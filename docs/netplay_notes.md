@@ -552,3 +552,14 @@ Checked (two copies on one machine, `BT3_SESSION_TEST=<role>:<address>:<port>:<b
   same window and leaving it brings the player back where they were; "reverting back works perfectly".
 - Not checked: the sound after a return in particular (the automated tests ran without a sound device); sound effects that were sounding when the state changed; a real Windows; two
   machines.
+
+## Linux against Windows (2026-10-07)
+
+- One Linux copy hosting, the Windows program under Wine joining, no window, both fed the input of session6 by
+  blank (`BT3_PAD_TABLE` of an ordinary run, played with `BT3_NET_SCRIPT`), `BT3_SOUND_TICKS=1`.
+- The fight values (both health values, both positions, the clock, the random number state) are the same on the
+  two at every one of 76,978 blanks of fighting; both end on 37420 / 16770, as the ordinary run does.
+- The whole-state checksum cannot be compared between the two programs: they are linked differently, so the
+  addresses the game stores in its own memory differ. Only the fight values were compared.
+- Wine, not a real Windows; one machine (same processor on both sides: nothing here says two different
+  processors agree, though the game's arithmetic is the port's own soft-float code and not the processor's).
