@@ -311,3 +311,11 @@ same pack / movie / text formats as the PS2 with the byte order swapped; picture
 - **Differences still to look at** (same recording): sound on against `BT3_NOSOUND=1` differs from blank 1477;
   4:3 against 16:9 from blank 2112. Not yet compared: the frame limiter on against off, the render thread, the
   32-bit program, the Windows program.
+- **A fight checksum** (the user's point: two players' machines legitimately differ in everything that belongs to
+  the view, so what has to match is the fight): `BT3_HASH` lines carry, during a fight, a checksum of both
+  fighters' health and position, the battle clock and the C library generator's state, and the values
+  themselves; `compare_hash.py a b --fight` compares only those. session5's split-screen fight (about 9,500 blanks;
+  nobody is hit in it, the fighters move a little, 4,700 clock ticks): identical between 4:3, 16:9 and 21:9 and
+  between sound on and off, the generator's state included. To come: a fight with hits, one view against two
+  views, a stage with the haze effect (which draws from the same generator, see above), ki and the fighters'
+  action states in the checksum.

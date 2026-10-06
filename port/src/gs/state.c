@@ -7,7 +7,9 @@
  * map, in <program>.mem next to the program), the game's heap and the scratchpad. Not covered: the port's own
  * memory (renderer, sound, input), and the game thread's stack and registers.
  *
- *   BT3_HASH=<file>       one line per vertical blank: its number and the checksum
+ *   BT3_HASH=<file>       one line per vertical blank: its number, the checksum of everything, and during a fight
+ *                         the checksum of the fight's own values (health, positions, clock, generator) and
+ *                         the values themselves
  *   BT3_HASH_AT=<n>       at that vertical blank, also <file>.pages (a checksum per 4 KB of every region) and
  *                         <file>.dump (the regions themselves), for finding WHERE two runs differ
  *                         (port/tools/compare_hash.py)
@@ -88,7 +90,7 @@ uint64_t Port_StateHash(void) {
 }
 
 /* Called at every vertical blank (Port_Trace, headless.c). */
-void Port_StateLog(unsigned vblank) {
+void Port_StateLog(unsigned vblank, const void *fight, unsigned fightSize) {
     static FILE *fp;
     static int mode = -1, at = -1;
 
@@ -103,7 +105,13 @@ void Port_StateLog(unsigned vblank) {
     if (mode != 1) {
         return;
     }
-    fprintf(fp, "%u %016llx\n", vblank, (unsigned long long)Port_StateHash());
+    /* blank, checksum of everything, checksum of the fight's own values (0 outside a fight) and those values */
+    fprintf(fp, "%u %016llx %016llx", vblank, (unsigned long long)Port_StateHash(), fight != NULL ? (unsigned long long)XXH3_64bits(fight, fightSize) : 0ull);
+    if (fight != NULL) {
+        const int *w = fight;
+        fprintf(fp, " hp %d %d pos %08x %08x %08x  %08x %08x %08x clock %d rnd %08x%08x", w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[11], w[10]);
+    }
+    fputc('\n', fp);
     if ((int)vblank == at) {
         char path[1100];
         FILE *pg;

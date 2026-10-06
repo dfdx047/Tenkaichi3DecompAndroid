@@ -57,7 +57,19 @@ def dumps():
 def main():
     if sys.argv[1].endswith(".dump"):
         return dumps()
-    a, b = (open(p).read().split("\n") for p in sys.argv[1:3])
+    a, b = (open(p).read().split("\n")[:-1] for p in sys.argv[1:3])  # (a line is complete once its newline is there)
+    if "--fight" in sys.argv:
+        # only the fight's own values (third column on): for two runs with different settings
+        fa = [" ".join(l.split()[2:]) for l in a if len(l.split()) > 3]
+        fb = [" ".join(l.split()[2:]) for l in b if len(l.split()) > 3]
+        va = [l.split()[0] for l in a if len(l.split()) > 3]
+        n = min(len(fa), len(fb))
+        for i in range(n):
+            if fa[i] != fb[i]:
+                print(f"fight values differ from fight blank {i + 1} of {n} (blank {va[i]}):\n  {fa[i]}\n  {fb[i]}")
+                return
+        print(f"fight values identical for {n} blanks of fighting")
+        return
     if not sys.argv[1].endswith(".pages"):
         n = min(len(a), len(b))
         for i in range(n):

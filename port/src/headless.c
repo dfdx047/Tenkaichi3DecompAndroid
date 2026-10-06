@@ -131,8 +131,29 @@ void Port_Trace(unsigned vblanks) {
     int i;
 
     {
-        extern void Port_StateLog(unsigned vblank); /* gs/state.c: BT3_HASH */
-        Port_StateLog(vblanks);
+        /* gs/state.c: BT3_HASH. With it, during a fight, the fight's own values: both fighters' health and
+           position, the battle clock and the C library generator's state. Two players' machines differ in much
+           (each has its own view, its own picture shape); these have to be the same on both. */
+        extern void Port_StateLog(unsigned vblank, const void *fight, unsigned fightSize);
+        extern unsigned long long gPortRandNext;
+        struct { int hp[2]; unsigned pos[2][3]; int clock; unsigned long long rnd; } f;
+        int battle = (sBattles != 0 || sFromMenu) && gBtlSeq != NULL && gBtlSeq->state >= 2;
+
+        if (battle && getenv("BT3_HASH") != NULL) {
+            float q[4] __attribute__((aligned(16)));
+            int k;
+            memset(&f, 0, sizeof(f));
+            for (k = 0; k < 2; k++) {
+                f.hp[k] = BtlCharApi_GetHp(k);
+                BtlCharApi_GetPos(k, q);
+                memcpy(f.pos[k], q, 12);
+            }
+            f.clock = BtlSeq_GetClock()[0];
+            f.rnd = gPortRandNext;
+            Port_StateLog(vblanks, &f, sizeof(f));
+        } else {
+            Port_StateLog(vblanks, NULL, 0);
+        }
     }
     if (gPortUnlockAll) {
         gPortUnlockAll = 0;
