@@ -50,7 +50,7 @@ unsigned gPortVBlanks; /* vertical blanks since start: the headless build's cloc
 /* With a window, a vertical blank is also the clock: one every 1/59.94 s. The game waits for one per frame in
    the menus (60 frames per second) and two in a battle (30), as on the console. Headless runs do not wait. */
 extern int GsGpu_Enabled(void);
-unsigned long long gPortSleptNs; /* time spent waiting here (the renderer's frame timing subtracts it) */
+PORT_HOST unsigned long long gPortSleptNs = 0; /* time spent waiting here (the renderer's frame timing subtracts it) */
 
 static unsigned long long now_ns(void) {
     struct timespec ts;
@@ -58,11 +58,12 @@ static unsigned long long now_ns(void) {
     return (unsigned long long)ts.tv_sec * 1000000000ull + (unsigned long long)ts.tv_nsec;
 }
 
-static unsigned long long sPacePrev, sPaceMin = ~0ull, sPaceMax;
-static unsigned sPaceCount, sPaceOff, sPaceLate, sPaceReset;
+/* (real time, not game state: PORT_HOST) */
+PORT_HOST static unsigned long long sPacePrev = 0, sPaceMin = ~0ull, sPaceMax = 0;
+PORT_HOST static unsigned sPaceCount = 0, sPaceOff = 0, sPaceLate = 0, sPaceReset = 0;
 
 static void vblank_wait(void) {
-    static unsigned long long next;
+    PORT_HOST static unsigned long long next = 0;
     struct timespec ts;
     unsigned long long t = now_ns(), after;
 
@@ -127,8 +128,16 @@ static void vblank_wait(void) {
 static unsigned char sPadLast[2][18]; /* (defined with the pads below) */
 void Port_VBlank(void) {
     /* BT3_PACED=1: real-time pacing without a window too (sound tests) */
-    if ((GsGpu_Enabled() || getenv("BT3_PACED") != NULL) && getenv("BT3_UNCAPPED") == NULL) {
-        vblank_wait();
+    {
+        extern int Port_NetSession(void), Port_NetWarp(void); /* gs/net.c */
+        extern int gPortResim;                                /* gs/state.c: no picture, no sound */
+        int warp = Port_NetWarp();
+        if (Port_NetSession()) {
+            gPortResim = warp; /* an online session's start-up up to the versus menu is not shown and not timed */
+        }
+        if ((GsGpu_Enabled() || getenv("BT3_PACED") != NULL) && getenv("BT3_UNCAPPED") == NULL && !warp) {
+            vblank_wait();
+        }
     }
     {   /* BT3_PAD_TABLE=<file>: what each pad read during the blank that ends here, 36 bytes per blank (the input
            of a session by blank and by pad: gs/net.c plays one player's column of it for its tests) */

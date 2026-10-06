@@ -3,6 +3,8 @@
 #ifdef PORT
 extern void Port_NetMenuOpen(void);
 extern int Port_NetMenuListed(void);
+extern int Port_NetSession(void);
+extern void Port_NetLeave(void);
 #endif
 #include "sys/pad.h"
 #include "sys/save.h"
@@ -493,6 +495,11 @@ void MainMenu_Input(s32 *result) {
 s32 MainMenu_Run(s32 section) {
     s32 result = 1;
 
+#ifdef PORT
+    if (Port_NetSession()) {
+        Port_NetLeave(); /* an online session lives in the versus mode: back at the main menu it is over (no return) */
+    }
+#endif
     MainMenu_Init(section);
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {

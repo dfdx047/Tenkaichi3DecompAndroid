@@ -42,6 +42,7 @@ typedef int socklen_t;
 #include "gs_internal.h"
 
 extern int Port_PadRead(int socket, unsigned char *data); /* gs_input.c: the keyboard and the controllers */
+void Port_NetLeave(void);
 
 enum { PAD = 18, RING = 4096, REDUNDANT = 16, MAGIC = 0x4E335442 /* "BT3N" */ };
 enum { T_HELLO = 1, T_HELLO_ACK = 2, T_INPUT = 3 };
@@ -258,6 +259,9 @@ void Port_NetBeginTick(unsigned tick) {
         }
         if (now - t0 > 15000000000ull) {
             fprintf(stderr, "bt3: net: the other player has not answered for 15 seconds (blank %u)\n", tick);
+            if (getenv("BT3_NET_SESSION") != NULL) {
+                Port_NetLeave(); /* back to the game as it normally is */
+            }
             exit(2);
         }
     }
@@ -287,4 +291,202 @@ int Port_NetView(void) {
         return forced & 1;
     }
     return Port_NetActive() ? sMe : -1;
+}
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * The session started from the game's "Dragon Net Battle" entry.
+ *
+ * Two copies can only stay in step if they start from the same state, and two players coming from their own menus
+ * with their own saves are not in the same state. So a session is a fresh start of the program on both sides:
+ *   1. the lobby (the window behind the menu entry): one side hosts, the other joins; the two find each other
+ *      (Port_Lobby*, a greeting and its answer);
+ *   2. each side then starts the program again with BT3_NET_SESSION=1 and its role, an empty save folder of the
+ *      session's own (net_session/), and connects again as above. The game boots without picture and sound and
+ *      not held to real time, straight into the versus mode's menu (headless.c), with everything unlocked by the
+ *      game's own Save_UnlockAll, so both sides have the same roster;
+ *   3. from there it is the game's own two-player versus mode, the host's pad also driving the menus;
+ *   4. leaving the versus mode for the main menu ends the session: each side starts the program once more, as
+ *      it normally is, with its own save.
+ * ------------------------------------------------------------------------------------------------------------- */
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
+static void relaunch(int role, const char *join, int port) {
+    char value[160];
+#ifdef _WIN32
+    char exe[1024];
+    STARTUPINFOA si;
+    PROCESS_INFORMATION pi;
+#define SETENV(n, v) SetEnvironmentVariableA(n, v)
+#else
+#define SETENV(n, v) ((v) != NULL ? setenv(n, v, 1) : unsetenv(n))
+#endif
+    SETENV("BT3_NET_HOST", NULL);
+    SETENV("BT3_NET_JOIN", NULL);
+    SETENV("BT3_NET_SESSION", NULL);
+    SETENV("BT3_SOUND_TICKS", NULL);
+    if (role != 0) {
+        if (role == 1) {
+            snprintf(value, sizeof(value), "%d", port);
+            SETENV("BT3_NET_HOST", value);
+        } else {
+            snprintf(value, sizeof(value), "%s:%d", join, port);
+            SETENV("BT3_NET_JOIN", value);
+        }
+        SETENV("BT3_NET_SESSION", "1");
+        SETENV("BT3_SOUND_TICKS", "1");
+        SETENV("BT3_NOMOVIE", "1");
+        SETENV("BT3_SAVES", "net_session");
+        /* the session's own save folder starts empty: both sides begin from the game's defaults */
+        remove("net_session/card1/BASLUS-21678DBZT3/BASLUS-21678DBZT3");
+        remove("net_session/card1/BASLUS-21678DBZT3/icon.sys");
+        remove("net_session/card1/BASLUS-21678DBZT3/dbzsm.ico");
+    } else {
+        SETENV("BT3_SAVES", NULL); /* (a save folder named on the command line is not carried over a session: known) */
+        SETENV("BT3_NOMOVIE", "1");
+    }
+    fflush(NULL);
+#ifdef _WIN32
+    GetModuleFileNameA(NULL, exe, sizeof(exe) - 1);
+    memset(&si, 0, sizeof(si));
+    si.cb = sizeof(si);
+    if (CreateProcessA(exe, NULL, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+        ExitProcess(0);
+    }
+#else
+    {
+        char *argv[2] = {(char *)"/proc/self/exe", NULL};
+        execv("/proc/self/exe", argv);
+    }
+#endif
+    fprintf(stderr, "bt3: net: could not start the program again\n");
+    exit(2);
+}
+
+/* 1 in a session started from Dragon Net Battle. */
+int Port_NetSession(void) {
+    return getenv("BT3_NET_SESSION") != NULL && Port_NetActive();
+}
+
+/* The session's start-up runs without picture and sound and without waiting for real time until the game has
+   reached the versus menu (headless.c says when). */
+static int sArrived;
+int Port_NetWarp(void) {
+    return Port_NetSession() && !sArrived;
+}
+void Port_NetArrived(void) {
+    sArrived = 1;
+}
+
+/* The session is over (the game went back to the main menu, or the other side is gone): back to the game as it
+   normally is. */
+void Port_NetLeave(void) {
+    fprintf(stderr, "bt3: net: the session has ended\n");
+    relaunch(0, NULL, 0);
+}
+
+/* ---- the lobby: called from the settings code's window (ui.cpp), once a frame ---- */
+static int sLobby; /* 0 idle, 1 waiting, 2 found, -1 failed */
+static int sLobbyRole, sLobbyPort;
+static char sLobbyAddr[128];
+static uint64_t sLobbyLast;
+
+int Port_LobbyStart(int host, const char *address, int port) {
+    struct sockaddr_in local;
+
+    if (sSock >= 0) {
+        closesocket(sSock);
+    }
+#ifdef _WIN32
+    {
+        WSADATA w;
+        u_long on = 1;
+        WSAStartup(MAKEWORD(2, 2), &w);
+        sSock = (int)socket(AF_INET, SOCK_DGRAM, 0);
+        ioctlsocket(sSock, FIONBIO, &on);
+    }
+#else
+    sSock = socket(AF_INET, SOCK_DGRAM, 0);
+    fcntl(sSock, F_SETFL, fcntl(sSock, F_GETFL, 0) | O_NONBLOCK);
+#endif
+    sLobbyRole = host ? 1 : 2;
+    sLobbyPort = port;
+    snprintf(sLobbyAddr, sizeof(sLobbyAddr), "%s", address != NULL ? address : "");
+    memset(&sPeer, 0, sizeof(sPeer));
+    sPeer.sin_family = AF_INET;
+    sLobby = 1;
+    sLobbyLast = 0;
+    if (host) {
+        memset(&local, 0, sizeof(local));
+        local.sin_family = AF_INET;
+        local.sin_addr.s_addr = htonl(INADDR_ANY);
+        local.sin_port = htons((uint16_t)port);
+        if (bind(sSock, (struct sockaddr *)&local, sizeof(local)) != 0) {
+            sLobby = -1;
+        }
+    } else {
+        sPeer.sin_port = htons((uint16_t)port);
+        if (inet_pton(AF_INET, sLobbyAddr, &sPeer.sin_addr) != 1) {
+            struct hostent *he = gethostbyname(sLobbyAddr);
+            if (he == NULL) {
+                sLobby = -1;
+            } else {
+                memcpy(&sPeer.sin_addr, he->h_addr_list[0], sizeof(sPeer.sin_addr));
+            }
+        }
+    }
+    return sLobby;
+}
+
+void Port_LobbyCancel(void) {
+    if (sSock >= 0) {
+        closesocket(sSock);
+        sSock = -1;
+    }
+    sLobby = 0;
+}
+
+/* 0 idle, 1 still waiting, 2 the other player is there, -1 it cannot work (port in use, unknown address). */
+int Port_LobbyPoll(void) {
+    uint8_t pkt[64];
+    struct sockaddr_in from;
+    socklen_t fromLen = sizeof(from);
+    uint64_t now = SDL_GetTicksNS();
+    int n;
+
+    if (sLobby != 1) {
+        return sLobby;
+    }
+    if (sLobbyRole == 2 && now - sLobbyLast > 200000000ull) {
+        uint32_t hello[2] = {MAGIC, T_HELLO};
+        sendto(sSock, (const char *)hello, sizeof(hello), 0, (struct sockaddr *)&sPeer, sizeof(sPeer));
+        sLobbyLast = now;
+    }
+    while ((n = (int)recvfrom(sSock, (char *)pkt, sizeof(pkt), 0, (struct sockaddr *)&from, &fromLen)) >= 8) {
+        uint32_t magic, type;
+        memcpy(&magic, pkt, 4);
+        memcpy(&type, pkt + 4, 4);
+        if (magic != MAGIC) {
+            continue;
+        }
+        if (sLobbyRole == 1 && type == T_HELLO) {
+            uint32_t ack[2] = {MAGIC, T_HELLO_ACK};
+            int k;
+            for (k = 0; k < 3; k++) {
+                sendto(sSock, (const char *)ack, sizeof(ack), 0, (struct sockaddr *)&from, sizeof(from));
+            }
+            sLobby = 2;
+        } else if (sLobbyRole == 2 && type == T_HELLO_ACK) {
+            sLobby = 2;
+        }
+    }
+    return sLobby;
+}
+
+/* The other player is there: start the session (this does not return). */
+void Port_LobbyLaunch(void) {
+    closesocket(sSock);
+    sSock = -1;
+    relaunch(sLobbyRole, sLobbyAddr, sLobbyPort);
 }

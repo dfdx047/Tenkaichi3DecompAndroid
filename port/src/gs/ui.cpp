@@ -9,7 +9,13 @@
 #include "imgui_impl_sdlgpu3.h"
 #include "ui.h"
 
-extern "C" { extern volatile int gPortNetMenuRequest; }
+extern "C" {
+extern volatile int gPortNetMenuRequest;
+int Port_LobbyStart(int host, const char *address, int port); // gs/net.c
+int Port_LobbyPoll(void);
+void Port_LobbyCancel(void);
+void Port_LobbyLaunch(void);
+}
 static bool sReady, sOpen;
 static bool sNet;                              // the open window is the online screen (Dragon Net Battle), not the settings
 static int sForceTab = -1;                     // BT3_UI_OPEN=<tab>: open at start on that tab (testing)
@@ -147,18 +153,44 @@ static void build_net(void) {
             ImGui::EndTabBar();
         }
         ImGui::Spacing();
-        ImGui::BeginDisabled();
-        ImGui::Button(tab == 0 ? "Host a match" : "Join the match", ImVec2(200.0f, 0.0f));
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-        if (ImGui::Button("Back", ImVec2(120.0f, 0.0f))) {
-            open = false;
+        {
+            int state = Port_LobbyPoll();
+            if (state == 2) {
+                Port_LobbyLaunch(); // the other player is there: the game starts again as the session (no return)
+            }
+            if (state == 1) {
+                if (tab == 0) {
+                    ImGui::Text("Waiting for the other player on port %s...", port);
+                } else {
+                    ImGui::Text("Looking for %s...", address);
+                }
+                if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f))) {
+                    Port_LobbyCancel();
+                }
+            } else {
+                bool can = atoi(port) > 0 && (tab == 0 || address[0] != '\0');
+                ImGui::BeginDisabled(!can);
+                if (ImGui::Button(tab == 0 ? "Host a match" : "Join the match", ImVec2(200.0f, 0.0f))) {
+                    Port_LobbyStart(tab == 0, address, atoi(port));
+                }
+                ImGui::EndDisabled();
+                ImGui::SameLine();
+                if (ImGui::Button("Back", ImVec2(120.0f, 0.0f))) {
+                    open = false;
+                }
+                if (state < 0) {
+                    ImGui::TextWrapped(tab == 0 ? "That port cannot be used (another program has it?)." : "That address is not known.");
+                }
+            }
         }
         ImGui::Spacing();
-        ImGui::TextDisabled("Online play is not built yet: this is the screen it will start from.");
+        ImGui::TextDisabled("When you are connected the game starts again for the match: both players get the same");
+        ImGui::TextDisabled("roster, with everything unlocked, and your own save is left alone. The host's controls");
+        ImGui::TextDisabled("also work the menus.");
     }
     ImGui::End();
     if (!open) {
+        Port_LobbyCancel();
         set_open(false);
     }
 }

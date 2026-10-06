@@ -36,12 +36,38 @@ static int sFromMenu;
 extern int __real_Progress_Main(int arg);
 int gPortMenuMode;
 
+volatile int gPortUnlockAll, gPortUnlockDone;
+extern struct SaveData GAME_PTR gSaveData;
+extern void Save_UnlockAll(void *opt);
+extern int Port_NetSession(void); /* gs/net.c */
+extern int Port_NetWarp(void);
+extern void Port_NetArrived(void);
+extern struct { int unk0[2]; int loadPack, loadRes, loadSprites; int flags; int mode; } GAME_PTR gProgress; /* include/menu/menu_a.h */
+static int sNetEntered;
+
 int __wrap_Progress_Main(int arg) {
     const char *path = getenv("BT3_REPLAY");
 
     if (path == NULL && getenv("BT3_DEMO") == NULL) {
         {
             int r;
+            /* An online session (gs/net.c) goes straight to the versus mode's character select, with the game's
+               default save and everything in it unlocked: the same on both sides. (The overlay's first-run part, the
+               logos and the memory card check, still runs first; without picture: Port_NetWarp.) */
+            if (Port_NetSession() && !sNetEntered && gProgress != NULL && gSaveData != NULL) {
+                sNetEntered = 1;
+                /* Mode 39 is the versus mode's character select. The versus menu in front of it (mode 38) only
+                   leaves three choices behind, in this same record (DuelProgress, include/menu/menu_g.h): who
+                   plays (+0x620: 1 = 1P vs 2P), the battle type (+0x624: 0 = single) and the DP limit (+0x630).
+                   They are set here, so the session opens on the character select itself. Going back from it
+                   leads to the versus menu, where the host can change the battle type; back from there ends the
+                   session. (After a battle the game itself returns to mode 39.) */
+                gProgress->mode = 39;
+                *(int *)((char *)gProgress + 0x620) = 1;
+                *(int *)((char *)gProgress + 0x624) = 0;
+                *(int *)((char *)gProgress + 0x630) = 0;
+                Save_UnlockAll(gSaveData);
+            }
             gPortMenuMode = 1; /* the renderer treats all 2D as one centred 4:3 page while the menus run */
             r = __real_Progress_Main(arg);
             gPortMenuMode = 0;
@@ -102,6 +128,8 @@ extern int *BtlSeq_GetClock(void);
 extern int BtlCharApi_GetHp(int objId);
 extern void BtlCharApi_GetPos(int objId, float *out);
 
+
+
 /* Main-menu item 4, Dragon Net Battle, was confirmed (src/menu/menu_a.c): the settings code opens the online
    screen when it sees the request (port/src/gs/ui.cpp). Without a window nothing does. */
 volatile int gPortNetMenuRequest;
@@ -119,9 +147,7 @@ int Port_NetMenuListed(void) {
    unlock flags, and the largest amount of Zenni. It changes the save in memory (the records list is emptied too);
    the game writes it to the card the next time it saves. The window only sets the request; it is carried out
    here, on the game's side, at a vertical blank. */
-volatile int gPortUnlockAll, gPortUnlockDone;
-extern struct SaveData GAME_PTR gSaveData;
-extern void Save_UnlockAll(void *opt);
+
 
 void Port_Trace(unsigned vblanks) {
     static int every = -1;
@@ -154,6 +180,9 @@ void Port_Trace(unsigned vblanks) {
         } else {
             Port_StateLog(vblanks, NULL, 0);
         }
+    }
+    if (Port_NetWarp() && sNetEntered && gProgress != NULL && !(gProgress->flags & 0x40)) {
+        Port_NetArrived(); /* the logos and the card check are over: the character select is next, with picture and sound */
     }
     if (gPortUnlockAll) {
         gPortUnlockAll = 0;

@@ -466,3 +466,24 @@ cut (skip the vertex work, keep the uploads) when rollback is in.
   fight values identical for 15,693 blanks; the original session's final health.
 - Still the split-screen game underneath: the stage model is the split-screen one (a different, presumably
   lighter file), and the effects that are per view are computed for both.
+
+## The session flow behind "Dragon Net Battle" (2026-10-07)
+
+- Lobby: the window behind the menu entry (ui.cpp) has working Host / Join buttons (`Port_Lobby*` in gs/net.c: a
+  greeting and its answer over UDP). When the two have found each other, each side starts the program again as
+  the session (`relaunch`: `BT3_NET_SESSION=1`, its role, `BT3_SAVES=net_session` emptied first,
+  `BT3_SOUND_TICKS=1`), and the two connect again and run in lockstep from the first blank.
+- The session opens on the versus mode's CHARACTER SELECT (mode 39), not on the versus menu: that menu (mode 38)
+  leaves only three values behind (who plays, battle type, DP limit, at +0x620 / +0x624 / +0x630 of the progress
+  record), which `__wrap_Progress_Main` sets itself (1P vs 2P, single battle). Everything is unlocked with the
+  game's `Save_UnlockAll` on the default save, so both sides have the same roster. The start-up before that
+  (logos, memory card check) runs without picture, sound or real-time pacing (`Port_NetWarp`). The user's check:
+  the two windows come up in the character select.
+- Leaving: back from the character select is the versus menu (the host can change the battle type); back from
+  there the game enters the main menu, where `MainMenu_Run` ends the session (`Port_NetLeave`: the program
+  starts once more as it normally is, with the player's own save). A player who does not answer for 15 seconds
+  ends it the same way.
+- Two session copies on one machine, no input: the checksum of everything is identical on both for all 2,715
+  blanks run (after the frame limiter's clock values were taken out of the state: PORT_HOST).
+- Not tried: the lobby window itself (the buttons were not clicked in a test: the session was started with the
+  variables it sets), a fight from this flow with real controllers, leaving, the Windows program.
