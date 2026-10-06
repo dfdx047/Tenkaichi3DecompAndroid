@@ -159,10 +159,13 @@ static void map_heap(void) {
      - the C library's heap: kept in the break area that follows the program (no mmap, one arena), because
        handles the port gives to the game (files, sound players) come from it;
      - the stack of the thread that runs the game: the game stores addresses of local variables, so its main()
-       runs on a thread whose stack is mapped at 0x60000000 (the process's own stack is far above 4 GB). */
+       runs on a thread whose stack is mapped right above the heap (the process's own stack is far above 4 GB).
+       Below the program at 0x20000000 on purpose: the C library's own heap starts at a random place in the
+       gigabyte ABOVE the program, and a fixed address there (this stack used to be at 0x60000000) is sometimes
+       taken, which stopped the program at start now and then. */
 #include <malloc.h>
 #include <pthread.h>
-#define STACK_BASE 0x60000000u
+#define STACK_BASE 0x02000000u
 #define STACK_SIZE 0x01000000u
 extern int __real_main(int argc, char **argv);
 static int sArgc, sResult;
@@ -344,6 +347,23 @@ static void Port_LoadGameData(void) {
     }
 }
 
+#if defined(__x86_64__) && !defined(_WIN32)
+/* (between the GS registers at 0x12000000 and the program at 0x20000000: see the note at STACK_BASE) */
+#define LOW_ARENA_BASE 0x13000000u
+#define LOW_ARENA_SIZE 0x0C000000u /* address space only: pages are taken as they are first used */
+enum { LOW_SIZES = 256 };
+static uint8_t *sLowArena, *sLowNext;
+static struct { uint64_t size; void *head; } sLowList[LOW_SIZES];
+static int sLowSizes;
+static volatile int sLowLock;
+#endif
+
+/* Where the game's heap is in this process (at its PS2 address unless that was taken) and how large. */
+void Port_HeapRegion(uint8_t **base, uint32_t *size) {
+    *base = (uint8_t *)(uintptr_t)(sHeapEnd - (HEAP_END - HEAP_BASE));
+    *size = HEAP_END - HEAP_BASE;
+}
+
 __attribute__((constructor)) static void Port_MapMemory(void) {
 #ifdef _WIN32
     /* The program only works at the address it was linked for (the game's pointers are 4 bytes and absolute). It
@@ -371,6 +391,25 @@ __attribute__((constructor)) static void Port_MapMemory(void) {
     mallopt(M_MMAP_MAX, 0);
     mallopt(M_ARENA_MAX, 1);
     map(STACK_BASE, STACK_SIZE, "the game thread's stack");
+    /* the region of Port_LowAlloc, taken now: later (once the graphics libraries are loaded) the address is
+       sometimes in use, and the blocks' addresses, which end up in the game's memory, changed from run to run */
+    sLowArena = mmap((void *)(uintptr_t)LOW_ARENA_BASE, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+    if (sLowArena == MAP_FAILED || sLowArena != (uint8_t *)(uintptr_t)LOW_ARENA_BASE) {
+        if (getenv("BT3_MEM_DEBUG") != NULL) {
+            char line[256];
+            FILE *maps = fopen("/proc/self/maps", "r");
+            fprintf(stderr, "bt3: the region at 0x%08X was not free (got %p). Mappings below 0x50000000:\n", LOW_ARENA_BASE, (void *)sLowArena);
+            while (maps != NULL && fgets(line, sizeof(line), maps) != NULL) {
+                if (strtoull(line, NULL, 16) < 0x50000000ull) {
+                    fputs(line, stderr);
+                }
+            }
+        }
+        sLowArena = NULL; /* Port_LowAlloc takes one where it can */
+    } else {
+        sLowNext = sLowArena;
+    }
 #endif
     map_heap();
     map(0x10000000u, 0x10000, "the hardware registers");
@@ -398,6 +437,7 @@ void *Port_Malloc(uint32_t size) {
 enum { LOW_POOL = 0x100000, LOW_SMALL = 0x1000 };
 static void *sLowFreed[LOW_SMALL / 256];
 #endif
+
 
 void *Port_LowAlloc(size_t size) {
 #ifdef _WIN32
@@ -433,14 +473,49 @@ void *Port_LowAlloc(size_t size) {
     p[0] = total;
     return p + 2;
 #elif defined(__x86_64__)
-    size_t total = (size + 16 + 4095) & ~(size_t)4095;
-    uint64_t *p = mmap(NULL, total, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT, -1, 0);
+    /* From one region at a fixed address, handed out in order, freed blocks reused by size (last freed first).
+       The addresses end up in the game's memory (file handles, sound buffers); with the system choosing them they
+       differed from run to run, and so did the game's state. This way they depend only on the order of the
+       requests. */
+    size_t total = (size + 16 + 255) & ~(size_t)255;
+    uint64_t *p = NULL;
+    int i;
 
-    if (p == MAP_FAILED) {
-        fprintf(stderr, "bt3: no memory below 4 GB for %zu bytes\n", size);
-        exit(2);
+    if (total > 4096) {
+        total = (total + 4095) & ~(size_t)4095;
+    }
+    while (__sync_lock_test_and_set(&sLowLock, 1)) {
+    }
+    if (sLowArena == NULL) {
+        sLowArena = mmap((void *)(uintptr_t)LOW_ARENA_BASE, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE,
+                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+        if (sLowArena == MAP_FAILED || sLowArena != (uint8_t *)(uintptr_t)LOW_ARENA_BASE) { /* taken: anywhere below 4 GB */
+            sLowArena = mmap(NULL, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_32BIT, -1, 0);
+        }
+        if (sLowArena == MAP_FAILED) {
+            fprintf(stderr, "bt3: no memory below 4 GB for the port's own blocks\n");
+            exit(2);
+        }
+        sLowNext = sLowArena;
+    }
+    for (i = 0; i < sLowSizes; i++) {
+        if (sLowList[i].size == total && sLowList[i].head != NULL) {
+            p = sLowList[i].head;
+            sLowList[i].head = *(void **)p;
+            memset(p, 0, total);
+            break;
+        }
+    }
+    if (p == NULL) {
+        if ((size_t)(sLowArena + LOW_ARENA_SIZE - sLowNext) < total) {
+            fprintf(stderr, "bt3: no memory below 4 GB for %zu bytes\n", size);
+            exit(2);
+        }
+        p = (uint64_t *)sLowNext;
+        sLowNext += total;
     }
     p[0] = total;
+    __sync_lock_release(&sLowLock);
     return p + 2;
 #else
     return calloc(1, size);
@@ -461,8 +536,22 @@ void Port_LowFree(void *addr) {
     }
 #elif defined(__x86_64__)
     if (addr != NULL) {
-        uint64_t *p = (uint64_t *)addr - 2;
-        munmap(p, p[0]);
+        uint64_t *p = (uint64_t *)addr - 2, total = p[0];
+        int i;
+        while (__sync_lock_test_and_set(&sLowLock, 1)) {
+        }
+        for (i = 0; i < sLowSizes && sLowList[i].size != total; i++) {
+        }
+        if (i == sLowSizes && sLowSizes < LOW_SIZES) {
+            sLowList[sLowSizes].size = total;
+            sLowList[sLowSizes].head = NULL;
+            sLowSizes++;
+        }
+        if (i < sLowSizes) { /* (with the table of sizes full the block is simply not reused) */
+            *(void **)p = sLowList[i].head;
+            sLowList[i].head = p;
+        }
+        __sync_lock_release(&sLowLock);
     }
 #else
     free(addr);

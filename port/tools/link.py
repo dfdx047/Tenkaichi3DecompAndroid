@@ -46,6 +46,12 @@ def main():
     print(f"{len(need)} stubs; link {'OK -> ' + str(EXE.relative_to(ROOT)) if r.returncode == 0 else 'FAILED'}; {len(errs)} error lines")
     for l in errs[:12]:
         print("  " + l[-160:])
+    if r.returncode == 0:
+        # where the game's own variables lie in this program (for the state checksum; port/src/gs/state.c)
+        d = subprocess.run([sys.executable, str(ROOT / "port/tools/make_state.py")], capture_output=True, text=True)
+        if d.returncode:
+            print((d.stdout + d.stderr).strip()[-300:])
+            sys.exit(1)
     if r.returncode == 0 and (DATA / "SKELETON").exists():
         # built from the blank data tables: the program needs the list of where their values are on the user's disc
         d = subprocess.run([sys.executable, str(ROOT / "port/tools/make_dat.py")], capture_output=True, text=True)

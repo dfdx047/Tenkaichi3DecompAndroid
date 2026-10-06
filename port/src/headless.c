@@ -130,6 +130,10 @@ void Port_Trace(unsigned vblanks) {
     int *clock;
     int i;
 
+    {
+        extern void Port_StateLog(unsigned vblank); /* gs/state.c: BT3_HASH */
+        Port_StateLog(vblanks);
+    }
     if (gPortUnlockAll) {
         gPortUnlockAll = 0;
         if (gSaveData != NULL) {

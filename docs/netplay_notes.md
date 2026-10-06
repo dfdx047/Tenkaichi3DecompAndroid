@@ -284,3 +284,30 @@ same pack / movie / text formats as the PS2 with the byte order swapped; picture
   interrupted.", "No activity for 60 seconds".
 - The screen order and what the countdown does are inferred; main.dol was not analysed (how a fight is kept in
   sync is still unknown). The decoded sheets and the text are kept outside the repositories (game data).
+
+## Stage 1: the state checksum (2026-10-06, branch netplay)
+
+- `port/src/gs/state.c`: `BT3_HASH=<file>` writes one checksum per vertical blank (XXH3 over the game's global
+  variables, its heap and the scratchpad); `BT3_HASH_AT=<n>` adds, at that blank, a checksum per 4 KB page and a
+  dump of the regions. `port/tools/compare_hash.py` finds the first differing blank of two logs and, from two
+  dumps, the differing bytes with the variable they are in. Which addresses are the game's own globals comes from
+  the linker's map (`port/tools/make_state.py` -> `<program>.mem`, run at link time): about 440 KB in 5 ranges.
+- Checksums are comparable between runs of the SAME program only: the state holds addresses of functions and
+  variables, which differ between builds. Comparing a Linux and a Windows machine needs something else (a
+  checksum of chosen values, or addresses normalised): open.
+- **First findings, both fixed:**
+  1. `Port_LowAlloc` on 64-bit Linux took its blocks from wherever mmap put them; the addresses end up in the
+     game's memory (file handles, sound buffers: gSndRpcBuf, gFileReq, heap), so two runs differed from the third
+     blank on. Now one region at a fixed address, blocks handed out in order and reused by size.
+  2. That region (first at 0x30000000) and the game thread's stack (0x60000000) were at fixed addresses ABOVE the
+     program, where the C library's heap starts at a random place within a gigabyte: the region was taken in
+     about a third of the windowed runs, and the stack's address must have been taken now and then too (the
+     program then stops at start with "cannot reserve": not seen reported, a few percent by the arithmetic).
+     Both are below the program now (stack 0x02000000, region 0x13000000). This second fix belongs on the main
+     line as well.
+- **Result:** the same program, the same input, the same settings: 3 headless runs of the replay fight identical
+  for 13,378 blanks; 10 windowed runs of session5 (menus and a split-screen fight, played from the pad recording,
+  `BT3_MENU_ITEM4=0`) identical for 6,973 blanks and 5 for 12,956.
+- **Differences still to look at** (same recording): sound on against `BT3_NOSOUND=1` differs from blank 1477;
+  4:3 against 16:9 from blank 2112. Not yet compared: the frame limiter on against off, the render thread, the
+  32-bit program, the Windows program.
