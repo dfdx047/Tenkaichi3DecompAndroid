@@ -578,3 +578,9 @@ Checked (two copies on one machine, `BT3_SESSION_TEST=<role>:<address>:<port>:<b
 - Known: the test hook's own "leave" after a session that had already ended by time-out restores twice and
   crashed the Windows program (seen once, with the broken archive). `Port_NetLeave` itself is only reached in a
   session.
+
+## Real Windows (2026-10-07)
+
+- The user, with the two archives of commit 401fb60: Linux here and Windows in their VM (other processor: Intel
+  i5 12th gen against this Ryzen), from the Dragon Net Battle window: "connected, were in sync and reverted to
+  main menu when disconnecting". By eye; no checksum log was taken.
