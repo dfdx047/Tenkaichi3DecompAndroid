@@ -451,3 +451,18 @@ cut (skip the vertex work, keep the uploads) when rollback is in.
 - Not done: real keyboards / controllers as the input (only the script), two machines, the Windows program (it
   builds), what happens when a copy is closed (the other stops after 15 s), a check of the two copies against
   each other while they run, both players' saves and settings (the copies had the same save).
+
+## One view per window (2026-10-07)
+
+- Online, both machines run the two-player battle with its two cameras (the split-screen game, the one tested
+  above) and each SHOWS only its own player's view, full screen. The game has the mechanism already:
+  `BtlCam_UpdateOverride` gives one view the whole screen while its camera "has priority" (close-ups). Under PORT
+  the local player's view takes that place when the game gives none priority (`Port_NetView`, gs/net.c); when the
+  game does, both players see that view, as in the split-screen game.
+- `BT3_VIEW=0|1` does the same without a connection. session6 shown three ways (split, player 1's view, player
+  2's view; 16:9): the fight values, the generator's state included, are identical for all 13,170 blanks of
+  fighting. So what a machine shows does not reach the fight (on this session).
+- Two connected copies (delay 2): each window shows its own fighter from behind, full screen, at the same blank;
+  fight values identical for 15,693 blanks; the original session's final health.
+- Still the split-screen game underneath: the stage model is the split-screen one (a different, presumably
+  lighter file), and the effects that are per view are computed for both.

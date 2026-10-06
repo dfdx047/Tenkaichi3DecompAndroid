@@ -483,6 +483,9 @@ void BtlCam_ApplyView(s32 scissor) {
     View_Apply(&gBtlCam->cur->view, scissor);
 }
 
+#ifdef PORT
+extern int Port_NetView(void); /* port/src/gs/net.c: the local player's view (0 or 1), or -1 */
+#endif
 /* Decides whether one full-screen view replaces the per-player views this frame; returns 1 if so. */
 s32 BtlCam_UpdateOverride(void) {
     s32 ret = 0;
@@ -499,6 +502,14 @@ s32 BtlCam_UpdateOverride(void) {
         BtlCam_SetLayout(0, 1);
     } else {
         idx = BtlCam_GetPriorityView();
+#ifdef PORT
+        /* Online play: both machines run the two-player game with its two cameras, and each shows only its own
+           player's view, full screen. That is this function's own case of "one view has priority", with the
+           local player's view taking the place when the game itself gives none priority. */
+        if (idx < 0) {
+            idx = Port_NetView();
+        }
+#endif
         if (idx >= 0) {
             BtlCam_SelectView(idx);
             ret = 1;

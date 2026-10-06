@@ -15,6 +15,8 @@
  *                                   1, pad 2; written by BT3_PAD_TABLE=<file> during an ordinary run), not from
  *                                   the keyboard or a controller
  *   BT3_NET_LOSS=<percent>, BT3_NET_LAG=<ms>   testing: drop that share of the packets sent / hold each one back
+ *   BT3_VIEW=0|1                    testing: show that player's view full screen in a two-player battle (what a
+ *                                   connected copy does with its own player's)
  *
  * A packet carries the sender's input for the last 16 blanks, so a lost packet is covered by the next ones; while
  * a copy waits it sends its own latest packet again every few milliseconds.
@@ -270,4 +272,19 @@ void Port_NetBeginTick(unsigned tick) {
 /* What the game reads for a pad during this blank. */
 void Port_NetInput(int player, unsigned char *data) {
     memcpy(data, player >= 0 && player < 2 && sTick < sHave[player] ? sIn[player][sTick % RING] : kIdle, PAD);
+}
+
+/* Which player's view this copy shows full screen in a two-player battle: the local player's when online; -1
+   otherwise (the two views side by side, as always). BT3_VIEW=0|1: the same without a connection, for looking at
+   it and for comparing the game's state between the three ways of showing a battle. */
+int Port_NetView(void) {
+    static int forced = -2;
+    if (forced == -2) {
+        const char *e = getenv("BT3_VIEW");
+        forced = e != NULL ? atoi(e) : -1;
+    }
+    if (forced >= 0) {
+        return forced & 1;
+    }
+    return Port_NetActive() ? sMe : -1;
 }
