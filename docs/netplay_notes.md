@@ -221,3 +221,21 @@ It is not a generator: there are two instances (0x252F68 and 0x253ED8), each the
 the character password codec (docs/systems/save_data.md). The state is seeded per call, read
 and never twisted, and touches nothing shared. The only live draw in that range is
 `ChrPass_Encode`, which takes two libc `rand()` values (menu only).
+
+## The Wii build's online mode: first look (2026-10-06, from the text in its main.dol only)
+
+Read from the readable strings of `sys/main.dol` of the USA Wii disc (no symbols; nothing disassembled yet).
+
+- Networking is Nintendo's DWC library (Nintendo Wi-Fi Connection) on GameSpy's services: login, friend lists
+  (GP), matchmaking ("ConnectToAnybody", "ConnectToFriends", server browsing), and GT2 for the connection between
+  the two consoles, with "SendUnreliable" present: the consoles talk to each other directly; the servers only
+  introduce them. Save file of the mode: `nocopy/DBZT3_WIFI`.
+- Screens, from the names of the menu's objects (`mc_*` / `fl_*`): a Wi-Fi menu with a guide character; a friend
+  list with add / delete, entry of a friend code on an on-screen keypad and a "my code" page; a friend match
+  lobby; a matchmaking screen with both players' names, win counts and battle points and a "revenge" (rematch)
+  marker; time counters on the selection screens; choice of map and music; a VS screen with a countdown; a
+  ranking list; a results list with win percentages; and the "ability limit" / item cost fields of custom
+  characters among the same objects.
+- NOT known from this: what the two consoles exchange during a fight (inputs only or more), whether there is an
+  input delay, and what happens on a mismatch or a lost connection. That needs the callers of the library's send
+  and receive functions found in the PowerPC code.
