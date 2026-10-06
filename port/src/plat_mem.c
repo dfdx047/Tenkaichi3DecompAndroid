@@ -358,6 +358,31 @@ static int sLowSizes;
 static volatile int sLowLock;
 #endif
 
+/* For saving and restoring the game's state (port/src/gs/state.c): the port's own memory that belongs to it. The
+   blocks of Port_LowAlloc hold what the game was handed by address (file handles, sound buffers), and the
+   allocator's own variables say which of them are in use. Also where the game thread's stack ends. */
+int Port_StateExtra(void **p, size_t *n, int max) {
+    int k = 0;
+#if defined(__x86_64__) && !defined(_WIN32)
+    if (max >= 4 && sLowArena != NULL) {
+        p[k] = &sLowNext; n[k++] = sizeof(sLowNext);
+        p[k] = sLowList; n[k++] = sizeof(sLowList);
+        p[k] = &sLowSizes; n[k++] = sizeof(sLowSizes);
+        p[k] = sLowArena; n[k++] = (size_t)(sLowNext - sLowArena);
+    }
+#else
+    (void)p; (void)n; (void)max;
+#endif
+    return k;
+}
+uint8_t *Port_GameStackTop(void) {
+#if defined(__x86_64__) && !defined(_WIN32)
+    return (uint8_t *)(uintptr_t)(STACK_BASE + STACK_SIZE);
+#else
+    return NULL;
+#endif
+}
+
 /* Where the game's heap is in this process (at its PS2 address unless that was taken) and how large. */
 void Port_HeapRegion(uint8_t **base, uint32_t *size) {
     *base = (uint8_t *)(uintptr_t)(sHeapEnd - (HEAP_END - HEAP_BASE));

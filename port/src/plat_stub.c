@@ -128,6 +128,10 @@ void Port_VBlank(void) {
         vblank_wait();
     }
     gPortVBlanks++;
+    {
+        extern void Port_SyncTest(unsigned vblank); /* gs/state.c: BT3_SYNCTEST */
+        Port_SyncTest(gPortVBlanks);
+    }
     Port_Trace(gPortVBlanks);
     if (sVsyncHandler != NULL) {
         sVsyncHandler(0);
@@ -159,6 +163,11 @@ extern int Port_PadRead(int socket, unsigned char *data);
    (given the same save folder to start from). For reproducing what a player saw. */
 static FILE *sPadRec, *sPadPlay;
 static int sPadFilesTried;
+
+/* Where the playback of a pad recording stands, and going back there (the state save / restore test re-runs
+   frames: they have to get the same input again). */
+long Port_PadPlayPos(void) { return sPadPlay != NULL ? ftell(sPadPlay) : -1; }
+void Port_PadPlaySeek(long pos) { if (sPadPlay != NULL && pos >= 0) { fseek(sPadPlay, pos, SEEK_SET); } }
 
 int scePad2Read(int socket, unsigned char *data) {
     int i;

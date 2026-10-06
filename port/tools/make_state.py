@@ -4,7 +4,8 @@
 The game's memory is its heap, the scratchpad and its global variables. The first two are fixed regions; the
 globals are spread through the program's .data and .bss between the port's own (the renderer's buffers, caches,
 counters), which are not game state. This reads the linker's map and lists the address ranges that come from the
-game's objects (everything in the object folder except the port's pc_*, gs_* and C++ files, plus the data tables),
+game's objects (everything in the object folder except the port's gs_* and C++ files and some of its pc_* files,
+see PORT_STATE; plus the data tables),
 merged where they touch. port/src/gs/state.c reads the list: it is what a checksum of the game state covers, and
 later what saving and restoring the state copies.
 
@@ -14,13 +15,22 @@ import pathlib, re, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from toolchain import OBJ, DATA, EXE
 
+PORT_STATE = {"headless", "mathf_pc", "plat_file", "plat_libm", "plat_mc", "plat_mem", "plat_stub", "plat_sys", "softfloat_ps2",
+              "vu0_a", "vu0_b", "gs_marker"}
 WRITABLE = (".data", ".bss", ".sdata", ".sbss", ".ldata", ".lbss", ".tbss", ".tdata")
 
 def is_game(obj):
     p = pathlib.Path(obj.split("(")[0])
     if p.parent == DATA:
         return True
-    return p.parent == OBJ and not p.name.startswith(("pc_", "gs_", "cxx_", "ui", "imgui"))
+    if p.parent != OBJ or p.name.startswith(("gs_", "cxx_", "ui", "imgui")):
+        return False
+    if p.name.startswith("pc_"):
+        # the port's own files: those whose variables are part of what the game goes through (the vector unit's
+        # registers and the C library generator, the memory, file and memory card layers, the start of a battle),
+        # not the ones that only show or configure (crash report, movies, settings, the GS glue)
+        return p.stem[3:] in PORT_STATE
+    return True
 
 def main():
     text = pathlib.Path(str(EXE) + ".map").read_text(errors="replace")

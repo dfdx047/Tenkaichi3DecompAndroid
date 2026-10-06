@@ -145,3 +145,178 @@ void Port_StateLog(unsigned vblank, const void *fight, unsigned fightSize) {
         fflush(fp);
     }
 }
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Saving and restoring the game's state, and the test of it. (64-bit Linux so far.)
+ *
+ * A snapshot is: the regions the checksum covers, the port's own memory that belongs to the game's state
+ * (Port_StateExtra), the used part of the game thread's stack, and the processor's registers at the moment of
+ * saving. Restoring copies all of it back and continues from the moment of saving: the function that saved
+ * returns a second time. The copy back is done from another stack (the game thread's own is being overwritten).
+ *
+ *   BT3_SYNCTEST=1   every vertical blank: save; run to the next blank; note the checksum; restore; run to the
+ *                    next blank AGAIN; compare. A game that cannot be rewound and replayed to the same state shows
+ *                    here, with the place in memory that came out differently. Every frame runs twice.
+ *                    (=<n>: start at blank n.)
+ * ------------------------------------------------------------------------------------------------------------- */
+#if defined(__x86_64__) && !defined(_WIN32)
+#include <ucontext.h>
+
+extern int Port_StateExtra(void **p, size_t *n, int max); /* plat_mem.c */
+extern uint8_t *Port_GameStackTop(void);
+extern long Port_PadPlayPos(void);                         /* plat_stub.c */
+extern void Port_PadPlaySeek(long pos);
+
+#define MAX_PARTS (MAX_REGIONS + 8)
+typedef struct Snapshot {
+    struct { uint8_t *at; size_t n; uint8_t *copy; size_t cap; } part[MAX_PARTS];
+    int parts;
+    ucontext_t ctx;
+    long padPos;
+    volatile int loaded;
+} Snapshot;
+
+static void part_save(Snapshot *s, uint8_t *at, size_t n) {
+    int k = s->parts++;
+    if (s->part[k].cap < n) {
+        free(s->part[k].copy);
+        s->part[k].copy = malloc(n + 4096);
+        s->part[k].cap = n + 4096;
+    }
+    s->part[k].at = at;
+    s->part[k].n = n;
+    memcpy(s->part[k].copy, at, n);
+}
+
+/* Returns 0 after saving, 1 when it returns the second time (the state was restored). */
+static int __attribute__((noinline)) state_save(Snapshot *s) {
+    void *xp[8];
+    size_t xn[8];
+    uint8_t *sp = (uint8_t *)__builtin_frame_address(0) - 1024, *top = Port_GameStackTop();
+    int i, extra;
+
+    if (sRegions < 0) {
+        regions_init();
+    }
+    s->parts = 0;
+    for (i = 0; i < sRegions; i++) {
+        part_save(s, (uint8_t *)sRegion[i].p, sRegion[i].n);
+    }
+    extra = Port_StateExtra(xp, xn, 8);
+    for (i = 0; i < extra; i++) {
+        part_save(s, xp[i], xn[i]);
+    }
+    s->padPos = Port_PadPlayPos();
+    s->loaded = 0;
+    part_save(s, sp, (size_t)(top - sp)); /* the stack last: this frame's own contents as they are now */
+    getcontext(&s->ctx);
+    return s->loaded;
+}
+
+static Snapshot *sLoading;
+static ucontext_t sLoaderCtx;
+
+static void loader(void) {
+    Snapshot *s = sLoading;
+    int k;
+    for (k = 0; k < s->parts; k++) {
+        memcpy(s->part[k].at, s->part[k].copy, s->part[k].n);
+    }
+    Port_PadPlaySeek(s->padPos);
+    s->loaded = 1;
+    setcontext(&s->ctx);
+}
+
+static void state_load(Snapshot *s) {
+    static uint8_t *stack;
+    if (stack == NULL) {
+        stack = malloc(1 << 20);
+    }
+    sLoading = s;
+    getcontext(&sLoaderCtx);
+    sLoaderCtx.uc_stack.ss_sp = stack;
+    sLoaderCtx.uc_stack.ss_size = 1 << 20;
+    sLoaderCtx.uc_link = NULL;
+    makecontext(&sLoaderCtx, loader, 0);
+    setcontext(&sLoaderCtx);
+}
+
+/* a checksum of a snapshot's memory, the stack left out (the last part) */
+static uint64_t parts_hash(void) {
+    XXH3_state_t st;
+    void *xp[8];
+    size_t xn[8];
+    int i, extra = Port_StateExtra(xp, xn, 8);
+    XXH3_64bits_reset(&st);
+    for (i = 0; i < sRegions; i++) {
+        XXH3_64bits_update(&st, sRegion[i].p, sRegion[i].n);
+    }
+    for (i = 0; i < extra; i++) {
+        XXH3_64bits_update(&st, xp[i], xn[i]);
+    }
+    return XXH3_64bits_digest(&st);
+}
+
+void Port_SyncTest(unsigned vblank) {
+    static struct Ctl { int mode, phase; unsigned from, frames, bad; uint64_t h1; Snapshot snap, first; } *c;
+
+    if (c == NULL) {
+        const char *e = getenv("BT3_SYNCTEST");
+        c = calloc(1, sizeof(*c)); /* (outside everything a snapshot restores) */
+        c->mode = e != NULL;
+        c->from = e != NULL ? (unsigned)atoi(e) : 0;
+    }
+    if (!c->mode || vblank < c->from) {
+        return;
+    }
+    if (sRegions < 0) {
+        regions_init();
+    }
+    if (c->phase == 1) {
+        /* the frame has run once: keep what it produced, go back and run it again */
+        c->h1 = parts_hash();
+        c->phase = 2;
+        if (state_save(&c->first) == 0) { /* (kept only to say WHERE a difference is) */
+            state_load(&c->snap);
+        }
+        return; /* not reached: the load continues in the save below, one frame ago */
+    }
+    if (c->phase == 2) {
+        uint64_t h2 = parts_hash();
+        c->frames++;
+        if (h2 != c->h1) {
+            int k, shown = 0;
+            c->bad++;
+            if (c->bad <= 8) {
+                fprintf(stderr, "sync: blank %u: the frame run again from the saved state ends differently\n", vblank);
+                for (k = 0; k + 1 < c->first.parts && shown < 6; k++) { /* (not the stack) */
+                    const uint8_t *a = c->first.part[k].copy, *b = c->first.part[k].at;
+                    size_t n = c->first.part[k].n, i;
+                    for (i = 0; i < n && shown < 6; i++) {
+                        if (a[i] != b[i]) {
+                            size_t j = i;
+                            while (j < n && a[j] != b[j]) {
+                                j++;
+                            }
+                            fprintf(stderr, "sync:   %s %p, %u bytes: %02x %02x %02x %02x -> %02x %02x %02x %02x\n",
+                                    k < sRegions ? sRegion[k].what : "port", (void *)(b + i), (unsigned)(j - i), a[i], a[i + 1], a[i + 2],
+                                    a[i + 3], b[i], b[i + 1], b[i + 2], b[i + 3]);
+                            shown++;
+                            i = j + 64;
+                        }
+                    }
+                }
+            }
+        }
+        if (c->frames % 600 == 0) {
+            fprintf(stderr, "sync: %u frames each run twice from a saved state, %u ended differently\n", c->frames, c->bad);
+        }
+    }
+    c->phase = 1;
+    if (state_save(&c->snap) != 0) {
+        /* back here after the restore: the same frame runs a second time (phase 2 was set before the load) */
+    }
+}
+#else
+void Port_SyncTest(unsigned vblank) { (void)vblank; }
+#endif

@@ -330,3 +330,26 @@ same pack / movie / text formats as the PS2 with the byte order swapped; picture
   in the port), a clock (nothing reads one). Not found: what changed between the groups. To do: keep a memory
   dump at blank 4,658 of every run so that the next time two groups appear they can be compared byte by byte.
   This matters for rollback (the whole memory is restored and re-run), not for the comparison between players.
+
+## Stage 2: saving and restoring the state, first version (2026-10-06, branch netplay, 64-bit Linux only)
+
+- `port/src/gs/state.c`: a snapshot is the checksum's regions, the port's own state memory (`Port_StateExtra`: the
+  blocks of `Port_LowAlloc` and its allocator), the used part of the game thread's stack and the registers
+  (`getcontext`); restoring copies it back from another stack and continues at the save point (`setcontext`).
+  Which of the port's own files count as state is in `port/tools/make_state.py` (`PORT_STATE`: headless, the
+  memory / file / memory card / system layers, the float and vector code); about 570 KB of variables now.
+- `BT3_SYNCTEST=1`: every vertical blank the frame is run, rewound to the saved state and run again, and the two
+  results compared, with the differing places printed. The mechanism works: frames are re-run from the saved
+  state. (The first try stopped at once with "battle finished": the port's own counter of battles was not in
+  the state and counted the re-run as a second battle. Hence PORT_STATE.)
+- **What it shows on the replay fight, from the third blank: the port's file and sound layers cannot be rewound.**
+  1. Files (`plat_file.c`): a handle given to the game holds the host's `FILE *`, and a read continues from the
+     host file's own position. Re-running a frame opens the file again (another `FILE *`, the first one lost) or
+     reads on from where the first run stopped (the heap then holds zeros where the first run had data), and a
+     file closed in the first run is closed again: the test ends in an abort after five blanks.
+  2. Sound (`gs/snd_adx.c`): the players handed to the game are slots of the sound code's own table, which is not
+     part of the state: the re-run frame gets the next slot (`gAdxPlayerTbl` differs).
+- Next: (a) a file handle that holds only what the game may see (which file, size, position) with the host's files
+  kept beside it and every read positioned by the handle; (b) the sound code's bookkeeping that the game can see
+  (which players exist, what they report) moved into the state, the audio itself left outside; then the memory
+  card layer; then the test again until a whole fight passes.
