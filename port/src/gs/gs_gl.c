@@ -227,7 +227,7 @@ static char *translate(const char *src, int is_vertex) {
             memcpy(m + 5, "gs_", 3);
             len += 3;
         }
-        PUSH("\nvoid main() { gs_main(); gl_Position.y = -gl_Position.y; }\n");
+        PUSH("\nvoid main() { gs_main(); gl_Position.y = -gl_Position.y; gl_Position.z = clamp(gl_Position.z, 0.0, 1.0); }\n");
         out[len] = 0;
     }
 #undef PUSH
@@ -800,6 +800,7 @@ static void frame_end(void) {
     {
         int sw, sh;
         SDL_GetWindowSize(sWindow, &sw, &sh);
+        SDL_GetWindowSizeInPixels(sWindow, &sw, &sh); /* the drawable's real pixels (differs from the window on HiDPI / fullscreen) */
         glViewport(0, 0, sw, sh);
         glDisable(GL_SCISSOR_TEST);
         glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -811,6 +812,11 @@ static void frame_end(void) {
             if ((float)sw > (float)sh * want) { w = (int)((float)sh * want + 0.5f); } else { h = (int)((float)sw / want + 0.5f); }
             dx = (sw - w) / 2;
             dy = (sh - h) / 2;
+            if (getenv("BT3_GS_VERBOSE") != NULL) {
+                int ww, wh;
+                SDL_GetWindowSize(sWindow, &ww, &wh);
+                fprintf(stderr, "gl: present window %dx%d pixels %dx%d aspect %d -> picture %dx%d at (%d,%d)\n", ww, wh, sw, sh, Port_AspectMilli(), w, h, dx, dy);
+            }
             glBindFramebuffer(GL_READ_FRAMEBUFFER, sTgFbo[best]);
             glReadBuffer(GL_COLOR_ATTACHMENT0);
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
@@ -821,6 +827,30 @@ static void frame_end(void) {
         }
     }
     SDL_GL_SwapWindow(sWindow);
+    /* BT3_GL_WINSHOT=<n>: dump the window's own framebuffer every n frames (what the user sees) */
+    if (getenv("BT3_GL_WINSHOT") != NULL && atoi(getenv("BT3_GL_WINSHOT")) > 0 && (int)gGsFrame % atoi(getenv("BT3_GL_WINSHOT")) == 0) {
+        int sw, sh, x, y;
+        uint8_t *wp;
+        char nm[64];
+        FILE *wf;
+        SDL_GetWindowSize(sWindow, &sw, &sh);
+        wp = malloc((size_t)sw * sh * 4);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        glReadBuffer(GL_BACK);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, sw, sh, GL_RGBA, GL_UNSIGNED_BYTE, wp);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+        snprintf(nm, sizeof(nm), "port/build/shots/window_%05u.ppm", gGsFrame);
+        wf = fopen(nm, "wb");
+        if (wf != NULL) {
+            fprintf(wf, "P6\n%d %d\n255\n", sw, sh);
+            for (y = sh - 1; y >= 0; y--) {
+                for (x = 0; x < sw; x++) { fwrite(&wp[(y * sw + x) * 4], 1, 3, wf); }
+            }
+            fclose(wf);
+        }
+        free(wp);
+    }
     if (getenv("BT3_GS_VERBOSE") != NULL) {
         GLenum e = glGetError();
         if (e != GL_NO_ERROR) { fprintf(stderr, "bt3: gl: frame error 0x%x\n", e); }
