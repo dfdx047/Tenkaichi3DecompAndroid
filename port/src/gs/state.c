@@ -157,7 +157,7 @@ void Port_StateLog(unsigned vblank, const void *fight, unsigned fightSize) {
 }
 
 /* ---------------------------------------------------------------------------------------------------------------
- * Saving and restoring the game's state, and the test of it. (64-bit Linux so far.)
+ * Saving and restoring the game's state, and the test of it. (The 64-bit programs: Linux and Windows.)
  *
  * A snapshot is: the regions the checksum covers, the port's own memory that belongs to the game's state
  * (Port_StateExtra), the used part of the game thread's stack, and the processor's registers at the moment of
@@ -172,8 +172,15 @@ void Port_StateLog(unsigned vblank, const void *fight, unsigned fightSize) {
  *                    one's checksum, restore, run the n again and compare each. What online play does when an
  *                    input arrives late: several frames are undone and replayed.
  * ------------------------------------------------------------------------------------------------------------- */
-#if defined(__x86_64__) && !defined(_WIN32)
+#if defined(__x86_64__)
+#ifdef _WIN32
+/* Windows: the registers are kept with the compiler's own minimal setjmp (frame, stack pointer and the place to
+   continue; everything else counts as lost over it, which is what a restore is), and the copy back runs on another
+   stack through the port's stack switch (plat_mem.c). */
+extern void Port_CallOnStack(void (*fn)(void), void *top);
+#else
 #include <ucontext.h>
+#endif
 
 extern int Port_StateExtra(void **p, size_t *n, int max); /* plat_mem.c */
 extern uint8_t *Port_GameStackTop(void);
@@ -184,7 +191,11 @@ extern void Port_PadPlaySeek(long pos);
 typedef struct Snapshot {
     struct { uint8_t *at; size_t n; uint8_t *copy; size_t cap; } part[MAX_PARTS];
     int parts;
+#ifdef _WIN32
+    void *jb[5];
+#else
     ucontext_t ctx;
+#endif
     long padPos;
     volatile int loaded;
 } Snapshot;
@@ -222,12 +233,21 @@ static int __attribute__((noinline)) state_save(Snapshot *s) {
     s->padPos = Port_PadPlayPos();
     s->loaded = 0;
     part_save(s, sp, (size_t)(top - sp)); /* the stack last: this frame's own contents as they are now */
+#ifdef _WIN32
+    if (__builtin_setjmp(s->jb) != 0) {
+        return 1;
+    }
+    return 0;
+#else
     getcontext(&s->ctx);
     return s->loaded;
+#endif
 }
 
 static Snapshot *sLoading;
+#ifndef _WIN32
 static ucontext_t sLoaderCtx;
+#endif
 
 static void loader(void) {
     Snapshot *s = sLoading;
@@ -237,7 +257,11 @@ static void loader(void) {
     }
     Port_PadPlaySeek(s->padPos);
     s->loaded = 1;
+#ifdef _WIN32
+    __builtin_longjmp(s->jb, 1);
+#else
     setcontext(&s->ctx);
+#endif
 }
 
 static void state_load(Snapshot *s) {
@@ -246,12 +270,16 @@ static void state_load(Snapshot *s) {
         stack = malloc(1 << 20);
     }
     sLoading = s;
+#ifdef _WIN32
+    Port_CallOnStack(loader, stack + (1 << 20) - 64); /* (does not come back: the loader continues at the save) */
+#else
     getcontext(&sLoaderCtx);
     sLoaderCtx.uc_stack.ss_sp = stack;
     sLoaderCtx.uc_stack.ss_size = 1 << 20;
     sLoaderCtx.uc_link = NULL;
     makecontext(&sLoaderCtx, loader, 0);
     setcontext(&sLoaderCtx);
+#endif
 }
 
 /* a checksum of a snapshot's memory, the stack left out (the last part) */

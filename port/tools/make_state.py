@@ -37,6 +37,7 @@ def main():
     text = text[text.index("Linker script and memory map"):]
     out = None
     ranges = []
+    others = []
     lines = text.splitlines()
     i = 0
     while i < len(lines):
@@ -58,12 +59,16 @@ def main():
         if out is None or not out.startswith(WRITABLE):
             continue
         addr, size, obj = int(parts[1], 16), int(parts[2], 16), " ".join(parts[3:])
-        if size and addr and is_game(obj):
-            ranges.append((addr, addr + size))
+        if size and addr:
+            (ranges if is_game(obj) else others).append((addr, addr + size))
     ranges.sort()
+    others.sort()
     merged = []
     for a, b in ranges:
-        if merged and a <= merged[-1][1] + 64:   # alignment gaps between two game objects belong to neither side
+        # Two game ranges are joined over the alignment gap between them, but not over anything of the port's
+        # own that lies there (a small variable of a file that is not state sat in such a gap and was saved and
+        # restored with the game: on Windows a lock's address, which then differed after a restore).
+        if merged and a <= merged[-1][1] + 64 and not any(x < a and y > merged[-1][1] for x, y in others):
             merged[-1][1] = max(merged[-1][1], b)
         else:
             merged.append([a, b])

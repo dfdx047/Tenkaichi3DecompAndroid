@@ -26,6 +26,12 @@ static uint32_t sHeapNext = HEAP_FIRST, sHeapEnd = HEAP_END;
 /* How far the start got, for the crash report (plat_crash.c). */
 const char *volatile gPortStage = "starting";
 
+/* Where the game's own part of its stack ends (the stack the game's main() runs on). Saving and restoring the
+   game's state covers the stack up to here. On Linux the thread library's own data for the thread lies above it
+   (its control block and thread-local variables, the C library's per-thread memory cache among them), which a
+   restore must leave alone. */
+static uint8_t *sGameStackTop;
+
 #ifdef _WIN32
 #include <direct.h> /* chdir */
 /* ------------------------------------------------------------------------------------------------------ Windows
@@ -84,6 +90,26 @@ static void map_heap(void) {
     sHeapEnd = (uint32_t)(uintptr_t)p + (HEAP_END - HEAP_BASE);
 }
 
+/* The same search, reserving the address range only (the region of Port_LowAlloc commits its pages as it grows). */
+static void *low_reserve(size_t size) {
+    uintptr_t addr = 0x30000000u;
+    MEMORY_BASIC_INFORMATION mbi;
+
+    size = (size + 0xFFFF) & ~(size_t)0xFFFF;
+    while (addr < 0x7F000000u && VirtualQuery((void *)addr, &mbi, sizeof(mbi)) != 0) {
+        uintptr_t base = ((uintptr_t)mbi.BaseAddress + 0xFFFF) & ~(uintptr_t)0xFFFF;
+        uintptr_t end = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
+        if (mbi.State == MEM_FREE && base + size <= end && base + size <= 0x7F000000u) {
+            void *p = VirtualAlloc((void *)base, size, MEM_RESERVE, PAGE_READWRITE);
+            if (p != NULL) {
+                return p;
+            }
+        }
+        addr = end > addr ? end : addr + 0x10000;
+    }
+    return NULL;
+}
+
 extern int __real_main(int argc, char **argv);
 extern void Port_CallOnStack(void (*fn)(void), void *top);
 PORT_HOST static int sArgc = 0, sResult = 0; /* (the process's own arguments: an address on its stack, not game state) */
@@ -114,6 +140,7 @@ int __wrap_main(int argc, char **argv) {
         tib = (NT_TIB *)NtCurrentTeb();
     } else
     if ((uintptr_t)&stack < 0xFFF00000u) {
+        sGameStackTop = (uint8_t *)__builtin_frame_address(0);
         gPortStage = "the game is running (on the process's own stack)";
         return __real_main(argc, argv); /* the process's own stack is low already */
     }
@@ -126,6 +153,7 @@ int __wrap_main(int argc, char **argv) {
     tib->StackBase = stack + STACK_SIZE; /* the system checks these on exceptions and when the stack grows */
     tib->StackLimit = stack;
     *dealloc = stack;
+    sGameStackTop = stack + STACK_SIZE;
     gPortStage = "the game is running (on a stack of its own below 4 GB)";
     Port_CallOnStack(game_main, stack + STACK_SIZE);
     tib->StackBase = base;
@@ -175,8 +203,6 @@ PORT_HOST static char **sArgv = NULL;
 /* Where the game's own part of the thread's stack ends: above this frame lie the thread library's own data for
    the thread (its control block and thread-local variables are at the top of the stack it was given, among them
    the C library's per-thread memory cache). Saving and restoring the game's state must leave those alone. */
-static uint8_t *sGameStackTop;
-
 static void *game_thread(void *arg) {
     (void)arg;
     sGameStackTop = (uint8_t *)__builtin_frame_address(0);
@@ -354,12 +380,16 @@ static void Port_LoadGameData(void) {
     }
 }
 
-#if defined(__x86_64__) && !defined(_WIN32)
+#if defined(__x86_64__)
 /* (between the GS registers at 0x12000000 and the program at 0x20000000: see the note at STACK_BASE) */
 #define LOW_ARENA_BASE 0x13000000u
 #define LOW_ARENA_SIZE 0x0C000000u /* address space only: pages are taken as they are first used */
 enum { LOW_SIZES = 256 };
-static uint8_t *sLowArena, *sLowNext;
+PORT_HOST static uint8_t *sLowArena = NULL; /* where the region is: fixed once it is taken, not game state */
+static uint8_t *sLowNext;
+#ifdef _WIN32
+PORT_HOST static uint8_t *sLowCommitted = NULL; /* how far the region's pages are committed (never given back) */
+#endif
 static struct { uint64_t size; void *head; } sLowList[LOW_SIZES];
 static int sLowSizes;
 static volatile int sLowLock;
@@ -370,7 +400,7 @@ static volatile int sLowLock;
    allocator's own variables say which of them are in use. Also where the game thread's stack ends. */
 int Port_StateExtra(void **p, size_t *n, int max) {
     int k = 0;
-#if defined(__x86_64__) && !defined(_WIN32)
+#if defined(__x86_64__)
     if (max >= 4 && sLowArena != NULL) {
         p[k] = &sLowNext; n[k++] = sizeof(sLowNext);
         p[k] = sLowList; n[k++] = sizeof(sLowList);
@@ -383,7 +413,7 @@ int Port_StateExtra(void **p, size_t *n, int max) {
     return k;
 }
 uint8_t *Port_GameStackTop(void) {
-#if defined(__x86_64__) && !defined(_WIN32)
+#if defined(__x86_64__)
     return sGameStackTop;
 #else
     return NULL;
@@ -396,6 +426,9 @@ void Port_HeapRegion(uint8_t **base, uint32_t *size) {
     *size = HEAP_END - HEAP_BASE;
 }
 
+#if defined(__x86_64__)
+static void low_region_take(void);
+#endif
 __attribute__((constructor)) static void Port_MapMemory(void) {
 #ifdef _WIN32
     /* The program only works at the address it was linked for (the game's pointers are 4 bytes and absolute). It
@@ -423,25 +456,10 @@ __attribute__((constructor)) static void Port_MapMemory(void) {
     mallopt(M_MMAP_MAX, 0);
     mallopt(M_ARENA_MAX, 1);
     map(STACK_BASE, STACK_SIZE, "the game thread's stack");
-    /* the region of Port_LowAlloc, taken now: later (once the graphics libraries are loaded) the address is
-       sometimes in use, and the blocks' addresses, which end up in the game's memory, changed from run to run */
-    sLowArena = mmap((void *)(uintptr_t)LOW_ARENA_BASE, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE,
-                     MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
-    if (sLowArena == MAP_FAILED || sLowArena != (uint8_t *)(uintptr_t)LOW_ARENA_BASE) {
-        if (getenv("BT3_MEM_DEBUG") != NULL) {
-            char line[256];
-            FILE *maps = fopen("/proc/self/maps", "r");
-            fprintf(stderr, "bt3: the region at 0x%08X was not free (got %p). Mappings below 0x50000000:\n", LOW_ARENA_BASE, (void *)sLowArena);
-            while (maps != NULL && fgets(line, sizeof(line), maps) != NULL) {
-                if (strtoull(line, NULL, 16) < 0x50000000ull) {
-                    fputs(line, stderr);
-                }
-            }
-        }
-        sLowArena = NULL; /* Port_LowAlloc takes one where it can */
-    } else {
-        sLowNext = sLowArena;
-    }
+    low_region_take(); /* the region of Port_LowAlloc, now (see there) */
+#endif
+#if defined(__x86_64__) && defined(_WIN32)
+    low_region_take();
 #endif
     map_heap();
     map(0x10000000u, 0x10000, "the hardware registers");
@@ -465,46 +483,40 @@ void *Port_Malloc(uint32_t size) {
 /* Memory the port hands to the game by address (file handles, the "second processor's" memory): zeroed, and below
    4 GB in the 64-bit build, where the game keeps such an address in 4 bytes. The C library's malloc is not safe
    for this there: it moves to mappings far above 4 GB whenever the break area cannot grow. */
+#if defined(__x86_64__)
+/* Takes the region of Port_LowAlloc. At the program's start (Port_MapMemory), before anything else can sit at its
+   address and before any state is saved: a state restored to before the region existed would otherwise take it a
+   second time, somewhere else. */
+static void low_region_take(void) {
 #ifdef _WIN32
-enum { LOW_POOL = 0x100000, LOW_SMALL = 0x1000 };
-static void *sLowFreed[LOW_SMALL / 256];
+        /* address space only (reserved); pages are committed as the region is used, below */
+        sLowArena = VirtualAlloc((void *)(uintptr_t)LOW_ARENA_BASE, LOW_ARENA_SIZE, MEM_RESERVE, PAGE_READWRITE);
+        if (sLowArena == NULL) {
+            sLowArena = low_reserve(LOW_ARENA_SIZE);
+        }
+        if (sLowArena == NULL) {
+            fprintf(stderr, "bt3: no room below 2 GB for the port's own blocks\n");
+            exit(2);
+        }
+        sLowCommitted = sLowArena;
+#else
+        sLowArena = mmap((void *)(uintptr_t)LOW_ARENA_BASE, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE,
+                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+        if (sLowArena == MAP_FAILED || sLowArena != (uint8_t *)(uintptr_t)LOW_ARENA_BASE) { /* taken: anywhere below 4 GB */
+            sLowArena = mmap(NULL, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_32BIT, -1, 0);
+        }
+        if (sLowArena == MAP_FAILED) {
+            fprintf(stderr, "bt3: no memory below 4 GB for the port's own blocks\n");
+            exit(2);
+        }
+#endif
+        sLowNext = sLowArena;
+}
+
 #endif
 
-
 void *Port_LowAlloc(size_t size) {
-#ifdef _WIN32
-    /* small blocks from a pool (file handles come and go by the thousand; a reservation of its own would cost
-       64 KB of address space each), large ones reserved singly. Freed small blocks are reused by size. */
-    static uint8_t *pool, *poolEnd;
-    void **freed = sLowFreed;
-    size_t total = (size + 16 + 15) & ~(size_t)15;
-    uint64_t *p;
-
-    if (total > LOW_SMALL) {
-        p = low_alloc(total);
-    } else {
-        size_t cls = (total - 1) / 256; /* 256-byte steps up to LOW_SMALL */
-        total = (cls + 1) * 256;
-        if (freed[cls] != NULL) {
-            p = freed[cls];
-            freed[cls] = *(void **)p;
-            memset(p, 0, total);
-        } else {
-            if (pool == NULL || (size_t)(poolEnd - pool) < total) {
-                pool = low_alloc(LOW_POOL);
-                poolEnd = pool != NULL ? pool + LOW_POOL : NULL;
-            }
-            p = (uint64_t *)pool;
-            pool = pool != NULL ? pool + total : NULL;
-        }
-    }
-    if (p == NULL) {
-        fprintf(stderr, "bt3: no memory below 2 GB for %u bytes\n", (unsigned)size);
-        exit(2);
-    }
-    p[0] = total;
-    return p + 2;
-#elif defined(__x86_64__)
+#if defined(__x86_64__)
     /* From one region at a fixed address, handed out in order, freed blocks reused by size (last freed first).
        The addresses end up in the game's memory (file handles, sound buffers); with the system choosing them they
        differed from run to run, and so did the game's state. This way they depend only on the order of the
@@ -519,16 +531,7 @@ void *Port_LowAlloc(size_t size) {
     while (__sync_lock_test_and_set(&sLowLock, 1)) {
     }
     if (sLowArena == NULL) {
-        sLowArena = mmap((void *)(uintptr_t)LOW_ARENA_BASE, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE,
-                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
-        if (sLowArena == MAP_FAILED || sLowArena != (uint8_t *)(uintptr_t)LOW_ARENA_BASE) { /* taken: anywhere below 4 GB */
-            sLowArena = mmap(NULL, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_32BIT, -1, 0);
-        }
-        if (sLowArena == MAP_FAILED) {
-            fprintf(stderr, "bt3: no memory below 4 GB for the port's own blocks\n");
-            exit(2);
-        }
-        sLowNext = sLowArena;
+        low_region_take();
     }
     for (i = 0; i < sLowSizes; i++) {
         if (sLowList[i].size == total && sLowList[i].head != NULL) {
@@ -545,6 +548,19 @@ void *Port_LowAlloc(size_t size) {
         }
         p = (uint64_t *)sLowNext;
         sLowNext += total;
+#ifdef _WIN32
+        if (sLowNext > sLowCommitted) { /* commit what is new, a megabyte at a time */
+            size_t grow = ((size_t)(sLowNext - sLowCommitted) + 0xFFFFF) & ~(size_t)0xFFFFF;
+            if ((size_t)(sLowArena + LOW_ARENA_SIZE - sLowCommitted) < grow) {
+                grow = (size_t)(sLowArena + LOW_ARENA_SIZE - sLowCommitted);
+            }
+            if (VirtualAlloc(sLowCommitted, grow, MEM_COMMIT, PAGE_READWRITE) == NULL) {
+                fprintf(stderr, "bt3: no memory for the port's own blocks\n");
+                exit(2);
+            }
+            sLowCommitted += grow;
+        }
+#endif
         /* cleared: after the game's state was restored to an earlier moment, the memory above the restored end
            of the region still holds the blocks of the frames that were undone (a file handle with its read
            position, which made the re-run frame's read loop spin for ever) */
@@ -559,18 +575,7 @@ void *Port_LowAlloc(size_t size) {
 }
 
 void Port_LowFree(void *addr) {
-#ifdef _WIN32
-    if (addr != NULL) {
-        uint64_t *p = (uint64_t *)addr - 2;
-        if (p[0] > LOW_SMALL) {
-            VirtualFree(p, 0, MEM_RELEASE);
-        } else { /* back to the list of its size */
-            size_t cls = (size_t)(p[0] - 1) / 256;
-            *(void **)p = sLowFreed[cls];
-            sLowFreed[cls] = p;
-        }
-    }
-#elif defined(__x86_64__)
+#if defined(__x86_64__)
     if (addr != NULL) {
         uint64_t *p = (uint64_t *)addr - 2, total = p[0];
         int i;

@@ -490,3 +490,22 @@ cut (skip the vertex work, keep the uploads) when rollback is in.
 - The user's test of the whole flow by hand (two windows on one machine, 2026-10-07): Host / Join in the lobby,
   both restart into the character select, a fight that stays in step, and on leaving to the main menu both
   copies start again as the normal game. Works as built.
+
+## Saving and restoring the state on Windows (2026-10-07)
+
+- `gs/state.c` on Windows: the registers with the compiler's minimal `__builtin_setjmp` / `__builtin_longjmp`, the
+  copy back on another stack through `Port_CallOnStack` (Linux keeps `getcontext` / `setcontext`).
+- `plat_mem.c`: Windows now uses the same region allocator for `Port_LowAlloc` as Linux (address space reserved
+  at 0x13000000 or, if that is taken, the first free place from 0x30000000; pages committed a megabyte at a time
+  as it grows) instead of its own pools and single reservations: blocks are no longer given back to the system,
+  which a restore to an earlier state needs. The region is taken once at the program's start on both systems
+  (a state restored to before it existed took it a second time, elsewhere), and where it is counts as host data.
+  The game's stack end is recorded on Windows too (`sGameStackTop`).
+- `make_state.py`: two game ranges are no longer joined over a gap that holds a variable of a file that is not
+  state (plat_settings.c's lock lay in one: on Windows its address was restored with the game).
+- **Windows program under Wine** (`BT3_SYNCTEST=1 BT3_SYNCTEST_DEPTH=8`): the replay fight without a window,
+  44,400 blanks each run twice, 0 differences, the fight's result unchanged; session6 with the window, 49,800
+  blanks each run twice, 0 differences. Rewinding 1 at a time, the replay fight: 0 differences.
+- Linux unchanged: session6 rewinding 8, 0 differences; the replay's result on all three programs; normal play's
+  fight values as before.
+- Not tried: a real Windows (only Wine); two Windows copies connected; Linux against Windows.
