@@ -511,3 +511,43 @@ cut (skip the vertex work, keep the uploads) when rollback is in.
 - Linux unchanged: session6 rewinding 8, 0 differences; the replay's result on all three programs; normal play's
   fight values as before.
 - Not tried: a real Windows (only Wine); two Windows copies connected; Linux against Windows.
+
+## A session without starting the program again (2026-10-07)
+
+How it works (`gs/state.c`, "Exchanging the game's state"; 64-bit programs, the 32-bit one still restarts):
+
+- A snapshot is taken at the first vertical blank of every run (`sBoot`): the same state on every machine with
+  the same program, which is what the restart was for.
+- Host / Join found the other player: at the game's next blank its present state is kept (`sOwn`, plus the
+  emulated GS's memory, registers and the vertex unit, `Gs_StateKeep`, which a snapshot does not hold), the
+  connection is made, and the game is put back to `sBoot`, now as a session (save folder `net_session`, no
+  movies, sound by ticks). From there the flow is the old one (silent start-up, opens on the character select).
+- Leaving (`Port_NetLeave`, from `MainMenu_Run` or the 15-second time-out): `sOwn` is put back, the GS memory
+  with it, the online window closes. The player is at the blank the session was asked for, with their own save.
+- The sound is made to fit the state each time (`Port_AdxResync`): every stream stops, and what the state now in
+  place says is playing starts again from its beginning. `PortAdxView` holds file, volume and pan for that.
+
+Found on the way:
+
+- Moving every GS page's upload generation on (so nothing decoded in between is reused) also moved the pages that
+  were never uploaded to away from 0, which is how the drawing code tells frame buffers from texture memory: a
+  full-screen pass then went into GS memory and the scene came back darker. Pages at 0 stay at 0.
+- `ADXT_GetOutVol` answered from the host's player, not from the state: the game fades a stream by reading the
+  volume and setting a little less, so a frame run again read another value (seen by the rewind test once the
+  volume was part of the state). It answers from the state now.
+- A session left during its silent start-up kept the picture switched off.
+
+Checked (two copies on one machine, `BT3_SESSION_TEST=<role>:<address>:<port>:<blank>`,
+`BT3_SESSION_LEAVE=<n>`, `BT3_SESSION_AGAIN=<n>`):
+
+- Linux and the Windows program under Wine, no window: several sessions in one run. In every session the two
+  copies' checksums are the same at each of 1,500 blanks; after every return the state is the same, blank for
+  blank, as a run that never left.
+- Linux with the window: a session asked for in the middle of a fight of session6, which reached and drew its
+  character select for a while, then left: the picture 4,000 blanks after the return is the same file as that of
+  a run that never left. (The frames right after the return were not compared.)
+- Rewind test on session6 (Linux depth 1 and 8, Wine depth 8): 0 differences. Replay result on all three
+  programs; normal play's fight values unchanged.
+- Not checked: the whole thing by hand from the Dragon Net Battle window; the sound after a return (all tests
+  ran without a sound device); sound effects that were sounding when the state changed; a real Windows; two
+  machines.

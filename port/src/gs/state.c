@@ -409,6 +409,105 @@ void Port_SyncTest(unsigned vblank) {
         c->tPrev = SDL_GetTicksNS();
     }
 }
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Exchanging the game's state: into an online session and back, without starting the program again.
+ *
+ * Two copies of the game stay in step only if they start from the same state. So a snapshot is taken at the very
+ * first vertical blank of every run (sBoot: the same on every machine with this program); to begin a session the
+ * game's present state is kept (sOwn, with the emulated GS's memory, which is not in a snapshot) and the game is
+ * put back to that first blank, now as a session (gs/net.c); when the session ends, the kept state is put back
+ * and the player is where they were, with their own save. The sound is made to fit the state each time.
+ * ------------------------------------------------------------------------------------------------------------- */
+extern void Gs_StateKeep(void), Gs_StateBack(void);                       /* gs_core.c */
+extern void Port_AdxResync(void);                                         /* snd_adx.c */
+extern void Port_NetSessionBegin(int role, const char *address, int port); /* net.c */
+extern void Port_NetSessionEnd(void);
+volatile int gPortNetWindowClose; /* for the overlay (ui.cpp): back from a session, the online window closes.
+                                     (Here and not with the game's variables: it is not part of the state.) */
+
+static Snapshot sBoot, sOwn;
+static int sBootTaken, sReqRole, sReqPort;
+static volatile int sReq;
+static char sReqAddr[128];
+
+void Port_SessionReturn(void);
+
+int Port_SessionCan(void) {
+    return sBootTaken;
+}
+
+void Port_SessionRequest(int role, const char *address, int port) {
+    sReqRole = role;
+    sReqPort = port;
+    snprintf(sReqAddr, sizeof(sReqAddr), "%s", address != NULL ? address : "");
+    sReq = 1;
+}
+
+/* At the top of every vertical blank, on the game's thread (Port_VBlank). */
+void Port_SessionPoll(void) {
+    if (!sBootTaken) {
+        sBootTaken = 1;
+        if (state_save(&sBoot) != 0) {
+            Port_AdxResync(); /* a session begins: this is the game's first blank again; whatever sounded stops */
+        }
+        return;
+    }
+    {
+        /* testing: BT3_SESSION_TEST=<role>:<address>:<port>:<blank> asks for a session at that blank, and
+           BT3_SESSION_LEAVE=<n> leaves it n blanks after it began; BT3_SESSION_AGAIN=<n> asks for the next one n
+           blanks after each return */
+        static unsigned blank, began;
+        static int role, port, at = -1, leave;
+        static char addr[128];
+        if (at < 0) {
+            const char *t = getenv("BT3_SESSION_TEST");
+            at = 0;
+            if (t != NULL && sscanf(t, "%d:%127[^:]:%d:%d", &role, addr, &port, &at) != 4) {
+                at = 0;
+            }
+            leave = getenv("BT3_SESSION_LEAVE") != NULL ? atoi(getenv("BT3_SESSION_LEAVE")) : 0;
+        }
+        blank++;
+        if (at > 0 && blank == (unsigned)at) {
+            fprintf(stderr, "bt3: session test: asked for at blank %u\n", blank);
+            began = blank;
+            Port_SessionRequest(role, addr, port);
+        } else if (began != 0 && leave > 0 && blank == began + (unsigned)leave) {
+            fprintf(stderr, "bt3: session test: leaving\n");
+            began = 0;
+            if (getenv("BT3_SESSION_AGAIN") != NULL) { /* and another one, that many blanks later */
+                at = (int)blank + atoi(getenv("BT3_SESSION_AGAIN"));
+            }
+            Port_SessionReturn();
+        }
+    }
+    if (sReq) {
+        sReq = 0;
+        Gs_StateKeep();
+        if (state_save(&sOwn) == 0) {
+            Port_NetSessionBegin(sReqRole, sReqAddr, sReqPort); /* connects (waits for the other side) */
+            state_load(&sBoot);
+        } else {
+            /* back from the session, at the blank it was asked for */
+            gPortResim = 0; /* (a session left before its start-up was over was still running without picture) */
+            Gs_StateBack();
+            Port_AdxResync();
+            gPortNetWindowClose = 1;
+        }
+    }
+}
+
+/* The session is over: the kept state comes back (does not return). */
+void Port_SessionReturn(void) {
+    Port_NetSessionEnd();
+    state_load(&sOwn);
+}
 #else
+volatile int gPortNetWindowClose;
 void Port_SyncTest(unsigned vblank) { (void)vblank; }
+int Port_SessionCan(void) { return 0; }
+void Port_SessionRequest(int role, const char *address, int port) { (void)role; (void)address; (void)port; }
+void Port_SessionPoll(void) {}
+void Port_SessionReturn(void) {}
 #endif

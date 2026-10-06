@@ -14,6 +14,9 @@ typedef struct PortAdxView {
     int stat;   /* as ADXT_GetStat reports it: 0 stopped, 3 playing, 5 played to the end */
     int paused;
     int left;   /* vertical blanks to the end; -1: the stream loops */
+    int vol, pan[2];
+    char path[256]; /* the file it was last started with (to start the sound again when the game's state is
+                       exchanged for another: Port_AdxResync in gs/snd_adx.c) */
 } PortAdxView;
 
 int gPortAdxCount;

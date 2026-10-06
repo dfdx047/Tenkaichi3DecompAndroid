@@ -177,6 +177,49 @@ const uint8_t *Gs_BlockPtr(uint32_t bp, uint32_t bw, uint32_t psm, uint32_t x, u
     return (const uint8_t *)sVram + ((bn & 0x3FFF) << 8);
 }
 
+/* The emulated GS as the game left it: its memory and registers. A snapshot of the game's state (gs/state.c) does
+   not hold these, and a game put back to an earlier moment would find the textures of whatever ran in between in
+   GS memory (it only uploads a menu's textures when the menu is loaded). Kept when the game switches to an
+   online session, brought back when it returns. */
+static struct { uint32_t *vram; GsState gs; uint32_t gen[512]; int valid; } sKept;
+
+static uint32_t sMoved;
+
+void Gs_StateKeep(void) {
+    extern void GsVu1_StateKeep(int restore); /* gs_vu1.c: the vertex unit's memory and programs */
+    if (sKept.vram == NULL) {
+        sKept.vram = malloc(sizeof(sVram));
+    }
+    memcpy(sKept.vram, sVram, sizeof(sVram));
+    sKept.gs = gGs;
+    memcpy(sKept.gen, gGsPageGen, sizeof(sKept.gen));
+    sKept.valid = 1;
+    GsVu1_StateKeep(0);
+}
+
+void Gs_StateBack(void) {
+    extern void GsVu1_StateKeep(int restore);
+    int i;
+    if (!sKept.valid) {
+        return;
+    }
+    memcpy(sVram, sKept.vram, sizeof(sVram));
+    gGs = sKept.gs;
+    /* The pages' upload generations as they were, all moved on by one amount that no page has had: nothing
+       decoded from the pages in between is taken for them. A page that was never uploaded to stays at 0, which
+       is how the frame buffers are told from texture memory (the rectangle case of the drawing code: with every
+       page moved, a full-screen pass went into GS memory instead of the picture, which came back darker). */
+    sMoved += 0x01000000u;
+    for (i = 0; i < 512; i++) {
+        gGsPageGen[i] = sKept.gen[i] != 0 ? sKept.gen[i] + sMoved : 0;
+    }
+    GsVu1_StateKeep(1);
+    if (sGpu) {
+        extern void GsGpu_PagesMoved(uint32_t delta); /* gs_gpu.c */
+        GsGpu_PagesMoved(0x01000000u);
+    }
+}
+
 uint32_t Gs_VramRead(uint32_t bp, uint32_t bw, uint32_t psm, uint32_t x, uint32_t y) {
     return vram_rw(bp, bw, psm, x, y, 0, 0);
 }

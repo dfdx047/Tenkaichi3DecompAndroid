@@ -123,16 +123,21 @@ static int receive(void) {
     return got;
 }
 
-static void net_init(void) {
-    const char *host = getenv("BT3_NET_HOST"), *join = getenv("BT3_NET_JOIN");
+static int sSession; /* a session started from Dragon Net Battle (below), not a plain connected run */
+static int sArrived; /* its start-up has reached the character select */
+
+/* Connects: role 1 hosts on `port`, role 2 joins `join` ("address:port"). Waits until the other side is there. */
+static void net_start(int role, const char *host, const char *join) {
     struct sockaddr_in local;
     uint64_t t0, last = 0;
     uint32_t i;
 
-    sMode = host != NULL ? 1 : join != NULL ? 2 : 0;
-    if (sMode == 0) {
-        return;
-    }
+    sMode = role;
+    sConnected = 0;
+    sTick = 0;
+    memset(sIn, 0, sizeof(sIn));
+    memset(sHave, 0, sizeof(sHave)); /* (a second session in one run starts as clean as the first) */
+    sWaitNs = sWaits = 0;
 #ifdef _WIN32
     {
         WSADATA w;
@@ -212,8 +217,13 @@ static void net_init(void) {
 }
 
 int Port_NetActive(void) {
-    if (sMode < 0) {
-        net_init();
+    if (sMode < 0) { /* first asked: connected from the start if the environment says so */
+        const char *host = getenv("BT3_NET_HOST"), *join = getenv("BT3_NET_JOIN");
+        sMode = 0;
+        if (host != NULL || join != NULL) {
+            sSession = getenv("BT3_NET_SESSION") != NULL;
+            net_start(host != NULL ? 1 : 2, host, join);
+        }
     }
     return sMode > 0;
 }
@@ -259,7 +269,7 @@ void Port_NetBeginTick(unsigned tick) {
         }
         if (now - t0 > 15000000000ull) {
             fprintf(stderr, "bt3: net: the other player has not answered for 15 seconds (blank %u)\n", tick);
-            if (getenv("BT3_NET_SESSION") != NULL) {
+            if (sSession) {
                 Port_NetLeave(); /* back to the game as it normally is */
             }
             exit(2);
@@ -366,12 +376,64 @@ static void relaunch(int role, const char *join, int port) {
 
 /* 1 in a session started from Dragon Net Battle. */
 int Port_NetSession(void) {
-    return getenv("BT3_NET_SESSION") != NULL && Port_NetActive();
+    return Port_NetActive() && sSession;
+}
+
+/* The session without starting the program again (gs/state.c exchanges the game's state; 64-bit programs).
+   Begin: called on the game's own thread just before the game is put back to its first moment. */
+extern int Port_SessionCan(void);                                    /* gs/state.c */
+extern void Port_SessionRequest(int role, const char *address, int port);
+extern void Port_SessionReturn(void);
+static char sSavesBefore[512];
+static int sSavesWasSet;
+
+static void put_env(const char *name, const char *value) {
+#ifdef _WIN32
+    SetEnvironmentVariableA(name, value);
+    _putenv_s(name, value != NULL ? value : "");
+#else
+    if (value != NULL) { setenv(name, value, 1); } else { unsetenv(name); }
+#endif
+}
+
+void Port_NetSessionBegin(int role, const char *address, int port) {
+    char host[16], join[160];
+    static int known;
+
+    if (!known) { /* the player's own save folder, as the program was started */
+        const char *saves = getenv("BT3_SAVES");
+        known = 1;
+        sSavesWasSet = saves != NULL;
+        snprintf(sSavesBefore, sizeof(sSavesBefore), "%s", saves != NULL ? saves : "");
+    }
+    /* the session's own save folder starts empty: both sides begin from the game's defaults */
+    remove("net_session/card1/BASLUS-21678DBZT3/BASLUS-21678DBZT3");
+    remove("net_session/card1/BASLUS-21678DBZT3/icon.sys");
+    remove("net_session/card1/BASLUS-21678DBZT3/dbzsm.ico");
+    put_env("BT3_SAVES", "net_session");
+    snprintf(host, sizeof(host), "%d", port);
+    snprintf(join, sizeof(join), "%s:%d", address, port);
+    if (sSock >= 0) {
+        closesocket(sSock);
+        sSock = -1;
+    }
+    sSession = 1;
+    sArrived = 0;
+    net_start(role, role == 1 ? host : NULL, role == 2 ? join : NULL);
+}
+
+void Port_NetSessionEnd(void) {
+    if (sSock >= 0) {
+        closesocket(sSock);
+        sSock = -1;
+    }
+    sMode = 0;
+    sSession = 0;
+    put_env("BT3_SAVES", sSavesWasSet ? sSavesBefore : NULL);
 }
 
 /* The session's start-up runs without picture and sound and without waiting for real time until the game has
    reached the versus menu (headless.c says when). */
-static int sArrived;
 int Port_NetWarp(void) {
     return Port_NetSession() && !sArrived;
 }
@@ -383,6 +445,9 @@ void Port_NetArrived(void) {
    normally is. */
 void Port_NetLeave(void) {
     fprintf(stderr, "bt3: net: the session has ended\n");
+    if (Port_SessionCan()) {
+        Port_SessionReturn(); /* the game as it was when the session was asked for (does not return) */
+    }
     relaunch(0, NULL, 0);
 }
 
@@ -484,9 +549,14 @@ int Port_LobbyPoll(void) {
     return sLobby;
 }
 
-/* The other player is there: start the session (this does not return). */
+/* The other player is there: start the session. */
 void Port_LobbyLaunch(void) {
     closesocket(sSock);
     sSock = -1;
+    sLobby = 0;
+    if (Port_SessionCan()) {
+        Port_SessionRequest(sLobbyRole, sLobbyAddr, sLobbyPort); /* the game's thread makes the change at its next blank */
+        return;
+    }
     relaunch(sLobbyRole, sLobbyAddr, sLobbyPort);
 }

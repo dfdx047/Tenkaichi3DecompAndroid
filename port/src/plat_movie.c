@@ -10,6 +10,7 @@
  * rearranges it into the block order. The bytes the game feeds to sceMpegDemuxPss are ignored. Without a window a
  * movie ends at once, except when recorded input is played back (the movie has to take the same number of frames).
  */
+extern int Port_NetSession(void); /* gs/net.c: no movies in an online session */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,7 +46,7 @@ static void movie_start(void) {
     sStarted = 1;
     sEnd = 1;
     /* without a window too when recorded input is played back: the movie has to take the same number of frames */
-    if ((!GsGpu_Enabled() && getenv("BT3_PAD_PLAY") == NULL) || gPortMoviePath[0] == '\0' || getenv("BT3_NOMOVIE") != NULL) {
+    if ((!GsGpu_Enabled() && getenv("BT3_PAD_PLAY") == NULL) || gPortMoviePath[0] == '\0' || getenv("BT3_NOMOVIE") != NULL || Port_NetSession()) {
         return;
     }
     sMovie = Mpeg2_Open(gPortMoviePath);

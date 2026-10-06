@@ -51,16 +51,17 @@ static Player sPlayers[MAX_PLAYERS];
 
 /* plat_sndstate.c: which players exist and, counted in vertical blanks, what they report: the part of this that is
    the game's state. The second is used when the state must not depend on the sound device (sByTicks). */
-typedef struct PortAdxView { int stat, paused, left; } PortAdxView;
+typedef struct PortAdxView { int stat, paused, left, vol, pan[2]; char path[256]; } PortAdxView;
 extern int gPortAdxCount;
 extern PortAdxView gPortAdxView[MAX_PLAYERS];
 
 static int by_ticks(void) {
+    extern int Port_NetSession(void); /* net.c */
     static int on = -1;
     if (on < 0) {
         on = getenv("BT3_SYNCTEST") != NULL || getenv("BT3_SOUND_TICKS") != NULL;
     }
-    return on;
+    return on || Port_NetSession();
 }
 
 /* The length of an ADX file in vertical blanks (59.94 a second), -1 if it loops, 0 if it cannot be read. */
@@ -92,6 +93,7 @@ static void view_start(Player *p, const char *path) {
     int blanks = adx_blanks(path);
     v->stat = blanks != 0 ? ADXT_STAT_PLAYING : ADXT_STAT_STOP;
     v->left = blanks;
+    snprintf(v->path, sizeof(v->path), "%s", path);
 }
 static SDL_AudioDeviceID sDevice;
 static int sMono, sTried;
@@ -320,6 +322,7 @@ void *ADXT_Create(int maxnch, void *work, int worksize) {
     memset(p, 0, sizeof(*p));
     p->pan[0] = p->pan[1] = PAN_AUTO;
     memset(&gPortAdxView[p - sPlayers], 0, sizeof(PortAdxView));
+    gPortAdxView[p - sPlayers].pan[0] = gPortAdxView[p - sPlayers].pan[1] = PAN_AUTO;
     return p;
 }
 
@@ -381,12 +384,15 @@ void ADXT_SetOutVol(void *adxt, int vol) {
             fprintf(stderr, "adx: player %d volume %d\n", (int)(p - sPlayers), vol);
         }
         p->vol = vol;
+        gPortAdxView[p - sPlayers].vol = vol;
         apply_volume(p);
     }
 }
 
 int ADXT_GetOutVol(void *adxt) {
-    return adxt != NULL ? ((Player *)adxt)->vol : 0;
+    /* From the game's state, not from the player: the game fades a stream by reading this and setting a little
+       less, and a frame run again after a restore must read what the frame read the first time. */
+    return adxt != NULL ? gPortAdxView[(Player *)adxt - sPlayers].vol : 0;
 }
 
 void ADXT_SetOutPan(void *adxt, int chan, int pan) {
@@ -395,6 +401,7 @@ void ADXT_SetOutPan(void *adxt, int chan, int pan) {
     if (p != NULL && chan >= 0 && chan < 2) {
         if (p->stream != NULL) { SDL_LockAudioStream(p->stream); }
         p->pan[chan] = pan;
+        gPortAdxView[p - sPlayers].pan[chan] = pan;
         if (p->stream != NULL) { SDL_UnlockAudioStream(p->stream); }
     }
 }
@@ -423,5 +430,26 @@ void Port_AudioRefresh(void) {
     int i;
     for (i = 0; i < MAX_PLAYERS; i++) {
         apply_volume(&sPlayers[i]);
+    }
+}
+
+/* The game's state was exchanged for another (into an online session, or back from one): the streams that are
+   sounding belong to the state that is gone. Everything stops, and what the state now in place says is playing
+   starts again, from its beginning (where it was in the file is not kept). */
+void Port_AdxResync(void) {
+    int i;
+    for (i = 0; i < MAX_PLAYERS; i++) {
+        Player *p = &sPlayers[i];
+        PortAdxView *v = &gPortAdxView[i];
+        stop(p);
+        if (i < gPortAdxCount) {
+            p->vol = v->vol;
+            p->pan[0] = v->pan[0];
+            p->pan[1] = v->pan[1];
+            p->paused = v->paused;
+            if (v->stat == ADXT_STAT_PLAYING && v->path[0] != '\0') {
+                start(p, v->path);
+            }
+        }
     }
 }

@@ -478,6 +478,18 @@ int GsGpu_Init(void) {
     return 1;
 }
 
+/* Gs_StateBack (gs_core.c) moved every page's upload generation on by `delta`, so that nothing decoded from the
+   pages in between is taken for them. The buffers the game draws into keep their standing: one that was drawn
+   since the last upload over it still is. */
+void GsGpu_PagesMoved(uint32_t delta) {
+    int i;
+    for (i = 0; i < sTargetCount; i++) {
+        if (sTargets[i].gen != 0) { /* (0: its page was never uploaded to, and stays 0) */
+            sTargets[i].gen += delta;
+        }
+    }
+}
+
 static int target_get(uint32_t fbp, int create) {
     SDL_GPUTextureCreateInfo ci;
     int i, slot;

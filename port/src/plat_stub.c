@@ -127,6 +127,11 @@ static void vblank_wait(void) {
 
 static unsigned char sPadLast[2][18]; /* (defined with the pads below) */
 void Port_VBlank(void) {
+    {
+        extern void Port_SessionPoll(void); /* gs/state.c: the state at the first blank is kept; an online session
+                                               begins or ends here */
+        Port_SessionPoll();
+    }
     /* BT3_PACED=1: real-time pacing without a window too (sound tests) */
     {
         extern int Port_NetSession(void), Port_NetWarp(void); /* gs/net.c */

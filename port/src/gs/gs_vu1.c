@@ -40,6 +40,19 @@ static struct {
     uint32_t top, tops, base, ofst, dbf, itop, itops, mode, mask, cl, wl, row[4], col[4];
 } vu;
 
+/* See Gs_StateKeep (gs_core.c): the vertex unit's memory and loaded programs, kept (0) or brought back (1). */
+void GsVu1_StateKeep(int restore) {
+    static unsigned char *kept;
+    if (!restore) {
+        if (kept == NULL) {
+            kept = malloc(sizeof(vu));
+        }
+        memcpy(kept, &vu, sizeof(vu));
+    } else if (kept != NULL) {
+        memcpy(&vu, kept, sizeof(vu));
+    }
+}
+
 static unsigned sUnknown[2][128];
 static unsigned sStatRuns, sStatInstr, sStatKicks;
 static unsigned sProgSize;

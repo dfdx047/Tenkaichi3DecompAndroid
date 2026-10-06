@@ -113,6 +113,7 @@ static void set_open(bool open) {
 // host or join. Nothing is sent anywhere yet.
 extern "C" {
 extern volatile int gPortNetMenuRequest;
+extern volatile int gPortNetWindowClose; // gs/state.c
 }
 
 static void net_open(void) {
@@ -156,7 +157,9 @@ static void build_net(void) {
         {
             int state = Port_LobbyPoll();
             if (state == 2) {
-                Port_LobbyLaunch(); // the other player is there: the game starts again as the session (no return)
+                Port_LobbyLaunch(); // the other player is there: the game turns into the session at its next blank
+                set_open(false);
+                sNet = false;
             }
             if (state == 1) {
                 if (tab == 0) {
@@ -503,7 +506,11 @@ void Ui_DrawAgain(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
 }
 
 void Ui_Draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
-    if (sReady && gPortNetMenuRequest) { // Dragon Net Battle was chosen in the game's main menu
+    if (sReady && gPortNetWindowClose) { // back from an online session: the window it was started from closes
+        gPortNetWindowClose = 0;
+        gPortNetMenuRequest = 0;
+        set_open(false);
+    } else if (sReady && gPortNetMenuRequest) { // Dragon Net Battle was chosen in the game's main menu
         gPortNetMenuRequest = 0;
         net_open();
     }
