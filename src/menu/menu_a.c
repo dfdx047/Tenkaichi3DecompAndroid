@@ -2,6 +2,7 @@
 #include "menu/menu_a.h"
 #ifdef PORT
 extern void Port_NetMenuOpen(void);
+extern int Port_NetMenuListed(void);
 #endif
 #include "sys/pad.h"
 #include "sys/save.h"
@@ -139,7 +140,7 @@ void MainMenu_Init(s32 section) {
            the guides' voiced lines on the disc, and no mode behind it (the Wii version's online mode). The port
            lists it: it is the way into online play. BT3_MENU_ITEM4=0 hides it again (the pad recordings made
            before it was listed count on the old menu). */
-        if (i == 4 && getenv("BT3_MENU_ITEM4") != NULL && atoi(getenv("BT3_MENU_ITEM4")) == 0) {
+        if (i == 4 && !Port_NetMenuListed()) {
             continue;
         }
 #else

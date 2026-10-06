@@ -108,6 +108,11 @@ volatile int gPortNetMenuRequest;
 void Port_NetMenuOpen(void) {
     gPortNetMenuRequest = 1;
 }
+/* (asked here and not in the game's file: there a pointer is 4 bytes wide in the 64-bit build, and getenv's is not) */
+int Port_NetMenuListed(void) {
+    const char *e = getenv("BT3_MENU_ITEM4");
+    return e == NULL || atoi(e) != 0;
+}
 
 /* "Unlock everything" on the Cheats tab of the settings window (port/src/gs/ui.cpp): the game's own leftover debug
    function Save_UnlockAll (0x266088, no caller in the game): every character, stage, music track and item, the
