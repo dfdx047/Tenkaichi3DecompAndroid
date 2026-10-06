@@ -17,6 +17,7 @@
  * The numbers of two runs of the SAME program can be compared. Not those of different builds: the state holds
  * addresses of functions and variables, which differ from build to build.
  */
+#include <SDL3/SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -276,8 +277,11 @@ void Port_SyncTest(unsigned vblank) {
         int mode, phase, depth, step;
         unsigned from, frames, bad;
         uint64_t h1[SYNC_MAX_DEPTH + 1];
+        uint64_t tPrev, nsSilent, nsLoud, nsSave, nsLoad, tLoad; /* how long things take (reported with the count) */
+        unsigned nSilent, nLoud, nSave, nLoad;
         Snapshot snap, first;
     } *c;
+    uint64_t tNow = SDL_GetTicksNS();
 
     if (c == NULL) {
         const char *e = getenv("BT3_SYNCTEST"), *d = getenv("BT3_SYNCTEST_DEPTH");
@@ -296,19 +300,27 @@ void Port_SyncTest(unsigned vblank) {
     }
     if (c->phase == 1) {
         /* first pass: note what each blank of the stretch ended with; after the last, go back to its start */
+        c->nsSilent += tNow - c->tPrev;
+        c->nSilent++;
         c->h1[++c->step] = parts_hash();
+        c->tPrev = SDL_GetTicksNS();
         if (c->step < c->depth) {
             return;
         }
         c->phase = 2;
         c->step = 0;
         if (c->depth > 1 || state_save(&c->first) == 0) { /* (depth 1: kept to say WHERE a difference is) */
+            c->tLoad = SDL_GetTicksNS();
             state_load(&c->snap);
         }
         return; /* not reached: the load continues in the save below, `depth` blanks ago */
     }
     if (c->phase == 2) {
-        uint64_t h2 = parts_hash();
+        uint64_t h2;
+        c->nsLoud += tNow - c->tPrev;
+        c->nLoud++;
+        h2 = parts_hash();
+        c->tPrev = SDL_GetTicksNS();
         c->step++;
         if (h2 != c->h1[c->step]) {
             int k, shown = 0;
@@ -341,11 +353,22 @@ void Port_SyncTest(unsigned vblank) {
         c->frames += (unsigned)c->depth;
         if (c->frames / 600 != (c->frames - (unsigned)c->depth) / 600) {
             fprintf(stderr, "sync: %u blanks each run twice, rewinding %d at a time; %u ended differently\n", c->frames, c->depth, c->bad);
+            if (getenv("BT3_GS_VERBOSE") != NULL && c->nSilent != 0 && c->nLoud != 0 && c->nSave != 0 && c->nLoad != 0) {
+                fprintf(stderr, "sync:   per blank: re-run without output %.2f ms, with output %.2f ms; saving the state %.2f ms, restoring it %.2f ms\n",
+                        (double)c->nsSilent / c->nSilent / 1e6, (double)c->nsLoud / c->nLoud / 1e6, (double)c->nsSave / c->nSave / 1e6,
+                        (double)c->nsLoad / c->nLoad / 1e6);
+            }
+            c->nsSilent = c->nsLoud = c->nsSave = c->nsLoad = 0;
+            c->nSilent = c->nLoud = c->nSave = c->nLoad = 0;
         }
     }
     c->phase = 1;
     c->step = 0;
+    tNow = SDL_GetTicksNS();
     if (state_save(&c->snap) != 0) {
+        c->nsLoad += SDL_GetTicksNS() - c->tLoad;
+        c->nLoad++;
+        c->tPrev = SDL_GetTicksNS();
         /* back here after the restore: the same stretch runs a second time (phase 2 was set before the load),
            this time with its picture and sound */
         gPortResim = 0;
@@ -353,6 +376,9 @@ void Port_SyncTest(unsigned vblank) {
         /* the pass that will be undone runs without picture and sound (BT3_SYNCTEST_LOUD=1: with them, as the
            test first did): what online play does with the frames it re-runs. It has to leave the same state. */
         gPortResim = getenv("BT3_SYNCTEST_LOUD") == NULL;
+        c->nsSave += SDL_GetTicksNS() - tNow;
+        c->nSave++;
+        c->tPrev = SDL_GetTicksNS();
     }
 }
 #else

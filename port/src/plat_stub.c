@@ -4,7 +4,9 @@
  * implementation later and then moves to its own file. Arguments are ignored (the callers clean the stack).
  */
 #include <stdint.h>
+#include "port_host.h"
 #include <stdio.h>
+#include <string.h>
 #ifdef _WIN32
 #include <windows.h>
 #include <mmsystem.h>
@@ -122,12 +124,30 @@ static void vblank_wait(void) {
     }
 }
 
+static unsigned char sPadLast[2][18]; /* (defined with the pads below) */
 void Port_VBlank(void) {
     /* BT3_PACED=1: real-time pacing without a window too (sound tests) */
     if ((GsGpu_Enabled() || getenv("BT3_PACED") != NULL) && getenv("BT3_UNCAPPED") == NULL) {
         vblank_wait();
     }
+    {   /* BT3_PAD_TABLE=<file>: what each pad read during the blank that ends here, 36 bytes per blank (the input
+           of a session by blank and by pad: gs/net.c plays one player's column of it for its tests) */
+        PORT_HOST static FILE *table = NULL;
+        PORT_HOST static int tried = 0;
+        if (!tried) {
+            tried = 1;
+            table = getenv("BT3_PAD_TABLE") != NULL ? fopen(getenv("BT3_PAD_TABLE"), "wb") : NULL;
+        }
+        if (table != NULL) {
+            fwrite(sPadLast, 1, sizeof(sPadLast), table);
+            fflush(table);
+        }
+    }
     gPortVBlanks++;
+    {
+        extern void Port_NetBeginTick(unsigned tick); /* gs/net.c: online play */
+        Port_NetBeginTick(gPortVBlanks);
+    }
     {
         extern void Port_SyncTest(unsigned vblank); /* gs/state.c: BT3_SYNCTEST */
         extern void Port_AdxTick(void);             /* plat_sndstate.c */
@@ -163,7 +183,6 @@ extern int Port_PadRead(int socket, unsigned char *data);
    The game reads the pads a fixed number of times per vertical blank and everything else is deterministic, so a
    recording made from the title screen replays the same menus and the same fight, with or without a window
    (given the same save folder to start from). For reproducing what a player saw. */
-#include "port_host.h"
 PORT_HOST static FILE *sPadRec = NULL, *sPadPlay = NULL; /* (the position in the playback file IS restored: Port_PadPlaySeek) */
 PORT_HOST static int sPadFilesTried = 0;
 
@@ -173,7 +192,28 @@ long Port_PadPlayPos(void) { return sPadPlay != NULL ? ftell(sPadPlay) : -1; }
 /* (a position of -1 was taken before the file was open: its start) */
 void Port_PadPlaySeek(long pos) { if (sPadPlay != NULL) { fseek(sPadPlay, pos >= 0 ? pos : 0, SEEK_SET); } }
 
+/* The pads as the game last read them (for BT3_PAD_TABLE, below). */
+static unsigned char sPadLast[2][18] = {{0xFF, 0xFF, 0x80, 0x80, 0x80, 0x80}, {0xFF, 0xFF, 0x80, 0x80, 0x80, 0x80}};
+static int pad_read(int socket, unsigned char *data);
+
 int scePad2Read(int socket, unsigned char *data) {
+    extern int Port_NetActive(void);                       /* gs/net.c: online play */
+    extern void Port_NetInput(int player, unsigned char *data);
+    int n;
+
+    if (Port_NetActive()) {
+        Port_NetInput(socket, data); /* both pads come from the exchange with the other player */
+        n = 18;
+    } else {
+        n = pad_read(socket, data);
+    }
+    if (socket >= 0 && socket < 2) {
+        memcpy(sPadLast[socket], data, 18);
+    }
+    return n;
+}
+
+static int pad_read(int socket, unsigned char *data) {
     int i;
 
     if (!sPadFilesTried) {

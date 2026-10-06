@@ -18,7 +18,7 @@ def link(objs, extra):
         # the compiler's own libraries linked in, SDL3 as SDL3.dll next to the program.
         lib = [f"-L{sdl3() / 'lib'}"] if sdl3() else []
         cmd = [PREFIX + "gcc", "-w", "-o", str(EXE)] + extra + objs + lib + \
-              ["-lSDL3", "-lm", "-lwinmm", "-static-libgcc", "-Wl,-Bstatic", "-lstdc++", "-lwinpthread", "-Wl,-Bdynamic",
+              ["-lSDL3", "-lm", "-lwinmm", "-lws2_32", "-static-libgcc", "-Wl,-Bstatic", "-lstdc++", "-lwinpthread", "-Wl,-Bdynamic",
                "-Wl,--image-base,0x20000000", "-Wl,--disable-dynamicbase", "-Wl,--disable-reloc-section", "-Wl,--disable-high-entropy-va", "-Wl,--wrap=main",
                "-Wl,--stack,0x1000000", "-mwindows"] + common
         return subprocess.run(cmd, capture_output=True, text=True)

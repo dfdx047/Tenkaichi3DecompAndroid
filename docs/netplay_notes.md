@@ -418,3 +418,36 @@ showed, but with `BT3_NOSOUND=1`); the movie player; saving to the memory card; 
 - Normal play: the flag is never set; the replay's result and session5's picture are unchanged.
 - Not measured yet: what a silent frame costs (the list is still walked); sound with a device during rewinds
   (all runs had `BT3_NOSOUND=1`).
+
+## Measured: what a re-run blank costs (2026-10-07, Ryzen 7 9800X3D, session6's split-screen fight)
+
+`BT3_GS_VERBOSE=1` with `BT3_SYNCTEST`: per vertical blank, re-run without output 1.5 to 1.7 ms, with output 3.1
+to 3.2 ms; saving the state 0.75 ms, restoring it 0.6 ms (about 30 MB each way). A fight frame is two blanks. So
+undoing and re-running 4 frames costs about 13 ms here, and by the factor measured earlier about 2.2 times that on
+the i5 12th gen: most of one 33 ms frame. Walking the frame's list is what a silent blank still pays for; to be
+cut (skip the vertex work, keep the uploads) when rollback is in.
+
+## Stage 4, first step: two copies in lockstep (2026-10-07)
+
+- `port/src/gs/net.c`: `BT3_NET_HOST=<port>` / `BT3_NET_JOIN=<address>:<port>`; UDP; each copy has one local
+  player (host = pad 1, joiner = pad 2); at every vertical blank a copy sends its player's input for that blank
+  (the last 16 in every packet) and waits for the other's; the game's pad reads are answered from the exchange on
+  both sides. `BT3_NET_DELAY` (default 2 blanks). Nothing predicted, nothing rewound. Both copies run the same
+  game from the first blank (they connect before it). Test hooks: `BT3_PAD_TABLE` (an ordinary run writes its
+  input by blank and pad), `BT3_NET_SCRIPT` (a copy plays its player's column of that), `BT3_NET_LOSS`,
+  `BT3_NET_LAG`.
+- Two copies on one machine (64-bit Linux, windows open, each with its own copy of the save folder), each playing
+  one player's column of session6's input:
+  | delay | packets dropped | extra lag | fight values of the two copies | final health |
+  |---|---|---|---|---|
+  | 0 | 0 | 0 | identical for 13,071 blanks of fighting | 37420 / 16770 |
+  | 2 | 0 | 0 | identical for 11,297 | 37420 / 16770 |
+  | 2 | 20% | 0 | identical for 11,353 | 37420 / 16770 |
+  | 3 | 30% | 4 ms | identical for 15,720 | 37420 / 16770 |
+  With delay 0 the host's fight values also equal the ordinary offline run's (9,794 blanks compared). The final
+  health is the original session's in every case.
+- The checksum of EVERYTHING differs between the two copies from blank 147 (where the memory card is read): the
+  two had different save folders, and the path of an open card file is part of the state. Expected, not chased.
+- Not done: real keyboards / controllers as the input (only the script), two machines, the Windows program (it
+  builds), what happens when a copy is closed (the other stops after 15 s), a check of the two copies against
+  each other while they run, both players' saves and settings (the copies had the same save).
