@@ -249,3 +249,38 @@ Read from the readable strings of `sys/main.dol` of the USA Wii disc (no symbols
 - The user's check in the running game: the guide speaks a line when it is highlighted; confirming it plays the
   confirm sound and nothing else happens (no hang).
 - Plan: this is the entry point of online play. Work on it happens on the branch `netplay`.
+
+## What is left of Dragon Net Battle on the PS2 disc, and the Wii's screens (2026-10-06)
+
+Two read-only investigations (by subagents; the points marked "checked" I looked at myself).
+
+**PS2 leftovers**
+- `MainMenu_Input` (src/menu/menu_a.c) has `case 4: break;` (checked): no mode is chosen, the code falls through to
+  the "fl_ok" plate animation and the confirm sound. No mode number is reserved for it; nothing network-related
+  is in either program (no strings, no modules, no uncalled functions that fit).
+- Main-menu pack `pzs3us1/00449.bin`: the four guides' lines for item 4 are message lines 32..35 ("You can compete
+  with players from around the world. That's amazing." and three more), voice files 0x8719..0x871C; the label
+  "Dragon Net Battle" is row 4 of two 512 x 256 sheets (off / on), the icon a spaceship, still and animated.
+- `pzs3us1/00478.bin` (baseFile + 0x1E, which no loader in the source reads): a complete 44-line guide script of
+  the online mode with Pan and Giru. Lines 0..5 are a "not available" scene ("Whoops, the spaceship's run out of
+  energy... Return to the Main menu and have fun with a different mode, okay?"), lines 6..43 the online mode's
+  own lines (Wi-Fi data, Friend Code, friend list, ranking, sending fighters and replays, searching).
+- None of the Wii's online screens (movies, pictures) is on the PS2 disc.
+
+**The Wii's online mode** (USA disc, `wzs3us1.afs` entry 461 "DragonNe...", three BPE-compressed sections; the
+same pack / movie / text formats as the PS2 with the byte order swapped; pictures decoded: checked on two sheets)
+- Top: Nintendo WFC Battle / Manage Friends / User Settings. Guides: Pan and Giru.
+- Battle menu: Custom Battle (anyone, custom characters allowed) / Normal Battle (anyone, normal characters only)
+  / Friend Battle / Ranking Battle / View Ranking / Battle Record. No other rule options exist (no time, rounds
+  or handicap text).
+- Matchmaking: "Search For Opponent" / "Search From Limited Opponents"; two player plates with name, Fighting
+  Points, battles / wins / losses and Connection Errors; a countdown.
+- Setup: the ordinary versus screens (character reel with DP totals, Normal / Custom 1-3, colour, Map Select, BGM
+  Select, VS) with a two-digit countdown. Afterwards: win plate, points up or down, Rematch Request / End Battle.
+- Friends: roster (battles / wins / losses per friend), enter a 12-digit Friend Code, show one's own. User
+  Settings: a player name (on-screen keyboard), initialise the mode's data. Ranking: My Area / Top 10. Battle
+  Record: per mode, wins, losses, consecutive wins, connection errors.
+- Messages include "Searching for opponent...", "Opponent found!", "Waiting for opponent's input...", "Match
+  interrupted.", "No activity for 60 seconds".
+- The screen order and what the countdown does are inferred; main.dol was not analysed (how a fight is kept in
+  sync is still unknown). The decoded sheets and the text are kept outside the repositories (game data).
