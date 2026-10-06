@@ -23,6 +23,8 @@
 #include "gs_internal.h"
 #include "gs_draw.h"
 #include "ui.h"         /* PortVideo and the window helpers */
+#include "gs_texpack.h" /* texture packs (replacement textures) */
+#include <math.h>
 
 extern int Port_Setting(const char *name, int def); /* plat_settings.c: the saved settings */
 extern void Port_SettingSave(const char *name, int value);
@@ -57,11 +59,13 @@ int gsTargetCount;
 int gsTexCount;
 unsigned gsFxOff;
 int gsGlowPercent = GLOW_DEFAULT;
+static int sTexPackOn = 1; /* the setting: use the texture pack (if one was found) */
 int gsAnchor;
 int gsDepthByteIsFog;
 unsigned gsNative;
 unsigned gsSkipped;
 unsigned gGpuNewTex, gGpuNewTexPixels, gGpuNewPipes; /* created since the front end last cleared them (slow-frame report) */
+unsigned gGpuTexReplaced; /* textures taken from a texture pack so far */
 uint64_t gGpuTexNs, gGpuPipeNs, gGpuEndNs; /* time spent decoding textures, creating pipelines, in GsGpu_FrameEnd */
 
 static uint64_t gpu_now(void) {
@@ -76,6 +80,9 @@ typedef struct Tex {
     uint32_t gen;
     GsTex tex;
     unsigned last; /* frame last used */
+    int replaced;  /* from a texture pack: several times the size, so always filtered (texture_get) */
+    uint32_t ow, oh, rw, rh; /* then: the original's size and the replacement's */
+    uint32_t amax;           /* and the largest alpha byte of the original */
 } Tex;
 static Tex sTex[MAX_TEX];
 static uint16_t sTexBucket[TEX_BUCKETS]; /* index + 1 of a cache entry, 0 = empty (open addressing) */
@@ -120,6 +127,9 @@ static GsTex texture_get(int ctx) {
     uint32_t bits = (uint32_t)Gs_PsmBits(psm), gen = 0, pages, i, x, y, *px;
     Tex *t;
     uint64_t tex_t0;
+    TexPackImage pack;
+    uint32_t packMaxAlpha = 255, rw = tw, rh = th;
+    int packFormat = GS_TEXFMT_RGBA8, replaced = 0;
 
     if (tw > 1024) { tw = 1024; }
     if (th > 1024) { th = 1024; }
@@ -130,6 +140,9 @@ static GsTex texture_get(int ctx) {
     }
     if (bits <= 8) {
         gen = (gen ^ clut_hash(cbp, cpsm, bits == 8 ? 256 : 16)) * 16777619u;
+    }
+    if (sTexPackOn && TexPack_Count() != 0) {
+        gen ^= 0x5BD1E995u; /* with the pack and without it are different textures: switching it takes effect at once */
     }
     if (sLast != NULL && sLast->tex0 == t0 && sLast->texa == texa && sLast->gen == gen) {
         sLast->last = gGsFrame;
@@ -178,8 +191,23 @@ static GsTex texture_get(int ctx) {
         }
     }
     tex_t0 = gpu_now();
-    px = malloc((size_t)tw * th * 4);
-    for (y = 0; y < th; y++) {
+    /* a texture pack's replacement for this texture, if there is one (gs_texpack.c) */
+    if (sTexPackOn && TexPack_Count() != 0) {
+        const char *path = TexPack_Lookup(tbp, tbw, psm, tw, th, (uint32_t)((t0 >> 34) & 1), cbp, cpsm, &packMaxAlpha);
+        if (path != NULL && TexPack_Load(path, &pack)) {
+            packFormat = pack.format & 3;
+            if (sBackend->texSlotsLeft() >= pack.levels) {
+                replaced = 1;
+                gGpuTexReplaced++;
+                rw = pack.w;
+                rh = pack.h;
+            } else {
+                TexPack_Free(&pack);
+            }
+        }
+    }
+    px = replaced ? NULL : malloc((size_t)tw * th * 4);
+    for (y = 0; !replaced && y < th; y++) {
         for (x = 0; x < tw; x++) {
             uint32_t c = Gs_VramRead(tbp, tbw, psm, x, y), a;
             if (bits > 8) {
@@ -197,10 +225,25 @@ static GsTex texture_get(int ctx) {
     }
     gGpuTexNs += gpu_now() - tex_t0;
     t = &sTex[gsTexCount];
-    t->tex = sBackend->texCreate(tw, th, px); /* on failure the back end left px alone: this side frees it */
+    t->tex = replaced ? sBackend->texCreate(rw, rh, packFormat, pack.levels) : sBackend->texCreate(tw, th, GS_TEXFMT_RGBA8, 1);
     if (t->tex == 0) {
         free(px);
+        if (replaced) {
+            TexPack_Free(&pack);
+        }
         return gsWhite;
+    }
+    if (replaced) {
+        int level;
+        for (level = 0; level < pack.levels; level++) {
+            uint32_t lw = pack.w >> level ? pack.w >> level : 1, lh = pack.h >> level ? pack.h >> level : 1;
+            void *buf = malloc(pack.bytes[level]);
+            memcpy(buf, pack.data[level], pack.bytes[level]);
+            sBackend->texUpload(t->tex, level, lw, lh, packFormat, buf, pack.bytes[level]);
+        }
+        TexPack_Free(&pack);
+    } else {
+        sBackend->texUpload(t->tex, 0, tw, th, GS_TEXFMT_RGBA8, px, tw * th * 4);
     }
     gsTexCount++;
     {
@@ -217,6 +260,12 @@ static GsTex texture_get(int ctx) {
     t->texa = texa;
     t->gen = gen;
     t->last = gGsFrame;
+    t->replaced = replaced;
+    t->ow = tw;
+    t->oh = th;
+    t->rw = rw;
+    t->rh = rh;
+    t->amax = replaced ? packMaxAlpha : 255u;
     return t->tex;
 }
 
@@ -249,11 +298,12 @@ static GsTex clut_texture(uint32_t cbp) {
     }
     upload = malloc(sizeof(px));
     memcpy(upload, px, sizeof(px));
-    tex = sBackend->texCreate(256, 1, upload);
+    tex = sBackend->texCreate(256, 1, GS_TEXFMT_RGBA8, 1);
     if (tex == 0) {
         free(upload);
         return 0;
     }
+    sBackend->texUpload(tex, 0, 256, 1, GS_TEXFMT_RGBA8, upload, sizeof(px));
     sCluts[old].tex = tex;
     sCluts[old].hash = hash;
     sCluts[old].last = gGsFrame;
@@ -510,8 +560,20 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
         }
     }
     d->sampler = (int)((gGs.tex1[ctx] >> 5) & 1) | ((cl & 3) ? 2 : 0) | (((cl >> 2) & 3) ? 4 : 0);
+    /* A replacement is several times the original's size: with the nearest-texel sampling the game asks for on
+       its text and 2D art (right for a texture drawn 1:1) it is shown smaller than it is, and its edges come out
+       jagged. Replacements are always sampled with filtering. */
+    if (d->tex != 0 && sLast != NULL && sLast->tex == d->tex && sLast->replaced) {
+        d->sampler |= 1 | 8; /* (GsGpu_Draw takes the 8 off again for 2D art) */
+    }
     d->pipeline = pipeline_get(ctx, topo, vu);
     d->mode[0] = !tme ? 0 : d->tex_is_target ? 2 : 1; /* 2: a frame buffer as texture, its alpha is already rescaled */
+    /* (BT3_TEX_ALPHA=0 switches the replacement's alpha treatment off, for telling which one a fault comes from) */
+    if (d->mode[0] == 1 && sLast != NULL && sLast->tex == d->tex && sLast->replaced &&
+        !(getenv("BT3_TEX_ALPHA") != NULL && atoi(getenv("BT3_TEX_ALPHA")) == 0)) {
+        d->mode[0] = 3; /* a texture pack's replacement: the alpha test allows for its filtered, compressed alpha (gs.frag) */
+        d->orig[2] = (float)sLast->amax / 128.0f; /* its alpha is kept at or below the original's largest (1.0 = 0x80) */
+    }
     d->mode[1] = (int32_t)((t0 >> 35) & 3);
     d->mode[2] = (int32_t)((t0 >> 34) & 1);
     d->mode[3] = (test & 1) && ((test >> 12) & 3) == 0 ? (int32_t)((test >> 1) & 7) + 1 : 0;
@@ -541,7 +603,7 @@ static int same_state(const GsDraw *a, const GsDraw *b) {
     return !a->native && a->vu == b->vu && a->target == b->target && a->tex == b->tex && a->sampler == b->sampler && a->pipeline == b->pipeline &&
            memcmp(a->mode, b->mode, sizeof(a->mode)) == 0 && a->misc[0] == b->misc[0] && a->misc[1] == b->misc[1] &&
            a->misc[2] == b->misc[2] && a->misc[3] == b->misc[3] && a->blendc == b->blendc &&
-           memcmp(a->rect, b->rect, sizeof(a->rect)) == 0 &&
+           memcmp(a->rect, b->rect, sizeof(a->rect)) == 0 && memcmp(a->orig, b->orig, sizeof(a->orig)) == 0 &&
            memcmp(a->scissor, b->scissor, sizeof(a->scissor)) == 0;
 }
 
@@ -588,7 +650,7 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
     float s[3], t[3], q[3];
     const GsVertex *flat = &v[n - 1];
     GsDraw d, *last;
-    int i;
+    int i, packed2d = 0;
 
     if (gsVertCount + 6 > MAX_VERTS || gsDrawCount == MAX_DRAWS) {
         return;
@@ -596,10 +658,18 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
     if (!draw_state(ctx, type == 1 ? 1 : type == 0 ? 2 : 0, type == 6, 0, &d, &us, &vs)) {
         return;
     }
+    if (type == 6 || fst) {
+        d.sampler &= 7; /* 2D art: never the smaller copies of a replacement */
+    }
     if ((type == 6 || fst) && !d.tex_is_target) {
         /* 2D art: sprites, and triangles with whole-texel coordinates (the logo, HUD pieces drawn as quads):
-           texture coordinates per GS pixel (gs.frag) */
-        d.misc[3] = (float)SCALE;
+           texture coordinates per GS pixel (gs.frag). Not for a texture pack's replacement: that has several
+           texels per GS pixel, and sampling it once per GS pixel would show it at the original's resolution. */
+        if (sLast != NULL && sLast->tex == d.tex && sLast->replaced && !(getenv("BT3_TEX_2D") != NULL && atoi(getenv("BT3_TEX_2D")) == 0)) {
+            packed2d = 1; /* its rectangle is worked out below, from the vertices */
+        } else {
+            d.misc[3] = (float)SCALE;
+        }
     }
     date_snapshot(&d);
     for (i = 0; i < n; i++) {
@@ -612,6 +682,44 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
             t[i] = v[i].t * vs;
             q[i] = v[i].q != 0.0f ? v[i].q : 1.0f;
         }
+    }
+    if (packed2d) {
+        /* A texture pack's replacement as 2D art: sampled per output pixel (it has several texels per original
+           texel), but only inside the rectangle of the sheet this piece shows on the console: the original texels
+           from the one its first GS pixel takes to the one its last GS pixel takes. Without the limit the
+           filtering reaches the neighbouring picture of the sheet (lines along HUD panels). */
+        int lo[2] = {0, 0}, hi[2] = {0, 0}, k, axis;
+        for (axis = 0; axis < 2; axis++) {
+            float size = axis ? th : tw, pmin = 0, pmax = 0, cmin = 0, cmax = 0, cAtMin = 0, cAtMax = 0, step, first, lastc;
+            for (k = 0; k < n; k++) {
+                /* (a sprite's coordinates are both divided by the SECOND vertex's Q, as below) */
+                float pos = axis ? v[k].y : v[k].x, c = (axis ? t[k] : s[k]) / (type == 6 ? q[1] : q[k]) * size;
+                if (k == 0 || pos < pmin) { pmin = pos; cAtMin = c; }
+                if (k == 0 || pos > pmax) { pmax = pos; cAtMax = c; }
+                if (k == 0 || c < cmin) { cmin = c; }
+                if (k == 0 || c > cmax) { cmax = c; }
+            }
+            step = pmax > pmin ? (cmax - cmin) / (pmax - pmin) : 0.0f; /* texels per GS pixel */
+            first = cAtMax >= cAtMin ? cmin : cmin + step;             /* lowest coordinate a GS pixel takes */
+            lastc = cAtMax >= cAtMin ? cmax - step : cmax;             /* highest */
+            lo[axis] = (int)floorf(first + 1.0f / 64.0f);
+            /* A mirrored piece (coordinates falling along the screen) starts exactly ON the boundary to the next
+               picture of the sheet (16.0 down to 8.0): one GS pixel's worth on the console, but the filtered
+               replacement blends that neighbour in over a visible stretch when the piece is drawn enlarged
+               (a strip of the yellow layer at the end of the second player's health bar). The boundary itself
+               does not count as inside. */
+            hi[axis] = (int)floorf(lastc + (cAtMax >= cAtMin ? 1.0f / 64.0f : -1.0f / 64.0f)) + 1;
+            if (hi[axis] <= lo[axis]) {
+                hi[axis] = lo[axis] + 1;
+            }
+        }
+        d.misc[3] = -(float)SCALE;
+        d.rect[0] = (float)lo[0] / tw;
+        d.rect[1] = (float)lo[1] / th;
+        d.rect[2] = (float)hi[0] / tw;
+        d.rect[3] = (float)hi[1] / th;
+        d.orig[0] = tw;
+        d.orig[1] = th;
     }
     d.first = gsVertCount;
     if (type == 6) { /* sprite: two corners, flat colour and depth of the second vertex */
@@ -1035,6 +1143,8 @@ void GsGpu_GetSettings(PortVideo *v) {
     v->music = gPortMusicPercent;
     v->effects = gPortSePercent;
     v->display = sDisplaySetting;
+    v->texPack = sTexPackOn;
+    v->texPackCount = TexPack_Count();
 }
 
 /* Applies what differs from the current state, all of it at once, and keeps it for the next run. */
@@ -1059,6 +1169,8 @@ void GsGpu_SetSettings(const PortVideo *v) {
         Port_AudioRefresh();
     }
     sDisplaySetting = v->display;
+    sTexPackOn = v->texPack != 0;
+    Port_SettingSave("texture_pack", sTexPackOn);
     Port_SettingSave("scale", gsPendingScale ? gsPendingScale : gsScale);
     Port_SettingSave("aspect_milli", Port_AspectMilli());
     Port_SettingSave("fullscreen", sFullscreen);
@@ -1099,8 +1211,10 @@ int GsGpu_Init(void) {
     gsWhite = sb->whiteTex();
     gsFxOff = (unsigned)(getenv("BT3_FX_OFF") != NULL ? atoi(getenv("BT3_FX_OFF")) : Port_Setting("fx_off", 0)) & 31;
     gsGlowPercent = getenv("BT3_GLOW") != NULL ? atoi(getenv("BT3_GLOW")) : Port_Setting("glow", GLOW_DEFAULT);
+    sTexPackOn = Port_Setting("texture_pack", 1) != 0;
     gPortMusicPercent = Port_Setting("music", 100);
     gPortSePercent = Port_Setting("effects", 100);
+    TexPack_Init();
     return 1;
 }
 

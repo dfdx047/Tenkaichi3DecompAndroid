@@ -32,7 +32,7 @@ static SDL_GPUDevice *sDev;
 static SDL_GPUShader *sVs, *sFs;
 static SDL_GPUBuffer *sVbuf;
 static SDL_GPUTransferBuffer *sVxfer;
-static SDL_GPUSampler *sSamplers[8]; /* bit 0: linear, bit 1: clamp U, bit 2: clamp V */
+static SDL_GPUSampler *sSamplers[16]; /* bit 0 filtered, bit 1 / 2 clamped in u / v, bit 3 with the smaller copies (mip levels) */
 static SDL_GPUTexture *sWhite;
 static SDL_GPUGraphicsPipeline *sOutlinePipe, *sKeyPipe;
 static SDL_GPUTexture *sFbTex[2]; /* pictures uploaded into the two display buffers (movies) */
@@ -54,7 +54,7 @@ static int sPipeCount;
 
 /* textures created this frame, to upload in the copy pass */
 #define MAX_PENDING 4096
-static struct { SDL_GPUTexture *tex; uint32_t w, h; uint32_t *px; } sPending[MAX_PENDING];
+static struct { SDL_GPUTexture *tex; uint32_t w, h; uint32_t *px; uint32_t bytes, level; /* bytes 0: w * h * 4 */ } sPending[MAX_PENDING];
 static int sPendingCount;
 
 static uint64_t gpu_now(void) { return SDL_GetTicksNS(); }
@@ -121,32 +121,45 @@ static GsTex target_depth(int i) { return (GsTex)(uintptr_t)sTgDep[i]; }
 
 /* --- textures ------------------------------------------------------------------- */
 
-/* A texture for what gs_draw.c decoded. Takes ownership of `px` (the copy pass uploads it, then frees it). */
-static GsTex tex_create(uint32_t w, uint32_t h, uint32_t *px) {
+/* The format a texture pack's replacement can be in (gs_draw.h's GS_TEXFMT_*), as SDL GPU wants it. */
+static const SDL_GPUTextureFormat kTexFormat[4] = {SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, SDL_GPU_TEXTUREFORMAT_BC1_RGBA_UNORM,
+                                                   SDL_GPU_TEXTUREFORMAT_BC2_RGBA_UNORM, SDL_GPU_TEXTUREFORMAT_BC3_RGBA_UNORM};
+
+/* Makes a texture object; the levels' pixels come with tex_upload (the copy pass uploads them). 0 = unsupported. */
+static GsTex tex_create(uint32_t w, uint32_t h, int format, int levels) {
     SDL_GPUTextureCreateInfo ci;
     SDL_GPUTexture *tex;
 
-    if (sPendingCount == MAX_PENDING) {
-        return 0; /* the caller frees px */
+    if (!SDL_GPUTextureSupportsFormat(sDev, kTexFormat[format & 3], SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_SAMPLER)) {
+        return 0;
     }
     SDL_zero(ci);
     ci.type = SDL_GPU_TEXTURETYPE_2D;
-    ci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    ci.format = kTexFormat[format & 3];
     ci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
     ci.width = w;
     ci.height = h;
     ci.layer_count_or_depth = 1;
-    ci.num_levels = 1;
+    ci.num_levels = (Uint32)(levels < 1 ? 1 : levels);
     tex = SDL_CreateGPUTexture(sDev, &ci);
-    if (tex == NULL) {
-        return 0; /* the caller frees px */
+    return (GsTex)(uintptr_t)tex;
+}
+
+/* Queues a level's pixels for the copy pass (which frees them). Takes ownership of `px`; 0 = dropped. */
+static int tex_upload(GsTex handle, int level, uint32_t w, uint32_t h, int format, const void *px, uint32_t bytes) {
+    (void)format; /* a Vulkan texture is made with its format; the pixels arrive as they are */
+    if (sPendingCount == MAX_PENDING) {
+        free((void *)px);
+        return 0;
     }
-    sPending[sPendingCount].tex = tex;
+    sPending[sPendingCount].tex = (SDL_GPUTexture *)(uintptr_t)handle;
     sPending[sPendingCount].w = w;
     sPending[sPendingCount].h = h;
-    sPending[sPendingCount].px = px;
+    sPending[sPendingCount].px = (uint32_t *)px;
+    sPending[sPendingCount].bytes = bytes;
+    sPending[sPendingCount].level = (uint32_t)level;
     sPendingCount++;
-    return (GsTex)(uintptr_t)tex;
+    return 1;
 }
 
 static void tex_destroy(GsTex tex) {
@@ -366,11 +379,16 @@ static int vk_init(void) {
     ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
     ti.size = MAX_VERTS * sizeof(Vtx);
     sVxfer = SDL_CreateGPUTransferBuffer(sDev, &ti);
-    for (i = 0; i < 8; i++) {
+    for (i = 0; i < 16; i++) {
         SDL_GPUSamplerCreateInfo si;
         SDL_zero(si);
         si.min_filter = si.mag_filter = (i & 1) ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
-        si.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+        /* The game's own textures have one level. A texture pack's have smaller copies as well, used (bit 3)
+           where the texture is on 3D geometry. Not for 2D art: a smaller copy averages neighbouring texels, and
+           on a sheet of HUD pieces those are another piece (a strip of the next colour layer showed in a health
+           bar once widescreen drew the HUD narrower and the smaller copies came into use). */
+        si.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
+        si.max_lod = (i & 8) ? 16.0f : 0.0f;
         si.address_mode_u = (i & 2) ? SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE : SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
         si.address_mode_v = (i & 4) ? SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE : SDL_GPU_SAMPLERADDRESSMODE_REPEAT;
         si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
@@ -394,6 +412,7 @@ static int vk_init(void) {
         ci.num_levels = 1;
         sWhite = SDL_CreateGPUTexture(sDev, &ci);
         sPending[sPendingCount].tex = sWhite;
+        sPending[sPendingCount].bytes = sPending[sPendingCount].level = 0;
         sPending[sPendingCount].w = sPending[sPendingCount].h = 1;
         sPending[sPendingCount].px = malloc(4);
         memcpy(sPending[sPendingCount].px, &white, 4);
@@ -465,7 +484,7 @@ static void vk_frame_end(void) {
     uint64_t sEndT[5];
     int lastPipe = -1, lastUni = -1, lastSampler = -1, haveFu = 0, haveScissor = 0; /* what the pass has set (the replay loop) */
     SDL_GPUTexture *lastTex = NULL;
-    struct { int32_t mode[4]; float misc[4]; float rect[4]; } lastFu;
+    struct { int32_t mode[4]; float misc[4]; float rect[4]; float orig[4]; } lastFu;
     int lastScissor[4];
     float lastBlend = -1.0f;
     uint32_t n;
@@ -557,7 +576,7 @@ static void vk_frame_end(void) {
         void *p;
         SDL_zero(ti);
         ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        ti.size = sPending[i].w * sPending[i].h * 4;
+        ti.size = sPending[i].bytes ? sPending[i].bytes : sPending[i].w * sPending[i].h * 4;
         tb = SDL_CreateGPUTransferBuffer(sDev, &ti);
         p = SDL_MapGPUTransferBuffer(sDev, tb, false);
         memcpy(p, sPending[i].px, ti.size);
@@ -566,6 +585,7 @@ static void vk_frame_end(void) {
         src.transfer_buffer = tb;
         SDL_zero(dst);
         dst.texture = sPending[i].tex;
+        dst.mip_level = sPending[i].level;
         dst.w = sPending[i].w;
         dst.h = sPending[i].h;
         dst.d = 1;
@@ -628,7 +648,7 @@ static void vk_frame_end(void) {
         SDL_GPUBufferBinding vb;
         SDL_GPUTextureSamplerBinding ts;
         SDL_FColor bc;
-        struct { int32_t mode[4]; float misc[4]; float rect[4]; } fu;
+        struct { int32_t mode[4]; float misc[4]; float rect[4]; float orig[4]; } fu;
 
         if (d->native >= 100) { /* a picture uploaded into this display buffer (GsGpu_FbUpload): scaled into its texture */
             SDL_GPUBlitInfo bl;
@@ -824,6 +844,7 @@ static void vk_frame_end(void) {
         memcpy(fu.mode, d->mode, sizeof(fu.mode));
         memcpy(fu.misc, d->misc, sizeof(fu.misc));
         memcpy(fu.rect, d->rect, sizeof(fu.rect));
+        memcpy(fu.orig, d->orig, sizeof(fu.orig));
         if (!haveFu || memcmp(&fu, &lastFu, sizeof(fu)) != 0) {
             SDL_PushGPUFragmentUniformData(cmd, 0, &fu, sizeof(fu));
             memcpy(&lastFu, &fu, sizeof(fu));
@@ -1069,6 +1090,7 @@ GsBackend sVulkanBackend = {
     scale_changed,
     white_tex,
     tex_create,
+    tex_upload,
     tex_destroy,
     tex_slots_left,
     target_ensure,

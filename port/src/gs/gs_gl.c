@@ -87,6 +87,7 @@ typedef void GLvoid; typedef ptrdiff_t GLsizeiptr; typedef ptrdiff_t GLintptr; t
     X(glActiveTexture, void, (GLenum), (GLenum)) \
     X(glTexImage2D, void, (GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void *), (GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void *)) \
     X(glTexSubImage2D, void, (GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void *), (GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void *)) \
+    X(glCompressedTexImage2D, void, (GLenum, GLint, GLenum, GLsizei, GLsizei, GLint, GLsizei, const void *), (GLenum, GLint, GLenum, GLsizei, GLsizei, GLint, GLsizei, const void *)) \
     X(glTexParameteri, void, (GLenum, GLenum, GLint), (GLenum, GLenum, GLint)) \
     X(glDeleteTextures, void, (GLsizei, const GLuint *), (GLsizei, const GLuint *)) \
     X(glGenFramebuffers, void, (GLsizei, GLuint *), (GLsizei, GLuint *)) \
@@ -129,6 +130,11 @@ GL_FUNCS(GL_DECL)
 #define GL_TEXTURE_WRAP_T 0x2803
 #define GL_NEAREST 0x2600
 #define GL_LINEAR 0x2601
+#define GL_LINEAR_MIPMAP_LINEAR 0x2703
+#define GL_TEXTURE_MAX_LEVEL 0x813D
+#define GL_COMPRESSED_RGBA_S3TC_DXT1_EXT 0x83F1
+#define GL_COMPRESSED_RGBA_S3TC_DXT3_EXT 0x83F2
+#define GL_COMPRESSED_RGBA_S3TC_DXT5_EXT 0x83F3
 #define GL_CLAMP_TO_EDGE 0x812F
 #define GL_REPEAT 0x2901
 #define GL_ARRAY_BUFFER 0x8892
@@ -324,7 +330,7 @@ static SDL_GLContext sCtx;
 static GLuint sMainProg[4]; /* gs.vert / vu0 / vu4 / vu6 + gs.frag */
 static GLuint sOutlineProg, sKeyProg, sDclutProg, sPresentProg;
 static GLuint sVaoGs, sVaoVu, sVboGs, sVboVu;
-static GLuint sSamplers[8];
+static GLuint sSamplers[16];
 static GLuint sWhite;
 static GLuint sUboU, sUboParams;
 static GLuint sTgCol[MAX_TARGETS], sTgAux[MAX_TARGETS], sTgDep[MAX_TARGETS], sTgFbo[MAX_TARGETS];
@@ -382,14 +388,31 @@ static GsTex target_color(int i) { return (GsTex)sTgCol[i]; }
 static GsTex target_aux(int i) { return (GsTex)sTgAux[i]; }
 static GsTex target_depth(int i) { return (GsTex)sTgDep[i]; }
 
-static GsTex tex_create(uint32_t w, uint32_t h, uint32_t *px) {
+/* Makes a texture; its levels come with tex_upload. GL_TEXTURE_MAX_LEVEL bounds the chain so that a mipmapped
+   replacement is complete even if the pack's chain stops short of 1x1. */
+static GsTex tex_create(uint32_t w, uint32_t h, int format, int levels) {
     GLuint t;
+    (void)w; (void)h; (void)format;
     glGenTextures(1, &t);
     glBindTexture(GL_TEXTURE_2D, t);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)w, (GLsizei)h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
-    free(px);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, levels > 0 ? levels - 1 : 0);
     return (GsTex)t;
+}
+
+/* Uploads a level at once (GL has no upload queue; the pixels are copied). Takes ownership of px. */
+static int tex_upload(GsTex handle, int level, uint32_t w, uint32_t h, int format, const void *px, uint32_t bytes) {
+    GLuint t = (GLuint)handle;
+    glBindTexture(GL_TEXTURE_2D, t);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    if (format == GS_TEXFMT_RGBA8) {
+        glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA8, (GLsizei)w, (GLsizei)h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
+    } else {
+        GLenum ifmt = format == GS_TEXFMT_BC1 ? GL_COMPRESSED_RGBA_S3TC_DXT1_EXT :
+                      format == GS_TEXFMT_BC2 ? GL_COMPRESSED_RGBA_S3TC_DXT3_EXT : GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+        glCompressedTexImage2D(GL_TEXTURE_2D, level, ifmt, (GLsizei)w, (GLsizei)h, 0, (GLsizei)bytes, px);
+    }
+    free((void *)px);
+    return 1;
 }
 
 static void tex_destroy(GsTex tex) { GLuint t = (GLuint)tex; glDeleteTextures(1, &t); }
@@ -644,10 +667,12 @@ static int gl_init(void) {
     glBufferData(GL_UNIFORM_BUFFER, 64, NULL, GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_UNIFORM_BUFFER, 1, sUboParams);
 
-    for (i = 0; i < 8; i++) {
+    for (i = 0; i < 16; i++) {
+        int lin = (i & 1) != 0;
         glGenSamplers(1, &sSamplers[i]);
-        glSamplerParameteri(sSamplers[i], GL_TEXTURE_MIN_FILTER, (i & 1) ? GL_LINEAR : GL_NEAREST);
-        glSamplerParameteri(sSamplers[i], GL_TEXTURE_MAG_FILTER, (i & 1) ? GL_LINEAR : GL_NEAREST);
+        glSamplerParameteri(sSamplers[i], GL_TEXTURE_MAG_FILTER, lin ? GL_LINEAR : GL_NEAREST);
+        /* bit 3: a texture pack's replacement, whose smaller copies (mip levels) may be sampled on 3D geometry */
+        glSamplerParameteri(sSamplers[i], GL_TEXTURE_MIN_FILTER, (i & 8) ? GL_LINEAR_MIPMAP_LINEAR : (lin ? GL_LINEAR : GL_NEAREST));
         glSamplerParameteri(sSamplers[i], GL_TEXTURE_WRAP_S, (i & 2) ? GL_CLAMP_TO_EDGE : GL_REPEAT);
         glSamplerParameteri(sSamplers[i], GL_TEXTURE_WRAP_T, (i & 4) ? GL_CLAMP_TO_EDGE : GL_REPEAT);
     }
@@ -673,7 +698,7 @@ static void frame_end(void) {
     SDL_Event ev;
     int cur = -1, best = -1, i;
     uint32_t n;
-    struct { int32_t mode[4]; float misc[4]; float rect[4]; } fu, lastFu;
+    struct { int32_t mode[4]; float misc[4]; float rect[4]; float orig[4]; } fu, lastFu;
     int haveFu = 0;
 
     while (SDL_PollEvent(&ev)) {
@@ -813,6 +838,7 @@ static void frame_end(void) {
         memcpy(fu.mode, d->mode, sizeof(fu.mode));
         memcpy(fu.misc, d->misc, sizeof(fu.misc));
         memcpy(fu.rect, d->rect, sizeof(fu.rect));
+        memcpy(fu.orig, d->orig, sizeof(fu.orig));
         if (!haveFu || memcmp(&fu, &lastFu, sizeof(fu)) != 0) {
             set_params(&fu, sizeof(fu));
             memcpy(&lastFu, &fu, sizeof(fu));
@@ -949,6 +975,7 @@ GsBackend sGlBackend = {
     scale_changed,
     white_tex,
     tex_create,
+    tex_upload,
     tex_destroy,
     tex_slots_left,
     target_ensure,

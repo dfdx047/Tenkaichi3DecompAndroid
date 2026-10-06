@@ -74,10 +74,18 @@ typedef struct GsDraw {
     int pipeline; /* the back end's pipeline index (GsBackend.pipeGet) */
     int32_t mode[4];
     float misc[4];
-    float rect[4];  /* a frame buffer as texture: the part of it the GS would address (u0, v0, u1, v1 in its uv) */
+    float rect[4];  /* a frame buffer as texture: the part of it the GS would address (u0, v0, u1, v1 in its uv);
+                       a texture pack's replacement drawn as 2D art: the piece's own rectangle of the sheet */
+    float orig[4];  /* a texture pack's replacement: xy = the original texture's size in texels, z = its largest alpha */
     float blendc;
     int scissor[4]; /* x, y, width, height, at SCALE */
 } GsDraw;
+
+/* The formats a texture pack's replacement can be in (matches gs_texpack.h's TexPackImage.format). */
+#define GS_TEXFMT_RGBA8 0
+#define GS_TEXFMT_BC1 1
+#define GS_TEXFMT_BC2 2
+#define GS_TEXFMT_BC3 3
 
 /* The frame being recorded. A back end's frameEnd reads these, uploads the vertices, replays the list and
    clears the counters for the next frame. */
@@ -103,6 +111,7 @@ extern unsigned gsSkipped;      /* primitives of PS2-only passes dropped this fr
 extern int gGsMainFbp;          /* the frame buffer the game shows (gs_sony.c), -1 before the first swap */
 /* created / spent since the front end last cleared them (gs_core.c's slow-frame report) */
 extern unsigned gGpuNewTex, gGpuNewTexPixels, gGpuNewPipes;
+extern unsigned gGpuTexReplaced; /* textures taken from a texture pack so far */
 extern uint64_t gGpuTexNs, gGpuPipeNs, gGpuEndNs;
 
 /* The colour write mask FRAME.FBMSK turns into, in the bit values every back end's masks use (R=1, G=2,
@@ -121,7 +130,8 @@ typedef struct GsBackend {
     void (*frameEnd)(void);               /* events, uploads, replay the list, present, UI, screenshots */
     void (*scaleChanged)(void);           /* gsScale just changed: wait idle, drop and rebuild what is sized */
     GsTex (*whiteTex)(void);              /* the 1x1 white texture made in init */
-    GsTex (*texCreate)(uint32_t w, uint32_t h, uint32_t *px); /* takes ownership of px on success; 0 = full */
+    GsTex (*texCreate)(uint32_t w, uint32_t h, int format, int levels); /* 0 = at capacity / unsupported */
+    int (*texUpload)(GsTex tex, int level, uint32_t w, uint32_t h, int format, const void *px, uint32_t bytes); /* takes ownership of px; 0 = dropped */
     void (*texDestroy)(GsTex tex);
     int (*texSlotsLeft)(void);            /* how many more textures it can take this frame */
     void (*targetEnsure)(int i);          /* create the attachments of shared target i */
