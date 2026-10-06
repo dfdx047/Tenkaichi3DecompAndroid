@@ -258,6 +258,9 @@ static int slot_of(int mask) {
 }
 
 static void play(int mask, int id, int volume, int pan, int pitch, int handle) {
+    if (gPortResim) { /* a frame that is only being re-run: its sounds were heard the first time */
+        return;
+    }
     int slot = slot_of(mask), k, pick = -1;
     uint32_t start, rate;
     double theta;

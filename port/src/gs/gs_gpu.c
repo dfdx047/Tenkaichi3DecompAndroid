@@ -1214,6 +1214,9 @@ static void date_snapshot(const Draw *d) {
 }
 
 void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
+    if (gPortResim) { /* a frame that is only being re-run: nothing is drawn */
+        return;
+    }
     uint64_t prim = gGs.prim, t0 = gGs.tex0[ctx];
     int fst = (prim >> 8) & 1, gouraud = (prim >> 3) & 1, n = type == 6 ? 2 : type == 3 ? 3 : type == 1 ? 2 : 1;
     float tw = (float)(1u << ((t0 >> 26) & 15)), th = (float)(1u << ((t0 >> 30) & 15)), us, vs;
@@ -1399,6 +1402,9 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
    as floats, a slot the original fills with s, t). A flagged vertex means: the triangle that ends here is not
    drawn (it only joins two real triangles of the strip). */
 void GsGpu_DrawVu6(int ctx, const float *vertices, uint32_t count, const float *consts) {
+    if (gPortResim) { /* a frame that is only being re-run: nothing is drawn */
+        return;
+    }
     Vu0Uniform u;
     Draw d, *last;
     float us, vs;
@@ -1453,6 +1459,9 @@ void GsGpu_DrawVu6(int ctx, const float *vertices, uint32_t count, const float *
 /* Vertex program 4 as a shader: one strip of stage geometry (see shaders/vu4.vert). Vertices: position, colour
    (0..255 floats), texture coordinates, 48 bytes; the screen matrix is VU memory 0..3. */
 void GsGpu_DrawVu4(int ctx, const float *vertices, uint32_t count, const float *consts) {
+    if (gPortResim) { /* a frame that is only being re-run: nothing is drawn */
+        return;
+    }
     Vu0Uniform u;
     Draw d, *last;
     float us, vs;
@@ -1493,6 +1502,9 @@ void GsGpu_DrawVu4(int ctx, const float *vertices, uint32_t count, const float *
 /* Vertex program 0 as a shader: one strip of the fighters' models (see shaders/vu0.vert and gs_vu1.c). The strip
    becomes a triangle list of the program's own 48-byte vertices; the constants go into a uniform block. */
 void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, const float *consts) {
+    if (gPortResim) { /* a frame that is only being re-run: nothing is drawn */
+        return;
+    }
     Vu0Uniform u;
     Draw d, *last;
     float us, vs;
@@ -1550,6 +1562,9 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
 /* The game uploaded pixels straight into a display buffer (a movie frame). Remembers the place in the frame's
    draw order; the pixels are taken from GS memory at the end of the frame (frame_end). */
 void GsGpu_FbUpload(int second) {
+    if (gPortResim) { /* a frame that is only being re-run: nothing is drawn */
+        return;
+    }
     Draw d;
 
     if (sDrawCount == MAX_DRAWS) {
@@ -1564,6 +1579,9 @@ void GsGpu_FbUpload(int second) {
 }
 
 void GsGpu_Native(int effect) {
+    if (gPortResim) { /* a frame that is only being re-run: nothing is drawn */
+        return;
+    }
     uint64_t sc = gGs.scissor[0];
     Draw d;
 
@@ -1594,6 +1612,9 @@ static void frame_end(void);
 
 void GsGpu_FrameEnd(void) {
     uint64_t t0 = gpu_now();
+    if (gPortResim) { /* a frame that is only being re-run: nothing was recorded, nothing is shown */
+        return;
+    }
     frame_end();
     scale_apply();
     gGpuEndNs += gpu_now() - t0;

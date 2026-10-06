@@ -402,3 +402,19 @@ showed, but with `BT3_NOSOUND=1`); the movie player; saving to the memory card; 
   multi-blank rewind showed it: the stretch across the recording's end did not repeat, because the first pass
   had closed the recording. Now the pads are idle for the rest of a run once a recording has ended (what the
   comment always said), and the file stays open so a restored state can read its last part again.
+
+## Stage 3: frames that are only re-run are neither seen nor heard (2026-10-07)
+
+- `gPortResim` (gs/state.c): while it is set, the frame's list is still walked (it carries the texture uploads and
+  vertex programs later frames count on) but no draw is recorded, nothing is shown, the picture's frame counter
+  stands still, sound effects do not start, and a stream that is asked to start the file it is already playing
+  plays on.
+- `BT3_SYNCTEST` now runs the pass that gets undone in this mode and the second pass normally
+  (`BT3_SYNCTEST_LOUD=1`: both with output, as before). session6 with the window, rewinding 1 and 8 blanks:
+  13,200 and 16,200 blanks each run twice, 0 differences; the checksum of everything equals a normal run's at
+  every blank (13,722 and 15,182 compared); and the picture at three fixed blanks (2600, 3401, 4000) is
+  byte-identical to the normal run's. (Screenshots taken by frame number do not line up between the two runs:
+  the runs count frames differently around loading. By blank they do.)
+- Normal play: the flag is never set; the replay's result and session5's picture are unchanged.
+- Not measured yet: what a silent frame costs (the list is still walked); sound with a device during rewinds
+  (all runs had `BT3_NOSOUND=1`).

@@ -33,6 +33,7 @@ enum { ADXT_STAT_STOP = 0, ADXT_STAT_PLAYING = 3, ADXT_STAT_PLAYEND = 5 };
 
 typedef struct Player {
     SDL_AudioStream *stream;
+    char path[512];         /* the file it plays */
     uint8_t *file;          /* the whole ADX file */
     uint32_t size, data;    /* file size; offset of the first frame */
     uint32_t channels, rate, total;
@@ -246,7 +247,11 @@ static void start(Player *p, const char *path) {
     long size;
     uint32_t header, highpass;
 
+    if (gPortResim && p->stream != NULL && strcmp(p->path, path) == 0) {
+        return; /* a frame that is only being re-run starts the stream that is playing already: it plays on */
+    }
     stop(p);
+    snprintf(p->path, sizeof(p->path), "%s", path);
     if (!device()) {
         return;
     }

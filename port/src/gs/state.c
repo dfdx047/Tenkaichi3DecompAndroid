@@ -31,6 +31,8 @@
 
 extern void Port_HeapRegion(uint8_t **base, uint32_t *size); /* plat_mem.c */
 
+int gPortResim; /* gs_internal.h: frames are being re-run, without picture or sound */
+
 #define MAX_REGIONS 64
 static struct { const uint8_t *p; size_t n; const char *what; } sRegion[MAX_REGIONS];
 static int sRegions = -1;
@@ -344,7 +346,13 @@ void Port_SyncTest(unsigned vblank) {
     c->phase = 1;
     c->step = 0;
     if (state_save(&c->snap) != 0) {
-        /* back here after the restore: the same stretch runs a second time (phase 2 was set before the load) */
+        /* back here after the restore: the same stretch runs a second time (phase 2 was set before the load),
+           this time with its picture and sound */
+        gPortResim = 0;
+    } else {
+        /* the pass that will be undone runs without picture and sound (BT3_SYNCTEST_LOUD=1: with them, as the
+           test first did): what online play does with the frames it re-runs. It has to leave the same state. */
+        gPortResim = getenv("BT3_SYNCTEST_LOUD") == NULL;
     }
 }
 #else

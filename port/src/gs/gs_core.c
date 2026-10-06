@@ -969,7 +969,9 @@ static void screenshot(void) {
     for (i = 0; i < sTargetCount; i++) {
         sTargets[i].drawn = 0;
     }
-    sFrame++;
+    if (!gPortResim) { /* (a frame that is only being re-run is not a frame of the picture) */
+        sFrame++;
+    }
 }
 
 /* ---- The render thread (GPU back end only).

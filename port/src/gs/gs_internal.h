@@ -71,6 +71,12 @@ void GsGpu_DrawVu6(int ctx, const float *vertices, uint32_t count, const float *
 void Gs_RegWrite(uint32_t addr, uint64_t d);
 void GsGpu_Native(int effect); /* marker register 0x7F: a native effect goes here */
 void GsGpu_FrameEnd(void);
+/* The game is re-running frames it has already shown (online play after a late input; the save / restore test):
+   nothing of them is to be seen or heard. The frame's list is still walked, because it also carries the texture
+   uploads and vertex programs that later frames count on, but no draw is recorded, nothing is shown, and no
+   sound starts. (gs/state.c) */
+extern int gPortResim;
+
 /* Settings are read from the environment all over the renderer, some of them for every batch a model sends
    (tens of thousands of times per frame). The C library's getenv is cheap on Linux and slow on Windows (a lock
    and a case-insensitive search of a much larger environment): there it cost more than half of a frame. In the
