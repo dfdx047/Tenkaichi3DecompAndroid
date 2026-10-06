@@ -548,6 +548,7 @@ Checked (two copies on one machine, `BT3_SESSION_TEST=<role>:<address>:<port>:<b
   a run that never left. (The frames right after the return were not compared.)
 - Rewind test on session6 (Linux depth 1 and 8, Wine depth 8): 0 differences. Replay result on all three
   programs; normal play's fight values unchanged.
-- Not checked: the whole thing by hand from the Dragon Net Battle window; the sound after a return (all tests
-  ran without a sound device); sound effects that were sounding when the state changed; a real Windows; two
+- By hand (the user, two copies on one machine, from the Dragon Net Battle window): the session starts in the
+  same window and leaving it brings the player back where they were; "reverting back works perfectly".
+- Not checked: the sound after a return in particular (the automated tests ran without a sound device); sound effects that were sounding when the state changed; a real Windows; two
   machines.
