@@ -131,9 +131,17 @@ void MainMenu_Init(s32 section) {
     MsgWin_Open();
 
     for (i = 0; i < MAINMENU_ITEM_MAX; i++) {
+#ifdef PORT
+        /* Item 4 is the one entry the PS2 game never lists (it has a plate and a label of its own in the menu's
+           pictures, and no mode behind it). BT3_MENU_ITEM4=1 lists it, to look at it. */
+        if (i == 4 && getenv("BT3_MENU_ITEM4") == NULL) {
+            continue;
+        }
+#else
         if (i == 4) {
             continue;
         }
+#endif
         if (i == 10 && (gSaveData->unlockFlags & 0x7F) != 0x7F) {
             continue;
         }

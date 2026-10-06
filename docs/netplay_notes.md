@@ -239,3 +239,13 @@ Read from the readable strings of `sys/main.dol` of the USA Wii disc (no symbols
 - NOT known from this: what the two consoles exchange during a fight (inputs only or more), whether there is an
   input delay, and what happens on a mismatch or a lost connection. That needs the callers of the library's send
   and receive functions found in the PowerPC code.
+
+## The PS2 main menu's hidden entry: "Dragon Net Battle" (2026-10-06)
+
+- `MainMenu_Init` (src/menu/menu_a.c) lists items 0..10 and skips item 4 (`if (i == 4) continue;`); every other
+  item has a mode (menu_overlay.md), item 4 has none. Listed with `BT3_MENU_ITEM4=1` (port only), it appears
+  between Duel and Dragon World Tour as **"Dragon Net Battle"**, with its plate, label and icon from the PS2
+  disc's own menu pictures (seen in a screenshot).
+- The user's check in the running game: the guide speaks a line when it is highlighted; confirming it plays the
+  confirm sound and nothing else happens (no hang).
+- Plan: this is the entry point of online play. Work on it happens on the branch `netplay`.
