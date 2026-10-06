@@ -504,8 +504,10 @@ cut (skip the vertex work, keep the uploads) when rollback is in.
 - `make_state.py`: two game ranges are no longer joined over a gap that holds a variable of a file that is not
   state (plat_settings.c's lock lay in one: on Windows its address was restored with the game).
 - **Windows program under Wine** (`BT3_SYNCTEST=1 BT3_SYNCTEST_DEPTH=8`): the replay fight without a window,
-  44,400 blanks each run twice, 0 differences, the fight's result unchanged; session6 with the window, 49,800
-  blanks each run twice, 0 differences. Rewinding 1 at a time, the replay fight: 0 differences.
+  44,400 blanks each run twice, 0 differences, the fight's result unchanged; session6 with the window (started
+  from the folder that has the save: from another one the recording never reaches its fight, which a first run of
+  this did), 27,600 blanks each run twice through the menus and the whole fight, 0 differences, final health
+  37420 / 16770 as everywhere. Rewinding 1 at a time, the replay fight: 0 differences.
 - Linux unchanged: session6 rewinding 8, 0 differences; the replay's result on all three programs; normal play's
   fight values as before.
 - Not tried: a real Windows (only Wine); two Windows copies connected; Linux against Windows.
