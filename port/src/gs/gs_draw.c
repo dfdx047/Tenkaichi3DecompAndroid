@@ -990,7 +990,7 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
     SDL_DestroyProperties(props);
     SDL_free(displays);
     if (sWindow != NULL && !sFullscreen) {
-        SDL_SetWindowAspectRatio(sWindow, want, want);
+        SDL_SetWindowSize(sWindow, (int)((float)896 * want + 0.5f), 896);
     }
     fprintf(stderr, "bt3: internal resolution %dx (%d x %d)\n", gsScale, 512 * gsScale, 448 * gsScale);
     return sWindow;
@@ -1004,9 +1004,7 @@ void GsDraw_WindowShape(void) {
     sWantAspect = want;
     if (!sFullscreen && sWindow != NULL) {
         SDL_GetWindowSize(sWindow, &w, &h);
-        SDL_SetWindowAspectRatio(sWindow, 0.0f, 0.0f);
         SDL_SetWindowSize(sWindow, (int)((float)h * want + 0.5f), h);
-        SDL_SetWindowAspectRatio(sWindow, want, want);
     }
 }
 
@@ -1015,13 +1013,7 @@ void GsDraw_FullscreenSet(int on) {
         return;
     }
     sFullscreen = on;
-    if (on) { /* the full screen has the display's shape: the picture is centred in it */
-        SDL_SetWindowAspectRatio(sWindow, 0.0f, 0.0f);
-    }
     SDL_SetWindowFullscreen(sWindow, on);
-    if (!on) {
-        SDL_SetWindowAspectRatio(sWindow, sWantAspect, sWantAspect);
-    }
 }
 
 void GsDraw_FullscreenToggle(void) {

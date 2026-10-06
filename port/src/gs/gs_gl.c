@@ -66,6 +66,7 @@ typedef void GLvoid; typedef ptrdiff_t GLsizeiptr; typedef ptrdiff_t GLintptr; t
     X(glDeleteProgram, void, (GLuint), (GLuint)) \
     X(glGetUniformLocation, GLint, (GLuint, const GLchar *), (GLuint, const GLchar *)) \
     X(glUniform1i, void, (GLint, GLint), (GLint, GLint)) \
+    X(glUniform2f, void, (GLint, GLfloat, GLfloat), (GLint, GLfloat, GLfloat)) \
     X(glGetUniformBlockIndex, GLuint, (GLuint, const GLchar *), (GLuint, const GLchar *)) \
     X(glUniformBlockBinding, void, (GLuint, GLuint, GLuint), (GLuint, GLuint, GLuint)) \
     X(glBindBufferBase, void, (GLenum, GLuint, GLuint), (GLenum, GLuint, GLuint)) \
@@ -164,6 +165,7 @@ GL_FUNCS(GL_DECL)
 #define GL_ALWAYS 0x0207
 #define GL_FRAMEBUFFER 0x8D40
 #define GL_BACK 0x0405
+#define GL_FRONT 0x0404
 #define GL_READ_FRAMEBUFFER 0x8CA8
 #define GL_DRAW_FRAMEBUFFER 0x8CA9
 #define GL_COLOR_ATTACHMENT0 0x8CE0
@@ -287,11 +289,40 @@ static GLuint make_program(const unsigned char *vsrc, const unsigned char *fsrc,
     return p;
 }
 
+/* The present: one textured full-screen triangle sampling the shown buffer's colour, drawn with the viewport
+   set to the letterboxed rectangle. (A textured quad, as the OpenGL framebuffer guide does it, instead of a
+   scaled/flipped blit.) */
+static GLuint make_present_program(void) {
+    static const char *vs = "#version 330 core\nout vec2 vUv;\nvoid main() {\n"
+        "    vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);\n"
+        "    vUv = vec2((p.x + 1.0) * 0.5, (1.0 - p.y) * 0.5);\n"  /* y flipped: the scene's top row to the window's top */
+        "    gl_Position = vec4(p, 0.0, 1.0);\n}\n";
+    static const char *fs = "#version 330 core\nin vec2 vUv;\nout vec4 o;\nuniform sampler2D tex;\nuniform vec2 uvScale;\n"
+        "void main() { o = texture(tex, vUv * uvScale); }\n";
+    GLuint v = compile(GL_VERTEX_SHADER, vs, "present.vs"), f = compile(GL_FRAGMENT_SHADER, fs, "present.fs"), p;
+    GLint ok = 0;
+    p = glCreateProgram();
+    glAttachShader(p, v);
+    glAttachShader(p, f);
+    glLinkProgram(p);
+    glGetProgramiv(p, GL_LINK_STATUS, &ok);
+    if (!ok) {
+        fprintf(stderr, "bt3: gl: present link FAILED\n");
+        exit(1);
+    }
+    glDeleteShader(v);
+    glDeleteShader(f);
+    glUseProgram(p);
+    glUniform1i(glGetUniformLocation(p, "tex"), 0);
+    glUniform2f(glGetUniformLocation(p, "uvScale"), 512.0f / (float)GS_W, 448.0f / (float)GS_H);
+    return p;
+}
+
 /* ---- state -------------------------------------------------------------------------------------- */
 static SDL_Window *sWindow;
 static SDL_GLContext sCtx;
 static GLuint sMainProg[4]; /* gs.vert / vu0 / vu4 / vu6 + gs.frag */
-static GLuint sOutlineProg, sKeyProg, sDclutProg;
+static GLuint sOutlineProg, sKeyProg, sDclutProg, sPresentProg;
 static GLuint sVaoGs, sVaoVu, sVboGs, sVboVu;
 static GLuint sSamplers[8];
 static GLuint sWhite;
@@ -577,6 +608,7 @@ static int gl_init(void) {
     sOutlineProg = make_program(kFxVertGlsl, kOutlineFragGlsl, "outline", sOneSampler, 1);
     sKeyProg = make_program(kFxVertGlsl, kAlphakeyFragGlsl, "alphakey", sOneSampler, 1);
     sDclutProg = make_program(kFxVertGlsl, kDclutFragGlsl, "dclut", sDclutSamplers, 3);
+    sPresentProg = make_present_program();
 
     glGenBuffers(1, &sVboGs);
     glBindBuffer(GL_ARRAY_BUFFER, sVboGs);
@@ -817,16 +849,20 @@ static void frame_end(void) {
                 SDL_GetWindowSize(sWindow, &ww, &wh);
                 fprintf(stderr, "gl: present window %dx%d pixels %dx%d aspect %d -> picture %dx%d at (%d,%d)\n", ww, wh, sw, sh, Port_AspectMilli(), w, h, dx, dy);
             }
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, sTgFbo[best]);
-            glReadBuffer(GL_COLOR_ATTACHMENT0);
-            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-            /* src row 0 (the scene's top) to the window's top: the destination y range is inverted */
-            glBlitFramebuffer(0, 0, 512 * SCALE, 448 * SCALE, dx, dy + h, dx + w, dy, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-            glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+            glViewport(dx, dy, w, h);
+            glDisable(GL_SCISSOR_TEST);
+            glDisable(GL_DEPTH_TEST);
+            glDisable(GL_BLEND);
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            glUseProgram(sPresentProg);
+            glBindVertexArray(sVaoGs); /* core profile needs a bound VAO to draw (the present uses no attributes) */
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, sTgCol[best]);
+            glBindSampler(0, sSamplers[7]); /* linear, clamped */
+            glDrawArrays(GL_TRIANGLES, 0, 3);
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
     }
-    SDL_GL_SwapWindow(sWindow);
     /* BT3_GL_WINSHOT=<n>: dump the window's own framebuffer every n frames (what the user sees) */
     if (getenv("BT3_GL_WINSHOT") != NULL && atoi(getenv("BT3_GL_WINSHOT")) > 0 && (int)gGsFrame % atoi(getenv("BT3_GL_WINSHOT")) == 0) {
         int sw, sh, x, y;
@@ -851,6 +887,7 @@ static void frame_end(void) {
         }
         free(wp);
     }
+    SDL_GL_SwapWindow(sWindow);
     if (getenv("BT3_GS_VERBOSE") != NULL) {
         GLenum e = glGetError();
         if (e != GL_NO_ERROR) { fprintf(stderr, "bt3: gl: frame error 0x%x\n", e); }
