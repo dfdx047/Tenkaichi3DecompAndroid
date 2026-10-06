@@ -18,9 +18,15 @@ typedef struct PortVideo {
     int texPackCount; /* read only: replacement textures found in the textures folder */
 } PortVideo;
 
-/* gs_gpu.c */
+/* gs_draw.c */
 void GsGpu_GetSettings(PortVideo *v);
 void GsGpu_SetSettings(const PortVideo *v); /* applies what changed and saves it */
+/* gs_draw.c: the one window both back ends share (created before the device / the GL context). */
+SDL_Window *GsDraw_WindowCreate(int opengl);
+SDL_Window *GsDraw_Window(void);
+void GsDraw_WindowShape(void);
+void GsDraw_FullscreenSet(int on);
+void GsDraw_FullscreenToggle(void); /* F11: switch, save it, write the settings */
 
 /* gs_input.c: bindings of both players. Actions 0..15 are the pad's buttons, 16..23 the two sticks' directions. */
 #define PORT_ACTIONS 24

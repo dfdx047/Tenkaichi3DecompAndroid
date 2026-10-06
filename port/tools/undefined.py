@@ -137,6 +137,15 @@ def main():
                 print("FAILED shader", src.name, r.stderr[:300])
                 continue
         arrays.append(f"static const unsigned char {name}[] = {{" + ",".join(str(b) for b in spv.read_bytes()) + "};\n")
+    # The GL back end (gs_gl.c) compiles the GLSL at run time (it translates Vulkan GLSL to GL 3.3 the way
+    # port/tools/glprobe.c proved), so the sources are embedded here too, NUL-terminated.
+    for src in sorted((ROOT / "port/src/gs/shaders").glob("*")):
+        if src.suffix not in (".vert", ".frag"):
+            continue
+        stage = src.suffix[1:]
+        name = "k" + src.stem.capitalize() + stage.capitalize() + "Glsl"
+        data = src.read_bytes() + b"\0"
+        arrays.append(f"static const unsigned char {name}[] = {{" + ",".join(str(b) for b in data) + "};\n")
     (gen / "shaders.h").write_text("/* generated from port/src/gs/shaders by port/tools/undefined.py */\n" + "".join(arrays))
     for f in sorted((ROOT / "port/src/gs").glob("*.c")):
         o = OBJ / ("gs_" + f.stem + ".o")
