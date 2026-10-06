@@ -319,3 +319,14 @@ same pack / movie / text formats as the PS2 with the byte order swapped; picture
   between sound on and off, the generator's state included. To come: a fight with hits, one view against two
   views, a stage with the haze effect (which draws from the same generator, see above), ki and the fighters'
   action states in the checksum.
+- **session6** (the user's recording with hits: health 40000 / 30000 -> 37420 / 16770 in 29 steps, split screen,
+  played with `BT3_MENU_ITEM4=0 BT3_NOMOVIE=1`): the fight values are identical for about 16,000 blanks of fighting
+  between 4:3, 16:9 and 21:9 and between sound on and off.
+- **Open: the checksum of everything is not always the same between runs with the same settings.** Seen on
+  session6: the runs fall into groups. Runs made up to about 22:49 agree with each other (one of them leaves the
+  others at blank 13,518); runs made from about 22:55 agree with each other and differ from the first group from
+  blank 4,658 on. The fight values are identical in all of them. Ruled out: the save file (unchanged, and a fresh
+  copy per run changes nothing), a busy against an idle machine (same result), the controllers' state (constant
+  in the port), a clock (nothing reads one). Not found: what changed between the groups. To do: keep a memory
+  dump at blank 4,658 of every run so that the next time two groups appear they can be compared byte by byte.
+  This matters for rollback (the whole memory is restored and re-run), not for the comparison between players.
