@@ -487,3 +487,6 @@ cut (skip the vertex work, keep the uploads) when rollback is in.
   blanks run (after the frame limiter's clock values were taken out of the state: PORT_HOST).
 - Not tried: the lobby window itself (the buttons were not clicked in a test: the session was started with the
   variables it sets), a fight from this flow with real controllers, leaving, the Windows program.
+- The user's test of the whole flow by hand (two windows on one machine, 2026-10-07): Host / Join in the lobby,
+  both restart into the character select, a fight that stays in step, and on leaving to the main menu both
+  copies start again as the normal game. Works as built.
