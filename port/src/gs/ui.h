@@ -50,6 +50,15 @@ void Ui_Toggle(void);
 void Ui_Draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target);      /* builds and draws this frame's window */
 void Ui_DrawAgain(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target); /* the same picture onto another texture */
 
+/* Stage-name overlay: the names of stages added from outside the disc are drawn by the port (its font has no
+   stylized glyphs), over the picture, in the game's own coordinates. gs_gpu.c fills the present rectangle (the
+   letterboxed 512x448 picture in window pixels); the game's menu fills the name's rectangle (game pixels) and
+   which strip image to show, each frame it draws a stage name. ui.cpp combines them. */
+extern volatile int gUiPresentX, gUiPresentY, gUiPresentW, gUiPresentH; /* window pixels */
+extern volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;            /* game pixels */
+extern volatile int gUiNameIdx;   /* strip image to show; < 0 = none */
+extern volatile int gUiNameReady; /* 1 when the name strip was loaded (else the game prints with its own font) */
+
 #ifdef __cplusplus
 }
 #endif

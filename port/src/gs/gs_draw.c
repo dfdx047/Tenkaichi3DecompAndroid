@@ -26,6 +26,13 @@
 #include "gs_texpack.h" /* texture packs (replacement textures) */
 #include <math.h>
 
+/* Stage-name overlay: defined here (C) so both the renderer (gs_gpu.c) and the game's menu (menu_c_e.c) can
+   reach them without C++ name mangling. Where they mean is in ui.h. */
+volatile int gUiPresentX, gUiPresentY, gUiPresentW, gUiPresentH;
+volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;
+volatile int gUiNameIdx = -1;
+volatile int gUiNameReady;
+
 extern int Port_Setting(const char *name, int def); /* plat_settings.c: the saved settings */
 extern void Port_SettingSave(const char *name, int value);
 extern int Port_IsWide(void);   /* plat_stub.c */

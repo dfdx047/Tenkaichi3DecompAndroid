@@ -182,6 +182,14 @@ s32 BtlLoad_StepStageReload(BtlJob *job) {
         break;
     case 1:
         BtlLoad_BeginStageSwap();
+#ifdef PORT
+        /* PC build: a stage added from outside the disc (id 0x24 on) has one model only, and the file id its
+           split-screen model would have belongs to other files (the menu archives, the stage transitions): it
+           is loaded for split screen too. The disc's own stages keep their lighter split-screen model. */
+        if (Battle_GetStage() >= 0x24) {
+            id = Battle_GetStage() + BTL_FILE_STAGE;
+        } else
+#endif
         if (Battle_IsSplitScreen()) {
             id = Battle_GetStage() + BTL_FILE_STAGE_SPLIT;
         } else {
@@ -525,6 +533,12 @@ s32 BtlLoad_StepInitial(BtlJob *job) {
                 memset(m->buf[1], 0, BTL_MEMBER_BUF_SIZE);
             }
         }
+#ifdef PORT
+        /* PC build: see the note in the stage-swap job: an added stage has one model, for split screen too. */
+        if (Battle_GetStartStage() >= 0x24) {
+            id = Battle_GetStartStage() + BTL_FILE_STAGE;
+        } else
+#endif
         if (Battle_IsSplitScreen()) {
             id = Battle_GetStartStage() + BTL_FILE_STAGE_SPLIT;
         } else {

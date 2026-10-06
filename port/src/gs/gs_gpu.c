@@ -901,6 +901,10 @@ static void vk_frame_end(void) {
         bl.load_op = SDL_GPU_LOADOP_CLEAR;
         bl.filter = SDL_GPU_FILTER_LINEAR;
         SDL_BlitGPUTexture(cmd, &bl);
+        gUiPresentX = (int)bl.destination.x; /* the stage-name overlay maps game pixels through this rectangle */
+        gUiPresentY = (int)bl.destination.y;
+        gUiPresentW = (int)bl.destination.w;
+        gUiPresentH = (int)bl.destination.h;
         Ui_Draw(cmd, swap);
         {   /* BT3_UI_SHOT=<frame>:<file.ppm>: the window's picture with the settings window on it, for checking
                 the settings window without a person or a screen capture (drawn a second time into a texture) */

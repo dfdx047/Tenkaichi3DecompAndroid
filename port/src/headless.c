@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "plat_stages.h"
 
 extern void Battle_ClearWork(void);
 extern int BattleReplay_Load(void *buf, int size);
@@ -44,9 +45,58 @@ extern int Port_NetWarp(void);
 extern void Port_NetArrived(void);
 extern struct { int unk0[2]; int loadPack, loadRes, loadSprites; int flags; int mode; } GAME_PTR gProgress; /* include/menu/menu_a.h */
 static int sNetEntered;
+/* Extra stage ids (BT3_STAGE_REPLACE="0x1b=0x24,0x23=0x25"): the menus swap the id in a stage-list slot for a
+   map added from outside the disc. Parsed here, in a port file where pointers are the host's; the game code reads
+   the result from these globals. (A getenv result cannot be used inside the game code: its 64-bit pointer would
+   be truncated to the game's 32-bit ones.) The grid is a fixed 6x6, so the list cannot grow: a slot is reused. */
+int gPortStageReplaceCount;
+int gPortReplaceOld[16];
+int gPortReplaceNew[16];
+
+static void port_stage_replace_init(void) {
+    static int done;
+    const char *p;
+    if (done) {
+        return;
+    }
+    done = 1;
+    p = getenv("BT3_STAGE_REPLACE");
+    while (p != NULL && *p != '\0' && gPortStageReplaceCount < 16) {
+        char *end;
+        long old = strtol(p, &end, 0);
+        long nw;
+        if (end == p) {
+            break;
+        }
+        p = end;
+        while (*p == ' ') {
+            p++;
+        }
+        if (*p == '=') {
+            p++;
+        }
+        while (*p == ' ') {
+            p++;
+        }
+        nw = strtol(p, &end, 0);
+        if (end == p) {
+            break;
+        }
+        p = end;
+        gPortReplaceOld[gPortStageReplaceCount] = (int)old;
+        gPortReplaceNew[gPortStageReplaceCount] = (int)nw;
+        gPortStageReplaceCount++;
+        while (*p == ',' || *p == ' ') {
+            p++;
+        }
+    }
+}
 
 int __wrap_Progress_Main(int arg) {
-    const char *path = getenv("BT3_REPLAY");
+    const char *path;
+    PortStages_Init();
+    port_stage_replace_init();
+    path = getenv("BT3_REPLAY");
 
     if (path == NULL && getenv("BT3_DEMO") == NULL) {
         {

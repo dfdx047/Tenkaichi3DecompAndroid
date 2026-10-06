@@ -32,9 +32,21 @@ static int slot_of(const char *rel) {
             return i;
         }
     }
-    /* a file under mods/ wins over the original */
-    snprintf(path, sizeof(path), "%s/mods/%s", Port_FileRoot(), rel);
-    fp = fopen(path, "rb");
+    {
+        /* a stage added from outside the disc: the game asks for a file id past the disc's own, and the file is
+           the one the stage list names (plat_stages.c), under the data folder */
+        extern int PortStages_Alias(const char *rel, char *out, unsigned n);
+        char target[256];
+        fp = NULL;
+        if (PortStages_Alias(rel, target, (unsigned)sizeof(target))) {
+            snprintf(path, sizeof(path), "%s/%s", Port_FileRoot(), target);
+            fp = fopen(path, "rb");
+        }
+    }
+    if (fp == NULL) { /* a file under mods/ wins over the original */
+        snprintf(path, sizeof(path), "%s/mods/%s", Port_FileRoot(), rel);
+        fp = fopen(path, "rb");
+    }
     if (fp == NULL) {
         snprintf(path, sizeof(path), "%s/%s", Port_FileRoot(), rel);
         fp = fopen(path, "rb");

@@ -3,6 +3,12 @@
 #include "menu/menu_f.h"
 #include "sys/pad.h"
 #include "sys/save.h"
+#ifdef PORT
+/* include/battle/view_a.h holds these; repeated here (pulling it in clashes with the menu headers). The PC build
+   moves the locked / empty markers up so added stages keep their own ids. */
+#define STGGRID_ID_LOCKED 0x3E
+#define STGGRID_ID_EMPTY 0x3F
+#endif
 
 /*
  * TeamSel: the team character / stage / music select of the versus modes, 0x348D78..0x351C38. One object,
@@ -117,7 +123,15 @@ void TeamSel_SetStageChips(void) {
 
         gTeamSel->stage->chip[1][i] = gTeamSel->stage->chip[0][i];
         gTeamSel->stage->chip[0][i] = id;
+#ifdef PORT
+        /* PC build: the markers moved up, so they keep the locked / empty icons (37, 38). */
+        {
+            s32 icon = id == STGGRID_ID_LOCKED ? 37 : (id == STGGRID_ID_EMPTY ? 38 : id + 1);
+            res = (MTexRes *)MPACK_AT(gTeamSel->stagePack, icon);
+        }
+#else
         res = (MTexRes *)MPACK_AT(gTeamSel->stagePack, id + 1);
+#endif
         gTeamSel->tex[41 + i] = gTeamSel->tex[slot[i]];
         gTeamSel->tex[slot[i]] = res->tex;
     }

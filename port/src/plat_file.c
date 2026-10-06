@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "plat_stages.h"
 
 #define SECTOR 2048
 enum { STAT_STOP = 1, STAT_READING = 2, STAT_READEND = 3, STAT_ERROR = 4 };
@@ -39,6 +40,40 @@ static const char *root(void) {
     return r != NULL ? r : "gamedata";
 }
 const char *Port_FileRoot(void) { return root(); }
+
+/* BT3_FILE_ALIAS="rel=target;rel=target": a file the game asks for (its path under the data root) served from
+   somewhere else. A missing archive entry (a new id) gets a host file this way. The manifest of added stages
+   (port/plat_stages.c) is checked first. */
+static const char *alias_target(const char *rel) {
+    static char buf[512];
+    const char *list = getenv("BT3_FILE_ALIAS");
+    const char *p, *eq, *end;
+    size_t rl = strlen(rel);
+
+    if (PortStages_Alias(rel, buf, sizeof(buf))) {
+        return buf;
+    }
+    if (list == NULL) {
+        return NULL;
+    }
+    for (p = list; *p != '\0'; p = end + 1) {
+        eq = strchr(p, '=');
+        end = strchr(p, ';');
+        if (eq == NULL || (end != NULL && eq > end)) {
+            if (end == NULL) break;
+            continue;
+        }
+        if ((size_t)(eq - p) == rl && strncmp(p, rel, rl) == 0) {
+            size_t n = end != NULL ? (size_t)(end - (eq + 1)) : strlen(eq + 1);
+            if (n >= sizeof(buf)) n = sizeof(buf) - 1;
+            memcpy(buf, eq + 1, n);
+            buf[n] = '\0';
+            return buf;
+        }
+        if (end == NULL) break;
+    }
+    return NULL;
+}
 
 static PortFile *open_rel(const char *rel) {
     PortFile *f;

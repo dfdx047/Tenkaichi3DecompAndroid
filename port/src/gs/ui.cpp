@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlgpu3.h"
@@ -29,6 +30,103 @@ static bool sNet;                              // the open window is the online 
 static int sForceTab = -1;                     // BT3_UI_OPEN=<tab>: open at start on that tab (testing)
 static int sCapKind, sCapPlayer, sCapAction;   // waiting for a key (1) or a controller button (2) to bind
 static SDL_GPUDevice *sDevice;
+
+/* The stage-name strip (gamedata/stages/names.rgba): the names of stages added from outside the disc, drawn in
+   the menu's own style (the port's own texture, one image per name, stacked). Raw RGBA, 12-byte header. */
+static SDL_GPUTexture *sNameTex;
+static uint32_t sNameW, sNameH, sNameCount;
+
+static uint8_t *read_name_strip(const char *path, size_t *bytes, uint32_t *w, uint32_t *h, uint32_t *count) {
+    FILE *fp = fopen(path, "rb");
+    uint32_t hdr[3];
+    uint8_t *pix;
+
+    if (fp == NULL) {
+        return NULL;
+    }
+    if (fread(hdr, sizeof(hdr), 1, fp) != 1 || hdr[0] == 0 || hdr[1] == 0 || hdr[2] == 0) {
+        fclose(fp);
+        return NULL;
+    }
+    *w = hdr[0];
+    *h = hdr[1];
+    *count = hdr[2];
+    *bytes = (size_t)hdr[0] * hdr[1] * hdr[2] * 4;
+    pix = (uint8_t *)malloc(*bytes);
+    if (pix == NULL || fread(pix, 1, *bytes, fp) != *bytes) {
+        free(pix);
+        fclose(fp);
+        return NULL;
+    }
+    fclose(fp);
+    return pix;
+}
+
+static void load_name_strip(void) {
+    static const char *paths[] = {NULL, "gamedata/stages/names.rgba", "names.rgba"};
+    uint8_t *pix = NULL;
+    size_t bytes = 0;
+    uint32_t i;
+
+    paths[0] = getenv("BT3_STAGE_NAMES");
+    for (i = 0; i < sizeof(paths) / sizeof(paths[0]) && pix == NULL; i++) {
+        if (paths[i] != NULL) {
+            pix = read_name_strip(paths[i], &bytes, &sNameW, &sNameH, &sNameCount);
+        }
+    }
+    if (pix == NULL) {
+        return;
+    }
+    {
+        SDL_GPUTextureCreateInfo ci;
+        SDL_GPUTransferBufferCreateInfo tbi;
+        SDL_GPUTransferBuffer *tb;
+        SDL_GPUCommandBuffer *cmd;
+        SDL_GPUCopyPass *cp;
+        SDL_GPUTextureTransferInfo src;
+        SDL_GPUTextureRegion dst;
+        void *map;
+
+        SDL_zero(ci);
+        ci.type = SDL_GPU_TEXTURETYPE_2D;
+        ci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+        ci.width = sNameW;
+        ci.height = sNameH * sNameCount;
+        ci.layer_count_or_depth = 1;
+        ci.num_levels = 1;
+        ci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+        sNameTex = SDL_CreateGPUTexture(sDevice, &ci);
+        if (sNameTex == NULL) {
+            free(pix);
+            return;
+        }
+        SDL_zero(tbi);
+        tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        tbi.size = (Uint32)bytes;
+        tb = SDL_CreateGPUTransferBuffer(sDevice, &tbi);
+        map = SDL_MapGPUTransferBuffer(sDevice, tb, false);
+        memcpy(map, pix, bytes);
+        SDL_UnmapGPUTransferBuffer(sDevice, tb);
+        free(pix);
+        cmd = SDL_AcquireGPUCommandBuffer(sDevice);
+        cp = SDL_BeginGPUCopyPass(cmd);
+        SDL_zero(src);
+        src.transfer_buffer = tb;
+        src.pixels_per_row = sNameW;
+        src.rows_per_layer = sNameH * sNameCount;
+        SDL_zero(dst);
+        dst.texture = sNameTex;
+        dst.w = sNameW;
+        dst.h = sNameH * sNameCount;
+        dst.d = 1;
+        SDL_UploadToGPUTexture(cp, &src, &dst, false);
+        SDL_EndGPUCopyPass(cp);
+        SDL_SubmitGPUCommandBuffer(cmd);
+        SDL_ReleaseGPUTransferBuffer(sDevice, tb);
+        gUiNameReady = 1;
+        fprintf(stderr, "bt3: stage-name overlay: %u names, %ux%u each\n", sNameCount, sNameW, sNameH);
+    }
+}
 
 static void style() {
     ImGuiStyle &st = ImGui::GetStyle();
@@ -104,6 +202,7 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context) {
     }
     sDevice = device;
     sReady = true;
+    load_name_strip(); /* the stage-name overlay; gUiNameReady stays 0 if there is no strip */
     if (getenv("BT3_UI_OPEN") != NULL) {
         sForceTab = atoi(getenv("BT3_UI_OPEN"));
         if (sForceTab == 9) { // testing: the online screen
@@ -552,7 +651,7 @@ void Ui_DrawAgain(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
     SDL_GPUColorTargetInfo ti;
     SDL_GPURenderPass *pass;
 
-    if (dd == NULL || dd->DisplaySize.x <= 0.0f || dd->DisplaySize.y <= 0.0f) {
+    if (dd == NULL || dd->CmdListsCount == 0 || dd->DisplaySize.x <= 0.0f || dd->DisplaySize.y <= 0.0f) {
         return;
     }
     ImGui_ImplSDLGPU3_PrepareDrawData(dd, cmd);
@@ -591,8 +690,11 @@ static bool frame_build(void) {
         sNoticeUntil = SDL_GetTicks() + 6000;
         notice = sNotice[0] != '\0';
     }
+    // the name of a stage added from outside the disc, over the stage select (a strip of pre-rendered names;
+    // the SDL GPU back end only for now: under OpenGL the game writes the name with its own font)
+    bool overlay = !sGL && gUiNameReady != 0 && gUiNameIdx >= 0 && gUiNameIdx < (int)sNameCount;
     sBuilt = false;
-    if (!sReady || (!sOpen && !notice)) {
+    if (!sReady || (!sOpen && !notice && !overlay)) {
         return false;
     }
     sBuilt = true;
@@ -619,6 +721,20 @@ static bool frame_build(void) {
             ImGui::TextUnformatted(sNotice);
         }
         ImGui::End();
+    }
+    if (overlay && gUiPresentW > 0 && gUiPresentH > 0) {
+        /* The name's rectangle is in the game's 512x448 pixels: map it through the picture's rectangle in the
+           window (the letterbox gs_gpu.c just blitted into). */
+        float sx = (float)gUiPresentW / 512.0f;
+        float sy = (float)gUiPresentH / 448.0f;
+        float x = (float)gUiPresentX + (float)gUiNameX * sx;
+        float y = (float)gUiPresentY + (float)gUiNameY * sy;
+        float w = (float)gUiNameW * sx;
+        float h = (float)gUiNameH * sy;
+        ImVec2 uv0(0.0f, (float)gUiNameIdx / (float)sNameCount);
+        ImVec2 uv1(1.0f, (float)(gUiNameIdx + 1) / (float)sNameCount);
+        ImGui::GetForegroundDrawList()->AddImage(ImTextureRef((ImTextureID)(intptr_t)sNameTex),
+                                                 ImVec2(x, y), ImVec2(x + w, y + h), uv0, uv1);
     }
     ImGui::Render();
     return true;

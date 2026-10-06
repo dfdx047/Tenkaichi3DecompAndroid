@@ -3,6 +3,21 @@
 #include "sys/common.h"
 #include "sys/pad.h"
 #include "sys/save.h"
+#ifdef PORT
+#include "battle/col_c.h" /* FontStyle / FONT_ALIGN_* / FONT_SHADOW_*, for the names of added stages */
+#include "plat_stages.h"  /* the manifest of added stages: their ids, names and file aliases */
+#include <stdio.h>
+#include <stdlib.h>
+/* include/battle/view_a.h holds these, but pulling it in clashes with menu_d.h (MsgWin_Init); the values are
+   fixed, so they are repeated here for the stage list of the PC build. */
+#define STGGRID_COLS 6
+#define STGGRID_ID_LOCKED 0x3E
+#define STGGRID_ID_EMPTY 0x3F
+/* The port's stage-name overlay (port/src/gs/ui.cpp / gs_draw.c): the names of added stages are drawn by the
+   port, over the picture, from its own stylized art. The menu only fills the name's rectangle and which image. */
+extern volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;
+extern volatile int gUiNameIdx, gUiNameReady;
+#endif
 
 /*
  * CharSel, 0x342190..0x348D78: the character / stage / music select of the versus modes (progress modes 38..41
@@ -72,7 +87,25 @@ void CharSel_SetStageChips(void) {
 
         gCharSel->stage->chip[1][i] = gCharSel->stage->chip[0][i];
         gCharSel->stage->chip[0][i] = id;
+#ifdef PORT
+        /* PC build: the icon pack holds one icon per stage plus the locked and empty ones (37, 38). A map added
+           from outside the disc (id >= 0x24) borrows an icon; the markers keep theirs even though they moved up. */
+        {
+            s32 icon;
+            if (id == STGGRID_ID_LOCKED) {
+                icon = 37;
+            } else if (id == STGGRID_ID_EMPTY) {
+                icon = 38;
+            } else if (id >= 0x24) {
+                icon = 1 + (id - 0x24) % 36;
+            } else {
+                icon = id + 1;
+            }
+            res = (MTexRes *)MPACK_AT(gCharSel->stagePack, icon);
+        }
+#else
         res = (MTexRes *)MPACK_AT(gCharSel->stagePack, id + 1);
+#endif
         gCharSel->tex[41 + i] = gCharSel->tex[slot[i]];
         gCharSel->tex[slot[i]] = res->tex;
     }
@@ -244,7 +277,7 @@ void CharSel_UpdateStageLoad(void) {
         break;
     case CHARSEL_LOAD_REQUEST:
         File_CancelRequests();
-        File_Request(gCharSel->stage->stage + CHARSEL_STAGE_FILE, gCharSel->stageFile, 0x3B800);
+        File_Request(CHARSEL_STAGE_FILE_ID(gCharSel->stage->stage), gCharSel->stageFile, 0x3B800);
         gCharSel->stageState = CHARSEL_LOAD_READ;
         break;
     case CHARSEL_LOAD_READ:
@@ -488,8 +521,63 @@ void CharSel_Init(s32 section) {
 
     gCharSel->stageIds = (s32 *)(MPACK_AT(gCharSel->res, 39) + 0x10);
     gCharSel->stageCount = MPACK_WORD(gCharSel->res, 39);
+#ifdef PORT
+    {
+        /* PC build: append stage ids for maps added from outside the disc (BT3_EXTRA_STAGES) and, optionally, swap
+           the id in a slot (BT3_STAGE_REPLACE). Their model/sound/picture come from BT3_FILE_ALIAS. The ids are
+           parsed in the port layer (headless.c) and read here as globals: a getenv result must not be dereferenced
+           in game code (its host pointer would be truncated to the game's 32-bit ones). The list is copied to a
+           buffer of ours and padded with "empty" cells to fill the last row, because the grid is a reel of rows and
+           it always reads whole rows. Each added id gets its unlock bit set so it shows as selectable. */
+        extern int gPortStageReplaceCount, gPortReplaceOld[16], gPortReplaceNew[16];
+        static s32 sAllIds[64];
+        s32 n = gCharSel->stageCount, i, rows, r;
+        if (n > 64) {
+            n = 64;
+        }
+        for (i = 0; i < n; i++) {
+            sAllIds[i] = gCharSel->stageIds[i];
+        }
+        for (i = 0; i < gPortExtraStageCount && n < 60; i++) {
+            sAllIds[n++] = (s32)gPortExtraStages[i];
+            gSaveData->stageBits |= 1LL << gPortExtraStages[i];
+        }
+        for (r = 0; r < gPortStageReplaceCount; r++) {
+            int k;
+            for (k = 0; k < n; k++) {
+                if (sAllIds[k] == gPortReplaceOld[r]) {
+                    sAllIds[k] = (s32)gPortReplaceNew[r];
+                    gSaveData->stageBits |= 1LL << gPortReplaceNew[r];
+                    break;
+                }
+            }
+        }
+        if (gPortExtraStageCount > 0 || gPortStageReplaceCount > 0) {
+            rows = (n + STGGRID_COLS - 1) / STGGRID_COLS;
+            for (i = n; i < rows * STGGRID_COLS && i < 64; i++) {
+                sAllIds[i] = STGGRID_ID_EMPTY;
+            }
+            gCharSel->stageIds = sAllIds;
+            gCharSel->stageCount = n;
+        }
+    }
+#endif
     StgGrid_ApplyUnlocks(&gCharSel->stageCount, gCharSel->stageIds);
+#ifdef PORT /* PC build: list the stage ids the game loaded, to see what a data pack carries (stages report) */
+    if (getenv("BT3_STAGES_DEBUG") != NULL) {
+        s32 dbg;
+        fprintf(stderr, "stages: count %d, ids:", (int)gCharSel->stageCount);
+        for (dbg = 0; dbg < gCharSel->stageCount; dbg++) {
+            fprintf(stderr, " %02x", (int)(u32)gCharSel->stageIds[dbg]);
+        }
+        fprintf(stderr, "\n");
+    }
+#endif
+#ifdef PORT
+    gCharSel->stageRows = (gCharSel->stageCount + STGGRID_COLS - 1) / STGGRID_COLS;
+#else
     gCharSel->stageRows = 6;
+#endif
     gCharSel->bgmIds = (s32 *)(MPACK_AT(gCharSel->res, 56) + 0x10);
     gCharSel->bgmCount = MPACK_WORD(gCharSel->res, 56);
     BgmList_ApplyUnlocks(&gCharSel->bgmCount, gCharSel->bgmIds);
@@ -563,7 +651,7 @@ void CharSel_Init(s32 section) {
         gCharSel->tex[i != 0 ? 22 : 23] = MTEX(res, 0);
         gCharSel->side[i]->flags |= CHARSEL_SIDE_FACE_READY;
     }
-    File_LoadSync(gCharSel->stage->stage + CHARSEL_STAGE_FILE, gCharSel->stageFile, 0x3B800);
+    File_LoadSync(CHARSEL_STAGE_FILE_ID(gCharSel->stage->stage), gCharSel->stageFile, 0x3B800);
     Sprite_Unpack(gCharSel->stageFile, gCharSel->stageRes[gCharSel->stageBuf], NULL);
     res = gCharSel->stageRes[gCharSel->stageBuf];
     Res_RelocateOffsets(&res, res, res);
@@ -592,6 +680,9 @@ void CharSel_Init(s32 section) {
 void CharSel_Term(void) {
     s32 i;
 
+#ifdef PORT
+    gUiNameIdx = -1; /* drop the port's stage-name overlay */
+#endif
     IconWin_Term();
     ItemHelp_Term();
     ItemPanel_Term(1);
@@ -647,6 +738,9 @@ void CharSel_Draw(void) {
     s32 j;
     MFlash *f;
 
+#ifdef PORT
+    gUiNameIdx = -1; /* set again below only when the cursor is on a stage added from outside the disc */
+#endif
     for (i = 0; i < 2; i++) {
         if (gCharSel->flags & CHARSEL_STAGE_READY) {
             switch (i) {
@@ -701,12 +795,61 @@ void CharSel_Draw(void) {
 
     uv.x0 = 0;
     uv.x1 = 0x200;
+    Flash_FindLabel(f, NULL, "mc_map_name", &ref);
+#ifdef PORT
+    {
+        /* PC build: the movie's name atlas only holds the stages of the disc (0..0x23). A stage added from
+           outside the disc has no name there, so the atlas clip is hidden and the name is printed with the
+           game's own font at the clip's place (the font queue is flushed at the end of this draw). */
+        extern void Flash_ClipGetPos(MFlash *flash, MFlashRef *ref, s32 *x, s32 *y);
+        extern void Font_PrintAsciiAt(s32 x, s32 y, char *str);
+        extern s32 Font_GetGlyphHeight(void);
+        extern FontStyle gFontStyle;
+        s32 nameId = gCharSel->stage->stage;
+
+        if (nameId >= 0x24) {
+            s32 nx, ny;
+            s32 idx = nameId - 0x24;
+            Flash_ClipSetFlags(f, &ref, 2, 0); /* FLASH_PROP_VISIBLE: hide the atlas name */
+            Flash_ClipGetPos(f, &ref, &nx, &ny);
+            if (idx >= 0 && idx < gPortExtraStageCount) {
+                if (gUiNameReady) {
+                    /* The port draws the name (its own art: the menu's stylized font) over the picture. The
+                       rectangle is the clip's, in the game's 512x448 pixels; the strip image is idx. */
+                    gUiNameX = nx + 64;   /* centre the 384-wide strip in the 512-wide clip window */
+                    gUiNameY = ny + 14;
+                    gUiNameW = 0x180;
+                    gUiNameH = 0x30;
+                    gUiNameIdx = idx;
+                } else {
+                    /* No overlay: print the name with the game's own font (its plain UI face), centred on the
+                       strip, in an opaque white with a drop shadow (the style is copied into the command). */
+                    FontStyle saved = gFontStyle;
+                    gFontStyle.align = FONT_ALIGN_CENTER;
+                    gFontStyle.color = 0xFFFFFFFF;
+                    gFontStyle.shadowMode = FONT_SHADOW_DROP;
+                    gFontStyle.shadowColor = 0xC0000000;
+                    gFontStyle.shadowDx = 1;
+                    gFontStyle.shadowDy = 1;
+                    Font_PrintAsciiAt(nx + 0x100, ny + (0x40 - Font_GetGlyphHeight()) / 2, gPortStageNames[idx]);
+                    gFontStyle = saved;
+                }
+            }
+        } else {
+            uv.y0 = (nameId % 4) * 0x40;
+            uv.y1 = uv.y0 + 0x40;
+            uv.unk10 = nameId / 4;
+            Flash_ClipSetUv(f, &ref, &uv);
+            Flash_ClipSetTex(f, &ref, uv.unk10);
+        }
+    }
+#else
     uv.y0 = (gCharSel->stage->stage % 4) * 0x40;
     uv.y1 = uv.y0 + 0x40;
     uv.unk10 = gCharSel->stage->stage / 4;
-    Flash_FindLabel(f, NULL, "mc_map_name", &ref);
     Flash_ClipSetUv(f, &ref, &uv);
     Flash_ClipSetTex(f, &ref, uv.unk10);
+#endif
     Flash_FindLabel(f, NULL, "mc_map_mask", &ref);
     if (gCharSel->stage->mask != 0) {
         Flash_ClipSetFlags(f, &ref, 0x102, 1);
