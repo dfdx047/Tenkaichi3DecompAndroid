@@ -37,6 +37,7 @@ int gPortResim; /* gs_internal.h: frames are being re-run, without picture or so
 #define MAX_REGIONS 64
 static struct { const uint8_t *p; size_t n; const char *what; } sRegion[MAX_REGIONS];
 static int sRegions = -1;
+static int sListed; /* the list of the game's variables was found: without it a saved state is not whole */
 
 static void regions_init(void) {
     char exe[1024], path[1100];
@@ -65,6 +66,7 @@ static void regions_init(void) {
                 sRegions++;
             }
             fclose(fp);
+            sListed = sRegions > 0;
         }
     }
     Port_HeapRegion(&heap, &heapSize);
@@ -434,7 +436,7 @@ static char sReqAddr[128];
 void Port_SessionReturn(void);
 
 int Port_SessionCan(void) {
-    return sBootTaken;
+    return sBootTaken > 0;
 }
 
 void Port_SessionRequest(int role, const char *address, int port) {
@@ -446,7 +448,17 @@ void Port_SessionRequest(int role, const char *address, int port) {
 
 /* At the top of every vertical blank, on the game's thread (Port_VBlank). */
 void Port_SessionPoll(void) {
+    if (sBootTaken < 0) {
+        return;
+    }
     if (!sBootTaken) {
+        if (sRegions < 0) {
+            regions_init();
+        }
+        if (!sListed) { /* no whole state without the list: sessions start the program again, as before */
+            sBootTaken = -1;
+            return;
+        }
         sBootTaken = 1;
         if (state_save(&sBoot) != 0) {
             Port_AdxResync(); /* a session begins: this is the game's first blank again; whatever sounded stops */

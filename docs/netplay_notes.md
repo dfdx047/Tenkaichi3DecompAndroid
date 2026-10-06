@@ -563,3 +563,18 @@ Checked (two copies on one machine, `BT3_SESSION_TEST=<role>:<address>:<port>:<b
   addresses the game stores in its own memory differ. Only the fight values were compared.
 - Wine, not a real Windows; one machine (same processor on both sides: nothing here says two different
   processors agree, though the game's arithmetic is the port's own soft-float code and not the processor's).
+
+## The release archives from this branch (2026-10-07)
+
+- The archives lacked `<program>.mem` (the list of the game's variables, `make_state.py`): the program said so and
+  went on with states that held no game variables, so a session "started" without the game going back to its
+  first blank and the two sides never met (15-second time-out). `package.py` now puts the file beside the program
+  (`Tenkaichi3Decomp.mem`, `Tenkaichi3Decomp.exe.mem`) and refuses to package without it; a program that does not
+  find it does sessions the old way (starting itself again).
+- Both archives built in the container, each installed from the disc image with its own setup program
+  (`--install`, the Windows one under Wine; the demo fight self-test passed on both), then the Linux release
+  program hosting and the Windows release program joining, no window: three sessions in one run connected and
+  ended, and after each return each program's state was the same, blank for blank, as its own run that never left.
+- Known: the test hook's own "leave" after a session that had already ended by time-out restores twice and
+  crashed the Windows program (seen once, with the broken archive). `Port_NetLeave` itself is only reached in a
+  session.

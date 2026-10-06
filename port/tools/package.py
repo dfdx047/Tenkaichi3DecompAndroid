@@ -53,6 +53,12 @@ def take_program(exe, out):
     import toolchain
     out.mkdir(parents=True)
     name = NAME + ".exe" if exe.suffix == ".exe" else NAME
+    # where the game's own variables lie in the program (make_state.py, at link time): the program reads it from
+    # beside itself to save and restore its state, which an online session is built on
+    mem = pathlib.Path(str(exe) + ".mem")
+    if not mem.exists():
+        sys.exit(f"missing {mem.name}: link.py makes it")
+    shutil.copy2(mem, out / (name + ".mem"))
     if (toolchain.DATA / "SKELETON").exists():
         dat = pathlib.Path(str(exe)[:-4] + ".dat" if exe.suffix == ".exe" else str(exe) + ".dat")
         if not dat.exists():
