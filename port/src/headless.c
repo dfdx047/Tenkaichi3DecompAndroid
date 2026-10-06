@@ -102,6 +102,13 @@ extern int *BtlSeq_GetClock(void);
 extern int BtlCharApi_GetHp(int objId);
 extern void BtlCharApi_GetPos(int objId, float *out);
 
+/* Main-menu item 4, Dragon Net Battle, was confirmed (src/menu/menu_a.c): the settings code opens the online
+   screen when it sees the request (port/src/gs/ui.cpp). Without a window nothing does. */
+volatile int gPortNetMenuRequest;
+void Port_NetMenuOpen(void) {
+    gPortNetMenuRequest = 1;
+}
+
 /* "Unlock everything" on the Cheats tab of the settings window (port/src/gs/ui.cpp): the game's own leftover debug
    function Save_UnlockAll (0x266088, no caller in the game): every character, stage, music track and item, the
    unlock flags, and the largest amount of Zenni. It changes the save in memory (the records list is emptied too);

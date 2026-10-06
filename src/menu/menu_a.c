@@ -1,5 +1,8 @@
 #include "common.h"
 #include "menu/menu_a.h"
+#ifdef PORT
+extern void Port_NetMenuOpen(void);
+#endif
 #include "sys/pad.h"
 #include "sys/save.h"
 
@@ -132,9 +135,11 @@ void MainMenu_Init(s32 section) {
 
     for (i = 0; i < MAINMENU_ITEM_MAX; i++) {
 #ifdef PORT
-        /* Item 4 is the one entry the PS2 game never lists (it has a plate and a label of its own in the menu's
-           pictures, and no mode behind it). BT3_MENU_ITEM4=1 lists it, to look at it. */
-        if (i == 4 && getenv("BT3_MENU_ITEM4") == NULL) {
+        /* Item 4, "Dragon Net Battle", is the one entry the PS2 game never lists: it has its plate, label, icon and
+           the guides' voiced lines on the disc, and no mode behind it (the Wii version's online mode). The port
+           lists it: it is the way into online play. BT3_MENU_ITEM4=0 hides it again (the pad recordings made
+           before it was listed count on the old menu). */
+        if (i == 4 && getenv("BT3_MENU_ITEM4") != NULL && atoi(getenv("BT3_MENU_ITEM4")) == 0) {
             continue;
         }
 #else
@@ -442,6 +447,9 @@ void MainMenu_Input(s32 *result) {
             MAINMENU_COUNT();
             break;
         case 4:
+#ifdef PORT
+            Port_NetMenuOpen(); /* the port's own screen for online play (port/src/gs/ui.cpp); the menu stays where it is */
+#endif
             break;
         case 5:
             MAINMENU_COUNT();

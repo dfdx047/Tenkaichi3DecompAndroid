@@ -9,7 +9,9 @@
 #include "imgui_impl_sdlgpu3.h"
 #include "ui.h"
 
+extern "C" { extern volatile int gPortNetMenuRequest; }
 static bool sReady, sOpen;
+static bool sNet;                              // the open window is the online screen (Dragon Net Battle), not the settings
 static int sForceTab = -1;                     // BT3_UI_OPEN=<tab>: open at start on that tab (testing)
 static int sCapKind, sCapPlayer, sCapAction;   // waiting for a key (1) or a controller button (2) to bind
 static SDL_GPUDevice *sDevice;
@@ -83,6 +85,10 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device) {
     sReady = true;
     if (getenv("BT3_UI_OPEN") != NULL) {
         sForceTab = atoi(getenv("BT3_UI_OPEN"));
+        if (sForceTab == 9) { // testing: the online screen
+            sForceTab = -1;
+            gPortNetMenuRequest = 1;
+        }
         sOpen = true;
         gPortOverlayOpen = 1;
     }
@@ -91,9 +97,70 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device) {
 
 static void set_open(bool open) {
     sOpen = open;
+    sNet = false;
     sCapKind = 0;
     gPortInputCapture = 0;
     gPortOverlayOpen = open;
+}
+
+// Dragon Net Battle: the screen behind the main menu's entry. For now only its shape: what a player fills in to
+// host or join. Nothing is sent anywhere yet.
+extern "C" {
+extern volatile int gPortNetMenuRequest;
+}
+
+static void net_open(void) {
+    set_open(true);
+    sNet = true;
+    gPortInputCapture = 1; // the game takes no input at all while this is open (it sits on the main menu behind it)
+}
+
+static void build_net(void) {
+    static char name[17] = "Player", address[64] = "", port[8] = "7000";
+    static int tab;
+    ImGuiIO &io = ImGui::GetIO();
+    bool open = true;
+
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(560.0f, 0.0f), ImGuiCond_Appearing);
+    if (ImGui::Begin("Dragon Net Battle", &open, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped("Fight a player on another computer. One of you hosts, the other joins with the host's address.");
+        ImGui::Spacing();
+        ImGui::SetNextItemWidth(260.0f);
+        ImGui::InputText("Player name", name, sizeof(name));
+        ImGui::Spacing();
+        if (ImGui::BeginTabBar("net")) {
+            if (ImGui::BeginTabItem("Host")) {
+                tab = 0;
+                ImGui::SetNextItemWidth(120.0f);
+                ImGui::InputText("Port", port, sizeof(port), ImGuiInputTextFlags_CharsDecimal);
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Join")) {
+                tab = 1;
+                ImGui::SetNextItemWidth(260.0f);
+                ImGui::InputText("Host's address", address, sizeof(address));
+                ImGui::SetNextItemWidth(120.0f);
+                ImGui::InputText("Port", port, sizeof(port), ImGuiInputTextFlags_CharsDecimal);
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }
+        ImGui::Spacing();
+        ImGui::BeginDisabled();
+        ImGui::Button(tab == 0 ? "Host a match" : "Join the match", ImVec2(200.0f, 0.0f));
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (ImGui::Button("Back", ImVec2(120.0f, 0.0f))) {
+            open = false;
+        }
+        ImGui::Spacing();
+        ImGui::TextDisabled("Online play is not built yet: this is the screen it will start from.");
+    }
+    ImGui::End();
+    if (!open) {
+        set_open(false);
+    }
 }
 
 void Ui_Toggle(void) {
@@ -404,13 +471,21 @@ void Ui_DrawAgain(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
 }
 
 void Ui_Draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
+    if (sReady && gPortNetMenuRequest) { // Dragon Net Battle was chosen in the game's main menu
+        gPortNetMenuRequest = 0;
+        net_open();
+    }
     if (!sReady || !sOpen) {
         return;
     }
     ImGui_ImplSDLGPU3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
-    build();
+    if (sNet) {
+        build_net();
+    } else {
+        build();
+    }
     ImGui::Render();
     Ui_DrawAgain(cmd, target);
 }
