@@ -16,12 +16,17 @@
 #define SECTOR 2048
 enum { STAT_STOP = 1, STAT_READING = 2, STAT_READEND = 3, STAT_ERROR = 4 };
 
+/* What the game holds for an open file. Only what can be saved and restored with the game's state: which file, its
+   size, the read position, the status. The host's own file objects are in plat_fcache.c. */
 typedef struct PortFile {
-    FILE *fp;
+    char rel[128];
     int32_t sizeSct;
     int32_t posSct;
     int32_t stat;
 } PortFile;
+
+extern long Port_FileSize(const char *rel); /* plat_fcache.c */
+extern size_t Port_FileReadAt(const char *rel, long offset, void *buf, size_t bytes);
 
 static char sPartDir[8][64];
 char gPortMoviePath[512]; /* host path of the movie file opened last */
@@ -33,28 +38,17 @@ static const char *root(void) {
     const char *r = getenv("BT3_DATA");
     return r != NULL ? r : "gamedata";
 }
+const char *Port_FileRoot(void) { return root(); }
 
 static PortFile *open_rel(const char *rel) {
-    char path[512];
-    FILE *fp;
     PortFile *f;
-    long size;
+    long size = Port_FileSize(rel); /* (says so itself when the file is missing) */
 
-    snprintf(path, sizeof(path), "%s/mods/%s", root(), rel);
-    fp = fopen(path, "rb");
-    if (fp == NULL) {
-        snprintf(path, sizeof(path), "%s/%s", root(), rel);
-        fp = fopen(path, "rb");
-    }
-    if (fp == NULL) {
-        fprintf(stderr, "bt3: file not found: %s\n", path);
+    if (size < 0) {
         return NULL;
     }
-    fseek(fp, 0, SEEK_END);
-    size = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
     f = Port_LowAlloc(sizeof(PortFile)); /* the game keeps the handle in a 4-byte pointer */
-    f->fp = fp;
+    snprintf(f->rel, sizeof(f->rel), "%s", rel);
     f->sizeSct = (int32_t)((size + SECTOR - 1) / SECTOR);
     f->stat = STAT_STOP;
     return f;
@@ -141,8 +135,7 @@ void ADXF_Close(void *h) {
     PortFile *f = h;
 
     if (f != NULL) {
-        fclose(f->fp);
-        Port_LowFree(f);
+        Port_LowFree(f); /* (the host's file stays open for a while: plat_fcache.c) */
     }
 }
 
@@ -158,7 +151,7 @@ int ADXF_ReadNw(void *h, int nsct, void *buf) {
     if (nsct > f->sizeSct - f->posSct) {
         nsct = f->sizeSct - f->posSct;
     }
-    got = fread(buf, 1, (size_t)nsct * SECTOR, f->fp);
+    got = Port_FileReadAt(f->rel, (long)f->posSct * SECTOR, buf, (size_t)nsct * SECTOR);
     memset((uint8_t *)buf + got, 0, (size_t)nsct * SECTOR - got);
     f->posSct += nsct;
     f->stat = STAT_READEND;

@@ -353,3 +353,37 @@ same pack / movie / text formats as the PS2 with the byte order swapped; picture
   kept beside it and every read positioned by the handle; (b) the sound code's bookkeeping that the game can see
   (which players exist, what they report) moved into the state, the audio itself left outside; then the memory
   card layer; then the test again until a whole fight passes.
+
+## Stage 2, continued: the port's layers made rewindable; the test passes a whole session (2026-10-07)
+
+Changes, each found by `BT3_SYNCTEST` and each leaving normal play as it was (the replay's result on all three
+programs, and session6's fight values, are unchanged):
+- **Files** (`plat_file.c`, new `plat_fcache.c`): a handle holds the file's relative path, size, position and
+  status and nothing of the host; the host's `FILE`s are in a cache outside the state (32 files, least recently
+  used closed), every read positioned from the handle.
+- **Memory card** (`plat_mc.c`): the same split (open / mode / path / position are state; the host `FILE` beside
+  it is reopened when it does not fit the state). The write path was not exercised by any test here (saving a
+  game: to be tried by hand).
+- **Stream players** (`gs/snd_adx.c`, new `plat_sndstate.c`): how many players exist is state. With
+  `BT3_SYNCTEST` or `BT3_SOUND_TICKS=1` what a player reports (playing / played to the end) is counted in vertical
+  blanks from the stream's length instead of taken from the sound device: the same on every machine. Normal play
+  keeps the device's answer. On session6 without a sound device the two give the same fight values.
+- **`PORT_HOST`** (`port_host.h`): a variable of a state file that is not state (host file objects, the
+  process's arguments) goes into the section `.porthst`, which `make_state.py` leaves out.
+- **`Port_LowAlloc` clears new blocks**: after a restore the memory above the restored end of its region still
+  held the undone frames' blocks.
+- **The thread library's data at the top of the game thread's stack is not part of a snapshot** (the control
+  block, thread-local variables, the C library's per-thread memory cache): restoring them corrupted the C
+  library's heap (crashes at random places).
+- Test harness: a pad recording opened during the re-run frame is rewound to its start.
+
+**Result (64-bit Linux):**
+- the replay fight without a window: 8,400+ frames each run twice from a saved state, 0 differences, the fight's
+  result unchanged;
+- session6 with the window (menus, loading, the split-screen fight with hits): 25,200 frames each run twice, 0
+  differences; and against a normal run of the same session (15,504 blanks in both) the checksum of everything
+  is the same at every blank.
+
+Not covered: the render thread and sound effects (`gs/snd_se.c`) as far as the game can see them (no difference
+showed, but with `BT3_NOSOUND=1`); the movie player; saving to the memory card; Windows and the 32-bit program
+(the save / restore itself is written for 64-bit Linux only); rewinding more than one frame.

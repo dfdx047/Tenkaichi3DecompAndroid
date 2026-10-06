@@ -15,7 +15,7 @@ import pathlib, re, sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from toolchain import OBJ, DATA, EXE
 
-PORT_STATE = {"headless", "mathf_pc", "plat_file", "plat_libm", "plat_mc", "plat_mem", "plat_stub", "plat_sys", "softfloat_ps2",
+PORT_STATE = {"headless", "mathf_pc", "plat_file", "plat_libm", "plat_mc", "plat_mem", "plat_sndstate", "plat_stub", "plat_sys", "softfloat_ps2",
               "vu0_a", "vu0_b", "gs_marker"}
 WRITABLE = (".data", ".bss", ".sdata", ".sbss", ".ldata", ".lbss", ".tbss", ".tdata")
 

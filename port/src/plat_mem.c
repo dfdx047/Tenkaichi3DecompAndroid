@@ -11,6 +11,7 @@
  *                           written (0 at start: "transfer finished").
  *   0x70000000              the 16 KB scratchpad.
  */
+#include "port_host.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -85,8 +86,8 @@ static void map_heap(void) {
 
 extern int __real_main(int argc, char **argv);
 extern void Port_CallOnStack(void (*fn)(void), void *top);
-static int sArgc, sResult;
-static char **sArgv;
+PORT_HOST static int sArgc = 0, sResult = 0; /* (the process's own arguments: an address on its stack, not game state) */
+PORT_HOST static char **sArgv = NULL;
 
 /* fn() with the stack pointer at `top` (Windows x64 calling convention: fn in rcx, top in rdx). */
 __asm__(".text\n.globl Port_CallOnStack\nPort_CallOnStack:\n"
@@ -168,11 +169,17 @@ static void map_heap(void) {
 #define STACK_BASE 0x02000000u
 #define STACK_SIZE 0x01000000u
 extern int __real_main(int argc, char **argv);
-static int sArgc, sResult;
-static char **sArgv;
+PORT_HOST static int sArgc = 0, sResult = 0; /* (the process's own arguments: an address on its stack, not game state) */
+PORT_HOST static char **sArgv = NULL;
+
+/* Where the game's own part of the thread's stack ends: above this frame lie the thread library's own data for
+   the thread (its control block and thread-local variables are at the top of the stack it was given, among them
+   the C library's per-thread memory cache). Saving and restoring the game's state must leave those alone. */
+static uint8_t *sGameStackTop;
 
 static void *game_thread(void *arg) {
     (void)arg;
+    sGameStackTop = (uint8_t *)__builtin_frame_address(0);
     sResult = __real_main(sArgc, sArgv);
     return NULL;
 }
@@ -377,7 +384,7 @@ int Port_StateExtra(void **p, size_t *n, int max) {
 }
 uint8_t *Port_GameStackTop(void) {
 #if defined(__x86_64__) && !defined(_WIN32)
-    return (uint8_t *)(uintptr_t)(STACK_BASE + STACK_SIZE);
+    return sGameStackTop;
 #else
     return NULL;
 #endif
@@ -538,6 +545,10 @@ void *Port_LowAlloc(size_t size) {
         }
         p = (uint64_t *)sLowNext;
         sLowNext += total;
+        /* cleared: after the game's state was restored to an earlier moment, the memory above the restored end
+           of the region still holds the blocks of the frames that were undone (a file handle with its read
+           position, which made the re-run frame's read loop spin for ever) */
+        memset(p, 0, total);
     }
     p[0] = total;
     __sync_lock_release(&sLowLock);

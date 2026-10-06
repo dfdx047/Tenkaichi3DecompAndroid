@@ -47,7 +47,51 @@ typedef struct Player {
 } Player;
 
 static Player sPlayers[MAX_PLAYERS];
-static int sCount;
+
+/* plat_sndstate.c: which players exist and, counted in vertical blanks, what they report: the part of this that is
+   the game's state. The second is used when the state must not depend on the sound device (sByTicks). */
+typedef struct PortAdxView { int stat, paused, left; } PortAdxView;
+extern int gPortAdxCount;
+extern PortAdxView gPortAdxView[MAX_PLAYERS];
+
+static int by_ticks(void) {
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("BT3_SYNCTEST") != NULL || getenv("BT3_SOUND_TICKS") != NULL;
+    }
+    return on;
+}
+
+/* The length of an ADX file in vertical blanks (59.94 a second), -1 if it loops, 0 if it cannot be read. */
+static int adx_blanks(const char *path) {
+    uint8_t h[0x40];
+    FILE *fp = fopen(path, "rb");
+    size_t got;
+    uint32_t header, rate, total;
+
+    if (fp == NULL) {
+        return 0;
+    }
+    got = fread(h, 1, sizeof(h), fp);
+    fclose(fp);
+    if (got < sizeof(h) || ((uint32_t)h[0] << 8 | h[1]) != 0x8000) {
+        return 0;
+    }
+    header = ((uint32_t)h[2] << 8 | h[3]) + 4;
+    rate = (uint32_t)h[8] << 24 | (uint32_t)h[9] << 16 | (uint32_t)h[10] << 8 | h[11];
+    total = (uint32_t)h[12] << 24 | (uint32_t)h[13] << 16 | (uint32_t)h[14] << 8 | h[15];
+    if (h[0x12] == 4 && header >= 0x38 && (h[0x24] | h[0x25] | h[0x26] | h[0x27]) != 0) {
+        return -1;
+    }
+    return rate == 0 ? 0 : (int)(((uint64_t)total * 60000 + (uint64_t)rate * 1001 - 1) / ((uint64_t)rate * 1001)) + 1;
+}
+
+static void view_start(Player *p, const char *path) {
+    PortAdxView *v = &gPortAdxView[p - sPlayers];
+    int blanks = adx_blanks(path);
+    v->stat = blanks != 0 ? ADXT_STAT_PLAYING : ADXT_STAT_STOP;
+    v->left = blanks;
+}
 static SDL_AudioDeviceID sDevice;
 static int sMono, sTried;
 static unsigned sFeedCalls; /* callbacks from SDL so far (BT3_SND_VERBOSE prints it at a stop) */
@@ -264,11 +308,13 @@ static void start(Player *p, const char *path) {
 void ADXT_Init(void) {}
 
 void *ADXT_Create(int maxnch, void *work, int worksize) {
-    Player *p = &sPlayers[sCount < MAX_PLAYERS ? sCount++ : MAX_PLAYERS - 1];
+    Player *p = &sPlayers[gPortAdxCount < MAX_PLAYERS ? gPortAdxCount++ : MAX_PLAYERS - 1];
 
     (void)maxnch; (void)work; (void)worksize;
+    stop(p); /* (a frame run again after a restore creates its players again: whatever played there ends) */
     memset(p, 0, sizeof(*p));
     p->pan[0] = p->pan[1] = PAN_AUTO;
+    memset(&gPortAdxView[p - sPlayers], 0, sizeof(PortAdxView));
     return p;
 }
 
@@ -280,6 +326,7 @@ void ADXT_StartAfs(void *adxt, int patid, int fid) {
 
     if (adxt != NULL && Port_FilePath(patid, fid, NULL, path, sizeof(path))) {
         start(adxt, path);
+        view_start(adxt, path);
     }
 }
 
@@ -288,12 +335,14 @@ void ADXT_StartFname(void *adxt, char *fname) {
 
     if (adxt != NULL && Port_FilePath(0, 0, fname, path, sizeof(path))) {
         start(adxt, path);
+        view_start(adxt, path);
     }
 }
 
 void ADXT_Stop(void *adxt) {
     if (adxt != NULL) {
         stop(adxt);
+        gPortAdxView[(Player *)adxt - sPlayers].stat = ADXT_STAT_STOP;
     }
 }
 
@@ -303,6 +352,7 @@ void ADXT_Pause(void *adxt, int sw) {
     if (p == NULL) {
         return;
     }
+    gPortAdxView[p - sPlayers].paused = sw != 0;
     if (getenv("BT3_SND_VERBOSE") != NULL && p->paused != (sw != 0)) {
         fprintf(stderr, "adx: player %d pause %d\n", (int)(p - sPlayers), sw);
     }
@@ -349,6 +399,9 @@ void ADXT_SetOutputMono(int flag) {
 }
 
 int ADXT_GetStat(void *adxt) {
+    if (adxt != NULL && by_ticks()) {
+        return gPortAdxView[(Player *)adxt - sPlayers].stat; /* counted in vertical blanks, the same on every machine */
+    }
     return adxt != NULL ? ((Player *)adxt)->stat : ADXT_STAT_STOP;
 }
 

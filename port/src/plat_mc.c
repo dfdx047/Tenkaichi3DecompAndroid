@@ -34,7 +34,25 @@
 
 static int sLastCmd, sLastResult;
 static int sSeen;             /* slot 1 was reported once: later sceMcGetInfo calls answer "same card" */
-static FILE *sFiles[MC_FILES];
+/* An open file as the game knows it (part of the game's state): open or not, how it was opened, which host file,
+   the position. The host's own file object is beside it (not state) and is brought in line when it is used, so a
+   frame that is run again after the state was restored finds the files as that state says. */
+#include "port_host.h"
+static struct { int open, mode; long pos; char path[600]; } sMc[MC_FILES];
+PORT_HOST static FILE *sHost[MC_FILES] = {NULL};
+PORT_HOST static char sHostPath[MC_FILES][600] = {{0}};
+
+static FILE *host_file(int fd) {
+    if (sHost[fd] != NULL && strcmp(sHostPath[fd], sMc[fd].path) != 0) {
+        fclose(sHost[fd]);
+        sHost[fd] = NULL;
+    }
+    if (sHost[fd] == NULL) {
+        sHost[fd] = fopen(sMc[fd].path, (sMc[fd].mode & 2) ? "r+b" : "rb");
+        snprintf(sHostPath[fd], sizeof(sHostPath[fd]), "%s", sMc[fd].path);
+    }
+    return sHost[fd];
+}
 
 static int request(int cmd, int result) {
     sLastCmd = cmd;
@@ -92,7 +110,7 @@ int func_002A1E58(int port, int slot, char *name, int mode) {
     if (slot != 0 || !host_path(port, name, path, sizeof(path))) {
         return request(2, -10);
     }
-    for (fd = 0; fd < MC_FILES && sFiles[fd] != NULL; fd++) {
+    for (fd = 0; fd < MC_FILES && sMc[fd].open; fd++) {
     }
     if (fd == MC_FILES) {
         return request(2, -7); /* too many open files */
@@ -104,7 +122,15 @@ int func_002A1E58(int port, int slot, char *name, int mode) {
     if (f == NULL) {
         return request(2, -4);
     }
-    sFiles[fd] = f;
+    if (sHost[fd] != NULL) {
+        fclose(sHost[fd]);
+    }
+    sHost[fd] = f;
+    snprintf(sHostPath[fd], sizeof(sHostPath[fd]), "%s", path);
+    sMc[fd].open = 1;
+    sMc[fd].mode = mode;
+    sMc[fd].pos = 0;
+    snprintf(sMc[fd].path, sizeof(sMc[fd].path), "%s", path);
     return request(2, fd);
 }
 
@@ -120,40 +146,54 @@ int func_002A1F80(int port, int slot, char *name) {
 
 /* sceMcClose */
 int func_002A1FB8(int fd) {
-    if (fd < 0 || fd >= MC_FILES || sFiles[fd] == NULL) {
+    if (fd < 0 || fd >= MC_FILES || !sMc[fd].open) {
         return request(3, -4);
     }
-    fclose(sFiles[fd]);
-    sFiles[fd] = NULL;
+    if (sHost[fd] != NULL) {
+        fclose(sHost[fd]);
+        sHost[fd] = NULL;
+    }
+    sMc[fd].open = 0;
     return request(3, 0);
 }
 
 /* sceMcSeek: origin 0 = start, 1 = current, 2 = end */
 int func_002A2078(int fd, int offset, int origin) {
-    if (fd < 0 || fd >= MC_FILES || sFiles[fd] == NULL) {
+    FILE *f;
+    if (fd < 0 || fd >= MC_FILES || !sMc[fd].open || (f = host_file(fd)) == NULL) {
         return request(4, -4);
     }
-    fseek(sFiles[fd], offset, origin == 0 ? SEEK_SET : origin == 1 ? SEEK_CUR : SEEK_END);
-    return request(4, (int)ftell(sFiles[fd]));
+    fseek(f, sMc[fd].pos, SEEK_SET);
+    fseek(f, offset, origin == 0 ? SEEK_SET : origin == 1 ? SEEK_CUR : SEEK_END);
+    sMc[fd].pos = ftell(f);
+    return request(4, (int)sMc[fd].pos);
 }
 
 /* sceMcRead */
 int func_002A2208(int fd, void *buf, int size) {
-    if (fd < 0 || fd >= MC_FILES || sFiles[fd] == NULL) {
+    FILE *f;
+    int n;
+    if (fd < 0 || fd >= MC_FILES || !sMc[fd].open || (f = host_file(fd)) == NULL) {
         return request(5, -4);
     }
-    return request(5, (int)fread(buf, 1, (size_t)size, sFiles[fd]));
+    fseek(f, sMc[fd].pos, SEEK_SET);
+    n = (int)fread(buf, 1, (size_t)size, f);
+    sMc[fd].pos += n;
+    return request(5, n);
 }
 
 /* sceMcWrite */
 int func_002A2320(int fd, void *buf, int size) {
     int n;
 
-    if (fd < 0 || fd >= MC_FILES || sFiles[fd] == NULL) {
+    FILE *f;
+    if (fd < 0 || fd >= MC_FILES || !sMc[fd].open || (f = host_file(fd)) == NULL) {
         return request(6, -4);
     }
-    n = (int)fwrite(buf, 1, (size_t)size, sFiles[fd]);
-    fflush(sFiles[fd]);
+    fseek(f, sMc[fd].pos, SEEK_SET);
+    n = (int)fwrite(buf, 1, (size_t)size, f);
+    fflush(f);
+    sMc[fd].pos += n;
     return request(6, n);
 }
 

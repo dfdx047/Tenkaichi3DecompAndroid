@@ -111,6 +111,13 @@ void Port_StateLog(unsigned vblank, const void *fight, unsigned fightSize) {
         const int *w = fight;
         fprintf(fp, " hp %d %d pos %08x %08x %08x  %08x %08x %08x clock %d rnd %08x%08x", w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[11], w[10]);
     }
+    {
+        extern long Port_PadPlayPos(void); /* plat_stub.c: how far a pad recording has been played */
+        long pos = Port_PadPlayPos();
+        if (pos >= 0) {
+            fprintf(fp, " pad %ld", pos);
+        }
+    }
     fputc('\n', fp);
     if ((int)vblank == at) {
         char path[1100];

@@ -130,6 +130,8 @@ void Port_VBlank(void) {
     gPortVBlanks++;
     {
         extern void Port_SyncTest(unsigned vblank); /* gs/state.c: BT3_SYNCTEST */
+        extern void Port_AdxTick(void);             /* plat_sndstate.c */
+        Port_AdxTick();
         Port_SyncTest(gPortVBlanks);
     }
     Port_Trace(gPortVBlanks);
@@ -161,13 +163,15 @@ extern int Port_PadRead(int socket, unsigned char *data);
    The game reads the pads a fixed number of times per vertical blank and everything else is deterministic, so a
    recording made from the title screen replays the same menus and the same fight, with or without a window
    (given the same save folder to start from). For reproducing what a player saw. */
-static FILE *sPadRec, *sPadPlay;
-static int sPadFilesTried;
+#include "port_host.h"
+PORT_HOST static FILE *sPadRec = NULL, *sPadPlay = NULL; /* (the position in the playback file IS restored: Port_PadPlaySeek) */
+PORT_HOST static int sPadFilesTried = 0;
 
 /* Where the playback of a pad recording stands, and going back there (the state save / restore test re-runs
    frames: they have to get the same input again). */
 long Port_PadPlayPos(void) { return sPadPlay != NULL ? ftell(sPadPlay) : -1; }
-void Port_PadPlaySeek(long pos) { if (sPadPlay != NULL && pos >= 0) { fseek(sPadPlay, pos, SEEK_SET); } }
+/* (a position of -1 was taken before the file was open: its start) */
+void Port_PadPlaySeek(long pos) { if (sPadPlay != NULL) { fseek(sPadPlay, pos >= 0 ? pos : 0, SEEK_SET); } }
 
 int scePad2Read(int socket, unsigned char *data) {
     int i;
