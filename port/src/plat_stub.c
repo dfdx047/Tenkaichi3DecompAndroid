@@ -185,12 +185,18 @@ int scePad2Read(int socket, unsigned char *data) {
         }
     }
     if (sPadPlay != NULL) {
+        /* After the recording's end the pads are idle (below), for the rest of the run: the keyboard and the
+           controllers are not read. (They used to be, from the end on: two runs of one recording then differed
+           by whatever a controller happened to report, which looked like the game not repeating itself.) The
+           file stays open: a state restored to before the end reads the recording's last part again. */
+        PORT_HOST static int said = 0;
         if (fread(data, 1, 18, sPadPlay) == 18) {
             return 18;
         }
-        fclose(sPadPlay);
-        sPadPlay = NULL;
-        fprintf(stderr, "bt3: the recorded input has ended\n");
+        if (!said) {
+            said = 1;
+            fprintf(stderr, "bt3: the recorded input has ended\n");
+        }
     } else if (Port_PadRead(socket, data)) {
         if (sPadRec != NULL) {
             fwrite(data, 1, 18, sPadRec);

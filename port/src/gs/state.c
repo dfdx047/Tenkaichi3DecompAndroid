@@ -165,6 +165,9 @@ void Port_StateLog(unsigned vblank, const void *fight, unsigned fightSize) {
  *                    next blank AGAIN; compare. A game that cannot be rewound and replayed to the same state shows
  *                    here, with the place in memory that came out differently. Every frame runs twice.
  *                    (=<n>: start at blank n.)
+ *   BT3_SYNCTEST_DEPTH=<n>  rewind n blanks at a time instead of one (up to 64): save, run n blanks noting each
+ *                    one's checksum, restore, run the n again and compare each. What online play does when an
+ *                    input arrives late: several frames are undone and replayed.
  * ------------------------------------------------------------------------------------------------------------- */
 #if defined(__x86_64__) && !defined(_WIN32)
 #include <ucontext.h>
@@ -264,14 +267,24 @@ static uint64_t parts_hash(void) {
     return XXH3_64bits_digest(&st);
 }
 
+#define SYNC_MAX_DEPTH 64
+
 void Port_SyncTest(unsigned vblank) {
-    static struct Ctl { int mode, phase; unsigned from, frames, bad; uint64_t h1; Snapshot snap, first; } *c;
+    static struct Ctl {
+        int mode, phase, depth, step;
+        unsigned from, frames, bad;
+        uint64_t h1[SYNC_MAX_DEPTH + 1];
+        Snapshot snap, first;
+    } *c;
 
     if (c == NULL) {
-        const char *e = getenv("BT3_SYNCTEST");
+        const char *e = getenv("BT3_SYNCTEST"), *d = getenv("BT3_SYNCTEST_DEPTH");
         c = calloc(1, sizeof(*c)); /* (outside everything a snapshot restores) */
         c->mode = e != NULL;
         c->from = e != NULL ? (unsigned)atoi(e) : 0;
+        c->depth = d != NULL ? atoi(d) : 1;
+        if (c->depth < 1) { c->depth = 1; }
+        if (c->depth > SYNC_MAX_DEPTH) { c->depth = SYNC_MAX_DEPTH; }
     }
     if (!c->mode || vblank < c->from) {
         return;
@@ -280,23 +293,28 @@ void Port_SyncTest(unsigned vblank) {
         regions_init();
     }
     if (c->phase == 1) {
-        /* the frame has run once: keep what it produced, go back and run it again */
-        c->h1 = parts_hash();
+        /* first pass: note what each blank of the stretch ended with; after the last, go back to its start */
+        c->h1[++c->step] = parts_hash();
+        if (c->step < c->depth) {
+            return;
+        }
         c->phase = 2;
-        if (state_save(&c->first) == 0) { /* (kept only to say WHERE a difference is) */
+        c->step = 0;
+        if (c->depth > 1 || state_save(&c->first) == 0) { /* (depth 1: kept to say WHERE a difference is) */
             state_load(&c->snap);
         }
-        return; /* not reached: the load continues in the save below, one frame ago */
+        return; /* not reached: the load continues in the save below, `depth` blanks ago */
     }
     if (c->phase == 2) {
         uint64_t h2 = parts_hash();
-        c->frames++;
-        if (h2 != c->h1) {
+        c->step++;
+        if (h2 != c->h1[c->step]) {
             int k, shown = 0;
             c->bad++;
             if (c->bad <= 8) {
-                fprintf(stderr, "sync: blank %u: the frame run again from the saved state ends differently\n", vblank);
-                for (k = 0; k + 1 < c->first.parts && shown < 6; k++) { /* (not the stack) */
+                fprintf(stderr, "sync: blank %u (step %d of %d after the restore): run again from the saved state it ends differently\n",
+                        vblank, c->step, c->depth);
+                for (k = 0; c->depth == 1 && k + 1 < c->first.parts && shown < 6; k++) { /* (not the stack) */
                     const uint8_t *a = c->first.part[k].copy, *b = c->first.part[k].at;
                     size_t n = c->first.part[k].n, i;
                     for (i = 0; i < n && shown < 6; i++) {
@@ -315,13 +333,18 @@ void Port_SyncTest(unsigned vblank) {
                 }
             }
         }
-        if (c->frames % 600 == 0) {
-            fprintf(stderr, "sync: %u frames each run twice from a saved state, %u ended differently\n", c->frames, c->bad);
+        if (c->step < c->depth) {
+            return;
+        }
+        c->frames += (unsigned)c->depth;
+        if (c->frames / 600 != (c->frames - (unsigned)c->depth) / 600) {
+            fprintf(stderr, "sync: %u blanks each run twice, rewinding %d at a time; %u ended differently\n", c->frames, c->depth, c->bad);
         }
     }
     c->phase = 1;
+    c->step = 0;
     if (state_save(&c->snap) != 0) {
-        /* back here after the restore: the same frame runs a second time (phase 2 was set before the load) */
+        /* back here after the restore: the same stretch runs a second time (phase 2 was set before the load) */
     }
 }
 #else

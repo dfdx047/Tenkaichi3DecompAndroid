@@ -387,3 +387,18 @@ programs, and session6's fight values, are unchanged):
 Not covered: the render thread and sound effects (`gs/snd_se.c`) as far as the game can see them (no difference
 showed, but with `BT3_NOSOUND=1`); the movie player; saving to the memory card; Windows and the 32-bit program
 (the save / restore itself is written for 64-bit Linux only); rewinding more than one frame.
+
+## Rewinding several blanks at a time; the run-to-run difference explained (2026-10-07)
+
+- `BT3_SYNCTEST_DEPTH=<n>` (up to 64): save, run n blanks noting each one's checksum, restore, run the n again and
+  compare each: what online play does when an input arrives late. Replay fight without a window, 8 and 20 blanks
+  at a time: 15,000+ blanks each run twice, 0 differences, the fight's result unchanged. session6 with the window,
+  8 and 20 at a time: 14,400 and 15,000 blanks each run twice, 0 differences, and against a normal run of the
+  same program the checksum of everything is the same at every blank (14,714 and 15,032 compared).
+- **The "open" run-to-run difference above (groups of runs differing from blank 4,658, one from 13,518) is
+  explained: it was the test, not the game.** session6's recording ends at about blank 4,656. From there on a
+  playback read the REAL keyboard and controllers, so runs differed by whatever a controller reported at the
+  time (the groups by time of day: a controller awake or asleep; the one run at 13,518: an input event). The
+  multi-blank rewind showed it: the stretch across the recording's end did not repeat, because the first pass
+  had closed the recording. Now the pads are idle for the rest of a run once a recording has ended (what the
+  comment always said), and the file stays open so a restored state can read its last part again.
