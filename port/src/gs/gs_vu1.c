@@ -672,6 +672,13 @@ void GsVu1_Call(int addr) {
         vu.tops = vu.base + vu.ofst;
         vu.dbf = 1;
     }
+    if (gPortResim) {
+        /* A frame that is only being re-run (rollback, an online session's silent start-up): the program is not
+           run. A vertex program's whole output is primitives for the GS, none of which would be drawn; what a
+           later frame's programs need (their code, the data unpacked for them, the registers above) is kept up
+           by the rest of the list, which is still walked. */
+        return;
+    }
     if (getenv("BT3_VU_DUMP") != NULL && (int)gGsFrame == atoi(getenv("BT3_VU_DUMP")) && sProgSize == 127) {
         static int shown;
         if (shown < 3 && addr < 0) {

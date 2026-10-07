@@ -668,3 +668,20 @@ a frame with picture 3.1 ms, re-run without output 1.53 ms, saving the state 0.7
   whole-copy test, the session switch test and normal play unchanged.
 - Not checked: a real Windows (Wine's write tracking is its own implementation); memory use (the shadow is 28 MB
   plus the block region's used part, each save's list about 0.3 MB).
+
+## Less list work in a re-run frame (2026-10-07)
+
+- `GsVu1_Call` returns after its register bookkeeping when `gPortResim`: the vertex program is not run (its whole
+  output is primitives). Programs, unpacked data and the VIF registers are still kept up by the list walk, which
+  an online session's silent start-up needs (everything loaded once on the way to the character select).
+- `vertex()` (gs_core.c) collects nothing when `gPortResim`, except sprites into TEXTURE memory (frame width 1:
+  the palettes the game paints over, which later frames read). Uploads and register writes are untouched.
+- A re-run blank 1.27 -> 1.13 ms (the experiment that skipped the whole list was 0.38 ms better than nothing
+  skipped; this takes 0.14 of it, the rest is uploads and the walk itself).
+- Picture: with a rewind every 8 blanks (`BT3_SYNCTEST_ROLL=1`) the screenshots at blanks 2700, 4500 and 6500 of
+  session6 are the same files as a plain run's; the session's character select after its silent start-up is the
+  same file as before.
+
+Where rollback's cost stands (session6, this machine): save 0.08 ms, back 4 / 8 saves 0.29 / 0.36 ms, a re-run
+blank 1.13 ms, a blank with picture 2.7 ms. A frame with a 4-blank rollback: about 0.3 + 4 x (1.13 + 0.08) + 2.7
+= 7.8 ms; 8 blanks: 12.7 ms. At the start of the day: 0.64 + 4 x (1.53 + 0.74) + 3.1 = 12.8 and 21.9 ms.

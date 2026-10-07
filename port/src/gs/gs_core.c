@@ -556,6 +556,11 @@ static void vertex(uint32_t x, uint32_t y, uint32_t z, int kick) {
     Target *sf;
     Vertex v;
 
+    if (gPortResim && !(type == 6 && ((gs.frame[ctx] >> 16) & 0x3F) == 1)) {
+        /* A frame that is only being re-run draws nothing, so its vertices are not even collected: all but the
+           sprites into TEXTURE memory (the rectangle case below, which changes what later frames read). */
+        return;
+    }
     sStat[5]++;
     v.x = ((float)(int)x - (float)(gs.xyoffset[ctx] & 0xFFFF)) / 16.0f;
     v.y = ((float)(int)y - (float)((gs.xyoffset[ctx] >> 32) & 0xFFFF)) / 16.0f;
