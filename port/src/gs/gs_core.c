@@ -240,6 +240,23 @@ uint32_t Gs_PageHash(uint32_t page) {
     w = &sVram[page * 2048];
     {   /* four independent 64-bit lanes (the processor runs them side by side), folded at the end */
         uint64_t l[4] = {0x9E3779B97F4A7C15ull, 0xC2B2AE3D27D4EB4Full, 0x165667B19E3779F9ull, 0x27D4EB2F165667C5ull}, q;
+#ifdef __SIZEOF_INT128__
+        /* 16 bytes per multiplication (the two halves of the 128-bit product folded together): twice the pace
+           of the loop below. The game sends several megabytes of textures to the same addresses in every frame
+           of a fight, and all of it is hashed; this was 7% of a frame. */
+        static const uint64_t kMul[4] = {0xA0761D6478BD642Full, 0xE7037ED1A0B428DBull, 0x8EBC6AF09C88C6E3ull, 0x589965CC75374CC3ull};
+        for (i = 0; i < 2048; i += 16) {
+            uint32_t j;
+            for (j = 0; j < 4; j++) {
+                uint64_t b;
+                unsigned __int128 m;
+                memcpy(&q, &w[i + j * 4], 8);
+                memcpy(&b, &w[i + j * 4 + 2], 8);
+                m = (unsigned __int128)(l[j] ^ q) * (kMul[j] ^ b);
+                l[j] = (uint64_t)m ^ (uint64_t)(m >> 64) ^ q; /* (^ q: a zero factor does not lose the lane) */
+            }
+        }
+#else
         for (i = 0; i < 2048; i += 8) {
             uint32_t j;
             for (j = 0; j < 4; j++) {
@@ -248,6 +265,7 @@ uint32_t Gs_PageHash(uint32_t page) {
                 l[j] ^= l[j] >> 32;
             }
         }
+#endif
         q = (l[0] ^ (l[1] << 13 | l[1] >> 51) ^ (l[2] << 29 | l[2] >> 35) ^ (l[3] << 47 | l[3] >> 17)) * 0x9FB21C651E98DF25ull;
         h = (uint32_t)(q ^ q >> 32);
     }
@@ -922,6 +940,20 @@ static void vif(const uint32_t *w, uint32_t count) {
             direct -= qwc;
             continue;
         }
+        if (need != 0 && have == 0 && count - i >= need && need <= 2048) {
+            /* The command's data is all here, which is the usual case: used where it lies. (Copying it to `buf`
+               first was a fifth of all the copying of a frame; the vertex data is copied again by the unpack.) */
+            const uint32_t *b = &w[i];
+            uint32_t c = (pend >> 24) & 0x7F, pn = (pend >> 16) & 0xFF;
+            if (c == 0x20) { GsVu1_SetMask(b[0]); }
+            else if (c == 0x30) { GsVu1_SetRow(b); }
+            else if (c == 0x31) { GsVu1_SetCol(b); }
+            else if (c == 0x4A) { GsVu1_Program(pend & 0xFFFF, b, need); }
+            else { GsVu1_Unpack(c, pn, pend & 0xFFFF, b); }
+            i += need;
+            need = 0;
+            continue;
+        }
         if (need != 0) {
             uint32_t n = count - i < need - have ? count - i : need - have;
             if (have + n <= 2048) {
@@ -1170,7 +1202,9 @@ const char *Port_GetEnv(const char *name) {
     pthread_mutex_unlock(&lock);
     return value;
 }
-#define getenv(name) Port_GetEnv(name)
+/* Each place a variable is asked for remembers its answer (the names are literals; the environment does not
+   change while the game runs). Asked in the middle of drawing, the search in Port_GetEnv was 3% of a frame. */
+#define getenv(name) (__extension__({ static const char *v_; static int k_; if (!k_) { v_ = Port_GetEnv(name); k_ = 1; } v_; }))
 
 /* Which renderer: BT3_GS = "gpu" (the window), "1" (the software reference), "none" (nothing is drawn: tests).
    Without the variable a release program opens its window, so that it can be started by a double click; a

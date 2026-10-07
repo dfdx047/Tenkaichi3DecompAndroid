@@ -9,10 +9,10 @@
 #include <stdint.h>
 #include <string.h>
 
-static float f(uint32_t u) { float x; memcpy(&x, &u, 4); return x; }
-static uint32_t u(float x) { uint32_t v; memcpy(&v, &x, 4); return v; }
-static double d(uint64_t v) { double x; memcpy(&x, &v, 8); return x; }
-static uint64_t q(double x) { uint64_t v; memcpy(&v, &x, 8); return v; }
+static float f(uint32_t u) { float x; __builtin_memcpy(&x, &u, 4); return x; }
+static uint32_t u(float x) { uint32_t v; __builtin_memcpy(&v, &x, 4); return v; }
+static double d(uint64_t v) { double x; __builtin_memcpy(&x, &v, 8); return x; }
+static uint64_t q(double x) { uint64_t v; __builtin_memcpy(&v, &x, 8); return v; }
 
 #define F1(name) uint32_t Port_##name(uint32_t a) { return u(name(f(a))); }
 #define F2(name) uint32_t Port_##name(uint32_t a, uint32_t b) { return u(name(f(a), f(b))); }

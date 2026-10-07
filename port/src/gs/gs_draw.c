@@ -63,6 +63,8 @@ Vtx *gsVerts;
 uint32_t gsVertCount;
 float *gsVuVerts;
 uint32_t gsVuVertCount;
+uint32_t *gsVuIdx;
+uint32_t gsVuIdxCount;
 Vu0Uniform *gsVuUni;
 uint32_t gsVuUniCount;
 GsTarget gsTargets[MAX_TARGETS];
@@ -858,7 +860,8 @@ void GsGpu_DrawVu6(int ctx, const float *vertices, uint32_t count, const float *
     float us, vs;
     uint32_t i, k, flag;
 
-    if (count < 3 || gsVuVertCount + (count - 2) * 3 > MAX_VU_VERTS || gsDrawCount == MAX_DRAWS || gsVuUniCount == MAX_VU_UNIFORMS) {
+    if (count < 3 || gsVuVertCount + count > MAX_VU_VERTS || gsVuIdxCount + (count - 2) * 3 > MAX_VU_IDX || gsDrawCount == MAX_DRAWS ||
+        gsVuUniCount == MAX_VU_UNIFORMS) {
         return;
     }
     if (!draw_state(ctx, 0, 0, 3, &d, &us, &vs)) {
@@ -875,22 +878,25 @@ void GsGpu_DrawVu6(int ctx, const float *vertices, uint32_t count, const float *
     u.misc[1] = (float)((gGs.xyoffset[ctx] >> 32) & 0xFFFF) / 16.0f;
     u.misc[2] = ((gGs.zbuf[ctx] >> 24) & 15) == 0 ? 4294967295.0f : ((gGs.zbuf[ctx] >> 24) & 15) == 1 ? 16777215.0f : 65535.0f;
     d.vu = 3;
-    d.first = gsVuVertCount;
-    for (i = 0; i + 2 < count; i++) { /* strip -> list, without the flagged triangles */
+    d.first = gsVuIdxCount;
+    for (i = 0; i + 2 < count; i++) { /* strip -> triangles, without the flagged ones */
         memcpy(&flag, &vertices[(i + 2) * 16 + 3], 4);
         if (flag & 0xFFFF) {
             continue;
         }
         for (k = 0; k < 3; k++) {
-            float *o = &gsVuVerts[gsVuVertCount++ * 12];
-            memcpy(o, &vertices[(i + k) * 16], 16);          /* position */
-            memcpy(o + 4, &vertices[(i + k) * 16 + 8], 16);  /* colour */
-            memset(o + 8, 0, 16);
+            gsVuIdx[gsVuIdxCount++] = gsVuVertCount + i + k;
         }
     }
-    d.count = gsVuVertCount - d.first;
+    d.count = gsVuIdxCount - d.first;
     if (d.count == 0) {
         return;
+    }
+    for (i = 0; i < count; i++) {
+        float *o = &gsVuVerts[gsVuVertCount++ * 12];
+        memcpy(o, &vertices[i * 16], 16);          /* position */
+        memcpy(o + 4, &vertices[i * 16 + 8], 16);  /* colour */
+        memset(o + 8, 0, 16);
     }
     gsTargets[d.target].draws++;
     gsTargets[d.target].gen = gGsPageGen[gsTargets[d.target].fbp & 511];
@@ -915,7 +921,8 @@ void GsGpu_DrawVu4(int ctx, const float *vertices, uint32_t count, const float *
     float us, vs;
     uint32_t i, k;
 
-    if (count < 3 || gsVuVertCount + (count - 2) * 3 > MAX_VU_VERTS || gsDrawCount == MAX_DRAWS || gsVuUniCount == MAX_VU_UNIFORMS) {
+    if (count < 3 || gsVuVertCount + count > MAX_VU_VERTS || gsVuIdxCount + (count - 2) * 3 > MAX_VU_IDX || gsDrawCount == MAX_DRAWS ||
+        gsVuUniCount == MAX_VU_UNIFORMS) {
         return;
     }
     if (!draw_state(ctx, 0, 0, 2, &d, &us, &vs)) {
@@ -928,13 +935,15 @@ void GsGpu_DrawVu4(int ctx, const float *vertices, uint32_t count, const float *
     u.misc[1] = (float)((gGs.xyoffset[ctx] >> 32) & 0xFFFF) / 16.0f;
     u.misc[2] = ((gGs.zbuf[ctx] >> 24) & 15) == 0 ? 4294967295.0f : ((gGs.zbuf[ctx] >> 24) & 15) == 1 ? 16777215.0f : 65535.0f;
     d.vu = 2;
-    d.first = gsVuVertCount;
-    for (i = 0; i + 2 < count; i++) { /* strip -> list */
+    d.first = gsVuIdxCount;
+    for (i = 0; i + 2 < count; i++) { /* strip -> triangles */
         for (k = 0; k < 3; k++) {
-            memcpy(&gsVuVerts[gsVuVertCount++ * 12], &vertices[(i + k) * 12], 48);
+            gsVuIdx[gsVuIdxCount++] = gsVuVertCount + i + k;
         }
     }
-    d.count = gsVuVertCount - d.first;
+    d.count = gsVuIdxCount - d.first;
+    memcpy(&gsVuVerts[gsVuVertCount * 12], vertices, count * 48);
+    gsVuVertCount += count;
     gsTargets[d.target].draws++;
     gsTargets[d.target].gen = gGsPageGen[gsTargets[d.target].fbp & 511];
     last = gsDrawCount ? &gsDraws[gsDrawCount - 1] : NULL;
@@ -958,7 +967,8 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
     float us, vs;
     uint32_t i, k;
 
-    if (count < 3 || gsVuVertCount + (count - 2) * 3 > MAX_VU_VERTS || gsDrawCount == MAX_DRAWS || gsVuUniCount == MAX_VU_UNIFORMS) {
+    if (count < 3 || gsVuVertCount + count > MAX_VU_VERTS || gsVuIdxCount + (count - 2) * 3 > MAX_VU_IDX || gsDrawCount == MAX_DRAWS ||
+        gsVuUniCount == MAX_VU_UNIFORMS) {
         return;
     }
     if (!draw_state(ctx, 0, 0, 1, &d, &us, &vs)) {
@@ -979,8 +989,8 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
     u.misc[3] = (float)layer;
     u.light2[0] = consts[41]; u.light2[1] = consts[45]; u.light2[2] = consts[49]; u.light2[3] = consts[53];
     d.vu = 1;
-    d.first = gsVuVertCount;
-    for (i = 0; i + 2 < count; i++) { /* strip -> list */
+    d.first = gsVuIdxCount;
+    for (i = 0; i + 2 < count; i++) { /* strip -> triangles */
         if (layer == 4) { /* debris: a flagged vertex does not complete a triangle */
             uint32_t flag;
             memcpy(&flag, &vertices[(i + 2) * 12 + 3], 4);
@@ -989,10 +999,12 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
             }
         }
         for (k = 0; k < 3; k++) {
-            memcpy(&gsVuVerts[gsVuVertCount++ * 12], &vertices[(i + k) * 12], 48);
+            gsVuIdx[gsVuIdxCount++] = gsVuVertCount + i + k;
         }
     }
-    d.count = gsVuVertCount - d.first;
+    d.count = gsVuIdxCount - d.first;
+    memcpy(&gsVuVerts[gsVuVertCount * 12], vertices, count * 48);
+    gsVuVertCount += count;
     gsTargets[d.target].draws++;
     gsTargets[d.target].gen = gGsPageGen[gsTargets[d.target].fbp & 511];
     last = gsDrawCount ? &gsDraws[gsDrawCount - 1] : NULL;
@@ -1213,6 +1225,7 @@ int GsGpu_Init(void) {
     gsPendingScale = 0;
     gsVerts = malloc(MAX_VERTS * sizeof(Vtx));
     gsVuVerts = malloc(MAX_VU_VERTS * 48);
+    gsVuIdx = malloc(MAX_VU_IDX * sizeof(uint32_t));
     gsVuUni = malloc(MAX_VU_UNIFORMS * sizeof(Vu0Uniform));
     gsDraws = malloc(MAX_DRAWS * sizeof(GsDraw));
     /* BT3_GPU_API=vulkan|gl|auto picks the back end. Both are complete renderers of the same list, so a

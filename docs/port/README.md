@@ -1325,3 +1325,41 @@ Vulkan through SDL GPU (`gs/gs_gpu.c`) or OpenGL 3.3 core (`gs/gs_gl.c`).
 - 2026-10-07, from release 0.1.10: the archives no longer have `play.sh` / `play.bat`. They set `BT3_GS=gpu` and
   the current folder, and a release program does both itself (it opens its window without the variable, and
   works in its own folder when started from another: plat_mem.c). The program is started directly.
+
+## Where a fight's frame goes, and four things taken out of it (2026-10-08)
+
+Measured on the user's machine (Ryzen 7 9800X3D, RTX 5080) with the recorded two-player split-screen session
+(`session6.pad`), uncapped, the port's own timing (`BT3_GS_VERBOSE`), frames 2400 to 5400:
+
+| | before | after |
+|---|---|---|
+| Vulkan, work per frame | 4.84 ms (game 1.5, drawing 3.3 of which submitting 1.7) | 4.30 ms (game 1.5, drawing 2.8) |
+| OpenGL, work per frame | 6.85 ms (game 1.5, drawing 5.3 of which submitting 3.7) | 6.32 ms (game 1.5, drawing 4.8) |
+| nothing drawn (`BT3_GS=none`) | 1.6 ms per blank | not measured again |
+
+The budget is 33.4 ms. One frame of the session is over it: 51 ms at the fight's start, where 116 textures are
+made at once. Of the game's own code more than half is `Port_FastAdd` / `Port_FastMul` / `Port_FastMtxApply`.
+OpenGL's extra time is all inside the driver (48% of the process's time against 14% with Vulkan).
+
+Found with `perf` and with a preloaded `memcpy` that counts by caller (the call stacks of `perf` and of `gdb`
+attached from outside were not available: `ptrace_scope` 1), and changed:
+
+- The vertex programs' strips were stored as whole triangles, every vertex three times: 11 MB a frame, built
+  with one 48-byte `memcpy` per vertex and then copied to the graphics card (half of all bytes copied in a
+  frame). Now each vertex once, and the triangles as 32-bit indices (`gsVuIdx`; a draw's `first` / `count` are a
+  range of indices; `SDL_DrawGPUIndexedPrimitives`, `glDrawElements`).
+- `vif` copied every command's data to a buffer before handing it on (a fifth of all `memcpy` calls); now used
+  where it lies when it is all there.
+- `getenv` inside drawing: each place remembers its answer (the search in `Port_GetEnv` was 3%).
+- The hash of a page of GS memory takes 16 bytes per multiplication where the compiler has 128-bit integers
+  (it was 7%: the game sends megabytes of textures to the same addresses in every frame, and all is hashed).
+- `plat_libm.c`: `__builtin_memcpy` (with `-fno-builtin` each 8-byte copy of the double helpers was a call into
+  the C library, a third of all `memcpy` calls).
+
+Checked: 16 screenshots through the session (`BT3_SHOT=400`) byte-identical to those of the program before the
+changes, on Vulkan and on OpenGL, and from the 32-bit program; the replay check on the three programs; the
+Windows program through the session on Vulkan under Wine (fight values as always).
+
+Not done, in the order of what is left in the profile (Vulkan): the per-pixel loop that writes an uploaded
+texture into GS memory (`Gs_Gif`, 7%); `draw_state` (4%); `feclearexcept` in libm, 2%, caller not found; the copy
+of the vertices into the transfer buffer could be saved by recording straight into it.

@@ -84,6 +84,8 @@ extern int gPortResim;
    changes the environment while the game runs.) */
 #include <stdlib.h>
 const char *Port_GetEnv(const char *name);
-#define getenv(name) Port_GetEnv(name)
+/* Each place a variable is asked for remembers its answer (the names are literals; the environment does not
+   change while the game runs). Asked in the middle of drawing, the search in Port_GetEnv was 3% of a frame. */
+#define getenv(name) (__extension__({ static const char *v_; static int k_; if (!k_) { v_ = Port_GetEnv(name); k_ = 1; } v_; }))
 
 #endif

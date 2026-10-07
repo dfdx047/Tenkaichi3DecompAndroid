@@ -20,6 +20,7 @@ extern int gsScale;
 #define MAX_DRAWS (1 << 16)
 #define MAX_TARGETS 24
 #define MAX_VU_VERTS (1 << 19)
+#define MAX_VU_IDX (1 << 20)
 #define MAX_VU_UNIFORMS 8192
 #define MAX_TEX 8192
 #define TEX_BUCKETS 32768 /* a power of two, four times MAX_TEX */
@@ -95,6 +96,11 @@ extern Vtx *gsVerts;            /* MAX_VERTS of them, malloc'd in GsGpu_Init */
 extern uint32_t gsVertCount;
 extern float *gsVuVerts;        /* 12 floats per vertex, as the vertex programs get them */
 extern uint32_t gsVuVertCount;
+/* The triangles of the vertex programs' draws: three indices into gsVuVerts each. A draw's `first` and `count`
+   are a range of these. (A strip's vertices are stored once; as a list of whole triangles they were stored three
+   times, 11 MB a frame in a two-player fight, built here and copied to the graphics card.) */
+extern uint32_t *gsVuIdx;
+extern uint32_t gsVuIdxCount;
 extern Vu0Uniform *gsVuUni;
 extern uint32_t gsVuUniCount;
 extern GsTarget gsTargets[MAX_TARGETS];

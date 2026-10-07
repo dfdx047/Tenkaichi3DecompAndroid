@@ -79,6 +79,7 @@ typedef void GLvoid; typedef ptrdiff_t GLsizeiptr; typedef ptrdiff_t GLintptr; t
     X(glEnableVertexAttribArray, void, (GLuint), (GLuint)) \
     X(glVertexAttribPointer, void, (GLuint, GLint, GLenum, GLboolean, GLsizei, const void *), (GLuint, GLint, GLenum, GLboolean, GLsizei, const void *)) \
     X(glDrawArrays, void, (GLenum, GLint, GLsizei), (GLenum, GLint, GLsizei)) \
+    X(glDrawElements, void, (GLenum, GLsizei, GLenum, const void *), (GLenum, GLsizei, GLenum, const void *)) \
     X(glGenSamplers, void, (GLsizei, GLuint *), (GLsizei, GLuint *)) \
     X(glBindSampler, void, (GLuint, GLuint), (GLuint, GLuint)) \
     X(glSamplerParameteri, void, (GLuint, GLenum, GLint), (GLuint, GLenum, GLint)) \
@@ -138,6 +139,12 @@ GL_FUNCS(GL_DECL)
 #define GL_CLAMP_TO_EDGE 0x812F
 #define GL_REPEAT 0x2901
 #define GL_ARRAY_BUFFER 0x8892
+#ifndef GL_ELEMENT_ARRAY_BUFFER
+#define GL_ELEMENT_ARRAY_BUFFER 0x8893
+#endif
+#ifndef GL_UNSIGNED_INT
+#define GL_UNSIGNED_INT 0x1405
+#endif
 #define GL_STREAM_DRAW 0x88E0
 #define GL_DYNAMIC_DRAW 0x88E8
 #define GL_UNIFORM_BUFFER 0x8A11
@@ -339,7 +346,7 @@ static SDL_Window *sWindow;
 static SDL_GLContext sCtx;
 static GLuint sMainProg[4]; /* gs.vert / vu0 / vu4 / vu6 + gs.frag */
 static GLuint sOutlineProg, sKeyProg, sDclutProg, sPresentProg;
-static GLuint sVaoGs, sVaoVu, sVboGs, sVboVu;
+static GLuint sVaoGs, sVaoVu, sVboGs, sVboVu, sIboVu;
 static GLuint sSamplers[16];
 static GLuint sWhite;
 static GLuint sUboU, sUboParams;
@@ -684,6 +691,9 @@ static int gl_init(void) {
         glEnableVertexAttribArray((GLuint)i);
         glVertexAttribPointer((GLuint)i, 4, GL_FLOAT, GL_FALSE, 48, (void *)(uintptr_t)(i * 16));
     }
+    glGenBuffers(1, &sIboVu); /* the triangles' indices (gsVuIdx); the binding is part of the vertex array's state */
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, sIboVu);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, MAX_VU_IDX * sizeof(uint32_t), NULL, GL_STREAM_DRAW);
     glBindVertexArray(0);
 
     glGenBuffers(1, &sUboU);
@@ -781,6 +791,11 @@ static void frame_end(void) {
     if (gsVuVertCount != 0) {
         glBindBuffer(GL_ARRAY_BUFFER, sVboVu);
         glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(gsVuVertCount * 48), gsVuVerts);
+    }
+    if (gsVuIdxCount != 0) {
+        glBindVertexArray(sVaoVu);
+        glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, (GLsizeiptr)(gsVuIdxCount * sizeof(uint32_t)), gsVuIdx);
+        glBindVertexArray(0);
     }
     for (i = 0; i < 2; i++) {
         uint32_t *px, x, y, fbp = i ? 0x70 : 0;
@@ -911,7 +926,11 @@ static void frame_end(void) {
         set_textures((GLuint)d->tex, d->sampler, sDateCopy, 6, 0, 6);
         if (d->blendc != lastBlendc) { glBlendColor(d->blendc, d->blendc, d->blendc, d->blendc); lastBlendc = d->blendc; }
         set_scissor(d->scissor);
-        glDrawArrays(sPipes[d->pipeline].topo == 0 ? GL_TRIANGLES : sPipes[d->pipeline].topo == 1 ? GL_LINES : GL_POINTS, (GLint)d->first, (GLsizei)d->count);
+        if (d->vu) {
+            glDrawElements(GL_TRIANGLES, (GLsizei)d->count, GL_UNSIGNED_INT, (const void *)(uintptr_t)(d->first * sizeof(uint32_t)));
+        } else {
+            glDrawArrays(sPipes[d->pipeline].topo == 0 ? GL_TRIANGLES : sPipes[d->pipeline].topo == 1 ? GL_LINES : GL_POINTS, (GLint)d->first, (GLsizei)d->count);
+        }
     }
 
     /* the shown buffer: the one sceGsSwapDBuff set up for this frame, else the first target */
@@ -1034,6 +1053,7 @@ static void frame_end(void) {
     for (i = 0; i < gsTargetCount; i++) { gsTargets[i].draws = 0; }
     gsVertCount = 0;
     gsVuVertCount = 0;
+    gsVuIdxCount = 0;
     gsVuUniCount = 0;
     gsDrawCount = 0;
     gsAnchor = 0;

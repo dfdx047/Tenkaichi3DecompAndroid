@@ -43,6 +43,8 @@ static SDL_GPUTexture *sAuxCopy;  /* the alpha bytes, copied so that a pass can 
 static SDL_GPUTexture *sTgCol[MAX_TARGETS], *sTgAux[MAX_TARGETS], *sTgDep[MAX_TARGETS];
 static SDL_GPUBuffer *sVuVbuf;
 static SDL_GPUTransferBuffer *sVuXfer;
+static SDL_GPUBuffer *sVuIbuf;          /* gsVuIdx */
+static SDL_GPUTransferBuffer *sVuIXfer;
 static SDL_GPUShader *sVu0Vs, *sVu4Vs, *sVu6Vs;
 
 typedef struct Pipe {
@@ -401,6 +403,12 @@ static int vk_init(void) {
     sVuVbuf = SDL_CreateGPUBuffer(sDev, &bi);
     ti.size = MAX_VU_VERTS * 48;
     sVuXfer = SDL_CreateGPUTransferBuffer(sDev, &ti);
+    bi.usage = SDL_GPU_BUFFERUSAGE_INDEX;
+    bi.size = MAX_VU_IDX * sizeof(uint32_t);
+    sVuIbuf = SDL_CreateGPUBuffer(sDev, &bi);
+    bi.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+    ti.size = MAX_VU_IDX * sizeof(uint32_t);
+    sVuIXfer = SDL_CreateGPUTransferBuffer(sDev, &ti);
     {
         SDL_GPUTextureCreateInfo ci;
         SDL_zero(ci);
@@ -566,6 +574,19 @@ static void vk_frame_end(void) {
         dst.buffer = sVuVbuf;
         dst.offset = 0;
         dst.size = gsVuVertCount * 48;
+        SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+    }
+    if (gsVuIdxCount != 0) {
+        SDL_GPUTransferBufferLocation src;
+        SDL_GPUBufferRegion dst;
+        void *p = SDL_MapGPUTransferBuffer(sDev, sVuIXfer, true);
+        memcpy(p, gsVuIdx, gsVuIdxCount * sizeof(uint32_t));
+        SDL_UnmapGPUTransferBuffer(sDev, sVuIXfer);
+        src.transfer_buffer = sVuIXfer;
+        src.offset = 0;
+        dst.buffer = sVuIbuf;
+        dst.offset = 0;
+        dst.size = gsVuIdxCount * sizeof(uint32_t);
         SDL_UploadToGPUBuffer(copy, &src, &dst, true);
     }
     for (i = 0; i < sPendingCount; i++) {
@@ -817,6 +838,12 @@ static void vk_frame_end(void) {
             vb.buffer = d->vu ? sVuVbuf : sVbuf;
             vb.offset = 0;
             SDL_BindGPUVertexBuffers(pass, 0, &vb, 1);
+            if (d->vu) {
+                SDL_GPUBufferBinding ib;
+                ib.buffer = sVuIbuf;
+                ib.offset = 0;
+                SDL_BindGPUIndexBuffer(pass, &ib, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+            }
             bound = d->vu != 0;
         }
         /* Only what changed since the previous draw is set again: most of a frame's 2,000 draws differ from their
@@ -861,7 +888,11 @@ static void vk_frame_end(void) {
             memcpy(lastScissor, d->scissor, sizeof(lastScissor));
             haveScissor = 1;
         }
-        SDL_DrawGPUPrimitives(pass, d->count, 1, d->first, 0);
+        if (d->vu) {
+            SDL_DrawGPUIndexedPrimitives(pass, d->count, 1, d->first, 0, 0);
+        } else {
+            SDL_DrawGPUPrimitives(pass, d->count, 1, d->first, 0);
+        }
     }
     if (pass != NULL) {
         SDL_EndGPURenderPass(pass);
@@ -1080,6 +1111,7 @@ static void vk_frame_end(void) {
     }
     gsVertCount = 0;
     gsVuVertCount = 0;
+    gsVuIdxCount = 0;
     gsVuUniCount = 0;
     gsDrawCount = 0;
     gsAnchor = 0;
