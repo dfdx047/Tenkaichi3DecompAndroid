@@ -584,3 +584,25 @@ Checked (two copies on one machine, `BT3_SESSION_TEST=<role>:<address>:<port>:<b
 - The user, with the two archives of commit 401fb60: Linux here and Windows in their VM (other processor: Intel
   i5 12th gen against this Ryzen), from the Dragon Net Battle window: "connected, were in sync and reverted to
   main menu when disconnecting". By eye; no checksum log was taken.
+
+## What a silently re-run frame costs (2026-10-07, measurements for rollback)
+
+Session6's fight, this machine (Ryzen 7 9800X3D), `BT3_SYNCTEST=1 BT3_SYNCTEST_DEPTH=8 BT3_GS_VERBOSE=1`:
+a frame with picture 3.1 ms, re-run without output 1.53 ms, saving the state 0.74 ms, restoring it 0.64 ms.
+
+- **Skipping all draw-list work in a re-run frame** (experiment: `run_chain` returned at once when `gPortResim`):
+  1.53 -> 1.15 ms. That is the upper bound of what the renderer side can give (a real version has to keep the
+  texture uploads and the rectangles drawn into GS memory). Not kept.
+- **The rest is the game's own arithmetic.** Profile with no renderer (`perf`, `BT3_GS=none`): `f_mul` of
+  src/port/vu0_b.c 25%, `add_core` 20% + 4% + 4% (its copies), `Sf_AddBits` 5%, `__mulsf3` 4%, `op_vmaddabc` 4%,
+  `RefVu0_LtBits` 2.5%, `fpu_add` 2%: the soft-float add and multiply are well over half of a frame. Much of the
+  rest by name is preparation for drawing done by the game itself (clipping, culling, projecting, lighting).
+  The callers of `f_mul` could not be listed (no unwind information in the program for `perf`).
+- **A quick exact path was tried and is slower.** Idea: for ordinary operands the exact product (48 bits) and the
+  exact sum of operands at most 28 exponents apart (53 bits) fit a double, and the top bits of that double are
+  the truncated single. Bit for bit equal to the long way on 1.2 thousand million pairs with all three compilers,
+  and the replay and the fight values were unchanged; but the game's and the port's files are compiled with
+  `-msoft-float -mno-sse`, so the double operations became library calls: a re-run frame went from 1.7 to 4.1 ms
+  at the same place. Reverted. To gain anything this has to live in a file compiled with the processor's
+  floating point, and one call per operation would about cancel the gain: the worthwhile form is whole kernels
+  there (a matrix applied to a vector: 16 multiplies and 12 adds at once, in SIMD).
