@@ -24,6 +24,31 @@ menu is the file's name (`My_Song.unk` is shown as "My Song"). `$BT3_STAGES` nam
 - Tried with a real custom map (a downloaded `.unk`, dropped into `stages`; the user, 2026-10-07): "worked fine".
   Until then only a copy of a disc stage under a new id had been loaded this way.
 
+## File ids and size of an added stage (2026-10-07)
+
+- **A bug of release 0.1.8, fixed.** An added stage's files were asked for under ids that belong to the disc's
+  own files. Its sound bank at 0x14E + stage was redirected to the first stage's bank; but 0x14E + 0x24 is 0x172,
+  the one-screen MODEL of disc stage 1, so with one stage added a one-player fight on disc stage 1 was given a
+  sound bank as its model (the second added stage did the same to stage 2, and so on). And its model at
+  0x171 + stage is, from the fourth added stage on, the split-screen model of a disc stage. Found by reading the
+  code (the pull request had removed the bank redirection in a later commit of which only the renderer part was
+  taken); not reproduced in a run of 0.1.8.
+- Now: an added stage's model has a file id of its own, 30000 + n past the start of the second archive
+  (`PORT_ADDED_STAGE_FILE` in battle_load.c, served by plat_stages.c), and for its sound bank the first stage's
+  is asked for by its real id (`BTL_STAGE_BANK`). No redirection touches a disc file.
+- Checked with a stage added, on one screen (`BT3_TEST_SCREEN=0`) and with `BT3_TEST_STAGE`: disc stage 1 opens
+  its own model `00369.bin` and bank `00334.bin`; the added stage opens its file and bank `00333.bin`; all fight.
+- **Size.** The game loads a battle's stage into one buffer of 0x6CB800 bytes (7.1 MB) and nothing checked a
+  file against it: a larger file overran the buffer and the game crashed seconds later in its heap. Now the
+  buffer is as large as the largest added stage (`Port_StageBufSize`, up to 64 MB); one larger than the game's
+  own comes from the port's memory, not the game's 28 MB heap (`Port_GameBigAlloc`; a 10 MB buffer in the heap
+  left too little for a battle's pools). A stage file that does not fit is refused with a message. With no
+  larger stage installed, and in an online session, sizes and memory are the game's own.
+- Tried with stage 12's split-screen file rebuilt at 2, 3 and 4 times its triangles (63,000 to 126,500; 8.2 to
+  11.8 MB), put in its place through `mods/` with `BT3_STAGE_BUF`: all load and play the recorded fight with the
+  same fight values as the disc file at each of 12,325 blanks; a frame's work goes from 7.3 to 9.3 ms.
+- `BT3_TEST_STAGE=<id>` / `BT3_TEST_SCREEN=<mode>`: every battle on that stage / screen mode (testing).
+
 ## The name in the game's own lettering (main line)
 
 The game has no font for these names: every stage name of the disc is a picture. `port/src/gs/namefont.c` reads

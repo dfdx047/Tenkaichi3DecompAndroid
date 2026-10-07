@@ -250,7 +250,18 @@ void *Heap_Alloc(s32 size, u32 align, s32 fromTail, s32 heap) {
 }
 
 void Heap_Free(void *ptr) {
-    HeapBlock *block = Heap_FindBlock((u32)ptr);
+    HeapBlock *block;
+
+#ifdef PORT
+    {
+        /* PC build: a block that is not the heap's (a large stage buffer, battle_load.c) goes back to the port */
+        extern int Port_GameBigFree(unsigned addr);
+        if (Port_GameBigFree((u32)ptr)) {
+            return;
+        }
+    }
+#endif
+    block = Heap_FindBlock((u32)ptr);
 
     if (block == NULL) {
         Heap_ReportBadFree();

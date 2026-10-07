@@ -407,6 +407,36 @@ uint32_t Port_LowRegionSize(void) {
 #endif
 }
 
+void *Port_LowAlloc(size_t size);
+void Port_LowFree(void *addr);
+
+/* A large block for the game that does not come out of its own heap (28 MB, sized for the console): the buffer of
+   a stage larger than the disc's (battle_load.c). From the port's region, which is below 4 GB (the game's
+   pointers are 32 bits) and is part of every saved state. As an address, not a pointer: the game's files are
+   compiled with 32-bit pointers and must not be handed a host function's pointer result. 0: not available
+   (the 32-bit program, whose blocks are the C library's and cannot be told from the heap's by address). */
+unsigned Port_GameBigAlloc(int size) {
+#if defined(__x86_64__)
+    return (unsigned)(uintptr_t)Port_LowAlloc((size_t)size);
+#else
+    (void)size;
+    return 0;
+#endif
+}
+
+/* 1 if `addr` was such a block (it is given back); 0: it is the game heap's (Heap_Free goes on). */
+int Port_GameBigFree(unsigned addr) {
+#if defined(__x86_64__)
+    if (sLowArena != NULL && addr >= (unsigned)(uintptr_t)sLowArena && addr - (unsigned)(uintptr_t)sLowArena < LOW_ARENA_SIZE) {
+        Port_LowFree((void *)(uintptr_t)addr);
+        return 1;
+    }
+#else
+    (void)addr;
+#endif
+    return 0;
+}
+
 int Port_StateExtra(void **p, size_t *n, int max) {
     int k = 0;
 #if defined(__x86_64__)

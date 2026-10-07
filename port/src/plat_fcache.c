@@ -76,6 +76,15 @@ static int slot_of(const char *rel) {
     sSlot[old].fp = fp;
     fseek(fp, 0, SEEK_END);
     sSlot[old].size = ftell(fp);
+    {
+        extern int Port_StageFits(const char *rel, long size); /* plat_stages.c */
+        extern int Port_StageBufSize(void);
+        if (!Port_StageFits(rel, sSlot[old].size)) {
+            fprintf(stderr, "bt3: the stage file %s is %ld bytes; the game has room for %d. It cannot be loaded.\n", path, sSlot[old].size,
+                    Port_StageBufSize());
+            exit(2);
+        }
+    }
     sSlot[old].used = ++sClock;
     return old;
 }
