@@ -21,22 +21,27 @@ jobs:
           set -e
           NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
           echo "NDK: $NDK"; cat "$NDK/source.properties"
-          ls "$ANDROID_HOME/ndk" || true
           TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
-          mkdir -p out/ndk/sysroot/usr/lib out/ndk/clang_rt
-          cp -a "$TC/sysroot/usr/include" out/ndk/sysroot/usr/
-          mkdir -p out/ndk/sysroot/usr/lib/aarch64-linux-android
-          (cd "$TC/sysroot/usr/lib/aarch64-linux-android" && cp -a *.a *.so 29 30 31 33 35 ../../../../../out/ndk/sysroot/usr/lib/aarch64-linux-android/ 2>/dev/null || true)
-          ls out/ndk/sysroot/usr/lib/aarch64-linux-android
-          find "$TC/lib/clang" -path "*linux*" -name "*aarch64-android*" -exec cp -a {} out/ndk/clang_rt/ \;
-          ls out/ndk/clang_rt
-          cp "$NDK/source.properties" out/ndk/
-          "$TC/bin/clang" --version | head -1 > out/ndk/clang_version.txt
-          cd out && tar -cJf ndk-arm64-sysroot.tar.xz ndk && ls -la
+          OUT="$GITHUB_WORKSPACE/out/ndk"
+          mkdir -p "$OUT/sysroot/usr/lib/aarch64-linux-android" "$OUT/clang_rt" "$OUT/bin"
+          cp -a "$TC/sysroot/usr/include" "$OUT/sysroot/usr/"
+          SRC="$TC/sysroot/usr/lib/aarch64-linux-android"
+          ls "$SRC"
+          cp -a "$SRC"/*.a "$OUT/sysroot/usr/lib/aarch64-linux-android/" || true
+          for api in 29 30 31 33 34 35; do [ -d "$SRC/$api" ] && cp -a "$SRC/$api" "$OUT/sysroot/usr/lib/aarch64-linux-android/"; done
+          ls "$OUT/sysroot/usr/lib/aarch64-linux-android"
+          find "$TC/lib/clang" -path "*linux*" \( -name "libclang_rt.builtins-aarch64-android.a" -o -name "libunwind.a" \) -path "*aarch64*" -exec cp -a {} "$OUT/clang_rt/" \;
+          find "$TC/lib/clang" -path "*aarch64*" -name "libunwind.a" -exec cp -a {} "$OUT/clang_rt/" \; || true
+          ls "$OUT/clang_rt"
+          cp "$NDK/shader-tools/linux-x86_64/glslc" "$OUT/bin/" || true
+          cp "$NDK/source.properties" "$OUT/"
+          "$TC/bin/clang" --version | head -1 > "$OUT/clang_version.txt"
+          cd "$GITHUB_WORKSPACE/out" && tar -cJf ndk-arm64-sysroot.tar.xz ndk && ls -la
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: toolchain-ndk
           name: "Toolchain: NDK arm64 sysroot"
           prerelease: true
           files: out/ndk-arm64-sysroot.tar.xz
+          overwrite_files: true
           body: Build input for the engine (not an app release). The arm64 sysroot of the runner's Android NDK.
