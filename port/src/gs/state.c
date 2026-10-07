@@ -885,7 +885,7 @@ void Port_SessionPoll(void) {
             if (getenv("BT3_SESSION_AGAIN") != NULL) { /* and another one, that many blanks later */
                 at = (int)blank + atoi(getenv("BT3_SESSION_AGAIN"));
             }
-            Port_SessionReturn();
+            { extern void Port_NetLeave(void); Port_NetLeave(); } /* (as the game leaves: the other side is told) */
         }
     }
     if (sReq) {

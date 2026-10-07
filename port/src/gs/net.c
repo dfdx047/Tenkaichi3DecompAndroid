@@ -45,7 +45,21 @@ extern int Port_PadRead(int socket, unsigned char *data); /* gs_input.c: the key
 void Port_NetLeave(void);
 
 enum { PAD = 18, RING = 4096, REDUNDANT = 16, MAGIC = 0x4E335442 /* "BT3N" */ };
-enum { T_HELLO = 1, T_HELLO_ACK = 2, T_INPUT = 3 };
+enum { T_HELLO = 1, T_HELLO_ACK = 2, T_INPUT = 3, T_BYE = 4 };
+
+/* What the host chose in the Dragon Net Battle window (-1: not said; the environment or the defaults decide).
+   The host's answer to the greeting carries its input delay and rollback limit, and the joining side takes them:
+   the delay has to be the same on both sides. (The rollback limit is each side's own business, the two ways of
+   playing work against each other; the host's is only the other side's starting value.) */
+static int sOptRoll = -1, sOptDelay = -1;
+static int sCfgGot, sCfgDelay, sCfgRoll;
+static int sGone; /* the other player said goodbye */
+extern void Port_UiNotice(const char *text); /* ui.cpp: a line over the picture for a few seconds */
+
+void Port_NetOptions(int rollback, int delay) {
+    sOptRoll = rollback;
+    sOptDelay = delay;
+}
 
 static int sMode = -1; /* 0 off, 1 host, 2 join */
 static int sSock = -1, sMe, sDelay = 2, sConnected, sLoss, sLagMs;
@@ -137,14 +151,23 @@ static int receive(void) {
             continue;
         }
         got = 1;
-        if (type == T_HELLO && sMode == 1) {
-            uint32_t ack[2] = {MAGIC, T_HELLO_ACK};
+        if (type == T_BYE && sConnected) {
+            sGone = 1;
+        } else if (type == T_HELLO && sMode == 1) {
+            uint32_t ack[4] = {MAGIC, T_HELLO_ACK, (uint32_t)sDelay, (uint32_t)sRollMax};
             sPeer = from; /* the host learns the other side's address from its greeting */
             sConnected = 1;
             sendto(sSock, (const char *)ack, sizeof(ack), 0, (struct sockaddr *)&sPeer, sizeof(sPeer));
         } else if (type == T_HELLO_ACK && sMode == 2) {
-            sConnected = 1;
-        } else if (type == T_INPUT && n >= 20) {
+            if (n >= 16 && !sConnected) {
+                uint32_t v[2];
+                memcpy(v, pkt + 8, 8);
+                sCfgDelay = (int)v[0];
+                sCfgRoll = (int)v[1];
+                sCfgGot = 1;
+                sConnected = 1;
+            }
+        } else if (type == T_INPUT && n >= 20 && (sConnected || sMode == 1)) { /* (the joining side: not before the host's answer) */
             uint32_t base, count, i, other = (uint32_t)!sMe;
             memcpy(&base, pkt + 8, 4);
             memcpy(&count, pkt + 12, 4);
@@ -195,16 +218,18 @@ static void net_start(int role, const char *host, const char *join) {
     fcntl(sSock, F_SETFL, fcntl(sSock, F_GETFL, 0) | O_NONBLOCK);
 #endif
     sMe = sMode - 1;
-    sDelay = getenv("BT3_NET_DELAY") != NULL ? atoi(getenv("BT3_NET_DELAY")) : 2;
+    sDelay = getenv("BT3_NET_DELAY") != NULL ? atoi(getenv("BT3_NET_DELAY")) : sOptDelay >= 0 ? sOptDelay : 2;
     if (sDelay < 0) { sDelay = 0; }
     if (sDelay > 30) { sDelay = 30; }
+    sCfgGot = 0;
+    sGone = 0;
     sLoss = getenv("BT3_NET_LOSS") != NULL ? atoi(getenv("BT3_NET_LOSS")) : 0;
     sLagMs = getenv("BT3_NET_LAG") != NULL ? atoi(getenv("BT3_NET_LAG")) : 0;
     sLatencyMs = getenv("BT3_NET_LATENCY") != NULL ? atoi(getenv("BT3_NET_LATENCY")) : 0;
     /* BT3_NET_ROLLBACK=<n>: the game does not wait for the other player's input; it goes on with a guess (what
        they held last) for up to n blanks and, when the real input differs, goes back and runs those blanks again
        (roll_tick). Needs the roll ring of gs/state.c (the 64-bit programs); 0 or unset: wait, as before. */
-    sRollMax = getenv("BT3_NET_ROLLBACK") != NULL && Port_RollCan() ? atoi(getenv("BT3_NET_ROLLBACK")) : 0;
+    sRollMax = !Port_RollCan() ? 0 : getenv("BT3_NET_ROLLBACK") != NULL ? atoi(getenv("BT3_NET_ROLLBACK")) : sOptRoll >= 0 ? sOptRoll : 0;
     if (sRollMax < 0) { sRollMax = 0; }
     if (sRollMax > 30) { sRollMax = 30; }
     sChecked = sLive = 0;
@@ -215,12 +240,6 @@ static void net_start(int role, const char *host, const char *join) {
     if (getenv("BT3_NET_SCRIPT") != NULL) {
         sScript = fopen(getenv("BT3_NET_SCRIPT"), "rb");
     }
-    /* the blanks before any input can have arrived (0 .. delay) are idle for both players */
-    for (i = 0; i <= (uint32_t)sDelay; i++) {
-        memcpy(sIn[0][i], kIdle, PAD);
-        memcpy(sIn[1][i], kIdle, PAD);
-    }
-    sHave[0] = sHave[1] = (uint32_t)sDelay + 1;
     memset(&local, 0, sizeof(local));
     local.sin_family = AF_INET;
     local.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -269,7 +288,24 @@ static void net_start(int role, const char *host, const char *join) {
             exit(2);
         }
     }
-    fprintf(stderr, "bt3: net: connected; input delay %d blanks\n", sDelay);
+    if (sMode == 2 && sCfgGot) { /* the host's choices, unless this side was started with its own */
+        if (getenv("BT3_NET_DELAY") == NULL && sCfgDelay >= 0 && sCfgDelay <= 30) {
+            sDelay = sCfgDelay;
+        }
+        if (getenv("BT3_NET_ROLLBACK") == NULL && sOptRoll < 0 && sCfgRoll >= 0 && sCfgRoll <= 30) {
+            sRollMax = Port_RollCan() ? sCfgRoll : 0;
+        }
+    }
+    /* the blanks before any input can have arrived (0 .. delay) are idle for both players */
+    for (i = 0; i <= (uint32_t)sDelay; i++) {
+        memcpy(sIn[0][i], kIdle, PAD);
+        memcpy(sIn[1][i], kIdle, PAD);
+    }
+    sHave[0] = sHave[1] = (uint32_t)sDelay + 1;
+    fprintf(stderr, "bt3: net: connected; input delay %d blanks, %s\n", sDelay, sRollMax > 0 ? "rollback" : "waiting for each other");
+    if (sRollMax > 0) {
+        fprintf(stderr, "bt3: net: rollback of up to %d blanks\n", sRollMax);
+    }
 }
 
 int Port_NetActive(void) {
@@ -307,12 +343,19 @@ static void sample_local(unsigned tick) {
     sHave[sMe] = at + 1;
 }
 
-static void gone_quiet(unsigned tick) {
-    fprintf(stderr, "bt3: net: the other player has not answered for 15 seconds (blank %u)\n", tick);
+#define QUIET_NS 6000000000ull /* this long without the input the game is waiting for: the other player is gone */
+
+static void ended(const char *why, unsigned tick) {
+    fprintf(stderr, "bt3: net: %s (blank %u)\n", why, tick);
+    Port_UiNotice(why);
     if (sSession) {
         Port_NetLeave(); /* back to the game as it normally is */
     }
     exit(2);
+}
+
+static void gone_quiet(unsigned tick) {
+    ended("The connection to the other player was lost.", tick);
 }
 
 /*
@@ -337,6 +380,9 @@ static void roll_tick(unsigned tick) {
         sample_local(tick);
         send_inputs();
         receive();
+        if (sGone) {
+            ended("The other player left the match.", tick);
+        }
         t0 = last = SDL_GetTicksNS();
         if (tick >= sHave[other] + (uint32_t)sRollMax) {
             sStalls++;
@@ -350,7 +396,10 @@ static void roll_tick(unsigned tick) {
             if (!receive()) {
                 SDL_DelayNS(200000);
             }
-            if (now - t0 > 15000000000ull) {
+            if (sGone) {
+                ended("The other player left the match.", tick);
+            }
+            if (now - t0 > QUIET_NS) {
                 gone_quiet(tick);
             }
         }
@@ -417,7 +466,10 @@ void Port_NetBeginTick(unsigned tick) {
         if (!receive()) {
             SDL_DelayNS(200000);
         }
-        if (now - t0 > 15000000000ull) {
+        if (sGone) {
+            ended("The other player left the match.", tick);
+        }
+        if (now - t0 > QUIET_NS) {
             gone_quiet(tick);
         }
     }
@@ -599,6 +651,13 @@ void Port_NetArrived(void) {
    normally is. */
 void Port_NetLeave(void) {
     fprintf(stderr, "bt3: net: the session has ended\n");
+    if (sSock >= 0 && sConnected) { /* tell the other side, so that it does not wait for input that will not come */
+        uint32_t bye[2] = {MAGIC, T_BYE};
+        int k;
+        for (k = 0; k < 3; k++) {
+            sendto(sSock, (const char *)bye, sizeof(bye), 0, (struct sockaddr *)&sPeer, sizeof(sPeer));
+        }
+    }
     if (Port_SessionCan()) {
         Port_SessionReturn(); /* the game as it was when the session was asked for (does not return) */
     }

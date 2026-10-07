@@ -11,6 +11,11 @@
 
 extern "C" {
 extern volatile int gPortNetMenuRequest;
+void Port_NetOptions(int rollback, int delay); // gs/net.c
+int Port_RollCan(void);                        // gs/state.c
+int Port_Setting(const char *name, int def);   // plat_settings.c
+void Port_SettingSave(const char *name, int value);
+void Port_SettingsWrite(void);
 int Port_LobbyStart(int host, const char *address, int port); // gs/net.c
 int Port_LobbyPoll(void);
 void Port_LobbyCancel(void);
@@ -124,7 +129,7 @@ static void net_open(void) {
 
 static void build_net(void) {
     static char name[17] = "Player", address[64] = "", port[8] = "7000";
-    static int tab;
+    static int tab, roll = -1, delay = 1;
     ImGuiIO &io = ImGui::GetIO();
     bool open = true;
 
@@ -138,9 +143,28 @@ static void build_net(void) {
         ImGui::Spacing();
         if (ImGui::BeginTabBar("net")) {
             if (ImGui::BeginTabItem("Host")) {
+                static const char *const kRoll[] = {"Off (wait for each other)", "Up to 2 frames", "Up to 4 frames", "Up to 6 frames", "Up to 8 frames"};
                 tab = 0;
                 ImGui::SetNextItemWidth(120.0f);
                 ImGui::InputText("Port", port, sizeof(port), ImGuiInputTextFlags_CharsDecimal);
+                if (roll < 0) { // the choices of last time
+                    roll = Port_RollCan() ? Port_Setting("net_rollback", 4) / 2 : 0;
+                    delay = Port_Setting("net_delay", 1);
+                    if (roll < 0 || roll > 4) { roll = 2; }
+                    if (delay < 0 || delay > 6) { delay = 1; }
+                }
+                ImGui::BeginDisabled(!Port_RollCan());
+                ImGui::SetNextItemWidth(260.0f);
+                ImGui::Combo("Rollback", &roll, kRoll, 5);
+                ImGui::EndDisabled();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    ImGui::SetTooltip("With rollback your own moves come out at once and the game corrects itself when the\n"
+                                      "other player's buttons arrive. More frames cope with a slower connection and cost\n"
+                                      "more processor time. Off: both games wait for each other every frame.");
+                }
+                ImGui::SetNextItemWidth(260.0f);
+                ImGui::SliderInt("Input delay (frames)", &delay, 0, 6);
+                ImGui::TextDisabled("The host's choices apply to both players.");
                 ImGui::EndTabItem();
             }
             if (ImGui::BeginTabItem("Join")) {
@@ -174,6 +198,14 @@ static void build_net(void) {
                 bool can = atoi(port) > 0 && (tab == 0 || address[0] != '\0');
                 ImGui::BeginDisabled(!can);
                 if (ImGui::Button(tab == 0 ? "Host a match" : "Join the match", ImVec2(200.0f, 0.0f))) {
+                    if (tab == 0 && roll >= 0) {
+                        Port_NetOptions(roll * 2, delay);
+                        Port_SettingSave("net_rollback", roll * 2);
+                        Port_SettingSave("net_delay", delay);
+                        Port_SettingsWrite();
+                    } else {
+                        Port_NetOptions(-1, -1); // joining: the host's choices arrive with its answer
+                    }
                     Port_LobbyStart(tab == 0, address, atoi(port));
                 }
                 ImGui::EndDisabled();
@@ -505,6 +537,15 @@ void Ui_DrawAgain(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
     SDL_EndGPURenderPass(pass);
 }
 
+static char sNotice[160];
+static Uint64 sNoticeUntil;
+static volatile int sNoticeNew;
+
+extern "C" void Port_UiNotice(const char *text) {
+    SDL_strlcpy(sNotice, text != NULL ? text : "", sizeof(sNotice));
+    sNoticeNew = 1;
+}
+
 void Ui_Draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
     if (sReady && gPortNetWindowClose) { // back from an online session: the window it was started from closes
         gPortNetWindowClose = 0;
@@ -514,16 +555,34 @@ void Ui_Draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
         gPortNetMenuRequest = 0;
         net_open();
     }
-    if (!sReady || !sOpen) {
+    bool notice = sNotice[0] != '\0' && SDL_GetTicks() < sNoticeUntil;
+    if (sNoticeNew) { // (set from the game's side: the time starts when it is first drawn)
+        sNoticeNew = 0;
+        sNoticeUntil = SDL_GetTicks() + 6000;
+        notice = sNotice[0] != '\0';
+    }
+    if (!sReady || (!sOpen && !notice)) {
         return;
     }
     ImGui_ImplSDLGPU3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
-    if (sNet) {
-        build_net();
-    } else {
-        build();
+    if (sOpen) {
+        if (sNet) {
+            build_net();
+        } else {
+            build();
+        }
+    }
+    if (notice) { // a line over the picture for a few seconds (the end of an online match)
+        ImGuiIO &io = ImGui::GetIO();
+        ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.12f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+        ImGui::SetNextWindowBgAlpha(0.85f);
+        if (ImGui::Begin("##notice", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
+                                               ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoSavedSettings)) {
+            ImGui::TextUnformatted(sNotice);
+        }
+        ImGui::End();
     }
     ImGui::Render();
     Ui_DrawAgain(cmd, target);

@@ -733,3 +733,23 @@ player's last known input; beyond that it waits, as lockstep does every blank). 
   on: "it worked and stayed in sync". By eye; no checksum log. Not known yet: whether `BT3_NET_LATENCY` was set
   (without it, on a local network, the game hardly ever goes back, so the saves are exercised on Windows but the
   going back barely is), and how long a frame with a rollback takes there.
+
+## Choices in the window; the end of a match (2026-10-07)
+
+- Dragon Net Battle, Host tab: Rollback (off, up to 2 / 4 / 6 / 8 frames; 4 to begin with) and input delay (0 to
+  6 frames; 1 to begin with), kept in the settings file (`net_rollback`, `net_delay`). `Port_NetOptions` hands
+  them to gs/net.c; the environment variables still win, for tests.
+- The host's answer to the greeting (`T_HELLO_ACK`, now 16 bytes) carries its delay and rollback limit and the
+  joining side takes them. The delay has to be the same on both sides; the rollback limit need not be (a copy
+  that rolls back plays against one that waits). The joining side no longer counts as connected through an input
+  packet, only through that answer, and its input tables are set up after it.
+- `T_BYE`: sent three times by `Port_NetLeave`. The other side stops at once with "The other player left the
+  match." Without it: 6 seconds (was 15) with no input, then "The connection to the other player was lost."
+  Either way the copy goes back to its own game (in a session) and the line is shown over the picture for 6
+  seconds (`Port_UiNotice`, ui.cpp). While a copy waits those 6 seconds its picture stands still.
+- Checked without windows: a Windows joiner (Wine) started with nothing set takes delay 1 / rollback 4 from a
+  Linux host, fight values the same on both and as lockstep; one side leaving: the other is told at the next
+  blank and its own game goes on where it was; one side killed: the other gives up after 6 seconds and its own
+  game goes on; the session switch test as before.
+- Not looked at: the window's new controls and the line over the picture (no automated way here to see the
+  overlay; screenshots do not contain it).
