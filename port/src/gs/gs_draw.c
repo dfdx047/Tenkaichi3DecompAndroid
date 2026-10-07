@@ -254,6 +254,17 @@ static GsTex texture_get(int ctx) {
         TexPack_Free(&pack);
     } else {
         sBackend->texUpload(t->tex, 0, tw, th, GS_TEXFMT_RGBA8, px, tw * th * 4);
+        if (getenv("BT3_TEX_DUMP") != NULL) { /* every texture as it is decoded, raw RGBA with a small header (looking at the game's art) */
+            static unsigned n;
+            char name[600];
+            FILE *df;
+            snprintf(name, sizeof(name), "%s/tex_%05u_f%06u_%ux%u.rgba", getenv("BT3_TEX_DUMP"), n++, gGsFrame, (unsigned)tw, (unsigned)th);
+            df = fopen(name, "wb");
+            if (df != NULL) {
+                fwrite(px, 1, (size_t)tw * th * 4, df);
+                fclose(df);
+            }
+        }
     }
     gsTexCount++;
     {
