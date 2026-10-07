@@ -1,0 +1,103 @@
+# Builds the Dragon Rage Android app (android/).
+#
+#   push / pull request touching android/   debug + release APK as artifacts of the run (a build check)
+#   a tag  android-v*                        the same, and a published pre-release with the APK attached
+#   "Run workflow" button                    the same as a push
+#
+# Release signing: set the repository secrets DR_KEYSTORE_BASE64 (the .jks file, base64), DR_KEYSTORE_PASSWORD,
+# DR_KEY_ALIAS and DR_KEY_PASSWORD. Without them the APK is signed with a throwaway debug key, and each build
+# then has a different signature (uninstall before installing a newer one).
+name: android
+
+on:
+  push:
+    branches: [main]
+    tags: ["android-v*"]
+    paths: ["android/**", ".github/workflows/android.yml"]
+  pull_request:
+    paths: ["android/**", ".github/workflows/android.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Version from the tag
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/android-v* ]]; then
+            echo "DR_VERSION_NAME=${GITHUB_REF#refs/tags/android-v}" >> "$GITHUB_ENV"
+          else
+            echo "DR_VERSION_NAME=0.0.0-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          fi
+          echo "DR_VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.DR_KEYSTORE_BASE64 }}
+          DR_KEYSTORE_PASSWORD: ${{ secrets.DR_KEYSTORE_PASSWORD }}
+          DR_KEY_ALIAS: ${{ secrets.DR_KEY_ALIAS }}
+          DR_KEY_PASSWORD: ${{ secrets.DR_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            {
+              echo "DR_KEYSTORE=$RUNNER_TEMP/release.jks"
+              echo "DR_KEYSTORE_PASSWORD=$DR_KEYSTORE_PASSWORD"
+              echo "DR_KEY_ALIAS=$DR_KEY_ALIAS"
+              echo "DR_KEY_PASSWORD=$DR_KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+          else
+            echo "::warning::No signing secrets: the release APK is signed with a debug key."
+          fi
+
+      - name: Build
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug assembleRelease
+
+      - name: Collect APKs
+        run: |
+          mkdir -p ../out
+          cp app/build/outputs/apk/release/app-release.apk "../out/DragonRage-${DR_VERSION_NAME}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "../out/DragonRage-${DR_VERSION_NAME}-debug.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DragonRage-${{ env.DR_VERSION_NAME }}
+          path: out/*.apk
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/android-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Dragon Rage ${{ env.DR_VERSION_NAME }}
+          prerelease: true
+          files: out/*.apk
+          body: |
+            First builds of the **Dragon Rage** launcher. The game engine is **not included yet**: this release is
+            the app (game-data install from your own ISO, texture packs, mods, cheats, settings). The Play button
+            tells you the engine is missing. See the README for the status of the arm64 engine port.
+
+            `DragonRage-${{ env.DR_VERSION_NAME }}.apk` is the release build; the `-debug` one is for testing.
