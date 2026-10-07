@@ -1,153 +1,153 @@
-# Añadir escenarios (mapas) al port
+# Adding stages (maps) to the port
 
-El port puede cargar **escenarios que no están en el disco**: un mapa es un fichero `.unk` (el modelo de
-escenario que sueltan los modders de BT3, el mismo que se reemplaza en PCSX2). El port le da una celda más
-en la rejilla de selección, sirve su modelo (y un banco de sonido) al juego, y dibuja su nombre en el menú.
+The port can load **stages that are not on the disc**: a map is a `.unk` file (the stage model BT3 modders
+release, the same one that is replaced under PCSX2). The port gives it one more cell in the stage grid,
+serves its model (and a sound bank) to the game, and draws its name in the menu.
 
-Todo se controla desde un **manifiesto** (`<data>/stages/maps.txt`) que el port lee al arrancar. No hay que
-tocar código ni pasar variables de entorno.
+Everything is driven by a **manifest** (`<data>/stages/maps.txt`) that the port reads at start-up. No code
+change and no environment variable is needed.
 
 ---
 
-## Uso rápido (script)
+## Quick start (script)
 
-Desde la raíz del repositorio:
+From the repository root:
 
 ```sh
-# instalar un mapa (el nombre es el que sale en el menú)
-port/tools/add_stage.py add "/ruta/A Mi Mapa.unk" "A Mi Mapa"
+# install a map (the name is the one shown in the menu)
+port/tools/add_stage.py add "/path/My Map.unk" "My Map"
 
-# listar los instalados (con su id)
+# list the installed ones (with their id)
 port/tools/add_stage.py list
 
-# quitar uno
-port/tools/add_stage.py remove "A Mi Mapa"
+# remove one
+port/tools/add_stage.py remove "My Map"
 
-# regenerar solo la tira de nombres (si cambias la fuente/estilo)
+# regenerate only the name strip (after a font/style change)
 port/tools/add_stage.py rebuild
 ```
 
-`add` copia el `.unk` a `gamedata/stages/`, añade la línea al manifiesto y **regenera la tira de nombres**
-(`names.rgba`) para que el nombre salga con el estilo del juego.
+`add` copies the `.unk` into `gamedata/stages/`, adds the line to the manifest and **regenerates the name
+strip** (`names.rgba`) so the name comes out in the game's style.
 
-Opciones:
+Options:
 
-| opción | efecto |
+| option | effect |
 |---|---|
-| `--data <dir>` | carpeta de datos (por defecto `gamedata`, o `$BT3_DATA`) |
-| `--font <ttf>` | fuente para la tira de nombres (por defecto `$BT3_STAGE_FONT`, o `port/tools/compacta.ttf`, o una del sistema) |
-| `--no-strip` | solo edita el manifiesto; no toca la tira |
+| `--data <dir>` | data folder (default `gamedata`, or `$BT3_DATA`) |
+| `--font <ttf>` | font for the name strip (default `$BT3_STAGE_FONT`, or `port/tools/compacta.ttf`, or a system one) |
+| `--no-strip` | only edit the manifest; leave the strip alone |
 
-### La fuente de los nombres
+### The font of the names
 
-El juego dibuja los nombres de sus escenarios como **imágenes pre-renderizadas** (no usa una fuente con
-glifos). Para que los mapas añadidos tengan el mismo aire, la tira de nombres se **genera** desde un TTF. Si
-no hay Pillow o no hay fuente, el manifiesto funciona igual (los mapas salen y se juegan) pero el nombre se
-dibuja con la fuente plana del propio juego.
+The game draws its stage names as **pre-rendered images** (it does not use a font with glyphs). So that the
+added maps look the same, the name strip is **generated** from a TTF. Without Pillow or without a font the
+manifest still works (the maps appear and are playable) but the name is drawn with the game's own plain font.
 
-Coloca el TTF en `port/tools/compacta.ttf` (o pásalo con `--font`) para el aspecto de la referencia. El
-estilo (relleno crema→naranja, borde marrón, sombra) está en las constantes de `port/tools/add_stage.py`.
-
----
-
-## Uso manual
-
-1. Copia el `.unk` a `gamedata/stages/`.
-2. Añade una línea a `gamedata/stages/maps.txt`:
-   ```
-   mi_mapa.unk|Nombre En El Menú
-   ```
-3. Regenera la tira: `port/tools/add_stage.py rebuild`.
-
-Cada línea **no comentada** (`#`) añade un mapa; el orden del fichero es el orden de los ids y el orden de
-las imágenes de la tira.
+Put the TTF at `port/tools/compacta.ttf` (or pass it with `--font`) for the reference look. The style
+(cream→orange fill, brown outline, shadow) lives in the constants of `port/tools/add_stage.py`.
 
 ---
 
-## Cómo funciona por dentro
+## Manual use
 
-### Ids de escenario
+1. Copy the `.unk` into `gamedata/stages/`.
+2. Add a line to `gamedata/stages/maps.txt`:
+   ```
+   my_map.unk|Name In The Menu
+   ```
+3. Regenerate the strip: `port/tools/add_stage.py rebuild`.
 
-El juego tiene 36 escenarios del disco, ids `0x00`–`0x23`. Los añadidos toman ids **`0x24`, `0x25`, …** (el
-campo de desbloqueo `stageBits` es de 64 bits, así que caben hasta el `0x3F`; el port usa 26 como tope,
-`0x24`–`0x3D`). Para que esos ids sean seleccionables, el port sube los centinelas de la rejilla:
+Every **non-comment** line (`#`) adds a map; the order in the file is the order of the ids and of the strip's
+images.
+
+---
+
+## How it works
+
+### Stage ids
+
+The game has 36 stages on the disc, ids `0x00`–`0x23`. The added ones take ids **`0x24`, `0x25`, …** (the
+unlock field `stageBits` is 64 bits, so up to `0x3F`; the port uses 26 as the cap, `0x24`–`0x3D`). So that
+those ids are selectable the port moves the grid's sentinels:
 
 ```
-STGGRID_ID_LOCKED 0x24 -> 0x3E      STGGRID_ID_EMPTY 0x25 -> 0x3F   (solo con PORT)
+STGGRID_ID_LOCKED 0x24 -> 0x3E      STGGRID_ID_EMPTY 0x25 -> 0x3F   (PORT only)
 ```
 
-y la rejilla pasa a **6×N** (`stageRows = ceil(count/6)`), rellenando la última fila con celdas "empty".
+and the grid becomes **6×N** (`stageRows = ceil(count/6)`), filling the last row with "empty" cells.
 
-### Ficheros que pide el juego
+### Files the game asks for
 
-Para un escenario de id `S` el juego pide (ver `docs/systems/files_and_assets.md`):
+For a stage of id `S` the game asks for (see `docs/systems/files_and_assets.md`):
 
-| asset | id | de dónde sale el añadido |
+| asset | id | where the added one comes from |
 |---|---|---|
-| modelo (pantalla partida) | `0x171 + S` | **el `.unk` del mapa** |
-| modelo (pantalla dividida) | `0x198 + S` | el modelo *single* (el port no usa nunca el split) |
-| banco de sonido | `0x14E + S` | el banco del primer escenario (prestado) |
-| miniatura del menú | `0x39D + S` | una miniatura existente (los ids altos chocan con la pantalla de carga) |
-| nombre | atlas del movie | dibujado por el port (ver abajo) |
+| model (single screen) | `0x171 + S` | **the map's `.unk`** |
+| model (split screen) | `0x198 + S` | the *single* model (the port never uses the split) |
+| sound bank | `0x14E + S` | the first stage's bank (borrowed) |
+| menu thumbnail | `0x39D + S` | an existing thumbnail (high ids fall on the loading screens) |
+| name | movie atlas | drawn by the port (see below) |
 
-El port traduce esas peticiones a ficheros del disco mediante una **tabla de alias** que construye
-`port/src/plat_stages.c` a partir del manifiesto; `port/src/plat_file.c` la consulta en `open_rel`.
+The port turns those requests into disc files through an **alias table** built by `port/src/plat_stages.c`
+from the manifest; `port/src/plat_file.c` consults it in `open_rel` (and in `Port_FilePath`, the streamed
+path).
 
-**Los rangos de ids están empaquetados y se pisan.** Los ids de fichero son contiguos por tipo de asset y el
-siguiente rango empieza justo después de los 36 del disco, así que:
+**The id ranges are packed and overlap.** File ids are contiguous per asset type and the next range starts
+right after the disc's 36, so:
 
-* el modelo *split* de los añadidos (`0x198 + S`) cae sobre los **archivos de menú** (`baseFile = 0x1C1`) y
-  las transiciones (`0x1BF`, `0x1C0`). Por eso el port **carga siempre el modelo *single*** en batalla
-  (`battle_load.c`, con `#ifdef PORT`): nunca se pide el rango *split* y no hay colisión. En pantalla
-  dividida se usa el modelo completo.
-* la miniatura (`0x39D + S`, con `S ≥ 0x24`) cae sobre las pantallas de carga (`LOAD_FILE_FIRST = 0x3C1`).
-  Por eso se reutiliza una miniatura existente (`menu_d.h`, `CHARSEL_STAGE_FILE_ID`).
+* the added stages' *split* model (`0x198 + S`) falls on the **menu archives** (`baseFile = 0x1C1`) and the
+  transitions (`0x1BF`, `0x1C0`). That is why the port **always loads the *single* model** in battle
+  (`battle_load.c`, under `#ifdef PORT`): the *split* range is never asked for, so there is no collision. In
+  split screen the full model is used.
+* the thumbnail (`0x39D + S`, with `S >= 0x24`) falls on the loading screens (`LOAD_FILE_FIRST = 0x3C1`). So
+  an existing thumbnail is reused (`menu_d.h`, `CHARSEL_STAGE_FILE_ID`).
 
-### El nombre en el menú
+### The name in the menu
 
-El atlas de nombres del movie solo cubre los 36 escenarios del disco. Para los añadidos el clip se oculta y
-el nombre lo dibuja el **port** (`ui.cpp`) como una **imagen** encima del frame:
+The movie's name atlas only covers the disc's 36 stages. For the added ones the clip is hidden and the name
+is drawn by the **port** (`ui.cpp`) as an **image** over the frame:
 
-* `gamedata/stages/names.rgba`: cabecera `w`, `h`, `count` (u32) y luego `count` imágenes de `w×h` en RGBA,
-  una por mapa en el orden del manifiesto.
-* El menú (`menu_c_e.c`) publica cada frame el rectángulo del clip en píxeles del juego (512×448) y qué
-  imagen; `gs_gpu.c` publica el rectángulo de la imagen presentada (letterbox en píxeles de ventana);
-  `ui.cpp` los combina y dibuja con Dear ImGui.
+* `gamedata/stages/names.rgba`: a header `w`, `h`, `count` (u32) and then `count` images of `w×h` in RGBA,
+  one per map in the manifest's order.
+* The menu (`menu_c_e.c`) publishes each frame the clip's rectangle in game pixels (512×448) and which image;
+  `gs_gpu.c` publishes the presented picture's rectangle (the letterbox, in window pixels); `ui.cpp` combines
+  them and draws with Dear ImGui.
 
-Si el overlay no está disponible (no hay `names.rgba`, o se usa el back end **OpenGL**), el menú cae a
-imprimir el nombre con la **fuente del propio juego** (coloca el nombre con `gPortStageNames`, de
+When the overlay is not available (no `names.rgba`, or the **OpenGL** back end), the menu falls back to
+printing the name with the **game's own font** (the name is placed from `gPortStageNames`, in
 `port/src/plat_stages.c`).
 
-### Compatibilidad con lo anterior
+### Compatibility with the earlier prototype
 
-Siguen existiendo, para pruebas, las variables de entorno del prototipo:
+For testing, the prototype's environment variables still work:
 
-* `BT3_EXTRA_STAGES="0x24,0x25"` — se usa **solo si no hay manifiesto**; añade ids sin nombres.
-* `BT3_FILE_ALIAS="pzs3us1/00404.bin=/ruta/kaio.unk;…"` — alias manual por ruta relativa.
-* `BT3_STAGE_REPLACE="0x1b=0x24,…"` — reemplaza el id de una celda existente por otro (sin añadir).
+* `BT3_EXTRA_STAGES="0x24,0x25"` — used **only when there is no manifest**; adds ids without names.
+* `BT3_FILE_ALIAS="pzs3us1/00404.bin=/path/kaio.unk;…"` — a manual alias by relative path.
+* `BT3_STAGE_REPLACE="0x1b=0x24,…"` — replaces the id of an existing cell with another (without adding).
 
 ---
 
-## Límites y notas
+## Limits and notes
 
-* **26 mapas** como máximo (`0x24`–`0x3D`). Más allá, `stageBits` (64 bits) y los sentinelas no dan.
-* El **banco de sonido** de los añadidos es el del primer escenario (prestado). Si quieres el suyo, habría
-  que darle un id libre o reemplazar un banco existente.
-* El modelo se carga en el buffer del juego (`BTL_STAGE_BUF_SIZE = 0x6CB800`, ~7,1 MB). Los modelos
-  originales llegan a ~7,12 MB, así que los `.unk` de los mods caben; uno **más grande** se truncaría.
-* La **miniatura** (el preview pequeño de la rejilla) es una imagen del juego reutilizada: no es la del
-  mapa. Generarla requeriría arte propio.
-* El overlay de nombres va por **Vulkan (SDL_GPU)**. En OpenGL se usa el texto de la fuente del juego.
+* **26 maps** at most (`0x24`–`0x3D`). Beyond that neither `stageBits` (64 bits) nor the sentinels allow it.
+* The added stages' **sound bank** is the first stage's (borrowed). For their own, a free id would have to be
+  given or an existing bank replaced.
+* The model is loaded into the game's buffer (`BTL_STAGE_BUF_SIZE = 0x6CB800`, ~7.1 MB). The original models
+  reach ~7.12 MB, so the mods' `.unk` files fit; a **larger** one would be truncated.
+* The **thumbnail** (the grid's small preview) is a reused game image: it is not the map's. Generating it
+  would need its own art.
+* The name overlay runs on **Vulkan (SDL_GPU)**. On OpenGL the game font's text is used.
 
-## Comprobación
+## Checking it
 
 ```sh
 port/tools/add_stage.py list
-BT3_STAGE_FONT=/ruta/a/compacta.ttf port/tools/add_stage.py rebuild
-BT3_64=1 port/run.sh menu     # entra a Duel -> Character/Stage Select
+BT3_STAGE_FONT=/path/to/compacta.ttf port/tools/add_stage.py rebuild
+BT3_64=1 port/run.sh menu     # go to Duel -> Character/Stage Select
 ```
 
-En el arranque el port registra cuántos mapas leyó:
+At start-up the port logs how many maps it read:
 
 ```
 bt3: stages: 11 map(s) from gamedata/stages/maps.txt

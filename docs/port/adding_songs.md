@@ -1,137 +1,136 @@
-# Añadir canciones a la selección de música
+# Adding songs to the music select
 
-El port permite **añadir pistas** a la lista de música (BGM) que aparece en el menú. Una canción es un
-fichero de audio (mp3, wav, ogg, flac…): el port lo sirve como el ADX que el juego reproduce y le da una
-entrada propia en la lista, con su nombre.
+The port can **add tracks** to the music ("BGM") list shown in the menu. A song is an audio file (mp3, wav,
+ogg, flac…): the port serves it as the ADX the game plays and gives it its own entry in the list, with its
+name.
 
-Todo se controla con un **manifiesto** (`<data>/songs/songs.txt`) que el port lee al arrancar. No hay que
-tocar código ni pasar variables de entorno.
+Everything is driven by a **manifest** (`<data>/songs/songs.txt`) that the port reads at start-up. No code
+change and no environment variable is needed.
 
 ---
 
-## Uso rápido (script)
+## Quick start (script)
 
-Desde la raíz del repositorio:
+From the repository root:
 
 ```sh
-# instalar una canción (el nombre es el que sale en el menú)
-port/tools/add_song.py add "/ruta/Cancion.mp3" "Nombre de la Canción"
+# install a song (the name is the one shown in the menu)
+port/tools/add_song.py add "/path/Song.mp3" "Song Name"
 
-# listar las instaladas (con su offset de lista)
+# list the installed ones (with their list offset)
 port/tools/add_song.py list
 
-# quitar una
-port/tools/add_song.py remove "Nombre de la Canción"
+# remove one
+port/tools/add_song.py remove "Song Name"
 
-# regenerar solo la tira de nombres (si cambias la fuente/estilo)
+# regenerate only the name strip (after a font/style change)
 port/tools/add_song.py rebuild
 ```
 
-`add` **convierte el audio a ADX** con `ffmpeg` (24000 Hz, estéreo — como los temas del juego), lo copia a
-`gamedata/songs/`, añade la línea al manifiesto y **regenera la tira de nombres** (`names.rgba`).
+`add` **converts the audio to ADX** with `ffmpeg` (24000 Hz, stereo — like the game's own tracks), copies it
+into `gamedata/songs/`, adds the line to the manifest and **regenerates the name strip** (`names.rgba`).
 
-| opción | efecto |
+| option | effect |
 |---|---|
-| `--data <dir>` | carpeta de datos (por defecto `gamedata`, o `$BT3_DATA`) |
-| `--font <ttf>` | fuente para la tira de nombres (por defecto `$BT3_STAGE_FONT`, o `port/tools/compacta.ttf`, o una del sistema) |
-| `--ffmpeg <ruta>` | binario de ffmpeg (por defecto `ffmpeg`) |
-| `--rate <hz>` | frecuencia del ADX (por defecto 24000) |
-| `--no-strip` | solo edita el manifiesto; no toca la tira |
+| `--data <dir>` | data folder (default `gamedata`, or `$BT3_DATA`) |
+| `--font <ttf>` | font for the name strip (default `$BT3_STAGE_FONT`, or `port/tools/compacta.ttf`, or a system one) |
+| `--ffmpeg <path>` | the ffmpeg binary (default `ffmpeg`) |
+| `--rate <hz>` | the ADX sample rate (default 24000) |
+| `--no-strip` | only edit the manifest; leave the strip alone |
 
-### La fuente de los nombres
+### The font of the names
 
-Los nombres de las canciones son **imágenes pre-renderizadas** en el juego (igual que los escenarios), así
-que la tira de nombres se **genera** desde un TTF. Si no hay Pillow o no hay fuente, el manifiesto funciona
-igual (las canciones salen y suenan) pero el nombre se dibuja con la fuente plana del juego.
+The songs' names are **pre-rendered images** in the game (like the stages), so the name strip is **generated**
+from a TTF. Without Pillow or without a font the manifest still works (the songs appear and play) but the name
+is drawn with the game's own plain font.
 
-Coloca el TTF en `port/tools/compacta.ttf` (o pásalo con `--font`). El estilo (relleno crema→naranja, borde
-marrón, sombra, alineado a la izquierda) está en las constantes de `port/tools/add_song.py`.
-
----
-
-## Uso manual
-
-1. Convierte el audio a ADX: `ffmpeg -i Cancion.mp3 -ar 24000 -ac 2 -c:a adpcm_adx mi_cancion.adx`.
-2. Copia el `.adx` a `gamedata/songs/`.
-3. Añade una línea a `gamedata/songs/songs.txt`:
-   ```
-   mi_cancion.adx|Nombre En El Menú
-   ```
-4. Regenera la tira: `port/tools/add_song.py rebuild`.
+Put the TTF at `port/tools/compacta.ttf` (or pass it with `--font`). The style (cream→orange fill, brown
+outline, shadow, left-aligned) lives in the constants of `port/tools/add_song.py`.
 
 ---
 
-## Cómo funciona por dentro
+## Manual use
 
-### La lista de música
+1. Convert the audio to ADX: `ffmpeg -i Song.mp3 -ar 24000 -ac 2 -c:a adpcm_adx my_song.adx`.
+2. Copy the `.adx` into `gamedata/songs/`.
+3. Add a line to `gamedata/songs/songs.txt`:
+   ```
+   my_song.adx|Name In The Menu
+   ```
+4. Regenerate the strip: `port/tools/add_song.py rebuild`.
 
-El menú guarda la música como **offsets** dentro de un rango de ficheros BGM:
+---
+
+## How it works
+
+### The music list
+
+The menu keeps the music as **offsets** into a range of BGM files:
 
 ```
 BGM id = 0x10B16 + offset      ->      pzs3us2/<64974 + offset>.bin
 ```
 
-- Offsets `0x00..0x13` (20) = los temas del disco (0x10B16..0x10B29).
-- `0x14..0x17` existen en la lista cruda pero el menú los quita (hueco).
-- `0x18` = **Random** (marcador), `0x19` = **Locked** (marcador).
-- Offsets `0x1A` en adelante = **libres** (sus ficheros, `0x10B30+`, son stubs de 30 KB).
+- Offsets `0x00..0x13` (20) = the disc's tracks (0x10B16..0x10B29).
+- `0x14..0x17` exist in the raw list but the menu drops them (a gap).
+- `0x18` = **Random** (a marker), `0x19` = **Locked** (a marker).
+- Offsets `0x1A` onward = **free** (their files, `0x10B30+`, are 30 KB stubs).
 
-Las canciones añadidas toman `0x1A`, `0x1B`, … El port:
+The added songs take `0x1A`, `0x1B`, … The port:
 
-1. **Aliasa** el fichero `pzs3us2/<64974 + 0x1A + i>.bin` → `songs/<fichero>` (`plat_songs.c`; lo consulta
-   `plat_file.c`, tanto la carga normal como el **streaming** del ADX).
-2. **Amplía la lista**: copia `bgmIds` a un buffer, inserta los offsets nuevos **antes** de Random y sube
-   `bgmCount` (en `menu_c_e.c`, solo `#ifdef PORT`). Marca sus bits en `gSaveData->bgmBits` (u32 → caben
-   offsets `0x1A..0x1F`).
-3. **Dibuja el nombre**: la franja de música es fija; el port la dibuja como imagen (`gamedata/songs/names.rgba`)
-   por encima del frame (overlay, back end **Vulkan/SDL_GPU**). Sin overlay (p. ej. **OpenGL**), el nombre se
-   imprime con la **fuente del juego**.
+1. **Aliases** the file `pzs3us2/<64974 + 0x1A + i>.bin` → `songs/<file>` (`plat_songs.c`; `plat_file.c`
+   consults it both for the normal load and for the **streamed** ADX).
+2. **Extends the list**: copies `bgmIds` into a buffer, inserts the new offsets **before** Random and raises
+   `bgmCount` (in `menu_c_e.c`, `#ifdef PORT` only). It sets their bits in `gSaveData->bgmBits` (a u32, so
+   offsets `0x1A..0x1F` fit).
+3. **Draws the name**: the music strip is fixed; the port draws it as an image (`gamedata/songs/names.rgba`)
+   over the frame (the overlay, on the **Vulkan/SDL_GPU** back end). Without the overlay (e.g. **OpenGL**)
+   the name is printed with the **game's font**.
 
-### El nombre (overlay)
+### The name (overlay)
 
-`names.rgba`: cabecera `w`, `h`, `count` (u32) y luego `count` imágenes de `w×h` en RGBA, una por canción en
-el orden del manifiesto. El port las dibuja con la **posición real del clip** `mc_bgm_now` (padre + hijo) del
-juego, mapeando por el letterbox.
+`names.rgba`: a header `w`, `h`, `count` (u32) and then `count` images of `w×h` in RGBA, one per song in the
+manifest's order. The port draws them at the **clip's real position** (`mc_bgm_now`, parent + child of the
+game), mapped through the letterbox.
 
-## Problema conocido: la posición del nombre
+## Known issue: the name's position
 
-En la selección de música el juego muestra el nombre en **dos** sitios distintos:
+In the music select the game shows the name in **two** different places:
 
-- sobre el **carrete** (la entrada que se está desplazando; la "selección"),
-- en la **franja inferior** (el tema ya elegido; el "seleccionado").
+- over the **reel** (the entry being scrolled; the "selection"),
+- in the **bottom bar** (the track already chosen; the "selected").
 
-Es el **mismo clip** (`mc_bgm_now`), movido por cada pantalla/estado, así que el port lo sigue y dibuja el
-nombre donde el juego lo haría. El del **seleccionado** (franja) queda en su sitio; el de la **selección**
-(sobre el carrete) puede quedar **un poco alto** respecto a la referencia del juego (el clip está animado y su
-posición no es la definitiva). Queda pendiente afinarlo. La misma mecánica sirve para el **Map Select**, donde
-el nombre va en la franja igual que en los escenarios.
+It is the **same clip** (`mc_bgm_now`), moved by each screen/state, so the port follows it and draws the name
+where the game would. The **selected** one (the bar) lands in place; the **selection** one (over the reel) can
+sit **a bit high** compared with the game (the clip is animated and its position is not final). Refining it is
+still pending. The same mechanism serves the **Map Select**, where the name goes in the bar like the stages.
 
 ---
 
-## Reemplazar una canción del disco
+## Replacing a disc track
 
-Ya funciona por el mecanismo de mods: basta poner el ADX en `gamedata/mods/pzs3us2/<índice>.bin` (p. ej.
-`64974.bin` es el tema 0). No hace falta nada del port.
+That already works through the mods mechanism: just put the ADX at `gamedata/mods/pzs3us2/<index>.bin` (e.g.
+`64974.bin` is track 0). Nothing from the port is needed.
 
-## Límites y notas
+## Limits and notes
 
-- **6 canciones** como máximo añadidas (offsets `0x1A..0x1F`; `bgmBits` es un u32).
-- El audio se convierte a **ADX** (ffmpeg `adpcm_adx`). El juego lo reproduce con su decodificador ADX; otros
-  formatos no suenan.
-- La lista de música es un **reel**: las añadidas aparecen antes de Random.
-- El overlay va por **Vulkan (SDL_GPU)**. En OpenGL se usa el texto de la fuente del juego.
+- **6 added songs** at most (offsets `0x1A..0x1F`; `bgmBits` is a u32).
+- The audio is converted to **ADX** (ffmpeg `adpcm_adx`). The game plays it with its ADX decoder; other
+  formats make no sound.
+- The music list is a **reel**: the added ones appear before Random.
+- The overlay runs on **Vulkan (SDL_GPU)**. On OpenGL the game font's text is used.
 
-## Comprobación
+## Checking it
 
 ```sh
 port/tools/add_song.py list
-BT3_STAGE_FONT=/ruta/a/compacta.ttf port/tools/add_song.py rebuild
+BT3_STAGE_FONT=/path/to/compacta.ttf port/tools/add_song.py rebuild
 BT3_64=1 port/run.sh menu     # Duel -> Character/Stage Select -> BGM Select
 ```
 
-En el arranque el port registra cuántas canciones leyó:
+At start-up the port logs how many songs it read:
 
 ```
-bt3: songs: 2 added track(s) from gamedata/songs/songs.txt
-bt3: song-name overlay: 2 names, 1024x64 each
+bt3: songs: 1 added track(s) from gamedata/songs/songs.txt
+bt3: song-name overlay: 1 names, 1024x64 each
 ```
