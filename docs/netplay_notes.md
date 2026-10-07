@@ -726,3 +726,10 @@ player's last known input; beyond that it waits, as lockstep does every blank). 
 - Test (`BT3_NET_SKEW=60`: one copy falls 60 ms behind at blank 1500; rollback 8, 40 ms): without balancing the
   other copy stays 6 blanks ahead and every rollback is 6 blanks; with it, it slows by 72 ms over the next
   blanks, both are 2 to 3 ahead again and rollbacks are 2 to 3 blanks. Fight values the same on both either way.
+
+## Rollback on a real Windows (2026-10-07)
+
+- The user, with the two archives of commit bbf72ff (Linux here, Windows in their VM, another processor), rollback
+  on: "it worked and stayed in sync". By eye; no checksum log. Not known yet: whether `BT3_NET_LATENCY` was set
+  (without it, on a local network, the game hardly ever goes back, so the saves are exercised on Windows but the
+  going back barely is), and how long a frame with a rollback takes there.
