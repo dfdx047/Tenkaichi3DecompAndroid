@@ -764,6 +764,10 @@ static void frame_end(void) {
     sCurSamp0 = sCurSamp1 = -1;
     haveScissor = 0;
     lastBlendc = -1.0f;
+    /* The present draws its full-screen triangle with the scissor test off (see the end of this function); turn it
+       back on for the frame's own draws, or every partial scissor (the split screen's halves, the HUD, the
+       fighters' shadows) is ignored and the two views overlap across the whole screen. */
+    glEnable(GL_SCISSOR_TEST);
     for (n = 0; n < gsDrawCount; n++) {
         const GsDraw *d = &gsDraws[n];
         if (d->native >= 100) {
