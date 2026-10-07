@@ -17,8 +17,19 @@ game's data from it, and it stays on your computer.
 - In the game, **F1** opens the settings. Its Cheats tab has "Unlock everything" (a debug function the game's
   developers left in: all characters, stages, music, items and Zenni).
 
-Not there yet: online play (the goal of the project). See
-[docs/port/README.md](docs/port/README.md) for the running log of what is done, what is verified and what is not.
+- **Online play, experimental** (in the source; not in a release yet): the main menu's hidden "Dragon Net Battle"
+  entry is back and opens a small window. One player hosts on a port, the other joins with the host's address;
+  both get the same roster with everything unlocked, each sees their own fighter's view full screen, and leaving
+  the match puts each player back where they were with their own save. Linux and Windows play against each
+  other. With rollback (the host chooses how many frames, and the input delay) your own moves come out at once
+  and the game corrects itself when the other player's buttons arrive.
+
+Online play is new: it has been played between two machines on one local network, not yet over the internet,
+and the host's port has to be reachable from the other player (port forwarding; there is no relay or
+match-making). The 32-bit Linux build has no rollback. [docs/netplay_notes.md](docs/netplay_notes.md) is the
+working log of how it is built and what was checked.
+
+See [docs/port/README.md](docs/port/README.md) for the running log of what is done, what is verified and what is not.
 
 ## Requirements
 
