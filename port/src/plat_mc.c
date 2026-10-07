@@ -38,6 +38,7 @@ static int sSeen;             /* slot 1 was reported once: later sceMcGetInfo ca
    the position. The host's own file object is beside it (not state) and is brought in line when it is used, so a
    frame that is run again after the state was restored finds the files as that state says. */
 #include "port_host.h"
+extern void Port_StateTouch(void *p, unsigned long n); /* gs/state.c */
 static struct { int open, mode; long pos; char path[600]; } sMc[MC_FILES];
 PORT_HOST static FILE *sHost[MC_FILES] = {NULL};
 PORT_HOST static char sHostPath[MC_FILES][600] = {{0}};
@@ -177,6 +178,7 @@ int func_002A2208(int fd, void *buf, int size) {
         return request(5, -4);
     }
     fseek(f, sMc[fd].pos, SEEK_SET);
+    Port_StateTouch(buf, (size_t)size); /* (gs/state.c: file data straight into watched memory) */
     n = (int)fread(buf, 1, (size_t)size, f);
     sMc[fd].pos += n;
     return request(5, n);

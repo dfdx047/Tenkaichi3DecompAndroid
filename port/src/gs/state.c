@@ -215,6 +215,9 @@ static void part_save(Snapshot *s, uint8_t *at, size_t n) {
 }
 
 /* Returns 0 after saving, 1 when it returns the second time (the state was restored). */
+static int sSaveSmall; /* state_save leaves out the regions the page tracking covers (the roll ring keeps those) */
+static int tracked_part(const uint8_t *p);
+
 static int __attribute__((noinline)) state_save(Snapshot *s) {
     void *xp[8];
     size_t xn[8];
@@ -226,11 +229,15 @@ static int __attribute__((noinline)) state_save(Snapshot *s) {
     }
     s->parts = 0;
     for (i = 0; i < sRegions; i++) {
-        part_save(s, (uint8_t *)sRegion[i].p, sRegion[i].n);
+        if (!(sSaveSmall && tracked_part(sRegion[i].p))) {
+            part_save(s, (uint8_t *)sRegion[i].p, sRegion[i].n);
+        }
     }
     extra = Port_StateExtra(xp, xn, 8);
     for (i = 0; i < extra; i++) {
-        part_save(s, xp[i], xn[i]);
+        if (!(sSaveSmall && tracked_part(xp[i]))) {
+            part_save(s, xp[i], xn[i]);
+        }
     }
     s->padPos = Port_PadPlayPos();
     s->loaded = 0;
@@ -266,11 +273,14 @@ static void loader(void) {
 #endif
 }
 
+static void roll_forget(void);
+
 static void state_load(Snapshot *s) {
     static uint8_t *stack;
     if (stack == NULL) {
         stack = malloc(1 << 20);
     }
+    roll_forget();
     sLoading = s;
 #ifdef _WIN32
     Port_CallOnStack(loader, stack + (1 << 20) - 64); /* (does not come back: the loader continues at the save) */
@@ -300,11 +310,365 @@ static uint64_t parts_hash(void) {
     return XXH3_64bits_digest(&st);
 }
 
+/* ---------------------------------------------------------------------------------------------------------------
+ * The roll ring: a saved state per vertical blank, cheap enough to keep many (rollback).
+ *
+ * Nearly all of a state is the game's heap and the port's block region (30 MB and more), of which a blank changes
+ * about one page in a hundred. So those two are not copied: the system is asked which pages were written
+ * (Linux: the pages are read-only and the first write to one arrives here as a fault, which notes the page and
+ * opens it; Windows: the regions are allocated with write tracking and GetWriteWatch lists the pages), a copy of
+ * both regions as of the latest save is kept (the shadow), and at each save the pages written since the save
+ * before go, as they were then (from the shadow), to that earlier save's own list. Going back k saves: the pages
+ * written since the latest save come back from the shadow, then each save's list is put back, newest first.
+ * The small rest (the game's variables, the stack, the registers) is copied whole per save, as before.
+ *
+ * A read() into a read-only page does not fault, it fails: whatever lets the system write file data straight
+ * into the game's memory calls Port_StateTouch first.
+ * ------------------------------------------------------------------------------------------------------------- */
+#define PG 4096u
+#define ROLL_MAX 64
+
+typedef struct Track { uint8_t *base, *shadow; uint32_t pages, first; } Track; /* first: its first global page number */
+static Track sTrack[2];
+static int sTracks, sTracking;
+static uint32_t sTrackPages;       /* global page numbers in use */
+static uint32_t *sDirty;           /* global page numbers written since the last collect */
+static volatile uint32_t sDirtyCount;
+static volatile uint8_t *sDirtyMark; /* per global page: in sDirty already */
+static uint32_t *sStamp;           /* per global page: the save whose list holds it already */
+static uint32_t sArenaPages;       /* pages of the block region in use at the last collect */
+
+typedef struct Roll {
+    Snapshot small;
+    uint32_t *pg;
+    uint8_t *data;
+    uint32_t n, cap, id;
+} Roll;
+static Roll *sRoll[ROLL_MAX];
+static int sRolls;
+static uint32_t sRollId;
+
+static int tracked_part(const uint8_t *p) {
+    int t;
+    for (t = 0; t < sTracks; t++) {
+        if (p == sTrack[t].base) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static inline uint8_t *page_at(uint32_t g, uint8_t **shadow) {
+    Track *t = &sTrack[g >= sTrack[1].first && sTracks > 1];
+    *shadow = t->shadow + (size_t)(g - t->first) * PG;
+    return t->base + (size_t)(g - t->first) * PG;
+}
+
+static inline void dirty_note(uint32_t g) {
+    if (!__atomic_exchange_n(&sDirtyMark[g], 1, __ATOMIC_SEQ_CST)) {
+        sDirty[__atomic_fetch_add(&sDirtyCount, 1, __ATOMIC_SEQ_CST)] = g;
+    }
+}
+
+#ifndef _WIN32
+#include <signal.h>
+#include <sys/mman.h>
+static struct sigaction sOldSegv;
+
+static void on_write_fault(int sig, siginfo_t *si, void *uc) {
+    uintptr_t a = (uintptr_t)si->si_addr;
+    int t;
+    for (t = 0; t < sTracks; t++) {
+        uintptr_t b = (uintptr_t)sTrack[t].base;
+        if (a >= b && a < b + (uintptr_t)sTrack[t].pages * PG) {
+            uint32_t page = (uint32_t)((a - b) / PG);
+            dirty_note(sTrack[t].first + page);
+            mprotect((void *)(b + (uintptr_t)page * PG), PG, PROT_READ | PROT_WRITE);
+            return;
+        }
+    }
+    /* not ours: to whoever handled it before, or to the default (the write is tried again and ends the program) */
+    if (sOldSegv.sa_flags & SA_SIGINFO) {
+        sOldSegv.sa_sigaction(sig, si, uc);
+    } else if (sOldSegv.sa_handler != SIG_DFL && sOldSegv.sa_handler != SIG_IGN) {
+        sOldSegv.sa_handler(sig);
+    } else {
+        sigaction(SIGSEGV, &sOldSegv, NULL);
+    }
+}
+
+static void *shadow_alloc(size_t n) {
+    void *p = mmap(NULL, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    return p == MAP_FAILED ? NULL : p;
+}
+#else
+static void *shadow_alloc(size_t n) {
+    return VirtualAlloc(NULL, n, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+}
+#endif
+
+/* A page of a tracked region is about to be written by other means than an ordinary store. */
+static void touch_page(uint32_t g) {
+    if (!sDirtyMark[g]) {
+#ifndef _WIN32
+        uint8_t *sh, *m = page_at(g, &sh);
+        mprotect(m, PG, PROT_READ | PROT_WRITE);
+#endif
+        dirty_note(g);
+    }
+}
+
+void Port_StateTouch(void *p, unsigned long n) {
+    uintptr_t a = (uintptr_t)p;
+    int t;
+    if (!sTracking || n == 0) {
+        return;
+    }
+    for (t = 0; t < sTracks; t++) {
+        uintptr_t b = (uintptr_t)sTrack[t].base, e = b + (uintptr_t)sTrack[t].pages * PG;
+        if (a + n > b && a < e) {
+            uintptr_t lo = a < b ? b : a, hi = a + n > e ? e : a + n, q;
+            for (q = (lo - b) / PG; q <= (hi - 1 - b) / PG; q++) {
+                touch_page(sTrack[t].first + (uint32_t)q);
+            }
+        }
+    }
+}
+
+static void track_start(void) {
+    void *xp[8];
+    size_t xn[8];
+    uint8_t *heap;
+    uint32_t heapSize;
+    int extra, t;
+
+    if (sRegions < 0) {
+        regions_init();
+    }
+    Port_HeapRegion(&heap, &heapSize);
+    sTrack[0].base = heap;
+    sTrack[0].pages = heapSize / PG;
+    sTrack[0].first = 0;
+    sTracks = 1;
+    sTrackPages = sTrack[0].pages;
+    extra = Port_StateExtra(xp, xn, 8);
+    if (extra >= 4) { /* the block region: all of its address range, used or not yet */
+        extern uint32_t Port_LowRegionSize(void); /* plat_mem.c */
+        sTrack[1].base = xp[3];
+        sTrack[1].pages = Port_LowRegionSize() / PG;
+        sTrack[1].first = sTrackPages;
+        sTrackPages += sTrack[1].pages;
+        sTracks = 2;
+        sArenaPages = (uint32_t)((xn[3] + PG - 1) / PG);
+    }
+    sDirty = malloc(sizeof(uint32_t) * sTrackPages);
+    sDirtyMark = calloc(1, sTrackPages);
+    sStamp = calloc(sizeof(uint32_t), sTrackPages);
+    for (t = 0; t < sTracks; t++) {
+        size_t used = (size_t)(t == 0 ? sTrack[t].pages : sArenaPages) * PG;
+        sTrack[t].shadow = shadow_alloc((size_t)sTrack[t].pages * PG);
+        if (sTrack[t].shadow == NULL) {
+            fprintf(stderr, "bt3: state: no memory for the copy of the game's memory\n");
+            exit(2);
+        }
+        memcpy(sTrack[t].shadow, sTrack[t].base, used);
+    }
+#ifndef _WIN32
+    {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_sigaction = on_write_fault;
+        sa.sa_flags = SA_SIGINFO | SA_NODEFER;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGSEGV, &sa, &sOldSegv);
+        mprotect(sTrack[0].base, (size_t)sTrack[0].pages * PG, PROT_READ);
+        if (sTracks > 1 && sArenaPages != 0) {
+            mprotect(sTrack[1].base, (size_t)sArenaPages * PG, PROT_READ);
+        }
+    }
+#else
+    for (t = 0; t < sTracks; t++) {
+        ResetWriteWatch(sTrack[t].base, (size_t)(t == 0 ? sTrack[t].pages : sArenaPages) * PG);
+    }
+#endif
+    sTracking = 1;
+}
+
+/* The pages written since the last collect, into sDirty (each once). Returns how many. */
+static uint32_t dirty_collect(void) {
+    void *xp[8];
+    size_t xn[8];
+    uint32_t used = sArenaPages, g;
+
+    if (sTracks > 1 && Port_StateExtra(xp, xn, 8) >= 4) {
+        used = (uint32_t)((xn[3] + PG - 1) / PG);
+    }
+#ifdef _WIN32
+    {
+        static void **addr;
+        int t;
+        if (addr == NULL) {
+            addr = malloc(sizeof(void *) * sTrackPages);
+        }
+        for (t = 0; t < sTracks; t++) {
+            ULONG_PTR count = sTrackPages;
+            DWORD gran = 0;
+            size_t len = (size_t)(t == 0 ? sTrack[t].pages : (used > sArenaPages ? used : sArenaPages)) * PG;
+            ULONG_PTR i;
+            UINT rc = len != 0 ? GetWriteWatch(WRITE_WATCH_FLAG_RESET, sTrack[t].base, len, addr, &count, &gran) : 0;
+            if (rc != 0) {
+                static int said;
+                if (!said++) {
+                    fprintf(stderr, "bt3: state: the system does not list the written pages of %p + %u MB (error %lu)\n", (void *)sTrack[t].base,
+                            (unsigned)(len >> 20), (unsigned long)GetLastError());
+                }
+            }
+            if (len != 0 && rc == 0) {
+                for (i = 0; i < count; i++) {
+                    dirty_note(sTrack[t].first + (uint32_t)(((uintptr_t)addr[i] - (uintptr_t)sTrack[t].base) / PG));
+                }
+            }
+        }
+    }
+#endif
+    /* the block region grew: its new pages count as written (they were nothing before: the shadow's zeros) */
+    for (g = sArenaPages; g < used; g++) {
+        dirty_note(sTrack[1].first + g);
+    }
+    if (used > sArenaPages) {
+        sArenaPages = used;
+    }
+    return sDirtyCount;
+}
+
+static int cmp_u32(const void *a, const void *b);
+
+/* After a collect has been dealt with: nothing counts as written, every page is watched again. */
+static void dirty_rearm(void) {
+    uint32_t i, n = sDirtyCount;
+#ifndef _WIN32
+    /* read-only again, neighbours in one call (the list is in the order of the writes: sort it first) */
+    uint32_t j;
+    qsort(sDirty, n, sizeof(sDirty[0]), cmp_u32);
+    for (i = 0; i < n; i = j) {
+        uint8_t *sh, *m = page_at(sDirty[i], &sh);
+        int second = sDirty[i] >= sTrack[1].first && sTracks > 1;
+        for (j = i + 1; j < n && sDirty[j] == sDirty[j - 1] + 1 && (sDirty[j] >= sTrack[1].first && sTracks > 1) == second; j++) {
+        }
+        mprotect(m, (size_t)(j - i) * PG, PROT_READ);
+    }
+#endif
+    for (i = 0; i < n; i++) {
+        sDirtyMark[sDirty[i]] = 0;
+    }
+    sDirtyCount = 0;
+}
+
+/* A whole state is about to be put back by other means than roll_back (state_load): the ring's saves do not
+   lead to it. (Its pages arrive as written at the next collect, and the shadow follows.) */
+static int sRollLoading;
+static void roll_forget(void) {
+    if (!sRollLoading) {
+        sRolls = 0;
+    }
+    sRollLoading = 0;
+}
+
+static int cmp_u32(const void *a, const void *b) {
+    uint32_t x = *(const uint32_t *)a, y = *(const uint32_t *)b;
+    return x < y ? -1 : x > y;
+}
+
+/* Saves the state as the newest of the ring. Returns 0 after saving, 1 when a roll_back has come back to it. */
+static int __attribute__((noinline)) roll_save(void) {
+    Roll *r, *prev;
+    uint32_t i, n;
+    int back;
+
+    if (!sTracking) {
+        track_start();
+    }
+    n = dirty_collect();
+    prev = sRolls != 0 ? sRoll[sRolls - 1] : NULL;
+    for (i = 0; i < n; i++) {
+        uint32_t g = sDirty[i];
+        uint8_t *sh, *m = page_at(g, &sh);
+        if (prev != NULL && sStamp[g] != prev->id) { /* as the page was at the save before: into that save's list */
+            if (prev->n == prev->cap) {
+                prev->cap = prev->cap != 0 ? prev->cap * 2 : 256;
+                prev->pg = realloc(prev->pg, sizeof(uint32_t) * prev->cap);
+                prev->data = realloc(prev->data, (size_t)prev->cap * PG);
+            }
+            prev->pg[prev->n] = g;
+            memcpy(prev->data + (size_t)prev->n * PG, sh, PG);
+            prev->n++;
+            sStamp[g] = prev->id;
+        }
+        memcpy(sh, m, PG);
+    }
+    dirty_rearm();
+    if (sRolls == ROLL_MAX) { /* the oldest goes; its storage is used for the new one */
+        r = sRoll[0];
+        memmove(&sRoll[0], &sRoll[1], sizeof(sRoll[0]) * (ROLL_MAX - 1));
+        sRolls--;
+    } else if (sRoll[sRolls] != NULL) {
+        r = sRoll[sRolls];
+    } else {
+        r = calloc(1, sizeof(*r));
+    }
+    sRoll[sRolls++] = r;
+    r->n = 0;
+    r->id = ++sRollId;
+    sSaveSmall = 1;
+    back = state_save(&r->small);
+    sSaveSmall = 0;
+    return back;
+}
+
+/* Back to the state of k saves ago (1: the newest). Does not return: roll_save of that save returns 1. */
+static void roll_back(int k) {
+    int target = sRolls - k, j;
+    uint32_t i, n;
+    Roll *r;
+
+    if (target < 0) {
+        fprintf(stderr, "bt3: state: asked to go back %d saves, the ring holds %d\n", k, sRolls);
+        exit(2);
+    }
+    /* what was written since the newest save: back from the shadow (the pages stay noted as written) */
+    n = dirty_collect();
+    for (i = 0; i < n; i++) {
+        uint8_t *sh, *m = page_at(sDirty[i], &sh);
+        touch_page(sDirty[i]);
+        memcpy(m, sh, PG);
+    }
+    /* then each save's own pages, from the one before the newest down to the target */
+    for (j = sRolls - 2; j >= target; j--) {
+        r = sRoll[j];
+        for (i = 0; i < r->n; i++) {
+            uint8_t *sh, *m = page_at(r->pg[i], &sh);
+            touch_page(r->pg[i]);
+            memcpy(m, r->data + (size_t)i * PG, PG);
+            memcpy(sh, r->data + (size_t)i * PG, PG);
+        }
+    }
+    r = sRoll[target];
+    for (j = target + 1; j < sRolls; j++) { /* the newer saves are gone (their storage is kept for reuse) */
+        sRoll[j]->n = 0;
+    }
+    sRolls = target + 1;
+    for (i = 0; i < r->n; i++) { /* the target's list is still right: the pages in it are not noted a second time */
+        sStamp[r->pg[i]] = r->id;
+    }
+    sRollLoading = 1;
+    state_load(&r->small);
+}
+
 #define SYNC_MAX_DEPTH 64
 
 void Port_SyncTest(unsigned vblank) {
     static struct Ctl {
-        int mode, phase, depth, step;
+        int mode, phase, depth, step, roll;
         unsigned from, frames, bad;
         uint64_t h1[SYNC_MAX_DEPTH + 1];
         uint64_t tPrev, nsSilent, nsLoud, nsSave, nsLoad, tLoad; /* how long things take (reported with the count) */
@@ -319,6 +683,7 @@ void Port_SyncTest(unsigned vblank) {
         c->mode = e != NULL;
         c->from = e != NULL ? (unsigned)atoi(e) : 0;
         c->depth = d != NULL ? atoi(d) : 1;
+        c->roll = getenv("BT3_SYNCTEST_ROLL") != NULL; /* with the roll ring (pages written, not whole copies) */
         if (c->depth < 1) { c->depth = 1; }
         if (c->depth > SYNC_MAX_DEPTH) { c->depth = SYNC_MAX_DEPTH; }
     }
@@ -335,10 +700,21 @@ void Port_SyncTest(unsigned vblank) {
         c->h1[++c->step] = parts_hash();
         c->tPrev = SDL_GetTicksNS();
         if (c->step < c->depth) {
+            if (c->roll) { /* a save at every blank, as rollback makes them */
+                tNow = SDL_GetTicksNS();
+                roll_save();
+                c->nsSave += SDL_GetTicksNS() - tNow;
+                c->nSave++;
+                c->tPrev = SDL_GetTicksNS();
+            }
             return;
         }
         c->phase = 2;
         c->step = 0;
+        if (c->roll) {
+            c->tLoad = SDL_GetTicksNS();
+            roll_back(c->depth);
+        }
         if (c->depth > 1 || state_save(&c->first) == 0) { /* (depth 1: kept to say WHERE a difference is) */
             c->tLoad = SDL_GetTicksNS();
             state_load(&c->snap);
@@ -378,6 +754,10 @@ void Port_SyncTest(unsigned vblank) {
             }
         }
         if (c->step < c->depth) {
+            if (c->roll) {
+                roll_save();
+                c->tPrev = SDL_GetTicksNS();
+            }
             return;
         }
         c->frames += (unsigned)c->depth;
@@ -395,7 +775,7 @@ void Port_SyncTest(unsigned vblank) {
     c->phase = 1;
     c->step = 0;
     tNow = SDL_GetTicksNS();
-    if (state_save(&c->snap) != 0) {
+    if ((c->roll ? roll_save() : state_save(&c->snap)) != 0) {
         c->nsLoad += SDL_GetTicksNS() - c->tLoad;
         c->nLoad++;
         c->tPrev = SDL_GetTicksNS();
@@ -516,6 +896,7 @@ void Port_SessionReturn(void) {
     state_load(&sOwn);
 }
 #else
+void Port_StateTouch(void *p, unsigned long n) { (void)p; (void)n; }
 volatile int gPortNetWindowClose;
 void Port_SyncTest(unsigned vblank) { (void)vblank; }
 int Port_SessionCan(void) { return 0; }

@@ -55,7 +55,7 @@ static void *low_alloc(size_t size) {
         uintptr_t base = ((uintptr_t)mbi.BaseAddress + 0xFFFF) & ~(uintptr_t)0xFFFF;
         uintptr_t end = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
         if (mbi.State == MEM_FREE && base + size <= end && base + size <= 0x7F000000u) {
-            void *p = VirtualAlloc((void *)base, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            void *p = VirtualAlloc((void *)base, size, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE); /* (the heap may land here) */
             if (p != NULL) {
                 return p;
             }
@@ -76,7 +76,8 @@ static void map(uint32_t addr, uint32_t size, const char *what) {
 
 static void map_heap(void) {
     uint32_t base = HEAP_BASE & ~0xFFFFu;
-    uint8_t *p = VirtualAlloc((void *)(uintptr_t)base, HEAP_END - base, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    /* (write tracking: gs/state.c asks which of the heap's pages were written; costs nothing until it does) */
+    uint8_t *p = VirtualAlloc((void *)(uintptr_t)base, HEAP_END - base, MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE);
 
     if (p != NULL) {
         return; /* at the PS2's address */
@@ -100,7 +101,7 @@ static void *low_reserve(size_t size) {
         uintptr_t base = ((uintptr_t)mbi.BaseAddress + 0xFFFF) & ~(uintptr_t)0xFFFF;
         uintptr_t end = (uintptr_t)mbi.BaseAddress + mbi.RegionSize;
         if (mbi.State == MEM_FREE && base + size <= end && base + size <= 0x7F000000u) {
-            void *p = VirtualAlloc((void *)base, size, MEM_RESERVE, PAGE_READWRITE);
+            void *p = VirtualAlloc((void *)base, size, MEM_RESERVE | MEM_WRITE_WATCH, PAGE_READWRITE);
             if (p != NULL) {
                 return p;
             }
@@ -398,6 +399,14 @@ static volatile int sLowLock;
 /* For saving and restoring the game's state (port/src/gs/state.c): the port's own memory that belongs to it. The
    blocks of Port_LowAlloc hold what the game was handed by address (file handles, sound buffers), and the
    allocator's own variables say which of them are in use. Also where the game thread's stack ends. */
+uint32_t Port_LowRegionSize(void) {
+#if defined(__x86_64__)
+    return LOW_ARENA_SIZE;
+#else
+    return 0;
+#endif
+}
+
 int Port_StateExtra(void **p, size_t *n, int max) {
     int k = 0;
 #if defined(__x86_64__)
@@ -490,7 +499,7 @@ void *Port_Malloc(uint32_t size) {
 static void low_region_take(void) {
 #ifdef _WIN32
         /* address space only (reserved); pages are committed as the region is used, below */
-        sLowArena = VirtualAlloc((void *)(uintptr_t)LOW_ARENA_BASE, LOW_ARENA_SIZE, MEM_RESERVE, PAGE_READWRITE);
+        sLowArena = VirtualAlloc((void *)(uintptr_t)LOW_ARENA_BASE, LOW_ARENA_SIZE, MEM_RESERVE | MEM_WRITE_WATCH, PAGE_READWRITE);
         if (sLowArena == NULL) {
             sLowArena = low_reserve(LOW_ARENA_SIZE);
         }

@@ -643,3 +643,28 @@ a frame with picture 3.1 ms, re-run without output 1.53 ms, saving the state 0.7
   `BtlObjPose_CalcMatrices` 7%, `StgFrustum_TestPart` 6%, `op_vmaddbc` 6%, `ClipPlane_DistArray` 5%,
   `Quat_ToMtx` 4%: spread out. The next kernels worth having whole would be the four-component VU0 operations
   (`op_vmulabc`, `op_vmaddabc`, `op_vmaddbc` of src/port/vu0_a.c) and `Mtx_Mul` as one piece.
+
+## The roll ring: a save per blank that stores only the pages written (2026-10-07)
+
+`gs/state.c`, "The roll ring" (`roll_save`, `roll_back(k)`; nothing uses it yet but the rewind test with
+`BT3_SYNCTEST_ROLL=1`; normal play never starts the tracking).
+
+- Measured first: of the 7,550 pages (30 MB) a whole save copies, a blank of the fight changes 70 to 90.
+- The heap and the port's block region are not copied. Linux: their pages are read-only, the first write to a
+  page faults (`on_write_fault`: note the page, open it), and the pages are closed again at the next save.
+  Windows: the regions are allocated with `MEM_WRITE_WATCH` and `GetWriteWatch` lists the pages (the heap is NOT
+  at the PS2's address in the Windows program but in a `low_alloc` block at 0x30000000: that allocation needed the
+  flag too, or the call fails with error 87 and nothing is tracked).
+- A copy of both regions as of the newest save (the shadow) supplies each written page as it was; it goes to the
+  save before's list. Going back k saves: pages written since the newest save from the shadow, then each save's
+  list, newest first. Variables, stack and registers are copied whole per save (the old `state_save`, without the
+  two regions). 64 saves are kept. A whole state loaded by other means (`state_load`: the session switch) empties
+  the ring.
+- `Port_StateTouch`: a `read()` into a read-only page does not fault, it fails. The three places that let the
+  system write file data straight into game memory (plat_fcache.c, plat_mc.c, the pad recording) announce it.
+- Results, session6 with the window, this machine: saving 0.74 -> 0.08 ms; going back 4 / 8 / 20 saves 0.29 /
+  0.36 / 0.61 ms (a whole restore was 0.64); a re-run blank 1.27 ms (was 1.14: the faults, about 80 a blank).
+  0 differences at depth 1, 4, 8 and 20 on Linux and at 1 and 8 on the Windows program under Wine; the old
+  whole-copy test, the session switch test and normal play unchanged.
+- Not checked: a real Windows (Wine's write tracking is its own implementation); memory use (the shadow is 28 MB
+  plus the block region's used part, each save's list about 0.3 MB).

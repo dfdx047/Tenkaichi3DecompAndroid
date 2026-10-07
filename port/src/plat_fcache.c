@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+extern void Port_StateTouch(void *p, unsigned long n); /* gs/state.c */
 
 extern const char *Port_FileRoot(void); /* plat_file.c: BT3_DATA or "gamedata" */
 
@@ -82,6 +83,7 @@ size_t Port_FileReadAt(const char *rel, long offset, void *buf, size_t bytes) {
     }
     i = slot_of(rel);
     if (i >= 0 && fseek(sSlot[i].fp, offset, SEEK_SET) == 0) {
+        Port_StateTouch(buf, bytes); /* (gs/state.c: file data straight into watched memory) */
         got = fread(buf, 1, bytes, sSlot[i].fp);
     }
     __sync_lock_release(&sLock);

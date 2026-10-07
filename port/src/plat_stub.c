@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <time.h>
+extern void Port_StateTouch(void *p, unsigned long n); /* gs/state.c */
 
 /* ---- second processor (IOP): heap and remote calls ---- */
 int sceSifInitIopHeap() { return 0; }
@@ -244,6 +245,7 @@ static int pad_read(int socket, unsigned char *data) {
            by whatever a controller happened to report, which looked like the game not repeating itself.) The
            file stays open: a state restored to before the end reads the recording's last part again. */
         PORT_HOST static int said = 0;
+        Port_StateTouch(data, 18);
         if (fread(data, 1, 18, sPadPlay) == 18) {
             return 18;
         }
