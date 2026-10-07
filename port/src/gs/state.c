@@ -664,6 +664,20 @@ static void roll_back(int k) {
     state_load(&r->small);
 }
 
+/* For online play (gs/net.c). */
+int Port_RollCan(void) {
+    if (sRegions < 0) {
+        regions_init();
+    }
+    return sListed;
+}
+int Port_RollSave(void) {
+    return roll_save();
+}
+void Port_RollBack(int k) {
+    roll_back(k);
+}
+
 #define SYNC_MAX_DEPTH 64
 
 void Port_SyncTest(unsigned vblank) {
@@ -896,6 +910,9 @@ void Port_SessionReturn(void) {
     state_load(&sOwn);
 }
 #else
+int Port_RollCan(void) { return 0; }
+int Port_RollSave(void) { return 0; }
+void Port_RollBack(int k) { (void)k; }
 void Port_StateTouch(void *p, unsigned long n) { (void)p; (void)n; }
 volatile int gPortNetWindowClose;
 void Port_SyncTest(unsigned vblank) { (void)vblank; }

@@ -58,8 +58,39 @@ static uint64_t sWaitNs, sWaits;
 
 static const uint8_t kIdle[PAD] = {0xFF, 0xFF, 0x80, 0x80, 0x80, 0x80};
 
+/* rollback (roll_tick) */
+extern int Port_RollCan(void), Port_RollSave(void); /* gs/state.c */
+extern void Port_RollBack(int k);
+extern int gPortResim;
+int Port_NetWarp(void);
+static int sRollMax, sResim, sRollBegun;
+static uint8_t sUsed[RING][PAD]; /* what the other player's pad read in each blank */
+static uint32_t sChecked;        /* blanks below this were given the other player's real input */
+static uint32_t sLive;           /* during a re-run: the blank that was the present when it began */
+static unsigned sRollbacks, sRollTicks, sStalls;
+
+/* BT3_NET_LATENCY=<ms>: testing, a line that takes that long one way. What is sent waits in a queue. */
+static int sLatencyMs;
+static struct { uint64_t due; int n; uint8_t data[16 + 16 * PAD]; } sQueue[256];
+static unsigned sQueueHead, sQueueTail;
+
+static void queue_flush(void) {
+    uint64_t now = SDL_GetTicksNS();
+    while (sQueueHead != sQueueTail && sQueue[sQueueHead % 256].due <= now) {
+        sendto(sSock, (const char *)sQueue[sQueueHead % 256].data, sQueue[sQueueHead % 256].n, 0, (struct sockaddr *)&sPeer, sizeof(sPeer));
+        sQueueHead++;
+    }
+}
+
 static void send_to_peer(const void *buf, int n) {
     if (sLoss != 0 && (rand() % 100) < sLoss) {
+        return;
+    }
+    if (sLatencyMs > 0 && n <= (int)sizeof(sQueue[0].data) && sQueueTail - sQueueHead < 256) {
+        sQueue[sQueueTail % 256].due = SDL_GetTicksNS() + (uint64_t)sLatencyMs * 1000000ull;
+        sQueue[sQueueTail % 256].n = n;
+        memcpy(sQueue[sQueueTail % 256].data, buf, (size_t)n);
+        sQueueTail++;
         return;
     }
     sendto(sSock, buf, n, 0, (struct sockaddr *)&sPeer, sizeof(sPeer));
@@ -86,6 +117,7 @@ static int receive(void) {
     socklen_t fromLen = sizeof(from);
     int got = 0, n;
 
+    queue_flush();
     while ((n = (int)recvfrom(sSock, (char *)pkt, sizeof(pkt), 0, (struct sockaddr *)&from, &fromLen)) >= 8) {
         uint32_t magic, type;
         memcpy(&magic, pkt, 4);
@@ -156,6 +188,16 @@ static void net_start(int role, const char *host, const char *join) {
     if (sDelay > 30) { sDelay = 30; }
     sLoss = getenv("BT3_NET_LOSS") != NULL ? atoi(getenv("BT3_NET_LOSS")) : 0;
     sLagMs = getenv("BT3_NET_LAG") != NULL ? atoi(getenv("BT3_NET_LAG")) : 0;
+    sLatencyMs = getenv("BT3_NET_LATENCY") != NULL ? atoi(getenv("BT3_NET_LATENCY")) : 0;
+    /* BT3_NET_ROLLBACK=<n>: the game does not wait for the other player's input; it goes on with a guess (what
+       they held last) for up to n blanks and, when the real input differs, goes back and runs those blanks again
+       (roll_tick). Needs the roll ring of gs/state.c (the 64-bit programs); 0 or unset: wait, as before. */
+    sRollMax = getenv("BT3_NET_ROLLBACK") != NULL && Port_RollCan() ? atoi(getenv("BT3_NET_ROLLBACK")) : 0;
+    if (sRollMax < 0) { sRollMax = 0; }
+    if (sRollMax > 30) { sRollMax = 30; }
+    sChecked = sLive = 0;
+    sResim = sRollBegun = 0;
+    sRollbacks = sRollTicks = sStalls = 0;
     if (getenv("BT3_NET_SCRIPT") != NULL) {
         sScript = fopen(getenv("BT3_NET_SCRIPT"), "rb");
     }
@@ -230,15 +272,14 @@ int Port_NetActive(void) {
 
 /* A new vertical blank begins (Port_VBlank): this player's input made now takes effect `delay` blanks on; then
    wait until the other player's input for THIS blank is here. */
-void Port_NetBeginTick(unsigned tick) {
+/* The local player's input of this blank, entered for the blank `delay` later (once per blank). */
+static void sample_local(unsigned tick) {
     uint8_t mine[PAD];
-    uint64_t t0, last;
     uint32_t at = (uint32_t)tick + (uint32_t)sDelay;
 
-    if (!Port_NetActive()) {
+    if (at < sHave[sMe]) {
         return;
     }
-    sTick = tick;
     memcpy(mine, kIdle, PAD);
     if (sScript != NULL) {
         uint8_t both[2 * PAD];
@@ -248,10 +289,94 @@ void Port_NetBeginTick(unsigned tick) {
     } else if (!Port_PadRead(0, mine)) {
         memcpy(mine, kIdle, PAD);
     }
-    if (at >= sHave[sMe]) {
-        memcpy(sIn[sMe][at % RING], mine, PAD);
-        sHave[sMe] = at + 1;
+    memcpy(sIn[sMe][at % RING], mine, PAD);
+    sHave[sMe] = at + 1;
+}
+
+static void gone_quiet(unsigned tick) {
+    fprintf(stderr, "bt3: net: the other player has not answered for 15 seconds (blank %u)\n", tick);
+    if (sSession) {
+        Port_NetLeave(); /* back to the game as it normally is */
     }
+    exit(2);
+}
+
+/*
+ * Rollback. Each blank's state is saved before the blank reads its pads (Port_RollSave). The other player's pad
+ * for a blank whose input has not arrived reads as their last known input, and what each blank was given is
+ * remembered (sUsed). When input arrives that differs from what a past blank was given, the game goes back to
+ * that blank's save and runs up to the present again, without picture or sound (gPortResim), now with the right
+ * input. It never runs more than sRollMax blanks ahead of the other player's last known input: there it waits.
+ */
+static void roll_tick(unsigned tick) {
+    uint32_t other = (uint32_t)!sMe, t, limit;
+    uint64_t t0, last;
+
+    if (!sRollBegun) {
+        sRollBegun = 1;
+        sChecked = tick; /* nothing was given to an earlier blank */
+    }
+    if (sResim && tick >= sLive) {
+        sResim = 0; /* caught up: this blank is the present again */
+    }
+    if (!sResim) {
+        sample_local(tick);
+        send_inputs();
+        receive();
+        t0 = last = SDL_GetTicksNS();
+        if (tick >= sHave[other] + (uint32_t)sRollMax) {
+            sStalls++;
+        }
+        while (tick >= sHave[other] + (uint32_t)sRollMax) {
+            uint64_t now = SDL_GetTicksNS();
+            if (now - last > 4000000ull) {
+                send_inputs();
+                last = now;
+            }
+            if (!receive()) {
+                SDL_DelayNS(200000);
+            }
+            if (now - t0 > 15000000000ull) {
+                gone_quiet(tick);
+            }
+        }
+        limit = sHave[other] < tick ? sHave[other] : tick;
+        for (t = sChecked; t < limit && memcmp(sUsed[t % RING], sIn[other][t % RING], PAD) == 0; t++) {
+        }
+        sChecked = t;
+        if (t < limit) { /* blank t was given something else than what they really pressed */
+            sLive = tick;
+            sResim = 1;
+            sRollbacks++;
+            sRollTicks += tick - t;
+            gPortResim = 1;
+            Port_RollBack((int)(tick - t)); /* does not return: goes on after blank t's Port_RollSave below */
+        }
+        if (tick % 600 == 0 && getenv("BT3_GS_VERBOSE") != NULL) {
+            fprintf(stderr, "net: blank %u: %u rollbacks (%.1f blanks each), %u waits in the last 600 blanks\n", tick, sRollbacks,
+                    sRollbacks != 0 ? (double)sRollTicks / sRollbacks : 0.0, sStalls);
+            sRollbacks = sRollTicks = sStalls = 0;
+        }
+    }
+    if (Port_RollSave() != 0) {
+        sTick = tick; /* back at this blank, to run from here again */
+    }
+    gPortResim = sResim || Port_NetWarp();
+    memcpy(sUsed[tick % RING], sIn[other][(tick < sHave[other] ? tick : sHave[other] - 1) % RING], PAD);
+}
+
+void Port_NetBeginTick(unsigned tick) {
+    uint64_t t0, last;
+
+    if (!Port_NetActive()) {
+        return;
+    }
+    sTick = tick;
+    if (sRollMax > 0) {
+        roll_tick(tick);
+        return;
+    }
+    sample_local(tick);
     if (sLagMs != 0) {
         SDL_Delay((Uint32)sLagMs); /* (a crude stand-in for a slow line: everything this copy sends is late) */
     }
@@ -268,11 +393,7 @@ void Port_NetBeginTick(unsigned tick) {
             SDL_DelayNS(200000);
         }
         if (now - t0 > 15000000000ull) {
-            fprintf(stderr, "bt3: net: the other player has not answered for 15 seconds (blank %u)\n", tick);
-            if (sSession) {
-                Port_NetLeave(); /* back to the game as it normally is */
-            }
-            exit(2);
+            gone_quiet(tick);
         }
     }
     sWaitNs += SDL_GetTicksNS() - t0;
@@ -285,7 +406,15 @@ void Port_NetBeginTick(unsigned tick) {
 
 /* What the game reads for a pad during this blank. */
 void Port_NetInput(int player, unsigned char *data) {
+    if (sRollMax > 0 && player == !sMe) {
+        memcpy(data, sUsed[sTick % RING], PAD); /* their real input, or the guess (roll_tick) */
+        return;
+    }
     memcpy(data, player >= 0 && player < 2 && sTick < sHave[player] ? sIn[player][sTick % RING] : kIdle, PAD);
+}
+
+int Port_NetResim(void) {
+    return sResim;
 }
 
 /* Which player's view this copy shows full screen in a two-player battle: the local player's when online; -1

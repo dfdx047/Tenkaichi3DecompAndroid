@@ -138,10 +138,12 @@ void Port_VBlank(void) {
         extern int Port_NetSession(void), Port_NetWarp(void); /* gs/net.c */
         extern int gPortResim;                                /* gs/state.c: no picture, no sound */
         int warp = Port_NetWarp();
-        if (Port_NetSession()) {
-            gPortResim = warp; /* an online session's start-up up to the versus menu is not shown and not timed */
+        extern int Port_NetResim(void); /* blanks being run again after a rollback: not shown, not timed either */
+        int again = Port_NetResim();
+        if (Port_NetSession() || again) {
+            gPortResim = warp || again; /* an online session's start-up up to the versus menu is not shown and not timed */
         }
-        if ((GsGpu_Enabled() || getenv("BT3_PACED") != NULL) && getenv("BT3_UNCAPPED") == NULL && !warp) {
+        if ((GsGpu_Enabled() || getenv("BT3_PACED") != NULL) && getenv("BT3_UNCAPPED") == NULL && !warp && !again) {
             vblank_wait();
         }
     }

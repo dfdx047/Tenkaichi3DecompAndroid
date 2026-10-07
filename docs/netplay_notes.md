@@ -685,3 +685,31 @@ a frame with picture 3.1 ms, re-run without output 1.53 ms, saving the state 0.7
 Where rollback's cost stands (session6, this machine): save 0.08 ms, back 4 / 8 saves 0.29 / 0.36 ms, a re-run
 blank 1.13 ms, a blank with picture 2.7 ms. A frame with a 4-blank rollback: about 0.3 + 4 x (1.13 + 0.08) + 2.7
 = 7.8 ms; 8 blanks: 12.7 ms. At the start of the day: 0.64 + 4 x (1.53 + 0.74) + 3.1 = 12.8 and 21.9 ms.
+
+## Rollback (2026-10-07)
+
+`gs/net.c`, `roll_tick`; off unless `BT3_NET_ROLLBACK=<n>` (the most blanks the game runs ahead of the other
+player's last known input; beyond that it waits, as lockstep does every blank). 64-bit programs (the roll ring).
+
+- Every blank: the local input is entered for the blank `BT3_NET_DELAY` later and sent; the state is saved
+  (`Port_RollSave`) before the blank reads its pads; the other player's pad reads their input for this blank if it
+  has arrived, else their last known input, and what it was given is remembered (`sUsed`).
+- When input arrives that differs from what a past blank was given, `Port_RollBack` goes to that blank's save and
+  the blanks up to the present run again with `gPortResim` (no picture, no sound, no pacing wait), then the
+  present goes on. All of gs/net.c's own variables are host data, so a rollback does not touch them.
+- `BT3_NET_LATENCY=<ms>`: testing, everything sent waits that long in a queue (a line with that delay one way).
+  The older `BT3_NET_LAG` sleeps in the blank and so slows the whole copy.
+- Checks, both copies fed session6's input by blank (`BT3_NET_SCRIPT`), run in real time (`BT3_PACED=1`, no
+  window), the checksum log read as "the last line written for each blank" (a blank run again is logged again):
+  - rollback 4, 30 ms: 23 to 120 rollbacks per 600 blanks of 1 to 2 blanks each; rollback 8, 80 ms: 5 blanks
+    each; rollback 6, 50 ms with 15% of the packets dropped: 3.2 blanks each. In every run the two copies' fight
+    values are the same at every blank compared (3,751 to 4,351 blanks of fighting), and the same as a lockstep
+    run with the same input delay.
+  - Linux against the Windows program under Wine, rollback 6, 50 ms: the same (4,323 blanks of fighting).
+  - Two windows in real time, rollback 4, 40 ms: in step; blanks 16.65 to 16.71 ms apart, none late.
+  - The session switch test with rollback on: sessions connect and end as before.
+- Seen: in the two-window run one copy did all the rollbacks and the other none. Nothing keeps the two copies'
+  clocks together yet: the one that is ahead guesses, the one behind always has the input already.
+- Not done: keeping the two copies in step in time; a setting in the Dragon Net Battle window (it is the
+  environment variable for now); what a rollback does to a pad recording being played (the recording is rewound
+  with the state: fine for the tests' scripts, which are read by blank number); real Windows; two machines.
