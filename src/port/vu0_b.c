@@ -244,6 +244,15 @@ static RefVec4f mtx_apply(const RefVec4f *r, RefVec4f v) {
     RefVec4f acc;
     RefVec4f o;
 
+#if defined(REF_VU0_EXTERN_ARITH) && !defined(REF_VU0_B_STANDALONE)
+    {   /* the port: the same sequence with the processor's arithmetic where that is exact (port/src/plat_fastvec.c) */
+        extern int Port_FastMtxApply(const uint32_t *r, const uint32_t *v, uint32_t *out);
+        if (!mode(0) && !mode(2) && Port_FastMtxApply((const uint32_t *)r, (const uint32_t *)&v, (uint32_t *)&o)) {
+            return o;
+        }
+    }
+#endif
+
     acc.x = f_mul(r[0].x, v.x);
     acc.y = f_mul(r[0].y, v.x);
     acc.z = f_mul(r[0].z, v.x);

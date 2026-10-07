@@ -45,6 +45,22 @@ static inline uint32_t round_pack(uint32_t sign, int32_t e, uint64_t m, int stic
 }
 
 /* a + b, exact, then truncated toward zero (nearest = 0) or rounded to nearest even. */
+#ifdef SF_FAST_CALLS
+/* The port's files: the truncating add and multiply are done by the processor where that is exact
+   (port/src/plat_fastvec.c, which is compiled with hardware floating point and falls back to the code here). */
+extern uint32_t Port_FastAdd(uint32_t a, uint32_t b);
+extern uint32_t Port_FastMul(uint32_t a, uint32_t b);
+static inline uint32_t add_core_long(uint32_t a, uint32_t b, int nearest);
+static inline uint32_t mul_core_long(uint32_t a, uint32_t b, int nearest);
+static inline uint32_t add_core(uint32_t a, uint32_t b, int nearest) {
+    return nearest ? add_core_long(a, b, nearest) : Port_FastAdd(a, b);
+}
+static inline uint32_t mul_core(uint32_t a, uint32_t b, int nearest) {
+    return nearest ? mul_core_long(a, b, nearest) : Port_FastMul(a, b);
+}
+#define add_core add_core_long
+#define mul_core mul_core_long
+#endif
 static inline uint32_t add_core(uint32_t a, uint32_t b, int nearest) {
     uint64_t ma, mb;
     uint32_t sign;
@@ -119,6 +135,11 @@ static inline uint32_t mul_core(uint32_t a, uint32_t b, int nearest) {
     }
     return round_pack(sign, e, m, 0, nearest);
 }
+
+#ifdef SF_FAST_CALLS
+#undef add_core
+#undef mul_core
+#endif
 
 /* Experiment switches (environment, read once): BT3_VU_NEAREST=1 rounds the vector unit's add / multiply /
    divide to nearest; BT3_FPU_NEAREST=1 does the same for the FPU's add / multiply. Default: toward zero. */

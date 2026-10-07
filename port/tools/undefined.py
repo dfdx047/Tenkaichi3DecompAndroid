@@ -164,7 +164,7 @@ def main():
     for f in [ROOT / "src/port/vu0_a.c", ROOT / "src/port/vu0_b.c"] + sorted((ROOT / "port/src").glob("*.c")):
         o = OBJ / ("pc_" + f.stem + ".o")
         names = ["-include", "vu0_names.h", "-DREF_VU0_EXTERN_ARITH"] if f.parent.name == "port" and f.parent.parent.name == "src" else []
-        soft = [] if f.name == "plat_libm.c" else ["-msoft-float", "-mno-sse", "-mno-mmx", "-include", "math.h", "-include", "stdlib.h", "-include", "port_libm.h"]
+        soft = [] if f.name in ("plat_libm.c", "plat_fastvec.c") else ["-msoft-float", "-mno-sse", "-mno-mmx", "-DSF_FAST_CALLS", "-include", "math.h", "-include", "stdlib.h", "-include", "port_libm.h"]
         cmd = ["gcc", "-m32", "-std=gnu99", "-c", "-O2", "-g", "-fno-pic", "-malign-double", "-fno-strict-aliasing",
                "-ffp-contract=off", "-fno-builtin", "-w", "-Iinclude", "-Iport/include", "-Iport/src"] + soft + names
         if soft and not names:  # the port's own soft-float code: PS2 constants; the vector references are written for the host

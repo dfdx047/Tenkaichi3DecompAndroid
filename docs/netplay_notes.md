@@ -606,3 +606,34 @@ a frame with picture 3.1 ms, re-run without output 1.53 ms, saving the state 0.7
   at the same place. Reverted. To gain anything this has to live in a file compiled with the processor's
   floating point, and one call per operation would about cancel the gain: the worthwhile form is whole kernels
   there (a matrix applied to a vector: 16 multiplies and 12 adds at once, in SIMD).
+
+## The add and the multiply done by the processor, exactly (2026-10-07)
+
+`port/src/plat_fastvec.c`, the one port file besides plat_libm.c compiled with hardware floating point
+(`undefined.py`); the soft-float files reach it through calls with integer arguments (`-DSF_FAST_CALLS`,
+`softfloat_ps2_inl.h`).
+
+- Why it is exact: the PS2's add and multiply are the exact result cut toward zero at 24 bits. A product of two
+  24-bit mantissas (48 bits) and a sum of operands at most 28 exponents apart (at most 53 bits) fit a double, so
+  the double operation rounds nothing and clearing its low 29 mantissa bits is the cut. Everything else goes to
+  the old integer code: zero and what the PS2 takes for zero, exponent 255, results outside the ordinary range,
+  rounding to nearest (the experiment switches). Sums of operands further apart are the larger operand, or the
+  single just below it when the signs differ (in the matrix kernel; the single add leaves them to the old code).
+- `Port_FastMul`, `Port_FastAdd`: every truncating multiply and add of the port (the vector library, the FPU
+  helpers `__mulsf3` / `__addsf3`, the VU0 operations). `Port_FastMtxApply`: a matrix applied to a vector
+  (`mtx_apply` of src/port/vu0_b.c, 16 multiplies and 12 adds; 31% of a frame's simulation before, by a profile
+  with frame pointers: `Mtx_MulVec4` 26%, `Mtx_Mul` 10%), in SSE2 two components at a time; it gives up and the
+  caller goes the long way if any step leaves the covered cases.
+- Check: `port/tools/fastvec_check.c` (build line in its header) compares all three with the old code on random
+  operands of four kinds (any bits, near 1.0, edges and zeros, few bits). 600 million matrices and 3.2 thousand
+  million single adds and multiplies with clang, 40 to 100 million matrices each with gcc -m32 (x87), gcc -m32
+  -msse2 and the Windows compiler under Wine: 0 differences.
+- In the game: the replay's result on all three programs; session6's fight values the same as the build before
+  (16,968 blanks), 32-bit against 64-bit (21,325 blanks), Linux against the Windows program connected (71,813
+  blanks); rewind test 0 differences.
+- Time (session6, same two places as before, this machine): a re-run frame 1.71 -> 1.20 ms and 1.52 -> 1.08 ms;
+  a frame with picture 3.57 -> 3.05 and 3.10 -> 2.66 ms. The three functions are now 53% of a frame's simulation
+  (`Port_FastAdd` 19%, `Port_FastMul` 18%, `Port_FastMtxApply` 17%).
+- Traps met: `-fno-builtin` turns `memcpy` of 4 or 8 bytes into a library call (the first version was slower
+  than the soft-float code: `__builtin_memcpy`); a first SSE2 version is 600 instructions and only a little
+  faster than the plain one, the range checks after every step are most of it.
