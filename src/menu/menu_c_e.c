@@ -13,6 +13,7 @@
 #define STGGRID_COLS 6
 #define STGGRID_ID_LOCKED 0x3E
 #define STGGRID_ID_EMPTY 0x3F
+static s32 sPortStagesAdded; /* this stage select shows stages from outside the disc */
 /* The port's stage-name overlay (port/src/gs/ui.cpp / gs_draw.c): the names of added stages are drawn by the
    port, over the picture, from its own stylized art. The menu only fills the name's rectangle and which image. */
 extern volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;
@@ -521,6 +522,7 @@ void CharSel_Init(s32 section) {
 
     gCharSel->stageIds = (s32 *)(MPACK_AT(gCharSel->res, 39) + 0x10);
     gCharSel->stageCount = MPACK_WORD(gCharSel->res, 39);
+    StgGrid_ApplyUnlocks(&gCharSel->stageCount, gCharSel->stageIds);
 #ifdef PORT
     {
         /* PC build: append stage ids for maps added from outside the disc (BT3_EXTRA_STAGES) and, optionally, swap
@@ -528,9 +530,15 @@ void CharSel_Init(s32 section) {
            parsed in the port layer (headless.c) and read here as globals: a getenv result must not be dereferenced
            in game code (its host pointer would be truncated to the game's 32-bit ones). The list is copied to a
            buffer of ours and padded with "empty" cells to fill the last row, because the grid is a reel of rows and
-           it always reads whole rows. Each added id gets its unlock bit set so it shows as selectable. */
+           it always reads whole rows. This runs AFTER the game has applied the save's unlocks to its own list
+           (just above): the added ids are appended to the result and are never looked up in the save, so the
+           save file is not touched and stays valid for a copy of the game without these stages. In an online
+           session nothing is added: both players must have the same list. */
         extern int gPortStageReplaceCount, gPortReplaceOld[16], gPortReplaceNew[16];
         static s32 sAllIds[64];
+        extern int Port_NetSession(void); /* port/src/gs/net.c */
+        s32 extra = Port_NetSession() ? 0 : gPortExtraStageCount;
+        s32 swaps = Port_NetSession() ? 0 : gPortStageReplaceCount;
         s32 n = gCharSel->stageCount, i, rows, r;
         if (n > 64) {
             n = 64;
@@ -538,21 +546,20 @@ void CharSel_Init(s32 section) {
         for (i = 0; i < n; i++) {
             sAllIds[i] = gCharSel->stageIds[i];
         }
-        for (i = 0; i < gPortExtraStageCount && n < 60; i++) {
+        for (i = 0; i < extra && n < 60; i++) {
             sAllIds[n++] = (s32)gPortExtraStages[i];
-            gSaveData->stageBits |= 1LL << gPortExtraStages[i];
         }
-        for (r = 0; r < gPortStageReplaceCount; r++) {
+        for (r = 0; r < swaps; r++) {
             int k;
             for (k = 0; k < n; k++) {
                 if (sAllIds[k] == gPortReplaceOld[r]) {
                     sAllIds[k] = (s32)gPortReplaceNew[r];
-                    gSaveData->stageBits |= 1LL << gPortReplaceNew[r];
                     break;
                 }
             }
         }
-        if (gPortExtraStageCount > 0 || gPortStageReplaceCount > 0) {
+        sPortStagesAdded = extra > 0 || swaps > 0;
+        if (sPortStagesAdded) {
             rows = (n + STGGRID_COLS - 1) / STGGRID_COLS;
             for (i = n; i < rows * STGGRID_COLS && i < 64; i++) {
                 sAllIds[i] = STGGRID_ID_EMPTY;
@@ -562,7 +569,6 @@ void CharSel_Init(s32 section) {
         }
     }
 #endif
-    StgGrid_ApplyUnlocks(&gCharSel->stageCount, gCharSel->stageIds);
 #ifdef PORT /* PC build: list the stage ids the game loaded, to see what a data pack carries (stages report) */
     if (getenv("BT3_STAGES_DEBUG") != NULL) {
         s32 dbg;
@@ -573,10 +579,11 @@ void CharSel_Init(s32 section) {
         fprintf(stderr, "\n");
     }
 #endif
-#ifdef PORT
-    gCharSel->stageRows = (gCharSel->stageCount + STGGRID_COLS - 1) / STGGRID_COLS;
-#else
     gCharSel->stageRows = 6;
+#ifdef PORT
+    if (sPortStagesAdded) { /* (with nothing added the grid is the game's own, 6 rows) */
+        gCharSel->stageRows = (gCharSel->stageCount + STGGRID_COLS - 1) / STGGRID_COLS;
+    }
 #endif
     gCharSel->bgmIds = (s32 *)(MPACK_AT(gCharSel->res, 56) + 0x10);
     gCharSel->bgmCount = MPACK_WORD(gCharSel->res, 56);
