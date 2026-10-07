@@ -1321,3 +1321,7 @@ Vulkan through SDL GPU (`gs/gs_gpu.c`) or OpenGL 3.3 core (`gs/gs_gl.c`).
   NVIDIA ones.
   The line over the picture and a whole online match under OpenGL were not run. `BT3_SHOT_VBLANK` is not
   implemented in gs_gl.c (`BT3_SHOT` with `BT3_SHOT_FROM` / `_TO` is).
+
+- 2026-10-07, from release 0.1.10: the archives no longer have `play.sh` / `play.bat`. They set `BT3_GS=gpu` and
+  the current folder, and a release program does both itself (it opens its window without the variable, and
+  works in its own folder when started from another: plat_mem.c). The program is started directly.

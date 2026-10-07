@@ -31,10 +31,13 @@ game's data from it, and it stays on your computer.
   other. With rollback (the host chooses how many frames, and the input delay) your own moves come out at once
   and the game corrects itself when the other player's buttons arrive.
 
-Online play is new: it has been played between two machines on one local network, not yet over the internet,
-and the host's port has to be reachable from the other player (port forwarding; there is no relay or
-match-making). The 32-bit Linux build has no rollback. [docs/netplay_notes.md](docs/netplay_notes.md) is the
-working log of how it is built and what was checked.
+Online play is new. It has been played over the internet between a Linux and a Windows machine. The input delay
+is chosen from the connection when a match starts (or set by the host), both players need the same release (the
+game says so when they differ; 0.1.10 does not play against 0.1.8 / 0.1.9), and the host's port has to be
+reachable from the other player (port forwarding, or a virtual network such as Tailscale; there is no relay or
+match-making). F1, Video has a meter for the frame rate and, in a match, the ping, rollbacks and waits. The 32-bit
+Linux build has no rollback. [docs/netplay_notes.md](docs/netplay_notes.md) is the working log of how it is built
+and what was checked.
 
 See [docs/port/README.md](docs/port/README.md) for the running log of what is done, what is verified and what is not.
 

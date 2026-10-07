@@ -25,17 +25,18 @@ README = """Dragon Ball Z: Budokai Tenkaichi 3 - PC port (Linux, 64-bit)
 1. Start  Tenkaichi3Decomp-setup
 2. Choose your own disc image of the USA release (SLUS-21678), an .iso file.
    The setup checks it and unpacks the game's data next to this file. About 4 GB are needed.
-3. Press Play. Later, start  Tenkaichi3Decomp-setup  again and press Play, or run  ./play.sh
+3. Press Play. Later, start  Tenkaichi3Decomp  itself (or the setup again, and press Play).
 
 In the game, F1 opens the settings: resolution, widescreen, controls and sound.
 Saves are kept in saves/. A file placed in gamedata/mods/<same path as the original> replaces the original.
-Texture packs (PCSX2 naming, .dds or .png) go into textures/: see the note there.
+Texture packs (PCSX2 naming, .dds or .png) go into textures/, stages and music from outside the disc into
+stages/ and songs/: see the note in each folder.
 
 This package contains no game data. The game's data comes from your disc and stays on your computer.
 """
 
 WIN_README = README.replace("(Linux, 64-bit)", "(Windows, 64-bit)").replace("Start  Tenkaichi3Decomp-setup\n", "Start  Tenkaichi3Decomp-setup.exe\n") \
-    .replace("start  Tenkaichi3Decomp-setup  again and press Play, or run  ./play.sh", "start  Tenkaichi3Decomp-setup.exe  again and press Play, or run  play.bat")
+    .replace("start  Tenkaichi3Decomp  itself", "start  Tenkaichi3Decomp.exe  itself")
 
 TEXTURES_NOTE = """Texture packs go here.
 
@@ -115,7 +116,6 @@ def main_win():
     shutil.copy2(setup, out / "Tenkaichi3Decomp-setup.exe")
     shutil.copy2(dll, out / "SDL3.dll")
     (out / "README.txt").write_text(WIN_README.replace("\n", "\r\n"))
-    (out / "play.bat").write_text('@echo off\r\nrem Starts the game from its menus.\r\ncd /d "%~dp0"\r\nset BT3_GS=gpu\r\nstart "" Tenkaichi3Decomp.exe\r\n')
     lic = out / "licenses"
     lic.mkdir()
     shutil.copy2(ROOT / "port/third_party/imgui/LICENSE.txt", lic / "dear-imgui.txt")
@@ -156,8 +156,6 @@ def main():
         sys.exit("libSDL3.so.0 not found")
     shutil.copy2(lib.resolve(), OUT / "lib/libSDL3.so.0")
     (OUT / "README.txt").write_text(README)
-    (OUT / "play.sh").write_text('#!/bin/sh\n# Starts the game from its menus.\ncd "$(dirname "$0")" && BT3_GS=gpu exec ./Tenkaichi3Decomp\n')
-    (OUT / "play.sh").chmod(0o755)
     lic = OUT / "licenses"
     lic.mkdir()
     shutil.copy2(ROOT / "port/third_party/imgui/LICENSE.txt", lic / "dear-imgui.txt")
