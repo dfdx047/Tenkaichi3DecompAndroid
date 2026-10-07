@@ -1288,3 +1288,33 @@ The replacements are DXT5 at 4 times the size (512 x 512 for a 128 x 128 origina
   short freeze instead of a visible swap.
 - The Windows program under Wine, session5 in 16:9: the DDS pack (557 lookups found, 70 missing) and the PNG pack
   (55 found) both load and draw correctly; no crash.
+
+## An OpenGL 3.3 renderer beside Vulkan (branch `opengl`, 2026-10-07)
+
+From pull request #1 (its renderer commits only, on top of the main line with online play; its stages / songs work
+is not in here). The draw stream is recorded by shared code (`gs/gs_draw.c`) and replayed by one of two back ends:
+Vulkan through SDL GPU (`gs/gs_gpu.c`) or OpenGL 3.3 core (`gs/gs_gl.c`).
+
+- Choice: F1 -> Video -> Renderer (setting `gpu_api`, 0 Vulkan / 1 OpenGL; from the next start). `BT3_GPU_API=
+  vulkan|gl` wins. Without a name asked for, the other renderer is tried when the chosen one cannot start.
+- The main line's changes carried into the refactor: the seven returns for frames that are only re-run
+  (`gPortResim`) and `GsGpu_PagesMoved`, now in gs_draw.c; the overlay is built by one function for both
+  (`frame_build` in ui.cpp: settings, the online window, the line over the picture), drawn by ImGui's SDL GPU or
+  OpenGL3 backend.
+- **Verified** (session6: menus and three moments of a split-screen fight, blanks 1500 / 2700 / 4500 / 6500):
+  Vulkan on this branch writes the same screenshot files as the main line and runs as fast (9,210 and 9,131
+  blanks in 30 s uncapped against 9,183 and 9,131). OpenGL writes the same four files as Vulkan, on Linux.
+  The replay's result on all three programs. The overlay and the online window open under OpenGL (looked at).
+- The pull request's OpenGL picture was darker in fights: its vertex wrapper clamped clip-space z before the
+  divide and kept GL's -1..1 depth range, so stored depth was wrong, and the depth tint that feeds the glare and
+  the distance blur with it. Fixed with `glClipControl` (or the same mapping by hand without the extension: a few
+  hundred to a few thousand pixels then still differ) and depth clamp.
+- The pull request's slower Vulkan (29% in fights) was not the renderer: its stages work loads the full stage
+  model in split screen instead of the lighter split one (battle_load.c). Not taken.
+- **OpenGL is slower**: 7,931 blanks in the same 30 s (14% fewer over the whole session, more in fights). A
+  profile puts 47% of the processor time inside the graphics driver, against 14% with Vulkan: the cost is the
+  number of GL calls per draw, not the graphics card.
+- **Not working / not checked**: the Windows program with OpenGL under Wine stops inside the creation of the
+  OpenGL window (`BT3_GL_TRACE=1` shows how far it gets); not tried on a real Windows. Only this NVIDIA card.
+  The line over the picture and a whole online match under OpenGL were not run. `BT3_SHOT_VBLANK` is not
+  implemented in gs_gl.c (`BT3_SHOT` with `BT3_SHOT_FROM` / `_TO` is).
