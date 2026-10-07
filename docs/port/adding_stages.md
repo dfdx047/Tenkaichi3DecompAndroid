@@ -21,6 +21,8 @@ menu is the file's name (`My_Song.unk` is shown as "My Song"). `$BT3_STAGES` nam
   rest of this document describes, is still used when there is none next to the game. The script now writes to
   the folder next to the game (the repository root) unless `--data` names another place.
 - Code: `port/src/plat_extras.c` (the folder, the scan), `plat_stages.c`, `plat_songs.c`.
+- Tried with a real custom map (a downloaded `.unk`, dropped into `stages`; the user, 2026-10-07): "worked fine".
+  Until then only a copy of a disc stage under a new id had been loaded this way.
 
 ## The name in the game's own lettering (main line)
 
