@@ -305,11 +305,11 @@ static void build_net(void) {
                 tab = 0;
                 ImGui::SetNextItemWidth(120.0f);
                 ImGui::InputText("Port", port, sizeof(port), ImGuiInputTextFlags_CharsDecimal);
-                if (roll < 0) { // the choices of last time
-                    roll = Port_RollCan() ? Port_Setting("net_rollback", 4) / 2 : 0;
-                    delay = Port_Setting("net_delay", 1);
-                    if (roll < 0 || roll > 4) { roll = 2; }
-                    if (delay < 0 || delay > 6) { delay = 1; }
+                if (roll < 0) { // the choices of last time (new names: the first ones' defaults were 4 frames and delay 1)
+                    roll = Port_RollCan() ? Port_Setting("net_rollback2", 8) / 2 : 0;
+                    delay = Port_Setting("net_delay2", -1) + 1; // 0 = automatic, else the delay + 1
+                    if (roll < 0 || roll > 4) { roll = 4; }
+                    if (delay < 0 || delay > 7) { delay = 0; }
                 }
                 ImGui::BeginDisabled(!Port_RollCan());
                 ImGui::SetNextItemWidth(260.0f);
@@ -321,7 +321,16 @@ static void build_net(void) {
                                       "more processor time. Off: both games wait for each other every frame.");
                 }
                 ImGui::SetNextItemWidth(260.0f);
-                ImGui::SliderInt("Input delay (frames)", &delay, 0, 6);
+                {
+                    static const char *const kDelay[] = {"Automatic (from the connection)", "0 frames", "1 frame", "2 frames", "3 frames",
+                                                         "4 frames", "5 frames", "6 frames"};
+                    ImGui::Combo("Input delay", &delay, kDelay, 8);
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("How long after a press your own move comes out. A slow connection needs more, or the game\n"
+                                      "has to guess too far ahead and stutters. Automatic measures the connection when the match\n"
+                                      "starts: 1 frame on a good one, more on a slow one.");
+                }
                 ImGui::TextDisabled("The host's choices apply to both players.");
                 ImGui::EndTabItem();
             }
@@ -360,9 +369,9 @@ static void build_net(void) {
                 ImGui::BeginDisabled(!can);
                 if (ImGui::Button(tab == 0 ? "Host a match" : "Join the match", ImVec2(200.0f, 0.0f))) {
                     if (tab == 0 && roll >= 0) {
-                        Port_NetOptions(roll * 2, delay);
-                        Port_SettingSave("net_rollback", roll * 2);
-                        Port_SettingSave("net_delay", delay);
+                        Port_NetOptions(roll * 2, delay == 0 ? -2 : delay - 1);
+                        Port_SettingSave("net_rollback2", roll * 2);
+                        Port_SettingSave("net_delay2", delay - 1);
                         Port_SettingsWrite();
                     } else {
                         Port_NetOptions(-1, -1); // joining: the host's choices arrive with its answer
@@ -781,7 +790,7 @@ static void meter_draw(void) {
                 ImGui::TextUnformatted("rollback off");
             }
             ImGui::Text("waited %d ms/s (%d times)", n[4], n[3]);
-            ImGui::Text("delay %d, rollback up to %d", n[6], n[5]);
+            ImGui::Text("delay %d%s, rollback up to %d", n[6], n[7] ? " (auto)" : "", n[5]);
         }
     }
     ImGui::End();

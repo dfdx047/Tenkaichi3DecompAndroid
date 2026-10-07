@@ -45,7 +45,7 @@ extern int Port_PadRead(int socket, unsigned char *data); /* gs_input.c: the key
 void Port_NetLeave(void);
 
 enum { PAD = 18, RING = 4096, REDUNDANT = 16, MAGIC = 0x4E335442 /* "BT3N" */ };
-enum { T_HELLO = 1, T_HELLO_ACK = 2, T_INPUT = 3, T_BYE = 4 };
+enum { T_HELLO = 1, T_HELLO_ACK = 2, T_INPUT = 3, T_BYE = 4, T_PING = 5, T_PONG = 6, T_CONFIG = 7, T_CONFIG_ACK = 8 };
 /* The version of what goes over the line. The greeting and its answer carry it, and two copies that differ do not
    start a match (the input packets changed with version 2: times for the ping were added; a copy that read them
    the old way took them for input). 1 was releases 0.1.8 and 0.1.9, which said no version. */
@@ -74,9 +74,29 @@ static int sCfgGot, sCfgDelay, sCfgRoll;
 static int sGone; /* the other player said goodbye */
 extern void Port_UiNotice(const char *text); /* ui.cpp: a line over the picture for a few seconds */
 
+static int sAutoDelay;
+static int sOptAuto;      /* the host asked for the input delay to be chosen from the line's ping */
+static int sSetupRtt = -1; /* the smallest round trip measured while setting up, ms */
+static int sCfgAcked;
+
 void Port_NetOptions(int rollback, int delay) {
     sOptRoll = rollback;
-    sOptDelay = delay;
+    sOptAuto = delay == -2; /* -2: automatic; -1: not said; else the delay in blanks */
+    sOptDelay = delay >= 0 ? delay : -1;
+}
+
+/* The input delay for a line with this round trip. A blank is 16.7 ms; the other side's input for a blank is
+   entered `delay` blanks ahead and takes half the round trip plus up to a blank (it waits for the next look at
+   the socket) to arrive, so the game runs about ceil(trip / 2 / 16.7 + 1) - delay blanks on guesses. The delay
+   is what keeps that at 4 or under: 1 on a good line (up to about 130 ms), more beyond, 6 at most. */
+static int auto_delay(int rttMs) {
+    int ticks, delay;
+    if (rttMs < 0) {
+        return 2;
+    }
+    ticks = (rttMs * 1000 / 2 + 16682) / 16683 + 1; /* ceil(one way in blanks) + 1 */
+    delay = ticks - 4;
+    return delay < 1 ? 1 : delay > 6 ? 6 : delay;
 }
 
 static int sMode = -1; /* 0 off, 1 host, 2 join */
@@ -173,7 +193,28 @@ static int receive(void) {
             continue;
         }
         got = 1;
-        if (type == T_BYE && sConnected) {
+        if (type == T_PING && n >= 12) { /* setting up: sent back as it came, for the round trip time */
+            uint32_t pong[3] = {MAGIC, T_PONG, 0};
+            memcpy(&pong[2], pkt + 8, 4);
+            send_to_peer(pong, (int)sizeof(pong)); /* (through the test line's delay, like the input) */
+        } else if (type == T_PONG && n >= 12) {
+            uint32_t ts;
+            int rtt;
+            memcpy(&ts, pkt + 8, 4);
+            rtt = (int)(now_ms() - ts);
+            if (rtt >= 0 && rtt < 5000 && (sSetupRtt < 0 || rtt < sSetupRtt)) {
+                sSetupRtt = rtt;
+            }
+        } else if (type == T_CONFIG && sMode == 2 && n >= 16) { /* the host's choices, made after it measured the line */
+            uint32_t v[2], ack[2] = {MAGIC, T_CONFIG_ACK};
+            memcpy(v, pkt + 8, 8);
+            sCfgDelay = (int)v[0];
+            sCfgRoll = (int)v[1];
+            sCfgGot = 2;
+            sendto(sSock, (const char *)ack, sizeof(ack), 0, (struct sockaddr *)&from, sizeof(from));
+        } else if (type == T_CONFIG_ACK && sMode == 1) {
+            sCfgAcked = 1;
+        } else if (type == T_BYE && sConnected) {
             sGone = 1;
         } else if (type == T_HELLO && sMode == 1 && !(n >= 12 && memcmp(pkt + 8, &kVersion, 4) == 0)) {
             static int said;
@@ -268,7 +309,10 @@ static void net_start(int role, const char *host, const char *join) {
     fcntl(sSock, F_SETFL, fcntl(sSock, F_GETFL, 0) | O_NONBLOCK);
 #endif
     sMe = sMode - 1;
-    sDelay = getenv("BT3_NET_DELAY") != NULL ? atoi(getenv("BT3_NET_DELAY")) : sOptDelay >= 0 ? sOptDelay : 2;
+    sAutoDelay = getenv("BT3_NET_DELAY") != NULL ? strcmp(getenv("BT3_NET_DELAY"), "auto") == 0 : sOptAuto;
+    sDelay = getenv("BT3_NET_DELAY") != NULL && !sAutoDelay ? atoi(getenv("BT3_NET_DELAY")) : sOptDelay >= 0 ? sOptDelay : 2;
+    sSetupRtt = -1;
+    sCfgAcked = 0;
     if (sDelay < 0) { sDelay = 0; }
     if (sDelay > 30) { sDelay = 30; }
     sCfgGot = 0;
@@ -351,8 +395,47 @@ static void net_start(int role, const char *host, const char *join) {
             exit(2);
         }
     }
+    /* Setting up. The host measures the round trip (a dozen pings, the smallest counts), chooses the input delay
+       from it if that is automatic, and tells the other side its choices until that side has them; the other
+       side answers the pings and waits for the choices. */
+    if (sMode == 1) {
+        uint64_t start = SDL_GetTicksNS(), lastPing = 0, lastCfg = 0;
+        int pings = 0;
+        while (SDL_GetTicksNS() - start < 400000000ull) {
+            uint64_t now = SDL_GetTicksNS();
+            if (pings < 12 && now - lastPing >= 25000000ull) {
+                uint32_t ping[3] = {MAGIC, T_PING, now_ms()};
+                send_to_peer(ping, (int)sizeof(ping));
+                lastPing = now;
+                pings++;
+            }
+            receive();
+            SDL_Delay(1);
+        }
+        if (sAutoDelay) {
+            sDelay = auto_delay(sSetupRtt);
+        }
+        fprintf(stderr, "bt3: net: round trip %d ms%s\n", sSetupRtt, sAutoDelay ? " (the input delay is chosen from it)" : "");
+        start = SDL_GetTicksNS();
+        while (!sCfgAcked && SDL_GetTicksNS() - start < 3000000000ull) {
+            uint64_t now = SDL_GetTicksNS();
+            if (now - lastCfg >= 50000000ull) {
+                uint32_t cfg[5] = {MAGIC, T_CONFIG, (uint32_t)sDelay, (uint32_t)sRollMax, NET_VERSION};
+                sendto(sSock, (const char *)cfg, sizeof(cfg), 0, (struct sockaddr *)&sPeer, sizeof(sPeer));
+                lastCfg = now;
+            }
+            receive();
+            SDL_Delay(1);
+        }
+    } else {
+        uint64_t start = SDL_GetTicksNS();
+        while (sCfgGot != 2 && SDL_GetTicksNS() - start < 5000000000ull) {
+            receive();
+            SDL_Delay(1);
+        }
+    }
     if (sMode == 2 && sCfgGot) { /* the host's choices, unless this side was started with its own */
-        if (getenv("BT3_NET_DELAY") == NULL && sCfgDelay >= 0 && sCfgDelay <= 30) {
+        if ((getenv("BT3_NET_DELAY") == NULL || sAutoDelay) && sCfgDelay >= 0 && sCfgDelay <= 30) {
             sDelay = sCfgDelay;
         }
         if (getenv("BT3_NET_ROLLBACK") == NULL && sOptRoll < 0 && sCfgRoll >= 0 && sCfgRoll <= 30) {
@@ -877,6 +960,7 @@ int Port_NetStats(int *out) {
     out[4] = sShown[4];
     out[5] = sRollMax;
     out[6] = sDelay;
+    out[7] = sAutoDelay;
     return 1;
 }
 

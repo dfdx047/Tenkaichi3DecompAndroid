@@ -790,3 +790,24 @@ pacing (the two copies kept in step) as the suspect. The meter is there to see i
 - Checked: the meter seen in a connected run (60 fps, speed 100%, ping, rollbacks, waits); a rollback match of
   the recorded input, Linux against the Windows program under Wine, with the new packets: fight values the same at
   all 3,723 blanks of the fight. Not checked: the version messages (no old copy was run against it).
+
+## The first internet match explained; automatic input delay (2026-10-07)
+
+- The user's screenshots of the meter in that match: ping 218 ms, speed 85 to 90%, "waited" 930 to 1010 ms per
+  second on 40 to 59 of the 60 blanks, every rollback 4 frames (the limit), with the defaults of then (delay 1,
+  rollback 4). The line was slow because the user was on a VPN with Tailscale on top (their words; not measured
+  further). Half of 218 ms is 6.5 blanks: with 1 blank of delay the game would have to run about 6 blanks on
+  guesses, the limit was 4, so it waited for input at nearly every blank.
+- Reproduced with `BT3_NET_LATENCY=109` (220 ms round trip measured), delay 1, rollback 4: 417 waits per 600
+  blanks and 3,941 blanks in 75 s where a full-speed run does 4,444 (89%): the same picture.
+- Now: the host measures the round trip when a match starts (12 pings in 0.4 s, the smallest; `T_PING` / `T_PONG`),
+  chooses the delay from it if that is automatic (`auto_delay`: about ceil(trip / 2 / 16.7 + 1) - 4 blanks, 1 to
+  6) and sends its choices (`T_CONFIG`, repeated until `T_CONFIG_ACK`); the joining side waits for them. Host tab:
+  Input delay "Automatic" (the default; `BT3_NET_DELAY=auto`) or 0 to 6 frames; the rollback limit starts at 8.
+  The settings have new names (`net_rollback2`, `net_delay2`) so that the old defaults do not stay with those who
+  hosted once.
+- Checked, two copies, the recorded input, 75 s each: 220 ms -> delay 4, 0 waits, rollbacks of 3 blanks, 4,444
+  blanks; 22 ms -> delay 1, rollbacks of 1 blank; 102 ms -> delay 1, rollbacks of 3 blanks; fight values the same
+  on both copies in every run.
+- Not done: the ping shown in the lobby before the match; changing the delay during a match when the line
+  changes; the measurement is the host's only.
