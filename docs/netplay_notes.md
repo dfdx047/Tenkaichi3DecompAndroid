@@ -637,3 +637,9 @@ a frame with picture 3.1 ms, re-run without output 1.53 ms, saving the state 0.7
 - Traps met: `-fno-builtin` turns `memcpy` of 4 or 8 bytes into a library call (the first version was slower
   than the soft-float code: `__builtin_memcpy`); a first SSE2 version is 600 instructions and only a little
   faster than the plain one, the range checks after every step are most of it.
+- Where the single adds and multiplies come from now (profile with frame pointers:
+  `BT3_PORT_CFLAGS="-fno-omit-frame-pointer -fno-optimize-sibling-calls"` for undefined.py, then `perf record -g`):
+  `mtx_apply` 16% (`Mtx_MulVec4` 14%, `Mtx_Mul` 12%), `op_vmaddabc` 10%, `ClipPoly_ClipPlane` 10%, `fpu_add` 8%,
+  `BtlObjPose_CalcMatrices` 7%, `StgFrustum_TestPart` 6%, `op_vmaddbc` 6%, `ClipPlane_DistArray` 5%,
+  `Quat_ToMtx` 4%: spread out. The next kernels worth having whole would be the four-component VU0 operations
+  (`op_vmulabc`, `op_vmaddabc`, `op_vmaddbc` of src/port/vu0_a.c) and `Mtx_Mul` as one piece.

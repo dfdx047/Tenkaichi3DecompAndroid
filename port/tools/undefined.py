@@ -167,6 +167,8 @@ def main():
         soft = [] if f.name in ("plat_libm.c", "plat_fastvec.c") else ["-msoft-float", "-mno-sse", "-mno-mmx", "-DSF_FAST_CALLS", "-include", "math.h", "-include", "stdlib.h", "-include", "port_libm.h"]
         cmd = ["gcc", "-m32", "-std=gnu99", "-c", "-O2", "-g", "-fno-pic", "-malign-double", "-fno-strict-aliasing",
                "-ffp-contract=off", "-fno-builtin", "-w", "-Iinclude", "-Iport/include", "-Iport/src"] + soft + names
+        if os.environ.get("BT3_PORT_CFLAGS"):  # profiling: e.g. -fno-omit-frame-pointer
+            cmd += os.environ["BT3_PORT_CFLAGS"].split()
         if soft and not names:  # the port's own soft-float code: PS2 constants; the vector references are written for the host
             r = compile_ee(cmd, f, o)
         else:
