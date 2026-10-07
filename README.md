@@ -16,6 +16,11 @@ game's data from it, and it stays on your computer.
 - Internal resolution from 1x to 8x; 4:3, 16:9, 21:9 and wider without stretching the fight.
 - Music, voices and sound effects; keyboard and controllers, fully rebindable; two players.
 - Texture packs made for PCSX2 (`.dds` or `.png`): copied into the `textures` folder next to the game, they are used as they are.
+- Stages and music from outside the disc: a stage model (`.unk`) dropped into the `stages` folder next to the
+  game, or a song (`.adx`) into `songs`, is added to the stage select, its name written in the game's own
+  lettering (cut from the disc's name pictures while the game runs). They are not written to the save and are
+  not offered in an online match. See [docs/port/adding_stages.md](docs/port/adding_stages.md) and
+  [adding_songs.md](docs/port/adding_songs.md).
 - In the game, **F1** opens the settings. Its Cheats tab has "Unlock everything" (a debug function the game's
   developers left in: all characters, stages, music, items and Zenni).
 
