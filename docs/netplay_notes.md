@@ -708,7 +708,7 @@ player's last known input; beyond that it waits, as lockstep does every blank). 
   - Linux against the Windows program under Wine, rollback 6, 50 ms: the same (4,323 blanks of fighting).
   - Two windows in real time, rollback 4, 40 ms: in step; blanks 16.65 to 16.71 ms apart, none late.
   - The session switch test with rollback on: sessions connect and end as before.
-- Seen: in the two-window run one copy did all the rollbacks and the other none. Nothing keeps the two copies'
+- Seen: in the two-window run one copy did nearly all the rollbacks (359 against 6). Nothing keeps the two copies'
   clocks together yet: the one that is ahead guesses, the one behind always has the input already.
 - Not done: keeping the two copies in step in time; a setting in the Dragon Net Battle window (it is the
   environment variable for now); what a rollback does to a pad recording being played (the recording is rewound
