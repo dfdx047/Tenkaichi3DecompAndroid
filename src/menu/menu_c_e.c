@@ -869,7 +869,7 @@ void CharSel_Draw(void) {
         s32 nameId = gCharSel->stage->stage;
 
         if (nameId >= 0x24) {
-            s32 nx, ny;
+            s32 nx = 0, ny = 0; /* (an empty clip reference leaves them untouched) */
             s32 idx = nameId - 0x24;
             Flash_ClipSetFlags(f, &ref, 2, 0); /* FLASH_PROP_VISIBLE: hide the atlas name */
             sPortStageNameHidden = 1;
@@ -954,10 +954,23 @@ void CharSel_Draw(void) {
             s32 cx, cy, px, py;
             /* Use the clip's real position: the game moves "mc_bgm_now" per screen (on the BGM select it is the
                bottom bar; on the map select it sits over the reel) and the child carries its own offset. */
+            /* Which of the two name clips exists depends on the menu's state: "off" while the music line is not
+               being chosen, "on" while its list is open. The position is taken from the one that is there (an
+               empty reference leaves the coordinates as they were: taking "off" alone put the name at whatever
+               the stack held while the list was open, and it was not seen). */
+            s32 have = 0;
+            cx = 0;
+            cy = 0;
             Flash_FindLabel(f, "mc_bgm_now", "mc_bgm_now_text_off", &ref);
-            Flash_ClipGetPos(f, &ref, &cx, &cy);
+            if (ref.id >= 0) {
+                Flash_ClipGetPos(f, &ref, &cx, &cy);
+                have = 1;
+            }
             Flash_ClipSetFlags(f, &ref, 2, 0);
             Flash_FindLabel(f, "mc_bgm_now", "mc_bgm_now_text_on", &ref);
+            if (!have && ref.id >= 0) {
+                Flash_ClipGetPos(f, &ref, &cx, &cy);
+            }
             Flash_ClipSetFlags(f, &ref, 2, 0);
             sPortSongNameHidden = 1; /* the game's own name clips are off while an added song's name is shown */
             Flash_FindLabel(f, NULL, "mc_bgm_now", &ref);
