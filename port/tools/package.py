@@ -61,7 +61,7 @@ SONGS_NOTE = """Music from outside the disc.
 
 Put a song as an .adx file (CRI ADX, the game's own music format) into this folder. It is added to the music
 choice of the stage select, before "Random", named after the file. Up to 6 songs. Other formats have to be
-converted to .adx first (ffmpeg can write it: ffmpeg -i song.mp3 -ar 44100 -ac 2 song.adx).
+converted to .adx first (ffmpeg can write it: ffmpeg -i song.mp3 -ar 24000 -ac 2 -c:a adpcm_adx song.adx).
 
 Optional: a file songs.txt here, one line per song, "file.adx|Name In The Menu", gives other names and an order.
 
