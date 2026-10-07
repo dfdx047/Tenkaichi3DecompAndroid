@@ -12,11 +12,16 @@
 #include "ui.h"
 #include "namefont.h"
 
+static int sMeter = -1; // the meter (frame rate, connection): -1 not read yet
+static bool meter_on(void);
 static int sGL; // 1: the OpenGL back end draws the window (ImGui's OpenGL3 backend, no SDL GPU device)
 
 extern "C" {
 extern volatile int gPortNetMenuRequest;
 void Port_NetOptions(int rollback, int delay); // gs/net.c
+int Port_NetStats(int *out);                   // gs/net.c: the meter's numbers of an online match
+int Port_LobbyOther(void);
+extern unsigned gPortLiveBlanks;               // plat_stub.c: vertical blanks the game has gone through
 int Port_RollCan(void);                        // gs/state.c
 const char *Port_FileRoot(void);               // plat_file.c: the game's data folder
 unsigned GsGl_StripTexture(const void *rgba, int w, int h); // gs_gl.c
@@ -341,6 +346,9 @@ static void build_net(void) {
             if (state == 1) {
                 if (tab == 0) {
                     ImGui::Text("Waiting for the other player on port %s...", port);
+                    if (Port_LobbyOther()) {
+                        ImGui::TextWrapped("A player with a different version of the game is trying to join. Both need the same release.");
+                    }
                 } else {
                     ImGui::Text("Looking for %s...", address);
                 }
@@ -366,7 +374,9 @@ static void build_net(void) {
                 if (ImGui::Button("Back", ImVec2(120.0f, 0.0f))) {
                     open = false;
                 }
-                if (state < 0) {
+                if (state == -2) {
+                    ImGui::TextWrapped("The host's game is a different version. Both players need the same release.");
+                } else if (state < 0) {
                     ImGui::TextWrapped(tab == 0 ? "That port cannot be used (another program has it?)." : "That address is not known.");
                 }
             }
@@ -510,6 +520,14 @@ static void video_tab(PortVideo &v) {
                               "If the chosen one cannot start, the game tries the other.");
         if (api != (sGL ? 1 : 0)) {
             ImGui::TextDisabled("Running now: %s. %s from the next start.", kApi[sGL ? 1 : 0], kApi[api]);
+        }
+    }
+    {
+        bool on = meter_on();
+        if (ImGui::Checkbox("Show frame rate, and the connection in an online match", &on)) {
+            sMeter = on;
+            Port_SettingSave("meter", sMeter);
+            Port_SettingsWrite();
         }
     }
     ImGui::Spacing();
@@ -717,6 +735,58 @@ extern "C" void Port_UiNotice(const char *text) {
     sNoticeNew = 1;
 }
 
+// The meter: frames shown and the game's speed, and in an online match the connection. A setting (Video tab).
+static bool meter_on(void) {
+    if (sMeter < 0) {
+        sMeter = getenv("BT3_METER") != NULL ? atoi(getenv("BT3_METER")) != 0 : Port_Setting("meter", 0) != 0;
+    }
+    return sMeter != 0;
+}
+static float sFps, sSpeed; // frames shown per second; the game's vertical blanks per second as a share of 60
+
+static void meter_count(void) { // once per frame shown
+    static Uint64 t0;
+    static unsigned frames, blanks0;
+    Uint64 now = SDL_GetTicks();
+    frames++;
+    if (t0 == 0) {
+        t0 = now;
+        blanks0 = gPortLiveBlanks;
+    } else if (now - t0 >= 500) {
+        sFps = (float)frames * 1000.0f / (float)(now - t0);
+        sSpeed = (float)(gPortLiveBlanks - blanks0) * 1000.0f / (float)(now - t0) / 60.0f * 100.0f;
+        frames = 0;
+        blanks0 = gPortLiveBlanks;
+        t0 = now;
+    }
+}
+
+static void meter_draw(void) {
+    int n[8];
+    ImGui::SetNextWindowPos(ImVec2(8.0f, 8.0f), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.6f);
+    if (ImGui::Begin("##meter", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
+                                          ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoSavedSettings)) {
+        // a fight shows 30 frames a second and the menus 60, as on the console; the speed is what should stay at 100%
+        ImGui::Text("%.0f fps   speed %.0f%%", sFps, sSpeed);
+        if (Port_NetStats(n)) {
+            if (n[0] >= 0) {
+                ImGui::Text("ping %d ms", n[0]);
+            } else {
+                ImGui::TextUnformatted("ping ...");
+            }
+            if (n[5] > 0) {
+                ImGui::Text("rollbacks %d/s, %.1f frames", n[1], (float)n[2] / 10.0f);
+            } else {
+                ImGui::TextUnformatted("rollback off");
+            }
+            ImGui::Text("waited %d ms/s (%d times)", n[4], n[3]);
+            ImGui::Text("delay %d, rollback up to %d", n[6], n[5]);
+        }
+    }
+    ImGui::End();
+}
+
 // The name of an added stage or song as text, in the rectangle the menu gives (the strip images' place): cream
 // letters with a dark outline, as tall as the rectangle allows, centred for a stage and from the left for a song.
 static void name_text(ImDrawList *dl, const char *text, float x, float y, float w, float h, bool centre) {
@@ -807,8 +877,10 @@ static bool frame_build(void) {
     bool nameOn = gUiNameReady != 0 && gUiNameIdx >= 0 && gUiNameIdx < PortStages_Count();
     bool songOn = gUiSongReady != 0 && gUiSongIdx >= 0 && gUiSongIdx < PortSongs_Count(); // (the same for an added song)
     bool overlay = nameOn || songOn;
+    bool meter = sReady && meter_on();
+    meter_count();
     sBuilt = false;
-    if (!sReady || (!sOpen && !notice && !overlay)) {
+    if (!sReady || (!sOpen && !notice && !overlay && !meter)) {
         return false;
     }
     sBuilt = true;
@@ -825,6 +897,9 @@ static bool frame_build(void) {
         } else {
             build();
         }
+    }
+    if (meter) {
+        meter_draw();
     }
     if (notice) { // a line over the picture for a few seconds (the end of an online match)
         ImGuiIO &io = ImGui::GetIO();

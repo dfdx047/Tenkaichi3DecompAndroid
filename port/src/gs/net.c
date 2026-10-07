@@ -46,6 +46,24 @@ void Port_NetLeave(void);
 
 enum { PAD = 18, RING = 4096, REDUNDANT = 16, MAGIC = 0x4E335442 /* "BT3N" */ };
 enum { T_HELLO = 1, T_HELLO_ACK = 2, T_INPUT = 3, T_BYE = 4 };
+/* The version of what goes over the line. The greeting and its answer carry it, and two copies that differ do not
+   start a match (the input packets changed with version 2: times for the ping were added; a copy that read them
+   the old way took them for input). 1 was releases 0.1.8 and 0.1.9, which said no version. */
+enum { NET_VERSION = 2, IN_HEAD = 32 };
+static int sVersionBad; /* the other side answered with another version */
+static const uint32_t kVersion = NET_VERSION;
+static int sLobbyOther;
+
+/* What the meter shows (ui.cpp): the round trip time, and per second how often the game went back, how far, and
+   how often and for how long it waited for the other player. */
+static uint32_t sEchoTs, sEchoAtMs;     /* the other side's last send time and when it arrived here */
+static int sPingMs = -1;
+static unsigned sSecRoll, sSecRollTicks, sSecWaits, sSecWaitMs, sSecTicks;
+static int sShown[5] = {0, 0, 0, 0, 0}; /* ping, rollbacks, depth x 10, waits, ms waited: of the last second */
+
+static uint32_t now_ms(void) {
+    return (uint32_t)(SDL_GetTicksNS() / 1000000ull) | 1u; /* (never 0: 0 means "no time yet") */
+}
 
 /* What the host chose in the Dragon Net Battle window (-1: not said; the environment or the defaults decide).
    The host's answer to the greeting carries its input delay and rollback limit, and the joining side takes them:
@@ -93,7 +111,7 @@ extern unsigned gPortPaceShiftNs;
 
 /* BT3_NET_LATENCY=<ms>: testing, a line that takes that long one way. What is sent waits in a queue. */
 static int sLatencyMs;
-static struct { uint64_t due; int n; uint8_t data[20 + 16 * PAD]; } sQueue[256];
+static struct { uint64_t due; int n; uint8_t data[IN_HEAD + 16 * PAD]; } sQueue[256];
 static unsigned sQueueHead, sQueueTail;
 
 static void queue_flush(void) {
@@ -119,7 +137,8 @@ static void send_to_peer(const void *buf, int n) {
 }
 
 static void send_inputs(void) {
-    uint8_t pkt[20 + REDUNDANT * PAD];
+    uint8_t pkt[IN_HEAD + REDUNDANT * PAD];
+    uint32_t tsend = now_ms(), techo = sEchoTs, thold = sEchoTs != 0 ? tsend - sEchoAtMs : 0;
     uint32_t magic = MAGIC, type = T_INPUT, n = sHave[sMe] < REDUNDANT ? sHave[sMe] : REDUNDANT, base = sHave[sMe] - n, i;
     int32_t ahead = (int32_t)sTick - (int32_t)sHave[!sMe]; /* how far this copy is beyond the input it has from the other */
 
@@ -129,10 +148,13 @@ static void send_inputs(void) {
     memcpy(pkt + 12, &n, 4);
     sMyAhead = ahead;
     memcpy(pkt + 16, &ahead, 4);
+    memcpy(pkt + 20, &tsend, 4); /* for the ping: when this left, */
+    memcpy(pkt + 24, &techo, 4); /* the other side's last such time that arrived here, */
+    memcpy(pkt + 28, &thold, 4); /* and how long ago that was */
     for (i = 0; i < n; i++) {
-        memcpy(pkt + 20 + i * PAD, sIn[sMe][(base + i) % RING], PAD);
+        memcpy(pkt + IN_HEAD + i * PAD, sIn[sMe][(base + i) % RING], PAD);
     }
-    send_to_peer(pkt, (int)(20 + n * PAD));
+    send_to_peer(pkt, (int)(IN_HEAD + n * PAD));
 }
 
 /* Takes in what has arrived. Returns 1 if anything did. */
@@ -153,13 +175,20 @@ static int receive(void) {
         got = 1;
         if (type == T_BYE && sConnected) {
             sGone = 1;
+        } else if (type == T_HELLO && sMode == 1 && !(n >= 12 && memcmp(pkt + 8, &kVersion, 4) == 0)) {
+            static int said;
+            if (!said++) {
+                fprintf(stderr, "bt3: net: a copy of another version tried to join; both players need the same release\n");
+            }
         } else if (type == T_HELLO && sMode == 1) {
-            uint32_t ack[4] = {MAGIC, T_HELLO_ACK, (uint32_t)sDelay, (uint32_t)sRollMax};
+            uint32_t ack[5] = {MAGIC, T_HELLO_ACK, (uint32_t)sDelay, (uint32_t)sRollMax, NET_VERSION};
             sPeer = from; /* the host learns the other side's address from its greeting */
             sConnected = 1;
             sendto(sSock, (const char *)ack, sizeof(ack), 0, (struct sockaddr *)&sPeer, sizeof(sPeer));
         } else if (type == T_HELLO_ACK && sMode == 2) {
-            if (n >= 16 && !sConnected) {
+            if (!(n >= 20 && memcmp(pkt + 16, &kVersion, 4) == 0)) {
+                sVersionBad = 1;
+            } else if (!sConnected) {
                 uint32_t v[2];
                 memcpy(v, pkt + 8, 8);
                 sCfgDelay = (int)v[0];
@@ -167,7 +196,7 @@ static int receive(void) {
                 sCfgGot = 1;
                 sConnected = 1;
             }
-        } else if (type == T_INPUT && n >= 20 && (sConnected || sMode == 1)) { /* (the joining side: not before the host's answer) */
+        } else if (type == T_INPUT && n >= IN_HEAD && (sConnected || sMode == 1)) { /* (the joining side: not before the host's answer) */
             uint32_t base, count, i, other = (uint32_t)!sMe;
             memcpy(&base, pkt + 8, 4);
             memcpy(&count, pkt + 12, 4);
@@ -176,12 +205,33 @@ static int receive(void) {
                 sPeer = from;
             }
             sConnected = 1; /* (an input packet says the greeting got through) */
-            for (i = 0; i < count && 20 + (i + 1) * PAD <= (uint32_t)n; i++) {
+            {
+                uint32_t ts, echo, hold, now = now_ms();
+                memcpy(&ts, pkt + 20, 4);
+                memcpy(&echo, pkt + 24, 4);
+                memcpy(&hold, pkt + 28, 4);
+                sEchoTs = ts;
+                sEchoAtMs = now;
+                if (echo != 0 && now - echo - hold < 5000u) { /* the round trip: there and back, less their holding time */
+                    /* The smallest of the last 64: a packet waits in the socket until the next blank looks, on both
+                       sides, which adds up to two blanks to a single measurement and nothing to the best one. */
+                    static int ring[64], at, filled;
+                    int rtt = (int)(now - echo - hold), k, best;
+                    ring[at++ & 63] = rtt;
+                    filled = filled < 64 ? filled + 1 : 64;
+                    best = ring[0];
+                    for (k = 1; k < filled; k++) {
+                        best = ring[k] < best ? ring[k] : best;
+                    }
+                    sPingMs = best;
+                }
+            }
+            for (i = 0; i < count && IN_HEAD + (i + 1) * PAD <= (uint32_t)n; i++) {
                 if (base + i >= sHave[other]) {
                     if (base + i > sHave[other]) {
                         break; /* a gap: wait for a packet that covers it */
                     }
-                    memcpy(sIn[other][(base + i) % RING], pkt + 20 + i * PAD, PAD);
+                    memcpy(sIn[other][(base + i) % RING], pkt + IN_HEAD + i * PAD, PAD);
                     sHave[other] = base + i + 1;
                 }
             }
@@ -223,6 +273,11 @@ static void net_start(int role, const char *host, const char *join) {
     if (sDelay > 30) { sDelay = 30; }
     sCfgGot = 0;
     sGone = 0;
+    sVersionBad = 0;
+    sEchoTs = 0;
+    sPingMs = -1;
+    sSecRoll = sSecRollTicks = sSecWaits = sSecWaitMs = sSecTicks = 0;
+    memset(sShown, 0, sizeof(sShown));
     sLoss = getenv("BT3_NET_LOSS") != NULL ? atoi(getenv("BT3_NET_LOSS")) : 0;
     sLagMs = getenv("BT3_NET_LAG") != NULL ? atoi(getenv("BT3_NET_LAG")) : 0;
     sLatencyMs = getenv("BT3_NET_LATENCY") != NULL ? atoi(getenv("BT3_NET_LATENCY")) : 0;
@@ -277,11 +332,19 @@ static void net_start(int role, const char *host, const char *join) {
     while (!sConnected) {
         uint64_t now = SDL_GetTicksNS();
         if (sMode == 2 && now - last > 100000000ull) {
-            uint32_t hello[2] = {MAGIC, T_HELLO};
+            uint32_t hello[3] = {MAGIC, T_HELLO, NET_VERSION};
             sendto(sSock, (const char *)hello, sizeof(hello), 0, (struct sockaddr *)&sPeer, sizeof(sPeer));
             last = now;
         }
         receive();
+        if (sVersionBad) {
+            fprintf(stderr, "bt3: net: the other player's game is another version; both need the same release\n");
+            Port_UiNotice("The other player's game is a different version.");
+            if (sSession) {
+                Port_NetLeave();
+            }
+            exit(2);
+        }
         SDL_Delay(2);
         if (now - t0 > 120000000000ull) {
             fprintf(stderr, "bt3: net: nobody answered in two minutes\n");
@@ -386,6 +449,7 @@ static void roll_tick(unsigned tick) {
         t0 = last = SDL_GetTicksNS();
         if (tick >= sHave[other] + (uint32_t)sRollMax) {
             sStalls++;
+            sSecWaits++;
         }
         while (tick >= sHave[other] + (uint32_t)sRollMax) {
             uint64_t now = SDL_GetTicksNS();
@@ -414,6 +478,14 @@ static void roll_tick(unsigned tick) {
                 sSlowed++;
             }
         }
+        sSecWaitMs += (unsigned)((SDL_GetTicksNS() - t0) / 1000000ull);
+        if (++sSecTicks >= 60) { /* a second of blanks: what the meter shows next */
+            sShown[1] = (int)sSecRoll;
+            sShown[2] = sSecRoll != 0 ? (int)(sSecRollTicks * 10 / sSecRoll) : 0;
+            sShown[3] = (int)sSecWaits;
+            sShown[4] = (int)sSecWaitMs;
+            sSecRoll = sSecRollTicks = sSecWaits = sSecWaitMs = sSecTicks = 0;
+        }
         limit = sHave[other] < tick ? sHave[other] : tick;
         for (t = sChecked; t < limit && memcmp(sUsed[t % RING], sIn[other][t % RING], PAD) == 0; t++) {
         }
@@ -423,6 +495,8 @@ static void roll_tick(unsigned tick) {
             sResim = 1;
             sRollbacks++;
             sRollTicks += tick - t;
+            sSecRoll++;
+            sSecRollTicks += tick - t;
             gPortResim = 1;
             Port_RollBack((int)(tick - t)); /* does not return: goes on after blank t's Port_RollSave below */
         }
@@ -475,6 +549,18 @@ void Port_NetBeginTick(unsigned tick) {
     }
     sWaitNs += SDL_GetTicksNS() - t0;
     sWaits++;
+    {   /* (the meter, when the two copies wait for each other every blank: time waited, and blanks that waited
+           more than a millisecond) */
+        unsigned ms = (unsigned)((SDL_GetTicksNS() - t0) / 1000000ull);
+        sSecWaitMs += ms;
+        sSecWaits += ms >= 1;
+        if (++sSecTicks >= 60) {
+            sShown[1] = sShown[2] = 0;
+            sShown[3] = (int)sSecWaits;
+            sShown[4] = (int)sSecWaitMs;
+            sSecWaits = sSecWaitMs = sSecTicks = 0;
+        }
+    }
     if (tick % 600 == 0 && getenv("BT3_GS_VERBOSE") != NULL) {
         fprintf(stderr, "net: blank %u: waited for the other player %.2f ms per blank on average\n", tick, (double)sWaitNs / (double)sWaits / 1e6);
         sWaitNs = sWaits = 0;
@@ -694,6 +780,7 @@ int Port_LobbyStart(int host, const char *address, int port) {
     memset(&sPeer, 0, sizeof(sPeer));
     sPeer.sin_family = AF_INET;
     sLobby = 1;
+    sLobbyOther = 0;
     sLobbyLast = 0;
     if (host) {
         memset(&local, 0, sizeof(local));
@@ -737,7 +824,7 @@ int Port_LobbyPoll(void) {
         return sLobby;
     }
     if (sLobbyRole == 2 && now - sLobbyLast > 200000000ull) {
-        uint32_t hello[2] = {MAGIC, T_HELLO};
+        uint32_t hello[3] = {MAGIC, T_HELLO, NET_VERSION};
         sendto(sSock, (const char *)hello, sizeof(hello), 0, (struct sockaddr *)&sPeer, sizeof(sPeer));
         sLobbyLast = now;
     }
@@ -748,15 +835,17 @@ int Port_LobbyPoll(void) {
         if (magic != MAGIC) {
             continue;
         }
-        if (sLobbyRole == 1 && type == T_HELLO) {
-            uint32_t ack[2] = {MAGIC, T_HELLO_ACK};
+        if (sLobbyRole == 1 && type == T_HELLO && !(n >= 12 && memcmp(pkt + 8, &kVersion, 4) == 0)) {
+            sLobbyOther = 1; /* someone with another release is trying: the window says so, and goes on waiting */
+        } else if (sLobbyRole == 1 && type == T_HELLO) {
+            uint32_t ack[3] = {MAGIC, T_HELLO_ACK, NET_VERSION};
             int k;
             for (k = 0; k < 3; k++) {
                 sendto(sSock, (const char *)ack, sizeof(ack), 0, (struct sockaddr *)&from, sizeof(from));
             }
             sLobby = 2;
         } else if (sLobbyRole == 2 && type == T_HELLO_ACK) {
-            sLobby = 2;
+            sLobby = n >= 12 && memcmp(pkt + 8, &kVersion, 4) == 0 ? 2 : -2; /* -2: the host is another release */
         }
     }
     return sLobby;
@@ -772,4 +861,26 @@ void Port_LobbyLaunch(void) {
         return;
     }
     relaunch(sLobbyRole, sLobbyAddr, sLobbyPort);
+}
+
+/* For the meter (ui.cpp). 0 when no match is on; else out = ping in ms (-1 not known yet), going back per second,
+   blanks per going back x 10, waits per second, ms waited per second, the rollback limit (0: waiting for each
+   other), the input delay. */
+int Port_NetStats(int *out) {
+    if (sMode <= 0 || !sConnected) {
+        return 0;
+    }
+    out[0] = sPingMs;
+    out[1] = sShown[1];
+    out[2] = sShown[2];
+    out[3] = sShown[3];
+    out[4] = sShown[4];
+    out[5] = sRollMax;
+    out[6] = sDelay;
+    return 1;
+}
+
+/* 1 while a copy of another release is trying to join the lobby this copy hosts. */
+int Port_LobbyOther(void) {
+    return sLobbyOther;
 }

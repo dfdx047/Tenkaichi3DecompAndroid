@@ -768,3 +768,25 @@ plat_mc.c was split into state and host data for the state saves; saving had not
   blank the card is read, so the save is taken in; with session6's input both builds leave the same save behind.
 - Not covered: a card that is full or damaged, the second slot (the port has none), saving during an online
   session (it goes to the session's own folder, which is emptied at the start of each).
+
+## A meter, the ping, and a version in the greeting (2026-10-07)
+
+After the first match over the internet (the user and a friend on Windows, same city, default settings, machines
+like the user's): "we both felt fps lag", a constant low frame rate on both sides. Not explained yet; with a short
+line and fast machines neither the cost of going back nor waiting for late input accounts for it, which leaves the
+pacing (the two copies kept in step) as the suspect. The meter is there to see it.
+
+- F1 -> Video -> "Show frame rate, and the connection in an online match" (setting `meter`; `BT3_METER=1`): frames
+  shown per second and the game's speed (vertical blanks really gone through per second, of 60: `gPortLiveBlanks`,
+  not counting blanks run again), and in a match the ping, how often per second the game went back and how many
+  frames, how long and how often it waited for the other side, the input delay and the rollback limit.
+- Ping: every input packet carries its send time, the other side's last send time that arrived and how long ago
+  that was (the header is 32 bytes now); the round trip is now - echoed time - their holding time, and the
+  smallest of the last 64 is shown (a packet waits in the socket for the next blank's look on both sides, up to
+  two blanks on a single measurement).
+- The greeting and its answer carry `NET_VERSION` (2). A copy of another version does not get an answer; a
+  joining copy that gets an old answer says "The host's game is a different version". 0.1.8 and 0.1.9 say no
+  version (they count as 1) and cannot play against this.
+- Checked: the meter seen in a connected run (60 fps, speed 100%, ping, rollbacks, waits); a rollback match of
+  the recorded input, Linux against the Windows program under Wine, with the new packets: fight values the same at
+  all 3,723 blanks of the fight. Not checked: the version messages (no old copy was run against it).

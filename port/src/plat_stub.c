@@ -66,6 +66,8 @@ PORT_HOST static unsigned sPaceCount = 0, sPaceOff = 0, sPaceLate = 0, sPaceRese
 /* Online play (gs/net.c): this copy runs ahead of the other one; the coming blanks are to come this much later
    in all (the grid moves, once). */
 PORT_HOST unsigned gPortPaceShiftNs = 0;
+/* Vertical blanks the game has really gone through (not the ones run again after a rollback): host data. */
+PORT_HOST unsigned gPortLiveBlanks = 0;
 
 static void vblank_wait(void) {
     PORT_HOST static unsigned long long next = 0;
@@ -172,6 +174,12 @@ void Port_VBlank(void) {
         }
     }
     gPortVBlanks++;
+    {
+        extern int gPortResim;
+        if (!gPortResim) {
+            gPortLiveBlanks++; /* (the meter: the game's speed is this per second, of 60) */
+        }
+    }
     {
         extern void Port_NetBeginTick(unsigned tick); /* gs/net.c: online play */
         Port_NetBeginTick(gPortVBlanks);
