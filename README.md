@@ -24,7 +24,7 @@ game's data from it, and it stays on your computer.
 - In the game, **F1** opens the settings. Its Cheats tab has "Unlock everything" (a debug function the game's
   developers left in: all characters, stages, music, items and Zenni).
 
-- **Online play, experimental** (in the source; not in a release yet): the main menu's hidden "Dragon Net Battle"
+- **Online play, experimental** (from release 0.1.8): the main menu's hidden "Dragon Net Battle"
   entry is back and opens a small window. One player hosts on a port, the other joins with the host's address;
   both get the same roster with everything unlocked, each sees their own fighter's view full screen, and leaving
   the match puts each player back where they were with their own save. Linux and Windows play against each
