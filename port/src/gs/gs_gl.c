@@ -625,16 +625,20 @@ static int gl_init(void) {
 
     sWindow = GsDraw_WindowCreate(1);
     if (sWindow == NULL) { return 0; }
+    if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: the window is there\n"); }
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     if (getenv("BT3_GPU_DEBUG") != NULL) { SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG); }
+    if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: window made, creating the context\n"); }
     sCtx = SDL_GL_CreateContext(sWindow);
+    if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: context %p (%s)\n", (void *)sCtx, sCtx == NULL ? SDL_GetError() : "ok"); }
     if (sCtx == NULL || !SDL_GL_MakeCurrent(sWindow, sCtx)) {
         fprintf(stderr, "bt3: gl: no GL 3.3 core context: %s\n", SDL_GetError());
         return 0;
     }
     SDL_GL_SetSwapInterval(0);
+    if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: current, loading the functions\n"); }
     if (!load_gl()) { return 0; }
     fprintf(stderr, "bt3: GL renderer: %s (%s)\n", (const char *)glGetString(GL_RENDERER), (const char *)glGetString(GL_VERSION));
     sHasIndexed = glEnablei != NULL && glColorMaski != NULL;
