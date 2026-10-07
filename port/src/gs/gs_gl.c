@@ -769,10 +769,13 @@ static void frame_end(void) {
         if (d->native >= 100) {
             GLenum one[1] = {GL_COLOR_ATTACHMENT0};
             if (sFbTex[d->native - 100] == 0) { continue; }
+            glDisable(GL_SCISSOR_TEST); /* glBlitFramebuffer honours the scissor test: the copy must be whole */
             glBindFramebuffer(GL_READ_FRAMEBUFFER, sFbFbo[d->native - 100]);
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, sTgFbo[d->target]);
             glDrawBuffers(1, one);
             glBlitFramebuffer(0, 0, GS_W, GS_H, 0, 0, GS_W * SCALE, GS_H * SCALE, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            glEnable(GL_SCISSOR_TEST);
+            haveScissor = 0;
             gsTargets[d->target].cleared = 1;
             cur = -1;
             continue;
@@ -781,6 +784,11 @@ static void frame_end(void) {
             GLuint dst = d->native == 5 ? sDateCopy : sAuxCopy;
             GLenum one[1] = {GL_COLOR_ATTACHMENT0};
             if (!gsTargets[d->target].cleared) { continue; }
+            /* The copy of the frame's alpha ids (the outline and the DATE passes read it). glBlitFramebuffer is
+               clipped by the scissor test, so with a partial scissor in force (the split screen's halves) only
+               part of the alpha would be copied and the outline would draw a stale silhouette; turn it off for
+               the blit. (Vulkan's copy pass is not affected, which is why only the GL back end showed it.) */
+            glDisable(GL_SCISSOR_TEST);
             glBindFramebuffer(GL_READ_FRAMEBUFFER, sScratchRead);
             glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sTgAux[d->target], 0);
             glReadBuffer(GL_COLOR_ATTACHMENT0);
@@ -790,6 +798,8 @@ static void frame_end(void) {
             glBlitFramebuffer(0, 0, GS_W * SCALE, GS_H * SCALE, 0, 0, GS_W * SCALE, GS_H * SCALE, GL_COLOR_BUFFER_BIT, GL_NEAREST);
             glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+            glEnable(GL_SCISSOR_TEST);
+            haveScissor = 0;
             cur = -1;
             continue;
         }
