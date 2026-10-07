@@ -10,6 +10,7 @@
 #include "imgui_impl_sdlgpu3.h"
 #include "imgui_impl_opengl3.h"
 #include "ui.h"
+#include "namefont.h"
 
 static int sGL; // 1: the OpenGL back end draws the window (ImGui's OpenGL3 backend, no SDL GPU device)
 
@@ -19,6 +20,7 @@ void Port_NetOptions(int rollback, int delay); // gs/net.c
 int Port_RollCan(void);                        // gs/state.c
 const char *Port_FileRoot(void);               // plat_file.c: the game's data folder
 unsigned GsGl_StripTexture(const void *rgba, int w, int h); // gs_gl.c
+void GsGl_StripTextureFree(unsigned id);
 const char *PortStages_Dir(void);                          // plat_stages.c
 const char *PortStages_Name(int index);
 int PortStages_Count(void);
@@ -733,6 +735,57 @@ static void name_text(ImDrawList *dl, const char *text, float x, float y, float 
     dl->AddText(font, size, ImVec2(tx, ty), IM_COL32(255, 236, 170, 255), text);
 }
 
+/* Names in the game's own lettering (namefont.c): a name with no picture in a strip is put together from the letters
+   of the disc's name pictures, once, and kept as a texture while it is the one shown (a few are kept, for going up
+   and down a list). */
+struct FontName {
+    SDL_GPUTexture *tex; // NULL: this name cannot be drawn that way (a character the disc's names do not have)
+    int style, w, h;
+    char text[64];
+    bool used;
+};
+static FontName sFontNames[12];
+static unsigned sFontNext;
+
+static const FontName *font_name(int style, const char *text) {
+    if (text == NULL || text[0] == '\0' || !NameFont_Ready()) { // (not ready: asked again next frame)
+        return NULL;
+    }
+    for (FontName &n : sFontNames) {
+        if (n.used && n.style == style && strncmp(n.text, text, sizeof(n.text) - 1) == 0) {
+            return n.tex != NULL ? &n : NULL;
+        }
+    }
+    FontName &n = sFontNames[sFontNext++ % (sizeof(sFontNames) / sizeof(sFontNames[0]))];
+    if (n.used && n.tex != NULL) {
+        if (sGL) {
+            GsGl_StripTextureFree((unsigned)(intptr_t)n.tex);
+        } else {
+            SDL_ReleaseGPUTexture(sDevice, n.tex);
+        }
+    }
+    n.tex = NULL;
+    n.used = true;
+    n.style = style;
+    SDL_strlcpy(n.text, text, sizeof(n.text));
+    unsigned char *pix = NameFont_Compose(style, n.text, &n.w, &n.h);
+    if (pix != NULL) {
+        n.tex = make_strip(pix, (size_t)n.w * n.h * 4, (uint32_t)n.w, (uint32_t)n.h, 1); // (frees pix)
+    }
+    return n.tex != NULL ? &n : NULL;
+}
+
+/* Draws such a name over the place of the disc's name picture: (x, y) is the corner of that picture's row in the
+   window, kx and ky are window pixels per pixel of the row (512 wide). A name longer than the row is made smaller
+   to fit, about the row's middle line; a stage name stays in the middle, a song name keeps its left edge. */
+static void font_draw(ImDrawList *dl, const FontName *n, float x, float y, float kx, float ky, bool centre) {
+    float k = n->w > 512 ? 512.0f / (float)n->w : 1.0f;
+    float w = (float)n->w * kx * k, h = (float)n->h * ky * k;
+    float x0 = centre ? x + (512.0f * kx - w) * 0.5f : x;
+    float y0 = y + ((float)n->h * ky - h) * 0.5f;
+    dl->AddImage(ImTextureRef((ImTextureID)(intptr_t)n->tex), ImVec2(x0, y0), ImVec2(x0 + w, y0 + h));
+}
+
 // Builds this frame's picture of the overlay (the settings or the online window, the line over the picture).
 // false: there is nothing to draw. The same for both back ends; each then draws ImGui's data its own way.
 static bool frame_build(void) {
@@ -790,9 +843,20 @@ static bool frame_build(void) {
         float sy = (float)gUiPresentH / 448.0f;
         ImDrawList *dl = ImGui::GetForegroundDrawList();
 
-        if (nameOn && gUiNameIdx >= (int)sNameCount) { // no pre-rendered name for this one: as text
-            name_text(dl, PortStages_Name(gUiNameIdx), (float)gUiPresentX + (float)gUiNameX * sx, (float)gUiPresentY + (float)gUiNameY * sy,
-                      (float)gUiNameW * sx, (float)gUiNameH * sy, true);
+        if (nameOn && gUiNameIdx >= (int)sNameCount) { // no pre-rendered name for this one
+            /* In the game's lettering if the disc's names have all its characters, else as plain text. The menu's
+               rectangle is the strip image's (384x48, set 64 right and 14 down in the 512x64 row of the disc's own
+               name picture); the lettering goes where that row is. The menu's movie draws the row a little below
+               the clip's position: kNameDy, measured by drawing a disc name both ways (the same for the songs). */
+            static const float kNameDy = 1.5f;
+            const FontName *fn = font_name(NF_STAGE, PortStages_Name(gUiNameIdx));
+            if (fn != NULL) {
+                float kx = (float)gUiNameW * sx / 384.0f, ky = (float)gUiNameH * sy / 48.0f;
+                font_draw(dl, fn, (float)gUiPresentX + (float)gUiNameX * sx - 64.0f * kx, (float)gUiPresentY + (float)gUiNameY * sy + (kNameDy - 14.0f) * ky, kx, ky, true);
+            } else {
+                name_text(dl, PortStages_Name(gUiNameIdx), (float)gUiPresentX + (float)gUiNameX * sx, (float)gUiPresentY + (float)gUiNameY * sy,
+                          (float)gUiNameW * sx, (float)gUiNameH * sy, true);
+            }
         } else if (nameOn) {
             float x = (float)gUiPresentX + (float)gUiNameX * sx;
             float y = (float)gUiPresentY + (float)gUiNameY * sy;
@@ -803,8 +867,16 @@ static bool frame_build(void) {
                          ImVec2(1.0f, (float)(gUiNameIdx + 1) / (float)sNameCount));
         }
         if (songOn && gUiSongIdx >= (int)sSongCount) {
-            name_text(dl, PortSongs_Name(gUiSongIdx), (float)gUiPresentX + (float)gUiSongX * sx, (float)gUiPresentY + (float)gUiSongY * sy,
-                      (float)gUiSongW * sx, (float)gUiSongH * sy, false);
+            // (the rectangle is the 512x32 row of the disc's song-name picture itself)
+            const FontName *fn = font_name(gUiSongLit ? NF_SONG_LIT : NF_SONG, PortSongs_Name(gUiSongIdx));
+            if (fn != NULL) {
+                static const float kSongDx = -0.2f, kSongDy = 2.35f;
+                float kx = (float)gUiSongW * sx / 512.0f, ky = (float)gUiSongH * sy / 32.0f;
+                font_draw(dl, fn, (float)gUiPresentX + (float)gUiSongX * sx + kSongDx * kx, (float)gUiPresentY + (float)gUiSongY * sy + kSongDy * ky, kx, ky, false);
+            } else {
+                name_text(dl, PortSongs_Name(gUiSongIdx), (float)gUiPresentX + (float)gUiSongX * sx, (float)gUiPresentY + (float)gUiSongY * sy,
+                          (float)gUiSongW * sx, (float)gUiSongH * sy, false);
+            }
         } else if (songOn) {
             float x = (float)gUiPresentX + (float)gUiSongX * sx;
             float y = (float)gUiPresentY + (float)gUiSongY * sy;

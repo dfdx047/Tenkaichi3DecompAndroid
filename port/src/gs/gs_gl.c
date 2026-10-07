@@ -736,6 +736,11 @@ unsigned GsGl_StripTexture(const void *rgba, int w, int h) {
     return (unsigned)id;
 }
 
+void GsGl_StripTextureFree(unsigned id) {
+    GLuint t = (GLuint)id;
+    glDeleteTextures(1, &t);
+}
+
 /* ---- the frame ---------------------------------------------------------------------------------- */
 static void frame_end(void) {
     SDL_Event ev;

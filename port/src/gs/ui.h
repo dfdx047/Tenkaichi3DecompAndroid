@@ -63,6 +63,7 @@ extern volatile int gUiNameReady; /* 1 when the name strip was loaded (else the 
 extern volatile int gUiSongX, gUiSongY, gUiSongW, gUiSongH; /* game pixels */
 extern volatile int gUiSongIdx;   /* < 0 = none */
 extern volatile int gUiSongReady;
+extern volatile int gUiSongLit;   /* 1 while the music list is open: the disc's names are then drawn from their second sheet */
 
 #ifdef __cplusplus
 }

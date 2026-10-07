@@ -21,7 +21,7 @@ static s32 sPortSongNameHidden, sPortStageNameHidden;
 extern volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;
 extern volatile int gUiNameIdx, gUiNameReady;
 extern volatile int gUiSongX, gUiSongY, gUiSongW, gUiSongH;
-extern volatile int gUiSongIdx, gUiSongReady;
+extern volatile int gUiSongIdx, gUiSongReady, gUiSongLit;
 #endif
 
 /*
@@ -434,6 +434,15 @@ void CharSel_Init(s32 section) {
     CS_RES(gCharSel->res, 12);
     gCharSel->tex[47] = MTEX(res, 0);
     gCharSel->tex[48] = MTEX(res, 1);
+#ifdef PORT
+    {
+        /* PC build: the name sheets of this screen (stage names: image 39; song names: image 19, and image 20 for
+           the open music list), for the letters the port draws the names of added stages and songs with
+           (port/src/gs/namefont.c). Addresses as numbers; the port only reads them. */
+        extern void Port_NameFontSheets(int stage, int song, int songLit);
+        Port_NameFontSheets((int)(u32)gCharSel->tex[39], (int)(u32)gCharSel->tex[19], (int)(u32)gCharSel->tex[20]);
+    }
+#endif
     Flash_Create(&gCharSel->flash[0], MPACK_AT(gCharSel->res, 15), gCharSel->tex);
     Flash_Play(&gCharSel->flash[0], 1);
 
@@ -981,6 +990,7 @@ void CharSel_Draw(void) {
                 gUiSongY = py + cy;
                 gUiSongW = 0x200;
                 gUiSongH = 0x20;
+                gUiSongLit = !have; /* the "on" clip: the music list is open */
                 gUiSongIdx = idx;
                 {
                     extern void Port_SongDebug(int state, int idx, int px, int py, int cx, int cy); /* headless.c */

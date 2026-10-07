@@ -35,6 +35,7 @@ volatile int gUiNameReady;
 volatile int gUiSongX, gUiSongY, gUiSongW, gUiSongH;
 volatile int gUiSongIdx = -1;
 volatile int gUiSongReady;
+volatile int gUiSongLit; /* the added song's name is the one of the open music list (the game's second name style) */
 
 extern int Port_Setting(const char *name, int def); /* plat_settings.c: the saved settings */
 extern void Port_SettingSave(const char *name, int value);

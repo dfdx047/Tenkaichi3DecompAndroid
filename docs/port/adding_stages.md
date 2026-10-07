@@ -22,6 +22,27 @@ menu is the file's name (`My_Song.unk` is shown as "My Song"). `$BT3_STAGES` nam
   the folder next to the game (the repository root) unless `--data` names another place.
 - Code: `port/src/plat_extras.c` (the folder, the scan), `plat_stages.c`, `plat_songs.c`.
 
+## The name in the game's own lettering (main line)
+
+The game has no font for these names: every stage name of the disc is a picture. `port/src/gs/namefont.c` reads
+those pictures from the stage select's own pack when the menu is set up (36 stage names in `gCharSel->tex[39]`,
+24 song names in `tex[19]` and again in the lit colours in `tex[20]`; 512 x 256 sheets, 8-bit with a table),
+cuts them into letters in memory and writes an added name with them. Nothing made from the game's art is stored
+or shipped; the letters exist while the program runs, made from the player's own disc.
+
+- Fill letters are cut from the pictures; the outline and the shadow are drawn again around the composed name
+  (neighbouring outlines run into each other on the disc). Spacing is solved from the disc names' own gaps.
+- Characters the disc's names have: most letters, `' - !`. None of `J Q X Y Z j q x`, no digits, no other
+  punctuation. A letter missing in one size is taken from the other and resampled. A name with a character
+  that exists nowhere is written as plain styled text instead, whole.
+- A strip made by the script (`names.rgba`) still comes first.
+- The tables of what each picture says are in namefont.c; a disc whose pictures do not have those letter counts
+  (another edition or language) leaves the names as plain text.
+- `BT3_NAMEFONT_TEST="Stage Name|Song Name" BT3_NAMEFONT_OUT=<folder>` writes test pictures and the coverage.
+- Checked: every disc name put together again from the kept letters against its own picture (mean difference
+  under 1 of 128); an added stage's name seen in the menu under Vulkan and once under OpenGL. Not seen: an added
+  song's name in the menu, in either of its two states (the lit one while the music list is open).
+
 > **How this differs from the pull request it came from** (main line, 2026-10-07):
 > - Nothing is written to the save: added stages are appended after the game has applied the save's unlocks to its
 >   own list, and no unlock bit is set for them. A save stays valid for a copy of the game without them.
