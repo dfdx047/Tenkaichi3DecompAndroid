@@ -80,6 +80,14 @@ finished program fetches the values from your disc when it starts.
 
 This project was made with the help of AI.
 
+## Contributors
+
+- [RexxColder](https://github.com/RexxColder): the OpenGL 3.3 renderer beside Vulkan (the split of the renderer
+  into a shared recorder and two back ends), and stages and songs from outside the disc (the manifest, the
+  install scripts, the menu changes and their documentation), in
+  [pull request #1](https://github.com/z3xox/Tenkaichi3Decomp/pull/1). Both were brought onto the main line
+  with changes; the documents under `docs/port/` say which.
+
 ## Licence
 
 The port's own code (everything under `port/` except `port/third_party/`, the setup, the build tools, and the
