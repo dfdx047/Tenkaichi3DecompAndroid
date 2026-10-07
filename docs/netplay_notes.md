@@ -753,3 +753,18 @@ player's last known input; beyond that it waits, as lockstep does every blank). 
   game goes on; the session switch test as before.
 - Not looked at: the window's new controls and the line over the picture (no automated way here to see the
   overlay; screenshots do not contain it).
+
+## The memory card on this branch (2026-10-07)
+
+plat_mc.c was split into state and host data for the state saves; saving had not been tried since.
+
+- The user recorded `port/build/save1.pad` on an empty card (`BT3_SAVES=<empty folder> BT3_NOMOVIE=1
+  BT3_MENU_ITEM4=0`): a new game, the save created, and saved again.
+- Played back without a window from an empty card: this branch, the main line (branch `port` at d39fd80, built in
+  a work tree with the same data tables), this branch a second time, the Windows program under Wine and the
+  32-bit program all write the same three files, byte for byte, and they are the files the user's own play wrote
+  (`BASLUS-21678DBZT3` 16,384 bytes, `icon.sys` 964, `dbzsm.ico` 40,090).
+- Reading it back: started again on that card, the game's state differs from a start on an empty card from the
+  blank the card is read, so the save is taken in; with session6's input both builds leave the same save behind.
+- Not covered: a card that is full or damaged, the second slot (the port has none), saving during an online
+  session (it goes to the session's own folder, which is emptied at the start of each).
