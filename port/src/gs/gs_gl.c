@@ -723,6 +723,19 @@ static int gl_init(void) {
     return 1;
 }
 
+/* A strip of pre-rendered names (the added stages / songs) as a texture for the overlay (ui.cpp). */
+unsigned GsGl_StripTexture(const void *rgba, int w, int h) {
+    GLuint id = 0;
+    glGenTextures(1, &id);
+    glBindTexture(GL_TEXTURE_2D, id);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    return (unsigned)id;
+}
+
 /* ---- the frame ---------------------------------------------------------------------------------- */
 static void frame_end(void) {
     SDL_Event ev;
@@ -920,6 +933,14 @@ static void frame_end(void) {
                 int ww, wh;
                 SDL_GetWindowSize(sWindow, &ww, &wh);
                 fprintf(stderr, "gl: present window %dx%d pixels %dx%d aspect %d -> picture %dx%d at (%d,%d)\n", ww, wh, sw, sh, Port_AspectMilli(), w, h, dx, dy);
+            }
+            {   /* where the picture is in the window, for the overlay's stage and song names (ui.cpp), counted from
+                   the top as the overlay does */
+                extern volatile int gUiPresentX, gUiPresentY, gUiPresentW, gUiPresentH;
+                gUiPresentX = dx;
+                gUiPresentY = sh - dy - h;
+                gUiPresentW = w;
+                gUiPresentH = h;
             }
             glViewport(dx, dy, w, h);
             glDisable(GL_SCISSOR_TEST);

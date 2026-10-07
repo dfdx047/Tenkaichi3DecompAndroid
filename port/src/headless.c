@@ -392,3 +392,16 @@ void Port_Trace(unsigned vblanks) {
            u[0][0], u[0][1], u[0][2], u[1][0], u[1][1], u[1][2]);
     fflush(stdout);
 }
+
+/* BT3_SONG_DEBUG=1: where the stage select asks for an added song's name to be drawn, whenever that changes
+   (the menu's state, the song, the name clip's parent position and its own offset, in the game's 512 x 448). */
+void Port_SongDebug(int state, int idx, int px, int py, int cx, int cy) {
+    static int last[6] = {-99, -99, -99, -99, -99, -99};
+    int now[6];
+    now[0] = state; now[1] = idx; now[2] = px; now[3] = py; now[4] = cx; now[5] = cy;
+    if (getenv("BT3_SONG_DEBUG") != NULL && memcmp(now, last, sizeof(now)) != 0) {
+        memcpy(last, now, sizeof(now));
+        fprintf(stderr, "song name: menu state %d, added song %d, parent at %d,%d, clip offset %d,%d -> drawn at %d,%d\n", state, idx, px, py, cx, cy,
+                px + cx, py + cy);
+    }
+}

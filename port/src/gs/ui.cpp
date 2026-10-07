@@ -17,6 +17,8 @@ extern "C" {
 extern volatile int gPortNetMenuRequest;
 void Port_NetOptions(int rollback, int delay); // gs/net.c
 int Port_RollCan(void);                        // gs/state.c
+const char *Port_FileRoot(void);               // plat_file.c: the game's data folder
+unsigned GsGl_StripTexture(const void *rgba, int w, int h); // gs_gl.c
 int Port_Setting(const char *name, int def);   // plat_settings.c
 void Port_SettingSave(const char *name, int value);
 void Port_SettingsWrite(void);
@@ -74,6 +76,11 @@ static SDL_GPUTexture *make_strip(uint8_t *pix, size_t bytes, uint32_t w, uint32
     SDL_GPUTexture *tex;
     void *map;
 
+    if (sGL) { // the OpenGL back end: a GL texture, its name carried in the pointer (ImGui's OpenGL3 backend takes it so)
+        unsigned id = GsGl_StripTexture(pix, (int)w, (int)(h * count));
+        free(pix);
+        return (SDL_GPUTexture *)(intptr_t)id;
+    }
     SDL_zero(ci);
     ci.type = SDL_GPU_TEXTURETYPE_2D;
     ci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
@@ -121,9 +128,12 @@ static SDL_GPUTexture *load_strip(const char *env, const char *rel, uint32_t *w,
     SDL_GPUTexture *tex;
     uint32_t i;
 
+    char inData[600];
+    // under the game's data folder, wherever that is (BT3_DATA); the environment variable names another file
+    snprintf(inData, sizeof(inData), "%s/%s", Port_FileRoot(), rel);
     paths[0] = getenv(env);
-    paths[1] = rel;
-    paths[2] = "names.rgba";
+    paths[1] = inData;
+    paths[2] = NULL;
     for (i = 0; i < 3 && pix == NULL; i++) {
         if (paths[i] != NULL) {
             pix = read_strip(paths[i], &bytes, w, h, count);
@@ -140,11 +150,11 @@ static SDL_GPUTexture *load_strip(const char *env, const char *rel, uint32_t *w,
 }
 
 static void load_strips(void) {
-    sNameTex = load_strip("BT3_STAGE_NAMES", "gamedata/stages/names.rgba", &sNameW, &sNameH, &sNameCount, "stage-name");
+    sNameTex = load_strip("BT3_STAGE_NAMES", "stages/names.rgba", &sNameW, &sNameH, &sNameCount, "stage-name");
     if (sNameTex != NULL) {
         gUiNameReady = 1;
     }
-    sSongTex = load_strip("BT3_SONG_NAMES", "gamedata/songs/names.rgba", &sSongW, &sSongH, &sSongCount, "song-name");
+    sSongTex = load_strip("BT3_SONG_NAMES", "songs/names.rgba", &sSongW, &sSongH, &sSongCount, "song-name");
     if (sSongTex != NULL) {
         gUiSongReady = 1;
     }
@@ -712,10 +722,9 @@ static bool frame_build(void) {
         sNoticeUntil = SDL_GetTicks() + 6000;
         notice = sNotice[0] != '\0';
     }
-    // the name of a stage added from outside the disc, over the stage select (a strip of pre-rendered names;
-    // the SDL GPU back end only for now: under OpenGL the game writes the name with its own font)
-    bool nameOn = !sGL && gUiNameReady != 0 && gUiNameIdx >= 0 && gUiNameIdx < (int)sNameCount;
-    bool songOn = !sGL && gUiSongReady != 0 && gUiSongIdx >= 0 && gUiSongIdx < (int)sSongCount; // (the same for an added song)
+    // the name of a stage added from outside the disc, over the stage select (a strip of pre-rendered names)
+    bool nameOn = gUiNameReady != 0 && gUiNameIdx >= 0 && gUiNameIdx < (int)sNameCount;
+    bool songOn = gUiSongReady != 0 && gUiSongIdx >= 0 && gUiSongIdx < (int)sSongCount; // (the same for an added song)
     bool overlay = nameOn || songOn;
     sBuilt = false;
     if (!sReady || (!sOpen && !notice && !overlay)) {

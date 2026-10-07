@@ -969,6 +969,10 @@ void CharSel_Draw(void) {
                 gUiSongW = 0x200;
                 gUiSongH = 0x20;
                 gUiSongIdx = idx;
+                {
+                    extern void Port_SongDebug(int state, int idx, int px, int py, int cx, int cy); /* headless.c */
+                    Port_SongDebug((int)gCharSel->stage->state, (int)idx, (int)px, (int)py, (int)cx, (int)cy);
+                }
             } else if (idx >= 0 && idx < gPortSongCount) {
                 /* No overlay (the OpenGL back end has none yet): print the name with the game's own font. */
                 extern void Font_PrintAsciiAt(s32 x, s32 y, char *str);
