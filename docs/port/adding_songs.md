@@ -7,6 +7,14 @@ name.
 Everything is driven by a **manifest** (`<data>/songs/songs.txt`) that the port reads at start-up. No code
 change and no environment variable is needed.
 
+
+> **How this differs from the pull request it came from** (main line, 2026-10-07):
+> - Nothing is written to the save: added songs are appended after the game has applied the save's unlocks to its
+>   own list, and no unlock bit is set for them. A save stays valid for a copy of the game without them.
+> - In an online session (Dragon Net Battle) added songs are not offered: both players must have the same list.
+> - With nothing installed the game is unchanged.
+> - The styled name over the menu is drawn by the Vulkan renderer only; under OpenGL the game's plain font is used.
+
 ---
 
 ## Quick start (script)
