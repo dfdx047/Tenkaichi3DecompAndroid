@@ -219,9 +219,9 @@ static void build_net(void) {
             }
         }
         ImGui::Spacing();
-        ImGui::TextDisabled("When you are connected the game starts again for the match: both players get the same");
-        ImGui::TextDisabled("roster, with everything unlocked, and your own save is left alone. The host's controls");
-        ImGui::TextDisabled("also work the menus.");
+        ImGui::TextDisabled("When you are connected the game switches to the match: both players get the same roster,");
+        ImGui::TextDisabled("with everything unlocked, and your own save is left alone. Leaving the match brings you");
+        ImGui::TextDisabled("back to where you were. The host's controls also work the menus.");
     }
     ImGui::End();
     if (!open) {
@@ -519,8 +519,10 @@ static void build(void) {
     }
 }
 
+static bool sBuilt; // this frame has something to draw: the window, or the line over the picture
+
 void Ui_DrawAgain(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
-    ImDrawData *dd = sReady && sOpen ? ImGui::GetDrawData() : NULL;
+    ImDrawData *dd = sReady && sBuilt ? ImGui::GetDrawData() : NULL; // (sBuilt: Ui_Draw made a picture this frame)
     SDL_GPUColorTargetInfo ti;
     SDL_GPURenderPass *pass;
 
@@ -561,9 +563,11 @@ void Ui_Draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
         sNoticeUntil = SDL_GetTicks() + 6000;
         notice = sNotice[0] != '\0';
     }
+    sBuilt = false;
     if (!sReady || (!sOpen && !notice)) {
         return;
     }
+    sBuilt = true;
     ImGui_ImplSDLGPU3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
