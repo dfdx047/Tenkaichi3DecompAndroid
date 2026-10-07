@@ -1,0 +1,42 @@
+# Packages the parts of the Android NDK that the engine build needs (the arm64 sysroot: bionic headers and
+# libraries, libc++, and clang's runtime library for arm64 Android) as a release asset, so a build machine without
+# the NDK can cross-compile the engine with an upstream LLVM. Runs when this file changes.
+name: toolchain
+
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/toolchain.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sysroot:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Package the NDK sysroot
+        run: |
+          set -e
+          NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          echo "NDK: $NDK"; cat "$NDK/source.properties"
+          ls "$ANDROID_HOME/ndk" || true
+          TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          mkdir -p out/ndk/sysroot/usr/lib out/ndk/clang_rt
+          cp -a "$TC/sysroot/usr/include" out/ndk/sysroot/usr/
+          mkdir -p out/ndk/sysroot/usr/lib/aarch64-linux-android
+          (cd "$TC/sysroot/usr/lib/aarch64-linux-android" && cp -a *.a *.so 29 30 31 33 35 ../../../../../out/ndk/sysroot/usr/lib/aarch64-linux-android/ 2>/dev/null || true)
+          ls out/ndk/sysroot/usr/lib/aarch64-linux-android
+          find "$TC/lib/clang" -path "*linux*" -name "*aarch64-android*" -exec cp -a {} out/ndk/clang_rt/ \;
+          ls out/ndk/clang_rt
+          cp "$NDK/source.properties" out/ndk/
+          "$TC/bin/clang" --version | head -1 > out/ndk/clang_version.txt
+          cd out && tar -cJf ndk-arm64-sysroot.tar.xz ndk && ls -la
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: toolchain-ndk
+          name: "Toolchain: NDK arm64 sysroot"
+          prerelease: true
+          files: out/ndk-arm64-sysroot.tar.xz
+          body: Build input for the engine (not an app release). The arm64 sysroot of the runner's Android NDK.
