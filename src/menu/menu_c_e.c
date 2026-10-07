@@ -883,7 +883,10 @@ void CharSel_Draw(void) {
             Flash_ClipSetFlags(f, &ref, 2, 0); /* FLASH_PROP_VISIBLE: hide the atlas name */
             sPortStageNameHidden = 1;
             Flash_ClipGetPos(f, &ref, &nx, &ny);
-            if (idx >= 0 && idx < gPortExtraStageCount) {
+            /* Only where the name clip exists: the stage select. This draw also runs on the character select
+               (the last stage stays chosen after a fight), where the movie has no such clip; the name was then
+               drawn at the top of the screen, at the place an empty reference leaves (seen by the user). */
+            if (ref.id >= 0 && idx >= 0 && idx < gPortExtraStageCount) {
                 if (gUiNameReady) {
                     /* The port draws the name (its own art: the menu's stylized font) over the picture. The
                        rectangle is the clip's, in the game's 512x448 pixels; the strip image is idx. */
@@ -968,6 +971,7 @@ void CharSel_Draw(void) {
                empty reference leaves the coordinates as they were: taking "off" alone put the name at whatever
                the stack held while the list was open, and it was not seen). */
             s32 have = 0;
+            s32 shown = 0; /* one of the two name clips exists: this screen shows the music's name */
             cx = 0;
             cy = 0;
             Flash_FindLabel(f, "mc_bgm_now", "mc_bgm_now_text_off", &ref);
@@ -979,12 +983,16 @@ void CharSel_Draw(void) {
             Flash_FindLabel(f, "mc_bgm_now", "mc_bgm_now_text_on", &ref);
             if (!have && ref.id >= 0) {
                 Flash_ClipGetPos(f, &ref, &cx, &cy);
+                shown = 1;
             }
+            shown |= have;
             Flash_ClipSetFlags(f, &ref, 2, 0);
             sPortSongNameHidden = 1; /* the game's own name clips are off while an added song's name is shown */
             Flash_FindLabel(f, NULL, "mc_bgm_now", &ref);
             Flash_ClipGetPos(f, &ref, &px, &py);
-            if (gUiSongReady) {
+            if (!shown) {
+                /* (a screen of this menu without the music line: nothing to draw, as for the stage's name) */
+            } else if (gUiSongReady) {
                 /* The port draws the track's name (its own art) over the menu, at the clip's own place. */
                 gUiSongX = px + cx;
                 gUiSongY = py + cy;
