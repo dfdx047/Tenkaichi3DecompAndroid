@@ -59,6 +59,11 @@ extern volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;            /* game p
 extern volatile int gUiNameIdx;   /* strip image to show; < 0 = none */
 extern volatile int gUiNameReady; /* 1 when the name strip was loaded (else the game prints with its own font) */
 
+/* The same for the music select's added tracks: a second strip (gamedata/songs/names.rgba). */
+extern volatile int gUiSongX, gUiSongY, gUiSongW, gUiSongH; /* game pixels */
+extern volatile int gUiSongIdx;   /* < 0 = none */
+extern volatile int gUiSongReady;
+
 #ifdef __cplusplus
 }
 #endif

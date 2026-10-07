@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "plat_stages.h"
+#include "plat_songs.h"
 
 extern void Battle_ClearWork(void);
 extern int BattleReplay_Load(void *buf, int size);
@@ -95,6 +96,7 @@ static void port_stage_replace_init(void) {
 int __wrap_Progress_Main(int arg) {
     const char *path;
     PortStages_Init();
+    PortSongs_Init();
     port_stage_replace_init();
     path = getenv("BT3_REPLAY");
 

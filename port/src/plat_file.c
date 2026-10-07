@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "plat_stages.h"
+#include "plat_songs.h"
 
 #define SECTOR 2048
 enum { STAT_STOP = 1, STAT_READING = 2, STAT_READEND = 3, STAT_ERROR = 4 };
@@ -51,6 +52,9 @@ static const char *alias_target(const char *rel) {
     size_t rl = strlen(rel);
 
     if (PortStages_Alias(rel, buf, sizeof(buf))) {
+        return buf;
+    }
+    if (PortSongs_Alias(rel, buf, sizeof(buf))) {
         return buf;
     }
     if (list == NULL) {
@@ -104,6 +108,14 @@ int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size) {
         rel[n] = '\0';
     } else {
         snprintf(rel, sizeof(rel), "%s/%05d.bin", sPartDir[ptid & 7], flid);
+    }
+    {
+        /* The streamed audio (a song added from outside the disc) reads through this path, so the manifest's
+           aliases must apply here too, not only in open_rel. */
+        const char *a = alias_target(rel);
+        if (a != NULL) {
+            snprintf(rel, sizeof(rel), "%s", a);
+        }
     }
     snprintf(out, (size_t)size, "%s/mods/%s", root(), rel);
     fp = fopen(out, "rb");

@@ -32,6 +32,9 @@ volatile int gUiPresentX, gUiPresentY, gUiPresentW, gUiPresentH;
 volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;
 volatile int gUiNameIdx = -1;
 volatile int gUiNameReady;
+volatile int gUiSongX, gUiSongY, gUiSongW, gUiSongH;
+volatile int gUiSongIdx = -1;
+volatile int gUiSongReady;
 
 extern int Port_Setting(const char *name, int def); /* plat_settings.c: the saved settings */
 extern void Port_SettingSave(const char *name, int value);

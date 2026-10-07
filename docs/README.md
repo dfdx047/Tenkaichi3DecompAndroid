@@ -42,6 +42,7 @@ Names marked `// guess` in `config/symbols/*.txt` are best guesses.
 | [agent_rules.md](agent_rules.md) | Working rules for parallel decomp agents |
 | [text_map.md](text_map.md) | Address ranges of the executable: game vs library code |
 | [port/adding_stages.md](port/adding_stages.md) | Adding stages (maps) to the port: the manifest, the script and how it works |
+| [port/adding_songs.md](port/adding_songs.md) | Adding songs to the music select: the manifest, the script and how it works |
 | [game_overview.md](game_overview.md) | The first static analysis (partly superseded; corrections at its end) |
 
 ## Binaries

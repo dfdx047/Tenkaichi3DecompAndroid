@@ -6,6 +6,7 @@
 #ifdef PORT
 #include "battle/col_c.h" /* FontStyle / FONT_ALIGN_* / FONT_SHADOW_*, for the names of added stages */
 #include "plat_stages.h"  /* the manifest of added stages: their ids, names and file aliases */
+#include "plat_songs.h"   /* the manifest of added songs (the music select) */
 #include <stdio.h>
 #include <stdlib.h>
 /* include/battle/view_a.h holds these, but pulling it in clashes with menu_d.h (MsgWin_Init); the values are
@@ -18,6 +19,8 @@ static s32 sPortStagesAdded; /* this stage select shows stages from outside the 
    port, over the picture, from its own stylized art. The menu only fills the name's rectangle and which image. */
 extern volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;
 extern volatile int gUiNameIdx, gUiNameReady;
+extern volatile int gUiSongX, gUiSongY, gUiSongW, gUiSongH;
+extern volatile int gUiSongIdx, gUiSongReady;
 #endif
 
 /*
@@ -588,8 +591,56 @@ void CharSel_Init(s32 section) {
     gCharSel->bgmIds = (s32 *)(MPACK_AT(gCharSel->res, 56) + 0x10);
     gCharSel->bgmCount = MPACK_WORD(gCharSel->res, 56);
     BgmList_ApplyUnlocks(&gCharSel->bgmCount, gCharSel->bgmIds);
+#ifdef PORT /* PC build: list the music ids the game loaded, to see the list a data pack carries (music report) */
+    if (getenv("BT3_BGM_DEBUG") != NULL) {
+        s32 dbg;
+        fprintf(stderr, "bgm raw: count %d, ids:", (int)gCharSel->bgmCount);
+        for (dbg = 0; dbg < gCharSel->bgmCount; dbg++) {
+            fprintf(stderr, " %02x", (int)(u32)gCharSel->bgmIds[dbg]);
+        }
+        fprintf(stderr, "\n");
+    }
+#endif
     gCharSel->bgmCount -= 4;
     gCharSel->bgmIds[gCharSel->bgmCount - 1] = CHARSEL_BGM_RANDOM;
+#ifdef PORT
+    {
+        /* PC build: append the tracks added from outside the disc (BT3_SONG manifest), keeping the game's
+           "random" entry last. Their offsets point past the disc's own entries; their files come from the
+           file layer. This runs after the game has applied the save's unlocks to its own list, and the added
+           entries are not looked up in the save: nothing is written to it. In an online session nothing is
+           added: both players must have the same list. */
+        extern int Port_NetSession(void); /* port/src/gs/net.c */
+        s32 added = Port_NetSession() ? 0 : gPortSongCount;
+        if (added > 0) {
+            static s32 sBgmIds[64];
+            s32 n = gCharSel->bgmCount, k, last = gCharSel->bgmIds[n - 1];
+            if (n > 62) {
+                n = 62;
+            }
+            for (k = 0; k < n - 1; k++) {
+                sBgmIds[k] = gCharSel->bgmIds[k];
+            }
+            for (k = 0; k < added && (n - 1 + k) < 63; k++) {
+                sBgmIds[n - 1 + k] = gPortSongOffsets[k];
+            }
+            n = n - 1 + added + 1; /* the disc's songs + the added ones + the "random" entry */
+            sBgmIds[n - 1] = last;          /* the "random" entry stays last */
+            gCharSel->bgmIds = sBgmIds;
+            gCharSel->bgmCount = n;
+        }
+    }
+#endif
+#ifdef PORT
+    if (getenv("BT3_BGM_DEBUG") != NULL) {
+        s32 dbg;
+        fprintf(stderr, "bgm final(+added): count %d, ids:", (int)gCharSel->bgmCount);
+        for (dbg = 0; dbg < gCharSel->bgmCount; dbg++) {
+            fprintf(stderr, " %02x", (int)(u32)gCharSel->bgmIds[dbg]);
+        }
+        fprintf(stderr, "\n");
+    }
+#endif
 
     gCharSel->cells[0] = (MChrCell *)(MPACK_AT(gCharSel->res, 42) + 0x10);
     gCharSel->masterCount[0] = MPACK_WORD(gCharSel->res, 42);
@@ -688,7 +739,8 @@ void CharSel_Term(void) {
     s32 i;
 
 #ifdef PORT
-    gUiNameIdx = -1; /* drop the port's stage-name overlay */
+    gUiNameIdx = -1; /* drop the port's name overlays */
+    gUiSongIdx = -1;
 #endif
     IconWin_Term();
     ItemHelp_Term();
@@ -746,7 +798,8 @@ void CharSel_Draw(void) {
     MFlash *f;
 
 #ifdef PORT
-    gUiNameIdx = -1; /* set again below only when the cursor is on a stage added from outside the disc */
+    gUiNameIdx = -1; /* set again below only for a stage added from outside the disc */
+    gUiSongIdx = -1; /* and only for a song added from outside the disc (set in the music-name block) */
 #endif
     for (i = 0; i < 2; i++) {
         if (gCharSel->flags & CHARSEL_STAGE_READY) {
@@ -885,6 +938,56 @@ void CharSel_Draw(void) {
 
     uv.x0 = 0;
     uv.x1 = 0x200;
+#ifdef PORT
+    {
+        extern void Flash_ClipGetPos(MFlash *flash, MFlashRef *ref, s32 *x, s32 *y);
+        s32 bgm = gCharSel->bgmIds[gCharSel->stage->bgm];
+
+        if (bgm >= PORT_SONG_FIRST_OFFSET) {
+            s32 idx = bgm - PORT_SONG_FIRST_OFFSET;
+            s32 cx, cy, px, py;
+            /* Use the clip's real position: the game moves "mc_bgm_now" per screen (on the BGM select it is the
+               bottom bar; on the map select it sits over the reel) and the child carries its own offset. */
+            Flash_FindLabel(f, "mc_bgm_now", "mc_bgm_now_text_off", &ref);
+            Flash_ClipGetPos(f, &ref, &cx, &cy);
+            Flash_ClipSetFlags(f, &ref, 2, 0);
+            Flash_FindLabel(f, "mc_bgm_now", "mc_bgm_now_text_on", &ref);
+            Flash_ClipSetFlags(f, &ref, 2, 0);
+            Flash_FindLabel(f, NULL, "mc_bgm_now", &ref);
+            Flash_ClipGetPos(f, &ref, &px, &py);
+            if (gUiSongReady) {
+                /* The port draws the track's name (its own art) over the menu, at the clip's own place. */
+                gUiSongX = px + cx;
+                gUiSongY = py + cy;
+                gUiSongW = 0x200;
+                gUiSongH = 0x20;
+                gUiSongIdx = idx;
+            } else if (idx >= 0 && idx < gPortSongCount) {
+                /* No overlay (the OpenGL back end has none yet): print the name with the game's own font. */
+                extern void Font_PrintAsciiAt(s32 x, s32 y, char *str);
+                extern s32 Font_GetGlyphHeight(void);
+                extern FontStyle gFontStyle;
+                FontStyle saved = gFontStyle;
+                gFontStyle.align = FONT_ALIGN_LEFT;
+                gFontStyle.color = 0xFFFFFFFF;
+                gFontStyle.shadowMode = FONT_SHADOW_DROP;
+                gFontStyle.shadowColor = 0xC0000000;
+                Font_PrintAsciiAt(px + cx, py + cy + (0x20 - Font_GetGlyphHeight()) / 2, gPortSongNames[idx]);
+                gFontStyle = saved;
+            }
+        } else {
+            uv.y0 = (bgm % 8) * 0x20;
+            uv.y1 = uv.y0 + 0x20;
+            uv.unk10 = bgm / 8;
+            Flash_FindLabel(f, "mc_bgm_now", "mc_bgm_now_text_off", &ref);
+            Flash_ClipSetUv(f, &ref, &uv);
+            Flash_ClipSetTex(f, &ref, uv.unk10);
+            Flash_FindLabel(f, "mc_bgm_now", "mc_bgm_now_text_on", &ref);
+            Flash_ClipSetUv(f, &ref, &uv);
+            Flash_ClipSetTex(f, &ref, uv.unk10);
+        }
+    }
+#else
     uv.y0 = (gCharSel->bgmIds[gCharSel->stage->bgm] % 8) * 0x20;
     uv.y1 = uv.y0 + 0x20;
     uv.unk10 = gCharSel->bgmIds[gCharSel->stage->bgm] / 8;
@@ -894,6 +997,7 @@ void CharSel_Draw(void) {
     Flash_FindLabel(f, "mc_bgm_now", "mc_bgm_now_text_on", &ref);
     Flash_ClipSetUv(f, &ref, &uv);
     Flash_ClipSetTex(f, &ref, uv.unk10);
+#endif
 
     for (i = 0; i < CHARSEL_SIDES; i++) {
         f = &gCharSel->flash[3 + i];

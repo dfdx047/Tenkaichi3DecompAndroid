@@ -31,12 +31,13 @@ static int sForceTab = -1;                     // BT3_UI_OPEN=<tab>: open at sta
 static int sCapKind, sCapPlayer, sCapAction;   // waiting for a key (1) or a controller button (2) to bind
 static SDL_GPUDevice *sDevice;
 
-/* The stage-name strip (gamedata/stages/names.rgba): the names of stages added from outside the disc, drawn in
-   the menu's own style (the port's own texture, one image per name, stacked). Raw RGBA, 12-byte header. */
-static SDL_GPUTexture *sNameTex;
-static uint32_t sNameW, sNameH, sNameCount;
+/* Name strips (gamedata/stages/names.rgba and gamedata/songs/names.rgba): the names of the stages and tracks added
+   from outside the disc, drawn by the port over the menu in the game's own lettering. Raw RGBA, a 12-byte header
+   (w, h, count) and then `count` images of w x h stacked. */
+static SDL_GPUTexture *sNameTex, *sSongTex;
+static uint32_t sNameW, sNameH, sNameCount, sSongW, sSongH, sSongCount;
 
-static uint8_t *read_name_strip(const char *path, size_t *bytes, uint32_t *w, uint32_t *h, uint32_t *count) {
+static uint8_t *read_strip(const char *path, size_t *bytes, uint32_t *w, uint32_t *h, uint32_t *count) {
     FILE *fp = fopen(path, "rb");
     uint32_t hdr[3];
     uint8_t *pix;
@@ -62,69 +63,90 @@ static uint8_t *read_name_strip(const char *path, size_t *bytes, uint32_t *w, ui
     return pix;
 }
 
-static void load_name_strip(void) {
-    static const char *paths[] = {NULL, "gamedata/stages/names.rgba", "names.rgba"};
+static SDL_GPUTexture *make_strip(uint8_t *pix, size_t bytes, uint32_t w, uint32_t h, uint32_t count) {
+    SDL_GPUTextureCreateInfo ci;
+    SDL_GPUTransferBufferCreateInfo tbi;
+    SDL_GPUTransferBuffer *tb;
+    SDL_GPUCommandBuffer *cmd;
+    SDL_GPUCopyPass *cp;
+    SDL_GPUTextureTransferInfo src;
+    SDL_GPUTextureRegion dst;
+    SDL_GPUTexture *tex;
+    void *map;
+
+    SDL_zero(ci);
+    ci.type = SDL_GPU_TEXTURETYPE_2D;
+    ci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    ci.width = w;
+    ci.height = h * count;
+    ci.layer_count_or_depth = 1;
+    ci.num_levels = 1;
+    ci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    tex = SDL_CreateGPUTexture(sDevice, &ci);
+    if (tex == NULL) {
+        free(pix);
+        return NULL;
+    }
+    SDL_zero(tbi);
+    tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    tbi.size = (Uint32)bytes;
+    tb = SDL_CreateGPUTransferBuffer(sDevice, &tbi);
+    map = SDL_MapGPUTransferBuffer(sDevice, tb, false);
+    memcpy(map, pix, bytes);
+    SDL_UnmapGPUTransferBuffer(sDevice, tb);
+    free(pix);
+    cmd = SDL_AcquireGPUCommandBuffer(sDevice);
+    cp = SDL_BeginGPUCopyPass(cmd);
+    SDL_zero(src);
+    src.transfer_buffer = tb;
+    src.pixels_per_row = w;
+    src.rows_per_layer = h * count;
+    SDL_zero(dst);
+    dst.texture = tex;
+    dst.w = w;
+    dst.h = h * count;
+    dst.d = 1;
+    SDL_UploadToGPUTexture(cp, &src, &dst, false);
+    SDL_EndGPUCopyPass(cp);
+    SDL_SubmitGPUCommandBuffer(cmd);
+    SDL_ReleaseGPUTransferBuffer(sDevice, tb);
+    return tex;
+}
+
+static SDL_GPUTexture *load_strip(const char *env, const char *rel, uint32_t *w, uint32_t *h, uint32_t *count,
+                                  const char *what) {
+    const char *paths[3];
     uint8_t *pix = NULL;
     size_t bytes = 0;
+    SDL_GPUTexture *tex;
     uint32_t i;
 
-    paths[0] = getenv("BT3_STAGE_NAMES");
-    for (i = 0; i < sizeof(paths) / sizeof(paths[0]) && pix == NULL; i++) {
+    paths[0] = getenv(env);
+    paths[1] = rel;
+    paths[2] = "names.rgba";
+    for (i = 0; i < 3 && pix == NULL; i++) {
         if (paths[i] != NULL) {
-            pix = read_name_strip(paths[i], &bytes, &sNameW, &sNameH, &sNameCount);
+            pix = read_strip(paths[i], &bytes, w, h, count);
         }
     }
     if (pix == NULL) {
-        return;
+        return NULL;
     }
-    {
-        SDL_GPUTextureCreateInfo ci;
-        SDL_GPUTransferBufferCreateInfo tbi;
-        SDL_GPUTransferBuffer *tb;
-        SDL_GPUCommandBuffer *cmd;
-        SDL_GPUCopyPass *cp;
-        SDL_GPUTextureTransferInfo src;
-        SDL_GPUTextureRegion dst;
-        void *map;
+    tex = make_strip(pix, bytes, *w, *h, *count);
+    if (tex != NULL) {
+        fprintf(stderr, "bt3: %s overlay: %u names, %ux%u each\n", what, *count, *w, *h);
+    }
+    return tex;
+}
 
-        SDL_zero(ci);
-        ci.type = SDL_GPU_TEXTURETYPE_2D;
-        ci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-        ci.width = sNameW;
-        ci.height = sNameH * sNameCount;
-        ci.layer_count_or_depth = 1;
-        ci.num_levels = 1;
-        ci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-        sNameTex = SDL_CreateGPUTexture(sDevice, &ci);
-        if (sNameTex == NULL) {
-            free(pix);
-            return;
-        }
-        SDL_zero(tbi);
-        tbi.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        tbi.size = (Uint32)bytes;
-        tb = SDL_CreateGPUTransferBuffer(sDevice, &tbi);
-        map = SDL_MapGPUTransferBuffer(sDevice, tb, false);
-        memcpy(map, pix, bytes);
-        SDL_UnmapGPUTransferBuffer(sDevice, tb);
-        free(pix);
-        cmd = SDL_AcquireGPUCommandBuffer(sDevice);
-        cp = SDL_BeginGPUCopyPass(cmd);
-        SDL_zero(src);
-        src.transfer_buffer = tb;
-        src.pixels_per_row = sNameW;
-        src.rows_per_layer = sNameH * sNameCount;
-        SDL_zero(dst);
-        dst.texture = sNameTex;
-        dst.w = sNameW;
-        dst.h = sNameH * sNameCount;
-        dst.d = 1;
-        SDL_UploadToGPUTexture(cp, &src, &dst, false);
-        SDL_EndGPUCopyPass(cp);
-        SDL_SubmitGPUCommandBuffer(cmd);
-        SDL_ReleaseGPUTransferBuffer(sDevice, tb);
+static void load_strips(void) {
+    sNameTex = load_strip("BT3_STAGE_NAMES", "gamedata/stages/names.rgba", &sNameW, &sNameH, &sNameCount, "stage-name");
+    if (sNameTex != NULL) {
         gUiNameReady = 1;
-        fprintf(stderr, "bt3: stage-name overlay: %u names, %ux%u each\n", sNameCount, sNameW, sNameH);
+    }
+    sSongTex = load_strip("BT3_SONG_NAMES", "gamedata/songs/names.rgba", &sSongW, &sSongH, &sSongCount, "song-name");
+    if (sSongTex != NULL) {
+        gUiSongReady = 1;
     }
 }
 
@@ -202,7 +224,7 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context) {
     }
     sDevice = device;
     sReady = true;
-    load_name_strip(); /* the stage-name overlay; gUiNameReady stays 0 if there is no strip */
+    load_strips(); /* the stage- and song-name overlays; the ready flags stay 0 if there is no strip */
     if (getenv("BT3_UI_OPEN") != NULL) {
         sForceTab = atoi(getenv("BT3_UI_OPEN"));
         if (sForceTab == 9) { // testing: the online screen
@@ -692,7 +714,9 @@ static bool frame_build(void) {
     }
     // the name of a stage added from outside the disc, over the stage select (a strip of pre-rendered names;
     // the SDL GPU back end only for now: under OpenGL the game writes the name with its own font)
-    bool overlay = !sGL && gUiNameReady != 0 && gUiNameIdx >= 0 && gUiNameIdx < (int)sNameCount;
+    bool nameOn = !sGL && gUiNameReady != 0 && gUiNameIdx >= 0 && gUiNameIdx < (int)sNameCount;
+    bool songOn = !sGL && gUiSongReady != 0 && gUiSongIdx >= 0 && gUiSongIdx < (int)sSongCount; // (the same for an added song)
+    bool overlay = nameOn || songOn;
     sBuilt = false;
     if (!sReady || (!sOpen && !notice && !overlay)) {
         return false;
@@ -723,18 +747,30 @@ static bool frame_build(void) {
         ImGui::End();
     }
     if (overlay && gUiPresentW > 0 && gUiPresentH > 0) {
-        /* The name's rectangle is in the game's 512x448 pixels: map it through the picture's rectangle in the
+        /* Each name's rectangle is in the game's 512x448 pixels: map it through the picture's rectangle in the
            window (the letterbox gs_gpu.c just blitted into). */
         float sx = (float)gUiPresentW / 512.0f;
         float sy = (float)gUiPresentH / 448.0f;
-        float x = (float)gUiPresentX + (float)gUiNameX * sx;
-        float y = (float)gUiPresentY + (float)gUiNameY * sy;
-        float w = (float)gUiNameW * sx;
-        float h = (float)gUiNameH * sy;
-        ImVec2 uv0(0.0f, (float)gUiNameIdx / (float)sNameCount);
-        ImVec2 uv1(1.0f, (float)(gUiNameIdx + 1) / (float)sNameCount);
-        ImGui::GetForegroundDrawList()->AddImage(ImTextureRef((ImTextureID)(intptr_t)sNameTex),
-                                                 ImVec2(x, y), ImVec2(x + w, y + h), uv0, uv1);
+        ImDrawList *dl = ImGui::GetForegroundDrawList();
+
+        if (nameOn) {
+            float x = (float)gUiPresentX + (float)gUiNameX * sx;
+            float y = (float)gUiPresentY + (float)gUiNameY * sy;
+            float w = (float)gUiNameW * sx;
+            float h = (float)gUiNameH * sy;
+            dl->AddImage(ImTextureRef((ImTextureID)(intptr_t)sNameTex), ImVec2(x, y), ImVec2(x + w, y + h),
+                         ImVec2(0.0f, (float)gUiNameIdx / (float)sNameCount),
+                         ImVec2(1.0f, (float)(gUiNameIdx + 1) / (float)sNameCount));
+        }
+        if (songOn) {
+            float x = (float)gUiPresentX + (float)gUiSongX * sx;
+            float y = (float)gUiPresentY + (float)gUiSongY * sy;
+            float w = (float)gUiSongW * sx;
+            float h = (float)gUiSongH * sy;
+            dl->AddImage(ImTextureRef((ImTextureID)(intptr_t)sSongTex), ImVec2(x, y), ImVec2(x + w, y + h),
+                         ImVec2(0.0f, (float)gUiSongIdx / (float)sSongCount),
+                         ImVec2(1.0f, (float)(gUiSongIdx + 1) / (float)sSongCount));
+        }
     }
     ImGui::Render();
     return true;

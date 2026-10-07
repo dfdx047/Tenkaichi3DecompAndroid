@@ -38,7 +38,8 @@ static int slot_of(const char *rel) {
         extern int PortStages_Alias(const char *rel, char *out, unsigned n);
         char target[256];
         fp = NULL;
-        if (PortStages_Alias(rel, target, (unsigned)sizeof(target))) {
+        extern int PortSongs_Alias(const char *rel, char *out, unsigned n); /* plat_songs.c: the same for a song */
+        if (PortStages_Alias(rel, target, (unsigned)sizeof(target)) || PortSongs_Alias(rel, target, (unsigned)sizeof(target))) {
             snprintf(path, sizeof(path), "%s/%s", Port_FileRoot(), target);
             fp = fopen(path, "rb");
         }

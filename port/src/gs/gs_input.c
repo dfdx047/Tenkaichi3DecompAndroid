@@ -64,6 +64,9 @@ static void defaults(int player) {
         }
     }
     sPadSlot[player] = player;
+    if (player == 1 && getenv("BT3_PAD_SHARED") != NULL) {
+        sPadSlot[player] = 0; /* BT3_PAD_SHARED: both players on controller 1 (testing 1P vs 2P with one pad) */
+    }
 }
 
 static void load(void) {
@@ -81,6 +84,9 @@ static void load(void) {
         }
         snprintf(name, sizeof(name), "padslot_p%d", p + 1);
         sPadSlot[p] = Port_Setting(name, sPadSlot[p]);
+        if (p == 1 && getenv("BT3_PAD_SHARED") != NULL) {
+            sPadSlot[p] = 0; /* overrides the saved setting too */
+        }
     }
 }
 
