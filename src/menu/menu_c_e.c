@@ -15,6 +15,7 @@
 #define STGGRID_ID_LOCKED 0x3E
 #define STGGRID_ID_EMPTY 0x3F
 static s32 sPortStagesAdded; /* this stage select shows stages from outside the disc */
+static s32 sPortSongNameHidden, sPortStageNameHidden;
 /* The port's stage-name overlay (port/src/gs/ui.cpp / gs_draw.c): the names of added stages are drawn by the
    port, over the picture, from its own stylized art. The menu only fills the name's rectangle and which image. */
 extern volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;
@@ -871,6 +872,7 @@ void CharSel_Draw(void) {
             s32 nx, ny;
             s32 idx = nameId - 0x24;
             Flash_ClipSetFlags(f, &ref, 2, 0); /* FLASH_PROP_VISIBLE: hide the atlas name */
+            sPortStageNameHidden = 1;
             Flash_ClipGetPos(f, &ref, &nx, &ny);
             if (idx >= 0 && idx < gPortExtraStageCount) {
                 if (gUiNameReady) {
@@ -901,6 +903,10 @@ void CharSel_Draw(void) {
             uv.unk10 = nameId / 4;
             Flash_ClipSetUv(f, &ref, &uv);
             Flash_ClipSetTex(f, &ref, uv.unk10);
+            if (sPortStageNameHidden) { /* back on a stage of the disc: its name clip was off for the added one */
+                Flash_ClipSetFlags(f, &ref, 2, 1);
+                sPortStageNameHidden = 0;
+            }
         }
     }
 #else
@@ -953,6 +959,7 @@ void CharSel_Draw(void) {
             Flash_ClipSetFlags(f, &ref, 2, 0);
             Flash_FindLabel(f, "mc_bgm_now", "mc_bgm_now_text_on", &ref);
             Flash_ClipSetFlags(f, &ref, 2, 0);
+            sPortSongNameHidden = 1; /* the game's own name clips are off while an added song's name is shown */
             Flash_FindLabel(f, NULL, "mc_bgm_now", &ref);
             Flash_ClipGetPos(f, &ref, &px, &py);
             if (gUiSongReady) {
@@ -982,9 +989,19 @@ void CharSel_Draw(void) {
             Flash_FindLabel(f, "mc_bgm_now", "mc_bgm_now_text_off", &ref);
             Flash_ClipSetUv(f, &ref, &uv);
             Flash_ClipSetTex(f, &ref, uv.unk10);
+            if (sPortSongNameHidden) {
+                /* Back on a song of the disc after an added one: the clips that were switched off for the added
+                   song's name come back. (The game itself never switches them; without this the names stayed
+                   invisible while scrolling the list, until the menu's animation reset the clips.) */
+                Flash_ClipSetFlags(f, &ref, 2, 1);
+            }
             Flash_FindLabel(f, "mc_bgm_now", "mc_bgm_now_text_on", &ref);
             Flash_ClipSetUv(f, &ref, &uv);
             Flash_ClipSetTex(f, &ref, uv.unk10);
+            if (sPortSongNameHidden) {
+                Flash_ClipSetFlags(f, &ref, 2, 1);
+                sPortSongNameHidden = 0;
+            }
         }
     }
 #else
