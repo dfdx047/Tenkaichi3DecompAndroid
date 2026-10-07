@@ -1314,7 +1314,10 @@ Vulkan through SDL GPU (`gs/gs_gpu.c`) or OpenGL 3.3 core (`gs/gs_gl.c`).
 - **OpenGL is slower**: 7,931 blanks in the same 30 s (14% fewer over the whole session, more in fights). A
   profile puts 47% of the processor time inside the graphics driver, against 14% with Vulkan: the cost is the
   number of GL calls per draw, not the graphics card.
-- **Not working / not checked**: the Windows program with OpenGL under Wine stops inside the creation of the
-  OpenGL window (`BT3_GL_TRACE=1` shows how far it gets); not tried on a real Windows. Only this NVIDIA card.
+- On a real Windows (the user's VM, archive of commit 2490fd5): "it opened fine" with OpenGL chosen. Under Wine the
+  same program stops inside the creation of the OpenGL window (`BT3_GL_TRACE=1` shows how far it gets), so that
+  is Wine's.
+- **Not checked**: the picture on Windows against Vulkan's (by eye or by file); graphics cards other than the two
+  NVIDIA ones.
   The line over the picture and a whole online match under OpenGL were not run. `BT3_SHOT_VBLANK` is not
   implemented in gs_gl.c (`BT3_SHOT` with `BT3_SHOT_FROM` / `_TO` is).
