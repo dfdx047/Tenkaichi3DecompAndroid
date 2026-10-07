@@ -11,6 +11,8 @@ game's data from it, and it stays on your computer.
 
 - The whole game loop: boot, opening movie, menus, saving, fights, split screen.
 - A GPU renderer (Vulkan) with the PS2's effects (outline, glow, depth tint, distance blur), each switchable.
+  An OpenGL 3.3 renderer draws the same picture for machines without a working Vulkan (F1, Video, Renderer; it
+  is also tried by itself when Vulkan cannot start). It is slower than Vulkan.
 - Internal resolution from 1x to 8x; 4:3, 16:9, 21:9 and wider without stretching the fight.
 - Music, voices and sound effects; keyboard and controllers, fully rebindable; two players.
 - Texture packs made for PCSX2 (`.dds` or `.png`): copied into the `textures` folder next to the game, they are used as they are.
