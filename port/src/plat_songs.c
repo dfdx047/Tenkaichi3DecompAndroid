@@ -35,6 +35,45 @@ static char *trim(char *s) {
     return s;
 }
 
+static char sDir[256]; /* the folder the songs are in (plat_extras.c) */
+static char sFiles[PORT_SONG_MAX][128];
+
+extern int PortExtras_Dir(const char *kind, const char *env, char *out, unsigned size);
+extern int PortExtras_Scan(const char *dir, const char *ext, char names[][128], int max);
+extern void PortExtras_NameFromFile(const char *file, char *name, unsigned size);
+
+void PortSongs_Init(void);
+
+const char *PortSongs_Dir(void) {
+    PortSongs_Init(); /* (the overlay may ask before the game has started) */
+    return sDir;
+}
+
+/* Adds one song: its place in the music list, its name, and the file the game's id for it stands for. */
+static void add_song(const char *file, const char *name) {
+    int i, offset, index;
+
+    for (i = 0; i < gPortSongCount; i++) {
+        if (strcmp(sFiles[i], file) == 0) {
+            return;
+        }
+    }
+    if (gPortSongCount >= PORT_SONG_MAX) {
+        fprintf(stderr, "bt3: songs: more than %d added, %s is left out\n", PORT_SONG_MAX, file);
+        return;
+    }
+    i = gPortSongCount;
+    snprintf(sFiles[i], sizeof(sFiles[i]), "%s", file);
+    offset = PORT_SONG_FIRST_OFFSET + i;
+    index = PORT_SONG_BGM_FIRST + offset - 0xD48; /* the game's id -> partition 2 index */
+    gPortSongOffsets[i] = offset;
+    snprintf(gPortSongNames[i], 64, "%s", name);
+    snprintf(sAliases[sAliasCount].rel, sizeof(sAliases[sAliasCount].rel), "pzs3us2/%05d.bin", index);
+    snprintf(sAliases[sAliasCount].target, sizeof(sAliases[sAliasCount].target), "%s/%s", sDir, file);
+    sAliasCount++;
+    gPortSongCount++;
+}
+
 void PortSongs_Init(void) {
     char path[512];
     char line[256];
@@ -45,15 +84,14 @@ void PortSongs_Init(void) {
         return;
     }
     sDone = 1;
-    snprintf(path, sizeof(path), "%s/songs/songs.txt", data_root());
-    fp = fopen(path, "rb");
-    if (fp == NULL) {
+    if (!PortExtras_Dir("songs", "BT3_SONGS", sDir, sizeof(sDir))) {
         return;
     }
-    while (fgets(line, sizeof(line), fp) != NULL && gPortSongCount < PORT_SONG_MAX) {
-        char *bar, *file;
-        int offset, index;
-
+    /* the list first (its names and its order), then whatever else is in the folder, by name */
+    snprintf(path, sizeof(path), "%s/songs.txt", sDir);
+    fp = fopen(path, "rb");
+    while (fp != NULL && fgets(line, sizeof(line), fp) != NULL) {
+        char *bar;
         if (line[0] == '\0' || line[0] == '#' || line[0] == '\n' || line[0] == '\r') {
             continue;
         }
@@ -62,22 +100,27 @@ void PortSongs_Init(void) {
             continue;
         }
         *bar = '\0';
-        file = trim(line);
-        i = gPortSongCount;
-        offset = PORT_SONG_FIRST_OFFSET + i;
-        index = PORT_SONG_BGM_FIRST + offset - 0xD48; /* the game's id -> partition 2 index */
-
-        gPortSongOffsets[i] = offset;
-        snprintf(gPortSongNames[i], 64, "%s", trim(bar + 1));
-        snprintf(sAliases[sAliasCount].rel, sizeof(sAliases[sAliasCount].rel), "pzs3us2/%05d.bin", index);
-        snprintf(sAliases[sAliasCount].target, sizeof(sAliases[sAliasCount].target), "songs/%s", file);
-        sAliasCount++;
-        gPortSongCount++;
+        add_song(trim(line), trim(bar + 1));
     }
-    fclose(fp);
+    if (fp != NULL) {
+        fclose(fp);
+    }
+    {
+        static char found[32][128];
+        int n = PortExtras_Scan(sDir, ".adx", found, 32), k;
+        for (k = 0; k < n; k++) {
+            char name[64];
+            PortExtras_NameFromFile(found[k], name, sizeof(name));
+            add_song(found[k], name);
+        }
+    }
     if (gPortSongCount > 0) {
-        fprintf(stderr, "bt3: songs: %d added track(s) from %s\n", gPortSongCount, path);
+        fprintf(stderr, "bt3: songs: %d added from %s\n", gPortSongCount, sDir);
     }
+}
+
+const char *PortSongs_Name(int index) {
+    return index >= 0 && index < gPortSongCount ? gPortSongNames[index] : "";
 }
 
 int PortSongs_Count(void) {

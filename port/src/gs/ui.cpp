@@ -19,6 +19,12 @@ void Port_NetOptions(int rollback, int delay); // gs/net.c
 int Port_RollCan(void);                        // gs/state.c
 const char *Port_FileRoot(void);               // plat_file.c: the game's data folder
 unsigned GsGl_StripTexture(const void *rgba, int w, int h); // gs_gl.c
+const char *PortStages_Dir(void);                          // plat_stages.c
+const char *PortStages_Name(int index);
+int PortStages_Count(void);
+const char *PortSongs_Dir(void);                           // plat_songs.c
+const char *PortSongs_Name(int index);
+int PortSongs_Count(void);
 int Port_Setting(const char *name, int def);   // plat_settings.c
 void Port_SettingSave(const char *name, int value);
 void Port_SettingsWrite(void);
@@ -129,8 +135,8 @@ static SDL_GPUTexture *load_strip(const char *env, const char *rel, uint32_t *w,
     uint32_t i;
 
     char inData[600];
-    // under the game's data folder, wherever that is (BT3_DATA); the environment variable names another file
-    snprintf(inData, sizeof(inData), "%s/%s", Port_FileRoot(), rel);
+    // in the stages / songs folder (plat_extras.c); the environment variable names another file
+    snprintf(inData, sizeof(inData), "%s", rel);
     paths[0] = getenv(env);
     paths[1] = inData;
     paths[2] = NULL;
@@ -150,14 +156,18 @@ static SDL_GPUTexture *load_strip(const char *env, const char *rel, uint32_t *w,
 }
 
 static void load_strips(void) {
-    sNameTex = load_strip("BT3_STAGE_NAMES", "stages/names.rgba", &sNameW, &sNameH, &sNameCount, "stage-name");
-    if (sNameTex != NULL) {
-        gUiNameReady = 1;
-    }
-    sSongTex = load_strip("BT3_SONG_NAMES", "songs/names.rgba", &sSongW, &sSongH, &sSongCount, "song-name");
-    if (sSongTex != NULL) {
-        gUiSongReady = 1;
-    }
+    char path[600];
+    // The names of added stages and songs are drawn by this overlay, over the menu: from a strip of pre-rendered
+    // names if the install script made one (names.rgba in the folder), else as text (frame_build). Either way the
+    // game leaves the name to the overlay, so the flags are set whenever the overlay exists.
+    snprintf(path, sizeof(path), "%s/names.rgba", PortStages_Dir());
+    sNameTex = PortStages_Dir()[0] != '\0' ? load_strip("BT3_STAGE_NAMES", path, &sNameW, &sNameH, &sNameCount, "stage-name") : NULL;
+    snprintf(path, sizeof(path), "%s/names.rgba", PortSongs_Dir());
+    sSongTex = PortSongs_Dir()[0] != '\0' ? load_strip("BT3_SONG_NAMES", path, &sSongW, &sSongH, &sSongCount, "song-name") : NULL;
+    if (sNameTex == NULL) { sNameCount = 0; }
+    if (sSongTex == NULL) { sSongCount = 0; }
+    gUiNameReady = 1;
+    gUiSongReady = 1;
 }
 
 static void style() {
@@ -705,6 +715,24 @@ extern "C" void Port_UiNotice(const char *text) {
     sNoticeNew = 1;
 }
 
+// The name of an added stage or song as text, in the rectangle the menu gives (the strip images' place): cream
+// letters with a dark outline, as tall as the rectangle allows, centred for a stage and from the left for a song.
+static void name_text(ImDrawList *dl, const char *text, float x, float y, float w, float h, bool centre) {
+    ImFont *font = ImGui::GetFont();
+    float size = h * (centre ? 0.42f : 0.72f);
+    ImVec2 ext = font->CalcTextSizeA(size, 10000.0f, 0.0f, text);
+    if (ext.x > w * 0.96f && ext.x > 0.0f) { // a long name: smaller, to fit
+        size *= w * 0.96f / ext.x;
+        ext = font->CalcTextSizeA(size, 10000.0f, 0.0f, text);
+    }
+    float tx = centre ? x + (w - ext.x) * 0.5f : x + h * 0.15f, ty = y + (h - ext.y) * 0.5f, o = size * 0.07f + 1.0f;
+    for (int k = 0; k < 8; k++) {
+        static const float dx[8] = {-1, 0, 1, -1, 1, -1, 0, 1}, dy[8] = {-1, -1, -1, 0, 0, 1, 1, 1};
+        dl->AddText(font, size, ImVec2(tx + dx[k] * o, ty + dy[k] * o), IM_COL32(40, 20, 0, 255), text);
+    }
+    dl->AddText(font, size, ImVec2(tx, ty), IM_COL32(255, 236, 170, 255), text);
+}
+
 // Builds this frame's picture of the overlay (the settings or the online window, the line over the picture).
 // false: there is nothing to draw. The same for both back ends; each then draws ImGui's data its own way.
 static bool frame_build(void) {
@@ -723,8 +751,8 @@ static bool frame_build(void) {
         notice = sNotice[0] != '\0';
     }
     // the name of a stage added from outside the disc, over the stage select (a strip of pre-rendered names)
-    bool nameOn = gUiNameReady != 0 && gUiNameIdx >= 0 && gUiNameIdx < (int)sNameCount;
-    bool songOn = gUiSongReady != 0 && gUiSongIdx >= 0 && gUiSongIdx < (int)sSongCount; // (the same for an added song)
+    bool nameOn = gUiNameReady != 0 && gUiNameIdx >= 0 && gUiNameIdx < PortStages_Count();
+    bool songOn = gUiSongReady != 0 && gUiSongIdx >= 0 && gUiSongIdx < PortSongs_Count(); // (the same for an added song)
     bool overlay = nameOn || songOn;
     sBuilt = false;
     if (!sReady || (!sOpen && !notice && !overlay)) {
@@ -762,7 +790,10 @@ static bool frame_build(void) {
         float sy = (float)gUiPresentH / 448.0f;
         ImDrawList *dl = ImGui::GetForegroundDrawList();
 
-        if (nameOn) {
+        if (nameOn && gUiNameIdx >= (int)sNameCount) { // no pre-rendered name for this one: as text
+            name_text(dl, PortStages_Name(gUiNameIdx), (float)gUiPresentX + (float)gUiNameX * sx, (float)gUiPresentY + (float)gUiNameY * sy,
+                      (float)gUiNameW * sx, (float)gUiNameH * sy, true);
+        } else if (nameOn) {
             float x = (float)gUiPresentX + (float)gUiNameX * sx;
             float y = (float)gUiPresentY + (float)gUiNameY * sy;
             float w = (float)gUiNameW * sx;
@@ -771,7 +802,10 @@ static bool frame_build(void) {
                          ImVec2(0.0f, (float)gUiNameIdx / (float)sNameCount),
                          ImVec2(1.0f, (float)(gUiNameIdx + 1) / (float)sNameCount));
         }
-        if (songOn) {
+        if (songOn && gUiSongIdx >= (int)sSongCount) {
+            name_text(dl, PortSongs_Name(gUiSongIdx), (float)gUiPresentX + (float)gUiSongX * sx, (float)gUiPresentY + (float)gUiSongY * sy,
+                      (float)gUiSongW * sx, (float)gUiSongH * sy, false);
+        } else if (songOn) {
             float x = (float)gUiPresentX + (float)gUiSongX * sx;
             float y = (float)gUiPresentY + (float)gUiSongY * sy;
             float w = (float)gUiSongW * sx;

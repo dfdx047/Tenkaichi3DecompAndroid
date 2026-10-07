@@ -40,8 +40,12 @@ static int slot_of(const char *rel) {
         fp = NULL;
         extern int PortSongs_Alias(const char *rel, char *out, unsigned n); /* plat_songs.c: the same for a song */
         if (PortStages_Alias(rel, target, (unsigned)sizeof(target)) || PortSongs_Alias(rel, target, (unsigned)sizeof(target))) {
-            snprintf(path, sizeof(path), "%s/%s", Port_FileRoot(), target);
+            snprintf(path, sizeof(path), "%s", target); /* as it is (the stages / songs folder), or in the data */
             fp = fopen(path, "rb");
+            if (fp == NULL) {
+                snprintf(path, sizeof(path), "%s/%s", Port_FileRoot(), target);
+                fp = fopen(path, "rb");
+            }
         }
     }
     if (fp == NULL) { /* a file under mods/ wins over the original */

@@ -8,6 +8,20 @@ Everything is driven by a **manifest** (`<data>/songs/songs.txt`) that the port 
 change and no environment variable is needed.
 
 
+## Where they go (main line)
+
+A folder **`songs`** next to the game, like `textures`. Drop a `.adx` file in and it is used: its name in the
+menu is the file's name (`My_Song.adx` is shown as "My Song"). `$BT3_SONGS` names another folder.
+
+- The list (`songs.txt` in that folder, `file|Name In The Menu` per line) is optional: it gives other names and an
+  order. Files it does not mention follow, by name without regard to case (the same order on every machine).
+- The name strip (`names.rgba`, made by the script below) is optional too: without one for an entry the overlay
+  writes the name as text in the same place.
+- The folder of that name inside the game's data folder, which is where the pull request put them and what the
+  rest of this document describes, is still used when there is none next to the game. The script now writes to
+  the folder next to the game (the repository root) unless `--data` names another place.
+- Code: `port/src/plat_extras.c` (the folder, the scan), `plat_stages.c`, `plat_songs.c`.
+
 > **How this differs from the pull request it came from** (main line, 2026-10-07):
 > - Nothing is written to the save: added songs are appended after the game has applied the save's unlocks to its
 >   own list, and no unlock bit is set for them. A save stays valid for a copy of the game without them.

@@ -114,6 +114,12 @@ int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size) {
            aliases must apply here too, not only in open_rel. */
         const char *a = alias_target(rel);
         if (a != NULL) {
+            fp = fopen(a, "rb"); /* as it is (the songs folder next to the game) */
+            if (fp != NULL) {
+                fclose(fp);
+                snprintf(out, (size_t)size, "%s", a);
+                return 1;
+            }
             snprintf(rel, sizeof(rel), "%s", a);
         }
     }

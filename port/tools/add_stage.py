@@ -14,7 +14,7 @@ Usage (from the repository root, or anywhere - the paths are resolved from this 
     port/tools/add_stage.py rebuild            # regenerate the name strip only
 
 Options:
-    --data <dir>    the data folder (default: gamedata, or $BT3_DATA)
+    --data <dir>    the folder that holds stages/ (default: next to the game, i.e. the repository root)
     --font <ttf>    the font for the name strip (default: $BT3_STAGE_FONT, or a few known paths)
     --no-strip      only edit the manifest; do not render the name strip
 
@@ -54,7 +54,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 
 def data_dir(args):
-    return args.data or os.environ.get("BT3_DATA") or os.path.join(ROOT, "gamedata")
+    # the folder that holds `stages/`: next to the game (the repository root here, where a build is run from),
+    # unless --data names another place (a data folder with the earlier layout, stages/ inside it)
+    return args.data or ROOT
 
 
 def slug(name):

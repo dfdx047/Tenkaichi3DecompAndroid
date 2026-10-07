@@ -17,6 +17,19 @@ typedef struct StageAlias {
 static StageAlias sAliases[PORT_STAGE_MAX * 2];
 static int sAliasCount;
 static int sDone;
+static char sDir[256]; /* the folder the stages are in (plat_extras.c) */
+static char sFiles[PORT_STAGE_MAX][128];
+
+extern int PortExtras_Dir(const char *kind, const char *env, char *out, unsigned size);
+extern int PortExtras_Scan(const char *dir, const char *ext, char names[][128], int max);
+extern void PortExtras_NameFromFile(const char *file, char *name, unsigned size);
+
+void PortStages_Init(void);
+
+const char *PortStages_Dir(void) {
+    PortStages_Init(); /* (the overlay may ask before the game has started) */
+    return sDir;
+}
 
 static const char *data_root(void) {
     const char *r = getenv("BT3_DATA");
@@ -43,14 +56,20 @@ static void add_stage(const char *file, const char *name) {
         fprintf(stderr, "bt3: stages: more than %d added maps, the rest are ignored\n", PORT_STAGE_MAX);
         return;
     }
+    for (i = 0; i < gPortExtraStageCount; i++) {
+        if (strcmp(sFiles[i], file) == 0) {
+            return; /* (in the list and found in the folder: once) */
+        }
+    }
     i = gPortExtraStageCount;
+    snprintf(sFiles[i], sizeof(sFiles[i]), "%s", file);
     id = PORT_STAGE_FIRST + i;
     snprintf(gPortStageNames[i], 64, "%s", name);
     gPortExtraStages[i] = id;
 
     /* model: the game asks for file id 0x171 + stage -> partition 1, index 0x170 + stage */
     snprintf(sAliases[sAliasCount].rel, sizeof(sAliases[sAliasCount].rel), "pzs3us1/%05d.bin", 0x170 + id);
-    snprintf(sAliases[sAliasCount].target, sizeof(sAliases[sAliasCount].target), "stages/%s", file);
+    snprintf(sAliases[sAliasCount].target, sizeof(sAliases[sAliasCount].target), "%s/%s", sDir, file);
     sAliasCount++;
 
     /* sound bank: file id 0x14E + stage -> the shared bank of the first stage, so the map has music */
@@ -91,16 +110,17 @@ void PortStages_Init(void) {
         return;
     }
     sDone = 1;
-    snprintf(path, sizeof(path), "%s/stages/maps.txt", data_root());
-    fp = fopen(path, "rb");
-    if (fp == NULL) {
+    if (!PortExtras_Dir("stages", "BT3_STAGES", sDir, sizeof(sDir))) {
         from_env();
         if (gPortExtraStageCount > 0) {
-            fprintf(stderr, "bt3: stages: %d from BT3_EXTRA_STAGES (no %s)\n", gPortExtraStageCount, path);
+            fprintf(stderr, "bt3: stages: %d from BT3_EXTRA_STAGES (no stages folder)\n", gPortExtraStageCount);
         }
         return;
     }
-    while (fgets(line, sizeof(line), fp) != NULL) {
+    /* the list first (its names and its order), then whatever else is in the folder, by name */
+    snprintf(path, sizeof(path), "%s/maps.txt", sDir);
+    fp = fopen(path, "rb");
+    while (fp != NULL && fgets(line, sizeof(line), fp) != NULL) {
         char *bar, *file;
         if (line[0] == '\0' || line[0] == '#' || line[0] == '\n' || line[0] == '\r') {
             continue;
@@ -113,9 +133,20 @@ void PortStages_Init(void) {
         file = trim(line);
         add_stage(file, trim(bar + 1));
     }
-    fclose(fp);
+    if (fp != NULL) {
+        fclose(fp);
+    }
+    {
+        static char found[PORT_STAGE_MAX][128];
+        int n = PortExtras_Scan(sDir, ".unk", found, PORT_STAGE_MAX), k;
+        for (k = 0; k < n; k++) {
+            char name[64];
+            PortExtras_NameFromFile(found[k], name, sizeof(name));
+            add_stage(found[k], name);
+        }
+    }
     if (gPortExtraStageCount > 0) {
-        fprintf(stderr, "bt3: stages: %d map(s) from %s\n", gPortExtraStageCount, path);
+        fprintf(stderr, "bt3: stages: %d added from %s\n", gPortExtraStageCount, sDir);
     }
 }
 
