@@ -154,6 +154,9 @@ GL_FUNCS(GL_DECL)
 #define GL_DEPTH_TEST 0x0B71
 #define GL_SCISSOR_TEST 0x0C11
 #define GL_CULL_FACE 0x0B44
+#define GL_DEPTH_CLAMP 0x864F
+#define GL_LOWER_LEFT 0x8CA1
+#define GL_ZERO_TO_ONE 0x935F
 #define GL_ZERO 0
 #define GL_ONE 1
 #define GL_SRC_ALPHA 0x0302
@@ -179,6 +182,9 @@ GL_FUNCS(GL_DECL)
 #define GL_DEPTH_ATTACHMENT 0x8D00
 #define GL_FRAMEBUFFER_COMPLETE 0x8CD5
 #define GL_INVALID_INDEX 0xFFFFFFFFu
+
+static void (*glClipControl)(GLenum, GLenum); /* optional: GL 4.5 / ARB_clip_control */
+static int sHasClipControl;
 
 static int load_gl(void) {
 #define LOAD(name, ret, args, callargs) \
@@ -235,7 +241,11 @@ static char *translate(const char *src, int is_vertex) {
             memcpy(m + 5, "gs_", 3);
             len += 3;
         }
-        PUSH("\nvoid main() { gs_main(); gl_Position.y = -gl_Position.y; gl_Position.z = clamp(gl_Position.z, 0.0, 1.0); }\n");
+        /* Depth: the shaders put z in Vulkan's clip range (0..w, stored as z / w). OpenGL's is -w..w, stored as
+           0.5 + z / 2w, unless glClipControl(GL_ZERO_TO_ONE) is there (GL 4.5 / ARB_clip_control); without it z
+           is moved to OpenGL's range here so that the stored depth is again z / w (the fog pass reads it). */
+        PUSH(sHasClipControl ? "\nvoid main() { gs_main(); gl_Position.y = -gl_Position.y; }\n"
+                             : "\nvoid main() { gs_main(); gl_Position.y = -gl_Position.y; gl_Position.z = 2.0 * gl_Position.z - gl_Position.w; }\n");
         out[len] = 0;
     }
 #undef PUSH
@@ -592,11 +602,17 @@ static void bind_target(int i, int clear) {
     glDrawBuffers(2, bufs);
     glViewport(0, 0, GS_W * SCALE, GS_H * SCALE);
     if (clear) {
-        float col[4] = {0.0f, 0.0f, 0.0f, 1.0f}, dep = 0.0f;
-        if (getenv("BT3_GPU_MAGENTA") != NULL) { col[0] = 1.0f; col[2] = 1.0f; }
+        /* as the Vulkan back end clears: colour and alpha 0 (alpha 1 only with the magenta aid), the alpha byte 0 */
+        float col[4] = {0.0f, 0.0f, 0.0f, 0.0f}, aux[4] = {0.0f, 0.0f, 0.0f, 0.0f}, dep = 0.0f;
+        if (getenv("BT3_GPU_MAGENTA") != NULL) { col[0] = 1.0f; col[2] = 1.0f; col[3] = 1.0f; }
         glDisable(GL_SCISSOR_TEST);
+        /* a clear obeys the write masks of the draw before it: open them (the caller sets its pipeline again) */
+        if (sHasIndexed) { glColorMaski(0, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE); glColorMaski(1, GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE); }
+        else { glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE); }
+        glDepthMask(GL_TRUE);
+        sCurPipe = -1;
         glClearBufferfv(GL_COLOR, 0, col);
-        glClearBufferfv(GL_COLOR, 1, col);
+        glClearBufferfv(GL_COLOR, 1, aux);
         glClearBufferfv(GL_DEPTH, 0, &dep);
         glEnable(GL_SCISSOR_TEST);
     }
@@ -622,6 +638,14 @@ static int gl_init(void) {
     if (!load_gl()) { return 0; }
     fprintf(stderr, "bt3: GL renderer: %s (%s)\n", (const char *)glGetString(GL_RENDERER), (const char *)glGetString(GL_VERSION));
     sHasIndexed = glEnablei != NULL && glColorMaski != NULL;
+    /* Depth as the Vulkan back end has it: clip-space z in 0..w stored as z / w, and (SDL GPU's default, depth
+       clip off) nothing cut at the near and far planes, the depth clamped to 0..1 instead. */
+    if (getenv("BT3_GL_NOCLIPCONTROL") == NULL && SDL_GL_ExtensionSupported("GL_ARB_clip_control")) {
+        glClipControl = (void (*)(GLenum, GLenum))SDL_GL_GetProcAddress("glClipControl");
+    }
+    sHasClipControl = glClipControl != NULL;
+    if (sHasClipControl) { glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE); }
+    glEnable(GL_DEPTH_CLAMP);
     if (!sHasIndexed) { fprintf(stderr, "bt3: gl: no per-attachment blend/mask (GL 3.0 indexed): the aux byte may be wrong\n"); }
 
     sMainProg[0] = make_program(kGsVertGlsl, kGsFragGlsl, "gs", sGsSamplers, 2);
@@ -814,6 +838,7 @@ static void frame_end(void) {
             set_pipe(d->pipeline);
             set_textures(sTgDep[d->target], 6, sAuxCopy, 6, (GLuint)d->tex, 6);
             set_params(params, 16);
+            haveFu = 0; /* the Params block now holds this pass's: the next primitive sends its own again */
             if (d->blendc != lastBlendc) { glBlendColor(d->blendc, d->blendc, d->blendc, d->blendc); lastBlendc = d->blendc; }
             set_scissor(d->scissor);
             glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -830,6 +855,7 @@ static void frame_end(void) {
             params[2] = 100.0f / 255.0f;
             params[3] = getenv("BT3_FX_DEBUG") != NULL ? 1.0f : 0.0f;
             set_params(params, 16);
+            haveFu = 0;
             set_scissor(d->scissor);
             glDrawArrays(GL_TRIANGLES, 0, 3);
             continue;
