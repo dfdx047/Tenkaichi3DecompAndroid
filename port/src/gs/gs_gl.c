@@ -712,8 +712,10 @@ static int gl_init(void) {
     glEnable(GL_SCISSOR_TEST);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glViewport(0, 0, GS_W * SCALE, GS_H * SCALE);
-    /* F1's window is not wired to OpenGL yet (Fase 5): Ui_Init is left uncalled, so every Ui_* the frame
-       calls is a no-op (ui.cpp guards on its own ready flag). */
+    /* the overlay (F1's settings, the online window) here too: ImGui's OpenGL3 backend, with the context current */
+    if (!Ui_Init(sWindow, NULL, (void *)sCtx)) {
+        fprintf(stderr, "bt3: gl: the settings window is not available\n");
+    }
     return 1;
 }
 
@@ -953,6 +955,7 @@ static void frame_end(void) {
         }
         free(wp);
     }
+    Ui_DrawGL(); /* the overlay, over the presented picture */
     SDL_GL_SwapWindow(sWindow);
     if (getenv("BT3_GS_VERBOSE") != NULL) {
         GLenum e = glGetError();

@@ -461,7 +461,7 @@ static int vk_init(void) {
     }
     sDclutFs = shader(kDclutFragSpv, sizeof(kDclutFragSpv), SDL_GPU_SHADERSTAGE_FRAGMENT, 3, 1);
     copies_create();
-    if (!Ui_Init(sWindow, sDev)) {
+    if (!Ui_Init(sWindow, sDev, NULL)) {
         fprintf(stderr, "bt3: the settings window could not be set up\n");
     }
     fprintf(stderr, "bt3: GPU renderer: %s\n", SDL_GetGPUDeviceDriver(sDev));

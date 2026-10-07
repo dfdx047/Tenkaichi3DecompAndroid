@@ -43,7 +43,8 @@ extern int gPortOverlayOpen;   /* the settings window is open: the keyboard does
 extern int gPortInputCapture;  /* it is waiting for a key or button to bind: nothing reaches the game */
 
 /* ui.cpp */
-int Ui_Init(SDL_Window *window, SDL_GPUDevice *device);
+int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context); /* device: the SDL GPU back end; NULL and a GL context: the OpenGL one */
+void Ui_DrawGL(void); /* the OpenGL back end: draws this frame's window with the context current */
 int Ui_Event(const SDL_Event *ev); /* 1 = the window used the event */
 void Ui_Toggle(void);
 void Ui_Draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target);      /* builds and draws this frame's window */

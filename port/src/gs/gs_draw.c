@@ -1195,7 +1195,11 @@ int GsGpu_Init(void) {
     gsDraws = malloc(MAX_DRAWS * sizeof(GsDraw));
     /* BT3_GPU_API=vulkan|gl|auto picks the back end. Both are complete renderers of the same list, so a
        picture from either should be the same (see the frame-by-frame compare in the port's docs). */
-    if (api == NULL || strcmp(api, "auto") == 0 || strcmp(api, "vk") == 0 || strcmp(api, "vulkan") == 0) {
+    if (api == NULL || strcmp(api, "auto") == 0) {
+        /* the settings window's choice (Renderer; Vulkan unless OpenGL was picked there) */
+        sb = Port_Setting("gpu_api", 0) == 1 ? &sGlBackend : &sVulkanBackend;
+        api = NULL;
+    } else if (strcmp(api, "vk") == 0 || strcmp(api, "vulkan") == 0) {
         sb = &sVulkanBackend;
     } else if (strcmp(api, "gl") == 0 || strcmp(api, "opengl") == 0) {
         sb = &sGlBackend;
@@ -1205,8 +1209,21 @@ int GsGpu_Init(void) {
     }
     sBackend = sb;
     if (!sb->init()) {
+        /* The chosen renderer cannot start (no Vulkan driver, an old graphics card): the other one is tried,
+           unless one was asked for by name. */
+        GsBackend *other = sb == &sVulkanBackend ? &sGlBackend : &sVulkanBackend;
         sBackend = NULL;
-        return 0;
+        if (api != NULL) {
+            return 0;
+        }
+        fprintf(stderr, "bt3: the %s renderer could not start; trying %s\n", sb == &sVulkanBackend ? "Vulkan" : "OpenGL",
+                other == &sVulkanBackend ? "Vulkan" : "OpenGL");
+        sb = other;
+        sBackend = sb;
+        if (!sb->init()) {
+            sBackend = NULL;
+            return 0;
+        }
     }
     gsWhite = sb->whiteTex();
     gsFxOff = (unsigned)(getenv("BT3_FX_OFF") != NULL ? atoi(getenv("BT3_FX_OFF")) : Port_Setting("fx_off", 0)) & 31;

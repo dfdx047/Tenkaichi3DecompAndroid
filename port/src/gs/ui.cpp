@@ -7,7 +7,10 @@
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlgpu3.h"
+#include "imgui_impl_opengl3.h"
 #include "ui.h"
+
+static int sGL; // 1: the OpenGL back end draws the window (ImGui's OpenGL3 backend, no SDL GPU device)
 
 extern "C" {
 extern volatile int gPortNetMenuRequest;
@@ -61,7 +64,7 @@ static void style() {
     c[ImGuiCol_TableRowBgAlt] = ImVec4(1.0f, 1.0f, 1.0f, 0.03f);
 }
 
-int Ui_Init(SDL_Window *window, SDL_GPUDevice *device) {
+int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context) {
     static const char *fonts[] = { // a proportional system font if there is one; else the library's built-in font
         "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/noto/NotoSans-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
@@ -83,14 +86,21 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device) {
             break;
         }
     }
-    if (!ImGui_ImplSDL3_InitForSDLGPU(window)) {
-        return 0;
-    }
-    info.Device = device;
-    info.ColorTargetFormat = SDL_GetGPUSwapchainTextureFormat(device, window);
-    info.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
-    if (!ImGui_ImplSDLGPU3_Init(&info)) {
-        return 0;
+    if (device == NULL) { // the OpenGL back end (gs_gl.c), with its context current
+        sGL = 1;
+        if (!ImGui_ImplSDL3_InitForOpenGL(window, (SDL_GLContext)gl_context) || !ImGui_ImplOpenGL3_Init("#version 330 core")) {
+            return 0;
+        }
+    } else {
+        if (!ImGui_ImplSDL3_InitForSDLGPU(window)) {
+            return 0;
+        }
+        info.Device = device;
+        info.ColorTargetFormat = SDL_GetGPUSwapchainTextureFormat(device, window);
+        info.MSAASamples = SDL_GPU_SAMPLECOUNT_1;
+        if (!ImGui_ImplSDLGPU3_Init(&info)) {
+            return 0;
+        }
     }
     sDevice = device;
     sReady = true;
@@ -343,6 +353,22 @@ static void video_tab(PortVideo &v) {
     }
     ImGui::SetItemTooltip("Takes effect the next time the game starts.");
     SDL_free(displays);
+    {   // which renderer draws the game: Vulkan (the default) or OpenGL 3.3, for machines without a working Vulkan
+        static const char *const kApi[] = {"Vulkan", "OpenGL"};
+        static int api = -1;
+        if (api < 0) {
+            api = Port_Setting("gpu_api", 0) == 1 ? 1 : 0;
+        }
+        if (ImGui::Combo("Renderer", &api, kApi, 2)) {
+            Port_SettingSave("gpu_api", api);
+            Port_SettingsWrite();
+        }
+        ImGui::SetItemTooltip("Takes effect the next time the game starts. Both draw the same picture; Vulkan is faster.\n"
+                              "If the chosen one cannot start, the game tries the other.");
+        if (api != (sGL ? 1 : 0)) {
+            ImGui::TextDisabled("Running now: %s. %s from the next start.", kApi[sGL ? 1 : 0], kApi[api]);
+        }
+    }
     ImGui::Spacing();
     if (v.texPackCount > 0) {
         bool on = v.texPack != 0;
@@ -548,7 +574,9 @@ extern "C" void Port_UiNotice(const char *text) {
     sNoticeNew = 1;
 }
 
-void Ui_Draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
+// Builds this frame's picture of the overlay (the settings or the online window, the line over the picture).
+// false: there is nothing to draw. The same for both back ends; each then draws ImGui's data its own way.
+static bool frame_build(void) {
     if (sReady && gPortNetWindowClose) { // back from an online session: the window it was started from closes
         gPortNetWindowClose = 0;
         gPortNetMenuRequest = 0;
@@ -565,10 +593,14 @@ void Ui_Draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
     }
     sBuilt = false;
     if (!sReady || (!sOpen && !notice)) {
-        return;
+        return false;
     }
     sBuilt = true;
-    ImGui_ImplSDLGPU3_NewFrame();
+    if (sGL) {
+        ImGui_ImplOpenGL3_NewFrame();
+    } else {
+        ImGui_ImplSDLGPU3_NewFrame();
+    }
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
     if (sOpen) {
@@ -589,5 +621,18 @@ void Ui_Draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
         ImGui::End();
     }
     ImGui::Render();
-    Ui_DrawAgain(cmd, target);
+    return true;
+}
+
+void Ui_Draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
+    if (!sGL && frame_build()) {
+        Ui_DrawAgain(cmd, target);
+    }
+}
+
+// The OpenGL back end's turn: over the presented picture, just before the buffers are swapped.
+void Ui_DrawGL(void) {
+    if (sGL && frame_build()) {
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    }
 }
