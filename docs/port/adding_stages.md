@@ -225,3 +225,11 @@ At start-up the port logs how many maps it read:
 bt3: stages: 11 map(s) from gamedata/stages/maps.txt
 bt3: stage-name overlay: 11 names, 1024x128 each
 ```
+
+## Only 24 of 26 added stages were listed (2026-10-08)
+
+Reported by a player who filled every slot. The stage select's list was 64 cells and the adding stopped at 60,
+the last whole row of 6 that fits; with all 36 disc stages unlocked that left 24. The list is 96 cells now: 36 +
+26 = 62 stages are 11 rows, 66 cells with the last row's padding. Checked with 28 files in the folder: 26 are
+taken, the list has 62 entries ending in ids 0x3C and 0x3D (it had 60, ending in 0x3B), and a fight starts on
+0x3C and on 0x3D (`BT3_TEST_STAGE`). Not looked at on screen: the eleventh row.
