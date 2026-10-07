@@ -713,3 +713,16 @@ player's last known input; beyond that it waits, as lockstep does every blank). 
 - Not done: keeping the two copies in step in time; a setting in the Dragon Net Battle window (it is the
   environment variable for now); what a rollback does to a pad recording being played (the recording is rewound
   with the state: fine for the tests' scripts, which are read by blank number); real Windows; two machines.
+
+## Keeping the two copies together in time (2026-10-07)
+
+- Each input packet now carries how many blanks the sender is beyond the input it has from the other side
+  (`ahead`, taken when sending; the packet's header is 20 bytes). On an even line the two numbers are equal; the
+  copy whose clock is ahead has the larger one, by twice the clocks' difference. When the smoothed difference
+  reaches a blank and a half, that copy lets its blanks come a millisecond later each (`gPortPaceShiftNs`, the
+  pacing grid of plat_stub.c moves) until they agree. Only with rollback on. `BT3_NET_NOBALANCE=1` turns it off.
+- The uneven rollback counts of the first two-window run were not the clocks: in session6's input player 1 does
+  nearly everything, so only the copy that has to guess player 1 goes back. The clocks were half a blank apart.
+- Test (`BT3_NET_SKEW=60`: one copy falls 60 ms behind at blank 1500; rollback 8, 40 ms): without balancing the
+  other copy stays 6 blanks ahead and every rollback is 6 blanks; with it, it slows by 72 ms over the next
+  blanks, both are 2 to 3 ahead again and rollbacks are 2 to 3 blanks. Fight values the same on both either way.

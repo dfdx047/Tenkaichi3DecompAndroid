@@ -63,10 +63,21 @@ static unsigned long long now_ns(void) {
 PORT_HOST static unsigned long long sPacePrev = 0, sPaceMin = ~0ull, sPaceMax = 0;
 PORT_HOST static unsigned sPaceCount = 0, sPaceOff = 0, sPaceLate = 0, sPaceReset = 0;
 
+/* Online play (gs/net.c): this copy runs ahead of the other one; the coming blanks are to come this much later
+   in all (the grid moves, once). */
+PORT_HOST unsigned gPortPaceShiftNs = 0;
+
 static void vblank_wait(void) {
     PORT_HOST static unsigned long long next = 0;
     struct timespec ts;
     unsigned long long t = now_ns(), after;
+
+    if (gPortPaceShiftNs != 0) {
+        if (next != 0) {
+            next += gPortPaceShiftNs;
+        }
+        gPortPaceShiftNs = 0;
+    }
 
     if (next != 0 && t >= next && t - next < 100000000ull) {
         /* Late, but not hopelessly: this blank has passed already, so do not wait, and keep the grid. A fight

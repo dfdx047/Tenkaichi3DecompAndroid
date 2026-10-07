@@ -68,10 +68,18 @@ static uint8_t sUsed[RING][PAD]; /* what the other player's pad read in each bla
 static uint32_t sChecked;        /* blanks below this were given the other player's real input */
 static uint32_t sLive;           /* during a re-run: the blank that was the present when it began */
 static unsigned sRollbacks, sRollTicks, sStalls;
+/* Keeping the two copies together in time: each says in its packets how many blanks it is beyond the input it
+   has from the other (sTheirAhead). On an even line both numbers are the same; the copy whose clock is ahead has
+   the larger one, by twice the difference of the clocks. That copy lets its blanks come a little later until the
+   two agree (plat_stub.c's pacing grid is moved), so that neither does all the guessing and going back. */
+static int32_t sTheirAhead, sMyAhead;
+static int sBalance;  /* (mine - theirs), smoothed, in 1/16 blank */
+static unsigned sSlowed;
+extern unsigned gPortPaceShiftNs;
 
 /* BT3_NET_LATENCY=<ms>: testing, a line that takes that long one way. What is sent waits in a queue. */
 static int sLatencyMs;
-static struct { uint64_t due; int n; uint8_t data[16 + 16 * PAD]; } sQueue[256];
+static struct { uint64_t due; int n; uint8_t data[20 + 16 * PAD]; } sQueue[256];
 static unsigned sQueueHead, sQueueTail;
 
 static void queue_flush(void) {
@@ -97,17 +105,20 @@ static void send_to_peer(const void *buf, int n) {
 }
 
 static void send_inputs(void) {
-    uint8_t pkt[16 + REDUNDANT * PAD];
+    uint8_t pkt[20 + REDUNDANT * PAD];
     uint32_t magic = MAGIC, type = T_INPUT, n = sHave[sMe] < REDUNDANT ? sHave[sMe] : REDUNDANT, base = sHave[sMe] - n, i;
+    int32_t ahead = (int32_t)sTick - (int32_t)sHave[!sMe]; /* how far this copy is beyond the input it has from the other */
 
     memcpy(pkt, &magic, 4);
     memcpy(pkt + 4, &type, 4);
     memcpy(pkt + 8, &base, 4);
     memcpy(pkt + 12, &n, 4);
+    sMyAhead = ahead;
+    memcpy(pkt + 16, &ahead, 4);
     for (i = 0; i < n; i++) {
-        memcpy(pkt + 16 + i * PAD, sIn[sMe][(base + i) % RING], PAD);
+        memcpy(pkt + 20 + i * PAD, sIn[sMe][(base + i) % RING], PAD);
     }
-    send_to_peer(pkt, (int)(16 + n * PAD));
+    send_to_peer(pkt, (int)(20 + n * PAD));
 }
 
 /* Takes in what has arrived. Returns 1 if anything did. */
@@ -133,20 +144,21 @@ static int receive(void) {
             sendto(sSock, (const char *)ack, sizeof(ack), 0, (struct sockaddr *)&sPeer, sizeof(sPeer));
         } else if (type == T_HELLO_ACK && sMode == 2) {
             sConnected = 1;
-        } else if (type == T_INPUT && n >= 16) {
+        } else if (type == T_INPUT && n >= 20) {
             uint32_t base, count, i, other = (uint32_t)!sMe;
             memcpy(&base, pkt + 8, 4);
             memcpy(&count, pkt + 12, 4);
+            memcpy(&sTheirAhead, pkt + 16, 4);
             if (sMode == 1 && !sConnected) {
                 sPeer = from;
             }
             sConnected = 1; /* (an input packet says the greeting got through) */
-            for (i = 0; i < count && 16 + (i + 1) * PAD <= (uint32_t)n; i++) {
+            for (i = 0; i < count && 20 + (i + 1) * PAD <= (uint32_t)n; i++) {
                 if (base + i >= sHave[other]) {
                     if (base + i > sHave[other]) {
                         break; /* a gap: wait for a packet that covers it */
                     }
-                    memcpy(sIn[other][(base + i) % RING], pkt + 16 + i * PAD, PAD);
+                    memcpy(sIn[other][(base + i) % RING], pkt + 20 + i * PAD, PAD);
                     sHave[other] = base + i + 1;
                 }
             }
@@ -197,6 +209,8 @@ static void net_start(int role, const char *host, const char *join) {
     if (sRollMax > 30) { sRollMax = 30; }
     sChecked = sLive = 0;
     sResim = sRollBegun = 0;
+    sTheirAhead = 0;
+    sBalance = 0;
     sRollbacks = sRollTicks = sStalls = 0;
     if (getenv("BT3_NET_SCRIPT") != NULL) {
         sScript = fopen(getenv("BT3_NET_SCRIPT"), "rb");
@@ -340,6 +354,17 @@ static void roll_tick(unsigned tick) {
                 gone_quiet(tick);
             }
         }
+        {   /* (see sTheirAhead) */
+            int diff = (int)sMyAhead - (int)sTheirAhead; /* (both taken at the same point of a blank: when sending) */
+            if (getenv("BT3_NET_SKEW") != NULL && tick == 1500) { /* testing: this copy falls behind by that many ms, once */
+                gPortPaceShiftNs = (unsigned)atoi(getenv("BT3_NET_SKEW")) * 1000000u;
+            }
+            sBalance += (diff * 16 - sBalance) / 16;
+            if (sBalance >= 24 && getenv("BT3_NET_NOBALANCE") == NULL) { /* a blank and a half apart or more: a millisecond later */
+                gPortPaceShiftNs += 1000000;
+                sSlowed++;
+            }
+        }
         limit = sHave[other] < tick ? sHave[other] : tick;
         for (t = sChecked; t < limit && memcmp(sUsed[t % RING], sIn[other][t % RING], PAD) == 0; t++) {
         }
@@ -353,9 +378,9 @@ static void roll_tick(unsigned tick) {
             Port_RollBack((int)(tick - t)); /* does not return: goes on after blank t's Port_RollSave below */
         }
         if (tick % 600 == 0 && getenv("BT3_GS_VERBOSE") != NULL) {
-            fprintf(stderr, "net: blank %u: %u rollbacks (%.1f blanks each), %u waits in the last 600 blanks\n", tick, sRollbacks,
-                    sRollbacks != 0 ? (double)sRollTicks / sRollbacks : 0.0, sStalls);
-            sRollbacks = sRollTicks = sStalls = 0;
+            fprintf(stderr, "net: blank %u: %u rollbacks (%.1f blanks each), %u waits in the last 600 blanks; ahead %d, they %d, slowed %u ms\n", tick, sRollbacks,
+                    sRollbacks != 0 ? (double)sRollTicks / sRollbacks : 0.0, sStalls, (int)sMyAhead, (int)sTheirAhead, sSlowed);
+            sRollbacks = sRollTicks = sStalls = sSlowed = 0;
         }
     }
     if (Port_RollSave() != 0) {
