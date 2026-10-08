@@ -303,10 +303,20 @@ def finish():
         for name in sorted(where):
             which, so = where[name]
             text = (ROOT / "port/data" / (name + ".s")).read_text().splitlines()
-            first = next((l[:-1] for l in text if re.match(r"^[A-Za-z_.$][\w.$]*:$", l)), None)
+            # where the object's data starts: the first label's address less what the file puts before that label
+            first, before = None, 0
+            for l in text:
+                if re.match(r"^[A-Za-z_.$][\w.$]*:$", l.strip()):
+                    first = l.strip()[:-1]
+                    break
+                p = l.split()
+                if p and p[0] in (".space", ".zero"):
+                    before += int(p[1])
+                elif p and p[0] == ".long":
+                    before += 4
             if first is None or first not in syms:
                 raise SystemExit(f"{name}: its first label is not in the program")
-            start, off = syms[first], 0
+            start, off = syms[first] - before, 0
             for l in text:
                 p = l.split()
                 if not p or p[0].startswith("#"):
