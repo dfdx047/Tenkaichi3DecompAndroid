@@ -39,6 +39,9 @@ extern int __real_Progress_Main(int arg);
 int gPortMenuMode;
 
 volatile int gPortUnlockAll, gPortUnlockDone;
+extern int Port_Setting(const char *name, int def); /* plat_settings.c */
+extern void Port_SettingSave(const char *name, int value);
+extern void Port_SettingsWrite(void);
 extern struct SaveData GAME_PTR gSaveData;
 extern void Save_UnlockAll(void *opt);
 extern int Port_NetSession(void); /* gs/net.c */
@@ -236,6 +239,24 @@ void Port_Trace(unsigned vblanks) {
     if (Port_NetWarp() && sNetEntered && gProgress != NULL && !(gProgress->flags & 0x40)) {
         Port_NetArrived(); /* the logos and the card check are over: the character select is next, with picture and sound */
     }
+#ifdef __ANDROID__
+    {   /* The app's "Unlock everything" (dr_unlock_all=1 in bt3_settings.txt). The memory card is read some time after
+           the start and replaces the save in memory, so the unlock is done every 10 seconds for the first two minutes
+           (it only sets things: doing it again changes nothing), then the setting is cleared. */
+        static int asked = -1, times = 0;
+        if (asked < 0) {
+            asked = Port_Setting("dr_unlock_all", 0) != 0;
+        }
+        if (asked && gSaveData != NULL && vblanks % 600 == 0) {
+            gPortUnlockAll = 1;
+            if (++times == 12) {
+                asked = 0;
+                Port_SettingSave("dr_unlock_all", 0);
+                Port_SettingsWrite();
+            }
+        }
+    }
+#endif
     if (gPortUnlockAll) {
         gPortUnlockAll = 0;
         if (gSaveData != NULL) {

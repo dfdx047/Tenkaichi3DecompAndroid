@@ -501,8 +501,8 @@ static void vk_frame_end(void) {
         if (ev.type == SDL_EVENT_QUIT) {
             exit(0);
         }
-        if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F1) {
-            Ui_Toggle();
+        if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && (ev.key.key == SDLK_F1 || ev.key.key == SDLK_AC_BACK)) {
+            Ui_Toggle(); /* (Android: the back button, which the loader asks SDL to hand over: android/.../loader.c) */
             continue;
         }
         if (Ui_Event(&ev)) { /* the settings window is open and used it (Esc closes it) */

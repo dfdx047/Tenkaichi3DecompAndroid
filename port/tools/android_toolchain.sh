@@ -18,8 +18,7 @@ if [ ! -x llvm/bin/clang ]; then
     echo "== LLVM $LLVM_VERSION"
     curl -fsSL "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/LLVM-$LLVM_VERSION-Linux-X64.tar.xz" \
         | xz -dc | tar -x --wildcards "*/bin/clang-*" "*/bin/clang" "*/bin/clang++" "*/bin/lld" "*/bin/ld.lld" "*/bin/llc" \
-            "*/bin/llvm-nm" "*/bin/llvm-objdump" "*/bin/llvm-ar" "*/lib/clang/*/include/*" "*/lib/libclang.so*" \
-            "*/lib/libLLVM*.so*" "*/lib/libclang-cpp.so*"
+            "*/bin/llvm-nm" "*/bin/llvm-objdump" "*/bin/llvm-ar" "*/lib/clang/*/include/*" "*/lib/libclang.so*" "*/lib/libclang-cpp.so*"
     rm -rf llvm && mv "LLVM-$LLVM_VERSION-Linux-X64" llvm
 fi
 if [ ! -f clang-bindings/clang/cindex.py ]; then

@@ -171,6 +171,7 @@ int SDL_main(int argc, char *argv[]) {
     setenv("BT3_EXE", exe, 1);
     setenv("BT3_GS", "gpu", 0);
     setenv("SDL_VIDEO_DRIVER", "android", 0);
+    setenv("SDL_ANDROID_TRAP_BACK_BUTTON", "1", 0); /* the back button opens the settings (gs_gpu.c), it does not end the game */
 
     if (!program_span(engine, &lo, &hi)) {
         say("cannot read the engine %s", engine);
