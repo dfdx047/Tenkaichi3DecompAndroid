@@ -23,6 +23,7 @@
 #include "gs_draw.h"
 #include "shaders.h" /* generated: kGsVertSpv, kGsFragSpv */
 #include "ui.h"
+static bool sGpuLite; /* the device was made without depth clamping and the other optional features */
 
 extern int Port_Setting(const char *name, int def); /* plat_settings.c: the saved settings */
 extern int Port_AspectMilli(void);
@@ -264,6 +265,7 @@ static int pipeline_create(uint32_t key, int remember) {
     ci.primitive_type = topo == 0 ? SDL_GPU_PRIMITIVETYPE_TRIANGLELIST : topo == 1 ? SDL_GPU_PRIMITIVETYPE_LINELIST : SDL_GPU_PRIMITIVETYPE_POINTLIST;
     ci.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
     ci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    ci.rasterizer_state.enable_depth_clip = sGpuLite; /* (no depth clamping on such a device) */
     ci.depth_stencil_state.enable_depth_test = true;
     ci.depth_stencil_state.enable_depth_write = zwrite;
     ci.depth_stencil_state.compare_op = ztst == 0 ? SDL_GPU_COMPAREOP_NEVER : ztst == 1 ? SDL_GPU_COMPAREOP_ALWAYS :
@@ -350,7 +352,26 @@ static int vk_init(void) {
         fprintf(stderr, "bt3: SDL_Init: %s\n", SDL_GetError());
         return 0;
     }
-    sDev = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_SPIRV, getenv("BT3_GPU_DEBUG") != NULL, NULL);
+    {   /* SDL's Vulkan device asks for features some GPUs lack (Mali: depthClamp, drawIndirectFirstInstance, ...);
+           without them, the same device with those features off (depth clipping instead of clamping) */
+        SDL_PropertiesID props = SDL_CreateProperties();
+        SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, true);
+        SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN, getenv("BT3_GPU_DEBUG") != NULL);
+        sDev = getenv("BT3_GPU_LITE") != NULL ? NULL : SDL_CreateGPUDeviceWithProperties(props);
+        if (sDev == NULL) {
+            fprintf(stderr, "bt3: Vulkan device with all features: %s; trying without the optional ones\n", SDL_GetError());
+            SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_CLIP_DISTANCE_BOOLEAN, false);
+            SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_DEPTH_CLAMPING_BOOLEAN, false);
+            SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, false);
+            SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_ANISOTROPY_BOOLEAN, false);
+            sDev = SDL_CreateGPUDeviceWithProperties(props);
+            sGpuLite = sDev != NULL;
+            if (sDev == NULL) {
+                fprintf(stderr, "bt3: Vulkan device without them: %s\n", SDL_GetError());
+            }
+        }
+        SDL_DestroyProperties(props);
+    }
     sWindow = GsDraw_WindowCreate(0); /* the shared window: shape, display and full screen decided there */    if (sWindow == NULL || !SDL_ClaimWindowForGPUDevice(sDev, sWindow)) {
         fprintf(stderr, "bt3: no GPU window: %s\n", SDL_GetError());
         return 0;
@@ -448,6 +469,7 @@ static int vk_init(void) {
         ci.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
         ci.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
         ci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        ci.rasterizer_state.enable_depth_clip = sGpuLite;
         ci.target_info.color_target_descriptions = &cd;
         ci.target_info.num_color_targets = 1;
         sOutlinePipe = vs && fs ? SDL_CreateGPUGraphicsPipeline(sDev, &ci) : NULL;
