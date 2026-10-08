@@ -34,6 +34,8 @@ jobs:
           find "$TC/lib/clang" -path "*aarch64*" -name "libunwind.a" -exec cp -a {} "$OUT/clang_rt/" \; || true
           ls "$OUT/clang_rt"
           cp "$NDK/shader-tools/linux-x86_64/glslc" "$OUT/bin/" || true
+          cp -L "$TC/lib/libc++.so" "$OUT/bin/libc++.so" 2>/dev/null || cp -L "$TC"/lib64/libc++.so* "$OUT/bin/" || true
+          ls "$OUT/bin"
           cp "$NDK/source.properties" "$OUT/"
           "$TC/bin/clang" --version | head -1 > "$OUT/clang_version.txt"
           cd "$GITHUB_WORKSPACE/out" && tar -cJf ndk-arm64-sysroot.tar.xz ndk && ls -la
