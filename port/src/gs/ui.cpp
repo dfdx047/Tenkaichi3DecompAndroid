@@ -216,6 +216,7 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context) {
         "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/noto/NotoSans-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
         "/usr/share/fonts/liberation/LiberationSans-Regular.ttf", "C:\\Windows\\Fonts\\segoeui.ttf",
+        "/system/fonts/Roboto-Regular.ttf", "/system/fonts/NotoSans-Regular.ttf", // Android
     };
     ImGui_ImplSDLGPU3_InitInfo info;
 
@@ -225,11 +226,24 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context) {
     io.IniFilename = NULL; // no window-layout file next to the game
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     style();
+#ifdef __ANDROID__
+    // a phone's or a handheld's dense screen, touched or driven with the controller: everything larger, and the
+    // controller moves through the window (the back button opens and closes it, gs_gpu.c)
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
+    float uiScale = SDL_GetWindowDisplayScale(window);
+    if (uiScale < 1.5f) {
+        uiScale = 1.5f;
+    }
+    ImGui::GetStyle().ScaleAllSizes(uiScale);
+#else
+    float uiScale = 1.0f;
+#endif
     for (size_t i = 0; i < sizeof(fonts) / sizeof(fonts[0]); i++) {
         FILE *fp = fopen(fonts[i], "rb");
         if (fp != NULL) {
             fclose(fp);
-            io.Fonts->AddFontFromFileTTF(fonts[i], 18.0f);
+            io.Fonts->AddFontFromFileTTF(fonts[i], 18.0f * uiScale);
             break;
         }
     }

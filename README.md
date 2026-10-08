@@ -16,9 +16,10 @@
 ---
 
 > [!IMPORTANT]
-> **Status: the launcher app works, the game engine is not ported yet.**
-> You can install the app today, unpack your own disc, and set up texture packs, mods and settings. The **Play**
-> button will tell you the engine is missing until the arm64 port of the engine lands. See [Roadmap](#roadmap).
+> **Status: the engine builds for arm64 and ships in the APK; first tests on a device are under way.**
+> The whole game (332 source files: the decompiled game, the PC port's platform layer, renderer, sound) compiles
+> and links for Android arm64, with the game's 32-bit pointers and the PS2's float arithmetic intact. Whether it
+> boots, and how well it runs, is being found out on real hardware right now. See [Roadmap](#roadmap).
 
 This repository contains **no game data**. You need your own copy of the **USA release (SLUS-21678)** as an
 `.iso`. The app reads it on your device; nothing is downloaded or uploaded.
@@ -30,8 +31,8 @@ sound and input layer underneath. Dragon Rage brings that to Android in two part
 
 | Part | Where | State |
 |---|---|---|
-| **Launcher app** (Kotlin, Jetpack Compose, Material 3) | [`android/`](android) | ✅ Done, first release |
-| **Game engine** (the port's C code, built for arm64 as `libdragonrage.so`) | `src/`, `include/`, `port/` | 🚧 Not started on Android yet |
+| **Launcher app** (Kotlin, Jetpack Compose, Material 3; English and Portuguese) | [`android/`](android) | ✅ Done |
+| **Game engine** (the port's C code, built for arm64 as `libbt3.so`) | `src/`, `include/`, `port/` | 🧪 Builds and links; testing on devices |
 
 ## The app
 
@@ -82,35 +83,34 @@ at start, then reset to 0), `dr_touch` (on-screen controls: 0 off, 1 automatic, 
       stages and songs, unlock-all cheat, all engine settings, Material 3 theme
 - [x] CI: every push builds the APK; an `android-v*` tag publishes a release
 
-### The engine on arm64 (what is missing)
+### The engine on arm64
 
-The PC port's 64-bit build relies on two compiler features that **do not work on ARM64**. Checked with clang 18:
+How it works:
 
-1. **32-bit pointers.** The game stores pointers in 32-bit fields everywhere. The x86-64 build marks every game
-   pointer `__ptr32` (`port/tools/ptr32.py`). Clang silently ignores that on AArch64: a test struct is 8 bytes on
-   x86-64 and 16 on arm64. So every structure of the game would have the wrong layout.
-2. **The PS2's float arithmetic.** Game code is built with `-msoft-float`, so every float operation goes through
-   `port/src/softfloat_ps2.c`, which matches the PS2 bit for bit. On AArch64 clang ignores the flag and emits
-   hardware float instructions.
+- **32-bit pointers.** The game stores pointers in 32-bit fields everywhere; the PC port's 64-bit build marks every
+  game pointer `__ptr32` (`port/tools/ptr32.py`). Clang supports that on AArch64 since LLVM 20, so the engine is
+  built with upstream **LLVM 21**; `irfix.py` makes the same repairs as on x86-64.
+- **The PS2's float arithmetic.** Game code is built for the soft-float ABI (`-mabi=aapcs-soft -mgeneral-regs-only`),
+  so every float operation still goes through `port/src/softfloat_ps2.c`, bit for bit what the PS2 does: the fights
+  play out exactly as on the PC port.
+- **Memory below 4 GB.** The program is linked at a fixed address (0x03000000, below an Android app's Java heap) and
+  marked as a shared object; `android/app/src/main/cpp/loader.c` reserves that range and has Android's own loader
+  load it there (`android_dlopen_ext`). The game's heap, stack and the port's region sit around it, all under
+  0x12C00000.
+- **SDL3** (Vulkan through SDL's GPU API, audio, controllers) with SDL's Android activity, in a process of its own.
 
-The plan:
+Build it: `sh port/tools/android_toolchain.sh` (LLVM 21, the NDK's sysroot, SDL3), then
+`BT3_SKELETON=1 python3 port/tools/android.py` (engine, loader, copied into the app), then `./gradlew` in `android/`.
+CI does the same on every push and publishes the result as the
+[android-nightly](../../releases/tag/android-nightly) pre-release.
 
-- [ ] **An LLVM pass** for the game's code: lower the 32-bit-pointer address space to 32-bit integers, and turn
-      float operations into calls to the PS2 soft-float routines. (Faster fallback: hardware float with the ARM
-      FPCR set to round-toward-zero and flush-to-zero. Very close to the PS2, but not bit-exact, so no online
-      play against PC.)
-- [ ] **Memory below 4 GB.** The game's heap, the stack of its thread and the program itself (callbacks are kept
-      in 32-bit fields) must sit below 4 GB. Load `libdragonrage.so` into a low reserved region with
-      `android_dlopen_ext` (`ANDROID_DLEXT_RESERVED_ADDRESS`).
-- [ ] **AArch64 versions of the x86-64-only parts** of `port/src/plat_mem.c` (low stack, arena) and
-      `port/src/gs/state.c` (the register save and stack switch used by save states and online rollback).
-- [ ] **Build** the engine with the NDK (CMake) next to SDL3, and start it from an SDL activity with the app's
-      folder as working directory.
-- [ ] **Renderer**: SDL3's GPU API already runs Vulkan on Android and the shaders are SPIR-V. Still to do: tuning
-      for tile-based mobile GPUs, and BC1–BC3 (DDS) textures on GPUs without BC support (transcode at import).
-- [ ] **Touch controls**, Android lifecycle (pause / resume, surface loss), the ImGui settings menu replaced by
-      the app's settings.
-- [ ] Android glue for the app's keys (`dr_unlock_all`, `dr_touch`, …).
+- [x] Engine builds and links for arm64 (332 of 332 sources)
+- [x] Loader, game activity, Play button; logs to logcat (`adb logcat -s bt3`) and `bt3_log.txt`
+- [x] Unlock-all from the app; the back button opens the in-game settings
+- [ ] **Boots and plays on a device** (testing now)
+- [ ] Performance on mobile GPUs; DDS (BC1–BC3) texture packs on GPUs without BC support
+- [ ] Touch controls; pause/resume
+- [ ] Save states and online rollback on arm64 (`port/src/gs/state.c` uses `getcontext`, which Android lacks)
 
 ### Later
 - [ ] **60 fps mode.** The game runs its logic at 30 fps; a real 60 fps needs changes to the simulation's timing.

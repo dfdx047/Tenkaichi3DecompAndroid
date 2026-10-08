@@ -124,6 +124,7 @@ jobs:
       # Every push to main: the latest build as the "nightly" pre-release (one tag, its APKs replaced each time)
       - name: Nightly
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        working-directory: .
         run: |
           cp out/*-debug.apk out/DragonRage-nightly-debug.apk
           cp "out/DragonRage-${DR_VERSION_NAME}.apk" out/DragonRage-nightly.apk
