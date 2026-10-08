@@ -165,12 +165,16 @@ class GameActivity : SDLActivity() {
 
     /** The list of where the game's data tables come from (made with the engine, android.py) next to the game's files. */
     private fun installDataList() {
-        val out = File(paths.root, "libbt3.so.dat")
-        runCatching {
-            assets.open("libbt3.so.dat").use { input ->
-                val bytes = input.readBytes()
-                if (!out.exists() || out.length() != bytes.size.toLong() || !out.readBytes().contentEquals(bytes)) {
-                    out.writeBytes(bytes)
+        // the list of the game's data tables (libbt3.so.dat) and of the engine's own addresses (libbt3.so.rel, for
+        // loading it elsewhere than its usual place), both made with the engine (android.py), next to the game's files
+        for (name in listOf("libbt3.so.dat", "libbt3.so.rel")) {
+            val out = File(paths.root, name)
+            runCatching {
+                assets.open(name).use { input ->
+                    val bytes = input.readBytes()
+                    if (!out.exists() || out.length() != bytes.size.toLong() || !out.readBytes().contentEquals(bytes)) {
+                        out.writeBytes(bytes)
+                    }
                 }
             }
         }

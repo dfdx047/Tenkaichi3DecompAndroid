@@ -231,6 +231,16 @@ static void map_heap(void) {
 #include <pthread.h>
 #define STACK_BASE 0x02000000u
 #define STACK_SIZE 0x01000000u
+#ifdef __ANDROID__
+/* Android: where an app's Java heap sits below 4 GB differs from device to device (0x02000000 on some), so the
+   stack goes at STACK_BASE when that is free, else in the first free place below 4 GB (plat_mem's map_anywhere). */
+static uint32_t sStackBase = STACK_BASE;
+#define STACK_AT sStackBase
+uint8_t gPortHwRegs[0x10000] __attribute__((aligned(65536))); /* the PS2's registers at 0x10000000 (irfix.py) */
+uint8_t gPortGsRegs[0x2000] __attribute__((aligned(65536)));  /* and at 0x12000000 */
+#else
+#define STACK_AT STACK_BASE
+#endif
 extern int __real_main(int argc, char **argv);
 PORT_HOST static int sArgc = 0, sResult = 0; /* (the process's own arguments: an address on its stack, not game state) */
 PORT_HOST static char **sArgv = NULL;
@@ -252,7 +262,7 @@ int __wrap_main(int argc, char **argv) {
     sArgc = argc;
     sArgv = argv;
     pthread_attr_init(&attr);
-    pthread_attr_setstack(&attr, (void *)(uintptr_t)STACK_BASE, STACK_SIZE);
+    pthread_attr_setstack(&attr, (void *)(uintptr_t)STACK_AT, STACK_SIZE);
     if (pthread_create(&th, &attr, game_thread, NULL) != 0) {
         fprintf(stderr, "bt3: cannot start the game thread\n");
         return 2;
@@ -310,6 +320,9 @@ static void Port_LoadGameData(void) {
     size_t listSize = 0, elfSize = 0, srcSize[2] = {0, 0};
     uint64_t hash = 0xCBF29CE484222325ull, want;
     uint32_t count, i, k;
+    /* Android: the engine may have been loaded elsewhere than it was linked (android/.../loader.c), and the list has
+       the linked addresses */
+    long bias = getenv("BT3_ENGINE_BIAS") != NULL ? atol(getenv("BT3_ENGINE_BIAS")) : 0;
 #ifdef _WIN32
     long n = (long)GetModuleFileNameA(NULL, exe, sizeof(exe) - 1);
 #else
@@ -403,7 +416,7 @@ static void Port_LoadGameData(void) {
             data_fail("damaged file (list of the game's data)", NULL);
         }
         from = src[r[1]] + r[2];
-        memcpy((void *)(uintptr_t)r[0], from, r[3]);
+        memcpy((void *)(uintptr_t)(r[0] + bias), from, r[3]);
         for (k = 0; k < r[3]; k++) {
             hash = (hash ^ from[k]) * 0x100000001B3ull;
         }
@@ -543,15 +556,44 @@ __attribute__((constructor)) static void Port_MapMemory(void) {
     mallopt(M_MMAP_MAX, 0);
     mallopt(M_ARENA_MAX, 1);
 #endif
+#ifdef __ANDROID__
+    {   /* the stack: at its usual place, or anywhere free below 4 GB */
+        void *p = mmap((void *)(uintptr_t)STACK_BASE, STACK_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | fixed_flag(STACK_BASE, STACK_SIZE),
+                       -1, 0);
+        uintptr_t at;
+        if (p != (void *)(uintptr_t)STACK_BASE) {
+            if (p != MAP_FAILED) {
+                munmap(p, STACK_SIZE);
+            }
+            p = MAP_FAILED;
+            for (at = 0x02000000u; at + STACK_SIZE <= 0xFF000000u && p == MAP_FAILED; at += 0x01000000u) {
+                p = mmap((void *)at, STACK_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+                if (p != MAP_FAILED && p != (void *)at) {
+                    munmap(p, STACK_SIZE);
+                    p = MAP_FAILED;
+                }
+            }
+            if (p == MAP_FAILED) {
+                fprintf(stderr, "bt3: no room below 4 GB for the game thread's stack\n");
+                exit(2);
+            }
+            fprintf(stderr, "bt3: the game thread's stack is at %p\n", p);
+        }
+        sStackBase = (uint32_t)(uintptr_t)p;
+    }
+#else
     map(STACK_BASE, STACK_SIZE, "the game thread's stack");
+#endif
     low_region_take(); /* the region of Port_LowAlloc, now (see there) */
 #endif
 #if PORT_LP64 && defined(_WIN32)
     low_region_take();
 #endif
     map_heap();
+#ifndef __ANDROID__ /* (Android: arrays in the engine, above) */
     map(0x10000000u, 0x10000, "the hardware registers");
     map(0x12000000u, 0x2000, "the GS registers");
+#endif
 #ifdef __ANDROID__
     /* The game addresses no memory there itself (its 0x70000000 words are DMA tags), and in an Android app's process
        the system's boot image is often mapped around that address: taken if free, not required. */
@@ -606,7 +648,7 @@ static void low_region_take(void) {
             /* (no MAP_32BIT on arm64: try fixed addresses below 4 GB, 16 MB apart) */
             uintptr_t at;
             sLowArena = MAP_FAILED;
-            for (at = 0x30000000u; at + LOW_ARENA_SIZE <= 0xFF000000u && sLowArena == MAP_FAILED; at += 0x01000000u) {
+            for (at = 0x02000000u; at + LOW_ARENA_SIZE <= 0xFF000000u && sLowArena == MAP_FAILED; at += 0x01000000u) {
                 sLowArena = mmap((void *)at, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE,
                                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
                 if (sLowArena != MAP_FAILED && sLowArena != (uint8_t *)at) {

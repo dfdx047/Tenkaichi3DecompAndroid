@@ -71,12 +71,32 @@ def store_line(line, n):
     pre = f"  %p32st.{n} = addrspacecast {line[start:j]} to ptr"
     return pre, line[:start] + f"ptr %p32st.{n}" + line[j:], n
 
+HWREG = re.compile(r'inttoptr \(i(?:32|64) (\d+) to ptr addrspace\(271\)\)')
+HWREG_AREAS = ((0x10000000, 0x10010000, "gPortHwRegs"), (0x12000000, 0x12002000, "gPortGsRegs"))
+
+
+def hwreg_line(line, used):
+    """Android: the PS2's hardware registers (0x10000000 timers/DMA, 0x12000000 GS) are two arrays inside the engine
+    (plat_mem.c) instead of memory at those addresses, which an Android process may not have free."""
+    def sub(m):
+        v = int(m.group(1))
+        for lo, hi, name in HWREG_AREAS:
+            if lo <= v < hi:
+                used.add(name)
+                return f"getelementptr (i8, ptr addrspace(271) addrspacecast (ptr @{name} to ptr addrspace(271)), i32 {v - lo})"
+        return m.group(0)
+    return HWREG.sub(sub, line)
+
+
 def fix(text, stores=False):
     out, n, declared, need = [], 0, set(), {}
+    hw_used = set()
     for line in text.split("\n"):
         if "addrspace(271)" in line and (GLOBAL.match(line) or TYPEDEF.match(line)):
             out.append(data_line(line))
             continue
+        if stores and "inttoptr" in line and not line.startswith("@"):
+            line = hwreg_line(line, hw_used)
         if stores and "addrspace(27" in line and STORE.match(line):
             pre, line, n = store_line(line, n)
             if pre is not None:
@@ -140,6 +160,9 @@ def fix(text, stores=False):
     for name, (kind, ptrs, size) in need.items():
         if name not in declared:
             extra.append(f"declare void {name}(ptr, {'ptr' if kind != 'set' else 'i8'}, {size}, i1)")
+    for name in sorted(hw_used):
+        if f"@{name} = " not in text:
+            extra.append(f"@{name} = external global [0 x i8], align 65536")
     text = "\n".join(out)
     if extra:
         text += "\n" + "\n".join(extra) + "\n"

@@ -204,14 +204,13 @@ static int early_reserve(int i, uintptr_t lo, uintptr_t hi) {
 }
 
 static uintptr_t sEngineLo, sEngineHi; /* the engine's range, reserved early (0: not) */
+static intptr_t sBias;                   /* where the engine was loaded less where it was linked */
 
 __attribute__((constructor)) static void reserve_early(void) {
     uintptr_t page = (uintptr_t)sysconf(_SC_PAGESIZE);
     Dl_info info;
     early_reserve(0, 0x003BE000u & ~(page - 1), 0x03000000u); /* PS2 heap, then the game thread's stack */
     early_reserve(1, 0x05000000u, 0x0F000000u);                 /* the port's region */
-    early_reserve(2, 0x10000000u, 0x10010000u);                 /* hardware registers */
-    early_reserve(3, 0x12000000u, (0x12002000u + page - 1) & ~(page - 1)); /* GS registers */
     if (dladdr((void *)reserve_early, &info) != 0 && info.dli_fname != NULL) {
         char engine[1024];
         const char *slash = strrchr(info.dli_fname, '/');
@@ -432,6 +431,109 @@ static void custom_driver(const char *libdir, const char *driverDir, const char 
     say("custom GPU driver: %s%s", drv, driverLib);
 }
 
+
+/* ---- Moving the engine.
+   The engine is linked at 0x03000000; where that range is taken (an app's Java heap sits at different places below
+   4 GB on different devices) it is loaded in another free place below 4 GB and its own addresses are moved by the
+   difference: libbt3.so.rel (port/tools/android.py, relocations()) lists every 4-byte word that holds one. Its
+   initialisers are hidden from Android's loader and called here, after the move. */
+typedef struct { uint32_t base, count, initAddr, initSize; uint32_t *words; } EngineRel;
+static EngineRel sRel;
+
+static int read_rel(const char *path, EngineRel *r) {
+    FILE *fp = fopen(path, "rb");
+    char magic[4];
+    uint32_t hdr[5];
+    memset(r, 0, sizeof(*r));
+    if (fp == NULL) {
+        return 0;
+    }
+    if (fread(magic, 1, 4, fp) != 4 || memcmp(magic, "BT3R", 4) != 0 || fread(hdr, 4, 5, fp) != 5 || hdr[0] != 1) {
+        fclose(fp);
+        return 0;
+    }
+    r->base = hdr[1];
+    r->count = hdr[2];
+    r->initAddr = hdr[3];
+    r->initSize = hdr[4];
+    r->words = malloc((size_t)r->count * 4);
+    if (r->words == NULL || fread(r->words, 4, r->count, fp) != r->count) {
+        free(r->words);
+        r->words = NULL;
+        fclose(fp);
+        return 0;
+    }
+    fclose(fp);
+    return 1;
+}
+
+/* A free place below 4 GB for `size` bytes, 64 KB aligned, reserved (address space only). 0 if none. */
+static uintptr_t find_low(size_t size) {
+    uintptr_t at;
+    for (at = 0x02000000u; at + size <= 0xF0000000u; at += 0x00100000u) /* (above the PS2 heap) */ {
+        void *p = mmap((void *)at, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+        if (p == (void *)at) {
+            return at;
+        }
+        if (p != MAP_FAILED) {
+            munmap(p, size);
+        }
+    }
+    return 0;
+}
+
+/* Adds `bias` to the listed words; the pages are made writable for it and given back their segment's protection. */
+static void move_engine(const char *engine, const EngineRel *r, intptr_t bias) {
+    uintptr_t page = (uintptr_t)sysconf(_SC_PAGESIZE);
+    Elf64_Ehdr eh;
+    Elf64_Phdr ph[32];
+    int fd = open(engine, O_RDONLY | O_CLOEXEC), n = 0, i;
+    uint32_t k;
+    if (fd >= 0 && pread(fd, &eh, sizeof(eh), 0) == sizeof(eh) && eh.e_phnum <= 32 &&
+        pread(fd, ph, (size_t)eh.e_phnum * sizeof(Elf64_Phdr), (off_t)eh.e_phoff) == (ssize_t)(eh.e_phnum * sizeof(Elf64_Phdr))) {
+        n = eh.e_phnum;
+    }
+    if (fd >= 0) {
+        close(fd);
+    }
+    for (i = 0; i < n; i++) { /* every loaded segment writable for the moment */
+        if (ph[i].p_type == PT_LOAD) {
+            uintptr_t lo = (ph[i].p_vaddr + bias) & ~(page - 1), hi = (ph[i].p_vaddr + ph[i].p_memsz + bias + page - 1) & ~(page - 1);
+            mprotect((void *)lo, hi - lo, PROT_READ | PROT_WRITE | ((ph[i].p_flags & PF_X) ? PROT_EXEC : 0));
+        }
+    }
+    for (k = 0; k < r->count; k++) {
+        uint32_t *w = (uint32_t *)(uintptr_t)(r->words[k] + bias);
+        *w = (uint32_t)(*w + (uint32_t)bias);
+    }
+    for (i = 0; i < n; i++) { /* the segments' own protection, and the read-only part after relocation (RELRO) */
+        if (ph[i].p_type == PT_LOAD) {
+            uintptr_t lo = (ph[i].p_vaddr + bias) & ~(page - 1), hi = (ph[i].p_vaddr + ph[i].p_memsz + bias + page - 1) & ~(page - 1);
+            mprotect((void *)lo, hi - lo, ((ph[i].p_flags & PF_R) ? PROT_READ : 0) | ((ph[i].p_flags & PF_W) ? PROT_WRITE : 0) |
+                                              ((ph[i].p_flags & PF_X) ? PROT_EXEC : 0));
+        }
+    }
+    for (i = 0; i < n; i++) {
+        if (ph[i].p_type == PT_GNU_RELRO) {
+            uintptr_t lo = (ph[i].p_vaddr + bias) & ~(page - 1), hi = (ph[i].p_vaddr + ph[i].p_memsz + bias) & ~(page - 1);
+            if (hi > lo) {
+                mprotect((void *)lo, hi - lo, PROT_READ);
+            }
+        }
+    }
+}
+
+static void run_initialisers(const EngineRel *r, intptr_t bias) {
+    extern char **environ;
+    uint32_t i;
+    for (i = 0; i < r->initSize / 8; i++) {
+        void (*fn)(int, char **, char **) = *(void (**)(int, char **, char **))(uintptr_t)(r->initAddr + bias + i * 8);
+        if (fn != NULL && (uintptr_t)fn != (uintptr_t)-1) {
+            fn(0, NULL, environ);
+        }
+    }
+}
+
 int SDL_main(int argc, char *argv[]) {
     const char *dir = argc > 1 ? argv[1] : ".";
     const char *libdir = argc > 2 ? argv[2] : ".";
@@ -496,31 +598,71 @@ int SDL_main(int argc, char *argv[]) {
     lo &= ~(page - 1);
     hi = (hi + page - 1) & ~(page - 1);
     say("early reservations: %s", sEarlyList[0] ? sEarlyList : "(none)");
-    if (sEngineLo == lo && sEngineHi == hi) {
-        region = (void *)lo; /* (claimed when this library was loaded) */
-    } else {
-        region = mmap((void *)lo, hi - lo, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+    {
+        char relpath[1100];
+        int haveRel;
+        snprintf(relpath, sizeof(relpath), "%s/libbt3.so.rel", dir);
+        haveRel = read_rel(relpath, &sRel);
+        if (sEngineLo == lo && sEngineHi == hi) {
+            region = (void *)lo; /* (claimed when this library was loaded) */
+        } else {
+            region = mmap((void *)lo, hi - lo, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+        }
+        if (region == (void *)lo && getenv("BT3_FORCE_MOVE") != NULL && atoi(getenv("BT3_FORCE_MOVE")) != 0) {
+            /* (testing the move on a device where the usual range is free: bt3_env.txt BT3_FORCE_MOVE=1) */
+            void *keep = region; /* held while another place is found, so it is not found again */
+            region = (void *)find_low(hi - lo);
+            munmap(keep, hi - lo);
+            say("BT3_FORCE_MOVE: the engine goes to %p", region);
+            if (region == NULL || !haveRel) {
+                say("cannot move the engine");
+                return 1;
+            }
+        } else if (region != (void *)lo) {
+            if (region != MAP_FAILED) {
+                munmap(region, hi - lo);
+            }
+            say("the engine's usual range 0x%lx-0x%lx is taken in this process", (unsigned long)lo, (unsigned long)hi);
+            log_low_maps();
+            if (!haveRel) {
+                say("no relocation list (%s): the engine cannot be moved", relpath);
+                return 1;
+            }
+            region = (void *)find_low(hi - lo);
+            if (region == NULL) {
+                say("no free place below 4 GB for the engine (%lu KB)", (unsigned long)((hi - lo) >> 10));
+                return 1;
+            }
+        }
+        sBias = (intptr_t)((uintptr_t)region - lo);
     }
-    if (region != (void *)lo) {
-        say("the engine's address range 0x%lx-0x%lx is taken in this process (%s)", (unsigned long)lo, (unsigned long)hi,
-            region == MAP_FAILED ? strerror(errno) : "mapped elsewhere");
-        log_low_maps();
-        return 1;
+    if (sBias == 0) {
+        log_low_maps(); /* (what the game's own fixed regions will have to fit around: plat_mem.c) */
     }
-    log_low_maps(); /* (what the game's own fixed regions will have to fit around: plat_mem.c) */
     {
         android_dlextinfo info;
+        char biasText[32];
         memset(&info, 0, sizeof(info));
         info.flags = ANDROID_DLEXT_RESERVED_ADDRESS;
         info.reserved_addr = region;
         info.reserved_size = hi - lo;
-        say("loading the engine at 0x%lx (%lu KB)", (unsigned long)lo, (unsigned long)((hi - lo) >> 10));
+        say("loading the engine at 0x%lx (%lu KB)%s", (unsigned long)(uintptr_t)region, (unsigned long)((hi - lo) >> 10),
+            sBias != 0 ? ", moved" : "");
         handle = android_dlopen_ext(engine, RTLD_NOW | RTLD_GLOBAL, &info);
+        snprintf(biasText, sizeof(biasText), "%ld", (long)sBias);
+        setenv("BT3_ENGINE_BIAS", biasText, 1); /* plat_mem.c: where the game's data tables are now */
     }
     if (handle == NULL) {
         say("the engine did not load: %s", dlerror());
         log_low_maps();
         return 1;
+    }
+    if (sRel.words != NULL) {
+        if (sBias != 0) {
+            move_engine(engine, &sRel, sBias);
+            say("moved %u addresses of the engine by 0x%lx", sRel.count, (unsigned long)sBias);
+        }
+        run_initialisers(&sRel, sBias);
     }
     if (getenv("BT3_CRASHLOG") == NULL || atoi(getenv("BT3_CRASHLOG")) != 0) {
         crash_handlers();
@@ -538,8 +680,8 @@ int SDL_main(int argc, char *argv[]) {
             for (i = 0; i < eh.e_phnum; i++) {
                 if (pread(fd, &ph, sizeof(ph), (off_t)(eh.e_phoff + (uint64_t)i * eh.e_phentsize)) == sizeof(ph) &&
                     ph.p_type == PT_LOAD && (ph.p_flags & PF_X)) {
-                    sCodeLo = ph.p_vaddr;
-                    sCodeHi = ph.p_vaddr + ph.p_memsz;
+                    sCodeLo = ph.p_vaddr + sBias;
+                    sCodeHi = ph.p_vaddr + ph.p_memsz + sBias;
                 }
             }
         }

@@ -225,14 +225,16 @@ def rtdir():
     return out
 
 
-def link_cmd(objs, extra):
+def link_cmd(objs, extra, out=None, base=None):
+    out = out or EXE
+    base = BASE if base is None else base
     return [str(LLVM / "bin/clang++")] + TARGET + [
-        "-fuse-ld=lld", "-no-pie", "-nostartfiles", "-o", str(EXE)] + extra + objs + [
+        "-fuse-ld=lld", "-no-pie", "-nostartfiles", "-o", str(out)] + extra + objs + [
         str(SYSROOT / f"usr/lib/aarch64-linux-android/{API}/crtbegin_so.o"),
         f"-L{SDL3 / 'lib'}", f"-L{rtdir()}", "-lSDL3", "-llog", "-landroid", "-lm", "-ldl",
         "-static-libstdc++",
         str(SYSROOT / f"usr/lib/aarch64-linux-android/{API}/crtend_so.o"),
-        f"-Wl,--image-base={BASE:#x}", "-Wl,--no-dynamic-linker", "-Wl,--export-dynamic", "-Wl,--hash-style=both",
+        f"-Wl,--image-base={base:#x}", "-Wl,--no-dynamic-linker", "-Wl,--export-dynamic", "-Wl,--hash-style=both",
         "-Wl,-z,max-page-size=16384", "-Wl,--wrap=main", "-Wl,--wrap=Progress_Main", "-Wl,--defsym=D_3BE71C=0x3BE71C",
         "-Wl,--unresolved-symbols=report-all", "-Wl,--error-limit=0", f"-Wl,-Map={EXE}.map", "-Wl,--build-id=sha1"]
 
@@ -261,7 +263,78 @@ def link():
         print("  " + l[-200:])
     if r.returncode:
         return False
+    # the same program linked RELOC_DELTA higher: the words that differ by exactly that are the program's own
+    # addresses, which the loader moves when the program cannot be loaded at BASE (relocations())
+    alt = OUT / "libbt3.alt.so"
+    r = run(link_cmd(objs, [str(stub_o)] if need else [], out=alt, base=BASE + RELOC_DELTA))
+    if r.returncode:
+        print("second link FAILED", r.stderr[-600:])
+        return False
+    if not relocations(EXE, alt):
+        return False
+    alt.unlink()
     finish()
+    return True
+
+
+RELOC_DELTA = 0x10000000
+SKIP_SECTIONS = {".dynsym", ".gnu.version", ".gnu.version_r", ".gnu.version_d", ".gnu.hash", ".hash", ".dynstr", ".rela.dyn",
+                 ".rela.plt", ".dynamic", ".note.android.ident", ".note.gnu.build-id"}
+
+
+def elf_sections(data):
+    shoff, = struct.unpack_from("<Q", data, 0x28)
+    shentsize, shnum, shstrndx = struct.unpack_from("<HHH", data, 0x3A)
+    raw = [struct.unpack_from("<IIQQQQIIQQ", data, shoff + i * shentsize) for i in range(shnum)]
+    strtab = raw[shstrndx][4]
+    out = {}
+    for sh in raw:
+        name = data[strtab + sh[0]:data.index(b"\0", strtab + sh[0])].decode()
+        out[name] = {"type": sh[1], "flags": sh[2], "addr": sh[3], "off": sh[4], "size": sh[5]}
+    return out
+
+
+def relocations(exe, alt):
+    """libbt3.so.rel: every 4-byte word of the program that holds one of its own addresses (32-bit game pointers and the
+    low half of 64-bit ones: the program is below 4 GB), found by comparing two links; the loader adds the load bias to
+    them. Also where the program's initialisers are: the loader calls them itself after moving (finish() hides them from
+    Android's loader, which would call them before)."""
+    a, b = exe.read_bytes(), alt.read_bytes()
+    secs, secs_b = elf_sections(a), elf_sections(b)
+    for name, sec in secs.items():  # (the allocated part must be laid out the same; names in .strtab may differ)
+        if sec["flags"] & 2 and (name not in secs_b or secs_b[name]["off"] != sec["off"] or secs_b[name]["size"] != sec["size"]):
+            print("relocations: the two links are laid out differently at", name)
+            return False
+    skip = set()
+    for name in (".rela.dyn", ".rela.plt"):  # slots Android's loader writes itself
+        sec = secs.get(name)
+        if sec:
+            for k in range(sec["size"] // 24):
+                off, = struct.unpack_from("<Q", a, sec["off"] + k * 24)
+                skip.add(off)
+    words, odd = [], 0
+    for name, sec in secs.items():
+        if not (sec["flags"] & 2) or sec["type"] == 8 or name in SKIP_SECTIONS:  # allocated, with bytes in the file
+            continue
+        for k in range(0, sec["size"] - 3, 4):
+            o = sec["off"] + k
+            x, = struct.unpack_from("<I", a, o)
+            y, = struct.unpack_from("<I", b, o)
+            if x == y:
+                continue
+            va = sec["addr"] + k
+            if (y - x) & 0xFFFFFFFF == RELOC_DELTA and va not in skip and va - 4 not in skip:
+                words.append(va)
+            elif va not in skip and va - 4 not in skip:
+                odd += 1
+    if odd:
+        print(f"relocations: {odd} words differ by something else than the move (not moved)")
+    init = secs.get(".init_array", {"addr": 0, "size": 0})
+    rel = bytearray(b"BT3R" + struct.pack("<IIIII", 1, BASE, len(words), init["addr"], init["size"]))
+    for w in words:
+        rel += struct.pack("<I", w)
+    pathlib.Path(str(exe) + ".rel").write_bytes(rel)
+    print(f"relocations: {len(words)} words -> {exe.name}.rel")
     return True
 
 
@@ -335,6 +408,11 @@ def finish():
         k = file_offset(EXE, syms["gPortDataStripped"])
         image[k:k + 4] = struct.pack("<I", 1)
         print(f"data list: {len(records)} records -> {EXE.name}.dat")
+    dyn = elf_sections(bytes(image))[".dynamic"]
+    for k in range(dyn["size"] // 16):  # DT_INIT_ARRAY(SZ) -> tags Android's loader ignores: the loader calls them (relocations())
+        tag, = struct.unpack_from("<q", image, dyn["off"] + k * 16)
+        if tag in (25, 27):
+            struct.pack_into("<q", image, dyn["off"] + k * 16, 0x6FFFF000 + tag)
     struct.pack_into("<H", image, 0x10, 3)  # e_type: ET_EXEC -> ET_DYN (loaded at its own addresses, android/app/src/main/cpp)
     EXE.write_bytes(image)
 
@@ -402,6 +480,8 @@ def install():
     assets.mkdir(parents=True, exist_ok=True)
     if pathlib.Path(str(EXE) + ".dat").exists():
         shutil.copy(str(EXE) + ".dat", assets / "libbt3.so.dat")
+    if pathlib.Path(str(EXE) + ".rel").exists():
+        shutil.copy(str(EXE) + ".rel", assets / "libbt3.so.rel")
     java = SDL3 / "java/org"
     if java.exists():
         shutil.copytree(java, APP / "java/org", dirs_exist_ok=True)
