@@ -515,6 +515,13 @@ static void vk_frame_end(void) {
             GsDraw_FullscreenToggle();
         }
     }
+#ifdef __ANDROID__
+    if (gGsFrame % 300 == 0) { /* a heartbeat in the log (adb logcat -s bt3): is the game running, and drawing? */
+        extern unsigned gPortVBlanks;
+        fprintf(stderr, "bt3: alive: frame %u, game blank %u, %u draws, %u vertices, %d targets, %d textures\n", gGsFrame, gPortVBlanks,
+                gsDrawCount, gsVertCount + gsVuVertCount, gsTargetCount, gsTexCount);
+    }
+#endif
     if (getenv("BT3_GS_VERBOSE") != NULL && gGsFrame % 30 == 0) {
         fprintf(stderr, "gpu: frame %u: %u draws, %u vertices, %d targets, %d textures, %d pipelines, %u primitives of PS2-only passes dropped, %u native effects\n",
                 gGsFrame, gsDrawCount, gsVertCount + gsVuVertCount, gsTargetCount, gsTexCount, sPipeCount, gsSkipped, gsNative);

@@ -171,6 +171,22 @@ int SDL_main(int argc, char *argv[]) {
     snprintf(exe, sizeof(exe), "%s/libbt3.so", dir); /* plat_mem.c reads <BT3_EXE>.dat: the app put it there */
     setenv("BT3_EXE", exe, 1);
     setenv("BT3_GS", "gpu", 0);
+    {   /* bt3_env.txt in the game folder: NAME=value lines, the engine's switches for testing (BT3_GS_VERBOSE=1, ...) */
+        char line[512];
+        FILE *fp = fopen("bt3_env.txt", "r");
+        while (fp != NULL && fgets(line, sizeof(line), fp) != NULL) {
+            char *eq = strchr(line, '=');
+            line[strcspn(line, "\r\n")] = '\0';
+            if (line[0] != '#' && eq != NULL) {
+                *eq = '\0';
+                setenv(line, eq + 1, 1);
+                say("env %s=%s", line, eq + 1);
+            }
+        }
+        if (fp != NULL) {
+            fclose(fp);
+        }
+    }
     setenv("SDL_VIDEO_DRIVER", "android", 0);
     setenv("SDL_ANDROID_TRAP_BACK_BUTTON", "1", 0); /* the back button opens the settings (gs_gpu.c), it does not end the game */
 

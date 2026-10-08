@@ -1113,6 +1113,9 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
     sDisplaySetting = Port_Setting("display", 0);
     pick = getenv("BT3_DISPLAY") != NULL ? atoi(getenv("BT3_DISPLAY")) : sDisplaySetting;
     sFullscreen = (getenv("BT3_FULLSCREEN") != NULL ? atoi(getenv("BT3_FULLSCREEN")) : Port_Setting("fullscreen", 0)) != 0;
+#ifdef __ANDROID__
+    sFullscreen = 1; /* (the whole screen, without the system's bars) */
+#endif
     sWantAspect = want;
     SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "Tenkaichi3Decomp");
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, w);
