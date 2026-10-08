@@ -403,8 +403,15 @@ static void Port_LoadGameData(void) {
 
 #if PORT_LP64
 /* (between the GS registers at 0x12000000 and the program at 0x20000000: see the note at STACK_BASE) */
+#ifdef __ANDROID__
+/* Android: an app's Java heap is reserved from 0x12C00000 up, so the engine (linked at 0x03000000,
+   port/tools/android.py) and this region sit in the free space below it: 0x05000000..0x0F000000. */
+#define LOW_ARENA_BASE 0x05000000u
+#define LOW_ARENA_SIZE 0x0A000000u
+#else
 #define LOW_ARENA_BASE 0x13000000u
 #define LOW_ARENA_SIZE 0x0C000000u /* address space only: pages are taken as they are first used */
+#endif
 enum { LOW_SIZES = 256 };
 PORT_HOST static uint8_t *sLowArena = NULL; /* where the region is: fixed once it is taken, not game state */
 static uint8_t *sLowNext;
@@ -525,7 +532,16 @@ __attribute__((constructor)) static void Port_MapMemory(void) {
     map_heap();
     map(0x10000000u, 0x10000, "the hardware registers");
     map(0x12000000u, 0x2000, "the GS registers");
+#ifdef __ANDROID__
+    /* The game addresses no memory there itself (its 0x70000000 words are DMA tags), and in an Android app's process
+       the system's boot image is often mapped around that address: taken if free, not required. */
+    if (mmap((void *)(uintptr_t)0x70000000u, 0x4000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) !=
+        (void *)(uintptr_t)0x70000000u) {
+        fprintf(stderr, "bt3: the scratchpad's address is taken (not needed)\n");
+    }
+#else
     map(0x70000000u, 0x4000, "the scratchpad");
+#endif
     gPortStage = "memory ready, before the program's main";
 }
 

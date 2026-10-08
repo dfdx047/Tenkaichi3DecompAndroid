@@ -2,7 +2,8 @@
  * libmain.so: what SDL's Android activity calls (SDL_main). It starts the engine, libbt3.so.
  *
  * The engine is the PC port's 64-bit program built for arm64 (port/tools/android.py): the game keeps addresses in
- * 4 bytes, so its code and data must lie where they were linked, at 0x20000000, below 4 GB. The program is linked
+ * 4 bytes, so its code and data must lie where they were linked, at 0x03000000, below 4 GB (and below the Java
+ * heap, which an app's process has from 0x12C00000 up). The program is linked
  * at that address and marked as a shared object; this reserves the address range and asks Android's own loader
  * to load the program exactly there (android_dlopen_ext with ANDROID_DLEXT_RESERVED_ADDRESS), so the loader's
  * load bias is zero and every address in the program is the one it was linked with. The loader also resolves the

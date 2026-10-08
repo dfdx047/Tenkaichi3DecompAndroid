@@ -10,7 +10,7 @@ What is different from the PC build:
     the same repairs as for x86-64
   - the PS2's float arithmetic: software float through the soft ABI (`-mabi=aapcs-soft -mgeneral-regs-only`,
     clang 19 or newer), so every float operation still goes to port/src/softfloat_ps2.c
-  - the program: linked at 0x20000000 like the PC's, without a program interpreter, and marked as a shared object
+  - the program: linked at 0x03000000 (the PC's is at 0x20000000, where an Android app has its Java heap), without a program interpreter, and marked as a shared object
     afterwards, so Android's own loader can load it into a region the app reserved at that address (the Android
     side: android/app/src/main/cpp). Code is position-independent (GOT access to the system libraries' data) but
     the link is not: the game's 32-bit addresses of symbols in its data tables are fixed at link time.
@@ -56,7 +56,7 @@ OBJ = OUT / "obj"
 DATA = OUT / "obj_data"
 GEN = OUT / "gen"
 EXE = OUT / "libbt3.so"
-BASE = 0x20000000
+BASE = int(os.environ.get("BT3_ANDROID_BASE", "0x03000000"), 0)  # below an app's Java heap (0x12C00000 up): plat_mem.c
 
 CLANG = str(LLVM / "bin/clang")
 LLC = str(LLVM / "bin/llc")
