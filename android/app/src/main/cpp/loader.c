@@ -33,6 +33,8 @@
 #include <sys/system_properties.h>
 #include <dirent.h>
 #include <sys/uio.h>
+#include <signal.h>
+#include <ucontext.h>
 #include <unistd.h>
 
 #ifndef MAP_FIXED_NOREPLACE
@@ -173,13 +175,66 @@ static void name_of(uintptr_t pc, char *out, size_t size) {
 
 static void *sEngine;
 
+/* A crash: where it happened, in the log (logcat -s bt3 and bt3_log.txt), with the engine's function names, then
+   Android's own handler (the tombstone) as usual. */
+static struct sigaction sOldAct[32];
+
+static void on_crash(int sig, siginfo_t *si, void *ctx) {
+    ucontext_t *uc = ctx;
+    char nm[160];
+    uintptr_t fp, frame[2];
+    int i;
+
+    name_of((uintptr_t)uc->uc_mcontext.pc, nm, sizeof(nm));
+    say("CRASH: signal %d (code %d) at %s, fault address 0x%lx", sig, si->si_code, nm, (unsigned long)(uintptr_t)si->si_addr);
+    name_of((uintptr_t)uc->uc_mcontext.regs[30], nm, sizeof(nm));
+    say("  lr %s", nm);
+    for (i = 0; i < 31; i += 4) {
+        say("  x%-2d %016llx %016llx %016llx %016llx", i, (unsigned long long)uc->uc_mcontext.regs[i],
+            (unsigned long long)(i + 1 < 31 ? uc->uc_mcontext.regs[i + 1] : 0), (unsigned long long)(i + 2 < 31 ? uc->uc_mcontext.regs[i + 2] : 0),
+            (unsigned long long)(i + 3 < 31 ? uc->uc_mcontext.regs[i + 3] : 0));
+    }
+    fp = (uintptr_t)uc->uc_mcontext.regs[29];
+    for (i = 0; i < 24 && fp != 0; i++) { /* the frame-pointer chain: [fp] = caller's fp, [fp + 8] = return address */
+        struct iovec lo = {frame, sizeof(frame)}, re = {(void *)fp, sizeof(frame)};
+        if (process_vm_readv(getpid(), &lo, 1, &re, 1, 0) != (ssize_t)sizeof(frame) || frame[1] == 0) {
+            break;
+        }
+        name_of(frame[1], nm, sizeof(nm));
+        say("  #%02d %s", i, nm);
+        if (frame[0] <= fp) {
+            break;
+        }
+        fp = frame[0];
+    }
+    if (sLog != NULL) {
+        fflush(sLog);
+    }
+    sigaction(sig, &sOldAct[sig], NULL); /* returning runs the instruction again, now into Android's handler */
+}
+
+static void crash_handlers(void) {
+    static const int sigs[] = {SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTRAP};
+    struct sigaction sa;
+    size_t i;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = on_crash;
+    sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
+    sigemptyset(&sa.sa_mask);
+    for (i = 0; i < sizeof(sigs) / sizeof(sigs[0]); i++) {
+        sigaction(sigs[i], &sa, &sOldAct[sigs[i]]);
+    }
+}
+
 /* BT3_PEEK: game variables in the watchdog's report. Comma-separated items "name+off" (the 32-bit word at the
    symbol plus off) or "name*off" (the symbol holds a 4-byte game pointer: the word at that pointer plus off). */
 static void peek(void) {
-    const char *spec = getenv("BT3_PEEK") != NULL ? getenv("BT3_PEEK") :
-        "gMcFlow*0x20,gMcFlow*0x24,gMcFlow*0x28,gMcFlow*0x2C,gMcFlow*0x30,gMcFlow*0x39DE0,gBootCard*0x8,gBootCard*0x10";
+    const char *spec = getenv("BT3_PEEK");
     char buf[1024], line[2048], nm[160], *item, *save = NULL;
     size_t len = 0;
+    if (spec == NULL || spec[0] == '\0') {
+        return; /* (nothing asked for) */
+    }
     snprintf(buf, sizeof(buf), "%s", spec);
     line[0] = '\0';
     for (item = strtok_r(buf, ",", &save); item != NULL && len < sizeof(line) - 200; item = strtok_r(NULL, ",", &save)) {
@@ -194,12 +249,26 @@ static void peek(void) {
             len += (size_t)snprintf(line + len, sizeof(line) - len, " %s=?", item);
             continue;
         }
-        at = (op != NULL && *op == '*') ? (uintptr_t)*sym + off : (uintptr_t)sym + off;
+        at = (uintptr_t)sym + off;
+        if (op != NULL && *op == '*') {
+            uint32_t p32 = 0;
+            struct iovec lo = {&p32, 4}, re = {sym, 4};
+            if (process_vm_readv(getpid(), &lo, 1, &re, 1, 0) != 4) {
+                continue;
+            }
+            at = (uintptr_t)p32 + off;
+        }
         if (at < 0x1000 || at >= 0x100000000ul) {
             len += (size_t)snprintf(line + len, sizeof(line) - len, " %s=(null)", item);
             continue;
         }
-        v = *(volatile uint32_t *)at;
+        {   /* read through the kernel: a pointer that is stale or not yet set must not bring the game down */
+            struct iovec lo = {&v, 4}, re = {(void *)at, 4};
+            if (process_vm_readv(getpid(), &lo, 1, &re, 1, 0) != 4) {
+                len += (size_t)snprintf(line + len, sizeof(line) - len, " %s=(unmapped 0x%lx)", item, (unsigned long)at);
+                continue;
+            }
+        }
         if (v >= sCodeLo && v < sCodeHi) {
             name_of(v, nm, sizeof(nm));
             len += (size_t)snprintf(line + len, sizeof(line) - len, " %s=%s", item, nm);
@@ -361,6 +430,9 @@ int SDL_main(int argc, char *argv[]) {
         say("the engine did not load: %s", dlerror());
         log_low_maps();
         return 1;
+    }
+    if (getenv("BT3_CRASHLOG") == NULL || atoi(getenv("BT3_CRASHLOG")) != 0) {
+        crash_handlers();
     }
     entry = (int (*)(int, char **))dlsym(handle, "__wrap_main");
     if (entry == NULL) {
