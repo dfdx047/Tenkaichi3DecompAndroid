@@ -12,6 +12,13 @@
  *   0x70000000              the 16 KB scratchpad.
  */
 #include "port_host.h"
+/* The 64-bit builds (x86-64 PC, arm64 Android): the game's pointers stay 4 bytes (port/tools/ptr32.py), so all of
+   its memory, the program included, has to lie below 4 GB. */
+#if defined(__x86_64__) || defined(__aarch64__)
+#define PORT_LP64 1
+#else
+#define PORT_LP64 0
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -167,13 +174,25 @@ int __wrap_main(int argc, char **argv) {
 /* -------------------------------------------------------------------------------------------------------- Linux */
 #include <sys/mman.h>
 #include <unistd.h>
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
 
+#ifndef MAP_FIXED_NOREPLACE
+#define MAP_FIXED_NOREPLACE 0x100000
+#endif
 static void map(uint32_t addr, uint32_t size, const char *what) {
-    void *p = mmap((void *)(uintptr_t)addr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE,
+    /* whole pages around the region (the system's pages may be 16 KB: an Android device's) */
+    uint32_t page = (uint32_t)sysconf(_SC_PAGESIZE), base = addr & ~(page - 1), len = (addr - base + size + page - 1) & ~(page - 1);
+    void *p = mmap((void *)(uintptr_t)base, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE,
                    -1, 0);
 
-    if (p != (void *)(uintptr_t)addr) {
+    if (p != (void *)(uintptr_t)base) {
         fprintf(stderr, "bt3: cannot map %s at 0x%08X\n", what, addr);
+#ifdef __ANDROID__
+        /* (straight to the system log too: the process ends before the app's log thread reads stderr) */
+        __android_log_print(6 /* ANDROID_LOG_ERROR */, "bt3", "cannot map %s at 0x%08X", what, addr);
+#endif
         exit(2);
     }
 }
@@ -182,7 +201,7 @@ static void map_heap(void) {
     map(HEAP_BASE, HEAP_END - HEAP_BASE, "the game heap");
 }
 
-#ifdef __x86_64__
+#if PORT_LP64
 /* The 64-bit build: the game's pointers are still 4 bytes wide (port/tools/ptr32.py), so everything the game can
    point at has to lie below 4 GB.
      - the program itself: linked at 0x20000000 (port/tools/link.py), clear of the regions above;
@@ -279,7 +298,8 @@ static void Port_LoadGameData(void) {
 #ifdef _WIN32
     long n = (long)GetModuleFileNameA(NULL, exe, sizeof(exe) - 1);
 #else
-    long n = (long)readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    long n = getenv("BT3_EXE") != NULL ? (long)snprintf(exe, sizeof(exe), "%s", getenv("BT3_EXE"))
+                                        : (long)readlink("/proc/self/exe", exe, sizeof(exe) - 1);
 #endif
 
     if (n <= 0 || n >= (long)sizeof(exe) - 1) {
@@ -381,7 +401,7 @@ static void Port_LoadGameData(void) {
     }
 }
 
-#if defined(__x86_64__)
+#if PORT_LP64
 /* (between the GS registers at 0x12000000 and the program at 0x20000000: see the note at STACK_BASE) */
 #define LOW_ARENA_BASE 0x13000000u
 #define LOW_ARENA_SIZE 0x0C000000u /* address space only: pages are taken as they are first used */
@@ -400,7 +420,7 @@ static volatile int sLowLock;
    blocks of Port_LowAlloc hold what the game was handed by address (file handles, sound buffers), and the
    allocator's own variables say which of them are in use. Also where the game thread's stack ends. */
 uint32_t Port_LowRegionSize(void) {
-#if defined(__x86_64__)
+#if PORT_LP64
     return LOW_ARENA_SIZE;
 #else
     return 0;
@@ -416,7 +436,7 @@ void Port_LowFree(void *addr);
    compiled with 32-bit pointers and must not be handed a host function's pointer result. 0: not available
    (the 32-bit program, whose blocks are the C library's and cannot be told from the heap's by address). */
 unsigned Port_GameBigAlloc(int size) {
-#if defined(__x86_64__)
+#if PORT_LP64
     return (unsigned)(uintptr_t)Port_LowAlloc((size_t)size);
 #else
     (void)size;
@@ -426,7 +446,7 @@ unsigned Port_GameBigAlloc(int size) {
 
 /* 1 if `addr` was such a block (it is given back); 0: it is the game heap's (Heap_Free goes on). */
 int Port_GameBigFree(unsigned addr) {
-#if defined(__x86_64__)
+#if PORT_LP64
     if (sLowArena != NULL && addr >= (unsigned)(uintptr_t)sLowArena && addr - (unsigned)(uintptr_t)sLowArena < LOW_ARENA_SIZE) {
         Port_LowFree((void *)(uintptr_t)addr);
         return 1;
@@ -439,7 +459,7 @@ int Port_GameBigFree(unsigned addr) {
 
 int Port_StateExtra(void **p, size_t *n, int max) {
     int k = 0;
-#if defined(__x86_64__)
+#if PORT_LP64
     if (max >= 4 && sLowArena != NULL) {
         p[k] = &sLowNext; n[k++] = sizeof(sLowNext);
         p[k] = sLowList; n[k++] = sizeof(sLowList);
@@ -452,7 +472,7 @@ int Port_StateExtra(void **p, size_t *n, int max) {
     return k;
 }
 uint8_t *Port_GameStackTop(void) {
-#if defined(__x86_64__)
+#if PORT_LP64
     return sGameStackTop;
 #else
     return NULL;
@@ -465,7 +485,7 @@ void Port_HeapRegion(uint8_t **base, uint32_t *size) {
     *size = HEAP_END - HEAP_BASE;
 }
 
-#if defined(__x86_64__)
+#if PORT_LP64
 static void low_region_take(void);
 #endif
 __attribute__((constructor)) static void Port_MapMemory(void) {
@@ -491,13 +511,15 @@ __attribute__((constructor)) static void Port_MapMemory(void) {
     gPortStage = "reading the game's programs from gamedata";
     Port_LoadGameData();
     gPortStage = "reserving the game's memory";
-#if defined(__x86_64__) && !defined(_WIN32)
+#if PORT_LP64 && !defined(_WIN32)
+#ifndef __ANDROID__
     mallopt(M_MMAP_MAX, 0);
     mallopt(M_ARENA_MAX, 1);
+#endif
     map(STACK_BASE, STACK_SIZE, "the game thread's stack");
     low_region_take(); /* the region of Port_LowAlloc, now (see there) */
 #endif
-#if defined(__x86_64__) && defined(_WIN32)
+#if PORT_LP64 && defined(_WIN32)
     low_region_take();
 #endif
     map_heap();
@@ -522,7 +544,7 @@ void *Port_Malloc(uint32_t size) {
 /* Memory the port hands to the game by address (file handles, the "second processor's" memory): zeroed, and below
    4 GB in the 64-bit build, where the game keeps such an address in 4 bytes. The C library's malloc is not safe
    for this there: it moves to mappings far above 4 GB whenever the break area cannot grow. */
-#if defined(__x86_64__)
+#if PORT_LP64
 /* Takes the region of Port_LowAlloc. At the program's start (Port_MapMemory), before anything else can sit at its
    address and before any state is saved: a state restored to before the region existed would otherwise take it a
    second time, somewhere else. */
@@ -542,7 +564,21 @@ static void low_region_take(void) {
         sLowArena = mmap((void *)(uintptr_t)LOW_ARENA_BASE, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE,
                          MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
         if (sLowArena == MAP_FAILED || sLowArena != (uint8_t *)(uintptr_t)LOW_ARENA_BASE) { /* taken: anywhere below 4 GB */
+#ifdef MAP_32BIT
             sLowArena = mmap(NULL, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_32BIT, -1, 0);
+#else
+            /* (no MAP_32BIT on arm64: try fixed addresses below 4 GB, 16 MB apart) */
+            uintptr_t at;
+            sLowArena = MAP_FAILED;
+            for (at = 0x30000000u; at + LOW_ARENA_SIZE <= 0xFF000000u && sLowArena == MAP_FAILED; at += 0x01000000u) {
+                sLowArena = mmap((void *)at, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE,
+                                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+                if (sLowArena != MAP_FAILED && sLowArena != (uint8_t *)at) {
+                    munmap(sLowArena, LOW_ARENA_SIZE);
+                    sLowArena = MAP_FAILED;
+                }
+            }
+#endif
         }
         if (sLowArena == MAP_FAILED) {
             fprintf(stderr, "bt3: no memory below 4 GB for the port's own blocks\n");
@@ -555,7 +591,7 @@ static void low_region_take(void) {
 #endif
 
 void *Port_LowAlloc(size_t size) {
-#if defined(__x86_64__)
+#if PORT_LP64
     /* From one region at a fixed address, handed out in order, freed blocks reused by size (last freed first).
        The addresses end up in the game's memory (file handles, sound buffers); with the system choosing them they
        differed from run to run, and so did the game's state. This way they depend only on the order of the
@@ -614,7 +650,7 @@ void *Port_LowAlloc(size_t size) {
 }
 
 void Port_LowFree(void *addr) {
-#if defined(__x86_64__)
+#if PORT_LP64
     if (addr != NULL) {
         uint64_t *p = (uint64_t *)addr - 2, total = p[0];
         int i;

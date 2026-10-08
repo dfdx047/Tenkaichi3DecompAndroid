@@ -13,9 +13,9 @@ on:
   push:
     branches: [main]
     tags: ["android-v*"]
-    paths: ["android/**", ".github/workflows/android.yml"]
+    paths: ["android/**", "port/**", "src/**", "include/**", ".github/workflows/android.yml"]
   pull_request:
-    paths: ["android/**", ".github/workflows/android.yml"]
+    paths: ["android/**", "port/**", "src/**", "include/**", ".github/workflows/android.yml"]
   workflow_dispatch:
 
 permissions:
@@ -28,7 +28,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04 # has the Android SDK; ANDROID_HOME is set
-    timeout-minutes: 30
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: android
@@ -41,6 +41,25 @@ jobs:
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@v4
+
+      # The engine (port/tools/android.py): upstream LLVM 21 + the runner's NDK + SDL3
+      - uses: actions/cache@v4
+        with:
+          path: port/build/android-toolchain/llvm
+          key: llvm-21.1.0-linux-x64-v1
+      - name: Engine toolchain
+        working-directory: .
+        run: |
+          echo "NDK: $ANDROID_NDK_LATEST_HOME"
+          ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" sh port/tools/android_toolchain.sh
+      - name: Engine
+        working-directory: .
+        env:
+          BT3_SKELETON: "1"
+        run: |
+          python3 port/tools/android.py 2>&1 | tee engine_build.txt
+          grep -q "^loader: OK" engine_build.txt
+          ls -la android/app/src/main/jniLibs/arm64-v8a
 
       - name: Version from the tag
         run: |

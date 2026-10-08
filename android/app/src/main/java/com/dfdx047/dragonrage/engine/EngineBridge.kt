@@ -3,15 +3,14 @@ package com.dfdx047.dragonrage.engine
 import android.content.Context
 
 /**
- * The link to the game engine (the Tenkaichi3Decomp port built for arm64 as libdragonrage.so).
- *
- * The engine is not part of this build yet. When it is, it ships as a native library next to SDL3
- * (libSDL3.so) and is started from an SDL activity with the app's folder (GamePaths.root) as its working
- * directory, so it finds gamedata/, textures/, stages/, songs/, saves/ and bt3_settings.txt where the PC
- * build looks for them.
+ * The link to the game engine: the Tenkaichi3Decomp port built for arm64 as libbt3.so (port/tools/android.py),
+ * next to SDL3 (libSDL3.so) and its loader (libmain.so). GameActivity starts it with the app's folder
+ * (GamePaths.root) as its working directory, so it finds gamedata/, textures/, stages/, songs/, saves/ and
+ * bt3_settings.txt where the PC build looks for them. A build of the app without the engine still works as a
+ * launcher.
  */
 object EngineBridge {
-    const val LIBRARY = "dragonrage"
+    const val LIBRARY = "bt3"
 
     /** Whether the engine library is packaged in this APK. Looked up without loading it. */
     fun isAvailable(context: Context): Boolean {

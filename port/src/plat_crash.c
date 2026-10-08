@@ -125,6 +125,10 @@ __attribute__((constructor(101))) static void crash_init(void) {
     setvbuf(stderr, NULL, _IONBF, 0);
     AddVectoredExceptionHandler(1, on_crash);
 }
+#elif defined(__ANDROID__)
+/* Android: no handlers of our own. The Java runtime of the app's process uses SIGSEGV itself (null checks, stack
+   overflow), and the system's crash reporter (debuggerd) already writes the backtrace, with function names, to the
+   log (adb logcat) and to a tombstone. */
 #else
 #include <execinfo.h>
 #include <fcntl.h>

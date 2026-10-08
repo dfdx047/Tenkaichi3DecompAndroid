@@ -54,6 +54,11 @@ android {
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        // the engine is loaded from a file at a fixed address (src/main/cpp/loader.c): installed as files, not stripped
+        jniLibs {
+            useLegacyPackaging = true
+            keepDebugSymbols += "**/libbt3.so"
+        }
     }
 }
 

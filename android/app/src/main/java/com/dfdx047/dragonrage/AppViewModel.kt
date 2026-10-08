@@ -208,7 +208,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         when {
             _install.value !is InstallState.Installed -> say("Instale os dados do jogo primeiro (a ISO do BT3 USA).")
             !engineAvailable -> say("O motor do jogo ainda não está incluído nesta versão do Dragon Rage.")
-            else -> say("Iniciando…") // the SDL activity of the engine is started here once it exists
+            else -> getApplication<android.app.Application>().startActivity(
+                android.content.Intent(getApplication(), com.dfdx047.dragonrage.engine.GameActivity::class.java)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
         }
     }
 

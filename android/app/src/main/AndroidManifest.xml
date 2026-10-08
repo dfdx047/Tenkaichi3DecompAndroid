@@ -5,6 +5,13 @@
     <uses-feature android:name="android.hardware.vulkan.version" android:version="0x401000" android:required="false" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.opengles.aep" android:required="false" />
+
+    <!-- SDL: rumble on controllers and the device -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:allowBackup="false"
@@ -15,7 +22,9 @@
         android:isGame="true"
         android:appCategory="game"
         android:supportsRtl="true"
-        android:theme="@style/Theme.DragonRage">
+        android:theme="@style/Theme.DragonRage"
+        android:extractNativeLibs="true"
+        android:hardwareAccelerated="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -25,5 +34,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The game (SDL). Its own process: see GameActivity. -->
+        <activity
+            android:name=".engine.GameActivity"
+            android:process=":game"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.DragonRage.Game"
+            android:screenOrientation="sensorLandscape"
+            android:launchMode="singleTask"
+            android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:preferMinimalPostProcessing="true" />
     </application>
 </manifest>
