@@ -16,10 +16,10 @@
 ---
 
 > [!IMPORTANT]
-> **Status: the engine builds for arm64 and ships in the APK; first tests on a device are under way.**
-> The whole game (332 source files: the decompiled game, the PC port's platform layer, renderer, sound) compiles
-> and links for Android arm64, with the game's 32-bit pointers and the PS2's float arithmetic intact. Whether it
-> boots, and how well it runs, is being found out on real hardware right now. See [Roadmap](#roadmap).
+> **Status: the game boots and plays a battle on an AYN Odin 3 (Snapdragon 8 Elite, Android 15).**
+> The whole game (332 source files: the decompiled game, the PC port's platform layer, renderer, sound) runs natively
+> on Android arm64: memory card check, logos, opening movie, menus, character select and a Dueling battle at the
+> game's full 30 fps. Now checking picture, sound and controls in detail. See [Roadmap](#roadmap).
 
 This repository contains **no game data**. You need your own copy of the **USA release (SLUS-21678)** as an
 `.iso`. The app reads it on your device; nothing is downloaded or uploaded.
@@ -32,7 +32,7 @@ sound and input layer underneath. Dragon Rage brings that to Android in two part
 | Part | Where | State |
 |---|---|---|
 | **Launcher app** (Kotlin, Jetpack Compose, Material 3; English and Portuguese) | [`android/`](android) | ✅ Done |
-| **Game engine** (the port's C code, built for arm64 as `libbt3.so`) | `src/`, `include/`, `port/` | 🧪 Builds and links; testing on devices |
+| **Game engine** (the port's C code, built for arm64 as `libbt3.so`) | `src/`, `include/`, `port/` | 🧪 Boots and plays on a device; testing |
 
 ## The app
 
@@ -107,7 +107,10 @@ CI does the same on every push and publishes the result as the
 - [x] Engine builds and links for arm64 (332 of 332 sources)
 - [x] Loader, game activity, Play button; logs to logcat (`adb logcat -s bt3`) and `bt3_log.txt`
 - [x] Unlock-all from the app; the back button opens the in-game settings
-- [ ] **Boots and plays on a device** (testing now)
+- [x] **Boots and plays on a device**: menus, character select and a battle on the Odin 3
+- [x] Worked around an LLVM 21 AArch64 bug: byte/halfword stores through 32-bit pointers were emitted as 4/8-byte
+      stores (`irfix.py` routes them through an ordinary pointer)
+- [ ] Picture, sound and controls checked in detail; long sessions; story mode
 - [ ] Performance on mobile GPUs; DDS (BC1–BC3) texture packs on GPUs without BC support
 - [ ] Touch controls; pause/resume
 - [ ] Save states and online rollback on arm64 (`port/src/gs/state.c` uses `getcontext`, which Android lacks)
