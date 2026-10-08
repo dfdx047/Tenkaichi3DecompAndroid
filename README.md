@@ -16,10 +16,10 @@
 ---
 
 > [!IMPORTANT]
-> **Status: the game boots and plays a battle on an AYN Odin 3 (Snapdragon 8 Elite, Android 15).**
-> The whole game (332 source files: the decompiled game, the PC port's platform layer, renderer, sound) runs natively
-> on Android arm64: memory card check, logos, opening movie, menus, character select and a Dueling battle at the
-> game's full 30 fps. Now checking picture, sound and controls in detail. See [Roadmap](#roadmap).
+> **Status: the game runs on an AYN Odin 3 (Snapdragon 8 Elite, Android 15): menus and full battles, smooth, at
+> the game's full 30 fps.** The whole game (332 source files: the decompiled game, the PC port's platform layer,
+> renderer, sound) runs natively on Android arm64. Now: on-screen controls, other GPUs (MediaTek, low-end
+> Snapdragon), modified ISOs, then 60 fps and picture options. See [Roadmap](#roadmap).
 
 This repository contains **no game data**. You need your own copy of the **USA release (SLUS-21678)** as an
 `.iso`. The app reads it on your device; nothing is downloaded or uploaded.
@@ -32,15 +32,16 @@ sound and input layer underneath. Dragon Rage brings that to Android in two part
 | Part | Where | State |
 |---|---|---|
 | **Launcher app** (Kotlin, Jetpack Compose, Material 3; English and Portuguese) | [`android/`](android) | ✅ Done |
-| **Game engine** (the port's C code, built for arm64 as `libbt3.so`) | `src/`, `include/`, `port/` | 🧪 Boots and plays on a device; testing |
+| **Game engine** (the port's C code, built for arm64 as `libbt3.so`) | `src/`, `include/`, `port/` | ✅ Runs on the Odin 3; other devices being tested |
 
 ## The app
 
 <table>
-<tr><td><b>Home</b></td><td>Pick your ISO. The app checks it is the unmodified USA release (the same SHA-1 checks as the PC setup) and unpacks the game data in the layout the engine expects. Play button.</td></tr>
+<tr><td><b>Home</b></td><td>Pick your ISO. The app checks it is the USA release (the same SHA-1 checks as the PC setup; a translated or modded image installs too, with a warning) and copies the game data in the layout the engine expects. Play button.</td></tr>
 <tr><td><b>Textures</b></td><td>Import a texture pack as a <code>.zip</code>. Packs made for PCSX2 (<code>.dds</code> / <code>.png</code>) work as they are. Turn each pack on or off, or all of them at once.</td></tr>
 <tr><td><b>Mods</b></td><td>File-replacement mods as <code>.zip</code> (with a priority order), extra stages (<code>.unk</code>) and extra songs (<code>.adx</code>), with the name shown in the game's menus editable.</td></tr>
 <tr><td><b>Cheats</b></td><td><i>Unlock everything</i>: every character, stage, song and item, and max Zeni. This is the debug function the developers left in the game. It is applied the next time the game starts.</td></tr>
+<tr><td><b>Controls</b></td><td>The on-screen controller for playing without a gamepad: PlayStation, Xbox or Nintendo look, layout editor (move, resize, hide), macros (combos, several buttons at once, turbo), opacity, size, vibration, floating stick. Also reachable in game.</td></tr>
 <tr><td><b>Settings</b></td><td>Internal resolution 1x–8x, aspect ratio (4:3 to 32:9), each of the five PS2 effects (outline, see-through tint, depth tint, glow, distance blur), glow strength, music / voice volume, on-screen controls, theme, Material You colours.</td></tr>
 </table>
 
@@ -63,7 +64,7 @@ Everything lives in `Android/data/com.dfdx047.dragonrage/files/`, in **the same 
 its program**, so the engine will run with that folder as its working directory without Android-specific paths:
 
 ```
-gamedata/            the unpacked disc (disc/, pzs3us0/, pzs3us1/, pzs3us2/, .installed)
+gamedata/            the disc's files (disc/SLUS_216.78, disc/BIN/, disc/DATA/ with the AFS archives, .installed)
 gamedata/mods/       replaced files (rebuilt by the app from modlib/)
 textures/            active texture packs (any depth)      textures_off/   packs switched off
 stages/  songs/      extra stages and songs (maps.txt / songs.txt hold the menu names)
@@ -73,51 +74,48 @@ modlib/              the app's mod library
 ```
 
 New keys in `bt3_settings.txt` for the Android side of the engine to read: `dr_unlock_all` (1 = run the unlock once
-at start, then reset to 0), `dr_touch` (on-screen controls: 0 off, 1 automatic, 2 always), `dr_touch_alpha`
-(opacity %), `dr_fps60` (reserved).
+at start, then reset to 0), `dr_fps60` (reserved). The on-screen controller's settings, layout and macros are in
+`touch_controls.json`.
 
 ## Roadmap
 
 ### Done
 - [x] Launcher app: game-data install from ISO with checksum verification, texture packs, mods, extra
-      stages and songs, unlock-all cheat, all engine settings, Material 3 theme
-- [x] CI: every push builds the APK; an `android-v*` tag publishes a release
-
-### The engine on arm64
-
-How it works:
-
-- **32-bit pointers.** The game stores pointers in 32-bit fields everywhere; the PC port's 64-bit build marks every
-  game pointer `__ptr32` (`port/tools/ptr32.py`). Clang supports that on AArch64 since LLVM 20, so the engine is
-  built with upstream **LLVM 21**; `irfix.py` makes the same repairs as on x86-64.
-- **The PS2's float arithmetic.** Game code is built for the soft-float ABI (`-mabi=aapcs-soft -mgeneral-regs-only`),
-  so every float operation still goes through `port/src/softfloat_ps2.c`, bit for bit what the PS2 does: the fights
-  play out exactly as on the PC port.
-- **Memory below 4 GB.** The program is linked at a fixed address (0x03000000, below an Android app's Java heap) and
-  marked as a shared object; `android/app/src/main/cpp/loader.c` reserves that range and has Android's own loader
-  load it there (`android_dlopen_ext`). The game's heap, stack and the port's region sit around it, all under
-  0x12C00000.
-- **SDL3** (Vulkan through SDL's GPU API, audio, controllers) with SDL's Android activity, in a process of its own.
-
-Build it: `sh port/tools/android_toolchain.sh` (LLVM 21, the NDK's sysroot, SDL3), then
-`BT3_SKELETON=1 python3 port/tools/android.py` (engine, loader, copied into the app), then `./gradlew` in `android/`.
-CI does the same on every push and publishes the result as the
-[android-nightly](../../releases/tag/android-nightly) pre-release.
-
-- [x] Engine builds and links for arm64 (332 of 332 sources)
-- [x] Loader, game activity, Play button; logs to logcat (`adb logcat -s bt3`) and `bt3_log.txt`
-- [x] Unlock-all from the app; the back button opens the in-game settings
-- [x] **Boots and plays on a device**: menus, character select and a battle on the Odin 3
+      stages and songs, unlock-all cheat, all engine settings, Material 3 theme, English and Portuguese
+- [x] CI: every push builds the APK ([android-nightly](../../releases/tag/android-nightly)); an `android-v*` tag
+      publishes a release
+- [x] Engine builds for arm64 (332 of 332 sources), loads below the Java heap, and **boots and plays**: memory card
+      check, logos, opening movie, menus, character select and battles on the AYN Odin 3 (Snapdragon 8 Elite), at
+      the game's full 30 fps, about 2–3 W at 4x resolution
 - [x] Worked around an LLVM 21 AArch64 bug: byte/halfword stores through 32-bit pointers were emitted as 4/8-byte
       stores (`irfix.py` routes them through an ordinary pointer)
-- [ ] Picture, sound and controls checked in detail; long sessions; story mode
-- [ ] Performance on mobile GPUs; DDS (BC1–BC3) texture packs on GPUs without BC support
-- [ ] Touch controls; pause/resume
-- [ ] Save states and online rollback on arm64 (`port/src/gs/state.c` uses `getcontext`, which Android lacks)
 
-### Later
-- [ ] **60 fps mode.** The game runs its logic at 30 fps; a real 60 fps needs changes to the simulation's timing.
-- [ ] Online play (the PC port has rollback netplay).
+### Now (testing on devices)
+- [x] **Fast install**: the AFS archives are copied whole and read through their tables (no more ~20 000 small files)
+- [x] **Modified ISOs** (translations such as PT-BR, mods such as "Tenkaichi 4"): installed with a warning; the
+      engine takes their data. Changes a mod made to the game's *code* do not apply (the engine is the original
+      program, rebuilt)
+- [x] In-game menu: the game **pauses** while it is open, works with **touch** (tap, drag to scroll), fills the screen,
+      Resume button; the **Odin's back button** opens it
+- [x] **On-screen controller**: d-pad, sticks (optional floating stick), face buttons (slide between them), shoulders,
+      START/SELECT; **PlayStation, Xbox and Nintendo looks**; **layout editor** (move, resize, hide, reset) in the
+      app and in game; **macros** (combos, several buttons at once, turbo); opacity, size, vibration; hides when a
+      physical controller is used
+- [ ] Texture packs from a .zip: check on a device
+- [ ] **MediaTek** GPUs (Mali): debug and fix
+- [ ] **Low-end devices** (Snapdragon 665 / Adreno 610): profile and optimise
+- [ ] In-game menu in Portuguese; a cleaner layout
+
+### Next
+- [ ] **60 fps mode.** The game runs its logic at 30 fps (a fight frame waits two vertical blanks); a real 60 fps needs
+      the simulation's timing changed (or frame interpolation)
+- [ ] Picture: bilinear / sharp-bilinear and other output filters, anisotropic filtering, **FSR 1** and
+      **Snapdragon Game Super Resolution** upscaling, post-processing shaders
+- [ ] Quality-of-life features of a "definitive edition" (the game's code is all here to change)
+- [ ] Performance on mobile GPUs; DDS (BC1–BC3) texture packs on GPUs without BC support
+- [ ] Pause/resume when the app goes to the background; save states on arm64 (`port/src/gs/state.c` uses
+      `getcontext`, which Android lacks)
+- [ ] Online play (the PC port has rollback netplay)
 
 ## Repository layout
 
