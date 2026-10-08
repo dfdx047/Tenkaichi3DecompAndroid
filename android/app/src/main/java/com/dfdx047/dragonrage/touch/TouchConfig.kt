@@ -53,7 +53,7 @@ enum class Ctl(
 ) {
     DPAD(CtlKind.DPAD, 0, 128f, 0.10f, 0.40f),
     STICK_L(CtlKind.STICK_L, 0, 150f, 0.19f, 0.74f),
-    STICK_R(CtlKind.STICK_R, 0, 110f, 0.66f, 0.80f, shownByDefault = false),
+    STICK_R(CtlKind.STICK_R, 0, 110f, 0.68f, 0.78f),
     CROSS(CtlKind.BUTTON, Ps2.CROSS, 66f, 0.86f, 0.64f, 0f, 62f),
     CIRCLE(CtlKind.BUTTON, Ps2.CIRCLE, 66f, 0.86f, 0.64f, 62f, 0f),
     SQUARE(CtlKind.BUTTON, Ps2.SQUARE, 66f, 0.86f, 0.64f, -62f, 0f),
@@ -62,8 +62,8 @@ enum class Ctl(
     L2(CtlKind.SHOULDER, Ps2.L2, 84f, 0.07f, 0.12f),
     R1(CtlKind.SHOULDER, Ps2.R1, 84f, 0.83f, 0.12f),
     R2(CtlKind.SHOULDER, Ps2.R2, 84f, 0.93f, 0.12f),
-    L3(CtlKind.BUTTON, Ps2.L3, 50f, 0.30f, 0.60f, shownByDefault = false),
-    R3(CtlKind.BUTTON, Ps2.R3, 50f, 0.56f, 0.70f, shownByDefault = false),
+    L3(CtlKind.BUTTON, Ps2.L3, 50f, 0.31f, 0.58f),
+    R3(CtlKind.BUTTON, Ps2.R3, 50f, 0.58f, 0.70f),
     SELECT(CtlKind.PILL, Ps2.SELECT, 70f, 0.42f, 0.92f),
     START(CtlKind.PILL, Ps2.START, 70f, 0.58f, 0.92f),
     MENU(CtlKind.SYSTEM, 0, 40f, 0.47f, 0.07f),    // the game's pause / settings window (the back key)

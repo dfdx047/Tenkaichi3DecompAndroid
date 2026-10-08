@@ -145,8 +145,8 @@ extern void *EftOrbTail_Create(s32 objId, s32 auraType);
 extern void EftOrbTail_Burst(void *fx);
 extern void EftOrbTail_Kill(void *fx);
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftOrbTail_SetPos(void *fx, Vec4 pos);
-#define EftOrbTail_SetPos(fx, pos) EftOrbTail_SetPos(fx, *(Vec4 *)(pos))
+extern void EftOrbTail_SetPos(void *fx, PortVec4 pos);
+#define EftOrbTail_SetPos(fx, pos) EftOrbTail_SetPos(fx, *(PortVec4 *)(pos))
 #else
 extern void EftOrbTail_SetPos(void *fx, Vec4 *pos);
 #endif

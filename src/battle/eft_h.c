@@ -1451,8 +1451,8 @@ extern void *EftRay_CreateByValue(EftEmitLightArg arg);
 extern void *EftRay_CreateByValue(EftEmitLightArg *arg);
 #endif
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftRay_SetPos(void *obj, Vec4 pos);
-#define EftRay_SetPos(obj, pos) EftRay_SetPos(obj, *(Vec4 *)(pos))
+extern void EftRay_SetPos(void *obj, PortVec4 pos);
+#define EftRay_SetPos(obj, pos) EftRay_SetPos(obj, *(PortVec4 *)(pos))
 #else
 extern void EftRay_SetPos(void *obj, Vec4 *pos);
 #endif

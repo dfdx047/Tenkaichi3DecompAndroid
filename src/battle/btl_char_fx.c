@@ -855,8 +855,8 @@ extern void EftRushBurst_Start(FxDirArg *arg);
 extern void EftRushBurst_Stage2(s32 objId);
 extern void EftRushBurst_Stop(s32 objId);
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftRay_StartHit(s32 objId, Vec4 pos, s32 a, s32 b, s32 c, f32 scale);
-#define EftRay_StartHit(objId, pos, a, b, c, scale) EftRay_StartHit(objId, *(Vec4 *)(pos), a, b, c, scale)
+extern void EftRay_StartHit(s32 objId, PortVec4 pos, s32 a, s32 b, s32 c, f32 scale);
+#define EftRay_StartHit(objId, pos, a, b, c, scale) EftRay_StartHit(objId, *(PortVec4 *)(pos), a, b, c, scale)
 #else
 extern void EftRay_StartHit(s32 objId, Vec4 *pos, s32 a, s32 b, s32 c, f32 scale);
 #endif
