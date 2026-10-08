@@ -116,8 +116,27 @@ jobs:
           prerelease: true
           files: out/*.apk
           body: |
-            First builds of the **Dragon Rage** launcher. The game engine is **not included yet**: this release is
-            the app (game-data install from your own ISO, texture packs, mods, cheats, settings). The Play button
-            tells you the engine is missing. See the README for the status of the arm64 engine port.
+            Dragon Rage ${{ env.DR_VERSION_NAME }}: the launcher app and the game engine (arm64). Needs your own ISO of
+            the USA release (SLUS-21678). See the README for the status of the port.
 
             `DragonRage-${{ env.DR_VERSION_NAME }}.apk` is the release build; the `-debug` one is for testing.
+
+      # Every push to main: the latest build as the "nightly" pre-release (one tag, its APKs replaced each time)
+      - name: Nightly
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          cp out/*-debug.apk out/DragonRage-nightly-debug.apk
+          cp "out/DragonRage-${DR_VERSION_NAME}.apk" out/DragonRage-nightly.apk
+      - uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        with:
+          tag_name: android-nightly
+          name: Dragon Rage nightly
+          prerelease: true
+          overwrite_files: true
+          files: |
+            out/DragonRage-nightly.apk
+            out/DragonRage-nightly-debug.apk
+          body: |
+            The latest build of main (${{ github.sha }}, run ${{ github.run_number }}). For testing: things may be broken.
+            Install `DragonRage-nightly-debug.apk`; its logs: `adb logcat -s bt3`.
