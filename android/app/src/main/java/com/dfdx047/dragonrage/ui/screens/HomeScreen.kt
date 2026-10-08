@@ -37,6 +37,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.dfdx047.dragonrage.R
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -81,19 +83,18 @@ fun HomeScreen(vm: AppViewModel) {
         ) {
             Icon(Icons.Rounded.PlayArrow, null, Modifier.size(30.dp))
             Spacer(Modifier.size(8.dp))
-            Text("JOGAR", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.play), style = MaterialTheme.typography.headlineSmall)
         }
 
-        SectionCard("Dados do jogo", Icons.Rounded.Album) {
+        SectionCard(stringResource(R.string.game_data), Icons.Rounded.Album) {
             when (val s = install) {
                 InstallState.NotInstalled -> {
                     Text(
-                        "Escolha a sua ISO de Budokai Tenkaichi 3 (versão USA, SLUS-21678). O app confere a imagem e " +
-                            "extrai os dados do jogo, como o setup do port de PC. Nada é baixado: os dados vêm do seu disco.",
+                        stringResource(R.string.game_data_intro),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    FilledTonalButton(onClick = { pickIso.launch(arrayOf("*/*")) }) { Text("Selecionar ISO") }
+                    FilledTonalButton(onClick = { pickIso.launch(arrayOf("*/*")) }) { Text(stringResource(R.string.pick_iso)) }
                 }
                 is InstallState.Working -> {
                     Text(s.step, style = MaterialTheme.typography.bodyLarge)
@@ -104,16 +105,16 @@ fun HomeScreen(vm: AppViewModel) {
                     )
                     Text(s.detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedButton(onClick = vm::cancelInstall) {
-                        Icon(Icons.Rounded.Close, null, Modifier.size(18.dp)); Spacer(Modifier.size(6.dp)); Text("Cancelar")
+                        Icon(Icons.Rounded.Close, null, Modifier.size(18.dp)); Spacer(Modifier.size(6.dp)); Text(stringResource(R.string.cancel))
                     }
                 }
                 is InstallState.Installed -> {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.CheckCircle, null, tint = Dbz.ShenronGreen)
                         Spacer(Modifier.size(8.dp))
-                        Text("Versão USA verificada · ${s.files} arquivos · ${formatBytes(s.bytes)}", style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(R.string.game_data_ok, s.files, formatBytes(s.bytes)), style = MaterialTheme.typography.bodyMedium)
                     }
-                    TextButton(onClick = { confirmRemove = true }) { Text("Remover dados do jogo") }
+                    TextButton(onClick = { confirmRemove = true }) { Text(stringResource(R.string.remove_game_data)) }
                 }
                 is InstallState.Failed -> {
                     Row(verticalAlignment = Alignment.Top) {
@@ -122,20 +123,19 @@ fun HomeScreen(vm: AppViewModel) {
                         Text(s.message, style = MaterialTheme.typography.bodyMedium)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilledTonalButton(onClick = { pickIso.launch(arrayOf("*/*")) }) { Text("Escolher outra ISO") }
-                        TextButton(onClick = vm::dismissInstallError) { Text("Fechar") }
+                        FilledTonalButton(onClick = { pickIso.launch(arrayOf("*/*")) }) { Text(stringResource(R.string.pick_other_iso)) }
+                        TextButton(onClick = vm::dismissInstallError) { Text(stringResource(R.string.close)) }
                     }
                 }
             }
         }
 
-        SectionCard("Motor do jogo", Icons.Rounded.Memory, accent = MaterialTheme.colorScheme.secondary) {
+        SectionCard(stringResource(R.string.engine), Icons.Rounded.Memory, accent = MaterialTheme.colorScheme.secondary) {
             if (vm.engineAvailable) {
-                Text("Incluído (arm64)", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.engine_included), style = MaterialTheme.typography.bodyMedium)
             } else {
                 Text(
-                    "Ainda não incluído nesta versão. O port do motor (Tenkaichi3Decomp) para arm64 está em andamento; " +
-                        "tudo que você configurar aqui — dados, texturas, mods e ajustes — já fica no lugar que ele vai usar.",
+                    stringResource(R.string.engine_missing),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -143,20 +143,20 @@ fun HomeScreen(vm: AppViewModel) {
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            StatPill("Texturas", "${packs.count { it.enabled }}", Dbz.SaiyanGold, Modifier.weight(1f))
-            StatPill("Mods", "${mods.count { it.enabled }}", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
-            StatPill("Estágios", "${stages.size}", Dbz.KiBlue, Modifier.weight(1f))
-            StatPill("Músicas", "${songs.size}", Dbz.ShenronGreen, Modifier.weight(1f))
+            StatPill(stringResource(R.string.stat_textures), "${packs.count { it.enabled }}", Dbz.SaiyanGold, Modifier.weight(1f))
+            StatPill(stringResource(R.string.stat_mods), "${mods.count { it.enabled }}", MaterialTheme.colorScheme.primary, Modifier.weight(1f))
+            StatPill(stringResource(R.string.stat_stages), "${stages.size}", Dbz.KiBlue, Modifier.weight(1f))
+            StatPill(stringResource(R.string.stat_songs), "${songs.size}", Dbz.ShenronGreen, Modifier.weight(1f))
         }
     }
 
     if (confirmRemove) {
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
-            title = { Text("Remover dados do jogo?") },
-            text = { Text("Os arquivos extraídos da ISO serão apagados. Saves, texturas e mods ficam.") },
-            confirmButton = { TextButton(onClick = { confirmRemove = false; vm.removeGameData() }) { Text("Remover") } },
-            dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text("Cancelar") } },
+            title = { Text(stringResource(R.string.remove_game_data_q)) },
+            text = { Text(stringResource(R.string.remove_game_data_text)) },
+            confirmButton = { TextButton(onClick = { confirmRemove = false; vm.removeGameData() }) { Text(stringResource(R.string.remove)) } },
+            dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }
@@ -179,7 +179,7 @@ private fun Hero() {
                         },
                 )
                 Text(
-                    "Budokai Tenkaichi 3 · Android",
+                    stringResource(R.string.tagline),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

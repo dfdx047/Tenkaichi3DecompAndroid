@@ -51,14 +51,17 @@ jobs:
         working-directory: .
         run: |
           echo "NDK: $ANDROID_NDK_LATEST_HOME"
-          ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" sh port/tools/android_toolchain.sh
+          ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" sh port/tools/android_toolchain.sh > toolchain.txt 2>&1 || { sh .github/annotate.sh toolchain.txt; exit 1; }
+          tail -3 toolchain.txt
       - name: Engine
         working-directory: .
         env:
           BT3_SKELETON: "1"
         run: |
-          python3 port/tools/android.py 2>&1 | tee engine_build.txt
-          grep -q "^loader: OK" engine_build.txt
+          python3 port/tools/android.py > engine_build.txt 2>&1 || true
+          tail -5 engine_build.txt
+          grep -q "^installed into" engine_build.txt || { grep -E "^FAILED|error|stubs|link|loader" engine_build.txt > engine_errors.txt || true; tail -30 engine_build.txt >> engine_errors.txt; sh .github/annotate.sh engine_errors.txt; exit 1; }
+          sh .github/annotate.sh engine_build.txt notice
           ls -la android/app/src/main/jniLibs/arm64-v8a
 
       - name: Version from the tag
@@ -92,7 +95,7 @@ jobs:
       - name: Build
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug assembleRelease
+          ./gradlew --no-daemon assembleDebug assembleRelease > ../gradle.txt 2>&1 || { grep -E "^e: |error:|FAILURE|What went wrong" -A3 ../gradle.txt > ../gradle_errors.txt || true; tail -20 ../gradle.txt >> ../gradle_errors.txt; sh ../.github/annotate.sh ../gradle_errors.txt; exit 1; }
 
       - name: Collect APKs
         run: |

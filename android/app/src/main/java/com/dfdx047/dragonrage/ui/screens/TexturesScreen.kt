@@ -35,6 +35,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.dfdx047.dragonrage.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -60,12 +62,12 @@ fun TexturesScreen(vm: AppViewModel) {
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { ScreenTitle("Texturas", "Packs em HD feitos para o PCSX2 funcionam como estão") }
+            item { ScreenTitle(stringResource(R.string.textures_title), stringResource(R.string.textures_sub)) }
             item {
-                SectionCard("Usar packs de texturas", Icons.Rounded.Texture) {
+                SectionCard(stringResource(R.string.textures_use), Icons.Rounded.Texture) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "Liga ou desliga todos os packs no jogo, sem apagar nada.",
+                            stringResource(R.string.textures_use_text),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.weight(1f),
@@ -81,9 +83,8 @@ fun TexturesScreen(vm: AppViewModel) {
                 item {
                     EmptyState(
                         Icons.Rounded.Texture,
-                        "Nenhum pack instalado",
-                        "Toque em \"Adicionar pack\" e escolha o .zip. O app extrai as texturas (.dds ou .png) " +
-                            "para a pasta certa e o jogo usa na próxima vez que abrir.",
+                        stringResource(R.string.textures_empty),
+                        stringResource(R.string.textures_empty_text),
                     )
                 }
             }
@@ -94,7 +95,7 @@ fun TexturesScreen(vm: AppViewModel) {
         ExtendedFloatingActionButton(
             onClick = { pick.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream")) },
             icon = { Icon(Icons.Rounded.Add, null) },
-            text = { Text("Adicionar pack") },
+            text = { Text(stringResource(R.string.add_pack)) },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         )
     }
@@ -102,10 +103,10 @@ fun TexturesScreen(vm: AppViewModel) {
     toDelete?.let { p ->
         AlertDialog(
             onDismissRequest = { toDelete = null },
-            title = { Text("Apagar \"${p.name}\"?") },
-            text = { Text("${formatBytes(p.bytes)} serão liberados. Para usar de novo, importe o zip outra vez.") },
-            confirmButton = { TextButton(onClick = { toDelete = null; vm.deletePack(p) }) { Text("Apagar") } },
-            dismissButton = { TextButton(onClick = { toDelete = null }) { Text("Cancelar") } },
+            title = { Text(stringResource(R.string.delete_q, p.name)) },
+            text = { Text(stringResource(R.string.delete_pack_text, formatBytes(p.bytes))) },
+            confirmButton = { TextButton(onClick = { toDelete = null; vm.deletePack(p) }) { Text(stringResource(R.string.delete)) } },
+            dismissButton = { TextButton(onClick = { toDelete = null }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }
@@ -122,14 +123,14 @@ private fun PackCard(p: TexturePack, onToggle: (Boolean) -> Unit, onDelete: () -
             Column(Modifier.weight(1f)) {
                 Text(p.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
-                    "${p.textures} texturas · ${formatBytes(p.bytes)}" + if (p.enabled) "" else " · desativado",
+                    stringResource(R.string.pack_info, p.textures, formatBytes(p.bytes)) + if (p.enabled) "" else " · " + stringResource(R.string.pack_off),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Switch(checked = p.enabled, onCheckedChange = onToggle)
             Spacer(Modifier.size(4.dp))
-            IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, "Apagar") }
+            IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, stringResource(R.string.delete)) }
         }
     }
 }

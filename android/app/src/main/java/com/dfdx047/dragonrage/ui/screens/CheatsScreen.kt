@@ -24,6 +24,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.dfdx047.dragonrage.R
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dfdx047.dragonrage.AppViewModel
@@ -43,15 +45,14 @@ fun CheatsScreen(vm: AppViewModel) {
         Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        ScreenTitle("Cheats", "Os desejos do Shenlong")
+        ScreenTitle(stringResource(R.string.cheats_title), stringResource(R.string.cheats_sub))
 
-        SectionCard("Desbloquear tudo", Icons.Rounded.LockOpen, accent = Dbz.SaiyanGold) {
+        SectionCard(stringResource(R.string.unlock_all), Icons.Rounded.LockOpen, accent = Dbz.SaiyanGold) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 DragonBall(stars = 7, size = 64.dp)
                 Spacer(Modifier.size(8.dp))
                 Text(
-                    "Todos os personagens, estágios, músicas e itens, e o máximo de Zeni. É a função de debug que os " +
-                        "desenvolvedores deixaram no jogo, a mesma do port de PC.",
+                    stringResource(R.string.unlock_all_text),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
@@ -59,7 +60,7 @@ fun CheatsScreen(vm: AppViewModel) {
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (pending) "Será aplicado na próxima vez que o jogo abrir" else "Aplicar ao abrir o jogo",
+                    stringResource(if (pending) R.string.unlock_pending else R.string.unlock_apply),
                     style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.weight(1f),
                 )
@@ -70,11 +71,9 @@ fun CheatsScreen(vm: AppViewModel) {
             }
         }
 
-        SectionCard("Como funciona", Icons.Rounded.Info, accent = MaterialTheme.colorScheme.secondary) {
+        SectionCard(stringResource(R.string.how_it_works), Icons.Rounded.Info, accent = MaterialTheme.colorScheme.secondary) {
             Text(
-                "O desbloqueio é gravado no save do jogo (cartão de memória) e não pode ser desfeito pelo app. Ele é " +
-                    "aplicado uma vez, quando o jogo abre, e o interruptor volta a ficar desligado.\n\n" +
-                    "Cheats do PCSX2 (.pnch) não se aplicam aqui: o Dragon Rage roda o código do jogo nativamente, não um emulador.",
+                stringResource(R.string.cheats_how),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -85,10 +84,10 @@ fun CheatsScreen(vm: AppViewModel) {
         AlertDialog(
             onDismissRequest = { confirm = false },
             icon = { Icon(Icons.Rounded.LockOpen, null) },
-            title = { Text("Desbloquear tudo?") },
-            text = { Text("O save do jogo será alterado na próxima vez que ele abrir. Faça uma cópia da pasta saves se quiser guardar o progresso atual.") },
-            confirmButton = { TextButton(onClick = { confirm = false; vm.setting(EngineSettings.UNLOCK_ALL, 1) }) { Text("Desbloquear") } },
-            dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancelar") } },
+            title = { Text(stringResource(R.string.unlock_q)) },
+            text = { Text(stringResource(R.string.unlock_q_text)) },
+            confirmButton = { TextButton(onClick = { confirm = false; vm.setting(EngineSettings.UNLOCK_ALL, 1) }) { Text(stringResource(R.string.unlock)) } },
+            dismissButton = { TextButton(onClick = { confirm = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }

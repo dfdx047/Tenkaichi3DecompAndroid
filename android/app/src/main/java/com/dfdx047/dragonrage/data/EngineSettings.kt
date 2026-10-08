@@ -35,7 +35,7 @@ class EngineSettings(private val file: File) {
 
     @Synchronized
     fun set(name: String, value: Int) {
-        require(name.length < 24) { "nome de ajuste longo demais: $name" }
+        require(name.length < 24) { "setting name too long: $name" }
         if (values[name] == value) return
         values[name] = value
         write()

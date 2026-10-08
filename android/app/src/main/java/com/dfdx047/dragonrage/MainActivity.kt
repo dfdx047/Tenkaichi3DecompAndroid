@@ -37,6 +37,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.dfdx047.dragonrage.R
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
@@ -73,12 +75,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Dest(val route: String, val label: String, val icon: ImageVector) {
-    HOME("home", "Início", Icons.Rounded.Home),
-    TEXTURES("textures", "Texturas", Icons.Rounded.Texture),
-    MODS("mods", "Mods", Icons.Rounded.Extension),
-    CHEATS("cheats", "Cheats", Icons.Rounded.LockOpen),
-    SETTINGS("settings", "Ajustes", Icons.Rounded.Settings),
+private enum class Dest(val route: String, val label: Int, val icon: ImageVector) {
+    HOME("home", R.string.nav_home, Icons.Rounded.Home),
+    TEXTURES("textures", R.string.nav_textures, Icons.Rounded.Texture),
+    MODS("mods", R.string.nav_mods, Icons.Rounded.Extension),
+    CHEATS("cheats", R.string.nav_cheats, Icons.Rounded.LockOpen),
+    SETTINGS("settings", R.string.nav_settings, Icons.Rounded.Settings),
 }
 
 @Composable
@@ -107,7 +109,7 @@ private fun DragonRageApp(vm: AppViewModel) {
                 Dest.entries.forEach { d ->
                     NavigationRailItem(
                         selected = current == d.route, onClick = { go(d) },
-                        icon = { Icon(d.icon, null) }, label = { Text(d.label) },
+                        icon = { Icon(d.icon, null) }, label = { Text(stringResource(d.label)) },
                     )
                 }
             }
@@ -123,7 +125,7 @@ private fun DragonRageApp(vm: AppViewModel) {
                             Dest.entries.forEach { d ->
                                 NavigationBarItem(
                                     selected = current == d.route, onClick = { go(d) },
-                                    icon = { Icon(d.icon, null) }, label = { Text(d.label, maxLines = 1) },
+                                    icon = { Icon(d.icon, null) }, label = { Text(stringResource(d.label), maxLines = 1) },
                                 )
                             }
                         }

@@ -1,6 +1,9 @@
 package com.dfdx047.dragonrage
 
 import android.app.Application
+import android.app.LocaleManager
+import android.os.Build
+import android.os.LocaleList
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -36,9 +39,9 @@ data class Busy(val title: String, val detail: String = "")
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     val paths = GamePaths(app).also { it.ensure() }
     private val resolver = app.contentResolver
-    private val installer = GameDataInstaller(paths, resolver)
-    private val packs = TexturePacks(paths, resolver)
-    private val mods = Mods(paths, resolver)
+    private val installer = GameDataInstaller(app, paths, resolver)
+    private val packs = TexturePacks(app, paths, resolver)
+    private val mods = Mods(app, paths, resolver)
     private val settings = EngineSettings(paths.settings)
     private val ui = UiPrefs(app)
 
@@ -93,15 +96,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         installJob = viewModelScope.launch {
             try {
                 _install.value = installer.install(uri) { _install.value = it }
-                say("Dados do jogo prontos!")
+                say(str(R.string.msg_data_ready))
             } catch (e: CancellationException) {
                 withContext(Dispatchers.IO) { installer.uninstall() }
                 _install.value = InstallState.NotInstalled
                 throw e
             } catch (e: GameDataInstaller.Stop) {
-                _install.value = InstallState.Failed(e.message ?: "Erro")
+                _install.value = InstallState.Failed(e.message ?: str(R.string.msg_error))
             } catch (e: Exception) {
-                _install.value = InstallState.Failed("Erro ao ler a imagem: ${e.message ?: e.javaClass.simpleName}")
+                _install.value = InstallState.Failed(str(R.string.msg_iso_read_error, e.message ?: e.javaClass.simpleName))
             }
         }
     }
@@ -121,26 +124,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- texture packs
 
-    fun importTexturePack(uri: Uri) = work("Importando pack de texturas") {
+    fun importTexturePack(uri: Uri) = work(str(R.string.busy_import_pack)) {
         val p = packs.import(uri) { setDetail(it) }
         _packs.value = packs.list()
-        say("Pack \"${p.name}\" instalado: ${p.textures} texturas")
+        say(str(R.string.msg_pack_installed, p.name, p.textures))
     }
 
-    fun setPackEnabled(pack: TexturePack, on: Boolean) = work(if (on) "Ativando pack" else "Desativando pack") {
+    fun setPackEnabled(pack: TexturePack, on: Boolean) = work(str(if (on) R.string.busy_pack_on else R.string.busy_pack_off)) {
         packs.setEnabled(pack, on)
         _packs.value = packs.list()
     }
 
-    fun deletePack(pack: TexturePack) = work("Removendo pack") {
+    fun deletePack(pack: TexturePack) = work(str(R.string.busy_pack_remove)) {
         packs.delete(pack)
         _packs.value = packs.list()
-        say("Pack \"${pack.name}\" removido")
+        say(str(R.string.msg_pack_removed, pack.name))
     }
 
     // ---- mods, stages, songs
 
-    fun importMod(uris: List<Uri>) = work("Importando mods") {
+    fun importMod(uris: List<Uri>) = work(str(R.string.busy_import_mods)) {
         var mods0 = 0
         var stages0 = 0
         var songs0 = 0
@@ -151,35 +154,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         refreshMods()
-        say(listOfNotNull(
-            mods0.takeIf { it > 0 }?.let { "$it mod(s)" },
-            stages0.takeIf { it > 0 }?.let { "$it estágio(s)" },
-            songs0.takeIf { it > 0 }?.let { "$it música(s)" },
-        ).joinToString(", ", prefix = "Adicionado: "))
+        say(str(R.string.msg_added, listOfNotNull(
+            mods0.takeIf { it > 0 }?.let { str(R.string.count_mods, it) },
+            stages0.takeIf { it > 0 }?.let { str(R.string.count_stages, it) },
+            songs0.takeIf { it > 0 }?.let { str(R.string.count_songs, it) },
+        ).joinToString(", ")))
     }
 
-    fun setModEnabled(mod: FileMod, on: Boolean) = work("Aplicando mods") {
+    fun setModEnabled(mod: FileMod, on: Boolean) = work(str(R.string.busy_apply_mods)) {
         mods.setEnabled(mod, on) { setDetail(it) }
         refreshMods()
     }
 
-    fun moveMod(mod: FileMod, delta: Int) = work("Reordenando mods") {
+    fun moveMod(mod: FileMod, delta: Int) = work(str(R.string.busy_reorder_mods)) {
         mods.move(mod, delta) { setDetail(it) }
         refreshMods()
     }
 
-    fun deleteMod(mod: FileMod) = work("Removendo mod") {
+    fun deleteMod(mod: FileMod) = work(str(R.string.busy_remove_mod)) {
         mods.delete(mod) { setDetail(it) }
         refreshMods()
-        say("Mod \"${mod.name}\" removido")
+        say(str(R.string.msg_mod_removed, mod.name))
     }
 
-    fun renameExtra(kind: ExtraKind, item: ExtraItem, name: String) = work("Renomeando") {
+    fun renameExtra(kind: ExtraKind, item: ExtraItem, name: String) = work(str(R.string.busy_rename)) {
         mods.rename(kind, item, name)
         refreshMods()
     }
 
-    fun deleteExtra(kind: ExtraKind, item: ExtraItem) = work("Removendo") {
+    fun deleteExtra(kind: ExtraKind, item: ExtraItem) = work(str(R.string.busy_remove)) {
         mods.deleteExtra(kind, item)
         refreshMods()
     }
@@ -200,14 +203,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setTheme(mode: ThemeMode) = ui.setTheme(mode)
+
+    /** The app's language ("" = the system's), through Android's per-app language (13 and newer). */
+    val canPickLanguage = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+
+    fun language(): String =
+        if (canPickLanguage) getApplication<Application>().getSystemService(LocaleManager::class.java).applicationLocales.toLanguageTags()
+        else ""
+
+    fun setLanguage(tag: String) {
+        if (canPickLanguage) {
+            getApplication<Application>().getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.forLanguageTags(tag)
+        }
+    }
     fun setDynamicColor(on: Boolean) = ui.setDynamic(on)
 
     // ---- launch
 
     fun play() {
         when {
-            _install.value !is InstallState.Installed -> say("Instale os dados do jogo primeiro (a ISO do BT3 USA).")
-            !engineAvailable -> say("O motor do jogo ainda não está incluído nesta versão do Dragon Rage.")
+            _install.value !is InstallState.Installed -> say(str(R.string.msg_install_first))
+            !engineAvailable -> say(str(R.string.msg_no_engine))
             else -> getApplication<android.app.Application>().startActivity(
                 android.content.Intent(getApplication(), com.dfdx047.dragonrage.engine.GameActivity::class.java)
                     .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
@@ -216,6 +232,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---- helpers
+
+    private fun str(id: Int, vararg args: Any): String = getApplication<Application>().getString(id, *args)
 
     private fun say(text: String) {
         _messages.tryEmit(text)
@@ -227,7 +245,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun work(title: String, block: suspend () -> Unit) {
         if (_busy.value != null) {
-            say("Aguarde a operação atual terminar.")
+            say(str(R.string.msg_wait))
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
@@ -237,7 +255,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                say(e.message ?: "Erro: ${e.javaClass.simpleName}")
+                say(e.message ?: "${str(R.string.msg_error)}: ${e.javaClass.simpleName}")
             } finally {
                 _busy.value = null
             }

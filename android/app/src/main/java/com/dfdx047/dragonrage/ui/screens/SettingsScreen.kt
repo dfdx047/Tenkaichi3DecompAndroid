@@ -26,10 +26,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.dfdx047.dragonrage.R
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dfdx047.dragonrage.AppViewModel
@@ -51,98 +54,106 @@ fun SettingsScreen(vm: AppViewModel) {
         Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        ScreenTitle("Ajustes", "Valem na próxima vez que o jogo abrir")
+        ScreenTitle(stringResource(R.string.settings_title), stringResource(R.string.settings_sub))
 
-        SectionCard("Vídeo", Icons.Rounded.Tv) {
+        SectionCard(stringResource(R.string.video), Icons.Rounded.Tv) {
             val scale = get(EngineSettings.SCALE, EngineSettings.SCALE_DEFAULT)
             StepSlider(
-                label = "Resolução interna",
+                label = stringResource(R.string.resolution),
                 format = { "${it}x · ${512 * it}×${448 * it}" },
                 value = scale, range = 1..8,
                 onChange = { vm.setting(EngineSettings.SCALE, it) },
             )
             Text(
-                "1x é a resolução do PS2. Em celulares e portáteis, 2x ou 3x costuma ser o ponto ideal.",
+                stringResource(R.string.resolution_hint),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text("Proporção da tela", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.aspect), style = MaterialTheme.typography.titleSmall)
             ChipRow(
                 options = listOf("4:3" to 1333, "16:10" to 1600, "16:9" to 1778, "21:9" to 2389, "32:9" to 3556),
                 selected = get(EngineSettings.ASPECT, EngineSettings.ASPECT_DEFAULT),
                 onSelect = { vm.setting(EngineSettings.ASPECT, it) },
             )
-            ToggleRow("Mostrar FPS", "Contador de quadros por segundo durante o jogo", get(EngineSettings.METER, 0) != 0) {
+            ToggleRow(stringResource(R.string.show_fps), stringResource(R.string.show_fps_text), get(EngineSettings.METER, 0) != 0) {
                 vm.setting(EngineSettings.METER, if (it) 1 else 0)
             }
         }
 
-        SectionCard("Efeitos do PS2", Icons.Rounded.AutoAwesome, accent = Dbz.SaiyanGold) {
+        SectionCard(stringResource(R.string.ps2_effects), Icons.Rounded.AutoAwesome, accent = Dbz.SaiyanGold) {
             val fxOff = get(EngineSettings.FX_OFF, 0)
             listOf(
-                Triple(1, "Contorno", "A linha preta em volta dos lutadores"),
-                Triple(2, "Silhueta atrás do cenário", "Mostra o lutador escondido atrás de objetos"),
-                Triple(4, "Névoa de profundidade", "A cor que tinge o que está longe"),
-                Triple(8, "Brilho e reflexo", "O bloom em volta de coisas brilhantes e o reflexo do céu"),
-                Triple(16, "Desfoque à distância", "O foco suave no cenário distante"),
+                Triple(1, R.string.fx_outline, R.string.fx_outline_text),
+                Triple(2, R.string.fx_see, R.string.fx_see_text),
+                Triple(4, R.string.fx_depth, R.string.fx_depth_text),
+                Triple(8, R.string.fx_glow, R.string.fx_glow_text),
+                Triple(16, R.string.fx_blur, R.string.fx_blur_text),
             ).forEach { (bit, title, sub) ->
-                ToggleRow(title, sub, fxOff and bit == 0) { on ->
+                ToggleRow(stringResource(title), stringResource(sub), fxOff and bit == 0) { on ->
                     vm.setting(EngineSettings.FX_OFF, if (on) fxOff and bit.inv() else fxOff or bit)
                 }
             }
             val glow = get(EngineSettings.GLOW, EngineSettings.GLOW_DEFAULT)
-            StepSlider("Intensidade do brilho", { "${it * 10}%" }, glow / 10, 0..20) { vm.setting(EngineSettings.GLOW, it * 10) }
+            StepSlider(stringResource(R.string.glow_strength), { "${it * 10}%" }, glow / 10, 0..20) { vm.setting(EngineSettings.GLOW, it * 10) }
         }
 
-        SectionCard("Áudio", Icons.AutoMirrored.Rounded.VolumeUp, accent = Dbz.ShenronGreen) {
+        SectionCard(stringResource(R.string.audio), Icons.AutoMirrored.Rounded.VolumeUp, accent = Dbz.ShenronGreen) {
             val music = get(EngineSettings.MUSIC, 100)
-            StepSlider("Música", { "${it * 10}%" }, music / 10, 0..20) { vm.setting(EngineSettings.MUSIC, it * 10) }
+            StepSlider(stringResource(R.string.music), { "${it * 10}%" }, music / 10, 0..20) { vm.setting(EngineSettings.MUSIC, it * 10) }
             val fx = get(EngineSettings.EFFECTS, 100)
-            StepSlider("Efeitos e vozes", { "${it * 10}%" }, fx / 10, 0..20) { vm.setting(EngineSettings.EFFECTS, it * 10) }
+            StepSlider(stringResource(R.string.sfx), { "${it * 10}%" }, fx / 10, 0..20) { vm.setting(EngineSettings.EFFECTS, it * 10) }
         }
 
-        SectionCard("Controles", Icons.Rounded.SportsEsports, accent = Dbz.KiBlue) {
-            Text("Controles na tela", style = MaterialTheme.typography.titleSmall)
+        SectionCard(stringResource(R.string.controls), Icons.Rounded.SportsEsports, accent = Dbz.KiBlue) {
+            Text(stringResource(R.string.touch_controls), style = MaterialTheme.typography.titleSmall)
             ChipRow(
-                options = listOf("Desligado" to 0, "Automático" to 1, "Sempre" to 2),
+                options = listOf(stringResource(R.string.touch_off) to 0, stringResource(R.string.touch_auto) to 1, stringResource(R.string.touch_always) to 2),
                 selected = get(EngineSettings.TOUCH, 1),
                 onSelect = { vm.setting(EngineSettings.TOUCH, it) },
             )
             Text(
-                "Automático: aparecem só quando não há controle conectado (no Odin e em portáteis, ficam escondidos).",
+                stringResource(R.string.touch_hint),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             val alpha = get(EngineSettings.TOUCH_OPACITY, 60)
-            StepSlider("Opacidade", { "${it * 10}%" }, alpha / 10, 1..10) { vm.setting(EngineSettings.TOUCH_OPACITY, it * 10) }
+            StepSlider(stringResource(R.string.opacity), { "${it * 10}%" }, alpha / 10, 1..10) { vm.setting(EngineSettings.TOUCH_OPACITY, it * 10) }
         }
 
-        SectionCard("Desempenho", Icons.Rounded.Speed, accent = MaterialTheme.colorScheme.secondary) {
-            ToggleRow("Modo 60 FPS", "Em breve: o jogo roda a lógica a 30 quadros por segundo", false, enabled = false) {}
+        SectionCard(stringResource(R.string.performance), Icons.Rounded.Speed, accent = MaterialTheme.colorScheme.secondary) {
+            ToggleRow(stringResource(R.string.fps60), stringResource(R.string.fps60_text), false, enabled = false) {}
         }
 
-        SectionCard("Aparência do app", Icons.Rounded.Palette, accent = MaterialTheme.colorScheme.tertiary) {
-            Text("Tema", style = MaterialTheme.typography.titleSmall)
+        SectionCard(stringResource(R.string.appearance), Icons.Rounded.Palette, accent = MaterialTheme.colorScheme.tertiary) {
+            Text(stringResource(R.string.theme), style = MaterialTheme.typography.titleSmall)
             ChipRow(
-                options = listOf("Escuro" to ThemeMode.DARK.ordinal, "Claro" to ThemeMode.LIGHT.ordinal, "Sistema" to ThemeMode.SYSTEM.ordinal),
+                options = listOf(stringResource(R.string.theme_dark) to ThemeMode.DARK.ordinal, stringResource(R.string.theme_light) to ThemeMode.LIGHT.ordinal, stringResource(R.string.theme_system) to ThemeMode.SYSTEM.ordinal),
                 selected = ui.theme.ordinal,
                 onSelect = { vm.setTheme(ThemeMode.entries[it]) },
             )
+            if (vm.canPickLanguage) {
+                Text(stringResource(R.string.language), style = MaterialTheme.typography.titleSmall)
+                var lang by remember { mutableStateOf(vm.language()) }
+                val langs = listOf("", "en", "pt")
+                ChipRow(
+                    options = listOf(stringResource(R.string.lang_system) to 0, "English" to 1, "Português" to 2),
+                    selected = langs.indexOfFirst { it.isNotEmpty() && lang.startsWith(it) }.coerceAtLeast(0),
+                    onSelect = { lang = langs[it]; vm.setLanguage(langs[it]) },
+                )
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                ToggleRow("Cores do Material You", "Usa as cores do seu papel de parede no lugar das cores do Goku", ui.dynamicColor) {
+                ToggleRow(stringResource(R.string.material_you), stringResource(R.string.material_you_text), ui.dynamicColor) {
                     vm.setDynamicColor(it)
                 }
             }
         }
 
-        SectionCard("Sobre", Icons.Rounded.Info, accent = MaterialTheme.colorScheme.outline) {
+        SectionCard(stringResource(R.string.about), Icons.Rounded.Info, accent = MaterialTheme.colorScheme.outline) {
             Text("Dragon Rage ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Port para Android do Tenkaichi3Decomp, o port nativo de PC de Dragon Ball Z: Budokai Tenkaichi 3 " +
-                    "baseado na decompilação BT3-Decompiled. Não é afiliado aos desenvolvedores, distribuidoras ou " +
-                    "detentores dos direitos do jogo, e não contém nenhum dado do jogo: é preciso a sua própria cópia.",
+                stringResource(R.string.about_text),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             HorizontalDivider()
-            Text("Pasta do jogo", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.game_folder), style = MaterialTheme.typography.titleSmall)
             Text(vm.paths.root.path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

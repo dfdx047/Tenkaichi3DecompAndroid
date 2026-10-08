@@ -18,7 +18,7 @@ class IsoImage(private val channel: FileChannel) : Closeable {
     init {
         val pvd = read(16L * SECTOR, SECTOR)
         if (pvd[0].toInt() != 1 || String(pvd, 1, 5, Charsets.US_ASCII) != "CD001") {
-            throw IOException("Não é uma imagem ISO 9660")
+            throw IOException("Not an ISO 9660 image")
         }
         val root = ByteBuffer.wrap(pvd).order(ByteOrder.LITTLE_ENDIAN)
         val lba = root.getInt(156 + 2).toLong() and 0xFFFFFFFFL
@@ -38,7 +38,7 @@ class IsoImage(private val channel: FileChannel) : Closeable {
         var pos = offset
         while (buf.hasRemaining()) {
             val n = channel.read(buf, pos)
-            if (n < 0) throw IOException("A imagem terminou antes do esperado (arquivo incompleto?)")
+            if (n < 0) throw IOException("The image ends early (incomplete file?)")
             pos += n
         }
     }

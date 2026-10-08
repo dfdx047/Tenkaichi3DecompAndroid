@@ -43,6 +43,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.dfdx047.dragonrage.R
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,11 +73,11 @@ fun ModsScreen(vm: AppViewModel) {
 
     Box(Modifier.fillMaxSize()) {
         Column {
-            ScreenTitle("Mods", "Personagens, estágios e músicas novas", Modifier.padding(horizontal = 16.dp))
+            ScreenTitle(stringResource(R.string.mods_title), stringResource(R.string.mods_sub), Modifier.padding(horizontal = 16.dp))
             TabRow(selectedTabIndex = tab, containerColor = Color.Transparent) {
-                Tab(tab == 0, { tab = 0 }, text = { Text("Arquivos (${mods.size})") })
-                Tab(tab == 1, { tab = 1 }, text = { Text("Estágios (${stages.size})") })
-                Tab(tab == 2, { tab = 2 }, text = { Text("Músicas (${songs.size})") })
+                Tab(tab == 0, { tab = 0 }, text = { Text(stringResource(R.string.tab_files, mods.size)) })
+                Tab(tab == 1, { tab = 1 }, text = { Text(stringResource(R.string.tab_stages, stages.size)) })
+                Tab(tab == 2, { tab = 2 }, text = { Text(stringResource(R.string.tab_songs, songs.size)) })
             }
             LazyColumn(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
@@ -85,9 +87,8 @@ fun ModsScreen(vm: AppViewModel) {
                     0 -> {
                         if (mods.isEmpty()) item {
                             EmptyState(
-                                Icons.Rounded.Extension, "Nenhum mod",
-                                "Mods em .zip que substituem arquivos do jogo, com as pastas como em gamedata " +
-                                    "(pzs3us0, pzs3us1, pzs3us2, disc). Se dois mods mexem no mesmo arquivo, vale o de baixo.",
+                                Icons.Rounded.Extension, stringResource(R.string.mods_empty),
+                                stringResource(R.string.mods_empty_text),
                             )
                         }
                         itemsIndexed(mods, key = { _, m -> m.id }) { i, m ->
@@ -105,13 +106,13 @@ fun ModsScreen(vm: AppViewModel) {
                         if (list.isEmpty()) item {
                             if (kind == ExtraKind.STAGE) {
                                 EmptyState(
-                                    Icons.Rounded.Landscape, "Nenhum estágio extra",
-                                    "Adicione mapas .unk (os mesmos usados no PCSX2). Eles aparecem como novas opções na seleção de estágio.",
+                                    Icons.Rounded.Landscape, stringResource(R.string.stages_empty),
+                                    stringResource(R.string.stages_empty_text),
                                 )
                             } else {
                                 EmptyState(
-                                    Icons.Rounded.MusicNote, "Nenhuma música extra",
-                                    "Adicione músicas .adx. Elas entram na lista de músicas (BGM) com o nome que você escolher.",
+                                    Icons.Rounded.MusicNote, stringResource(R.string.songs_empty),
+                                    stringResource(R.string.songs_empty_text),
                                 )
                             }
                         }
@@ -129,30 +130,30 @@ fun ModsScreen(vm: AppViewModel) {
         ExtendedFloatingActionButton(
             onClick = { pick.launch(arrayOf("*/*")) },
             icon = { Icon(Icons.Rounded.Add, null) },
-            text = { Text("Adicionar") },
+            text = { Text(stringResource(R.string.add)) },
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         )
     }
 
     deleteMod?.let { m ->
-        ConfirmDelete("Apagar o mod \"${m.name}\"?", onConfirm = { vm.deleteMod(m) }, onDismiss = { deleteMod = null })
+        ConfirmDelete(stringResource(R.string.delete_mod_q, m.name), onConfirm = { vm.deleteMod(m) }, onDismiss = { deleteMod = null })
     }
     deleteExtra?.let { (kind, item) ->
-        ConfirmDelete("Apagar \"${item.displayName}\"?", onConfirm = { vm.deleteExtra(kind, item) }, onDismiss = { deleteExtra = null })
+        ConfirmDelete(stringResource(R.string.delete_q, item.displayName), onConfirm = { vm.deleteExtra(kind, item) }, onDismiss = { deleteExtra = null })
     }
     rename?.let { (kind, item) ->
         var text by remember(item) { mutableStateOf(item.displayName) }
         AlertDialog(
             onDismissRequest = { rename = null },
-            title = { Text("Nome no jogo") },
+            title = { Text(stringResource(R.string.name_in_game)) },
             text = {
                 OutlinedTextField(
                     value = text, onValueChange = { text = it.take(40) }, singleLine = true,
-                    supportingText = { Text("Escrito com as letras do próprio jogo na seleção") },
+                    supportingText = { Text(stringResource(R.string.name_in_game_hint)) },
                 )
             },
-            confirmButton = { TextButton(onClick = { rename = null; vm.renameExtra(kind, item, text) }) { Text("Salvar") } },
-            dismissButton = { TextButton(onClick = { rename = null }) { Text("Cancelar") } },
+            confirmButton = { TextButton(onClick = { rename = null; vm.renameExtra(kind, item, text) }) { Text(stringResource(R.string.save)) } },
+            dismissButton = { TextButton(onClick = { rename = null }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }
@@ -162,8 +163,8 @@ private fun ConfirmDelete(title: String, onConfirm: () -> Unit, onDismiss: () ->
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        confirmButton = { TextButton(onClick = { onDismiss(); onConfirm() }) { Text("Apagar") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+        confirmButton = { TextButton(onClick = { onDismiss(); onConfirm() }) { Text(stringResource(R.string.delete)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -181,14 +182,14 @@ private fun ModCard(
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(m.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("${m.files} arquivos · ${formatBytes(m.bytes)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.mod_info, m.files, formatBytes(m.bytes)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Column {
-                IconButton(onClick = onUp, enabled = !first) { Icon(Icons.Rounded.KeyboardArrowUp, "Subir") }
-                IconButton(onClick = onDown, enabled = !last) { Icon(Icons.Rounded.KeyboardArrowDown, "Descer") }
+                IconButton(onClick = onUp, enabled = !first) { Icon(Icons.Rounded.KeyboardArrowUp, stringResource(R.string.move_up)) }
+                IconButton(onClick = onDown, enabled = !last) { Icon(Icons.Rounded.KeyboardArrowDown, stringResource(R.string.move_down)) }
             }
             Switch(checked = m.enabled, onCheckedChange = onToggle)
-            IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, "Apagar") }
+            IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, stringResource(R.string.delete)) }
         }
     }
 }
@@ -205,8 +206,8 @@ private fun ExtraCard(item: ExtraItem, kind: ExtraKind, onRename: () -> Unit, on
                 Text(item.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text("${item.file.name} · ${formatBytes(item.bytes)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            IconButton(onClick = onRename) { Icon(Icons.Rounded.Edit, "Renomear") }
-            IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, "Apagar") }
+            IconButton(onClick = onRename) { Icon(Icons.Rounded.Edit, stringResource(R.string.rename)) }
+            IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, stringResource(R.string.delete)) }
         }
     }
 }

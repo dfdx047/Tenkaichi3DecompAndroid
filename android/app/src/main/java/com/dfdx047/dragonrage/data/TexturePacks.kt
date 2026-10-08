@@ -1,6 +1,8 @@
 package com.dfdx047.dragonrage.data
 
 import android.content.ContentResolver
+import android.content.Context
+import com.dfdx047.dragonrage.R
 import android.net.Uri
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -19,7 +21,7 @@ data class TexturePack(
  * `<texture hash>-[<palette hash>-]<bits>` at any depth below `textures/` (port/src/gs/gs_texpack.c), so a
  * pack is simply a folder there; switched off, it moves to `textures_off/`.
  */
-class TexturePacks(private val paths: GamePaths, private val resolver: ContentResolver) {
+class TexturePacks(private val context: Context, private val paths: GamePaths, private val resolver: ContentResolver) {
 
     fun list(): List<TexturePack> {
         fun scan(dir: File, enabled: Boolean) = dir.listFiles { f -> f.isDirectory }.orEmpty().map { d ->
@@ -38,7 +40,7 @@ class TexturePacks(private val paths: GamePaths, private val resolver: ContentRe
     suspend fun import(uri: Uri, onProgress: (String) -> Unit): TexturePack = withContext(Dispatchers.IO) {
         val fileName = resolver.displayName(uri)
         if (!fileName.endsWith(".zip", ignoreCase = true)) {
-            throw IllegalArgumentException("Escolha um pack em .zip (arquivos .7z e .rar ainda não são aceitos).")
+            throw IllegalArgumentException(context.getString(R.string.err_zip_only))
         }
         val name = safeName(fileName.substringBeforeLast('.'))
         val staging = uniqueChild(paths.temp, name)
@@ -46,15 +48,13 @@ class TexturePacks(private val paths: GamePaths, private val resolver: ContentRe
         try {
             var found = 0
             val files = resolver.openInputStream(uri)?.use { input ->
-                unzip(input, staging, onBytes = { onProgress("Extraindo… ${formatBytes(it)}") }) { rel ->
+                unzip(input, staging, onBytes = { onProgress(context.getString(R.string.progress_extracting, formatBytes(it))) }) { rel ->
                     if (isReplacement(rel.substringAfterLast('/'))) found++
                 }
-            } ?: throw IllegalStateException("Não foi possível abrir o arquivo.")
-            if (files == 0) throw IllegalArgumentException("O zip está vazio.")
+            } ?: throw IllegalStateException(context.getString(R.string.err_open_file))
+            if (files == 0) throw IllegalArgumentException(context.getString(R.string.err_zip_empty))
             if (found == 0) {
-                throw IllegalArgumentException(
-                    "Nenhuma textura no formato do PCSX2 foi encontrada (nomes como 1a2b3c4d5e6f7a8b-0f1e2d3c-00004a64.dds).",
-                )
+                throw IllegalArgumentException(context.getString(R.string.err_no_textures))
             }
             val dest = uniqueChild(paths.textures, name)
             if (!staging.renameTo(dest)) {

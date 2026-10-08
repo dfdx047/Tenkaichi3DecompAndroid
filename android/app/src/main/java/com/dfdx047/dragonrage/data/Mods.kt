@@ -1,6 +1,8 @@
 package com.dfdx047.dragonrage.data
 
 import android.content.ContentResolver
+import android.content.Context
+import com.dfdx047.dragonrage.R
 import android.net.Uri
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -26,7 +28,7 @@ sealed interface ImportResult {
  *    order (a later mod wins over an earlier one for the same file);
  *  - stages/ (.unk) and songs/ (.adx), named by maps.txt / songs.txt (`file|Name In The Menu`).
  */
-class Mods(private val paths: GamePaths, private val resolver: ContentResolver) {
+class Mods(private val context: Context, private val paths: GamePaths, private val resolver: ContentResolver) {
 
     private val stateFile get() = File(paths.modLibrary, "mods.txt") // order and switches: "1|folder" per line
 
@@ -80,7 +82,7 @@ class Mods(private val paths: GamePaths, private val resolver: ContentResolver) 
         paths.mods.mkdirs()
         val on = listMods().filter { it.enabled }
         on.forEachIndexed { i, m ->
-            onProgress("Aplicando mods ${i + 1}/${on.size}: ${m.name}")
+            onProgress(context.getString(R.string.progress_applying, i + 1, on.size, m.name))
             m.dir.copyRecursively(paths.mods, overwrite = true)
         }
     }
@@ -97,19 +99,19 @@ class Mods(private val paths: GamePaths, private val resolver: ContentResolver) 
         ExtraKind.entries.firstOrNull { it.ext == ext }?.let { kind ->
             val dest = uniqueFile(dirOf(kind), safeName(fileName))
             resolver.openInputStream(uri)?.use { input -> dest.outputStream().use { input.copyTo(it) } }
-                ?: throw IllegalStateException("Não foi possível abrir o arquivo.")
+                ?: throw IllegalStateException(context.getString(R.string.err_open_file))
             return@withContext ImportResult.Extras(kind, 1)
         }
         if (ext != "zip") {
-            throw IllegalArgumentException("Formato não suportado: escolha um .zip (mod), .unk (estágio) ou .adx (música).")
+            throw IllegalArgumentException(context.getString(R.string.err_mod_format))
         }
         val name = safeName(fileName.substringBeforeLast('.'))
         val staging = uniqueChild(paths.temp, name)
         try {
             val files = resolver.openInputStream(uri)?.use { input ->
-                unzip(input, staging, onBytes = { onProgress("Extraindo… ${formatBytes(it)}") })
-            } ?: throw IllegalStateException("Não foi possível abrir o arquivo.")
-            if (files == 0) throw IllegalArgumentException("O zip está vazio.")
+                unzip(input, staging, onBytes = { onProgress(context.getString(R.string.progress_extracting, formatBytes(it))) })
+            } ?: throw IllegalStateException(context.getString(R.string.err_open_file))
+            if (files == 0) throw IllegalArgumentException(context.getString(R.string.err_zip_empty))
             val all = staging.walkTopDown().filter { it.isFile }.toList()
             val kind = ExtraKind.entries.firstOrNull { k -> all.all { it.extension.equals(k.ext, true) || it.name.equals(k.manifest, true) } }
             if (kind != null) {
@@ -127,9 +129,7 @@ class Mods(private val paths: GamePaths, private val resolver: ContentResolver) 
                 if (kids.size == 1 && kids[0].isDirectory && !looksLikeGameData(kids[0].name)) root = kids[0] else break
             }
             if (root.listFiles().orEmpty().none { looksLikeGameData(it.name) }) {
-                throw IllegalArgumentException(
-                    "Este zip não parece um mod do port: a estrutura deve espelhar gamedata/ (pastas pzs3us0, pzs3us1, pzs3us2 ou disc).",
-                )
+                throw IllegalArgumentException(context.getString(R.string.err_not_mod))
             }
             val dest = uniqueChild(paths.modLibrary, name)
             if (!root.renameTo(dest)) root.copyRecursively(dest, overwrite = true)

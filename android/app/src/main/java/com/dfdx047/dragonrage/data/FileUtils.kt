@@ -17,7 +17,7 @@ fun ContentResolver.displayName(uri: Uri): String {
             if (i >= 0) c.getString(i)?.let { return it }
         }
     }
-    return uri.lastPathSegment?.substringAfterLast('/') ?: "arquivo"
+    return uri.lastPathSegment?.substringAfterLast('/') ?: "file"
 }
 
 fun ContentResolver.size(uri: Uri): Long {
@@ -64,7 +64,7 @@ suspend fun unzip(input: InputStream, dest: File, onBytes: (Long) -> Unit = {}, 
             val name = e.name.replace('\\', '/')
             if (name.startsWith("__MACOSX/") || name.endsWith(".DS_Store")) continue
             val out = File(dest, name).canonicalFile
-            if (!out.path.startsWith(canonicalDest.path + File.separator)) throw IOException("Entrada inválida no zip: $name")
+            if (!out.path.startsWith(canonicalDest.path + File.separator)) throw IOException("Invalid entry in the zip: $name")
             if (e.isDirectory) {
                 out.mkdirs()
                 continue

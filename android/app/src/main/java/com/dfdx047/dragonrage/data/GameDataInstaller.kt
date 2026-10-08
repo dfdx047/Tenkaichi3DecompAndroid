@@ -1,6 +1,8 @@
 package com.dfdx047.dragonrage.data
 
 import android.content.ContentResolver
+import android.content.Context
+import com.dfdx047.dragonrage.R
 import android.net.Uri
 import android.os.StatFs
 import java.io.File
@@ -32,6 +34,7 @@ sealed interface InstallState {
  * unpacked files.
  */
 class GameDataInstaller(
+    private val context: Context,
     private val paths: GamePaths,
     private val resolver: ContentResolver,
     private val checkSums: Boolean = true, // (off only in tests with a synthetic image)
@@ -48,16 +51,16 @@ class GameDataInstaller(
     }
 
     suspend fun install(uri: Uri, report: (InstallState.Working) -> Unit): InstallState.Installed = withContext(Dispatchers.IO) {
-        val pfd = resolver.openFileDescriptor(uri, "r") ?: throw Stop("Não foi possível abrir o arquivo escolhido.")
+        val pfd = resolver.openFileDescriptor(uri, "r") ?: throw Stop(context.getString(R.string.err_open_file))
         pfd.use {
             val channel = FileInputStream(pfd.fileDescriptor).channel
             val iso = try {
                 IsoImage(channel)
             } catch (e: IOException) {
-                throw Stop("O arquivo não é uma imagem de disco ISO válida. Use a ISO do jogo (não CSO, CHD ou ZIP).")
+                throw Stop(context.getString(R.string.err_not_iso))
             }
             iso.use {
-                report(InstallState.Working("Verificando o disco", 0f, "procurando o jogo na imagem"))
+                report(InstallState.Working(context.getString(R.string.step_checking), 0f, context.getString(R.string.detail_finding)))
                 verify(iso, report)
                 extract(iso, report)
             }
@@ -68,12 +71,9 @@ class GameDataInstaller(
         val slus = iso.find("SLUS_216.78")
         val dbzp = iso.find("BIN/DBZP.BIN")
         if (slus == null || dbzp == null) {
-            throw Stop(
-                "Esta não é a imagem da versão americana (USA) de Budokai Tenkaichi 3: não há SLUS_216.78 nela.\n" +
-                    "Outras regiões e a versão de Wii têm outros programas e não são suportadas.",
-            )
+            throw Stop(context.getString(R.string.err_not_usa))
         }
-        report(InstallState.Working("Verificando o disco", 0.5f, "conferindo as somas de verificação"))
+        report(InstallState.Working(context.getString(R.string.step_checking), 0.5f, context.getString(R.string.detail_checksums)))
         coroutineContext.ensureActive()
         val elf = iso.read(slus.offset, slus.size.toInt())
         val rom = ByteArray((ROM_END - ROM_BASE).toInt())
@@ -99,10 +99,7 @@ class GameDataInstaller(
         }
         val menu = iso.read(dbzp.offset, dbzp.size.toInt())
         if (checkSums && (sha1(rom) != ROM_SHA1 || sha1(menu) != DBZP_SHA1)) {
-            throw Stop(
-                "Os programas do jogo nesta imagem não têm as somas esperadas.\n" +
-                    "É preciso a versão USA (SLUS-21678) sem modificações; uma imagem com patch ou danificada não funciona.",
-            )
+            throw Stop(context.getString(R.string.err_checksum))
         }
     }
 
@@ -114,7 +111,7 @@ class GameDataInstaller(
         val total = take.sumOf { it.size }
         val free = StatFs(paths.root.path).availableBytes
         if (free < total + 256L * 1024 * 1024) {
-            throw Stop("Espaço insuficiente: são precisos ${formatBytes(total)} e há ${formatBytes(free)} livres.")
+            throw Stop(context.getString(R.string.err_space, formatBytes(total), formatBytes(free)))
         }
         // A fresh start: whatever an earlier, interrupted run left is replaced (mods stay).
         paths.installedMarker.delete()
@@ -130,7 +127,7 @@ class GameDataInstaller(
             val percent = if (total > 0) (done * 100 / total).toInt() else 0
             if (percent != lastPercent) {
                 lastPercent = percent
-                report(InstallState.Working("Extraindo os dados do jogo", done.toFloat() / total, "$percent% · $files arquivos"))
+                report(InstallState.Working(context.getString(R.string.step_extracting), done.toFloat() / total, context.getString(R.string.detail_extract, percent, files)))
             }
         }
 
@@ -150,14 +147,14 @@ class GameDataInstaller(
             dir.mkdirs()
             val head = ByteBuffer.wrap(iso.read(f.offset, 8)).order(ByteOrder.LITTLE_ENDIAN)
             val count = head.getInt(4).toLong() and 0xFFFFFFFFL
-            if (head.getInt(0) != 0x00534641 || count * 8 + 8 > f.size) throw Stop("Um arquivo do disco (${f.path}) está danificado.")
+            if (head.getInt(0) != 0x00534641 || count * 8 + 8 > f.size) throw Stop(context.getString(R.string.err_damaged, f.path))
             val table = ByteBuffer.wrap(iso.read(f.offset + 8, (count * 8).toInt())).order(ByteOrder.LITTLE_ENDIAN)
             var inArchive = 0L
             for (i in 0 until count.toInt()) {
                 coroutineContext.ensureActive()
                 val off = table.getInt(i * 8).toLong() and 0xFFFFFFFFL
                 val size = table.getInt(i * 8 + 4).toLong() and 0xFFFFFFFFL
-                if (off + size > f.size) throw Stop("Um arquivo do disco (${f.path}) está danificado.")
+                if (off + size > f.size) throw Stop(context.getString(R.string.err_damaged, f.path))
                 copyOut(iso, f.offset + off, size, File(dir, "%05d.bin".format(i)), buf)
                 files++
                 inArchive += size
