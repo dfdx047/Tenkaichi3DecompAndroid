@@ -913,7 +913,23 @@ static void vk_frame_end(void) {
     sEndT[2] = gpu_now();
     acquired = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, sWindow, &swap, &sw, &sh);
     sEndT[3] = gpu_now();
+#ifdef __ANDROID__
+    if (gGsFrame % 300 == 0) { /* (with the heartbeat: why a frame would not reach the screen) */
+        fprintf(stderr, "bt3: present: acquired %d, swapchain %s %ux%u, main fbp %d, target %d, cleared %d, targets %d\n", (int)acquired,
+                swap != NULL ? "yes" : "NO", (unsigned)sw, (unsigned)sh, (int)gGsMainFbp, best,
+                best >= 0 ? (int)gsTargets[best].cleared : -1, gsTargetCount);
+        if (!acquired) {
+            fprintf(stderr, "bt3: present: %s\n", SDL_GetError());
+        }
+    }
+#endif
+#ifdef __ANDROID__
+    /* (testing on Android: show the frame's buffer even when it was never cleared, so the settings window and
+       whatever the game drew reach the screen; the log above says which condition fails) */
+    if (acquired && swap != NULL && best >= 0) {
+#else
     if (acquired && swap != NULL && best >= 0 && gsTargets[best].cleared) {
+#endif
         SDL_GPUBlitInfo bl;
         SDL_zero(bl);
         bl.source.texture = sTgCol[best];
