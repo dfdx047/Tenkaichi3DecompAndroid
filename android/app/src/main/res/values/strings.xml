@@ -141,7 +141,7 @@
     <string name="touch_off">Off</string>
     <string name="touch_auto">Automatic</string>
     <string name="touch_always">Always</string>
-    <string name="touch_hint">Automatic: shown only when no controller is connected (hidden on the Odin and other handhelds).</string>
+    <string name="touch_hint">Automatic: they hide as soon as a physical controller is used (the Odin\'s own, a Bluetooth pad) and come back when you touch the screen.</string>
     <string name="opacity">Opacity</string>
     <string name="performance">Performance</string>
     <string name="fps60">60 FPS mode</string>
@@ -158,4 +158,37 @@
     <string name="about">About</string>
     <string name="about_text">Android port of Tenkaichi3Decomp, the native PC port of Dragon Ball Z: Budokai Tenkaichi 3 built on the BT3-Decompiled decompilation. Not affiliated with the game\'s developers, publishers or rights holders, and contains no game data: your own copy is needed.</string>
     <string name="game_folder">Game folder</string>
+    <!-- on-screen controller -->
+    <string name="nav_controls">Controls</string>
+    <string name="controls_subtitle">The on-screen controller: when it shows, its look, its layout and macros</string>
+    <string name="touch_skin">Look</string>
+    <string name="skin_playstation">PlayStation</string>
+    <string name="skin_xbox">Xbox</string>
+    <string name="skin_nintendo">Nintendo</string>
+    <string name="touch_size">Size</string>
+    <string name="touch_haptics">Vibration</string>
+    <string name="touch_haptics_text">A short buzz when a button is pressed</string>
+    <string name="touch_float">Floating stick</string>
+    <string name="touch_float_text">The left stick starts where your thumb lands, anywhere on the lower left</string>
+    <string name="touch_edit_layout">Edit layout</string>
+    <string name="touch_edit_hint">Drag a control to move it. Tap it to select it: − and + resize it, Hide hides it, Reset puts it back. With nothing selected, − and + resize everything.</string>
+    <string name="touch_show">Show</string>
+    <string name="touch_hide">Hide</string>
+    <string name="touch_reset">Reset</string>
+    <string name="touch_done">Done</string>
+    <string name="touch_all_controls">All controls</string>
+    <string name="touch_ctl_menu">Game menu</string>
+    <string name="touch_ctl_options">Controller options</string>
+    <string name="touch_opacity_n">Opacity: %1$d%%</string>
+    <string name="touch_show_controls">Show controls</string>
+    <string name="touch_hide_controls">Hide controls</string>
+    <string name="macros">Macros</string>
+    <string name="macros_intro">A macro is a button of your own on the screen that plays a sequence: a combo, or several buttons at once. Each step holds its buttons for a time; a step with no buttons is a pause.</string>
+    <string name="macro_add">New macro</string>
+    <string name="macro_edit">Macro</string>
+    <string name="macro_name">Name</string>
+    <string name="macro_repeat">Repeat while held</string>
+    <string name="macro_repeat_text">Plays again for as long as the button is held (turbo)</string>
+    <string name="macro_step_n">Step %1$d</string>
+    <string name="macro_add_step">Add step</string>
 </resources>

@@ -140,7 +140,7 @@
     <string name="touch_off">Desligado</string>
     <string name="touch_auto">Automático</string>
     <string name="touch_always">Sempre</string>
-    <string name="touch_hint">Automático: aparecem só quando não há controle conectado (no Odin e em portáteis, ficam escondidos).</string>
+    <string name="touch_hint">Automático: somem assim que um controle físico é usado (o do Odin, um controle Bluetooth) e voltam quando você toca na tela.</string>
     <string name="opacity">Opacidade</string>
     <string name="performance">Desempenho</string>
     <string name="fps60">Modo 60 FPS</string>
@@ -157,4 +157,37 @@
     <string name="about">Sobre</string>
     <string name="about_text">Port para Android do Tenkaichi3Decomp, o port nativo de PC de Dragon Ball Z: Budokai Tenkaichi 3 baseado na decompilação BT3-Decompiled. Não é afiliado aos desenvolvedores, distribuidoras ou detentores dos direitos do jogo, e não contém nenhum dado do jogo: é preciso a sua própria cópia.</string>
     <string name="game_folder">Pasta do jogo</string>
+    <!-- controle na tela -->
+    <string name="nav_controls">Controles</string>
+    <string name="controls_subtitle">O controle na tela: quando aparece, o visual, o layout e as macros</string>
+    <string name="touch_skin">Visual</string>
+    <string name="skin_playstation">PlayStation</string>
+    <string name="skin_xbox">Xbox</string>
+    <string name="skin_nintendo">Nintendo</string>
+    <string name="touch_size">Tamanho</string>
+    <string name="touch_haptics">Vibração</string>
+    <string name="touch_haptics_text">Uma vibração curta ao apertar um botão</string>
+    <string name="touch_float">Analógico flutuante</string>
+    <string name="touch_float_text">O analógico esquerdo começa onde o polegar toca, em qualquer ponto do canto inferior esquerdo</string>
+    <string name="touch_edit_layout">Editar layout</string>
+    <string name="touch_edit_hint">Arraste um controle para movê-lo. Toque nele para selecionar: − e + mudam o tamanho, Ocultar esconde, Resetar volta ao padrão. Sem nada selecionado, − e + mudam o tamanho de tudo.</string>
+    <string name="touch_show">Mostrar</string>
+    <string name="touch_hide">Ocultar</string>
+    <string name="touch_reset">Resetar</string>
+    <string name="touch_done">Pronto</string>
+    <string name="touch_all_controls">Todos os controles</string>
+    <string name="touch_ctl_menu">Menu do jogo</string>
+    <string name="touch_ctl_options">Opções do controle</string>
+    <string name="touch_opacity_n">Opacidade: %1$d%%</string>
+    <string name="touch_show_controls">Mostrar controles</string>
+    <string name="touch_hide_controls">Ocultar controles</string>
+    <string name="macros">Macros</string>
+    <string name="macros_intro">Uma macro é um botão seu na tela que executa uma sequência: um combo, ou vários botões ao mesmo tempo. Cada passo segura os botões por um tempo; um passo sem botões é uma pausa.</string>
+    <string name="macro_add">Nova macro</string>
+    <string name="macro_edit">Macro</string>
+    <string name="macro_name">Nome</string>
+    <string name="macro_repeat">Repetir enquanto segura</string>
+    <string name="macro_repeat_text">Executa de novo enquanto o botão estiver apertado (turbo)</string>
+    <string name="macro_step_n">Passo %1$d</string>
+    <string name="macro_add_step">Adicionar passo</string>
 </resources>

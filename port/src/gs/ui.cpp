@@ -429,6 +429,11 @@ int Ui_Pauses(void) {
     return sReady && sOpen && !sNet;
 }
 
+// Any of the windows is open (Android: the on-screen controller steps aside, so touches reach the window).
+int Ui_IsOpen(void) {
+    return sReady && sOpen;
+}
+
 static void bind(int value) {
     if (sCapKind == 1) {
         PortInput_Keys(sCapPlayer)[sCapAction] = value;

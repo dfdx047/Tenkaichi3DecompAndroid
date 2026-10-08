@@ -20,6 +20,7 @@ import androidx.compose.material.icons.rounded.Extension
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SportsEsports
 import androidx.compose.material.icons.rounded.Texture
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +55,7 @@ import androidx.navigation.compose.rememberNavController
 import com.dfdx047.dragonrage.ui.components.BusyBar
 import com.dfdx047.dragonrage.ui.components.kiBackground
 import com.dfdx047.dragonrage.ui.screens.CheatsScreen
+import com.dfdx047.dragonrage.ui.screens.ControlsScreen
 import com.dfdx047.dragonrage.ui.screens.HomeScreen
 import com.dfdx047.dragonrage.ui.screens.ModsScreen
 import com.dfdx047.dragonrage.ui.screens.SettingsScreen
@@ -79,6 +81,7 @@ private enum class Dest(val route: String, val label: Int, val icon: ImageVector
     HOME("home", R.string.nav_home, Icons.Rounded.Home),
     TEXTURES("textures", R.string.nav_textures, Icons.Rounded.Texture),
     MODS("mods", R.string.nav_mods, Icons.Rounded.Extension),
+    CONTROLS("controls", R.string.nav_controls, Icons.Rounded.SportsEsports),
     CHEATS("cheats", R.string.nav_cheats, Icons.Rounded.LockOpen),
     SETTINGS("settings", R.string.nav_settings, Icons.Rounded.Settings),
 }
@@ -141,6 +144,7 @@ private fun DragonRageApp(vm: AppViewModel) {
                     composable(Dest.HOME.route) { HomeScreen(vm) }
                     composable(Dest.TEXTURES.route) { TexturesScreen(vm) }
                     composable(Dest.MODS.route) { ModsScreen(vm) }
+                    composable(Dest.CONTROLS.route) { ControlsScreen(vm) }
                     composable(Dest.CHEATS.route) { CheatsScreen(vm) }
                     composable(Dest.SETTINGS.route) { SettingsScreen(vm) }
                 }

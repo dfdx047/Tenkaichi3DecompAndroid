@@ -20,6 +20,8 @@ import com.dfdx047.dragonrage.data.TexturePack
 import com.dfdx047.dragonrage.data.TexturePacks
 import com.dfdx047.dragonrage.data.UiPrefs
 import com.dfdx047.dragonrage.engine.EngineBridge
+import com.dfdx047.dragonrage.touch.TouchConfig
+import com.dfdx047.dragonrage.touch.TouchStore
 import com.dfdx047.dragonrage.ui.theme.ThemeMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -66,6 +68,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _settings = MutableStateFlow(settings.snapshot())
     val engineSettings: StateFlow<Map<String, Int>> = _settings.asStateFlow()
 
+    private val touchStore = TouchStore(paths.root)
+    private val _touch = MutableStateFlow(touchStore.load())
+    /** The on-screen controller (touch_controls.json, read by the game's process at start). */
+    val touch: StateFlow<TouchConfig> = _touch.asStateFlow()
+
+    fun updateTouch(c: TouchConfig) {
+        _touch.value = c
+        viewModelScope.launch(Dispatchers.IO) { touchStore.save(c) }
+    }
+
     private val _busy = MutableStateFlow<Busy?>(null)
     val busy: StateFlow<Busy?> = _busy.asStateFlow()
 
@@ -86,6 +98,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             _songs.value = mods.listExtras(ExtraKind.SONG)
             settings.load()
             _settings.value = settings.snapshot()
+            _touch.value = touchStore.load() // (the game's own quick menu may have changed it)
         }
     }
 

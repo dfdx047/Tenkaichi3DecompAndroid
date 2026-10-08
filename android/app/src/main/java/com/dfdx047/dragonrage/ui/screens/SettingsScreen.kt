@@ -103,21 +103,6 @@ fun SettingsScreen(vm: AppViewModel) {
             StepSlider(stringResource(R.string.sfx), { "${it * 10}%" }, fx / 10, 0..20) { vm.setting(EngineSettings.EFFECTS, it * 10) }
         }
 
-        SectionCard(stringResource(R.string.controls), Icons.Rounded.SportsEsports, accent = Dbz.KiBlue) {
-            Text(stringResource(R.string.touch_controls), style = MaterialTheme.typography.titleSmall)
-            ChipRow(
-                options = listOf(stringResource(R.string.touch_off) to 0, stringResource(R.string.touch_auto) to 1, stringResource(R.string.touch_always) to 2),
-                selected = get(EngineSettings.TOUCH, 1),
-                onSelect = { vm.setting(EngineSettings.TOUCH, it) },
-            )
-            Text(
-                stringResource(R.string.touch_hint),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            val alpha = get(EngineSettings.TOUCH_OPACITY, 60)
-            StepSlider(stringResource(R.string.opacity), { "${it * 10}%" }, alpha / 10, 1..10) { vm.setting(EngineSettings.TOUCH_OPACITY, it * 10) }
-        }
-
         SectionCard(stringResource(R.string.performance), Icons.Rounded.Speed, accent = MaterialTheme.colorScheme.secondary) {
             ToggleRow(stringResource(R.string.fps60), stringResource(R.string.fps60_text), false, enabled = false) {}
         }
@@ -160,7 +145,7 @@ fun SettingsScreen(vm: AppViewModel) {
 }
 
 @Composable
-private fun ToggleRow(title: String, subtitle: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+internal fun ToggleRow(title: String, subtitle: String, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
@@ -172,7 +157,7 @@ private fun ToggleRow(title: String, subtitle: String, checked: Boolean, enabled
 
 /** A slider over whole steps that writes only when the finger lifts. */
 @Composable
-private fun StepSlider(label: String, format: (Int) -> String, value: Int, range: IntRange, onChange: (Int) -> Unit) {
+internal fun StepSlider(label: String, format: (Int) -> String, value: Int, range: IntRange, onChange: (Int) -> Unit) {
     var drag by remember(value) { mutableFloatStateOf(value.toFloat()) }
     Column {
         Row {
@@ -193,7 +178,7 @@ private fun StepSlider(label: String, format: (Int) -> String, value: Int, range
 }
 
 @Composable
-private fun ChipRow(options: List<Pair<String, Int>>, selected: Int, onSelect: (Int) -> Unit) {
+internal fun ChipRow(options: List<Pair<String, Int>>, selected: Int, onSelect: (Int) -> Unit) {
     // the nearest option counts as selected (an aspect written by the engine may be in between)
     val best = options.minByOrNull { kotlin.math.abs(it.second - selected) }?.second
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {

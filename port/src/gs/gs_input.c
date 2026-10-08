@@ -20,6 +20,18 @@
 #include "ui.h"
 
 int gPortOverlayOpen, gPortInputCapture;
+
+/* The on-screen controller (Android: android/.../touch/TouchPadView.kt through the loader): player 1's buttons
+   (1 = pressed, the bits below) and sticks, added to whatever the keyboard and controllers give. */
+static volatile unsigned sTouchButtons;
+static volatile unsigned char sTouchStick[4] = {0x80, 0x80, 0x80, 0x80}; /* lx, ly, rx, ry */
+void Port_TouchPad(unsigned buttons, int lx, int ly, int rx, int ry) {
+    sTouchButtons = buttons & 0xFFFF;
+    sTouchStick[0] = (unsigned char)lx;
+    sTouchStick[1] = (unsigned char)ly;
+    sTouchStick[2] = (unsigned char)rx;
+    sTouchStick[3] = (unsigned char)ry;
+}
 extern int Port_Setting(const char *name, int def); /* plat_settings.c */
 extern void Port_SettingSave(const char *name, int value), Port_SettingsWrite(void);
 
@@ -266,6 +278,17 @@ int Port_PadRead(int socket, unsigned char *data) {
     }
     if (socket == 0) {
         btn |= script_buttons();
+        if (!gPortInputCapture) {
+            btn |= sTouchButtons;
+            if (sTouchStick[0] != 0x80 || sTouchStick[1] != 0x80) {
+                lx = sTouchStick[0];
+                ly = sTouchStick[1];
+            }
+            if (sTouchStick[2] != 0x80 || sTouchStick[3] != 0x80) {
+                rx = sTouchStick[2];
+                ry = sTouchStick[3];
+            }
+        }
     }
     memset(data, 0, 18);
     data[0] = (unsigned char)(~btn & 0xFF);       /* active low */

@@ -398,3 +398,30 @@ int SDL_main(int argc, char *argv[]) {
         return r;
     }
 }
+
+/* ---- The on-screen controller (com.dfdx047.dragonrage.engine.TouchBridge): its state into the engine's pad
+   (gs_input.c), and whether the engine's own menu is open (then the controller steps aside). */
+#include <jni.h>
+
+JNIEXPORT void JNICALL Java_com_dfdx047_dragonrage_engine_TouchBridge_nativeSetPad(JNIEnv *env, jclass cls, jint buttons, jint lx, jint ly,
+                                                                                   jint rx, jint ry) {
+    static void (*fn)(unsigned, int, int, int, int);
+    (void)env;
+    (void)cls;
+    if (fn == NULL && sEngine != NULL) {
+        fn = (void (*)(unsigned, int, int, int, int))dlsym(sEngine, "Port_TouchPad");
+    }
+    if (fn != NULL) {
+        fn((unsigned)buttons, lx, ly, rx, ry);
+    }
+}
+
+JNIEXPORT jboolean JNICALL Java_com_dfdx047_dragonrage_engine_TouchBridge_nativeMenuOpen(JNIEnv *env, jclass cls) {
+    static int (*fn)(void);
+    (void)env;
+    (void)cls;
+    if (fn == NULL && sEngine != NULL) {
+        fn = (int (*)(void))dlsym(sEngine, "Ui_IsOpen");
+    }
+    return fn != NULL && fn() ? JNI_TRUE : JNI_FALSE;
+}
