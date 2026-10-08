@@ -171,6 +171,45 @@ static void name_of(uintptr_t pc, char *out, size_t size) {
     }
 }
 
+static void *sEngine;
+
+/* BT3_PEEK: game variables in the watchdog's report. Comma-separated items "name+off" (the 32-bit word at the
+   symbol plus off) or "name*off" (the symbol holds a 4-byte game pointer: the word at that pointer plus off). */
+static void peek(void) {
+    const char *spec = getenv("BT3_PEEK") != NULL ? getenv("BT3_PEEK") :
+        "gMcFlow*0x20,gMcFlow*0x24,gMcFlow*0x28,gMcFlow*0x2C,gMcFlow*0x30,gMcFlow*0x39DE0,gBootCard*0x8,gBootCard*0x10";
+    char buf[1024], line[2048], nm[160], *item, *save = NULL;
+    size_t len = 0;
+    snprintf(buf, sizeof(buf), "%s", spec);
+    line[0] = '\0';
+    for (item = strtok_r(buf, ",", &save); item != NULL && len < sizeof(line) - 200; item = strtok_r(NULL, ",", &save)) {
+        char name[96];
+        char *op = strpbrk(item, "+*");
+        unsigned long off = op != NULL ? strtoul(op + 1, NULL, 0) : 0;
+        uint32_t *sym, v = 0;
+        uintptr_t at;
+        snprintf(name, sizeof(name), "%.*s", op != NULL ? (int)(op - item) : (int)strlen(item), item);
+        sym = (uint32_t *)dlsym(sEngine, name);
+        if (sym == NULL) {
+            len += (size_t)snprintf(line + len, sizeof(line) - len, " %s=?", item);
+            continue;
+        }
+        at = (op != NULL && *op == '*') ? (uintptr_t)*sym + off : (uintptr_t)sym + off;
+        if (at < 0x1000 || at >= 0x100000000ul) {
+            len += (size_t)snprintf(line + len, sizeof(line) - len, " %s=(null)", item);
+            continue;
+        }
+        v = *(volatile uint32_t *)at;
+        if (v >= sCodeLo && v < sCodeHi) {
+            name_of(v, nm, sizeof(nm));
+            len += (size_t)snprintf(line + len, sizeof(line) - len, " %s=%s", item, nm);
+        } else {
+            len += (size_t)snprintf(line + len, sizeof(line) - len, " %s=0x%x(%d)", item, v, (int)v);
+        }
+    }
+    say("peek:%s", line);
+}
+
 static void dump_threads(void) {
     DIR *d = opendir("/proc/self/task");
     struct dirent *e;
@@ -178,6 +217,7 @@ static void dump_threads(void) {
         return;
     }
     say("watchdog: game blank %u", sVBlanks != NULL ? *sVBlanks : 0);
+    peek();
     while ((e = readdir(d)) != NULL) {
         char path[128], comm[64] = "?", sys[512] = "", line[2048], nm[160];
         unsigned long v[9];
@@ -331,6 +371,7 @@ int SDL_main(int argc, char *argv[]) {
             close(fd);
         }
         sVBlanks = (unsigned *)dlsym(handle, "gPortVBlanks");
+        sEngine = handle;
         if (getenv("BT3_WATCHDOG") == NULL || strcmp(getenv("BT3_WATCHDOG"), "0") != 0) {
             pthread_t th;
             pthread_create(&th, NULL, watchdog, NULL);
