@@ -15,6 +15,7 @@
  * Everything the engine prints (stdout, stderr) goes to the log (adb logcat -s bt3) and to bt3_log.txt in the
  * game's folder, so a player can send it.
  */
+#define _GNU_SOURCE 1 /* process_vm_readv */
 #include <android/api-level.h>
 #include <android/dlext.h>
 #include <android/log.h>
@@ -30,6 +31,8 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/system_properties.h>
+#include <dirent.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #ifndef MAP_FIXED_NOREPLACE
@@ -149,6 +152,94 @@ static int program_span(const char *path, uintptr_t *lo, uintptr_t *hi) {
     return *hi > *lo;
 }
 
+/* ---- The watchdog: every few seconds, where each thread of the process is, by name, in the log. Each thread's
+   stack pointer and program counter come from /proc/self/task/<id>/syscall (it is in a system call when it waits);
+   the stack above that is scanned for addresses inside the engine's code, named with dladdr (the engine exports
+   its symbols). A rough backtrace, but enough to see where the game waits. Off with BT3_WATCHDOG=0. */
+static uintptr_t sCodeLo, sCodeHi;
+static unsigned *sVBlanks;
+
+static void name_of(uintptr_t pc, char *out, size_t size) {
+    Dl_info info;
+    if (dladdr((void *)pc, &info) != 0 && info.dli_sname != NULL) {
+        snprintf(out, size, "%s+0x%lx", info.dli_sname, (unsigned long)(pc - (uintptr_t)info.dli_saddr));
+    } else if (dladdr((void *)pc, &info) != 0 && info.dli_fname != NULL) {
+        const char *b = strrchr(info.dli_fname, '/');
+        snprintf(out, size, "%s+0x%lx", b != NULL ? b + 1 : info.dli_fname, (unsigned long)(pc - (uintptr_t)info.dli_fbase));
+    } else {
+        snprintf(out, size, "0x%lx", (unsigned long)pc);
+    }
+}
+
+static void dump_threads(void) {
+    DIR *d = opendir("/proc/self/task");
+    struct dirent *e;
+    if (d == NULL) {
+        return;
+    }
+    say("watchdog: game blank %u", sVBlanks != NULL ? *sVBlanks : 0);
+    while ((e = readdir(d)) != NULL) {
+        char path[128], comm[64] = "?", sys[512] = "", line[2048], nm[160];
+        unsigned long v[9];
+        FILE *fp;
+        int n, k, found = 0;
+        size_t len;
+        if (e->d_name[0] == '.') {
+            continue;
+        }
+        snprintf(path, sizeof(path), "/proc/self/task/%s/comm", e->d_name);
+        if ((fp = fopen(path, "r")) != NULL) {
+            if (fgets(comm, sizeof(comm), fp) != NULL) {
+                comm[strcspn(comm, "\n")] = '\0';
+            }
+            fclose(fp);
+        }
+        snprintf(path, sizeof(path), "/proc/self/task/%s/syscall", e->d_name);
+        if ((fp = fopen(path, "r")) != NULL) {
+            if (fgets(sys, sizeof(sys), fp) == NULL) {
+                sys[0] = '\0';
+            }
+            fclose(fp);
+        }
+        n = sscanf(sys, "%lu %lx %lx %lx %lx %lx %lx %lx %lx", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5], &v[6], &v[7], &v[8]);
+        if (n < 9) { /* running (not in a system call) or unreadable */
+            say("  [%s %s] %s", e->d_name, comm, sys[0] != '\0' ? "running" : "?");
+            continue;
+        }
+        name_of(v[8], nm, sizeof(nm));
+        len = (size_t)snprintf(line, sizeof(line), "  [%s %s] syscall %lu at %s; engine frames:", e->d_name, comm, v[0], nm);
+        {   /* the stack from sp up, read without risking a fault */
+            static uint64_t stack[8192];
+            struct iovec local = {stack, sizeof(stack)}, remote = {(void *)v[7], sizeof(stack)};
+            ssize_t got = process_vm_readv(getpid(), &local, 1, &remote, 1, 0);
+            if (got < 0) { /* the top of a stack: try less */
+                remote.iov_len = local.iov_len = 4096;
+                got = process_vm_readv(getpid(), &local, 1, &remote, 1, 0);
+            }
+            for (k = 0; got > 0 && k < (int)(got / 8) && found < 14 && len < sizeof(line) - 200; k++) {
+                uintptr_t a = (uintptr_t)stack[k];
+                if (a >= sCodeLo && a < sCodeHi) {
+                    name_of(a, nm, sizeof(nm));
+                    len += (size_t)snprintf(line + len, sizeof(line) - len, " %s", nm);
+                    found++;
+                }
+            }
+        }
+        say("%s", line);
+    }
+    closedir(d);
+}
+
+static void *watchdog(void *arg) {
+    (void)arg;
+    sleep(8);
+    for (;;) {
+        dump_threads();
+        sleep(10);
+    }
+    return NULL;
+}
+
 int SDL_main(int argc, char *argv[]) {
     const char *dir = argc > 1 ? argv[1] : ".";
     const char *libdir = argc > 2 ? argv[2] : ".";
@@ -222,6 +313,29 @@ int SDL_main(int argc, char *argv[]) {
     if (entry == NULL) {
         say("the engine has no entry point: %s", dlerror());
         return 1;
+    }
+    {   /* the engine's code range (its executable segment) for the watchdog */
+        Elf64_Ehdr eh;
+        Elf64_Phdr ph;
+        int fd = open(engine, O_RDONLY | O_CLOEXEC), i;
+        if (fd >= 0 && pread(fd, &eh, sizeof(eh), 0) == sizeof(eh)) {
+            for (i = 0; i < eh.e_phnum; i++) {
+                if (pread(fd, &ph, sizeof(ph), (off_t)(eh.e_phoff + (uint64_t)i * eh.e_phentsize)) == sizeof(ph) &&
+                    ph.p_type == PT_LOAD && (ph.p_flags & PF_X)) {
+                    sCodeLo = ph.p_vaddr;
+                    sCodeHi = ph.p_vaddr + ph.p_memsz;
+                }
+            }
+        }
+        if (fd >= 0) {
+            close(fd);
+        }
+        sVBlanks = (unsigned *)dlsym(handle, "gPortVBlanks");
+        if (getenv("BT3_WATCHDOG") == NULL || strcmp(getenv("BT3_WATCHDOG"), "0") != 0) {
+            pthread_t th;
+            pthread_create(&th, NULL, watchdog, NULL);
+            pthread_detach(th);
+        }
     }
     say("starting the game");
     {
