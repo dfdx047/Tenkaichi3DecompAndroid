@@ -318,6 +318,19 @@ int SDL_main(int argc, char *argv[]) {
             fclose(fp);
         }
     }
+    {   /* an image that is not the unmodified USA release (the app's installer says so): the engine takes its data */
+        char line[128];
+        FILE *fp = fopen("gamedata/.installed", "r");
+        while (fp != NULL && fgets(line, sizeof(line), fp) != NULL) {
+            if (strncmp(line, "modified=1", 10) == 0) {
+                setenv("BT3_MODDED_DISC", "1", 0);
+                say("modified game image");
+            }
+        }
+        if (fp != NULL) {
+            fclose(fp);
+        }
+    }
     setenv("SDL_VIDEO_DRIVER", "android", 0);
     setenv("SDL_ANDROID_TRAP_BACK_BUTTON", "1", 0); /* the back button opens the settings (gs_gpu.c), it does not end the game */
 

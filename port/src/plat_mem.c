@@ -397,7 +397,12 @@ static void Port_LoadGameData(void) {
     free(src[1]);
     free(list);
     if (hash != want) {
-        data_fail("the game's programs in your game data are not the unmodified USA release (SLUS-21678)", NULL);
+        if (getenv("BT3_MODDED_DISC") == NULL) {
+            data_fail("the game's programs in your game data are not the unmodified USA release (SLUS-21678)", NULL);
+        }
+        /* a translation or a mod of the USA release: its data is taken as it is (where it sits where the original's
+           does); changes it made to the game's code do not apply */
+        fprintf(stderr, "bt3: the game's data comes from a modified image (BT3_MODDED_DISC)\n");
     }
 }
 

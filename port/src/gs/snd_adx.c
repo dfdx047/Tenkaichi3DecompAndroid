@@ -64,10 +64,11 @@ static int by_ticks(void) {
     return on || Port_NetSession();
 }
 
+extern FILE *Port_OpenSpan(const char *path, long *size); /* plat_file.c: also a file inside an AFS archive */
 /* The length of an ADX file in vertical blanks (59.94 a second), -1 if it loops, 0 if it cannot be read. */
 static int adx_blanks(const char *path) {
     uint8_t h[0x40];
-    FILE *fp = fopen(path, "rb");
+    FILE *fp = Port_OpenSpan(path, NULL);
     size_t got;
     uint32_t header, rate, total;
 
@@ -121,6 +122,17 @@ static int device(void) {
         }
     }
     return sDevice != 0;
+}
+
+/* The game paused (the settings window): all sound stops where it is, and goes on after. */
+void Port_AudioPause(int on) {
+    if (sDevice != 0) {
+        if (on) {
+            SDL_PauseAudioDevice(sDevice);
+        } else {
+            SDL_ResumeAudioDevice(sDevice);
+        }
+    }
 }
 
 /* What the port's other sound code mixes into: the opened device, or 0. */
@@ -257,14 +269,11 @@ static void start(Player *p, const char *path) {
     if (!device()) {
         return;
     }
-    fp = fopen(path, "rb");
+    fp = Port_OpenSpan(path, &size);
     if (fp == NULL) {
         fprintf(stderr, "bt3: sound file not found: %s\n", path);
         return;
     }
-    fseek(fp, 0, SEEK_END);
-    size = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
     p->file = malloc((size_t)size);
     p->size = (uint32_t)fread(p->file, 1, (size_t)size, fp);
     fclose(fp);

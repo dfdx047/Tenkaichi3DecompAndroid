@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
 sealed interface InstallState {
     data object NotInstalled : InstallState
     data class Working(val step: String, val progress: Float, val detail: String) : InstallState
-    data class Installed(val files: Int, val bytes: Long) : InstallState
+    data class Installed(val files: Int, val bytes: Long, val modified: Boolean = false) : InstallState
     data class Failed(val message: String) : InstallState
 }
 
@@ -27,8 +27,10 @@ sealed interface InstallState {
  * The PC port's setup (port/setup/native.cpp, steps 1 and 2) for Android: checks that the image is the
  * unmodified USA release and unpacks the game's data in the layout of port/tools/extract_disc.py:
  *
- *   gamedata/disc/SLUS_216.78, gamedata/disc/BIN/..., gamedata/disc/DATA/<non-AFS files>
- *   gamedata/<afs name in lower case>/00000.bin ...   one file per entry of each DATA/<name>.AFS archive
+ *   gamedata/disc/SLUS_216.78, gamedata/disc/BIN/..., gamedata/disc/DATA/... (the AFS archives whole)
+ *
+ * (The PC setup also splits each archive into one file per entry, gamedata/<name>/00000.bin ...; the engine reads
+ * either. Loose files and mods/ still win over the archive.)
  *
  * The image is read where it is (through the document the user picked); nothing of it is kept except the
  * unpacked files.
@@ -47,7 +49,8 @@ class GameDataInstaller(
         val lines = paths.installedMarker.readText().lines()
         val files = lines.firstOrNull { it.startsWith("files=") }?.substringAfter('=')?.toIntOrNull() ?: 0
         val bytes = lines.firstOrNull { it.startsWith("bytes=") }?.substringAfter('=')?.toLongOrNull() ?: 0L
-        return InstallState.Installed(files, bytes)
+        val modified = lines.any { it == "modified=1" }
+        return InstallState.Installed(files, bytes, modified)
     }
 
     suspend fun install(uri: Uri, report: (InstallState.Working) -> Unit): InstallState.Installed = withContext(Dispatchers.IO) {
@@ -61,13 +64,16 @@ class GameDataInstaller(
             }
             iso.use {
                 report(InstallState.Working(context.getString(R.string.step_checking), 0f, context.getString(R.string.detail_finding)))
-                verify(iso, report)
-                extract(iso, report)
+                val original = verify(iso, report)
+                extract(iso, report, modified = !original)
             }
         }
     }
 
-    private suspend fun verify(iso: IsoImage, report: (InstallState.Working) -> Unit) {
+    /** True for the unmodified USA release. A modified image (a translation, a mod such as "Tenkaichi 4") is
+     *  installed too: its files are used as they are, but the engine runs the original program, so changes a mod made
+     *  to the game's code (not to its data) do not apply. */
+    private suspend fun verify(iso: IsoImage, report: (InstallState.Working) -> Unit): Boolean {
         val slus = iso.find("SLUS_216.78")
         val dbzp = iso.find("BIN/DBZP.BIN")
         if (slus == null || dbzp == null) {
@@ -98,12 +104,10 @@ class GameDataInstaller(
             }
         }
         val menu = iso.read(dbzp.offset, dbzp.size.toInt())
-        if (checkSums && (sha1(rom) != ROM_SHA1 || sha1(menu) != DBZP_SHA1)) {
-            throw Stop(context.getString(R.string.err_checksum))
-        }
+        return !checkSums || (sha1(rom) == ROM_SHA1 && sha1(menu) == DBZP_SHA1)
     }
 
-    private suspend fun extract(iso: IsoImage, report: (InstallState.Working) -> Unit): InstallState.Installed {
+    private suspend fun extract(iso: IsoImage, report: (InstallState.Working) -> Unit, modified: Boolean): InstallState.Installed {
         val take = iso.files.filter {
             val u = it.path.uppercase()
             u == "SLUS_216.78" || u.startsWith("BIN/") || u.startsWith("DATA/")
@@ -118,7 +122,7 @@ class GameDataInstaller(
         paths.gameData.listFiles()?.filter { it.name != "mods" }?.forEach { it.deleteRecursively() }
         paths.gameData.mkdirs()
 
-        val buf = ByteBuffer.allocateDirect(1 shl 20)
+        val buf = ByteBuffer.allocateDirect(8 shl 20)
         var done = 0L
         var files = 0
         var lastPercent = -1
@@ -131,54 +135,37 @@ class GameDataInstaller(
             }
         }
 
+        // Every file is copied as it is, the AFS archives too: the engine reads their entries through the
+        // archive's table (port/src/plat_fcache.c). Unpacking them into ~20 000 small files, as the PC setup does,
+        // is what made the install take so long on Android's shared storage.
         for (f in take) {
             coroutineContext.ensureActive()
             val u = f.path.uppercase()
-            val isAfs = u.startsWith("DATA/") && u.endsWith(".AFS")
-            if (!isAfs) {
-                val out = File(paths.gameData, "disc/$u") // upper case, as the game asks for them
-                out.parentFile?.mkdirs()
-                copyOut(iso, f.offset, f.size, out, buf)
-                files++
-                progress(f.size)
-                continue
-            }
-            val dir = File(paths.gameData, u.substring(5, u.length - 4).lowercase())
-            dir.mkdirs()
-            val head = ByteBuffer.wrap(iso.read(f.offset, 8)).order(ByteOrder.LITTLE_ENDIAN)
-            val count = head.getInt(4).toLong() and 0xFFFFFFFFL
-            if (head.getInt(0) != 0x00534641 || count * 8 + 8 > f.size) throw Stop(context.getString(R.string.err_damaged, f.path))
-            val table = ByteBuffer.wrap(iso.read(f.offset + 8, (count * 8).toInt())).order(ByteOrder.LITTLE_ENDIAN)
-            var inArchive = 0L
-            for (i in 0 until count.toInt()) {
-                coroutineContext.ensureActive()
-                val off = table.getInt(i * 8).toLong() and 0xFFFFFFFFL
-                val size = table.getInt(i * 8 + 4).toLong() and 0xFFFFFFFFL
-                if (off + size > f.size) throw Stop(context.getString(R.string.err_damaged, f.path))
-                copyOut(iso, f.offset + off, size, File(dir, "%05d.bin".format(i)), buf)
-                files++
-                inArchive += size
-                progress(size)
-            }
-            progress((f.size - inArchive).coerceAtLeast(0)) // the archive's table and padding
+            val out = File(paths.gameData, "disc/$u") // upper case, as the game asks for them
+            out.parentFile?.mkdirs()
+            copyOut(iso, f.offset, f.size, out, buf) { progress(it) }
+            files++
         }
         val bytes = paths.gameData.sizeDeep()
-        paths.installedMarker.writeText("files=$files\nbytes=$bytes\n")
-        return InstallState.Installed(files, bytes)
+        paths.installedMarker.writeText("files=$files\nbytes=$bytes\nlayout=afs\n" + (if (modified) "modified=1\n" else ""))
+        return InstallState.Installed(files, bytes, modified)
     }
 
-    private fun copyOut(iso: IsoImage, offset: Long, size: Long, out: File, buf: ByteBuffer) {
+    private suspend fun copyOut(iso: IsoImage, offset: Long, size: Long, out: File, buf: ByteBuffer, onBytes: (Long) -> Unit = {}) {
         out.outputStream().channel.use { oc ->
             var pos = offset
             var left = size
             while (left > 0) {
+                coroutineContext.ensureActive()
                 buf.clear()
                 buf.limit(minOf(left, buf.capacity().toLong()).toInt())
                 iso.readInto(pos, buf)
                 buf.flip()
+                val n = buf.limit().toLong()
                 while (buf.hasRemaining()) oc.write(buf)
-                pos += buf.limit()
-                left -= buf.limit()
+                pos += n
+                left -= n
+                onBytes(n)
             }
         }
     }

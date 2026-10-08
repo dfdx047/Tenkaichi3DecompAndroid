@@ -130,10 +130,49 @@ int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size) {
         fp = fopen(out, "rb");
     }
     if (fp == NULL) {
+        /* inside the archive (plat_fcache.c): "<archive>#<offset>+<size>", which Port_OpenSpan opens */
+        extern int Port_AfsSpan(const char *rel, char *path, unsigned n, long *base, long *size);
+        char afs[400];
+        long base, span;
+        if (fname == NULL && Port_AfsSpan(rel, afs, (unsigned)sizeof(afs), &base, &span)) {
+            snprintf(out, (size_t)size, "%s#%ld+%ld", afs, base, span);
+            return 1;
+        }
         return 0;
     }
     fclose(fp);
     return 1;
+}
+
+/* Opens a path from Port_FilePath at the start of the file: a plain path, or "<archive>#<offset>+<size>".
+   *size gets the file's size. */
+FILE *Port_OpenSpan(const char *path, long *size) {
+    char host[512];
+    const char *hash = strrchr(path, '#');
+    long base = 0, span = -1;
+    FILE *fp;
+
+    if (hash != NULL && sscanf(hash + 1, "%ld+%ld", &base, &span) == 2 && (size_t)(hash - path) < sizeof(host)) {
+        memcpy(host, path, (size_t)(hash - path));
+        host[hash - path] = '\0';
+    } else {
+        snprintf(host, sizeof(host), "%s", path);
+        base = 0;
+        span = -1;
+    }
+    fp = fopen(host, "rb");
+    if (fp == NULL) {
+        return NULL;
+    }
+    if (span < 0) {
+        fseek(fp, 0, SEEK_END);
+        span = ftell(fp);
+    }
+    fseek(fp, base, SEEK_SET);
+    if (size != NULL) {
+        *size = span;
+    }
+    return fp;
 }
 
 /* "pzs3us1.afs" (any case, any directory, optional ";1") -> folder "pzs3us1". */

@@ -21,6 +21,8 @@
     <string name="pick_iso">Selecionar ISO</string>
     <string name="pick_other_iso">Escolher outra ISO</string>
     <string name="game_data_ok">Versão USA verificada · %1$d arquivos · %2$s</string>
+    <string name="game_data_ok_mod">Imagem modificada · %1$d arquivos · %2$s</string>
+    <string name="game_data_modified">Esta não é a versão USA original (é uma tradução ou um mod). Os arquivos dela são usados como estão, mas a engine roda o programa original do jogo: o que um mod mudou no código do jogo, e não nos arquivos, não vale, e alguns mods podem não funcionar.</string>
     <string name="remove_game_data">Remover dados do jogo</string>
     <string name="remove_game_data_q">Remover dados do jogo?</string>
     <string name="remove_game_data_text">Os arquivos extraídos da ISO serão apagados. Saves, texturas e mods ficam.</string>

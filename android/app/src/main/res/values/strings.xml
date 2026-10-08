@@ -22,6 +22,8 @@
     <string name="pick_iso">Choose ISO</string>
     <string name="pick_other_iso">Choose another ISO</string>
     <string name="game_data_ok">USA release verified · %1$d files · %2$s</string>
+    <string name="game_data_ok_mod">Modified image · %1$d files · %2$s</string>
+    <string name="game_data_modified">This is not the unmodified USA release (a translation or a mod). Its files are used as they are, but the engine runs the original game program: what a mod changed in the game\'s code, rather than in its files, does not apply, and some mods may not work.</string>
     <string name="remove_game_data">Remove game data</string>
     <string name="remove_game_data_q">Remove the game data?</string>
     <string name="remove_game_data_text">The files unpacked from the ISO will be deleted. Saves, textures and mods stay.</string>

@@ -480,6 +480,88 @@ static int vk_init(void) {
 
 /* --- the frame ---------------------------------------------------------------------------------- */
 
+/* The window's events: the settings window's key, the settings window, quitting, full screen. */
+static void poll_events(void) {
+    SDL_Event ev;
+    while (SDL_PollEvent(&ev)) {
+        if (ev.type == SDL_EVENT_QUIT) {
+            exit(0);
+        }
+        if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && (ev.key.key == SDLK_F1 || ev.key.key == SDLK_AC_BACK)) {
+            Ui_Toggle(); /* (Android: the back button, which the loader asks SDL to hand over: android/.../loader.c) */
+            continue;
+        }
+        if (Ui_Event(&ev)) { /* the settings window is open and used it (Esc closes it) */
+            continue;
+        }
+#ifndef __ANDROID__
+        if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_ESCAPE) {
+            exit(0);
+        }
+#endif
+        if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F11) {
+            GsDraw_FullscreenToggle();
+        }
+    }
+}
+
+static int sLastShown = -1; /* the target shown last (the paused picture) */
+
+/* The game's picture into the window: its shape kept (4:3 or 16:9), centred, the rest black. */
+static void show_target(SDL_GPUCommandBuffer *cmd, int best, SDL_GPUTexture *swap, Uint32 sw, Uint32 sh) {
+    SDL_GPUBlitInfo bl;
+    float want = (float)Port_AspectMilli() / 1000.0f;
+    Uint32 w = sw, h = sh;
+
+    SDL_zero(bl);
+    bl.source.texture = sTgCol[best];
+    bl.source.w = 512 * SCALE;
+    bl.source.h = 448 * SCALE;
+    bl.destination.texture = swap;
+    /* (The 512 x 448 buffer is not square-pixelled: it always fills a 4:3 or 16:9 screen.) */
+    if ((float)sw > (float)sh * want) {
+        w = (Uint32)((float)sh * want + 0.5f);
+    } else {
+        h = (Uint32)((float)sw / want + 0.5f);
+    }
+    bl.destination.x = (sw - w) / 2;
+    bl.destination.y = (sh - h) / 2;
+    bl.destination.w = w;
+    bl.destination.h = h;
+    bl.clear_color.a = 1.0f;
+    bl.load_op = SDL_GPU_LOADOP_CLEAR;
+    bl.filter = SDL_GPU_FILTER_LINEAR;
+    SDL_BlitGPUTexture(cmd, &bl);
+    gUiPresentX = (int)bl.destination.x; /* the stage-name overlay maps game pixels through this rectangle */
+    gUiPresentY = (int)bl.destination.y;
+    gUiPresentW = (int)bl.destination.w;
+    gUiPresentH = (int)bl.destination.h;
+    sLastShown = best;
+}
+
+/* While the game is paused (the settings window open, plat_stub.c): the last picture again, with the window on it,
+   and the window's events. The game itself does not run. */
+int GsGpu_PauseFrame(void) {
+    SDL_GPUCommandBuffer *cmd;
+    SDL_GPUTexture *swap = NULL;
+    Uint32 sw = 0, sh = 0;
+
+    if (sDev == NULL || sWindow == NULL || sLastShown < 0) {
+        return 0; /* (not this back end, or nothing shown yet: the game goes on) */
+    }
+    poll_events();
+    cmd = SDL_AcquireGPUCommandBuffer(sDev);
+    if (cmd == NULL) {
+        return 0;
+    }
+    if (SDL_WaitAndAcquireGPUSwapchainTexture(cmd, sWindow, &swap, &sw, &sh) && swap != NULL) {
+        show_target(cmd, sLastShown, swap, sw, sh);
+        Ui_Draw(cmd, swap);
+    }
+    SDL_SubmitGPUCommandBuffer(cmd);
+    return 1;
+}
+
 static void vk_frame_end(void) {
     SDL_GPUCommandBuffer *cmd;
     SDL_GPUCopyPass *copy;
@@ -497,24 +579,8 @@ static void vk_frame_end(void) {
     float lastBlend = -1.0f;
     uint32_t n;
 
-    while (SDL_PollEvent(&ev)) {
-        if (ev.type == SDL_EVENT_QUIT) {
-            exit(0);
-        }
-        if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && (ev.key.key == SDLK_F1 || ev.key.key == SDLK_AC_BACK)) {
-            Ui_Toggle(); /* (Android: the back button, which the loader asks SDL to hand over: android/.../loader.c) */
-            continue;
-        }
-        if (Ui_Event(&ev)) { /* the settings window is open and used it (Esc closes it) */
-            continue;
-        }
-        if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_ESCAPE) {
-            exit(0);
-        }
-        if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F11) {
-            GsDraw_FullscreenToggle();
-        }
-    }
+    (void)ev;
+    poll_events();
 #ifdef __ANDROID__
     if (gGsFrame % 300 == 0) { /* a heartbeat in the log (adb logcat -s bt3): is the game running, and drawing? */
         extern unsigned gPortVBlanks;
@@ -930,35 +996,7 @@ static void vk_frame_end(void) {
 #else
     if (acquired && swap != NULL && best >= 0 && gsTargets[best].cleared) {
 #endif
-        SDL_GPUBlitInfo bl;
-        SDL_zero(bl);
-        bl.source.texture = sTgCol[best];
-        bl.source.w = 512 * SCALE;
-        bl.source.h = 448 * SCALE;
-        bl.destination.texture = swap;
-        {
-            /* The picture keeps its shape whatever the window's: 4:3, or 16:9 in widescreen, centred, the rest
-               black. (The 512 x 448 buffer is not square-pixelled: it always fills a 4:3 or 16:9 screen.) */
-            float want = (float)Port_AspectMilli() / 1000.0f;
-            Uint32 w = sw, h = sh;
-            if ((float)sw > (float)sh * want) {
-                w = (Uint32)((float)sh * want + 0.5f);
-            } else {
-                h = (Uint32)((float)sw / want + 0.5f);
-            }
-            bl.destination.x = (sw - w) / 2;
-            bl.destination.y = (sh - h) / 2;
-            bl.destination.w = w;
-            bl.destination.h = h;
-            bl.clear_color.a = 1.0f;
-        }
-        bl.load_op = SDL_GPU_LOADOP_CLEAR;
-        bl.filter = SDL_GPU_FILTER_LINEAR;
-        SDL_BlitGPUTexture(cmd, &bl);
-        gUiPresentX = (int)bl.destination.x; /* the stage-name overlay maps game pixels through this rectangle */
-        gUiPresentY = (int)bl.destination.y;
-        gUiPresentW = (int)bl.destination.w;
-        gUiPresentH = (int)bl.destination.h;
+        show_target(cmd, best, swap, sw, sh);
         Ui_Draw(cmd, swap);
         {   /* BT3_UI_SHOT=<frame>:<file.ppm>: the window's picture with the settings window on it, for checking
                 the settings window without a person or a screen capture (drawn a second time into a texture) */
@@ -998,8 +1036,7 @@ static void vk_frame_end(void) {
                 ci.num_levels = 1;
                 tex = SDL_CreateGPUTexture(sDev, &ci);
                 c2 = SDL_AcquireGPUCommandBuffer(sDev);
-                bl.destination.texture = tex;
-                SDL_BlitGPUTexture(c2, &bl);
+                show_target(c2, best, tex, sw, sh);
                 Ui_DrawAgain(c2, tex);
                 SDL_zero(ti);
                 ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;

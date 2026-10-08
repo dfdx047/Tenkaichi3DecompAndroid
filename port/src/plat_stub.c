@@ -141,6 +141,24 @@ static void vblank_wait(void) {
 
 static unsigned char sPadLast[2][18]; /* (defined with the pads below) */
 void Port_VBlank(void) {
+    {   /* the settings window open: the game waits here, between two frames, until it is closed (not online) */
+        extern int Ui_Pauses(void);                     /* gs/ui.cpp */
+        extern int GsGpu_PauseFrame(void);              /* gs/gs_gpu.c */
+        extern void Port_AudioPause(int on);            /* gs/snd_adx.c */
+        extern int Port_NetSession(void);
+        if (GsGpu_Enabled() && Ui_Pauses() && !Port_NetSession() && getenv("BT3_NOPAUSE") == NULL) {
+            Port_AudioPause(1);
+            while (Ui_Pauses() && GsGpu_PauseFrame()) {
+#ifdef _WIN32
+                Sleep(16);
+#else
+                struct timespec ts = {0, 16000000};
+                nanosleep(&ts, NULL);
+#endif
+            }
+            Port_AudioPause(0);
+        }
+    }
     {
         extern void Port_SessionPoll(void); /* gs/state.c: the state at the first blank is kept; an online session
                                                begins or ends here */

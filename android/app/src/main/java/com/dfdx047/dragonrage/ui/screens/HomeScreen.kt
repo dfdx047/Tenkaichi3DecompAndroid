@@ -112,7 +112,18 @@ fun HomeScreen(vm: AppViewModel) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.CheckCircle, null, tint = Dbz.ShenronGreen)
                         Spacer(Modifier.size(8.dp))
-                        Text(stringResource(R.string.game_data_ok, s.files, formatBytes(s.bytes)), style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(if (s.modified) R.string.game_data_ok_mod else R.string.game_data_ok, s.files, formatBytes(s.bytes)), style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (s.modified) {
+                        Row(verticalAlignment = Alignment.Top) {
+                            Icon(Icons.Rounded.Warning, null, tint = Dbz.SaiyanGold)
+                            Spacer(Modifier.size(8.dp))
+                            Text(
+                                stringResource(R.string.game_data_modified),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                     TextButton(onClick = { confirmRemove = true }) { Text(stringResource(R.string.remove_game_data)) }
                 }

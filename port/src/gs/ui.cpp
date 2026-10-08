@@ -1,11 +1,13 @@
 // The settings window of the PC build: Dear ImGui over the finished picture. F1 opens and closes it.
 // Everything it shows lives elsewhere (ui.h): the renderer's settings in gs_gpu.c, the bindings in gs_input.c.
 // It runs on the render thread, which owns the window and its events.
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include "imgui.h"
+#include "imgui_internal.h" // (ClearActiveID: a finger drag over a button scrolls the window)
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlgpu3.h"
 #include "imgui_impl_opengl3.h"
@@ -422,6 +424,11 @@ void Ui_Toggle(void) {
     }
 }
 
+// The game waits while the settings window is open (plat_stub.c), except behind the online screen and in a match.
+int Ui_Pauses(void) {
+    return sReady && sOpen && !sNet;
+}
+
 static void bind(int value) {
     if (sCapKind == 1) {
         PortInput_Keys(sCapPlayer)[sCapAction] = value;
@@ -463,6 +470,34 @@ int Ui_Event(const SDL_Event *ev) {
     } else if (ev->type == SDL_EVENT_KEY_DOWN && ev->key.scancode == SDL_SCANCODE_ESCAPE) {
         set_open(false);
         return 1;
+    }
+    if (ev->type == SDL_EVENT_FINGER_DOWN || ev->type == SDL_EVENT_FINGER_MOTION || ev->type == SDL_EVENT_FINGER_UP ||
+        ev->type == SDL_EVENT_FINGER_CANCELED) {
+        // A finger is the mouse, from the touch itself (the mouse events SDL makes from touches are not used): one
+        // finger at a time; its position in the window's units, which are the window's (ImGui's display size).
+        static SDL_FingerID finger;
+        ImGuiIO &io = ImGui::GetIO();
+        bool down = ev->type == SDL_EVENT_FINGER_DOWN, up = ev->type == SDL_EVENT_FINGER_UP || ev->type == SDL_EVENT_FINGER_CANCELED;
+        if (down && finger == 0) {
+            finger = ev->tfinger.fingerID;
+        }
+        if (finger == 0 || ev->tfinger.fingerID != finger) {
+            return 1;
+        }
+        io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);
+        io.AddMousePosEvent(ev->tfinger.x * io.DisplaySize.x, ev->tfinger.y * io.DisplaySize.y);
+        if (down) {
+            io.AddMouseButtonEvent(0, true);
+        }
+        if (up) {
+            io.AddMouseButtonEvent(0, false);
+            finger = 0;
+        }
+        return 1;
+    }
+    if ((ev->type == SDL_EVENT_MOUSE_MOTION && ev->motion.which == SDL_TOUCH_MOUSEID) ||
+        ((ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev->type == SDL_EVENT_MOUSE_BUTTON_UP) && ev->button.which == SDL_TOUCH_MOUSEID)) {
+        return 1; // (the same touch again, as a mouse)
     }
     ImGui_ImplSDL3_ProcessEvent(ev);
     return ev->type == SDL_EVENT_KEY_DOWN || ev->type == SDL_EVENT_KEY_UP || ev->type == SDL_EVENT_TEXT_INPUT ||
@@ -698,6 +733,32 @@ static void controls_tab(void) {
     }
 }
 
+// A finger dragged up or down scrolls the window it is on, also when it started on a button (the button is let go:
+// a vertical drag is never meant for one; sliders are moved sideways).
+static void touch_scroll(void) {
+    ImGuiIO &io = ImGui::GetIO();
+    ImGuiContext &g = *GImGui;
+    static bool scrolling;
+    if (io.MouseSource != ImGuiMouseSource_TouchScreen || !io.MouseDown[0]) {
+        scrolling = false;
+        return;
+    }
+    ImVec2 drag = ImGui::GetMouseDragDelta(0, 0.0f);
+    if (!scrolling && fabsf(drag.y) > 14.0f && fabsf(drag.y) > fabsf(drag.x) * 1.5f) {
+        scrolling = true;
+        if (g.ActiveId != 0) {
+            ImGui::ClearActiveID();
+        }
+    }
+    if (scrolling && g.HoveredWindow != NULL) {
+        ImGuiWindow *w = g.HoveredWindow;
+        while (w->ScrollMax.y <= 0.0f && w->ParentWindow != NULL) {
+            w = w->ParentWindow; // the nearest one that can scroll
+        }
+        ImGui::SetScrollY(w, w->Scroll.y - io.MouseDelta.y);
+    }
+}
+
 static void build(void) {
     PortVideo v, was;
     ImGuiIO &io = ImGui::GetIO();
@@ -706,8 +767,24 @@ static void build(void) {
     GsGpu_GetSettings(&v);
     was = v;
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+#ifdef __ANDROID__
+    // most of the screen, fixed: fingers move through it by dragging its content, not its frame
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x * 0.92f, io.DisplaySize.y * 0.9f), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+#else
     ImGui::SetNextWindowSize(ImVec2(640.0f, 560.0f), ImGuiCond_Appearing);
-    if (ImGui::Begin("Settings", &open, ImGuiWindowFlags_NoCollapse)) {
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+#endif
+    if (ImGui::Begin("Dragon Rage  -  paused###Settings", &open, flags)) {
+#ifdef __ANDROID__
+        if (ImGui::Button("  Resume  ")) {
+            open = false;
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Back button: resume");
+        ImGui::Separator();
+#endif
         if (ImGui::BeginTabBar("tabs")) {
             if (tab("Video", 0)) { video_tab(v); ImGui::EndTabItem(); }
             if (tab("Effects", 1)) { effects_tab(v); ImGui::EndTabItem(); }
@@ -720,6 +797,7 @@ static void build(void) {
             sForceTab = -1;
         }
     }
+    touch_scroll();
     ImGui::End();
     if (memcmp(&v, &was, sizeof(v)) != 0) {
         GsGpu_SetSettings(&v);
