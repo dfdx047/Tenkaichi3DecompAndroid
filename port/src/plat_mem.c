@@ -181,10 +181,25 @@ int __wrap_main(int argc, char **argv) {
 #ifndef MAP_FIXED_NOREPLACE
 #define MAP_FIXED_NOREPLACE 0x100000
 #endif
+/* Android: ranges the loader claimed for the engine as soon as it was loaded (BT3_LOW_RESERVED, "lo-hi;lo-hi" in
+   hex). The engine maps over its own reservation there (MAP_FIXED); anywhere else it must not replace a mapping. */
+static int fixed_flag(uintptr_t lo, size_t len) {
+    const char *p = getenv("BT3_LOW_RESERVED");
+    while (p != NULL && *p != '\0') {
+        unsigned long a = 0, b = 0;
+        if (sscanf(p, "%lx-%lx", &a, &b) == 2 && lo >= a && lo + len <= b) {
+            return MAP_FIXED;
+        }
+        p = strchr(p, ';');
+        p = p != NULL ? p + 1 : NULL;
+    }
+    return MAP_FIXED_NOREPLACE;
+}
+
 static void map(uint32_t addr, uint32_t size, const char *what) {
     /* whole pages around the region (the system's pages may be 16 KB: an Android device's) */
     uint32_t page = (uint32_t)sysconf(_SC_PAGESIZE), base = addr & ~(page - 1), len = (addr - base + size + page - 1) & ~(page - 1);
-    void *p = mmap((void *)(uintptr_t)base, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE,
+    void *p = mmap((void *)(uintptr_t)base, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | fixed_flag(base, len),
                    -1, 0);
 
     if (p != (void *)(uintptr_t)base) {
@@ -583,7 +598,7 @@ static void low_region_take(void) {
         sLowCommitted = sLowArena;
 #else
         sLowArena = mmap((void *)(uintptr_t)LOW_ARENA_BASE, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE,
-                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | fixed_flag(LOW_ARENA_BASE, LOW_ARENA_SIZE), -1, 0);
         if (sLowArena == MAP_FAILED || sLowArena != (uint8_t *)(uintptr_t)LOW_ARENA_BASE) { /* taken: anywhere below 4 GB */
 #ifdef MAP_32BIT
             sLowArena = mmap(NULL, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_32BIT, -1, 0);

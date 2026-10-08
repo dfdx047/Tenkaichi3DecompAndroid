@@ -176,6 +176,59 @@ static void name_of(uintptr_t pc, char *out, size_t size) {
 
 static void *sEngine;
 
+/* ---- Early reservation of the game's fixed addresses.
+   The engine needs fixed places below 4 GB (its own code at 0x03000000, the PS2 heap from 0x003BE000, the game
+   thread's stack, the port's region, the hardware registers). Anything else that loads into the process first (the GPU
+   driver, the audio stack, a vendor library) might take one of them. So they are claimed, as address space only, the
+   moment this library is loaded (before SDL starts the GPU and audio), and handed to the engine: BT3_LOW_RESERVED lists
+   them, and plat_mem.c maps over its own reservation. A range already taken is left out and logged. */
+static struct { uintptr_t lo, hi; int ok; } sEarly[6];
+static char sEarlyList[256];
+
+static int early_reserve(int i, uintptr_t lo, uintptr_t hi) {
+    void *p = mmap((void *)lo, hi - lo, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+    sEarly[i].lo = lo;
+    sEarly[i].hi = hi;
+    sEarly[i].ok = p == (void *)lo;
+    if (p != MAP_FAILED && p != (void *)lo) {
+        munmap(p, hi - lo);
+    }
+    if (sEarly[i].ok) {
+        size_t n = strlen(sEarlyList);
+        snprintf(sEarlyList + n, sizeof(sEarlyList) - n, "%s%lx-%lx", n ? ";" : "", (unsigned long)lo, (unsigned long)hi);
+    } else {
+        __android_log_print(ANDROID_LOG_WARN, TAG, "early: 0x%lx-0x%lx is already taken (%s)", (unsigned long)lo, (unsigned long)hi,
+                            strerror(errno));
+    }
+    return sEarly[i].ok;
+}
+
+static uintptr_t sEngineLo, sEngineHi; /* the engine's range, reserved early (0: not) */
+
+__attribute__((constructor)) static void reserve_early(void) {
+    uintptr_t page = (uintptr_t)sysconf(_SC_PAGESIZE);
+    Dl_info info;
+    early_reserve(0, 0x003BE000u & ~(page - 1), 0x03000000u); /* PS2 heap, then the game thread's stack */
+    early_reserve(1, 0x05000000u, 0x0F000000u);                 /* the port's region */
+    early_reserve(2, 0x10000000u, 0x10010000u);                 /* hardware registers */
+    early_reserve(3, 0x12000000u, (0x12002000u + page - 1) & ~(page - 1)); /* GS registers */
+    if (dladdr((void *)reserve_early, &info) != 0 && info.dli_fname != NULL) {
+        char engine[1024];
+        const char *slash = strrchr(info.dli_fname, '/');
+        uintptr_t lo, hi;
+        snprintf(engine, sizeof(engine), "%.*s/libbt3.so", slash != NULL ? (int)(slash - info.dli_fname) : 1, slash != NULL ? info.dli_fname : ".");
+        if (program_span(engine, &lo, &hi)) {
+            lo &= ~(page - 1);
+            hi = (hi + page - 1) & ~(page - 1);
+            if (early_reserve(4, lo, hi)) {
+                sEngineLo = lo;
+                sEngineHi = hi;
+            }
+        }
+    }
+    setenv("BT3_LOW_RESERVED", sEarlyList, 1);
+}
+
 /* A crash: where it happened, in the log (logcat -s bt3 and bt3_log.txt), with the engine's function names, then
    Android's own handler (the tombstone) as usual. */
 static struct sigaction sOldAct[32];
@@ -442,7 +495,12 @@ int SDL_main(int argc, char *argv[]) {
     }
     lo &= ~(page - 1);
     hi = (hi + page - 1) & ~(page - 1);
-    region = mmap((void *)lo, hi - lo, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+    say("early reservations: %s", sEarlyList[0] ? sEarlyList : "(none)");
+    if (sEngineLo == lo && sEngineHi == hi) {
+        region = (void *)lo; /* (claimed when this library was loaded) */
+    } else {
+        region = mmap((void *)lo, hi - lo, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+    }
     if (region != (void *)lo) {
         say("the engine's address range 0x%lx-0x%lx is taken in this process (%s)", (unsigned long)lo, (unsigned long)hi,
             region == MAP_FAILED ? strerror(errno) : "mapped elsewhere");
