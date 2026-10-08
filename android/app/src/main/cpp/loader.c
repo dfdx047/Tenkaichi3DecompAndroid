@@ -35,6 +35,7 @@
 #include <sys/uio.h>
 #include <signal.h>
 #include <ucontext.h>
+#include <adrenotools/driver.h>
 #include <unistd.h>
 
 #ifndef MAP_FIXED_NOREPLACE
@@ -349,6 +350,35 @@ static void *watchdog(void *arg) {
     return NULL;
 }
 
+/* A custom Vulkan driver (Turnip, a newer Qualcomm driver), loaded through libadrenotools. SDL is pointed at this
+   library (SDL_VULKAN_LIBRARY) and finds its vkGetInstanceProcAddr here, which hands every call to the driver's. */
+typedef void (*VkVoidFn)(void);
+static VkVoidFn (*sDriverGipa)(void *instance, const char *name);
+
+__attribute__((visibility("default"))) VkVoidFn vkGetInstanceProcAddr(void *instance, const char *name) {
+    return sDriverGipa != NULL ? sDriverGipa(instance, name) : NULL;
+}
+
+static void custom_driver(const char *libdir, const char *driverDir, const char *driverLib) {
+    char hooks[1024], drv[1024], self[1100];
+    void *h;
+    snprintf(hooks, sizeof(hooks), "%s/", libdir);
+    snprintf(drv, sizeof(drv), "%s/", driverDir);
+    h = adrenotools_open_libvulkan(RTLD_NOW, ADRENOTOOLS_DRIVER_CUSTOM, NULL, hooks, drv, driverLib, NULL, NULL);
+    if (h == NULL) {
+        say("custom GPU driver %s%s could not be loaded: the system's driver is used", drv, driverLib);
+        return;
+    }
+    sDriverGipa = (VkVoidFn(*)(void *, const char *))dlsym(h, "vkGetInstanceProcAddr");
+    if (sDriverGipa == NULL) {
+        say("custom GPU driver %s has no vkGetInstanceProcAddr: the system's driver is used", driverLib);
+        return;
+    }
+    snprintf(self, sizeof(self), "%s/libmain.so", libdir);
+    setenv("SDL_VULKAN_LIBRARY", self, 1);
+    say("custom GPU driver: %s%s", drv, driverLib);
+}
+
 int SDL_main(int argc, char *argv[]) {
     const char *dir = argc > 1 ? argv[1] : ".";
     const char *libdir = argc > 2 ? argv[2] : ".";
@@ -399,6 +429,9 @@ int SDL_main(int argc, char *argv[]) {
         if (fp != NULL) {
             fclose(fp);
         }
+    }
+    if (argc > 4 && argv[3][0] != '\0' && argv[4][0] != '\0') {
+        custom_driver(libdir, argv[3], argv[4]); /* (chosen in the app: GameActivity passes its folder and file) */
     }
     setenv("SDL_VIDEO_DRIVER", "android", 0);
     setenv("SDL_ANDROID_TRAP_BACK_BUTTON", "1", 0); /* the back button opens the settings (gs_gpu.c), it does not end the game */

@@ -15,6 +15,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import com.dfdx047.dragonrage.R
 import com.dfdx047.dragonrage.data.GamePaths
+import com.dfdx047.dragonrage.data.GpuDrivers
 import com.dfdx047.dragonrage.touch.PadSkin
 import com.dfdx047.dragonrage.touch.TouchConfig
 import com.dfdx047.dragonrage.touch.TouchMode
@@ -198,5 +199,9 @@ class GameActivity : SDLActivity() {
 
     override fun getLibraries(): Array<String> = arrayOf("SDL3", "main")
 
-    override fun getArguments(): Array<String> = arrayOf(paths.root.path, applicationInfo.nativeLibraryDir)
+    /** The game folder, the app's native libraries (the engine, adrenotools' hooks) and the chosen GPU driver, if any. */
+    override fun getArguments(): Array<String> {
+        val driver = runCatching { GpuDrivers(this, contentResolver).selected() }.getOrNull()
+        return arrayOf(paths.root.path, applicationInfo.nativeLibraryDir, driver?.dir?.path ?: "", driver?.library ?: "")
+    }
 }

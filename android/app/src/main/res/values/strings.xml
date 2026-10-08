@@ -59,7 +59,7 @@
     <string name="msg_wait">Wait for the current operation to finish.</string>
     <string name="err_open_file">Could not open the file.</string>
     <string name="err_not_iso">The file is not a valid ISO disc image. Use the game\'s ISO (not CSO, CHD or ZIP).</string>
-    <string name="err_not_usa">This is not an image of the USA release of Budokai Tenkaichi 3: there is no SLUS_216.78 on it.\nOther regions and the Wii version have different programs and are not supported.</string>
+    <string name="err_not_usa">This image is not the USA release of Budokai Tenkaichi 3 (SLUS-21678): it is %1$s. Other releases (Europe SLES, Japan SLPS, the Wii) have programs of their own, which the engine is not built from, so they cannot run yet. Translations and mods made from the USA release work.</string>
     <string name="err_checksum">The game\'s programs on this image do not have the expected checksums.\nThe unmodified USA release (SLUS-21678) is needed; a patched or damaged image will not work.</string>
     <string name="err_space">Not enough space: %1$s needed, %2$s free.</string>
     <string name="err_damaged">A file on the disc (%1$s) is damaged.</string>
@@ -191,4 +191,17 @@
     <string name="macro_repeat_text">Plays again for as long as the button is held (turbo)</string>
     <string name="macro_step_n">Step %1$d</string>
     <string name="macro_add_step">Add step</string>
+    <!-- GPU drivers and bug reports -->
+    <string name="gpu_driver">GPU driver (Adreno)</string>
+    <string name="gpu_driver_text">For Snapdragon (Adreno) GPUs: another Vulkan driver, such as Turnip or a newer Qualcomm driver, from an AdrenoTools .zip. It can make the game start or run better where the phone\'s own driver fails. If the game does not start with it, choose System driver again.</string>
+    <string name="gpu_driver_system">System driver</string>
+    <string name="gpu_driver_import">Import driver (.zip)</string>
+    <string name="driver_bad_zip">That zip has no driver in it (.so)</string>
+    <string name="driver_imported">Driver imported: %1$s</string>
+    <string name="log_title">Bug report</string>
+    <string name="log_text">If the game crashes or does not start: start it once, then come back here and save the log. It goes to Downloads, and you can send it straight away.</string>
+    <string name="log_export">Save log to Downloads</string>
+    <string name="log_share">Send log</string>
+    <string name="log_saved">Saved in Downloads: %1$s</string>
+    <string name="log_failed">The log could not be saved: %1$s</string>
 </resources>

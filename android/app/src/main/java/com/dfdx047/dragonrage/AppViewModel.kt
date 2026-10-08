@@ -13,6 +13,9 @@ import com.dfdx047.dragonrage.data.ExtraKind
 import com.dfdx047.dragonrage.data.FileMod
 import com.dfdx047.dragonrage.data.GameDataInstaller
 import com.dfdx047.dragonrage.data.GamePaths
+import com.dfdx047.dragonrage.data.GpuDriver
+import com.dfdx047.dragonrage.data.GpuDrivers
+import com.dfdx047.dragonrage.data.LogExport
 import com.dfdx047.dragonrage.data.ImportResult
 import com.dfdx047.dragonrage.data.InstallState
 import com.dfdx047.dragonrage.data.Mods
@@ -76,6 +79,49 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun updateTouch(c: TouchConfig) {
         _touch.value = c
         viewModelScope.launch(Dispatchers.IO) { touchStore.save(c) }
+    }
+
+    // ---- GPU drivers (adrenotools) and bug reports
+
+    private val drivers = GpuDrivers(app, resolver)
+    private val _drivers = MutableStateFlow(drivers.list())
+    val gpuDrivers: StateFlow<List<GpuDriver>> = _drivers.asStateFlow()
+    private val _driver = MutableStateFlow(drivers.selected()?.id)
+    /** The chosen driver's id; null = the system's. */
+    val gpuDriver: StateFlow<String?> = _driver.asStateFlow()
+
+    fun importDriver(uri: Uri) = viewModelScope.launch(Dispatchers.IO) {
+        val d = runCatching { drivers.import(uri) }.getOrNull()
+        _drivers.value = drivers.list()
+        if (d == null) say(str(R.string.driver_bad_zip)) else {
+            drivers.select(d.id)
+            _driver.value = d.id
+            say(str(R.string.driver_imported, d.name))
+        }
+    }
+
+    fun selectDriver(id: String?) = viewModelScope.launch(Dispatchers.IO) {
+        drivers.select(id)
+        _driver.value = drivers.selected()?.id
+    }
+
+    fun deleteDriver(d: GpuDriver) = viewModelScope.launch(Dispatchers.IO) {
+        drivers.delete(d)
+        _drivers.value = drivers.list()
+        _driver.value = drivers.selected()?.id
+    }
+
+    private val _logShare = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
+    /** A report saved in Downloads, to offer for sharing. */
+    val logShare: SharedFlow<Uri> = _logShare.asSharedFlow()
+
+    fun exportLog() = viewModelScope.launch(Dispatchers.IO) {
+        runCatching { LogExport(getApplication(), paths).saveToDownloads() }
+            .onSuccess { (uri, name) ->
+                say(str(R.string.log_saved, name))
+                _logShare.tryEmit(uri)
+            }
+            .onFailure { say(str(R.string.log_failed, it.message ?: "")) }
     }
 
     private val _busy = MutableStateFlow<Busy?>(null)

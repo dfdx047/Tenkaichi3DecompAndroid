@@ -58,7 +58,7 @@
     <string name="msg_wait">Aguarde a operação atual terminar.</string>
     <string name="err_open_file">Não foi possível abrir o arquivo.</string>
     <string name="err_not_iso">O arquivo não é uma imagem de disco ISO válida. Use a ISO do jogo (não CSO, CHD ou ZIP).</string>
-    <string name="err_not_usa">Esta não é a imagem da versão americana (USA) de Budokai Tenkaichi 3: não há SLUS_216.78 nela.\nOutras regiões e a versão de Wii têm outros programas e não são suportadas.</string>
+    <string name="err_not_usa">Esta imagem não é a versão USA do Budokai Tenkaichi 3 (SLUS-21678): é a %1$s. As outras versões (Europa SLES, Japão SLPS, o Wii) têm um programa próprio, a partir do qual a engine não foi construída, então ainda não rodam. Traduções e mods feitos a partir da versão USA funcionam.</string>
     <string name="err_checksum">Os programas do jogo nesta imagem não têm as somas esperadas.\nÉ preciso a versão USA (SLUS-21678) sem modificações; uma imagem com patch ou danificada não funciona.</string>
     <string name="err_space">Espaço insuficiente: são precisos %1$s e há %2$s livres.</string>
     <string name="err_damaged">Um arquivo do disco (%1$s) está danificado.</string>
@@ -190,4 +190,17 @@
     <string name="macro_repeat_text">Executa de novo enquanto o botão estiver apertado (turbo)</string>
     <string name="macro_step_n">Passo %1$d</string>
     <string name="macro_add_step">Adicionar passo</string>
+    <!-- drivers de GPU e relatório de erros -->
+    <string name="gpu_driver">Driver de GPU (Adreno)</string>
+    <string name="gpu_driver_text">Para GPUs Snapdragon (Adreno): outro driver Vulkan, como o Turnip ou um driver Qualcomm mais novo, de um .zip do AdrenoTools. Pode fazer o jogo abrir ou rodar melhor onde o driver do próprio aparelho falha. Se o jogo não abrir com ele, volte para Driver do sistema.</string>
+    <string name="gpu_driver_system">Driver do sistema</string>
+    <string name="gpu_driver_import">Importar driver (.zip)</string>
+    <string name="driver_bad_zip">Esse zip não tem um driver (.so)</string>
+    <string name="driver_imported">Driver importado: %1$s</string>
+    <string name="log_title">Relatório de erro</string>
+    <string name="log_text">Se o jogo crashar ou não abrir: abra o jogo uma vez, volte aqui e salve o log. Ele vai para a pasta Download e você já pode enviar.</string>
+    <string name="log_export">Salvar log em Download</string>
+    <string name="log_share">Enviar log</string>
+    <string name="log_saved">Salvo em Download: %1$s</string>
+    <string name="log_failed">Não foi possível salvar o log: %1$s</string>
 </resources>

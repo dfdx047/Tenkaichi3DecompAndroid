@@ -473,6 +473,13 @@ static int vk_init(void) {
         fprintf(stderr, "bt3: the settings window could not be set up\n");
     }
     fprintf(stderr, "bt3: GPU renderer: %s\n", SDL_GetGPUDeviceDriver(sDev));
+    {   /* which GPU and driver (for reports from other devices) */
+        SDL_PropertiesID p = SDL_GetGPUDeviceProperties(sDev);
+        fprintf(stderr, "bt3: GPU: %s, driver %s %s (%s)\n", SDL_GetStringProperty(p, SDL_PROP_GPU_DEVICE_NAME_STRING, "?"),
+                SDL_GetStringProperty(p, SDL_PROP_GPU_DEVICE_DRIVER_NAME_STRING, "?"),
+                SDL_GetStringProperty(p, SDL_PROP_GPU_DEVICE_DRIVER_VERSION_STRING, "?"),
+                SDL_GetStringProperty(p, SDL_PROP_GPU_DEVICE_DRIVER_INFO_STRING, ""));
+    }
     fprintf(stderr, "bt3: %d logical processors, %d MB of memory\n", SDL_GetNumLogicalCPUCores(), SDL_GetSystemRAM());
     pipelines_preload();
     return 1;

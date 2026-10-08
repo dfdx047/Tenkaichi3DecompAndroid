@@ -107,6 +107,9 @@ fun SettingsScreen(vm: AppViewModel) {
             ToggleRow(stringResource(R.string.fps60), stringResource(R.string.fps60_text), false, enabled = false) {}
         }
 
+        GpuDriverCard(vm)
+        LogCard(vm)
+
         SectionCard(stringResource(R.string.appearance), Icons.Rounded.Palette, accent = MaterialTheme.colorScheme.tertiary) {
             Text(stringResource(R.string.theme), style = MaterialTheme.typography.titleSmall)
             ChipRow(

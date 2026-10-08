@@ -342,10 +342,52 @@ def finish():
 APP = ROOT / "android/app/src/main"
 
 
+ADRENO = ROOT / "port/third_party/libadrenotools"
+ADRENO_HOOKS = ["hook_impl", "main_hook", "file_redirect_hook", "gsl_alloc_hook"]
+
+
+def adrenotools():
+    """libadrenotools (custom Vulkan drivers such as Turnip on Adreno GPUs): its objects for libmain.so and the hook
+    libraries it loads from the app's native library folder."""
+    obj = OUT / "adreno"
+    obj.mkdir(parents=True, exist_ok=True)
+    cxx = [CLANG.replace("/clang", "/clang++")] + TARGET + ["-c", "-O2", "-fPIC", "-std=c++17", "-w", f"-I{ADRENO}/include", f"-I{ADRENO}",
+                                                          f"-I{ADRENO}/lib/linkernsbypass", "-fvisibility=hidden"]
+    cc = [CLANG] + TARGET + ["-c", "-O2", "-fPIC", "-w", f"-I{ADRENO}/include", f"-I{ADRENO}/src/hook"]
+    srcs = {"ns": "lib/linkernsbypass/android_linker_ns.cpp", "soname": "lib/linkernsbypass/elf_soname_patcher.cpp",
+            "driver": "src/driver.cpp", "bcenabler": "src/bcenabler.cpp", "bcpatch": "src/bcenabler_patch.s",
+            "hook_impl": "src/hook/hook_impl.cpp", "main_hook": "src/hook/main_hook.c",
+            "file_redirect_hook": "src/hook/file_redirect_hook.c", "gsl_alloc_hook": "src/hook/gsl_alloc_hook.c"}
+    for name, rel in srcs.items():
+        src = ADRENO / rel
+        comp = cxx if rel.endswith(".cpp") else cc
+        r = run(comp + [str(src), "-o", str(obj / (name + ".o"))])
+        if r.returncode:
+            print("adrenotools: FAILED", rel, r.stderr[:1200])
+            return False
+    link = [CLANG.replace("/clang", "/clang++")] + TARGET + ["-shared", "-static-libstdc++", f"-L{rtdir()}", "-Wl,-z,max-page-size=16384"]
+    r = run(link + ["-o", str(OUT / "libhook_impl.so"), str(obj / "hook_impl.o"), str(obj / "ns.o"), str(obj / "soname.o"),
+                    "-llog", "-ldl", "-landroid"])
+    if r.returncode:
+        print("adrenotools: FAILED hook_impl", r.stderr[:1200])
+        return False
+    for h in ADRENO_HOOKS[1:]:
+        r = run(link + ["-o", str(OUT / f"lib{h}.so"), str(obj / f"{h}.o"), "-Wl,-z,global", f"-L{OUT}", "-lhook_impl"])
+        if r.returncode:
+            print("adrenotools: FAILED", h, r.stderr[:1200])
+            return False
+    return True
+
+
 def loader():
-    """libmain.so, the part SDL's activity starts (android/app/src/main/cpp/loader.c)."""
-    r = run([CLANG] + TARGET + ["-shared", "-fPIC", "-O2", "-Wall", "-o", str(OUT / "libmain.so"), str(APP / "cpp/loader.c"),
-                                f"-L{rtdir()}", "-llog", "-ldl", "-Wl,-z,max-page-size=16384", "-Wl,--build-id=sha1"])
+    """libmain.so, the part SDL's activity starts (android/app/src/main/cpp/loader.c), with libadrenotools in it."""
+    if not adrenotools():
+        return False
+    obj = OUT / "adreno"
+    r = run([CLANG.replace("/clang", "/clang++")] + TARGET + ["-shared", "-fPIC", "-O2", "-Wall", "-x", "c", str(APP / "cpp/loader.c"), "-x", "none",
+                                f"-I{ADRENO}/include", str(obj / "driver.o"), str(obj / "bcenabler.o"), str(obj / "bcpatch.o"),
+                                str(obj / "ns.o"), str(obj / "soname.o"), "-o", str(OUT / "libmain.so"), "-static-libstdc++",
+                                f"-L{rtdir()}", "-llog", "-ldl", "-landroid", "-Wl,-z,max-page-size=16384", "-Wl,--build-id=sha1"])
     print("loader:", "OK" if r.returncode == 0 else "FAILED\n" + r.stderr[:1500])
     return r.returncode == 0
 
@@ -354,7 +396,7 @@ def install():
     """The engine's files into the app: the libraries for the APK, the data list as an asset."""
     jni = APP / "jniLibs/arm64-v8a"
     jni.mkdir(parents=True, exist_ok=True)
-    for f in (EXE, OUT / "libmain.so", SDL3 / "lib/libSDL3.so"):
+    for f in [EXE, OUT / "libmain.so", SDL3 / "lib/libSDL3.so"] + [OUT / f"lib{h}.so" for h in ADRENO_HOOKS]:
         shutil.copy(f, jni / f.name)
     assets = APP / "assets"
     assets.mkdir(parents=True, exist_ok=True)

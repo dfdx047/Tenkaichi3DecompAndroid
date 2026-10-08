@@ -77,7 +77,9 @@ class GameDataInstaller(
         val slus = iso.find("SLUS_216.78")
         val dbzp = iso.find("BIN/DBZP.BIN")
         if (slus == null || dbzp == null) {
-            throw Stop(context.getString(R.string.err_not_usa))
+            // another release: say which (SLES = Europe, SLPS / SLPM = Japan, SLKA = Korea)
+            val serial = iso.files.map { it.path }.firstOrNull { Regex("^S[LC][A-Z]{2}_\\d{3}\\.\\d{2}$", RegexOption.IGNORE_CASE).matches(it) }
+            throw Stop(context.getString(R.string.err_not_usa, serial?.replace('_', '-')?.replace(".", "") ?: "?"))
         }
         report(InstallState.Working(context.getString(R.string.step_checking), 0.5f, context.getString(R.string.detail_checksums)))
         coroutineContext.ensureActive()
