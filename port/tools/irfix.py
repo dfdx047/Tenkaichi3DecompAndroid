@@ -40,12 +40,47 @@ BITCAST = re.compile(r'^(\s*%[\w.$-]+ = )bitcast (ptr(?: addrspace\(271\))? \S+)
 GLOBAL = re.compile(r'^@[^=]+ = .*\b(global|constant)\b')
 TYPEDEF = re.compile(r'^%[^=]+ = type ')
 
-def fix(text):
+STORE = re.compile(r'^(\s*)store ')
+
+def store_line(line, n):
+    """`store ..., ptr addrspace(27x) P` -> a cast of P to an ordinary pointer, then the store through that.
+    The AArch64 code generator of LLVM 21 drops the truncation of a store through a 32-bit pointer: `store i8` becomes
+    a 4-byte `str w`, and a `store i32` of a truncated i64 an 8-byte `str x`, so every byte and halfword the game wrote
+    through a pointer also cleared the bytes after it. Through an ordinary pointer the store is selected correctly.
+    Returns (pre-line or None, line, n)."""
+    depth, k, i = 0, -1, 0
+    while i < len(line):
+        ch = line[i]
+        if ch in "([{<":
+            depth += 1
+        elif ch in ")]}>":
+            depth -= 1
+        elif depth == 0 and line.startswith(", ptr addrspace(27", i):
+            k = i
+        i += 1
+    if k < 0:
+        return None, line, n
+    start = k + 2
+    sp = line.index(")", start) + 2          # after "ptr addrspace(27x) "
+    j, depth = sp, 0
+    while j < len(line) and not (depth == 0 and line[j] == ","):
+        depth += line[j] in "([{<"
+        depth -= line[j] in ")]}>"
+        j += 1
+    n += 1
+    pre = f"  %p32st.{n} = addrspacecast {line[start:j]} to ptr"
+    return pre, line[:start] + f"ptr %p32st.{n}" + line[j:], n
+
+def fix(text, stores=False):
     out, n, declared, need = [], 0, set(), {}
     for line in text.split("\n"):
         if "addrspace(271)" in line and (GLOBAL.match(line) or TYPEDEF.match(line)):
             out.append(data_line(line))
             continue
+        if stores and "addrspace(27" in line and STORE.match(line):
+            pre, line, n = store_line(line, n)
+            if pre is not None:
+                out.append(pre)
         if " bitcast " in line and "addrspace(271)" in line:
             # clang writes a plain bitcast between a 4-byte and an ordinary pointer in a conditional expression that
             # mixes the two (`a ? param : &obj->field`); the conversion that exists for that is addrspacecast
