@@ -1245,6 +1245,11 @@ int GsGpu_Init(void) {
         fprintf(stderr, "bt3: unknown BT3_GPU_API=%s (try vulkan, gl or auto)\n", api);
         return 0;
     }
+#ifdef __ANDROID__
+    /* Android: the OpenGL back end is desktop GL 3.3 core, which Android does not have (GLES only): Vulkan always */
+    sb = &sVulkanBackend;
+    api = "vulkan";
+#endif
     sBackend = sb;
     if (!sb->init()) {
         /* The chosen renderer cannot start (no Vulkan driver, an old graphics card): the other one is tried,

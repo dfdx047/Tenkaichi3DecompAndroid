@@ -569,6 +569,7 @@ static void video_tab(PortVideo &v) {
     }
     ImGui::SetItemTooltip("Takes effect the next time the game starts.");
     SDL_free(displays);
+#ifndef __ANDROID__ // (Android: Vulkan only, gs_draw.c)
     {   // which renderer draws the game: Vulkan (the default) or OpenGL 3.3, for machines without a working Vulkan
         static const char *const kApi[] = {"Vulkan", "OpenGL"};
         static int api = -1;
@@ -585,6 +586,7 @@ static void video_tab(PortVideo &v) {
             ImGui::TextDisabled("Running now: %s. %s from the next start.", kApi[sGL ? 1 : 0], kApi[api]);
         }
     }
+#endif
     {
         bool on = meter_on();
         if (ImGui::Checkbox("Show frame rate, and the connection in an online match", &on)) {
