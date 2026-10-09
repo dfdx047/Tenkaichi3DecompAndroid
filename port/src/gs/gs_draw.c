@@ -627,6 +627,12 @@ static void put(const GsVertex *v, float x, float y, float s, float t, float q, 
     o->x = x;
     o->y = y;
     o->z = (float)((double)v->z / zmax);
+    /* A Z above the depth format's largest value (text and menus are sent at 0xFFFFFFFF with a 24-bit buffer)
+       lands past 1.0: a GPU with depth clamping clamps it, one without (Mali) clips the primitive away, and the
+       post-fight menu and the memory card messages lost their letters. Clamped here for every GPU. */
+    if (o->z > 1.0f) {
+        o->z = 1.0f;
+    }
     o->r = r; o->g = g; o->b = b; o->a = a;
     o->s = s; o->t = t; o->q = q;
 }
