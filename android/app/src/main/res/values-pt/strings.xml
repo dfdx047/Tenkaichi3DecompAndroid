@@ -116,7 +116,11 @@
     <string name="settings_sub">Valem na próxima vez que o jogo abrir</string>
     <string name="video">Vídeo</string>
     <string name="resolution">Resolução interna</string>
-    <string name="resolution_hint">1x é a resolução do PS2. Em celulares e portáteis, 2x ou 3x costuma ser o ponto ideal.</string>
+    <string name="resolution_hint">1x é a resolução do PS2. Em celulares e portáteis, 2x ou 3x costuma ser o ponto ideal; em GPUs mais fracas (Mali, Adreno 6xx), experimente 1.25x a 1.75x.</string>
+    <string name="screen_filter">Filtro de tela</string>
+    <string name="filter_bilinear">Bilinear</string>
+    <string name="filter_sharp">Bilinear nítido</string>
+    <string name="screen_filter_hint">FXAA suaviza o serrilhado. FSR e Snapdragon GSR ampliam a imagem com bordas mais nítidas: rendem melhor com resolução interna abaixo da tela (1x a 2x), então também ajudam GPUs mais fracas.</string>
     <string name="aspect">Proporção da tela</string>
     <string name="show_fps">Mostrar FPS</string>
     <string name="show_fps_text">Contador de quadros por segundo durante o jogo</string>

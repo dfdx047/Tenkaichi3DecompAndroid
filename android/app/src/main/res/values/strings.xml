@@ -117,7 +117,11 @@
     <string name="settings_sub">They apply the next time the game starts</string>
     <string name="video">Video</string>
     <string name="resolution">Internal resolution</string>
-    <string name="resolution_hint">1x is the PS2\'s own resolution. On phones and handhelds, 2x or 3x is usually the sweet spot.</string>
+    <string name="resolution_hint">1x is the PS2\'s own resolution. On phones and handhelds, 2x or 3x is usually the sweet spot; on weaker GPUs (Mali, Adreno 6xx), try 1.25x to 1.75x.</string>
+    <string name="screen_filter">Screen filter</string>
+    <string name="filter_bilinear">Bilinear</string>
+    <string name="filter_sharp">Sharp bilinear</string>
+    <string name="screen_filter_hint">FXAA smooths jagged edges. FSR and Snapdragon GSR upscale with sharper edges: best with an internal resolution below the screen\'s (1x to 2x), so they also help weaker GPUs.</string>
     <string name="aspect">Aspect ratio</string>
     <string name="show_fps">Show FPS</string>
     <string name="show_fps_text">Frames-per-second counter while playing</string>

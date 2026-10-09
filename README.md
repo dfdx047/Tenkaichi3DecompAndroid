@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <a href="../../releases"><img alt="Release" src="https://img.shields.io/github/v/release/dfdx047/Tenkaichi3DecompAndroid?include_prereleases&label=release&color=ff8a1f"></a>
+  <a href="../../releases"><img alt="Release" src="https://img.shields.io/github/v/release/dfdx047/Tenkaichi3DecompAndroid?label=release&color=ff8a1f"></a>
   <a href="../../actions/workflows/android.yml"><img alt="Android build" src="https://github.com/dfdx047/Tenkaichi3DecompAndroid/actions/workflows/android.yml/badge.svg"></a>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Android%2010%2B%20·%20arm64-1e4fa8">
 </p>
@@ -16,10 +16,10 @@
 ---
 
 > [!IMPORTANT]
-> **Status: the game runs on an AYN Odin 3 (Snapdragon 8 Elite, Android 15): menus and full battles, smooth, at
-> the game's full 30 fps.** The whole game (332 source files: the decompiled game, the PC port's platform layer,
-> renderer, sound) runs natively on Android arm64. Now: on-screen controls, other GPUs (MediaTek, low-end
-> Snapdragon), modified ISOs, then 60 fps and picture options. See [Roadmap](#roadmap).
+> **Status: the whole game runs natively on Android arm64**: menus and full battles at the game's full 30 fps on
+> Snapdragon (AYN Odin 3, Odin 2 Mini) and on Mali GPUs (Anbernic RG Cube, Unisoc T820). On-screen controller,
+> modified ISOs, screen filters (FXAA, AMD FSR 1, Snapdragon GSR) and custom Adreno drivers are in. Next: 60 fps,
+> more devices, quality-of-life features. See [Roadmap](#roadmap).
 
 This repository contains **no game data**. You need your own copy of the **USA release (SLUS-21678)** as an
 `.iso`. The app reads it on your device; nothing is downloaded or uploaded.
@@ -42,7 +42,7 @@ sound and input layer underneath. Dragon Rage brings that to Android in two part
 <tr><td><b>Mods</b></td><td>File-replacement mods as <code>.zip</code> (with a priority order), extra stages (<code>.unk</code>) and extra songs (<code>.adx</code>), with the name shown in the game's menus editable.</td></tr>
 <tr><td><b>Cheats</b></td><td><i>Unlock everything</i>: every character, stage, song and item, and max Zeni. This is the debug function the developers left in the game. It is applied the next time the game starts.</td></tr>
 <tr><td><b>Controls</b></td><td>The on-screen controller for playing without a gamepad: PlayStation, Xbox or Nintendo look, layout editor (move, resize, hide), macros (combos, several buttons at once, turbo), opacity, size, vibration, floating stick. Also reachable in game.</td></tr>
-<tr><td><b>Settings</b></td><td>Internal resolution 1x–8x, aspect ratio (4:3 to 32:9), each of the five PS2 effects (outline, see-through tint, depth tint, glow, distance blur), glow strength, music / voice volume, on-screen controls, theme, Material You colours.</td></tr>
+<tr><td><b>Settings</b></td><td>Internal resolution 1x–8x in fine steps (1.25x, 1.5x, 1.75x … for weaker GPUs), screen filter (bilinear, sharp bilinear, FXAA, AMD FSR 1, Snapdragon GSR), aspect ratio (4:3 to 32:9), each of the five PS2 effects (outline, see-through tint, depth tint, glow, distance blur), glow strength, music / voice volume, custom GPU driver for Adreno (Turnip and others, through AdrenoTools), <i>Save log to Downloads</i> for bug reports, theme, Material You colours.</td></tr>
 </table>
 
 Dark theme with Dragon Ball colours (Goku's gi orange and blue, dragon-ball amber, Super Saiyan gold) by default,
@@ -51,11 +51,20 @@ to a side rail.
 
 ### Install
 
-Download the APK from [Releases](../../releases) and install it, or build it yourself:
+Download `DragonRage-<version>.apk` from the [latest release](../../releases/latest) and install it. A newer
+version installs over the older one and keeps your game data, settings and saves.
+
+- **Releases** (`android-vX.Y.Z` tags): tested versions.
+- **[Nightly](../../releases/tag/android-nightly)**: the latest build of `main`, for testing; may be broken.
+
+To report a problem: *Settings → Save log to Downloads*, then send the `DragonRage-log-….txt` file.
+
+Build it yourself:
 
 ```sh
-cd android
-./gradlew installDebug        # needs JDK 17+ and the Android SDK (compileSdk 35)
+sh port/tools/android_toolchain.sh   # LLVM 21, the NDK's sysroot, SDL3 (once)
+python3 port/tools/android.py        # the engine -> android/app/src/main/jniLibs
+cd android && ./gradlew assembleRelease   # needs JDK 17+ and the Android SDK (compileSdk 35)
 ```
 
 ### Where files go
@@ -82,8 +91,8 @@ at start, then reset to 0), `dr_fps60` (reserved). The on-screen controller's se
 ### Done
 - [x] Launcher app: game-data install from ISO with checksum verification, texture packs, mods, extra
       stages and songs, unlock-all cheat, all engine settings, Material 3 theme, English and Portuguese
-- [x] CI: every push builds the APK ([android-nightly](../../releases/tag/android-nightly)); an `android-v*` tag
-      publishes a release
+- [x] CI: every push builds the APK ([android-nightly](../../releases/tag/android-nightly)); an `android-vX.Y.Z` tag
+      publishes a versioned release
 - [x] Engine builds for arm64 (332 of 332 sources), loads below the Java heap, and **boots and plays**: memory card
       check, logos, opening movie, menus, character select and battles on the AYN Odin 3 (Snapdragon 8 Elite), at
       the game's full 30 fps, about 2–3 W at 4x resolution
@@ -101,16 +110,24 @@ at start, then reset to 0), `dr_fps60` (reserved). The on-screen controller's se
       START/SELECT; **PlayStation, Xbox and Nintendo looks**; **layout editor** (move, resize, hide, reset) in the
       app and in game; **macros** (combos, several buttons at once, turbo); opacity, size, vibration; hides when a
       physical controller is used
+- [x] **Mali GPUs** (tested: Unisoc T820 / Mali-G57): Vulkan without the optional features Mali lacks, menu text and
+      memory card messages fixed, shaders without `discard` where nothing is discarded, render targets a quarter of
+      the size (less memory traffic on tile-based GPUs)
+- [x] **Engine loads anywhere in the low 4 GB** (relocatable), for devices whose Java heap sits where the engine used
+      to go (Moto g100 and others)
+- [x] **Custom GPU drivers** for Adreno (Turnip, newer Qualcomm drivers) through AdrenoTools
+- [x] **Bug reports**: *Save log to Downloads* in Settings
+- [x] **Screen filters**: bilinear, sharp bilinear, FXAA, AMD FSR 1 (EASU + RCAS), Snapdragon Game Super Resolution
+- [x] **Internal resolution in fine steps** (1.25x, 1.5x, 1.75x, 2.5x …)
 - [ ] Texture packs from a .zip: check on a device
-- [ ] **MediaTek** GPUs (Mali): debug and fix
+- [ ] **Mali at 2x and above**: measure and optimise further
 - [ ] **Low-end devices** (Snapdragon 665 / Adreno 610): profile and optimise
 - [ ] In-game menu in Portuguese; a cleaner layout
 
 ### Next
 - [ ] **60 fps mode.** The game runs its logic at 30 fps (a fight frame waits two vertical blanks); a real 60 fps needs
       the simulation's timing changed (or frame interpolation)
-- [ ] Picture: bilinear / sharp-bilinear and other output filters, anisotropic filtering, **FSR 1** and
-      **Snapdragon Game Super Resolution** upscaling, post-processing shaders
+- [ ] Picture: anisotropic filtering, SMAA, more post-processing shaders
 - [ ] Quality-of-life features of a "definitive edition" (the game's code is all here to change)
 - [ ] Performance on mobile GPUs; DDS (BC1–BC3) texture packs on GPUs without BC support
 - [ ] Pause/resume when the app goes to the background; save states on arm64 (`port/src/gs/state.c` uses
@@ -131,12 +148,16 @@ at start, then reset to 0), `dr_fps60` (reserved). The on-screen controller's se
 - **[Tenkaichi3Decomp](https://github.com/z3xox/Tenkaichi3Decomp)** by z3xox: the native PC port this is built on,
   and the matching decompilation BT3-Decompiled under it. Contributors of the PC port are listed in its README.
 - Dragon Rage (Android app and port): [dfdx047](https://github.com/dfdx047).
+- [AMD FidelityFX Super Resolution 1](https://github.com/GPUOpen-Effects/FidelityFX-FSR) (MIT),
+  [Snapdragon Game Super Resolution](https://github.com/SnapdragonStudios/snapdragon-gsr) (BSD-3-Clause),
+  [libadrenotools](https://github.com/bylaws/libadrenotools) (BSD-2-Clause), [SDL3](https://libsdl.org) (zlib).
 - Made with the help of AI.
 
 ## Licence
 
 The Android app (`android/`) and the PC port's own code (`port/` except `port/third_party/`) are under the
-[MIT licence](LICENSE). The libraries in `port/third_party/` keep their own licences. The game's code in `src/` and
+[MIT licence](LICENSE). The libraries in `port/third_party/` and the shaders in `port/src/gs/shaders/ffx/` (FSR's
+headers) and `port/src/gs/shaders/sgsr.frag` keep their own licences (the files next to them). The game's code in `src/` and
 `include/` comes from the decompilation and belongs to the game's rights holders.
 
 ## Legal

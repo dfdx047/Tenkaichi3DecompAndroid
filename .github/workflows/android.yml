@@ -1,8 +1,12 @@
 # Builds the Dragon Rage Android app (android/).
 #
-#   push / pull request touching android/   debug + release APK as artifacts of the run (a build check)
-#   a tag  android-v*                        the same, and a published pre-release with the APK attached
+#   push / pull request                      the release APK as an artifact of the run (a build check)
+#   push to main                             the same, and the "android-nightly" pre-release (its APK replaced)
+#   a tag  android-vX.Y.Z                    the same, and the release "Dragon Rage X.Y.Z" with its APK
 #   "Run workflow" button                    the same as a push
+#
+# Versions: the tag gives the version name (android-v0.2.0 -> 0.2.0), the run number the version code; other
+# builds are 0.0.0-dev.<run>.
 #
 # Release signing: set the repository secrets DR_KEYSTORE_BASE64 (the .jks file, base64), DR_KEYSTORE_PASSWORD,
 # DR_KEY_ALIAS and DR_KEY_PASSWORD. Without them the APK is signed with a throwaway debug key, and each build
@@ -46,7 +50,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: port/build/android-toolchain/llvm
-          key: llvm-21.1.0-linux-x64-v1
+          key: llvm-21.1.0-linux-x64-v2
       - name: Engine toolchain
         working-directory: .
         run: |
@@ -95,13 +99,12 @@ jobs:
       - name: Build
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug assembleRelease > ../gradle.txt 2>&1 || { grep -E "^e: |error:|FAILURE|What went wrong" -A3 ../gradle.txt > ../gradle_errors.txt || true; tail -20 ../gradle.txt >> ../gradle_errors.txt; sh ../.github/annotate.sh ../gradle_errors.txt; exit 1; }
+          ./gradlew --no-daemon assembleRelease > ../gradle.txt 2>&1 || { grep -E "^e: |error:|FAILURE|What went wrong" -A3 ../gradle.txt > ../gradle_errors.txt || true; tail -20 ../gradle.txt >> ../gradle_errors.txt; sh ../.github/annotate.sh ../gradle_errors.txt; exit 1; }
 
       - name: Collect APKs
         run: |
           mkdir -p ../out
           cp app/build/outputs/apk/release/app-release.apk "../out/DragonRage-${DR_VERSION_NAME}.apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "../out/DragonRage-${DR_VERSION_NAME}-debug.apk"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -113,20 +116,20 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: Dragon Rage ${{ env.DR_VERSION_NAME }}
-          prerelease: true
+          prerelease: false
+          make_latest: true
+          generate_release_notes: true
           files: out/*.apk
           body: |
-            Dragon Rage ${{ env.DR_VERSION_NAME }}: the launcher app and the game engine (arm64). Needs your own ISO of
-            the USA release (SLUS-21678). See the README for the status of the port.
-
-            `DragonRage-${{ env.DR_VERSION_NAME }}.apk` is the release build; the `-debug` one is for testing.
+            Dragon Rage ${{ env.DR_VERSION_NAME }} for Android (arm64, Android 10 or newer).
+            Install `DragonRage-${{ env.DR_VERSION_NAME }}.apk`; it updates an earlier version and keeps your game data.
+            You need your own disc image of the USA release (SLUS-21678). See the README for what works and what is next.
 
       # Every push to main: the latest build as the "nightly" pre-release (one tag, its APKs replaced each time)
       - name: Nightly
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         working-directory: .
         run: |
-          cp out/*-debug.apk out/DragonRage-nightly-debug.apk
           cp "out/DragonRage-${DR_VERSION_NAME}.apk" out/DragonRage-nightly.apk
       - uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -135,9 +138,8 @@ jobs:
           name: Dragon Rage nightly
           prerelease: true
           overwrite_files: true
-          files: |
-            out/DragonRage-nightly.apk
-            out/DragonRage-nightly-debug.apk
+          files: out/DragonRage-nightly.apk
           body: |
-            The latest build of main (${{ github.sha }}, run ${{ github.run_number }}). For testing: things may be broken.
-            Install `DragonRage-nightly-debug.apk`; its logs: `adb logcat -s bt3`.
+            The latest build of main (${{ github.sha }}, version 0.0.0-dev.${{ github.run_number }}). For testing: things
+            may be broken. For a stable version, take the latest release. Logs: Settings > Save log to Downloads, or
+            `adb logcat -s bt3`.

@@ -57,15 +57,33 @@ fun SettingsScreen(vm: AppViewModel) {
         ScreenTitle(stringResource(R.string.settings_title), stringResource(R.string.settings_sub))
 
         SectionCard(stringResource(R.string.video), Icons.Rounded.Tv) {
-            val scale = get(EngineSettings.SCALE, EngineSettings.SCALE_DEFAULT)
+            val steps = EngineSettings.SCALE_STEPS
+            val q = get(EngineSettings.SCALE4, 0).takeIf { it > 0 } ?: (get(EngineSettings.SCALE, EngineSettings.SCALE_DEFAULT) * 4)
+            val at = steps.indices.minByOrNull { kotlin.math.abs(steps[it] - q) } ?: 4
             StepSlider(
                 label = stringResource(R.string.resolution),
-                format = { "${it}x · ${512 * it}×${448 * it}" },
-                value = scale, range = 1..8,
-                onChange = { vm.setting(EngineSettings.SCALE, it) },
+                format = { i -> steps[i].let { "${if (it % 4 == 0) (it / 4).toString() else (it / 4.0).toString()}x · ${128 * it}×${112 * it}" } },
+                value = at, range = 0..steps.lastIndex,
+                onChange = { i ->
+                    vm.setting(EngineSettings.SCALE4, steps[i])
+                    vm.setting(EngineSettings.SCALE, (steps[i] + 2) / 4)
+                },
             )
             Text(
                 stringResource(R.string.resolution_hint),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(stringResource(R.string.screen_filter), style = MaterialTheme.typography.titleSmall)
+            ChipRow(
+                options = listOf(
+                    stringResource(R.string.filter_bilinear) to 0, stringResource(R.string.filter_sharp) to 1, "FXAA" to 2,
+                    "AMD FSR 1" to 3, "Snapdragon GSR" to 4,
+                ),
+                selected = get(EngineSettings.FILTER, 0),
+                onSelect = { vm.setting(EngineSettings.FILTER, it) },
+            )
+            Text(
+                stringResource(R.string.screen_filter_hint),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(stringResource(R.string.aspect), style = MaterialTheme.typography.titleSmall)

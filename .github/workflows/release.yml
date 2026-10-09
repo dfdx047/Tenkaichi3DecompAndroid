@@ -3,16 +3,14 @@
 # program fetches their values from the user's own disc at start. The same build runs locally with
 # port/release/build.sh.
 #
-#   every push to main        the archives as downloadable artifacts of the run (a check that everything builds)
 #   a tag  v*                 the same, and a draft release with both archives attached
-#   "Run workflow" button     the same as a push
+#   "Run workflow" button     the archives as downloadable artifacts of the run
 name: release
 
+# (This repository is the Android port: the PC archives are built on a tag v* or by hand only, not on every push.)
 on:
   push:
-    branches: [main]
     tags: ["v*"]
-    paths-ignore: ["docs/**", "**.md", "LICENSE", "android/**", ".github/workflows/android.yml", ".github/workflows/toolchain.yml"]
   workflow_dispatch:
 
 permissions:

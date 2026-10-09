@@ -53,7 +53,8 @@ class EngineSettings(private val file: File) {
 
     companion object Keys {
         // The engine's own (defaults as in port/src/gs/gs_draw.c)
-        const val SCALE = "scale"                 // internal resolution 1..8, default 2
+        const val SCALE = "scale"                 // internal resolution 1..8, default 2 (whole; kept for older engines)
+        const val SCALE4 = "scale4"               // the same in quarters: 4 = 1x, 6 = 1.5x .. 32 = 8x (wins over "scale")
         const val ASPECT = "aspect_milli"         // 1333, 1600, 1778, 2389, 3556
         const val FX_OFF = "fx_off"               // bits: 1 outline, 2 see-through tint, 4 depth tint, 8 glow, 16 blur
         const val GLOW = "glow"                   // 0..200 %, default 60
@@ -61,6 +62,7 @@ class EngineSettings(private val file: File) {
         const val EFFECTS = "effects"             // 0..200 %, sound effects and voices
         const val METER = "meter"                 // frame-rate meter
         const val TEXTURE_PACK = "texture_pack"   // texture packs on / off, default on
+        const val FILTER = "filter"               // screen filter: 0 bilinear, 1 sharp bilinear, 2 FXAA, 3 FSR 1, 4 Snapdragon GSR
 
         // Dragon Rage's own, read by the Android glue of the engine at start
         const val UNLOCK_ALL = "dr_unlock_all"    // 1: run Save_UnlockAll once on the next start, then 0
@@ -70,6 +72,8 @@ class EngineSettings(private val file: File) {
 
         const val GLOW_DEFAULT = 60
         const val SCALE_DEFAULT = 2
+        /** The internal resolutions offered, in quarters (the engine's settings window has the same list). */
+        val SCALE_STEPS = listOf(4, 5, 6, 7, 8, 10, 12, 16, 20, 24, 32)
         const val ASPECT_DEFAULT = 1778
     }
 }
