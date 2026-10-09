@@ -145,7 +145,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         refreshAll()
-        checkForUpdate(manual = false)
     }
 
     fun refreshAll() {
@@ -253,6 +252,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val update: StateFlow<UpdateState> = _update.asStateFlow()
     private var updateFile: File? = null
     private var updateJob: Job? = null
+
+    // (after the state above: properties are set up in order, and this reads _update)
+    init {
+        checkForUpdate(manual = false)
+    }
 
     /** Looks for a newer version. At start it only speaks up when there is one; from About it also says "up to date". */
     fun checkForUpdate(manual: Boolean) {
