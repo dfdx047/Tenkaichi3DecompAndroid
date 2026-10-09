@@ -4,7 +4,7 @@
  * gs_draw.c still records the frame (every primitive as a GsDraw, the vertices, the decoded textures); this
  * file owns the GPU objects and at the end of the frame uploads what is new, replays the recorded list on
  * the GPU, presents it, draws the settings window over it and writes the screenshots.
- *   render targets   one per GS frame-buffer address in use, GS_W x GS_H GS pixels at SCALE times the PS2's
+ *   render targets   one per GS frame-buffer address in use, sTW x sTH GS pixels at SCALE times the PS2's
  *                    resolution, each with its own depth buffer; the colour / aux / depth attachments of
  *                    gsTargets[i] live in sTgCol / sTgAux / sTgDep[i]
  *   textures         made from what gs_draw.c decoded, uploaded in the copy pass of the frame that needed them
@@ -16,6 +16,7 @@
  * frame-buffer masks, 16-bit targets' precision.
  */
 #include <SDL3/SDL.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,6 +31,12 @@ extern int Port_AspectMilli(void);
 
 static SDL_Window *sWindow; /* the shared window (GsDraw_WindowCreate) */
 static SDL_GPUDevice *sDev;
+/* The render targets' size in GS pixels (times SCALE). The draws are placed as on a 1024 x 1024 page (gs.vert
+   and the vertex programs map 0..1024 onto the clip space, with a viewport of that size), but the game never draws
+   past 512 x 512 in a buffer of its own: targets of 512 x 512 hold all of it at a quarter of the memory, and a tiled
+   GPU (Mali, Adreno) loads and stores a quarter of the pixels at each change of target. BT3_GPU_BIG_TARGETS=1: the
+   full 1024 x 1024, as before. */
+static int sTW = 512, sTH = 512;
 static unsigned sPassN, sCopyN; /* render passes and copies of the frames since the last report (BT3_GS_VERBOSE) */
 static SDL_GPUShader *sVs, *sFs, *sFsNd; /* sFsNd: gs.frag without its discards (key bit 23) */
 static SDL_GPUBuffer *sVbuf;
@@ -85,8 +92,8 @@ static void copies_create(void) {
     ci.type = SDL_GPU_TEXTURETYPE_2D;
     ci.format = SDL_GPU_TEXTUREFORMAT_R8_UNORM;
     ci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
-    ci.width = GS_W * SCALE;
-    ci.height = GS_H * SCALE;
+    ci.width = sTW * SCALE;
+    ci.height = sTH * SCALE;
     ci.layer_count_or_depth = 1;
     ci.num_levels = 1;
     sAuxCopy = SDL_CreateGPUTexture(sDev, &ci);
@@ -101,8 +108,8 @@ static void target_ensure(int i) {
     ci.type = SDL_GPU_TEXTURETYPE_2D;
     ci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
     ci.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    ci.width = GS_W * SCALE;
-    ci.height = GS_H * SCALE;
+    ci.width = sTW * SCALE;
+    ci.height = sTH * SCALE;
     ci.layer_count_or_depth = 1;
     ci.num_levels = 1;
     sTgCol[i] = SDL_CreateGPUTexture(sDev, &ci);
@@ -174,7 +181,7 @@ static int tex_slots_left(void) { return MAX_PENDING - sPendingCount; }
 
 static GsTex white_tex(void) { return (GsTex)(uintptr_t)sWhite; }
 
-/* gsScale just changed: the shared table is emptied after this returns; every attachment and helper sized
+/* gsScale4 just changed: the shared table is emptied after this returns; every attachment and helper sized
    to the old resolution is dropped here and the helpers are made again at the new size. */
 static void scale_changed(void) {
     int i;
@@ -188,7 +195,7 @@ static void scale_changed(void) {
 }
 
 /* The settings window (F1, ui.cpp) and the shared window it lives in are gs_draw.c's: what the user changes
-   there reaches this back end through gsScale, gsFxOff and gsGlowPercent. */
+   there reaches this back end through gsScale4, gsFxOff and gsGlowPercent. */
 
 /* --- pipelines ---------------------------------------------------------------------------------- */
 
@@ -348,6 +355,12 @@ static int vk_init(void) {
     SDL_GPUTransferBufferCreateInfo ti;
     static uint32_t white = 0xFFFFFFFFu;
     int i;
+
+    if (getenv("BT3_GPU_BIG_TARGETS") != NULL) {
+        sTW = sTH = 1024;
+    }
+    gsTargetW = sTW;
+    gsTargetH = sTH;
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         fprintf(stderr, "bt3: SDL_Init: %s\n", SDL_GetError());
@@ -546,6 +559,168 @@ static void poll_events(void) {
 static int sLastShown = -1; /* the target shown last (the paused picture) */
 
 /* The game's picture into the window: its shape kept (4:3 or 16:9), centred, the rest black. */
+/* A scissor inside the target (the game's may reach past its 512 x 512: nothing is drawn there anyway). */
+static void clamp_scissor(SDL_Rect *r) {
+    int w = (int)(sTW * SCALE), h = (int)(sTH * SCALE);
+    if (r->x < 0) { r->w += r->x; r->x = 0; }
+    if (r->y < 0) { r->h += r->y; r->y = 0; }
+    if (r->x > w) { r->x = w; }
+    if (r->y > h) { r->y = h; }
+    if (r->x + r->w > w) { r->w = w - r->x; }
+    if (r->y + r->h > h) { r->h = h - r->y; }
+    if (r->w < 0) { r->w = 0; }
+    if (r->h < 0) { r->h = 0; }
+}
+
+/* --- the picture onto the screen, through the chosen filter (gsFilter) ------------------------------------- */
+
+static SDL_GPUGraphicsPipeline *sPresentPipe, *sSgsrPipe, *sEasuPipe, *sRcasPipe;
+static SDL_GPUTexture *sUpTex;      /* FSR: the upscaled picture between its two passes */
+static Uint32 sUpW, sUpH;
+static int sFilterReady;            /* 1 made, -1 could not be made (the plain blit is used) */
+
+static SDL_GPUGraphicsPipeline *present_pipe(const unsigned char *code, size_t size, SDL_GPUTextureFormat fmt) {
+    SDL_GPUShader *fs = shader(code, size, SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+    SDL_GPUColorTargetDescription cd;
+    SDL_GPUGraphicsPipelineCreateInfo ci;
+    SDL_GPUGraphicsPipeline *pipe;
+    if (fs == NULL) {
+        return NULL;
+    }
+    SDL_zero(cd);
+    SDL_zero(ci);
+    cd.format = fmt;
+    ci.vertex_shader = sFxVs;
+    ci.fragment_shader = fs;
+    ci.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+    ci.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+    ci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    ci.rasterizer_state.enable_depth_clip = sGpuLite;
+    ci.target_info.color_target_descriptions = &cd;
+    ci.target_info.num_color_targets = 1;
+    pipe = SDL_CreateGPUGraphicsPipeline(sDev, &ci);
+    SDL_ReleaseGPUShader(sDev, fs);
+    if (pipe == NULL) {
+        fprintf(stderr, "bt3: screen filter pipeline: %s\n", SDL_GetError());
+    }
+    return pipe;
+}
+
+static int filters_make(void) {
+    SDL_GPUTextureFormat fmt;
+    if (sFilterReady != 0) {
+        return sFilterReady > 0;
+    }
+    fmt = SDL_GetGPUSwapchainTextureFormat(sDev, sWindow);
+    sPresentPipe = present_pipe(kPresentFragSpv, sizeof(kPresentFragSpv), fmt);
+    sSgsrPipe = present_pipe(kSgsrFragSpv, sizeof(kSgsrFragSpv), fmt);
+    sEasuPipe = present_pipe(kFsr_easuFragSpv, sizeof(kFsr_easuFragSpv), SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM);
+    sRcasPipe = present_pipe(kFsr_rcasFragSpv, sizeof(kFsr_rcasFragSpv), fmt);
+    sFilterReady = sPresentPipe != NULL ? 1 : -1;
+    fprintf(stderr, "bt3: screen filters: present %s, SGSR %s, FSR %s\n", sPresentPipe ? "yes" : "no", sSgsrPipe ? "yes" : "no",
+            sEasuPipe && sRcasPipe ? "yes" : "no");
+    return sFilterReady > 0;
+}
+
+static uint32_t fbits(float f) {
+    uint32_t u;
+    memcpy(&u, &f, 4);
+    return u;
+}
+
+/* One full-screen triangle of a filter into `dst`, inside the rectangle (x, y, w, h). */
+static void filter_pass(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *dst, SDL_GPUGraphicsPipeline *pipe, SDL_GPUTexture *src,
+                        SDL_GPUSampler *smp, const void *uni, Uint32 size, float x, float y, float w, float h, int clear) {
+    SDL_GPUColorTargetInfo ct;
+    SDL_GPUTextureSamplerBinding tb;
+    SDL_GPUViewport vp = {x, y, w, h, 0.0f, 1.0f};
+    SDL_GPURenderPass *pass;
+    SDL_zero(ct);
+    ct.texture = dst;
+    ct.clear_color.a = 1.0f;
+    ct.load_op = clear ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_DONT_CARE;
+    ct.store_op = SDL_GPU_STOREOP_STORE;
+    pass = SDL_BeginGPURenderPass(cmd, &ct, 1, NULL);
+    SDL_BindGPUGraphicsPipeline(pass, pipe);
+    SDL_SetGPUViewport(pass, &vp);
+    tb.texture = src;
+    tb.sampler = smp;
+    SDL_BindGPUFragmentSamplers(pass, 0, &tb, 1);
+    SDL_PushGPUFragmentUniformData(cmd, 0, uni, size);
+    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    SDL_EndGPURenderPass(pass);
+}
+
+/* The shown picture through the filter; 0 if the plain blit has to do it. */
+static int show_filtered(SDL_GPUCommandBuffer *cmd, int best, SDL_GPUTexture *swap, Uint32 dx, Uint32 dy, Uint32 w, Uint32 h) {
+    float texW = (float)sTW * SCALE, texH = (float)sTH * SCALE, inW = 512.0f * SCALE, inH = 448.0f * SCALE;
+    SDL_GPUSampler *lin = sSamplers[7], *near = sSamplers[6];
+    if (gsFilter == 0 || w == 0 || h == 0 || !filters_make()) {
+        return 0;
+    }
+    if (gsFilter == 3 && sEasuPipe != NULL && sRcasPipe != NULL) { /* AMD FSR 1: EASU to the shown size, then RCAS */
+        struct { uint32_t con0[4], con1[4], con2[4], con3[4]; float origin[4]; } e;
+        struct { uint32_t con[4]; float origin[4]; } r;
+        if (sUpTex == NULL || sUpW != w || sUpH != h) {
+            SDL_GPUTextureCreateInfo ci;
+            if (sUpTex != NULL) {
+                SDL_ReleaseGPUTexture(sDev, sUpTex);
+            }
+            SDL_zero(ci);
+            ci.type = SDL_GPU_TEXTURETYPE_2D;
+            ci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+            ci.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+            ci.width = w;
+            ci.height = h;
+            ci.layer_count_or_depth = 1;
+            ci.num_levels = 1;
+            sUpTex = SDL_CreateGPUTexture(sDev, &ci);
+            sUpW = w;
+            sUpH = h;
+            if (sUpTex == NULL) {
+                return 0;
+            }
+        }
+        /* FsrEasuCon (ffx_fsr1.h): the shown part (512 x 448 GS pixels) of the target, to w x h */
+        e.con0[0] = fbits(inW / (float)w);
+        e.con0[1] = fbits(inH / (float)h);
+        e.con0[2] = fbits(0.5f * inW / (float)w - 0.5f);
+        e.con0[3] = fbits(0.5f * inH / (float)h - 0.5f);
+        e.con1[0] = fbits(1.0f / texW);
+        e.con1[1] = fbits(1.0f / texH);
+        e.con1[2] = fbits(1.0f / texW);
+        e.con1[3] = fbits(-1.0f / texH);
+        e.con2[0] = fbits(-1.0f / texW);
+        e.con2[1] = fbits(2.0f / texH);
+        e.con2[2] = fbits(1.0f / texW);
+        e.con2[3] = fbits(2.0f / texH);
+        e.con3[0] = fbits(0.0f);
+        e.con3[1] = fbits(4.0f / texH);
+        e.con3[2] = e.con3[3] = 0;
+        memset(e.origin, 0, sizeof(e.origin));
+        filter_pass(cmd, sUpTex, sEasuPipe, sTgCol[best], lin, &e, sizeof(e), 0.0f, 0.0f, (float)w, (float)h, 0);
+        /* FsrRcasCon: sharpness in stops (0 the most); 0.25 keeps the game's own look */
+        memset(&r, 0, sizeof(r));
+        r.con[0] = fbits(exp2f(-0.25f));
+        r.origin[0] = (float)dx;
+        r.origin[1] = (float)dy;
+        filter_pass(cmd, swap, sRcasPipe, sUpTex, near, &r, sizeof(r), (float)dx, (float)dy, (float)w, (float)h, 1);
+        return 1;
+    }
+    if (gsFilter == 4 && sSgsrPipe != NULL) { /* Snapdragon GSR: one pass */
+        struct { float info[4], region[4]; } g = {{1.0f / texW, 1.0f / texH, texW, texH}, {inW / texW, inH / texH, 0.0f, 0.0f}};
+        filter_pass(cmd, swap, sSgsrPipe, sTgCol[best], lin, &g, sizeof(g), (float)dx, (float)dy, (float)w, (float)h, 1);
+        return 1;
+    }
+    {   /* bilinear, sharp bilinear, FXAA (and FSR or GSR if their pipelines could not be made) */
+        struct { float tex[4], region[4]; int32_t mode[4]; } u = {
+            {1.0f / texW, 1.0f / texH, texW, texH}, {inW / texW, inH / texH, (float)w / inW, (float)h / inH},
+            {gsFilter == 1 || gsFilter == 2 ? gsFilter : 0, 0, 0, 0}};
+        filter_pass(cmd, swap, sPresentPipe, sTgCol[best], lin, &u, sizeof(u), (float)dx, (float)dy, (float)w, (float)h, 1);
+        return 1;
+    }
+}
+
 static void show_target(SDL_GPUCommandBuffer *cmd, int best, SDL_GPUTexture *swap, Uint32 sw, Uint32 sh) {
     SDL_GPUBlitInfo bl;
     float want = (float)Port_AspectMilli() / 1000.0f;
@@ -569,7 +744,9 @@ static void show_target(SDL_GPUCommandBuffer *cmd, int best, SDL_GPUTexture *swa
     bl.clear_color.a = 1.0f;
     bl.load_op = SDL_GPU_LOADOP_CLEAR;
     bl.filter = SDL_GPU_FILTER_LINEAR;
-    SDL_BlitGPUTexture(cmd, &bl);
+    if (!show_filtered(cmd, best, swap, bl.destination.x, bl.destination.y, w, h)) {
+        SDL_BlitGPUTexture(cmd, &bl);
+    }
     gUiPresentX = (int)bl.destination.x; /* the stage-name overlay maps game pixels through this rectangle */
     gUiPresentY = (int)bl.destination.y;
     gUiPresentW = (int)bl.destination.w;
@@ -743,20 +920,20 @@ static void vk_frame_end(void) {
             ci.type = SDL_GPU_TEXTURETYPE_2D;
             ci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
             ci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-            ci.width = GS_W;
-            ci.height = GS_H;
+            ci.width = sTW;
+            ci.height = sTH;
             ci.layer_count_or_depth = 1;
             ci.num_levels = 1;
             sFbTex[i] = SDL_CreateGPUTexture(sDev, &ci);
         }
         SDL_zero(ti);
         ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        ti.size = GS_W * GS_H * 4;
+        ti.size = sTW * sTH * 4;
         tb = SDL_CreateGPUTransferBuffer(sDev, &ti);
         px = SDL_MapGPUTransferBuffer(sDev, tb, false);
-        for (y = 0; y < GS_H; y++) {
-            for (x = 0; x < GS_W; x++) {
-                px[y * GS_W + x] = Gs_VramRead(fbp * 32, 8, 0, x, y) | 0xFF000000u;
+        for (y = 0; y < sTH; y++) {
+            for (x = 0; x < sTW; x++) {
+                px[y * sTW + x] = Gs_VramRead(fbp * 32, 8, 0, x, y) | 0xFF000000u;
             }
         }
         SDL_UnmapGPUTransferBuffer(sDev, tb);
@@ -764,8 +941,8 @@ static void vk_frame_end(void) {
         src.transfer_buffer = tb;
         SDL_zero(dst);
         dst.texture = sFbTex[i];
-        dst.w = GS_W;
-        dst.h = GS_H;
+        dst.w = sTW;
+        dst.h = sTH;
         dst.d = 1;
         SDL_UploadToGPUTexture(copy, &src, &dst, false);
         SDL_ReleaseGPUTransferBuffer(sDev, tb);
@@ -791,11 +968,11 @@ static void vk_frame_end(void) {
             cur = -1;
             SDL_zero(bl);
             bl.source.texture = sFbTex[d->native - 100];
-            bl.source.w = GS_W;
-            bl.source.h = GS_H;
+            bl.source.w = sTW;
+            bl.source.h = sTH;
             bl.destination.texture = sTgCol[d->target];
-            bl.destination.w = GS_W * SCALE;
-            bl.destination.h = GS_H * SCALE;
+            bl.destination.w = sTW * SCALE;
+            bl.destination.h = sTH * SCALE;
             bl.load_op = SDL_GPU_LOADOP_DONT_CARE;
             bl.filter = SDL_GPU_FILTER_LINEAR;
             if (sFbTex[d->native - 100] != NULL) {
@@ -822,7 +999,7 @@ static void vk_frame_end(void) {
             SDL_zero(to);
             from.texture = sTgAux[d->target];
             to.texture = sDateCopy;
-            SDL_CopyGPUTextureToTexture(cp, &from, &to, GS_W * SCALE, GS_H * SCALE, 1, false);
+            SDL_CopyGPUTextureToTexture(cp, &from, &to, sTW * SCALE, sTH * SCALE, 1, false);
             SDL_EndGPUCopyPass(cp);
             continue;
         }
@@ -843,7 +1020,7 @@ static void vk_frame_end(void) {
             SDL_zero(to);
             from.texture = sTgAux[d->target];
             to.texture = sAuxCopy;
-            SDL_CopyGPUTextureToTexture(cp, &from, &to, GS_W * SCALE, GS_H * SCALE, 1, false);
+            SDL_CopyGPUTextureToTexture(cp, &from, &to, sTW * SCALE, sTH * SCALE, 1, false);
             SDL_EndGPUCopyPass(cp);
             continue;
         }
@@ -880,6 +1057,7 @@ static void vk_frame_end(void) {
             fs[2].sampler = sSamplers[6];
             SDL_BindGPUFragmentSamplers(pass, 0, fs, 3);
             SDL_PushGPUFragmentUniformData(cmd, 0, params, sizeof(params));
+            clamp_scissor(&sc);
             SDL_SetGPUScissor(pass, &sc);
             SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
             SDL_EndGPURenderPass(pass);
@@ -909,12 +1087,13 @@ static void vk_frame_end(void) {
             fs.texture = sAuxCopy; /* the ids as copied by the game, not the live alpha (later passes overwrite it) */
             fs.sampler = sSamplers[6]; /* nearest, clamped */
             SDL_BindGPUFragmentSamplers(pass, 0, &fs, 1);
-            params[0] = 1.0f / (float)GS_W;
-            params[1] = 1.0f / (float)GS_H;
+            params[0] = 1.0f / (float)sTW;
+            params[1] = 1.0f / (float)sTH;
             params[2] = 100.0f / 255.0f; /* the dark rectangle's 0x64 */
             params[3] = getenv("BT3_FX_DEBUG") != NULL ? 1.0f : 0.0f;
             SDL_PushGPUFragmentUniformData(cmd, 0, params, sizeof(params));
             sc = (SDL_Rect){ d->scissor[0], d->scissor[1], d->scissor[2], d->scissor[3] };
+            clamp_scissor(&sc);
             SDL_SetGPUScissor(pass, &sc);
             SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
             SDL_EndGPURenderPass(pass);
@@ -944,6 +1123,10 @@ static void vk_frame_end(void) {
             cts[0] = ct;
             sPassN++;
             pass = SDL_BeginGPURenderPass(cmd, cts, 2, &dt);
+            {   /* the draws' 1024 x 1024 page (see sTW): larger than the target, which holds its top-left part */
+                SDL_GPUViewport vp = {0.0f, 0.0f, 1024.0f * SCALE, 1024.0f * SCALE, 0.0f, 1.0f};
+                SDL_SetGPUViewport(pass, &vp);
+            }
             cur = d->target;
             bound = -1;
             lastPipe = lastUni = lastSampler = -1; /* a new pass: everything is set again */
@@ -1001,6 +1184,7 @@ static void vk_frame_end(void) {
         }
         if (!haveScissor || memcmp(d->scissor, lastScissor, sizeof(d->scissor)) != 0) {
             SDL_Rect r = { d->scissor[0], d->scissor[1], d->scissor[2], d->scissor[3] };
+            clamp_scissor(&r);
             SDL_SetGPUScissor(pass, &r);
             memcpy(lastScissor, d->scissor, sizeof(lastScissor));
             haveScissor = 1;

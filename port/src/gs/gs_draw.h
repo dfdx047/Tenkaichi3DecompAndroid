@@ -7,14 +7,15 @@
 #define GS_DRAW_H
 #include <stdint.h>
 
-/* The internal resolution multiplier: BT3_SCALE=1..8 (default 2). Every render target is GS_W x GS_H GS
+/* The internal resolution multiplier: BT3_SCALE=1..8, in quarter steps (1.25, 1.5 ...; default 2). Every render target is GS_W x GS_H GS
    pixels at SCALE times the PS2's resolution, about 9 MB of video memory each at 1x, 36 MB at 2x, 144 MB at
    4x; a fight uses 7 to 16 of them. Shared: the capture scales coordinates with it, the back ends size
    their attachments with it. */
-extern int gsScale;
-#define SCALE gsScale
+extern int gsScale4;              /* the multiplier in quarters: 4 = 1x, 6 = 1.5x, 8 = 2x (4..32) */
+#define SCALE ((float)gsScale4 * 0.25f)
 #define GS_W 1024
 #define GS_H 1024
+extern int gsTargetW, gsTargetH; /* a render target's size in GS pixels, as the back end made it (at most GS_W x GS_H) */
 
 #define MAX_VERTS (1 << 20)
 #define MAX_DRAWS (1 << 16)
@@ -107,9 +108,10 @@ extern GsTarget gsTargets[MAX_TARGETS];
 extern int gsTargetCount;
 extern int gsTexCount;          /* textures in the shared decode cache */
 extern GsTex gsWhite;           /* the back end's 1x1 white texture */
-extern int gsPendingScale;      /* the user asked for a new SCALE: applied between two frames */
+extern int gsPendingScale4;     /* the user asked for a new SCALE (in quarters): applied between two frames */
 extern unsigned gsFxOff;        /* effects the user can switch off (BT3_FX_OFF, or F1..F5 while running) */
 extern int gsGlowPercent;
+extern int gsFilter;           /* the picture onto the screen (ui.h, PortVideo.filter); the Vulkan back end */
 extern int gsAnchor;            /* widescreen: which part of the screen the 2D pieces being drawn belong to */
 extern int gsDepthByteIsFog;    /* the top byte of the depth page as the game last left it */
 extern unsigned gsNative;       /* native effect markers seen this frame */
@@ -134,7 +136,7 @@ typedef struct GsBackend {
     const char *name;                     /* "vulkan", "opengl" */
     int (*init)(void);                    /* window + device + fixed pipelines + white texture; 0 = failed */
     void (*frameEnd)(void);               /* events, uploads, replay the list, present, UI, screenshots */
-    void (*scaleChanged)(void);           /* gsScale just changed: wait idle, drop and rebuild what is sized */
+    void (*scaleChanged)(void);           /* gsScale4 just changed: wait idle, drop and rebuild what is sized */
     GsTex (*whiteTex)(void);              /* the 1x1 white texture made in init */
     GsTex (*texCreate)(uint32_t w, uint32_t h, int format, int levels); /* 0 = at capacity / unsupported */
     int (*texUpload)(GsTex tex, int level, uint32_t w, uint32_t h, int format, const void *px, uint32_t bytes); /* takes ownership of px; 0 = dropped */

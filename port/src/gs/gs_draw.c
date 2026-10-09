@@ -54,8 +54,9 @@ static int sFullscreen;
 static float sWantAspect;
 static int sDisplaySetting;
 
-int gsScale = 2;
-int gsPendingScale;
+int gsScale4 = 8;
+int gsTargetW = GS_W, gsTargetH = GS_H; /* the back end's render targets in GS pixels (the Vulkan one: 512) */
+int gsPendingScale4;
 GsTex gsWhite;
 GsDraw *gsDraws;
 uint32_t gsDrawCount;
@@ -72,6 +73,7 @@ int gsTargetCount;
 int gsTexCount;
 unsigned gsFxOff;
 int gsGlowPercent = GLOW_DEFAULT;
+int gsFilter;
 static int sTexPackOn = 1; /* the setting: use the texture pack (if one was found) */
 int gsAnchor;
 int gsDepthByteIsFog;
@@ -575,13 +577,13 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
                 float u0 = 0.0f, u1 = tw - 1.0f, v0 = 0.0f, v1 = th - 1.0f;
                 if (wms >= 2) { u0 = (float)((cl >> 4) & 0x3FF); u1 = (float)((cl >> 14) & 0x3FF); }
                 if (wmt >= 2) { v0 = (float)((cl >> 24) & 0x3FF); v1 = (float)((cl >> 34) & 0x3FF); }
-                d->rect[0] = (u0 + 0.5f) / (float)GS_W;
-                d->rect[1] = (v0 + 0.5f) / (float)GS_H;
-                d->rect[2] = (u1 + 0.5f) / (float)GS_W;
-                d->rect[3] = (v1 + 0.5f) / (float)GS_H;
+                d->rect[0] = (u0 + 0.5f) / (float)gsTargetW;
+                d->rect[1] = (v0 + 0.5f) / (float)gsTargetH;
+                d->rect[2] = (u1 + 0.5f) / (float)gsTargetW;
+                d->rect[3] = (v1 + 0.5f) / (float)gsTargetH;
             }
-            *us = tw / (float)GS_W;
-            *vs = th / (float)GS_H;
+            *us = tw / (float)gsTargetW;
+            *vs = th / (float)gsTargetH;
         } else {
             d->tex = texture_get(ctx);
         }
@@ -1085,15 +1087,15 @@ void GsGpu_Native(int effect) {
 /* A new resolution multiplier: every render target is dropped and made again at the new size when the game next
    draws to it. Buffers that carry something over from the previous frame start empty for one frame. */
 static void scale_apply(void) {
-    if (gsPendingScale == 0 || gsPendingScale == gsScale) {
-        gsPendingScale = 0;
+    if (gsPendingScale4 == 0 || gsPendingScale4 == gsScale4) {
+        gsPendingScale4 = 0;
         return;
     }
-    gsScale = gsPendingScale; /* the back end's attachments and copies are rebuilt to this size */
-    gsPendingScale = 0;
+    gsScale4 = gsPendingScale4; /* the back end's attachments and copies are rebuilt to this size */
+    gsPendingScale4 = 0;
     sBackend->scaleChanged();
     gsTargetCount = 0;
-    fprintf(stderr, "bt3: internal resolution %dx (%d x %d)\n", gsScale, 512 * gsScale, 448 * gsScale);
+    fprintf(stderr, "bt3: internal resolution %gx (%d x %d)\n", (double)SCALE, (int)(512 * SCALE), (int)(448 * SCALE));
 }
 
 /* ------------------------------------------------------------------------------------------- the one window */
@@ -1153,7 +1155,7 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
     if (sWindow != NULL && !sFullscreen) {
         SDL_SetWindowSize(sWindow, (int)((float)896 * want + 0.5f), 896);
     }
-    fprintf(stderr, "bt3: internal resolution %dx (%d x %d)\n", gsScale, 512 * gsScale, 448 * gsScale);
+    fprintf(stderr, "bt3: internal resolution %gx (%d x %d)\n", (double)SCALE, (int)(512 * SCALE), (int)(448 * SCALE));
     return sWindow;
 }
 
@@ -1188,11 +1190,12 @@ void GsDraw_FullscreenToggle(void) {
    scale, the effects switched off and the glow are shared state; the shape, the full screen and the display
    are the window's. */
 void GsGpu_GetSettings(PortVideo *v) {
-    v->scale = gsPendingScale ? gsPendingScale : gsScale;
+    v->scale4 = gsPendingScale4 ? gsPendingScale4 : gsScale4;
     v->aspectMilli = Port_AspectMilli();
     v->fullscreen = sFullscreen;
     v->fxOff = (int)gsFxOff;
     v->glow = gsGlowPercent;
+    v->filter = gsFilter;
     v->music = gPortMusicPercent;
     v->effects = gPortSePercent;
     v->display = sDisplaySetting;
@@ -1204,8 +1207,8 @@ void GsGpu_GetSettings(PortVideo *v) {
 void GsGpu_SetSettings(const PortVideo *v) {
     PortVideo now;
     GsGpu_GetSettings(&now);
-    if (v->scale != now.scale) {
-        gsPendingScale = v->scale < 1 ? 1 : v->scale > 8 ? 8 : v->scale; /* applied between two frames */
+    if (v->scale4 != now.scale4) {
+        gsPendingScale4 = v->scale4 < 4 ? 4 : v->scale4 > 32 ? 32 : v->scale4; /* applied between two frames */
     }
     if (v->aspectMilli != now.aspectMilli) {
         Port_SetAspectMilli(v->aspectMilli);
@@ -1216,6 +1219,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
     }
     gsFxOff = (unsigned)v->fxOff & 31;
     gsGlowPercent = v->glow;
+    gsFilter = v->filter < 0 || v->filter > 4 ? 0 : v->filter;
     gPortSePercent = v->effects;
     if (v->music != now.music) {
         gPortMusicPercent = v->music;
@@ -1224,11 +1228,16 @@ void GsGpu_SetSettings(const PortVideo *v) {
     sDisplaySetting = v->display;
     sTexPackOn = v->texPack != 0;
     Port_SettingSave("texture_pack", sTexPackOn);
-    Port_SettingSave("scale", gsPendingScale ? gsPendingScale : gsScale);
+    {   /* "scale4" in quarters; "scale" the whole multiplier, for the launcher of an earlier version */
+        int q = gsPendingScale4 ? gsPendingScale4 : gsScale4;
+        Port_SettingSave("scale4", q);
+        Port_SettingSave("scale", (q + 2) / 4);
+    }
     Port_SettingSave("aspect_milli", Port_AspectMilli());
     Port_SettingSave("fullscreen", sFullscreen);
     Port_SettingSave("fx_off", (int)gsFxOff);
     Port_SettingSave("glow", gsGlowPercent);
+    Port_SettingSave("filter", gsFilter);
     Port_SettingSave("music", gPortMusicPercent);
     Port_SettingSave("effects", gPortSePercent);
     Port_SettingSave("display", sDisplaySetting);
@@ -1239,9 +1248,17 @@ int GsGpu_Init(void) {
     const char *api = getenv("BT3_GPU_API");
     GsBackend *sb;
 
-    gsScale = getenv("BT3_SCALE") != NULL ? atoi(getenv("BT3_SCALE")) : Port_Setting("scale", 2);
-    gsScale = gsScale < 1 ? 1 : gsScale > 8 ? 8 : gsScale;
-    gsPendingScale = 0;
+    /* BT3_SCALE=1.5 and the like; the setting "scale4" in quarters, else the older whole "scale" */
+    if (getenv("BT3_SCALE") != NULL) {
+        gsScale4 = (int)(atof(getenv("BT3_SCALE")) * 4.0 + 0.5);
+    } else {
+        gsScale4 = Port_Setting("scale4", 0);
+        if (gsScale4 <= 0) {
+            gsScale4 = Port_Setting("scale", 2) * 4;
+        }
+    }
+    gsScale4 = gsScale4 < 4 ? 4 : gsScale4 > 32 ? 32 : gsScale4;
+    gsPendingScale4 = 0;
     gsVerts = malloc(MAX_VERTS * sizeof(Vtx));
     gsVuVerts = malloc(MAX_VU_VERTS * 48);
     gsVuIdx = malloc(MAX_VU_IDX * sizeof(uint32_t));
@@ -1287,6 +1304,8 @@ int GsGpu_Init(void) {
     gsWhite = sb->whiteTex();
     gsFxOff = (unsigned)(getenv("BT3_FX_OFF") != NULL ? atoi(getenv("BT3_FX_OFF")) : Port_Setting("fx_off", 0)) & 31;
     gsGlowPercent = getenv("BT3_GLOW") != NULL ? atoi(getenv("BT3_GLOW")) : Port_Setting("glow", GLOW_DEFAULT);
+    gsFilter = getenv("BT3_FILTER") != NULL ? atoi(getenv("BT3_FILTER")) : Port_Setting("filter", 0);
+    gsFilter = gsFilter < 0 || gsFilter > 4 ? 0 : gsFilter;
     sTexPackOn = Port_Setting("texture_pack", 1) != 0;
     gPortMusicPercent = Port_Setting("music", 100);
     gPortSePercent = Port_Setting("effects", 100);
