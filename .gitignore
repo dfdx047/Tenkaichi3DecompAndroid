@@ -40,4 +40,5 @@ port/build_release/
 # Android: the engine's build outputs copied into the app (port/tools/android.py install)
 /android/app/src/main/jniLibs/
 /android/app/src/main/assets/libbt3.so.dat
+/android/app/src/main/assets/libbt3.so.rel
 /android/app/src/main/java/org/libsdl/
