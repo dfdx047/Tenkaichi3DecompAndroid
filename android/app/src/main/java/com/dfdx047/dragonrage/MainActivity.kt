@@ -60,6 +60,7 @@ import com.dfdx047.dragonrage.ui.screens.HomeScreen
 import com.dfdx047.dragonrage.ui.screens.ModsScreen
 import com.dfdx047.dragonrage.ui.screens.SettingsScreen
 import com.dfdx047.dragonrage.ui.screens.TexturesScreen
+import com.dfdx047.dragonrage.ui.screens.UpdateDialog
 import com.dfdx047.dragonrage.ui.theme.DragonRageTheme
 
 class MainActivity : ComponentActivity() {
@@ -97,7 +98,8 @@ private fun DragonRageApp(vm: AppViewModel) {
 
     LaunchedEffect(Unit) { vm.messages.collect { snackbar.showSnackbar(it) } }
     // files may have been changed from outside (file manager, adb) while the app was in the background
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refreshAll() }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refreshAll(); vm.resumeUpdate() }
+    UpdateDialog(vm)
 
     fun go(d: Dest) = nav.navigate(d.route) {
         popUpTo(nav.graph.findStartDestination().id) { saveState = true }

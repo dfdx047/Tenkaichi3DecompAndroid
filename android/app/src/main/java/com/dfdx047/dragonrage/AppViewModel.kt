@@ -4,10 +4,21 @@ import android.app.Application
 import android.app.LocaleManager
 import android.os.Build
 import android.os.LocaleList
+import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.IOException
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.dfdx047.dragonrage.data.AppUpdates
+import com.dfdx047.dragonrage.data.CatalogState
 import com.dfdx047.dragonrage.data.EngineSettings
+import com.dfdx047.dragonrage.data.Net
+import com.dfdx047.dragonrage.data.TextureCatalog
+import com.dfdx047.dragonrage.data.UpdateState
+import com.dfdx047.dragonrage.data.formatBytes
 import com.dfdx047.dragonrage.data.ExtraItem
 import com.dfdx047.dragonrage.data.ExtraKind
 import com.dfdx047.dragonrage.data.FileMod
@@ -134,6 +145,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         refreshAll()
+        checkForUpdate(manual = false)
     }
 
     fun refreshAll() {
@@ -198,6 +210,120 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         packs.delete(pack)
         _packs.value = packs.list()
         say(str(R.string.msg_pack_removed, pack.name))
+    }
+
+    private val _catalog = MutableStateFlow<CatalogState>(CatalogState.Loading)
+    val catalog: StateFlow<CatalogState> = _catalog.asStateFlow()
+
+    fun loadCatalog() {
+        _catalog.value = CatalogState.Loading
+        viewModelScope.launch {
+            _catalog.value = runCatching { CatalogState.Loaded(TextureCatalog.load()) }.getOrDefault(CatalogState.Failed)
+        }
+    }
+
+    /** Downloads a texture pack (.zip, https) and installs it like one picked from the files. */
+    fun downloadTexturePack(url: String, name: String?) {
+        val u = url.trim()
+        if (!u.startsWith("https://")) {
+            say(str(R.string.err_https_only))
+            return
+        }
+        work(str(R.string.busy_download_pack)) {
+            paths.temp.mkdirs()
+            val file = File(paths.temp, "download-${System.currentTimeMillis()}.zip")
+            try {
+                Net.download(u, file) { done, total ->
+                    setDetail(str(R.string.progress_downloading, formatBytes(done)) + if (total > 0) " / ${formatBytes(total)}" else "")
+                }
+                if (!Net.looksLikeZip(file)) throw IOException(str(R.string.err_download_not_zip))
+                val label = name ?: u.substringBefore('?').substringAfterLast('/').removeSuffix(".zip").ifBlank { "Texture pack" }
+                val p = file.inputStream().use { packs.importStream(label, it) { d -> setDetail(d) } }
+                _packs.value = packs.list()
+                say(str(R.string.msg_pack_installed, p.name, p.textures))
+            } finally {
+                file.delete()
+            }
+        }
+    }
+
+    // ---- app updates (GitHub releases)
+
+    private val _update = MutableStateFlow<UpdateState>(UpdateState.Idle)
+    val update: StateFlow<UpdateState> = _update.asStateFlow()
+    private var updateFile: File? = null
+    private var updateJob: Job? = null
+
+    /** Looks for a newer version. At start it only speaks up when there is one; from About it also says "up to date". */
+    fun checkForUpdate(manual: Boolean) {
+        if (_update.value !is UpdateState.Idle) return
+        _update.value = UpdateState.Checking
+        viewModelScope.launch {
+            val r = runCatching { AppUpdates.check(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE) }
+            val info = r.getOrNull()
+            _update.value = if (info != null) UpdateState.Available(info) else UpdateState.Idle
+            if (manual && info == null) say(str(if (r.isSuccess) R.string.update_none else R.string.update_check_failed))
+        }
+    }
+
+    fun dismissUpdate() {
+        if (_update.value is UpdateState.Available || _update.value is UpdateState.NeedPermission) _update.value = UpdateState.Idle
+    }
+
+    fun cancelUpdate() {
+        updateJob?.cancel()
+        _update.value = UpdateState.Idle
+    }
+
+    fun startUpdate() {
+        val info = (_update.value as? UpdateState.Available)?.info ?: return
+        val app = getApplication<Application>()
+        updateJob = viewModelScope.launch {
+            _update.value = UpdateState.Downloading(info, 0, info.size)
+            try {
+                val dir = File(app.cacheDir, "updates").apply { deleteRecursively(); mkdirs() }
+                val f = File(dir, "DragonRage-update.apk")
+                Net.download(info.apkUrl, f) { d, t -> _update.value = UpdateState.Downloading(info, d, if (t > 0) t else info.size) }
+                val pkg = app.packageManager.getPackageArchiveInfo(f.path, 0)?.packageName
+                if (pkg != app.packageName) throw IOException(str(R.string.update_bad_apk))
+                updateFile = f
+                installUpdate(info)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _update.value = UpdateState.Idle
+                say(str(R.string.update_failed, e.message ?: e.javaClass.simpleName))
+            }
+        }
+    }
+
+    /** Hands the APK to the system installer, or asks first for the "install unknown apps" permission. */
+    private fun installUpdate(info: com.dfdx047.dragonrage.data.UpdateInfo) {
+        val app = getApplication<Application>()
+        val f = updateFile ?: return
+        if (!app.packageManager.canRequestPackageInstalls()) {
+            _update.value = UpdateState.NeedPermission(info)
+            return
+        }
+        val uri = FileProvider.getUriForFile(app, "${app.packageName}.files", f)
+        app.startActivity(
+            Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+        _update.value = UpdateState.Idle
+    }
+
+    fun openInstallPermission() {
+        val app = getApplication<Application>()
+        app.startActivity(
+            Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${app.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+
+    /** Back from the settings screen: if the permission is on now, the install goes ahead. */
+    fun resumeUpdate() {
+        val s = _update.value
+        if (s is UpdateState.NeedPermission && getApplication<Application>().packageManager.canRequestPackageInstalls()) installUpdate(s.info)
     }
 
     // ---- mods, stages, songs

@@ -5,6 +5,7 @@ import android.content.Context
 import com.dfdx047.dragonrage.R
 import android.net.Uri
 import java.io.File
+import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -42,16 +43,20 @@ class TexturePacks(private val context: Context, private val paths: GamePaths, p
         if (!fileName.endsWith(".zip", ignoreCase = true)) {
             throw IllegalArgumentException(context.getString(R.string.err_zip_only))
         }
-        val name = safeName(fileName.substringBeforeLast('.'))
+        val input = resolver.openInputStream(uri) ?: throw IllegalStateException(context.getString(R.string.err_open_file))
+        input.use { importStream(fileName.substringBeforeLast('.'), it, onProgress) }
+    }
+
+    /** The same from any stream (a downloaded file); [rawName] becomes the pack's folder name. */
+    suspend fun importStream(rawName: String, input: InputStream, onProgress: (String) -> Unit): TexturePack = withContext(Dispatchers.IO) {
+        val name = safeName(rawName)
         val staging = uniqueChild(paths.temp, name)
         staging.mkdirs()
         try {
             var found = 0
-            val files = resolver.openInputStream(uri)?.use { input ->
-                unzip(input, staging, onBytes = { onProgress(context.getString(R.string.progress_extracting, formatBytes(it))) }) { rel ->
-                    if (isReplacement(rel.substringAfterLast('/'))) found++
-                }
-            } ?: throw IllegalStateException(context.getString(R.string.err_open_file))
+            val files = unzip(input, staging, onBytes = { onProgress(context.getString(R.string.progress_extracting, formatBytes(it))) }) { rel ->
+                if (isReplacement(rel.substringAfterLast('/'))) found++
+            }
             if (files == 0) throw IllegalArgumentException(context.getString(R.string.err_zip_empty))
             if (found == 0) {
                 throw IllegalArgumentException(context.getString(R.string.err_no_textures))

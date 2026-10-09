@@ -17,8 +17,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Texture
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -56,6 +58,7 @@ fun TexturesScreen(vm: AppViewModel) {
         if (uri != null) vm.importTexturePack(uri)
     }
     var toDelete by remember { mutableStateOf<TexturePack?>(null) }
+    var downloading by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -79,6 +82,20 @@ fun TexturesScreen(vm: AppViewModel) {
                     }
                 }
             }
+            item {
+                SectionCard(stringResource(R.string.tex_dl_card), Icons.Rounded.Download) {
+                    Text(
+                        stringResource(R.string.tex_dl_card_text),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Button(onClick = { downloading = true }) {
+                        Icon(Icons.Rounded.Download, null, Modifier.size(18.dp))
+                        Spacer(Modifier.size(8.dp))
+                        Text(stringResource(R.string.tex_dl_button))
+                    }
+                }
+            }
             if (packs.isEmpty()) {
                 item {
                     EmptyState(
@@ -99,6 +116,8 @@ fun TexturesScreen(vm: AppViewModel) {
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
         )
     }
+
+    if (downloading) TextureDownloadDialog(vm) { downloading = false }
 
     toDelete?.let { p ->
         AlertDialog(

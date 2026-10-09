@@ -207,4 +207,37 @@
     <string name="log_share">Enviar log</string>
     <string name="log_saved">Salvo em Download: %1$s</string>
     <string name="log_failed">Não foi possível salvar o log: %1$s</string>
+    <!-- Downloads e atualizações -->
+    <string name="tex_dl_card">Baixar</string>
+    <string name="tex_dl_card_text">Baixe um pack de texturas da internet e instale direto por aqui. Packs da lista ou qualquer link direto para um .zip.</string>
+    <string name="tex_dl_button">Baixar packs</string>
+    <string name="tex_dl_title">Baixar packs de texturas</string>
+    <string name="tex_dl_loading">Carregando a lista…</string>
+    <string name="tex_dl_failed">Não deu para carregar a lista. Veja a conexão, ou use um link abaixo.</string>
+    <string name="tex_dl_empty">A lista ainda não tem packs. Cole abaixo o link de um pack, ou procure um na internet.</string>
+    <string name="tex_dl_get">Baixar</string>
+    <string name="tex_dl_link">Link de um .zip</string>
+    <string name="tex_dl_link_hint">Precisa ser um link https direto para o arquivo .zip (não uma página com botão de download). Use só packs que você pode usar.</string>
+    <string name="tex_dl_search">Procurar packs na internet</string>
+    <string name="busy_download_pack">Baixando pack de texturas</string>
+    <string name="progress_downloading">Baixando… %1$s</string>
+    <string name="err_https_only">Só links https são aceitos.</string>
+    <string name="err_download_not_zip">Esse link não entregou um .zip (pode ser uma página da web).</string>
+    <string name="about_author">por dfdx047</string>
+    <string name="github_repo">Repositório no GitHub</string>
+    <string name="check_updates">Buscar atualização</string>
+    <string name="update_available">Atualização disponível</string>
+    <string name="update_versions">O Dragon Rage %1$s saiu (você tem a %2$s).</string>
+    <string name="update_nightly">Esta é uma versão de teste; pode ter problemas.</string>
+    <string name="update_keeps">Instala por cima desta versão e mantém seus dados do jogo, configurações e saves. Abra o app de novo depois.</string>
+    <string name="update_now">Atualizar agora</string>
+    <string name="update_later">Depois</string>
+    <string name="update_downloading">Baixando atualização</string>
+    <string name="update_permission_title">Permitir instalar apps</string>
+    <string name="update_permission_text">O Android precisa da sua permissão para o Dragon Rage instalar a atualização. Toque no botão, ative \"Permitir desta fonte\" e volte: a atualização continua sozinha.</string>
+    <string name="update_permission_open">Abrir ajustes</string>
+    <string name="update_none">Você já está na versão mais recente.</string>
+    <string name="update_check_failed">Não deu para buscar atualização. Veja a conexão.</string>
+    <string name="update_failed">Falha na atualização: %1$s</string>
+    <string name="update_bad_apk">O arquivo baixado não é uma atualização do Dragon Rage.</string>
 </resources>

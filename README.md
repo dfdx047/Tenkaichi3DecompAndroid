@@ -38,7 +38,7 @@ sound and input layer underneath. Dragon Rage brings that to Android in two part
 
 <table>
 <tr><td><b>Home</b></td><td>Pick your ISO. The app checks it is the USA release (the same SHA-1 checks as the PC setup; a translated or modded image installs too, with a warning) and copies the game data in the layout the engine expects. Play button.</td></tr>
-<tr><td><b>Textures</b></td><td>Import a texture pack as a <code>.zip</code>. Packs made for PCSX2 (<code>.dds</code> / <code>.png</code>) work as they are. Turn each pack on or off, or all of them at once.</td></tr>
+<tr><td><b>Textures</b></td><td>Import a texture pack as a <code>.zip</code>, or download one from inside the app (a list kept in <a href="android/texture-packs.json"><code>android/texture-packs.json</code></a>, or any direct link to a <code>.zip</code>). Packs made for PCSX2 (<code>.dds</code> / <code>.png</code>) work as they are. Turn each pack on or off, or all of them at once.</td></tr>
 <tr><td><b>Mods</b></td><td>File-replacement mods as <code>.zip</code> (with a priority order), extra stages (<code>.unk</code>) and extra songs (<code>.adx</code>), with the name shown in the game's menus editable.</td></tr>
 <tr><td><b>Cheats</b></td><td><i>Unlock everything</i>: every character, stage, song and item, and max Zeni. This is the debug function the developers left in the game. It is applied the next time the game starts.</td></tr>
 <tr><td><b>Controls</b></td><td>The on-screen controller for playing without a gamepad: PlayStation, Xbox or Nintendo look, layout editor (move, resize, hide), macros (combos, several buttons at once, turbo), opacity, size, vibration, floating stick. Also reachable in game.</td></tr>
@@ -56,6 +56,8 @@ version installs over the older one and keeps your game data, settings and saves
 
 - **Releases** (`android-vX.Y.Z` tags): tested versions.
 - **[Nightly](../../releases/tag/android-nightly)**: the latest build of `main`, for testing; may be broken.
+
+The app checks GitHub when it opens and offers new versions: it downloads the APK and hands it to Android's installer (it asks for "install unknown apps" the first time). A test build follows the nightly, a normal build follows the releases.
 
 To report a problem: *Settings → Save log to Downloads*, then send the `DragonRage-log-….txt` file.
 
@@ -119,6 +121,7 @@ at start, then reset to 0), `dr_fps60` (reserved). The on-screen controller's se
 - [x] **Bug reports**: *Save log to Downloads* in Settings
 - [x] **Screen filters**: bilinear, sharp bilinear, FXAA, AMD FSR 1 (EASU + RCAS), Snapdragon Game Super Resolution
 - [x] **Internal resolution in fine steps** (1.25x, 1.5x, 1.75x, 2.5x …)
+- [x] **In-app update** from GitHub releases, and **texture pack download** inside the app
 - [ ] Texture packs from a .zip: check on a device
 - [ ] **Mali at 2x and above**: measure and optimise further
 - [ ] **Low-end devices** (Snapdragon 665 / Adreno 610): profile and optimise

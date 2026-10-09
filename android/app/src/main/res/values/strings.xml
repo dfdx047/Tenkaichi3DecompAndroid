@@ -208,4 +208,37 @@
     <string name="log_share">Send log</string>
     <string name="log_saved">Saved in Downloads: %1$s</string>
     <string name="log_failed">The log could not be saved: %1$s</string>
+    <!-- Downloads and updates -->
+    <string name="tex_dl_card">Download</string>
+    <string name="tex_dl_card_text">Download a texture pack from the internet and install it from here. Packs from the list, or any direct link to a .zip.</string>
+    <string name="tex_dl_button">Download packs</string>
+    <string name="tex_dl_title">Download texture packs</string>
+    <string name="tex_dl_loading">Loading the list…</string>
+    <string name="tex_dl_failed">The list could not be loaded. Check the connection, or use a link below.</string>
+    <string name="tex_dl_empty">The list has no packs yet. Paste the link of a pack below, or search the web for one.</string>
+    <string name="tex_dl_get">Download</string>
+    <string name="tex_dl_link">Link to a .zip</string>
+    <string name="tex_dl_link_hint">It has to be a direct https link to the .zip file (not a page that shows a download button). Use only packs you are allowed to use.</string>
+    <string name="tex_dl_search">Search the web for packs</string>
+    <string name="busy_download_pack">Downloading texture pack</string>
+    <string name="progress_downloading">Downloading… %1$s</string>
+    <string name="err_https_only">Only https links are accepted.</string>
+    <string name="err_download_not_zip">That link did not give a .zip file (it may be a web page).</string>
+    <string name="about_author">by dfdx047</string>
+    <string name="github_repo">GitHub repository</string>
+    <string name="check_updates">Check for updates</string>
+    <string name="update_available">Update available</string>
+    <string name="update_versions">Dragon Rage %1$s is out (you have %2$s).</string>
+    <string name="update_nightly">This is a test build; it may be broken.</string>
+    <string name="update_keeps">It installs over this version and keeps your game data, settings and saves. Open the app again afterwards.</string>
+    <string name="update_now">Update now</string>
+    <string name="update_later">Later</string>
+    <string name="update_downloading">Downloading update</string>
+    <string name="update_permission_title">Allow installing apps</string>
+    <string name="update_permission_text">Android needs your permission for Dragon Rage to install the update. Tap the button, turn on \"Allow from this source\", then come back: the update continues by itself.</string>
+    <string name="update_permission_open">Open settings</string>
+    <string name="update_none">You have the latest version.</string>
+    <string name="update_check_failed">Could not check for updates. Check the connection.</string>
+    <string name="update_failed">Update failed: %1$s</string>
+    <string name="update_bad_apk">The downloaded file is not a Dragon Rage update.</string>
 </resources>

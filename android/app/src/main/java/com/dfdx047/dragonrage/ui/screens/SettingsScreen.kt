@@ -11,7 +11,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AutoAwesome
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Info
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.SportsEsports
@@ -19,6 +21,12 @@ import androidx.compose.material.icons.rounded.Tv
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.ui.platform.LocalUriHandler
+import com.dfdx047.dragonrage.data.REPO_URL
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -154,10 +162,24 @@ fun SettingsScreen(vm: AppViewModel) {
 
         SectionCard(stringResource(R.string.about), Icons.Rounded.Info, accent = MaterialTheme.colorScheme.outline) {
             Text("Dragon Rage ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.about_author), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
                 stringResource(R.string.about_text),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            val uri = LocalUriHandler.current
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { runCatching { uri.openUri(REPO_URL) } }) {
+                    Icon(Icons.Rounded.Code, null, Modifier.size(18.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text(stringResource(R.string.github_repo))
+                }
+                OutlinedButton(onClick = { vm.checkForUpdate(manual = true) }) {
+                    Icon(Icons.Rounded.SystemUpdate, null, Modifier.size(18.dp))
+                    Spacer(Modifier.size(6.dp))
+                    Text(stringResource(R.string.check_updates))
+                }
+            }
             HorizontalDivider()
             Text(stringResource(R.string.game_folder), style = MaterialTheme.typography.titleSmall)
             Text(vm.paths.root.path, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
