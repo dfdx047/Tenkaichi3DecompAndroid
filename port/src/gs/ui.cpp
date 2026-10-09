@@ -533,15 +533,28 @@ static void video_tab(PortVideo &v) {
     char label[64];
     int best = 0, count = 0;
 
-    snprintf(label, sizeof(label), "%dx  (%d x %d)", v.scale, 512 * v.scale, 448 * v.scale);
+    /* in quarters: the steps between 1x and 2x for weaker GPUs (1.5x is 672 lines, 1.75x 784) */
+    static const int steps[] = {4, 5, 6, 7, 8, 10, 12, 16, 20, 24, 32};
+    snprintf(label, sizeof(label), "%gx  (%d x %d)", v.scale4 / 4.0, 128 * v.scale4, 112 * v.scale4);
     if (ImGui::BeginCombo("Internal resolution", label)) {
-        for (int n = 1; n <= 8; n++) {
-            snprintf(label, sizeof(label), "%dx  (%d x %d)", n, 512 * n, 448 * n);
-            if (ImGui::Selectable(label, n == v.scale)) { v.scale = n; }
+        for (int q : steps) {
+            snprintf(label, sizeof(label), "%gx  (%d x %d)", q / 4.0, 128 * q, 112 * q);
+            if (ImGui::Selectable(label, q == v.scale4)) { v.scale4 = q; }
         }
         ImGui::EndCombo();
     }
     ImGui::SetItemTooltip("How finely the game is drawn. 1x is the PlayStation 2's own resolution.\nHigher is sharper and uses more video memory.");
+    {
+        static const char *filters[] = {"Bilinear", "Sharp bilinear", "FXAA (smooths jagged edges)", "AMD FSR 1", "Snapdragon GSR"};
+        int f = v.filter < 0 || v.filter > 4 ? 0 : v.filter;
+        if (ImGui::BeginCombo("Screen filter", filters[f])) {
+            for (int n = 0; n < 5; n++) {
+                if (ImGui::Selectable(filters[n], n == f)) { v.filter = n; }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip("How the game's picture is scaled to the screen.\nFXAA smooths jagged edges; FSR and Snapdragon GSR upscale with sharper edges,\nbest with an internal resolution below the screen's (1x to 2x).");
+    }
     for (int i = 1; i < (int)(sizeof(aspects) / sizeof(aspects[0])); i++) {
         if (abs(aspects[i].milli - v.aspectMilli) < abs(aspects[best].milli - v.aspectMilli)) { best = i; }
     }

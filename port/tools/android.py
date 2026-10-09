@@ -481,8 +481,13 @@ def install():
     """The engine's files into the app: the libraries for the APK, the data list as an asset."""
     jni = APP / "jniLibs/arm64-v8a"
     jni.mkdir(parents=True, exist_ok=True)
+    ndk = os.environ.get("ANDROID_NDK_HOME") or os.environ.get("ANDROID_NDK_LATEST_HOME") or ""
+    strip = next((str(p) for p in [LLVM / "bin/llvm-strip", pathlib.Path(ndk) / "toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"]
+                  if ndk or p == LLVM / "bin/llvm-strip" if p.exists()), None)
     for f in [EXE, OUT / "libmain.so", SDL3 / "lib/libSDL3.so"] + [OUT / f"lib{h}.so" for h in ADRENO_HOOKS]:
         shutil.copy(f, jni / f.name)
+        if f != EXE and strip:  # the debug sections out of the others (SDL3 alone is 12 MB with them); the engine keeps its own
+            run([strip, "--strip-debug", str(jni / f.name)])
     assets = APP / "assets"
     assets.mkdir(parents=True, exist_ok=True)
     if pathlib.Path(str(EXE) + ".dat").exists():
