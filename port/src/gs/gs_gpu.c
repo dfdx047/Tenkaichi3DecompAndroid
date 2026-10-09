@@ -30,7 +30,8 @@ extern int Port_AspectMilli(void);
 
 static SDL_Window *sWindow; /* the shared window (GsDraw_WindowCreate) */
 static SDL_GPUDevice *sDev;
-static SDL_GPUShader *sVs, *sFs;
+static unsigned sPassN, sCopyN; /* render passes and copies of the frames since the last report (BT3_GS_VERBOSE) */
+static SDL_GPUShader *sVs, *sFs, *sFsNd; /* sFsNd: gs.frag without its discards (key bit 23) */
 static SDL_GPUBuffer *sVbuf;
 static SDL_GPUTransferBuffer *sVxfer;
 static SDL_GPUSampler *sSamplers[16]; /* bit 0 filtered, bit 1 / 2 clamped in u / v, bit 3 with the smaller copies (mip levels) */
@@ -257,7 +258,7 @@ static int pipeline_create(uint32_t key, int remember) {
         at[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4; at[2].offset = 32;
     }
     ci.vertex_shader = vu == 3 ? sVu6Vs : vu == 2 ? sVu4Vs : vu ? sVu0Vs : sVs;
-    ci.fragment_shader = sFs;
+    ci.fragment_shader = ((key >> 23) & 1) && sFsNd != NULL ? sFsNd : sFs;
     ci.vertex_input_state.vertex_buffer_descriptions = &vb;
     ci.vertex_input_state.num_vertex_buffers = 1;
     ci.vertex_input_state.vertex_attributes = at;
@@ -385,11 +386,19 @@ static int vk_init(void) {
         } else if (SDL_WindowSupportsGPUPresentMode(sDev, sWindow, SDL_GPU_PRESENTMODE_IMMEDIATE)) {
             mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
         }
+        if (getenv("BT3_PRESENT") != NULL) { /* (testing: vsync, mailbox or immediate) */
+            const char *m = getenv("BT3_PRESENT");
+            SDL_GPUPresentMode want = m[0] == 'm' ? SDL_GPU_PRESENTMODE_MAILBOX : m[0] == 'i' ? SDL_GPU_PRESENTMODE_IMMEDIATE : SDL_GPU_PRESENTMODE_VSYNC;
+            if (SDL_WindowSupportsGPUPresentMode(sDev, sWindow, want)) {
+                mode = want;
+            }
+        }
         SDL_SetGPUSwapchainParameters(sDev, sWindow, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
         fprintf(stderr, "bt3: present mode %s\n", mode == SDL_GPU_PRESENTMODE_MAILBOX ? "mailbox" : mode == SDL_GPU_PRESENTMODE_IMMEDIATE ? "immediate" : "vsync");
     }
     sVs = shader(kGsVertSpv, sizeof(kGsVertSpv), SDL_GPU_SHADERSTAGE_VERTEX, 0, 0);
     sFs = shader(kGsFragSpv, sizeof(kGsFragSpv), SDL_GPU_SHADERSTAGE_FRAGMENT, 2, 1);
+    sFsNd = shader(kGsNdFragSpv, sizeof(kGsNdFragSpv), SDL_GPU_SHADERSTAGE_FRAGMENT, 2, 1);
     if (sVs == NULL || sFs == NULL) {
         fprintf(stderr, "bt3: shaders: %s\n", SDL_GetError());
         return 0;
@@ -600,7 +609,7 @@ static void vk_frame_end(void) {
     Uint32 sw = 0, sh = 0;
     int cur = -1, best = -1, bound = -1, i;
     bool acquired;
-    uint64_t sEndT[5];
+    uint64_t sEndT[6];
     int lastPipe = -1, lastUni = -1, lastSampler = -1, haveFu = 0, haveScissor = 0; /* what the pass has set (the replay loop) */
     SDL_GPUTexture *lastTex = NULL;
     struct { int32_t mode[4]; float misc[4]; float rect[4]; float orig[4]; } lastFu;
@@ -791,6 +800,7 @@ static void vk_frame_end(void) {
             bl.filter = SDL_GPU_FILTER_LINEAR;
             if (sFbTex[d->native - 100] != NULL) {
                 SDL_BlitGPUTexture(cmd, &bl);
+                sCopyN++;
                 gsTargets[d->target].cleared = 1;
             }
             continue;
@@ -806,6 +816,7 @@ static void vk_frame_end(void) {
             if (!gsTargets[d->target].cleared) {
                 continue;
             }
+            sCopyN++;
             cp = SDL_BeginGPUCopyPass(cmd);
             SDL_zero(from);
             SDL_zero(to);
@@ -826,6 +837,7 @@ static void vk_frame_end(void) {
             if (!gsTargets[d->target].cleared) {
                 continue;
             }
+            sCopyN++;
             cp = SDL_BeginGPUCopyPass(cmd);
             SDL_zero(from);
             SDL_zero(to);
@@ -855,6 +867,7 @@ static void vk_frame_end(void) {
             cts[0].store_op = SDL_GPU_STOREOP_STORE;
             cts[1] = cts[0];
             cts[1].texture = sTgAux[d->target];
+            sPassN++;
             pass = SDL_BeginGPURenderPass(cmd, cts, 2, NULL);
             SDL_BindGPUGraphicsPipeline(pass, sPipes[d->pipeline].p);
             bc.r = bc.g = bc.b = bc.a = d->blendc;
@@ -890,6 +903,7 @@ static void vk_frame_end(void) {
             ft.texture = sTgCol[d->target];
             ft.load_op = SDL_GPU_LOADOP_LOAD;
             ft.store_op = SDL_GPU_STOREOP_STORE;
+            sPassN++;
             pass = SDL_BeginGPURenderPass(cmd, &ft, 1, NULL);
             SDL_BindGPUGraphicsPipeline(pass, d->native == 2 ? sKeyPipe : sOutlinePipe);
             fs.texture = sAuxCopy; /* the ids as copied by the game, not the live alpha (later passes overwrite it) */
@@ -928,6 +942,7 @@ static void vk_frame_end(void) {
             dt.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
             gsTargets[d->target].cleared = 1;
             cts[0] = ct;
+            sPassN++;
             pass = SDL_BeginGPURenderPass(cmd, cts, 2, &dt);
             cur = d->target;
             bound = -1;
@@ -1006,6 +1021,20 @@ static void vk_frame_end(void) {
         best = i;
     }
     sEndT[2] = gpu_now();
+    /* The frame's draws go to the GPU now, on their own: the GPU starts on them while the screen's buffer is
+       waited for, and the time each half takes in the driver is seen apart (a driver that blocks until the GPU
+       is done shows it in the second half: the present). BT3_GPU_ONE_SUBMIT=1: one submission, as before. */
+    {
+        static int one = -1;
+        if (one < 0) {
+            one = getenv("BT3_GPU_ONE_SUBMIT") != NULL;
+        }
+        if (!one) {
+            SDL_SubmitGPUCommandBuffer(cmd);
+            cmd = SDL_AcquireGPUCommandBuffer(sDev);
+        }
+    }
+    sEndT[5] = gpu_now();
     acquired = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, sWindow, &swap, &sw, &sh);
     sEndT[3] = gpu_now();
 #ifdef __ANDROID__
@@ -1106,20 +1135,24 @@ static void vk_frame_end(void) {
     sEndT[4] = gpu_now();
     SDL_SubmitGPUCommandBuffer(cmd);
     {   /* BT3_GS_VERBOSE: once a second, where the end of the frame spends its time */
-        static uint64_t sum[5];
+        static uint64_t sum[6];
         static int count;
         uint64_t now = gpu_now();
         sum[0] += sEndT[1] - sEndT[0];
         sum[1] += sEndT[2] - sEndT[1];
-        sum[2] += sEndT[3] - sEndT[2];
+        sum[5] += sEndT[5] - sEndT[2];
+        sum[2] += sEndT[3] - sEndT[5];
         sum[3] += sEndT[4] - sEndT[3];
         sum[4] += now - sEndT[4];
         if (++count == 60) {
             if (getenv("BT3_GS_VERBOSE") != NULL) {
-                fprintf(stderr, "time:   of ending the frame: uploads %.2f ms, issuing the draws %.2f, waiting for the screen's buffer %.2f, "
-                                "showing %.2f, handing over to the driver %.2f\n",
-                        (double)sum[0] / 60e6, (double)sum[1] / 60e6, (double)sum[2] / 60e6, (double)sum[3] / 60e6, (double)sum[4] / 60e6);
+                fprintf(stderr, "time:   of ending the frame: uploads %.2f ms, issuing the draws %.2f, handing them to the driver %.2f, "
+                                "waiting for the screen's buffer %.2f, showing %.2f, presenting %.2f\n",
+                        (double)sum[0] / 60e6, (double)sum[1] / 60e6, (double)sum[5] / 60e6, (double)sum[2] / 60e6, (double)sum[3] / 60e6,
+                        (double)sum[4] / 60e6);
+                fprintf(stderr, "time:   per frame: %.1f render passes, %.1f copies\n", (double)sPassN / 60.0, (double)sCopyN / 60.0);
             }
+            sPassN = sCopyN = 0;
             count = 0;
             memset(sum, 0, sizeof(sum));
         }

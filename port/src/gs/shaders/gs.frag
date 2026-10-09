@@ -22,12 +22,16 @@ vec2 step2(vec2 v) { return vec2(v.x >= 0.0 ? 1.0 : 0.0, v.y >= 0.0 ? 1.0 : 0.0)
 
 void main() {
     float k = 255.0 / 128.0;
+#ifndef GS_NO_DISCARD
+    // (built a second time with GS_NO_DISCARD for the draws that never discard: a shader with `discard` in it
+    // keeps tile-based GPUs from dropping hidden pixels early, whether or not it discards)
     if (p.misc.y != 0.0) {
         // TEST.DATE: the GS looks at bit 7 of the alpha already in the frame buffer. A GPU cannot read what it is
         // drawing to, so the back end hands over a copy made just before this run of draws.
         bool set = texelFetch(dateTex, ivec2(gl_FragCoord.xy), 0).r >= 127.5 / 255.0;
         if (set != (p.misc.y > 1.5)) discard;
     }
+#endif
     vec3 rgb = vColor.rgb;
     float a = vColor.a * k;
     if (p.mode.x != 0) {
@@ -82,6 +86,7 @@ void main() {
             if (p.mode.z != 0) a = (p.mode.y == 2) ? t.a + a : t.a;
         }
     }
+#ifndef GS_NO_DISCARD
     if (p.mode.w != 0) {
         // the GS compares integers; round, or a value that is exactly AREF (tree leaves: 0x7F against 0x7F) fails by float error
         float ag = floor(a * 128.0 + 0.5);
@@ -96,6 +101,7 @@ void main() {
                     f == 4 ? abs(ag - p.misc.x) < tol : f == 5 ? ag >= ref : f == 6 ? ag > ref : abs(ag - p.misc.x) >= tol;
         if (!pass) discard;
     }
+#endif
     outColor = vec4(clamp(rgb, 0.0, 1.0), clamp(a, 0.0, 1.0));
     float ab = clamp(a * 128.0 / 255.0, 0.0, 1.0);
     if (p.misc.z != 0.0) ab = (float(int(ab * 255.0 + 0.5) | 128)) / 255.0; // FBA

@@ -137,6 +137,18 @@ def main():
                 print("FAILED shader", src.name, r.stderr[:300])
                 continue
         arrays.append(f"static const unsigned char {name}[] = {{" + ",".join(str(b) for b in spv.read_bytes()) + "};\n")
+    # gs.frag a second time without its discards (the draws that never discard; gs_gpu.c, key bit 23)
+    spv = gen / "gs_nd.frag.spv"
+    src = ROOT / "port/src/gs/shaders/gs.frag"
+    if not (shutil.which("glslc") is None and spv.exists() and spv.stat().st_mtime >= src.stat().st_mtime):
+        if shutil.which("glslc") is not None:
+            r = subprocess.run(["glslc", "-fshader-stage=frag", "-DGS_NO_DISCARD=1", str(src), "-o", str(spv)], capture_output=True, text=True)
+        else:
+            r = subprocess.run(["glslangValidator", "-V", "-S", "frag", "-DGS_NO_DISCARD=1", str(src), "-o", str(spv)], capture_output=True, text=True)
+        if r.returncode:
+            print("FAILED shader gs.frag (no discard)", r.stderr[:300])
+    if spv.exists():
+        arrays.append("static const unsigned char kGsNdFragSpv[] = {" + ",".join(str(b) for b in spv.read_bytes()) + "};\n")
     # The GL back end (gs_gl.c) compiles the GLSL at run time (it translates Vulkan GLSL to GL 3.3 the way
     # port/tools/glprobe.c proved), so the sources are embedded here too, NUL-terminated.
     for src in sorted((ROOT / "port/src/gs/shaders").glob("*")):

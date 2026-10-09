@@ -171,6 +171,13 @@ def shaders():
             print("FAILED shader", src.name, r.stderr[:300])
             continue
         arrays.append(f"static const unsigned char {name}[] = {{" + ",".join(str(b) for b in spv.read_bytes()) + "};\n")
+    # gs.frag a second time without its discards (the draws that never discard; gs_gpu.c, key bit 23)
+    spv = gen / "gs_nd.frag.spv"
+    r = run([GLSLC, "-fshader-stage=frag", "-DGS_NO_DISCARD=1", str(ROOT / "port/src/gs/shaders/gs.frag"), "-o", str(spv)])
+    if r.returncode:
+        print("FAILED shader gs.frag (no discard)", r.stderr[:300])
+    else:
+        arrays.append("static const unsigned char kGsNdFragSpv[] = {" + ",".join(str(b) for b in spv.read_bytes()) + "};\n")
     for src in sorted((ROOT / "port/src/gs/shaders").glob("*")):
         if src.suffix in (".vert", ".frag"):
             name = "k" + src.stem.capitalize() + src.suffix[1:].capitalize() + "Glsl"
