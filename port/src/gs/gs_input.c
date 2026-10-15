@@ -547,7 +547,12 @@ static int sClashSquare = -1;
 
 int Port_ClashSquare(void) {
     if (sClashSquare < 0) {
+#ifdef __ANDROID__
+        /* Android: on unless the player turned it off (stick round in a clash is awkward on a touch screen). */
+        sClashSquare = getenv("BT3_CLASH_SQUARE") != NULL ? atoi(getenv("BT3_CLASH_SQUARE")) != 0 : Port_Setting("clash_square", 1) != 0;
+#else
         sClashSquare = getenv("BT3_CLASH_SQUARE") != NULL ? atoi(getenv("BT3_CLASH_SQUARE")) != 0 : Port_Setting("clash_square", 0) != 0;
+#endif
     }
     return sClashSquare;
 }
