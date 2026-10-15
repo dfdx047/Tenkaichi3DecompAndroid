@@ -27,6 +27,10 @@ static char *gl_translate(const char *src, int is_vertex, int es, int nodiscard,
             continue;
         }
         if (!strncmp(p, "gl_VertexIndex", 14)) { PUSH("gl_VertexID"); p += 14; continue; }
+        if (!strncmp(p, "layout(depth_less)", 18)) { /* (GL 4.2's; without it gl_FragDepth is simply written) */
+            while (*p && *p != '\n') { p++; }
+            continue;
+        }
         if (!strncmp(p, "layout(set", 10)) {
             const char *e = strchr(p, ')');
             if (e) {
