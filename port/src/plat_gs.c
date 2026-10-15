@@ -10,7 +10,12 @@
 #include <stdint.h>
 #include "port_addr.h"
 
+#ifdef __ANDROID__
+extern uint8_t gPortHwRegs[]; /* plat_mem.c: the registers live in the engine (irfix.py points the game there) */
+#define REG(a) ((volatile uint32_t *)(gPortHwRegs + ((uint32_t)(a) - 0x10000000u)))
+#else
 #define REG(a) ((volatile uint32_t *)Port_Ptr(a))
+#endif
 
 extern void Port_GsVif1Chain(uint32_t tadr, int tte);
 extern void Port_GsGifChannel(uint32_t addr, uint32_t qwc, int chain);
