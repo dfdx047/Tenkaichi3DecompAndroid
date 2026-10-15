@@ -13,6 +13,7 @@
 #include <string.h>
 #include "plat_stages.h"
 #include "plat_songs.h"
+#include "port_addr.h"
 
 extern void Battle_ClearWork(void);
 extern int BattleReplay_Load(void *buf, int size);
@@ -25,7 +26,7 @@ extern void Demo_SetupBattle(void);
 static int sBattles;
 static int sFromMenu;
 
-#if (defined(__x86_64__) || defined(__aarch64__)) && defined(__clang__)
+#if (defined(__x86_64__) || defined(__aarch64__)) && defined(__clang__) /* (the 64-bit builds: game pointers are 4 bytes) */
 #undef __ptr32 /* the Windows headers of mingw define these two away */
 #undef __uptr
 #define GAME_PTR *__ptr32 __uptr
@@ -37,6 +38,17 @@ static int sFromMenu;
    set up without menus (below); otherwise the real menus run (the overlay's Progress_Main, src/menu/menu_a_b.c). */
 extern int __real_Progress_Main(int arg);
 int gPortMenuMode;
+/* A menu screen that is a 3D scene (the character reference's model viewer) asks, every frame, to be shown as a
+   fight is while it runs: the wide projection, 2D kept in proportion. Only between the two lines of Progress_Main
+   below that set and clear the menu mode. */
+static int sMenuScene3D;
+void Port_MenuScene3D(int on) {
+    on = on != 0;
+    if (on != sMenuScene3D) {
+        sMenuScene3D = on;
+        gPortMenuMode = !on;
+    }
+}
 
 volatile int gPortUnlockAll, gPortUnlockDone;
 extern int Port_Setting(const char *name, int def); /* plat_settings.c */
@@ -49,6 +61,10 @@ extern int Port_NetWarp(void);
 extern void Port_NetArrived(void);
 extern struct { int unk0[2]; int loadPack, loadRes, loadSprites; int flags; int mode; } GAME_PTR gProgress; /* include/menu/menu_a.h */
 static int sNetEntered;
+/* The vertical blank at which the session's start-up was over (0: not yet). Part of the game's state like the rest
+   of this file's variables, so it goes back with a rollback: it is always what the blanks as they were last run
+   say, which gs/net.c's own note of the same moment (sArrived, for the picture) is not. */
+static unsigned sNetArrivedAt;
 /* Extra stage ids (BT3_STAGE_REPLACE="0x1b=0x24,0x23=0x25"): the menus swap the id in a stage-list slot for a
    map added from outside the disc. Parsed here, in a port file where pointers are the host's; the game code reads
    the result from these globals. (A getenv result cannot be used inside the game code: its 64-bit pointer would
@@ -136,6 +152,25 @@ int __wrap_Progress_Main(int arg) {
                     *(int *)((char *)gProgress + 0x630) = dp;
                     Save_UnlockAll(gSaveData);
                     *(int *)((char *)gSaveData + 0xC34) = time;
+                    {
+                        /* the match's seed, the host's draw (gs/net.c): the same on both copies, at the same point */
+                        /* Both of the game's generators, the way Rand_Init (src/sys/rand.c) seeds them at start-up:
+                           the C library's, then the twister from four of its numbers. "Random" at the character
+                           select, the random stage and song draw from the twister (Rand_Range). */
+                        extern unsigned Port_NetSeed(void);
+                        extern void Port_Srand(unsigned seed);
+                        extern int Port_Rand(void);
+                        extern void Rand_SeedByArray(unsigned *key, int keyLen);
+                        if (Port_NetSeed() != 0) {
+                            unsigned key[4];
+                            int k;
+                            Port_Srand(Port_NetSeed());
+                            for (k = 0; k < 4; k++) {
+                                key[k] = (unsigned)Port_Rand();
+                            }
+                            Rand_SeedByArray(key, 4);
+                        }
+                    }
                     fprintf(stderr, "bt3: net: rules: %s%s, time limit %s\n", type == 0 ? "single battle" : type == 1 ? "team battle" : "DP battle",
                             type == 2 ? (dp == 0 ? " (10)" : dp == 1 ? " (15)" : " (20)") : "",
                             time == 0 ? "60" : time == 1 ? "90" : time == 2 ? "180" : time == 3 ? "240" : "none");
@@ -222,6 +257,42 @@ int Port_NetMenuListed(void) {
    here, on the game's side, at a vertical blank. */
 
 
+/* For gs/net.c's check that the two copies of an online match still compute the same game: a number made of what
+   has to be the same on both at a vertical blank whatever each player's settings, view and system are. Where the
+   game is (the start-up's end, the menu mode, whether the first-run part still runs) and, in a fight, the values
+   BT3_HASH logs as the fight's own without the generator: both fighters' health and position, the sequence's
+   state and the battle clock. (Not the whole state: each copy shows its own view, and two systems' programs keep
+   other addresses in the game's memory.) */
+unsigned long long Port_NetDigest(void) {
+    struct { unsigned arrived; int mode, first, battle, seq, clock, hp[2]; unsigned pos[2][3]; } d;
+    float q[4] __attribute__((aligned(16)));
+    unsigned long long h = 0xCBF29CE484222325ull;
+    const unsigned char *b = (const unsigned char *)&d;
+    unsigned i;
+    int k;
+
+    memset(&d, 0, sizeof(d));
+    d.arrived = sNetArrivedAt;
+    if (gProgress != NULL) {
+        d.mode = gProgress->mode;
+        d.first = (gProgress->flags & 0x40) != 0;
+    }
+    if ((sBattles != 0 || sFromMenu) && gBtlSeq != NULL && gBtlSeq->state >= 2) {
+        d.battle = 1;
+        d.seq = gBtlSeq->state;
+        d.clock = BtlSeq_GetClock()[0];
+        for (k = 0; k < 2; k++) {
+            d.hp[k] = BtlCharApi_GetHp(k);
+            BtlCharApi_GetPos(k, q);
+            memcpy(d.pos[k], q, 12);
+        }
+    }
+    for (i = 0; i < sizeof(d); i++) { /* FNV-1a */
+        h = (h ^ b[i]) * 0x100000001B3ull;
+    }
+    return h;
+}
+
 void Port_Trace(unsigned vblanks) {
     static int every = -1;
     float p[2][4] __attribute__((aligned(16)));
@@ -253,6 +324,9 @@ void Port_Trace(unsigned vblanks) {
         } else {
             Port_StateLog(vblanks, NULL, 0);
         }
+    }
+    if (sNetEntered && sNetArrivedAt == 0 && gProgress != NULL && !(gProgress->flags & 0x40)) {
+        sNetArrivedAt = vblanks;
     }
     if (Port_NetWarp() && sNetEntered && gProgress != NULL && !(gProgress->flags & 0x40)) {
         Port_NetArrived(); /* the logos and the card check are over: the character select is next, with picture and sound */
@@ -305,10 +379,10 @@ void Port_Trace(unsigned vblanks) {
                     snprintf(name, sizeof(name), "port/build/heap_%u.bin", now);
                     fp = fopen(name, "wb"); /* a developer's dump: skipped where port/build does not exist */
                     if (fp != NULL) {
-                        fwrite((void *)0x3BE730, 1, 0x1EFB014 - 0x3BE730, fp);
+                        fwrite(Port_Ptr(0x3BE730), 1, 0x1EFB014 - 0x3BE730, fp);
                         fclose(fp);
                     }
-#ifndef _WIN32 /* the linker symbols of an ELF program */
+#if !defined(_WIN32) && !defined(__APPLE__) /* the linker symbols of an ELF program */
                     {   /* the game's global variables too: [__data_start, _end), base address first */
                         extern char __data_start[], _end[];
                         uint32_t base = (uint32_t)(uintptr_t)__data_start;
@@ -344,7 +418,7 @@ void Port_Trace(unsigned vblanks) {
             FILE *fp = fopen(getenv("BT3_DUMP"), "wb");
 
             if (fp != NULL) {
-                fwrite((void *)0x3BE730, 1, 0x1EFB014 - 0x3BE730, fp);
+                fwrite(Port_Ptr(0x3BE730), 1, 0x1EFB014 - 0x3BE730, fp);
                 fclose(fp);
             }
             clock = BtlSeq_GetClock();
