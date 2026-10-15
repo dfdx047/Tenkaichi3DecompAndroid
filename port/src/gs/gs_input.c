@@ -22,6 +22,18 @@
 #include "ui.h"
 
 int gPortOverlayOpen, gPortInputCapture, gPortChatTyping;
+
+/* The on-screen controller (Android: android/.../touch/TouchPadView.kt through the loader): player 1's buttons
+   (1 = pressed, the bits below) and sticks, added to whatever the keyboard and controllers give. */
+static volatile unsigned sTouchButtons;
+static volatile unsigned char sTouchStick[4] = {0x80, 0x80, 0x80, 0x80}; /* lx, ly, rx, ry */
+void Port_TouchPad(unsigned buttons, int lx, int ly, int rx, int ry) {
+    sTouchButtons = buttons & 0xFFFF;
+    sTouchStick[0] = (unsigned char)lx;
+    sTouchStick[1] = (unsigned char)ly;
+    sTouchStick[2] = (unsigned char)rx;
+    sTouchStick[3] = (unsigned char)ry;
+}
 extern int Port_Setting(const char *name, int def); /* plat_settings.c */
 extern void Port_SettingSave(const char *name, int value), Port_SettingsWrite(void);
 
@@ -64,6 +76,7 @@ static int sDeadzone[2][2], sVib[2][2];
 static int sOverlayKey = SDL_SCANCODE_F1, sOverlayPad = -1;
 static int sChatKey = SDL_SCANCODE_TAB; /* opens the online chat's line (setting key_chat; Tab by default) */
 static int sComboLatch; /* START + SELECT has opened or closed the window and is still held */
+static int sTouchSwallow; /* the on-screen START + SELECT opened the window: its two buttons are not the game's until let go */
 static int sSwallow; /* a controller opened or closed the window: nothing of the controllers reaches the game until those buttons are let go */
 static volatile int sKeySwallow; /* the chat's line was sent or put away: nothing of the keyboard reaches the game until no bound key is held
                                     (Enter, which sends it, is START) */
@@ -873,6 +886,42 @@ void PortInput_Fresh(void) {
     SDL_PumpEvents();
 }
 
+/* START + SELECT, polled once a frame (poll_events, gs_gpu.c): the on-screen controller's two buttons are not SDL events, and a physical pad whose second button's "down" event was lost still counts. Once per press, with the events' latch. */
+int PortInput_ComboPoll(void) {
+    int touchStart = (sTouchButtons & 0x0008u) != 0, touchSelect = (sTouchButtons & 0x0001u) != 0;
+    int padStart = 0, padSelect = 0, padBoth = 0, k;
+    pthread_once(&sLoadOnce, load);
+    for (k = 0; k < MAX_PADS; k++) {
+        if (sOpen[k].pad != NULL) {
+            int a = SDL_GetGamepadButton(sOpen[k].pad, SDL_GAMEPAD_BUTTON_START) != 0;
+            int b = SDL_GetGamepadButton(sOpen[k].pad, SDL_GAMEPAD_BUTTON_BACK) != 0;
+            padStart |= a;
+            padSelect |= b;
+            padBoth |= a && b;
+        }
+    }
+    if (!touchStart && !touchSelect) {
+        sTouchSwallow = 0;
+    }
+    if (!touchStart && !touchSelect && !padStart && !padSelect) {
+        sComboLatch = 0;
+    }
+    if (gPortInputCapture || sComboLatch) {
+        return 0;
+    }
+    if (touchStart && touchSelect) {
+        sComboLatch = 1;
+        sTouchSwallow = 1;
+        return 1;
+    }
+    if (padBoth) {
+        sComboLatch = 1;
+        sSwallow = 1;
+        return 1;
+    }
+    return 0;
+}
+
 int Port_PadRead(int socket, unsigned char *data) {
     unsigned btn = 0;
     unsigned char rx = 0x80, ry = 0x80, lx = 0x80, ly = 0x80;
@@ -949,6 +998,17 @@ int Port_PadRead(int socket, unsigned char *data) {
     }
     if (socket == 0) {
         btn |= script_buttons();
+        if (!gPortInputCapture) {
+            btn |= sTouchSwallow ? (sTouchButtons & ~0x0009u) : sTouchButtons;
+            if (sTouchStick[0] != 0x80 || sTouchStick[1] != 0x80) {
+                lx = sTouchStick[0];
+                ly = sTouchStick[1];
+            }
+            if (sTouchStick[2] != 0x80 || sTouchStick[3] != 0x80) {
+                rx = sTouchStick[2];
+                ry = sTouchStick[3];
+            }
+        }
     }
     if (socket == 0 && getenv("BT3_STICK_TEST") != NULL) { /* the numbers, once: what was read, what was passed, what the game has */
         static const char *const dirs[5] = {"-", "up", "down", "left", "right"};
