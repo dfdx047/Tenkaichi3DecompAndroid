@@ -52,6 +52,13 @@ static GsBackend *sBackend;
 static int sSmooth2d = 1; /* the setting "2D filtering" (smooth_2d; BT3_2D_SMOOTH=0/1 wins): 1 smooth */
 static int sWholeFrame; /* the draw being set up shows a frame the game read back (the cross-fade) */
 
+#ifdef __ANDROID__
+/* "Screen": the picture takes the shape of the device's own screen (the launcher's "Tela"; saved as aspect_milli 0). */
+static int sAspectAuto;
+#else
+#define sAspectAuto 0
+#endif
+
 /* The one window both back ends share: shape (aspect), full screen and display are the renderer's, not a
    back end's, so the settings window and F11 work the same whichever back end is running. */
 static SDL_Window *sWindow;
@@ -69,8 +76,9 @@ static int sFullscreen;
 static float sWantAspect;
 static int sDisplaySetting;
 
-int gsScale = 2;
-int gsPendingScale;
+int gsScale4 = 8;
+int gsTargetW = GS_W, gsTargetH = GS_H; /* the back end's render targets in GS pixels (the Vulkan one: 512) */
+int gsPendingScale4;
 GsTex gsWhite;
 GsDraw *gsDraws;
 uint32_t gsDrawCount;
@@ -85,8 +93,25 @@ uint32_t gsVuUniCount;
 GsTarget gsTargets[MAX_TARGETS];
 int gsTargetCount;
 int gsTexCount;
+extern int gGsNoBcTextures; /* gs_gl.c: the OpenGL ES renderer without DXT textures */
+/* How many decoded textures are kept. When full, all not used for two seconds go in one sweep. The game keeps
+   rewriting its texture memory, so in a fight the count climbs by hundreds every few seconds: on Android a smaller
+   cache keeps the GPU memory lower (phones share it with everything else) and each sweep shorter (a sweep of
+   thousands of textures in one frame is a stutter). With a texture pack on, the whole cache, as before. */
+#ifdef __ANDROID__
+#define TEX_CAP (sTexPackOn && TexPack_Count() != 0 ? MAX_TEX : 3072) /* (a pack's textures come from storage: kept longer) */
+#else
+#define TEX_CAP MAX_TEX
+#endif
+/* and how much GPU memory they may take: a texture pack's replacements can be megabytes each */
+#ifdef __ANDROID__
+#define TEX_BYTES_CAP (768ull << 20)
+#else
+#define TEX_BYTES_CAP (6ull << 30)
+#endif
 unsigned gsFxOff;
 int gsGlowPercent = GLOW_DEFAULT;
+int gsFilter;
 static int sTexPackOn = 1; /* the setting: use the texture pack (if one was found) */
 int gsAnchor;
 /* A fight's HUD in a picture wider than 4:3 (setting hud_layout, BT3_HUD=<n> for a test):
@@ -125,7 +150,9 @@ typedef struct Tex {
     int replaced;  /* 1: texture pack, 2: vector menu labels, 3: packed shared glyphs */
     uint32_t ow, oh, rw, rh; /* then: the original's size and the replacement's */
     uint32_t amax;           /* and the largest alpha byte of the original */
+    uint32_t bytes;          /* its size in GPU memory (about: the levels' pixels) */
 } Tex;
+static uint64_t sTexBytes; /* the cache's textures' sizes, together */
 static Tex sTex[MAX_TEX];
 static uint16_t sTexBucket[TEX_BUCKETS]; /* index + 1 of a cache entry, 0 = empty (open addressing) */
 static Tex *sLast; /* the entry the previous lookup returned */
@@ -342,6 +369,7 @@ static GsTex texture_get(int ctx) {
     Tex *t;
     uint64_t tex_t0;
     TexPackImage pack;
+    uint64_t texBytes = 0;
     uint32_t packMaxAlpha = 255, rw = tw, rh = th;
     int packFormat = GS_TEXFMT_RGBA8, replaced = 0, menuText = 0, sharedText = 0;
 
@@ -381,16 +409,18 @@ static GsTex texture_get(int ctx) {
     if (sBackend->texSlotsLeft() <= 0) {
         return gsWhite;
     }
-    if (gsTexCount == MAX_TEX) {
-        /* full: drop everything not used for two seconds (or, failing that, not used this frame) in one sweep */
+    if (gsTexCount >= TEX_CAP || sTexBytes > TEX_BYTES_CAP) {
+        /* full (by count, or by size: a texture pack's replacements are large): drop everything not used for two
+           seconds (or, failing that, not used this frame) in one sweep */
         unsigned keep = gGsFrame > 120 ? gGsFrame - 120 : 0;
         int pass, n;
-        for (pass = 0; pass < 2 && gsTexCount == MAX_TEX; pass++, keep = gGsFrame) {
+        for (pass = 0; pass < 2 && (gsTexCount >= TEX_CAP || sTexBytes > TEX_BYTES_CAP); pass++, keep = gGsFrame) {
             for (n = 0, i = 0; i < (uint32_t)gsTexCount; i++) {
                 if (sTex[i].last >= keep) {
                     sTex[n++] = sTex[i];
                 } else {
                     sBackend->texDestroy(sTex[i].tex);
+                    sTexBytes -= sTex[i].bytes;
                 }
             }
             gsTexCount = n;
@@ -404,7 +434,7 @@ static GsTex texture_get(int ctx) {
             }
             sTexBucket[h] = (uint16_t)(i + 1);
         }
-        if (gsTexCount == MAX_TEX) {
+        if (gsTexCount >= TEX_CAP) {
             return gsWhite; /* this one frame uses more textures than the cache holds */
         }
     }
@@ -414,7 +444,23 @@ static GsTex texture_get(int ctx) {
         const char *path = TexPack_Lookup(tbp, tbw, psm, tw, th, (uint32_t)((t0 >> 34) & 1), cbp, cpsm, &packMaxAlpha);
         if (path != NULL && TexPack_Load(path, &pack)) {
             packFormat = pack.format & 3;
-            if (sBackend->texSlotsLeft() >= pack.levels) {
+            if (packFormat != GS_TEXFMT_RGBA8 && gGsNoBcTextures) {
+                /* A GPU without DXT (phones): the .dds replacement is unpacked to RGBA here, once per load, with its
+                   levels above 2048 pixels left out on Android (memory); failing that the game's own texture is shown */
+#ifdef __ANDROID__
+                const uint32_t maxSide = 2048;
+#else
+                const uint32_t maxSide = 16384;
+#endif
+                if (TexPack_Decompress(&pack, maxSide)) {
+                    packFormat = GS_TEXFMT_RGBA8;
+                } else {
+                    TexPack_Free(&pack);
+                }
+            }
+            if (pack.file == NULL) {
+                /* (left out above) */
+            } else if (sBackend->texSlotsLeft() >= pack.levels) {
                 replaced = 1;
                 gGpuTexReplaced++;
                 rw = pack.w;
@@ -475,6 +521,7 @@ static GsTex texture_get(int ctx) {
             uint32_t lw = pack.w >> level ? pack.w >> level : 1, lh = pack.h >> level ? pack.h >> level : 1;
             void *buf = malloc(pack.bytes[level]);
             memcpy(buf, pack.data[level], pack.bytes[level]);
+            texBytes += pack.bytes[level];
             sBackend->texUpload(t->tex, level, lw, lh, packFormat, buf, pack.bytes[level]);
         }
         TexPack_Free(&pack);
@@ -513,6 +560,8 @@ static GsTex texture_get(int ctx) {
     t->rw = rw;
     t->rh = rh;
     t->amax = replaced ? packMaxAlpha : 255u;
+    t->bytes = replaced ? (uint32_t)(texBytes < 0xFFFFFFFFu ? texBytes : 0xFFFFFFFFu) : tw * th * 4;
+    sTexBytes += t->bytes;
     return t->tex;
 }
 
@@ -578,8 +627,10 @@ static uint32_t blend_key(uint64_t alpha, int abe) {
    one pipeline per key, so this is pure GS state -> an index):
    bits 0..8 blend, 10..11 depth test, 12 depth write, 13..14 topology, 16..19 colour write mask,
    20..21 vertices: 0 GS vertices, 1 program 0, 2 program 4, 3 program 6, 22 full-screen table pass,
-   23 the fragment shader without its own depth output, 24 flat-shadow stencil mask. */
-static int pipeline_get(int ctx, int topo, int vu, int shadow) {
+   23 the fragment shader without its own depth output (nz), 24 flat-shadow stencil mask,
+   25 the draw never discards a pixel (no alpha test, no destination alpha test): the fragment shader without
+   `discard`, which lets tile-based GPUs (Mali, Adreno) drop hidden pixels before shading them. */
+static int pipeline_get(int ctx, int topo, int vu, int shadow, int nodiscard) {
     uint64_t test = gGs.test[ctx], zb = gGs.zbuf[ctx];
     int zte = (test >> 16) & 1, ztst = (test >> 17) & 3, zwrite = !((zb >> 32) & 1);
     uint32_t bkey, key, wmask, m = (uint32_t)(gGs.frame[ctx] >> 32);
@@ -593,7 +644,7 @@ static int pipeline_get(int ctx, int topo, int vu, int shadow) {
     wmask = ((m & 0xFF) != 0xFF ? GS_CC_R : 0) | ((m & 0xFF00) != 0xFF00 ? GS_CC_G : 0) |
             ((m & 0xFF0000) != 0xFF0000 ? GS_CC_B : 0) | ((m & 0xFF000000u) != 0xFF000000u ? GS_CC_A : 0);
     key = bkey | (uint32_t)ztst << 10 | (uint32_t)zwrite << 12 | (uint32_t)topo << 13 | wmask << 16 | (uint32_t)vu << 20 |
-          (uint32_t)shadow << 24;
+            (uint32_t)shadow << 24 | (nodiscard ? 1u << 25 : 0);
     {   /* Bit 23: the fragment shader without its own depth output (gsnz.frag; see the end of gs.frag for why
            writing depth in the shader costs). Taken where it changes nothing: a draw that does not write depth
            and tests with "greater or equal" (or not at all). What is in the depth buffer was written through
@@ -672,7 +723,7 @@ int GsDraw_TargetGet(uint32_t fbp, int create) {
     return slot;
 }
 
-static int pipeline_get(int ctx, int topo, int vu, int shadow);
+static int pipeline_get(int ctx, int topo, int vu, int shadow, int nodiscard);
 
 /* GfxPost_DrawDepthClut as one full-screen pass (the game sends 16 strips; they become one draw). */
 static void depth_clut(int ctx) {
@@ -704,7 +755,7 @@ static void depth_clut(int ctx) {
     if (d.tex == 0) {
         return;
     }
-    d.pipeline = pipeline_get(ctx, 0, 4, 0);
+    d.pipeline = pipeline_get(ctx, 0, 4, 0, 0);
     d.blendc = (float)((gGs.alpha[ctx] >> 32) & 0xFF) / 128.0f;
     d.misc[0] = ((gGs.zbuf[ctx] >> 24) & 15) == 0 ? 4294967295.0f : ((gGs.zbuf[ctx] >> 24) & 15) == 1 ? 16777215.0f : 65535.0f;
     d.scissor[0] = (int)(sc & 0x7FF) * SCALE;
@@ -842,13 +893,13 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
                 float u0 = 0.0f, u1 = tw - 1.0f, v0 = 0.0f, v1 = th - 1.0f;
                 if (wms >= 2) { u0 = (float)((cl >> 4) & 0x3FF); u1 = (float)((cl >> 14) & 0x3FF); }
                 if (wmt >= 2) { v0 = (float)((cl >> 24) & 0x3FF); v1 = (float)((cl >> 34) & 0x3FF); }
-                d->rect[0] = (u0 + 0.5f) / (float)GS_W;
-                d->rect[1] = (v0 + 0.5f) / (float)GS_H;
-                d->rect[2] = (u1 + 0.5f) / (float)GS_W;
-                d->rect[3] = (v1 + 0.5f) / (float)GS_H;
+                d->rect[0] = (u0 + 0.5f) / (float)gsTargetW;
+                d->rect[1] = (v0 + 0.5f) / (float)gsTargetH;
+                d->rect[2] = (u1 + 0.5f) / (float)gsTargetW;
+                d->rect[3] = (v1 + 0.5f) / (float)gsTargetH;
             }
-            *us = tw / (float)GS_W;
-            *vs = th / (float)GS_H;
+            *us = tw / (float)gsTargetW;
+            *vs = th / (float)gsTargetH;
         } else {
             d->tex = texture_get(ctx);
         }
@@ -860,7 +911,6 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
     if (d->tex != 0 && sLast != NULL && sLast->tex == d->tex && sLast->replaced) {
         d->sampler |= 1 | 8; /* (GsGpu_Draw takes the 8 off again for 2D art) */
     }
-    d->pipeline = pipeline_get(ctx, topo, vu, 0);
     d->mode[0] = !tme ? 0 : d->tex_is_target ? 2 : 1; /* 2: a frame buffer as texture, its alpha is already rescaled */
     /* (BT3_TEX_ALPHA=0 switches the replacement's alpha treatment off, for telling which one a fault comes from) */
     if (d->mode[0] == 1 && sLast != NULL && sLast->tex == d->tex && sLast->replaced == 1 &&
@@ -874,6 +924,14 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
     d->misc[0] = (float)((test >> 4) & 0xFF);
     d->misc[1] = ((test >> 14) & 1) ? (float)(1 + (int)((test >> 15) & 1)) : 0.0f; /* DATE, DATM */
     d->misc[2] = (float)(gGs.fba[ctx] & 1);
+    {   /* alpha test off or "always", no destination alpha test: nothing this draw draws is ever discarded
+            (BT3_GPU_DISCARD=1: the shader with discard for every draw, as before) */
+        static int always = -1;
+        if (always < 0) {
+            always = getenv("BT3_GPU_DISCARD") != NULL;
+        }
+        d->pipeline = pipeline_get(ctx, topo, vu, 0, !always && (d->mode[3] == 0 || d->mode[3] == 2) && d->misc[1] == 0.0f);
+    }
     d->blendc = (float)((gGs.alpha[ctx] >> 32) & 0xFF) / 128.0f;
     d->scissor[0] = (int)(sc & 0x7FF) * SCALE;
     d->scissor[1] = (int)((sc >> 32) & 0x7FF) * SCALE;
@@ -905,6 +963,10 @@ static void put(const GsVertex *v, float x, float y, float s, float t, float q, 
        wins wherever the two are within those steps. (Not past the nearest depth there is.) */
     o->z = (float)(((double)v->z + (depth_frac() ? 0.0 : 0.5 + ((double)v->z + GS_Z_LEAD < (double)zmax ? GS_Z_LEAD : 0.0))) / zmax);
     gsZMax = depth_frac() ? 0.0f : zmax;
+    /* Android: clamp (Mali clips z > 1.0) */
+    if (o->z > 1.0f) {
+        o->z = 1.0f;
+    }
     o->r = r; o->g = g; o->b = b; o->a = a;
     o->s = s; o->t = t; o->q = q;
 }
@@ -1439,7 +1501,7 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
     if (layer == 2 && d.misc[1] == 1.0f && d.misc[2] != 0.0f) {
         /* TEST.DATE rejects pixels marked by FBA. Stencil also rejects overlap within this
            draw run, which a single snapshot of the alpha buffer cannot see. */
-        d.pipeline = pipeline_get(ctx, 0, 1, 1);
+        d.pipeline = pipeline_get(ctx, 0, 1, 1, 0);
     }
     date_snapshot(&d);
     memcpy(u.boneA, &consts[0], 64);
@@ -1580,15 +1642,15 @@ void GsGpu_Native(int effect) {
 /* A new resolution multiplier: every render target is dropped and made again at the new size when the game next
    draws to it. Buffers that carry something over from the previous frame start empty for one frame. */
 static void scale_apply(void) {
-    if (gsPendingScale == 0 || gsPendingScale == gsScale) {
-        gsPendingScale = 0;
+    if (gsPendingScale4 == 0 || gsPendingScale4 == gsScale4) {
+        gsPendingScale4 = 0;
         return;
     }
-    gsScale = gsPendingScale; /* the back end's attachments and copies are rebuilt to this size */
-    gsPendingScale = 0;
+    gsScale4 = gsPendingScale4; /* the back end's attachments and copies are rebuilt to this size */
+    gsPendingScale4 = 0;
     sBackend->scaleChanged();
     gsTargetCount = 0;
-    fprintf(stderr, "bt3: internal resolution %dx (%d x %d)\n", gsScale, 512 * gsScale, 448 * gsScale);
+    fprintf(stderr, "bt3: internal resolution %gx (%d x %d)\n", (double)SCALE, (int)(512 * SCALE), (int)(448 * SCALE));
 }
 
 /* The list of menu labels is made in a thread at start when it is not there (menu_labels.c, menu_text.c). What it
@@ -1631,9 +1693,26 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
         SDL_GetDisplayBounds(displays[pick], &r);
         fprintf(stderr, "bt3: display %d: %s, %d x %d\n", pick + 1, SDL_GetDisplayName(displays[pick]), r.w, r.h);
     }
+#ifdef __ANDROID__
+    /* Android: "aspect_milli" 0 (or none saved) = the screen's own shape, so the fight fills a phone's 19.5:9 or 20:9
+       screen with more of the scene (Port_WideFactor: the projection is widened, nothing is stretched). */
+    if (count > 0 && Port_Setting("aspect_milli", 0) == 0 && getenv("BT3_ASPECT") == NULL && getenv("BT3_WIDE") == NULL) {
+        extern void Port_SetAspectMilli(int milli); /* plat_stub.c */
+        SDL_Rect r;
+        sAspectAuto = 1;
+        if (SDL_GetDisplayBounds(displays[0], &r) && r.w > 0 && r.h > 0) {
+            int big = r.w > r.h ? r.w : r.h, small = r.w > r.h ? r.h : r.w;
+            Port_SetAspectMilli(big * 1000 / small);
+            fprintf(stderr, "bt3: picture shape: the screen's, %d:1000\n", big * 1000 / small);
+        }
+    }
+#endif
     sDisplaySetting = Port_Setting("display", 0);
     pick = getenv("BT3_DISPLAY") != NULL ? atoi(getenv("BT3_DISPLAY")) : sDisplaySetting;
     sFullscreen = (getenv("BT3_FULLSCREEN") != NULL ? atoi(getenv("BT3_FULLSCREEN")) : Port_Setting("fullscreen", 0)) != 0;
+#ifdef __ANDROID__
+    sFullscreen = 1; /* (the whole screen, without the system's bars) */
+#endif
     sWantAspect = want;
     SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "Tenkaichi3Decomp");
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, w);
@@ -1655,7 +1734,7 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
     if (sWindow != NULL && !sFullscreen) {
         SDL_SetWindowSize(sWindow, (int)((float)896 * want + 0.5f), 896);
     }
-    fprintf(stderr, "bt3: internal resolution %dx (%d x %d)\n", gsScale, 512 * gsScale, 448 * gsScale);
+    fprintf(stderr, "bt3: internal resolution %gx (%d x %d)\n", (double)SCALE, (int)(512 * SCALE), (int)(448 * SCALE));
     return sWindow;
 }
 
@@ -1696,12 +1775,26 @@ int Port_FxOff(int bit) {
     return (gsFxOff & (unsigned)bit) != 0;
 }
 
+#ifdef __ANDROID__
+static int screen_aspect_milli(void) {
+    SDL_Window *w = GsDraw_Window();
+    SDL_DisplayID id = w != NULL ? SDL_GetDisplayForWindow(w) : 0;
+    SDL_Rect r;
+    if (id != 0 && SDL_GetDisplayBounds(id, &r) && r.w > 0 && r.h > 0) {
+        int big = r.w > r.h ? r.w : r.h, small = r.w > r.h ? r.h : r.w;
+        return big * 1000 / small;
+    }
+    return 0;
+}
+#endif
+
 void GsGpu_GetSettings(PortVideo *v) {
-    v->scale = gsPendingScale ? gsPendingScale : gsScale;
-    v->aspectMilli = Port_AspectMilli();
+    v->scale4 = gsPendingScale4 ? gsPendingScale4 : gsScale4;
+    v->aspectMilli = sAspectAuto ? 0 : Port_AspectMilli(); /* (0: the screen's own shape, Android) */
     v->fullscreen = sFullscreen;
     v->fxOff = (int)gsFxOff;
     v->glow = gsGlowPercent;
+    v->filter = gsFilter;
     v->music = gPortMusicPercent;
     v->effects = gPortSePercent;
     v->voices = gPortVoicePercent;
@@ -1721,11 +1814,17 @@ void GsGpu_GetSettings(PortVideo *v) {
 void GsGpu_SetSettings(const PortVideo *v) {
     PortVideo now;
     GsGpu_GetSettings(&now);
-    if (v->scale != now.scale) {
-        gsPendingScale = v->scale < 1 ? 1 : v->scale > 8 ? 8 : v->scale; /* applied between two frames */
+    if (v->scale4 != now.scale4) {
+        gsPendingScale4 = v->scale4 < 4 ? 4 : v->scale4 > 32 ? 32 : v->scale4; /* applied between two frames */
     }
     if (v->aspectMilli != now.aspectMilli) {
+#ifdef __ANDROID__
+        int milli = v->aspectMilli == 0 ? screen_aspect_milli() : v->aspectMilli;
+        sAspectAuto = v->aspectMilli == 0;
+        Port_SetAspectMilli(milli > 0 ? milli : Port_AspectMilli());
+#else
         Port_SetAspectMilli(v->aspectMilli);
+#endif
         GsDraw_WindowShape();
     }
     if (v->fullscreen != now.fullscreen) {
@@ -1733,6 +1832,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
     }
     gsFxOff = (unsigned)v->fxOff & 63;
     gsGlowPercent = v->glow;
+    gsFilter = v->filter < 0 || v->filter > 4 ? 0 : v->filter;
     if (v->music != now.music || v->effects != now.effects || v->voices != now.voices || v->stage != now.stage) { /* (the streams that are playing follow at once) */
         gPortMusicPercent = v->music;
         gPortSePercent = v->effects;
@@ -1760,11 +1860,16 @@ void GsGpu_SetSettings(const PortVideo *v) {
     sSmooth2d = v->smooth2d != 0;
     Port_SettingSave("smooth_2d", sSmooth2d);
     Port_SettingSave("texture_pack", sTexPackOn);
-    Port_SettingSave("scale", gsPendingScale ? gsPendingScale : gsScale);
-    Port_SettingSave("aspect_milli", Port_AspectMilli());
+    {   /* "scale4" in quarters; "scale" the whole multiplier, for the launcher of an earlier version */
+        int q = gsPendingScale4 ? gsPendingScale4 : gsScale4;
+        Port_SettingSave("scale4", q);
+        Port_SettingSave("scale", (q + 2) / 4);
+    }
+    Port_SettingSave("aspect_milli", sAspectAuto ? 0 : Port_AspectMilli());
     Port_SettingSave("fullscreen", sFullscreen);
     Port_SettingSave("fx_off", (int)gsFxOff);
     Port_SettingSave("glow", gsGlowPercent);
+    Port_SettingSave("filter", gsFilter);
     Port_SettingSave("music", gPortMusicPercent);
     Port_SettingSave("effects", gPortSePercent);
     Port_SettingSave("voices", gPortVoicePercent);
@@ -1778,9 +1883,17 @@ int GsGpu_Init(void) {
     const char *api = getenv("BT3_GPU_API");
     GsBackend *sb;
 
-    gsScale = getenv("BT3_SCALE") != NULL ? atoi(getenv("BT3_SCALE")) : Port_Setting("scale", 2);
-    gsScale = gsScale < 1 ? 1 : gsScale > 8 ? 8 : gsScale;
-    gsPendingScale = 0;
+    /* BT3_SCALE=1.5 and the like; the setting "scale4" in quarters, else the older whole "scale" */
+    if (getenv("BT3_SCALE") != NULL) {
+        gsScale4 = (int)(atof(getenv("BT3_SCALE")) * 4.0 + 0.5);
+    } else {
+        gsScale4 = Port_Setting("scale4", 0);
+        if (gsScale4 <= 0) {
+            gsScale4 = Port_Setting("scale", 2) * 4;
+        }
+    }
+    gsScale4 = gsScale4 < 4 ? 4 : gsScale4 > 32 ? 32 : gsScale4;
+    gsPendingScale4 = 0;
     gsVerts = malloc(MAX_VERTS * sizeof(Vtx));
     gsVuVerts = malloc(MAX_VU_VERTS * 48);
     gsVuIdx = malloc(MAX_VU_IDX * sizeof(uint32_t));
@@ -1800,6 +1913,12 @@ int GsGpu_Init(void) {
         fprintf(stderr, "bt3: unknown BT3_GPU_API=%s (try vulkan, gl or auto)\n", api);
         return 0;
     }
+#ifdef __ANDROID__
+    /* Android: the setting "gpu_api" (1 = OpenGL ES 3.2, the OpenGL back end built for ES; else Vulkan) is written by the
+       launcher, which picks OpenGL ES for Mali GPUs by itself unless the player chose; if the chosen one cannot start,
+       the other is tried (api NULL) */
+    fprintf(stderr, "bt3: renderer chosen: %s\n", sb == &sGlBackend ? "OpenGL ES" : "Vulkan");
+#endif
     sBackend = sb;
     if (!sb->init()) {
         /* The chosen renderer cannot start (no Vulkan driver, an old graphics card): the other one is tried,
@@ -1821,6 +1940,8 @@ int GsGpu_Init(void) {
     gsWhite = sb->whiteTex();
     gsFxOff = (unsigned)(getenv("BT3_FX_OFF") != NULL ? atoi(getenv("BT3_FX_OFF")) : Port_Setting("fx_off", 0)) & 63;
     gsGlowPercent = getenv("BT3_GLOW") != NULL ? atoi(getenv("BT3_GLOW")) : Port_Setting("glow", GLOW_DEFAULT);
+    gsFilter = getenv("BT3_FILTER") != NULL ? atoi(getenv("BT3_FILTER")) : Port_Setting("filter", 0);
+    gsFilter = gsFilter < 0 || gsFilter > 4 ? 0 : gsFilter;
     MenuText_SetFontId(Port_Setting("menu_font_id", 0));
     MenuText_SetSharedFontId(Port_Setting("text_font_id", 0));
     sTexPackOn = Port_Setting("texture_pack", 1) != 0;
