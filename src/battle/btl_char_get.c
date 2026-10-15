@@ -14,6 +14,9 @@ extern void *BtlObj_Get(s32 id);
 extern void BtlObj_SetSubState(void *obj, s32 state, s32 arg);
 extern s32 BtlChar_TestFlag(BtlCharGetChr *chr, s32 bit);
 extern s32 BattleReplay_IsActive(void);
+#ifdef PORT
+extern s32 Port_RumbleTest(void); /* port/src/gs/gs_input.c */
+#endif
 extern s32 Battle_GetStage(void);
 extern s32 Battle_GetMode(void);
 extern s32 Voice_IsStopped(s32 voice);
@@ -316,7 +319,11 @@ void BtlChar_Vibrate(BtlCharGetChr *chr, f32 power, f32 seconds) {
 void BtlChar_UpdateVibration(BtlCharGetChr *chr) {
     BtlCharVib *vib = &chr->vib;
 
+#ifdef PORT /* PC build: BT3_RUMBLE_TEST=1 lets a replay vibrate as the fight it shows did (testing without a player) */
+    if (!vib->enabled || (BattleReplay_IsActive() && !Port_RumbleTest()) || chr->injectOn) {
+#else
     if (!vib->enabled || BattleReplay_IsActive() || chr->injectOn) {
+#endif
         vib->time = 0;
         vib->smallTime = 0;
     } else {

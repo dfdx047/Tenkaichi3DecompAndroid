@@ -13,7 +13,7 @@ transform(text) takes PREPROCESSED C and returns it with
 Constant arithmetic that only appears after the compiler propagates variables is not covered; port/tools/
 undefined.py --check-fold lists where the host compiler still folds inexact float arithmetic.
 """
-import re
+import os, re
 from fractions import Fraction
 
 TOKEN = re.compile(r'''
@@ -67,12 +67,18 @@ def parse_hexf(t):
     m = re.match(r"0[xX]([0-9a-fA-F]+)p([+-]?\d+)", t)
     return K(Fraction(int(m.group(1), 16)) * Fraction(2) ** int(m.group(2)), 'f' if isf else 'd')
 
+# `introduced=10.8` in Apple's availability attributes (the macOS SDK's headers) is a version, not a number.
+# Only the macOS build has such headers: the other builds read their text exactly as before.
+VERSION_KEYS = {"introduced", "deprecated", "obsoleted"} if os.environ.get("BT3_CC") == "mac64" else set()
+
 def lex(text):
     out = []
     for m in TOKEN.finditer(text):
         g = m.lastgroup
         t = m.group(g)
-        if g == "flt":
+        if g == "flt" and VERSION_KEYS and len(out) >= 2 and out[-1] == ("op", "=") and out[-2][0] == "id" and out[-2][1] in VERSION_KEYS:
+            out.append(("str", t))
+        elif g == "flt":
             suf = m.group("suf")
             body = t[:-1] if suf else t
             out.append(("k", make(Fraction(body), 'f' if suf in ("f", "F") else 'd')))

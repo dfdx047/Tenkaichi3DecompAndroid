@@ -552,6 +552,19 @@ void BtlInput_Sample(BtlInputChr *chr) {
     in->rawHeld = pad->held;
     in->rawStickX = BtlInput_StickToByte(pad->left[0]);
     in->rawStickY = BtlInput_StickToByte(pad->left[1]);
+#ifdef PORT
+    {
+        /* Online the fight goes on under the pause menu (btl_seq.c BtlSeqFight_Update): the buttons of the player
+           whose menu it is go to the menu and not to the fighter, who stands as with a pad left alone. */
+        extern int Port_NetActive(void);
+        extern s32 BtlPause_GetMenuPad(void);
+        if (Port_NetActive() && (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) && pad == &gPad[BtlPause_GetMenuPad()]) {
+            in->rawHeld = 0;
+            in->rawStickX = 0x7F;
+            in->rawStickY = 0x7F;
+        }
+    }
+#endif
     BtlInput_BuildRecord(chr);
 }
 

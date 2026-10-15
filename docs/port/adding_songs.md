@@ -21,6 +21,45 @@ menu is the file's name (`My_Song.adx` is shown as "My Song"). `$BT3_SONGS` name
   rest of this document describes, is still used when there is none next to the game. The script now writes to
   the folder next to the game (the repository root) unless `--data` names another place.
 - Code: `port/src/plat_extras.c` (the folder, the scan), `plat_stages.c`, `plat_songs.c`.
+- **An `.mp3` works too** (2026-10-12, pull request 70; changed 2026-10-13, below): at start-up every `name.mp3`
+  that needs it is converted once and written as `name.adx` next to it; the next start finds the ADX and does
+  nothing. The MP3's own rate and channels are kept. A file that cannot be read or written (not an MP3, more than
+  two channels, a folder that cannot be written to) is left out: one line in the log and a notice over the picture
+  ("Song x.mp3 could not be converted and is left out."), and the game goes on. `songs.txt` may name the `.mp3`;
+  its `.adx` is used. Code: `port/src/gs/song_mp3.c` (dr_mp3 from `port/third_party/dr_libs`, public domain /
+  MIT-0, see the README.txt there for the exact origin, and an ADX encoder written against the decoder in
+  `snd_adx.c`).
+  Checked with the macOS build (branch macos-port, where it was written): a 6 s and an 8 s MP3 converted (decoded
+  with the port's own rounding, 21 dB and 55 dB against the MP3's samples; ffmpeg's `adpcm_adx` files of the same
+  MP3s give 16.5 dB and 30 dB there, why was not looked into), not converted again at the next start; a file of
+  junk named `.mp3` left out with the log line; the demo fight ran to its end. The release container compiles it
+  for Linux (`clang64`, linked) and Windows (`win64`, the file compiled). Not checked: the notice on screen, the
+  songs played in a fight, the program run on Linux or Windows.
+- **How the conversion decides and when it runs** (2026-10-13, the top of `song_mp3.c` has the whole of it):
+  - The ADX written carries a mark in its header (0x60 bytes; at 0x30 `BT3:MP3\x01`, then the MP3's size and its
+    time of last change, 8 bytes each). No `name.adx`: converted. Mark with the MP3's size and time: nothing. Mark
+    with another size or time: converted again (a replaced MP3, whatever its date). **No mark: the ADX is somebody
+    else's (made by hand, by ffmpeg, by `add_song.py`) and is never written over**; the MP3 is left alone, the log
+    says so. An ADX written by the pull request before this change has no mark and counts as made by hand: delete
+    it to have it made again.
+  - An MP3 that cannot be decoded is written down in `mp3-failed.txt` in the folder (size, time, name, reason) and
+    not tried or reported again until the file changes or its line is deleted. A failure to write (the folder, the
+    disk) is not written down and is tried at every start.
+  - It runs in a thread of its own; the program does not wait. The song list is made at start from the ADX files
+    there are; a song converted later joins the END of the list when a character select is next set up
+    (`PortSongs_Refresh`, called from `menu_c_e.c` and `menu_e_b.c`), so its place can differ from the next start's
+    (there the list's order is `songs.txt`, then by name). Not in an online session. With `BT3_PAD_REC`,
+    `BT3_PAD_PLAY`, `BT3_PAD_TABLE` or `BT3_SYNCTEST` the conversion is done at start before the list is made, so
+    that such a run's list depends on the folder only. `BT3_TEST_SONGS_SLOW=<ms>` makes every conversion wait
+    first (testing).
+  - The MP3 is decoded and written 8192 samples at a time: about 14 MB for the whole program in a test whatever the
+    length (an hour of music took 622 MB decoded whole).
+  - Names: `.mp3` in any case of the letters; `a.b.mp3` gives `a.b.adx`; names of 128 bytes and more are left out
+    (the list does not take them either); of two MP3 files that give the same ADX name the first by name is
+    converted and the other left out, the same one at every start. On Windows a name with characters outside the
+    system's code page cannot be opened by this program (files are opened by the code page's names everywhere in
+    the port) and is left out with a line in the log; names inside the code page (accents on a western system) work.
+  - Deleting an MP3 does not delete its ADX: the song stays until the ADX is deleted too.
 
 ## The name in the game's own lettering (main line)
 

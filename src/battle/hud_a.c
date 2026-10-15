@@ -753,5 +753,12 @@ void Hud_Draw(void) {
             HudNode_Draw(gHud->notice, 0);
         }
     }
+#ifdef PORT
+    {
+        extern void PortTbo_SparSign(void); /* menu/port_tbo.c: Train While Waiting's sign over its sparring fight */
+
+        PortTbo_SparSign();
+    }
+#endif
     Hud_ClearTexMarks();
 }

@@ -603,6 +603,43 @@ static void shot(ImDrawData *dd, Uint32 w, Uint32 h, int number) {
     SDL_ReleaseGPUTexture(sDevice, tex);
 }
 
+#ifdef _WIN32
+// The few functions of Windows used below, declared here: its headers define names this file has (FAILED, ...).
+extern "C" {
+__declspec(dllimport) wchar_t *__stdcall GetCommandLineW(void);
+__declspec(dllimport) wchar_t **__stdcall CommandLineToArgvW(const wchar_t *line, int *count);
+__declspec(dllimport) int __stdcall WideCharToMultiByte(unsigned page, unsigned long flags, const wchar_t *wide, int wideLen, char *out, int outLen,
+                                                        const char *def, int *usedDef);
+__declspec(dllimport) void *__stdcall LocalFree(void *mem);
+}
+
+// The program's arguments in UTF-8. Those main() gets on Windows are in the system's code page: a disc image whose
+// path has letters outside it arrives with '?' in their place, and one with letters inside it as bytes that are not
+// UTF-8, which is what SDL opens files by. Either way the image was "not found". NULL when Windows gives none.
+static char **utf8_args(int *count) {
+    int n = 0;
+    wchar_t **wide = CommandLineToArgvW(GetCommandLineW(), &n);
+    char **out = wide != NULL ? (char **)SDL_calloc((size_t)n + 1, sizeof(char *)) : NULL;
+
+    for (int i = 0; out != NULL && i < n; i++) {
+        int len = WideCharToMultiByte(65001 /* CP_UTF8 */, 0, wide[i], -1, NULL, 0, NULL, NULL);
+        out[i] = (char *)SDL_calloc((size_t)(len > 0 ? len : 1), 1);
+        if (out[i] == NULL) {
+            out = NULL; // (out of memory at start-up: main's own arguments are used)
+            break;
+        }
+        if (len > 0) {
+            WideCharToMultiByte(65001, 0, wide[i], -1, out[i], len, NULL, NULL);
+        }
+    }
+    if (wide != NULL) {
+        LocalFree(wide);
+    }
+    *count = n;
+    return out;
+}
+#endif
+
 int main(int argc, char **argv) {
     static const char *fonts[] = {
         "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -612,6 +649,16 @@ int main(int argc, char **argv) {
     ImGui_ImplSDLGPU3_InitInfo info;
     int shots = 0, shotKey = -1;
 
+#ifdef _WIN32
+    {
+        int count = 0;
+        char **args = utf8_args(&count); // (kept for the whole run)
+        if (args != NULL) {
+            argc = count;
+            argv = args;
+        }
+    }
+#endif
     if (argc > 2 && strcmp(argv[1], "--install") == 0) {
         // Without a window: Tenkaichi3Decomp-setup --install <disc.iso>. A release folder only; prints the event lines.
         std::string line;
@@ -694,6 +741,9 @@ int main(int argc, char **argv) {
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
     io.IniFilename = NULL;
+    // The keyboard reaches every control: Tab and the arrows move, Space or Enter presses. Without this, Tab stops at
+    // the text field only and no button can be pressed without a mouse.
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     style();
     for (size_t i = 0; i < sizeof(fonts) / sizeof(fonts[0]); i++) {
         if (file_exists(fonts[i])) {

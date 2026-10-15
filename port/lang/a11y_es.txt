@@ -1,0 +1,523 @@
+# Screen reader: the Spanish lines (port/src/gs/a11y.c, "translations").
+# One line each: the FNV-1a hash (64 bits, 16 hex digits) of the English label, a tab, the line to say. The note
+# above a line is its English: "label|sense" is the second key of a label said another way in that sense.
+# These are the reader's own labels: none of the game's text is here.
+# For another language, copy this file to a11y_<code>.txt and put the lines of that language after the tabs.
+# Dragon History
+6fef1d3d57e9788a	Historia Dragón
+# Ultimate Battle
+104b7f197f7d2e58	Batalla definitiva
+# Dragon World Tour
+ddd6ac9e66399ecc	Torneo mundial Dragón
+# Duel
+47728b72f6c25e3b	Duelo
+# Dragon Net Battle
+a94212278ad76b25	Batalla Dragón en línea
+# Evolution Z
+3d369436311831a0	Evolución Z
+# Ultimate Training
+a3eef288166f4c08	Entrenamiento definitivo
+# Data Center
+8c3ea2d345ee40d2	Centro de datos
+# Character Reference
+cb34bf43f5544c2d	Referencia de personajes
+# Options
+463b8c4e92751ba5	Opciones
+# Shenron
+a465bd8f68fb8e88	Shenlon
+# New Game
+b7a371822ed26471	Partida nueva
+# Continue
+81ecf2d4386b8e84	Continuar
+# Yes
+cb489a1a173ac3f0	Sí
+# No
+09205907b5b56cda	No
+# Wasteland - Noon
+a92f090e1d88ecdf	Páramo, mediodía
+# Rocky Area - Noon
+2f2b6d7a5c6477c7	Área rocosa, mediodía
+# Planet Namek
+e68df78c1edbb22b	Planeta Namek
+# Dying Namek
+a9bcee967b23d6da	Namek agonizante
+# World Tournament Stage - Noon
+3c130f86b3fd73ef	Escenario Torneo Mundial, mediodía
+# Kami's Lookout
+08945dddc181da1c	Atalaya de Kami
+# Cell Games Arena - Evening
+a8efe0dd67743516	Pista Juegos Cell, tarde
+# Supreme Kai's World
+aeaaf8c875693aa1	Mundo Kaiyoshin
+# Hyperbolic Time Chamber
+424b05e0ba93914d	Habitación del tiempo
+# City Ruins - Noon
+ac48280a0c36bf98	Ciudad en ruinas, mediodía
+# Mountain Road - Noon
+9e500836248a8027	Carretera montañosa, mediodía
+# Islands
+b96dd84c4100882d	Islas
+# Kame House
+9ec6c7c4af2f628f	Kame House
+# Planet - Night
+457351029eb37cea	Planeta, noche
+# Glacier
+ee04f306ad5af932	Glaciar
+# Ruined Earth
+adc96cffc2669bde	Tierra en ruinas
+# Outer Space
+a12b8e1f06b549a2	Espacio exterior
+# Penguin Village
+e67e8529ccea2cab	Aldea Pingüino
+# Hell
+3526fdd86112af06	Infierno
+# Desert - Noon
+e001d184ecd2118f	Desierto, mediodía
+# King's Castle
+4db8655614215804	Castillo del rey
+# Muscle Tower
+cb4c2d8c53dd93e3	Torre Músculo
+# Mount Paozu
+d88567c52795b11f	Monte Paozu
+# Wasteland - Evening
+4c476b1a3472d743	Yermos, tarde
+# Wasteland - Night
+4d6a560e0410379d	Yermos, noche
+# Rocky Area - Evening
+d99f7b566929a3eb	Área rocosa, tarde
+# Rocky Area - Night
+5d4b91fd1fcec425	Área rocosa, noche
+# World Tournament Stage - Evening
+8cd853657272f453	Escenario Torneo Mundial, tarde
+# Cell Game - Noon
+654dcddacb08955c	Juegos Cell, mediodía
+# City Ruins - Evening
+b24dab6e8e0570a6	Ciudad en ruinas, tarde
+# City Ruins - Night
+f3184ce36b6dc180	Ciudad en ruinas, noche
+# Desert - Evening
+934a5a2c0506e673	Desierto, tarde
+# Desert - Night
+bde047f03ca0facd	Desierto, noche
+# Mountain Road - Evening
+f51cf178ea7b19cb	Carretera montañosa, tarde
+# Planet - Evening
+333a2264593a28a8	Planeta, tarde
+# Random
+8fb7a126449e0462	Aleatorio
+# Locked
+e3e714766f25ef93	Bloqueado
+# Custom characters
+3839a4c2c86c9d2a	Personajes personalizados
+# Empty
+500fd71a4232050e	Vacío
+# 1P vs CPU
+a2195b0072470e09	Jugador 1 contra CPU
+# 1P vs 2P
+e800f9a8e83b401f	Jugador 1 contra jugador 2
+# CPU vs CPU
+32ba9300249201de	CPU contra CPU
+# Battle Settings
+542e98f2af1009b8	Ajustes de batalla
+# Single Battle
+e58ca663436dee69	Combate individual
+# Team Battle
+b7eadeb50195b08e	Combate por equipos
+# DP Battle
+699524d22a7f6659	Combate PD
+# 10 DP
+f808b0760b0ea2d8	10 PD
+# 15 DP
+44453c5e43f5228d	15 PD
+# 20 DP
+471ebc0c4a6b0de1	20 PD
+# Duel Time
+bbf2fb90fadb7438	Tiempo de duelo
+# CPU Level
+4686f6ac617db5eb	Dificultad de la CPU
+# Referee
+f9cde6d9d432680f	Árbitro
+# Transformation
+a458c5015ed94d30	Transformación
+# Stage Destruction
+08c86d9d2cbc867d	Ajuste del mapa
+# Restore Defaults
+910b37b4dc95d345	Predeterminado
+# 60
+07f58c07b4b7c89b	60
+# 90
+08140207b4d18eac	90
+# 180
+454dc7181805e6f4	180
+# 240
+6031301827820379	240
+# Infinite
+0c024c0024360a2d	Infinito
+# Very Weak
+4ab76c4dd119394f	Muy débil
+# Weak
+680119021b521f09	Débil
+# Normal
+9ff3121d30f88d52	Normal
+# Strong
+8e52c9ecf3c109ba	Fuerte
+# Very Strong
+3942ee29c6331e2c	Muy fuerte
+# Ox-King
+f10bf0d8985a32ee	Rey Ox
+# Videl
+85186d61e0d560c5	Videl
+# Supreme Kai
+5e7de8d5b0fcffa7	Kaiyoshin
+# Announcer 1
+890339300643b24b	Locutor 1
+# Announcer 2
+89033a300643b3fe	Locutor 2
+# Announcer 3
+89033b300643b5b1	Locutor 3
+# Sim Dragon
+e6d4d553c1380887	Sim Dragón
+# Mission 100
+ad7795985ec904ce	Misión 100
+# Survival
+a133b0539876f28f	Supervivencia
+# Disc Fusion
+58ea7b855b647290	Fusión de disco
+# Open tournament
+0725c5d92a4f4358	Torneo abierto
+# Free play
+b0f5bfd680d6caf7	Juego libre
+# World Tournament
+6335b87158fb1fc6	Torneo de las Artes Marciales
+# Cell Games
+aeb94d5a65ca72c2	Juegos de Cell
+# Other World Tournament
+73af4ed16d15d3c4	Torneo del Otro Mundo
+# Yamcha Game
+b9169a45384ac19e	Juego de Yamcha
+# Tenkaichi Budokai
+4a514b2049f62e1c	Tenkaichi Budokai
+# Novice
+b073bb3ffd367afb	Principiante
+# Advanced
+21b06c38fc4164db	Avanzado
+# Expert
+5f45b0a663a21651	Experto
+# Choose a saga
+c4fef8f5b844b15d	Elegir saga
+# Level
+aa8aa81ad6f055fd	Dificultad
+# Easy
+483d9e6c1ccd1f9b	Fácil
+# Hard
+58c7b5d87587287c	Difícil
+# Free practice, choose a character
+fb20bd980f0fdfcd	Práctica libre, elegir personaje
+# Lessons
+c167a2d4a83b8c36	Lecciones
+# Start
+ae1c7f13b7c0c47f	Empezar
+# Ranking
+2cbcbf64d696b3b1	Clasificación
+# How to play
+60cc0d3776de9158	Cómo se juega
+# Profile
+b061ff5a347a296e	Perfil
+# Voice
+47a9f592c61daa59	Voz
+# Chi-Chi's comment
+f3a6514635067705	Comentario de Milk
+# Model
+5da52af9b083c29a	Modelo
+# Buy
+166a4319b11387ab	Comprar
+# Collection
+a7eea45fe1e4d231	Colección
+# Cancel
+2ceb11be2290bb1b	Cancelar
+# Details
+355b21b89ce5d9c5	Ver detalles
+# Save / Load
+f28ef543998bda07	Guardar y cargar
+# Screen
+744d993d03f29851	Pantalla
+# Sound
+2593d0c70a1c5074	Sonido
+# Controller
+96785479b0f40a01	Control
+# Exit
+122c4e6c8ff0ed45	Salir
+# Screen type
+2171a5d8b38ad9bb	Tipo de pantalla
+# Screen setting 2
+b464d4097d615c7b	Ajuste de pantalla 2
+# Screen position
+6a0c1e8acca9e2b0	Posición de la pantalla
+# Default
+11326fd2590f4e5e	Restablecer
+# Stereo / Mono
+aa00ea63af24957f	Estéreo o mono
+# Volume
+5b528a7f6c0c40af	Volumen
+# Sound test
+3d68d449f6b0d5d8	Prueba de sonido
+# Voices
+e3767266a468255e	Voces
+# Button setup
+e7f7c870197dbc84	Asignación de botones
+# Vibration
+598c7839e7feb2c9	Vibración
+# Save
+33f85f24c0f5f008	Guardar
+# Load
+4f20edb48a6287c9	Cargar
+# Type 1
+50b82a5325d72af2	Tipo 1
+# Type 2
+50b8295325d7293f	Tipo 2
+# Type 3
+50b8285325d7278c	Tipo 3
+# Choice 1
+96b9fafbae67b6a9	Opción 1
+# Choice 2
+96b9f7fbae67b190	Opción 2
+# Stereo
+5c73b6a46de9972d	Estéreo
+# Mono
+37edf2aec5ab122a	Mono
+# English
+4caed5b7a7e5d89b	Inglés
+# Japanese
+dd35b688281b6dea	Japonés
+# Off
+302cbb19bf9a174a	No
+# On
+091d5807b5b33550	Sí
+# default buttons
+68cabaf5f8f1c7c3	botones predeterminados
+# own buttons, X edits them
+e39148f495996d7b	botones propios, X para editarlos
+# choose a saga
+0828dbca8c95857d	elige una saga
+# Episode list
+90a0ed5508d1f982	Lista de episodios
+# Episode result
+682c2399b941061f	Resultado del episodio
+# Saga ending
+21ec0cf200823c88	Final de la saga
+# Choose a mission
+7c10a6e5c14fa47d	Elige una misión
+# Choose your fighters, not read yet
+ed745c98595c9c82	Elige a tus luchadores, todavía sin lectura
+# Mission result
+09311c7a3b79ac92	Resultado de la misión
+# Survival result
+f4721b1daf4b7fcc	Resultado de supervivencia
+# Sim Dragon, the day
+fdcee8c41fbd3c80	Sim Dragón, jornada
+# Day result
+6c4b35c48111f9fe	Resultado de la jornada
+# Result
+890e983a7be64da4	Resultado
+# Choose a course
+69c73414fc4e34d4	Elige un recorrido
+# Tournament bracket
+b38d54b8751d04b6	Cuadro del torneo
+# Team select, not read yet
+8bf44dc7ccd81bf5	Selección por equipos, todavía sin lectura
+# opponent
+90eaf167ae67e404	rival
+# opponents
+a71caa2d5a893635	rivales
+# Choose your fighter
+920480d1b63fb886	Elige a tu luchador
+# Tournament entry
+e38e35017a55308e	Inscripción al torneo
+# %d.%d
+211bf1f5e73b04e7	%d,%d
+# , %d of %d
+ec7b3f05f50df16a	, %d de %d
+# Press START button
+029b8581e5cff644	Presiona START
+# Main Menu
+76813002d9c586bf	Menú principal
+# Page %d of %d: 
+1218b4742012e117	Página %d de %d: 
+# Mission %d
+78865cd5fa8f82ba	Misión %d
+# , cleared
+e8d4b9b9b642cd27	, superada
+# , closed
+a769fcab8a811081	, cerrado
+# , prizes %d and %d
+5d97253c7e4cb205	, premios %d y %d
+# Level: %s
+b68d1cd63be685c7	Dificultad: %s
+# Entrants: %d
+43266d9bc674949d	Participantes: %d
+# Completed: %d percent
+35613091158e76d8	Completado: %d por ciento
+# Watch the ending
+3b07e2f05385d962	Ver el final
+# , new
+e63bab3ddfead73d	, nueva
+# , %d of %d episodes cleared
+f2ade074ff228c94	, %d de %d episodios superados
+# Episode %d
+99f2e0a0f6175417	Episodio %d
+# , new|episode
+6d91f169cd9a36dc	, nuevo
+# , cleared|episode
+43a534c3ce122b36	, superado
+# Class %d
+f43a3f58b73e4074	Clase %d
+# , %d of %d lessons cleared
+9fcffb6b7404f24f	, %d de %d lecciones superadas
+# Lesson %d
+c5fb64b14a46a192	Lección %d
+# Course %d
+56b265b5cff48c69	Recorrido %d
+# %s: X to start, triangle to go back
+fcdbe6082eb0819e	%s: X para empezar, triángulo para volver
+# . Best: %d opponents beaten, time %d:%02d:%02d, score %d
+574c18d6cdf3ea62	. Récord: %d rivales derrotados, tiempo %d:%02d:%02d, puntaje %d
+# Rank %d: no record
+42c1e6985680cb86	Puesto %d: sin registro
+# Rank %d: %d points%s
+6835ac890f04251e	Puesto %d: %d puntos%s
+# , cleared|ranking
+e5f47d61d9767a6d	, completado
+# %sPage %d of %d
+a9b33ba36905cf01	%sPágina %d de %d
+# Character %d
+fd9aec8c72541291	Personaje %d
+# nobody
+1d3b7e9137dffe1e	nadie
+#  (player %d)
+761113ab81f500a8	 (jugador %d)
+# %s wins
+76693856f4931e48	Gana %s
+# Round %d: 
+44cde10ed7e7e0b2	Ronda %d: 
+# %s versus %s. X to go on
+bf07f9dc8bc02827	%s contra %s. X para seguir
+# , row %d of %d
+c8a4d9ecdb00d276	, fila %d de %d
+# No items
+a70d23a470af74da	Sin objetos
+# Item set %d
+136b9006844280c7	Juego de objetos %d
+# Item panel
+c0593df42382b810	Panel de objetos
+# Costume %d
+a7028809b2e475a2	Traje %d
+# Ready
+9c13a2548d254014	Listo
+# Player %d: %s
+23f6f4167aa617c3	Jugador %d: %s
+# Random|song
+abd7f8391541aef3	Aleatoria
+# Locked|song
+5010c586c500b2cc	Bloqueada
+# Stage and music
+ba7d1aaee7d3d163	Escenario y música
+# Music: %s
+da4aed893437c916	Música: %s
+# Character select
+c1733128deb8fab8	Selección de personajes
+# Entrant %d of %d: %s
+3e1ea9cda45a5b1e	Participante %d de %d: %s
+# Confirm the team
+689fb7e4f7adff2d	Confirmar el equipo
+# Member %d: 
+5f2e1e7562d63eba	Miembro %d: 
+# Member %d: empty
+ab3bbe2da8d301ef	Miembro %d: vacío
+# Team ready
+b09ed0af0daa4313	Equipo listo
+# . Team DP: %d of %d
+2d60fcb95f7f8b13	. DP del equipo: %d de %d
+# Member %d: %s
+7920481d4b1557ba	Miembro %d: %s
+# Team %d: %s
+a22c88acde1dfb4f	Equipo %d: %s
+# Team select
+f71c8bdfa698487c	Selección de equipos
+# Save replay data
+ae9388c15429fb55	Guardar datos de repetición
+# View replay data
+dfb4752b6325b8c5	Ver datos de repetición
+# Replay %d of %d: 
+2ec14ac94d52e1cb	Repetición %d de %d: 
+# empty
+904fefb3d01cb2ae	vacía
+#  versus 
+e2a557ed91ba66a7	 contra 
+# Character reference
+7489deed7e1b9f8d	Referencia de personajes
+# %sX plays a line, triangle goes back
+efc01e70f86cac66	%sX reproduce una frase, triángulo vuelve
+# Costume %d. X shows the model
+8fde59311a756e8c	Traje %d. X muestra el modelo
+# Model shown. Triangle goes back
+80d94efed1c0d360	Modelo en pantalla. Triángulo vuelve
+# Item shop
+b3712dcd4b15c8ee	Tienda de objetos
+# . Money: %d zeni. Collection: %d of %d, %d percent
+c6a2e70147f00399	. Dinero: %d zeni. Colección: %d de %d, %d por ciento
+# Tab %d of %d%s. 
+07002e4e059937d9	Pestaña %d de %d%s. 
+# , all
+6487493d96841708	, todos
+# Not owned
+11be46552c22e797	No obtenido
+# Item %d
+de5e2e2723bc7063	Objeto %d
+# %s, owned
+84ab42d5e3d52796	%s, ya lo tienes
+# %s, %d zeni
+c82d80095f275878	%s, %d zeni
+# Buy %s for %d zeni? You have %d. 
+5d4e05ec12b977f0	¿Comprar %s por %d zeni? Tienes %d. 
+# Bought %s. %d zeni left. X to go on
+5acf97467b7dd114	Compraste %s. Te quedan %d zeni. X para seguir
+# : 1P %s, 2P %s
+e5bdf85006acf000	: jugador 1 %s, jugador 2 %s
+# Duel|screen
+57073441b53ba5f1	Menú versus
+# %dP: %s
+12f0a0c827d1c036	Jugador %d: %s
+# %s, %d of 9
+c6f823748b71d23a	%s, %d de 9
+# Effects
+d004bbafa47097e5	Efectos
+# Music
+9ca372a6096ddd54	Música
+# Player %d
+484012a7c7abc741	Jugador %d
+# Player %d, vibration: %s
+39595d2ce369e98b	Jugador %d, vibración: %s
+# Volume change dropped, it was not kept with X
+217a0f05a31f3eb2	Cambio de volumen descartado, no se guardó con X
+# Volume. Left and right change it, X keeps it, triangle leaves and undoes what was not kept
+9b68e823db8baec2	Volumen. Izquierda y derecha cambian, X guarda, triángulo sale y deshace lo no guardado
+# Kept
+d5e577de736671b9	Guardado
+# Item %d|menu
+ea95648875dd6d42	Opción %d
+# Fight over
+40ab375948ddef79	Fin de la pelea
+# Pause
+061cc20e3432dead	Pausa
+# Player %d: health %s of %s bars, ki %s of %d, blast %d of %d
+51941966a23e3c69	Jugador %d: vida %s de %s barras, ki %s de %d, blast %d de %d
+# , max power
+4d3dc239edc30f60	, en máximo poder
+# , %d fighters still up
+dfd76cb726caaa09	, %d luchadores en pie
+# Close the game? Progress that was not saved is lost.
+0560a602fbaf05f4	¿Cerrar el juego? Se pierde el progreso que no se haya guardado.
+# Left and right choose, Enter confirms, Escape goes back to the game
+22301f9513285cb5	Izquierda y derecha eligen, Intro confirma, Escape vuelve al juego
+# Back to the game
+6376cd42a8789562	De vuelta al juego

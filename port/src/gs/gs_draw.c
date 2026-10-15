@@ -24,6 +24,7 @@
 #include "gs_draw.h"
 #include "ui.h"         /* PortVideo and the window helpers */
 #include "gs_texpack.h" /* texture packs (replacement textures) */
+#include "menu_text.h"  /* editable labels in the original menu texture slots */
 #include <math.h>
 
 /* Stage-name overlay: defined here (C) so both the renderer (gs_gpu.c) and the game's menu (menu_c_e.c) can
@@ -40,21 +41,16 @@ volatile int gUiSongLit; /* the added song's name is the one of the open music l
 extern int Port_Setting(const char *name, int def); /* plat_settings.c: the saved settings */
 extern void Port_SettingSave(const char *name, int value);
 extern int Port_IsWide(void);   /* plat_stub.c */
+extern unsigned long long Port_BlankNs(void); /* plat_stub.c: 16.68 ms, less in an online session at 120% */
 extern int Port_AspectMilli(void);
 extern void Port_SetAspectMilli(int milli), Port_AudioRefresh(void), Port_SettingsWrite(void);
 extern int gPortMenuMode;       /* headless.c: the menus are running */
-extern int gPortMusicPercent, gPortSePercent;
+extern int Port_PageAspectMilli(void); /* plat_stub.c: the shape of the page shown now (4:3 in the menus if asked for) */
+extern int gPortMusicPercent, gPortSePercent, gPortVoicePercent, gPortStagePercent;
 
 static GsBackend *sBackend;
 static int sSmooth2d = 1; /* the setting "2D filtering" (smooth_2d; BT3_2D_SMOOTH=0/1 wins): 1 smooth */
 static int sWholeFrame; /* the draw being set up shows a frame the game read back (the cross-fade) */
-
-#ifdef __ANDROID__
-/* "Screen": the picture takes the shape of the device's own screen (the launcher's "Tela"; saved as aspect_milli 0). */
-static int sAspectAuto;
-#else
-#define sAspectAuto 0
-#endif
 
 /* The one window both back ends share: shape (aspect), full screen and display are the renderer's, not a
    back end's, so the settings window and F11 work the same whichever back end is running. */
@@ -73,9 +69,8 @@ static int sFullscreen;
 static float sWantAspect;
 static int sDisplaySetting;
 
-int gsScale4 = 8;
-int gsTargetW = GS_W, gsTargetH = GS_H; /* the back end's render targets in GS pixels (the Vulkan one: 512) */
-int gsPendingScale4;
+int gsScale = 2;
+int gsPendingScale;
 GsTex gsWhite;
 GsDraw *gsDraws;
 uint32_t gsDrawCount;
@@ -90,27 +85,24 @@ uint32_t gsVuUniCount;
 GsTarget gsTargets[MAX_TARGETS];
 int gsTargetCount;
 int gsTexCount;
-extern int gGsNoBcTextures; /* gs_gl.c: the OpenGL ES renderer without DXT textures */
-/* How many decoded textures are kept. When full, all not used for two seconds go in one sweep. The game keeps
-   rewriting its texture memory, so in a fight the count climbs by hundreds every few seconds: on Android a smaller
-   cache keeps the GPU memory lower (phones share it with everything else) and each sweep shorter (a sweep of
-   thousands of textures in one frame is a stutter). With a texture pack on, the whole cache, as before. */
-#ifdef __ANDROID__
-#define TEX_CAP (sTexPackOn && TexPack_Count() != 0 ? MAX_TEX : 3072) /* (a pack's textures come from storage: kept longer) */
-#else
-#define TEX_CAP MAX_TEX
-#endif
-/* and how much GPU memory they may take: a texture pack's replacements can be megabytes each */
-#ifdef __ANDROID__
-#define TEX_BYTES_CAP (768ull << 20)
-#else
-#define TEX_BYTES_CAP (6ull << 30)
-#endif
 unsigned gsFxOff;
 int gsGlowPercent = GLOW_DEFAULT;
-int gsFilter;
 static int sTexPackOn = 1; /* the setting: use the texture pack (if one was found) */
 int gsAnchor;
+/* A fight's HUD in a picture wider than 4:3 (setting hud_layout, BT3_HUD=<n> for a test):
+     0  the side panels at the screen's edges (as since widescreen)
+     1  the same, with the health bars drawn longer, up to the timer (hud_b.c, pull request #28)
+     2  everything about the middle of the screen: the 4:3 layout as it is, with the scene wider around it */
+static int sHudLayout;
+static unsigned sHudFrame;
+static int sHudSeen;
+/* 1 = the HUD's side panels were drawn within the last few frames (a few: frames left out by frame skipping). */
+int GsDraw_HudShown(void) {
+    return sHudSeen && gGsFrame - sHudFrame <= 6;
+}
+int Port_HudLayout(void) {
+    return sHudLayout;
+}
 int gsDepthByteIsFog;
 unsigned gsNative;
 unsigned gsSkipped;
@@ -130,12 +122,10 @@ typedef struct Tex {
     uint32_t gen;
     GsTex tex;
     unsigned last; /* frame last used */
-    int replaced;  /* from a texture pack: several times the size, so always filtered (texture_get) */
+    int replaced;  /* 1: texture pack, 2: vector menu labels, 3: packed shared glyphs */
     uint32_t ow, oh, rw, rh; /* then: the original's size and the replacement's */
     uint32_t amax;           /* and the largest alpha byte of the original */
-    uint32_t bytes;          /* its size in GPU memory (about: the levels' pixels) */
 } Tex;
-static uint64_t sTexBytes; /* the cache's textures' sizes, together */
 static Tex sTex[MAX_TEX];
 static uint16_t sTexBucket[TEX_BUCKETS]; /* index + 1 of a cache entry, 0 = empty (open addressing) */
 static Tex *sLast; /* the entry the previous lookup returned */
@@ -170,6 +160,178 @@ static uint32_t clut_hash(uint32_t cbp, uint32_t cpsm, uint32_t count) {
     return h;
 }
 
+/* Tenkaichi Budokai Online: its pictures (include/menu/tbo_art.h). The game draws one as a sprite whose TEX0 has the
+   reserved format TBO_PSM and the picture's number in CBP (src/menu/port_tbo.c); it is read from tbo/ui/<name>.png
+   next to the program the first time and kept, at the PNG's own size, so it is drawn at full resolution and in the
+   game's own order. */
+#include "../../../include/menu/tbo_art.h"
+#define TBO_NAME(id, name) name,
+static const char *const kTboNames[TBO_ART_COUNT] = {TBO_ART_LIST(TBO_NAME)};
+#undef TBO_NAME
+static GsTex sTboTex[TBO_ART_COUNT];
+static unsigned char sTboMissing[TBO_ART_COUNT]; /* not found or not readable: not looked for again */
+
+/* Makes a texture of RGBA pixels (the GS's alpha) with its smaller copies, each half the one before, averaged by
+   2 x 2: these pictures are mostly shown smaller than they are (letters, the crest), and one sample of the full
+   picture per pixel shimmers. Takes `px`; 0 if no texture could be had. */
+static GsTex tbo_upload(uint32_t *px, uint32_t w, uint32_t h) {
+    uint32_t *lv[12];
+    uint32_t lw[12], lh[12], x, y;
+    int levels = 1, k;
+    GsTex tex;
+
+    lv[0] = px;
+    lw[0] = w;
+    lh[0] = h;
+    while (px != NULL && levels < 12 && (lw[levels - 1] > 1 || lh[levels - 1] > 1)) {
+        uint32_t pw = lw[levels - 1], ph = lh[levels - 1], nw = pw > 1 ? pw / 2 : 1, nh = ph > 1 ? ph / 2 : 1;
+        uint32_t *src = lv[levels - 1], *dst = malloc((size_t)nw * nh * 4);
+        if (dst == NULL) {
+            break;
+        }
+        for (y = 0; y < nh; y++) {
+            for (x = 0; x < nw; x++) {
+                uint32_t x0 = x * 2 < pw ? x * 2 : pw - 1, x1 = x * 2 + 1 < pw ? x * 2 + 1 : pw - 1;
+                uint32_t y0 = y * 2 < ph ? y * 2 : ph - 1, y1 = y * 2 + 1 < ph ? y * 2 + 1 : ph - 1;
+                uint32_t c[4] = {src[y0 * pw + x0], src[y0 * pw + x1], src[y1 * pw + x0], src[y1 * pw + x1]}, out = 0, ch;
+                uint32_t aw = 0;
+                for (k = 0; k < 4; k++) {
+                    aw += c[k] >> 24;
+                }
+                for (ch = 0; ch < 24; ch += 8) { /* colour weighted by alpha: no dark rims round what is cut out */
+                    uint32_t sum = 0;
+                    for (k = 0; k < 4; k++) {
+                        sum += ((c[k] >> ch) & 0xFF) * ((c[k] >> 24) + (aw == 0 ? 1 : 0));
+                    }
+                    out |= (aw != 0 ? sum / aw : sum / 4) << ch;
+                }
+                dst[y * nw + x] = out | ((aw + 2) / 4) << 24;
+            }
+        }
+        lv[levels] = dst;
+        lw[levels] = nw;
+        lh[levels] = nh;
+        levels++;
+    }
+    if (px != NULL && sBackend->texSlotsLeft() < levels) {
+        for (k = 1; k < levels; k++) {
+            free(lv[k]);
+        }
+        levels = 1;
+    }
+    tex = px != NULL ? sBackend->texCreate(w, h, GS_TEXFMT_RGBA8, levels) : 0;
+    if (tex == 0) {
+        for (k = 0; k < levels; k++) {
+            free(lv[k]);
+        }
+        return 0;
+    }
+    for (k = 0; k < levels; k++) {
+        sBackend->texUpload(tex, k, lw[k], lh[k], GS_TEXFMT_RGBA8, lv[k], lw[k] * lh[k] * 4);
+    }
+    return tex;
+}
+
+/* The lines of letters (gs/tbo_text.c): each place's texture and what it shows; a texture drawn in this frame is
+   kept until the next (the line changed under it: the old one is shown once more). */
+extern uint32_t TboText_Version(uint32_t id);
+extern uint32_t *TboText_Pixels(uint32_t id, uint32_t *version, uint32_t *w, uint32_t *h);
+static struct {
+    GsTex tex;
+    uint32_t version, frame;
+} sTboText[TBO_TEXT_SLOTS];
+
+static GsTex tbo_text_texture(uint32_t id) {
+    uint32_t slot = id - TBO_TEXT_BASE, version = TboText_Version(id), w, h, *px;
+    GsTex tex;
+
+    if (sTboText[slot].tex != 0 && (sTboText[slot].version == version || sTboText[slot].frame == gGsFrame)) {
+        sTboText[slot].frame = gGsFrame;
+        return sTboText[slot].tex;
+    }
+    if (sBackend->texSlotsLeft() <= 0) {
+        return sTboText[slot].tex != 0 ? sTboText[slot].tex : gsWhite;
+    }
+    px = TboText_Pixels(id, &version, &w, &h);
+    tex = px != NULL ? tbo_upload(px, w, h) : 0;
+    if (tex == 0) {
+        return sTboText[slot].tex != 0 ? sTboText[slot].tex : gsWhite;
+    }
+    if (sTboText[slot].tex != 0) {
+        sBackend->texDestroy(sTboText[slot].tex);
+    }
+    sTboText[slot].tex = tex;
+    sTboText[slot].version = version;
+    sTboText[slot].frame = gGsFrame;
+    return tex;
+}
+
+static GsTex tbo_texture(uint32_t id) {
+    char path[1024];
+    SDL_Surface *png, *rgba;
+    uint32_t *px, w, h, x, y;
+    GsTex tex;
+    const char *base;
+
+    if (id >= TBO_TEXT_BASE && id < TBO_TEXT_BASE + TBO_TEXT_SLOTS) {
+        return tbo_text_texture(id);
+    }
+    if (id >= TBO_ART_COUNT || sTboMissing[id]) {
+        return gsWhite;
+    }
+    if (sTboTex[id] != 0) {
+        return sTboTex[id];
+    }
+    if (sBackend->texSlotsLeft() <= 0) {
+        return gsWhite; /* (no room this frame: the next one tries again) */
+    }
+    base = SDL_GetBasePath();
+    snprintf(path, sizeof(path), "%stbo/ui/%s.png", base != NULL ? base : "", kTboNames[id]);
+    png = SDL_LoadPNG(path);
+    if (png == NULL) {
+        snprintf(path, sizeof(path), "tbo/ui/%s.png", kTboNames[id]);
+        png = SDL_LoadPNG(path);
+    }
+    if (png == NULL) { /* a source checkout: the pictures where they are kept (port/tbo/ui) */
+        snprintf(path, sizeof(path), "port/tbo/ui/%s.png", kTboNames[id]);
+        png = SDL_LoadPNG(path);
+    }
+    rgba = png != NULL ? SDL_ConvertSurface(png, SDL_PIXELFORMAT_RGBA32) : NULL;
+    if (png != NULL) {
+        SDL_DestroySurface(png);
+    }
+    if (rgba == NULL) {
+        fprintf(stderr, "bt3: tbo: cannot read %s\n", path);
+        sTboMissing[id] = 1;
+        return gsWhite;
+    }
+    w = (uint32_t)rgba->w;
+    h = (uint32_t)rgba->h;
+    px = malloc((size_t)w * h * 4);
+    for (y = 0; px != NULL && y < h; y++) {
+        const uint8_t *row = (const uint8_t *)rgba->pixels + (size_t)y * rgba->pitch;
+        for (x = 0; x < w; x++) {
+            const uint8_t *c = row + x * 4;
+            uint32_t a = ((uint32_t)c[3] * 128 + 127) / 255; /* the GS's alpha: 0x80 is opaque */
+            px[y * w + x] = (uint32_t)c[0] | ((uint32_t)c[1] << 8) | ((uint32_t)c[2] << 16) | (a << 24);
+            /* the window: its inside is bands of two teals, which fall anywhere under the lines at the sizes it is
+               drawn (src/menu/port_tbo.c, Tb_Panel). Every teal pixel is the darker one; the frame (grey, nearly
+               black) is not teal and stays, its round corners with it. */
+            if (id == TBO_KIT_WINDOW && c[3] == 255 && c[0] < 60 && c[1] >= 60 && c[1] <= 125 && c[2] + 10 >= c[1] && c[2] <= c[1] + 15) {
+                px[y * w + x] = 27u | (86u << 8) | (92u << 16) | (a << 24);
+            }
+        }
+    }
+    SDL_DestroySurface(rgba);
+    tex = tbo_upload(px, w, h);
+    if (tex == 0) {
+        return gsWhite;
+    }
+    sTboTex[id] = tex;
+    fprintf(stderr, "bt3: tbo: %s (%ux%u)\n", kTboNames[id], (unsigned)w, (unsigned)h);
+    return tex;
+}
+
 /* GS memory -> an RGBA texture for the current TEX0 (alpha as stored: 0x80 is opaque). The back end makes
    the texture and takes the decoded pixels (freed after it has uploaded them). */
 static GsTex texture_get(int ctx) {
@@ -180,12 +342,12 @@ static GsTex texture_get(int ctx) {
     Tex *t;
     uint64_t tex_t0;
     TexPackImage pack;
-    uint64_t texBytes = 0;
     uint32_t packMaxAlpha = 255, rw = tw, rh = th;
-    int packFormat = GS_TEXFMT_RGBA8, replaced = 0;
+    int packFormat = GS_TEXFMT_RGBA8, replaced = 0, menuText = 0, sharedText = 0;
 
     if (tw > 1024) { tw = 1024; }
     if (th > 1024) { th = 1024; }
+    rw = tw; rh = th;
     pages = ((tbw ? tbw : 1) * 64 * th * (bits == 24 ? 32 : bits) / 8 + 8191) / 8192;
     /* `gen` identifies the CONTENT: a hash over the pages the texture and its palette occupy */
     for (i = 0; i <= pages; i++) {
@@ -194,6 +356,9 @@ static GsTex texture_get(int ctx) {
     if (bits <= 8) {
         gen = (gen ^ clut_hash(cbp, cpsm, bits == 8 ? 256 : 16)) * 16777619u;
     }
+    /* a font instead of the game's lettering (menu_text.c): the labels and glyph sheets it draws follow the font
+       and the resolution. Nothing is added with both settings on "Original". */
+    gen ^= MenuText_TexKey((int)tw, (int)th, bits <= 8, (int)tbp, (int)cbp, MenuText_RasterScale(SCALE));
     if (sTexPackOn && TexPack_Count() != 0) {
         gen ^= 0x5BD1E995u; /* with the pack and without it are different textures: switching it takes effect at once */
     }
@@ -216,18 +381,16 @@ static GsTex texture_get(int ctx) {
     if (sBackend->texSlotsLeft() <= 0) {
         return gsWhite;
     }
-    if (gsTexCount >= TEX_CAP || sTexBytes > TEX_BYTES_CAP) {
-        /* full (by count, or by size: a texture pack's replacements are large): drop everything not used for two
-           seconds (or, failing that, not used this frame) in one sweep */
+    if (gsTexCount == MAX_TEX) {
+        /* full: drop everything not used for two seconds (or, failing that, not used this frame) in one sweep */
         unsigned keep = gGsFrame > 120 ? gGsFrame - 120 : 0;
         int pass, n;
-        for (pass = 0; pass < 2 && (gsTexCount >= TEX_CAP || sTexBytes > TEX_BYTES_CAP); pass++, keep = gGsFrame) {
+        for (pass = 0; pass < 2 && gsTexCount == MAX_TEX; pass++, keep = gGsFrame) {
             for (n = 0, i = 0; i < (uint32_t)gsTexCount; i++) {
                 if (sTex[i].last >= keep) {
                     sTex[n++] = sTex[i];
                 } else {
                     sBackend->texDestroy(sTex[i].tex);
-                    sTexBytes -= sTex[i].bytes;
                 }
             }
             gsTexCount = n;
@@ -241,7 +404,7 @@ static GsTex texture_get(int ctx) {
             }
             sTexBucket[h] = (uint16_t)(i + 1);
         }
-        if (gsTexCount >= TEX_CAP) {
+        if (gsTexCount == MAX_TEX) {
             return gsWhite; /* this one frame uses more textures than the cache holds */
         }
     }
@@ -251,23 +414,7 @@ static GsTex texture_get(int ctx) {
         const char *path = TexPack_Lookup(tbp, tbw, psm, tw, th, (uint32_t)((t0 >> 34) & 1), cbp, cpsm, &packMaxAlpha);
         if (path != NULL && TexPack_Load(path, &pack)) {
             packFormat = pack.format & 3;
-            if (packFormat != GS_TEXFMT_RGBA8 && gGsNoBcTextures) {
-                /* A GPU without DXT (phones): the .dds replacement is unpacked to RGBA here, once per load, with its
-                   levels above 2048 pixels left out on Android (memory); failing that the game's own texture is shown */
-#ifdef __ANDROID__
-                const uint32_t maxSide = 2048;
-#else
-                const uint32_t maxSide = 16384;
-#endif
-                if (TexPack_Decompress(&pack, maxSide)) {
-                    packFormat = GS_TEXFMT_RGBA8;
-                } else {
-                    TexPack_Free(&pack);
-                }
-            }
-            if (pack.file == NULL) {
-                /* (left out above) */
-            } else if (sBackend->texSlotsLeft() >= pack.levels) {
+            if (sBackend->texSlotsLeft() >= pack.levels) {
                 replaced = 1;
                 gGpuTexReplaced++;
                 rw = pack.w;
@@ -294,9 +441,27 @@ static GsTex texture_get(int ctx) {
             px[y * tw + x] = c;
         }
     }
+    if (!replaced && px != NULL) {
+        int mw, mh;
+        uint64_t font_t0 = gpu_now();
+        int textScale = MenuText_RasterScale(SCALE);
+        uint8_t *text = MenuText_RenderGlyphs((uint8_t *)px, (int)tw, (int)th, (int)tbp, (int)cbp, textScale, &mw, &mh);
+        sharedText = text != NULL;
+        if (text == NULL) { text = MenuText_Render((uint8_t *)px, (int)tw, (int)th, bits <= 8, textScale, &mw, &mh); }
+        if (text != NULL) {
+            free(px);
+            px = (uint32_t *)text;
+            rw = (uint32_t)mw; rh = (uint32_t)mh;
+            menuText = 1;
+        }
+        if (getenv("BT3_FONT_LOG") != NULL) { /* what a font setting costs: every decoded texture, and the time the text took */
+            fprintf(stderr, "font: frame %u: %ux%u %s %.3f ms\n", gGsFrame, (unsigned)tw, (unsigned)th, text != NULL ? "drawn" : "left",
+                    (double)(gpu_now() - font_t0) / 1e6);
+        }
+    }
     gGpuTexNs += gpu_now() - tex_t0;
     t = &sTex[gsTexCount];
-    t->tex = replaced ? sBackend->texCreate(rw, rh, packFormat, pack.levels) : sBackend->texCreate(tw, th, GS_TEXFMT_RGBA8, 1);
+    t->tex = replaced ? sBackend->texCreate(rw, rh, packFormat, pack.levels) : sBackend->texCreate(rw, rh, GS_TEXFMT_RGBA8, 1);
     if (t->tex == 0) {
         free(px);
         if (replaced) {
@@ -310,23 +475,22 @@ static GsTex texture_get(int ctx) {
             uint32_t lw = pack.w >> level ? pack.w >> level : 1, lh = pack.h >> level ? pack.h >> level : 1;
             void *buf = malloc(pack.bytes[level]);
             memcpy(buf, pack.data[level], pack.bytes[level]);
-            texBytes += pack.bytes[level];
             sBackend->texUpload(t->tex, level, lw, lh, packFormat, buf, pack.bytes[level]);
         }
         TexPack_Free(&pack);
     } else {
-        sBackend->texUpload(t->tex, 0, tw, th, GS_TEXFMT_RGBA8, px, tw * th * 4);
         if (getenv("BT3_TEX_DUMP") != NULL) { /* every texture as it is decoded, raw RGBA with a small header (looking at the game's art) */
             static unsigned n;
             char name[600];
             FILE *df;
-            snprintf(name, sizeof(name), "%s/tex_%05u_f%06u_%ux%u.rgba", getenv("BT3_TEX_DUMP"), n++, gGsFrame, (unsigned)tw, (unsigned)th);
+            snprintf(name, sizeof(name), "%s/tex_%05u_f%06u_%ux%u.rgba", getenv("BT3_TEX_DUMP"), n++, gGsFrame, (unsigned)rw, (unsigned)rh);
             df = fopen(name, "wb");
             if (df != NULL) {
-                fwrite(px, 1, (size_t)tw * th * 4, df);
+                fwrite(px, 1, (size_t)rw * rh * 4, df);
                 fclose(df);
             }
         }
+        sBackend->texUpload(t->tex, 0, rw, rh, GS_TEXFMT_RGBA8, px, rw * rh * 4);
     }
     gsTexCount++;
     {
@@ -337,20 +501,18 @@ static GsTex texture_get(int ctx) {
         sTexBucket[h] = (uint16_t)gsTexCount;
     }
     gGpuNewTex++;
-    gGpuNewTexPixels += tw * th;
+    gGpuNewTexPixels += rw * rh;
     sLast = t;
     t->tex0 = t0;
     t->texa = texa;
     t->gen = gen;
     t->last = gGsFrame;
-    t->replaced = replaced;
+    t->replaced = replaced ? 1 : sharedText ? 3 : menuText ? 2 : 0;
     t->ow = tw;
     t->oh = th;
     t->rw = rw;
     t->rh = rh;
     t->amax = replaced ? packMaxAlpha : 255u;
-    t->bytes = replaced ? (uint32_t)(texBytes < 0xFFFFFFFFu ? texBytes : 0xFFFFFFFFu) : tw * th * 4;
-    sTexBytes += t->bytes;
     return t->tex;
 }
 
@@ -416,9 +578,8 @@ static uint32_t blend_key(uint64_t alpha, int abe) {
    one pipeline per key, so this is pure GS state -> an index):
    bits 0..8 blend, 10..11 depth test, 12 depth write, 13..14 topology, 16..19 colour write mask,
    20..21 vertices: 0 GS vertices, 1 program 0, 2 program 4, 3 program 6, 22 full-screen table pass,
-   23 the draw never discards a pixel (no alpha test, no destination alpha test): the fragment shader without
-   `discard`, which lets tile-based GPUs (Mali, Adreno) drop hidden pixels before shading them. */
-static int pipeline_get(int ctx, int topo, int vu, int nodiscard) {
+   23 the fragment shader without its own depth output, 24 flat-shadow stencil mask. */
+static int pipeline_get(int ctx, int topo, int vu, int shadow) {
     uint64_t test = gGs.test[ctx], zb = gGs.zbuf[ctx];
     int zte = (test >> 16) & 1, ztst = (test >> 17) & 3, zwrite = !((zb >> 32) & 1);
     uint32_t bkey, key, wmask, m = (uint32_t)(gGs.frame[ctx] >> 32);
@@ -432,11 +593,41 @@ static int pipeline_get(int ctx, int topo, int vu, int nodiscard) {
     wmask = ((m & 0xFF) != 0xFF ? GS_CC_R : 0) | ((m & 0xFF00) != 0xFF00 ? GS_CC_G : 0) |
             ((m & 0xFF0000) != 0xFF0000 ? GS_CC_B : 0) | ((m & 0xFF000000u) != 0xFF000000u ? GS_CC_A : 0);
     key = bkey | (uint32_t)ztst << 10 | (uint32_t)zwrite << 12 | (uint32_t)topo << 13 | wmask << 16 | (uint32_t)vu << 20 |
-          (nodiscard ? 1u << 23 : 0);
+          (uint32_t)shadow << 24;
+    {   /* Bit 23: the fragment shader without its own depth output (gsnz.frag; see the end of gs.frag for why
+           writing depth in the shader costs). Taken where it changes nothing: a draw that does not write depth
+           and tests with "greater or equal" (or not at all). What is in the depth buffer was written through
+           the other shader, so it is whole numbers; and z >= N is the same as floor(z) >= N for a whole N.
+           ("Greater" is not the same: N + 0.5 > N but floor(N + 0.5) > N is not. Those keep the full shader, and
+           so does everything that writes depth.) Measured on an integrated chip at 2x in a fight: 112 pictures a
+           second before the depth output existed (0.1.24), 82 with it on every draw (0.1.25 to 0.1.30), and
+           with this rule see docs/port/README.md. BT3_NZ=0: every draw with the full shader again (to compare). */
+        static int nz = -1;
+        if (nz < 0) { nz = getenv("BT3_NZ") != NULL ? atoi(getenv("BT3_NZ")) : 1; }
+        if (nz && !zwrite && ztst != 3 && vu != 4) {
+            key |= 1u << 23;
+        }
+    }
     if (vu == 4) { /* asked for by depth_clut: the table pass, which only depends on blending and the write mask */
         key = bkey | wmask << 16 | 1u << 22;
     }
-    return sBackend->pipeGet(key);
+    {
+        /* The back end finds a pipeline by going through all it has made (some hundreds) and is asked once for
+           every primitive: 6% of a fight frame's processor time in a profile. The answer is remembered here by
+           key. A pipeline keeps its number for the whole run (they are only ever added), so nothing goes stale. */
+        static struct { uint32_t key; int idx; } cache[4096]; /* idx + 1; 0 = empty */
+        uint32_t h = (key * 2654435761u) >> 20;
+        int i;
+        if (cache[h].idx != 0 && cache[h].key == key) {
+            return cache[h].idx - 1;
+        }
+        i = sBackend->pipeGet(key);
+        if (i >= 0) {
+            cache[h].key = key;
+            cache[h].idx = i + 1;
+        }
+        return i;
+    }
 }
 
 /* The shared target table's entry for a frame-buffer address. The attachments are the back end's: a new
@@ -481,7 +672,7 @@ int GsDraw_TargetGet(uint32_t fbp, int create) {
     return slot;
 }
 
-static int pipeline_get(int ctx, int topo, int vu, int nodiscard);
+static int pipeline_get(int ctx, int topo, int vu, int shadow);
 
 /* GfxPost_DrawDepthClut as one full-screen pass (the game sends 16 strips; they become one draw). */
 static void depth_clut(int ctx) {
@@ -580,7 +771,7 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
         /* (Not the cross-fade of a fight's scenes: the frame the game read back is uploaded over the depth page as a
            24-bit picture and drawn from there over the new shot, stg_b.c ScrXfade_Draw. That is a picture like any
            other, taken from GS memory; the passes dropped here read the page as depth or as one of its bytes.) */
-        if (tme && !(tpsm == 1 && sprite && tbp / 32 == zbp) &&
+        if (tme && tpsm != TBO_PSM && !(tpsm == 1 && sprite && tbp / 32 == zbp) &&
             ((tpsm & 0x30) == 0x30 || tbp / 32 == zbp || tpsm == 0x1B || tpsm == 0x24 || tpsm == 0x2C)) {
             int t = GsDraw_TargetGet(fbp, 0);
             if (t >= 0 && fbp != (uint32_t)gGsMainFbp) {
@@ -599,7 +790,9 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
     if (!tme && sprite) {
         gsTargets[d->target].stale = 0; /* cleared by the game: what is drawn into it from here on is real */
     }
-    if (tme) {
+    if (tme && ((t0 >> 20) & 0x3F) == TBO_PSM) {
+        d->tex = tbo_texture((uint32_t)((t0 >> 37) & 0x3FFF)); /* a Tenkaichi Budokai Online picture (above texture_get) */
+    } else if (tme) {
         int kept = 0;
         src = GsDraw_TargetGet((uint32_t)((t0 & 0x3FFF) / 32), 0);
         if (sWholeFrame) { /* the cross-fade's picture: the frame kept on the card (GsGpu_Snapshot), if there is one */
@@ -649,13 +842,13 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
                 float u0 = 0.0f, u1 = tw - 1.0f, v0 = 0.0f, v1 = th - 1.0f;
                 if (wms >= 2) { u0 = (float)((cl >> 4) & 0x3FF); u1 = (float)((cl >> 14) & 0x3FF); }
                 if (wmt >= 2) { v0 = (float)((cl >> 24) & 0x3FF); v1 = (float)((cl >> 34) & 0x3FF); }
-                d->rect[0] = (u0 + 0.5f) / (float)gsTargetW;
-                d->rect[1] = (v0 + 0.5f) / (float)gsTargetH;
-                d->rect[2] = (u1 + 0.5f) / (float)gsTargetW;
-                d->rect[3] = (v1 + 0.5f) / (float)gsTargetH;
+                d->rect[0] = (u0 + 0.5f) / (float)GS_W;
+                d->rect[1] = (v0 + 0.5f) / (float)GS_H;
+                d->rect[2] = (u1 + 0.5f) / (float)GS_W;
+                d->rect[3] = (v1 + 0.5f) / (float)GS_H;
             }
-            *us = tw / (float)gsTargetW;
-            *vs = th / (float)gsTargetH;
+            *us = tw / (float)GS_W;
+            *vs = th / (float)GS_H;
         } else {
             d->tex = texture_get(ctx);
         }
@@ -667,9 +860,10 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
     if (d->tex != 0 && sLast != NULL && sLast->tex == d->tex && sLast->replaced) {
         d->sampler |= 1 | 8; /* (GsGpu_Draw takes the 8 off again for 2D art) */
     }
+    d->pipeline = pipeline_get(ctx, topo, vu, 0);
     d->mode[0] = !tme ? 0 : d->tex_is_target ? 2 : 1; /* 2: a frame buffer as texture, its alpha is already rescaled */
     /* (BT3_TEX_ALPHA=0 switches the replacement's alpha treatment off, for telling which one a fault comes from) */
-    if (d->mode[0] == 1 && sLast != NULL && sLast->tex == d->tex && sLast->replaced &&
+    if (d->mode[0] == 1 && sLast != NULL && sLast->tex == d->tex && sLast->replaced == 1 &&
         !(getenv("BT3_TEX_ALPHA") != NULL && atoi(getenv("BT3_TEX_ALPHA")) == 0)) {
         d->mode[0] = 3; /* a texture pack's replacement: the alpha test allows for its filtered, compressed alpha (gs.frag) */
         d->orig[2] = (float)sLast->amax / 128.0f; /* its alpha is kept at or below the original's largest (1.0 = 0x80) */
@@ -680,14 +874,6 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
     d->misc[0] = (float)((test >> 4) & 0xFF);
     d->misc[1] = ((test >> 14) & 1) ? (float)(1 + (int)((test >> 15) & 1)) : 0.0f; /* DATE, DATM */
     d->misc[2] = (float)(gGs.fba[ctx] & 1);
-    {   /* alpha test off or "always", no destination alpha test: nothing this draw draws is ever discarded
-            (BT3_GPU_DISCARD=1: the shader with discard for every draw, as before) */
-        static int always = -1;
-        if (always < 0) {
-            always = getenv("BT3_GPU_DISCARD") != NULL;
-        }
-        d->pipeline = pipeline_get(ctx, topo, vu, !always && (d->mode[3] == 0 || d->mode[3] == 2) && d->misc[1] == 0.0f);
-    }
     d->blendc = (float)((gGs.alpha[ctx] >> 32) & 0xFF) / 128.0f;
     d->scissor[0] = (int)(sc & 0x7FF) * SCALE;
     d->scissor[1] = (int)((sc >> 32) & 0x7FF) * SCALE;
@@ -696,25 +882,84 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
     return 1;
 }
 
+#define GS_Z_LEAD 2.0 /* depth steps: see put() */
+/* BT3_DEPTH_FRAC=1: depth as before the whole-number rule (fractions kept, nothing rounded), to compare. */
+static int depth_frac(void) {
+    static int v = -1;
+    if (v < 0) { v = getenv("BT3_DEPTH_FRAC") != NULL; }
+    return v;
+}
+
+float gsZMax = 16777215.0f; /* the depth buffer's largest value, as the frame's draws had it (the fragment shader rounds with it) */
+
 static void put(const GsVertex *v, float x, float y, float s, float t, float q, uint8_t r, uint8_t g, uint8_t b, uint8_t a, float zmax) {
     Vtx *o = &gsVerts[gsVertCount++];
     o->x = x;
     o->y = y;
-    o->z = (float)((double)v->z / zmax);
-    /* A Z above the depth format's largest value (text and menus are sent at 0xFFFFFFFF with a 24-bit buffer)
-       lands past 1.0: a GPU with depth clamping clamps it, one without (Mali) clips the primitive away, and the
-       post-fight menu and the memory card messages lost their letters. Clamped here for every GPU. */
-    if (o->z > 1.0f) {
-        o->z = 1.0f;
-    }
+    /* The whole number plus a half (see gs.frag; the vertex programs do the same), and GS_Z_LEAD steps towards the
+       eye. What the game transforms itself and lays onto scenery of a vertex program (a waterfall on its rock) is
+       in front of it by less than a step: on the console both come out as the same whole number, or the fall's
+       one higher. Here the rock's number is computed by the GPU and can come out one higher than the console's,
+       this pixel and not that one, differently every picture while the camera moves: found by the user as the
+       fall blinking sideways in motion (the part it had been missing came and went). With the lead the fall
+       wins wherever the two are within those steps. (Not past the nearest depth there is.) */
+    o->z = (float)(((double)v->z + (depth_frac() ? 0.0 : 0.5 + ((double)v->z + GS_Z_LEAD < (double)zmax ? GS_Z_LEAD : 0.0))) / zmax);
+    gsZMax = depth_frac() ? 0.0f : zmax;
     o->r = r; o->g = g; o->b = b; o->a = a;
     o->s = s; o->t = t; o->q = q;
+}
+
+/* ---- the wall at the edge of the map, as the game hands it over (see interp_wall) ---- */
+typedef struct WallMesh {
+    const void *key;      /* the game's mesh (one per fighter and kind) */
+    int second, culled, nq;
+    float S[16], cam[3];  /* the view's world-to-screen matrix and camera position of the tick */
+    float v[24][16];      /* EftBoundVtx: position (4), -, s t (4), colour (4) */
+    int idx[15][4];
+} WallMesh;
+#define WALL_MAX 8
+/* The last patches handed over, oldest overwritten. Not "this tick's and the one before's": the game hands them
+   over while it builds its list, a vertical blank before that list is shown, so a tick's patches come in before
+   the previous tick's real picture is out. Which are a picture's is told by the view's matrix (interp_wall). */
+#define WALL_RING 32
+static WallMesh sWallRing[WALL_RING];
+static uint32_t sWallSeq; /* patches handed over so far */
+static uint64_t sWallTex0; /* TEX0 of the wall's texture: the triangles drawn with it are the wall's */
+static float sWallUs = 1.0f, sWallVs = 1.0f;
+extern int gsInterp;
+
+/* From the game (src/battle/eft_g.c, EftBound_DrawMesh / EftBound_DrawMeshCulled), each time it draws a wall mesh:
+   the 24 points before anything is cut off, the quads, the view's matrix. */
+void Port_WallMesh(const void *key, int second, int culled, const float *screen, const float *cam, const float *vtx, int quadCount,
+                   const void *quads, unsigned long long tex0) {
+    WallMesh *m;
+    int i;
+
+    if (GS_NO_PICTURE || gsInterp <= 0 || quadCount <= 0 || quadCount > 15) {
+        return;
+    }
+    if (getenv("BT3_INTERP_WALLLOG") != NULL && atoi(getenv("BT3_INTERP_WALLLOG")) > 2) {
+        extern unsigned gPortVBlanks;
+        fprintf(stderr, "wall: hook at frame %u blank %u: key %p second %d culled %d m0 %.4f (have %d)\n", gGsFrame, gPortVBlanks, key, second, culled, screen[0], (int)sWallSeq);
+    }
+    sWallTex0 = tex0;
+    m = &sWallRing[sWallSeq++ % WALL_RING];
+    m->key = key;
+    m->second = second != 0;
+    m->culled = culled;
+    m->nq = quadCount;
+    memcpy(m->S, screen, sizeof(m->S));
+    memcpy(m->cam, cam, sizeof(m->cam));
+    memcpy(m->v, vtx, sizeof(m->v));
+    for (i = 0; i < quadCount; i++) {
+        memcpy(m->idx[i], (const uint8_t *)quads + i * 0x20, sizeof(m->idx[i])); /* EftBoundQuad: four vertex numbers, a normal */
+    }
 }
 
 /* Two draws can be merged into one call when everything they need is the same. `scissor` is compared as
    four ints (the scissor a draw has recorded). */
 static int same_state(const GsDraw *a, const GsDraw *b) {
-    return !a->native && a->vu == b->vu && a->target == b->target && a->tex == b->tex && a->sampler == b->sampler && a->pipeline == b->pipeline &&
+    return !a->native && a->vu == b->vu && a->wall == b->wall && a->target == b->target && a->tex == b->tex && a->sampler == b->sampler && a->pipeline == b->pipeline &&
            memcmp(a->mode, b->mode, sizeof(a->mode)) == 0 && a->misc[0] == b->misc[0] && a->misc[1] == b->misc[1] &&
            a->misc[2] == b->misc[2] && a->misc[3] == b->misc[3] && a->blendc == b->blendc &&
            memcmp(a->rect, b->rect, sizeof(a->rect)) == 0 && memcmp(a->orig, b->orig, sizeof(a->orig)) == 0 &&
@@ -741,6 +986,69 @@ static void date_snapshot(const GsDraw *d) {
     }
 }
 
+/* The part of the buffer the draws after snapshot `k` (a native 5) read the copied alpha in: the box around the run
+   of alpha-testing draws that follows it, in the buffer's own pixels, a little wider. A back end copies only that.
+   (The whole buffer was copied each time: nine times a frame for a fight's HUD, whose pieces are small. On an
+   integrated graphics chip at 3x those copies were a quarter of the frame's time: 45 pictures a second with them,
+   62 without. Measured 2026-10-12.) A run with a draw whose place is worked out by a vertex program is not known
+   here: then the whole buffer, as before. Returns 0 when there is nothing to copy. */
+int GsDraw_DateRegion(uint32_t k, int *rx, int *ry, int *rw, int *rh) {
+    const GsDraw *c = &gsDraws[k];
+    float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
+    int W = GS_W * SCALE, H = GS_H * SCALE, ix0, iy0, ix1, iy1, whole = 0, any = 0;
+    uint32_t i, j;
+
+    for (i = k + 1; i < gsDrawCount; i++) {
+        const GsDraw *d = &gsDraws[i];
+        if (d->native || d->misc[1] == 0.0f || d->target != c->target) {
+            break;
+        }
+        any = 1;
+        if (d->vu || d->wall) {
+            whole = 1;
+            break;
+        }
+        for (j = 0; j < d->count; j++) {
+            const Vtx *v = &gsVerts[d->first + j];
+            if (!(v->x == v->x) || !(v->y == v->y)) { /* not a number: do not trust the box */
+                whole = 1;
+                break;
+            }
+            if (v->x < x0) { x0 = v->x; }
+            if (v->x > x1) { x1 = v->x; }
+            if (v->y < y0) { y0 = v->y; }
+            if (v->y > y1) { y1 = v->y; }
+        }
+    }
+    if (!any) {
+        return 0;
+    }
+    {
+        static int all = -1; /* BT3_DATE_WHOLE=1: the whole buffer every time, as it was (to compare pictures) */
+        if (all < 0) {
+            all = getenv("BT3_DATE_WHOLE") != NULL;
+        }
+        whole = whole || all;
+    }
+    if (whole || x1 < x0 || y1 < y0) {
+        *rx = 0, *ry = 0, *rw = W, *rh = H;
+        return 1;
+    }
+    x0 = (x0 - 2.0f) * (float)SCALE, y0 = (y0 - 2.0f) * (float)SCALE;
+    x1 = (x1 + 2.0f) * (float)SCALE, y1 = (y1 + 2.0f) * (float)SCALE;
+    ix0 = x0 < 0.0f ? 0 : x0 > (float)W ? W : (int)x0;
+    iy0 = y0 < 0.0f ? 0 : y0 > (float)H ? H : (int)y0;
+    ix1 = x1 < 0.0f ? 0 : x1 > (float)W ? W : (int)x1 + 1;
+    iy1 = y1 < 0.0f ? 0 : y1 > (float)H ? H : (int)y1 + 1;
+    if (ix1 > W) { ix1 = W; }
+    if (iy1 > H) { iy1 = H; }
+    if (ix1 <= ix0 || iy1 <= iy0) {
+        return 0; /* the run is off the buffer: nothing reads the copy */
+    }
+    *rx = ix0, *ry = iy0, *rw = ix1 - ix0, *rh = iy1 - iy0;
+    return 1;
+}
+
 /* Gs_StateBack (gs_core.c) moved every page's upload generation on by `delta`, so that nothing decoded from the
    pages in between is taken for them. The buffers the game draws into keep their standing: one that was drawn
    since the last upload over it still is. */
@@ -754,7 +1062,7 @@ void GsGpu_PagesMoved(uint32_t delta) {
 }
 
 void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
-    if (gPortResim) { /* a frame that is only being re-run: nothing is drawn */
+    if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
         return;
     }
     uint64_t prim = gGs.prim, t0 = gGs.tex0[ctx];
@@ -772,10 +1080,14 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
     if (!draw_state(ctx, type == 1 ? 1 : type == 0 ? 2 : 0, type == 6, 0, &d, &us, &vs)) {
         return;
     }
+    int tbo = (prim >> 4) & 1 && ((t0 >> 20) & 0x3F) == TBO_PSM; /* a Tenkaichi Budokai Online picture */
     if (type == 6 || fst) {
         d.sampler &= 7; /* 2D art: never the smaller copies of a replacement */
     }
-    if ((type == 6 || fst) && !d.tex_is_target) {
+    if (tbo) {
+        d.sampler |= 1 | 8; /* filtered, with its smaller copies, sampled per output pixel (not per GS pixel) */
+    }
+    if ((type == 6 || fst) && !d.tex_is_target && !tbo) {
         /* 2D art: sprites, and triangles with whole-texel coordinates (the logo, HUD pieces drawn as quads):
            texture coordinates per GS pixel (gs.frag). Not for a texture pack's replacement: that has several
            texels per GS pixel, and sampling it once per GS pixel would show it at the original's resolution. */
@@ -843,6 +1155,11 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
            its letters stepped one after the other while a piece glided (BT3_TEX_GRID=1: the grid rule, to compare). */
         d.orig[3] = getenv("BT3_TEX_GRID") != NULL && atoi(getenv("BT3_TEX_GRID")) != 0 ? 0.0f : 1.0f;
     }
+    if (type == 3 && sWallTex0 != 0 && t0 == sWallTex0) { /* the wall at the edge of the map (Port_WallMesh) */
+        d.wall = 1;
+        sWallUs = us;
+        sWallVs = vs;
+    }
     d.first = gsVertCount;
     if (type == 6) { /* sprite: two corners, flat colour and depth of the second vertex */
         const GsVertex *a = &v[0], *b = &v[1];
@@ -856,6 +1173,29 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
             for (i = 0; i < 6; i++) {
                 gsVerts[d.first + i].s /= q[1];
                 gsVerts[d.first + i].t /= q[1];
+            }
+        }
+        if (fst && !d.tex_is_target && sLast != NULL && sLast->tex == d.tex && sLast->replaced == 3) {
+            float rect[8];
+            int tbp = (int)(t0 & 0x3FFF), cbp = (int)((t0 >> 37) & 0x3FFF);
+            if (MenuText_MapGlyph(tbp, cbp, (int)tw, (int)th,
+                                  v[0].u/16.0f, v[0].v/16.0f, v[1].u/16.0f, v[1].v/16.0f, rect)) {
+                float originalHeight = (v[1].v-v[0].v)/16.0f;
+                float yScale = (v[1].y-v[0].y)/originalHeight;
+                float y0 = v[0].y - rect[4]*yScale, y1 = v[1].y + rect[5]*yScale;
+                int k;
+                /* The extra space changes only the drawn quad. Font_DrawGlyph still returns the original
+                   advance, so wrapping, alignment and the following character's position are unchanged. */
+                for (k = 0; k < 6; k++) {
+                    Vtx *o = &gsVerts[d.first+k];
+                    int right = k == 1 || k == 3 || k == 4, bottom = k == 2 || k == 4 || k == 5;
+                    o->y = bottom ? y1 : y0;
+                    o->s = (rect[0]+0.5f+(right ? rect[2] : 0))/rect[6];
+                    o->t = (rect[1]+0.5f+(bottom ? rect[3] : 0))/rect[7];
+                }
+                d.rect[0]=rect[0]/rect[6]; d.rect[1]=rect[1]/rect[7];
+                d.rect[2]=(rect[0]+rect[2])/rect[6]; d.rect[3]=(rect[1]+rect[3])/rect[7];
+                d.orig[0]=rect[6]; d.orig[1]=rect[7]; d.orig[3]=1.0f; d.misc[3]=-(float)SCALE;
             }
         }
     } else {
@@ -889,10 +1229,22 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
             }
         }
     }
+    /* A piece of a side panel of the HUD (a health bar, a portrait) that can be seen was drawn: the frame it was
+       in. What the overlay shows with the HUD (the players' names of an online fight, ui.cpp) asks through
+       GsDraw_HudShown, and is not there in an intro or wherever else the game leaves the HUD out. */
+    if ((gsAnchor == 1 || gsAnchor == 2 || gsAnchor == 5 || gsAnchor == 6) && (type == 6 || fst) && v[type == 6 ? 1 : 0].a != 0) {
+        if (gGsFrame - sHudFrame > 6 || !sHudSeen) { /* BT3_HUD_LOG (testing): when the HUD comes back */
+            static int log = -1;
+            if (log < 0) { log = getenv("BT3_HUD_LOG") != NULL; }
+            if (log) { fprintf(stderr, "hud: drawn from frame %u (last at %u)\n", gGsFrame, sHudSeen ? sHudFrame : 0); }
+        }
+        sHudFrame = gGsFrame;
+        sHudSeen = 1;
+    }
     /* (Not the cross-fade's picture: it is the whole frame as it was shown, wide view and all, drawn back over the
        whole frame in strips. Each strip is narrower than the screen, so the rule below took it for a piece of 2D
        art and the old shot was drawn at three quarters of the width over the new one: seen by the user.) */
-    if (Port_IsWide() && !gPortMenuMode && !sWholeFrame && !d.tex_is_target && (type == 6 || fst) && gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
+    if (Port_IsWide() && (!gPortMenuMode || (gsAnchor == 7 && Port_PageAspectMilli() > 1340)) && !sWholeFrame && !d.tex_is_target && !tbo && (type == 6 || fst) && gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
         /* Widescreen. The 3D scene is projected for a 16:9 picture by the game itself; 2D art is laid out for
            4:3 and would come out a third too wide. Each 2D piece is narrowed to 3/4 about a fixed point:
              (not in the menus: their pages are shown whole, stretched to the width; see Port_WideFactor)
@@ -913,12 +1265,19 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
         }
         if (type == 6 && !d.mode[0] && y1 - y0 >= 400.0f) {
             pivot = -1.0f;
-        } else if (x1 - x0 >= 480.0f) {
+        } else if (x1 - x0 >= 480.0f && gsAnchor != 5 && gsAnchor != 6) {
             /* as wide as the screen (the bands and streaks of READY / FIGHT, flashes, speed lines): meant to
                reach from edge to edge, so it keeps the full width */
             pivot = -1.0f;
+        } else if (gsAnchor == 7) {
+            /* Loading animations keep their left margin and sprite proportions, even in menu mode.
+               Scattered items already have their positions spread over the wider page by loading.c. */
+            pivot = 0.0f;
         } else if (gsAnchor != 0) {
-            pivot = gsAnchor == 1 ? 0.0f : gsAnchor == 2 ? 512.0f : 256.0f;
+            pivot = (gsAnchor == 1 || gsAnchor == 5) ? 0.0f : (gsAnchor == 2 || gsAnchor == 6) ? 512.0f : 256.0f;
+            if (sHudLayout == 2) {
+                pivot = 256.0f;
+            } else
             if (gsAnchor == 4) { /* a part without a fixed side (captions: technique names): the side it is on */
                 float cx = (x0 + x1) * 0.5f;
                 pivot = x1 <= 300.0f || cx < 180.0f ? 0.0f : x0 >= 212.0f || cx > 332.0f ? 512.0f : 256.0f;
@@ -953,7 +1312,7 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
    as floats, a slot the original fills with s, t). A flagged vertex means: the triangle that ends here is not
    drawn (it only joins two real triangles of the strip). */
 void GsGpu_DrawVu6(int ctx, const float *vertices, uint32_t count, const float *consts) {
-    if (gPortResim) { /* a frame that is only being re-run: nothing is drawn */
+    if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
         return;
     }
     Vu0Uniform u;
@@ -978,6 +1337,7 @@ void GsGpu_DrawVu6(int ctx, const float *vertices, uint32_t count, const float *
     u.misc[0] = (float)(gGs.xyoffset[ctx] & 0xFFFF) / 16.0f;
     u.misc[1] = (float)((gGs.xyoffset[ctx] >> 32) & 0xFFFF) / 16.0f;
     u.misc[2] = ((gGs.zbuf[ctx] >> 24) & 15) == 0 ? 4294967295.0f : ((gGs.zbuf[ctx] >> 24) & 15) == 1 ? 16777215.0f : 65535.0f;
+    if (depth_frac()) { u.misc[2] = -u.misc[2]; }
     d.vu = 3;
     d.first = gsVuIdxCount;
     for (i = 0; i + 2 < count; i++) { /* strip -> triangles, without the flagged ones */
@@ -1014,7 +1374,7 @@ void GsGpu_DrawVu6(int ctx, const float *vertices, uint32_t count, const float *
 /* Vertex program 4 as a shader: one strip of stage geometry (see shaders/vu4.vert). Vertices: position, colour
    (0..255 floats), texture coordinates, 48 bytes; the screen matrix is VU memory 0..3. */
 void GsGpu_DrawVu4(int ctx, const float *vertices, uint32_t count, const float *consts) {
-    if (gPortResim) { /* a frame that is only being re-run: nothing is drawn */
+    if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
         return;
     }
     Vu0Uniform u;
@@ -1035,6 +1395,7 @@ void GsGpu_DrawVu4(int ctx, const float *vertices, uint32_t count, const float *
     u.misc[0] = (float)(gGs.xyoffset[ctx] & 0xFFFF) / 16.0f;
     u.misc[1] = (float)((gGs.xyoffset[ctx] >> 32) & 0xFFFF) / 16.0f;
     u.misc[2] = ((gGs.zbuf[ctx] >> 24) & 15) == 0 ? 4294967295.0f : ((gGs.zbuf[ctx] >> 24) & 15) == 1 ? 16777215.0f : 65535.0f;
+    if (depth_frac()) { u.misc[2] = -u.misc[2]; }
     d.vu = 2;
     d.first = gsVuIdxCount;
     for (i = 0; i + 2 < count; i++) { /* strip -> triangles */
@@ -1060,7 +1421,7 @@ void GsGpu_DrawVu4(int ctx, const float *vertices, uint32_t count, const float *
 /* Vertex program 0 as a shader: one strip of the fighters' models (see shaders/vu0.vert and gs_vu1.c). The strip
    becomes a triangle list of the program's own 48-byte vertices; the constants go into a uniform block. */
 void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, const float *consts) {
-    if (gPortResim) { /* a frame that is only being re-run: nothing is drawn */
+    if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
         return;
     }
     Vu0Uniform u;
@@ -1075,6 +1436,11 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
     if (!draw_state(ctx, 0, 0, 1, &d, &us, &vs)) {
         return;
     }
+    if (layer == 2 && d.misc[1] == 1.0f && d.misc[2] != 0.0f) {
+        /* TEST.DATE rejects pixels marked by FBA. Stencil also rejects overlap within this
+           draw run, which a single snapshot of the alpha buffer cannot see. */
+        d.pipeline = pipeline_get(ctx, 0, 1, 1);
+    }
     date_snapshot(&d);
     memcpy(u.boneA, &consts[0], 64);
     memcpy(u.boneB, &consts[16], 64);
@@ -1087,6 +1453,7 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
     u.misc[0] = (float)(gGs.xyoffset[ctx] & 0xFFFF) / 16.0f;
     u.misc[1] = (float)((gGs.xyoffset[ctx] >> 32) & 0xFFFF) / 16.0f;
     u.misc[2] = ((gGs.zbuf[ctx] >> 24) & 15) == 0 ? 4294967295.0f : ((gGs.zbuf[ctx] >> 24) & 15) == 1 ? 16777215.0f : 65535.0f;
+    if (depth_frac()) { u.misc[2] = -u.misc[2]; }
     u.misc[3] = (float)layer;
     u.light2[0] = consts[41]; u.light2[1] = consts[45]; u.light2[2] = consts[49]; u.light2[3] = consts[53];
     d.vu = 1;
@@ -1159,7 +1526,7 @@ int GsGpu_ReadFrame(uint32_t fbp, uint8_t *rgba) {
 }
 
 void GsGpu_FbUpload(int second) {
-    if (gPortResim) { /* a frame that is only being re-run: nothing is drawn */
+    if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
         return;
     }
     GsDraw d;
@@ -1176,7 +1543,7 @@ void GsGpu_FbUpload(int second) {
 }
 
 void GsGpu_Native(int effect) {
-    if (gPortResim) { /* a frame that is only being re-run: nothing is drawn */
+    if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
         return;
     }
     uint64_t sc = gGs.scissor[0];
@@ -1184,6 +1551,11 @@ void GsGpu_Native(int effect) {
 
     /* 1 = outline. 2 (the see-through tint) is drawn by the generic table pass now (depth_clut), from the game's
        own table. */
+    if (effect >= 0x15 && effect <= 0x17) {
+        /* 5/6: extended life bar, anchored left/right even beyond 480 pixels; 7: loading page, anchored left. */
+        gsAnchor = effect - 0x10;
+        return;
+    }
     if (effect >= 0x10 && effect <= 0x14) {
         gsAnchor = effect == 0x13 ? 0 : effect == 0x14 ? 4 : effect - 0x0F; /* 1 left, 2 right, 3 centre, 4 by position */
         return;
@@ -1208,15 +1580,25 @@ void GsGpu_Native(int effect) {
 /* A new resolution multiplier: every render target is dropped and made again at the new size when the game next
    draws to it. Buffers that carry something over from the previous frame start empty for one frame. */
 static void scale_apply(void) {
-    if (gsPendingScale4 == 0 || gsPendingScale4 == gsScale4) {
-        gsPendingScale4 = 0;
+    if (gsPendingScale == 0 || gsPendingScale == gsScale) {
+        gsPendingScale = 0;
         return;
     }
-    gsScale4 = gsPendingScale4; /* the back end's attachments and copies are rebuilt to this size */
-    gsPendingScale4 = 0;
+    gsScale = gsPendingScale; /* the back end's attachments and copies are rebuilt to this size */
+    gsPendingScale = 0;
     sBackend->scaleChanged();
     gsTargetCount = 0;
-    fprintf(stderr, "bt3: internal resolution %gx (%d x %d)\n", (double)SCALE, (int)(512 * SCALE), (int)(448 * SCALE));
+    fprintf(stderr, "bt3: internal resolution %dx (%d x %d)\n", gsScale, 512 * gsScale, 448 * gsScale);
+}
+
+/* The list of menu labels is made in a thread at start when it is not there (menu_labels.c, menu_text.c). What it
+   made is taken into use here, between two frames: the settings window and the texture cache see the fonts for the
+   menus appear at no other moment. Not under an online session: it waits until that is over. */
+static void menu_labels_apply(void) {
+    extern int Port_NetSession(void); /* net.c */
+    if (!Port_NetSession()) {
+        MenuText_Poll();
+    }
 }
 
 /* ------------------------------------------------------------------------------------------- the one window */
@@ -1249,26 +1631,9 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
         SDL_GetDisplayBounds(displays[pick], &r);
         fprintf(stderr, "bt3: display %d: %s, %d x %d\n", pick + 1, SDL_GetDisplayName(displays[pick]), r.w, r.h);
     }
-#ifdef __ANDROID__
-    /* Android: "aspect_milli" 0 (or none saved) = the screen's own shape, so the fight fills a phone's 19.5:9 or 20:9
-       screen with more of the scene (Port_WideFactor: the projection is widened, nothing is stretched). */
-    if (count > 0 && Port_Setting("aspect_milli", 0) == 0 && getenv("BT3_ASPECT") == NULL && getenv("BT3_WIDE") == NULL) {
-        extern void Port_SetAspectMilli(int milli); /* plat_stub.c */
-        SDL_Rect r;
-        sAspectAuto = 1;
-        if (SDL_GetDisplayBounds(displays[0], &r) && r.w > 0 && r.h > 0) {
-            int big = r.w > r.h ? r.w : r.h, small = r.w > r.h ? r.h : r.w;
-            Port_SetAspectMilli(big * 1000 / small);
-            fprintf(stderr, "bt3: picture shape: the screen's, %d:1000\n", big * 1000 / small);
-        }
-    }
-#endif
     sDisplaySetting = Port_Setting("display", 0);
     pick = getenv("BT3_DISPLAY") != NULL ? atoi(getenv("BT3_DISPLAY")) : sDisplaySetting;
     sFullscreen = (getenv("BT3_FULLSCREEN") != NULL ? atoi(getenv("BT3_FULLSCREEN")) : Port_Setting("fullscreen", 0)) != 0;
-#ifdef __ANDROID__
-    sFullscreen = 1; /* (the whole screen, without the system's bars) */
-#endif
     sWantAspect = want;
     SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "Tenkaichi3Decomp");
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, w);
@@ -1290,7 +1655,7 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
     if (sWindow != NULL && !sFullscreen) {
         SDL_SetWindowSize(sWindow, (int)((float)896 * want + 0.5f), 896);
     }
-    fprintf(stderr, "bt3: internal resolution %gx (%d x %d)\n", (double)SCALE, (int)(512 * SCALE), (int)(448 * SCALE));
+    fprintf(stderr, "bt3: internal resolution %dx (%d x %d)\n", gsScale, 512 * gsScale, 448 * gsScale);
     return sWindow;
 }
 
@@ -1331,49 +1696,36 @@ int Port_FxOff(int bit) {
     return (gsFxOff & (unsigned)bit) != 0;
 }
 
-#ifdef __ANDROID__
-static int screen_aspect_milli(void) {
-    SDL_Window *w = GsDraw_Window();
-    SDL_DisplayID id = w != NULL ? SDL_GetDisplayForWindow(w) : 0;
-    SDL_Rect r;
-    if (id != 0 && SDL_GetDisplayBounds(id, &r) && r.w > 0 && r.h > 0) {
-        int big = r.w > r.h ? r.w : r.h, small = r.w > r.h ? r.h : r.w;
-        return big * 1000 / small;
-    }
-    return 0;
-}
-#endif
-
 void GsGpu_GetSettings(PortVideo *v) {
-    v->scale4 = gsPendingScale4 ? gsPendingScale4 : gsScale4;
-    v->aspectMilli = sAspectAuto ? 0 : Port_AspectMilli(); /* (0: the screen's own shape, Android) */
+    v->scale = gsPendingScale ? gsPendingScale : gsScale;
+    v->aspectMilli = Port_AspectMilli();
     v->fullscreen = sFullscreen;
     v->fxOff = (int)gsFxOff;
     v->glow = gsGlowPercent;
-    v->filter = gsFilter;
     v->music = gPortMusicPercent;
     v->effects = gPortSePercent;
+    v->voices = gPortVoicePercent;
+    v->stage = gPortStagePercent;
     v->display = sDisplaySetting;
     v->texPack = sTexPackOn;
     v->texPackCount = TexPack_Count();
+    v->menuFont = MenuText_GetFont();
+    v->textFont = MenuText_GetSharedFont();
     v->smooth2d = sSmooth2d;
+    v->vsync = Port_Setting("vsync", 0) != 0;
+    v->frameSkip = GsDraw_FrameSkip();
+    v->hudLayout = sHudLayout;
 }
 
 /* Applies what differs from the current state, all of it at once, and keeps it for the next run. */
 void GsGpu_SetSettings(const PortVideo *v) {
     PortVideo now;
     GsGpu_GetSettings(&now);
-    if (v->scale4 != now.scale4) {
-        gsPendingScale4 = v->scale4 < 4 ? 4 : v->scale4 > 32 ? 32 : v->scale4; /* applied between two frames */
+    if (v->scale != now.scale) {
+        gsPendingScale = v->scale < 1 ? 1 : v->scale > 8 ? 8 : v->scale; /* applied between two frames */
     }
     if (v->aspectMilli != now.aspectMilli) {
-#ifdef __ANDROID__
-        int milli = v->aspectMilli == 0 ? screen_aspect_milli() : v->aspectMilli;
-        sAspectAuto = v->aspectMilli == 0;
-        Port_SetAspectMilli(milli > 0 ? milli : Port_AspectMilli());
-#else
         Port_SetAspectMilli(v->aspectMilli);
-#endif
         GsDraw_WindowShape();
     }
     if (v->fullscreen != now.fullscreen) {
@@ -1381,29 +1733,43 @@ void GsGpu_SetSettings(const PortVideo *v) {
     }
     gsFxOff = (unsigned)v->fxOff & 63;
     gsGlowPercent = v->glow;
-    gsFilter = v->filter < 0 || v->filter > 4 ? 0 : v->filter;
-    gPortSePercent = v->effects;
-    if (v->music != now.music) {
+    if (v->music != now.music || v->effects != now.effects || v->voices != now.voices || v->stage != now.stage) { /* (the streams that are playing follow at once) */
         gPortMusicPercent = v->music;
+        gPortSePercent = v->effects;
+        gPortVoicePercent = v->voices;
+        gPortStagePercent = v->stage;
         Port_AudioRefresh();
+    }
+    if (v->hudLayout != now.hudLayout) {
+        sHudLayout = v->hudLayout < 0 || v->hudLayout > 2 ? 0 : v->hudLayout;
+    }
+    if (v->frameSkip != now.frameSkip) {
+        GsDraw_FrameSkipSet(v->frameSkip);
+    }
+    if (v->vsync != now.vsync) { /* (whichever back end draws) */
+        GsGpu_Vsync(v->vsync);
+        GsGl_Vsync(v->vsync);
+        Port_SettingSave("vsync", v->vsync);
     }
     sDisplaySetting = v->display;
     sTexPackOn = v->texPack != 0;
+    MenuText_SetFont(v->menuFont);
+    MenuText_SetSharedFont(v->textFont);
+    Port_SettingSave("text_font_id", MenuText_FontId(MenuText_GetSharedFont()));
+    Port_SettingSave("menu_font_id", MenuText_FontIdToSave());
     sSmooth2d = v->smooth2d != 0;
     Port_SettingSave("smooth_2d", sSmooth2d);
     Port_SettingSave("texture_pack", sTexPackOn);
-    {   /* "scale4" in quarters; "scale" the whole multiplier, for the launcher of an earlier version */
-        int q = gsPendingScale4 ? gsPendingScale4 : gsScale4;
-        Port_SettingSave("scale4", q);
-        Port_SettingSave("scale", (q + 2) / 4);
-    }
-    Port_SettingSave("aspect_milli", sAspectAuto ? 0 : Port_AspectMilli());
+    Port_SettingSave("scale", gsPendingScale ? gsPendingScale : gsScale);
+    Port_SettingSave("aspect_milli", Port_AspectMilli());
     Port_SettingSave("fullscreen", sFullscreen);
     Port_SettingSave("fx_off", (int)gsFxOff);
     Port_SettingSave("glow", gsGlowPercent);
-    Port_SettingSave("filter", gsFilter);
     Port_SettingSave("music", gPortMusicPercent);
     Port_SettingSave("effects", gPortSePercent);
+    Port_SettingSave("voices", gPortVoicePercent);
+    Port_SettingSave("hud_layout", sHudLayout);
+    Port_SettingSave("stage_sounds", gPortStagePercent);
     Port_SettingSave("display", sDisplaySetting);
     Port_SettingsWrite();
 }
@@ -1412,17 +1778,9 @@ int GsGpu_Init(void) {
     const char *api = getenv("BT3_GPU_API");
     GsBackend *sb;
 
-    /* BT3_SCALE=1.5 and the like; the setting "scale4" in quarters, else the older whole "scale" */
-    if (getenv("BT3_SCALE") != NULL) {
-        gsScale4 = (int)(atof(getenv("BT3_SCALE")) * 4.0 + 0.5);
-    } else {
-        gsScale4 = Port_Setting("scale4", 0);
-        if (gsScale4 <= 0) {
-            gsScale4 = Port_Setting("scale", 2) * 4;
-        }
-    }
-    gsScale4 = gsScale4 < 4 ? 4 : gsScale4 > 32 ? 32 : gsScale4;
-    gsPendingScale4 = 0;
+    gsScale = getenv("BT3_SCALE") != NULL ? atoi(getenv("BT3_SCALE")) : Port_Setting("scale", 2);
+    gsScale = gsScale < 1 ? 1 : gsScale > 8 ? 8 : gsScale;
+    gsPendingScale = 0;
     gsVerts = malloc(MAX_VERTS * sizeof(Vtx));
     gsVuVerts = malloc(MAX_VU_VERTS * 48);
     gsVuIdx = malloc(MAX_VU_IDX * sizeof(uint32_t));
@@ -1442,12 +1800,6 @@ int GsGpu_Init(void) {
         fprintf(stderr, "bt3: unknown BT3_GPU_API=%s (try vulkan, gl or auto)\n", api);
         return 0;
     }
-#ifdef __ANDROID__
-    /* Android: the setting "gpu_api" (1 = OpenGL ES 3.2, the OpenGL back end built for ES; else Vulkan) is written by the
-       launcher, which picks OpenGL ES for Mali GPUs by itself unless the player chose; if the chosen one cannot start,
-       the other is tried (api NULL) */
-    fprintf(stderr, "bt3: renderer chosen: %s\n", sb == &sGlBackend ? "OpenGL ES" : "Vulkan");
-#endif
     sBackend = sb;
     if (!sb->init()) {
         /* The chosen renderer cannot start (no Vulkan driver, an old graphics card): the other one is tried,
@@ -1469,12 +1821,17 @@ int GsGpu_Init(void) {
     gsWhite = sb->whiteTex();
     gsFxOff = (unsigned)(getenv("BT3_FX_OFF") != NULL ? atoi(getenv("BT3_FX_OFF")) : Port_Setting("fx_off", 0)) & 63;
     gsGlowPercent = getenv("BT3_GLOW") != NULL ? atoi(getenv("BT3_GLOW")) : Port_Setting("glow", GLOW_DEFAULT);
-    gsFilter = getenv("BT3_FILTER") != NULL ? atoi(getenv("BT3_FILTER")) : Port_Setting("filter", 0);
-    gsFilter = gsFilter < 0 || gsFilter > 4 ? 0 : gsFilter;
+    MenuText_SetFontId(Port_Setting("menu_font_id", 0));
+    MenuText_SetSharedFontId(Port_Setting("text_font_id", 0));
     sTexPackOn = Port_Setting("texture_pack", 1) != 0;
     sSmooth2d = getenv("BT3_2D_SMOOTH") != NULL ? atoi(getenv("BT3_2D_SMOOTH")) != 0 : Port_Setting("smooth_2d", 1) != 0;
     gPortMusicPercent = Port_Setting("music", 100);
     gPortSePercent = Port_Setting("effects", 100);
+
+    sHudLayout = getenv("BT3_HUD") != NULL ? atoi(getenv("BT3_HUD")) : Port_Setting("hud_layout", 0);
+    sHudLayout = sHudLayout < 0 || sHudLayout > 2 ? 0 : sHudLayout;
+    gPortVoicePercent = Port_Setting("voices", gPortSePercent); /* (one slider before 0.1.30: what it was set to) */
+    gPortStagePercent = Port_Setting("stage_sounds", gPortSePercent);
     TexPack_Init();
     return 1;
 }
@@ -2667,6 +3024,7 @@ static int interp_build(float t, int first) {
 typedef struct InterpPrim {
     uint32_t sig, first; /* first: index of its first vertex */
     uint32_t kind;       /* sig without the number of triangles: how it is drawn */
+    uint32_t base;       /* kind without the texture (interp_kinds_follow) */
     uint32_t view;       /* the view it is drawn in (INTERP_SCISSOR_ID) */
     uint8_t flat2d, tris; /* tris: how many triangles the piece has (a quad: 2) */
 } InterpPrim;
@@ -2684,16 +3042,29 @@ static unsigned gInterpTris, gInterpTrisBlended, gInterpTrisCamera;
 /* Where a vertex the game transformed itself was one picture earlier if the thing it belongs to stood still: back to
    clip space (its q is 1 / w), through the camera's change, and to pixels again. 0 = it cannot be said. */
 static int interp_reproject_with(const float *D, const Vtx *v, float *x, float *y, float *z) {
-    float w, c[4], p[4];
+    float w, c[4], p[4], zs, zadd;
     int i;
 
     if (!(v->q > 1e-20f) || !(v->q < 1e20f)) {
         return 0;
     }
+    /* The depth the game gave the corner: what put() stored is that plus a half and the lead (GS_Z_LEAD). Taken as
+       it is, a far corner (depth about 1000 of 16 million, where one step is a long way) was put back in the world
+       well in front of where it is, and the camera's sideways movement then moved it too far: a distant waterfall
+       jumped sideways in every in-between picture (found by the user). */
+    zadd = depth_frac() ? 0.0f : 0.5f;
+    zs = v->z * sInterpZMax - zadd;
+    if (getenv("BT3_INTERP_ZRAW") != NULL) { /* (testing: the stored depth as it is, the fault this corrects) */
+        zs += zadd;
+        zadd = 0.0f;
+    } else if (!depth_frac() && zs < sInterpZMax - (float)GS_Z_LEAD) {
+        zs -= (float)GS_Z_LEAD;
+        zadd += (float)GS_Z_LEAD;
+    }
     w = 1.0f / v->q;
     c[0] = (v->x + sInterpOffX) * w;
     c[1] = (v->y + sInterpOffY) * w;
-    c[2] = v->z * sInterpZMax * w;
+    c[2] = zs * w;
     c[3] = w;
     for (i = 0; i < 4; i++) {
         p[i] = D[i] * c[0] + D[4 + i] * c[1] + D[8 + i] * c[2] + D[12 + i] * c[3];
@@ -2703,7 +3074,7 @@ static int interp_reproject_with(const float *D, const Vtx *v, float *x, float *
     }
     *x = p[0] / p[3] - sInterpOffX;
     *y = p[1] / p[3] - sInterpOffY;
-    *z = p[2] / p[3] / sInterpZMax;
+    *z = (p[2] / p[3] + zadd) / sInterpZMax; /* (stored the way put() stores it) */
     return 1;
 }
 
@@ -2840,6 +3211,7 @@ static uint32_t interp_prims(InterpPrim *out) {
             out[count].view = INTERP_SCISSOR_ID(d);
             out[count].sig = ((uint32_t)d->tex * 2654435761u) ^ ((uint32_t)d->pipeline * 40503u) ^ (role * 0x9E3779B1u) ^ (tris * 0x85EBCA6Bu) ^ (out[count].view * 0xC2B2AE35u);
             out[count].kind = ((uint32_t)d->tex * 2654435761u) ^ ((uint32_t)d->pipeline * 40503u) ^ (role * 0x9E3779B1u) ^ (out[count].view * 0xC2B2AE35u);
+            out[count].base = ((uint32_t)d->pipeline * 40503u) ^ (role * 0x9E3779B1u) ^ (out[count].view * 0xC2B2AE35u);
             out[count].first = d->first + k;
             out[count].flat2d = d->misc[3] != 0.0f;
             out[count].tris = (uint8_t)tris;
@@ -2880,6 +3252,71 @@ static int interp_kind_find(uint32_t kind, int add) {
     memset(&sInterpKinds[sInterpKindCount], 0, sizeof(sInterpKinds[0]));
     sInterpKinds[sInterpKindCount].kind = kind;
     return (int)sInterpKindCount++;
+}
+
+/* A surface whose texture is another one this tick (a waterfall's water is a few pictures shown in turn; a texture
+   put into GS memory again) is a kind that was not there a tick ago, and the kind it was is gone. Nothing of it was
+   found in the previous picture then, so all of it stayed where this tick has it while the scenery around it was
+   drawn part of the way: a distant waterfall a camera's step to the side for one in-between picture in about
+   twenty-five (found by the user, on a video of his screen). The previous picture's pieces of the kind that is
+   gone are given the new kind's name, where the two are drawn the same way but for the texture. */
+static void interp_kinds_follow(void) {
+    enum { MAXK = 512 };
+    static uint32_t ck[MAXK], cb[MAXK], pk[MAXK], pb[MAXK];
+    uint32_t nc = 0, np = 0, i, j, changed = 0;
+
+    for (i = 0; i < sInterpPrimCount; i++) {
+        for (j = 0; j < nc && ck[j] != sInterpPrims[i].kind; j++) {
+        }
+        if (j == nc && nc < MAXK) {
+            ck[nc] = sInterpPrims[i].kind;
+            cb[nc++] = sInterpPrims[i].base;
+        }
+    }
+    for (i = 0; i < sInterpPrevPrimCount; i++) {
+        for (j = 0; j < np && pk[j] != sInterpPrevPrims[i].kind; j++) {
+        }
+        if (j == np && np < MAXK) {
+            pk[np] = sInterpPrevPrims[i].kind;
+            pb[np++] = sInterpPrevPrims[i].base;
+        }
+    }
+    for (i = 0; i < nc; i++) {
+        uint32_t take = np, a;
+        for (j = 0; j < np && pk[j] != ck[i]; j++) {
+        }
+        if (j < np) {
+            continue; /* it was there */
+        }
+        for (j = 0; j < np; j++) { /* one that is gone, drawn the same way; only if there is exactly one such */
+            if (pb[j] != cb[i]) {
+                continue;
+            }
+            for (a = 0; a < nc && ck[a] != pk[j]; a++) {
+            }
+            if (a < nc) {
+                continue; /* (still there) */
+            }
+            if (take != np) {
+                take = np + 1;
+                break;
+            }
+            take = j;
+        }
+        if (take < np) {
+            for (a = 0; a < sInterpPrevPrimCount; a++) {
+                if (sInterpPrevPrims[a].kind == pk[take]) {
+                    sInterpPrevPrims[a].kind = ck[i];
+                    sInterpPrevPrims[a].sig = ck[i] ^ ((uint32_t)sInterpPrevPrims[a].tris * 0x85EBCA6Bu);
+                }
+            }
+            pk[take] = ck[i];
+            changed = 1;
+        }
+    }
+    if (changed) {
+        qsort(sInterpPrevPrims, sInterpPrevPrimCount, sizeof(InterpPrim), interp_prim_cmp);
+    }
 }
 
 static void interp_static_kinds(void) {
@@ -2954,6 +3391,322 @@ static void interp_static_kinds(void) {
     }
 }
 
+/* ---- the wall at the edge of the map in an in-between picture ------------------------------------------------
+ * The wall is not scenery: the game builds it anew every tick as a patch of 6 x 4 points on the map's cylinder,
+ * centred on the fighter's bearing and height (EftBound_BuildWall), with a texture that is laid out in the world
+ * and scrolls, and cuts its triangles off at the edges of the view before the GS gets them. As pieces moved by the
+ * camera's change it tore: the patch travels with the fighter, and its cut pieces are different ones every tick
+ * (two attempts on the pieces, "none moves if one cannot" and "all move if most can", both looked worse). So the
+ * game hands over the patch itself (Port_WallMesh), and an in-between picture gets the patch part of the way
+ * between the two ticks' (points, texture coordinates, colours), seen by the camera part of its way: the tick's
+ * own wall triangles are taken out of that picture and these put in their place.
+ * The points go through the tick's own world-to-screen matrix and then the camera's change for the part of the
+ * way (sInterpDt), which is how every other piece of scenery gets there. Only the plane in front of the eye is
+ * cut here; the screen's edges are the GPU's. */
+static struct { uint32_t draw, first, count; } sWallPatch[WALL_MAX];
+static int sWallPatches;
+
+typedef struct WallPt { float p[4], s, t, col[4]; } WallPt;
+
+static void wall_lerp_pt(WallPt *o, const WallPt *a, const WallPt *b, float k) {
+    int i;
+    for (i = 0; i < 4; i++) {
+        o->p[i] = a->p[i] + (b->p[i] - a->p[i]) * k;
+        o->col[i] = a->col[i] + (b->col[i] - a->col[i]) * k;
+    }
+    o->s = a->s + (b->s - a->s) * k;
+    o->t = a->t + (b->t - a->t) * k;
+}
+
+/* One triangle of the patch (already at its part of the way, in the world): through the matrices, cut at the eye's
+   plane, written as up to two triangles. Returns the vertices written. */
+static uint32_t wall_tri(Vtx *out, uint32_t room, const WallMesh *m, const WallPt *w3, float wNear, const float *Dt, float zBias) {
+    WallPt in[3], poly[9];
+    int i, k, n = 0;
+    uint32_t made = 0;
+    float fs = (float)(int)w3[0].s, ft = (float)(int)w3[0].t; /* (the game takes the first corner's whole repeats off all three) */
+
+    for (i = 0; i < 3; i++) {
+        float c[4];
+        in[i] = w3[i];
+        in[i].s -= fs;
+        in[i].t -= ft;
+        for (k = 0; k < 4; k++) {
+            c[k] = m->S[k] * w3[i].p[0] + m->S[4 + k] * w3[i].p[1] + m->S[8 + k] * w3[i].p[2] + m->S[12 + k];
+        }
+        for (k = 0; k < 4; k++) {
+            in[i].p[k] = Dt[k] * c[0] + Dt[4 + k] * c[1] + Dt[8 + k] * c[2] + Dt[12 + k] * c[3];
+        }
+    }
+    /* Cut as the game cuts it (EftGfx_DrawPolyScaledZ: five planes, before the division): at the eye's plane and
+       at the edges of the view with its margin (seen in what reaches the GS: x from -29.69 to 541.69, y from -26
+       to 474). Not only for the eye's plane: the GS shades a triangle straight across the screen, so where the
+       corners are decides the colours in between. Left whole, with corners far outside, the wall came out a
+       little brighter towards the top than the game's own (the test BT3_INTERP_WALLTEST showed it). */
+    n = 3;
+    memcpy(poly, in, sizeof(in));
+    for (k = 0; k < 5 && n >= 3; k++) {
+        WallPt next[9];
+        float dist[9];
+        int m2 = 0;
+        for (i = 0; i < n; i++) {
+            const float *q = poly[i].p;
+            dist[i] = k == 0 ? q[3] - wNear :
+                      k == 1 ? q[0] - (sInterpOffX - 29.69f) * q[3] :
+                      k == 2 ? (sInterpOffX + 541.69f) * q[3] - q[0] :
+                      k == 3 ? q[1] - (sInterpOffY - 26.0f) * q[3] : (sInterpOffY + 474.0f) * q[3] - q[1];
+        }
+        for (i = 0; i < n; i++) {
+            int j = (i + 1) % n;
+            if (dist[i] >= 0.0f) {
+                next[m2++] = poly[i];
+            }
+            if ((dist[i] >= 0.0f) != (dist[j] >= 0.0f)) {
+                wall_lerp_pt(&next[m2++], &poly[i], &poly[j], dist[i] / (dist[i] - dist[j]));
+            }
+        }
+        n = m2;
+        memcpy(poly, next, sizeof(WallPt) * (size_t)n);
+    }
+    for (i = 2; i < n && made + 3 <= room; i++) {
+        const WallPt *tri[3] = {&poly[0], &poly[i - 1], &poly[i]};
+        for (k = 0; k < 3; k++) {
+            const WallPt *v = tri[k];
+            Vtx *o = &out[made++];
+            float q = 1.0f / v->p[3], z = v->p[2] * q;
+            int ch;
+            uint8_t bytes[4];
+            z += zBias + (float)GS_Z_LEAD; /* (the lead every piece the game transforms itself has: put()) */
+            z = z < 0.0f ? 0.0f : z > sInterpZMax - 1.0f ? sInterpZMax - 1.0f : z;
+            for (ch = 0; ch < 4; ch++) {
+                float cc = v->col[ch] < 0.0f ? 0.0f : v->col[ch] > 255.0f ? 255.0f : v->col[ch];
+                bytes[ch] = (uint8_t)cc;
+            }
+            o->x = v->p[0] * q - sInterpOffX;
+            o->y = v->p[1] * q - sInterpOffY;
+            o->z = (floorf(z) + 0.5f) / sInterpZMax;
+            o->s = v->s * q * sWallUs;
+            o->t = v->t * q * sWallVs;
+            o->q = q;
+            o->r = bytes[0]; o->g = bytes[1]; o->b = bytes[2]; o->a = bytes[3];
+        }
+    }
+    return made;
+}
+
+static void interp_wall_restore(void) {
+    while (sWallPatches > 0) {
+        sWallPatches--;
+        gsDraws[sWallPatch[sWallPatches].draw].first = sWallPatch[sWallPatches].first;
+        gsDraws[sWallPatch[sWallPatches].draw].count = sWallPatch[sWallPatches].count;
+    }
+    /* (not the vertex count: the back end has emptied the lists, and the tick's own counts are put back for its
+       real picture by interp_counts_restore; a count left here read as "the game has drawn already" and the tick's
+       real picture and its being remembered were dropped) */
+}
+
+static void interp_wall_into(float t, Vtx *buf, int test);
+
+static void interp_wall(float t) {
+    interp_wall_into(t, sInterpBlendVerts, getenv("BT3_INTERP_WALLTEST") != NULL);
+}
+
+/* The tick's real picture, while in-between pictures are shown: its wall drawn the same way, at the tick itself. */
+static void interp_wall_real(void) {
+    if (getenv("BT3_INTERP_WALLGAME") == NULL) { /* (the switch: the game's own triangles in the real picture, to compare) */
+        interp_wall_into(1.0f, gsVerts, 1);
+    }
+}
+
+static void interp_wall_into(float t, Vtx *buf, int test) {
+    static const float kSame[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    /* BT3_INTERP_WALLTEST=1 (with BT3_INTERP_ONLY): the patch as it is at the tick itself, seen by the tick's own
+       camera. The picture must then be the game's own picture of the tick: the test that what is drawn here is
+       what the game draws. */
+    const float *Dt = test ? kSame : sInterpDt;
+    uint32_t ids[4], n;
+    int idx0[4], nids = 0, k, i;
+
+    if (test) {
+        t = 1.0f;
+    }
+
+    sWallPatches = 0;
+    if (getenv("BT3_INTERP_WALLLOG") != NULL && sWallSeq != 0) {
+        uint32_t wd = 0, wv = 0;
+        for (n = 0; n < gsDrawCount; n++) {
+            if (gsDraws[n].wall) { wd++; wv += gsDraws[n].count; }
+        }
+        fprintf(stderr, "wall: frame %u: %d patches handed over so far, %u draws with %u vertices are the wall's (tex0 %llx)\n", gGsFrame, (int)sWallSeq, wd, wv, (unsigned long long)sWallTex0);
+    }
+    if (sWallSeq == 0 || getenv("BT3_INTERP_NOWALL") != NULL) {
+        return;
+    }
+    for (n = 0; n < gsDrawCount; n++) { /* the views the wall is drawn in, the left one first */
+        const GsDraw *d = &gsDraws[n];
+        uint32_t id;
+        if (!d->wall || d->vu || d->native || d->count < 3) {
+            continue;
+        }
+        id = INTERP_SCISSOR_ID(d);
+        for (k = 0; k < nids && ids[k] != id; k++) {
+        }
+        if (k == nids && nids < 4) {
+            for (i = nids; i > 0 && gsDraws[idx0[i - 1]].scissor[0] > d->scissor[0]; i--) {
+                ids[i] = ids[i - 1];
+                idx0[i] = idx0[i - 1];
+            }
+            ids[i] = id;
+            idx0[i] = (int)n;
+            nids++;
+        }
+    }
+    for (k = 0; k < nids; k++) {
+        Vtx *out = &buf[gsVertCount];
+        uint32_t room = MAX_VERTS - gsVertCount, made = 0;
+        float wNear = 0.0f;
+        int mi, first = -1, used = 0;
+
+        if (!interp_view_select(ids[k]) || (!sInterpHaveDt && !test)) {
+            continue; /* a cut, or no camera known: the wall stays this tick's */
+        }
+        for (n = 0; n < gsDrawCount; n++) { /* how near the game lets it come to the eye: the nearest corner it drew */
+            const GsDraw *d = &gsDraws[n];
+            uint32_t j;
+            if (d->wall && !d->vu && !d->native && INTERP_SCISSOR_ID(d) == ids[k]) {
+                for (j = 0; j < d->count; j++) {
+                    float w = gsVerts[d->first + j].q > 0.0f ? 1.0f / gsVerts[d->first + j].q : 0.0f;
+                    if (w > 0.0f && (wNear == 0.0f || w < wNear)) {
+                        wNear = w;
+                    }
+                }
+            }
+        }
+        if (!(wNear > 0.0f)) {
+            continue;
+        }
+        for (mi = 0; mi < WALL_RING && mi < (int)sWallSeq; mi++) { /* from the newest back */
+            const WallMesh *m = &sWallRing[(sWallSeq - 1 - (uint32_t)mi) % WALL_RING], *p = m;
+            float cam[3];
+            int q, c, pi;
+            /* The game hands the patch over once per camera it draws for (both, in a two-player battle, also when
+               only one view is shown): this picture's are those with the matrix its scenery is drawn with. Each
+               once (the newest). */
+            for (pi = 0; pi < (int)nscreens && memcmp(screens[pi], m->S, sizeof(m->S)) != 0; pi++) {
+            }
+            if (pi == (int)nscreens) {
+                continue;
+            }
+            for (pi = 0; pi < mi; pi++) {
+                const WallMesh *o = &sWallRing[(sWallSeq - 1 - (uint32_t)pi) % WALL_RING];
+                if (o->key == m->key && o->culled == m->culled && memcmp(o->S, m->S, sizeof(m->S)) == 0) {
+                    break;
+                }
+            }
+            if (pi < mi) {
+                continue;
+            }
+            used++;
+            /* the same patch a tick before: the one handed over last before this one for the same camera */
+            for (pi = mi + 1; pi < WALL_RING && pi < (int)sWallSeq; pi++) {
+                const WallMesh *o = &sWallRing[(sWallSeq - 1 - (uint32_t)pi) % WALL_RING];
+                if (o->key == m->key && o->second == m->second && o->culled == m->culled) {
+                    p = o;
+                    break;
+                }
+            }
+            for (c = 0; c < 3; c++) {
+                cam[c] = p->cam[c] + (m->cam[c] - p->cam[c]) * t;
+            }
+            for (q = 0; q < m->nq; q++) {
+                WallPt w[4];
+                int j;
+                for (j = 0; j < 4; j++) {
+                    int vi = m->idx[q][j];
+                    const float *a, *b;
+                    float as, at;
+                    if (vi < 0 || vi >= 24) {
+                        break;
+                    }
+                    a = p->v[vi];
+                    b = m->v[vi];
+                    as = a[8];
+                    at = a[9];
+                    /* (the texture's scroll starts again at a whole repeat: the same place, one further) */
+                    if (b[8] - as > 0.5f) { as += 1.0f; } else if (b[8] - as < -0.5f) { as -= 1.0f; }
+                    if (b[9] - at > 0.5f) { at += 1.0f; } else if (b[9] - at < -0.5f) { at -= 1.0f; }
+                    for (c = 0; c < 3; c++) {
+                        w[j].p[c] = a[c] + (b[c] - a[c]) * t;
+                    }
+                    w[j].p[3] = 1.0f;
+                    w[j].s = as + (b[8] - as) * t;
+                    w[j].t = at + (b[9] - at) * t;
+                    for (c = 0; c < 4; c++) {
+                        w[j].col[c] = a[12 + c] + (b[12 + c] - a[12 + c]) * t;
+                    }
+                }
+                if (j < 4) {
+                    continue;
+                }
+                if (m->culled) { /* only the quads that face the camera, as the game decides it */
+                    float e1[3], e2[3], nrm[3], dv[3];
+                    for (c = 0; c < 3; c++) {
+                        e1[c] = w[1].p[c] - w[0].p[c];
+                        e2[c] = w[2].p[c] - w[1].p[c];
+                        dv[c] = w[1].p[c] - cam[c];
+                    }
+                    nrm[0] = e2[1] * e1[2] - e2[2] * e1[1];
+                    nrm[1] = e2[2] * e1[0] - e2[0] * e1[2];
+                    nrm[2] = e2[0] * e1[1] - e2[1] * e1[0];
+                    if (!(nrm[0] * dv[0] + nrm[1] * dv[1] + nrm[2] * dv[2] < 0.0f)) {
+                        continue;
+                    }
+                }
+                {
+                    WallPt ta[3] = {w[0], w[1], w[2]}, tb[3] = {w[2], w[1], w[3]};
+                    /* Two fighters at the same stretch of the wall: two patches in one surface. In the game, which
+                       of them a pixel shows over the other falls to the last bit of its depth, triangle by triangle;
+                       drawn here the bits fall differently and the wall changed its shade in triangles from the real
+                       picture to the in-between one. So each patch is drawn a few depth steps in front of the one
+                       before it (every later one is then drawn over the earlier, everywhere), and the tick's real
+                       picture gets the wall drawn this way too (interp_wall_real), so that the pictures agree. */
+                    made += wall_tri(out + made, room - made, m, ta, wNear, Dt, 4.0f * (float)(WALL_RING - mi));
+                    made += wall_tri(out + made, room - made, m, tb, wNear, Dt, 4.0f * (float)(WALL_RING - mi));
+                }
+            }
+        }
+        if (getenv("BT3_INTERP_WALLLOG") != NULL) {
+            fprintf(stderr, "wall: frame %u view %d of %d: %d patches are this view's, %u vertices made, nearest w %.2f\n", gGsFrame, k, nids, used, made, wNear);
+        }
+        if (used == 0) {
+            continue; /* none of the patches is this view's: its wall stays this tick's */
+        }
+        /* the tick's own wall triangles of this view give way: the first of its draws takes the new ones, the
+           others (and the first, if there is nothing to show) are drawn as nothing */
+        for (n = 0; n < gsDrawCount; n++) {
+            GsDraw *d = &gsDraws[n];
+            uint32_t j;
+            if (!d->wall || d->vu || d->native || d->count < 3 || INTERP_SCISSOR_ID(d) != ids[k]) {
+                continue;
+            }
+            if (first < 0 && made > 0 && sWallPatches < WALL_MAX) {
+                first = (int)n;
+                sWallPatch[sWallPatches].draw = n;
+                sWallPatch[sWallPatches].first = d->first;
+                sWallPatch[sWallPatches].count = d->count;
+                sWallPatches++;
+                d->first = gsVertCount;
+                d->count = made;
+                gsVertCount += made;
+                continue;
+            }
+            for (j = 1; j < d->count; j++) {
+                buf[d->first + j] = buf[d->first];
+            }
+        }
+    }
+}
+
 static void interp_build_verts(float t) {
     uint32_t i, lo = 0;
     int staticKind = 0;
@@ -2961,6 +3714,7 @@ static void interp_build_verts(float t) {
 
     if (forFrame != gGsFrame) {
         forFrame = gGsFrame;
+        interp_kinds_follow();
         interp_static_kinds();
     }
 
@@ -3280,6 +4034,49 @@ static void interp_counts_restore(void) {
     }
 }
 
+/* A machine that cannot show the asked number of pictures in the time of a tick gets fewer of them, or none: each
+   in-between picture costs what a real one does, so asking for more than fit made the whole game run slowly (on
+   an integrated GPU at 8x and "240": a picture every 186 ms, the fight at an eighth of its speed), and every
+   in-between picture, its faults included, then stood for that long. sInterpCostNs: what showing one picture
+   takes, smoothed; sInterpCap: the most pictures a 33 ms tick may have now (8, 4, 2 or 1). */
+static uint64_t sInterpCostNs;
+static int sInterpCap = 8;
+
+static void interp_cost(uint64_t ns) {
+    static int said;
+    int was = sInterpCap;
+
+    {   /* Not the first pictures of a run: they create the pipelines and load what the first screens need, and
+           took long enough on any machine to switch the in-between pictures off for a moment and say so (seen in
+           the user's log on a fast graphics card: "shows a picture in 12.0 ms" at the logos). */
+        static unsigned seen;
+        if (seen < 300) {
+            seen++;
+            return;
+        }
+    }
+    if (ns > 100000000ull) { /* (one long pause, a load or a stall, does not count for more than this) */
+        ns = 100000000ull;
+    }
+    sInterpCostNs = sInterpCostNs == 0 ? ns : (sInterpCostNs * 7 + ns) / 8;
+    if (getenv("BT3_INTERP_NOCAP") != NULL) {
+        return;
+    }
+    /* down when the pictures take more than 70% of the tick (the rest is the game's own work), up again when one
+       step more would take less than half of it */
+    while (sInterpCap > 1 && sInterpCostNs * (uint64_t)sInterpCap > 33366700ull * 7 / 10) {
+        sInterpCap /= 2;
+    }
+    if (sInterpCap == was && sInterpCap < 8 && sInterpCostNs * (uint64_t)sInterpCap * 2 < 33366700ull / 2) {
+        sInterpCap *= 2;
+    }
+    if (sInterpCap < was && sInterpCap < interp_steps() && !said) {
+        said = 1;
+        fprintf(stderr, "bt3: smooth motion: this machine shows a picture in %.1f ms; fewer in-between pictures are shown while that lasts\n",
+                (double)sInterpCostNs / 1000000.0);
+    }
+}
+
 /* Shows picture `step` of the tick's sInterpSteps: the list replayed `step / steps` of the way from the previous
    tick; the last one is the tick itself. The recorded list has to be in place (interp_counts_restore). */
 static void interp_show(int step) {
@@ -3296,19 +4093,34 @@ static void interp_show(int step) {
         }
         if (getenv("BT3_INTERP_3D") == NULL) { /* (BT3_INTERP_3D=1: the vertex programs' draws only, as the first prototype) */
             interp_build_verts(t);
+            interp_wall(t);
             gsVerts = sInterpBlendVerts;
         }
         gsVuUni = sInterpBlend;
-        sBackend->frameEnd();
+        if (getenv("BT3_INTERP_REALONLY") == NULL) { /* (testing: only the ticks' real pictures are shown, numbered as without in-between pictures) */
+            uint64_t t0 = gpu_now();
+            sBackend->frameEnd();
+            interp_cost(gpu_now() - t0);
+        } else {
+            gsVertCount = gsVuVertCount = gsVuIdxCount = gsVuUniCount = gsDrawCount = 0; /* (as the back end leaves them) */
+        }
+        interp_wall_restore();
         gsVuUni = real;
         gsVerts = realVerts;
         interp_present_log('B');
         gInterpShown++;
     } else {
         interp_remember(); /* (only now: the in-between pictures were built from the previous tick's copy) */
-        sBackend->frameEnd();
+        interp_wall_real();
+        {
+            uint64_t t0 = gpu_now();
+            sBackend->frameEnd();
+            interp_cost(gpu_now() - t0);
+        }
+        interp_wall_restore();
         interp_present_log('R');
         scale_apply();
+        menu_labels_apply();
     }
 }
 
@@ -3374,8 +4186,67 @@ void GsGpu_InterpFlush(void) { /* (the name Port_VBlank knew it by) */
     GsGpu_InterpPump(6, 0);
 }
 
+/* ---- frame skipping ------------------------------------------------------------------------------------------
+ * The game advances one step per picture and knows no other clock, so a machine that needs longer than a tick
+ * to show a picture ran the game itself slowly. When the game is more than a vertical blank behind its grid as a
+ * picture is finished, the NEXT tick is computed without being drawn (its drawing is left out the way a re-run
+ * frame's is: GS_NO_PICTURE) and nothing is shown for it; the grid (plat_stub.c: a blank that is already due is
+ * not waited for) then catches up. At most kSkipMax ticks in a row, so that something is shown at least every
+ * fifth tick; a machine too slow for that slows down as before. Setting "frame_skip" (F1, Video), on by default.
+ * Only helps where the showing is what takes the time (a weak graphics chip), not the computing. */
+int gsSkipFrame;
+static int sSkipOn = -1, sSkipRun;
+static unsigned sSkipped; /* (BT3_GS_VERBOSE) */
+
+int GsDraw_FrameSkip(void) {
+    if (sSkipOn < 0) {
+        sSkipOn = getenv("BT3_FRAME_SKIP") != NULL ? atoi(getenv("BT3_FRAME_SKIP")) != 0 : Port_Setting("frame_skip", 1) != 0;
+    }
+    return sSkipOn;
+}
+
+void GsDraw_FrameSkipSet(int on) {
+    sSkipOn = on != 0;
+    Port_SettingSave("frame_skip", sSkipOn);
+}
+
+static void skip_decide(void) {
+    extern int Port_PaceBehindUs(void);        /* plat_stub.c */
+    extern volatile int gPortNetWindowClose;   /* (any picture the settings or online window waits for is shown) */
+    extern int gPortOverlayOpen;
+    int behind = Port_PaceBehindUs();
+    int skip = GsDraw_FrameSkip() && getenv("BT3_UNCAPPED") == NULL && getenv("BT3_SHOT") == NULL && !gPortOverlayOpen &&
+               behind > (int)(Port_BlankNs() / 1000ull) && sSkipRun < 4;
+
+    if (getenv("BT3_SKIP_FORCE") != NULL) { /* testing: every other tick is left out, whatever the clock says */
+        skip = sSkipRun == 0;
+    }
+
+    (void)gPortNetWindowClose;
+    sSkipRun = skip ? sSkipRun + 1 : 0;
+    sSkipped += (unsigned)skip;
+    gsSkipFrame = skip;
+    if (getenv("BT3_GS_VERBOSE") != NULL && gGsFrame % 120 == 0 && sSkipped != 0) {
+        fprintf(stderr, "skip: %u ticks were not shown in the last 120 pictures (the game was %d.%d ms behind just now)\n", sSkipped, behind / 1000, behind / 100 % 10);
+        sSkipped = 0;
+    }
+}
+
 void GsGpu_FrameEnd(void) {
     if (gPortResim) { /* a frame that is only being re-run: nothing was recorded, nothing is shown */
+        return;
+    }
+    if (gsSkipFrame) {
+        /* A skipped tick: nothing was recorded. The tick before's last pictures, if any are still waiting, are
+           shown now (its real one); nothing can be blended over the gap, so the next tick has no in-between
+           picture. */
+        if (sInterpNext != 0) {
+            GsGpu_InterpPump(0, 1);
+        }
+        sInterpPrevCount = 0;
+        sInterpPrevPrimCount = 0;
+        gsVertCount = gsVuVertCount = gsVuIdxCount = gsVuUniCount = gsDrawCount = 0;
+        skip_decide();
         return;
     }
     uint64_t t0 = gpu_now();
@@ -3411,8 +4282,8 @@ void GsGpu_FrameEnd(void) {
             unsigned blanks = gPortVBlanks - sInterpLastBlank;
             sInterpLastBlank = gPortVBlanks;
             blanks = blanks < 1 ? 1 : blanks > 2 ? 2 : blanks;
-            sInterpSteps = interp_steps() * (int)blanks / 2;
-            sInterpTickNs = (uint64_t)blanks * 16683350ull;
+            sInterpSteps = (interp_steps() < sInterpCap ? interp_steps() : sInterpCap) * (int)blanks / 2;
+            sInterpTickNs = (uint64_t)blanks * Port_BlankNs();
         }
         if (gsInterp > 0) {
             interp_signatures(sInterpSig);
@@ -3453,14 +4324,19 @@ void GsGpu_FrameEnd(void) {
                 gInterpPaired = gInterpUnpaired = gInterpCamera = gInterpTris = gInterpTrisBlended = 0;
             }
         } else {
+            uint64_t t1;
             if (gsInterp > 0) {
                 interp_remember();
                 gInterpSkipped++;
             }
+            t1 = gpu_now();
             sBackend->frameEnd();
+            interp_cost(gpu_now() - t1);
             interp_present_log('S');
             scale_apply();
+            menu_labels_apply();
         }
     }
     gGpuEndNs += gpu_now() - t0;
+    skip_decide();
 }

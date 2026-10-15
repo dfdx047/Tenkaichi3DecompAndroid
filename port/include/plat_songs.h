@@ -20,6 +20,7 @@
                                                                                     : PORT_SONG_BGM_FIRST + (n))
 
 void PortSongs_Init(void);
+void PortSongs_Refresh(void);       /* before a select screen's music list is made: songs converted from MP3 since */
 int PortSongs_Count(void);
 int PortSongs_Offset(int index);    /* the music-list entry value of the index-th added track */
 

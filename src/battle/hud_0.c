@@ -294,8 +294,58 @@ void PauseMenu_Reset(void) {
     gPauseMenuWhich = 0;
 }
 
+#ifdef PORT
+/* Takes the entry with an id out of a menu (the entries behind it move up). The engine finds entries by id and
+   sizes the box by the count, so nothing else has to know. */
+static void PauseMenu_PortRemove(BtlMenu *menu, s32 id) {
+    s32 i;
+    s32 k;
+
+    for (i = 0; i < menu->count; i++) {
+        if (menu->items[i].id == id) {
+            for (k = i; k + 1 < menu->count; k++) {
+                menu->items[k] = menu->items[k + 1];
+            }
+            menu->count--;
+            return;
+        }
+    }
+}
+#endif
+
 /* Battle start: allocates the menu work. */
 void PauseMenu_Init(void) {
+#ifdef PORT
+    {
+        /* Online the menu at the end of a battle does without three of its six entries (asked for by the user):
+           "Return to Vs Menu" (id 0xE; a session has no versus menu, the host sets the rules in the lobby window),
+           "View Replay Data" (id 0x18) and "Save Replay Data" (id 0x17). Done on both copies at every battle start (the first time takes them
+           out, later ones find nothing); the program is started afresh after a session, so offline has them. */
+        extern int Port_NetActive(void);
+        if (Port_NetActive()) {
+            PauseMenu_PortRemove(&gPauseMenuResultVersus, 0xE);
+            PauseMenu_PortRemove(&gPauseMenuResultVersus, 0x18);
+            PauseMenu_PortRemove(&gPauseMenuResultVersus, 0x17);
+        }
+    }
+    {
+        /* The pause menu of the story mode (battle mode 1: Continue, Skill List, quit) gets the restart entry that
+           the pause menu of mode 6 has (id 0xC, with its yes / no box: PauseMenu_Update ends the battle with the
+           restart reason, and Battle_Loop starts it again), in front of the quit entry. */
+        static BtlMenuItem sItems[5];
+
+        if (gPauseMenuMode1.count == 4 && gPauseMenuMode6.count > 4 && gPauseMenuMode6.items[4].id == 0xC) {
+            sItems[0] = gPauseMenuMode1.items[0];
+            sItems[1] = gPauseMenuMode1.items[1];
+            sItems[2] = gPauseMenuMode1.items[2];
+            sItems[3] = gPauseMenuMode6.items[4];
+            sItems[3].text[0] = sItems[3].text[1] = 3; /* "Fight Again", the versus result menu (in mode 6 the entry reads "Reset standing position") */
+            sItems[4] = gPauseMenuMode1.items[3];
+            gPauseMenuMode1.items = sItems;
+            gPauseMenuMode1.count = 5;
+        }
+    }
+#endif
     BtlMenu_Init();
 }
 
@@ -381,5 +431,18 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
 
 /* Draws the menu when it is shown. */
 void PauseMenu_Draw(void) {
+#ifdef PORT
+    {
+        /* Online the pause menu belongs to the one who opened it (the fight goes on under it, btl_seq.c): it is
+           not drawn on the other screen. The result menu (which = 1) is drawn for both as before. */
+        extern int Port_NetActive(void);
+        extern int Port_NetMe(void);
+        extern s32 BtlPause_GetMenuPad(void);
+        if (Port_NetActive() && gPauseMenuWhich == 0 && (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) &&
+            BtlPause_GetMenuPad() != Port_NetMe()) {
+            return;
+        }
+    }
+#endif
     BtlMenu_DrawAll();
 }

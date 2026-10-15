@@ -159,6 +159,21 @@ void FirstRun_WaitPartition(s32 pt) {
     Dma_ResetBuffers();
 }
 
+#ifdef PORT
+/* Two settings of the PC version (F1, UI): the logos and the opening movie can be left out at the start. Both
+   can be skipped with a button anyway, and nothing is loaded by either: the loading runs beside the logos and is
+   waited for after them. */
+/* Not in an online session (port/src/gs/net.c): there the sequence is part of what both copies compute from the
+   same first moment (it runs unseen and not held to real time, Port_NetWarp), and one player's setting must not
+   make their copy's start-up shorter than the other's. With "Skip logos" on one side only that copy was in the
+   character select 537 vertical blanks before the other and the two never agreed again (2026-10-13). */
+extern int Port_Setting(const char *name, int def);
+extern int Port_NetFixedStart(void);
+#define FIRSTRUN_SHOW(name) (Port_NetFixedStart() || !Port_Setting(name, 0))
+#else
+#define FIRSTRUN_SHOW(name) 1
+#endif
+
 /* The first-run sequence. Returns 1. */
 s32 FirstRun_Main(void) {
     u32 *res;
@@ -171,7 +186,9 @@ s32 FirstRun_Main(void) {
     }
     BootCard_Run(2);
     res = Sprite_Unpack(MPACK_AT(gMenuArc0, 3), NULL, NULL);
-    Logo_ShowAll(res);
+    if (FIRSTRUN_SHOW("skip_logos")) {
+        Logo_ShowAll(res);
+    }
     if (res != NULL) {
         Heap_Free(res);
     }
@@ -180,7 +197,9 @@ s32 FirstRun_Main(void) {
         gMenuArc0 = NULL;
     }
     FirstRun_WaitPartition(2);
-    Movie_PlayOpening();
+    if (FIRSTRUN_SHOW("skip_intro")) {
+        Movie_PlayOpening();
+    }
     PadWatch_SetEnabled(1);
     return 1;
 }

@@ -2699,6 +2699,18 @@ void EftWater_DrawGroundQuad(EftWaterVec *pos, EftWaterMtx *world2screen, f32 si
     f32 half;
     s32 i;
 
+#ifdef PORT
+    /* A ring's size grows by a share of itself every tick (EftWaterRing_Update: sizeVel += sizeVel * sizeDamp) and
+       reaches the largest number a float holds within two seconds; its quad then has corners at 1.7e38. Cut off at
+       the view's edges with numbers like that, what comes out is wherever the rounding puts it: on the console
+       and at 4:3 here, off the screen; with the side planes of a 16:9 view, one corner on the screen and two
+       behind the eye, a flat light-blue triangle across the picture for as long as the ring lives (found by the
+       user going in and out of the water at Kame House). A ring ten times the size of a map has nothing left on
+       the screen that is the ring: it is not drawn. */
+    if (!(size < 100000.0f)) {
+        return;
+    }
+#endif
     Mtx_StoreIdentity(&m);
     if (rot != 0.0f) {
         Mtx_RotateY(&m, &m, EftMath_WrapAngle(rot * 3.14159265f / 180.0f));

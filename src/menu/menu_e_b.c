@@ -15,6 +15,8 @@ static s32 sPortSongNameHidden;
 extern volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;
 extern volatile int gUiNameIdx, gUiNameReady;
 static s32 sPortStageNameHidden;
+static s32 sPortStagesAdded; /* this stage select shows stages from outside the disc */
+static s32 sPortSongsAdded;  /* ... and its music list songs from outside the disc */
 static s32 sPortStageRows = TS_STAGE_COLS; /* rows of the stage reel: the game's 6, more with stages added */
 /* The picture behind the reel: a disc stage's own (0x39D + id); an added stage borrows one (its id past 0x23
    would fall on the loading screens' files), as in the duel's select. */
@@ -651,6 +653,7 @@ void TeamSel_Init(s32 section) {
         s32 swaps = Port_NetSession() ? 0 : gPortStageReplaceCount;
         s32 n = gTeamSel->stageCount, k, r;
         sPortStageRows = TS_STAGE_COLS;
+        sPortStagesAdded = extra > 0 || swaps > 0;
         if (extra > 0 || swaps > 0) {
             if (n > 64) {
                 n = 64;
@@ -692,7 +695,10 @@ void TeamSel_Init(s32 section) {
            in the save or written to it. Not in an online session: both players must have the same list. */
         extern int Port_NetSession(void); /* port/src/gs/net.c */
         extern void Port_NameFontSheets(int stage, int song, int songLit);
-        s32 added = Port_NetSession() ? 0 : gPortSongCount;
+        s32 added;
+        PortSongs_Refresh(); /* songs converted from MP3 since the start join the list here (port/src/plat_songs.c) */
+        added = Port_NetSession() ? 0 : gPortSongCount;
+        sPortSongsAdded = 0;
         Port_NameFontSheets((int)(u32)gTeamSel->tex[39], (int)(u32)gTeamSel->tex[19], (int)(u32)gTeamSel->tex[20]);
         if (added > 0) {
             static s32 sBgmIds[72];
@@ -713,6 +719,7 @@ void TeamSel_Init(s32 section) {
             sBgmIds[n - 1] = last; /* the "random" entry stays last */
             gTeamSel->bgmIds = sBgmIds;
             gTeamSel->bgmCount = n;
+            sPortSongsAdded = 1;
         }
     }
 #endif
@@ -2180,6 +2187,14 @@ f32 TeamSel_Input(s32 *result) {
     }
 }
 
+/* The song a chosen "random" stands for: one of the nine battle songs. PC build, with songs added from outside
+   the disc: any entry of the music list before "random", the disc's and the added ones alike. */
+#ifdef PORT
+#define TS_RANDOM_BGM() (sPortSongsAdded ? gTeamSel->bgmIds[Rand_Range(gTeamSel->bgmCount - 1)] : Rand_Range(9) + 8)
+#else
+#define TS_RANDOM_BGM() (Rand_Range(9) + 8)
+#endif
+
 /*
  * The team select screen: its own frame loop until the fade out is done and both picture loaders are idle.
  * Returns 0 when the screen was left with cancel; otherwise the battle setup has been written (mode 0,
@@ -2241,6 +2256,14 @@ s32 TeamSel_Run(s32 section) {
     if (result != 0) {
         s32 handicap[2] = { 1, 1 };
 
+#ifdef PORT
+        /* PC build: "random" also draws the added stages, as in the duel's select (menu_c_e.c has the note). */
+        if (gTeamSel->stage->stage == TS_STAGE_RANDOM && sPortStagesAdded) {
+            do {
+                gTeamSel->stage->stage = gTeamSel->stageIds[Rand_Range(gTeamSel->stageCount)];
+            } while (gTeamSel->stage->stage == TS_STAGE_RANDOM || gTeamSel->stage->stage >= STGGRID_ID_LOCKED);
+        }
+#endif
         if (gTeamSel->stage->stage == TS_STAGE_RANDOM) {
             do {
                 gTeamSel->stage->stage = gTeamSel->stageIds[Rand_Range(gTeamSel->stageCount - 1)];
@@ -2248,7 +2271,7 @@ s32 TeamSel_Run(s32 section) {
         }
         bgm = gTeamSel->bgmIds[gTeamSel->stage->bgm];
         if (bgm == TS_BGM_RANDOM) {
-            bgm = Rand_Range(9) + 8;
+            bgm = TS_RANDOM_BGM();
         }
         switch (gSaveData->rule[0]) {
         case 0:

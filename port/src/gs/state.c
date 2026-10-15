@@ -18,6 +18,9 @@
  * addresses of functions and variables, which differ from build to build.
  */
 #include <SDL3/SDL.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h> /* _NSGetExecutablePath */
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +32,7 @@
 #define XXH_INLINE_ALL
 #include "../../third_party/xxhash/xxhash.h"
 #include "gs_internal.h"
+#include "../port_addr.h"
 
 extern void Port_HeapRegion(uint8_t **base, uint32_t *size); /* plat_mem.c */
 
@@ -46,15 +50,12 @@ static void regions_init(void) {
     FILE *fp;
 #ifdef _WIN32
     long n = (long)GetModuleFileNameA(NULL, exe, sizeof(exe) - 1);
+#elif defined(__APPLE__)
+    uint32_t cap = sizeof(exe) - 1;
+    long n = _NSGetExecutablePath(exe, &cap) == 0 ? (long)strlen(exe) : -1;
 #else
-    /* (Android: the engine is a library; the app puts <BT3_EXE>.mem next to the game's files, android.py writes it) */
-    long n = getenv("BT3_EXE") != NULL ? (long)snprintf(exe, sizeof(exe), "%s", getenv("BT3_EXE"))
-                                        : (long)readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    long n = (long)readlink("/proc/self/exe", exe, sizeof(exe) - 1);
 #endif
-    /* Android: the engine may have been loaded elsewhere than it was linked (loader.c); the list has the linked
-       addresses */
-    long long bias = getenv("BT3_ENGINE_BIAS") != NULL ? atoll(getenv("BT3_ENGINE_BIAS")) : 0;
-    extern int gPortScratchpadMapped; /* plat_mem.c */
 
     sRegions = 0;
     if (n > 0 && n < (long)sizeof(exe) - 1) {
@@ -65,13 +66,38 @@ static void regions_init(void) {
         if (fp == NULL) {
             fprintf(stderr, "bt3: state: %s is missing (written by port/tools/make_state.py at link time)\n", path);
         } else {
+            /* The list's first two lines say which program it was made for: "0 <address of gPortResim>" and
+               "1 <address of gPortVBlanks>" there. A list of another release (seen on Windows: a new .exe put
+               next to the old files) names addresses that are something else here, code among them, and the
+               first state put back was written over that: a crash at the start of an online match. */
+            extern unsigned gPortVBlanks; /* plat_stub.c */
+            int marks = 0;
             while (sRegions < MAX_REGIONS - 2 && fscanf(fp, "%llx %llx", &a, &size) == 2) {
-                sRegion[sRegions].p = (const uint8_t *)(uintptr_t)(a + (unsigned long long)bias);
+                if (a < 2) {
+#ifdef __APPLE__ /* (the list holds game addresses: offsets in the window, port_addr.h) */
+                    marks += size == Port_Addr(a == 0 ? (const void *)&gPortResim : (const void *)&gPortVBlanks);
+#else
+                    marks += (uintptr_t)size == (a == 0 ? (uintptr_t)&gPortResim : (uintptr_t)&gPortVBlanks);
+#endif
+                    continue;
+                }
+#ifdef __APPLE__
+                sRegion[sRegions].p = (const uint8_t *)Port_Ptr((uint32_t)a);
+#else
+                sRegion[sRegions].p = (const uint8_t *)(uintptr_t)a;
+#endif
                 sRegion[sRegions].n = (size_t)size;
                 sRegion[sRegions].what = "globals";
                 sRegions++;
             }
             fclose(fp);
+            if (marks != 2) {
+                extern void Port_UiNotice(const char *text);
+                fprintf(stderr, "bt3: state: %s is not this program's (it is from another release). Online play starts the slow way and "
+                                "without rollback. Copy ALL the files of a release, not only the program.\n", path);
+                Port_UiNotice("Files of two different releases are mixed: copy all the files of the release, not only the program.");
+                sRegions = 0;
+            }
             sListed = sRegions > 0;
         }
     }
@@ -80,12 +106,10 @@ static void regions_init(void) {
     sRegion[sRegions].n = heapSize;
     sRegion[sRegions].what = "heap";
     sRegions++;
-    if (gPortScratchpadMapped) { /* (Android: only where its address was free; the game addresses nothing there) */
-        sRegion[sRegions].p = (const uint8_t *)(uintptr_t)0x70000000u;
-        sRegion[sRegions].n = 0x4000;
-        sRegion[sRegions].what = "scratchpad";
-        sRegions++;
-    }
+    sRegion[sRegions].p = (const uint8_t *)Port_Ptr(0x70000000u);
+    sRegion[sRegions].n = 0x4000;
+    sRegion[sRegions].what = "scratchpad";
+    sRegions++;
 }
 
 uint64_t Port_StateHash(void) {
@@ -182,67 +206,17 @@ void Port_StateLog(unsigned vblank, const void *fight, unsigned fightSize) {
  *                    one's checksum, restore, run the n again and compare each. What online play does when an
  *                    input arrives late: several frames are undone and replayed.
  * ------------------------------------------------------------------------------------------------------------- */
-#if defined(__x86_64__) || defined(__aarch64__)
-#ifdef _WIN32
+#if defined(__x86_64__) || defined(__APPLE__)
+#ifdef __APPLE__
+/* macOS: as on Windows, the registers are kept with a setjmp (the C library's, without the signal mask: macOS has
+   no ucontext functions on arm64) and the copy back runs on another stack through the port's stack switch. */
+#include <setjmp.h>
+extern void Port_CallOnStack(void (*fn)(void), void *top);
+#elif defined(_WIN32)
 /* Windows: the registers are kept with the compiler's own minimal setjmp (frame, stack pointer and the place to
    continue; everything else counts as lost over it, which is what a restore is), and the copy back runs on another
    stack through the port's stack switch (plat_mem.c). */
 extern void Port_CallOnStack(void (*fn)(void), void *top);
-#elif defined(__aarch64__)
-/* AArch64 (Android): no getcontext there. The registers a call keeps (x19..x30, the stack pointer, d8..d15) are
-   saved by port_jmp_save, which returns 0, and port_jmp_jump puts them back and returns 1 from that save, as the
-   Windows path does with setjmp; the copy back runs on another stack (call_on_stack). x18 is the platform's and is
-   left alone (it is the same thread). */
-typedef struct PortJmp { uint64_t r[21]; } PortJmp; /* x19..x28, x29, x30, sp, d8..d15 */
-extern int port_jmp_save(PortJmp *j) __attribute__((returns_twice));
-extern void port_jmp_jump(PortJmp *j) __attribute__((noreturn));
-__asm__(".text\n"
-        ".p2align 2\n"
-        ".globl port_jmp_save\n"
-        ".hidden port_jmp_save\n"
-        ".type port_jmp_save, %function\n"
-        "port_jmp_save:\n"
-        "    stp x19, x20, [x0, #0]\n"
-        "    stp x21, x22, [x0, #16]\n"
-        "    stp x23, x24, [x0, #32]\n"
-        "    stp x25, x26, [x0, #48]\n"
-        "    stp x27, x28, [x0, #64]\n"
-        "    stp x29, x30, [x0, #80]\n"
-        "    mov x16, sp\n"
-        "    str x16, [x0, #96]\n"
-        "    stp d8, d9, [x0, #104]\n"
-        "    stp d10, d11, [x0, #120]\n"
-        "    stp d12, d13, [x0, #136]\n"
-        "    stp d14, d15, [x0, #152]\n"
-        "    mov w0, #0\n"
-        "    ret\n"
-        ".size port_jmp_save, .-port_jmp_save\n"
-        ".p2align 2\n"
-        ".globl port_jmp_jump\n"
-        ".hidden port_jmp_jump\n"
-        ".type port_jmp_jump, %function\n"
-        "port_jmp_jump:\n"
-        "    ldp x19, x20, [x0, #0]\n"
-        "    ldp x21, x22, [x0, #16]\n"
-        "    ldp x23, x24, [x0, #32]\n"
-        "    ldp x25, x26, [x0, #48]\n"
-        "    ldp x27, x28, [x0, #64]\n"
-        "    ldp x29, x30, [x0, #80]\n"
-        "    ldr x16, [x0, #96]\n"
-        "    mov sp, x16\n"
-        "    ldp d8, d9, [x0, #104]\n"
-        "    ldp d10, d11, [x0, #120]\n"
-        "    ldp d12, d13, [x0, #136]\n"
-        "    ldp d14, d15, [x0, #152]\n"
-        "    mov w0, #1\n"
-        "    ret\n"
-        ".size port_jmp_jump, .-port_jmp_jump\n");
-
-/* fn on the stack that ends at top (16-byte aligned); fn does not come back. */
-static void __attribute__((noinline, noreturn)) call_on_stack(void (*fn)(void), void *top) {
-    __asm__ volatile("mov sp, %1\n\tblr %0\n\tbrk #0" : : "r"(fn), "r"(top) : "memory");
-    __builtin_unreachable();
-}
 #else
 #include <ucontext.h>
 #endif
@@ -256,10 +230,10 @@ extern void Port_PadPlaySeek(long pos);
 typedef struct Snapshot {
     struct { uint8_t *at; size_t n; uint8_t *copy; size_t cap; } part[MAX_PARTS];
     int parts;
-#ifdef _WIN32
+#ifdef __APPLE__
+    jmp_buf jb;
+#elif defined(_WIN32)
     void *jb[5];
-#elif defined(__aarch64__)
-    PortJmp jb;
 #else
     ucontext_t ctx;
 #endif
@@ -307,13 +281,13 @@ static int __attribute__((noinline)) state_save(Snapshot *s) {
     s->padPos = Port_PadPlayPos();
     s->loaded = 0;
     part_save(s, sp, (size_t)(top - sp)); /* the stack last: this frame's own contents as they are now */
-#ifdef _WIN32
-    if (__builtin_setjmp(s->jb) != 0) {
+#ifdef __APPLE__
+    if (_setjmp(s->jb) != 0) {
         return 1;
     }
     return 0;
-#elif defined(__aarch64__)
-    if (port_jmp_save(&s->jb) != 0) {
+#elif defined(_WIN32)
+    if (__builtin_setjmp(s->jb) != 0) {
         return 1;
     }
     return 0;
@@ -324,7 +298,7 @@ static int __attribute__((noinline)) state_save(Snapshot *s) {
 }
 
 static Snapshot *sLoading;
-#if !defined(_WIN32) && !defined(__aarch64__)
+#if !defined(_WIN32) && !defined(__APPLE__)
 static ucontext_t sLoaderCtx;
 #endif
 
@@ -336,10 +310,10 @@ static void loader(void) {
     }
     Port_PadPlaySeek(s->padPos);
     s->loaded = 1;
-#ifdef _WIN32
+#ifdef __APPLE__
+    _longjmp(s->jb, 1);
+#elif defined(_WIN32)
     __builtin_longjmp(s->jb, 1);
-#elif defined(__aarch64__)
-    port_jmp_jump(&s->jb);
 #else
     setcontext(&s->ctx);
 #endif
@@ -354,10 +328,8 @@ static void state_load(Snapshot *s) {
     }
     roll_forget();
     sLoading = s;
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
     Port_CallOnStack(loader, stack + (1 << 20) - 64); /* (does not come back: the loader continues at the save) */
-#elif defined(__aarch64__)
-    call_on_stack(loader, stack + (1 << 20) - 64);
 #else
     getcontext(&sLoaderCtx);
     sLoaderCtx.uc_stack.ss_sp = stack;
@@ -399,7 +371,11 @@ static uint64_t parts_hash(void) {
  * A read() into a read-only page does not fault, it fails: whatever lets the system write file data straight
  * into the game's memory calls Port_StateTouch first.
  * ------------------------------------------------------------------------------------------------------------- */
+#ifdef __APPLE__
+#define PG 16384u /* the page size of Apple Silicon: what mprotect works in */
+#else
 #define PG 4096u
+#endif
 #define ROLL_MAX 64
 
 typedef struct Track { uint8_t *base, *shadow; uint32_t pages, first; } Track; /* first: its first global page number */
@@ -425,7 +401,11 @@ static uint32_t sRollId;
 static int tracked_part(const uint8_t *p) {
     int t;
     for (t = 0; t < sTracks; t++) {
+#ifdef __APPLE__
+        if (p >= sTrack[t].base && p < sTrack[t].base + PG) { /* (the heap starts inside its first tracked page) */
+#else
         if (p == sTrack[t].base) {
+#endif
             return 1;
         }
     }
@@ -448,6 +428,9 @@ static inline void dirty_note(uint32_t g) {
 #include <signal.h>
 #include <sys/mman.h>
 static struct sigaction sOldSegv;
+#ifdef __APPLE__
+static struct sigaction sOldBus; /* macOS reports a write to a read-only page as SIGBUS */
+#endif
 
 static void on_write_fault(int sig, siginfo_t *si, void *uc) {
     uintptr_t a = (uintptr_t)si->si_addr;
@@ -462,6 +445,16 @@ static void on_write_fault(int sig, siginfo_t *si, void *uc) {
         }
     }
     /* not ours: to whoever handled it before, or to the default (the write is tried again and ends the program) */
+#ifdef __APPLE__
+    struct sigaction *old = sig == SIGBUS ? &sOldBus : &sOldSegv;
+    if (old->sa_flags & SA_SIGINFO) {
+        old->sa_sigaction(sig, si, uc);
+    } else if (old->sa_handler != SIG_DFL && old->sa_handler != SIG_IGN) {
+        old->sa_handler(sig);
+    } else {
+        sigaction(sig, old, NULL);
+    }
+#else
     if (sOldSegv.sa_flags & SA_SIGINFO) {
         sOldSegv.sa_sigaction(sig, si, uc);
     } else if (sOldSegv.sa_handler != SIG_DFL && sOldSegv.sa_handler != SIG_IGN) {
@@ -469,6 +462,7 @@ static void on_write_fault(int sig, siginfo_t *si, void *uc) {
     } else {
         sigaction(SIGSEGV, &sOldSegv, NULL);
     }
+#endif
 }
 
 static void *shadow_alloc(size_t n) {
@@ -520,6 +514,11 @@ static void track_start(void) {
         regions_init();
     }
     Port_HeapRegion(&heap, &heapSize);
+#ifdef __APPLE__
+    /* the heap starts inside a 16 KB page (0x003BE000); the mapping starts on that page, and so does the tracking */
+    heapSize += (uint32_t)((uintptr_t)heap & (PG - 1));
+    heap -= (uintptr_t)heap & (PG - 1);
+#endif
     sTrack[0].base = heap;
     sTrack[0].pages = heapSize / PG;
     sTrack[0].first = 0;
@@ -555,6 +554,9 @@ static void track_start(void) {
         sa.sa_flags = SA_SIGINFO | SA_NODEFER;
         sigemptyset(&sa.sa_mask);
         sigaction(SIGSEGV, &sa, &sOldSegv);
+#ifdef __APPLE__
+        sigaction(SIGBUS, &sa, &sOldBus);
+#endif
         mprotect(sTrack[0].base, (size_t)sTrack[0].pages * PG, PROT_READ);
         if (sTracks > 1 && sArenaPages != 0) {
             mprotect(sTrack[1].base, (size_t)sArenaPages * PG, PROT_READ);

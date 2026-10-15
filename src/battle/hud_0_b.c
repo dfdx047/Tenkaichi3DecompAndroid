@@ -231,7 +231,37 @@ u16 *BtlMenu_GetText(s32 n) {
 
 /* Text of a menu item. */
 u16 *BtlMenu_GetItemText(s32 n) {
+#ifdef PORT
+    /* Tenkaichi Budokai Online's sparring fight goes back to its search, and its pause menu says so */
+    static const char from[] = "Return to Character Select";
+    static const char to[] = "Back to Budokai Online";
+    static u16 line[32];
+    extern s32 gPortTboSpar; /* menu/port_tbo.c */
+    u16 *s = BtlMenu_GetText(n + 8);
+
+    if (gPortTboSpar) {
+        u16 *t = *s == 0xFEFF ? s + 1 : s;
+        s32 i;
+
+        for (i = 0; from[i] != 0 && t[i] == (u8)from[i]; i++) {
+        }
+        if (from[i] == 0 && t[i] == 0) {
+            u16 *d = line;
+
+            if (*s == 0xFEFF) {
+                *d++ = 0xFEFF;
+            }
+            for (i = 0; to[i] != 0; i++) {
+                d[i] = (u8)to[i];
+            }
+            d[i] = 0;
+            return line;
+        }
+    }
+    return s;
+#else
     return BtlMenu_GetText(n + 8);
+#endif
 }
 
 /* Text of the controls page for a pad type and a control configuration. */

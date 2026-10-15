@@ -1454,6 +1454,9 @@ void BattleSetup_InitCharaBits(BattleCharaBits *dst, BattleCharaBits *src) {
 }
 
 /* Unless options were given, takes the two per-side options from the save data. */
+#ifdef PORT
+extern int Port_NetSideOptions(int *camera, int *shake); /* port/src/gs/net.c: each player's own, the same on both copies */
+#endif
 void BattleSetup_DefaultOptions(void) {
     BattleOption *opt = &SETUP()->option;
 
@@ -1463,6 +1466,18 @@ void BattleSetup_DefaultOptions(void) {
         opt->optA[1] = gSaveData->unk1694;
         opt->optB[0] = gSaveData->unk1698;
         opt->optB[1] = gSaveData->unk1698;
+#ifdef PORT
+        {   /* An online match: the save is the session's empty one, the same on both copies; each side gets the
+               camera type and the screen shake of its player's own save instead. */
+            int camera[2], shake[2];
+            if (Port_NetSideOptions(camera, shake)) {
+                opt->optA[0] = camera[0];
+                opt->optA[1] = camera[1];
+                opt->optB[0] = shake[0];
+                opt->optB[1] = shake[1];
+            }
+        }
+#endif
     }
 }
 

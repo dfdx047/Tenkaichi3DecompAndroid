@@ -1282,6 +1282,12 @@ void EftBound_DrawTri(EftMtxArg m, EftVecArg p0, EftVecArg p1, EftVecArg p2, Eft
     EftGfx_DrawPolyScaledZ(v, otZ, 1, 0, 0, 0, tex0, 2.0f);
 }
 
+#ifdef PORT
+extern void Port_WallMesh(const void *key, int second, int culled, const float *screen, const float *cam, const float *vtx,
+                          int quadCount, const void *quads, unsigned long long tex0);
+extern s32 BtlScene_IsSecondView(void);
+#endif
+
 /* Draws the quads of a mesh that face the camera, two triangles each. */
 void EftBound_DrawMeshCulled(EftBoundMesh *mesh) {
     Vec4 cam;
@@ -1294,6 +1300,12 @@ void EftBound_DrawMeshCulled(EftBoundMesh *mesh) {
     s32 i;
 
     Vec4_Copy(&cam, &gBtlCamView->pos);
+#ifdef PORT
+    /* The PC port's in-between pictures draw the wall from this patch (port/src/gs/gs_draw.c, interp_wall): the
+       triangles below reach the GS cut off at the view's edges, differently every tick. */
+    Port_WallMesh(mesh, BtlScene_IsSecondView(), 1, (const float *)&gBtlCamView->screen, (const float *)&gBtlCamView->pos,
+                  (const float *)mesh->vtx, mesh->quadCount, mesh->quad, tex->tex0);
+#endif
     Vu0Cur_Push();
     Vu0Cur_LoadMtx(&gBtlCamView->screen);
     for (i = 0; i < mesh->quadCount; i++) {
@@ -1321,6 +1333,10 @@ void EftBound_DrawMesh(EftBoundMesh *mesh) {
     EftBoundVtx *vtx = mesh->vtx;
     s32 i;
 
+#ifdef PORT
+    Port_WallMesh(mesh, BtlScene_IsSecondView(), 0, (const float *)&gBtlCamView->screen, (const float *)&gBtlCamView->pos,
+                  (const float *)mesh->vtx, mesh->quadCount, mesh->quad, tex->tex0);
+#endif
     Vu0Cur_Push();
     Vu0Cur_LoadMtx(&gBtlCamView->screen);
     for (i = 0; i < mesh->quadCount; i++) {

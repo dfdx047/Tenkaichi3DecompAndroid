@@ -1,0 +1,6 @@
+# The fonts the game offers in F1 > UI. One line per font, separated by tabs:
+#   file (relative to this folder)   name in the list   use: 1 = Menu font, 2 = Dialogue / UI font, 3 = both
+# A font has to be a static TrueType file (.ttf with glyf outlines) with a capital H, at most 16 MB.
+fira/FiraSansCondensed-Bold.ttf	Fira Sans Condensed Bold	1
+dejavu/DejaVuSansCondensed-Bold.ttf	DejaVu Sans Condensed Bold	1
+dejavu/DejaVuSansCondensed.ttf	DejaVu Sans Condensed	2

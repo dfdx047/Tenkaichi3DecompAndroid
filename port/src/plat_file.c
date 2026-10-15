@@ -28,6 +28,7 @@ typedef struct PortFile {
 } PortFile;
 
 extern long Port_FileSize(const char *rel); /* plat_fcache.c */
+extern void Port_TestSlow(int what, int amount); /* gs/net.c: testing, a machine that is slow at this */
 extern size_t Port_FileReadAt(const char *rel, long offset, void *buf, size_t bytes);
 
 static char sPartDir[8][64];
@@ -240,6 +241,7 @@ int ADXF_ReadNw(void *h, int nsct, void *buf) {
     PortFile *f = h;
     size_t got;
 
+    Port_TestSlow(0, nsct);
     if (nsct > f->sizeSct - f->posSct) {
         nsct = f->sizeSct - f->posSct;
     }

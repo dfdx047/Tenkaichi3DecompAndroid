@@ -13,6 +13,8 @@ run() { # the build of one variant; a compile failure must stop the release (und
     cat port/build/link_$BT3_CC.txt
 }
 mkdir -p port/build
+# the build key (port/tools/buildkey.py reads it from the environment; it is never printed)
+if [ -n "$BT3_BUILD_KEY" ]; then echo "build key: given"; else echo "build key: none (the programs do not sign their matchmaking requests)"; fi
 echo "== Linux"
 export BT3_CC=clang64
 run

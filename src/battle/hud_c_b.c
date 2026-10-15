@@ -10,6 +10,8 @@
    side's data is the same, where it is drawn is the other side's place. HUD_SCR(side) is the place of a side. */
 extern int Port_HudSwap(void);
 #define HUD_SCR(side) ((side) ^ Port_HudSwap())
+#else
+#define HUD_SCR(side) (side)
 #endif
 /*
  * Battle HUD: the combo part, 0x222730-0x224B50 (the fifth part the manager builds, gHud->combo, from sprite

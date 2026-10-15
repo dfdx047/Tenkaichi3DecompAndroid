@@ -18,6 +18,17 @@ import bisect, ctypes, re, sys
 import clang.cindex as ci
 from clang.cindex import CursorKind as K, TokenKind, TypeKind
 
+_kind_from_id = K.from_id
+def _known_kind(kind_id):
+    """A cursor kind newer than these Python bindings is taken for an attribute: the macOS SDK's headers have such
+    attributes (id 437 with libclang 18), and none of them is a kind this tool looks for."""
+    try:
+        return _kind_from_id(kind_id)
+    except ValueError:
+        return K.UNEXPOSED_ATTR
+if sys.platform == "darwin":  # (only there: on Linux and Windows an unknown kind stops the tool, as it always did)
+    K.from_id = staticmethod(_known_kind)
+
 ROOT_B = str(__import__("pathlib").Path(__file__).resolve().parents[2]).replace("\\", "/").encode() + b"/"
 P32 = "* __ptr32 __uptr "
 TYPE_EXPRS = {K.CSTYLE_CAST_EXPR, K.CXX_UNARY_EXPR, K.COMPOUND_LITERAL_EXPR, K.DECL_STMT}  # expressions that contain a type name

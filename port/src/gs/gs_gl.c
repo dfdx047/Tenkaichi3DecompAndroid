@@ -1,6 +1,5 @@
 /*
- * Graphics Synthesizer, OpenGL back end (GL 3.3 core: SDL3 window + a core context; on Android OpenGL ES 3.2, the
- * same code with the shaders translated to GLSL ES and the few things ES lacks left out, see GL_ES below).
+ * Graphics Synthesizer, OpenGL back end (GL 3.3 core: SDL3 window + a core context).
  *
  * gs_draw.c records the frame (every primitive as a GsDraw, the vertices, the decoded textures) and installs
  * this file as the sGlBackend. It owns the GL objects (programs translated from the Vulkan GLSL at run time,
@@ -8,7 +7,7 @@
  *
  * Written from the ground up against the canonical OpenGL 3.3 core patterns (learnopengl.com):
  *   - one VAO per vertex layout, configured once with the VBO bound;
- *   - a framebuffer per target: colour (GL_RGBA8) + aux (GL_R8) + depth (GL_DEPTH_COMPONENT32F), complete, and
+ *   - a framebuffer per target: colour (GL_RGBA8) + aux (GL_R8) + depth/stencil (GL_DEPTH32F_STENCIL8), complete, and
  *     used through GL_FRAMEBUFFER;
  *   - depth/colour state set explicitly before every draw, exactly like a pipeline object would be.
  * The GL floor is 3.3 core.
@@ -24,16 +23,6 @@
 #include "ui.h"
 
 extern int Port_AspectMilli(void);
-
-/* Android: OpenGL ES 3.2 (every function used here is in it). What it lacks against desktop GL 3.3: depth clamping
-   (GL_EXT_depth_clamp where the driver has it), S3TC (DXT) textures (a texture pack's .dds files are then unpacked to
-   RGBA on the CPU, gs_draw.c), a default point size (the shaders write one). */
-#ifdef __ANDROID__
-#define GL_ES 1
-#else
-#define GL_ES 0
-#endif
-int gGsNoBcTextures; /* gs_draw.c: the renderer cannot take BC1-BC3 (DXT) textures: a pack's .dds are unpacked to RGBA */
 
 /* ---- GL 3.3 core entry points (loaded through SDL_GL_GetProcAddress) ------------------------------ */
 typedef unsigned int GLenum; typedef unsigned int GLuint; typedef int GLint; typedef int GLsizei;
@@ -61,6 +50,10 @@ typedef void GLvoid; typedef ptrdiff_t GLsizeiptr; typedef ptrdiff_t GLintptr; t
     X(glColorMaski, void, (GLuint, GLboolean, GLboolean, GLboolean, GLboolean), (GLuint, GLboolean, GLboolean, GLboolean, GLboolean)) \
     X(glColorMask, void, (GLboolean, GLboolean, GLboolean, GLboolean), (GLboolean, GLboolean, GLboolean, GLboolean)) \
     X(glDepthFunc, void, (GLenum), (GLenum)) \
+    X(glStencilFunc, void, (GLenum, GLint, GLuint), (GLenum, GLint, GLuint)) \
+    X(glStencilOp, void, (GLenum, GLenum, GLenum), (GLenum, GLenum, GLenum)) \
+    X(glStencilMask, void, (GLuint), (GLuint)) \
+    X(glClearStencil, void, (GLint), (GLint)) \
     X(glDepthMask, void, (GLboolean), (GLboolean)) \
     X(glCreateShader, GLuint, (GLenum), (GLenum)) \
     X(glShaderSource, void, (GLuint, GLsizei, const GLchar *const *, const GLint *), (GLuint, GLsizei, const GLchar *const *, const GLint *)) \
@@ -121,6 +114,7 @@ GL_FUNCS(GL_DECL)
 #define GL_NO_ERROR 0
 #define GL_COLOR_BUFFER_BIT 0x00004000
 #define GL_DEPTH_BUFFER_BIT 0x00000100
+#define GL_STENCIL_BUFFER_BIT 0x00000400
 #define GL_POINTS 0x0000
 #define GL_LINES 0x0001
 #define GL_TRIANGLES 0x0004
@@ -130,10 +124,12 @@ GL_FUNCS(GL_DECL)
 #define GL_COLOR 0x1800
 #define GL_DEPTH 0x1801
 #define GL_DEPTH_COMPONENT 0x1902
+#define GL_DEPTH_STENCIL 0x84F9
 #define GL_RGBA 0x1908
 #define GL_RGBA8 0x8058
 #define GL_R8 0x8229
-#define GL_DEPTH_COMPONENT32F 0x8CAC
+#define GL_DEPTH32F_STENCIL8 0x8CAD
+#define GL_FLOAT_32_UNSIGNED_INT_24_8_REV 0x8DAD
 #define GL_TEXTURE_2D 0x0DE1
 #define GL_TEXTURE0 0x84C0
 #define GL_TEXTURE_MIN_FILTER 0x2801
@@ -170,6 +166,7 @@ GL_FUNCS(GL_DECL)
 #define GL_PACK_ALIGNMENT 0x0D05
 #define GL_BLEND 0x0BE2
 #define GL_DEPTH_TEST 0x0B71
+#define GL_STENCIL_TEST 0x0B90
 #define GL_SCISSOR_TEST 0x0C11
 #define GL_CULL_FACE 0x0B44
 #define GL_DEPTH_CLAMP 0x864F
@@ -188,7 +185,10 @@ GL_FUNCS(GL_DECL)
 #define GL_FUNC_REVERSE_SUBTRACT 0x800B
 #define GL_NEVER 0x0200
 #define GL_GREATER 0x0204
+#define GL_EQUAL 0x0202
 #define GL_GEQUAL 0x0206
+#define GL_KEEP 0x1E00
+#define GL_INCR 0x1E02
 #define GL_ALWAYS 0x0207
 #define GL_FRAMEBUFFER 0x8D40
 #define GL_BACK 0x0405
@@ -197,7 +197,7 @@ GL_FUNCS(GL_DECL)
 #define GL_DRAW_FRAMEBUFFER 0x8CA9
 #define GL_COLOR_ATTACHMENT0 0x8CE0
 #define GL_COLOR_ATTACHMENT1 0x8CE1
-#define GL_DEPTH_ATTACHMENT 0x8D00
+#define GL_DEPTH_STENCIL_ATTACHMENT 0x821A
 #define GL_FRAMEBUFFER_COMPLETE 0x8CD5
 #define GL_INVALID_INDEX 0xFFFFFFFFu
 
@@ -213,9 +213,68 @@ static int load_gl(void) {
     return 1;
 }
 
-#include "gl_translate.h"
+/* ---- shader translation: Vulkan GLSL 450 -> GL 3.3 core ------------------------------------------ */
+/* The rules port/tools/glprobe.c proved on hardware: #version, strip layout(set/binding) on uniforms and
+   samplers, gl_VertexIndex -> gl_VertexID, and layout(location) kept only where GL 3.3 core allows it
+   (vertex inputs and fragment outputs). */
+static char *translate(const char *src, int is_vertex) {
+    size_t cap = strlen(src) + 128, len = 0;
+    char *out = malloc(cap);
+#define PUSHN(s, n_) do { size_t _n = (n_); \
+    while (len + _n + 1 > cap) cap *= 2; out = realloc(out, cap); memcpy(out + len, (s), _n); len += _n; } while (0)
+#define PUSH(str) PUSHN((str), strlen(str))
+    const char *p = src;
+    while (*p) {
+        if (!strncmp(p, "#version 450", 12)) { PUSH("#version 330 core"); p += 12; continue; }
+        if (!strncmp(p, "gl_VertexIndex", 14)) { PUSH("gl_VertexID"); p += 14; continue; }
+        if (!strncmp(p, "layout(depth_less)", 18)) { /* (GL 4.2's; without it gl_FragDepth is simply written) */
+            while (*p && *p != '\n') { p++; }
+            continue;
+        }
+        if (!strncmp(p, "layout(set", 10)) {
+            const char *e = strchr(p, ')');
+            if (e) { p = e + 1; if (*p == ' ') p++; continue; }
+        }
+        if (!strncmp(p, "layout(location", 15)) {
+            const char *e = strchr(p, ')');
+            if (e) {
+                const char *q = e + 1;
+                while (*q == ' ' || *q == '\t') q++;
+                int in_out = !strncmp(q, "in ", 3) || !strncmp(q, "out ", 4);
+                int bad = in_out && (is_vertex ? !strncmp(q, "out ", 4) : !strncmp(q, "in ", 3));
+                if (bad) { p = q; continue; }
+                PUSHN(p, (size_t)(e + 1 - p));
+                p = e + 1;
+                continue;
+            }
+        }
+        out[len++] = *p++;
+    }
+    out[len] = 0;
+    /* SDL GPU (Vulkan) maps clip-space +Y to the TOP of the render target; OpenGL maps it to the BOTTOM, so
+       the same shader would store the picture in the other half of the target (black window). Voltear
+       gl_Position.y makes OpenGL store the picture exactly where the Vulkan back end does, so the present,
+       the screenshots, gl_FragCoord and every texture taken from a target all agree. */
+    if (is_vertex) {
+        char *m = strstr(out, "void main");
+        if (m != NULL) {
+            size_t rest = strlen(m + 5) + 1;
+            memmove(m + 8, m + 5, rest);
+            memcpy(m + 5, "gs_", 3);
+            len += 3;
+        }
+        /* Depth: the shaders put z in Vulkan's clip range (0..w, stored as z / w). OpenGL's is -w..w, stored as
+           0.5 + z / 2w, unless glClipControl(GL_ZERO_TO_ONE) is there (GL 4.5 / ARB_clip_control); without it z
+           is moved to OpenGL's range here so that the stored depth is again z / w (the fog pass reads it). */
+        PUSH(sHasClipControl ? "\nvoid main() { gs_main(); gl_Position.y = -gl_Position.y; }\n"
+                             : "\nvoid main() { gs_main(); gl_Position.y = -gl_Position.y; gl_Position.z = 2.0 * gl_Position.z - gl_Position.w; }\n");
+        out[len] = 0;
+    }
+#undef PUSH
+#undef PUSHN
+    return out;
+}
 
-static int sGlFailed; /* a shader did not compile or link (Android: the renderer gives up, see gl_init) */
 static GLuint compile(GLenum stage, const char *src, const char *tag) {
     GLuint sh = glCreateShader(stage);
     GLint ok = 0;
@@ -229,19 +288,13 @@ static GLuint compile(GLenum stage, const char *src, const char *tag) {
         glGetShaderInfoLog(sh, n, NULL, log);
         fprintf(stderr, "bt3: gl: %s compile FAILED\n%s\n", tag, log);
         free(log);
-#if GL_ES
-        sGlFailed = 1; /* (Android: gl_init gives up and the Vulkan renderer is started instead) */
-        glDeleteShader(sh);
-        return 0;
-#else
         exit(1);
-#endif
     }
     return sh;
 }
 
-static GLuint make_program(const unsigned char *vsrc, const unsigned char *fsrc, const char *tag, const char *const *samplers, int ns, int nodiscard) {
-    char *vt = gl_translate((const char *)vsrc, 1, GL_ES, 0, sHasClipControl), *ft = gl_translate((const char *)fsrc, 0, GL_ES, nodiscard, sHasClipControl);
+static GLuint make_program(const unsigned char *vsrc, const unsigned char *fsrc, const char *tag, const char *const *samplers, int ns) {
+    char *vt = translate((const char *)vsrc, 1), *ft = translate((const char *)fsrc, 0);
     GLuint v = compile(GL_VERTEX_SHADER, vt, tag), f = compile(GL_FRAGMENT_SHADER, ft, tag), p;
     GLint ok = 0, i;
     free(vt); free(ft);
@@ -257,12 +310,7 @@ static GLuint make_program(const unsigned char *vsrc, const unsigned char *fsrc,
         glGetProgramInfoLog(p, n, NULL, log);
         fprintf(stderr, "bt3: gl: %s link FAILED\n%s\n", tag, log);
         free(log);
-#if GL_ES
-        sGlFailed = 1;
-        return 0;
-#else
         exit(1);
-#endif
     }
     glDeleteShader(v);
     glDeleteShader(f);
@@ -283,16 +331,11 @@ static GLuint make_program(const unsigned char *vsrc, const unsigned char *fsrc,
    set to the letterboxed rectangle. (A textured quad, as the OpenGL framebuffer guide does it, instead of a
    scaled/flipped blit.) */
 static GLuint make_present_program(void) {
-#if GL_ES
-#define PRESENT_HEAD "#version 300 es\nprecision highp float;\n"
-#else
-#define PRESENT_HEAD "#version 330 core\n"
-#endif
-    static const char *vs = PRESENT_HEAD "out vec2 vUv;\nvoid main() {\n"
+    static const char *vs = "#version 330 core\nout vec2 vUv;\nvoid main() {\n"
         "    vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);\n"
         "    vUv = vec2((p.x + 1.0) * 0.5, (1.0 - p.y) * 0.5);\n"  /* y flipped: the scene's top row to the window's top */
         "    gl_Position = vec4(p, 0.0, 1.0);\n}\n";
-    static const char *fs = PRESENT_HEAD "in vec2 vUv;\nout vec4 o;\nuniform sampler2D tex;\nuniform vec2 uvScale;\n"
+    static const char *fs = "#version 330 core\nin vec2 vUv;\nout vec4 o;\nuniform sampler2D tex;\nuniform vec2 uvScale;\n"
         "void main() { o = texture(tex, vUv * uvScale); }\n";
     GLuint v = compile(GL_VERTEX_SHADER, vs, "present.vs"), f = compile(GL_FRAGMENT_SHADER, fs, "present.fs"), p;
     GLint ok = 0;
@@ -303,12 +346,7 @@ static GLuint make_present_program(void) {
     glGetProgramiv(p, GL_LINK_STATUS, &ok);
     if (!ok) {
         fprintf(stderr, "bt3: gl: present link FAILED\n");
-#if GL_ES
-        sGlFailed = 1;
-        return 0;
-#else
         exit(1);
-#endif
     }
     glDeleteShader(v);
     glDeleteShader(f);
@@ -321,8 +359,7 @@ static GLuint make_present_program(void) {
 /* ---- state -------------------------------------------------------------------------------------- */
 static SDL_Window *sWindow;
 static SDL_GLContext sCtx;
-static GLuint sMainProg[4]; /* gs.vert / vu0 / vu4 / vu6 + gs.frag */
-static GLuint sMainProgNd[4]; /* the same with gs.frag without its discards (pipeline key bit 23, as the Vulkan back end) */
+static GLuint sMainProg[8]; /* gs.vert / vu0 / vu4 / vu6 + gs.frag; 4..7: the same with gsnz.frag (key bit 23) */
 static GLuint sOutlineProg, sKeyProg, sDclutProg, sPresentProg;
 static GLuint sVaoGs, sVaoVu, sVboGs, sVboVu, sIboVu;
 static GLuint sSamplers[16];
@@ -337,7 +374,7 @@ static const char *sGsSamplers[2] = {"tex", "dateTex"};
 static const char *sOneSampler[1] = {"aux"};
 static const char *sDclutSamplers[3] = {"depthTex", "auxTex", "clutTex"};
 
-typedef struct Pipe { uint32_t key, bkey, wmask; int ztst, zwrite, topo, vu, fx, nd; } Pipe;
+typedef struct Pipe { uint32_t key, bkey, wmask; int ztst, zwrite, topo, vu, fx, nz, shadow; } Pipe;
 static Pipe sPipes[1024];
 static int sPipeCount;
 
@@ -357,14 +394,15 @@ static void target_ensure(int i) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, GS_W * SCALE, GS_H * SCALE, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
     glGenTextures(1, &sTgDep[i]);
     glBindTexture(GL_TEXTURE_2D, sTgDep[i]);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, GS_W * SCALE, GS_H * SCALE, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH32F_STENCIL8, GS_W * SCALE, GS_H * SCALE, 0,
+                 GL_DEPTH_STENCIL, GL_FLOAT_32_UNSIGNED_INT_24_8_REV, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glGenFramebuffers(1, &sTgFbo[i]);
     glBindFramebuffer(GL_FRAMEBUFFER, sTgFbo[i]);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sTgCol[i], 0);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, sTgAux[i], 0);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, sTgDep[i], 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, sTgDep[i], 0);
     glDrawBuffers(2, bufs);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         fprintf(stderr, "bt3: gl: target %d framebuffer incomplete\n", i);
@@ -443,9 +481,10 @@ static void pipe_decode(Pipe *p, uint32_t key) {
     p->zwrite = (int)((key >> 12) & 1);
     p->topo = (int)((key >> 13) & 3);
     p->vu = (int)((key >> 20) & 3);
+    p->nz = (int)((key >> 23) & 1);
+    p->shadow = (int)((key >> 24) & 1);
     p->fx = (int)((key >> 22) & 1);
     p->wmask = (key >> 16) & 15;
-    p->nd = (int)((key >> 23) & 1);
 }
 
 static int pipe_get(uint32_t key) {
@@ -512,24 +551,34 @@ static void set_pipe(int pipe) {
     sCurPipe = pipe;
     p = &sPipes[pipe];
     {
-        GLuint prog = p->fx ? sDclutProg : p->nd && sMainProgNd[p->vu] != 0 ? sMainProgNd[p->vu] : sMainProg[p->vu];
+        GLuint prog = p->fx ? sDclutProg : sMainProg[p->vu + (p->nz ? 4 : 0)];
         if (sCurProgram != prog) { sCurProgram = prog; glUseProgram(prog); }
     }
     apply_blend(p->bkey);
     apply_masks(p->wmask);
     if (p->fx) {
         glDisable(GL_DEPTH_TEST);
+        glDisable(GL_STENCIL_TEST);
         glDepthMask(GL_FALSE);
     } else {
         glEnable(GL_DEPTH_TEST);
         glDepthMask(p->zwrite ? GL_TRUE : GL_FALSE);
         glDepthFunc(p->ztst == 0 ? GL_NEVER : p->ztst == 1 ? GL_ALWAYS : p->ztst == 2 ? GL_GEQUAL : GL_GREATER);
+        if (p->shadow) {
+            glEnable(GL_STENCIL_TEST);
+            glStencilFunc(GL_EQUAL, 0, 0xff);
+            glStencilOp(GL_KEEP, GL_KEEP, GL_INCR);
+            glStencilMask(0xff);
+        } else {
+            glDisable(GL_STENCIL_TEST);
+        }
     }
 }
 
 static void set_native(int effect) {
     sCurPipe = -1;
     glDisable(GL_DEPTH_TEST);
+    glDisable(GL_STENCIL_TEST);
     glDepthMask(GL_FALSE);
     if (sHasIndexed) { glEnablei(GL_BLEND, 0); glDisablei(GL_BLEND, 1); } else { glEnable(GL_BLEND); }
     if (effect == 2) {
@@ -604,111 +653,58 @@ static void bind_target(int i, int clear) {
     }
 }
 
-/* ---- init --------------------------------------------------------------------------------------- */
-/* The renderer cannot start: the context and the window go, so that the other renderer can make its own (gs_draw.c
-   tries Vulkan next when the OpenGL one was only chosen in the settings). */
-static void gl_give_up(void) {
+void GsGl_Vsync(int on) { /* the settings window's "V-sync" */
     if (sCtx != NULL) {
-        SDL_GL_MakeCurrent(sWindow, NULL);
-        SDL_GL_DestroyContext(sCtx);
-        sCtx = NULL;
-    }
-    if (sWindow != NULL) {
-        SDL_DestroyWindow(sWindow);
-        sWindow = NULL;
+        SDL_GL_SetSwapInterval(on != 0);
     }
 }
 
+/* ---- init --------------------------------------------------------------------------------------- */
 static int gl_init(void) {
     static const uint32_t white = 0xFFFFFFFFu;
     int i;
 
-#if GL_ES
-    /* OpenGL ES 3.2. (On Android the context's kind is part of the window's EGL configuration: asked for first.) */
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);   /* (the window's own buffer is only presented to) */
-    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 0);
-#endif
     sWindow = GsDraw_WindowCreate(1);
     if (sWindow == NULL) { return 0; }
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: the window is there\n"); }
-#if !GL_ES
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
-#endif
     if (getenv("BT3_GPU_DEBUG") != NULL) { SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG); }
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: window made, creating the context\n"); }
     sCtx = SDL_GL_CreateContext(sWindow);
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: context %p (%s)\n", (void *)sCtx, sCtx == NULL ? SDL_GetError() : "ok"); }
     if (sCtx == NULL || !SDL_GL_MakeCurrent(sWindow, sCtx)) {
-        fprintf(stderr, "bt3: gl: no %s context: %s\n", GL_ES ? "OpenGL ES 3.2" : "GL 3.3 core", SDL_GetError());
-        gl_give_up();
+        fprintf(stderr, "bt3: gl: no GL 3.3 core context: %s\n", SDL_GetError());
         return 0;
     }
-#if GL_ES
-    {   /* the present mode chosen for Vulkan, as near as GL has it: FIFO (VSync) waits for the screen, the others not */
-        extern int Port_Setting(const char *name, int def);
-        SDL_GL_SetSwapInterval(Port_Setting("present", 0) == 1 ? 1 : 0);
-    }
-#else
-    SDL_GL_SetSwapInterval(0);
-#endif
+    SDL_GL_SetSwapInterval(Port_Setting("vsync", 0) != 0);
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: current, loading the functions\n"); }
-    if (!load_gl()) { gl_give_up(); return 0; }
+    if (!load_gl()) { return 0; }
     fprintf(stderr, "bt3: GL renderer: %s (%s)\n", (const char *)glGetString(GL_RENDERER), (const char *)glGetString(GL_VERSION));
-    {   /* the meter's and the reports' name of the GPU (as the Vulkan back end prints it) */
-        fprintf(stderr, "bt3: GPU renderer: opengl%s\n", GL_ES ? " es" : "");
-    }
     sHasIndexed = glEnablei != NULL && glColorMaski != NULL;
     /* Depth as the Vulkan back end has it: clip-space z in 0..w stored as z / w, and (SDL GPU's default, depth
        clip off) nothing cut at the near and far planes, the depth clamped to 0..1 instead. */
-#if GL_ES
-    /* ES: glClipControlEXT and depth clamping only where the driver has the extensions (Mali mostly has neither:
-       z is moved to GL's range in the shaders, and what comes nearer than the near plane is cut, as with the Vulkan
-       renderer on GPUs without depth clamping) */
-    if (getenv("BT3_GL_NOCLIPCONTROL") == NULL && SDL_GL_ExtensionSupported("GL_EXT_clip_control")) {
-        glClipControl = (void (*)(GLenum, GLenum))SDL_GL_GetProcAddress("glClipControlEXT");
-    }
-    sHasClipControl = glClipControl != NULL;
-    if (sHasClipControl) { glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE); }
-    if (SDL_GL_ExtensionSupported("GL_EXT_depth_clamp")) { glEnable(GL_DEPTH_CLAMP); }
-    gGsNoBcTextures = !SDL_GL_ExtensionSupported("GL_EXT_texture_compression_s3tc");
-    fprintf(stderr, "bt3: gl es: clip control %s, depth clamp %s, DXT textures %s\n", sHasClipControl ? "yes" : "no",
-            SDL_GL_ExtensionSupported("GL_EXT_depth_clamp") ? "yes" : "no", gGsNoBcTextures ? "no (a pack's .dds are unpacked on the CPU)" : "yes");
-#else
     if (getenv("BT3_GL_NOCLIPCONTROL") == NULL && SDL_GL_ExtensionSupported("GL_ARB_clip_control")) {
         glClipControl = (void (*)(GLenum, GLenum))SDL_GL_GetProcAddress("glClipControl");
     }
     sHasClipControl = glClipControl != NULL;
     if (sHasClipControl) { glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE); }
     glEnable(GL_DEPTH_CLAMP);
-#endif
     if (!sHasIndexed) { fprintf(stderr, "bt3: gl: no per-attachment blend/mask (GL 3.0 indexed): the aux byte may be wrong\n"); }
 
-    sMainProg[0] = make_program(kGsVertGlsl, kGsFragGlsl, "gs", sGsSamplers, 2, 0);
-    sMainProg[1] = make_program(kVu0VertGlsl, kGsFragGlsl, "vu0", sGsSamplers, 2, 0);
-    sMainProg[2] = make_program(kVu4VertGlsl, kGsFragGlsl, "vu4", sGsSamplers, 2, 0);
-    sMainProg[3] = make_program(kVu6VertGlsl, kGsFragGlsl, "vu6", sGsSamplers, 2, 0);
-    sOutlineProg = make_program(kFxVertGlsl, kOutlineFragGlsl, "outline", sOneSampler, 1, 0);
-    sKeyProg = make_program(kFxVertGlsl, kAlphakeyFragGlsl, "alphakey", sOneSampler, 1, 0);
-    sDclutProg = make_program(kFxVertGlsl, kDclutFragGlsl, "dclut", sDclutSamplers, 3, 0);
-    /* the draws that never discard: a shader with `discard` in it keeps tile-based GPUs from dropping hidden pixels
-       early (BT3_GPU_DISCARD=1: always the one with discard) */
-    if (getenv("BT3_GPU_DISCARD") == NULL) {
-        sMainProgNd[0] = make_program(kGsVertGlsl, kGsFragGlsl, "gs-nd", sGsSamplers, 2, 1);
-        sMainProgNd[1] = make_program(kVu0VertGlsl, kGsFragGlsl, "vu0-nd", sGsSamplers, 2, 1);
-        sMainProgNd[2] = make_program(kVu4VertGlsl, kGsFragGlsl, "vu4-nd", sGsSamplers, 2, 1);
-        sMainProgNd[3] = make_program(kVu6VertGlsl, kGsFragGlsl, "vu6-nd", sGsSamplers, 2, 1);
-    }
+    sMainProg[0] = make_program(kGsVertGlsl, kGsFragGlsl, "gs", sGsSamplers, 2);
+    sMainProg[1] = make_program(kVu0VertGlsl, kGsFragGlsl, "vu0", sGsSamplers, 2);
+    sMainProg[2] = make_program(kVu4VertGlsl, kGsFragGlsl, "vu4", sGsSamplers, 2);
+    sMainProg[3] = make_program(kVu6VertGlsl, kGsFragGlsl, "vu6", sGsSamplers, 2);
+    sMainProg[4] = make_program(kGsVertGlsl, kGsnzFragGlsl, "gs nz", sGsSamplers, 2);
+    sMainProg[5] = make_program(kVu0VertGlsl, kGsnzFragGlsl, "vu0 nz", sGsSamplers, 2);
+    sMainProg[6] = make_program(kVu4VertGlsl, kGsnzFragGlsl, "vu4 nz", sGsSamplers, 2);
+    sMainProg[7] = make_program(kVu6VertGlsl, kGsnzFragGlsl, "vu6 nz", sGsSamplers, 2);
+    sOutlineProg = make_program(kFxVertGlsl, kOutlineFragGlsl, "outline", sOneSampler, 1);
+    sKeyProg = make_program(kFxVertGlsl, kAlphakeyFragGlsl, "alphakey", sOneSampler, 1);
+    sDclutProg = make_program(kFxVertGlsl, kDclutFragGlsl, "dclut", sDclutSamplers, 3);
     sPresentProg = make_present_program();
-    if (sGlFailed) {
-        fprintf(stderr, "bt3: gl: the shaders could not be made: this renderer gives up\n");
-        gl_give_up();
-        return 0;
-    }
 
     glGenBuffers(1, &sVboGs);
     glBindBuffer(GL_ARRAY_BUFFER, sVboGs);
@@ -744,7 +740,7 @@ static int gl_init(void) {
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, sUboU);
     glGenBuffers(1, &sUboParams);
     glBindBuffer(GL_UNIFORM_BUFFER, sUboParams);
-    glBufferData(GL_UNIFORM_BUFFER, 64, NULL, GL_DYNAMIC_DRAW);
+    glBufferData(GL_UNIFORM_BUFFER, 80, NULL, GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_UNIFORM_BUFFER, 1, sUboParams);
 
     for (i = 0; i < 16; i++) {
@@ -769,7 +765,7 @@ static int gl_init(void) {
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     glViewport(0, 0, GS_W * SCALE, GS_H * SCALE);
     /* the overlay (F1's settings, the online window) here too: ImGui's OpenGL3 backend, with the context current */
-    if (!Ui_Init(sWindow, NULL, (void *)sCtx)) {
+    if (!Ui_Init(sWindow, NULL, (void *)sCtx, (const char *)glGetString(GL_RENDERER))) {
         fprintf(stderr, "bt3: gl: the settings window is not available\n");
     }
     return 1;
@@ -793,114 +789,21 @@ void GsGl_StripTextureFree(unsigned id) {
     glDeleteTextures(1, &t);
 }
 
-/* The shown buffer's picture onto the window, letterboxed (the window's own framebuffer, not yet swapped). */
-static void present_picture(int best) {
-    glBindVertexArray(0);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    {
-        int sw, sh;
-        SDL_GetWindowSize(sWindow, &sw, &sh);
-        SDL_GetWindowSizeInPixels(sWindow, &sw, &sh); /* the drawable's real pixels (differs from the window on HiDPI / fullscreen) */
-        glViewport(0, 0, sw, sh);
-        glDisable(GL_SCISSOR_TEST);
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        glEnable(GL_SCISSOR_TEST);
-        if (best >= 0 && gsTargets[best].cleared) {
-            float want = (float)Port_AspectMilli() / 1000.0f;
-            int w = sw, h = sh, dx, dy;
-            if ((float)sw > (float)sh * want) { w = (int)((float)sh * want + 0.5f); } else { h = (int)((float)sw / want + 0.5f); }
-            dx = (sw - w) / 2;
-            dy = (sh - h) / 2;
-            if (getenv("BT3_GS_VERBOSE") != NULL) {
-                int ww, wh;
-                SDL_GetWindowSize(sWindow, &ww, &wh);
-                fprintf(stderr, "gl: present window %dx%d pixels %dx%d aspect %d -> picture %dx%d at (%d,%d)\n", ww, wh, sw, sh, Port_AspectMilli(), w, h, dx, dy);
-            }
-            {   /* where the picture is in the window, for the overlay's stage and song names (ui.cpp), counted from
-                   the top as the overlay does */
-                extern volatile int gUiPresentX, gUiPresentY, gUiPresentW, gUiPresentH;
-                gUiPresentX = dx;
-                gUiPresentY = sh - dy - h;
-                gUiPresentW = w;
-                gUiPresentH = h;
-            }
-            glViewport(dx, dy, w, h);
-            glDisable(GL_SCISSOR_TEST);
-            glDisable(GL_DEPTH_TEST);
-            glDisable(GL_BLEND);
-            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-            glUseProgram(sPresentProg);
-            glBindVertexArray(sVaoGs); /* core profile needs a bound VAO to draw (the present uses no attributes) */
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, sTgCol[best]);
-            glBindSampler(0, sSamplers[7]); /* linear, clamped */
-            glDrawArrays(GL_TRIANGLES, 0, 3);
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        }
-    }
-}
-
-static int sLastBest = -1; /* the target shown last (shown again while the game is paused) */
-extern void GsGpu_PollEvents(void); /* gs_gpu.c */
-
-#ifdef __ANDROID__
-/* The log's heartbeat, as the Vulkan renderer's (gs_gpu.c): every 300 frames, what is drawn and how fast the game runs. */
-static void gl_heartbeat(void) {
-    extern unsigned gPortVBlanks;
-    static uint64_t lastNs;
-    static unsigned lastBlank, lastFrame;
-    uint64_t now;
-    if (gGsFrame % 300 != 0) {
-        return;
-    }
-    now = SDL_GetTicksNS();
-    fprintf(stderr, "bt3: alive: frame %u, game blank %u, %u draws, %u vertices, %d targets, %d textures\n", gGsFrame, gPortVBlanks,
-            gsDrawCount, gsVertCount + gsVuVertCount, gsTargetCount, gsTexCount);
-    if (lastNs != 0 && now > lastNs) {
-        double secs = (double)(now - lastNs) / 1e9, bps = (double)(gPortVBlanks - lastBlank) / secs;
-        fprintf(stderr, "bt3: speed %.0f%% (%.1f game blanks/s, %.1f pictures/s over %.1f s%s), OpenGL ES\n", bps * 100.0 / 60.0, bps,
-                (double)(gGsFrame - lastFrame) / secs, secs, Ui_Pauses() ? ", the menu was open" : "");
-    }
-    lastNs = now;
-    lastBlank = gPortVBlanks;
-    lastFrame = gGsFrame;
-}
-#endif
-
-/* While the game is paused (the settings window open, plat_stub.c): the last picture again with the window on it, and
-   the window's events. 0: not this renderer, or nothing shown yet (the game goes on). */
-int GsGl_PauseFrame(void) {
-    if (sCtx == NULL || sLastBest < 0 || sLastBest >= gsTargetCount || sTgFbo[sLastBest] == 0) {
-        return 0;
-    }
-    GsGpu_PollEvents();
-    present_picture(sLastBest);
-    Ui_DrawGL();
-    SDL_GL_SwapWindow(sWindow);
-    SDL_Delay(8); /* (nothing moves behind the window: about 100 pictures a second are plenty, and spare the battery) */
-    return 1;
-}
-
 /* ---- the frame ---------------------------------------------------------------------------------- */
 static void frame_end(void) {
     SDL_Event ev;
     int cur = -1, best = -1, i;
     uint32_t n;
-    struct { int32_t mode[4]; float misc[4]; float rect[4]; float orig[4]; } fu, lastFu;
+    struct { int32_t mode[4]; float misc[4]; float rect[4]; float orig[4]; float extra[4]; } fu, lastFu;
     int haveFu = 0;
 
-#ifdef __ANDROID__
-    (void)ev;
-    GsGpu_PollEvents(); /* gs_gpu.c: the same events as the Vulkan renderer (back key, START + SELECT, leaving) */
-    gl_heartbeat();
-#else
     GsGpu_TitlePoll();
     while (SDL_PollEvent(&ev)) {
         if (ev.type == SDL_EVENT_QUIT) { exit(0); }
+        { extern void PortA11y_Event(const SDL_Event *ev); PortA11y_Event(&ev); } /* a11y.c: the repeat key and button */
         if (PortInput_Hotkey(&ev)) { Ui_Toggle(); continue; }
         if (Ui_Event(&ev)) { continue; }
-        if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_ESCAPE) { exit(0); }
+        if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_ESCAPE) { if (!ev.key.repeat && !Ui_QuitAsk()) { exit(0); } /* (asks first) */ }
         if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F9) { /* in-between pictures on / off */
             extern int gsInterp;
             extern void Port_SettingSave(const char *name, int value);
@@ -913,7 +816,6 @@ static void frame_end(void) {
         }
         if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F11) { GsDraw_FullscreenToggle(); }
     }
-#endif
     if (getenv("BT3_GS_VERBOSE") != NULL && gGsFrame % 30 == 0) {
         fprintf(stderr, "gpu: frame %u: %u draws, %u vertices, %d targets, %d textures, %d pipelines, %u primitives of PS2-only passes dropped, %u native effects\n",
                 gGsFrame, gsDrawCount, gsVertCount + gsVuVertCount, gsTargetCount, gsTexCount, sPipeCount, gsSkipped, gsNative);
@@ -981,6 +883,7 @@ static void frame_end(void) {
     glEnable(GL_SCISSOR_TEST);
     for (n = 0; n < gsDrawCount; n++) {
         const GsDraw *d = &gsDraws[n];
+        int shadowStart;
         if (d->native >= 100) {
             GLenum one[1] = {GL_COLOR_ATTACHMENT0};
             if (sFbTex[d->native - 100] == 0) { continue; }
@@ -998,7 +901,10 @@ static void frame_end(void) {
         if (d->native == 5 || d->native == 4) {
             GLuint dst = d->native == 5 ? sDateCopy : sAuxCopy;
             GLenum one[1] = {GL_COLOR_ATTACHMENT0};
+            int rx = 0, ry = 0, rw = GS_W * SCALE, rh = GS_H * SCALE;
             if (!gsTargets[d->target].cleared) { continue; }
+            /* the DATE copy: only what the draws that follow read (gs_draw.c); rows as in the Vulkan back end */
+            if (d->native == 5 && !GsDraw_DateRegion(n, &rx, &ry, &rw, &rh)) { continue; }
             /* The copy of the frame's alpha ids (the outline and the DATE passes read it). glBlitFramebuffer is
                clipped by the scissor test, so with a partial scissor in force (the split screen's halves) only
                part of the alpha would be copied and the outline would draw a stale silhouette; turn it off for
@@ -1010,7 +916,7 @@ static void frame_end(void) {
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, sScratchDraw);
             glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, dst, 0);
             glDrawBuffers(1, one);
-            glBlitFramebuffer(0, 0, GS_W * SCALE, GS_H * SCALE, 0, 0, GS_W * SCALE, GS_H * SCALE, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            glBlitFramebuffer(rx, ry, rx + rw, ry + rh, rx, ry, rx + rw, ry + rh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
             glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
             glEnable(GL_SCISSOR_TEST);
@@ -1048,6 +954,9 @@ static void frame_end(void) {
             continue;
         }
         /* an ordinary primitive */
+        shadowStart = sPipes[d->pipeline].shadow &&
+            (n == 0 || gsDraws[n - 1].native || gsDraws[n - 1].target != d->target ||
+             !sPipes[gsDraws[n - 1].pipeline].shadow);
         if (cur != d->target) {
             bind_target(d->target, !gsTargets[d->target].cleared);
             gsTargets[d->target].cleared = 1;
@@ -1058,6 +967,15 @@ static void frame_end(void) {
         } else if (!gsTargets[d->target].cleared) {
             gsTargets[d->target].cleared = 1;
         }
+        if (shadowStart) {
+            /* One bit per pixel blocks every later triangle of this flat-shadow run. */
+            glDisable(GL_SCISSOR_TEST);
+            glStencilMask(0xff);
+            glClearStencil(0);
+            glClear(GL_STENCIL_BUFFER_BIT);
+            glEnable(GL_SCISSOR_TEST);
+            haveScissor = 0;
+        }
         set_pipe(d->pipeline);
         glBindVertexArray(d->vu ? sVaoVu : sVaoGs);
         if (d->vu) { set_uniform_u(&gsVuUni[d->uniform]); }
@@ -1066,6 +984,7 @@ static void frame_end(void) {
         memcpy(fu.misc, d->misc, sizeof(fu.misc));
         memcpy(fu.rect, d->rect, sizeof(fu.rect));
         memcpy(fu.orig, d->orig, sizeof(fu.orig));
+        fu.extra[0] = d->vu ? (gsVuUni[d->uniform].misc[2] > 0.0f ? gsVuUni[d->uniform].misc[2] : 0.0f) : gsZMax;
         if (!haveFu || memcmp(&fu, &lastFu, sizeof(fu)) != 0) {
             set_params(&fu, sizeof(fu));
             memcpy(&lastFu, &fu, sizeof(fu));
@@ -1084,12 +1003,52 @@ static void frame_end(void) {
     /* the shown buffer: the one sceGsSwapDBuff set up for this frame, else the first target */
     best = gGsMainFbp >= 0 ? GsDraw_TargetGet((uint32_t)gGsMainFbp, 0) : -1;
     for (i = 0; best < 0 && i < gsTargetCount; i++) { best = i; }
-    if (best >= 0 && gsTargets[best].cleared) {
-        sLastBest = best; /* (shown again while the game is paused: GsGl_PauseFrame) */
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDisable(GL_STENCIL_TEST);
+    {
+        int sw, sh;
+        SDL_GetWindowSize(sWindow, &sw, &sh);
+        SDL_GetWindowSizeInPixels(sWindow, &sw, &sh); /* the drawable's real pixels (differs from the window on HiDPI / fullscreen) */
+        glViewport(0, 0, sw, sh);
+        glDisable(GL_SCISSOR_TEST);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glEnable(GL_SCISSOR_TEST);
+        if (best >= 0 && gsTargets[best].cleared) {
+            extern int Port_PageAspectMilli(void); /* plat_stub.c: 4:3 while the menus run, if asked for */
+            float want = (float)Port_PageAspectMilli() / 1000.0f;
+            int w = sw, h = sh, dx, dy;
+            if ((float)sw > (float)sh * want) { w = (int)((float)sh * want + 0.5f); } else { h = (int)((float)sw / want + 0.5f); }
+            dx = (sw - w) / 2;
+            dy = (sh - h) / 2;
+            if (getenv("BT3_GS_VERBOSE") != NULL) {
+                int ww, wh;
+                SDL_GetWindowSize(sWindow, &ww, &wh);
+                fprintf(stderr, "gl: present window %dx%d pixels %dx%d aspect %d -> picture %dx%d at (%d,%d)\n", ww, wh, sw, sh, Port_AspectMilli(), w, h, dx, dy);
+            }
+            {   /* where the picture is in the window, for the overlay's stage and song names (ui.cpp), counted from
+                   the top as the overlay does */
+                extern volatile int gUiPresentX, gUiPresentY, gUiPresentW, gUiPresentH;
+                gUiPresentX = dx;
+                gUiPresentY = sh - dy - h;
+                gUiPresentW = w;
+                gUiPresentH = h;
+            }
+            glViewport(dx, dy, w, h);
+            glDisable(GL_SCISSOR_TEST);
+            glDisable(GL_DEPTH_TEST);
+            glDisable(GL_BLEND);
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            glUseProgram(sPresentProg);
+            glBindVertexArray(sVaoGs); /* core profile needs a bound VAO to draw (the present uses no attributes) */
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, sTgCol[best]);
+            glBindSampler(0, sSamplers[7]); /* linear, clamped */
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
     }
-    present_picture(best);
-    Ui_DrawGL(); /* the overlay, over the presented picture */
-    SDL_GL_SwapWindow(sWindow);
     /* BT3_GL_WINSHOT=<n>: dump the window's own framebuffer every n frames (what the user sees) */
     if (getenv("BT3_GL_WINSHOT") != NULL && atoi(getenv("BT3_GL_WINSHOT")) > 0 && (int)gGsFrame % atoi(getenv("BT3_GL_WINSHOT")) == 0) {
         int sw, sh, x, y;
@@ -1114,6 +1073,8 @@ static void frame_end(void) {
         }
         free(wp);
     }
+    Ui_DrawGL(); /* the overlay, over the presented picture */
+    SDL_GL_SwapWindow(sWindow);
     if (getenv("BT3_GS_VERBOSE") != NULL) {
         GLenum e = glGetError();
         if (e != GL_NO_ERROR) { fprintf(stderr, "bt3: gl: frame error 0x%x\n", e); }
@@ -1185,7 +1146,7 @@ static int gl_target_read(int i, uint8_t *rgba) {
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     for (y = 0; y < 448; y++) { /* (rows come back in texture order: the first is the scene's top) */
         for (x = 0; x < 512; x++) {
-            memcpy(rgba + (y * 512 + x) * 4, px + ((size_t)(y * SCALE + SCALE / 2) * (size_t)w + (size_t)(x * SCALE + SCALE / 2)) * 4, 4);
+            memcpy(rgba + (y * 512 + x) * 4, px + ((size_t)(y * SCALE + SCALE / 2) * w + x * SCALE + SCALE / 2) * 4, 4);
         }
     }
     free(px);

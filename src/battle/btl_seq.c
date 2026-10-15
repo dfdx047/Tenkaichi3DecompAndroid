@@ -583,6 +583,12 @@ extern void BtlPause_SetPad(s32 pad);
 extern s32 BtlPause_GetMenuPad(void);
 extern s32 BtlPause_GetPad(void);
 extern s32 PauseMenu_Update(s32 a, s32 b);     /* pause / result menu update */
+#ifdef PORT
+extern int Port_NetActive(void); /* port/src/gs/net.c: 1 in an online match */
+extern int Port_NetMe(void);     /* which player this copy plays (0 or 1) */
+extern s32 gPortSeSilent;        /* src/sys/snd.c */
+extern void PauseMenu_Reset(void);
+#endif
 extern void PauseMenu_Draw(void);
 extern void Snd_SetPause(s32 a, s32 b);
 extern void Hud_ShowAll(s32 on);          /* HUD visibility bits */
@@ -1331,12 +1337,32 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
             } else if (Battle_GetMode() == 1 && BtlScript_IsEventRunning()) {
                 BtlScript_AbortEvents();
             } else {
-                Battle_GetWork()->flags |= BATTLE_FLAG_PAUSE_MENU | BATTLE_FLAG_PAUSE;
-                Adx_PauseSeVoice();
-                Snd_SetPause(4, 1);
+#ifdef PORT
+                /* Online the pause menu does not stop the fight (a player could hold the other in a pause for as
+                   long as they liked): the menu opens for the one who pressed START, the fight, its clock and its
+                   sound go on. That player's fighter takes no buttons meanwhile (BtlInput_Sample) and the menu is
+                   drawn on that player's screen only (PauseMenu_Draw). */
+                if (Port_NetActive()) {
+                    Battle_GetWork()->flags |= BATTLE_FLAG_PAUSE_MENU;
+                } else
+#endif
+                {
+                    Battle_GetWork()->flags |= BATTLE_FLAG_PAUSE_MENU | BATTLE_FLAG_PAUSE;
+                    Adx_PauseSeVoice();
+                    Snd_SetPause(4, 1);
+                }
             }
         }
         if (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) {
+#ifdef PORT
+            if (Port_NetActive()) {
+                gPortSeSilent = BtlPause_GetMenuPad() != Port_NetMe(); /* (its sounds are for its owner) */
+                if (PauseMenu_Update(BtlPause_GetMenuPad(), 0) == 0) {
+                    Battle_GetWork()->flags &= ~BATTLE_FLAG_PAUSE_MENU;
+                }
+                gPortSeSilent = 0;
+            } else
+#endif
             if (PauseMenu_Update(BtlPause_GetMenuPad(), 0) == 0) {
                 Battle_GetWork()->flags &= ~(BATTLE_FLAG_PAUSE_MENU | BATTLE_FLAG_PAUSE);
                 Snd_SetPause(4, 0);
@@ -1344,6 +1370,14 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
         }
     }
     if (BtlSeq_CheckBattleEnd()) {
+#ifdef PORT
+        /* Online the fight can end under an open pause menu (it does not stop for it): the menu is closed, unless
+           it is what ended the battle (as in the original, where it stays up through the fade). */
+        if (Port_NetActive() && (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) && !BattleResult_IsAborted()) {
+            PauseMenu_Reset();
+            Battle_GetWork()->flags &= ~BATTLE_FLAG_PAUSE_MENU;
+        }
+#endif
         if (Battle_GetMode() == 7) {
             return 6;
         }

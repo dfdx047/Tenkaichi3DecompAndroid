@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <time.h>
+#include "port_addr.h"
 extern void Port_StateTouch(void *p, unsigned long n); /* gs/state.c */
 
 /* ---- second processor (IOP): heap and remote calls ---- */
@@ -25,7 +26,7 @@ int sceSifFreeIopHeap(void *addr) { Port_LowFree(addr); return 0; }
 int sceSifQueryTotalFreeMemSize() { return 0x100000; }
 int sceSifQueryMaxFreeMemSize() { return 0x100000; }
 /* The bind is answered at once: sceSifClientData.serve (offset 0x24) becomes non-NULL. */
-int sceSifBindRpc(void *client, int id, int mode) { (void)id; (void)mode; *(uint32_t *)((uint8_t *)client + 0x24) = (uint32_t)(uintptr_t)client; /* a 4-byte pointer field of the game */ return 0; }
+int sceSifBindRpc(void *client, int id, int mode) { (void)id; (void)mode; *(uint32_t *)((uint8_t *)client + 0x24) = Port_Addr(client); /* a 4-byte pointer field of the game */ return 0; }
 int func_002B4AF0() { return 0; }      /* sceSifCheckStatRpc: never busy */
 /* sceSifCallRpc, sceSifSetDma, sceSdRemote: the sound effects, port/src/gs/snd_se.c */
 int sceSifDmaStat() { return -1; }     /* transfer finished */
@@ -92,6 +93,69 @@ int Port_VBlankUsLeft(void) {
     return sPaceNext > t && sPaceNext - t < 100000000ull ? (int)((sPaceNext - t) / 1000ull) : 0;
 }
 
+/* How far behind its grid the game is, in microseconds: the coming vertical blank was due that long ago (0: it
+   is not due yet, or there is no grid). For gs/gs_draw.c, which leaves pictures out when the machine is behind. */
+int Port_PaceBehindUs(void) {
+    unsigned long long t = now_ns();
+    return sPaceNext != 0 && t > sPaceNext && t - sPaceNext < 100000000ull ? (int)((t - sPaceNext) / 1000ull) : 0;
+}
+
+/* The game's pace, 1000 = its own. Online it is the match's and nothing else (gs/net.c: 1000 or 1200, the same on
+   both copies); otherwise the player's own "Game speed" of the Cheats tab (setting game_speed, percent, 50..200),
+   which an online match never reads. Like the match's speed it is the vertical blanks' pace and the pitch of what
+   is heard: every step of the game is computed as always. (PORT_HOST: not the game's state.) */
+extern int Port_NetSpeedMilli(void);
+extern int Port_NetSession(void);
+extern int Port_NetActive(void);
+extern int Port_Setting(const char *name, int def); /* plat_settings.c */
+extern void Port_SettingSave(const char *name, int value);
+PORT_HOST static int sSpeedPercent = -1;
+int Port_GameSpeed(void) {
+    if (sSpeedPercent < 0) {
+        int v = Port_Setting("game_speed", 100);
+        sSpeedPercent = v < 50 ? 50 : v > 200 ? 200 : v;
+    }
+    return sSpeedPercent;
+}
+void Port_GameSpeedSet(int percent) {
+    percent = percent < 50 ? 50 : percent > 200 ? 200 : percent;
+    if (percent != Port_GameSpeed()) {
+        sSpeedPercent = percent;
+        Port_SettingSave("game_speed", percent);
+    }
+}
+int Port_SpeedMilli(void) {
+    return Port_NetSession() || Port_NetActive() ? Port_NetSpeedMilli() : Port_GameSpeed() * 10;
+}
+/* BT3_LAG_LOG=1: when things happen in a tick, in microseconds since the start: V a vertical blank (after its wait),
+   R a pad read, E the window's events taken (which is when a controller's state is renewed), S a picture handed to
+   the window. For measuring how old the input is that the game reads, and how long until its picture is shown. */
+void Port_LagMark(int what) {
+    PORT_HOST static int on = -1;
+    PORT_HOST static unsigned long long first = 0;
+    unsigned long long t;
+    if (on < 0) {
+        on = getenv("BT3_LAG_LOG") != NULL;
+    }
+    if (!on) {
+        return;
+    }
+    t = now_ns();
+    if (first == 0) {
+        first = t;
+    }
+    {
+        extern unsigned gGsFrame; /* gs/gs_draw.c: the pictures so far */
+        fprintf(stderr, "lag %c %u %u\n", what, (unsigned)((t - first) / 1000ull), gGsFrame);
+    }
+}
+
+int Port_LateInput(void);
+
+/* A vertical blank's length: 16.68 ms at the game's own pace. */
+#define BLANK_NS (16683350ull * 1000ull / (unsigned long long)Port_SpeedMilli())
+unsigned long long Port_BlankNs(void) { return BLANK_NS; }
+
 static void vblank_wait(void) {
     struct timespec ts;
     unsigned long long t = now_ns(), after;
@@ -110,7 +174,7 @@ static void vblank_wait(void) {
            a new grid instead, as this did before, added a full period to every such frame: a machine that needed
            20 ms per frame ran the fight at 27 frames per second and unevenly, though it was within the budget.) */
         after = t;
-        next += 16683350ull;
+        next += BLANK_NS;
         sPaceLate++;
     } else if (next > t && next - t < 100000000ull) {
 #ifdef _WIN32
@@ -134,10 +198,10 @@ static void vblank_wait(void) {
 #endif
         after = now_ns();
         gPortSleptNs += after - t; /* the time really spent waiting (a sleep can return early or late) */
-        next += 16683350ull;
+        next += BLANK_NS;
     } else {
         after = t;
-        next = t + 16683350ull; /* the first one, or more than a tenth of a second behind: a new grid from now */
+        next = t + BLANK_NS; /* the first one, or more than a tenth of a second behind: a new grid from now */
         sPaceReset++;
     }
     /* BT3_GS_VERBOSE: once a second, how evenly the vertical blanks came (they should be 16.68 ms apart) */
@@ -163,25 +227,48 @@ static void vblank_wait(void) {
 
 #undef next
 static unsigned char sPadLast[2][18]; /* (defined with the pads below) */
-void Port_VBlank(void) {
-    {   /* the settings window open: the game waits here, between two frames, until it is closed (not online) */
-        extern int Ui_Pauses(void);                     /* gs/ui.cpp */
-        extern int GsGpu_PauseFrame(void);              /* gs/gs_gpu.c */
-        extern void Port_AudioPause(int on);            /* gs/snd_adx.c */
-        extern int Port_NetSession(void);
-        if (GsGpu_Enabled() && Ui_Pauses() && !Port_NetSession() && getenv("BT3_NOPAUSE") == NULL) {
-            Port_AudioPause(1);
-            while (Ui_Pauses() && GsGpu_PauseFrame()) {
-#ifdef _WIN32
-                Sleep(16);
-#else
-                struct timespec ts = {0, 16000000};
-                nanosleep(&ts, NULL);
-#endif
-            }
-            Port_AudioPause(0);
-        }
+
+/* ---- "Low input lag" (setting late_input, F1 > Video; BT3_LATE_INPUT=0/1) ------------------------------------
+ * The game reads the pads, computes the tick, and THEN waits for its vertical blanks (two in a fight) before the
+ * picture is shown: what is seen is 33 ms old in a fight although computing and drawing it took a few (measured
+ * with BT3_LAG_LOG: 1 ms and 2 ms on a fast machine). With this on, a blank the game asks for is not waited for
+ * there but owed, and waited for when the game next reads the pads: the tick's length is the same, the pads are
+ * read at its end instead of its start, and the picture follows the read by the time the work takes.
+ * Nothing of the game's state changes: the same reads, the same blanks, in the same order (a recording replays
+ * the same). Not in an online session and not with in-between pictures, which keep the original order.
+ * (PORT_HOST: real time, not the game's state.) */
+PORT_HOST static int sLateOwed = 0, sLateOn = -1;
+
+int Port_LateInput(void) {
+    if (sLateOn < 0) {
+        sLateOn = getenv("BT3_LATE_INPUT") != NULL ? atoi(getenv("BT3_LATE_INPUT")) != 0 : Port_Setting("late_input", 0) != 0;
     }
+    return sLateOn;
+}
+
+void Port_LateInputSet(int on) {
+    extern void Port_SettingSave(const char *name, int value);
+    sLateOn = on != 0;
+    Port_SettingSave("late_input", sLateOn);
+}
+
+/* The blanks owed are waited for now: called before the first pad is read. */
+static void late_wait(void) {
+    extern void PortInput_Fresh(void); /* gs/gs_input.c */
+    if (sLateOwed == 0) {
+        return;
+    }
+    while (sLateOwed > 0) {
+        sLateOwed--;
+        vblank_wait();
+    }
+    Port_LagMark('L');
+    if (GsGpu_Enabled()) {
+        PortInput_Fresh(); /* the controllers and keys as they are now, not as they were when the last picture was shown */
+    }
+}
+void Port_VBlank(void) {
+    Port_LagMark('W'); /* (the game has come to wait for a blank) */
     {
         extern void Port_SessionPoll(void); /* gs/state.c: the state at the first blank is kept; an online session
                                                begins or ends here */
@@ -205,18 +292,32 @@ void Port_VBlank(void) {
             /* gs/gs_draw.c: the pictures of the tick that follow its first (in-between pictures and the real one):
                those due before this blank now, those due at it after the wait */
             extern void GsGpu_InterpPump(int ahead_ms, int all);
+            extern int gsInterp; /* gs/gs_draw.c: in-between pictures (their timing counts from the blanks) */
+            int timed = (GsGpu_Enabled() || getenv("BT3_PACED") != NULL) && getenv("BT3_UNCAPPED") == NULL && !warp && !again;
             /* (not while blanks are run again after a rollback or run ahead for an online session: those are
                not shown and not timed, and waiting for a picture here would slow the catching up) */
+            if (timed && Port_LateInput() && !Port_NetSession() && gsInterp <= 0 && sLateOwed < 2) {
+                /* "Low input lag": the wait is owed and made before the next pad read instead (scePad2Read), so
+                   that the tick is computed and shown right after its input was read, not a tick's wait later.
+                   At most two blanks are owed (a fight's tick has two); where the game reads no pad (loading)
+                   the blanks are waited for here as always. */
+                sLateOwed++;
+            } else {
             if (GsGpu_Enabled() && !warp && !again) {
                 GsGpu_InterpPump(-1, 0); /* (-1: what can be finished before the blank) */
             }
-            if ((GsGpu_Enabled() || getenv("BT3_PACED") != NULL) && getenv("BT3_UNCAPPED") == NULL && !warp && !again) {
+            if (timed) {
                 vblank_wait();
+            }
             }
             if (GsGpu_Enabled() && !warp && !again) {
                 GsGpu_InterpPump(6, 0);
             }
         }
+    }
+    {
+        extern void PortA11y_GameTick(void); /* a11y_game.c: what the screen reader says (off without its library) */
+        PortA11y_GameTick();
     }
     {   /* BT3_PAD_TABLE=<file>: what each pad read during the blank that ends here, 36 bytes per blank (the input
            of a session by blank and by pad: gs/net.c plays one player's column of it for its tests) */
@@ -231,6 +332,7 @@ void Port_VBlank(void) {
             fflush(table);
         }
     }
+    Port_LagMark('V');
     gPortVBlanks++;
     {
         extern int gPortResim;
@@ -295,6 +397,10 @@ int scePad2Read(int socket, unsigned char *data) {
     extern void Port_NetInput(int player, unsigned char *data);
     int n;
 
+    if (socket == 0) {
+        late_wait();
+        Port_LagMark('R');
+    }
     if (Port_NetActive()) {
         Port_NetInput(socket, data); /* both pads come from the exchange with the other player */
         n = 18;
@@ -349,7 +455,17 @@ static int pad_read(int socket, unsigned char *data) {
     return 18;
 }
 int sceVibGetProfile() { return 0; }
-int sceVibSetActParam() { return 0; }
+/* The game's motor command for a port, sent every frame (Pad_SendActuator, src/sys/pad.c): two bytes, bit 0 = the
+   small motor, bits 1..7 = the large motor's power. To the player's controller (gs/gs_input.c). Only read here:
+   nothing of it goes back into the game. */
+int sceVibSetActParam(int socket, int profileSize, unsigned char *profile, int dataSize, unsigned char *data) {
+    extern void Port_PadVibrate(int socket, int small, int large);
+    (void)profileSize; (void)profile;
+    if (dataSize >= 1 && data != NULL) {
+        Port_PadVibrate(socket, data[0] & 1, data[0] >> 1);
+    }
+    return 0;
+}
 
 /* ---- MPEG movies: port/src/plat_movie.c ---- */
 
@@ -362,7 +478,11 @@ int sceVibSetActParam() { return 0; }
    The game's projection, culling and effect proportions take Port_WideFactor() (src/battle/btl_cam.c, stg_a.c,
    eft_*.c, all #ifdef PORT); the renderer keeps 2D art in proportion and shows the picture at this shape
    (port/src/gs/gs_gpu.c). */
-static int sAspectMilli = -1;
+/* (PORT_HOST: the player's setting, not the game's state. Without it the shape was saved and put back with the
+   game: a session starts by going back to the state of the program's first moments, so a shape chosen in the
+   settings window during the run went back to what it was at start, 4:3 on a first run. Reported as "joining a
+   match resets the screen to 4:3".) */
+PORT_HOST static int sAspectMilli = -1;
 extern int Port_Setting(const char *name, int def); /* plat_settings.c */
 int Port_AspectMilli(void) {
     if (sAspectMilli < 0) {
@@ -413,4 +533,21 @@ int Port_IsWide(void) {
 extern int gPortMenuMode; /* headless.c */
 float Port_WideFactor(void) {
     return Port_IsWide() && !gPortMenuMode ? (float)Port_AspectMilli() * 3.0f / 4000.0f : 1.0f;
+}
+/* "Menus in 4:3" (F1, UI; setting menus_43): the menus' pages are shown at the shape they were composed for, in the
+   middle with black at the sides, instead of stretched to the picture's width. A fight is not changed.
+   Port_PageAspectMilli is the shape of the page being shown now: what the present step and the loading screens
+   go by. (PORT_HOST: the player's setting, not the game's state.) */
+PORT_HOST static int sMenus43 = -1;
+int Port_Menus43(void) {
+    if (sMenus43 < 0) {
+        sMenus43 = Port_Setting("menus_43", 0) != 0;
+    }
+    return sMenus43;
+}
+void Port_Menus43Set(int on) {
+    sMenus43 = on != 0;
+}
+int Port_PageAspectMilli(void) {
+    return gPortMenuMode && Port_Menus43() ? 1333 : Port_AspectMilli();
 }

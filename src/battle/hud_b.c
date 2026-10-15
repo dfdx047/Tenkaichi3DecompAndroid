@@ -108,6 +108,8 @@ extern void HudGfx_CallEnd(void (*fn)(void)); /* run a GS state function (end) *
    side's data is the same, where it is drawn is the other side's place. HUD_SCR(side) is the place of a side. */
 extern int Port_HudSwap(void);
 #define HUD_SCR(side) ((side) ^ Port_HudSwap())
+#else
+#define HUD_SCR(side) (side)
 #endif
 extern void HudSprite_SetMirror(HudBSprite *spr, s32 mirror);
 extern void HudSprite_InitTex(HudBSprite *spr, void *res, s32 tex, s32 sub);    /* sprite of a sheet's texture */
@@ -799,37 +801,138 @@ void HudGauge_UpdateStatIcons(void) {
     }
 }
 
+#ifdef PORT
+extern int Port_AspectMilli(void);
+extern void Port_GsMarker(s32 effect);
+
+/* Marks the side's life bar so the renderer does not take it for a full-screen flash at very wide ratios. */
+static void HudGauge_HpAnchor(s32 stretch) {
+    Port_GsMarker((stretch ? 0x15 : 0x10) + (HUD_SCR(gHudGauge->side) != 0));
+}
+
+/* Adds half the extra screen width before the renderer narrows the panel, bringing the bar to the timer. */
+static s32 HudGauge_WideHpExtra(void) {
+    extern int Port_HudLayout(void); /* gs_draw.c: 1 = the long bars were asked for in the settings */
+    s32 aspect = Port_AspectMilli();
+    return Port_HudLayout() == 1 && aspect > 1340 ? (256 * (aspect * 3 - 4000) + 2000) / 4000 : 0;
+}
+
+/* Extends the life-bar frame and its flash mask through a plain strip; the portrait and lower gauges stay put. */
+static void HudGauge_DrawWideFrame(HudBSprite *spr, s32 clear) {
+    s32 extra = HudGauge_WideHpExtra();
+    HudBSprite piece;
+    s32 i;
+
+    if (!extra) {
+        if (clear) { HudSprite_DrawAlphaClear(spr); }
+        else { HudSprite_Draw(spr, gHudGauge->res, 0); }
+        return;
+    }
+    HudGauge_HpAnchor(1);
+    for (i = 0; i < 4; i++) {
+        piece = *spr;
+        if (i == 3) {
+            piece.pos[2] = piece.uv[2] = 27;
+        } else {
+            piece.pos[3] = piece.uv[3] = 27;
+            if (i == 0) {
+                piece.pos[1] = piece.uv[1] = 210;
+            } else if (i == 1) {
+                piece.pos[0] = piece.uv[0] = 210;
+                piece.uv[1] = 220;
+                piece.pos[1] = 220 + extra;
+            } else {
+                piece.uv[0] = 220;
+                piece.pos[0] = 220 + extra;
+                piece.pos[1] += extra;
+            }
+        }
+        if (clear) { HudSprite_DrawAlphaClear(&piece); }
+        else { HudSprite_Draw(&piece, gHudGauge->res, 0); }
+    }
+    HudGauge_HpAnchor(0);
+}
+#endif
+
+#ifdef PORT
+/* Extends the bar's straight middle, keeping the step and angled tip. The moving mask follows the health
+ * fraction over the new width. */
+static void HudGauge_DrawHpSprite(s32 index, s32 flag, s32 clear) {
+    HudBSprite *spr = &gHudGauge->spr[index];
+    s32 extra = HudGauge_WideHpExtra();
+    s32 cuts[4] = {0, 64, 144, 160};
+    s32 i, origin = spr->pos[0] * (160 + extra) / 160;
+    HudBSprite piece;
+
+    if (!extra) {
+        if (clear) { HudSprite_DrawAlphaClear(spr); }
+        else { HudSprite_Draw(spr, gHudGauge->res, flag); }
+        return;
+    }
+    for (i = 0; i < 3; i++) {
+        piece = *spr;
+        piece.pos[0] = origin + cuts[i] + (i == 2 ? extra : 0);
+        piece.pos[1] = origin + cuts[i + 1] + (i >= 1 ? extra : 0);
+        piece.uv[0] = cuts[i];
+        piece.uv[1] = cuts[i + 1];
+        if (clear) { HudSprite_DrawAlphaClear(&piece); }
+        else { HudSprite_Draw(&piece, gHudGauge->res, flag); }
+    }
+}
+#define HUDG_HP_DRAW(i, flag) HudGauge_DrawHpSprite(i, flag, 0)
+#define HUDG_HP_CLEAR() HudGauge_DrawHpSprite(8, 0, 1)
+#else
+#define HUDG_HP_DRAW(i, flag) HudSprite_Draw(&gHudGauge->spr[i], gHudGauge->res, flag)
+#define HUDG_HP_CLEAR() HudSprite_DrawAlphaClear(&gHudGauge->spr[8])
+#endif
+
 /* Draw of node 3: the health bar is drawn three times (sprites 1..3, 4..6, 7..8), each through the alpha mask of
  * sprite 8; HudGauge_UpdateHp (hud_a_d.c) sets the rectangles first. */
 void HudGauge_DrawHp(void) {
-    HudSprite_DrawAlphaClear(&gHudGauge->spr[8]);
+#ifdef PORT
+    HudGauge_HpAnchor(1);
+#endif
+    HUDG_HP_CLEAR();
     HudGauge_UpdateHp();
     HudGfx_CallBegin(HudGauge_GsBeginMask);
-    HudSprite_Draw(&gHudGauge->spr[1], gHudGauge->res, 0);
-    HudSprite_Draw(&gHudGauge->spr[2], gHudGauge->res, 1);
-    HudSprite_Draw(&gHudGauge->spr[3], gHudGauge->res, 0);
+    HUDG_HP_DRAW(1, 0);
+    HUDG_HP_DRAW(2, 1);
+    HUDG_HP_DRAW(3, 0);
     HudGfx_CallEnd(HudGauge_GsEndMask);
-    HudSprite_DrawAlphaClear(&gHudGauge->spr[8]);
+    HUDG_HP_CLEAR();
     HudGfx_CallBegin(HudGauge_GsBeginMask);
-    HudSprite_Draw(&gHudGauge->spr[4], gHudGauge->res, 0);
-    HudSprite_Draw(&gHudGauge->spr[5], gHudGauge->res, 1);
-    HudSprite_Draw(&gHudGauge->spr[6], gHudGauge->res, 0);
+    HUDG_HP_DRAW(4, 0);
+    HUDG_HP_DRAW(5, 1);
+    HUDG_HP_DRAW(6, 0);
     HudGfx_CallEnd(HudGauge_GsEndMask);
-    HudSprite_DrawAlphaClear(&gHudGauge->spr[8]);
+    HUDG_HP_CLEAR();
     HudGfx_CallBegin(HudGauge_GsBeginMask);
-    HudSprite_Draw(&gHudGauge->spr[7], gHudGauge->res, 1);
-    HudSprite_Draw(&gHudGauge->spr[8], gHudGauge->res, 0);
+    HUDG_HP_DRAW(7, 1);
+    HUDG_HP_DRAW(8, 0);
     HudGfx_CallEnd(HudGauge_GsEndMask);
+#ifdef PORT
+    HudGauge_HpAnchor(0);
+#endif
 }
+#undef HUDG_HP_DRAW
+#undef HUDG_HP_CLEAR
 
 /* Draw of node 10: sprite 47 as mask, the panel pieces, the red flash and the node's ten sparks. */
 void HudGauge_DrawAura(HudBGroup *node) {
     HudBSprite *spr = &gHudGauge->spr[47];
     u32 i;
 
+#ifdef PORT
+    HudGauge_DrawWideFrame(spr, 1);
+#else
     HudSprite_DrawAlphaClear(spr);
+#endif
     HudGfx_CallBegin(HudGauge_GsBeginMask2);
+#ifdef PORT
+    HudGauge_DrawWideFrame(spr, 0);
+#else
     HudSprite_Draw(spr, gHudGauge->res, 0);
+#endif
     HudSprite_Draw(&gHudGauge->spr[48], gHudGauge->res, 0);
     HudSprite_Draw(&gHudGauge->spr[49], gHudGauge->res, 0);
     HudSprite_Draw(&gHudGauge->spr[50], gHudGauge->res, 0);
@@ -840,7 +943,11 @@ void HudGauge_DrawAura(HudBGroup *node) {
         HudSprite_Draw(node->sprList[i], gHudGauge->res, 1);
     }
     HudGfx_CallEnd(HudGauge_GsEndMask2);
+#ifdef PORT
+    HudGauge_DrawWideFrame(spr, 1);
+#else
     HudSprite_DrawAlphaClear(&gHudGauge->spr[47]);
+#endif
 }
 
 /* Draw of node 2: the bars-in-reserve markers. */
@@ -907,6 +1014,12 @@ void HudGauge_DrawSprites(HudBGroup *node) {
     u32 i;
 
     for (i = 0; i < node->sprCount; i++) {
+#ifdef PORT
+        if (node->sprList[i] == &gHudGauge->spr[0]) {
+            HudGauge_DrawWideFrame(node->sprList[i], 0);
+            continue;
+        }
+#endif
         HudSprite_Draw(node->sprList[i], gHudGauge->res, 0);
     }
 }

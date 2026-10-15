@@ -4,6 +4,13 @@
 #include "sys/job.h"
 #include "sys/rand.h"
 
+#ifdef PORT
+extern void Port_GsMarker(s32 effect);
+extern int Port_PageAspectMilli(void);
+#define PORT_2D_LOADING 0x17
+#define PORT_2D_END 0x13
+#endif
+
 /* libc */
 extern void *memset(void *dst, s32 value, u32 size);
 
@@ -278,11 +285,33 @@ void Load_ReadInput(void) {
 #define ITEM_X(i) (LOAD_POS_VIEW->items[(i) * LOAD_ITEM_WORDS])
 #define ITEM_Y(i) (LOAD_POS_VIEW->items[(i) * LOAD_ITEM_WORDS + 1])
 
+#ifdef PORT
+/* Spread the items over the wider page, keeping the original left/right margins.
+   Only the draw position changes: the stored positions and random sequence stay the same. */
+static s32 Load_ItemDrawX(s32 x) {
+    s32 aspect = Port_PageAspectMilli();
+    s32 extra;
+
+    if (aspect <= 1340) {
+        return x;
+    }
+    extra = (512 * (aspect * 3 - 4000) + 2000) / 4000;
+    return x + ((x - 0x10) * extra + (0x19C - 0x10) / 2) / (0x19C - 0x10);
+}
+#define ITEM_DRAW_X(i) Load_ItemDrawX(ITEM_X(i))
+#else
+#define ITEM_DRAW_X(i) ITEM_X(i)
+#endif
+
 /* Draws the loading screen for the current type. */
 void Load_DrawScreen(void) {
     u8 digits[16];
     s32 i;
 
+#ifdef PORT
+    /* Preserve sprite proportions and the left margin, independently of the battle HUD layout. */
+    Port_GsMarker(PORT_2D_LOADING);
+#endif
     switch (gLoadScreen.type) {
     case LOAD_TYPE_0:
         Sprite_DrawList(NULL, 0, 0, gLoadScreen.sprites);
@@ -349,28 +378,31 @@ void Load_DrawScreen(void) {
         for (i = 0; i < LOAD_ITEM_COUNT; i++) {
             if (gLoadScreen.target != i && !(ITEM_FLAGS(i) & 1) &&
                 ITEM_Y(i) + 0x20 <= ITEM_Y(gLoadScreen.target) + 0x40) {
-                Sprite_DrawList(gLoadScreen.res, ITEM_X(i), ITEM_Y(i), &gLoadScreen.sprites[4]);
+                Sprite_DrawList(gLoadScreen.res, ITEM_DRAW_X(i), ITEM_Y(i), &gLoadScreen.sprites[4]);
             }
         }
         if (gLoadScreen.flags & LOAD_FLAG_TAKEN) {
             gLoadScreen.sprites[6].u0 = 0;
             gLoadScreen.sprites[6].u1 = gLoadScreen.sprites[6].u0 + 0x40;
             gLoadScreen.sprites[6].tex = 1;
-            Sprite_DrawList(gLoadScreen.res, ITEM_X(gLoadScreen.target), ITEM_Y(gLoadScreen.target), &gLoadScreen.sprites[2]);
+            Sprite_DrawList(gLoadScreen.res, ITEM_DRAW_X(gLoadScreen.target), ITEM_Y(gLoadScreen.target), &gLoadScreen.sprites[2]);
         } else {
             gLoadScreen.sprites[6].u0 = gLoadScreen.frame << 6;
             gLoadScreen.sprites[6].u1 = gLoadScreen.sprites[6].u0 + 0x40;
             gLoadScreen.sprites[6].tex = 0;
         }
-        Sprite_DrawList(gLoadScreen.res, ITEM_X(gLoadScreen.target), ITEM_Y(gLoadScreen.target) - 0x40, &gLoadScreen.sprites[6]);
+        Sprite_DrawList(gLoadScreen.res, ITEM_DRAW_X(gLoadScreen.target), ITEM_Y(gLoadScreen.target) - 0x40, &gLoadScreen.sprites[6]);
         for (i = 0; i < LOAD_ITEM_COUNT; i++) {
             if (gLoadScreen.target != i && !(ITEM_FLAGS(i) & 1) &&
                 ITEM_Y(i) + 0x20 > ITEM_Y(gLoadScreen.target) + 0x40) {
-                Sprite_DrawList(gLoadScreen.res, ITEM_X(i), ITEM_Y(i), &gLoadScreen.sprites[4]);
+                Sprite_DrawList(gLoadScreen.res, ITEM_DRAW_X(i), ITEM_Y(i), &gLoadScreen.sprites[4]);
             }
         }
         break;
     }
+#ifdef PORT
+    Port_GsMarker(PORT_2D_END);
+#endif
 }
 
 /* Shows the loading screen until the file request queue has been read. No callers. */

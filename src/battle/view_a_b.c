@@ -101,6 +101,57 @@ void MsgWin_SetSide(s32 side) {
     gMsgWin->side = side;
 }
 
+#ifdef PORT
+/* PC build, for screens of the PC's own (menu/port_tbo.c): the window with a line of theirs in place of a line of the
+   text file, written by the game's text box in the game's font, where the game writes its own (and read out by the
+   screen reader as the game's lines are: it reads the box's line, port/src/a11y_game.c). */
+#include "battle/view_b.h"
+
+extern void Flash_ClipSetCallbackC(Flash *flash, FlashRef *ref, void *fn, void *arg);
+extern void TextBox_AttachString(Flash *flash, FlashRef *ref, s32 x, s32 y, u16 *str, TextBox *box);
+
+static f32 sMsgWinTextX = -1.0f; /* where the line was last drawn (the screen's 512 x 448), -1 before */
+
+/* The text box's own drawing, and where it drew (it follows the window's slide-in). */
+static void MsgWin_PortDrawClip(void *draw, f32 *prop) {
+    sMsgWinTextX = prop[14]; /* the matrix's translation (FlashProp 0x38: sys/gfxm_c.h) */
+    TextBox_DrawClip((TextBoxDraw *)draw, (TextBoxClipProp *)prop);
+}
+
+/* As MsgWin_Draw, with `str` (16-bit, 0xFEFF first; NULL: no line). A changed line is another buffer: the screen
+   reader tells lines apart by where they are. */
+void MsgWin_PortDrawString(u16 *str) {
+    FlashRef ref;
+    Flash *flash;
+
+    Flash_Advance(gMsgWin->flash);
+    flash = gMsgWin->flash;
+    gMsgWin->text = str;
+    Flash_FindLabel(flash, NULL, "mc_message_text", &ref);
+    if (str != NULL) {
+        TextBox_AttachString(flash, &ref, 0, 0, str, &gMsgWin->box);
+        Flash_ClipSetCallbackC(flash, &ref, MsgWin_PortDrawClip, &((TextBoxFull *)&gMsgWin->box)->draw);
+    } else {
+        Flash_ClipSetCallbackC(flash, &ref, NULL, NULL);
+    }
+    Flash_Draw(flash);
+    Font_FlushAll();
+}
+
+/* How wide a line may be, in the font's pixels: from where the line starts up to `right` (the screen's 512). */
+s32 MsgWin_PortLineRoom(s32 right) {
+    f32 x = sMsgWinTextX < 0.0f ? 40.0f : sMsgWinTextX + (f32)gMsgWin->box.unkC;
+
+    return (s32)((f32)right - x);
+}
+
+/* One or two lines start at the same height (the two lines' place): screens whose line changes with the cursor do not
+   have it jump up and down. Three start higher, as the game's. */
+void MsgWin_PortSameTop(void) {
+    TextBox_SetLineOffsets((struct TextBox *)&gMsgWin->box, 0x14, 0x14, 0xA, 0, 0);
+}
+#endif
+
 /* Passes two values to TextBox_SetSpacing for the window's text box. */
 void MsgWin_SetBoxParam(s32 a, s32 b) {
     TextBox_SetSpacing(&gMsgWin->box, a, b);

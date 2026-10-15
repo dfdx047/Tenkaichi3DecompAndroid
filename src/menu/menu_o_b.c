@@ -12,6 +12,11 @@ DiscFusion *gDiscFusion = NULL; /* 0x3B735C */
 
 /* Copies the two "recognised" bits of gProgress into the work area. */
 void DiscFusion_UpdateHave(void) {
+#ifdef PORT
+    /* On a PC there is no drive to put the earlier games' discs into, and the game takes nothing from them: it
+       only looks for their boot file and sets these two bits. Both discs count as recognised. */
+    UO_PROG->discFlags |= UB_DISC_0 | UB_DISC_1;
+#endif
     if (UO_PROG->discFlags & UB_DISC_0) {
         gDiscFusion->have[0] = 1;
     } else {

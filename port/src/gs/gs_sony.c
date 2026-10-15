@@ -8,6 +8,7 @@
  */
 #include <stdint.h>
 #include <string.h>
+#include "../port_addr.h"
 
 extern void Port_GsGifChannel(uint32_t addr, uint32_t qwc, int chain);
 int gGsMainFbp = -1; /* frame-buffer address of the frame being drawn (from sceGsSwapDBuff); -1 before the first swap */
@@ -62,7 +63,7 @@ int sceGsSetDefDBuff(void *p, int psm, int w, int h, int ztest, int zpsm, int cl
 }
 
 int sceGsPutDrawEnv(uint64_t *giftag) {
-    Port_GsGifChannel((uint32_t)(uintptr_t)giftag, 1 + (uint32_t)(giftag[0] & 0x7FFF), 0);
+    Port_GsGifChannel(Port_Addr(giftag), 1 + (uint32_t)(giftag[0] & 0x7FFF), 0);
     return 0;
 }
 

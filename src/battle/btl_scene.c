@@ -322,12 +322,27 @@ s32 BtlScene_IsSecondView(void) {
 }
 
 /* Tells a task whether to draw for this fighter in the view being drawn (split-screen aware). */
+#ifdef PORT
+extern int Port_NetView(void);          /* port/src/gs/net.c: the local player's view (0 or 1) when online, or -1 */
+extern s32 BtlCam_GetPriorityView(void);
+#endif
 s32 BtlScene_IsCharInView(s32 objId) {
     if (Battle_IsSplitScreen()) {
         if (BtlScene_IsSingleView()) {
             if (EftCam_IsActive()) {
                 return 1;
             }
+#ifdef PORT
+            /* Online play shows the local player's view of the two-player game full screen
+               (BtlCam_UpdateOverride). To the game that is "one view", where with no camera priority both
+               fighters count as shown (BtlCharApi_IsCamShown), and what a fighter's effects draw only in his
+               own view, in front of everything, was drawn for the opponent too: the dark shape under his aura
+               on whatever he stood behind. Here as in the two halves: only the view's own fighter. Asked by
+               drawing code only, so the two copies' states stay the same. */
+            if (Port_NetView() >= 0 && BtlCam_GetPriorityView() < 0) {
+                return objId == Port_NetView();
+            }
+#endif
             return BtlCharApi_IsCamShown(objId);
         }
         return BtlScene_IsSecondView() == objId;

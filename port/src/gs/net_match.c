@@ -11,12 +11,17 @@
  * failing those the `curl` program (BT3_MATCH_CURL=1 asks for the program). No game data goes that way.
  *
  * BT3_MATCH_URL=<address> names another Worker (one's own; see port/matchmaking/README.md).
+ *
+ * A program built with a build key (net_sign.c) signs every request to the Worker: three headers, X-BT3-Release,
+ * X-BT3-Time and X-BT3-Sign. One built without sends none of them. The request to GitHub (the update check) is
+ * never signed.
  */
 #include <SDL3/SDL.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -30,60 +35,47 @@
 
 #define MATCH_URL_DEFAULT "https://odd-surf-0af7.bt3decomp.workers.dev"
 #include "net_match.h"
+#include "../port_release.h"
 #include "net_relay.h"
+#include "net_sign.h"
 
 static struct {
     SDL_Mutex *lock;
     SDL_Thread *thread;
     SDL_AtomicInt cancel, gen; /* gen: which search is the current one (a thread of an earlier one writes nothing) */
+    SDL_AtomicInt sockBusy;    /* the thread is talking to the relay on the match's socket: the lobby keeps off it */
     MatchStatus st;
     int role, sock, localPort, version;
-    char code[8], name[20];
+    char code[8], name[20]; /* (role 3, a quick match: `code` is the queue's name until the service gives a room) */
+    char queue[8];
 } sM;
+
+/* Quick match: what this game calls itself to the service (so that a room it left behind is not given back to
+   it): sixteen letters made up once per run. */
+static const char *match_who(void) {
+    static char who[20];
+    if (who[0] == '\0') {
+        int i;
+        SDL_srand(SDL_GetTicksNS() ^ (Uint64)(uintptr_t)&who);
+        for (i = 0; i < 16; i++) {
+            who[i] = (char)('a' + SDL_rand(26));
+        }
+        who[16] = '\0';
+    }
+    return who;
+}
 
 static SDL_TLSID sMine; /* the thread's own search number */
 #define STOPPED() (SDL_GetAtomicInt(&sM.cancel) || (int)(intptr_t)SDL_GetTLS(&sMine) != SDL_GetAtomicInt(&sM.gen))
 
 static const char *match_url(void) {
     const char *e = SDL_getenv("BT3_MATCH_URL");
-#ifdef __ANDROID__
-    /* Android: <game folder>/match_url.txt, one line "https://...", names another Worker (one's own, see
-       port/matchmaking/README.md) without a new build */
-    static char fromFile[256];
-    static int read;
-    if ((e == NULL || e[0] == '\0') && !read) {
-        extern const char *Port_FileRoot(void); /* plat_file.c */
-        char path[600];
-        FILE *f;
-        read = 1;
-        SDL_snprintf(path, sizeof(path), "%s/match_url.txt", Port_FileRoot());
-        if ((f = fopen(path, "r")) != NULL) {
-            if (fgets(fromFile, sizeof(fromFile), f) != NULL) {
-                fromFile[strcspn(fromFile, " \r\n")] = '\0';
-                while (fromFile[0] != '\0' && fromFile[strlen(fromFile) - 1] == '/') {
-                    fromFile[strlen(fromFile) - 1] = '\0';
-                }
-                if (SDL_strncmp(fromFile, "https://", 8) != 0) {
-                    fromFile[0] = '\0';
-                }
-            }
-            fclose(f);
-        }
-        fprintf(stderr, "net: matchmaking service %s\n", fromFile[0] != '\0' ? fromFile : MATCH_URL_DEFAULT);
-    }
-    if ((e == NULL || e[0] == '\0') && fromFile[0] != '\0') {
-        return fromFile;
-    }
-#endif
     return e != NULL && e[0] != '\0' ? e : MATCH_URL_DEFAULT;
 }
 
 static void set_state(int state, const char *error) {
     if ((int)(intptr_t)SDL_GetTLS(&sMine) != SDL_GetAtomicInt(&sM.gen)) {
         return;
-    }
-    if (error != NULL && state < 0) {
-        fprintf(stderr, "net: %s\n", error); /* (in the log, for a report about online play) */
     }
     SDL_LockMutex(sM.lock);
     sM.st.state = state;
@@ -94,19 +86,30 @@ static void set_state(int state, const char *error) {
 }
 
 /* ---- the Worker, through curl ---- */
+/* (http_post_native: `json` NULL makes it a GET of `url`, for the update check further down. `headers`: lines
+   "Name: value" to send as well, ended by a NULL, or NULL for none.) */
 
 #ifdef _WIN32
 /* Windows: its own HTTPS (WinHTTP), so nothing has to be installed and no other program is started. */
 #include <winhttp.h>
 
-static int http_post_native(const char *url, const char *json, char *out, size_t size) {
-    wchar_t wurl[512], host[256], path[256];
+static int http_post_native(const char *url, const char *json, const char *const *headers, char *out, size_t size) {
+    wchar_t wurl[512], host[256], path[256], whead[512];
+    char head[512];
     URL_COMPONENTS uc;
     HINTERNET ses = NULL, con = NULL, req = NULL;
     DWORD got = 0, used = 0, status = 0, len = sizeof(status);
     int ok = 0;
 
     if (MultiByteToWideChar(CP_UTF8, 0, url, -1, wurl, 512) == 0) {
+        return 0;
+    }
+    SDL_strlcpy(head, "Content-Type: application/json\r\n", sizeof(head));
+    for (; headers != NULL && *headers != NULL; headers++) {
+        SDL_strlcat(head, *headers, sizeof(head));
+        SDL_strlcat(head, "\r\n", sizeof(head));
+    }
+    if (MultiByteToWideChar(CP_UTF8, 0, head, -1, whead, 512) == 0) {
         return 0;
     }
     memset(&uc, 0, sizeof(uc));
@@ -124,9 +127,11 @@ static int http_post_native(const char *url, const char *json, char *out, size_t
         con = WinHttpConnect(ses, host, uc.nPort, 0);
     }
     if (con != NULL) {
-        req = WinHttpOpenRequest(con, L"POST", path, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, uc.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0);
+        req = WinHttpOpenRequest(con, json != NULL ? L"POST" : L"GET", path, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, uc.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0);
     }
-    if (req != NULL && WinHttpSendRequest(req, L"Content-Type: application/json\r\n", (DWORD)-1, (LPVOID)json, (DWORD)strlen(json), (DWORD)strlen(json), 0) &&
+    if (req != NULL &&
+        (json != NULL ? WinHttpSendRequest(req, whead, (DWORD)-1, (LPVOID)json, (DWORD)strlen(json), (DWORD)strlen(json), 0)
+                      : WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0)) &&
         WinHttpReceiveResponse(req, NULL)) {
         WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &status, &len, WINHTTP_NO_HEADER_INDEX);
         while (used + 1 < size && WinHttpReadData(req, out + used, (DWORD)(size - 1 - used), &got) && got != 0) {
@@ -140,56 +145,12 @@ static int http_post_native(const char *url, const char *json, char *out, size_t
     if (ses != NULL) { WinHttpCloseHandle(ses); }
     return ok;
 }
-#elif defined(__ANDROID__)
-/* Android: no curl. The app's Java side does the request (GameActivity.netPost, HttpsURLConnection), called here
-   through JNI on this thread (SDL attaches it). */
-#include <jni.h>
-
-static int http_post_native(const char *url, const char *json, char *out, size_t size) {
-    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
-    jobject act;
-    jclass cls;
-    jmethodID m;
-    jstring ju, jb, jr;
-    int ok = 0;
-
-    if (env == NULL || (act = (jobject)SDL_GetAndroidActivity()) == NULL) {
-        return 0;
-    }
-    cls = (*env)->GetObjectClass(env, act);
-    m = cls != NULL ? (*env)->GetMethodID(env, cls, "netPost", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;") : NULL;
-    if (m == NULL) {
-        (*env)->ExceptionClear(env);
-    } else {
-        ju = (*env)->NewStringUTF(env, url);
-        jb = (*env)->NewStringUTF(env, json);
-        jr = (jstring)(*env)->CallObjectMethod(env, act, m, ju, jb);
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionClear(env);
-            jr = NULL;
-        }
-        if (jr != NULL) {
-            const char *r = (*env)->GetStringUTFChars(env, jr, NULL);
-            if (r != NULL) {
-                SDL_strlcpy(out, r, size);
-                ok = out[0] != '\0';
-                (*env)->ReleaseStringUTFChars(env, jr, r);
-            }
-            (*env)->DeleteLocalRef(env, jr);
-        }
-        (*env)->DeleteLocalRef(env, ju);
-        (*env)->DeleteLocalRef(env, jb);
-    }
-    if (cls != NULL) {
-        (*env)->DeleteLocalRef(env, cls);
-    }
-    (*env)->DeleteLocalRef(env, act);
-    return ok;
-}
 #else
 /* Linux: the system's curl library, if it is there (it nearly always is), loaded when first needed. */
-static int http_post_native(const char *url, const char *json, char *out, size_t size) {
+static int http_post_native(const char *url, const char *json, const char *const *headers, char *out, size_t size) {
     typedef void *(*init_fn)(void);
+    typedef void *(*append_fn)(void *, const char *);
+    typedef void (*freeall_fn)(void *);
     typedef int (*setopt_fn)(void *, int, ...);
     typedef int (*perform_fn)(void *);
     typedef void (*cleanup_fn)(void *);
@@ -199,7 +160,9 @@ static int http_post_native(const char *url, const char *json, char *out, size_t
     static setopt_fn setopt;
     static perform_fn perform;
     static cleanup_fn cleanup;
-    void *h;
+    static append_fn append;
+    static freeall_fn freeall;
+    void *h, *list = NULL;
     SDL_IOStream *mem;
     FILE *fp;
     int rc;
@@ -217,10 +180,12 @@ static int http_post_native(const char *url, const char *json, char *out, size_t
             setopt = (setopt_fn)SDL_LoadFunction(lib, "curl_easy_setopt");
             perform = (perform_fn)SDL_LoadFunction(lib, "curl_easy_perform");
             cleanup = (cleanup_fn)SDL_LoadFunction(lib, "curl_easy_cleanup");
+            append = (append_fn)SDL_LoadFunction(lib, "curl_slist_append");
+            freeall = (freeall_fn)SDL_LoadFunction(lib, "curl_slist_free_all");
         }
     }
     (void)mem;
-    if (init == NULL || setopt == NULL || perform == NULL || cleanup == NULL || (h = init()) == NULL) {
+    if (init == NULL || setopt == NULL || perform == NULL || cleanup == NULL || (headers != NULL && (append == NULL || freeall == NULL)) || (h = init()) == NULL) {
         return 0;
     }
     fp = tmpfile(); /* (the library writes the answer with fwrite by default: into a file that is never on disk by name) */
@@ -229,12 +194,26 @@ static int http_post_native(const char *url, const char *json, char *out, size_t
         return 0;
     }
     setopt(h, 10002 /* CURLOPT_URL */, url);
-    setopt(h, 10015 /* CURLOPT_POSTFIELDS */, json);
+    if (json != NULL) {
+        setopt(h, 10015 /* CURLOPT_POSTFIELDS */, json);
+    } else { /* a GET (the update check): GitHub answers nothing without a name, and sends on to another address */
+        setopt(h, 10018 /* CURLOPT_USERAGENT */, "Tenkaichi3Decomp");
+        setopt(h, 52 /* CURLOPT_FOLLOWLOCATION */, 1L);
+    }
+    for (; headers != NULL && *headers != NULL; headers++) {
+        list = append(list, *headers);
+    }
+    if (list != NULL) {
+        setopt(h, 10023 /* CURLOPT_HTTPHEADER */, list);
+    }
     setopt(h, 10001 /* CURLOPT_WRITEDATA */, fp);
     setopt(h, 13 /* CURLOPT_TIMEOUT */, 12L);
     setopt(h, 99 /* CURLOPT_NOSIGNAL */, 1L);
     rc = perform(h);
     cleanup(h);
+    if (list != NULL) {
+        freeall(list);
+    }
     n = 0;
     if (rc == 0) {
         rewind(fp);
@@ -246,24 +225,44 @@ static int http_post_native(const char *url, const char *json, char *out, size_t
 }
 #endif
 
+/* The build key (net_sign.c). The service checks the time a request is signed for against its own clock (five
+   minutes either way), and a player's clock can be wrong by more: so the game keeps how far the service's clock is
+   ahead of this computer's. It learns that from the answer to "hello" (asked when the online screen opens), and
+   from a request refused for its time, which is then sent once more. */
+static SDL_AtomicInt sClockAhead;
+
+static void clock_learn(const char *answer) {
+    const char *p = SDL_strstr(answer, "\"now\":");
+    long long now = p != NULL ? SDL_strtoll(p + 6, NULL, 10) : 0;
+    if (now > 1000000000LL) {
+        SDL_SetAtomicInt(&sClockAhead, (int)(now - (long long)time(NULL)));
+    }
+}
+
 /* POSTs `json` to <url>/v1/<what>; the answer's text in out. 0 = no answer. The system's own HTTPS first (above); if
    that is not to be had, the `curl` program. */
-static int http_post(const char *what, const char *json, char *out, size_t size) {
-    char url[256];
-    const char *args[12];
+static int http_post_once(const char *what, const char *json, char *out, size_t size) {
+    char url[256], path[64], sig[65], head[3][96];
+    const char *args[20], *headers[4] = {NULL, NULL, NULL, NULL};
     SDL_Process *p;
     size_t got = 0;
-    int code = 0, n = 0;
+    int code = 0, n = 0, i;
     void *data;
+    long long when = (long long)time(NULL) + SDL_GetAtomicInt(&sClockAhead);
 
     SDL_snprintf(url, sizeof(url), "%s/v1/%s", match_url(), what);
-    if (SDL_getenv("BT3_MATCH_CURL") == NULL && http_post_native(url, json, out, size)) {
+    SDL_snprintf(path, sizeof(path), "/v1/%s", what);
+    if (Sign_Request("POST", path, PORT_RELEASE, when, json, sig)) { /* (a program without a key: no headers) */
+        SDL_snprintf(head[0], sizeof(head[0]), "X-BT3-Release: %d", PORT_RELEASE);
+        SDL_snprintf(head[1], sizeof(head[1]), "X-BT3-Time: %lld", when);
+        SDL_snprintf(head[2], sizeof(head[2]), "X-BT3-Sign: %s", sig);
+        for (i = 0; i < 3; i++) {
+            headers[i] = head[i];
+        }
+    }
+    if (SDL_getenv("BT3_MATCH_CURL") == NULL && http_post_native(url, json, headers[0] != NULL ? headers : NULL, out, size)) {
         return 1;
     }
-#ifdef __ANDROID__
-    (void)args; (void)p; (void)got; (void)code; (void)n; (void)data;
-    return 0; /* (no curl program to fall back on) */
-#endif
 #ifdef _WIN32
     args[n++] = "curl.exe";
 #else
@@ -277,6 +276,10 @@ static int http_post(const char *what, const char *json, char *out, size_t size)
     args[n++] = url;
     args[n++] = "-d";
     args[n++] = json;
+    for (i = 0; headers[i] != NULL; i++) {
+        args[n++] = "-H";
+        args[n++] = headers[i];
+    }
     args[n] = NULL;
     p = SDL_CreateProcess(args, true);
     if (p == NULL) {
@@ -291,6 +294,23 @@ static int http_post(const char *what, const char *json, char *out, size_t size)
     SDL_free(data);
     return got > 0;
 }
+
+static int http_post(const char *what, const char *json, char *out, size_t size) {
+    int ok = http_post_once(what, json, out, size);
+    /* refused for the time it was signed for: the answer says the service's time; once more by that */
+    if (ok && Sign_HasKey() && SDL_strstr(out, "\"build key\"") != NULL && SDL_strstr(out, "\"why\":\"time\"") != NULL && SDL_strstr(out, "\"now\":") != NULL) {
+        clock_learn(out);
+        ok = http_post_once(what, json, out, size);
+    }
+    return ok;
+}
+
+/* What the window says when the service lets only official releases in (its REQUIRE_KEY) and refused this program:
+   `plain` for a program without a key, or with one the service does not know. */
+static const char *key_refused(const char *answer, const char *plain) {
+    return Sign_HasKey() && SDL_strstr(answer, "\"why\":\"time\"") != NULL ? "This computer's clock is wrong: set its date and time, then try again." : plain;
+}
+#define KEY_REFUSED(answer) (SDL_strstr(answer, "\"build key\"") != NULL)
 
 /* The text of "key":"..." in a flat JSON answer. 0 = not there. */
 static int json_str(const char *json, const char *key, char *out, size_t size) {
@@ -431,8 +451,8 @@ static int lan_address(int localPort, char *out, size_t size) {
 /* ---- the thread ---- */
 
 static int SDLCALL match_thread(void *arg) {
-    char pub[64] = "", lan[64] = "", addrs[160], body[512], answer[1024], key[40] = "", you[64] = "", name[20];
-    int i, n = 0;
+    char pub[64] = "", lan[64] = "", addrs[160], body[512], answer[1024], key[40] = "", you[64] = "", name[20], relayAddr[64] = "";
+    int i, n = 0, hosting, searches = 0;
 
     SDL_SetTLS(&sMine, arg, NULL);
     for (i = 0; sM.name[i] != '\0' && n < (int)sizeof(name) - 1; i++) { /* (a name that needs no escaping) */
@@ -457,30 +477,72 @@ static int SDLCALL match_thread(void *arg) {
         set_state(-1, "This computer's address could not be found (no network?).");
         return 0;
     }
-    if (sM.role == 1) {
-        SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"name\":\"%s\",\"addrs\":[%s]}", sM.version, name, addrs);
-        if (!http_post("host", body, answer, sizeof(answer))) {
+again:
+    hosting = sM.role == 1;
+    if (sM.role == 3) {
+        /* A quick match: the service puts this player with whoever waits longest in the queue (then this is the
+           one who joins), or gives it a room of its own in the queue to wait in (then it is the host). A room
+           lasts ten minutes; when it runs out the search simply starts again. */
+        MatchStatus st;
+        SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"rel\":%d,\"name\":\"%s\",\"addrs\":[%s],\"queue\":\"%s\",\"who\":\"%s\"%s}", sM.version, PORT_RELEASE, name, addrs, sM.queue,
+                     match_who(), relayAddr[0] != '\0' ? ",\"relay\":false" : "");
+        if (!http_post("quick", body, answer, sizeof(answer))) {
             set_state(-1, "The matchmaking service could not be reached (is the network up?).");
             return 0;
         }
         if (STOPPED()) {
             return 0;
         }
-        if (!json_str(answer, "code", sM.code, sizeof(sM.code)) || !json_str(answer, "key", key, sizeof(key))) {
-            fprintf(stderr, "net: the service answered: %.200s\n", answer);
-            set_state(-1, SDL_strstr(answer, "busy") != NULL ? "Too many rooms from this address; try again in a few minutes." : "The matchmaking service gave no room.");
+        searches++;
+        SDL_memset(&st, 0, sizeof(st));
+        if (SDL_strstr(answer, "\"role\":\"join\"") != NULL && json_peer(answer, &st)) {
+            SDL_LockMutex(sM.lock);
+            SDL_strlcpy(sM.st.peerName, st.peerName, sizeof(sM.st.peerName));
+            SDL_memcpy(sM.st.peerAddr, st.peerAddr, sizeof(st.peerAddr));
+            sM.st.peerCount = st.peerCount;
+            sM.st.role = 2;
+            sM.st.state = 3;
+            SDL_UnlockMutex(sM.lock);
+            json_str(answer, "code", sM.code, sizeof(sM.code));
+            json_str(answer, "key", key, sizeof(key));
+            goto joined;
+        }
+        if (SDL_strstr(answer, "\"role\":\"host\"") == NULL) {
+            set_state(-1, SDL_strstr(answer, "\"old\"") != NULL ? "Update available. Online servers are unreachable until you update." :
+                          KEY_REFUSED(answer) ? key_refused(answer, "Quick match needs an official release of the game.") :
+                          SDL_strstr(answer, "busy") != NULL ? "Too many searches from this address; try again in a few minutes." :
+                          SDL_strstr(answer, "bad request") != NULL || SDL_strstr(answer, "error") != NULL ? "The matchmaking service does not know quick match yet." :
+                          "The matchmaking service gave no answer.");
             return 0;
         }
-        {
+        hosting = 1;
+    }
+    if (hosting) {
+        if (sM.role == 1) {
+            SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"rel\":%d,\"name\":\"%s\",\"addrs\":[%s]}", sM.version, PORT_RELEASE, name, addrs);
+            if (!http_post("host", body, answer, sizeof(answer))) {
+                set_state(-1, "The matchmaking service could not be reached (is the network up?).");
+                return 0;
+            }
+            if (STOPPED()) {
+                return 0;
+            }
+        }
+        if (!json_str(answer, "code", sM.code, sizeof(sM.code)) || !json_str(answer, "key", key, sizeof(key))) {
+            set_state(-1, SDL_strstr(answer, "\"old\"") != NULL ? "Update available. Online servers are unreachable until you update." :
+                          KEY_REFUSED(answer) ? key_refused(answer, "Room codes need an official release of the game. Playing by address still works.") :
+                          SDL_strstr(answer, "busy") != NULL ? "Too many rooms from this address; try again in a few minutes." : "The matchmaking service gave no room.");
+            return 0;
+        }
+        if (relayAddr[0] != '\0') { /* (a search begun again: the relay address it holds already goes with the new room) */
+            SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\",\"addrs\":[%s,\"relay=%s\"]}", sM.code, key, addrs, relayAddr);
+            http_post("addrs", body, answer, sizeof(answer));
+        } else {
             /* A relay address, if the service gives access to one: published with the others, for a player who
                cannot reach this one directly. The code is shown only after this, so nobody joins before. */
             char server[128], user[160], pass[160], relay[64];
-#ifdef __ANDROID__
-            if (1) { /* (Android: always in the log; most phones on mobile data need the relay) */
-#else
-            if (SDL_getenv("BT3_RELAY_LOG") != NULL) {
-#endif
-                char why[160] = "";
+            if (SDL_getenv("BT3_RELAY_LOG") != NULL && (SDL_strstr(answer, "\"turn\"") != NULL || SDL_strstr(answer, "noRelay") != NULL)) {
+                char why[160] = ""; /* (a service that hands a login out with the room: one that is asked later says nothing here) */
                 json_str(answer, "noRelay", why, sizeof(why));
                 fprintf(stderr, "relay: the service %s%s\n", SDL_strstr(answer, "\"turn\"") != NULL ? "gave access" : "gave no access: ", why);
             }
@@ -488,6 +550,7 @@ static int SDLCALL match_thread(void *arg) {
                 json_str(answer, "credential", pass, sizeof(pass)) && Relay_Allocate(sM.sock, server, user, pass, relay, sizeof(relay)) && !STOPPED()) {
                 SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\",\"addrs\":[%s,\"relay=%s\"]}", sM.code, key, addrs, relay);
                 http_post("addrs", body, answer, sizeof(answer));
+                SDL_strlcpy(relayAddr, relay, sizeof(relayAddr));
             }
         }
         if (STOPPED()) {
@@ -497,6 +560,8 @@ static int SDLCALL match_thread(void *arg) {
         }
         SDL_LockMutex(sM.lock);
         SDL_strlcpy(sM.st.code, sM.code, sizeof(sM.st.code)); /* (shown from here on) */
+        sM.st.role = 1;
+        sM.st.searches = searches;
         sM.st.state = 2;
         SDL_UnlockMutex(sM.lock);
         SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"}", sM.code, key);
@@ -522,7 +587,50 @@ static int SDLCALL match_thread(void *arg) {
                     sM.st.peerCount = st.peerCount;
                     sM.st.state = 3;
                     SDL_UnlockMutex(sM.lock);
-                    http_post("leave", body, answer, sizeof(answer)); /* the room has done its work: it is given up at once */
+                    if (relayAddr[0] != '\0' || SDL_getenv("BT3_NO_RELAY") != NULL) {
+                        http_post("leave", body, answer, sizeof(answer)); /* the room has done its work: it is given up at once */
+                        return 0;
+                    }
+                    /* No relay address yet (it is asked for only when it is needed). The lobby now tries the direct
+                       ways; it ends this search when the two are connected. If that has not happened in a few
+                       seconds, a login is asked for, the address is added to the room (the one who joined learns it
+                       by its poll), and the lobby is told to let the other player through. The room is kept until
+                       the lobby is done, so that the other side can still ask. */
+                    {
+                        int w, wait = SDL_getenv("BT3_RELAY_ONLY") != NULL ? 2 : 40;
+                        char server[128], user[160], pass[160], relay[64];
+                        for (w = 0; w < wait && !STOPPED(); w++) {
+                            SDL_Delay(100);
+                        }
+                        if (!STOPPED() && http_post("relay", body, answer, sizeof(answer))) {
+                            if (SDL_getenv("BT3_RELAY_LOG") != NULL) {
+                                char why[160] = "";
+                                json_str(answer, "noRelay", why, sizeof(why));
+                                fprintf(stderr, "relay: asked for when the direct ways stayed silent: the service %s%s\n",
+                                        SDL_strstr(answer, "\"turn\"") != NULL ? "gave access" : "gave no access: ", why);
+                            }
+                            if (json_str(answer, "server", server, sizeof(server)) && json_str(answer, "username", user, sizeof(user)) &&
+                                json_str(answer, "credential", pass, sizeof(pass)) && !STOPPED()) {
+                                int got;
+                                SDL_SetAtomicInt(&sM.sockBusy, 1);
+                                SDL_Delay(80); /* (the lobby is between two looks at the socket by then) */
+                                got = !STOPPED() && Relay_Allocate(sM.sock, server, user, pass, relay, sizeof(relay));
+                                SDL_SetAtomicInt(&sM.sockBusy, 0);
+                                if (got && !STOPPED()) {
+                                    char more[512];
+                                    SDL_snprintf(more, sizeof(more), "{\"code\":\"%s\",\"key\":\"%s\",\"addrs\":[%s,\"relay=%s\"]}", sM.code, key, addrs, relay);
+                                    http_post("addrs", more, answer, sizeof(answer));
+                                    SDL_LockMutex(sM.lock);
+                                    sM.st.relayGen++;
+                                    SDL_UnlockMutex(sM.lock);
+                                }
+                            }
+                        }
+                        for (w = 0; w < 250 && !STOPPED(); w++) { /* (the lobby gives up after 25 seconds at the latest) */
+                            SDL_Delay(100);
+                        }
+                    }
+                    http_post("leave", body, answer, sizeof(answer));
                     return 0;
                 }
                 if (SDL_strstr(answer, "no room") != NULL) {
@@ -534,10 +642,14 @@ static int SDLCALL match_thread(void *arg) {
             http_post("leave", body, answer, sizeof(answer));
             return 0;
         }
+        if (sM.role == 3) { /* (a quick match waits for as long as the player does) */
+            http_post("leave", body, answer, sizeof(answer));
+            goto again;
+        }
         set_state(-1, "Nobody joined: the room code has run out. Host again for a new one.");
     } else {
         MatchStatus st;
-        SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"code\":\"%s\",\"name\":\"%s\",\"addrs\":[%s]}", sM.version, sM.code, name, addrs);
+        SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"rel\":%d,\"code\":\"%s\",\"name\":\"%s\",\"addrs\":[%s]}", sM.version, PORT_RELEASE, sM.code, name, addrs);
         if (!http_post("join", body, answer, sizeof(answer))) {
             set_state(-1, "The matchmaking service could not be reached (is the network up?).");
             return 0;
@@ -545,8 +657,9 @@ static int SDLCALL match_thread(void *arg) {
         (void)you;
         SDL_memset(&st, 0, sizeof(st));
         if (!json_peer(answer, &st)) {
-            fprintf(stderr, "net: the service answered: %.200s\n", answer);
-            set_state(-1, SDL_strstr(answer, "version") != NULL ? "The host's game is a different version: both players need the same release." :
+            set_state(-1, SDL_strstr(answer, "\"old\"") != NULL ? "Update available. Online servers are unreachable until you update." :
+                          KEY_REFUSED(answer) ? key_refused(answer, "Room codes need an official release of the game. Playing by address still works.") :
+                          SDL_strstr(answer, "version") != NULL ? "The host's game is a different version: both players need the same release." :
                           SDL_strstr(answer, "full") != NULL ? "Someone has already joined that room." :
                           SDL_strstr(answer, "no room") != NULL ? "No room with that code (codes last ten minutes)." :
                           SDL_strstr(answer, "busy") != NULL ? "Too many wrong codes from this address; try again in an hour." : "The matchmaking service gave no answer.");
@@ -561,6 +674,41 @@ static int SDLCALL match_thread(void *arg) {
         sM.st.peerCount = st.peerCount;
         sM.st.state = 3;
         SDL_UnlockMutex(sM.lock);
+        json_str(answer, "key", key, sizeof(key));
+        goto joined;
+    }
+    return 0;
+joined:
+    /* The one who joined. If the host's direct addresses stay silent, the host asks for a relay address and adds it
+       to the room: asked for here every two seconds, from the third second on, until the lobby ends this search
+       (connected, or given up) or the address has come. */
+    if (key[0] != '\0' && sM.code[0] != '\0') {
+        MatchStatus st;
+        int round, w, known;
+        SDL_LockMutex(sM.lock);
+        known = sM.st.peerCount;
+        SDL_UnlockMutex(sM.lock);
+        SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"}", sM.code, key);
+        for (round = 0; round < 11 && !STOPPED(); round++) {
+            for (w = 0; w < (round == 0 ? 30 : 20) && !STOPPED(); w++) {
+                SDL_Delay(100);
+            }
+            if (STOPPED() || !http_post("poll", body, answer, sizeof(answer))) {
+                continue;
+            }
+            if (SDL_strstr(answer, "no room") != NULL) {
+                break; /* (the host has given the room up: it is connected, or gone) */
+            }
+            SDL_memset(&st, 0, sizeof(st));
+            if (json_peer(answer, &st) && SDL_strstr(answer, "relay=") != NULL && st.peerCount != known && !STOPPED()) {
+                SDL_LockMutex(sM.lock);
+                SDL_memcpy(sM.st.peerAddr, st.peerAddr, sizeof(st.peerAddr));
+                sM.st.peerCount = st.peerCount;
+                sM.st.addrGen++;
+                SDL_UnlockMutex(sM.lock);
+                break;
+            }
+        }
     }
     return 0;
 }
@@ -598,11 +746,166 @@ void Match_Begin(int role, int sock, int localPort, const char *code, const char
         }
     }
     sM.code[n] = '\0';
+    SDL_strlcpy(sM.queue, role == 3 ? sM.code : "", sizeof(sM.queue));
     SDL_strlcpy(sM.name, name != NULL ? name : "Player", sizeof(sM.name));
     sM.thread = SDL_CreateThread(match_thread, "bt3-match", (void *)(intptr_t)SDL_GetAtomicInt(&sM.gen));
     if (sM.thread == NULL) {
         set_state(-1, "The matchmaking could not be started.");
     }
+}
+
+/* ---- how many wait in each quick-match queue (for the window): asked in a thread of its own, now and then ---- */
+static SDL_AtomicInt sQueueCount[MATCH_QUEUES], sQueueBusy;
+static int sQueueVersion;
+const char *const kMatchQueues[MATCH_QUEUES] = {"S", "T", "D10", "D15", "D20"};
+
+static int SDLCALL queues_thread(void *arg) {
+    char body[64], answer[512];
+    int i;
+
+    (void)arg;
+    SDL_snprintf(body, sizeof(body), "{\"v\":%d}", sQueueVersion);
+    if (http_post("queues", body, answer, sizeof(answer)) && SDL_strstr(answer, "\"waiting\"") != NULL) {
+        for (i = 0; i < MATCH_QUEUES; i++) {
+            char key[16];
+            const char *p;
+            SDL_snprintf(key, sizeof(key), "\"%s\":", kMatchQueues[i]);
+            p = SDL_strstr(answer, key);
+            SDL_SetAtomicInt(&sQueueCount[i], p != NULL ? SDL_atoi(p + SDL_strlen(key)) + 1 : 0);
+        }
+    }
+    SDL_SetAtomicInt(&sQueueBusy, 0);
+    return 0;
+}
+
+/* ---- is there a newer release? asked of GitHub, once per run, when the window is there ("Check for updates") ----
+   One GET of the repository's newest published release (drafts and pre-releases are not it); nothing is sent but
+   the request itself. The answer is long; the tag's name is near its start, and only the start is kept. */
+static SDL_AtomicInt sUpdLatest, sUpdBusy;
+
+static int SDLCALL update_thread(void *arg) {
+    static char answer[4096];
+    const char *url = "https://api.github.com/repos/" PORT_UPDATE_REPO "/releases/latest", *p;
+    int ok;
+
+    (void)arg;
+    ok = SDL_getenv("BT3_MATCH_CURL") == NULL && http_post_native(url, NULL, NULL, answer, sizeof(answer));
+    if (!ok) { /* the `curl` program, as for the service */
+#ifdef _WIN32
+        const char *args[] = {"curl.exe", "-s", "-L", "-m", "12", "-A", "Tenkaichi3Decomp", url, NULL};
+#else
+        const char *args[] = {"curl", "-s", "-L", "-m", "12", "-A", "Tenkaichi3Decomp", url, NULL};
+#endif
+        SDL_Process *pr = SDL_CreateProcess(args, true);
+        size_t got = 0;
+        int code = 0;
+        void *data = pr != NULL ? SDL_ReadProcess(pr, &got, &code) : NULL;
+        if (pr != NULL) {
+            SDL_DestroyProcess(pr);
+        }
+        if (data != NULL) {
+            SDL_strlcpy(answer, (const char *)data, sizeof(answer));
+            SDL_free(data);
+            ok = got > 0;
+        }
+    }
+    if (ok && (p = SDL_strstr(answer, "\"tag_name\"")) != NULL && (p = SDL_strchr(p + 10, 'v')) != NULL) {
+        int a = 0, b = 0, c = 0;
+        if (SDL_sscanf(p, "v%d.%d.%d", &a, &b, &c) == 3 && a == 0 && b >= 0 && c >= 0 && c < 100) {
+            SDL_SetAtomicInt(&sUpdLatest, b * 100 + c); /* as PORT_RELEASE counts: 0.1.33 is 133 */
+            fprintf(stderr, "bt3: update check: the newest release is 0.%d.%d, this is 0.%d.%d\n", b, c, PORT_RELEASE / 100, PORT_RELEASE % 100);
+        }
+    }
+    if (SDL_GetAtomicInt(&sUpdLatest) == 0) {
+        fprintf(stderr, "bt3: update check: no answer\n");
+    }
+    SDL_SetAtomicInt(&sUpdBusy, 0);
+    return 0;
+}
+
+void Match_UpdateAsk(void) {
+    SDL_Thread *t;
+    if (SDL_GetAtomicInt(&sUpdBusy)) {
+        return;
+    }
+    SDL_SetAtomicInt(&sUpdBusy, 1);
+    t = SDL_CreateThread(update_thread, "bt3-update", NULL);
+    if (t == NULL) {
+        SDL_SetAtomicInt(&sUpdBusy, 0);
+    } else {
+        SDL_DetachThread(t);
+    }
+}
+
+/* The newest published release's number (0: not asked, no answer yet, or none). */
+int Match_UpdateLatest(void) {
+    return SDL_GetAtomicInt(&sUpdLatest);
+}
+
+/* ---- is this release new enough? asked when the online screen opens ---- */
+static SDL_AtomicInt sRelMin, sRelLatest, sRelBusy;
+
+static int SDLCALL hello_thread(void *arg) {
+    char body[64], answer[256];
+    const char *p;
+
+    (void)arg;
+    SDL_snprintf(body, sizeof(body), "{\"rel\":%d}", PORT_RELEASE);
+    if (http_post("hello", body, answer, sizeof(answer)) && (p = SDL_strstr(answer, "\"min\":")) != NULL) {
+        SDL_SetAtomicInt(&sRelMin, SDL_atoi(p + 6));
+        p = SDL_strstr(answer, "\"latest\":");
+        SDL_SetAtomicInt(&sRelLatest, p != NULL ? SDL_atoi(p + 9) : 0);
+        clock_learn(answer); /* (a service that knows the build key says its time) */
+    }
+    SDL_SetAtomicInt(&sRelBusy, 0);
+    return 0;
+}
+
+void Match_HelloAsk(void) {
+    SDL_Thread *t;
+    if (SDL_GetAtomicInt(&sRelBusy)) {
+        return;
+    }
+    SDL_SetAtomicInt(&sRelBusy, 1);
+    t = SDL_CreateThread(hello_thread, "bt3-hello", NULL);
+    if (t == NULL) {
+        SDL_SetAtomicInt(&sRelBusy, 0);
+    } else {
+        SDL_DetachThread(t);
+    }
+}
+
+/* This release's number, and what the service last said: the oldest it lets in and the newest there is (0: not
+   said, or not asked yet). */
+int Match_Release(int *min, int *latest) {
+    *min = SDL_GetAtomicInt(&sRelMin);
+    *latest = SDL_GetAtomicInt(&sRelLatest);
+    return PORT_RELEASE;
+}
+
+/* Asks the service (nothing happens if an answer is still on its way). */
+void Match_QueuesAsk(int version) {
+    SDL_Thread *t;
+    if (SDL_GetAtomicInt(&sQueueBusy)) {
+        return;
+    }
+    SDL_SetAtomicInt(&sQueueBusy, 1);
+    sQueueVersion = version;
+    t = SDL_CreateThread(queues_thread, "bt3-queues", NULL);
+    if (t == NULL) {
+        SDL_SetAtomicInt(&sQueueBusy, 0);
+    } else {
+        SDL_DetachThread(t);
+    }
+}
+
+/* Players waiting in queue i as last heard, -1 if not known. */
+int Match_QueueWaiting(int i) {
+    return i >= 0 && i < MATCH_QUEUES ? SDL_GetAtomicInt(&sQueueCount[i]) - 1 : -1;
+}
+
+int Match_SocketBusy(void) {
+    return SDL_GetAtomicInt(&sM.sockBusy);
 }
 
 /* Where it stands. */
@@ -629,4 +932,25 @@ void Match_Cancel(void) {
         sM.st.state = 0;
         SDL_UnlockMutex(sM.lock);
     }
+}
+
+/* BT3_SIGN_TEST (called before the game starts, plat_mem.c; the program ends after it): the build key's signature
+   for a fixed request, for port/matchmaking/test_sign.py. BT3_SIGN_TEST=post also sends one "hello" the way every
+   request to the service goes (so the headers can be looked at), and only to this computer: BT3_MATCH_URL has to
+   name http://127.0.0.1 or http://localhost. */
+int Match_SignTest(void) {
+    const char *mode = SDL_getenv("BT3_SIGN_TEST"), *url = match_url();
+    char body[64], answer[512] = "";
+
+    Sign_SelfTest();
+    if (mode != NULL && SDL_strcmp(mode, "post") == 0) {
+        if (SDL_strncmp(url, "http://127.0.0.1", 16) != 0 && SDL_strncmp(url, "http://localhost", 16) != 0) {
+            printf("sign: post: BT3_MATCH_URL does not name this computer, nothing sent\n");
+            return 1;
+        }
+        SDL_snprintf(body, sizeof(body), "{\"rel\":%d}", PORT_RELEASE);
+        printf("sign: post %s\n", http_post("hello", body, answer, sizeof(answer)) ? answer : "no answer");
+    }
+    fflush(stdout);
+    return 0;
 }

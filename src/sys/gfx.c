@@ -179,6 +179,11 @@ void Gfx_BeginFrame(void) {
  */
 void Gfx_EndFrame(s32 vsyncs) {
     Fade_DrawScreen();
+#ifdef PORT
+    /* The PC exit question uses the game's animated memory-card dialog above the current screen. */
+    extern void PortQuit_Draw(void);
+    PortQuit_Draw();
+#endif
     FontIcon_Tick(vsyncs);
     PadWatch_Update();
     PadWatch_Draw();

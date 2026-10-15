@@ -4,5 +4,9 @@
    section of their own, which the list leaves out. */
 #ifndef PORT_HOST_H
 #define PORT_HOST_H
+#ifdef __APPLE__
+#define PORT_HOST __attribute__((section("__DATA,__porthst"))) /* (Mach-O names a segment and a section) */
+#else
 #define PORT_HOST __attribute__((section(".porthst")))
+#endif
 #endif

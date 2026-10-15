@@ -10,7 +10,7 @@ modulo 16 as on the PS2, so data that must be 16-byte aligned stays aligned.
 
 Usage: port/tools/gen_data.py [--asm DIR]     DIR = the decompilation's generated asm/ (default ../bt3/asm)
 Output: port/build/gen/data/*.s and the assembled port/build/obj_data/*.o  (generated from the game; never commit)"""
-import argparse, collections, pathlib, re
+import argparse, collections, pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 KINDS = ("data", "sdata", "rodata", "lit4", "lit8", "bss", "sbss")
@@ -117,8 +117,11 @@ def main():
         out.append(f'    .incbin "{blob}", {c - start}, {end - c}')
     (dst / "vu1_micro.data.s").write_text("\n".join(out) + "\n")
     print(f"{n} data chunks, {m} included tables and the VU1 microprograms written to {dst.relative_to(ROOT)}")
-    # assemble them for the link (port/build/obj_data)
+    # assemble them for the link (port/build/obj_data: the 32-bit Linux build's; the other builds assemble the
+    # sources themselves, undefined.py, and macOS has no 32-bit x86 assembler)
     import subprocess
+    if sys.platform == "darwin":
+        return
     obj = ROOT / "port/build/obj_data"
     obj.mkdir(parents=True, exist_ok=True)
     for old in obj.glob("*.o"):

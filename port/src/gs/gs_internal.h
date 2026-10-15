@@ -76,6 +76,10 @@ void GsGpu_FrameEnd(void);
    uploads and vertex programs that later frames count on, but no draw is recorded, nothing is shown, and no
    sound starts. (gs/state.c) */
 extern int gPortResim;
+/* The frame being computed is not shown because the machine is behind (gs_draw.c: frame skipping). Its drawing
+   is left out the way a re-run frame's is; the game itself (and its sound) go on as always. */
+extern int gsSkipFrame;
+#define GS_NO_PICTURE (gPortResim || gsSkipFrame)
 
 /* Settings are read from the environment all over the renderer, some of them for every batch a model sends
    (tens of thousands of times per frame). The C library's getenv is cheap on Linux and slow on Windows (a lock

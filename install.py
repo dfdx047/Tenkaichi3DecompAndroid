@@ -15,9 +15,12 @@ Steps (each is skipped when its result is already there; --force redoes them):
   4. executable data    the data tables of the game's two programs, split out for the build
   5. build              the port itself (64-bit; --32 for the 32-bit build)
   6. self-test          the game's own demo fight, run without a window
+(The list of menu labels of the "Menu font" setting was a step here. The game makes it itself now, the first time
+it starts with a window: port/src/gs/menu_labels.c, docs/port/menu_font.md.)
 Everything the tools print goes to install.log.
-Standard library only; Linux for now."""
-import argparse, hashlib, os, pathlib, shutil, struct, subprocess, sys, threading, time
+Standard library only; Linux, and macOS on Apple Silicon (experimental: the native arm64 build, BT3_CC=mac64,
+docs/port/macos_plan.md)."""
+import argparse, hashlib, os, pathlib, platform, shutil, struct, subprocess, sys, threading, time
 
 ROOT = pathlib.Path(__file__).resolve().parent
 LOG = ROOT / "install.log"
@@ -26,6 +29,9 @@ ROM_SHA1 = "caee6c2269bba89fc51eea9e7beac3adbec9dc52"   # SLUS_216.78 as a flat 
 DBZP_SHA1 = "4f910969e05d9b25c83af7642b60da9949a4348b"  # BIN/DBZP.BIN (config/DBZP.yaml)
 ROM_BASE, ROM_END = 0x100000, 0x2FF180
 SPLAT = "splat64[mips]==0.50.0"
+MAC = sys.platform == "darwin"
+LIBCLANG = "libclang==18.1.1"  # (macOS: the python bindings of clang for ptr32.py, in .venv; Linux uses the system's)
+LLVM = pathlib.Path(os.environ.get("BT3_LLVM", "/opt/homebrew/opt/llvm/bin"))  # (macOS: Homebrew's LLVM, as toolchain.py)
 
 TTY = sys.stdout.isatty()
 MACHINE = False  # --machine: one line per event for the setup window (port/setup/setup.cpp), see say()
@@ -125,8 +131,27 @@ def works(cmd, stdin=None):
         return False
 
 
+def requirements_mac():
+    """macOS: Apple's command line tools (the renderer, the link), Homebrew's LLVM (the game code: Apple's clang has no
+    4-byte pointers on arm64), SDL3 and the shader tools from Homebrew. The disc is read with the system's bsdtar."""
+    have = lambda tool: shutil.which(tool) is not None
+    sdl = pathlib.Path(os.environ.get("BT3_SDL3", "/opt/homebrew/opt/sdl3"), "lib", "libSDL3.dylib").exists()
+    return [
+        ("Apple Silicon", platform.machine() == "arm64", "the macOS build is native arm64 only", "a Mac with an M-series processor"),
+        ("Command Line Tools", works(["xcrun", "--show-sdk-path"]) and have("clang"), "compiles the renderer and links the game", "xcode-select --install"),
+        ("LLVM (Homebrew)", all((LLVM / t).exists() for t in ("clang", "llc", "opt", "llvm-config")), "compiles the game code", "brew install llvm"),
+        ("SDL3", sdl, "window, input and sound", "brew install sdl3"),
+        ("glslc", have("glslc"), "compiles the shaders", "brew install shaderc"),
+        ("spirv-cross", have("spirv-cross"), "translates the shaders for Metal", "brew install spirv-cross"),
+        ("disc reader", have("7z") or have("bsdtar"), "reads the disc image", "brew install p7zip"),
+        ("python venv", works([sys.executable, "-c", "import venv, ensurepip"]), "holds the tools that split the executable", "python3 from python.org or brew install python"),
+    ]
+
+
 def requirements(want32):
     """[(name, present, what it is for, how to get it)] and the build variant that can be made."""
+    if MAC:
+        return requirements_mac()
     hello = "int main(void){return 0;}\n"
     have = lambda tool: shutil.which(tool) is not None
     sdl = works(["pkg-config", "--exists", "sdl3"]) or any(pathlib.Path(p, "libSDL3.so").exists() for p in ("/usr/lib", "/usr/lib64", "/usr/lib/x86_64-linux-gnu"))
@@ -165,7 +190,7 @@ def step_requirements(args):
                 say("missing", f"{name}|{why}|{pkg}")
             else:
                 print(f"    {BOLD(name):<32} {why}\n    {'':<24} install: {pkg}")
-        raise Failed("Install what is listed above with your system's package manager and run this again.")
+        raise Failed("Install what is listed above " + ("(Homebrew: https://brew.sh)" if MAC else "with your system's package manager") + " and run this again.")
     optional = [r[0] for r in rows if not r[1]]
     s.ok("all present" + (f"  (not found: {', '.join(optional)})" if optional else ""))
 
@@ -223,11 +248,14 @@ def step_disc(args):
         return None
     iso = find_iso(args)
     s = Step("Disc image")
-    code, listing = run(["7z", "l", iso])
+    bsdtar = MAC and shutil.which("7z") is None and shutil.which("bsdtar") is not None  # (macOS only: the system's own reader)
+    code, listing = run(["bsdtar", "-tf", iso] if bsdtar else ["7z", "l", iso])
     if code != 0 or "SLUS_216.78" not in listing:
         s.fail(f"{iso.name} is not a disc image of the USA release (no SLUS_216.78 on it).\n"
                "    Other regions and the Wii version have different programs and are not supported.")
-    code, _ = run(["7z", "x", "-y", f"-o{disc}", iso, "SLUS_216.78", "BIN"])
+    if bsdtar:
+        disc.mkdir(exist_ok=True)  # (7z makes its output folder itself)
+    code, _ = run(["bsdtar", "-xf", iso, "-C", disc, "SLUS_216.78", "BIN"] if bsdtar else ["7z", "x", "-y", f"-o{disc}", iso, "SLUS_216.78", "BIN"])
     if code != 0 or not (disc / "SLUS_216.78").is_file() or not dbzp.is_file():
         s.fail("The disc image could not be read (see install.log).")
     rom.write_bytes(flat_image(disc / "SLUS_216.78"))
@@ -280,6 +308,11 @@ def step_split(args):
         code, _ = run([py, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", SPLAT])
         if code != 0:
             s.fail(f"Could not install {SPLAT} (see install.log). This step needs an internet connection once.")
+    if MAC and run([py, "-c", "import clang.cindex as c; c.Index.create()"])[0] != 0:
+        s.note = "downloading the python bindings of clang"
+        code, _ = run([py, "-m", "pip", "install", "--quiet", "--disable-pip-version-check", LIBCLANG])
+        if code != 0:
+            s.fail(f"Could not install {LIBCLANG} (see install.log). This step needs an internet connection once.")
     for name in ("SLUS_216.78", "DBZP"):
         s.note = name
         code, _ = run([py, "-m", "splat", "split", ROOT / "config" / f"{name}.yaml"])
@@ -293,14 +326,16 @@ def step_split(args):
 # ------------------------------------------------------------------------------------------------------ 5. build
 
 def step_build(args):
-    exe = ROOT / "port/build" / ("bt3" if args.bits32 else "bt3_64")
+    exe = ROOT / "port/build" / ("bt3_mac" if MAC else "bt3" if args.bits32 else "bt3_64")
     if not args.force and exe.is_file() and not args.rebuild:
         Step("Build").skip("already built" if MACHINE else f"{exe.relative_to(ROOT)} is there (--rebuild to build again)")
         return exe
     s = Step("Build")
     py = venv_python() if venv_python().exists() else pathlib.Path(sys.executable)
     env = dict(os.environ)
-    if not args.bits32:
+    if MAC:
+        env["BT3_CC"] = "mac64"
+    elif not args.bits32:
         env["BT3_CC"] = "clang64"
     s.note = "data tables"
     code, out = run([py, ROOT / "port/tools/gen_data.py", "--asm", ROOT / "asm"], env)
@@ -345,6 +380,11 @@ def step_test(args, exe):
 
 def write_launcher(exe, bits32):
     play = ROOT / "play.sh"
+    if MAC:
+        play.write_text("#!/bin/sh\n# Starts the game from its menus. Written by install.py.\n"
+                        'cd "$(dirname "$0")" && unset BT3_REPLAY BT3_DEMO && BT3_GS=gpu exec port/build/bt3_mac\n')
+        play.chmod(0o755)
+        return play
     play.write_text("#!/bin/sh\n# Starts the game from its menus. Written by install.py.\n"
                     f'cd "$(dirname "$0")" && {"" if bits32 else "BT3_64=1 "}exec port/run.sh menu\n')
     play.chmod(0o755)
@@ -364,8 +404,8 @@ def main():
     global MACHINE, TTY
     MACHINE = args.machine
     TTY = TTY and not MACHINE
-    if sys.platform != "linux":
-        print("This wizard supports Linux for now.")
+    if sys.platform not in ("linux", "darwin"):
+        print("This wizard supports Linux and macOS (Apple Silicon).")
         return 2
     LOG.write_text(f"install.py, {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
     if not MACHINE:

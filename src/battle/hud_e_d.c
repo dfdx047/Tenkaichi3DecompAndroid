@@ -54,6 +54,13 @@ s32 BtlPause_CheckOpen(void) {
         }
     }
     if (Battle_GetMode() != 7) {
+#ifdef PORT
+        /* (online nothing stops the fight, btl_seq.c: a pad pulled out does not either) */
+        extern int Port_NetActive(void);
+        if (Port_NetActive()) {
+            return 0;
+        }
+#endif
         if (PadWatch_GetMissing(&port)) {
             work->pad = port;
             Battle_GetWork()->flags |= BATTLE_FLAG_PAUSE | BATTLE_FLAG_PAUSE_MENU;

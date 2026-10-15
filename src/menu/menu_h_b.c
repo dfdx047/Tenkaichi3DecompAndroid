@@ -170,6 +170,10 @@ void CharRef_Init(s32 section) {
     CharRef_BuildList();
 }
 
+#ifdef PORT
+extern void Port_MenuScene3D(int on); /* port/src/headless.c */
+#endif
+
 /* Runs the screen until its fade out is over and the picture loader is idle; returns 0. */
 s32 CharRef_Run(s32 section) {
     CharRef_Init(section);
@@ -180,6 +184,11 @@ s32 CharRef_Run(s32 section) {
         Pad_Update();
         Snd_Update();
         ColorFade_Update();
+#ifdef PORT
+        /* The model viewer is a 3D scene, not a page composed for 4:3: in a picture wider than 4:3 it is shown as a
+           fight is, with the wider view, and not stretched like the menus around it. */
+        Port_MenuScene3D(gCharRef->state == CHARREF_ST_VIEW);
+#endif
         if (gCharRef->state == CHARREF_ST_VIEW) {
             ChrView_Update();
         } else {
@@ -208,6 +217,9 @@ s32 CharRef_Run(s32 section) {
         }
     }
 done:
+#ifdef PORT
+    Port_MenuScene3D(0);
+#endif
     Dma_ResetBuffers();
     CharRef_Term();
     return 0;

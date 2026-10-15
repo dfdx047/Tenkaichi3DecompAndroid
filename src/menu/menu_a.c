@@ -23,6 +23,66 @@ MainMenu *gMainMenu = NULL;
 /* The item under the cursor. */
 #define MAINMENU_CUR(m) ((m)->items[((m)->top + (m)->cursor + 1) % (m)->itemCount])
 
+#ifdef PORT
+/*
+ * PC only: "Tenkaichi Budokai Online" (item 11), listed after Dragon Net Battle (after Duel when that one is
+ * hidden). Its label is written into the free fourth row of the second label sheet of each plate state (label 11,
+ * the item's own number), put together from the letters of the other labels of the player's disc
+ * (port/src/gs/menu_text.c, Port_MainItemLabel); without them (another edition of the game) from port_tbo_label.h. Its
+ * icon is Dragon Net Battle's. Choosing it opens the port's screen mode (menu/port_screen.c) with the screens of
+ * menu/port_tbo.c. It has no voiced line of the guides.
+ */
+#include "port_tbo_label.h"
+
+#define MAINMENU_TBO 11
+#define MM_ICON(item) ((item) == MAINMENU_TBO ? 4 : (item)) /* whose icon an item shows */
+
+/* A label sheet's pixels are stored the way the GS keeps 8-bit textures (in blocks): where pixel (x, y) is. */
+static s32 PortMainMenu_PixelAt(s32 x, s32 y) {
+    s32 block = (y & ~0xF) * 512 + (x & ~0xF) * 2;
+    s32 swap = (((y + 2) >> 2) & 1) * 4;
+    s32 line = (((y & ~3) >> 1) + (y & 1)) & 7;
+
+    return block + line * 512 * 2 + ((x + swap) & 7) * 4 + ((y >> 1) & 1) + ((x >> 2) & 2);
+}
+
+/* Writes runs of palette indices into label row `row` of a sheet. */
+static void PortMainMenu_WriteRuns(u8 *tex, s32 row, const PortLabelRun *run, s32 count) {
+    u8 *px = *(u8 **)(tex + 0x38) + 0x60;
+    s32 i;
+    s32 k;
+
+    for (i = 0; i < count; i++) {
+        for (k = 0; k < run[i].len; k++) {
+            px[PortMainMenu_PixelAt(run[i].x + k, row * 0x20 + run[i].y)] = run[i].v;
+        }
+    }
+}
+
+/* The label in the disc's lettering into row `row` of a sheet; 0 when it could not be made. */
+static s32 PortMainMenu_WriteDisc(u8 *tex, s32 row, s32 lit) {
+    extern s32 Port_MainItemLabel(s32 entry, s32 lit, s32 out);
+    static u8 index[512 * 0x20];
+    u8 *px = *(u8 **)(tex + 0x38) + 0x60;
+    s32 x;
+    s32 y;
+
+    if (!Port_MainItemLabel((s32)(u32)tex, lit, (s32)(u32)index)) {
+        return 0;
+    }
+    for (y = 0; y < 0x20; y++) {
+        for (x = 0; x < 512; x++) {
+            px[PortMainMenu_PixelAt(x, row * 0x20 + y)] = index[y * 512 + x];
+        }
+    }
+    return 1;
+}
+#define MAINMENU_VOICED(item) ((item) < MAINMENU_TBO)
+#else
+#define MM_ICON(item) (item)
+#define MAINMENU_VOICED(item) 1
+#endif
+
 /* Starts the idle loop of the seven dragon balls (all seven collected). */
 void MainMenu_StartBallLoops(void) {
     MFlashRef ref;
@@ -49,8 +109,13 @@ void MainMenu_Init(s32 section) {
     if (gMenuArc1 == NULL) {
         gMenuArc1 = File_LoadSync(gProgress->baseFile + 1, NULL, 0);
     }
+#ifdef PORT
+    gMainMenu = Heap_Alloc(sizeof(MainMenu), 0x20, 0, 2); /* (its item list is longer on the PC: MAINMENU_ITEM_MAX) */
+    memset(gMainMenu, 0, sizeof(MainMenu));
+#else
     gMainMenu = Heap_Alloc(0x188, 0x20, 0, 2);
     memset(gMainMenu, 0, 0x188);
+#endif
     gMainMenu->pack = (u32 *)MPACK_AT(gMenuArc1, section);
     gMainMenu->res = Sprite_Unpack(gMainMenu->pack, NULL, NULL);
     MM_RES(1);
@@ -145,6 +210,9 @@ void MainMenu_Init(s32 section) {
         if (i == 4 && !Port_NetMenuListed()) {
             continue;
         }
+        if (i == MAINMENU_TBO) { /* (listed after Dragon Net Battle, below: not again at the end) */
+            continue;
+        }
 #else
         if (i == 4) {
             continue;
@@ -154,7 +222,19 @@ void MainMenu_Init(s32 section) {
             continue;
         }
         gMainMenu->items[gMainMenu->itemCount++] = i;
+#ifdef PORT
+        if (i == (Port_NetMenuListed() ? 4 : 3)) {
+            gMainMenu->items[gMainMenu->itemCount++] = MAINMENU_TBO;
+        }
+#endif
     }
+#ifdef PORT
+    /* the second sheet of each state (slot 8 not chosen, 12 chosen) is the entry behind the first */
+    if (!PortMainMenu_WriteDisc(gMainMenu->tex[8] + 0x40, 3, 0) || !PortMainMenu_WriteDisc(gMainMenu->tex[12] + 0x40, 3, 1)) {
+        PortMainMenu_WriteRuns(gMainMenu->tex[8] + 0x40, 3, sPortTboOff, sizeof(sPortTboOff) / sizeof(sPortTboOff[0]));
+        PortMainMenu_WriteRuns(gMainMenu->tex[12] + 0x40, 3, sPortTboOn, sizeof(sPortTboOn) / sizeof(sPortTboOn[0]));
+    }
+#endif
     gMainMenu->top = gMainMenu->itemCount - 1;
     for (i = 0; i < gMainMenu->itemCount; i++) {
         if (gMainMenu->items[i] == gProgress->mainMenuItem) {
@@ -251,22 +331,22 @@ void MainMenu_Draw(void) {
             Flash_FindLabel(flash, name, "mc_menu_text_on", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
             Flash_ClipSetTex(flash, &ref, item / 8);
-            uv.x0 = (item % 4) * 0x40;
-            uv.y0 = (item / 4) * 0x40;
+            uv.x0 = (MM_ICON(item) % 4) * 0x40;
+            uv.y0 = (MM_ICON(item) / 4) * 0x40;
             uv.x1 = uv.x0 + 0x40;
             uv.y1 = uv.y0 + 0x40;
             Flash_FindLabel(flash, name, "mc_icon_off", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
             uv.x0 = 0;
-            uv.y0 = (item % 10) * 0x30;
+            uv.y0 = (MM_ICON(item) % 10) * 0x30;
             uv.x1 = 0x30;
             uv.y1 = uv.y0 + 0x30;
             Flash_FindLabel(flash, name, "mc_icon_play", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
-            Flash_ClipSetTex(flash, &ref, item / 10);
+            Flash_ClipSetTex(flash, &ref, MM_ICON(item) / 10);
             if (item == MAINMENU_CUR(gMainMenu)) {
                 FlashAnim_Sheet(flash, &ref, &gMainMenu->iconTimer, &gMainMenu->iconFrame, &uv,
-                                cols[MAINMENU_CUR(gMainMenu)], 1, MAINMENU_CUR(gMainMenu) == 3 ? 3 : 6);
+                                cols[MM_ICON(MAINMENU_CUR(gMainMenu))], 1, MM_ICON(MAINMENU_CUR(gMainMenu)) == 3 ? 3 : 6);
             }
         }
     }
@@ -283,19 +363,19 @@ void MainMenu_Draw(void) {
         Flash_FindLabel(flash, "mc_menu_plate_7", "mc_menu_text_on", &ref);
         Flash_ClipSetUv(flash, &ref, &uv);
         Flash_ClipSetTex(flash, &ref, item / 8);
-        uv.x0 = (item % 4) * 0x40;
-        uv.y0 = (item / 4) * 0x40;
+        uv.x0 = (MM_ICON(item) % 4) * 0x40;
+        uv.y0 = (MM_ICON(item) / 4) * 0x40;
         uv.x1 = uv.x0 + 0x40;
         uv.y1 = uv.y0 + 0x40;
         Flash_FindLabel(flash, "mc_menu_plate_7", "mc_icon_off", &ref);
         Flash_ClipSetUv(flash, &ref, &uv);
         uv.x0 = 0;
-        uv.y0 = (item % 10) * 0x30;
+        uv.y0 = (MM_ICON(item) % 10) * 0x30;
         uv.x1 = 0x30;
         uv.y1 = uv.y0 + 0x30;
         Flash_FindLabel(flash, "mc_menu_plate_7", "mc_icon_play", &ref);
         Flash_ClipSetUv(flash, &ref, &uv);
-        Flash_ClipSetTex(flash, &ref, item / 10);
+        Flash_ClipSetTex(flash, &ref, MM_ICON(item) / 10);
     }
 
     for (i = 0; i < 2; i++) {
@@ -359,8 +439,12 @@ void MainMenu_Update(void) {
         if (gMainMenu->voiceLine == gMainMenu->guide + 0xC || gMainMenu->voiceLine == gMainMenu->guide + 0x3C) {
             if (Voice_GetStat(0) == 5) {
                 gMainMenu->guide = Rand_Range(4);
-                gMainMenu->voiceLine = MAINMENU_CUR(gMainMenu) * 4 + gMainMenu->guide + 0x10;
-                Voice_PlayWithSubtitle(gMainMenu->subtitles, MAINMENU_VOICE_BASE, gMainMenu->voiceLine);
+                if (MAINMENU_VOICED(MAINMENU_CUR(gMainMenu))) {
+                    gMainMenu->voiceLine = MAINMENU_CUR(gMainMenu) * 4 + gMainMenu->guide + 0x10;
+                    Voice_PlayWithSubtitle(gMainMenu->subtitles, MAINMENU_VOICE_BASE, gMainMenu->voiceLine);
+                } else {
+                    gMainMenu->voiceLine = -1;
+                }
             }
         }
     }
@@ -428,8 +512,12 @@ void MainMenu_Input(s32 *result) {
     moved:
         MainMenu_PlateGoto(0, "fl_on_start");
         gMainMenu->guide = Rand_Range(4);
-        gMainMenu->voiceLine = MAINMENU_CUR(gMainMenu) * 4 + gMainMenu->guide + 0x10;
-        Voice_PlayWithSubtitle(gMainMenu->subtitles, MAINMENU_VOICE_BASE, gMainMenu->voiceLine);
+        if (MAINMENU_VOICED(MAINMENU_CUR(gMainMenu))) {
+            gMainMenu->voiceLine = MAINMENU_CUR(gMainMenu) * 4 + gMainMenu->guide + 0x10;
+            Voice_PlayWithSubtitle(gMainMenu->subtitles, MAINMENU_VOICE_BASE, gMainMenu->voiceLine);
+        } else {
+            gMainMenu->voiceLine = -1;
+        }
         Snd_PlaySe(1, 0);
     } else if (gPad[0].gamePressed & 0x200) {
         switch (MAINMENU_CUR(gMainMenu)) {
@@ -478,6 +566,13 @@ void MainMenu_Input(s32 *result) {
             MAINMENU_COUNT();
             MAINMENU_CHOOSE(70);
             break;
+#ifdef PORT
+        case MAINMENU_TBO: /* "Tenkaichi Budokai Online": the port's screen mode runs its screens (menu/port_tbo.c) */
+            gPortScreen = PORT_SCREEN_TBO;
+            MAINMENU_COUNT();
+            MAINMENU_CHOOSE(MPROG_MODE_PORT_SCREEN);
+            break;
+#endif
         }
         MainMenu_PlateGoto(0, "fl_ok");
         Snd_PlaySe(1, 1);

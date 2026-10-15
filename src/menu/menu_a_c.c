@@ -13,6 +13,11 @@ Title *gTitle = NULL;
 
 #define TITLE_VOICE_BASE 0x86F9
 
+#ifdef PORT
+extern int gPortOverlayOpen; /* port/src/gs/gs_input.c: settings or quit dialog owns input */
+extern int Ui_QuitAsk(void);
+#endif
+
 /* What ends the screen: the movie plays out for 15 frames, then the fade starts. */
 #define TITLE_LEAVE() \
     gTitle->flags |= TITLE_CHOSEN; \
@@ -203,8 +208,13 @@ void Title_OnCardCancel(void) {
     Title_ClipGoto(0, 2, "fl_on_start");
 }
 
-/* Pad 0: start skips the intro and opens the menu; up / down, confirm. */
+/* Pad 0: start skips the intro and opens the menu; up / down, confirm, or quit from the menu on PC. */
 void Title_Input(s32 *result) {
+#ifdef PORT
+    if (gPortOverlayOpen) {
+        return;
+    }
+#endif
     if (gTitle->state == 0) {
         if (gPad[0].gamePressed & 0x1000) {
             Flash_GotoLabel(&gTitle->flash[0], "fl_skip", 1);
@@ -241,6 +251,13 @@ void Title_Input(s32 *result) {
         }
         break;
     case 2:
+#ifdef PORT
+        if (gPad[0].gamePressed & PADG_TRIANGLE) {
+            gTitle->idle = 0;
+            Ui_QuitAsk();
+            break;
+        }
+#endif
         if (gPad[0].gameRepeat & 8) {
             gTitle->idle = 0;
             if (gTitle->itemCount >= 2) {
@@ -285,6 +302,11 @@ void Title_Input(s32 *result) {
     }
 }
 
+#ifdef PORT
+extern int Port_Setting(const char *name, int def);
+extern int Port_NetFixedStart(void); /* port/src/gs/net.c */
+#endif
+
 /* The title screen's own frame loops. Returns 0 to go on to the main menu, 1 when the attract demo was set up
    (the overlay returns and the battle runs), 2 to play the opening movie. */
 s32 Title_Run(s32 section) {
@@ -293,7 +315,14 @@ s32 Title_Run(s32 section) {
 
     Title_Init(section);
     ColorFade_StartIn(0, 0, 0, 0x14);
+#ifdef PORT
+    /* A setting of the PC version (F1, UI): the copyright page, a still held for 300 frames that no button
+       shortens, is left out. Nothing else happens in its loop. (Not in an online session: a player's setting does
+       not change what the two copies compute. A session does not come here as things are.) */
+    while (Port_NetFixedStart() || !Port_Setting("skip_copyright", 0)) {
+#else
     while (1) {
+#endif
         Gfx_BeginFrame();
         Pad_Update();
         Snd_Update();

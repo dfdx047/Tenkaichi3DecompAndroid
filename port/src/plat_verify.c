@@ -19,6 +19,9 @@
  *
  * What does NOT count: texture packs, added songs, stages and characters live outside the data folder.
  * BT3_VERIFY=0 turns the check off; without a window (BT3_GS=none) it only runs with BT3_VERIFY=1.
+ *
+ * The same thread computes the gameplay fingerprint (plat_fprint.c), which asks the other question: not "is every
+ * file the original's" but "does this data compute the same fight". It is computed with BT3_VERIFY=0 too.
  */
 #include <pthread.h>
 #include <stdint.h>
@@ -30,6 +33,8 @@
 
 extern const char *Port_FileRoot(void); /* plat_file.c */
 extern void Port_UiNotice(const char *text); /* gs/ui.cpp */
+extern void PortFp_Run(int detail); /* plat_fprint.c: the gameplay fingerprint, computed on this thread */
+static int sCheck = 1; /* 0 with BT3_VERIFY=0: only the fingerprint */
 
 enum { DATA_CHECKING = 0, DATA_ORIGINAL = 1, DATA_MODIFIED = 2, DATA_OFF = 3 };
 static volatile int sState = DATA_OFF;
@@ -135,11 +140,15 @@ static void *verify_thread(void *arg) {
     int n;
 
     (void)arg;
+    if (!sCheck) {
+        PortFp_Run(0);
+        return NULL;
+    }
     crc_init();
     sTotal = FILES;
     /* the signature: every file's size and time, and whether mods/ has one for it */
     for (n = 0; n < FILES; n++) {
-        uint64_t rec[3] = { 0, 0, 0 };
+        uint64_t rec[4] = { 0, 0, 0, 0 };
         rel_of(n, rel, sizeof(rel));
         snprintf(path, sizeof(path), "%s/%s", root, rel);
         if (stat(path, &st) == 0) {
@@ -149,6 +158,7 @@ static void *verify_thread(void *arg) {
         snprintf(path, sizeof(path), "%s/mods/%s", root, rel);
         if (stat(path, &st) == 0) {
             rec[2] = (uint64_t)st.st_size + 1;
+            rec[3] = (uint64_t)st.st_mtime;
         }
         /* the quick pass: a replaced, missing or resized file shows without reading anything */
         if (rec[2] != 0) {
@@ -169,6 +179,7 @@ static void *verify_thread(void *arg) {
            then, so the number is a lower bound. */
         sAtLeast = 1;
         finish();
+        PortFp_Run(0); /* (reads the files that are loaded, those under mods/ too) */
         return NULL;
     }
     snprintf(cache, sizeof(cache), "%s/.verified", root);
@@ -183,11 +194,15 @@ static void *verify_thread(void *arg) {
             }
         }
         fclose(f);
-        if (got == 5 && ver == 1 && was == sig) {
+        if (got == 5 && ver == 2 && was == sig) {
             finish();
+            PortFp_Run(0);
             return NULL;
         }
     }
+    /* The fingerprint first: a few hundred megabytes of the 3 GB, known within a second or two; the comparison
+       below then finds those files in the system's cache. */
+    PortFp_Run(0);
     sDiffer = sMissing = sMods = 0;
     memset(sFirst, 0, sizeof(sFirst));
     buf = malloc(1 << 20);
@@ -234,7 +249,7 @@ static void *verify_thread(void *arg) {
     free(buf);
     f = fopen(cache, "w");
     if (f != NULL) {
-        fprintf(f, "1 %08x %d %d %d\n", (unsigned int)sig, sDiffer, sMissing, sMods);
+        fprintf(f, "2 %08x %d %d %d\n", (unsigned int)sig, sDiffer, sMissing, sMods);
         for (n = 0; n < 4 && sFirst[n][0] != '\0'; n++) {
             fprintf(f, "%s\n", sFirst[n]);
         }
@@ -255,17 +270,20 @@ void Port_VerifyStart(void) {
         return;
     }
     once = 1;
-#ifdef __ANDROID__
-    /* Android: the app checks the disc image when it installs the game (the same checksums as the PC setup), and the
-       archives are kept whole (layout "afs"), not as the loose files this compares: only on request. */
-    if (v == NULL || atoi(v) == 0) {
+    if (getenv("BT3_FINGERPRINT") != NULL) {
+        /* BT3_FINGERPRINT=1: the gameplay fingerprint with every differing file named, then the program ends (a
+           tool: port/tools/make_fingerprint.py is the other implementation of the same definition). */
+        PortFp_Run(1);
+        fflush(stderr);
+        exit(0);
+    }
+    if (v == NULL && gs != NULL && strcmp(gs, "none") == 0) {
         return;
     }
-#endif
-    if (v != NULL ? atoi(v) == 0 : (gs != NULL && strcmp(gs, "none") == 0)) {
-        return;
+    if (v != NULL && atoi(v) == 0) {
+        sCheck = 0; /* no comparison with the disc, no notice; the fingerprint is still computed */
     }
-    sState = DATA_CHECKING;
+    sState = sCheck ? DATA_CHECKING : DATA_OFF;
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     if (pthread_create(&th, &attr, verify_thread, NULL) != 0) {

@@ -5,8 +5,9 @@
  *
  * The settings overlay (port/src/gs/gs_gpu.c) writes it whenever a setting changes. At start an environment
  * variable (BT3_SCALE, BT3_ASPECT, ...) still wins over the file, so a single run can be started differently.
- * Names: scale, aspect_milli, fullscreen, fx_off, glow, music, effects, display; the bindings of port/src/gs/gs_input.c
- * (key_p1_cross = an SDL scancode, pad_p1_cross = a controller button, padslot_p1 = which controller).
+ * Names: scale, aspect_milli, fullscreen, fx_off, glow, music, effects, voices, stage_sounds, hud_layout, game_speed, music_follows_speed, display; the bindings of port/src/gs/gs_input.c
+ * (key_p1_cross = an SDL scancode, pad_p1_cross = a controller button, padslot_p1 = which controller,
+ * deadzone_p1_ls / deadzone_p1_rs = a stick's deadzone, vibration_p1 and vibration_p1_strength).
  */
 #include <pthread.h>
 #include <stdio.h>
@@ -15,6 +16,11 @@
 
 #define MAX_SETTINGS 200
 static struct { char name[24]; int value; } sSet[MAX_SETTINGS];
+/* The few settings that are text (the player's online name): `name="text"` in the file, after the numbers. A
+   release from before these reads past such a line. */
+#define MAX_TEXTS 8
+static struct { char name[24]; char value[64]; } sText[MAX_TEXTS];
+static int sTextCount;
 static int sDirty;
 static int sCount;
 static pthread_once_t sOnce = PTHREAD_ONCE_INIT;
@@ -31,7 +37,13 @@ static void load(void) {
     FILE *fp = path() != NULL ? fopen(path(), "r") : NULL;
 
     while (fp != NULL && fgets(line, sizeof(line), fp) != NULL && sCount < MAX_SETTINGS) {
-        if (sscanf(line, " %23[a-z0-9_]=%d", name, &value) == 2) {
+        char text[64];
+        if (sscanf(line, " %23[a-z0-9_]=\"%63[^\"\n]", name, text) == 2) {
+            if (sTextCount < MAX_TEXTS) {
+                strcpy(sText[sTextCount].name, name);
+                strcpy(sText[sTextCount++].value, text);
+            }
+        } else if (sscanf(line, " %23[a-z0-9_]=%d", name, &value) == 2) {
             strcpy(sSet[sCount].name, name);
             sSet[sCount++].value = value;
         }
@@ -77,6 +89,49 @@ void Port_SettingSave(const char *name, int value) {
     pthread_mutex_unlock(&sLock);
 }
 
+/* A saved text setting copied into out (size bytes), or `def` when the file does not have it. */
+void Port_SettingText(const char *name, const char *def, char *out, int size) {
+    int i;
+
+    pthread_once(&sOnce, load);
+    pthread_mutex_lock(&sLock);
+    snprintf(out, (size_t)size, "%s", def);
+    for (i = 0; i < sTextCount; i++) {
+        if (strcmp(sText[i].name, name) == 0) {
+            snprintf(out, (size_t)size, "%s", sText[i].value);
+        }
+    }
+    pthread_mutex_unlock(&sLock);
+}
+
+/* Stores a text setting (a double quote or a line break in it becomes an apostrophe or a space: the file's form). */
+void Port_SettingTextSave(const char *name, const char *value) {
+    char clean[64];
+    int i;
+
+    snprintf(clean, sizeof(clean), "%s", value);
+    for (i = 0; clean[i] != '\0'; i++) {
+        clean[i] = clean[i] == '"' ? '\'' : clean[i] == '\n' || clean[i] == '\r' ? ' ' : clean[i];
+    }
+    pthread_once(&sOnce, load);
+    pthread_mutex_lock(&sLock);
+    for (i = 0; i < sTextCount && strcmp(sText[i].name, name) != 0; i++) {
+    }
+    if (i < MAX_TEXTS) {
+        if (i == sTextCount) {
+            snprintf(sText[i].name, sizeof(sText[i].name), "%s", name);
+            sText[i].value[0] = '\0';
+            sTextCount++;
+            sDirty = 1;
+        }
+        if (strcmp(sText[i].value, clean) != 0) {
+            strcpy(sText[i].value, clean);
+            sDirty = 1;
+        }
+    }
+    pthread_mutex_unlock(&sLock);
+}
+
 void Port_SettingsWrite(void) {
     FILE *fp;
     int i;
@@ -86,6 +141,9 @@ void Port_SettingsWrite(void) {
     if (fp != NULL) {
         for (i = 0; i < sCount; i++) {
             fprintf(fp, "%s=%d\n", sSet[i].name, sSet[i].value);
+        }
+        for (i = 0; i < sTextCount; i++) {
+            fprintf(fp, "%s=\"%s\"\n", sText[i].name, sText[i].value);
         }
         fclose(fp);
     }

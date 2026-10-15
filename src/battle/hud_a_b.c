@@ -48,6 +48,8 @@ extern void HudSprite_Show(HudSprite *spr, s32 show);
    side's data is the same, where it is drawn is the other side's place. HUD_SCR(side) is the place of a side. */
 extern int Port_HudSwap(void);
 #define HUD_SCR(side) ((side) ^ Port_HudSwap())
+#else
+#define HUD_SCR(side) (side)
 #endif
 extern void HudSprite_SetMirror(HudSprite *spr, s32 mirror);
 extern void HudSprite_SetRect(HudSprite *spr, s32 x0, s32 x1, s32 y0, s32 y1);

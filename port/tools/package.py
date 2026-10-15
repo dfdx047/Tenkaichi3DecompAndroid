@@ -10,6 +10,10 @@
 Contents:  Tenkaichi3Decomp, Tenkaichi3Decomp.dat   the game without the data tables of the original programs (strip_data.py)
            Tenkaichi3Decomp-setup       the setup window: reads the user's own disc image and unpacks it into gamedata/
            lib/            SDL3, so that it does not have to be installed
+           a11y_<code>.txt the screen reader's lines in other languages (port/lang; its own labels, no game text)
+
+           fonts/          the fonts of F1 > UI with their licences (port/third_party/fonts as it is)
+           tbo/ui/         the pictures of the Tenkaichi Budokai Online screens (port/tbo/ui), their credits in licenses/
            README.txt, licenses/
 The user needs nothing but their disc image. Nothing from the disc is in the zip."""
 import os, pathlib, re, shutil, subprocess, sys, zipfile
@@ -31,8 +35,21 @@ In the game, F1 opens the settings: resolution, widescreen, controls and sound.
 Saves are kept in saves/. A file placed in gamedata/mods/<same path as the original> replaces the original.
 Texture packs (PCSX2 naming, .dds or .png) go into textures/, stages and music from outside the disc into
 stages/ and songs/: see the note in each folder.
+F1 > UI has two font settings, both "Original" unless you choose: "Menu font" draws the menus' labels and
+"Dialogue / UI font" the game's text from a font in fonts/ instead of the game's own lettering (the fonts and their
+licences are in that folder; fonts.tsv there is the list, to which a .ttf of your own can be added). For the menus
+the game makes a list of their labels from your disc data the first time it starts (gamedata/game-text/, a moment
+in the background): the fonts appear under "Menu font" when it is done.
+
+Screen reader: with Prism's library (prism.dll, libprism.so; release 0.18.3) placed next to the program, the menus
+and the fight's gauges are spoken and shown in braille. a11y_es.txt is its Spanish; another language is a file
+a11y_<code>.txt of the same kind, and lines of your own go into a11y_<code>_own.txt, which no update replaces.
 
 This package contains no game data. The game's data comes from your disc and stays on your computer.
+
+The port's own code is under the GNU AGPL, version 3 (licenses/tenkaichi3decomp-agpl.txt; code from before the
+change of licence also under MIT, licenses/tenkaichi3decomp-mit.txt). Its source, this release's tag included:
+https://github.com/z3xox/Tenkaichi3Decomp
 """
 
 WIN_README = README.replace("(Linux, 64-bit)", "(Windows, 64-bit)").replace("Start  Tenkaichi3Decomp-setup\n", "Start  Tenkaichi3Decomp-setup.exe\n") \
@@ -60,11 +77,17 @@ Added stages are not written to your save, and they are not offered in an online
 
 SONGS_NOTE = """Music from outside the disc.
 
-Put a song as an .adx file (CRI ADX, the game's own music format) into this folder. It is added to the music
-choice of the stage select, before "Random", named after the file. Up to 6 songs. Other formats have to be
-converted to .adx first (ffmpeg can write it: ffmpeg -i song.mp3 -ar 24000 -ac 2 -c:a adpcm_adx song.adx).
+Put a song as an .mp3 or an .adx file (CRI ADX, the game's own music format) into this folder. It is added to the
+music choice of the stage select, before "Random", named after the file. Up to 40 songs. An .mp3 is converted to
+.adx when the game starts, once (the .adx is written next to it, while the game is already running: a new song may
+be missing from the first select screen and is there from the next one on). An .mp3 that is replaced by another is
+converted again. An .adx you made yourself is never replaced: an .mp3 of the same name beside it is left alone. An
+.mp3 that cannot be read is left out, with a notice, and noted in mp3-failed.txt here; it is tried again when the
+file changes. Other formats have to be converted first (ffmpeg can write ADX: ffmpeg -i song.ogg -ar 24000 -ac 2
+-c:a adpcm_adx song.adx).
 
-Optional: a file songs.txt here, one line per song, "file.adx|Name In The Menu", gives other names and an order.
+Optional: a file songs.txt here, one line per song, "file.adx|Name In The Menu" (or the .mp3), gives other names
+and an order.
 
 Added songs are not written to your save, and they are not offered in an online match (Dragon Net Battle).
 """
@@ -96,6 +119,33 @@ def take_program(exe, out):
         sys.exit("strip_data.py failed or left game data in the program: not packaging\n" + r.stderr)
     (out / ("bt3.exe" if exe.suffix == ".exe" else "bt3")).rename(out / name)  # strip_data.py writes bt3 and bt3.dat
     (out / "bt3.dat").rename(out / (NAME + ".dat"))
+
+def take_lang(out):
+    """The screen reader's lines in other languages (port/lang/a11y_<code>.txt, read by port/src/gs/a11y.c from beside
+    the program). They hold the reader's own labels only, none of the game's text."""
+    for p in sorted((ROOT / "port/lang").glob("a11y_*.txt")):
+        if not p.name.endswith("_own.txt"):
+            shutil.copy2(p, out / p.name)
+
+def take_fonts(out, lic):
+    """The fonts the settings offer, and their licences next to them and in licenses/. Only what is in the
+    repository: the list of menu labels (gamedata/game-text) is made from the disc, by the game at its first start
+    on the player's machine (port/src/gs/menu_labels.c), and never packaged."""
+    src = ROOT / "port/third_party/fonts"
+    for p in sorted(src.rglob("*")):
+        if p.is_file():
+            (out / "fonts" / p.relative_to(src)).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, out / "fonts" / p.relative_to(src))
+            if p.name == "LICENSE":
+                shutil.copy2(p, lic / f"{p.parent.name}-fonts.txt")
+
+def take_tbo_art(out, lic):
+    """The pictures of the Tenkaichi Budokai Online screens, and who made them (port/tbo/ui/CREDITS.md)."""
+    src = ROOT / "port/tbo/ui"
+    (out / "tbo/ui").mkdir(parents=True, exist_ok=True)
+    for p in sorted(src.glob("*.png")):
+        shutil.copy2(p, out / "tbo/ui" / p.name)
+    shutil.copy2(src / "CREDITS.md", lic / "tbo-ui-credits.txt")
 
 def bundle_sdl_dependencies(dll, out, lic, prefix):
     """MSYS2 SDL can import libiconv; the official SDL archive is self-contained.
@@ -138,15 +188,22 @@ def main_win():
     if out.exists():
         shutil.rmtree(out)
     take_program(exe, out)
+    take_lang(out)
     shutil.copy2(setup, out / "Tenkaichi3Decomp-setup.exe")
     shutil.copy2(dll, out / "SDL3.dll")
     (out / "README.txt").write_text(WIN_README.replace("\n", "\r\n"))
     lic = out / "licenses"
     lic.mkdir()
     bundle_sdl_dependencies(dll, out, lic, toolchain.PREFIX)
+    shutil.copy2(ROOT / "LICENSE", lic / "tenkaichi3decomp-agpl.txt")
+    shutil.copy2(ROOT / "LICENSE-MIT", lic / "tenkaichi3decomp-mit.txt")
     shutil.copy2(ROOT / "port/third_party/imgui/LICENSE.txt", lic / "dear-imgui.txt")
     shutil.copy2(ROOT / "port/third_party/newlib_libm/COPYING.NEWLIB", lic / "newlib.txt")
     shutil.copy2(ROOT / "port/third_party/xxhash/LICENSE", lic / "xxhash.txt")
+    shutil.copy2(ROOT / "port/third_party/dr_libs/LICENSE", lic / "dr_mp3.txt")
+
+    take_fonts(out, lic)
+    take_tbo_art(out, lic)
     (out / "textures").mkdir()
     (out / "textures/README.txt").write_text(TEXTURES_NOTE.replace("\n", "\r\n"))
     for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE)):
@@ -175,6 +232,7 @@ def main():
     if OUT.exists():
         shutil.rmtree(OUT)
     take_program(exe, OUT)
+    take_lang(OUT)
     shutil.copy2(setup, OUT / "Tenkaichi3Decomp-setup")
     (OUT / "lib").mkdir()
     lib = next((p for d in ("/usr/local/lib", "/usr/lib", "/usr/lib64", "/usr/lib/x86_64-linux-gnu") for p in sorted(pathlib.Path(d).glob("libSDL3.so.0"))), None)
@@ -184,9 +242,15 @@ def main():
     (OUT / "README.txt").write_text(README)
     lic = OUT / "licenses"
     lic.mkdir()
+    shutil.copy2(ROOT / "LICENSE", lic / "tenkaichi3decomp-agpl.txt")
+    shutil.copy2(ROOT / "LICENSE-MIT", lic / "tenkaichi3decomp-mit.txt")
     shutil.copy2(ROOT / "port/third_party/imgui/LICENSE.txt", lic / "dear-imgui.txt")
     shutil.copy2(ROOT / "port/third_party/newlib_libm/COPYING.NEWLIB", lic / "newlib.txt")
     shutil.copy2(ROOT / "port/third_party/xxhash/LICENSE", lic / "xxhash.txt")
+    shutil.copy2(ROOT / "port/third_party/dr_libs/LICENSE", lic / "dr_mp3.txt")
+
+    take_fonts(OUT, lic)
+    take_tbo_art(OUT, lic)
     (OUT / "textures").mkdir()
     (OUT / "textures/README.txt").write_text(TEXTURES_NOTE)
     for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE)):

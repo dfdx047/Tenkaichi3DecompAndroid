@@ -621,6 +621,12 @@ void Snd_SetMasterVolume(s32 volume) {
 }
 
 /* Plays sample `id` of a bank at volume 0x40, centre, unshifted. */
+#ifdef PORT
+/* Set while the online pause menu of the OTHER player runs (btl_seq.c BtlSeqFight_Update): its sounds are asked for
+   as on that player's copy, so that both copies do the same, but with no volume: the menu is that player's alone. */
+s32 gPortSeSilent;
+#endif
+
 s32 Snd_PlaySe(u32 mask, s32 id) {
     return Snd_PlaySeEx(mask, id, 0x40, 0, 0);
 }
@@ -653,6 +659,11 @@ play:
     volume = Snd_ScaleVolume(idx, volume);
     pan = Snd_ScalePan(pan);
     pitch = Snd_ScalePitch(pitch);
+#ifdef PORT
+    if (gPortSeSilent) { /* (the same request on both copies of an online match, heard on one: see the variable) */
+        volume = 0;
+    }
+#endif
     return Snd_QueuePlay(mask, id, volume, pan, pitch, Snd_IsLoopSe(mask, id));
 }
 
