@@ -280,7 +280,12 @@ void Port_VerifyStart(void) {
     if (v == NULL && gs != NULL && strcmp(gs, "none") == 0) {
         return;
     }
+#ifdef __ANDROID__
+    /* Android: the app checks the disc image at install; here the comparison only on request (BT3_VERIFY=1), the fingerprint always. */
+    if (v == NULL || atoi(v) == 0) {
+#else
     if (v != NULL && atoi(v) == 0) {
+#endif
         sCheck = 0; /* no comparison with the disc, no notice; the fingerprint is still computed */
     }
     sState = sCheck ? DATA_CHECKING : DATA_OFF;
