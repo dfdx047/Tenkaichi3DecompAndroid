@@ -178,6 +178,13 @@ def shaders():
         print("FAILED shader gs.frag (no discard)", r.stderr[:300])
     else:
         arrays.append("static const unsigned char kGsNdFragSpv[] = {" + ",".join(str(b) for b in spv.read_bytes()) + "};\n")
+    # gs.frag without its depth output (NO_FRAG_DEPTH): the PC renderer's gsnz variant, gs_gpu.c key bit 23
+    spv = gen / "gsnz.frag.spv"
+    r = run([GLSLC, "-fshader-stage=frag", "-DNO_FRAG_DEPTH=1", str(ROOT / "port/src/gs/shaders/gs.frag"), "-o", str(spv)])
+    if r.returncode:
+        print("FAILED shader gs.frag (no depth)", r.stderr[:300])
+    else:
+        arrays.append("static const unsigned char kGsnzFragSpv[] = {" + ",".join(str(b) for b in spv.read_bytes()) + "};\n")
     for src in sorted((ROOT / "port/src/gs/shaders").glob("*")):
         if src.suffix in (".vert", ".frag"):
             name = "k" + src.stem.capitalize() + src.suffix[1:].capitalize() + "Glsl"

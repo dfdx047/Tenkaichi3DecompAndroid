@@ -46,6 +46,7 @@ int *PortInput_PadSlot(int player);    /* which connected controller: -1 none, 0
 int *PortInput_OverlayKey(void);       /* the key that opens and closes the settings window (scancode, 0 = none) */
 int *PortInput_OverlayPad(void);       /* the controller button that does (-1 = none; START + SELECT always do) */
 int PortInput_Hotkey(const SDL_Event *ev); /* 1 = the event opens or closes the settings window */
+int PortInput_ComboPoll(void); /* once a frame: 1 = START + SELECT */
 void PortInput_Swallow(void);           /* the controller buttons held now are not the game's until they are let go */
 void PortInput_SwallowKeys(void);       /* the same for the bound keys held now */
 int *PortInput_ChatKey(void);           /* the key that opens the online chat's line (scancode, 0 = none) */

@@ -4,7 +4,7 @@
  * gs_draw.c still records the frame (every primitive as a GsDraw, the vertices, the decoded textures); this
  * file owns the GPU objects and at the end of the frame uploads what is new, replays the recorded list on
  * the GPU, presents it, draws the settings window over it and writes the screenshots.
- *   render targets   one per GS frame-buffer address in use, GS_W x GS_H GS pixels at SCALE times the PS2's
+ *   render targets   one per GS frame-buffer address in use, sTW x sTH GS pixels at SCALE times the PS2's
  *                    resolution, each with its own depth buffer; the colour / aux / depth attachments of
  *                    gsTargets[i] live in sTgCol / sTgAux / sTgDep[i]
  *   textures         made from what gs_draw.c decoded, uploaded in the copy pass of the frame that needed them
@@ -15,7 +15,11 @@
  * Not handled yet: a target sampled while it is being drawn to, region clamp / repeat, destination-alpha tests,
  * frame-buffer masks, 16-bit targets' precision.
  */
+#ifdef __ANDROID__
+#include <unistd.h> /* _exit */
+#endif
 #include <SDL3/SDL.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,15 +27,25 @@
 #include "gs_draw.h"
 #include "shaders.h" /* generated: kGsVertSpv, kGsFragSpv */
 #include "ui.h"
+static bool sGpuLite; /* the device was made without depth clamping and the other optional features */
 
 extern int Port_Setting(const char *name, int def); /* plat_settings.c: the saved settings */
+extern void Port_SettingSave(const char *name, int value); /* plat_settings.c */
 extern int Port_AspectMilli(void);
+extern int Port_PageAspectMilli(void); /* plat_stub.c: the shape of the page shown now */
 
 static SDL_Window *sWindow; /* the shared window (GsDraw_WindowCreate) */
 static SDL_GPUDevice *sDev;
+/* The render targets' size in GS pixels (times SCALE). The draws are placed as on a 1024 x 1024 page (gs.vert
+   and the vertex programs map 0..1024 onto the clip space, with a viewport of that size), but the game never draws
+   past 512 x 512 in a buffer of its own: targets of 512 x 512 hold all of it at a quarter of the memory, and a tiled
+   GPU (Mali, Adreno) loads and stores a quarter of the pixels at each change of target. BT3_GPU_BIG_TARGETS=1: the
+   full 1024 x 1024, as before. */
+static int sTW = 512, sTH = 512;
+static unsigned sPassN, sCopyN; /* render passes and copies of the frames since the last report (BT3_GS_VERBOSE) */
+static SDL_GPUShader *sVs, *sFs, *sFsNd, *sFsNz; /* sFsNd: gs.frag without its discards (key bit 23) */
 static SDL_GPUTextureFormat sDepthFormat = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
 static int sShadowStencil;
-static SDL_GPUShader *sVs, *sFs, *sFsNz; /* (Nz: gs.frag without its depth output, key bit 23) */
 static SDL_GPUBuffer *sVbuf;
 static SDL_GPUTransferBuffer *sVxfer;
 static SDL_GPUSampler *sSamplers[16]; /* bit 0 filtered, bit 1 / 2 clamped in u / v, bit 3 with the smaller copies (mip levels) */
@@ -94,8 +108,8 @@ static void copies_create(void) {
     ci.type = SDL_GPU_TEXTURETYPE_2D;
     ci.format = SDL_GPU_TEXTUREFORMAT_R8_UNORM;
     ci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
-    ci.width = GS_W * SCALE;
-    ci.height = GS_H * SCALE;
+    ci.width = sTW * SCALE;
+    ci.height = sTH * SCALE;
     ci.layer_count_or_depth = 1;
     ci.num_levels = 1;
     sAuxCopy = SDL_CreateGPUTexture(sDev, &ci);
@@ -110,8 +124,8 @@ static void target_ensure(int i) {
     ci.type = SDL_GPU_TEXTURETYPE_2D;
     ci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
     ci.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
-    ci.width = GS_W * SCALE;
-    ci.height = GS_H * SCALE;
+    ci.width = sTW * SCALE;
+    ci.height = sTH * SCALE;
     ci.layer_count_or_depth = 1;
     ci.num_levels = 1;
     sTgCol[i] = SDL_CreateGPUTexture(sDev, &ci);
@@ -183,7 +197,7 @@ static int tex_slots_left(void) { return MAX_PENDING - sPendingCount; }
 
 static GsTex white_tex(void) { return (GsTex)(uintptr_t)sWhite; }
 
-/* gsScale just changed: the shared table is emptied after this returns; every attachment and helper sized
+/* gsScale4 just changed: the shared table is emptied after this returns; every attachment and helper sized
    to the old resolution is dropped here and the helpers are made again at the new size. */
 static void scale_changed(void) {
     int i;
@@ -197,7 +211,7 @@ static void scale_changed(void) {
 }
 
 /* The settings window (F1, ui.cpp) and the shared window it lives in are gs_draw.c's: what the user changes
-   there reaches this back end through gsScale, gsFxOff and gsGlowPercent. */
+   there reaches this back end through gsScale4, gsFxOff and gsGlowPercent. */
 
 /* --- pipelines ---------------------------------------------------------------------------------- */
 
@@ -268,7 +282,7 @@ static int pipeline_create(uint32_t key, int remember) {
         at[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4; at[2].offset = 32;
     }
     ci.vertex_shader = vu == 3 ? sVu6Vs : vu == 2 ? sVu4Vs : vu ? sVu0Vs : sVs;
-    ci.fragment_shader = (key >> 23) & 1 ? sFsNz : sFs;
+    ci.fragment_shader = ((key >> 25) & 1) && sFsNd != NULL ? sFsNd : ((key >> 23) & 1) && sFsNz != NULL ? sFsNz : sFs; /* bit 25: no discard (Android); bit 23: no depth output (PC) */
     ci.vertex_input_state.vertex_buffer_descriptions = &vb;
     ci.vertex_input_state.num_vertex_buffers = 1;
     ci.vertex_input_state.vertex_attributes = at;
@@ -276,6 +290,7 @@ static int pipeline_create(uint32_t key, int remember) {
     ci.primitive_type = topo == 0 ? SDL_GPU_PRIMITIVETYPE_TRIANGLELIST : topo == 1 ? SDL_GPU_PRIMITIVETYPE_LINELIST : SDL_GPU_PRIMITIVETYPE_POINTLIST;
     ci.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
     ci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    ci.rasterizer_state.enable_depth_clip = sGpuLite; /* (no depth clamping on such a device) */
     ci.depth_stencil_state.enable_depth_test = true;
     ci.depth_stencil_state.enable_depth_write = zwrite;
     ci.depth_stencil_state.compare_op = ztst == 0 ? SDL_GPU_COMPAREOP_NEVER : ztst == 1 ? SDL_GPU_COMPAREOP_ALWAYS :
@@ -395,6 +410,92 @@ static void vsync_apply(int on) {
 
 /* --- init --------------------------------------------------------------------------------------- */
 
+/* The present mode: 0 automatic (mailbox where the device has it, else immediate, else vsync), 1 vsync / FIFO,
+   2 mailbox, 3 immediate; a chosen one the device does not offer falls back to the automatic choice. BT3_PRESENT
+   (testing: vsync, mailbox or immediate) wins over the setting. */
+static int sPresentNow = -1, sPresentWant = -1;
+static SDL_GPUPresentMode present_pick(int want) {
+    SDL_GPUPresentMode mode = SDL_GPU_PRESENTMODE_VSYNC;
+    if (SDL_WindowSupportsGPUPresentMode(sDev, sWindow, SDL_GPU_PRESENTMODE_MAILBOX)) {
+        mode = SDL_GPU_PRESENTMODE_MAILBOX;
+    } else if (SDL_WindowSupportsGPUPresentMode(sDev, sWindow, SDL_GPU_PRESENTMODE_IMMEDIATE)) {
+        mode = SDL_GPU_PRESENTMODE_IMMEDIATE;
+    }
+    if (want >= 1 && want <= 3) {
+        SDL_GPUPresentMode w = want == 1 ? SDL_GPU_PRESENTMODE_VSYNC : want == 2 ? SDL_GPU_PRESENTMODE_MAILBOX : SDL_GPU_PRESENTMODE_IMMEDIATE;
+        if (SDL_WindowSupportsGPUPresentMode(sDev, sWindow, w)) {
+            mode = w;
+        } else {
+            fprintf(stderr, "bt3: present mode %d is not offered by this device; the automatic choice is used\n", want);
+        }
+    }
+    if (getenv("BT3_PRESENT") != NULL) {
+        const char *m = getenv("BT3_PRESENT");
+        SDL_GPUPresentMode e = m[0] == 'm' ? SDL_GPU_PRESENTMODE_MAILBOX : m[0] == 'i' ? SDL_GPU_PRESENTMODE_IMMEDIATE : SDL_GPU_PRESENTMODE_VSYNC;
+        if (SDL_WindowSupportsGPUPresentMode(sDev, sWindow, e)) {
+            mode = e;
+        }
+    }
+    return mode;
+}
+/* The settings window's choice: kept for the next start, and applied between two frames (present_apply). */
+int GsGpu_PresentGet(void) { return sPresentWant >= 0 ? sPresentWant : Port_Setting("present", 0); }
+void GsGpu_PresentSet(int want) {
+    sPresentWant = want < 0 || want > 3 ? 0 : want;
+    Port_SettingSave("present", sPresentWant);
+}
+static void present_apply(void) {
+    if (sDev != NULL && sWindow != NULL && sPresentWant >= 0 && sPresentWant != sPresentNow) {
+        SDL_GPUPresentMode mode = present_pick(sPresentWant);
+        sPresentNow = sPresentWant;
+        SDL_SetGPUSwapchainParameters(sDev, sWindow, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
+        fprintf(stderr, "bt3: present mode %s (changed in the settings)\n", mode == SDL_GPU_PRESENTMODE_MAILBOX ? "mailbox" : mode == SDL_GPU_PRESENTMODE_IMMEDIATE ? "immediate" : "vsync");
+    }
+}
+
+#ifdef __ANDROID__
+/* Android takes the window's surface away when the app goes to the background and gives a new one when it comes back.
+   The Vulkan surface and swapchain made for the old one then show nothing (a black screen on return; the log has
+   "queueBuffer failed" as the old surface goes). So the window is handed back to SDL when the app leaves and claimed
+   again, with a surface made for the new one, when it returns (SDL sends the foreground event only once the new
+   surface is there). Nothing is drawn in between. */
+static int sWindowGone, sWindowBack;
+static void window_away(void) {
+    if (!sWindowGone && sDev != NULL && sWindow != NULL) {
+        SDL_WaitForGPUIdle(sDev);
+        SDL_ReleaseWindowFromGPUDevice(sDev, sWindow);
+        sWindowGone = 1;
+        sWindowBack = 0;
+        fprintf(stderr, "bt3: the app went to the background: the window's surface is let go\n");
+    }
+}
+/* 1 = the window can be drawn to (claimed again first, after a return from the background) */
+static int window_ready(void) {
+    static int failed;
+    if (!sWindowGone) {
+        return 1;
+    }
+    if (!sWindowBack) {
+        return 0;
+    }
+    if (SDL_ClaimWindowForGPUDevice(sDev, sWindow)) {
+        int want = GsGpu_PresentGet();
+        sWindowGone = sWindowBack = 0;
+        failed = 0;
+        SDL_SetGPUSwapchainParameters(sDev, sWindow, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, present_pick(want));
+        sPresentNow = want;
+        fprintf(stderr, "bt3: back from the background: the window has a new surface\n");
+        return 1;
+    }
+    if (failed++ % 60 == 0) {
+        fprintf(stderr, "bt3: back from the background, but the window cannot be claimed yet: %s\n", SDL_GetError());
+    }
+    return 0;
+}
+#else
+#define window_ready() 1
+#endif
+
 static int vk_init(void) {
     SDL_GPUBufferCreateInfo bi;
     SDL_GPUTransferBufferCreateInfo ti;
@@ -402,11 +503,36 @@ static int vk_init(void) {
     const char *gpuName = NULL;
     int i;
 
+    if (getenv("BT3_GPU_BIG_TARGETS") != NULL) {
+        sTW = sTH = 1024;
+    }
+    gsTargetW = sTW;
+    gsTargetH = sTH;
+
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         fprintf(stderr, "bt3: SDL_Init: %s\n", SDL_GetError());
         return 0;
     }
-    sDev = SDL_CreateGPUDevice(SHADER_FORMAT, getenv("BT3_GPU_DEBUG") != NULL, NULL);
+    {   /* SDL's Vulkan device asks for features some GPUs lack (Mali: depthClamp, drawIndirectFirstInstance, ...);
+           without them, the same device with those features off (depth clipping instead of clamping) */
+        SDL_PropertiesID props = SDL_CreateProperties();
+        SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_SHADERS_SPIRV_BOOLEAN, true);
+        SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_DEBUGMODE_BOOLEAN, getenv("BT3_GPU_DEBUG") != NULL);
+        sDev = getenv("BT3_GPU_LITE") != NULL ? NULL : SDL_CreateGPUDeviceWithProperties(props);
+        if (sDev == NULL) {
+            fprintf(stderr, "bt3: Vulkan device with all features: %s; trying without the optional ones\n", SDL_GetError());
+            SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_CLIP_DISTANCE_BOOLEAN, false);
+            SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_DEPTH_CLAMPING_BOOLEAN, false);
+            SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_INDIRECT_DRAW_FIRST_INSTANCE_BOOLEAN, false);
+            SDL_SetBooleanProperty(props, SDL_PROP_GPU_DEVICE_CREATE_FEATURE_ANISOTROPY_BOOLEAN, false);
+            sDev = SDL_CreateGPUDeviceWithProperties(props);
+            sGpuLite = sDev != NULL;
+            if (sDev == NULL) {
+                fprintf(stderr, "bt3: Vulkan device without them: %s\n", SDL_GetError());
+            }
+        }
+        SDL_DestroyProperties(props);
+    }
     sShadowStencil = sDev != NULL && SDL_GPUTextureSupportsFormat(sDev, SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT,
         SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER);
     sDepthFormat = sShadowStencil ? SDL_GPU_TEXTUREFORMAT_D32_FLOAT_S8_UINT : SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
@@ -419,11 +545,24 @@ static int vk_init(void) {
     }
     /* The game paces itself at 30 frames per second; waiting for the display's own refresh on top of that
        (VSYNC) costs up to a refresh period per frame. Prefer MAILBOX (no tearing, no wait), then IMMEDIATE. */
+    if (Port_Setting("present", 0) != 0 || getenv("BT3_PRESENT") != NULL) {
+        SDL_GPUPresentMode mode = present_pick(Port_Setting("present", 0));
+        SDL_SetGPUSwapchainParameters(sDev, sWindow, SDL_GPU_SWAPCHAINCOMPOSITION_SDR, mode);
+        sPresentNow = Port_Setting("present", 0);
+        fprintf(stderr, "bt3: present mode %s\n", mode == SDL_GPU_PRESENTMODE_MAILBOX ? "mailbox" : mode == SDL_GPU_PRESENTMODE_IMMEDIATE ? "immediate" : "vsync");
+    } else {
     vsync_apply(Port_Setting("vsync", 0)); /* (the setting "V-sync" asks for the wait all the same) */
+    }
     sVs = shader(SHADER_CODE(kGsVert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 0);
     sFs = shader(SHADER_CODE(kGsFrag), SDL_GPU_SHADERSTAGE_FRAGMENT, 2, 1);
     sFsNz = shader(SHADER_CODE(kGsnzFrag), SDL_GPU_SHADERSTAGE_FRAGMENT, 2, 1);
+#ifdef __ANDROID__
+    sFsNd = shader(SHADER_CODE(kGsNdFrag), SDL_GPU_SHADERSTAGE_FRAGMENT, 2, 1);
+#endif
     if (sVs == NULL || sFs == NULL || sFsNz == NULL) {
+#ifdef __ANDROID__
+    sFsNd = shader(SHADER_CODE(kGsNdFrag), SDL_GPU_SHADERSTAGE_FRAGMENT, 2, 1);
+#endif
         fprintf(stderr, "bt3: shaders: %s\n", SDL_GetError());
         return 0;
     }
@@ -502,6 +641,7 @@ static int vk_init(void) {
         ci.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
         ci.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
         ci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        ci.rasterizer_state.enable_depth_clip = sGpuLite;
         ci.target_info.color_target_descriptions = &cd;
         ci.target_info.num_color_targets = 1;
         sOutlinePipe = vs && fs ? SDL_CreateGPUGraphicsPipeline(sDev, &ci) : NULL;
@@ -535,12 +675,327 @@ static int vk_init(void) {
         fprintf(stderr, "bt3: the settings window could not be set up\n");
     }
     fprintf(stderr, "bt3: GPU renderer: %s\n", SDL_GetGPUDeviceDriver(sDev));
+    {   /* which GPU and driver (for reports from other devices) */
+        SDL_PropertiesID p = SDL_GetGPUDeviceProperties(sDev);
+        fprintf(stderr, "bt3: GPU: %s, driver %s %s (%s)\n", SDL_GetStringProperty(p, SDL_PROP_GPU_DEVICE_NAME_STRING, "?"),
+                SDL_GetStringProperty(p, SDL_PROP_GPU_DEVICE_DRIVER_NAME_STRING, "?"),
+                SDL_GetStringProperty(p, SDL_PROP_GPU_DEVICE_DRIVER_VERSION_STRING, "?"),
+                SDL_GetStringProperty(p, SDL_PROP_GPU_DEVICE_DRIVER_INFO_STRING, ""));
+    }
     fprintf(stderr, "bt3: %d logical processors, %d MB of memory\n", SDL_GetNumLogicalCPUCores(), SDL_GetSystemRAM());
+    {   /* DXT (BC1-BC3) textures, which a texture pack's .dds files are: phones' GPUs mostly have none, and then the
+           replacements are unpacked to RGBA on the CPU (gs_draw.c) instead of being drawn white */
+        extern int gGsNoBcTextures; /* gs_gl.c */
+        int i;
+        gGsNoBcTextures = 0;
+        for (i = 1; i < 4; i++) {
+            if (!SDL_GPUTextureSupportsFormat(sDev, kTexFormat[i], SDL_GPU_TEXTURETYPE_2D, SDL_GPU_TEXTUREUSAGE_SAMPLER)) {
+                gGsNoBcTextures = 1;
+            }
+        }
+        if (gGsNoBcTextures) {
+            fprintf(stderr, "bt3: the GPU has no DXT textures: a texture pack's .dds files are unpacked on the CPU\n");
+        }
+    }
     pipelines_preload();
     return 1;
 }
 
 /* --- the frame ---------------------------------------------------------------------------------- */
+
+/* The window's events: the settings window's key, the settings window, quitting, full screen. (Also the OpenGL ES
+   renderer's on Android, through GsGpu_PollEvents: the back key, START + SELECT, leaving.) */
+static void poll_events(void);
+void GsGpu_PollEvents(void) { poll_events(); }
+static void poll_events(void) {
+    SDL_Event ev;
+    GsGpu_TitlePoll();
+    if (PortInput_ComboPoll()) {
+        Ui_Toggle(); /* START + SELECT, held together (also the on-screen controller's two buttons) */
+    }
+    while (SDL_PollEvent(&ev)) {
+#ifdef __ANDROID__
+        if (ev.type == SDL_EVENT_WILL_ENTER_BACKGROUND || ev.type == SDL_EVENT_DID_ENTER_BACKGROUND) {
+            window_away();
+            continue;
+        }
+        if (ev.type == SDL_EVENT_DID_ENTER_FOREGROUND) {
+            sWindowBack = 1;
+            continue;
+        }
+#endif
+        if (ev.type == SDL_EVENT_QUIT) {
+#ifdef __ANDROID__
+            /* (not exit(): its destructors run while Android's own UI threads still use them, which aborts in
+               libhwui. Nothing is left to write: the log is flushed, saves are closed when written.) */
+            fflush(NULL);
+            _exit(0);
+#else
+            exit(0);
+#endif
+        }
+        { extern void PortA11y_Event(const SDL_Event *ev); PortA11y_Event(&ev); } /* a11y.c: the repeat key and button */
+        if (PortInput_Hotkey(&ev) || (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_AC_BACK)) {
+            Ui_Toggle(); /* F1, START + SELECT, or the list's key; Android: the back button (loader.c hands it over) */
+            continue;
+        }
+        if (Ui_Event(&ev)) { /* the settings window is open and used it (Esc closes it) */
+            continue;
+        }
+#ifndef __ANDROID__
+        if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_ESCAPE) {
+            if (!ev.key.repeat && !Ui_QuitAsk()) { exit(0); }
+        }
+#endif
+        if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F9) { /* in-between pictures on / off */
+            extern int gsInterp;
+            extern void Port_SettingSave(const char *name, int value);
+            extern void Port_SettingsWrite(void);
+            static int was = 1; /* (the same setting as F1, Video, Smooth motion: off, or back to what it was) */
+            if (gsInterp > 0) { was = gsInterp; gsInterp = 0; } else { gsInterp = was; }
+            Port_SettingSave("interp", gsInterp);
+            Port_SettingsWrite();
+            fprintf(stderr, "bt3: smooth motion %s\n", gsInterp == 0 ? "off" : gsInterp == 1 ? "60" : gsInterp == 2 ? "120" : "240");
+        }
+        if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F11) {
+            GsDraw_FullscreenToggle();
+        }
+    }
+}
+
+static int sLastShown = -1; /* the target shown last (the paused picture) */
+
+/* The game's picture into the window: its shape kept (4:3 or 16:9), centred, the rest black. */
+/* A scissor inside the target (the game's may reach past its 512 x 512: nothing is drawn there anyway). */
+static void clamp_scissor(SDL_Rect *r) {
+    int w = (int)(sTW * SCALE), h = (int)(sTH * SCALE);
+    if (r->x < 0) { r->w += r->x; r->x = 0; }
+    if (r->y < 0) { r->h += r->y; r->y = 0; }
+    if (r->x > w) { r->x = w; }
+    if (r->y > h) { r->y = h; }
+    if (r->x + r->w > w) { r->w = w - r->x; }
+    if (r->y + r->h > h) { r->h = h - r->y; }
+    if (r->w < 0) { r->w = 0; }
+    if (r->h < 0) { r->h = 0; }
+}
+
+/* --- the picture onto the screen, through the chosen filter (gsFilter) ------------------------------------- */
+
+static SDL_GPUGraphicsPipeline *sPresentPipe, *sSgsrPipe, *sEasuPipe, *sRcasPipe;
+static SDL_GPUTexture *sUpTex;      /* FSR: the upscaled picture between its two passes */
+static Uint32 sUpW, sUpH;
+static int sFilterReady;            /* 1 made, -1 could not be made (the plain blit is used) */
+
+static SDL_GPUGraphicsPipeline *present_pipe(const unsigned char *code, size_t size, SDL_GPUTextureFormat fmt) {
+    SDL_GPUShader *fs = shader(code, size, SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+    SDL_GPUColorTargetDescription cd;
+    SDL_GPUGraphicsPipelineCreateInfo ci;
+    SDL_GPUGraphicsPipeline *pipe;
+    if (fs == NULL) {
+        return NULL;
+    }
+    SDL_zero(cd);
+    SDL_zero(ci);
+    cd.format = fmt;
+    ci.vertex_shader = sFxVs;
+    ci.fragment_shader = fs;
+    ci.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+    ci.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+    ci.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    ci.rasterizer_state.enable_depth_clip = sGpuLite;
+    ci.target_info.color_target_descriptions = &cd;
+    ci.target_info.num_color_targets = 1;
+    pipe = SDL_CreateGPUGraphicsPipeline(sDev, &ci);
+    SDL_ReleaseGPUShader(sDev, fs);
+    if (pipe == NULL) {
+        fprintf(stderr, "bt3: screen filter pipeline: %s\n", SDL_GetError());
+    }
+    return pipe;
+}
+
+static int filters_make(void) {
+    SDL_GPUTextureFormat fmt;
+    if (sFilterReady != 0) {
+        return sFilterReady > 0;
+    }
+    fmt = SDL_GetGPUSwapchainTextureFormat(sDev, sWindow);
+    sPresentPipe = present_pipe(kPresentFragSpv, sizeof(kPresentFragSpv), fmt);
+    sSgsrPipe = present_pipe(kSgsrFragSpv, sizeof(kSgsrFragSpv), fmt);
+    sEasuPipe = present_pipe(kFsr_easuFragSpv, sizeof(kFsr_easuFragSpv), SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM);
+    sRcasPipe = present_pipe(kFsr_rcasFragSpv, sizeof(kFsr_rcasFragSpv), fmt);
+    sFilterReady = sPresentPipe != NULL ? 1 : -1;
+    fprintf(stderr, "bt3: screen filters: present %s, SGSR %s, FSR %s\n", sPresentPipe ? "yes" : "no", sSgsrPipe ? "yes" : "no",
+            sEasuPipe && sRcasPipe ? "yes" : "no");
+    return sFilterReady > 0;
+}
+
+static uint32_t fbits(float f) {
+    uint32_t u;
+    memcpy(&u, &f, 4);
+    return u;
+}
+
+/* One full-screen triangle of a filter into `dst`, inside the rectangle (x, y, w, h). */
+static void filter_pass(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *dst, SDL_GPUGraphicsPipeline *pipe, SDL_GPUTexture *src,
+                        SDL_GPUSampler *smp, const void *uni, Uint32 size, float x, float y, float w, float h, int clear) {
+    SDL_GPUColorTargetInfo ct;
+    SDL_GPUTextureSamplerBinding tb;
+    SDL_GPUViewport vp = {x, y, w, h, 0.0f, 1.0f};
+    SDL_GPURenderPass *pass;
+    SDL_zero(ct);
+    ct.texture = dst;
+    ct.clear_color.a = 1.0f;
+    ct.load_op = clear ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_DONT_CARE;
+    ct.store_op = SDL_GPU_STOREOP_STORE;
+    pass = SDL_BeginGPURenderPass(cmd, &ct, 1, NULL);
+    SDL_BindGPUGraphicsPipeline(pass, pipe);
+    SDL_SetGPUViewport(pass, &vp);
+    tb.texture = src;
+    tb.sampler = smp;
+    SDL_BindGPUFragmentSamplers(pass, 0, &tb, 1);
+    SDL_PushGPUFragmentUniformData(cmd, 0, uni, size);
+    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+    SDL_EndGPURenderPass(pass);
+}
+
+/* The shown picture through the filter; 0 if the plain blit has to do it. */
+static int show_filtered(SDL_GPUCommandBuffer *cmd, int best, SDL_GPUTexture *swap, Uint32 dx, Uint32 dy, Uint32 w, Uint32 h) {
+    float texW = (float)sTW * SCALE, texH = (float)sTH * SCALE, inW = 512.0f * SCALE, inH = 448.0f * SCALE;
+    SDL_GPUSampler *lin = sSamplers[7], *near = sSamplers[6];
+    if (gsFilter == 0 || w == 0 || h == 0 || !filters_make()) {
+        return 0;
+    }
+    if (gsFilter == 3 && sEasuPipe != NULL && sRcasPipe != NULL) { /* AMD FSR 1: EASU to the shown size, then RCAS */
+        struct { uint32_t con0[4], con1[4], con2[4], con3[4]; float origin[4]; } e;
+        struct { uint32_t con[4]; float origin[4]; } r;
+        if (sUpTex == NULL || sUpW != w || sUpH != h) {
+            SDL_GPUTextureCreateInfo ci;
+            if (sUpTex != NULL) {
+                SDL_ReleaseGPUTexture(sDev, sUpTex);
+            }
+            SDL_zero(ci);
+            ci.type = SDL_GPU_TEXTURETYPE_2D;
+            ci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+            ci.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+            ci.width = w;
+            ci.height = h;
+            ci.layer_count_or_depth = 1;
+            ci.num_levels = 1;
+            sUpTex = SDL_CreateGPUTexture(sDev, &ci);
+            sUpW = w;
+            sUpH = h;
+            if (sUpTex == NULL) {
+                return 0;
+            }
+        }
+        /* FsrEasuCon (ffx_fsr1.h): the shown part (512 x 448 GS pixels) of the target, to w x h */
+        e.con0[0] = fbits(inW / (float)w);
+        e.con0[1] = fbits(inH / (float)h);
+        e.con0[2] = fbits(0.5f * inW / (float)w - 0.5f);
+        e.con0[3] = fbits(0.5f * inH / (float)h - 0.5f);
+        e.con1[0] = fbits(1.0f / texW);
+        e.con1[1] = fbits(1.0f / texH);
+        e.con1[2] = fbits(1.0f / texW);
+        e.con1[3] = fbits(-1.0f / texH);
+        e.con2[0] = fbits(-1.0f / texW);
+        e.con2[1] = fbits(2.0f / texH);
+        e.con2[2] = fbits(1.0f / texW);
+        e.con2[3] = fbits(2.0f / texH);
+        e.con3[0] = fbits(0.0f);
+        e.con3[1] = fbits(4.0f / texH);
+        e.con3[2] = e.con3[3] = 0;
+        memset(e.origin, 0, sizeof(e.origin));
+        filter_pass(cmd, sUpTex, sEasuPipe, sTgCol[best], lin, &e, sizeof(e), 0.0f, 0.0f, (float)w, (float)h, 0);
+        /* FsrRcasCon: sharpness in stops (0 the most); 0.25 keeps the game's own look */
+        memset(&r, 0, sizeof(r));
+        r.con[0] = fbits(exp2f(-0.25f));
+        r.origin[0] = (float)dx;
+        r.origin[1] = (float)dy;
+        filter_pass(cmd, swap, sRcasPipe, sUpTex, near, &r, sizeof(r), (float)dx, (float)dy, (float)w, (float)h, 1);
+        return 1;
+    }
+    if (gsFilter == 4 && sSgsrPipe != NULL) { /* Snapdragon GSR: one pass */
+        struct { float info[4], region[4]; } g = {{1.0f / texW, 1.0f / texH, texW, texH}, {inW / texW, inH / texH, 0.0f, 0.0f}};
+        filter_pass(cmd, swap, sSgsrPipe, sTgCol[best], lin, &g, sizeof(g), (float)dx, (float)dy, (float)w, (float)h, 1);
+        return 1;
+    }
+    {   /* bilinear, sharp bilinear, FXAA (and FSR or GSR if their pipelines could not be made) */
+        struct { float tex[4], region[4]; int32_t mode[4]; } u = {
+            {1.0f / texW, 1.0f / texH, texW, texH}, {inW / texW, inH / texH, (float)w / inW, (float)h / inH},
+            {gsFilter == 1 || gsFilter == 2 ? gsFilter : 0, 0, 0, 0}};
+        filter_pass(cmd, swap, sPresentPipe, sTgCol[best], lin, &u, sizeof(u), (float)dx, (float)dy, (float)w, (float)h, 1);
+        return 1;
+    }
+}
+
+static void show_target(SDL_GPUCommandBuffer *cmd, int best, SDL_GPUTexture *swap, Uint32 sw, Uint32 sh) {
+    SDL_GPUBlitInfo bl;
+    float want = (float)Port_PageAspectMilli() / 1000.0f;
+    Uint32 w = sw, h = sh;
+
+    SDL_zero(bl);
+    bl.source.texture = sTgCol[best];
+    bl.source.w = 512 * SCALE;
+    bl.source.h = 448 * SCALE;
+    bl.destination.texture = swap;
+    /* (The 512 x 448 buffer is not square-pixelled: it always fills a 4:3 or 16:9 screen.) */
+    if ((float)sw > (float)sh * want) {
+        w = (Uint32)((float)sh * want + 0.5f);
+    } else {
+        h = (Uint32)((float)sw / want + 0.5f);
+    }
+    bl.destination.x = (sw - w) / 2;
+    bl.destination.y = (sh - h) / 2;
+    bl.destination.w = w;
+    bl.destination.h = h;
+    bl.clear_color.a = 1.0f;
+    bl.load_op = SDL_GPU_LOADOP_CLEAR;
+    bl.filter = SDL_GPU_FILTER_LINEAR;
+    if (!show_filtered(cmd, best, swap, bl.destination.x, bl.destination.y, w, h)) {
+        SDL_BlitGPUTexture(cmd, &bl);
+    }
+    gUiPresentX = (int)bl.destination.x; /* the stage-name overlay maps game pixels through this rectangle */
+    gUiPresentY = (int)bl.destination.y;
+    gUiPresentW = (int)bl.destination.w;
+    gUiPresentH = (int)bl.destination.h;
+    sLastShown = best;
+}
+
+/* While the game is paused (the settings window open, plat_stub.c): the last picture again, with the window on it,
+   and the window's events. The game itself does not run. */
+int GsGpu_PauseFrame(void) {
+    SDL_GPUCommandBuffer *cmd;
+    SDL_GPUTexture *swap = NULL;
+    Uint32 sw = 0, sh = 0;
+
+#ifdef __ANDROID__
+    if (sDev == NULL) {
+        extern int GsGl_PauseFrame(void); /* gs_gl.c: the OpenGL ES renderer's */
+        return GsGl_PauseFrame();
+    }
+#endif
+    if (sDev == NULL || sWindow == NULL || sLastShown < 0) {
+        return 0; /* (not this back end, or nothing shown yet: the game goes on) */
+    }
+    poll_events();
+    cmd = SDL_AcquireGPUCommandBuffer(sDev);
+    if (cmd == NULL) {
+        return 0;
+    }
+    if (window_ready()) {
+        present_apply();
+    }
+    if (window_ready() && SDL_WaitAndAcquireGPUSwapchainTexture(cmd, sWindow, &swap, &sw, &sh) && swap != NULL) {
+        show_target(cmd, sLastShown, swap, sw, sh);
+        Ui_Draw(cmd, swap);
+    }
+    SDL_SubmitGPUCommandBuffer(cmd);
+    return 1;
+}
+
+/* the heartbeat's sums (Android's "alive" line every 300 frames): frame-end times, frames, passes and copies */
+static uint64_t sHb[6], sHbPass, sHbCopy;
+static unsigned sHbN;
 
 static void vk_frame_end(void) {
     SDL_GPUCommandBuffer *cmd;
@@ -551,7 +1006,7 @@ static void vk_frame_end(void) {
     Uint32 sw = 0, sh = 0;
     int cur = -1, best = -1, bound = -1, i;
     bool acquired;
-    uint64_t sEndT[5];
+    uint64_t sEndT[6];
     int lastPipe = -1, lastUni = -1, lastSampler = -1, haveFu = 0, haveScissor = 0; /* what the pass has set (the replay loop) */
     SDL_GPUTexture *lastTex = NULL;
     struct { int32_t mode[4]; float misc[4]; float rect[4]; float orig[4]; float extra[4]; } lastFu;
@@ -559,7 +1014,7 @@ static void vk_frame_end(void) {
     float lastBlend = -1.0f;
     uint32_t n;
 
-    GsGpu_TitlePoll();
+    (void)ev;
     if (sVsyncPending >= 0) {
         vsync_apply(sVsyncPending);
         sVsyncPending = -1;
@@ -577,35 +1032,33 @@ static void vk_frame_end(void) {
         }
     }
     { extern void Port_LagMark(int what); Port_LagMark('E'); }
-    while (SDL_PollEvent(&ev)) {
-        if (ev.type == SDL_EVENT_QUIT) {
-            exit(0);
+    poll_events();
+#ifdef __ANDROID__
+    if (gGsFrame % 300 == 0) { /* a heartbeat in the log (adb logcat -s bt3): is the game running, and drawing? */
+        extern unsigned gPortVBlanks;
+        static uint64_t lastNs;
+        static unsigned lastBlank;
+        uint64_t nowNs = SDL_GetTicksNS();
+        fprintf(stderr, "bt3: alive: frame %u, game blank %u, %u draws, %u vertices, %d targets, %d textures\n", gGsFrame, gPortVBlanks,
+                gsDrawCount, gsVertCount + gsVuVertCount, gsTargetCount, gsTexCount);
+        /* how fast the game runs (60 game blanks a second is full speed) and where a frame's end spends its time, over
+           the last 300 frames: the numbers a report about slowness needs, without BT3_GS_VERBOSE */
+        if (lastNs != 0 && nowNs > lastNs && sHbN > 0) {
+            double secs = (double)(nowNs - lastNs) / 1e9, bps = (double)(gPortVBlanks - lastBlank) / secs;
+            fprintf(stderr, "bt3: speed %.0f%% (%.1f game blanks/s, %.1f pictures/s over %.1f s%s); per frame, ms: uploads %.2f, "
+                            "draws %.2f, to the driver %.2f, waiting for the screen %.2f, showing %.2f, presenting %.2f; "
+                            "%.1f render passes, %.1f copies\n",
+                    bps * 100.0 / 60.0, bps, (double)sHbN / secs, secs, Ui_Pauses() ? ", the menu was open" : "",
+                    (double)sHb[0] / sHbN / 1e6, (double)sHb[1] / sHbN / 1e6, (double)sHb[5] / sHbN / 1e6, (double)sHb[2] / sHbN / 1e6,
+                    (double)sHb[3] / sHbN / 1e6, (double)sHb[4] / sHbN / 1e6, (double)sHbPass / sHbN, (double)sHbCopy / sHbN);
         }
-        { extern void PortA11y_Event(const SDL_Event *ev); PortA11y_Event(&ev); } /* a11y.c: the repeat key and button */
-        if (PortInput_Hotkey(&ev)) { /* F1, START + SELECT, or what the settings window's list says */
-            Ui_Toggle();
-            continue;
-        }
-        if (Ui_Event(&ev)) { /* the settings window is open and used it (Esc closes it) */
-            continue;
-        }
-        if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_ESCAPE) {
-            if (!ev.key.repeat && !Ui_QuitAsk()) { exit(0); } /* (asks first) */
-        }
-        if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F9) { /* in-between pictures on / off */
-            extern int gsInterp;
-            extern void Port_SettingSave(const char *name, int value);
-            extern void Port_SettingsWrite(void);
-            static int was = 1; /* (the same setting as F1, Video, Smooth motion: off, or back to what it was) */
-            if (gsInterp > 0) { was = gsInterp; gsInterp = 0; } else { gsInterp = was; }
-            Port_SettingSave("interp", gsInterp);
-            Port_SettingsWrite();
-            fprintf(stderr, "bt3: smooth motion %s\n", gsInterp == 0 ? "off" : gsInterp == 1 ? "60" : gsInterp == 2 ? "120" : "240");
-        }
-        if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F11) {
-            GsDraw_FullscreenToggle();
-        }
+        memset(sHb, 0, sizeof(sHb));
+        sHbN = 0;
+        sHbPass = sHbCopy = 0;
+        lastNs = nowNs;
+        lastBlank = gPortVBlanks;
     }
+#endif
     if (getenv("BT3_GS_VERBOSE") != NULL && gGsFrame % 30 == 0) {
         fprintf(stderr, "gpu: frame %u: %u draws, %u vertices, %d targets, %d textures, %d pipelines, %u primitives of PS2-only passes dropped, %u native effects\n",
                 gGsFrame, gsDrawCount, gsVertCount + gsVuVertCount, gsTargetCount, gsTexCount, sPipeCount, gsSkipped, gsNative);
@@ -735,20 +1188,20 @@ static void vk_frame_end(void) {
             ci.type = SDL_GPU_TEXTURETYPE_2D;
             ci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
             ci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
-            ci.width = GS_W;
-            ci.height = GS_H;
+            ci.width = sTW;
+            ci.height = sTH;
             ci.layer_count_or_depth = 1;
             ci.num_levels = 1;
             sFbTex[i] = SDL_CreateGPUTexture(sDev, &ci);
         }
         SDL_zero(ti);
         ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        ti.size = GS_W * GS_H * 4;
+        ti.size = sTW * sTH * 4;
         tb = SDL_CreateGPUTransferBuffer(sDev, &ti);
         px = SDL_MapGPUTransferBuffer(sDev, tb, false);
-        for (y = 0; y < GS_H; y++) {
-            for (x = 0; x < GS_W; x++) {
-                px[y * GS_W + x] = Gs_VramRead(fbp * 32, 8, 0, x, y) | 0xFF000000u;
+        for (y = 0; y < sTH; y++) {
+            for (x = 0; x < sTW; x++) {
+                px[y * sTW + x] = Gs_VramRead(fbp * 32, 8, 0, x, y) | 0xFF000000u;
             }
         }
         SDL_UnmapGPUTransferBuffer(sDev, tb);
@@ -756,8 +1209,8 @@ static void vk_frame_end(void) {
         src.transfer_buffer = tb;
         SDL_zero(dst);
         dst.texture = sFbTex[i];
-        dst.w = GS_W;
-        dst.h = GS_H;
+        dst.w = sTW;
+        dst.h = sTH;
         dst.d = 1;
         SDL_UploadToGPUTexture(copy, &src, &dst, false);
         SDL_ReleaseGPUTransferBuffer(sDev, tb);
@@ -784,15 +1237,16 @@ static void vk_frame_end(void) {
             cur = -1;
             SDL_zero(bl);
             bl.source.texture = sFbTex[d->native - 100];
-            bl.source.w = GS_W;
-            bl.source.h = GS_H;
+            bl.source.w = sTW;
+            bl.source.h = sTH;
             bl.destination.texture = sTgCol[d->target];
-            bl.destination.w = GS_W * SCALE;
-            bl.destination.h = GS_H * SCALE;
+            bl.destination.w = sTW * SCALE;
+            bl.destination.h = sTH * SCALE;
             bl.load_op = SDL_GPU_LOADOP_DONT_CARE;
             bl.filter = SDL_GPU_FILTER_LINEAR;
             if (sFbTex[d->native - 100] != NULL) {
                 SDL_BlitGPUTexture(cmd, &bl);
+                sCopyN++;
                 gsTargets[d->target].cleared = 1;
             }
             continue;
@@ -812,6 +1266,7 @@ static void vk_frame_end(void) {
             if (!GsDraw_DateRegion(n, &rx, &ry, &rw, &rh)) { /* only what the draws that follow read (gs_draw.c) */
                 continue;
             }
+            sCopyN++;
             cp = SDL_BeginGPUCopyPass(cmd);
             SDL_zero(from);
             SDL_zero(to);
@@ -834,12 +1289,13 @@ static void vk_frame_end(void) {
             if (!gsTargets[d->target].cleared) {
                 continue;
             }
+            sCopyN++;
             cp = SDL_BeginGPUCopyPass(cmd);
             SDL_zero(from);
             SDL_zero(to);
             from.texture = sTgAux[d->target];
             to.texture = sAuxCopy;
-            SDL_CopyGPUTextureToTexture(cp, &from, &to, GS_W * SCALE, GS_H * SCALE, 1, false);
+            SDL_CopyGPUTextureToTexture(cp, &from, &to, sTW * SCALE, sTH * SCALE, 1, false);
             SDL_EndGPUCopyPass(cp);
             continue;
         }
@@ -863,6 +1319,7 @@ static void vk_frame_end(void) {
             cts[0].store_op = SDL_GPU_STOREOP_STORE;
             cts[1] = cts[0];
             cts[1].texture = sTgAux[d->target];
+            sPassN++;
             pass = SDL_BeginGPURenderPass(cmd, cts, 2, NULL);
             SDL_BindGPUGraphicsPipeline(pass, sPipes[d->pipeline].p);
             bc.r = bc.g = bc.b = bc.a = d->blendc;
@@ -875,6 +1332,7 @@ static void vk_frame_end(void) {
             fs[2].sampler = sSamplers[6];
             SDL_BindGPUFragmentSamplers(pass, 0, fs, 3);
             SDL_PushGPUFragmentUniformData(cmd, 0, params, sizeof(params));
+            clamp_scissor(&sc);
             SDL_SetGPUScissor(pass, &sc);
             SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
             SDL_EndGPURenderPass(pass);
@@ -898,17 +1356,19 @@ static void vk_frame_end(void) {
             ft.texture = sTgCol[d->target];
             ft.load_op = SDL_GPU_LOADOP_LOAD;
             ft.store_op = SDL_GPU_STOREOP_STORE;
+            sPassN++;
             pass = SDL_BeginGPURenderPass(cmd, &ft, 1, NULL);
             SDL_BindGPUGraphicsPipeline(pass, d->native == 2 ? sKeyPipe : sOutlinePipe);
             fs.texture = sAuxCopy; /* the ids as copied by the game, not the live alpha (later passes overwrite it) */
             fs.sampler = sSamplers[6]; /* nearest, clamped */
             SDL_BindGPUFragmentSamplers(pass, 0, &fs, 1);
-            params[0] = 1.0f / (float)GS_W;
-            params[1] = 1.0f / (float)GS_H;
+            params[0] = 1.0f / (float)sTW;
+            params[1] = 1.0f / (float)sTH;
             params[2] = 100.0f / 255.0f; /* the dark rectangle's 0x64 */
             params[3] = getenv("BT3_FX_DEBUG") != NULL ? 1.0f : 0.0f;
             SDL_PushGPUFragmentUniformData(cmd, 0, params, sizeof(params));
             sc = (SDL_Rect){ d->scissor[0], d->scissor[1], d->scissor[2], d->scissor[3] };
+            clamp_scissor(&sc);
             SDL_SetGPUScissor(pass, &sc);
             SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
             SDL_EndGPURenderPass(pass);
@@ -946,7 +1406,12 @@ static void vk_frame_end(void) {
             dt.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
             gsTargets[d->target].cleared = 1;
             cts[0] = ct;
+            sPassN++;
             pass = SDL_BeginGPURenderPass(cmd, cts, 2, &dt);
+            {   /* the draws' 1024 x 1024 page (see sTW): larger than the target, which holds its top-left part */
+                SDL_GPUViewport vp = {0.0f, 0.0f, 1024.0f * SCALE, 1024.0f * SCALE, 0.0f, 1.0f};
+                SDL_SetGPUViewport(pass, &vp);
+            }
             if (sShadowStencil) { SDL_SetGPUStencilReference(pass, 0); }
             cur = d->target;
             bound = -1;
@@ -1006,6 +1471,7 @@ static void vk_frame_end(void) {
         }
         if (!haveScissor || memcmp(d->scissor, lastScissor, sizeof(d->scissor)) != 0) {
             SDL_Rect r = { d->scissor[0], d->scissor[1], d->scissor[2], d->scissor[3] };
+            clamp_scissor(&r);
             SDL_SetGPUScissor(pass, &r);
             memcpy(lastScissor, d->scissor, sizeof(lastScissor));
             haveScissor = 1;
@@ -1026,39 +1492,44 @@ static void vk_frame_end(void) {
         best = i;
     }
     sEndT[2] = gpu_now();
-    acquired = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, sWindow, &swap, &sw, &sh);
-    sEndT[3] = gpu_now();
-    if (acquired && swap != NULL && best >= 0 && gsTargets[best].cleared) {
-        SDL_GPUBlitInfo bl;
-        SDL_zero(bl);
-        bl.source.texture = sTgCol[best];
-        bl.source.w = 512 * SCALE;
-        bl.source.h = 448 * SCALE;
-        bl.destination.texture = swap;
-        {
-            /* The picture keeps its shape whatever the window's: 4:3, or 16:9 in widescreen, centred, the rest
-               black. (The 512 x 448 buffer is not square-pixelled: it always fills a 4:3 or 16:9 screen.) */
-            extern int Port_PageAspectMilli(void); /* plat_stub.c: 4:3 while the menus run, if asked for */
-            float want = (float)Port_PageAspectMilli() / 1000.0f;
-            Uint32 w = sw, h = sh;
-            if ((float)sw > (float)sh * want) {
-                w = (Uint32)((float)sh * want + 0.5f);
-            } else {
-                h = (Uint32)((float)sw / want + 0.5f);
-            }
-            bl.destination.x = (sw - w) / 2;
-            bl.destination.y = (sh - h) / 2;
-            bl.destination.w = w;
-            bl.destination.h = h;
-            bl.clear_color.a = 1.0f;
+    /* The frame's draws go to the GPU now, on their own: the GPU starts on them while the screen's buffer is
+       waited for, and the time each half takes in the driver is seen apart (a driver that blocks until the GPU
+       is done shows it in the second half: the present). BT3_GPU_ONE_SUBMIT=1: one submission, as before. */
+    {
+        static int one = -1;
+        if (one < 0) {
+            one = getenv("BT3_GPU_ONE_SUBMIT") != NULL;
         }
-        bl.load_op = SDL_GPU_LOADOP_CLEAR;
-        bl.filter = SDL_GPU_FILTER_LINEAR;
-        SDL_BlitGPUTexture(cmd, &bl);
-        gUiPresentX = (int)bl.destination.x; /* the stage-name overlay maps game pixels through this rectangle */
-        gUiPresentY = (int)bl.destination.y;
-        gUiPresentW = (int)bl.destination.w;
-        gUiPresentH = (int)bl.destination.h;
+        if (!one) {
+            SDL_SubmitGPUCommandBuffer(cmd);
+            cmd = SDL_AcquireGPUCommandBuffer(sDev);
+        }
+    }
+    sEndT[5] = gpu_now();
+    acquired = false;
+    if (window_ready()) {
+        present_apply();
+        acquired = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, sWindow, &swap, &sw, &sh);
+    }
+    sEndT[3] = gpu_now();
+#ifdef __ANDROID__
+    if (gGsFrame % 300 == 0) { /* (with the heartbeat: why a frame would not reach the screen) */
+        fprintf(stderr, "bt3: present: acquired %d, swapchain %s %ux%u, main fbp %d, target %d, cleared %d, targets %d\n", (int)acquired,
+                swap != NULL ? "yes" : "NO", (unsigned)sw, (unsigned)sh, (int)gGsMainFbp, best,
+                best >= 0 ? (int)gsTargets[best].cleared : -1, gsTargetCount);
+        if (!acquired) {
+            fprintf(stderr, "bt3: present: %s\n", SDL_GetError());
+        }
+    }
+#endif
+#ifdef __ANDROID__
+    /* (testing on Android: show the frame's buffer even when it was never cleared, so the settings window and
+       whatever the game drew reach the screen; the log above says which condition fails) */
+    if (acquired && swap != NULL && best >= 0) {
+#else
+    if (acquired && swap != NULL && best >= 0 && gsTargets[best].cleared) {
+#endif
+        show_target(cmd, best, swap, sw, sh);
         Ui_Draw(cmd, swap);
         {   /* BT3_UI_SHOT=<frame>:<file.ppm>: the window's picture with the settings window on it, for checking
                 the settings window without a person or a screen capture (drawn a second time into a texture) */
@@ -1098,8 +1569,7 @@ static void vk_frame_end(void) {
                 ci.num_levels = 1;
                 tex = SDL_CreateGPUTexture(sDev, &ci);
                 c2 = SDL_AcquireGPUCommandBuffer(sDev);
-                bl.destination.texture = tex;
-                SDL_BlitGPUTexture(c2, &bl);
+                show_target(c2, best, tex, sw, sh);
                 Ui_DrawAgain(c2, tex);
                 SDL_zero(ti);
                 ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
@@ -1140,20 +1610,33 @@ static void vk_frame_end(void) {
     sEndT[4] = gpu_now();
     SDL_SubmitGPUCommandBuffer(cmd); { extern void Port_LagMark(int what); Port_LagMark('S'); }
     {   /* BT3_GS_VERBOSE: once a second, where the end of the frame spends its time */
-        static uint64_t sum[5];
+        static uint64_t sum[6];
         static int count;
         uint64_t now = gpu_now();
         sum[0] += sEndT[1] - sEndT[0];
         sum[1] += sEndT[2] - sEndT[1];
-        sum[2] += sEndT[3] - sEndT[2];
+        sum[5] += sEndT[5] - sEndT[2];
+        sum[2] += sEndT[3] - sEndT[5];
         sum[3] += sEndT[4] - sEndT[3];
         sum[4] += now - sEndT[4];
+        sHb[0] += sEndT[1] - sEndT[0];
+        sHb[1] += sEndT[2] - sEndT[1];
+        sHb[5] += sEndT[5] - sEndT[2];
+        sHb[2] += sEndT[3] - sEndT[5];
+        sHb[3] += sEndT[4] - sEndT[3];
+        sHb[4] += now - sEndT[4];
+        sHbN++;
         if (++count == 60) {
+            sHbPass += sPassN;
+            sHbCopy += sCopyN;
             if (getenv("BT3_GS_VERBOSE") != NULL) {
-                fprintf(stderr, "time:   of ending the frame: uploads %.2f ms, issuing the draws %.2f, waiting for the screen's buffer %.2f, "
-                                "showing %.2f, handing over to the driver %.2f\n",
-                        (double)sum[0] / 60e6, (double)sum[1] / 60e6, (double)sum[2] / 60e6, (double)sum[3] / 60e6, (double)sum[4] / 60e6);
+                fprintf(stderr, "time:   of ending the frame: uploads %.2f ms, issuing the draws %.2f, handing them to the driver %.2f, "
+                                "waiting for the screen's buffer %.2f, showing %.2f, presenting %.2f\n",
+                        (double)sum[0] / 60e6, (double)sum[1] / 60e6, (double)sum[5] / 60e6, (double)sum[2] / 60e6, (double)sum[3] / 60e6,
+                        (double)sum[4] / 60e6);
+                fprintf(stderr, "time:   per frame: %.1f render passes, %.1f copies\n", (double)sPassN / 60.0, (double)sCopyN / 60.0);
             }
+            sPassN = sCopyN = 0;
             count = 0;
             memset(sum, 0, sizeof(sum));
         }
@@ -1301,11 +1784,11 @@ static void vk_target_copy(int src, int dst) {
     cmd = SDL_AcquireGPUCommandBuffer(sDev);
     SDL_zero(bl);
     bl.source.texture = sTgCol[src];
-    bl.source.w = GS_W * SCALE;
-    bl.source.h = GS_H * SCALE;
+    bl.source.w = (Uint32)(sTW * SCALE); /* (the targets' own size: 512 x 512 GS pixels on Android, see sTW) */
+    bl.source.h = (Uint32)(sTH * SCALE);
     bl.destination.texture = sTgCol[dst];
-    bl.destination.w = GS_W * SCALE;
-    bl.destination.h = GS_H * SCALE;
+    bl.destination.w = (Uint32)(sTW * SCALE);
+    bl.destination.h = (Uint32)(sTH * SCALE);
     bl.load_op = SDL_GPU_LOADOP_DONT_CARE;
     bl.filter = SDL_GPU_FILTER_NEAREST;
     SDL_BlitGPUTexture(cmd, &bl);
