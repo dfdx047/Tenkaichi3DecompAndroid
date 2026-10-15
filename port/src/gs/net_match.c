@@ -70,6 +70,35 @@ static SDL_TLSID sMine; /* the thread's own search number */
 
 static const char *match_url(void) {
     const char *e = SDL_getenv("BT3_MATCH_URL");
+#ifdef __ANDROID__
+    /* Android: <game folder>/match_url.txt, one line "https://...", names another Worker (one's own, see
+       port/matchmaking/README.md) without a new build */
+    static char fromFile[256];
+    static int read;
+    if ((e == NULL || e[0] == '\0') && !read) {
+        extern const char *Port_FileRoot(void); /* plat_file.c */
+        char path[600];
+        FILE *f;
+        read = 1;
+        SDL_snprintf(path, sizeof(path), "%s/match_url.txt", Port_FileRoot());
+        if ((f = fopen(path, "r")) != NULL) {
+            if (fgets(fromFile, sizeof(fromFile), f) != NULL) {
+                fromFile[strcspn(fromFile, " \r\n")] = '\0';
+                while (fromFile[0] != '\0' && fromFile[strlen(fromFile) - 1] == '/') {
+                    fromFile[strlen(fromFile) - 1] = '\0';
+                }
+                if (SDL_strncmp(fromFile, "https://", 8) != 0) {
+                    fromFile[0] = '\0';
+                }
+            }
+            fclose(f);
+        }
+        fprintf(stderr, "net: matchmaking service %s\n", fromFile[0] != '\0' ? fromFile : MATCH_URL_DEFAULT);
+    }
+    if ((e == NULL || e[0] == '\0') && fromFile[0] != '\0') {
+        return fromFile;
+    }
+#endif
     return e != NULL && e[0] != '\0' ? e : MATCH_URL_DEFAULT;
 }
 
@@ -143,6 +172,56 @@ static int http_post_native(const char *url, const char *json, const char *const
     if (req != NULL) { WinHttpCloseHandle(req); }
     if (con != NULL) { WinHttpCloseHandle(con); }
     if (ses != NULL) { WinHttpCloseHandle(ses); }
+    return ok;
+}
+#elif defined(__ANDROID__)
+/* Android: no curl. The app's Java side does the request (GameActivity.netPost, HttpsURLConnection), called here
+   through JNI on this thread (SDL attaches it). */
+#include <jni.h>
+
+static int http_post_native(const char *url, const char *json, const char *const *headers, char *out, size_t size) {
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject act;
+    jclass cls;
+    jmethodID m;
+    jstring ju, jb, jr;
+    int ok = 0;
+    (void)headers;
+    if (json == NULL) { /* GET: the Java side only does POST */
+        return 0;
+    }
+
+    if (env == NULL || (act = (jobject)SDL_GetAndroidActivity()) == NULL) {
+        return 0;
+    }
+    cls = (*env)->GetObjectClass(env, act);
+    m = cls != NULL ? (*env)->GetMethodID(env, cls, "netPost", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;") : NULL;
+    if (m == NULL) {
+        (*env)->ExceptionClear(env);
+    } else {
+        ju = (*env)->NewStringUTF(env, url);
+        jb = (*env)->NewStringUTF(env, json);
+        jr = (jstring)(*env)->CallObjectMethod(env, act, m, ju, jb);
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+            jr = NULL;
+        }
+        if (jr != NULL) {
+            const char *r = (*env)->GetStringUTFChars(env, jr, NULL);
+            if (r != NULL) {
+                SDL_strlcpy(out, r, size);
+                ok = out[0] != '\0';
+                (*env)->ReleaseStringUTFChars(env, jr, r);
+            }
+            (*env)->DeleteLocalRef(env, jr);
+        }
+        (*env)->DeleteLocalRef(env, ju);
+        (*env)->DeleteLocalRef(env, jb);
+    }
+    if (cls != NULL) {
+        (*env)->DeleteLocalRef(env, cls);
+    }
+    (*env)->DeleteLocalRef(env, act);
     return ok;
 }
 #else
@@ -263,6 +342,10 @@ static int http_post_once(const char *what, const char *json, char *out, size_t 
     if (SDL_getenv("BT3_MATCH_CURL") == NULL && http_post_native(url, json, headers[0] != NULL ? headers : NULL, out, size)) {
         return 1;
     }
+#ifdef __ANDROID__
+    (void)args; (void)p; (void)got; (void)code; (void)n; (void)data;
+    return 0; /* (no curl program to fall back on) */
+#endif
 #ifdef _WIN32
     args[n++] = "curl.exe";
 #else
@@ -603,7 +686,11 @@ again:
                             SDL_Delay(100);
                         }
                         if (!STOPPED() && http_post("relay", body, answer, sizeof(answer))) {
+#ifdef __ANDROID__
+                            if (1) { /* (Android: always in the log; most phones on mobile data need the relay) */
+#else
                             if (SDL_getenv("BT3_RELAY_LOG") != NULL) {
+#endif
                                 char why[160] = "";
                                 json_str(answer, "noRelay", why, sizeof(why));
                                 fprintf(stderr, "relay: asked for when the direct ways stayed silent: the service %s%s\n",
