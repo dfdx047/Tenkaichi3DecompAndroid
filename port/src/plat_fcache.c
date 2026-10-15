@@ -82,6 +82,7 @@ int Port_AfsSpan(const char *rel, char *path, unsigned n, long *base, long *size
     *base = (long)sAfs[i].toc[index * 2];
     *size = (long)sAfs[i].toc[index * 2 + 1];
     return 1;
+}
 
 /* Opens the host file the game gets for `rel` (its path under the data root) and says which it is: a stage or a
    song added from outside the disc (the stage / song list names the file), else the file under mods/, else the

@@ -11,6 +11,7 @@ name: release
 on:
   push:
     tags: ["v*"]
+    paths-ignore: ["docs/**", "**.md", "LICENSE", "LICENSE-MIT"]
   workflow_dispatch:
 
 permissions:
@@ -38,10 +39,15 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # BT3_BUILD_KEY: the release's build key (port/matchmaking/README.md), from the repository secret of that
+      # name, for a tag's build only: the archives of an ordinary push are not a release and carry no key. Where
+      # there is no such secret (a fork) it is empty, and the programs are built without a key as well.
       - name: Build both archives
+        env:
+          BT3_BUILD_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.BT3_BUILD_KEY || '' }}
         run: |
           mkdir -p port/build
-          docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD":/src -w /src \
+          docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e BT3_BUILD_KEY -v "$PWD":/src -w /src \
             bt3-port-release:jammy sh port/release/inside.sh
 
       - uses: actions/upload-artifact@v4
