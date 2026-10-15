@@ -82,6 +82,36 @@ int Port_AfsSpan(const char *rel, char *path, unsigned n, long *base, long *size
     *base = (long)sAfs[i].toc[index * 2];
     *size = (long)sAfs[i].toc[index * 2 + 1];
     return 1;
+
+/* Opens the host file the game gets for `rel` (its path under the data root) and says which it is: a stage or a
+   song added from outside the disc (the stage / song list names the file), else the file under mods/, else the
+   original. NULL if there is none; `path` then holds the last place looked at. This is the ONE place that
+   decides which file is loaded: the gameplay fingerprint (plat_fprint.c) hashes what this opens. */
+FILE *Port_FileOpenHost(const char *rel, char *path, size_t n) {
+    extern int PortStages_Alias(const char *rel, char *out, unsigned n); /* plat_stages.c */
+    extern int PortSongs_Alias(const char *rel, char *out, unsigned n);  /* plat_songs.c: the same for a song */
+    char target[256];
+    FILE *fp = NULL;
+
+    /* a stage added from outside the disc: the game asks for a file id past the disc's own, and the file is
+       the one the stage list names (plat_stages.c), under the data folder */
+    if (PortStages_Alias(rel, target, (unsigned)sizeof(target)) || PortSongs_Alias(rel, target, (unsigned)sizeof(target))) {
+        snprintf(path, n, "%s", target); /* as it is (the stages / songs folder), or in the data */
+        fp = fopen(path, "rb");
+        if (fp == NULL) {
+            snprintf(path, n, "%s/%s", Port_FileRoot(), target);
+            fp = fopen(path, "rb");
+        }
+    }
+    if (fp == NULL) { /* a file under mods/ wins over the original */
+        snprintf(path, n, "%s/mods/%s", Port_FileRoot(), rel);
+        fp = fopen(path, "rb");
+    }
+    if (fp == NULL) {
+        snprintf(path, n, "%s/%s", Port_FileRoot(), rel);
+        fp = fopen(path, "rb");
+    }
+    return fp;
 }
 
 static int slot_of(const char *rel) {
@@ -96,30 +126,7 @@ static int slot_of(const char *rel) {
             return i;
         }
     }
-    {
-        /* a stage added from outside the disc: the game asks for a file id past the disc's own, and the file is
-           the one the stage list names (plat_stages.c), under the data folder */
-        extern int PortStages_Alias(const char *rel, char *out, unsigned n);
-        char target[256];
-        fp = NULL;
-        extern int PortSongs_Alias(const char *rel, char *out, unsigned n); /* plat_songs.c: the same for a song */
-        if (PortStages_Alias(rel, target, (unsigned)sizeof(target)) || PortSongs_Alias(rel, target, (unsigned)sizeof(target))) {
-            snprintf(path, sizeof(path), "%s", target); /* as it is (the stages / songs folder), or in the data */
-            fp = fopen(path, "rb");
-            if (fp == NULL) {
-                snprintf(path, sizeof(path), "%s/%s", Port_FileRoot(), target);
-                fp = fopen(path, "rb");
-            }
-        }
-    }
-    if (fp == NULL) { /* a file under mods/ wins over the original */
-        snprintf(path, sizeof(path), "%s/mods/%s", Port_FileRoot(), rel);
-        fp = fopen(path, "rb");
-    }
-    if (fp == NULL) {
-        snprintf(path, sizeof(path), "%s/%s", Port_FileRoot(), rel);
-        fp = fopen(path, "rb");
-    }
+    fp = Port_FileOpenHost(rel, path, sizeof(path));
     if (fp == NULL && Port_AfsSpan(rel, path, (unsigned)sizeof(path), &base, &span)) { /* inside the archive */
         fp = fopen(path, "rb");
     }
