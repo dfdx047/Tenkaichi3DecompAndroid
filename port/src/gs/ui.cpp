@@ -2,16 +2,22 @@
 // of a controller, or the key and button of its Controls list (gs_input.c: PortInput_Hotkey).
 // Everything it shows lives elsewhere (ui.h): the renderer's settings in gs_gpu.c, the bindings in gs_input.c.
 // It runs on the render thread, which owns the window and its events.
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 #include "imgui.h"
+#include "imgui_internal.h" // (ClearActiveID: a finger drag over a button scrolls the window)
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlgpu3.h"
 #include "imgui_impl_opengl3.h"
 #include "ui.h"
 #include "namefont.h"
+#ifdef __ANDROID__
+#include <jni.h>
+#include <unistd.h>
+#endif
 #include "../port_release.h"
 #include "menu_text.h"
 #include "../quit_dialog.h"
@@ -354,6 +360,7 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
         "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/noto/NotoSans-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
         "/usr/share/fonts/liberation/LiberationSans-Regular.ttf", "C:\\Windows\\Fonts\\segoeui.ttf",
+        "/system/fonts/Roboto-Regular.ttf", "/system/fonts/NotoSans-Regular.ttf", // Android
     };
     ImGui_ImplSDLGPU3_InitInfo info;
 
@@ -365,17 +372,36 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
     io.IniFilename = NULL; // no window-layout file next to the game
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad; // (a controller opens it too: START + SELECT)
     style();
+#ifdef __ANDROID__
+    // a phone's or a handheld's dense screen, touched or driven with the controller: everything larger, and the
+    // controller moves through the window (the back button opens and closes it, gs_gpu.c)
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
+    float uiScale = SDL_GetWindowDisplayScale(window);
+    if (uiScale < 1.5f) {
+        uiScale = 1.5f;
+    }
+    ImGui::GetStyle().ScaleAllSizes(uiScale);
+#else
+    float uiScale = 1.0f;
+#endif
     for (size_t i = 0; i < sizeof(fonts) / sizeof(fonts[0]); i++) {
         FILE *fp = fopen(fonts[i], "rb");
         if (fp != NULL) {
             fclose(fp);
-            io.Fonts->AddFontFromFileTTF(fonts[i], 18.0f);
+            io.Fonts->AddFontFromFileTTF(fonts[i], 18.0f * uiScale);
             break;
         }
     }
     if (device == NULL) { // the OpenGL back end (gs_gl.c), with its context current
         sGL = 1;
-        if (!ImGui_ImplSDL3_InitForOpenGL(window, (SDL_GLContext)gl_context) || !ImGui_ImplOpenGL3_Init("#version 330 core")) {
+        if (!ImGui_ImplSDL3_InitForOpenGL(window, (SDL_GLContext)gl_context) || !ImGui_ImplOpenGL3_Init(
+#ifdef __ANDROID__
+                                                                                     "#version 300 es"
+#else
+                                                                                     "#version 330 core"
+#endif
+                                                                                     )) {
             return 0;
         }
     } else {
@@ -892,6 +918,16 @@ void Ui_Toggle(void) {
     }
 }
 
+// The game waits while the settings window is open (plat_stub.c), except behind the online screen and in a match.
+int Ui_Pauses(void) {
+    return sReady && sOpen && !sNet;
+}
+
+// Any of the windows is open (Android: the on-screen controller steps aside, so touches reach the window).
+int Ui_IsOpen(void) {
+    return sReady && sOpen;
+}
+
 static void bind(int value) {
     if (sCapAction == PORT_ACTIONS) { // the row "Open this window"
         if (sCapKind == 1) {
@@ -1039,6 +1075,34 @@ int Ui_Event(const SDL_Event *ev) {
         set_open(false);
         return 1;
     }
+    if (ev->type == SDL_EVENT_FINGER_DOWN || ev->type == SDL_EVENT_FINGER_MOTION || ev->type == SDL_EVENT_FINGER_UP ||
+        ev->type == SDL_EVENT_FINGER_CANCELED) {
+        // A finger is the mouse, from the touch itself (the mouse events SDL makes from touches are not used): one
+        // finger at a time; its position in the window's units, which are the window's (ImGui's display size).
+        static SDL_FingerID finger;
+        ImGuiIO &io = ImGui::GetIO();
+        bool down = ev->type == SDL_EVENT_FINGER_DOWN, up = ev->type == SDL_EVENT_FINGER_UP || ev->type == SDL_EVENT_FINGER_CANCELED;
+        if (down && finger == 0) {
+            finger = ev->tfinger.fingerID;
+        }
+        if (finger == 0 || ev->tfinger.fingerID != finger) {
+            return 1;
+        }
+        io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);
+        io.AddMousePosEvent(ev->tfinger.x * io.DisplaySize.x, ev->tfinger.y * io.DisplaySize.y);
+        if (down) {
+            io.AddMouseButtonEvent(0, true);
+        }
+        if (up) {
+            io.AddMouseButtonEvent(0, false);
+            finger = 0;
+        }
+        return 1;
+    }
+    if ((ev->type == SDL_EVENT_MOUSE_MOTION && ev->motion.which == SDL_TOUCH_MOUSEID) ||
+        ((ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev->type == SDL_EVENT_MOUSE_BUTTON_UP) && ev->button.which == SDL_TOUCH_MOUSEID)) {
+        return 1; // (the same touch again, as a mouse)
+    }
     ImGui_ImplSDL3_ProcessEvent(ev);
     return ev->type == SDL_EVENT_KEY_DOWN || ev->type == SDL_EVENT_KEY_UP || ev->type == SDL_EVENT_TEXT_INPUT ||
            ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev->type == SDL_EVENT_MOUSE_BUTTON_UP || ev->type == SDL_EVENT_MOUSE_WHEEL;
@@ -1068,21 +1132,42 @@ static bool tab(const char *label, int index) {
 }
 
 static void video_tab(PortVideo &v) {
-    static const struct { const char *name; int milli; } aspects[] = {{"4:3 (original)", 1333}, {"16:10", 1600}, {"16:9", 1778}, {"21:9", 2389}, {"32:9", 3556}};
+    static const struct { const char *name; int milli; } aspects[] = {
+#ifdef __ANDROID__
+        {"Screen (the device's own shape)", 0},
+#endif
+        {"4:3 (original)", 1333}, {"16:10", 1600}, {"16:9", 1778}, {"20:9", 2222}, {"21:9", 2389}, {"32:9", 3556}};
     char label[64];
     int best = 0, count = 0;
 
-    snprintf(label, sizeof(label), "%dx  (%d x %d)", v.scale, 512 * v.scale, 448 * v.scale);
+    /* in quarters: the steps between 1x and 2x for weaker GPUs (1.5x is 672 lines, 1.75x 784) */
+    static const int steps[] = {4, 5, 6, 7, 8, 10, 12, 16, 20, 24, 32};
+    snprintf(label, sizeof(label), "%gx  (%d x %d)", v.scale4 / 4.0, 128 * v.scale4, 112 * v.scale4);
     if (ImGui::BeginCombo("Internal resolution", label)) {
-        for (int n = 1; n <= 8; n++) {
-            snprintf(label, sizeof(label), "%dx  (%d x %d)", n, 512 * n, 448 * n);
-            if (ImGui::Selectable(label, n == v.scale)) { v.scale = n; }
+        for (int q : steps) {
+            snprintf(label, sizeof(label), "%gx  (%d x %d)", q / 4.0, 128 * q, 112 * q);
+            if (ImGui::Selectable(label, q == v.scale4)) { v.scale4 = q; }
         }
         ImGui::EndCombo();
     }
     ImGui::SetItemTooltip("How finely the game is drawn. 1x is the PlayStation 2's own resolution.\nHigher is sharper and uses more video memory.");
-    for (int i = 1; i < (int)(sizeof(aspects) / sizeof(aspects[0])); i++) {
-        if (abs(aspects[i].milli - v.aspectMilli) < abs(aspects[best].milli - v.aspectMilli)) { best = i; }
+    {
+        static const char *filters[] = {"Bilinear", "Sharp bilinear", "FXAA (smooths jagged edges)", "AMD FSR 1", "Snapdragon GSR"};
+        int f = v.filter < 0 || v.filter > 4 ? 0 : v.filter;
+        if (ImGui::BeginCombo("Screen filter", filters[f])) {
+            for (int n = 0; n < 5; n++) {
+                if (ImGui::Selectable(filters[n], n == f)) { v.filter = n; }
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip("How the game's picture is scaled to the screen.\nFXAA smooths jagged edges; FSR and Snapdragon GSR upscale with sharper edges,\nbest with an internal resolution below the screen's (1x to 2x).");
+    }
+    {   // the entry that is the picture's shape: the exact one (0 = the screen's, Android), else the nearest
+        int bestd = 1 << 30;
+        for (int i = 0; i < (int)(sizeof(aspects) / sizeof(aspects[0])); i++) {
+            int d = aspects[i].milli == 0 ? (v.aspectMilli == 0 ? 0 : 1 << 29) : abs(aspects[i].milli - v.aspectMilli);
+            if (d < bestd) { bestd = d; best = i; }
+        }
     }
     if (ImGui::BeginCombo("Aspect ratio", aspects[best].name)) {
         for (int i = 0; i < (int)(sizeof(aspects) / sizeof(aspects[0])); i++) {
@@ -1090,7 +1175,11 @@ static void video_tab(PortVideo &v) {
         }
         ImGui::EndCombo();
     }
+#ifdef __ANDROID__
+    ImGui::SetItemTooltip("Screen: the picture takes the shape of this device's screen, so it is not squeezed.\nWider than 4:3 shows more of the fight to the sides. Menus are stretched.");
+#else
     ImGui::SetItemTooltip("Wider than 4:3 shows more of the fight to the sides. Menus are stretched.");
+#endif
     if (ImGui::BeginCombo("2D filtering", v.smooth2d ? "Smooth" : "Sharp (console)")) {
         if (ImGui::Selectable("Sharp (console)", !v.smooth2d)) { v.smooth2d = 0; }
         if (ImGui::Selectable("Smooth", v.smooth2d != 0)) { v.smooth2d = 1; }
@@ -1136,17 +1225,31 @@ static void video_tab(PortVideo &v) {
     ImGui::SetItemTooltip("Takes effect the next time the game starts.");
     SDL_free(displays);
     {   // which renderer draws the game: Vulkan (the default) or OpenGL 3.3, for machines without a working Vulkan
+        // (Android: OpenGL ES 3.2; the launcher picks it by itself for Mali GPUs unless chosen here or in the app)
+#ifdef __ANDROID__
+        static const char *const kApi[] = {"Vulkan", "OpenGL ES"};
+#else
         static const char *const kApi[] = {"Vulkan", "OpenGL"};
+#endif
         static int api = -1;
         if (api < 0) {
             api = Port_Setting("gpu_api", 0) == 1 ? 1 : 0;
         }
         if (ImGui::Combo("Renderer", &api, kApi, 2)) {
             Port_SettingSave("gpu_api", api);
+#ifdef __ANDROID__
+            Port_SettingSave("dr_renderer", api + 1); /* (the player's choice: the launcher no longer picks by GPU) */
+#endif
             Port_SettingsWrite();
         }
+#ifdef __ANDROID__
+        ImGui::SetItemTooltip("Takes effect the next time the game starts. If the chosen one cannot start, the game tries the other.\n"
+                              "OpenGL ES: chosen by itself for Mali GPUs. No depth clamping (what comes very near the camera\n"
+                              "can be cut), no screen filters (FXAA, FSR, GSR).");
+#else
         ImGui::SetItemTooltip("Takes effect the next time the game starts. Both draw the same picture; Vulkan is faster.\n"
                               "If the chosen one cannot start, the game tries the other.");
+#endif
         if (api != (sGL ? 1 : 0)) {
             ImGui::TextDisabled("Running now: %s. %s from the next start.", kApi[sGL ? 1 : 0], kApi[api]);
         }
@@ -1168,6 +1271,38 @@ static void video_tab(PortVideo &v) {
                               "The newest picture reaches the screen later: 17 ms at 60, 25 ms at 120, 29 ms at 240.\n"
                               "Choose what your screen can show. F9 switches it off and on.");
     }
+    {
+        // In-between pictures (gs_draw.c): the fight is computed 30 times a second, as on the console; with this
+        // on one more picture is drawn between each two. The game itself, its replays and online play are the same.
+        static const char *kSmooth[] = { "Off (30, as the console)", "60 pictures a second", "120 pictures a second", "240 pictures a second" };
+        int smooth = gsInterp < 0 ? 0 : gsInterp > 3 ? 3 : gsInterp;
+        ImGui::SetNextItemWidth(416.0f);
+        if (ImGui::Combo("Smooth motion", &smooth, kSmooth, 4)) {
+            gsInterp = smooth;
+            Port_SettingSave("interp", gsInterp);
+            Port_SettingsWrite();
+        }
+        ImGui::SetItemTooltip("Experimental. The game computes a fight 30 times a second. With this, more pictures are\n"
+                              "drawn between each two. The fight itself does not change, and neither does online play.\n"
+                              "The newest picture reaches the screen later: 17 ms at 60, 25 ms at 120, 29 ms at 240.\n"
+                              "Choose what your screen can show. F9 switches it off and on.");
+    }
+#ifdef __ANDROID__
+    {   // how finished pictures reach the screen (gs_gpu.c); applied between two frames, kept for the next start
+        static const char *kPresent[] = { "Automatic (Mailbox where the device has it)", "FIFO (VSync)", "Mailbox", "Immediate" };
+        int pm = GsGpu_PresentGet();
+        pm = pm < 0 || pm > 3 ? 0 : pm;
+        ImGui::SetNextItemWidth(416.0f);
+        if (ImGui::Combo("Present mode", &pm, kPresent, 4)) {
+            GsGpu_PresentSet(pm);
+            Port_SettingsWrite();
+        }
+        ImGui::SetItemTooltip("How the finished pictures reach the screen.\n"
+                              "FIFO (VSync): no tearing, a little more latency, steadier pace on some devices.\n"
+                              "Mailbox: no tearing, no waiting. Immediate: least latency, may tear.\n"
+                              "A mode the device does not offer falls back to Automatic.");
+    }
+#endif
     {
         bool on = meter_on();
         if (ImGui::Checkbox("Show frame rate, and the connection in an online match", &on)) {
@@ -1655,6 +1790,50 @@ static void controls_tab(void) {
     }
 }
 
+// A finger dragged up or down scrolls the window it is on, also when it started on a button (the button is let go:
+// a vertical drag is never meant for one; sliders are moved sideways).
+static void touch_scroll(void) {
+    ImGuiIO &io = ImGui::GetIO();
+    ImGuiContext &g = *GImGui;
+    static bool scrolling;
+    if (io.MouseSource != ImGuiMouseSource_TouchScreen || !io.MouseDown[0]) {
+        scrolling = false;
+        return;
+    }
+    ImVec2 drag = ImGui::GetMouseDragDelta(0, 0.0f);
+    if (!scrolling && fabsf(drag.y) > 14.0f && fabsf(drag.y) > fabsf(drag.x) * 1.5f) {
+        scrolling = true;
+        if (g.ActiveId != 0) {
+            ImGui::ClearActiveID();
+        }
+    }
+    if (scrolling && g.HoveredWindow != NULL) {
+        ImGuiWindow *w = g.HoveredWindow;
+        while (w->ScrollMax.y <= 0.0f && w->ParentWindow != NULL) {
+            w = w->ParentWindow; // the nearest one that can scroll
+        }
+        ImGui::SetScrollY(w, w->Scroll.y - io.MouseDelta.y);
+    }
+}
+
+#ifdef __ANDROID__
+// "Quit to the launcher": the activity (GameActivity.quitToApp) brings the launcher forward and ends the game's own
+// process, which cannot be started again in place (the engine needs the fixed addresses a fresh process has).
+static void quit_to_app(void) {
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject act = env != NULL ? (jobject)SDL_GetAndroidActivity() : NULL;
+    jclass cls = act != NULL ? env->GetObjectClass(act) : NULL;
+    jmethodID m = cls != NULL ? env->GetMethodID(cls, "quitToApp", "()V") : NULL;
+    if (m == NULL) {
+        if (env != NULL) { env->ExceptionClear(); }
+        fflush(NULL);
+        _exit(0); /* (no activity to ask: at least the game ends) */
+    }
+    env->CallVoidMethod(act, m);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); }
+}
+#endif
+
 static void build(void) {
     PortVideo v, was;
     ImGuiIO &io = ImGui::GetIO();
@@ -1674,9 +1853,42 @@ static void build(void) {
         sPadTab = true;
     }
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+#ifdef __ANDROID__
+    // most of the screen, fixed: fingers move through it by dragging its content, not its frame
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x * 0.92f, io.DisplaySize.y * 0.9f), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+    if (ImGui::Begin("Dragon Rage  -  paused###Settings", &open, flags)) {
+#else
     // (760 high where the picture has the room: the Controls tab's sticks and its list of bindings together)
     ImGui::SetNextWindowSize(ImVec2(640.0f, io.DisplaySize.y >= 800.0f ? 760.0f : 600.0f), ImGuiCond_Appearing);
     if (ImGui::Begin("Settings", &open, ImGuiWindowFlags_NoCollapse)) {
+#endif
+#ifdef __ANDROID__
+        if (ImGui::Button("  Resume  ")) {
+            open = false;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("  Quit to launcher  ")) {
+            ImGui::OpenPopup("Quit to launcher?");
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Back button or START + SELECT: resume");
+        if (ImGui::BeginPopupModal("Quit to launcher?", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("The game closes and you go back to the app's menu.");
+            ImGui::TextUnformatted("Progress that has not been saved in the game is lost.");
+            ImGui::Spacing();
+            if (ImGui::Button("Quit", ImVec2(160.0f, 0.0f))) {
+                quit_to_app();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Stay", ImVec2(160.0f, 0.0f))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::Separator();
+#endif
         {
             int latest = update_latest();
             if (latest > PORT_RELEASE) {
@@ -1750,6 +1962,7 @@ static void build(void) {
             ImGui::TextDisabled("D-pad: move   Cross / A: choose   Circle / B: back   L1 / R1: tab");
         }
     }
+    touch_scroll();
     ImGui::End();
     if (memcmp(&v, &was, sizeof(v)) != 0) {
         GsGpu_SetSettings(&v);
