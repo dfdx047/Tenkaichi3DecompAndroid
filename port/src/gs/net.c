@@ -93,6 +93,8 @@ static void session_hold(void);
 
 static int sAutoDelay;
 static int sOptAuto;      /* the host asked for the input delay to be chosen from the line's ping */
+#include "delay_policy.h"
+static DbtDelayPolicy sDbtDelay;
 static int sSetupRtt = -1; /* the smallest round trip measured while setting up, ms */
 static int sCfgAcked;
 
@@ -534,6 +536,7 @@ static int receive(void) {
             int rtt;
             memcpy(&ts, pkt + 8, 4);
             rtt = (int)(now_ms() - ts);
+            DbtDelay_Note(&sDbtDelay, rtt);
             if (rtt >= 0 && rtt < 5000 && (sSetupRtt < 0 || rtt < sSetupRtt)) {
                 sSetupRtt = rtt;
             }
@@ -602,6 +605,7 @@ static int receive(void) {
                 if ((cap & 0xFFFF0000u) != CAP_MARK) {
                     cap = 0;
                 }
+                sDbtDelay.peer_auto = (cap & DBT_DELAY_AUTO_CAP) != 0;
                 if (!(cap & 2)) { /* does not know the number: 120% if it knows that and it is that, else 100% */
                     sRules &= ~(0xFFu << RULE_SPEED_SHIFT);
                 }
@@ -783,6 +787,7 @@ static void net_start(int role, const char *host, const char *join) {
     }
     sAutoDelay = getenv("BT3_NET_DELAY") != NULL ? strcmp(getenv("BT3_NET_DELAY"), "auto") == 0 : sOptAuto;
     sDelay = getenv("BT3_NET_DELAY") != NULL && !sAutoDelay ? atoi(getenv("BT3_NET_DELAY")) : sOptDelay >= 0 ? sOptDelay : 2;
+    memset(&sDbtDelay, 0, sizeof(sDbtDelay));
     sSetupRtt = -1;
     sCfgAcked = 0;
     if (sDelay < 0) { sDelay = 0; }
@@ -875,7 +880,7 @@ static void net_start(int role, const char *host, const char *join) {
             uint32_t hello[5 + NAME_LEN / 4] = {MAGIC, T_HELLO, NET_VERSION};
             memcpy(&hello[3], sMyName, NAME_LEN);
             hello[3 + NAME_LEN / 4] = sOpts[1];
-            hello[4 + NAME_LEN / 4] = CAP_MARK | 3;
+            hello[4 + NAME_LEN / 4] = CAP_MARK | 3 | (sAutoDelay ? DBT_DELAY_AUTO_CAP : 0);
             net_send(hello, sizeof(hello), &sPeer);
             last = now;
         }
@@ -901,7 +906,7 @@ static void net_start(int role, const char *host, const char *join) {
     if (sMode == 1) {
         uint64_t start = SDL_GetTicksNS(), lastPing = 0, lastCfg = 0;
         int pings = 0;
-        while (SDL_GetTicksNS() - start < 400000000ull) {
+        while (SDL_GetTicksNS() - start < 850000000ull) {
             uint64_t now = SDL_GetTicksNS();
             if (pings < 12 && now - lastPing >= 25000000ull) {
                 uint32_t ping[3] = {MAGIC, T_PING, now_ms()};
@@ -914,7 +919,9 @@ static void net_start(int role, const char *host, const char *join) {
             SDL_Delay(1);
         }
         if (sAutoDelay) {
-            sDelay = auto_delay(sSetupRtt);
+            { int dbt = DbtDelay_Choose(&sDbtDelay, Port_NetSpeedMilli());
+            sDelay = dbt > 0 ? dbt : auto_delay(sSetupRtt);
+            fprintf(stderr, "bt3: net: auto-delay peer=%d samples=%u rtt_p90_ms=%d delay=%d\n", sDbtDelay.peer_auto, sDbtDelay.count, DbtDelay_UpperRtt(&sDbtDelay), sDelay); }
         }
         fprintf(stderr, "bt3: net: round trip %d ms%s\n", sSetupRtt, sAutoDelay ? " (the input delay is chosen from it)" : "");
         start = SDL_GetTicksNS();
@@ -939,6 +946,11 @@ static void net_start(int role, const char *host, const char *join) {
             session_hold();
             SDL_Delay(1);
         }
+    }
+    if (sAutoDelay && ((sMode == 1 && sDbtDelay.peer_auto && !sCfgAcked) || (sMode == 2 && sCfgGot != 2))) {
+        Port_UiNotice("Could not agree on the connection. Create or search the room again.");
+        Port_NetLeave();
+        return;
     }
     if (sMode == 2 && sCfgGot) { /* the host's choices, unless this side was started with its own */
         if ((getenv("BT3_NET_DELAY") == NULL || sAutoDelay) && sCfgDelay >= 0 && sCfgDelay <= 30) {
