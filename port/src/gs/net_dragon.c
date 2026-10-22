@@ -333,8 +333,45 @@ static int outbox_first(char *match, int *score, char *digest) {
     return sscanf(text, "%32s %d %8s %u", match, score, digest, &round) >= 3 && is_hex(match, 32) && is_hex(digest, 8);
 }
 
+#define OUTBOX_MAX 1024
+
+/* adds one match to the end of the queue (no overwrite) */
+static int outbox_push(const char *line) {
+    char all[OUTBOX_MAX], id[33];
+    size_t n;
+    int nl;
+    SDL_strlcpy(id, line, sizeof(id));
+    all[0] = '\0';
+    read_text("dragonnet-result.txt", all, sizeof(all));
+    if (all[0] != '\0' && strstr(all, id) != NULL) {
+        return 1; /* already queued */
+    }
+    n = strlen(all);
+    nl = (n > 0 && all[n - 1] != '\n');
+    if (n + nl + strlen(line) + 1 > sizeof(all)) {
+        fprintf(stderr, "dragonnet: the result queue is full\n");
+        return 0;
+    }
+    if (nl) {
+        all[n++] = '\n';
+    }
+    SDL_strlcpy(all + n, line, sizeof(all) - n);
+    return write_text("dragonnet-result.txt", all);
+}
+
+/* settles the first match of the queue only */
 static void outbox_done(void) {
-    remove_file("dragonnet-result.txt"); /* (one ranked match at a time: the file holds one line) */
+    char all[OUTBOX_MAX];
+    const char *rest;
+    if (!read_text("dragonnet-result.txt", all, sizeof(all))) {
+        return;
+    }
+    rest = strchr(all, '\n');
+    if (rest == NULL || rest[1] == '\0') {
+        remove_file("dragonnet-result.txt");
+        return;
+    }
+    write_text("dragonnet-result.txt", rest + 1);
 }
 
 /* the ranked match being played: dragonnet-session.txt, "match role mode sent" */
@@ -819,7 +856,7 @@ void DrNet_BattleFinished(int flags, int reason, int clock) {
     }
     SDL_snprintf(digest, sizeof(digest), "%08x", hash);
     SDL_snprintf(line, sizeof(line), "%s %d %s 1\n", match, score, digest);
-    if (!write_text("dragonnet-result.txt", line)) {
+    if (!outbox_push(line)) {
         fprintf(stderr, "dragonnet: the ranked result could not be saved\n");
         return;
     }
@@ -838,7 +875,7 @@ void DrNet_SessionEnding(int mine) {
     }
     if (!sent && mine) {
         SDL_snprintf(line, sizeof(line), "%s -1 00000000 1\n", match);
-        write_text("dragonnet-result.txt", line);
+        outbox_push(line);
         fprintf(stderr, "dragonnet: left the ranked match before its end: a loss\n");
     }
     remove_file("dragonnet-session.txt");
