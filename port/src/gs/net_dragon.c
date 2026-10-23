@@ -214,6 +214,8 @@ static void hex_decode(const char *in, size_t len, char *out, size_t size) {
 /* ---- the shared state (one lock) ---- */
 
 static SDL_Mutex *sLock;
+static SDL_Mutex *sOutboxLock; /* result queue file */
+static SDL_Mutex *sOutboxLock; /* result queue file */
 static SDL_AtomicInt sStarted;
 static SDL_Condition *sWake;
 
@@ -224,6 +226,8 @@ static void lock_make(void) {
     }
     if (SDL_CompareAndSwapAtomicInt(&made, 0, 1)) {
         sLock = SDL_CreateMutex();
+        sOutboxLock = SDL_CreateMutex();
+        sOutboxLock = SDL_CreateMutex();
         sWake = SDL_CreateCondition();
         SDL_SetAtomicInt(&made, 2);
     }
@@ -324,8 +328,8 @@ static int identity(void) {
 
 /* ---- the results waiting to be sent: dragonnet-result.txt, one line "match score digest round" ---- */
 
-static int outbox_first(char *match, int *score, char *digest) {
-    char text[512];
+static int outbox_first_nl(char *match, int *score, char *digest) {
+    char text[1024];
     unsigned round;
     if (!read_text("dragonnet-result.txt", text, sizeof(text)) || text[0] == '\0') {
         return 0;
@@ -336,7 +340,7 @@ static int outbox_first(char *match, int *score, char *digest) {
 #define OUTBOX_MAX 1024
 
 /* adds one match to the end of the queue (no overwrite) */
-static int outbox_push(const char *line) {
+static int outbox_push_nl(const char *line) {
     char all[OUTBOX_MAX], id[33];
     size_t n;
     int nl;
@@ -360,7 +364,7 @@ static int outbox_push(const char *line) {
 }
 
 /* settles the first match of the queue only */
-static void outbox_done(void) {
+static void outbox_done_nl(void) {
     char all[OUTBOX_MAX];
     const char *rest;
     if (!read_text("dragonnet-result.txt", all, sizeof(all))) {
@@ -372,6 +376,54 @@ static void outbox_done(void) {
         return;
     }
     write_text("dragonnet-result.txt", rest + 1);
+}
+
+/* the queue file is shared by the game thread (push) and the net thread
+   (first/done): one lock around each read-modify-write */
+static int outbox_first_nl(char *match, int *score, char *digest) {
+    int r;
+    SDL_LockMutex(sOutboxLock);
+    r = outbox_first_nl(match, score, digest);
+    SDL_UnlockMutex(sOutboxLock);
+    return r;
+}
+
+static int outbox_push_nl(const char *line) {
+    int r;
+    SDL_LockMutex(sOutboxLock);
+    r = outbox_push_nl(line);
+    SDL_UnlockMutex(sOutboxLock);
+    return r;
+}
+
+static void outbox_done_nl(void) {
+    SDL_LockMutex(sOutboxLock);
+    outbox_done_nl();
+    SDL_UnlockMutex(sOutboxLock);
+}
+
+/* the queue file is shared by the game thread (push) and the net thread
+   (first/done): one lock around each read-modify-write */
+static int outbox_first(char *match, int *score, char *digest) {
+    int r;
+    SDL_LockMutex(sOutboxLock);
+    r = outbox_first_nl(match, score, digest);
+    SDL_UnlockMutex(sOutboxLock);
+    return r;
+}
+
+static int outbox_push(const char *line) {
+    int r;
+    SDL_LockMutex(sOutboxLock);
+    r = outbox_push_nl(line);
+    SDL_UnlockMutex(sOutboxLock);
+    return r;
+}
+
+static void outbox_done(void) {
+    SDL_LockMutex(sOutboxLock);
+    outbox_done_nl();
+    SDL_UnlockMutex(sOutboxLock);
 }
 
 /* the ranked match being played: dragonnet-session.txt, "match role mode sent" */
