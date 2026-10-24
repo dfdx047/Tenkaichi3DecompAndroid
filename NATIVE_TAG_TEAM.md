@@ -15,13 +15,11 @@ prototype. It is maintained separately from the PCSX2 installer.
 ## Playing
 
 For the online prototype with up to ten players, CPUs and read-only spectators,
-see [Native Tag Team Online](NATIVE_TAG_ONLINE.md). Its BT3 and BT4 launchers are
-**Play native online.cmd** and **Play native BT4 online.cmd**. It is also available
-from **Select > Modded Online** in the normal game menu. **Select > Online Lobby**
+see [Native Tag Team Online](NATIVE_TAG_ONLINE.md). Open **Play.cmd**, choose BT3 or BT4, then use **Select > Modded Online** in the normal game menu. **Select > Online Lobby**
 opens the persistent room: guests practise while the host chooses modes, then
 everyone stays connected through team setup, matches and returns to practice.
 
-Open **Play native prototype.cmd** in this folder. At the main menu, press
+Open **Play.cmd** in this folder. At the main menu, press
 **Select** to open Modded Modes. Team Battle, Free For All, Modded Training,
 Gauntlet and World Tournament,
 player counts, team assignments and Mod Settings use the original animated
@@ -29,7 +27,7 @@ game menu and lettering. Character, outfit, equipment and stage selection
 then use the game's normal screens. It uses your imported disc resources and
 does not launch PCSX2. See [Building](docs/NATIVE_BUILD.md) for initial setup.
 
-For the English **BT4 B14 REV2** disc, open **Play native BT4 prototype.cmd**.
+For the English **BT4 B14 REV2** disc, open **Play.cmd**.
 It uses the same native engine and Modded Modes, with BT4's roster, costumes,
 stages, music, voices, portraits and fusion recipes. Its saves and settings are
 separate from BT3, under `port/build/native-bt4-prototype-saves` and
@@ -53,11 +51,11 @@ from that disc; Europe and Japan do not need a second USA disc.
 
 | Disc | Local launcher | Private data folder |
 | --- | --- | --- |
-| BT3 USA, SLUS-21678 | Play native prototype.cmd | `gamedata` |
-| BT3 Europe/Australia, SLES-54945 | Play native BT3 Europe.cmd | `gamedata-eu` |
-| BT3 Japan, SLPS-25815 | Play native BT3 Japan.cmd | `gamedata-jp` |
-| BT4 B14 REV2 English | Play native BT4 prototype.cmd | `gamedata-bt4` |
-| BT4 B14 REV2 Spanish | Play native BT4 Spanish.cmd | `gamedata-bt4-es` |
+| BT3 USA, SLUS-21678 | Play.cmd | `gamedata` |
+| BT3 Europe/Australia, SLES-54945 | Play.cmd | `gamedata-eu` |
+| BT3 Japan, SLPS-25815 | Play.cmd | `gamedata-jp` |
+| BT4 B14 REV2 English | Play.cmd | `gamedata-bt4` |
+| BT4 B14 REV2 Spanish | Play.cmd | `gamedata-bt4-es` |
 
 To import your own disc, install `pycdlib` for Python and run the shared importer,
 using the matching data folder from the table:
@@ -152,8 +150,8 @@ The launchers use their own settings and saves under
 `port/build/native-prototype-settings.txt` and
 `port/build/native-prototype-saves`. Controls can be rebound in F1.
 
-**Watch native 2v2.cmd** starts an all-CPU fight and closes when it finishes.
-**Play native split-screen.cmd** opens the same menus. Select two, three or
+Choose **CPU Only** in the in-game player-count menu to watch a battle.
+For split-screen, open **Play.cmd** and select two, three or
 four players there, then assign them to either team. Bind each player's keyboard/controller in F1;
 Players 3 and 4 inherit the in-game button layouts of Players 1 and 2 respectively,
 but have independent physical-device bindings. Three-player matches default to

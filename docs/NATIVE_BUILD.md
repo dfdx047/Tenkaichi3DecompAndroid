@@ -52,12 +52,32 @@ export BT3_SDL3=/path/to/SDL3/x86_64-w64-mingw32
 cp "$BT3_SDL3/bin/SDL3.dll" port/build/
 ```
 
-Keep `bt3.exe` and `bt3.exe.mem` together. Open the matching `Play native*.cmd`
-launcher from Windows after importing that disc's resources. Each launcher keeps
-its own saves and settings under `port/build/`.
+Keep `bt3.exe` and `bt3.exe.mem` together. Open `Play.cmd` from Windows and choose
+one of your imported discs. BT3 and BT4 keep separate saves and settings under
+`port/build/`.
 
 The inherited upstream release-container scripts build blank executable tables
 for the upstream USA installer. They are not a regional Tag Team installer.
+
+## Native Windows installer
+
+Strip a freshly linked Windows build before packaging it:
+
+```sh
+BT3_CC=win64 .venv/bin/python port/tools/strip_data.py --data gamedata --out port/build/installer-portable
+```
+
+On Windows, use an isolated Python environment with `pyinstaller` and `pycdlib`,
+then run `python port/tools/package_native_setup.py`. This produces
+`port/build/Tag Team Native - Setup.zip`. It contains Setup.exe, a readme and
+one payload folder, with no extracted game assets or saves.
+
+`native_table_recipes.json` reconstructs the stripped startup tables from each
+supported disc. Regenerate it with `build_native_table_recipes.py` when a build
+needs new ranges; pass the stripped Windows and Linux manifests and privately
+owned reference discs. Setup checks every reconstructed range and the build's
+combined checksum before installing. Never package a build that reports
+unmatched original data in `strip_data.py`.
 The workflow is kept in `.github/workflow-examples/release.yml` as a disabled
 example. This repository does not publish those archives automatically.
 

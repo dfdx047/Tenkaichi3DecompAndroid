@@ -319,7 +319,8 @@ def portable(out):
             bad.append(f"{f}: needs glibc {vers[-1][0]}.{vers[-1][1]}")
     print("portable: yes (baseline x86-64, glibc <= 2.35)" if not bad else "NOT PORTABLE:\n  " + "\n  ".join(bad))
 
-if os.environ.get("BT3_CC") == "win64":
-    main_win()
-else:
-    main()
+if __name__ == '__main__':
+    if os.environ.get("BT3_CC") == "win64":
+        main_win()
+    else:
+        main()

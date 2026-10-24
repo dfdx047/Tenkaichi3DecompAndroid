@@ -30,13 +30,22 @@ For hosting, joining and spectating, see [Online play](NATIVE_TAG_ONLINE.md).
 
 ## Supported discs
 
+On Windows, open **Setup.exe** from the native installer, choose your disc image,
+English or Spanish, and an empty installation folder. You can also choose an
+existing native save folder or PCSX2 `.ps2` memory card. Setup copies the save;
+the original stays untouched. Open **Play.cmd** in the installed folder afterward.
+Python is included in setup and does not need to be installed separately.
+
+The source checkout has just **Setup.cmd** and **Play.cmd**. Play offers the
+discs already imported on this computer. Offline and online modes are in-game.
+
 | Disc | Data folder | Windows launcher |
 | --- | --- | --- |
-| BT3 USA — SLUS-21678 | `gamedata` | `Play native prototype.cmd` |
-| BT3 Europe/Australia — SLES-54945 | `gamedata-eu` | `Play native BT3 Europe.cmd` |
-| BT3 Japan — SLPS-25815 | `gamedata-jp` | `Play native BT3 Japan.cmd` |
-| BT4 B14 REV2 English | `gamedata-bt4` | `Play native BT4 prototype.cmd` |
-| BT4 B14 REV2 Spanish | `gamedata-bt4-es` | `Play native BT4 Spanish.cmd` |
+| BT3 USA — SLUS-21678 | `gamedata` | `Play.cmd` |
+| BT3 Europe/Australia — SLES-54945 | `gamedata-eu` | `Play.cmd` |
+| BT3 Japan — SLPS-25815 | `gamedata-jp` | `Play.cmd` |
+| BT4 B14 REV2 English | `gamedata-bt4` | `Play.cmd` |
+| BT4 B14 REV2 Spanish | `gamedata-bt4-es` | `Play.cmd` |
 
 Import a supported disc into its matching folder:
 
@@ -56,9 +65,10 @@ expect the compiled executable at `port/build/bt3.exe`. Launch the matching disc
 then press **Select** (**Right Shift** on the default keyboard bindings) at the
 main menu. **F1** opens controller bindings and graphics settings.
 
-The source build currently uses the original USA executable's data tables.
-Once built that way, it can run the supported regional and BT4 resource imports
-listed above. Keep those locally extracted tables and disc assets out of Git.
+Building the engine from source currently uses the original USA executable's
+data tables. The portable installer removes those tables and reconstructs them
+from the selected supported disc, so a player does not need a second USA disc.
+Keep locally extracted tables and disc assets out of Git.
 
 Online connections are direct to the host's IPv4 address and TCP port. There is
 no matchmaking service or relay for the modded rooms. Internet hosting may need

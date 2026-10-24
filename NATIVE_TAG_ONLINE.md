@@ -7,7 +7,7 @@ the field together, and the teams can be different sizes.
 From the normal game menu, press **Select**, then choose **Modded Online**.
 The online room uses native game menu pages, character artwork and stage previews.
 
-You can also open **Play native online.cmd** for BT3 USA, or **Play native BT4 online.cmd**
+You can also open **Play.cmd** for BT3 USA, or **Play.cmd**
 for English BT4 B14 REV2. These launch the native game, not PCSX2. They use
 separate online saves and settings; your offline saves are unchanged.
 

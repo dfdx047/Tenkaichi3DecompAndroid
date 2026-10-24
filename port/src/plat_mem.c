@@ -390,6 +390,7 @@ static void Port_LoadGameData(void) {
     size_t listSize = 0, elfSize = 0, srcSize[2] = {0, 0};
     uint64_t hash = 0xCBF29CE484222325ull, want;
     uint32_t count, i, k;
+    int normalized;
 #ifdef _WIN32
     long n = (long)GetModuleFileNameA(NULL, exe, sizeof(exe) - 1);
 #elif defined(__APPLE__)
@@ -442,7 +443,7 @@ static void Port_LoadGameData(void) {
         }
         return; /* no list: the data is linked in */
     }
-    if (listSize < 16 || memcmp(list, "BT3D", 4) != 0) {
+    if (listSize < 16 || (memcmp(list, "BT3D", 4) != 0 && memcmp(list, "TTMD", 4) != 0)) {
         data_fail("damaged file", path);
     }
     memcpy(&count, list + 4, 4);
@@ -450,6 +451,16 @@ static void Port_LoadGameData(void) {
     if (listSize < 16 + (size_t)count * 16) {
         data_fail("damaged file", path);
     }
+    normalized = memcmp(list, "TTMD", 4) == 0;
+    if (normalized) {
+        for (i = 0; i < 2; i++) {
+            snprintf(path, sizeof(path), "%s/native-tables%u.bin", root, i);
+            src[i] = read_file(path, &srcSize[i]);
+            if (src[i] == NULL) {
+                data_fail("startup tables are missing; run Setup again", path);
+            }
+        }
+    } else {
     snprintf(path, sizeof(path), "%s/disc/SLUS_216.78", root);
     elf = read_file(path, &elfSize);
     if (elf == NULL || elfSize < 0x34 || memcmp(elf, "\177ELF", 4) != 0) {
@@ -477,6 +488,7 @@ static void Port_LoadGameData(void) {
     if (src[1] == NULL) {
         data_fail("the game's menu program was not found", path);
     }
+    }
     for (i = 0; i < count; i++) {
         uint32_t r[4]; /* address in this program, source, offset in it, length */
         const uint8_t *from;
@@ -494,7 +506,7 @@ static void Port_LoadGameData(void) {
     free(src[1]);
     free(list);
     if (hash != want) {
-        data_fail("the game's programs in your game data are not the unmodified USA release (SLUS-21678)", NULL);
+        data_fail("startup tables do not match this build; run Setup again", NULL);
     }
 }
 
