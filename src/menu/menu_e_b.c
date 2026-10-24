@@ -1,9 +1,51 @@
+#ifdef PORT
+#define GRID_REAL_CHAR(id) PortGame_IsCharacter(id)
+#else
+#define GRID_REAL_CHAR(id) ((id) < TS_RANDOM)
+#endif
 #include "common.h"
 #include "menu/menu_e.h"
 #include "menu/menu_f.h"
 #include "sys/pad.h"
 #include "sys/save.h"
 #ifdef PORT
+#include "battle/tag_session.h"
+#include "menu/tag_tournament.h"
+#include "battle/tag_challenge.h"
+#include "battle/tag_options.h"
+#include "menu/tag_outfit.h"
+#include "menu/port_screen.h"
+#include "../../port/src/gs/tag_net.h"
+static TsTeam tagRemembered[2];
+static s32 tagRememberedCount[2], tagSelector, tagSelectionCommitted;
+static s32 onlinePick,onlinePickCpu,onlinePickLevel;
+static s32 practicePick,practicePickHidden,practicePickOwn,practicePickDone;
+static TsProgress practiceSaved;
+static s32 cpuPrompt=-1,cpuPromptLevel,cpuApproved=-1;
+static void TeamSel_DrawCpuPrompt(void) {
+    extern const char *CpuLevel_SettingName(s32);
+    s32 j;f32 x=150,y=123,w=212;
+    if(cpuPrompt<0)return;
+    Ps_PageSet();Ps_SetShift(0);Ps_Align(1);
+    Ps_Rect(0,0,512,448,Ps_Rgba(0,0,0,65),Ps_Rgba(0,0,0,65));
+    Ps_Heading(256,82,"CPU DIFFICULTY",1.15f,270,128);
+    for(j=0;j<5;j++) {
+        s32 lit=j==cpuPromptLevel;
+        Ps_Quad(x+6,y+j*35,x+w,y+j*35,x,y+j*35+30,x+w-6,y+j*35+30,
+            Ps_Rgba(66,27,93,128),Ps_Rgba(66,27,93,128),Ps_Rgba(66,27,93,128),Ps_Rgba(66,27,93,128));
+        Ps_Quad(x+8,y+j*35+2,x+w-3,y+j*35+2,x+3,y+j*35+28,x+w-8,y+j*35+28,
+            lit?Ps_Rgba(255,245,170,128):Ps_Rgba(210,229,248,128),lit?Ps_Rgba(255,245,170,128):Ps_Rgba(210,229,248,128),
+            lit?Ps_Rgba(236,167,50,128):Ps_Rgba(103,146,191,128),lit?Ps_Rgba(236,167,50,128):Ps_Rgba(103,146,191,128));
+        Ps_Text(256,y+j*35+5,CpuLevel_SettingName(j),0.85f,190,lit?1:0);
+    }
+    Ps_PromptsClear();Ps_Prompt(0,"Confirm");Ps_Prompt(2,"Back");Ps_PromptsDraw();
+}
+void TeamSel_ResetTagRoster(void) {
+    memset(tagRemembered,0,sizeof(tagRemembered));
+    memset(tagRememberedCount,0,sizeof(tagRememberedCount));
+    tagSelector=tagSelectionCommitted=0;
+    cpuPrompt=cpuApproved=-1;
+}
 #include "battle/col_c.h" /* FontStyle / FONT_ALIGN_* / FONT_SHADOW_*, for the names of added songs */
 #include "plat_songs.h"   /* the songs added from outside the disc (the music select) */
 /* The port's song-name overlay (port/src/gs/ui.cpp / gs_draw.c), as the duel's select uses it (menu_c_e.c). */
@@ -20,11 +62,11 @@ static s32 sPortSongsAdded;  /* ... and its music list songs from outside the di
 static s32 sPortStageRows = TS_STAGE_COLS; /* rows of the stage reel: the game's 6, more with stages added */
 /* The picture behind the reel: a disc stage's own (0x39D + id); an added stage borrows one (its id past 0x23
    would fall on the loading screens' files), as in the duel's select. */
-#define TS_STAGE_PICTURE(id) (TS_STAGE_FILE + ((id) < 0x24 ? (id) : (id) - 0x24))
+#define TS_STAGE_PICTURE(id) (TS_STAGE_FILE + ((id) < 0x24 || PortGame_IsBT4() ? (id) : (id) - 0x24))
 /* include/battle/view_a.h holds these; repeated here (pulling it in clashes with the menu headers). The PC build
    moves the locked / empty markers up so added stages keep their own ids. */
-#define STGGRID_ID_LOCKED 0x3E
-#define STGGRID_ID_EMPTY 0x3F
+#define STGGRID_ID_LOCKED (PortGame_IsBT4() ? 0xFE : 0x3E)
+#define STGGRID_ID_EMPTY (PortGame_IsBT4() ? 0xFF : 0x3F)
 #endif
 
 /*
@@ -90,6 +132,9 @@ void TeamSel_SumCost(s32 side, s32 skipCur) {
 s32 TeamSel_IsCharaFree(s32 side, s32 chara) {
     s32 ok = 1;
     s32 i;
+#ifdef PORT
+    if(onlinePick || TagSession_Selected()) return 1;
+#endif
 
     for (i = 0; i < gTeamSel->side[side]->memberCount; i++) {
         if (i != gTeamSel->side[side]->cur) {
@@ -123,6 +168,9 @@ void TeamSel_RemoveMember(s32 side, s32 idx) {
     if (idx < gTeamSel->side[side]->memberCount) {
         for (i = idx; i < gTeamSel->side[side]->memberCount - 1; i++) {
             gTeamSel->side[side]->member[i] = gTeamSel->side[side]->member[i + 1];
+#ifdef PORT
+            if(TagSession_Selected()) TagSession_SetCpuSetting(side,i,TagSession_CpuSetting(side,i+1));
+#endif
         }
         memset(&gTeamSel->side[side]->member[gTeamSel->side[side]->memberCount - 1], 0, sizeof(TsMember));
         gTeamSel->side[side]->member[gTeamSel->side[side]->memberCount - 1].chara = -1;
@@ -144,7 +192,7 @@ void TeamSel_SetStageChips(void) {
         /* PC build: the markers moved up, so they keep the locked / empty icons (37, 38). */
         {
             /* (a stage added from outside the disc, id 0x24 on, borrows an icon as in the duel's select) */
-            s32 icon = id == STGGRID_ID_LOCKED ? 37 : (id == STGGRID_ID_EMPTY ? 38 : (id >= 0x24 ? 1 + (id - 0x24) % 36 : id + 1));
+            s32 icon = id == STGGRID_ID_LOCKED ? 37 : (id == STGGRID_ID_EMPTY ? 38 : (id >= 0x24 && !PortGame_IsBT4() ? 1 + (id - 0x24) % 36 : id + 1));
             res = (MTexRes *)MPACK_AT(gTeamSel->stagePack, icon);
         }
 #else
@@ -262,6 +310,27 @@ void TeamSel_SetTeamTex(s32 side) {
 /* One step of the background loader of the two portraits. */
 void TeamSel_UpdateFaceLoad(void) {
     MTexRes *res;
+
+#ifdef PORT
+    if(practicePick) {
+        s32 i;
+        /* The battle owns the asynchronous request queue. Portraits have
+           their own synchronous handle and must never cancel a fighter load. */
+        for(i=0;i<2;i++)if(gTeamSel->side[i]->flags&TEAMSEL_SIDE_FACE_CHANGE) {
+            s32 id=gTeamSel->side[i]->chara;
+            if(id>=0) {
+                File_LoadSync(id+TS_FACE_FILE,gTeamSel->faceFile[i],0x16800);
+                Sprite_Unpack(gTeamSel->faceFile[i],gTeamSel->faceRes[i],NULL);
+                res=gTeamSel->faceRes[i];Res_RelocateOffsets(&res,res,res);
+                gTeamSel->tex[i?22:23]=MTEX(res,0);
+                gTeamSel->side[i]->flags&=~TEAMSEL_SIDE_NO_FACE;
+            } else gTeamSel->side[i]->flags|=TEAMSEL_SIDE_NO_FACE;
+            gTeamSel->side[i]->flags&=~TEAMSEL_SIDE_FACE_CHANGE;
+            gTeamSel->side[i]->flags|=TEAMSEL_SIDE_FACE_READY;
+        }
+        gTeamSel->faceState=TEAMSEL_LOAD_IDLE;return;
+    }
+#endif
 
     switch (gTeamSel->faceState) {
     case TEAMSEL_LOAD_ABORT:
@@ -628,12 +697,12 @@ void TeamSel_Init(s32 section) {
     gTeamSel->nameText = MPACK_AT(gTeamSel->res, 43);
     gTeamSel->formText = MPACK_AT(gTeamSel->res, 44);
     gTeamSel->chipPack = (u32 *)MPACK_AT(gTeamSel->res, 45);
-    for (i = 0; i < TS_CELL_MAX; i++) {
+    for (i = 0; i < (PortGame_IsBT4() ? 250 : TS_CELL_MAX); i++) {
         res = (MTexRes *)MPACK_AT(gTeamSel->chipPack, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
     gTeamSel->stagePack = (u32 *)MPACK_AT(gTeamSel->res, 46);
-    for (i = 0; i < 38; i++) {
+    for (i = 0; i < (PortGame_IsBT4() ? 99 : 38); i++) {
         res = (MTexRes *)MPACK_AT(gTeamSel->stagePack, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
@@ -648,20 +717,20 @@ void TeamSel_Init(s32 section) {
            an online session. The list is ours, with whole rows: the reel reads rows of six. */
         extern int gPortStageReplaceCount, gPortReplaceOld[16], gPortReplaceNew[16];
         extern int Port_NetSession(void); /* port/src/gs/net.c */
-        static s32 sAllIds[96];
-        s32 extra = Port_NetSession() ? 0 : gPortExtraStageCount;
-        s32 swaps = Port_NetSession() ? 0 : gPortStageReplaceCount;
+        static s32 sAllIds[132];
+        s32 extra = (Port_NetSession() || PortGame_IsBT4()) ? 0 : gPortExtraStageCount;
+        s32 swaps = (Port_NetSession() || PortGame_IsBT4()) ? 0 : gPortStageReplaceCount;
         s32 n = gTeamSel->stageCount, k, r;
         sPortStageRows = TS_STAGE_COLS;
-        sPortStagesAdded = extra > 0 || swaps > 0;
-        if (extra > 0 || swaps > 0) {
-            if (n > 64) {
-                n = 64;
+        sPortStagesAdded = extra > 0 || swaps > 0 || PortGame_IsBT4();
+        if (extra > 0 || swaps > 0 || PortGame_IsBT4()) {
+            if (n > 126) {
+                n = 126;
             }
-            for (k = 0; k < 96; k++) {
+            for (k = 0; k < 132; k++) {
                 sAllIds[k] = k < n ? gTeamSel->stageIds[k] : STGGRID_ID_EMPTY;
             }
-            for (k = 0; k < extra && n < 90; k++) {
+            for (k = 0; k < extra && n < 126; k++) {
                 sAllIds[n++] = (s32)gPortExtraStages[k];
             }
             for (r = 0; r < swaps; r++) {
@@ -685,8 +754,13 @@ void TeamSel_Init(s32 section) {
     gTeamSel->bgmCount = TS_PACK_WORD(gTeamSel->res, 56);
     BgmList_ApplyUnlocks(&gTeamSel->bgmCount, gTeamSel->bgmIds);
     /* the last four entries of the list are not offered; the last one kept becomes "random" */
+#ifdef PORT
+    if (!PortGame_IsBT4())
+#endif
+    {
     gTeamSel->bgmCount -= 4;
     gTeamSel->bgmIds[gTeamSel->bgmCount - 1] = TS_BGM_RANDOM;
+    }
 #ifdef PORT
     {
         /* PC build: the tracks added from outside the disc, after the disc's and before the "random" entry, as in
@@ -697,7 +771,7 @@ void TeamSel_Init(s32 section) {
         extern void Port_NameFontSheets(int stage, int song, int songLit);
         s32 added;
         PortSongs_Refresh(); /* songs converted from MP3 since the start join the list here (port/src/plat_songs.c) */
-        added = Port_NetSession() ? 0 : gPortSongCount;
+        added = (Port_NetSession() || PortGame_IsBT4()) ? 0 : gPortSongCount;
         sPortSongsAdded = 0;
         Port_NameFontSheets((int)(u32)gTeamSel->tex[39], (int)(u32)gTeamSel->tex[19], (int)(u32)gTeamSel->tex[20]);
         if (added > 0) {
@@ -762,9 +836,12 @@ void TeamSel_Init(s32 section) {
         gTeamSel->stage->col = gTsProgress->stageCell % cols;
         gTeamSel->stage->row = gTsProgress->stageCell / rows;
     }
+    if(TagSession_Selected() && TagSession_Mode()==TAG_MODE_GAUNTLET)
+        gTsProgress->bgm=TagSession_Music();
     for (i = 0; i < gTeamSel->bgmCount; i++) {
         if (gTeamSel->bgmIds[i] == gTsProgress->bgm) {
             gTeamSel->stage->bgmCursor = i;
+            if(TagSession_Selected() && TagSession_Mode()==TAG_MODE_GAUNTLET)break;
         }
     }
     gTeamSel->faceState = TEAMSEL_LOAD_IDLE;
@@ -809,6 +886,42 @@ void TeamSel_Init(s32 section) {
             gTeamSel->side[i]->member[j].chara = -1;
         }
     }
+#ifdef PORT
+    if(TagSession_Selected()) {
+        for(i=0;i<2;i++) {
+            s32 n=tagRememberedCount[i];
+            if(n>TagSession_Size(i)) n=TagSession_Size(i);
+            for(j=0;j<n;j++) gTeamSel->side[i]->member[j]=tagRemembered[i].member[j];
+            gTeamSel->side[i]->memberCount=n;
+            TeamSel_SetTeamTex(i);
+        }
+        tagSelector=TagSession_Owner(0,0);
+        if(TagSession_Mode()==TAG_MODE_GAUNTLET) {
+            /* The gauntlet owns the opposing roster. Stage selection still
+               belongs to the original Team Battle screen. */
+            gTeamSel->side[1]->memberCount=TagChallenge_FirstCount();
+            for(j=0;j<gTeamSel->side[1]->memberCount;j++) {
+                gTeamSel->side[1]->member[j].chara=TagChallenge_FirstFighter(j,0);
+                gTeamSel->side[1]->member[j].color=TagChallenge_FirstFighter(j,1);
+                memset(&gTeamSel->side[1]->member[j].items,0,sizeof(gTeamSel->side[1]->member[j].items));
+            }
+            gTeamSel->side[1]->chara=TagChallenge_FirstFighter(0,0);
+            TeamSel_SetTeamTex(1);
+            gTeamSel->side[1]->state=TEAMSEL_ST_DONE;
+        }
+        if(TagSession_Mode()==TAG_MODE_TOURNAMENT) {
+            gTeamSel->side[1]->memberCount=0;gTeamSel->side[1]->state=TEAMSEL_ST_DONE;
+            TeamSel_SetTeamTex(1);gTeamSel->faceMask=1;
+        }
+        if(tagSelector<0) tagSelector=0;
+        tagSelectionCommitted=0;
+        {
+            extern void Port_TagMenuTrace(s32,s32,s32,s32,s32,s32);
+            Port_TagMenuTrace(48,tagRememberedCount[0],tagRememberedCount[1],
+                tagSelector,TagSession_Players(),TagSession_Mode());
+        }
+    }
+#endif
     for (i = 0; i < TEAMSEL_SIDES; i++) {
         File_LoadSync(gTeamSel->side[i]->chara + TS_FACE_FILE, gTeamSel->faceFile[i], 0x16800);
         Sprite_Unpack(gTeamSel->faceFile[i], gTeamSel->faceRes[i], NULL);
@@ -832,7 +945,8 @@ void TeamSel_Init(s32 section) {
     gTeamSel->bgAlpha[0] = 0x80;
     gTeamSel->bgAlpha[1] = 0;
     gTeamSel->stageBuf = 1;
-    if (gTeamSel->bgmIds[gTeamSel->stage->bgm] == TS_BGM_RANDOM) {
+    if(practicePick) { /* Keep the practice arena's music playing. */ }
+    else if (gTeamSel->bgmIds[gTeamSel->stage->bgm] == TS_BGM_RANDOM) {
         Bgm_Play(Rand_Range(9) + 0x10B1E);
     } else {
 #ifdef PORT /* (a song added from outside the disc has a file id of its own) */
@@ -939,7 +1053,7 @@ void TeamSel_Draw(void) {
                 gTeamSel->bgAlpha[i] = 0x80;
             }
         }
-        Sprite_DrawPicture(gTeamSel->bg[i], 0, 0, gTeamSel->bgAlpha[i]);
+        if(!practicePickHidden)Sprite_DrawPicture(gTeamSel->bg[i], 0, 0, gTeamSel->bgAlpha[i]);
     }
     flash = &gTeamSel->flash[0];
     for (i = 0; i < TEAMSEL_SIDES; i++) {
@@ -976,7 +1090,7 @@ void TeamSel_Draw(void) {
         extern void Flash_ClipGetPos(MFlash *flash, MFlashRef *ref, s32 *x, s32 *y);
         s32 nameId = gTeamSel->stage->stage;
 
-        if (nameId >= 0x24) {
+        if (nameId >= 0x24 && !PortGame_IsBT4()) {
             s32 nx = 0, ny = 0, idx = nameId - 0x24;
             Flash_ClipSetFlags(flash, &ref, 2, 0);
             sPortStageNameHidden = 1;
@@ -1064,7 +1178,7 @@ void TeamSel_Draw(void) {
         extern void Flash_ClipGetPos(MFlash *flash, MFlashRef *ref, s32 *x, s32 *y);
         s32 bgm = gTeamSel->bgmIds[gTeamSel->stage->bgmCursor];
 
-        if (bgm >= PORT_SONG_FIRST_OFFSET) {
+        if (bgm >= PORT_SONG_FIRST_OFFSET && !PortGame_IsBT4()) {
             s32 idx = bgm - PORT_SONG_FIRST_OFFSET;
             s32 cx = 0, cy = 0, px, py, have = 0, shown = 0;
             Flash_FindLabel(flash, "mc_bgm_now", "mc_bgm_now_text_off", &ref);
@@ -1165,6 +1279,15 @@ void TeamSel_Draw(void) {
                                        TS_RANDOM);
             }
         }
+#ifdef PORT
+        if(PortGame_IsBT4()) {
+            TeamSelSide *side=gTeamSel->side[i];
+            if(side->cur<TS_MEMBER_MAX)
+                TagMenu_DrawBT4Outfit(flash,gTeamSel->res,side->chara,
+                                     side->member[side->cur].color,gTeamSel->colorCount[i],i);
+            continue;
+        }
+#endif
         for (j = 0; j < 4; j++) {
             uv.x0 = (j % 2) * 0x40;
             uv.x1 = uv.x0 + 0x40;
@@ -1256,7 +1379,7 @@ void TeamSel_Draw(void) {
             Flash_ClipSetFlags(flash, &ref, 0x80, (u8)gTeamSel->side[i]->mask);
             chara = gTeamSel->side[i]->chip[j / cols][j % cols];
             if (gTeamSel->battleType == 2) {
-                if (chara < TS_RANDOM) {
+                if (GRID_REAL_CHAR(chara)) {
                     cost = ChrTbl_GetCost(chara);
                 } else {
                     cost = 0;
@@ -1265,14 +1388,14 @@ void TeamSel_Draw(void) {
                 Flash_FindLabel(flash, name, name2, &ref);
                 if (gTeamSel->side[i]->cost + cost > gTeamSel->dpMax) {
                     Flash_ClipSetColor(flash, &ref, 0.4f);
-                } else if (chara < TS_RANDOM) {
+                } else if (GRID_REAL_CHAR(chara)) {
                     Flash_ClipSetColor(flash, &ref, TeamSel_IsCharaFree(i, chara) ? 1.0f : 0.4f);
                 } else {
                     Flash_ClipSetColor(flash, &ref, 1.0f);
                 }
                 sprintf(name2, "mc_dp_num_%03d", j);
                 Flash_FindLabel(flash, name, name2, &ref);
-                if (chara < TS_RANDOM) {
+                if (GRID_REAL_CHAR(chara)) {
                     uv.x0 = (cost % 4) * 0x20;
                     uv.x1 = uv.x0 + 0x20;
                     uv.y0 = (cost / 4) * 0x20;
@@ -1285,7 +1408,7 @@ void TeamSel_Draw(void) {
             } else {
                 sprintf(name2, "mc_chara_%03d", j);
                 Flash_FindLabel(flash, name, name2, &ref);
-                if (chara < TS_RANDOM) {
+                if (GRID_REAL_CHAR(chara)) {
                     Flash_ClipSetColor(flash, &ref, TeamSel_IsCharaFree(i, chara) ? 1.0f : 0.4f);
                 } else {
                     Flash_ClipSetColor(flash, &ref, 1.0f);
@@ -1334,13 +1457,12 @@ void TeamSel_Draw(void) {
         }
     }
     for (i = 0; i < TEAMSEL_FLASH_NUM; i++) {
-        Flash_Draw(&gTeamSel->flash[i]);
+        if(TagSession_Selected() && TagSession_Mode()==TAG_MODE_TOURNAMENT && (i==2 || i==4 || i==6))continue;
+        if(!practicePickHidden)Flash_Draw(&gTeamSel->flash[i]);
     }
-    Font_FlushAll();
-    IconWin_Draw();
-    ItemPanel_Draw(0);
-    ItemPanel_Draw(1);
-    ItemHelp_Draw(gTeamSel->help);
+    if(!practicePickHidden) {
+        Font_FlushAll();IconWin_Draw();ItemPanel_Draw(0);ItemPanel_Draw(1);ItemHelp_Draw(gTeamSel->help);
+    }
 }
 
 /* ======== 0x34D368: the per-frame update, the pad handler and the main loop ======== */
@@ -1432,6 +1554,18 @@ f32 TeamSel_Input(s32 *result) {
     s32 r;
     s32 chara;
     s32 idx;
+#ifdef PORT
+    if(cpuPrompt>=0) {
+        if(gPad[0].gameRepeat&(PADG_UP|PADG_DOWN)) {
+            cpuPromptLevel=Ps_Wrap(cpuPromptLevel+(gPad[0].gameRepeat&PADG_UP?-1:1),0,4);Snd_PlaySe(1,0);
+        }
+        if(gPad[0].gamePressed&PADG_TRIANGLE){cpuPrompt=-1;Snd_PlaySe(1,2);return 0;}
+        if(!(gPad[0].gamePressed&PADG_CROSS))return 0;
+        cpuApproved=cpuPrompt;cpuPrompt=-1;
+        if(onlinePick)onlinePickLevel=cpuPromptLevel;
+        else TagSession_SetCpuSetting(cpuApproved/5,cpuApproved%5,cpuPromptLevel);
+    }
+#endif
 
     if (!(gTeamSel->flash[0].flags & MFLASH_PAD)) {
         return;
@@ -1458,6 +1592,8 @@ f32 TeamSel_Input(s32 *result) {
             if (gPad[0].gameRepeat & 1) {
                 TeamSel_ClipGoto(0, 0, TEAMSEL_CLIP_STAGE_CHIP, "fl_off_start");
                 StgGrid_MoveLeft(gTeamSel->stageIds, &gTeamSel->stage->col, gTeamSel->stage->row);
+                if(TagSession_Mode()==TAG_MODE_GAUNTLET && gTeamSel->stage->col==TS_STAGE_COLS)
+                    StgGrid_MoveLeft(gTeamSel->stageIds, &gTeamSel->stage->col, gTeamSel->stage->row);
                 TeamSel_ClipGoto(0, 0, TEAMSEL_CLIP_STAGE_CHIP, "fl_on_start");
                 if (gTeamSel->stage->col != TS_STAGE_COLS) {
                     gTeamSel->stage->stage =
@@ -1468,6 +1604,8 @@ f32 TeamSel_Input(s32 *result) {
             } else if (gPad[0].gameRepeat & 2) {
                 TeamSel_ClipGoto(0, 0, TEAMSEL_CLIP_STAGE_CHIP, "fl_off_start");
                 StgGrid_MoveRight(gTeamSel->stageIds, &gTeamSel->stage->col, gTeamSel->stage->row);
+                if(TagSession_Mode()==TAG_MODE_GAUNTLET && gTeamSel->stage->col==TS_STAGE_COLS)
+                    StgGrid_MoveRight(gTeamSel->stageIds, &gTeamSel->stage->col, gTeamSel->stage->row);
                 TeamSel_ClipGoto(0, 0, TEAMSEL_CLIP_STAGE_CHIP, "fl_on_start");
                 if (gTeamSel->stage->col != TS_STAGE_COLS) {
                     gTeamSel->stage->stage =
@@ -1530,7 +1668,13 @@ f32 TeamSel_Input(s32 *result) {
                 Flash_GotoLabel(&gTeamSel->flash[0], "fl_map_cansel", 1);
                 IconWin_Close();
                 TeamSel_ClipGoto(0, 0, TEAMSEL_CLIP_STAGE_CHIP, "fl_off_start");
-                if (gTeamSel->players != TEAMSEL_PLAYERS_TWO) {
+                if(TagSession_Mode()==TAG_MODE_GAUNTLET) {
+                    gTeamSel->base=0;
+                    Flash_GotoLabel(&gTeamSel->flash[1], "fl_fast_in", 1);
+                    TeamSel_ClipGoto(1, 0, TEAMSEL_CLIP_TEAM, "fl_on_start");
+                    gTeamSel->side[0]->state=TEAMSEL_ST_TEAM;
+                    gTeamSel->side[1]->state=TEAMSEL_ST_DONE;
+                } else if (gTeamSel->players != TEAMSEL_PLAYERS_TWO) {
                     Flash_GotoLabel(&gTeamSel->flash[2], "fl_fast_in", 1);
                     TeamSel_ClipGoto(2, 1, TEAMSEL_CLIP_TEAM, "fl_on_start");
                     gTeamSel->side[1]->state = TEAMSEL_ST_TEAM;
@@ -1904,6 +2048,14 @@ f32 TeamSel_Input(s32 *result) {
                     TeamSel_ClipGoto(CUR_N + 5, CUR_N, TEAMSEL_CLIP_COLOR_PLATE, "fl_on_start");
                     Snd_PlaySe(1, 0);
                 } else if (gPad[i].gamePressed & 0x200) {
+#ifdef PORT
+                    if((onlinePick?onlinePickCpu:TagSession_Selected()&&TagSession_Owner(CUR_N,CUR_SIDE->cur)<0) && cpuApproved!=CUR_N*5+CUR_SIDE->cur) {
+                        cpuPrompt=CUR_N*5+CUR_SIDE->cur;
+                        cpuPromptLevel=onlinePick?onlinePickLevel:TagSession_CpuSetting(CUR_N,CUR_SIDE->cur);
+                        Snd_PlaySe(1,1);continue;
+                    }
+                    cpuApproved=-1;
+#endif
                     /* the member is complete: fix the character and its item set */
                     CUR_SIDE->mask = 0;
                     Flash_GotoLabel(&gTeamSel->flash[CUR_N + 5], "fl_color_ok", 1);
@@ -1917,7 +2069,7 @@ f32 TeamSel_Input(s32 *result) {
                             if (CUR_CELL.id == TS_CUSTOM) {
                                 CUR_ITEMS = TS_SAVE->rec[CUR_MEMBER.customCol + CUR_MEMBER.customRow * TS_COLS].items;
                             } else {
-                                CUR_ITEMS = TS_SAVE->custom[CUR_MEMBER.row * TS_COLS + CUR_MEMBER.col].set[CUR_MEMBER.plate - 1];
+                                CUR_ITEMS = SAVE_CUSTOM_AT(TS_SAVE, CUR_MEMBER.row * TS_COLS + CUR_MEMBER.col).set[CUR_MEMBER.plate - 1];
                             }
                         } else {
                             memset(&CUR_ITEMS, 0, sizeof(TsItemSet));
@@ -1937,7 +2089,7 @@ f32 TeamSel_Input(s32 *result) {
                             do {
                                 for (;;) {
                                     idx = Rand_Range(gTeamSel->masterCount[CUR_N]);
-                                    if (gTeamSel->cells[CUR_N][idx].id < TS_RANDOM) {
+                                    if (GRID_REAL_CHAR(gTeamSel->cells[CUR_N][idx].id)) {
                                         chara = gTeamSel->cells[CUR_N][idx].id;
                                         break;
                                     }
@@ -1953,7 +2105,7 @@ f32 TeamSel_Input(s32 *result) {
                             idx = CUR_MEMBER.col + CUR_MEMBER.row * TS_COLS;
                         }
                         if (CUR_MEMBER.plate != 0) {
-                            CUR_ITEMS = TS_SAVE->custom[idx].set[CUR_MEMBER.plate - 1];
+                            CUR_ITEMS = SAVE_CUSTOM_AT(TS_SAVE, idx).set[CUR_MEMBER.plate - 1];
                         } else {
                             memset(&CUR_ITEMS, 0, sizeof(TsItemSet));
                         }
@@ -1965,6 +2117,17 @@ f32 TeamSel_Input(s32 *result) {
                         CUR_SIDE->memberCount = CUR_SIDE->cur + 1;
                         CUR_SIDE->cur = CUR_SIDE->memberCount;
                     }
+#ifdef PORT
+                    if(TagSession_Selected()) {
+                        /* Reconfirming a retained human slot must hand off just
+                           like a newly added fighter. Hovering a slot does not. */
+                        if(CUR_SIDE->cur<CUR_SIDE->memberCount &&
+                           TagSession_Owner(CUR_N,CUR_SIDE->cur)>=0)
+                            CUR_SIDE->cur++;
+                        tagSelectionCommitted++;
+                    }
+                    if(TagSession_Selected() && CUR_SIDE->cur>=TagSession_Size(CUR_N)) CUR_SIDE->cur=TS_CUR_MENU;
+#endif
                     TeamSel_SetTeamTex(CUR_N);
                     TeamSel_ClipGoto(CUR_N + 1, CUR_N, TEAMSEL_CLIP_TEAM, "fl_on_start");
                     if (CUR_SIDE->cur == TS_CUR_MENU) {
@@ -1997,6 +2160,10 @@ f32 TeamSel_Input(s32 *result) {
                     } else if (CUR_SIDE->cur > CUR_SIDE->memberCount) {
                         CUR_SIDE->cur = CUR_SIDE->memberCount;
                     }
+#ifdef PORT
+                    if(TagSession_Selected() && CUR_SIDE->cur!=TS_CUR_MENU && CUR_SIDE->cur>=TagSession_Size(CUR_N))
+                        CUR_SIDE->cur=TagSession_Size(CUR_N)-1;
+#endif
                     TeamSel_ClipGoto(CUR_N + 1, CUR_N, TEAMSEL_CLIP_TEAM, "fl_on_start");
                     if (CUR_SIDE->cur == TS_CUR_MENU) {
                         CUR_SIDE->chara = CUR_SIDE->member[0].chara;
@@ -2013,6 +2180,9 @@ f32 TeamSel_Input(s32 *result) {
                     } else if (CUR_SIDE->cur > CUR_SIDE->memberCount) {
                         CUR_SIDE->cur = TS_CUR_MENU;
                     }
+#ifdef PORT
+                    if(TagSession_Selected() && CUR_SIDE->cur>=TagSession_Size(CUR_N)) CUR_SIDE->cur=TS_CUR_MENU;
+#endif
                     TeamSel_ClipGoto(CUR_N + 1, CUR_N, TEAMSEL_CLIP_TEAM, "fl_on_start");
                     if (CUR_SIDE->cur == TS_CUR_MENU) {
                         CUR_SIDE->chara = CUR_SIDE->member[0].chara;
@@ -2034,13 +2204,27 @@ f32 TeamSel_Input(s32 *result) {
                         TeamSel_RequestFace(CUR_N);
                         gTeamSel->backup[CUR_N] = CUR_MEMBER;
                         CUR_SIDE->state = TEAMSEL_ST_GRID;
+#ifdef PORT
+                        if(TagSession_Selected()) {
+                            s32 owner=TagSession_Owner(CUR_N,CUR_SIDE->cur);
+                            tagSelector=owner<0?0:owner;
+                        }
+#endif
                         Snd_PlaySe(1, 1);
-                    } else if (CUR_SIDE->memberCount != 0) {
+                    } else if (CUR_SIDE->memberCount != 0
+#ifdef PORT
+                               && (!TagSession_Selected() || CUR_SIDE->memberCount>=TagSession_MinSize(CUR_N))
+#endif
+                    ) {
                         /* the team is complete */
                         Flash_GotoLabel(&gTeamSel->flash[CUR_N + 1], "fl_out", 1);
                         TeamSel_ClipGoto(CUR_N + 1, CUR_N, TEAMSEL_CLIP_TEAM, "fl_ok");
                         CUR_SIDE->state = TEAMSEL_ST_DONE;
-                        if (gTeamSel->players != TEAMSEL_PLAYERS_TWO && gTeamSel->base == 0) {
+                        if (gTeamSel->players != TEAMSEL_PLAYERS_TWO && gTeamSel->base == 0
+#ifdef PORT
+                            && !(TagSession_Selected() && (TagSession_Mode()==TAG_MODE_GAUNTLET || TagSession_Mode()==TAG_MODE_TOURNAMENT))
+#endif
+                        ) {
                             /* one pad: it goes on to the second team */
                             gTeamSel->base = 1;
                             TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_CHIP, "fl_on_start");
@@ -2167,6 +2351,12 @@ f32 TeamSel_Input(s32 *result) {
                     continue;
                 }
                 if (gTeamSel->side[(i + gTeamSel->base) ^ 1]->state == TEAMSEL_ST_DONE) {
+#ifdef PORT
+                    if(TagSession_Selected() && TagSession_Mode()==TAG_MODE_TOURNAMENT) {
+                        gTeamSel->flags|=TEAMSEL_DECIDED|TEAMSEL_LEAVING;
+                        gTeamSel->timer=15;gTeamSel->faceMask=0;break;
+                    }
+#endif
                     /* both teams are complete: on to the stage */
                     Flash_GotoLabel(&gTeamSel->flash[0], "fl_map", 1);
                     IconWin_Open();
@@ -2190,7 +2380,16 @@ f32 TeamSel_Input(s32 *result) {
 /* The song a chosen "random" stands for: one of the nine battle songs. PC build, with songs added from outside
    the disc: any entry of the music list before "random", the disc's and the added ones alike. */
 #ifdef PORT
-#define TS_RANDOM_BGM() (sPortSongsAdded ? gTeamSel->bgmIds[Rand_Range(gTeamSel->bgmCount - 1)] : Rand_Range(9) + 8)
+static s32 TS_RandomBgm(void) {
+    s32 i, count=0, pick;
+    if(!sPortSongsAdded && !PortGame_IsBT4()) return Rand_Range(9)+8;
+    for(i=0;i<gTeamSel->bgmCount;i++) if(gTeamSel->bgmIds[i]!=TS_BGM_RANDOM) count++;
+    if(!count) return 8;
+    pick=Rand_Range(count);
+    for(i=0;i<gTeamSel->bgmCount;i++) if(gTeamSel->bgmIds[i]!=TS_BGM_RANDOM && !pick--) return gTeamSel->bgmIds[i];
+    return 8;
+}
+#define TS_RANDOM_BGM() TS_RandomBgm()
 #else
 #define TS_RANDOM_BGM() (Rand_Range(9) + 8)
 #endif
@@ -2215,12 +2414,50 @@ s32 TeamSel_Run(s32 section) {
         TeamSel_UpdateFaceLoad();
         TeamSel_UpdateStageLoad();
         Pad_Update();
+        { extern void Port_TagMenuTrace(s32,s32,s32,s32,s32,s32);
+          Port_TagMenuTrace(40,gTeamSel->base,gTeamSel->side[gTeamSel->base]->state,
+             gTeamSel->side[gTeamSel->base]->cur,gTeamSel->flags,tagSelector); }
+        if(TagSession_Mode()==TAG_MODE_GAUNTLET && (gTeamSel->flags&TEAMSEL_STAGE)) {
+            extern void Port_TagMenuTrace(s32,s32,s32,s32,s32,s32);
+            static s32 previousState=-1,previousBgm=-1,previousCursor=-1;
+            if(previousState!=gTeamSel->stage->state || previousBgm!=gTeamSel->stage->bgm || previousCursor!=gTeamSel->stage->bgmCursor) {
+                previousState=gTeamSel->stage->state;previousBgm=gTeamSel->stage->bgm;previousCursor=gTeamSel->stage->bgmCursor;
+                Port_TagMenuTrace(91,previousState,previousBgm,previousCursor,
+                    gTeamSel->bgmIds[previousBgm],gTeamSel->stage->stage);
+            }
+        }
         Snd_Update();
         ColorFade_Update();
         if (!(gProgress->flags & MPROG_FREEZE)) {
             TeamSel_Update();
         }
         TeamSel_Draw();
+#ifdef PORT
+        TeamSel_DrawCpuPrompt();
+        if(TagSession_Selected() && Port_TagOption(TAG_OPT_SLOT_LABELS) && !(gTeamSel->flags&TEAMSEL_STAGE)) {
+            extern void Flash_ClipGetPos(MFlash *,MFlashRef *,s32 *,s32 *);
+            extern f32 Flash_ClipGetAlpha(MFlash *,MFlashRef *);
+            char parent[32],label[32],name[32];
+            s32 side,member,x,y,owner;
+            MFlashRef ref;
+            Ps_PageSet(); Ps_SetShift(0); Ps_Align(1);
+            for(side=0;side<(TagSession_Mode()==TAG_MODE_TOURNAMENT?1:2);side++) for(member=0;member<TagSession_Size(side);member++) {
+                sprintf(parent,"mc_team_%d",member);
+                sprintf(name,"mc_team_plate_%d",member);
+                Flash_FindLabel(&gTeamSel->flash[side+1],parent,name,&ref);
+                if(ref.id<0 || Flash_ClipGetAlpha(&gTeamSel->flash[side+1],&ref)<0.4f) continue;
+                Flash_ClipGetPos(&gTeamSel->flash[side+1],&ref,&x,&y);
+                owner=TagSession_Owner(side,member);
+                if(owner<0) Ps_Copy(label,"CPU",sizeof(label));
+                else sprintf(label,"P%d",owner+1);
+                Ps_Text(x+24,y-17,label,0.65f,48,owner<0?0:3);
+            }
+            if(TagSession_Mode()==TAG_MODE_TOURNAMENT)sprintf(label,Port_TagText("TEAM %d - PLAYER %d"),TagTournament_DraftTeam()+1,tagSelector+1);
+            else sprintf(label,Port_TagText("PLAYER %d SELECTING"),tagSelector+1);
+            Ps_TextExOuter(402,5,label,0.65f,202,Ps_Rgba(208,252,255,128),
+                Ps_Rgba(112,224,255,128),Ps_Rgba(0,0,0,128),Ps_Rgba(0,0,0,128),0.8f);
+        }
+#endif
         Font_FlushAll();
         ColorFade_Draw();
         Gfx_EndFrame(1);
@@ -2250,6 +2487,36 @@ s32 TeamSel_Run(s32 section) {
             }
             continue;
         }
+#ifdef PORT
+        if(TagSession_Selected()) {
+            Pad saved=gPad[0];
+            s32 side=gTeamSel->base, before=gTeamSel->side[side]->memberCount;
+            s32 committed=tagSelectionCommitted;
+            if(!(gTeamSel->flags&TEAMSEL_STAGE)) gPad[0]=gPad[tagSelector];
+            if(Port_TagOption(TAG_OPT_ALL_SELECT)) {
+                s32 p;
+                /* One complete packet wins; do not combine contradictory
+                   directions or confirm/back from separate controllers. */
+                if(saved.gamePressed || saved.gameRepeat) gPad[0]=saved;
+                else for(p=1;p<TagSession_Players();p++)
+                    if(gPad[p].gamePressed || gPad[p].gameRepeat) { gPad[0]=gPad[p]; break; }
+            }
+            /* Back always belongs to P1 as well. It takes priority over another
+             * controller's confirm in the same frame. Cursor motion never
+             * transfers control merely because it crosses someone else's slot. */
+            if(saved.gamePressed&PADG_TRIANGLE) {
+                gPad[0].gamePressed=PADG_TRIANGLE;
+                gPad[0].gameRepeat=0;
+            }
+            TeamSel_Input(&result);
+            gPad[0]=saved;
+            if(side!=gTeamSel->base || before!=gTeamSel->side[side]->memberCount ||
+               committed!=tagSelectionCommitted) {
+                s32 next=TagSession_Owner(gTeamSel->base,gTeamSel->side[gTeamSel->base]->cur);
+                tagSelector=next<0?0:next;
+            }
+        } else
+#endif
         TeamSel_Input(&result);
     }
 
@@ -2270,7 +2537,9 @@ s32 TeamSel_Run(s32 section) {
             } while (gTeamSel->stage->stage >= TS_STAGE_RANDOM);
         }
         bgm = gTeamSel->bgmIds[gTeamSel->stage->bgm];
-        if (bgm == TS_BGM_RANDOM) {
+        if(TagSession_Selected() && TagSession_Mode()==TAG_MODE_GAUNTLET) {
+            bgm=TagSession_BattleMusic();
+        } else if (bgm == TS_BGM_RANDOM) {
             bgm = TS_RANDOM_BGM();
         }
         switch (gSaveData->rule[0]) {
@@ -2296,6 +2565,12 @@ s32 TeamSel_Run(s32 section) {
         handicap[0] = gSaveData->rule[3] ^ 1;
         handicap[1] = gSaveData->rule[4] ^ 1;
         cpuLevel = CpuLevel_FromSetting(gSaveData->rule[1]);
+#ifdef PORT
+        if(TagSession_Selected()) {
+            timeLimit=TagSession_Time();
+            cpuLevel=TagSession_Level();
+        }
+#endif
         Battle_ClearWork();
         BattleSetup_SetRule(gTeamSel->players == TEAMSEL_PLAYERS_TWO, 0, bgm, timeLimit, gSaveData->rule[2],
                             gTeamSel->stage->stage, gSaveData->rule[5] ^ 1);
@@ -2316,12 +2591,123 @@ s32 TeamSel_Run(s32 section) {
         for (i = 0; i < TEAMSEL_SIDES; i++) {
             for (j = 0; j < gTeamSel->side[i]->memberCount; j++) {
                 BattleSetup_SetMember(i, j, gTeamSel->side[i]->member[j].chara, gTeamSel->side[i]->member[j].color,
-                                      0, cpuLevel, 100.0f, gTeamSel->side[i]->member[j].items.id);
+                                      0,
+#ifdef PORT
+                                      TagSession_Selected()?TagSession_CpuLevel(i,j):cpuLevel,
+#else
+                                      cpuLevel,
+#endif
+                                      100.0f, gTeamSel->side[i]->member[j].items.id);
             }
         }
-        BattleSetup_Finish();
+        TagChallenge_SetupBattle();
+        if(TagSession_Mode()!=TAG_MODE_TOURNAMENT)BattleSetup_Finish();
     }
+#ifdef PORT
+    if(TagSession_Selected()) for(i=0;i<2;i++) {
+        tagRemembered[i]=*(TsTeam *)gTeamSel->side[i];
+        tagRememberedCount[i]=gTeamSel->side[i]->memberCount;
+    }
+#endif
     TeamSel_Term();
     Dma_ResetBuffers();
     return result;
 }
+
+#ifdef PORT
+/* Reuse the real grid, form reel, equipment and costume plates. This is a
+ * single roster edit, so it never enters the stage picker or sets up a match.
+ * Room traffic continues during selection, including disconnects and edits. */
+void TeamSel_PracticeStart(TlLoadout *loadout) {
+    TsMember data,*member=&data;int k;memset(&data,0,sizeof(data));data.chara=loadout->chara;data.color=loadout->costume;
+    for(k=0;k<8;k++)data.items.id[k]=loadout->items[k];
+    s32 i,f;
+    practiceSaved=*gTsProgress;practicePick=1;practicePickDone=0;
+    onlinePick=1;onlinePickCpu=0;onlinePickLevel=2;cpuPrompt=cpuApproved=-1;
+    memset(gTsProgress->team,0,sizeof(gTsProgress->team));
+    gTsProgress->players=TEAMSEL_PLAYERS_VS_CPU;gTsProgress->battleType=1;
+    gTsProgress->stageCell=gTsProgress->bgm=gTsProgress->dpLevel=0;
+    practicePickOwn=gMenuArc5==NULL;
+    if(practicePickOwn)gMenuArc5=File_LoadSync(gProgress->baseFile,NULL,0);
+    TeamSel_Init(2);
+    for(i=0;i<gTeamSel->masterCount[0];i++) {
+        TsCell *cell=&gTeamSel->cells[0][i];
+        for(f=0;f<cell->formCount;f++)if(cell->form[f]==member->chara)break;
+        if(cell->id==member->chara || f<cell->formCount) {
+            TsMember *m=&gTeamSel->side[0]->member[0];
+            *m=*member;m->col=i%TS_COLS;m->row=i/TS_COLS;m->form=f<cell->formCount?f:0;
+            TeamSel_SetChips(0);gTeamSel->side[0]->chara=cell->id;TeamSel_RequestFace(0);break;
+        }
+    }
+}
+/* Run on every peer with the editing member's synchronized input. No second
+   game loop, Pad_Update, frame wait or global pause is entered here. */
+s32 TeamSel_PracticeUpdate(s32 member,TlLoadout *result) {
+    Pad saved=gPad[0];s32 keep=1;
+    if(!practicePick)return 0;
+    if(!practicePickDone) {
+        gPad[0]=gPad[member];TeamSel_UpdateFaceLoad();TeamSel_Update();TeamSel_Input(&keep);gPad[0]=saved;
+        if(gTeamSel->side[0]->memberCount>0){TsMember *f=&gTeamSel->side[0]->member[0];int k;result->chara=f->chara;result->costume=f->color;for(k=0;k<8;k++)result->items[k]=f->items.id[k];practicePickDone=1;return 1;}
+        if(!keep){practicePickDone=1;return -1;}
+    }
+    return 0;
+}
+void TeamSel_PracticeDraw(s32 visible) {
+    if(!practicePick)return;
+    /* Clip/movie state is updated on every peer, even when only the editor
+       emits the native artwork into their own viewport. */
+    practicePickHidden=!visible;TeamSel_Draw();practicePickHidden=0;
+}
+void TeamSel_PracticeEnd(void) {
+    if(!practicePick)return;
+    sceGsSyncPath(0,0);TeamSel_Term();
+    if(practicePickOwn){Heap_Free(gMenuArc5);gMenuArc5=NULL;}
+    *gTsProgress=practiceSaved;onlinePick=practicePick=practicePickDone=practicePickHidden=0;
+    cpuPrompt=cpuApproved=-1;
+}
+s32 TeamSel_PickOnline(TsMember *member,s32 cpu,s32 *level,s32 revision) {
+    TsProgress saved=*gTsProgress;
+    TagNetStatus status;
+    s32 result=1,accepted=0,done=0,frame=0,i,f,own=gMenuArc5==NULL;
+    TagSession_Leave();
+    onlinePick=1;onlinePickCpu=cpu;onlinePickLevel=*level;
+    cpuPrompt=cpuApproved=-1;
+    memset(gTsProgress->team,0,sizeof(gTsProgress->team));
+    gTsProgress->players=TEAMSEL_PLAYERS_VS_CPU;gTsProgress->battleType=1;
+    gTsProgress->stageCell=gTsProgress->bgm=gTsProgress->dpLevel=0;
+    if(own){gMenuArc5=File_LoadSync(gProgress->baseFile,NULL,0);Snd_LoadBankFile(2,0x14C);}
+    TeamSel_Init(2);
+    for(i=0;i<gTeamSel->masterCount[0];i++) {
+        TsCell *cell=&gTeamSel->cells[0][i];
+        for(f=0;f<cell->formCount;f++)if(cell->form[f]==member->chara)break;
+        if(cell->id==member->chara || f<cell->formCount) {
+            TsMember *m=&gTeamSel->side[0]->member[0];
+            m->col=i%TS_COLS;m->row=i/TS_COLS;m->form=f<cell->formCount?f:0;m->color=member->color;
+            TeamSel_SetChips(0);gTeamSel->side[0]->chara=cell->id;TeamSel_RequestFace(0);break;
+        }
+    }
+    Pad_SetRepeat(20,5);ColorFade_StartIn(0,0,0,12);
+    while(1) {
+        TagNet_MenuPoll();TagNet_Status(&status);
+        if(!done && (status.phase!=2 || status.config.revision!=revision)) {
+            done=1;result=0;ColorFade_StartOut(0,0,0,12);
+        }
+        Job_Run();Gfx_BeginFrame();TeamSel_UpdateFaceLoad();TeamSel_UpdateStageLoad();
+        Pad_Update();Snd_Update();ColorFade_Update();TeamSel_Update();TeamSel_Draw();TeamSel_DrawCpuPrompt();
+        Font_FlushAll();ColorFade_Draw();Gfx_EndFrame(1);Dma_Flush();File_Stub264D90();
+        {extern void Port_TagMenuTrace(s32,s32,s32,s32,s32,s32);
+         Port_TagMenuTrace(82,gTeamSel->side[0]->state,cpuPrompt,onlinePickLevel,gTeamSel->side[0]->chara,done);}
+        if(!done && frame++>12 && !ColorFade_IsFadingOut()) {
+            TeamSel_Input(&result);
+            if(gTeamSel->side[0]->memberCount>0) {
+                *member=gTeamSel->side[0]->member[0];*level=onlinePickLevel;accepted=1;done=1;
+                ColorFade_StartOut(0,0,0,12);
+            } else if(!result)done=1;
+        }
+        if(done && ColorFade_IsOutDone() && gTeamSel->faceState==TEAMSEL_LOAD_IDLE && gTeamSel->stageState==TEAMSEL_LOAD_IDLE)break;
+    }
+    TeamSel_Term();if(own){Heap_Free(gMenuArc5);gMenuArc5=NULL;Snd_UnloadBank(2);}
+    Dma_ResetBuffers();*gTsProgress=saved;onlinePick=0;cpuPrompt=cpuApproved=-1;
+    return accepted && result;
+}
+#endif

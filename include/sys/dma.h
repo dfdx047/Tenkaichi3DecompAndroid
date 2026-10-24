@@ -12,7 +12,13 @@ typedef int s128 __attribute__((mode(TI)));
 typedef unsigned int u128 __attribute__((mode(TI)));
 #endif
 
+#ifdef PORT
+/* Ten fighters in four views emit substantially more geometry than the
+ * original two-fighter display lists. These are host allocations. */
+#define DMA_BUF_SIZE 0x1000000
+#else
 #define DMA_BUF_SIZE 0x100000
+#endif
 
 /* Source-chain DMA tag ids (bits 28-30 of the first word; the low 16 bits are the quadword count). */
 #define DMA_TAG_CNT 0x10000000  /* data follows the tag, next tag after the data */

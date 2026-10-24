@@ -467,7 +467,7 @@ s32 ObjShadow_IsEnabled(ObjMdlObj *obj) {
     if (Battle_GetWork()->flags & BATTLE_FLAG_LOADING) {
         return 0;
     }
-    if (obj->flags & 0x10000000) {
+    if ((obj->flags & 0x10000000) && obj->shadow != NULL) {
         return 1;
     }
     return 0;

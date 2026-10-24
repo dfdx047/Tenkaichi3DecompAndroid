@@ -689,7 +689,9 @@ void *Port_LowAlloc(size_t size) {
        The addresses end up in the game's memory (file handles, sound buffers); with the system choosing them they
        differed from run to run, and so did the game's state. This way they depend only on the order of the
        requests. */
-    size_t total = (size + 16 + 255) & ~(size_t)255;
+    /* Native fighter resources request 64-byte alignment. Keep the allocation
+       header in a full cache line so every returned buffer honors that. */
+    size_t total = (size + 64 + 255) & ~(size_t)255;
     uint64_t *p = NULL;
     int i;
 
@@ -736,7 +738,7 @@ void *Port_LowAlloc(size_t size) {
     }
     p[0] = total;
     __sync_lock_release(&sLowLock);
-    return p + 2;
+    return p + 8;
 #else
     return calloc(1, size);
 #endif
@@ -745,7 +747,7 @@ void *Port_LowAlloc(size_t size) {
 void Port_LowFree(void *addr) {
 #if PORT_LOW_REGION
     if (addr != NULL) {
-        uint64_t *p = (uint64_t *)addr - 2, total = p[0];
+        uint64_t *p = (uint64_t *)addr - 8, total = p[0];
         int i;
         while (__sync_lock_test_and_set(&sLowLock, 1)) {
         }

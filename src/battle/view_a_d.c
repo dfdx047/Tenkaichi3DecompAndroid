@@ -86,6 +86,9 @@ ChrView *gChrView = NULL;
 
 /* File id of a character's model: costume n, or its damaged version. */
 s32 ChrView_GetModelFile(s32 chara, s32 costume, s32 damaged) {
+#ifdef PORT
+    return PortGame_Model(chara,costume,damaged);
+#endif
     if (damaged != 0) {
         return chara * 10 + costume + (CHRVIEW_FILE_FIRST + 4);
     }
@@ -95,7 +98,7 @@ s32 ChrView_GetModelFile(s32 chara, s32 costume, s32 damaged) {
 /* The character's entry in the table of common file 4, NULL for an id that is not a character. */
 ChrViewInfo *ChrView_GetCharaInfo(u32 chara) {
     ChrViewInfo *table = PACK_AT(gCommonRes->data[2], 1);
-    if (chara >= CHRVIEW_CHARA_COUNT) {
+    if (chara >= PortGame_CharacterCount()) {
         return NULL;
     }
     return &table[chara];
@@ -351,7 +354,11 @@ void ChrView_Init(void) {
     memset(gChrView, 0, sizeof(ChrView));
     gChrView->anim = 7;
     for (i = 0; i < CHRVIEW_SLOT_COUNT; i++) {
-        gChrView->slot[i].file[0].buf = Heap_Alloc(CHRVIEW_MODEL_SIZE, 0x40, 0, HEAP_ANY);
+        gChrView->slot[i].file[0].buf = Heap_Alloc(
+#ifdef PORT
+            PortGame_IsBT4() ? 0xE6800 :
+#endif
+            CHRVIEW_MODEL_SIZE, 0x40, 0, HEAP_ANY);
         gChrView->slot[i].file[0].size = 0;
         gChrView->slot[i].file[0].id = -1;
         *(s32 *)gChrView->slot[i].file[0].buf = 0;

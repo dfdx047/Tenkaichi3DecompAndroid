@@ -10,6 +10,9 @@
 enum {
     PORT_SCREEN_NONE,
     PORT_SCREEN_TBO, /* Tenkaichi Budokai Online (menu/port_tbo.c) */
+    PORT_SCREEN_TAG_TEAM,
+    PORT_SCREEN_TAG_ONLINE,
+    PORT_SCREEN_TAG_LOBBY,
 };
 
 extern s32 gPortScreen; /* the screen the mode runs next (PORT_SCREEN_*) */

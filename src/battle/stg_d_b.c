@@ -13,6 +13,7 @@
 #include "sys/randf.h"
 #include "sys/vu1_packet.h"
 #include "battle/stg_d.h"
+#include "battle/tag_stage.h"
 
 /* Offset table of the stage file (StgOfsTable in battle/stg_a.h). */
 typedef struct StgAnimTable {
@@ -57,6 +58,8 @@ typedef struct StgAnimStage {
 typedef struct StgAnimRes {
     /* 0x00 */ u8 unk0[0x24];
     /* 0x24 */ u32 *stage;
+    /* 0x28 */ u8 unk28[0x24];
+    /* 0x4C */ s32 stageSize;
 } StgAnimRes;
 
 /* Local view of the battle work: only the flag word. */
@@ -83,6 +86,7 @@ void StgModel_InitStage(void) {
     u32 *file = gCommonRes->stage;
     void *stage = (u8 *)file + file[1] / 4 * 4;
 
+    TagStage_Prepare(file,gCommonRes->stageSize);
     BtlStage_Init(stage, stage);
 }
 

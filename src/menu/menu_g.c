@@ -301,7 +301,7 @@ void ItemPanel_SetChara(s32 side, s32 chara, s32 slot, s32 set, s32 fromRec) {
     if (fromRec) {
         p->item = IP_SAVE->rec[slot].set;
     } else {
-        p->item = IP_SAVE->custom[slot].set[set];
+        p->item = SAVE_CUSTOM_AT(IP_SAVE, slot).set[set];
     }
     p->chara = chara;
     p->set = set + 1;

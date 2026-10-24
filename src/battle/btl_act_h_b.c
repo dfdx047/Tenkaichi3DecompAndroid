@@ -1,5 +1,23 @@
 #include "common.h"
 #include "battle/btl_act_h.h"
+#ifdef PORT
+struct BtlActIChr;
+extern void BtlChar_ClearFlag(struct BtlActIChr *,s32);
+#endif
+
+static void spend_transform_cost(BtlActHChr *chr) {
+#ifdef PORT
+    if (PortGame_IsBT4()) {
+        extern s32 BtlMember_DrainKi(BtlActHChr *,s32);
+        extern void BtlMember_SubMaxPower(BtlActHChr *,s32);
+        if (BtlChar_TestFlag(chr,6))
+            BtlMember_SubMaxPower(chr,chr->form.cost/2-chr->form.cost/5);
+        else BtlMember_DrainKi(chr,chr->form.cost);
+        return;
+    }
+#endif
+    BtlMember_SubBlast(chr,chr->form.cost);
+}
 
 /*
  * Fighter action handlers, second file: 0x1FC598..0x203168 (see btl_act_h.c for the overview and for how a
@@ -35,7 +53,13 @@ s32 BtlAct_Throw(BtlActHChr *chr, s32 phase) {
                 BtlMove_TurnYaw(chr, alt ? 8 : 7, BTL_DEG(180.0f));
             }
         }
-        if (BtlMember_GetActive(chr)->chara == 0x6E && !(BtlOpp_GetParamWord0(chr) & 0x80)) {
+        if (BtlMember_GetActive(chr)->chara ==
+#ifdef PORT
+            (PortGame_IsBT4() ? 0xC1 : 0x6E)
+#else
+            0x6E
+#endif
+            && !(BtlOpp_GetParamWord0(chr) & 0x80)) {
             chr->unkE60 = BtlUtil_Clamp(chr->unkE60 + 1, 0, 10);
         }
     }
@@ -94,6 +118,9 @@ s32 BtlAct_Throw(BtlActHChr *chr, s32 phase) {
  */
 s32 BtlAct_Thrown(BtlActHChr *chr, s32 phase) {
     if (phase == 0) {
+#ifdef PORT
+        if (PortGame_IsBT4()) BtlChar_ClearFlag((struct BtlActIChr *)chr,0x1D);
+#endif
         BtlAnim_Play(chr, BtlAct_GetCurrent(chr) == 0xBA ? 0x189 : 0x97, chr->react.unk10 != 0 ? 0.0f : 0.3f);
         BtlChar_SetHeldFlag(chr, 0xE);
         BtlActThrow_TurnByRootYaw(chr);
@@ -685,7 +712,7 @@ s32 BtlAct_TransformA(BtlActHChr *chr, s32 phase) {
             BtlActChange_PushBack(chr);
             if (BtlChange_IsLoadedFor(chr->player)) {
                 BtlAnim_Request(chr, 0x179, 0.0f);
-                BtlMember_SubBlast(chr, chr->form.cost);
+                spend_transform_cost(chr);
                 BtlChange_SetReady(chr->player);
             }
             break;
@@ -769,6 +796,9 @@ s32 BtlAct_TransformB(BtlActHChr *chr, s32 phase) {
             BtlAnim_AdvanceLoop(chr, 0);
             if (BtlChange_IsLoadedFor(chr->player)) {
                 BtlAnim_Request(chr, 0x191, 0.0f);
+#ifdef PORT
+                if (!PortGame_IsBT4())
+#endif
                 BtlMember_SubBlast(chr, chr->form.cost);
                 BtlChange_SetReady(chr->player);
             }
@@ -811,8 +841,12 @@ s32 BtlAct_TransformB(BtlActHChr *chr, s32 phase) {
  * leaving unless a warp flag (0xFC / 0xFD) is set.
  */
 s32 BtlAct_TransformC(BtlActHChr *chr, s32 phase) {
+    s32 lead = 0x177;
+#ifdef PORT
+    if (PortGame_IsBT4()) lead=0x1A4;
+#endif
     if (phase == 0) {
-        BtlAnim_Play(chr, 0x177, 0.0f);
+        BtlAnim_Play(chr, lead, 0.0f);
         BtlChar_GetPos(chr)->unk98 = 0.0f;
         BtlChar_GetPos(chr)->unk9C = 0.0f;
         BtlMove_SetHeading(chr, BtlChar_GetPos(chr)->rot.y, 0.0f);
@@ -829,12 +863,12 @@ s32 BtlAct_TransformC(BtlActHChr *chr, s32 phase) {
             BtlChange_RequestChara(chr->player, chr->form.chara, chr->form.costume, chr->form.variant,
                                    chr->form.animChara, chr->form.unk1C, chr->form.voiceChara);
         }
-        switch (BtlAnim_GetId(chr)) {
+        switch (BtlAnim_GetId(chr)==lead ? 0x177 : BtlAnim_GetId(chr)) {
         case 0x177:
             if (BtlAnim_Advance(chr, 0)) {
                 if (BtlChange_IsLoadedFor(chr->player)) {
                     BtlAnim_Request(chr, 0x179, 0.0f);
-                    BtlMember_SubBlast(chr, chr->form.cost);
+                    spend_transform_cost(chr);
                     BtlChange_SetReady(chr->player);
                 }
             }
@@ -945,7 +979,7 @@ s32 BtlAct_TransformD(BtlActHChr *chr, s32 phase) {
             }
             if (BtlAnim_Advance(chr, 0) && BtlChange_IsLoadedFor(chr->player)) {
                 BtlAnim_Request(chr, 0x179, 0.0f);
-                BtlMember_SubBlast(chr, chr->form.cost);
+                spend_transform_cost(chr);
                 BtlChange_SetReady(chr->player);
             }
             BtlPartner_StepAnim(chr);
@@ -1046,7 +1080,7 @@ s32 BtlAct_TransformE(BtlActHChr *chr, s32 phase) {
             waiting = 1;
             if (BtlChange_IsLoadedFor(chr->player)) {
                 BtlAnim_Request(chr, 0x179, 0.0f);
-                BtlMember_SubBlast(chr, chr->form.cost);
+                spend_transform_cost(chr);
                 BtlChange_SetReady(chr->player);
             }
             break;
@@ -2346,6 +2380,11 @@ s32 BtlDecide_Main(BtlActIChr *chr, s32 mask) {
         }
     }
     if (mask & 0x200000) {
+#ifdef PORT
+        /* A deliberate lock-off (including a gauntlet rest) is not a lost
+           opponent. Do not automatically search the hidden roster slot. */
+        if (TagTeam_LockedOff(chr->player)) return 0;
+#endif
         if (BtlChar_TestFlag(chr, 5)) {
             return 0;
         }

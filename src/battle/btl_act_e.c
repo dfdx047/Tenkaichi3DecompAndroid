@@ -1,3 +1,4 @@
+#include "battle/tag_clash.h"
 #include "common.h"
 #include "battle/btl_act_e.h"
 
@@ -1339,7 +1340,7 @@ void BtlAct_ClashBlowsHandler(BtlActEChr *chr, s32 phase) {
     s32 *bonus = &chr->work[2];
 
     if (phase == 0) {
-        BtlAnim_Play(chr, chr->player == 0 ? 0x173 : 0x174, 0.15f);
+        BtlAnim_Play(chr, BtlClash_Side(chr->player) == 0 ? 0x173 : 0x174, 0.15f);
         chr->clashCountB = 0;
         if (BtlAct_IsTechniqueId(BtlAct_GetPrev(chr))) {
             chr->work[0] |= 1;
@@ -1369,6 +1370,8 @@ void BtlAct_ClashBlowsHandler(BtlActEChr *chr, s32 phase) {
 #ifdef PORT /* PC build: BT3_CLASH_LOG=1 */
                     Port_ClashLog(chr->player, "blow clash", 1, chr->clashCountB, chr->actionFrame);
 #endif
+                } else if (BtlClash_SequenceActive(chr->player)) {
+                    /* No passive mash credit while waiting for the next button. */
                 } else if (BtlMember_HasAbility(chr, 0x6A)) {
                     if (chr->actionFrame % 28 == 0) {
                         BtlAct_CountAndMarkOpponent(chr);
@@ -1386,12 +1389,14 @@ void BtlAct_ClashBlowsHandler(BtlActEChr *chr, s32 phase) {
                         BtlAct_CountAndMarkOpponent(chr);
                     }
                 }
-                if (chr->work[0] & 1) {
+                if (!BtlClash_SequenceActive(chr->player) && (chr->work[0] & 1)) {
                     if (chr->actionFrame % 15 == 0) {
                         BtlAct_CountAndMarkOpponent(chr);
                     }
                 }
-                if (BtlMember_HasAbility(chr, 0x14)) {
+                if (BtlClash_SequenceActive(chr->player)) {
+                    /* Sequence scores come only from accepted button presses. */
+                } else if (BtlMember_HasAbility(chr, 0x14)) {
                     if (chr->actionFrame % 5 == 0) {
                         BtlAct_CountAndMarkOpponent(chr);
                     }
@@ -1500,7 +1505,7 @@ s32 BtlAct_ClashVanishHandler(BtlActEChr *chr, s32 phase) {
  * The sequence answers with flags 0xC5 (again), 0xC6 (over), 0xC7 (won) and 0xC8 (lost).
  */
 s32 BtlAct_ClashExchangeHandler(BtlActEChr *chr, s32 phase) {
-    BtlActEClashC *c = &gBtlChars->clashC;
+    BtlActEClashC *c = BtlClash_Exchange(chr->player);
     s32 *counter = &chr->work[2];
     s32 wait;
     f32 duration;
@@ -1571,7 +1576,7 @@ s32 BtlAct_ClashExchangeHandler(BtlActEChr *chr, s32 phase) {
                     if (BtlAnim_PassedRatio(chr, 0.1f)) {
                         BtlChar_SetFxBit(chr, 0xC);
                         BtlChar_Vibrate(chr, 1.0f, 0.3f);
-                        if (chr->player == 0) {
+                        if (BtlClash_Side(chr->player) == 0) {
                             BtlChar_SetFxBit(chr, 0x2D);
                             BtlCharSnd_PlayCommon(chr, 0x4F);
                             BtlCharSnd_PlayCommon(chr, 0x4B);
@@ -1582,7 +1587,12 @@ s32 BtlAct_ClashExchangeHandler(BtlActEChr *chr, s32 phase) {
                         BtlChar_SetFlag(chr, 0xC4);
                     }
                 }
-                if (chr->actionFrame > 0) {
+                if (BtlClash_SequenceActive(chr->player)) {
+                    if(BtlClash_SequenceInput(chr->player)) {
+                        BtlAct_CountAndMarkOpponent(chr);
+                        if(!chr->injected) BtlCharSnd_PlayCommonFar(chr,0x14);
+                    }
+                } else if (chr->actionFrame > 0) {
                     BtlChar_SetFlag(chr, c->pick + 0xE9);
                     if (chr->unkE58 == -1) {
                         if (BtlInput_IsPressed(chr, 0x78000000)) {

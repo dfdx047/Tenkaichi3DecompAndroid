@@ -304,8 +304,8 @@ typedef struct ChrGridCell {
 /* Stage grid: 6 columns of stage ids. */
 #define STGGRID_COLS 6
 #ifdef PORT /* the PC build adds stages from outside the disc, so the "locked"/"empty" markers move past them */
-#define STGGRID_ID_LOCKED 0x3E
-#define STGGRID_ID_EMPTY 0x3F
+#define STGGRID_ID_LOCKED (PortGame_IsBT4() ? 0xFE : 0x3E)
+#define STGGRID_ID_EMPTY (PortGame_IsBT4() ? 0xFF : 0x3F)
 #else
 #define STGGRID_ID_LOCKED 0x24
 #define STGGRID_ID_EMPTY 0x25

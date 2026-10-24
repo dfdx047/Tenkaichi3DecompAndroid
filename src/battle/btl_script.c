@@ -675,10 +675,10 @@ void BtlScript_StopVoices(void) {
     work->voice[1] = NULL;
     work->voice[2] = NULL;
     work->voice[3] = NULL;
-    Voice_Stop(0);
-    Voice_Stop(1);
-    StreamSe_Stop(0);
-    StreamSe_Stop(1);
+    for (s32 i = 0; i < TagTeam_Count(); i++) {
+        Voice_Stop(i);
+        StreamSe_Stop(i);
+    }
 }
 
 /* Returns 1 while a text is shown. */

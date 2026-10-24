@@ -30,6 +30,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include "plat_verify_tab.h"
+#include "plat_game.h"
 
 extern const char *Port_FileRoot(void); /* plat_file.c */
 extern void Port_UiNotice(const char *text); /* gs/ui.cpp */
@@ -140,8 +141,11 @@ static void *verify_thread(void *arg) {
     int n;
 
     (void)arg;
+    /* Rooms need the gameplay identity before the much larger integrity scan.
+       In particular, per-file stat calls on mounted or slow drives can take
+       longer than the room startup deadline. The full check still runs below. */
+    PortFp_Run(0);
     if (!sCheck) {
-        PortFp_Run(0);
         return NULL;
     }
     crc_init();
@@ -179,7 +183,6 @@ static void *verify_thread(void *arg) {
            then, so the number is a lower bound. */
         sAtLeast = 1;
         finish();
-        PortFp_Run(0); /* (reads the files that are loaded, those under mods/ too) */
         return NULL;
     }
     snprintf(cache, sizeof(cache), "%s/.verified", root);
@@ -196,13 +199,9 @@ static void *verify_thread(void *arg) {
         fclose(f);
         if (got == 5 && ver == 2 && was == sig) {
             finish();
-            PortFp_Run(0);
             return NULL;
         }
     }
-    /* The fingerprint first: a few hundred megabytes of the 3 GB, known within a second or two; the comparison
-       below then finds those files in the system's cache. */
-    PortFp_Run(0);
     sDiffer = sMissing = sMods = 0;
     memset(sFirst, 0, sizeof(sFirst));
     buf = malloc(1 << 20);
@@ -270,6 +269,14 @@ void Port_VerifyStart(void) {
         return;
     }
     once = 1;
+    if (PortGame_IsBT4()) {
+        /* The USA file catalogue is not a BT4 integrity check. The importer
+           identifies the supported BT4 build; do not report every file missing
+           or expose a made-up BT3 network fingerprint for this offline port. */
+        sState = DATA_OFF;
+        fprintf(stderr,"native disc: BT4 profile; BT3-only data comparison is not applicable\n");
+        return;
+    }
     if (getenv("BT3_FINGERPRINT") != NULL) {
         /* BT3_FINGERPRINT=1: the gameplay fingerprint with every differing file named, then the program ends (a
            tool: port/tools/make_fingerprint.py is the other implementation of the same definition). */
@@ -277,10 +284,10 @@ void Port_VerifyStart(void) {
         fflush(stderr);
         exit(0);
     }
-    if (v == NULL && gs != NULL && strcmp(gs, "none") == 0) {
+    if (v == NULL && gs != NULL && strcmp(gs, "none") == 0 && getenv("BT3_TAG_ONLINE")==NULL) {
         return;
     }
-    if (v != NULL && atoi(v) == 0) {
+    if (PortGame_Region()!=0 || (v != NULL && atoi(v) == 0)) {
         sCheck = 0; /* no comparison with the disc, no notice; the fingerprint is still computed */
     }
     sState = sCheck ? DATA_CHECKING : DATA_OFF;

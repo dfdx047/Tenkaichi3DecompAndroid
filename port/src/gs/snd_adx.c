@@ -25,9 +25,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include "gs_internal.h"
+#include "../../../include/battle/tag_capacity.h"
 
 enum { ADXT_STAT_STOP = 0, ADXT_STAT_PLAYING = 3, ADXT_STAT_PLAYEND = 5 };
-#define MAX_PLAYERS 16
+#define MAX_PLAYERS TAG_ADX_CAPACITY
 #define FRAME 18
 #define PAN_AUTO (-128)
 #define ST_CAP 12288   /* sample pairs a stretcher holds */
@@ -45,6 +46,8 @@ typedef struct Player {
     int c1, c2;
     int hist[2][2];
     int stat, paused;
+    uint64_t testSamples;    /* non-silent samples submitted in the opt-in audio check */
+    int testAudio;
     int vol;                /* 0.1 dB, 0 = full, -960 and below = silent */
     int pan[2];             /* per input channel: -15 left .. 15 right, PAN_AUTO */
     /* the game speed's time stretch (stretch_feed): decoded sound waiting to be laid out, and the end of the
@@ -66,11 +69,12 @@ extern PortAdxView gPortAdxView[MAX_PLAYERS];
 extern int Port_NetActive(void); /* net.c */
 static int by_ticks(void) {
     extern int Port_NetSession(void); /* net.c */
+    extern int TagNet_Enabled(void);
     static int on = -1;
     if (on < 0) {
         on = getenv("BT3_SYNCTEST") != NULL || getenv("BT3_SOUND_TICKS") != NULL;
     }
-    return on || Port_NetSession();
+    return on || Port_NetSession() || TagNet_Enabled();
 }
 
 /* The length of an ADX file in vertical blanks (59.94 a second), -1 if it loops, 0 if it cannot be read. */
@@ -271,7 +275,38 @@ static void put_pcm(Player *p, SDL_AudioStream *stream, const int16_t *data, int
         fwrite(data, 1, (size_t)bytes, dump);
         fflush(dump);
     }
+    if (p->testAudio) {
+        for (int i = 0; i < bytes / 2; i++) if (data[i]) p->testSamples++;
+    }
     SDL_PutAudioStreamData(stream, data, bytes);
+}
+
+/* Reads the actual SDL decode path, not the game's reported playback state.
+ * The fixture is opt-in and uses SDL's dummy device on automated runs. */
+int Port_TagAudioProbe(int mask, int paused) {
+    uint64_t before[MAX_PLAYERS] = {0};
+    uint32_t positions[MAX_PLAYERS] = {0};
+    int pass = 1;
+    for (int i = 0; i < MAX_PLAYERS; i++) if ((uint32_t)mask & (UINT32_C(1) << i)) {
+        Player *p = &sPlayers[i];
+        if (!p->stream) return 0;
+        SDL_LockAudioStream(p->stream);
+        before[i] = p->testSamples;
+        positions[i] = p->pos;
+        pass &= p->paused == paused && SDL_GetAudioStreamGain(p->stream) > 0;
+        SDL_UnlockAudioStream(p->stream);
+    }
+    SDL_Delay(200);
+    for (int i = 0; i < MAX_PLAYERS; i++) if ((uint32_t)mask & (UINT32_C(1) << i)) {
+        Player *p = &sPlayers[i];
+        SDL_LockAudioStream(p->stream);
+        uint64_t after = p->testSamples;
+        pass &= paused ? after == before[i] && p->pos == positions[i] : after > 0 && p->pos != positions[i];
+        fprintf(stderr,"tag audio channel=%d paused=%d nonzero=%llu delta=%llu gain=%.3f\n",
+            i,p->paused,(unsigned long long)after,(unsigned long long)(after-before[i]),SDL_GetAudioStreamGain(p->stream));
+        SDL_UnlockAudioStream(p->stream);
+    }
+    return pass;
 }
 
 /* The game at another speed than its own (an online match at 120%, the Cheats tab's speed): a stream has to end
@@ -395,7 +430,7 @@ extern float PortA11y_StreamGain(const void *player); /* a11y.c: the voices are 
 static void apply_volume(Player *p) {
     if (p->stream != NULL) {
         int ch = (int)(p - sPlayers); /* (the game makes its six players in the order of include/sys/adx.h) */
-        int percent = ch == 0 ? gPortMusicPercent : ch == 1 ? gPortStagePercent : ch == 4 || ch == 5 ? gPortVoicePercent : gPortSePercent;
+        int percent = ch == 0 ? gPortMusicPercent : ch == 1 ? gPortStagePercent : ch >= 4 && ch < 14 ? gPortVoicePercent : gPortSePercent;
         SDL_SetAudioStreamGain(p->stream, p->vol <= -960 ? 0.0f : (float)pow(10.0, (double)p->vol / 200.0) * (float)percent / 100.0f * PortA11y_StreamGain(p));
     }
 }
@@ -470,6 +505,8 @@ static void start(Player *p, const char *path) {
         return; /* a frame that is only being re-run starts the stream that is playing already: it plays on */
     }
     stop(p);
+    p->testSamples = 0;
+    p->testAudio = getenv("BT3_TAG_TEST_AUDIO") != NULL;
     snprintf(p->path, sizeof(p->path), "%s", path);
     if (!device()) {
         return;

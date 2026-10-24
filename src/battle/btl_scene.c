@@ -129,7 +129,7 @@ void BtlScene_Init(s32 layerMask) {
     if (layerMask == 0) {
         gBtlScene->layerMask = BTL_SCENE_LAYER_ALL;
     }
-    BtlScene_SetCharCount(2);
+    BtlScene_SetCharCount(TagTeam_Count());
     if (Battle_IsSplitScreen()) {
         BtlScene_SetSingleView(0);
     } else {
@@ -164,6 +164,9 @@ void BtlScene_Term(void) {
 
 /* First per-frame pass: empties the record list, refreshes the character scales, runs every task's update. */
 void BtlScene_Update(void) {
+    /* A simulation step can run without a draw (headless tests, frame skip).
+       Texture requests describe this frame, never an accumulating history. */
+    EftVram_Reset();
     EftHit_BeginFrame();
     EftCam_Update();
     BtlScene_UpdateCharScales();
@@ -177,6 +180,25 @@ void BtlScene_PostUpdate(void) {
     BtlTaskList_PostUpdate(gBtlScene->root);
     BtlScene_UpdateRecords();
     EftHit_SpawnImpacts();
+}
+
+/* Effect ownership is independent of the legacy scene reset mode numbers:
+ * mode 4 is a stage group, not character 2. Hit-event bits use the low word. */
+s32 BtlScene_CharOwnerTag(s32 objId) {
+    switch (objId) {
+    case 0: return 0x800;
+    case 1: return 0x1000;
+    case 2: return 0x10000000;
+    case 3: return 0x20000000;
+    default: return objId>=4 && objId<PORT_FIGHTER_CAPACITY ? 1<<(12+objId) : 0;
+    }
+}
+
+void BtlScene_ResetCharacter(s32 objId) {
+    s32 owner = BtlScene_CharOwnerTag(objId);
+    if (gBtlScene != NULL && owner != 0) {
+        BtlTaskList_Reset(gBtlScene->root, owner);
+    }
 }
 
 /* Resets the tasks selected by mode (BTL_SCENE_RESET_*) and drops a pending stage change request. */
@@ -327,6 +349,13 @@ extern int Port_NetView(void);          /* port/src/gs/net.c: the local player's
 extern s32 BtlCam_GetPriorityView(void);
 #endif
 s32 BtlScene_IsCharInView(s32 objId) {
+    if (TagTeam_Active()) {
+        extern s32 TagTeam_CurrentViewActor(void);
+        extern s32 DemoCam_FighterActive(s32);
+        s32 actor=TagTeam_CurrentViewActor(),owner=TagTeam_CameraActor(actor);
+        return BtlScene_IsSingleView() || objId==BattleSide_GetObjId(actor) ||
+            (DemoCam_FighterActive(owner)&&objId==BattleSide_GetObjId(owner));
+    }
     if (Battle_IsSplitScreen()) {
         if (BtlScene_IsSingleView()) {
             if (EftCam_IsActive()) {
@@ -440,9 +469,16 @@ void BtlScene_CreateChar(s32 chr) {
 /* Tells a task of the given kind (0..6) attached to an object whether its time is stopped this frame. */
 s32 BtlScene_IsEffectStopped(s32 objId, s32 kind) {
     s32 result = 0;
+    if(TagTeam_Active() && (u32)objId<(u32)BtlScene_GetCharCount() && TagTeam_CinematicPaused(objId))return 1;
 
     switch (kind) {
     case 0:
+        if (TagTeam_Active() && (u32)objId < (u32)BtlScene_GetCharCount()) {
+            /* Hit-stop in a different fight must not suspend this fighter's
+               projectiles. Shared cinematics freeze their owners explicitly. */
+            return BtlScene_IsTimeStopped() || BtlScene_IsCharStopped(objId) ||
+                   BtlCharApi_IsInRushSequence(objId);
+        }
         if (BtlScene_IsAnyCharStopped()) {
             result = 1;
         }

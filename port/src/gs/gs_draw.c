@@ -22,6 +22,8 @@
 #include <SDL3/SDL.h>   /* the one window both back ends share */
 #include "gs_internal.h"
 #include "gs_draw.h"
+#include "../../../include/battle/tag_options.h"
+#include "../../../include/battle/tag_view_layout.h"
 #include "ui.h"         /* PortVideo and the window helpers */
 #include "gs_texpack.h" /* texture packs (replacement textures) */
 #include "menu_text.h"  /* editable labels in the original menu texture slots */
@@ -85,7 +87,7 @@ void GsGpu_TitlePoll(void) {
     extern int Port_DataState(void);
     static int done;
     if (!done && sWindow != NULL && Port_DataState() == 2) {
-        SDL_SetWindowTitle(sWindow, "Tenkaichi3Decomp [modified game data]");
+        SDL_SetWindowTitle(sWindow, getenv("BT3_TAG_TEAM") != NULL ? "Native Tag Team prototype [modified game data]" : "Tenkaichi3Decomp [modified game data]");
         done = 1;
     }
 }
@@ -113,6 +115,7 @@ unsigned gsFxOff;
 int gsGlowPercent = GLOW_DEFAULT;
 static int sTexPackOn = 1; /* the setting: use the texture pack (if one was found) */
 int gsAnchor;
+static int tagHudViewport;
 /* A fight's HUD in a picture wider than 4:3 (setting hud_layout, BT3_HUD=<n> for a test):
      0  the side panels at the screen's edges (as since widescreen)
      1  the same, with the health bars drawn longer, up to the timer (hud_b.c, pull request #28)
@@ -1366,6 +1369,26 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
             }
         }
     }
+    if (tagHudViewport && !tbo && gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
+        int timer=tagHudViewport==0x54;
+        int r[4],bottom=!timer && (tagHudViewport&0x20);
+        TagView_HudRect(tagHudViewport,r);
+        if(timer) {r[0]=r[1]=0;r[2]=512;r[3]=448;}
+        float scale=r[2]==512 && r[3]==448?1.0f:0.5f;
+        float x=r[0],y=r[1];
+        if(timer) { scale=0.5f; x=128.0f; }
+        float panelInset=0;
+        if(!timer && r[1]==0 && r[2]==256 && r[0]==0 && (gsAnchor==2||gsAnchor==6)) panelInset=-12;
+        if(!timer && r[1]==0 && r[2]==256 && r[0]==256 && (gsAnchor==1||gsAnchor==5)) panelInset=12;
+        if(r[2]==512 && r[3]==224) panelInset=(gsAnchor==1||gsAnchor==5)?0:
+            (gsAnchor==2||gsAnchor==6)?256:128;
+        for(uint32_t k=d.first;k<gsVertCount;k++) {
+            gsVerts[k].x=x+panelInset+gsVerts[k].x*scale;
+            gsVerts[k].y=y+(bottom?r[3]-448*scale:0)+gsVerts[k].y*scale;
+        }
+        d.scissor[0]=timer?0:(int)x*SCALE; d.scissor[1]=(int)y*SCALE;
+        d.scissor[2]=r[2]*SCALE; d.scissor[3]=r[3]*SCALE;
+    }
     d.count = gsVertCount - d.first;
     gsTargets[d.target].draws++;
     gsTargets[d.target].gen = gGsPageGen[gsTargets[d.target].fbp & 511];
@@ -1501,6 +1524,12 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
 
     if (count < 3 || gsVuVertCount + count > MAX_VU_VERTS || gsVuIdxCount + (count - 2) * 3 > MAX_VU_IDX || gsDrawCount == MAX_DRAWS ||
         gsVuUniCount == MAX_VU_UNIFORMS) {
+        if(getenv("BT3_TAG_RENDER_TRACE") && gGsFrame%150==0) {
+            static unsigned reported;
+            if(reported!=gGsFrame) { reported=gGsFrame;
+                fprintf(stderr,"tagrender geometry limit frame=%u verts=%u idx=%u uniforms=%u draws=%u\n",gGsFrame,gsVuVertCount,gsVuIdxCount,gsVuUniCount,gsDrawCount);
+            }
+        }
         return;
     }
     if (!draw_state(ctx, 0, 0, 1, &d, &us, &vs)) {
@@ -1619,6 +1648,9 @@ void GsGpu_Native(int effect) {
     uint64_t sc = gGs.scissor[0];
     GsDraw d;
 
+    if(effect==0x54 || (effect>=0x80 && effect<=0xBF)) { tagHudViewport=effect; return; }
+    if(effect==0x5F) { tagHudViewport=0; return; }
+
     /* 1 = outline. 2 (the see-through tint) is drawn by the generic table pass now (depth_clut), from the game's
        own table. */
     if (effect >= 0x15 && effect <= 0x18) {
@@ -1705,7 +1737,7 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
     pick = getenv("BT3_DISPLAY") != NULL ? atoi(getenv("BT3_DISPLAY")) : sDisplaySetting;
     sFullscreen = (getenv("BT3_FULLSCREEN") != NULL ? atoi(getenv("BT3_FULLSCREEN")) : Port_Setting("fullscreen", 0)) != 0;
     sWantAspect = want;
-    SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "Tenkaichi3Decomp");
+    SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, getenv("BT3_TAG_TEAM") != NULL ? "Native Tag Team prototype" : "Tenkaichi3Decomp");
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, w);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, h);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
@@ -1723,7 +1755,7 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
     SDL_DestroyProperties(props);
     SDL_free(displays);
     if (sWindow != NULL && !sFullscreen) {
-        SDL_SetWindowSize(sWindow, (int)((float)896 * want + 0.5f), 896);
+        SDL_SetWindowSize(sWindow, (int)((float)h * want + 0.5f), h);
     }
     fprintf(stderr, "bt3: internal resolution %dx (%d x %d)\n", gsScale, 512 * gsScale, 448 * gsScale);
     return sWindow;

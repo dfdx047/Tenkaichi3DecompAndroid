@@ -663,7 +663,7 @@ void SoloSel_Input(s32 *result) {
             if (gSoloSel->sel->flags & SOLOSEL_SEL_FORM) {
                 SS_CUR.chara = gSoloSel->sel->rowChara[SS_CUR.form];
                 if (SS_CUR.custom != 0) {
-                    SS_CUR.items = LSAVE->custom[SS_CUR.col + SS_CUR.row * SOLOSEL_COLS].set[SS_CUR.custom - 1];
+                    SS_CUR.items = SAVE_CUSTOM_AT(LSAVE, SS_CUR.col + SS_CUR.row * SOLOSEL_COLS).set[SS_CUR.custom - 1];
                 } else {
                     memset(&SS_CUR.items, 0, sizeof(LItemSet));
                 }
@@ -671,7 +671,7 @@ void SoloSel_Input(s32 *result) {
             } else {
                 SS_CUR.chara = gSoloSel->sel->rowChara[SS_CUR.col];
                 if (SS_CUR.custom != 0) {
-                    SS_CUR.items = LSAVE->custom[SS_CUR.col + SS_CUR.row * SOLOSEL_COLS].set[SS_CUR.custom - 1];
+                    SS_CUR.items = SAVE_CUSTOM_AT(LSAVE, SS_CUR.col + SS_CUR.row * SOLOSEL_COLS).set[SS_CUR.custom - 1];
                 } else {
                     memset(&SS_CUR.items, 0, sizeof(LItemSet));
                 }

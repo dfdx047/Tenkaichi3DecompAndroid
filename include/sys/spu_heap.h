@@ -9,7 +9,12 @@
  */
 
 #define SPU_HEAP_BASE 0x5010     /* first SPU address managed */
+#ifdef PORT
+/* Native audio uses host memory. Keep this in sync with snd_se.c. */
+#define SPU_HEAP_SIZE (0x1000000 - SPU_HEAP_BASE)
+#else
 #define SPU_HEAP_SIZE 0x1F0FD0   /* bytes managed: 0x5010..0x1F5FE0 */
+#endif
 #define SPU_HEAP_BLOCKS 17       /* descriptors: free and used ranges together */
 
 /* SpuBlock.state */

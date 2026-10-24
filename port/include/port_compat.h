@@ -7,6 +7,21 @@
 #define PORT_COMPAT_H
 
 #define PORT 1
+#include "plat_game.h"
+#include "battle/tag_capacity.h"
+#define PORT_FIGHTER_CAPACITY TAG_ACTOR_CAPACITY
+extern void TagContact_Clear(int actor);
+extern void TagContact_Record(int attacker, int defender);
+extern int TagContact_Has(int attacker, int defender);
+extern int TagTeam_Active(void);
+extern int TagTeam_CheckEnd(int timeUp);
+extern int TagTeam_Count(void);
+extern int TagTeam_Team(int fighter);
+extern int TagTeam_Target(int fighter);
+extern int TagTeam_IsEnemy(int a, int b);
+extern int TagTeam_ViewCount(void);
+extern int TagTeam_ViewActor(int view);
+extern int TagTeam_Player(int actor);
 
 /* The game's types: on the PS2 `long` is 64 bits. Take over include/types.h. */
 #define TYPES_H

@@ -1,5 +1,9 @@
 #include "common.h"
 #include "battle/btl_char_flag.h"
+#include "battle/tag_clash.h"
+#include "battle/tag_options.h"
+#include "battle/tag_assist.h"
+#include "battle/btl_input.h"
 
 /*
  * Clash sequences between the two fighters: 0x1D8750..0x1D9A20.
@@ -38,8 +42,8 @@ extern void BtlAct_CountAndMarkOpponent(BtlFlagChr *chr);                       
 extern f32 BtlCharApi_GetHeight(s32 objId);                                  /* height */
 extern void BtlCharApi_GetNodePos(s32 objId, s32 node, Vec4 *out);            /* world position of a model node */
 extern f32 EftStruggle_GetCamDist(s32 side, s32 type);
-extern f32 EftStruggle_GetMidDist(void);
-extern void EftStruggle_End(s32 objId);
+extern f32 EftStruggle_GetMidDist(s32 actor);
+extern void EftStruggle_EndFor(s32 actor,s32 winner);
 extern s32 BtlStage_GetPathCount(void);                                       /* number of stage paths */
 extern BtlClashPath *BtlStage_GetPath(s32 n);                            /* stage path n */
 extern s32 BtlSuper_IsThrow(BtlFlagChr *chr, s32 cls);
@@ -57,9 +61,98 @@ typedef struct BtlClashProgress {
 } BtlClashProgress;
 extern BtlClashProgress *gProgress;
 
+/* Two independent native pairs can coexist. The original serialized roster is
+ * left intact; actions access their own pair rather than one global exchange. */
+static BtlClashPair pairs[PORT_FIGHTER_CAPACITY/2];
+extern void *memset(void *, s32, u32);
+
+static BtlClashPair *pair_for(s32 actor) {
+    s32 i;
+    for(i=0;i<PORT_FIGHTER_CAPACITY/2;i++) if(pairs[i].used &&
+        (pairs[i].actor[0]==actor || pairs[i].actor[1]==actor)) return &pairs[i];
+    return NULL;
+}
+void BtlClash_Reset(void) { memset(pairs,0,sizeof(pairs)); }
+s32 BtlClash_Join(s32 a,s32 b) {
+    BtlClashPair *pa=pair_for(a), *pb=pair_for(b);
+    s32 i;
+    if(a<0 || b<0 || a>=TagTeam_Count() || b>=TagTeam_Count() || !TagTeam_IsEnemy(a,b)) return 0;
+    if(pa || pb) return pa && pa==pb;
+    for(i=0;i<PORT_FIGHTER_CAPACITY/2;i++) if(!pairs[i].used) {
+        BtlClashPair *p=&pairs[i];
+        memset(p,0,sizeof(*p)); p->used=1;
+        p->actor[0]=a<b?a:b; p->actor[1]=a<b?b:a;
+        p->c.prevPick=-1;
+        {
+            u32 seed=Port_TagOption(TAG_OPT_CLASH_QTE)?BtlChar_Rand():1;
+            TagSequence_Init(&p->sequence[0],seed);
+            TagSequence_Init(&p->sequence[1],seed);
+        }
+        return 1;
+    }
+    return 0;
+}
+s32 BtlClash_Opponent(s32 actor) {
+    BtlClashPair *p=pair_for(actor);
+    return p ? p->actor[actor==p->actor[0]?1:0] : -1;
+}
+s32 BtlClash_Side(s32 actor) {
+    BtlClashPair *p=pair_for(actor);
+    return p ? actor!=p->actor[0] : actor&1;
+}
+void *BtlClash_Exchange(s32 actor) {
+    BtlClashPair *p=pair_for(actor);
+    return p ? &p->c : &gBtlChars->clashC;
+}
+f32 BtlClash_Bias(s32 actor) {
+    BtlClashPair *p=pair_for(actor);
+    return p ? p->a.bias : 0.0f;
+}
+s32 BtlClash_State(s32 actor) {
+    BtlClashPair *p=pair_for(actor);
+    return p ? p->state : 0;
+}
+s32 BtlClash_SequenceActive(s32 actor) {
+    BtlClashPair *p=pair_for(actor);
+    return Port_TagOption(TAG_OPT_CLASH_QTE) && p &&
+        (p->state==1 || p->state==2 || p->state==6 || p->state==7 || p->state==9 || p->state==10);
+}
+s32 BtlClash_SequenceInput(s32 actor) {
+    BtlClashPair *p=pair_for(actor);
+    BtlInputChr *chr=(BtlInputChr *)BtlChar_Get(actor);
+    TagClashSequence *s;
+    u32 pressed;
+    if(!BtlClash_SequenceActive(actor)) return 0;
+    s=&p->sequence[actor==p->actor[1]];
+    pressed=chr->input.pressed>>27;
+    if(chr->injectOn) {
+        extern s32 BtlAiMgr_GetLevel(s32);
+        s32 level=BtlAiMgr_GetLevel(actor), interval;
+        if(level<0) pressed=0;
+        else {
+            if(level>29) level=29;
+            interval=18-level*12/29;
+            pressed=p->age%interval==0 ? 1u<<s->button : 0;
+        }
+    }
+    return TagSequence_Press(s,p->age,pressed);
+}
+s32 BtlClash_SequencePrompt(s32 actor) {
+    BtlClashPair *p=pair_for(actor);
+    BtlInputChr *chr=(BtlInputChr *)BtlChar_Get(actor);
+    extern s32 BtlCharApi_GetButtonIcon(void *,u32);
+    if(!BtlClash_SequenceActive(actor) || chr->injectOn) return -1;
+    return BtlCharApi_GetButtonIcon(chr,27+p->sequence[actor==p->actor[1]].button);
+}
+static s32 random_below(s32 n) { return n>1 ? (BtlChar_Rand()>>2) % (u32)n : 0; }
+static s32 is_clashing(s32 actor) {
+    s32 action=BtlAct_GetCurrent(BtlChar_Get(actor));
+    return (action>=0x130 && action<=0x132) || (action>=0xFA && action<=0xFC);
+}
+
 /* 1 while both fighters are in actions 0x130..0x132. */
-s32 BtlClash_BothInClashA(void) {
-    if (BtlCharApi_IsInClashA(0) && BtlCharApi_IsInClashA(1)) {
+s32 BtlClash_BothInClashA(BtlClashPair *pair) {
+    if (BtlCharApi_IsInClashA(pair->actor[0]) && BtlCharApi_IsInClashA(pair->actor[1])) {
         return 1;
     }
     return 0;
@@ -73,13 +166,13 @@ void BtlClash_HoldClashA(s32 player) {
 }
 
 /* 1 while both fighters are in action 0xFA. */
-s32 BtlClash_BothInActionFA(void) {
-    s32 action = BtlAct_GetCurrent(BtlChar_Get(0));
+s32 BtlClash_BothInActionFA(BtlClashPair *pair) {
+    s32 action = BtlAct_GetCurrent(BtlChar_Get(pair->actor[0]));
 
     if (action != 0xFA) {
         return 0;
     }
-    return BtlAct_GetCurrent(BtlChar_Get(1)) == action;
+    return BtlAct_GetCurrent(BtlChar_Get(pair->actor[1])) == action;
 }
 
 /* Raises flag 0xBF on a fighter still in action 0xFA (ends it). */
@@ -92,23 +185,23 @@ void BtlClash_EndActionFA(s32 player) {
 }
 
 /* 1 while both fighters are in action 0xFB. */
-s32 BtlClash_BothInActionFB(void) {
-    s32 action = BtlAct_GetCurrent(BtlChar_Get(0));
+s32 BtlClash_BothInActionFB(BtlClashPair *pair) {
+    s32 action = BtlAct_GetCurrent(BtlChar_Get(pair->actor[0]));
 
     if (action != 0xFB) {
         return 0;
     }
-    return BtlAct_GetCurrent(BtlChar_Get(1)) == action;
+    return BtlAct_GetCurrent(BtlChar_Get(pair->actor[1])) == action;
 }
 
 /* 1 while both fighters are in action 0xFC. */
-s32 BtlClash_BothInActionFC(void) {
-    s32 action = BtlAct_GetCurrent(BtlChar_Get(0));
+s32 BtlClash_BothInActionFC(BtlClashPair *pair) {
+    s32 action = BtlAct_GetCurrent(BtlChar_Get(pair->actor[0]));
 
     if (action != 0xFC) {
         return 0;
     }
-    return BtlAct_GetCurrent(BtlChar_Get(1)) == action;
+    return BtlAct_GetCurrent(BtlChar_Get(pair->actor[1])) == action;
 }
 
 /* Raises flag 0xC6 on a fighter still in action 0xFC (ends it). */
@@ -121,7 +214,7 @@ void BtlClash_EndActionFC(s32 player) {
 }
 
 /* Clash A camera: a one-frame cut orbiting one fighter (type 0 wide, 1 from the side, 2 close on node 0x30). */
-void BtlClash_SetOrbitCut(s32 player, s32 type) {
+void BtlClash_SetOrbitCut(BtlClashPair *pair, s32 side, s32 type) {
     Vec4 d;
     BtlFlagChr *chr;
     s32 nodeA = 3;
@@ -130,6 +223,8 @@ void BtlClash_SetOrbitCut(s32 player, s32 type) {
     f32 yaw;
     f32 dist;
 
+    s32 player = pair->actor[side];
+    if (TagTeam_Active() && !Port_TagOption(TAG_OPT_SHARED_CLASH)) return;
     chr = BtlChar_Get(player);
     pitch = 0.0f;
     BtlOpp_GetDelta(chr, &d);
@@ -138,7 +233,7 @@ void BtlClash_SetOrbitCut(s32 player, s32 type) {
     Vec3_Normalize(&d, &d);
     switch (type) {
     case 0:
-        if (player == 0) {
+        if (side == 0) {
             dist = 2.4f;
         } else {
             dist = -2.4f;
@@ -149,7 +244,7 @@ void BtlClash_SetOrbitCut(s32 player, s32 type) {
         dist += EftStruggle_GetCamDist(player, type);
         break;
     case 1:
-        if (player == 0) {
+        if (side == 0) {
             dist = 0.5f;
         } else {
             dist = -0.5f;
@@ -174,37 +269,38 @@ void BtlClash_SetOrbitCut(s32 player, s32 type) {
 }
 
 /* Clash A camera: a one-frame cut around the point between the fighters, swinging with the balance. */
-void BtlClash_SetMidCut(Vec4 *mid, f32 bias) {
+void BtlClash_SetMidCut(BtlClashPair *pair, Vec4 *mid, f32 bias) {
     Vec4 d;
     Vec4 look;
     Vec4 a;
     Vec4 b;
-    BtlFlagChr *chr = BtlChar_Get(0);
+    BtlFlagChr *chr = BtlChar_Get(pair->actor[0]);
     f32 ang = 1.5707963f;
     f32 half;
     f32 base;
     f32 yaw;
     f32 pitch;
 
+    if (TagTeam_Active() && !Port_TagOption(TAG_OPT_SHARED_CLASH)) return;
     BtlOpp_GetDelta(chr, &d);
     half = 0.5f;
     ang = bias * ang;
     base = 50.0f;
     Vec3_Normalize(&d, &d);
-    BtlCharApi_GetNodePos(0, 0x11, &a);
+    BtlCharApi_GetNodePos(pair->actor[0], 0x11, &a);
     ang = ang * half;
-    BtlCharApi_GetNodePos(1, 0x11, &b);
+    BtlCharApi_GetNodePos(pair->actor[1], 0x11, &b);
     Vec4_Lerp(&look, &b, &a, bias * 0.6f + half);
     ang = ang + -1.5707963f;
     yaw = BtlUtil_WrapAngle(atan2f(d.x, d.z) + ang);
     pitch = -Mathf_Asin(d.y);
     pitch *= bias;
     ChrCam_SetCut(chr, mid, &D_002EC2A0, mid, &D_002EC2A0, &look, &D_002EC2A0, -1, yaw, 0.0f, pitch, 0.0f,
-                  EftStruggle_GetMidDist() + base, 0.0f, -1, -1, -1, 1, 0x45);
+                  EftStruggle_GetMidDist(pair->actor[0]) + base, 0.0f, -1, -1, -1, 1, 0x45);
 }
 
 /* Clash C camera: a one-frame cut placed at the first point of a stage path, looking along its angles. */
-void BtlClash_SetPathCut(s32 n) {
+void BtlClash_SetPathCut(BtlClashPair *pair, s32 n) {
     Vec4 pos;
     Vec4 look;
     BtlClashPath *path = BtlStage_GetPath(n);
@@ -220,7 +316,7 @@ void BtlClash_SetPathCut(s32 n) {
         look.y = pos.y - sinf(p[4]);
         look.z = pos.z + cosf(p[5]);
         look.w = 1.0f;
-        ChrCam_SetCut(BtlChar_Get(0), &pos, &D_002EC2A0, &pos, &D_002EC2A0, &look, &D_002EC2A0, -1, 0.0f, 0.0f, 0.0f,
+        ChrCam_SetCut(BtlChar_Get(pair->actor[0]), &pos, &D_002EC2A0, &pos, &D_002EC2A0, &look, &D_002EC2A0, -1, 0.0f, 0.0f, 0.0f,
                       0.0f, 0.0f, 0.0f, -1, -1, -1, 1, 0x45);
     }
 }
@@ -233,15 +329,19 @@ f32 BtlClash_CalcBias(s32 lead) {
 }
 
 /* Clash A, one frame. Returns the next state (0 when it is over). */
-s32 BtlClash_UpdateA(s32 state) {
+s32 BtlClash_UpdateA(BtlClashPair *pair, s32 state) {
     Vec4 a;
     Vec4 b;
-    BtlFlagRoster *roster = gBtlChars;
-    BtlFlagChr *chr0 = BtlChar_Get(0);
-    BtlFlagChr *chr1 = BtlChar_Get(1);
-    s32 count0 = chr0->clashCountA;
-    BtlClashA *c = &roster->clashA;
-    s32 count1 = chr1->clashCountA;
+    BtlFlagChr *chr0 = BtlChar_Get(pair->actor[0]);
+    BtlFlagChr *chr1 = BtlChar_Get(pair->actor[1]);
+    s32 count0 = chr0->clashCountA * TagAssist_Multiplier(pair->actor[0])/100;
+    BtlClashA *c = &pair->a;
+    s32 count1 = chr1->clashCountA * TagAssist_Multiplier(pair->actor[1])/100;
+
+    if(Port_TagOption(TAG_OPT_CLASH_QTE)) {
+        count0=pair->sequence[0].score*TagAssist_Multiplier(pair->actor[0])/100;
+        count1=pair->sequence[1].score*TagAssist_Multiplier(pair->actor[1])/100;
+    }
 
     switch (state) {
     case 1:
@@ -258,9 +358,9 @@ s32 BtlClash_UpdateA(s32 state) {
             BtlChar_PlayVoice(chr1, 0x14);
         }
         if (c->timer < 0x1E) {
-            BtlClash_SetOrbitCut(0, 0);
+            BtlClash_SetOrbitCut(pair, 0, 0);
         } else if (c->timer < 0x3C) {
-            BtlClash_SetOrbitCut(1, 0);
+            BtlClash_SetOrbitCut(pair, 1, 0);
         } else {
             if (count1 < count0) {
                 c->lead++;
@@ -269,11 +369,11 @@ s32 BtlClash_UpdateA(s32 state) {
                 c->lead--;
             }
             if (c->bias < -0.64f) {
-                BtlClash_SetOrbitCut(0, 1);
+                BtlClash_SetOrbitCut(pair, 0, 1);
             } else if (0.64f < c->bias) {
-                BtlClash_SetOrbitCut(1, 1);
+                BtlClash_SetOrbitCut(pair, 1, 1);
             } else {
-                BtlClash_SetMidCut(&c->mid, c->bias);
+                BtlClash_SetMidCut(pair, &c->mid, c->bias);
             }
         }
         c->timer++;
@@ -294,9 +394,9 @@ s32 BtlClash_UpdateA(s32 state) {
             }
         }
         if (c->lead > 0) {
-            BtlClash_SetOrbitCut(0, 2);
+            BtlClash_SetOrbitCut(pair, 0, 2);
         } else {
-            BtlClash_SetOrbitCut(1, 2);
+            BtlClash_SetOrbitCut(pair, 1, 2);
         }
         c->timer++;
         if (c->timer >= 0x10) {
@@ -310,7 +410,7 @@ s32 BtlClash_UpdateA(s32 state) {
         } else {
             c->lead -= 4;
         }
-        BtlClash_SetMidCut(&c->mid, c->bias);
+        BtlClash_SetMidCut(pair, &c->mid, c->bias);
         if (__builtin_abs(c->lead) >= 0x47) {
             c->timer = 0;
             state++;
@@ -344,10 +444,11 @@ s32 BtlClash_UpdateA(s32 state) {
             if (BtlSuper_IsThrow(winner, cls)) {
                 BtlColl_StartThrow(winner, loser, cls, BtlSuper_GetFlags(winner, cls));
                 BtlChar_SetHeldFlag(winner, 0xA0);
-                EftStruggle_End(winner->objId);
+                EftStruggle_EndFor(winner->objId,winner->objId);
             } else {
                 damage = BtlSuper_GetDamage(winner, cls, 0, 1);
                 damage += BtlSuper_GetDamage(loser, loserCls, 0, 1) / 2;
+                damage = damage*TagAssist_DamageMultiplier(pair->actor[0],pair->actor[1])/100;
                 switch (cls) {
                 case 2:
                     flags = 0x800000;
@@ -362,32 +463,32 @@ s32 BtlClash_UpdateA(s32 state) {
                 BtlMember_Damage(loser, damage, flags);
                 BtlChar_PlayVoice(loser, 0x16);
                 BtlCharSnd_PlayStream(loser, 0x8D31);
-                EftStruggle_End(-1);
+                EftStruggle_EndFor(winner->objId,-1);
             }
             BtlChar_RaiseFirstClash(winner);
-            c->winner = winner->player;
+            c->winner = winner->objId;
         }
-        if (c->winner == 0) {
-            BtlClash_SetOrbitCut(1, 0);
+        if (c->winner == pair->actor[0]) {
+            BtlClash_SetOrbitCut(pair, 1, 0);
         } else {
-            BtlClash_SetOrbitCut(0, 0);
+            BtlClash_SetOrbitCut(pair, 0, 0);
         }
         c->lead = 0;
         state = 0;
         break;
     }
     c->bias = BtlClash_CalcBias(c->lead);
-    BtlCharApi_GetNodePos(0, 0x11, &a);
-    BtlCharApi_GetNodePos(1, 0x11, &b);
+    BtlCharApi_GetNodePos(pair->actor[0], 0x11, &a);
+    BtlCharApi_GetNodePos(pair->actor[1], 0x11, &b);
     Vec4_Lerp(&c->mid, &b, &a, c->bias * 0.5f + 0.5f);
     return state;
 }
 
 /* Clash B, one frame. Returns the next state (0 when it is over). */
-s32 BtlClash_UpdateB(s32 state) {
-    BtlClashB *c = &gBtlChars->clashB;
-    BtlFlagChr *chr0 = BtlChar_Get(0);
-    BtlFlagChr *chr1 = BtlChar_Get(1);
+s32 BtlClash_UpdateB(BtlClashPair *pair, s32 state) {
+    BtlClashB *c = &pair->b;
+    BtlFlagChr *chr0 = BtlChar_Get(pair->actor[0]);
+    BtlFlagChr *chr1 = BtlChar_Get(pair->actor[1]);
 
     switch (state) {
     case 6:
@@ -407,10 +508,10 @@ s32 BtlClash_UpdateB(s32 state) {
             c->timer = 0;
             state = 8;
         }
-        if (!BtlClash_BothInActionFA()) {
+        if (!BtlClash_BothInActionFA(pair)) {
             state = 0;
-            BtlClash_EndActionFA(0);
-            BtlClash_EndActionFA(1);
+            BtlClash_EndActionFA(pair->actor[0]);
+            BtlClash_EndActionFA(pair->actor[1]);
         }
         break;
     case 8:
@@ -428,17 +529,17 @@ s32 BtlClash_UpdateB(s32 state) {
                 win = BtlChar_FrameMod(2) == 0;
             }
             lose = !win;
-            winner = BtlChar_Get(win);
-            loser = BtlChar_Get(lose);
+            winner = BtlChar_Get(pair->actor[win]);
+            loser = BtlChar_Get(pair->actor[lose]);
             BtlChar_SetFlag(winner, 0xBF);
             BtlChar_SetFlag(loser, 0xC0);
             BtlChar_PlayVoice(winner, 0x19);
             BtlChar_RaiseFirstClash(winner);
             ChrCam_EndCut(chr0);
-            c->winner = win;
+            c->winner = pair->actor[win];
         }
         c->timer++;
-        if (!BtlClash_BothInActionFA()) {
+        if (!BtlClash_BothInActionFA(pair)) {
             state = 0;
         }
         break;
@@ -447,10 +548,10 @@ s32 BtlClash_UpdateB(s32 state) {
 }
 
 /* Clash C, one frame: every exchange moves the pair to a random point of a random stage path. */
-s32 BtlClash_UpdateC(s32 state) {
-    BtlClashC *c = &gBtlChars->clashC;
-    BtlFlagChr *chr0 = BtlChar_Get(0);
-    BtlFlagChr *chr1 = BtlChar_Get(1);
+s32 BtlClash_UpdateC(BtlClashPair *pair, s32 state) {
+    BtlClashC *c = &pair->c;
+    BtlFlagChr *chr0 = BtlChar_Get(pair->actor[0]);
+    BtlFlagChr *chr1 = BtlChar_Get(pair->actor[1]);
     BtlClashPath *path;
     BtlFlagChr *winner;
     BtlFlagChr *loser;
@@ -458,11 +559,11 @@ s32 BtlClash_UpdateC(s32 state) {
     switch (state) {
     case 9:
         c->count = 0;
-        c->path = (BtlChar_Rand() >> 2) % (u32)(BtlStage_GetPathCount() - 1) + 1;
+        c->path = random_below(BtlStage_GetPathCount() - 1) + 1;
         c->hold = (BtlChar_Rand() >> 2) % 10 < 7 ? 2 : 1;
         path = BtlStage_GetPath(c->path);
         if (path != NULL) {
-            c->point = (BtlChar_Rand() >> 2) % (u32)(path->end - path->first) + path->first;
+            c->point = random_below(path->end - path->first) + path->first;
         } else {
             c->point = 0;
         }
@@ -476,17 +577,24 @@ s32 BtlClash_UpdateC(s32 state) {
         state++;
         break;
     case 10:
-        if (BtlClash_BothInActionFC()) {
-            BtlClash_SetPathCut(c->path);
+        if (BtlClash_BothInActionFC(pair)) {
+            BtlClash_SetPathCut(pair, c->path);
         }
         if (BtlChar_TestFlag(chr0, 0xC4) && BtlChar_TestFlag(chr1, 0xC4)) {
-            if (chr0->unkE58 >= 0) {
+            if (Port_TagOption(TAG_OPT_CLASH_QTE)) {
+                chr0->clashCountB=pair->sequence[0].score;
+                chr1->clashCountB=pair->sequence[1].score;
+                /* Resolve ties after a short extension; never wait forever
+                   for an absent controller to provide a deciding input. */
+                if(pair->age>=300 && chr0->clashCountB==chr1->clashCountB)
+                    BtlAct_CountAndMarkOpponent((BtlChar_Rand()&1)?chr0:chr1);
+            } else if (chr0->unkE58 >= 0) {
                 BtlAct_CountAndMarkOpponent(chr0);
             } else {
                 BtlAct_CountAndMarkOpponent(chr1);
             }
             c->count++;
-            if (c->count >= 7 && chr0->clashCountB != chr1->clashCountB) {
+            if ((Port_TagOption(TAG_OPT_CLASH_QTE) ? pair->age>=240 : c->count>=7) && chr0->clashCountB != chr1->clashCountB) {
                 if (chr1->clashCountB < chr0->clashCountB) {
                     winner = chr0;
                     loser = chr1;
@@ -501,23 +609,23 @@ s32 BtlClash_UpdateC(s32 state) {
                 c->hold--;
                 if (c->hold <= 0) {
                     s32 prev = c->path;
-                    s32 n = (BtlChar_Rand() >> 2) % (u32)(BtlStage_GetPathCount() - 2);
+                    s32 n = random_below(BtlStage_GetPathCount() - 2);
                     c->path = n + 1;
-                    if (c->path >= prev) {
+                    if (c->path >= prev && BtlStage_GetPathCount() > 2) {
                         c->path = n + 2;
                     }
                     c->hold = (BtlChar_Rand() >> 2) % 10 < 7 ? 2 : 1;
                     c->point = 0;
                     path = BtlStage_GetPath(c->path);
                     if (path != NULL) {
-                        c->point = (BtlChar_Rand() >> 2) % (u32)(path->end - path->first) + path->first;
+                        c->point = random_below(path->end - path->first) + path->first;
                     }
                 } else {
                     path = BtlStage_GetPath(c->path);
                     if (path != NULL) {
                         s32 prev = c->point;
-                        c->point = (BtlChar_Rand() >> 2) % (u32)(path->end - path->first - 1) + path->first;
-                        if (c->point >= prev) {
+                        c->point = random_below(path->end - path->first - 1) + path->first;
+                        if (c->point >= prev && path->end-path->first > 1) {
                             c->point++;
                         }
                     } else {
@@ -530,14 +638,14 @@ s32 BtlClash_UpdateC(s32 state) {
                 BtlChar_SetFlag(chr1, 0xC5);
             }
         }
-        if (!BtlClash_BothInActionFB() && !BtlClash_BothInActionFC()) {
+        if (!BtlClash_BothInActionFB(pair) && !BtlClash_BothInActionFC(pair)) {
             state = 0;
-            BtlClash_EndActionFC(0);
-            BtlClash_EndActionFC(1);
+            BtlClash_EndActionFC(pair->actor[0]);
+            BtlClash_EndActionFC(pair->actor[1]);
         }
         break;
     case 11:
-        if (!BtlClash_BothInActionFC()) {
+        if (!BtlClash_BothInActionFC(pair)) {
             state = 0;
         }
         break;
@@ -545,49 +653,59 @@ s32 BtlClash_UpdateC(s32 state) {
     return state;
 }
 
-/* Runs the clash sequences: starts one when both fighters enter a clash action, then steps it. */
-void BtlClash_Update(void) {
-    s32 *state = &gBtlChars->clashState;
-
-    if (*state == 0) {
-        if (BtlClash_BothInClashA()) {
-            *state = 1;
+/* Release only the participants. Never leave a waiting clash action behind
+ * when the other actor is interrupted, KO'd, transformed, or removed. */
+static void release_pair(BtlClashPair *p) {
+    s32 i;
+    for(i=0;i<2;i++) {
+        s32 actor=p->actor[i];
+        BtlFlagChr *chr=BtlChar_Get(actor);
+        BtlClash_HoldClashA(actor);
+        BtlClash_EndActionFA(actor);
+        BtlClash_EndActionFC(actor);
+        if(BtlAct_GetCurrent(chr)==0xFB) {
+            extern void BtlAct_Request(BtlFlagChr *,s32);
+            BtlAct_Request(chr,0xB);
         }
-        if (BtlClash_BothInActionFA()) {
-            *state = 6;
-        }
-        if (BtlClash_BothInActionFB()) {
-            *state = 9;
-        }
+        ChrCam_EndCut(chr);
     }
-    switch (*state) {
-    case 0:
-        BtlClash_HoldClashA(0);
-        BtlClash_HoldClashA(1);
-        BtlClash_EndActionFA(0);
-        BtlClash_EndActionFA(1);
-        break;
-    case 1:
-    case 2:
-    case 3:
-    case 4:
-    case 5:
-        *state = BtlClash_UpdateA(*state);
-        if (!BtlClash_BothInClashA()) {
-            BtlClash_HoldClashA(0);
-            BtlClash_HoldClashA(1);
-            *state = 0;
+    p->used=0;
+}
+
+void BtlClash_Update(void) {
+    s32 i;
+    /* Native duel/script actions historically start together without an
+     * explicit collision callback. Preserve that path only for a real duel. */
+    if(!TagTeam_Active() && !pair_for(0) && is_clashing(0) && is_clashing(1)) BtlClash_Join(0,1);
+    for(i=0;i<PORT_FIGHTER_CAPACITY/2;i++) {
+        BtlClashPair *pair=&pairs[i];
+        s32 *state=&pair->state;
+        if(!pair->used) continue;
+        {
+            extern s32 BtlChar_IsFrozen(BtlFlagChr *);
+            if(BtlChar_IsFrozen(BtlChar_Get(pair->actor[0])) ||
+               BtlChar_IsFrozen(BtlChar_Get(pair->actor[1]))) continue;
         }
-        break;
-    case 6:
-    case 7:
-    case 8:
-        *state = BtlClash_UpdateB(*state);
-        break;
-    case 9:
-    case 10:
-    case 11:
-        *state = BtlClash_UpdateC(*state);
-        break;
+        pair->age++;
+        if(*state==0) {
+            if(BtlClash_BothInClashA(pair)) *state=1;
+            else if(BtlClash_BothInActionFA(pair)) *state=6;
+            else if(BtlClash_BothInActionFB(pair)) *state=9;
+            else if(pair->age>30) release_pair(pair);
+            /* Collision flags need one action update before both are ready. */
+            if(!*state) continue;
+        }
+        if(*state<=5) {
+            *state=BtlClash_UpdateA(pair,*state);
+            if(!BtlClash_BothInClashA(pair)) *state=0;
+        } else if(*state<=8) *state=BtlClash_UpdateB(pair,*state);
+        else *state=BtlClash_UpdateC(pair,*state);
+        /* A broken/missing stage path cannot trap the battle indefinitely. */
+        if(!*state || pair->age>900) release_pair(pair);
+    }
+    for(i=0;i<TagTeam_Count();i++) if(!pair_for(i) && !TagAssist_Active(i) && is_clashing(i)) {
+        BtlClash_HoldClashA(i);
+        BtlClash_EndActionFA(i);
+        BtlClash_EndActionFC(i);
     }
 }

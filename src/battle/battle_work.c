@@ -103,8 +103,12 @@ s32 Battle_Load(void) {
     BtlScript_Init();
     BtlLoad_PushInitialJob();
     Load_RunBlocking();
-    BattleSide_SetObjId(0, BtlObj_CreateChara(BattleSide_GetModelSlot(0)));
-    BattleSide_SetObjId(1, BtlObj_CreateChara(BattleSide_GetModelSlot(1)));
+    if (!TagTeam_Active()) {
+        s32 fighter;
+        for (fighter = 0; fighter < TagTeam_Count(); fighter++) {
+            BattleSide_SetObjId(fighter, BtlObj_CreateChara(BattleSide_GetModelSlot(fighter)));
+        }
+    }
     return 1;
 }
 

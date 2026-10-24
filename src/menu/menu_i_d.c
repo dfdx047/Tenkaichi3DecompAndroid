@@ -852,7 +852,7 @@ void EntrySel_Input(s32 *result) {
                     ES_CUR.items = TOUR_SAVE->rec[ES_CUR.recCol + ES_CUR.recRow * 7].items;
                 } else if (ES_CUR.custom != 0) {
                     ES_CUR.items =
-                        *(TourItemSet *)gSaveData->custom[ES_CUR.row * ESEL_COLS + ES_CUR.col].item[ES_CUR.custom - 1];
+                        *(TourItemSet *)SAVE_CUSTOM_AT(gSaveData, ES_CUR.row * ESEL_COLS + ES_CUR.col).item[ES_CUR.custom - 1];
                 } else {
                     memset(&ES_CUR.items, 0, 16);
                 }
@@ -883,7 +883,7 @@ void EntrySel_Input(s32 *result) {
                     slot = ES_CUR.col + ES_CUR.row * ESEL_COLS;
                 }
                 if (ES_CUR.custom != 0) {
-                    ES_CUR.items = *(TourItemSet *)gSaveData->custom[slot].item[ES_CUR.custom - 1];
+                    ES_CUR.items = *(TourItemSet *)SAVE_CUSTOM_AT(gSaveData, slot).item[ES_CUR.custom - 1];
                 } else {
                     memset(&ES_CUR.items, 0, 16);
                 }
@@ -1127,6 +1127,10 @@ s32 Tour_Main(void) {
                 Adx_StopAll();
                 gProgress->mode = 33;
                 gSaveData->unkA0C++;
+#ifdef PORT
+                { extern s32 TagSession_Selected(void);extern void TagSession_Open(void);
+                  if(TagSession_Selected()) {TagSession_Open();result=0;done=1;} }
+#endif
                 if (gSaveData->unkA0C >= TOUR_HOURS) {
                     gSaveData->unkA0C = 0;
                 }

@@ -1,4 +1,5 @@
 #include "common.h"
+#include "battle/tag_team.h"
 #include "battle/battle_work.h"
 #include "battle/battle_setup.h"
 #include "battle/btl_seq.h"
@@ -19,8 +20,10 @@
    the training mode's guide voice lines, and with n stages added the first n of them were replaced by stage
    files. Found 2026-10-08 while listing the file ids for added characters.) */
 #define PORT_ADDED_STAGE_FILE(stage) (0xD48 + 70000 + ((stage) - 0x24))
-#define BTL_STAGE_MODEL(stage) ((stage) >= 0x24 ? PORT_ADDED_STAGE_FILE(stage) : (stage) + BTL_FILE_STAGE)
-#define BTL_STAGE_BANK(stage) (((stage) >= 0x24 ? 0 : (stage)) + BTL_FILE_SND_STAGE)
+#define BTL_STAGE_MODEL(stage) (PortGame_IsBT4() ? 1523+(stage) : (stage) >= 0x24 ? PORT_ADDED_STAGE_FILE(stage) : (stage) + BTL_FILE_STAGE)
+/* The final two native stage packages also have no matching sound bank:
+   0x14E+34/35 are already model files, not SND containers. */
+#define BTL_STAGE_BANK(stage) (PortGame_IsBT4()?1424+(stage):((stage)>=0x22?0:(stage))+BTL_FILE_SND_STAGE)
 #else
 #define BTL_STAGE_MODEL(stage) ((stage) + BTL_FILE_STAGE)
 #define BTL_STAGE_BANK(stage) ((stage) + BTL_FILE_SND_STAGE)
@@ -200,10 +203,11 @@ s32 BtlLoad_StepStageReload(BtlJob *job) {
     case 1:
         BtlLoad_BeginStageSwap();
 #ifdef PORT
-        /* PC build: a stage added from outside the disc (id 0x24 on) has one model only, and the file id its
+        /* The last two native arenas have empty split packages. They, and
+           stages added from outside the disc (id 0x24 on), use one model, and the file id an added stage's
            split-screen model would have belongs to other files (the menu archives, the stage transitions): it
            is loaded for split screen too. The disc's own stages keep their lighter split-screen model. */
-        if (Battle_GetStage() >= 0x24) {
+        if (PortGame_IsBT4() || Battle_GetStage() >= 0x22) {
             id = BTL_STAGE_MODEL(Battle_GetStage());
         } else
 #endif
@@ -326,6 +330,10 @@ s32 BtlLoad_StepObject(BtlJob *job) {
     switch (job->state) {
     case 0:
         Battle_GetWork()->flags |= BATTLE_FLAG_LOAD_OBJECT;
+#ifdef PORT
+        { extern void Port_ModelRequestTrace(s32,s32,s32,s32,s32);
+          Port_ModelRequestTrace(job->side,100+job->kind,job->chara,job->animChara,job->unk1C); }
+#endif
         id = job->chara + BTL_FILE_OBJECT;
         if (job->chara < 0x100) {
             if (job->unk1C != 0) {
@@ -334,6 +342,7 @@ s32 BtlLoad_StepObject(BtlJob *job) {
                 id = job->chara * 10 + job->animChara + BTL_FILE_CHARA;
             }
         }
+        if (job->chara<0x100) id=PortGame_Model(job->chara,job->animChara,job->unk1C);
         gBtlLoadHandle = BtlRes_Request(0, id, -1, -1);
         job->state++;
         return 0;
@@ -397,15 +406,20 @@ s32 BtlLoad_StepChara(BtlJob *job) {
 
     switch (job->state) {
     case 0:
+#ifdef PORT
+        { extern void Port_ModelRequestTrace(s32,s32,s32,s32,s32);
+          Port_ModelRequestTrace(job->side,job->modelOnly,job->chara,job->costume,job->variant); }
+#endif
         if (job->variant != 0) {
             model = job->chara * 10 + job->costume + (BTL_FILE_CHARA + 4);
         } else {
             model = job->chara * 10 + job->costume + BTL_FILE_CHARA;
         }
+        model = PortGame_Model(job->chara,job->costume,job->variant);
         if (job->modelOnly == 0) {
-            file8 = job->animChara * 10 + (BTL_FILE_CHARA + 8);
-            file9 = job->unk1C * 10 + (BTL_FILE_CHARA + 9);
-            voice = job->voiceChara + ((gSaveData->flags & SAVE_FLAG_VOICE) ? BTL_FILE_VOICE_ALT : BTL_FILE_VOICE);
+            file8 = PortGame_Animation(job->animChara);
+            file9 = PortGame_Combat(job->unk1C);
+            voice = PortGame_Voice(job->voiceChara,(gSaveData->flags & SAVE_FLAG_VOICE)!=0);
             BtlRes_Reload(BattleSide_GetModelSlot(job->side), model, file8, file9);
             res->bank = File_Request3(voice, res->bank, res->bankSize);
             if (!BtlCtrl_IsSwitching(job->side)) {
@@ -416,7 +430,7 @@ s32 BtlLoad_StepChara(BtlJob *job) {
                     member = BtlSide_GetActiveMember(job->side);
                 }
                 next = BattleSide_GetMember(job->side, member);
-                next->buf[1] = File_Request3(job->chara * 2 + job->side + BTL_FILE_CHARA_DATA, next->buf[1], BTL_MEMBER_BUF_SIZE);
+                next->buf[1] = File_Request3(PortGame_Member(job->chara,TagTeam_NativeSide(job->side)), next->buf[1], BTL_MEMBER_BUF_SIZE);
             }
         } else {
             BtlRes_Reload(BattleSide_GetModelSlot(job->side), model, -1, -1);
@@ -452,11 +466,7 @@ s32 BtlLoad_StepChara(BtlJob *job) {
         job->state++;
         BtlRes_CommitReload2();
         if (job->modelOnly == 0) {
-            if (job->side == 0) {
-                Snd_ReloadBank(0x10, res->bank, 0);
-            } else {
-                Snd_ReloadBank(0x20, res->bank, 0);
-            }
+            Snd_ReloadBank(1 << (job->side + 4), res->bank, 0);
         }
         BtlObj_Rebind(BattleSide_GetObjId(job->side), BattleSide_GetModelSlot(job->side));
         switch (job->kind) {
@@ -488,6 +498,7 @@ s32 BtlLoad_StepChara(BtlJob *job) {
 }
 
 /* Job: the first load of a battle. */
+static void *tagVoice[PORT_FIGHTER_CAPACITY];
 s32 BtlLoad_StepInitial(BtlJob *job) {
     BattleRes *res = BATTLE_RES;
     BattleMember *m;
@@ -500,8 +511,11 @@ s32 BtlLoad_StepInitial(BtlJob *job) {
     case 0:
         res->sndCommon = File_Request3(BTL_FILE_SND_COMMON, NULL, 0);
         res->sndStage = File_Request3(BTL_STAGE_BANK(Battle_GetStartStage()), NULL, 0);
-        res->sndChara[0] = File_Request3(BattleSide_GetStartChara(0) + ((gSaveData->flags & SAVE_FLAG_VOICE) ? BTL_FILE_VOICE_ALT : BTL_FILE_VOICE), NULL, 0);
-        res->sndChara[1] = File_Request3(BattleSide_GetStartChara(1) + ((gSaveData->flags & SAVE_FLAG_VOICE) ? BTL_FILE_VOICE_ALT : BTL_FILE_VOICE), NULL, 0);
+        res->sndChara[0] = File_Request3(PortGame_Voice(BattleSide_GetStartChara(0),(gSaveData->flags & SAVE_FLAG_VOICE)!=0), NULL, 0);
+        res->sndChara[1] = File_Request3(PortGame_Voice(BattleSide_GetStartChara(1),(gSaveData->flags & SAVE_FLAG_VOICE)!=0), NULL, 0);
+        for (side = 2; side < TagTeam_Count(); side++) {
+            tagVoice[side] = File_Request3(PortGame_Voice(BattleSide_GetStartChara(side),(gSaveData->flags & SAVE_FLAG_VOICE)!=0), NULL, 0);
+        }
         job->state++;
         return 0;
     case 1:
@@ -515,6 +529,7 @@ s32 BtlLoad_StepInitial(BtlJob *job) {
         Snd_LoadBank(8, res->sndStage, 0);
         Snd_LoadBank(0x10, res->sndChara[0], 0);
         Snd_LoadBank(0x20, res->sndChara[1], 0);
+        for (side = 2; side < TagTeam_Count(); side++) Snd_LoadBank(1 << (side + 4), tagVoice[side], 0);
         job->state++;
         break;
     case 3:
@@ -529,11 +544,16 @@ s32 BtlLoad_StepInitial(BtlJob *job) {
         res->sndChara[0] = NULL;
         Heap_Free(res->sndChara[1]);
         res->sndChara[1] = NULL;
+        for (side = 2; side < TagTeam_Count(); side++) {
+            Heap_Free(tagVoice[side]);
+            tagVoice[side] = NULL;
+        }
         job->state++;
         break;
     case 4:
-        BattleSide_SetModelSlot(0, BtlObj_RequestCharaModel(0, BattleSide_GetStartChara(0), BattleSide_GetStartCostume(0), BattleSide_GetStartVariant(0)));
-        BattleSide_SetModelSlot(1, BtlObj_RequestCharaModel(1, BattleSide_GetStartChara(1), BattleSide_GetStartCostume(1), BattleSide_GetStartVariant(1)));
+        for (side = 0; side < TagTeam_Count(); side++) {
+            BattleSide_SetModelSlot(side, BtlObj_RequestCharaModel(side, BattleSide_GetStartChara(side), BattleSide_GetStartCostume(side), BattleSide_GetStartVariant(side)));
+        }
 #ifdef PORT
         {
             /* PC build: the buffer is the game's own size unless a stage added from outside the disc is larger
@@ -565,8 +585,11 @@ s32 BtlLoad_StepInitial(BtlJob *job) {
         res->bankSize = BTL_BANK_BUF_SIZE;
         res->bank = Heap_Alloc(res->bankSize, 0x40, 0, HEAP_ANY);
         memset(res->bank, 0, res->bankSize);
-        for (side = 0; side < 2; side++) {
-            for (i = 0; i < 5; i++) {
+        for (side = 0; side < TagTeam_Count(); side++) {
+            /* Each simultaneous fighter owns only its real roster members.
+             * Keep their second buffer for transformations, but do not allocate
+             * and clear eight unused buffers for every extra fighter. */
+            for (i = 0; i < (TagTeam_Active() ? BattleSide_GetMemberCount(side) : 5); i++) {
                 m = BattleSide_GetMember(side, i);
                 m->buf[0] = Heap_Alloc(BTL_MEMBER_BUF_SIZE, 0x40, 0, HEAP_ANY);
                 m->buf[1] = Heap_Alloc(BTL_MEMBER_BUF_SIZE, 0x40, 0, HEAP_ANY);
@@ -577,7 +600,7 @@ s32 BtlLoad_StepInitial(BtlJob *job) {
         }
 #ifdef PORT
         /* PC build: see the note in the stage-swap job: an added stage has one model, for split screen too. */
-        if (Battle_GetStartStage() >= 0x24) {
+        if (PortGame_IsBT4() || Battle_GetStartStage() >= 0x22) {
             id = BTL_STAGE_MODEL(Battle_GetStartStage());
         } else
 #endif
@@ -587,10 +610,10 @@ s32 BtlLoad_StepInitial(BtlJob *job) {
             id = Battle_GetStartStage() + BTL_FILE_STAGE;
         }
         res->stage = File_Request3(id, res->stage, res->stageSize);
-        for (side = 0; side < 2; side++) {
+        for (side = 0; side < TagTeam_Count(); side++) {
             for (i = 0; (u32)i < (u32)BattleSide_GetMemberCount(side); i++) {
                 m = BattleSide_GetMember(side, i);
-                m->buf[0] = File_Request3(m->chara * 2 + side + BTL_FILE_CHARA_DATA, m->buf[0], BTL_MEMBER_BUF_SIZE);
+                m->buf[0] = File_Request3(PortGame_Member(m->chara,TagTeam_NativeSide(side)), m->buf[0], BTL_MEMBER_BUF_SIZE);
             }
         }
         res->unk8 = File_Request3(gProgress->unk0[0] + 6, NULL, 0);
@@ -600,12 +623,28 @@ s32 BtlLoad_StepInitial(BtlJob *job) {
         if (!File_UpdateRequests()) {
             return 0;
         }
-        for (side = 0; side < 2; side++) {
+        for (side = 0; side < TagTeam_Count(); side++) {
             for (i = 0; (u32)i < (u32)BattleSide_GetMemberCount(side); i++) {
                 m = BattleSide_GetMember(side, i);
                 Res_RelocateOffsets(&m->buf[0], m->buf[0], m->buf[0]);
             }
         }
+        if (TagTeam_Active()) {
+            job->side = 0;
+            job->state = 6;
+            return 0;
+        }
+        BtlJob_Free(job);
+        return 1;
+    case 6:
+        /* All four actors, their animations and the scene are ready before
+         * the game's loading screen ends. Never insert preparation into an intro. */
+        if (job->side < TagTeam_Count()) {
+            side = job->side++;
+            BattleSide_SetObjId(side, BtlObj_CreateChara(BattleSide_GetModelSlot(side)));
+            return 0;
+        }
+        { extern void Battle_CreateSubsystems(void); Battle_CreateSubsystems(); }
         BtlJob_Free(job);
         return 1;
     case 0x5A:
@@ -681,7 +720,7 @@ void BtlLoad_PollObjectRequest(void) {
     s32 side;
     BtlJob *job;
 
-    for (side = 0; side < 2; side++) {
+    for (side = 0; side < TagTeam_Count(); side++) {
         if (BtlChange_IsPendingType1(side)) {
             BtlChange_GetArgs(&id, &costume, &variant, NULL, NULL, NULL, &slot);
             job = BtlJob_Alloc();
@@ -711,7 +750,7 @@ void BtlLoad_PollCharaRequest(void) {
     s32 modelOnly;
     BtlJob *job;
 
-    for (side = 0; side < 2; side++) {
+    for (side = 0; side < TagTeam_Count(); side++) {
         if (BtlChange_IsPendingType0(side)) {
             BtlChange_GetArgs(&chara, &costume, &variant, &animChara, &unk1C, &voiceChara, NULL);
             if (animChara < 0 && unk1C < 0 && voiceChara < 0) {
@@ -763,7 +802,7 @@ void BtlLoad_Reload(void) {
     BtlJob_InitPool();
     /* The original passes a second argument (0) that the function does not have. */
     ((s32 (*)(s32, s32))BtlLoad_RequestStageReload)(Battle_GetStartStage(), 0);
-    for (side = 0; side < 2; side++) {
+    for (side = 0; side < TagTeam_Count(); side++) {
         if (BattleSide_IsFormChanged(side)) {
             chara = BattleSide_GetStartChara(side);
             costume = BattleSide_GetStartCostume(side);
@@ -791,7 +830,7 @@ void BtlLoad_Reload(void) {
     if (BtlJob_GetFreeCount() != BTL_JOB_COUNT) {
         Load_RunBlocking();
     }
-    for (side = 0; side < 2; side++) {
+    for (side = 0; side < TagTeam_Count(); side++) {
         for (i = 0; (u32)i < (u32)BattleSide_GetMemberCount(side); i++) {
             m = BattleSide_GetMember(side, i);
             m->data = m->buf[0];
@@ -827,12 +866,12 @@ void BtlLoad_FreeAll(void) {
         Heap_Free(res->script);
         res->script = NULL;
     }
-    for (side = 0; side < 2; side++) {
+    for (side = 0; side < TagTeam_Count(); side++) {
         for (i = 0; i < 5; i++) {
             m = BattleSide_GetMember(side, i);
-            Heap_Free(m->buf[0]);
+            if (m->buf[0] != NULL) Heap_Free(m->buf[0]);
             m->buf[0] = NULL;
-            Heap_Free(m->buf[1]);
+            if (m->buf[1] != NULL) Heap_Free(m->buf[1]);
             m->buf[1] = NULL;
         }
     }
@@ -852,6 +891,7 @@ void BtlLoad_FreeAll(void) {
     Snd_UnloadBank(8);
     Snd_UnloadBank(0x10);
     Snd_UnloadBank(0x20);
+    for (side = 2; side < TagTeam_Count(); side++) Snd_UnloadBank(1 << (side + 4));
 }
 
 /* Zeroes the result block. */
@@ -1058,7 +1098,7 @@ void ItemSet_GetStats(BattleItemSet *items, s32 *stats, s32 *ability, s32 chara)
 static inline BattleSide *Side(s32 n) {
     BattleSetup *setup = SETUP();
 
-    return &setup->sides[n];
+    return TagTeam_Side(n);
 }
 
 static inline BattleMember *Member(s32 n, s32 i) {
@@ -1206,7 +1246,7 @@ void BtlEvent_Reset(void) {
 
 /* Raises event ev for a side; events 0x5A and 0x5B also notify the script module. */
 void BtlEvent_Raise(s32 side, s32 ev) {
-    BtlEvent_SetBit(Battle_GetEventWork()->set[side].now, ev);
+    BtlEvent_SetBit(Battle_GetEventWork()->set[TagTeam_NativeSide(side)].now, ev);
     switch (ev) {
     case 0x5A:
     case 0x5B:
@@ -1217,12 +1257,12 @@ void BtlEvent_Raise(s32 side, s32 ev) {
 
 /* BtlEventSet_IsNew on a side. */
 s32 BtlEvent_IsNew(s32 side, s32 ev) {
-    return BtlEventSet_IsNew(&Battle_GetEventWork()->set[side], ev);
+    return BtlEventSet_IsNew(&Battle_GetEventWork()->set[TagTeam_NativeSide(side)], ev);
 }
 
 /* BtlEventSet_WasRaised on a side. */
 s32 BtlEvent_WasRaised(s32 side, s32 ev) {
-    return BtlEventSet_WasRaised(&Battle_GetEventWork()->set[side], ev);
+    return BtlEventSet_WasRaised(&Battle_GetEventWork()->set[TagTeam_NativeSide(side)], ev);
 }
 
 /* Once per unpaused frame: requests, rotate both sides, then raise the time events for the new frame. */
@@ -1424,6 +1464,9 @@ void BattleSetup_FixForMode(void) {
             }
             break;
         case 4:
+#ifdef PORT
+            { extern s32 TagSession_Mode(void); if(TagSession_Mode()==4)break; }
+#endif
             if (side->memberCount != 1) {
                 side->memberCount = 1;
             }
@@ -1811,6 +1854,7 @@ s32 Battle_GetScript(void) {
 
 /* 1 when the battle is drawn in split-screen. */
 s32 Battle_IsSplitScreen(void) {
+    if (TagTeam_Active()) return TagTeam_ViewCount() > 1;
     return SETUP()->rule.screenMode == 1;
 }
 
@@ -1875,14 +1919,14 @@ s32 Battle_GetRuleUnk10(void) {
 s32 BattleSide_GetOptionA(s32 side) {
     s32 *p = SETUP()->option.optA;
 
-    return p[side];
+    return p[TagTeam_NativeSide(side)];
 }
 
 /* Per-side option B (save 0x1698 by default). */
 s32 BattleSide_GetOptionB(s32 side) {
     s32 *p = SETUP()->option.optB;
 
-    return p[side];
+    return p[TagTeam_NativeSide(side)];
 }
 
 /* Returns the side's controller number. */
@@ -2021,6 +2065,10 @@ void BattleSide_SetMemberItems(s32 side, s32 idx, BattleItemSet *items) {
 /* 1 when character id is in the side's usable-character bits. */
 s32 BattleSide_IsCharaUsable(s32 side, s32 chara) {
     u64 *bits = Side(side)->charaBits.bits;
-
+#ifdef PORT
+    /* The native BT4 selection grid exposes its full valid roster. The BT3
+       save's three populated unlock words cannot describe the added forms. */
+    if (PortGame_IsBT4()) return PortGame_IsCharacter(chara);
+#endif
     return (bits[chara / 64] >> (chara % 64)) & 1;
 }

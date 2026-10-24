@@ -1,3 +1,4 @@
+#include "battle/btl_effect_owner.h"
 #include "common.h"
 #include "battle/eft_i.h"
 
@@ -1570,7 +1571,7 @@ void EftSweep_Init(EftTask *task, EftOwner *owner) {
     }
     w->life = EftEmit_GetEndFrames(w->set);
     EftSweep_InitPath(task);
-    BtlTask_SetOwnerTag(task, owner->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(owner->objId));
 }
 
 /* Instance term. */
@@ -1836,7 +1837,7 @@ void EftFollow_Init(EftTask *task, EftOwner *owner) {
         w->flags |= EFT_FOLLOW_OWN_WIDTH;
     }
     w->life = EftEmit_GetEndFrames(w->set);
-    BtlTask_SetOwnerTag(task, owner->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(owner->objId));
 }
 
 /* Instance term. */

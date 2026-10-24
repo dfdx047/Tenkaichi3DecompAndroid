@@ -615,6 +615,15 @@ s32 BtlCharApi_HasCamPriority(s32 objId) {
     return 0;
 }
 
+#ifdef PORT
+/* Authored shots do not always request the whole screen. */
+s32 BtlCharApi_HasAuthoredCamera(s32 objId) {
+    BtlCharApiChr *chr=BtlChar_FindByObjId(objId);
+    extern s32 DemoCam_FighterActive(s32);
+    return chr!=NULL && (ChrCam_IsCutActive(chr) || DemoCam_FighterActive(chr->side));
+}
+#endif
+
 /* Shakes the camera of every fighter whose +0x420 point is within `far` of pos, scaled by closeness. */
 void BtlCharApi_ShakeCamsNear(Vec4 *pos, f32 near, f32 far, f32 arg3, f32 arg4) {
     s32 i;

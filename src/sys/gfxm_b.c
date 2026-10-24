@@ -10,6 +10,8 @@
 #include "sys/gfx.h"
 #include "sys/heap.h"
 #include "sys/gfxm_b.h"
+#include "battle/tag_post_view.h"
+extern void *BtlCam_GetNativeView(s32 view);
 
 extern void *memset(void *dst, s32 c, u32 n);
 extern void GfxPostQuad_Set(GfxQuad *out, s32 baseX, s32 baseY, s16 u0, s16 v0, s16 u1, s16 v1, s32 dx, s32 dy, s32 w, s32 h,
@@ -831,7 +833,7 @@ void GfxAlphaKey_Draw(void) {
 void GfxWater_Reset(void) {
     s32 i;
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < PORT_FIGHTER_CAPACITY; i++) {
         gGfxWater[i].speedU = 0.06f;
         gGfxWater[i].speedV = 0.04f;
         GfxWater_SetColor(i, 0x5C, 0x5C, 0x80, 0x80);
@@ -840,8 +842,8 @@ void GfxWater_Reset(void) {
 
 /* Allocates the two water layers. */
 void GfxWater_Init(void) {
-    gGfxWater = Heap_Alloc(sizeof(GfxWaterLayer) * 2, 0x20, 0, HEAP_ANY);
-    memset(gGfxWater, 0, sizeof(GfxWaterLayer) * 2);
+    gGfxWater = Heap_Alloc(sizeof(GfxWaterLayer) * PORT_FIGHTER_CAPACITY, 0x20, 0, HEAP_ANY);
+    memset(gGfxWater, 0, sizeof(GfxWaterLayer) * PORT_FIGHTER_CAPACITY);
     GfxWater_Reset();
 }
 
@@ -859,8 +861,9 @@ void GfxWater_LoadStageColor(void) {
 
     if (st != NULL) {
         if (st->flags & 1) {
-            GfxWater_SetColor(0, st->r, st->g, st->b, st->a);
-            GfxWater_SetColor(1, st->r, st->g, st->b, st->a);
+            s32 i;
+            for(i=0;i<PORT_FIGHTER_CAPACITY;i++)
+                GfxWater_SetColor(i, st->r, st->g, st->b, st->a);
         }
     }
 }
@@ -924,11 +927,12 @@ void GfxWater_DrawView(s32 split, s32 view) {
     f32 ph;
     s32 h = 0xE0;
     s32 srcH = 0x1C0;
+    s32 y0 = 0;
 
     if (Battle_GetWork()->flags & 0x2000) {
         return;
     }
-    if (!(BtlStage_GetList90()->flags & 1)) {
+    if (!BtlStage_GetList90() || !(BtlStage_GetList90()->flags & 1)) {
         return;
     }
     if (!(Battle_GetWork()->flags & 0x100)) {
@@ -959,19 +963,26 @@ void GfxWater_DrawView(s32 split, s32 view) {
         x1 = 0x200;
         cols = 10;
     }
+    if (TagTeam_Active()) {
+        s32 r[4];
+        TagPost_Rect(view,split,r);
+        x0=r[0]; y0=r[1]; w=srcW=r[2]; srcH=r[3];
+        x1=x0+w; h=srcH/2; cols=w>256 ? 10 : 5;
+        Port_TagPostTrace(1,view,split,(u32)r);
+    }
     for (row = 0; row < 6; row++) {
         for (col = 0; col < cols; col++) {
             cx = col * w / (cols - 1);
             cy = h * row / 5;
             gu[row][col] = cx << 4;
             gv[row][col] = cy << 4;
-            if (row != 0 && row != 9) {
+            if (row != 0 && row != 5) {
                 fw = w;
                 fx = cx;
                 fy = cy;
                 fh = h;
                 dx = fx - fw * 0.2f;
-                dy = fy - 224 * 0.2f;
+                dy = fy - fh * 0.2f;
                 d = sqrtf(dx * dx + dy * dy);
                 ph = d * 0.2f;
                 gu[row][col] += (s32)(cosf(gGfxWater[view].phaseU + ph) * (dx / d) * 3.0f * 16.0f);
@@ -1020,10 +1031,10 @@ void GfxWater_DrawView(s32 split, s32 view) {
     p[0] = GS_SET_ZBUF(GFX_ZBP, GS_PSMZ24, 1);
     p[1] = GS_ZBUF_1;
     p += 2;
-    p[0] = ((s64)(w - 1) << 16) | ((u64)0xDF << 48);
+    p[0] = GS_SET_SCISSOR(0,w-1,0,h-1);
     p[1] = GS_SCISSOR_1;
     p += 2;
-    p[0] = ((s64)x0 << 4) | ((u64)0x1C0 << 34) | ((s64)x1 << 14) | 0xA;
+    p[0] = GS_SET_CLAMP(2,2,x0,x1-1,y0,y0+srcH-1);
     p[1] = GS_CLAMP_1;
     p += 2;
     p[0] = 0x44;
@@ -1044,15 +1055,18 @@ void GfxWater_DrawView(s32 split, s32 view) {
     p[1] = 0x5353;
     p += 2;
     for (row = 0; row < n; row++) {
-        p[0] = (x0 + row * 32) << 4;
+        p[0] = ((x0 + row * 32) << 4) | ((u64)(y0<<4)<<16);
         p[1] = (GFX_OFX + ((row * step) << 4)) | (0x7200 << 16);
         p += 2;
-        p[0] = ((x0 + (row + 1) * 32) << 4) | (0x1C00 << 16);
-        p[1] = (s64)(GFX_OFX + (((row + 1) * step) << 4)) | ((u64)0x8000 << 16);
+        p[0] = ((x0 + (row + 1) * 32) << 4) | ((u64)((y0+srcH)<<4)<<16);
+        p[1] = (s64)(GFX_OFX + (((row + 1) * step) << 4)) | ((u64)(GFX_OFY+(h<<4)) << 16);
         p += 2;
     }
-    p[0] = GIF_TAG(4, 0, 1);
+    p[0] = GIF_TAG(5, 0, 1);
     p[1] = GIF_REG_AD;
+    p += 2;
+    p[0] = 0;
+    p[1] = GS_TEXFLUSH;
     p += 2;
     p[0] = 0x264022A00;
     p[1] = GS_TEX0_1;
@@ -1060,10 +1074,10 @@ void GfxWater_DrawView(s32 split, s32 view) {
     p[0] = !(gGfx.frame & 1) ? 0x80070 : 0x80000;
     p[1] = GS_FRAME_1;
     p += 2;
-    p[0] = (s64)x0 | ((s64)(x1 - 1) << 16) | ((u64)0x1BF << 48);
+    p[0] = GS_SET_SCISSOR(x0,x1-1,y0,y0+srcH-1);
     p[1] = GS_SCISSOR_1;
     p += 2;
-    p[0] = ((s64)w << 14) | ((s64)h << 34) | 0xA;
+    p[0] = GS_SET_CLAMP(2,2,0,w-1,0,h-1);
     p[1] = GS_CLAMP_1;
     p += 2;
     for (row = 0; row < 5; row++) {
@@ -1081,10 +1095,10 @@ void GfxWater_DrawView(s32 split, s32 view) {
         for (col = 0; col < cols; col++) {
             sx = ((x0 + col * srcW / (cols - 1)) << 4) + GFX_OFX;
             p[0] = (s64)gu[row][col] | ((s64)gv[row][col] << 16);
-            p[1] = (s64)sx | ((s64)(((srcH * row / 5) << 4) + GFX_OFY) << 16);
+            p[1] = (s64)sx | ((s64)(((y0+srcH * row / 5) << 4) + GFX_OFY) << 16);
             p += 2;
             p[0] = (s64)gu[row + 1][col] | ((s64)gv[row + 1][col] << 16);
-            p[1] = (s64)sx | ((s64)(((srcH * (row + 1) / 5) << 4) + GFX_OFY) << 16);
+            p[1] = (s64)sx | ((s64)(((y0+srcH * (row + 1) / 5) << 4) + GFX_OFY) << 16);
             p += 2;
         }
     }
@@ -1112,6 +1126,18 @@ void GfxWater_Draw(void) {
     s32 i;
     GfxLensView *v;
 
+    if (TagTeam_Active()) {
+        split=TagPost_Split();
+        views=split ? TagTeam_ViewCount() : 1;
+        if (!gBtlCam || !BtlStage_GetWaterLevel(&level)) return;
+        for(i=0;i<views;i++) {
+            if(split && !TagTeam_ViewVisible(i)) continue;
+            v=split ? (GfxLensView *)BtlCam_GetNativeView(i) : gBtlCamView;
+            Mtx_InverseRT(&cam,&v->mtx40);
+            if(level<cam.m[3][1]) GfxWater_DrawView(split,i);
+        }
+        return;
+    }
     if (gBtlCam == NULL) {
         return;
     }

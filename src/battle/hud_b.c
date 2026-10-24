@@ -3,6 +3,7 @@
 #include "battle/battle.h"
 #include "sys/randf.h"
 #include "sys/heap.h"
+#include "battle/tag_team.h"
 
 /*
  * Battle HUD: the gauge part (health, ki, blast stock, powered-up timer, status icons, face), 0x21CA60-0x222400.
@@ -86,6 +87,14 @@ typedef struct HudBWork {
 
 extern HudBWork *gHudGauge;
 
+/* Each local viewport owns its gauge animation state. The original sprite tree
+ * and draw callbacks are reused, with panel indices mapped to real actors. */
+static HudBWork *nativeGauges[4];
+static s32 nativeActors[4][2];
+static s32 nativeChara[4][2];
+static s32 nativeView = -1;
+static s32 gauge_actor(s32 panel) { return nativeView < 0 ? panel : nativeActors[nativeView][panel]; }
+
 #define HUDB_MAX(a, b) ((a) < (b) ? (b) : (a))
 
 /* Sprite / node library at 0x224B50.. (not decompiled yet). */
@@ -107,7 +116,7 @@ extern void HudGfx_CallEnd(void (*fn)(void)); /* run a GS state function (end) *
    and counters on the right. With the swap (gs/net.c) the two sides change places on THIS copy's screen only: a
    side's data is the same, where it is drawn is the other side's place. HUD_SCR(side) is the place of a side. */
 extern int Port_HudSwap(void);
-#define HUD_SCR(side) ((side) ^ Port_HudSwap())
+#define HUD_SCR(side) ((side) ^ (nativeView < 0 ? Port_HudSwap() : 0))
 #else
 #define HUD_SCR(side) (side)
 #endif
@@ -138,6 +147,12 @@ void HudGauge_UpdateHpBarCount(void) {
     }
     for (i = 0; i < 6; i++) {
         HudBSprite *spr = &gHudGauge->spr[9 + i];
+#ifdef PORT
+        if (PortGame_IsBT4()) {
+            static const u8 palette[6] = {3, 4, 1, 1, 5, 5};
+            HudSprite_SetTex(spr, 8, palette[i]);
+        }
+#endif
         HudSprite_SetColor(spr, 0x80, 0x80, 0x80, 0x80);
         if (i < bars) {
             HudSprite_Show(spr, 1);
@@ -277,7 +292,7 @@ void HudGauge_UpdateAura(void) {
     HudBSprite *spr;
     Ramp *ramp;
 
-    if (BtlSide_IsPoweredUp(gHudGauge->side) && !BtlCtrl_IsActiveDead(gHudGauge->side)) {
+    if (BtlSide_IsPoweredUp(gauge_actor(gHudGauge->side)) && !BtlCtrl_IsActiveDead(gauge_actor(gHudGauge->side))) {
         gHudGauge->auraAlpha[gHudGauge->side] += 0x10;
         if (gHudGauge->auraAlpha[gHudGauge->side] > 0x80) {
             gHudGauge->auraAlpha[gHudGauge->side] = 0x80;
@@ -316,7 +331,7 @@ void HudGauge_UpdateAura(void) {
     HudSprite_InitPlain(spr, 0, 0, 0xFF, (u8)((f32)gHudGauge->auraAlpha[gHudGauge->side] * 0.0078125f * 44.0f));
     HudSprite_SetRect(spr, 0, 0x180, 0, 0x6C);
     ramp = &gHudGauge->lowHpPulse[gHudGauge->side];
-    if (gHudGauge->hp[gHudGauge->side] <= 10000 && !BtlCtrl_IsActiveDead(gHudGauge->side)) {
+    if (gHudGauge->hp[gHudGauge->side] <= 10000 && !BtlCtrl_IsActiveDead(gauge_actor(gHudGauge->side))) {
         if (!HUDG_PAUSED() && Ramp_Step(ramp)) {
             if (ramp->value == 0.0f) {
                 Ramp_Start(ramp, 0.5f, 0.0f, 1.0f);
@@ -538,7 +553,7 @@ void HudGauge_UpdateBlast(void) {
         { 0x00, 0x20, 0x00, 0x20 }, { 0x20, 0x40, 0x00, 0x20 }, { 0x40, 0x60, 0x00, 0x20 }, { 0x60, 0x80, 0x00, 0x20 },
         { 0x00, 0x20, 0x20, 0x40 }, { 0x20, 0x40, 0x20, 0x40 }, { 0x40, 0x60, 0x20, 0x40 }, { 0x60, 0x80, 0x20, 0x40 },
     };
-    s32 max = BtlSide_GetBlastMax(gHudGauge->side);
+    s32 max = BtlSide_GetBlastMax(gauge_actor(gHudGauge->side));
     HudBSprite *spr;
     u32 n;
     s32 r;
@@ -551,6 +566,9 @@ void HudGauge_UpdateBlast(void) {
     HudSprite_SetRect(spr, -0x20, 0, 0, 0x20);
     HudSprite_SetUv(spr, tbl[n][0], tbl[n][1], tbl[n][2], tbl[n][3]);
     HudSprite_Move(spr, 10, -16);
+#ifdef PORT
+    if (PortGame_IsBT4()) HudSprite_Move(spr, 99, -10);
+#endif
     if (!HUDG_PAUSED()) {
         r = Ramp_Step(ramp);
     } else {
@@ -571,6 +589,9 @@ void HudGauge_UpdateBlast(void) {
     HudSprite_SetRect(spr, -0x20, 0, 0, 0x20);
     HudSprite_SetUv(spr, tbl[n][0], tbl[n][1], tbl[n][2], tbl[n][3]);
     HudSprite_Move(spr, 10, -16);
+#ifdef PORT
+    if (PortGame_IsBT4()) HudSprite_Move(spr, 99, -10);
+#endif
     if (ramp->value > 0.0f) {
         HudSprite_Show(spr, 1);
     } else {
@@ -582,6 +603,9 @@ void HudGauge_UpdateBlast(void) {
     spr = &gHudGauge->spr[37];
     HudSprite_SetRect(spr, n, n + 0x1A, 0, 6);
     HudSprite_Move(spr, 5, 3);
+#ifdef PORT
+    if (PortGame_IsBT4()) HudSprite_Move(spr, 106, -21);
+#endif
     if (blast >= max) {
         HudSprite_Show(&gHudGauge->spr[36], 0);
         HudSprite_Show(&gHudGauge->spr[38], 0);
@@ -998,7 +1022,7 @@ void HudGauge_DrawFace(HudBGroup *node) {
             /* (PC build: a fighter's face sheet has two pictures, one drawn for the left place and one for the right;
                with the sides swapped the picture is the one of the place, not of the side) */
             HudSprite_InitTex(spr, gHudGauge->faceRes[gHudGauge->side], HUD_SCR(gHudGauge->side), 0);
-            if (BtlCtrl_GetObj(gHudGauge->side)->unkA40 & 0x40000) {
+            if (BtlCtrl_GetObj(gauge_actor(gHudGauge->side))->unkA40 & 0x40000) {
                 HudSprite_SetColor(spr, 0x80, 0x50, 0x70, 0x80);
             } else {
                 HudSprite_SetColor(spr, 0x80, 0x80, 0x80, 0x80);
@@ -1733,5 +1757,91 @@ void HudGauge_Init(HudBGroup **out, void *res) {
     grp->childList[0] = &gHudGauge->grp[1];
     grp->update = HudGauge_UpdateRoot;
     grp->draw = NULL;
+#ifdef PORT
+    /* BT4's atlas keeps the health and ki tracks but moves the hexagonal face
+       and blast-stock panel. Change local artwork coordinates before the
+       existing mirror/viewport transforms, so both sides and every split agree. */
+    if (PortGame_IsBT4()) {
+        gHudGauge->grp[11].x = 3;
+        gHudGauge->grp[11].y = -2;
+        HudSprite_Move(&gHudGauge->spr[36], 105, -21);
+        HudSprite_Move(&gHudGauge->spr[48], 105, -21);
+        HudSprite_Move(&gHudGauge->spr[38], 106, -21);
+    }
+#endif
     *out = gHudGauge->grp;
 }
+
+#ifdef PORT
+extern void HudGauge_Term(void), HudGauge_Reset(void), HudGfx_ClearAlpha(void);
+extern void HudNode_Update(HudBGroup *), HudNode_Draw(HudBGroup *, s32);
+extern s32 BtlSide_GetHp(s32), BtlSide_GetKi(s32), BtlSide_GetBlast(s32), BtlSide_GetMaxPower(s32);
+extern s32 BtlSide_GetParamUnk2C(s32), BtlSide_TestFlagBE(s32);
+extern s32 BtlCtrl_GetStatMod0(s32), BtlCtrl_GetStatMod1(s32), BtlCtrl_GetStatMod2(s32), BtlCtrl_GetStatMod3(s32);
+extern s32 BtlCharApi_GetChara(s32), BattleSide_GetObjId(s32);
+
+void HudGauge_NativeReset(void) {
+    HudBWork *saved = gHudGauge;
+    s32 v, p;
+    for (v=0; v<4; v++) {
+        if (nativeGauges[v]) { gHudGauge=nativeGauges[v]; HudGauge_Reset(); }
+        for (p=0;p<2;p++) nativeActors[v][p]=nativeChara[v][p]=-1;
+    }
+    gHudGauge=saved; nativeView=-1;
+}
+void HudGauge_NativeTerm(void) {
+    HudBWork *saved=gHudGauge;
+    s32 v;
+    for(v=0;v<4;v++) if(nativeGauges[v]) {
+        gHudGauge=nativeGauges[v]; HudGauge_Term(); nativeGauges[v]=NULL;
+    }
+    gHudGauge=saved; nativeView=-1;
+}
+void HudGauge_DrawNative(s32 view, s32 own, s32 target, s32 shared) {
+    HudBWork *saved=gHudGauge;
+    s32 p, actor, hp, ki, chara, stats[4], mask, up, i;
+    HudBGroup *root;
+    if(!nativeGauges[view]) {
+        HudGauge_Init(&root,saved->res);
+        nativeGauges[view]=gHudGauge;
+        HudGauge_Reset();
+        nativeActors[view][0]=nativeActors[view][1]=-1;
+    }
+    gHudGauge=nativeGauges[view]; nativeView=view;
+    /* Face sheets belong to streamed fighter resources, not the HUD. A hidden
+       opponent may have been unloaded since the previous draw. DrawFace fills
+       these again from each visible fighter before clearing texture marks. */
+    gHudGauge->faceRes[0]=gHudGauge->faceRes[1]=NULL;
+    /* These display-list markers carry the viewport to the native renderer.
+     * They affect every piece of a panel equally, including portrait masks. */
+    Port_GsMarker(TagTeam_HudMarker(view,shared,0));
+    for(p=0;p<2;p++) {
+        actor=p?target:own;
+        if(actor<0 || actor>=TagTeam_Count()) continue;
+        hp=BtlSide_GetHp(actor); ki=BtlSide_GetKi(actor);
+        chara=BtlCharApi_GetChara(BattleSide_GetObjId(actor));
+        if(nativeActors[view][p]!=actor || nativeChara[view][p]!=chara || hp>gHudGauge->hp[p]) {
+            gHudGauge->hpShown[p]=hp;
+            gHudGauge->kiShown[p]=ki;
+            gHudGauge->hpBarFade[p].value=0;
+        }
+        nativeActors[view][p]=actor; nativeChara[view][p]=chara;
+        HudGauge_SetHp(p,hp); HudGauge_SetKi(p,ki);
+        HudGauge_SetBlast(p,BtlSide_GetBlast(actor));
+        HudGauge_SetMaxPower(p,BtlSide_GetMaxPower(actor));
+        HudGauge_SetFighter(p,BtlCtrl_GetObj(actor));
+        HudGauge_SetKiReserve(p,BtlSide_TestFlagBE(actor)?BtlSide_GetParamUnk2C(actor):0);
+        stats[0]=BtlCtrl_GetStatMod0(actor); stats[1]=BtlCtrl_GetStatMod3(actor);
+        stats[2]=BtlCtrl_GetStatMod1(actor); stats[3]=BtlCtrl_GetStatMod2(actor);
+        mask=up=0;
+        for(i=0;i<4;i++) if(stats[i]) { mask|=1<<i; if(stats[i]>0) up|=1<<i; }
+        HudGauge_SetStatIcons(p,mask,up);
+        HudGfx_ClearAlpha();
+        HudGauge_SelectSide(p);
+        HudNode_Update(gHudGauge->grp);
+        HudNode_Draw(gHudGauge->grp,0);
+    }
+    Port_GsMarker(0x5F);
+    gHudGauge=saved; nativeView=-1;
+}
+#endif

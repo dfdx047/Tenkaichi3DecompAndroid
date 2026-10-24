@@ -2,6 +2,7 @@
 #define BATTLE_EFT_Z_H
 
 #include "types.h"
+#include "battle/eft_fighter_capacity.h"
 #include "sys/math3d.h"
 #include "sys/list.h"
 
@@ -249,8 +250,8 @@ typedef struct EftGndDustWork {
     /* 0x62B4 */ s32 count;               /* live particles */
     /* 0x62B8 */ u8 unk62B8[8];
     /* 0x62C0 */ EftGndDustArg tmpl;         /* the stage's debris dust */
-    /* 0x6330 */ EftZTask *slide[2];      /* per fighter object id */
-    /* 0x6338 */ EftZTask *dash[2];
+    EftZTask *slide[EFT_FIGHTER_CAPACITY]; /* per fighter object id */
+    EftZTask *dash[EFT_FIGHTER_CAPACITY];
 } EftGndDustWork; /* size 0x6340 */
 
 /* Stage dust record (BtlStage_GetList68). */

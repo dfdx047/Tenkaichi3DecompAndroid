@@ -30,6 +30,7 @@ extern s32 BtlPool_GetCurrent(void);
 extern void *BtlPool_Alloc(s32 slot, s32 size);
 extern void BtlPool_Free(s32 slot, void *ptr);
 extern s32 BtlScene_IsEffectStopped(s32 objId, s32 kind);
+extern s32 BtlScene_GetCharCount(void), BtlScene_IsSingleView(void);
 extern void *BtlTask_CreateChildList(EftAbTask *task, s32 count, s32 workSize);
 extern EftAbTask *BtlTaskList_AddTail(void *list, void *cls, void *arg);
 extern void BtlTask_SetDead(EftAbTask *task);                         /* marks a task as dying */
@@ -255,7 +256,35 @@ void EftTransform_Init(EftAbTask *task, EftTransformArg *req) {
     BtlCharApi_GetNodePos(arg->objId, 3, &w->pos);
     w->flags |= EFT_TF_ALIVE;
     w->endFrames = EftEmit_GetEndFrames(w->set);
-    gEftTransform->busy = 1;
+    if (!TagTeam_Active()) gEftTransform->busy = 1;
+}
+
+/* Only a shared view may flash the whole arena. Concurrent transforms retain
+   their own actor task and cannot reveal or end another actor's effect. */
+#define EFT_TF_SCENE_FLASH 0x1000
+static void EftTransform_BeginFlash(EftTransform *w) {
+#ifdef PORT
+    if (TagTeam_Active()) {
+        extern s32 TagTeam_CurrentViewActor(void), BattleSide_GetObjId(s32);
+        if (!BtlScene_IsSingleView() ||
+            BattleSide_GetObjId(TagTeam_CurrentViewActor()) != w->arg.objId) return;
+        w->flags |= EFT_TF_SCENE_FLASH;
+        if (gEftTransform->sceneFlashes++ != 0) return;
+    }
+#endif
+    EftStage_SetDrawOn(0);
+    StgTint_Start(1,0,0.0f);
+}
+static void EftTransform_EndFlash(EftTransform *w) {
+#ifdef PORT
+    if (TagTeam_Active()) {
+        if (!(w->flags & EFT_TF_SCENE_FLASH)) return;
+        w->flags &= ~EFT_TF_SCENE_FLASH;
+        if (--gEftTransform->sceneFlashes != 0) return;
+    }
+#endif
+    StgTint_Start(1,1,0.0f);
+    EftStage_SetDrawOn(1);
 }
 
 /* Term callback: undoes the tint and the hidden fighter if the task dies between flash and reveal. */
@@ -265,14 +294,22 @@ void EftTransform_Term(EftAbTask *task) {
     EftTransformArg *arg = &w->arg;
 
     if (w->flags & EFT_TF_TINT) {
-        StgTint_Start(1, 1, 0.0f);
+        EftTransform_EndFlash(w);
         BtlCharApi_ObjClearMaskBit3(arg->objId);
         BtlCharApi_GetNodePos(arg->objId, 3, &pos);
         ScrWarp_Spawn(arg->objId, &pos, 0.6f, 10.0f, 50.0f, 10.0f, 0.4f);
         ScrWarp_Spawn(arg->objId, &pos, 0.6f, 10.0f, 50.0f, 10.0f, 0.4f);
     }
-    EftStage_SetDrawOn(1);
+    if (!TagTeam_Active()) EftStage_SetDrawOn(1);
     EftEmit_TermState(w->set, w->state);
+#ifdef PORT
+    if (TagTeam_Active()) {
+        if ((u32)arg->objId < PORT_FIGHTER_CAPACITY &&
+            gEftTransform->actorTask[arg->objId] == task)
+            gEftTransform->actorTask[arg->objId] = NULL;
+        return;
+    }
+#endif
     if (!(w->flags & EFT_TF_DETACHED)) {
         gEftTransform->task = NULL;
         gEftTransform->busy = 0;
@@ -294,8 +331,7 @@ void EftTransform_Update(EftAbTask *task) {
         case 1:
             if (w->flags & EFT_TF_FLASH) {
                 EftTransform_OnFlash(task, arg->kind);
-                EftStage_SetDrawOn(0);
-                StgTint_Start(1, 0, 0.0f);
+                EftTransform_BeginFlash(w);
                 w->flags |= EFT_TF_TINT;
                 BtlCharApi_ObjSetMaskBit3(arg->objId);
                 task->step++;
@@ -305,7 +341,7 @@ void EftTransform_Update(EftAbTask *task) {
             w->timer += 1.0f;
             if (w->delay < w->timer) {
                 if (w->flags & EFT_TF_TINT) {
-                    StgTint_Start(1, 1, 0.0f);
+                    EftTransform_EndFlash(w);
                     BtlCharApi_ObjClearMaskBit3(arg->objId);
                     BtlCharApi_GetNodePos(arg->objId, 3, &pos);
                     ScrWarp_Spawn(arg->objId, &pos, 0.6f, 10.0f, 50.0f, 10.0f, 0.4f);
@@ -379,7 +415,9 @@ void EftTransformMgr_Init(EftAbTask *task) {
 
     gEftTransform = BtlPool_Alloc(BtlPool_GetCurrent(), sizeof(EftTransformMgr));
     memset(gEftTransform, 0, sizeof(EftTransformMgr));
-    gEftTransformList = BtlTask_CreateChildList(task, 2, sizeof(EftTransform));
+    /* A previous effect may still be fading when its owner transforms again. */
+    gEftTransformList = BtlTask_CreateChildList(task,
+        TagTeam_Active() ? BtlScene_GetCharCount() * 2 : 2, sizeof(EftTransform));
     {
         s32 ids[EFT_TF_SETS] = { 0x192, 0x1AA, 0x1C0, 0x1C1, 0x1CB, 0x1E6, 0x1FC, 0x217 };
 
@@ -414,6 +452,15 @@ s32 EftTransform_Start(EftTransformArg *req) {
     EftTransformArg arg = *req;
     EftAbTask *task;
 
+    if (gEftTransform == NULL || (u32)arg.objId >= (u32)BtlScene_GetCharCount()) return 0;
+#ifdef PORT
+    if (TagTeam_Active()) {
+        if (gEftTransform->actorTask[arg.objId] != NULL) return 0;
+        task = BtlTaskList_AddTail(gEftTransformList, gEftTransformClass, &arg);
+        gEftTransform->actorTask[arg.objId] = task;
+        return task != NULL;
+    }
+#endif
     if (gEftTransform->busy != 0) {
         return 0;
     }
@@ -423,6 +470,34 @@ s32 EftTransform_Start(EftTransformArg *req) {
     }
     gEftTransform->task = task;
     return 1;
+}
+
+s32 EftTransform_FlashFor(s32 objId) {
+#ifdef PORT
+    if (TagTeam_Active()) {
+        EftAbTask *task;
+        if (gEftTransform == NULL || (u32)objId >= PORT_FIGHTER_CAPACITY) return 0;
+        task = gEftTransform->actorTask[objId];
+        if (task == NULL) return 0;
+        ((EftTransform *)task->work)->flags |= EFT_TF_FLASH;
+        return 1;
+    }
+#endif
+    return EftTransform_Flash();
+}
+s32 EftTransform_EndFor(s32 objId) {
+#ifdef PORT
+    if (TagTeam_Active()) {
+        EftAbTask *task;
+        if (gEftTransform == NULL || (u32)objId >= PORT_FIGHTER_CAPACITY) return 0;
+        task = gEftTransform->actorTask[objId];
+        if (task == NULL) return 0;
+        ((EftTransform *)task->work)->flags |= EFT_TF_END | EFT_TF_DETACHED;
+        gEftTransform->actorTask[objId] = NULL;
+        return 1;
+    }
+#endif
+    return EftTransform_End();
 }
 
 /* Fighter effect request 1: tells the running effect that the model changes now. */

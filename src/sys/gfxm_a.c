@@ -6,6 +6,9 @@
 #include "sys/heap.h"
 #include "sys/math3d.h"
 #include "sys/gfxm_a.h"
+#include "battle/tag_post_view.h"
+
+static StgPanBlurView tagPanViews[4];
 
 /*
  * Full-screen post effects, 0x102F28..0x106D60. See include/sys/gfxm_a.h for the overview.
@@ -88,6 +91,7 @@ typedef struct GfxPostSpritePkt {
 
 /* Creates the pan blur: the CLUT block and the two views (halves of the screen in split screen). */
 void StgPanBlur_Init(s32 cbp) {
+    memset(tagPanViews, 0, sizeof(tagPanViews));
     gStgPanBlur = Heap_Alloc(sizeof(StgPanBlur), 0x20, 0, 2);
     memset(gStgPanBlur, 0, sizeof(StgPanBlur));
     GfxClut_InitPacket(&gStgPanBlur->tex, cbp);
@@ -125,6 +129,41 @@ extern int Port_FxOff(int bit); /* port/src/gs/gs_draw.c: an effect switched off
 
 /* Updates the views (unless the battle is paused) and draws those with a strength. */
 void StgPanBlur_Draw(void) {
+    if (TagTeam_Active()) {
+        s32 i, r[4], enabled[4]={0,0,0,0}, any=0;
+        s32 split=TagPost_Split(), count=split ? TagTeam_ViewCount() : 1;
+        for (i=0;i<count;i++) {
+            StgPanBlurView *v=&tagPanViews[i];
+            BtlCamView *cam;
+            if (split && !TagTeam_ViewVisible(i)) { v->w=0; continue; }
+            TagPost_Rect(i,split,r);
+            v->index=split ? i : BtlCam_GetPriorityView();
+            if (v->index<0) v->index=0;
+            cam=BtlCam_GetNativeView(v->index);
+            if (v->x!=r[0] || v->y!=r[1] || v->w!=r[2] || v->h!=r[3] || v->unk8C!=v->index+1) {
+                v->strength=0;
+                Mtx_InverseRT(&v->cur,&cam->view.world2view2);
+            }
+            v->unk8C=v->index+1;
+            v->x=r[0]; v->y=r[1]; v->w=r[2]; v->h=r[3]; v->maxAlpha=101.0f;
+            if (!(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE))
+                enabled[i]=StgPanBlur_UpdateView(v);
+            else enabled[i]=v->strength>0.0f;
+            any|=enabled[i];
+            if(enabled[i]) Port_TagPostTrace(2,i,split,(u32)r);
+        }
+        if (!any || Port_FxOff(32)) return;
+        Gfx_AddDefaultEnv();
+        Dma_AddZbuf(0xE0,1);
+        Dma_AddData(gStgPanBlur->tex.upload,0x10);
+        Dma_AddTexFlush();
+        Dma_AddFrame((gGfx.frame&1)?0:0x70,8,0xFFFFFF);
+        GfxPost_DrawDepthClut(0,GFXPOST_DEPTH_TBP,gStgPanBlur->tex.cbp,0x44);
+        StgPanBlur_CopyScreen();
+        for(i=0;i<count;i++) if(enabled[i]) StgPanBlur_DrawView(&tagPanViews[i],split);
+        StgPanBlur_RestoreEnv();
+        return;
+    }
     s32 on0 = 1;
     s32 on1 = 1;
 
@@ -247,7 +286,7 @@ s32 StgPanBlur_UpdateView(StgPanBlurView *view) {
     f32 dist;
     s32 i;
 
-    cam = &gBtlCam->views[view->index];
+    cam = BtlCam_GetNativeView(view->index);
     dist = 0.0f;
     Mtx_Copy(&view->prev, &view->cur);
     Mtx_InverseRT(&view->cur, &cam->view.world2view2);
@@ -278,6 +317,13 @@ s32 StgPanBlur_UpdateView(StgPanBlurView *view) {
     }
     if (view->strength < 0.0f) {
         view->strength = 0.0f;
+#ifdef PORT
+        if(TagTeam_Active()) {
+            extern void Port_TagPanTrace(s32,u32);
+            f32 probe[4]={dist,view->strength,view->cur.m[3][0],view->cur.m[3][2]};
+            Port_TagPanTrace(view->index,(u32)probe);
+        }
+#endif
         return 0;
     }
     view->side = sp->y * 100.0f;
@@ -394,6 +440,8 @@ void StgPanBlur_DrawView(StgPanBlurView *view, s32 split) {
     u64 *p;
     s32 shift = 0;
     s32 srcX = 0;
+    s32 srcY = view->y * 256 / 448;
+    s32 srcH = view->h * 256 / 448;
 
     if (split != 0) {
         srcX = 0x80;
@@ -401,6 +449,10 @@ void StgPanBlur_DrawView(StgPanBlurView *view, s32 split) {
         if (view->index == 0) {
             srcX = 0;
         }
+    }
+    if (TagTeam_Active()) {
+        srcX=view->x/2;
+        shift=view->w==256 ? 1 : 0;
     }
     p = Dma_BeginDirect();
     p[0] = GIF_TAG(9, 0, 1);
@@ -418,7 +470,7 @@ void StgPanBlur_DrawView(StgPanBlurView *view, s32 split) {
     p[0] = GS_SET_SCISSOR(0, 0x7F, 0, 0x7F);
     p[1] = GS_SCISSOR_1;
     p += 2;
-    p[0] = GS_SET_CLAMP(2, 2, 0, 0xFF, 0, 0xFF);
+    p[0] = GS_SET_CLAMP(2, 2, srcX, srcX+(0x100>>shift)-1, srcY, srcY+srcH-1);
     p[1] = GS_CLAMP_1;
     p += 2;
     p[0] = 0;
@@ -449,10 +501,10 @@ void StgPanBlur_DrawView(StgPanBlurView *view, s32 split) {
         p[1] = 0x5353;
         p += 2;
         for (i = 0; i < n; i++) {
-            p[0] = (srcX + i * 32) << 4;
+            p[0] = ((srcX + i * 32) << 4) | ((u64)(srcY<<4)<<16);
             p[1] = (0x7C00 + ((i * step) << 4)) | (0x7C00 << 16);
             p += 2;
-            p[0] = ((srcX + (i + 1) * 32) << 4) | (0x1000 << 16);
+            p[0] = ((srcX + (i + 1) * 32) << 4) | ((u64)((srcY+srcH)<<4)<<16);
             p[1] = (s64)(0x7C00 + (((i + 1) * step) << 4)) | ((u64)0x8400 << 16);
             p += 2;
         }
@@ -496,10 +548,10 @@ void StgPanBlur_DrawView(StgPanBlurView *view, s32 split) {
         y = layer->ofs.y;
         r = layer->size;
         for (i = 0; i < n; i++) {
-            p[0] = (((srcX + i * size) << 4) + 8) | (8 << 16);
+            p[0] = (((srcX + i * size) << 4) + 8) | ((u64)((srcY<<4)+8)<<16);
             p[1] = (((i * step + x - r) << 4) + 0x7C00) | ((s64)(((y - r) << 4) + 0x7C00) << 16);
             p += 2;
-            p[0] = (((srcX + (i + 1) * size) << 4) + 8) | (0x1008 << 16);
+            p[0] = (((srcX + (i + 1) * size) << 4) + 8) | ((u64)(((srcY+srcH)<<4)+8)<<16);
             p[1] = ((((i + 1) * step + r + x) << 4) + 0x7C00) | ((s64)((y + r + 0x840) << 4) << 16);
             p += 2;
         }
@@ -561,11 +613,11 @@ void StgPanBlur_DrawView(StgPanBlurView *view, s32 split) {
         pkt.uv1.u = (u1 << 4) + 8;
         pkt.uv1.v = 0x7F8;
         pkt.xyz0.x = (x << 4) + 0x7000;
-        pkt.xyz0.y = 0x7200;
+        pkt.xyz0.y = 0x7200 + (view->y<<4);
         pkt.xyz0.z = 0;
         pkt.xyz0.f = 0xFF;
         pkt.xyz1.x = ((x + 32) << 4) + 0x7000;
-        pkt.xyz1.y = 0x8E00;
+        pkt.xyz1.y = 0x7200 + ((view->y+view->h)<<4);
         pkt.xyz1.z = 0;
         pkt.xyz1.f = 0xFF;
         u = u1;

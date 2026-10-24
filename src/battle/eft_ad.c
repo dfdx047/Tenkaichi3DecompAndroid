@@ -1,3 +1,4 @@
+#include "battle/btl_effect_owner.h"
 #include "common.h"
 #include "battle/eft_ad.h"
 
@@ -399,7 +400,7 @@ void EftShock_Init(EftAdTask *task, s32 *arg) {
 
     memset(w, 0, sizeof(EftShock));
     w->objId = arg[0];
-    BtlTask_SetOwnerTag(task, arg[0] == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(arg[0]));
     w->timer = 2;
 }
 
@@ -447,7 +448,7 @@ void EftShock_Update(EftAdTask *task) {
             BtlCharApi_GetDir(*objId, (Vec4 *)&arg.dir);
             part[w->count + 4] = EftAnimPart_Create(&arg);
             EftAnimPart_SetType(part[w->count + 4], 3);
-            BtlTask_SetOwnerTag(part[w->count + 4], *objId == 0 ? 0x800 : 0x1000);
+            BtlTask_SetOwnerTag(part[w->count + 4], BtlScene_CharOwnerTag(*objId));
             w->count++;
             w->flags |= EFT_SHOCK_WAIT;
         }

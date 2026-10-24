@@ -940,7 +940,7 @@ void UbTeamSel_Input(s32 *result) {
             if (gUbTeamSel->sel->flags & UBTEAM_SEL_FORM) {
                 UT_CUR.chara = gUbTeamSel->sel->chip[0][UT_CUR.form];
                 if (UT_CUR.plate != 0) {
-                    UT_CUR.items = UB_SAVE->custom[UT_CUR.col + UT_CUR.row * UB_COLS].set[UT_CUR.plate - 1];
+                    UT_CUR.items = SAVE_CUSTOM_AT(UB_SAVE, UT_CUR.col + UT_CUR.row * UB_COLS).set[UT_CUR.plate - 1];
                 } else {
                     memset(&UT_CUR.items, 0, sizeof(UbItemSet));
                 }
@@ -948,7 +948,7 @@ void UbTeamSel_Input(s32 *result) {
             } else {
                 UT_CUR.chara = gUbTeamSel->sel->chip[0][UT_CUR.col];
                 if (UT_CUR.plate != 0) {
-                    UT_CUR.items = UB_SAVE->custom[UT_CUR.col + UT_CUR.row * UB_COLS].set[UT_CUR.plate - 1];
+                    UT_CUR.items = SAVE_CUSTOM_AT(UB_SAVE, UT_CUR.col + UT_CUR.row * UB_COLS).set[UT_CUR.plate - 1];
                 } else {
                     memset(&UT_CUR.items, 0, sizeof(UbItemSet));
                 }

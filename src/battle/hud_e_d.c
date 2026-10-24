@@ -29,6 +29,16 @@ void BtlPause_Reset(void) {
 
 /* Battle start: sets the number of pads that may pause. */
 void BtlPause_Init(s32 padCount) {
+#ifdef PORT
+    if(TagTeam_Active()) {
+        s32 i;
+        padCount=1;
+        for(i=0;i<PAD_COUNT;i++) {
+            s32 actor=TagTeam_ControlActor(i);
+            if(actor>=0 && TagTeam_Player(actor)==i) padCount=i+1;
+        }
+    }
+#endif
     BtlPause_GetWork()->padCount = padCount;
     BtlPause_Reset();
 }
@@ -65,7 +75,7 @@ s32 BtlPause_CheckOpen(void) {
             work->pad = port;
             Battle_GetWork()->flags |= BATTLE_FLAG_PAUSE | BATTLE_FLAG_PAUSE_MENU;
             Adx_PauseSeVoice();
-            Snd_SetPause(4, 1);
+            Snd_SetPause(TagTeam_Active() ? 0xF4 : 4, 1);
             return 0;
         }
     } else if (gPad[0].gamePressed & BTL_PAUSE_START) {

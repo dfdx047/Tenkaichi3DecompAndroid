@@ -1,3 +1,8 @@
+#ifdef PORT
+#define GRID_CHARACTER(id) PortGame_IsCharacter(id)
+#else
+#define GRID_CHARACTER(id) ((id) < CHRGRID_ID_RANDOM)
+#endif
 #include "common.h"
 #include "battle/view_a.h"
 #include "sys/heap.h"
@@ -538,6 +543,10 @@ void Num_DrawEx(Flash *flash, NumStyle *style, char *a, char *b, s32 value) {
 /* Non-zero if the cursor may rest on a cell: a character, the custom cell or the random cell. */
 s32 ChrGrid_IsSelectable(ChrGridCell *cells, s32 index) {
     s32 ok = 1;
+#ifdef PORT
+    if (PortGame_IsBT4()) return PortGame_IsCharacter(cells[index].id) ||
+        cells[index].id==CHRGRID_ID_RANDOM || cells[index].id==CHRGRID_ID_CUSTOM;
+#endif
 
     if (cells[index].id >= CHRGRID_ID_LOCKED) {
         ok = cells[index].id == CHRGRID_ID_CUSTOM;
@@ -561,7 +570,11 @@ s32 ChrGrid_MoveRight(ChrGridCell *cells, s32 *col, s32 row) {
             break;
         }
         id = cells[row * CHRGRID_COLS + *col].id;
-        if (id < CHRGRID_ID_LOCKED) {
+        if (id < CHRGRID_ID_LOCKED
+#ifdef PORT
+            || PortGame_IsCharacter(id)
+#endif
+        ) {
             break;
         }
         if (id == CHRGRID_ID_CUSTOM) {
@@ -588,7 +601,11 @@ s32 ChrGrid_MoveLeft(ChrGridCell *cells, s32 *col, s32 row) {
             break;
         }
         id = cells[row * CHRGRID_COLS + *col].id;
-        if (id < CHRGRID_ID_LOCKED) {
+        if (id < CHRGRID_ID_LOCKED
+#ifdef PORT
+            || PortGame_IsCharacter(id)
+#endif
+        ) {
             break;
         }
         if (id == CHRGRID_ID_CUSTOM) {
@@ -609,7 +626,11 @@ void ChrGrid_MoveDown(ChrGridCell *cells, s32 *col, s32 *row, s32 rows) {
             *row = 0;
         }
         id = cells[*row * CHRGRID_COLS + *col].id;
-        if (id < CHRGRID_ID_LOCKED) {
+        if (id < CHRGRID_ID_LOCKED
+#ifdef PORT
+            || PortGame_IsCharacter(id)
+#endif
+        ) {
             return;
         }
         if (id == CHRGRID_ID_CUSTOM) {
@@ -628,7 +649,11 @@ void ChrGrid_MoveUp(ChrGridCell *cells, s32 *col, s32 *row, s32 rows) {
             *row = rows - 1;
         }
         id = cells[*row * CHRGRID_COLS + *col].id;
-        if (id < CHRGRID_ID_LOCKED) {
+        if (id < CHRGRID_ID_LOCKED
+#ifdef PORT
+            || PortGame_IsCharacter(id)
+#endif
+        ) {
             return;
         }
         if (id == CHRGRID_ID_CUSTOM) {
@@ -649,7 +674,7 @@ void ChrGrid_NextForm(s32 *forms, s32 *index) {
         if (start == *index) {
             break;
         }
-    } while (forms[*index] >= CHRGRID_ID_RANDOM);
+    } while (!GRID_CHARACTER(forms[*index]));
 }
 
 /* Steps to the previous form of a cell that is a character, wrapping in the seven slots. */
@@ -664,13 +689,13 @@ void ChrGrid_PrevForm(s32 *forms, s32 *index) {
         if (start == *index) {
             break;
         }
-    } while (forms[*index] >= CHRGRID_ID_RANDOM);
+    } while (!GRID_CHARACTER(forms[*index]));
 }
 
 /* Puts the cursor on a character if it is on a marker cell: right in the row first, then down.
  * Declared with a result that it never sets: the call of ChrGrid_MoveDown is not a tail call. */
 s32 ChrGrid_FixCursor(ChrGridCell *cells, s32 *col, s32 *row, s32 rows) {
-    if (cells[*row * CHRGRID_COLS + *col].id >= CHRGRID_ID_RANDOM) {
+    if (!GRID_CHARACTER(cells[*row * CHRGRID_COLS + *col].id)) {
         if (ChrGrid_MoveRight(cells, col, *row) == 0) {
             ChrGrid_MoveDown(cells, col, row, rows);
         }
@@ -760,7 +785,13 @@ void StgGrid_MoveUp(s32 *ids, s32 *col, s32 *row, s32 rows) {
     }
 }
 
+#ifdef PORT
+/* BT4's extra roster does not fit the original save's three unlock words.
+   Its roster is available from the disc; never index past the BT3 save. */
+#define CHARA_UNLOCKED(id) (PortGame_IsBT4() ? PortGame_IsCharacter(id) : ((s32)((SAVE_CHARA_WORD(gSaveData, id) >> ((id) % 64)) & 1)))
+#else
 #define CHARA_UNLOCKED(id) ((s32)((SAVE_CHARA_WORD(gSaveData, id) >> ((id) % 64)) & 1))
+#endif
 
 /* Build flags of ChrGrid_Build. */
 #define CHRGRID_ALL 1        /* no unlock test (never set here) */
@@ -897,6 +928,12 @@ INCLUDE_ASM("asm/nonmatchings/battle/view_a_e", ChrGrid_Build);
 void StgGrid_ApplyUnlocks(s32 *count, s32 *ids) {
     s32 flags = 0;
     s32 i;
+#ifdef PORT
+    if (PortGame_IsBT4()) {
+        for (i=0;i<*count;i++) if ((u32)ids[i]>=99) ids[i]=STGGRID_ID_EMPTY;
+        return;
+    }
+#endif
 
     if (gProgress->mode == 0x28) {
         flags = 4;
@@ -941,6 +978,9 @@ void StgGrid_ApplyUnlocks(s32 *count, s32 *ids) {
 void BgmList_ApplyUnlocks(s32 *count, s32 *ids) {
     s32 flags = 0;
     s32 i;
+#ifdef PORT
+    if (PortGame_IsBT4()) return;
+#endif
 
     if (gProgress->mode == 0x3E) {
         flags = 2;
@@ -1003,6 +1043,15 @@ void TextBox_Init(TextBox *box, void *text, u32 preset) {
         TextBox_SetUnk50(box, 0);
         TextBox_SetMaxWidth(box, 0x160);
         break;
+#ifdef PORT
+    case 7:
+        if(PortGame_IsBT4()) {
+            TextBox_SetUnk50(box,1);
+            TextBox_SetUnkC(box,0x18,0x28);
+            TextBox_SetMaxWidth(box,0xD0);
+        }
+        break;
+#endif
     case 0:
         break;
     }

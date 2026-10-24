@@ -14,6 +14,7 @@
 #include <string.h>
 #include "plat_stages.h"
 #include "plat_songs.h"
+#include "plat_game.h"
 
 #define SECTOR 2048
 enum { STAT_STOP = 1, STAT_READING = 2, STAT_READEND = 3, STAT_ERROR = 4 };
@@ -32,6 +33,11 @@ extern void Port_TestSlow(int what, int amount); /* gs/net.c: testing, a machine
 extern size_t Port_FileReadAt(const char *rel, long offset, void *buf, size_t bytes);
 
 static char sPartDir[8][64];
+static const char *partition_dir(int ptid) {
+    static const char *bt4[] = {"pzs4us0", "pzs4us1", "pzs4us2", "pzs4us3"};
+    if (PortGame_IsBT4() && ptid >= 0 && ptid < 4) return bt4[ptid];
+    return sPartDir[ptid & 7];
+}
 char gPortMoviePath[512]; /* host path of the movie file opened last */
 int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size);
 extern void *Port_LowAlloc(size_t size); /* plat_mem.c */
@@ -108,7 +114,7 @@ int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size) {
         }
         rel[n] = '\0';
     } else {
-        snprintf(rel, sizeof(rel), "%s/%05d.bin", sPartDir[ptid & 7], flid);
+        snprintf(rel, sizeof(rel), "%s/%05d.bin", partition_dir(ptid), flid);
     }
     {
         /* The streamed audio (a song added from outside the disc) reads through this path, so the manifest's
@@ -164,7 +170,7 @@ int ADXF_GetPtStat(int ptid) {
 void *ADXF_OpenAfs(int ptid, int flid) {
     char rel[128];
 
-    snprintf(rel, sizeof(rel), "%s/%05d.bin", sPartDir[ptid & 7], flid);
+    snprintf(rel, sizeof(rel), "%s/%05d.bin", partition_dir(ptid), flid);
     return open_rel(rel);
 }
 

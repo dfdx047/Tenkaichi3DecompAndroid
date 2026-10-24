@@ -107,6 +107,9 @@ s32 Progress_Main(s32 arg) {
         }
 #endif
     }
+#ifdef PORT
+    { extern void TagSession_Return(s32,s32); TagSession_Return(flags,reason); }
+#endif
     if (gProgress->mode == 1 || gProgress->mode == 4) {
         if (gMenuArc1 == NULL) {
             gMenuArc1 = File_LoadSync(gProgress->baseFile + 1, NULL, 0);

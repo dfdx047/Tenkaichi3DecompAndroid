@@ -24,6 +24,7 @@ int MenuLabels_Make(const char *dataDir, const char *outDir, int anyDisc, char *
    NameFont_Compose's), the item as it is
    and while chosen, malloc'ed into out[0] and out[1]. 0 (both NULL): not the USA release's archives, or a letter
    none of them has. Files only, a few tenths of a second; may run in a thread of its own. */
+int MenuLabels_MainTexts(const char *dataDir, const char *const *text, int count, unsigned char *out[][2]);
 int MenuLabels_MainItem(const char *dataDir, unsigned char *out[2]);
 /* What the label sheet's pixels hold for such a picture (512 x 32 values into `out`): each pixel the colour of
    `table` (the sheet's 256 colours, in the order they are in memory) nearest to it. The game's write and the list of

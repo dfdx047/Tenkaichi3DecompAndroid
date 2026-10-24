@@ -485,6 +485,14 @@ s32 BtlStage_GetChangeTarget(void) {
     if (!BtlStage_IsReady()) {
         return -1;
     }
+#ifdef PORT
+    /* B14 stores the actual destination as a signed byte, rather than BT3's
+       two-value destruction category. This also covers the added maps. */
+    if (PortGame_IsBT4()) {
+        kind = ((s8 *)gBtlStage->data->info)[0xD];
+        return kind >= 0 && kind < PortGame_StageCount() ? kind : -1;
+    }
+#endif
     kind = gBtlStage->data->info->changeKind;
     if (kind == 1) {
         return 0xF;
@@ -1487,7 +1495,7 @@ void ScrWarp_UpdateAll(void) {
         }
         if (!(o->flags & 2)) {
             if (Battle_IsSplitScreen() && !BtlScene_IsSingleView()) {
-                Mtx_Copy(&m, &gBtlCam->views[o->view].view.world2screen);
+                Mtx_Copy(&m, &BtlCam_GetNativeView(o->view)->view.world2screen);
             } else {
                 Vu0Screen_StoreMtx(&m);
             }

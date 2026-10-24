@@ -30,6 +30,10 @@
 #include "sys/file.h"
 #include "sys/heap.h"
 
+/* The legacy data symbol has only twelve entries. Keep the native table sized
+   with the object pool instead of overwriting the following globals. */
+static BtlObj *nativeObjectTable[BTL_OBJ_MAX];
+
 extern void *memset(void *dst, s32 c, u32 n);
 extern f32 sqrtf(f32 x);
 
@@ -124,12 +128,20 @@ void BtlObj_RebuildTable(void) {
     BtlObjNode *node;
 
     if (gBtlObjWork != NULL) {
-        memset(gBtlObjTbl, 0, sizeof(gBtlObjTbl));
+        memset(nativeObjectTable, 0, sizeof(nativeObjectTable));
         for (node = (BtlObjNode *)List_GetHead(BtlObj_GetUsedList()); node != NULL;
              node = (BtlObjNode *)List_GetNext(&node->link)) {
-            gBtlObjTbl[node->id] = &node->obj;
+            nativeObjectTable[node->id] = &node->obj;
         }
     }
+}
+
+/* Additional view records are owned separately: model binary layouts stay intact. */
+static BtlObjView extraObjectViews[BTL_OBJ_MAX][2];
+static void *extraView[2];
+static BtlObjDrawList extraLists[2];
+BtlObjView *BtlObj_View(BtlObj *obj, s32 view) {
+    return view < 2 ? &obj->state.views[view] : &extraObjectViews[obj->id][view - 2];
 }
 
 /* Returns the per-view visibility block. */
@@ -140,6 +152,8 @@ BtlObjVis *BtlObjVis_Get(void) {
 /* Zeroes the visibility block. */
 void BtlObjVis_Clear(void) {
     memset(BtlObjVis_Get(), 0, sizeof(BtlObjVis));
+    memset(extraObjectViews, 0, sizeof(extraObjectViews));
+    memset(extraLists, 0, sizeof(extraLists));
 }
 
 /* Claims one bit of the allocation mask; returns 0 if it was already taken. */
@@ -185,12 +199,12 @@ s32 BtlObjVis_TestFlags(u32 mask) {
 
 /* Returns the draw list of a view. */
 BtlObjDrawList *BtlObjVis_GetList(s32 view) {
-    return &gBtlObjWork->vis.lists[view];
+    return view < 2 ? &gBtlObjWork->vis.lists[view] : &extraLists[view - 2];
 }
 
 /* Returns the View a draw list was built for. */
 void *BtlObjVis_GetView(s32 view) {
-    return gBtlObjWork->vis.views[view];
+    return view < 2 ? gBtlObjWork->vis.views[view] : extraView[view - 2];
 }
 
 /* Returns the light block. */
@@ -271,7 +285,7 @@ void BtlObjPoolE0_Init(void) {
 
     memset(pool, 0, sizeof(BtlObjPoolE0Work));
     node = pool->nodes;
-    for (i = 0; i < 512; i++) {
+    for (i = 0; i < 2048; i++) {
         SList_PushFront(&pool->free, &node->link);
         node++;
     }
@@ -312,7 +326,7 @@ void BtlObjPool70_Init(void) {
     s32 i;
 
     memset(pool, 0, sizeof(BtlObjPool70Work));
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < BTL_OBJ_MAX; i++) {
         SList_PushFront(&pool->free, &pool->nodes[i].link);
     }
 }
@@ -434,14 +448,14 @@ s32 BtlObj_FreeId(s32 id) {
 
 /* Returns the object with this id, NULL if the id is free. */
 BtlObj *BtlObj_Get(s32 id) {
-    return gBtlObjTbl[id];
+    return (u32)id < BTL_OBJ_MAX ? nativeObjectTable[id] : NULL;
 }
 
 /* Returns the big work buffer that goes with a fighter object id. */
 u8 *BtlObj_GetCharaWork(u32 id) {
     BtlObjTable *tbl = BtlObj_GetTable();
 
-    if (id < 3) {
+    if (id < PORT_FIGHTER_CAPACITY) {
         return tbl->charaWork[id];
     }
     return NULL;
@@ -453,7 +467,7 @@ void BtlObj_Setup(BtlObj *obj, s32 type, BtlResSlot *res, s32 id, s32 active) {
     BtlObjMdl_Create(type, obj, res);
     obj->active = active;
     obj->id = id;
-    obj->chara = (res->file[0].id - 0x590) / 10;
+    obj->chara = PortGame_ModelCharacter(res->file[0].id);
     BtlObj_InitChains(obj);
 }
 
@@ -512,7 +526,11 @@ BtlResWork *BtlRes_GetWork(void) {
 /* Requests a character's model and its two animation files; returns the resource slot number. */
 s32 BtlObj_RequestCharaModel(s32 side, s32 chara, s32 costume, s32 variant) {
     s32 model;
-
+#ifdef PORT
+    { extern void Port_ModelRequestTrace(s32,s32,s32,s32,s32);
+      Port_ModelRequestTrace(side,-1,chara,costume,variant); }
+    return BtlRes_Request(1, PortGame_Model(chara,costume,variant), PortGame_Animation(chara), PortGame_Combat(chara));
+#endif
     if (variant != 0) {
         model = chara * 10 + costume + 0x594;
     } else {
@@ -538,8 +556,11 @@ void BtlRes_CommitReloadEx(void) {
 
 /* Allocates the work block and initialises every part of it. */
 void BtlObj_Init(s32 prealloc) {
-    gBtlObjWork = Heap_Alloc(BTL_OBJ_WORK_SIZE, 0x20, 0, HEAP_ANY);
-    memset(gBtlObjWork, 0, BTL_OBJ_WORK_SIZE);
+    gBtlObjWork = Heap_Alloc(sizeof(BtlObjWork), 0x20, 0, HEAP_ANY);
+#ifdef PORT
+    PortGame_ResetAnimations();
+#endif
+    memset(gBtlObjWork, 0, sizeof(BtlObjWork));
     BtlRes_Init(prealloc);
     BtlObj_InitTable();
     BtlObjPoolE0_Init();
@@ -863,7 +884,13 @@ void BtlObj_BuildDrawList(BtlObjDrawList *list, s32 view) {
                             list->objs[list->count++] = obj;
                         }
                     } else if (rec->flags & BTL_OBJ_FLAG_PASS2) {
-                        if (view == obj->id && obj->type == BTL_OBJ_TYPE_CHARA) {
+                        if (
+#ifdef PORT
+                            (TagTeam_Active() ? TagTeam_ViewActor(view) : view)
+#else
+                            view
+#endif
+                            == obj->id && obj->type == BTL_OBJ_TYPE_CHARA) {
                             own = obj;
                         } else {
                             list->objs[list->count++] = obj;
@@ -936,15 +963,21 @@ void BtlObj_UpdateVisibility(s32 view) {
     if (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE) {
         return;
     }
-    idx = view == 1;
-    vis->views[idx] = gBtlCamView;
+    idx = TagTeam_Active() ? view : view == 1;
+    if (idx < 2) vis->views[idx] = gBtlCamView; else extraView[idx - 2] = gBtlCamView;
     for (node = (BtlObjNode *)List_GetHead(BtlObj_GetUsedList()); node != NULL;
          node = (BtlObjNode *)List_GetNext(&node->link)) {
         obj = &node->obj;
         if (obj->unk04 != 0 && obj->active != 0) {
             state = &node->obj.state;
-            state->view = &state->views[idx];
+            state->view = BtlObj_View(obj, idx);
             BtlObj_UpdateView(obj);
+#ifdef PORT
+            if (TagTeam_Active()) {
+                extern void Port_TagObjectTrace(s32,s32,u32,u32);
+                Port_TagObjectTrace(idx,obj->id,state->view->flags,(u32)state->view);
+            }
+#endif
         }
     }
     BtlObj_BuildDrawList(BtlObjVis_GetListExt(idx), idx);
@@ -963,14 +996,15 @@ void BtlObj_FinishVisibility(s32 split) {
         return;
     }
     vis->flags = 0;
-    vis->viewCount = (split == 0) ? 1 : 2;
+    vis->viewCount = (split == 0) ? 1 : TagTeam_ViewCount();
     for (i = 0; i < vis->viewCount; i++) {
+        if (split && !TagTeam_ViewVisible(i)) continue;
         for (node = (BtlObjNode *)List_GetHead(BtlObj_GetUsedList()); node != NULL;
              node = (BtlObjNode *)List_GetNext(&node->link)) {
             obj = &node->obj;
             if (obj->unk04 != 0 && obj->active != 0) {
                 state = &node->obj.state;
-                rec = &state->views[i];
+                rec = BtlObj_View(obj, i);
                 state->viewFlags |= rec->flags;
                 vis->flags |= rec->flags;
             }
@@ -1182,12 +1216,12 @@ void BtlRes_Init(s32 prealloc) {
     memset(res, 0, sizeof(BtlResWork));
     res->prealloc = prealloc;
     if (prealloc != 0) {
-        for (i = 0; i < 3; i++) {
-            res->spare[i].buf = Heap_Alloc(BTL_RES_MODEL_SIZE, 0x40, 0, HEAP_ANY);
+        for (i = 0; i < BTL_RES_FIXED_MAX + 1; i++) {
+            res->spare[i].buf = Heap_Alloc((PortGame_IsBT4()?0xE6800:BTL_RES_MODEL_SIZE), 0x40, 0, HEAP_ANY);
             res->spare[i].size = 0;
             res->spare[i].id = -1;
             res->spare[i].orig = res->spare[i].buf;
-            memset(res->spare[i].buf, 0, BTL_RES_MODEL_SIZE);
+            memset(res->spare[i].buf, 0, (PortGame_IsBT4()?0xE6800:BTL_RES_MODEL_SIZE));
         }
         for (i = 0; i < BTL_RES_FIXED_MAX; i++) {
             slot = &res->fixed[i];
@@ -1195,15 +1229,15 @@ void BtlRes_Init(s32 prealloc) {
             slot->file[1].buf = Heap_Alloc(BTL_RES_ANIM0_SIZE, 0x40, 0, HEAP_ANY);
             slot->file[1].size = 0;
             slot->file[1].id = -1;
-            slot->file[2].buf = Heap_Alloc(BTL_RES_ANIM1_SIZE, 0x40, 0, HEAP_ANY);
+            slot->file[2].buf = Heap_Alloc((PortGame_IsBT4()?0xD3800:BTL_RES_ANIM1_SIZE), 0x40, 0, HEAP_ANY);
             slot->file[2].size = 0;
             slot->file[2].id = -1;
             memset(slot->file[1].buf, 0, BTL_RES_ANIM0_SIZE);
-            memset(slot->file[2].buf, 0, BTL_RES_ANIM1_SIZE);
+            memset(slot->file[2].buf, 0, (PortGame_IsBT4()?0xD3800:BTL_RES_ANIM1_SIZE));
             BtlRes_CopyFile(&slot->file[0], spare);
             slot->number = number++;
         }
-        res->next = &res->spare[2];
+        res->next = &res->spare[BTL_RES_FIXED_MAX];
     }
     for (i = 0; i < BTL_RES_SLOT_MAX; i++) {
         slot = &res->slots[i];
@@ -1231,7 +1265,7 @@ void BtlRes_Term(void) {
         }
         slot++;
     }
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < BTL_RES_FIXED_MAX + 1; i++) {
         if (res->spare[i].orig != NULL) {
             Heap_Free(res->spare[i].orig);
         }

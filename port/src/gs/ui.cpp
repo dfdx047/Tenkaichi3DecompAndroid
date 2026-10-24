@@ -17,6 +17,8 @@
 #include "menu_translation.h"
 #include "../quit_dialog.h"
 #include "net_chat.h"
+#include "tag_net.h"
+#include "../../include/plat_game.h"
 
 static int sMeter = -1; // the meter (frame rate, connection): -1 not read yet
 static bool meter_on(void);
@@ -92,6 +94,8 @@ static int sLanguageCount, sLanguageChoice;
 static bool sLanguageRestartPending;
 static bool sNet;                              // the open window is the online screen (Dragon Net Battle), not the settings
 static int sForceTab = -1;                     // BT3_UI_OPEN=<tab>: open at start on that tab (testing)
+static int sTagSettingsRequest;
+extern "C" void Port_TagSettingsOpen(void) { __atomic_store_n(&sTagSettingsRequest,1,__ATOMIC_RELEASE); }
 static int sCapKind, sCapPlayer, sCapAction;   // waiting for a key (1) or a controller button (2) to bind
 static Uint64 sCapUntil;                       // ... until then: a controller has no button that is not a binding, so the wait ends by itself
 static bool sQuit;                             // the question before the game closes is up
@@ -456,7 +460,7 @@ static void language_init() {
     Port_SettingText("menu_lang", "", saved, sizeof(saved));
     sLanguageCount = MenuTranslation_Available(sLanguages, (int)(sizeof(sLanguages) / sizeof(sLanguages[0])));
     sLanguageChoice = 0;
-    const char *preferred = override != NULL && override[0] != '\0' ? override : saved[0] != '\0' ? saved : "en";
+    const char *preferred = override != NULL && override[0] != '\0' ? override : saved[0] != '\0' ? saved : PortGame_DefaultLanguage();
     for (int i = 0; i < sLanguageCount; i++) if (strcmp(sLanguages[i].locale, preferred) == 0) sLanguageChoice = i;
 }
 
@@ -553,7 +557,7 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
 // The game gets nothing from keyboard or controller while the window or the exit question is up; and the button
 // that closed either is not the game's.
 static void input_owner(void) {
-    int up = sOpen || sQuit;
+    int up = sOpen || sQuit || (TagNet_MenuInput() && !TagNet_NativeMenu());
     if (gPortOverlayOpen && !up) {
         PortInput_Swallow();
     }
@@ -1054,7 +1058,7 @@ static void bind(int value) {
 }
 
 static bool chat_can_open(void) {
-    return sReady && !sOpen && !sQuit && PortChat_Enabled() && Port_NetActive();
+    return sReady && !sOpen && !sQuit && !TagNet_Enabled() && PortChat_Enabled() && Port_NetActive();
 }
 
 static void chat_open(void) {
@@ -1150,6 +1154,11 @@ int Ui_Event(const SDL_Event *ev) {
                ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev->type == SDL_EVENT_MOUSE_BUTTON_UP || ev->type == SDL_EVENT_MOUSE_WHEEL;
     }
     if (!sOpen) {
+        if(TagNet_NativeMenu()) {ImGui_ImplSDL3_ProcessEvent(ev);return 0;}
+        if(TagNet_Enabled() && !TagNet_NativeMenu() && (TagNet_MenuInput() || TagNet_Role()==10)) {
+            ImGui_ImplSDL3_ProcessEvent(ev);
+            return TagNet_MenuInput() || ev->type==SDL_EVENT_MOUSE_BUTTON_DOWN || ev->type==SDL_EVENT_MOUSE_BUTTON_UP || ev->type==SDL_EVENT_MOUSE_WHEEL;
+        }
         return 0;
     }
     if (sCapKind != 0) { // the next key or button is the binding; Esc leaves it as it was, Delete clears it
@@ -1727,7 +1736,16 @@ static void sticks_panel(int player) {
     }
 }
 
+bool TagHud_Visible();
+void TagHud_Draw();
+extern "C" void TagNet_Draw();
+extern "C" int TagNet_Enabled();
+extern "C" int TagNet_MenuInput();
+extern "C" int TagNet_Role();
+void TagHud_Settings();
+
 static void controls_tab(void) {
+    TagHud_Settings();
     static int player;
     char label[96];
     int count = 0;
@@ -1735,6 +1753,10 @@ static void controls_tab(void) {
     ImGui::RadioButton("Player 1", &player, 0);
     ImGui::SameLine();
     ImGui::RadioButton("Player 2", &player, 1);
+    if(getenv("BT3_TAG_TEAM")) {
+        ImGui::SameLine(); ImGui::RadioButton("Player 3", &player, 2);
+        ImGui::SameLine(); ImGui::RadioButton("Player 4", &player, 3);
+    }
     int *slot = PortInput_PadSlot(player), *keys = PortInput_Keys(player), *pads = PortInput_PadButtons(player);
     SDL_JoystickID *ids = SDL_GetGamepads(&count);
     if (*slot < 0) {
@@ -1860,6 +1882,11 @@ static void build(void) {
     // (760 high where the picture has the room: the Controls tab's sticks and its list of bindings together)
     ImGui::SetNextWindowSize(ImVec2(640.0f, io.DisplaySize.y >= 800.0f ? 760.0f : 600.0f), ImGuiCond_Appearing);
     if (ImGui::Begin("Settings", &open, ImGuiWindowFlags_NoCollapse)) {
+        if(TagNet_Active()) {
+            ImGui::TextWrapped("Online match rules are chosen in the room before everyone readies up.");
+            if(ImGui::Button("Leave online match")){TagNet_Leave();open=false;}
+            ImGui::Separator();
+        }
         {
             int latest = update_latest();
             if (latest > PORT_RELEASE) {
@@ -2301,6 +2328,7 @@ static void chat_draw(void) {
 // false: there is nothing to draw. The same for both back ends; each then draws ImGui's data its own way.
 static bool frame_build(void) {
     PortInput_TboClipboard();
+    if(TagNet_Enabled())input_owner();
     { // a keypad of Tenkaichi Budokai Online takes text: the system's text input is on for it (letters as typed)
         static SDL_Window *on = NULL;
         SDL_Window *want = gPortTboTyping && !sOpen && !sQuit && !sChat ? SDL_GetKeyboardFocus() : NULL;
@@ -2314,6 +2342,9 @@ static bool frame_build(void) {
         sQuit = false;
         input_owner();
         PortA11y_Say(PortA11y_Label("Back to the game"), 1);
+    }
+    if(sReady && __atomic_exchange_n(&sTagSettingsRequest,0,__ATOMIC_ACQ_REL)) {
+        sForceTab=6; set_open(true); input_owner();
     }
     if (sReady && gPortNetWindowClose) { // back from an online session: the window it was started from closes
         gPortNetWindowClose = 0;
@@ -2354,7 +2385,7 @@ static bool frame_build(void) {
     bool banner = sReady && sBanner[0] != '\0';
     meter_count();
     sBuilt = false;
-    if (!sReady || (!sOpen && !sQuit && !notice && !overlay && !meter && !names && !bars && !chat && !banner)) {
+    if (!sReady || (!sOpen && !sQuit && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !TagHud_Visible() && !TagNet_Enabled())) {
         return false;
     }
     if (sPadHold && sCapKind != 2) { // a binding was taken: the controller works the window again once nothing is held
@@ -2372,7 +2403,7 @@ static bool frame_build(void) {
     }
     // (the button that becomes the binding would also press the row it is bound in; while a chat line is typed the
     // controller is the game's)
-    if (sPadHold || (sChat && !sOpen)) {
+    if (sPadHold || (sChat && !sOpen) || (TagNet_Enabled() && !TagNet_MenuInput() && !sOpen)) {
         ImGui::GetIO().ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
     } else {
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
@@ -2386,6 +2417,8 @@ static bool frame_build(void) {
     ImGui_ImplSDL3_NewFrame();
     fonts_apply(); // (a face chosen for the fight panels, between two frames)
     ImGui::NewFrame();
+    TagHud_Draw();
+    TagNet_Draw();
     if (bars) {
         bars_draw();
     }

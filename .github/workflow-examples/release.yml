@@ -3,20 +3,14 @@
 # program fetches their values from the user's own disc at start. The same build runs locally with
 # port/release/build.sh.
 #
-#   every push to main        the archives as downloadable artifacts of the run (a check that everything builds)
-#   a tag  v*                 the same, and a draft release with both archives attached
-#   "Run workflow" button     the same as a push
-name: release
+# Manual upstream packaging checks. Native Tag Team installers are prepared separately.
+name: Manual upstream build
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
-    paths-ignore: ["docs/**", "**.md", "LICENSE", "LICENSE-MIT"]
   workflow_dispatch:
 
 permissions:
-  contents: write   # to create the draft release on a tag
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -61,11 +55,3 @@ jobs:
           name: Tenkaichi3Decomp-windows-x64
           path: port/build/Tenkaichi3Decomp-windows-x64.zip
           if-no-files-found: error
-
-      - name: Draft release
-        if: startsWith(github.ref, 'refs/tags/v')
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${GITHUB_REF_NAME}" --draft --title "${GITHUB_REF_NAME}" --generate-notes \
-            port/build/Tenkaichi3Decomp-linux-x64.zip port/build/Tenkaichi3Decomp-windows-x64.zip

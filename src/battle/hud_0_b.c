@@ -232,6 +232,11 @@ u16 *BtlMenu_GetText(s32 n) {
 /* Text of a menu item. */
 u16 *BtlMenu_GetItemText(s32 n) {
 #ifdef PORT
+    {
+        extern s32 TagNet_Enabled(void);
+        static u16 room[]={0xFEFF,'R','e','t','u','r','n',' ','t','o',' ','r','o','o','m',0};
+        if(TagNet_Enabled() && n==5)return room;
+    }
     /* Tenkaichi Budokai Online's sparring fight goes back to its search, and its pause menu says so */
     static const char from[] = "Return to Character Select";
     static const char to[] = "Back to Budokai Online";
@@ -336,7 +341,7 @@ s32 BtlMenu_GetWidth(BtlMenu *menu) {
         w = Font_GetGlyphHeight() * 22;
     } else {
         for (i = 0; i < menu->count; i++) {
-            s32 n = Font_GetWidth(BtlMenu_GetItemText(menu->items[i].text[pad]));
+            s32 n = Font_GetWidth(BtlMenu_GetItemText(menu->items[i].text[pad & 1]));
 
             if (w < n) {
                 w = n;
@@ -498,7 +503,7 @@ void BtlMenu_Draw(u64 **pkt, BtlMenu *menu) {
                     } else {
                         Font_SetColorRGBA(0x89, 0xC3, 0xE5, 0x80);
                     }
-                    text = menu->items[i].text[pad];
+                    text = menu->items[i].text[pad & 1];
                     if (text >= 0) {
                         Font_Print(BtlMenu_GetItemText(text));
                         Font_NewLine();
@@ -591,8 +596,8 @@ void BtlMenu_ClearActive(void) {
 void BtlMenu_Init(void) {
     u32 *file;
 
-    gBtlMenu = Heap_Alloc(0x120, 0x20, 0, 2);
-    memset(gBtlMenu, 0, 0x120);
+    gBtlMenu = Heap_Alloc(sizeof(BtlMenuWork), 0x20, 0, 2);
+    memset(gBtlMenu, 0, sizeof(BtlMenuWork));
     BtlMenu_SetActive();
     file = *(u32 **)((u8 *)gCommonRes + 0x28);
     gBtlMenu->tex = (BtlMenuTexFile *)(file + file[7] / 4);

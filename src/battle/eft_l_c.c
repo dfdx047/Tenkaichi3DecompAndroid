@@ -1,3 +1,4 @@
+#include "battle/btl_effect_owner.h"
 #include "common.h"
 #include "battle/eft_l.h"
 
@@ -93,7 +94,7 @@ void EftAbsorb_Init(EftTask *task, EftAbsorbArg *arg) {
     EftEmit_InitState(w->model, &w->inst[1]);
     w->flags |= EFT_ABSORB_NEW;
     w->life = EftEmit_GetEndFrames(w->model);
-    BtlTask_SetOwnerTag(task, owner->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(owner->objId));
     if (w->hands == 0) {
         BtlCharApi_GetNodePos(owner->objId, 0x36, &w->pos[0]);
         Vec4_Set(&w->dir[0], 0.0f, -1.0f, 0.0f, 1.0f);

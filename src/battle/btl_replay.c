@@ -26,6 +26,11 @@ extern s32 gBtlReplayHudMode;
 
 /* Rewinds the fighter's track; when no replay is being played it is also emptied, ready to record. */
 void BtlReplay_Rewind(BtlReplayChr *chr) {
+#ifdef PORT
+    /* The stock replay file contains exactly two input tracks. Native team
+     * matches must not read or write beyond that serialized format. */
+    if (TagTeam_Active()) return;
+#endif
     BtlReplayTrack *trk = &BattleReplay_GetData()->track[chr->player];
 
     trk->pos = 0;
@@ -36,6 +41,9 @@ void BtlReplay_Rewind(BtlReplayChr *chr) {
 
 /* Appends this frame's stick bytes and button word to the fighter's track; a full track raises the end flag. */
 void BtlReplay_Record(BtlReplayChr *chr, u32 buttons, u32 commands, u8 *stick) {
+#ifdef PORT
+    if (TagTeam_Active()) return;
+#endif
     BtlReplayTracks *data = BattleReplay_GetData();
     BtlReplayTrack *trk = &data->track[chr->player];
 

@@ -2,6 +2,11 @@
 #include "battle/hud_0.h"
 #include "battle/battle.h"
 #include "sys/pad.h"
+#ifdef PORT
+#include "battle/tag_team.h"
+static BtlMenu tagResultMenu;
+static BtlMenuItem tagResultItems[7];
+#endif
 
 /*
  * Battle pause menu, part 1. Source range 0x2129C8-0x213238.
@@ -69,6 +74,10 @@ extern s32 CpuLevel_FromSetting(s32 setting); /* menu difficulty 0..4 -> interna
 
 /* Draws the battle's 2D layers: the HUD, the script's view update, then the pause menu. */
 void BtlGame_Draw(void) {
+#ifdef PORT
+    extern s32 Port_TagShowcase(void);
+    if(!Port_TagShowcase())
+#endif
     Hud_Draw();
 #ifdef PORT
     {
@@ -134,6 +143,9 @@ BtlMenu *PauseMenu_GetMenu(s32 which) {
         case 0:
             if (!BattleReplay_IsActive()) {
                 menu = &gPauseMenuResultVersus;
+#ifdef PORT
+                if(TagTeam_Active()) menu=&tagResultMenu;
+#endif
             } else if (!BattleReplay_IsLoaded()) {
                 menu = &gPauseMenuResultReplayRec;
             } else {
@@ -316,16 +328,33 @@ static void PauseMenu_PortRemove(BtlMenu *menu, s32 id) {
 /* Battle start: allocates the menu work. */
 void PauseMenu_Init(void) {
 #ifdef PORT
+    if(TagTeam_Active()) {
+        s32 i;
+        tagResultMenu=gPauseMenuResultVersus;
+        tagResultMenu.items=tagResultItems;
+        tagResultMenu.count=0;
+        /* Native replays hold only two fighters. Keep the natural retry,
+           character-select and main-menu exits, without unusable entries. */
+        for(i=0;i<gPauseMenuResultVersus.count;i++) {
+            s32 id=gPauseMenuResultVersus.items[i].id;
+            if(id==0xE || id==0x18 || id==0x17) continue;
+            tagResultItems[tagResultMenu.count++]=gPauseMenuResultVersus.items[i];
+        }
+    }
     {
         /* Online the menu at the end of a battle does without three of its six entries (asked for by the user):
            "Return to Vs Menu" (id 0xE; a session has no versus menu, the host sets the rules in the lobby window),
            "View Replay Data" (id 0x18) and "Save Replay Data" (id 0x17). Done on both copies at every battle start (the first time takes them
            out, later ones find nothing); the program is started afresh after a session, so offline has them. */
         extern int Port_NetActive(void);
+        extern int TagNet_Enabled(void);
         if (Port_NetActive()) {
             PauseMenu_PortRemove(&gPauseMenuResultVersus, 0xE);
             PauseMenu_PortRemove(&gPauseMenuResultVersus, 0x18);
             PauseMenu_PortRemove(&gPauseMenuResultVersus, 0x17);
+            /* Native rooms own character selection. Offer one clear return
+               path; leaving the connection itself is in the local F1 menu. */
+            if(TagNet_Enabled())PauseMenu_PortRemove(&gPauseMenuVersus,0xF);
         }
     }
     {
@@ -361,11 +390,28 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
     BtlMenu *menu;
     BtlMenuItem *item;
 
+    {extern s32 TagChallenge_ResultInput(s32);if(which==1 && TagChallenge_ResultInput(pad))return 1;}
     gPauseMenuWhich = which;
     menu = PauseMenu_GetMenu(which);
+#ifdef PORT
+    {
+        s32 actor=TagTeam_Active()?TagTeam_ControlActor(pad):pad;
+        PauseMenuObj *obj;
+        if(actor<0) actor=TagTeam_ViewActor(pad);
+        obj=BtlObj_Get(BattleSide_GetObjId(actor));
+        BtlMenu_SetScript(obj?obj->skillText:NULL);
+        { extern void Port_TagMenuTrace(s32,s32,s32,s32,s32,s32);
+          Port_TagMenuTrace(90,pad,which,menu->cursor,menu->open,actor); }
+    }
+#else
     BtlMenu_SetScript(BtlObj_Get(BattleSide_GetObjId(pad))->skillText);
+#endif
     set = BattleResult_Set;
     if (BtlMenu_Update(which, NULL, menu, pad)) {
+#ifdef PORT
+        { extern void Port_TagMenuTrace(s32,s32,s32,s32,s32,s32);
+          Port_TagMenuTrace(91,pad,which,menu->cursor,menu->state,0); }
+#endif
         Battle_GetWork()->flags &= ~BATTLE_FLAG_PAUSE;
         BtlMenu_ClearActive();
         Adx_ResumeSeVoice();
@@ -431,6 +477,7 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
 
 /* Draws the menu when it is shown. */
 void PauseMenu_Draw(void) {
+    {extern s32 TagChallenge_ResultVisible(void);if(TagChallenge_ResultVisible())return;}
 #ifdef PORT
     {
         /* Online the pause menu belongs to the one who opened it (the fight goes on under it, btl_seq.c): it is

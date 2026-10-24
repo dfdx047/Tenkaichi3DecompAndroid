@@ -1,6 +1,7 @@
 #include "common.h"
 #include "menu/menu_g.h"
 #ifdef PORT
+#include "battle/tag_session.h"
 extern int Port_NetSession(void); /* port/src/gs/net.c */
 #endif
 
@@ -66,6 +67,12 @@ s32 Duel_Main(void) {
             break;
         case 40:
             if (TeamSel_Run(2)) {
+#ifdef PORT
+                { extern s32 TagTournament_Start(void);
+                  s32 next=TagTournament_Start();
+                  if(next==2)continue;
+                  if(next) result=0; else TagSession_Apply(); }
+#endif
                 Adx_StopAll();
                 bgm = 0;
                 done = 1;
@@ -75,6 +82,11 @@ s32 Duel_Main(void) {
                 gProgress->mode = 38;
 #ifdef PORT /* PC build, online session: there is no versus menu in it; going back leaves for the main menu, which
                ends the session (as cancelling the versus menu does) */
+                if (TagSession_Selected()) {
+                    TagSession_Open();
+                    result=0;
+                    done=1;
+                }
                 if (Port_NetSession()) {
                     gProgress->mode = 4;
                     result = 0;

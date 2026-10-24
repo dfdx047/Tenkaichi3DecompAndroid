@@ -37,8 +37,11 @@
 #include "gs_internal.h"
 #include "../port_addr.h"
 
-#define SPU_SIZE 0x200000
-#define VOICES 48
+#define SPU_SIZE 0x1000000
+#define BANK_COUNT 14
+/* The console's 48 voices covered two fighters. Ten native fighters can queue
+   several strikes, shouts and loops each without cutting one another off. */
+#define VOICES (24 * (BANK_COUNT - 4))
 #define OUT_RATE 48000
 /* Loudness of the effects against the music. 0.55 (a guess) was too loud by the user's ear. 0.25 follows the
    chain the console had: sequence volume, note velocity and timbre volume are each 100 of 127 ((100/127)^3 = 0.49)
@@ -53,7 +56,7 @@ static float se_gain(void) {
 }
 /* The settings overlay's volumes (snd_adx.c), by bank slot; they take effect with the next sound. */
 extern int gPortSePercent, gPortVoicePercent, gPortStagePercent;
-#define SE_GAIN(slot) (se_gain() * (float)((slot) == 3 ? gPortStagePercent : (slot) == 4 || (slot) == 5 ? gPortVoicePercent : gPortSePercent) / 100.0f)
+#define SE_GAIN(slot) (se_gain() * (float)((slot) == 3 ? gPortStagePercent : (slot) >= 4 && (slot) < BANK_COUNT ? gPortVoicePercent : gPortSePercent) / 100.0f)
 
 typedef struct Bank {
     int set;
@@ -79,13 +82,15 @@ typedef struct Voice {
 
 /* Beside the sound chip's memory: room for the clip banks this copy plays in the place of the game's (voice_own_bank). */
 #define OWN_SLOT 0x100000 /* a megabyte each; the largest voice bank file of the disc has 591,104 bytes */
-#define SPU_TOTAL (SPU_SIZE + 8 * OWN_SLOT)
+#define SPU_TOTAL (SPU_SIZE + BANK_COUNT * OWN_SLOT)
 static uint8_t sSpu[SPU_TOTAL];
-static uint8_t *sOwnTables[8]; /* the two tables of such a bank (one allocation) */
-static Bank sBanks[8];
+static uint8_t *sOwnTables[BANK_COUNT]; /* the two tables of such a bank (one allocation) */
+static Bank sBanks[BANK_COUNT];
 static Voice sVoices[VOICES];
 static SDL_AudioStream *sStream;
 static int sMono, sTried;
+static int sTestAudio;
+static uint64_t sTestSamples[BANK_COUNT];
 
 extern SDL_AudioDeviceID Port_AudioDevice(void); /* snd_adx.c */
 
@@ -209,6 +214,7 @@ static void SDLCALL mix(void *user, SDL_AudioStream *stream, int additional, int
                 s = (a + (b - a) * (float)(v->frac - (double)ip)) * v->fade;
                 acc[i * 2] += s * v->gl;
                 acc[i * 2 + 1] += s * v->gr;
+                if (sTestAudio && s != 0 && (v->gl > 0 || v->gr > 0)) sTestSamples[v->bank]++;
                 v->frac += v->step;
                 if (v->stopping) {
                     v->fade -= 1.0f / (0.008f * OUT_RATE); /* 8 ms */
@@ -240,6 +246,7 @@ static int stream_ready(void) {
             return 0;
         }
         sTried = 1;
+        sTestAudio = getenv("BT3_TAG_TEST_AUDIO") != NULL;
         spec.format = SDL_AUDIO_S16;
         spec.channels = 2;
         spec.freq = OUT_RATE;
@@ -252,10 +259,28 @@ static int stream_ready(void) {
     return sStream != NULL;
 }
 
+void Port_TagSampleProbeReset(void) {
+    if(sStream) SDL_LockAudioStream(sStream);
+    memset(sTestSamples,0,sizeof(sTestSamples));
+    if(sStream) SDL_UnlockAudioStream(sStream);
+}
+int Port_TagSampleProbe(int mask) {
+    if (!sStream) return 0;
+    SDL_Delay(200);
+    SDL_LockAudioStream(sStream);
+    int pass = 1;
+    for (int i = 0; i < BANK_COUNT; i++) if (mask & (1 << i)) {
+        fprintf(stderr,"tag audio bank=%d nonzero=%llu\n",i,(unsigned long long)sTestSamples[i]);
+        pass &= sTestSamples[i] > 0;
+    }
+    SDL_UnlockAudioStream(sStream);
+    return pass;
+}
+
 static int slot_of(int mask) {
     int i;
 
-    for (i = 0; i < 8; i++) {
+    for (i = 0; i < BANK_COUNT; i++) {
         if (mask & (1 << i)) {
             return i;
         }
@@ -510,7 +535,7 @@ int sceSifCallRpc(void *client, int fno, int mode, void *send, int sendSize, voi
         break;
     }
     case 0x4: /* FREE_BANK */
-        for (i = 0; i < 8; i++) {
+        for (i = 0; i < BANK_COUNT; i++) {
             if (w[0] & (1 << i)) {
                 sBanks[i].set = 0;
             }
@@ -521,12 +546,12 @@ int sceSifCallRpc(void *client, int fno, int mode, void *send, int sendSize, voi
         break;
     case 0x5: sMono = w[0] != 0; break;
     case 0x6: /* SET_PAUSE: mask, on */
-        for (i = 0; i < 8; i++) {
+        for (i = 0; i < BANK_COUNT; i++) {
             if (w[0] & (1 << i)) { sBanks[i].paused = w[1] != 0; }
         }
         break;
     case 0x7: /* SET_VOLUME: mask, 0..0x7F */
-        for (i = 0; i < 8; i++) {
+        for (i = 0; i < BANK_COUNT; i++) {
             if (w[0] & (1 << i)) { sBanks[i].volume = (float)w[1] / 127.0f; }
         }
         break;
@@ -534,12 +559,12 @@ int sceSifCallRpc(void *client, int fno, int mode, void *send, int sendSize, voi
     case 0xD: { /* QUEUE: count, then 12-byte commands { type, loop, u16 handle, bank, id, volume, pan, s32 pitch } */
         const uint8_t *q = send;
         uint32_t count = le32(q);
-        for (i = 0; ready && i < (int)count && i < 32; i++) {
+        for (i = 0; ready && i < (int)count && i < (sendSize-4)/12; i++) {
             const uint8_t *c = q + 4 + i * 12;
             if (c[0] == 0) {
-                play(c[4], c[5], c[6], c[7], (int32_t)le32(c + 8), (int)le16(c + 2));
+                play(1u << c[4], c[5], c[6], c[7], (int32_t)le32(c + 8), (int)le16(c + 2));
             } else if (c[0] == 1) {
-                stop(c[4], c[5], -1);
+                stop(1u << c[4], c[5], -1);
             } else if (c[0] == 2) {
                 stop(0, -1, (int)le16(c + 2));
             }

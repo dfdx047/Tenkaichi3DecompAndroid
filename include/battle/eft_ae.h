@@ -133,11 +133,10 @@ typedef struct EftAeVramEntry {
 
 /* The effect VRAM allocator (gEftVram): a list rebuilt every frame. */
 typedef struct EftAeVram {
-    /* 0x000 */ EftAeVramEntry entry[128];
-    /* 0x800 */ u32 count;
-    /* 0x804 */ s32 imageNext;  /* next free block for images, 0x2B00 at the start of a frame (grows up) */
-    /* 0x808 */ s32 clutNext;   /* next free block for CLUTs, 0x2A00 at the start of a frame (grows up) */
-} EftAeVram; /* size 0x80C */
+    EftAeVramEntry *entry;
+    u32 count, capacity;
+    s32 imageNext, clutNext;
+} EftAeVram;
 
 /* ---- "V000" sprite animation pack ----------------------------------------------------------------------- */
 

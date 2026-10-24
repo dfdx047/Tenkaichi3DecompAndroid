@@ -208,7 +208,7 @@ void EvoZ_Refresh(UEvoZ *ez) {
             Flash_ClipSetFlags(flash, &ref, 2, 0);
             Flash_FindLabel(flash, name, "mc_list_plate_off", &ref);
             if (i < ez->used || i == 7) {
-                if (gSaveData->custom[ez->side->pick.col + ez->side->pick.row * 7].set[ez->set][i] != 0) {
+                if (SAVE_CUSTOM_AT(gSaveData, ez->side->pick.col + ez->side->pick.row * 7).set[ez->set][i] != 0) {
                     Flash_ClipSetTex(flash, &ref, 4);
                 } else {
                     Flash_ClipSetTex(flash, &ref, 5);
@@ -217,7 +217,7 @@ void EvoZ_Refresh(UEvoZ *ez) {
                 Flash_ClipSetTex(flash, &ref, 7);
             }
             Flash_FindLabel(flash, name, "mc_list_plate_on", &ref);
-            if (gSaveData->custom[ez->side->pick.col + ez->side->pick.row * 7].set[ez->set][i] != 0) {
+            if (SAVE_CUSTOM_AT(gSaveData, ez->side->pick.col + ez->side->pick.row * 7).set[ez->set][i] != 0) {
                 Flash_ClipSetTex(flash, &ref, 0);
             } else {
                 Flash_ClipSetTex(flash, &ref, 1);
@@ -234,9 +234,9 @@ void EvoZ_Refresh(UEvoZ *ez) {
                 Flash_ClipSetFlags(flash, &ref, 2, 0);
             }
             Flash_FindLabel(flash, name, "mc_icon_item_cost", &ref);
-            if (gSaveData->custom[ez->side->pick.col + ez->side->pick.row * 7].set[ez->set][i] != 0 && ez->items[gSaveData->custom[ez->side->pick.col + ez->side->pick.row * 7].set[ez->set][i] - 1].slots != 0) {
-                uv.x0 = ez->items[gSaveData->custom[ez->side->pick.col + ez->side->pick.row * 7].set[ez->set][i] - 1].slots * 32 - 32;
-                uv.y0 = ItemTbl_GetClass(gSaveData->custom[ez->side->pick.col + ez->side->pick.row * 7].set[ez->set][i] - 1, ez->items) * 42;
+            if (SAVE_CUSTOM_AT(gSaveData, ez->side->pick.col + ez->side->pick.row * 7).set[ez->set][i] != 0 && ez->items[SAVE_CUSTOM_AT(gSaveData, ez->side->pick.col + ez->side->pick.row * 7).set[ez->set][i] - 1].slots != 0) {
+                uv.x0 = ez->items[SAVE_CUSTOM_AT(gSaveData, ez->side->pick.col + ez->side->pick.row * 7).set[ez->set][i] - 1].slots * 32 - 32;
+                uv.y0 = ItemTbl_GetClass(SAVE_CUSTOM_AT(gSaveData, ez->side->pick.col + ez->side->pick.row * 7).set[ez->set][i] - 1, ez->items) * 42;
                 uv.x1 = uv.x0 + 32;
                 uv.y1 = uv.y0 + 42;
                 Flash_ClipSetFlags(flash, &ref, 2, 1);
@@ -245,8 +245,8 @@ void EvoZ_Refresh(UEvoZ *ez) {
                 Flash_ClipSetFlags(flash, &ref, 2, 0);
             }
             Flash_FindLabel(flash, name, "mc_icon_item_potara", &ref);
-            if (gSaveData->custom[ez->side->pick.col + ez->side->pick.row * 7].set[ez->set][i] != 0) {
-                uv.x0 = ez->items[gSaveData->custom[ez->side->pick.col + ez->side->pick.row * 7].set[ez->set][i] - 1].type * 64;
+            if (SAVE_CUSTOM_AT(gSaveData, ez->side->pick.col + ez->side->pick.row * 7).set[ez->set][i] != 0) {
+                uv.x0 = ez->items[SAVE_CUSTOM_AT(gSaveData, ez->side->pick.col + ez->side->pick.row * 7).set[ez->set][i] - 1].type * 64;
                 uv.y0 = 0;
                 uv.x1 = uv.x0 + 64;
                 uv.y1 = 0x40;
@@ -256,8 +256,8 @@ void EvoZ_Refresh(UEvoZ *ez) {
                 Flash_ClipSetFlags(flash, &ref, 2, 0);
             }
             Flash_FindLabel(flash, name, "mc_dammy_text", &ref);
-            if (gSaveData->custom[ez->side->pick.col + ez->side->pick.row * 7].set[ez->set][i] != 0) {
-                TextBox_AttachLine(flash, &ref, 0, 0, gSaveData->custom[ez->side->pick.col + ez->side->pick.row * 7].set[ez->set][i] - 1, &ez->box[10 + i]);
+            if (SAVE_CUSTOM_AT(gSaveData, ez->side->pick.col + ez->side->pick.row * 7).set[ez->set][i] != 0) {
+                TextBox_AttachLine(flash, &ref, 0, 0, SAVE_CUSTOM_AT(gSaveData, ez->side->pick.col + ez->side->pick.row * 7).set[ez->set][i] - 1, &ez->box[10 + i]);
             } else {
                 TextBox_AttachLine(flash, &ref, 0, 0, -1, &ez->box[10 + i]);
             }

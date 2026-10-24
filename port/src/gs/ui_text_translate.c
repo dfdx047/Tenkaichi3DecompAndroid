@@ -31,11 +31,13 @@ static void ui_translated_free(void *p) { (void)p; } /* (all of it at once: ui_c
 #endif
 
 #define UI_MAX_FILE (16u * 1024 * 1024)
-#define UI_MAX_ROWS 30000
-#define UI_MAX_GROUPS 256
+/* BT4 includes 30,362 strings in over a thousand small tables. Keep explicit
+ * bounds, but do not reject its own generated catalog as corrupt. */
+#define UI_MAX_ROWS 65536
+#define UI_MAX_GROUPS 4096
 #define UI_MAX_LINE 16384
 #define UI_MAX_UNITS 4096
-#define UI_WORD_SLOTS 65536
+#define UI_WORD_SLOTS 131072
 
 typedef struct UiParser { const char *p, *end; } UiParser;
 typedef struct UiRow { char *id; uint16_t *original, *translated; } UiRow;

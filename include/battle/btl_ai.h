@@ -183,7 +183,7 @@ typedef struct BtlAi {
     /* 0x004 */ f32 dist;           /* (m) between the two fighters' centres, refreshed every frame */
     /* 0x008 */ f32 radiusSum;      /* both fighters' BtlCharApi_GetRadius */
     /* 0x00C */ s32 sight;          /* (m) BTLAI_SIGHT_*: stage line test between the two fighters */
-    /* 0x010 */ BtlAiWork work[2];
+    /* 0x010 */ BtlAiWork work[PORT_FIGHTER_CAPACITY];
     /* 0xA50 */ s32 frame;          /* frames the AI has run */
     /* 0xA54 */ s32 flags;          /* (m) bit 0: data is a heap block owned by the manager (Heap_Free on reset) */
     /* 0xA58 */ s32 unkA58[2];

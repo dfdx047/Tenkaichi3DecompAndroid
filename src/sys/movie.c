@@ -192,9 +192,16 @@ void Movie_Open(char *pss, char *adx) {
     MovieBuf *buf;
     s32 i;
 
+#ifdef PORT
+    adxf = ADXF_Open(pss, NULL);
+    /* An incomplete import must not trap the native application in a retry
+       loop. Leave the movie closed and continue to the title/menu. */
+    if (adxf == NULL) return;
+#else
     do {
         adxf = ADXF_Open(pss, NULL);
     } while (adxf == NULL);
+#endif
     Adx_PlayFilePaused(ADX_CH_BGM, adx, 0x40, 0);
     gMovie = Heap_Alloc(sizeof(Movie), 0x20, 0, 2);
     memset(gMovie, 0, sizeof(Movie));
@@ -248,14 +255,26 @@ void Movie_Close(void) {
 
 /* Plays the opening movie from start to end (or until it is skipped). */
 void Movie_PlayOpening(void) {
+#ifdef PORT
+    extern s32 PortGame_IsBT4(void);
+    if (PortGame_IsBT4()) Movie_Open("zs4usop.pss", "zs4usop.adx");
+    else
+#endif
     Movie_Open("zs3usop.pss", "zs3usop.adx");
+    if (!gMovie) return;
     Movie_Run();
     Movie_Close();
 }
 
 /* Plays the ending movie. */
 void Movie_PlayEnding(void) {
+#ifdef PORT
+    extern s32 PortGame_IsBT4(void);
+    if (PortGame_IsBT4()) Movie_Open("zs4used.pss", "zs4used.adx");
+    else
+#endif
     Movie_Open("zs3used.pss", "zs3used.adx");
+    if (!gMovie) return;
     Movie_Run();
     Movie_Close();
 }

@@ -3,6 +3,7 @@
 
 #include "types.h"
 #include "sys/math3d.h"
+#include "battle/eft_disc_capacity.h"
 
 /*
  * Views local to src/battle/eft_p.c (0x16C2E0..0x16DCA0, the tail of the "disc" projectile module) and
@@ -190,9 +191,10 @@ typedef struct EftDiscMgr {
     /* 0x420 */ u8 modelA[0x90];    /* model template of kinds 0 and 1 */
     /* 0x4B0 */ u8 modelB[0xA0];    /* model template of kinds 2 and 3 */
     /* 0x550 */ void *list;         /* task list of the discs */
-    /* 0x554 */ EftDiscNode *head[2]; /* per fighter */
-    /* 0x55C */ EftDiscNode *tail[2];
-    /* 0x564 */ EftDiscNode node[20];
+    /* Native port extends this tail; the resource prefix stays unchanged. */
+    EftDiscNode *head[EFT_DISC_OWNERS]; /* per fighter */
+    EftDiscNode *tail[EFT_DISC_OWNERS];
+    EftDiscNode node[EFT_DISC_CAPACITY];
     /* 0x654 */ u8 cursor;
 } EftDiscMgr;
 
@@ -201,6 +203,7 @@ typedef struct EftDiscRoot {
 } EftDiscRoot;
 
 extern EftDiscRoot *gEftDisc;
+u32 EftDiscMgr_WorkSize(void);
 
 void EftDisc_PostUpdate(EftPTask *task);
 void EftDisc_Draw(EftPTask *task);

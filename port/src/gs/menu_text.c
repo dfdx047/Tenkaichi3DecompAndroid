@@ -26,6 +26,7 @@
 #include "ui_text_extract.h" /* UiText_EuropeanOnStartup */
 #include "menu_translation.h"
 #include "../port_addr.h"
+#include "../../../include/menu/tag_labels.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1042,13 +1043,56 @@ static void labels_take(void) {
 /* ---- the label of the PC's item of the main menu (src/menu/menu_a.c) ----
    Made from the player's disc (MenuLabels_MainItem) in a thread of its own, started with the first frame, so that it is
    there when the main menu is first set up; the menu waits for it if not. */
+typedef struct TagWaveFighter {short chara,costume,items[8];} TagWaveFighter;
+typedef struct TagWave {const char *name;int level,count;TagWaveFighter fighters[5];} TagWave;
+typedef struct TagGauntlet {const char *name;int bt4,count,capacity;const TagWave *waves;} TagGauntlet;
+#include "../../../src/battle/tag_gauntlets.inc"
 static unsigned char *sItemPic[2];
+static unsigned char *sTagPic[TAG_LABEL_COUNT][2];
+static unsigned char sTagIndices[TAG_LABEL_COUNT][2][512*32];
+static unsigned char sTagPalette[2][1024], sTagCached[TAG_LABEL_COUNT][2];
 static volatile int sItem; /* 0 not started, 1 being made, 2 done (sItemPic NULL: not made) */
+static unsigned char *tag_label_fallback(const char *text, int lit);
 
 static void *item_thread(void *arg) {
     const char *data = getenv("BT3_DATA");
     (void)arg;
     MenuLabels_MainItem(data != NULL ? data : "gamedata", sItemPic);
+    if(getenv("BT3_TAG_TEAM")) {
+        static const char *base[]={"Team Battle","Free For All","Modded Training","Mod Settings","Back",
+            "One Player","Two Players","Three Players","Four Players","Back"};
+        char labels[TAG_LABEL_COUNT][96]={{0}}; const char *names[TAG_LABEL_COUNT];
+        int i;
+        for(i=0;i<TAG_LABEL_COUNT;i++) { names[i]=labels[i]; snprintf(labels[i],96,"Back"); }
+        for(i=0;i<10;i++) snprintf(labels[i],96,"%s",base[i]);
+        snprintf(labels[TAG_LABEL_CHOOSE],96,"Choose Characters");
+        snprintf(labels[TAG_LABEL_CPU],96,"CPU Only");
+        snprintf(labels[TAG_LABEL_ONLINE],96,"Modded Online");
+        snprintf(labels[TAG_LABEL_LOBBY],96,"Online Lobby");
+        snprintf(labels[TAG_LABEL_CLOSE_LOBBY],96,"Close Lobby");
+        snprintf(labels[TAG_LABEL_GAUNTLET],96,"Fighter Gauntlet");
+        snprintf(labels[TAG_LABEL_TOURNAMENT],96,"Tag Team Tournament");
+        {
+            for(i=0;i<TAG_OPTION_GROUP_COUNT;i++) snprintf(labels[TAG_LABEL_SETTINGS+i],96,"%s",tagOptionGroups[i]);
+            for(i=0;i<TAG_OPT_COUNT;i++) snprintf(labels[TAG_LABEL_OPTIONS+i],96,"%s",tagOptionInfo[i].label);
+        }
+        {
+            extern int PortGame_IsBT4(void);
+            const char *tours[]={"World Tournament","World Martial Arts Big Tournament","Cell Games","Otherworld Tournament","Yamcha Game"};
+            int n=0,bt4=PortGame_IsBT4();
+            for(i=0;i<(int)(sizeof(gauntlets)/sizeof(*gauntlets));i++) if(gauntlets[i].bt4==bt4 && n<26)
+                snprintf(labels[TAG_LABEL_PRESETS+n++],96,"%s",gauntlets[i].name);
+            for(i=0;i<5;i++)snprintf(labels[TAG_LABEL_TOURS+i],96,"%s",bt4&&i==4?"Tournament of Power":tours[i]);
+            snprintf(labels[TAG_LABEL_PREV],96,"Previous page");snprintf(labels[TAG_LABEL_NEXT],96,"Next page");
+        }
+        { extern const char *Port_TagText(const char *); for(i=0;i<TAG_LABEL_COUNT;i++)names[i]=Port_TagText(names[i]); }
+        MenuLabels_MainTexts(data?data:"gamedata",names,TAG_LABEL_COUNT,sTagPic);
+        /* The disc's painted words do not contain every letter or symbol in
+           a preset name. Keep the native plate and render a fitted label for
+           those names instead of leaving the previous menu's pixels there. */
+        for(i=0;i<TAG_LABEL_COUNT;i++) for(int lit=0;lit<2;lit++)
+            if(!sTagPic[i][lit]) sTagPic[i][lit]=tag_label_fallback(names[i],lit);
+    }
     __sync_synchronize();
     sItem = 2;
     return NULL;
@@ -1092,6 +1136,27 @@ int Port_MainItemLabel(int entry, int lit, int out) {
     }
     memcpy(&clutAt, e + 0x3C, 4);
     MenuLabels_ItemPixels(pic, (const uint8_t *)Port_Ptr(clutAt) + 0x60, dst);
+    return 1;
+}
+int Port_MainTagLabel(int entry,int lit,int row,int out) {
+    const uint8_t *e=(const uint8_t *)Port_Ptr((uint32_t)entry);
+    uint32_t clutAt;
+    int waited=0;
+    item_start();
+    while(sItem!=2 && waited++<5000) usleep(1000);
+    __sync_synchronize();
+    if(sItem!=2 || (unsigned)row>=TAG_LABEL_COUNT || (unsigned)lit>=2 || !sTagPic[row][lit]) return 0;
+    memcpy(&clutAt,e+0x3C,4);
+    const uint8_t *palette=(const uint8_t *)Port_Ptr(clutAt)+0x60;
+    if(memcmp(sTagPalette[lit],palette,1024)!=0) {
+        memcpy(sTagPalette[lit],palette,1024);
+        for(int i=0;i<TAG_LABEL_COUNT;i++) sTagCached[i][lit]=0;
+    }
+    if(!sTagCached[row][lit]) {
+        MenuLabels_ItemPixels(sTagPic[row][lit],palette,sTagIndices[row][lit]);
+        sTagCached[row][lit]=1;
+    }
+    memcpy((uint8_t *)Port_Ptr((uint32_t)out),sTagIndices[row][lit],512*32);
     return 1;
 }
 
@@ -2145,6 +2210,35 @@ static Face *line_face(int kind) {
         if (font_open(&sLineFace[kind], choice)) { sLineChoice[kind] = choice; }
     }
     return sLineChoice[kind] != 0 ? &sLineFace[kind] : NULL;
+}
+
+static unsigned char *tag_label_fallback(const char *text, int lit) {
+    MenuLabel label={0}; Row row={0}; unsigned char *px=NULL;
+    Face *font; int x,y;
+    pthread_mutex_lock(&sLock);
+    font=line_face(0);
+    label.rowWidth=240; label.rowHeight=32; label.cap=14;
+    label.baseline=23; label.margin=8; label.widthMilli=1000; label.italic=1;
+    label.top=lit?0xF4EF89:0xCBCBCB;
+    label.bottom=lit?0xD2684B:0xCBCBCB;
+    label.outline=label.outlineBottom=lit?0x2C151B:0x140F18;
+    label.outlineMilli=3000; label.shadow=1;
+    snprintf(label.text,sizeof(label.text),"%s",text);
+    if(font && menu_text_row(font,&label,1,&row)) {
+        px=calloc(512*32,4);
+        if(px) for(y=0;y<row.h;y++) for(x=0;x<row.w;x++) {
+            int dx=row.x+x,dy=row.y+y;
+            if(dx>=0 && dx<512 && dy>=0 && dy<32) {
+                const unsigned char *src=row.px+(y*row.w+x)*4;
+                unsigned char *dst=px+(dy*512+dx)*4;
+                memcpy(dst,src,3);
+                dst[3]=(unsigned char)((src[3]*255+63)/127);
+            }
+        }
+        free(row.px);
+    }
+    pthread_mutex_unlock(&sLock);
+    return px;
 }
 
 /* The next character of UTF-8 text, 0 at its end; a malformed or control character is a question mark. */

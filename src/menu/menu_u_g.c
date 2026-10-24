@@ -158,12 +158,12 @@ void EvoZ_Update(void) {
         if (gEvoZ->pay > 33) {
             gEvoZ->pay -= 33;
             gSaveData->money -= 33;
-            gSaveData->custom[gEvoZ->side->pick.col + gEvoZ->side->pick.row * 7].exp += 33;
-            gEvoZ->exp = gSaveData->custom[gEvoZ->side->pick.col + gEvoZ->side->pick.row * 7].exp;
+            SAVE_CUSTOM_AT(gSaveData, gEvoZ->side->pick.col + gEvoZ->side->pick.row * 7).exp += 33;
+            gEvoZ->exp = SAVE_CUSTOM_AT(gSaveData, gEvoZ->side->pick.col + gEvoZ->side->pick.row * 7).exp;
         } else {
             gSaveData->money -= gEvoZ->pay;
-            gSaveData->custom[gEvoZ->side->pick.col + gEvoZ->side->pick.row * 7].exp += gEvoZ->pay;
-            gEvoZ->exp = gSaveData->custom[gEvoZ->side->pick.col + gEvoZ->side->pick.row * 7].exp;
+            SAVE_CUSTOM_AT(gSaveData, gEvoZ->side->pick.col + gEvoZ->side->pick.row * 7).exp += gEvoZ->pay;
+            gEvoZ->exp = SAVE_CUSTOM_AT(gSaveData, gEvoZ->side->pick.col + gEvoZ->side->pick.row * 7).exp;
             gEvoZ->pay = 0;
             gEvoZ->expLeft = ChrTbl_GetMaxExp(gEvoZ->side->chara) - gEvoZ->exp;
             gEvoZ->flags ^= UEVOZ_PAYING;
@@ -174,7 +174,7 @@ void EvoZ_Update(void) {
             Flash_ClipGotoLabel(&gEvoZ->flash[0], &ref, "fl_ability_limit_up_in");
             gEvoZ->flags |= UEVOZ_LIMIT_UP;
             gEvoZ->state = 7;
-            gSaveData->custom[gEvoZ->side->pick.col + gEvoZ->side->pick.row * 7].level++;
+            SAVE_CUSTOM_AT(gSaveData, gEvoZ->side->pick.col + gEvoZ->side->pick.row * 7).level++;
             EvoZ_RefreshStatus(gEvoZ);
             Snd_PlaySe(2, 0x2F);
         } else {

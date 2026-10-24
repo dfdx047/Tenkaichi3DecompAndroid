@@ -1,3 +1,5 @@
+#include "battle/tag_clash.h"
+#include "battle/tag_position.h"
 #include "common.h"
 #include "battle/btl_char_ctl.h"
 #include "sys/mathf.h"
@@ -76,8 +78,18 @@ void BtlChar_ObjToPose(BtlCtlChr *chr) {
     BtlCtlPose *pose = BtlChar_GetPos(chr);
     BtlCtlNode *node;
     Quat q;
+    extern f32 TagGiant_ObjectScale(void *);
+    f32 scale=TagGiant_ObjectScale(obj);
+    Vec4 previous=pose->pos;
 
     Vec4_Sub(&pose->pos, &obj->outPos, &pose->move);
+    /* The enlarged skeleton must not multiply locomotion/root displacement.
+       This also prevents charge loops slowly dragging giants across the map. */
+    if(scale!=1) {
+        pose->pos.x=previous.x+(pose->pos.x-previous.x)/scale;
+        pose->pos.y=previous.y+(pose->pos.y-previous.y)/scale;
+        pose->pos.z=previous.z+(pose->pos.z-previous.z)/scale;
+    }
     Vec4_Copy(&pose->rot, &obj->rot);
     node = BtlObj_GetNode(obj, 0);
     if (node != NULL) {
@@ -102,7 +114,10 @@ void BtlChar_PoseToObj(BtlCtlChr *chr, s32 keepRoot) {
     Vec4_Copy(&old, &obj->pos);
     Vec4_Add(&obj->pos, &pose->pos, &pose->move);
     Vec4_Copy(&obj->rot, &pose->rot);
-    obj->scale = chr->scale;
+    {
+        extern f32 TagGiant_ObjectScale(void *);
+        obj->scale = chr->scale*TagGiant_ObjectScale(obj);
+    }
     if (BtlChar_TestFlag(chr, 0x2B)) {
         apply = 0;
     } else {
@@ -195,7 +210,8 @@ void BtlChar_PlaceRestart(BtlCtlChr *chr) {
     Vec4 rot;
 
     if (BtlChar_TestFlag(chr, 0xF3)) {
-        BtlChar_Place(chr, &pos, &rot, BtlStage_GetStartPlace(chr->player, &pos, &rot, 1));
+        s32 area=BtlStage_GetStartPlace(chr->player,&pos,&rot,1);
+        TagPosition_Place(chr->player,&pos,&rot,area,1);
     }
 }
 
@@ -205,7 +221,8 @@ void BtlChar_PlaceCenter(BtlCtlChr *chr) {
     Vec4 rot;
 
     if (BtlChar_TestFlag(chr, 0xF4)) {
-        BtlChar_Place(chr, &pos, &rot, BtlStage_GetPlace(&pos, &rot));
+        s32 area=BtlStage_GetPlace(&pos,&rot);
+        TagPosition_Place(chr->player,&pos,&rot,area,1);
     }
 }
 
@@ -220,7 +237,7 @@ void BtlChar_PlaceRelative(BtlCtlChr *chr) {
         Vec4_Add(&pos, &pos, &chr->relPos);
         Vec4_Add(&rot, &rot, &chr->relRot);
         BtlUtil_WrapAngles(&rot, &rot);
-        BtlChar_Place(chr, &pos, &rot, area);
+        TagPosition_Place(chr->player,&pos,&rot,area,2);
     }
 }
 
@@ -230,12 +247,12 @@ void BtlChar_PlaceOnPath(BtlCtlChr *chr) {
     Vec4 delta;
     Vec4 pos;
     Vec4 rot;
-    s32 *work = gBtlChars->unk7C;
+    s32 *work = BtlClash_Exchange(chr->player);
 
     if (BtlChar_TestFlag(chr, 0xF8)) {
         BtlCtlPath *path = BtlStage_GetPath(work[2]);
 
-        if (path != NULL) {
+        if (path != NULL && path->count > path->first) {
             s32 index = work[3] % (path->count - path->first) + path->first;
             BtlCtlPathPoint *first = path->points;
             BtlCtlPathPoint *point = &first[index];
@@ -264,7 +281,7 @@ void BtlChar_PlaceOnPath(BtlCtlChr *chr) {
             rot.y = 0.0f;
             rot.z = 0.0f;
             rot.w = 0.0f;
-            if (chr->player == 0) {
+            if (BtlClash_Side(chr->player) == 0) {
                 Vec4_Sub(&pos, &pos, &side);
                 rot.y = atan2f(side.x, side.z);
             } else {
@@ -286,7 +303,7 @@ void BtlChar_PlaceCenterHigh(BtlCtlChr *chr) {
         f32 y = BtlStage_GetTop();
 
         pos.y = y + BtlCharApi_GetHeight(chr->objId) * 0.5f;
-        BtlChar_Place(chr, &pos, &rot, area);
+        TagPosition_Place(chr->player,&pos,&rot,area,3);
     }
 }
 

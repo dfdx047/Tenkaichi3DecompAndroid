@@ -2,6 +2,7 @@
 #define BATTLE_EFT_AA_H
 
 #include "types.h"
+#include "battle/eft_fighter_capacity.h"
 #include "sys/math3d.h"
 #include "sys/list.h"
 
@@ -195,11 +196,11 @@ typedef struct EftCharSlot {
 
 /* gEftCharSlot (0x50 bytes): one slot per kind and fighter. */
 typedef struct EftCharSlots {
-    /* 0x00 */ EftCharSlot kind0[2];
-    /* 0x10 */ EftCharSlot kind1[2];
-    /* 0x20 */ EftCharSlot kind2[2];
-    /* 0x30 */ EftCharSlot kind3[2];
-    /* 0x40 */ EftCharSlot absorb[2]; /* the drain glow (EftAbsorb, eft_l_c.c) */
+    EftCharSlot kind0[EFT_FIGHTER_CAPACITY];
+    EftCharSlot kind1[EFT_FIGHTER_CAPACITY];
+    EftCharSlot kind2[EFT_FIGHTER_CAPACITY];
+    EftCharSlot kind3[EFT_FIGHTER_CAPACITY];
+    EftCharSlot absorb[EFT_FIGHTER_CAPACITY]; /* the drain glow */
 } EftCharSlots;
 
 /* ---- blade trail ---------------------------------------------------------------------------------------- */
@@ -239,7 +240,7 @@ typedef struct EftBlade {
 /* gEftBlade (0x10 bytes). */
 typedef struct EftBladeMgr {
     /* 0x0 */ void *list;       /* two tasks */
-    /* 0x4 */ s32 chara[2];     /* the fighters' character ids at creation */
+    s32 chara[EFT_FIGHTER_CAPACITY]; /* the fighters' character ids at creation */
     /* 0xC */ u8 *color;        /* gEftBladeColor: default RGBA */
 } EftBladeMgr;
 
@@ -270,7 +271,7 @@ typedef struct EftBladeTriPkt {
 
 /* gEftBlind (0xC bytes). */
 typedef struct EftBlind {
-    /* 0x0 */ f32 alpha[2];     /* 0..255, by battle object id */
+    f32 alpha[EFT_FIGHTER_CAPACITY]; /* 0..255, by battle object id */
     /* 0x8 */ s32 flags;
 } EftBlind;
 

@@ -1,3 +1,4 @@
+#include "battle/btl_effect_owner.h"
 #include "common.h"
 #include "battle/eft_l.h"
 
@@ -726,7 +727,7 @@ void EftRingShot_Init(EftTask *task, EftTechArg *arg) {
     } else if (id == 0x2A4) {
         w->type = 3;
     }
-    BtlTask_SetOwnerTag(task, arg->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(arg->objId));
 }
 
 /* Term callback: releases the model instance and the fighter's held flags. */

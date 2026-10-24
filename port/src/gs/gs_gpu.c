@@ -1032,10 +1032,11 @@ static void vk_frame_end(void) {
     sEndT[2] = gpu_now();
     acquired = SDL_WaitAndAcquireGPUSwapchainTexture(cmd, sWindow, &swap, &sw, &sh);
     sEndT[3] = gpu_now();
-    if (acquired && swap != NULL && best >= 0 && gsTargets[best].cleared) {
+    if (acquired && swap != NULL) {
+        int hasGame = best >= 0 && gsTargets[best].cleared;
         SDL_GPUBlitInfo bl;
         SDL_zero(bl);
-        bl.source.texture = sTgCol[best];
+        bl.source.texture = hasGame ? sTgCol[best] : NULL;
         bl.source.w = 512 * SCALE;
         bl.source.h = 448 * SCALE;
         bl.destination.texture = swap;
@@ -1058,7 +1059,15 @@ static void vk_frame_end(void) {
         }
         bl.load_op = SDL_GPU_LOADOP_CLEAR;
         bl.filter = SDL_GPU_FILTER_LINEAR;
-        SDL_BlitGPUTexture(cmd, &bl);
+        if(hasGame)SDL_BlitGPUTexture(cmd, &bl);
+        else {
+            /* A native online room exists before the first game render target.
+               Its UI must still be presented and accept events while waiting. */
+            SDL_GPUColorTargetInfo color;SDL_zero(color);color.texture=swap;
+            color.load_op=SDL_GPU_LOADOP_CLEAR;color.store_op=SDL_GPU_STOREOP_STORE;
+            color.clear_color.r=0.025f;color.clear_color.g=0.04f;color.clear_color.b=0.065f;color.clear_color.a=1;
+            SDL_GPURenderPass *clear=SDL_BeginGPURenderPass(cmd,&color,1,NULL);SDL_EndGPURenderPass(clear);
+        }
         gUiPresentX = (int)bl.destination.x; /* the stage-name overlay maps game pixels through this rectangle */
         gUiPresentY = (int)bl.destination.y;
         gUiPresentW = (int)bl.destination.w;
@@ -1067,15 +1076,18 @@ static void vk_frame_end(void) {
         {   /* BT3_UI_SHOT=<frame>:<file.ppm>: the window's picture with the settings window on it, for checking
                 the settings window without a person or a screen capture (drawn a second time into a texture) */
             static int frame = -1;
+            static int byTime;
             static const char *file;
             if (frame < 0) {
                 frame = 0;
-                if (getenv("BT3_UI_SHOT") != NULL && (file = strchr(getenv("BT3_UI_SHOT"), ':')) != NULL) {
-                    frame = atoi(getenv("BT3_UI_SHOT"));
+                const char *shot=getenv("BT3_UI_SHOT_MS");byTime=shot!=NULL;
+                if(!shot)shot=getenv("BT3_UI_SHOT");
+                if (shot != NULL && (file = strchr(shot, ':')) != NULL) {
+                    frame = atoi(shot);
                     file++;
                 }
             }
-            if (frame > 0 && gGsFrame >= (unsigned)frame) {
+            if (frame > 0 && (byTime ? SDL_GetTicks() : gGsFrame) >= (unsigned)frame) {
                 SDL_GPUTextureCreateInfo ci;
                 SDL_GPUTransferBufferCreateInfo ti;
                 SDL_GPUTransferBuffer *tb;
@@ -1103,7 +1115,13 @@ static void vk_frame_end(void) {
                 tex = SDL_CreateGPUTexture(sDev, &ci);
                 c2 = SDL_AcquireGPUCommandBuffer(sDev);
                 bl.destination.texture = tex;
-                SDL_BlitGPUTexture(c2, &bl);
+                if(hasGame)SDL_BlitGPUTexture(c2, &bl);
+                else {
+                    SDL_GPUColorTargetInfo color;SDL_zero(color);color.texture=tex;
+                    color.load_op=SDL_GPU_LOADOP_CLEAR;color.store_op=SDL_GPU_STOREOP_STORE;
+                    color.clear_color.r=0.025f;color.clear_color.g=0.04f;color.clear_color.b=0.065f;color.clear_color.a=1;
+                    SDL_GPURenderPass *clear=SDL_BeginGPURenderPass(c2,&color,1,NULL);SDL_EndGPURenderPass(clear);
+                }
                 Ui_DrawAgain(c2, tex);
                 SDL_zero(ti);
                 ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
@@ -1193,7 +1211,7 @@ static void vk_frame_end(void) {
             SDL_GPUFence *fence;
             Uint32 w = 512 * SCALE, h = 448 * SCALE, x, y;
             uint8_t *px;
-            char name[64];
+            char name[1024];
             FILE *fp;
 
             SDL_zero(ti);
@@ -1213,20 +1231,24 @@ static void vk_frame_end(void) {
             SDL_WaitForGPUFences(sDev, true, &fence, 1);
             SDL_ReleaseGPUFence(sDev, fence);
             px = SDL_MapGPUTransferBuffer(sDev, tb, false);
-            snprintf(name, sizeof(name), "port/build/shots/gpu_%05u.ppm", gGsFrame);
+            snprintf(name, sizeof(name), "%s/gpu_%05u.ppm",
+                     getenv("BT3_SHOT_DIR") ? getenv("BT3_SHOT_DIR") : "port/build/shots", gGsFrame);
             fp = fopen(name, "wb");
             if (fp != NULL && px != NULL) {
                 fprintf(fp, "P6\n%u %u\n255\n", w, h);
-                for (y = 0; y < h; y++) {
+                uint8_t *row = malloc(w * 3);
+                for (y = 0; row && y < h; y++) {
                     for (x = 0; x < w; x++) {
                         if (getenv("BT3_SHOT_AUX") != NULL) { /* one byte per pixel: show it as grey, times 16 to see small ids */
-                            uint8_t g = (uint8_t)(px[y * w + x] * 16), t[3] = {g, g, px[y * w + x]};
-                            fwrite(t, 1, 3, fp);
+                            uint8_t g = (uint8_t)(px[y * w + x] * 16);
+                            row[x*3]=g;row[x*3+1]=g;row[x*3+2]=px[y*w+x];
                         } else {
-                            fwrite(&px[(y * w + x) * 4], 1, 3, fp);
+                            memcpy(row+x*3, &px[(y * w + x) * 4], 3);
                         }
                     }
+                    fwrite(row, 1, w * 3, fp);
                 }
+                free(row);
                 fclose(fp);
             }
             SDL_UnmapGPUTransferBuffer(sDev, tb);

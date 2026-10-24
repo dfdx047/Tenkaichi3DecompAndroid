@@ -1,4 +1,12 @@
+#ifdef PORT
+#define GRID_REAL_CHAR(id) PortGame_IsCharacter(id)
+#else
+#define GRID_REAL_CHAR(id) ((id) < MCHR_RANDOM)
+#endif
 #include "common.h"
+#ifdef PORT
+#include "menu/tag_outfit.h"
+#endif
 #include "menu/menu_d.h"
 #include "sys/common.h"
 #include "sys/pad.h"
@@ -12,8 +20,8 @@
 /* include/battle/view_a.h holds these, but pulling it in clashes with menu_d.h (MsgWin_Init); the values are
    fixed, so they are repeated here for the stage list of the PC build. */
 #define STGGRID_COLS 6
-#define STGGRID_ID_LOCKED 0x3E
-#define STGGRID_ID_EMPTY 0x3F
+#define STGGRID_ID_LOCKED (PortGame_IsBT4() ? 0xFE : 0x3E)
+#define STGGRID_ID_EMPTY (PortGame_IsBT4() ? 0xFF : 0x3F)
 static s32 sPortStagesAdded; /* this stage select shows stages from outside the disc */
 static s32 sPortSongsAdded;  /* ... and its music list songs from outside the disc */
 static s32 sPortSongNameHidden, sPortStageNameHidden;
@@ -102,7 +110,7 @@ void CharSel_SetStageChips(void) {
                 icon = 37;
             } else if (id == STGGRID_ID_EMPTY) {
                 icon = 38;
-            } else if (id >= 0x24) {
+            } else if (id >= 0x24 && !PortGame_IsBT4()) {
                 icon = 1 + (id - 0x24) % 36;
             } else {
                 icon = id + 1;
@@ -526,11 +534,11 @@ void CharSel_Init(s32 section) {
     gCharSel->nameText = MPACK_AT(gCharSel->res, 43);
     gCharSel->formText = MPACK_AT(gCharSel->res, 44);
     gCharSel->chipPack = (u32 *)MPACK_AT(gCharSel->res, 45);
-    for (i = 0; i < MCHR_CELL_MAX; i++) {
+    for (i = 0; i < (PortGame_IsBT4() ? 250 : MCHR_CELL_MAX); i++) {
         CS_RES(gCharSel->chipPack, i + 1);
     }
     gCharSel->stagePack = (u32 *)MPACK_AT(gCharSel->res, 46);
-    for (i = 0; i < 38; i++) {
+    for (i = 0; i < (PortGame_IsBT4() ? 99 : 38); i++) {
         CS_RES(gCharSel->stagePack, i + 1);
     }
 
@@ -552,18 +560,18 @@ void CharSel_Init(s32 section) {
         /* Room for the disc's 36 and all 26 added ones, and the padding of the last row: 62 are 11 rows of 6, 66
            cells. (It was 64 cells with the adding stopped at 60, the last whole row that fits: with every disc
            stage unlocked only 24 of 26 added stages were listed. Reported by a player.) */
-        static s32 sAllIds[96];
+        static s32 sAllIds[132];
         extern int Port_NetSession(void); /* port/src/gs/net.c */
-        s32 extra = Port_NetSession() ? 0 : gPortExtraStageCount;
-        s32 swaps = Port_NetSession() ? 0 : gPortStageReplaceCount;
+        s32 extra = (Port_NetSession() || PortGame_IsBT4()) ? 0 : gPortExtraStageCount;
+        s32 swaps = (Port_NetSession() || PortGame_IsBT4()) ? 0 : gPortStageReplaceCount;
         s32 n = gCharSel->stageCount, i, rows, r;
-        if (n > 64) {
-            n = 64;
+        if (n > 126) {
+            n = 126;
         }
         for (i = 0; i < n; i++) {
             sAllIds[i] = gCharSel->stageIds[i];
         }
-        for (i = 0; i < extra && n < 90; i++) {
+        for (i = 0; i < extra && n < 126; i++) {
             sAllIds[n++] = (s32)gPortExtraStages[i];
         }
         for (r = 0; r < swaps; r++) {
@@ -575,10 +583,10 @@ void CharSel_Init(s32 section) {
                 }
             }
         }
-        sPortStagesAdded = extra > 0 || swaps > 0;
+        sPortStagesAdded = extra > 0 || swaps > 0 || PortGame_IsBT4();
         if (sPortStagesAdded) {
             rows = (n + STGGRID_COLS - 1) / STGGRID_COLS;
-            for (i = n; i < rows * STGGRID_COLS && i < 96; i++) {
+            for (i = n; i < rows * STGGRID_COLS && i < 132; i++) {
                 sAllIds[i] = STGGRID_ID_EMPTY;
             }
             gCharSel->stageIds = sAllIds;
@@ -615,8 +623,13 @@ void CharSel_Init(s32 section) {
         fprintf(stderr, "\n");
     }
 #endif
+#ifdef PORT
+    if (!PortGame_IsBT4())
+#endif
+    {
     gCharSel->bgmCount -= 4;
     gCharSel->bgmIds[gCharSel->bgmCount - 1] = CHARSEL_BGM_RANDOM;
+    }
 #ifdef PORT
     {
         /* PC build: append the tracks added from outside the disc (BT3_SONG manifest), keeping the game's
@@ -627,7 +640,7 @@ void CharSel_Init(s32 section) {
         extern int Port_NetSession(void); /* port/src/gs/net.c */
         s32 added;
         PortSongs_Refresh(); /* songs converted from MP3 since the start join the list here (port/src/plat_songs.c) */
-        added = Port_NetSession() ? 0 : gPortSongCount;
+        added = (Port_NetSession() || PortGame_IsBT4()) ? 0 : gPortSongCount;
         sPortSongsAdded = 0;
         if (added > 0) {
             static s32 sBgmIds[72];
@@ -893,7 +906,7 @@ void CharSel_Draw(void) {
         extern FontStyle gFontStyle;
         s32 nameId = gCharSel->stage->stage;
 
-        if (nameId >= 0x24) {
+        if (nameId >= 0x24 && !PortGame_IsBT4()) {
             s32 nx = 0, ny = 0; /* (an empty clip reference leaves them untouched) */
             s32 idx = nameId - 0x24;
             Flash_ClipSetFlags(f, &ref, 2, 0); /* FLASH_PROP_VISIBLE: hide the atlas name */
@@ -974,7 +987,7 @@ void CharSel_Draw(void) {
         extern void Flash_ClipGetPos(MFlash *flash, MFlashRef *ref, s32 *x, s32 *y);
         s32 bgm = gCharSel->bgmIds[gCharSel->stage->bgm];
 
-        if (bgm >= PORT_SONG_FIRST_OFFSET) {
+        if (bgm >= PORT_SONG_FIRST_OFFSET && !PortGame_IsBT4()) {
             s32 idx = bgm - PORT_SONG_FIRST_OFFSET;
             s32 cx, cy, px, py;
             /* Use the clip's real position: the game moves "mc_bgm_now" per screen (on the BGM select it is the
@@ -1093,6 +1106,13 @@ void CharSel_Draw(void) {
                                    gCharSel->cells[i][gCharSel->side[i]->col + gCharSel->side[i]->row * 7].id != MCHR_RANDOM);
             }
         }
+#ifdef PORT
+        if(PortGame_IsBT4()) {
+            TagMenu_DrawBT4Outfit(f,gCharSel->res,gCharSel->side[i]->chara,
+                                 gCharSel->side[i]->colorPlate,gCharSel->colorCount[i],i);
+            continue;
+        }
+#endif
         for (j = 0; j < 4; j++) {
             uv.x0 = (j % 2) * 0x40;
             uv.y0 = (j / 2) * 0x20;
@@ -1697,7 +1717,7 @@ void CharSel_Input(s32 *running) {
                         if (CS_CELL.id == MCHR_CUSTOM) {
                             CS_SIDE->items = CSSAVE->rec[CS_SIDE->customCol + CS_SIDE->customRow * 7].items;
                         } else {
-                            CS_SIDE->items = CSSAVE->custom[CS_SIDE->col + CS_SIDE->row * 7].set[CS_SIDE->customPlate - 1];
+                            CS_SIDE->items = SAVE_CUSTOM_AT(CSSAVE, CS_SIDE->col + CS_SIDE->row * 7).set[CS_SIDE->customPlate - 1];
                         }
                     } else {
                         memset(&CS_SIDE->items, 0, 0x10);
@@ -1717,7 +1737,7 @@ void CharSel_Input(s32 *running) {
                         for (;;) {
                             n = Rand_Range(gCharSel->masterCount[CS_N]);
                             id = gCharSel->cells[CS_N][n].id;
-                            if (id < MCHR_RANDOM) {
+                            if (GRID_REAL_CHAR(id)) {
                                 chara = id;
                                 break;
                             }
@@ -1731,7 +1751,7 @@ void CharSel_Input(s32 *running) {
                         n = CS_SIDE->col + CS_SIDE->row * 7;
                     }
                     if (CS_SIDE->customPlate != 0) {
-                        CS_SIDE->items = CSSAVE->custom[n].set[CS_SIDE->customPlate - 1];
+                        CS_SIDE->items = SAVE_CUSTOM_AT(CSSAVE, n).set[CS_SIDE->customPlate - 1];
                     } else {
                         memset(&CS_SIDE->items, 0, 0x10);
                     }
@@ -1871,7 +1891,16 @@ extern s32 CpuLevel_FromSetting(u32 setting);
 /* The song a chosen "random" stands for: one of the nine battle songs. PC build, with songs added from outside
    the disc: any entry of the music list before "random", the disc's and the added ones alike. */
 #ifdef PORT
-#define CHARSEL_RANDOM_BGM() (sPortSongsAdded ? gCharSel->bgmIds[Rand_Range(gCharSel->bgmCount - 1)] : Rand_Range(9) + 8)
+static s32 CHARSEL_RandomBgm(void) {
+    s32 i, count=0, pick;
+    if(!sPortSongsAdded && !PortGame_IsBT4()) return Rand_Range(9)+8;
+    for(i=0;i<gCharSel->bgmCount;i++) if(gCharSel->bgmIds[i]!=CHARSEL_BGM_RANDOM) count++;
+    if(!count) return 8;
+    pick=Rand_Range(count);
+    for(i=0;i<gCharSel->bgmCount;i++) if(gCharSel->bgmIds[i]!=CHARSEL_BGM_RANDOM && !pick--) return gCharSel->bgmIds[i];
+    return 8;
+}
+#define CHARSEL_RANDOM_BGM() CHARSEL_RandomBgm()
 #else
 #define CHARSEL_RANDOM_BGM() (Rand_Range(9) + 8)
 #endif
