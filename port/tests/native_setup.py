@@ -36,6 +36,19 @@ class SetupTests(unittest.TestCase):
             file=Path(d)/'card.ps2';file.write_bytes(bytes(8192))
             with self.assertRaises(ValueError):Card(file)
 
+    def test_installed_language_uses_native_text_setting_format(self):
+        for language in ('en', 'es'):
+            with self.subTest(language=language), tempfile.TemporaryDirectory() as d:
+                root=Path(d);target=root/'game';iso=root/'game.iso';iso.write_bytes(b'fake')
+                payload=root/'payload';(payload/'engine').mkdir(parents=True);(payload/'engine/TagTeam.dat').write_bytes(b'fake')
+                with patch.object(setup.native_tables,'identify',return_value=({'id':'test'},[],[])), \
+                     patch.object(setup.native_tables,'reconstruct',return_value=[]), \
+                     patch.object(setup.native_tables,'verify'),patch.object(setup,'payload_files',return_value={}), \
+                     patch.object(setup,'extract',side_effect=lambda _, out:out.mkdir()):
+                    setup.install(iso,target,language,payload=payload,progress=lambda _:None)
+                # Port_SettingText reads quoted strings, unlike numeric settings.
+                self.assertIn(f'menu_lang="{language}"\n',(target/'settings.txt').read_text())
+
     def test_failed_import_cleans_only_its_temporary_folder(self):
         with tempfile.TemporaryDirectory() as d:
             root=Path(d);target=root/'game';iso=root/'game.iso';iso.write_bytes(b'fake')

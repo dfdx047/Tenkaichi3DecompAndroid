@@ -82,7 +82,7 @@ def install(iso, target, language='en', save=None, payload=PAYLOAD, progress=pri
             destination = stage / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(payload / name, destination)
-        (stage / 'settings.txt').write_text(f'menu_lang={language}\nlanguage_prompt_always=0\n', encoding='utf-8')
+        (stage / 'settings.txt').write_text(f'menu_lang="{language}"\nlanguage_prompt_always=0\n', encoding='utf-8')
         if imported:
             native_save.write(imported, stage / 'saves')
         else:
