@@ -153,11 +153,11 @@ def gui():
     save_or.grid(row=0, column=1, sticky='ew', padx=12)
     folder = ttk.Button(save_options, text='Recomp save folder…', command=lambda: choose_save(True))
     folder.grid(row=0, column=2, sticky='e')
-    help_label = ttk.Label(pane, text='PCSX2: choose the .ps2 memory-card file. Recomp: choose the saves folder from an existing recomp installation. Your original save is kept.', wraplength=640)
+    help_label = ttk.Label(pane, text='PCSX2: choose the .ps2 memory-card file.\nRecomp: choose the saves folder from an existing recomp installation.\nYour original save is kept.', wraplength=640, justify='left')
     help_label.grid(row=7, column=0, columnspan=3, sticky='ew', pady=14)
     status = ttk.Label(pane, text='', wraplength=640)
     status.grid(row=9, column=0, columnspan=3, sticky='ew', pady=10)
-    bar = ttk.Progressbar(pane, mode='indeterminate')
+    bar = ttk.Progressbar(pane, mode='determinate', value=0)
     bar.grid(row=10, column=0, columnspan=3, sticky='ew')
     events, busy, installed = queue.Queue(), False, None
     def translate(*_):
@@ -171,7 +171,7 @@ def gui():
         folder.configure(text='Carpeta de partida Recomp…' if spanish else 'Recomp save folder…')
         save_or.configure(text='o' if spanish else 'Or')
         start.configure(text='Instalar' if spanish else 'Install')
-        help_label.configure(text='PCSX2: elige el archivo de tarjeta de memoria .ps2. Recomp: elige la carpeta saves de una instalación recomp existente. Se conserva la partida original.' if spanish else 'PCSX2: choose the .ps2 memory-card file. Recomp: choose the saves folder from an existing recomp installation. Your original save is kept.')
+        help_label.configure(text='PCSX2: elige el archivo de tarjeta de memoria .ps2.\nRecomp: elige la carpeta saves de una instalación recomp existente.\nSe conserva la partida original.' if spanish else 'PCSX2: choose the .ps2 memory-card file.\nRecomp: choose the saves folder from an existing recomp installation.\nYour original save is kept.')
         subtitle.configure(text='BT3 y BT4 nativos • Elige tu disco y empieza a jugar' if spanish else 'Native BT3 & BT4 • Choose your disc and start playing')
     def begin():
         nonlocal busy
@@ -183,6 +183,7 @@ def gui():
             return
         busy = True
         start.configure(state='disabled')
+        bar.configure(mode='indeterminate', value=0)
         bar.start()
         def worker():
             try:
@@ -199,6 +200,7 @@ def gui():
             if kind in ('done', 'error'):
                 busy = False
                 bar.stop()
+                bar.configure(mode='determinate', value=100 if kind == 'done' else 0)
                 start.configure(state='normal')
                 if kind == 'done':
                     installed = value
