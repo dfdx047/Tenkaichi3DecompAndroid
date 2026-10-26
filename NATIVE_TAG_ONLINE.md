@@ -1,10 +1,10 @@
 # Native Tag Team Online
 
-This local prototype connects **up to ten players and ten spectators**. Each
-team has one to five fighters; unclaimed fighters are CPUs. Everyone fights on
-the field together, and the teams can be different sizes.
+The Online Lobby connects **up to ten people**. Guests can join the host's
+next match or watch it. Unclaimed fighters are CPUs, and everyone fights on
+the field together. Teams can be different sizes.
 
-From the normal game menu, press **Select**, then choose **Modded Online**.
+From the normal game menu, press **Select**, then choose **Online Lobby**.
 The online room uses native game menu pages, character artwork and stage previews.
 
 You can also open **Play.cmd** for BT3 USA, or **Play.cmd**
@@ -13,9 +13,8 @@ separate online saves and settings; your offline saves are unchanged.
 
 ## Persistent Online Lobby
 
-Choose **Select > Online Lobby** in the normal BT3 or BT4 main menu. This is a
-separate room type from **Modded Online**, which still opens the duel room.
-The native prototype launchers both include this menu entry.
+Choose **Select > Online Lobby** in the normal BT3 or BT4 main menu.
+The Windows and Linux launchers both include this menu entry.
 
 An Online Lobby holds the host and up to nine guests. The host uses the normal
 **Modded Modes** main menu, including its game artwork and challenge submenus.
@@ -75,54 +74,20 @@ confirmation/cancellation, host loss, kicking a guest, and restoring offline
 save data and BT4 equipment afterward. These used real native processes on
 one computer; they are not a substitute for a multi-PC playtest.
 
-## Hosting and joining a duel room
+## Hosting and joining
 
-1. Everyone needs the same native executable, its matching `.mem` file, and
-   matching game data. BT3 and BT4 cannot share a room. Windows and Linux native
-   builds currently use different build identities and cannot share a room.
-2. The host chooses **Host a Room**, confirms the port, then selects **Open Room**.
-   The default port is **TCP 7001**.
-3. Players choose **Join a Room** and viewers choose **Watch a Room**, then enter
-   the host's IPv4 address and port using the keyboard or on-screen keypad.
-4. The host chooses the stage, music, time limit, CPU level, roster and match
-   settings. Each team can have one to five fighters. Each person claims one
-   slot with **Play this fighter**; every other slot is a CPU. Players can edit
-   their own character and outfit. The host can edit the whole roster. Selecting
-   a fighter opens the original game's character, form, equipment and costume
-   screens. CPUs also get an individual difficulty choice after the costume.
-5. All players select **Ready**. Changing a fighter, rule or player assignment
-   clears everyone's ready check. The game waits for every player to finish loading before
-   starting the entrances. Extra fighter intros follow the room's setting.
+Everyone needs matching game data and the same native build. Windows and Linux
+currently use separate online rooms. Choose **Host a Room**, confirm the TCP
+port (7001 by default), and open the lobby. Guests choose **Join a Room** and
+enter the host's reachable IPv4 address and port.
 
-In the room, **Spectate** releases your fighter to the CPU. Use
-**Join as Player**, or **Play This Fighter** on an available CPU slot, to
-play again. If the roster needs another fighter it grows up to 5v5. Occupied
-player slots cannot be taken. Player numbers stay the same when someone else
-switches roles. The host can spectate and still manage the room's rules.
+The host chooses a mode from the normal Modded Modes menu. At team setup,
+guests press **Start** to claim a place and choose their characters through
+the game's normal selector. Guests without a slot watch the match. Loading
+waits for the players before starting the entrances.
 
-Role changes are available before starting and after returning from a match.
-They do not change control in the middle of a fight. A full player or spectator
-section refuses the change without disconnecting anyone.
-
-Each computer uses **Player 1's local input bindings**, even when joining as
-Player 10. Press **F1 > Controls** to choose the keyboard/controller and bindings.
-The room supports keyboard, mouse and controller navigation. Both teams stay
-visible, and character/stage grids use pages so a small window does not crop rows.
-Select a rule before changing its value; confirm to save or Back to cancel.
-HUD and revival options include previews of the room's selected values.
-
-- **Cross** selects; **Triangle** goes back or cancels an edit.
-- **Start** readies up from the room; **Square** removes the selected CPU slot
-  when you are hosting. It cannot remove another player's fighter or leave a
-  team empty. Playing and watching are changed through the room's role choices.
-- **L1 / R1** changes pages in character, stage, music and settings lists.
-- Music selections play a preview before confirmation.
-- Leave the room, then Back returns to the normal modded main menu.
-
-For a LAN, use the host's LAN address. For a direct internet connection, the
-host needs a reachable address and TCP port (including any necessary router
-forwarding). There is no matchmaking service, relay or automatic NAT traversal
-in this prototype. Only numeric IPv4 addresses are accepted currently.
+Each computer uses **Player 1's local input bindings**. Use **F1 > Controls**
+to choose your keyboard/controller and bindings.
 
 ## Spectating
 
@@ -140,20 +105,11 @@ The original health/ki panels follow the viewed fighter and their target.
 Following a fused partner follows the shared fighter. Camera movement is local
 to the spectator and does not affect the players' simulation.
 
-## Duel-room results and connection problems
+## Results and connection problems
 
-After the result, everyone returns to the online character/team room. Ready up
-again to rematch, or change the roster first. **Return to room** in the game's
-pause menu ends the current fight and returns everyone to that room.
-
-In the original duel room, **F1 > Leave online match** leaves the connection. Losing any player stops
-the match for everyone; there is no host migration or reconnection during a
-fight yet. Losing a spectator leaves the match running, unless that spectator
-is the host. If another player leaves before a match, their fighter becomes a
-CPU and the room stays open for a replacement.
-
-The persistent Online Lobby has different departure rules: a missing guest
-becomes a CPU during a match, while losing its host ends the room.
+After a session ends, the host returns to mode selection and guests return to
+the practice map on the same connection. A missing guest becomes a CPU during
+a match; losing the host ends the room.
 
 The compatibility check compares build and game-content fingerprints, not
 installation paths. The first BT4 check reads its extracted resources and can

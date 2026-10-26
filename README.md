@@ -21,8 +21,8 @@ You need your own game disc data; game assets, saves and binaries are not includ
 - Revivals, teammate takeover, directional targeting and lock-off, temporary and
   permanent fusions, shared fusion controls, and beam-clash assists.
 - Expanded maps, giant scaling, configurable cinematic cameras, and HUD options.
-- Online rooms for up to ten players and ten spectators, plus a persistent lobby
-  where guests can practise while the host chooses the next mode.
+- A persistent online lobby for up to ten people, where guests can practice
+  while the host chooses the next mode, then join the match or watch.
 - English and Spanish mod menus and settings.
 
 For controls and settings, see [Native Tag Team](NATIVE_TAG_TEAM.md).

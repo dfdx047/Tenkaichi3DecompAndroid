@@ -15,8 +15,7 @@ prototype. It is maintained separately from the PCSX2 installer.
 ## Playing
 
 For the online prototype with up to ten players, CPUs and read-only spectators,
-see [Native Tag Team Online](NATIVE_TAG_ONLINE.md). Open **Play.cmd**, choose BT3 or BT4, then use **Select > Modded Online** in the normal game menu. **Select > Online Lobby**
-opens the persistent room: guests practise while the host chooses modes, then
+see [Native Tag Team Online](NATIVE_TAG_ONLINE.md). Open **Play.cmd**, choose BT3 or BT4, then use **Select > Online Lobby** in the normal game menu. It opens the persistent room: guests practice while the host chooses modes, then
 everyone stays connected through team setup, matches and returns to practice.
 
 Open **Play.cmd** in this folder. At the main menu, press
@@ -347,7 +346,7 @@ under `port/build/`, not redistributable game assets.
 | Stage effects | Water distortion, panorama blur and radial blur use each visible viewport, including the full-width third view and merged fusion views. Dust and weather advance once per game frame. |
 | Expanded maps | Mod Settings → Stages → Map Size scales the arena, terrain, collision, water/lava, animated objects and intro cameras together, from 100% to 300%. It applies on the next stage load. The 35 selectable BT3 and 65 selectable BT4 stages have been loaded at 100% and 200%, including rematches. |
 | Transformations and fusions | Native teammate fusion, human consent, timed dance separation and merged camera layouts. Real model-load checks cover Gogeta, Gotenks, SS4 Gogeta, Vegito, costumes, CPU partners, simultaneous fusions, knockouts and rematching while fused. |
-| Online and replays | The separate Modded Online room supports players, CPUs and spectators; see NATIVE_TAG_ONLINE.md. The upstream online path and two-fighter replay format are separate and do not run Tag Team battles. |
+| Online and replays | The Online Lobby supports players and CPUs, with unclaimed guests watching; see NATIVE_TAG_ONLINE.md. The upstream online path and two-fighter replay format are separate and do not run Tag Team battles. |
 | Game versions | BT3 USA, Europe/Australia and Japan, plus BT4 B14 REV2 English and Spanish. Regional resources are imported into the engine's logical layout; BT4 retains its own roster, parameters, voices and HUD offsets. Unknown revisions require another profile. |
 | Gauntlets and tournaments | Authored wave presets, movement between waves, skippable arrivals and the original tournament bracket/crowd sequence. More human playtesting of complete runs and cancellations is still needed. |
 | Other mod mechanics | Custom Potaras, tag attacks and custom scenarios still need native implementations. |
@@ -571,7 +570,7 @@ results, cancellation and Return to Main Menu must lead to their corresponding
 native screens without falling into an unrelated default mode. Exercise these
 routes after wins, losses and interrupted setup as well as a normal start.
 
-World Tournament, gauntlets and Modded Online now have local implementations.
+World Tournament, gauntlets and Online Lobby now have local implementations.
 Modded Scenarios and tag attacks remain separate future work.
 
 Gauntlet and tournament presets are selected after player count, before team

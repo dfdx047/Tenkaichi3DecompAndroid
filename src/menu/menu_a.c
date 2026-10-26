@@ -65,7 +65,7 @@ static s32 TagMenu_Count(s32 page) {
     if(page==TAG_MENU_PRESET) return preset_rows()+3;
     if(page==3) return 1; /* spatial setup page draws its own roster */
     if(page==2) return 6;
-    if(page==1) return TagNet_HostMenu()?7:9;
+    if(page==1) return TagNet_HostMenu()?7:8;
     if(page==4) return TAG_OPTION_GROUP_COUNT+1;
     if(page<5) return 6;
     while(TagMenu_Option(page,n)>=0) n++;
@@ -77,7 +77,7 @@ static s32 TagMenu_Label(s32 page,s32 row) {
         return row<n?(tagMode==TAG_MODE_GAUNTLET?TAG_LABEL_PRESETS:TAG_LABEL_TOURS)+presetPage*8+row:
             row==n?TAG_LABEL_PREV:row==n+1?TAG_LABEL_NEXT:4;
     }
-    if(page==1) {static const s32 labels[]={0,1,2,TAG_LABEL_GAUNTLET,TAG_LABEL_TOURNAMENT,TAG_LABEL_LOBBY,TAG_LABEL_ONLINE,3,4};return TagNet_HostMenu() && row==6?TAG_LABEL_CLOSE_LOBBY:labels[TagNet_HostMenu() && row>=5?row+2:row];}
+    if(page==1) {static const s32 labels[]={0,1,2,TAG_LABEL_GAUNTLET,TAG_LABEL_TOURNAMENT,TAG_LABEL_LOBBY,3,4};return TagNet_HostMenu() && row==6?TAG_LABEL_CLOSE_LOBBY:labels[TagNet_HostMenu() && row>=5?row+1:row];}
     if(page==3) return TAG_LABEL_CHOOSE;
     if(page==2 && row>=4) return row==4?TAG_LABEL_CPU:4;
     if(page==4) return row==TAG_OPTION_GROUP_COUNT?4:TAG_LABEL_SETTINGS+row;
@@ -191,8 +191,7 @@ static void TagMenu_Guide(void) {
         "Practice with teams and adjustable training rules.",
         "Survive successive waves of enemies with your team.",
         "Enter your teams in a tournament bracket.",
-        "Practise together while the host chooses your next mode.",
-        "Fight online with up to ten players, CPUs and spectators.",
+        "Practice together while the host chooses your next mode.",
         "Change the mod's gameplay, cameras and HUD settings.","Return to the previous menu."};
     s32 row=MAINMENU_CUR(gMainMenu);
     char value[96],heading[64];
@@ -211,9 +210,9 @@ static void TagMenu_Guide(void) {
         Ps_Text(256,398,"LEFT / RIGHT - CHANGE",0.6f,472,3);
     } else {
         char message[128];
-        Ps_Copy(message,descriptions[8],sizeof(message));
+        Ps_Copy(message,descriptions[7],sizeof(message));
         if(tagPage==TAG_MENU_PRESET) {sprintf(message,Port_TagText("Choose a challenge. Page %d of %d."),presetPage+1,(preset_count()+7)/8);}
-        else if(tagPage==1 && (u32)row<8) Ps_Copy(message,TagNet_HostMenu() && row==6?"Close the online lobby and disconnect its guests.":descriptions[TagNet_HostMenu() && row==5?7:row],sizeof(message));
+        else if(tagPage==1 && (u32)row<7) Ps_Copy(message,TagNet_HostMenu() && row==6?"Close the online lobby and disconnect its guests.":descriptions[TagNet_HostMenu() && row==5?6:row],sizeof(message));
         else if(tagPage==2 && row!=5) Ps_Copy(message,row==4?
             "Choose both rosters and watch the battle. L3 changes the fighter you follow.":
             "Choose how many people are playing on this PC.",sizeof(message));
@@ -771,11 +770,11 @@ void MainMenu_Input(s32 *result) {
                 presetPage=0;TagMenu_SetPage(tagMode==TAG_MODE_GAUNTLET || tagMode==TAG_MODE_TOURNAMENT?TAG_MENU_PRESET:3);
             } else if(item==3 || item==4) {
                 tagMode=item==3?TAG_MODE_GAUNTLET:TAG_MODE_TOURNAMENT;TagMenu_SetPage(2);
-            } else if(item==5 || item==6) {
-                TagSession_Leave();gPortScreen=item==5?PORT_SCREEN_TAG_LOBBY:PORT_SCREEN_TAG_ONLINE;
+            } else if(item==5) {
+                TagSession_Leave();gPortScreen=PORT_SCREEN_TAG_LOBBY;
                 MAINMENU_CHOOSE(MPROG_MODE_PORT_SCREEN);
                 MainMenu_PlateGoto(0,"fl_ok");
-            } else if(item==7) {
+            } else if(item==6) {
                 TagMenu_SetPage(4);
             } else { tagMode=item; TagMenu_SetPage(2); }
             Snd_PlaySe(1,1); return;

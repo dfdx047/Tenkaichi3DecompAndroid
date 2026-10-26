@@ -14,7 +14,7 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 CASES = {
     "settings": {
-        "pad": "150:select,180:down,210:down,240:down,270:down,300:down,320:down,340:down,380:cross,440:cross,500:down,560:right,680:triangle,740:triangle,800:select",
+        "pad": "150:select,180:down,210:down,240:down,270:down,300:down,320:down,380:cross,440:cross,500:down,560:right,680:triangle,740:triangle,800:select",
         "end": r"frame=\d+ page=4 state=0,0,1,3,0",
         "after": 800,
         "states": [(4, 4), (4, 5), (4, 1), (4, 0)],

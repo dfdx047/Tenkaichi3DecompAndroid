@@ -41,7 +41,7 @@ def run(data, locale, picture, mechanic=None, match=False, executable=None):
     if picture:
         pads = dict(modes='150:select', setup='150:select,210:cross,270:cross',
                     fighters='150:select,210:cross,270:cross,450:start',
-                    settings='150:select,180:down,210:down,240:down,270:down,300:down,330:down,360:down,400:cross,460:cross')
+                    settings='150:select,180:down,210:down,240:down,270:down,300:down,330:down,400:cross,460:cross')
         frame = dict(modes=200, setup=380, fighters=520, settings=540)[picture]
         shot = out / (picture+'.ppm')
         shot.unlink(missing_ok=True)

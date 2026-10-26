@@ -328,7 +328,7 @@ static void home(void) {
     button(0,190,102,294,63,"Host a Room",1);left(209,144,"Choose the teams, stage and battle rules.",0.58f,258,2);
     button(1,190,181,294,63,"Join a Room",1);left(209,223,"Enter the host address and choose your fighter.",0.58f,258,2);
     if(!TagNet_IsParty()){button(2,190,260,294,63,"Watch a Room",1);left(209,302,"Follow any fighter or use the free camera.",0.58f,258,2);}
-    else {left(209,277,"Practise together between matches.",0.67f,258,3);left(209,304,"Take a player slot at team setup, or watch.",0.58f,258,2);}
+    else {left(209,277,"Practice together between matches.",0.67f,258,3);left(209,304,"Take a player slot at team setup, or watch.",0.58f,258,2);}
     button(3,190,343,140,30,"Back",1);
     text(256,386,"Players and spectators can switch places in the room.",0.65f,468,3);
 }
