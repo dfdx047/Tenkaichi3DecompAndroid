@@ -32,7 +32,7 @@ CASES = {
         "states": [(4, 1), (4, 2), (4, 3), (40, 0), (40, 1)],
     },
 }
-def roster_pad(left=2,right=2,duplicates=False,cpu_only=False):
+def roster_pad(left=2,right=2,duplicates=False,cpu_only=False,cpu_steps=0):
     events=["150:select","210:cross","270:cross","450:start"]
     tick=540
     def press(key):
@@ -48,27 +48,32 @@ def roster_pad(left=2,right=2,duplicates=False,cpu_only=False):
             # and fifth choices open Vegeta/Trunks's form picker first.
             for _ in range(4 if not duplicates and side==1 and member in (2,4) else 3):
                 press("cross") # fighter, optional form, equipment, colour
-            if cpu_only or side!=0 or member!=0: press("cross") # CPU difficulty
+            if cpu_only or side!=0 or member!=0:
+                for _ in range(cpu_steps): press("down")
+                press("cross") # CPU difficulty
         if count<5: press("right") # End is optional, not forced after two
         press("cross")
     tick+=80
     press("cross") # stage
     return ",".join(events)
 
-def bt4_roster_pad(left=2,right=2,cpu_only=False):
+def bt4_roster_pad(left=2,right=2,cpu_only=False,cpu_steps=0):
     # Both first BT4 grid cells have a form picker. Repeated fighters also
     # exercise the native mod's duplicate-selection rule.
     events=["150:select","210:cross","270:cross","450:start"];tick=540
     for side,count in enumerate((left,right)):
         for member in range(count):
-            for _ in range(4+(member>0)+(cpu_only or side!=0 or member!=0)):
+            for _ in range(4+(member>0)):
                 events.append(f"{tick}:cross");tick+=60
+            if cpu_only or side!=0 or member!=0:
+                for key in ['down']*cpu_steps+['cross']:
+                    events.append(f"{tick}:{key}");tick+=60
         for key in (('right','cross') if count<5 else ('cross',)):
             events.append(f"{tick}:{key}");tick+=60
     tick+=80;events.append(f"{tick}:cross")
     return ','.join(events)
 
-def adapt_bt4_roster(pad, sizes, duplicates=False,cpu_only=False):
+def adapt_bt4_roster(pad, sizes, duplicates=False,cpu_only=False,cpu_steps=0):
     """Replace only character selection, keeping mode/setup and later inputs.
 
     CPU-only selection starts later; return/result cases have later actions
@@ -77,8 +82,8 @@ def adapt_bt4_roster(pad, sizes, duplicates=False,cpu_only=False):
     def parse(value):
         return [(int(t),key) for t,key in (event.split(':',1) for event in value.split(',') if event)]
     events=parse(pad)
-    before=parse(roster_pad(*sizes,duplicates=duplicates,cpu_only=cpu_only))[4:]
-    after=parse(bt4_roster_pad(*sizes,cpu_only=cpu_only))[4:]
+    before=parse(roster_pad(*sizes,duplicates=duplicates,cpu_only=cpu_only,cpu_steps=cpu_steps))[4:]
+    after=parse(bt4_roster_pad(*sizes,cpu_only=cpu_only,cpu_steps=cpu_steps))[4:]
     for start in range(len(events)-len(before)+1):
         offset=events[start][0]-before[0][0]
         if events[start:start+len(before)]==[(t+offset,k) for t,k in before]:
@@ -143,28 +148,25 @@ CASES["cpu-label"] = {
     "states":[(4,2),(4,3)],"env":{"BT3_UI_SHOT":"500:port/build/tag-menu-tests/cpu-label/menu.ppm"},
 }
 CASES["setup-edit-cancel"] = {
-    # Right selects the neighbouring COM card, without changing Duel Time.
-    # Triangle cancels an edit, then Cross commits a second edit.
+    # Only the timer is shown here. Triangle cancels its edit; Cross saves.
     "pad":"150:select,210:cross,270:down,310:down,350:down,390:down,450:cross,"
-          "510:right,570:cross,630:right,690:triangle,750:left,810:cross,"
-          "870:right,930:triangle,990:cross,1050:right,1110:cross,1170:down,1230:triangle",
-    "end":r"frame=\d+ page=4 state=2,","after":1230,
+          "510:cross,570:right,630:triangle,690:cross,750:right,810:cross,930:triangle",
+    "end":r"frame=\d+ page=4 state=2,","after":930,
     "states":[(4,3),(4,2)],
     "env":{"BT3_UI_SHOT":"900:port/build/tag-menu-tests/setup-edit-cancel/menu.ppm"},
 }
 for mode, navigation in (("free-for-all", "180:down,"), ("training", "175:down,195:down,")):
     CASES[mode] = dict(CASES["match"], pad=CASES["match"]["pad"].replace("210:cross", navigation + "210:cross"))
 for mode, navigation, mode_id in (("team", "", 0), ("free-for-all", "180:down,", 1), ("training", "175:down,195:down,", 2)):
-    # The fifth player-count entry is CPU Only. Set 60 seconds and Very Strong
-    # here, then exercise the real native character/stage selection and loader.
+    # Set the timer here, and each CPU's difficulty after their outfit.
     pad="150:select,"+navigation+"210:cross,270:down,310:down,350:down,390:down,450:cross,"
     pad+="510:cross,"+("550:right," if mode=="training" else "550:right,590:right,")
-    pad+="630:cross,670:right,710:cross,750:right,790:right,830:cross,890:start"
-    for event in roster_pad(cpu_only=True).split(",")[4:]:
-        tick,key=event.split(":");pad+=f",{int(tick)+480}:{key}"
+    pad+="630:cross,690:start"
+    for event in roster_pad(cpu_only=True,cpu_steps=2).split(",")[4:]:
+        tick,key=event.split(":");pad+=f",{int(tick)+330}:{key}"
     CASES["cpu-"+mode] = dict(CASES["match"],pad=pad,
-        end=r"tagteam frame=150 fighter=3",cpu=True,mode_id=mode_id,
-        env={"BT3_TAG_DEBUG":"1"})
+        end=r"tagteam frame=150 fighter=3",cpu=True,mode_id=mode_id,cpu_steps=2,
+        env={"BT3_TAG_DEBUG":"1","BT3_BGM_DEBUG":"1"})
 CASES["pause"] = {
     "pad": "", "after": 0, "end": r"page=91 state=3,0,",
     "states": [(90, 2), (91, 2), (90, 3), (91, 3)],
@@ -204,7 +206,7 @@ def run(case, exe, renderer, data=None):
     marker=Path(data)/'native-disc.json' if data else None
     if marker and marker.exists() and json.loads(marker.read_text()).get('game')=='bt4':
         sizes=spec.get('roster',(2,2))
-        spec['pad']=adapt_bt4_roster(spec['pad'],sizes,case=='duplicates',spec.get('cpu',False))
+        spec['pad']=adapt_bt4_roster(spec['pad'],sizes,case=='duplicates',spec.get('cpu',False),spec.get('cpu_steps',0))
     output = ROOT / "port/build/tag-menu-tests" / ((Path(data).name+"-" if data else "")+case)
     output.mkdir(parents=True, exist_ok=True)
     settings = output / "settings.txt"
@@ -252,7 +254,11 @@ def run(case, exe, renderer, data=None):
     if spec.get("cpu"):
         # BT4's highest selectable difficulty is Z Hard, level 99.
         level=99 if marker and marker.exists() and json.loads(marker.read_text()).get('game')=='bt4' else 29
-        assert f"page=46 state=1,{level},0,{spec['mode_id']},{level}" in text, "Chosen timer/COM level did not reach the loaded battle"
+        assert f"page=46 state=1,{level},0,{spec['mode_id']},{level}" in text, "Chosen timer/per-fighter difficulty did not reach the loaded battle"
+        assert not re.search(r"page=47 state=1,",text), "Hidden global CPU difficulty was edited"
+        if marker and marker.exists() and json.loads(marker.read_text()).get('game')=='bt4':
+            playlists=[list(map(int,line.split())) for line in re.findall(r"bt4 music list:([^\r\n]+)",text)]
+            assert playlists and all(len(ids)==len(set(ids)) and ids.count(0)==1 and ids.count(24)==1 for ids in playlists),playlists
         controls=re.findall(r"tagteam control fighter=(\d+) control=(\d+) inject=(\d+)",text)
         assert controls and all(control=="2" and inject=="1" for _,control,inject in controls),controls
     if "rosters" in spec:
@@ -268,7 +274,7 @@ def run(case, exe, renderer, data=None):
         assert "tag_revive_wave_speed=125\n" in settings.read_text(), "Wave speed did not persist"
     if case=="setup-edit-cancel":
         changes=[tuple(map(int,m.split(","))) for m in re.findall(r"page=47 state=([-\d,]+)",text)]
-        assert changes==[(1,1,3,3,0),(1,-1,3,2,0),(0,1,4,2,0),(0,-1,3,2,0),(0,1,4,2,0)],changes
+        assert changes==[(0,1,4,2,0),(0,-1,3,2,0),(0,1,4,2,0)],changes
     if case == "camera-views":
         assert "tag_three_wide=0\n" in settings.read_text(), "Three-player layout did not persist"
     if case == "fusion-settings":

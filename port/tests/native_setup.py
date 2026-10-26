@@ -1,6 +1,6 @@
 """Installer failures must leave existing installations and saves untouched."""
 from pathlib import Path
-import sys,tempfile,unittest
+import hashlib,json,os,struct,subprocess,sys,tempfile,unittest
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[2]
 sys.path.insert(0,str(ROOT/'port/tools'))
@@ -36,18 +36,58 @@ class SetupTests(unittest.TestCase):
             file=Path(d)/'card.ps2';file.write_bytes(bytes(8192))
             with self.assertRaises(ValueError):Card(file)
 
-    def test_installed_language_uses_native_text_setting_format(self):
-        for language in ('en', 'es'):
-            with self.subTest(language=language), tempfile.TemporaryDirectory() as d:
+    def test_language_and_platform_launcher(self):
+        for platform, language in ((p,l) for p in ('windows','linux') for l in ('en','es')):
+            with self.subTest(platform=platform,language=language), tempfile.TemporaryDirectory() as d:
                 root=Path(d);target=root/'game';iso=root/'game.iso';iso.write_bytes(b'fake')
                 payload=root/'payload';(payload/'engine').mkdir(parents=True);(payload/'engine/TagTeam.dat').write_bytes(b'fake')
+                executable='engine/TagTeam.exe' if platform=='windows' else 'engine/TagTeam'
+                (payload/executable).write_bytes(b'fake engine')
                 with patch.object(setup.native_tables,'identify',return_value=({'id':'test'},[],[])), \
                      patch.object(setup.native_tables,'reconstruct',return_value=[]), \
-                     patch.object(setup.native_tables,'verify'),patch.object(setup,'payload_files',return_value={}), \
+                     patch.object(setup.native_tables,'verify'),patch.object(setup,'payload_files',return_value={executable:'fixture'}), \
+                     patch.object(setup,'platform_name',return_value=platform), \
                      patch.object(setup,'extract',side_effect=lambda _, out:out.mkdir()):
                     setup.install(iso,target,language,payload=payload,progress=lambda _:None)
                 # Port_SettingText reads quoted strings, unlike numeric settings.
                 self.assertIn(f'menu_lang="{language}"\n',(target/'settings.txt').read_text())
+                launcher=target/('Play.cmd' if platform=='windows' else 'Play.sh')
+                self.assertTrue(launcher.is_file())
+                self.assertEqual(json.loads((target/'installation.json').read_text())['platform'],platform)
+                if platform=='linux' and os.name!='nt':
+                    self.assertTrue(os.access(launcher,os.X_OK))
+                    self.assertTrue(os.access(target/executable,os.X_OK))
+
+    def test_missing_linux_library_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            payload=Path(d);(payload/'engine').mkdir()
+            names=('engine/TagTeam','engine/TagTeam.mem','engine/TagTeam.dat')
+            for name in names:(payload/name).write_bytes(b'fixture')
+            manifest={name:hashlib.sha256(b'fixture').hexdigest() for name in names}
+            (payload/'manifest.json').write_text(json.dumps(manifest))
+            with patch.object(setup,'platform_name',return_value='linux'):
+                with self.assertRaisesRegex(ValueError,'Incomplete'):setup.payload_files(payload)
+
+    def test_packaging_rejects_missing_table_ranges(self):
+        with tempfile.TemporaryDirectory() as d:
+            recipe=Path(d)/'recipes.json'
+            recipe.write_text(json.dumps({'profiles':[{'id':'test','ranges':[[0,10,4,'',[]],[0,14,4,'',[]]]}]}))
+            with patch.object(setup.native_tables,'RECIPES',recipe):
+                covered=b'BT3D'+struct.pack('<IQ4I',1,0,100,0,10,8)
+                setup.native_tables.check_recipe_coverage(covered)
+                missing=b'BT3D'+struct.pack('<IQ4I',1,0,100,0,10,9)
+                with self.assertRaisesRegex(ValueError,'Rebuild'):setup.native_tables.check_recipe_coverage(missing)
+
+    @unittest.skipIf(os.name=='nt','POSIX launcher')
+    def test_linux_launcher_handles_spaces_and_clears_test_flags(self):
+        with tempfile.TemporaryDirectory(prefix='tag team ') as d:
+            root=Path(d);(root/'engine').mkdir()
+            exe=root/'engine/TagTeam'
+            exe.write_text('#!/bin/sh\nprintf "%s\\n" "$PWD" "$BT3_DATA" "${BT3_DEMO-unset}" "$BT3_TAG_TEAM" "$1"\n')
+            exe.chmod(0o755)
+            launcher=root/'Play.sh';launcher.write_text(setup.PLAY_LINUX);launcher.chmod(0o755)
+            result=subprocess.run([str(launcher),'space argument'],cwd='/',env={**os.environ,'BT3_DEMO':'1'},capture_output=True,text=True,check=True)
+            self.assertEqual(result.stdout.splitlines(),[str(root),str(root/'gamedata'),'unset','1','space argument'])
 
     def test_failed_import_cleans_only_its_temporary_folder(self):
         with tempfile.TemporaryDirectory() as d:

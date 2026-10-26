@@ -59,7 +59,7 @@ one of your imported discs. BT3 and BT4 keep separate saves and settings under
 The inherited upstream release-container scripts build blank executable tables
 for the upstream USA installer. They are not a regional Tag Team installer.
 
-## Native Windows installer
+## Native installers
 
 Strip a freshly linked Windows build before packaging it:
 
@@ -68,9 +68,27 @@ BT3_CC=win64 .venv/bin/python port/tools/strip_data.py --data gamedata --out por
 ```
 
 On Windows, use an isolated Python environment with `pyinstaller` and `pycdlib`,
-then run `python port/tools/package_native_setup.py`. This produces
-`port/build/Tag Team Native - Setup.zip`. It contains Setup.exe, a readme and
-one payload folder, with no extracted game assets or saves.
+then run `python port/tools/package_native_setup.py --platform windows`. This
+produces `port/build/Tag-Team-Recomp-Beta.2-Windows.zip`. It contains Setup.exe,
+a readme and one payload folder, with no extracted game assets or saves.
+
+For Linux, build in Ubuntu 22.04 or an equivalent glibc 2.35 environment. Compile
+SDL 3.4.12 there too; copying a library from a newer distribution can raise the
+minimum system requirement. Keep the CPU target at generic x86-64. Then:
+
+```sh
+BT3_CC=clang64 python3 port/tools/strip_data.py --data gamedata --out port/build/installer-portable-linux
+cp port/build/bt3_64.mem port/build/installer-portable-linux/bt3.mem
+python3 port/tools/package_native_setup.py --platform linux \
+  --portable port/build/installer-portable-linux \
+  --sdl /usr/local/lib/libSDL3.so.0 --output port/build/native-setup-linux
+```
+
+Freeze each installer on its own operating system, using a Python environment
+with PyInstaller, pycdlib and Tk installed. Packaging requires an empty output
+folder. The Linux archive is `Tag-Team-Recomp-Beta.2-Linux-x86_64.tar.gz`; its
+Setup.sh opens the bundled installer. It installs Play.sh, the game, SDL and the
+chosen disc's data. Neither installer needs a system Python installation.
 
 `native_table_recipes.json` reconstructs the stripped startup tables from each
 supported disc. Regenerate it with `build_native_table_recipes.py` when a build

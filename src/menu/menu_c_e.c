@@ -1984,9 +1984,9 @@ s32 CharSel_Run(s32 section) {
             mode = 6;
             bgm = gCharSel->bgmIds[gCharSel->stage->bgmPlaying];
             screenMode = 0;
-            if (bgm == CHARSEL_BGM_RANDOM) {
-                bgm = CHARSEL_RANDOM_BGM();
-            }
+#ifndef PORT
+            if (bgm == CHARSEL_BGM_RANDOM) { bgm = CHARSEL_RANDOM_BGM(); }
+#endif
             announcer = 1;
             timeLimit = 0;
             unk10 = 0;
@@ -1998,9 +1998,9 @@ s32 CharSel_Run(s32 section) {
             mode = 0;
             bgm = gCharSel->bgmIds[gCharSel->stage->bgmPlaying];
             screenMode = gCharSel->players == 1;
-            if (bgm == CHARSEL_BGM_RANDOM) {
-                bgm = CHARSEL_RANDOM_BGM();
-            }
+#ifndef PORT
+            if (bgm == CHARSEL_BGM_RANDOM) { bgm = CHARSEL_RANDOM_BGM(); }
+#endif
             switch (gSaveData->rule[0]) {
             case 0:
                 timeLimit = 1;

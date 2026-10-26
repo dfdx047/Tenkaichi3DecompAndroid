@@ -30,22 +30,29 @@ For hosting, joining and spectating, see [Online play](NATIVE_TAG_ONLINE.md).
 
 ## Supported discs
 
-On Windows, open **Setup.exe** from the native installer, choose your disc image,
+On Windows, open **Setup.exe** from the native installer. On Linux, extract the
+Linux archive and run **Setup.sh**. Choose your disc image,
 English or Spanish, and an empty installation folder. You can also choose an
-existing native save folder or PCSX2 `.ps2` memory card. Setup copies the save;
-the original stays untouched. Open **Play.cmd** in the installed folder afterward.
+existing Recomp save folder or PCSX2 `.ps2` memory card. Setup copies the save;
+the original stays untouched. Open **Play.cmd** on Windows or **Play.sh** on Linux
+in the installed folder afterward.
 Python is included in setup and does not need to be installed separately.
 
-The source checkout has just **Setup.cmd** and **Play.cmd**. Play offers the
-discs already imported on this computer. Offline and online modes are in-game.
+Linux needs an x86-64 system with glibc 2.35 or newer (such as Ubuntu 22.04 or
+newer), a desktop session and a working Vulkan graphics driver. Run setup and the
+game as your normal user, without sudo. The game and SDL library are included.
 
-| Disc | Data folder | Windows launcher |
-| --- | --- | --- |
-| BT3 USA — SLUS-21678 | `gamedata` | `Play.cmd` |
-| BT3 Europe/Australia — SLES-54945 | `gamedata-eu` | `Play.cmd` |
-| BT3 Japan — SLPS-25815 | `gamedata-jp` | `Play.cmd` |
-| BT4 B14 REV2 English | `gamedata-bt4` | `Play.cmd` |
-| BT4 B14 REV2 Spanish | `gamedata-bt4-es` | `Play.cmd` |
+The source checkout uses **Setup.cmd** / **Play.cmd** on Windows and **Setup.sh** /
+**Play.sh** on Linux. Play opens the only compatible imported disc directly, or
+offers a choice when several are present. Offline and online modes are in-game.
+
+| Disc | Data folder |
+| --- | --- |
+| BT3 USA — SLUS-21678 | `gamedata` |
+| BT3 Europe/Australia — SLES-54945 | `gamedata-eu` |
+| BT3 Japan — SLPS-25815 | `gamedata-jp` |
+| BT4 B14 REV2 English | `gamedata-bt4` |
+| BT4 B14 REV2 Spanish | `gamedata-bt4-es` |
 
 Import a supported disc into its matching folder:
 

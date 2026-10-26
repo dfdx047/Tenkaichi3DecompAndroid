@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "gs_internal.h"
+#include "../../include/plat_songs.h"
 #include "../../../include/battle/tag_capacity.h"
 
 enum { ADXT_STAT_STOP = 0, ADXT_STAT_PLAYING = 3, ADXT_STAT_PLAYEND = 5 };
@@ -41,6 +42,7 @@ typedef struct Player {
     uint32_t size, data;    /* file size; offset of the first frame */
     uint32_t channels, rate, total;
     int loop;
+    int battleMusic, randomMusic;
     uint32_t loopStart, loopEnd; /* samples */
     uint32_t pos;           /* next sample */
     int c1, c2;
@@ -64,6 +66,8 @@ extern int gPortMusicFollows; /* (below, with the volumes) */
    the game's state. The second is used when the state must not depend on the sound device (sByTicks). */
 typedef struct PortAdxView { int stat, paused, left, vol, pan[2]; char path[256]; } PortAdxView;
 extern int gPortAdxCount;
+extern int gPortAdxMusicMode[MAX_PLAYERS];
+extern unsigned gPortBattleMusicUnlocked;
 extern PortAdxView gPortAdxView[MAX_PLAYERS];
 
 extern int Port_NetActive(void); /* net.c */
@@ -147,6 +151,7 @@ static void view_start(Player *p, const char *path, int found) {
             }
         }
     }
+    gPortAdxMusicMode[p-sPlayers]=0;
     v->stat = blanks != 0 ? ADXT_STAT_PLAYING : ADXT_STAT_STOP;
     v->left = blanks;
     snprintf(v->path, sizeof(v->path), "%s", path);
@@ -383,7 +388,7 @@ static void SDLCALL feed(void *user, SDL_AudioStream *stream, int additional, in
     (void)total;
     while (additional > 0 && p->stat == ADXT_STAT_PLAYING && !p->paused) {
         int speed = Port_SpeedMilli();
-        if (p->loop && p - sPlayers <= 1 && gPortMusicFollows <= 0) {
+        if ((p->loop || p->battleMusic) && p - sPlayers <= 1 && gPortMusicFollows <= 0) {
             speed = 1000;
         }
         if (speed != 1000) {
@@ -446,6 +451,7 @@ static void stop(Player *p) {
     free(p->file);
     p->file = NULL;
     p->stat = ADXT_STAT_STOP;
+    p->battleMusic = p->randomMusic = 0;
 }
 
 /* An online match computes with the default voice set on both sides (net.c). A player who chose the other one hears
@@ -582,6 +588,93 @@ static void start(Player *p, const char *path) {
     }
 }
 
+/* Battle music is presentation, not a source of rollback inputs. The game
+   sees one continuing music channel; advancing this local playlist never
+   touches its RNG, file queue, or recorded voice timings. */
+static char battleSongs[24 + PORT_SONG_MAX][512];
+static int battleSongCount;
+static uint64_t musicRandom;
+
+static void battle_music_policy(Player *p, int random) {
+    if(p->stream) SDL_LockAudioStream(p->stream);
+    p->battleMusic=1;p->randomMusic=random;
+    if(random) {
+        if(p->loop) p->total=p->loopEnd;
+        p->loop=0;
+    } else if(!p->loop && p->total>=32) {
+        p->loopStart=0;p->loopEnd=p->total;p->loop=1;
+    }
+    /* Opt-in runtime test: exercise the actual decoder's end transition. */
+    const char *test=getenv("BT3_TEST_MUSIC_SECONDS");
+    if(test && atoi(test)>0 && p->rate) {
+        uint64_t end=(uint64_t)p->rate*atoi(test);
+        if(end<p->total) {p->total=(uint32_t)end;p->loopEnd=p->total;p->loopStart=0;}
+    }
+    if(p->stream) SDL_UnlockAudioStream(p->stream);
+}
+
+/* Ordinary menu songs also repeat. Jingles and spoken lines never opt in. */
+void Port_MusicRepeat(void *adxt) {
+    Player *p=adxt;
+    if(!p)return;
+    gPortAdxMusicMode[p-sPlayers]=1;
+    if(gPortAdxView[p-sPlayers].stat==ADXT_STAT_PLAYING)gPortAdxView[p-sPlayers].left=-1;
+    if(gPortResim)return;
+    if(p->stream)SDL_LockAudioStream(p->stream);
+    if(!p->loop && p->total>=32) {p->loopStart=0;p->loopEnd=p->total;p->loop=1;}
+    if(p->stream)SDL_UnlockAudioStream(p->stream);
+}
+
+void Port_BattleMusicBegin(int random, unsigned unlocked) {
+    Player *p=&sPlayers[0]; int i;
+    gPortBattleMusicUnlocked=unlocked;
+    gPortAdxMusicMode[0]=random?3:2;
+    if(gPortAdxView[0].stat==ADXT_STAT_PLAYING)gPortAdxView[0].left=-1;
+    if(gPortResim)return;
+    battleSongCount=0;
+    if(random) {
+        int bt4=PortGame_IsBT4(), count=bt4?24:20;
+        for(i=0;i<count+(!bt4?gPortSongCount:0);i++) {
+            int track=i<count?i:gPortSongOffsets[i-count];
+            if(!bt4 && i<count && !(unlocked&(1u<<i)))continue;
+            int file=PORT_BGM_FILE(track);
+            char path[512];
+            if(Port_FilePath(PortGame_Partition(file),PortGame_FileIndex(file),NULL,path,sizeof(path))) {
+                FILE *f=fopen(path,"rb");unsigned char header[2];
+                int valid=f && fread(header,1,2,f)==2 && header[0]==0x80 && !header[1];
+                if(f)fclose(f);
+                if(valid && battleSongCount<24+PORT_SONG_MAX)
+                    snprintf(battleSongs[battleSongCount++],512,"%s",path);
+            }
+        }
+    }
+    battle_music_policy(p,random);
+    if(getenv("BT3_SND_VERBOSE"))fprintf(stderr,"battle music: %s, %d playlist tracks\n",random?"random":"repeat",battleSongCount);
+}
+
+void Port_BattleMusicTick(void) {
+    Player *p=&sPlayers[0]; int ended=0, random, index=-1,i,n=0;
+    char path[512];
+    if(gPortResim || !p->stream || !p->battleMusic)return;
+    SDL_LockAudioStream(p->stream);
+    ended=p->stat==ADXT_STAT_PLAYEND && !p->paused;
+    SDL_UnlockAudioStream(p->stream);
+    if(!ended || SDL_GetAudioStreamAvailable(p->stream)>0)return;
+    random=p->randomMusic;snprintf(path,sizeof(path),"%s",p->path);
+    if(random && battleSongCount>1) {
+        /* Reservoir sampling excludes the song that just ended. */
+        if(!musicRandom)musicRandom=SDL_GetTicksNS()|1;
+        for(i=0;i<battleSongCount;i++)if(strcmp(battleSongs[i],path)) {
+            musicRandom^=musicRandom<<13;musicRandom^=musicRandom>>7;musicRandom^=musicRandom<<17;
+            if(musicRandom%(++n)==0)index=i;
+        }
+        if(index>=0)snprintf(path,sizeof(path),"%s",battleSongs[index]);
+    }
+    if(getenv("BT3_SND_VERBOSE"))fprintf(stderr,"battle music: next %s\n",path);
+    start(p,path);
+    battle_music_policy(p,random);
+}
+
 /* ------------------------------------------------------------------------------- the library's functions */
 
 void ADXT_Init(void) {}
@@ -594,6 +687,7 @@ void *ADXT_Create(int maxnch, void *work, int worksize) {
     memset(p, 0, sizeof(*p));
     p->pan[0] = p->pan[1] = PAN_AUTO;
     memset(&gPortAdxView[p - sPlayers], 0, sizeof(PortAdxView));
+    gPortAdxMusicMode[p-sPlayers]=0;
     gPortAdxView[p - sPlayers].pan[0] = gPortAdxView[p - sPlayers].pan[1] = PAN_AUTO;
     return p;
 }
@@ -635,6 +729,7 @@ void ADXT_Stop(void *adxt) {
     if (adxt != NULL) {
         stop(adxt);
         gPortAdxView[(Player *)adxt - sPlayers].stat = ADXT_STAT_STOP;
+        gPortAdxMusicMode[(Player *)adxt-sPlayers]=0;
     }
 }
 
@@ -733,6 +828,12 @@ void Port_AdxResync(void) {
             p->paused = v->paused;
             if (v->stat == ADXT_STAT_PLAYING && v->path[0] != '\0') {
                 start(p, v->path);
+                /* Room/match state transfers restart local audio too. Keep
+                   its playlist policy instead of silently reverting to a
+                   one-shot song after returning from an online match. */
+                if(i==0 && gPortAdxMusicMode[i]>=2)
+                    Port_BattleMusicBegin(gPortAdxMusicMode[i]==3,gPortBattleMusicUnlocked);
+                else if(gPortAdxMusicMode[i]==1)Port_MusicRepeat(p);
             }
         }
     }

@@ -21,6 +21,11 @@ typedef struct PortAdxView {
 } PortAdxView;
 
 int gPortAdxCount;
+/* Requested battle music policy survives rematches and rollback. */
+int gPortBattleMusicRandom;
+unsigned gPortBattleMusicUnlocked;
+/* 0 voice/jingle, 1 repeating song, 2 battle repeat, 3 battle random. */
+int gPortAdxMusicMode[PORT_ADX_PLAYERS];
 PortAdxView gPortAdxView[PORT_ADX_PLAYERS];
 
 /* One vertical blank has passed (Port_VBlank). */

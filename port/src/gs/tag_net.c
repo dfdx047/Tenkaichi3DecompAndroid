@@ -236,7 +236,8 @@ static void practice_ui_input(void) {
         }
     }
 }
-int TagNet_NativeMenu(void) { return nativeMenu; }
+/* Both the room and the host's mode picker use native game input. */
+int TagNet_NativeMenu(void) { return nativeMenu || hostMenu; }
 int TagNet_Active(void) {
     int active;SDL_LockSpinlock(&uiLock);active=status.phase>=3 && status.phase<=4;SDL_UnlockSpinlock(&uiLock);
     return TagNet_Enabled() && !nativeMenu && !hostMenu && active;

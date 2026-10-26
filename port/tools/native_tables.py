@@ -73,3 +73,22 @@ def verify(tables, dat):
             digest = ((digest ^ byte) * 0x100000001b3) & 0xffffffffffffffff
     if digest != expected:
         raise ValueError('This setup does not contain the startup recipes required by the game build.')
+
+
+def check_recipe_coverage(dat):
+    """Reject a stale recipe file before an installer can be packaged."""
+    if len(dat) < 16 or dat[:4] not in (b'TTMD', b'BT3D'):
+        raise ValueError('Invalid portable build table manifest')
+    count, = struct.unpack_from('<I', dat, 4)
+    if len(dat) != 16 + count * 16:
+        raise ValueError('Truncated portable build table manifest')
+    for profile in json.loads(RECIPES.read_text(encoding='utf-8'))['profiles']:
+        for _, which, offset, length in struct.iter_unpack('<4I', dat[16:]):
+            end = offset + length
+            for source, start, size, *_ in sorted(profile['ranges']):
+                if source == which and start <= offset < start + size:
+                    offset = max(offset, start + size)
+                if offset >= end:
+                    break
+            if offset < end:
+                raise ValueError(f"Rebuild native_table_recipes.json for this build ({profile['id']}).")

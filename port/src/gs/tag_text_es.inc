@@ -424,6 +424,7 @@
 {"Only with one enemy","Solo con un enemigo"},
 {"Open Room","Abrir sala"},
 {"Open fighter slot","Plaza libre"},
+{"Opponent CPU difficulty","Dificultad de CPU rival"},
 {"Options","Opciones"},
 {"Ordinary attacks only. Cinematic animations keep their normal timing.","Solo ataques normales. Las cinemáticas mantienen su duración."},
 {"Otherworld Tournament","Torneo del Otro Mundo"},

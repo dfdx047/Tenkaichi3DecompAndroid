@@ -4,6 +4,10 @@
 #define GRID_CHARACTER(id) ((id) < CHRGRID_ID_RANDOM)
 #endif
 #include "common.h"
+#ifdef PORT
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 #include "battle/view_a.h"
 #include "sys/heap.h"
 #include "sys/rand.h"
@@ -979,7 +983,21 @@ void BgmList_ApplyUnlocks(s32 *count, s32 *ids) {
     s32 flags = 0;
     s32 i;
 #ifdef PORT
-    if (PortGame_IsBT4()) return;
+    if (PortGame_IsBT4()) {
+        /* B14's archive pads the music list with repeated entry zero. Keep
+           each playable track once, followed by Random (except Sound Test). */
+        u32 seen=0; s32 n=0;
+        for(i=0;i<*count;i++) if((u32)ids[i]<24 && !(seen&(1u<<ids[i]))) {
+            seen|=1u<<ids[i];ids[n++]=ids[i];
+        }
+        if(gProgress->mode!=0x3E)ids[n++]=BGMLIST_ID_RANDOM;
+        if(getenv("BT3_BGM_DEBUG")) {
+            fprintf(stderr,"bt4 music list:");
+            for(i=0;i<n;i++)fprintf(stderr," %d",ids[i]);
+            fprintf(stderr,"\n");
+        }
+        *count=n;return;
+    }
 #endif
 
     if (gProgress->mode == 0x3E) {

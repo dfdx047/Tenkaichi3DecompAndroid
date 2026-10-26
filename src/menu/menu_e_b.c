@@ -2538,10 +2538,11 @@ s32 TeamSel_Run(s32 section) {
         }
         bgm = gTeamSel->bgmIds[gTeamSel->stage->bgm];
         if(TagSession_Selected() && TagSession_Mode()==TAG_MODE_GAUNTLET) {
-            bgm=TagSession_BattleMusic();
-        } else if (bgm == TS_BGM_RANDOM) {
-            bgm = TS_RANDOM_BGM();
+            bgm=TagSession_Music();
         }
+#ifndef PORT
+        else if (bgm == TS_BGM_RANDOM) { bgm = TS_RANDOM_BGM(); }
+#endif
         switch (gSaveData->rule[0]) {
         case 0:
             timeLimit = 1;

@@ -234,6 +234,12 @@ void Bgm_PlayEx(s32 id, s32 vol, s32 pan) {
         id=PortGame_MusicFile(id-0x10B16);
 #endif
     Adx_Play(ADX_CH_BGM, id, vol, pan);
+#ifdef PORT
+    if(id>=PortGame_MusicFile(0) && id<PortGame_MusicFile(PortGame_IsBT4()?24:20)) {
+        extern void Port_MusicRepeat(void *);
+        Port_MusicRepeat(File_AdxPlayer(ADX_CH_BGM)->adxt);
+    }
+#endif
 }
 
 /* Plays music file `id` at the default music volume, centred. */

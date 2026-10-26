@@ -129,9 +129,11 @@ void TagTournament_SetupBattle(void *ptr) {
             f32 hp=type==2 && b->round?remaining[ids[t]][m]+20:100;
             if(hp>100)hp=100;
             BattleSetup_SetMember(t,m,f->chara,f->costume,0,
-                custom?f->cpuLevel:(leader.cpuLevel>f->cpuLevel?leader.cpuLevel:f->cpuLevel),
+                f->cpuLevel,
                 hp,custom?&f->items:&leader.items);
             assigned[t][m]=owner>=0?local[owner]:-1;
+            if(Port_TagTournamentTest())Port_TagTestCheck(
+                setup->sides[t].members[m].cpuLevel==f->cpuLevel,2202);
         }
     }
     TagTeam_Configure(n,n,0);

@@ -3,11 +3,16 @@ and confirm the next match still has the full teams and controller mapping."""
 import argparse, os, re, subprocess
 from pathlib import Path
 root=Path(__file__).resolve().parents[2]
-p=argparse.ArgumentParser();p.add_argument('--bt4',action='store_true');p.add_argument('--four-teams',action='store_true');p.add_argument('--skip',action='store_true');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--bt4',action='store_true');p.add_argument('--four-teams',action='store_true');p.add_argument('--skip',action='store_true');p.add_argument('--easy-opponents',action='store_true');a=p.parse_args()
 out=root/'port/build/oct22/tournament'/(('bt4' if a.bt4 else 'bt3')+('-four' if a.four_teams else '')+('-skip' if a.skip else ''));out.mkdir(parents=True,exist_ok=True)
 settings=out/'settings.txt';settings.write_text('tag_controller_check=0\ntag_extra_intros=0\n')
 buttons=[(150,'select')]+[(i,'down') for i in (210,270,330,390)]+[(510,'cross'),(600,'cross'),(690,'cross'),(900,'start')]
 buttons += [(i,'cross') for i in range(1020,30000,90)]
+if a.easy_opponents:
+ assert not a.four_teams
+ # Opponent difficulty is its own card; selected teammates still default
+ # to Normal on their individual difficulty pages after the outfit picker.
+ buttons += [(750,'down'),(780,'cross'),(810,'left'),(840,'left'),(870,'cross')]
 if a.four_teams:
  buttons=[(150,'select')]+[(i,'down') for i in (210,270,330,390)]+[(510,'cross'),(600,'down'),(660,'down'),(720,'down'),(780,'cross'),(870,'cross')]
  tick=960
@@ -27,6 +32,7 @@ env.update(BT3_GS='gpu',BT3_WINDOW='800x600',BT3_UNCAPPED='1',BT3_SETTINGS=str(s
  BT3_TAG_MENU_TEST='main',BT3_MENU_LANG='en',BT3_UPDATE_CHECK='0',BT3_SOUND_TICKS='1',SDL_AUDIO_DRIVER='dummy',BT3_SND_VERBOSE='1',
  BT3_TAG_TEST_TOURNAMENT='1',BT3_PAD=','.join(f'{f}:{b}' for f,b in sorted(buttons)))
 env['BT3_UI_SHOT']=f'{8420 if a.bt4 else 7250}:{out/"crowd.ppm"}'
+if a.easy_opponents:env['BT3_UI_SHOT']=f'890:{out/"setup.ppm"}'
 if a.four_teams:
  for p in (2,3,4):env[f'BT3_PAD_{p}']=','.join(f'{t}:{b}' for t,b in buttons if t>2000 and b=='cross')
 if a.bt4:env['BT3_DATA']=str(root/'gamedata-bt4')
@@ -41,3 +47,6 @@ print('PASS native tournament menu, two round returns, next match',log)
 
 if a.four_teams:assert 'page=87 state=0,0,4,0,4' in text,log
 if a.skip:assert 'page=88 state=1,' in text,log
+if a.easy_opponents:
+ assert 'page=47 state=1,-1,3,0,1' in text,log
+ assert 'PASS check=2202' in text and 'FAIL' not in text,log

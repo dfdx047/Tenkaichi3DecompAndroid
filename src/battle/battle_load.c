@@ -11,6 +11,7 @@
 #include "sys/save.h"
 
 #ifdef PORT
+#include "plat_songs.h"
 /* PC build: a stage added from outside the disc (id 0x24 on) has no files on the disc. Every file id the game
    would form for it belongs to another file: 0x171 + stage runs into the split-screen models of the disc's
    stages (0x198 on), and 0x14E + stage into the models (0x171 on). So an added stage's model has a file id of
@@ -1605,8 +1606,20 @@ void BattleSetup_SetRule(s32 screenMode, s32 mode, s32 bgm, s32 timeLimit, s32 a
         }
     }
 #endif
+#ifdef PORT
+    { extern int gPortBattleMusicRandom; gPortBattleMusicRandom = bgm == 24; }
+#endif
     if (bgm == 24) {
+#ifdef PORT
+        /* Use the same unlocked disc/custom tracks as the playlist. */
+        s32 choices[24+PORT_SONG_MAX],n=0,i,bt4=PortGame_IsBT4();
+        for(i=0;i<(bt4?24:20);i++)
+            if(bt4 || (gSaveData->bgmBits&(1u<<i)))choices[n++]=i;
+        if(!bt4)for(i=0;i<gPortSongCount && i<PORT_SONG_MAX;i++)choices[n++]=gPortSongOffsets[i];
+        rule->bgm = n?choices[rand()%n]:8;
+#else
         rule->bgm = rand() % 24;
+#endif
     } else {
         rule->bgm = bgm;
     }

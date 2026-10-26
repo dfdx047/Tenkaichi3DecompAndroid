@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import queue
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -15,7 +16,8 @@ import native_tables
 from import_native_disc import extract
 
 BASE = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[2]
-PAYLOAD = BASE / 'payload' if getattr(sys, 'frozen', False) else BASE / 'port/build/native-setup/payload'
+PAYLOAD = BASE / 'payload' if getattr(sys, 'frozen', False) else BASE / (
+    'port/build/native-setup/payload' if sys.platform == 'win32' else 'port/build/native-setup-linux/payload')
 
 PLAY = '''@echo off
 setlocal
@@ -36,6 +38,19 @@ if errorlevel 1 (
 )
 '''
 
+PLAY_LINUX = '''#!/bin/sh
+set -eu
+cd -- "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+for name in $(env | sed -n 's/^\\(BT3_[A-Za-z0-9_]*\\)=.*/\\1/p'); do unset "$name"; done
+export BT3_TAG_TEAM=1 BT3_GS=gpu BT3_UPDATE_CHECK=0 BT3_MENU_ITEM4=0
+export BT3_DATA="$PWD/gamedata" BT3_SAVES="$PWD/saves" BT3_SETTINGS="$PWD/settings.txt"
+exec "$PWD/engine/TagTeam" "$@"
+'''
+
+
+def platform_name():
+    return 'windows' if sys.platform == 'win32' else 'linux'
+
 
 def payload_files(payload):
     manifest = json.loads((payload / 'manifest.json').read_text(encoding='utf-8'))
@@ -44,8 +59,10 @@ def payload_files(payload):
         if path.resolve().parent != payload.resolve() and payload.resolve() not in path.resolve().parents:
             raise ValueError('Invalid setup manifest path')
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
-            raise ValueError(f'Setup file is missing or damaged: {name}. Extract the complete installer ZIP again.')
-    for required in ('engine/TagTeam.exe', 'engine/TagTeam.exe.mem', 'engine/TagTeam.dat', 'engine/SDL3.dll'):
+            raise ValueError(f'Setup file is missing or damaged: {name}. Extract the complete installer archive again.')
+    required_files = ('engine/TagTeam.exe', 'engine/TagTeam.exe.mem', 'engine/TagTeam.dat', 'engine/SDL3.dll') if platform_name() == 'windows' else (
+        'engine/TagTeam', 'engine/TagTeam.mem', 'engine/TagTeam.dat', 'engine/lib/libSDL3.so.0')
+    for required in required_files:
         if required not in manifest:
             raise ValueError('Incomplete setup payload')
     return manifest
@@ -87,9 +104,14 @@ def install(iso, target, language='en', save=None, payload=PAYLOAD, progress=pri
             native_save.write(imported, stage / 'saves')
         else:
             (stage / 'saves').mkdir()
-        (stage / 'Play.cmd').write_bytes(PLAY.replace('\n', '\r\n').encode('utf-8'))
+        if platform_name() == 'windows':
+            (stage / 'Play.cmd').write_bytes(PLAY.replace('\n', '\r\n').encode('utf-8'))
+        else:
+            (stage / 'Play.sh').write_text(PLAY_LINUX, encoding='utf-8')
+            (stage / 'Play.sh').chmod(0o755)
+            (stage / 'engine/TagTeam').chmod(0o755)
         (stage / 'installation.json').write_text(json.dumps(dict(schema=1, profile=profile['id'], language=language,
-            save_imported=bool(imported), files=files), indent=2) + '\n', encoding='utf-8')
+            platform=platform_name(), save_imported=bool(imported), files=files), indent=2) + '\n', encoding='utf-8')
         if target.exists():
             target.rmdir()  # Still empty; never remove an existing installation.
         stage.replace(target)
@@ -98,7 +120,8 @@ def install(iso, target, language='en', save=None, payload=PAYLOAD, progress=pri
             # Only the unique temporary folder created by this invocation.
             assert stage.parent == target.parent and stage.name.startswith('.tag-team-install-')
             shutil.rmtree(stage)
-    progress('Ready. Start Play.cmd. / Listo. Abre Play.cmd.')
+    launcher = 'Play.cmd' if platform_name() == 'windows' else 'Play.sh'
+    progress(f'Ready. Start {launcher}. / Listo. Abre {launcher}.')
     return target
 
 
@@ -205,7 +228,12 @@ def gui():
                 if kind == 'done':
                     installed = value
                     status.configure(text=f'Ready / Listo: {value}')
-                    start.configure(text='Play / Jugar', command=lambda: os.startfile(str(installed / 'Play.cmd')))
+                    def play_installed():
+                        if platform_name() == 'windows':
+                            os.startfile(str(installed / 'Play.cmd'))
+                        else:
+                            subprocess.Popen([str(installed / 'Play.sh')], cwd=installed)
+                    start.configure(text='Play / Jugar', command=play_installed)
                 else:
                     messagebox.showerror('Setup', value)
         window.after(100, poll)

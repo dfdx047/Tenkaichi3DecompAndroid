@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -28,11 +29,11 @@ def match_pad(bt4):
     return ','.join(events)
 
 
-def run(data, locale, picture, mechanic=None, match=False):
+def run(data, locale, picture, mechanic=None, match=False, executable=None):
     out = ROOT / 'port/build/regional-runtime' / (data.name + '-' + locale)
     out.mkdir(parents=True, exist_ok=True)
     settings = out / 'settings.txt'
-    settings.write_text('menu_lang=' + locale + '\ntag_controller_check=0\n', encoding='utf-8')
+    settings.write_text('menu_lang="' + locale + '"\ntag_controller_check=0\n', encoding='utf-8')
     env = {k: v for k, v in os.environ.items() if not k.startswith('BT3_')}
     env.update(BT3_DATA=str(data), BT3_SETTINGS=str(settings), BT3_SAVES=str(out/'saves'),
                BT3_TAG_TEAM='1', BT3_UPDATE_CHECK='0', BT3_MENU_LANG=locale, SDL_AUDIO_DRIVER='dummy')
@@ -58,6 +59,10 @@ def run(data, locale, picture, mechanic=None, match=False):
             'assists':dict(BT3_TAG_TEST_BEAMS='1',BT3_TAG_TEST_BEAM_ASSIST='1'),
             'fusion':dict(BT3_TAG_TEST_FUSION='1'),
         }[mechanic]
+        marker=data/'native-disc.json'
+        if mechanic=='fusion' and marker.is_file() and json.loads(marker.read_text()).get('game')=='bt4':
+            # BT4 has different forms/recipes; use its authored Goku/Vegeta pair.
+            values=dict(BT3_TAG_TEST_FUSION='2',BT3_TAG_FUSION_PAIR='3,31,0',BT3_TAG_FUSION_RESULT='85')
         env.update(BT3_GS='none',BT3_DEMO='1',BT3_TAG_PLAY='4',BT3_TAG_VIEWS='4',
                    BT3_TAG_ROSTER='2,2',BT3_TEST_STAGE='6')
         env.update(values)
@@ -65,7 +70,7 @@ def run(data, locale, picture, mechanic=None, match=False):
         env.update(BT3_GS='none', BT3_DEMO='1', BT3_TAG_ROSTER='5,5', BT3_TAG_TRACE='1', BT3_TEST_FRAMES='1800')
     log = out / (name+'.log')
     with log.open('w', encoding='utf-8') as stream:
-        p = subprocess.Popen([str(ROOT/'port/build/bt3.exe')], cwd=ROOT, env=env, stdout=stream, stderr=subprocess.STDOUT)
+        p = subprocess.Popen([str(executable or ROOT/('port/build/bt3.exe' if sys.platform=='win32' else 'port/build/bt3_64'))], cwd=ROOT, env=env, stdout=stream, stderr=subprocess.STDOUT)
         try:
             deadline=time.monotonic()+100
             while time.monotonic()<deadline:
@@ -110,5 +115,6 @@ if __name__=='__main__':
     parser.add_argument('--picture',choices=['modes','setup','fighters','settings'])
     parser.add_argument('--mechanic',choices=['voices','revival','assists','fusion'])
     parser.add_argument('--match',action='store_true')
+    parser.add_argument('--exe',type=Path)
     args=parser.parse_args()
-    run(args.data.resolve(),args.locale,args.picture,args.mechanic,args.match)
+    run(args.data.resolve(),args.locale,args.picture,args.mechanic,args.match,args.exe)

@@ -18,7 +18,12 @@ static f32 rules_y(void) {return gauntlet()?270:275;}
 static f32 controls_y(void) {return gauntlet()?330:310;}
 static f32 buttons_y(void) {return gauntlet()?360:342;}
 void TagSetup_Reset(void) { Port_TagControllersCancel(); focus=!TagSession_Players()&&tournament()?1:0; checkedThisSetup=0; editing=0; }
-static s32 visible(s32 id) {return !tournament() || id!=TagSession_Players();}
+static s32 visible(s32 id) {
+    s32 players=TagSession_Players();
+    if(id==players)return !tournament();
+    if(id==players+1)return tournament();
+    return 1;
+}
 static void card_center(s32 id,f32 *x,f32 *y) {
     s32 p,n=0,players=TagSession_Players(),team;
     if(id<players) {
@@ -26,7 +31,7 @@ static void card_center(s32 id,f32 *x,f32 *y) {
         team=TagSession_PlayerTeam(id);
         for(p=0;p<id;p++) if(TagSession_PlayerTeam(p)==team) n++;
         *x=139+234*team; *y=157+31*n;
-    } else if(id<=players+1) {*x=tournament()?256:139+234*(id-players);*y=rules_y()+14;}
+    } else if(id<=players+1) {*x=256;*y=rules_y()+14;}
     else if(gauntlet() && id==players+2) {*x=256;*y=313;}
     else if(id==controls_card()) {*x=256;*y=controls_y()+13;}
     else {*x=id==controls_card()+1?318:86;*y=buttons_y()+17;}
@@ -123,11 +128,11 @@ void TagSetup_Draw(void) {
     if(!players) Ps_Text(256,211,"CPU ONLY - choose every fighter, then watch the battle.",0.8f,440,2);
     for(t=0;t<2;t++) {
         if(!visible(players+t))continue;
-        x=tournament()?147:30+t*234;
-        plate(x,rules_y(),218,29,focus==players+t,0);
+        x=30;
+        plate(x,rules_y(),452,29,focus==players+t,0);
         sprintf(text,"%s%s: %s%s",editing&&focus==players+t?"< ":"",
-            Port_TagText(TagSession_DraftMode()==TAG_MODE_GAUNTLET?(t?"COM Level":"Heal per Wave"):(t?"COM Level":"Duel Time")),Port_TagText(TagSession_RuleLabel(t)),editing&&focus==players+t?" >":"");
-        Ps_Text(x+109,rules_y()+3,text,0.7f,202,focus==players+t?1:2);
+            Port_TagText(t?"Opponent CPU difficulty":gauntlet()?"Heal per Wave":"Duel Time"),Port_TagText(TagSession_RuleLabel(t)),editing&&focus==players+t?" >":"");
+        Ps_Text(256,rules_y()+3,text,0.8f,430,focus==players+t?1:2);
     }
     if(gauntlet()) {
         plate(30,300,452,27,focus==players+2,0);

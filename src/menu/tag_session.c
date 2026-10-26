@@ -31,7 +31,7 @@ s32 TagSession_BattleMusic(void) {
 }
 static s32 cpuSetting[4][5];
 static s32 selection_side(s32 side) {return selected && mode==TAG_MODE_TOURNAMENT && !TagTournament_Active() && side==0?TagTournament_DraftTeam():side;}
-s32 TagSession_CpuSetting(s32 side,s32 member) {side=selection_side(side);return cpuSetting[side][member]<0?comLevel:cpuSetting[side][member];}
+s32 TagSession_CpuSetting(s32 side,s32 member) {side=selection_side(side);return cpuSetting[side][member]<0?(mode==TAG_MODE_TOURNAMENT?gSaveData->rule[1]:comLevel):cpuSetting[side][member];}
 void TagSession_SetCpuSetting(s32 side,s32 member,s32 level) {side=selection_side(side);if((u32)side<4 && (u32)member<5 && (u32)level<5)cpuSetting[side][member]=level;}
 s32 TagSession_CpuLevel(s32 side,s32 member) {extern s32 CpuLevel_FromSetting(u32);return CpuLevel_FromSetting(TagSession_CpuSetting(side,member));}
 /* This page assigns people to teams only. The native roster's End button
@@ -63,7 +63,7 @@ void TagSession_ChangeRule(s32 rule,s32 direction) {
         musicChoice=Ps_Wrap(musicChoice+direction,0,musicCount-1);
         Port_TagMenuTrace(94,musicChoice,TagSession_Music(),musicCount,0,0);return;
     }
-    if(rule>1)return;
+    if(rule>1 || (rule==1 && mode!=TAG_MODE_TOURNAMENT))return;
     if(mode==TAG_MODE_TOURNAMENT && !rule)return;
     if(mode==TAG_MODE_GAUNTLET && !rule) {TagChallenge_Refill(direction);return;}
     *value=Ps_Wrap(*value+direction,0,4);

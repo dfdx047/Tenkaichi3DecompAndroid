@@ -43,7 +43,7 @@ env={k:v for k,v in os.environ.items() if not k.startswith('BT3_')}
 env.update(BT3_TAG_TEAM='1', BT3_TAG_ONLINE='1', BT3_TAG_AUTO_READY='1',
            BT3_TAG_TEST_PLAYERS=str(a.players),
            BT3_DATA=str((a.data or root/('gamedata-bt4' if a.bt4 else 'gamedata')).resolve()),
-           BT3_NOSOUND='1', BT3_UPDATE_CHECK='0', BT3_TEST_FRAMES='0')
+           BT3_NOSOUND='1', BT3_GS='none', BT3_UPDATE_CHECK='0', BT3_TEST_FRAMES='0')
 if a.disconnect or a.kick:env['BT3_TAG_SAVE_CHECK']='1'
 if a.kick:
     assert a.party and a.players>=3
@@ -59,7 +59,9 @@ if a.swap_roles:env['BT3_TAG_TEST_ROLE_SWAP']='1'
 if a.high_fusion:env['BT3_TAG_TEST_HIGH_FUSION']='1'
 if a.watch_camera:env['BT3_TAG_NET_WATCH_TEST']='1'
 if a.gpu:env['BT3_GS']='gpu'
-if a.sound:env.pop('BT3_NOSOUND',None)
+if a.sound:
+    env.pop('BT3_NOSOUND',None)
+    env['BT3_SOUND']='1'  # Headless clients must also open their audio backend.
 env['BT3_TAG_TEST_SIZE']=a.size
 if a.case:env['BT3_TAG_NET_CASE']=str(a.case)
 if a.case==3:env['BT3_TAG_TEST_BEAM_ASSIST']='1'
@@ -149,7 +151,10 @@ finally:
         timed=proc.poll() is None
         if timed and not completed:print('HARNESS DEADLINE:',name,flush=True)
         if timed:proc.terminate()
-        proc.wait();f.close()
+        try:proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill();proc.wait(timeout=10)
+        f.close()
         print(name,proc.returncode,'ROUNDS COMPLETE' if completed else 'TIMEOUT' if timed else '',flush=True)
         print('\n'.join(l for l in log.read_text(errors='replace').splitlines() if not l.startswith('audit'))[-3000:],flush=True)
 
