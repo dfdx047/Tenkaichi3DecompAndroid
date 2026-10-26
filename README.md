@@ -34,7 +34,7 @@ On Windows, open **Setup.exe** from the native installer. On Linux, extract the
 Linux archive and run **Setup.sh**. Choose your disc image,
 English or Spanish, and an empty installation folder. You can also choose an
 existing Recomp save folder or PCSX2 `.ps2` memory card. Setup copies the save;
-the original stays untouched. Open **Play.cmd** on Windows or **Play.sh** on Linux
+the original stays untouched. Open **Play.exe** on Windows or **Play.sh** on Linux
 in the installed folder afterward.
 Python is included in setup and does not need to be installed separately.
 

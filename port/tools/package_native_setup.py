@@ -24,6 +24,7 @@ def main():
     parser.add_argument('--platform', choices=('windows', 'linux'), default='windows' if sys.platform == 'win32' else 'linux')
     parser.add_argument('--portable', type=Path, default=ROOT / 'port/build/installer-portable')
     parser.add_argument('--sdl', type=Path)
+    parser.add_argument('--launcher', type=Path, default=ROOT / 'port/build/Play.exe')
     parser.add_argument('--output', type=Path, default=ROOT / 'port/build/native-setup')
     args = parser.parse_args()
     windows = args.platform == 'windows'
@@ -38,6 +39,11 @@ def main():
     payload = output / 'payload'
     engine = payload / 'engine'
     engine.mkdir(parents=True, exist_ok=True)
+    if windows:
+        if not args.launcher.is_file():
+            raise ValueError('Build Play.exe with port/tools/build_native_launcher.py first.')
+        shutil.copy2(args.launcher, payload / 'Play.exe')
+    shutil.copy2(ROOT / 'docs/assets/tag-team-logo.png', payload / 'Tag Team Mod Logo.png')
     binary = 'TagTeam.exe' if windows else 'TagTeam'
     source_binary = 'bt3.exe' if windows else 'bt3'
     mem = args.portable / (source_binary + '.mem')
@@ -65,10 +71,11 @@ def main():
         ('port/third_party/xxhash/LICENSE', 'xxhash.txt'), ('port/third_party/dr_libs/LICENSE', 'dr_mp3.txt')]:
         shutil.copy2(ROOT / source, licenses / name)
     shutil.copy2(ROOT / 'port/licenses/SDL.txt', licenses / 'SDL.txt')
-    launcher = 'Play.cmd' if windows else 'Play.sh'
+    launcher = 'Play.exe' if windows else 'Play.sh'
     (payload / 'Read me.txt').write_text(
         f'Tag Team Mod — Native Beta .2\n\nStart {launcher}. Press Select at the main menu for Modded Modes.\n'
-        'F1 opens graphics, controller and language settings. Online modes are in the game menu.\n'
+        'Double-click the game picture or press Alt+Enter to switch fullscreen. F11 also works.\n'
+        'F1 opens graphics, controller, language and mod settings. Online modes are in the game menu.\n'
         'Your saves are in saves/. Setup copies imported saves; it never changes the original.\n'
         'English and Spanish mod menus are included. Disc audio comes from your selected disc.\n'
         'BT3: USA, Europe/Australia, Japan. BT4: B14 REV2 English and Spanish.\n\n'

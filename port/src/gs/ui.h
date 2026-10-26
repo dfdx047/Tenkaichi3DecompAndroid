@@ -33,7 +33,8 @@ SDL_Window *GsDraw_WindowCreate(int opengl);
 SDL_Window *GsDraw_Window(void);
 void GsDraw_WindowShape(void);
 void GsDraw_FullscreenSet(int on);
-void GsDraw_FullscreenToggle(void); /* F11: switch, save it, write the settings */
+void GsDraw_FullscreenToggle(void); /* switch and remember the window mode */
+int GsDraw_FullscreenEvent(const SDL_Event *ev); /* keys before UI input; mouse after UI input */
 
 /* gs_input.c: bindings of both players. Actions 0..15 are the pad's buttons, 16..23 the two sticks' directions. */
 #define PORT_ACTIONS 24

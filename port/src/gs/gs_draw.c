@@ -1777,14 +1777,44 @@ void GsDraw_FullscreenSet(int on) {
     if (sWindow == NULL) {
         return;
     }
-    sFullscreen = on;
-    SDL_SetWindowFullscreen(sWindow, on);
+    if (SDL_SetWindowFullscreen(sWindow, on != 0)) {
+        sFullscreen = on != 0;
+    } else {
+        fprintf(stderr, "bt3: could not change full screen: %s\n", SDL_GetError());
+    }
 }
 
 void GsDraw_FullscreenToggle(void) {
     GsDraw_FullscreenSet(!sFullscreen);
     Port_SettingSave("fullscreen", sFullscreen);
     Port_SettingsWrite();
+}
+
+int GsDraw_FullscreenEvent(const SDL_Event *ev) {
+    static unsigned held;
+    if (sWindow == NULL) return 0;
+    if (ev->type == SDL_EVENT_KEY_DOWN || ev->type == SDL_EVENT_KEY_UP) {
+        unsigned key = ev->key.scancode == SDL_SCANCODE_F11 ? 1 :
+            ev->key.scancode == SDL_SCANCODE_RETURN ? 2 :
+            ev->key.scancode == SDL_SCANCODE_KP_ENTER ? 4 : 0;
+        if (ev->key.windowID != SDL_GetWindowID(sWindow) || !key) return 0;
+        if (ev->type == SDL_EVENT_KEY_UP) {
+            int used = (held & key) != 0;
+            held &= ~key;
+            return used;
+        }
+        if (key != 1 && !(ev->key.mod & SDL_KMOD_ALT) && !(held & key)) return 0;
+        held |= key;
+        if (!ev->key.repeat) GsDraw_FullscreenToggle();
+        return 1;
+    }
+    if (ev->type == SDL_EVENT_WINDOW_FOCUS_LOST) held = 0;
+    if (ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev->button.windowID == SDL_GetWindowID(sWindow) &&
+        ev->button.button == SDL_BUTTON_LEFT && ev->button.clicks == 2) {
+        GsDraw_FullscreenToggle();
+        return 1;
+    }
+    return 0;
 }
 
 /* ------------------------------------------------------------------------------------------- the settings window

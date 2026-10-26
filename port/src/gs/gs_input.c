@@ -497,11 +497,23 @@ static SDL_Gamepad *pad_of(int player) {
     return NULL;
 }
 
+/* Alt+Enter belongs to the window, even when input is sampled before its
+   queued event is handled. Keep Enter reserved if Alt is released first. */
+static int window_key(const bool *keys, int sc) {
+    static unsigned held;
+    unsigned bit = sc == SDL_SCANCODE_RETURN ? 1 : sc == SDL_SCANCODE_KP_ENTER ? 2 : 0;
+    if (sc == SDL_SCANCODE_F11) return 1;
+    if (!bit) return 0;
+    if (!keys[sc]) held &= ~bit;
+    else if (keys[SDL_SCANCODE_LALT] || keys[SDL_SCANCODE_RALT]) held |= bit;
+    return (held & bit) != 0;
+}
+
 static unsigned join_keys(int profile) {
     const bool *keys=SDL_GetKeyboardState(NULL);
     int start=sKeys[profile][14],back=sKeys[profile][15];
-    return (start>0&&start<SDL_SCANCODE_COUNT&&keys[start]?B_START:0) |
-        (back>0&&back<SDL_SCANCODE_COUNT&&keys[back]?B_SELECT:0);
+    return (start>0&&start<SDL_SCANCODE_COUNT&&!window_key(keys,start)&&keys[start]?B_START:0) |
+        (back>0&&back<SDL_SCANCODE_COUNT&&!window_key(keys,back)&&keys[back]?B_SELECT:0);
 }
 static int join_key_unique(int profile) {
     int i,key=sKeys[profile][14];
@@ -1050,6 +1062,9 @@ void PortInput_VibrationTest(int player) {
    read long after the window's events were last taken). The events themselves stay queued for the window. */
 void PortInput_Fresh(void) {
     SDL_PumpEvents();
+    const bool *keys = SDL_GetKeyboardState(NULL);
+    window_key(keys, SDL_SCANCODE_RETURN);
+    window_key(keys, SDL_SCANCODE_KP_ENTER);
 }
 
 int Port_PadRead(int socket, unsigned char *data) {
@@ -1114,11 +1129,11 @@ int Port_PadRead(int socket, unsigned char *data) {
         static const int noKeys[PORT_ACTIONS]={0};
         const int *k = keyProfile>=0?sKeys[keyProfile]:noKeys;
         for (a = 0; a < PORT_PAD_BUTTONS; a++) {
-            if (k[a] > 0 && k[a] < SDL_SCANCODE_COUNT && ks[k[a]] && !(gPortTboTyping && typing_key(k[a]))) {
+            if (k[a] > 0 && k[a] < SDL_SCANCODE_COUNT && !window_key(ks, k[a]) && ks[k[a]] && !(gPortTboTyping && typing_key(k[a]))) {
                 btn |= kActions[a].bit;
             }
         }
-#define HELD(n) (k[n] > 0 && k[n] < SDL_SCANCODE_COUNT && ks[k[n]] && !(gPortTboTyping && typing_key(k[n])))
+#define HELD(n) (k[n] > 0 && k[n] < SDL_SCANCODE_COUNT && !window_key(ks, k[n]) && ks[k[n]] && !(gPortTboTyping && typing_key(k[n])))
         if (HELD(16)) { ly = 0x00; }
         if (HELD(17)) { ly = 0xFF; }
         if (HELD(18)) { lx = 0x00; }

@@ -67,6 +67,15 @@ Strip a freshly linked Windows build before packaging it:
 BT3_CC=win64 .venv/bin/python port/tools/strip_data.py --data gamedata --out port/build/installer-portable
 ```
 
+Build the installed Windows launcher with MinGW-w64:
+
+```sh
+python3 port/tools/build_native_launcher.py
+```
+
+Its icon is in `port/assets/tag-team.ico`. The installer places Play.exe and
+Tag Team Mod Logo.png in the installation folder.
+
 On Windows, use an isolated Python environment with `pyinstaller` and `pycdlib`,
 then run `python port/tools/package_native_setup.py --platform windows`. This
 produces `port/build/Tag-Team-Recomp-Beta.2-Windows.zip`. It contains Setup.exe,

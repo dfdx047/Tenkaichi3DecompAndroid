@@ -19,25 +19,6 @@ BASE = Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__
 PAYLOAD = BASE / 'payload' if getattr(sys, 'frozen', False) else BASE / (
     'port/build/native-setup/payload' if sys.platform == 'win32' else 'port/build/native-setup-linux/payload')
 
-PLAY = '''@echo off
-setlocal
-cd /d "%~dp0"
-for /f "tokens=1 delims==" %%V in ('set BT3_ 2^>nul') do set "%%V="
-set "BT3_TAG_TEAM=1"
-set "BT3_GS=gpu"
-set "BT3_DATA=%~dp0gamedata"
-set "BT3_SAVES=%~dp0saves"
-set "BT3_SETTINGS=%~dp0settings.txt"
-set "BT3_UPDATE_CHECK=0"
-set "BT3_MENU_ITEM4=0"
-start "" /wait "%~dp0engine\\TagTeam.exe"
-if errorlevel 1 (
-    echo The game stopped. Check bt3_crash.txt in this folder if it was created.
-    pause
-    exit /b 1
-)
-'''
-
 PLAY_LINUX = '''#!/bin/sh
 set -eu
 cd -- "$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
@@ -60,7 +41,7 @@ def payload_files(payload):
             raise ValueError('Invalid setup manifest path')
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
             raise ValueError(f'Setup file is missing or damaged: {name}. Extract the complete installer archive again.')
-    required_files = ('engine/TagTeam.exe', 'engine/TagTeam.exe.mem', 'engine/TagTeam.dat', 'engine/SDL3.dll') if platform_name() == 'windows' else (
+    required_files = ('Play.exe', 'engine/TagTeam.exe', 'engine/TagTeam.exe.mem', 'engine/TagTeam.dat', 'engine/SDL3.dll') if platform_name() == 'windows' else (
         'engine/TagTeam', 'engine/TagTeam.mem', 'engine/TagTeam.dat', 'engine/lib/libSDL3.so.0')
     for required in required_files:
         if required not in manifest:
@@ -104,9 +85,7 @@ def install(iso, target, language='en', save=None, payload=PAYLOAD, progress=pri
             native_save.write(imported, stage / 'saves')
         else:
             (stage / 'saves').mkdir()
-        if platform_name() == 'windows':
-            (stage / 'Play.cmd').write_bytes(PLAY.replace('\n', '\r\n').encode('utf-8'))
-        else:
+        if platform_name() != 'windows':
             (stage / 'Play.sh').write_text(PLAY_LINUX, encoding='utf-8')
             (stage / 'Play.sh').chmod(0o755)
             (stage / 'engine/TagTeam').chmod(0o755)
@@ -120,7 +99,7 @@ def install(iso, target, language='en', save=None, payload=PAYLOAD, progress=pri
             # Only the unique temporary folder created by this invocation.
             assert stage.parent == target.parent and stage.name.startswith('.tag-team-install-')
             shutil.rmtree(stage)
-    launcher = 'Play.cmd' if platform_name() == 'windows' else 'Play.sh'
+    launcher = 'Play.exe' if platform_name() == 'windows' else 'Play.sh'
     progress(f'Ready. Start {launcher}. / Listo. Abre {launcher}.')
     return target
 
@@ -142,7 +121,7 @@ def gui():
     subtitle = ttk.Label(pane, text='Native BT3 & BT4 • Choose your disc and start playing')
     subtitle.grid(row=1, column=0, columnspan=3, sticky='w', pady=(0, 18))
     labels, buttons = {}, []
-    for row, key, variable in [(2, 'Language', lang), (3, 'Disc image', disc), (4, 'Install folder', destination), (5, 'Existing save (optional)', save)]:
+    for row, key, variable in [(2, 'Language', lang), (3, 'Disc image (.iso)', disc), (4, 'Install folder', destination), (5, 'Existing save (optional)', save)]:
         labels[key] = ttk.Label(pane, text=key)
         labels[key].grid(row=row, column=0, sticky='w', padx=(0, 12), pady=7)
         if row == 2:
@@ -151,7 +130,7 @@ def gui():
         else:
             ttk.Entry(pane, textvariable=variable).grid(row=row, column=1, columnspan=2 if row == 5 else 1, sticky='ew')
     def choose_disc():
-        name = filedialog.askopenfilename(filetypes=[('Disc image', '*.iso')])
+        name = filedialog.askopenfilename(filetypes=[('Disc image (.iso)', '*.iso')])
         if name:
             disc.set(name)
     def choose_target():
@@ -185,7 +164,7 @@ def gui():
     events, busy, installed = queue.Queue(), False, None
     def translate(*_):
         spanish = lang.get() == 'Español'
-        names = ['Idioma', 'Imagen de disco', 'Carpeta de instalación', 'Partida existente (opcional)']
+        names = ['Idioma', 'Imagen de disco (.iso)', 'Carpeta de instalación', 'Partida existente (opcional)']
         for (key, label), text in zip(labels.items(), names):
             label.configure(text=text if spanish else key)
         for button in buttons:
@@ -230,7 +209,7 @@ def gui():
                     status.configure(text=f'Ready / Listo: {value}')
                     def play_installed():
                         if platform_name() == 'windows':
-                            os.startfile(str(installed / 'Play.cmd'))
+                            os.startfile(str(installed / 'Play.exe'))
                         else:
                             subprocess.Popen([str(installed / 'Play.sh')], cwd=installed)
                     start.configure(text='Play / Jugar', command=play_installed)

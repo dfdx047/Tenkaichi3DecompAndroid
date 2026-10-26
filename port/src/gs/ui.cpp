@@ -19,6 +19,7 @@
 #include "net_chat.h"
 #include "tag_net.h"
 #include "../../include/plat_game.h"
+#include "../../include/tag_text.h"
 
 static int sMeter = -1; // the meter (frame rate, connection): -1 not read yet
 static bool meter_on(void);
@@ -1253,7 +1254,7 @@ static void video_tab(PortVideo &v) {
     bool full = v.fullscreen != 0;
     if (ImGui::Checkbox("Full screen", &full)) { v.fullscreen = full; }
     ImGui::SameLine();
-    ImGui::TextDisabled("(F11)");
+    ImGui::TextDisabled("(Alt+Enter / F11)");
     {
         bool vs = v.vsync != 0, fs = v.frameSkip != 0;
         if (ImGui::Checkbox("V-sync", &vs)) { v.vsync = vs; }
@@ -1745,7 +1746,6 @@ extern "C" int TagNet_Role();
 void TagHud_Settings();
 
 static void controls_tab(void) {
-    TagHud_Settings();
     static int player;
     char label[96];
     int count = 0;
@@ -1875,7 +1875,8 @@ static void build(void) {
         open = false;
     }
     if (sForceTab < 0 && (pad_pressed(ImGuiKey_GamepadL1) || pad_pressed(ImGuiKey_GamepadR1))) {
-        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 6 : 1)) % 7;
+        const int tabCount = getenv("BT3_TAG_TEAM") ? 8 : 7;
+        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? tabCount - 1 : 1)) % tabCount;
         sPadTab = true;
     }
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -1941,6 +1942,12 @@ static void build(void) {
             }
             if (tab("Cheats", 5)) { cheats_tab(); ImGui::EndTabItem(); }
             if (tab("Misc", 6)) { misc_tab(); ImGui::EndTabItem(); }
+            if (getenv("BT3_TAG_TEAM") && tab(Port_TagText("Mod Settings"), 7)) {
+                ImGui::BeginDisabled(TagNet_Active() != 0);
+                TagHud_Settings();
+                ImGui::EndDisabled();
+                ImGui::EndTabItem();
+            }
             ImGui::EndTabBar();
         }
         ImGui::EndChild();
@@ -2344,7 +2351,7 @@ static bool frame_build(void) {
         PortA11y_Say(PortA11y_Label("Back to the game"), 1);
     }
     if(sReady && __atomic_exchange_n(&sTagSettingsRequest,0,__ATOMIC_ACQ_REL)) {
-        sForceTab=6; set_open(true); input_owner();
+        sForceTab=getenv("BT3_TAG_TEAM") ? 7 : 6; set_open(true); input_owner();
     }
     if (sReady && gPortNetWindowClose) { // back from an online session: the window it was started from closes
         gPortNetWindowClose = 0;

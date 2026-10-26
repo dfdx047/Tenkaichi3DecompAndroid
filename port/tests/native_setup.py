@@ -43,16 +43,20 @@ class SetupTests(unittest.TestCase):
                 payload=root/'payload';(payload/'engine').mkdir(parents=True);(payload/'engine/TagTeam.dat').write_bytes(b'fake')
                 executable='engine/TagTeam.exe' if platform=='windows' else 'engine/TagTeam'
                 (payload/executable).write_bytes(b'fake engine')
+                files={executable:'fixture'}
+                if platform=='windows':
+                    (payload/'Play.exe').write_bytes(b'fake launcher');files['Play.exe']='fixture'
                 with patch.object(setup.native_tables,'identify',return_value=({'id':'test'},[],[])), \
                      patch.object(setup.native_tables,'reconstruct',return_value=[]), \
-                     patch.object(setup.native_tables,'verify'),patch.object(setup,'payload_files',return_value={executable:'fixture'}), \
+                     patch.object(setup.native_tables,'verify'),patch.object(setup,'payload_files',return_value=files), \
                      patch.object(setup,'platform_name',return_value=platform), \
                      patch.object(setup,'extract',side_effect=lambda _, out:out.mkdir()):
                     setup.install(iso,target,language,payload=payload,progress=lambda _:None)
                 # Port_SettingText reads quoted strings, unlike numeric settings.
                 self.assertIn(f'menu_lang="{language}"\n',(target/'settings.txt').read_text())
-                launcher=target/('Play.cmd' if platform=='windows' else 'Play.sh')
+                launcher=target/('Play.exe' if platform=='windows' else 'Play.sh')
                 self.assertTrue(launcher.is_file())
+                self.assertFalse((target/'Play.cmd').exists())
                 self.assertEqual(json.loads((target/'installation.json').read_text())['platform'],platform)
                 if platform=='linux' and os.name!='nt':
                     self.assertTrue(os.access(launcher,os.X_OK))

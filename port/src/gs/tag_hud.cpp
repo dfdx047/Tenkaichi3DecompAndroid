@@ -132,7 +132,7 @@ static bool tag_combo(const char *label,int *value,const char *items) {
 }
 void TagHud_Settings() {
     if (!getenv("BT3_TAG_TEAM")) return;
-    ImGui::SeparatorText("Tag Team prototype");
+    ImGui::SeparatorText(Port_TagText("Mod Settings"));
     for(int group=0;group<TAG_OPTION_GROUP_COUNT;group++) {
         if(!ImGui::TreeNode(Port_TagText(tagOptionGroups[group]))) continue;
         for(int i=0;i<TAG_OPT_COUNT;i++) {
