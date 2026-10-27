@@ -1266,7 +1266,11 @@ static void owner_hello(const uint8_t *pkt, int n, const struct sockaddr_in *fro
     uint32_t why = 0, nonce = n >= 32 ? get(pkt, 7) : 0;
     unsigned long long mine;
     int k, free = -1, s, back = n >= HELLO_BYTES ? t_token_owner(pkt + 40 + NAMEB + 4, get(pkt, (40 + NAMEB) / 4)) : -1;
+    char ip[INET_ADDRSTRLEN] = "?";
+    inet_ntop(AF_INET, &from->sin_addr, ip, sizeof(ip));
+    fprintf(stderr, "[lobby] owner_hello from %s:%u bytes=%d\n", ip, (unsigned)ntohs(from->sin_port), n);
     if (n < 40 + NAMEB) {
+        fprintf(stderr, "[lobby] owner_hello rejected: malformed packet\n");
         return;
     }
     if (back >= 0 && sL.t.dropNs[back] == 0 && get(pkt, 2) == LOBBY_VERSION) {
@@ -1289,6 +1293,7 @@ static void owner_hello(const uint8_t *pkt, int n, const struct sockaddr_in *fro
         if (sL.m[k].on && same(&sL.m[k].addr, from)) {
             sL.m[k].heardNs = now_ns();
             state_send(k); /* (its greeting came again: the answer was lost) */
+            fprintf(stderr, "[lobby] owner_hello existing member: resent state to %s:%u\n", ip, (unsigned)ntohs(from->sin_port));
             return;
         }
         if (!sL.m[k].on && free < 0) {
@@ -1306,6 +1311,9 @@ static void owner_hello(const uint8_t *pkt, int n, const struct sockaddr_in *fro
     }
     if (why != 0) {
         uint32_t no[4] = {MAGIC, T_L_NO, why, nonce};
+        fprintf(stderr, "[lobby] owner_hello rejected: %s from %s:%u\n",
+                why == LNO_VERSION ? "version differs" : why == LNO_DATA ? "game data differs" : "lobby full",
+                ip, (unsigned)ntohs(from->sin_port));
         send_to(no, sizeof(no), from);
         return;
     }
@@ -1330,6 +1338,8 @@ static void owner_hello(const uint8_t *pkt, int n, const struct sockaddr_in *fro
         }
     }
     sL.slot[s] = free;
+    fprintf(stderr, "[lobby] owner_hello accepted: member %s at slot %d from %s:%u\n",
+            sL.m[free].name, s, ip, (unsigned)ntohs(from->sin_port));
     Relay_Permit(NetIo_Sock(), from);
     {   /* a member who came with the code: the oldest knocked address is taken as its (its address as this side
            sees it may be another than the one the service saw: the same network, another router) */
@@ -1693,6 +1703,11 @@ static void hello_send(const struct sockaddr_in *to) {
     put(p, 7, sL.nonce);
     addr_put(p, 8, &self);
     SDL_strlcpy((char *)p + 40, NetIo_MyName(), NAMEB);
+    {
+        char ip[INET_ADDRSTRLEN] = "?";
+        inet_ntop(AF_INET, &to->sin_addr, ip, sizeof(ip));
+        fprintf(stderr, "[lobby] member sent T_L_HELLO to %s:%u\n", ip, (unsigned)ntohs(to->sin_port));
+    }
     if (sTok.has && strcmp(sTok.code, sJoinCode) == 0) { /* (its own lobby's only) */
         static uint32_t said;
         put(p, (40 + NAMEB) / 4, sTok.gen);
@@ -1701,7 +1716,6 @@ static void hello_send(const struct sockaddr_in *to) {
             said = sL.nonce;
             fprintf(stderr, "bt3: lobby: the greeting carries this game's rejoin token\n");
         }
-    }
     send_to(p, (int)sizeof(p), to);
 }
 
@@ -1769,6 +1783,14 @@ static void member_closed(const char *why) {
 }
 
 static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *from, uint32_t type) {
+    if (type == T_L_STATE || type == T_L_NO) {
+        char ip[INET_ADDRSTRLEN] = "?";
+        uint32_t nonce = type == T_L_NO && n >= 16 ? get(pkt, 3) : type == T_L_STATE && n >= 372 ? get(pkt, 92) : 0;
+        inet_ntop(AF_INET, &from->sin_addr, ip, sizeof(ip));
+        fprintf(stderr, "[lobby] member received %s from %s:%u bytes=%d nonce=%u expected=%u%s\n",
+                type == T_L_STATE ? "T_L_STATE" : "T_L_NO", ip, (unsigned)ntohs(from->sin_port), n,
+                nonce, (unsigned)sL.nonce, nonce == sL.nonce ? " match" : " mismatch/absent");
+    }
     if (sL.state == 1) { /* connecting: the owner's first answer is the one that carries this member's nonce (its
                             greeting's, a number nobody else knows), from whatever address it comes (the owner's
                             game may answer from another address of its machine, or through its router with
@@ -1964,6 +1986,10 @@ static void lobby_off(void) {
 
 void Lobby_Packet(const uint8_t *pkt, int n, const struct sockaddr_in *from, uint32_t type) {
     if (sL.on == 1) {
+        char ip[INET_ADDRSTRLEN] = "?";
+        inet_ntop(AF_INET, &from->sin_addr, ip, sizeof(ip));
+        fprintf(stderr, "[lobby] host received UDP from %s:%u type=%u bytes=%d\n",
+                ip, (unsigned)ntohs(from->sin_port), (unsigned)type, n);
         owner_packet(pkt, n, from, type);
     } else if (sL.on == 2) {
         member_packet(pkt, n, from, type);
@@ -2212,6 +2238,9 @@ static void timers(void) {
                 if (sTok.has && strcmp(sTok.code, sJoinCode) == 0) {
                     tok_forget("its lobby does not answer");
                 }
+                fprintf(stderr, "[lobby] member connection timed out after 25 seconds: no valid T_L_STATE/T_L_NO with nonce %u\n",
+                        (unsigned)sL.nonce);
+                Port_UiNotice("O anfitrião não respondeu. Verifique se os dois usam a mesma versão do app.");
                 member_closed("The lobby's owner did not answer. A firewall on the owner's PC may be blocking the game: "
                               "allow Tenkaichi3Decomp through it (Windows Firewall: allow an app), then try again.");
                 return;
