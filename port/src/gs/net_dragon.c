@@ -215,7 +215,6 @@ static void hex_decode(const char *in, size_t len, char *out, size_t size) {
 
 static SDL_Mutex *sLock;
 static SDL_Mutex *sOutboxLock; /* result queue file */
-static SDL_Mutex *sOutboxLock; /* result queue file */
 static SDL_AtomicInt sStarted;
 static SDL_Condition *sWake;
 
@@ -226,7 +225,6 @@ static void lock_make(void) {
     }
     if (SDL_CompareAndSwapAtomicInt(&made, 0, 1)) {
         sLock = SDL_CreateMutex();
-        sOutboxLock = SDL_CreateMutex();
         sOutboxLock = SDL_CreateMutex();
         sWake = SDL_CreateCondition();
         SDL_SetAtomicInt(&made, 2);
@@ -376,30 +374,6 @@ static void outbox_done_nl(void) {
         return;
     }
     write_text("dragonnet-result.txt", rest + 1);
-}
-
-/* the queue file is shared by the game thread (push) and the net thread
-   (first/done): one lock around each read-modify-write */
-static int outbox_first_nl(char *match, int *score, char *digest) {
-    int r;
-    SDL_LockMutex(sOutboxLock);
-    r = outbox_first_nl(match, score, digest);
-    SDL_UnlockMutex(sOutboxLock);
-    return r;
-}
-
-static int outbox_push_nl(const char *line) {
-    int r;
-    SDL_LockMutex(sOutboxLock);
-    r = outbox_push_nl(line);
-    SDL_UnlockMutex(sOutboxLock);
-    return r;
-}
-
-static void outbox_done_nl(void) {
-    SDL_LockMutex(sOutboxLock);
-    outbox_done_nl();
-    SDL_UnlockMutex(sOutboxLock);
 }
 
 /* the queue file is shared by the game thread (push) and the net thread
