@@ -2,6 +2,7 @@
    defeated team's models/voices are replaced through the normal loader. */
 #include "common.h"
 #include "battle/tag_challenge.h"
+#include "battle/tag_options.h"
 #include "battle/tag_session.h"
 #include "battle/tag_team.h"
 #include "battle/tag_fusion.h"
@@ -358,6 +359,8 @@ void TagChallenge_Draw(void) {
         Ps_Text(256,393,text,0.68f,460,3);Font_FlushAll();return;
     }
     if(!bannerTicks || (Battle_GetWork()->flags&BATTLE_FLAG_PAUSE))return;
+    if(Port_TagOption(TAG_OPT_HIDE_ALL_HUD) ||
+       !Port_TagOption(bannerKind==2?TAG_OPT_ROUND_END_TEXT:TAG_OPT_WAVE_TITLE_TEXT))return;
     Ps_PageSet();Ps_SetShift(0);Ps_Align(1);
     if(bannerKind==2)sprintf(text,Port_TagText("ROUND %d OVER"),completed);
     else sprintf(text,Port_TagText("WAVE %d - %s"),wave+1,g->waves[wave].name);

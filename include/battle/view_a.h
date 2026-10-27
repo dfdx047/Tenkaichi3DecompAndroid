@@ -194,6 +194,9 @@ typedef struct ChrViewSlot {
     /* 0x00 */ SListNode node;
     /* 0x04 */ s32 obj;        /* BtlObj id */
     /* 0x08 */ ChrViewFile file[3]; /* [0].buf: CHRVIEW_MODEL_SIZE bytes */
+#ifdef PORT
+    void *idleMotion;       /* fallback from the character's own animation bank */
+#endif
 } ChrViewSlot; /* size 0x38 */
 
 /* The viewer's load job (the first 0x24 bytes of ChrView). */

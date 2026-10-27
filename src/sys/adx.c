@@ -375,6 +375,9 @@ void Voice_FadeOutStep(s32 voice) {
 
 /* Plays file `id` on streamed-SE player `se` (0 or 1). */
 void StreamSe_Play(s32 se, s32 id, s32 vol, s32 pan) {
+#ifdef PORT
+    id=PortGame_StreamFile(id);
+#endif
     Adx_Play((se < 2 ? se + ADX_CH_SE0 : 4 + PORT_FIGHTER_CAPACITY + se - 2), id, vol, pan);
 }
 
@@ -385,6 +388,9 @@ void StreamSe_PlayDefault(s32 se, s32 id) {
 
 /* Starts file `id` on a streamed-SE player in the paused state. */
 void StreamSe_PlayPaused(s32 se, s32 id, s32 vol, s32 pan) {
+#ifdef PORT
+    id=PortGame_StreamFile(id);
+#endif
     Adx_PlayPaused((se < 2 ? se + ADX_CH_SE0 : 4 + PORT_FIGHTER_CAPACITY + se - 2), id, vol, pan);
 }
 

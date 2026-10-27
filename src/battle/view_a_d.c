@@ -5,6 +5,11 @@
 #include "sys/fade.h"
 #include "sys/file.h"
 #include "sys/heap.h"
+#ifdef PORT
+#include "battle/bobj_a.h"
+extern void Bpe_Decode(void *src, void *dst, s32 *size);
+extern void Port_TagTeamFatal(const char *message);
+#endif
 
 /*
  * ChrView, 0x25D468..0x25DE68: the character model viewer of the menus. It runs the battle's object, stage and
@@ -39,7 +44,9 @@ extern void BtlRes_LoadSingle(s32 fromHeap, void *slot, s32 model);
 extern s32 BtlObj_Create(s32 type, void *res, s32 active);
 extern u8 *BtlObj_Get(s32 id);
 extern s32 BtlObj_Destroy(s32 id);
+#ifndef PORT
 extern void BtlObjAnim_PlayModel(u8 *obj, s32 anim, s32 mode);
+#endif
 extern void BtlObj_SetPartVisible(u8 *obj, u32 part, s32 on);
 extern void BtlObj_Init(s32 prealloc);
 extern void BtlObj_Term(void);
@@ -195,7 +202,31 @@ s32 ChrView_StepLoad(ChrViewJob *job) {
         }
         job->slot->obj = BtlObj_Create(3, &job->slot->file, 1);
         job->obj = BtlObj_Get(job->slot->obj);
+#ifdef PORT
+        {
+            BobjObj *obj = (BobjObj *)job->obj;
+            /* B14 moved the viewer stance out of several costume files.
+               Motion zero in the fighter's animation bank is that same idle. */
+            if (PortGame_IsBT4() && !obj->mdl.modelAnims[gChrView->anim]) {
+                s32 id = PortGame_Animation(job->chara), size = File_GetSize(id), decoded = 0;
+                u32 *bank = File_LoadSync(id, NULL, 0);
+                u32 start = bank[1] & ~3u, end = bank[2] & ~3u;
+                if (bank[0] < 1 || bank[0] > 512 || start < (bank[0]+2)*4 ||
+                    end <= start+4 || end > (u32)size ||
+                    *(u32 *)((u8 *)bank+start) < 148 ||
+                    *(u32 *)((u8 *)bank+start) > (u32)PortGame_AnimationCapacity())
+                    Port_TagTeamFatal("Invalid character viewer idle animation.");
+                Bpe_Decode((u8 *)bank+start, job->slot->idleMotion, &decoded);
+                Heap_Free(bank);
+                if (PortGame_CheckAnimation(job->slot->idleMotion, decoded) < 0)
+                    Port_TagTeamFatal("Invalid character viewer idle animation.");
+                obj->mdl.modelAnims[gChrView->anim] = job->slot->idleMotion;
+            }
+            BtlObjAnim_PlayModel(obj, gChrView->anim, 2);
+        }
+#else
         BtlObjAnim_PlayModel(job->obj, gChrView->anim, 2);
+#endif
         BTL_OBJ_FLAGS(job->obj) &= ~0x02000000;
         BtlObj_SetPartVisible(job->obj, 0, 0);
         job->count = 0;
@@ -230,7 +261,7 @@ s32 ChrView_StepLoadStage(ChrViewJob *job) {
 
     switch (job->state) {
     case 0:
-        res->stage = File_Request3(CHRVIEW_FILE_STAGE, NULL, 0);
+        res->stage = File_Request3(DISC_RESOURCE(CHRVIEW_FILE_STAGE, 0x619), NULL, 0);
         job->state++;
         break;
     case 1:
@@ -362,6 +393,10 @@ void ChrView_Init(void) {
         gChrView->slot[i].file[0].size = 0;
         gChrView->slot[i].file[0].id = -1;
         *(s32 *)gChrView->slot[i].file[0].buf = 0;
+#ifdef PORT
+        if (PortGame_IsBT4())
+            gChrView->slot[i].idleMotion = Heap_Alloc(PortGame_AnimationCapacity(), 0x20, 0, HEAP_ANY);
+#endif
         SList_PushFront(&gChrView->free, &gChrView->slot[i].node);
     }
     BtlObj_Init(0);
@@ -385,13 +420,16 @@ void ChrView_Init(void) {
 void ChrView_Term(void) {
     s32 i;
 
+    BtlObj_Term();
     for (i = 0; i < CHRVIEW_SLOT_COUNT; i++) {
         Heap_Free(gChrView->slot[i].file[0].buf);
+#ifdef PORT
+        if (gChrView->slot[i].idleMotion) Heap_Free(gChrView->slot[i].idleMotion);
+#endif
     }
     Heap_Free(gChrView);
     File_CancelRequests();
     Job_Clear();
-    BtlObj_Term();
     OrbitCam_Term();
     StgFx_Term();
     BtlStage_Term();

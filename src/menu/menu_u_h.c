@@ -540,7 +540,12 @@ void EvoZ_Load(UEvoZ *ez, s32 section) {
 
     ez->pack = (u32 *)MPACK_AT(gMenuArc7, section);
     ez->res = Sprite_Unpack(ez->pack, NULL, NULL);
+#ifdef PORT
+    /* BT4 moved the Evolution Z background, independently of its portraits. */
+    ez->chipFile = File_LoadSync(PortGame_IsBT4() ? 0x6DC : 0x3C0, NULL, 0);
+#else
     ez->chipFile = File_LoadSync(0x3C0, NULL, 0);
+#endif
     ez->chipRes = Sprite_Unpack(ez->chipFile, NULL, NULL);
     res = ez->chipRes;
     Res_RelocateOffsets(&res, res, res);
@@ -666,7 +671,13 @@ void EvoZ_Load(UEvoZ *ez, s32 section) {
     ez->text[1] = MPACK_AT(ez->res, 35);
     ez->text[2] = MPACK_AT(ez->res, 37);
     ez->chipPack = (u32 *)MPACK_AT(ez->res, 36);
+#ifdef PORT
+    /* This pack contains 250 form portraits in BT4, although its selection
+       grid still fits the original 165 base-character cells. */
+    for (i = 0; i < ez->chipPack[0] && i < 250; i++) {
+#else
     for (i = 0; i < 165; i++) {
+#endif
         res = (MTexRes *)MPACK_AT(ez->chipPack, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }

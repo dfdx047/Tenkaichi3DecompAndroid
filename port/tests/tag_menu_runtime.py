@@ -35,6 +35,7 @@ CASES = {
 def roster_pad(left=2,right=2,duplicates=False,cpu_only=False,cpu_steps=0):
     events=["150:select","210:cross","270:cross","450:start"]
     tick=540
+    first_cpu=True
     def press(key):
         nonlocal tick
         events.append(f"{tick}:{key}")
@@ -49,8 +50,9 @@ def roster_pad(left=2,right=2,duplicates=False,cpu_only=False,cpu_steps=0):
             for _ in range(4 if not duplicates and side==1 and member in (2,4) else 3):
                 press("cross") # fighter, optional form, equipment, colour
             if cpu_only or side!=0 or member!=0:
-                for _ in range(cpu_steps): press("down")
+                for _ in range(cpu_steps if first_cpu else 0): press("down")
                 press("cross") # CPU difficulty
+                first_cpu=False
         if count<5: press("right") # End is optional, not forced after two
         press("cross")
     tick+=80
@@ -61,13 +63,15 @@ def bt4_roster_pad(left=2,right=2,cpu_only=False,cpu_steps=0):
     # Both first BT4 grid cells have a form picker. Repeated fighters also
     # exercise the native mod's duplicate-selection rule.
     events=["150:select","210:cross","270:cross","450:start"];tick=540
+    first_cpu=True
     for side,count in enumerate((left,right)):
         for member in range(count):
             for _ in range(4+(member>0)):
                 events.append(f"{tick}:cross");tick+=60
             if cpu_only or side!=0 or member!=0:
-                for key in ['down']*cpu_steps+['cross']:
+                for key in ['down']*(cpu_steps if first_cpu else 0)+['cross']:
                     events.append(f"{tick}:{key}");tick+=60
+                first_cpu=False
         for key in (('right','cross') if count<5 else ('cross',)):
             events.append(f"{tick}:{key}");tick+=60
     tick+=80;events.append(f"{tick}:cross")

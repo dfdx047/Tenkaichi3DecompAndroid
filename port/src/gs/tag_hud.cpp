@@ -93,14 +93,19 @@ extern "C" int Port_TagOption(int i) {
     std::call_once(loaded,[] {
         for(int k=0;k<TAG_OPT_COUNT;k++) {
             const auto &o=tagOptionInfo[k];
-            opts[k]=std::clamp(Port_Setting(o.key,o.initial),o.min,o.max);
+            int initial=o.initial;
+            // Preserve an older choice to hide both parts until the new text
+            // setting has been saved separately.
+            if(k==TAG_OPT_FUSION_TIME_TEXT)initial=Port_Setting("tag_fusion_meter",initial);
+            if(k==TAG_OPT_SPECTATOR_NAME)initial=Port_Setting("tag_spectator_hints",initial);
+            opts[k]=std::clamp(Port_Setting(o.key,initial),o.min,o.max);
         }
     });
     return TagNet_Option(i,opts[i].load());
 }
 extern "C" void Port_TagOptionSet(int i,int value) {
     if(i<0 || i>=TAG_OPT_COUNT) return;
-    if(TagNet_Active()) return; // Agreed match rules cannot change locally.
+    if(TagNet_Active() && !TagOption_IsPresentation(i)) return; // Agreed match rules stay fixed.
     Port_TagOption(i);
     const auto &o=tagOptionInfo[i];
     opts[i]=std::clamp(value,o.min,o.max);
@@ -138,6 +143,7 @@ void TagHud_Settings() {
         for(int i=0;i<TAG_OPT_COUNT;i++) {
             auto o=tagOptionInfo[i]; if(o.group!=group) continue;
             o.label=Port_TagText(o.label);o.help=Port_TagText(o.help);
+            ImGui::BeginDisabled(TagNet_Active() && !TagOption_IsPresentation(i));
             int value=Port_TagOption(i); bool changed=false;
             if(i==TAG_OPT_THREE_WIDE) changed=tag_combo(o.label,&value,"Centered bottom view\0Full width bottom view\0");
             else if(i==TAG_OPT_CINEMATIC_PAUSE) changed=tag_combo(o.label,&value,"Keep moving\0Pause target\0Pause other fighters\0");
@@ -155,6 +161,7 @@ void TagHud_Settings() {
             else changed=ImGui::SliderInt(o.label,&value,o.min,o.max);
             if(ImGui::IsItemHovered()) ImGui::SetTooltip("%s",o.help);
             if(changed) Port_TagOptionSet(i,value);
+            ImGui::EndDisabled();
             if(has_preview(i)) {
                 float width=std::min(340.0f,ImGui::GetContentRegionAvail().x);
                 ImVec2 p=ImGui::GetCursorScreenPos();
@@ -287,7 +294,7 @@ template<class Project> static void revival_ring(ImDrawList *d,float phase,Proje
 static bool has_preview(int i) {
     return i==TAG_OPT_STYLED_HUD || i==TAG_OPT_TARGET_STYLE || i==TAG_OPT_TARGET_MARKER ||
         i==TAG_OPT_ENEMY_OVERHEAD || i==TAG_OPT_ALLY_OVERHEAD || i==TAG_OPT_ALLY_PANEL ||
-        i==TAG_OPT_ATTACK_WARNING || i==TAG_OPT_FUSION_METER || i==TAG_OPT_FUSION_COUNTDOWN ||
+        i==TAG_OPT_ATTACK_WARNING || i==TAG_OPT_FUSION_METER || i==TAG_OPT_FUSION_TIME_TEXT || i==TAG_OPT_FUSION_COUNTDOWN ||
         i==TAG_OPT_FUSION_OWNER || i==TAG_OPT_REVIVE_RING || i==TAG_OPT_REVIVE_OPACITY ||
         i==TAG_OPT_REVIVE_WAVE_HEIGHT || i==TAG_OPT_REVIVE_WAVE_SPEED ||
         i==TAG_OPT_REVIVE || i==TAG_OPT_REVIVE_SECONDS || i==TAG_OPT_REVIVE_STOCKS || i==TAG_OPT_THREE_WIDE;
@@ -340,7 +347,15 @@ static void preview(ImDrawList *d,int id,ImVec2 p,ImVec2 end) {
         else text(d,c.x-20*sc,c.y,7*sc,IM_COL32_WHITE,"Hidden");
     } else {
         bool on=id==TAG_OPT_STYLED_HUD || Port_TagOption(id);
-        bool fusion=id==TAG_OPT_FUSION_METER||id==TAG_OPT_FUSION_OWNER||id==TAG_OPT_FUSION_COUNTDOWN;
+        bool fusion=id==TAG_OPT_FUSION_METER||id==TAG_OPT_FUSION_TIME_TEXT||id==TAG_OPT_FUSION_OWNER||id==TAG_OPT_FUSION_COUNTDOWN;
+        if(id==TAG_OPT_FUSION_METER || id==TAG_OPT_FUSION_TIME_TEXT) {
+            if(Port_TagOption(TAG_OPT_FUSION_TIME_TEXT))text(d,p.x+10*sc,p.y+27*sc,6*sc,
+                IM_COL32(255,225,160,255),"Fusion - 42s remaining",w-20*sc);
+            if(Port_TagOption(TAG_OPT_FUSION_METER))bar(d,p.x+15*sc,c.y,w-36*sc,7*sc,0.65f,IM_COL32(255,220,120,255));
+            if(!Port_TagOption(TAG_OPT_FUSION_TIME_TEXT) && !Port_TagOption(TAG_OPT_FUSION_METER))
+                text(d,c.x-20*sc,c.y,7*sc,IM_COL32_WHITE,"Hidden");
+            d->PopClipRect();return;
+        }
         if(on) {
             text(d,p.x+10*sc,p.y+27*sc,6*sc,IM_COL32(255,225,160,255),
                 fusion?(id==TAG_OPT_FUSION_OWNER?"Fused - P1 has control":id==TAG_OPT_FUSION_COUNTDOWN?"P2 takes control in 5s":"Fusion - 42s remaining"):"Teammate health",w-20*sc);
@@ -373,7 +388,7 @@ void TagHud_Draw() {
     ImDrawList *d=ImGui::GetBackgroundDrawList();
     float sx=gUiPresentW/512.0f, sy=gUiPresentH/448.0f;
     auto point=[&](float x,float y){return ImVec2(std::round(gUiPresentX+x*sx),std::round(gUiPresentY+y*sy));};
-    if(!s.shown || s.paused) return;
+    if(!s.shown || s.paused || Port_TagOption(TAG_OPT_HIDE_ALL_HUD)) return;
     const bool onlineObserver=TagNet_Active() && TagNet_Observer();
     int views=s.shared?1:s.views;
     for(int v=0;v<views;v++) {
@@ -399,13 +414,15 @@ void TagHud_Draw() {
         float statusWidth=end.x-begin.x-2*margin;
         if(columns) statusWidth=(statusWidth-margin)*0.5f;
         float allyRow=row+20*sc;
-        if(!onlineObserver && (view.spectating ? Port_TagOption(TAG_OPT_SPECTATOR_HINTS) : Port_TagOption(TAG_OPT_PLAYER_LABELS)))
+        if(!onlineObserver && (view.spectating ? Port_TagOption(TAG_OPT_SPECTATOR_NAME) : Port_TagOption(TAG_OPT_PLAYER_LABELS)))
             text(d,statusX,row,8*sc,team(a.team),label,statusWidth);
         for(int i=0;i<s.count;i++) if(allies&&i!=actor&&s.actors[i].team==a.team) {
             auto &ally=s.actors[i];
             if(ally.fusedInto>=0 || ally.absent) continue;
             snprintf(label,sizeof(label),"%s %s",Port_TagText(ally.eliminated?"OUT":ally.down?"DOWN":"ALLY"),TagHud_Name(ally.chara));
-            text(d,statusX,allyRow,8*sc,team(a.team),label,statusWidth); allyRow+=18*sc;
+            if(Port_TagOption(TAG_OPT_ALLY_NAMES)) {
+                text(d,statusX,allyRow,8*sc,team(a.team),label,statusWidth); allyRow+=18*sc;
+            }
             bar(d,statusX,allyRow,std::min(80*sc,statusWidth-3*sc),3*sc,
                 ally.hpMax>0?(float)ally.hp/ally.hpMax:0,team(a.team)); allyRow+=8*sc;
         }
@@ -414,7 +431,7 @@ void TagHud_Draw() {
         for(int i=0;i<s.count;i++) {
             auto &other=s.actors[i]; auto &head=view.heads[i];
             if(other.fusedInto>=0 || other.absent) continue;
-            if(head.visible && other.practiceLabel[0]) {
+            if(head.visible && other.practiceLabel[0] && Port_TagOption(TAG_OPT_PRACTICE_LABELS)) {
                 ImVec2 p=point(head.x,head.y);
                 float hs=sc*head.scale, fs=14*hs;
                 float width=ImGui::GetFont()->CalcTextSizeA(fs,10000,0,other.practiceLabel).x;
@@ -429,7 +446,7 @@ void TagHud_Draw() {
                 if(clear)text(d,p.x-width*.5f,p.y-29*hs,fs*.5f,IM_COL32(255,240,170,255),other.practiceLabel);
             }
             if(i!=actor && head.visible && i==a.target && Port_TagOption(TAG_OPT_TARGET_MARKER)) {
-                ImVec2 p=point(head.x,head.y); p.y-=(other.practiceLabel[0]?46:other.down?45:12)*sc;
+                ImVec2 p=point(head.x,head.y); p.y-=(other.practiceLabel[0]&&Port_TagOption(TAG_OPT_PRACTICE_LABELS)?46:other.down?45:12)*sc;
                 int style=Port_TagOption(TAG_OPT_TARGET_STYLE);
                 auto color=team(other.team);
                 if(style==0||style==3) marker(d,p,sc,color);
@@ -482,7 +499,8 @@ void TagHud_Draw() {
             float available=end.x-begin.x-2*margin;
             float width=std::min(available,ImGui::GetFont()->CalcTextSizeA(18*sc,10000,0,label).x);
             float x=(begin.x+end.x-width)*.5f,y=end.y-77*sc;
-            text(d,x,y,9*sc,IM_COL32(110,255,210,255),label,available);
+            if(Port_TagOption(missing?TAG_OPT_REVIVE_COST_TEXT:TAG_OPT_REVIVE_PROGRESS_TEXT))
+                text(d,x,y,9*sc,IM_COL32(110,255,210,255),label,available);
             if(!missing) bar(d,(begin.x+end.x)*.5f-42*sc,y+25*sc,84*sc,5*sc,
                 (float)body.reviveTicks/std::max(1,s.reviveDuration),IM_COL32(100,255,200,255),1);
         }
@@ -490,7 +508,7 @@ void TagHud_Draw() {
         // another participant's fusion/assist/takeover controls to a viewer.
         const bool controls=view.controlActor>=0 && view.controlActor<s.count && !onlineObserver;
         const int request=controls?s.actors[view.controlActor].fusionRequest:-1;
-        if(request>=0 && request<s.count) {
+        if(request>=0 && request<s.count && Port_TagOption(TAG_OPT_FUSION_REQUEST_TEXT)) {
             snprintf(label,sizeof(label),Port_TagText("P%d requests fusion - press R3"),s.actors[request].player+1);
             text(d,begin.x+margin,end.y-38*sc,9*sc,IM_COL32(255,220,120,255),label,end.x-begin.x-2*margin);
         }
@@ -506,7 +524,7 @@ void TagHud_Draw() {
             const float textWidth=fusionWidth;
             if(Port_TagOption(TAG_OPT_FUSION_OWNER)) {
                 if(a.fusionController>=0) snprintf(label,sizeof(label),Port_TagText("Fused - P%d has control"),a.fusionController+1);
-                else snprintf(label,sizeof(label),Port_TagText("Fused - CPU has control"));
+                else snprintf(label,sizeof(label),"%s",Port_TagText("Fused - CPU has control"));
                 text(d,fusionX,fusionY,8*sc,gold,label,textWidth); fusionY+=21*sc;
             }
             // Match the PCSX2 HUD: warn only as the control handoff approaches.
@@ -515,18 +533,23 @@ void TagHud_Draw() {
                 snprintf(label,sizeof(label),Port_TagText("P%d takes control in %ds"),a.fusionNext+1,a.fusionSwitchSeconds);
                 text(d,fusionX,fusionY,8*sc,gold,label,textWidth); fusionY+=21*sc;
             }
-            if(a.fusionSeconds>=0&&Port_TagOption(TAG_OPT_FUSION_METER)) {
-                snprintf(label,sizeof(label),Port_TagText("Fusion - %ds remaining"),a.fusionSeconds);
-                text(d,fusionX,fusionY,8*sc,gold,label,textWidth); fusionY+=21*sc;
-                bar(d,fusionX,fusionY,width,7*sc,a.fusionDuration>0?(float)a.fusionSeconds/a.fusionDuration:0,gold);
-                fusionY+=15*sc;
+            if(a.fusionSeconds>=0) {
+                if(Port_TagOption(TAG_OPT_FUSION_TIME_TEXT)) {
+                    snprintf(label,sizeof(label),Port_TagText("Fusion - %ds remaining"),a.fusionSeconds);
+                    text(d,fusionX,fusionY,8*sc,gold,label,textWidth); fusionY+=21*sc;
+                }
+                if(Port_TagOption(TAG_OPT_FUSION_METER)) {
+                    bar(d,fusionX,fusionY,width,7*sc,a.fusionDuration>0?(float)a.fusionSeconds/a.fusionDuration:0,gold);
+                    fusionY+=15*sc;
+                }
             }
             row=std::max(row,fusionY+6*sc);
         }
         if(a.assistAlly>=0 || a.assistPower>100) {
             snprintf(label,sizeof(label),Port_TagText("Beam assist - %d%% power"),a.assistPower);
-            text(d,statusX,row,9*sc,IM_COL32(110,255,210,255),label,statusWidth);
-        } else if(controls && !view.spectating && a.assistReady>=0 && request<0) {
+            if(Port_TagOption(TAG_OPT_ASSIST_POWER_TEXT))
+                text(d,statusX,row,9*sc,IM_COL32(110,255,210,255),label,statusWidth);
+        } else if(controls && !view.spectating && a.assistReady>=0 && request<0 && Port_TagOption(TAG_OPT_ASSIST_HINT_TEXT)) {
             text(d,begin.x+margin,end.y-38*sc,9*sc,IM_COL32(110,255,210,255),
                 "R3 - beam assist (1 stock)",end.x-begin.x-2*margin);
         }

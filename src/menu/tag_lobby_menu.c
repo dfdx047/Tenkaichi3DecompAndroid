@@ -3,6 +3,7 @@
 #include "common.h"
 #include "menu/port_screen.h"
 #include "sys/pad.h"
+#include "battle/tag_options.h"
 #include "../../port/src/gs/tag_net.h"
 
 static int selectedGuest=-1;
@@ -21,6 +22,7 @@ int TagLobbyRoster_Input(void) {
 }
 void TagLobbyRoster_Draw(int hostMenu) {
     TagLobbyRoster r;int i;char line[64];float y=hostMenu?48:142;
+    if(!hostMenu && (Port_TagOption(TAG_OPT_HIDE_ALL_HUD) || !Port_TagOption(TAG_OPT_PRACTICE_ROSTER)))return;
     TagNet_Roster((u32)&r);
     Ps_PageSet();Ps_SetShift(0);Ps_Align(1);
     Ps_Text(422,y,hostMenu?"CONNECTED":"PLAYERS / PING TO HOST",hostMenu?.60f:.49f,156,1);
@@ -39,6 +41,7 @@ void TagLobbyMenu_Draw(void) {
     if(!TagNet_IsPractice())return;
     TagNet_PracticeUi((u32)&ui);
     if(!ui.visible) {
+        if(Port_TagOption(TAG_OPT_HIDE_ALL_HUD))return;
         TagLobbyRoster_Draw(0);
         extern const char *TagLobby_Prompt(void);const char *s=TagLobby_Prompt();
         if(s && *s){Ps_PageSet();Ps_SetShift(0);Ps_Align(1);Ps_Text(256,396,(char *)s,.65f,470,3);}

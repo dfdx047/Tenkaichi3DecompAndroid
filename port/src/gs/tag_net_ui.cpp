@@ -57,21 +57,33 @@ extern "C" void TagNet_Draw(void) {
     TagNetStatus s;TagNet_Status(&s);ImGuiIO &io=ImGui::GetIO();
     if(s.phase==4) {
         if(TagNet_Observer()) {
+            // Camera bindings remain usable with every spectator label hidden.
+            int view=s.view,n=s.config.size[0]+s.config.size[1];
+            bool free=s.freeCam!=0;
+            if(n<1)return;
+            if(!io.WantTextInput && !gPortOverlayOpen) {
+                if(ImGui::IsKeyPressed(ImGuiKey_LeftBracket))view=(view+n-1)%n;
+                if(ImGui::IsKeyPressed(ImGuiKey_RightBracket))view=(view+1)%n;
+                if(ImGui::IsKeyPressed(ImGuiKey_F))free=!free;
+            }
+            if(view!=s.view || free!=(s.freeCam!=0))TagNet_Watch(view,free);
+            bool hints=Port_TagOption(TAG_OPT_SPECTATOR_HINTS)!=0;
+            bool names=Port_TagOption(TAG_OPT_SPECTATOR_NAME)!=0;
+            if(Port_TagOption(TAG_OPT_HIDE_ALL_HUD) || (!hints && !names))return;
             ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x-12,io.DisplaySize.y-12),ImGuiCond_Always,ImVec2(1,1));
             ImGui::SetNextWindowSize(ImVec2(290,0),ImGuiCond_FirstUseEver);
-            if(ImGui::Begin("Spectating",nullptr,ImGuiWindowFlags_AlwaysAutoResize)) {
-                ImGui::TextUnformatted("Read-only spectator");
-                ImGui::TextUnformatted("L2/R2: switch view | Select: free camera");
-                int view=s.view;int n=s.config.size[0]+s.config.size[1];
-                if(ImGui::Button("Previous [") || (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_LeftBracket)))view=(view+n-1)%n;
-                ImGui::SameLine();if(ImGui::Button("Next ]") || (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_RightBracket)))view=(view+1)%n;
-                bool free=s.freeCam!=0;
-                bool change=ImGui::Checkbox("Free camera (F)",&free);
-                if(!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F)){free=!free;change=true;}
-                if(change||view!=s.view)TagNet_Watch(view,free);
-                ImGui::TextWrapped("%s",name(s.config.chara[view]));
-                if(free)ImGui::TextWrapped("Left stick: move. Right stick: look. L1/R1: height. Keyboard uses your game bindings (F1 to change).");
-                if(ImGui::Button("Leave match"))TagNet_Leave();
+            if(ImGui::Begin("##Spectator",nullptr,ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoTitleBar)) {
+                if(names)ImGui::TextWrapped(Port_TagText("Watching %s"),name(s.config.chara[view]));
+                if(hints) {
+                    ImGui::TextUnformatted(Port_TagText("L2/R2: switch view | Select: free camera"));
+                    bool change=false;
+                    if(ImGui::Button(Port_TagText("Previous ["))){view=(view+n-1)%n;change=true;}
+                    ImGui::SameLine();if(ImGui::Button(Port_TagText("Next ]"))){view=(view+1)%n;change=true;}
+                    change=ImGui::Checkbox(Port_TagText("Free camera (F)"),&free)||change;
+                    if(change)TagNet_Watch(view,free);
+                    if(free)ImGui::TextWrapped("%s",Port_TagText("Left stick: move. Right stick: look. L1/R1: height. Keyboard uses your game bindings (F1 to change)."));
+                    if(ImGui::Button(Port_TagText("Leave match")))TagNet_Leave();
+                }
             }ImGui::End();
         }
         return;

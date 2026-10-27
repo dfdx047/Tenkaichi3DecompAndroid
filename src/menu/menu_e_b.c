@@ -22,6 +22,10 @@ static s32 onlinePick,onlinePickCpu,onlinePickLevel;
 static s32 practicePick,practicePickHidden,practicePickOwn,practicePickDone;
 static TsProgress practiceSaved;
 static s32 cpuPrompt=-1,cpuPromptLevel,cpuApproved=-1;
+/* Shared by offline and online character picking; cancelling or starting a
+   new roster must not replace the last difficulty the player confirmed. */
+static s32 cpuLastConfirmed=-1;
+extern void Port_TagCpuPromptTrace(s32 event,s32 slot,s32 level);
 static void TeamSel_DrawCpuPrompt(void) {
     extern const char *CpuLevel_SettingName(s32);
     s32 j;f32 x=150,y=123,w=212;
@@ -1559,9 +1563,14 @@ f32 TeamSel_Input(s32 *result) {
         if(gPad[0].gameRepeat&(PADG_UP|PADG_DOWN)) {
             cpuPromptLevel=Ps_Wrap(cpuPromptLevel+(gPad[0].gameRepeat&PADG_UP?-1:1),0,4);Snd_PlaySe(1,0);
         }
-        if(gPad[0].gamePressed&PADG_TRIANGLE){cpuPrompt=-1;Snd_PlaySe(1,2);return 0;}
+        if(gPad[0].gamePressed&PADG_TRIANGLE){
+            Port_TagCpuPromptTrace(2,cpuPrompt,cpuPromptLevel);
+            cpuPrompt=-1;Snd_PlaySe(1,2);return 0;
+        }
         if(!(gPad[0].gamePressed&PADG_CROSS))return 0;
         cpuApproved=cpuPrompt;cpuPrompt=-1;
+        cpuLastConfirmed=cpuPromptLevel;
+        Port_TagCpuPromptTrace(1,cpuApproved,cpuPromptLevel);
         if(onlinePick)onlinePickLevel=cpuPromptLevel;
         else TagSession_SetCpuSetting(cpuApproved/5,cpuApproved%5,cpuPromptLevel);
     }
@@ -2052,6 +2061,8 @@ f32 TeamSel_Input(s32 *result) {
                     if((onlinePick?onlinePickCpu:TagSession_Selected()&&TagSession_Owner(CUR_N,CUR_SIDE->cur)<0) && cpuApproved!=CUR_N*5+CUR_SIDE->cur) {
                         cpuPrompt=CUR_N*5+CUR_SIDE->cur;
                         cpuPromptLevel=onlinePick?onlinePickLevel:TagSession_CpuSetting(CUR_N,CUR_SIDE->cur);
+                        if(cpuLastConfirmed>=0 && cpuLastConfirmed<5)cpuPromptLevel=cpuLastConfirmed;
+                        Port_TagCpuPromptTrace(0,cpuPrompt,cpuPromptLevel);
                         Snd_PlaySe(1,1);continue;
                     }
                     cpuApproved=-1;

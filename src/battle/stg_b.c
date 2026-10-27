@@ -936,7 +936,7 @@ void StgAmb_Start(void) {
         gStgAmb.update = StgAmb_Update22;
         break;
     }
-    MapBgm_Play(id + 0x10BA4);
+    MapBgm_Play(id + DISC_RESOURCE(0x10BA4, 0x916));
     StgAmb_SetBgmVolume(0);
 }
 

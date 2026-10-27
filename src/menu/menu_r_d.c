@@ -103,7 +103,11 @@ void SimTop_Init(s32 section) {
     gSimTop->tex[39] = MTEX(res, 29);
 
     gSimTop->faces = (u32 *)MPACK_AT(gSimTop->res, 7);
+    #ifdef PORT
+    for (i = 0; i < gSimTop->faces[0] && i < 250; i++) {
+#else
     for (i = 0; i < SIMTOP_FACE_NUM; i++) {
+#endif
         res = (MTexRes *)MPACK_AT(gSimTop->faces, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }

@@ -13,6 +13,7 @@ int PortGame_IsCharacter(int chara);
 const char *PortGame_CharacterName(int chara);
 int PortGame_StageCount(void);
 int PortGame_MusicFile(int track);
+int PortGame_StreamFile(int original);
 int PortGame_Costumes(int chara);
 int PortGame_Model(int chara, int costume, int damaged);
 int PortGame_ModelCharacter(int id);

@@ -33,7 +33,7 @@ s32 Duel_Main(void) {
         case 38:
             if (!bgm) {
                 bgm = 1;
-                Bgm_Play(DUEL_BGM);
+                Bgm_Play(DISC_RESOURCE(DUEL_BGM, 0x8AF));
             }
             if (DuelMenu_Run(1)) {
                 Adx_StopAll();

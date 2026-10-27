@@ -27,16 +27,31 @@ int main(void) {
     assert(PortGame_CheckAnimation(b,0x10001)==-1);
     for(i=0;i<16;i++)assert(data[i]==0xa5 && b[0x10000+i]==0xa5);
     if(PortGame_IsBT4()) {
+        assert(PortGame_StreamFile(0x10BC7)==0x14E);
+        assert(PortGame_StreamFile(0x10BCA)==0x151);
+        assert(PortGame_StreamFile(0x10BDB)==0x158);
+        assert(PortGame_StreamFile(0x10BE1)==0x15E);
+        assert(PortGame_StreamFile(0x151)==0x151);
+        assert(PortGame_StreamFile(0x10BCB)==0x10BCB);
         assert(PortGame_AnimationCapacity()==0x10000);
         assert(PortGame_CheckAnimation(b,53632)==0);
         assert(PortGame_VoiceLine(165,0,0)==0x10CC2+16500);
         assert(PortGame_VoiceLine(165,99,1)==0x16E6A+16500+99);
-        assert(PortGame_Voice(246,1)==PortGame_Voice(246,0));
+        /* English B14 has an invalid alternate Time Patroller bank. Spanish
+           B14 provides both banks, so it must retain its chosen audio. */
+        if(strcmp(PortGame_DefaultLanguage(),"es"))
+            assert(PortGame_Voice(246,1)==PortGame_Voice(246,0));
+        else {
+            assert(PortGame_Voice(246,0)==0x1D012+246);
+            assert(PortGame_Voice(246,1)==0x1D10C+246);
+        }
         a=PortGame_AnimationBuffer(b);a2=PortGame_AnimationBuffer(b);
         other=PortGame_AnimationBuffer(copy);assert(a==a2 && a!=other && a!=b);
         memset(a,1,0x10000);memset(other,2,0x10000);
         PortGame_ResetAnimations();assert(PortGame_AnimationBuffer(copy)==a);
     } else {
+        assert(PortGame_StreamFile(0x10BC7)==0x10BC7);
+        assert(PortGame_StreamFile(0x10BE1)==0x10BE1);
         assert(PortGame_AnimationBuffer(b)==b);
         assert(PortGame_VoiceLine(5,17,0)==0x8D4E + 517);
         assert(PortGame_VoiceLine(5,17,1)==0xCC32+517);

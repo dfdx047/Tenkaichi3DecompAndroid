@@ -105,6 +105,12 @@ const char *PortGame_CharacterName(int c) {
     return PortGame_IsBT4() && c>=0 && c<250 && names[c][0]?names[c]:NULL;
 }
 int PortGame_MusicFile(int track) { return (PortGame_IsBT4()?2070:0x10B16)+track; }
+int PortGame_StreamFile(int id) {
+    if(!PortGame_IsBT4()) return id;
+    if(id>=0x10BC7 && id<=0x10BCA) return 0x14E + id - 0x10BC7;
+    if(id>=0x10BDB && id<=0x10BE1) return 0x158 + id - 0x10BDB;
+    return id;
+}
 int PortGame_Costumes(int c) {
     if(PortGame_IsBT4())return c>=0 && c<250 ? costumes[c] : 0;
     if(c>=0 && c<161) {

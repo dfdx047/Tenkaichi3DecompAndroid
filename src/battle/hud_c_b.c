@@ -731,7 +731,7 @@ void HudCombo_SlideIn(f32 seconds) {
 void HudCombo_DrawText(void) {
     s32 side;
 #ifdef PORT
-    if(!Port_TagOption(TAG_OPT_NATIVE_HUD))return;
+    if((!Port_TagOption(TAG_OPT_NATIVE_HUD) || Port_TagOption(TAG_OPT_HIDE_ALL_HUD)))return;
 #endif
 
     for (side = 0; side < 2; side++) {

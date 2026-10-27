@@ -376,7 +376,11 @@ void UbTeamSel_Init(s32 section) {
     gUbTeamSel->nameText = MPACK_AT(gUbTeamSel->res, 28);
     gUbTeamSel->formText = MPACK_AT(gUbTeamSel->res, 29);
     gUbTeamSel->chips = (u32 *)MPACK_AT(gUbTeamSel->res, 27);
+    #ifdef PORT
+    for (i = 0; i < gUbTeamSel->chips[0] && i < 250; i++) {
+#else
     for (i = 0; i < UB_CELL_MAX; i++) {
+#endif
         res = (MTexRes *)MPACK_AT(gUbTeamSel->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }

@@ -1943,9 +1943,7 @@ static void build(void) {
             if (tab("Cheats", 5)) { cheats_tab(); ImGui::EndTabItem(); }
             if (tab("Misc", 6)) { misc_tab(); ImGui::EndTabItem(); }
             if (getenv("BT3_TAG_TEAM") && tab(Port_TagText("Mod Settings"), 7)) {
-                ImGui::BeginDisabled(TagNet_Active() != 0);
                 TagHud_Settings();
-                ImGui::EndDisabled();
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();

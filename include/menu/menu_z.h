@@ -212,7 +212,7 @@ typedef struct DcList {
 #define DCLIST_LEAVING 0x20
 #define DCLIST_FACE_READY 0x40  /* the picture is loaded and fades in */
 
-#define DCLIST_FACE_FILE 0x2F9
+#define DCLIST_FACE_FILE DISC_RESOURCE(0x2F9, 0x71C)
 #define DCLIST_FACE_SIZE 0x16800
 
 /* ---- DcMenu: the top menu of the Data Center (mode 53); a whole object. ---- */
@@ -267,7 +267,7 @@ typedef struct DcMenu {
 #define DCPASS_TEXT_LEN 0x22    /* 34 cells: two lines of 17 */
 #define DCPASS_TEXT_LAST 0x21   /* index of the last of the 34 password characters */
 #define DCPASS_LIST_ROWS 3      /* rows of the "which slot" list that the cursor can be on */
-#define DCPASS_FACE_FILE 0x2F9
+#define DCPASS_FACE_FILE DISC_RESOURCE(0x2F9, 0x71C)
 #define DCPASS_FACE_SIZE 0x16800
 
 /* Codes in the key table that are not characters: where they are ... */

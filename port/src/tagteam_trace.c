@@ -37,6 +37,11 @@ void Port_TagMenuTrace(int page,int a,int b,int c,int d,int e) {
     fprintf(stderr,"tagmenu frame=%u page=%d state=%d,%d,%d,%d,%d draw=%u\n",gPortVBlanks,page,a,b,c,d,e,gGsFrame);
 }
 
+void Port_TagCpuPromptTrace(int event,int slot,int level) {
+    if(getenv("BT3_TAG_MENU_TEST"))
+        fprintf(stderr,"tagcpu prompt=%d slot=%d level=%d\n",event,slot,level);
+}
+
 void Port_TagTeamTrace(int frame, int fighter, int chara, int team, int target, int hp, int action) {
     if (getenv("BT3_TAG_TRACE")) {
         fprintf(stderr, "tagteam frame=%d fighter=%d chara=%d team=%d target=%d hp=%d action=%d\n",

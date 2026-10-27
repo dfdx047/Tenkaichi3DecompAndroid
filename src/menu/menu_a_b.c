@@ -126,7 +126,7 @@ s32 Progress_Main(s32 arg) {
             gProgress->mode = 1;
             break;
         case 1:
-            Bgm_Play(MENU_BGM_TITLE);
+            Bgm_Play(DISC_RESOURCE(MENU_BGM_TITLE, 0x816));
             ret = Title_Run(1);
             Adx_StopAll();
             switch (ret) {
@@ -143,7 +143,7 @@ s32 Progress_Main(s32 arg) {
             }
             break;
         case 4:
-            Bgm_Play(MENU_BGM_TITLE);
+            Bgm_Play(DISC_RESOURCE(MENU_BGM_TITLE, 0x84C));
             if (MainMenu_Run(2)) {
                 Adx_StopAll();
                 MENU_ARC_FREE(gMenuArc1);

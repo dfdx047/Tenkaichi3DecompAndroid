@@ -164,6 +164,8 @@ int __wrap_Progress_Main(int arg) {
                 Save_UnlockAll(gSaveData);
                 gProgress->flags&=~0x40;
                 if(strcmp(getenv("BT3_TAG_MENU_TEST"),"main")==0) gProgress->mode=4;
+                else if(strncmp(getenv("BT3_TAG_MENU_TEST"),"screen:",7)==0)
+                    gProgress->mode=atoi(getenv("BT3_TAG_MENU_TEST")+7);
                 else TagSession_Open();
             }
             /* An online session (gs/net.c) goes straight to the versus mode's character select, with the game's

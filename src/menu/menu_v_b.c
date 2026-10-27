@@ -747,7 +747,11 @@ void EvoZ_UpdateFace(EvoZ *ez) {
         break;
     case 1:
         File_CancelRequests();
+#ifdef PORT
+        File_Request(ez->side->chara + (PortGame_IsBT4() ? 0x71C : 0x2F9), ez->faceFile, 0x16800);
+#else
         File_Request(ez->side->chara + 0x2F9, ez->faceFile, 0x16800);
+#endif
         ez->faceState = 2;
         break;
     case 2:

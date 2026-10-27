@@ -29,9 +29,11 @@ int main(void) {
         "\"one/0\":{\"original\":\"Play\",\"text\":\"Jugar\"},"
         "\"one/1\":{\"original\":\"Start\",\"text\":\"Inicio\"},"
         "\"two/0\":{\"original\":\"Play\",\"text\":\"Reproducir\"},"
-        "\"two/1\":{\"original\":\"Quit\",\"text\":\"Salir\"}}}";
+        "\"two/1\":{\"original\":\"Quit\",\"text\":\"Salir\"},"
+        "\"bt4/0\":{\"original\":\"\\ufeffTeam BT4\",\"text\":\"Equipo BT4\"}}}";
     char dir[] = "/tmp/bt3-ui-translation-XXXXXX", path[256];
     uint8_t one[64], two[64];
+    const uint16_t bt4[] = {0xfeff, 0xfeff, 'T', 'e', 'a', 'm', ' ', 'B', 'T', '4', 0};
     const uint16_t *a, *b, *plain;
     FILE *fp;
     int result = 1;
@@ -51,7 +53,8 @@ int main(void) {
     b = UiText_TranslateLine((const uint32_t *)two, 0, (const uint16_t *)(two + 16));
     if (a != plain && (uintptr_t)a <= UINT32_MAX && (uintptr_t)b <= UINT32_MAX &&
         a[1] == 'J' && b[1] == 'R' &&
-        UiText_TranslateString(plain) == plain && UiText_TranslateString(a) == a) result = 0;
+        UiText_TranslateString(plain) == plain && UiText_TranslateString(a) == a &&
+        UiText_TranslateString(bt4)[1] == 'E') result = 0;
 done:
     snprintf(path, sizeof(path), "%s/translations/ui/es.json", dir); unlink(path);
     snprintf(path, sizeof(path), "%s/translations/ui", dir); rmdir(path);

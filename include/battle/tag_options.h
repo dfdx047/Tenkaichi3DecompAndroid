@@ -3,7 +3,7 @@
 /* One catalogue for the native menu, F1 window, persistence and range checks.
    Keep existing IDs stable when adding options. */
 #define TAG_OPTION_GROUPS(X) \
- X("Revival") X("Combat") X("Cinematics") X("Targeting and Views") X("HUD") X("Controllers") X("Training") X("Fusion") X("Outnumbered") X("Giants") X("Stages")
+ X("Revival") X("Combat") X("Cinematics") X("Targeting and Views") X("HUD") X("Controllers") X("Training") X("Fusion") X("Outnumbered") X("Giants") X("Stages") X("HUD Text")
 #define TAG_OPTION_LIST(X) \
  X(REVIVE,"tag_revive","Revive Teammates",0,0,1,1,1,"Stay near a fallen teammate. Movement and blocking are allowed.") \
  X(REVIVE_SECONDS,"tag_revive_seconds","Revival Time",0,1,15,1,3,"Seconds spent inside the revival ring.") \
@@ -44,8 +44,8 @@
  X(FUSION_METER,"tag_fusion_meter","Fusion Time Meter",7,0,1,1,1,"Show time remaining for temporary Fusion Dance fusions.") \
  X(FUSION_SWAP,"tag_fusion_swap","Switch Fusion Control",7,0,1,1,1,"Two human fusion partners take turns controlling their fused fighter.") \
  X(FUSION_SWAP_SECONDS,"tag_fusion_swap_seconds","Control Switch Time",7,5,60,5,20,"Seconds of play before the other fusion partner takes control.") \
- X(FUSION_OWNER,"tag_fusion_owner","Show Fusion Controller",7,0,1,1,1,"Show which player is controlling the fused fighter.") \
- X(FUSION_COUNTDOWN,"tag_fusion_countdown","Control Switch Countdown",7,0,1,1,1,"Show who takes control next during the final five seconds before a switch.") \
+ X(FUSION_OWNER,"tag_fusion_owner","Show Fusion Controller",11,0,1,1,1,"Show which player is controlling the fused fighter.") \
+ X(FUSION_COUNTDOWN,"tag_fusion_countdown","Control Switch Countdown",11,0,1,1,1,"Show who takes control next during the final five seconds before a switch.") \
  X(BEAM_ASSIST,"tag_beam_assist","Allow Beam Assists",1,0,1,1,1,"Press R3 near a struggling teammate to assist. Costs one blast stock.") \
  X(BEAM_ASSIST_POWER,"tag_beam_assist_power","Assist Power",1,110,300,10,150,"Push and damage multiplier with one helper, in percent. Stacks up to 300 percent.") \
  X(BEAM_ASSIST_CPU,"tag_beam_assist_cpu","CPU Beam Assists",1,0,1,1,1,"Nearby CPU teammates can join beam struggles.") \
@@ -57,7 +57,7 @@
  X(GIANT_ARMOR,"tag_giant_armor","Giant Armor",9,0,5,1,1,"Extra stagger resistance. Damage and armor-breaking moves still work.") \
  X(GIANT_CAMERA,"tag_giant_camera","Giant Camera Distance",9,100,250,10,150,"Extra distance for normal follow cameras; cinematic cameras stay unchanged.") \
  X(SPECTATE_FALLEN,"tag_spectate_fallen","Watch Fallen Fighters",3,0,1,1,1,"Include defeated fighters when L3 switches the spectator camera.") \
- X(SPECTATOR_HINTS,"tag_spectator_hints","Spectator Hints",3,0,1,1,1,"Show camera switching and teammate takeover controls while spectating.") \
+ X(SPECTATOR_HINTS,"tag_spectator_hints","Spectator Hints",11,0,1,1,1,"Show camera switching and teammate takeover controls while spectating.") \
  X(TARGET_STYLE,"tag_target_style","Target Marker Look",3,0,3,1,0,"Choose an arrow, a ring, a corner reticle, or arrow and ring.") \
  X(TARGET_STICK,"tag_target_stick","Right Stick Targeting",3,0,2,1,2,"Off, hold L3 and flick, or flick alone. Locked off, the stick still moves the camera.") \
  X(ATTACK_WARNING,"tag_attack_warning","Enemy Attack Indicators",4,0,1,1,0,"Red pointers mark enemies targeting you and flash when they attack.") \
@@ -71,7 +71,7 @@
  X(OUT_PROTECTION,"tag_out_protection","Custom Get Up Protection",8,0,30,1,5,"Tenths of a second protected from ordinary hits. Specials and grabs still work.") \
  X(OUT_BREAKER,"tag_out_breaker","Custom Combo Breaker",8,0,30,1,12,"Hits before an escape, with a five-second cooldown. Zero disables it.") \
  X(LOCAL_CINEMATICS,"tag_local_cinematics","Keep Moves Nearby",2,0,1,1,0,"Stage attacks and transformations near their starting point, with terrain and arena safety checks.") \
- X(PLAYER_LABELS,"tag_player_labels","Player Corner Labels",4,0,1,1,0,"Show P1, P2 and CPU labels in the corner of each view.") \
+ X(PLAYER_LABELS,"tag_player_labels","Player Corner Labels",11,0,1,1,0,"Show P1, P2 and CPU labels in the corner of each view.") \
  X(SHARED_SPECIAL,"tag_shared_special","Special Attack Camera",2,0,1,1,0,"Switch everyone's camera for ordinary beam and projectile specials.") \
  X(MAP_SIZE,"tag_map_size","Map Size",10,100,300,25,100,"Scale the arena, terrain and water together. Applies on the next stage load; fighters keep their normal size.") \
  X(REVIVE_WAVE_HEIGHT,"tag_revive_wave_height","Ring Wave Height",0,0,80,1,8,"Height of the traveling edge around the revival ring. Zero makes it flat.") \
@@ -79,7 +79,22 @@
  X(NATIVE_HUD,"tag_native_hud","Base Game HUD",4,0,1,1,1,"Show the original health, ki, timer and battle prompts. Mod indicators have their own switches.") \
  X(COMBO_METER,"tag_combo_meter","Combo Hit Counter",4,0,1,1,1,"Show the number of hits in a combo.") \
  X(DAMAGE_METER,"tag_damage_meter","Damage Counter",4,0,1,1,1,"Show the damage dealt by a combo or special move.") \
- X(CLASH_QTE,"tag_clash_qte","Clash Button Prompts",1,0,1,1,0,"Replace clash mashing and stick spinning with successive button prompts. A wrong press briefly locks your input.")
+ X(CLASH_QTE,"tag_clash_qte","Clash Button Prompts",1,0,1,1,0,"Replace clash mashing and stick spinning with successive button prompts. A wrong press briefly locks your input.") \
+ X(HIDE_ALL_HUD,"tag_hide_all_hud","Hide All HUD",4,0,1,1,0,"Hide original and modded battle displays. Menus remain available; individual HUD choices are remembered.") \
+ X(FUSION_TIME_TEXT,"tag_fusion_time_text","Fusion Time Text",11,0,1,1,1,"Show seconds left in a temporary fusion, separately from its meter.") \
+ X(SPECTATOR_NAME,"tag_spectator_name","Spectated Fighter Name",11,0,1,1,1,"Show who you are watching, separately from the spectator controls.") \
+ X(ALLY_NAMES,"tag_ally_names","Side Ally Names",11,0,1,1,1,"Show teammate names and status in the side panel. Health meters remain visible.") \
+ X(REVIVE_PROGRESS_TEXT,"tag_revive_progress_text","Revival Progress Text",11,0,1,1,1,"Show the revival percentage. Turning this off keeps the progress meter.") \
+ X(REVIVE_COST_TEXT,"tag_revive_cost_text","Revival Cost Text",11,0,1,1,1,"Show how many blast stocks you still need to revive a teammate.") \
+ X(FUSION_REQUEST_TEXT,"tag_fusion_request_text","Fusion Request Text",11,0,1,1,1,"Show incoming fusion requests and the accept button.") \
+ X(ASSIST_POWER_TEXT,"tag_assist_power_text","Beam Assist Power Text",11,0,1,1,1,"Show the power bonus during a beam assist.") \
+ X(ASSIST_HINT_TEXT,"tag_assist_hint_text","Beam Assist Hint",11,0,1,1,1,"Show the button hint when a teammate can be assisted.") \
+ X(PRACTICE_LABELS,"tag_practice_labels","Practice Fighter Labels",11,0,1,1,1,"Show player and dummy difficulty labels above practice fighters.") \
+ X(PRACTICE_ROSTER,"tag_practice_roster","Practice Player List",11,0,1,1,1,"Show connected players and ping while in the practice map.") \
+ X(PRACTICE_PROMPTS,"tag_practice_prompts","Practice Challenge Hints",11,0,1,1,1,"Show challenge requests, menu hints and character-change messages in practice.") \
+ X(PRACTICE_RECOVERY_TEXT,"tag_practice_recovery_text","Practice Recovery Countdown",11,0,1,1,1,"Show the countdown before getting up again in practice.") \
+ X(WAVE_TITLE_TEXT,"tag_wave_title_text","Gauntlet Wave Titles",11,0,1,1,1,"Show the title when a new gauntlet wave begins.") \
+ X(ROUND_END_TEXT,"tag_round_end_text","Gauntlet Round End Text",11,0,1,1,1,"Show the round-over message between gauntlet waves.")
 #define TAG_OPTION_ENUM(id,key,label,group,min,max,step,def,help) TAG_OPT_##id,
 enum {
     TAG_OPTION_LIST(TAG_OPTION_ENUM)
@@ -96,7 +111,7 @@ static const TagOptionInfo tagOptionInfo[TAG_OPT_COUNT]={TAG_OPTION_LIST(TAG_OPT
 #define TAG_GROUP_NAME(name) name,
 static const char *tagOptionGroups[]={TAG_OPTION_GROUPS(TAG_GROUP_NAME)};
 #undef TAG_GROUP_NAME
-#define TAG_OPTION_GROUP_COUNT 11
+#define TAG_OPTION_GROUP_COUNT 12
 /* These switches only draw information. In a room they stay local; gameplay
    and cinematic rules still come from the host. Keep this explicit so adding
    a gameplay setting to the HUD category cannot accidentally desynchronize it. */
@@ -110,6 +125,21 @@ static inline int TagOption_IsPresentation(int id) {
     case TAG_OPT_SPECTATOR_HINTS: case TAG_OPT_ATTACK_WARNING: case TAG_OPT_STYLED_HUD:
     case TAG_OPT_PLAYER_LABELS: case TAG_OPT_NATIVE_HUD:
     case TAG_OPT_COMBO_METER: case TAG_OPT_DAMAGE_METER:
+    case TAG_OPT_HIDE_ALL_HUD:
+    case TAG_OPT_FUSION_TIME_TEXT:
+    case TAG_OPT_SPECTATOR_NAME:
+    case TAG_OPT_ALLY_NAMES:
+    case TAG_OPT_REVIVE_PROGRESS_TEXT:
+    case TAG_OPT_REVIVE_COST_TEXT:
+    case TAG_OPT_FUSION_REQUEST_TEXT:
+    case TAG_OPT_ASSIST_POWER_TEXT:
+    case TAG_OPT_ASSIST_HINT_TEXT:
+    case TAG_OPT_PRACTICE_LABELS:
+    case TAG_OPT_PRACTICE_ROSTER:
+    case TAG_OPT_PRACTICE_PROMPTS:
+    case TAG_OPT_PRACTICE_RECOVERY_TEXT:
+    case TAG_OPT_WAVE_TITLE_TEXT:
+    case TAG_OPT_ROUND_END_TEXT:
         return 1;
     default:return 0;
     }

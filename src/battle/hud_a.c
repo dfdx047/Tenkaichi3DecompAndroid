@@ -217,7 +217,7 @@ void HudNode_Draw(HudNode *node, s32 mirror) {
     HudMtx flip;
     u32 i;
 #ifdef PORT
-    if (!Port_TagOption(TAG_OPT_NATIVE_HUD)) return;
+    if ((!Port_TagOption(TAG_OPT_NATIVE_HUD) || Port_TagOption(TAG_OPT_HIDE_ALL_HUD))) return;
 #endif
 
     if (node->flags & HUD_NODE_HIDDEN) {

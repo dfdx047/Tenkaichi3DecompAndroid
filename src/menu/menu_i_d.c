@@ -86,7 +86,7 @@ void EntrySel_UpdateImage(void) {
         break;
     case ESEL_LOAD_REQUEST:
         File_CancelRequests();
-        File_Request(gEntrySel->sel->image + 0x2F9, gEntrySel->imageFile, 0x16800);
+        File_Request(gEntrySel->sel->image + DISC_RESOURCE(0x2F9, 0x71C), gEntrySel->imageFile, 0x16800);
         gEntrySel->loadState = ESEL_LOAD_READ;
         break;
     case ESEL_LOAD_READ:
@@ -268,7 +268,11 @@ void EntrySel_Init(s32 section) {
     gEntrySel->nameText = MPACK_AT(gEntrySel->res, 30);
     gEntrySel->formText = MPACK_AT(gEntrySel->res, 31);
     gEntrySel->chips = (u32 *)MPACK_AT(gEntrySel->res, 32);
+    #ifdef PORT
+    for (i = 0; i < gEntrySel->chips[0] && i < 250; i++) {
+#else
     for (i = 0; i < ESEL_CELL_MAX; i++) {
+#endif
         res = (MTexRes *)MPACK_AT(gEntrySel->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
@@ -330,7 +334,7 @@ void EntrySel_Init(s32 section) {
     for (i = 0; i < 2; i++) {
         gEntrySel->blink[i] = Rand_Range(0x20);
     }
-    File_LoadSync(gEntrySel->sel->image + 0x2F9, gEntrySel->imageFile, 0x16800);
+    File_LoadSync(gEntrySel->sel->image + DISC_RESOURCE(0x2F9, 0x71C), gEntrySel->imageFile, 0x16800);
     Sprite_Unpack(gEntrySel->imageFile, gEntrySel->imageRes, NULL);
     res = gEntrySel->imageRes;
     Res_RelocateOffsets(&res, res, res);
@@ -1088,7 +1092,7 @@ s32 Tour_Main(void) {
                     gMenuArc4 = File_LoadSync(gProgress->baseFile + 2, NULL, 0);
                 }
             }
-            Bgm_Play(0x10B19);
+            Bgm_Play(DISC_RESOURCE(0x10B19, 0x83B));
             if (TourMenu_Run(1)) {
                 Adx_StopAll();
                 gProgress->mode = 34;
@@ -1105,7 +1109,7 @@ s32 Tour_Main(void) {
                     gMenuArc4 = File_LoadSync(gProgress->baseFile + 2, NULL, 0);
                 }
             }
-            Bgm_Play(0x10B1B);
+            Bgm_Play(DISC_RESOURCE(0x10B1B, 0x891));
             if (EntrySel_Run(2)) {
                 Adx_StopAll();
                 gProgress->mode = 35;

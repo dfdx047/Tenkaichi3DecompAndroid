@@ -52,6 +52,8 @@ int TagLobby_LocalMenu(void) {
 const char *TagLobby_Prompt(void) {
     static char text[112];int p=TagNet_Role(),a=p-1,i;
     if(!practice || p<1 || p>=TL_MEMBERS || editor==p || !positioned)return "";
+    if(world.actors[a].recovering && !Port_TagOption(TAG_OPT_PRACTICE_RECOVERY_TEXT))return "";
+    if(!world.actors[a].recovering && !Port_TagOption(TAG_OPT_PRACTICE_PROMPTS))return "";
     if(editDenied[p])return "Finish your challenge before changing fighters.";
     if(editRequests&(1u<<p))return "Waiting for the character selector...";
     if(world.actors[a].recovering){sprintf(text,Port_TagText("Back on your feet in %d"),(world.actors[a].recovering+29)/30);return text;}

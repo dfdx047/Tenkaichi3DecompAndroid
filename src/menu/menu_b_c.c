@@ -190,34 +190,34 @@ void HistOutro_Init(s32 section) {
 
     switch (gProgress->subMenu) {
     case 0:
-        Bgm_Play(OUTRO_BGM);
+        Bgm_Play(DISC_RESOURCE(OUTRO_BGM, 0x899));
         StreamSe_PlayDefault(0, 0x10BDC);
         break;
     case 1:
-        Bgm_Play(OUTRO_BGM);
+        Bgm_Play(DISC_RESOURCE(OUTRO_BGM, 0x834));
         StreamSe_PlayDefault(0, 0x10BDD);
         OUTRO_COUNT(1);
         break;
     case 2:
-        Bgm_Play(OUTRO_BGM);
+        Bgm_Play(DISC_RESOURCE(OUTRO_BGM, 0x834));
         StreamSe_PlayDefault(0, 0x10BDE);
         break;
     case 3:
-        Bgm_Play(OUTRO_BGM);
+        Bgm_Play(DISC_RESOURCE(OUTRO_BGM, 0x835));
         break;
     case 4:
-        Bgm_Play(OUTRO_BGM);
+        Bgm_Play(DISC_RESOURCE(OUTRO_BGM, 0x86C));
         OUTRO_COUNT(4);
         break;
     case 5:
-        Bgm_Play(0x10B1E);
+        Bgm_Play(DISC_RESOURCE(0x10B1E, 0x837));
         OUTRO_COUNT(5);
         break;
     case 6:
-        Bgm_Play(0x10B28);
+        Bgm_Play(DISC_RESOURCE(0x10B28, 0x828));
         break;
     case 7:
-        Bgm_Play(OUTRO_BGM);
+        Bgm_Play(DISC_RESOURCE(OUTRO_BGM, 0x867));
         OUTRO_COUNT(7);
         break;
     }
@@ -839,7 +839,7 @@ s32 Hist_Main(void) {
     do {
         switch (gProgress->mode) {
         case 6:
-            Bgm_Play(0x10B18);
+            Bgm_Play(DISC_RESOURCE(0x10B18, 0x838));
             r = HistSel_Run(1);
             Adx_StopAll();
             gProgress->prevMode = gProgress->mode;

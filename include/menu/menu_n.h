@@ -48,7 +48,7 @@ extern void BattleSetup_Finish(void);
 
 #define N_VOICE_IDLE 5          /* Voice_GetStat result when nothing is playing */
 #define N_VOICE_BASE 0x8765     /* voice bank base of this mode group's guides (Voice_PlayWithSubtitle) */
-#define N_FACE_FILE 0x2F9       /* + character id: compressed portrait */
+#define N_FACE_FILE DISC_RESOURCE(0x2F9, 0x71C)       /* + character id: compressed portrait */
 #define N_CHIP_NUM 165          /* texture lists in a chip pack: section id + 1 = chip of a character */
 #define N_NONE 999              /* "no entry" in the opponent / rule tables */
 #define N_RANDOM 998            /* "draw one" in the rule tables */

@@ -730,3 +730,40 @@ Demon King Piccolo	Piccolo Daimaoh
 Future Gohan	Gohan del futuro
 Future Gohan Super Saiyan	Gohan del futuro Super Saiyan
 Opponent CPU difficulty	Dificultad de CPU rival
+HUD Text	Textos del HUD
+Hide All HUD	Ocultar todo el HUD
+Hide original and modded battle displays. Menus remain available; individual HUD choices are remembered.	Oculta los indicadores de combate originales y del mod. Los menús siguen disponibles y se conservan los ajustes individuales del HUD.
+Fusion Time Text	Texto del tiempo de fusión
+Show seconds left in a temporary fusion, separately from its meter.	Muestra los segundos restantes de una fusión temporal, por separado de su barra.
+Spectated Fighter Name	Nombre del luchador observado
+Show who you are watching, separately from the spectator controls.	Muestra a quién estás observando, por separado de los controles de espectador.
+Side Ally Names	Nombres de aliados en el lateral
+Show teammate names and status in the side panel. Health meters remain visible.	Muestra los nombres y el estado de los aliados en el panel lateral. Las barras de salud siguen visibles.
+Revival Progress Text	Texto del progreso de resurrección
+Show the revival percentage. Turning this off keeps the progress meter.	Muestra el porcentaje de resurrección. Al desactivarlo se conserva la barra de progreso.
+Revival Cost Text	Texto del coste de resurrección
+Show how many blast stocks you still need to revive a teammate.	Muestra cuántas reservas de técnica te faltan para resucitar a un aliado.
+Fusion Request Text	Texto de solicitud de fusión
+Show incoming fusion requests and the accept button.	Muestra las solicitudes de fusión recibidas y el botón para aceptarlas.
+Beam Assist Power Text	Texto de potencia de asistencia
+Show the power bonus during a beam assist.	Muestra el aumento de potencia durante la asistencia en un choque de rayos.
+Beam Assist Hint	Ayuda de asistencia de rayos
+Show the button hint when a teammate can be assisted.	Muestra el botón cuando puedes ayudar a un aliado en un choque de rayos.
+Practice Fighter Labels	Etiquetas de luchadores en práctica
+Show player and dummy difficulty labels above practice fighters.	Muestra las etiquetas de jugadores y la dificultad de los muñecos sobre los luchadores en práctica.
+Practice Player List	Lista de jugadores en práctica
+Show connected players and ping while in the practice map.	Muestra los jugadores conectados y su latencia en el mapa de práctica.
+Practice Challenge Hints	Ayuda de desafíos en práctica
+Show challenge requests, menu hints and character-change messages in practice.	Muestra las solicitudes de desafío, la ayuda de menús y los mensajes de cambio de personaje en práctica.
+Practice Recovery Countdown	Cuenta atrás de recuperación en práctica
+Show the countdown before getting up again in practice.	Muestra la cuenta atrás antes de volver a levantarte en práctica.
+Gauntlet Wave Titles	Títulos de oleada en Desafío
+Show the title when a new gauntlet wave begins.	Muestra el título al empezar una nueva oleada del Desafío.
+Gauntlet Round End Text	Texto de fin de ronda en Desafío
+Show the round-over message between gauntlet waves.	Muestra el mensaje de fin de ronda entre las oleadas del Desafío.
+L2/R2: switch view | Select: free camera	L2/R2: cambiar vista | Select: cámara libre
+Previous [	Anterior [
+Next ]	Siguiente ]
+Free camera (F)	Cámara libre (F)
+Left stick: move. Right stick: look. L1/R1: height. Keyboard uses your game bindings (F1 to change).	Stick izquierdo: mover. Stick derecho: mirar. L1/R1: altura. El teclado usa tus controles del juego (F1 para cambiarlos).
+Leave match	Abandonar combate

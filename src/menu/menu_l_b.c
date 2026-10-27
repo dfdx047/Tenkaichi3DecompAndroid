@@ -71,7 +71,7 @@ void SoloSel_UpdateImage(void) {
         break;
     case SOLOSEL_LOAD_REQUEST:
         File_CancelRequests();
-        File_Request(gSoloSel->sel->image + 0x2F9, gSoloSel->imageFile, 0x16800);
+        File_Request(gSoloSel->sel->image + DISC_RESOURCE(0x2F9, 0x71C), gSoloSel->imageFile, 0x16800);
         gSoloSel->loadState = SOLOSEL_LOAD_READ;
         break;
     case SOLOSEL_LOAD_READ:
@@ -216,7 +216,11 @@ void SoloSel_Init(s32 section) {
     gSoloSel->nameText = MPACK_AT(gSoloSel->res, 28);
     gSoloSel->formText = MPACK_AT(gSoloSel->res, 29);
     gSoloSel->chips = (u32 *)MPACK_AT(gSoloSel->res, 27);
+    #ifdef PORT
+    for (i = 0; i < gSoloSel->chips[0] && i < 250; i++) {
+#else
     for (i = 0; i < LCHR_CELL_MAX; i++) {
+#endif
         res = (MTexRes *)MPACK_AT(gSoloSel->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
@@ -250,7 +254,7 @@ void SoloSel_Init(s32 section) {
         gSoloSel->blink[i] = Rand_Range(0x20);
     }
     gSoloSel->voiceLine = -1;
-    File_LoadSync(gSoloSel->sel->image + 0x2F9, gSoloSel->imageFile, 0x16800);
+    File_LoadSync(gSoloSel->sel->image + DISC_RESOURCE(0x2F9, 0x71C), gSoloSel->imageFile, 0x16800);
     Sprite_Unpack(gSoloSel->imageFile, gSoloSel->imageRes, NULL);
     res = gSoloSel->imageRes;
     Res_RelocateOffsets(&res, res, res);
