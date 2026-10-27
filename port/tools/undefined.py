@@ -23,6 +23,8 @@ MAC_LLC = ["-mtriple=arm64-apple-macos11", "-mattr=-fp-armv8,-neon", "-relocatio
 
 def variant(cmd):
     """The command for this build variant: clang for everything built with software float, 64-bit or Windows flags."""
+    # Keep local checkout paths out of debug information and assertion strings.
+    cmd = cmd + [f"-ffile-prefix-map={ROOT}=."]
     if MAC:
         soft = "-msoft-float" in cmd
         cc = llvm("clang++" if cmd[0] == "g++" else "clang") if soft else ("clang++" if cmd[0] == "g++" else "clang")
@@ -240,7 +242,9 @@ def main():
     imgui = ROOT / "port/third_party/imgui"
     for f in sorted(imgui.glob("*.cpp")) + sorted((ROOT / "port/src/gs").glob("*.cpp")):
         o = OBJ / ("cxx_" + f.stem + ".o")
-        if f.parent == imgui and o.exists() and o.stat().st_mtime > f.stat().st_mtime:
+        build_rules = max(pathlib.Path(__file__).stat().st_mtime,
+                          (ROOT / "port/tools/toolchain.py").stat().st_mtime)
+        if f.parent == imgui and o.exists() and o.stat().st_mtime > max(f.stat().st_mtime, build_rules):
             objs.append(str(o))
             continue
         r = run(["g++", "-m32", "-std=c++17", "-c", "-O2", "-g", "-fno-pic", "-msse2", "-mfpmath=sse", "-fno-exceptions",

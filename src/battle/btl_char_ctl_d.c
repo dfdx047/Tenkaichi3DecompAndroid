@@ -71,6 +71,7 @@ extern void BtlObjBody_Reset(BtlCtlObj *obj);
 extern void BtlObjXf_Update(BtlCtlObj *obj);
 extern void BtlObjPose_CalcMatrices(BtlCtlObj *obj);
 extern BtlCtlNode *BtlObj_GetNode(BtlCtlObj *obj, s32 node);
+extern void BtlMove_ClampToStage(BtlCtlChr *chr);
 
 /* Reads the object's position, rotation and root node back into the pose. */
 void BtlChar_ObjToPose(BtlCtlChr *chr) {
@@ -390,26 +391,25 @@ void BtlChars_UpdateHold(void) {
     Vec4 holderPos;
     Vec4 heldPos;
     Vec4 delta;
-    BtlCtlChr *held = NULL;
-    BtlCtlChr *holder = NULL;
     s32 i;
 
     for (i = 0; i < BtlChar_GetCount(); i++) {
-        BtlCtlChr *chr = BtlChar_Get(i);
-
-        if (!BtlChar_IsFrozen(chr)) {
-            if (BtlChar_TestFlag(chr, 0x8B)) {
-                holder = chr;
-            }
-            if (BtlChar_TestFlag(chr, 0x97)) {
-                held = chr;
-            }
-        }
-    }
-    if (holder != NULL && held != NULL && holder != held) {
-        BtlCtlObj *holderObj = BtlChar_GetObj(holder);
-        BtlCtlObj *heldObj = BtlChar_GetObj(held);
-        s32 node = heldObj->holdNode;
+        BtlCtlChr *holder = BtlChar_Get(i);
+        BtlCtlChr *held;
+        BtlCtlObj *holderObj, *heldObj;
+        s32 other, node;
+        if (BtlChar_IsFrozen(holder) || !BtlChar_TestFlag(holder, 0x8B)) continue;
+        /* Every grab/rush owns its own pair. Selecting the last holder and
+           last victim in the roster crosses two simultaneous animations and
+           drags a victim into the wrong hand (especially visible on giants).
+           The contact handshake pins this opponent for the move's duration. */
+        other = BtlOpp_GetPlayer(holder);
+        if (other < 0 || other >= BtlChar_GetCount() || other == i) continue;
+        held = BtlChar_Get(other);
+        if (BtlChar_IsFrozen(held) || !BtlChar_TestFlag(held, 0x97)) continue;
+        holderObj = BtlChar_GetObj(holder);
+        heldObj = BtlChar_GetObj(held);
+        node = heldObj->holdNode;
 
         BtlCharApi_GetNodePos(holder->objId, 0x34, &holderPos);
         BtlCharApi_GetNodePos(held->objId, node, &heldPos);
@@ -432,6 +432,27 @@ void BtlChars_UpdateHold(void) {
             BtlObjPose_CalcMatrices(heldObj);
             BtlChar_ObjToPose(held);
             BtlChar_SetFlag(held, 0x23);
+        }
+        {
+            extern f32 TagGiant_ObjectScale(void *);
+            if (TagGiant_ObjectScale(holderObj) != 1.0f || TagGiant_ObjectScale(heldObj) != 1.0f) {
+                /* An enlarged hand can reach past the arena ceiling/wall.
+                   Move the pair by the victim's boundary correction now,
+                   instead of letting stage 8 tear the victim out of the hand.
+                   Keep the native terrain and release processing intact. */
+                Vec4 before = BtlChar_GetPos(held)->pos;
+                BtlMove_ClampToStage(held);
+                Vec4_Sub(&delta, &BtlChar_GetPos(held)->pos, &before);
+                if (Vec3_Length(&delta) > 0.001f) {
+                    Vec4_Add(&BtlChar_GetPos(holder)->pos, &BtlChar_GetPos(holder)->pos, &delta);
+                    BtlChar_PoseToObj(holder, 0);
+                    BtlObjPose_CalcMatrices(holderObj);
+                    BtlChar_ObjToPose(holder);
+                    BtlChar_PoseToObj(held, 0);
+                    BtlObjPose_CalcMatrices(heldObj);
+                    BtlChar_ObjToPose(held);
+                }
+            }
         }
     }
 }

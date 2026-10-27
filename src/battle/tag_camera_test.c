@@ -7,6 +7,7 @@
 #include "battle/btl_char_move.h"
 #include "battle/btl_cam.h"
 #include "battle/btl_char_coll.h"
+#include "battle/bobj_a.h"
 extern BtlMgrChr *BtlChar_Get(s32);
 extern BtlMgrGauge *BtlMember_GetActiveGauge(BtlMgrChr *);
 extern void BtlAct_Request(BtlMgrChr *,s32),BtlAct_ClearQueue(BtlMgrChr *);
@@ -16,6 +17,39 @@ extern s32 BtlStage_FindZoneNear(s32,Vec4 *),BtlCharApi_HasCamPriority(s32);
 extern s32 TagTeam_CameraActor(s32),TagTeam_ShareClashCamera(s32);
 extern void Port_TagTestCheck(s32,s32),Port_TagClashTrace(s32,s32,s32,s32,s32);
 extern s32 Port_TagCameraTest(void);
+extern BobjObj *BtlChar_GetObj(BtlMgrChr *);
+extern f32 BtlCharApi_GetRadius(s32),BtlCharApi_GetCenterHeight(s32);
+extern void BtlCharApi_GetNodePos(s32,s32,Vec4 *);
+extern s32 BtlChar_TestFlag(BtlMgrChr *,s32);
+extern void BtlChar_SetHeldFlag(BtlMgrChr *,s32);
+extern void Port_TagTestPositions(u32,u32);
+
+static void grab_contact_fixture(BtlMgrChr *a,BtlMgrChr *b) {
+    BobjObj *o=BtlChar_GetObj(a),*v=BtlChar_GetObj(b);
+    BobjWork *w=o->work;
+    if(BtlAct_GetCurrent(a)!=0xB4)return;
+    if(w->atkSphereCount || w->atkObbCount) {
+        Vec4 p=((BtlMovePose *)&b->pose)->pos,r={0,3.14159265f,0,0};
+        Vec4 contact=w->atkSphereCount?w->atkSphere[0].center:w->atkObb[0].center;
+        p.x+=contact.x-v->body.cur->center.x;
+        p.y+=contact.y-v->body.cur->center.y;
+        p.z+=contact.z-v->body.cur->center.z;
+        BtlChar_Place(b,&p,&r,BtlStage_FindZoneNear(-1,&p));
+    }
+}
+static s32 check_hold(s32 holder,s32 victim) {
+    BtlMgrChr *a=BtlChar_Get(holder),*b=BtlChar_Get(victim);
+    Vec4 p,q;f32 x,y,z;
+    if(!BtlChar_TestFlag(a,0x8B)||!BtlChar_TestFlag(b,0x97)||BtlChar_GetObj(b)->anim.blend>0)return 0;
+    BtlCharApi_GetNodePos(a->objId,0x34,&p);
+    BtlCharApi_GetNodePos(b->objId,BtlChar_GetObj(b)->hit.node,&q);
+    x=p.x-q.x;y=p.y-q.y;z=p.z-q.z;
+    /* Check the final rendered pose, including subsequent gravity/terrain
+       corrections. A detached actor is hundreds of units away. */
+    if(x*x+y*y+z*z>=100)Port_TagTestPositions((u32)&p,(u32)&q);
+    Port_TagTestCheck(x*x+y*y+z*z<100,470+holder);
+    return 1;
+}
 
 /* Run on the successful native contact, before action dispatch can turn the
    pending catch into an animation. Exercise the late effect callbacks too. */
@@ -44,6 +78,7 @@ void TagCamera_TestContact(s32 attacker,s32 victim,s32 rush) {
 
 void TagCamera_TestTick(s32 tick) {
     static s32 caught,priority,finished,backstepped,attacked,overlaps;
+    static s32 heldFrames,simultaneous;
     BtlMgrChr *a=BtlChar_Get(0),*b=BtlChar_Get(3);
     s32 i;
     if(tick==30) {
@@ -52,16 +87,42 @@ void TagCamera_TestTick(s32 tick) {
             BtlMgrChr *c=BtlChar_Get(i);
             Vec4 p={i==1?300.0f:i==2?-300.0f:0.0f,0, i==3?22.0f:0.0f,1};
             Vec4 r={0,i==3?3.14159265f:0,0,0};
+            if(Port_TagCameraTest()>=5) {
+                p.y=-350;
+                if(i==3) {
+                    p.y+=BtlCharApi_GetCenterHeight(b->objId)-BtlCharApi_GetCenterHeight(a->objId);
+                    p.z=BtlCharApi_GetRadius(a->objId)+BtlCharApi_GetRadius(b->objId)+12;
+                }
+                if(Port_TagCameraTest()==6 && i==2) {p.x=300;p.z=22;r.y=3.14159265f;}
+            }
             BtlAct_ClearQueue(c);BtlAct_Request(c,0xB);
             BtlChar_Place(c,&p,&r,BtlStage_FindZoneNear(-1,&p));
+            if(Port_TagCameraTest()>=5)BtlChar_SetHeldFlag(c,0xE);
             c->freeze=c->freezeNext=0;
             BtlMember_GetActiveGauge(c)->health=30000;
         }
         while(TagTeam_Target(0)!=3) TagTeam_CycleTarget(0);
         while(TagTeam_Target(3)!=2) TagTeam_CycleTarget(3);
+        if(Port_TagCameraTest()==6) {
+            while(TagTeam_Target(1)!=2)TagTeam_CycleTarget(1);
+            while(TagTeam_Target(2)!=1)TagTeam_CycleTarget(2);
+        }
     }
     if(tick==35) {
         BtlAct_Request(a,0xB4);
+        if(Port_TagCameraTest()==6)BtlAct_Request(BtlChar_Get(1),0xB4);
+    }
+    if(Port_TagCameraTest()>=5 && !caught && tick>35 && tick<100) {
+        /* Put the receiving fighter in the live native grab volume. This
+           exercises the real collision/action handshake, without conflating
+           attachment with a test fighter falling out of range beforehand. */
+        grab_contact_fixture(a,b);
+    }
+    if(Port_TagCameraTest()==6 && tick>35 && tick<100)grab_contact_fixture(BtlChar_Get(1),BtlChar_Get(2));
+    if(Port_TagCameraTest()>=5) {
+        s32 held=check_hold(0,3);
+        heldFrames+=held;
+        if(Port_TagCameraTest()==6)simultaneous+=check_hold(1,2)&&held;
     }
     if(tick==40 && Port_TagCameraTest()==2)BtlAct_Request(b,0x1B);
     if(tick==50 && Port_TagCameraTest()==2) {
@@ -76,6 +137,13 @@ void TagCamera_TestTick(s32 tick) {
     if(tick>35 && tick%15==0) {
         Port_TagClashTrace(tick,0,TagTeam_CameraActor(0),BtlAnim_GetId(a),BtlAct_GetCurrent(a));
         Port_TagClashTrace(tick,3,TagTeam_CameraActor(3),BtlAnim_GetId(b),BtlAct_GetCurrent(b));
+        if(Port_TagCameraTest()>=5) {
+            BobjObj *o=BtlChar_GetObj(a);Vec4 p,q;
+            BtlCharApi_GetNodePos(a->objId,0x34,&p);
+            BtlCharApi_GetNodePos(b->objId,BtlChar_GetObj(b)->hit.node,&q);
+            Port_TagTestPositions((u32)&p,(u32)&q);
+            Port_TagClashTrace(tick,BtlChar_TestFlag(a,0x8B),BtlChar_TestFlag(b,0x97),o->work->atkSphereCount,o->work->atkObbCount);
+        }
     }
     if(BtlAct_GetCurrent(a)==0xB7 || BtlAct_GetCurrent(a)==0xBB) {
         if(!caught) {
@@ -89,7 +157,7 @@ void TagCamera_TestTick(s32 tick) {
             {
                 BtlMovePose *p=(BtlMovePose *)&a->pose,*q=(BtlMovePose *)&b->pose;
                 f32 x=p->pos.x-q->pos.x,y=p->pos.y-q->pos.y,z=p->pos.z-q->pos.z;
-                Port_TagTestCheck(x*x+y*y+z*z<150*150,416);
+                if(Port_TagCameraTest()<5)Port_TagTestCheck(x*x+y*y+z*z<150*150,416);
             }
             Port_TagTestCheck(!TagTeam_CinematicPaused(0)&&!TagTeam_CinematicPaused(3),402);
             if(priority==1 && Port_TagCameraTest()!=4) {
@@ -113,7 +181,6 @@ void TagCamera_TestTick(s32 tick) {
                 BtlChar_Place(c,&p,&r,BtlStage_FindZoneNear(-1,&p));
                 while(TagTeam_Target(i)!=victim->side)TagTeam_CycleTarget(i);
                 {
-                    extern void *BtlChar_GetObj(BtlMgrChr *);
                     extern s32 BtlBodyHit_Test(void *,void *);
                     if(BtlBodyHit_Test(BtlChar_GetObj(c),BtlChar_GetObj(victim)))overlaps++;
                 }
@@ -125,6 +192,8 @@ void TagCamera_TestTick(s32 tick) {
         }
     }
     if(finished==15) {
+        if(Port_TagCameraTest()>=5)Port_TagTestCheck(heldFrames>10,472);
+        if(Port_TagCameraTest()==6)Port_TagTestCheck(simultaneous>5,473);
         if(Port_TagCameraTest()==3)Port_TagTestCheck(attacked>0&&overlaps>0,420);
         Port_TagTestCheck(priority>0,405);
         Port_TagTestCheck(TagTeam_CameraActor(0)==0&&TagTeam_CameraActor(3)==3,406);

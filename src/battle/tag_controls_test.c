@@ -5,10 +5,12 @@
 #include "battle/btl_char_mgr.h"
 #include "battle/btl_char_move.h"
 #include "battle/btl_cam.h"
+#include "battle/btl_seq.h"
 #include "battle/tag_options.h"
 #include "battle/tag_balance.h"
 #include "battle/tag_cpu.h"
 #include "battle/tag_position.h"
+#include "battle/tag_revive.h"
 #include "battle/btl_char_coll.h"
 #include "battle/stg_a.h"
 #include "sys/pad.h"
@@ -100,12 +102,14 @@ static void spectator_test(void) {
 /* Land a human and a CPU on real out-of-ring ground, then keep the rest
    of the team alive long enough to catch the old get-up/attack regression. */
 static void ring_out_test(s32 tick) {
+    static s32 finishAge, sawVictory;
+    static Vec4 settled[2];
     s32 i;extern s32 BtlChar_TestFlag(BtlMgrChr *,s32),BtlChar_IsDead(BtlMgrChr *),BtlChar_IsFree(BtlMgrChr *);
     extern s32 TagRevive_Nearby(s32),TagRevive_Progress(s32);
-    for(i=2;i<4;i++)BtlChar_Get(i)->freezeNext=2;
+    if(tick<280)for(i=2;i<TagTeam_Count();i++)BtlChar_Get(i)->freezeNext=2;
     if(tick==30)for(i=0;i<2;i++) {
         BtlMgrChr *c=BtlChar_Get(i);Vec4 p={250,-1000,0,1},r={0,0,0,0};StgGroundHit ground;
-        p.z=i?60:-60;BtlStage_ProbeGround(-1,&p,&ground);p.y=ground.y;
+        p.z=i?60:-60;BtlStage_ProbeGround(-1,&p,&ground);p.y=ground.y-(i?100:0);
         BtlMember_GetActiveGauge(c)->health=30000;
         BtlAct_ClearQueue(c);BtlAct_Request(c,0xD9);
         /* Normal knock-downs disable the tournament's automatic low-altitude
@@ -127,18 +131,137 @@ static void ring_out_test(s32 tick) {
         Port_TagTestCheck(c->action==0xD8 || c->action==0xD9,374+i);
         Port_TagTestCheck(!TagTeam_CanContact(i,3-i)&&!TagTeam_CanContact(3-i,i),376+i);
         Port_TagTestCheck(TagRevive_Progress(i)==0,378+i);
+        {
+            BtlMovePose *p=(BtlMovePose *)&c->pose;
+            extern void Port_TagTestState(s32,s32,s32,s32);
+            Port_TagTestState(c->action,BtlChar_TestFlag(c,0xF),(s32)p->pos.y,(s32)p->unkB0.y);
+            Port_TagTestCheck(c->action==0xD8 && BtlChar_TestFlag(c,0xF),384+i);
+            if(tick==180) settled[i]=p->pos;
+            else Port_TagTestCheck(p->pos.y>settled[i].y-.1f && p->pos.y<settled[i].y+.1f,386+i);
+        }
     }
     if(tick==200) {
         /* Even a queued attack or mash recovery must not stand them back up. */
         for(i=0;i<2;i++)BtlAct_Request(BtlChar_Get(i),0x44);
     }
     if(tick==280) {
-        BtlMgrChr *ally=BtlChar_Get(2);ally->freeze=ally->freezeNext=ally->freezeDelay=0;
-        Port_TagTestCheck(TagTeam_TakeoverCandidate(0)==2&&TagTeam_Takeover(0),380);
-        Port_TagTestCheck(TagTeam_ControlActor(0)==2&&TagTeam_Player(0)<0,381);
+        s32 candidate;
+        for(i=2;i<TagTeam_Count();i++) {
+            BtlMgrChr *ally=BtlChar_Get(i);
+            ally->freeze=ally->freezeNext=ally->freezeDelay=0;
+        }
+        candidate=TagTeam_TakeoverCandidate(0);
+        Port_TagTestCheck(candidate>=0&&TagTeam_Takeover(0),380);
+        Port_TagTestCheck(TagTeam_ControlActor(0)==candidate&&TagTeam_Player(0)<0,381);
         Port_TagTestCheck(!TagTeam_CheckEnd(0),382);
-        BtlChar_SetHeldFlag(BtlChar_Get(1),7);BtlChar_SetHeldFlag(BtlChar_Get(3),7);
+        for(i=0;i<TagTeam_Count();i++)if(TagTeam_Team(i)==1)BtlChar_SetHeldFlag(BtlChar_Get(i),7);
         Port_TagTestCheck(TagTeam_CheckEnd(0),383);
+    }
+    if(tick>280) {
+        /* The old downed-body path queued F6 on its final fighting update:
+           it reloaded a ringed-out fighter, flew it in, then reset everyone. */
+        for(i=0;i<TagTeam_Count();i++) {
+            BtlMgrChr *c=BtlChar_Get(i);
+            if(c->action>=0xF3 && c->action<=0xF9) {
+                extern void Port_TagTestState(s32,s32,s32,s32);
+                Port_TagTestState(c->action,i,BtlSeq_GetState(),tick);
+                Port_TagTestCheck(0,388);
+            }
+        }
+        if(BtlSeq_IsFinish())finishAge++;
+        if(BtlSeq_GetState()==BTL_SEQ_WIN_TALK)sawVictory=1;
+        if(sawVictory && BtlSeq_GetState()==BTL_SEQ_END) {
+            Port_TagTestCheck(finishAge>=90,389);
+            Port_TagTestCheck(1,388);
+            Port_TagTestCheck(1,99);
+        }
+        if(tick>=1500)Port_TagTestCheck(0,390);
+    }
+}
+
+/* Drop an actual KO into the void, release/re-enable the catcher, then revive
+   it there using normal proximity, time and blast-stock rules. */
+static void corpse_safety_test(s32 tick) {
+    static Vec4 caught;
+    BtlMgrChr *body=BtlChar_Get(2),*rescuer=BtlChar_Get(0);
+    BtlMovePose *p=(BtlMovePose *)&body->pose;
+    BtlMgrGauge *g=BtlMember_GetActiveGauge(body),*payer=BtlMember_GetActiveGauge(rescuer);
+    s32 i;
+    f32 bottom=BtlStage_GetBottom();
+    extern s32 BtlAct_GetRequested(BtlMgrChr *),BtlChar_TestFlag(BtlMgrChr *,s32);
+    extern s32 TagRevive_Nearby(s32),TagRevive_Progress(s32);
+    extern void Port_TagTestState(s32,s32,s32,s32),Port_TagTestPositions(u32,u32);
+    if(tick==30) {
+        Vec4 spot={0,0,0,1},rot={0,0,0,0};StgGroundHit ground;
+        Port_TagTestCheck(Port_TagOption(TAG_OPT_CORPSE_SAFETY)==1,400);
+        Port_TagOptionSet(TAG_OPT_REVIVE,1);
+        Port_TagOptionSet(TAG_OPT_REVIVE_SECONDS,3);
+        Port_TagOptionSet(TAG_OPT_REVIVE_STOCKS,2);
+        for(i=0;i<TagTeam_Count();i++) {
+            BtlMgrChr *c=BtlChar_Get(i);
+            c->freeze=c->freezeNext=c->freezeDelay=0;
+            BtlAct_ClearQueue(c);BtlAct_Request(c,i==2?0xD9:0xB);
+            BtlMember_GetActiveGauge(c)->health=i==2?0:30000;
+        }
+        /* Below the lookout, or between Space's asteroids. The stage probe
+           must confirm there is no ordinary floor at the safety boundary. */
+        spot.x=BtlStage_GetInnerRadius()*.65f;spot.y=bottom-50;
+        BtlStage_ProbeGround(-1,&spot,&ground);
+        Port_TagTestState(Battle_GetStage(),(s32)bottom,(s32)ground.y,0);
+        Port_TagTestCheck(ground.y>bottom+1,401);
+        BtlChar_Place(body,&spot,&rot,BtlStage_FindZoneNear(-1,&spot));
+        /* Teleporting below the platform must discard the fixture's previous
+           cached ground. On BT4 a no-hit query deliberately retains that old
+           floor; otherwise this drop is lifted back onto the spawn platform. */
+        p->unkB0.y=ground.y;
+        BtlChar_ClearFlag(body,0xF);BtlChar_ClearFlag(body,0x10);
+        p->fallSpeed=0;
+        payer->blast=400000;
+    }
+    if(tick>30)for(i=0;i<TagTeam_Count();i++)
+        if(i!=2 && (i!=0 || tick<380))BtlChar_Get(i)->freezeNext=2;
+    if(tick==180 || tick==240 || tick==360) {
+        Port_TagTestState(body->action,g->health,(s32)p->pos.y,(s32)bottom);
+        Port_TagTestCheck(g->health==0 && body->action==0xD8 && TagRevive_FallenSupported(2),402);
+        Port_TagTestCheck(p->pos.y>=bottom-.01f && p->pos.y<=bottom+.01f && p->fallSpeed==0,403);
+        if(tick==180)caught=p->pos;
+        if(tick==240)Port_TagTestCheck(p->pos.x==caught.x && p->pos.z==caught.z,404);
+        Port_TagTestCheck(TagRevive_Progress(2)==0,405);
+    }
+    if(tick==245) {
+        /* A recovery already requested by another system must win. */
+        BtlAct_Request(body,0xB);TagRevive_CatchFallen(2);
+        Port_TagTestCheck(BtlAct_GetRequested(body)==0xB,406);
+        BtlAct_Request(body,0xD8);
+        BtlChar_SetHeldFlag(body,7);
+        Port_TagTestCheck(!TagRevive_FallenSupported(2),407);
+        BtlChar_ClearFlag(body,7);
+        g->health=100;
+        Port_TagTestCheck(!TagRevive_FallenSupported(2),408);
+        g->health=0;
+        Port_TagOptionSet(TAG_OPT_CORPSE_SAFETY,0);
+    }
+    if(tick==275) {
+        Port_TagTestCheck(!TagRevive_FallenSupported(2) && p->pos.y>bottom+10,409);
+        Port_TagOptionSet(TAG_OPT_CORPSE_SAFETY,1);
+    }
+    if(tick==380) {
+        Vec4 q=p->pos,rot={0,0,0,0};q.x-=20;
+        rescuer->freeze=rescuer->freezeNext=rescuer->freezeDelay=0;
+        BtlAct_ClearQueue(rescuer);BtlAct_Request(rescuer,0xB);
+        BtlChar_Place(rescuer,&q,&rot,BtlStage_FindZoneNear(-1,&q));
+        ((BtlMovePose *)&rescuer->pose)->unkB0.y=p->unkB0.y;
+        BtlChar_ClearFlag(rescuer,0xF);BtlChar_ClearFlag(rescuer,0x10);
+        Port_TagTestCheck(TagRevive_Nearby(0)==2,410);
+    }
+    if(tick==410)Port_TagTestCheck(TagRevive_Progress(2)>0,411);
+    if(tick==520) {
+        Port_TagTestPositions((u32)&p->pos,(u32)&caught);
+        Port_TagTestState(body->action,g->health,payer->blast,TagRevive_Progress(2));
+        Port_TagTestCheck(g->health==g->healthMax/4 && TagTeam_IsAlive(2),412);
+        Port_TagTestCheck(payer->blast>=200000 && payer->blast<300000,413);
+        Port_TagTestCheck(body->action!=0xD8 && body->action!=0xD9 && !TagRevive_FallenSupported(2),414);
+        Port_TagTestCheck(p->pos.y<bottom+20 && !BtlChar_TestFlag(body,7),415);
         Port_TagTestCheck(1,99);
     }
 }
@@ -147,6 +270,7 @@ void TagControls_TestTick(s32 tick) {
     s32 i, before;
     BtlMgrChr *a=BtlChar_Get(0), *ally=BtlChar_Get(2);
     if(Port_TagControlsTest()==4) {ring_out_test(tick);return;}
+    if(Port_TagControlsTest()==5) {corpse_safety_test(tick);return;}
     if(Port_TagControlsTest()==3) {
         if(tick==30) {
             Vec4 p={0,0,0,1},r={0,0,0,0};

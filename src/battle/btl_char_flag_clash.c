@@ -378,6 +378,8 @@ s32 BtlClash_UpdateA(BtlClashPair *pair, s32 state) {
         }
         c->timer++;
         if (c->timer >= 0x6A) {
+            extern s32 TagBeam_ShowcaseHolding(void);
+            if(TagBeam_ShowcaseHolding()) {c->timer=60;c->lead=0;break;}
             c->timer = 0;
             state++;
         }

@@ -432,8 +432,11 @@ void TagTeam_SetupDemo(s32 human, s32 team0, s32 team1) {
         if(Port_TagShowcase()) {
             extern s32 Port_TagShowcaseLead(s32,s32);
             static const s32 cast[]={16,32,22,4,43};
+            static const s32 showcaseCast[2][3]={{50,53,21},{112,138,133}};
             for(team=0;team<2;team++)for(member=0;member<sizes[team];member++) {
                 setup->sides[team].members[member].chara=team?108:cast[member];
+                if(Port_TagShowcase()>=3)
+                    setup->sides[team].members[member].chara=showcaseCast[team][member%3];
                 if(member==0) setup->sides[team].members[member].chara=Port_TagShowcaseLead(team,setup->sides[team].members[member].chara);
                 setup->sides[team].members[member].costume=0;
             }

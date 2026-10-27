@@ -25,11 +25,71 @@ extern void Port_TagTestCheck(s32,s32), Port_TagClashTrace(s32,s32,s32,s32,s32);
 extern s32 Port_TagShowcase(void);
 extern s32 Port_TagShowcaseDelay(void);
 extern s32 TagNet_Active(void);
+extern EftHSlot *EftShot_GetSlot(s32,s32);
 static s32 showcaseTick,showcaseActive,showcaseHelpers;
+
+/* The extended photo takes hold an even struggle for an orbit. This is only
+ * enabled by the capture environment; ordinary matches keep native timing. */
+s32 TagBeam_ShowcaseHolding(void) {
+    return Port_TagShowcase()>=3 && showcaseTick<780;
+}
+static void showcase_three(s32 tick) {
+    extern void Port_TagShowcaseFrame(s32);
+    s32 i,help=Port_TagShowcase()==4,active=0,helpers=0;
+    static const s32 slots[6]={2,3,2,2,2,2};
+    static const s32 starts[6]={80,100,95,80,110,80};
+    showcaseTick=tick;
+    Port_TagShowcaseFrame(tick);
+    if(tick==1) {
+        Port_TagOptionSet(TAG_OPT_BEAM_ASSIST_CPU,help);
+        Port_TagOptionSet(TAG_OPT_BEAM_ASSIST_RANGE,150);
+        Port_TagOptionSet(TAG_OPT_CINEMATIC_PAUSE,0);
+        Port_TagOptionSet(TAG_OPT_CLASH_QTE,0);
+    }
+    if(tick==30)for(i=0;i<6;i++) {
+        BtlMgrChr *c=BtlChar_Get(i);
+        Vec4 p={(i/2-1)*160.0f,-180,(i&1)?150:-150,1};
+        Vec4 r={0,(i&1)?3.14159265f:0,0,0};
+        if(help) {p.x=i<2?0:(i<4?-30:30);p.z=(i&1)?150:-150;}
+        BtlAct_ClearQueue(c);BtlAct_Request(c,0xB);
+        BtlMember_GetActiveGauge(c)->ki=BtlMember_GetActiveGauge(c)->kiMax;
+        BtlMember_GetActiveGauge(c)->blast=500000;
+        BtlMember_GetActiveGauge(c)->health=200000;
+        BtlChar_Place(c,&p,&r,BtlStage_FindZoneNear(-1,&p));
+        while(TagTeam_Target(i)!=(help?((i&1)?0:1):(i^1)))TagTeam_CycleTarget(i);
+        { extern s32 BtlSuper_GetType(BtlMgrChr *,s32),BtlSuper_GetHitDirKind(BtlMgrChr *,s32);
+          s32 k;for(k=2;k<5;k++){EftHSlot *fx=EftShot_GetSlot(i,k);
+          Port_TagClashTrace(600+i,k,BtlSuper_GetType(c,k),BtlSuper_GetHitDirKind(c,k),fx->param->type);} }
+    }
+    for(i=0;i<(help?2:6);i++) {
+        BtlMgrChr *c=BtlChar_Get(i);
+        if(tick>30 && !BtlClash_State(i))while(TagTeam_Target(i)!=(help?((i&1)?0:1):(i^1)))TagTeam_CycleTarget(i);
+        if(tick==starts[i])BtlAct_Request(c,BtlAct_GetTechniqueAction(c,slots[i]));
+        if(c->action>=0x10F && c->action<=0x111 &&
+           BtlAnim_GetId(c)==262+34*(c->action-0x10F))((BtlSuperChr *)c)->work[0]|=1;
+        if(tick%5==0 && tick<240)Port_TagClashTrace(tick,i,c->action,BtlAnim_GetId(c),BtlClash_State(i));
+    }
+    for(i=0;i<6;i++) {
+        if(tick>=30 && tick<780) {
+            extern void BtlChar_PoseToObj(BtlMgrChr *,s32);
+            BtlMgrChr *c=BtlChar_Get(i);
+            BtlMovePose *p=(BtlMovePose *)&c->pose;
+            p->pos.y=-180;p->fallSpeed=0;p->unk20.y=0;
+            BtlChar_PoseToObj(c,1);
+        }
+        if(EftStruggle_IsActiveFor(i))active++;
+        if(TagAssist_Active(i))helpers++;
+        ((BtlFlagChr *)BtlChar_Get(i))->clashCountA=0;
+    }
+    if(active==(help?2:6) && (!help||helpers==4))showcaseActive++;
+    if(tick%30==0)Port_TagClashTrace(tick,99,active,helpers,showcaseActive);
+    if(tick==1100) {Port_TagTestCheck(showcaseActive>300,560);Port_TagTestCheck(1,99);}
+}
 
 /* Local capture fixture: real beams, clash collision and CPU assistance. Only
    staging, inputs, HUD visibility and the filming camera are directed. */
 static void showcase(s32 tick) {
+    if(Port_TagShowcase()>=3) {showcase_three(tick);return;}
     s32 i,n=TagTeam_Count(),help=Port_TagShowcase()==2,helpers=0;
     showcaseTick=tick;
     if(tick==1) {
@@ -107,6 +167,15 @@ s32 TagBeam_ShowcaseCamera(void) {
     eye=(Vec4){80,-35,-20,1};look=(Vec4){0,-26,-5,1};
     {extern void Port_TagShowcaseView(Vec4 *,Vec4 *);Port_TagShowcaseView(&eye,&look);}
     eye.z+=showcaseTick*.035f;
+    if(Port_TagShowcase()>=3) {
+        extern f32 sinf(f32),cosf(f32);
+        f32 t=(showcaseTick-190)/590.0f,angle;
+        if(t<0)t=0;if(t>1)t=1;
+        angle=0.55f+t*4.8f;
+        look=(Vec4){0,-188,0,1};
+        eye=(Vec4){sinf(angle)*(Port_TagShowcase()==3?420:275),-275-35*sinf(t*3.14159265f),cosf(angle)*(Port_TagShowcase()==3?420:275),1};
+        {extern void Port_TagShowcaseView(Vec4 *,Vec4 *);Port_TagShowcaseView(&eye,&look);}
+    }
     BtlCam_SelectView(0);BtlCam_SetLayout(0,0);v=BtlCam_GetNativeView(0);
     x=look.x-eye.x;y=look.y-eye.y;z=look.z-eye.z;
     v->pos=eye;v->rot=(Vec4){-atan2f(y,sqrtf(x*x+z*z)),atan2f(x,z),0,0};

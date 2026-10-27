@@ -94,7 +94,8 @@
  X(PRACTICE_PROMPTS,"tag_practice_prompts","Practice Challenge Hints",11,0,1,1,1,"Show challenge requests, menu hints and character-change messages in practice.") \
  X(PRACTICE_RECOVERY_TEXT,"tag_practice_recovery_text","Practice Recovery Countdown",11,0,1,1,1,"Show the countdown before getting up again in practice.") \
  X(WAVE_TITLE_TEXT,"tag_wave_title_text","Gauntlet Wave Titles",11,0,1,1,1,"Show the title when a new gauntlet wave begins.") \
- X(ROUND_END_TEXT,"tag_round_end_text","Gauntlet Round End Text",11,0,1,1,1,"Show the round-over message between gauntlet waves.")
+ X(ROUND_END_TEXT,"tag_round_end_text","Gauntlet Round End Text",11,0,1,1,1,"Show the round-over message between gauntlet waves.") \
+ X(CORPSE_SAFETY,"tag_corpse_safety","Keep Fallen Fighters in Bounds",0,0,1,1,1,"Catch KO'd fighters at the lower stage boundary so teammates can reach them. Ring-outs remain permanent.")
 #define TAG_OPTION_ENUM(id,key,label,group,min,max,step,def,help) TAG_OPT_##id,
 enum {
     TAG_OPTION_LIST(TAG_OPTION_ENUM)

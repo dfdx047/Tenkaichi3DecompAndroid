@@ -163,6 +163,15 @@ static SDL_AudioDeviceID sDevice;
 static int sMono, sTried;
 static unsigned sFeedCalls; /* callbacks from SDL so far (BT3_SND_VERBOSE prints it at a stop) */
 
+/* Optional game-only audio for local showcase captures. Each chunk records
+   its game frame, so the recording tool can trim it with the GPU screenshots. */
+static void SDLCALL capture_mix(void *user, const SDL_AudioSpec *spec, float *buffer, int bytes) {
+    FILE *file=(FILE *)user;
+    uint32_t header[4]={gGsFrame,(uint32_t)spec->freq,(uint32_t)spec->channels,(uint32_t)bytes};
+    fwrite(header,sizeof(header),1,file);
+    fwrite(buffer,1,bytes,file);
+}
+
 extern int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size); /* plat_file.c */
 
 static uint32_t be32(const uint8_t *p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
@@ -179,6 +188,11 @@ static int device(void) {
                 fprintf(stderr, "bt3: no sound device: %s\n", SDL_GetError());
             }
             else {
+                const char *capture=getenv("BT3_CAPTURE_AUDIO");
+                if(capture && getenv("BT3_TAG_SHOWCASE")) {
+                    FILE *file=fopen(capture,"wb");
+                    if(file)SDL_SetAudioPostmixCallback(sDevice,capture_mix,file);
+                }
                 SDL_ResumeAudioDevice(sDevice);
                 fprintf(stderr, "bt3: sound: %s\n", SDL_GetCurrentAudioDriver());
             }

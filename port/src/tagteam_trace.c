@@ -87,6 +87,10 @@ void Port_TagAssistTrace(int actor,int state,int action,int tick) {
         fprintf(stderr,"tagassist actor=%d state=%d action=%x tick=%d\n",actor,state,action,tick);
 }
 int Port_TagShowcase(void) {const char *v=getenv("BT3_TAG_SHOWCASE");return v?atoi(v):0;}
+void Port_TagShowcaseFrame(int tick) {
+    extern unsigned gGsFrame;
+    if(getenv("BT3_TAG_SHOWCASE"))fprintf(stderr,"showcase-frame tick=%d frame=%u\n",tick,gGsFrame);
+}
 int Port_TagShowcaseDelay(void) {const char *v=getenv("BT3_TAG_SHOWCASE_DELAY");return v?atoi(v):15;}
 int Port_TagShowcaseDistance(void) {const char *v=getenv("BT3_TAG_SHOWCASE_DISTANCE");int d=v?atoi(v):150;return d<40?40:d;}
 void Port_TagShowcaseView(float *eye,float *look) {

@@ -10,6 +10,8 @@
 #include "battle/tag_options.h"
 #include "battle/tag_fusion.h"
 #include "battle/tag_assist.h"
+#include "battle/tag_revive.h"
+#include "battle/stg_a.h"
 
 extern void *memset(void *, s32, u32);
 extern BtlMgrChr *BtlChar_Get(s32);
@@ -21,6 +23,7 @@ extern s32 BtlChar_IsFrozen(BtlMgrChr *);
 extern s32 BtlColl_IsGuarding(BtlMgrChr *);
 extern s32 BtlCharApi_IsInRushSequence(s32), BtlCharApi_IsChanging(s32);
 extern void BtlAct_ClearQueue(BtlMgrChr *), BtlAct_Request(BtlMgrChr *, s32);
+extern s32 BtlAct_GetRequested(BtlMgrChr *);
 extern s32 Port_TagOption(s32);
 extern void Port_TagRevived(s32, s32, s32);
 
@@ -28,6 +31,39 @@ static s32 progress[TAG_TEAM_CAPACITY], helper[TAG_TEAM_CAPACITY], previousHp[TA
 static s32 trainingHp[TAG_TEAM_CAPACITY], trainingQuiet[TAG_TEAM_CAPACITY];
 static s32 enabled = 1, duration = 90, cost = 2;
 static f32 radius = 45.0f;
+
+s32 TagRevive_FallenSupported(s32 actor) {
+    BtlMgrChr *c;
+    BtlMovePose *p;
+    f32 bottom;
+    s32 state;
+    if(!TagTeam_Active() || !Port_TagOption(TAG_OPT_CORPSE_SAFETY) ||
+       actor<0 || actor>=TagTeam_Count() || !BtlStage_IsReady() ||
+       (Battle_GetWork()->flags&BATTLE_FLAG_LOADING)) return 0;
+    state=BtlSeq_GetState();
+    if(state<BTL_SEQ_FIGHT || state>BTL_SEQ_END) return 0;
+    c=BtlChar_Get(actor);
+    if((c->action!=0xD8 && c->action!=0xD9) || BtlMember_GetActiveGauge(c)->health>0 ||
+       BtlChar_TestFlag(c,7) || TagFusion_Hidden(actor) || TagChallenge_Hidden(actor)) return 0;
+    p=(BtlMovePose *)&c->pose;
+    bottom=BtlStage_GetBottom();
+    /* Bounds are read each update, including after stage destruction/expansion.
+       Comparisons also reject NaN and infinite positions or stage parameters. */
+    return bottom>-100000.0f && bottom<100000.0f && BtlStage_GetTop()<bottom &&
+           p->pos.y>=bottom && p->pos.y<1000000.0f;
+}
+
+void TagRevive_CatchFallen(s32 actor) {
+    BtlMgrChr *c;
+    BtlMovePose *p;
+    s32 next;
+    if(!TagRevive_FallenSupported(actor)) return;
+    c=BtlChar_Get(actor);p=(BtlMovePose *)&c->pose;
+    p->pos.y=BtlStage_GetBottom();p->fallSpeed=0;
+    next=BtlAct_GetRequested(c);
+    if(c->action==0xD9 && (next==-1 || next==0xD9)) BtlAct_Request(c,0xD8);
+}
+
 s32 TagRevive_Progress(s32 i) { return progress[i]; }
 s32 TagRevive_Helper(s32 i) { return helper[i]; }
 s32 TagRevive_Enabled(void) { return !TagLobby_Practice() && Port_TagOption(TAG_OPT_REVIVE) && TagSession_Mode()!=TAG_MODE_FREE_FOR_ALL; }

@@ -1178,11 +1178,13 @@ void BtlAct_Update(BtlActChr *chr) {
 #ifdef PORT
     /* The original duel ends immediately on ring-out. A team fight can keep
        going, so put the eliminated body down and reject recovery/attack
-       requests while its teammates finish the round. Keep normal falling. */
+       requests while its teammates finish the round. Let the native falling,
+       landing impact and lying-down chain finish; blocking DC/DB leaves a
+       fighter looping the falling animation even after ground collision. */
     if (TagTeam_Active() && BtlChar_TestFlag(chr, 3) && BtlChar_TestFlag(chr, 7)) {
         BtlAct_ClearQueue(chr);
-        if (act->current != 0xD8 && act->current != 0xD9) BtlAct_Request(chr, 0xD8);
-        else if (act->request != 0xD8 && act->request != 0xD9) act->request = -1;
+        if (act->current < 0xD8 || act->current > 0xDE) BtlAct_Request(chr, 0xD8);
+        else if (act->request < 0xD8 || act->request > 0xDE) act->request = -1;
     }
 #endif
     if (act->request != -1) {

@@ -128,6 +128,12 @@ void TagTeam_TestTick(void) {
     {extern s32 TagNet_Enabled(void);if(TagNet_Enabled())return;}
     {extern s32 Port_TagModeRushTest(void);extern void TagModeRush_TestTick(void);
      if(Port_TagModeRushTest()) {TagModeRush_TestTick();return;}}
+    /* Ring-out coverage follows the actual finish and victory states too. */
+    if(Port_TagControlsTest()==4) {
+        static s32 ringTick;
+        if(TagTeam_Active() && (BtlSeq_IsFighting() || ringTick)) TagControls_TestTick(++ringTick);
+        return;
+    }
     if((!Port_TagReviveTest()&&!Port_TagAudioTest()&&!Port_TagClashTest()&&!Port_TagControlsTest()&&!Port_TagBeamTest()&&!Port_TagCameraTest()&&!Port_TagFusionTest()&&!Port_TagGiantTest()&&!Port_TagCpuTest()&&!Port_TagStageTest()&&!Port_TagCinemaTest()&&!Port_TagResultTest()) || !TagTeam_Active() || !BtlSeq_IsFighting()) return;
     if(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE) return;
     tick++;
@@ -151,7 +157,9 @@ void TagTeam_TestTick(void) {
     }
     if(Port_TagStageTest()) {TagStage_TestTick(tick);return;}
     if(Port_TagCpuTest()) {TagCpu_TestTick(tick);return;}
-    if(tick==1 && !Port_TagAudioTest())check_start_spacing();
+    /* The catcher fixture places its actors below the arena itself; ordinary
+       spawn spacing has separate coverage and is not its starting condition. */
+    if(tick==1 && !Port_TagAudioTest() && Port_TagControlsTest()!=5)check_start_spacing();
     if(Port_TagGiantTest()) { TagGiant_TestTick(tick); return; }
     if(Port_TagCameraTest()) { TagCamera_TestTick(tick); return; }
     if(Port_TagFusionTest()) { TagFusion_TestTick(tick); return; }

@@ -767,3 +767,5 @@ Next ]	Siguiente ]
 Free camera (F)	Cámara libre (F)
 Left stick: move. Right stick: look. L1/R1: height. Keyboard uses your game bindings (F1 to change).	Stick izquierdo: mover. Stick derecho: mirar. L1/R1: altura. El teclado usa tus controles del juego (F1 para cambiarlos).
 Leave match	Abandonar combate
+Keep Fallen Fighters in Bounds	Mantener a los caídos dentro del escenario
+Catch KO'd fighters at the lower stage boundary so teammates can reach them. Ring-outs remain permanent.	Detiene a los luchadores noqueados en el límite inferior del escenario para que sus compañeros puedan alcanzarlos. Las eliminaciones por salida del ring siguen siendo permanentes.
