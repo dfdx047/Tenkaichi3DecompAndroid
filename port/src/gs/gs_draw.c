@@ -372,12 +372,13 @@ static GsTex tbo_upload(uint32_t *px, uint32_t w, uint32_t h) {
     return tbo_upload_levels(lv, lw, lh, levels);
 }
 
-/* The lines of letters (gs/tbo_text.c): each place's texture and what it shows; a texture drawn in this frame is
-   kept until the next (the line changed under it: the old one is shown once more). */
+/* The lines of letters (gs/tbo_text.c): each place's texture and what it shows, and what the place gave in which
+   frame (`shown` in `frame`: one answer a frame, so a line's outline and fill are always the same picture, and a
+   picture given in this frame is not destroyed before its end). */
 extern uint32_t TboText_Version(uint32_t id);
 extern uint32_t *TboText_Pixels(uint32_t id, uint32_t *version, uint32_t *w, uint32_t *h);
 static struct {
-    GsTex tex;
+    GsTex tex, shown;
     uint32_t version, frame;
 } sTboText[TBO_TEXT_SLOTS];
 
@@ -425,15 +426,13 @@ static int tbo_text_thread(void *arg) {
     return 0;
 }
 
-/* What a place shows while its new picture is not ready: the one it had, marked as drawn in this frame (a line is
-   two draws, its outline and its fill: the picture one of them took must not be replaced, and so destroyed, before
-   the other in the same frame; that was a crash at the frame's end, the texture gone), or nothing yet (clear). */
+/* What a place shows while its new picture is not ready: nothing (clear). Not the picture it had: that is another
+   line's, and the game already lays the place out at the new line's measures, so the old letters were stretched
+   into them for a few frames (the letters looked bent while moving through the menus). */
 static GsTex tbo_text_keep(uint32_t slot) {
-    if (sTboText[slot].tex != 0) {
-        sTboText[slot].frame = gGsFrame;
-        return sTboText[slot].tex;
-    }
-    return sClearTex != 0 ? sClearTex : gsWhite;
+    sTboText[slot].shown = sClearTex != 0 ? sClearTex : gsWhite;
+    sTboText[slot].frame = gGsFrame;
+    return sTboText[slot].shown;
 }
 
 static GsTex tbo_text_texture(uint32_t id) {
@@ -441,7 +440,11 @@ static GsTex tbo_text_texture(uint32_t id) {
     GsTex old = sTboText[slot].tex, tex = 0;
     int i, asked = 0;
 
-    if (old != 0 && (sTboText[slot].version == version || sTboText[slot].frame == gGsFrame)) {
+    if (sTboText[slot].frame == gGsFrame && sTboText[slot].shown != 0) {
+        return sTboText[slot].shown; /* (a line is two draws, its outline and its fill: both get the same) */
+    }
+    if (old != 0 && sTboText[slot].version == version) {
+        sTboText[slot].shown = old;
         sTboText[slot].frame = gGsFrame;
         return old;
     }
@@ -506,9 +509,10 @@ static GsTex tbo_text_texture(uint32_t id) {
         return tbo_text_keep(slot);
     }
     if (old != 0) {
-        sBackend->texDestroy(old);
+        sBackend->texDestroy(old); /* (not given in this frame: that would have been answered above) */
     }
     sTboText[slot].tex = tex;
+    sTboText[slot].shown = tex;
     sTboText[slot].version = version;
     sTboText[slot].frame = gGsFrame;
     return tex;
