@@ -156,6 +156,7 @@ s32 BtlCharApi_GetUnk974(s32 objId);
 void *BtlCharApi_GetUnk974Data(s32 objId);
 s32 BtlCharApi_TestFlag2B(s32 objId);
 s32 BtlCharApi_GetCamPose(s32 objId, Vec4 *pos, Vec4 *rot);
+s32 BtlCharApi_IsMoving(s32 objId);
 f32 BtlCharApi_GetCamUnk4A0(s32 objId);
 s32 BtlCharApi_HasCamPriority(s32 objId);
 void BtlCharApi_ShakeCamsNear(Vec4 *pos, f32 near, f32 far, f32 arg3, f32 arg4);

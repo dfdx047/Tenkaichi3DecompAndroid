@@ -595,6 +595,13 @@ s32 BtlCharApi_GetCamPose(s32 objId, Vec4 *pos, Vec4 *rot) {
     return 0;
 }
 
+/* Fighter flag 0xE: locomotion, including ground and air movement actions. */
+s32 BtlCharApi_IsMoving(s32 objId) {
+    BtlCharApiChr *chr = BtlChar_FindByObjId(objId);
+
+    return chr != NULL ? BtlChar_TestFlag(chr, 0xE) : 0;
+}
+
 /* Float at fighter +0x4A0. */
 f32 BtlCharApi_GetCamUnk4A0(s32 objId) {
     BtlCharApiChr *chr = BtlChar_FindByObjId(objId);

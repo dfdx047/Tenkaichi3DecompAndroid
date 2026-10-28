@@ -2,6 +2,7 @@
 #include "main.h"
 #include "battle/battle.h"
 #include "battle/btl_cam.h"
+#include "battle/btl_char_api.h"
 #include "battle/btl_demo_cam.h"
 #include "port/camera.h"
 #include "sys/heap.h"
@@ -369,6 +370,17 @@ void BtlCam_UpdateView(s32 side) {
     }
     BtlCharApi_GetCamPose(objId, &view->pos, &view->rot);
     view->priority = BtlCharApi_HasCamPriority(objId);
+    if (Port_CameraEnabled()) {
+        f32 fov = Port_CameraValue("fov_base", 61.2f);
+        f32 extra = Port_CameraValue("fov_move_extra", 0.0f);
+        f32 width = view->split ? 128.0f : 256.0f;
+
+        if (BtlCharApi_IsMoving(objId)) fov += extra;
+        if (fov < 35.0f) fov = 35.0f;
+        if (fov > 100.0f) fov = 100.0f;
+        view->view.screenDist = width / Mathf_Tan(fov * 0.00872664626f);
+        View_BuildProjection(&view->view);
+    }
     BtlCam_BuildView(view, 1);
 }
 
