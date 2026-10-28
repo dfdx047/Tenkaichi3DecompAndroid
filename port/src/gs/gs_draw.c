@@ -298,11 +298,11 @@ static unsigned char sLangMissing[3];
 /* Makes a texture of RGBA pixels (the GS's alpha) with its smaller copies, each half the one before, averaged by
    2 x 2: these pictures are mostly shown smaller than they are (letters, the crest), and one sample of the full
    picture per pixel shimmers. Takes `px`; 0 if no texture could be had. */
-static GsTex tbo_upload(uint32_t *px, uint32_t w, uint32_t h) {
-    uint32_t *lv[12];
-    uint32_t lw[12], lh[12], x, y;
+/* The smaller copies of a picture (its mipmap levels), each a quarter of the one before, colour weighted by alpha.
+   lv[0] = px; returns how many levels there are. (Any thread: it only reads px and allocates.) */
+static int tbo_levels(uint32_t *px, uint32_t w, uint32_t h, uint32_t *lv[12], uint32_t lw[12], uint32_t lh[12]) {
+    uint32_t x, y;
     int levels = 1, k;
-    GsTex tex;
 
     lv[0] = px;
     lw[0] = w;
@@ -337,6 +337,15 @@ static GsTex tbo_upload(uint32_t *px, uint32_t w, uint32_t h) {
         lh[levels] = nh;
         levels++;
     }
+    return levels;
+}
+
+/* Uploads a picture and its levels (made by tbo_levels, or made here); takes them. 0 when it could not. */
+static GsTex tbo_upload_levels(uint32_t *lv[12], uint32_t lw[12], uint32_t lh[12], int levels) {
+    uint32_t *px = lv[0], w = lw[0], h = lh[0];
+    GsTex tex;
+    int k;
+
     if (px != NULL && sBackend->texSlotsLeft() < levels) {
         for (k = 1; k < levels; k++) {
             free(lv[k]);
@@ -356,6 +365,13 @@ static GsTex tbo_upload(uint32_t *px, uint32_t w, uint32_t h) {
     return tex;
 }
 
+static GsTex tbo_upload(uint32_t *px, uint32_t w, uint32_t h) {
+    uint32_t *lv[12], lw[12], lh[12];
+    int levels = tbo_levels(px, w, h, lv, lw, lh);
+
+    return tbo_upload_levels(lv, lw, lh, levels);
+}
+
 /* The lines of letters (gs/tbo_text.c): each place's texture and what it shows; a texture drawn in this frame is
    kept until the next (the line changed under it: the old one is shown once more). */
 extern uint32_t TboText_Version(uint32_t id);
@@ -365,24 +381,132 @@ static struct {
     uint32_t version, frame;
 } sTboText[TBO_TEXT_SLOTS];
 
-static GsTex tbo_text_texture(uint32_t id) {
-    uint32_t slot = id - TBO_TEXT_BASE, version = TboText_Version(id), w, h, *px;
-    GsTex tex;
+/* A new line's picture (its letters, their outline: tens of milliseconds of the processor on a phone for a long
+   line, and the cursor of the online screens changes two or three at each step) is made on a thread of its own with
+   its smaller copies; the renderer only uploads it when it is ready. Meanwhile the place shows what it showed, or
+   nothing (a line that is new: clear, not a white box). */
+#define TEXT_JOBS 8
+typedef struct {
+    int state; /* 0 free, 1 asked, 2 being made, 3 made */
+    uint32_t slot, version, *lv[12], lw[12], lh[12];
+    int levels;
+} TboTextJob;
+static TboTextJob sTextJob[TEXT_JOBS];
+static SDL_Mutex *sTextLock;
+static SDL_Condition *sTextWake;
+static SDL_Thread *sTextThread;
+static GsTex sClearTex;
 
-    if (sTboText[slot].tex != 0 && (sTboText[slot].version == version || sTboText[slot].frame == gGsFrame)) {
+static int tbo_text_thread(void *arg) {
+    (void)arg;
+    SDL_LockMutex(sTextLock);
+    for (;;) {
+        TboTextJob *j = NULL;
+        uint32_t version = 0, w = 0, h = 0, *px;
+        int i;
+
+        for (i = 0; i < TEXT_JOBS && j == NULL; i++) {
+            if (sTextJob[i].state == 1) {
+                j = &sTextJob[i];
+            }
+        }
+        if (j == NULL) {
+            SDL_WaitCondition(sTextWake, sTextLock);
+            continue;
+        }
+        j->state = 2;
+        SDL_UnlockMutex(sTextLock);
+        px = TboText_Pixels(TBO_TEXT_BASE + j->slot, &version, &w, &h);
+        j->levels = px != NULL ? tbo_levels(px, w, h, j->lv, j->lw, j->lh) : 0;
+        SDL_LockMutex(sTextLock);
+        j->version = version;
+        j->state = 3;
+    }
+    return 0;
+}
+
+/* What a place shows while its new picture is not ready: the one it had, marked as drawn in this frame (a line is
+   two draws, its outline and its fill: the picture one of them took must not be replaced, and so destroyed, before
+   the other in the same frame; that was a crash at the frame's end, the texture gone), or nothing yet (clear). */
+static GsTex tbo_text_keep(uint32_t slot) {
+    if (sTboText[slot].tex != 0) {
         sTboText[slot].frame = gGsFrame;
         return sTboText[slot].tex;
     }
-    if (sBackend->texSlotsLeft() <= 0) {
-        return sTboText[slot].tex != 0 ? sTboText[slot].tex : gsWhite;
+    return sClearTex != 0 ? sClearTex : gsWhite;
+}
+
+static GsTex tbo_text_texture(uint32_t id) {
+    uint32_t slot = id - TBO_TEXT_BASE, version = TboText_Version(id);
+    GsTex old = sTboText[slot].tex, tex = 0;
+    int i, asked = 0;
+
+    if (old != 0 && (sTboText[slot].version == version || sTboText[slot].frame == gGsFrame)) {
+        sTboText[slot].frame = gGsFrame;
+        return old;
     }
-    px = TboText_Pixels(id, &version, &w, &h);
-    tex = px != NULL ? tbo_upload(px, w, h) : 0;
+    if (sTextLock == NULL) { /* (once) */
+        sTextLock = SDL_CreateMutex();
+        sTextWake = SDL_CreateCondition();
+        sTextThread = sTextLock != NULL && sTextWake != NULL ? SDL_CreateThread(tbo_text_thread, "tbo letters", NULL) : NULL;
+        if (sTextThread == NULL) {
+            fprintf(stderr, "bt3: no thread for the online screens' letters: made on the renderer's\n");
+        }
+    }
+    if (sClearTex == 0 && sBackend->texSlotsLeft() > 0) {
+        uint32_t *clear = calloc(1, 4);
+        if (clear != NULL && (sClearTex = sBackend->texCreate(1, 1, GS_TEXFMT_RGBA8, 1)) != 0) {
+            sBackend->texUpload(sClearTex, 0, 1, 1, GS_TEXFMT_RGBA8, clear, 4);
+        } else {
+            free(clear);
+        }
+    }
+    if (sTextThread == NULL) { /* (as it was: here and now) */
+        uint32_t w, h, *px;
+        if (sBackend->texSlotsLeft() <= 0) {
+            return tbo_text_keep(slot);
+        }
+        px = TboText_Pixels(id, &version, &w, &h);
+        tex = px != NULL ? tbo_upload(px, w, h) : 0;
+    } else {
+        SDL_LockMutex(sTextLock);
+        for (i = 0; i < TEXT_JOBS; i++) {
+            TboTextJob *j = &sTextJob[i];
+            if (j->state == 0 || j->slot != slot) {
+                continue;
+            }
+            asked = 1;
+            if (j->state == 3) {
+                if (j->version == version && j->levels > 0 && sBackend->texSlotsLeft() >= j->levels) {
+                    tex = tbo_upload_levels(j->lv, j->lw, j->lh, j->levels);
+                } else { /* (made for an older line, or no room: dropped; asked again below) */
+                    int k;
+                    for (k = 0; k < j->levels; k++) {
+                        free(j->lv[k]);
+                    }
+                    asked = 0;
+                }
+                j->state = 0;
+                j->levels = 0;
+            }
+        }
+        if (!asked && tex == 0) {
+            for (i = 0; i < TEXT_JOBS && sTextJob[i].state != 0; i++) {
+            }
+            if (i < TEXT_JOBS) {
+                sTextJob[i].state = 1;
+                sTextJob[i].slot = slot;
+                sTextJob[i].levels = 0;
+                SDL_SignalCondition(sTextWake);
+            }
+        }
+        SDL_UnlockMutex(sTextLock);
+    }
     if (tex == 0) {
-        return sTboText[slot].tex != 0 ? sTboText[slot].tex : gsWhite;
+        return tbo_text_keep(slot);
     }
-    if (sTboText[slot].tex != 0) {
-        sBackend->texDestroy(sTboText[slot].tex);
+    if (old != 0) {
+        sBackend->texDestroy(old);
     }
     sTboText[slot].tex = tex;
     sTboText[slot].version = version;
