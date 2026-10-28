@@ -25,6 +25,16 @@ extern s32 BtlMember_HasBlast(ChrCamChr *chr, s32 amount);
 
 static f32 sChrCamKiFactor[6];
 
+/* Clears Sparking camera zoom smoothing at the start of each fight. */
+void ChrCam_ResetPortState(void) {
+    sChrCamKiFactor[0] = 0.0f;
+    sChrCamKiFactor[1] = 0.0f;
+    sChrCamKiFactor[2] = 0.0f;
+    sChrCamKiFactor[3] = 0.0f;
+    sChrCamKiFactor[4] = 0.0f;
+    sChrCamKiFactor[5] = 0.0f;
+}
+
 /* The fighter's own camera, 0x1C4BF8-0x1C7B30. See battle/btl_char_cam.h for the structures and the frame flow.
  *
  * Callers: BtlChar_UpdateCamera (0x1C2218) runs ChrCam_StartCut, ChrCam_UpdateDemo, ChrCam_UpdateInput;

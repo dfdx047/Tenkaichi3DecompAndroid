@@ -68,6 +68,7 @@ extern void BtlChar_FreeAll(void);
 extern void BtlChar_ResetAll(void);
 
 extern void BtlCam_Init(void);
+extern void BtlCam_Reset(void);
 extern void BtlCam_Term(void);
 extern void BtlCam_SelectView(s32 view);
 extern void BtlCam_ApplyView(s32 setScissor);
@@ -136,6 +137,7 @@ extern void BtlScript_Update(void);
 s32 Battle_Restart(void) {
     Snd_StopBankAndResume(0x3C);
     Battle_ResetWork();
+    BtlCam_Reset();
     BtlScene_Reset(0);
     StgFx_Reset();
     BtlGame_Reset();

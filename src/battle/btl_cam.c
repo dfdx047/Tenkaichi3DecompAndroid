@@ -50,6 +50,7 @@ extern s32 BtlCharApi_GetMgrUnk134(void);
 extern s32 StgCol_TraceSphere(s32 obj, void *seg, Vec4 *hitPos, f32 *frac, void *unk);
 extern s32 BtlStage_FindZoneNear(s32 arg0, Vec4 *pos);
 extern s32 D_002FF280[2];
+extern void ChrCam_ResetPortState(void);
 
 static f32 sPortCameraFov[2];
 static s32 sCameraLogFrames;
@@ -353,6 +354,8 @@ void BtlCam_BuildView(BtlCamView *view, s32 apply) {
 /* Clears the camera block, rebuilds the views, selects view 0 and resets the demo camera. */
 void BtlCam_Reset(void) {
     memset(gBtlCam, 0, sizeof(BtlCam));
+    memset(sPortCameraFov, 0, sizeof(sPortCameraFov));
+    ChrCam_ResetPortState();
     BtlCam_InitViews();
     gBtlCam->cur = &gBtlCam->views[0];
     DemoCam_Reset();
@@ -434,19 +437,6 @@ void BtlCam_UpdateView(s32 side) {
                         view->view.screenDist = screenDist;
                         View_BuildProjection(&view->view);
                     }
-                }
-            }
-        } else if (fov == fov && fov <= FLT_MAX && fov >= -FLT_MAX &&
-                   extra == extra && extra <= FLT_MAX && extra >= -FLT_MAX) {
-            /* Invalid fighter height/configuration: retain the pre-adaptation FOV path for this frame. */
-            if (BtlCharApi_IsMoving(objId)) fov += extra;
-            if (fov == fov && fov <= FLT_MAX && fov >= -FLT_MAX) {
-                if (fov < 35.0f) fov = 35.0f;
-                if (fov > 100.0f) fov = 100.0f;
-                screenDist = width / Mathf_Tan(fov * 0.00872664626f);
-                if (screenDist == screenDist && screenDist > 0.0f && screenDist <= FLT_MAX) {
-                    view->view.screenDist = screenDist;
-                    View_BuildProjection(&view->view);
                 }
             }
         }
