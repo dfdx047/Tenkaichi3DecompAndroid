@@ -801,7 +801,8 @@ static NmPair sNmQueue[64], sNmSnap[64];
 static int sNmQueueN, sNmSnapN;
 static char sNmFonts[3][1024], sNmDevice[256];
 static char sNmLobbyCode[8], sNmLobbyServer[12], sNmSpecNames[130]; // (a lobby's code and service; watched players, "a|b")
-static volatile int sNmAction; // 1 resume, 2 quit, 3 the controller's buttons (this window, Controls); 4 back to the lobby, 5 leave it, 6 the next view, 7 stop watching
+static volatile int sNmAction; // 1 resume, 2 quit, 3 the controller's buttons (this window, Controls); 4 back to the lobby, 5 leave it, 6 the next view, 7 stop watching,
+                               // 8 the controller's automatic set-up (the PS2 layout)
 
 static void nm_lock(void) {
     if (sNmLock == NULL) {
@@ -1009,6 +1010,21 @@ static void nm_frame(void) {
         sNmDirty = 1;
     } else if (action == 7 && sNativeOpen) { // stop watching
         Port_NetSpecLeave();
+    } else if (action == 8) { // the controller's automatic set-up: the PS2 layout on the wireless one (gs_input.c)
+        static char line[160];
+        char name[96];
+        int slot = PortInput_AutoConfigure(0, name, (int)sizeof(name));
+        if (slot < 0) {
+            SDL_strlcpy(line, T("No controller is connected: pair it by Bluetooth (or plug it in) and press again.",
+                                "Nenhum controle conectado: pareie pelo Bluetooth (ou ligue no cabo) e aperte de novo.",
+                                "No hay ningún control conectado: emparéjalo por Bluetooth (o conéctalo) y pulsa otra vez."), sizeof(line));
+        } else {
+            SDL_snprintf(line, sizeof(line), T("Controller %d (%s): PS2 layout, deadzone 10%%, vibration on.",
+                                               "Controle %d (%s): layout de PS2, zona morta 10%%, vibração ligada.",
+                                               "Control %d (%s): diseño de PS2, zona muerta 10%%, vibración activada."), slot + 1, name);
+        }
+        Port_UiNotice(line);
+        sNmDirty = 1;
     }
     if ((want == 0 || action == 1) && sNativeOpen) {
         sNativeOpen = 0;

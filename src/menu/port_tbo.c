@@ -261,6 +261,7 @@ extern void BattleSetup_SetSide(s32 sideNo, s32 control, s32 pad, s32 memberCoun
 extern void BattleSetup_SetMember(s32 sideNo, s32 idx, s32 chara, s32 costume, s32 variant, s32 cpuLevel, f32 health, void *items);
 extern void BattleSetup_Finish(void);
 extern int Port_DataFingerprint(unsigned long long *out); /* plat_fprint.c: 1 known, 0 being worked out, -1 not done */
+extern void GsDraw_ScreenScaleCap(int cap4);             /* port/src/gs/gs_draw.c: the online screens' resolution cap */
 extern int Port_DataFingerprintOriginal(void);           /* 1 the data the game computes with is the original disc's */
 extern const char *Port_DataFingerprintText(void);
 extern int Port_Setting(const char *name, int def);
@@ -1574,7 +1575,7 @@ static void Tb_DrawHub(void) {
     f32 left = Tb_TitleLeft() - 8.0f + slide;
 
     Tb_RaditzBust(0.0f);
-    sTb->hubY += (Tb_HubRowY(cur) - sTb->hubY) * 0.35f;
+    sTb->hubY += (Tb_HubRowY(cur) - sTb->hubY) * 0.6f; /* (quick: the gold plate is where the cursor is in a few frames) */
     for (i = 0; i < HUB_ROWS; i++) {
         f32 y = Tb_HubRowY(i);
         f32 end = left + (i < HUB_SMALL ? TB_HUB_SHORT : TB_HUB_LONG - 4.0f * (f32)(i - HUB_SMALL)) - slide;
@@ -3394,18 +3395,26 @@ static void Tb_DrawTalk(void) {
 
 static void Tb_DrawTalkText(void) {
     static char tr[512];
+    static char said[512]; /* the line cut last (it is cut again only when it changes: measuring is the fonts' work) */
+    static s32 saidLang = -1;
     static char line[TB_TALK_LINES][128];
+    static s32 lines;
     extern int Port_TrLine(const char *original, char *out, int size);
     char *say = Tb_Help();
     f32 x = Tb_TitleLeft() + 14.0f;
     f32 room = TB_TALK_WIDE - 28.0f;
-    s32 lines = 0;
     s32 at = 0;
     s32 k;
 
     if (say == NULL || say[0] == 0) {
         return;
     }
+    if (saidLang == sTb->lang && strncmp(say, said, sizeof(said) - 1) == 0) {
+        goto draw;
+    }
+    Ps_Copy(said, say, sizeof(said));
+    saidLang = sTb->lang;
+    lines = 0;
     if (Port_TrLine(say, tr, sizeof(tr))) {
         say = tr;
     }
@@ -3444,6 +3453,7 @@ static void Tb_DrawTalkText(void) {
         at = end;
         lines++;
     }
+draw:
     for (k = 0; k < lines; k++) {
         f32 mid = (TB_TALK_TOP + TB_TALK_BOTTOM) * 0.5f + TB_TALK_PITCH * ((f32)k - (f32)(lines - 1) * 0.5f);
 
@@ -3644,6 +3654,7 @@ s32 PortTbo_Run(void) {
         Tb_SetMode(TB_WAIT);
     }
     DrNet_PresenceActive(DrNet_Mode() == 0); /* the players online: counted while these screens are up (Dragon Net) */
+    GsDraw_ScreenScaleCap(12); /* (at most 3x here: gs_draw.c; the player's own after) */
     Port_EscQuit(0);
     Tb_WinInit();
     ColorFade_StartIn(0, 0, 0, 0x14);
@@ -3736,6 +3747,7 @@ s32 PortTbo_Run(void) {
         DrRanked_Cancel();
     }
     DrNet_PresenceActive(0);
+    GsDraw_ScreenScaleCap(0);
     train = sTb->train;
     if (train) {
         static u8 noItems[0x10]; /* an empty set of Z items */

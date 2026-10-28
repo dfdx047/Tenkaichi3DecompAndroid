@@ -2090,6 +2090,21 @@ static void controls_tab(void) {
         PortInput_ResetDefaults(player);
         PortInput_Save();
     }
+    ImGui::SameLine();
+    if (ImGui::Button("Automatic set-up (PS2 layout)")) {
+        char name[96];
+        static char line[160];
+        int got = PortInput_AutoConfigure(player, name, (int)sizeof(name));
+        if (got < 0) {
+            snprintf(line, sizeof(line), "No controller is connected: pair it (or plug it in) and press again.");
+        } else {
+            snprintf(line, sizeof(line), "Controller %d (%s): PS2 layout, deadzone 10%%, vibration on.", got + 1, name);
+        }
+        Port_UiNotice(line);
+    }
+    ImGui::SetItemTooltip("The wireless controller (else the first one) with the PS2 controller's buttons: cross at the bottom,\n"
+                          "circle right, square left, triangle top, L1 / R1, L2 / R2, L3 / R3, START, SELECT. A controller the game\n"
+                          "does not know gets the order of the PS2 controller adapters. The keyboard is not changed.");
     if (ImGui::CollapsingHeader("Sticks, triggers and vibration", ImGuiTreeNodeFlags_DefaultOpen)) {
         sticks_panel(player);
     }

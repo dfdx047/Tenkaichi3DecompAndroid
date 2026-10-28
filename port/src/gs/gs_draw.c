@@ -107,6 +107,11 @@ static int sDisplaySetting;
 int gsScale4 = 8;
 int gsTargetW = GS_W, gsTargetH = GS_H; /* the back end's render targets in GS pixels (the Vulkan one: 512) */
 int gsPendingScale4;
+/* The online screens (menu/port_tbo.c) are drawn at most at this resolution (in quarters; 0: no cap): pictures and
+   letters of a 2D page are no sharper on a phone's screen above it, and 5x or 6x there cost the frames that made
+   the menus slow. The player's own choice (sUserScale4) is what the settings show and keep, and comes back after. */
+static int sScreenCap4;
+static int sUserScale4;
 GsTex gsWhite;
 GsDraw *gsDraws;
 uint32_t gsDrawCount;
@@ -402,6 +407,13 @@ typedef struct {
     uint32_t frame, w, h;
     uint64_t lastMs;
     double due; /* seconds of film owed */
+    /* the decoding, on a thread of its own (a picture of the film costs milliseconds of the processor: on the
+       renderer's thread a phone dropped frames): it keeps the next picture ready, the renderer takes it */
+    SDL_Thread *thread;
+    SDL_Mutex *lock;
+    SDL_Condition *wake;
+    uint32_t *ready; /* the next picture (RGBA, the GS's alpha), NULL while it is being made */
+    int want;        /* the thread makes the next one */
 } TboFilm;
 static TboFilm sTboFilm = {"bg", 0};
 static TboFilm sRaditzFilm = {"raditz", 1};
@@ -444,11 +456,57 @@ static uint8_t *tbo_film_read(const char *name, size_t *len) {
     return bytes;
 }
 
+/* One picture of the film, as the renderer uploads it: RGBA, the GS's alpha (0x80 opaque; a film with alpha: from
+   the lower picture's red). NULL at the film's end without a loop, or without memory. */
+static uint32_t *tbo_film_picture(TboFilm *film) {
+    plm_frame_t *pic = plm_decode_video(film->plm);
+    uint32_t *px, i, h = film->alpha ? film->h / 2 : film->h;
+
+    if (pic == NULL) { /* (at its end pl_mpeg says so once, then the loop starts it again: the first picture of the next round) */
+        pic = plm_decode_video(film->plm);
+    }
+    if (pic == NULL || (px = malloc((size_t)film->w * film->h * 4)) == NULL) {
+        return NULL;
+    }
+    plm_frame_to_rgba(pic, (uint8_t *)px, (int)film->w * 4);
+    for (i = 0; i < film->w * h; i++) {
+        uint32_t a = film->alpha ? ((px[i + film->w * h] & 0xFFu) * 128u + 127u) / 255u : 0x80u;
+        px[i] = (px[i] & 0x00FFFFFFu) | (a << 24);
+    }
+    return px;
+}
+
+static int tbo_film_thread(void *arg) {
+    TboFilm *film = (TboFilm *)arg;
+
+    SDL_LockMutex(film->lock);
+    for (;;) {
+        uint32_t *px;
+
+        while (!film->want) {
+            SDL_WaitCondition(film->wake, film->lock);
+        }
+        film->want = 0;
+        SDL_UnlockMutex(film->lock);
+        px = tbo_film_picture(film); /* (the film is this thread's alone once it started) */
+        SDL_LockMutex(film->lock);
+        free(film->ready);
+        film->ready = px;
+        if (px == NULL) {
+            film->want = 1; /* (no picture: another try, or the renderer, which asks only when it takes one, would wait forever) */
+            SDL_UnlockMutex(film->lock);
+            SDL_Delay(10);
+            SDL_LockMutex(film->lock);
+        }
+    }
+    return 0;
+}
+
 static GsTex tbo_film_texture(TboFilm *film) {
     uint64_t now = SDL_GetTicks();
-    plm_frame_t *pic = NULL;
+    uint32_t *px = NULL;
     double step;
-    uint32_t *px, i, h;
+    uint32_t h;
 
     if (!film->tried) {
         size_t len = 0;
@@ -469,6 +527,13 @@ static GsTex tbo_film_texture(TboFilm *film) {
         plm_set_loop(film->plm, 1);
         film->w = (uint32_t)plm_get_width(film->plm);
         film->h = (uint32_t)plm_get_height(film->plm);
+        film->lock = SDL_CreateMutex();
+        film->wake = SDL_CreateCondition();
+        film->ready = tbo_film_picture(film); /* (the first one here: the screen has it at once) */
+        film->want = 1;
+        if (film->lock == NULL || film->wake == NULL || (film->thread = SDL_CreateThread(tbo_film_thread, "tbo film", film)) == NULL) {
+            fprintf(stderr, "bt3: artwork: no thread for tbo/ui/%s.mpg: decoded on the renderer's\n", film->name);
+        }
     }
     if (film->plm == NULL) {
         return 0;
@@ -485,32 +550,29 @@ static GsTex tbo_film_texture(TboFilm *film) {
     if (film->due > step * 3.0) {
         film->due = step * 3.0; /* a slow frame: the film waits rather than racing to catch up */
     }
-    while (film->tex == 0 || film->due >= step) {
-        plm_frame_t *f = plm_decode_video(film->plm);
-        if (f == NULL) {
-            break;
-        }
-        pic = f;
-        if (film->tex != 0) {
-            film->due -= step;
-        } else {
-            break;
-        }
-    }
-    if (pic == NULL) {
+    if (film->tex != 0 && film->due < step) {
         return film->tex;
     }
-    px = malloc((size_t)film->w * film->h * 4);
+    if (film->thread != NULL) { /* the picture the thread has ready, if it has: else the last one stays a frame more */
+        SDL_LockMutex(film->lock);
+        px = film->ready;
+        film->ready = NULL;
+        if (px != NULL) {
+            film->want = 1;
+            SDL_SignalCondition(film->wake);
+        }
+        SDL_UnlockMutex(film->lock);
+    } else {
+        px = film->ready != NULL ? film->ready : tbo_film_picture(film);
+        film->ready = NULL;
+    }
     if (px == NULL) {
         return film->tex;
     }
-    plm_frame_to_rgba(pic, (uint8_t *)px, (int)film->w * 4);
-    h = film->alpha ? film->h / 2 : film->h;
-    for (i = 0; i < film->w * h; i++) {
-        /* the GS's alpha: 0x80 is opaque; a film with alpha: from the lower picture's red, 0..255 */
-        uint32_t a = film->alpha ? ((px[i + film->w * h] & 0xFFu) * 128u + 127u) / 255u : 0x80u;
-        px[i] = (px[i] & 0x00FFFFFFu) | (a << 24);
+    if (film->tex != 0) {
+        film->due -= step;
     }
+    h = film->alpha ? film->h / 2 : film->h;
     if (film->tex == 0) {
         film->tex = sBackend->texCreate(film->w, h, GS_TEXFMT_RGBA8, 1);
         if (film->tex == 0) {
@@ -1466,11 +1528,13 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
     }
     d->blendc = (float)((gGs.alpha[ctx] >> 32) & 0xFF) / 128.0f;
     {
-        int ts = lowres_now(d->target) ? 1 : SCALE; /* (a work buffer at the PS2's resolution: target_lowres) */
-        d->scissor[0] = (int)(sc & 0x7FF) * ts;
-        d->scissor[1] = (int)((sc >> 32) & 0x7FF) * ts;
-        d->scissor[2] = ((int)((sc >> 16) & 0x7FF) + 1) * ts - d->scissor[0];
-        d->scissor[3] = ((int)((sc >> 48) & 0x7FF) + 1) * ts - d->scissor[1];
+        /* (a float: SCALE is 1.25, 1.5, 1.75 too, and as an int it was 1 there: every draw cut to the 1x corner of the
+           picture, which then filled a part of the screen) */
+        float ts = lowres_now(d->target) ? 1.0f : SCALE; /* (a work buffer at the PS2's resolution: target_lowres) */
+        d->scissor[0] = (int)floorf((float)(sc & 0x7FF) * ts);
+        d->scissor[1] = (int)floorf((float)((sc >> 32) & 0x7FF) * ts);
+        d->scissor[2] = (int)ceilf((float)(((sc >> 16) & 0x7FF) + 1) * ts) - d->scissor[0];
+        d->scissor[3] = (int)ceilf((float)(((sc >> 48) & 0x7FF) + 1) * ts) - d->scissor[1];
     }
     return 1;
 }
@@ -2394,7 +2458,7 @@ void GsDraw_AspectFollow(void) {
 #endif
 
 void GsGpu_GetSettings(PortVideo *v) {
-    v->scale4 = gsPendingScale4 ? gsPendingScale4 : gsScale4;
+    v->scale4 = sScreenCap4 ? sUserScale4 : gsPendingScale4 ? gsPendingScale4 : gsScale4;
     v->aspectMilli = sAspectAuto ? 0 : Port_AspectMilli(); /* (0: the screen's own shape, Android) */
     v->fullscreen = sFullscreen;
     v->fxOff = (int)gsFxOff;
@@ -2423,7 +2487,12 @@ void GsGpu_SetSettings(const PortVideo *v) {
     PortVideo now;
     GsGpu_GetSettings(&now);
     if (v->scale4 != now.scale4) {
-        gsPendingScale4 = v->scale4 < 4 ? 4 : v->scale4 > 32 ? 32 : v->scale4; /* applied between two frames */
+        int q = v->scale4 < 4 ? 4 : v->scale4 > 32 ? 32 : v->scale4;
+        if (sScreenCap4) { /* (on the online screens: kept for after them, and drawn there at most at the cap) */
+            sUserScale4 = q;
+            q = q > sScreenCap4 ? sScreenCap4 : q;
+        }
+        gsPendingScale4 = q; /* applied between two frames */
     }
     if (v->aspectMilli != now.aspectMilli) {
 #ifdef __ANDROID__
@@ -2473,7 +2542,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
     Port_SettingSave("smooth_2d", sSmooth2d);
     Port_SettingSave("texture_pack", sTexPackOn);
     {   /* "scale4" in quarters; "scale" the whole multiplier, for the launcher of an earlier version */
-        int q = gsPendingScale4 ? gsPendingScale4 : gsScale4;
+        int q = sScreenCap4 ? sUserScale4 : gsPendingScale4 ? gsPendingScale4 : gsScale4;
         Port_SettingSave("scale4", q);
         Port_SettingSave("scale", (q + 2) / 4);
     }
@@ -2491,6 +2560,20 @@ void GsGpu_SetSettings(const PortVideo *v) {
     Port_SettingSave("stage_sounds", gPortStagePercent);
     Port_SettingSave("display", sDisplaySetting);
     Port_SettingsWrite();
+}
+
+/* The online screens open (cap4 > 0, in quarters) or close (0): see sScreenCap4. Called by menu/port_tbo.c. */
+void GsDraw_ScreenScaleCap(int cap4) {
+    if (cap4 > 0 && !sScreenCap4) {
+        sUserScale4 = gsPendingScale4 ? gsPendingScale4 : gsScale4;
+        sScreenCap4 = cap4;
+        if (sUserScale4 > cap4) {
+            gsPendingScale4 = cap4;
+        }
+    } else if (cap4 <= 0 && sScreenCap4) {
+        sScreenCap4 = 0;
+        gsPendingScale4 = sUserScale4 != gsScale4 ? sUserScale4 : 0;
+    }
 }
 
 int GsGpu_Init(void) {

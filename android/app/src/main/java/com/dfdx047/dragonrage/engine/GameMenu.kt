@@ -802,9 +802,15 @@ private fun ControlsPage(l: L, game: Game, v: MenuValues, actions: GameMenu.Acti
             }
         }
         Card(l.t("Physical controller", "Controle físico", "Control físico")) {
-            Note(l.t("The buttons of a Bluetooth or USB controller are set in the game's own window (made for a controller).",
-                "Os botões de um controle Bluetooth ou USB são configurados na janela do próprio jogo (feita para controle).",
-                "Los botones de un control Bluetooth o USB se configuran en la ventana del propio juego (hecha para control)."))
+            Note(l.t("Any wireless or USB controller with the PS2 controller's buttons: cross at the bottom, circle right, square left, triangle top, L1 / R1, L2 / R2, L3 / R3, START, SELECT. A controller the game does not know gets the order of the PS2 adapters.",
+                "Qualquer controle sem fio ou USB com os botões do controle de PS2: X embaixo, Círculo à direita, Quadrado à esquerda, Triângulo em cima, L1 / R1, L2 / R2, L3 / R3, START, SELECT. Um controle que o jogo não conhece recebe a ordem dos adaptadores de PS2.",
+                "Cualquier control inalámbrico o USB con los botones del control de PS2: X abajo, Círculo a la derecha, Cuadrado a la izquierda, Triángulo arriba, L1 / R1, L2 / R2, L3 / R3, START, SELECT. Un control que el juego no conoce recibe el orden de los adaptadores de PS2."))
+            BigButton(l.t("Automatic set-up (PS2 layout)", "Configuração automática (layout de PS2)", "Configuración automática (diseño de PS2)"), primary = true) {
+                MenuBridge.action(MenuBridge.ACTION_PAD_AUTO)
+            }
+            Note(l.t("To change one button, use the game's own window (made for a controller).",
+                "Para trocar um botão só, use a janela do próprio jogo (feita para controle).",
+                "Para cambiar un solo botón, usa la ventana del propio juego (hecha para control)."))
             BigButton(l.t("Controller buttons", "Botões do controle", "Botones del control")) { closeMenu(); actions.padButtons() }
         }
     }
