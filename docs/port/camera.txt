@@ -1,29 +1,29 @@
-# Optional battle camera settings. Copy this file to camera.txt next to the game to enable it.
-# Missing files, sparking_cam=0, and omitted keys preserve the current camera behavior.
+# Optional battle camera overrides. The built-in Sparking camera is enabled by BT3 CAM.
+# Missing files use its embedded defaults; keys here override those defaults.
 # Values are clamped to their documented ranges; malformed and unknown lines are ignored.
 
-sparking_cam=0
+# Set sparking_cam=0 to disable the built-in Sparking camera, or 1 to enable it in another BT3 port.
 
 # Add to the game's character-size/distance-derived position, in game world units.
 # 0 keeps the original value. Range: -50..50.
-base_distance=0
-base_height=0
+base_distance=4.3
+base_height=2.2
 
 # Added to the original camera pitch, in degrees. Positive values pitch farther downward.
 # 0 keeps the original angle. Range: -45..45.
-inclination=0
+inclination=0.45
 
 # Multiplier for the game's follow interpolation rate. 1 keeps the original smoothing.
 # Lower values follow more slowly. Range: 0.1..2.
-follow_smoothing=1
+follow_smoothing=0.85
 
 # Multiplier for camera shake amplitude. 1 keeps the original shake. Range: 0..5.
-shake_scale=1
+shake_scale=1.2
 
 # Horizontal field of view in degrees; 61.2 is the original battle projection.
 # Range: 35..100. Applied by the separate battle-projection setting.
-fov_base=61.2
+fov_base=63
 
 # Additional horizontal field of view while running/flying, in degrees. Range: 0..20.
 # Applied by the separate battle-projection setting.
-fov_move_extra=0
+fov_move_extra=3
