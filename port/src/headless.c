@@ -18,6 +18,7 @@
 extern void Battle_ClearWork(void);
 extern int BattleReplay_Load(void *buf, int size);
 extern void Demo_SetupBattle(void);
+extern int Port_CamSparking(void);
 
 #define REPLAY_FILE_SIZE 0x1AC00
 #define REPLAY_HEADER 0x38
@@ -38,13 +39,13 @@ typedef struct PortCameraSetting {
 } PortCameraSetting;
 
 static PortCameraSetting sCameraSettings[] = {
-    {"base_distance", -50.0f, 50.0f, 0.0f, 0},
-    {"base_height", -50.0f, 50.0f, 0.0f, 0},
-    {"inclination", -45.0f, 45.0f, 0.0f, 0},
-    {"follow_smoothing", 0.1f, 2.0f, 1.0f, 0},
-    {"shake_scale", 0.0f, 5.0f, 1.0f, 0},
-    {"fov_base", 35.0f, 100.0f, 0.0f, 0},
-    {"fov_move_extra", 0.0f, 20.0f, 0.0f, 0},
+    {"base_distance", -50.0f, 50.0f, 4.3f, 1},
+    {"base_height", -50.0f, 50.0f, 2.2f, 1},
+    {"inclination", -45.0f, 45.0f, 0.45f, 1},
+    {"follow_smoothing", 0.1f, 2.0f, 0.85f, 1},
+    {"shake_scale", 0.0f, 5.0f, 1.2f, 1},
+    {"fov_base", 35.0f, 100.0f, 63.0f, 1},
+    {"fov_move_extra", 0.0f, 20.0f, 3.0f, 1},
 };
 static int sCameraConfigRead;
 static int sCameraConfigEnabled;
@@ -57,6 +58,7 @@ static void port_camera_config_load(void) {
         return;
     }
     sCameraConfigRead = 1;
+    sCameraConfigEnabled = Port_CamSparking();
     fp = fopen("camera.txt", "r");
     while (fp != NULL && fgets(line, sizeof(line), fp) != NULL) {
         char *key = line;
