@@ -44,7 +44,7 @@ s32 ChrTbl_GetLevel(s32 chara, s32 slot, s32 fromRec) {
     if (fromRec != 0) {
         level = gSaveData->rec[slot].level;
     } else {
-        level = gSaveData->custom[slot].level;
+        level = SAVE_CUSTOM_AT(gSaveData, slot).level;
     }
     file = CHRTBL_FILE;
     table = (ChrTblEntry *)CHRTBL_SECTION(file, charaOffset);
@@ -56,7 +56,7 @@ s32 ChrTbl_GetExp(s32 chara, s32 slot) {
     ChrTblFile *file = CHRTBL_FILE;
     ChrTblEntry *table = (ChrTblEntry *)CHRTBL_SECTION(file, charaOffset);
 
-    return table[chara].exp[gSaveData->custom[slot].level];
+    return table[chara].exp[SAVE_CUSTOM_AT(gSaveData, slot).level];
 }
 
 /* The last experience value of the character's list. */

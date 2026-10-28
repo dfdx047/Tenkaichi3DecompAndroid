@@ -3,6 +3,7 @@
    serves it for a file id and the menu lists it (the same scheme as the added stages). */
 #ifndef PORT_PLAT_SONGS_H
 #define PORT_PLAT_SONGS_H
+#include "plat_game.h"
 
 /* The music list holds offsets into the BGM file range: entry value `n` plays file 0x10B16 + n. Offsets 0x00..0x13
    are the disc's 20 tracks, 0x18 is the game's "random" and 0x19 its "locked" marker; the disc's own raw list also
@@ -16,7 +17,7 @@
    limit was 6 for the save's 32 music bits, which an added song is never looked up in. */
 #define PORT_SONG_FILE_INDEX 73000
 #define PORT_BGM_FILE(n) \
-    ((n) >= PORT_SONG_FIRST_OFFSET && (n) < PORT_SONG_FIRST_OFFSET + PORT_SONG_MAX ? 0xD48 + PORT_SONG_FILE_INDEX + ((n) - PORT_SONG_FIRST_OFFSET) \
+    (PortGame_IsBT4() ? PortGame_MusicFile(n) : (n) >= PORT_SONG_FIRST_OFFSET && (n) < PORT_SONG_FIRST_OFFSET + PORT_SONG_MAX ? 0xD48 + PORT_SONG_FILE_INDEX + ((n) - PORT_SONG_FIRST_OFFSET) \
                                                                                     : PORT_SONG_BGM_FIRST + (n))
 
 void PortSongs_Init(void);

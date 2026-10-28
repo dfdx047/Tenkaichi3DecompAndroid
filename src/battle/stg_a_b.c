@@ -11,6 +11,8 @@
 #include "battle/battle_setup.h"
 #include "battle/battle_work.h"
 #include "battle/stg_a.h"
+#include "battle/tag_team.h"
+#include "battle/tag_position.h"
 
 extern void *memset(void *dst, s32 c, u32 n);
 extern s32 rand(void);
@@ -828,7 +830,7 @@ s32 BtlStage_GetStartPlace(s32 side, Vec4 *pos, Vec4 *rot, s32 alt) {
         pos->z = p->pos.z;
         pos->w = 1.0f;
     } else {
-        p = (StgPlace *)(side * (s32)sizeof(StgPlace) + (s32)starts);
+        p = (StgPlace *)(TagTeam_NativeSide(side) * (s32)sizeof(StgPlace) + (s32)starts);
         yaw = Stg_CalcYaw(p->pos.x, p->pos.z, p->target.x, p->target.z);
         pos->x = p->pos.x;
         pos->y = -700.0f;
@@ -839,6 +841,85 @@ s32 BtlStage_GetStartPlace(s32 side, Vec4 *pos, Vec4 *rot, s32 alt) {
     rot->w = 1.0f;
     rot->z = 0.0f;
     rot->x = 0.0f;
+    if(!alt && TagPosition_FreeForAllStart(side,pos,rot))
+        return BtlStage_FindZoneNear(-1,pos);
+    if (TagTeam_Active()) {
+        /* Build the same ordered placements for every caller (initial spawn,
+           rematch and stage change). Previously every extra used one offset. */
+        extern f32 BtlCharApi_GetRadius(s32);
+        extern f32 BtlStage_GetInnerRadius(void), BtlStage_GetTop(void), BtlStage_GetBottom(void);
+        Vec4 placed[TAG_TEAM_CAPACITY];
+        f32 body[TAG_TEAM_CAPACITY],gap=40.0f,limit=BtlStage_GetInnerRadius(),fallbackHeight=0.0f;
+        f32 water=0;
+        s32 hasWater=!alt && BtlStage_GetWaterLevel(&water);
+        s32 a,b,ring,k,found=0;
+        for(a=0;a<TagTeam_Count();a++) {
+            s32 obj=BattleSide_GetObjId(a);
+            body[a]=obj>=0?BtlCharApi_GetRadius(obj):15.0f;
+            if(body[a]<10.0f) body[a]=10.0f;
+            if(body[a]*2.0f+12.0f>gap) gap=body[a]*2.0f+12.0f;
+        }
+        for(a=0;a<=side;a++) {
+            StgPlace *base=alt?d->altStarts:&starts[TagTeam_NativeSide(a)];
+            f32 radius=0.0f,samples=0.0f;
+            found=0;
+            fallbackHeight+=gap;
+            for(ring=0;ring<24 && !found;ring++,radius+=gap,samples+=8.0f) {
+              f32 angle=0.0f,step=ring?6.2831853f/samples:0.0f;
+              for(k=0;k<(ring?8*ring:1);k++,angle+=step) {
+                extern f32 sinf(f32),cosf(f32);
+                Vec4 test;
+                s32 clear=1;
+                test.x=base->pos.x+cosf(angle)*radius;
+                test.z=base->pos.z+sinf(angle)*radius;
+                test.y=BtlStage_GetTop()+1.0f; test.w=1.0f;
+                if(test.x*test.x+test.z*test.z>(limit-body[a])*(limit-body[a])) continue;
+                for(b=0;b<a;b++) {
+                    f32 x=test.x-placed[b].x,z=test.z-placed[b].z,r=body[a]+body[b]+10.0f;
+                    if(x*x+z*z<r*r) { clear=0; break; }
+                }
+                if(!clear) continue;
+                zone=BtlStage_ProbeGround(-1,&test,&hit);
+                if(hit.y<=BtlStage_GetTop()+1.0f || hit.y>BtlStage_GetBottom()) continue;
+                if(hasWater && hit.y>water-2) continue;
+                test.y=hit.y;
+                /* A valid footpoint can still put a teammate's body inside
+                   nearby rubble, especially on B14's destroyed arenas. */
+                if(!TagPosition_SafeSpot(a,&test)) continue;
+                placed[a]=test; found=1; break;
+              }
+            }
+            if(!found && a>0) {
+                /* A destroyed arena may have only one small dry island. Use
+                   air above a verified placement before trying an authored
+                   start point that may now be inside rubble or underwater. */
+                extern f32 BtlCharApi_GetHeight(s32);
+                s32 level;
+                f32 lift=BtlCharApi_GetHeight(BattleSide_GetObjId(a))+gap;
+                for(level=1;level<24 && !found;level++) for(b=0;b<a;b++) {
+                    Vec4 test=placed[b];
+                    s32 j,clear=1;
+                    test.y-=lift*level;
+                    if(!TagPosition_SafeSpot(a,&test)) continue;
+                    for(j=0;j<a;j++) {
+                        f32 x=test.x-placed[j].x,y=test.y-placed[j].y,z=test.z-placed[j].z;
+                        if(x*x+y*y+z*z<lift*lift) { clear=0;break; }
+                    }
+                    if(clear) { placed[a]=test;found=1;break; }
+                }
+            }
+            if(!found) {
+                /* Extremely constrained stages: separate vertically above the
+                   original safe point rather than stacking bodies on it. */
+                placed[a]=base->pos;
+                placed[a].y-=fallbackHeight;
+                if(hasWater && placed[a].y>water-gap) placed[a].y=water-gap;
+                if(placed[a].y<BtlStage_GetTop()+gap) placed[a].y=BtlStage_GetTop()+gap;
+            }
+        }
+        *pos=placed[side];
+        return BtlStage_FindZoneNear(-1,pos);
+    }
     zone = BtlStage_ProbeGround(-1, pos, &hit);
     pos->y = hit.y;
     return zone;

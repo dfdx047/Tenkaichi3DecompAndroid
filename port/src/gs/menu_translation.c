@@ -3,6 +3,8 @@
 #include "menu_text.h"
 #include "ui_text_extract.h"
 #include "ui_text_translate.h"
+#include "../../include/plat_game.h"
+#include "../../../include/menu/tbo_art.h"
 #ifndef _WIN32
 #include <dirent.h>
 #else
@@ -504,7 +506,10 @@ static int tr_prepare(void) {
         snprintf(id, sizeof(id), "main-6/%d/%d", i / 8, i % 8);
         r = tr_find(id);
         if (r == NULL) return 0;
-        if (i == 11) { sItem = r->resolved; sItemOriginal = r->original; }
+        if (i == 11) {
+            sItem = r->resolved;
+            sItemOriginal = r->original;
+        }
         else {
             if (strlen(sMain) + strlen(r->resolved) + 2 >= sizeof(sMain) ||
                 strlen(sMainOriginal) + strlen(r->original) + 2 >= sizeof(sMainOriginal)) return 0;
@@ -923,7 +928,7 @@ int MenuTranslation_Load(const char *outDir, char *why, size_t whyLen) {
     char path[1200], dirPath[1200], filename[32], locale[16], uiPath[1200], portPath[1200];
     int ok = 0;
     if (wanted == NULL || wanted[0] == 0) {
-        Port_SettingText("menu_lang", "en", saved, sizeof(saved));
+        Port_SettingText("menu_lang", PortGame_DefaultLanguage(), saved, sizeof(saved));
         wanted = saved;
     }
     if (snprintf(filename, sizeof(filename), "%s.json", wanted) >= (int)sizeof(filename) ||

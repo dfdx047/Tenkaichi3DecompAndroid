@@ -643,6 +643,7 @@ int SDL_main(int argc, char *argv[]) {
     snprintf(exe, sizeof(exe), "%s/libbt3.so", dir); /* plat_mem.c reads <BT3_EXE>.dat: the app put it there */
     setenv("BT3_EXE", exe, 1);
     setenv("BT3_GS", "gpu", 0);
+    setenv("BT3_TAG_TEAM", "1", 0); /* the Tag Team mod: SELECT in the main menu opens its modes (port/src/tagteam_trace.c) */
     {   /* bt3_env.txt in the game folder: NAME=value lines, the engine's switches for testing (BT3_GS_VERBOSE=1, ...) */
         char line[512];
         FILE *fp = fopen("bt3_env.txt", "r");
@@ -970,7 +971,24 @@ JNIEXPORT jint JNICALL Java_com_dfdx047_dragonrage_engine_TouchBridge_nativePlay
             running = 0;
         }
     }
-    if (running != 1) {
+    {   /* a Tag Team battle (the mod: src/battle/tag_team.c): every fighter is its own actor, the sides' member
+           counts say nothing about it; L3 (aim at an attacker / unlock) and the target button are used there */
+        typedef int32_t (*TagTeamActiveFn)(void);
+        static TagTeamActiveFn tag_active;
+        static int tag_looked;
+        if (!tag_looked) {
+            tag_active = (TagTeamActiveFn)dlsym(sEngine, "TagTeam_Active");
+            tag_looked = 1;
+        }
+        if (running == 1 && tag_active != NULL && tag_active()) {
+            result = 2;
+            source = "tag-team";
+            running = 2; /* (skips the side counts below) */
+        }
+    }
+    if (running == 2) {
+        /* (the Tag Team answer, above) */
+    } else if (running != 1) {
         result = 0; /* no active battle: don't show team controls in menus */
         source = "idle";
     } else if (magic != 0x736C7462u) {

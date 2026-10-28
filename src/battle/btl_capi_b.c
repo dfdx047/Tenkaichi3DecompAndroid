@@ -1648,6 +1648,12 @@ s32 BtlCtrl_Fuse(s32 player, s32 id) {
         BtlChar_ClearFlag(chr, 0xBE);
         chr->stunTimer = 0;
         g->hp = g->hpMax;
+#ifdef PORT
+        if(TagTeam_Active()) {
+            BtlCapiBGauge *pg=BtlMember_GetActiveGauge(BtlChar_Get(partner));
+            pg->hp=pg->hpMax;
+        } else
+#endif
         BtlMember_GetGauge(chr, partner)->hp = BtlMember_GetGauge(chr, partner)->hpMax;
         return 1;
     }

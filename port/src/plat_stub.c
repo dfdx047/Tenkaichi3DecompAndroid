@@ -451,6 +451,7 @@ void Port_VBlank(void) {
         extern void Port_SyncTest(unsigned vblank); /* gs/state.c: BT3_SYNCTEST */
         extern void Port_AdxTick(void);             /* plat_sndstate.c */
         Port_AdxTick();
+        { extern void Port_BattleMusicTick(void); Port_BattleMusicTick(); }
         Port_SyncTest(gPortVBlanks);
     }
     Port_Trace(gPortVBlanks);

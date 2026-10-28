@@ -22,7 +22,10 @@ extern int gsTargetW, gsTargetH; /* a render target's size in GS pixels, as the 
 #define MAX_TARGETS 24
 #define MAX_VU_VERTS (1 << 19)
 #define MAX_VU_IDX (1 << 20)
-#define MAX_VU_UNIFORMS 8192
+/* Four views can submit all four fighters plus scenery in each view. The old
+ * 8192 limit silently truncated the bottom views midway through their models.
+ * Keep indices within the interpolation path's signed 16-bit range. */
+#define MAX_VU_UNIFORMS 32768
 #define MAX_TEX 8192
 #define TEX_BUCKETS 32768 /* a power of two, four times MAX_TEX */
 #define MAX_CLUTS 64

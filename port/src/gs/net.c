@@ -40,6 +40,7 @@ typedef int socklen_t;
 #define closesocket close
 #endif
 #include "gs_internal.h"
+#include "tag_net.h"
 
 extern int Port_PadRead(int socket, unsigned char *data); /* gs_input.c: the keyboard and the controllers */
 void Port_NetLeave(void);
@@ -277,6 +278,7 @@ static int rules_speed(void) {
 int Port_NetSession(void);
 /* 1000 = the game's own pace; only ever the match's, never the player's own setting. */
 int Port_NetSpeedMilli(void) {
+    if(TagNet_Enabled())return 1000;
     return Port_NetSession() || Port_NetActive() ? rules_speed() * 10 : 1000;
 }
 
@@ -2286,6 +2288,7 @@ const char *Port_NetName(int player) {
    and with this their own gauges are on the left, as the host's are for the host. Setting net_hud_own (on by
    default); BT3_HUD_SWAP=1 the same without a connection, for looking at it. Only this copy's picture changes. */
 int Port_HudSwap(void) {
+    if(TagNet_Enabled()) return 0;
     static int forced = -1, pref = -1;
     extern int Port_Setting(const char *name, int def);
     if (forced < 0) {
@@ -2297,10 +2300,12 @@ int Port_HudSwap(void) {
 
 /* Which player this copy plays in an online match (0 the host, 1 the one who joined). */
 int Port_NetMe(void) {
+    if(TagNet_Enabled()) return TagNet_Role();
     return sMe;
 }
 
 int Port_NetActive(void) {
+    if(TagNet_Enabled()) return TagNet_Active();
     if (sMode < 0) { /* first asked: connected from the start if the environment says so */
         const char *host = getenv("BT3_NET_HOST"), *join = getenv("BT3_NET_JOIN"), *watch = getenv("BT3_NET_SPECTATE");
         sMode = 0;
@@ -2838,6 +2843,7 @@ static void spec_tick(unsigned tick) {
 }
 
 void Port_NetBeginTick(unsigned tick) {
+    if(TagNet_Enabled()) {TagNet_Tick(tick);return;}
     uint64_t t0, last;
 
     if (!Port_NetActive()) {
@@ -2917,6 +2923,7 @@ void Port_NetBeginTick(unsigned tick) {
 
 /* What the game reads for a pad during this blank. */
 void Port_NetInput(int player, unsigned char *data) {
+    if(TagNet_Enabled()) {TagNet_Input(player,data);return;}
     if (sMode == 3) { /* a spectator: both players' input as the host has it */
         memcpy(data, player >= 0 && player < 2 && sTick < sLogN ? sLog + ((size_t)sTick * 2 + (size_t)player) * PAD : kIdle, PAD);
         return;
@@ -2929,6 +2936,7 @@ void Port_NetInput(int player, unsigned char *data) {
 }
 
 int Port_NetResim(void) {
+    if(TagNet_Enabled()) return TagNet_Resim();
     return sResim;
 }
 
@@ -2941,6 +2949,7 @@ unsigned Port_NetTick(void) {
    otherwise (the two views side by side, as always). BT3_VIEW=0|1: the same without a connection, for looking at
    it and for comparing the game's state between the three ways of showing a battle. */
 int Port_NetView(void) {
+    if(TagNet_Enabled()) return TagNet_Role()<TN_PLAYERS?TagNet_Role():-1;
     static int forced = -2;
     if (forced == -2) {
         const char *e = getenv("BT3_VIEW");

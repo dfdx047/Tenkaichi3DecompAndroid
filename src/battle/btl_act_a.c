@@ -1,5 +1,8 @@
 #include "common.h"
 #include "battle/btl_act_a.h"
+#ifdef PORT
+#include "battle/tag_revive.h"
+#endif
 
 /*
  * Fighter action handlers, first group: 0x1E3158..0x1EA5F8 (two parts: to 0x1E6CC0, and from there; the second
@@ -2587,6 +2590,14 @@ void BtlActB_UpdateMashRate(BtlActBChr *chr, f32 *rate, s32 scaled) {
    The last two tests have to share the final `return 0` (written as early returns the compiler turns the counter
    test into slti / sltiu; with one `return 0` reached from two places it keeps the branches). */
 s32 BtlActB_TickMemberChange(BtlActBChr *chr, s32 *frames) {
+#ifdef PORT
+    /* All Tag Team members already have their own actor. A ring-out retains
+       HP, so the native reserve counter can count this same defeated body as
+       its replacement. Never queue F6: a request left on the last fighting
+       frame otherwise runs after the ring-out guard, flies the body back in
+       and resets every fighter through F9. */
+    if (TagTeam_Active()) return 0;
+#endif
     if (Battle_GetMode() == 1 && !BtlChar_TestFlag(chr, 0x10E)) {
         return 0;
     }
@@ -3452,6 +3463,11 @@ s32 BtlAct_LieDownHandler(BtlActBChr *chr, s32 phase) {
         if (!BtlChar_TestFlag(chr, 0xF) && !BtlChar_TestPrevFlag(chr, 0xF) && !BtlChar_TestFlag(chr, 0x1F) &&
             !BtlChar_TestFlag(chr, 0x11)) {
             height = BtlAct_GetHeight(chr);
+#ifdef PORT
+            /* Support only this downed body's fall decision. The real floor,
+               collision flags and living fighters retain their native rules. */
+            if(TagRevive_FallenSupported(chr->player)) height=0;
+#endif
             if (BtlCharApi_GetHeight(chr->objId) * 0.3f < height) {
                 BtlAct_Request(chr, 0xD9);
             }

@@ -397,12 +397,12 @@ s32 BtlScript_IsTriggered(s32 trigger, s32 range) {
 
 /* Returns the id of the streamed voice file of a line: 300 lines per story, two language sets. */
 s32 BtlScript_GetVoiceFile(s32 line) {
-    s32 base = 0xD48;
+    s32 base = DISC_RESOURCE(0xD48, 0x20000);
 
     if (gSaveData->flags & SAVE_FLAG_VOICE) {
-        base = 0x47E0;
+        base = DISC_RESOURCE(0x47E0, 0x23A98);
     }
-    return base + BtlScript_GetStory() * 300 + line;
+    return base + BtlScript_GetStory() * DISC_RESOURCE(300, 200) + line;
 }
 
 /* Registers "say this line when the trigger fires"; once = the line is switched off after it was said. */
@@ -675,10 +675,10 @@ void BtlScript_StopVoices(void) {
     work->voice[1] = NULL;
     work->voice[2] = NULL;
     work->voice[3] = NULL;
-    Voice_Stop(0);
-    Voice_Stop(1);
-    StreamSe_Stop(0);
-    StreamSe_Stop(1);
+    for (s32 i = 0; i < TagTeam_Count(); i++) {
+        Voice_Stop(i);
+        StreamSe_Stop(i);
+    }
 }
 
 /* Returns 1 while a text is shown. */

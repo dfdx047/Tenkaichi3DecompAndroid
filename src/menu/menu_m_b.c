@@ -376,7 +376,11 @@ void UbTeamSel_Init(s32 section) {
     gUbTeamSel->nameText = MPACK_AT(gUbTeamSel->res, 28);
     gUbTeamSel->formText = MPACK_AT(gUbTeamSel->res, 29);
     gUbTeamSel->chips = (u32 *)MPACK_AT(gUbTeamSel->res, 27);
+    #ifdef PORT
+    for (i = 0; i < gUbTeamSel->chips[0] && i < 250; i++) {
+#else
     for (i = 0; i < UB_CELL_MAX; i++) {
+#endif
         res = (MTexRes *)MPACK_AT(gUbTeamSel->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
@@ -940,7 +944,7 @@ void UbTeamSel_Input(s32 *result) {
             if (gUbTeamSel->sel->flags & UBTEAM_SEL_FORM) {
                 UT_CUR.chara = gUbTeamSel->sel->chip[0][UT_CUR.form];
                 if (UT_CUR.plate != 0) {
-                    UT_CUR.items = UB_SAVE->custom[UT_CUR.col + UT_CUR.row * UB_COLS].set[UT_CUR.plate - 1];
+                    UT_CUR.items = SAVE_CUSTOM_AT(UB_SAVE, UT_CUR.col + UT_CUR.row * UB_COLS).set[UT_CUR.plate - 1];
                 } else {
                     memset(&UT_CUR.items, 0, sizeof(UbItemSet));
                 }
@@ -948,7 +952,7 @@ void UbTeamSel_Input(s32 *result) {
             } else {
                 UT_CUR.chara = gUbTeamSel->sel->chip[0][UT_CUR.col];
                 if (UT_CUR.plate != 0) {
-                    UT_CUR.items = UB_SAVE->custom[UT_CUR.col + UT_CUR.row * UB_COLS].set[UT_CUR.plate - 1];
+                    UT_CUR.items = SAVE_CUSTOM_AT(UB_SAVE, UT_CUR.col + UT_CUR.row * UB_COLS).set[UT_CUR.plate - 1];
                 } else {
                     memset(&UT_CUR.items, 0, sizeof(UbItemSet));
                 }

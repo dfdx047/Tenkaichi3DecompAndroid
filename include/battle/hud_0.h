@@ -123,7 +123,11 @@ typedef struct BtlMenuWork {
     /* 0x14 */ BtlMenu *top;   /* the tree being shown */
     /* 0x18 */ u16 *text;      /* skill-list script of the owner's fighter (battle object + 0xBC) */
     /* 0x1C */ u16 *text2;     /* second script (never set inside this range) */
+#ifdef PORT
+    /* 0x20 */ BtlMenuList list[10];
+#else
     /* 0x20 */ BtlMenuList list[2];
+#endif
 } BtlMenuWork; /* size 0x120 */
 
 /* hud_0.c */

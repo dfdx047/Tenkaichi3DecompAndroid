@@ -1,3 +1,4 @@
+#include "battle/btl_effect_owner.h"
 #include "common.h"
 #include "battle/eft_s.h"
 #include "sys/gfx_ot.h"
@@ -1530,6 +1531,11 @@ extern void EftTexSet_Keep32(void *tex, s32 a1, s32 a2);         /* steps a text
 extern void EftTexSet_Load32(void *tex, s32 *entry);             /* builds a texture set from a pack entry */
 
 extern s32 EftCam_IsActive(void);
+#ifdef PORT
+extern s32 EftCam_IsFighterActive(s32 objId);
+#else
+#define EftCam_IsFighterActive(objId) EftCam_IsActive()
+#endif
 extern f32 EftMath_WrapAngle(f32 angle);
 extern EftTVec *EftGfx_GetClipPlanes(void);
 extern void EftPrim_DrawTriangle(EftTIVec *p0, EftTIVec *p1, EftTIVec *p2, EftTVec *c0, EftTVec *c1, EftTVec *c2,
@@ -2107,8 +2113,8 @@ void EftRay_Init(EftTTask *task, EftRayArg *arg) {
     memset(w, 0, sizeof(EftRayWork));
     w->type = 2;
     EftRay_Setup(w, arg);
-    if ((u32)arg->objId < 2) {
-        BtlTask_SetOwnerTag(task, arg->objId == 0 ? 0x800 : 0x1000);
+    if ((u32)arg->objId < (u32)BtlScene_GetCharCount()) {
+        BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(arg->objId));
     }
 }
 
@@ -2186,7 +2192,7 @@ void EftRay_Update(EftTTask *task) {
             break;
         }
         case EFT_RAY_MODE_CUT:
-            if (EftCam_IsActive()) {
+            if (EftCam_IsFighterActive(w->objId)) {
                 w->life = -1.0f;
                 w->alpha = -1.0f;
             }

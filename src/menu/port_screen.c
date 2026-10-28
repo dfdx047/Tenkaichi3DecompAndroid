@@ -348,6 +348,7 @@ void Ps_Align(s32 align) {
 
 
 f32 Ps_TextWidth(char *str, f32 scale) {
+    str=(char *)Port_TagText(str);
     return (f32)PortTbo_TextMeasure(str, 0) / 1000.0f * PS_CELL_UNITS * scale * PS_CAP_OF_CELL * PS_UNIT_X;
 }
 
@@ -412,6 +413,7 @@ void Ps_TextExOuterXY(f32 x, f32 y, char *str, f32 scaleX, f32 scaleY, f32 width
     s32 alpha = (s32)((top >> 24) & 0xFF);
     s32 id;
 
+    str=(char *)Port_TagText(str);
     if (str[0] == 0 || (id = PortTbo_TextId(str, 0)) < 0) {
         return;
     }
@@ -470,6 +472,7 @@ void Ps_Heading(f32 x, f32 y, char *str, f32 scale, f32 width, s32 alpha) {
     f32 y0;
     s32 id;
 
+    str=(char *)Port_TagText(str);
     if (str[0] == 0 || (id = PortTbo_TextId(str, 2)) < 0) {
         return;
     }
@@ -550,6 +553,7 @@ void Ps_PromptsClear(void) {
 }
 
 void Ps_Prompt(s32 kind, char *label) {
+    label=(char *)Port_TagText(label);
     if (sPsPromptCount < PS_PROMPTS) {
         sPsPromptKind[sPsPromptCount] = kind;
         sPsPromptLabel[sPsPromptCount++] = label;
@@ -625,6 +629,18 @@ s32 PortScreen_Main(void) {
         gMenuArc5 = File_LoadSync(gProgress->baseFile, NULL, 0);
     }
     switch (screen) {
+    case PORT_SCREEN_TAG_TEAM:
+        { extern s32 TagSession_Run(void);
+          Bgm_Play(0x10B16+2); result=TagSession_Run(); Adx_StopAll(); }
+        break;
+    case PORT_SCREEN_TAG_ONLINE:
+    case PORT_SCREEN_TAG_LOBBY:
+        { extern void TagNet_Enable(s32),TagNet_Party(s32),Port_TagOnlineSetup(void);
+          extern s32 TagNet_Room(void);
+          TagNet_Party(screen==PORT_SCREEN_TAG_LOBBY);TagNet_Enable(1);result=TagNet_Room();
+          if(result==1)Port_TagOnlineSetup();else {result=0;TagMenu_Request(1);gProgress->mode=4;}
+        }
+        break;
     case PORT_SCREEN_TBO:
         Bgm_Play(0x10B16 + 2);
         result = PortTbo_Run();

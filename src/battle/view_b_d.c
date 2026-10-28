@@ -365,7 +365,7 @@ s32 ShenScene_StepLoad(ShenJob *job) {
     case 0: {
         s32 files[3][SHENSCENE_ACTOR_COUNT] = {{0xD3C, 0xD46}, {0xD3D, 0xD46}, {0xD45, 0xD47}};
 
-        res->stage = File_Request3(gShenScene->dragon + SHENSCENE_FILE_STAGE, NULL, 0);
+        res->stage = File_Request3(gShenScene->dragon + DISC_RESOURCE(SHENSCENE_FILE_STAGE, 0x616), NULL, 0);
         for (i = 0; i < SHENSCENE_ACTOR_COUNT; i++) {
             ShenActor *a = &gShenScene->actor[i];
 

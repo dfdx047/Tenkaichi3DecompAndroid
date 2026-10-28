@@ -1,5 +1,7 @@
+#include "battle/btl_effect_owner.h"
 #include "common.h"
 #include "battle/eft_o.h"
+#include "battle/eft_disc_capacity.h"
 
 /*
  * Effect tasks, 0x16AE78..0x16C2E0. Two modules:
@@ -167,7 +169,7 @@ void EftBodyFx_Init(EftOTask *task, EftBodyFxArg *arg) {
     EftEmit_SetNode(&w->nodes, 0, 3, NULL);
     w->flags |= 8;
     w->endLife = EftEmit_GetEndFrames(w->set);
-    BtlTask_SetOwnerTag(task, arg->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(arg->objId));
 }
 
 /* Term callback. */
@@ -245,7 +247,7 @@ void EftBodyFxMgr_Init(EftOTask *task) {
 
     gEftBodyFx = BtlPool_Alloc(BtlPool_GetCurrent(), sizeof(EftBodyFxMgr));
     memset(gEftBodyFx, 0, sizeof(EftBodyFxMgr));
-    gEftBodyFxList = BtlTask_CreateChildList(task, 3, sizeof(EftBodyFx));
+    gEftBodyFxList = BtlTask_CreateChildList(task, sizeof(gEftBodyFx->task)/sizeof(gEftBodyFx->task[0])+1, sizeof(EftBodyFx));
     id[0] = 0x23F;
     for (i = 0; i < EFT_BODYFX_SETS; i++) {
         EftEmit_LoadSet(NULL, &gEftBodyFx->set[i], NULL, NULL, 1, id[i]);
@@ -274,6 +276,8 @@ void EftBodyFxMgr_Update(void) {
 
 /* Starts the effect on a fighter; fails when it is already running. */
 s32 EftBodyFx_Start(EftBodyFxArg arg) {
+    if(!gEftBodyFx || (u32)arg.objId>=sizeof(gEftBodyFx->task)/sizeof(gEftBodyFx->task[0]) ||
+       (u32)arg.unk4>=EFT_BODYFX_SETS)return 0;
     if (gEftBodyFx->task[arg.objId] != NULL) {
         return 0;
     }
@@ -283,9 +287,11 @@ s32 EftBodyFx_Start(EftBodyFxArg arg) {
 
 /* Asks the fighter's effect to end. */
 s32 EftBodyFx_Stop(s32 objId) {
-    EftOTask *t = gEftBodyFx->task[objId];
+    EftOTask *t;
     EftBodyFx *w;
 
+    if(!gEftBodyFx || (u32)objId>=sizeof(gEftBodyFx->task)/sizeof(gEftBodyFx->task[0]))return 0;
+    t=gEftBodyFx->task[objId];
     if (t == NULL) {
         return 0;
     }
@@ -301,9 +307,11 @@ s32 EftBodyFx_Stop(s32 objId) {
 
 /* Init callback of the manager: two texture sets, two model templates, a list of 20 discs. */
 void EftDiscMgr_Init(EftOTask *task) {
+    extern u32 EftDiscMgr_WorkSize(void);
     gEftDisc = BtlPool_Alloc(BtlPool_GetCurrent(), sizeof(EftODiscMgr));
     gEftDisc->res = NULL;
-    gEftDisc->res = BtlPool_Alloc(BtlPool_GetCurrent(), 0x660);
+    gEftDisc->res = BtlPool_Alloc(BtlPool_GetCurrent(), EftDiscMgr_WorkSize());
+    memset(gEftDisc->res,0,EftDiscMgr_WorkSize());
     gEftDisc->res->packTexA = BtlScene_GetCommonEntry(0x238);
     gEftDisc->res->packTexB = BtlScene_GetCommonEntry(0x23A);
     gEftDisc->res->packModelA = BtlScene_GetCommonEntry(0x239);
@@ -317,7 +325,7 @@ void EftDiscMgr_Init(EftOTask *task) {
     EftMesh_SetTexBase(gEftDisc->res->modelA, 0);
     EftMesh_SetTexBase(gEftDisc->res->modelB, 0);
     gEftDisc->res->unk410 = 0;
-    gEftDisc->res->list = BtlTask_CreateChildList(task, 20, sizeof(EftODisc));
+    gEftDisc->res->list = BtlTask_CreateChildList(task, EFT_DISC_CAPACITY, sizeof(EftODisc));
 }
 
 /* Update callback of the manager: the texture sets have not been advanced this frame. */
@@ -421,7 +429,7 @@ void EftDisc_Init(EftOTask *task, EftODiscArg *arg) {
     }
     EftDisc_SetTex(w, w->tex, arg->texA, arg->texB);
     w->flags |= EFT_ODISC_ALIVE;
-    BtlTask_SetOwnerTag(task, arg->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(arg->objId));
 }
 
 /* The roll decay block needs its own zero / clamp variable `k` (not the function-wide `t`) and the clamp written

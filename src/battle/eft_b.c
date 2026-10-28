@@ -1,4 +1,5 @@
 #include "common.h"
+#include "battle/eft_fighter_capacity.h"
 #include "battle/eft_b.h"
 #include "sys/gfx_ot.h"
 
@@ -623,7 +624,7 @@ s32 EftBubble_StartBurst(s32 objId) {
     EftBubbleChr *chr;
     f32 n;
 
-    if (gEftBubble == NULL) {
+    if (gEftBubble == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) {
         return 0;
     }
     chr = &gEftBubble->chr[objId];
@@ -657,8 +658,8 @@ void EftBubble_Init(EftBTask *task) {
         memset(gEftBubble, 0, sizeof(EftBubbleWork));
     }
     if (gEftBubble->chr == NULL) {
-        gEftBubble->chr = BtlPool_Alloc(BtlPool_GetCurrent(), 2 * sizeof(EftBubbleChr));
-        memset(gEftBubble->chr, 0, 2 * sizeof(EftBubbleChr));
+        gEftBubble->chr = BtlPool_Alloc(BtlPool_GetCurrent(), EFT_FIGHTER_CAPACITY * sizeof(EftBubbleChr));
+        memset(gEftBubble->chr, 0, EFT_FIGHTER_CAPACITY * sizeof(EftBubbleChr));
     }
     if (gEftBubble->pool == NULL) {
         gEftBubble->pool = BtlPool_Alloc(BtlPool_GetCurrent(), EFT_BUBBLE_MAX * sizeof(EftBubble));
@@ -847,7 +848,8 @@ void EftBubble_EmitCamera(s32 view) {
     Vec4 pos;
     Vec4 tmp;
     Mtx44 m;
-    EftBView *v = &gBtlCam->views[view];
+    extern EftBView *BtlCam_GetNativeView(s32);
+    EftBView *v = BtlCam_GetNativeView(view);
     f32 x;
     f32 y;
     f32 size;
@@ -883,7 +885,7 @@ void EftBubble_UpdateChrs(void) {
         return;
     }
     chr = gEftBubble->chr;
-    for (i = 0; i < 2; i++, chr++) {
+    for (i = 0; i < EFT_FIGHTER_CAPACITY; i++, chr++) {
         if (EFT_BUBBLE_CHR_FLAGS(chr)->trail) {
             EftBubble_UpdateTrail(chr);
         }
@@ -1073,7 +1075,8 @@ s32 EftBubble_Step(EftBubble *b) {
         return 1;
     }
     if (b->view != -1) {
-        if (gBtlCam->views[b->view].camPos.y < water) {
+        extern EftBView *BtlCam_GetNativeView(s32);
+        if (BtlCam_GetNativeView(b->view)->camPos.y < water) {
             return 1;
         }
     }

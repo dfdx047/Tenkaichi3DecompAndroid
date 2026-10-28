@@ -652,7 +652,7 @@ static int ml_texture(MlCtx *c, MlBuf d, uint32_t index, MlTex *out) {
 /* ---- the catalogue --------------------------------------------------------------------------------------------- */
 
 /* The PC's item of the main menu (at the end of this file). */
-static int ml_item_pics(MlCtx *c, unsigned char *out[2]);
+static int ml_item_pics(MlCtx *c, unsigned char *out[2], const char *text);
 static int ml_item_into(MlCtx *c, MlBuf screen, int part, MlTex *sheet, const unsigned char *pic);
 
 static MlGroup *ml_group(MlCtx *c, const char *id, int height, int width) {
@@ -903,7 +903,7 @@ static int ml_catalog(MlCtx *c) {
     {
         unsigned char *item[2];
         char withItem[1024];
-        int haveItem = ml_item_pics(c, item);
+        int haveItem = ml_item_pics(c, item, NULL);
 
         snprintf(withItem, sizeof(withItem), "%s|%s", kMain, kMlItem);
         for (i = 5; g != NULL && i <= 6; i++) {
@@ -1735,8 +1735,14 @@ static int ml_read_one(MlCtx *c, const char *dataDir, int i, int anyDisc) {
     FILE *fp;
     uint8_t *data;
     long size;
+    extern int PortGame_IsBT4(void);
+    int bt4 = PortGame_IsBT4();
 
-    snprintf(path, sizeof(path), "%s/pzs3us1/%05d.bin", dataDir, kMlFiles[i].number);
+    /* Native BT4 uses its own artwork in the same menu archive slots. The
+       bounded package/texture parser still checks the layout when cutting
+       letters; the USA archive CRC is not the identity of this disc. */
+    { extern int PortGame_Region(void); if (bt4 || PortGame_Region()) anyDisc = 1; }
+    snprintf(path, sizeof(path), "%s/%s/%05d.bin", dataDir, bt4?"pzs4us1":"pzs3us1", kMlFiles[i].number);
     if (stat(path, &st) != 0 || !S_ISREG(st.st_mode) || (fp = fopen(path, "rb")) == NULL) {
         ml_fail(c, "%s is missing (the game data of the USA release, SLUS-21678, is needed)", path);
         return MENU_LABELS_OTHER_DISC;
@@ -1829,9 +1835,8 @@ int MenuLabels_Make(const char *dataDir, const char *outDir, int anyDisc, char *
 /* ---- the PC's item of the main menu (src/menu/menu_a.c) ---------------------------------------------------------- */
 
 /* The cutter's sheets and letters, all three styles, given back. (with sMlCutter held) */
-static void ml_cutter_clear(void) {
-    int s, i;
-    for (s = 0; s < NF_STYLES; s++) {
+static void ml_cutter_style_clear(int s) {
+    int i;
         for (i = 0; i < MAX_SHEETS; i++) {
             free(sSheet[s][i]);
             sSheet[s][i] = NULL;
@@ -1841,7 +1846,10 @@ static void ml_cutter_clear(void) {
         }
         memset(&sStyle[s], 0, sizeof(sStyle[s]));
         sSheetCount[s] = 0;
-    }
+}
+static void ml_cutter_clear(void) {
+    int s;
+    for (s = 0; s < NF_STYLES; s++) ml_cutter_style_clear(s);
     sState = 0;
 }
 
@@ -1871,15 +1879,39 @@ static int ml_cutter_sheets(MlCtx *c, MlBuf screen, int part, int s, int want) {
 }
 
 /* The label's two pictures (MenuLabels_MainItem), with sMlCutter held and archives 448 and 449 read into `c`. */
-static int ml_item_pics(MlCtx *c, unsigned char *out[2]) {
+static int ml_item_style(MlCtx *c) {
+    /* B14's painted labels differ from BT3's. The cutter must describe the
+       actual sheet, including unused rows, before lending any glyphs. */
+    static const char *bt4Stages[] = {
+        "Wasteland - Evening", "Rocky Area - Noon", "Planet Namek", "Tournament of Power - Final",
+        "World Tournament - Noon", "Kami's Lookout - Noon", "Cell Game Arena - Ruins", "Supreme Kai's World",
+        "Hyperbolic Time Chamber", "City Ruins - Noon", "Mountain Road - Noon", "Archipelago - Evening",
+        "Kame House - Noon", "Glacier", "Ice Continent", "Dying Planet",
+        "Outer Space - Earth", "Tournament of Power - Climax", "Hell", "Desert - Noon",
+        "King's Castle", "Penguin Village - Noon", "Mount Paozu", "Plains - Noon",
+        "South City", "Baba's Palace - Night", "Rocky Area - Night", "World Tournament - Evening",
+        "Cell Games Arena - Noon", "City Ruins - Evening", "City Ruins - Future", "Tournament of Power",
+        "Champa's Ring", "Islands", "Planet - Evening", "Random"
+    };
+    static const char *bt4Songs[] = {
+        "Bu Yuu Retsuden", "Dragon Crisis", "Victory Road", "Little Light",
+        "Super Sonic", "Explosion (RB1)", "Final Confrontation", "Dark Half",
+        "Denouement", "Stand After Confusion", "The Warrior", "Tense Atmosphere",
+        "Challenger", "Gallant", "Sky Battle for Justice", "Move Forward Fearlessly",
+        "Dynamite Battle", "Burnin' Up", "Wild Rush", "Evolution", "Force Of Justice",
+        "Challengers", "Joker", "Evil Desires"
+    };
+    extern int PortGame_IsBT4(void);
+    int bt4 = PortGame_IsBT4();
     const char *names[ML_LABELS];
     char split[1024], *p;
-    const char *kMlMain, *kMlItem;
+    const char *kMlMain;
     MlBuf select, main;
-    int count = 0, k, w, h, ok = 0;
+    NfStyle music;
+    int count = 0, i, ok = 0;
 
-    out[0] = out[1] = NULL;
-    if (!MenuTranslation_Ensure() || (kMlMain = MenuTranslation_MainOriginal()) == NULL || (kMlItem = MenuTranslation_ItemOriginal()) == NULL ||
+    if (!MenuTranslation_Ensure() || (kMlMain = bt4 ?
+        "Dragon History|Time Nest|Dragon World Tour|Duel Mode|UNUSED|Evolution Z|Ultimate Training|Baba's Palace|Zuno's Temple|Options|Shenron Mode" : MenuTranslation_MainOriginal()) == NULL ||
         snprintf(split, sizeof(split), "%s", kMlMain) >= (int)sizeof(split)) return 0;
     for (p = split; count < ML_LABELS; p++) { /* the main menu's texts, one by one */
         names[count++] = p;
@@ -1889,24 +1921,52 @@ static int ml_item_pics(MlCtx *c, unsigned char *out[2]) {
         *p = '\0';
     }
     ml_cutter_clear();
-    /* the stage select's names lend the letters the main menu's labels do not have (the k), as namefont.c does */
-    if (ml_screen(c, 448, 2, &select) && ml_screen(c, 449, 2, &main) && ml_cutter_sheets(c, select, 6, NF_STAGE, 9) == 9 &&
+    /* Stage and song names together supply the full alphabet: the main menu
+       and stages alone have no F, which would disable Free For All. Read and
+       cut these once for the entire set of mod pages. */
+    if (!ml_screen(c, 448, 2, &select) || !ml_screen(c, 449, 2, &main) ||
+        ml_cutter_sheets(c, select, 6, NF_STAGE, 9) != 9 ||
+        ml_cutter_sheets(c, select, 4, NF_SONG, 3) != 3 ||
+        !style_build(NF_STAGE, bt4 ? bt4Stages : kStageNames, STAGE_NAMES, 64) ||
+        !style_build(NF_SONG, bt4 ? bt4Songs : kSongNames, bt4 ? 8 : SONG_NAMES, 32)) return 0;
+    /* Keep the original song glyphs: style_lend deliberately will not lend a
+       previously rescaled glyph again. */
+    music=sStyle[NF_SONG];
+    memset(&sStyle[NF_SONG],0,sizeof(sStyle[NF_SONG]));
+    ml_cutter_style_clear(NF_SONG);
+    if (
         ml_cutter_sheets(c, main, 5, NF_SONG, 2) == 2 && ml_cutter_sheets(c, main, 6, NF_SONG_LIT, 2) == 2 &&
-        style_build(NF_STAGE, kStageNames, STAGE_NAMES, 64) &&
         style_build(NF_SONG, names, count, 32) && style_build(NF_SONG_LIT, names, count, 32)) {
         style_lend(&sStyle[NF_SONG], &sStyle[NF_STAGE]);
         style_lend(&sStyle[NF_SONG_LIT], &sStyle[NF_STAGE]);
+        style_lend(&sStyle[NF_SONG], &music);
+        style_lend(&sStyle[NF_SONG_LIT], &music);
         sState = 3;
-        for (k = 0, ok = 1; k < 2 && ok; k++) {
-            out[k] = MenuLabels_NameCompose_(NF_SONG + k, kMlItem, &w, &h);
+        ok=1;
+    }
+    for(i=0;i<128;i++) free(music.g[i].px);
+    return ok;
+}
+
+static int ml_item_compose(const char *text, unsigned char *out[2]) {
+    int k, w, h, ok = text != NULL;
+    out[0] = out[1] = NULL;
+    for (k = 0; k < 2 && ok; k++) {
+            out[k] = MenuLabels_NameCompose_(NF_SONG + k, text, &w, &h);
             ok = out[k] != NULL && w == SHEET_W && h == 32;
-        }
     }
     if (!ok) {
         free(out[0]);
         free(out[1]);
         out[0] = out[1] = NULL;
     }
+    return ok;
+}
+
+static int ml_item_pics(MlCtx *c, unsigned char *out[2], const char *text) {
+    int ok;
+    out[0] = out[1] = NULL;
+    ok = ml_item_style(c) && ml_item_compose(text ? text : MenuTranslation_ItemOriginal(), out);
     ml_cutter_clear();
     return ok;
 }
@@ -1921,7 +1981,7 @@ int MenuLabels_MainItem(const char *dataDir, unsigned char *out[2]) {
     }
     pthread_mutex_lock(&sMlCutter);
     if (ml_read_one(c, dataDir, ml_file(448), 0) == MENU_LABELS_MADE && ml_read_one(c, dataDir, ml_file(449), 0) == MENU_LABELS_MADE) {
-        ok = ml_item_pics(c, out);
+        ok = ml_item_pics(c, out, NULL);
     }
     if (!ok) {
         fprintf(stderr, "bt3: main menu: the lettering of the PC's item was not made from the disc (%s)\n",
@@ -1931,6 +1991,24 @@ int MenuLabels_MainItem(const char *dataDir, unsigned char *out[2]) {
     ml_free(c);
     free(c);
     return ok;
+}
+
+/* Arbitrary mode labels in the exact lettering of the main menu. */
+int MenuLabels_MainTexts(const char *dataDir, const char *const *text, int count, unsigned char *out[][2]) {
+    MlCtx *c=calloc(1,sizeof(*c)); int ok=0,i;
+    for(i=0;i<count;i++) out[i][0]=out[i][1]=NULL;
+    if(!c) return 0;
+    pthread_mutex_lock(&sMlCutter);
+    if(ml_read_one(c,dataDir,ml_file(448),0)==MENU_LABELS_MADE &&
+       ml_read_one(c,dataDir,ml_file(449),0)==MENU_LABELS_MADE && ml_item_style(c)) {
+        ok=1;
+        for(i=0;i<count;i++) if(!ml_item_compose(text[i],out[i])) {
+            ok=0;
+        }
+    }
+    ml_cutter_clear();
+    pthread_mutex_unlock(&sMlCutter);
+    ml_free(c); free(c); return ok;
 }
 
 void MenuLabels_ItemPixels(const unsigned char *pic, const unsigned char *table, unsigned char *out) {
@@ -1955,6 +2033,68 @@ void MenuLabels_ItemPixels(const unsigned char *pic, const unsigned char *table,
         }
         out[i] = (unsigned char)((best & 0xE7) | ((best & 8) << 1) | ((best & 0x10) >> 1)); /* (the table's order: 8..15 and 16..23 of every 32 change places) */
     }
+}
+
+/* B14 stores the unselected menu lettering in four bits per pixel. Mod pages
+   need writable eight-bit sheets in both states. Own their packets and color
+   tables instead of writing eight-bit indices into the disc's smaller bank. */
+uint32_t Port_MainMenuSheets(uint32_t original, uint32_t model, int lit) {
+    enum { PIX=0x20080, PAL=0x480, BYTES=128+2*(PIX+PAL) };
+    extern void *Port_LowAlloc(size_t);
+    static uint8_t *owned[2], *clean[2];
+    MlCtx *c;
+    MlBuf screen, file;
+    uint8_t *template=(uint8_t *)Port_Ptr(model);
+    uint8_t *templatePix=(uint8_t *)Port_Ptr(rd32(template+56));
+    uint8_t *templatePal=(uint8_t *)Port_Ptr(rd32(template+60));
+    const char *root=getenv("BT3_DATA");
+    int i,x,y,j;
+    if(lit<0 || lit>1) return original;
+    if(owned[lit]) { memcpy(owned[lit],clean[lit],BYTES); return (uint32_t)(uintptr_t)owned[lit]; }
+    c=calloc(1,sizeof(*c));
+    if(!c || rd32(template+8)!=PIX || rd32(template+12)!=PAL ||
+       ml_read_one(c,root?root:"gamedata",ml_file(449),0)!=MENU_LABELS_MADE ||
+       !ml_screen(c,449,2,&screen) || !ml_section(c,screen,5+lit,&file)) goto fail;
+    owned[lit]=Port_LowAlloc(BYTES);clean[lit]=calloc(BYTES,1);
+    if(!owned[lit] || !clean[lit]) goto fail;
+    memset(owned[lit],0,BYTES);
+    for(i=0;i<2;i++) {
+        MlTex picture;
+        uint8_t *e=owned[lit]+64*i, *pix=owned[lit]+128+i*(PIX+PAL),*pal=pix+PIX;
+        uint32_t src, palette;
+        uint64_t tex0; int colors;
+        if(ml_texture(c,file,i,&picture)<=0 || picture.w!=512 || picture.h>256) goto fail;
+        src=rd32(file.p+4)*4+i*64;palette=rd32(file.p+src+4)*4+96;
+        memcpy(&tex0,file.p+src+48,8);colors=((tex0>>20)&63)==20?16:256;
+        if(palette>file.n || file.n-palette<(unsigned)colors*4) goto fail;
+        memcpy(e,template,64);memcpy(pix,templatePix,96);memcpy(pix+PIX-32,templatePix+PIX-32,32);
+        memcpy(pal,templatePal,96);memcpy(pal+PAL-32,templatePal+PAL-32,32);
+        { uint32_t a=(uint32_t)(uintptr_t)pix,b=(uint32_t)(uintptr_t)pal;
+          memcpy(e+56,&a,4);memcpy(e+60,&b,4); }
+        for(j=0;j<256;j++) {
+            int slot=(j&0xe7)|((j&8)<<1)|((j&16)>>1);
+            int source=colors==16?j%16:slot;
+            memcpy(pal+96+slot*4,file.p+palette+source*4,4);
+        }
+        for(y=0;y<picture.h;y++) for(x=0;x<512;x++) {
+            const uint8_t *rgba=picture.rgba+4*(y*512+x);int index=0;
+            for(j=0;j<colors;j++) {
+                int slot=(j&0xe7)|((j&8)<<1)|((j&16)>>1);
+                const uint8_t *q=pal+96+slot*4;
+                if(memcmp(q,rgba,4)==0) {index=j;break;}
+            }
+            { int block=(y&~15)*512+(x&~15)*2,swap=(((y+2)>>2)&1)*4;
+              int line=(((y&~3)>>1)+(y&1))&7;
+              pix[96+block+line*1024+((x+swap)&7)*4+((y>>1)&1)+((x>>2)&2)]=index; }
+        }
+    }
+    memcpy(clean[lit],owned[lit],BYTES);
+    ml_free(c);free(c);
+    return (uint32_t)(uintptr_t)owned[lit];
+fail:
+    fprintf(stderr,"native disc: could not prepare BT4 main-menu textures\n");
+    if(c) {ml_free(c);free(c);}
+    exit(2);
 }
 
 /* The colour table of texture `index` of a texture file, in the order it is in memory (256 colours of 4 bytes). */

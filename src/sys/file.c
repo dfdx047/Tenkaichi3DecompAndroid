@@ -40,7 +40,12 @@ extern AdxPlayer gAdxPlayerTbl[];
 extern char *gDiscExeNameTbl[];
 extern AdxDvdFsParam gAdxDvdFsParam;
 extern AdxFcacheParam gAdxFcacheParam;
+#ifdef PORT
+static FileReqQueue nativeFileRequests;
+#define gFileReq nativeFileRequests
+#else
 extern FileReqQueue gFileReq;
+#endif
 extern char gFileRootDir[];
 extern char gFileDirName[];
 
@@ -127,6 +132,17 @@ void File_Init(void) {
     File_LoadPartition1();
 }
 
+/* Native extra fighters have separate voice and streamed-effect players. */
+#ifdef PORT
+static AdxPlayer extraAdxPlayers[ADX_PLAYER_COUNT-6];
+#endif
+AdxPlayer *File_AdxPlayer(s32 channel) {
+#ifdef PORT
+    if (channel >= 6) return &extraAdxPlayers[channel - 6];
+#endif
+    return &gAdxPlayerTbl[channel];
+}
+
 /* Sets up the CRI file system and players, loads partition 0 and resets the request queue. */
 void File_InitAdx(void) {
     AdxDvdFsParam *dvd = &gAdxDvdFsParam;
@@ -156,8 +172,11 @@ void File_InitAdx(void) {
     for (i = 0; i < FILE_PT_COUNT; i++, part++) {
         part->info = Heap_Alloc(part->infoSize, 0x20, 0, HEAP_ANY);
     }
-    player = gAdxPlayerTbl;
-    for (i = 0; i < ADX_PLAYER_COUNT; i++, player++) {
+    for (i = 0; i < ADX_PLAYER_COUNT; i++) {
+        player = File_AdxPlayer(i);
+#ifdef PORT
+        if (i >= 6) *player = gAdxPlayerTbl[i < 4+PORT_FIGHTER_CAPACITY ? 4 : 2];
+#endif
         player->work = Heap_Alloc(player->workSize, 0x20, 0, HEAP_ANY);
         player->adxt = ADXT_Create(2, player->work, player->workSize);
         ADXT_SetReloadSct(player->adxt, player->reloadSct);
@@ -373,6 +392,12 @@ void *File_Request(s32 id, void *buf) {
     ADXF_Close(adxf);
 
     req = (FileReq *)List_PopFront(&queue->free);
+#ifdef PORT
+    if (req == NULL) {
+        extern void Port_TagTeamFatal(const char *);
+        Port_TagTeamFatal("file request queue exhausted");
+    }
+#endif
     req->flags = flags;
     req->id = id;
     req->sectors = sectors;
@@ -383,7 +408,7 @@ void *File_Request(s32 id, void *buf) {
 }
 
 /* Advances the request queue by one step; returns 1 when every request has been read. */
-s32 File_UpdateRequests(void) {
+static s32 File_UpdateRequestStep(void) {
     FileReqQueue *queue = &gFileReq;
     s32 done = 0;
     List *pending;
@@ -437,6 +462,30 @@ s32 File_UpdateRequests(void) {
     return done;
 }
 
+/* On PC a completed local read needs no further video frames to acknowledge it.
+ * Drain only ready work, with both a time and a step limit so the loading
+ * minigame still gets its normal input, sound and drawing updates. A read that
+ * is genuinely waiting (or failed to open) yields immediately. */
+s32 File_UpdateRequests(void) {
+#ifdef PORT
+    extern s32 Port_FastFileQueue(void);
+    extern u32 Port_LoadTimeUs(void);
+    if (Port_FastFileQueue()) {
+        u32 started = Port_LoadTimeUs();
+        s32 step;
+        for (step = 0; step < 32; step++) {
+            s32 state = gFileReq.state;
+            s32 count = File_GetPendingCount();
+            if (File_UpdateRequestStep()) return 1;
+            if (state == gFileReq.state && count == File_GetPendingCount()) break;
+            if ((u32)(Port_LoadTimeUs() - started) >= 2000) break;
+        }
+        return 0;
+    }
+#endif
+    return File_UpdateRequestStep();
+}
+
 /* Size of file `id` in bytes, rounded up to whole sectors. */
 s32 File_GetSize(s32 id) {
     ADXF adxf;
@@ -467,12 +516,20 @@ FileReqQueue *File_GetRequestQueue(void) {
 
 /* Opens file `id`, translating the global id into (partition, index). */
 ADXF File_OpenById(s32 id) {
+#ifdef PORT
+    return ADXF_OpenAfs(PortGame_Partition(id), PortGame_FileIndex(id));
+#else
     return ADXF_OpenAfs(id <= 0 ? 0 : id < FILE_PT2_FIRST_ID ? 1 : 2,
                         id <= 0 ? id : id < FILE_PT2_FIRST_ID ? id - FILE_PT1_FIRST_ID : id - FILE_PT2_FIRST_ID);
+#endif
 }
 
 /* Starts streaming file `id` on an ADXT player, with the same id translation as File_OpenById. */
 void File_StartAdxById(ADXT_HN adxt, s32 id) {
+#ifdef PORT
+    ADXT_StartAfs(adxt, PortGame_Partition(id), PortGame_FileIndex(id));
+#else
     ADXT_StartAfs(adxt, id <= 0 ? 0 : id < FILE_PT2_FIRST_ID ? 1 : 2,
                   id <= 0 ? id : id < FILE_PT2_FIRST_ID ? id - FILE_PT1_FIRST_ID : id - FILE_PT2_FIRST_ID);
+#endif
 }

@@ -61,6 +61,7 @@ extern void BtlPool_Free(s32 slot, void *ptr);
 extern void *BtlTask_CreateChildList(EftAaTask *task, s32 count, s32 workSize);
 extern EftAaTask *BtlTaskList_AddTail(void *list, void *cls, void *arg);
 extern s32 BtlScene_IsTimeStopped(void);
+extern s32 BtlScene_GetCharCount(void);
 extern s32 BtlScene_IsCharStopped(s32 objId);
 extern s32 BtlScene_IsEffectStopped(s32 objId, s32 kind);
 extern s32 BtlScene_IsEffectHidden(s32 objId, s32 kind);
@@ -682,6 +683,7 @@ void EftCharSlotMgr_Reset(void) {
 
 /* Records the kind-0 effect task of a fighter. */
 void EftCharSlot_Set0(s32 objId, void *task) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return ;
     EftCharSlot *s = &gEftCharSlot->kind0[objId];
 
     if (task != NULL) {
@@ -692,6 +694,7 @@ void EftCharSlot_Set0(s32 objId, void *task) {
 
 /* Empties the kind-0 slot of a fighter. */
 void EftCharSlot_Clear0(s32 objId) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return ;
     EftCharSlot *s = &gEftCharSlot->kind0[objId];
 
     s->task = NULL;
@@ -700,11 +703,13 @@ void EftCharSlot_Clear0(s32 objId) {
 
 /* The kind-0 effect task of a fighter, or NULL. */
 void *EftCharSlot_Get0(s32 objId) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return NULL;
     return gEftCharSlot->kind0[objId].task;
 }
 
 /* Records the kind-1 effect task of a fighter. */
 void EftCharSlot_Set1(s32 objId, void *task) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return ;
     EftCharSlot *s = &gEftCharSlot->kind1[objId];
 
     if (task != NULL) {
@@ -715,6 +720,7 @@ void EftCharSlot_Set1(s32 objId, void *task) {
 
 /* Empties the kind-1 slot of a fighter. */
 void EftCharSlot_Clear1(s32 objId) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return ;
     EftCharSlot *s = &gEftCharSlot->kind1[objId];
 
     s->task = NULL;
@@ -723,6 +729,7 @@ void EftCharSlot_Clear1(s32 objId) {
 
 /* The kind-1 effect task of a fighter, or NULL. */
 void *EftCharSlot_Get1(s32 objId) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return NULL;
     EftCharSlot *s = &gEftCharSlot->kind1[objId];
 
     return s->task;
@@ -730,6 +737,7 @@ void *EftCharSlot_Get1(s32 objId) {
 
 /* Records the kind-2 effect task of a fighter. */
 void EftCharSlot_Set2(s32 objId, void *task) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return ;
     EftCharSlot *s = &gEftCharSlot->kind2[objId];
 
     if (task != NULL) {
@@ -740,6 +748,7 @@ void EftCharSlot_Set2(s32 objId, void *task) {
 
 /* Empties the kind-2 slot of a fighter. */
 void EftCharSlot_Clear2(s32 objId) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return ;
     EftCharSlot *s = &gEftCharSlot->kind2[objId];
 
     s->task = NULL;
@@ -748,6 +757,7 @@ void EftCharSlot_Clear2(s32 objId) {
 
 /* The kind-2 effect task of a fighter, or NULL. */
 void *EftCharSlot_Get2(s32 objId) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return NULL;
     EftCharSlot *s = &gEftCharSlot->kind2[objId];
 
     return s->task;
@@ -755,6 +765,7 @@ void *EftCharSlot_Get2(s32 objId) {
 
 /* Records the kind-3 effect task of a fighter. */
 void EftCharSlot_Set3(s32 objId, void *task) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return ;
     EftCharSlot *s = &gEftCharSlot->kind3[objId];
 
     if (task != NULL) {
@@ -765,6 +776,7 @@ void EftCharSlot_Set3(s32 objId, void *task) {
 
 /* Empties the kind-3 slot of a fighter. */
 void EftCharSlot_Clear3(s32 objId) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return ;
     EftCharSlot *s = &gEftCharSlot->kind3[objId];
 
     s->task = NULL;
@@ -773,6 +785,7 @@ void EftCharSlot_Clear3(s32 objId) {
 
 /* The kind-3 effect task of a fighter, or NULL. */
 void *EftCharSlot_Get3(s32 objId) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return NULL;
     EftCharSlot *s = &gEftCharSlot->kind3[objId];
 
     return s->task;
@@ -780,6 +793,7 @@ void *EftCharSlot_Get3(s32 objId) {
 
 /* Records the drain glow task of a fighter (EftAbsorb_Start). */
 void EftCharSlot_SetAbsorb(s32 objId, void *task) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return ;
     EftCharSlot *s = &gEftCharSlot->absorb[objId];
 
     if (task != NULL) {
@@ -790,6 +804,7 @@ void EftCharSlot_SetAbsorb(s32 objId, void *task) {
 
 /* Empties the drain glow slot of a fighter (EftAbsorb_Term). */
 void EftCharSlot_ClearAbsorb(s32 objId) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return ;
     EftCharSlot *s = &gEftCharSlot->absorb[objId];
 
     s->task = NULL;
@@ -798,6 +813,7 @@ void EftCharSlot_ClearAbsorb(s32 objId) {
 
 /* The drain glow task of a fighter, or NULL (EftAbsorb_Start / _Stop). */
 void *EftCharSlot_GetAbsorb(s32 objId) {
+    if (gEftCharSlot == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return NULL;
     EftCharSlot *s = &gEftCharSlot->absorb[objId];
 
     return s->task;
@@ -818,6 +834,7 @@ void EftBlade_Create(s32 objId) {
 /* Manager init: fills the table of the eight characters that have a trail and creates both fighters' tasks. */
 void EftBladeMgr_Init(EftAaTask *task) {
     EftBladeDef *d = gEftBladeDef;
+    s32 i, count = BtlScene_GetCharCount();
 
     Vec4_Set(&d[0].base, 0.0f, 0.0f, -1.5f, 1.0f);
     Vec4_Set(&d[0].tip, 0.0f, 0.0f, -10.5f, 1.0f);
@@ -862,11 +879,12 @@ void EftBladeMgr_Init(EftAaTask *task) {
     gEftBlade = BtlPool_Alloc(BtlPool_GetCurrent(), sizeof(EftBladeMgr));
     memset(gEftBlade, 0, sizeof(EftBladeMgr));
     gEftBlade->color = gEftBladeColor;
-    gEftBlade->list = BtlTask_CreateChildList(task, 2, sizeof(EftBlade));
-    gEftBlade->chara[0] = BtlCharApi_GetChara(0);
-    gEftBlade->chara[1] = BtlCharApi_GetChara(1);
-    EftBlade_Create(0);
-    EftBlade_Create(1);
+    if (count > EFT_FIGHTER_CAPACITY) count = EFT_FIGHTER_CAPACITY;
+    gEftBlade->list = BtlTask_CreateChildList(task, count, sizeof(EftBlade));
+    for (i = 0; i < count; i++) {
+        gEftBlade->chara[i] = BtlCharApi_GetChara(i);
+        EftBlade_Create(i);
+    }
 }
 
 /* Manager term. */
@@ -1292,6 +1310,15 @@ void EftBlind_Init(void) {
 /* Update callback: reads each fighter's blind level (fighter +0xFFC / 90) into an alpha. Object 1 is read only in
    split screen. Skipped while time is stopped. */
 void EftBlind_Update(void) {
+#ifdef PORT
+    if (TagTeam_Active()) {
+        s32 i;
+        if (BtlScene_IsTimeStopped()) return;
+        for (i = 0; i < EFT_FIGHTER_CAPACITY; i++)
+            gEftBlind->alpha[i] = EFT_BLIND_CLAMP(BtlCharApi_GetBlindRatio(i) * 255.0f);
+        return;
+    }
+#endif
     if (BtlScene_IsTimeStopped()) {
         return;
     }
@@ -1313,6 +1340,21 @@ void EftBlind_Update(void) {
 
 /* Draw callback: object 0's overlay over the whole screen, or each object's over its half in split screen. */
 void EftBlind_Draw(void) {
+#ifdef PORT
+    if (TagTeam_Active()) {
+        extern s32 TagTeam_CurrentViewActor(void);
+        extern EftAaView *BtlCam_GetNativeView(s32);
+        s32 actor = TagTeam_CurrentViewActor(), view;
+        if (BattleReplay_IsActive() || (u32)actor >= EFT_FIGHTER_CAPACITY) return;
+        if (gEftBlind->alpha[actor] <= 0) return;
+        for (view = 0; view < TagTeam_ViewCount(); view++)
+            if (gBtlCamView == BtlCam_GetNativeView(view)) {
+                EftBlind_DrawOverlay(view, BtlScene_IsSingleView(), gEftBlind->alpha[actor]);
+                break;
+            }
+        return;
+    }
+#endif
     if (BattleReplay_IsActive()) {
         return;
     }
@@ -1382,6 +1424,15 @@ void EftBlind_DrawOverlay(s32 view, s32 full, f32 alpha) {
     p->rgbaq.b = c.z;
     p->rgbaq.a = c.w;
     p->rgbaq.q = 1.0f;
+#ifdef PORT
+    if (TagTeam_Active()) {
+        extern void TagTeam_ViewRect(s32,s32 *);
+        s32 rect[4] = {0,0,512,448};
+        if (!full) TagTeam_ViewRect(view,rect);
+        EftBlind_SetRect(p, 0x7000 + rect[0]*16, 0x7200 + rect[1]*16,
+                        0x7000 + (rect[0]+rect[2])*16, 0x7200 + (rect[1]+rect[3])*16);
+    } else
+#endif
     if (full == 0) {
         if (view == 0) {
             EftBlind_SetRect(p, 0x7000, 0x7200, -0x8000, -0x7200);
@@ -1707,5 +1758,5 @@ void EftOrbTailMgr_Init(EftAaTask *task) {
             gEftOrbTail->w->unk434[i] = BtlScene_GetCommonEntry(idsC[i]);
         }
     }
-    gEftOrbTail->w->list = BtlTask_CreateChildList(task, 2, 0x1E0);
+    gEftOrbTail->w->list = BtlTask_CreateChildList(task, BtlScene_GetCharCount(), 0x1E0);
 }

@@ -2,6 +2,7 @@
 #define BATTLE_BTL_OBJ_H
 
 #include "types.h"
+#include "battle/tag_capacity.h"
 #include "sys/list.h"
 #include "sys/math3d.h"
 
@@ -30,7 +31,9 @@
  * Entries of free ids are NULL.
  */
 
-#define BTL_OBJ_MAX 12
+/* Ten fighters may each spawn two seven-model projectile swarms, besides
+   other move props. These are objects, not additional playable fighters. */
+#define BTL_OBJ_MAX 192
 #define BTL_OBJ_VIEW_MAX 2
 #define BTL_OBJ_WORK_SIZE 0x6B740
 
@@ -207,7 +210,7 @@ typedef struct BtlResSlot {
 #define BTL_RES_SLOT_HEAP 2 /* the buffers came from the heap (File_Request allocated them) */
 
 #define BTL_RES_SLOT_MAX 12
-#define BTL_RES_FIXED_MAX 2
+#define BTL_RES_FIXED_MAX PORT_FIGHTER_CAPACITY
 #define BTL_RES_ID_KEEP (-99) /* BtlRes_SetFileId: leave the file as it is */
 
 /* Buffer sizes of a fixed slot. */
@@ -219,7 +222,7 @@ typedef struct BtlResSlot {
 typedef struct BtlResWork {
     /* 0x000 */ BtlResSlot slots[BTL_RES_SLOT_MAX];  /* heap-loaded models */
     /* 0x2A0 */ BtlResSlot fixed[BTL_RES_FIXED_MAX]; /* the two fighters, preallocated buffers */
-    /* 0x310 */ BtlResFile spare[3];  /* model buffers: [0], [1] start in fixed[0], fixed[1]; [2] is free */
+    /* 0x310 */ BtlResFile spare[PORT_FIGHTER_CAPACITY + 1];  /* model buffers: [0], [1] start in fixed[0], fixed[1]; [2] is free */
     /* 0x340 */ BtlResFile *next;     /* the model buffer not in use: a character change loads into it */
     /* 0x344 */ s32 pending;          /* fixed slot waiting for BtlRes_CommitReload, -1 = none */
     /* 0x348 */ s32 prealloc;         /* argument of BtlObj_Init: 1 = the fixed slots exist */
@@ -239,7 +242,7 @@ typedef struct BtlObjTable {
     /* 0x10E00 */ List freeObjs;
     /* 0x10E0C */ List usedObjs;
     /* 0x10E18 */ u8 unk10E18[0x28];
-    /* 0x10E40 */ u8 charaWork[2][0x1A0C0];
+    /* 0x10E40 */ u8 charaWork[PORT_FIGHTER_CAPACITY][0x1A0C0];
     /* 0x44FC0 */ s32 unk44FC0;
     /* 0x44FC4 */ f32 unk44FC4;
     /* 0x44FC8 */ u8 unk44FC8[0x38];
@@ -255,7 +258,7 @@ typedef struct BtlObjPoolE0 {
 } BtlObjPoolE0; /* size 0xE0 */
 
 typedef struct BtlObjPoolE0Work {
-    /* 0x00000 */ BtlObjPoolE0 nodes[512];
+    /* 0x00000 */ BtlObjPoolE0 nodes[2048];
     /* 0x1C000 */ SList free;
     /* 0x1C00C */ s32 pad;
 } BtlObjPoolE0Work; /* size 0x1C010 */
@@ -266,14 +269,15 @@ typedef struct BtlObjPool70 {
 } BtlObjPool70; /* size 0x70 */
 
 typedef struct BtlObjPool70Work {
-    /* 0x000 */ BtlObjPool70 nodes[4];
+    /* 0x000 */ BtlObjPool70 nodes[BTL_OBJ_MAX];
     /* 0x1C0 */ SList free;
     /* 0x1CC */ s32 pad;
 } BtlObjPool70Work; /* size 0x1D0 */
 
 /* Third pool; elements are not touched in this file (ObjShadow_InitPool fills the free list). */
 typedef struct BtlObjPool3Work {
-    /* 0x0000 */ u8 nodes[0xA140];
+    /* Fighter shadows have a separate pool, shared with ObjShadowPool. */
+    /* 0x0000 */ u8 nodes[0x2040*TAG_SHADOW_CAPACITY];
     /* 0xA140 */ SList free;
     /* 0xA14C */ s32 pad;
 } BtlObjPool3Work; /* size 0xA150 */
@@ -318,6 +322,7 @@ typedef struct BtlObjWork {
 extern BtlObjWork *gBtlObjWork;
 extern BtlObj *gBtlObjTbl[BTL_OBJ_MAX];
 
+BtlObjView *BtlObj_View(BtlObj *obj, s32 view);
 void BtlObj_InitNop(void);
 void BtlObj_TermNop(void);
 void BtlObj_RebuildTable(void);

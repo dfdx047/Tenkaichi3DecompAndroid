@@ -1,6 +1,14 @@
 #include "common.h"
 #include "menu/menu_a.h"
 #ifdef PORT
+#include "battle/tag_session.h"
+#include "battle/tag_challenge.h"
+#include "menu/tag_tournament.h"
+#include "battle/tag_options.h"
+#include "menu/tag_labels.h"
+#include "menu/tag_setup.h"
+#include "menu/port_screen.h"
+extern s32 Port_TagAvailable(void);
 extern void Port_NetMenuOpen(void);
 extern int Port_NetMenuListed(void);
 extern int Port_NetSession(void);
@@ -11,6 +19,7 @@ extern void Port_NetLeave(void);
 
 /* The screen's work (overlay .data, 0x3B0E80). */
 MainMenu *gMainMenu = NULL;
+void MainMenu_PlateGoto(s32 idx,char *label);
 
 /*
  * MainMenu: the main menu of the game (progress mode 4), 0x334C00..0x336A90. First object of the menu
@@ -33,9 +42,61 @@ MainMenu *gMainMenu = NULL;
  * menu/port_tbo.c. It has no voiced line of the guides.
  */
 #include "port_tbo_label.h"
+#include "menu/tag_controllers.h"
+#include "../../port/src/gs/tag_net.h"
 
 #define MAINMENU_TBO 11
-#define MM_ICON(item) ((item) == MAINMENU_TBO ? 4 : (item)) /* whose icon an item shows */
+static s32 tagPage, tagMode, presetPage;
+#define TAG_MENU_PRESET 100
+static s32 preset_count(void) {return tagMode==TAG_MODE_GAUNTLET?TagChallenge_Count():5;}
+static s32 preset_rows(void) {s32 n=preset_count()-presetPage*8;return n>8?8:n;}
+static s32 stockItems[MAINMENU_ITEM_MAX], stockCount, stockTop, stockCursor;
+/* The native plate movie uses a second texture sheet after row seven. Keep
+   both sheets intact so long settings pages and returning to stock work. */
+static u8 stockLabels[2][12][512*32], tagLabels[2][12][512*32];
+static s32 tagLabelsReady;
+static s32 TagMenu_Option(s32 page,s32 row) {
+    s32 i;
+    for(i=0;i<TAG_OPT_COUNT;i++) if(tagOptionInfo[i].group==page-5 && row--==0) return i;
+    return -1;
+}
+static s32 TagMenu_Count(s32 page) {
+    s32 n=0;
+    if(page==TAG_MENU_PRESET) return preset_rows()+3;
+    if(page==3) return 1; /* spatial setup page draws its own roster */
+    if(page==2) return 6;
+    if(page==1) return TagNet_HostMenu()?7:8;
+    if(page==4) return TAG_OPTION_GROUP_COUNT+1;
+    if(page<5) return 6;
+    while(TagMenu_Option(page,n)>=0) n++;
+    return n+1;
+}
+static s32 TagMenu_Label(s32 page,s32 row) {
+    if(page==TAG_MENU_PRESET) {
+        s32 n=preset_rows();
+        return row<n?(tagMode==TAG_MODE_GAUNTLET?TAG_LABEL_PRESETS:TAG_LABEL_TOURS)+presetPage*8+row:
+            row==n?TAG_LABEL_PREV:row==n+1?TAG_LABEL_NEXT:4;
+    }
+    if(page==1) {static const s32 labels[]={0,1,2,TAG_LABEL_GAUNTLET,TAG_LABEL_TOURNAMENT,TAG_LABEL_LOBBY,3,4};return TagNet_HostMenu() && row==6?TAG_LABEL_CLOSE_LOBBY:labels[TagNet_HostMenu() && row>=5?row+1:row];}
+    if(page==3) return TAG_LABEL_CHOOSE;
+    if(page==2 && row>=4) return row==4?TAG_LABEL_CPU:4;
+    if(page==4) return row==TAG_OPTION_GROUP_COUNT?4:TAG_LABEL_SETTINGS+row;
+    if(page>=5) return row==TagMenu_Count(page)-1?4:TAG_LABEL_OPTIONS+TagMenu_Option(page,row);
+    return (page==2?5:0)+row;
+}
+static void TagMenu_SettingChange(s32 row,s32 direction) {
+    s32 id=TagMenu_Option(tagPage,row),lo,hi,step;
+    if(id<0) return;
+    lo=tagOptionInfo[id].min; hi=tagOptionInfo[id].max; step=tagOptionInfo[id].step;
+    Port_TagOptionSet(id,Ps_Wrap(Port_TagOption(id)+direction*step,lo,hi));
+    Snd_PlaySe(1,0);
+}
+void TagMenu_Request(s32 page) { tagPage=page; }
+static s32 tag_icon(s32 item) {
+    static const s32 icons[6]={3,3,6,9,4,4};
+    return tagPage>=4 ? 9 : tagPage==3 ? 3 : tagPage ? icons[item%6] : item==MAINMENU_TBO?4:item;
+}
+#define MM_ICON(item) tag_icon(item)
 
 /* A label sheet's pixels are stored the way the GS keeps 8-bit textures (in blocks): where pixel (x, y) is. */
 static s32 PortMainMenu_PixelAt(s32 x, s32 y) {
@@ -77,7 +138,89 @@ static s32 PortMainMenu_WriteDisc(u8 *tex, s32 row, s32 lit) {
     }
     return 1;
 }
-#define MAINMENU_VOICED(item) ((item) < MAINMENU_TBO)
+static void TagMenu_SetPage(s32 page) {
+    extern s32 Port_MainTagLabel(s32,s32,s32,s32);
+    s32 lit,row,x,y,count=TagMenu_Count(page);
+    MainMenu_PlateGoto(0,"fl_off_start");
+    if(!tagPage && page) { stockTop=gMainMenu->top; stockCursor=gMainMenu->cursor; }
+    tagPage=page;
+    if(page==3) TagSetup_Reset();
+    for(lit=0;lit<2;lit++) for(row=0;row<(page?count:12);row++) {
+        u8 *tex=gMainMenu->tex[lit?12:8]+(row/8)*0x40;
+        u8 *px=*(u8 **)(tex+0x38)+0x60;
+        u8 *labelPixels=page?tagLabels[lit][row]:stockLabels[lit][row];
+        if(page) {
+            s32 label=TagMenu_Label(page,row);
+            if(!Port_MainTagLabel((s32)tex,lit,label,(s32)labelPixels))
+                memset(labelPixels,0,512*32);
+        }
+        for(y=0;y<32;y++) for(x=0;x<512;x++)
+            px[PortMainMenu_PixelAt(x,(row%8)*32+y)]=labelPixels[y*512+x];
+    }
+    if(page) {
+        gMainMenu->itemCount=count;
+        for(row=0;row<count;row++) gMainMenu->items[row]=row;
+        gMainMenu->top=count-1; gMainMenu->cursor=0; gMainMenu->extra=5%count;
+    } else {
+        memcpy(gMainMenu->items,stockItems,sizeof(stockItems));
+        gMainMenu->itemCount=stockCount; gMainMenu->top=stockTop; gMainMenu->cursor=stockCursor;
+        gMainMenu->extra=(stockTop+6)%stockCount;
+    }
+    Voice_Stop(0); gMainMenu->voiceLine=-1;
+    gMainMenu->flags=(gMainMenu->flags&~MAINMENU_STARTED)|MAINMENU_GREETED;
+}
+static void TagMenu_Prepare(void) {
+    extern s32 Port_MainTagLabel(s32,s32,s32,s32);
+    s32 lit,row,x,y,ok=1;
+    if(!Port_TagAvailable()) { tagPage=0; return; }
+    memcpy(stockItems,gMainMenu->items,sizeof(stockItems));
+    stockCount=gMainMenu->itemCount; stockTop=gMainMenu->top; stockCursor=gMainMenu->cursor;
+    for(lit=0;lit<2;lit++) for(row=0;row<12;row++) {
+        u8 *tex=gMainMenu->tex[lit?12:8]+(row/8)*0x40;
+        u8 *px=*(u8 **)(tex+0x38)+0x60;
+        for(y=0;y<32;y++) for(x=0;x<512;x++)
+            stockLabels[lit][row][y*512+x]=px[PortMainMenu_PixelAt(x,(row%8)*32+y)];
+        if(!tagLabelsReady && row<10) ok&=Port_MainTagLabel((s32)tex,lit,row,(s32)tagLabels[lit][row]);
+    }
+    tagLabelsReady=ok;
+    if(tagPage && ok) TagMenu_SetPage(tagPage);
+}
+static void TagMenu_Guide(void) {
+    static char descriptions[][96]={"Fight with your own teams and player assignments.",
+        "Every fighter for themselves. Last fighter standing wins.",
+        "Practice with teams and adjustable training rules.",
+        "Survive successive waves of enemies with your team.",
+        "Enter your teams in a tournament bracket.",
+        "Practice together while the host chooses your next mode.",
+        "Change the mod's gameplay, cameras and HUD settings.","Return to the previous menu."};
+    s32 row=MAINMENU_CUR(gMainMenu);
+    char value[96],heading[64];
+    if(tagPage==TAG_MENU_PRESET) Ps_Copy(heading,tagMode==TAG_MODE_GAUNTLET?"CHOOSE GAUNTLET":"CHOOSE TOURNAMENT",sizeof(heading));
+    else if(tagPage>=5) Ps_Copy(heading,tagOptionGroups[tagPage-5],sizeof(heading));
+    else Ps_Copy(heading,tagPage==4?"MOD SETTINGS":tagPage==3?"BATTLE SETUP":tagPage==2?"PLAYERS":"MODDED MODES",sizeof(heading));
+    Ps_Heading(390,14,heading,0.75f,225,128);
+    Ps_Rect(10,342,502,414,Ps_Rgba(12,49,65,115),Ps_Rgba(12,49,65,115));
+    if(tagPage!=TAG_MENU_PRESET && tagPage>=5 && row<TagMenu_Count(tagPage)-1) {
+        s32 id=TagMenu_Option(tagPage,row),v=Port_TagOption(id);
+        { extern void Port_TagOptionValue(s32,u32,s32),Port_TagPreview(s32),Hud_LoadTagPreview(void);
+          Hud_LoadTagPreview();
+          Port_TagOptionValue(id,(u32)value,sizeof(value));Port_TagPreview(id); }
+        Ps_Text(256,350,value,1.0f,472,3);
+        Ps_Text(256,376,tagOptionInfo[id].help,0.7f,472,3);
+        Ps_Text(256,398,"LEFT / RIGHT - CHANGE",0.6f,472,3);
+    } else {
+        char message[128];
+        Ps_Copy(message,descriptions[7],sizeof(message));
+        if(tagPage==TAG_MENU_PRESET) {sprintf(message,Port_TagText("Choose a challenge. Page %d of %d."),presetPage+1,(preset_count()+7)/8);}
+        else if(tagPage==1 && (u32)row<7) Ps_Copy(message,TagNet_HostMenu() && row==6?"Close the online lobby and disconnect its guests.":descriptions[TagNet_HostMenu() && row==5?6:row],sizeof(message));
+        else if(tagPage==2 && row!=5) Ps_Copy(message,row==4?
+            "Choose both rosters and watch the battle. L3 changes the fighter you follow.":
+            "Choose how many people are playing on this PC.",sizeof(message));
+        else if(tagPage==4 && row!=TAG_OPTION_GROUP_COUNT) Ps_Copy(message,"Choose a group of mod settings.",sizeof(message));
+        Ps_Text(256,359,message,0.8f,472,3);
+    }
+}
+#define MAINMENU_VOICED(item) (!tagPage && (item) < MAINMENU_TBO)
 #else
 #define MM_ICON(item) (item)
 #define MAINMENU_VOICED(item) 1
@@ -133,6 +276,14 @@ void MainMenu_Init(s32 section) {
     gMainMenu->tex[8] = MTEX(res, 0);
     MM_RES(6);
     gMainMenu->tex[12] = MTEX(res, 0);
+#ifdef PORT
+    if(PortGame_IsBT4()) {
+        extern u32 Port_MainMenuSheets(u32,u32,s32);
+        u32 off=(u32)gMainMenu->tex[8],on=(u32)gMainMenu->tex[12];
+        gMainMenu->tex[8]=(u8 *)Port_MainMenuSheets(off,on,0);
+        gMainMenu->tex[12]=(u8 *)Port_MainMenuSheets(on,on,1);
+    }
+#endif
     MM_RES(7);
     gMainMenu->tex[7] = MTEX(res, 0);
     gMainMenu->tex[11] = MTEX(res, 1);
@@ -155,7 +306,14 @@ void MainMenu_Init(s32 section) {
     gMainMenu->tex[49] = MTEX(res, 5);
     MM_RES(13);
     gMainMenu->tex[22] = MTEX(res, 0);
+#ifdef PORT
+    /* B14 replaces the old guide artwork with three disc-authored banks.
+       Its section 26 is empty; interpreting it as textures corrupts the
+       following subtitle block and its display-list uploads. */
+    MM_RES(PortGame_IsBT4()?30+2*Rand_Range(3):26);
+#else
     MM_RES(26);
+#endif
     gMainMenu->tex[27] = MTEX(res, 0);
     gMainMenu->tex[28] = MTEX(res, 1);
     gMainMenu->tex[29] = MTEX(res, 2);
@@ -164,7 +322,11 @@ void MainMenu_Init(s32 section) {
     gMainMenu->tex[13] = MTEX(res, 1);
     gMainMenu->tex[14] = MTEX(res, 2);
     gMainMenu->tex[15] = MTEX(res, 3);
+#ifdef PORT
+    MM_RES(PortGame_IsBT4()?29+2*Rand_Range(3):14);
+#else
     MM_RES(14);
+#endif
     gMainMenu->tex[31] = MTEX(res, 0);
     gMainMenu->tex[32] = MTEX(res, 1);
     gMainMenu->tex[33] = MTEX(res, 2);
@@ -224,7 +386,7 @@ void MainMenu_Init(s32 section) {
         }
         gMainMenu->items[gMainMenu->itemCount++] = i;
 #ifdef PORT
-        if (i == 3 && !Port_NetMenuListed()) { /* (Dragon Net Battle opens these screens now: listed alone only without it) */
+        if (i == 3 && !Port_NetMenuListed() && !Port_TagAvailable()) { /* (Dragon Net Battle opens these screens now: listed alone only without it) */
             gMainMenu->items[gMainMenu->itemCount++] = MAINMENU_TBO;
         }
 #endif
@@ -250,6 +412,9 @@ void MainMenu_Init(s32 section) {
     for (i = 0; i < 4; i++) {
         gMainMenu->blink[i] = Rand_Range(0x20);
     }
+#ifdef PORT
+    TagMenu_Prepare();
+#endif
 }
 
 /* Frees the screen.
@@ -285,6 +450,10 @@ void MainMenu_Draw(void) {
     s32 i;
     s32 item;
     MFlash *flash;
+#ifdef PORT
+    MFlashRef hidden[9];
+    s32 visible[9];
+#endif
 
     Sprite_DrawPicture(gMainMenu->bg, 0, 0, 0x80);
     flash = &gMainMenu->flash[0];
@@ -414,11 +583,41 @@ void MainMenu_Draw(void) {
         FlashAnim_Scroll(flash, &ref, &uv, &gMainMenu->cloud[i], NULL, i ? -0.18962963f : -0.35555556f, 0.0f);
     }
 
+#ifdef PORT
+    if(tagPage==3) {
+        extern s32 Flash_ClipIsVisible(MFlash *,MFlashRef *);
+        for(i=0;i<9;i++) {
+            if(i<7) sprintf(name,"mc_menu_plate_%d",i+1);
+            else Ps_Copy(name,i==7?"mc_menu_yajirusi_up":"mc_menu_yajirusi_down",sizeof(name));
+            Flash_FindLabel(flash,NULL,name,&hidden[i]);
+            visible[i]=Flash_ClipIsVisible(flash,&hidden[i]);
+            Flash_ClipSetFlags(flash,&hidden[i],2,0);
+        }
+    }
+#endif
     for (i = 0; i < MAINMENU_FLASH_NUM; i++) {
         Flash_Draw(&gMainMenu->flash[i]);
     }
+#ifdef PORT
+    if(tagPage==3) for(i=0;i<9;i++) Flash_ClipSetFlags(flash,&hidden[i],2,visible[i]);
+    if(tagPage!=3)
+#endif
     IconWin_Draw();
+#ifdef PORT
+    if(!tagPage)
+#endif
     MsgWin_Draw(0, 0, gMainMenu->voiceLine);
+#ifdef PORT
+    if(Port_TagAvailable()) {
+        Ps_PageSet(); Ps_SetShift(0); Ps_Align(1);
+        if(tagPage==3) TagSetup_Draw();
+        else {
+            if(tagPage) TagMenu_Guide();
+            Ps_Text(256,427,TagNet_HostMenu()?(TagNet_HostChoosing()?"BRINGING GUESTS TO BATTLE SETUP":"CHOOSE A MODE FOR THE LOBBY"):tagPage?"SELECT - NORMAL MODES":"PRESS SELECT FOR MODDED MODES",0.65f,470,3);
+            if(TagNet_HostMenu())TagLobbyRoster_Draw(1);
+        }
+    }
+#endif
 }
 
 /* Sends the plate under the cursor of movie `idx` to a label. */
@@ -471,6 +670,29 @@ void MainMenu_Update(void) {
 
 /* Pad 0: up / down move the cursor (the ring scrolls at the ends), confirm enters a mode, cancel leaves. */
 void MainMenu_Input(s32 *result) {
+#ifdef PORT
+    { extern void Port_TagMenuTrace(s32,s32,s32,s32,s32,s32);
+      if(tagPage!=3) Port_TagMenuTrace(4,tagPage,MAINMENU_CUR(gMainMenu),tagLabelsReady,gMainMenu->flash[0].flags,gPad[0].gamePressed); }
+    if(TagNet_HostMenu()) {
+        extern s32 TagLobbyRoster_Input(void);
+        if(TagNet_HostPoll()) {gPortScreen=PORT_SCREEN_TAG_LOBBY;MAINMENU_CHOOSE(MPROG_MODE_PORT_SCREEN);return;}
+        if(TagNet_HostChoosing())return;
+        if(TagLobbyRoster_Input())return;
+    }
+    /* Select is available immediately, including while the native menu enters. */
+    if(!TagNet_HostMenu() && tagLabelsReady && !Port_TagControllersActive() && (gPad[0].gamePressed&PADG_SELECT)) {
+        TagSession_Leave(); TagMenu_SetPage(tagPage?0:1); Snd_PlaySe(1,0); return;
+    }
+    if(tagPage==3) {
+        s32 action=TagSetup_Input();
+        if(action<0) TagMenu_SetPage(tagMode==TAG_MODE_GAUNTLET || tagMode==TAG_MODE_TOURNAMENT?TAG_MENU_PRESET:2);
+        if(action>0) { Snd_PlaySe(1,1); MAINMENU_CHOOSE(40); }
+        return;
+    }
+    if(tagPage!=TAG_MENU_PRESET && tagPage>=5 && (gPad[0].gameRepeat&(PADG_LEFT|PADG_RIGHT))) {
+        TagMenu_SettingChange(MAINMENU_CUR(gMainMenu),(gPad[0].gameRepeat&PADG_LEFT)?-1:1); return;
+    }
+#endif
     if (!(gMainMenu->flash[0].flags & MFLASH_PAD)) {
         return;
     }
@@ -533,6 +755,44 @@ void MainMenu_Input(s32 *result) {
         }
         Snd_PlaySe(1, 0);
     } else if (gPad[0].gamePressed & 0x200) {
+#ifdef PORT
+        if(tagPage) {
+            s32 item=MAINMENU_CUR(gMainMenu);
+            if(tagPage==TAG_MENU_PRESET) {
+                s32 n=preset_rows(),pages=(preset_count()+7)/8;
+                if(item<n) {
+                    if(tagMode==TAG_MODE_GAUNTLET)TagChallenge_Choose(presetPage*8+item);
+                    else TagTournament_Choose(item);
+                    if(TagNet_HostMenu())TagNet_ChoosePreset(tagMode,presetPage*8+item);
+                    else TagMenu_SetPage(3);
+                } else if(item==n+2) TagMenu_SetPage(TagNet_HostMenu()?1:2);
+                else {presetPage=(presetPage+(item==n?-1:1)+pages)%pages;TagMenu_SetPage(TAG_MENU_PRESET);}
+            } else if(tagPage>=5) {
+                if(item==TagMenu_Count(tagPage)-1) TagMenu_SetPage(4);
+                else TagMenu_SettingChange(item,1);
+            } else if(tagPage==4) TagMenu_SetPage(item==TAG_OPTION_GROUP_COUNT?1:5+item);
+            else if(tagPage==1 && TagNet_HostMenu()) {
+                if(item<3)TagNet_ChoosePreset(item,0);
+                else if(item<5){tagMode=item;presetPage=0;TagMenu_SetPage(TAG_MENU_PRESET);}
+                else if(item==5)TagMenu_SetPage(4);
+                else TagNet_Leave();
+            }
+            else if(item==TagMenu_Count(tagPage)-1) TagMenu_SetPage(tagPage==2?1:0);
+            else if(tagPage==2) {
+                TagSession_Setup(tagMode,item==4?0:item+1);
+                presetPage=0;TagMenu_SetPage(tagMode==TAG_MODE_GAUNTLET || tagMode==TAG_MODE_TOURNAMENT?TAG_MENU_PRESET:3);
+            } else if(item==3 || item==4) {
+                tagMode=item==3?TAG_MODE_GAUNTLET:TAG_MODE_TOURNAMENT;TagMenu_SetPage(2);
+            } else if(item==5) {
+                TagSession_Leave();gPortScreen=PORT_SCREEN_TAG_LOBBY;
+                MAINMENU_CHOOSE(MPROG_MODE_PORT_SCREEN);
+                MainMenu_PlateGoto(0,"fl_ok");
+            } else if(item==6) {
+                TagMenu_SetPage(4);
+            } else { tagMode=item; TagMenu_SetPage(2); }
+            Snd_PlaySe(1,1); return;
+        }
+#endif
         switch (MAINMENU_CUR(gMainMenu)) {
         case 0:
             MAINMENU_CHOOSE(6);
@@ -548,6 +808,9 @@ void MainMenu_Input(s32 *result) {
             break;
         case 3:
             MAINMENU_CHOOSE(38);
+#ifdef PORT
+            { extern void TagSession_Leave(void); TagSession_Leave(); }
+#endif
             MAINMENU_COUNT();
             break;
         case 4:
@@ -585,7 +848,8 @@ void MainMenu_Input(s32 *result) {
             break;
 #ifdef PORT
         case MAINMENU_TBO: /* "Tenkaichi Budokai Online": the port's screen mode runs its screens (menu/port_tbo.c) */
-            gPortScreen = PORT_SCREEN_TBO;
+            { extern s32 Port_TagAvailable(void);
+              gPortScreen = Port_TagAvailable()?PORT_SCREEN_TAG_TEAM:PORT_SCREEN_TBO; }
             MAINMENU_COUNT();
             MAINMENU_CHOOSE(MPROG_MODE_PORT_SCREEN);
             break;
@@ -594,6 +858,10 @@ void MainMenu_Input(s32 *result) {
         MainMenu_PlateGoto(0, "fl_ok");
         Snd_PlaySe(1, 1);
     } else if (gPad[0].gamePressed & 0x400) {
+#ifdef PORT
+        if(tagPage==1 && TagNet_HostMenu()){Snd_PlaySe(1,2);return;}
+        if(tagPage) { TagMenu_SetPage(tagPage==TAG_MENU_PRESET?(TagNet_HostMenu()?1:2):tagPage>=5?4:tagPage==4?1:tagPage==3?2:tagPage==2?1:0); Snd_PlaySe(1,2); return; }
+#endif
         Flash_GotoLabel(&gMainMenu->flash[0], "fl_cancel", 1);
         IconWin_Close();
         MsgWin_Close();
@@ -653,7 +921,11 @@ s32 MainMenu_Run(s32 section) {
         if (gMainMenu->flags & MAINMENU_LEAVING) {
             if (--gMainMenu->timer == -1) {
                 ColorFade_StartOut(0, 0, 0, 0x14);
+#ifdef PORT
+                gProgress->mainMenuItem = tagPage ? stockItems[(stockTop+stockCursor+1)%stockCount] : MAINMENU_CUR(gMainMenu);
+#else
                 gProgress->mainMenuItem = MAINMENU_CUR(gMainMenu);
+#endif
             }
         } else {
             MainMenu_Input(&result);

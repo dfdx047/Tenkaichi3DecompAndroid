@@ -3,7 +3,12 @@
 
 #include "types.h"
 
-#define PAD_COUNT 2 /* controller ports 0 and 1, slot 0 (no multitap) */
+#ifdef PORT
+#define PAD_COUNT 10 /* four local devices, ten synchronized online input slots */
+#define gPad gNativePad
+#else
+#define PAD_COUNT 2
+#endif
 
 /* Pad.held / pressed / repeat bits.
    Bits 0..15 are the controller's two digital button bytes, inverted so that 1 = down.

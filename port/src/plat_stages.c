@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "plat_stages.h"
+#include "plat_game.h"
 
 /* The added stages' models: files 70000.. of the second archive, past its end (65,201 files); the same number
    as PORT_ADDED_STAGE_FILE in src/battle/battle_load.c. */
@@ -143,6 +144,9 @@ void PortStages_Init(void) {
         return;
     }
     sDone = 1;
+    /* BT4 already owns IDs 36..98. Its disc list is read by the native
+       selection menu; BT3's external-stage aliases must not replace them. */
+    if (PortGame_IsBT4()) return;
     if (!PortExtras_Dir("stages", "BT3_STAGES", sDir, sizeof(sDir))) {
         from_env();
         if (gPortExtraStageCount > 0) {

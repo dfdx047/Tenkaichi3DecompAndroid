@@ -37,7 +37,7 @@ s32 EvoMode_Main(void) {
         case MODE_EVOZ_MENU:
             if (!bgm) {
                 bgm = 1;
-                Bgm_Play(BGM_EVOZ);
+                Bgm_Play(DISC_RESOURCE(BGM_EVOZ, 0x839));
             }
             r = EvoTop_Run(1);
             if (r != 0) {

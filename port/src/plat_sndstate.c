@@ -8,8 +8,9 @@
  * stream's length here, instead of taken from the sound device's own progress.
  */
 #include <stdint.h>
+#include "battle/tag_capacity.h"
 
-#define PORT_ADX_PLAYERS 16
+#define PORT_ADX_PLAYERS TAG_ADX_CAPACITY
 typedef struct PortAdxView {
     int stat;   /* as ADXT_GetStat reports it: 0 stopped, 3 playing, 5 played to the end */
     int paused;
@@ -20,6 +21,11 @@ typedef struct PortAdxView {
 } PortAdxView;
 
 int gPortAdxCount;
+/* Requested battle music policy survives rematches and rollback. */
+int gPortBattleMusicRandom;
+unsigned gPortBattleMusicUnlocked;
+/* 0 voice/jingle, 1 repeating song, 2 battle repeat, 3 battle random. */
+int gPortAdxMusicMode[PORT_ADX_PLAYERS];
 PortAdxView gPortAdxView[PORT_ADX_PLAYERS];
 
 /* One vertical blank has passed (Port_VBlank). */

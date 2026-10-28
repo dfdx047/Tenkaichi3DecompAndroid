@@ -769,38 +769,38 @@ s32 EftObj_Destroy(s32 id) {
 
 /* Writes the object's position (used by EftObj_UpdateMtx). No caller. */
 void EftObj_SetPos(s32 id, Vec4 *pos) {
-    Vec4_Copy(&BtlObj_Get(id)->pos, pos);
+    EftAdObj *obj=BtlObj_Get(id);if(obj)Vec4_Copy(&obj->pos, pos);
 }
 
 /* Rebuilds the object's matrix from its position and rotation. No caller. */
 void EftObj_UpdateMtx(s32 id) {
-    BtlObjXf_Update(BtlObj_Get(id));
+    EftAdObj *obj=BtlObj_Get(id);if(obj)BtlObjXf_Update(obj);
 }
 
 /* Starts one of the model's animations. */
 void EftObj_PlayAnim(s32 id, s32 anim, s32 mode) {
-    BtlObjAnim_PlayModel(BtlObj_Get(id), anim, mode);
+    EftAdObj *obj=BtlObj_Get(id);if(obj)BtlObjAnim_PlayModel(obj, anim, mode);
 }
 
 /* Whether an animation is playing. */
 s32 EftObj_IsAnimPlaying(s32 id) {
-    return BtlObjAnim_GetMode(BtlObj_Get(id)) != 0;
+    EftAdObj *obj=BtlObj_Get(id);return obj && BtlObjAnim_GetMode(obj) != 0;
 }
 
 /* Writes the object's rotation (used by EftObj_UpdateMtx). No caller. */
 void EftObj_SetRot(s32 id, Vec4 *rot) {
-    Vec4_Copy(&BtlObj_Get(id)->rot, rot);
+    EftAdObj *obj=BtlObj_Get(id);if(obj)Vec4_Copy(&obj->rot, rot);
 }
 
 /* Poses the object: sets its world matrix. */
 void EftObj_SetMtx(s32 id, Mtx44 *m) {
-    BtlObjXf_SetMtx(BtlObj_Get(id), m);
+    EftAdObj *obj=BtlObj_Get(id);if(obj)BtlObjXf_SetMtx(obj, m);
 }
 
 /* Shows or hides the object (the battle object's "drawn" flag). */
 void EftObj_SetVisible(s32 id, s32 on) {
     EftAdObj *obj = BtlObj_Get(id);
-
+    if(!obj)return;
     if (on) {
         obj->flags |= 2;
     } else {

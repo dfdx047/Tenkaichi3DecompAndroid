@@ -33,6 +33,7 @@
 #include "battle/stg_a.h"
 
 #ifdef PORT
+#include "battle/tag_team.h"
 extern f32 Port_WideFactor(void); /* widescreen on PC: 1, or 4/3 for a 16:9 picture (port/src/plat_stub.c) */
 #endif
 
@@ -385,6 +386,17 @@ void StgFrustum_Build(StgView *view, StgFrustum *fr) {
 #ifdef PORT
     fr->plane[0].z *= Port_WideFactor(); /* the side planes of a 16:9 view: a third more half width */
     fr->plane[1].z *= Port_WideFactor();
+    if(TagTeam_Active()) {
+        StgView *v=view;
+        f32 halfW=(v->unk204-v->x0+1)*0.5f/v->aspectX;
+        f32 halfH=(v->unk20C-v->x1+1)*0.5f/v->aspectY;
+        /* The original culler only knew full-height halves. Use the actual
+           viewport, including the full-width lower three-player view. */
+        fr->plane[0].x=v->screenDist; fr->plane[1].x=-v->screenDist;
+        fr->plane[0].z=fr->plane[1].z=halfW;
+        fr->plane[2].y=v->screenDist; fr->plane[3].y=-v->screenDist;
+        fr->plane[2].z=fr->plane[3].z=halfH;
+    }
 #endif
     for (i = 0; i < 4; i++) {
         Vec3_Normalize(&fr->plane[i], &fr->plane[i]);
@@ -402,6 +414,13 @@ void StgFrustum_Build(StgView *view, StgFrustum *fr) {
 #ifdef PORT
     right *= Port_WideFactor();
     left *= Port_WideFactor();
+    if(TagTeam_Active()) {
+        StgView *v=view;
+        right=k*(v->unk204-v->x0+1)*0.5f/v->aspectX;
+        left=-right;
+        top=k*(v->unk20C-v->x1+1)*0.5f/v->aspectY;
+        bottom=-top;
+    }
 #endif
     k = 1.0f / (right - left);
     fr->proj.m[0][0] = (view->nearZ + view->nearZ) * k;

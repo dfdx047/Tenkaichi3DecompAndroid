@@ -31,9 +31,10 @@ static void ui_translated_free(void *p) { (void)p; } /* (all of it at once: ui_c
 #endif
 
 #define UI_MAX_FILE (32u * 1024 * 1024)
-/* The full USA catalog has 47,533 rows. Keep word slots above the row bound so probing always terminates. */
+/* The full USA catalog has 47,533 rows. Keep word slots above the row bound so probing always terminates.
+ * BT4 includes 30,362 strings in over a thousand small tables. */
 #define UI_MAX_ROWS 65536
-#define UI_MAX_GROUPS 1024
+#define UI_MAX_GROUPS 4096
 #define UI_MAX_LINE 16384
 #define UI_MAX_UNITS 4096
 #define UI_WORD_SLOTS 131072
@@ -169,7 +170,9 @@ static uint16_t *ui_utf16(const char *s, int translated) {
             for (i = 0; i < extra; i++) { if (!*p || (*p & 0xc0) != 0x80) goto fail; c = (c << 6) | (*p++ & 0x3f); }
             if (c < min || c > 0x10ffff || (c >= 0xd800 && c <= 0xdfff)) goto fail;
         }
-        if ((size_t)(w - out) >= UI_MAX_UNITS || c == 0xfeff) goto fail;
+        /* Some BT4 disc strings contain an extra BOM. Retain it in the source
+           key so lookup matches the disc, rather than rejecting the catalog. */
+        if ((size_t)(w - out) >= UI_MAX_UNITS || (translated && c == 0xfeff)) goto fail;
         if (c < 0x10000) *w++ = (uint16_t)c;
         else { c -= 0x10000; *w++ = (uint16_t)(0xd800 | (c >> 10)); *w++ = (uint16_t)(0xdc00 | (c & 0x3ff)); }
     }

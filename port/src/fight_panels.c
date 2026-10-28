@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "gs/fight_panels.h"
+#include "plat_game.h"
 
 #if (defined(__x86_64__) || defined(__aarch64__)) && defined(__clang__)
 #undef __ptr32 /* the Windows headers of mingw define these two away */
@@ -78,10 +79,10 @@ static void portrait_path(int side, int slot, int chara, int costume) {
     }
     sPathKey[side][slot] = key;
     sPath[side][slot][0] = '\0';
-    if (chara < 0 || chara >= CHARA_MAX) {
+    if (!PortGame_IsCharacter(chara)) {
         return;
     }
-    id = FACE_FILE + chara; /* (a file under mods/ wins, as for the game's own reads) */
+    id = (PortGame_IsBT4()?1820:FACE_FILE) + chara;
     if (!Port_FilePath(1, id - 1, NULL, sPath[side][slot], FP_PATH)) {
         sPath[side][slot][0] = '\0';
     }

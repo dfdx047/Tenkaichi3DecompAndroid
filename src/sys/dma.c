@@ -17,7 +17,20 @@ extern s32 gDmaBufIdx;
 extern u32 *gDmaCur;
 extern s32 gDmaVif1Started;
 
-/* Allocates the two 1 MB display-list buffers and points the write cursor at the first. */
+#ifdef PORT
+/* (on every packet the display list gets: inlined, two comparisons) */
+static inline __attribute__((always_inline)) void Dma_CheckRoom(s32 bytes) {
+    extern void Port_TagTeamFatal(const char *);
+    u32 base = gDmaBuf[gDmaBufIdx], end = gDmaBufEnd[gDmaBufIdx];
+    /* (the cursor outside the buffer on either side: the unsigned difference is larger than the buffer) */
+    if (__builtin_expect((u32)gDmaCur - base > end - base || (u32)bytes > end - (u32)gDmaCur, 0))
+        Port_TagTeamFatal("native display list exceeded its reserved space");
+}
+#else
+#define Dma_CheckRoom(bytes) ((void)0)
+#endif
+
+/* Allocates both display-list buffers and points the write cursor at the first. */
 void Dma_InitBuffers(void) {
     gDmaBuf[0] = (u32)Heap_Alloc(DMA_BUF_SIZE, 0x20, 0, HEAP_ANY);
     gDmaBuf[1] = (u32)Heap_Alloc(DMA_BUF_SIZE, 0x20, 0, HEAP_ANY);
@@ -30,6 +43,7 @@ void Dma_InitBuffers(void) {
 
 /* Copies `size` bytes (whole quadwords) of ready-made packet data to the display list. */
 void Dma_AddData(void *src, s32 size) {
+    Dma_CheckRoom(size);
     memcpy(gDmaCur, src, size);
     gDmaCur = (u32 *)((u8 *)gDmaCur + size / 16 * 16);
 }
@@ -37,6 +51,7 @@ void Dma_AddData(void *src, s32 size) {
 /* Appends a REF tag: sends `size` bytes that live at `addr` without copying them. */
 void Dma_AddRef(void *addr, s32 size) {
     u32 *tag = gDmaCur;
+    Dma_CheckRoom(16);
 
     tag[0] = DMA_TAG_REF + size / 16;
     tag[1] = (u32)addr;
@@ -49,6 +64,7 @@ void Dma_AddRef(void *addr, s32 size) {
 /* Appends a NEXT tag that jumps to the chain at `addr`, and makes `retTag` point back to what follows. */
 void Dma_AddNext(void *addr, u32 *retTag) {
     u32 *tag = gDmaCur;
+    Dma_CheckRoom(16);
 
     tag[0] = DMA_TAG_NEXT;
     tag[1] = (u32)addr;
@@ -62,6 +78,7 @@ void Dma_AddNext(void *addr, u32 *retTag) {
 /* Closes the display list with a GS FINISH and an END tag, sends it on VIF1 and switches to the other buffer. */
 void Dma_Flush(void) {
     u32 *p = gDmaCur;
+    Dma_CheckRoom(64);
 
     p[0] = DMA_TAG_CNT | 2;
     p[1] = 0;
@@ -86,6 +103,7 @@ void Dma_Flush(void) {
 /* Reserves `size` bytes (whole quadwords) in the display list and returns where they start. */
 void *Dma_Alloc(s32 size) {
     u32 *p = gDmaCur;
+    Dma_CheckRoom(size);
 
     gDmaCur = (u32 *)((u8 *)gDmaCur + size / 16 * 16);
     return p;
@@ -94,6 +112,7 @@ void *Dma_Alloc(s32 size) {
 /* Starts a GS packet: clears the quadword that will hold its DMA tag and returns the first data quadword. */
 u64 *Dma_BeginDirect(void) {
     u128 *tag = (u128 *)gDmaCur;
+    Dma_CheckRoom(16);
 
 #ifdef PORT
     tag->lo = 0;
@@ -108,6 +127,7 @@ u64 *Dma_BeginDirect(void) {
 void Dma_EndDirect(u64 *end) {
     u32 *tag = gDmaCur;
     s32 qwc;
+    Dma_CheckRoom((u8 *)end - (u8 *)tag);
 
     if ((u32 *)end != tag + 4) {
         qwc = (((u8 *)end - (u8 *)tag) >> 4) - 1;
@@ -148,7 +168,7 @@ s32 Dma_GetFreeSize(void) {
     return Dma_GetBufSize() - Dma_GetUsedSize();
 }
 
-/* Shrinks both buffers to 0x51000 bytes and hands their upper 0xAF000 bytes to the caller. */
+/* Keeps a loading-screen display list and lends the remaining buffer space. */
 void Dma_LendBufferTails(u32 *tail0, u32 *tail1, s32 *size) {
     gDmaBufSize = 0x51000;
     gDmaBufEnd[0] = gDmaBuf[0] + 0x51000;
@@ -158,7 +178,7 @@ void Dma_LendBufferTails(u32 *tail0, u32 *tail1, s32 *size) {
     *size = DMA_BUF_SIZE - 0x51000;
 }
 
-/* Gives the buffers their full 1 MB back. */
+/* Restores the full display-list buffers after loading. */
 void Dma_ReclaimBufferTails(void) {
     gDmaBufSize = DMA_BUF_SIZE;
     gDmaBufEnd[0] = gDmaBuf[0] + DMA_BUF_SIZE;

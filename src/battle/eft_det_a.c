@@ -1,3 +1,4 @@
+#include "battle/tag_clash.h"
 #include "common.h"
 #include "battle/eft_det_a.h"
 
@@ -121,6 +122,7 @@ extern void BtlColl_PlayContactSound(EftDetRec *hit);
 
 /* Beam struggle effect (ki blast file, 0x174A70..). */
 extern s32 EftStruggle_IsActive(void);                                       /* 1 while a beam struggle is running */
+extern s32 EftStruggle_IsActiveFor(s32 actor);
 extern void EftStruggle_Start(EftDetVec *pos, EftDetRec *a, EftDetRec *b); /* starts the beam struggle at pos */
 
 /* Collision primitives (0x230B38..0x239A00, not decompiled). */
@@ -678,6 +680,22 @@ s32 BtlBodyHit_TestVolumes(EftDetObjWork *work, EftDetPart **body) {
     return 0;
 }
 
+#ifdef PORT
+static u32 tagContacts[PORT_FIGHTER_CAPACITY];
+void TagContact_Clear(s32 actor) {
+    if ((u32)actor<PORT_FIGHTER_CAPACITY) tagContacts[actor]=0;
+}
+void TagContact_Record(s32 attacker,s32 defender) {
+    if ((u32)attacker<PORT_FIGHTER_CAPACITY && (u32)defender<PORT_FIGHTER_CAPACITY)
+        tagContacts[attacker]|=1u<<defender;
+}
+s32 TagContact_Has(s32 attacker,s32 defender) {
+    if ((u32)attacker>=PORT_FIGHTER_CAPACITY) return 0;
+    return defender<0 ? tagContacts[attacker]!=0 :
+        (u32)defender<PORT_FIGHTER_CAPACITY && (tagContacts[attacker]&(1u<<defender))!=0;
+}
+#endif
+
 /* Tests the strike volumes of `atk` against the body of `def` and records the contact in both objects. */
 s32 BtlBodyHit_Test(EftDetObj *atk, EftDetObj *def) {
     EftDetObjWork *work;
@@ -705,8 +723,12 @@ s32 BtlBodyHit_Test(EftDetObj *atk, EftDetObj *def) {
     if (!BtlBodyHit_TestVolumes(work, body)) {
         return 0;
     }
+#ifdef PORT
+    TagContact_Record(atk->id,def->id);
+#else
     work->hitFlags |= 1 << (def->id + 0x18);
     defWork->hitFlags |= 1 << (atk->id + 0x1C);
+#endif
     return 1;
 }
 
@@ -714,10 +736,13 @@ s32 BtlBodyHit_Test(EftDetObj *atk, EftDetObj *def) {
 void BtlBodyHit_Update(void) {
     EftDetObj *a;
 
-    a = BtlObj_Get(BattleSide_GetObjId(0));
-    BtlBodyHit_Test(a, BtlObj_Get(BattleSide_GetObjId(1)));
-    a = BtlObj_Get(BattleSide_GetObjId(1));
-    BtlBodyHit_Test(a, BtlObj_Get(BattleSide_GetObjId(0)));
+    s32 i, j;
+    for (i = 0; i < TagTeam_Count(); i++) {
+        a = BtlObj_Get(BattleSide_GetObjId(i));
+        for (j = 0; j < TagTeam_Count(); j++) {
+            if (TagTeam_IsEnemy(i, j) && TagTeam_CanContact(i,j)) BtlBodyHit_Test(a, BtlObj_Get(BattleSide_GetObjId(j)));
+        }
+    }
 }
 
 /* Shape type 0: bounds of the sweep from sphere b to sphere a, its movement and direction, and the zone. */
@@ -934,8 +959,8 @@ s32 EftDet_HitFighterMulti(EftDetRec *rec, s32 target, s32 idx) {
     }
 }
 
-/* Record against fighter. Each record is tested against ONE fighter: target = owner id ^ 1, and the object tested
- * is the active fighter of side (target != 0). A contact that lies behind a stage contact of the same record
+/* A projectile hits the first hostile body in its path, independent of lock-on.
+ * A contact that lies behind a stage contact of the same record
  * (found by EftDet_StagePass, which ran before) is dropped. Then the fighter answers, first yes wins: dodge
  * (nothing reported), deflect (0x40), reflect (0x80), absorb (0x20), then guard (2) or hit (1).
  * (The mix of `rec->` and `list->rec[i].` is what reproduces the original's two induction pointers.) */
@@ -952,16 +977,30 @@ void EftDet_FighterPass(void) {
     for (i = 0; i < list->count; i++) {
         rec = &list->rec[i];
         if (EftHit_CanHit(rec, 1)) {
-            s32 target = list->rec[i].objId ^ 1;
+            s32 target = TagTeam_Target(list->rec[i].objId);
             s32 ok;
             EftDetObj *obj;
 
-            if (target == 0) {
-                obj = BtlObj_Get(BattleSide_GetObjId(0));
-            } else {
-                obj = BtlObj_Get(BattleSide_GetObjId(1));
+            if (TagTeam_Active()) {
+                extern s32 TagTeam_IsAlive(s32);
+                EftDetShape original=rec->shape, nearest=rec->shape;
+                s32 candidate;
+                f32 distance=1.0e30f;
+                target=-1;
+                for (candidate=0;candidate<TagTeam_Count();candidate++) {
+                    EftDetShape probe=original;
+                    if (!TagTeam_IsEnemy(rec->objId,candidate) || !TagTeam_IsAlive(candidate) || !TagTeam_CanContact(rec->objId,candidate)) continue;
+                    obj=BtlObj_Get(BattleSide_GetObjId(candidate));
+                    if (test[probe.type](obj,&probe) && probe.dist<distance) {
+                        target=candidate; nearest=probe; distance=probe.dist;
+                    }
+                }
+                if (target<0) continue;
+                rec->shape=nearest;
             }
-            if (test[list->rec[i].shape.type](obj, &rec->shape)) {
+
+            obj = BtlObj_Get(BattleSide_GetObjId(target));
+            if (TagTeam_Active() || test[list->rec[i].shape.type](obj, &rec->shape)) {
                 ok = 0;
                 if (!(list->rec[i].shape.hitFlags & EFT_DET_HIT_STAGE) ||
                     list->rec[i].shape.dist < list->rec[i].shape.stageDist) {
@@ -1145,7 +1184,7 @@ void EftDet_ClashPass(void) {
                 s32 hit = 0;
                 s32 result;
 
-                if (list->rec[i].objId != list->rec[j].objId) {
+                if (TagTeam_IsEnemy(list->rec[i].objId, list->rec[j].objId)) {
                     if (EftHit_CanHit(&list->rec[j], 2)) {
                         if (list->rec[i].shape.type == 0 && list->rec[j].shape.type == 0) {
                             if (EftDet_SpheresVsSpheres(&list->rec[i].shape, &list->rec[j].shape)) {
@@ -1182,9 +1221,11 @@ void EftDet_ClashPass(void) {
                                     EftHit_SetTaskFlag(i, 8, list->rec[i].shape.hitPos);
                                     EftHit_SetTaskFlag(j, 8, list->rec[j].shape.hitPos);
                                 } else {
-                                    BtlCharApi_SetHeldFlagAA(0);
-                                    BtlCharApi_SetHeldFlagAA(1);
-                                    if (!EftStruggle_IsActive()) {
+                                    if (!EftStruggle_IsActiveFor(list->rec[i].objId) &&
+                                        !EftStruggle_IsActiveFor(list->rec[j].objId) &&
+                                        BtlClash_Join(list->rec[i].objId, list->rec[j].objId)) {
+                                        BtlCharApi_SetHeldFlagAA(list->rec[i].objId);
+                                        BtlCharApi_SetHeldFlagAA(list->rec[j].objId);
                                         EftHit_SetTaskFlag(i, 0x100, list->rec[i].shape.hitPos);
                                         EftHit_SetTaskFlag(j, 0x100, list->rec[j].shape.hitPos);
                                         EftStruggle_Start(&list->rec[i].shape.hitPos, &list->rec[i], &list->rec[j]);

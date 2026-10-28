@@ -671,6 +671,8 @@ extern f32 BtlMoveParam_GetTurnRate(BtlActDChr *chr, s32 kind); /* turn rate, ta
  * Entered from actions 0x3E, 0xB0, 0xB1 it resumes in the loop.
  */
 s32 BtlAct_DashMoveHandler(BtlActDChr *chr, s32 phase) {
+    extern s32 TagAssist_Handle(s32,s32);
+    if(TagAssist_Handle(chr->player,phase)) return 0;
     s32 subNeg;
     s32 subPos;
     s32 moving;

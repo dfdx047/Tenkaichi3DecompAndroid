@@ -78,8 +78,14 @@ f32 BtlAi_GetLowGaugeFactor(BtlAiWork *ai);
 /* The entry on top of the sequence stack. Written with a shift: an array index gives the other operand order. */
 #define SEQ_TOP(seq) (*(BtlAiSeqEntry *)((u8 *)(seq) + ((seq)->depth << 3) + 0xC))
 /* Five-step tables by level: 0..5, 6..11, 12..17, 18..23, 24..29. */
+#ifdef PORT
+#include "battle/cpu_level.h"
+#define LEVEL_IDX(ai) CpuLevel_TableIndex((ai)->level)
+#define LEVEL_STEP(ai, tbl) ((ai)->level < 0 ? 0 : (tbl)[CpuLevel_TableIndex((ai)->level)])
+#else
 #define LEVEL_IDX(ai) ((ai)->level < 0 ? 0 : (ai)->level / 6)
 #define LEVEL_STEP(ai, tbl) ((ai)->level < 0 ? 0 : (tbl)[(ai)->level / 6])
+#endif
 /* The character's own rate table: one signed byte per rate at level 0 (+8) and at level 29 (+0x100). */
 #define RATE(ai, lo, hi, n) BtlAi_ScaleByLevel((ai)->level, lo[n], hi[n])
 

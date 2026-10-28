@@ -135,6 +135,7 @@ void View_InitLayout(View *view, s32 layout);
 
 void BtlCam_SetViewLayout(BtlCamView *view, s32 layout);
 void BtlCam_InitViews(void);
+BtlCamView *BtlCam_GetNativeView(s32 idx);
 void BtlCam_BuildView(BtlCamView *view, s32 apply);
 void BtlCam_Reset(void);
 void BtlCam_Init(void);

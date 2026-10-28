@@ -373,6 +373,8 @@ s32 BtlAnim_TestAttr(BtlStatChr *chr, u64 mask) {
 s32 BtlAnim_Advance(BtlStatChr *chr, s32 flags) {
     s32 done = 0;
     BtlAnimObj *a = &BtlChar_GetObj(chr)->anim;
+    extern f32 TagGiant_AnimationStep(void *),TagBalance_Recovery(s32);
+    f32 step=a->step*TagGiant_AnimationStep(BtlChar_GetObj(chr))*TagBalance_Recovery(*(s32 *)chr);
 
     a->blend -= a->blendStep;
     if (a->blend < 0.0f) {
@@ -383,7 +385,7 @@ s32 BtlAnim_Advance(BtlStatChr *chr, s32 flags) {
     }
     a->prevFrame = a->frame;
     if (!(flags & 1) || a->blend == 0.0f) {
-        a->frame += a->step;
+        a->frame += step;
         if (a->frame >= a->length - 0.1f) {
             BtlChar_SetHeldFlag(chr, BTL_ANIM_FLAG_END);
             done = 1;
@@ -412,6 +414,8 @@ s32 BtlAnim_AdvanceThen(BtlStatChr *chr, s32 next, f32 blend, s32 flags) {
 /* Advances a looping animation one step (flags & 1: not while blending); at the end goes back to frame 0. */
 void BtlAnim_AdvanceLoop(BtlStatChr *chr, s32 flags) {
     BtlAnimObj *a = &BtlChar_GetObj(chr)->anim;
+    extern f32 TagGiant_AnimationStep(void *),TagBalance_Recovery(s32);
+    f32 step=a->step*TagGiant_AnimationStep(BtlChar_GetObj(chr))*TagBalance_Recovery(*(s32 *)chr);
 
     a->blend -= a->blendStep;
     if (a->blend < 0.0f) {
@@ -422,7 +426,7 @@ void BtlAnim_AdvanceLoop(BtlStatChr *chr, s32 flags) {
     }
     a->prevFrame = a->frame;
     if (!(flags & 1) || a->blend == 0.0f) {
-        a->frame += a->step;
+        a->frame += step;
         if (a->frame >= a->length - 0.1f) {
             a->frame = 0.0f;
         }

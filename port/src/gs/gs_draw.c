@@ -23,6 +23,8 @@
 #include <SDL3/SDL.h>   /* the one window both back ends share */
 #include "gs_internal.h"
 #include "gs_draw.h"
+#include "../../../include/battle/tag_options.h"
+#include "../../../include/battle/tag_view_layout.h"
 #include "ui.h"         /* PortVideo and the window helpers */
 #include "gs_texpack.h" /* texture packs (replacement textures) */
 #include "menu_text.h"  /* editable labels in the original menu texture slots */
@@ -96,7 +98,7 @@ void GsGpu_TitlePoll(void) {
     extern int Port_DataState(void);
     static int done;
     if (!done && sWindow != NULL && Port_DataState() == 2) {
-        SDL_SetWindowTitle(sWindow, "Tenkaichi3Decomp [modified game data]");
+        SDL_SetWindowTitle(sWindow, getenv("BT3_TAG_TEAM") != NULL ? "Native Tag Team prototype [modified game data]" : "Tenkaichi3Decomp [modified game data]");
         done = 1;
     }
 }
@@ -184,6 +186,7 @@ static int sGlowIsGlare; /* the glow chain under way is the sky's glare (gfxm_a.
 static int sBlockSample; /* the draw being set up reads a work buffer at the GS's 1x (orig.x): pipeline_get, key bit 25 */
 static int sTexPackOn = 1; /* the setting: use the texture pack (if one was found) */
 int gsAnchor;
+static int tagHudViewport;
 /* A fight's HUD in a picture wider than 4:3 (setting hud_layout, BT3_HUD=<n> for a test):
      0  the side panels at the screen's edges (as since widescreen)
      1  the same, with the health bars drawn longer, up to the timer (hud_b.c, pull request #28)
@@ -2115,6 +2118,26 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
             }
         }
     }
+    if (tagHudViewport && !tbo && gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
+        int timer=tagHudViewport==0x54;
+        int r[4],bottom=!timer && (tagHudViewport&0x20);
+        TagView_HudRect(tagHudViewport,r);
+        if(timer) {r[0]=r[1]=0;r[2]=512;r[3]=448;}
+        float scale=r[2]==512 && r[3]==448?1.0f:0.5f;
+        float x=r[0],y=r[1];
+        if(timer) { scale=0.5f; x=128.0f; }
+        float panelInset=0;
+        if(!timer && r[1]==0 && r[2]==256 && r[0]==0 && (gsAnchor==2||gsAnchor==6)) panelInset=-12;
+        if(!timer && r[1]==0 && r[2]==256 && r[0]==256 && (gsAnchor==1||gsAnchor==5)) panelInset=12;
+        if(r[2]==512 && r[3]==224) panelInset=(gsAnchor==1||gsAnchor==5)?0:
+            (gsAnchor==2||gsAnchor==6)?256:128;
+        for(uint32_t k=d.first;k<gsVertCount;k++) {
+            gsVerts[k].x=x+panelInset+gsVerts[k].x*scale;
+            gsVerts[k].y=y+(bottom?r[3]-448*scale:0)+gsVerts[k].y*scale;
+        }
+        d.scissor[0]=timer?0:(int)x*SCALE; d.scissor[1]=(int)y*SCALE;
+        d.scissor[2]=r[2]*SCALE; d.scissor[3]=r[3]*SCALE;
+    }
     d.count = gsVertCount - d.first;
     if (lowres_now(d.target)) { /* into a work buffer at the PS2's resolution: its corner (target_lowres) */
         uint32_t k;
@@ -2262,6 +2285,12 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
 
     if (count < 3 || gsVuVertCount + count > MAX_VU_VERTS || gsVuIdxCount + (count - 2) * 3 > MAX_VU_IDX || gsDrawCount == MAX_DRAWS ||
         gsVuUniCount == MAX_VU_UNIFORMS) {
+        if(getenv("BT3_TAG_RENDER_TRACE") && gGsFrame%150==0) {
+            static unsigned reported;
+            if(reported!=gGsFrame) { reported=gGsFrame;
+                fprintf(stderr,"tagrender geometry limit frame=%u verts=%u idx=%u uniforms=%u draws=%u\n",gGsFrame,gsVuVertCount,gsVuIdxCount,gsVuUniCount,gsDrawCount);
+            }
+        }
         return;
     }
     if (!draw_state(ctx, 0, 0, 1, &d, &us, &vs)) {
@@ -2381,6 +2410,9 @@ void GsGpu_Native(int effect) {
     uint64_t sc = gGs.scissor[0];
     GsDraw d;
 
+    if(effect==0x54 || (effect>=0x80 && effect<=0xBF)) { tagHudViewport=effect; return; }
+    if(effect==0x5F) { tagHudViewport=0; return; }
+
     /* 1 = outline. 2 (the see-through tint) is drawn by the generic table pass now (depth_clut), from the game's
        own table. */
     if (effect >= 0x15 && effect <= 0x18) {
@@ -2488,7 +2520,7 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
     sFullscreen = 1; /* (the whole screen, without the system's bars) */
 #endif
     sWantAspect = want;
-    SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "Tenkaichi3Decomp");
+    SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, getenv("BT3_TAG_TEAM") != NULL ? "Native Tag Team prototype" : "Tenkaichi3Decomp");
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, w);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, h);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
@@ -2528,14 +2560,44 @@ void GsDraw_FullscreenSet(int on) {
     if (sWindow == NULL) {
         return;
     }
-    sFullscreen = on;
-    SDL_SetWindowFullscreen(sWindow, on);
+    if (SDL_SetWindowFullscreen(sWindow, on != 0)) {
+        sFullscreen = on != 0;
+    } else {
+        fprintf(stderr, "bt3: could not change full screen: %s\n", SDL_GetError());
+    }
 }
 
 void GsDraw_FullscreenToggle(void) {
     GsDraw_FullscreenSet(!sFullscreen);
     Port_SettingSave("fullscreen", sFullscreen);
     Port_SettingsWrite();
+}
+
+int GsDraw_FullscreenEvent(const SDL_Event *ev) {
+    static unsigned held;
+    if (sWindow == NULL) return 0;
+    if (ev->type == SDL_EVENT_KEY_DOWN || ev->type == SDL_EVENT_KEY_UP) {
+        unsigned key = ev->key.scancode == SDL_SCANCODE_F11 ? 1 :
+            ev->key.scancode == SDL_SCANCODE_RETURN ? 2 :
+            ev->key.scancode == SDL_SCANCODE_KP_ENTER ? 4 : 0;
+        if (ev->key.windowID != SDL_GetWindowID(sWindow) || !key) return 0;
+        if (ev->type == SDL_EVENT_KEY_UP) {
+            int used = (held & key) != 0;
+            held &= ~key;
+            return used;
+        }
+        if (key != 1 && !(ev->key.mod & SDL_KMOD_ALT) && !(held & key)) return 0;
+        held |= key;
+        if (!ev->key.repeat) GsDraw_FullscreenToggle();
+        return 1;
+    }
+    if (ev->type == SDL_EVENT_WINDOW_FOCUS_LOST) held = 0;
+    if (ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev->button.windowID == SDL_GetWindowID(sWindow) &&
+        ev->button.button == SDL_BUTTON_LEFT && ev->button.clicks == 2) {
+        GsDraw_FullscreenToggle();
+        return 1;
+    }
+    return 0;
 }
 
 /* ------------------------------------------------------------------------------------------- the settings window

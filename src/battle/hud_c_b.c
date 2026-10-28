@@ -5,6 +5,7 @@
 #include "sys/heap.h"
 
 #ifdef PORT
+#include "battle/tag_options.h"
 /* PC build, online play: the player who joined is side 1 of the game, and would have their own gauges, team, prompts
    and counters on the right. With the swap (gs/net.c) the two sides change places on THIS copy's screen only: a
    side's data is the same, where it is drawn is the other side's place. HUD_SCR(side) is the place of a side. */
@@ -98,6 +99,9 @@ HudCombo *gHudCombo = NULL;
 extern void *memset(void *dst, s32 c, u32 n);
 extern void Vu0Cur_StoreMtx(f32 (*m)[4]);
 extern HudCObj *BtlCtrl_GetObj(s32 side);
+#ifdef PORT
+extern s32 Hud_NativeActor(s32);
+#endif
 extern void BtlMenu_SetScript2(void *script);
 extern void BtlText_DrawEntryName(s32 x, s32 y, s32 n, s32 align, f32 alpha);
 /* src/battle/hud_d.c */
@@ -586,6 +590,10 @@ void HudCombo_UpdateHits(HudCNode *node) {
 /* Draw callback: every sprite of the node. */
 void HudCombo_DrawSprites(HudCNode *node) {
     u32 i;
+#ifdef PORT
+    if(node==&gHudCombo->nodes[HUD_COMBO_NODE_DAMAGE] && !Port_TagOption(TAG_OPT_DAMAGE_METER))return;
+    if(node==&gHudCombo->nodes[HUD_COMBO_NODE_HITS] && !Port_TagOption(TAG_OPT_COMBO_METER))return;
+#endif
 
     for (i = 0; i < node->spriteCount; i++) {
         HudSprite_Draw(node->sprites[i], gHudCombo->res, 0);
@@ -722,6 +730,9 @@ void HudCombo_SlideIn(f32 seconds) {
    HudCombo_StoreTextPos noted, aligned by side. Called by Hud_Draw after the combo trees. */
 void HudCombo_DrawText(void) {
     s32 side;
+#ifdef PORT
+    if((!Port_TagOption(TAG_OPT_NATIVE_HUD) || Port_TagOption(TAG_OPT_HIDE_ALL_HUD)))return;
+#endif
 
     for (side = 0; side < 2; side++) {
         s32 *pos = gHudCombo->textPos[side];
@@ -734,7 +745,11 @@ void HudCombo_DrawText(void) {
                edge and stood where it stands in 4:3, away from its panel (seen by the user). */
             Port_GsMarker(HUD_SCR(side) ? PORT_2D_RIGHT : PORT_2D_LEFT);
 #endif
+#ifdef PORT
+            BtlMenu_SetScript2(BtlCtrl_GetObj(Hud_NativeActor(side))->skillScript);
+#else
             BtlMenu_SetScript2(BtlCtrl_GetObj(side)->skillScript);
+#endif
             BtlText_DrawEntryName(pos[0], pos[1], gHudCombo->text[side], HUD_SCR(side), alpha); /* (the 4th: left or right aligned) */
         }
     }
@@ -925,6 +940,9 @@ void HudCombo_Reset(void) {
         gHudCombo->hitsRaw[i] = 0;
         gHudCombo->hitsPrev[i] = 0;
         gHudCombo->text[i] = 0;
+        gHudCombo->textPos[i][0] = -1;
+        gHudCombo->textPos[i][1] = -1;
+        gHudCombo->textAlpha[i] = 0.0f;
         memset(&gHudCombo->msgRamp[i], 0, sizeof(Ramp));
         memset(&gHudCombo->textRamp[i], 0, sizeof(Ramp));
         memset(&gHudCombo->dmgRamp[i], 0, sizeof(Ramp));

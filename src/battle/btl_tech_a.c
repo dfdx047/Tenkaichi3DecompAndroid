@@ -1,4 +1,7 @@
 #include "common.h"
+#ifdef PORT
+#include "sys/common.h"
+#endif
 #include "battle/btl_tech_a.h"
 
 /*
@@ -936,6 +939,8 @@ BtlAtkRecord *BtlAtk_GetRecordOf(BtlTechChr *chr, u32 id) {
 /* Damage changes by ability: ids 0..9 +10% (4) / -10% (5); ids 0x13..0x21 +10% (6) / -10% (7); ids 0x55, 0x56
    x2 (8) / halved (9). */
 s32 BtlAtk_ApplyAbilities(BtlTechChr *chr, s32 val, u32 id) {
+    extern s32 TagGiant_Damage(s32,s32);
+    val=TagGiant_Damage(chr->player,val);
     if (id < 10) {
         if (BtlMember_HasAbility(chr, 4)) {
             val += val / 10;
@@ -1322,6 +1327,14 @@ s32 BtlParam_ScaleKiCharge(BtlTechChr *chr, s32 val) {
 
 /* Parameter +0x10: flag word. */
 u32 BtlParam_GetFlags(BtlTechChr *chr) {
+#ifdef PORT
+    if (PortGame_IsBT4()) {
+        /* BT4 moved the four character flag words to common file 2, part 12. */
+        u32 *pack = gCommonRes->data[0];
+        if (pack[12] == pack[13]) return 0;
+        return ((u32 *)((u8 *)pack + (pack[12] & ~3u)))[BtlChar_GetObj(chr)->chara * 4 + 1];
+    }
+#endif
     return BtlChar_GetObj(chr)->param->flags;
 }
 
@@ -1357,6 +1370,9 @@ s32 BtlParam_GetSlotId(BtlTechChr *chr, s32 slot) {
 
 /* Parameter +0x9C + slot, times 100000: blast gauge a transformation costs. */
 s32 BtlParam_GetSlotCost(BtlTechChr *chr, s32 slot) {
+#ifdef PORT
+    if (PortGame_IsBT4()) return BtlChar_GetObj(chr)->param->transCost[slot] * 20000;
+#endif
     return BtlChar_GetObj(chr)->param->transCost[slot] * 100000;
 }
 
@@ -1372,8 +1388,17 @@ s32 BtlParam_GetSlotA4(BtlTechChr *chr, s32 slot) {
 
 /* Parameter +0xA8 + slot. */
 s32 BtlParam_GetSlotA8(BtlTechChr *chr, s32 slot) {
+#ifdef PORT
+    if (PortGame_IsBT4()) return ((s16 *)((u8 *)BtlChar_GetObj(chr)->param + 0xCC))[slot];
+#endif
     return BtlChar_GetObj(chr)->param->transA8[slot];
 }
+
+#ifdef PORT
+s32 BtlParam_GetTransformPropCostume(BtlTechChr *chr,s32 slot) {
+    return ((u8 *)BtlChar_GetObj(chr)->param)[0xD4 + slot * 4 + BtlMember_GetActive(chr)->costume];
+}
+#endif
 
 /* Parameter +0xAD. */
 s32 BtlParam_GetUnkAD(BtlTechChr *chr) {
@@ -1471,6 +1496,9 @@ s32 BtlParam_GetType(BtlTechChr *chr) {
         costume = 0;
     }
     type = param->searchType[costume];
+#ifdef PORT
+    if (PortGame_IsBT4()) type = (s8)BtlChar_GetObj(chr)->modelInfo[0x355];
+#endif
     switch (type) {
         case 2:
         case 3:

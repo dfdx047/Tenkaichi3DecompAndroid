@@ -169,7 +169,11 @@ s32 PassChk_IsValid(ZaChrPass *pass) {
     s32 i;
     s32 j;
 
+#ifdef PORT
+    if (!PortGame_IsCharacter(chara)) {
+#else
     if (chara > 0xA0) {
+#endif
         return 0;
     }
     extra = pass->extraSlots;
@@ -180,11 +184,11 @@ s32 PassChk_IsValid(ZaChrPass *pass) {
         if (pass->item[i] != 0) {
             u32 item = pass->item[i] - 1;
 
-            if (itemTbl[item].type == 3) {
-                fill = 1;
-            }
             if (item >= 0x15E) {
                 return 0;
+            }
+            if (itemTbl[item].type == 3) {
+                fill = 1;
             }
             for (j = 0; j < 7; j++) {
                 u32 other = pass->item[j] - 1;

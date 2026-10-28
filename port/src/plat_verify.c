@@ -30,6 +30,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include "plat_verify_tab.h"
+#include "plat_game.h"
 
 extern const char *Port_FileRoot(void); /* plat_file.c */
 extern void Port_UiNotice(const char *text); /* gs/ui.cpp */
@@ -272,6 +273,14 @@ void Port_VerifyStart(void) {
         return;
     }
     once = 1;
+    if (PortGame_IsBT4()) {
+        /* The USA file catalogue is not a BT4 integrity check. The importer
+           identifies the supported BT4 build; do not report every file missing
+           or expose a made-up BT3 network fingerprint for this offline port. */
+        sState = DATA_OFF;
+        fprintf(stderr,"native disc: BT4 profile; BT3-only data comparison is not applicable\n");
+        return;
+    }
     if (getenv("BT3_FINGERPRINT") != NULL) {
         /* BT3_FINGERPRINT=1: the gameplay fingerprint with every differing file named, then the program ends (a
            tool: port/tools/make_fingerprint.py is the other implementation of the same definition). */
@@ -286,10 +295,10 @@ void Port_VerifyStart(void) {
         return;
     }
 #endif
-    if (v == NULL && gs != NULL && strcmp(gs, "none") == 0) {
+    if (v == NULL && gs != NULL && strcmp(gs, "none") == 0 && getenv("BT3_TAG_ONLINE") == NULL) {
         return;
     }
-    if (v != NULL && atoi(v) == 0) {
+    if (PortGame_Region()!=0 || (v != NULL && atoi(v) == 0)) {
         sCheck = 0; /* no comparison with the disc, no notice; the fingerprint is still computed */
     }
     sState = sCheck ? DATA_CHECKING : DATA_OFF;

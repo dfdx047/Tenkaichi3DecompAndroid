@@ -498,7 +498,7 @@ Tools
   parameter: the parameter itself was advanced.
 - FAKE MATCHES: `EftLink_DrawBillboard` (eft_w.c) matches only with an empty `__asm__("");`
   that adds one RTL instruction to break an allocator tie. Kept, marked in the source; the
-  natural source form is unknown. List such cases in docs/open_questions.md.
+  natural source form is unknown. List such cases in [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md).
 - memset arguments loaded a1, a2, a0 mean the clear is compiler-generated: write the argument
   block as a STRUCT INITIALISER with `{0, ...}` members and 16-aligned vectors
   (`EftArg9 arg = { { res0, res1 }, tex, {0,0,0,0}, {0,0,0,0}, size, rate, objId };`), not

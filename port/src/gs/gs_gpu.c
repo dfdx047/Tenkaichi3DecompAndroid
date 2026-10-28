@@ -1104,6 +1104,7 @@ static void poll_events(void) {
             exit(0);
 #endif
         }
+        if (ev.type != SDL_EVENT_MOUSE_BUTTON_DOWN && GsDraw_FullscreenEvent(&ev)) continue;
         { extern void PortA11y_Event(const SDL_Event *ev); PortA11y_Event(&ev); } /* a11y.c: the repeat key and button */
         if (PortInput_Hotkey(&ev) || (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_AC_BACK)) {
             Ui_Toggle(); /* F1, START + SELECT, or the list's key; Android: the back button (loader.c hands it over) */
@@ -1112,6 +1113,7 @@ static void poll_events(void) {
         if (Ui_Event(&ev)) { /* the settings window is open and used it (Esc closes it) */
             continue;
         }
+        if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && GsDraw_FullscreenEvent(&ev)) continue;
 #ifndef __ANDROID__
         if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_ESCAPE) {
             if (!ev.key.repeat && !Ui_QuitAsk()) { exit(0); } /* (asks first) */
@@ -1126,9 +1128,6 @@ static void poll_events(void) {
             Port_SettingSave("interp", gsInterp);
             Port_SettingsWrite();
             fprintf(stderr, "bt3: smooth motion %s\n", gsInterp == 0 ? "off" : gsInterp == 1 ? "60" : gsInterp == 2 ? "120" : "240");
-        }
-        if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F11) {
-            GsDraw_FullscreenToggle();
         }
     }
 }
@@ -2384,15 +2383,18 @@ static void vk_frame_end(void) {
         {   /* BT3_UI_SHOT=<frame>:<file.ppm>: the window's picture with the settings window on it, for checking
                 the settings window without a person or a screen capture (drawn a second time into a texture) */
             static int frame = -1;
+            static int byTime;
             static const char *file;
             if (frame < 0) {
                 frame = 0;
-                if (getenv("BT3_UI_SHOT") != NULL && (file = strchr(getenv("BT3_UI_SHOT"), ':')) != NULL) {
-                    frame = atoi(getenv("BT3_UI_SHOT"));
+                const char *shot=getenv("BT3_UI_SHOT_MS");byTime=shot!=NULL;
+                if(!shot)shot=getenv("BT3_UI_SHOT");
+                if (shot != NULL && (file = strchr(shot, ':')) != NULL) {
+                    frame = atoi(shot);
                     file++;
                 }
             }
-            if (frame > 0 && gGsFrame >= (unsigned)frame) {
+            if (frame > 0 && (byTime ? SDL_GetTicks() : gGsFrame) >= (unsigned)frame) {
                 SDL_GPUTextureCreateInfo ci;
                 SDL_GPUTransferBufferCreateInfo ti;
                 SDL_GPUTransferBuffer *tb;
@@ -2456,6 +2458,19 @@ static void vk_frame_end(void) {
                 SDL_ReleaseGPUTexture(sDev, tex);
             }
         }
+    } else if (acquired && swap != NULL && best < 0) {
+        /* (Tag Team: a native online room exists before the game's first picture; its window is shown and used) */
+        SDL_GPUColorTargetInfo color;
+        SDL_zero(color);
+        color.texture = swap;
+        color.load_op = SDL_GPU_LOADOP_CLEAR;
+        color.store_op = SDL_GPU_STOREOP_STORE;
+        color.clear_color.r = 0.025f;
+        color.clear_color.g = 0.04f;
+        color.clear_color.b = 0.065f;
+        color.clear_color.a = 1.0f;
+        SDL_EndGPURenderPass(SDL_BeginGPURenderPass(cmd, &color, 1, NULL));
+        Ui_Draw(cmd, swap);
     }
     sEndT[4] = gpu_now();
     if (getenv("BT3_LAG_LOG") != NULL) { /* (and when the graphics chip has finished it: lag_fence) */
@@ -2566,7 +2581,7 @@ static void vk_frame_end(void) {
             SDL_GPUFence *fence;
             Uint32 w = 512 * SCALE, h = 448 * SCALE, x, y;
             uint8_t *px;
-            char name[600];
+            char name[1024];
             FILE *fp;
 
             SDL_zero(ti);
@@ -2597,16 +2612,19 @@ static void vk_frame_end(void) {
             fp = fopen(name, "wb");
             if (fp != NULL && px != NULL) {
                 fprintf(fp, "P6\n%u %u\n255\n", w, h);
-                for (y = 0; y < h; y++) {
+                uint8_t *row = malloc(w * 3);
+                for (y = 0; row && y < h; y++) {
                     for (x = 0; x < w; x++) {
                         if (getenv("BT3_SHOT_AUX") != NULL) { /* one byte per pixel: show it as grey, times 16 to see small ids */
-                            uint8_t g = (uint8_t)(px[y * w + x] * 16), t[3] = {g, g, px[y * w + x]};
-                            fwrite(t, 1, 3, fp);
+                            uint8_t g = (uint8_t)(px[y * w + x] * 16);
+                            row[x*3]=g;row[x*3+1]=g;row[x*3+2]=px[y*w+x];
                         } else {
-                            fwrite(&px[(y * w + x) * 4], 1, 3, fp);
+                            memcpy(row+x*3, &px[(y * w + x) * 4], 3);
                         }
                     }
+                    fwrite(row, 1, w * 3, fp);
                 }
+                free(row);
                 fclose(fp);
             }
             SDL_UnmapGPUTransferBuffer(sDev, tb);

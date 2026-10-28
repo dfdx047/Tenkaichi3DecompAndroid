@@ -38,8 +38,16 @@ typedef struct TsCell {
 #define TS_STAGE_RANDOM 0x23
 #define TS_BGM_RANDOM 0x18
 
+#ifdef PORT
+#define TS_FACE_FILE (PortGame_IsBT4() ? 0x71C : 0x2F9)   /* + character id: compressed portrait */
+#else
 #define TS_FACE_FILE 0x2F9   /* + character id: compressed portrait */
+#endif
+#ifdef PORT
+#define TS_STAGE_FILE (PortGame_IsBT4() ? 0x6B9 : 0x39D)  /* + stage id: compressed stage picture */
+#else
 #define TS_STAGE_FILE 0x39D  /* + stage id: compressed stage picture */
+#endif
 
 /* An item set: eight item ids, one object (it is copied whole with a structure assignment; TeamSel_Input only
    compiles to the original's code that way). */
@@ -216,5 +224,8 @@ void TeamSel_ClipGoto(s32 flash, s32 side, s32 kind, char *label);
 void TeamSel_Init(s32 section);
 void TeamSel_Term(void);
 void TeamSel_Draw(void);
+#ifdef PORT
+s32 TeamSel_PickOnline(TsMember *member,s32 cpu,s32 *level,s32 revision);
+#endif
 
 #endif

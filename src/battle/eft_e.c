@@ -586,7 +586,7 @@ s32 EftWater_GetSurfaceY(f32 *y) {
 s32 EftWater_SetWake(s32 objId, u8 off) {
     EftWaterWake *wake;
 
-    if (gEftDust == NULL) {
+    if (gEftDust == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) {
         return 0;
     }
     if (Battle_IsSplitScreen()) {
@@ -782,6 +782,15 @@ s32 EftWater_AddBurst(s32 objId, s32 count, f32 delay) {
 
 /* Called by BtlScene_UpdateRecords for every hit record of the frame: the splash where a record crosses the
    water surface, and the spray trail of a technique that skims it. Writes EFT task flag 0x400 only. */
+/* The shared native layout keeps its original two counters in place. */
+static u8 *EftWater_BlastWait(s32 objId) {
+    if (gEftDust == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) return NULL;
+#ifdef PORT
+    if (objId >= 2) return &gEftDust->extraBlastWait[objId - 2];
+#endif
+    return &gEftDust->blastWait[objId];
+}
+
 void EftWater_UpdateBlast(EftWaterBlast *rec) {
     Vec4 pos;
     Vec4 prev;
@@ -838,11 +847,8 @@ void EftWater_UpdateBlast(EftWaterBlast *rec) {
             BtlCharApi_PlaySoundAt((Vec4 *)&hit, 0, 0x3C, 200.0f, 1500.0f);
         } else if (rec->src != NULL) {
             if ((u32)(rec->src->def[5] - 3) < 2) {
-                if (rec->objId == 0) {
-                    wait = &gEftDust->blastWait[0];
-                } else {
-                    wait = &gEftDust->blastWait[1];
-                }
+                wait = EftWater_BlastWait(rec->objId);
+                if (wait == NULL) return;
                 if (*wait != 0) {
                     (*wait)--;
                 } else {
@@ -860,11 +866,8 @@ void EftWater_UpdateBlast(EftWaterBlast *rec) {
             BtlCharApi_PlaySoundAt((Vec4 *)&hit, 0, 0x3D, 200.0f, 1500.0f);
         } else if (rec->src != NULL) {
             if ((u32)(rec->src->def[5] - 3) < 2) {
-                if (rec->objId == 0) {
-                    wait = &gEftDust->blastWait[0];
-                } else {
-                    wait = &gEftDust->blastWait[1];
-                }
+                wait = EftWater_BlastWait(rec->objId);
+                if (wait == NULL) return;
                 if (*wait != 0) {
                     (*wait)--;
                 } else {
@@ -898,8 +901,8 @@ void EftWater_Init(void *task) {
         memset(gEftDust, 0, sizeof(EftWater));
     }
     if (gEftDust->wake == NULL) {
-        gEftDust->wake = BtlPool_Alloc(BtlPool_GetCurrent(), 0x18);
-        memset(gEftDust->wake, 0, 0x18);
+        gEftDust->wake = BtlPool_Alloc(BtlPool_GetCurrent(), EFT_FIGHTER_CAPACITY * sizeof(EftWaterWake));
+        memset(gEftDust->wake, 0, EFT_FIGHTER_CAPACITY * sizeof(EftWaterWake));
     }
     if (gEftDust->splash == NULL) {
         gEftDust->splash = BtlPool_Alloc(BtlPool_GetCurrent(), 0x280);
@@ -971,11 +974,9 @@ void EftWater_Term(void) {
 
 /* Water task update: the wakes, then every particle list. */
 void EftWater_Update(void) {
-    if (!BtlCharApi_IsInTechnique(0)) {
-        gEftDust->blastWait[0] = 0;
-    }
-    if (!BtlCharApi_IsInTechnique(1)) {
-        gEftDust->blastWait[1] = 0;
+    s32 i;
+    for (i = 0; i < EFT_FIGHTER_CAPACITY; i++) {
+        if (!BtlCharApi_IsInTechnique(i)) *EftWater_BlastWait(i) = 0;
     }
     EftWater_UpdateWakes();
     EftWaterSplash_UpdateList(&gEftDust->splashList[0], &gEftDust->splashList[1]);
@@ -991,11 +992,11 @@ void EftWater_PostUpdate(void) {
     EftWater_UpdateTextures(1, 0);
 }
 
-/* Water task reset: stops both wakes. */
+/* Water task reset: stops every fighter's wake. */
 void EftWater_Reset(void) {
     s32 i;
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < EFT_FIGHTER_CAPACITY; i++) {
         EftWater_SetWake(i, 1);
     }
 }
@@ -1045,7 +1046,7 @@ void EftWater_UpdateWakes(void) {
 
     if (!EFT_PAUSED()) {
         wake = gEftDust->wake;
-        for (n = 0; n < 2; n++, wake++) {
+        for (n = 0; n < EFT_FIGHTER_CAPACITY; n++, wake++) {
             if (wake->on != 0) {
                 BtlCharApi_GetPos(wake->objId, (Vec4 *)&pos);
                 if (EftWater_GetSurfaceY(&y)) {

@@ -4,6 +4,7 @@
 #include "battle/battle.h"
 #include "sys/pad.h"
 #include "sys/save.h"
+#include "battle/tag_clash.h"
 
 /*
  * Per-fighter battle input: 0x1D3B40..0x1D60A0.
@@ -419,6 +420,7 @@ void BtlInput_BuildRecord(BtlInputChr *chr) {
             active = BtlChars_IsTimeStopped() == 0;
         }
     }
+    { extern s32 Port_TagShowcase(void); if(Port_TagShowcase()) active=0; }
     if (active) {
         if (BattleReplay_IsActive()) {
             BtlReplay_Play(chr, &buttons, stick);
@@ -491,9 +493,20 @@ void BtlInput_Fetch(BtlInputChr *chr, u32 *outButtons, u32 *outCommands, u8 *sti
 u32 BtlInput_GetKeyMask(BtlInputChr *chr, s32 action) {
     s32 padBit[SAVE_KEY_COUNT] = { PAD_CIRCLE, PAD_CROSS, PAD_SQUARE, PAD_TRIANGLE, PAD_L1, PAD_L2, PAD_R1, PAD_R2 };
     s32 i;
+    s32 profile=chr->player;
+#ifdef PORT
+    /* The disc save contains two button-layout profiles, not four actors.
+     * P3/P4 inherit the P1/P2 layouts; all four physical devices/key bindings
+     * remain independently configurable in the native Controls window. */
+    if(TagTeam_Active()) {
+        profile=TagTeam_InputPlayer(chr->player);
+        if(profile<0) profile=TagTeam_NativeSide(chr->player);
+        profile &= 1;
+    }
+#endif
 
     for (i = 0; i < SAVE_KEY_COUNT; i++) {
-        if (gSaveData->key[chr->player][i] == action) {
+        if (gSaveData->key[profile][i] == action) {
             return padBit[i];
         }
     }
@@ -550,6 +563,14 @@ void BtlInput_Sample(BtlInputChr *chr) {
     in->padStatus = pad->status;
     in->padLastStatus = pad->lastStatus;
     in->rawHeld = pad->held;
+    {
+        extern s32 TagTeam_TargetStickConsumed(s32);
+        if(TagTeam_TargetStickConsumed(chr->player)) in->rawHeld &= ~0xF00000;
+    }
+    {
+        extern s32 TagAssist_ConsumeR3(s32);
+        if(TagAssist_ConsumeR3(chr->pad)) in->rawHeld &= ~PAD_R3;
+    }
     in->rawStickX = BtlInput_StickToByte(pad->left[0]);
     in->rawStickY = BtlInput_StickToByte(pad->left[1]);
 #ifdef PORT
@@ -966,7 +987,7 @@ s32 BtlInput_TestAction(BtlInputChr *chr, s32 id, s32 want) {
         result = !BtlInput_IsCmdHeld(chr, BTLC_GUARD_H);
         break;
     case 51:
-        result = BtlInput_IsCmdHeld(chr, BTLC_DIR_P);
+        result = BtlClash_SequenceActive(chr->player) ? BtlClash_SequenceInput(chr->player) : BtlInput_IsCmdHeld(chr, BTLC_DIR_P);
         break;
     case 97:
         result = BtlInput_IsHeld(chr, BTLB_RS_LEFT);
