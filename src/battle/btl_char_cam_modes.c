@@ -1,5 +1,6 @@
 #include "common.h"
 #include "battle/btl_char_cam_int.h"
+#include "port/camera.h"
 
 /* The fighter camera's modes, per-frame update and cut control, 0x1C5840-0x1C7B30: the last part of
  * btl_char_cam.c (see the note at the top of that file). */
@@ -519,6 +520,8 @@ shake:
         smooth = 0;
     }
     rate = ChrCam_GetRate(chr, &eye, &target);
+    rate *= Port_CameraValue("follow_smoothing", 1.0f);
+    if (rate > 1.0f) rate = 1.0f;
     if (smooth) {
         Vec4_Lerp(&cam->eye, &eye, &cam->eye, rate);
     } else {
