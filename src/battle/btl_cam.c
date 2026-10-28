@@ -3,6 +3,7 @@
 #include "battle/battle.h"
 #include "battle/btl_cam.h"
 #include "battle/btl_demo_cam.h"
+#include "port/camera.h"
 #include "sys/heap.h"
 #include "sys/pad.h"
 
@@ -675,6 +676,7 @@ void CamShake_Calc(CamShake *shake, Vec4 *posOfs, Vec4 *rotOfs) {
         if (amp > 0.1f) {
             amp = 0.1f;
         }
+        amp *= Port_CameraValue("shake_scale", 1.0f);
         rotOfs->x = ((rand() & 0xFF) - 0x7F) * 0.0078125f * amp;
         rotOfs->y = ((rand() & 0xFF) - 0x7F) * 0.0078125f * amp;
         posOfs->x = ((rand() & 0xFF) - 0x7F) * 0.5f * amp;
