@@ -4,6 +4,7 @@
 #include "battle/btl_cam.h"
 #include "battle/btl_char_api.h"
 #include "battle/btl_demo_cam.h"
+#include "battle/btl_seq.h"
 #include "port/camera.h"
 #include "sys/heap.h"
 #include "sys/pad.h"
@@ -51,7 +52,10 @@ extern s32 BtlStage_FindZoneNear(s32 arg0, Vec4 *pos);
 extern s32 D_002FF280[2];
 
 static f32 sPortCameraFov[2];
-static s32 sPortCameraDiagCalls;
+static s32 sCameraLogFrames;
+static s32 sCameraLogLines;
+static s32 sCameraLogTotalFrames;
+static s32 sCameraLogStarted;
 
 extern View gDbgCamView;
 extern s32 gDbgCamLocked;
@@ -378,7 +382,8 @@ void BtlCam_UpdateView(s32 side) {
     }
     BtlCharApi_GetCamPose(objId, &view->pos, &view->rot);
     view->priority = BtlCharApi_HasCamPriority(objId);
-    if (Port_CameraEnabled()) {
+    if (Port_CameraEnabled() && !DemoCam_IsActive() &&
+        Port_CameraValue("cam_fov_adapt", 1.0f) != 0.0f) {
         f32 fov = Port_CameraValue("fov_base", 61.2f);
         f32 extra = Port_CameraValue("fov_move_extra", 0.0f);
         f32 width = view->split ? 128.0f : 256.0f;
@@ -407,9 +412,9 @@ void BtlCam_UpdateView(s32 side) {
                 }
             }
             if (BtlCharApi_IsMoving(objId)) fov += extra;
-            if (BtlCharApi_AnyCamPriority()) fov -= 15.0f;
+            if (BtlCharApi_AnyCamPriority() && Port_CameraValue("cam_cut_fov", 1.0f) != 0.0f) fov -= 15.0f;
             if (fov == fov && fov <= FLT_MAX && fov >= -FLT_MAX) {
-                if (BtlCharApi_AnyCamPriority()) {
+                if (BtlCharApi_AnyCamPriority() && Port_CameraValue("cam_cut_fov", 1.0f) != 0.0f) {
                     if (fov < 45.0f) fov = 45.0f;
                     if (fov > 55.0f) fov = 55.0f;
                 } else {
@@ -444,16 +449,6 @@ void BtlCam_UpdateView(s32 side) {
                     View_BuildProjection(&view->view);
                 }
             }
-        }
-        if (sPortCameraDiagCalls < 30) {
-            FILE *fp = fopen("cam_log.txt", "a");
-            if (fp != NULL) {
-                fprintf(fp, "camera=%d fov=%.6f screenDist=%.6f height=%.6f separation=%.6f opponentId=%d\n",
-                        sPortCameraDiagCalls + 1, fov, view->view.screenDist, height, separation, opponentId);
-                fflush(fp);
-                fclose(fp);
-            }
-            sPortCameraDiagCalls++;
         }
     }
     BtlCam_BuildView(view, 1);
@@ -630,9 +625,32 @@ s32 BtlCam_UpdateOverride(void) {
             BtlCam_SetLayout(0, 1);
         }
     }
-    if (DemoCam_IsActive() != 0) {
+    {
+        s32 demoActive = DemoCam_IsActive();
+        sCameraLogFrames++;
+        sCameraLogTotalFrames++;
+        if (sCameraLogFrames >= 30 && sCameraLogLines < 200) {
+            FILE *fp;
+            sCameraLogFrames = 0;
+            fp = fopen("cam_log.txt", sCameraLogStarted ? "a" : "w");
+            if (fp != NULL) {
+                fprintf(fp, "frame=%d demo=%d intro_state=%d resources=fov:%d,cut_fov:%d,microzoom:%d,dist:%d\n",
+                        sCameraLogTotalFrames, demoActive, BtlSeq_GetState(),
+                        !demoActive && Port_CameraEnabled() && Port_CameraValue("cam_fov_adapt", 1.0f) != 0.0f,
+                        !demoActive && Port_CameraEnabled() &&
+                            Port_CameraValue("cam_fov_adapt", 1.0f) != 0.0f &&
+                            Port_CameraValue("cam_cut_fov", 1.0f) != 0.0f,
+                        !demoActive && Port_CameraEnabled() && Port_CameraValue("cam_microzoom", 1.0f) != 0.0f,
+                        !demoActive && Port_CameraEnabled() && Port_CameraValue("cam_dist_adapt", 1.0f) != 0.0f);
+                fclose(fp);
+                sCameraLogStarted = 1;
+                sCameraLogLines++;
+            }
+        }
+        if (demoActive) {
         DemoCam_Update();
         ret = 1;
+        }
     }
     return ret;
 }

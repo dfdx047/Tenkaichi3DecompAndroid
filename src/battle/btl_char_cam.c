@@ -1,6 +1,7 @@
 #include "common.h"
 #include "battle/btl_char_cam_int.h"
 #include "port/camera.h"
+#include "battle/btl_demo_cam.h"
 
 extern int Port_CamSparking(void);
 extern f32 BtlUtil_ApproachF(f32 cur, f32 target, f32 step);
@@ -117,7 +118,9 @@ f32 ChrCam_GetOffset(ChrCamChr *chr, Vec4 *out, s32 mode) {
         out->z *= zoom;
         pitch += CAM_KI_PITCH * kiZoomFactor;
     }
-    out->z -= Port_CameraValue("base_distance", 0.0f);
+    if (!DemoCam_IsActive() && Port_CameraValue("cam_dist_adapt", 1.0f) != 0.0f) {
+        out->z -= Port_CameraValue("base_distance", 0.0f);
+    }
     out->y += Port_CameraValue("base_height", 0.0f);
     pitch -= Port_CameraValue("inclination", 0.0f) * 0.0174532925f;
     out->w = 1.0f;

@@ -27,3 +27,10 @@ fov_base=63
 # Additional horizontal field of view while running/flying, in degrees. Range: 0..20.
 # Applied by the separate battle-projection setting.
 fov_move_extra=3
+
+# Diagnostic switches for optional battle camera effects. 1 enables (default); 0 disables that effect.
+# These effects are suppressed while the scripted DemoCam intro/cut is active.
+cam_fov_adapt=1
+cam_cut_fov=1
+cam_microzoom=1
+cam_dist_adapt=1

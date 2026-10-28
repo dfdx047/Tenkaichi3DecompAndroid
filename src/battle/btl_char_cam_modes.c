@@ -1,6 +1,7 @@
 #include "common.h"
 #include "battle/btl_char_cam_int.h"
 #include "port/camera.h"
+#include "battle/btl_demo_cam.h"
 
 /* The fighter camera's modes, per-frame update and cut control, 0x1C5840-0x1C7B30: the last part of
  * btl_char_cam.c (see the note at the top of that file). */
@@ -504,7 +505,8 @@ void ChrCam_Update(ChrCamChr *chr) {
         keepBehind = 1;
     }
 shake:
-    if (Port_CameraEnabled()) {
+    if (Port_CameraEnabled() && !DemoCam_IsActive() &&
+        Port_CameraValue("cam_microzoom", 1.0f) != 0.0f) {
         shakeTime = CamShake_GetTime(&cam->shake);
         if (shakeTime > 0.0f) {
             f32 zoom = shakeTime * 0.2f;

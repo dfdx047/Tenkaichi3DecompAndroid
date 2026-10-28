@@ -46,6 +46,10 @@ static PortCameraSetting sCameraSettings[] = {
     {"shake_scale", 0.0f, 5.0f, 1.15f, 1},
     {"fov_base", 35.0f, 100.0f, 63.0f, 1},
     {"fov_move_extra", 0.0f, 20.0f, 3.0f, 1},
+    {"cam_fov_adapt", 0.0f, 1.0f, 1.0f, 1},
+    {"cam_cut_fov", 0.0f, 1.0f, 1.0f, 1},
+    {"cam_microzoom", 0.0f, 1.0f, 1.0f, 1},
+    {"cam_dist_adapt", 0.0f, 1.0f, 1.0f, 1},
 };
 static int sCameraConfigRead;
 static int sCameraConfigEnabled;
