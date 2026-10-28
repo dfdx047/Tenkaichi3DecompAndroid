@@ -118,6 +118,7 @@ f32 ChrCam_GetOffset(ChrCamChr *chr, Vec4 *out, s32 mode) {
         pitch += CAM_KI_PITCH * kiZoomFactor;
     }
     out->z -= Port_CameraValue("base_distance", 0.0f);
+    out->y += Port_CameraValue("base_height", 0.0f);
     out->w = 1.0f;
     return pitch;
 }
