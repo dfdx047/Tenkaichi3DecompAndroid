@@ -1,0 +1,29 @@
+# Optional battle camera settings. Copy this file to camera.txt next to the game to enable it.
+# Missing files, sparking_cam=0, and omitted keys preserve the current camera behavior.
+# Values are clamped to their documented ranges; malformed and unknown lines are ignored.
+
+sparking_cam=0
+
+# Add to the game's character-size/distance-derived position, in game world units.
+# 0 keeps the original value. Range: -50..50.
+base_distance=0
+base_height=0
+
+# Added to the original camera pitch, in degrees. Positive values pitch farther downward.
+# 0 keeps the original angle. Range: -45..45.
+inclination=0
+
+# Multiplier for the game's follow interpolation rate. 1 keeps the original smoothing.
+# Lower values follow more slowly. Range: 0.1..2.
+follow_smoothing=1
+
+# Multiplier for camera shake amplitude. 1 keeps the original shake. Range: 0..5.
+shake_scale=1
+
+# Horizontal field of view in degrees; 61.2 is the original battle projection.
+# Range: 35..100. Applied by the separate battle-projection setting.
+fov_base=61.2
+
+# Additional horizontal field of view while running/flying, in degrees. Range: 0..20.
+# Applied by the separate battle-projection setting.
+fov_move_extra=0

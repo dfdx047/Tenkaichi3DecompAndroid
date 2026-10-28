@@ -28,6 +28,88 @@ int Port_CamSparking(void) {
     return e != NULL && atoi(e) != 0;
 }
 
+/* Optional battle-camera tuning. Missing files, disabled config, and unknown/bad lines keep the game's values. */
+typedef struct PortCameraSetting {
+    const char *name;
+    float min;
+    float max;
+    float value;
+    int found;
+} PortCameraSetting;
+
+static PortCameraSetting sCameraSettings[] = {
+    {"base_distance", -50.0f, 50.0f, 0.0f, 0},
+    {"base_height", -50.0f, 50.0f, 0.0f, 0},
+    {"inclination", -45.0f, 45.0f, 0.0f, 0},
+    {"follow_smoothing", 0.1f, 2.0f, 1.0f, 0},
+    {"shake_scale", 0.0f, 5.0f, 1.0f, 0},
+    {"fov_base", 35.0f, 100.0f, 0.0f, 0},
+    {"fov_move_extra", 0.0f, 20.0f, 0.0f, 0},
+};
+static int sCameraConfigRead;
+static int sCameraConfigEnabled;
+
+static void port_camera_config_load(void) {
+    char line[256];
+    FILE *fp;
+
+    if (sCameraConfigRead) {
+        return;
+    }
+    sCameraConfigRead = 1;
+    fp = fopen("camera.txt", "r");
+    while (fp != NULL && fgets(line, sizeof(line), fp) != NULL) {
+        char *key = line;
+        char *value;
+        char *end;
+        float parsed;
+        int i;
+
+        while (*key == ' ' || *key == '\t') key++;
+        if (*key == '\0' || *key == '\n' || *key == '\r' || *key == '#') continue;
+        value = strchr(key, '=');
+        if (value == NULL) continue;
+        *value++ = '\0';
+        end = key + strlen(key);
+        while (end > key && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n')) *--end = '\0';
+        while (*value == ' ' || *value == '\t') value++;
+        parsed = strtof(value, &end);
+        if (end == value || parsed != parsed) continue;
+        while (*end == ' ' || *end == '\t') end++;
+        if (*end != '\0' && *end != '\r' && *end != '\n' && *end != '#') continue;
+        if (strcmp(key, "sparking_cam") == 0) {
+            if (parsed == 0.0f || parsed == 1.0f) sCameraConfigEnabled = parsed == 1.0f;
+            continue;
+        }
+        for (i = 0; i < (int)(sizeof(sCameraSettings) / sizeof(sCameraSettings[0])); i++) {
+            PortCameraSetting *setting = &sCameraSettings[i];
+            if (strcmp(key, setting->name) == 0) {
+                if (parsed < setting->min) parsed = setting->min;
+                if (parsed > setting->max) parsed = setting->max;
+                setting->value = parsed;
+                setting->found = 1;
+                break;
+            }
+        }
+    }
+    if (fp != NULL) fclose(fp);
+}
+
+int Port_CameraEnabled(void) {
+    port_camera_config_load();
+    return sCameraConfigEnabled;
+}
+
+float Port_CameraValue(const char *name, float fallback) {
+    int i;
+    port_camera_config_load();
+    if (!sCameraConfigEnabled) return fallback;
+    for (i = 0; i < (int)(sizeof(sCameraSettings) / sizeof(sCameraSettings[0])); i++) {
+        if (sCameraSettings[i].found && strcmp(name, sCameraSettings[i].name) == 0) return sCameraSettings[i].value;
+    }
+    return fallback;
+}
+
 static int sBattles;
 static int sFromMenu;
 
