@@ -7,6 +7,8 @@
 #include "port/camera.h"
 #include "sys/heap.h"
 #include "sys/pad.h"
+#include <float.h>
+#include <stdio.h>
 
 /* Battle camera, 0x23E040-0x23F620. See battle/btl_cam.h for the structures and the per-frame flow. */
 
@@ -49,6 +51,7 @@ extern s32 BtlStage_FindZoneNear(s32 arg0, Vec4 *pos);
 extern s32 D_002FF280[2];
 
 static f32 sPortCameraFov[2];
+static s32 sPortCameraDiagCalls;
 
 extern View gDbgCamView;
 extern s32 gDbgCamLocked;
@@ -380,28 +383,78 @@ void BtlCam_UpdateView(s32 side) {
         f32 extra = Port_CameraValue("fov_move_extra", 0.0f);
         f32 width = view->split ? 128.0f : 256.0f;
         f32 targetFov;
+        f32 height = BtlCharApi_GetHeight(objId);
         Vec4 opponentPos;
         Vec4 opponentRot;
-        f32 separation;
+        s32 opponentId = BattleSide_GetObjId(side ^ 1);
+        s32 opponentPose;
+        f32 separation = 0.0f;
+        f32 screenDist;
+        s32 valid = height > 0.0f && height == height && height <= FLT_MAX && height >= -FLT_MAX;
 
-        BtlCharApi_GetCamPose(BattleSide_GetObjId(side ^ 1), &opponentPos, &opponentRot);
-        separation = Mathf_Sqrt(Vec3_DistSq(&view->pos, &opponentPos));
-        fov += separation * 0.025f - 3.0f;
-        if (BtlCharApi_IsMoving(objId)) fov += extra;
-        if (BtlCharApi_AnyCamPriority()) fov -= 15.0f;
-        if (BtlCharApi_AnyCamPriority()) {
-            if (fov < 45.0f) fov = 45.0f;
-            if (fov > 55.0f) fov = 55.0f;
-        } else {
-            if (fov < 60.0f) fov = 60.0f;
-            if (fov > 70.0f) fov = 70.0f;
+        if (valid && fov == fov && fov <= FLT_MAX && fov >= -FLT_MAX &&
+            extra == extra && extra <= FLT_MAX && extra >= -FLT_MAX) {
+            if (opponentId >= 0) {
+                opponentPose = BtlCharApi_GetCamPose(opponentId, &opponentPos, &opponentRot);
+                /* Object IDs 0 and 1 are the two battle fighters; other IDs cannot supply the opponent pose. */
+                if (opponentId <= 1 && opponentPose != 0) {
+                    separation = Mathf_Sqrt(Vec3_DistSq(&view->pos, &opponentPos));
+                    if (!(separation == separation && separation <= FLT_MAX && separation >= 0.01f)) {
+                        separation = 0.0f;
+                    } else {
+                        fov += separation * 0.025f - 3.0f;
+                    }
+                }
+            }
+            if (BtlCharApi_IsMoving(objId)) fov += extra;
+            if (BtlCharApi_AnyCamPriority()) fov -= 15.0f;
+            if (fov == fov && fov <= FLT_MAX && fov >= -FLT_MAX) {
+                if (BtlCharApi_AnyCamPriority()) {
+                    if (fov < 45.0f) fov = 45.0f;
+                    if (fov > 55.0f) fov = 55.0f;
+                } else {
+                    if (fov < 60.0f) fov = 60.0f;
+                    if (fov > 70.0f) fov = 70.0f;
+                }
+                targetFov = fov;
+                if (sPortCameraFov[side] == 0.0f || !(sPortCameraFov[side] == sPortCameraFov[side]) ||
+                    sPortCameraFov[side] > FLT_MAX || sPortCameraFov[side] < -FLT_MAX) {
+                    sPortCameraFov[side] = targetFov;
+                }
+                sPortCameraFov[side] = BtlUtil_ApproachF(sPortCameraFov[side], targetFov, 1.5f);
+                fov = sPortCameraFov[side];
+                if (fov == fov && fov >= 35.0f && fov <= 100.0f) {
+                    screenDist = width / Mathf_Tan(fov * 0.00872664626f);
+                    if (screenDist == screenDist && screenDist > 0.0f && screenDist <= FLT_MAX) {
+                        view->view.screenDist = screenDist;
+                        View_BuildProjection(&view->view);
+                    }
+                }
+            }
+        } else if (fov == fov && fov <= FLT_MAX && fov >= -FLT_MAX &&
+                   extra == extra && extra <= FLT_MAX && extra >= -FLT_MAX) {
+            /* Invalid fighter height/configuration: retain the pre-adaptation FOV path for this frame. */
+            if (BtlCharApi_IsMoving(objId)) fov += extra;
+            if (fov == fov && fov <= FLT_MAX && fov >= -FLT_MAX) {
+                if (fov < 35.0f) fov = 35.0f;
+                if (fov > 100.0f) fov = 100.0f;
+                screenDist = width / Mathf_Tan(fov * 0.00872664626f);
+                if (screenDist == screenDist && screenDist > 0.0f && screenDist <= FLT_MAX) {
+                    view->view.screenDist = screenDist;
+                    View_BuildProjection(&view->view);
+                }
+            }
         }
-        targetFov = fov;
-        if (sPortCameraFov[side] == 0.0f) sPortCameraFov[side] = targetFov;
-        sPortCameraFov[side] = BtlUtil_ApproachF(sPortCameraFov[side], targetFov, 1.5f);
-        fov = sPortCameraFov[side];
-        view->view.screenDist = width / Mathf_Tan(fov * 0.00872664626f);
-        View_BuildProjection(&view->view);
+        if (sPortCameraDiagCalls < 30) {
+            FILE *fp = fopen("cam_log.txt", "a");
+            if (fp != NULL) {
+                fprintf(fp, "camera=%d fov=%.6f screenDist=%.6f height=%.6f separation=%.6f opponentId=%d\n",
+                        sPortCameraDiagCalls + 1, fov, view->view.screenDist, height, separation, opponentId);
+                fflush(fp);
+                fclose(fp);
+            }
+            sPortCameraDiagCalls++;
+        }
     }
     BtlCam_BuildView(view, 1);
 }
