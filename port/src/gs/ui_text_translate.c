@@ -11,7 +11,7 @@
    online session puts the game back to its first blank, from before this catalog was loaded: its lines were
    overwritten and the pause menu read "!! !" and "dd". This file's variables are not part of the state
    (port/tools/make_state.py leaves the gs_ files out) and the program lies below 4 GB, so the lines go into a
-   region of this file's own: handed out in order, given back as a whole (ui_clear). About 1.6 MB a language. */
+   region of this file's own: handed out in order, given back as a whole (ui_clear). About 2.6 MB a language with the mode and story tables. */
 #ifndef UI_TEXT_HOST_ALLOC
 #define UI_ARENA (16u * 1024 * 1024)
 static uint8_t sArena[UI_ARENA] __attribute__((aligned(16)));
@@ -30,12 +30,13 @@ static void ui_translated_free(void *p) { (void)p; } /* (all of it at once: ui_c
 #define ui_translated_free free
 #endif
 
-#define UI_MAX_FILE (16u * 1024 * 1024)
-#define UI_MAX_ROWS 30000
-#define UI_MAX_GROUPS 256
+#define UI_MAX_FILE (32u * 1024 * 1024)
+/* The full USA catalog has 47,533 rows. Keep word slots above the row bound so probing always terminates. */
+#define UI_MAX_ROWS 65536
+#define UI_MAX_GROUPS 1024
 #define UI_MAX_LINE 16384
 #define UI_MAX_UNITS 4096
-#define UI_WORD_SLOTS 65536
+#define UI_WORD_SLOTS 131072
 
 typedef struct UiParser { const char *p, *end; } UiParser;
 typedef struct UiRow { char *id; uint16_t *original, *translated; } UiRow;

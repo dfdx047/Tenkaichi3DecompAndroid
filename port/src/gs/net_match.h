@@ -38,8 +38,6 @@ void Match_Area(const char *area); /* a quick match: where to look ("auto", "any
 int Match_Watchers(char out[][64], int max, int *gen); /* the spectators' addresses ("seen=" too); *gen: changes */
 void Match_QueuesAsk(int version);
 void Match_HelloAsk(void);
-void Match_UpdateAsk(void);   /* asks GitHub for the newest release (a thread; once is enough) */
-int Match_UpdateLatest(void); /* its number as PORT_RELEASE counts, 0 while unknown */
 int Match_Release(int *min, int *latest);
 int Match_QueueWaiting(int queue);
 void Match_Poll(MatchStatus *out);

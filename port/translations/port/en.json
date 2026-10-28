@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "labels_version": 2,
+  "labels_version": 3,
   "translation_version": 1,
-  "labels_count": 13,
+  "labels_count": 18,
   "locale": "en",
   "name": "English",
   "order": 1,
@@ -58,6 +58,26 @@
     "region/OC": {
       "original": "Oceania",
       "text": "Oceania"
+    },
+    "update/available": {
+      "original": "Update {version} available. F1 to update.",
+      "text": "Update {version} available. F1 to update."
+    },
+    "update/downloading": {
+      "original": "Downloading update {version}: {percent}%",
+      "text": "Downloading update {version}: {percent}%"
+    },
+    "update/ready": {
+      "original": "Update {version} is ready. F1 > Restart now.",
+      "text": "Update {version} is ready. F1 > Restart now."
+    },
+    "update/done": {
+      "original": "Updated to {version}.",
+      "text": "Updated to {version}."
+    },
+    "update/online_off": {
+      "original": "An update is being installed: online play is off until the game restarts (F1 > Restart now).",
+      "text": "An update is being installed: online play is off until the game restarts (F1 > Restart now)."
     }
   }
 }

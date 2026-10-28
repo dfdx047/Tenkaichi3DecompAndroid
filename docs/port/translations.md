@@ -6,8 +6,8 @@ own JSON catalog under `gamedata/game-text/translations/`:
 | Folder | Text covered | Where the English text comes from |
 | --- | --- | --- |
 | `labels/` | Menu and other text painted into artwork textures | Bundled `port/translations/labels/en.json` |
-| `ui/` | Original game's menu and dialog text tables | Extracted from the USA game data at startup into `ui/en.json`, unless an English UI catalog is bundled |
-| `port/` | Text added by the PC port: the quit confirmation, and the lines at the start of an online match (`{name}` is the rival's name) | Bundled `port/translations/port/en.json` |
+| `ui/` | Original game's menu, mode and story dialogue text tables | Extracted from the USA game data at startup into `ui/en.json`, unless an English UI catalog is bundled |
+| `port/` | Text added by the PC port: the quit confirmation, the lines at the start of an online match (`{name}` is the rival's name), and the automatic update's lines (`update/...`; `{version}`, `{percent}`) | Bundled `port/translations/port/en.json` |
 
 An entry has a stable ID, the English `original`, and editable `text`. For
 example, `port/en.json` contains:
@@ -79,8 +79,22 @@ rebuilding `labels.tsv`. Layout and style changes are described in
 **Game UI:** `ui/en.json` lists text found in the extracted game tables. Copy
 it to `ui/<locale>.json`, keep each ID and `original`, and translate `text`.
 Repeated English phrases can have separate IDs because they occur in
-different tables. Only extracted tables are covered; text elsewhere in the
-original game does not become translatable by adding a JSON entry.
+different tables. Extraction covers the battle HUD (USA archive entry 5), all
+31 menu packs (`pzs3us1/00448.bin` through `00478.bin`), and the 50 story
+dialogue tables (`00560.bin` through `00609.bin`). This includes tournament
+brackets, saga/episode descriptions and ending narration, Sim Dragon events,
+and Ultimate Battle rankings and course descriptions. Whole compressed packs
+and compressed sections are decoded before their UTF-16 tables are scanned.
+The extractor reads the loose `.bin` files under `gamedata/pzs3us1/` created
+by disc setup. The standard USA data yields 47,533 entries, including blank
+and placeholder lines in the original tables.
+
+Generated English catalogs from earlier extractor versions are refreshed at
+startup. A reviewed catalog with a custom `source` is preserved; merge new IDs
+from a freshly generated English catalog into existing manual translations.
+The IDs of previously extracted lines stay the same. Only recognized text
+tables are covered: painted artwork and hardcoded strings still require label
+mappings, replacement artwork, or translation calls in code.
 
 **Port text:** An entry in `port/<locale>.json` works only after port code has
 registered its ID and looks it up. To add one, define the ID in
@@ -144,7 +158,7 @@ Each catalog handles missing entries differently:
 ## The European disc's languages
 
 The European release (SLES-54945) has the menus, the battle HUD and their text five times, once per language
-(English, Spanish, German, French, Italian). The port extracts 60 translated menu/HUD entries, one native
+(English, Spanish, German, French, Italian). The port extracts 410 menu/HUD and story text archive entries, one native
 language-selector entry, and the opening soundtrack:
 
 - the setup window takes them from a second, optional disc image (in a release folder: native.cpp `step_eu`;
@@ -154,18 +168,20 @@ language-selector entry, and the opening soundtrack:
   `python3 port/tools/extract_eu.py <European image>`.
 
 The translated entries go as they are into `gamedata/pzs3eu1/<entry>.bin` (the battle HUD is entries 5 to 9, one
-per language; the USA menu archive 448 + k is entry 451 + k + 31 per language). The selector textures are in
+per language; the USA menu archive 448 + k is entry 451 + k + 31 per language).
+Story dialogue occupies entries 656 through 905 (50 episodes per language).
+The selector textures are in
 `gamedata/pzs3eu0/00001.bin` (entry 1 of `DATA/PZS3EU0.AFS`); the renderer decodes the background and arrows
 directly from it, without PNG assets. For an existing EU installation, run
 `python3 port/tools/extract_eu.py <European image> --selector-only` to add just this entry. These are the
 player's own disc data: never commit them. The game does the rest itself:
 
 - `ui/es.json`, `de.json`, `fr.json`, `it.json`: at the first start after the entries arrive, before the language
-  list (`UiText_EuropeanOnStartup`, ui_text_extract.c; under a second). The menu, dialog and pause menu text,
+  list (`UiText_EuropeanOnStartup`, ui_text_extract.c). The menu, dialog, pause menu and story text,
   keyed by the USA IDs: the walk that makes `ui/en.json`, over both discs. A line is taken where the European
   English is the USA English, or where its table has as many lines on both discs: the European English is then
-  the same line reworded (bullets added, a typo fixed, "Fight Again?"). About 15,000 of 20,604 lines change; the
-  rest are names and numbers. A catalog is made again when it was made by another version of this; one with
+  the same line reworded (bullets added, a typo fixed, "Fight Again?"). About 30,000 of 47,533 lines change; the
+  rest include names, numbers and placeholder lines. A catalog is made again when it was made by another version of this; one with
   another source (written by a person) is left alone.
 - The painted lettering of the menus and the battle HUD (headings, menu items, buttons such as Yes and No, the
   title's Press START, Ready and Fight, Hits, the pause menu's title): when a language is chosen, every texture
@@ -179,8 +195,16 @@ player's own disc data: never commit them. The game does the rest itself:
 A redrawn label (Menu font other than Original) is drawn from `labels/`; on a texture that shows the European
 picture there is no USA label to redraw, so the European art is what shows.
 
-The English catalog the game extracts (`ui/en.json`, source "extracted USA game text, version 2") also has the
-lines that sit among other sections, as the pause menu's do in file 5. One extracted by an earlier version is made
-again at start; one a person wrote names another source and is kept.
+Existing European installations that imported only the earlier 60 entries must
+import their European image again (setup's **Add languages...**, or
+`python3 port/tools/extract_eu.py <European image>`). Until the additional packs
+are present, existing European catalogs stay in place and the game reports the
+incomplete import when it tries to refresh them. Manually authored catalogs
+with a different source are preserved.
+
+The English catalog's source is "extracted USA game text, version 3"; generated
+European catalogs use "European disc, version 2". These include the lines that
+sit among other sections, as the pause menu's do in file 5, along with the mode
+packs and story dialogue. Older generated catalogs are refreshed at startup.
 
 `BT3_ART_LOG=1` lists every pair at start and every swap.

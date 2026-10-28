@@ -53,20 +53,26 @@ enum { T_HELLO = 1, T_HELLO_ACK = 2, T_INPUT = 3, T_BYE = 4, T_PING = 5, T_PONG 
 /* The version of what goes over the line. The greeting and its answer carry it, and two copies that differ do not
    start a match (the input packets changed with version 2: times for the ping were added; a copy that read them
    the old way took them for input). 1 was releases 0.1.8 and 0.1.9, which said no version. */
-enum { NET_VERSION = 5, IN_HEAD = 44 }; /* 3 (0.1.15): the host's battle rules travel with its choices.
+enum { NET_VERSION = 6, IN_HEAD = 44 }; /* 3 (0.1.15): the host's battle rules travel with its choices.
    4 (0.1.34): a session's start-up no longer follows the player's "Skip logos" / "Skip intro video" (0.1.32 and
    0.1.33 with either on computed another start-up than the other side and the two never agreed again: such a copy
    must not be let into a match); the input packets carry the sender's check value (sync_*, below), 12 bytes more
    in their head; the goodbye can say why.
    5: a session's start-up is run with nothing pressed and without waiting for the other side, which then is not
    sent the start-up's input; the two meet at the character select (T_ARRIVED). A copy of 4 would wait for input
-   that does not come. */
+   that does not come.
+   6 (0.1.39): lobbies replace the rooms of two (a friend is played in a lobby; Tenkaichi Budokai Online has no
+   Create Room and no Watch), and a peer without a gameplay fingerprint is refused (FP_PEER_REQUIRED). Nothing a
+   0.1.38 game sends is taken: the matchmaking service's queues and codes are kept apart by this number, and by
+   address each side says "another version" (a lobby's owner refuses the greeting; a 0.1.38 host of two answers
+   the lobby member's spectator question with SPEC_NO_VERSION, net_lobby.c). */
 static int sVersionBad; /* the other side answered with another version */
 static const uint32_t kVersion = NET_VERSION;
 #include "net_match.h"
 #include "net_relay.h"
 #include "net_chat.h"
 #include "net_lobby.h"
+#include "net_update.h"
 static int sLobbyOther;
 
 /* What the meter shows (ui.cpp): the round trip time, and per second how often the game went back, how far, and
@@ -407,22 +413,59 @@ static void net_send(const void *buf, int n, const struct sockaddr_in *to) {
 /* The gameplay fingerprint (plat_fprint.c: one number for the data a fight is computed from) goes to the other side
    with the greetings, in a packet of its own: {MAGIC, T_FPRINT, FP_MARK, low half, high half}. Two games whose data
    differ (a modified disc image on one side, or another one on each) compute two different fights: the match ended
-   as a desync at the fight's first moments. Compared only when both sides know theirs, so a copy that does not send
-   it (0.1.37 and older) is let in as before. BT3_TEST_FPRINT=<hex>: testing, this copy claims that value. */
-enum { FP_MARK = 0x46505231 };
+   as a desync at the fight's first moments.
+   The rule (docs/port/README.md, "Online: whose data may meet"): a quick match (strangers) needs the original disc's
+   data (Port_LobbyStartQuick); with friends (a room code, a lobby, an address, watching) the two need the same data,
+   modified or not. A game never begins to connect before its own fingerprint is known (fp_known: the lobby's start
+   waits for it, state 6, and so does net_start), so a copy of this release always sends one.
+   A copy that sends none: 0.1.37 (NET_VERSION 5 as well, nothing else in its greetings told it from 0.1.37.1 to
+   0.1.38.9, which send one), or a 0.1.37.1 to 0.1.38.9 that connected before its own was computed. Those were let
+   in while FP_PEER_REQUIRED was 0; from 0.1.39 (NET_VERSION 6: every copy of it sends one) a peer, a spectator or
+   a lobby's member without one is refused. BT3_TEST_FPRINT=<hex>: testing, this copy claims that value
+   (plat_fprint.c); BT3_TEST_FPRINT=off: it sends none, as 0.1.37 did; BT3_TEST_FP_REQUIRED=0: FP_PEER_REQUIRED off
+   for this copy. */
+enum { FP_MARK = 0x46505231, FP_PEER_REQUIRED = 1 };
 extern int Port_DataFingerprint(unsigned long long *out); /* plat_fprint.c */
+extern int Port_DataFingerprintNeed(void);
+extern int Port_DataFingerprintOriginal(void);
+extern const char *Port_DataFingerprintText(void);
 static const char kDataDiffer[] = "Your game data and the other player's are not the same (a modified disc image or mods on one side): "
                                   "an online match needs the same on both.";
-static int sDataBad; /* the other side's fingerprint differs from this side's */
+static const char kDataUnsaid[] = "The other player's game did not say which game data it has (release 0.1.37, or it was still checking "
+                                  "its data): both need 0.1.38 or newer.";
+static int sDataBad;  /* the other side's fingerprint differs from this side's */
+static int sFpHeard;  /* the other side's fingerprint has come (this session) */
 
 static int fprint_mine(unsigned long long *fp) {
-    if (Port_DataFingerprint(fp) != 1) {
-        return 0;
+    const char *t = getenv("BT3_TEST_FPRINT");
+    if (t != NULL && strcmp(t, "off") == 0) {
+        return 0; /* (testing: as 0.1.37, which neither sends nor compares) */
     }
-    if (getenv("BT3_TEST_FPRINT") != NULL) {
-        *fp = strtoull(getenv("BT3_TEST_FPRINT"), NULL, 16);
+    return Port_DataFingerprint(fp) == 1;
+}
+
+/* 1: this game's fingerprint is known. Else it is being computed (and is started if this run had not). */
+static int fp_known(void) {
+    return Port_DataFingerprintNeed() == 1;
+}
+
+/* A peer that sends no fingerprint is refused (see FP_PEER_REQUIRED), when this side has one to compare. */
+static int fp_required(void) {
+    unsigned long long fp;
+    const char *t = getenv("BT3_TEST_FP_REQUIRED");
+    return (t != NULL ? atoi(t) != 0 : FP_PEER_REQUIRED) && fprint_mine(&fp);
+}
+
+/* Why this game cannot search for a quick match ("" it can: its data are the original disc's), in `out`. */
+static const char *fp_quick_refusal(char *out, size_t size) {
+    const char *t = Port_DataFingerprintText(), *m = strstr(t, "modified:");
+    if (Port_DataFingerprint(NULL) == 1 && Port_DataFingerprintOriginal() == 1) {
+        return "";
     }
-    return 1;
+    snprintf(out, size, "Quick match needs the original disc's data, and your game data are not the disc's%s%s%s. With friends "
+             "(a room code, a lobby or an address) you can play when both have the same data.",
+             m != NULL ? " (" : "", m != NULL ? m + 10 : "", m != NULL ? ")" : "");
+    return out;
 }
 
 static void fprint_send(const struct sockaddr_in *to) {
@@ -440,12 +483,19 @@ static int fprint_differs(const uint8_t *pkt, int n) {
     static unsigned long long said;
     unsigned long long mine, theirs;
     uint32_t v[3];
-    if (n < 20 || !fprint_mine(&mine)) {
+    if (n < 20) {
         return 0;
     }
     memcpy(v, pkt + 8, 12);
+    if (v[0] != FP_MARK) {
+        return 0;
+    }
+    sFpHeard = 1;
+    if (!fprint_mine(&mine)) {
+        return 0;
+    }
     theirs = (unsigned long long)v[1] | (unsigned long long)v[2] << 32;
-    if (v[0] != FP_MARK || theirs == mine) {
+    if (theirs == mine) {
         return 0;
     }
     if (theirs != said) { /* (once: the packet comes again and again) */
@@ -960,6 +1010,9 @@ static uint32_t spec_check(const uint8_t *pkt, int n) {
     }
     if (v[2] == FP_MARK && fprint_mine(&mine) && ((unsigned long long)v[3] | (unsigned long long)v[4] << 32) != mine) {
         return SPEC_NO_DATA;
+    }
+    if (v[2] != FP_MARK && fp_required()) {
+        return SPEC_NO_DATA; /* (says no data: a copy of 0.1.37, see FP_PEER_REQUIRED) */
     }
     return spec_allowed() ? 0 : SPEC_NO_OFF;
 }
@@ -1483,7 +1536,7 @@ static const char *spec_no_text(int why) {
     case SPEC_NO_OFF:
         return "The host does not let anyone watch its matches.";
     case SPEC_NO_PLAIN:
-        return "This match cannot be watched (it was not started from Dragon Net Battle).";
+        return "This match cannot be watched (it was not started from the online menus).";
     case SPEC_NO_PLAYER:
         return "That is the address of the player who joined, not of the host: spectators connect to the host.";
     case SPEC_NO_LOBBY:
@@ -1751,6 +1804,28 @@ static int sSession; /* a session started from Dragon Net Battle (below), not a 
 static int sArrived; /* its start-up has reached the character select */
 static uint32_t sStartedMs; /* when the two were connected (for the log) */
 
+/* Before connecting: this game's gameplay fingerprint must be known (it is sent with the greetings, and a copy
+   that connected without one was let in unchecked). With its cache it is a matter of seconds after the start;
+   meanwhile the session holds its picture with a line. */
+static void fp_wait(void) {
+    uint64_t t0 = SDL_GetTicksNS();
+    int said = 0;
+    while (!fp_known()) {
+        if (!said) {
+            said = 1;
+            fprintf(stderr, "bt3: net: this game's gameplay data are still being checked: waiting for the fingerprint before connecting\n");
+        }
+        if (sSession) {
+            Port_UiBanner("Checking your game data...", 0);
+            Gs_HoldFrame();
+        }
+        SDL_Delay(10);
+    }
+    if (said) {
+        fprintf(stderr, "bt3: net: the gameplay fingerprint is known after %u ms: connecting\n", (unsigned)((SDL_GetTicksNS() - t0) / 1000000ull));
+    }
+}
+
 /* Connects: role 1 hosts on `port`, role 2 joins `join` ("address:port"), role 3 watches the match hosted at `join`
    (a spectator). Waits until the other side is there. */
 static void net_start(int role, const char *host, const char *join) {
@@ -1758,6 +1833,7 @@ static void net_start(int role, const char *host, const char *join) {
     uint64_t t0, last = 0;
     uint32_t i;
 
+    fp_wait();
     sMode = role;
     sConnected = 0;
     sTick = 0;
@@ -1850,6 +1926,7 @@ static void net_start(int role, const char *host, const char *join) {
     sGoneNote[0] = '\0';
     sVersionBad = 0;
     sDataBad = 0;
+    sFpHeard = 0;
     sEchoTs = 0;
     sPingMs = -1;
     sSecRoll = sSecRollTicks = sSecWaits = sSecWaitMs = sSecTicks = 0;
@@ -2061,6 +2138,7 @@ static void net_start(int role, const char *host, const char *join) {
                 memcpy(&cfg[6], sMyName, NAME_LEN);
                 cfg[6 + NAME_LEN / 4] = sOpts[0];
                 net_send(cfg, sizeof(cfg), &sPeer);
+                fprint_send(&sPeer); /* (again with each: the other side refuses a match it had none for, FP_PEER_REQUIRED) */
                 lastCfg = now;
             }
             receive();
@@ -2091,6 +2169,28 @@ static void net_start(int role, const char *host, const char *join) {
         }
         if (getenv("BT3_NET_ROLLBACK") == NULL && sOptRoll < 0 && sCfgRoll >= 0 && sCfgRoll <= 30) {
             sRollMax = Port_RollCan() ? sCfgRoll : 0;
+        }
+    }
+    if (sMode != 3 && !sDataBad && !sFpHeard && fp_required()) {
+        /* none has come: given a second more (it travels with the greetings, the pings and the host's choices, so
+           only a copy that sends none at all should get here), then refused */
+        uint64_t start = SDL_GetTicksNS(), lastFp = 0;
+        while (!sFpHeard && SDL_GetTicksNS() - start < 1000000000ull) {
+            if (SDL_GetTicksNS() - lastFp >= 50000000ull) {
+                fprint_send(&sPeer);
+                lastFp = SDL_GetTicksNS();
+            }
+            receive();
+            session_hold();
+            SDL_Delay(1);
+        }
+        if (!sFpHeard) {
+            fprintf(stderr, "bt3: net: the other player's game sent no gameplay fingerprint: no match (an older release)\n");
+            Port_UiNotice(kDataUnsaid);
+            if (sSession) {
+                Port_NetLeave();
+            }
+            exit(2);
         }
     }
     if (sDataBad) {
@@ -3174,6 +3274,7 @@ static int sCodeMode, sCodeAddrs;
 static int sCodeRelay = -1; /* which of sCodeAddr is the host's relay address (the one who joins) */
 static int sCodeVia;        /* the match was reached through the relay (for the window) */
 static struct sockaddr_in sCodeSeen; /* the address the service saw the other player under (for the relay's permission) */
+static char sCodeAsked[16]; /* the code this game asked the service for (a lobby's: its member keeps it, net_lobby.c) */
 static int sCodeSeenSet, sCodeGen, sCodeRelayGen; /* ... and which of the search's later news the lobby has taken in */
 
 int Port_LobbyRelayed(void) { return sCodeVia; }
@@ -3186,9 +3287,66 @@ const char *Port_LobbyCode(void) { return sCodeText; }
 const char *Port_LobbyServer(void) { return Match_ServerLabel(); }
 const char *Port_LobbyError(void) { return sCodeError; }
 
+/* A start asked for before this game's fingerprint was known: kept, and made by Port_LobbyPoll once it is (the
+   lobby's state 6 meanwhile, which Port_LobbyPoll gives as 3, "asking"; Port_LobbyCheckingData says why). */
+enum { PEND_ADDR = 1, PEND_WATCH, PEND_CODE, PEND_WATCH_CODE, PEND_QUICK };
+static struct {
+    int kind, host, port;
+    char text[128];
+} sPend;
+
+static int lobby_hold(int kind, int host, const char *text, int port) {
+    if (fp_known()) {
+        return 0;
+    }
+    sPend.kind = kind;
+    sPend.host = host;
+    sPend.port = port;
+    snprintf(sPend.text, sizeof(sPend.text), "%s", text != NULL ? text : "");
+    sCodeError[0] = '\0';
+    sLobby = 6;
+    fprintf(stderr, "bt3: net: this game's gameplay data are still being checked: the %s begins when its fingerprint is known\n",
+            kind == PEND_QUICK ? "quick match" : kind == PEND_WATCH || kind == PEND_WATCH_CODE ? "watching" : "connection");
+    return 1;
+}
+
+/* 1 while a start waits for this game's fingerprint (the windows say "Checking your game data..."). */
+int Port_LobbyCheckingData(void) {
+    return sLobby == 6;
+}
+
+/* Why this game cannot search for a quick match now: NULL it can, "" its data are still being checked, else the
+   reason (its data are not the original disc's). For the windows, before the search is asked for. */
+const char *Port_LobbyQuickRefusal(void) {
+    static char text[400];
+    if (!fp_known()) {
+        return "";
+    }
+    return fp_quick_refusal(text, sizeof(text))[0] != '\0' ? text : NULL;
+}
+
+/* An update is being downloaded or waits to be installed (gs/net_update.c): no new online session meanwhile (the other
+   player would soon be on another version). The line that says so, in the chosen language; NULL: online play is on. */
+const char *Port_OnlineBlocked(void) {
+    const char *t;
+    if (!Update_BlocksOnline()) {
+        return NULL;
+    }
+    t = MenuTranslation_PortText("update/online_off"); /* (menu_translation.h: PORT_TEXT_UPDATE_ONLINE_OFF) */
+    return t != NULL && t[0] != '\0' ? t : Update_OnlineNote();
+}
+
 int Port_LobbyStart(int host, const char *address, int port) {
     struct sockaddr_in local;
 
+    if (Port_OnlineBlocked() != NULL) { /* (said by the screens through Port_LobbyError) */
+        snprintf(sCodeError, sizeof(sCodeError), "%s", Port_OnlineBlocked());
+        sLobby = -3;
+        return sLobby;
+    }
+    if (lobby_hold(PEND_ADDR, host, address, port)) {
+        return sLobby;
+    }
     sRivalRegion[0] = '\0';
     if (Lobby_Active()) { /* (the lobby has the socket) */
         sLobby = -1;
@@ -3254,6 +3412,9 @@ static uint64_t sSpecAskSince;
 static int sLobbySpecWait;
 
 int Port_LobbySpectate(const char *address, int port) {
+    if (lobby_hold(PEND_WATCH, 0, address, port)) {
+        return sLobby;
+    }
     Port_LobbyStart(0, address, port);
     if (sLobby < 0) {
         return sLobby;
@@ -3271,6 +3432,9 @@ static int sWatchByCode;
 /* Watching the match of a room code: the service gives the host's addresses (Match_Begin role 4), and the lobby
    asks the host from there as by address. */
 int Port_LobbySpectateCode(const char *code) {
+    if (lobby_hold(PEND_WATCH_CODE, 0, code, 0)) {
+        return sLobby;
+    }
     sWatchByCode = 1;
     Port_LobbyStartCode(0, code);
     sWatchByCode = 0;
@@ -3286,12 +3450,53 @@ int Port_LobbySpectateWaiting(void) {
     return sLobby == 1 && sLobbyRole == 3 && sLobbySpecWait;
 }
 
+/* This PC's address on its own network (what another PC there types to join a match hosted by address): the address a
+   socket would send from, found without sending anything (as net_match.c's for the matchmaking service). Asked again
+   at most every five seconds; "" when it is not known (no network). */
+const char *Port_NetLanAddress(void) {
+    static char text[48];
+    static uint64_t asked;
+    uint64_t now = SDL_GetTicksNS();
+    struct sockaddr_in to, me;
+    socklen_t len = sizeof(me);
+    int s;
+
+    if (asked != 0 && now - asked < 5000000000ull) {
+        return text;
+    }
+    asked = now;
+    text[0] = '\0';
+#ifdef _WIN32
+    {
+        WSADATA w;
+        WSAStartup(MAKEWORD(2, 2), &w);
+    }
+#endif
+    s = (int)socket(AF_INET, SOCK_DGRAM, 0);
+    if (s < 0) {
+        return text;
+    }
+    memset(&to, 0, sizeof(to));
+    to.sin_family = AF_INET;
+    to.sin_port = htons(9);
+    inet_pton(AF_INET, "192.0.2.1", &to.sin_addr); /* (a documentation address: nothing is sent) */
+    if (connect(s, (struct sockaddr *)&to, sizeof(to)) != 0 || getsockname(s, (struct sockaddr *)&me, &len) != 0 ||
+        inet_ntop(AF_INET, &me.sin_addr, text, sizeof(text)) == NULL || strcmp(text, "0.0.0.0") == 0) {
+        text[0] = '\0';
+    }
+    closesocket(s);
+    return text;
+}
+
 static int sQuickQueue = -1; /* Port_LobbyStartQuick: the search that Port_LobbyStartCode starts is a quick match in this queue */
 
 int Port_LobbyStartCode(int host, const char *code) {
     struct sockaddr_in local;
     socklen_t len = sizeof(local);
 
+    if (sQuickQueue < 0 && !sWatchByCode && lobby_hold(PEND_CODE, host, code, 0)) {
+        return sLobby;
+    }
     Port_LobbyStart(1, "", 0); /* a socket on a port of the system's choosing */
     if (sLobby < 0) {
         return sLobby;
@@ -3314,6 +3519,7 @@ int Port_LobbyStartCode(int host, const char *code) {
     Match_Watch(sLobbyRole == 1 && sQuickQueue < 0 && spec_allowed()); /* (a room of its own: spectators may come with its code) */
     sKnockGen = -1;
     memset(sKnockUntil, 0, sizeof(sKnockUntil));
+    snprintf(sCodeAsked, sizeof(sCodeAsked), "%s", sQuickQueue < 0 && code != NULL ? code : "");
     Match_Begin(sQuickQueue >= 0 ? 3 : sWatchByCode ? 4 : sLobbyRole, sSock, sCodeLocalPort, sQuickQueue >= 0 ? kMatchQueues[sQuickQueue] : code, sMyName, NET_VERSION);
     return sLobby;
 }
@@ -3321,8 +3527,22 @@ int Port_LobbyStartCode(int host, const char *code) {
 /* A quick match in one of the queues (net_match.h: kMatchQueues). Whether this player hosts or joins is the
    service's choice, known when it answers (Port_LobbyPoll takes it from there). */
 int Port_LobbyStartQuick(int queue) {
+    char why[400];
     if (queue < 0 || queue >= MATCH_QUEUES) {
         return -1;
+    }
+    if (lobby_hold(PEND_QUICK, 0, NULL, queue)) {
+        return sLobby;
+    }
+    /* Quick match is with strangers: the original disc's data only (with friends, the same data on both sides is
+       enough). Here, where every quick match begins (Dragon Net Battle, Tenkaichi Budokai Online, BT3_LOBBY=quick). */
+    if (fp_quick_refusal(why, sizeof(why))[0] != '\0') {
+        unsigned long long fp = 0;
+        Port_DataFingerprint(&fp);
+        fprintf(stderr, "bt3: net: no quick match: this game's data are not the original disc's (gameplay fingerprint %016llx)\n", fp);
+        snprintf(sCodeError, sizeof(sCodeError), "%s", why);
+        sLobby = -3;
+        return sLobby;
     }
     sQuickQueue = queue;
     Port_LobbyStartCode(1, "");
@@ -3346,6 +3566,11 @@ int Port_LobbyRelease(int *min, int *latest) { return Match_Release(min, latest)
 int Port_LobbyQueueWaiting(int queue) { return Match_QueueWaiting(queue); }
 
 void Port_LobbyCancel(void) {
+    if (sLobby == 6) { /* (a start that waited for the fingerprint: not made) */
+        sPend.kind = 0;
+        sLobby = 0;
+        return;
+    }
     if (sLobby == 5 || Lobby_Active()) { /* (it became a lobby: the lobby has the socket now) */
         sLobby = 0;
         sCodeMode = 0;
@@ -3434,6 +3659,27 @@ int Port_LobbyPoll(void) {
     uint64_t now = SDL_GetTicksNS();
     int n;
 
+    if (sLobby == 6) { /* a start that waits for this game's fingerprint */
+        int kind = sPend.kind;
+        if (!fp_known()) {
+            return 3;
+        }
+        fprintf(stderr, "bt3: net: the gameplay fingerprint is known: the start goes on\n");
+        sLobby = 0;
+        sPend.kind = 0;
+        if (kind == PEND_ADDR) {
+            Port_LobbyStart(sPend.host, sPend.text, sPend.port);
+        } else if (kind == PEND_WATCH) {
+            Port_LobbySpectate(sPend.text, sPend.port);
+        } else if (kind == PEND_CODE) {
+            Port_LobbyStartCode(sPend.host, sPend.text);
+        } else if (kind == PEND_WATCH_CODE) {
+            Port_LobbySpectateCode(sPend.text);
+        } else if (kind == PEND_QUICK) {
+            Port_LobbyStartQuick(sPend.port);
+        }
+        return sLobby == 6 ? 3 : sLobby;
+    }
     if (sLobby == 3) { /* a room code: what the matchmaking service has said so far */
         MatchStatus st;
         int i;
@@ -3463,7 +3709,7 @@ int Port_LobbyPoll(void) {
         } else if (st.state == 3 && st.lobby) {
             /* the code is a lobby's (the service said so): this game becomes its member (net_lobby.c), with this
                socket; the search's thread goes on asking for the owner's relay address meanwhile */
-            Lobby_JoinFound((const char (*)[64])st.peerAddr, st.peerCount, st.code, st.self);
+            Lobby_JoinFound((const char (*)[64])st.peerAddr, st.peerCount, st.code[0] != '\0' ? st.code : sCodeAsked, st.self);
             sCodeMode = 0;
             sLobby = 5;
         } else if (st.state == 3) {
@@ -3911,6 +4157,14 @@ int NetIo_Recv(uint8_t *pkt, int size, struct sockaddr_in *from) {
 
 int NetIo_Fingerprint(unsigned long long *fp) {
     return fprint_mine(fp);
+}
+
+int NetIo_FingerprintKnown(void) {
+    return fp_known();
+}
+
+int NetIo_FingerprintRequired(void) {
+    return fp_required();
 }
 
 const char *NetIo_MyName(void) {

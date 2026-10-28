@@ -58,6 +58,8 @@ void PortInput_Swallow(void);           /* the controller buttons held now are n
 void PortInput_SwallowKeys(void);       /* the same for the bound keys held now */
 int *PortInput_ChatKey(void);           /* the key that opens the online chat's line (scancode, 0 = none) */
 void PortInput_ResetDefaults(int player);
+/* The automatic set-up: the PS2 controller's layout on the wireless controller (else the first): its slot, -1 none */
+int PortInput_AutoConfigure(int player, char *name, int size);
 #define PORT_DEADZONE_MAX 90   /* percent */
 #define PORT_TRIGGER_AT 12000  /* of 32767: from here a trigger counts as pressed */
 int *PortInput_Deadzone(int player);  /* [2] left, right stick: -1 = the game's own (per axis), 0..PORT_DEADZONE_MAX = a round one, percent */

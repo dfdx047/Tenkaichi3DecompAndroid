@@ -48,6 +48,12 @@ extern struct { int unk0[2]; int loadPack, loadRes, loadSprites; int flags; int 
 #define MODE_HIST_SEL 6 /* the story mode's saga select */
 #define MODE_EPISODES 7 /* the saga's episode list */
 
+/* The game's progress mode, for the port's own lines over the picture (gs/ui.cpp: the update's line shows over the
+   main menu, 4, and the port's screens, 80, Tenkaichi Budokai Online); -1 before the menus exist. */
+int Port_GameMode(void) {
+    return gProgress != NULL ? gProgress->mode : -1;
+}
+
 /* include/menu/menu_a.h: Title (src/menu/menu_a_c.c) */
 typedef struct {
     char unk0[0xA8];

@@ -4,1286 +4,1770 @@
   "name": "Português",
   "labels": {
     "tbo/000": {
+      "original": "Join",
+      "text": "Entrar"
+    },
+    "tbo/001": {
+      "original": "A lobby for your friends: up to eight, your rules, rematches, spectators and tournaments!",
+      "text": "Um lobby para seus amigos: até oito, suas regras, revanches, espectadores e torneios!"
+    },
+    "tbo/002": {
+      "original": "Got a lobby's code? Type it in to join, to play or to watch! By Address joins by the owner's address.",
+      "text": "Tem o código de um lobby? Digite para entrar, jogar ou assistir! Por Endereço entra pelo endereço do dono."
+    },
+    "tbo/003": {
+      "original": "THE PORT AFTER THE COLON IS A NUMBER FROM 1 TO 65535",
+      "text": "A PORTA DEPOIS DOS DOIS-PONTOS É UM NÚMERO DE 1 A 65535"
+    },
+    "tbo/004": {
+      "original": "TYPE THE OWNER'S ADDRESS FIRST, AS 192.168.1.20 OR 192.168.1.20:7000",
+      "text": "DIGITE PRIMEIRO O ENDEREÇO DO DONO, COMO 192.168.1.20 OU 192.168.1.20:7000"
+    },
+    "tbo/005": {
+      "original": "THE CONNECTION WAS REFUSED",
+      "text": "A CONEXÃO FOI RECUSADA"
+    },
+    "tbo/006": {
+      "original": "THE OTHER GAME IS ANOTHER VERSION: BOTH NEED THE SAME RELEASE",
+      "text": "O OUTRO JOGO É DE OUTRA VERSÃO: OS DOIS PRECISAM DA MESMA"
+    },
+    "tbo/007": {
+      "original": "THE SEARCH COULD NOT BE STARTED",
+      "text": "NÃO FOI POSSÍVEL COMEÇAR A BUSCA"
+    },
+    "tbo/008": {
+      "original": "Update available. Online servers are unreachable until you update.",
+      "text": "Atualização disponível. Os servidores online ficam fora de alcance até você atualizar."
+    },
+    "tbo/009": {
+      "original": "NOT OPEN YET: IT NEEDS MORE FROM THE MATCHMAKING SERVICE",
+      "text": "AINDA NÃO ABRIU: PRECISA DE MAIS DO SERVIÇO DE PARTIDAS"
+    },
+    "tbo/010": {
+      "original": "Open Lobby",
+      "text": "Abrir Lobby"
+    },
+    "tbo/011": {
+      "original": "Host by Address",
+      "text": "Hospedar por Endereço"
+    },
+    "tbo/012": {
+      "original": "BY ADDRESS",
+      "text": "POR ENDEREÇO"
+    },
+    "tbo/013": {
+      "original": "A LOBBY'S CODE HAS SIX LETTERS AND NUMBERS",
+      "text": "O CÓDIGO DE UM LOBBY TEM SEIS LETRAS E NÚMEROS"
+    },
+    "tbo/014": {
+      "original": "PORT %d",
+      "text": "PORTA %d"
+    },
+    "tbo/015": {
+      "original": "WITH A CODE",
+      "text": "COM UM CÓDIGO"
+    },
+    "tbo/016": {
+      "original": "A NEW LOBBY",
+      "text": "UM NOVO LOBBY"
+    },
+    "tbo/017": {
+      "original": "THE OWNER'S ADDRESS:PORT",
+      "text": "ENDEREÇO:PORTA DO DONO"
+    },
+    "tbo/018": {
+      "original": "NO :PORT TYPED: PORT 7000",
+      "text": "SEM :PORTA DIGITADA: PORTA 7000"
+    },
+    "tbo/019": {
+      "original": "JOINING LOBBY",
+      "text": "ENTRANDO NO LOBBY"
+    },
+    "tbo/020": {
+      "original": "THE LOBBY...",
+      "text": "O LOBBY..."
+    },
+    "tbo/021": {
+      "original": "No Quick Match",
+      "text": "Sem Partida Rápida"
+    },
+    "tbo/022": {
+      "original": "Quick match needs the original disc's data.",
+      "text": "A partida rápida precisa dos dados do disco original."
+    },
+    "tbo/023": {
+      "original": "In a lobby with friends, both need the same data.",
+      "text": "Num lobby com amigos, os dois precisam dos mesmos dados."
+    },
+    "tbo/024": {
+      "original": "JOINING A LOBBY",
+      "text": "ENTRANDO NUM LOBBY"
+    },
+    "tbo/025": {
+      "original": "Mode",
+      "text": "Modo"
+    },
+    "tbo/026": {
+      "original": "Entrants",
+      "text": "Participantes"
+    },
+    "tbo/027": {
+      "original": "The game at that address is a different version: joining needs the same release.",
+      "text": "O jogo nesse endereço é de outra versão: para entrar, precisa da mesma."
+    },
+    "tbo/028": {
+      "original": "Someone with another version of the game tried to join.",
+      "text": "Alguém com outra versão do jogo tentou entrar."
+    },
+    "tbo/029": {
+      "original": "The tournament was called off.",
+      "text": "O torneio foi cancelado."
+    },
+    "tbo/030": {
+      "original": "The match will be played again.",
+      "text": "A partida vai ser jogada de novo."
+    },
+    "tbo/031": {
+      "original": "No winner: the match will be played again.",
+      "text": "Sem vencedor: a partida vai ser jogada de novo."
+    },
+    "tbo/032": {
+      "original": "The players' results differ: the match will be played again.",
+      "text": "Os resultados dos jogadores não batem: a partida vai ser jogada de novo."
+    },
+    "tbo/033": {
+      "original": "Only one player's result came: the match will be played again.",
+      "text": "Só chegou o resultado de um jogador: a partida vai ser jogada de novo."
+    },
+    "tbo/034": {
+      "original": "The two games disagree on this match: the owner chooses the winner.",
+      "text": "Os dois jogos discordam desta partida: o dono escolhe o vencedor."
+    },
+    "tbo/035": {
+      "original": "The host's game data are not the same as yours (a modified disc image or mods on one side): you cannot watch this match.",
+      "text": "Os dados do jogo do anfitrião não são iguais aos seus (imagem de disco modificada ou mods de um lado): você não pode assistir esta partida."
+    },
+    "tbo/036": {
+      "original": "This match already has as many spectators as it can take (6).",
+      "text": "Esta partida já tem o máximo de espectadores (6)."
+    },
+    "tbo/037": {
+      "original": "The host does not let anyone watch its matches.",
+      "text": "O anfitrião não deixa ninguém assistir às partidas dele."
+    },
+    "tbo/038": {
+      "original": "This match cannot be watched (it was not started from the online menus).",
+      "text": "Esta partida não pode ser assistida (não começou pelos menus online)."
+    },
+    "tbo/039": {
+      "original": "That is the address of the player who joined, not of the host: spectators connect to the host.",
+      "text": "Esse é o endereço de quem entrou, não do anfitrião: os espectadores se conectam ao anfitrião."
+    },
+    "tbo/040": {
+      "original": "This match is a lobby's: join the lobby (its code, or its owner's address) to watch it.",
+      "text": "Esta partida é de um lobby: entre no lobby (pelo código ou pelo endereço do dono) para assistir."
+    },
+    "tbo/041": {
+      "original": "The host's game is a different version: watching needs the same release as the host's.",
+      "text": "O jogo do anfitrião é de outra versão: para assistir, precisa da mesma versão dele."
+    },
+    "tbo/042": {
+      "original": "No answer from the host. Check the address and port. Watching a match needs a release newer than 0.1.38.7 on the host as well (an older host does not answer spectators).",
+      "text": "O anfitrião não respondeu. Confira o endereço e a porta. Para assistir, o anfitrião também precisa de uma versão mais nova que a 0.1.38.7 (uma mais antiga não responde a espectadores)."
+    },
+    "tbo/043": {
+      "original": "Your game data and the other player's are not the same (a modified disc image or mods on one side): an online match needs the same on both.",
+      "text": "Os dados do seu jogo e os do outro jogador não são iguais (imagem de disco modificada ou mods de um lado): uma partida online precisa dos mesmos nos dois."
+    },
+    "tbo/044": {
+      "original": "Too many have asked to watch that room in the last two minutes; try again soon.",
+      "text": "Muita gente pediu para assistir essa sala nos últimos dois minutos; tente de novo daqui a pouco."
+    },
+    "tbo/045": {
+      "original": "No room with that code, or the matchmaking service does not take spectators yet. (Codes last ten minutes; a host on 0.1.38.7 or older gives its room up when the match begins.)",
+      "text": "Nenhuma sala com esse código, ou o serviço de partidas ainda não aceita espectadores. (Os códigos duram dez minutos; um anfitrião na 0.1.38.7 ou mais antiga larga a sala quando a partida começa.)"
+    },
+    "tbo/046": {
+      "original": "The matchmaking service could not be reached (is the network up?).",
+      "text": "Não foi possível falar com o serviço de partidas (a internet está ligada?)."
+    },
+    "tbo/047": {
+      "original": "Too many wrong codes from this address; try again in an hour.",
+      "text": "Códigos errados demais deste endereço; tente de novo daqui a uma hora."
+    },
+    "tbo/048": {
+      "original": "%s won the match",
+      "text": "%s venceu a partida"
+    },
+    "tbo/049": {
+      "original": "%s won by walkover",
+      "text": "%s venceu por W.O."
+    },
+    "tbo/050": {
+      "original": "%s is the champion!",
+      "text": "%s é o campeão!"
+    },
+    "tbo/051": {
+      "original": "%s lost the connection: the place is held for 90 s",
+      "text": "%s perdeu a conexão: a vaga fica guardada por 90 s"
+    },
+    "tbo/052": {
+      "original": "%s is back in the tournament",
+      "text": "%s voltou ao torneio"
+    },
+    "tbo/053": {
+      "original": "%s did not come back in time",
+      "text": "%s não voltou a tempo"
+    },
+    "tbo/054": {
+      "original": "%s won the match (the owner's choice)",
+      "text": "%s venceu a partida (escolha do dono)"
+    },
+    "tbo/055": {
+      "original": "Tournament: ",
+      "text": "Torneio: "
+    },
+    "tbo/056": {
+      "original": " entrants",
+      "text": " participantes"
+    },
+    "tbo/057": {
+      "original": "Tournament: %d entrants",
+      "text": "Torneio: %d participantes"
+    },
+    "tbo/058": {
+      "original": "TOURNAMENT",
+      "text": "TORNEIO"
+    },
+    "tbo/059": {
+      "original": "VERSUS",
+      "text": "VERSUS"
+    },
+    "tbo/060": {
+      "original": "%d PLAYERS",
+      "text": "%d JOGADORES"
+    },
+    "tbo/061": {
+      "original": "Start Next Match",
+      "text": "Começar Próxima Partida"
+    },
+    "tbo/062": {
+      "original": "New Tournament",
+      "text": "Novo Torneio"
+    },
+    "tbo/063": {
+      "original": "Start Tournament",
+      "text": "Começar Torneio"
+    },
+    "tbo/064": {
+      "original": "Bracket",
+      "text": "Chaveamento"
+    },
+    "tbo/065": {
+      "original": "CHOOSE THE WINNER OF THE DISPUTED MATCH ON THE BRACKET",
+      "text": "ESCOLHA O VENCEDOR DA PARTIDA DISPUTADA NO CHAVEAMENTO"
+    },
+    "tbo/066": {
+      "original": "WAITING FOR A PLAYER WHO LOST THE CONNECTION",
+      "text": "ESPERANDO UM JOGADOR QUE PERDEU A CONEXÃO"
+    },
+    "tbo/067": {
+      "original": "NO MATCH LEFT TO PLAY",
+      "text": "NÃO SOBROU PARTIDA PARA JOGAR"
+    },
+    "tbo/068": {
+      "original": "PUT AT LEAST TWO PLAYERS IN THE PLAYER PLACES",
+      "text": "PONHA PELO MENOS DOIS JOGADORES NAS VAGAS DE JOGADOR"
+    },
+    "tbo/069": {
+      "original": "Copy Address",
+      "text": "Copiar Endereço"
+    },
+    "tbo/070": {
+      "original": "THE ENTRANTS CANNOT CHANGE DURING A TOURNAMENT",
+      "text": "OS PARTICIPANTES NÃO MUDAM DURANTE UM TORNEIO"
+    },
+    "tbo/071": {
+      "original": "COPIED: PASTE THE ADDRESS TO THE OTHERS",
+      "text": "COPIADO: COLE O ENDEREÇO PARA OS OUTROS"
+    },
+    "tbo/072": {
+      "original": "PLAYERS  %d / %d",
+      "text": "JOGADORES  %d / %d"
+    },
+    "tbo/073": {
+      "original": "SPECTATORS  %d / %d",
+      "text": "ESPECTADORES  %d / %d"
+    },
+    "tbo/074": {
+      "original": "THE OTHERS JOIN WITH IT",
+      "text": "OS OUTROS ENTRAM COM ELE"
+    },
+    "tbo/075": {
+      "original": "PORT",
+      "text": "PORTA"
+    },
+    "tbo/076": {
+      "original": "ON YOUR NETWORK",
+      "text": "NA SUA REDE"
+    },
+    "tbo/077": {
+      "original": "TOURNAMENT ON",
+      "text": "TORNEIO EM ANDAMENTO"
+    },
+    "tbo/078": {
+      "original": "TOURNAMENT OVER",
+      "text": "TORNEIO ENCERRADO"
+    },
+    "tbo/079": {
+      "original": "Opening the port...",
+      "text": "Abrindo a porta..."
+    },
+    "tbo/080": {
+      "original": "Call Off the Tournament?",
+      "text": "Cancelar o Torneio?"
+    },
+    "tbo/081": {
+      "original": "Its bracket is lost; the lobby is Versus again.",
+      "text": "O chaveamento se perde; o lobby volta a ser Versus."
+    },
+    "tbo/082": {
+      "original": "Call off the tournament? ",
+      "text": "Cancelar o torneio? "
+    },
+    "tbo/083": {
+      "original": "Final",
+      "text": "Final"
+    },
+    "tbo/084": {
+      "original": "Semifinal",
+      "text": "Semifinal"
+    },
+    "tbo/085": {
+      "original": "Quarterfinal",
+      "text": "Quartas de final"
+    },
+    "tbo/086": {
+      "original": "%d ENTRANTS",
+      "text": "%d PARTICIPANTES"
+    },
+    "tbo/087": {
+      "original": "BYE",
+      "text": "FOLGA"
+    },
+    "tbo/088": {
+      "original": "DISCONNECTED %d:%02d",
+      "text": "DESCONECTADO %d:%02d"
+    },
+    "tbo/089": {
+      "original": "LEFT",
+      "text": "SAIU"
+    },
+    "tbo/090": {
+      "original": "CHAMPION",
+      "text": "CAMPEÃO"
+    },
+    "tbo/091": {
+      "original": "FINAL",
+      "text": "FINAL"
+    },
+    "tbo/092": {
+      "original": "THE TWO GAMES DISAGREE ON THIS MATCH: CHOOSE THE WINNER",
+      "text": "OS DOIS JOGOS DISCORDAM DESTA PARTIDA: ESCOLHA O VENCEDOR"
+    },
+    "tbo/093": {
+      "original": "THE OWNER IS CHOOSING THE WINNER",
+      "text": "O DONO ESTÁ ESCOLHENDO O VENCEDOR"
+    },
+    "tbo/094": {
+      "original": "%s is the champion! Congratulations!",
+      "text": "%s é o campeão! Parabéns!"
+    },
+    "tbo/095": {
+      "original": "The tournament is over.",
+      "text": "O torneio acabou."
+    },
+    "tbo/096": {
+      "original": "New Tournament draws another of the player places.",
+      "text": "Novo Torneio sorteia outro com as vagas de jogador."
+    },
+    "tbo/097": {
+      "original": "Waiting for the next match...",
+      "text": "Esperando a próxima partida..."
+    },
+    "tbo/098": {
+      "original": "%s vs %s",
+      "text": "%s x %s"
+    },
+    "tbo/099": {
+      "original": "The two games disagree on this match: choose the winner.",
+      "text": "Os dois jogos discordam desta partida: escolha o vencedor."
+    },
+    "tbo/100": {
+      "original": "The owner is choosing the winner.",
+      "text": "O dono está escolhendo o vencedor."
+    },
+    "tbo/101": {
+      "original": "Now: %s vs %s",
+      "text": "Agora: %s x %s"
+    },
+    "tbo/102": {
+      "original": "Next: %s vs %s",
+      "text": "Próxima: %s x %s"
+    },
+    "tbo/103": {
+      "original": "Waiting for %s to come back.",
+      "text": "Esperando %s voltar."
+    },
+    "tbo/104": {
+      "original": "Start it when both are here!",
+      "text": "Comece quando os dois estiverem aqui!"
+    },
+    "tbo/105": {
+      "original": "The owner starts it.",
+      "text": "O dono começa."
+    },
+    "tbo/106": {
+      "original": "Choose the winner: ",
+      "text": "Escolha o vencedor: "
+    },
+    "tbo/107": {
+      "original": "No code: the others type your address and this port on Join by Address. Left / right, L1 / R1 change it.",
+      "text": "Sem código: os outros digitam seu endereço e esta porta em Entrar por Endereço. Esquerda / direita, L1 / R1 mudam."
+    },
+    "tbo/108": {
+      "original": "Your lobby gets a code: give it to your friends, they type it on Join. Set the rules on its page!",
+      "text": "Seu lobby ganha um código: passe para os amigos, eles digitam em Entrar. Defina as regras na página dele!"
+    },
+    "tbo/109": {
+      "original": "Enter the lobby's code, or Paste the one they sent you! Then Join: to play, or to watch from the stands.",
+      "text": "Digite o código do lobby, ou Cole o que te mandaram! Depois Entrar: para jogar ou assistir da arquibancada."
+    },
+    "tbo/110": {
+      "original": "Type the lobby owner's address, and :port if it is not 7000. Then Join!",
+      "text": "Digite o endereço do dono do lobby, e :porta se não for 7000. Depois Entrar!"
+    },
+    "tbo/111": {
+      "original": "Sorry! Quick match is for the game straight off the disc. Modded? Play your friends in a lobby!",
+      "text": "Foi mal! A partida rápida é para o jogo igual ao disco. Com mod? Jogue com os amigos num lobby!"
+    },
+    "tbo/112": {
+      "original": "Opening your lobby! The others join it with your address.",
+      "text": "Abrindo seu lobby! Os outros entram pelo seu endereço."
+    },
+    "tbo/113": {
+      "original": "Tournament: Entrants sets the player places. Move people into them (you too, to play), then Start Tournament!",
+      "text": "Torneio: Participantes define as vagas de jogador. Mova as pessoas para elas (você também, para jogar) e Começar Torneio!"
+    },
+    "tbo/114": {
+      "original": "Your lobby is open! Give the others its code: they type it on Join. Then put two of you in 1P and 2P.",
+      "text": "Seu lobby está aberto! Passe o código: os outros digitam em Entrar. Depois ponha dois de vocês em 1P e 2P."
+    },
+    "tbo/115": {
+      "original": "Your lobby is open! The others join with your address and port (Join by Address). Then 1P and 2P.",
+      "text": "Seu lobby está aberto! Os outros entram com seu endereço e porta (Entrar por Endereço). Depois 1P e 2P."
+    },
+    "tbo/116": {
+      "original": "New Lobby",
+      "text": "Novo Lobby"
+    },
+    "tbo/117": {
+      "original": "Join by Address",
+      "text": "Entrar por Endereço"
+    },
+    "tbo/118": {
+      "original": "Joining lobby ",
+      "text": "Entrando no lobby "
+    },
+    "tbo/119": {
+      "original": "No quick match. Quick match needs the original disc's data; with friends, both need the same data.",
+      "text": "Sem partida rápida. A partida rápida precisa dos dados do disco original; com amigos, os dois precisam dos mesmos dados."
+    },
+    "tbo/120": {
+      "original": "Address: ",
+      "text": "Endereço: "
+    },
+    "tbo/121": {
       "original": "Language",
       "text": "Idioma"
     },
-    "tbo/001": {
+    "tbo/122": {
       "original": "Choose the language of these screens. Left and right change it.",
       "text": "Escolha o idioma destas telas. Esquerda e direita trocam."
     },
-    "tbo/002": {
+    "tbo/123": {
       "original": "Searching",
       "text": "Procurando"
     },
-    "tbo/003": {
+    "tbo/124": {
       "original": "Quick Match",
       "text": "Partida Rápida"
     },
-    "tbo/004": {
+    "tbo/125": {
       "original": "Ranked",
       "text": "Classificatória"
     },
-    "tbo/005": {
+    "tbo/126": {
       "original": "Play Against",
       "text": "Jogar contra"
     },
-    "tbo/006": {
+    "tbo/127": {
       "original": "Fights for Elo points against Android and Switch players. Points change when both results agree.",
       "text": "Lutas valendo pontos Elo contra jogadores de Android e Switch. Os pontos mudam quando os dois resultados batem."
     },
-    "tbo/007": {
+    "tbo/128": {
       "original": "Choose who you play against: Android and Switch, or the PC.",
       "text": "Escolha contra quem você joga: Android e Switch, ou o PC."
     },
-    "tbo/008": {
+    "tbo/129": {
       "original": "Against PC players: rooms and quick match on the PC port's service.",
       "text": "Contra jogadores de PC: salas e partida rápida no serviço do port de PC."
     },
-    "tbo/009": {
+    "tbo/130": {
       "original": "Against Android and Switch players, on Dragon Net.",
       "text": "Contra jogadores de Android e Switch, no Dragon Net."
     },
-    "tbo/010": {
+    "tbo/131": {
       "original": "Against Android and Switch players. Online now: about %d.",
       "text": "Contra jogadores de Android e Switch. Online agora: cerca de %d."
     },
-    "tbo/011": {
+    "tbo/132": {
       "original": "RANKED IS AGAINST ANDROID + SWITCH: CHOOSE IT IN PLAY AGAINST",
       "text": "A CLASSIFICATÓRIA É CONTRA ANDROID + SWITCH: ESCOLHA EM JOGAR CONTRA"
     },
-    "tbo/012": {
+    "tbo/133": {
       "original": "Search for a Rival",
       "text": "Buscar Rival"
     },
-    "tbo/013": {
+    "tbo/134": {
       "original": "Ranking",
       "text": "Classificação"
     },
-    "tbo/014": {
+    "tbo/135": {
       "original": "Update Profile",
       "text": "Atualizar Perfil"
     },
-    "tbo/015": {
+    "tbo/136": {
       "original": "Update",
       "text": "Atualizar"
     },
-    "tbo/016": {
+    "tbo/137": {
       "original": "Loading profile...",
       "text": "Carregando perfil..."
     },
-    "tbo/017": {
+    "tbo/138": {
       "original": "%d ELO",
       "text": "%d ELO"
     },
-    "tbo/018": {
+    "tbo/139": {
       "original": "%d W / %d L",
       "text": "%d V / %d D"
     },
-    "tbo/019": {
+    "tbo/140": {
       "original": "Position %d",
       "text": "Posição %d"
     },
-    "tbo/020": {
+    "tbo/141": {
       "original": "TEAM",
       "text": "EQUIPE"
     },
-    "tbo/021": {
+    "tbo/142": {
       "original": "SINGLE",
       "text": "INDIVIDUAL"
     },
-    "tbo/022": {
+    "tbo/143": {
       "original": "RANKED",
       "text": "CLASSIFICATÓRIA"
     },
-    "tbo/023": {
+    "tbo/144": {
       "original": "RIVAL",
       "text": "RIVAL"
     },
-    "tbo/024": {
+    "tbo/145": {
       "original": "Bronze",
       "text": "Bronze"
     },
-    "tbo/025": {
+    "tbo/146": {
       "original": "Silver",
       "text": "Prata"
     },
-    "tbo/026": {
+    "tbo/147": {
       "original": "Gold",
       "text": "Ouro"
     },
-    "tbo/027": {
+    "tbo/148": {
       "original": "Platinum",
       "text": "Platina"
     },
-    "tbo/028": {
+    "tbo/149": {
       "original": "Diamond",
       "text": "Diamante"
     },
-    "tbo/029": {
+    "tbo/150": {
       "original": "Master",
       "text": "Mestre"
     },
-    "tbo/030": {
+    "tbo/151": {
       "original": "Searching for a rival...",
       "text": "Procurando um rival..."
     },
-    "tbo/031": {
+    "tbo/152": {
       "original": "Searching for a rival of your level...",
       "text": "Procurando um rival do seu nível..."
     },
-    "tbo/032": {
+    "tbo/153": {
       "original": "Rival found. Connecting...",
       "text": "Rival encontrado. Conectando..."
     },
-    "tbo/033": {
+    "tbo/154": {
       "original": "Result confirmed.",
       "text": "Resultado confirmado."
     },
-    "tbo/034": {
+    "tbo/155": {
       "original": "Search over. No points.",
       "text": "Busca encerrada. Sem pontos."
     },
-    "tbo/035": {
+    "tbo/156": {
       "original": "Waiting for your rival's result.",
       "text": "Esperando o resultado do rival."
     },
-    "tbo/036": {
+    "tbo/157": {
       "original": "The two results differ: no points.",
       "text": "Os dois resultados não batem: sem pontos."
     },
-    "tbo/037": {
+    "tbo/158": {
       "original": "Match void: no points.",
       "text": "Partida anulada: sem pontos."
     },
-    "tbo/038": {
+    "tbo/159": {
       "original": "Ranked did not answer. Trying again...",
       "text": "O ranqueado não respondeu. Tentando de novo..."
     },
-    "tbo/039": {
+    "tbo/160": {
       "original": "The Ranked profile could not be made.",
       "text": "Não foi possível criar o perfil ranqueado."
     },
-    "tbo/040": {
+    "tbo/161": {
       "original": "The ranking could not be updated.",
       "text": "Não foi possível atualizar a classificação."
     },
-    "tbo/041": {
+    "tbo/162": {
       "original": "The ranked room could not be published.",
       "text": "Não foi possível publicar a sala ranqueada."
     },
-    "tbo/042": {
+    "tbo/163": {
       "original": "Your last ranked match is still being confirmed.",
       "text": "Sua última partida ranqueada ainda está sendo confirmada."
     },
-    "tbo/043": {
+    "tbo/164": {
       "original": "The Dragon Net service does not take this version yet.",
       "text": "O serviço Dragon Net ainda não aceita esta versão."
     },
-    "tbo/044": {
+    "tbo/165": {
       "original": "Profile updated.",
       "text": "Perfil atualizado."
     },
-    "tbo/045": {
+    "tbo/166": {
       "original": "Too many requests: wait a moment.",
       "text": "Muitos pedidos: espere um pouco."
     },
-    "tbo/046": {
+    "tbo/167": {
       "original": "Server busy (daily limit), try again later.",
       "text": "Servidor ocupado (limite diário), tente mais tarde."
     },
-    "tbo/047": {
+    "tbo/168": {
       "original": "Updating the ranking...",
       "text": "Atualizando a classificação..."
     },
-    "tbo/048": {
+    "tbo/169": {
       "original": "The ranking did not answer: X tries again.",
       "text": "A classificação não respondeu: X tenta de novo."
     },
-    "tbo/049": {
+    "tbo/170": {
       "original": "Single or team fights. No time limit, at the standard speed.",
       "text": "Lutas individuais ou em equipe. Sem limite de tempo, na velocidade padrão."
     },
-    "tbo/050": {
+    "tbo/171": {
       "original": "Find a rival of your level! Points change when both results agree.",
       "text": "Ache um rival do seu nível! Os pontos mudam quando os dois resultados batem."
     },
-    "tbo/051": {
+    "tbo/172": {
       "original": "The best fighters of the community, by their Elo points.",
       "text": "Os melhores lutadores da comunidade, pelos pontos Elo."
     },
-    "tbo/052": {
+    "tbo/173": {
       "original": "Load your profile again from the service.",
       "text": "Carrega seu perfil de novo do serviço."
     },
-    "tbo/053": {
+    "tbo/174": {
       "original": "The table shows the community's Elo points. X updates it.",
       "text": "A tabela mostra os pontos Elo da comunidade. X atualiza."
     },
-    "tbo/054": {
+    "tbo/175": {
       "original": ": team",
       "text": ": equipe"
     },
-    "tbo/055": {
+    "tbo/176": {
       "original": ": single",
       "text": ": individual"
     },
-    "tbo/056": {
+    "tbo/177": {
       "original": "Rival found. Connecting",
       "text": "Rival encontrado. Conectando"
     },
-    "tbo/057": {
+    "tbo/178": {
       "original": "Ranked: searching for a rival",
       "text": "Classificatória: procurando um rival"
     },
-    "tbo/058": {
+    "tbo/179": {
       "original": "First: ",
       "text": "Primeiro: "
     },
-    "tbo/059": {
+    "tbo/180": {
       "original": "Create Room",
       "text": "Criar Sala"
     },
-    "tbo/060": {
+    "tbo/181": {
       "original": "Join Room",
       "text": "Entrar em Sala"
     },
-    "tbo/061": {
+    "tbo/182": {
       "original": "Lobby",
       "text": "Lobby"
     },
-    "tbo/062": {
+    "tbo/183": {
       "original": "Friends",
       "text": "Amigos"
     },
-    "tbo/063": {
+    "tbo/184": {
       "original": "Tournament",
       "text": "Torneio"
     },
-    "tbo/064": {
+    "tbo/185": {
       "original": "Replays",
       "text": "Replays"
     },
-    "tbo/065": {
+    "tbo/186": {
       "original": "Leaderboard",
       "text": "Ranking"
     },
-    "tbo/066": {
+    "tbo/187": {
       "original": "Profile",
       "text": "Perfil"
     },
-    "tbo/067": {
+    "tbo/188": {
       "original": "Fight whoever is searching right now! No time limit, and you can train while you wait.",
       "text": "Lute com quem estiver procurando agora! Sem limite de tempo, e dá para treinar enquanto espera."
     },
-    "tbo/068": {
+    "tbo/189": {
       "original": "Open a room with your own rules, then give your rival its code. No port forwarding needed!",
       "text": "Abra uma sala com suas regras e passe o código ao rival. Sem abrir portas no roteador!"
     },
-    "tbo/069": {
+    "tbo/190": {
       "original": "Got a room code from your rival? Type it in and jump right into their room!",
       "text": "Recebeu o código da sala do rival? Digite e entre direto na sala dele!"
     },
-    "tbo/070": {
+    "tbo/191": {
       "original": "A lobby for up to eight: two fight, six watch. You pick who plays and the rules; the others join with its code.",
       "text": "Um lobby para até oito: dois lutam, seis assistem. Você escolhe quem joga e as regras; os outros entram com o código."
     },
-    "tbo/071": {
+    "tbo/192": {
       "original": "Your rivals, who is online, and invites. That one is coming soon!",
       "text": "Seus rivais, quem está online e convites. Essa chega em breve!"
     },
-    "tbo/072": {
+    "tbo/193": {
       "original": "The Tenkaichi Budokai itself: brackets of 4 to 16 players. That one is coming soon!",
       "text": "O próprio Tenkaichi Budokai: chaves de 4 a 16 jogadores. Essa chega em breve!"
     },
-    "tbo/073": {
+    "tbo/194": {
       "original": "Your last matches, saved to watch again. That one is coming soon!",
       "text": "Suas últimas partidas, salvas para rever. Essa chega em breve!"
     },
-    "tbo/074": {
+    "tbo/195": {
       "original": "The strongest in the world, among your friends, and with each fighter. Coming soon!",
       "text": "Os mais fortes do mundo, entre amigos e com cada lutador. Em breve!"
     },
-    "tbo/075": {
+    "tbo/196": {
       "original": "The name your rivals see.",
       "text": "O nome que seus rivais veem."
     },
-    "tbo/076": {
+    "tbo/197": {
       "original": "AUTO",
       "text": "AUTO"
     },
-    "tbo/077": {
+    "tbo/198": {
       "original": "NORTH AMERICA",
       "text": "AMÉRICA DO NORTE"
     },
-    "tbo/078": {
+    "tbo/199": {
       "original": "SOUTH AMERICA",
       "text": "AMÉRICA DO SUL"
     },
-    "tbo/079": {
+    "tbo/200": {
       "original": "EUROPE",
       "text": "EUROPA"
     },
-    "tbo/080": {
+    "tbo/201": {
       "original": "MIDDLE EAST",
       "text": "ORIENTE MÉDIO"
     },
-    "tbo/081": {
+    "tbo/202": {
       "original": "AFRICA",
       "text": "ÁFRICA"
     },
-    "tbo/082": {
+    "tbo/203": {
       "original": "ASIA",
       "text": "ÁSIA"
     },
-    "tbo/083": {
+    "tbo/204": {
       "original": "OCEANIA",
       "text": "OCEANIA"
     },
-    "tbo/084": {
+    "tbo/205": {
       "original": "ANYWHERE",
       "text": "QUALQUER LUGAR"
     },
-    "tbo/085": {
+    "tbo/206": {
       "original": "60 SECONDS",
       "text": "60 SEGUNDOS"
     },
-    "tbo/086": {
+    "tbo/207": {
       "original": "90 SECONDS",
       "text": "90 SEGUNDOS"
     },
-    "tbo/087": {
+    "tbo/208": {
       "original": "180 SECONDS",
       "text": "180 SEGUNDOS"
     },
-    "tbo/088": {
+    "tbo/209": {
       "original": "240 SECONDS",
       "text": "240 SEGUNDOS"
     },
-    "tbo/089": {
+    "tbo/210": {
       "original": "NO LIMIT",
       "text": "SEM LIMITE"
     },
-    "tbo/090": {
+    "tbo/211": {
       "original": "AUTOMATIC",
       "text": "AUTOMÁTICO"
     },
-    "tbo/091": {
+    "tbo/212": {
       "original": "%d FRAME",
       "text": "%d QUADRO"
     },
-    "tbo/092": {
+    "tbo/213": {
       "original": "%d FRAMES",
       "text": "%d QUADROS"
     },
-    "tbo/093": {
+    "tbo/214": {
       "original": "NOT ON THIS PC",
       "text": "NÃO NESTE APARELHO"
     },
-    "tbo/094": {
+    "tbo/215": {
       "original": "OFF",
       "text": "DESLIGADO"
     },
-    "tbo/095": {
+    "tbo/216": {
       "original": "UP TO %d FRAMES",
       "text": "ATÉ %d QUADROS"
     },
-    "tbo/096": {
+    "tbo/217": {
       "original": "CHECKING YOUR GAME DATA AGAINST THE DISC... TRY AGAIN IN A MOMENT",
       "text": "CONFERINDO SEUS DADOS COM O DISCO... TENTE DE NOVO EM INSTANTES"
     },
-    "tbo/097": {
+    "tbo/218": {
       "original": "Back",
       "text": "Voltar"
     },
-    "tbo/098": {
+    "tbo/219": {
       "original": "THE NETWORK COULD NOT BE OPENED ON THIS PC",
       "text": "A REDE NÃO PÔDE SER ABERTA NESTE APARELHO"
     },
-    "tbo/099": {
+    "tbo/220": {
       "original": "THE TWO GAMES COULD NOT REACH EACH OTHER, EVEN THROUGH THE RELAY",
       "text": "OS DOIS JOGOS NÃO SE ALCANÇARAM, NEM PELO RELAY"
     },
-    "tbo/100": {
+    "tbo/221": {
       "original": "THE ROOM COULD NOT BE OPENED",
       "text": "A SALA NÃO PÔDE SER ABERTA"
     },
-    "tbo/101": {
+    "tbo/222": {
       "original": "Copy Code",
       "text": "Copiar Código"
     },
-    "tbo/102": {
+    "tbo/223": {
       "original": "Train While Waiting",
       "text": "Treinar Esperando"
     },
-    "tbo/103": {
+    "tbo/224": {
       "original": "Cancel",
       "text": "Cancelar"
     },
-    "tbo/104": {
+    "tbo/225": {
       "original": "COPIED: PASTE THE CODE TO YOUR RIVAL",
       "text": "COPIADO: COLE O CÓDIGO PARA O RIVAL"
     },
-    "tbo/105": {
+    "tbo/226": {
       "original": "Change",
       "text": "Trocar"
     },
-    "tbo/106": {
+    "tbo/227": {
       "original": "Start Training",
       "text": "Começar Treino"
     },
-    "tbo/107": {
+    "tbo/228": {
       "original": "Search",
       "text": "Procurar"
     },
-    "tbo/108": {
+    "tbo/229": {
       "original": "Enter",
       "text": "Entrar"
     },
-    "tbo/109": {
+    "tbo/230": {
       "original": "NOT OPEN YET: IT NEEDS MORE FROM THE MATCHMAKING SERVICE THAN ROOM CODES",
       "text": "AINDA FECHADO: PRECISA DE MAIS DO SERVIÇO DE PARTIDAS QUE CÓDIGOS DE SALA"
     },
-    "tbo/110": {
+    "tbo/231": {
       "original": "Open Room",
       "text": "Abrir Sala"
     },
-    "tbo/111": {
+    "tbo/232": {
       "original": "DELETE",
       "text": "APAGAR"
     },
-    "tbo/112": {
+    "tbo/233": {
       "original": "PASTE",
       "text": "COLAR"
     },
-    "tbo/113": {
+    "tbo/234": {
       "original": "JOIN",
       "text": "ENTRAR"
     },
-    "tbo/114": {
+    "tbo/235": {
       "original": "SPACE",
       "text": "ESPAÇO"
     },
-    "tbo/115": {
+    "tbo/236": {
       "original": "DONE",
       "text": "PRONTO"
     },
-    "tbo/116": {
+    "tbo/237": {
       "original": "A ROOM CODE HAS SIX LETTERS AND NUMBERS",
       "text": "O CÓDIGO DA SALA TEM SEIS LETRAS E NÚMEROS"
     },
-    "tbo/117": {
+    "tbo/238": {
       "original": "Delete",
       "text": "Apagar"
     },
-    "tbo/118": {
+    "tbo/239": {
       "original": "Type Name",
       "text": "Digitar Nome"
     },
-    "tbo/119": {
+    "tbo/240": {
       "original": "SAVED: YOUR RIVALS WILL SEE THIS NAME",
       "text": "SALVO: SEUS RIVAIS VÃO VER ESTE NOME"
     },
-    "tbo/120": {
+    "tbo/241": {
       "original": "Battle",
       "text": "Batalha"
     },
-    "tbo/121": {
+    "tbo/242": {
       "original": "Time Limit",
       "text": "Tempo"
     },
-    "tbo/122": {
+    "tbo/243": {
       "original": "Input Delay",
       "text": "Atraso"
     },
-    "tbo/123": {
+    "tbo/244": {
       "original": "Rollback",
       "text": "Rollback"
     },
-    "tbo/124": {
+    "tbo/245": {
       "original": "TEAMS (UP TO 5)",
       "text": "EQUIPES (ATÉ 5)"
     },
-    "tbo/125": {
+    "tbo/246": {
       "original": "ONE ON ONE",
       "text": "UM CONTRA UM"
     },
-    "tbo/126": {
+    "tbo/247": {
       "original": "ROOM SETTINGS",
       "text": "REGRAS DA SALA"
     },
-    "tbo/127": {
+    "tbo/248": {
       "original": "QUICK MATCH",
       "text": "PARTIDA RÁPIDA"
     },
-    "tbo/128": {
+    "tbo/249": {
       "original": "TEAMS",
       "text": "EQUIPES"
     },
-    "tbo/129": {
+    "tbo/250": {
       "original": "YOUR RIVAL IS FROM",
       "text": "SEU RIVAL É DE"
     },
-    "tbo/130": {
+    "tbo/251": {
       "original": "NO ONE THERE:",
       "text": "NINGUÉM LÁ:"
     },
-    "tbo/131": {
+    "tbo/252": {
       "original": "SEARCHING EVERYWHERE",
       "text": "PROCURANDO EM TODO LUGAR"
     },
-    "tbo/132": {
+    "tbo/253": {
       "original": "PLAYERS IN",
       "text": "JOGADORES EM"
     },
-    "tbo/133": {
+    "tbo/254": {
       "original": "FIRST, EVERYONE AFTER %d S",
       "text": "PRIMEIRO, TODOS DEPOIS DE %d S"
     },
-    "tbo/134": {
+    "tbo/255": {
       "original": "NO ONE NEARBY:",
       "text": "NINGUÉM POR PERTO:"
     },
-    "tbo/135": {
+    "tbo/256": {
       "original": "LOOKING FOR A RIVAL",
       "text": "PROCURANDO UM RIVAL"
     },
-    "tbo/136": {
+    "tbo/257": {
       "original": "NEAR YOU FIRST",
       "text": "PERTO DE VOCÊ PRIMEIRO"
     },
-    "tbo/137": {
+    "tbo/258": {
       "original": "THE SERVICE PAIRS YOU",
       "text": "O SERVIÇO TE JUNTA"
     },
-    "tbo/138": {
+    "tbo/259": {
       "original": "WITH THE NEXT RIVAL",
       "text": "COM O PRÓXIMO RIVAL"
     },
-    "tbo/139": {
+    "tbo/260": {
       "original": "%d IN THIS QUEUE",
       "text": "%d NESTA FILA"
     },
-    "tbo/140": {
+    "tbo/261": {
       "original": "ROOM CODE",
       "text": "CÓDIGO DA SALA"
     },
-    "tbo/141": {
+    "tbo/262": {
       "original": "GETTING A CODE...",
       "text": "PEGANDO UM CÓDIGO..."
     },
-    "tbo/142": {
+    "tbo/263": {
       "original": "GIVE THIS CODE TO",
       "text": "PASSE ESTE CÓDIGO PARA"
     },
-    "tbo/143": {
+    "tbo/264": {
       "original": "ASKING THE",
       "text": "PEDINDO AO"
     },
-    "tbo/144": {
+    "tbo/265": {
       "original": "YOUR RIVAL",
       "text": "SEU RIVAL"
     },
-    "tbo/145": {
+    "tbo/266": {
       "original": "MATCHMAKING SERVICE",
       "text": "SERVIÇO DE PARTIDAS"
     },
-    "tbo/146": {
+    "tbo/267": {
       "original": "ANOTHER VERSION TRIED",
       "text": "OUTRA VERSÃO TENTOU"
     },
-    "tbo/147": {
+    "tbo/268": {
       "original": "JOINING ROOM",
       "text": "ENTRANDO NA SALA"
     },
-    "tbo/148": {
+    "tbo/269": {
       "original": "LOOKING FOR",
       "text": "PROCURANDO"
     },
-    "tbo/149": {
+    "tbo/270": {
       "original": "THE HOST...",
       "text": "O ANFITRIÃO..."
     },
-    "tbo/150": {
+    "tbo/271": {
       "original": "YOUR RIVAL IS HERE!",
       "text": "SEU RIVAL CHEGOU!"
     },
-    "tbo/151": {
+    "tbo/272": {
       "original": "SEARCHING...  %d:%02d",
       "text": "PROCURANDO...  %d:%02d"
     },
-    "tbo/152": {
+    "tbo/273": {
       "original": "Cannot Go Online",
       "text": "Sem Acesso Online"
     },
-    "tbo/153": {
+    "tbo/274": {
       "original": "Online matches are only between",
       "text": "Partidas online são só entre"
     },
-    "tbo/154": {
+    "tbo/275": {
       "original": "two unmodded games.",
       "text": "dois jogos sem mods."
     },
-    "tbo/155": {
+    "tbo/276": {
       "original": "modified:",
       "text": "modificado:"
     },
-    "tbo/156": {
+    "tbo/277": {
       "original": "Changed: ",
       "text": "Alterado: "
     },
-    "tbo/157": {
+    "tbo/278": {
       "original": "Your game data is not the disc's.",
       "text": "Seus dados não são os do disco."
     },
-    "tbo/158": {
+    "tbo/279": {
       "original": "Your game data could not be checked.",
       "text": "Não deu para conferir seus dados."
     },
-    "tbo/159": {
+    "tbo/280": {
       "original": "Take out what you added in gamedata/mods.",
       "text": "Tire o que você pôs em gamedata/mods."
     },
-    "tbo/160": {
+    "tbo/281": {
       "original": "(Fighter mods switch off by themselves online.)",
       "text": "(Mods de lutadores desligam sozinhos online.)"
     },
-    "tbo/161": {
+    "tbo/282": {
       "original": "BACK",
       "text": "VOLTAR"
     },
-    "tbo/162": {
+    "tbo/283": {
       "original": "TYPE YOUR NAME",
       "text": "DIGITE SEU NOME"
     },
-    "tbo/163": {
+    "tbo/284": {
       "original": "SPARRING AT THE TOURNAMENT",
       "text": "TREINO NO TORNEIO"
     },
-    "tbo/164": {
+    "tbo/285": {
       "original": "You",
       "text": "Você"
     },
-    "tbo/165": {
+    "tbo/286": {
       "original": "Partner",
       "text": "Parceiro"
     },
-    "tbo/166": {
+    "tbo/287": {
       "original": "QUICK MATCH SEARCH",
       "text": "BUSCA DE PARTIDA RÁPIDA"
     },
-    "tbo/167": {
+    "tbo/288": {
       "original": "YOUR ROOM IS OPEN",
       "text": "SUA SALA ESTÁ ABERTA"
     },
-    "tbo/168": {
+    "tbo/289": {
       "original": "JOINING A ROOM",
       "text": "ENTRANDO EM UMA SALA"
     },
-    "tbo/169": {
+    "tbo/290": {
       "original": "SEARCHING  %d:%02d",
       "text": "PROCURANDO  %d:%02d"
     },
-    "tbo/170": {
+    "tbo/291": {
       "original": "THE MATCH STARTS THE MOMENT",
       "text": "A PARTIDA COMEÇA ASSIM QUE"
     },
-    "tbo/171": {
+    "tbo/292": {
       "original": "YOUR RIVAL ARRIVES",
       "text": "SEU RIVAL CHEGAR"
     },
-    "tbo/172": {
+    "tbo/293": {
       "original": "PICK YOUR BATTLE",
       "text": "ESCOLHA SUA BATALHA"
     },
-    "tbo/173": {
+    "tbo/294": {
       "original": "Region",
       "text": "Região"
     },
-    "tbo/174": {
+    "tbo/295": {
       "original": "WAITING RIGHT NOW",
       "text": "ESPERANDO AGORA"
     },
-    "tbo/175": {
+    "tbo/296": {
       "original": "Teams",
       "text": "Equipes"
     },
-    "tbo/176": {
+    "tbo/297": {
       "original": "One on One",
       "text": "Um contra Um"
     },
-    "tbo/177": {
+    "tbo/298": {
       "original": "%d WAITING",
       "text": "%d ESPERANDO"
     },
-    "tbo/178": {
+    "tbo/299": {
       "original": "PLAYERS THERE FIRST, EVERYONE AFTER %d S",
       "text": "JOGADORES DE LÁ PRIMEIRO, TODOS DEPOIS DE %d S"
     },
-    "tbo/179": {
+    "tbo/300": {
       "original": "RIVALS NEAR YOU FIRST, THEN ANYWHERE",
       "text": "RIVAIS PERTO PRIMEIRO, DEPOIS QUALQUER LUGAR"
     },
-    "tbo/180": {
+    "tbo/301": {
       "original": "THE NEXT RIVAL, WHEREVER: THE FASTEST",
       "text": "O PRÓXIMO RIVAL, DE ONDE FOR: O MAIS RÁPIDO"
     },
-    "tbo/181": {
+    "tbo/302": {
       "original": "Name",
       "text": "Nome"
     },
-    "tbo/182": {
+    "tbo/303": {
       "original": "PLAYER CARD",
       "text": "CARTÃO DO JOGADOR"
     },
-    "tbo/183": {
+    "tbo/304": {
       "original": "SINGLE BATTLE",
       "text": "BATALHA SIMPLES"
     },
-    "tbo/184": {
+    "tbo/305": {
       "original": "TEAM BATTLE",
       "text": "BATALHA EM EQUIPE"
     },
-    "tbo/185": {
+    "tbo/306": {
       "original": "DP BATTLE: 10 DP",
       "text": "BATALHA DP: 10 DP"
     },
-    "tbo/186": {
+    "tbo/307": {
       "original": "DP BATTLE: 15 DP",
       "text": "BATALHA DP: 15 DP"
     },
-    "tbo/187": {
+    "tbo/308": {
       "original": "DP BATTLE: 20 DP",
       "text": "BATALHA DP: 20 DP"
     },
-    "tbo/188": {
+    "tbo/309": {
       "original": "Game Speed",
       "text": "Velocidade"
     },
-    "tbo/189": {
+    "tbo/310": {
       "original": "The owner went back to the lobby.",
       "text": "O dono voltou ao lobby."
     },
-    "tbo/190": {
+    "tbo/311": {
       "original": "The two players could not connect to each other.",
       "text": "Os dois jogadores não conseguiram se conectar."
     },
-    "tbo/191": {
+    "tbo/312": {
       "original": "The lobby was closed by its owner.",
       "text": "O dono fechou o lobby."
     },
-    "tbo/192": {
+    "tbo/313": {
       "original": "The lobby's owner removed you from the lobby.",
       "text": "O dono do lobby te removeu."
     },
-    "tbo/193": {
+    "tbo/314": {
       "original": "The connection to the lobby's owner was lost: the lobby is closed.",
       "text": "A conexão com o dono do lobby caiu: o lobby fechou."
     },
-    "tbo/194": {
+    "tbo/315": {
       "original": "This lobby is full (8 places).",
       "text": "Este lobby está cheio (8 lugares)."
     },
-    "tbo/195": {
+    "tbo/316": {
       "original": "The lobby owner's game is a different version: joining needs the same release.",
       "text": "O jogo do dono do lobby é de outra versão: para entrar, as versões têm que ser iguais."
     },
-    "tbo/196": {
+    "tbo/317": {
       "original": "The lobby owner's game data are not the same as yours (a modified disc image or mods on one side): you cannot join.",
       "text": "Os dados do jogo do dono do lobby são diferentes dos seus (imagem modificada ou mods de um lado): não dá para entrar."
     },
-    "tbo/197": {
+    "tbo/318": {
       "original": "That address is not known.",
       "text": "Esse endereço não é conhecido."
     },
-    "tbo/198": {
+    "tbo/319": {
       "original": "No socket could be opened.",
       "text": "Não deu para abrir a conexão de rede."
     },
-    "tbo/199": {
+    "tbo/320": {
       "original": "Lobbies need the game's state list (the .mem file beside the program): copy all the files of the release.",
       "text": "Lobbies precisam da lista de estado do jogo (o arquivo .mem ao lado do programa): copie todos os arquivos da versão."
     },
-    "tbo/200": {
+    "tbo/321": {
       "original": "%s joined the lobby",
       "text": "%s entrou no lobby"
     },
-    "tbo/201": {
+    "tbo/322": {
       "original": "%s left the lobby",
       "text": "%s saiu do lobby"
     },
-    "tbo/202": {
+    "tbo/323": {
       "original": "%s was removed from the lobby",
       "text": "%s foi removido do lobby"
     },
-    "tbo/203": {
+    "tbo/324": {
       "original": "%s lost the connection to the lobby",
       "text": "%s perdeu a conexão com o lobby"
     },
-    "tbo/204": {
+    "tbo/325": {
       "original": "Match ",
       "text": "Partida "
     },
-    "tbo/205": {
+    "tbo/326": {
       "original": "Match %d: %s vs %s",
       "text": "Partida %d: %s vs %s"
     },
-    "tbo/206": {
+    "tbo/327": {
       "original": "%d%% (STANDARD)",
       "text": "%d%% (PADRÃO)"
     },
-    "tbo/207": {
+    "tbo/328": {
       "original": "Match On",
       "text": "Em Partida"
     },
-    "tbo/208": {
+    "tbo/329": {
       "original": "Start Match",
       "text": "Começar"
     },
-    "tbo/209": {
+    "tbo/330": {
       "original": "Not Ready",
       "text": "Não Pronto"
     },
-    "tbo/210": {
+    "tbo/331": {
       "original": "Ready",
       "text": "Pronto"
     },
-    "tbo/211": {
+    "tbo/332": {
       "original": "Chat",
       "text": "Chat"
     },
-    "tbo/212": {
+    "tbo/333": {
       "original": "Close Lobby",
       "text": "Fechar Lobby"
     },
-    "tbo/213": {
+    "tbo/334": {
       "original": "Leave Lobby",
       "text": "Sair do Lobby"
     },
-    "tbo/214": {
+    "tbo/335": {
       "original": "A MATCH IS ON ALREADY",
       "text": "JÁ TEM UMA PARTIDA ROLANDO"
     },
-    "tbo/215": {
+    "tbo/336": {
       "original": "TWO PLAYERS ARE NEEDED: ONE IN 1P, ONE IN 2P",
       "text": "PRECISA DE DOIS JOGADORES: UM NO 1P, UM NO 2P"
     },
-    "tbo/216": {
+    "tbo/337": {
       "original": "Send",
       "text": "Enviar"
     },
-    "tbo/217": {
+    "tbo/338": {
       "original": "Yes",
       "text": "Sim"
     },
-    "tbo/218": {
+    "tbo/339": {
       "original": "No",
       "text": "Não"
     },
-    "tbo/219": {
+    "tbo/340": {
       "original": "Move",
       "text": "Mover"
     },
-    "tbo/220": {
+    "tbo/341": {
       "original": "Remove from the Lobby",
       "text": "Remover do Lobby"
     },
-    "tbo/221": {
+    "tbo/342": {
       "original": "Move Here",
       "text": "Mover para Cá"
     },
-    "tbo/222": {
+    "tbo/343": {
       "original": "THE RULES CANNOT CHANGE DURING A MATCH",
       "text": "AS REGRAS NÃO MUDAM DURANTE A PARTIDA"
     },
-    "tbo/223": {
+    "tbo/344": {
       "original": "NOT DURING A MATCH: THE PLACES CHANGE BETWEEN MATCHES",
       "text": "NÃO DURANTE A PARTIDA: OS LUGARES MUDAM ENTRE PARTIDAS"
     },
-    "tbo/224": {
+    "tbo/345": {
       "original": "THE LOBBY'S OWNER CHOOSES WHO PLAYS",
       "text": "O DONO DO LOBBY ESCOLHE QUEM JOGA"
     },
-    "tbo/225": {
+    "tbo/346": {
       "original": "COPIED: PASTE THE CODE TO THE OTHERS",
       "text": "COPIADO: COLE O CÓDIGO PARA OS OUTROS"
     },
-    "tbo/226": {
+    "tbo/347": {
       "original": "PLAYERS",
       "text": "JOGADORES"
     },
-    "tbo/227": {
+    "tbo/348": {
       "original": "SPECTATORS  %d / 6",
       "text": "ESPECTADORES  %d / 6"
     },
-    "tbo/228": {
+    "tbo/349": {
       "original": "OWNER",
       "text": "DONO"
     },
-    "tbo/229": {
+    "tbo/350": {
       "original": "YOU",
       "text": "VOCÊ"
     },
-    "tbo/230": {
+    "tbo/351": {
       "original": "READY",
       "text": "PRONTO"
     },
-    "tbo/231": {
+    "tbo/352": {
       "original": "EMPTY",
       "text": "VAZIO"
     },
-    "tbo/232": {
+    "tbo/353": {
       "original": "LOBBY CODE",
       "text": "CÓDIGO DO LOBBY"
     },
-    "tbo/233": {
+    "tbo/354": {
       "original": "GIVE IT TO THE OTHERS",
       "text": "PASSE PARA OS OUTROS"
     },
-    "tbo/234": {
+    "tbo/355": {
       "original": "JOIN ROOM WITH IT",
       "text": "ENTRAR EM SALA COM ELE"
     },
-    "tbo/235": {
+    "tbo/356": {
       "original": "OTHERS JOIN WITH YOUR ADDRESS AND PORT",
       "text": "OS OUTROS ENTRAM COM SEU ENDEREÇO E PORTA"
     },
-    "tbo/236": {
+    "tbo/357": {
       "original": "LOBBY",
       "text": "LOBBY"
     },
-    "tbo/237": {
+    "tbo/358": {
       "original": "JOINED BY ADDRESS",
       "text": "ENTROU PELO ENDEREÇO"
     },
-    "tbo/238": {
+    "tbo/359": {
       "original": "A MATCH IS ON",
       "text": "PARTIDA ROLANDO"
     },
-    "tbo/239": {
+    "tbo/360": {
       "original": "RULES",
       "text": "REGRAS"
     },
-    "tbo/240": {
+    "tbo/361": {
       "original": "RULES (THE OWNER'S)",
       "text": "REGRAS (DO DONO)"
     },
-    "tbo/241": {
+    "tbo/362": {
       "original": "Opening the Lobby",
       "text": "Abrindo o Lobby"
     },
-    "tbo/242": {
+    "tbo/363": {
       "original": "Joining the Lobby",
       "text": "Entrando no Lobby"
     },
-    "tbo/243": {
+    "tbo/364": {
       "original": "Asking the matchmaking service for a code...",
       "text": "Pedindo um código ao serviço de partidas..."
     },
-    "tbo/244": {
+    "tbo/365": {
       "original": "Looking for the lobby's owner...",
       "text": "Procurando o dono do lobby..."
     },
-    "tbo/245": {
+    "tbo/366": {
       "original": "No Longer in the Lobby",
       "text": "Fora do Lobby"
     },
-    "tbo/246": {
+    "tbo/367": {
       "original": "The lobby is closed.",
       "text": "O lobby fechou."
     },
-    "tbo/247": {
+    "tbo/368": {
       "original": "Close the Lobby?",
       "text": "Fechar o Lobby?"
     },
-    "tbo/248": {
+    "tbo/369": {
       "original": "Leave the Lobby?",
       "text": "Sair do Lobby?"
     },
-    "tbo/249": {
+    "tbo/370": {
       "original": "Everyone in it goes back to the menus.",
       "text": "Todos voltam para os menus."
     },
-    "tbo/250": {
+    "tbo/371": {
       "original": "You go back to the online menu.",
       "text": "Você volta para o menu online."
     },
-    "tbo/251": {
+    "tbo/372": {
       "original": "SAY SOMETHING TO THE LOBBY",
       "text": "DIGA ALGO PARA O LOBBY"
     },
-    "tbo/252": {
+    "tbo/373": {
       "original": "Opening the lobby",
       "text": "Abrindo o lobby"
     },
-    "tbo/253": {
+    "tbo/374": {
       "original": "Joining the lobby",
       "text": "Entrando no lobby"
     },
-    "tbo/254": {
+    "tbo/375": {
       "original": "Close the lobby? ",
       "text": "Fechar o lobby? "
     },
-    "tbo/255": {
+    "tbo/376": {
       "original": "Leave the lobby? ",
       "text": "Sair do lobby? "
     },
-    "tbo/256": {
+    "tbo/377": {
       "original": "Player %d",
       "text": "Jogador %d"
     },
-    "tbo/257": {
+    "tbo/378": {
       "original": "Spectator %d",
       "text": "Espectador %d"
     },
-    "tbo/258": {
+    "tbo/379": {
       "original": "Move to ",
       "text": "Mover para "
     },
-    "tbo/259": {
+    "tbo/380": {
       "original": "empty",
       "text": "vazio"
     },
-    "tbo/260": {
+    "tbo/381": {
       "original": ", owner",
       "text": ", dono"
     },
-    "tbo/261": {
+    "tbo/382": {
       "original": ", ready",
       "text": ", pronto"
     },
-    "tbo/262": {
+    "tbo/383": {
       "original": "How late your moves come out. Automatic measures the line when the match starts.",
       "text": "Quanto seus golpes atrasam. Automático mede a conexão quando a partida começa."
     },
-    "tbo/263": {
+    "tbo/384": {
       "original": "Your moves come out at once and the game corrects itself. More frames cope with a slower line.",
       "text": "Seus golpes saem na hora e o jogo se corrige. Mais quadros aguentam uma conexão mais lenta."
     },
-    "tbo/264": {
+    "tbo/385": {
       "original": "Set the rules of your tournament! Then your rival joins with the room code.",
       "text": "Defina as regras do seu torneio! Depois o rival entra com o código da sala."
     },
-    "tbo/265": {
+    "tbo/386": {
       "original": "Enter your rival's room code, or Paste the one they sent you! Then Join.",
       "text": "Digite o código da sala do rival, ou Cole o que ele mandou! Depois Entrar."
     },
-    "tbo/266": {
+    "tbo/387": {
       "original": "Here we go! The match is starting!",
       "text": "Lá vamos nós! A partida vai começar!"
     },
-    "tbo/267": {
+    "tbo/388": {
       "original": "Looking for a worthy challenger... Warm up in Training meanwhile!",
       "text": "Procurando um desafiante à altura... Aqueça no Treino enquanto isso!"
     },
-    "tbo/268": {
+    "tbo/389": {
       "original": "Sorry! Online fights have to be fair, so only the game straight off the disc can play.",
       "text": "Desculpe! As lutas online têm que ser justas, então só o jogo igual ao do disco pode jogar."
     },
-    "tbo/269": {
+    "tbo/390": {
       "original": "Warm up at the tournament while we search! Pick yourself and a sparring partner.",
       "text": "Aqueça no torneio enquanto procuramos! Escolha você e um parceiro de treino."
     },
-    "tbo/270": {
+    "tbo/391": {
       "original": "Auto: rivals near you first. A region: players there first, everyone after 40 s. Anywhere: the fastest.",
       "text": "Auto: rivais perto primeiro. Uma região: jogadores de lá primeiro, todos depois de 40 s. Qualquer lugar: o mais rápido."
     },
-    "tbo/271": {
+    "tbo/392": {
       "original": "Pick a battle and we'll find you a rival! No time limit, and the game runs a little faster.",
       "text": "Escolha a batalha e achamos um rival! Sem limite de tempo, e o jogo roda um pouco mais rápido."
     },
-    "tbo/272": {
+    "tbo/393": {
       "original": "Pick your letters, then Done! Square deletes, Start finishes.",
       "text": "Escolha as letras e depois Pronto! Quadrado apaga, Start termina."
     },
-    "tbo/273": {
+    "tbo/394": {
       "original": "Show everyone who you are! This is the name your rivals see.",
       "text": "Mostre a todos quem você é! Este é o nome que seus rivais veem."
     },
-    "tbo/274": {
+    "tbo/395": {
       "original": "Opening your lobby! The others join it with its code.",
       "text": "Abrindo seu lobby! Os outros entram com o código."
     },
-    "tbo/275": {
+    "tbo/396": {
       "original": "Knocking at the lobby's door...",
       "text": "Batendo na porta do lobby..."
     },
-    "tbo/276": {
+    "tbo/397": {
       "original": "You are out of that lobby. OK takes you back to the online menu.",
       "text": "Você saiu daquele lobby. OK volta para o menu online."
     },
-    "tbo/277": {
+    "tbo/398": {
       "original": "Type a line for everyone in the lobby, then Done! Start sends it too.",
       "text": "Escreva algo para todos no lobby e depois Pronto! Start também envia."
     },
-    "tbo/278": {
+    "tbo/399": {
       "original": "Welcome to the lobby! Its owner picks who plays and starts the match. Chat while you wait!",
       "text": "Bem-vindo ao lobby! O dono escolhe quem joga e começa a partida. Converse enquanto espera!"
     },
-    "tbo/279": {
+    "tbo/400": {
       "original": "Your lobby is open! Give the others its code: they join with Join Room. Then put two of you in 1P and 2P.",
       "text": "Seu lobby está aberto! Passe o código: os outros entram por Entrar em Sala. Depois ponha dois no 1P e no 2P."
     },
-    "tbo/280": {
+    "tbo/401": {
       "original": "Your lobby is open! The others join with your address and port. Then put two of you in 1P and 2P.",
       "text": "Seu lobby está aberto! Os outros entram com seu endereço e porta. Depois ponha dois no 1P e no 2P."
     },
-    "tbo/281": {
+    "tbo/402": {
       "original": ", soon",
       "text": ", em breve"
     },
-    "tbo/282": {
+    "tbo/403": {
       "original": "Teams, up to 5",
       "text": "Equipes, até 5"
     },
-    "tbo/283": {
+    "tbo/404": {
       "original": "One on one",
       "text": "Um contra um"
     },
-    "tbo/284": {
+    "tbo/405": {
       "original": "Your rival is here! The match begins.",
       "text": "Seu rival chegou! A partida começa."
     },
-    "tbo/285": {
+    "tbo/406": {
       "original": " Your rival is from ",
       "text": " Seu rival é de "
     },
-    "tbo/286": {
+    "tbo/407": {
       "original": "Quick match, teams: searching",
       "text": "Partida rápida, equipes: procurando"
     },
-    "tbo/287": {
+    "tbo/408": {
       "original": "Quick match, one on one: searching",
       "text": "Partida rápida, um contra um: procurando"
     },
-    "tbo/288": {
+    "tbo/409": {
       "original": "Your room code: ",
       "text": "Código da sua sala: "
     },
-    "tbo/289": {
+    "tbo/410": {
       "original": "Getting a room code",
       "text": "Pegando um código de sala"
     },
-    "tbo/290": {
+    "tbo/411": {
       "original": "Joining room ",
       "text": "Entrando na sala "
     },
-    "tbo/291": {
+    "tbo/412": {
       "original": "Battle: teams",
       "text": "Batalha: equipes"
     },
-    "tbo/292": {
+    "tbo/413": {
       "original": "Battle: one on one",
       "text": "Batalha: um contra um"
     },
-    "tbo/293": {
+    "tbo/414": {
       "original": "Region: ",
       "text": "Região: "
     },
-    "tbo/294": {
+    "tbo/415": {
       "original": "You: ",
       "text": "Você: "
     },
-    "tbo/295": {
+    "tbo/416": {
       "original": "Partner: ",
       "text": "Parceiro: "
     },
-    "tbo/296": {
+    "tbo/417": {
       "original": "Start training",
       "text": "Começar treino"
     },
-    "tbo/297": {
+    "tbo/418": {
       "original": "Cannot go online. Online matches are only between two unmodded games.",
       "text": "Sem acesso online. Partidas online são só entre dois jogos sem mods."
     },
-    "tbo/298": {
+    "tbo/419": {
       "original": "Name: ",
       "text": "Nome: "
     },
-    "tbo/299": {
+    "tbo/420": {
       "original": "Code: ",
       "text": "Código: "
     },
-    "tbo/300": {
+    "tbo/421": {
       "original": "Searching for a rival...  %d:%02d",
       "text": "Procurando um rival...  %d:%02d"
     },
-    "tbo/301": {
+    "tbo/422": {
       "original": "Quick Match: ",
       "text": "Partida Rápida: "
     },
-    "tbo/302": {
+    "tbo/423": {
       "original": "Your room: ",
       "text": "Sua sala: "
     },
-    "tbo/303": {
+    "tbo/424": {
       "original": "PLAYER 1",
       "text": "JOGADOR 1"
     },
-    "tbo/304": {
+    "tbo/425": {
       "original": "PLAYER 2",
       "text": "JOGADOR 2"
     },
-    "tbo/305": {
+    "tbo/426": {
       "original": "SPLIT SCREEN",
       "text": "TELA DIVIDIDA"
     },
-    "tbo/306": {
+    "tbo/427": {
       "original": "Spectating %s vs %s",
       "text": "Assistindo %s vs %s"
     },
-    "tbo/307": {
+    "tbo/428": {
       "original": "CATCHING UP WITH THE MATCH... %d%%",
       "text": "ALCANÇANDO A PARTIDA... %d%%"
     },
-    "tbo/308": {
+    "tbo/429": {
       "original": "NO LONGER THE PLAYERS' FIGHT (SINCE FRAME %d)",
       "text": "NÃO É MAIS A LUTA DOS JOGADORES (DESDE O QUADRO %d)"
     },
-    "tbo/309": {
+    "tbo/430": {
       "original": "VIEW: ",
       "text": "CÂMERA: "
     },
-    "tbo/310": {
+    "tbo/431": {
       "original": "   R1: CHANGE   START: MENU",
       "text": "   R1: TROCAR   START: MENU"
     },
-    "tbo/311": {
+    "tbo/432": {
       "original": "Player 1",
       "text": "Jogador 1"
     },
-    "tbo/312": {
+    "tbo/433": {
       "original": "Player 2",
       "text": "Jogador 2"
     },
-    "tbo/313": {
+    "tbo/434": {
       "original": "Split Screen",
       "text": "Tela Dividida"
     },
-    "tbo/314": {
+    "tbo/435": {
       "original": "Stop Watching",
       "text": "Parar de Assistir"
     },
-    "tbo/315": {
+    "tbo/436": {
       "original": "Close the Lobby",
       "text": "Fechar o Lobby"
     },
-    "tbo/316": {
+    "tbo/437": {
       "original": "Leave the Lobby",
       "text": "Sair do Lobby"
     },
-    "tbo/317": {
+    "tbo/438": {
       "original": "Your screen only: the fight goes on",
       "text": "Só a sua tela: a luta continua"
     },
-    "tbo/318": {
+    "tbo/439": {
       "original": "Continue",
       "text": "Continuar"
     },
-    "tbo/319": {
+    "tbo/440": {
       "original": "View: ",
       "text": "Câmera: "
     },
-    "tbo/320": {
+    "tbo/441": {
       "original": "Back to the Lobby",
       "text": "Voltar ao Lobby"
     }

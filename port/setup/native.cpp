@@ -8,7 +8,7 @@
 //                config/DBZP.yaml and config/SLUS_216.78.yaml)
 //   game data    gamedata/disc/<loose files>, and every DATA/*.AFS archive split into gamedata/<name>/00000.bin ...
 //                (the layout of port/tools/extract_disc.py)
-//   European     optional, a second image (SLES-54945): 60 entries of DATA/PZS3EU1.AFS for translated menus/HUD,
+//   European     optional, a second image (SLES-54945): 410 entries of DATA/PZS3EU1.AFS for translated menus/HUD,
 //                plus entry 1 of DATA/PZS3EU0.AFS for the native language selector and ZS3EUOP.ADX for the
 //                EU opening soundtrack (as port/tools/extract_eu.py).
 #include <stdio.h>
@@ -414,14 +414,15 @@ void step_test(const std::string &root) {
 // The European release's archive entries: the battle HUD (5 to 9, one per language: English, Spanish, German,
 // French, Italian) and the menu archives (USA 448 + k is 451 + k + 31 per language).
 std::vector<Uint32> eu_entries() {
-    static const Uint32 kUsa[] = {448, 449, 450, 451, 452, 453, 459, 460, 461, 463, 472};
     std::vector<Uint32> out;
     for (Uint32 bank = 0; bank < 5; bank++) {
         out.push_back(5 + bank);
-        for (Uint32 usa : kUsa) {
+        for (Uint32 usa = 448; usa < 479; usa++) {
             out.push_back(451 + (usa - 448) + bank * 31);
         }
     }
+    // Story dialogue: 50 episodes for each of the five European languages.
+    for (Uint32 entry = 656; entry < 906; entry++) out.push_back(entry);
     return out;
 }
 

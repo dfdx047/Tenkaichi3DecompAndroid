@@ -24,7 +24,7 @@
 #endif
 
 enum { TR_MAX_FILE = 1024 * 1024, TR_MAX_ROWS = 640, TR_MAX_GROUPS = 160 };
-enum { TR_PORT_TEXT_COUNT = 13, TR_PORT_TEXT_MAX = 1024, TR_PORT_MAX_FILE = 1024 * 1024 };
+enum { TR_PORT_TEXT_COUNT = 18, TR_PORT_TEXT_MAX = 1024, TR_PORT_MAX_FILE = 1024 * 1024 };
 /* The online menus' lines (ids "tbo/..."): looked up by their English text, as the menu draws them (MenuTranslation_Line).
    Any number up to TR_LINES_MAX; a table is made once per load and kept (the game's thread may be reading the last). */
 enum { TR_LINES_MAX = 2048, TR_LINES_HASH = 4096 };
@@ -45,6 +45,11 @@ static const struct { const char *id, *original; } kPortText[TR_PORT_TEXT_COUNT]
     {"region/AF", "Africa"},
     {"region/AS", "Asia"},
     {"region/OC", "Oceania"},
+    {PORT_TEXT_UPDATE_AVAILABLE, "Update {version} available. F1 to update."},
+    {PORT_TEXT_UPDATE_DOWNLOADING, "Downloading update {version}: {percent}%"},
+    {PORT_TEXT_UPDATE_READY, "Update {version} is ready. F1 > Restart now."},
+    {PORT_TEXT_UPDATE_DONE, "Updated to {version}."},
+    {PORT_TEXT_UPDATE_ONLINE_OFF, "An update is being installed: online play is off until the game restarts (F1 > Restart now)."},
 };
 typedef struct TrPortCatalog {
     char text[TR_PORT_TEXT_COUNT][TR_PORT_TEXT_MAX];

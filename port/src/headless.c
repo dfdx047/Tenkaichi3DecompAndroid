@@ -258,6 +258,21 @@ int Port_BattleSeqState(void) {
     return gBtlSeq != NULL ? gBtlSeq->state : -1;
 }
 
+/* For the lobby's tournaments (gs/net_lobby.c, result_watch): the battle sequence's state (-1 outside a battle) and,
+   once the fight is decided (states 4 to 6), the result's winner bits (include/battle/battle.h, BTL_RESULT_*: 1 side
+   0 won, 2 side 1 won, 4 a draw, 8 left without a finish); 0 before. Read only. */
+int Port_BattleOutcome(int *winner) {
+    extern struct { int winner, reason; } GAME_PTR Battle_GetResult(void);
+    *winner = 0;
+    if (gBtlSeq == NULL) {
+        return -1;
+    }
+    if (gBtlSeq->state >= 4 && gBtlSeq->state <= 6) {
+        *winner = Battle_GetResult()->winner;
+    }
+    return gBtlSeq->state;
+}
+
 /* Main-menu item 4, Dragon Net Battle, was confirmed (src/menu/menu_a.c): the settings code opens the online
    screen when it sees the request (port/src/gs/ui.cpp). Without a window nothing does. */
 volatile int gPortNetMenuRequest;
@@ -275,10 +290,21 @@ int Port_SpecLineShown(void) {
     return shown;
 }
 
-/* (asked here and not in the game's file: there a pointer is 4 bytes wide in the 64-bit build, and getenv's is not) */
+/* (asked here and not in the game's file: there a pointer is 4 bytes wide in the 64-bit build, and getenv's is not)
+   Dragon Net Battle is listed only when the player asks for it: F1 > Online > Advanced, "List Dragon Net Battle in the
+   main menu" (setting net_dnb_menu, off by default; Tenkaichi Budokai Online's screens do everything it does).
+   BT3_MENU_ITEM4=0 / 1 (testing) hides or lists it whatever the setting says. */
 int Port_NetMenuListed(void) {
+    extern int Port_Setting(const char *name, int def);
     const char *e = getenv("BT3_MENU_ITEM4");
-    return e == NULL || atoi(e) != 0;
+    if (e != NULL) {
+        return atoi(e) != 0;
+    }
+#ifdef __ANDROID__
+    return Port_Setting("net_dnb_menu", 1) != 0; /* (Android: Dragon Net Battle is the way in, to the online screens: menu_a.c) */
+#else
+    return Port_Setting("net_dnb_menu", 0) != 0;
+#endif
 }
 
 /* "Unlock everything" on the Cheats tab of the settings window (port/src/gs/ui.cpp): the game's own leftover debug

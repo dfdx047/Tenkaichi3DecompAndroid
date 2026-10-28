@@ -85,7 +85,7 @@ the files the game writes are the same bytes as that tool's, and a `game-text/` 
 
 ## Edit translations and labels
 
-When no English UI catalog is present, the game extracts its UTF-16 UI and dialog text into
+When no English UI catalog is present, the game extracts its UTF-16 UI, mode and story dialogue text into
 `gamedata/game-text/translations/ui/en.json` on startup. Copy it to
 `ui/<locale>.json`, set `locale` and `name`, then edit `text` while keeping each ID
 and `original`. The selected language's catalog is loaded on the next launch;
