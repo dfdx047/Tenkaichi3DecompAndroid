@@ -624,14 +624,16 @@ s32 BtlCam_UpdateOverride(void) {
             sCameraLogFrames = 0;
             fp = fopen("cam_log.txt", sCameraLogStarted ? "a" : "w");
             if (fp != NULL) {
-                fprintf(fp, "frame=%d demo=%d intro_state=%d resources=fov:%d,cut_fov:%d,microzoom:%d,dist:%d\n",
+                fprintf(fp, "frame=%d demo=%d intro_state=%d resources=fov:%d,cut_fov:%d,microzoom:%d,dist:%d view=%d screen_dist=%.3f\n",
                         sCameraLogTotalFrames, demoActive, BtlSeq_GetState(),
                         !demoActive && Port_CameraEnabled() && Port_CameraValue("cam_fov_adapt", 1.0f) != 0.0f,
                         !demoActive && Port_CameraEnabled() &&
                             Port_CameraValue("cam_fov_adapt", 1.0f) != 0.0f &&
                             Port_CameraValue("cam_cut_fov", 1.0f) != 0.0f,
                         !demoActive && Port_CameraEnabled() && Port_CameraValue("cam_microzoom", 1.0f) != 0.0f,
-                        !demoActive && Port_CameraEnabled() && Port_CameraValue("cam_dist_adapt", 1.0f) != 0.0f);
+                        !demoActive && Port_CameraEnabled() && Port_CameraValue("cam_dist_adapt", 1.0f) != 0.0f,
+                        gBtlCam != NULL && gBtlCam->cur != NULL ? gBtlCam->cur->index : -1,
+                        gBtlCam != NULL && gBtlCam->cur != NULL ? gBtlCam->cur->view.screenDist : -1.0f);
                 fclose(fp);
                 sCameraLogStarted = 1;
                 sCameraLogLines++;

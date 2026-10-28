@@ -151,6 +151,7 @@ void ChrCam_CalcLockOn(ChrCamChr *chr, Vec4 *eye, Vec4 *rot, Vec4 *target) {
     f32 turn;
     f32 d;
     f32 m;
+    f32 distanceScale;
 
     scale = BtlCharApi_GetHeight(chr->objId);
     Vec4_Copy(&pos, &BtlChar_GetPos(chr)->pos);
@@ -188,6 +189,12 @@ void ChrCam_CalcLockOn(ChrCamChr *chr, Vec4 *eye, Vec4 *rot, Vec4 *target) {
         u = u * 0.2f + 0.8f;
     }
     Vec4_Scale(&ofs, &ofs, u);
+    distanceScale = 1.0f;
+    if (Port_CameraEnabled() && len > 100.0f) {
+        distanceScale += (len - 100.0f) * 0.0002f;
+        if (distanceScale > 1.2f) distanceScale = 1.2f;
+    }
+    Vec4_Scale(&ofs, &ofs, distanceScale);
     Vec4_Scale(target, target, 1.0f - (1.0f - u) * 0.5f);
     maxPitch = PI * 0.35f;
     if (BtlChar_TestFlag(chr, 0xD6)) {
@@ -481,6 +488,8 @@ void ChrCam_Update(ChrCamChr *chr) {
     f32 len;
     f32 rate;
     f32 shakeTime;
+    f32 shakeStrength;
+    s32 shakeIndex;
 
     if (BtlChar_TestFlag(chr, 0xCC)) {
         Vec4_Copy(&eye, &chr->cam.pos);
@@ -509,7 +518,14 @@ shake:
         Port_CameraValue("cam_microzoom", 1.0f) != 0.0f) {
         shakeTime = CamShake_GetTime(&cam->shake);
         if (shakeTime > 0.0f) {
-            f32 zoom = shakeTime * 0.2f;
+            f32 zoom;
+            shakeStrength = 0.0f;
+            for (shakeIndex = 0; shakeIndex < 4; shakeIndex++) {
+                if (shakeStrength < cam->shake.strength[shakeIndex]) {
+                    shakeStrength = cam->shake.strength[shakeIndex];
+                }
+            }
+            zoom = shakeTime * 0.2f * (shakeStrength / 5.0f);
             if (zoom > 0.02f) zoom = 0.02f;
             Vec4_Sub(&d, &eye, &target);
             Vec4_Scale(&d, &d, 1.0f - zoom);

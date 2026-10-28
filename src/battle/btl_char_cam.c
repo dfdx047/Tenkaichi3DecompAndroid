@@ -57,6 +57,17 @@ f32 ChrCam_GetOffset(ChrCamChr *chr, Vec4 *out, s32 mode) {
     f32 kiFactor;
 
     scale = BtlCharApi_GetHeight(chr->objId);
+    if (BtlChar_TestFlag(chr, 5)) {
+        f32 opponentScale = BtlOpp_GetHeight(chr);
+        f32 scaleLimit = scale * 2.5f;
+
+        /* A giant opponent pulls the lock-on camera back, with a bound for bad scale data. */
+        if (opponentScale > scale && opponentScale == opponentScale && opponentScale < scaleLimit) {
+            scale = opponentScale;
+        } else if (opponentScale >= scaleLimit && scaleLimit > scale) {
+            scale = scaleLimit;
+        }
+    }
     pitch = 0.0f;
     dist = scale * 0.5f + 1.0f;
     if (dist < 10.0f) {
