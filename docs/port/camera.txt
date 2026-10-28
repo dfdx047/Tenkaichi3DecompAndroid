@@ -11,7 +11,7 @@ base_height=2.2
 
 # Added to the original camera pitch, in degrees. Positive values pitch farther downward.
 # 0 keeps the original angle. Range: -45..45.
-inclination=0.45
+inclination=0.38
 
 # Multiplier for the game's follow interpolation rate. 1 keeps the original smoothing.
 # Lower values follow more slowly. Range: 0.1..2.
