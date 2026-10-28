@@ -398,7 +398,7 @@ void BtlCam_UpdateView(s32 side) {
         }
         targetFov = fov;
         if (sPortCameraFov[side] == 0.0f) sPortCameraFov[side] = targetFov;
-        sPortCameraFov[side] = BtlUtil_ApproachF(sPortCameraFov[side], targetFov, 1.5f / 30.0f);
+        sPortCameraFov[side] = BtlUtil_ApproachF(sPortCameraFov[side], targetFov, 1.5f);
         fov = sPortCameraFov[side];
         view->view.screenDist = width / Mathf_Tan(fov * 0.00872664626f);
         View_BuildProjection(&view->view);

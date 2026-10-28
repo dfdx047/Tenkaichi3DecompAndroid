@@ -479,6 +479,7 @@ void ChrCam_Update(ChrCamChr *chr) {
     f32 limit;
     f32 len;
     f32 rate;
+    f32 shakeTime;
 
     if (BtlChar_TestFlag(chr, 0xCC)) {
         Vec4_Copy(&eye, &chr->cam.pos);
@@ -503,6 +504,16 @@ void ChrCam_Update(ChrCamChr *chr) {
         keepBehind = 1;
     }
 shake:
+    if (Port_CameraEnabled()) {
+        shakeTime = CamShake_GetTime(&cam->shake);
+        if (shakeTime > 0.0f) {
+            f32 zoom = shakeTime * 0.2f;
+            if (zoom > 0.02f) zoom = 0.02f;
+            Vec4_Sub(&d, &eye, &target);
+            Vec4_Scale(&d, &d, 1.0f - zoom);
+            Vec4_Add(&eye, &target, &d);
+        }
+    }
     CamShake_Calc(&cam->shake, &shakePos, &shakeRot);
     Vec4_Add(&eye, &eye, &shakePos);
     CamShake_Tick(&cam->shake);
