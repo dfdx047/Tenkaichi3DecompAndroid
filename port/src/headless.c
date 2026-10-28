@@ -43,7 +43,7 @@ static PortCameraSetting sCameraSettings[] = {
     {"base_height", -50.0f, 50.0f, 2.2f, 1},
     {"inclination", -45.0f, 45.0f, 0.38f, 1},
     {"follow_smoothing", 0.1f, 2.0f, 0.85f, 1},
-    {"shake_scale", 0.0f, 5.0f, 1.2f, 1},
+    {"shake_scale", 0.0f, 5.0f, 1.15f, 1},
     {"fov_base", 35.0f, 100.0f, 63.0f, 1},
     {"fov_move_extra", 0.0f, 20.0f, 3.0f, 1},
 };

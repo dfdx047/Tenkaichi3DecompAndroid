@@ -18,7 +18,7 @@ inclination=0.38
 follow_smoothing=0.85
 
 # Multiplier for camera shake amplitude. 1 keeps the original shake. Range: 0..5.
-shake_scale=1.2
+shake_scale=1.15
 
 # Horizontal field of view in degrees; 61.2 is the original battle projection.
 # Range: 35..100. Applied by the separate battle-projection setting.
