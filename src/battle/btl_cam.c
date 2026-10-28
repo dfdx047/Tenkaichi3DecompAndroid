@@ -380,14 +380,25 @@ void BtlCam_UpdateView(s32 side) {
         f32 extra = Port_CameraValue("fov_move_extra", 0.0f);
         f32 width = view->split ? 128.0f : 256.0f;
         f32 targetFov;
+        Vec4 opponentPos;
+        Vec4 opponentRot;
+        f32 separation;
 
+        BtlCharApi_GetCamPose(BattleSide_GetObjId(side ^ 1), &opponentPos, &opponentRot);
+        separation = Mathf_Sqrt(Vec3_DistSq(&view->pos, &opponentPos));
+        fov += separation * 0.025f - 3.0f;
         if (BtlCharApi_IsMoving(objId)) fov += extra;
         if (BtlCharApi_AnyCamPriority()) fov -= 15.0f;
-        if (fov < 45.0f) fov = 45.0f;
-        if (fov > 70.0f) fov = 70.0f;
+        if (BtlCharApi_AnyCamPriority()) {
+            if (fov < 45.0f) fov = 45.0f;
+            if (fov > 55.0f) fov = 55.0f;
+        } else {
+            if (fov < 60.0f) fov = 60.0f;
+            if (fov > 70.0f) fov = 70.0f;
+        }
         targetFov = fov;
         if (sPortCameraFov[side] == 0.0f) sPortCameraFov[side] = targetFov;
-        sPortCameraFov[side] = BtlUtil_ApproachF(sPortCameraFov[side], targetFov, 0.5f / 30.0f);
+        sPortCameraFov[side] = BtlUtil_ApproachF(sPortCameraFov[side], targetFov, 1.5f / 30.0f);
         fov = sPortCameraFov[side];
         view->view.screenDist = width / Mathf_Tan(fov * 0.00872664626f);
         View_BuildProjection(&view->view);
