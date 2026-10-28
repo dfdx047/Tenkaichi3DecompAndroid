@@ -40,10 +40,15 @@ extern s32 BattleReplay_IsActive(void);
 extern s32 BattleSide_GetControl(s32 side);
 extern s32 BtlCharApi_GetCamPose(s32 objId, Vec4 *pos, Vec4 *rot); /* the fighter camera's pose */
 extern s32 BtlCharApi_HasCamPriority(s32 objId);                /* the fighter camera's priority */
+extern s32 BtlCharApi_IsMoving(s32 objId);
+extern s32 BtlCharApi_AnyCamPriority(void);
+extern f32 BtlUtil_ApproachF(f32 cur, f32 target, f32 step);
 extern s32 BtlCharApi_GetMgrUnk134(void);
 extern s32 StgCol_TraceSphere(s32 obj, void *seg, Vec4 *hitPos, f32 *frac, void *unk);
 extern s32 BtlStage_FindZoneNear(s32 arg0, Vec4 *pos);
 extern s32 D_002FF280[2];
+
+static f32 sPortCameraFov[2];
 
 extern View gDbgCamView;
 extern s32 gDbgCamLocked;
@@ -374,10 +379,16 @@ void BtlCam_UpdateView(s32 side) {
         f32 fov = Port_CameraValue("fov_base", 61.2f);
         f32 extra = Port_CameraValue("fov_move_extra", 0.0f);
         f32 width = view->split ? 128.0f : 256.0f;
+        f32 targetFov;
 
         if (BtlCharApi_IsMoving(objId)) fov += extra;
-        if (fov < 35.0f) fov = 35.0f;
-        if (fov > 100.0f) fov = 100.0f;
+        if (BtlCharApi_AnyCamPriority()) fov -= 15.0f;
+        if (fov < 45.0f) fov = 45.0f;
+        if (fov > 70.0f) fov = 70.0f;
+        targetFov = fov;
+        if (sPortCameraFov[side] == 0.0f) sPortCameraFov[side] = targetFov;
+        sPortCameraFov[side] = BtlUtil_ApproachF(sPortCameraFov[side], targetFov, 0.5f / 30.0f);
+        fov = sPortCameraFov[side];
         view->view.screenDist = width / Mathf_Tan(fov * 0.00872664626f);
         View_BuildProjection(&view->view);
     }

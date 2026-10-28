@@ -181,7 +181,11 @@ void ChrCam_CalcLockOn(ChrCamChr *chr, Vec4 *eye, Vec4 *rot, Vec4 *target) {
     u = u * 2.0f - 1.0f;
     u = -u * __builtin_fabsf(u) + u * 2.0f;
     u = u * 0.5f + 0.5f;
-    u = u * 0.2f + 0.8f;
+    if (Port_CameraEnabled()) {
+        u = u * 0.3f + 0.85f;
+    } else {
+        u = u * 0.2f + 0.8f;
+    }
     Vec4_Scale(&ofs, &ofs, u);
     Vec4_Scale(target, target, 1.0f - (1.0f - u) * 0.5f);
     maxPitch = PI * 0.35f;
