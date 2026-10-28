@@ -73,6 +73,7 @@
 #include <SDL3/SDL.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -244,6 +245,62 @@ static SDL_SpinLock sLock;
 static PortLobbyView sView;
 static Cmd sQueue[16];
 static int sQueueN;
+extern const char *Port_FileRoot(void);
+
+/* Keep the diagnostic [lobby] lines beside the game, including on Android where stderr is hard to retrieve. */
+static void lobby_debug(const char *fmt, ...) {
+    static char lines[200][1024];
+    static int count, loaded;
+    char line[1024];
+    va_list ap;
+    FILE *f;
+    const char *base;
+    char path[1024];
+    int i;
+    va_start(ap, fmt);
+    SDL_vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    fputs(line, stderr);
+    if (!loaded) {
+        loaded = 1;
+        base = Port_FileRoot();
+        if (base != NULL && SDL_snprintf(path, sizeof(path), "%s/lobby_log.txt", base) < (int)sizeof(path) &&
+            (f = fopen(path, "r")) != NULL) {
+            char old[sizeof(lines[0])];
+            while (fgets(old, sizeof(old), f) != NULL) {
+                if (count < 200) {
+                    SDL_strlcpy(lines[count++], old, sizeof(lines[0]));
+                } else {
+                    memmove(lines, lines + 1, sizeof(lines[0]) * 199);
+                    SDL_strlcpy(lines[199], old, sizeof(lines[199]));
+                }
+            }
+            fclose(f);
+        }
+    }
+    base = Port_FileRoot();
+    if (base == NULL || SDL_snprintf(path, sizeof(path), "%s/lobby_log.txt", base) >= (int)sizeof(path)) {
+        return;
+    }
+    if (count < 200) {
+        SDL_strlcpy(lines[count++], line, sizeof(lines[0]));
+        if ((f = fopen(path, "a")) != NULL) {
+            fputs(line, f);
+            fflush(f);
+            fclose(f);
+        }
+    } else {
+        memmove(lines, lines + 1, sizeof(lines[0]) * 199);
+        SDL_strlcpy(lines[199], line, sizeof(lines[199]));
+        if ((f = fopen(path, "w")) != NULL) {
+            for (i = 0; i < 200; i++) {
+                fputs(lines[i], f);
+            }
+            fflush(f);
+            fclose(f);
+        }
+    }
+}
 
 static int same(const struct sockaddr_in *a, const struct sockaddr_in *b) {
     return a->sin_addr.s_addr == b->sin_addr.s_addr && a->sin_port == b->sin_port;
@@ -1268,9 +1325,9 @@ static void owner_hello(const uint8_t *pkt, int n, const struct sockaddr_in *fro
     int k, free = -1, s, back = n >= HELLO_BYTES ? t_token_owner(pkt + 40 + NAMEB + 4, get(pkt, (40 + NAMEB) / 4)) : -1;
     char ip[INET_ADDRSTRLEN] = "?";
     inet_ntop(AF_INET, &from->sin_addr, ip, sizeof(ip));
-    fprintf(stderr, "[lobby] owner_hello from %s:%u bytes=%d\n", ip, (unsigned)ntohs(from->sin_port), n);
+    lobby_debug("[lobby] owner_hello from %s:%u bytes=%d\n", ip, (unsigned)ntohs(from->sin_port), n);
     if (n < 40 + NAMEB) {
-        fprintf(stderr, "[lobby] owner_hello rejected: malformed packet\n");
+        lobby_debug("[lobby] owner_hello rejected: malformed packet\n");
         return;
     }
     if (back >= 0 && sL.t.dropNs[back] == 0 && get(pkt, 2) == LOBBY_VERSION) {
@@ -1293,7 +1350,7 @@ static void owner_hello(const uint8_t *pkt, int n, const struct sockaddr_in *fro
         if (sL.m[k].on && same(&sL.m[k].addr, from)) {
             sL.m[k].heardNs = now_ns();
             state_send(k); /* (its greeting came again: the answer was lost) */
-            fprintf(stderr, "[lobby] owner_hello existing member: resent state to %s:%u\n", ip, (unsigned)ntohs(from->sin_port));
+            lobby_debug("[lobby] owner_hello existing member: resent state to %s:%u\n", ip, (unsigned)ntohs(from->sin_port));
             return;
         }
         if (!sL.m[k].on && free < 0) {
@@ -1311,7 +1368,7 @@ static void owner_hello(const uint8_t *pkt, int n, const struct sockaddr_in *fro
     }
     if (why != 0) {
         uint32_t no[4] = {MAGIC, T_L_NO, why, nonce};
-        fprintf(stderr, "[lobby] owner_hello rejected: %s from %s:%u\n",
+        lobby_debug("[lobby] owner_hello rejected: %s from %s:%u\n",
                 why == LNO_VERSION ? "version differs" : why == LNO_DATA ? "game data differs" : "lobby full",
                 ip, (unsigned)ntohs(from->sin_port));
         send_to(no, sizeof(no), from);
@@ -1338,7 +1395,7 @@ static void owner_hello(const uint8_t *pkt, int n, const struct sockaddr_in *fro
         }
     }
     sL.slot[s] = free;
-    fprintf(stderr, "[lobby] owner_hello accepted: member %s at slot %d from %s:%u\n",
+    lobby_debug("[lobby] owner_hello accepted: member %s at slot %d from %s:%u\n",
             sL.m[free].name, s, ip, (unsigned)ntohs(from->sin_port));
     Relay_Permit(NetIo_Sock(), from);
     {   /* a member who came with the code: the oldest knocked address is taken as its (its address as this side
@@ -1706,7 +1763,7 @@ static void hello_send(const struct sockaddr_in *to) {
     {
         char ip[INET_ADDRSTRLEN] = "?";
         inet_ntop(AF_INET, &to->sin_addr, ip, sizeof(ip));
-        fprintf(stderr, "[lobby] member sent T_L_HELLO to %s:%u\n", ip, (unsigned)ntohs(to->sin_port));
+        lobby_debug("[lobby] member sent T_L_HELLO to %s:%u\n", ip, (unsigned)ntohs(to->sin_port));
     }
     if (sTok.has && strcmp(sTok.code, sJoinCode) == 0) { /* (its own lobby's only) */
         static uint32_t said;
@@ -1716,6 +1773,7 @@ static void hello_send(const struct sockaddr_in *to) {
             said = sL.nonce;
             fprintf(stderr, "bt3: lobby: the greeting carries this game's rejoin token\n");
         }
+    }
     send_to(p, (int)sizeof(p), to);
 }
 
@@ -1787,7 +1845,7 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
         char ip[INET_ADDRSTRLEN] = "?";
         uint32_t nonce = type == T_L_NO && n >= 16 ? get(pkt, 3) : type == T_L_STATE && n >= 372 ? get(pkt, 92) : 0;
         inet_ntop(AF_INET, &from->sin_addr, ip, sizeof(ip));
-        fprintf(stderr, "[lobby] member received %s from %s:%u bytes=%d nonce=%u expected=%u%s\n",
+        lobby_debug("[lobby] member received %s from %s:%u bytes=%d nonce=%u expected=%u%s\n",
                 type == T_L_STATE ? "T_L_STATE" : "T_L_NO", ip, (unsigned)ntohs(from->sin_port), n,
                 nonce, (unsigned)sL.nonce, nonce == sL.nonce ? " match" : " mismatch/absent");
     }
@@ -1988,7 +2046,7 @@ void Lobby_Packet(const uint8_t *pkt, int n, const struct sockaddr_in *from, uin
     if (sL.on == 1) {
         char ip[INET_ADDRSTRLEN] = "?";
         inet_ntop(AF_INET, &from->sin_addr, ip, sizeof(ip));
-        fprintf(stderr, "[lobby] host received UDP from %s:%u type=%u bytes=%d\n",
+        lobby_debug("[lobby] host received UDP from %s:%u type=%u bytes=%d\n",
                 ip, (unsigned)ntohs(from->sin_port), (unsigned)type, n);
         owner_packet(pkt, n, from, type);
     } else if (sL.on == 2) {
@@ -2238,7 +2296,7 @@ static void timers(void) {
                 if (sTok.has && strcmp(sTok.code, sJoinCode) == 0) {
                     tok_forget("its lobby does not answer");
                 }
-                fprintf(stderr, "[lobby] member connection timed out after 25 seconds: no valid T_L_STATE/T_L_NO with nonce %u\n",
+                lobby_debug("[lobby] member connection timed out after 25 seconds: no valid T_L_STATE/T_L_NO with nonce %u\n",
                         (unsigned)sL.nonce);
                 Port_UiNotice("O anfitrião não respondeu. Verifique se os dois usam a mesma versão do app.");
                 member_closed("The lobby's owner did not answer. A firewall on the owner's PC may be blocking the game: "
