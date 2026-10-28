@@ -42,6 +42,7 @@ void MainMenu_PlateGoto(s32 idx,char *label);
  * menu/port_tbo.c. It has no voiced line of the guides.
  */
 #include "port_tbo_label.h"
+#include "menu/tbo_art.h"
 #include "menu/tag_controllers.h"
 #include "../../port/src/gs/tag_net.h"
 
@@ -199,15 +200,16 @@ static void TagMenu_Guide(void) {
     else if(tagPage>=5) Ps_Copy(heading,tagOptionGroups[tagPage-5],sizeof(heading));
     else Ps_Copy(heading,tagPage==4?"MOD SETTINGS":tagPage==3?"BATTLE SETUP":tagPage==2?"PLAYERS":"MODDED MODES",sizeof(heading));
     Ps_Heading(390,14,heading,0.75f,225,128);
-    Ps_Rect(10,342,502,414,Ps_Rgba(12,49,65,115),Ps_Rgba(12,49,65,115));
+    /* The guide: the online screens' window (menu/port_tbo.c), its line in the middle, the buttons under it */
+    Ps_Panel(TBO_KIT_WINDOW,10,340,502,414,0x80);
     if(tagPage!=TAG_MENU_PRESET && tagPage>=5 && row<TagMenu_Count(tagPage)-1) {
-        s32 id=TagMenu_Option(tagPage,row),v=Port_TagOption(id);
+        s32 id=TagMenu_Option(tagPage,row);
         { extern void Port_TagOptionValue(s32,u32,s32),Port_TagPreview(s32),Hud_LoadTagPreview(void);
           Hud_LoadTagPreview();
           Port_TagOptionValue(id,(u32)value,sizeof(value));Port_TagPreview(id); }
-        Ps_Text(256,350,value,1.0f,472,3);
-        Ps_Text(256,376,tagOptionInfo[id].help,0.7f,472,3);
-        Ps_Text(256,398,"LEFT / RIGHT - CHANGE",0.6f,472,3);
+        Ps_Pill(TBO_KIT_GOLD,170,347,342,371,0x80); /* the value on a gold capsule, as a choice in the online screens */
+        Ps_Text(256,Ps_TextTop(359,0.82f),value,0.82f,160,1);
+        Ps_Text(256,Ps_TextTop(392,0.66f),tagOptionInfo[id].help,0.66f,468,0);
     } else {
         char message[128];
         Ps_Copy(message,descriptions[7],sizeof(message));
@@ -217,8 +219,24 @@ static void TagMenu_Guide(void) {
             "Choose both rosters and watch the battle. L3 changes the fighter you follow.":
             "Choose how many people are playing on this PC.",sizeof(message));
         else if(tagPage==4 && row!=TAG_OPTION_GROUP_COUNT) Ps_Copy(message,"Choose a group of mod settings.",sizeof(message));
-        Ps_Text(256,359,message,0.8f,472,3);
+        Ps_Text(256,Ps_TextTop(377,0.8f),message,0.8f,468,0);
     }
+    Ps_Align(0); Ps_PromptsClear();
+    Ps_Prompt(0,"Select");
+    if(tagPage!=TAG_MENU_PRESET && tagPage>=5 && row<TagMenu_Count(tagPage)-1) Ps_Prompt(3,"Change");
+    Ps_Prompt(2,"Back"); Ps_PromptsDraw(); Ps_Align(1);
+}
+/* The way between the game's modes and the mod's (SELECT) on a steel capsule, at the foot of the menu: on the
+   left beside the buttons on the mod's pages, in the middle on the game's own. */
+static void TagMenu_SelectHint(const char *line) {
+    char text[96];
+    f32 w,x0;
+    Ps_Copy(text,Port_TagText(line),sizeof(text));
+    w=Ps_TextWidth(text,0.6f)+24;
+    if(w>250) w=250;
+    x0=tagPage?14:256-w*0.5f;
+    Ps_Pill(TBO_KIT_STEEL,x0,415,x0+w,436,0x80);
+    Ps_Text(x0+w*0.5f,Ps_TextTop(425.5f,0.6f),text,0.6f,w-14,0);
 }
 #define MAINMENU_VOICED(item) (!tagPage && (item) < MAINMENU_TBO)
 #else
@@ -613,7 +631,8 @@ void MainMenu_Draw(void) {
         if(tagPage==3) TagSetup_Draw();
         else {
             if(tagPage) TagMenu_Guide();
-            Ps_Text(256,427,TagNet_HostMenu()?(TagNet_HostChoosing()?"BRINGING GUESTS TO BATTLE SETUP":"CHOOSE A MODE FOR THE LOBBY"):tagPage?"SELECT - NORMAL MODES":"PRESS SELECT FOR MODDED MODES",0.65f,470,3);
+            if(TagNet_HostMenu()) Ps_Text(256,427,TagNet_HostChoosing()?"BRINGING GUESTS TO BATTLE SETUP":"CHOOSE A MODE FOR THE LOBBY",0.65f,470,3);
+            else TagMenu_SelectHint(tagPage?"SELECT - NORMAL MODES":"PRESS SELECT FOR MODDED MODES");
             if(TagNet_HostMenu())TagLobbyRoster_Draw(1);
         }
     }

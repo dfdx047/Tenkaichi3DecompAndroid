@@ -6,6 +6,7 @@
 #include "menu/tag_controllers.h"
 #include "battle/tag_options.h"
 #include "sys/pad.h"
+#include "menu/tbo_art.h"
 
 /* This is a page of the original animated main menu. The roster is spatial:
    left and right are teams, each card is one fighter. No scrolling slot IDs. */
@@ -68,6 +69,8 @@ static void plate(f32 x,f32 y,f32 w,f32 h,s32 selected,s32 red) {
         edge=Ps_Rgba(255,214,57,128);
         top=Ps_Rgba(255,246,176,128); bottom=Ps_Rgba(247,183,70,128);
     }
+    { u32 shade=Ps_Rgba(0,0,12,52); /* a soft shadow under the plate: it stands off the window */
+      Ps_Quad(x+10,y+3,x+w+3,y+3,x+3,y+h+3,x+w-4,y+h+3,shade,shade,shade,shade); }
     Ps_Quad(x+7,y,x+w,y,x,y+h,x+w-7,y+h,edge,edge,edge,edge);
     Ps_Quad(x+8,y+2,x+w-3,y+2,x+3,y+h-2,x+w-8,y+h-2,top,top,bottom,bottom);
 }
@@ -78,6 +81,7 @@ void TagSetup_Draw(void) {
     Ps_PageSet(); Ps_SetShift(0); Ps_Align(1);
     if(Port_TagControllersActive()) {
         Ps_Heading(256,25,"CONTROLLER SETUP",1.55f,460,128);
+        Ps_Panel(TBO_KIT_WINDOW,18,126,494,141+TagSession_Players()*42,0x80);
         Ps_Text(256,80,"Press START in player order, using your own controller.",0.8f,470,2);
         Ps_Text(256,102,"SELECT leaves a seat. A controller can join only once.",0.7f,470,2);
         for(p=0;p<TagSession_Players();p++) {
@@ -92,9 +96,15 @@ void TagSetup_Draw(void) {
         Ps_Text(256,333,Port_TagControllersReady(TagSession_Players())?
             "Everyone is ready. Player 1: press Cross to confirm.":
             "Waiting for each player to join...",0.8f,470,2);
-        Ps_Text(256,362,"Keyboard players use their START binding. Edit bindings with F1.",0.65f,475,2);
-        Ps_Text(256,388,"Triangle - cancel and keep the previous assignments",0.7f,470,2);
-        Ps_PromptsClear(); return;
+#ifdef __ANDROID__
+        Ps_Text(256,362,"Touch screen: START joins, SELECT leaves.",0.65f,475,0);
+#else
+        Ps_Text(256,362,"Keyboard players use their START binding. Edit bindings with F1.",0.65f,475,0);
+#endif
+        Ps_Align(0); Ps_PromptsClear();
+        if(Port_TagControllersReady(TagSession_Players())) Ps_Prompt(0,"Confirm");
+        Ps_Prompt(2,"Cancel"); Ps_PromptsDraw(); Ps_Align(1);
+        return;
     }
     Ps_Heading(174,8,ffa()?"BATTLE LINEUP":"TEAM SETUP",2.1f,300,128);
     Ps_Copy(heading,"TEAM BATTLE",sizeof(heading));
@@ -103,12 +113,16 @@ void TagSetup_Draw(void) {
     else if(TagSession_DraftMode()==TAG_MODE_GAUNTLET) Ps_Copy(heading,"FIGHTER GAUNTLET",sizeof(heading));
     else if(TagSession_DraftMode()==TAG_MODE_TOURNAMENT) Ps_Copy(heading,"TAG TEAM TOURNAMENT",sizeof(heading));
     Ps_Heading(391,14,heading,0.8f,224,128);
-    Ps_Rect(16,72,496,gauntlet()?414:401,Ps_Rgba(25,18,53,98),Ps_Rgba(32,17,55,112));
-    Ps_Text(112,76,"PLAYERS",0.7f,100,2);
-    Ps_Text(183,76,">",0.7f,18,2);
-    Ps_Text(256,76,ffa()?"LINEUP":"TEAMS",0.7f,100,1);
-    Ps_Text(329,76,">",0.7f,18,2);
-    Ps_Text(400,76,"FIGHTERS",0.7f,100,2);
+    Ps_Panel(TBO_KIT_WINDOW,12,68,500,gauntlet()?416:404,0x80);
+    /* the three steps, this one on gold */
+    Ps_Pill(TBO_KIT_STEEL,60,75,164,95,0x70);
+    Ps_Pill(TBO_KIT_GOLD,204,74,308,96,0x80);
+    Ps_Pill(TBO_KIT_STEEL,348,75,452,95,0x70);
+    Ps_Text(112,Ps_TextTop(85,0.62f),"PLAYERS",0.62f,92,0);
+    Ps_Text(184,Ps_TextTop(85,0.62f),">",0.62f,18,2);
+    Ps_Text(256,Ps_TextTop(85,0.66f),ffa()?"LINEUP":"TEAMS",0.66f,92,1);
+    Ps_Text(328,Ps_TextTop(85,0.62f),">",0.62f,18,2);
+    Ps_Text(400,Ps_TextTop(85,0.62f),"FIGHTERS",0.62f,92,0);
     Ps_Text(256,101,"Choose your fighters on the next screen. End each team when ready.",0.65f,460,2);
     if(tournament()) Ps_Text(256,119,"ENTER UP TO FOUR TEAMS - other entrants are CPU teams",0.75f,452,2);
     else if(TagSession_DraftMode()==TAG_MODE_GAUNTLET) Ps_Heading(139,119,"YOUR TEAM",1.05f,195,128);
@@ -148,8 +162,8 @@ void TagSetup_Draw(void) {
     plate(154,buttons_y(),328,gauntlet()?31:35,focus==controls_card()+1,0);
     Ps_Text(86,buttons_y()+4,"Back",0.95f,100,2);
     Ps_Text(318,buttons_y()+4,"Choose Fighters",1.05f,290,focus==controls_card()+1?1:2);
-    Ps_Text(256,gauntlet()?396:382,editing?"Left / Right changes the value. Cross saves. Triangle cancels.":
-        "Directions move between cards. Cross selects. Start continues.",0.65f,455,2);
+    Ps_Text(256,gauntlet()?396:383,editing?"Left / Right changes the value. Cross saves. Triangle cancels.":
+        "Directions move between cards. Cross selects. Start continues.",0.6f,455,4);
     Ps_Align(0); Ps_PromptsClear();
     Ps_Prompt(0,editing?"Confirm":"Select"); Ps_Prompt(7,"Continue"); Ps_Prompt(2,editing?"Cancel":"Back"); Ps_PromptsDraw(); Ps_Align(1);
 }

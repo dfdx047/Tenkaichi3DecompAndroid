@@ -769,3 +769,8 @@ Left stick: move. Right stick: look. L1/R1: height. Keyboard uses your game bind
 Leave match	Abandonar combate
 Keep Fallen Fighters in Bounds	Mantener a los caídos dentro del escenario
 Catch KO'd fighters at the lower stage boundary so teammates can reach them. Ring-outs remain permanent.	Detiene a los luchadores noqueados en el límite inferior del escenario para que sus compañeros puedan alcanzarlos. Las eliminaciones por salida del ring siguen siendo permanentes.
+Change	Cambiar
+Touch screen	Pantalla táctil
+Touch screen: START joins, SELECT leaves.	Pantalla táctil: START entra, SELECT sale.
+Press START to join	Pulsa START para unirte
+Disconnected - check in again	Desconectado - vuelve a unirte

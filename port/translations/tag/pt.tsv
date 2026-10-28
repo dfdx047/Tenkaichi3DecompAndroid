@@ -769,3 +769,8 @@ Left stick: move. Right stick: look. L1/R1: height. Keyboard uses your game bind
 Leave match	Sair da luta
 Keep Fallen Fighters in Bounds	Manter Derrotados no Cenário
 Catch KO'd fighters at the lower stage boundary so teammates can reach them. Ring-outs remain permanent.	Segurar os lutadores nocauteados no limite de baixo do cenário para os aliados alcançarem. Ring out continua definitivo.
+Change	Mudar
+Touch screen	Tela de toque
+Touch screen: START joins, SELECT leaves.	Tela de toque: START entra, SELECT sai.
+Press START to join	Aperte START para entrar
+Disconnected - check in again	Desconectado - entre de novo
