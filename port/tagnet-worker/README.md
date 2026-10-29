@@ -10,14 +10,23 @@ the room's title); joining takes a code (six digits) or an address. The service'
 (`TAG_ONLINE_URL`, `port/src/gs/tag_link.h`); a file `tag_online_url.txt` (one line) in the game's data folder names
 another.
 
+## The service in use
+
+`https://tagteam-online.regulusplay.workers.dev` (`TAG_ONLINE_URL`), put up on 2026-10-29 with wrangler
+(`wrangler.example.jsonc`, the D1 database `tagteam-online` and the Durable Object `TagRelay`). No TURN key: players
+who cannot reach each other directly go through the room's relay (`/v1/ws`), about 140-160 ms one way from Brazil.
+To put a new `worker.js` up: `wrangler login`, then `wrangler deploy --keep-vars` with the config filled in (the
+database id: `wrangler d1 list`). The dashboard's editor can replace the code too, but cannot create the Durable
+Object's class (it needs the migration in the config).
+
 ## Putting it up (Cloudflare dashboard)
 
 1. **Workers & Pages > Create > Worker**, name it (e.g. `tagteam-online`), **Deploy**, then **Edit code**: replace
    everything with `worker.js`, **Deploy**.
 2. **Storage & Databases > D1 > Create**, a database (e.g. `tagteam-online`). Its **Console**: paste `schema.sql`, run.
 3. The Worker's **Settings > Bindings > Add > D1 database**: variable name `DB`, the database of step 2.
-4. The relay (needed by players whose networks do not let a direct connection through; without it they cannot
-   join): **Realtime > TURN Server > Create**: copy the **Key ID** and the **API token**. The Worker's
+4. Optional, a TURN relay as well (the room's own relay, the Durable Object, needs none):
+   **Realtime > TURN Server > Create**: copy the **Key ID** and the **API token**. The Worker's
    **Settings > Variables and Secrets**: secret `TURN_KEY_ID` = the Key ID, secret `TURN_KEY_TOKEN` = the token.
 5. Optional variables: `ALLOWED_VERSIONS` = `5` (the mod's network version), `TURN_DAILY_MAX` (relay logins a day,
    default 300), `MAX_MEMBERS` (default 19).
