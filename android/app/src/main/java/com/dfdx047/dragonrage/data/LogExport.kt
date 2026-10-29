@@ -57,6 +57,16 @@ class LogExport(private val context: Context, private val paths: GamePaths) {
             }
         }
         appendLine()
+        appendLine("===== lobby_log.txt (lobby diagnostics) =====")
+        val lobbyLog = File(paths.root, "lobby_log.txt")
+        if (lobbyLog.exists()) {
+            val lines = runCatching { lobbyLog.readLines() }.getOrDefault(emptyList())
+            if (lines.size > 1000) appendLine("(${lines.size - 1000} earlier lines left out)")
+            lines.takeLast(1000).forEach { appendLine(it) }
+        } else {
+            appendLine("(none: the game has not written lobby diagnostics yet)")
+        }
+        appendLine()
         appendLine("===== bt3_log.txt (the game's last run) =====")
         val log = File(paths.root, "bt3_log.txt")
         if (log.exists()) {

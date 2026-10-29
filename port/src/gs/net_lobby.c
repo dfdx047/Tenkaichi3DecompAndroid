@@ -376,7 +376,7 @@ static void note_set(const char *text) {
     SDL_strlcpy(sL.note, text, sizeof(sL.note));
     sL.noteSeq++;
     sL.dirty = 1;
-    fprintf(stderr, "bt3: lobby: %s\n", text);
+    lobby_debug("[lobby] %s\n", text);
 }
 
 /* A line of what happened, for the screen: a note (name "") or a line of chat. */
@@ -649,7 +649,7 @@ static void log_table(void) {
             break;
         }
     }
-    fprintf(stderr, "bt3: lobby: places %s; rules %s\n", line, rules_text());
+    lobby_debug("[lobby] places %s; rules %s\n", line, rules_text());
 }
 
 /* The mode and the bracket, in STATE after the lobby (bytes 372 on): words 93 mode | state << 8 | size << 16 |
@@ -908,7 +908,7 @@ static void match_over(void) {
         }
     }
     sL.dirty = 1;
-    fprintf(stderr, "bt3: lobby: match %u is over: back to the lobby\n", (unsigned)sL.gen);
+    lobby_debug("[lobby] match %u is over: back to the lobby\n", (unsigned)sL.gen);
 }
 
 /* The owner ends its match (it is in its session): the session ends at its next look at the socket, and with it
@@ -953,7 +953,7 @@ static void t_tokens(void) {
         if (sL.t.hasTok[e] && (sL.t.state != 1 || e >= sL.t.count || sL.t.gone[e] || t_out(e))) {
             sL.t.hasTok[e] = 0;
             memset(sL.t.tok[e], 0, TOKEN);
-            fprintf(stderr, "bt3: lobby: entrant %d's rejoin token forgotten\n", e);
+            lobby_debug("[lobby] entrant %d's rejoin token forgotten\n", e);
         }
     }
 }
@@ -995,7 +995,7 @@ static void t_log(void) {
         at += (size_t)SDL_snprintf(line + at, sizeof(line) - at, "%s%d:%s-%s>%s", m == 0 ? "" : " ", m, a >= 0 ? sL.t.name[a] : a == -2 ? "bye" : "?",
                                    b >= 0 ? sL.t.name[b] : b == -2 ? "bye" : "?", w >= 0 ? sL.t.name[w] : "?");
     }
-    fprintf(stderr, "bt3: lobby: bracket %s; next %d\n", line, sL.t.cur);
+    lobby_debug("[lobby] bracket %s; next %d\n", line, sL.t.cur);
 }
 
 /* Byes and walkovers decided, the next match and the champion found (after every change of the bracket). */
@@ -1056,7 +1056,7 @@ static void t_new(void) {
         n += sL.slot[s] >= 0;
     }
     if (n < 2) {
-        fprintf(stderr, "bt3: lobby: a tournament needs two of its %d player places taken (%d are)\n", sL.entrants, n);
+        lobby_debug("[lobby] a tournament needs two of its %d player places taken (%d are)\n", sL.entrants, n);
         return;
     }
     memset(&sL.t, 0, sizeof(sL.t));
@@ -1110,7 +1110,7 @@ static void t_new(void) {
         SDL_snprintf(text, sizeof(text), "Tournament: %d entrants", n);
         note_set(text);
     }
-    fprintf(stderr, "bt3: lobby: tournament %u drawn (seed %08x)\n", (unsigned)sL.t.gen, (unsigned)sL.t.seed);
+    lobby_debug("[lobby] tournament %u drawn (seed %08x)\n", (unsigned)sL.t.gen, (unsigned)sL.t.seed);
     t_resolve();
 }
 
@@ -1182,7 +1182,7 @@ static void t_decide(void) {
             sL.t.win[m] = w;
             sL.t.how[m] = HOW_PLAYED;
             sL.t.playing = -1;
-            fprintf(stderr, "bt3: lobby: match %u decided: side %d won (%s)\n", (unsigned)sL.gen, r[0] - 1, sL.t.name[w]);
+            lobby_debug("[lobby] match %u decided: side %d won (%s)\n", (unsigned)sL.gen, r[0] - 1, sL.t.name[w]);
             t_resolve();
             if (sL.t.state == 1) { /* (the final's: the champion is said instead, the members' log has one line of it) */
                 SDL_snprintf(text, sizeof(text), "%s won the match", sL.t.name[w]);
@@ -1193,7 +1193,7 @@ static void t_decide(void) {
         }
         if (r[0] != r[1] && r[0] != RES_NO_WINNER && r[1] != RES_NO_WINNER && ++sL.t.disagree[m] >= 2) {
             /* the second time the two games name different winners: no more replays, the owner chooses */
-            fprintf(stderr, "bt3: lobby: match %u: the two games disagree again (%d / %d): the owner chooses\n", (unsigned)sL.gen, r[0], r[1]);
+            lobby_debug("[lobby] match %u: the two games disagree again (%d / %d): the owner chooses\n", (unsigned)sL.gen, r[0], r[1]);
             sL.t.playing = -1;
             sL.t.choose = m;
             sL.dirty = 1;
@@ -1210,7 +1210,7 @@ static void t_decide(void) {
         }
     }
     if (again != NULL) {
-        fprintf(stderr, "bt3: lobby: match %u: results %d / %d\n", (unsigned)sL.gen, r[0], r[1]);
+        lobby_debug("[lobby] match %u: results %d / %d\n", (unsigned)sL.gen, r[0], r[1]);
         sL.t.playing = -1;
         match_end(again);
     }
@@ -1437,9 +1437,9 @@ static void owner_hello(const uint8_t *pkt, int n, const struct sockaddr_in *fro
         table_make();
         SDL_snprintf(text, sizeof(text), "%s is back in the tournament", sL.m[free].name);
         note_set(text);
-        fprintf(stderr, "bt3: lobby: entrant %d back by its token (a new one drawn)\n", back);
+        lobby_debug("[lobby] entrant %d back by its token (a new one drawn)\n", back);
     } else if (n >= HELLO_BYTES && get(pkt, (40 + NAMEB) / 4) != 0) {
-        fprintf(stderr, "bt3: lobby: a greeting with a rejoin token that is no entrant's now: a member as any other, told to forget it\n");
+        lobby_debug("[lobby] a greeting with a rejoin token that is no entrant's now: a member as any other, told to forget it\n");
         sL.m[free].tokFor = 1;
         sL.m[free].forgetLeft = 10;
     }
@@ -1514,7 +1514,7 @@ static void owner_say(int k, const char *text) {
     sL.chatCount++;
     sL.chatOut++;
     log_push(sL.chat[sL.chatCount - 1].name, sL.chat[sL.chatCount - 1].text);
-    fprintf(stderr, "bt3: lobby: chat: %s: %s\n", sL.m[k].name, sL.chat[sL.chatCount - 1].text);
+    lobby_debug("[lobby] chat: %s: %s\n", sL.m[k].name, sL.chat[sL.chatCount - 1].text);
     put(p, 0, MAGIC);
     put(p, 1, T_L_SAID);
     put(p, 2, sL.chatOut);
@@ -1548,7 +1548,7 @@ static void owner_do(int what, int a, int b) {
             sL.t.win[m] = w;
             sL.t.how[m] = HOW_CHOSEN;
             sL.t.choose = -1;
-            fprintf(stderr, "bt3: lobby: the owner chose the winner of match %d: %s\n", m, sL.t.name[w]);
+            lobby_debug("[lobby] the owner chose the winner of match %d: %s\n", m, sL.t.name[w]);
             SDL_snprintf(text, sizeof(text), "%s won the match (the owner's choice)", sL.t.name[w]);
             note_set(text);
             t_resolve();
@@ -1619,7 +1619,7 @@ static void owner_do(int what, int a, int b) {
                 *v = a == LOBBY_RULE_ROLLBACK ? cur * 2 : cur;
             }
             sL.dirty = 1;
-            fprintf(stderr, "bt3: lobby: rules %s\n", rules_text());
+            lobby_debug("[lobby] rules %s\n", rules_text());
         }
     } else if (what == LOBBY_READY) {
         sL.m[0].ready = a != 0;
@@ -1658,7 +1658,7 @@ static const char *tok_path(void) {
 static void tok_forget(const char *why) {
     const char *path = tok_path();
     if (sTok.has) {
-        fprintf(stderr, "bt3: lobby: the rejoin token is forgotten (%s)\n", why);
+        lobby_debug("[lobby] the rejoin token is forgotten (%s)\n", why);
     }
     memset(&sTok, 0, sizeof(sTok));
     sTok.loaded = 1;
@@ -1687,7 +1687,7 @@ static void tok_keep(uint32_t gen, const uint8_t *tok, const char *code) {
         fprintf(f, "\n");
         fclose(f);
     }
-    fprintf(stderr, "bt3: lobby: a rejoin token kept for tournament %u (lobby %s)\n", (unsigned)gen, sTok.code);
+    lobby_debug("[lobby] a rejoin token kept for tournament %u (lobby %s)\n", (unsigned)gen, sTok.code);
 }
 
 /* At the program's start (the first lobby blank): the token of a game that crashed or was closed in a tournament,
@@ -1719,7 +1719,7 @@ static void tok_load(void) {
             sTok.tok[i] = (uint8_t)v;
         }
         if (!ok) {
-            fprintf(stderr, "bt3: lobby: the rejoin token file is %lld s old: removed\n", age);
+            lobby_debug("[lobby] the rejoin token file is %lld s old: removed\n", age);
         }
     }
     fclose(f);
@@ -1730,7 +1730,7 @@ static void tok_load(void) {
     sTok.has = 1;
     sTok.gen = gen;
     SDL_strlcpy(sTok.code, strcmp(code, "-") == 0 ? "" : code, sizeof(sTok.code));
-    fprintf(stderr, "bt3: lobby: a rejoin token from before (lobby %s, tournament %u)\n", sTok.code, gen);
+    lobby_debug("[lobby] a rejoin token from before (lobby %s, tournament %u)\n", sTok.code, gen);
 }
 
 static void hello_send(const struct sockaddr_in *to) {
@@ -1771,7 +1771,7 @@ static void hello_send(const struct sockaddr_in *to) {
         memcpy(p + 40 + NAMEB + 4, sTok.tok, TOKEN);
         if (said != sL.nonce) {
             said = sL.nonce;
-            fprintf(stderr, "bt3: lobby: the greeting carries this game's rejoin token\n");
+            lobby_debug("[lobby] the greeting carries this game's rejoin token\n");
         }
     }
     send_to(p, (int)sizeof(p), to);
@@ -1823,7 +1823,7 @@ static void lobby_goodbye(void) {
             send_to(p, sizeof(p), &sL.owner);
         }
     }
-    fprintf(stderr, "bt3: lobby: the program ends: %s\n", sL.on == 1 ? "the lobby is closed for everyone" : "this game leaves the lobby");
+    lobby_debug("[lobby] the program ends: %s\n", sL.on == 1 ? "the lobby is closed for everyone" : "this game leaves the lobby");
 }
 
 static void goodbye_arm(void) {
@@ -1836,7 +1836,7 @@ static void goodbye_arm(void) {
 
 static void member_closed(const char *why) {
     SDL_strlcpy(sL.error, why, sizeof(sL.error));
-    fprintf(stderr, "bt3: lobby: %s\n", why);
+    lobby_debug("[lobby] %s\n", why);
     lobby_off();
 }
 
@@ -1863,7 +1863,7 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
             static int said;
             char text[32];
             if ((type == T_L_STATE || type == T_L_NO) && said++ < 4 && inet_ntop(AF_INET, &from->sin_addr, text, sizeof(text)) != NULL) {
-                fprintf(stderr, "bt3: lobby: an answer from %s:%d without this member's nonce: not taken\n", text, ntohs(from->sin_port));
+                lobby_debug("[lobby] an answer from %s:%d without this member's nonce: not taken\n", text, ntohs(from->sin_port));
             }
             return;
         }
@@ -1874,7 +1874,7 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
         sL.owner = *from;
         sL.state = 2;
         Match_Cancel(); /* (a code's search: it has done its work, the owner's relay address is not needed now) */
-        fprintf(stderr, "bt3: lobby: in the lobby (%s)\n", Relay_IsPeer(from) ? "through the relay" : "the owner answered");
+        lobby_debug("[lobby] in the lobby (%s)\n", Relay_IsPeer(from) ? "through the relay" : "the owner answered");
     }
     if (!same(from, &sL.owner)) {
         return;
@@ -1912,7 +1912,7 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
             if (sL.note[0] != '\0') {
                 log_push("", sL.note);
             }
-            fprintf(stderr, "bt3: lobby: note: %s\n", sL.note);
+            lobby_debug("[lobby] note: %s\n", sL.note);
         }
         memcpy(sL.code, pkt + 360, 8);
         sL.code[7] = '\0';
@@ -1922,7 +1922,7 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
             tour_get(pkt);
             changed |= sL.mode != wasMode || sL.entrants != wasEntrants;
             if (sL.t.size >= 2 && (sL.t.gen != was || sL.t.state != wasState || sL.t.champ != wasChamp)) {
-                fprintf(stderr, "bt3: lobby: tournament %u: %s, %d entrants, bracket of %d%s%s\n", (unsigned)sL.t.gen,
+                lobby_debug("[lobby] tournament %u: %s, %d entrants, bracket of %d%s%s\n", (unsigned)sL.t.gen,
                         sL.t.state == 1 ? "on" : sL.t.state == 2 ? "over" : "called off", sL.t.count, sL.t.size,
                         sL.t.champ >= 0 ? ", champion " : "", sL.t.champ >= 0 ? sL.t.name[sL.t.champ] : "");
             }
@@ -1954,7 +1954,7 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
         }
         sL.goGen = gen;
         sL.inGen = gen;
-        fprintf(stderr, "bt3: lobby: match %u: %s\n", (unsigned)gen, role == 1 ? "hosting it (player 1)" : role == 2 ? "joining it (player 2)" : "watching it");
+        lobby_debug("[lobby] match %u: %s\n", (unsigned)gen, role == 1 ? "hosting it (player 1)" : role == 2 ? "joining it (player 2)" : "watching it");
         NetIo_Go(role, &t, &alt, &kn, &kn2, get(pkt, 4), (int)get(pkt, 5), (int)get(pkt, 6));
         alive_send();
     } else if (type == T_L_BACK && n >= 12 + NOTE) {
@@ -2002,7 +2002,7 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
             memcpy(sL.chat[sL.chatCount].text, pkt + 16 + NAMEB, len);
             sL.chat[sL.chatCount].text[len] = '\0';
             name_clean(sL.chat[sL.chatCount].text, TEXT + 1);
-            fprintf(stderr, "bt3: lobby: chat: %s: %s\n", sL.chat[sL.chatCount].name, sL.chat[sL.chatCount].text);
+            lobby_debug("[lobby] chat: %s: %s\n", sL.chat[sL.chatCount].name, sL.chat[sL.chatCount].text);
             log_push(sL.chat[sL.chatCount].name, sL.chat[sL.chatCount].text);
             sL.chatCount++;
         }
@@ -2108,10 +2108,10 @@ static void result_watch(uint32_t gen) {
     } else if (now - sL.resCandNs > 300000000ull) {
         if (sL.on == 2 && res != RES_NO_WINNER && getenv("BT3_TEST_RESULT_LIE") != NULL) {
             res = res == RES_SIDE0 ? RES_SIDE1 : RES_SIDE0; /* (tests: this member reports the other winner) */
-            fprintf(stderr, "bt3: lobby: test: the result reported is the other one\n");
+            lobby_debug("[lobby] test: the result reported is the other one\n");
         }
         sL.res = res;
-        fprintf(stderr, "bt3: lobby: match %u: the battle ended: %s\n", (unsigned)gen,
+        lobby_debug("[lobby] match %u: the battle ended: %s\n", (unsigned)gen,
                 res == RES_SIDE0 ? "player 1 won" : res == RES_SIDE1 ? "player 2 won" : "no winner");
         if (sL.on == 2) {
             alive_send(); /* (the owner hears it at once) */
@@ -2132,13 +2132,13 @@ static void timers(void) {
             Match_Poll(&st);
             if (st.code[0] != '\0' && strcmp(st.code, sL.code) != 0) {
                 SDL_strlcpy(sL.code, st.code, sizeof(sL.code));
-                fprintf(stderr, "bt3: lobby: code '%s'\n", sL.code);
+                lobby_debug("[lobby] code '%s'\n", sL.code);
                 sL.state = 2;
                 sL.dirty = 1;
             }
             if (st.state == -1 && sL.state == 1) {
                 SDL_strlcpy(sL.error, st.error, sizeof(sL.error));
-                fprintf(stderr, "bt3: lobby: %s\n", st.error);
+                lobby_debug("[lobby] %s\n", st.error);
                 lobby_off();
                 return;
             }
@@ -2196,7 +2196,7 @@ static void timers(void) {
                         sL.pend[j].ip = 0; /* (it has come, or it is long gone) */
                     } else if (now - sL.pend[j].since > 8 * SEC && !sL.relayAsked && !Relay_Active()) {
                         sL.relayAsked = 1;
-                        fprintf(stderr, "bt3: lobby: a member has not reached this side in eight seconds: a relay address is asked for\n");
+                        lobby_debug("[lobby] a member has not reached this side in eight seconds: a relay address is asked for\n");
                         Match_RelayAsk();
                     }
                 }
@@ -2221,7 +2221,7 @@ static void timers(void) {
                             Relay_Permit(NetIo_Sock(), &a);
                         }
                     }
-                    fprintf(stderr, "bt3: lobby: the relay address is there: members who cannot reach this side directly come through it\n");
+                    lobby_debug("[lobby] the relay address is there: members who cannot reach this side directly come through it\n");
                 }
             }
         }
@@ -2352,7 +2352,7 @@ static void do_cmd(const Cmd *c) {
         sL.error[0] = '\0';
         if (sL.on == 1) {
             sL.closing = 1;
-            fprintf(stderr, "bt3: lobby: the owner closes the lobby\n");
+            lobby_debug("[lobby] the owner closes the lobby\n");
             for (r = 0; r < 3; r++) {
                 for (k = 1; k < LOBBY_SLOTS; k++) {
                     if (sL.m[k].on) {
@@ -2364,7 +2364,7 @@ static void do_cmd(const Cmd *c) {
             uint32_t p[3] = {MAGIC, T_L_LEAVE, sL.myId};
             sL.leaving = 1;
             tok_forget("left on purpose");
-            fprintf(stderr, "bt3: lobby: leaving the lobby\n");
+            lobby_debug("[lobby] leaving the lobby\n");
             for (r = 0; r < 3; r++) {
                 send_to(p, sizeof(p), &sL.owner);
             }
@@ -2424,7 +2424,7 @@ static void owner_start(int byCode, int port, const char *r) {
         Relay_Close(-1);
         Match_Begin(5, NetIo_Sock(), local, "", NetIo_MyName(), NetIo_Version());
     }
-    fprintf(stderr, "bt3: lobby: made%s, on port %d\n", byCode ? " (a room code is asked for)" : "", local);
+    lobby_debug("[lobby] made%s, on port %d\n", byCode ? " (a room code is asked for)" : "", local);
     log_table();
     view_update(1);
 }
@@ -2503,7 +2503,7 @@ static void join_found(const char addrs[][64], int count, const char *code, cons
     SDL_strlcpy(sL.self, self != NULL ? self : "", sizeof(sL.self));
     SDL_strlcpy(sJoinCode, code, sizeof(sJoinCode));
     member_start();
-    fprintf(stderr, "bt3: lobby: the code is a lobby's: joining it (the owner at");
+    lobby_debug("[lobby] the code is a lobby's: joining it (the owner at");
     for (i = 0; i < sL.candCount; i++) {
         char text[32];
         if (inet_ntop(AF_INET, &sL.cand[i].sin_addr, text, sizeof(text)) != NULL) {
@@ -2539,7 +2539,7 @@ static void join_address_found(const struct sockaddr_in *owner) {
     sL.self[0] = '\0';
     sJoinCode[0] = '\0';
     member_start();
-    fprintf(stderr, "bt3: lobby: the address is a lobby's: joining it\n");
+    lobby_debug("[lobby] the address is a lobby's: joining it\n");
 }
 
 void Lobby_JoinAddress(const struct sockaddr_in *owner) {
@@ -2641,7 +2641,7 @@ static void script(void) {
         } else if (strncmp(c, "leave", 5) == 0) {
             Port_LobbyDo(LOBBY_LEAVE, 0, 0);
         } else if (strncmp(c, "quit", 4) == 0) { /* the program ends as when its window is closed (atexit) */
-            fprintf(stderr, "bt3: lobby: test: quit\n");
+            lobby_debug("[lobby] test: quit\n");
             exit(0);
         } else if (sscanf(c, "kick %d", &a) == 1) {
             Port_LobbyDo(LOBBY_KICK, a, 0);
@@ -2686,7 +2686,7 @@ static void script(void) {
         if (!done) {
             return;
         }
-        fprintf(stderr, "bt3: lobby: test: %s\n", c);
+        lobby_debug("[lobby] test: %s\n", c);
     }
     at = end != NULL ? end + 1 : NULL;
     since = now;
@@ -2714,7 +2714,7 @@ static int online_ok(void) {
     memset(&sL, 0, sizeof(sL));
     SDL_strlcpy(sL.error, off, sizeof(sL.error));
     sL.state = 3;
-    fprintf(stderr, "bt3: lobby: %s\n", off);
+    lobby_debug("[lobby] %s\n", off);
     view_update(1);
     return 0;
 }
@@ -2735,7 +2735,7 @@ static void queue_run(void) {
         SDL_UnlockSpinlock(&sLock);
         if (!said) {
             said = 1;
-            fprintf(stderr, "bt3: lobby: this game's gameplay data are still being checked: the lobby begins when its fingerprint is known\n");
+            lobby_debug("[lobby] this game's gameplay data are still being checked: the lobby begins when its fingerprint is known\n");
         }
         return;
     }
