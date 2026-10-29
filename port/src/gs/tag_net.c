@@ -21,6 +21,9 @@ typedef SOCKET tn_socket;
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
+#ifdef __ANDROID__
+#include <dlfcn.h>
+#endif
 typedef int tn_socket;
 #define TN_BAD (-1)
 #define closesocket close
@@ -364,6 +367,11 @@ static uint64_t build_identity(void) {
     char path[1200];unsigned char buf[65536];FILE *f;size_t n,i;uint64_t h=14695981039346656037ull;
 #ifdef _WIN32
     GetModuleFileNameA(NULL,path,sizeof(path));
+#elif defined(__ANDROID__)
+    /* Android: /proc/self/exe is the system's app_process (it differs between phones), the game is libbt3.so. */
+    Dl_info info;
+    if(!dladdr((void *)build_identity,&info) || !info.dli_fname)return 0;
+    snprintf(path,sizeof(path),"%s",info.dli_fname);
 #else
     int len=(int)readlink("/proc/self/exe",path,sizeof(path)-1);if(len<0)return 0;path[len]=0;
 #endif
@@ -635,11 +643,18 @@ static void handle(Peer *p,int type,const unsigned char *data,unsigned n) {
     if(!p->hello && type!=TN_HELLO && !(!host && type==TN_REJECT))return;
     if(type==TN_HELLO) {
         if(p->hello)return;
-        if(n!=36 || get32(data)!=MAGIC || get32(data+4)!=PROTOCOL || get32(data+8)!=(unsigned)config.disc || get32(data+32)!=(unsigned)TagNet_IsParty() ||
-           get32(data+12)!=(uint32_t)(identity>>32) || get32(data+16)!=(uint32_t)identity ||
-           get32(data+24)!=(uint32_t)(dataIdentity>>32) || get32(data+28)!=(uint32_t)dataIdentity) {
-            const char *s="The game build or disc does not match the host.";send_packet(p,TN_REJECT,s,(unsigned)strlen(s)+1);return;
+        if(n!=36 || get32(data)!=MAGIC || get32(data+4)!=PROTOCOL || get32(data+8)!=(unsigned)config.disc || get32(data+32)!=(unsigned)TagNet_IsParty()) {
+            const char *s="The game build or disc does not match the host.";
+            if(n==36)fprintf(stderr,"tagnet: refused a game: protocol %u/%u, disc %u/%u, party %u/%d, build %08x%08x/%016llx, data %08x%08x/%016llx\n",
+                get32(data+4),PROTOCOL,get32(data+8),(unsigned)config.disc,get32(data+32),TagNet_IsParty(),get32(data+12),get32(data+16),
+                (unsigned long long)identity,get32(data+24),get32(data+28),(unsigned long long)dataIdentity);
+            else fprintf(stderr,"tagnet: refused a game: hello of %u bytes\n",n);
+            send_packet(p,TN_REJECT,s,(unsigned)strlen(s)+1);return;
         }
+        if(get32(data+12)!=(uint32_t)(identity>>32) || get32(data+16)!=(uint32_t)identity)
+            fprintf(stderr,"tagnet: a game of another build (%08x%08x, this one %016llx) is let in\n",get32(data+12),get32(data+16),(unsigned long long)identity);
+        if(get32(data+24)!=(uint32_t)(dataIdentity>>32) || get32(data+28)!=(uint32_t)dataIdentity)
+            fprintf(stderr,"tagnet: a game with other game data (%08x%08x, this one %016llx) is let in\n",get32(data+24),get32(data+28),(unsigned long long)dataIdentity);
         if(host) {
             int r=(int)get32(data+20);
             if(config.party && (phase==2 || phase==4)) {
@@ -1000,7 +1015,7 @@ int TagNet_Room(void) {
         WSADATA w;WSAStartup(MAKEWORD(2,2),&w);
 #endif
         for(i=0;i<PEERS;i++){peers[i].fd=TN_BAD;peers[i].ping=-1;}
-        identity=build_identity();roomInitialized=1;phase=1;
+        identity=build_identity();roomInitialized=1;phase=1;fprintf(stderr,"tagnet: this build %016llx\n",(unsigned long long)identity);
         { extern unsigned long long TagNet_DataIdentity(void);
           say("Checking game compatibility...");publish();TagOnlineMenu_Frame();
           dataIdentity=TagNet_DataIdentity();
