@@ -16,6 +16,7 @@
 #include "../../third_party/xxhash/xxhash.h"
 extern const char *Port_FileRoot(void);
 extern int Port_DataFingerprint(unsigned long long *);
+extern int Port_DataFingerprintNeed(void);
 extern void Gs_HoldFrame(void);
 
 typedef struct FileHash {
@@ -51,7 +52,11 @@ unsigned long long TagNet_DataIdentity(void) {
     unsigned char *buffer;Uint64 began=SDL_GetTicks();
     if(!PortGame_IsBT4()) {
         unsigned long long h=0;
-        while(Port_DataFingerprint(&h)!=1 && SDL_GetTicks()-began<120000){Gs_HoldFrame();SDL_Delay(10);}
+        /* The game data's fingerprint (plat_fprint.c): where this run's data check has not computed it (Android
+           starts none), it is started here, on its own thread; waited for while it runs (a few seconds), not for
+           two minutes on one that never began. */
+        Port_DataFingerprintNeed();
+        while(Port_DataFingerprint(&h)==0 && SDL_GetTicks()-began<120000){Gs_HoldFrame();SDL_Delay(10);}
         return h;
     }
     for(part=0;part<4;part++){count[part]=PortGame_VolumeCount(part);TOTAL+=count[part];}

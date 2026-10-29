@@ -27,6 +27,8 @@ typedef int tn_socket;
 #endif
 #include "../../include/plat_game.h"
 #include "../../include/env_cache.h"
+#include "tag_link.h"
+#include "../../include/tag_text.h"
 
 extern void Gs_HoldFrame(void);
 extern int Port_RollCan(void),Port_RollSave(void),Port_PadRead(int,unsigned char *);
@@ -265,7 +267,12 @@ void TagNet_TestCheck(int passed,int id) {
 int TagNet_Resim(void) { return resim || (lateJoining && TagNet_IsPractice() && !local_produces(frame) && frame+60<replayTarget); }
 int TagNet_Stopped(void) { return TagNet_Enabled() && phase==5; }
 static void say(const char *s) { snprintf(message,sizeof(message),"%s",s);fprintf(stderr,"tagnet: %s\n",s); }
-static void close_peer(Peer *p) { if(p->fd!=TN_BAD)closesocket(p->fd);memset(p,0,sizeof(*p));p->fd=TN_BAD;p->ping=-1; }
+/* A peer's socket is a TCP one (a room on the same network) or, with TN_LINK set, a connection of an online room
+   (tag_link.c: its slot in the low bits). */
+#define TN_LINK 0x40000000
+#define IS_LINK(fd) ((fd)!=TN_BAD && ((int)(fd)&TN_LINK))
+#define LINK_SLOT(fd) ((int)(fd)&0xFFFF)
+static void close_peer(Peer *p) { if(IS_LINK(p->fd))TagLink_Close(LINK_SLOT(p->fd));else if(p->fd!=TN_BAD)closesocket(p->fd);memset(p,0,sizeof(*p));p->fd=TN_BAD;p->ping=-1; }
 static int blocked(void) {
 #ifdef _WIN32
     return WSAGetLastError()==WSAEWOULDBLOCK || WSAGetLastError()==WSAEINPROGRESS;
@@ -390,7 +397,28 @@ static int valid(const TagNetConfig *c) {
     for(i=0;i<TN_PLAYERS;i++)if(owners[i]>1)return 0;
     return 1;
 }
-static void failed(const char *s) { if(phase==5)return;say(s);phase=5;go=0;resim=0;gPortResim=0;Port_UiNotice(s); }
+/* Why valid() refuses (for the log): the first check that fails, "" none. */
+static const char *invalid_why(const TagNetConfig *c) {
+    static char why[96];int i,n;
+    if(c->disc!=PortGame_IsBT4())return "disc";
+    if(c->revision<=0)return "revision";
+    if(c->size[0]<1 || c->size[0]>5 || c->size[1]<1 || c->size[1]>5)return "team sizes";
+    if(c->stage<0 || c->stage>=PortGame_StageCount() || c->stage==35)return "stage";
+    if(c->music<0 || c->music>24 || c->time<0 || c->time>5 || c->cpu<0 || c->cpu>4)return "music, time or cpu";
+    if(c->party<0 || c->party>1 || c->practice<0 || c->practice>1 || c->mode<0 || c->mode>TL_TOURNAMENT || c->preset<0 || c->preset>127 || c->heal<0 || c->heal>4)return "mode";
+    if(c->party)for(i=0;i<TL_MEMBERS;i++) {
+        const TlMember *m=&c->lobby.members[i];
+        if(m->present<0 || m->present>1 || !PortGame_IsCharacter(m->loadout.chara) || m->loadout.costume<0 || m->loadout.costume>=PortGame_Costumes(m->loadout.chara)){
+            snprintf(why,sizeof(why),"lobby member %d's fighter %d costume %d",i,m->loadout.chara,m->loadout.costume);return why;}
+    }
+    n=c->size[0]+c->size[1];
+    for(i=0;i<n;i++)if(!PortGame_IsCharacter(c->chara[i]) || c->costume[i]<0 || c->costume[i]>=PortGame_Costumes(c->chara[i])){
+        snprintf(why,sizeof(why),"fighter %d: %d costume %d",i,c->chara[i],c->costume[i]);return why;}
+    for(i=0;i<TN_OPTIONS;i++)if(c->options[i]<tagOptionInfo[i].min || c->options[i]>tagOptionInfo[i].max){
+        snprintf(why,sizeof(why),"option %s = %d (%d..%d)",tagOptionInfo[i].key,c->options[i],tagOptionInfo[i].min,tagOptionInfo[i].max);return why;}
+    return valid(c)?"":"owners or items";
+}
+static void failed(const char *s) { if(phase==5)return;say(s);phase=5;go=0;resim=0;gPortResim=0;Port_UiNotice(Port_TagText(s)); }
 static void desync(unsigned at,Peer *p) {
     fprintf(stderr,"tagnet: divergence at %u with player %d: local %016llx, remote %016llx\n",at,p->role+1,(unsigned long long)digest[at%RING],(unsigned long long)p->hash[at%RING]);
     failed("The games went out of sync. Match stopped.");
@@ -753,15 +781,39 @@ static void pump(void) {
         for(i=0;i<PEERS;i++)if(peers[i].hello && peers[i].role<TN_PLAYERS)rosterPing[peers[i].role]=peers[i].ping;
         put32(b,mask);for(i=0;i<TN_PLAYERS;i++)put32(b+4+4*i,rosterPing[i]);broadcast(TN_ROSTER,b,sizeof(b),NULL);
     }
+    TagLink_Pump();
     if(listener!=TN_BAD) {
         tn_socket fd=accept(listener,NULL,NULL);
         if(fd!=TN_BAD){for(i=0;i<PEERS;i++)if(peers[i].fd==TN_BAD)break;
             if(i==PEERS)closesocket(fd);else {nonblock(fd);peers[i].fd=fd;peers[i].last=SDL_GetTicks();}}
     }
+    if(host && TagLink_Active()) { /* a player of the online room */
+        int slot=TagLink_Accept();
+        if(slot>=0){for(i=0;i<PEERS;i++)if(peers[i].fd==TN_BAD)break;
+            if(i==PEERS)TagLink_Close(slot);else {memset(&peers[i],0,sizeof(peers[i]));peers[i].ping=-1;peers[i].fd=(tn_socket)(TN_LINK|slot);peers[i].last=SDL_GetTicks();}}
+    }
     for(i=0;i<PEERS;i++) {
         Peer *p=&peers[i];int n;
         if(p->fd==TN_BAD)continue;
         stream_history(p);
+        if(IS_LINK(p->fd)) { /* an online room's connection: as the socket below, through tag_link.c */
+            int slot=LINK_SLOT(p->fd),state=TagLink_State(slot);
+            if(p->connecting) {
+                if(state==TK_LINK_CLOSED || SDL_GetTicks()-p->last>30000){
+                    char why[160],code[16];TagLink_Status(why,sizeof(why),code,sizeof(code));
+                    failed(state==TK_LINK_CLOSED && why[0]?why:"Could not reach the room's owner. Ask them to try again, or play on the same network.");close_peer(p);continue;}
+                if(state!=TK_LINK_OPEN)continue;
+                p->connecting=0;p->last=SDL_GetTicks();
+            }
+            if(p->off<p->tn) {
+                n=TagLink_Send(slot,p->tx+p->off,(int)(p->tn-p->off));
+                if(n>0)p->off+=(unsigned)n;else if(n<0){peer_lost(p,"Connection lost. The match has stopped.");continue;}
+                if(p->off==p->tn)p->off=p->tn=0;
+            }
+            n=TagLink_Recv(slot,p->rx+p->rn,(int)(sizeof(p->rx)-p->rn));
+            if(n<0){peer_lost(p,"Connection lost. The match has stopped.");continue;}
+            if(n>0){p->rn+=(unsigned)n;p->last=SDL_GetTicks();}
+        } else {
         if(p->connecting) {
             fd_set writeSet,errorSet;struct timeval wait={0,0};int error=0;
 #ifdef _WIN32
@@ -791,6 +843,7 @@ static void pump(void) {
             peer_lost(p,"Connection lost. The match has stopped.");continue;
         }
         if(n>0){p->rn+=(unsigned)n;p->last=SDL_GetTicks();}
+        }
         while(p->rn>=8 && p->fd!=TN_BAD) {
             unsigned size=get32(p->rx);if(size<8 || size>MAX_PACKET){
                 if(p->hello && (!host||p->role<TN_PLAYERS))failed("Invalid network message. Match stopped.");
@@ -811,11 +864,17 @@ static void pump(void) {
         if(state!=lastPeerState){lastPeerState=state;put32(data,n);put32(data+4,mask);broadcast(TN_PEERS,data,8,NULL);}
     }
 }
+/* A room's code (six digits) rather than an address. */
+static int online_code(const char *a) {
+    int i;for(i=0;a[i];i++)if(a[i]<'0'||a[i]>'9')return 0;
+    return i==6;
+}
 static void begin_socket(int r,const char *address,int port) {
     struct sockaddr_in addr;tn_socket fd;int i,on=1;
     if(r<0 || r>2 || port<1024 || port>65535)return;
     for(i=0;i<PEERS;i++)close_peer(&peers[i]);
     if(listener!=TN_BAD){closesocket(listener);listener=TN_BAD;}
+    TagLink_Stop();
     memset(&addr,0,sizeof(addr));addr.sin_family=AF_INET;addr.sin_port=htons((unsigned short)port);
     fd=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);if(fd==TN_BAD){say("Could not create the room connection.");return;}
     host=r==0;role=host?0:TN_OBSERVER;memset(ready,0,sizeof(ready));phase=2;lastPeerState=-1;roomSpectators=roomMask=0;
@@ -833,10 +892,20 @@ static void begin_socket(int r,const char *address,int port) {
         setsockopt(fd,SOL_SOCKET,SO_REUSEADDR,(const char *)&on,sizeof(on));
         if(bind(fd,(struct sockaddr *)&addr,sizeof(addr)) || listen(fd,32)){closesocket(fd);phase=1;say("Could not open that port. Try a different port.");return;}
         listener=fd;nonblock(fd);say("Room open. Invite players or spectators.");
+        { extern const char *Port_NetNameGet(void); TagLink_Host(Port_NetNameGet(),PROTOCOL); } /* (and over the internet: a code) */
         if(getenv("BT3_TAG_TEST_HOST_SPECTATOR"))TagNet_SwitchRole(0,-1);
     } else {
         /* Numeric addresses keep connection setup bounded; DNS/UI can be
            added separately without blocking the simulation thread. */
+        if(online_code(address)) { /* a room's code: the online room (tag_link.c) */
+            extern const char *Port_NetNameGet(void);
+            int slot;closesocket(fd);
+            slot=TagLink_Join(address,Port_NetNameGet(),PROTOCOL,r==2);
+            if(slot<0){phase=1;say("Could not start the online connection.");return;}
+            peers[0].fd=(tn_socket)(TN_LINK|slot);peers[0].last=SDL_GetTicks();peers[0].connecting=1;
+            {unsigned char h[36];put32(h,MAGIC);put32(h+4,PROTOCOL);put32(h+8,config.disc);put32(h+12,(unsigned)(identity>>32));put32(h+16,(unsigned)identity);put32(h+20,r);put32(h+24,(unsigned)(dataIdentity>>32));put32(h+28,(unsigned)dataIdentity);put32(h+32,TagNet_IsParty());send_packet(&peers[0],TN_HELLO,h,36);}
+            say("Joining the online room...");return;
+        }
         if(inet_pton(AF_INET,address,&addr.sin_addr)!=1){closesocket(fd);phase=1;say("Enter the host's IPv4 address.");return;}
         nonblock(fd);
         i=connect(fd,(struct sockaddr *)&addr,sizeof(addr));
@@ -869,6 +938,7 @@ static void commands(void) {
             if(phase==2){broadcast(TN_LEAVE,NULL,0,NULL);pump();}
             int i;for(i=0;i<PEERS;i++)close_peer(&peers[i]);
             if(listener!=TN_BAD){closesocket(listener);listener=TN_BAD;}
+            TagLink_Stop();
             phase=1;role=-1;host=0;say("");
         } else {broadcast(TN_LEAVE,NULL,0,NULL);pump();failed("You left the room.");}
     }
@@ -939,7 +1009,7 @@ int TagNet_Room(void) {
         config.stage=2;config.music=0;config.time=3;config.cpu=2;config.size[0]=config.size[1]=3;
         for(i=0;i<10;i++){config.chara[i]=i%2?31:3;config.owner[i]=-1;config.cpuLevel[i]=-1;}
         config.owner[0]=0;
-        for(i=0;i<TN_OPTIONS;i++)config.options[i]=Port_TagOption(i);
+        for(i=0;i<TN_OPTIONS;i++)config.options[i]=SDL_clamp(Port_TagOption(i),tagOptionInfo[i].min,tagOptionInfo[i].max);
         if(getenv("BT3_TAG_TEST_SIZE")) {
             int a=3,b=3;sscanf(getenv("BT3_TAG_TEST_SIZE"),"%d,%d",&a,&b);
             if(a>=1&&a<=5&&b>=1&&b<=5){config.size[0]=a;config.size[1]=b;for(i=0;i<10;i++)config.owner[i]=-1;config.owner[0]=0;}
@@ -987,6 +1057,20 @@ int TagNet_Room(void) {
         if((getenv("BT3_TAG_AUTO_READY") || (config.party && config.practice)) && phase==2 && role>=0 && role<TN_PLAYERS && (host || peers[0].hello) && !ready[role])TagNet_Ready(1);
         if(config.party && !config.practice && !tournament.active && getenv("BT3_TAG_PARTY_FLOW") && phase==2 && role>0 && role<TN_PLAYERS && !(player_mask()&(1u<<role)))TagNet_SwitchRole(1,-1);
         if(host && config.party && tournament.active==2 && getenv("BT3_TAG_PARTY_FLOW"))TagNet_ReturnPractice();
+        if(host && phase==2 && config.party && config.practice && !all_ready()) { /* (the lobby waits for everyone ready: who is not, in the log, every 5 s) */
+            static Uint64 told;
+            if(SDL_GetTicks()-told>5000){int k;told=SDL_GetTicks();fprintf(stderr,"tagnet: lobby not ready: players %x, ready",player_mask());
+                for(k=0;k<TN_PLAYERS;k++)if(player_mask()&(1u<<k))fprintf(stderr," %d:%d",k,ready[k]);fprintf(stderr,", role %d\n",role);}
+        }
+        if(host && phase==2 && config.party && config.practice && !all_ready()) { /* (the lobby waits for everyone ready: who is not, in the log, every 5 s) */
+            static Uint64 told;
+            if(SDL_GetTicks()-told>5000){int k;told=SDL_GetTicks();fprintf(stderr,"tagnet: lobby not ready: players %x, ready",player_mask());
+                for(k=0;k<TN_PLAYERS;k++)if(player_mask()&(1u<<k))fprintf(stderr," %d:%d",k,ready[k]);fprintf(stderr,", role %d\n",role);}
+        }
+        if(host && phase==2 && all_ready() && !valid(&config)) {
+            static char said[96];const char *why=invalid_why(&config);
+            if(strcmp(why,said)){snprintf(said,sizeof(said),"%s",why);fprintf(stderr,"tagnet: everyone is ready, but the room is not valid: %s\n",why);}
+        }
         if(host && phase==2 && all_ready() && valid(&config)) {
             if(config.party && !config.practice && config.mode==TL_TOURNAMENT && !tournament.active){begin_tournament();continue;}
             if(getenv("BT3_TAG_TEST_HIGH_FUSION") && popcount(player_mask())==10 && config.owner[0]==0) {
@@ -1008,6 +1092,7 @@ int TagNet_Room(void) {
         broadcast(TN_LEAVE,NULL,0,NULL);pump();
         for(i=0;i<PEERS;i++)close_peer(&peers[i]);
         if(listener!=TN_BAD){closesocket(listener);listener=TN_BAD;}
+        TagLink_Stop();
         phase=1;role=-1;host=0;roomMask=roomSpectators=0;
         memset(ready,0,sizeof(ready));pendingLeave=pendingStart=pendingEdit=0;
         pendingReady=pendingSwitch=-1;publish();TagNet_Enable(0);TagOnline_SaveScope(0);
@@ -1302,4 +1387,14 @@ int TagNet_FreeCamera(float *p,float *r) {
      pos[0]+=(x*cosf(rot[1])+z*sinf(rot[1]))*2;pos[2]+=(z*cosf(rot[1])-x*sinf(rot[1]))*2;
      if(!(pad[1]&4))pos[1]-=2;if(!(pad[1]&8))pos[1]+=2;}
     memcpy(p,pos,16);memcpy(r,rot,16);return 1;
+}
+
+/* The online room for the screens: its code ("" none yet) and what it is doing. */
+void TagNet_OnlineInfo(unsigned codeOut,unsigned lineOut,int size) {
+    char *code=(char *)(uintptr_t)codeOut,*line=(char *)(uintptr_t)lineOut;
+    TagLink_Status(line,size,code,size);
+    if(!TagLink_Active())code[0]=0;
+    { static char shown[200]; char now[200]; /* (in the log when it changes: what the screens were given) */
+      snprintf(now,sizeof(now),"code \"%s\", line \"%s\"",code,line);
+      if(strcmp(now,shown)){snprintf(shown,sizeof(shown),"%s",now);fprintf(stderr,"tagnet: online info for the screens: %s\n",now);} }
 }

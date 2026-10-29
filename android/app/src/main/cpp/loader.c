@@ -814,6 +814,19 @@ JNIEXPORT void JNICALL Java_com_dfdx047_dragonrage_engine_TouchBridge_nativeSetP
     }
 }
 
+/* A tap between the controls, in window pixels: the Tag Team menus press what is under it (gs_input.c). */
+JNIEXPORT void JNICALL Java_com_dfdx047_dragonrage_engine_TouchBridge_nativeTap(JNIEnv *env, jclass cls, jint x, jint y) {
+    static void (*fn)(int, int);
+    (void)env;
+    (void)cls;
+    if (fn == NULL && sEngine != NULL) {
+        fn = (void (*)(int, int))dlsym(sEngine, "Port_TouchTap");
+    }
+    if (fn != NULL) {
+        fn(x, y);
+    }
+}
+
 JNIEXPORT jboolean JNICALL Java_com_dfdx047_dragonrage_engine_TouchBridge_nativeMenuOpen(JNIEnv *env, jclass cls) {
     static int (*fn)(void);
     (void)env;

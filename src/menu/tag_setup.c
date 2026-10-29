@@ -7,6 +7,7 @@
 #include "battle/tag_options.h"
 #include "sys/pad.h"
 #include "menu/tbo_art.h"
+#include "menu/tag_kit.h"
 
 /* This is a page of the original animated main menu. The roster is spatial:
    left and right are teams, each card is one fighter. No scrolling slot IDs. */
@@ -61,116 +62,129 @@ static s32 controllers_ready(void) {
     return Port_TagControllersReady(TagSession_Players()) &&
         (checkedThisSetup || Port_TagOption(TAG_OPT_KEEP_CHECKINS));
 }
-static void plate(f32 x,f32 y,f32 w,f32 h,s32 selected,s32 red) {
-    u32 edge=Ps_Rgba(69,30,92,128);
-    u32 top=Ps_Rgba(red?225:165,red?177:223,red?220:246,118);
-    u32 bottom=Ps_Rgba(red?166:83,red?101:166,red?186:213,118);
-    if(selected) {
-        edge=Ps_Rgba(255,214,57,128);
-        top=Ps_Rgba(255,246,176,128); bottom=Ps_Rgba(247,183,70,128);
-    }
-    { u32 shade=Ps_Rgba(0,0,12,52); /* a soft shadow under the plate: it stands off the window */
-      Ps_Quad(x+10,y+3,x+w+3,y+3,x+3,y+h+3,x+w-4,y+h+3,shade,shade,shade,shade); }
-    Ps_Quad(x+7,y,x+w,y,x,y+h,x+w-7,y+h,edge,edge,edge,edge);
-    Ps_Quad(x+8,y+2,x+w-3,y+2,x+3,y+h-2,x+w-8,y+h-2,top,top,bottom,bottom);
+/* A card: a bar of the online screens' kit (gold under the cursor), its team's colour in a dot at its left end;
+   a place to tap (its id). */
+static void plate(f32 x,f32 y,f32 w,f32 h,s32 selected,s32 red,s32 id) {
+    Tk_Bar(x,y,x+w,y+h,selected);
+    if(red>=0) Ps_Disc(x+h*0.62f,y+h*0.5f,h*0.2f,red?Ps_Rgba(255,150,150,128):Ps_Rgba(150,210,255,128),
+        red?Ps_Rgba(200,40,50,128):Ps_Rgba(40,110,220,128));
+    if(id>=0) Tk_Region(x,y,x+w,y+h,TK_ROW,id);
+}
+/* While a card's value changes: the arrows at its right end, each half a place to tap. */
+static void arrows(f32 x,f32 y,f32 w,f32 h) {
+    Ps_Button(3,x+w-26,y+h*0.5f,h*0.72f);
+    Tk_Region(x+w-48,y-4,x+w-26,y+h+4,TK_PAD,PADG_LEFT);
+    Tk_Region(x+w-26,y-4,x+w,y+h+4,TK_PAD,PADG_RIGHT);
+}
+static void setup_title(char *title) {
+    char card[64];
+    Ps_Copy(card,"TEAM BATTLE",sizeof(card));
+    if(ffa()) Ps_Copy(card,"FREE FOR ALL",sizeof(card));
+    else if(TagSession_DraftMode()==TAG_MODE_TRAINING) Ps_Copy(card,"MODDED TRAINING",sizeof(card));
+    else if(TagSession_DraftMode()==TAG_MODE_GAUNTLET) Ps_Copy(card,"FIGHTER GAUNTLET",sizeof(card));
+    else if(TagSession_DraftMode()==TAG_MODE_TOURNAMENT) Ps_Copy(card,"TAG TEAM TOURNAMENT",sizeof(card));
+    Tk_Title(title,card);
 }
 void TagSetup_Draw(void) {
     s32 p,t,n[4]={0,0,0,0},players=TagSession_Players();
     f32 x,y;
-    char text[96],heading[64];
-    Ps_PageSet(); Ps_SetShift(0); Ps_Align(1);
+    char text[96];
+    Tk_Begin(); Tk_Backdrop(); Ps_Align(1);
     if(Port_TagControllersActive()) {
-        Ps_Heading(256,25,"CONTROLLER SETUP",1.55f,460,128);
-        Ps_Panel(TBO_KIT_WINDOW,18,126,494,141+TagSession_Players()*42,0x80);
-        Ps_Text(256,80,"Press START in player order, using your own controller.",0.8f,470,2);
-        Ps_Text(256,102,"SELECT leaves a seat. A controller can join only once.",0.7f,470,2);
+        setup_title("CONTROLLER SETUP");
+        Tk_Box(18,64,494,141+TagSession_Players()*42,0);
+        Ps_Text(256,80,"Press START in player order, using your own controller.",0.8f,450,2);
+        Ps_Text(256,102,"SELECT leaves a seat. A controller can join only once.",0.7f,450,0);
         for(p=0;p<TagSession_Players();p++) {
             char device[72];
             Port_TagControllersName(p,(u32)device,sizeof(device));
-            plate(30,139+p*42,452,37,0,p&1);
+            plate(30,135+p*42,452,36,0,p&1,-1);
             sprintf(text,"P%d",p+1);
-            Ps_Align(0); Ps_Text(44,143+p*42,text,1.0f,45,2);
-            Ps_Text(101,148+p*42,device,0.75f,365,2);
+            Ps_Align(0); Ps_Text(64,Ps_TextTop(153+p*42,0.95f),text,0.95f,45,2);
+            Ps_Text(110,Ps_TextTop(153+p*42,0.75f),device,0.75f,340,0);
         }
         Ps_Align(1);
-        Ps_Text(256,333,Port_TagControllersReady(TagSession_Players())?
-            "Everyone is ready. Player 1: press Cross to confirm.":
-            "Waiting for each player to join...",0.8f,470,2);
+        Tk_Talk(Tk_Left(),320,Tk_Left()+400,408,Port_TagControllersReady(TagSession_Players())?
 #ifdef __ANDROID__
-        Ps_Text(256,362,"Touch screen: START joins, SELECT leaves.",0.65f,475,0);
+            "Everyone is ready. Player 1: press Cross to confirm.":"Waiting for each player to join... Touch screen: START joins, SELECT leaves.",0.74f);
 #else
-        Ps_Text(256,362,"Keyboard players use their START binding. Edit bindings with F1.",0.65f,475,0);
+            "Everyone is ready. Player 1: press Cross to confirm.":"Waiting for each player to join... Keyboard players use their START binding.",0.74f);
 #endif
-        Ps_Align(0); Ps_PromptsClear();
-        if(Port_TagControllersReady(TagSession_Players())) Ps_Prompt(0,"Confirm");
-        Ps_Prompt(2,"Cancel"); Ps_PromptsDraw(); Ps_Align(1);
+        Tk_PromptsClear();
+        if(Port_TagControllersReady(TagSession_Players())) Tk_Prompt(0,"Confirm");
+        Tk_Prompt(2,"Cancel"); Tk_PromptsDraw();
         return;
     }
-    Ps_Heading(174,8,ffa()?"BATTLE LINEUP":"TEAM SETUP",2.1f,300,128);
-    Ps_Copy(heading,"TEAM BATTLE",sizeof(heading));
-    if(ffa()) Ps_Copy(heading,"FREE FOR ALL",sizeof(heading));
-    else if(TagSession_DraftMode()==TAG_MODE_TRAINING) Ps_Copy(heading,"MODDED TRAINING",sizeof(heading));
-    else if(TagSession_DraftMode()==TAG_MODE_GAUNTLET) Ps_Copy(heading,"FIGHTER GAUNTLET",sizeof(heading));
-    else if(TagSession_DraftMode()==TAG_MODE_TOURNAMENT) Ps_Copy(heading,"TAG TEAM TOURNAMENT",sizeof(heading));
-    Ps_Heading(391,14,heading,0.8f,224,128);
-    Ps_Panel(TBO_KIT_WINDOW,12,68,500,gauntlet()?416:404,0x80);
+    setup_title(ffa()?"BATTLE LINEUP":"TEAM SETUP");
+    Tk_Box(12,62,500,gauntlet()?416:404,0);
     /* the three steps, this one on gold */
-    Ps_Pill(TBO_KIT_STEEL,60,75,164,95,0x70);
-    Ps_Pill(TBO_KIT_GOLD,204,74,308,96,0x80);
-    Ps_Pill(TBO_KIT_STEEL,348,75,452,95,0x70);
-    Ps_Text(112,Ps_TextTop(85,0.62f),"PLAYERS",0.62f,92,0);
-    Ps_Text(184,Ps_TextTop(85,0.62f),">",0.62f,18,2);
-    Ps_Text(256,Ps_TextTop(85,0.66f),ffa()?"LINEUP":"TEAMS",0.66f,92,1);
-    Ps_Text(328,Ps_TextTop(85,0.62f),">",0.62f,18,2);
-    Ps_Text(400,Ps_TextTop(85,0.62f),"FIGHTERS",0.62f,92,0);
-    Ps_Text(256,101,"Choose your fighters on the next screen. End each team when ready.",0.65f,460,2);
+    Tk_Para(60,73,164,91,7,Ps_Rgba(60,80,150,110),Ps_Rgba(30,45,110,110));
+    Tk_Capsule(204,71,308,93,ffa()?"LINEUP":"TEAMS",0.66f);
+    Tk_Para(348,73,452,91,7,Ps_Rgba(60,80,150,110),Ps_Rgba(30,45,110,110));
+    Tk_Ball(72,82,8,1); Tk_Ball(222,82,9,2); Tk_Ball(360,82,8,3);
+    Ps_Text(120,Ps_TextTop(82,0.62f),"PLAYERS",0.62f,64,0);
+    Ps_Text(184,Ps_TextTop(82,0.62f),">",0.62f,18,2);
+    Ps_Text(328,Ps_TextTop(82,0.62f),">",0.62f,18,2);
+    Ps_Text(408,Ps_TextTop(82,0.62f),"FIGHTERS",0.62f,64,0);
+    Ps_Text(256,99,"Choose your fighters on the next screen. End each team when ready.",0.62f,460,0);
     if(tournament()) Ps_Text(256,119,"ENTER UP TO FOUR TEAMS - other entrants are CPU teams",0.75f,452,2);
-    else if(TagSession_DraftMode()==TAG_MODE_GAUNTLET) Ps_Heading(139,119,"YOUR TEAM",1.05f,195,128);
+    else if(TagSession_DraftMode()==TAG_MODE_GAUNTLET) Ps_Heading(139,117,"YOUR TEAM",1.0f,195,128);
     else if(!ffa()) {
-        Ps_Heading(139,119,"TEAM 1",1.05f,195,128);
-        Ps_Heading(373,119,"TEAM 2",1.05f,195,128);
+        Ps_Heading(139,117,"TEAM 1",1.0f,195,128);
+        Ps_Heading(373,117,"TEAM 2",1.0f,195,128);
     } else Ps_Text(256,119,"EVERY FIGHTER FOR THEMSELVES",0.85f,440,2);
     for(p=0;p<TagSession_Players();p++) {
         t=TagSession_PlayerTeam(p); x=tournament()?96:30+t*234; y=143+(tournament()?p:n[t])*31;n[t]++;
-        plate(x,y,tournament()?320:218,28,focus==p,t);
+        plate(x,y,tournament()?320:218,28,focus==p,ffa()?-1:t&1,p);
         if(tournament())sprintf(text,Port_TagText("Player %d  -  Team %d"),p+1,t+1);else sprintf(text,Port_TagText("Player %d"),p+1);
-        Ps_Align(0); Ps_Text(x+14,y+2,text,0.9f,172,focus==p?1:2);
-        if(focus==p && editing && !ffa()) Ps_Text(x+196,y+2,t?"<":">",0.9f,16,1);
+        Ps_Align(0); Ps_Text(x+(ffa()?20:32),Ps_TextTop(y+14,0.85f),text,0.85f,150,focus==p?1:0);
+        Ps_Align(1);
+        if(focus==p && editing && !ffa()) arrows(x,y,tournament()?320:218,28);
     }
     Ps_Align(1);
-    for(t=0;t<2;t++) if(n[t]==0 && !ffa() && !tournament() && TagSession_DraftMode()!=TAG_MODE_GAUNTLET) Ps_Text(139+t*234,160,"CPU team",0.85f,205,2);
+    for(t=0;t<2;t++) if(n[t]==0 && !ffa() && !tournament() && TagSession_DraftMode()!=TAG_MODE_GAUNTLET) Ps_Text(139+t*234,Ps_TextTop(157,0.85f),"CPU team",0.85f,205,3);
     if(!players) Ps_Text(256,211,"CPU ONLY - choose every fighter, then watch the battle.",0.8f,440,2);
     for(t=0;t<2;t++) {
         if(!visible(players+t))continue;
         x=30;
-        plate(x,rules_y(),452,29,focus==players+t,0);
-        sprintf(text,"%s%s: %s%s",editing&&focus==players+t?"< ":"",
-            Port_TagText(t?"Opponent CPU difficulty":gauntlet()?"Heal per Wave":"Duel Time"),Port_TagText(TagSession_RuleLabel(t)),editing&&focus==players+t?" >":"");
-        Ps_Text(256,rules_y()+3,text,0.8f,430,focus==players+t?1:2);
+        plate(x,rules_y(),452,29,focus==players+t,-1,players+t);
+        Ps_Copy(text,(char *)Port_TagText(t?"Opponent CPU difficulty":gauntlet()?"Heal per Wave":"Duel Time"),sizeof(text));
+        Ps_Cat(text,":  ",sizeof(text)); Ps_Cat(text,(char *)Port_TagText(TagSession_RuleLabel(t)),sizeof(text));
+        Ps_Text(250,Ps_TextTop(rules_y()+14.5f,0.8f),text,0.8f,380,focus==players+t?1:0);
+        if(editing&&focus==players+t) arrows(x,rules_y(),452,29);
     }
     if(gauntlet()) {
-        plate(30,300,452,27,focus==players+2,0);
-        sprintf(text,Port_TagText("%sMusic: %s%s"),editing&&focus==players+2?"< ":"",
-            TagSession_RuleLabel(2),editing&&focus==players+2?" >":"");
-        Ps_Text(256,301,text,0.75f,430,focus==players+2?1:2);
+        plate(30,300,452,27,focus==players+2,-1,players+2);
+        Ps_Copy(text,(char *)Port_TagText("Music"),sizeof(text));Ps_Cat(text,":  ",sizeof(text));Ps_Cat(text,(char *)TagSession_RuleLabel(2),sizeof(text));
+        Ps_Text(250,Ps_TextTop(313.5f,0.75f),text,0.75f,380,focus==players+2?1:0);
+        if(editing&&focus==players+2) arrows(30,300,452,27);
     }
     if(players) {
-        plate(30,controls_y(),452,27,focus==controls_card(),0);
-        Ps_Text(256,controls_y()+1,controllers_ready()?"Controller Setup - assignments ready":"Controller Setup - assign players",0.8f,430,2);
-    } else Ps_Text(256,controls_y()+2,"L3 changes who you follow. Start opens the pause menu.",0.7f,440,2);
-    plate(30,buttons_y(),114,gauntlet()?31:35,focus==controls_card()+2,0);
-    plate(154,buttons_y(),328,gauntlet()?31:35,focus==controls_card()+1,0);
-    Ps_Text(86,buttons_y()+4,"Back",0.95f,100,2);
-    Ps_Text(318,buttons_y()+4,"Choose Fighters",1.05f,290,focus==controls_card()+1?1:2);
+        plate(30,controls_y(),452,27,focus==controls_card(),-1,controls_card());
+        Ps_Text(256,Ps_TextTop(controls_y()+13.5f,0.78f),controllers_ready()?"Controller Setup - assignments ready":"Controller Setup - assign players",0.78f,420,focus==controls_card()?1:0);
+    } else Ps_Text(256,Ps_TextTop(controls_y()+13.5f,0.7f),"L3 changes who you follow. Start opens the pause menu.",0.7f,440,3);
+    plate(30,buttons_y(),114,gauntlet()?31:35,focus==controls_card()+2,-1,controls_card()+2);
+    plate(154,buttons_y(),328,gauntlet()?31:35,focus==controls_card()+1,-1,controls_card()+1);
+    y=buttons_y()+(gauntlet()?15.5f:17.5f);
+    Ps_Text(87,Ps_TextTop(y,0.92f),"Back",0.92f,90,focus==controls_card()+2?1:0);
+    Ps_Text(318,Ps_TextTop(y,1.02f),"Choose Fighters",1.02f,290,focus==controls_card()+1?1:2);
     Ps_Text(256,gauntlet()?396:383,editing?"Left / Right changes the value. Cross saves. Triangle cancels.":
-        "Directions move between cards. Cross selects. Start continues.",0.6f,455,4);
-    Ps_Align(0); Ps_PromptsClear();
-    Ps_Prompt(0,editing?"Confirm":"Select"); Ps_Prompt(7,"Continue"); Ps_Prompt(2,editing?"Cancel":"Back"); Ps_PromptsDraw(); Ps_Align(1);
+        "Tap a card or use the directions. Cross selects. Start continues.",0.6f,455,3);
+    Tk_PromptsClear();
+    Tk_Prompt(0,editing?"Confirm":"Select"); Tk_Prompt(7,"Continue"); Tk_Prompt(2,editing?"Cancel":"Back"); Tk_PromptsDraw();
 }
 s32 TagSetup_Input(void) {
     extern void Port_TagMenuTrace(s32,s32,s32,s32,s32,s32);
     s32 old=focus,players=TagSession_Players();
     u32 pressed=gPad[0].gamePressed,nav=gPad[0].gameRepeat,raw=gPad[0].repeat;
+    { /* a tap (menu/tag_kit.h): a card is chosen and pressed; while a value changes, anywhere else saves it */
+        s32 kind,value;
+        if(Tk_Tap(&kind,&value)) {
+            if(kind==TK_PAD) {pressed|=value;nav|=value;}
+            else if(editing) pressed|=PADG_CROSS;
+            else if(!Port_TagControllersActive()) {if(value!=focus)Snd_PlaySe(1,0);focus=value;old=focus;pressed|=PADG_CROSS;}
+        }
+    }
     if(Port_TagControllersActive()) {
         Port_TagControllersPoll();
         if(pressed&PADG_TRIANGLE) {Port_TagControllersCancel(); Snd_PlaySe(1,2);}

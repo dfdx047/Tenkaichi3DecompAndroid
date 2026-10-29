@@ -772,6 +772,7 @@ static int json_peer(const char *json, MatchStatus *st) {
 
 /* ---- STUN (RFC 5389): one question, "which address do you see me under?" ---- */
 
+static int sStunFree; /* (asked by the Tag Team mod's rooms, TagLink_Stun: not a search of this file's to stop with) */
 static int stun_ask(int sock, const char *host, int port, char *out, size_t size) {
     struct addrinfo hints, *res = NULL;
     uint8_t req[20], pkt[512];
@@ -791,7 +792,7 @@ static int stun_ask(int sock, const char *host, int port, char *out, size_t size
     for (i = 8; i < 20; i++) {
         req[i] = (uint8_t)SDL_rand(256);
     }
-    for (tries = 0; tries < 3 && !STOPPED(); tries++) {
+    for (tries = 0; tries < 3 && (sStunFree || !STOPPED()); tries++) {
         int waited;
         sendto(sock, (const char *)req, sizeof(req), 0, res->ai_addr, (int)res->ai_addrlen);
         for (waited = 0; waited < 500; waited += 10) {
@@ -1570,4 +1571,23 @@ int Match_PostDragon(const char *what, const char *json, char *out, size_t size)
         DrNet_NoteResult(base, ok && out[0] == '{');
     }
     return ok;
+}
+
+/* ---- for the Tag Team mod's rooms over the internet (tag_link.c): the same questions, on its own socket ---- */
+
+/* This socket's address as the internet sees it ("ip:port"): STUN, Cloudflare's server then Google's. */
+int TagLink_Stun(int sock, char *out, int size) {
+    int ok;
+    sStunFree = 1;
+    ok = stun_ask(sock, "stun.cloudflare.com", 3478, out, (size_t)size) || stun_ask(sock, "stun.l.google.com", 19302, out, (size_t)size);
+    sStunFree = 0;
+    return ok;
+}
+/* This machine's address on its own network, with `port`. */
+int TagLink_Lan(int port, char *out, int size) {
+    return lan_address(port, out, (size_t)size);
+}
+/* A POST of `json` to `url` (the answer in out, error answers too). 0: nothing came back. */
+int TagLink_Http(const char *url, const char *json, char *out, int size) {
+    return http_post_native(url, json, NULL, out, (size_t)size);
 }

@@ -774,3 +774,29 @@ Touch screen	Pantalla táctil
 Touch screen: START joins, SELECT leaves.	Pantalla táctil: START entra, SELECT sale.
 Press START to join	Pulsa START para unirte
 Disconnected - check in again	Desconectado - vuelve a unirte
+TAG TEAM MOD	MOD TAG TEAM
+Resume	Seguir entrenando
+Tap a card or use the directions. Cross selects. Start continues.	Toca una tarjeta o usa las flechas. X selecciona. START continúa.
+Waiting for each player to join... Touch screen: START joins, SELECT leaves.	Esperando a que entre cada jugador... En la pantalla táctil: START entra, SELECT sale.
+Waiting for each player to join... Keyboard players use their START binding.	Esperando a que entre cada jugador... En el teclado, usa la tecla de START.
+ONLINE CODE	CÓDIGO ONLINE
+SHARE IT TO INVITE	COMPÁRTELO PARA INVITAR
+Enter the room's online code or the host's address.	Escribe el código online de la sala o la dirección del anfitrión.
+ONLINE CODE OR HOST ADDRESS	CÓDIGO ONLINE O DIRECCIÓN DEL ANFITRIÓN
+Code  123456  or  192.168.1.5:7001	Código  123456  o  192.168.1.5:7001
+Default port  7001 - you also get an online code	Puerto por defecto  7001 - también recibes un código online
+Joining the online room...	Entrando en la sala online...
+Could not start the online connection.	No se pudo iniciar la conexión online.
+Could not reach the room's owner. Ask them to try again, or play on the same network.	No se pudo llegar al dueño de la sala. Pídele que lo intente de nuevo, o jueguen en la misma red.
+Finding this device's internet address...	Buscando la dirección de este dispositivo en internet...
+Creating the online room...	Creando la sala online...
+Reaching the room's owner...	Conectando con el dueño de la sala...
+The online service gave an unexpected answer.	El servicio online dio una respuesta inesperada.
+The online service could not be reached.	No se pudo contactar con el servicio online.
+The online room was closed.	La sala online se cerró.
+No room has that code.	Ninguna sala tiene ese código.
+That room is for another version of the mod.	Esa sala es de otra versión del mod.
+That room is full.	Esa sala está llena.
+No online service is set for Tag Team rooms.	No hay ningún servicio online configurado para las salas Tag Team.
+Could not open the online connection.	No se pudo abrir la conexión online.
+Players connected: %d	Jugadores conectados: %d

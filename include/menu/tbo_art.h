@@ -27,7 +27,13 @@
     X(TBO_BTN_TRIANGLE, "btn_triangle") \
     X(TBO_BTN_LEFTRIGHT, "btn_leftright") \
     X(TBO_BTN_CIRCLE, "btn_circle") \
-    X(TBO_BTN_START, "btn_start")
+    X(TBO_BTN_START, "btn_start") \
+    X(TBO_DB_SKY, "db_sky")                 /* the Tag Team mod's menus, in the look of Dragon Ball (port/tools/db_assets.py): */ \
+    X(TBO_DB_BALLS, "db_balls")             /* the dragon balls: eight on a sheet, 0 to 7 stars */ \
+    X(TBO_DB_GLOW, "db_glow")               /* a soft white glow (tinted) */ \
+    X(TBO_DB_RAYS, "db_rays")               /* the picture window's rays */ \
+    X(TBO_DB_FRAME, "db_frame")             /* its gold frame (nine pieces) */ \
+    X(TBO_DB_DIALOG, "db_dialog")           /* the white talk box (nine pieces) */
 
 #define TBO_ART_ENUM(id, name) id,
 enum { TBO_ART_LIST(TBO_ART_ENUM) TBO_ART_COUNT };

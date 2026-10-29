@@ -32,8 +32,17 @@ static const char *stage_name(int i) {
 #include <cstdlib>
 static SDL_SpinLock pointerLock;
 static int pointerState[3]={-1,-1,0};
+extern "C" int Port_TouchTapTake(int *x,int *y);
 extern "C" void TagNet_MenuPointer(unsigned output) {
-    SDL_LockSpinlock(&pointerLock);std::memcpy((void *)(uintptr_t)output,pointerState,sizeof(pointerState));pointerState[2]=0;SDL_UnlockSpinlock(&pointerLock);
+    int x,y;
+    SDL_LockSpinlock(&pointerLock);
+    // A tap of the touch screen (gs_input.c) is a click where it landed, in the game picture's 512 x 448.
+    if(Port_TouchTapTake(&x,&y) && gUiPresentW>0 && gUiPresentH>0) {
+        pointerState[0]=int((x-gUiPresentX)*512/gUiPresentW);
+        pointerState[1]=int((y-gUiPresentY)*448/gUiPresentH);
+        pointerState[2]=1;
+    }
+    std::memcpy((void *)(uintptr_t)output,pointerState,sizeof(pointerState));pointerState[2]=0;SDL_UnlockSpinlock(&pointerLock);
 }
 extern "C" void TagNet_MenuName(int kind,int id,unsigned output,int size) {
     const char *n=kind==0?name(id):kind==1?stage_name(id):nullptr;

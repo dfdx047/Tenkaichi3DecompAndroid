@@ -301,6 +301,32 @@ open class GameActivity : SDLActivity() {
         return super.dispatchGenericMotionEvent(ev)
     }
 
+    /** The Tag Team rooms' relay (RelaySocket; port/src/gs/tag_link.c, through JNI on the engine's threads). */
+    @Volatile private var relay: RelaySocket? = null
+
+    @Suppress("unused")
+    fun relayOpen(url: String): Boolean {
+        relay?.close()
+        relay = RelaySocket.connect(url)
+        return relay != null
+    }
+
+    @Suppress("unused")
+    fun relaySend(data: ByteArray): Boolean = relay?.send(data) ?: false
+
+    /** The next message in, or null; an empty array: the relay is closed. */
+    @Suppress("unused")
+    fun relayRecv(): ByteArray? {
+        val r = relay ?: return ByteArray(0)
+        return r.receive() ?: if (r.open) null else ByteArray(0)
+    }
+
+    @Suppress("unused")
+    fun relayClose() {
+        relay?.close()
+        relay = null
+    }
+
     /**
      * HTTPS for the engine's online play (port/src/gs/net_match.c, through JNI on the engine's own thread): a POST of
      * [body] (JSON) to [url], the answer's text, or "" when there was none. Only the matchmaking service is asked this

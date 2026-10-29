@@ -1110,6 +1110,7 @@ static unsigned char sTagIndices[TAG_LABEL_COUNT][2][512*32];
 static unsigned char sTagPalette[2][1024], sTagCached[TAG_LABEL_COUNT][2];
 static volatile int sItem; /* 0 not started, 1 being made, 2 done (sItemPic NULL: not made) */
 static unsigned char *tag_label_fallback(const char *text, int lit);
+static char sTagNames[TAG_LABEL_COUNT][96]; /* the labels' words, in English (Port_TagLabelText) */
 
 static void *item_thread(void *arg) {
     const char *data = getenv("BT3_DATA");
@@ -1118,7 +1119,7 @@ static void *item_thread(void *arg) {
     if(getenv("BT3_TAG_TEAM")) {
         static const char *base[]={"Team Battle","Free For All","Modded Training","Mod Settings","Back",
             "One Player","Two Players","Three Players","Four Players","Back"};
-        char labels[TAG_LABEL_COUNT][96]={{0}}; const char *names[TAG_LABEL_COUNT];
+        char (*labels)[96]=sTagNames; const char *names[TAG_LABEL_COUNT];
         int i;
         for(i=0;i<TAG_LABEL_COUNT;i++) { names[i]=labels[i]; snprintf(labels[i],96,"Back"); }
         for(i=0;i<10;i++) snprintf(labels[i],96,"%s",base[i]);
@@ -1193,6 +1194,18 @@ int Port_MainItemLabel(int entry, int lit, int out) {
     }
     memcpy(&clutAt, e + 0x3C, 4);
     MenuLabels_ItemPixels(pic, (const uint8_t *)Port_Ptr(clutAt) + 0x60, dst);
+    return 1;
+}
+/* The words of label `row` (TAG_LABEL_*, English: the menu translates them where it draws them) into out (`size`
+   bytes): the Tag Team pages draw their lists with the online screens' letters (src/menu/menu_a.c). 0: none. */
+int Port_TagLabelText(int row,int out,int size) {
+    char *dst=(char *)Port_Ptr((uint32_t)out);
+    int waited=0;
+    item_start();
+    while(sItem!=2 && waited++<5000) usleep(1000);
+    __sync_synchronize();
+    if(sItem!=2 || (unsigned)row>=TAG_LABEL_COUNT || size<1 || !sTagNames[row][0]) return 0;
+    snprintf(dst,size,"%s",sTagNames[row]);
     return 1;
 }
 int Port_MainTagLabel(int entry,int lit,int row,int out) {

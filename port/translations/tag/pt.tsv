@@ -774,3 +774,29 @@ Touch screen	Tela de toque
 Touch screen: START joins, SELECT leaves.	Tela de toque: START entra, SELECT sai.
 Press START to join	Aperte START para entrar
 Disconnected - check in again	Desconectado - entre de novo
+TAG TEAM MOD	MOD TAG TEAM
+Resume	Continuar treino
+Tap a card or use the directions. Cross selects. Start continues.	Toque num cartão ou use as setas. X seleciona. START continua.
+Waiting for each player to join... Touch screen: START joins, SELECT leaves.	Esperando cada jogador entrar... Na tela de toque: START entra, SELECT sai.
+Waiting for each player to join... Keyboard players use their START binding.	Esperando cada jogador entrar... No teclado, use a tecla do START.
+ONLINE CODE	CÓDIGO ONLINE
+SHARE IT TO INVITE	COMPARTILHE PARA CONVIDAR
+Enter the room's online code or the host's address.	Digite o código online da sala ou o endereço do anfitrião.
+ONLINE CODE OR HOST ADDRESS	CÓDIGO ONLINE OU ENDEREÇO DO ANFITRIÃO
+Code  123456  or  192.168.1.5:7001	Código  123456  ou  192.168.1.5:7001
+Default port  7001 - you also get an online code	Porta padrão  7001 - você também recebe um código online
+Joining the online room...	Entrando na sala online...
+Could not start the online connection.	Não foi possível iniciar a conexão online.
+Could not reach the room's owner. Ask them to try again, or play on the same network.	Não foi possível alcançar o dono da sala. Peça para tentar de novo, ou joguem na mesma rede.
+Finding this device's internet address...	Descobrindo o endereço deste aparelho na internet...
+Creating the online room...	Criando a sala online...
+Reaching the room's owner...	Conectando ao dono da sala...
+The online service gave an unexpected answer.	O serviço online deu uma resposta inesperada.
+The online service could not be reached.	Não foi possível falar com o serviço online.
+The online room was closed.	A sala online foi fechada.
+No room has that code.	Nenhuma sala tem esse código.
+That room is for another version of the mod.	Essa sala é de outra versão do mod.
+That room is full.	Essa sala está cheia.
+No online service is set for Tag Team rooms.	Nenhum serviço online foi configurado para as salas Tag Team.
+Could not open the online connection.	Não foi possível abrir a conexão online.
+Players connected: %d	Jogadores conectados: %d

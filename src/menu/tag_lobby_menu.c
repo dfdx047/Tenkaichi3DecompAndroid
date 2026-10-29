@@ -4,6 +4,7 @@
 #include "menu/port_screen.h"
 #include "sys/pad.h"
 #include "battle/tag_options.h"
+#include "menu/tag_kit.h"
 #include "../../port/src/gs/tag_net.h"
 
 static int selectedGuest=-1;
@@ -47,21 +48,22 @@ void TagLobbyMenu_Draw(void) {
         if(s && *s){Ps_PageSet();Ps_SetShift(0);Ps_Align(1);Ps_Text(256,396,(char *)s,.65f,470,3);}
         return;
     }
-    Ps_PageSet();Ps_SetShift(0);Ps_Align(1);
-    Ps_Rect(0,0,512,448,Ps_Rgba(26,13,44,128),Ps_Rgba(69,35,82,128));
-    Ps_Heading(256,18,"PRACTICE LOBBY",1.45f,478,128);
+    Tk_Begin();Ps_Align(1);
+    /* the online screens' look over the running map: a dusk, the kit's bars and window (menu/tag_kit.h) */
+    Ps_ScreenQuad(0,0,512,0,0,448,512,448,Ps_Rgba(6,10,40,96),Ps_Rgba(6,10,40,96),Ps_Rgba(4,6,24,118),Ps_Rgba(4,6,24,118));
+    Tk_Title("PRACTICE LOBBY",NULL);
     Ps_Text(256,58,"The practice map keeps running while this menu is open.",.64f,478,3);
     for(i=0;i<3;i++) {
-        float y=90+i*42;u32 a=ui.choice==i?Ps_Rgba(255,235,158,128):Ps_Rgba(181,211,233,120);
-        u32 b=ui.choice==i?Ps_Rgba(237,161,43,128):Ps_Rgba(103,120,169,120);
-        Ps_Quad(28,y,278,y,22,y+34,272,y+34,a,a,b,b);
-        Ps_Text(150,y+5,guest[i],.77f,231,ui.choice==i?1:0);
+        float y=90+i*42;
+        Tk_Bar(ui.choice==i?22:30,y,ui.choice==i?296:272,y+34,ui.choice==i);
+        Ps_Text(150,Ps_TextTop(y+17,ui.choice==i?.86f:.77f),guest[i],ui.choice==i?.86f:.77f,231,ui.choice==i?1:0);
     }
-    Ps_Text(395,94,"PVP LEADERBOARD",.72f,202,1);
-    Ps_Text(395,117,"Player          W / L / D",.58f,202,3);
+    Tk_Box(300,80,492,392,0);
+    Ps_Text(395,94,"PVP LEADERBOARD",.72f,180,2);
+    Ps_Text(395,117,"Player          W / L / D",.58f,180,3);
     for(i=1;i<TL_MEMBERS;i++)if(ui.lobby.members[i].present) {
         TlMember *m=&ui.lobby.members[i];sprintf(label,"P%d           %d / %d / %d",i+1,m->wins,m->losses,m->draws);
         Ps_Text(395,142+row++*24,label,.65f,202,ui.choice==100+i?1:3);
     }
-    Ps_Text(256,414,"Cross - Select     Triangle / Start - Resume",.65f,478,3);
+    Ps_Align(0);Ps_PromptsClear();Ps_Prompt(0,"Select");Ps_Prompt(2,"Resume");Ps_PromptsDraw();Ps_Align(1);
 }

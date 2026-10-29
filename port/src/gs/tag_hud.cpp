@@ -26,11 +26,19 @@ static std::atomic<int> opts[TAG_OPT_COUNT];
 static std::once_flag loaded;
 static std::atomic<int> previewOption{-1};
 static std::atomic<Uint64> previewTime{0};
+static std::atomic<int> previewRect[4]={{304},{191},{494},{320}}; // where, in the game picture's 512 x 448
 extern "C" void Port_TagPreview(int option) {
     previewOption=option;previewTime=SDL_GetTicks();
 }
 static void preview(ImDrawList *,int,ImVec2,ImVec2);
 static bool has_preview(int option);
+// The same in a box of the menu's (the Tag Team pages' preview window, src/menu/menu_a.c); 0: the option has none.
+extern "C" int Port_TagPreviewAt(int option,int x0,int y0,int x1,int y1) {
+    if(option<0 || !has_preview(option))return 0;
+    previewRect[0]=x0;previewRect[1]=y0;previewRect[2]=x1;previewRect[3]=y1;
+    Port_TagPreview(option);
+    return 1;
+}
 struct OnlinePreview {float rect[4];int id,values[TAG_OPT_COUNT];};
 static OnlinePreview onlinePreview;
 static Uint64 onlinePreviewTime;
@@ -380,7 +388,7 @@ void TagHud_Draw() {
     if(opt>=0 && SDL_GetTicks()-previewTime.load()<150 && has_preview(opt) && gUiPresentW>0) {
         float sx=gUiPresentW/512.0f,sy=gUiPresentH/448.0f;
         preview(ImGui::GetBackgroundDrawList(),opt,
-            ImVec2(gUiPresentX+304*sx,gUiPresentY+191*sy),ImVec2(gUiPresentX+494*sx,gUiPresentY+320*sy));
+            ImVec2(gUiPresentX+previewRect[0]*sx,gUiPresentY+previewRect[1]*sy),ImVec2(gUiPresentX+previewRect[2]*sx,gUiPresentY+previewRect[3]*sy));
     }
     TagHudState s;
     SDL_LockSpinlock(&lock); s=latest; SDL_UnlockSpinlock(&lock);

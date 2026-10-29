@@ -5,6 +5,7 @@
 #include "menu/port_screen.h"
 typedef struct LoadSprite {s32 flags,x0,y0,x1,y1,u0,v0,u1,v1,tex,r,g,b,a;} LoadSprite;
 #include "sys/pad.h"
+#include "menu/tag_kit.h"
 #include "../../port/src/gs/tag_net.h"
 
 /* Native online pages. Resources, input, sounds and transitions use the game
@@ -43,11 +44,10 @@ static void text(f32 x,f32 y,char *s,f32 scale,f32 width,s32 style) {Ps_Text(x,y
 static void left(f32 x,f32 y,char *s,f32 scale,f32 width,s32 style) {Ps_Align(0);text(x,y,s,scale,width,style);Ps_Align(1);}
 static void say(char *s) {Ps_Copy(notice,s,sizeof(notice));noticeFrames=300;}
 static void go(s32 next,s32 first) {page=next;focus=first;editing=0;notice[0]=0;PortTbo_TextMode(next==ADDRESS);Snd_PlaySe(1,0);}
+/* The online screens' kit (menu/tag_kit.h): a bar (gold under the cursor), or a window for a tall one. */
 static void plate(f32 x,f32 y,f32 w,f32 h,s32 lit,s32 red) {
-    u32 edge=Ps_Rgba(70,24,84,128),top=Ps_Rgba(red?243:197,red?199:229,red?217:250,125),bottom=Ps_Rgba(red?176:105,red?111:160,red?151:203,125);
-    if(lit){edge=Ps_Rgba(255,243,161,128);top=Ps_Rgba(255,246,182,128);bottom=Ps_Rgba(244,170,54,128);}
-    Ps_Quad(x+6,y,x+w,y,x,y+h,x+w-6,y+h,edge,edge,edge,edge);
-    Ps_Quad(x+7,y+2,x+w-3,y+2,x+3,y+h-2,x+w-7,y+h-2,top,top,bottom,bottom);
+    (void)red;
+    if(h>48)Tk_Box(x,y,x+w,y+h,lit);else Tk_Bar(x,y,x+w,y+h,lit);
 }
 static void button(s32 id,f32 x,f32 y,f32 w,f32 h,char *s,s32 enabled) {
     if(buttonCount<80){OnlineButton *b=&buttons[buttonCount++];b->id=id;b->enabled=enabled;b->x=x;b->y=y;b->w=w;b->h=h;}
@@ -140,6 +140,18 @@ static void remove_slot(s32 id) {
     }
     c.size[team]--;commit(&c);focus=team*5+(id%5<c.size[team]?id%5:c.size[team]-1);
 }
+/* The room's online code for its owner, or what the online part is doing: the line under the room's title. */
+static char *online_line(char *other) {
+    static char line[160];
+    char code[160],status[160];
+    extern void TagNet_OnlineInfo(u32,u32,s32);
+    if(!room.host)return other;
+    TagNet_OnlineInfo((u32)code,(u32)status,sizeof(code));
+    if(code[0]){Ps_Copy(line,(char *)Port_TagText("ONLINE CODE"),sizeof(line));Ps_Cat(line,"  ",sizeof(line));Ps_Cat(line,code,sizeof(line));
+        Ps_Cat(line,"  -  ",sizeof(line));Ps_Cat(line,(char *)Port_TagText("SHARE IT TO INVITE"),sizeof(line));return line;}
+    if(status[0]){Ps_Copy(line,status,sizeof(line));return line;}
+    return other;
+}
 static void connect(void) {
     s32 ip[4]={0},port=7001,n=0,i,j=0,digits=0;char host[64];
     if(connectRole==0) {
@@ -147,6 +159,9 @@ static void connect(void) {
         if(!i||hostPort[i]||port<1024||port>65535){say("Use a port between 1024 and 65535.");return;}
         TagNet_Start(0,"",port);go(HOME,0);return;
     }
+    /* Six digits: an online room's code (port/src/gs/tag_link.c). */
+    for(i=0;address[i]>='0'&&address[i]<='9';i++){}
+    if(i==6 && !address[i]){TagNet_Start(connectRole,address,7001);go(HOME,connectRole);return;}
     /* Deliberately numeric IPv4, like the transport. Never accept a partial address. */
     for(i=0;address[i];i++) {
         s32 ch=address[i];
@@ -326,7 +341,7 @@ static void home(void) {
     heading(TagNet_IsParty()?"ONLINE LOBBY":"MODDED ONLINE","");
     load_face(PortGame_IsBT4()?3:0);texture(facePic,20,88,154,268);
     button(0,190,102,294,63,"Host a Room",1);left(209,144,"Choose the teams, stage and battle rules.",0.58f,258,2);
-    button(1,190,181,294,63,"Join a Room",1);left(209,223,"Enter the host address and choose your fighter.",0.58f,258,2);
+    button(1,190,181,294,63,"Join a Room",1);left(209,223,"Enter the room's online code or the host's address.",0.58f,258,2);
     if(!TagNet_IsParty()){button(2,190,260,294,63,"Watch a Room",1);left(209,302,"Follow any fighter or use the free camera.",0.58f,258,2);}
     else {left(209,277,"Practice together between matches.",0.67f,258,3);left(209,304,"Take a player slot at team setup, or watch.",0.58f,258,2);}
     button(3,190,343,140,30,"Back",1);
@@ -334,12 +349,12 @@ static void home(void) {
 }
 static void connection(void) {
     s32 i;static char *keys[]={"1","2","3","4","5","6","7","8","9",".","0",":"};
-    heading(connectRole==0?"HOST A ROOM":connectRole==2?"WATCH A ROOM":"JOIN A ROOM",connectRole==0?"CONNECTION PORT":"HOST ADDRESS");
+    heading(connectRole==0?"HOST A ROOM":connectRole==2?"WATCH A ROOM":"JOIN A ROOM",connectRole==0?"CONNECTION PORT":"ONLINE CODE OR HOST ADDRESS");
     plate(36,87,440,45,1,0);text(256,96,entry()[0]?entry():"Type here or use the keypad",1.0f,415,1);
     for(i=0;i<12;i++)button(i,144+76*(i%3),151+39*(i/3),70,33,keys[i],connectRole || (i!=9&&i!=11));
     button(12,48,318,113,31,"Delete",1);button(13,171,318,113,31,"Clear",1);
     button(14,294,318,170,31,connectRole==0?"Open Room":connectRole==2?"Spectate":"Connect",1);button(15,48,360,113,30,"Back",1);
-    text(319,367,connectRole?"Example  192.168.1.5:7001":"Default port  7001",0.67f,282,3);
+    text(319,367,connectRole?"Code  123456  or  192.168.1.5:7001":"Default port  7001 - you also get an online code",0.67f,282,3);
 }
 static void lobby(void) {
     TagNetConfig *c=&room.config;s32 team,j,i,p,readyCount=0;f32 x,y;
@@ -364,13 +379,14 @@ static void lobby(void) {
         button(19,151,389,210,29,"Return to Lobby",room.host);return;
     }
     if(c->party && c->practice) {
-        heading("ONLINE LOBBY","WAITING FOR GUESTS TO ENTER PRACTICE");
+        heading("ONLINE LOBBY",online_line("WAITING FOR GUESTS TO ENTER PRACTICE"));
         text(256,175,PortGame_IsBT4()?"South City - 200%":"Kami's Lookout - 200%",1.1f,460,1);
         text(256,220,"Guests enter the practice map when connected.",.78f,460,3);
         text(256,253,"The host stays in the mode menu.",.78f,460,3);
+        sprintf(label,Port_TagText("Players connected: %d"),room.connected);text(256,290,label,.85f,460,room.connected>1?5:2); /* (who is in: the owner counts) */
         button(15,177,345,158,36,"Leave Lobby",1);return;
     }
-    heading(c->party?titles[c->mode]:"ONLINE BATTLE ROOM",c->party?(c->mode==TL_TOURNAMENT?"START - CLAIM / READY    L1 / R1 - CHANGE TEAM":"START - CLAIM A SLOT / READY   TRIANGLE - RELEASE SLOT"):room.host?"YOU ARE HOSTING  /  CHOOSE THE LINEUP AND READY UP":"CHOOSE YOUR FIGHTER AND READY UP");
+    heading(c->party?titles[c->mode]:"ONLINE BATTLE ROOM",c->party?(c->mode==TL_TOURNAMENT?"START - CLAIM / READY    L1 / R1 - CHANGE TEAM":"START - CLAIM A SLOT / READY   TRIANGLE - RELEASE SLOT"):room.host?online_line("YOU ARE HOSTING  /  CHOOSE THE LINEUP AND READY UP"):"CHOOSE YOUR FIGHTER AND READY UP");
     for(team=0;team<2;team++) {
         x=18+244*team;Ps_Heading(x+112,76,c->party&&c->mode==TL_GAUNTLET?(team?"NEXT WAVE":"YOUR TEAM"):c->party&&c->mode==TL_FFA?(team?"FIGHTERS 6 - 10":"FIGHTERS 1 - 5"):team?"TEAM 2":"TEAM 1",1.05f,208,128);
         for(j=0;j<5;j++) {
@@ -528,10 +544,9 @@ static void options(void) {
     text(384,395,editing?"EDITING":"PAGE",0.64f,92,editing?1:3);
 }
 static void draw(void) {
-    Ps_PageSet();Ps_SetShift(0);Ps_Align(1);Sprite_DrawPicture(background,0,0,128);
-    /* The original menu's purple/cyan backdrop and cloud frame remain visible. */
-    Ps_Rect(9,73,503,420,Ps_Rgba(26,17,42,100),Ps_Rgba(30,15,44,114));
-    IconWin_Draw();buttonCount=0;
+    Tk_Begin();Ps_Align(1);
+    /* the tournament grounds of the online screens, the game's cloud frame over them */
+    Tk_Backdrop();IconWin_Draw();buttonCount=0;
     if(room.phase==3){heading("GET READY","EVERYONE IS READY - LOADING THE BATTLE");load_stage(room.config.stage);stage_preview(72,100,368,275);}
     else if(page==HOME)home();else if(page==ADDRESS)connection();else if(page==ROOM)lobby();
     else if(page==STAGE)stages();else if(page==MUSIC)music();

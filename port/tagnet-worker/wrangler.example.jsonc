@@ -1,0 +1,11 @@
+{
+    // wrangler deploy --config wrangler.example.jsonc   (after: wrangler d1 create tagteam-online, and its id below)
+    "name": "tagteam-online",
+    "main": "worker.js",
+    "compatibility_date": "2026-10-01",
+    "d1_databases": [{ "binding": "DB", "database_name": "tagteam-online", "database_id": "<the id wrangler d1 create printed>" }],
+    // the rooms' relay (worker.js, TagRelay): a Durable Object per room, SQLite-backed (free plan)
+    "durable_objects": { "bindings": [{ "name": "RELAY", "class_name": "TagRelay" }] },
+    "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TagRelay"] }],
+    "vars": { "ALLOWED_VERSIONS": "5", "TURN_DAILY_MAX": "300" }
+}

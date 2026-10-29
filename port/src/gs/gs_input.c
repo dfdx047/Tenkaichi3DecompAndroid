@@ -45,6 +45,35 @@ void Port_TouchPad(unsigned buttons, int lx, int ly, int rx, int ry) {
 }
 /* The on-screen controller's buttons as they are now (the bits below): a spectator's R1 changes the view (gs/ui.cpp). */
 unsigned Port_TouchButtons(void) { return sTouchButtons; }
+
+/* A tap on the screen that was not on a control of the on-screen controller (Android: TouchPadView), in window
+   pixels: the Tag Team mod's menus take it as a press of what was under it (gs/tag_net_ui.cpp, TagNet_MenuPointer). */
+static volatile int sTapX, sTapY;
+static volatile unsigned sTapSeq;
+static volatile Uint64 sTapAt;
+void Port_TouchTap(int x, int y) {
+    sTapX = x;
+    sTapY = y;
+    sTapAt = SDL_GetTicks();
+    __atomic_fetch_add(&sTapSeq, 1, __ATOMIC_ACQ_REL);
+}
+/* 1 and where, once per tap; a tap no menu took within a third of a second is dropped (one made in a fight must
+   not press the next menu's first row). */
+int Port_TouchTapTake(int *x, int *y) {
+    static unsigned seen;
+    unsigned seq = __atomic_load_n(&sTapSeq, __ATOMIC_ACQUIRE);
+
+    if (seq == seen) {
+        return 0;
+    }
+    seen = seq;
+    if (SDL_GetTicks() - sTapAt > 350) {
+        return 0;
+    }
+    *x = sTapX;
+    *y = sTapY;
+    return 1;
+}
 extern int Port_Setting(const char *name, int def); /* plat_settings.c */
 extern void Port_SettingSave(const char *name, int value), Port_SettingsWrite(void);
 

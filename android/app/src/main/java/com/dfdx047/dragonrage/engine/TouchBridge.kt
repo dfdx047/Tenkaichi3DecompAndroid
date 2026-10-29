@@ -13,6 +13,11 @@ object TouchBridge {
     /** Player-side team size in battle; 0 = no active battle, -1 = active state could not be read reliably. */
     @JvmStatic external fun nativePlayerTeamSize(): Int
 
+    /** A tap between the controls, in window pixels (the Tag Team menus press what is under it). */
+    @JvmStatic external fun nativeTap(x: Int, y: Int)
+
+    private var tapMissing = false
+
     private var loggedTeamQueryFailure = false
 
     private var nativeMissing = false
@@ -32,6 +37,15 @@ object TouchBridge {
 
     fun setPad(buttons: Int, lx: Int, ly: Int, rx: Int, ry: Int) {
         runCatching { nativeSetPad(buttons, lx, ly, rx, ry) }
+    }
+
+    fun tap(x: Int, y: Int) {
+        if (tapMissing) return
+        try {
+            nativeTap(x, y)
+        } catch (t: UnsatisfiedLinkError) {
+            tapMissing = true // (Budokai Tenkaichi 4's engine has no such line)
+        }
     }
 
     fun menuOpen(): Boolean = runCatching { nativeMenuOpen() }.getOrDefault(false)
