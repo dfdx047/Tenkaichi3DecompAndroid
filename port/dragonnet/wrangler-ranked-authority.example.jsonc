@@ -1,0 +1,19 @@
+{
+  "name": "dbt-ranked-authority-staging",
+  "main": "ranked_authority.js",
+  "compatibility_date": "2026-10-15",
+  "workers_dev": true,
+  "vars": {
+    "AUTHORITY_ID": "REPLACE_WITH_PERMANENT_RANDOM_AUTHORITY_ID",
+    "URL_C": "https://bt-ranked.arielnndrd.workers.dev",
+    "URL_D": "https://bt3-net-rooms.alexsanchez01es.workers.dev",
+    "MIGRATION_COMPLETE": "0",
+    "ALLOWED_VERSIONS": "5001", // Android Ranked: NET_VERSION 5 * 1000 + DRNET_SIM 1.
+    "DP20_ENABLED": "1",
+    "CHAT_ENABLED": "0",
+    "REQUIRE_KEY": "off"
+  },
+  "d1_databases": [{"binding": "DB", "database_name": "ranked-authority", "database_id": "REPLACE_WITH_D1_ID"}]
+  // Secrets GATEWAY_C_KEY and GATEWAY_D_KEY: distinct >=32 byte random keys.
+  // No TURN secrets: enabling a billable relay is outside this deployment.
+}

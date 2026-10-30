@@ -1,0 +1,13 @@
+{
+  "name": "bt3-net-rooms",
+  "main": "ranked_gateway.js",
+  "compatibility_date": "2026-10-15",
+  "workers_dev": true,
+  "vars": {
+    "GATEWAY_ID": "D",
+    "AUTHORITY_ID": "REPLACE_WITH_THE_SAME_AUTHORITY_ID",
+    "AUTHORITY_URL": "https://REPLACE_AUTHORITY.workers.dev"
+  }
+  // Secret AUTHORITY_KEY: E's GATEWAY_D_KEY. For C use GATEWAY_ID C and C key.
+  // Neither gateway has a local D1 binding: all business data lives at E.
+}

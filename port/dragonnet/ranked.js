@@ -126,7 +126,7 @@ export async function rankedFetch(request,env,path,body,now,ip){
  await expire(db,p,now);p=await one(db,"SELECT * FROM ranked_players WHERE id=?",p.id);
  if(path==="queue"){
   const rules=body.rules??'legacy';
-  if(!['legacy','solo-inf-v1','team3-inf-v1'].includes(rules))return json({error:'rules'},400);
+  if(!['legacy','solo-inf-v1','team3-inf-v1'].includes(rules)&&!(rules==='dp20-inf-v1'&&String(env.DP20_ENABLED)==='1'&&body.flow===2))return json({error:'rules'},400);
   if(!p.active_match){
    if(!await limit(db,"ranked-start:"+p.id,now-now%3600,30))return json({error:"busy"},429);
    const mine=id();
@@ -139,6 +139,13 @@ export async function rankedFetch(request,env,path,body,now,ip){
   }
   let m=await one(db,"SELECT * FROM ranked_matches WHERE id=?",p.active_match);
   if(m.rule_set!==rules || m.version!==body.v)return json({error:'cancel current search first'},409);
+  // A waiting assignment can survive a client update/restart. Refresh the
+  // authenticated host's capability before pairing; after pairing it is
+  // frozen, because either peer may already have handed the session over.
+  if(m.state==="waiting" && body.rematches===1 && !(m.rematch_caps&1)){
+   await stmt(db,"UPDATE ranked_matches SET rematch_caps=rematch_caps|1 WHERE id=? AND host_id=? AND state='waiting'",m.id,p.id).run();
+   m=await one(db,"SELECT * FROM ranked_matches WHERE id=?",m.id);
+  }
   if(m?.state==="waiting"){
    // FIFO within a widening Elo window. The older room is always the host.
    const window=200+Math.min(800,Math.floor((now-m.made)/15)*100);

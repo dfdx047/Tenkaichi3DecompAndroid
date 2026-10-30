@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import {rankedFetch,eloDelta} from './ranked.js';
 const sql=new DatabaseSync(':memory:');
 for(const file of ['schema.sql','ranked-schema.sql'])sql.exec(fs.readFileSync(new URL(file,import.meta.url),'utf8'));
+sql.exec(fs.readFileSync(new URL('ranked-flow-schema.sql',import.meta.url),'utf8'));
 const DB={prepare(text){return {values:[],bind(...v){return {...this,values:v};},async first(){return sql.prepare(text).get(...this.values)??null;},async run(){return {meta:{changes:Number(sql.prepare(text).run(...this.values).changes)}};},async all(){return {results:sql.prepare(text).all(...this.values)};}};},async batch(statements){sql.exec('BEGIN');try{const out=[];for(const st of statements)out.push(await st.run());sql.exec('COMMIT');return out;}catch(e){sql.exec('ROLLBACK');throw e;}}};
 let now=1800000000;
 async function api(path,auth={},data={}){const response=await rankedFetch(null,{DB,RANKED_ENABLED:'1'},path,{v:40001,...auth,...data},now,'198.51.100.1');return {status:response.status,...await response.json()};}
