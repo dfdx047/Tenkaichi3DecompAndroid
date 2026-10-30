@@ -1238,6 +1238,23 @@ void CharSel_Update(void) {
    original loads the upper half of that string's address once, in front of the branch (its delay slot), and
    starts both arms with `move a1,a2`, while this compiles with `move a1,a2` in the delay slot and the `lui` at
    the start of each arm. Everything else, including every branch, is the original's code. */
+#ifdef PORT
+/* A lobby's match (port/src/gs/net_lobby.c): going back from the character select is its owner's way back to the
+   lobby (the session ends for everyone, as "Back to the Lobby" in a fight); the other player's triangle does
+   nothing there. The owner's side travels with the rules, so every copy decides the same. */
+static s32 CharSel_PortLobbyHold(s32 pad) {
+    extern int Port_NetSession(void);
+    extern int Port_NetLobbyOwnerSide(void);
+    s32 owner;
+
+    if (!Port_NetSession()) {
+        return 0;
+    }
+    owner = Port_NetLobbyOwnerSide();
+    return owner >= 0 && pad != owner;
+}
+#endif
+
 void CharSel_Input(s32 *running) {
     s32 count = 0;
     s32 i;
@@ -1525,6 +1542,12 @@ void CharSel_Input(s32 *running) {
                         }
                     }
                 } else {
+#ifdef PORT
+                    if (CharSel_PortLobbyHold(i)) { /* a lobby's match: only its owner leaves the select */
+                        Snd_PlaySe(1, 2);
+                        break;
+                    }
+#endif
                     ColorFade_StartOut(0, 0, 0, 20);
                     *running = 0;
                 }

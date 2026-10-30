@@ -435,7 +435,7 @@
     <string name="bt4_renderer_dr">Dragon Rage (experimental)</string>
     <string name="bt4_renderer_text">ARMSX2 (default): the PlayStation 2 emulator\'s renderer (PCSX2\'s, with ARMSX2\'s fixes for Mali and Adreno), the most faithful picture. Dragon Rage (experimental): Budokai Tenkaichi 3\'s renderer, with faults in some of BT4\'s scenery. Both use the resolution, the shape and the Vulkan or OpenGL ES choice above. From the next start.</string>
     <string name="bt4_err_not_bt4">This image is not Budokai Tenkaichi 4 (it has no SLUS_219.78). It needs Team BT4\'s mod, Beta 14 Rev2.</string>
-    <string name="bt4_err_version">This image is another version of the mod: the game was recompiled for Beta 14 Rev2 (SLUS-219.78).</string>
+    <string name="bt4_err_version">This image is another version of the mod: the game was recompiled for Beta 14 Rev2 (SLUS-219.78). The SLUS_219.78 of your image has %1$d bytes (SHA-256 %2$s…); this one needs 2115688 bytes (224525C5…). A file named Rev2 can still hold another build: get the Beta 14 Rev2 image from the Team BT4 release.</string>
     <string name="bt4_err_permission">Android did not let the app keep reading this image. Move it to Downloads or the phone\'s storage and pick it again.</string>
     <string name="err_iso_packed">This file is a compressed %1$s, not the disc image itself. Extract it first (ZArchiver, for example) and pick the .iso inside. CHD and CSO images must be turned back into .iso (chdman / maxcso on a PC).</string>
     <string name="err_iso_web_page">This file is a web page, not the game: the download link saved its page instead of the file. Download the ISO again and pick the .iso.</string>

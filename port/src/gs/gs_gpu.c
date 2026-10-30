@@ -2566,7 +2566,7 @@ static void vk_frame_end(void) {
             SDL_GPUFence *fence;
             Uint32 w = 512 * SCALE, h = 448 * SCALE, x, y;
             uint8_t *px;
-            char name[64];
+            char name[600];
             FILE *fp;
 
             SDL_zero(ti);
@@ -2586,7 +2586,14 @@ static void vk_frame_end(void) {
             SDL_WaitForGPUFences(sDev, true, &fence, 1);
             SDL_ReleaseGPUFence(sDev, fence);
             px = SDL_MapGPUTransferBuffer(sDev, tb, false);
-            snprintf(name, sizeof(name), "port/build/shots/gpu_%05u.ppm", gGsFrame);
+            if (getenv("BT3_SHOT_DIR") != NULL) {
+                /* BT3_SHOT_DIR=<folder>: there instead, the vertical blank in the name too (several copies at once;
+                   two copies' pictures of the same blank compared) */
+                extern unsigned gPortVBlanks;
+                snprintf(name, sizeof(name), "%s/gpu_%05u_v%06u.ppm", getenv("BT3_SHOT_DIR"), gGsFrame, gPortVBlanks);
+            } else {
+                snprintf(name, sizeof(name), "port/build/shots/gpu_%05u.ppm", gGsFrame);
+            }
             fp = fopen(name, "wb");
             if (fp != NULL && px != NULL) {
                 fprintf(fp, "P6\n%u %u\n255\n", w, h);

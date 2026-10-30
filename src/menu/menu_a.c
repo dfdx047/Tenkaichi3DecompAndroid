@@ -205,8 +205,9 @@ void MainMenu_Init(s32 section) {
 #ifdef PORT
         /* Item 4, "Dragon Net Battle", is the one entry the PS2 game never lists: it has its plate, label, icon and
            the guides' voiced lines on the disc, and no mode behind it (the Wii version's online mode). The port
-           lists it: it is the way into online play. BT3_MENU_ITEM4=0 hides it again (the pad recordings made
-           before it was listed count on the old menu). */
+           lists it only when the player asks for it (F1 > Online > Advanced: Port_NetMenuListed, port/src/headless.c):
+           Tenkaichi Budokai Online, listed after Duel then, is the way into online play. BT3_MENU_ITEM4=1 lists it
+           whatever the setting (tests: the pad recordings made while it was always listed count on that menu). */
         if (i == 4 && !Port_NetMenuListed()) {
             continue;
         }
@@ -223,7 +224,7 @@ void MainMenu_Init(s32 section) {
         }
         gMainMenu->items[gMainMenu->itemCount++] = i;
 #ifdef PORT
-        if (i == (Port_NetMenuListed() ? 4 : 3)) {
+        if (i == 3 && !Port_NetMenuListed()) { /* (Dragon Net Battle opens these screens now: listed alone only without it) */
             gMainMenu->items[gMainMenu->itemCount++] = MAINMENU_TBO;
         }
 #endif
@@ -473,6 +474,18 @@ void MainMenu_Input(s32 *result) {
     if (!(gMainMenu->flash[0].flags & MFLASH_PAD)) {
         return;
     }
+#ifdef PORT
+    {   /* In a lobby (joined from the Dragon Net Battle window, or back here after its match): its screen, in
+           Tenkaichi Budokai Online (menu/port_tbo.c; port/src/gs/net_lobby.c) */
+        extern int Port_LobbyWantsScreen(void);
+
+        if (!(gMainMenu->flags & MAINMENU_LEAVING) && Port_LobbyWantsScreen()) {
+            gPortScreen = PORT_SCREEN_TBO;
+            MAINMENU_CHOOSE(MPROG_MODE_PORT_SCREEN);
+            return;
+        }
+    }
+#endif
     if (!(gMainMenu->flags & MAINMENU_STARTED)) {
         MainMenu_PlateGoto(0, "fl_on_start");
         if ((gSaveData->unlockFlags & 0x7F) == 0x7F) {
@@ -539,7 +552,11 @@ void MainMenu_Input(s32 *result) {
             break;
         case 4:
 #ifdef PORT
-            Port_NetMenuOpen(); /* the port's own screen for online play (port/src/gs/ui.cpp); the menu stays where it is */
+            /* Dragon Net Online: the screens of menu/port_tbo.c (Quick Match, Ranked, rooms, lobbies, against
+               Android + Switch or the PC), in the port's screen mode */
+            gPortScreen = PORT_SCREEN_TBO;
+            MAINMENU_COUNT();
+            MAINMENU_CHOOSE(MPROG_MODE_PORT_SCREEN);
 #endif
             break;
         case 5:

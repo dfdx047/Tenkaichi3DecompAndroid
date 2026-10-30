@@ -69,7 +69,7 @@ class Bt4Installer(
                 val data = iso.read(elf.offset, elf.size.toInt())
                 val hash = sha256(data)
                 ActivityLog.info("iso", "bt4: $ELF ${data.size} bytes, SHA-256 $hash")
-                if (hash != ELF_SHA256) throw GameDataInstaller.Stop(context.getString(R.string.bt4_err_version))
+                if (hash != ELF_SHA256) throw GameDataInstaller.Stop(context.getString(R.string.bt4_err_version, data.size, hash.take(8)))
                 report(InstallState.Working(context.getString(R.string.step_extracting), 0.1f, ELF))
                 paths.runtimeData.deleteRecursively()
                 paths.runtimeData.mkdirs()

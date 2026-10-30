@@ -12,7 +12,7 @@
 
 namespace dn {
 
-enum Screen { HOME, CREATE, CREATE_WAIT, JOIN, JOIN_WAIT, QUICK, QUICK_WAIT, RANKED, RANKED_WAIT, BOARD, CHAT, REMATCH };
+enum Screen { HOME, CREATE, CREATE_WAIT, JOIN, JOIN_WAIT, QUICK, QUICK_WAIT, RANKED, RANKED_WAIT, BOARD, CHAT, REMATCH, WATCH_WAIT };
 
 static Screen sScreen = HOME;
 static int sRow, sHomeRow;
@@ -26,6 +26,8 @@ static int sLobbyLast;                       // the lobby's last state worth tel
 static Uint64 sSearchSince, sFoundAt;
 static bool sRankedLobby;                    // the lobby was started for a ranked match
 static float sK = 1.0f;                      // FontSizeBase per pixel of text
+// The PC's Quick Match regions (src/menu/port_tbo.c): what the matchmaking service is told, and their names here.
+static const char *const kRegionArea[9] = {"auto", "NA", "SA", "EU", "ME", "AF", "AS", "OC", "any"};
 
 // ---- colours (DBT-NX's): night violet, violet lines, gold choice, cyan plates
 static ImU32 col(float r, float g, float b, float a = 1.0f) { return ImGui::GetColorU32(ImVec4(r, g, b, a)); }
@@ -346,6 +348,19 @@ static const char *lobby_error(int last) {
 static int lobby_step(void) {
     int st = Port_LobbyPoll();
     sNetBusy = st == 1 || st == 3;
+    if (st == 5) { // the code was a lobby's (the PC's 0.1.38.9): this game is its member, and the lobby's page is the game's own (the main menu opens it)
+        Port_LobbyCancel(); // (the lobby has the socket now)
+        const char *said = MenuTranslation_PortText(PORT_TEXT_LOBBY_JOINED);
+        Port_UiNotice(said != NULL ? said : T("You are in the lobby. Its screen opens from the main menu (Dragon Net Battle).",
+                                               "Você está no lobby. A tela dele abre pelo menu principal (Dragon Net Battle).",
+                                               "Estás en el lobby. Su pantalla se abre desde el menú principal (Dragon Net Battle)."));
+        set_open(false);
+        sNet = false;
+        DrNet_PresenceActive(0);
+        DrChat_Close();
+        goto_screen(HOME, sHomeRow);
+        return st;
+    }
     if (st < 0) { sLobbyLast = st; }
     if (st == -3 || st == -4 || st == -2) { sLobbyLast = st; }
     if (st == 2) {
@@ -454,15 +469,43 @@ static void screen_home(bool &close) {
 static void screen_create(void) {
     if (header(T("Create room", "Criar sala", "Crear sala"), true) || padB()) { goto_screen(HOME); return; }
     const float u = U();
-    card_start(u * 4.2f, u * 3.6f, T("PREPARE YOUR FIGHT", "PREPARE SEU COMBATE", "PREPARA TU COMBATE"));
+    card_start(u * 4.2f, u * 6.7f, T("PREPARE YOUR FIGHT", "PREPARE SEU COMBATE", "PREPARA TU COMBATE"));
     int m = padMove();
-    if (m != 0) { sRow = (sRow + m + 2) % 2; }
+    if (m != 0) { sRow = (sRow + m + 4) % 4; }
     int ch = 0;
     card_row(0, u * 0.45f, T("Battle", "Combate", "Combate"), battle_name(sBattle), &ch);
     if (sRow == 0) { ch += padSide(); }
     if (ch != 0) { sBattle = (sBattle + ch + 5) % 5; }
     bool go = card_row(1, u * 2.0f, T("Open room", "Abrir sala", "Abrir sala"), "") || (sRow == 1 && padA());
     if (sRow == 0 && padA()) { sBattle = (sBattle + 1) % 5; }
+    // a lobby (the PC's 0.1.38.9, net_lobby.c): up to eight games meet at this one, two fight and the rest watch; its page is the game's own
+    // (Tenkaichi Budokai Online's, worked with the pad: the on-screen controller), which the main menu opens once a lobby is on
+    bool lobby = card_row(2, u * 3.55f, T("Open a lobby (up to 8)", "Abrir um lobby (até 8)", "Abrir un lobby (hasta 8)"), "") || (sRow == 2 && padA());
+    // spectators of this game's matches (the setting net_spectators, as the PC's Host tab and the touch menu's card)
+    {
+        int wch = 0;
+        const bool watch = Port_Setting("net_spectators", 1) != 0;
+        card_row(3, u * 5.1f, T("Let others watch", "Deixar outros assistirem", "Dejar que otros miren"), watch ? T("Yes", "Sim", "Sí") : T("No", "Não", "No"), &wch);
+        if (sRow == 3) { wch += padSide(); if (padA()) { wch = 1; } }
+        if (wch != 0) { Port_SettingSave("net_spectators", watch ? 0 : 1); Port_SettingsWrite(); }
+    }
+    if (lobby) {
+        sLobbyLast = 0;
+        rules_set(sBattle);
+        Port_SettingSave("net_battle", sBattle);
+        Port_LobbyCancel();
+        Port_NetNameSet(sName);
+        // (the rules as Create Room has them: no time limit, the competitive speed, rollback 8, the delay from the connection
+        // (the lobby's 0 = auto, as rules_set's -2); the lobby's page changes them)
+        if (Port_LobbyCreate(1, 0, sBattle, 4, Port_Setting("net_speed_host", Port_NetSpeedStandard()), Port_RollCan() ? 8 : 0, 0) >= 0) {
+            set_open(false);
+            DrNet_PresenceActive(0);
+            DrChat_Close();
+            goto_screen(HOME, 0);
+            return;
+        }
+        sLobbyLast = -3;
+    }
     const char *err = lobby_error(sLobbyLast);
     footer(err[0] ? err : rules_line(), "", controls_hint());
     if (go) {
@@ -521,10 +564,10 @@ static void code_field(float y) {
 static void screen_join(void) {
     if (header(T("Join room", "Entrar em sala", "Entrar a sala"), true) || (!sEditCode && padB())) { goto_screen(HOME, 1); sHomeRow = 1; return; }
     const float u = U();
-    card_start(u * 4.2f, u * 3.6f, T("INVITATION BY CODE", "CONVITE POR CÓDIGO", "INVITACIÓN POR CÓDIGO"));
+    card_start(u * 4.2f, u * 5.15f, T("INVITATION BY CODE", "CONVITE POR CÓDIGO", "INVITACIÓN POR CÓDIGO"));
     if (!sEditCode) {
         int m = padMove();
-        if (m != 0) { sRow = (sRow + m + 2) % 2; }
+        if (m != 0) { sRow = (sRow + m + 3) % 3; }
     }
     if ((card_row(0, u * 0.45f, T("Room code", "Código da sala", "Código de sala"),
                   sCode[0] ? sCode : T("Type the code", "Escrever código", "Escribir código")) || (sRow == 0 && !sEditCode && padA()))) {
@@ -532,6 +575,8 @@ static void screen_join(void) {
     }
     if (sEditCode) { code_field(u * 0.45f); }
     bool go = card_row(1, u * 2.0f, T("Join the room", "Entrar na sala", "Unirse a sala"), "") || (sRow == 1 && !sEditCode && padA());
+    // the same room's match, only watched (a spectator, Port_LobbySpectateCode: up to six; the controller does nothing in it)
+    bool watch = card_row(2, u * 3.55f, T("Watch the match", "Assistir à partida", "Ver la partida"), "") || (sRow == 2 && !sEditCode && padA());
     // paste
     {
         ImDrawList *dl = ImGui::GetWindowDrawList();
@@ -564,6 +609,32 @@ static void screen_join(void) {
         Port_LobbyStartCode(0, sCode);
         goto_screen(JOIN_WAIT);
     }
+    if (watch && strlen(sCode) == 6) {
+        sLobbyLast = 0;
+        Port_NetNameSet(sName);
+        Port_SettingTextSave("net_name", sName);
+        Port_SettingsWrite();
+        Port_LobbySpectateCode(sCode);
+        goto_screen(WATCH_WAIT);
+    }
+}
+
+static void screen_watch_wait(void) {
+    int st = lobby_step();
+    if (!sOpen) { return; }
+    if (header(T("Watch the match", "Assistir à partida", "Ver la partida"), true) || padB() || st < 0) {
+        if (st >= 0) { Port_LobbyCancel(); }
+        goto_screen(JOIN, 2);
+        return;
+    }
+    wait_card(U() * 4.6f, T("ROOM CODE", "CÓDIGO DA SALA", "CÓDIGO DE SALA"), sCode,
+              Port_LobbySpectateWaiting() ? T("The host is there: waiting for the match to begin...", "O anfitrião está lá: esperando a partida começar...",
+                                              "El anfitrión está: esperando que empiece la partida...")
+              : st == 1 ? T("Room found. Connecting...", "Sala encontrada. Conectando...", "Sala encontrada. Conectando...")
+                        : T("Looking for the room...", "Procurando a sala...", "Buscando la sala..."), col(1.0f, 0.86f, 0.30f));
+    footer(T("You will see the match about a second behind; your controller does nothing in it. R1: view. START: menu (view, stop watching).",
+             "Você verá a partida cerca de um segundo atrás; seu controle não mexe nela. R1: câmera. START: menu (câmera, parar de assistir).",
+             "Verás la partida un segundo atrás; tu control no hace nada en ella. R1: cámara. START: menú (cámara, dejar de ver)."), "", T("B: cancel", "B: cancelar", "B: cancelar"));
 }
 
 static void screen_join_wait(void) {
@@ -585,9 +656,11 @@ static void screen_quick(void) {
     static Uint64 asked;
     if (asked == 0 || SDL_GetTicks() - asked > 30000) { asked = SDL_GetTicks() + 1; Port_LobbyQueuesAsk(); }
     const float u = U();
-    card_start(u * 4.2f, u * 3.6f, T("CHOOSE YOUR FIGHT", "ESCOLHA SEU COMBATE", "ELIGE TU COMBATE"));
+    card_start(u * 4.2f, u * 5.15f, T("CHOOSE YOUR FIGHT", "ESCOLHA SEU COMBATE", "ELIGE TU COMBATE"));
     int m = padMove();
-    if (m != 0) { sRow = (sRow + m + 2) % 2; }
+    if (m != 0) { sRow = (sRow + m + 3) % 3; }
+    int region = Port_Setting("tbo_region", 0); // (the PC's screens' setting: the same choice here and in Tenkaichi Budokai Online)
+    if (region < 0 || region > 8) { region = 0; }
     char val[64];
     int waiting = Port_LobbyQueueWaiting(sQueue2);
     if (waiting > 0) { SDL_snprintf(val, sizeof(val), T("%s (%d waiting)", "%s (%d esperando)", "%s (%d esperando)"), battle_name(sQueue2), waiting); }
@@ -597,13 +670,25 @@ static void screen_quick(void) {
     if (sRow == 0) { ch += padSide(); }
     if (sRow == 0 && padA()) { ch = 1; }
     if (ch != 0) { sQueue2 = (sQueue2 + ch + 5) % 5; }
-    bool go = card_row(1, u * 2.0f, T("Search for a rival", "Buscar rival", "Buscar rival"), "") || (sRow == 1 && padA());
+    // the region (the PC's 0.1.38.9): players there first, everyone after a while
+    {
+        static const char *const names[9][3] = {{"Auto (nearest first)", "Auto (mais perto primeiro)", "Auto (más cerca primero)"},
+            {"North America", "América do Norte", "América del Norte"}, {"South America", "América do Sul", "América del Sur"},
+            {"Europe", "Europa", "Europa"}, {"Middle East", "Oriente Médio", "Oriente Medio"}, {"Africa", "África", "África"},
+            {"Asia", "Ásia", "Asia"}, {"Oceania", "Oceania", "Oceanía"}, {"Anywhere", "Qualquer lugar", "Cualquier lugar"}};
+        int rch = 0;
+        card_row(1, u * 2.0f, T("Region", "Região", "Región"), T(names[region][0], names[region][1], names[region][2]), &rch);
+        if (sRow == 1) { rch += padSide(); if (padA()) { rch = 1; } }
+        if (rch != 0) { region = (region + rch + 9) % 9; Port_SettingSave("tbo_region", region); Port_SettingsWrite(); }
+    }
+    bool go = card_row(2, u * 3.55f, T("Search for a rival", "Buscar rival", "Buscar rival"), "") || (sRow == 2 && padA());
     const char *err = lobby_error(sLobbyLast);
     footer(err[0] ? err : rules_line(), "", controls_hint());
     if (go) {
         sLobbyLast = 0;
         rules_set(sQueue2);
         Port_SettingSave("net_queue", sQueue2);
+        Port_LobbyQuickArea(kRegionArea[region]);
         Port_LobbyStartQuick(sQueue2);
         sSearchSince = SDL_GetTicks();
         sFoundAt = 0;
@@ -621,7 +706,7 @@ static void screen_quick_wait(void) {
     }
     if (header(T("Searching for a rival", "Buscando rival", "Buscando rival"), true) || padB() || st < 0) {
         if (st >= 0) { Port_LobbyCancel(); }
-        goto_screen(QUICK, 1);
+        goto_screen(QUICK, 2);
         return;
     }
     wait_card(U() * 4.6f, st == 1 ? T("RIVAL FOUND", "RIVAL ENCONTRADO", "RIVAL ENCONTRADO") : T("SEARCH UNDER WAY", "BUSCA EM ANDAMENTO", "BÚSQUEDA EN CURSO"),
@@ -985,7 +1070,8 @@ static void window(void) {
     case RANKED_WAIT: screen_ranked_wait(); break;
     case BOARD: screen_board(); break;
     case CHAT: screen_chat(); break;
-        case REMATCH: screen_rematch(); break;
+    case REMATCH: screen_rematch(); break;
+    case WATCH_WAIT: screen_watch_wait(); break;
     }
     ImGui::End();
     if (close) {

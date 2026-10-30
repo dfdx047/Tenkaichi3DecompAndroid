@@ -1,4 +1,4 @@
-/* Extract the game's UTF-16 text tables from menu archives at startup. */
+/* Extract the game's UTF-16 menu, mode and story text tables at startup. */
 #include "ui_text_extract.h"
 #include <pthread.h>
 #include <stdint.h>
@@ -24,7 +24,17 @@ typedef struct UtLine { char *id; uint8_t *text; size_t n; unsigned tableLines; 
 typedef struct UtWriter { FILE *fp; unsigned count; int file; UtLine *lines; unsigned nLines, capLines; int failed; } UtWriter;
 static pthread_mutex_t sUtLock = PTHREAD_MUTEX_INITIALIZER;
 static int sUtStarted;
-static const int kUtMenuFiles[] = {5, 448, 449, 450, 451, 452, 453, 459, 460, 461, 463, 472};
+/* All 31 menu packs, including the separately loaded tournament, saga and Ultimate Battle screens.
+   Story command 701 loads file ID 0x231 + story: archive entry 560 + story (50 episodes). */
+static const int kUtTextFiles[] = {
+    5,
+    448, 449, 450, 451, 452, 453, 454, 455, 456, 457, 458, 459, 460, 461, 462, 463,
+    464, 465, 466, 467, 468, 469, 470, 471, 472, 473, 474, 475, 476, 477, 478,
+    560, 561, 562, 563, 564, 565, 566, 567, 568, 569, 570, 571, 572, 573, 574, 575,
+    576, 577, 578, 579, 580, 581, 582, 583, 584, 585, 586, 587, 588, 589, 590, 591,
+    592, 593, 594, 595, 596, 597, 598, 599, 600, 601, 602, 603, 604, 605, 606, 607,
+    608, 609
+};
 
 static uint32_t ut_u32(const uint8_t *p) {
     return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
@@ -164,7 +174,16 @@ static void ut_emit(UtWriter *w, const char *id, UtBuf line, unsigned tableLines
 static void ut_walk(UtWriter *w, UtBuf b, const char *path, int depth) {
     uint32_t n, i, lines = 0;
     UtBuf line;
-    if (depth > 4 || !ut_archive(b, &n)) return;
+    if (depth > 6) return;
+    if (!ut_archive(b, &n)) {
+        UtBuf unpacked;
+        /* The separate mode packs are compressed as a whole, rather than archive members. */
+        if (ut_unpack(b, &unpacked)) {
+            ut_walk(w, unpacked, path, depth + 1);
+            free((void *)unpacked.p);
+        }
+        return;
+    }
     for (i = 1; i <= n; i++) if (!ut_section(b, i, &line) || !ut_line(line)) break;
     if (i > n) {
         for (i = 1; i <= n; i++) {
@@ -203,8 +222,8 @@ static uint8_t *ut_read(const char *path, size_t *size) {
     if (fread(data, 1, (size_t)n, fp) != (size_t)n) { free(data); fclose(fp); return NULL; }
     fclose(fp); *size = (size_t)n; return data;
 }
-/* What an extracted catalog says it is. Version 2 has the lines among other sections too (the pause menu). */
-#define UT_SOURCE "extracted USA game text, version 2"
+/* Version 3 adds whole compressed packs, all mode menus and the story dialogue tables. */
+#define UT_SOURCE "extracted USA game text, version 3"
 /* An English catalog this program extracted in an earlier version (never one a person wrote or edited: those name
    another source). */
 static int ut_stale(const char *path) {
@@ -215,7 +234,9 @@ static int ut_stale(const char *path) {
     n = fread(head, 1, sizeof(head) - 1, fp);
     fclose(fp);
     head[n] = 0;
-    return strstr(head, "\"source\": \"extracted USA game text\"") != NULL;
+    return (strstr(head, "\"source\": \"extracted USA game text\"") != NULL ||
+            strstr(head, "\"source\": \"extracted USA game text, version ") != NULL) &&
+           strstr(head, "\"source\": \"" UT_SOURCE "\"") == NULL;
 }
 static void *ut_worker(void *arg) {
     UtJob *job = arg;
@@ -227,13 +248,13 @@ static void *ut_worker(void *arg) {
     w.fp = fopen(temp, "wb");
     if (w.fp == NULL) goto done;
     fputs("{\n  \"schema_version\": 1,\n  \"labels_version\": 1,\n  \"translation_version\": 1,\n  \"locale\": \"en\",\n  \"name\": \"English\",\n  \"source\": \"" UT_SOURCE "\",\n  \"labels\": {\n", w.fp);
-    for (i = 0; i < (int)(sizeof(kUtMenuFiles) / sizeof(kUtMenuFiles[0])); i++) {
+    for (i = 0; i < (int)(sizeof(kUtTextFiles) / sizeof(kUtTextFiles[0])); i++) {
         uint8_t *data;
         UtBuf b;
-        if (snprintf(path, sizeof(path), "%s/pzs3us1/%05d.bin", job->data, kUtMenuFiles[i]) >= (int)sizeof(path)) continue;
+        if (snprintf(path, sizeof(path), "%s/pzs3us1/%05d.bin", job->data, kUtTextFiles[i]) >= (int)sizeof(path)) continue;
         data = ut_read(path, &size);
         if (data == NULL) continue;
-        b.p = data; b.n = size; w.file = kUtMenuFiles[i];
+        b.p = data; b.n = size; w.file = kUtTextFiles[i];
         { char id[32]; snprintf(id, sizeof(id), "pzs3us1/%05d", w.file); ut_walk(&w, b, id, 0); }
         free(data);
     }
@@ -311,13 +332,16 @@ static int ut_line_same(const UtLine *a, const UtLine *b) {
 /* The lines of one disc: the USA one's (bank -1, gamedata/pzs3us1) or a European language bank's (0 English ...). */
 static int ut_collect(const char *data, int bank, UtWriter *w) {
     int i;
-    for (i = 0; i < (int)(sizeof(kUtMenuFiles) / sizeof(kUtMenuFiles[0])); i++) {
+    for (i = 0; i < (int)(sizeof(kUtTextFiles) / sizeof(kUtTextFiles[0])); i++) {
         char path[1300], id[32];
         size_t size;
         uint8_t *bytes;
         UtBuf b;
-        int usa = kUtMenuFiles[i];
-        int entry = bank < 0 ? usa : usa == UT_EU_HUD ? UT_EU_HUD + bank : UT_EU_FIRST + (usa - 448) + bank * UT_EU_STRIDE;
+        int usa = kUtTextFiles[i];
+        /* EU story English begins at 656, then 50 entries per language (verified against SLES-54945). */
+        int entry = bank < 0 ? usa : usa == UT_EU_HUD ? UT_EU_HUD + bank :
+                    usa >= 560 ? 656 + (usa - 560) + bank * 50 :
+                    UT_EU_FIRST + (usa - 448) + bank * UT_EU_STRIDE;
         if (snprintf(path, sizeof(path), "%s/%s/%05d.bin", data, bank < 0 ? "pzs3us1" : "pzs3eu1", entry) >= (int)sizeof(path)) return 0;
         if ((bytes = ut_read(path, &size)) == NULL) return 0;
         b.p = bytes; b.n = size;
@@ -365,7 +389,7 @@ int UiText_EuropeanOnStartup(const char *gameTextDir, char *why, size_t whyLen) 
     }
     for (k = 0; k < 5; k++) {
         if (!ut_collect(data, k, &eu[k])) {
-            snprintf(why, whyLen, "the European disc's archives in %s/pzs3eu1 are incomplete or damaged", data);
+            snprintf(why, whyLen, "the European disc's archives in %s/pzs3eu1 are incomplete or damaged; import the European disc again to add mode and story text", data);
             goto done;
         }
         qsort(eu[k].lines, eu[k].nLines, sizeof(*eu[k].lines), ut_line_order);

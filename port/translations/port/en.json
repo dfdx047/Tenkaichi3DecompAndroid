@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "labels_version": 1,
+  "labels_version": 3,
   "translation_version": 1,
-  "labels_count": 3,
+  "labels_count": 18,
   "locale": "en",
   "name": "English",
   "order": 1,
@@ -18,6 +18,66 @@
     "net/rival_here": {
       "original": "Your rival \"{name}\" is here! The match begins.",
       "text": "Your rival \"{name}\" is here! The match begins."
+    },
+    "net/lobby_joined": {
+      "original": "You are in the lobby. Its screen opens from the main menu (Dragon Net Battle).",
+      "text": "You are in the lobby. Its screen opens from the main menu (Dragon Net Battle)."
+    },
+    "net/rival_from": {
+      "original": "Your rival \"{name}\" from {region} is here! The match begins.",
+      "text": "Your rival \"{name}\" from {region} is here! The match begins."
+    },
+    "net/round_trip": {
+      "original": "Round trip: ~{ms} ms",
+      "text": "Round trip: ~{ms} ms"
+    },
+    "region/NA": {
+      "original": "North America",
+      "text": "North America"
+    },
+    "region/SA": {
+      "original": "South America",
+      "text": "South America"
+    },
+    "region/EU": {
+      "original": "Europe",
+      "text": "Europe"
+    },
+    "region/ME": {
+      "original": "the Middle East",
+      "text": "the Middle East"
+    },
+    "region/AF": {
+      "original": "Africa",
+      "text": "Africa"
+    },
+    "region/AS": {
+      "original": "Asia",
+      "text": "Asia"
+    },
+    "region/OC": {
+      "original": "Oceania",
+      "text": "Oceania"
+    },
+    "update/available": {
+      "original": "Update {version} available. F1 to update.",
+      "text": "Update {version} available. F1 to update."
+    },
+    "update/downloading": {
+      "original": "Downloading update {version}: {percent}%",
+      "text": "Downloading update {version}: {percent}%"
+    },
+    "update/ready": {
+      "original": "Update {version} is ready. F1 > Restart now.",
+      "text": "Update {version} is ready. F1 > Restart now."
+    },
+    "update/done": {
+      "original": "Updated to {version}.",
+      "text": "Updated to {version}."
+    },
+    "update/online_off": {
+      "original": "An update is being installed: online play is off until the game restarts (F1 > Restart now).",
+      "text": "An update is being installed: online play is off until the game restarts (F1 > Restart now)."
     }
   }
 }

@@ -2085,8 +2085,8 @@ If the number is higher than this program's:
 Nothing is downloaded or installed by the game. Updating is copying the new files over the old ones.
 
 F1, Misc (a tab of its own, the seventh): "Check for updates" (setting `update_check`, on by default) turns the request off. It is not made under the
-offscreen or dummy video drivers (test runs). `BT3_UPDATE_CHECK=1` / `0` overrides both; `BT3_UPDATE_LATEST=<n>`
-is taken as the answer without asking. `PORT_UPDATE_REPO` (port_release.h) names the repository: a fork that
+offscreen or dummy video drivers (test runs). `BT3_UPDATE_CHECK=1` / `0` overrides both. (From the release after 0.1.38.9
+the game also installs updates: see "Automatic updates" below; `BT3_UPDATE_LATEST` is gone.) `PORT_UPDATE_REPO` (port_release.h) names the repository: a fork that
 publishes its own releases changes it, or its players are told of this repository's.
 
 GitHub allows 60 such requests an hour from one address without an account; one per start is far inside it, and a
@@ -2613,8 +2613,9 @@ match: the lobby stops with "Your game data and the other player's are not the s
 own, so both sides say so), and a session that got that far goes back to the menu with the same line. Until then
 two players with different discs (a modified image on one side) were matched, and the desync check ended the
 match a moment into the fight. Two copies with the same modified image have the same fingerprint and are let in.
-A copy that does not send it (0.1.37 and older) is let in as before; `NET_VERSION` stays. `BT3_TEST_FPRINT=<hex>`:
-testing, a copy claims that value. `BT3_LOBBY=direct:<port>` / `direct:<address>:<port>`: the lobby by address
+A copy that does not send it (0.1.37 and older) is let in as before; `NET_VERSION` stays (since 2026-10-27 that is
+a constant, and a game no longer connects before its own is known: "Online: whose data may meet" below).
+`BT3_TEST_FPRINT=<hex>`: testing, a copy claims that value. `BT3_LOBBY=direct:<port>` / `direct:<address>:<port>`: the lobby by address
 without its window (tests).
 
 ### Cache and cost
@@ -3571,3 +3572,861 @@ A copy whose MP3 is gone stays a song, and an ADX without the mark (made by hand
 left out. The files are not touched. Counted at start, four folders: MP3 + its copy + WAV + FLAC gave 3 songs
 (4 before); the copy alone 1; a hand-made ADX beside an MP3 of the same name 2; the list naming the copy 3. Heard
 (Linux): WAV and FLAC songs in a fight, and the MP3 beside its old ADX copy.
+
+## Spectators (2026-10-26)
+
+The first stage of the lobbies: a third game, and up to six, can watch a one-on-one match. (Later an eight-place
+lobby is to reuse it: two players, six spectators, the host in the middle.)
+
+**How.** A session is computed from its first blank out of nothing but the two players' input (the chapters on
+the session's start-up above: nothing else enters the game's state). So a spectator does not need to be sent
+pictures or state: the host sends it the match's set-up, the same words the one who joins is told (rules and speed,
+the seed, both players' camera and shake options, the names), and then the input of both players for every blank
+from the session's first, as the host has it CONFIRMED: its own, and the other player's as it arrived, never a
+guess (`spec_log_update`: every blank below the input known of both). The spectator's copy starts a session like
+the players' (state put back to the first blank, or the program started as the session), runs the same unseen
+start-up, and from the character select on reads both pads from what came (`Port_NetInput`): it computes the same
+character select, battles and rematches, and its player-1 view is the host's picture.
+
+- **Buffer.** It keeps about a second of the host's blanks in hand (`SPEC_BUFFER`, 60). With none left it waits
+  until it has a second's worth again ("Waiting for the match..."); more than two seconds behind (it came in
+  mid-match, or loaded slower) it runs blanks without picture, sound and pacing until it is back at one second
+  ("Catching up with the match... N%", `Port_NetSpecSkip`, the way blanks after a rollback are run).
+- **Whole match kept.** The host keeps every blank's input of the session (36 bytes a blank, 7.8 MB an hour; at
+  most 1,000,000 blanks), so a spectator can come at any time and is sent the match from its first blank.
+- **Packets** (`T_SPEC_*`, types 20 to 28, gs/net.c, the comment above `spec_pump`): greeting (with the
+  fingerprint, the netcode version and a version of its own), wait, no (with why), set-up, data, ack, goodbye,
+  the list of who watches (to the other player), ready (to a lobby's question). Data packets carry a run of blanks,
+  a byte per step: `0x80|n` = the next n+1 blanks are the one before again, `1`/`2`/`3` = the pad(s) that changed
+  follow; a packet's first blank is whole, so every packet stands by itself (a fight with random presses on both
+  sides is about 15 bytes a blank, a menu nothing). After the blanks, the host's sure check values (`sync_check`,
+  every 32 blanks) from the first not yet sent.
+- **Unreliable line.** The spectator says every 50 ms how many blanks it has in a row, and at once when a packet
+  came after a gap; the host sends again from there (after such a word, or after half a second without progress).
+- **The players come first.** Nothing waits for a spectator. The host does its sending with its looks at the socket
+  (`receive`), at most every 16 ms: a live spectator gets a packet every other blank or so (about 30 a second,
+  3 to 4 KB), one with nothing new one every half second, and those that are catching up two packets of 1,150
+  bytes every 16 ms between them all (about 140 KB a second at most, whatever their number). A spectator silent for
+  8 s, or still a minute behind after a minute, is let go.
+- **Same data, same release.** The greeting carries the gameplay fingerprint: different data are refused ("The host's
+  game data are not the same as yours..."), so is another netcode or spectator version. A 0.1.38.7 host ignores
+  every packet of a spectator: after 10 s without an answer the spectator says so ("No answer from the host...
+  needs a release newer than 0.1.38.7 on the host as well"). Nothing the two players send each other changed:
+  NET_VERSION stays 5, and the new build plays 0.1.38.7 both ways.
+- **Desync.** The spectator compares the host's check values with its own. When they differ it says so ("this
+  screen no longer shows the players' fight") and follows the match again from its first blank, once (a second
+  difference is only noted). The players are never told or touched.
+- **The view.** A session's battle is the game's two-player battle with both cameras computed on every copy; each
+  player's copy shows its own one full screen (`BtlCam_UpdateOverride`, `Port_NetView`). The spectator chooses:
+  player 1's (the default), player 2's, or both halves as the game draws them on one machine, V or R1 (and F1 >
+  Change view). Only drawing: the fight's values are the same in every view (tested below; the game's whole state
+  differs by the camera, as between the two players' copies).
+
+**In the game.** (From 0.1.39 there is no Watch anywhere: a spectator joins a lobby, by its code on Join or its
+owner's address on Join by Address, and is given a spectator's place; see "0.1.39: lobbies replace rooms". What
+follows is the window as it was then.) The online window's Join tab has "Watch
+the match" beside "Join the match" (by address and port, or by room code); the Host tab "Let others watch the match" (setting `net_spectators`, on by default; the host then
+answers no). While the host has no match yet the spectator waits ("The host is there but its match has not begun
+yet"). The players see "N watching: names" small in the top right corner; the spectator a line at the top
+("Spectating A vs B, view: ...", "V or R1: change view, F1: stop watching"), and F1 has Change view and Stop
+watching. (Later the same day the spectator's line and a pause menu of its own, START, became the game's: see
+"Lobbies", "The screens".) Its controller and keyboard play nobody (and nothing vibrates). When the players leave, the spectator is
+told and goes back to where it was.
+
+**Room codes** (port/matchmaking/README.md, "Spectators"): the spectator asks the service for the room's host
+(`/v1/watch`), the host learns the spectator's addresses with its polls (`watch: true`) and knocks at them for ten
+seconds, letting them through its relay if it holds one. A host that lets spectators in keeps its room while the
+match is on (`keep: true` every five seconds) and gives it up when the session ends; one that does not, gives it up
+when the match begins, as before. Needs the Worker change deployed (a new table and the code).
+
+**Limits.** Six spectators. A spectator behind a router that the host's knocking does not open, with a host that has
+no relay address (the relay is only asked for when the two players needed it), cannot watch by code. Watching by
+code needs the session without a restart on the host (the 64-bit programs with the state list). During a catch-up
+the spectator sees the last picture and hears nothing. A match with a modified disc is watched only by a copy with
+the same one.
+
+**Testing.** `BT3_LOBBY=spectate:<address>:<port>` or `spectate:CODE` (the lobby without its window),
+`BT3_NET_SPECTATE=<address>:<port>` with `BT3_NET_SESSION=1` (started as the session); `BT3_LOBBY_AT=<n>` (the lobby
+begins at the n-th blank, as from the menus), `BT3_SPEC_VIEWS=<blank>:<view>|...` (0, 1, 2 = split),
+`BT3_SPEC_LEAVE=<blank>`, `BT3_TEST_SPEC_APART=<blank>` (this spectator claims a wrong check value once),
+`BT3_NET_LOSS` (a spectator drops that share of what it sends and receives), `BT3_NET_SPECTATORS=0|1` (the host's
+setting), `BT3_NET_SAVES=<folder>` (the session's save folder, for several copies in one folder),
+`BT3_SHOT_DIR=<folder>` (screenshots there, named by frame and blank: two copies' pictures of one blank compared).
+A program started as the session now exits when the session ends (it kept no game to go back to; it used to crash).
+
+Found on the way: a session begun from the lobby window (not by starting the program again) waited forever at the
+language question of the start-up when no language had been chosen yet, or with "Always ask" on: it now never
+asks in a session.
+
+**Tested** (this machine, every copy offscreen and on 127.0.0.1; host and joiner fed one table of random presses
+from the character select on, `BT3_NET_SCRIPT`, rollback 8, 20 ms each way, 60 s battles at 100%; `BT3_HASH` of
+every blank compared, the last line of a blank counting):
+
+| case | compared | result |
+|---|---|---|
+| two spectators from the start (one by the lobby, caught up 570 blanks; one started as the session) | 13,403 blanks, two battles and the rematch between | the whole state identical to the host's in every blank |
+| a spectator coming mid-fight (at the host's blank 6,293; 5,151 blanks run without picture) | 13,942 blanks | identical |
+| a spectator with 15% of its packets lost both ways | 13,998 blanks | identical (one wait of 0.74 s) |
+| views 1 -> 2 -> split -> 1 -> split, and one that left at blank 10,000 | 4,380 and 5,893 fight blanks | the fight's values identical (the whole state differs from the first change: the camera); 312 check values compared, none differed; the host let it go at once |
+| a spectator killed | | the host let it go after 8 s |
+| a false check value at blank 4,000 | | noted, followed again from the start (2,597 blanks caught up), then 4,557 fight blanks identical |
+| pictures: host and spectator, every 20th frame of 110 s | 169 pictures of the same blanks | 168 byte-identical; the first after the start-up differs in 58 pixels of its bottom-right corner |
+| by room code through a local copy of the new Worker: one before the match (told to wait), one mid-match (1,851 caught up) | 4,798 blanks | identical; the joiner's log names them |
+| seven spectators | | the seventh is told the match has six |
+
+The players' pacing (host / joiner, `BT3_LAG_LOG`, 130 s): without spectators, pictures 33.26 ms apart on average,
+99th percentile 34.7 / 37.6 ms, longest 38.0 / 38.1, no waits; with six spectators (without picture, so as not to
+share this machine's graphics card) 33.26, 37.6 / 34.7, 38.8 / 37.8, no waits; rollbacks per 600 blanks within
+the run-to-run spread of the random input (44 to 48). (With four spectators that draw too, the six pictures at 2x
+on one graphics card made frames of up to 100 ms on the players' copies: this machine, not the netcode.)
+0.1.38.7 against this build, host and joiner both ways: the fight's values identical over 4,283 fight blanks, no
+desync; two 0.1.38.7 copies by room code through the new Worker: connected as before; a spectator of a 0.1.38.7
+host: "No answer from the host..." after 10 s by address, the same or "No room with that code..." by code. The
+Windows build compiles (mingw-w64).
+
+## Lobbies (2026-10-26)
+
+An eight-place lobby on top of the spectators (the chapter above): two players and up to six spectators meet at the
+game of the one who made it, the owner. The owner puts people in the places, chooses the rules and starts the
+matches; the two in the player places play, everyone else watches.
+
+**In the game** (changed the same day: the lobby is one of the game's own screens now, no longer an ImGui window; see
+"The screens" below. From 0.1.39 Lobby opens New Lobby, with Open Lobby and Host by Address, and Join Room is
+called Join: "0.1.39: lobbies replace rooms"). Tenkaichi Budokai Online's list has Lobby: it asks for nothing, opens a lobby with a room code
+and shows its page at once, with the code to hand on. Others type that code on Join Room: the service's answer says
+it is a lobby, and the game becomes a member and shows the same page. (By address, `BT3_LOBBY=lobbyjoin:`, Join by Address
+(2026-10-28) and the Dragon Net Battle window's Join tab still work; the window then closes with a line saying that the lobby's screen
+is in Tenkaichi Budokai Online, which the main menu goes to by itself.) The page (src/menu/port_tbo.c, `TB_LOBBY`):
+
+- the places: 1P and 2P, then spectators 1 to 6, with the owner's mark, this game's own ("YOU") and who is ready.
+  The owner chooses a name: Move (then the place: the two swap) or Remove from the Lobby. A newcomer takes the first
+  free place (a player's while one is free and no match is on);
+- the rules as rows with left / right: battle (single, team, DP 10 / 15 / 20), time limit, game speed (100 to 150 in
+  steps, 114 marked as the standard), rollback, input delay. A new lobby starts from Create Room's choices (from
+  0.1.39: from the rules its owner last set on a lobby's page). Everyone
+  sees them change at once; while a match is on they cannot change;
+- Start Match (the owner, with both player places taken; also START), Ready / Not Ready, Chat, leaving (triangle:
+  Leave / Close the Lobby, with a yes / no window), the code (square copies it on a PC), and in the box at
+  the foot of the screen the last three things that happened ("Vegeta joined the lobby", "Match 2: Goku vs Vegeta",
+  the chat's lines).
+
+**A match.** The game in 1P hosts it, the one in 2P joins it, as any online match (the character select, rematches,
+everything as in a match from the Host tab), with the lobby's rules. Everyone else watches it as a spectator **of the
+owner**: the owner's game passes the match on to them whatever its own part is (host; the one who joined: its own
+confirmed input of both players; a spectator itself: what its host sent it, check values included). So the members
+only ever talk to the owner, whom they can already reach, and the owner's view or part makes no difference to them.
+The two players reach each other directly (when one of them is the owner, over the lobby's own connection); when
+neither is, the host knocks at the other's address as the owner sees it and at its own public address (STUN), and the
+one who joins greets both.
+
+**Back to the lobby.** Only the owner, three ways: the game's pause menu mid-fight and its menu after a battle have
+"Return to Vs Menu" for the owner's side (with the pause menu's yes / no box), which ends the battle on every copy and
+the session with it (`src/battle/hud_0.c` builds the menus' two forms at a battle's start, the owner's with the entry
+and the other player's without it and without "Return to Main Menu", and picks one each time a menu runs, by its pad;
+the owner's side travels in bits 24..27 of the rules word, the same on every copy; `src/menu/menu_a_b.c` turns that
+result into the main menu, which ends the session); F1 > "Back to the lobby"; and a spectating owner's own pause menu.
+Every member's session ends on the owner's word (`T_LOBBY_BACK`) and all are on the lobby's page again, where the
+rules can be changed and the next match started. Going back from the character select opens it again in a lobby's
+match (`src/menu/menu_g_b.c`): only the owner ends it.
+
+**A spectator's pause menu** (START, Esc or the key bound to START): only on its screen, nothing stops. Continue, View
+(player 1's, player 2's, split screen, with left / right; also V / R1 outside the menu), Leave the Lobby (the owner:
+Close the Lobby; a yes / no first), and for the owner Back to the Lobby. It is the game's (below).
+
+**Leaving.** Anyone, at any time: the window's button, F1, a spectator's pause menu. A spectator leaving changes
+nothing for the others (its place frees). A player leaving mid-fight ends the match: everyone is back in the lobby
+window with "NAME left the lobby", and the owner fills the free place. The owner leaving closes the lobby for everyone
+("The lobby was closed by its owner."). A member whose game falls silent for 15 s is dropped (a player's: the match
+ends); a member that hears nothing from the owner for 15 s says the lobby is closed. Removed members read "The lobby's
+owner removed you from the lobby." A full lobby answers "This lobby is full (8 places)."
+
+**How** (port/src/gs/net_lobby.c; packets 30 to 40, ignored by older releases). The owner keeps the places, the
+rules, who is ready; members greet it (`HELLO`: versions, gameplay fingerprint, name, own public address) and say
+every second that they are there (`ALIVE`: ready, the match they were sent to, the match they are in, connected); the
+owner sends the whole lobby every second and at each change (`STATE`, 368 bytes). `GO` tells a member its part in
+match n (host, join an address, watch the owner) with the rules, rollback and delay; the session begins as one from
+the online screens always does (the state put back to the first blank, gs/state.c) on the lobby's own socket, which the
+session hands back when it ends (`Port_NetSessionEnd`: no close, no relay given up). `BACK`, `CLOSE`, `LEAVE`,
+`CHAT` / `SAID`. Everything runs on the game's thread: outside a session from `Port_VBlank` (`Lobby_Pump`), in one
+from the look at the socket (`receive`). The owner sends `GO` again to a spectator that is back on the lobby's page
+while the match is on (a desync, its connection), and ends the match when a player's session has ended or the two
+have not connected in 40 s. Nothing of the two players' traffic changed; a lobby is a release-after-0.1.38.7 thing.
+
+Lobbies need the session without a start again (the 64-bit programs with their .mem list; otherwise the page says
+so). The game is put back, after each match, to the moment its match was asked for: the lobby's page, where it was.
+
+**Old releases.** A 0.1.38.7 with the code: the service answers "old" (it shows "Update available. Online servers
+are unreachable until you update."). By address: the owner answers its greeting as a host of another release would ("The
+host's game is a different version"). A new game greeting by address as for a match of two is told "lobby"
+(`INVITE`) and becomes a member.
+
+**The relay.** The owner holds the relay (net_relay.c now serves up to twelve addresses, each with a channel of its
+own, and lets sixteen through): a member who joined with the code and has not reached the owner in eight seconds
+makes it ask for one, once per lobby (`/v1/relay`, allowed to a lobby's owner once a member has come); members learn
+its address by polling with their key. Cloudflare documents no limit on peers or channels per allocation that we
+know of; TURN itself allows 4096 channels. **Not tested against Cloudflare's service** (no local TURN server here):
+the multi-peer client is exercised only by code reading; a match of two through the relay uses one place as before.
+The two players reach each other directly only (when neither is the owner): two players who cannot are told "The two
+players could not connect to each other." after 40 s; routing their match through the owner is not done.
+
+**The screens** (the same day, later: the lobby moved out of Dear ImGui into the game's own menus, with the elements
+of Tenkaichi Budokai Online's pages; "the less we rely on ImGui the better").
+
+- *The page* (src/menu/port_tbo.c, `TB_LOBBY`, drawn with the kit of port_screen.c like the other pages: the
+  tournament grounds, the heading, windows, bars, the gold cursor bar, the pad's prompts, the Menu font). Left, the
+  eight places in a window; right, the code (square: Copy Code), the rules and four buttons in two rows. Up / down
+  move in a side, left / right go from the places to the right side and back (on a rule they change it; L1 / R1
+  switch sides from anywhere). Cross on a place opens the owner's window (Move, then the place, the two swap;
+  Remove from the Lobby; Back). Start Match, Ready / Not Ready, Chat, Leave / Close Lobby (a yes / no window; also
+  triangle). The talk box at the foot shows the last three things that happened, each cut to a line, in the game's
+  own font; before anything has, the hosts' hint. While the lobby is being reached a window says so (circle or
+  triangle: cancel); when it is closed, why, and OK goes back to the list. The screen reader is told the page, what
+  the cursor is on, what was typed and each new line of what happened.
+- *Changed after the first test by the user* (the same day): the page has no Close / Leave button (triangle does it,
+  with its yes / no): the owner's buttons are Start Match and Ready, with Chat across the row under them; a member's
+  Ready and Chat, one row in the middle. Going back from a lobby match's character select is the owner's way back to
+  the lobby for everyone (as "Back to the Lobby" in a fight: the session ends on every copy); the other player's
+  triangle does nothing there (src/menu/menu_c_e.c, `CharSel_PortLobbyHold`; before, the select opened again). The
+  players' pause menu and the menu after a battle say "Back to the Lobby" for the owner's way back (the item
+  "Return to Vs Menu" kept, its text the port's: text number 0x6FFE, hud_0_b.c). A lobby's game that ends (its
+  window closed, the game quit: atexit) sends what leaving does: the owner closes the lobby for everyone (CLOSE, three
+  times, also in a match, from its socket then), a member leaves (LEAVE); the others know at once ("The lobby was
+  closed by its owner." / "NAME left the lobby") instead of after 15 s of silence. And the player's name is the
+  setting `net_name` (the settings file's, as Dragon Net Battle's window writes it; Profile writes it too) before
+  online_name.txt: two copies with their own settings files had both read the shared file's "Player".
+  Tested (by code, owner + 2): the player's pause and result menus with "Back to the Lobby"; the 2P player's
+  triangle at the character select (nothing), then the owner's (everyone back on the page); the owner quitting in the
+  lobby, at the character select and mid-fight (the members: "The lobby was closed by its owner." at once), the 2P
+  player quitting mid-fight ("Vegeta left the lobby", everyone back); fight values identical in every match.
+  `BT3_LOBBY_DO` has `quit` (the program ends, as when its window is closed).
+- *A spectator's delay* (the same day, from the user's test with three windows): the spectator ran a fixed second
+  behind the host (`SPEC_BUFFER`). It now runs 24 blanks behind at first (about 0.4 s at 114%), 12 more each time
+  it runs out of the host's blanks (a stall of the line or of the host; at most the old second), and 2 fewer after
+  each quiet 900 blanks (down to 18); a spectator further behind than its lead and 12 runs one blank in sixteen
+  without picture until it is back (only beyond the lead and 60, as before, it runs without picture until caught
+  up). Still only the host's confirmed blanks. Measured (offscreen, 114%, drawing, 100 s; `BT3_PRESENT_LOG`, the
+  fight's pictures): the spectator's pictures 29.0 / 29.5 / 30.1 ms (5th / 95th / 99th percentile) before and
+  29.1 / 29.4 / 30.0 after, no picture over 36 ms; 27 blanks behind the host's latest from the fight on, with 5% of
+  its packets lost too; the host's pictures unchanged; fight values identical. The 20 frames a second of that test
+  were the three windows at 8x with a texture pack on one graphics card (the players' too), and its 0.7 s pauses
+  came in all three windows at once ("submitting the frame"): the card, not the netcode.
+- *Reaching the owner* (from the user's test, a Windows owner and a Linux member on one network: the owner said the
+  member had joined, the member never heard it): a member connecting takes the owner's first answer by the nonce of
+  its greeting (a number from the system's random source, new for each attempt), which the owner's STATE now
+  carries (LOBBY_VERSION 2: a game of the version before is told the versions differ), from whatever address it
+  comes (an answer from another address of the owner's machine, or through its router with another port, was
+  dropped); without it nothing is taken, and once in only the owner's address counts, as before. It says in the
+  log where it greets the owner and what it did not take, and when nothing answers says
+  so without guessing a version ("A firewall on the owner's PC may be blocking the game..."). The owner already
+  knocks at the addresses of members the service tells of, as a room's host does, and asks for a relay after eight
+  seconds. `BT3_TEST_FIREWALL=1`: this copy takes only what comes from addresses it has sent to (a stateful
+  firewall). Tested: an owner with it, a member by code, ten times through a local Worker and twice through the
+  live one: joined each time; forged answers (no nonce, a wrong one, a NO with a wrong one) from another socket of
+  this machine: not taken. The user's case itself was not reproduced here.
+- *Chat* is the name's keypad (letters, digits, -_.!?#&*+, space; the PC keyboard types any plain character but < and
+  >), up to 60 characters, sent with Done or START; the lines are in the talk box. No ImGui is left in the lobby.
+- *Getting there.* The hub's new Lobby (between Join Room and Friends; the list is ten bars now, 26 units apart
+  instead of 27.5; from 0.1.39 nine, Lobby in Create Room's place) makes one with Create Room's rules and the saved speed, asking nothing. Join Room with a lobby's
+  code goes to the page instead of the search (`Port_LobbyPoll` 5). The screens opened while a lobby is on go to its
+  page; so does the main menu (`Port_LobbyWantsScreen`, src/menu/menu_a.c), for a lobby joined from the Dragon Net
+  Battle window (which no longer has a Lobby tab, and only says where the lobby's screen is) or by the test switches.
+  The game is in the page when a match is asked for, so it is put back into the page when the match ends.
+- *A spectator* (any spectator, of a lobby's match or of a match of two) has the line over the match at the foot of
+  the screen ("Spectating A vs B", the view, R1: change, START: menu; catching up; a desync), drawn by the game over
+  every screen of the match from `Gfx_EndFrame` (src/sys/gfx.c, `PortTbo_SpecDraw`) with the pages' kit; and, in a
+  fight, its own pause menu (START, Esc, or the key bound to START) in the battle's own pause-menu box, drawn by the
+  battle's own menu engine (port/src/spec_menu.c; `BtlMenu_Draw` of src/battle/hud_0_b.c, through
+  `BtlMenu_PortDrawMenu`): the note "Your screen only: the fight goes on" where the battle's menus have their title
+  picture, Continue, View: Player 1 / Player 2 / Split Screen (left / right), Back to the Lobby (the owner), Leave /
+  Close the Lobby or Stop Watching, the latter with the battle's own "EXIT ?" Yes / No box (the versus pause menu's,
+  `PauseMenu_PortConfirmBox`). The box grows and shrinks over six frames and plays the menu's sounds as the
+  players' does. Nothing of the battle's own menus is touched: the engine's update is not run (the file moves the
+  cursor and the box itself), its texts reach the engine through `BtlMenu_GetItemText` (numbers 0x6FFF and on), and
+  the pad is read with `Port_PadRead` (the spectator's pad plays nobody). Outside a fight (the character select)
+  there is no menu. Drawing goes through the game's own draw lists, so a spectator that shows the line or the menu
+  differs from its host in those bytes of its state (the fight's values and the check values are the same: tested
+  below); `BT3_SPEC_LINE=0` leaves the line out, and the whole state is the same again. The players' "N watching"
+  corner and F1's entries stay as they were (ImGui).
+- *Text.* Every line is in port_tbo.c, so `port/tools/tbo_strings.py` lists it for translators (ids `tbo/...`; notes
+  for the new places). port/src/spec_menu.c is listed as well. The lobby's own lines come from the owner's game in English and are translated where they
+  are shown: whole lines by the file, lines with a name by their end ("%s joined the lobby" and four more), "Match %d:
+  %s vs %s" by its parts. The Dragon Net Battle window's one new line is port text `net/lobby_joined`.
+- *Testing.* `BT3_TBO=1` opens Tenkaichi Budokai Online instead of the title (after the logos; with a lobby, its page);
+  `BT3_PAD` (gs_input.c) drives the pages; `BT3_SPEC_PAUSE_AT` now opens the game's menu.
+
+Tested (this machine, offscreen, 127.0.0.1, local Worker; players fed the random-press table):
+
+| case | result |
+|---|---|
+| the pages with the pad alone: the owner takes Lobby on the list, two members type its code on Join Room's keypad (`BT3_PAD`, a fixed code from the local Worker) | lobby made and joined through the screens; a match, back, closed; the spectator's whole state identical to the host's over 6,972 blanks, the players' fight values over 7,030 |
+| the owner's pad on the page: a rule changed twice, a member's window, Move and the place, the chat's keypad typing | the lobby logs the new speed and the swap; screenshots below |
+| by address, owner + 3, two matches (the owner hosts and two watch; then the owner watches and passes the match on), `BT3_SPEC_LINE=0` | every spectator's whole state identical to its host's (5,731 to 5,782 blanks a match), the players' fight values identical; 179 / 180 check values each, none differed; all back on the page after each match |
+| by code, owner + 3, the owner and a member watching; the pause menu (the battle's box) driven with the pad: every item (Continue, View to player 2 and split, Back to the Lobby, Close the Lobby then No, Leave the Lobby then Yes) | fight values of both spectators and of the two players identical over the match (1,290 to 1,365 fight blanks); 141 check values each, none differed; the owner's Back brought everyone to the page, the member left |
+| a match of two: a spectator with the menu open, one with neither line nor menu | the first's fight values identical; the second's whole state identical (6,281 blanks) |
+| by code, owner + 3: the owner a spectator, line and pause menus open (member and owner; first version of the menu) | fight values identical to the host's (4,048 / 4,050 fight blanks); 227 check values each, none differed; the owner back to the lobby (test switch): everyone on the page again with "The owner went back to the lobby." |
+| by code: a spectator leaves mid-fight, the owner removes the 2P player mid-fight, a fifth joins and leaves, the owner closes | "Piccolo left the lobby" (the match goes on), everyone back with "Vegeta was removed from the lobby" (Vegeta: "The lobby's owner removed you from the lobby."), "Krillin joined / left", "The lobby was closed by its owner." |
+| a match of two by code with a spectator by code (`BT3_SPEC_LINE=0`), a quick match | spectator identical over 10,106 blanks; fight values identical (6,933 and 7,447 fight blanks) |
+| 0.1.38.7 against this build, both ways | fight values identical (4,283 / 4,282 fight blanks) |
+
+Screenshots were looked at for each page (owner and member, a rule being changed, a member's window, moving, the
+chat's keypad, a spectator's line, the member's and the owner's pause menu next to a player's own, a match of two's spectator, back on the
+page after a match, removed, closed). The Windows build compiles (mingw-w64). Not done: a person with a controller.
+
+**Testing switches.** `BT3_LOBBY=lobby` (with a code), `lobby:<port>`, `lobbyjoin:<address>:<port>`, and a code with
+`join:<code>` or `spectate:<code>`. `BT3_LOBBY_DO=<s>:<command>|...` (each that many seconds after the one before was
+done): `start`, `back`, `leave`, `kick <place>`, `move <place> <place>`, `rule <rule> <step>` (0 battle, 1 time,
+2 speed, 3 rollback, 4 delay), `ready`, `say <text>`, `wait <members>`, `waitmatch`, `waitlobby`, `waitseq <state>`
+(the battle sequence's state, 6 the result menu). `BT3_SPEC_PAUSE_AT=<s>`: a spectator's pause menu (the game's) opens
+that long into its match (for screenshots).
+
+**Found on the way.** The spectator's "Joining the match as a spectator..." stayed on its screen for the whole
+match; a test line (`BT3_NET_LATENCY`) delivered what it held back from one session in the next.
+
+**Tested** (this machine, offscreen, 127.0.0.1; players fed the random-press table, rollback 8, `BT3_NET_LATENCY=20`
+where said; `BT3_HASH` of each copy compared session by session, the last line of a blank counting):
+
+| case | result |
+|---|---|
+| owner + 4 by address, three matches: owner hosts (3 watch it); m2 hosts, m1 joins, the owner watches and passes it on to 2; m2 hosts, the owner joins and passes it on to 3 | every spectator's whole state identical to its host's in every blank (5,181 / 5,182 / 4,536 to 4,584 blanks a match), the two players' fight values identical; 1,399 check values compared, none differed |
+| by room code through a local copy of the new Worker: owner + 3, two matches with players swapped, a fourth (`spectate:` with the code) joining mid-match | members in by the code; the late one caught up 359 blanks and was identical over 3,941 |
+| 0.1.38.7 with the lobby's code / by address, before and during a match | "Update available..." / "The host's game is a different version" |
+| a new game knocking by address with Join and with Watch, before and during a match | became members (the second watched the running match) |
+| owner back mid-fight (F1 / the test switch), after a battle (at its result menu), with the game's pause menu ("Return to Vs Menu", Yes) | everyone back in the lobby window each time; the other player's pause menu has 3 entries, its result menu 2 |
+| rules changed, players moved, started again | the members' copies log the same places and rules; the next match runs with them |
+| a spectator leaves mid-fight; a player leaves mid-fight; a player removed mid-fight; the owner closes mid-fight and in the lobby | nothing / everyone back with "m1 left the lobby" / back with "m3 was removed from the lobby" (m3: "removed you") / everyone "The lobby was closed by its owner." |
+| a ninth game | "This lobby is full (8 places)." |
+| chat | every line reached every member once |
+
+Pacing of the two players (owner 1P and a member 2P drawing, `BT3_LAG_LOG`, 150 s, 60 s battles): without spectators
+33.28 / 33.28 ms between pictures on average, 99th percentile 35.1 / 33.9, longest 37.6 / 37.6, no waits; with six
+spectators (not drawing, and computing the state checksum every blank) 33.06 / 33.21, 35.2 / 34.0, longest 43.1 /
+42.9 (one picture over 40 ms each), no waits; rollbacks per 600 blanks the same (47.4 / 47.9). (Spectators that draw
+on this machine's one graphics card stall the players' pictures by up to 1.9 s, with the spectator branch's own build
+as much as with this one: this machine, not the netcode; the spectator tests above did not draw them either.)
+Unchanged: a match of two with a spectator (whole state identical over 8,090 blanks), 0.1.38.7 against this build
+both ways (fight values identical over 4,380 fight blanks), `node port/matchmaking/test.mjs` (17 new checks for lobbies, the earlier ones unchanged). The
+Windows build compiles (mingw-w64).
+
+## Online: the goodbye says why the match ended (2026-10-26)
+
+A match that ended with "The other player left the match." could not be told apart: the other game says goodbye
+(T_BYE) whenever its session ends in order, whether its player left for the menus or it had stopped hearing this one.
+Seen by the user: a quick match ended so after five fights at a 300 ms round trip, and the log could not say which.
+
+The goodbye's word (until now 0, or BYE_APART for a desync) says why: BYE_LEFT (the player left: the menus, or the
+match ended for a reason of this side's), BYE_QUIT (the program was closed: an atexit goodbye, so the other side knows
+at once instead of after QUIET_NS of silence; before, closing the window mid-match gave "The connection to the other
+player was lost." six seconds later), BYE_LOST (this game stopped hearing the other one). The other side shows "left the
+match", "The other player's game was closed", or "The other player's game lost contact with yours (a connection
+problem on one side or between you)". When one direction fails both games soon wait for each other's input, so the one
+that notices first says LOST; the message does not say on which side the problem was, because it cannot know.
+
+Compatible both ways: 0.1.38.8 and older take any word but BYE_APART as "left the match", as before; a goodbye of 0
+from them is shown as that too. Tested offscreen with two copies by address (`BT3_SESSION_TEST`): leaving
+(`BT3_SESSION_LEAVE`), a killed program (SIGTERM: the atexit goodbye), and a one-way failure (new test switch
+`BT3_NET_MUTE_AT=<blank>`: this game's packets stop reaching the other from that blank), and each against the 0.1.38.7
+and 0.1.38.8 releases.
+
+## Quick match: nearby players first, and a Region to choose (2026-10-26)
+
+Players complained about the round trip of quick matches: the service put a searcher with whoever had waited longest
+in the queue, wherever that was (a player in the Gulf got about 300 ms). Asked for by the user, and decided with him:
+the nearest first, then everyone; a Region item for those who want only one region; the rival's region and the
+measured round trip shown when the match is found.
+
+**Where players are.** The Worker reads Cloudflare's placing of each request (`request.cf`: latitude, longitude,
+continent, country) and keeps, for a quick-match room of a new game and only for the room's life (ten minutes at
+most), the position rounded to whole degrees (about 100 km), the region and the host's choice (column `loc`); of the
+one who joins, its region only (`join_region`). Nothing of it is logged, and the other player is told the region
+only ("from Europe"). Seven regions: Cloudflare's continents (North America, South America, Europe, Africa, Asia,
+Oceania), with the Middle East made of the countries AE, BH, CY, EG, IL, IQ, IR, JO, KW, LB, OM, PS, QA, SA, SY,
+TR, YE (Egypt, Turkey and Cyprus with it, as games' regions usually have them; Antarctica belongs to none).
+
+**The choice** (Quick Match's new Region row, left / right, kept as the setting `tbo_region`):
+
+| choice | is put with |
+|---|---|
+| Auto (the default) | a room within 2,500 km (great-circle, `NEAR_KM`) at once, the nearest first; once the searcher or the room has waited 25 seconds (`WIDEN_SECONDS`), any room, the nearest first (rooms of older games, whose place is not known, last). The search screen then says "NO ONE NEARBY: SEARCHING EVERYWHERE" |
+| a region | players placed in that region (by Cloudflare, not by their own choice) at once, the nearest first; anyone once 40 seconds (`REGION_WIDEN_SECONDS`) have gone by. The screens say "Players there first, everyone after 40 s", and after 40 s "NO ONE THERE: SEARCHING EVERYWHERE" |
+| Anywhere | anyone: whoever waits longest, as before |
+
+(Changed the same day, the user's decision: a region was at first a lock, never widened; it is now a preference.)
+A pair is made only when each side takes the other, the wait being the longer of the two sides' (a room's: its
+age): Auto takes near players at once and anyone from 25 s; a region players placed there at once and anyone from
+40 s; Anywhere and older games anyone. So Auto in the Middle East and a player who chose South America meet at 40 s,
+not at 25 (Auto would take them, South America would not yet).
+
+2,500 km keeps the round trip near 60 ms or under (Frankfurt-Madrid 1,400 km, Dubai-Mumbai 1,900 km, New
+York-Chicago 1,150 km); 25 seconds is short enough that a search does not stall for long when nobody near is there.
+
+**Two who wait far apart still meet.** Before, a host never searched again: it only polled. A new game that waits in
+its room now asks `/v1/quick` again every ten seconds (`again` in the service's answer), naming its room (code and
+key) and how long it has searched (`waited`). The service holds the room while it looks (`join_key` set to "-" for
+that moment: nobody joins it meanwhile), then either puts it with another room (its own is deleted) or lets it go
+and says to wait on. A room someone joined just before is never lost: the answer is then `joined`, and the poll that
+follows has the other player. These searches from one's own room are not counted against the 60 searches an hour.
+A database without the two new columns still works (rooms are made without a place and matched by the widening).
+
+**Shown to the player.** The line of the match's start says `Your rival "Riyadh" from the Middle East is here! The
+match begins.` and, once the two are connected, `Round trip: ~2 ms` under it (the smaller of the host's setup pings
+and the round trip of the input packets; it stays a moment over the character select). New lines in the port
+catalog: `net/rival_from`, `net/round_trip`, `region/NA` ... `region/OC`; the screens' lines are port_tbo.c's (listed by
+tbo_strings.py; the table of what is sent, `sTbRegionArea`, is left out).
+
+**Older games** (0.1.38.8 and before) send no `waited`: they are answered exactly as before, whoever waits longest
+(of the rooms that take them: a new Auto room far away after 25 s, a region's room outside it after 40 s), never
+search again and are told nothing new; their rooms are taken by new games as rooms whose place is not known (Auto:
+after 25 s; a region: after 40 s; Anywhere: at once). Testing: `BT3_QUICK_AREA=auto|any|NA|SA|EU|ME|AF|AS|OC` with `BT3_LOBBY=quick:<queue>`.
+
+Tested (this machine, offscreen, a local stand-in of the Worker over SQLite with the schema, its places faked per
+player name):
+
+| case | result |
+|---|---|
+| `node port/matchmaking/test.mjs`: 56 new checks (near first, far only after the widening, the nearest of the far ones, two far waiters meeting by searching again, a search again after being joined, a room held while its host looks, regions / Anywhere / Auto and their mixes, older games with each, the Middle East by country, no place in any answer, a database without the columns) | all 180 pass |
+| Dubai + Riyadh (870 km), through the screens | matched at once; the line "Your rival "Riyadh" from the Middle East is here! ... Round trip: ~2 ms" |
+| Dubai + Frankfurt (4,800 km) | both wait; "NO ONE NEARBY: SEARCHING EVERYWHERE" at 0:25; matched by Dubai's search at 30 s |
+| Paris choosing Europe while Dubai and Riyadh search | left alone; its screen "ONLY PLAYERS IN EUROPE / THE WAIT CAN BE LONGER" |
+| 0.1.38.8 waiting, this build searching | taken by this build's search at 27 s (the room's wait past 25 s) |
+| this build waiting, 0.1.38.8 searching | joined at once |
+
+Both matches of the last two reached the character select together. The Windows build compiles (mingw-w64).
+Not checked: the Worker on Cloudflare with its real `request.cf` and D1 (the SQL ran on SQLite here), two players on
+two networks.
+
+**The region as a preference** (the same day): `node port/matchmaking/test.mjs` passes, 185 checks (the region's,
+Anywhere's and the older games' rewritten for the new rule; new: 30 / 40 s for a region against Auto both ways, a
+region chosen from elsewhere taking an Auto room there at 25 s, two different regions at 40 s). Through the screens
+with the local Worker: Dubai on Auto and São Paulo choosing South America both waited, São Paulo's screen saying
+"PLAYERS IN SOUTH AMERICA FIRST, EVERYONE AFTER 40 S", and were put together by Dubai's search at 40 s; both reached
+the character select. No change to the database.
+
+## Online: whose data may meet (2026-10-27)
+
+The rule, for every way into online play:
+
+| | needs |
+|---|---|
+| **quick match** (strangers; Dragon Net Battle, Tenkaichi Budokai Online, `BT3_LOBBY=quick:`) | the original disc's data (gameplay fingerprint = the table's, `plat_fprint_tab.h`) |
+| **with friends**: a room code, a lobby, an address, watching | the same data on both sides, modified or not (two players with the same mod may play) |
+
+- **Quick match** is refused where every search begins, `Port_LobbyStartQuick` (net.c): the matchmaking service is not
+  asked at all, the lobby's state is -3 and `Port_LobbyError` says "Quick match needs the original disc's data, and
+  your game data are not the disc's (what differs). With friends (a room code, a lobby or an address) you can play
+  when both have the same data." Dragon Net Battle's Quick match tab says it in orange before the search and greys
+  the button (`Port_LobbyQuickRefusal`); Tenkaichi Budokai Online keeps its window, now "No Quick Match" ("Quick
+  match needs the original disc's data. / With friends, both need the same data." and what changed), shown for
+  Quick Match only. Its Create Room, Join Room and Lobby (from 0.1.39: Lobby and Join) no longer refuse modified data (before, every one of its
+  ways online wanted the original data, and Dragon Net Battle none).
+- **With friends** the two fingerprints are compared as before (`T_FPRINT` with the greetings; a spectator's and a
+  lobby member's greeting carries it, the host or owner compares).
+- **No game connects before its own fingerprint is known.** A start asked for earlier waits: the lobby's state 6
+  (`Port_LobbyPoll` gives 3, `Port_LobbyCheckingData`: the windows say "Checking your game data..."), the
+  eight-place lobby's create and join commands stay in its queue, and `net_start` (every session, also one started
+  by `BT3_NET_HOST`/`BT3_NET_JOIN` or `BT3_SESSION_TEST`) holds the picture with that line. Where this run computes
+  no fingerprint (`BT3_GS=none`, or online play asked before the data check began) `Port_DataFingerprintNeed`
+  (plat_fprint.c) starts it on a thread of its own; `PortFp_Run` runs once, the first caller's. The log:
+  `net: this game's gameplay data are still being checked: ... begins when its fingerprint is known`, then
+  `the gameplay fingerprint is known` (with the cache it takes a fraction of a second to a few seconds).
+- **A peer that sends no fingerprint.** 0.1.37 sends none and has `NET_VERSION` 5 like 0.1.37.1 to 0.1.38.9, which do;
+  nothing else in the greetings (HELLO, CONFIG, their capability word) tells them apart, and the matchmaking service
+  has `rel` 137 for both 0.1.37 and 0.1.37.1. So the rule is a constant, `FP_PEER_REQUIRED` (net.c): 0 for now (the
+  service's `MIN_RELEASE` is 137: 0.1.37 is still let in, unchecked, as are 0.1.38.x copies that connected before
+  their own was computed); set it to 1 together with `MIN_RELEASE` 138. Then a session that has heard no fingerprint
+  when it is set up (it travels with the greetings, the host's pings and its choices; one second more is given)
+  ends with "The other player's game did not say which game data it has (release 0.1.37, or it was still checking
+  its data): both need 0.1.38 or newer.", a spectator without one gets "not the same data", and so does a lobby
+  member. Copies of this release always send one (they wait for it).
+- Testing: `BT3_TEST_FPRINT=<hex>` now acts in plat_fprint.c (the Tenkaichi Budokai Online window and the quick-match
+  refusal see the claimed value too); `BT3_TEST_FPRINT=off` sends none, as 0.1.37; `BT3_TEST_FP_REQUIRED=1` is
+  `FP_PEER_REQUIRED` for one copy; `BT3_UI_NET_TAB=host|quick|join` (with `BT3_UI_OPEN=9`) opens Dragon Net Battle on
+  that tab.
+
+Tested (offscreen, the virtual pad, the local Worker stand-in): quick match original against original by
+`BT3_LOBBY=quick:S` and through Tenkaichi Budokai Online's screens, both at the character select; a copy claiming
+another fingerprint is refused before asking the service (`BT3_LOBBY=quick:S`; Tenkaichi Budokai Online's Quick
+Match shows "No Quick Match"; Dragon Net Battle's tab the orange line and a grey button) and opens a room by code
+from Tenkaichi Budokai Online. By address and by room code two copies with the same fake fingerprint play, two
+different ones are refused on both sides; both had started their lobby at the first blank and logged the wait.
+Spectators: the same data watch, other data are refused. Lobby: a member with the owner's data joins, another is
+refused; with `FP_PEER_REQUIRED` a member, a player (by address) without a fingerprint are refused. 0.1.38.9 against
+this build by address both ways: at the character select (also with `BT3_TEST_FP_REQUIRED=1` on this side).
+
+## Tournaments (2026-10-27)
+
+A lobby (the chapter "Lobbies") can run a knockout tournament of its members. Asked for by the user, and decided with
+him: the owner runs it and is the authority, every match is an ordinary lobby match (two play, everyone else watches),
+no CPU entrants.
+
+**In the game.** The lobby's rules have a new first row, Mode: Versus (as before) or Tournament (left / right, the
+owner's). In Tournament the battle is a single battle and its row becomes **Entrants** (2 to 8, 2 at first; the
+owner's, not while a tournament is on); the time limit, speed, rollback and delay are the lobby's. The places on the
+left follow it: PLAYERS N / N with the places 1..N, then SPECTATORS with the other 8 - N (Versus keeps 1P, 2P and six
+spectators). The entrants are whoever sits in the player places when the owner presses Start Tournament (at least two;
+empty places are left out, byes as below); the owner fills them with Move, and plays only if it sits in one. Fewer
+entrants: those in the places that are no longer players' are spectators there now. Ready is not shown in Tournament
+(the places say who plays). (Changed after the user's first look: the entrants were the places marked Ready, and it was
+not clear who played and who watched.) The bracket is drawn at once
+and shown to everyone: a page of its own (`TB_BRACKET`, src/menu/port_tbo.c, the same kit as the lobby's page), the
+two halves meeting at the final in the middle as the game's own tournament tree does, each entrant's box on the outer
+edge, the lines of each match turning inwards and lit gold as far as an entrant has got, the match to play glowing
+(its two boxes as the chosen bar), byes greyed with "BYE", entrants who are out greyed ("LEFT" on one who left), the
+champion's box over the final. The box at the foot says "Next: A vs B (Semifinal). Start it when both are here!" (a
+member: "The owner starts it."), "Now: ..." while it is played, "A is the champion! Congratulations!" at the end.
+Buttons: the owner Start Next Match (also START) and Back to the Lobby, a member Back to the Lobby; triangle / circle go
+back as well. The lobby's page has a Bracket button while there is a bracket, its Start button says Start Tournament /
+Start Next Match / New Tournament, and "TOURNAMENT ON" / "OVER" by the code. The bracket page comes up by itself when a
+tournament is drawn and when a tournament's match ends. When it is over the owner starts a new one (New Tournament, of
+those in the player places then) or switches the lobby back to Versus. Switching to Versus while a tournament is on asks first
+("Call Off the Tournament?").
+
+**Seeding.** The owner's game draws a number from the system's random source and shuffles the entrants with it
+(xorshift, Fisher-Yates); the number travels with the bracket. The bracket has 2, 4 or 8 leaves; with 3, 5, 6 or 7
+entrants the missing ones are byes, one per first-round match at most, shared out between the halves (with 8 leaves:
+the first match of the top half, the last of the bottom half, then the second of the top, the first of the bottom). An
+entrant with a bye goes straight to the second round.
+
+**A match.** The owner presses Start Next Match: its game puts the match's two in 1P and 2P (swapping places with
+whoever was there; the one on the left of the bracket in 1P, who hosts) and starts the lobby's match as always. Every
+copy in the match watches how its first battle ends (`result_watch`, net_lobby.c, through `Port_BattleOutcome` of
+headless.c: the battle sequence past its fight, states 4 to 6, and the result's winner bits, `BattleResult.winner`).
+It takes a result only once it has seen this match's fight on (state 3), and only when the end has held for 0.3 s (a
+K.O. that a late input takes back after a rollback is not taken). A player says its result with every ALIVE (and at
+once when it has it); the owner, as soon as the two players agree on a winner, marks it, says "A won the match" (or
+"A is the champion!"), and ends the match: everyone is back in the lobby on the bracket page, the winner's line gold.
+The result menu of the battle is cut short by that (a second or so after the finish announcement).
+
+The match is played again (it stays the next one) when the two results differ, when the battle had no winner (a draw
+on time, or it was left), when only one result came in 20 s, or when the match ends without one: the owner's "Back to
+the Lobby", the two players not connecting, a player's game leaving its session.
+
+**Two games that disagree.** A draw is played again as above (in real play they hardly happen). When the two
+players' games name different winners for the same match a second time, it is not played again: the owner's bracket
+page says "THE TWO GAMES DISAGREE ON THIS MATCH: CHOOSE THE WINNER" with the two names as buttons (and Back to the
+Lobby), the members' "THE OWNER IS CHOOSING THE WINNER", the box says so too, and no match starts meanwhile. The
+owner's choice is final ("NAME won the match (the owner's choice)"; `TOUR_CHOOSE`, the match's how 4; STATE byte
+616 the match being chosen, 620 bytes). A walkover of that match ends the choice. Tests: `BT3_TEST_RESULT_LIE=1` (a
+member reports the other winner), `BT3_LOBBY_DO` `choose <side>`. Tested with two entrants, the member lying: the
+first disagreement played again, the second asked the owner; its choice made the champion (pictures of both pages
+looked at).
+
+**Leaving.** An entrant who leaves the lobby (or is removed, or falls silent) loses by walkover: its match if it is
+playing (the match ends for everyone, as a player leaving always ended it), else its next one as soon as its opponent
+is known ("A won by walkover"). The owner leaving closes the lobby, and the tournament with it, as before. A newcomer
+during a tournament is a spectator of it.
+
+**Rejoining** (asked for by the user after the first version, and decided with him). Leaving on purpose (Leave,
+removed) is a walkover at once, as above. An entrant whose game falls silent (15 s without a word: a lost
+connection, a crash, the program closed without its goodbye) keeps its place in the bracket for **90 s**: the
+lobby says "NAME lost the connection: the place is held for 90 s", its box on the bracket says DISCONNECTED and the
+time left, and its next match cannot be started meanwhile. If it joins with the lobby's code within the 90 s it is
+back in the place it had ("NAME is back in the tournament"); the match the drop broke was ended and is played again
+from its start, as any match without a result. After 90 s: "NAME did not come back in time", and the walkover.
+
+Who is who is told by a secret **rejoin token**, not the name: when the tournament starts the owner's game draws
+one for each entrant (128 bits from the system's random source) and sends it to that member alone (`TOKEN`, a packet
+of its own, with every STATE; never in what the others get). The member keeps it in memory and in
+`lobby_rejoin.txt` beside its settings file (the time, the lobby's code, the tournament's number, the token), so a
+crash or a start again keeps it; its greeting to the lobby of that code carries it. A greeting with the token of an
+entrant whose place is held puts the newcomer in that place (whoever sat there moves to the newcomer's free place)
+and draws a **new** token for it, so a copy of the old one is worth nothing; if the old game is still there but
+silent (the new one came before the 15 s were up), the old one is dropped at once and the place held. Any other
+greeting (no token, another's, an old one, the same name) is a new member in a free place, a spectator of the
+tournament. The owner forgets a token (memory only) when its entrant is out, leaves on purpose, runs out of the 90 s,
+rejoins (the new one replaces it), and when the tournament ends or is called off or the lobby closes; it then tells
+the member to forget it (`TOKEN` "forget", ten times), as it does a member that came with a token no longer known.
+The member removes its file when told so, when the lobby is closed or it is removed (CLOSE), when it leaves on
+purpose, when the lobby of its code does not answer, and at the program's start when the file is more than an hour
+old.
+
+While a tournament is on, a newcomer takes a spectator's place (its entrants are drawn already). The member keeps the
+code it asked the service for (net.c, `sCodeAsked`): the service's answer to a member has no code, and the token is
+sent only to the lobby of its own code.
+
+Tested (offscreen, local Worker, the virtual test pad everywhere): owner + 3, the member playing the first match
+killed (SIGKILL) 40 s into it; a stranger with its name and no token joined (a spectator); the killed game started
+again with its settings folder and joined with the code: "is back in the tournament" in its old place, a new token,
+the broken match played again from the start and the tournament played out, every spectator's check values equal
+to its host's in every match (0 differed); a copy of the old token in a fourth game: "a member as any other, told to
+forget it"; every token file gone at the end (the losers' when they were out, the rest with the champion). Owner + 1,
+the member killed and started again after the 90 s: "did not come back in time", the walkover, the champion; it
+joined as an ordinary member and was told to forget its token. A token file two hours old: removed at the start.
+The bracket's DISCONNECTED countdown and the box's "Waiting for NAME to come back." were looked at. The Windows build
+compiles.
+
+**Protocol.** LOBBY_VERSION 3 (one step for all of the tournaments; on the `tournament` branch it had gone to 4 on the
+way, never released). STATE (620 bytes) carries after the lobby the mode and the bracket: state, size,
+number of entrants, the Entrants rule, the seconds left of each held place (bytes 608 to 615, 616 bytes now), the tournament's number and seed, the next match, the champion, the match on, the entrants' ids
+and names, the leaves, each match's winner and how it was decided (bye, walkover, played), who left. ALIVE (40 bytes)
+carries the match whose result the member has and the result; HELLO (80 bytes) a rejoin token and its tournament's
+number after the name; TOKEN (type 41, owner to one member) keeps or forgets one. Nothing else changed; the two players' traffic and the
+spectators' are as before. A game of 0.1.38.9 (lobby version 2) that joins a new lobby is told "The lobby owner's game
+is a different version: joining needs the same release.", and so is a new game joining a 0.1.38.9 lobby.
+
+**Text.** All of it is in port_tbo.c (the page, the buttons, the box's lines, the round names), so
+`port/tools/tbo_strings.py` lists it (notes for the bracket page added); the lobby's new notes, written by the owner's
+game in English, are translated where they are shown like the others ("%s won the match", "%s won by walkover", "%s is
+the champion!", "Tournament: %d entrants" and five whole lines).
+
+**Testing switches.** `BT3_LOBBY_DO` has `waitready <n>` (until n places are ready), `tour` (draw a tournament), `next`
+(start its next match once it can), `waittour` (until it is over); `rule 5 1` is the mode, `rule 6 <step>` the
+entrants. Pictures of the lobby's page with 2, 4 (after 5 and back: the fifth a spectator again) and 8 player places
+were looked at.
+
+Tested (this machine, offscreen, 127.0.0.1, by room code through a local copy of the Worker over SQLite; every copy
+with the virtual test pad, the players fed the random-press table, 60 s battles at 100%, rollback 8; `BT3_HASH` of
+each copy compared match by match, `BT3_SPEC_LINE=0`):
+
+| case | result |
+|---|---|
+| owner + 3, all entrants (4): three matches, the owner a player in one and a spectator in two | the bracket advanced each time, champion found; in every match each spectator's whole state identical to its host's (about 7,000 blanks a match), the two players' fight values identical; 0 of about 218 check values differed for each spectator |
+| owner + 4 (5 entrants, 3 byes: two in the top half, one in the bottom) | the byes went through, four matches played, the same identity in every match |
+| owner + 3, a member leaving 30 s into its own match (the second) | "Piccolo left the lobby", "Vegeta won by walkover", everyone back on the bracket; the final played |
+| 2 entrants with another table of presses | player 2 won: both players said so, the owner marked it |
+| a 0.1.38.9 game joining a new lobby by code, and a new game joining a 0.1.38.9 lobby | "The lobby owner's game is a different version: joining needs the same release." |
+| a Versus lobby match (start, the result menu, the owner back), a quick match, a room of two by code | as before: everyone back on the page, fight values identical |
+
+Pictures looked at: the lobby's page in Tournament (the six rules, Start Tournament, the Bracket button), the bracket
+of 2, 3, 4, 5 and 8 entrants when drawn, between matches (gold lines, the next match glowing), after a walkover
+("LEFT"), and with the champion, for the owner and a member. The Windows build compiles (mingw-w64). Not done: a person
+with a controller; two players on two networks; the spectator's pause menu has no bracket.
+
+## Automatic updates (2026-10-27)
+
+The in-game updater is based on **PR #107 by JosephLlacchua** ("Auto-updater: in-game release download, progress
+bar, extraction and restart"), brought onto 0.1.38.9 with his authorship: the download in the game (WinHTTP, curl),
+its progress bar, miniz to unpack, the **rename trick** to replace a running program, and the restart into the new
+version. On top of it (`port/src/gs/net_update.c`, `ui.cpp`): the exact version, the player's choice of when, a
+signature check, every path from the program's own folder, every file of the zip swapped (no fixed list), the
+player's files protected, and an install that is undone on any failure.
+
+**The version.** Each build knows its full number: `port/tools/undefined.py` writes `PORT_VERSION` into the generated
+`port_version.h` from `BT3_VERSION`, which the release workflow takes from the tag (`v0.1.38.10` -> `0.1.38.10`;
+`inside.sh` prints it). Without it a build is `dev` and is never offered an update. The check compares it with the
+newest release's tag as dotted numbers (`update_sign.c`): 0.1.38.7 < 0.1.38.9 < 0.1.38.10 < 0.1.39; a tag that is not
+two to four numbers (`v0.1.39-rc1`) is never offered. The old check compared only `PORT_RELEASE` (0.1.38), so patch
+releases were never announced ("the newest release is 0.1.38, this is 0.1.38" to a 0.1.38.7 player). `PORT_RELEASE`
+is still what the matchmaking service is told.
+
+**The flow.**
+1. Four seconds after the settings window is ready, one GET of `api.github.com/repos/<repo>/releases/latest`
+   (`PORT_UPDATE_REPO`; drafts and pre-releases are not "latest"). Its tag, notes (`body`), page and list of files are
+   read; this system's zip by name (`Tenkaichi3Decomp-linux-x64.zip` / `-windows-x64.zip`), its size and GitHub's
+   SHA-256 (`digest`), and `<zip>.sig`.
+2. Newer: a line at the top of the picture over the main menu (mode 4) and the port's screens (mode 80, Tenkaichi
+   Budokai Online): "Update 0.1.38.10 available. F1 to update." At the top of F1: **Update now**, **Later** (no line
+   until the next start; the next start reminds again), **What's new** (the notes, as text), **Release page**.
+3. Update now: the zip downloads into `update/` beside the program in a thread ("Downloading update 0.1.38.10: 45%"
+   over the menus, a progress bar in F1). Offline play goes on. From then on no new online session starts
+   (`Port_OnlineBlocked`: `Port_LobbyStart` and the online screens' `Tb_Vanilla` refuse with "An update is being
+   installed: online play is off until the game restarts"); a session that is on is never interrupted.
+4. The checks: the size, the SHA-256 (a clear "damaged download" message), then the **Ed25519 signature** of the whole
+   zip against the public key compiled in (below). Wrong: nothing is installed; the reason and the release page.
+5. **Restart now** (disabled during an online session or a lobby), in two steps, every path from
+   `SDL_GetBasePath()` (the PR's were relative to the working folder: wrong when a shortcut starts the game from
+   elsewhere):
+   a. every file of the zip is written beside its place as `<name>.new`, folders made as needed;
+   b. each file in place is renamed to `<name>.old` and its `.new` renamed into its place. A running program and its
+      loaded libraries cannot be written or deleted on Windows, but they can be renamed: that is the PR's trick, here
+      for every file the zip ships.
+   A failure in a or b undoes everything (the `.new` files go, each `.old` is renamed back, added files and folders
+   removed) and the old version goes on, the reason in F1. Then `update/result.txt` and `update/cleanup.txt` are
+   written, the new program is started from the folder (the working folder kept) and this one exits.
+6. The new version says "Updated to 0.1.38.10." (port catalog `update/done`) and removes the `.old` files listed in
+   `update/cleanup.txt` (one still in use stays listed for the next start).
+
+**Never written by an update**, even if a zip had them (`user_file` in net_update.c; a release ships none of them):
+`saves/`, `gamedata/` (the disc's data, `gamedata/mods/`, the menu text made from the disc), `mods/`, `update/`,
+`bars/` (faces.txt), `net_session/`, `screenshots/`, `replays/`, `shots/`, `bt3_settings.txt`, `bt3_pipelines.txt`,
+`online_name.txt`, `zdump.bin`, `bt3_log*`, `bt3_crash*`, `a11y_*_own.txt`, `a11y_log.txt`, `a11y_untranslated.txt`,
+`prism.dll`, `libprism.so`, and everything in `textures/`, `songs/` and `stages/` but the `README.txt` a release has
+there (texture packs, added songs and stages). `fonts/fonts.tsv` takes the new list and then the player's own lines
+(a font the new list does not name) under "# Your own fonts (kept by the update):". Nothing is deleted but the
+`.old` files and the update's own download. A zip must be the game's folder (`Tenkaichi3Decomp/...`) with this
+system's program in it; a path with `..`, `\` or `:` refuses the whole update. Linux keeps the zip's file modes; the
+programs and `.so` files stay executable.
+
+**The signature.** Monocypher 4.0.2 (`port/third_party/monocypher`, BSD-2-Clause or CC0; `licenses/monocypher.txt`
+in a release) checks Ed25519 (RFC 8032). The public key is `PORT_UPDATE_KEY_RELEASE` in `port/src/update_key.h`; it
+is a **placeholder of zeros** until the keeper makes the key (`port/release/README.md`): a build with zeros, or a
+release without `.sig`, announces the update and shows its page but installs nothing. `port/tools/update_key.py`
+makes the key pair, signs and verifies (plain Python, checked against the RFC's vectors and the `cryptography`
+package). The workflow signs both zips for a tag with the secret `UPDATE_SIGNING_KEY` and attaches the `.sig` files;
+without the secret it warns and the release is unsigned; a secret that does not match `update_key.h` stops it.
+miniz (the PR's, 3.1.2, MIT) unpacks; its licence is `licenses/miniz.txt`.
+
+**Testing.** `BT3_UPDATE_API=<http://127.0.0.1:port>` asks a local stand-in instead of GitHub (a folder served by
+`python3 -m http.server` with `repos/<repo>/releases/latest` and the files it names); `BT3_UPDATE_AUTO=1` presses Update
+now and Restart now; `BT3_UPDATE_FAIL_AT=<n>` makes the n-th swap fail; `BT3_UPDATE_TEST_KEY=<hex>` at build time
+builds with a throw-away public key. `sh port/tests/update/run.sh`: 34 checks of the numbers, SHA-256 and Ed25519.
+
+| case (Linux, a scratch install of a 0.1.38.9 built with a test key, the 0.1.38.10 zip from the stand-in) | result |
+|---|---|
+| Update now, download, verify, Restart now | the new 0.1.38.10 runs from the folder (another working folder), says it, removes the .old files; every file of the zip in place; the player's files unchanged byte for byte; six entries of theirs put into the zip on purpose not written; fonts.tsv: the new list and the player's line; programs 0755 |
+| a zip signed with another key | "signature is NOT valid", nothing installed |
+| a release without .sig | announced, not installed ("The release is not signed") |
+| a read-only folder (step a) | refused, every file as before |
+| the 6th swap fails (after the program itself was swapped) | everything put back, the old version goes on |
+| a zip with `../escaped.txt` | refused, nothing written |
+| Windows under wine: the running Tenkaichi3Decomp.exe (a driver of net_update.c) and the loaded SDL3.dll renamed, the zip in place; the next start removes every .old; the 8th swap failing: all back | as expected |
+
+Not tested: the real Windows (only wine), the restart into the new game on Windows, the real GitHub (its answer's
+shape was taken from its documentation; the stand-in serves the same fields).
+
+## Integration: fingerprints first, tournaments, automatic updates (2026-10-28)
+
+The branch `next` puts three branches on 0.1.38.9, in this order, with their commits as they were: `fp-early` (the
+fingerprint computed first; whose data may meet), `tournament` (the chapter "Tournaments"), `updater` (PR #107 by
+Joseph Llacchua and the commits on it; the chapter "Automatic updates"). Where they meet:
+
+- A lobby, and a tournament in it, obeys the data policy of "Online: whose data may meet": a member needs the owner's
+  data (modified or not), and a lobby is made or joined (a tournament's rejoin too) only once the game's own
+  fingerprint is known (net_lobby.c's queue waits).
+- While an update is being downloaded or waits to be installed no lobby is made or joined (net_lobby.c `online_ok`,
+  the same line as the rooms', "update/online_off"); Tenkaichi Budokai Online's `Tb_Vanilla` refuses before the data
+  check, `Port_LobbyStart` before it holds a start for the fingerprint. A lobby that is on goes on, and Restart now is
+  not offered during it (the updater's rule).
+- LOBBY_VERSION is 3: one step from 0.1.38.9's 2 for everything the tournaments add (STATE 620 bytes, ALIVE 40,
+  HELLO 80, TOKEN).
+- A member keeps the code it asked the service for (`sCodeAsked`), since the service's answer to a member has none:
+  the rejoin token goes only to the lobby of its own code.
+
+
+## Tenkaichi Budokai Online does what Dragon Net Battle did; the window is put away (2026-10-28)
+
+Everything the Dragon Net Battle window (port/src/gs/ui.cpp, `build_net`) could do is on the game's own screens now
+(src/menu/port_tbo.c), and the window is no longer in the way of a player. (0.1.39 took most of this back out again:
+Create Room, Watch, Host by Address's room of two and F1's "Let others watch your matches" are gone, and the next
+chapter says what replaced them; Join by Address and the keypad stayed.)
+
+- **Watch a room by its code.** Join Room has a second row of buttons under DELETE / PASTE / JOIN: BY ADDRESS and
+  WATCH (under JOIN; the cursor still goes to JOIN when the sixth letter is typed, so the pad recordings of the
+  lobby tests type and join as before). WATCH is `Port_LobbySpectateCode`, the window's "Watch the match": the waiting
+  page says WATCHING and the code, "Asking the host to let you watch...", and, while the host's match has not begun
+  (`Port_LobbySpectateWaiting`), "The match has not begun yet: you watch it when it does". The match is then watched
+  as before (the line over it, R1 for the view, START for the spectator's pause menu). A spectator has no Train While
+  Waiting. When the host says no (the room is full, it lets nobody watch, other data, another version, no answer),
+  the reason is the hosts' line in the box for ten seconds (`Tb_Say`: these lines are long; `sTbNetLines` puts them
+  in the translation file) and a short note says "You cannot watch this match". **A lobby's code** (or a lobby
+  owner's address) under WATCH does what JOIN does: the service answers it as a lobby, the game becomes a member,
+  and the hosts say "That is a lobby: you joined it. Its owner chooses who plays; everyone else watches the matches
+  from here." (a member watches every match it is not put into; one rule for both ways in, and nothing new in the
+  lobby).
+- **Join by Address** (`TB_ADDR`, Join Room's BY ADDRESS): one line, the host's address and the port after a colon
+  (7000 when none is typed, as the window's default), on a keypad of five rows: the digits, then `0 . : -` and the
+  letters of a host name (the blank keys of the last row are not there: the cursor does not stop on them). The PC
+  keyboard types (letters as small letters), Ctrl+V and PASTE take the last word of the clipboard
+  (`PortTbo_PasteText`). DELETE, PASTE, WATCH, JOIN: JOIN is `Port_LobbyStart(0, address, port)`, WATCH
+  `Port_LobbySpectate`. The address is kept (text setting `net_join_addr`) and offered the next time, the cursor on
+  JOIN. Wrong input is said before anything is sent ("Type the host's address first", "The port after the colon is a
+  number from 1 to 65535", "That address is not known").
+- **Host by Address**: Create Room's last row (its value is the port, setting `net_port`, 7000 to begin with;
+  left / right by one, L1 / R1 by a hundred). Cross is `Port_LobbyStart(1, "", port)` with the room's rules. The
+  waiting page shows the port in large figures, "On your network:" this PC's address (`Port_NetLanAddress`, the
+  address a socket would send from, found without sending anything), and that over the internet the others need the
+  public address with the port open; cross copies "address:port" for pasting, square trains while waiting (its sign
+  says "Your room: port N").
+- **Create Room has the window's rules**: Battle is one on one, teams, or DP battle of 10, 15 or 20 DP (the lobby's
+  order, so a lobby made from the list starts with it too), and a new row Game Speed (the lobby's steps, 100 to 150%,
+  setting `net_speed_host` as the window's slider; 114% is "standard"). The seven rows are 31 units apart.
+- The data policy and the update's hold are the rooms': every way in goes through `Tb_Vanilla` (the fingerprint
+  known, no update under way) and gs/net.c compares the two games' data as for any match with friends.
+- The screens ask the matchmaking service "hello" when they open, as the window did (is this release still let in,
+  the service's clock for the signed requests); below the minimum the hosts say "Update available. Online servers
+  are unreachable until you update."
+- **The window is put away.** The main menu lists Dragon Net Battle only when the player asks for it (setting
+  `net_dnb_menu`, off; `Port_NetMenuListed`, headless.c; `BT3_MENU_ITEM4=1` lists it for tests). F1 has a tab
+  **Online**: "Let others watch your matches" (`net_spectators`, which only the window had), "End an online match on
+  a desync" and the chat (moved from Misc), and a closed section **Advanced** with "Open Dragon Net Battle" and "List
+  Dragon Net Battle in the main menu". Its code is unchanged. The texts that sent players to it now name the screens:
+  the spectators' refusal of a plain connected run ("not started from the online menus"), the release notes of
+  stages and songs (package.py), README.md.
+
+Tested (Linux, offscreen, 1x, scratch saves and settings, the virtual test pad only, room codes against a local
+stand-in of the Worker):
+
+| test | result |
+| --- | --- |
+| 1v1 room by code: host `BT3_LOBBY=host`, a spectator through the pages (Join Room, ABCDEF, WATCH) 50 s before the joiner comes | the spectator waited on "the match has not begun yet", then watched; its whole state identical to the host's over 10,507 blanks, the two players' fight values over 7,278 |
+| by address through the pages: host on Host by Address (port 47811), joiner on Join by Address (`127.0.0.1:47811`, START), a spectator on Join by Address (WATCH) | the match played, fight values identical over 8,226 blanks; the spectator caught up and was identical over 11,426 |
+| the lobby through the pages (owner Lobby, two members type its code on Join Room and JOIN; a match, back, closed) | as before: the spectator identical over 6,990 blanks, the players' fight values over 3,786 |
+| WATCH with a lobby's code (the owner made the lobby from the list) | joined the lobby (given the free 2P place), the hosts' line said so |
+| a 4-entrant tournament (owner and three members by code, `BT3_LOBBY_DO`) | three matches and a champion; in each match every copy's fight values identical to the owner's (3,716 to 3,786 blanks) |
+| quick match, original data on both (`BT3_LOBBY=quick:S`) | matched and played; fight values identical over 7,711 blanks |
+| screenshots | Create Room (seven rows), Host by Address waiting, Join Room with BY ADDRESS / WATCH, Join by Address, the spectator waiting for the match, the lobby after WATCH, the main menu without Dragon Net Battle (and with it, `BT3_MENU_ITEM4=1`), F1 > Online with Advanced open (`BT3_UI_OPEN=7 BT3_UI_ADVANCED=1`) |
+
+Windows: built (mingw); not run. The PS2 build of the two game files touched (port_tbo.c, menu_a.c: comments and
+`#ifdef PORT` only) is unchanged (`cpp -P` md5). Not tested: a real second PC on the network (the LAN address
+shown was this PC's own and joined over 127.0.0.1), a host name typed instead of an address, the PC keyboard and
+PASTE on Join by Address (the pad typed everything), the screen reader's lines for the new pages.
+
+## 0.1.39: lobbies replace rooms (2026-10-28)
+
+Playing a friend is a lobby now, everywhere: a lobby of two plays like the room of two did, and has the rules on its
+page, rematches (Start Match again), spectators' places and tournaments on top. What the rooms had that the lobby
+lacked was nothing: the lobby's rules already had Create Room's battle (single, team, DP 10 / 15 / 20), time limit,
+game speed (the same steps), rollback and input delay.
+
+- **Tenkaichi Budokai Online's list** (src/menu/port_tbo.c): Quick Match, Ranked Match, **Lobby**, **Join**, then the
+  SOON ones and Profile (nine bars; the cursor starts on Lobby). Create Room is gone. **Lobby** opens a small page,
+  New Lobby, with two rows: *Open Lobby* (a code from the matchmaking service, for the others' Join) and *Host by
+  Address* (its value the port, setting `net_port`; left / right by one, L1 / R1 by a hundred). Either opens the
+  lobby's page at once. A new lobby starts with the rules its owner last set on a lobby's page (`Tb_LobbyKeepRules`
+  saves them when they change, in the settings Create Room used: `tbo_battle`, `tbo_time`, `net_speed_host`,
+  `net_rollback2`, `net_delay2`), so nothing chosen before is lost.
+- **Join** (Join Room renamed) is the one place for a code: DELETE / PASTE / JOIN, and under them BY ADDRESS across
+  the row. **No Watch** on Join or on Join by Address: a spectator joins the lobby and is given a spectator's place
+  when the player places are taken (or the owner moves them there). A code is looked up as before
+  (`Port_LobbyStartCode`); the service answers a lobby's, and the game becomes its member.
+- **By address = lobby by address.** Host by Address is `Port_LobbyCreate(0, port, ...)` (the netcode of
+  `BT3_LOBBY=lobby:<port>`); the lobby's page shows PORT and the port where a code would be, and "On your network"
+  this PC's address (`Port_NetLanAddress`); square copies "address:port". Join by Address types the owner's address
+  and :port and JOIN is `Port_LobbyJoin` (`lobbyjoin:`): the lobby's page at once, "Joining the Lobby" until the
+  owner answers. The waiting page of the rooms (WATCHING, HOSTING ON PORT, Copy Address) is only Quick Match's and a
+  code's search now.
+- **Dragon Net Battle** (F1 > Online > Advanced) works on the same state: its Host tab opens a lobby (with a code,
+  or on its port) with the tab's rules as the lobby's first ones, its Join tab joins one (a code, or the owner's
+  address and port); the window then closes saying that the lobby's screen is in Tenkaichi Budokai Online, which the
+  main menu opens by itself. Its "Watch the match" and "Let others watch the match" are gone; Quick match is as it
+  was. The simplest consistent choice: the window makes and joins lobbies, never rooms of two.
+- F1 > Online's "Let others watch your matches" is gone: it was for the rooms of two (a lobby's spectators are its
+  members, whom the owner can remove; `spec_allowed` let them in whatever the setting said already).
+- **Version.** `PORT_RELEASE` 139; `NET_VERSION` 6 (port/src/gs/net.c). Nothing a 0.1.38 game sends is taken: the
+  service keeps its quick match queues and its codes apart by `v` (a code of the other version is "version"), a
+  lobby's owner refuses a member of another version (and says once a minute "Someone with another version of the
+  game tried to join."), and a 0.1.38 game greeted by address answers this one's lobby greeting with nothing: so a
+  member joining a typed address that has had no answer for two seconds also sends, once a second, a spectator's
+  greeting too short to be one and a 1v1 greeting; a 0.1.38 host of two answers the first with `SPEC_NO_VERSION`
+  (taken in `Lobby_Pump`: "The game at that address is a different version: joining needs the same release.") and
+  shows "another version tried" for the second. A lobby's owner answers both with an invitation, which a member
+  connecting ignores.
+- **`FP_PEER_REQUIRED` = 1**: a peer, a spectator or a lobby member that sends no gameplay fingerprint is refused
+  (every 0.1.39 game sends one; `BT3_TEST_FP_REQUIRED=0` turns it off for a test copy).
+- **Updates.** The tag `v0.1.39` (and `v0.1.39.1` ...) is newer than 0.1.38.9 for this release's updater
+  (`UpdateVer_Compare`, port/tests/update: 10 checks more, 44 in all) and for 0.1.38.9's own check (it reads `v0.%d.%d`
+  of the tag: 139 > 138). After publishing, the Worker's variable `MIN_RELEASE` goes to 139 (port/release/README.md);
+  the Worker's code needs no change (quick match still uses its rooms; lobbies are its rooms with `lobby: 1`; the
+  version check of join, watch and the queues is by `v` already).
+
+Tested (Linux, offscreen, 1x, scratch saves and settings with vibration off, `BT3_STICK_TEST=0`, a local stand-in of
+the Worker for every run):
+
+| test | result |
+| --- | --- |
+| lobby by code through the pages: owner Lobby > Open Lobby, two members type the code on Join; two matches with a return to the lobby between, then closed | both matches played; the second member in a spectator's place; every copy's fight values identical to the owner's in both matches (3,077 to 3,127 blanks) |
+| lobby by address through the pages: owner New Lobby > Host by Address (port 47941), joiner Join > By Address `127.0.0.1:47941`, JOIN; a match | played; fight values identical over 3,106 blanks |
+| a 4-entrant tournament (owner and three members by code, `BT3_LOBBY_DO`) | three matches and a champion; every copy identical to the owner's in each (3,765 to 3,787 blanks) |
+| quick match, 0.1.39 against 0.1.39 | paired, played; identical over 4,309 blanks |
+| quick match, 0.1.38.9 (the release) and 0.1.39 alone in the same queue for 90 s | never paired (each waits in its own version's queue) |
+| 0.1.38.9 hosting a match of two on a port, 0.1.39 joining it on Join by Address | "The game at that address is a different version: joining needs the same release." |
+| 0.1.38.9 owning a lobby on a port, 0.1.39 joining it by address | "The lobby owner's game is a different version" |
+| 0.1.39 owning a lobby on a port, 0.1.38.9 joining by address as a game of two (`direct:`) and as a lobby member (`lobbyjoin:`) | both refused with "The lobby owner's game is a different version"; the owner's lobby noted "Someone with another version of the game tried to join." |
+| 0.1.38.9 typing a 0.1.39 lobby's code | the service: "The host's game is a different version" |
+| a lobby member with `BT3_TEST_FPRINT=off` (sends no fingerprint) | refused |
+| update checks (port/tests/update) | 44 of 44 |
+| screenshots | the list without Create Room, New Lobby (both rows), Join without WATCH, Join by Address without WATCH, the lobby by address (owner: port and LAN address; member), the version refusal, Dragon Net Battle's Host tab, F1 > Online |
+| the regular checks against 0.1.38.9 | the heavy recording's 28 pictures identical to the earlier ones; stage 22 uncapped, alternating, three runs each: 4.09 to 4.12 ms per frame both (render thread off), 2.98 to 3.00 both (on) |
+
+Windows: built (mingw), not run. The PS2 build of port_tbo.c is unchanged (`cpp -P` md5; all of it is `#ifdef PORT`).
+Not tested: Dragon Net Battle's buttons pressed (only seen; they call what the pages call), a real second PC, the
+screen reader's lines of the new page.

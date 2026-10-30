@@ -26,14 +26,22 @@ int gPortOverlayOpen, gPortInputCapture, gPortChatTyping;
 /* The on-screen controller (Android: android/.../touch/TouchPadView.kt through the loader): player 1's buttons
    (1 = pressed, the bits below) and sticks, added to whatever the keyboard and controllers give. */
 static volatile unsigned sTouchButtons;
+/* The buttons pressed since the pad was last read (Port_PadRead): a quick tap, down and up between two of the game's
+   frames, still counts as one press (read as the buttons are now, it was lost: the menus seemed not to answer). */
+static unsigned sTouchTapped;
 static volatile unsigned char sTouchStick[4] = {0x80, 0x80, 0x80, 0x80}; /* lx, ly, rx, ry */
 void Port_TouchPad(unsigned buttons, int lx, int ly, int rx, int ry) {
-    sTouchButtons = buttons & 0xFFFF;
+    unsigned now = buttons & 0xFFFF;
+
+    __atomic_fetch_or(&sTouchTapped, now & ~sTouchButtons, __ATOMIC_ACQ_REL);
+    sTouchButtons = now;
     sTouchStick[0] = (unsigned char)lx;
     sTouchStick[1] = (unsigned char)ly;
     sTouchStick[2] = (unsigned char)rx;
     sTouchStick[3] = (unsigned char)ry;
 }
+/* The on-screen controller's buttons as they are now (the bits below): a spectator's R1 changes the view (gs/ui.cpp). */
+unsigned Port_TouchButtons(void) { return sTouchButtons; }
 extern int Port_Setting(const char *name, int def); /* plat_settings.c */
 extern void Port_SettingSave(const char *name, int value), Port_SettingsWrite(void);
 
@@ -230,7 +238,8 @@ int PortTbo_TextRead(void) {
    puts it on the clipboard (PortInput_TboClipboard, from the overlay's frame: SDL wants the clipboard there). */
 static char sTboCopy[64];
 static int sTboCopyDue;
-static int sTboPasteDue; /* the keypad's PASTE (Join Room): the clipboard's room code, typed on the window's thread */
+static int sTboPasteDue; /* the keypad's PASTE: 1 the clipboard's code (Join), 2 its plain characters (Join
+                            by Address), typed on the window's thread */
 
 void PortTbo_Copy(const char *text) {
     SDL_LockSpinlock(&sTboLock);
@@ -243,6 +252,31 @@ void PortTbo_Paste(void) {
     SDL_LockSpinlock(&sTboLock);
     sTboPasteDue = 1;
     SDL_UnlockSpinlock(&sTboLock);
+}
+
+void PortTbo_PasteText(void) {
+    SDL_LockSpinlock(&sTboLock);
+    sTboPasteDue = 2;
+    SDL_UnlockSpinlock(&sTboLock);
+}
+
+/* An address in a copied text: its last word ("192.168.1.20:7000" of "My address: 192.168.1.20:7000"), typed as if
+   by hand; the page keeps the characters an address can have. */
+static void tbo_paste_text(const char *clip) {
+    const unsigned char *p = (const unsigned char *)clip, *from = p;
+    int n = 0;
+
+    for (; p != NULL && *p; p++) {
+        if (*p == ' ' && p[1] != '\0' && p[1] != ' ') {
+            from = p + 1; /* (the last word is the address) */
+        }
+    }
+    for (p = from; p != NULL && *p && *p != ' ' && *p != '\n' && *p != '\r' && n < 48; p++) {
+        if (*p > 32 && *p < 127) {
+            tbo_push(*p);
+            n++;
+        }
+    }
 }
 
 /* The room code in a copied text: the last run of exactly six letters and digits ("Room code: MFT8FD"); without
@@ -287,7 +321,11 @@ void PortInput_TboClipboard(void) {
     }
     if (paste) {
         char *clip = SDL_GetClipboardText();
-        tbo_paste_code(clip);
+        if (paste == 2) {
+            tbo_paste_text(clip);
+        } else {
+            tbo_paste_code(clip);
+        }
         SDL_free(clip);
     }
 }
@@ -336,6 +374,7 @@ int PortInput_TboEvent(const SDL_Event *ev) {
 }
 int *PortInput_ChatKey(void) { pthread_once(&sLoadOnce, load); return &sChatKey; }
 void PortInput_ResetDefaults(int player) { pthread_once(&sLoadOnce, load); defaults(player); }
+
 
 void PortInput_Save(void) {
     char name[32];
@@ -468,6 +507,12 @@ int PortInput_ComboPoll(void) {
     return 0;
 }
 
+/* Controllers SDL does not know (many cheap wireless ones, the PS2 controller adapters): the automatic set-up
+   (PortInput_AutoConfigure) gives each a mapping in the PS2 adapters' order, kept in this file next to the settings
+   and read again at every start. */
+#define PAD_MAPPINGS "gamepad_mappings.txt"
+static volatile int sPadsStale; /* the list of controllers is read again at the next pads_refresh */
+
 static void pads_refresh(void) {
     static unsigned calls;
     SDL_JoystickID *ids;
@@ -475,8 +520,11 @@ static void pads_refresh(void) {
 
     if (!sInit) {
         SDL_InitSubSystem(SDL_INIT_GAMEPAD);
+        SDL_AddGamepadMappingsFromFile(PAD_MAPPINGS); /* (none yet: -1, nothing added) */
         sInit = 1;
         test_pad();
+    } else if (sPadsStale) {
+        sPadsStale = 0;
     } else if (calls++ % 120 != 0) { /* look for plugged and unplugged controllers about once a second */
         return;
     }
@@ -525,6 +573,105 @@ static SDL_Gamepad *pad_of(int player) {
         }
     }
     return NULL;
+}
+
+/* A mapping for a joystick SDL has none for, in the order of the PS2 controller's USB adapters and of most generic
+   pads made after them: 0 triangle, 1 circle, 2 cross, 3 square, 4 L2, 5 R2, 6 L1, 7 R1, 8 SELECT, 9 START, 10 L3,
+   11 R3, the d-pad on the first hat, the sticks on axes 0 1 (left) and 2 3 (right). Only what the joystick has. */
+static int generic_mapping(SDL_Joystick *js, char *out, size_t size) {
+    static const char *const kButton[12] = {"y", "b", "a", "x", "lefttrigger", "righttrigger", "leftshoulder", "rightshoulder",
+                                            "back", "start", "leftstick", "rightstick"};
+    static const char *const kAxis[4] = {"leftx", "lefty", "rightx", "righty"};
+    char guid[64];
+    const char *name = SDL_GetJoystickName(js);
+    int buttons = SDL_GetNumJoystickButtons(js), axes = SDL_GetNumJoystickAxes(js), b;
+    size_t used;
+
+    SDL_GUIDToString(SDL_GetJoystickGUID(js), guid, (int)sizeof(guid));
+    used = (size_t)snprintf(out, size, "%s,%s,", guid, name != NULL && name[0] != '\0' ? name : "Controller");
+    for (b = 0; b < 12 && b < buttons && used < size; b++) {
+        used += (size_t)snprintf(out + used, size - used, "%s:b%d,", kButton[b], b);
+    }
+    if (SDL_GetNumJoystickHats(js) > 0 && used < size) {
+        used += (size_t)snprintf(out + used, size - used, "dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,");
+    }
+    for (b = 0; b < 4 && b < axes && used < size; b++) {
+        used += (size_t)snprintf(out + used, size - used, "%s:a%d,", kAxis[b], b);
+    }
+    return buttons >= 4 && used < size;
+}
+
+/* The automatic set-up (the Controls page's button): every connected controller SDL does not know gets the PS2
+   order above (kept in PAD_MAPPINGS); the player plays with the wireless one (else the first one); its buttons are
+   the PS2 controller's (cross at the bottom, circle right, square left, triangle top, L1 / R1, L2 / R2, L3 / R3,
+   START, SELECT), the sticks get a deadzone of 10 % (a worn or cheap stick drifts) and vibration is on. The
+   keyboard is left as it is. Returns the controller's slot, -1 when none is connected; its name in `name`. */
+int PortInput_AutoConfigure(int player, char *name, int size) {
+    SDL_JoystickID *ids;
+    int n = 0, i, a, chosen = -1, wireless = -1;
+
+    pthread_once(&sLoadOnce, load);
+    if (!sInit) {
+        SDL_InitSubSystem(SDL_INIT_GAMEPAD);
+    }
+    ids = SDL_GetJoysticks(&n);
+    for (i = 0; ids != NULL && i < n; i++) {
+        SDL_Joystick *js;
+        char map[1024];
+
+        if (SDL_IsGamepad(ids[i]) || SDL_IsJoystickVirtual(ids[i]) || (js = SDL_OpenJoystick(ids[i])) == NULL) {
+            continue;
+        }
+        if (generic_mapping(js, map, sizeof(map)) && SDL_AddGamepadMapping(map) >= 0) {
+            FILE *f = fopen(PAD_MAPPINGS, "a");
+            fprintf(stderr, "bt3: controls: %s had no mapping: the PS2 order given to it\n", SDL_GetJoystickName(js));
+            if (f != NULL) {
+                fprintf(f, "%s\n", map);
+                fclose(f);
+            }
+        }
+        SDL_CloseJoystick(js);
+    }
+    SDL_free(ids);
+    ids = SDL_GetGamepads(&n); /* (in the order pads_refresh numbers them) */
+    for (i = 0; ids != NULL && i < n; i++) {
+        SDL_Gamepad *pad;
+
+        if (SDL_IsJoystickVirtual(ids[i])) {
+            continue;
+        }
+        if (chosen < 0) {
+            chosen = i;
+        }
+        if (wireless < 0 && (pad = SDL_OpenGamepad(ids[i])) != NULL) {
+            if (SDL_GetGamepadConnectionState(pad) == SDL_JOYSTICK_CONNECTION_WIRELESS) {
+                wireless = i;
+            }
+            SDL_CloseGamepad(pad);
+        }
+    }
+    if (wireless >= 0) {
+        chosen = wireless;
+    }
+    if (name != NULL && size > 0) {
+        snprintf(name, (size_t)size, "%s", chosen >= 0 && SDL_GetGamepadNameForID(ids[chosen]) != NULL ? SDL_GetGamepadNameForID(ids[chosen]) : "");
+    }
+    SDL_free(ids);
+    for (a = 0; a < PORT_PAD_BUTTONS; a++) {
+        sPadBtn[player][a] = kActions[a].pad;
+    }
+    if (chosen >= 0) {
+        sPadSlot[player] = chosen;
+        if (sPadSlot[1 - player] == chosen) { /* (the other player had it: the next one, or none) */
+            sPadSlot[1 - player] = chosen + 1 < n ? chosen + 1 : -1;
+        }
+    }
+    sDeadzone[player][0] = sDeadzone[player][1] = 10;
+    sVib[player][0] = 1;
+    sVib[player][1] = 100;
+    sPadsStale = 1;
+    PortInput_Save();
+    return chosen;
 }
 
 /* BT3_PAD="frame:button,frame:button,...": scripted presses for player 1, each held for 4 frames from that frame
@@ -935,7 +1082,8 @@ void Port_PadVibrate(int socket, int small, int large) {
         return;
     }
     if (Port_NetActive()) {
-        if (socket != Port_NetMe()) {
+        extern int Port_NetSpectating(void);
+        if (socket != Port_NetMe() || Port_NetSpectating()) { /* (a spectator's controller plays nobody) */
             return;
         }
         player = 0;
@@ -1111,9 +1259,10 @@ int Port_PadRead(int socket, unsigned char *data) {
 #undef HELD
     }
     if (socket == 0) {
+        unsigned touch = sTouchButtons | __atomic_exchange_n(&sTouchTapped, 0u, __ATOMIC_ACQ_REL); /* (taken even when unused) */
         btn |= script_buttons();
         if (!gPortInputCapture) {
-            btn |= sTouchSwallow ? (sTouchButtons & ~0x0009u) : sTouchButtons;
+            btn |= sTouchSwallow ? (touch & ~0x0009u) : touch;
             if (sTouchStick[0] != 0x80 || sTouchStick[1] != 0x80) {
                 lx = sTouchStick[0];
                 ly = sTouchStick[1];

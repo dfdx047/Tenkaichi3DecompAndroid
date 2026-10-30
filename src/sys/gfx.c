@@ -180,6 +180,9 @@ void Gfx_BeginFrame(void) {
 void Gfx_EndFrame(s32 vsyncs) {
     Fade_DrawScreen();
 #ifdef PORT
+    /* A spectator's line over the match it watches and its own pause menu (menu/port_tbo.c), over every screen. */
+    extern void PortTbo_SpecDraw(s32 vsyncs);
+    PortTbo_SpecDraw(vsyncs);
     /* The PC exit question uses the game's animated memory-card dialog above the current screen. */
     extern void PortQuit_Draw(int vsyncs);
     PortQuit_Draw(vsyncs); /* (the blanks this frame lasts: a fight's frame is two) */

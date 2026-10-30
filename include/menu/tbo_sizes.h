@@ -12,8 +12,10 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {636, 698, 0}, /* hosts_puzzled */
     {693, 637, 0}, /* hosts_cheer */
     {684, 711, 0}, /* hosts_thumbs_up */
-    {1280, 107, 54}, /* kit_sel */
-    {1273, 100, 50}, /* kit_bar */
+    {431, 887, 0}, /* raditz */
+    {512, 496, 0}, /* raditz_bust */
+    {640, 100, 62}, /* kit_sel */
+    {640, 100, 62}, /* kit_bar */
     {1273, 204, 73}, /* kit_dialog */
     {465, 224, 49}, /* kit_window */
     {306, 81, 40}, /* kit_gold */

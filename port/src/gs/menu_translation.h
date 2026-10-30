@@ -16,6 +16,19 @@ typedef struct MenuTranslationOption {
 /* The start of an online match (gs/net.c): before the other player is there, and once they are ({name}: theirs). */
 #define PORT_TEXT_NET_CONNECTING "net/connecting"
 #define PORT_TEXT_NET_RIVAL "net/rival_here"
+/* ... a quick match's rival, with where the matchmaking service placed them ({region}: one of region/NA, SA, EU, ME,
+   AF, AS, OC), and the round trip once measured ({ms}, a line under it). */
+#define PORT_TEXT_NET_RIVAL_FROM "net/rival_from"
+#define PORT_TEXT_NET_ROUND_TRIP "net/round_trip"
+/* Dragon Net Battle's Join tab found a lobby (gs/ui.cpp): its screen is in Tenkaichi Budokai Online. */
+#define PORT_TEXT_LOBBY_JOINED "net/lobby_joined"
+/* The automatic update (gs/update.c, gs/ui.cpp): the line over the main menu and the online screens ({version}: the
+   new release's number; {percent}: how much is downloaded), and what the game says after it installed one. */
+#define PORT_TEXT_UPDATE_AVAILABLE "update/available"
+#define PORT_TEXT_UPDATE_DOWNLOADING "update/downloading"
+#define PORT_TEXT_UPDATE_READY "update/ready"
+#define PORT_TEXT_UPDATE_DONE "update/done"
+#define PORT_TEXT_UPDATE_ONLINE_OFF "update/online_off"
 
 /* Copies bundled label and port catalogs without replacing local edits, then loads
    BT3_MENU_LANG or the saved menu_lang setting (English if neither is set). */

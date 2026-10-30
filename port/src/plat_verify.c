@@ -34,6 +34,7 @@
 extern const char *Port_FileRoot(void); /* plat_file.c */
 extern void Port_UiNotice(const char *text); /* gs/ui.cpp */
 extern void PortFp_Run(int detail); /* plat_fprint.c: the gameplay fingerprint, computed on this thread */
+extern void PortFp_Pending(int on);  /* plat_fprint.c: it will be computed (1) / it will not after all (0) */
 static int sCheck = 1; /* 0 with BT3_VERIFY=0: only the fingerprint */
 
 enum { DATA_CHECKING = 0, DATA_ORIGINAL = 1, DATA_MODIFIED = 2, DATA_OFF = 3 };
@@ -140,8 +141,12 @@ static void *verify_thread(void *arg) {
     int n;
 
     (void)arg;
+    /* The gameplay fingerprint first, before the pass over all the disc's files below: it reads only the files the
+       fights are computed from (a few hundred megabytes, or nothing with its cache), and it decides whether this
+       game may go online. On a slow drive (a USB hard disk) the pass over the ~68,600 files took long enough that
+       the online screens were opened before the fingerprint was known (seen by a player). */
+    PortFp_Run(0);
     if (!sCheck) {
-        PortFp_Run(0);
         return NULL;
     }
     crc_init();
@@ -179,7 +184,6 @@ static void *verify_thread(void *arg) {
            then, so the number is a lower bound. */
         sAtLeast = 1;
         finish();
-        PortFp_Run(0); /* (reads the files that are loaded, those under mods/ too) */
         return NULL;
     }
     snprintf(cache, sizeof(cache), "%s/.verified", root);
@@ -196,13 +200,11 @@ static void *verify_thread(void *arg) {
         fclose(f);
         if (got == 5 && ver == 2 && was == sig) {
             finish();
-            PortFp_Run(0);
             return NULL;
         }
     }
-    /* The fingerprint first: a few hundred megabytes of the 3 GB, known within a second or two; the comparison
-       below then finds those files in the system's cache. */
-    PortFp_Run(0);
+    /* (the fingerprint, above, has read a few hundred megabytes of the 3 GB: the comparison below finds those files in
+       the system's cache) */
     sDiffer = sMissing = sMods = 0;
     memset(sFirst, 0, sizeof(sFirst));
     buf = malloc(1 << 20);
@@ -291,10 +293,12 @@ void Port_VerifyStart(void) {
         sCheck = 0; /* no comparison with the disc, no notice; the fingerprint is still computed */
     }
     sState = sCheck ? DATA_CHECKING : DATA_OFF;
+    PortFp_Pending(1); /* (from now on the fingerprint is "being computed": the online screens wait for it) */
     pthread_attr_init(&attr);
     pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     if (pthread_create(&th, &attr, verify_thread, NULL) != 0) {
         sState = DATA_OFF;
+        PortFp_Pending(0);
     }
     pthread_attr_destroy(&attr);
 }

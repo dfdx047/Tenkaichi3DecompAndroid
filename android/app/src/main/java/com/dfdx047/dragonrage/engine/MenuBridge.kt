@@ -16,6 +16,12 @@ object MenuBridge {
     const val ACTION_RESUME = 1
     const val ACTION_QUIT = 2
     const val ACTION_PAD_BUTTONS = 3
+    // (Budokai Tenkaichi 3: a lobby's match and a watched match, ui_android.inc's nm_frame)
+    const val ACTION_LOBBY_BACK = 4
+    const val ACTION_LOBBY_LEAVE = 5
+    const val ACTION_SPEC_VIEW = 6
+    const val ACTION_SPEC_STOP = 7
+    const val ACTION_PAD_AUTO = 8 // the controller's automatic set-up: the PS2 layout on the wireless one
 
     fun open(open: Boolean): Boolean = runCatching { nativeOpen(open) }.getOrDefault(false)
     fun gen(): Int = runCatching { nativeGen() }.getOrDefault(-1)

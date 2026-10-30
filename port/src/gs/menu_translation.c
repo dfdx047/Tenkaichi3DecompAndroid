@@ -24,7 +24,7 @@
 #endif
 
 enum { TR_MAX_FILE = 1024 * 1024, TR_MAX_ROWS = 640, TR_MAX_GROUPS = 160 };
-enum { TR_PORT_TEXT_COUNT = 3, TR_PORT_TEXT_MAX = 1024, TR_PORT_MAX_FILE = 1024 * 1024 };
+enum { TR_PORT_TEXT_COUNT = 18, TR_PORT_TEXT_MAX = 1024, TR_PORT_MAX_FILE = 1024 * 1024 };
 /* The online menus' lines (ids "tbo/..."): looked up by their English text, as the menu draws them (MenuTranslation_Line).
    Any number up to TR_LINES_MAX; a table is made once per load and kept (the game's thread may be reading the last). */
 enum { TR_LINES_MAX = 2048, TR_LINES_HASH = 4096 };
@@ -34,7 +34,22 @@ static TrLines *sLines;
 static const struct { const char *id, *original; } kPortText[TR_PORT_TEXT_COUNT] = {
     {PORT_TEXT_QUIT_CONFIRM, "Close the game?\nUnsaved progress will be lost."},
     {PORT_TEXT_NET_CONNECTING, "Connecting to your rival..."},
-    {PORT_TEXT_NET_RIVAL, "Your rival \"{name}\" is here! The match begins."}
+    {PORT_TEXT_NET_RIVAL, "Your rival \"{name}\" is here! The match begins."},
+    {PORT_TEXT_LOBBY_JOINED, "You are in the lobby. Its screen opens from the main menu (Dragon Net Battle)."},
+    {PORT_TEXT_NET_RIVAL_FROM, "Your rival \"{name}\" from {region} is here! The match begins."},
+    {PORT_TEXT_NET_ROUND_TRIP, "Round trip: ~{ms} ms"},
+    {"region/NA", "North America"},
+    {"region/SA", "South America"},
+    {"region/EU", "Europe"},
+    {"region/ME", "the Middle East"},
+    {"region/AF", "Africa"},
+    {"region/AS", "Asia"},
+    {"region/OC", "Oceania"},
+    {PORT_TEXT_UPDATE_AVAILABLE, "Update {version} available. F1 to update."},
+    {PORT_TEXT_UPDATE_DOWNLOADING, "Downloading update {version}: {percent}%"},
+    {PORT_TEXT_UPDATE_READY, "Update {version} is ready. F1 > Restart now."},
+    {PORT_TEXT_UPDATE_DONE, "Updated to {version}."},
+    {PORT_TEXT_UPDATE_ONLINE_OFF, "An update is being installed: online play is off until the game restarts (F1 > Restart now)."},
 };
 typedef struct TrPortCatalog {
     char text[TR_PORT_TEXT_COUNT][TR_PORT_TEXT_MAX];
@@ -381,12 +396,11 @@ static int tr_port_parse(const char *buf, size_t size, const char *locale, TrPor
     } while (tr_take(&p, ','));
     return 0;
 }
-static int tr_port_read(const char *outDir, const char *locale, TrPortCatalog *catalog) {
-    char path[1200], *data;
+static int tr_port_read_file(const char *path, const char *locale, TrPortCatalog *catalog) {
+    char *data;
     FILE *fp;
     long size;
     int ok;
-    if (snprintf(path, sizeof(path), "%s/translations/port/%s.json", outDir, locale) >= (int)sizeof(path)) return 0;
     fp = fopen(path, "rb");
     if (!fp) return 0;
     if (fseek(fp, 0, SEEK_END) || (size = ftell(fp)) < 1 || size > TR_PORT_MAX_FILE || fseek(fp, 0, SEEK_SET)) { fclose(fp); return 0; }
@@ -397,6 +411,11 @@ static int tr_port_read(const char *outDir, const char *locale, TrPortCatalog *c
     if (ok) { data[size] = 0; ok = tr_port_parse(data, (size_t)size, locale, catalog); }
     free(data);
     return ok;
+}
+static int tr_port_read(const char *outDir, const char *locale, TrPortCatalog *catalog) {
+    char path[1200];
+    if (snprintf(path, sizeof(path), "%s/translations/port/%s.json", outDir, locale) >= (int)sizeof(path)) return 0;
+    return tr_port_read_file(path, locale, catalog);
 }
 static void tr_port_load(const char *outDir, const char *locale) {
     static TrPortCatalog catalog; /* (big: not on the stack) */
@@ -869,12 +888,13 @@ int MenuTranslation_Available(MenuTranslationOption *out, int capacity) {
     }
     return MenuTranslation_List(folder, out, capacity);
 }
+extern int Port_NetSession(void); /* gs/net.c: an online session (begun without starting the program again too) */
 int MenuTranslation_ShouldPrompt(const MenuTranslationOption *options, int count) {
     char saved[16];
     int i;
     const char *override = getenv("BT3_MENU_LANG");
     if (count <= 1 || options == NULL || (override != NULL && override[0] != '\0') ||
-        getenv("BT3_NET_SESSION") != NULL || getenv("BT3_PAD_PLAY") != NULL ||
+        getenv("BT3_NET_SESSION") != NULL || Port_NetSession() || getenv("BT3_PAD_PLAY") != NULL ||
         getenv("BT3_PAD_TABLE") != NULL || getenv("BT3_SYNCTEST") != NULL) return 0;
     if (__atomic_load_n(&sBootChoiceMade, __ATOMIC_ACQUIRE)) return 0;
     if (Port_Setting("language_prompt_always", 0) != 0) return 1;
@@ -969,6 +989,31 @@ int Port_TrLine(const char *original, char *out, int size) {
     if (t == NULL || out == NULL || size <= 0) return 0;
     snprintf(out, (size_t)size, "%s", t);
     return 1;
+}
+/* The online screens' own language (menu/port_tbo.c, the hub's language row): "pt" or "es" takes their lines from
+   translations/tbo/<locale>.json beside the program (port/tools/tbo_translations.py), anything else leaves them in
+   English. Taken at once: the table before is kept, a line may be in use. 1 when the lines are in that language. */
+int Port_TboLanguage(const char *locale) {
+    static TrPortCatalog catalog; /* (big: not on the stack) */
+    char dir[1024], path[1300];
+    int ok = 0;
+    if (locale != NULL && (!strcmp(locale, "pt") || !strcmp(locale, "es")) && tr_bundled_dir(dir, sizeof(dir)) &&
+        snprintf(path, sizeof(path), "%s/tbo/%s.json", dir, locale) < (int)sizeof(path)) {
+        ok = tr_port_read_file(path, locale, &catalog);
+    }
+    if (ok && catalog.lines != NULL) {
+        fprintf(stderr, "bt3: the online screens in %s (%d lines)\n", locale, catalog.lines->count);
+        __atomic_store_n(&sLines, catalog.lines, __ATOMIC_RELEASE);
+    } else {
+        if (locale != NULL && strcmp(locale, "en")) {
+            fprintf(stderr, "bt3: no translation of the online screens in %s: English\n", locale);
+        }
+        tr_lines_free(catalog.lines);
+        __atomic_store_n(&sLines, (TrLines *)NULL, __ATOMIC_RELEASE);
+        ok = 0;
+    }
+    catalog.lines = NULL;
+    return ok;
 }
 const char *MenuTranslation_PortText(const char *id) {
     int i;

@@ -22,6 +22,10 @@
  *
  * The server and login come from the matchmaking Worker (port/matchmaking): Cloudflare's TURN service, a name and
  * password good for three hours.
+ *
+ * Several peers: a lobby's owner (net_lobby.c) holds the relay for up to seven members. Every address the relay
+ * delivers from gets a place of its own (RELAY_PEERS) with its own channel, and up to RELAY_PERMITS addresses are let
+ * through; a ChannelBind's answer is matched to its request by the transaction. A match of two uses one place.
  */
 #include <SDL3/SDL.h>
 #include <stdint.h>
@@ -174,19 +178,27 @@ static void hmac_sha1(const uint8_t *key, size_t keyLen, const uint8_t *msg, siz
 #define COOKIE2 0xA4
 #define COOKIE3 0x42
 
+/* The relay serves the host's other players: one in a match, up to seven in a lobby (its owner holds the relay).
+   Each address the relay delivers from gets a place, and a channel of its own once it is known. */
+enum { RELAY_PEERS = 12, RELAY_PERMITS = 16 };
+typedef struct {
+    struct sockaddr_in addr;         /* an address the relay delivered from */
+    int via;                         /* ... and packets to it go through the relay */
+    int chan, chanBound;             /* its channel's number (0x4000 and up; 0 none), and whether the server has agreed */
+    uint64_t lastBind, lastHeard;
+    uint8_t txn[12];                 /* the transaction of its last ChannelBind (the answer names no channel) */
+} RelayPeer;
+
 static struct {
     int active;
     struct sockaddr_in server;
     char username[160], password[160], realm[128], nonce[256];
     uint8_t key[16];                 /* MD5(username:realm:password) */
     int haveLogin;                   /* realm and nonce are known */
-    struct sockaddr_in permit[4];    /* the addresses let through */
+    struct sockaddr_in permit[RELAY_PERMITS]; /* the addresses let through (by IP: the port does not matter) */
     int permits;
-    struct sockaddr_in peer;         /* the address the relay last delivered from */
-    int peerVia;                     /* ... and packets to it go through the relay */
-    struct sockaddr_in chanPeer;     /* the address a channel is bound (or being bound) to */
-    int chan, chanBound;             /* its number (0x4000 and up; 0 none), and whether the server has agreed */
-    uint64_t lastBind;
+    RelayPeer peer[RELAY_PEERS];
+    int nextChan;                    /* the next channel number to give (a number stays with its address) */
     uint64_t lastRefresh, lastPermit;
 } sR;
 
@@ -415,17 +427,28 @@ static void send_permit(int sock, const struct sockaddr_in *peer) {
 /* Asks for a channel to `peer` (or asks again: a binding lasts ten minutes). With a channel the match's packets
    travel with a 4-byte header in both directions, as the plain data they are, instead of each inside a STUN message
    ("indication"): that is what a relay expects of a steady stream. */
-static void send_bind(int sock) {
+static void send_bind(int sock, RelayPeer *p) {
     uint8_t m[768], num[4];
     int at = msg_begin(m, 0x0009);
-    num[0] = (uint8_t)(sR.chan >> 8);
-    num[1] = (uint8_t)sR.chan;
+    num[0] = (uint8_t)(p->chan >> 8);
+    num[1] = (uint8_t)p->chan;
     num[2] = num[3] = 0;
+    memcpy(p->txn, m + 8, 12);
     at = msg_attr(m, at, 0x000C, num, 4);
-    at = msg_addr(m, at, 0x0012, &sR.chanPeer);
+    at = msg_addr(m, at, 0x0012, &p->addr);
     at = msg_sign(m, at);
     to_server(sock, m, at);
-    sR.lastBind = SDL_GetTicks();
+    p->lastBind = SDL_GetTicks();
+}
+
+static RelayPeer *peer_find(const struct sockaddr_in *a) {
+    int i;
+    for (i = 0; i < RELAY_PEERS; i++) {
+        if (sR.peer[i].chan != 0 && same_addr(&sR.peer[i].addr, a)) {
+            return &sR.peer[i];
+        }
+    }
+    return NULL;
 }
 
 void Relay_Permit(int sock, const struct sockaddr_in *peer) {
@@ -438,7 +461,7 @@ void Relay_Permit(int sock, const struct sockaddr_in *peer) {
             return;
         }
     }
-    if (sR.permits < 4) {
+    if (sR.permits < RELAY_PERMITS) {
         sR.permit[sR.permits++] = *peer;
     }
     send_permit(sock, peer);
@@ -456,8 +479,11 @@ void Relay_Tick(int sock) {
         return;
     }
     now = SDL_GetTicks();
-    if (sR.chan != 0 && now - sR.lastBind > (sR.chanBound ? 240000u : 500u) && SDL_getenv("BT3_RELAY_NOCHAN") == NULL) {
-        send_bind(sock); /* not agreed yet (an answer lost): again; agreed: renewed well before it runs out */
+    for (i = 0; i < RELAY_PEERS; i++) {
+        RelayPeer *p = &sR.peer[i];
+        if (p->chan != 0 && now - p->lastBind > (p->chanBound ? 240000u : 500u) && SDL_getenv("BT3_RELAY_NOCHAN") == NULL) {
+            send_bind(sock, p); /* not agreed yet (an answer lost): again; agreed: renewed well before it runs out */
+        }
     }
     if (now - sR.lastPermit > 60000) { /* a permission lasts five minutes: asked again every minute (an answer may be lost) */
         sR.lastPermit = now;
@@ -483,14 +509,17 @@ int Relay_Unwrap(uint8_t *pkt, int n, struct sockaddr_in *from, uint8_t **data, 
     if (!sR.active || !same_addr(from, &sR.server)) {
         return 2;
     }
-    if (n >= 4 && sR.chan != 0 && pkt[0] == (uint8_t)(sR.chan >> 8) && pkt[1] == (uint8_t)sR.chan) { /* channel data */
+    if (n >= 4 && (pkt[0] & 0xC0) == 0x40) { /* channel data: the channel's number says whose */
+        int i, num = pkt[0] << 8 | pkt[1];
+        for (i = 0; i < RELAY_PEERS && !(sR.peer[i].chan == num && num != 0); i++) {
+        }
         l = pkt[2] << 8 | pkt[3];
-        if (l > n - 4) {
+        if (i == RELAY_PEERS || l > n - 4) {
             return 0;
         }
-        sR.peer = sR.chanPeer;
-        sR.peerVia = 1;
-        *from = sR.chanPeer;
+        sR.peer[i].via = 1;
+        sR.peer[i].lastHeard = SDL_GetTicks();
+        *from = sR.peer[i].addr;
         *data = pkt + 4;
         *len = l;
         return 1;
@@ -499,10 +528,15 @@ int Relay_Unwrap(uint8_t *pkt, int n, struct sockaddr_in *from, uint8_t **data, 
         return 0;
     }
     type = (unsigned)(pkt[0] << 8 | pkt[1]);
-    if (type == 0x0109) { /* the channel is agreed */
-        sR.chanBound = 1;
-        if (SDL_getenv("BT3_RELAY_LOG") != NULL) {
-            fprintf(stderr, "relay: channel %04x bound\n", sR.chan);
+    if (type == 0x0109) { /* a channel is agreed: which one, its request's transaction says */
+        int i;
+        for (i = 0; i < RELAY_PEERS; i++) {
+            if (sR.peer[i].chan != 0 && memcmp(sR.peer[i].txn, pkt + 8, 12) == 0) {
+                sR.peer[i].chanBound = 1;
+                if (SDL_getenv("BT3_RELAY_LOG") != NULL) {
+                    fprintf(stderr, "relay: channel %04x bound\n", sR.peer[i].chan);
+                }
+            }
         }
         return 0;
     }
@@ -516,18 +550,30 @@ int Relay_Unwrap(uint8_t *pkt, int n, struct sockaddr_in *from, uint8_t **data, 
         if (d == NULL) {
             return 0;
         }
-        if (SDL_getenv("BT3_RELAY_LOG") != NULL && (!sR.peerVia || !same_addr(&sR.peer, &peer))) {
-            fprintf(stderr, "relay: data from port %d\n", ntohs(peer.sin_port));
-        }
-        sR.peer = peer;
-        sR.peerVia = 1;
-        if ((sR.chan == 0 || !same_addr(&sR.chanPeer, &peer)) && SDL_getenv("BT3_RELAY_NOCHAN") == NULL) {
-            /* the other player's address is known now: a channel to it (a new number if it is another address
-               than before: a number stays with its address) */
-            sR.chan = sR.chan == 0 ? 0x4000 : sR.chan + 1;
-            sR.chanPeer = peer;
-            sR.chanBound = 0;
-            sR.lastBind = 0; /* (asked by the next tick) */
+        {
+            RelayPeer *p = peer_find(&peer);
+            if (p == NULL) { /* a new address: the first free place, or the one heard from longest ago */
+                int i, pick = 0;
+                for (i = 0; i < RELAY_PEERS; i++) {
+                    if (sR.peer[i].chan == 0) {
+                        pick = i;
+                        break;
+                    }
+                    if (sR.peer[i].lastHeard < sR.peer[pick].lastHeard) {
+                        pick = i;
+                    }
+                }
+                p = &sR.peer[pick];
+                memset(p, 0, sizeof(*p));
+                p->addr = peer;
+                p->chan = 0x4000 + (sR.nextChan++ & 0xFFF); /* (a number stays with its address) */
+                if (SDL_getenv("BT3_RELAY_LOG") != NULL) {
+                    fprintf(stderr, "relay: data from port %d (channel %04x)\n", ntohs(peer.sin_port), p->chan);
+                }
+            }
+            p->via = 1;
+            p->lastHeard = SDL_GetTicks();
+            /* the address is known now: a channel to it is asked for by the next tick */
         }
         *from = peer;
         *data = (uint8_t *)d;
@@ -549,7 +595,8 @@ int Relay_Unwrap(uint8_t *pkt, int n, struct sockaddr_in *from, uint8_t **data, 
 }
 
 int Relay_IsPeer(const struct sockaddr_in *to) {
-    return sR.active && sR.peerVia && same_addr(to, &sR.peer);
+    const RelayPeer *p;
+    return sR.active && (p = peer_find(to)) != NULL && p->via;
 }
 
 void Relay_Send(int sock, const void *data, int len, const struct sockaddr_in *to) {
@@ -566,13 +613,16 @@ void Relay_Send(int sock, const void *data, int len, const struct sockaddr_in *t
     if (len > 1400) {
         return;
     }
-    if (sR.chanBound && same_addr(to, &sR.chanPeer)) {
-        m[0] = (uint8_t)(sR.chan >> 8);
-        m[1] = (uint8_t)sR.chan;
+    {
+        const RelayPeer *p = peer_find(to);
+        if (p != NULL && p->chanBound && SDL_getenv("BT3_RELAY_NOCHAN") == NULL) {
+            m[0] = (uint8_t)(p->chan >> 8);
+            m[1] = (uint8_t)p->chan;
         put16(m + 2, (unsigned)len);
-        memcpy(m + 4, data, (size_t)len);
-        to_server(sock, m, 4 + len);
-        return;
+            memcpy(m + 4, data, (size_t)len);
+            to_server(sock, m, 4 + len);
+            return;
+        }
     }
     at = msg_begin(m, 0x0016);
     at = msg_addr(m, at, 0x0012, to);
@@ -582,8 +632,9 @@ void Relay_Send(int sock, const void *data, int len, const struct sockaddr_in *t
 }
 
 void Relay_SawDirect(const struct sockaddr_in *from) {
-    if (sR.active && sR.peerVia && same_addr(from, &sR.peer)) {
-        sR.peerVia = 0;
+    RelayPeer *p;
+    if (sR.active && (p = peer_find(from)) != NULL) {
+        p->via = 0;
     }
 }
 
@@ -597,7 +648,7 @@ void Relay_Close(int sock) {
         to_server(sock, m, at);
     }
     sR.active = 0;
-    sR.peerVia = 0;
     sR.permits = 0;
-    sR.chan = sR.chanBound = 0;
+    memset(sR.peer, 0, sizeof(sR.peer));
+    sR.nextChan = 0;
 }
