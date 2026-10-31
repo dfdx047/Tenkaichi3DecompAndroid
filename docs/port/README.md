@@ -4684,3 +4684,29 @@ a controller, the European disc's field with a real image, the Linux and macOS w
 - Sim Dragon's day (32, from the user's recordings): the fighter's panels (`mc_at_plate`, `mc_df_plate`, `mc_plate_potara*`) against the left edge (cut there on the 4:3 screen); the portrait and health bar (`mc_chara_pt_plate`) there too, 24 lines up, level with the Z points counter (`PORT_MENU_LEFT_UP`, marker 0x34); the counter (`mc_point_plate`) centred above the monitor (`PORT_MENU_CENTER_NUDGE`, marker 0x33: 18 to the right after the narrowing); the commands (`mc_sim_botan*`) and the turn timer (`mc_icon_timer`) against the right (all the user's choices). Its pause window (movie `SIMDAY_FL_MENU`, src/menu/menu_q_b.c) is drawn under CENTER_ALL: the labels not chosen are pieces exactly as wide as the 4:3 screen, which the page filled with (stretched); the chosen one is enlarged, so not as wide.
 - Dragon History's result, the window of what was won ("Battle Unlocked!", `GetWin_Draw`, src/menu/menu_c_c.c): a page of its own (54, CENTER_ALL) in the middle, its title, rows and text with it (the screens' title rule, `mc_title*` against the left, not on 54); the static over it (`mc_noise`) with it, not across the width. From the user's recording.
 - The default layout since 0.1.39.3 (the user's decision): `menus_wide` defaults to 1 (port/src/plat_stub.c), still labelled "Widescreen (beta)". A player who chose Stretched or 4:3 in F1 has both settings saved and keeps that; an older "Menus in 4:3" (menus_43 alone) wins over it in `Port_MenusWide`. Tests that compare with the 4:3 or Stretched pictures set `BT3_MENU_WIDE=0`.
+
+## F1 > Tech: the community's fixes of the game's mechanics (2026-11-01)
+
+From the community package "BT3 PS2 Port Gameplay Source" v0.3.1 (Z Counter 2 v0.9.0, Bombardment v2.2; AGPL-3.0,
+the repository's own license). Its six files are `port/src/bt3_{zcounter2,bombardment,gameplay_rules}.c` and
+`port/include/` alike; its integration patch is applied to five battle files under PORT (the PS2 build is unchanged).
+
+- **Z Counter fix** (`tech_zcounter2`): a valid Z Counter (Up + attack) that the game loses when a movement changes the
+  defender's collision pose in the same update is kept: at the movement input the fighter's neutral pose is copied
+  (672,268 bytes of private state) and an incoming attack in that update is tested against it with the game's own
+  counter / guard code. The input timing, cooldown and requirements are the game's.
+- **Bombardment fix** (`tech_bombardment`): in a dash after a completed smash blast (0xB1), the first body-contact stop
+  waits one update when the next smash blast is exactly one update short of its six (blast held 5 updates, no
+  Charge / Rush), so the chain is not broken. Uses the fighter's dash work[2].
+- Both off by default; read when the roster is set up (src/battle/btl_char_mgr.c: a fight's start), ended when it is
+  freed. Never in an online session (both sides would have to agree: they keep the game's rules) and never while a
+  replay is played back (`BtlGame_IsReplay` in the flag queries: it was recorded with the game's rules).
+- Changed from the package: off, the call sites run the game's own code exactly (the package's helpers wrote the
+  fighter's work[2] even when off); its activation is the F1 settings instead of always on; its 672 KB state is not
+  in make_state.py's PORT_STATE: it is never used online, so it stays out of the rollback snapshots and the digest.
+  If the fixes are ever offered online, they need both sides' agreement in the match setup and that state in
+  PORT_STATE.
+- Checked: the attract demo's fight values (BT3_HASH, third column) are identical to main's on all 3,462 frames, with
+  the fixes off and with them on (on, the CPU fighters never reach the Z Counter's movement input: no capture; the
+  demo is not a replay). A fight with the fixes on, played by a person, is still to be done (the package's author did
+  not play one either).

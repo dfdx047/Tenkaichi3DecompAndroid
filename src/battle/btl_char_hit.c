@@ -1,5 +1,9 @@
 #include "common.h"
 #include "battle/btl_char_hit.h"
+#ifdef PORT
+#include "bt3_zcounter2.h"
+#include "bt3_gameplay_rules.h"
+#endif
 
 /* Fighter hit resolution, 0x1C7B30-0x1CA6D0. The frame flow and the structures are in battle/btl_char_hit.h.
  *
@@ -1027,6 +1031,12 @@ void BtlHit_CheckProximityAll(void) {
  * the opponent within 90 degrees of the facing (or attack flag 8). Marks the hit handled (0x60), then runs the
  * avoid / guard / throw-break tests in order; if none applies the opponent is stored as the pending target. */
 void BtlHit_TestHit(HitChr *chr) {
+#ifdef PORT
+    /* The native dispatcher has already established this contact pair. */
+    if (Bt3Gameplay_ZCounter2Enabled()) {
+        Bt3ZCounter2_BeforeHit(chr);
+    }
+#endif
     HitStatus *st = &chr->status;
     HitObj *obj = BtlChar_GetObj(chr);
     s32 full;

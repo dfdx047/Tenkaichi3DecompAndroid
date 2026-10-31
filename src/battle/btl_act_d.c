@@ -1,5 +1,9 @@
 #include "common.h"
 #include "battle/btl_act_d.h"
+#ifdef PORT
+#include "bt3_bombardment.h"
+#include "bt3_gameplay_rules.h"
+#endif
 
 /*
  * Fighter action handlers: 0x1EE058..0x1F1930. A slice of the original handler source file (its float pool
@@ -684,7 +688,11 @@ s32 BtlAct_DashMoveHandler(BtlActDChr *chr, s32 phase) {
 
     if (phase == PHASE_ENTER) {
         resume = 0;
+#ifdef PORT
+        switch (Bt3Gameplay_BombardmentEnabled() ? Bt3Bombardment_GetPrevForDashEnter(chr, 1) : BtlAct_GetPrev(chr)) {
+#else
         switch (BtlAct_GetPrev(chr)) {
+#endif
             case 0x3E:
             case 0xB0:
             case 0xB1:
@@ -817,7 +825,11 @@ s32 BtlAct_DashMoveHandler(BtlActDChr *chr, s32 phase) {
             }
             BtlAct_Request(chr, BtlAct_GetQueued(chr));
         }
+#ifdef PORT
+        switch (Bt3Gameplay_BombardmentEnabled() ? Bt3Bombardment_GetAnimationForDashDecide(chr, 1) : BtlAnim_GetId(chr)) {
+#else
         switch (BtlAnim_GetId(chr)) {
+#endif
             case 0xC:
                 if (BtlInput_TestAction(chr, 4, 1)) {
                     chr->work[0] |= 1;
@@ -828,7 +840,15 @@ s32 BtlAct_DashMoveHandler(BtlActDChr *chr, s32 phase) {
                     BtlAnim_Request(chr, 0xE, 0.15f);
                 }
                 if (BtlMove_IsBlockedByOpponent(chr)) {
+#ifdef PORT
+                    if (Bt3Gameplay_BombardmentEnabled()) {
+                        Bt3Bombardment_RequestContactStop(chr, 1); /* (F1 > Tech: off, the game's own request below) */
+                    } else {
+                        BtlAnim_Request(chr, 0xE, 0.15f);
+                    }
+#else
                     BtlAnim_Request(chr, 0xE, 0.15f);
+#endif
                     BtlChar_GetPos(chr)->speed = 0.0f;
                 }
                 if (BtlInput_TestAction(chr, 4, 1) || (chr->work[0] & 1)) {

@@ -7,6 +7,13 @@
 #include "sys/common.h"
 #include "sys/heap.h"
 #include "sys/save.h"
+#ifdef PORT
+#include "bt3_zcounter2.h"
+#include "bt3_gameplay_rules.h"
+extern int Port_NetSession(void);
+extern int Port_NetActive(void);
+extern int Port_Setting(const char *name, int def);
+#endif
 
 /*
  * Fighter manager, 0x1C0058..0x1C2FF0: the roster (gBtlChars), the per-fighter reset and the whole-roster
@@ -1297,10 +1304,25 @@ void BtlChar_AllocAll(s32 count) {
     gBtlChars->tbl[5] = FILE_TABLE(gCommonRes->data[0], 9);
     BtlChar_ResetAll();
     BtlCharSnd_Init();
+#ifdef PORT
+    /* F1 > Tech: the community's fixes of the game's mechanics (port/src/bt3_*.c), for this fight, as set when it
+       starts; never online (both sides would have to agree: they keep the game's own rules) */
+    Bt3Gameplay_EndMatch();
+    if (!Port_NetSession() && !Port_NetActive()) {
+        struct Bt3GameplayRules rules = Bt3Gameplay_MakeRules(Port_Setting("tech_zcounter2", 0) != 0,
+                                                              Port_Setting("tech_bombardment", 0) != 0, BT3_GAMEPLAY_OFFLINE);
+        if (rules.flags != 0) {
+            Bt3Gameplay_BeginMatch(&rules, BT3_GAMEPLAY_OFFLINE);
+        }
+    }
+#endif
 }
 
 /* Frees the roster. */
 void BtlChar_FreeAll(void) {
+#ifdef PORT
+    Bt3Gameplay_EndMatch();
+#endif
     Heap_Free(gBtlChars->unkC);
     Heap_Free(gBtlChars->unk8);
     Heap_Free(gBtlChars->chars);
@@ -1313,6 +1335,10 @@ void BtlChar_ResetAll(void) {
     s32 i;
     BtlMgrChr *chr;
     s32 pad;
+
+#ifdef PORT
+    Bt3ZCounter2_Reset();
+#endif
 
     for (i = 0; i < BtlChar_GetCount(); i++) {
         BtlPartner_Release(BtlChar_Get(i));
