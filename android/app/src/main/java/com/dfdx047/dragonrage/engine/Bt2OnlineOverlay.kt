@@ -109,8 +109,17 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
     fun start(into: ViewGroup) {
         layout = into
         if (box.text.isEmpty()) box.setText(name().orEmpty())
+        paused = false
         handler.removeCallbacks(tick)
         handler.post(tick)
+    }
+
+    /** The app left the screen: the room stays (the player may be passing its code on in a chat app), its polls wait. */
+    @Volatile private var paused = false
+
+    fun pause() {
+        paused = true
+        handler.removeCallbacks(tick)
     }
 
     fun stop() {
@@ -296,15 +305,23 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
             var room = first
             var since = System.currentTimeMillis()
             var lost = 0
+            var every = 2000L // (one a second was 60 a minute per open room, on a free Worker)
             while (!s.cancelled) {
-                Thread.sleep(1000)
+                Thread.sleep(every)
+                if (paused) continue // (the app is not on the screen: nothing asked of the service, the room stays)
                 publishRelay(s, room, mine)
                 // (a poll that fails for a moment, a signal that dips on mobile data, must not end the wait: the room is still there; ~15 in a row do)
                 val peer = try {
-                    Bt2Online.poll(s.base, room).also { lost = 0 }
+                    Bt2Online.poll(s.base, room).also { lost = 0; every = 2000L }
                 } catch (e: Bt2Online.Failure) {
-                    if (e.why != "network" || ++lost > 15) throw e
-                    null
+                    if (e.why == "limit") { // 30 s, doubling up to 10 minutes, as BT3's (net_match.c)
+                        every = (if (every < 30_000L) 30_000L else every * 2).coerceAtMost(600_000L)
+                        say(Bt2Online.explain("limit"), spinner = true)
+                        null
+                    } else {
+                        if (e.why != "network" || ++lost > 15) throw e
+                        null
+                    }
                 }
                 peer?.let { return connected(s, it) }
                 // (a room the service keeps ten minutes: a search that waits longer asks again)

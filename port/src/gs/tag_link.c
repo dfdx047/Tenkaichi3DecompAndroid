@@ -710,6 +710,7 @@ static int SDLCALL service_thread(void *arg) {
     struct sockaddr_in me;
     socklen_t ml = sizeof(me);
     Uint64 lastPoll = 0, relayAsked = 0;
+    Uint64 pollEvery = 2000; /* (one a second was 60 a minute for each open room, on a free Worker) */
     int relayRefused = 0;
     getsockname(L.sock, (struct sockaddr *)&me, &ml);
     SDL_SetAtomicInt(&L.busy, 1);
@@ -773,8 +774,9 @@ static int SDLCALL service_thread(void *arg) {
         }
     }
     while (!STOPPED()) {
+        extern volatile int gPortInBackground; /* net_match.c: nobody asks the service from the background */
         Uint64 now = SDL_GetTicks();
-        if (now - lastPoll < 1000) {
+        if (now - lastPoll < pollEvery || gPortInBackground) {
             SDL_Delay(50);
             continue;
         }
@@ -783,6 +785,14 @@ static int SDLCALL service_thread(void *arg) {
         if (!post("poll", body, answer, sizeof(answer)) || STOPPED()) {
             continue; /* (the service was not reached this time: the room goes on) */
         }
+        /* over the service's limit (HTTP 429, Cloudflare's error 1027): 30 s, doubling up to 10 minutes */
+        if (SDL_strstr(answer, "\"http\":429") != NULL || SDL_strstr(answer, "error code: 1027") != NULL) {
+            pollEvery = pollEvery < 30000 ? 30000 : pollEvery >= 300000 ? 600000 : pollEvery * 2;
+            set_status("Server busy, try again later.");
+            fprintf(stderr, "taglink: the service is over its limit: next poll in %d s\n", (int)(pollEvery / 1000));
+            continue;
+        }
+        pollEvery = 2000;
         if (SDL_strstr(answer, "\"error\"") != NULL) {
             say_error(answer, "poll");
             if (!L.hosting) {

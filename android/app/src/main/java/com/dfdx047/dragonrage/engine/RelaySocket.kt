@@ -106,9 +106,12 @@ class RelaySocket private constructor(private val socket: SSLSocket, private val
         fun connect(url: String): RelaySocket? = try {
             val u = URI(url)
             val port = if (u.port > 0) u.port else 443
-            val s = SSLSocketFactory.getDefault().createSocket(u.host, port) as SSLSocket
-            s.soTimeout = 0
+            val s = SSLSocketFactory.getDefault().createSocket() as SSLSocket
+            s.connect(java.net.InetSocketAddress(u.host, port), 10_000)
+            s.soTimeout = 15_000 // (the handshake and the answer's header; then the reader's own)
             s.tcpNoDelay = true
+            // the certificate must be this host's: the room's key travels in the address
+            s.sslParameters = s.sslParameters.apply { endpointIdentificationAlgorithm = "HTTPS" }
             s.startHandshake()
             val out = s.outputStream
             val input = BufferedInputStream(s.inputStream)

@@ -1086,10 +1086,14 @@ static void poll_events(void) {
     while (SDL_PollEvent(&ev)) {
 #ifdef __ANDROID__
         if (ev.type == SDL_EVENT_WILL_ENTER_BACKGROUND || ev.type == SDL_EVENT_DID_ENTER_BACKGROUND) {
+            extern volatile int gPortInBackground;
+            gPortInBackground = 1;
             window_away();
             continue;
         }
         if (ev.type == SDL_EVENT_DID_ENTER_FOREGROUND) {
+            extern volatile int gPortInBackground;
+            gPortInBackground = 0;
             sWindowBack = 1;
             continue;
         }

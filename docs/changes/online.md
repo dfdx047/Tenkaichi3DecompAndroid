@@ -19,3 +19,10 @@ Regras e formato: [README](README.md).
 - **Medido/provado:** compila; teste em aparelho: ver a bateria em `docs/release-1.0.md`.
 - **O que pode quebrar:** join por relay no host que conecta depois de 4 s; banner online; lobby que demora.
 - **Como testar de novo:** Dragon Net e lobby entre os dois aparelhos com `BT3_RELAY_LOG=1`: sem linha "relay: asked for" depois da partida começar.
+
+### 1.0.0 (este commit): limites de pedidos: Tag Team e BT2, segundo plano, TLS do relay
+- **Onde:** `port/src/gs/tag_link.c` (laço de `poll`, `pollEvery`); `port/src/gs/net_match.c`, `gPortInBackground`, `http_post_to`; `port/src/gs/gs_gpu.c`; `data/Bt2Online.kt`; `engine/Bt2OnlineOverlay.kt`; `engine/Bt2GameActivity.kt`; `engine/RelaySocket.kt`, `connect`
+- **O que e por quê:** Tag Team e BT2 pediam uma vez por segundo por sala aberta (60 pedidos/min em Worker grátis), sem recuar em 429 ou erro 1027, e continuavam com o app em segundo plano. Agora: 2 s por sala, recuo de 30 s dobrando até 10 min com a mensagem "Servidor ocupado", e nenhum pedido em segundo plano. O BT2 destruía a sala em `onPause`: um código passado pelo chat perdia a sala; agora a sala fica e só encerra em `onDestroy`. O socket do relay validava o certificado mas não o nome do servidor e não tinha tempo limite, e a chave da sala vai no endereço: agora confere o nome e tem tempo limite.
+- **Medido/provado:** compila; teste em aparelho: ver a bateria em `docs/release-1.0.md`.
+- **O que pode quebrar:** quem entra numa sala demora até 2 s a mais para ser visto; sala de BT2 em segundo plano continua contando os 10 minutos do serviço.
+- **Como testar de novo:** `BT3_NET_TEST_429=1` mostra a pausa no Dragon Net; sala de Tag aberta, app em segundo plano: o log do Worker não recebe `poll`.

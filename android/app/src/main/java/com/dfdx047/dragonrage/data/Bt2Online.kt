@@ -83,6 +83,7 @@ object Bt2Online {
         "build key" -> "O servidor só aceita versões oficiais do jogo."
         "bad request" -> "O servidor não aceitou o pedido."
         "network" -> "Sem conexão com o servidor."
+        "limit" -> "Servidor ocupado, tente mais tarde."
         else -> "O servidor respondeu: $why"
     }
 
@@ -109,6 +110,7 @@ object Bt2Online {
             c.doOutput = true
             c.setRequestProperty("Content-Type", "application/json")
             c.outputStream.use { it.write(body.toString().toByteArray()) }
+            if (c.responseCode == 429) throw Failure("limit") // (over the free Worker's limit; Cloudflare's own page is no JSON)
             val stream = if (c.responseCode < 400) c.inputStream else (c.errorStream ?: throw Failure("network"))
             val json = JSONObject(stream.bufferedReader().use { it.readText() })
             json.optString("error").takeIf { it.isNotEmpty() }?.let { throw Failure(it) }

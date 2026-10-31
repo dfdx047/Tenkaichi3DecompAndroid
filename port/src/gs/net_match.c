@@ -629,10 +629,17 @@ static int limit_after(const char *base, const char *what, int ok, const char *o
     return 0;
 }
 
+/* The app is not on the screen (gs_gpu.c): the free Workers' daily requests are not spent on it. The request waits for
+   the player's return; a room that ran out meanwhile says so then. */
+volatile int gPortInBackground;
+
 static int http_post_to(const char *base, const char *what, const char *json, char *out, size_t size) {
     int ok, limited;
     if (base == NULL) {
         base = match_url();
+    }
+    while (gPortInBackground) {
+        SDL_Delay(200);
     }
     if (limit_before(base, out, size)) {
         return 1;
