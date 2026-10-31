@@ -366,6 +366,7 @@
     <string name="online_ok_title">Online is working</string>
     <string name="online_ok">This Dragon Rage (release %1$s) is accepted by the matchmaking service: quick match, rooms with a code and direct connections all work, also against PC players on the same release.</string>
     <string name="online_searching">Players searching right now: %1$d.</string>
+    <string name="online_iso_notice">For BT3 online to work properly, use the ISO of the American disc (SLUS-21678), unmodified. A modified ISO or another dump can fail to pair or go out of sync.</string>
     <string name="online_explain">Online is played from the game\'s menu: open Dragon Net Battle and pick Create room, Join room, Quick match or Ranked. A Wi-Fi connection gives the steadiest fights.</string>
     <string name="lastrun_data_title">The game closed: a problem with the game data</string>
     <string name="lastrun_data">The game stopped because a file of the imported disc image is missing, damaged or modified. Dragon Rage needs an unmodified USA disc image (SLUS-21678). Import the ISO again (Game data → Import); if it was modified or a mod changed its files, use a clean dump.</string>

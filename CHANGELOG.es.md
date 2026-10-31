@@ -19,7 +19,7 @@ píxel a píxel contra la 0.9.0.
 ## Aparatos débiles
 - **BT4**: el valor por defecto ahora va por aparato. Un aparato débil o el modo Lite usa el renderizador Dragon Rage; si ARMSX2 se queda
   por debajo de 27 actualizaciones por segundo durante 5 s en una pelea, el siguiente inicio usa Dragon Rage. Tu elección en Ajustes siempre vale. En
-  un RG Cube limitado a un chip como el G52 MC1, el valor por defecto pasó de 7,8 a 11,2 imágenes por segundo; el juego aún no llega a la velocidad
+  un RG Cube limitado a un chip como el G52 MC1, ARMSX2 dio de 8 a 10 imágenes por segundo y Dragon Rage de 10 a 11; el juego aún no llega a la velocidad
   completa en ese chip.
 - **BT3**: el mismo rendimiento que la 0.9.0 en ese aparato limitado.
 

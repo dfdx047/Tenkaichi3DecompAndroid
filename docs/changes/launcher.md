@@ -24,6 +24,13 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** nada além do nível da linha no log.
 - **Como testar de novo:** modo avião, abrir o app: a linha no log é de informação.
 
+### 1.0.0 (este commit): 1.0: aviso da ISO no online do BT3 e cartões com texto legível
+- **Onde:** android/app/src/main/java/com/dfdx047/dragonrage/ui/screens/HomeScreen.kt, `OnlineBanner` e `StatusCard`/card do online; ui/screens/bt2/Bt2HomeScreen.kt, `Bt2OnlineCard`; res/values{,-pt,-es}/strings.xml `online_iso_notice`
+- **O que e por quê:** Pedido do desenvolvedor: um aviso de que o online do BT3 pede a ISO do disco americano sem modificações (SLUS-21678). É só aviso, não bloqueia nada, e não cita site de ROM. O título dos cartões herdava a cor errada do Material: passa a usar `contentColor` onSurface no próprio cartão.
+- **Medido/provado:** Visto na tela no Cube (primeiro em PT, depois tema claro, EN, ES) e no RP5: aviso em laranja abaixo do texto do online; título "Dragon Net está funcionando" e "Online Mode" legíveis. Os cinco .so são idênticos ao candidato anterior (md5).
+- **O que pode quebrar:** Só texto e cor. Um texto muito longo em ES pode empurrar o botão "Como funciona o online" para baixo em tela pequena.
+- **Como testar de novo:** Abrir o app, escolher BT3 e ler o cartão do online nos três idiomas e nos dois temas.
+
 ## Histórico: 0.9.0 para trás
 
 Linhas: lado novo do diff naquele commit; o arquivo de hoje tem outra numeração. Fontes: mensagens de commit, diffs, changelogs de cada tag,

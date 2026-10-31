@@ -38,6 +38,13 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** nada no app.
 - **Como testar de novo:** ler junto de `docs/release-1.0.md`.
 
+### 1.0.0 (este commit): 1.0: scripts de medição final e faixas do changelog
+- **Onde:** port/tools/lab/finals.sh, port/tools/lab/finals2.sh; CHANGELOG{,.pt,.es}.md
+- **O que e por quê:** As rodadas finais de GL, Lite e 60 fps. O changelog passa a dizer faixas (8 a 10 no ARMSX2, 10 a 11 no Dragon Rage) porque a rodada final deu 10,1 e não o 11,2 de antes.
+- **Medido/provado:** Logs em ~/DragonRageRefs/1.0n/logs. `gpu_api=1` sozinho não troca o renderizador: o launcher reescreve a partir de `dr_renderer`, por isso `finals2.sh` usa `dr_renderer=2 gpu_api=1`; as linhas `*_gl` de finals.sh rodaram em Vulkan e não valem como GL.
+- **O que pode quebrar:** Só scripts e texto. Os scripts têm IPs da rede local do laboratório.
+- **Como testar de novo:** `bash port/tools/lab/finals2.sh` com os dois aparelhos na mesma rede.
+
 ## Histórico: 0.9.0 para trás
 
 Linhas: lado novo do diff naquele commit; o arquivo de hoje tem outra numeração. Fontes: mensagens de commit, diffs, changelogs de cada tag,

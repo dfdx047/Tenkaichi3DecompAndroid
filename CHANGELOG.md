@@ -19,7 +19,7 @@ picture comparison against 0.9.0.
 ## Weak devices
 - **BT4**: the default now goes by device. A weak device or Lite mode uses the Dragon Rage renderer; if ARMSX2 stays below 27 updates a
   second for 5 s in a fight, the next start uses Dragon Rage. Your choice in Settings always counts. On an RG Cube held down to a chip like the
-  G52 MC1, the default went from 7.8 to 11.2 pictures a second; the game still does not reach full speed on that chip.
+  G52 MC1, ARMSX2 gave 8 to 10 pictures a second and Dragon Rage 10 to 11; the game still does not reach full speed on that chip.
 - **BT3**: the same performance as 0.9.0 on that held-down device.
 
 ## Tag Team Mod

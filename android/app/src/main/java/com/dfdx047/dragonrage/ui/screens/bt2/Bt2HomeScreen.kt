@@ -159,7 +159,7 @@ private fun Bt2OnlineCard() {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.13f)),
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.13f), contentColor = MaterialTheme.colorScheme.onSurface),
         border = androidx.compose.foundation.BorderStroke(1.5.dp, color.copy(alpha = 0.6f)),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -168,7 +168,7 @@ private fun Bt2OnlineCard() {
                 Spacer(Modifier.size(10.dp))
                 Text(stringResource(R.string.bt2_online_banner_title).uppercase(), style = MaterialTheme.typography.labelLarge, color = color)
             }
-            Text(stringResource(R.string.bt2_online_name), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
+            Text(stringResource(R.string.bt2_online_name), style = MaterialTheme.typography.titleLarge)
             Text(stringResource(R.string.bt2_online_soon), style = MaterialTheme.typography.titleMedium, color = Dbz.GiOrange)
             Text(stringResource(R.string.bt2_online_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

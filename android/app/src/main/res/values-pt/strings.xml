@@ -365,6 +365,7 @@
     <string name="online_ok_title">O online está funcionando</string>
     <string name="online_ok">Este Dragon Rage (versão %1$s) é aceito pelo serviço de partidas: partida rápida, salas com código e conexão direta funcionam, inclusive contra jogadores de PC na mesma versão.</string>
     <string name="online_searching">Jogadores procurando partida agora: %1$d.</string>
+    <string name="online_iso_notice">Para o online do BT3 funcionar corretamente, use a ISO do disco americano (SLUS-21678), sem modificações. ISO modificada ou de outra cópia pode não parear ou dessincronizar.</string>
     <string name="online_explain">O online é jogado pelo menu do jogo: abra Dragon Net Battle e escolha Criar sala, Entrar em sala, Partida rápida ou Classificatória. Wi-Fi deixa as lutas mais estáveis.</string>
     <string name="lastrun_data_title">O jogo fechou: problema nos dados do jogo</string>
     <string name="lastrun_data">O jogo parou porque um arquivo da imagem de disco importada está faltando, danificado ou modificado. O Dragon Rage precisa de uma imagem de disco americana sem modificações (SLUS-21678). Importe a ISO de novo (Dados do jogo → Importar); se ela foi modificada ou um mod alterou os arquivos, use um dump limpo.</string>

@@ -19,7 +19,8 @@ imagem pixel a pixel contra a 0.9.0.
 ## Aparelhos fracos
 - **BT4**: o padrão agora é por aparelho. Aparelho fraco ou modo Lite usa o renderizador Dragon Rage; se o ARMSX2 ficar abaixo de 27
   atualizações por segundo por 5 s numa luta, a próxima abertura usa o Dragon Rage. Sua escolha em Ajustes sempre vale. Num RG Cube limitado
-  a um chip como o G52 MC1, o padrão passou de 7,8 para 11,2 imagens por segundo; o jogo ainda não chega à velocidade total nesse chip.
+  a um chip como o G52 MC1, foram de 8 a 10 imagens por segundo no ARMSX2 e de 10 a 11 no Dragon Rage; o jogo ainda não chega à velocidade total
+  nesse chip.
 - **BT3**: mesmo desempenho da 0.9.0 nesse aparelho limitado.
 
 ## Tag Team Mod
