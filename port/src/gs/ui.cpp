@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdint.h>
 #include "imgui.h"
+#include "imgui_internal.h" // ImGuiTabBar: the settings window as wide as its tabs
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlgpu3.h"
 #include "imgui_impl_opengl3.h"
@@ -2011,7 +2012,9 @@ static void tech_tab(void) {
                           "that one stop waits one frame, only when the next smash blast is exactly one frame away.\n"
                           "Ki costs, timing (six frames) and priorities stay the original ones.");
     ImGui::Spacing();
-    ImGui::TextDisabled("From the community's \"BT3 PS2 Port Gameplay Source\" v0.3.1 (Z Counter 2 v0.9.0, Bombardment v2.2).");
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextWrapped("From the community's \"BT3 PS2 Port Gameplay Source\" v0.3.1 (Z Counter 2 v0.9.0, Bombardment v2.2).");
+    ImGui::PopStyleColor();
 }
 
 static void cheats_tab(void) {
@@ -2393,6 +2396,15 @@ static void build(void) {
             if (tab("Misc", 6)) { misc_tab(); ImGui::EndTabItem(); }
             if (tab("Online", 7)) { online_tab(); ImGui::EndTabItem(); }
             if (tab("Tech", 8)) { tech_tab(); ImGui::EndTabItem(); }
+            { // the window as wide as its row of tabs needs, at the menu's size (all in sight, none squeezed)
+                ImGuiTabBar *bar = ImGui::GetCurrentContext()->CurrentTabBar;
+                ImGuiWindow *win = ImGui::FindWindowByName("Settings"); // (the tabs' content is a child: the window itself)
+                float need = bar != NULL && bar->WidthAllTabsIdeal > 0.0f ? bar->WidthAllTabsIdeal - bar->BarRect.GetWidth() : 0.0f;
+                if (win != NULL && need > 0.5f) {
+                    float w = win->Size.x + need + U(2.0f), most = io.DisplaySize.x * 0.96f;
+                    ImGui::SetWindowSize("Settings", ImVec2(w < most ? w : most, win->Size.y));
+                }
+            }
             ImGui::EndTabBar();
         }
         ImGui::EndChild();
