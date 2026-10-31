@@ -21,6 +21,9 @@
  * BtlObj_UpdateVisibility only matches when BtlObjVis_GetList is not visible to the compiler. They are kept in
  * one file here because their constants are contiguous (.rodata 0x2F23F0..0x2F2420, .lit4 0x2FE630..0x2FE640).
  */
+#ifdef PORT
+#include <stdio.h>
+#endif
 #include "common.h"
 #include "battle/btl_obj.h"
 #include "battle/battle.h"
@@ -513,13 +516,23 @@ void BtlObj_Rebind(s32 id, s32 slot) {
     BtlResSlot *res = BtlRes_GetSlot(slot);
     BtlObj *obj = BtlObj_Get(id);
 
+#ifdef PORT
+    {   /* The new model cannot be read (BtlRes_PortModelReady): the fighter stays with the one it has, in the spare
+           buffer since BtlRes_CommitReload, instead of ending the game. */
+        extern s32 BtlRes_PortModelReady(void *slot);
+        extern void BtlRes_SwapFile(BtlResFile *a, BtlResFile *b);
+        if (!BtlRes_PortModelReady(res) && gBtlObjWork->res.next != NULL) {
+            fprintf(stderr, "bt3: battle: model file %d cannot be read: the fighter keeps the model it has\n", (int)res->file[0].id);
+            BtlRes_SwapFile(&res->file[0], gBtlObjWork->res.next);
+        }
+    }
+#endif
     BtlObj_Setup(obj, BTL_OBJ_TYPE_CHARA, res, id, 1);
     obj->charaWork = BtlObj_GetCharaWork(id);
     BtlObjFlash_Reset(obj);
 }
 
 #ifdef PORT
-#include <stdio.h>
 /* Android / PC build: a fighter's model that is not in its buffer when the battle builds the fighter (the model
    file's table read as empty: BtlObjMdl_BindFiles+0x30, address 0x6c, seen in team battles on phones). Says what
    the slot holds and reads the model again, synchronously, into the same buffer; 1 if it was read again. */
@@ -549,6 +562,20 @@ s32 BtlRes_PortReloadModel(void *slotPtr) {
     }
     file->buf = File_LoadSyncEx(file->id, NULL, file->buf, 0);
     return file->buf != NULL;
+}
+
+/* 1: the slot's model file holds a model (its table, as BObjFile_GetEntry reads it), read again if it was not. */
+s32 BtlRes_PortModelReady(void *slotPtr) {
+    extern void *BObjFile_GetEntry(void *file, s32 n);
+    BtlResSlot *slot = slotPtr;
+
+    if (slot == NULL) {
+        return 0;
+    }
+    if (BObjFile_GetEntry(&slot->file[0], 3) != NULL) {
+        return 1;
+    }
+    return BtlRes_PortReloadModel(slot) && BObjFile_GetEntry(&slot->file[0], 3) != NULL;
 }
 #endif
 

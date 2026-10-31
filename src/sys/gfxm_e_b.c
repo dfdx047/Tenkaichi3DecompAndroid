@@ -1,4 +1,8 @@
 #include "common.h"
+#ifdef PORT
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 #include "battle/battle.h"
 #include "sys/dma.h"
 #include "sys/gfx.h"
@@ -233,6 +237,10 @@ void BtlObjMdl_Init(ObjMdlObj *obj) {
         extern s32 BtlRes_PortReloadModel(void *slot);
         if (obj->mdl.file == NULL && BtlRes_PortReloadModel(obj->res)) {
             BtlObj_BindTables(obj);
+        }
+        if (obj->mdl.file == NULL) { /* (at the start of a battle: no other model to go on with) */
+            fprintf(stderr, "bt3: stopped: a fighter's model file cannot be read from the game data. Install the ISO again.\n");
+            exit(2);
         }
     }
 #endif

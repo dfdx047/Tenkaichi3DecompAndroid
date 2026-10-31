@@ -10,6 +10,7 @@
  * (Its variables must NOT be part of the saved state: port/tools/make_state.py leaves this file out.)
  */
 #include <ctype.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -206,6 +207,43 @@ size_t Port_FileReadAt(const char *rel, long offset, void *buf, size_t bytes) {
         }
         Port_StateTouch(buf, bytes); /* (gs/state.c: file data straight into watched memory) */
         got = fread(buf, 1, bytes, sSlot[i].fp);
+#ifdef __ANDROID__
+        {   /* BT3_TEST_READ_FAIL=<n>: the n-th read gives nothing (testing what follows) */
+            static int failAt = -1, reads;
+            if (failAt < 0) {
+                failAt = getenv("BT3_TEST_READ_FAIL") != NULL ? atoi(getenv("BT3_TEST_READ_FAIL")) : 0;
+            }
+            if (failAt > 0 && ++reads == failAt) {
+                got = 0;
+                errno = EIO;
+            }
+        }
+#endif
+        if (got < bytes) {
+            /* The game's file functions give zeros for what was not read, and on a phone the file object can stop working
+               (the shared storage's service went away and came back): a model then seemed empty and the battle crashed
+               binding it (BtlObjMdl_BindFiles+0x30, 10 devices in the players' logs, without a word why). Said, and read
+               again through a new file object. */
+            static int told;
+            int why = errno, k;
+            char rel2[128];
+            size_t first = got;
+            snprintf(rel2, sizeof(rel2), "%s", rel);
+            for (k = 0; k < 3 && got < bytes; k++) {
+                fclose(sSlot[i].fp);
+                sSlot[i].fp = NULL;
+                i = slot_of(rel2);
+                if (i < 0 || fseek(sSlot[i].fp, sSlot[i].base + offset + (long)got, SEEK_SET) != 0) {
+                    break;
+                }
+                got += fread((char *)buf + got, 1, bytes - got, sSlot[i].fp);
+            }
+            if (told < 16) {
+                told++;
+                fprintf(stderr, "bt3: reading %s: %zu of %zu bytes (%s); after opening it again %zu\n", rel2, first, bytes,
+                        strerror(why), got);
+            }
+        }
     }
     __sync_lock_release(&sLock);
     return got;
