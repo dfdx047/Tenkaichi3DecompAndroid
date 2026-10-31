@@ -9,3 +9,10 @@ Regras e formato: [README](README.md).
 - **Medido/provado:** compila; teste em aparelho: ver a bateria em `docs/release-1.0.md`. A chave de teste `BT3_TEST_READ_FAIL=<n>` faz a n-ésima leitura não entregar nada.
 - **O que pode quebrar:** `exit(2)` novo quando o modelo não existe no início da batalha; a troca de forma que falha deixa o lutador com o modelo antigo e as animações novas.
 - **Como testar de novo:** jogar com `BT3_TEST_READ_FAIL=2000` em `bt3_env.txt`: o log diz `reading ...: 0 of N bytes (I/O error); after opening it again N` e a luta segue. O próximo log real de jogador diz o `errno`.
+
+### 1.0.0 (este commit): tamanho negativo pedido pelos dados vira aviso de disco modificado
+- **Onde:** `port/src/plat_mem.c`, `Port_LowAlloc`
+- **O que e por quê:** "no memory below 4 GB for 18446744073709531552 bytes" (3 aparelhos, 26 linhas) é -20064 lido do disco, em imagens com 3400 arquivos no primeiro AFS (o original tem 3399). O app mostrava falta de memória; agora a frase cai no `Problem.DATA` de `LastRun.kt`.
+- **Medido/provado:** linhas dos logs; compila; teste em aparelho: ver a bateria em `docs/release-1.0.md`.
+- **O que pode quebrar:** nada para o disco original, que nunca pede tamanho negativo.
+- **Como testar de novo:** abrir o jogo com uma imagem assim e ler a mensagem do último erro.

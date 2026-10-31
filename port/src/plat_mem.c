@@ -858,6 +858,10 @@ void *Port_LowAlloc(size_t size) {
     if (total > 4096) {
         total = (total + 4095) & ~(size_t)4095;
     }
+    if ((long long)size < 0) { /* (a size read from the disc: seen with images of 3400 files in the first archive; LastRun.kt tells the player) */
+        fprintf(stderr, "bt3: the game data asks for %lld bytes: this is not the unmodified USA release\n", (long long)size);
+        exit(2);
+    }
     while (__sync_lock_test_and_set(&sLowLock, 1)) {
     }
     if (sLowArena == NULL) {
