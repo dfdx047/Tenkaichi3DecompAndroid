@@ -113,7 +113,7 @@ def install():
 
 
 def main():
-    steps = sys.argv[1:] or ["configure", "build", "install"]
+    steps = sys.argv[1:] or ["configure", "build", "install", "plugin"]
     for step in steps:
         {"configure": configure, "build": build, "install": install, "check": check, "plugin": plugin}[step]()
 

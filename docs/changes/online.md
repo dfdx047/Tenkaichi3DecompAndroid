@@ -27,6 +27,13 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** quem entra numa sala demora até 2 s a mais para ser visto; sala de BT2 em segundo plano continua contando os 10 minutos do serviço.
 - **Como testar de novo:** `BT3_NET_TEST_429=1` mostra a pausa no Dragon Net; sala de Tag aberta, app em segundo plano: o log do Worker não recebe `poll`.
 
+### 1.0.0 (este commit): nome de usuário do relay do BT2 com limite
+- **Onde:** `bt2/plugin/online/relay.cpp`, `Relay::begin`
+- **O que e por quê:** o nome entra em mensagens de tamanho fixo (768 bytes) sem limite, e só o realm e o nonce eram limitados em `takeLogin`. Um nome acima de cerca de 316 bytes estouraria o buffer. Com 128 ou mais, o relay falha e o jogo segue sem ele.
+- **Medido/provado:** revisão de código; compilado em `libbt2online.so`. Sem teste com servidor.
+- **O que pode quebrar:** nomes vêm do token do servidor e são curtos. Só um nome anormal passa a falhar.
+- **Como testar de novo:** BT2 online com relay, nome normal: entra como antes.
+
 ## Histórico: 0.9.0 para trás
 
 Linhas: lado novo do diff naquele commit; o arquivo de hoje tem outra numeração. Fontes: mensagens de commit, diffs, changelogs de cada tag,

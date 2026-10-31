@@ -126,7 +126,8 @@ Relay::~Relay() {if (resolver_.joinable()) resolver_.join();}
 void Relay::begin(const std::string& server, const std::string& username, const std::string& credential) {
     if (state_ != Idle) return;
     const auto colon = server.rfind(':');
-    if (colon == std::string::npos) {state_ = Failed; return;}
+    // (the name goes into fixed 768-byte messages, with the realm and the nonce: bounded like them, in takeLogin)
+    if (colon == std::string::npos || username.size() >= 128) {state_ = Failed; return;}
     host_ = server.substr(0, colon);
     port_ = server.substr(colon + 1);
     username_ = username;

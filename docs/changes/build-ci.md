@@ -17,6 +17,13 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** só vale com a chave; sem ela, nenhum efeito.
 - **Como testar de novo:** `BT3_TEST_CPUS=0-5`: o log diz "only cpus 0-5: done".
 
+### 1.0.0 (este commit): `build.py` do BT2 também gera o `libbt2online.so`
+- **Onde:** `bt2/android/build.py`, `main`
+- **O que e por quê:** sem argumentos o script não rodava o passo `plugin`, então o APK levava o `libbt2online.so` antigo do `jniLibs` sem aviso: a correção do relay ficou de fora no primeiro build. O passo agora faz parte do padrão. Para o `libbt4gsx.so`, o build do librashader pede `rustup target add aarch64-linux-android` no PC.
+- **Medido/provado:** depois do `plugin`, o md5 do `.so` no APK é igual ao do `jniLibs` (`8bd82499acb2`).
+- **O que pode quebrar:** o comando padrão fica alguns segundos mais longo.
+- **Como testar de novo:** `python3 bt2/android/build.py`: a data do `libbt2online.so` no `jniLibs` muda.
+
 ## Histórico: 0.9.0 para trás
 
 Linhas: lado novo do diff naquele commit; o arquivo de hoje tem outra numeração. Fontes: mensagens de commit, diffs, changelogs de cada tag,
