@@ -13,3 +13,10 @@ Regras e formato: [README](README.md).
   não rodasse, `sock` seria 0 e o `Stop` fecharia o descritor 0.
 - **Como testar de novo:** abrir e fechar uma sala do Tag Team Online; `llvm-size port/build/android/obj/gs_tag_link.o`.
 
+
+### 1.0.0 (este commit): `CLASH_QTE` não vale em partida do jogo normal
+- **Onde:** `src/battle/btl_char_flag_clash.c`, `clash_prompts`
+- **O que e por quê:** a opção é local e consome `BtlChar_Rand` no primeiro clash: em Dragon Net/Ranked com um jogador só com ela ligada, os dois lados divergiam. Agora ela só vale fora de `Port_NetSession`.
+- **Medido/provado:** lido no código (revisão do branch); compila; teste em aparelho: ver a bateria em `docs/release-1.0.md`.
+- **O que pode quebrar:** prompts de clash no Tag Team Online, se ele passasse a ser `Port_NetSession` um dia (hoje não é).
+- **Como testar de novo:** ligar SELECT > Mod Settings > Clash Button Prompts num aparelho, Dragon Net 1x1 com outro, forçar clash: sem dessincronia.

@@ -16,6 +16,14 @@
  * The sequences drive the fighter camera, voices and the flags that tell the action code who won.
  */
 
+/* The mod's clash prompts are one player's own option and they draw from the fight's random numbers: in a match of the
+   normal game the two copies would come apart at the first clash, so not there. (The mod's own online play is no
+   Port_NetSession: there the host's choice travels to all, TagNet_Option.) */
+static s32 clash_prompts(void) {
+    extern int Port_NetSession(void);
+    return Port_TagOption(TAG_OPT_CLASH_QTE) && !Port_NetSession();
+}
+
 extern f32 atan2f(f32 y, f32 x);
 extern f32 sinf(f32 x);
 extern f32 cosf(f32 x);
@@ -84,7 +92,7 @@ s32 BtlClash_Join(s32 a,s32 b) {
         p->actor[0]=a<b?a:b; p->actor[1]=a<b?b:a;
         p->c.prevPick=-1;
         {
-            u32 seed=Port_TagOption(TAG_OPT_CLASH_QTE)?BtlChar_Rand():1;
+            u32 seed=clash_prompts()?BtlChar_Rand():1;
             TagSequence_Init(&p->sequence[0],seed);
             TagSequence_Init(&p->sequence[1],seed);
         }
@@ -114,7 +122,7 @@ s32 BtlClash_State(s32 actor) {
 }
 s32 BtlClash_SequenceActive(s32 actor) {
     BtlClashPair *p=pair_for(actor);
-    return Port_TagOption(TAG_OPT_CLASH_QTE) && p &&
+    return clash_prompts() && p &&
         (p->state==1 || p->state==2 || p->state==6 || p->state==7 || p->state==9 || p->state==10);
 }
 s32 BtlClash_SequenceInput(s32 actor) {
@@ -338,7 +346,7 @@ s32 BtlClash_UpdateA(BtlClashPair *pair, s32 state) {
     BtlClashA *c = &pair->a;
     s32 count1 = chr1->clashCountA * TagAssist_Multiplier(pair->actor[1])/100;
 
-    if(Port_TagOption(TAG_OPT_CLASH_QTE)) {
+    if(clash_prompts()) {
         count0=pair->sequence[0].score*TagAssist_Multiplier(pair->actor[0])/100;
         count1=pair->sequence[1].score*TagAssist_Multiplier(pair->actor[1])/100;
     }
@@ -583,7 +591,7 @@ s32 BtlClash_UpdateC(BtlClashPair *pair, s32 state) {
             BtlClash_SetPathCut(pair, c->path);
         }
         if (BtlChar_TestFlag(chr0, 0xC4) && BtlChar_TestFlag(chr1, 0xC4)) {
-            if (Port_TagOption(TAG_OPT_CLASH_QTE)) {
+            if (clash_prompts()) {
                 chr0->clashCountB=pair->sequence[0].score;
                 chr1->clashCountB=pair->sequence[1].score;
                 /* Resolve ties after a short extension; never wait forever
@@ -596,7 +604,7 @@ s32 BtlClash_UpdateC(BtlClashPair *pair, s32 state) {
                 BtlAct_CountAndMarkOpponent(chr1);
             }
             c->count++;
-            if ((Port_TagOption(TAG_OPT_CLASH_QTE) ? pair->age>=240 : c->count>=7) && chr0->clashCountB != chr1->clashCountB) {
+            if ((clash_prompts() ? pair->age>=240 : c->count>=7) && chr0->clashCountB != chr1->clashCountB) {
                 if (chr1->clashCountB < chr0->clashCountB) {
                     winner = chr0;
                     loser = chr1;
