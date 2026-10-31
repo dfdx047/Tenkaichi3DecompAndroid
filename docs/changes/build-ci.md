@@ -31,6 +31,13 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** quem quiser cadeias de shader do RetroArch no BT4 precisa ligar a opção e pôr a biblioteca no APK; hoje a tela do jogo não oferece isso.
 - **Como testar de novo:** no log do BT4 com `bt4_renderer=1`: linhas `bt4gsx:` e nenhuma `could not start`. Instalar o alvo Rust e compilar de novo não pode mudar a lista de `NEEDED`.
 
+### 1.0.0 (este commit): changelogs da 1.0
+- **Onde:** `CHANGELOG.md`, `CHANGELOG.pt.md`, `CHANGELOG.es.md`
+- **O que e por quê:** conteúdo substituído pelo da 1.0, nos três idiomas, com o que muda para quem joga e o desempenho real em aparelho fraco.
+- **Medido/provado:** cada frase conferida contra os testes nos aparelhos; os números vêm de `~/DragonRageRefs/1.0i/logs`, `1.0j/logs` e `0.9.0b/logs`.
+- **O que pode quebrar:** nada no app.
+- **Como testar de novo:** ler junto de `docs/release-1.0.md`.
+
 ## Histórico: 0.9.0 para trás
 
 Linhas: lado novo do diff naquele commit; o arquivo de hoje tem outra numeração. Fontes: mensagens de commit, diffs, changelogs de cada tag,

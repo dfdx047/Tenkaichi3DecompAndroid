@@ -1,93 +1,54 @@
-# Dragon Rage 0.9.0
+# Dragon Rage 1.0.0
 
-**The PC port's 0.1.38.7, Budokai Tenkaichi 4 drawn by ARMSX2's renderer, and lighter fights on Mali GPUs.** Everything
-measured on an RG Cube (Mali-G57) and a Retroid Pocket 5 (Adreno 650), with a recorded fight and pixel-by-pixel picture
-comparison.
+**Budokai Tenkaichi 2 with only the ISO, Dragon Net Online and the lobbies of PC 0.1.39, the Tag Team Mod as an option, and BT4's far
+scenery fixed.** Tested on an RG Cube (Mali-G57) and a Retroid Pocket 5 (Adreno 650), with a recorded fight and a pixel-by-pixel
+picture comparison against 0.9.0.
 
-## Faster
-- **Internal resolution 2x and above**: drawing passes that never use depth run without it, flat shadows share a single
-  clear, and the characters' glow is drawn at the PlayStation 2's resolution (from the PC). On the RG Cube a Vulkan 2x
-  fight went from about 76% to **95%** of full speed (OpenGL 2x: 92% to 98%); on the Retroid Pocket 5, Vulkan 4x went
-  from 71% to 84%.
-- **OpenGL on Adreno**: persistent buffers on Adreno too. On the Retroid Pocket 5, OpenGL 2x took about 4 seconds a
-  frame and now runs at a steady 30.
-- **Adreno**: the flat shadows' stencil is off by default, faster on these chips.
-- **GPU profiles** measured for the Mali-G57 MC4 and the Adreno 650: the launcher suggests the resolution that keeps
-  fights at 30.
-- **Lite mode** (Settings > Performance; offered by the GPU profile on Mali-G52-class GPUs): the renderer on its own
-  thread and the glow and the sky's glare left out entirely. On a simulated Mali-G52 MC1, fights at 1x went from 53% to
-  77% of full speed.
-- **From the PC**: fewer hitches the first time a special or a transformation appears (new textures are prepared much
-  faster, on several cores), drawing buffers made ready before a fight's first big effect, and the characters' outline
-  drawn only where there is a line.
-- **Texture packs**: files are read in the background and kept in memory, and a frame takes in at most 4 MB of them.
-  Fewer hitches with large packs (from the PC).
+## Budokai Tenkaichi 2
+- **Just the ISO**: the engine comes inside the app. There is no engine package to import any more; if you had one, it is deleted
+  after a notice and the game uses the app's.
+- **The ISO stays where it is**: it is read in place, not copied. Only small files stay in the app's folder.
+- **A wrong ISO is refused** with a message that says what was found and which tab installs it.
+- **BT2 online**: a match between two devices, with its own screen in the game's menu.
+- A game error now shows on the screen, not as a black screen. An output scale below 100% fills the screen.
 
-## Picture (from the PC)
-- **Super Saiyan glow** right at every internal resolution: it used to come out as a sharp, shifted copy of the
-  character.
-- **Distance blur** as on the console at high resolutions (leaves no longer show up as squares).
-- **Outlines** the same thickness at every aspect ratio.
-- **The back of Videl's shirt** without the dashed line.
-- **White screen** with teen Gohan's third costume on Namek fixed.
-- A texture written in a 24-bit or 4/8-bit format no longer keeps old content in its last rows.
+## Budokai Tenkaichi 4
+- **Far scenery on the Dragon Rage renderer**: the mountains no longer come out as blocks of coloured noise. The game's distance blur
+  now works.
 
-## New: Budokai Tenkaichi 4
-- **Team BT4's mod in the same app**, next to BT3: new characters, forms and stages. The launcher's opening screen
-  picks the game; each has its own image, saves and settings. It needs your image of the mod **Beta 14 Rev2
-  (SLUS-219.78)**: the game is recompiled for that version (the engine is the mod recompiled, from BT3-Recomp).
-- **ARMSX2's renderer by default**: the PlayStation 2 emulator's (PCSX2's, with ARMSX2's fixes for Mali and Adreno),
-  the most faithful picture of the mod. Dragon Rage's stays as an **experimental** option (Settings and the in-game
-  menu, with one line explaining the difference). With it, far-off scenery can still come out as blocks of
-  coloured noise; ARMSX2's draws it right.
-- **Shaders compiled in advance**: the APK carries ARMSX2's shaders compiled on a Mali and an Adreno. The first picture
-  appears in ~2.5 s instead of ~4.5 s, without the small compile hitches in menus and fights.
-- **16:9** (as Team BT4 made it), 4:3 or full screen; **custom drivers** for BT4 too; an **FPS meter**.
-- **60 fps fights (experimental)**: where the device cannot hold them (under 57 updates a second for 3 s in a fight),
-  the game goes back to 30 by itself and says so: "This device could not hold 60 fps in BT4's fights; back to 30". On
-  the devices measured it cannot yet: the RG Cube does 30 and the Retroid Pocket 5 about 36 to 41.
-- The image can be picked from Downloads and still opens after the device restarts.
+## Weak devices
+- **BT4**: the default now goes by device. A weak device or Lite mode uses the Dragon Rage renderer; if ARMSX2 stays below 27 updates a
+  second for 5 s in a fight, the next start uses Dragon Rage. Your choice in Settings always counts. On an RG Cube held down to a chip like the
+  G52 MC1, the default went from 7.8 to 11.2 pictures a second; the game still does not reach full speed on that chip.
+- **BT3**: the same performance as 0.9.0 on that held-down device.
 
-## Texture packs
-- **They now work on Android**: the game looked for packs in an internal folder of the app, so an imported pack was
-  never used ("it installed and nothing changed"). They are now used in **BT3** and **BT4** (with both renderers).
-  Measured with the SLUS-21678 HD pack (18,704 textures, 10.3 GB): about 3,000 textures replaced in the recorded
-  fight, at a steady 30 fps on the RG Cube and the Retroid Pocket 5.
-- **More zips open**: ones made in 7-Zip with Deflate64 or BZip2 and ones written as a stream (stored, with a data
-  descriptor) gave "a compression the app cannot read".
-- **Space**: a pack that does not fit is refused before unpacking, with its size and the free space ("Not enough
-  space: this pack takes 10.3 GB unpacked and the device has 7.8 GB free"), instead of unpacking for over a minute
-  and failing with a system error. What an interrupted import left behind is removed.
-- The file picker also shows .rar and .7z, and the app explains how to turn them into a .zip.
+## Tag Team Mod
+- Up to 10 fighters, with the modes and Tag Team Online of the mod by tehmufti and its contributors, adapted to phones.
+- **Off by default**: turn it on in Settings. Off, it does not appear in normal fights.
 
 ## Online
-- **Server busy**: when the free server reaches its daily limit (HTTP 429, Cloudflare's error 1027), the game stops
-  asking for a while (30 s, doubling up to 10 min) instead of insisting, moves to the backup server, and the launcher
-  says **"Server busy (daily limit), try again later"**. Offline play is not affected.
-- **Fewer requests**: the Ranked queue is only asked while its screen is open; a search asks every 4 s for its first
-  half minute, then every 8 s, and after two minutes every 15 s; a result the rival has not confirmed yet is sent again
-  in 5 s, doubling up to a minute (before: every round).
-- **From the PC** (for Dragon Net and against PC): the rival's sounds that went missing with rollback (Z-counter,
-  vanish, teleport), the ki charge sound that stayed the whole fight, Solar Flare blinding as offline, Japanese voices
-  replaced by English lines, and a desync is a warning instead of the end of the match. Two games with different data
-  (a modified ISO against the original) are no longer matched.
-- The app's log says why when the launcher cannot reach the online service.
+- **Dragon Net Online**: new screens in place of Dragon Net Battle, with Ranked, lobbies, spectators, quick match by region and joining
+  by address (from PC 0.1.39).
+- **Fewer requests to the servers**: nothing in the background, a growing wait when a server refuses, and the message "Server busy, try
+  again later" in place of an unexplained failure.
+- Random music no longer sets the two players of a match apart.
 
-## Controls and launcher
-- **Full screen**: on the Retroid Pocket 5 (and devices with a navigation bar) the game sometimes started in a smaller
-  area (1920x972) that the system stretched to the screen, everything 11% taller and black bars at the sides in 16:9.
-  The picture now fills the screen from the start, in BT3 and BT4 (10 of 10 starts right; before, 3 of 8 wrong).
-- **Classic pad on a square screen** (RG Cube 720x720): L1/L2 and R1/R2 no longer overlap, and the face buttons and the
-  d-pad stay on screen. Nothing changes on 16:9.
-- **START + SELECT** also closes the in-game menu, not only opens it.
-- The touch pad is hidden at start when a controller with a stick is connected.
-- In the Drivers tab, the whole row picks the driver.
-- The launcher's side rail scrolls (BT3's nine pages on 1080p screens).
-- When Vulkan cannot start (for example with the MaliSX2 driver on the Mali-G57), the game falls back to OpenGL
-  instead of a black screen.
-- ADPF and sustained performance mode on the devices that have them, so the system does not lower the clock in the
-  middle of a fight.
+## Fixes from players' logs
+- **Menu font and labels**: they no longer ask for game data that is already in the ISO.
+- **False texture pack warning** with an empty folder.
+- **A file that fails to read**: the game says why, tries again, and the fight goes on.
+- **A modified disc**: a negative size is a clear warning, not "out of memory".
+- `.7z` and `.rar` are refused with a clear message. Without internet, checking for updates no longer shows as a failure.
+
+## App and controls
+- **Controllers navigate the launcher** again, on the RG Cube and the Retroid Pocket 5.
+- **Team and licences** on the About screen.
+- The controller mapping is read again when the game opens.
+
+## Team
+Regulus CiberSec, z3xox (PC), Androidxxt01, jllacchua, victorgonl, tehmufti and the Tag Team Mod contributors, Team BT4. Artists:
+MarshallPunk and pluantoine.
 
 ## Update notes
-- Installs over 0.8.x and keeps saves, settings and the imported ISOs.
-- Online: PC mode talks to the official server of release 0.1.38; Dragon Net still plays with the Switch (DBT-NX).
+- Installs over 0.9.0 and keeps saves, settings and the imported ISOs.
+- Online needs the same version on both devices.
