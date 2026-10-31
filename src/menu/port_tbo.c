@@ -628,10 +628,6 @@ static s32 Tb_Vanilla(s32 quick) {
     if (!quick || Port_DataFingerprintOriginal() == 1) {
         return 1;
     }
-    if (state < 0) { /* not computed in this run (Android: the app checked the disc image when it installed it, and keeps
-                        the archives whole, not as the loose files it reads): let in, as net.c does */
-        return 1;
-    }
     sTb->blockBack = sTb->mode;
     Snd_PlaySe(1, 2);
     Tb_SetMode(TB_BLOCK);
