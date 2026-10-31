@@ -20,7 +20,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Album
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Memory
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material3.AlertDialog
@@ -48,7 +47,6 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -68,14 +66,9 @@ import com.dfdx047.dragonrage.ui.theme.TitleStyle
 fun Bt2HomeScreen(vm: Bt2ViewModel) {
     val install by vm.install.collectAsStateWithLifecycle()
     val pickIso = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.installFromIso(uri) }
-    val pickEngine = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) vm.importEngine(uri) }
-    val engine by vm.engine.collectAsStateWithLifecycle()
-    val engineBusy by vm.engineBusy.collectAsStateWithLifecycle()
+    val engineReplaced by vm.engineReplaced.collectAsStateWithLifecycle()
     var confirmRemove by remember { mutableStateOf(false) }
-    var confirmRemoveEngine by remember { mutableStateOf(false) }
     val installed = install is InstallState.Installed
-    val engineReady = vm.enginePackaged || engine?.compatible == true
-    val links = LocalUriHandler.current
 
     Column(
         Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
@@ -85,7 +78,7 @@ fun Bt2HomeScreen(vm: Bt2ViewModel) {
         Bt2OnlineCard()
 
         Button(
-            onClick = vm::play, enabled = installed && engineReady,
+            onClick = vm::play, enabled = installed && vm.engineAvailable,
             modifier = Modifier.fillMaxWidth().height(64.dp), shape = RoundedCornerShape(22.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Dbz.GiOrange, contentColor = Dbz.Night),
         ) {
@@ -133,47 +126,15 @@ fun Bt2HomeScreen(vm: Bt2ViewModel) {
             }
         }
 
-        SectionCard(stringResource(R.string.bt2_engine_title), Icons.Rounded.Memory, accent = MaterialTheme.colorScheme.secondary) {
-            // the APK's own (a private build), else the motor package the player imports (Bt2Engine)
-            val e = engine
-            when {
-                engineBusy -> {
-                    Text(stringResource(R.string.bt2_engine_importing), style = MaterialTheme.typography.bodyMedium)
-                    LinearProgressIndicator(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.tertiary)
-                }
-                e != null && e.compatible -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.CheckCircle, null, tint = Dbz.ShenronGreen)
-                    Spacer(Modifier.size(8.dp))
-                    Text(stringResource(R.string.bt2_engine_installed, e.version), style = MaterialTheme.typography.bodyMedium)
-                }
-                e != null -> Row(verticalAlignment = Alignment.Top) {
-                    Icon(Icons.Rounded.Warning, null, tint = MaterialTheme.colorScheme.error)
-                    Spacer(Modifier.size(8.dp))
-                    Text(stringResource(R.string.bt2_engine_outdated, e.version), style = MaterialTheme.typography.bodyMedium)
-                }
-                vm.enginePackaged -> Text(stringResource(R.string.bt2_engine_included), style = MaterialTheme.typography.bodyMedium)
-                else -> Text(stringResource(R.string.bt2_engine_get), style = MaterialTheme.typography.bodyMedium)
-            }
-            if (!engineBusy && !(vm.enginePackaged && e == null)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    FilledTonalButton(onClick = { pickEngine.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }) {
-                        Text(stringResource(if (e == null) R.string.bt2_engine_import else R.string.bt2_engine_import_other))
-                    }
-                    if (e == null) TextButton(onClick = { links.openUri(DISCORD) }) { Text("Discord") }
-                    else TextButton(onClick = { confirmRemoveEngine = true }) { Text(stringResource(R.string.remove)) }
-                }
-            }
-            Text(stringResource(R.string.bt2_gpu_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        Text(stringResource(R.string.bt2_gpu_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 
-    if (confirmRemoveEngine) {
+    if (engineReplaced) {
         AlertDialog(
-            onDismissRequest = { confirmRemoveEngine = false },
-            title = { Text(stringResource(R.string.bt2_engine_remove_q)) },
-            text = { Text(stringResource(R.string.bt2_engine_remove_text)) },
-            confirmButton = { TextButton(onClick = { confirmRemoveEngine = false; vm.removeEngine() }) { Text(stringResource(R.string.remove)) } },
-            dismissButton = { TextButton(onClick = { confirmRemoveEngine = false }) { Text(stringResource(R.string.cancel)) } },
+            onDismissRequest = vm::dismissEngineReplaced,
+            title = { Text(stringResource(R.string.bt2_engine_title)) },
+            text = { Text(stringResource(R.string.bt2_engine_replaced)) },
+            confirmButton = { TextButton(onClick = vm::dismissEngineReplaced) { Text(stringResource(R.string.close)) } },
         )
     }
 
@@ -187,9 +148,6 @@ fun Bt2HomeScreen(vm: Bt2ViewModel) {
         )
     }
 }
-
-/** Where the motor packages are shared (HomeScreen's Discord link). */
-private const val DISCORD = "https://discord.gg/6XXxT547Qx"
 
 /**
  * Online play, as BT3's Home shows it (HomeScreen's OnlineBanner), for BT2: Dragon Net 2 is not there yet, so the

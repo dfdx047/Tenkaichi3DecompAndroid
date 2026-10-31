@@ -88,27 +88,18 @@ cd android && ./gradlew assembleRelease                          # the APK with 
 The Android workflow (`.github/workflows/android.yml`) runs `build.py` only when
 `bt2/work/bt2-generation/guest-memory.bin` is there. That never happens in the public repository:
 `libbt2.so`, the generated code and the startup inputs are made from the game's program and stay out of it
-([LEGAL.md](../project/LEGAL.md); the app's `.gitignore` covers `assets/bt2/` and `jniLibs/`). A public
-build therefore has no BT2 engine of its own: the players import it.
+([LEGAL.md](../project/LEGAL.md); the app's `.gitignore` covers `assets/bt2/` and `jniLibs/`). A CI
+build therefore has no BT2 engine; the APKs that are published are built on the developer's PC, with `libbt2.so`
+inside (as `libbt4.so`), and the player brings only the ISO.
 
-## The motor package (the public APKs)
+## The player's ISO (since 1.0)
 
-The public APK leaves `libbt2.so` out; the players download a motor package shared outside GitHub (the Dragon
-Rage Discord) and import it on the BT2 tab's home ("Import motor"). Made where the game's code was generated:
-
-```sh
-python3 bt2/android/build.py key        # once: the signing key, ~/.config/dragonrage/bt2-engine-key.pem
-ANDROID_NDK_HOME=/path/to/ndk python3 bt2/android/build.py configure build package
-                                        # build/android/bt2-motor-<date>-<commit>.zip
-```
-
-The package holds the stripped `libbt2.so`, `manifest.json` (version, ABI, size, SHA-256) and `manifest.sig`,
-the manifest's ECDSA P-256 signature. The app (`data/Bt2Engine.kt`) takes it only when the signature matches the
-public key it carries (`Bt2Engine.PUBLIC_KEY`, printed by `key`), the library matches the manifest and the ABI is
-its own (`BT2_ENGINE_ABI`, `runtime/android/engine_abi.h`; raise it when `SDL_main`'s arguments or the JNI
-functions change, so an app update asks for the matching motor instead of starting one that does not fit). It
-keeps the engine in its own folder (`files/engines/bt2`) and `Bt2GameActivity` loads it from there. The private
-key stays out of every repository; a lost key means a new one and an app update carrying its public half.
+The tab asks only for the ISO. It is read where it is, through the file descriptor the system gave
+(`/proc/self/fd/N` with `pread`, `runtime/services/devices/disc_image.h`), and never opened again by path: a
+`msf:` address of the system's picker has no path to open. The app keeps its address (`bt2/iso_uri.txt`) and checks
+the SHA-256 of `SLUS_214.41` inside the image before taking it (`data/GameDataInstaller.kt`, `installBt2`). The motor
+package of the 0.9.x APKs, imported from the Discord, is gone: an install that had one tells the player once and
+deletes it.
 
 ## Status
 

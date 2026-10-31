@@ -1,7 +1,6 @@
 package com.dfdx047.dragonrage.engine
 
 import android.content.Context
-import com.dfdx047.dragonrage.data.Bt2Engine
 import com.dfdx047.dragonrage.data.Game
 
 /**
@@ -14,9 +13,8 @@ import com.dfdx047.dragonrage.data.Game
 object EngineBridge {
     const val LIBRARY = "bt3"
 
-    /** Whether [game]'s engine can be started: BT2's imported by the player (Bt2Engine), or packaged in this APK. */
-    fun isAvailable(context: Context, game: Game = Game.BT3): Boolean =
-        game == Game.BT2 && Bt2Engine.usable(context) != null || isPackaged(context, game)
+    /** Whether [game]'s engine can be started: packaged in this APK. */
+    fun isAvailable(context: Context, game: Game = Game.BT3): Boolean = isPackaged(context, game)
 
     /** The same by the engine's name (Game.engine: "bt4" is Budokai Tenkaichi 4's, libbt4.so). */
     fun isAvailable(context: Context, library: String): Boolean = isPackaged(context, library)

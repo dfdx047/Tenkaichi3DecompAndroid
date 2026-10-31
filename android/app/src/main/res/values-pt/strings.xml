@@ -230,6 +230,8 @@
     <string name="err_https_only">Só links https são aceitos.</string>
     <string name="err_download_not_zip">Esse link não entregou um .zip (pode ser uma página da web).</string>
     <string name="about_author">por dfdx047</string>
+    <string name="about_team">Dragon Rage: dfdx047. BT2 Recomp, Dragon Net Online: Regulus CiberSec. Port de PC, Tenkaichi3Decomp: z3xox. Com Androidxxt01, jllacchua e victorgonl. Tag Team Mod: tehmufti e contribuidores. Mod Budokai Tenkaichi 4: Team BT4. Arte: MarshallPunk, pluantoine.</string>
+    <string name="licences">Licenças</string>
     <string name="github_repo">Repositório no GitHub</string>
     <string name="check_updates">Buscar atualização</string>
     <string name="update_available">Atualização disponível</string>
@@ -331,6 +333,8 @@
     <string name="frame_skip_text">Quando a GPU não dá conta, o jogo mantém a velocidade e pula um quadro.</string>
     <string name="lite">Modo Lite (GPUs fracas)</string>
     <string name="lite_text">Para GPUs do nível do Mali-G52: renderizador na própria thread, e brilho e reflexo do céu desligados (ligar o modo põe os dois em 0). Vale na próxima vez que o jogo abrir.</string>
+    <string name="tag_team">Mod Tag Team</string>
+    <string name="tag_team_text">Até dez lutadores: SELECT no menu principal abre Batalha em Equipe, Todos Contra Todos e os ajustes do mod. Vale na próxima vez que o jogo abrir.</string>
     <string name="gpu_opt_lite">Modo Lite: thread de renderização, brilho e reflexo desligados</string>
     <string name="bt4_weak_cpu">Este aparelho tem pouca CPU para o BT4: a luta vai rodar abaixo da velocidade normal.</string>
     <string name="orientation">Orientação da tela</string>
@@ -409,15 +413,14 @@
 
     <!-- Budokai Tenkaichi 2 -->
     <string name="bt2_title">Budokai Tenkaichi 2</string>
-    <string name="bt2_intro">Escolha a sua ISO de Budokai Tenkaichi 2 (versão USA, SLUS-21441). A imagem é copiada inteira para a pasta do app; os dados do BT3 continuam como estão.</string>
+    <string name="bt2_intro">Escolha a ISO do Budokai Tenkaichi 2 (lançamento dos EUA, SLUS-21441). Ela é lida onde está: mantenha o arquivo lá. Os dados do BT3 ficam como estão.</string>
     <string name="bt2_ready">Imagem do disco no lugar (%1$s).</string>
     <string name="bt2_play">Jogar BT2</string>
     <string name="bt2_remove_q">Remover a imagem do BT2?</string>
-    <string name="bt2_remove_text">A imagem copiada é apagada. Os cartões de memória continuam.</string>
-    <string name="step_copying_bt2">Copiando a imagem do BT2</string>
-    <string name="err_bt2_program">Esta é uma imagem de Budokai Tenkaichi 2, mas o programa dela não é o da versão USA original (SLUS-21441), a partir da qual o motor foi construído. Imagens modificadas e outras versões não rodam.</string>
+    <string name="bt2_remove_text">O app esquece a imagem; o arquivo fica onde está. Os cartões de memória são mantidos.</string>
+    <string name="err_bt2_program">Esta é uma imagem do Budokai Tenkaichi 2, mas o programa dela não é o do lançamento original dos EUA (SLUS-21441), do qual o motor é feito. O SLUS_214.41 da sua imagem tem %1$d bytes (SHA-256 %2$s…); este precisa de 2675936 bytes (F7E5BA8E…). Imagens modificadas e outros lançamentos não rodam.</string>
     <string name="msg_install_bt2_first">Escolha primeiro a sua ISO de Budokai Tenkaichi 2.</string>
-    <string name="msg_no_engine_bt2">Importe primeiro o motor do BT2 (aba BT2, página Início).</string>
+    <string name="msg_no_engine_bt2">Esta compilação do app não tem o motor do BT2 (as compilações automáticas ficam sem ele): instale o APK do lançamento.</string>
     <string name="welcome_pick">Escolha o jogo</string>
     <string name="welcome_bt3">O jogo original (disco americano). Online no Dragon Net, mods, cenários, músicas, cheats e drivers personalizados.</string>
     <string name="welcome_bt4">O mod da Team BT4: personagens, formas e cenários novos. Experimental: motor próprio (o mod recompilado), desenhado pelo renderizador do ARMSX2 (o do Dragon Rage fica como opção experimental).</string>
@@ -441,7 +444,7 @@
     <string name="bt4_renderer_armsx2">ARMSX2 (padrão)</string>
     <string name="bt4_renderer_dr">Dragon Rage (experimental)</string>
     <string name="bt4_renderer_text">ARMSX2 (padrão): o renderizador do emulador de PlayStation 2 (o do PCSX2, com as correções do ARMSX2 para Mali e Adreno), a imagem mais fiel. Dragon Rage (experimental): o renderizador do Budokai Tenkaichi 3, com falhas em parte do cenário do BT4. Os dois usam a resolução, a proporção e a escolha Vulkan ou OpenGL ES acima. Vale na próxima vez que o jogo abrir.</string>
-    <string name="bt4_err_not_bt4">Esta imagem não é o Budokai Tenkaichi 4 (não tem SLUS_219.78). Precisa do mod da Team BT4, Beta 14 Rev2.</string>
+    <string name="bt4_err_not_bt4">Esta imagem não é o Budokai Tenkaichi 4 (não tem SLUS_219.78). Encontrado: %1$s. É preciso o mod do Team BT4, Beta 14 Rev2.</string>
     <string name="bt4_err_version">Esta imagem é outra versão do mod: o jogo foi recompilado para a Beta 14 Rev2 (SLUS-219.78). O SLUS_219.78 da sua imagem tem %1$d bytes (SHA-256 %2$s…); este precisa de 2115688 bytes (224525C5…). Um arquivo chamado Rev2 ainda pode ter outra compilação: pegue a imagem da Beta 14 Rev2 na versão publicada pela Team BT4.</string>
     <string name="bt4_err_permission">O Android não deixou o app continuar lendo esta imagem. Mova ela para Downloads ou para o armazenamento do celular e escolha de novo.</string>
     <string name="err_iso_packed">Este arquivo é um %1$s compactado, não a imagem do disco. Extraia primeiro (com o ZArchiver, por exemplo) e escolha o .iso que estiver dentro. Imagens CHD e CSO precisam ser convertidas de volta para .iso (chdman / maxcso no PC).</string>

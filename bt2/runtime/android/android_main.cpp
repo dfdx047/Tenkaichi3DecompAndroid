@@ -3,6 +3,8 @@
 //   argv[1]  the game's folder (<app files>/bt2: data/BT2.iso, saves/, startup/, user/)
 //   argv[2]  the app's native library folder
 //   argv[3], argv[4]  a custom GPU driver's folder and file ("" for none), loaded through libadrenotools
+//   argv[5]  the disc image the app opened (/proc/self/fd/<n>, read where it lies); "": data/BT2.iso, the copy an
+//            install from before 1.0 has
 // and this does what the PC's game program does before it starts the runtime (runtime/game/game_main.cpp):
 // the folders, the settings (the disc image and a memory card chosen when they name none), the startup
 // inputs in the runtime's argument order, and the environment of a player's run. The runtime's main
@@ -13,6 +15,7 @@
 // The on-screen controller reaches the game through TouchBridge's native functions (host/sdl/touch_pad.h);
 // leaving the game (back twice, host/sdl/sdl_player_session.h) brings the app's launcher forward.
 #include "game/startup_inputs.h"
+#include "services/devices/disc_image.h"
 #include "gs/gpu/gpu_gs_backend.h"
 #include "gs/gpu/gpu_window_presenter.h"
 #include "host/game_folders.h"
@@ -55,9 +58,14 @@ constexpr const char* tag="bt2";
 void prepareStartupInputs(const fs::path& folder,const fs::path& disc) {
     std::error_code error;
     const auto stamp=folder/".made";
-    // (The time as whole seconds: libc++'s file clock counts in a 128-bit type on Android.)
-    const auto seconds=std::chrono::duration_cast<std::chrono::seconds>(fs::last_write_time(disc,error).time_since_epoch()).count();
-    const std::string made="1 "+std::to_string(static_cast<unsigned long long>(fs::file_size(disc,error)))+" "+std::to_string(static_cast<long long>(seconds));
+    std::uint64_t length=0;long long seconds=0;
+    const int fd=disc_image_fd(disc.string());
+    if(fd<0 || !disc_image_stat(fd,length,seconds)) {
+        // (The time as whole seconds: libc++'s file clock counts in a 128-bit type on Android.)
+        seconds=std::chrono::duration_cast<std::chrono::seconds>(fs::last_write_time(disc,error).time_since_epoch()).count();
+        length=fs::file_size(disc,error);
+    }
+    const std::string made="1 "+std::to_string(static_cast<unsigned long long>(length))+" "+std::to_string(seconds);
     {
         std::ifstream in(stamp);std::string line;
         if(std::getline(in,line) && line==made) {
@@ -280,8 +288,10 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc,char* ar
         folders.create();
         Settings settings;
         if(auto stored=Settings::load(settings_path.string()))settings=*stored;
-        // The disc image the app copied (data/BT2.iso), and a memory card, when the settings name none.
-        if(!folders.configured(settings)) {
+        // The disc image the app opened; without one the copy of an older install (data/BT2.iso), and a memory card,
+        // when the settings name none.
+        const std::string opened=argc>5?argv[5]:"";
+        if(opened.empty() && !folders.configured(settings)) {
             const auto discs=folders.discImages();
             if(discs.empty())return stop("No Budokai Tenkaichi 2 disc image in "+utf8(folders.data)+". Choose your ISO in the app.");
             settings.disc=discs.front();
@@ -293,11 +303,12 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc,char* ar
         settings.save(settings_path.string());
 
         // MEMORY_IMAGE STOP_REPORT inputs... with the disc before the last input, as game_main.cpp builds it.
-        prepareStartupInputs(inputs,folders.disc(settings));
+        const fs::path disc=opened.empty()?folders.disc(settings):fs::path(opened);
+        prepareStartupInputs(inputs,disc);
         const std::size_t count=startup_input_names.size();
         std::vector<std::string> args{"bt2",(inputs/startup_input_names[0]).string(),(user/"last-run.json").string()};
         for(std::size_t n=1;n<count;++n) {
-            if(n==count-1)args.push_back(folders.disc(settings).string());
+            if(n==count-1)args.push_back(disc.string());
             args.push_back((inputs/startup_input_names[n]).string());
         }
 

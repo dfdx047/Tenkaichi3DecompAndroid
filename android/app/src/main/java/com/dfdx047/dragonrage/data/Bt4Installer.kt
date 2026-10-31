@@ -64,7 +64,7 @@ class Bt4Installer(
                 val elf = iso.find(ELF)
                 if (elf == null) {
                     ActivityLog.warn("iso", "bt4: no $ELF; top of the image: " + iso.files.map { it.path.substringBefore('/') }.distinct().take(20))
-                    throw GameDataInstaller.Stop(context.getString(R.string.bt4_err_not_bt4))
+                    throw GameDataInstaller.Stop(context.getString(R.string.bt4_err_not_bt4, GameDataInstaller.foundInImage(context, iso)))
                 }
                 val data = iso.read(elf.offset, elf.size.toInt())
                 val hash = sha256(data)

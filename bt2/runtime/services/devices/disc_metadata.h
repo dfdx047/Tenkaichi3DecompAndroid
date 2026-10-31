@@ -1,4 +1,5 @@
 #pragma once
+#include "disc_image.h"
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -10,10 +11,15 @@
 
 // Read-only ISO9660 metadata. No file payload or sector completion API.
 class DiscMetadata {
-    std::ifstream file_;std::uint64_t length_=0;
+    std::ifstream file_;int fd_=-1;std::uint64_t length_=0;
     std::vector<std::uint8_t> read(std::uint64_t offset,std::uint32_t size) {
         if(offset>length_ || size>length_-offset)throw std::runtime_error("Disc extent outside file");
-        std::vector<std::uint8_t> b(size);file_.clear();file_.seekg(static_cast<std::streamoff>(offset));
+        std::vector<std::uint8_t> b(size);
+        if(fd_>=0) {
+            if(!disc_image_read(fd_,offset,b.data(),size))throw std::runtime_error("Short disc read");
+            return b;
+        }
+        file_.clear();file_.seekg(static_cast<std::streamoff>(offset));
         if(!file_.read(reinterpret_cast<char*>(b.data()),size))throw std::runtime_error("Short disc read");return b;
     }
     static std::uint32_t pair(const std::vector<std::uint8_t>& b,unsigned p) {
@@ -27,7 +33,13 @@ class DiscMetadata {
         if(std::uint64_t(lba)*2048>length_ || size>length_-std::uint64_t(lba)*2048)throw std::runtime_error("ISO extent outside disc");return {lba,size};
     }
 public:
-    explicit DiscMetadata(const std::string& path):file_(path,std::ios::binary|std::ios::ate) {
+    explicit DiscMetadata(const std::string& path):fd_(disc_image_fd(path)) {
+        if(fd_>=0) {
+            long long seconds=0;
+            if(!disc_image_stat(fd_,length_,seconds))throw std::runtime_error("Local disc unavailable");
+            return;
+        }
+        file_.open(path,std::ios::binary|std::ios::ate);
         if(!file_ || file_.tellg()<0)throw std::runtime_error("Local disc unavailable");length_=static_cast<std::uint64_t>(file_.tellg());
     }
     std::optional<std::array<std::uint8_t,32>> lookup(const std::string& path) {

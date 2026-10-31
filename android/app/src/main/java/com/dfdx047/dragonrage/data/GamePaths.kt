@@ -19,7 +19,8 @@ import java.io.File
  * Budokai Tenkaichi 2 (BT2-Recomp, libbt2.so) has a folder of its own under the root, in the layout its PC program
  * expects next to itself (runtime/host/game_folders.h). BT3's files stay where they always were:
  *
- *   <root>/bt2/data/BT2.iso     the disc image, whole (the BT2 runtime reads the image itself)
+ *   <root>/bt2/iso_uri.txt      the disc image's address: it is read where it lies. (data/BT2.iso: the copy of an install from before 1.0)
+ *   <root>/bt2/data/BT2.iso     (old) the disc image, whole (the BT2 runtime reads the image itself)
  *   <root>/bt2/data/textures/   its texture packs
  *   <root>/bt2/saves/           its memory cards
  *   <root>/bt2/.installed       written once the image is in place
@@ -50,6 +51,7 @@ class GamePaths(context: Context, val game: Game = Game.BT3) {
     val bt2Root = File(root, "bt2")
     val bt2Data = File(bt2Root, "data")
     val bt2Iso = File(bt2Data, "BT2.iso")
+    val bt2IsoUri = File(bt2Root, "iso_uri.txt")
     val bt2Saves = File(bt2Root, "saves")
     val bt2InstalledMarker = File(bt2Root, ".installed")
 

@@ -1,4 +1,5 @@
 #include "opening_music.h"
+#include "../../runtime/services/devices/disc_image.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -15,15 +16,26 @@ std::uint32_t be16(const std::uint8_t* p) {return std::uint32_t(p[0])<<8|p[1];}
 std::uint32_t be32(const std::uint8_t* p) {return be16(p)<<16|be16(p+2);}
 std::uint32_t le32(const std::uint8_t* p) {return std::uint32_t(p[0])|std::uint32_t(p[1])<<8|std::uint32_t(p[2])<<16|std::uint32_t(p[3])<<24;}
 
+// The disc image, through the descriptor the app opened or as a file of its own (disc_image.h).
+struct Disc {
+    int fd;std::ifstream in;
+    explicit Disc(const std::string& path):fd(disc_image_fd(path)) {if(fd<0)in.open(path,std::ios::binary);}
+    bool read(std::uint64_t offset,void* out,std::uint64_t size) {
+        if(fd>=0)return disc_image_read(fd,offset,out,size);
+        in.clear();in.seekg(std::streamoff(offset));
+        return bool(in.read(static_cast<char*>(out),std::streamsize(size)));
+    }
+};
+
 // A file's extent in an ISO 9660 image: the path's directories from the root, then the file (names as the disc has
 // them, ";1" included). {0, 0}: not there.
-std::pair<std::uint64_t,std::uint64_t> isoFile(std::ifstream& in,const std::vector<std::string>& path) {
+std::pair<std::uint64_t,std::uint64_t> isoFile(Disc& in,const std::vector<std::string>& path) {
     std::vector<std::uint8_t> sector(2048);
-    in.seekg(16*2048);if(!in.read(reinterpret_cast<char*>(sector.data()),2048) || std::memcmp(sector.data()+1,"CD001",5))return {0,0};
+    if(!in.read(16*2048,sector.data(),2048) || std::memcmp(sector.data()+1,"CD001",5))return {0,0};
     std::uint64_t lba=le32(sector.data()+156+2),size=le32(sector.data()+156+10);
     for(const auto& name:path) {
         std::vector<std::uint8_t> dir(size);
-        in.seekg(std::streamoff(lba*2048));if(size>16*1024*1024 || !in.read(reinterpret_cast<char*>(dir.data()),std::streamsize(size)))return {0,0};
+        if(size>16*1024*1024 || !in.read(lba*2048,dir.data(),size))return {0,0};
         bool found=false;
         for(std::size_t at=0;at<dir.size();) {
             const unsigned n=dir[at];
@@ -52,7 +64,7 @@ void OpeningMusic::stop() {std::lock_guard<std::mutex> hold(lock_);stopping_=tru
 // The movie's audio stream, out of its MPEG-1 program stream: packs (0xBA), and packets with a 16-bit length; the
 // payload of stream 0xC0 after its header (stuffing, buffer size, time stamps).
 void OpeningMusic::demux(std::string disc_image) {
-    std::ifstream in(disc_image,std::ios::binary); // (a handle of its own: the game's disc reads are not held up)
+    Disc in(disc_image); // (a handle of its own: the game's disc reads are not held up)
     const auto [offset,size]=isoFile(in,{"DATA","ZS2USOP.SFD;1"});
     if(!size) {std::fprintf(stderr,"Online Mode: no opening movie on the disc, no music\n");complete_=true;return;}
     std::vector<std::uint8_t> buffer;std::uint64_t read=0;std::size_t at=0;
@@ -60,8 +72,8 @@ void OpeningMusic::demux(std::string disc_image) {
         while(buffer.size()-at<bytes && read<size && !quit_) {
             buffer.erase(buffer.begin(),buffer.begin()+std::ptrdiff_t(at));at=0;
             const std::size_t chunk=std::size_t(std::min<std::uint64_t>(1<<20,size-read));const std::size_t old=buffer.size();
-            buffer.resize(old+chunk);in.seekg(std::streamoff(offset+read));
-            if(!in.read(reinterpret_cast<char*>(buffer.data()+old),std::streamsize(chunk))){buffer.resize(old);read=size;break;}
+            buffer.resize(old+chunk);
+            if(!in.read(offset+read,buffer.data()+old,chunk)){buffer.resize(old);read=size;break;}
             read+=chunk;
         }
         return buffer.size()-at>=bytes;

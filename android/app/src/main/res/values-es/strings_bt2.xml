@@ -1,12 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The Budokai Tenkaichi 2 tab (ui/screens/bt2, Bt2ViewModel). -->
 <resources>
-    <string name="err_not_bt2">Esta imagen no es de Budokai Tenkaichi 2 (USA, SLUS-21441). Budokai Tenkaichi 3 se instala en la pestaña BT3.</string>
+    <string name="err_not_bt2">Esta imagen no es Budokai Tenkaichi 2 (EE. UU., SLUS-21441). Encontrado: %1$s. Budokai Tenkaichi 3 se instala en la pestaña BT3.</string>
     <string name="msg_bt2_installed_tab">Esa era una imagen de Budokai Tenkaichi 2: está lista en la pestaña BT2.</string>
     <string name="bt2_tagline">Budokai Tenkaichi 2 · Android</string>
     <string name="bt2_back_hint">En el juego, pulsa atrás dos veces para volver a la app.</string>
     <string name="bt2_engine_title">Motor de BT2</string>
-    <string name="bt2_engine_included">Incluido: BT2 Recomp, el código del juego recompilado para Android.</string>
     <string name="bt2_gpu_note">BT2 dibuja con Vulkan 1.3 (paraLLEl-GS): Adreno 600 en adelante, Mali G57 en adelante. En Adreno, un driver personalizado (página Drivers) puede ayudar.</string>
     <string name="bt2_tex_title">Texturas HD</string>
     <string name="bt2_tex_sub">Paquetes en el formato de PCSX2 para SLUS-21441</string>
@@ -106,17 +105,6 @@
     <string name="bt2_online_text">El modo online de Budokai Tenkaichi 2 todavía no está disponible.</string>
     <string name="bt2_play_online">Jugar online</string>
     <!-- el paquete del motor (data/Bt2Engine.kt) -->
-    <string name="bt2_engine_get">El motor de BT2 no viene en la app: descarga el paquete del motor (.zip) en el Discord de Dragon Rage e impórtalo aquí.</string>
-    <string name="bt2_engine_import">Importar motor (.zip)</string>
-    <string name="bt2_engine_import_other">Importar otro</string>
-    <string name="bt2_engine_importing">Verificando e instalando el motor…</string>
-    <string name="bt2_engine_installed">Motor instalado: versión %1$s.</string>
-    <string name="bt2_engine_outdated">El motor instalado (versión %1$s) es de otra versión de Dragon Rage. Descarga en el Discord el motor de esta versión e impórtalo.</string>
-    <string name="bt2_engine_imported">Motor de BT2 instalado (versión %1$s).</string>
-    <string name="bt2_engine_not_package">Este archivo no es un paquete del motor de BT2.</string>
-    <string name="bt2_engine_bad_signature">Este motor no es uno oficial de Dragon Rage (la firma no coincide) y no se instaló.</string>
-    <string name="bt2_engine_damaged">El paquete del motor está incompleto o dañado: descárgalo de nuevo.</string>
-    <string name="bt2_engine_other_version">Este motor (versión %1$s) es de otra versión de Dragon Rage: descarga el de esta versión.</string>
-    <string name="bt2_engine_remove_q">¿Quitar el motor de BT2?</string>
-    <string name="bt2_engine_remove_text">BT2 no se podrá jugar hasta importar un motor de nuevo. La imagen del disco, las partidas guardadas y los ajustes se conservan.</string>
+    <string name="found_no_ps2_program">ningún programa de PlayStation 2</string>
+    <string name="bt2_engine_replaced">El motor de BT2 ahora viene con la app, así que el paquete de motor que importaste se borró. Nada más cambia: tu ISO y tus partidas siguen como estaban.</string>
 </resources>

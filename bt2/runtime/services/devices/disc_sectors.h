@@ -1,4 +1,5 @@
 #pragma once
+#include "disc_image.h"
 #include <cstdint>
 #include <fstream>
 #include <mutex>
@@ -13,6 +14,14 @@
 // or is too short there.
 inline bool read_iso_bytes(const std::string& path,std::uint64_t offset,char* out,std::uint64_t size,std::uint64_t* length_out=nullptr) {
     static std::mutex lock;static std::ifstream file;static std::string open_path;static std::uint64_t length=0;
+    const int fd=disc_image_fd(path);
+    if(fd>=0) { // (no lock: pread keeps no position)
+        std::uint64_t bytes=0;long long seconds=0;
+        if(!disc_image_stat(fd,bytes,seconds))return false;
+        if(length_out)*length_out=bytes;
+        if(offset>bytes || size>bytes-offset)return false;
+        return !size || disc_image_read(fd,offset,out,size);
+    }
     std::lock_guard<std::mutex> hold(lock);
     if(open_path!=path || !file.is_open()) {
         file.close();file.clear();open_path.clear();

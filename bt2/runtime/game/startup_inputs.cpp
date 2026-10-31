@@ -1,5 +1,6 @@
 #include "game/startup_inputs.h"
 #include "services/devices/disc_metadata.h"
+#include "services/devices/disc_sectors.h"
 #include <algorithm>
 #include <cstring>
 #include <fstream>
@@ -115,10 +116,8 @@ std::vector<std::uint8_t> readGameProgram(const fs::path& disc) {
     const auto record=metadata.lookup("\\SLUS_214.41;1");
     if(!record)throw std::runtime_error("This disc image has no SLUS_214.41: it is not Budokai Tenkaichi 2 (USA)");
     std::uint32_t lba,size;std::memcpy(&lba,record->data(),4);std::memcpy(&size,record->data()+4,4);
-    std::ifstream in(disc,std::ios::binary);
     Bytes program(size);
-    in.seekg(std::streamoff(std::uint64_t(lba)*2048));
-    if(!in.read(reinterpret_cast<char*>(program.data()),std::streamsize(size)))throw std::runtime_error("Cannot read SLUS_214.41 from the disc image");
+    if(!read_iso_bytes(disc.string(),std::uint64_t(lba)*2048,reinterpret_cast<char*>(program.data()),size))throw std::runtime_error("Cannot read SLUS_214.41 from the disc image");
     return program;
 }
 

@@ -1,16 +1,20 @@
 package com.dfdx047.dragonrage.engine
 
+import android.os.Bundle
+import android.os.ParcelFileDescriptor
 import android.view.KeyEvent
 import android.view.ViewGroup
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.dfdx047.dragonrage.data.ActivityLog
 import com.dfdx047.dragonrage.data.Bt2Drivers
-import com.dfdx047.dragonrage.data.Bt2Engine
 import com.dfdx047.dragonrage.data.Bt2MenuItem
 import com.dfdx047.dragonrage.data.Bt2Settings
 import com.dfdx047.dragonrage.data.Bt2Unlock
 import com.dfdx047.dragonrage.data.Game
+import com.dfdx047.dragonrage.data.GameDataInstaller
+import com.dfdx047.dragonrage.data.GamePaths
 import com.dfdx047.dragonrage.data.GpuDriver
 import com.dfdx047.dragonrage.data.Renderer
 import android.content.Intent
@@ -52,16 +56,16 @@ class Bt2GameActivity : GameActivity() {
 
     override fun getLibraries(): Array<String> = arrayOf("SDL3", Game.BT2.library)
 
-    /** The engine the player imported (Bt2Engine: files/engines/bt2), else the APK's own (getLibraries). */
-    private val imported by lazy { Bt2Engine.usable(this) }
+    /** The disc image, open for as long as the engine runs (it reads it as /proc/self/fd/<n>). */
+    private var image: ParcelFileDescriptor? = null
 
-    override fun loadLibraries() {
-        val engine = imported ?: return super.loadLibraries()
-        System.loadLibrary("SDL3")
-        System.load(engine.path)
+    override fun onCreate(savedInstanceState: Bundle?) {
+        val where = GamePaths(this, Game.BT2)
+        image = runCatching { GameDataInstaller(this, where, contentResolver).openBt2Image() }.getOrNull()
+        ActivityLog.init(where)
+        ActivityLog.info("bt2", if (image != null) "disc image opened in place" else "no image to open: the copy of an older install, if any")
+        super.onCreate(savedInstanceState)
     }
-
-    override fun getMainSharedObject(): String = imported?.path ?: super.getMainSharedObject()
 
     /** BT2's own controller layout (<root>/bt2/touch_controls.json): what the BT2 tab sets, apart from BT3's. */
     override fun touchFolder(): File = paths.bt2Root
@@ -84,6 +88,11 @@ class Bt2GameActivity : GameActivity() {
             if (v.outputScale == 100) settings.save(v.copy(outputScale = 75))
             done.writeText("75\n")
         }
+    }
+
+    override fun onDestroy() {
+        online.stop()
+        super.onDestroy()
     }
 
     override fun onResume() {
@@ -121,7 +130,7 @@ class Bt2GameActivity : GameActivity() {
 
     override fun onPause() {
         perf.hide()
-        online.stop()
+        online.pause()
         wifiLock?.let { runCatching { if (it.isHeld) it.release() } }
         super.onPause()
     }
@@ -184,6 +193,9 @@ class Bt2GameActivity : GameActivity() {
 
     override fun getArguments(): Array<String> {
         val driver = gpuDriver()
-        return arrayOf(paths.bt2Root.path, applicationInfo.nativeLibraryDir, driver?.dir?.path ?: "", driver?.library ?: "")
+        return arrayOf(
+            paths.bt2Root.path, applicationInfo.nativeLibraryDir, driver?.dir?.path ?: "", driver?.library ?: "",
+            image?.let { "/proc/self/fd/${it.fd}" } ?: "",
+        )
     }
 }
