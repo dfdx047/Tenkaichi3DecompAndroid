@@ -223,7 +223,12 @@ s32 BtlAct_CanTransform(BtlActJChr *chr, u32 index, s32 needBlast, s32 needAllow
     if (kind == 3 && !BtlStage_HasMoon()) {
         return 0;
     }
-    if (needBlast && !BtlMember_HasBlast(chr, cost)) {
+    if (needBlast &&
+#ifdef PORT
+        (PortGame_IsBT4() ? !BtlMember_HasKi(chr,cost) : !BtlMember_HasBlast(chr,cost))) {
+#else
+        !BtlMember_HasBlast(chr,cost)) {
+#endif
         return 0;
     }
     return 1;
@@ -288,6 +293,13 @@ s32 BtlAct_QueueTransform(BtlActJChr *chr, s32 index) {
     if (BtlMember_GetActive(chr)->chara == 0x6A) {
         chr->form.unk28 = 2;
     }
+#ifdef PORT
+    if (PortGame_IsBT4()) {
+        extern s32 BtlParam_GetTransformPropCostume(BtlActJChr *,s32);
+        chr->form.unk28 = BtlParam_GetTransformPropCostume(chr,index);
+        if (chr->form.unk24 >= 0x100) chr->form.unk24 += chr->form.unk28;
+    }
+#endif
     if (BtlParam_TestUnkADBit(chr, index)) {
         chr->form.variant = 0;
     }
@@ -325,6 +337,10 @@ s32 BtlAct_CanFuse(BtlActJChr *chr, s32 index, s32 needBlast, s32 needAllowed, s
     s32 cost;
     s32 member;
     s32 i;
+#ifdef PORT
+    extern s32 TagTeam_FusionsEnabled(void);
+    if (TagTeam_Active() && !TagTeam_FusionsEnabled()) return 0;
+#endif
 
     if (needAllowed && chr->form.allowed == 0) {
         return 0;
@@ -349,6 +365,15 @@ s32 BtlAct_CanFuse(BtlActJChr *chr, s32 index, s32 needBlast, s32 needAllowed, s
     if (needBlast && !BtlMember_HasBlast(chr, cost)) {
         return 0;
     }
+#ifdef PORT
+    if(TagTeam_Active()) {
+        extern s32 TagFusion_Find(s32,s32);
+        member=TagFusion_Find(chr->player,index);
+        if(member<0) return 0;
+        if(partner) *partner=member;
+        return 1;
+    }
+#endif
     member = -1;
     i = 0;
     while (i < 4) {
@@ -407,6 +432,14 @@ s32 BtlAct_QueueFusion(BtlActJChr *chr, s32 index, s32 partner) {
     s32 i;
     s32 action;
 
+#ifdef PORT
+    if(TagTeam_Active()) {
+        extern s32 TagFusion_Prepare(s32,s32,s32);
+        if(seq!=1 && seq!=2) return 0;
+        partner=TagFusion_Prepare(chr->player,index,partner);
+        if(partner<0) return 0;
+    }
+#endif
     if (partner < 0) {
         i = 0;
         while (i < 4) {
@@ -428,6 +461,12 @@ s32 BtlAct_QueueFusion(BtlActJChr *chr, s32 index, s32 partner) {
     chr->form.partner = partner;
     chr->form.unk28 = BtlMember_Get(chr, partner)->costume;
     chr->form.variant = BtlMember_GetActiveGauge(chr)->variant;
+#ifdef PORT
+    if (PortGame_IsBT4()) {
+        chr->form.unk30 = BtlMember_GetGauge(chr,partner)->variant;
+        chr->form.variant = 0;
+    }
+#endif
     chr->form.animChara = chara;
     chr->form.unk1C = chara;
     chr->form.voiceChara = chara;
@@ -522,7 +561,11 @@ s32 BtlAct_CanUseTechnique(BtlActJChr *chr, s32 slot) {
     if ((u32)(slot - 2) >= 3) {
         return 0;
     }
-    if (BtlChar_TestMemberUnk70(chr)) {
+    if (BtlChar_TestMemberUnk70(chr)
+#ifdef PORT
+        && (!PortGame_IsBT4() || slot >= 4)
+#endif
+        ) {
         return 0;
     }
     if (!BtlChar_TestFlag(chr, 5)) {
@@ -633,7 +676,11 @@ s32 BtlAct_CanUseSkill(BtlActJChr *chr, u32 slot) {
     }
     flags = BtlSkill_GetFlags(chr, slot);
     stack = (flags >> 8) & 1;
-    if (BtlChar_TestMemberUnk70(chr)) {
+    if (BtlChar_TestMemberUnk70(chr)
+#ifdef PORT
+        && !PortGame_IsBT4()
+#endif
+        ) {
         return 0;
     }
     if (!BtlChar_TestFlag(chr, 5) && (flags & 1)) {

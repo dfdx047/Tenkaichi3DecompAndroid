@@ -2,6 +2,14 @@
 #include "battle/battle.h"
 #include "battle/btl_demo_cam.h"
 #include "sys/heap.h"
+#ifdef PORT
+#include "battle/tag_team.h"
+#include "battle/btl_seq.h"
+static DemoCam fighterDemo[PORT_FIGHTER_CAPACITY];
+static s32 fighterDemoTick[PORT_FIGHTER_CAPACITY];
+static u32 fighterDemoFrame;
+static CamShake fighterDemoShake[PORT_FIGHTER_CAPACITY];
+#endif
 
 /* Scripted (demo) camera, 0x23D1E8-0x23E040. See battle/btl_demo_cam.h. */
 
@@ -110,6 +118,10 @@ void DemoCam_Reset(void) {
 
 /* Allocates the demo camera. */
 void DemoCam_Init(void) {
+#ifdef PORT
+    memset(fighterDemo,0,sizeof(fighterDemo));
+    memset(fighterDemoTick,-1,sizeof(fighterDemoTick));
+#endif
     gDemoCam = Heap_Alloc(sizeof(DemoCam), 0x20, 0, HEAP_ANY);
     memset(gDemoCam, 0, sizeof(DemoCam));
     View_InitLayout(&gDemoCam->view, VIEW_LAYOUT_FULL);
@@ -512,3 +524,57 @@ s32 DemoCam_PlayStageAnim(s32 idx) {
     }
     return 0;
 }
+
+#ifdef PORT
+/* Character camera files used to share the single stage/intro camera. Keep
+   their native animation, but give each fighter its own playback context. */
+void *DemoCam_EnterFighter(s32 actor) {
+    DemoCam *saved=gDemoCam;gDemoCam=&fighterDemo[actor];return saved;
+}
+void DemoCam_LeaveFighter(void *saved) {gDemoCam=saved;}
+void DemoCam_FighterRequest(s32 actor,s32 objId,s32 flags) {
+    DemoCam *saved=gDemoCam;
+    if((u32)actor>=PORT_FIGHTER_CAPACITY)return;
+    gDemoCam=&fighterDemo[actor];
+    if(flags&8)DemoCam_Stop();
+    if(flags&1)DemoCam_PlayCharAnim0(objId);
+    if(flags&2)DemoCam_PlayCharAnim1(objId);
+    if(flags&4)DemoCam_PlayCharAnim2(objId);
+    if(flags)fighterDemoTick[actor]=-1;
+    gDemoCam=saved;
+}
+void DemoCam_ResetFighters(void) {
+    memset(fighterDemo,0,sizeof(fighterDemo));
+    memset(fighterDemoTick,-1,sizeof(fighterDemoTick));
+}
+/* The duel clock stops during transformations and other cinematics. A camera
+   needs one step per simulation update, not one step per duel-timer tick. */
+void DemoCam_BeginFighterFrame(void) {fighterDemoFrame++;}
+s32 DemoCam_FighterActive(s32 actor) {
+    DemoCam *saved=gDemoCam;s32 active;
+    if(!TagTeam_Active() || (u32)actor>=(u32)TagTeam_Count())return 0;
+    gDemoCam=&fighterDemo[actor];active=DemoCam_IsActive();gDemoCam=saved;
+    return active;
+}
+s32 DemoCam_ApplyFighter(s32 actor,View *view,Vec4 *eye) {
+    DemoCam *saved=gDemoCam;Mtx44 inv;s32 flags,frame,repeat;
+    if(!DemoCam_FighterActive(actor))return 0;
+    gDemoCam=&fighterDemo[actor];gDemoCam->view=*view;
+    frame=fighterDemoFrame;
+    flags=gDemoCam->flags;
+    /* Fused partners and the target may all view the same animation. Advance
+       it once per simulation update, independent of viewport count. */
+    repeat=fighterDemoTick[actor]==frame;
+    if(repeat)gDemoCam->shake=fighterDemoShake[actor];
+    else fighterDemoShake[actor]=gDemoCam->shake;
+    if(repeat || TagTeam_CinematicPaused(actor))gDemoCam->flags&=~DEMO_CAM_AUTO;
+    DemoCam_Update();
+    gDemoCam->flags|=flags&DEMO_CAM_AUTO;
+    fighterDemoTick[actor]=frame;
+    *view=gDemoCam->view;
+    Mtx_InverseRT(&inv,&view->world2view2);
+    Vec4_Copy(eye,(Vec4 *)inv.m[3]);
+    gDemoCam=saved;
+    return 1;
+}
+#endif

@@ -255,14 +255,16 @@ typedef struct StgView {
     /* 0x040 */ Mtx44 mtx;
     /* 0x080 */ u8 unk80[0x180];
     /* 0x200 */ s32 x0;
-    /* 0x204 */ s32 unk204;
-    /* 0x208 */ s32 x1;
-    /* 0x20C */ s32 unk20C;
+    /* 0x204 */ s32 unk204; /* scissor X1 */
+    /* 0x208 */ s32 x1;     /* legacy name: actually scissor Y0 */
+    /* 0x20C */ s32 unk20C; /* scissor Y1 */
     /* 0x210 */ u8 unk210[0x10];
     /* 0x220 */ Vec4 pos;
     /* 0x230 */ f32 unk230;
     /* 0x234 */ f32 screenDist;
-    /* 0x238 */ u8 unk238[0x18];
+    /* 0x238 */ f32 aspectX;
+    /* 0x23C */ f32 aspectY;
+    /* 0x240 */ u8 unk240[0x10];
     /* 0x250 */ f32 nearZ;
     /* 0x254 */ f32 farZ;
 } StgView;

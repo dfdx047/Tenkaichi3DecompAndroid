@@ -318,6 +318,10 @@ typedef struct EftTransformMgr {
     /* 0x0000 */ EftAbSet set[EFT_TF_SETS];   /* common effect packs 0x192, 0x1AA, 0x1C0, 0x1C1, 0x1CB, 0x1E6, 0x1FC, 0x217 */
     /* 0x1900 */ EftAbTask *task;             /* the running effect */
     /* 0x1904 */ s32 busy;
+#ifdef PORT
+    EftAbTask *actorTask[PORT_FIGHTER_CAPACITY];
+    s32 sceneFlashes;
+#endif
 } EftTransformMgr; /* 0x1908 */
 
 extern EftTransformMgr *gEftTransform;
@@ -340,6 +344,8 @@ void EftTransformMgr_Term(void);
 void EftTransformMgr_Update(void);
 s32 EftTransform_Start(EftTransformArg *req);
 s32 EftTransform_Flash(void);
+s32 EftTransform_FlashFor(s32 objId);
+s32 EftTransform_EndFor(s32 objId);
 s32 EftTransform_End(void);
 
 /* ---- ribbon helpers (the module continues in the file after this one, eft_ac) ---------------- */

@@ -1219,26 +1219,14 @@ void BtlTaskList_PostUpdate(BtlTaskList *list) {
     }
 }
 
-/* Runs the reset callback of every task (mask 0), or of the tasks tagged with mask (0x800, 0x1000, 0x2000);
+/* Runs the reset callback of every task (mask 0), or of the tasks tagged with the requested owner/group mask;
    tasks whose dead bit is set afterwards are removed. */
 void BtlTaskList_Reset(BtlTaskList *list, s32 mask) {
     BtlTask *task = list->head;
     BtlTask *next;
 
     while (task != NULL) {
-        if (mask == 0) {
-            if (task->cls->reset != NULL) {
-                task->cls->reset(task);
-            }
-        } else if (mask == 0x800 && (task->tag & 0x800)) {
-            if (task->cls->reset != NULL) {
-                task->cls->reset(task);
-            }
-        } else if (mask == 0x1000 && (task->tag & 0x1000)) {
-            if (task->cls->reset != NULL) {
-                task->cls->reset(task);
-            }
-        } else if (mask == 0x2000 && (task->tag & 0x2000)) {
+        if (mask == 0 || (task->tag & mask)) {
             if (task->cls->reset != NULL) {
                 task->cls->reset(task);
             }
@@ -1538,7 +1526,7 @@ void BtlTask_SetPos(BtlTask *task, EftAeVec pos) {
     Vec4_Copy(&task->pos, (Vec4 *)&pos);
 }
 
-/* Sets bits of a task's tag word; used to tag a task with its owner (0x800 object id 0, else 0x1000). */
+/* Sets bits of a task's tag word; fighter masks come from BtlScene_CharOwnerTag. */
 void BtlTask_SetOwnerTag(BtlTask *task, s32 bits) {
     task->tag |= bits;
 }
@@ -1562,13 +1550,16 @@ BtlTask *BtlTask_GetParent(BtlTask *task) {
 void EftVram_Init(void) {
     gEftVram = Heap_Alloc(sizeof(EftAeVram), 0x20, 0, 2);
     memset(gEftVram, 0, sizeof(EftAeVram));
-    gEftVram->imageNext = 0x2B00;
+    gEftVram->capacity=128;
+    gEftVram->entry=Heap_Alloc(128*sizeof(EftAeVramEntry),0x20,0,2);
+    gEftVram->imageNext = 0x2A00;
     gEftVram->clutNext = 0x2A00;
 }
 
 /* Frees it. */
 void EftVram_Term(void) {
     if (gEftVram != NULL) {
+        Heap_Free(gEftVram->entry);
         Heap_Free(gEftVram);
         gEftVram = NULL;
     }
@@ -1588,57 +1579,86 @@ void EftVram_GetCursor(s32 *imageBlock, s32 *clutBlock) {
 
 /* Gives a texture VRAM for this frame (image and CLUT), queues its upload and returns its TEX0 with the new
    TBP0 / CBP and the given TCC / TFX. The entry's own TEX0 keeps the base and palette fields cleared. */
+static EftAeVramEntry *EftVram_NextEntry(void) {
+    /* The PS2 list had 128 unchecked entries. Concurrent techniques can exceed
+       that before rendering, overwriting the count and then arbitrary memory. */
+    if(gEftVram->count==gEftVram->capacity) {
+        u32 n=gEftVram->capacity*2;
+        EftAeVramEntry *entries=Heap_Alloc(n*sizeof(*entries),0x20,0,2);
+        __builtin_memcpy(entries,gEftVram->entry,gEftVram->count*sizeof(*entries));
+        Heap_Free(gEftVram->entry);
+        gEftVram->entry=entries;gEftVram->capacity=n;
+    }
+    return &gEftVram->entry[gEftVram->count];
+}
+
+/* Images and palettes used to grow independently from 0x2B00 and 0x2A00.
+   Four beam helpers exceed that 256-block palette gap and upload CLUTs on
+   top of the stage's smoke. Reserve both from the same cursor. A texture
+   shared by several emitters needs only one upload in this draw frame. */
+static EftAeVramEntry *EftVram_Acquire(EftAeTex *tex, s32 flags) {
+    EftAeVramEntry *e = NULL;
+    u32 i;
+    s32 next = gEftVram->imageNext > gEftVram->clutNext ?
+               gEftVram->imageNext : gEftVram->clutNext;
+    for (i = 0; i < gEftVram->count; i++) {
+        if (gEftVram->entry[i].tex->image == tex->image) {
+            e = &gEftVram->entry[i];
+            break;
+        }
+    }
+    if (e == NULL) {
+        e = EftVram_NextEntry();
+        e->tex = tex;
+        e->flags = 0;
+        e->imageBlock = e->clutBlock = -1;
+        gEftVram->count++;
+    }
+    if ((flags & 1) && !(e->flags & 1)) {
+        e->imageBlock = next;
+        next += tex->image->imageBlocks;
+    }
+    if ((flags & 2) && !(e->flags & 2)) {
+        e->clutBlock = next;
+        next += tex->image->clutBlocks;
+    }
+    e->flags |= flags;
+    gEftVram->imageNext = gEftVram->clutNext = next;
+    return e;
+}
+
 u64 EftVram_AddTex(EftAeTex *tex, s32 tcc, s32 tfx) {
-    EftAeVramEntry *e = &gEftVram->entry[gEftVram->count];
+    EftAeVramEntry *e = EftVram_Acquire(tex, 3);
     u64 tex0;
 
-    e->tex = tex;
-    e->imageBlock = gEftVram->imageNext;
-    e->clutBlock = gEftVram->clutNext;
-    e->flags = 3;
-    gEftVram->count++;
     tex->tex0 &= 0xFFF80003FFFFC000;
-    tex0 = ((tex->tex0 | ((u64)tcc << 34)) | (((u64)tfx << 35) | (u32)gEftVram->imageNext)) |
-           ((u64)(u32)gEftVram->clutNext << 37);
-    gEftVram->imageNext += tex->image->imageBlocks;
-    gEftVram->clutNext += tex->image->clutBlocks;
+    tex0 = ((tex->tex0 | ((u64)tcc << 34)) | (((u64)tfx << 35) | (u32)e->imageBlock)) |
+           ((u64)(u32)e->clutBlock << 37);
     return tex0;
 }
 
 /* The same for the image only (the CLUT field stays cleared). */
 u64 EftVram_AddImage(EftAeTex *tex, s32 tcc, s32 tfx) {
-    EftAeVramEntry *e = &gEftVram->entry[gEftVram->count];
+    EftAeVramEntry *e = EftVram_Acquire(tex, 1);
     u64 tex0;
 
-    e->tex = tex;
-    e->imageBlock = gEftVram->imageNext;
-    e->flags = 1;
-    e->clutBlock = 0;
-    gEftVram->count++;
     tex->tex0 &= 0xFFF80003FFFFC000;
-    tex0 = (tex->tex0 | ((u64)tcc << 34)) | (((u64)tfx << 35) | (u32)gEftVram->imageNext);
-    gEftVram->imageNext += tex->image->imageBlocks;
+    tex0 = (tex->tex0 | ((u64)tcc << 34)) | (((u64)tfx << 35) | (u32)e->imageBlock);
     return tex0;
 }
 
 /* Gives a texture's CLUT VRAM for this frame and returns its block. */
 u64 EftVram_AddClut(EftAeTex *tex) {
-    EftAeVramEntry *e = &gEftVram->entry[gEftVram->count];
+    EftAeVramEntry *e = EftVram_Acquire(tex, 2);
     u64 block;
 
-    e->tex = tex;
-    e->imageBlock = 0;
-    e->clutBlock = gEftVram->clutNext;
-    e->flags = 2;
-    gEftVram->count++;
-    block = (u32)gEftVram->clutNext;
-    gEftVram->clutNext += tex->image->clutBlocks;
+    block = (u32)e->clutBlock;
     return block;
 }
 
 /* Queues a texture's upload at given blocks and returns its TEX0. No caller. */
 u64 EftVram_AddTexAt(EftAeTex *tex, s32 imageBlock, s32 clutBlock, s32 tcc, s32 tfx) {
-    EftAeVramEntry *e = &gEftVram->entry[gEftVram->count];
+    EftAeVramEntry *e = EftVram_NextEntry();
 
     e->flags = 3;
     e->imageBlock = imageBlock;
@@ -1706,7 +1726,7 @@ void EftVram_UploadAll(void) {
 
 /* Empties the list and rewinds the cursors (from BtlScene_Draw, after the upload). */
 void EftVram_Reset(void) {
-    gEftVram->imageNext = 0x2B00;
+    gEftVram->imageNext = 0x2A00;
     gEftVram->clutNext = 0x2A00;
     gEftVram->count = 0;
 }

@@ -249,29 +249,29 @@ void ModeMenu_Init(s32 section) {
 
     switch (gProgress->subMenu) {
     case 0:
-        Bgm_Play(MODEMENU_BGM);
+        Bgm_Play(DISC_RESOURCE(MODEMENU_BGM, 0x899));
         StreamSe_PlayDefault(0, 0x10BDC);
         break;
     case 1:
-        Bgm_Play(MODEMENU_BGM);
+        Bgm_Play(DISC_RESOURCE(MODEMENU_BGM, 0x834));
         StreamSe_PlayDefault(0, 0x10BDD);
         break;
     case 2:
-        Bgm_Play(MODEMENU_BGM);
+        Bgm_Play(DISC_RESOURCE(MODEMENU_BGM, 0x835));
         StreamSe_PlayDefault(0, 0x10BDE);
         break;
     case 3:
     case 4:
-        Bgm_Play(MODEMENU_BGM);
+        Bgm_Play(DISC_RESOURCE(MODEMENU_BGM, 0x86C));
         break;
     case 5:
-        Bgm_Play(0x10B1E);
+        Bgm_Play(DISC_RESOURCE(0x10B1E, 0x837));
         break;
     case 6:
-        Bgm_Play(0x10B28);
+        Bgm_Play(DISC_RESOURCE(0x10B28, 0x828));
         break;
     case 7:
-        Bgm_Play(MODEMENU_BGM);
+        Bgm_Play(DISC_RESOURCE(MODEMENU_BGM, 0x867));
         break;
     }
 }

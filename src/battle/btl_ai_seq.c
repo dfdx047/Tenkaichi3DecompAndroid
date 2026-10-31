@@ -1,4 +1,5 @@
 #include "common.h"
+#include "battle/cpu_level.h"
 #include "battle/btl_ai_int.h"
 #include "battle/btl_ai_seq_a.h"
 
@@ -148,7 +149,7 @@ s32 BtlAiSeq_CheckStageAbort(BtlAiWork *ai, s32 id) {
     BtlAiVec pos;
 
     pose[0] = BtlCharApi_TestPoseBit80(ai->objId, 1);
-    pose[1] = BtlCharApi_TestPoseBit80(ai->objId ^ 1, 1);
+    pose[1] = BtlCharApi_TestPoseBit80(TagTeam_Target(ai->objId), 1);
     BtlCharApi_GetPos(ai->objId, &pos);
     switch (id) {
     case 9:
@@ -320,7 +321,7 @@ void BtlAiSeq_PhaseRun(BtlAiWork *ai) {
     s8 cls[2];
 
     state[0] = BtlCharApi_GetUnk974(ai->objId);
-    state[1] = BtlCharApi_GetUnk974(ai->objId ^ 1);
+    state[1] = BtlCharApi_GetUnk974(TagTeam_Target(ai->objId));
     cls[0] = body->stateClass[state[0]];
     cls[1] = body->stateClass[state[1]];
     step = &step[seq->step];
@@ -551,8 +552,8 @@ s32 BtlAiPick_LevelDelay(BtlAiWork *ai, s32 n, s32 arg) {
     f32 tbl[5] = { 45.0f, 33.75f, 22.5f, 11.25f, 0.0f };
     BtlAiSeqA *seq = SEQA(ai);
     f32 r = (s32)Rand_Range(100) * 0.01f;
-    s32 level = ai->level;
-    f32 base = tbl[level < 0 ? 0 : level / 6] * 0.5f;
+    s32 level = ai->level>29?29:ai->level;
+    f32 base = tbl[CpuLevel_TableIndex(level)] * 0.5f;
 
     switch (arg) {
     case 1:
@@ -894,7 +895,7 @@ s32 BtlAiStep_ChargeKi(BtlAiWork *ai) {
     s32 ki = BtlSide_GetKi(ai->objId);
     s32 want = (f32)seq->timer / 100.0f * 100000.0f;
 
-    if (BtlAiSense_IsBehindOpponent(&gBtlAi->work[ai->objId ^ 1]) != 0) {
+    if (BtlAiSense_IsBehindOpponent(&gBtlAi->work[TagTeam_Target(ai->objId)]) != 0) {
         return 1;
     }
     if (seq->timer == 101) {
@@ -1022,9 +1023,9 @@ s32 BtlAiStep_Charged(BtlAiWork *ai) {
 s32 BtlAiStep_GuardUntilSafe(BtlAiWork *ai) {
     BtlAiSeqA *seq = SEQA(ai);
     BtlAiSeqActTable *act = AI_DATA->act;
-    s32 state = BtlCharApi_GetUnk974(ai->objId ^ 1);
+    s32 state = BtlCharApi_GetUnk974(TagTeam_Target(ai->objId));
     s8 cls = act->body.stateClass[state];
-    s32 attacking = BtlCharApi_CheckUnkCAC(ai->objId ^ 1);
+    s32 attacking = BtlCharApi_CheckUnkCAC(TagTeam_Target(ai->objId));
     s32 passing = BtlCharApi_IsBlastPassing(ai->objId);
     BtlAiSeqEntry *top = &SEQ_TOP(seq);
     u8 flags = act->body.stateFlags[state];
@@ -1063,8 +1064,8 @@ s32 BtlAiStep_GuardUntilSafe(BtlAiWork *ai) {
  * state has flag bit 1. With no attack at all it ends when the step parameter has been counted below 0. */
 s32 BtlAiStep_GuardCountdown(BtlAiWork *ai) {
     BtlAiSeqA *seq = SEQA(ai);
-    u8 flags = AI_DATA->act->body.stateFlags[BtlCharApi_GetUnk974(ai->objId ^ 1)];
-    s32 attacking = BtlCharApi_CheckUnkCAC(ai->objId ^ 1);
+    u8 flags = AI_DATA->act->body.stateFlags[BtlCharApi_GetUnk974(TagTeam_Target(ai->objId))];
+    s32 attacking = BtlCharApi_CheckUnkCAC(TagTeam_Target(ai->objId));
 
     if (flags & 2) {
         return 0;
@@ -1124,7 +1125,7 @@ s32 BtlAiStep_FacingOpponent(BtlAiWork *ai) {
     seq->dirZ = face.z;
     seq->dirX = face.x;
     BtlCharApi_GetPos(ai->objId, &pos);
-    BtlCharApi_GetPos(ai->objId ^ 1, &opp);
+    BtlCharApi_GetPos(TagTeam_Target(ai->objId), &opp);
     Vec3_Sub(&rot, &opp, &pos);
     rot.y = 0.0f;
     Vec3_Normalize(&dir, &rot);
@@ -1175,13 +1176,13 @@ s32 BtlAiStep_Unk14(BtlAiWork *ai) {
         a = BtlAi_ScaleByLevel(ai->level, lo[4], hi[4]);
         b = BtlAi_ScaleByLevel(ai->level, lo[3], hi[3]);
         val[0] = BtlCharApi_GetClashCountB(ai->objId);
-        val[1] = BtlCharApi_GetClashCountB(ai->objId ^ 1);
+        val[1] = BtlCharApi_GetClashCountB(TagTeam_Target(ai->objId));
         break;
     case 2:
         a = BtlAi_ScaleByLevel(ai->level, lo[6], hi[6]);
         b = BtlAi_ScaleByLevel(ai->level, lo[5], hi[5]);
         val[0] = BtlCharApi_GetClashCountA(ai->objId);
-        val[1] = BtlCharApi_GetClashCountA(ai->objId ^ 1);
+        val[1] = BtlCharApi_GetClashCountA(TagTeam_Target(ai->objId));
         break;
     default:
         return 1;
@@ -1289,7 +1290,7 @@ s32 BtlAiStep_FireSkill(BtlAiWork *ai) {
         return 1;
     }
     action[0] = BtlCharApi_GetUnk974(ai->objId);
-    action[1] = BtlCharApi_GetUnk974(ai->objId ^ 1);
+    action[1] = BtlCharApi_GetUnk974(TagTeam_Target(ai->objId));
     tbl = (BtlAiActBody *)((u8 *)act + 8);
     cls[0] = tbl->actClass[action[0]];
     cls[1] = tbl->actClass[action[1]];

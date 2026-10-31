@@ -133,7 +133,13 @@ void HudGauge_UpdateHp(void) {
     }
     HudSprite_Show(tip, 1);
     HudSprite_Show(bar, 1);
-    if (bars >= 7) {
+    if (bars >=
+#ifdef PORT
+        (PortGame_IsBT4() ? 4 : 7)
+#else
+        7
+#endif
+    ) {
         HudSprite_SetTex(tip, 8, 5);
     } else if (bars >= 2) {
         HudSprite_SetTex(tip, 8, 1);
@@ -158,7 +164,13 @@ void HudGauge_UpdateHp(void) {
         }
     }
     bar = &gHudGauge->sprites[3];
-    if (bars - 1 >= 7) {
+    if (bars - 1 >=
+#ifdef PORT
+        (PortGame_IsBT4() ? 4 : 7)
+#else
+        7
+#endif
+    ) {
         HudSprite_SetTex(bar, 8, 5);
     } else if (bars - 1 >= 2) {
         HudSprite_SetTex(bar, 8, 1);

@@ -1,6 +1,7 @@
 #include "common.h"
 #ifdef PORT
 #include "plat_songs.h"
+#include "sys/save.h"
 #endif
 #include "battle/battle_work.h"
 #include "battle/battle_setup.h"
@@ -56,7 +57,9 @@ void Battle_ResetWork(void) {
     BattleResult_Clear();
     BtlEvent_Reset();
 #ifdef PORT
-    Bgm_Play(PORT_BGM_FILE(Battle_GetBgm())); /* (a song added from outside the disc has a file id of its own) */
+    Bgm_Play(PORT_BGM_FILE(Battle_GetBgm()));
+    { extern void Port_BattleMusicBegin(s32,u32); extern int gPortBattleMusicRandom;
+      Port_BattleMusicBegin(gPortBattleMusicRandom,gSaveData->bgmBits); }
 #else
     Bgm_Play(Battle_GetBgm() + 0x10B16);
 #endif
@@ -103,8 +106,12 @@ s32 Battle_Load(void) {
     BtlScript_Init();
     BtlLoad_PushInitialJob();
     Load_RunBlocking();
-    BattleSide_SetObjId(0, BtlObj_CreateChara(BattleSide_GetModelSlot(0)));
-    BattleSide_SetObjId(1, BtlObj_CreateChara(BattleSide_GetModelSlot(1)));
+    if (!TagTeam_Active()) {
+        s32 fighter;
+        for (fighter = 0; fighter < TagTeam_Count(); fighter++) {
+            BattleSide_SetObjId(fighter, BtlObj_CreateChara(BattleSide_GetModelSlot(fighter)));
+        }
+    }
     return 1;
 }
 

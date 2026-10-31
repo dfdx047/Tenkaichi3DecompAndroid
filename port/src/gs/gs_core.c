@@ -1420,7 +1420,13 @@ static int render_thread_wanted(void) {
     extern int Port_Setting(const char *name, int def);
     extern int SDL_GetNumLogicalCPUCores(void);
     const char *e = getenv("BT3_GS_THREAD");
-    int want = e != NULL ? atoi(e) != 0 : Port_Setting("render_thread", 0) != 0 || Port_Setting("dr_lite", 0) != 0;
+    /* (Android's Tag Team app: on unless the player switched it off. Its fights draw two to ten fighters, and the
+       frame's drawing, 8 to 17 ms a picture on a mid-range phone, otherwise waits for the game's tick and the tick for it.) */
+    int dflt = 0;
+#ifdef __ANDROID__
+    dflt = getenv("BT3_TAG_TEAM") != NULL;
+#endif
+    int want = e != NULL ? atoi(e) != 0 : Port_Setting("render_thread", dflt) != 0 || Port_Setting("dr_lite", 0) != 0;
 #ifdef __APPLE__
     want = 0;
 #endif

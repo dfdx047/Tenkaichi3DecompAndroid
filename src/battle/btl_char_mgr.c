@@ -1,9 +1,11 @@
+#include "battle/tag_clash.h"
 #include "common.h"
 #include "battle/battle.h"
 #include "battle/battle_setup.h"
 #include "battle/btl_char_mgr.h"
 #include "battle/btl_scene.h"
 #include "battle/btl_seq.h"
+#include "battle/tag_team.h"
 #include "sys/common.h"
 #include "sys/heap.h"
 #include "sys/save.h"
@@ -350,8 +352,8 @@ void BtlChar_Reset(BtlMgrChr *chr) {
         chr->unk99C = 100000;
     }
     res = BattleResult_GetPtr();
-    res->unk1C[chr->side] = 0;
-    res->unk24[chr->side] = 0;
+    res->unk1C[TagTeam_NativeSide(chr->side)] = 0;
+    res->unk24[TagTeam_NativeSide(chr->side)] = 0;
     if (BtlMember_GetActiveGauge(chr)->unk20 != 0) {
         BtlChar_GetObj(chr)->flags |= 0x40000000;
     }
@@ -495,6 +497,7 @@ void BtlChar_OnModelLoaded(BtlMgrChr *chr) {
         }
         break;
     }
+    { extern void TagFusion_ModelLoaded(s32); TagFusion_ModelLoaded(chr->side); }
     BtlObj_SetColorPreset(obj, BtlParam_GetAuraKind(chr), -1);
     if (BtlMember_GetActiveGauge(chr)->unk20 != 0) {
         obj->flags |= 0x40000000;
@@ -564,7 +567,7 @@ void BtlChar_ResetObjWork(BtlMgrChr *chr) {
 
 /* Decides which fighters are frozen (hit-stop) and counts the freeze timers down. */
 void BtlChars_UpdateFreeze(void) {
-    s32 level[2];
+    s32 level[PORT_FIGHTER_CAPACITY];
     s32 i;
     s32 max;
     u8 *bytes;
@@ -584,7 +587,10 @@ void BtlChars_UpdateFreeze(void) {
             max = level[i];
         }
     }
-    if (max > 0) {
+    /* Native technique startup assumes exactly one opponent. In Tag Team the
+       per-context cinematic policy owns that pause; hit-stop from an actual
+       impact still uses each fighter's freeze timers below. */
+    if (max > 0 && !(TagTeam_Active() && BtlSeq_IsFighting())) {
         for (i = 0; i < BtlChar_GetCount(); i++) {
             chr = BtlChar_Get(i);
             chr->freezeNext = 1;
@@ -634,7 +640,10 @@ void BtlChars_UpdateObjFlag2(void) {
     s32 found = -1;
     BtlMgrChr *chr;
 
-    for (i = 0; i < BtlChar_GetCount(); i++) {
+    /* A startup cut used to hide the entire other side. Visibility is global
+       across views, so never use that shortcut in a live Tag Team match.
+       Per-actor vanish, transformation and fusion flags still apply below. */
+    for (i = 0; i < BtlChar_GetCount() && !(TagTeam_Active() && BtlSeq_IsFighting()); i++) {
         if (BtlChar_TestFlag(BtlChar_Get(i), 0x12A)) {
             found = i;
             break;
@@ -680,7 +689,7 @@ void BtlChars_UpdateCollision(void) {
     s32 nobodyFrozen = 1;
 
     for (i = 0; i < BtlChar_GetCount(); i++) {
-        if (BtlChar_IsFrozen(BtlChar_Get(i))) {
+        if (BtlChar_Get(i)->freeze > 0) {
             nobodyFrozen = 0;
             break;
         }
@@ -912,7 +921,7 @@ void BtlChar_RaiseEvents(BtlMgrChr *chr) {
     }
     if (BtlChar_TestFlag(chr, 3)) {
         BattleResult *res = BattleResult_GetPtr();
-        s32 opp = BtlOpp_GetPlayer(chr);
+        s32 opp = TagTeam_NativeSide(BtlOpp_GetPlayer(chr));
 
         if (res->unk1C[opp] < chr->unkD40) {
             res->unk1C[opp] = chr->unkD40;
@@ -920,7 +929,7 @@ void BtlChar_RaiseEvents(BtlMgrChr *chr) {
         if (res->unk24[opp] < chr->unkD44) {
             res->unk24[opp] = chr->unkD44;
         }
-        res->health[chr->side] = BtlMember_GetTeamHealthRatio(chr) * 100.0f;
+        res->health[TagTeam_NativeSide(chr->side)] = BtlMember_GetTeamHealthRatio(chr) * 100.0f;
         if (BtlMember_GetActiveGauge(chr)->health == 1) {
             if (BtlMember_CountAlive(BtlChar_Get(BtlOpp_GetPlayer(chr))) <= 0) {
                 BtlEvent_Raise(chr->side, 0x54);
@@ -1224,6 +1233,9 @@ void BtlChar_PostScene(BtlMgrChr *chr) {
         BtlMember_GetActiveGauge(chr)->lowHealth = 0;
     }
     opp = BtlChar_Get(BtlOpp_GetPlayer(chr));
+    /* In a multi-fighter battle, unrelated actors can target this thrower.
+       Only the reciprocal participant owns its paired animation delta. */
+    if(TagTeam_Active() && TagTeam_Target(opp->side)!=chr->side) return;
     if (BtlChar_TestFlag(chr, 0x97)) {
         if (!BtlChar_TestFlag(chr, 0x30)) {
             BtlChar_GetSnapDelta(chr, opp->unkF30, 1, 4);
@@ -1314,6 +1326,8 @@ void BtlChar_ResetAll(void) {
     BtlMgrChr *chr;
     s32 pad;
 
+    /* Ready/Fight resets happen after the stage and all body sizes are live. */
+    { extern void TagSpawn_Reset(void); TagSpawn_Reset(); }
     for (i = 0; i < BtlChar_GetCount(); i++) {
         BtlPartner_Release(BtlChar_Get(i));
     }
@@ -1326,6 +1340,7 @@ void BtlChar_ResetAll(void) {
     memset(gBtlChars->unk40, 0, 0x60);
     gBtlChars->unk130 = 0;
     memset(gBtlChars->chars, 0, BtlChar_GetCount() * 0x1600);
+    BtlClash_Reset();
     BtlChange_Reset();
     BtlReplay_ResetViewer();
     for (i = 0; i < BtlChar_GetCount(); i++) {

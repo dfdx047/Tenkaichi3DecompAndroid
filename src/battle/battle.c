@@ -1,4 +1,8 @@
 #include "common.h"
+#include "battle/tag_challenge.h"
+#ifdef PORT
+#include "battle/tag_team.h"
+#endif
 #include "battle/battle.h"
 #include "sys/adx.h"
 #include "sys/dma.h"
@@ -134,7 +138,9 @@ extern void Gsc_Update(void);
 extern void BtlScript_Update(void);
 /* Puts every battle subsystem back to the start of a match (first start and rematch) and fades in over 1 s. */
 s32 Battle_Restart(void) {
-    Snd_StopBankAndResume(0x3C);
+    TagTeam_Reset();
+    TagChallenge_Reset();
+    Snd_StopBankAndResume(TagTeam_Active() ? ((1u<<(4+PORT_FIGHTER_CAPACITY))-4) : 0x3C);
     Battle_ResetWork();
     BtlScene_Reset(0);
     StgFx_Reset();
@@ -146,25 +152,37 @@ s32 Battle_Restart(void) {
     return 0;
 }
 
-/* Loads the battle data, creates every battle subsystem, then starts the first match. */
-s32 Battle_Init(void) {
-    Battle_Load();
+/* The tag loader calls this before the normal loading screen fades out. */
+void Battle_CreateSubsystems(void) {
     StgFx_Init();
     StgModel_InitStage();
-    BtlChar_AllocAll(2);
+    BtlChar_AllocAll(TagTeam_Count());
     BtlAiMgr_Init();
     BtlCam_Init();
     StgNav_Init();
     BtlGame_Init();
     Ot_Init();
     BtlScene_Init(0);
+}
+
+/* Loads the battle data, creates every battle subsystem, then starts the first match. */
+s32 Battle_Init(void) {
+    TagTeam_Begin();
+    Battle_Load();
+    TagChallenge_Begin();
+    if (!TagTeam_Active()) Battle_CreateSubsystems();
     Battle_Restart();
+    { extern void TagNet_Loaded(void); TagNet_Loaded(); }
+#ifdef PORT
+    { extern void Port_LoadTrace(s32); Port_LoadTrace(3); }
+#endif
     return 0;
 }
 
 /* Stores the result and destroys every battle subsystem. */
 s32 Battle_Term(void) {
     BattleResult_Finish();
+    {extern void TagTournament_FinishBattle(void);TagTournament_FinishBattle();}
     Adx_StopAll();
     BtlChar_FreeAll();
     BtlCam_Term();
@@ -176,6 +194,8 @@ s32 Battle_Term(void) {
     StgNav_Term();
     BtlGame_Term();
     Battle_Unload();
+    TagTeam_End();
+    TagChallenge_End();
     Fade_ResetAll();
     Dma_ResetBuffers();
     Job_Clear();
@@ -197,15 +217,17 @@ s32 Battle_Update(void) {
     BtlLoad_PollCharaRequest();
     BtlLoad_PollObjectRequest();
     BtlStage_Update();
-    BtlCam_SelectView(0);
-    BtlCam_UpdateView(0);
-    BtlCam_SelectView(1);
-    BtlCam_UpdateView(1);
+    for (i = 0; i < TagTeam_CameraCount(); i++) {
+        extern s32 TagNet_Active(void);
+        if (!TagNet_Active() && !TagTeam_ViewVisible(i)) continue;
+        BtlCam_SelectView(i); BtlCam_UpdateView(i);
+    }
     singleView = BtlCam_UpdateOverride();
     BtlChars_EndFrame();
     BtlObj_UpdateAll();
     if (Battle_IsSplitScreen() && !singleView) {
-        for (i = 0; i < 2; i++) {
+        for (i = 0; i < TagTeam_ViewCount(); i++) {
+            if (!TagTeam_ViewVisible(i)) continue;
             BtlCam_SelectView(i);
             BtlCam_ApplyView(0);
             BtlObj_UpdateVisibility(i);
@@ -274,7 +296,8 @@ s32 Battle_DrawSplit(void) {
 
     Dbg_ProfMark(gBattleProf);
     Gfx_MarkPass(1);
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < TagTeam_ViewCount(); i++) {
+        if (!TagTeam_ViewVisible(i)) continue;
         BtlCam_SelectView(i);
         BtlCam_ApplyView(1);
         StgModel_Cull(gBtlCamView);
@@ -296,7 +319,8 @@ s32 Battle_DrawSplit(void) {
     Dbg_ProfMark(gBattleProf);
     Gfx_MarkPass(4);
     Gfx_AddDefaultEnv();
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < TagTeam_ViewCount(); i++) {
+        if (!TagTeam_ViewVisible(i)) continue;
         BtlCam_SelectView(i);
         BtlCam_ApplyView(1);
         BtlScene_Draw(i == 0);
@@ -342,19 +366,43 @@ void Battle_Loop(void) {
         }
         BtlChars_CheckStart();
         Pad_Update();
+#ifdef PORT
+        /* Leave through the normal teardown path, never dispatch an exit
+           sentinel as if it were a sequence-table index. */
+        { extern int TagNet_Stopped(void); if(TagNet_Stopped()) {BattleResult_Set(BTL_RESULT_ABORT,0);break;} }
+#endif
         Snd_Update();
         Snd_SendFighters();
         BtlGame_PreUpdate();
         Battle_UpdateWork();
+        TagChallenge_Update();
+        TagTeam_Update();
+#ifdef PORT
+        {extern void TagOnline_TestPrepare(void);TagOnline_TestPrepare();}
+#endif
         BtlAiMgr_Update();
         BtlChars_SampleInput();
         draw = Battle_Update();
+        TagTeam_UpdateMechanics();
         done = BtlGame_Update();
+#ifdef PORT
+        { extern s32 TagOnline_BeginDraw(void); if(TagOnline_BeginDraw()) {
+            draw=0;BtlObj_UpdateVisibility(0);BtlObj_FinishVisibility(0);
+        } }
+#endif
+        TagTeam_AfterUpdate();
         if (Battle_IsSplitScreen() && draw) {
             Battle_DrawSplit();
         } else {
             Battle_Draw();
         }
+#ifdef PORT
+        { extern void TagOnline_EndDraw(void); TagOnline_EndDraw(); }
+#endif
+        TagChallenge_Draw();
+#ifdef PORT
+        {extern void TagLobbyMenu_Draw(void),TagLobby_Draw(void);TagLobbyMenu_Draw();TagLobby_Draw();}
+#endif
         Gfx_EndFrame(2);
         Dma_Flush();
     } while (!done);
@@ -365,6 +413,9 @@ s32 Battle_Main(void) {
     Battle_GetWork()->running = 1;
     Battle_Init();
     Battle_Loop();
+#ifdef PORT
+    { extern void TagNet_Finished(void),TagOnline_ReportResult(void);TagOnline_ReportResult();TagNet_Finished(); }
+#endif
     Battle_Term();
     Battle_GetWork()->running = 0;
     return 1;

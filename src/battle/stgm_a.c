@@ -16,6 +16,7 @@
 #include "sys/gfx.h"
 #include "sys/vu1_packet.h"
 #include "battle/stgm_a.h"
+#include "battle/tag_stage.h"
 
 /* Offset table of the stage file (StgOfsTable in battle/stg_a.h). */
 typedef struct StgMOfsTable StgMOfsTable;
@@ -119,6 +120,13 @@ void StgModel_DrawAnims(void) {
             Vu0Cur_RotateZXY(&rot);
             Vu0Cur_Translate(&pos);
             Vu0Cur_StoreMtx(mtx);
+            /* The object position is scaled during loading. Scale its local
+             * animated mesh through the parent basis, not its frame times. */
+            {
+                s32 axis;
+                f32 scale=TagStage_Scale();
+                for(axis=0;axis<12;axis++) mtx[axis]*=scale;
+            }
             Vu1Node_Animate(mdl, track, mtx, def->frame);
             def++;
             if (!uploaded) {

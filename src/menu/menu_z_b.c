@@ -28,7 +28,7 @@ s32 Dc_Main(void) {
     do {
         switch (gProgress->mode) {
         case 53:
-            Bgm_Play(DC_BGM);
+            Bgm_Play(DISC_RESOURCE(DC_BGM, 0x856));
             next = DcMenu_Run(1);
             if (next != 0) {
                 Adx_StopAll();
@@ -41,19 +41,19 @@ s32 Dc_Main(void) {
             }
             break;
         case 54:
-            Bgm_Play(DC_BGM);
+            Bgm_Play(DISC_RESOURCE(DC_BGM, 0x856));
             DcPass_Run(3);
             Adx_StopAll();
             gProgress->mode = 53;
             break;
         case 55:
-            Bgm_Play(DC_BGM);
+            Bgm_Play(DISC_RESOURCE(DC_BGM, 0x892));
             DcList_Run(2);
             Adx_StopAll();
             gProgress->mode = 53;
             break;
         case 56:
-            Bgm_Play(DC_BGM);
+            Bgm_Play(DISC_RESOURCE(DC_BGM, 0x87E));
             next = ReplayMenu_Run(4);
             if (next != 0) {
                 /* The constant lives in a variable set BEFORE the call: only then is its lifetime long enough

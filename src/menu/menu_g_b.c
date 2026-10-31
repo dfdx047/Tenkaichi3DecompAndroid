@@ -1,6 +1,7 @@
 #include "common.h"
 #include "menu/menu_g.h"
 #ifdef PORT
+#include "battle/tag_session.h"
 extern int Port_NetSession(void); /* port/src/gs/net.c */
 extern int Port_NetLobbyOwnerSide(void); /* port/src/gs/net.c: in a lobby's match, the owner's side; -1 otherwise */
 #endif
@@ -33,7 +34,7 @@ s32 Duel_Main(void) {
         case 38:
             if (!bgm) {
                 bgm = 1;
-                Bgm_Play(DUEL_BGM);
+                Bgm_Play(DISC_RESOURCE(DUEL_BGM, 0x8AF));
             }
             if (DuelMenu_Run(1)) {
                 Adx_StopAll();
@@ -68,6 +69,12 @@ s32 Duel_Main(void) {
             break;
         case 40:
             if (TeamSel_Run(2)) {
+#ifdef PORT
+                { extern s32 TagTournament_Start(void);
+                  s32 next=TagTournament_Start();
+                  if(next==2)continue;
+                  if(next) result=0; else TagSession_Apply(); }
+#endif
                 Adx_StopAll();
                 bgm = 0;
                 done = 1;
@@ -79,6 +86,11 @@ s32 Duel_Main(void) {
                ends the session (as cancelling the versus menu does). In a lobby's match only its owner ends the
                session (port/src/gs/net_lobby.c), as from the character select; the team select goes back on the
                first pad alone, so another's going back opens it again. */
+                if (TagSession_Selected()) {
+                    TagSession_Open();
+                    result=0;
+                    done=1;
+                }
                 if (Port_NetSession() && Port_NetLobbyOwnerSide() > 0) {
                     gProgress->mode = 40;
                 } else if (Port_NetSession()) {

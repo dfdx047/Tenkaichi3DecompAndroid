@@ -102,9 +102,26 @@ s32 ChrTbl_IsRelated(s32 a, s32 b) {
     return 0;
 }
 
+/* BT4's disc maps the same five menu slots to 6,13,21,29,99.
+ * Keep these indices identical to the original options and save data. */
+#ifdef PORT
+const char *CpuLevel_SettingName(s32 setting) {
+    static const char *bt3[]={"Very Weak","Weak","Normal","Strong","Very Strong"};
+    static const char *bt4[]={"Easy","Normal","Hard","Very Hard","Z Hard"};
+    extern s32 PortGame_IsBT4(void);
+    if((u32)setting>=5)setting=2;
+    if(PortGame_IsBT4())return bt4[setting];
+    return bt3[setting];
+}
+#endif
 /* CPU level of a difficulty setting 0..4. */
 s32 CpuLevel_FromSetting(u32 setting) {
     s32 level = 0;
+#ifdef PORT
+    extern s32 PortGame_IsBT4(void);
+    static const s32 bt4[]={6,13,21,29,99};
+    if(PortGame_IsBT4())return setting<5?bt4[setting]:0;
+#endif
 
     switch (setting) {
     case 0:
@@ -129,6 +146,14 @@ s32 CpuLevel_FromSetting(u32 setting) {
 /* Difficulty setting of a CPU level; -1 (no CPU) stays -1, a level in between gives 0. */
 s32 CpuLevel_ToSetting(s32 level) {
     s32 setting = 0;
+#ifdef PORT
+    extern s32 PortGame_IsBT4(void);
+    if(PortGame_IsBT4()) {
+        if(level==-1)return -1;
+        for(setting=0;setting<5;setting++)if(CpuLevel_FromSetting(setting)==level)return setting;
+        return 0;
+    }
+#endif
 
     switch (level) {
     case -1:

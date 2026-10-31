@@ -24,7 +24,7 @@ s32 OptMode_Main(void) {
         case MODE_OPTION:
             if (!bgm) {
                 bgm = 1;
-                Bgm_Play(BGM_OPTION);
+                Bgm_Play(DISC_RESOURCE(BGM_OPTION, 0x83E));
             }
             if (Option_Run(1) == 0) {
                 Adx_StopAll();

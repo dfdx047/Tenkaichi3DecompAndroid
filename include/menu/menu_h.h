@@ -66,7 +66,11 @@ extern MCommonRes *gCommonRes;
 /* ---- CharRef (menu_h_b.c): the character reference with Chi-Chi's comments (mode 60) ---- */
 
 #define CHARREF_FLASH_NUM 1
+#ifdef PORT
+#define CHARREF_CHARA_MAX 250
+#else
 #define CHARREF_CHARA_MAX 161
+#endif
 #define CHARREF_ROWS 4            /* list rows the cursor can be on */
 #define CHARREF_VOICE_BASE 0x82B7
 

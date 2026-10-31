@@ -57,6 +57,11 @@ extern u64 EftVram_AddClut(EftTTex *tex);                        /* steps a text
 extern void EftTexSet_Load8(void *tex, s32 *entry);              /* builds a texture set from a pack entry */
 
 extern s32 EftCam_IsActive(void);
+#ifdef PORT
+extern s32 EftCam_IsFighterActive(s32 objId);
+#else
+#define EftCam_IsFighterActive(objId) EftCam_IsActive()
+#endif
 extern void EftGfx_DrawPolyScaledZ(EftTClipVtx *v, s32 blend, s32 a2, s32 a3, s32 a4, s32 a5, u64 tex0, f32 scale);
 
 extern void BtlCharApi_GetNodePos(s32 objId, s32 node, Vec4 *out);
@@ -183,7 +188,7 @@ void EftStreak_Update(EftTTask *task) {
                     break;
                 }
                 case 2:
-                    if (EftCam_IsActive()) {
+                    if (EftCam_IsFighterActive(w->objId)) {
                         w->flags |= EFT_STREAK_DEAD;
                     }
                     break;

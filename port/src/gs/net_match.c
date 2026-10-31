@@ -13,8 +13,8 @@
  * BT3_MATCH_URL=<address> names another Worker (one's own; see port/matchmaking/README.md).
  *
  * A program built with a build key (net_sign.c) signs every request to the Worker: three headers, X-BT3-Release,
- * X-BT3-Time and X-BT3-Sign. One built without sends none of them. The request to GitHub (the update check) is
- * never signed.
+ * X-BT3-Time and X-BT3-Sign. One built without sends none of them. The request to GitHub (the update check,
+ * gs/net_update.c) is never signed.
  */
 #include <SDL3/SDL.h>
 #include <stdint.h>
@@ -256,7 +256,7 @@ static void set_state(int state, const char *error) {
 }
 
 /* ---- the Worker, through curl ---- */
-/* (http_post_native: `json` NULL makes it a GET of `url`, for the update check further down. `headers`: lines
+/* (http_post_native: `json` NULL makes it a GET of `url`. `headers`: lines
    "Name: value" to send as well, ended by a NULL, or NULL for none.) */
 
 #ifdef _WIN32
@@ -772,6 +772,7 @@ static int json_peer(const char *json, MatchStatus *st) {
 
 /* ---- STUN (RFC 5389): one question, "which address do you see me under?" ---- */
 
+static int sStunFree; /* (asked by the Tag Team mod's rooms, TagLink_Stun: not a search of this file's to stop with) */
 static int stun_ask(int sock, const char *host, int port, char *out, size_t size) {
     struct addrinfo hints, *res = NULL;
     uint8_t req[20], pkt[512];
@@ -791,7 +792,7 @@ static int stun_ask(int sock, const char *host, int port, char *out, size_t size
     for (i = 8; i < 20; i++) {
         req[i] = (uint8_t)SDL_rand(256);
     }
-    for (tries = 0; tries < 3 && !STOPPED(); tries++) {
+    for (tries = 0; tries < 3 && (sStunFree || !STOPPED()); tries++) {
         int waited;
         sendto(sock, (const char *)req, sizeof(req), 0, res->ai_addr, (int)res->ai_addrlen);
         for (waited = 0; waited < 500; waited += 10) {
@@ -1393,69 +1394,7 @@ static int SDLCALL queues_thread(void *arg) {
     return 0;
 }
 
-/* ---- is there a newer release? asked of GitHub, once per run, when the window is there ("Check for updates") ----
-   One GET of the repository's newest published release (drafts and pre-releases are not it); nothing is sent but
-   the request itself. The answer is long; the tag's name is near its start, and only the start is kept. */
-static SDL_AtomicInt sUpdLatest, sUpdBusy;
-
-static int SDLCALL update_thread(void *arg) {
-    static char answer[4096];
-    const char *url = "https://api.github.com/repos/" PORT_UPDATE_REPO "/releases/latest", *p;
-    int ok;
-
-    (void)arg;
-    ok = SDL_getenv("BT3_MATCH_CURL") == NULL && http_post_native(url, NULL, NULL, answer, sizeof(answer));
-    if (!ok) { /* the `curl` program, as for the service */
-#ifdef _WIN32
-        const char *args[] = {"curl.exe", "-s", "-L", "-m", "12", "-A", "Tenkaichi3Decomp", url, NULL};
-#else
-        const char *args[] = {"curl", "-s", "-L", "-m", "12", "-A", "Tenkaichi3Decomp", url, NULL};
-#endif
-        SDL_Process *pr = SDL_CreateProcess(args, true);
-        size_t got = 0;
-        int code = 0;
-        void *data = pr != NULL ? SDL_ReadProcess(pr, &got, &code) : NULL;
-        if (pr != NULL) {
-            SDL_DestroyProcess(pr);
-        }
-        if (data != NULL) {
-            SDL_strlcpy(answer, (const char *)data, sizeof(answer));
-            SDL_free(data);
-            ok = got > 0;
-        }
-    }
-    if (ok && (p = SDL_strstr(answer, "\"tag_name\"")) != NULL && (p = SDL_strchr(p + 10, 'v')) != NULL) {
-        int a = 0, b = 0, c = 0;
-        if (SDL_sscanf(p, "v%d.%d.%d", &a, &b, &c) == 3 && a == 0 && b >= 0 && c >= 0 && c < 100) {
-            SDL_SetAtomicInt(&sUpdLatest, b * 100 + c); /* as PORT_RELEASE counts: 0.1.33 is 133 */
-            fprintf(stderr, "bt3: update check: the newest release is 0.%d.%d, this is 0.%d.%d\n", b, c, PORT_RELEASE / 100, PORT_RELEASE % 100);
-        }
-    }
-    if (SDL_GetAtomicInt(&sUpdLatest) == 0) {
-        fprintf(stderr, "bt3: update check: no answer\n");
-    }
-    SDL_SetAtomicInt(&sUpdBusy, 0);
-    return 0;
-}
-
-void Match_UpdateAsk(void) {
-    SDL_Thread *t;
-    if (SDL_GetAtomicInt(&sUpdBusy)) {
-        return;
-    }
-    SDL_SetAtomicInt(&sUpdBusy, 1);
-    t = SDL_CreateThread(update_thread, "bt3-update", NULL);
-    if (t == NULL) {
-        SDL_SetAtomicInt(&sUpdBusy, 0);
-    } else {
-        SDL_DetachThread(t);
-    }
-}
-
-/* The newest published release's number (0: not asked, no answer yet, or none). */
-int Match_UpdateLatest(void) {
-    return SDL_GetAtomicInt(&sUpdLatest);
-}
+/* (Is there a newer release? That is gs/net_update.c's, the automatic update.) */
 
 /* ---- is this release new enough? asked when the online screen opens ---- */
 static SDL_AtomicInt sRelMin, sRelLatest, sRelBusy;
@@ -1632,4 +1571,23 @@ int Match_PostDragon(const char *what, const char *json, char *out, size_t size)
         DrNet_NoteResult(base, ok && out[0] == '{');
     }
     return ok;
+}
+
+/* ---- for the Tag Team mod's rooms over the internet (tag_link.c): the same questions, on its own socket ---- */
+
+/* This socket's address as the internet sees it ("ip:port"): STUN, Cloudflare's server then Google's. */
+int TagLink_Stun(int sock, char *out, int size) {
+    int ok;
+    sStunFree = 1;
+    ok = stun_ask(sock, "stun.cloudflare.com", 3478, out, (size_t)size) || stun_ask(sock, "stun.l.google.com", 19302, out, (size_t)size);
+    sStunFree = 0;
+    return ok;
+}
+/* This machine's address on its own network, with `port`. */
+int TagLink_Lan(int port, char *out, int size) {
+    return lan_address(port, out, (size_t)size);
+}
+/* A POST of `json` to `url` (the answer in out, error answers too). 0: nothing came back. */
+int TagLink_Http(const char *url, const char *json, char *out, int size) {
+    return http_post_native(url, json, NULL, out, (size_t)size);
 }

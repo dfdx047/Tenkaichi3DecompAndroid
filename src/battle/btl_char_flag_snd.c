@@ -39,7 +39,35 @@ extern s32 BtlSuper_GetFlags(BtlFlagChr *chr, s32 slot);       /* attribute word
 
 extern BtlFlagRoster *gBtlChars;
 /* Sample bank of request kinds 0..3; none for the rest. Defined here: this object's first rodata. */
-const s32 gBtlSndBankMask[8] = { 4, 8, 0x10, 0x20, -1, -1, -1, -1 };
+const s32 gBtlSndBankMask[16] = { 4, 8, 0x10, 0x20, -1, -1, -1, -1, 0x40, 0x80, 0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000 };
+
+static s32 own_kind(s32 player) { return player < 2 ? player + 2 : player + 6; }
+
+/* A four-fighter frame can request voices, strikes and loops together. Keep
+ * the original roster layout intact and give the native fight its own queue. */
+#ifdef PORT
+static BtlFlagSndReq nativeRequests[8*PORT_FIGHTER_CAPACITY];
+static s32 nativeRequestCount;
+#endif
+static BtlFlagSndReq *sound_requests(void) {
+#ifdef PORT
+    if(TagTeam_Active()) return nativeRequests;
+#endif
+    return gBtlChars->snd.req;
+}
+static s32 *sound_count(void) {
+#ifdef PORT
+    if(TagTeam_Active()) return &nativeRequestCount;
+#endif
+    return &gBtlChars->snd.count;
+}
+static s32 sound_capacity(void) {
+#ifdef PORT
+    if(TagTeam_Active()) return 8*PORT_FIGHTER_CAPACITY;
+#endif
+    return 4;
+}
+
 
 /* The fighter's set of one-shot sound slots. */
 BtlFlagSoundSet *BtlCharSnd_GetSet(BtlFlagChr *chr) {
@@ -60,12 +88,13 @@ BtlFlagSoundSet *BtlCharSnd_GetLoopSet(BtlFlagChr *chr) {
 /* 1 when the fighter already has this looping sound playing. */
 s32 BtlCharSnd_IsLoopPlaying(s32 player, s32 kind, s32 id) {
     BtlFlagChr *chr = BtlChar_Get(player);
-    BtlFlagSound *slot = BtlCharSnd_GetLoopSet(chr)->slot;
+    BtlFlagSound *slot;
     s32 i;
 
     if (chr == NULL) {
         return 0;
     }
+    slot = BtlCharSnd_GetLoopSet(chr)->slot;
     for (i = 0; i < 4; i++, slot++) {
         if (slot->handle >= 0 && id == slot->id && kind == slot->kind) {
             return 1;
@@ -76,34 +105,38 @@ s32 BtlCharSnd_IsLoopPlaying(s32 player, s32 kind, s32 id) {
 
 /* 1 when the request list holds this sound for this owner. */
 s32 BtlCharSnd_IsRequested(s32 owner, s32 kind, s32 id) {
-    BtlFlagSndReqList *list = &gBtlChars->snd;
+    BtlFlagSndReq *requests = sound_requests();
+    s32 *count = sound_count();
     s32 i;
 
-    for (i = 0; i < list->count; i++) {
-        if (owner == list->req[i].p.owner && id == list->req[i].p.id && kind == list->req[i].p.kind) {
+    for (i = 0; i < (*count); i++) {
+        if (owner == requests[i].p.owner && id == requests[i].p.id && kind == requests[i].p.kind) {
             return 1;
         }
     }
     return 0;
 }
 
-/* Queues a positional sound; dropped when four are already queued. */
+/* Queues a positional sound up to this battle's request capacity. */
 void BtlCharSnd_Request(Vec4 *pos, s32 owner, s32 kind, f32 near, f32 far, s32 id) {
-    BtlFlagSndReqList *list = &gBtlChars->snd;
+    BtlFlagSndReq *requests;
+    s32 *count;
     BtlFlagSndReq *req;
     s32 ok;
 
     if (gBtlChars != NULL) {
-        ok = list->count < 4;
-        req = &list->req[list->count];
+        requests = sound_requests();
+        count = sound_count();
+        ok = (*count) < sound_capacity();
         if (ok) {
+            req = &requests[(*count)];
             Vec4_Copy(&req->pos, pos);
             req->p.owner = owner;
             req->p.kind = kind;
             req->p.id = id;
             req->p.near = near;
             req->p.far = far;
-            list->count++;
+            (*count)++;
         }
     }
 }
@@ -180,12 +213,14 @@ void BtlCharSnd_CalcVolPan(Vec4 *pos, s32 *vol, s32 *pan, f32 near, f32 far) {
 
 /* Empties the request slots and every fighter's sound slots (the request count is left alone). */
 void BtlCharSnd_Init(void) {
-    BtlFlagSndReqList *list = &gBtlChars->snd;
+    BtlFlagSndReq *requests = sound_requests();
+    s32 *count = sound_count();
     s32 i;
     s32 j;
 
-    for (i = 0; i < 4; i++) {
-        BtlFlagSndParam *p = &list->req[i].p;
+    *count = 0;
+    for (i = 0; i < sound_capacity(); i++) {
+        BtlFlagSndParam *p = &requests[i].p;
 
         p->kind = -1;
         p->id = 0xFF;
@@ -205,26 +240,28 @@ void BtlCharSnd_Init(void) {
 
 /* Empties the request list (start of the frame). */
 void BtlCharSnd_ClearRequests(void) {
-    BtlFlagSndReqList *list = &gBtlChars->snd;
+    BtlFlagSndReq *requests = sound_requests();
+    s32 *count = sound_count();
     s32 i;
 
-    for (i = 0; i < 4; i++) {
-        BtlFlagSndParam *p = &list->req[i].p;
+    for (i = 0; i < sound_capacity(); i++) {
+        BtlFlagSndParam *p = &requests[i].p;
 
         p->kind = -1;
         p->id = 0xFF;
         p->owner = -1;
     }
-    list->count = 0;
+    (*count) = 0;
 }
 
 /* Plays the queued requests, then stops the looping sounds nobody asked for this frame. */
 void BtlCharSnd_PlayRequests(void) {
-    BtlFlagSndReqList *list = &gBtlChars->snd;
+    BtlFlagSndReq *requests = sound_requests();
+    s32 *count = sound_count();
     s32 i;
 
-    for (i = 0; i < list->count; i++) {
-        BtlFlagSndReq *req = &list->req[i];
+    for (i = 0; i < (*count); i++) {
+        BtlFlagSndReq *req = &requests[i];
         s32 vol;
         s32 pan;
         s32 owner;
@@ -270,8 +307,7 @@ void BtlCharSnd_PlayRequests(void) {
             break;
         }
     }
-    BtlCharSnd_StopUnrequestedLoops(BtlChar_Get(0));
-    BtlCharSnd_StopUnrequestedLoops(BtlChar_Get(1));
+    for (i = 0; i < BtlChar_GetCount(); i++) BtlCharSnd_StopUnrequestedLoops(BtlChar_Get(i));
 }
 
 /* Queues a sound that belongs to no fighter. */
@@ -308,7 +344,7 @@ void BtlCharSnd_PlayOwn(BtlFlagChr *chr, s32 id) {
     Vec4 pos;
 
     BtlCharApi_GetNodePos(chr->objId, 0x30, &pos);
-    BtlCharSnd_Request(&pos, chr->player, chr->player + 2, 200.0f, 1500.0f, id);
+    BtlCharSnd_Request(&pos, chr->player, own_kind(chr->player), 200.0f, 1500.0f, id);
 }
 
 /* Queues a streamed sound (kind 4) at the fighter's node 3. */
@@ -324,7 +360,7 @@ void BtlCharSnd_PlayVoice(BtlFlagChr *chr, s32 line) {
     Vec4 pos;
 
     BtlCharApi_GetNodePos(chr->objId, 0x30, &pos);
-    BtlCharSnd_Request(&pos, chr->player, chr->player + 5, 200.0f, 1500.0f, line);
+    BtlCharSnd_Request(&pos, chr->player, 5, 200.0f, 1500.0f, line);
 }
 
 /* Plays the sounds and voice lines of the technique in use when its animation raises the matching event bits. */
@@ -410,7 +446,7 @@ void BtlCharSnd_StopCommon(BtlFlagChr *chr, s32 id) {
 
 /* Cuts short a sound of the fighter's own bank. */
 void BtlCharSnd_StopOwn(BtlFlagChr *chr, s32 id) {
-    BtlCharSnd_Stop(chr, chr->player + 2, id);
+    BtlCharSnd_Stop(chr, own_kind(chr->player), id);
 }
 
 /* Sample bank mask of a request kind. (The load only assembles as in the original, with its last instruction in

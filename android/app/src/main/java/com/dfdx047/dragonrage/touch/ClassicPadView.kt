@@ -11,10 +11,12 @@ import android.graphics.RectF
 import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import com.dfdx047.dragonrage.R
+import com.dfdx047.dragonrage.engine.TouchBridge
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.hypot
@@ -178,7 +180,20 @@ class ClassicPadView(context: Context, initial: TouchConfig, editing: Boolean = 
 
     // ---- state
 
-    private class Track(var el: El?, val downX: Float, val downY: Float, var originX: Float, var originY: Float, var moved: Boolean = false)
+    private class Track(var el: El?, val downX: Float, val downY: Float, var originX: Float, var originY: Float, var moved: Boolean = false,
+                        val downAt: Long = SystemClock.uptimeMillis(), var floated: Boolean = false)
+
+    private val windowAt = IntArray(2)
+
+    /** A short touch that stayed put and was not on a control (or only woke the floating stick) is a tap on the
+     *  game's picture: the Tag Team menus press what is under it (TouchBridge.tap, in window pixels). */
+    private fun tapEnded(t: Track, x: Float, y: Float) {
+        if (t.el != null && !t.floated) return
+        if (SystemClock.uptimeMillis() - t.downAt > 450) return
+        if (hypot(x - t.downX, y - t.downY) > 18f * resources.displayMetrics.density) return
+        getLocationInWindow(windowAt)
+        TouchBridge.tap((x + windowAt[0]).toInt(), (y + windowAt[1]).toInt())
+    }
 
     private val tracks = HashMap<Int, Track>()
     private var dpadBits = 0
@@ -284,7 +299,10 @@ class ClassicPadView(context: Context, initial: TouchConfig, editing: Boolean = 
             return false
         }
         if (hiddenForPad && !editing) {
-            if (ev.actionMasked == MotionEvent.ACTION_DOWN) hiddenForPad = false
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                hiddenForPad = false
+                tracks[ev.getPointerId(0)] = Track(null, ev.x, ev.y, ev.x, ev.y) // (it may still be a tap on a menu: up)
+            }
             return true
         }
         if (editing) return editTouch(ev)
@@ -328,6 +346,7 @@ class ClassicPadView(context: Context, initial: TouchConfig, editing: Boolean = 
         val t = Track(e, x, y, e?.cx ?: x, e?.cy ?: y)
         if (e === stickL && floatL != null) {
             t.originX = x; t.originY = y
+            t.floated = true
         }
         tracks[id] = t
         if (e == null) return
@@ -387,6 +406,7 @@ class ClassicPadView(context: Context, initial: TouchConfig, editing: Boolean = 
 
     private fun up(id: Int, x: Float, y: Float) {
         val t = tracks.remove(id) ?: return
+        tapEnded(t, x, y)
         val e = t.el ?: return
         when (e.kind) {
             CtlKind.BUTTON, CtlKind.SHOULDER, CtlKind.PILL -> {

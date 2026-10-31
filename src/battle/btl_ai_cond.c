@@ -30,7 +30,7 @@ INCLUDE_RODATA("asm/nonmatchings/battle/btl_ai_cond", D_002EDEE8);
 /* Records the opponent's current action and its class, and raises reaction bits. */
 void BtlAi_NoteOpponent(BtlAiWork *ai, s32 react) {
     BtlAiActTable *act = gBtlAi->data->act;
-    s32 action = BtlCharApi_GetUnk974(ai->objId ^ 1);
+    s32 action = BtlCharApi_GetUnk974(TagTeam_Target(ai->objId));
     BtlAiStatus *st = &ai->status;
     s32 cls = act->actClass[action];
 
@@ -176,7 +176,7 @@ s32 BtlAiCond_LevelBelowDummy(BtlAiWork *ai, u8 arg) {
 /* Helper of condition 20: 75% chance to react to an opponent action of class 1..7, 22 or 23. */
 s32 BtlAiCond_GuardRoll(BtlAiWork *ai) {
     BtlAiStatus *st = &ai->status;
-    s8 cls = gBtlAi->data->act->actClass[BtlCharApi_GetUnk974(ai->objId ^ 1)];
+    s8 cls = gBtlAi->data->act->actClass[BtlCharApi_GetUnk974(TagTeam_Target(ai->objId))];
     s32 roll = Rand_Range(100);
 
     if (!((u32)(cls - 1) < 7) && cls != 0x16 && cls != 0x17) {
@@ -201,7 +201,7 @@ s32 BtlAiCond_React(BtlAiWork *ai, u8 arg) {
     s32 blastC[5] = { 0, 2, 3, 4, 5 };
     s32 step = LEVEL_IDX(ai);
     s32 roll = Rand_Range(100);
-    s32 action = BtlCharApi_GetUnk974(ai->objId ^ 1);
+    s32 action = BtlCharApi_GetUnk974(TagTeam_Target(ai->objId));
     s32 chance;
 
     switch (arg) {
@@ -344,7 +344,7 @@ s32 BtlAiCond_Rate4(BtlAiWork *ai, u8 arg) {
 /* Condition 31: AI-type rate chosen by which of the opponent actions 0x37..0x3A / 0x3C..0x3F is running. */
 s32 BtlAiCond_TypeRateByOppAction(BtlAiWork *ai, u8 arg) {
     BtlAiSeq *seq = &ai->seq;
-    s32 action = BtlCharApi_GetUnk974(ai->objId ^ 1);
+    s32 action = BtlCharApi_GetUnk974(TagTeam_Target(ai->objId));
     u8 *prof = gBtlAi->data->profile[ai->type];
     s8 *lo = (s8 *)prof + 0x2A8;
     s8 *hi = (s8 *)prof + 0x568;
@@ -1091,7 +1091,7 @@ s32 AiThink_TestMove(AiThWork *ai) {
     s32 stock = BtlSide_GetBlast(ai->objId) / 100000;
     s32 kind = plan->cond - 0x5C;
     s32 dist = BtlCharApi_GetHp(ai->objId);
-    s32 oppVal = BtlCharApi_GetStunTimer(ai->objId ^ 1);
+    s32 oppVal = BtlCharApi_GetStunTimer(TagTeam_Target(ai->objId));
     s32 i;
     s32 blocked;
 
@@ -1110,7 +1110,7 @@ s32 AiThink_TestMove(AiThWork *ai) {
         switch (kind) {
         case 0:
             if (moves->id[i] == 1) {
-                if (BtlCharApi_TestFlag05(ai->objId ^ 1) == 0) {
+                if (BtlCharApi_TestFlag05(TagTeam_Target(ai->objId)) == 0) {
                     blocked = 1;
                 }
             } else if (!(oppVal < 0x1F)) {
@@ -1197,7 +1197,7 @@ s32 AiThink_TestSkill(AiThWork *ai) {
     kind = plan->cond - 0x65;
     dist = BtlCharApi_GetHp(ai->objId);
     oppSlot = BtlCharApi_GetOppSkillClass(ai->objId);
-    opp = BtlCharApi_GetSkillTable(ai->objId ^ 1);
+    opp = BtlCharApi_GetSkillTable(TagTeam_Target(ai->objId));
     if (BtlCharApi_GetUnkE40(ai->objId) != 0) {
         return 0;
     }
@@ -1257,7 +1257,7 @@ s32 AiThink_TestSkill(AiThWork *ai) {
             if (BtlCharApi_TestPoseBit80(ai->objId, 1) == 0) {
                 continue;
             }
-            if (BtlCharApi_TestPoseBit80(ai->objId ^ 1, 1) == 0) {
+            if (BtlCharApi_TestPoseBit80(TagTeam_Target(ai->objId), 1) == 0) {
                 continue;
             }
         }
@@ -1321,7 +1321,7 @@ s32 AiThCond_MiscRate0Or3(AiThWork *ai, u8 arg) {
         chance = 0;
         break;
     }
-    if (stage != 0 && BtlCharApi_TestPoseBit80(ai->objId ^ 1, 1) == 0) {
+    if (stage != 0 && BtlCharApi_TestPoseBit80(TagTeam_Target(ai->objId), 1) == 0) {
         return 0;
     }
     seq->roll = roll;
@@ -1411,7 +1411,7 @@ s32 AiThCond_WeightedByHeight(AiThWork *ai, u8 arg) {
     f32 dy;
 
     BtlCharApi_GetPos(ai->objId, &pos);
-    BtlCharApi_GetPos(ai->objId ^ 1, &opp);
+    BtlCharApi_GetPos(TagTeam_Target(ai->objId), &opp);
     dy = opp.y - pos.y;
     switch (D_002EDA70[plan->cond]) {
     case 0x36:
@@ -1432,7 +1432,7 @@ s32 AiThCond_WeightedByHeight(AiThWork *ai, u8 arg) {
         }
         break;
     case 0x37:
-        if (BtlCharApi_IsAnimFlag2800(ai->objId ^ 1) == 0) {
+        if (BtlCharApi_IsAnimFlag2800(TagTeam_Target(ai->objId)) == 0) {
             return 0;
         }
         if (gBtlAi->distance > gBtlAi->radiusSum + BtlCharApi_GetRadius(ai->objId)) {
@@ -1483,7 +1483,7 @@ s32 AiThCond_ActRateByFlags(AiThWork *ai, u8 arg) {
         return 0;
     }
     action[0] = BtlCharApi_GetUnk974(ai->objId);
-    action[1] = BtlCharApi_GetUnk974(ai->objId ^ 1);
+    action[1] = BtlCharApi_GetUnk974(TagTeam_Target(ai->objId));
     cls[0] = ((AiThActBody *)((u8 *)act + 8))->actClass[action[0]];
     cls[1] = ((AiThActBody *)((u8 *)act + 8))->actClass[action[1]];
     switch (D_002EDA70[plan->cond]) {
@@ -2326,7 +2326,7 @@ void AiThink_ResetSide(s32 side, s32 owned) {
     BtlAiMgr_SetLevel(ai->objId, BtlCharApi_GetCpuLevel(side));
     BtlAiMgr_SetType(ai->objId, BtlCharApi_GetAiType(ai->objId));
     BtlAiSeq_Reset(&ai->seq);
-    gBtlAi->radiusSum = BtlCharApi_GetRadius(ai->objId) + BtlCharApi_GetRadius(ai->objId ^ 1);
+    gBtlAi->radiusSum = BtlCharApi_GetRadius(ai->objId) + BtlCharApi_GetRadius(TagTeam_Target(ai->objId));
     range->dist[0] = gBtlAi->radiusSum;
     d = BtlCharApi_GetCloseRange(side) - BtlCharApi_GetRadius(side);
     range->dist[1] = d;

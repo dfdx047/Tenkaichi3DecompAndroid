@@ -10,6 +10,8 @@
 #include "sys/math3d.h"
 #include "sys/ramp.h"
 #include "sys/randf.h"
+#include "battle/tag_post_view.h"
+#include "battle/tag_stage.h"
 
 /*
  * Battle screen effects, 0x245F58..0x248F28. See include/battle/stg_c.h for the overview.
@@ -315,9 +317,9 @@ void StgHaze_BuildClut(StgHaze *haze, StgCurve *curve, f32 scale) {
 void StgHaze_Init(u16 clutBase) {
     s32 i;
 
-    gStgHaze = Heap_Alloc(sizeof(StgHaze) * 2, 0x40, 0, 2);
-    memset(gStgHaze, 0, sizeof(StgHaze) * 2);
-    for (i = 0; i < 2; i++) {
+    gStgHaze = Heap_Alloc(sizeof(StgHaze) * PORT_FIGHTER_CAPACITY, 0x40, 0, 2);
+    memset(gStgHaze, 0, sizeof(StgHaze) * PORT_FIGHTER_CAPACITY);
+    for (i = 0; i < PORT_FIGHTER_CAPACITY; i++) {
         StgHaze_Create(&gStgHaze[i], clutBase);
     }
     StgHaze_Reset();
@@ -336,7 +338,7 @@ void StgHaze_Reset(void) {
     StgHaze *haze = gStgHaze;
     s32 i;
 
-    for (i = 0; i < 2; i++, haze++) {
+    for (i = 0; i < PORT_FIGHTER_CAPACITY; i++, haze++) {
         haze->cols = 20;
         haze->rows = 50;
         haze->ampX = 0x80;
@@ -357,7 +359,7 @@ void StgHaze_UpdateClut(StgHaze *haze, s32 split, s32 view) {
     if (gBtlCam == NULL) {
         y = gBtlCamView->pos.y;
     } else {
-        y = gBtlCam->views[view].pos.y;
+        { extern BtlCamView *BtlCam_GetNativeView(s32); y = BtlCam_GetNativeView(view)->pos.y; }
     }
     top = -BtlStage_GetTop();
     StgHaze_BuildClut(haze, &haze->curve, 1.0f - -y / top * 0.5f);
@@ -654,7 +656,7 @@ void StgFx_DrawPre(void) {
         if (BtlStage_HasFeature(3) && !(Battle_GetWork()->flags & 0x400000000000000)) {
             StgFog_Draw();
         }
-        if (BtlStage_HasFeature(0xD)) {
+        if (TagTeam_Active() ? TagStage_PanBlur() : BtlStage_HasFeature(0xD)) {
             StgPanBlur_Draw();
         }
         if (BtlStage_HasFeature(9)) {
@@ -939,10 +941,10 @@ void StgBlur_Nop(StgBlurDraw *d) {
 
 /* Allocates the two blur views. */
 void StgBlur_Init(void) {
-    StgBlur *blur = Heap_Alloc(sizeof(StgBlur) * 2, 0x20, 0, 2);
+    StgBlur *blur = Heap_Alloc(sizeof(StgBlur) * PORT_FIGHTER_CAPACITY, 0x20, 0, 2);
 
     gStgBlur = blur;
-    memset(blur, 0, sizeof(StgBlur) * 2);
+    memset(blur, 0, sizeof(StgBlur) * PORT_FIGHTER_CAPACITY);
     StgBlur_Reset();
 }
 
@@ -959,7 +961,7 @@ void StgBlur_Reset(void) {
     StgBlur *blur = gStgBlur;
     s32 i;
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < PORT_FIGHTER_CAPACITY; i++) {
         blur->unk0 = 0;
         Vec4_Set(&blur->center, 0.0f, 0.0f, 1.0f, 0.0f);
         blur->passes = 3;
@@ -1018,6 +1020,7 @@ void StgBlur_Draw(s32 split, s32 view, Mtx44 *viewMtx) {
     s32 width;   /* of the view, pixels */
     s32 half;    /* of the work buffers */
     s32 xOffset; /* left edge of the view */
+    s32 yOffset=0;
     s32 srcH;
     s32 h;
     s32 lastTbp; /* texture block of the work buffer written last */
@@ -1046,6 +1049,13 @@ void StgBlur_Draw(s32 split, s32 view, Mtx44 *viewMtx) {
     } else {
         u1 = 0x200;
     }
+    if (TagTeam_Active()) {
+        s32 r[4];
+        TagPost_Rect(view,split,r);
+        xOffset=r[0]; yOffset=r[1]; width=r[2]; srcH=r[3];
+        half=width/2; h=srcH/2; u1=x1=xOffset+width;
+        Port_TagPostTrace(3,view,split,(u32)r);
+    }
     if (blur->screenSpace) {
         Vec4_Copy(&c, &blur->center);
     } else {
@@ -1054,11 +1064,17 @@ void StgBlur_Draw(s32 split, s32 view, Mtx44 *viewMtx) {
         Mtx_MulVec4(&c, &m, &blur->center);
     }
     StgBlur_BeginDraw(&d, xOffset, x1, width, srcH, half, h);
+    d.p->d[0]=GIF_TAG(1,0,1); d.p->d[1]=GIF_REG_AD; d.p++;
+    d.p->d[0]=GS_SET_CLAMP(2,2,xOffset,x1-1,yOffset,yOffset+srcH-1);
+    d.p->d[1]=GS_CLAMP_1; d.p++;
     {
         u32 tbp[2] = { 0x2A00, 0x2D80 }; /* the two work buffers as textures ... */
         u32 fbp[2] = { 0x150, 0x16C };   /* ... and as frame buffers */
 
-        Dma_PutTexStrips(&d.p, 0, 0, half, h, 0, 0, xOffset, 0, u1, srcH, 0, 0, 0x80808080, 0);
+        Dma_PutTexStrips(&d.p, 0, 0, half, h, 0, 0, xOffset, yOffset, u1, yOffset+srcH, 0, 0, 0x80808080, 0);
+        d.p->d[0]=GIF_TAG(1,0,1); d.p->d[1]=GIF_REG_AD; d.p++;
+        d.p->d[0]=GS_SET_CLAMP(2,2,0,half-1,0,h-1);
+        d.p->d[1]=GS_CLAMP_1; d.p++;
         f = 1.0f;
         for (i = 0; i < blur->passes; i++, f += f) {
             s32 grow;
@@ -1115,7 +1131,7 @@ void StgBlur_Draw(s32 split, s32 view, Mtx44 *viewMtx) {
             d.p->d[1] = 0x72007000;
             d.p++;
             d.p->d[0] = (u64)(((half - ub) << 4) + 8) | ((u64)(((h - vb) << 4) + 8) << 16);
-            d.p->d[1] = (u64)((half + 0x700) << 4) | ((u64)0x8000 << 16);
+            d.p->d[1] = (u64)((half + 0x700) << 4) | ((u64)((h+0x720)<<4) << 16);
             d.p++;
         }
         d.p->d[0] = GIF_TAG(4, 0, 1);
@@ -1124,7 +1140,7 @@ void StgBlur_Draw(s32 split, s32 view, Mtx44 *viewMtx) {
         d.p->d[0] = !(gGfx.frame & 1) ? 0x80070 : 0x80000;
         d.p->d[1] = GS_FRAME_1;
         d.p++;
-        d.p->d[0] = GS_SET_SCISSOR(xOffset, x1 - 1, 0, srcH - 1);
+        d.p->d[0] = GS_SET_SCISSOR(xOffset, x1 - 1, yOffset, yOffset+srcH - 1);
         d.p->d[1] = GS_SCISSOR_1;
         d.p++;
         d.p->d[0] = (u64)(lastTbp | 0x20010000) | ((u64)8 << 30);
@@ -1187,16 +1203,16 @@ void StgBlur_Draw(s32 split, s32 view, Mtx44 *viewMtx) {
             in[3][3] = hy + rv / 2;
             StgBlur_PutStripTag(&d, 10, 1);
             for (i = 0; i < 5; i++) {
-                StgBlur_PutVertex(&d, (u32)blur->color01, cx + xOffset, cy, hx, hy);
-                StgBlur_PutVertex(&d, ((u32 *)&blur->color01)[1], in[i % 4][0] + xOffset, in[i % 4][1], in[i % 4][2],
+                StgBlur_PutVertex(&d, (u32)blur->color01, cx + xOffset, cy+yOffset, hx, hy);
+                StgBlur_PutVertex(&d, ((u32 *)&blur->color01)[1], in[i % 4][0] + xOffset, in[i % 4][1]+yOffset, in[i % 4][2],
                                   in[i % 4][3]);
             }
             StgBlur_Nop(&d);
             StgBlur_PutStripTag(&d, 10, 1);
             for (i = 0; i < 5; i++) {
-                StgBlur_PutVertex(&d, ((u32 *)&blur->color01)[1], in[i % 4][0] + xOffset, in[i % 4][1], in[i % 4][2],
+                StgBlur_PutVertex(&d, ((u32 *)&blur->color01)[1], in[i % 4][0] + xOffset, in[i % 4][1]+yOffset, in[i % 4][2],
                                   in[i % 4][3]);
-                StgBlur_PutVertex(&d, blur->color2, out[i % 4][0] + xOffset, out[i % 4][1], out[i % 4][2],
+                StgBlur_PutVertex(&d, blur->color2, out[i % 4][0] + xOffset, out[i % 4][1]+yOffset, out[i % 4][2],
                                   out[i % 4][3]);
             }
             StgBlur_Nop(&d);
@@ -1207,28 +1223,34 @@ void StgBlur_Draw(s32 split, s32 view, Mtx44 *viewMtx) {
 
 /* Draws the blur for whatever views are on screen. */
 void StgBlur_DrawAll(void) {
+    if (TagTeam_Active() && TagPost_Split()) {
+        s32 i;
+        for(i=0;i<TagTeam_ViewCount();i++) if(TagTeam_ViewVisible(i))
+            StgBlur_Draw(1,i,&BtlCam_GetNativeView(i)->view.world2view2);
+        return;
+    }
     if (gBtlCam == NULL) {
         StgBlur_Draw(0, 0, &gBtlCamView->world2view2);
         return;
     }
     if (Battle_IsSplitScreen()) {
         if (DemoCam_IsActive()) {
-            StgBlur_Draw(0, 0, &gBtlCam->views[0].view.world2view2);
+            StgBlur_Draw(0, 0, &BtlCam_GetNativeView(0)->view.world2view2);
             return;
         }
         if (gBtlCam->cur->split == 0) {
-            StgBlur_Draw(0, gBtlCam->cur->index, &gBtlCam->views[gBtlCam->cur->index].view.world2view2);
+            StgBlur_Draw(0, gBtlCam->cur->index, &BtlCam_GetNativeView(gBtlCam->cur->index)->view.world2view2);
             return;
         }
-        StgBlur_Draw(1, 0, &gBtlCam->views[0].view.world2view2);
-        StgBlur_Draw(1, 1, &gBtlCam->views[1].view.world2view2);
+        StgBlur_Draw(1, 0, &BtlCam_GetNativeView(0)->view.world2view2);
+        StgBlur_Draw(1, 1, &BtlCam_GetNativeView(1)->view.world2view2);
         return;
     }
     if (DemoCam_IsActive()) {
-        StgBlur_Draw(0, 0, &gBtlCam->views[0].view.world2view2);
+        StgBlur_Draw(0, 0, &BtlCam_GetNativeView(0)->view.world2view2);
         return;
     }
-    StgBlur_Draw(0, gBtlCam->cur->index, &gBtlCam->views[gBtlCam->cur->index].view.world2view2);
+    StgBlur_Draw(0, gBtlCam->cur->index, &BtlCam_GetNativeView(gBtlCam->cur->index)->view.world2view2);
 }
 
 /* Sets the number of passes. */

@@ -187,7 +187,7 @@ void HistResult_Init(s32 section) {
         bg = 3;
         gHistResult->flags |= HISTRESULT_LOST;
     }
-    gHistResult->bgFile = File_LoadSync(bg + 0x3FE, NULL, 0);
+    gHistResult->bgFile = File_LoadSync(bg + DISC_RESOURCE(0x3FE, 8), NULL, 0);
     gHistResult->bgRes = Sprite_Unpack(gHistResult->bgFile, NULL, NULL);
     res = gHistResult->bgRes;
     Res_RelocateOffsets(&res, res, res);
@@ -492,7 +492,7 @@ void HistResult_UpdateSe(void) {
         }
         break;
     case 3:
-        Bgm_Play(0x10B18);
+        Bgm_Play(DISC_RESOURCE(0x10B18, 0x87D));
         gHistResult->seState = 0;
         break;
     }

@@ -1,3 +1,5 @@
+#include "battle/btl_effect_owner.h"
+#include "battle/tag_clash.h"
 #include "common.h"
 #include "battle/eft_r.h"
 
@@ -165,6 +167,26 @@ s32 EftCharaFx_Stop(s32 objId) {
 
 /* ---- beam struggle ------------------------------------------------------------------------------------------ */
 
+/* Each pair owns its effect task. The old manager's first task/power slots
+   cannot identify the correct struggle once two pairs fire simultaneously. */
+static EftRTask *struggleTasks[PORT_FIGHTER_CAPACITY];
+static f32 strugglePower[PORT_FIGHTER_CAPACITY];
+static EftRTask *struggle_task(s32 actor) {
+    EftRTask *task;
+    if (!gEftStruggle || (u32)actor >= PORT_FIGHTER_CAPACITY) return NULL;
+    task = struggleTasks[actor];
+    if (!task || EFT_TASK_IS_DEAD(task) ||
+        (((EftStruggle *)task->work)->flags & EFT_STRUGGLE_END)) return NULL;
+    return task;
+}
+s32 EftStruggle_IsActiveFor(s32 actor) { return struggle_task(actor) != NULL; }
+s32 EftStruggle_GetPosFor(s32 actor,EftRVec *out) {
+    EftRTask *task=struggle_task(actor);
+    if(!task) return 0;
+    *out=((EftStruggle *)task->work)->pos;
+    return 1;
+}
+
 /* Starts the struggle between two technique records that met head-on (called by the hit pass, 0x1B0910, after it
    set task flag 0x100 on both). The task gets copies of both records, object 0's first. Returns how far along the
    line between the two start points record 0 got. */
@@ -174,7 +196,7 @@ f32 EftStruggle_Start(EftRVec *pos, EftRRec *a, EftRRec *b) {
 
     memset(&arg, 0, sizeof(EftStruggleArg));
     Vec4_Copy(&arg.pos, pos);
-    if (a->objId == 0) {
+    if (a->objId < b->objId) {
         arg.rec[0] = *a;
         arg.rec[1] = *b;
     } else {
@@ -184,22 +206,21 @@ f32 EftStruggle_Start(EftRVec *pos, EftRRec *a, EftRRec *b) {
     arg.rec[1].pose.start.w = 1.0f;
     arg.rec[0].pose.start.w = 1.0f;
     d = Vec3_Dist(&arg.rec[1].pose.start, &arg.rec[0].pose.start);
-    arg.ratio = Vec3_Dist(&arg.rec[0].pose.start, &arg.rec[0].pose.pos) / d;
+    arg.ratio = Vec3_Dist(&arg.rec[0].pose.start, &arg.rec[0].pose.pos) / (d > 0.001f ? d : 0.001f);
     BtlTaskList_AddTail(gEftStruggle->list, &gEftStruggleClass, &arg);
     return arg.ratio;
 }
 
 /* Whether a struggle task exists. */
 s32 EftStruggle_IsActive(void) {
-    if (gEftStruggle == NULL) {
-        return 0;
-    }
-    return gEftStruggle->list->first != NULL;
+    s32 i;
+    for (i=0;i<PORT_FIGHTER_CAPACITY;i++) if (struggle_task(i)) return 1;
+    return 0;
 }
 
 /* Ends the struggle (BtlClash_UpdateA). winner 0 / 1: the other fighter's technique timers are expired and its
    effect layer is reset (scene layer 2 + character), which kills its beam; -1: both. */
-void EftStruggle_End(s32 winner) {
+void EftStruggle_EndFor(s32 actor, s32 winner) {
     EftRTask *task;
     EftStruggle *w;
     s32 layer;
@@ -208,7 +229,7 @@ void EftStruggle_End(s32 winner) {
     if (gEftStruggle == NULL) {
         return;
     }
-    task = gEftStruggle->list->first;
+    task = struggle_task(actor);
     if (task == NULL) {
         return;
     }
@@ -224,21 +245,23 @@ void EftStruggle_End(s32 winner) {
     }
     w->flags |= EFT_STRUGGLE_END;
     if (winner == -1) {
-        EftTechEvt_RequestExpire(0);
-        EftTechEvt_RequestExpire(1);
-        BtlScene_Reset(2);
-        BtlScene_Reset(3);
+        EftTechEvt_RequestExpire(w->arg.rec[0].objId);
+        EftTechEvt_RequestExpire(w->arg.rec[1].objId);
+        BtlScene_ResetCharacter(w->arg.rec[0].objId);
+        BtlScene_ResetCharacter(w->arg.rec[1].objId);
     } else {
-        if (winner == 0) {
-            loser = 1;
-            layer = 3;
-        } else {
-            loser = 0;
-            layer = 2;
-        }
+        loser = w->arg.rec[winner == w->arg.rec[0].objId ? 1 : 0].objId;
         EftTechEvt_RequestExpire(loser);
-        BtlScene_Reset(layer);
+        BtlScene_ResetCharacter(loser);
     }
+}
+
+/* Legacy callers ending all effects retain their original meaning. Battle
+   actions use EndFor so ending one struggle never expires another pair. */
+void EftStruggle_End(s32 winner) {
+    s32 i;
+    if(winner>=0) { EftStruggle_EndFor(winner,winner); return; }
+    for(i=0;i<PORT_FIGHTER_CAPACITY;i++) EftStruggle_EndFor(i,-1);
 }
 
 /* Sets where the struggle point is between the two fighters, clamped to 0..1 (no caller: the task recomputes it
@@ -340,12 +363,7 @@ f32 EftStruggle_GetCamDist(s32 objId, s32 mode) {
     if (gEftStruggle == NULL) {
         return ret;
     }
-    if (gEftStruggle->side[0].objId == objId) {
-        power = gEftStruggle->side[0].power;
-    }
-    if (gEftStruggle->side[1].objId == objId) {
-        power = gEftStruggle->side[1].power;
-    }
+    power = EftStruggle_GetPower(objId);
     if (power <= 0.5f) {
         power = 0.5f;
     }
@@ -366,34 +384,34 @@ f32 EftStruggle_GetCamDist(s32 objId, s32 mode) {
 }
 
 /* Camera distance of the struggle's middle cut (BtlClash_SetMidCut): 40 + 20 * the larger power. */
-f32 EftStruggle_GetMidDist(void) {
-    if (gEftStruggle == NULL) {
-        return 0.0f;
-    }
-    return gEftStruggle->midDist + gEftStruggle->maxPower * 20.0f;
+f32 EftStruggle_GetMidDist(s32 actor) {
+    EftRTask *task = struggle_task(actor);
+    EftStruggle *w;
+    f32 a,b;
+    if (!task) return 0.0f;
+    w=task->work;
+    a=EftStruggle_GetPower(w->arg.rec[0].objId);
+    b=EftStruggle_GetPower(w->arg.rec[1].objId);
+    return gEftStruggle->midDist + (a>b?a:b)*20.0f;
 }
 
 /* Sets one side's power and object id (the index), and the larger of the two powers (no caller). */
 void EftStruggle_SetPower(s32 side, f32 power) {
-    if (gEftStruggle != NULL) {
-        gEftStruggle->side[side].power = power;
-        gEftStruggle->side[side].objId = side;
-        gEftStruggle->maxPower = gEftStruggle->side[0].power > gEftStruggle->side[1].power
-                                     ? gEftStruggle->side[0].power
-                                     : gEftStruggle->side[1].power;
-    }
+    if(struggle_task(side) && power>0.0f) strugglePower[side]=power;
 }
 
 /* One side's power (no caller). */
 f32 EftStruggle_GetPower(s32 side) {
-    if (gEftStruggle == NULL) {
-        return 0.0f;
-    }
-    return gEftStruggle->side[side].power;
+    EftRTask *task=struggle_task(side);
+    EftStruggle *w;
+    if(!task) return 1.0f;
+    w=task->work;
+    return strugglePower[side];
 }
 
 /* Manager init: the globals and a child list of one task. */
 void EftStruggleMgr_Init(EftRTask *task) {
+    memset(struggleTasks,0,sizeof(struggleTasks));
     gEftStruggle = BtlPool_Alloc(BtlPool_GetCurrent(), sizeof(EftStruggleMgr));
     memset(gEftStruggle, 0, sizeof(EftStruggleMgr));
     gEftStruggle->camDist = 20.0f;
@@ -403,7 +421,7 @@ void EftStruggleMgr_Init(EftRTask *task) {
     gEftStruggle->side[0].objId = 0;
     gEftStruggle->side[1].power = 1.0f;
     gEftStruggle->side[1].objId = 1;
-    gEftStruggle->list = BtlTask_CreateChildList(task, 1, sizeof(EftStruggle));
+    gEftStruggle->list = BtlTask_CreateChildList(task, PORT_FIGHTER_CAPACITY/2, sizeof(EftStruggle));
 }
 
 /* Manager term. */
@@ -438,37 +456,11 @@ void EftStruggle_Init(EftRTask *task, EftStruggleArg *arg) {
     w->bias = w->arg.ratio;
     r0 = &w->arg.rec[0];
     r1 = &w->arg.rec[1];
-    p0 = EftStruggle_GetRecRadius(r0);
-    p1 = EftStruggle_GetRecRadius(r1);
-    if (p1 < p0) {
-        EftRSrc *s0 = r0->src;
-        EftRSrc *s1 = r1->src;
-        EftRDef *d0 = s0->def;
-        EftRDef *d1 = s1->def;
-
-        gEftStruggle->side[0].power = d0->power;
-        gEftStruggle->side[0].objId = r0->objId;
-        gEftStruggle->side[1].power = d1->power;
-        gEftStruggle->side[1].objId = r1->objId;
-        gEftStruggle->maxPower = gEftStruggle->side[0].power > gEftStruggle->side[1].power
-                                     ? gEftStruggle->side[0].power
-                                     : gEftStruggle->side[1].power;
-    } else {
-        EftRSrc *s0 = r0->src;
-        EftRSrc *s1 = r1->src;
-        EftRDef *d0 = s0->def;
-        EftRDef *d1 = s1->def;
-
-        gEftStruggle->side[0].power = d0->power;
-        gEftStruggle->side[0].objId = r0->objId;
-        gEftStruggle->side[1].power = d1->power;
-        gEftStruggle->side[1].objId = r1->objId;
-        gEftStruggle->maxPower = gEftStruggle->side[0].power > gEftStruggle->side[1].power
-                                     ? gEftStruggle->side[0].power
-                                     : gEftStruggle->side[1].power;
-    }
+    struggleTasks[r0->objId]=struggleTasks[r1->objId]=task;
+    strugglePower[r0->objId]=r0->src->def->power;
+    strugglePower[r1->objId]=r1->src->def->power;
     one = 1.0f;
-    w->bias = (BtlCharApi_GetClashBias() + one) * 0.5f;
+    w->bias = (BtlClash_Bias(w->arg.rec[0].objId) + one) * 0.5f;
     if (w->bias < 0.0f) {
         w->bias = 0.0f;
     }
@@ -481,14 +473,16 @@ void EftStruggle_Init(EftRTask *task, EftStruggleArg *arg) {
     Vec3_Normalize(&spark.dir, &w->arg.rec[0].pose.dir);
     spark.scale = one;
     spark.kind = 0;
-    spark.objId = 0;
+    spark.objId = r0->objId;
     w->spark = EftClashSpark_Create(spark);
 }
 
 /* Task term: lets the spark end. */
 void EftStruggle_Term(EftRTask *task) {
     EftStruggle *w = task->work;
+    s32 i;
 
+    for(i=0;i<PORT_FIGHTER_CAPACITY;i++) if(struggleTasks[i]==task) struggleTasks[i]=NULL;
     EftClashSpark_Stop(w->spark);
 }
 
@@ -535,7 +529,7 @@ void EftStruggle_Step(EftRTask *task) {
     f32 tmp;
 
     w->frames++;
-    if (!BtlCharApi_IsInClashA(0) || !BtlCharApi_IsInClashA(1)) {
+    if (!BtlCharApi_IsInClashA(w->arg.rec[0].objId) || !BtlCharApi_IsInClashA(w->arg.rec[1].objId)) {
         w->flags |= EFT_STRUGGLE_END;
     }
     if (w->flags & EFT_STRUGGLE_END) {
@@ -548,15 +542,10 @@ void EftStruggle_Step(EftRTask *task) {
     EftClashSpark_SetScale(w->spark, one);
     r1 = &w->arg.rec[1];
     t = one;
-    p0 = gEftStruggle->side[0].power;
+    p0 = EftStruggle_GetPower(r0->objId);
     k = 13.0f;
-    p1 = gEftStruggle->side[1].power;
-    tmp = p0;
-    if (gEftStruggle->side[0].objId != r0->objId) {
-        p0 = p1;
-        p1 = tmp;
-    }
-    w->bias = (BtlCharApi_GetClashBias() + t) * 0.5f;
+    p1 = EftStruggle_GetPower(r1->objId);
+    w->bias = (BtlClash_Bias(w->arg.rec[0].objId) + t) * 0.5f;
     if (w->bias < 0.0f) {
         w->bias = 0.0f;
     }
@@ -711,7 +700,7 @@ void EftClashSparkMgr_Init(EftRTask *task) {
 
     gEftClashSparkSet = BtlPool_Alloc(BtlPool_GetCurrent(), sizeof(EftRSet));
     memset(gEftClashSparkSet, 0, sizeof(EftRSet));
-    gEftClashSparkList = BtlTask_CreateChildList(task, 3, sizeof(EftClashSpark));
+    gEftClashSparkList = BtlTask_CreateChildList(task, PORT_FIGHTER_CAPACITY, sizeof(EftClashSpark));
     {
         s32 file[1] = { 0x268 };
 
@@ -849,7 +838,7 @@ void EftCharge_Init(EftRTask *task, s32 *arg) {
     EftEmit_SetNode(&w->nodes, 0, 3, NULL);
     w->flags |= EFT_CHARGE_ALIVE;
     w->life = EftEmit_GetEndFrames(w->set);
-    BtlTask_SetOwnerTag(task, arg[0] == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(arg[0]));
 }
 
 /* Task term: releases the emitter state and the fighter's task slot. */
@@ -1074,12 +1063,12 @@ void EftKiBlast_Turn(EftRTask *task, EftKiBlast *w) {
 
     Vec3_Lerp(&w->pose.pos, &task->pos, &w->pose.prev, 0.7f);
     if (task->hit & EFT_R_HIT_DEFLECT) {
-        BtlCharApi_GetDeflectDir((s16)(w->arg.objId ^ 1), &dir);
+        BtlCharApi_GetDeflectDir((s16)TagTeam_Target(w->arg.objId), &dir);
         Vec4_Copy(&w->pose.dir, &dir);
         w->arg.objId ^= 1;
         w->flags = (w->flags & ~EFT_KIBLAST_HOMING) | EFT_KIBLAST_DEFLECTED;
     } else if (task->hit & EFT_R_HIT_REFLECT) {
-        BtlCharApi_GetDeflectDir((s16)(w->arg.objId ^ 1), &dir);
+        BtlCharApi_GetDeflectDir((s16)TagTeam_Target(w->arg.objId), &dir);
         Vec4_Copy(&w->pose.dir, &dir);
         w->arg.objId ^= 1;
         w->life = w->arg.life;
@@ -1166,7 +1155,7 @@ void EftKiBlast_Init(EftRTask *task, EftRArg *arg) {
     if (BtlCharApi_IsLockedOn(arg->objId)) {
         w->flags |= EFT_KIBLAST_HOMING;
     }
-    BtlTask_SetOwnerTag(task, arg->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(arg->objId));
 }
 
 /* Task term. */
@@ -1402,7 +1391,7 @@ void EftBlastCharge_Init(EftRTask *task, EftBlastChargeArg *arg) {
     w->mask |= 1;
     EftEmit_SetNode(&w->nodes, 0, arg->node, NULL);
     w->life = EftEmit_GetEndFrames(w->set);
-    BtlTask_SetOwnerTag(task, arg->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(arg->objId));
 }
 
 /* Task term: releases the emitter state and the fighter's task slot. */
@@ -1615,7 +1604,7 @@ void EftKiBomb_Init(EftRTask *task, EftRArg *arg) {
     w->arg.srcId = arg->objId;
     EftKiBomb_Launch(task);
     w->flags |= EFT_KIBOMB_SHOWN | EFT_KIBOMB_HITS;
-    BtlTask_SetOwnerTag(task, arg->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(arg->objId));
 }
 
 /* Task term: frees the model instance. */
@@ -1632,7 +1621,7 @@ void EftKiBomb_Update(EftRTask *task) {
     EftKiBomb *w = task->work;
     s32 dead; /* a dead store after a call keeps it from becoming a tail call, as in the original */
 
-    if (!BtlScene_IsAnyCharStopped()) {
+    if (!BtlScene_IsEffectStopped(w->arg.objId, 0)) {
         EftKiBomb_Move(task);
         if (w->flags & EFT_KIBOMB_HITS) {
             EftKiBomb_AddHitRecord(task);
@@ -1932,12 +1921,12 @@ void EftKiObj_Turn(EftRTask *task, EftKiObj *w) {
 
     Vec3_Lerp(&w->b.pose.pos, &task->pos, &w->b.pose.prev, 0.7f);
     if (task->hit & EFT_R_HIT_DEFLECT) {
-        BtlCharApi_GetDeflectDir((s16)(w->b.arg.objId ^ 1), &dir);
+        BtlCharApi_GetDeflectDir((s16)TagTeam_Target(w->b.arg.objId), &dir);
         Vec4_Copy(&w->b.pose.dir, &dir);
         w->b.arg.objId ^= 1;
         w->b.flags |= EFT_KIBOMB_DEFLECTED;
     } else if (task->hit & EFT_R_HIT_REFLECT) {
-        BtlCharApi_GetDeflectDir((s16)(w->b.arg.objId ^ 1), &dir);
+        BtlCharApi_GetDeflectDir((s16)TagTeam_Target(w->b.arg.objId), &dir);
         Vec4_Copy(&w->b.pose.dir, &dir);
         w->b.arg.objId ^= 1;
         w->b.life = w->b.arg.life;
@@ -1999,7 +1988,7 @@ void EftKiObj_Init(EftRTask *task, EftRArg *arg) {
     w->b.arg.srcId = arg->objId;
     EftKiObj_Launch(task);
     w->b.flags |= EFT_KIBOMB_SHOWN | EFT_KIBOMB_HITS;
-    BtlTask_SetOwnerTag(task, arg->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(arg->objId));
 }
 
 /* Task term: frees the model instance. */
@@ -2017,7 +2006,7 @@ void EftKiObj_Update(EftRTask *task) {
     EftKiObj *w = task->work;
     s32 dead; /* a dead store after a call keeps it from becoming a tail call, as in the original */
 
-    if (!BtlScene_IsAnyCharStopped()) {
+    if (!BtlScene_IsEffectStopped(w->b.arg.objId, 0)) {
         EftKiObj_Step(task);
         if (w->b.flags & EFT_KIBOMB_HITS) {
             EftKiObj_AddHitRecord(task);

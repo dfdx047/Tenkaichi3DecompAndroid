@@ -125,7 +125,7 @@ void EftImpact_Init(EftVTask *task, EftImpactInit *init) {
         if (init->scale <= 0.0f) {
             u32 chr = w->objId;
 
-            if (chr >= 2) {
+            if (chr >= (u32)BtlScene_GetCharCount()) {
                 chr = 0;
             }
             w->scale = BtlScene_GetCharScale(chr);

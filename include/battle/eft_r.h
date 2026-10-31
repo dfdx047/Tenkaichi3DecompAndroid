@@ -446,13 +446,16 @@ s32 EftCharaFx_Stop(s32 objId);
 
 f32 EftStruggle_Start(EftRVec *pos, EftRRec *a, EftRRec *b);
 s32 EftStruggle_IsActive(void);
+/* Native multi-fighter queries always identify the participating actor. */
+s32 EftStruggle_IsActiveFor(s32 actor);
+void EftStruggle_EndFor(s32 actor, s32 winner);
 void EftStruggle_End(s32 winner);
 void EftStruggle_SetBias(f32 bias);
 f32 EftStruggle_GetBias(void);
 void EftStruggle_GetPos(EftRVec *out);
 void EftStruggle_SetPos(EftRVec *pos);
 f32 EftStruggle_GetCamDist(s32 objId, s32 mode);
-f32 EftStruggle_GetMidDist(void);
+f32 EftStruggle_GetMidDist(s32 actor);
 void EftStruggle_SetPower(s32 side, f32 power);
 f32 EftStruggle_GetPower(s32 side);
 void EftStruggleMgr_Init(EftRTask *task);

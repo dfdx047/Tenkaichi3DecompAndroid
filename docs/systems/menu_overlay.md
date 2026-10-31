@@ -2,13 +2,13 @@
 
 Loaded at 0x334C00; code 0x334C00..0x3B0E04 (737 functions), data from 0x3B0E80. Built with
 -G0 (verified: no gp-relative access anywhere). Data is laid out per object as `.data` then
-`.rodata`. Source goes in src/menu/. Brief and chunk table: docs/briefs_menu_overlay.md.
+`.rodata`. Source goes in src/menu/. Brief and chunk table: [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/briefs_menu_overlay.md).
 
 ## Link state (eleventh step, 2026-10-05): the whole overlay is linked from C
 
 build/DBZP.BIN is byte-identical from 69 C files (the 93 chunk files after 24 merges of head / tail halves);
 no assembly code chunk is left, only the zero padding between `.text` and the data (0x3B0E04..0x3B0E80). 728 of
-the 737 functions are C; 9 are INCLUDE_ASM inside linked files (docs/open_questions.md). The file names in the
+the 737 functions are C; 9 are INCLUDE_ASM inside linked files ([upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md)). The file names in the
 chunk sections below are the ORIGINAL chunk files; where a section says "append to" / "merge with", that is done
 and the tail file is gone:
 

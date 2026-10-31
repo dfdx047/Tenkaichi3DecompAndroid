@@ -312,10 +312,9 @@ typedef struct EftVramTex {
 
 /* The effect VRAM allocator (gp 0x2FEAF4; managed by the file before). */
 typedef struct EftVram {
-    /* 0x000 */ u8 entries[0x800];
-    /* 0x800 */ u32 count;
-    /* 0x804 */ s32 next;       /* next free block, starts at 0x2B00 */
-    /* 0x808 */ s32 unk808;
+    void *entries;
+    u32 count, capacity;
+    s32 next, clutNext;
 } EftVram;
 
 /* A shot of a volley (EftVolleyShot of battle/eft_h.h). */

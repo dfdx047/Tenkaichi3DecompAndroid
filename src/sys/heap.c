@@ -240,7 +240,13 @@ void Heap_Init(void) {
 }
 
 void *Heap_Alloc(s32 size, u32 align, s32 fromTail, s32 heap) {
-    HeapBlock *block = Heap_AllocBlock(size, align, fromTail, heap);
+    HeapBlock *block;
+    if (size >= 0x10000 && align <= 0x40) {
+        extern unsigned Port_GameBigAlloc(int size);
+        unsigned address = Port_GameBigAlloc(size);
+        if (address) return (void *)address;
+    }
+    block = Heap_AllocBlock(size, align, fromTail, heap);
     void *data = NULL;
 
     if (block != NULL) {

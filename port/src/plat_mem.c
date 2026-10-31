@@ -464,6 +464,7 @@ static void Port_LoadGameData(void) {
     /* Android: the engine may have been loaded elsewhere than it was linked (android/.../loader.c), and the list has
        the linked addresses */
     long bias = getenv("BT3_ENGINE_BIAS") != NULL ? atol(getenv("BT3_ENGINE_BIAS")) : 0;
+    int normalized;
 #ifdef _WIN32
     long n = (long)GetModuleFileNameA(NULL, exe, sizeof(exe) - 1);
 #elif defined(__APPLE__)
@@ -517,7 +518,7 @@ static void Port_LoadGameData(void) {
         }
         return; /* no list: the data is linked in */
     }
-    if (listSize < 16 || memcmp(list, "BT3D", 4) != 0) {
+    if (listSize < 16 || (memcmp(list, "BT3D", 4) != 0 && memcmp(list, "TTMD", 4) != 0)) {
         data_fail("damaged file", path);
     }
     memcpy(&count, list + 4, 4);
@@ -525,6 +526,16 @@ static void Port_LoadGameData(void) {
     if (listSize < 16 + (size_t)count * 16) {
         data_fail("damaged file", path);
     }
+    normalized = memcmp(list, "TTMD", 4) == 0;
+    if (normalized) {
+        for (i = 0; i < 2; i++) {
+            snprintf(path, sizeof(path), "%s/native-tables%u.bin", root, i);
+            src[i] = read_file(path, &srcSize[i]);
+            if (src[i] == NULL) {
+                data_fail("startup tables are missing; run Setup again", path);
+            }
+        }
+    } else {
     snprintf(path, sizeof(path), "%s/disc/SLUS_216.78", root);
     elf = read_file(path, &elfSize);
     if (elf == NULL || elfSize < 0x34 || memcmp(elf, "\177ELF", 4) != 0) {
@@ -551,6 +562,7 @@ static void Port_LoadGameData(void) {
     src[1] = read_file(path, &srcSize[1]);
     if (src[1] == NULL) {
         data_fail("the game's menu program was not found", path);
+    }
     }
     for (i = 0; i < count; i++) {
         uint32_t r[4]; /* address in this program, source, offset in it, length */
@@ -592,6 +604,9 @@ static void Port_LoadGameData(void) {
 enum { LOW_SIZES = 256 };
 PORT_HOST static uint8_t *sLowArena = NULL; /* where the region is: fixed once it is taken, not game state */
 static uint8_t *sLowNext;
+/* The highest the region was ever handed out to (not game state: a restored state can bring sLowNext below it).
+   Above it the pages were never touched: the system's zero pages, not yet backed by memory. */
+PORT_HOST static uint8_t *sLowHigh = NULL;
 #ifdef _WIN32
 PORT_HOST static uint8_t *sLowCommitted = NULL; /* how far the region's pages are committed (never given back) */
 #endif
@@ -834,7 +849,9 @@ void *Port_LowAlloc(size_t size) {
        The addresses end up in the game's memory (file handles, sound buffers); with the system choosing them they
        differed from run to run, and so did the game's state. This way they depend only on the order of the
        requests. */
-    size_t total = (size + 16 + 255) & ~(size_t)255;
+    /* Native fighter resources request 64-byte alignment. Keep the allocation
+       header in a full cache line so every returned buffer honors that. */
+    size_t total = (size + 64 + 255) & ~(size_t)255;
     uint64_t *p = NULL;
     int i;
 
@@ -876,12 +893,27 @@ void *Port_LowAlloc(size_t size) {
 #endif
         /* cleared: after the game's state was restored to an earlier moment, the memory above the restored end
            of the region still holds the blocks of the frames that were undone (a file handle with its read
-           position, which made the re-run frame's read loop spin for ever) */
-        memset(p, 0, total);
+           position, which made the re-run frame's read loop spin for ever). Only that part: what lies above the
+           highest point ever handed out is still zero, and clearing it would make the system back every page of
+           a large buffer at once (the Tag Team mod's two 16 MB display lists, a stage's buffer) when the game
+           uses a fraction of it: memory a phone does not have to spare. */
+        if (sLowHigh == NULL || sLowHigh < sLowArena) {
+            sLowHigh = sLowArena;
+        }
+        if ((uint8_t *)p < sLowHigh) {
+            memset(p, 0, (size_t)((sLowHigh < sLowNext ? sLowHigh : sLowNext) - (uint8_t *)p));
+        }
+        if (sLowNext > sLowHigh) {
+            if ((size_t)(sLowNext - sLowArena) / 0x1000000 != (size_t)(sLowHigh - sLowArena) / 0x1000000) {
+                fprintf(stderr, "bt3: memory: the port's region has %zu of %u MB handed out\n",
+                        (size_t)(sLowNext - sLowArena) >> 20, (unsigned)(LOW_ARENA_SIZE >> 20));
+            }
+            sLowHigh = sLowNext;
+        }
     }
     p[0] = total;
     __sync_lock_release(&sLowLock);
-    return p + 2;
+    return p + 8;
 #else
     return calloc(1, size);
 #endif
@@ -890,7 +922,7 @@ void *Port_LowAlloc(size_t size) {
 void Port_LowFree(void *addr) {
 #if PORT_LOW_REGION
     if (addr != NULL) {
-        uint64_t *p = (uint64_t *)addr - 2, total = p[0];
+        uint64_t *p = (uint64_t *)addr - 8, total = p[0];
         int i;
         while (__sync_lock_test_and_set(&sLowLock, 1)) {
         }

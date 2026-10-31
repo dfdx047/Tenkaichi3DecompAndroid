@@ -218,6 +218,7 @@ void SndOpt_Apply(void);
 void Progress_ClearTeams(void);
 s32 ChrTbl_IsRelated(s32 a, s32 b);
 s32 CpuLevel_FromSetting(u32 setting);
+const char *CpuLevel_SettingName(s32 setting);
 s32 CpuLevel_ToSetting(s32 level);
 void Demo_SetupBattle(void);
 s32 MenuUtil_ClassifyId(s32 id);

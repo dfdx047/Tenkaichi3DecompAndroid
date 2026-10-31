@@ -26,6 +26,12 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {422, 256, 0}, /* btn_leftright */
     {256, 256, 0}, /* btn_circle */
     {289, 120, 0}, /* btn_start */
+    {1920, 864, 0}, /* db_sky */
+    {2048, 256, 0}, /* db_balls */
+    {256, 256, 0}, /* db_glow */
+    {1024, 512, 0}, /* db_rays */
+    {256, 256, 48}, /* db_frame */
+    {256, 256, 50}, /* db_dialog */
 };
 
 #endif

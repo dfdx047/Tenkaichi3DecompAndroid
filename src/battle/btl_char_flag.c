@@ -152,6 +152,13 @@ s32 BtlChar_IsFlagDropped(BtlFlagChr *chr, u32 n) {
 /* Lock-on: drops flag 5 on flags 0x93 / 0xB2, and raises 0x13 and 5 when the opponent is within range. */
 void BtlChar_UpdateLockOn(BtlFlagChr *chr) {
     f32 range;
+#ifdef PORT
+    extern s32 TagTeam_LockedOff(s32);
+    if (TagTeam_LockedOff(chr->player)) {
+        BtlChar_ClearFlag(chr,5); BtlChar_ClearFlag(chr,0x13);
+        return;
+    }
+#endif
 
     if (BtlChar_TestFlag(chr, 0x93)) {
         BtlChar_ClearFlag(chr, 5);
@@ -177,6 +184,21 @@ void BtlChars_UpdateSightFlag(void) {
     Vec4 b;
     BtlFlagChr *chr0 = BtlChar_Get(0);
     BtlFlagChr *chr1 = BtlChar_Get(1);
+
+#ifdef PORT
+    if (TagTeam_Active()) {
+        s32 i;
+        for (i=0;i<TagTeam_Count();i++) {
+            BtlFlagChr *current=BtlChar_Get(i), *target=BtlChar_Get(TagTeam_Target(i));
+            BtlChar_ClearFlag(current,0xBA);
+            BtlCharApi_GetNodePos(current->objId,0x2F,&a);
+            BtlCharApi_GetNodePos(target->objId,0x2F,&b);
+            ColSeg_Set(seg,&a,&b);
+            if (StgCol_TraceSegment(seg)) BtlChar_SetHeldFlag(current,0xBA);
+        }
+        return;
+    }
+#endif
 
     BtlChar_ClearFlag(chr0, 0xBA);
     BtlChar_ClearFlag(chr1, 0xBA);

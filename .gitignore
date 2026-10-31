@@ -14,6 +14,9 @@ __pycache__/
 .ninja_*
 /port/build/
 /gamedata/
+/gamedata-bt4/
+/gamedata-*/
+/captures/
 port/tests/ps2float/*.o
 port/tests/ps2float/*.s
 !port/tests/ps2float/crt0*.s
@@ -29,6 +32,7 @@ port/tests/ps2float/*.o
 /bt3-setup
 /Tenkaichi3Decomp-setup
 /play.sh
+!/Play.sh
 install.log
 port/build_release/
 

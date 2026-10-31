@@ -146,7 +146,8 @@ typedef struct ObjShadowTri {
 
 #define OBJ_SHADOW_TRI_MAX 0x80
 #define OBJ_SHADOW_PKT_TRIS 0x90
-#define OBJ_SHADOW_MAX 5
+#include "battle/tag_capacity.h"
+#define OBJ_SHADOW_MAX TAG_SHADOW_CAPACITY
 
 /* Element of the third pool of the battle object work block (BtlObjPool3Work.nodes). */
 typedef struct ObjShadow {

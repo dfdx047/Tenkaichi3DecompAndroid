@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "labels_version": 1,
+  "translation_version": 1,
+  "labels_count": 3,
+  "locale": "es",
+  "name": "Español",
+  "order": 2,
+  "labels": {
+    "quit/confirm": {
+      "original": "Close the game?\nUnsaved progress will be lost.",
+      "text": "¿Cerrar el juego?\nSe perderá el progreso sin guardar."
+    },
+    "net/connecting": {
+      "original": "Connecting to your rival...",
+      "text": "Conectando con tu rival..."
+    },
+    "net/rival_here": {
+      "original": "Your rival \"{name}\" is here! The match begins.",
+      "text": "¡Tu rival \"{name}\" está aquí! Empieza el combate."
+    }
+  }
+}

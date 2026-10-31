@@ -462,10 +462,10 @@ s32 BtlScriptCmd_LoadText(u32 phase, void *taskWork) {
         base = -1;
         switch (gProgress->unk0) {
         case 0:
-            base = 0x231;
+            base = DISC_RESOURCE(0x231, 0x26F);
             break;
         case 1:
-            base = 0x263;
+            base = DISC_RESOURCE(0x263, 0x26F);
             break;
         }
         BtlScript_RequestTextFile(base + BtlScript_GetStory());
@@ -479,9 +479,9 @@ s32 BtlScriptCmd_LoadFile8(u32 phase, void *taskWork) {
         s32 base;
 
         if (gSaveData->flags & SAVE_FLAG_VOICE) {
-            base = 0x2C7;
+            base = DISC_RESOURCE(0x2C7, 0x34E);
         } else {
-            base = 0x295;
+            base = DISC_RESOURCE(0x295, 0x2DE);
         }
         BtlScript_RequestFile8(base + BtlScript_GetStory());
     }

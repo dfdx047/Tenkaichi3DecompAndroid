@@ -29,7 +29,7 @@ SOURCES = [ROOT / "src/menu/port_tbo.c", ROOT / "port/src/spec_menu.c"]
 NOT_SHOWN = {"Port_Setting", "Port_SettingSave", "Port_SettingText", "Port_SettingTextSave", "strncmp", "strcmp",
              "getenv", "fopen", "fprintf", "printf", "Port_LagMark", "SDL_SetClipboardText"}
 # Tables whose strings are not words.
-NOT_SHOWN_TABLES = {"sTbKeys", "sTbNameKeys", "sTbRegionArea"}
+NOT_SHOWN_TABLES = {"sTbKeys", "sTbNameKeys", "sTbAddrKeys", "sTbRegionArea"}
 # Where a line is shown, for the translator's note (the function it is in).
 NOTES = {
     "Tb_Help": "talk box at the foot of the screen (two lines at most)",
@@ -44,6 +44,11 @@ NOTES = {
     "Tb_LobbyPopItem": "a choice in a window over the lobby's page",
     "Tb_LobbyLine": "a line of what happened in the lobby (shown in the talk box)",
     "Tb_SpecLine": "the line over a match being watched (spectator)",
+    "Tb_DrawBracketText": "the tournament's bracket page (its boxes, labels and buttons)",
+    "Tb_BracketActName": "a button of the tournament's bracket page",
+    "Tb_BracketHelp": "talk box on the tournament's bracket page (%s: a player's name; keep it)",
+    "Tb_BracketStart": "message on the tournament's bracket page",
+    "Tb_LobbyStart": "message on the lobby's page",
     "item_line": "an item of a spectator's own pause menu (the battle's pause menu box)",
     "leave_name": "an item of a spectator's own pause menu (the battle's pause menu box)",
     "view_name": "a spectator's view of the match, in its pause menu (after \"View: \")",
@@ -147,7 +152,8 @@ def collect(path, bt4=False):
                     "sTbBattleName": "a battle type (the lobby's rules)", "sTbRuleName": "a rule of the lobby",
                     "sTbViewName": "a spectator's view of the match",
                     "sTbHubSay": "talk box at the foot of the screen (two lines at most), for the main list's entries",
-                    "sTbTime": "a time limit's name"}.get(table_name, note)
+                    "sTbTime": "a time limit's name",
+                    "sTbRoundName": "a round of a tournament, after \"Next: A vs B\" in brackets"}.get(table_name, note)
         if SLOT.search(text):
             note += "; keep the %d / %02d parts, in this order (and %% for a % sign)"
         lines.append((text, note))

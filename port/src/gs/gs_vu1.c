@@ -446,7 +446,9 @@ upper_done:
                 }
                 break;
             }
-            default: sUnknown[1][lop & 63]++; break;
+            default:
+                sUnknown[1][lop & 63]++;
+                break;
             }
         }
         /* ---- commit the upper instruction's result ---- */

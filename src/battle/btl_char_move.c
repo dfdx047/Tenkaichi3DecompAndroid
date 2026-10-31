@@ -1,5 +1,8 @@
 #include "common.h"
 #include "battle/btl_char_move.h"
+#ifdef PORT
+#include "battle/tag_revive.h"
+#endif
 
 /* Fighter movement, 0x1DC9A0-0x1E0290 (see battle/btl_char_move.h for the model and the structures).
  *
@@ -1205,6 +1208,9 @@ void BtlMove_ClampToStage(BtlMoveChr *chr) {
             BtlChar_ClearFlag(chr, 0x16);
         }
     }
+#ifdef PORT
+    TagRevive_CatchFallen(chr->player);
+#endif
     BtlChar_ClearFlag(chr, 0x17);
     if (BtlChar_IsStage4Or27()) {
         if (BtlChar_IsFree(chr) && !BtlChar_TestFlag(chr, 0x2A) && !BtlChar_TestFlag(chr, 7) && -10.0f < pose->pos.y) {

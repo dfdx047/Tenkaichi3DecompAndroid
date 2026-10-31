@@ -57,6 +57,7 @@ extern void EftShot_Request(BtlMemberAuraReq *req);
 extern void EftTransform_Start(BtlMemberFx0Req *req);
 extern void EftTransform_Flash(void);
 extern void EftTransform_End(void);
+extern s32 EftTransform_FlashFor(s32), EftTransform_EndFor(s32);
 extern s32 BtlAtk_GetHitFxKind(BtlMemberChr *chr);
 extern s32 BtlAtk_GetHitSoundLevel(BtlMemberChr *chr);
 extern s32 BtlCharApi_HasWeaponOut(s32 objId);
@@ -247,10 +248,10 @@ void BtlChar_SpawnFxBits0(BtlMemberChr *chr) {
         }
     }
     if (BtlChar_TestFxBit(chr, 1) && chr->unk12DC != 0) {
-        EftTransform_Flash();
+        EftTransform_FlashFor(chr->objId);
     }
     if (BtlChar_TestFxBit(chr, 2) && chr->unk12DC != 0) {
-        EftTransform_End();
+        EftTransform_EndFor(chr->objId);
     }
 }
 
@@ -516,6 +517,7 @@ extern s32 BtlObj_GetNodeSide(s32 kind);
 extern void EftSpdLine_SpawnBodyTrails(s32 objId);
 extern void EftAura_SetLevel(s32 objId, f32 level);
 extern void EftAura_Command(s32 objId, s32 cmd);
+extern s32 EftAura_IsBurstRising(s32 objId);
 extern void EftDisc_SpawnHeld(FxHitArg *arg, s32 kind);
 extern void EftGlow_Request(s32 player, s32 cmd);
 extern s32 EftCharge_IsActive(s32 objId);
@@ -644,7 +646,11 @@ s32 BtlFx_UpdateAura(FxChr *chr) {
             EftAura_Command(chr->objId, 2);
             BtlParam_GetUnk0(chr);
         }
-        if (BtlChar_IsFxBitEnded(chr, 7)) {
+        /* A hit/action reset can consume the falling request edge while the
+           effect pass is skipped. Reconcile a still-charging aura with the
+           current request too; preserve normal idle and max-power auras. */
+        if (BtlChar_IsFxBitEnded(chr, 7) ||
+            (!BtlChar_TestFxBit(chr, 7) && EftAura_IsBurstRising(chr->objId))) {
             EftAura_Command(chr->objId, 3);
             BtlParam_GetUnk0(chr);
         }

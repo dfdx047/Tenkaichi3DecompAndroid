@@ -345,7 +345,9 @@ typedef struct BobjXf {
 /* The object as this file sees it. */
 typedef struct BobjObj {
     /* 0x0000 */ s32 type;       /* 0 = fighter */
-    /* 0x0004 */ u8 unk04[0x14];
+    /* 0x0004 */ u8 unk04[0xC];
+    /* 0x0010 */ s32 id;
+    /* 0x0014 */ u8 unk14[4];
     /* 0x0018 */ BobjMdl mdl;
     /* 0x0950 */ BobjXf xf;
     /* 0x0A40 */ u32 flags;      /* BTL_OBJ_FLAG_* (0x40000: the fade value rises) */

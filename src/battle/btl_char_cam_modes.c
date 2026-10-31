@@ -1,5 +1,9 @@
 #include "common.h"
 #include "battle/btl_char_cam_int.h"
+#ifdef PORT
+#include "battle/tag_team.h"
+#include "battle/btl_seq.h"
+#endif
 
 /* The fighter camera's modes, per-frame update and cut control, 0x1C5840-0x1C7B30: the last part of
  * btl_char_cam.c (see the note at the top of that file). */
@@ -570,17 +574,26 @@ void ChrCam_AddShake(ChrCamChr *chr, f32 strength, f32 time) {
 
 /* Fighter flags 0xDA / 0xD7 / 0xD8 / 0xD9: stop the scripted camera / play one of the character's three camera animations. */
 void ChrCam_UpdateDemo(ChrCamChr *chr) {
+#ifdef PORT
+    if(TagTeam_Active() && BtlSeq_IsFighting()) {
+        extern void DemoCam_FighterRequest(s32,s32,s32);
+        DemoCam_FighterRequest(chr->side,chr->objId,
+            (BtlChar_TestFlag(chr,0xD7)?1:0)|(BtlChar_TestFlag(chr,0xD8)?2:0)|
+            (BtlChar_TestFlag(chr,0xD9)?4:0)|(BtlChar_TestFlag(chr,0xDA)?8:0));
+        return;
+    }
+#endif
     if (BtlChar_TestFlag(chr, 0xDA)) {
         DemoCam_Stop();
     }
     if (BtlChar_TestFlag(chr, 0xD7)) {
-        DemoCam_PlayCharAnim0(chr->side);
+        DemoCam_PlayCharAnim0(chr->objId);
     }
     if (BtlChar_TestFlag(chr, 0xD8)) {
-        DemoCam_PlayCharAnim1(chr->side);
+        DemoCam_PlayCharAnim1(chr->objId);
     }
     if (BtlChar_TestFlag(chr, 0xD9)) {
-        DemoCam_PlayCharAnim2(chr->side);
+        DemoCam_PlayCharAnim2(chr->objId);
     }
 }
 

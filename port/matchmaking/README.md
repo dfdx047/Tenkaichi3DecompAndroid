@@ -167,8 +167,8 @@ Worker (Settings -> Variables and Secrets, a plain variable, e.g. `129`), a new 
 from an older game is refused, and so is one from a game that does not say (0.1.28 and earlier). Rooms under way
 are not touched. Without the variable, or at 0, everyone is let in.
 
-- When its online screen opens, a game of 0.1.29 or later asks (`/v1/hello`) and, if it is below the minimum,
-  shows at the top of that screen: "Update available. Online servers are unreachable until you update.", with its
+- When its online screens open (Tenkaichi Budokai Online; the old Dragon Net Battle window), a game of 0.1.29 or
+  later asks (`/v1/hello`) and, if it is below the minimum, shows (in the hosts' box; at the top of the window): "Update available. Online servers are unreachable until you update.", with its
   own number and the one that is needed. The same words answer a refused room, join or search.
 - A second variable, `LATEST_RELEASE`, is optional: a game older than it, but not below the minimum, shows
   "Update available: release 0.1.NN." there and goes on working.
@@ -228,7 +228,7 @@ A refused request is answered with status 403 and `{"error":"build key","why":".
 `why` is `none` (nothing was signed), `release` (the Worker has no key for that release; or it is below
 `MIN_RELEASE`; or the header's release is not the body's), `sign` (not this key's signature of this request: a wrong
 key, a changed body, another path), or `time` (signed for a time more than five minutes from the Worker's clock).
-The game then says "Quick match needs an official release of the game." (in the online window, where a failed
+The game then says "Quick match needs an official release of the game." (on the online screens, where a failed
 search is reported), or for a room code "Room codes need an official release of the game. Playing by address
 still works."
 

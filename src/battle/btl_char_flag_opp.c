@@ -1,5 +1,8 @@
 #include "common.h"
 #include "battle/btl_char_flag.h"
+#ifdef PORT
+#include "battle/tag_challenge.h"
+#endif
 
 /*
  * Opponent helpers: 0x1DB048..0x1DBF20. Each takes a fighter and answers about the other one
@@ -37,7 +40,7 @@ extern s32 BtlParam_GetUnk0(BtlFlagChr *chr);                        /* u16 at +
 extern s32 BtlParam_GetUnk2(BtlFlagChr *chr);                        /* s8 at +2 of the object's parameter block */
 extern f32 BtlParam_GetUnkC7Scale(BtlFlagChr *chr);
 
-#define OPPONENT(chr) ((chr)->player == 0 ? BtlChar_Get(1) : BtlChar_Get(0))
+#define OPPONENT(chr) BtlChar_Get(TagTeam_Target((chr)->player))
 
 /* Where to aim at the opponent: its override position 6 when set, else its position. */
 void BtlOpp_GetTargetPos(BtlFlagChr *chr, Vec4 *out) {
@@ -318,12 +321,13 @@ s32 BtlOpp_GetClashCountB(BtlFlagChr *chr) {
 void BtlOpp_MirrorFlags(BtlFlagChr *chr) {
     BtlFlagChr *opp;
 
-    if (chr->player == 0) {
-        opp = BtlChar_Get(1);
-    } else {
-        opp = BtlChar_Get(0);
-    }
+    opp = OPPONENT(chr);
     BtlChar_ClearFlagRange(chr, 0xAC, 0xB9);
+#ifdef PORT
+    /* Between gauntlet waves the target slot contains a hidden, defeated
+       fighter. Mirroring its death flag would block the survivor's input. */
+    if (TagChallenge_Hidden(TagTeam_Target(chr->player))) return;
+#endif
     if (BtlChar_TestFlag(opp, 0xB)) {
         BtlChar_SetHeldFlag(chr, 0xAC);
     }

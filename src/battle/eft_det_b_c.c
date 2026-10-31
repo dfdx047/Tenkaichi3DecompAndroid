@@ -5,6 +5,7 @@
  * Not stage code. Neither function draws a random number or reads anything but the AI block.
  */
 #include "common.h"
+#include "battle/cpu_level.h"
 #include "battle/eft_det_b.h"
 
 /* Clears the sequence runner: empty stack, every entry {1, 0}. */
@@ -41,7 +42,7 @@ void BtlAiSeq_PushRule(DetAiWork *ai, DetAiRule *rule) {
     ai->pathCount = 0;
     seq->skip--;
     if (seq->skip < 0) {
-        seq->skip = skips[ai->level >= 0 ? ai->level / 6 : 0];
+        seq->skip = skips[CpuLevel_TableIndex(ai->level)];
     }
     for (i = 0; i < 4; i++) {
         entry = &seq->stack[seq->depth];
