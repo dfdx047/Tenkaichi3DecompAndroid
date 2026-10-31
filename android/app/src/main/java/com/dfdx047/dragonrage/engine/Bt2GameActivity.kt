@@ -121,6 +121,14 @@ class Bt2GameActivity : GameActivity() {
     fun applyOutputScale(percent: Int) {
         val surface = mSurface ?: return
         surface.post {
+            // (SDL adds the view with wrap_content: a fixed size would shrink the view itself, the picture in a corner)
+            surface.layoutParams?.let {
+                if (it.width != ViewGroup.LayoutParams.MATCH_PARENT || it.height != ViewGroup.LayoutParams.MATCH_PARENT) {
+                    it.width = ViewGroup.LayoutParams.MATCH_PARENT
+                    it.height = ViewGroup.LayoutParams.MATCH_PARENT
+                    surface.layoutParams = it
+                }
+            }
             val w = surface.width
             val h = surface.height
             if (percent >= 100 || w <= 0 || h <= 0) surface.holder.setSizeFromLayout()

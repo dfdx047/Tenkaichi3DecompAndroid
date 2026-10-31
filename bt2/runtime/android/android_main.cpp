@@ -115,8 +115,15 @@ _Unwind_Reason_Code traceStep(_Unwind_Context* context,void* argument) {
     if(const auto pc=_Unwind_GetIP(context))trace.pcs[trace.count++]=pc;
     return _URC_NO_REASON;
 }
-void traceThisThread(int,siginfo_t*,void*) {
+void traceThisThread(int,siginfo_t*,void* context) {
     Trace trace;_Unwind_Backtrace(traceStep,&trace);
+    // (the unwinder stops at the vDSO, where a thread that polls the clock always is: the frame records go on from there)
+    for(auto fp=std::uintptr_t(static_cast<ucontext_t*>(context)->uc_mcontext.regs[29]);trace.count<40 && fp && !(fp&15);) {
+        const auto* frame=reinterpret_cast<const std::uintptr_t*>(fp);
+        if(frame[1])trace.pcs[trace.count++]=frame[1];
+        if(frame[0]<=fp || frame[0]-fp>(1u<<20))break;
+        fp=frame[0];
+    }
     char name[32]="";
     {char path[64];std::snprintf(path,sizeof path,"/proc/self/task/%d/comm",gettid());
      const int fd=open(path,O_RDONLY);
@@ -313,7 +320,8 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc,char* ar
         }
 
         // A player's run (game_main.cpp: runGame).
-        for(const char* name:{"BT2_VIEWER","BT2_AUDIO_DEVICE","BT2_HOST_INPUT"})setenv(name,"1",1);
+        // (BT2_VIEWER_CLOSE: without it the viewer holds the window when the game stops, and the error is said only after it closes: a black screen for good)
+        for(const char* name:{"BT2_VIEWER","BT2_VIEWER_CLOSE","BT2_AUDIO_DEVICE","BT2_HOST_INPUT"})setenv(name,"1",1);
         setenv("BT2_GPU_GS","on",1);
         setenv("BT2_SELF_STARTUP","1",1); // The inputs above are made, not captured (game/startup_inputs.h).
         setEnv("BT2_PLAYER_SETTINGS",settings_path.string());
