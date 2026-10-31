@@ -228,26 +228,30 @@ def groups(exports, top):
     seen = set()
 
     def add(dev, ver, key, addr, when):
-        k = (dev, key, addr, when)
-        if k in seen:
-            return
-        seen.add(k)
+        """when: the diary's date of the line, or None for a run's own crash (the same crash the next start's diary
+        line tells: it counts only when no diary line told any of that device's)."""
         sig_dev[key].add(dev)
         sig_ver[key].add(ver)
-        sig_n[key] += 1
-        sig_addr[key][addr] += 1
+        if when is None:
+            run_crashes[(dev, key)] += 1
+            run_addr[(dev, key)] = addr
+        elif (dev, key, when) not in seen:
+            seen.add((dev, key, when))
+            told[(dev, key)] += 1
+            sig_addr[key][addr] += 1
 
+    run_crashes, told, run_addr = collections.Counter(), collections.Counter(), {}
     bad = collections.defaultdict(lambda: (set(), set(), collections.Counter()))
     for e in exports:
         for r in e.runs:
             if r.crash:
-                add(e.device, e.version, crash_sig(r.crash), r.crash[3], (e.file, r.section) if False else r.crash[3])
+                add(e.device, e.version, crash_sig(r.crash), r.crash[3], None)
         for when, lvl, tag, text in e.activity:
             if "ended badly" not in text:
                 continue
             m = CRASH.search(text)
             if m:
-                add(e.device, e.version, crash_sig(m.groups()), m.group(4), m.group(4))
+                add(e.device, e.version, crash_sig(m.groups()), m.group(4), when)
             else:
                 key = norm(text.split("ended badly:", 1)[1], 80)
                 k = (e.device, key, when)
@@ -257,6 +261,13 @@ def groups(exports, top):
                     bad[key][1].add(e.version)
                     bad[key][2]["n"] += 1
     print("\n## Crashes by signature (devices, events, versions, top fault addresses)")
+    for (dev, key), n in run_crashes.items():
+        sig_n[key] += max(n, told[(dev, key)])
+        if not told[(dev, key)]:
+            sig_addr[key][run_addr[(dev, key)]] += n
+    for (dev, key), n in told.items():
+        if not run_crashes[(dev, key)]:
+            sig_n[key] += n
     for key, devs in sorted(sig_dev.items(), key=lambda kv: (-len(kv[1]), -sig_n[kv[0]]))[:top]:
         print(f"{len(devs):3d} devices {sig_n[key]:4d} events  {key}  versions {sorted(sig_ver[key])}  addr {sig_addr[key].most_common(3)}")
     print("\n## Other runs that ended badly")
