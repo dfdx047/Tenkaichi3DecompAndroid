@@ -19,6 +19,11 @@ object LastRun {
         if (runCatching { seen.readText() }.getOrNull() == stamp) return null
         runCatching { seen.writeText(stamp) }
         val lines = runCatching { log.readLines() }.getOrNull() ?: return null
+        return diagnose(lines)
+    }
+
+    /** What the lines of a log say of how the run ended (apart from the files it is read from, so it can be tried on its own). */
+    internal fun diagnose(lines: List<String>): Report? {
         fun find(vararg keys: String) = lines.lastOrNull { l -> keys.any { l.contains(it) } }
         find("The game's data comes from your own disc image", "not the unmodified USA release", "damaged file", "was not found")?.let {
             val i = lines.indexOf(it)
@@ -31,7 +36,14 @@ object LastRun {
         find("CRASH: signal")?.let { return Report(Problem.CRASH, it.substringAfter("CRASH: ").trim()) }
         // A texture pack the game did not take: no file with a PCSX2 name in it, or a fight played without one of its
         // textures being used (made for another release or region of the game, or not a PCSX2 pack)
-        find("texture pack: no replacement textures")?.let { return Report(Problem.TEXTURES, it.substringAfter("bt3: ").trim()) }
+        // That line is also printed on every start by whoever has no pack at all (the switch is on by default and the folder is empty):
+        // only a folder with files in it, which the engine did not take, is a pack that does not work.
+        find("texture pack: no replacement textures")?.let { line ->
+            val folder = line.substringAfter(" found in ", "").trim()
+            if (folder.isNotEmpty() && runCatching { File(folder).walkTopDown().any { it.isFile } }.getOrDefault(false)) {
+                return Report(Problem.TEXTURES, line.substringAfter("bt3: ").trim())
+            }
+        }
         val packLine = find("replacement textures in ")
         val replaced = find("textures replaced so far")
         if (packLine != null && replaced != null && lines.any { it.contains(", fight)") } &&

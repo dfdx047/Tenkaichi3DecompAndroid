@@ -382,7 +382,8 @@ void Port_VBlank(void) {
         extern int gPortResim;                                /* gs/state.c: no picture, no sound */
         int warp = Port_NetWarp();
         extern int Port_NetResim(void); /* blanks being run again after a rollback: not shown, not timed either */
-        int again = Port_NetResim();
+        extern int Port_NetSpecSkip(void); /* (a spectator catching up with the match: the same) */
+        int again = Port_NetResim() || Port_NetSpecSkip();
         if (Port_NetSession() || again) {
             gPortResim = warp || again; /* an online session's start-up up to the versus menu is not shown and not timed */
         }

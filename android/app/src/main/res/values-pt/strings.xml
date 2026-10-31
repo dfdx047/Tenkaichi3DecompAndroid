@@ -406,9 +406,22 @@
     <string name="online_chat">• Chat geral: desligado por enquanto (volta numa próxima versão).\n• Jogadores online: uma contagem aproximada de quem está com a tela online aberta agora, no Android e no Switch.</string>
     <string name="online_log_title">Continua falhando? Mande o log</string>
     <string name="online_log">Logo depois do problema, volte ao app e aperte Enviar log: ele salva um relatório em Downloads (o aparelho, as três últimas execuções do jogo e tudo o que o app fez) e abre o compartilhamento. Mande no nosso Discord com uma linha dizendo o que você tentou e contra quem.</string>
+
+    <!-- Budokai Tenkaichi 2 -->
+    <string name="bt2_title">Budokai Tenkaichi 2</string>
+    <string name="bt2_intro">Escolha a sua ISO de Budokai Tenkaichi 2 (versão USA, SLUS-21441). A imagem é copiada inteira para a pasta do app; os dados do BT3 continuam como estão.</string>
+    <string name="bt2_ready">Imagem do disco no lugar (%1$s).</string>
+    <string name="bt2_play">Jogar BT2</string>
+    <string name="bt2_remove_q">Remover a imagem do BT2?</string>
+    <string name="bt2_remove_text">A imagem copiada é apagada. Os cartões de memória continuam.</string>
+    <string name="step_copying_bt2">Copiando a imagem do BT2</string>
+    <string name="err_bt2_program">Esta é uma imagem de Budokai Tenkaichi 2, mas o programa dela não é o da versão USA original (SLUS-21441), a partir da qual o motor foi construído. Imagens modificadas e outras versões não rodam.</string>
+    <string name="msg_install_bt2_first">Escolha primeiro a sua ISO de Budokai Tenkaichi 2.</string>
+    <string name="msg_no_engine_bt2">Importe primeiro o motor do BT2 (aba BT2, página Início).</string>
     <string name="welcome_pick">Escolha o jogo</string>
     <string name="welcome_bt3">O jogo original (disco americano). Online no Dragon Net, mods, cenários, músicas, cheats e drivers personalizados.</string>
     <string name="welcome_bt4">O mod da Team BT4: personagens, formas e cenários novos. Experimental: motor próprio (o mod recompilado), desenhado pelo renderizador do ARMSX2 (o do Dragon Rage fica como opção experimental).</string>
+    <string name="welcome_bt2">O clássico: Budokai Tenkaichi 2 (disco americano), com motor próprio. Modo Online com 1P VS 2P. O que você ajusta aqui fica separado do BT3 e do BT4.</string>
     <string name="welcome_note">Cada jogo tem sua própria imagem de disco, saves, texturas e ajustes. Dá para trocar pelo menu (Jogo) a qualquer momento.</string>
     <string name="welcome_last">Jogado por último</string>
     <string name="nav_switch_game">Jogo</string>
@@ -429,7 +442,7 @@
     <string name="bt4_renderer_dr">Dragon Rage (experimental)</string>
     <string name="bt4_renderer_text">ARMSX2 (padrão): o renderizador do emulador de PlayStation 2 (o do PCSX2, com as correções do ARMSX2 para Mali e Adreno), a imagem mais fiel. Dragon Rage (experimental): o renderizador do Budokai Tenkaichi 3, com falhas em parte do cenário do BT4. Os dois usam a resolução, a proporção e a escolha Vulkan ou OpenGL ES acima. Vale na próxima vez que o jogo abrir.</string>
     <string name="bt4_err_not_bt4">Esta imagem não é o Budokai Tenkaichi 4 (não tem SLUS_219.78). Precisa do mod da Team BT4, Beta 14 Rev2.</string>
-    <string name="bt4_err_version">Esta imagem é outra versão do mod: o jogo foi recompilado para a Beta 14 Rev2 (SLUS-219.78).</string>
+    <string name="bt4_err_version">Esta imagem é outra versão do mod: o jogo foi recompilado para a Beta 14 Rev2 (SLUS-219.78). O SLUS_219.78 da sua imagem tem %1$d bytes (SHA-256 %2$s…); este precisa de 2115688 bytes (224525C5…). Um arquivo chamado Rev2 ainda pode ter outra compilação: pegue a imagem da Beta 14 Rev2 na versão publicada pela Team BT4.</string>
     <string name="bt4_err_permission">O Android não deixou o app continuar lendo esta imagem. Mova ela para Downloads ou para o armazenamento do celular e escolha de novo.</string>
     <string name="err_iso_packed">Este arquivo é um %1$s compactado, não a imagem do disco. Extraia primeiro (com o ZArchiver, por exemplo) e escolha o .iso que estiver dentro. Imagens CHD e CSO precisam ser convertidas de volta para .iso (chdman / maxcso no PC).</string>
     <string name="err_iso_web_page">Este arquivo é uma página da web, não o jogo: o link de download salvou a página no lugar do arquivo. Baixe a ISO de novo e escolha o .iso.</string>

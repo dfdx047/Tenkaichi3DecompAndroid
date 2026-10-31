@@ -1,0 +1,21 @@
+{
+  "description": "Optional patches of the game's executable (docs/plans/graphics/IMAGE_QUALITY_PLAN.md). Each word is [address, original, patched]. Instruction words are listed under code: prepare_runtime.py makes the generated code read them from guest memory, so applying a patch is a memory write. The runtime's table (runtime/ee/game_patches.cpp) holds the same words; tools/ps2recomp/test_prepare_runtime.py checks that they agree.",
+  "patches": {
+    "widescreen": {
+      "source": "PCSX2 patch database, patches/SLUS-21441_FE961D28.pnach, Widescreen 16:9; 0x00386D94 (the story map's projection) added by the port",
+      "code": [
+        ["0x0012BA08", "0x3C013F40", "0x3C013F10"],
+        ["0x0025B694", "0x3C013F80", "0x3C013F40"]
+      ],
+      "data": [
+        ["0x00386D94", "0x43D88000", "0x4410553E"],
+        ["0x00386DA0", "0x43D88000", "0x4410553E"],
+        ["0x00386DA4", "0x3F955555", "0x3FC71C55"],
+        ["0x00386DC8", "0x3F955555", "0x3FC71C55"],
+        ["0x00386DD8", "0x43D88000", "0x4410553E"],
+        ["0x00386DF4", "0x43D88000", "0x4410553E"],
+        ["0x00386E00", "0x43D88000", "0x4410553E"]
+      ]
+    }
+  }
+}

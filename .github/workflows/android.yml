@@ -17,9 +17,9 @@ on:
   push:
     branches: [main]
     tags: ["android-v*"]
-    paths: ["android/**", "port/**", "src/**", "include/**", ".github/workflows/android.yml"]
+    paths: ["android/**", "port/**", "src/**", "include/**", "bt2/**", ".github/workflows/android.yml"]
   pull_request:
-    paths: ["android/**", "port/**", "src/**", "include/**", ".github/workflows/android.yml"]
+    paths: ["android/**", "port/**", "src/**", "include/**", "bt2/**", ".github/workflows/android.yml"]
   workflow_dispatch:
 
 permissions:
@@ -30,6 +30,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Budokai Tenkaichi 2's runtime (bt2/) for Android arm64 without the game's code, which is never here: does
+  # the handwritten part and paraLLEl-GS compile with the NDK, and do the retained EE stacks (their own stack
+  # switch on AArch64) pass BT2's tests on an emulated arm64? Not blocking: BT3's APK is built and released
+  # whatever this says.
+  bt2-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: SDL3 for Android arm64 (the engine toolchain's)
+        run: |
+          mkdir -p port/build/android-toolchain && cd port/build/android-toolchain
+          curl -fsSL "https://github.com/dfdx047/Tenkaichi3DecompAndroid/releases/download/toolchain-ndk/sdl3-android-arm64.tar.xz" | xz -dc | tar -x
+
+      - name: BT2 runtime for Android arm64
+        run: |
+          ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" python3 bt2/android/build.py check > bt2_check.txt 2>&1 || { tail -60 bt2_check.txt > bt2_check_errors.txt; sh .github/annotate.sh bt2_check_errors.txt; exit 1; }
+          tail -3 bt2_check.txt
+
+      - name: Retained EE stacks on arm64 (QEMU) and x86-64
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq g++-aarch64-linux-gnu qemu-user > /dev/null
+          for target in aarch64-linux-gnu-g++ g++; do
+            $target -std=c++20 -O2 -static -Ibt2/runtime -Ibt2/runtime/ee bt2/runtime/tests/retained_ee_stack_tests.cpp bt2/runtime/ee/retained_ee_stack.cpp -o stack-tests-$target
+          done
+          qemu-aarch64 ./stack-tests-aarch64-linux-gnu-g++
+          ./stack-tests-g++
+
   build:
     runs-on: ubuntu-24.04 # has the Android SDK; ANDROID_HOME is set
     timeout-minutes: 60
@@ -66,6 +96,30 @@ jobs:
           tail -5 engine_build.txt
           grep -q "^installed into" engine_build.txt || { grep -E "^FAILED|error|stubs|link|loader" engine_build.txt > engine_errors.txt || true; tail -30 engine_build.txt >> engine_errors.txt; sh .github/annotate.sh engine_errors.txt; exit 1; }
           sh .github/annotate.sh engine_build.txt notice
+          ls -la android/app/src/main/jniLibs/arm64-v8a
+
+      # Budokai Tenkaichi 2 (bt2/, libbt2.so): only where its code was generated from a disc image. That code never
+      # goes into this public repository (bt2/docs/project/LEGAL.md); a private copy that holds bt2/game/generated
+      # builds the APK with both games (libbt2.so makes its startup inputs from the player's disc). Without it
+      # this step is skipped: the players import BT2's engine as a signed motor package shared outside GitHub
+      # (bt2/android/build.py package; the app's BT2 tab, data/Bt2Engine.kt).
+      - name: Engine BT2 (when its generated code is present)
+        if: hashFiles('bt2/game/generated/bt2/FUN_0032EEE0_0x32eee0.cpp') != ''
+        working-directory: .
+        run: |
+          ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" python3 bt2/android/build.py > bt2_build.txt 2>&1 || { tail -60 bt2_build.txt > bt2_errors.txt; sh .github/annotate.sh bt2_errors.txt; exit 1; }
+          tail -3 bt2_build.txt
+          ls -la android/app/src/main/jniLibs/arm64-v8a
+
+      # Dragon Rage's own part of BT2 (bt2/plugin: libbt2online.so, the Online Mode menu and its screens, the music, later the online
+      # play): it needs nothing of the game's code, so it is built here for every APK. The BT2 engine (the players import it) loads
+      # it from the app's native libraries. Not blocking: without it the APK is as it was and BT2's main menu stays the game's.
+      - name: BT2 plugin (libbt2online.so)
+        continue-on-error: true
+        working-directory: .
+        run: |
+          ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" python3 bt2/android/build.py plugin > bt2_plugin.txt 2>&1 || { tail -40 bt2_plugin.txt > bt2_plugin_errors.txt; sh .github/annotate.sh bt2_plugin_errors.txt; exit 1; }
+          tail -2 bt2_plugin.txt
           ls -la android/app/src/main/jniLibs/arm64-v8a
 
       - name: Version from the tag

@@ -2190,6 +2190,7 @@ int MenuText_MapGlyph(int tbp, int cbp, int width, int height,
 static Face sLineFace[2];
 static int sLineChoice[2];       /* the font in sLineFace (0: none) */
 static uint32_t sLineGeneration; /* changes when one of the two changes */
+static int sLineDrawing; /* lines being drawn outside the lock (MenuText_LineRender): their fonts are not changed meanwhile */
 
 static int line_choice(int kind) {
     int choice = kind == 0 ? sFontChoice : sSharedChoice, i;
@@ -2211,7 +2212,7 @@ static Face *line_face(int kind) {
     int tries;
     for (tries = 0; tries < 4; tries++) { /* (a font that cannot be used is taken off the list: the next one) */
         int choice = line_choice(kind);
-        if (choice == sLineChoice[kind]) { break; }
+        if (choice == sLineChoice[kind] || sLineDrawing > 0) { break; } /* (a line is drawn with this one: changed later) */
         face_close(&sLineFace[kind]);
         sLineChoice[kind] = 0;
         sLineGeneration++;
@@ -2245,9 +2246,14 @@ static unsigned line_next(const unsigned char **text) {
    returns how far the pen goes, in pixels (0: no font, or nothing to write). A character the font does not have is
    a question mark. */
 #define LINE_CHARS 160
+static int line_layout_face(Face *f, const char *text, int cap, int pad, uint8_t **out, int *w, int *h, int *base);
 static int line_layout(int kind, const char *text, int cap, int pad, uint8_t **out, int *w, int *h, int *base) {
+    return line_layout_face(line_face(kind), text, cap, pad, out, w, h, base);
+}
+
+/* (reads the face only: a line can be drawn outside the lock while sLineDrawing keeps its font) */
+static int line_layout_face(Face *f, const char *text, int cap, int pad, uint8_t **out, int *w, int *h, int *base) {
     const unsigned char *p = (const unsigned char *)text;
-    Face *f = line_face(kind);
     int glyphs[LINE_CHARS], count = 0, i, ascent, descent, gap, adv, lsb, prev = 0, width, height, top;
     float scale, x = 0.0f, pen[LINE_CHARS];
     unsigned c;
@@ -2295,13 +2301,19 @@ static int line_layout(int kind, const char *text, int cap, int pad, uint8_t **o
     return (int)ceilf(x);
 }
 
+/* (asked for every line of the online screens, every frame: when the lock is busy the last answer is given rather
+   than waiting; the fonts change only when the player changes them) */
 uint32_t MenuText_LineGeneration(void) {
+    static uint32_t last;
     uint32_t r;
-    pthread_mutex_lock(&sLock);
+    if (pthread_mutex_trylock(&sLock) != 0) {
+        return __atomic_load_n(&last, __ATOMIC_ACQUIRE);
+    }
     line_face(0);
     line_face(1);
     r = sLineGeneration;
     pthread_mutex_unlock(&sLock);
+    __atomic_store_n(&last, r, __ATOMIC_RELEASE);
     return r;
 }
 
@@ -2314,14 +2326,22 @@ int MenuText_LineMeasure(int kind, const char *text, int cap, int pad, int *w, i
     return r;
 }
 
+/* The letters are drawn outside the lock (tens of milliseconds for a long line: the game's thread, which measures
+   lines under it every frame, waited for them); the font is kept meanwhile (sLineDrawing, line_face). */
 uint8_t *MenuText_LineRender(int kind, const char *text, int cap, int pad, int *w, int *h, int *base) {
     uint8_t *px = NULL;
+    Face *f;
     if (kind < 0 || kind > 1) { return NULL; }
     pthread_mutex_lock(&sLock);
-    if (line_layout(kind, text, cap, pad, &px, w, h, base) == 0) {
+    f = line_face(kind);
+    sLineDrawing++;
+    pthread_mutex_unlock(&sLock);
+    if (line_layout_face(f, text, cap, pad, &px, w, h, base) == 0) {
         free(px);
         px = NULL;
     }
+    pthread_mutex_lock(&sLock);
+    sLineDrawing--;
     pthread_mutex_unlock(&sLock);
     return px;
 }

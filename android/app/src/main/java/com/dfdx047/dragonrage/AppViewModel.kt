@@ -410,15 +410,21 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
                         ActivityLog.info("iso", "step: ${it.step} (${it.detail})")
                     }
                 }
-                val done = if (bt4 != null) bt4.install(uri, report) else installer.install(uri, report)
-                _install.value = done
-                ActivityLog.info("iso", "installed: ${done.files} files, ${done.bytes} bytes, modified image: ${done.modified}, " +
+                val done = if (bt4 != null) bt4.install(uri, report) else installer.install(uri, report = report)
+                if (done.game == Game.BT2) { // a BT2 image picked here goes to the BT2 tab (Bt2ViewModel)
+                    _install.value = installer.currentState()
+                    say(str(R.string.msg_bt2_installed_tab))
+                } else {
+                    _install.value = done
+                }
+                ActivityLog.info("iso", "installed ${done.game}: ${done.files} files, ${done.bytes} bytes, modified image: ${done.modified}, " +
                     "${(System.currentTimeMillis() - started) / 1000} s")
                 say(str(R.string.msg_data_ready))
             } catch (e: CancellationException) {
                 ActivityLog.warn("iso", "cancelled at: $step")
-                withContext(Dispatchers.IO) { if (bt4 != null) bt4.uninstall() else installer.uninstall() }
-                _install.value = InstallState.NotInstalled
+                // (BT3's data is only cleared when its own unpacking had begun: a cancelled BT2 copy leaves it as it was)
+                withContext(Dispatchers.IO) { if (bt4 != null) bt4.uninstall() else if (!paths.installedMarker.exists()) installer.uninstall() }
+                _install.value = bt4?.currentState() ?: installer.currentState()
                 throw e
             } catch (e: GameDataInstaller.Stop) {
                 val why = e.message ?: str(R.string.msg_error)

@@ -95,6 +95,36 @@ private val Bt4Light = DragonLight.copy(
     surfaceContainerHighest = Color(0xFFD6E2F0),
 )
 
+// Budokai Tenkaichi 2: the same look in green (the launcher's square for it), over a night with a green cast.
+private val Bt2Dark = DragonDark.copy(
+    primary = Color(0xFF5FE08A),
+    onPrimary = Color(0xFF00391C),
+    primaryContainer = Color(0xFF00522B),
+    onPrimaryContainer = Color(0xFFB4F5C8),
+    secondary = Color(0xFFA6E86B),
+    onSecondary = Color(0xFF1F3600),
+    secondaryContainer = Color(0xFF2F5A12),
+    onSecondaryContainer = Color(0xFFD2F7B0),
+    background = Color(0xFF08140E),
+    surface = Color(0xFF08140E),
+    surfaceContainer = Color(0xFF12241A),
+)
+
+private val Bt2Light = DragonLight.copy(
+    primary = Color(0xFF006D3A),
+    primaryContainer = Color(0xFFB4F5C8),
+    onPrimaryContainer = Color(0xFF00210F),
+    secondary = Color(0xFF3F7A12),
+    secondaryContainer = Color(0xFFD2F7B0),
+    onSecondaryContainer = Color(0xFF0F2000),
+    background = Color(0xFFF4FBF5),
+    surface = Color(0xFFF4FBF5),
+    surfaceContainerLow = Color(0xFFEAF5EC),
+    surfaceContainer = Color(0xFFE2EFE5),
+    surfaceContainerHigh = Color(0xFFDAE9DE),
+    surfaceContainerHighest = Color(0xFFD2E3D7),
+)
+
 @Composable
 fun DragonRageTheme(
     mode: ThemeMode = ThemeMode.SYSTEM,
@@ -111,8 +141,8 @@ fun DragonRageTheme(
     val scheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
             if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        dark -> if (game == Game.BT4) Bt4Dark else DragonDark
-        else -> if (game == Game.BT4) Bt4Light else DragonLight
+        dark -> when (game) { Game.BT4 -> Bt4Dark; Game.BT2 -> Bt2Dark; else -> DragonDark }
+        else -> when (game) { Game.BT4 -> Bt4Light; Game.BT2 -> Bt2Light; else -> DragonLight }
     }
     MaterialTheme(colorScheme = scheme, typography = DragonTypography, shapes = DragonShapes, content = content)
 }

@@ -192,28 +192,69 @@ uint32_t *TboText_Pixels(uint32_t id, uint32_t *version, uint32_t *w, uint32_t *
         return NULL;
     }
     r = l.outline;
-    for (y = 0; y < lh; y++) {
-        for (x = 0; x < lw; x++) {
-            int fill = cov[(size_t)y * lw + x], line = 0;
-            for (dy = -r; dy <= r && line < 255; dy++) {
-                int yy = y + dy;
-                if (yy < 0 || yy >= lh) {
-                    continue;
-                }
-                for (dx = -r; dx <= r; dx++) {
-                    int xx = x + dx, c;
-                    if (xx < 0 || xx >= lw || dx * dx + dy * dy > r * r + r) {
-                        continue;
-                    }
-                    c = cov[(size_t)yy * lw + xx];
-                    if (c > line) {
-                        line = c;
+    {   /* the outline: the most covered pixel within the disc dx*dx + dy*dy <= r*r + r round each one. Done by rows:
+           row[k] is each row's most covered pixel within k across (k = 0 .. r), then each pixel takes, for every dy,
+           the row dy away at the disc's width there. The same picture as looking at the whole disc for every pixel,
+           about six times less work (a long line was tens of milliseconds on a phone). */
+        size_t n = (size_t)lw * lh;
+        uint8_t *row = r > 0 && r <= 16 ? malloc(n * (size_t)(r + 1)) : NULL;
+        int span[33];
+
+        for (dy = -r; dy <= r && r <= 16; dy++) {
+            int k = 0;
+            while ((k + 1) * (k + 1) + dy * dy <= r * r + r) {
+                k++;
+            }
+            span[dy + r] = k;
+        }
+        if (row != NULL) {
+            memcpy(row, cov, n);
+            for (dx = 1; dx <= r; dx++) {
+                const uint8_t *prev = row + n * (size_t)(dx - 1);
+                uint8_t *cur = row + n * (size_t)dx;
+                for (y = 0; y < lh; y++) {
+                    const uint8_t *c = cov + (size_t)y * lw, *pv = prev + (size_t)y * lw;
+                    uint8_t *o = cur + (size_t)y * lw;
+                    for (x = 0; x < lw; x++) {
+                        uint8_t v = pv[x];
+                        if (x - dx >= 0 && c[x - dx] > v) { v = c[x - dx]; }
+                        if (x + dx < lw && c[x + dx] > v) { v = c[x + dx]; }
+                        o[x] = v;
                     }
                 }
             }
-            px[(size_t)y * lw + x] = 0xFFFFFFu | (uint32_t)((fill * 128 + 127) / 255) << 24;
-            px[(size_t)(y + lh) * lw + x] = 0xFFFFFFu | (uint32_t)((line * 128 + 127) / 255) << 24;
         }
+        for (y = 0; y < lh; y++) {
+            for (x = 0; x < lw; x++) {
+                int fill = cov[(size_t)y * lw + x], line = 0;
+                for (dy = -r; dy <= r && line < 255; dy++) {
+                    int yy = y + dy;
+                    if (yy < 0 || yy >= lh) {
+                        continue;
+                    }
+                    if (row != NULL) {
+                        int c = row[n * (size_t)span[dy + r] + (size_t)yy * lw + x];
+                        if (c > line) {
+                            line = c;
+                        }
+                        continue;
+                    }
+                    for (dx = -r; dx <= r; dx++) { /* (no memory for the rows: as it was) */
+                        int xx = x + dx, c;
+                        if (xx < 0 || xx >= lw || dx * dx + dy * dy > r * r + r) {
+                            continue;
+                        }
+                        c = cov[(size_t)yy * lw + xx];
+                        if (c > line) {
+                            line = c;
+                        }
+                    }
+                }
+                px[(size_t)y * lw + x] = 0xFFFFFFu | (uint32_t)((fill * 128 + 127) / 255) << 24;
+                px[(size_t)(y + lh) * lw + x] = 0xFFFFFFu | (uint32_t)((line * 128 + 127) / 255) << 24;
+            }
+        }
+        free(row);
     }
     free(cov);
     *w = (uint32_t)lw;

@@ -223,7 +223,7 @@ void MainMenu_Init(s32 section) {
         }
         gMainMenu->items[gMainMenu->itemCount++] = i;
 #ifdef PORT
-        if (i == (Port_NetMenuListed() ? 4 : 3)) {
+        if (i == 3 && !Port_NetMenuListed()) { /* (Dragon Net Battle opens these screens now: listed alone only without it) */
             gMainMenu->items[gMainMenu->itemCount++] = MAINMENU_TBO;
         }
 #endif
@@ -473,6 +473,18 @@ void MainMenu_Input(s32 *result) {
     if (!(gMainMenu->flash[0].flags & MFLASH_PAD)) {
         return;
     }
+#ifdef PORT
+    {   /* In a lobby (joined from the Dragon Net Battle window, or back here after its match): its screen, in
+           Tenkaichi Budokai Online (menu/port_tbo.c; port/src/gs/net_lobby.c) */
+        extern int Port_LobbyWantsScreen(void);
+
+        if (!(gMainMenu->flags & MAINMENU_LEAVING) && Port_LobbyWantsScreen()) {
+            gPortScreen = PORT_SCREEN_TBO;
+            MAINMENU_CHOOSE(MPROG_MODE_PORT_SCREEN);
+            return;
+        }
+    }
+#endif
     if (!(gMainMenu->flags & MAINMENU_STARTED)) {
         MainMenu_PlateGoto(0, "fl_on_start");
         if ((gSaveData->unlockFlags & 0x7F) == 0x7F) {
@@ -539,7 +551,11 @@ void MainMenu_Input(s32 *result) {
             break;
         case 4:
 #ifdef PORT
-            Port_NetMenuOpen(); /* the port's own screen for online play (port/src/gs/ui.cpp); the menu stays where it is */
+            /* Dragon Net Online: the screens of menu/port_tbo.c (Quick Match, Ranked, rooms, lobbies, against
+               Android + Switch or the PC), in the port's screen mode */
+            gPortScreen = PORT_SCREEN_TBO;
+            MAINMENU_COUNT();
+            MAINMENU_CHOOSE(MPROG_MODE_PORT_SCREEN);
 #endif
             break;
         case 5:

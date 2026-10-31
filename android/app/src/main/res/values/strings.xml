@@ -407,9 +407,22 @@
     <string name="online_chat">• General chat: switched off for now (it comes back in a later version).\n• Players online: an approximate count of who has the online screen open now, on Android and Switch.</string>
     <string name="online_log_title">Still failing? Send the log</string>
     <string name="online_log">Right after the problem, come back to the app and press Send log: it saves a report in Downloads (the device, the game\'s last three runs and everything the app did) and opens the share sheet. Send it on our Discord with a line about what you tried and against whom.</string>
+
+    <!-- Budokai Tenkaichi 2 -->
+    <string name="bt2_title">Budokai Tenkaichi 2</string>
+    <string name="bt2_intro">Pick your Budokai Tenkaichi 2 ISO (USA release, SLUS-21441). The image is copied whole into the app\'s folder; BT3\'s data stays as it is.</string>
+    <string name="bt2_ready">Disc image in place (%1$s).</string>
+    <string name="bt2_play">Play BT2</string>
+    <string name="bt2_remove_q">Remove the BT2 image?</string>
+    <string name="bt2_remove_text">The copied disc image is deleted. Its memory cards are kept.</string>
+    <string name="step_copying_bt2">Copying the BT2 image</string>
+    <string name="err_bt2_program">This is a Budokai Tenkaichi 2 image, but its program is not the one of the original USA release (SLUS-21441) the engine is built from. Modified images and other releases cannot run.</string>
+    <string name="msg_install_bt2_first">Pick your Budokai Tenkaichi 2 ISO first.</string>
+    <string name="msg_no_engine_bt2">Import the BT2 motor first (BT2 tab, Home page).</string>
     <string name="welcome_pick">Choose the game</string>
     <string name="welcome_bt3">The original game (USA disc). Online with Dragon Net, mods, stages, songs, cheats and custom drivers.</string>
     <string name="welcome_bt4">Team BT4\'s mod: new characters, forms and stages. Experimental: its own engine (the mod recompiled), drawn by ARMSX2\'s renderer (Dragon Rage\'s is an experimental option).</string>
+    <string name="welcome_bt2">The classic: Budokai Tenkaichi 2 (USA disc), with its own engine. Online Mode with 1P VS 2P. What you set here is kept apart from BT3 and BT4.</string>
     <string name="welcome_note">Each game keeps its own disc image, saves, textures and settings. You can switch from the menu (Game) at any time.</string>
     <string name="welcome_last">Last played</string>
     <string name="nav_switch_game">Game</string>
@@ -430,7 +443,7 @@
     <string name="bt4_renderer_dr">Dragon Rage (experimental)</string>
     <string name="bt4_renderer_text">ARMSX2 (default): the PlayStation 2 emulator\'s renderer (PCSX2\'s, with ARMSX2\'s fixes for Mali and Adreno), the most faithful picture. Dragon Rage (experimental): Budokai Tenkaichi 3\'s renderer, with faults in some of BT4\'s scenery. Both use the resolution, the shape and the Vulkan or OpenGL ES choice above. From the next start.</string>
     <string name="bt4_err_not_bt4">This image is not Budokai Tenkaichi 4 (it has no SLUS_219.78). It needs Team BT4\'s mod, Beta 14 Rev2.</string>
-    <string name="bt4_err_version">This image is another version of the mod: the game was recompiled for Beta 14 Rev2 (SLUS-219.78).</string>
+    <string name="bt4_err_version">This image is another version of the mod: the game was recompiled for Beta 14 Rev2 (SLUS-219.78). The SLUS_219.78 of your image has %1$d bytes (SHA-256 %2$s…); this one needs 2115688 bytes (224525C5…). A file named Rev2 can still hold another build: get the Beta 14 Rev2 image from the Team BT4 release.</string>
     <string name="bt4_err_permission">Android did not let the app keep reading this image. Move it to Downloads or the phone\'s storage and pick it again.</string>
     <string name="err_iso_packed">This file is a compressed %1$s, not the disc image itself. Extract it first (ZArchiver, for example) and pick the .iso inside. CHD and CSO images must be turned back into .iso (chdman / maxcso on a PC).</string>
     <string name="err_iso_web_page">This file is a web page, not the game: the download link saved its page instead of the file. Download the ISO again and pick the .iso.</string>

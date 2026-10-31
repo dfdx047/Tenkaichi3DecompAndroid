@@ -23,6 +23,7 @@
 #include "menu_translation.h"
 #include "../quit_dialog.h"
 #include "net_chat.h"
+#include "net_lobby.h"
 
 static int sMeter = -1; // the meter (frame rate, connection): -1 not read yet
 static bool meter_on(void);
@@ -86,18 +87,41 @@ void Port_LobbyHelloAsk(void);                               // asks it whether 
 int Port_LobbyRelease(int *min, int *latest);                // this release's number; the oldest let in and the newest (0: not known)
 int Port_LobbyQueueWaiting(int queue);                       // ... as last heard, -1 if not known
 const char *Port_LobbyCode(void);                            // the host's room code, "" until it is known
+const char *Port_LobbyServer(void);                          // matchmaking service holding the room code
 const char *Port_LobbyError(void);                           // why the matchmaking failed (state -3)
 int Port_LobbyRelayed(void);                                 // the other player was reached through the relay
 int Port_LobbyPoll(void);
 void Port_LobbyCancel(void);
 void Port_LobbyLaunch(void);
 #include "net_dragon.h"
+int Port_LobbySpectate(const char *address, int port);        // gs/net.c: watch the match hosted there (a spectator)
+int Port_LobbySpectateCode(const char *code);                // ... the match of that room code
+void Port_LobbyQuickArea(const char *area);                  // what the next quick match looks for: "auto", "any" or a region
+int Port_LobbySpectateWaiting(void);                         // ... the host is there and has no match yet
+int Port_NetSpectating(void);                                // this copy watches a match
+void Port_NetSpecLeave(void);                                // ... stop watching (at the game's next blank)
+void Port_NetSpecViewSet(int view);                          // ... 0 player 1's view, 1 player 2's, 2 both (split)
+int Port_NetSpecView(void);
+int Port_NetSpecStatus(int *out);                            // ... catching up (%), waiting, desync blank
+void Port_NetSpectatorsAllow(int on);                        // the host lets spectators in
+int Port_NetWatchers(void);                                  // how many watch this match (the players)
+const char *Port_NetWatcher(int i);                          // ... their names
 }
 static bool sReady, sOpen;
 static MenuTranslationOption sLanguages[256];
 static int sLanguageCount, sLanguageChoice;
 static bool sLanguageRestartPending;
 static bool sNet;                              // the open window is the online screen (Dragon Net Battle), not the settings
+// A spectator's own pause menu is the game's (src/menu/port_tbo.c, PortTbo_SpecDraw): Esc, or the test's moment, asks
+// for it here; the controller's START and the key bound to it reach it through the pad.
+extern "C" volatile int gPortSpecMenuAsk;
+volatile int gPortSpecMenuAsk;
+#ifdef __ANDROID__
+extern "C" unsigned Port_TouchButtons(void); // gs/gs_input.c: the on-screen controller's buttons now
+#endif
+extern "C" void Port_UiNotice(const char *text);
+static void spec_view_next(void);               // watching a match: the next view (player 1, player 2, both)
+static const char *spec_view_name(int view);
 static int sForceTab = -1;                     // BT3_UI_OPEN=<tab>: open at start on that tab (testing)
 static int sCapKind, sCapPlayer, sCapAction;   // waiting for a key (1) or a controller button (2) to bind
 static Uint64 sCapUntil;                       // ... until then: a controller has no button that is not a binding, so the wait ends by itself
@@ -805,6 +829,7 @@ static void build_net(void) {
     static bool useCode = true;       // host with a room code (no port forwarding) or on a port
     static char roomCode[8] = "";     // the code to join with
     static int lastState = 0;         // what the lobby said last (for its messages after a failure)
+    static bool watching;             // the lobby is a spectator's
     ImGuiIO &io = ImGui::GetIO();
     bool open = true;
 
@@ -910,6 +935,16 @@ static void build_net(void) {
                                               "release only 100%%.", Port_NetSpeedStandard());
                     }
                 }
+                {
+                    bool watch = Port_Setting("net_spectators", 1) != 0;
+                    if (ImGui::Checkbox("Let others watch the match", &watch)) {
+                        Port_SettingSave("net_spectators", watch ? 1 : 0);
+                        Port_SettingsWrite();
+                    }
+                    Port_NetSpectatorsAllow(watch);
+                    ImGui::SetItemTooltip("Up to 6 spectators can watch, with your address or room code (Join tab, \"Watch the\n"
+                                          "match\"). They cost your match nothing: it never waits for them.");
+                }
                 ImGui::TextDisabled("The host's choices apply to both players.");
                 ImGui::EndTabItem();
             }
@@ -987,6 +1022,14 @@ static void build_net(void) {
         {
             int state = Port_LobbyPoll();
             sNetBusy = state == 1 || state == 3;
+            if (state == 5) { // the code or address was a lobby's: this game is its member; its screen is the game's
+                Port_LobbyCancel(); // (the lobby has the socket now)
+                const char *said = MenuTranslation_PortText(PORT_TEXT_LOBBY_JOINED);
+                Port_UiNotice(said != NULL ? said : "You are in the lobby. Its screen opens from the main menu (Dragon Net Battle).");
+                set_open(false);
+                ImGui::End();
+                return;
+            }
             if (state == 2) {
                 Port_LobbyLaunch(); // the other player is there: the game turns into the session at its next blank
                 set_open(false);
@@ -1000,7 +1043,7 @@ static void build_net(void) {
                 quick_status(state, lastState, name);
             } else if (state == 3 || (state == 1 && byCode)) { // a room code: asking the service, then reaching the other player
                 if (tab == 0 && Port_LobbyCode()[0] != '\0') {
-                    ImGui::TextUnformatted("Room code:");
+                    ImGui::Text("Room code (server %s):", Port_LobbyServer());
                     ImGui::SameLine();
                     ImGui::SetWindowFontScale(1.8f);
                     ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "%s", Port_LobbyCode());
@@ -1019,7 +1062,9 @@ static void build_net(void) {
                     }
                     ImGui::TextUnformatted(state == 3 ? "Tell the other player this code. Waiting for them to join..." : "The other player has joined. Connecting...");
                 } else {
-                    ImGui::TextUnformatted(state == 1 ? "Found the room. Connecting to the host..." : tab == 0 ? "Getting a room code..." : "Looking for the room...");
+                    ImGui::TextUnformatted(watching && Port_LobbySpectateWaiting() ? "The room's match has not begun yet. Waiting for it..."
+                                           : state == 1 ? (watching ? "Found the room. Asking the host to let you watch..." : "Found the room. Connecting to the host...")
+                                           : tab == 0 ? "Getting a room code..." : "Looking for the room...");
                 }
                 if (ImGui::Button("Cancel", ImVec2(U(120.0f), 0.0f))) {
                     Port_LobbyCancel();
@@ -1031,6 +1076,10 @@ static void build_net(void) {
                     if (Port_LobbyOther()) {
                         ImGui::TextWrapped("A player with a different version of the game is trying to join. Both need the same release.");
                     }
+                } else if (watching && Port_LobbySpectateWaiting()) {
+                    ImGui::TextWrapped("The host is there but its match has not begun yet. You will watch it as soon as it does...");
+                } else if (watching) {
+                    ImGui::Text("Asking %s to let you watch...", address);
                 } else {
                     ImGui::Text("Looking for %s...", address);
                 }
@@ -1066,11 +1115,29 @@ static void build_net(void) {
                     Port_SettingTextSave("net_name", name);
                     Port_SettingsWrite();
                     lastState = 0;
+                    watching = false;
                     if (byCode) {
                         Port_LobbyStartCode(tab == 0, roomCode);
                     } else {
                         Port_LobbyStart(tab == 0, address, atoi(port));
                     }
+                }
+                if (tab == 1) { // the same match, only watched (a spectator)
+                    ImGui::SameLine();
+                    if (ImGui::Button("Watch the match", ImVec2(U(160.0f), 0.0f))) {
+                        Port_NetNameSet(name);
+                        Port_SettingTextSave("net_name", name);
+                        Port_SettingsWrite();
+                        lastState = 0;
+                        watching = true;
+                        if (byCode) {
+                            Port_LobbySpectateCode(roomCode);
+                        } else {
+                            Port_LobbySpectate(address, atoi(port));
+                        }
+                    }
+                    ImGui::SetItemTooltip("Watch the host's match as a spectator: you see the fight as it is played, about a\n"
+                                          "second behind, and your controller does nothing. Up to 6 can watch a match.");
                 }
                 ImGui::EndDisabled();
                 ImGui::SameLine();
@@ -1140,7 +1207,7 @@ static void bind(int value) {
 }
 
 static bool chat_can_open(void) {
-    return sReady && !sOpen && !sQuit && PortChat_Enabled() && Port_NetActive();
+    return sReady && !sOpen && !sQuit && PortChat_Enabled() && Port_NetActive() && !Port_NetSpectating();
 }
 
 static void chat_open(void) {
@@ -1220,6 +1287,16 @@ int Ui_Event(const SDL_Event *ev) {
     }
     if (sChat && !sOpen && !sQuit) {
         return chat_event(ev);
+    }
+    if (!sOpen && !sQuit && Port_NetSpectating() && ev->type == SDL_EVENT_KEY_DOWN && !ev->key.repeat && ev->key.scancode == SDL_SCANCODE_ESCAPE) {
+        gPortSpecMenuAsk = 1; // a spectator's own pause menu (the game's, over the match: only on this screen)
+        return 1;
+    }
+    if (!sOpen && !sQuit && Port_NetSpectating() &&
+        ((ev->type == SDL_EVENT_KEY_DOWN && !ev->key.repeat && ev->key.scancode == SDL_SCANCODE_V) ||
+         (ev->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && ev->gbutton.button == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER))) {
+        spec_view_next(); // (a spectator's keys and controller play nobody: the view is all they change)
+        return 1;
     }
     if (ev->type == SDL_EVENT_KEY_DOWN && !ev->key.repeat && *PortInput_ChatKey() > 0 && (int)ev->key.scancode == *PortInput_ChatKey() &&
         chat_can_open()) {
@@ -2013,6 +2090,21 @@ static void controls_tab(void) {
         PortInput_ResetDefaults(player);
         PortInput_Save();
     }
+    ImGui::SameLine();
+    if (ImGui::Button("Automatic set-up (PS2 layout)")) {
+        char name[96];
+        static char line[160];
+        int got = PortInput_AutoConfigure(player, name, (int)sizeof(name));
+        if (got < 0) {
+            snprintf(line, sizeof(line), "No controller is connected: pair it (or plug it in) and press again.");
+        } else {
+            snprintf(line, sizeof(line), "Controller %d (%s): PS2 layout, deadzone 10%%, vibration on.", got + 1, name);
+        }
+        Port_UiNotice(line);
+    }
+    ImGui::SetItemTooltip("The wireless controller (else the first one) with the PS2 controller's buttons: cross at the bottom,\n"
+                          "circle right, square left, triangle top, L1 / R1, L2 / R2, L3 / R3, START, SELECT. A controller the game\n"
+                          "does not know gets the order of the PS2 controller adapters. The keyboard is not changed.");
     if (ImGui::CollapsingHeader("Sticks, triggers and vibration", ImGuiTreeNodeFlags_DefaultOpen)) {
         sticks_panel(player);
     }
@@ -2172,6 +2264,45 @@ static void build(void) {
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
 #endif
     if (ImGui::Begin("Dragon Rage  -  paused###Settings", &open, flags)) {
+        PortLobbyView lv;
+        bool inLobby = Port_LobbyView(&lv) && lv.inMatch;
+        if (inLobby) { // a lobby's match: the ways back (the owner: for everyone) and out
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Lobby%s%s", lv.code[0] != '\0' ? " " : "", lv.code);
+            if (lv.owner) {
+                ImGui::SameLine();
+                if (ImGui::Button("Back to the lobby")) {
+                    Port_LobbyDo(LOBBY_BACK, 0, 0);
+                    open = false;
+                }
+                ImGui::SetItemTooltip("Ends the match for everyone: all go back to the lobby window, where the rules can be changed.");
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(lv.owner ? "Close the lobby" : "Leave the lobby")) {
+                Port_LobbyDo(LOBBY_LEAVE, 0, 0);
+                open = false;
+            }
+            ImGui::SetItemTooltip(lv.owner ? "Ends the match and the lobby for everyone." : "Back to the main menu. A player leaving ends the match; a spectator leaving changes nothing for the others.");
+            ImGui::Separator();
+        }
+        if (Port_NetSpectating()) { // watching a match: whose view, and the way out
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Spectating %s vs %s", Port_NetName(0), Port_NetName(1));
+            ImGui::SameLine();
+            if (ImGui::Button("Change view")) {
+                spec_view_next();
+            }
+            ImGui::SetItemTooltip("Player 1's view, player 2's, or both (split screen). Also V or R1 while watching.");
+            if (!inLobby) { // (in a lobby: "Leave the lobby", above)
+                ImGui::SameLine();
+                if (ImGui::Button("Stop watching")) {
+                    Port_NetSpecLeave();
+                    open = false;
+                }
+            }
+            ImGui::TextDisabled("View: %s", spec_view_name(Port_NetSpecView()));
+            ImGui::Separator();
+        }
 #ifdef __ANDROID__
         if (ImGui::Button("  Resume  ")) {
             open = false;
@@ -2369,6 +2500,40 @@ static void save_icon_draw(Uint64 now) {
         dl->AddRectFilled(ImVec2(cx, y0 + h * 0.1f), ImVec2(cx + w * 0.1f, y0 + h * 0.3f), col(255, 255, 255, 220));
     }
     dl->AddRectFilled(ImVec2(x0 + w * 0.18f, y0 + h * 0.48f), ImVec2(x1 - w * 0.18f, y1 - h * 0.14f), col(245, 140, 35, 235), h * 0.05f);
+}
+
+// Watching a match (gs/net.c, a spectator): a line at the top, whose match and whose view, and how to change it.
+static const char *spec_view_name(int view) {
+    static char text[48];
+    if (view == 2) {
+        return "both (split screen)";
+    }
+    SDL_snprintf(text, sizeof(text), "%s", Port_NetName(view)[0] != '\0' ? Port_NetName(view) : view == 0 ? "player 1" : "player 2");
+    return text;
+}
+
+static void spec_view_next(void) {
+    Port_NetSpecViewSet((Port_NetSpecView() + 1) % 3);
+}
+
+// For the players: who watches their match (small, in the top right corner).
+static void watchers_line(void) {
+    ImGuiIO &io = ImGui::GetIO();
+    char text[200];
+    int n = Port_NetWatchers();
+    size_t at = (size_t)SDL_snprintf(text, sizeof(text), "%d watching: ", n);
+    for (int i = 0; i < n && at < sizeof(text); i++) {
+        at += (size_t)SDL_snprintf(text + at, sizeof(text) - at, "%s%s", i > 0 ? ", " : "", Port_NetWatcher(i));
+    }
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - U(6.0f), U(6.0f)), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowBgAlpha(0.35f);
+    if (ImGui::Begin("##watchers", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
+                                             ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoSavedSettings)) {
+        ImGui::SetWindowFontScale(0.85f);
+        ImGui::TextDisabled("%s", text);
+        ImGui::SetWindowFontScale(1.0f);
+    }
+    ImGui::End();
 }
 
 // The meter: frames shown and the game's speed, and in an online match the connection. A setting (Video tab).
@@ -2726,6 +2891,28 @@ static bool frame_build(void) {
         gPortNetMenuRequest = 0;
         net_open();
     }
+    { // BT3_SPEC_PAUSE_AT=<seconds>: testing, a spectator's own pause menu (the game's) opens that long into its match
+        static Uint64 since;
+        static bool done;
+        if (!done && getenv("BT3_SPEC_PAUSE_AT") != NULL && sReady && Port_NetSpectating() && !sOpen) {
+            if (since == 0) {
+                since = SDL_GetTicks();
+            } else if (SDL_GetTicks() - since > (Uint64)atoi(getenv("BT3_SPEC_PAUSE_AT")) * 1000) {
+                done = true;
+                gPortSpecMenuAsk = 1;
+            }
+        }
+    }
+#ifdef __ANDROID__
+    { // the on-screen controller's R1 while watching: the next view, as a controller's R1 (its buttons are no SDL events)
+        static bool held;
+        const bool r1 = (Port_TouchButtons() & 0x0800u) != 0;
+        if (r1 && !held && sReady && !sOpen && !sNativeOpen && Port_NetSpectating()) {
+            spec_view_next();
+        }
+        held = r1;
+    }
+#endif
     if (sReady && !sUpdTold && update_latest() > PORT_RELEASE && SDL_GetTicks() >= sNoticeUntil) {
         int latest = update_latest(); // (told once, and not over another notice)
         sUpdTold = true;
@@ -2746,7 +2933,7 @@ static bool frame_build(void) {
     // the players' names under the gauges of an online fight
     bool names = sReady && Port_NetActive() && BtlChar_FindByObjId(0) != NULL && (Port_NetName(0)[0] != '\0' || Port_NetName(1)[0] != '\0');
     bool bars = sReady && bars_on();
-    bool online = sReady && Port_NetActive() && PortChat_Enabled();
+    bool online = sReady && Port_NetActive() && PortChat_Enabled() && !Port_NetSpectating(); // (a spectator has no one to talk to)
     if (sChat && !online) { // (the match ended while a line was typed)
         chat_close();
     }
@@ -2757,9 +2944,10 @@ static bool frame_build(void) {
     bool banner = sReady && sBanner[0] != '\0';
     Uint64 now = SDL_GetTicks();
     bool saving = save_icon_on(now) && sReady && gUiPresentW > 0 && gUiPresentH > 0;
+    bool watched = sReady && Port_NetWatchers() > 0 && !sOpen;  // a player's: who watches the match
     meter_count();
     sBuilt = false;
-    if (!sReady || (!sOpen && !sQuit && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !saving)) {
+    if (!sReady || (!sOpen && !sQuit && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !saving && !watched)) {
         return false;
     }
     if (sPadHold && sCapKind != 2) { // a binding was taken: the controller works the window again once nothing is held
@@ -2871,6 +3059,9 @@ static bool frame_build(void) {
     }
     if (saving) {
         save_icon_draw(now);
+    }
+    if (watched) {
+        watchers_line();
     }
     if (notice) { // a line over the picture for a few seconds (the end of an online match)
         ImGuiIO &io = ImGui::GetIO();

@@ -21,6 +21,7 @@ import com.dfdx047.dragonrage.R
 import com.dfdx047.dragonrage.data.EngineSettings
 import com.dfdx047.dragonrage.data.GamePaths
 import com.dfdx047.dragonrage.data.Renderer
+import com.dfdx047.dragonrage.data.GpuDriver
 import com.dfdx047.dragonrage.data.GpuDrivers
 import com.dfdx047.dragonrage.touch.PadSkin
 import com.dfdx047.dragonrage.touch.TouchConfig
@@ -53,28 +54,21 @@ open class GameActivity : SDLActivity() {
     /** Which game this screen runs (the menu's look and pages). */
     protected open val game: com.dfdx047.dragonrage.data.Game get() = com.dfdx047.dragonrage.data.Game.BT3
 
+    /** A menu of the activity's own is over the game (Bt2GameActivity's): the controller steps aside as for the engine's. */
+    protected var overlayOpen = false
+
     private val watchMenu = object : Runnable {
         override fun run() {
-            pad?.suppressed = TouchBridge.menuOpen() || menu?.isShown == true
+            pad?.suppressed = overlayOpen || TouchBridge.menuOpen() || menu?.isShown == true
             handler.postDelayed(this, 100)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         paths = gamePaths().also { it.ensure() }
-        // the renderer for this start (Vulkan, or OpenGL ES for Mali when automatic): written before the engine reads it
-        runCatching {
-            val es = EngineSettings(paths.settings)
-            Renderer.apply(es, paths)
-            // the in-game menu's language: the launcher's (0 English, 1 Portuguese, 2 Spanish)
-            val lang = when (resources.configuration.locales[0].language) { "pt" -> 1; "es" -> 2; else -> 0 }
-            if (es.get(EngineSettings.LANG, -1) != lang) es.set(EngineSettings.LANG, lang)
-            orientation = es.get(EngineSettings.ORIENTATION, 0)
-            sustained = es.get(EngineSettings.SUSTAINED, 0) != 0
-        }
+        prepareEngine()
         requestedOrientation = orientationFlag()
-        store = TouchStore(paths.root)
-        installDataList()
+        store = TouchStore(touchFolder())
         super.onCreate(savedInstanceState)
         hideBars()
         addTouchPad()
@@ -85,6 +79,30 @@ open class GameActivity : SDLActivity() {
                 android.util.Log.i("bt3", "sustained performance mode: ${pm.isSustainedPerformanceModeSupported}")
             }
         }
+    }
+
+    /** Where the on-screen controller's layout is kept (Bt2GameActivity keeps BT2's apart). */
+    protected open fun touchFolder(): File = paths.root
+
+    /** The custom GPU driver chosen for this game, or null for the system's (Bt2GameActivity has BT2's own choice). */
+    protected open fun gpuDriver(): GpuDriver? = runCatching { GpuDrivers(this, contentResolver).selected() }.getOrNull()
+
+    /** Whether the touch menu (GameMenu, on BT3's settings file) is this game's: BT2 has a menu and settings of its own. */
+    protected open fun usesGameMenu(): Boolean = true
+
+    /** What the engine needs in place before it starts (Bt2GameActivity has its own). */
+    protected open fun prepareEngine() {
+        // the renderer for this start (Vulkan, or OpenGL ES for Mali when automatic): written before the engine reads it
+        runCatching {
+            val es = EngineSettings(paths.settings)
+            Renderer.apply(es, paths)
+            // the in-game menu's language: the launcher's (0 English, 1 Portuguese, 2 Spanish)
+            val lang = when (resources.configuration.locales[0].language) { "pt" -> 1; "es" -> 2; else -> 0 }
+            if (es.get(EngineSettings.LANG, -1) != lang) es.set(EngineSettings.LANG, lang)
+            orientation = es.get(EngineSettings.ORIENTATION, 0)
+            sustained = es.get(EngineSettings.SUSTAINED, 0) != 0
+        }
+        installDataList()
     }
 
     /**
@@ -108,7 +126,7 @@ open class GameActivity : SDLActivity() {
     }
 
     /** The player's choice (launcher, Settings): 0 landscape, 1 portrait, 2 as the device is held. */
-    private var orientation = 0
+    protected var orientation = 0
     private var sustained = false
 
     private fun orientationFlag(): Int = when (orientation) {
@@ -128,7 +146,7 @@ open class GameActivity : SDLActivity() {
         view.listener = object : TouchListener {
             override fun onPad(buttons: Int, lx: Int, ly: Int, rx: Int, ry: Int) = TouchBridge.setPad(buttons, lx, ly, rx, ry)
 
-            override fun onMenu() = toggleMenu()
+            override fun onMenu() = onPadMenu()
 
             override fun onOptions() = showOptions()
 
@@ -141,7 +159,7 @@ open class GameActivity : SDLActivity() {
         layout.addView(view.view, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         pad = view
         if (stickPadConnected()) padUsed() // (a handheld's own controller, or one paired before the game: no touch pad to start with)
-        menu = GameMenu(this, game, { EngineSettings(paths.settings) }, object : GameMenu.Actions {
+        if (usesGameMenu()) menu = GameMenu(this, game, { EngineSettings(paths.settings) }, object : GameMenu.Actions {
             override fun resumed() {
                 pad?.suppressed = TouchBridge.menuOpen()
             }
@@ -188,6 +206,12 @@ open class GameActivity : SDLActivity() {
         runOnUiThread { if (menu?.isShown != true) toggleMenu() }
     }
 
+    /** The controller's menu button: the touch menu, as the back key opens it (Bt2GameActivity has its own). */
+    protected open fun onPadMenu() = toggleMenu()
+
+    /** The back key, before it goes to the engine: true when it was handled here (Bt2GameActivity's menu). */
+    protected open fun onBackKey(event: KeyEvent): Boolean = false
+
     override fun onResume() {
         super.onResume()
         pad?.let { it.config = store.load() }
@@ -203,7 +227,7 @@ open class GameActivity : SDLActivity() {
     }
 
     /** The controller's own quick menu: look, opacity, layout editing, shown or not. */
-    private fun showOptions() {
+    protected fun showOptions() {
         val view = pad ?: return
         var c = view.config
         val dp = resources.displayMetrics.density
@@ -419,6 +443,7 @@ open class GameActivity : SDLActivity() {
                 if (event.action == KeyEvent.ACTION_UP) pad?.editing = false
                 return true
             }
+            if (onBackKey(event)) return true
             if (event.action == KeyEvent.ACTION_UP) toggleMenu() // (the whole press: down and up are this one key)
             return true
         }
@@ -441,7 +466,7 @@ open class GameActivity : SDLActivity() {
 
     /** The game folder, the app's native libraries (the engine, adrenotools' hooks) and the chosen GPU driver, if any. */
     override fun getArguments(): Array<String> {
-        val driver = runCatching { GpuDrivers(this, contentResolver).selected() }.getOrNull()
+        val driver = gpuDriver()
         // Lite mode on a Mali: the render passes' areas cut to what they draw (loader.c, area_driver)
         val liteMali = game == com.dfdx047.dragonrage.data.Game.BT3 && runCatching {
             EngineSettings(paths.settings).get(EngineSettings.LITE, 0) != 0 && Renderer.isMali(Renderer.gpuName(paths))

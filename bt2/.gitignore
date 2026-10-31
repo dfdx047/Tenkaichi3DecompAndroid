@@ -1,0 +1,75 @@
+# Local game content: keep all extracted assets inside these directories.
+/rom/
+/disc/
+/game_data/
+/assets/*
+!/assets/BT2 Recomp Banner.png
+# The launcher's logo, cut out of the banner above (tools/launcher/cut_logo.py).
+!/assets/launcher/
+/assets/launcher/*
+!/assets/launcher/logo.png
+*.iso
+*.ISO
+*.cue
+*.CUE
+*.chd
+*.CHD
+*.img
+*.IMG
+*.mdf
+*.MDF
+*.mds
+*.MDS
+*.nrg
+*.NRG
+
+# Retail executable names, including common local naming variants.
+SLUS_214.41
+SLUS_214.41.*
+SLUS-21441
+SLUS-21441.*
+SLUS_21441
+SLUS_21441.*
+
+# Proprietary-derived generated code and reverse-engineering output.
+*.gif-expected.bin
+*.gif-actual.bin
+/generated/
+/game/generated/
+/research/
+/scratch/
+/work/
+/temp/
+/tmp/
+*.i64
+*.idb
+*.id0
+*.id1
+*.id2
+*.gpr
+*.rep/
+
+# Build output and Visual Studio/CMake temporary files.
+/build/
+/build-*/
+/out/
+/.vs/
+CMakeFiles/
+CMakeCache.txt
+CMakeUserPresets.json
+cmake_install.cmake
+compile_commands.json
+*.obj
+*.o
+*.pdb
+*.ilk
+*.tlog/
+*.VC.db
+*.VC.opendb
+*.suo
+*.user
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
+/user/

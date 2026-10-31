@@ -23,13 +23,13 @@ import pathlib
 import re
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-SOURCES = [ROOT / "src/menu/port_tbo.c"]
+SOURCES = [ROOT / "src/menu/port_tbo.c", ROOT / "port/src/spec_menu.c"]
 
 # Calls whose strings are not shown: settings' names, file names, comparisons, logs.
 NOT_SHOWN = {"Port_Setting", "Port_SettingSave", "Port_SettingText", "Port_SettingTextSave", "strncmp", "strcmp",
              "getenv", "fopen", "fprintf", "printf", "Port_LagMark", "SDL_SetClipboardText"}
 # Tables whose strings are not words.
-NOT_SHOWN_TABLES = {"sTbKeys", "sTbNameKeys"}
+NOT_SHOWN_TABLES = {"sTbKeys", "sTbNameKeys", "sTbRegionArea"}
 # Where a line is shown, for the translator's note (the function it is in).
 NOTES = {
     "Tb_Help": "talk box at the foot of the screen (two lines at most)",
@@ -38,6 +38,15 @@ NOTES = {
     "Tb_Fighter": "a fighter's name",
     "Tb_Speak": "read aloud by the screen reader (a piece may be joined to a name or a code after it)",
     "PortTbo_SparSign": "sign shown during Train While Waiting's sparring fight",
+    "Tb_DrawLobbyText": "the lobby's page (its places, code, rules and buttons)",
+    "Tb_DrawLobbyWin": "a window over the lobby's page",
+    "Tb_LobbyActName": "a button of the lobby's page",
+    "Tb_LobbyPopItem": "a choice in a window over the lobby's page",
+    "Tb_LobbyLine": "a line of what happened in the lobby (shown in the talk box)",
+    "Tb_SpecLine": "the line over a match being watched (spectator)",
+    "item_line": "an item of a spectator's own pause menu (the battle's pause menu box)",
+    "leave_name": "an item of a spectator's own pause menu (the battle's pause menu box)",
+    "view_name": "a spectator's view of the match, in its pause menu (after \"View: \")",
 }
 # Not words: the name keypad's case key (its rows are the table sTbKeys).
 NOT_WORDS = re.compile(r"Aa")
@@ -133,6 +142,10 @@ def collect(path, bt4=False):
             if table_name in NOT_SHOWN_TABLES or (bt4 and table_name == "sTbNames"):
                 continue  # (BT4's fighters are named in tbo/fighters.txt, not by the original's table)
             note = {"sTbNames": NOTES["Tb_Fighter"], "sTbHubName": "main list of the online menu",
+                    "sTbLobbyLines": "a line of the lobby: what happened, or why it closed (talk box or a window)",
+                    "sTbLobbyNamed": "a line of the lobby with a player's name in it (%s: the name; keep it)",
+                    "sTbBattleName": "a battle type (the lobby's rules)", "sTbRuleName": "a rule of the lobby",
+                    "sTbViewName": "a spectator's view of the match",
                     "sTbHubSay": "talk box at the foot of the screen (two lines at most), for the main list's entries",
                     "sTbTime": "a time limit's name"}.get(table_name, note)
         if SLOT.search(text):

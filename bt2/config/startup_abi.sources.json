@@ -1,0 +1,363 @@
+{
+  "repository": "https://github.com/ps2dev/ps2sdk",
+  "revision": "ac92a9f657d2e531dd8f060250b07f2a5ac6dea5",
+  "role": "ABI reference only; no SDK code linked or bundled",
+  "sources": [
+    {
+      "path": "ee/kernel/include/syscallnr.h",
+      "sha256": "573f0c3276eaae064f0da04990126133b434259b3b235e53ed8f013694300edc"
+    },
+    {
+      "path": "ee/kernel/include/kernel.h",
+      "sha256": "fe34ea02834f0b74199e8832e4d85641ce0f231c9d0c4e6d7f6b67b7d499814a"
+    },
+    {
+      "path": "ee/kernel/src/kernel.S",
+      "sha256": "81e16f24d565ce07060f3211b33c8e006e8907dffac585190a95af1ebea012ab"
+    },
+    {
+      "path": "ee/startup/src/crt0.c",
+      "sha256": "695d59d4a7b38ce9009ae6e934989131893ea359c92b32ee516521e21e15637e"
+    },
+    {
+      "path": "common/include/ee_regs.h",
+      "sha256": "085cba40b126ccf6c7ffe86e1b7cb7487de63fc9541f67f3d3ad39b426aee3ee"
+    },
+    {
+      "path": "ee/kernel/include/timer.h",
+      "sha256": "00bfea47e976d8f5ce1331e5a3e6dcc1843306af1b942d058d54a1d86fee752f"
+    },
+    {
+      "path": "ee/kernel/src/sifcmd.c",
+      "sha256": "3184529a0b741e9b8b495e3928bd3f8e2c4f89c25f02cfa2c1791efe6adecdc5"
+    },
+    {
+      "path": "iop/system/sifcmd/src/sifcmd.c",
+      "sha256": "40f4956fa3500bdc82ce1b6e6da8f0c771faa81095da6e45958e3afbefbedc5e"
+    },
+    {
+      "path": "ee/kernel/src/loadfile.c",
+      "sha256": "5ab0dd152ca966fb23eb077176a998eb8b5280442f799a78b18c6575eef1996e"
+    }
+  ],
+  "bootstrap_model_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "role": "SetupThread behavioral reference only; no source copied or linked; retail BIOS comparison pending",
+    "sources": [
+      {
+        "path": "Source/ee/PS2OS.cpp",
+        "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd"
+      },
+      {
+        "path": "Source/ee/PS2OS.h",
+        "sha256": "80039b77e4b7450f52681700384c09be36d66639032564ee01738463fcc20a07"
+      }
+    ]
+  },
+  "kernel_mapping_reference": {
+    "repository": "https://github.com/PCSX2/pcsx2",
+    "revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+    "path": "pcsx2/Memory.cpp",
+    "sha256": "d0fe8073d5bc9b52ed50bffe38c3c8111fd61e735a9f0eb4b1a1f7db02cb5830",
+    "role": "memMapKernelMem address mapping evidence only; no source copied/linked"
+  },
+  "timer_reference": {
+    "repository": "https://github.com/PCSX2/pcsx2",
+    "revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+    "sources": [
+      {
+        "path": "pcsx2/Counters.cpp",
+        "sha256": "0aada58be35681113a282b80a36e3cf87291e816fb5c9410bef559e088d412b9"
+      },
+      {
+        "path": "pcsx2/Counters.h",
+        "sha256": "4ded27a61d2297fd08fbfc468c98aee975446c686fff4b7d3fb620cb6b492193"
+      },
+      {
+        "path": "pcsx2/HwRead.cpp",
+        "sha256": "5fe7ba3833e3aabb8d5fbb934b95f1d79f596fbcc03b3b6facac0bc8e1790fc1"
+      }
+    ],
+    "role": "Timer mode register read/bit-layout evidence only; captured read replay is not full timer emulation"
+  },
+  "cache_reference": {
+    "path": "ee/kernel/include/kernel.h",
+    "sha256": "fe34ea02834f0b74199e8832e4d85641ce0f231c9d0c4e6d7f6b67b7d499814a",
+    "role": "FlushCache void ABI and operations 0 (D-cache writeback), 2 (I-cache invalidation). Fixed native dispatch has no guest instruction cache; patched guest code remains unsupported."
+  },
+  "extended_registration_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "path": "Source/ee/PS2OS.cpp",
+    "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
+    "role": "sc_SetSyscall maps extended selector 0x12C to Timer 3 / INTC line 12 registration and enable request. Probe records one bounded startup request only; no interrupt delivery, physical alias execution or BIOS equivalence claimed."
+  },
+  "intc_registration_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "sources": [
+      {
+        "path": "Source/ee/PS2OS.cpp",
+        "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd"
+      },
+      {
+        "path": "Source/ee/PS2OS.h",
+        "sha256": "80039b77e4b7450f52681700384c09be36d66639032564ee01738463fcc20a07"
+      }
+    ],
+    "role": "sc_AddIntcHandler and sc_SetSyscall share a 128-entry pool with IDs starting at one. Observed cause 11, next/arg zero uses front insertion, captures GP and returns ID (sign-extended -1 on exhaustion). Timer 3 reserves ID one. Probe retains original guest addresses; no physical alias execution, interrupt delivery, removal or scheduling."
+  },
+  "timer2_write_reference": {
+    "repository": "https://github.com/PCSX2/pcsx2",
+    "revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+    "path": "pcsx2/Counters.cpp",
+    "sha256": "0aada58be35681113a282b80a36e3cf87291e816fb5c9410bef559e088d412b9",
+    "role": "rcntWmode register control bits and write-one-to-clear flags only. Authored adapter accepts one observed 0x382 store to 0xB0001010 after explicit capture replay; counter synchronization/rate/gating/events remain unimplemented."
+  },
+  "enable_intc_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "path": "Source/ee/PS2OS.cpp",
+    "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
+    "role": "sc_EnableIntc cause bit: return 1 if changed, 0 if already enabled; preserve other mask bits. Probe accepts only cause 11 with an explicit mask checkpoint captured immediately before this syscall; no BIOS default, pending interrupt processing or delivery."
+  },
+  "thread_creation_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "sources": [
+      {
+        "path": "Source/ee/PS2OS.cpp",
+        "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd"
+      },
+      {
+        "path": "Source/ee/PS2OS.h",
+        "sha256": "80039b77e4b7450f52681700384c09be36d66639032564ee01738463fcc20a07"
+      }
+    ],
+    "role": "THREADPARAM/sc_CreateThread/ThreadReset/SetupThread/GetThreadId evidence. Authored model reserves main ID 1 and idle ID 256, allocates 2..255, records dormant threads and four low-word stack context stores; no scheduler, ID reuse or retail BIOS identity asserted. Epilog address 0x1FC03000 is a pinned reference-model value, not a confirmed retail BIOS entry. The reached sound thread ID 3 now uses owned SetupThread exit 0x100250, independently captured before/after start. Scoped ReferThreadStatus uses the SDK 48-byte structure; StartThread records ready state without preempting main priority 2 with child priority 5. IE/EIE at this handoff are capture-backed; general interrupt scheduling remains unimplemented."
+  },
+  "thread_priority_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "path": "Source/ee/PS2OS.cpp",
+    "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
+    "role": "sc_ChangeThreadPriority returns previous current priority and sets requested priority. Authored probe accepts only main ID 1 / priority 1 with main sole runnable and created threads dormant; no scheduling or retail BIOS equivalence claimed."
+  },
+  "osd_read_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "path": "Source/ee/PS2OS.cpp",
+    "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
+    "role": "sc_GetOsdConfigParam writes one 32-bit output word; SDK kernel.h declares void pointer ABI. Probe uses only an explicit validated local PCSX2/BIOS capture, not Play! preference defaults; one read, no setter."
+  },
+  "semaphore_operation_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "path": "Source/ee/PS2OS.cpp",
+    "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
+    "role": "sc_WaitSema/sc_SignalSema: valid nonblocking wait decrements count and returns ID; signal with no waiting thread increments count and returns ID; invalid ID returns sign-extended -1. Authored model rejects empty waits and maximum-count signaling before mutation; no thread sleep, wakeup, syscall stack clearing, interrupt variant or rescheduling."
+  },
+  "dmac_registration_enable_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "sources": [
+      {
+        "path": "Source/ee/PS2OS.cpp",
+        "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd"
+      },
+      {
+        "path": "Source/ee/PS2OS.h",
+        "sha256": "80039b77e4b7450f52681700384c09be36d66639032564ee01738463fcc20a07"
+      }
+    ],
+    "role": "Separate 128-entry DMAC handler pool with ID base 1; sc_AddDmacHandler records channel/address/arg/GP and next=0 inserts at front. Authored adapter accepts only channel 5/front insertion; no callback execution, removal or delivery. sc_EnableDmac tests mask bit 16+channel and returns 1 if changed, 0 if already enabled. Adapter uses explicit captured D_STAT mask and records channel 5 enable after both validated checkpoint reads; no hardware status/transfer progression or general D_STAT writes."
+  },
+  "sif_query_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "path": "Source/ee/PS2OS.cpp",
+    "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
+    "role": "sc_SifGetReg reads the low 32-bit selector and writes a sign-extended 32-bit result. Authored adapter replays only selector 0x80000000 once after explicit local checkpoint and DMAC enable. Value 0x19600 comes from local PCSX2 capture, not this reference. No generic SIF registers or transport. sc_SifSetDma confirms the next boundary submits descriptors to channel 6; no transfer implementation in this pass."
+  },
+  "sif_command_receive_reference": {
+    "repository": "https://github.com/ps2dev/ps2sdk",
+    "revision": "ac92a9f657d2e531dd8f060250b07f2a5ac6dea5",
+    "sources": [
+      {
+        "path": "ee/kernel/include/sifdma.h",
+        "sha256": "dc6d3ac908259c866f4a93226b914739d6c3d8a1610efb8beef7f999da48bab1"
+      },
+      {
+        "path": "common/include/sifcmd-common.h",
+        "sha256": "5db2f91a13052756d5a9be62480e149dd9681b50e251759eddf554d9aea8ddba"
+      },
+      {
+        "path": "ee/kernel/src/sifcmd.c",
+        "sha256": "3184529a0b741e9b8b495e3928bd3f8e2c4f89c25f02cfa2c1791efe6adecdc5"
+      },
+      {
+        "path": "iop/system/sifcmd/src/sifcmd.c",
+        "sha256": "40f4956fa3500bdc82ce1b6e6da8f0c771faa81095da6e45958e3afbefbedc5e"
+      },
+      {
+        "path": "common/include/sifrpc-common.h",
+        "sha256": "76647296efff26b5a48796ee1647f1651ba4fefc333d27016c03f313e35a1b8f"
+      }
+    ],
+    "role": "Public descriptor/header ABI, CHANGE_SADDR=0x80000000, RPCINIT software selector=0x80000002, RPC_BIND=0x80000009. EE initialized-service branch sends new receive address; IOP receive consumes psize and CHANGE_SADDR stores the new EE buffer. Authored adapter implements only the first observed 20-byte command logical effects, on an explicit before-capture IOP snapshot, with matching after-capture evidence and return 0x701. No general DMA engine, cycle timing, interrupt callback, RPC backend or transfer padding. RPCINIT result 1 is separately captured, opt-in and one-shot. SifRpcBindPkt_t establishes rec_id/pkt_addr/rpc_id/client/server-ID field positions for the reached pending packet."
+  },
+  "iop_capture_layout_reference": {
+    "repository": "https://github.com/PCSX2/pcsx2",
+    "revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+    "path": "pcsx2/MemoryTypes.h",
+    "sha256": "7f0066d74627959fffe68767f45038c7b3213f6de63e1a6822771b32867f2e8c",
+    "role": "IopVM_MemoryAllocMess begins with Main. Local PCSX2 exports IOPmem; tool reads its pointer and first 2 MiB with process read-only access. Packet/table windows stable in two reads; unrelated IOP/kernel memory remains live."
+  },
+  "uncached_ram_reference": {
+    "repository": "https://github.com/ps2dev/ps2sdk",
+    "revision": "ac92a9f657d2e531dd8f060250b07f2a5ac6dea5",
+    "path": "ee/kernel/include/kernel.h",
+    "sha256": "fe34ea02834f0b74199e8832e4d85641ce0f231c9d0c4e6d7f6b67b7d499814a",
+    "role": "UNCACHED_SEG sets address bit 0x20000000. Authored coherent RAM adapter enables checked byte/word alias accesses in [0x20000000,0x22000000) only after explicit RPCINIT query. Reached CACHE line checks accept this alias; wider access sizes, MMIO, TLB and guest cache state remain unsupported."
+  },
+  "rpc_bind_callback_reference": {
+    "repository": "https://github.com/ps2dev/ps2sdk",
+    "revision": "ac92a9f657d2e531dd8f060250b07f2a5ac6dea5",
+    "sources": [
+      {
+        "path": "ee/kernel/src/sifrpc.c",
+        "sha256": "8a4aa210ab4c6a66f493f61a19f0948af188b3678e05676ad0b0d0c95ece53ef"
+      },
+      {
+        "path": "ee/rpc/cdvd/src/libcdvd.c",
+        "sha256": "5dca8220ab92385a3ce229c870cf3ac8e0a6d7a5bf441fc0e19861d217395451"
+      },
+      {
+        "path": "iop/cdvd/cdvdfsv/src/cdvdfsv.c",
+        "sha256": "8aa32fefb2bdec70fc62f0ced3d902450febb02d94e15c9206ca995520bd01e0"
+      }
+    ],
+    "role": "ABI and service identity only; no public source copied/linked. CD_SERVER_INIT and sceSifRegisterRpc identify 0x80000592 as CD initialization. RPC_END bind response assigns server/buf/cbuf, invokes iSignalSema, frees pending packet. Local capture establishes retail pointers/effects. Negative syscall -0x43 is accepted only inside the scoped generated RPC_END callback; no hardware interrupt scheduler. Startup now also uses this generated callback in one checked synchronous logical bind delivery with complete caller CPU preservation and scratch-stack restoration. No hardware IRQ scheduling or CD service execution. Extension: one checked standalone mode-0 CD-init request/reply checkpoint invokes generated RPC_END CALL handling; no general service execution or disc access. CDVDFSV service 0x80000593 and command 34 establish synchronous commands/media-mode identity; local captures, not public-source assumptions, establish mode-2 reply 0 and semaphore/client effects. Both new responses execute generated RPC_END on an isolated CPU/scratch stack."
+  },
+  "rpc_bind_cleanup_reference": {
+    "repository": "https://github.com/jpd002/Play-",
+    "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+    "path": "Source/ee/PS2OS.cpp",
+    "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd",
+    "role": "sc_DeleteSema returns ID and frees it; invalid ID returns -1. Authored model deletes only the observed last semaphore 3 after bind signal/wait, without wait queues or rescheduling. sc_CreateSema reads initCount/maxCount/option, not unused attribute field. Pinned PS2SDK sceSifCallRpc also leaves attr uninitialized; only the exact first synchronous CD-init call descriptor permits its residual attr, gated by a local validated semaphore result capture. No general attribute semantics or syscall stack clearing. This pass also admits four exact captured CD semaphore descriptors and models sc_PollSema nonblocking invalid/empty/success behavior without queues or scheduling. Reached channel-5 DisableDmac clears only its mask bit and returns changed; RemoveDmacHandler removes the sole dormant handler and returns remaining count. Scoped to recorded post-media-mode startup; no DMA cancellation or reset semantics."
+  },
+  "sif_reset_local_evidence": {
+    "kernel_stop_address": "0x80006380",
+    "kernel_stop_size": 44,
+    "kernel_stop_sha256": "6a47c4cee303ef9916bbf8229e556dcd2f84ccdd054239b4c10f3a6dadecb19e",
+    "role": "Local BIOS implementation plus explicit PCSX2 stop/query/SMFLAG captures, not copied code. Reached SIF2 CHCR/QWC clear returns zero; SUBADDR remains 0x19600; first EE SMFLAG write clears selected 0x40000 bits and returns observed readback 0x30000 (later bit-clear captures disambiguate post-write readback). Pinned Play SifSetReg zero return is not used. No active DMA cancellation or IOP reboot completion modeled."
+  },
+  "gs_bootstrap_reference": {
+    "pcsx2": {
+      "revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+      "path": "pcsx2/GS.cpp",
+      "sha256": "cbbbe9c635b2e43c5cb2f531d221c4bf28a3d4ed290f246301e06b633628195c"
+    },
+    "play": {
+      "revision": "83700b2c31e593bc94e845b4b31b797be84dda59",
+      "path": "Source/ee/PS2OS.cpp",
+      "sha256": "fbb325b28566b247d8618795e43354990d15913286e0bfe96f8f2ad2ae94f1dd"
+    },
+    "role": "Public CSR reset and GS syscall ABI guidance only. Local disc-backed captures establish CSR readback 0x551B4000, GsPutIMR return 0xFF00 and CRT return zero. Play syscall implementations do not establish those return values; native probe requires explicit matching checkpoints. Records only the reached reset/mask/CRT requests; no native GS reset, interrupts, timing or rendering implemented.",
+    "hardware_map": {
+      "revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+      "path": "pcsx2/Hw.h",
+      "sha256": "9ea638423ac95123f644e9287a1453d6c48ebc8886dcd0d10fca058bf88b8ee0",
+      "role": "INTC_STAT 0x1000F000; DMAC_CTRL 0x1000E000. No event or DMA semantics inferred from register-address identity alone."
+    }
+  },
+  "gs_interrupt_reference": {
+    "pcsx2_revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+    "sources": [
+      {
+        "path": "pcsx2/HwWrite.cpp",
+        "sha256": "92a6c4da39f6389114bd7a4bccabdfb0e4a0713fc87596082300626b97c965a5"
+      },
+      {
+        "path": "pcsx2/Hw.cpp",
+        "sha256": "215c0707e81519d8d8f590d73abeec5cedaf9b5ea615fe69cc75bed6bf69e918"
+      },
+      {
+        "path": "pcsx2/Counters.cpp",
+        "sha256": "0aada58be35681113a282b80a36e3cf87291e816fb5c9410bef559e088d412b9"
+      }
+    ],
+    "ps2sdk": {
+      "revision": "ac92a9f657d2e531dd8f060250b07f2a5ac6dea5",
+      "path": "ee/kernel/include/kernel.h",
+      "sha256": "fe34ea02834f0b74199e8832e4d85641ce0f231c9d0c4e6d7f6b67b7d499814a"
+    },
+    "role": "INTC acknowledgement clears selected bits; Vblank-start is source 2 (bit 4), status latching is independent of callback mask. Independently captured BT2 publications gate a bounded diagnostic sequence: first unsatisfied poll, then one explicit event checkpoint. Poll count is chosen for diagnostics, not observed elapsed EE cycles. No video clock, interrupt callbacks or reference implementation copied. Later CSR field uses a separate explicit readback checkpoint."
+  },
+  "gif_dma_reference": {
+    "pcsx2_revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+    "sources": [
+      {
+        "path": "pcsx2/Dmac.cpp",
+        "sha256": "93761abcb9179758a920fc27b562f90c8b27fc58469284f3f2745ca1145d4d43"
+      },
+      {
+        "path": "pcsx2/Gif.cpp",
+        "sha256": "703a59851661d73c087539dde645b2003267cb8c4e45d484c3198ad7fdaff905"
+      },
+      {
+        "path": "pcsx2/Gif_Unit.h",
+        "sha256": "7ef080a9d889e9b015bd4e8f233473a748006b894af7ac40544eddda1b513032"
+      },
+      {
+        "path": "pcsx2/GS/GSRegs.h",
+        "sha256": "b9d73e6f5a8caf8ab12ab470de1ba8fdc407b5eb58c5bafa80e178adb57d730c"
+      }
+    ],
+    "role": "Public register/mode/tag guidance only, no implementation copied. Explicit local captures gate idle read and QWC/MADR staging. Full single PACKED A+D source is compared before DMA start. PRMODECONT/COLCLAMP/DTHE have only bit 0 defined; generated FUN_003119E8 retains guest stack padding in those words. Only those unused bits may differ, without modifying guest RAM; tag, register addresses and all other values stay exact. Drawing packet includes XYZ2 kicks. Scoped software consumption and bounded logical completion are described by gs_software_reference; no general DMA timing or presentation implemented."
+  },
+  "gs_software_reference": {
+    "pcsx2_revision": "81526d4dc7cc70e4ae75abb35a789417456c6d43",
+    "sources": [
+      {
+        "path": "pcsx2/GS/GSLocalMemory.h",
+        "sha256": "8cd6ed874f53aafde5f3d294048b2b0beed87765ab099a5f8aa93899cb988a19"
+      },
+      {
+        "path": "pcsx2/GS/GSLocalMemory.cpp",
+        "sha256": "46da01086c93f3839c0c20787433f8cd0b7b89790d42f12414f9589c66fd4e51"
+      },
+      {
+        "path": "pcsx2/GS/GSTables.h",
+        "sha256": "34c60c7163952ed34c4b150e603d8bc78aa35ed6661d684c485510167b9cc0eb"
+      },
+      {
+        "path": "pcsx2/GS/GSTables.cpp",
+        "sha256": "a9a226297ede32b89177d7bdb04e9d8e21728e7d55799405f6112e97fe4969e8"
+      },
+      {
+        "path": "pcsx2/GS/GSState.cpp",
+        "sha256": "a5b210e5bc6427416841a88337d7e81c4ecb075323e7bc2f373eb2c133b97193"
+      },
+      {
+        "path": "pcsx2/GS/GSDrawingEnvironment.cpp",
+        "sha256": "eafc1728cbd89cae54ece1b60118dc8df11ce9b7aebc966d49f51184dd0442e7"
+      },
+      {
+        "path": "pcsx2/GS/GSDrawingContext.cpp",
+        "sha256": "f3f80e952115a6a420296f53a10e2930632d6e87fe8672cff453f3bbd7fa16b2"
+      }
+    ],
+    "role": "Public PSMCT32/PSMZ24 page, block and pixel addressing, depth XOR and 24-bit preservation. Authored bit placement and transactional scoped sprite operation; no reference implementation copied. Unknown VRAM bits remain unknown. Independent BT2 checkpoints establish first transfer polling and idle VU status. The second observed same-form packet reuses the bounded logical DMA sequence; no physical timing or presentation claimed. Reached CSR reset initializes drawing-register defaults (including SCANMSK/FBA); VRAM is not cleared."
+  },
+  "post_reset_sif_role": "Pinned public command INIT_CMD opt 0/1 and SET_SREG layout/order, separate transport lifetime. Local before/after captures establish buffer ownership and response. Authored nonzero logical submission tokens; no native IOP execution or renewed service validity.",
+  "post_reset_service_role": "Public RPC_END bind/client/semaphore semantics and LOADFILE service identity. Fresh BT2 captures establish epoch-owned CD/SCMD replies and results; generated EE callback executes. One logical null-bind retry with bounded guest loop; no native IOP scheduling or general disc/module backend. No implementation copied.",
+  "loadfile_iop_tooling": {
+    "ps2sdk_revision": "ac92a9f657d2e531dd8f060250b07f2a5ac6dea5",
+    "irx_header_sha256": "2afc986bdf65970f599f635ed3c5c73353f8ed6a83f2ca186c285c927bdddff7",
+    "bt3_revision": "e22a34beb564e2d0f32bd60b02f0a95d9645ddcc",
+    "irx_discovery_sha256": "83465ff5c1a6e167fa5e6fe8ef485784ad09f034c05e026e3114c70f5d41e1c0",
+    "role": "Public import/export layout and discovery ideas. Authored bounded inspector and private placement/relocation compare actual local disc/capture evidence. No implementations copied or native module success supplied. Pinned PS2Recomp lacks BT3 R3000/import backend."
+  }
+}

@@ -107,7 +107,8 @@ or bring up to date a file for translators:
 A new line's `text` is its English, as a placeholder (a line left so is shown in
 English); running the tool again on the same file keeps what is translated,
 adds new lines and drops the ones the menus no longer have. A `note` says where
-a line is shown. A translation has to keep the line's `%d`/`%02d` parts in
+a line is shown. A line with a player's name in it (the lobby's "%s joined
+the lobby", "Spectating %s vs %s") has `%s` for each name. A translation has to keep the line's `%d`/`%02d`/`%s` parts in
 their order (and `%%` for a percent sign in such a line) and its `{name}`
 parts; one that does not is not used, and the console says so. The file goes in
 `translations/port/` beside the program; its language is then offered in the
@@ -116,6 +117,17 @@ first-run language screen and F1 even without menu labels of its own.
 Adding an ID to a JSON file alone cannot translate an arbitrary hardcoded
 string: the code or data that displays it must use the corresponding
 translation system.
+
+## The online screens' own language
+
+Tenkaichi Budokai Online (src/menu/port_tbo.c) has a language row at the top of its hub: English, Português, Español,
+changed with left and right and kept in the setting `tbo_lang` (until it is chosen: the launcher's `dr_lang`). It
+changes only those screens, at once, without a restart: `Port_TboLanguage` (port/src/gs/menu_translation.c) loads
+`translations/tbo/pt.json` or `es.json` (`port/translations/tbo/` in the source) into the table of the screens'
+lines, which `MenuTranslation_Line` reads; English is the screens' own text. The two files are written by
+`python3 port/tools/tbo_translations.py`, which holds every line in the three languages, checks each English line
+against the strings of port_tbo.c, and names the screen's lines that have no translation. They live apart from
+`translations/port/`, so they do not add languages to the game's language list.
 
 ## What happens when a translation does not cover every ID?
 

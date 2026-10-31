@@ -107,6 +107,11 @@ static int sDisplaySetting;
 int gsScale4 = 8;
 int gsTargetW = GS_W, gsTargetH = GS_H; /* the back end's render targets in GS pixels (the Vulkan one: 512) */
 int gsPendingScale4;
+/* The online screens (menu/port_tbo.c) are drawn at most at this resolution (in quarters; 0: no cap): pictures and
+   letters of a 2D page are no sharper on a phone's screen above it, and 5x or 6x there cost the frames that made
+   the menus slow. The player's own choice (sUserScale4) is what the settings show and keep, and comes back after. */
+static int sScreenCap4;
+static int sUserScale4;
 GsTex gsWhite;
 GsDraw *gsDraws;
 uint32_t gsDrawCount;
@@ -276,6 +281,12 @@ static uint32_t clut_hash(uint32_t cbp, uint32_t cpsm, uint32_t count) {
    next to the program the first time and kept, at the PNG's own size, so it is drawn at full resolution and in the
    game's own order. */
 #include "../../../include/menu/tbo_art.h"
+#ifdef _WIN32
+#include <direct.h>
+#define getcwd _getcwd
+#else
+#include <unistd.h> /* getcwd */
+#endif
 #define TBO_NAME(id, name) name,
 static const char *const kTboNames[TBO_ART_COUNT] = {TBO_ART_LIST(TBO_NAME)};
 #undef TBO_NAME
@@ -287,11 +298,11 @@ static unsigned char sLangMissing[3];
 /* Makes a texture of RGBA pixels (the GS's alpha) with its smaller copies, each half the one before, averaged by
    2 x 2: these pictures are mostly shown smaller than they are (letters, the crest), and one sample of the full
    picture per pixel shimmers. Takes `px`; 0 if no texture could be had. */
-static GsTex tbo_upload(uint32_t *px, uint32_t w, uint32_t h) {
-    uint32_t *lv[12];
-    uint32_t lw[12], lh[12], x, y;
+/* The smaller copies of a picture (its mipmap levels), each a quarter of the one before, colour weighted by alpha.
+   lv[0] = px; returns how many levels there are. (Any thread: it only reads px and allocates.) */
+static int tbo_levels(uint32_t *px, uint32_t w, uint32_t h, uint32_t *lv[12], uint32_t lw[12], uint32_t lh[12]) {
+    uint32_t x, y;
     int levels = 1, k;
-    GsTex tex;
 
     lv[0] = px;
     lw[0] = w;
@@ -326,6 +337,15 @@ static GsTex tbo_upload(uint32_t *px, uint32_t w, uint32_t h) {
         lh[levels] = nh;
         levels++;
     }
+    return levels;
+}
+
+/* Uploads a picture and its levels (made by tbo_levels, or made here); takes them. 0 when it could not. */
+static GsTex tbo_upload_levels(uint32_t *lv[12], uint32_t lw[12], uint32_t lh[12], int levels) {
+    uint32_t *px = lv[0], w = lw[0], h = lh[0];
+    GsTex tex;
+    int k;
+
     if (px != NULL && sBackend->texSlotsLeft() < levels) {
         for (k = 1; k < levels; k++) {
             free(lv[k]);
@@ -345,38 +365,351 @@ static GsTex tbo_upload(uint32_t *px, uint32_t w, uint32_t h) {
     return tex;
 }
 
-/* The lines of letters (gs/tbo_text.c): each place's texture and what it shows; a texture drawn in this frame is
-   kept until the next (the line changed under it: the old one is shown once more). */
+static GsTex tbo_upload(uint32_t *px, uint32_t w, uint32_t h) {
+    uint32_t *lv[12], lw[12], lh[12];
+    int levels = tbo_levels(px, w, h, lv, lw, lh);
+
+    return tbo_upload_levels(lv, lw, lh, levels);
+}
+
+/* The lines of letters (gs/tbo_text.c): each place's texture and what it shows, and what the place gave in which
+   frame (`shown` in `frame`: one answer a frame, so a line's outline and fill are always the same picture, and a
+   picture given in this frame is not destroyed before its end). */
 extern uint32_t TboText_Version(uint32_t id);
 extern uint32_t *TboText_Pixels(uint32_t id, uint32_t *version, uint32_t *w, uint32_t *h);
 static struct {
-    GsTex tex;
+    GsTex tex, shown;
     uint32_t version, frame;
 } sTboText[TBO_TEXT_SLOTS];
 
-static GsTex tbo_text_texture(uint32_t id) {
-    uint32_t slot = id - TBO_TEXT_BASE, version = TboText_Version(id), w, h, *px;
-    GsTex tex;
+/* A new line's picture (its letters, their outline: tens of milliseconds of the processor on a phone for a long
+   line, and the cursor of the online screens changes two or three at each step) is made on a thread of its own with
+   its smaller copies; the renderer only uploads it when it is ready. Meanwhile the place shows what it showed, or
+   nothing (a line that is new: clear, not a white box). */
+#define TEXT_JOBS 8
+typedef struct {
+    int state; /* 0 free, 1 asked, 2 being made, 3 made */
+    uint32_t slot, version, *lv[12], lw[12], lh[12];
+    int levels;
+} TboTextJob;
+static TboTextJob sTextJob[TEXT_JOBS];
+static SDL_Mutex *sTextLock;
+static SDL_Condition *sTextWake;
+static SDL_Thread *sTextThread;
+static GsTex sClearTex;
 
-    if (sTboText[slot].tex != 0 && (sTboText[slot].version == version || sTboText[slot].frame == gGsFrame)) {
+static int tbo_text_thread(void *arg) {
+    (void)arg;
+    SDL_LockMutex(sTextLock);
+    for (;;) {
+        TboTextJob *j = NULL;
+        uint32_t version = 0, w = 0, h = 0, *px;
+        int i;
+
+        for (i = 0; i < TEXT_JOBS && j == NULL; i++) {
+            if (sTextJob[i].state == 1) {
+                j = &sTextJob[i];
+            }
+        }
+        if (j == NULL) {
+            SDL_WaitCondition(sTextWake, sTextLock);
+            continue;
+        }
+        j->state = 2;
+        SDL_UnlockMutex(sTextLock);
+        px = TboText_Pixels(TBO_TEXT_BASE + j->slot, &version, &w, &h);
+        j->levels = px != NULL ? tbo_levels(px, w, h, j->lv, j->lw, j->lh) : 0;
+        SDL_LockMutex(sTextLock);
+        j->version = version;
+        j->state = 3;
+    }
+    return 0;
+}
+
+/* What a place shows while its new picture is not ready: nothing (clear). Not the picture it had: that is another
+   line's, and the game already lays the place out at the new line's measures, so the old letters were stretched
+   into them for a few frames (the letters looked bent while moving through the menus). */
+static GsTex tbo_text_keep(uint32_t slot) {
+    sTboText[slot].shown = sClearTex != 0 ? sClearTex : gsWhite;
+    sTboText[slot].frame = gGsFrame;
+    return sTboText[slot].shown;
+}
+
+static GsTex tbo_text_texture(uint32_t id) {
+    uint32_t slot = id - TBO_TEXT_BASE, version = TboText_Version(id);
+    GsTex old = sTboText[slot].tex, tex = 0;
+    int i, asked = 0;
+
+    if (sTboText[slot].frame == gGsFrame && sTboText[slot].shown != 0) {
+        return sTboText[slot].shown; /* (a line is two draws, its outline and its fill: both get the same) */
+    }
+    if (old != 0 && sTboText[slot].version == version) {
+        sTboText[slot].shown = old;
         sTboText[slot].frame = gGsFrame;
-        return sTboText[slot].tex;
+        return old;
     }
-    if (sBackend->texSlotsLeft() <= 0) {
-        return sTboText[slot].tex != 0 ? sTboText[slot].tex : gsWhite;
+    if (sTextLock == NULL) { /* (once) */
+        sTextLock = SDL_CreateMutex();
+        sTextWake = SDL_CreateCondition();
+        sTextThread = sTextLock != NULL && sTextWake != NULL ? SDL_CreateThread(tbo_text_thread, "tbo letters", NULL) : NULL;
+        if (sTextThread == NULL) {
+            fprintf(stderr, "bt3: no thread for the online screens' letters: made on the renderer's\n");
+        }
     }
-    px = TboText_Pixels(id, &version, &w, &h);
-    tex = px != NULL ? tbo_upload(px, w, h) : 0;
+    if (sClearTex == 0 && sBackend->texSlotsLeft() > 0) {
+        uint32_t *clear = calloc(1, 4);
+        if (clear != NULL && (sClearTex = sBackend->texCreate(1, 1, GS_TEXFMT_RGBA8, 1)) != 0) {
+            sBackend->texUpload(sClearTex, 0, 1, 1, GS_TEXFMT_RGBA8, clear, 4);
+        } else {
+            free(clear);
+        }
+    }
+    if (sTextThread == NULL) { /* (as it was: here and now) */
+        uint32_t w, h, *px;
+        if (sBackend->texSlotsLeft() <= 0) {
+            return tbo_text_keep(slot);
+        }
+        px = TboText_Pixels(id, &version, &w, &h);
+        tex = px != NULL ? tbo_upload(px, w, h) : 0;
+    } else {
+        SDL_LockMutex(sTextLock);
+        for (i = 0; i < TEXT_JOBS; i++) {
+            TboTextJob *j = &sTextJob[i];
+            if (j->state == 0 || j->slot != slot) {
+                continue;
+            }
+            asked = 1;
+            if (j->state == 3) {
+                if (j->version == version && j->levels > 0 && sBackend->texSlotsLeft() >= j->levels) {
+                    tex = tbo_upload_levels(j->lv, j->lw, j->lh, j->levels);
+                } else { /* (made for an older line, or no room: dropped; asked again below) */
+                    int k;
+                    for (k = 0; k < j->levels; k++) {
+                        free(j->lv[k]);
+                    }
+                    asked = 0;
+                }
+                j->state = 0;
+                j->levels = 0;
+            }
+        }
+        if (!asked && tex == 0) {
+            for (i = 0; i < TEXT_JOBS && sTextJob[i].state != 0; i++) {
+            }
+            if (i < TEXT_JOBS) {
+                sTextJob[i].state = 1;
+                sTextJob[i].slot = slot;
+                sTextJob[i].levels = 0;
+                SDL_SignalCondition(sTextWake);
+            }
+        }
+        SDL_UnlockMutex(sTextLock);
+    }
     if (tex == 0) {
-        return sTboText[slot].tex != 0 ? sTboText[slot].tex : gsWhite;
+        return tbo_text_keep(slot);
     }
-    if (sTboText[slot].tex != 0) {
-        sBackend->texDestroy(sTboText[slot].tex);
+    if (old != 0) {
+        sBackend->texDestroy(old); /* (not given in this frame: that would have been answered above) */
     }
     sTboText[slot].tex = tex;
+    sTboText[slot].shown = tex;
     sTboText[slot].version = version;
     sTboText[slot].frame = gGsFrame;
     return tex;
+}
+
+/* Films in place of pictures: tbo/ui/bg.mpg for the backdrop (bg.png), tbo/ui/raditz.mpg for Raditz from the waist
+   up (raditz_bust.png). MPEG-1 (pl_mpeg), played round and round, their last picture leading into their first.
+   Decoded here, one picture when its time has come, only while the screens draw it; a pause between two draws (the
+   screens left and opened again) goes on from where it was. A film with `alpha` is two pictures one above the other:
+   the colours on top, below them how solid each pixel is (white solid, black clear). No film, or one that cannot be
+   read: the picture, as before. */
+#define PL_MPEG_IMPLEMENTATION
+#include "../../third_party/pl_mpeg/pl_mpeg.h"
+typedef struct {
+    const char *name;
+    int alpha;
+    int tried;
+    plm_t *plm;
+    GsTex tex;
+    uint32_t frame, w, h;
+    uint64_t lastMs;
+    double due; /* seconds of film owed */
+    /* the decoding, on a thread of its own (a picture of the film costs milliseconds of the processor: on the
+       renderer's thread a phone dropped frames): it keeps the next picture ready, the renderer takes it */
+    SDL_Thread *thread;
+    SDL_Mutex *lock;
+    SDL_Condition *wake;
+    uint32_t *ready; /* the next picture (RGBA, the GS's alpha), NULL while it is being made */
+    int want;        /* the thread makes the next one */
+} TboFilm;
+static TboFilm sTboFilm = {"bg", 0};
+static TboFilm sRaditzFilm = {"raditz", 1};
+
+static uint8_t *tbo_film_read(const char *name, size_t *len) {
+    const char *base = SDL_GetBasePath();
+    char path[1024], cwd[768], local[128];
+    const char *tries[3];
+    uint8_t *bytes = NULL;
+    int i;
+
+    snprintf(path, sizeof(path), "%stbo/ui/%s.mpg", base != NULL ? base : "", name);
+    snprintf(local, sizeof(local), "port/tbo/ui/%s.mpg", name);
+    tries[0] = path;
+    if (getcwd(cwd, sizeof(cwd) - 64) != NULL) {
+        size_t n = strlen(cwd);
+        snprintf(cwd + n, sizeof(cwd) - n, "/tbo/ui/%s.mpg", name);
+        tries[1] = cwd;
+    } else {
+        tries[1] = local + 5; /* "tbo/ui/<name>.mpg" */
+    }
+    tries[2] = local;
+    for (i = 0; i < 3 && bytes == NULL; i++) {
+        FILE *fp = fopen(tries[i], "rb");
+        long n;
+        if (fp == NULL) {
+            continue;
+        }
+        if (fseek(fp, 0, SEEK_END) == 0 && (n = ftell(fp)) > 0 && fseek(fp, 0, SEEK_SET) == 0 && (bytes = malloc((size_t)n)) != NULL) {
+            if (fread(bytes, 1, (size_t)n, fp) == (size_t)n) {
+                *len = (size_t)n;
+                fprintf(stderr, "bt3: artwork: %s (film, %ld bytes)\n", tries[i], n);
+            } else {
+                free(bytes);
+                bytes = NULL;
+            }
+        }
+        fclose(fp);
+    }
+    return bytes;
+}
+
+/* One picture of the film, as the renderer uploads it: RGBA, the GS's alpha (0x80 opaque; a film with alpha: from
+   the lower picture's red). NULL at the film's end without a loop, or without memory. */
+static uint32_t *tbo_film_picture(TboFilm *film) {
+    plm_frame_t *pic = plm_decode_video(film->plm);
+    uint32_t *px, i, h = film->alpha ? film->h / 2 : film->h;
+
+    if (pic == NULL) { /* (at its end pl_mpeg says so once, then the loop starts it again: the first picture of the next round) */
+        pic = plm_decode_video(film->plm);
+    }
+    if (pic == NULL || (px = malloc((size_t)film->w * film->h * 4)) == NULL) {
+        return NULL;
+    }
+    plm_frame_to_rgba(pic, (uint8_t *)px, (int)film->w * 4);
+    for (i = 0; i < film->w * h; i++) {
+        uint32_t a = film->alpha ? ((px[i + film->w * h] & 0xFFu) * 128u + 127u) / 255u : 0x80u;
+        px[i] = (px[i] & 0x00FFFFFFu) | (a << 24);
+    }
+    return px;
+}
+
+static int tbo_film_thread(void *arg) {
+    TboFilm *film = (TboFilm *)arg;
+
+    SDL_LockMutex(film->lock);
+    for (;;) {
+        uint32_t *px;
+
+        while (!film->want) {
+            SDL_WaitCondition(film->wake, film->lock);
+        }
+        film->want = 0;
+        SDL_UnlockMutex(film->lock);
+        px = tbo_film_picture(film); /* (the film is this thread's alone once it started) */
+        SDL_LockMutex(film->lock);
+        free(film->ready);
+        film->ready = px;
+        if (px == NULL) {
+            film->want = 1; /* (no picture: another try, or the renderer, which asks only when it takes one, would wait forever) */
+            SDL_UnlockMutex(film->lock);
+            SDL_Delay(10);
+            SDL_LockMutex(film->lock);
+        }
+    }
+    return 0;
+}
+
+static GsTex tbo_film_texture(TboFilm *film) {
+    uint64_t now = SDL_GetTicks();
+    uint32_t *px = NULL;
+    double step;
+    uint32_t h;
+
+    if (!film->tried) {
+        size_t len = 0;
+        uint8_t *bytes = tbo_film_read(film->name, &len);
+        film->tried = 1;
+        film->plm = bytes != NULL ? plm_create_with_memory(bytes, len, 1) : NULL;
+        if (film->plm != NULL && (!plm_has_headers(film->plm) || plm_get_num_video_streams(film->plm) < 1)) {
+            plm_destroy(film->plm);
+            film->plm = NULL;
+        }
+        if (film->plm == NULL) {
+            if (bytes != NULL) {
+                fprintf(stderr, "bt3: artwork: tbo/ui/%s.mpg is not an MPEG-1 film: the picture instead\n", film->name);
+            }
+            return 0;
+        }
+        plm_set_audio_enabled(film->plm, 0);
+        plm_set_loop(film->plm, 1);
+        film->w = (uint32_t)plm_get_width(film->plm);
+        film->h = (uint32_t)plm_get_height(film->plm);
+        film->lock = SDL_CreateMutex();
+        film->wake = SDL_CreateCondition();
+        film->ready = tbo_film_picture(film); /* (the first one here: the screen has it at once) */
+        film->want = 1;
+        if (film->lock == NULL || film->wake == NULL || (film->thread = SDL_CreateThread(tbo_film_thread, "tbo film", film)) == NULL) {
+            fprintf(stderr, "bt3: artwork: no thread for tbo/ui/%s.mpg: decoded on the renderer's\n", film->name);
+        }
+    }
+    if (film->plm == NULL) {
+        return 0;
+    }
+    if (film->tex != 0 && film->frame == gGsFrame) {
+        return film->tex;
+    }
+    film->frame = gGsFrame;
+    step = 1.0 / (plm_get_framerate(film->plm) > 1.0 ? plm_get_framerate(film->plm) : 24.0);
+    if (film->lastMs != 0 && now - film->lastMs < 500) {
+        film->due += (double)(now - film->lastMs) / 1000.0;
+    }
+    film->lastMs = now;
+    if (film->due > step * 3.0) {
+        film->due = step * 3.0; /* a slow frame: the film waits rather than racing to catch up */
+    }
+    if (film->tex != 0 && film->due < step) {
+        return film->tex;
+    }
+    if (film->thread != NULL) { /* the picture the thread has ready, if it has: else the last one stays a frame more */
+        SDL_LockMutex(film->lock);
+        px = film->ready;
+        film->ready = NULL;
+        if (px != NULL) {
+            film->want = 1;
+            SDL_SignalCondition(film->wake);
+        }
+        SDL_UnlockMutex(film->lock);
+    } else {
+        px = film->ready != NULL ? film->ready : tbo_film_picture(film);
+        film->ready = NULL;
+    }
+    if (px == NULL) {
+        return film->tex;
+    }
+    if (film->tex != 0) {
+        film->due -= step;
+    }
+    h = film->alpha ? film->h / 2 : film->h;
+    if (film->tex == 0) {
+        film->tex = sBackend->texCreate(film->w, h, GS_TEXFMT_RGBA8, 1);
+        if (film->tex == 0) {
+            free(px);
+            return 0;
+        }
+    }
+    sBackend->texUpload(film->tex, 0, film->w, h, GS_TEXFMT_RGBA8, px, film->w * h * 4); /* (px is the backend's now) */
+    return film->tex;
 }
 
 static GsTex tbo_texture(uint32_t id) {
@@ -396,6 +729,12 @@ static GsTex tbo_texture(uint32_t id) {
     }
     if (id >= TBO_ART_COUNT && !languageArt) {
         return gsWhite;
+    }
+    if (id == TBO_BG || id == TBO_RADITZ_BUST) {
+        GsTex film = tbo_film_texture(id == TBO_BG ? &sTboFilm : &sRaditzFilm);
+        if (film != 0) {
+            return film;
+        }
     }
     cached = languageArt ? &sLangTex[id - TBO_LANG_BG] : &sTboTex[id];
     missing = languageArt ? &sLangMissing[id - TBO_LANG_BG] : &sTboMissing[id];
@@ -417,7 +756,14 @@ static GsTex tbo_texture(uint32_t id) {
         snprintf(path, sizeof(path), "%stbo/ui/%s.png", base != NULL ? base : "", kTboNames[id]);
         png = SDL_LoadPNG(path);
         if (png == NULL) {
-            snprintf(path, sizeof(path), "tbo/ui/%s.png", kTboNames[id]);
+            /* the current folder, written out whole: on Android SDL opens a relative path inside the APK's assets,
+               not in the app's folder where GameActivity copies tbo/ui (every picture was then white) */
+            char cwd[768];
+            if (getcwd(cwd, sizeof(cwd)) != NULL) {
+                snprintf(path, sizeof(path), "%s/tbo/ui/%s.png", cwd, kTboNames[id]);
+            } else {
+                snprintf(path, sizeof(path), "tbo/ui/%s.png", kTboNames[id]);
+            }
             png = SDL_LoadPNG(path);
         }
         if (png == NULL) { /* a source checkout: the pictures where they are kept (port/tbo/ui) */
@@ -1310,11 +1656,13 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
     }
     d->blendc = (float)((gGs.alpha[ctx] >> 32) & 0xFF) / 128.0f;
     {
-        int ts = lowres_now(d->target) ? 1 : SCALE; /* (a work buffer at the PS2's resolution: target_lowres) */
-        d->scissor[0] = (int)(sc & 0x7FF) * ts;
-        d->scissor[1] = (int)((sc >> 32) & 0x7FF) * ts;
-        d->scissor[2] = ((int)((sc >> 16) & 0x7FF) + 1) * ts - d->scissor[0];
-        d->scissor[3] = ((int)((sc >> 48) & 0x7FF) + 1) * ts - d->scissor[1];
+        /* (a float: SCALE is 1.25, 1.5, 1.75 too, and as an int it was 1 there: every draw cut to the 1x corner of the
+           picture, which then filled a part of the screen) */
+        float ts = lowres_now(d->target) ? 1.0f : SCALE; /* (a work buffer at the PS2's resolution: target_lowres) */
+        d->scissor[0] = (int)floorf((float)(sc & 0x7FF) * ts);
+        d->scissor[1] = (int)floorf((float)((sc >> 32) & 0x7FF) * ts);
+        d->scissor[2] = (int)ceilf((float)(((sc >> 16) & 0x7FF) + 1) * ts) - d->scissor[0];
+        d->scissor[3] = (int)ceilf((float)(((sc >> 48) & 0x7FF) + 1) * ts) - d->scissor[1];
     }
     return 1;
 }
@@ -2238,7 +2586,7 @@ void GsDraw_AspectFollow(void) {
 #endif
 
 void GsGpu_GetSettings(PortVideo *v) {
-    v->scale4 = gsPendingScale4 ? gsPendingScale4 : gsScale4;
+    v->scale4 = sScreenCap4 ? sUserScale4 : gsPendingScale4 ? gsPendingScale4 : gsScale4;
     v->aspectMilli = sAspectAuto ? 0 : Port_AspectMilli(); /* (0: the screen's own shape, Android) */
     v->fullscreen = sFullscreen;
     v->fxOff = (int)gsFxOff;
@@ -2267,7 +2615,12 @@ void GsGpu_SetSettings(const PortVideo *v) {
     PortVideo now;
     GsGpu_GetSettings(&now);
     if (v->scale4 != now.scale4) {
-        gsPendingScale4 = v->scale4 < 4 ? 4 : v->scale4 > 32 ? 32 : v->scale4; /* applied between two frames */
+        int q = v->scale4 < 4 ? 4 : v->scale4 > 32 ? 32 : v->scale4;
+        if (sScreenCap4) { /* (on the online screens: kept for after them, and drawn there at most at the cap) */
+            sUserScale4 = q;
+            q = q > sScreenCap4 ? sScreenCap4 : q;
+        }
+        gsPendingScale4 = q; /* applied between two frames */
     }
     if (v->aspectMilli != now.aspectMilli) {
 #ifdef __ANDROID__
@@ -2317,7 +2670,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
     Port_SettingSave("smooth_2d", sSmooth2d);
     Port_SettingSave("texture_pack", sTexPackOn);
     {   /* "scale4" in quarters; "scale" the whole multiplier, for the launcher of an earlier version */
-        int q = gsPendingScale4 ? gsPendingScale4 : gsScale4;
+        int q = sScreenCap4 ? sUserScale4 : gsPendingScale4 ? gsPendingScale4 : gsScale4;
         Port_SettingSave("scale4", q);
         Port_SettingSave("scale", (q + 2) / 4);
     }
@@ -2335,6 +2688,20 @@ void GsGpu_SetSettings(const PortVideo *v) {
     Port_SettingSave("stage_sounds", gPortStagePercent);
     Port_SettingSave("display", sDisplaySetting);
     Port_SettingsWrite();
+}
+
+/* The online screens open (cap4 > 0, in quarters) or close (0): see sScreenCap4. Called by menu/port_tbo.c. */
+void GsDraw_ScreenScaleCap(int cap4) {
+    if (cap4 > 0 && !sScreenCap4) {
+        sUserScale4 = gsPendingScale4 ? gsPendingScale4 : gsScale4;
+        sScreenCap4 = cap4;
+        if (sUserScale4 > cap4) {
+            gsPendingScale4 = cap4;
+        }
+    } else if (cap4 <= 0 && sScreenCap4) {
+        sScreenCap4 = 0;
+        gsPendingScale4 = sUserScale4 != gsScale4 ? sUserScale4 : 0;
+    }
 }
 
 int GsGpu_Init(void) {

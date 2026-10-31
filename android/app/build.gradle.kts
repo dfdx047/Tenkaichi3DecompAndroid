@@ -25,6 +25,10 @@ android {
         val portRelease = rootProject.file("../port/src/port_release.h").takeIf { it.exists() }?.readLines()
             ?.firstOrNull { it.startsWith("#define PORT_RELEASE ") }?.substringAfter("#define PORT_RELEASE ")?.trim()?.toIntOrNull() ?: 0
         buildConfigField("int", "PORT_RELEASE", portRelease.toString())
+        // the BT2 engine packages this app imports (bt2/runtime/android/engine_abi.h; data/Bt2Engine.kt)
+        val bt2EngineAbi = rootProject.file("../bt2/runtime/android/engine_abi.h").takeIf { it.exists() }?.readLines()
+            ?.firstOrNull { it.startsWith("#define BT2_ENGINE_ABI ") }?.substringAfter("#define BT2_ENGINE_ABI ")?.trim()?.toIntOrNull() ?: 0
+        buildConfigField("int", "BT2_ENGINE_ABI", bt2EngineAbi.toString())
 
         // The game engine will be arm64 only (see docs: 32-bit pointers lowered for AArch64).
         ndk { abiFilters += listOf("arm64-v8a") }
@@ -58,6 +62,14 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
+        // A test build installed beside Dragon Rage instead of over it (./gradlew assembleDebug -PsideBySide): its
+        // own package and the name "Dragon Rage (teste)" (src/sideBySide), so the player's app and its data stay.
+        if (project.hasProperty("sideBySide")) {
+            getByName("debug") { applicationIdSuffix = ".teste" }
+        }
+    }
+    if (project.hasProperty("sideBySide")) {
+        sourceSets.getByName("debug").res.srcDir("src/sideBySide/res")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

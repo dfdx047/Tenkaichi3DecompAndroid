@@ -1,0 +1,63 @@
+diff --git a/gs/gs_renderer.hpp b/gs/gs_renderer.hpp
+--- a/gs/gs_renderer.hpp
++++ b/gs/gs_renderer.hpp
+@@ -322,6 +322,9 @@ public:
+ 
+ 	void set_field_aware_super_sampling(bool enable);
+ 	void set_frame_boundaries(bool enable);
++	// The buffers that hold GS memory (with its super-samples) and the CLUT.
++	const Vulkan::Buffer &get_vram_buffer() const { return *buffers.gpu; }
++	const Vulkan::Buffer &get_clut_buffer() const { return *buffers.clut; }
+ 
+ private:
+ 	PageTracker &tracker;
+diff --git a/gs/gs_interface.hpp b/gs/gs_interface.hpp
+--- a/gs/gs_interface.hpp
++++ b/gs/gs_interface.hpp
+@@ -264,6 +264,14 @@ public:
+ 	// interface on the same device can flush from another thread without waiting for the first one's frame.
+ 	void set_frame_boundaries(bool enable);
+ 
++	// GS memory as the renderer holds it on the GPU (with super-samples), and its CLUT: for copying the state of
++	// one interface into another on the same device. Flush first; the copies are the caller's commands.
++	const Vulkan::Buffer &get_vram_buffer() const;
++	const Vulkan::Buffer &get_clut_buffer() const;
++	// After the caller wrote GS memory on the GPU: every page counts as written outside the GS (EXTWRITE),
++	// cached textures are dropped.
++	void invalidate_vram();
++
+ 	// Optional interface if application wants to listen for these IRQ related events.
+ 	void set_signal_interface(SignalInterface *iface);
+ 
+diff --git a/gs/gs_interface.cpp b/gs/gs_interface.cpp
+--- a/gs/gs_interface.cpp
++++ b/gs/gs_interface.cpp
+@@ -4465,6 +4465,28 @@ void GSInterface::set_debug_mode(const DebugMode &mode)
+ 	renderer.set_enable_timestamps(mode.timestamps);
+ }
+ 
++const Vulkan::Buffer &GSInterface::get_vram_buffer() const
++{
++	return renderer.get_vram_buffer();
++}
++
++const Vulkan::Buffer &GSInterface::get_clut_buffer() const
++{
++	return renderer.get_clut_buffer();
++}
++
++void GSInterface::invalidate_vram()
++{
++	PageRect page_rect = {};
++	page_rect.base_page = 0;
++	page_rect.page_width = vram_size / PageSize;
++	page_rect.page_height = 1;
++	page_rect.page_stride = page_rect.page_width;
++	page_rect.block_mask = UINT32_MAX;
++	page_rect.write_mask = UINT32_MAX;
++	tracker.mark_external_write(page_rect);
++}
++
+ void GSInterface::set_frame_boundaries(bool enable)
+ {
+ 	renderer.set_frame_boundaries(enable);

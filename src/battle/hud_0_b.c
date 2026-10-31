@@ -237,8 +237,14 @@ u16 *BtlMenu_GetItemText(s32 n) {
     static const char to[] = "Back to Budokai Online";
     static u16 line[32];
     extern s32 gPortTboSpar; /* menu/port_tbo.c */
-    u16 *s = BtlMenu_GetText(n + 8);
+    u16 *s;
 
+    if (n >= 0x6FFE) { /* the port's own (port/src/spec_menu.c): a lobby's "Back to the Lobby" (0x6FFE), a spectator's
+                          own pause menu (0x6FFF its header, 0x7000 on its items) */
+        extern u16 *PortSpecMenu_Text(s32 k);
+        return PortSpecMenu_Text(n == 0x6FFE ? 8 : n == 0x6FFF ? 7 : n - 0x7000);
+    }
+    s = BtlMenu_GetText(n + 8);
     if (gPortTboSpar) {
         u16 *t = *s == 0xFEFF ? s + 1 : s;
         s32 i;
@@ -499,6 +505,19 @@ void BtlMenu_Draw(u64 **pkt, BtlMenu *menu) {
                         Font_SetColorRGBA(0x89, 0xC3, 0xE5, 0x80);
                     }
                     text = menu->items[i].text[pad];
+#ifdef PORT
+                    if (text == 0x6FFF) { /* a header row in letters (a spectator's own pause menu, port/src/spec_menu.c:
+                                             its note where the battle's menus have their title picture) */
+                        extern u16 *PortSpecMenu_Text(s32 k);
+
+                        Font_PushCursor();
+                        Font_SetHome(0x100, ty + 0xE);
+                        Font_SetColorRGBA(0xFF, 0xB0, 0x40, 0x80);
+                        Font_Print(PortSpecMenu_Text(7));
+                        Font_PopCursor();
+                        continue;
+                    }
+#endif
                     if (text >= 0) {
                         Font_Print(BtlMenu_GetItemText(text));
                         Font_NewLine();
@@ -619,6 +638,53 @@ void BtlMenu_DrawAll(void) {
         Font_Flush(first);
     }
 }
+
+#ifdef PORT
+/* Draws a menu that is not the shown tree, as BtlMenu_DrawAll draws that one: a spectator's own pause menu
+   (port/src/spec_menu.c). */
+void BtlMenu_PortDrawMenu(BtlMenu *menu) {
+    extern s32 gPortBtlMenuLive; /* battle/hud_0.c */
+    u64 *pkt;
+    s32 first;
+    s32 pad;
+
+    if (!gPortBtlMenuLive || gBtlMenu == NULL) {
+        return;
+    }
+    pad = gBtlMenu->pad; /* (the texts of port 0: such a menu has the same for both; the shown tree's port after) */
+    gBtlMenu->pad = 0;
+    BtlMenu_UploadTex();
+    first = Font_GetCmdCount();
+    BtlMenu_BeginDraw(&pkt);
+    BtlMenu_Draw(&pkt, menu);
+    BtlMenu_EndDraw(&pkt);
+    Font_Flush(first);
+    gBtlMenu->pad = pad;
+}
+
+/* Its box's size, as the engine works it out (0 when the battle's menu work does not exist). */
+void BtlMenu_PortSize(BtlMenu *menu, s32 *w, s32 *h) {
+    extern s32 gPortBtlMenuLive;
+    s32 pad;
+
+    *w = *h = 0;
+    if (!gPortBtlMenuLive || gBtlMenu == NULL) {
+        return;
+    }
+    pad = gBtlMenu->pad;
+    gBtlMenu->pad = 0;
+    *w = BtlMenu_GetWidth(menu);
+    *h = BtlMenu_GetHeight(menu);
+    gBtlMenu->pad = pad;
+}
+
+/* 1 while the battle's menu work exists. */
+s32 BtlMenu_PortLive(void) {
+    extern s32 gPortBtlMenuLive;
+
+    return gPortBtlMenuLive && gBtlMenu != NULL;
+}
+#endif
 
 /* Returns the work. */
 BtlMenuWork *BtlMenu_GetWork(void) {

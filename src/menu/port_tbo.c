@@ -248,6 +248,9 @@ extern int Port_LobbyInBackground(void);
 extern int Port_RollCan(void);
 extern int Port_LobbyStartQuick(int queue);   /* a quick match: 0 one on one, 1 teams (the service's queues S, T) */
 extern void Port_LobbyQueuesAsk(void);        /* asks how many wait in each queue */
+extern void Port_LobbyQuickArea(const char *area); /* what the next quick match looks for: "auto", "any" or a region */
+extern int Port_LobbyWiden(void);             /* a quick match that waits (Auto): seconds after which it looks everywhere, 0 not said */
+extern const char *Port_LobbyRivalRegion(void); /* the rival's region's name, "" not known */
 extern int Port_LobbyQueueWaiting(int queue); /* ... as last heard, -1 if not known */
 extern void Port_NetSpeedSet(int percent);
 extern int Port_NetSpeedStandard(void);
@@ -258,11 +261,15 @@ extern void BattleSetup_SetSide(s32 sideNo, s32 control, s32 pad, s32 memberCoun
 extern void BattleSetup_SetMember(s32 sideNo, s32 idx, s32 chara, s32 costume, s32 variant, s32 cpuLevel, f32 health, void *items);
 extern void BattleSetup_Finish(void);
 extern int Port_DataFingerprint(unsigned long long *out); /* plat_fprint.c: 1 known, 0 being worked out, -1 not done */
+extern void GsDraw_ScreenScaleCap(int cap4);             /* port/src/gs/gs_draw.c: the online screens' resolution cap */
 extern int Port_DataFingerprintOriginal(void);           /* 1 the data the game computes with is the original disc's */
 extern const char *Port_DataFingerprintText(void);
 extern int Port_Setting(const char *name, int def);
 extern void Port_SettingSave(const char *name, int value);
 extern void Port_SettingsWrite(void);
+#include "../../port/src/gs/net_lobby.h" /* the lobby (Port_LobbyView, Port_LobbyDo ...): plain C, its view has no pointers */
+#include "../../port/src/gs/net_dragon.h" /* Dragon Net: against whom (DrNet_Mode), Ranked (DrRanked_*), players online */
+extern void Port_LobbyHelloAsk(void);
 
 /* the screens */
 #define TB_HUB 0
@@ -274,6 +281,11 @@ extern void Port_SettingsWrite(void);
 #define TB_QUICK 6
 #define TB_SPAR 7 /* Train While Waiting: the fighters of the sparring fight */
 #define TB_BLOCK 8 /* "Cannot Go Online": this game's data is not the disc's */
+#define TB_LOBBY 9 /* a lobby of up to eight (port/src/gs/net_lobby.c): its places, its rules, its talk */
+#define TB_RANKED 10 /* Ranked (Dragon Net only): the profile, the battle, search, the ranking, update */
+#define TB_RKWAIT 11 /* Ranked: searching for a rival, then the room the service pairs the two in */
+#define TB_BOARD 12  /* Ranked: the best fighters */
+#define TB_MODES 13
 #define TB_FIGHTERS 161
 #define TB_TOURNAMENT_STAGE 4 /* the World Tournament Stage, at noon */
 
@@ -282,12 +294,23 @@ extern void Port_SettingsWrite(void);
 #define HUB_RANKED 1
 #define HUB_CREATE 2
 #define HUB_JOIN 3
-#define HUB_FRIENDS 4
-#define HUB_TOURNAMENT 5
-#define HUB_REPLAYS 6
-#define HUB_LEADERBOARD 7
-#define HUB_PROFILE 8
-#define HUB_COUNT 9
+#define HUB_LOBBY 4
+#define HUB_FRIENDS 5
+#define HUB_TOURNAMENT 6
+#define HUB_REPLAYS 7
+#define HUB_LEADERBOARD 8
+#define HUB_PROFILE 9
+#define HUB_COUNT 10
+#define HUB_LANG 10 /* the language of these screens: the row above the list */
+#define HUB_VS 11   /* against whom: Android + Switch (Dragon Net's service) or the PC (the PC port's) */
+#define HUB_ITEMS 12
+
+/* Ranked's rows */
+#define RK_BATTLE 0
+#define RK_SEARCH 1
+#define RK_BOARD 2
+#define RK_UPDATE 3
+#define RK_COUNT 4
 
 /* Create Room's rows */
 #define CR_BATTLE 0
@@ -303,6 +326,7 @@ extern void Port_SettingsWrite(void);
 #define PR_NAME 0
 #define PR_COUNT 1
 
+#define TB_CHAT_MAX 60 /* a line of the lobby's chat */
 #define KEY_COLS 9
 #define KEY_ROWS 4
 #define CODE_LEN 6
@@ -315,8 +339,9 @@ typedef struct TboScreen {
     s32 train;          /* it is left for the Ultimate Training, the room still open */
     s32 note;
     char noteLine[96];
-    s32 hubCur;
+    s32 hubCur;         /* the item under the cursor (HUB_*) */
     f32 hubY;           /* where the hub's cursor plate is drawn: it glides */
+    s32 lang;           /* the screens' language: 0 English, 1 Portuguese, 2 Spanish (setting tbo_lang) */
     /* the host's choices (kept in the settings) */
     s32 battle;         /* 0 one on one, 1 teams of up to five */
     s32 time;           /* 0..4: 60, 90, 180, 240 seconds, no limit */
@@ -333,10 +358,12 @@ typedef struct TboScreen {
     s32 host;           /* this side opened the room */
     s32 waitFrom;       /* frames when the search began */
     s32 found;          /* the other player is there: the match is starting */
+    s32 launchIn;       /* ... in this many frames (the page says so first: the session holds the last picture shown) */
     s32 ended;          /* Port_NetSessionsEnded when it started: a change says the match has been played */
     s32 waitBack;       /* the screen a cancelled search goes back to */
     /* Quick Match */
     s32 queue;          /* 0 one on one, 1 teams */
+    s32 region;         /* where to look: 0 Auto (the nearest first), 1..7 only that region, 8 Anywhere (QK_REGIONS) */
     s32 qkCur;
     s32 asked;          /* frames when the queues were last asked about */
     /* Train While Waiting */
@@ -349,6 +376,28 @@ typedef struct TboScreen {
     /* typing the name */
     char typed[20];
     s32 typedLen;
+    /* the lobby (TB_LOBBY) */
+    s32 lbCol;          /* 0 the places, 1 the right side (the rules, the buttons) */
+    s32 lbPlace;        /* the place under the cursor */
+    s32 lbRight;        /* the right side's item under the cursor: a rule 0..4, a button 5..8 */
+    s32 lbPicked;       /* the owner: the place whose member is being moved (Move), -1 none */
+    s32 lbPop;          /* a window over the page: 0 none, LB_POP_ */
+    s32 lbPopCur;
+    s32 lbPopPlace;     /* (the place the owner's window is about) */
+    s32 lbChat;         /* the keypad for a line of chat is up */
+    s32 lbPopT;         /* frames since the window over the page opened */
+    s32 lbPopClose;     /* frames left of its going (it slides out, then is gone) */
+    s32 lbHostPose;     /* the hosts of the page the lobby's came from, who leave as it comes in (-1 none) */
+    f32 lbHostX;
+    f32 lbHostH;
+    s32 lbHostT;        /* frames since they began to go */
+    s32 lbSeenState;    /* the lobby's state last frame (reached: the page's windows come in then) */
+    char chat[TB_CHAT_MAX + 1];
+    s32 chatLen;
+    /* Ranked */
+    s32 rkCur;
+    s32 rkMode;         /* 0 single, 1 team */
+    s32 rkLobby;        /* paired: the room of the two is being opened / joined (the search's own, as a room's) */
 } TboScreen;
 
 static TboScreen *sTb;
@@ -357,7 +406,6 @@ static s32 sTbBgQueue;
 static s32 sTbBgFrames; /* how long it had been searching when the sparring fight began; the sign counts on from it */
 s32 gPortTboSpar;       /* the battle that runs is Train While Waiting's sparring fight (its sign, its pause menu) */
 static char sTbBgCode[CODE_LEN + 1];
-static f32 Tb_Beat(s32 period);
 /* A format with a number in it ("%d FRAME") in the chosen language, for sprintf (the translation file's line keeps
    its %d slots, or it is not used: port/src/gs/menu_translation.c). */
 static char *Tb_Fmt(char *format) {
@@ -369,29 +417,56 @@ static char *Tb_Fmt(char *format) {
     return Port_TrLine(format, buf[k], 160) ? buf[k] : format;
 }
 
-static char *sTbHubName[HUB_COUNT] = {"Quick Match", "Ranked Match", "Create Room", "Join Room", "Friends", "Tournament", "Replays", "Leaderboard", "Profile"};
-static const s32 sTbHubReady[HUB_COUNT] = {1, 0, 1, 1, 0, 0, 0, 0, 1};
-static char *sTbHubSay[HUB_COUNT] = {
+static char *sTbHubName[HUB_ITEMS] = {"Quick Match", "Ranked", "Create Room", "Join Room", "Lobby", "Friends", "Tournament", "Replays", "Leaderboard", "Profile",
+                                     "Language", "Play Against"};
+static const s32 sTbHubReady[HUB_ITEMS] = {1, 1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1};
+/* What the hub lists, top to bottom: the language, then what can be played. Ranked Match, Friends, Tournament, Replays
+   and Leaderboard need more of the matchmaking service than it has: not listed until they do. */
+static const s32 sTbHubOrder[] = {HUB_LANG, HUB_VS, HUB_QUICK, HUB_RANKED, HUB_CREATE, HUB_JOIN, HUB_LOBBY, HUB_PROFILE};
+#define HUB_SMALL 2 /* the rows above the list (the language, against whom): small, changed with left / right */
+#define HUB_ROWS ((s32)(sizeof(sTbHubOrder) / sizeof(sTbHubOrder[0])))
+static s32 Tb_HubRow(s32 item) {
+    s32 i;
+
+    for (i = 0; i < HUB_ROWS; i++) {
+        if (sTbHubOrder[i] == item) {
+            return i;
+        }
+    }
+    return 1;
+}
+/* the languages of the language row, in their own words (not translated) */
+static char *sTbLangName[3] = {"ENGLISH", "PORTUGU\xC3\x8AS", "ESPA\xC3\x91OL"}; /* (UTF-8 in escapes: the build reads the file as ASCII) */
+static char *sTbLangCode[3] = {"en", "pt", "es"};
+static char *sTbHubSay[HUB_ITEMS] = {
     "Fight whoever is searching right now! No time limit, and you can train while you wait.",
-    "Fights that move your rank, season by season. That one is coming soon!",
+    "Fights for Elo points against Android and Switch players. Points change when both results agree.",
     "Open a room with your own rules, then give your rival its code. No port forwarding needed!",
     "Got a room code from your rival? Type it in and jump right into their room!",
+    "A lobby for up to eight: two fight, six watch. You pick who plays and the rules; the others join with its code.",
     "Your rivals, who is online, and invites. That one is coming soon!",
     "The Tenkaichi Budokai itself: brackets of 4 to 16 players. That one is coming soon!",
     "Your last matches, saved to watch again. That one is coming soon!",
     "The strongest in the world, among your friends, and with each fighter. Coming soon!",
     "The name your rivals see.",
+    "Choose the language of these screens. Left and right change it.",
+    "Choose who you play against: Android and Switch, or the PC.",
 };
+/* against whom, as the row writes it (not translated: names) */
+static char *sTbVsName[2] = {"ANDROID + SWITCH", "PC"};
+static void Tb_LobbyOpen(void);
+static void Tb_LobbyCreate(void);
+/* Quick Match's Region: what the player chooses, and what the matchmaking service is told (port/matchmaking/worker.js:
+   Auto takes the nearest first and everyone after 25 seconds; a region players placed in it first and everyone
+   after 40; Anywhere whoever waits longest). */
+#define QK_REGIONS 9
+#define QK_REGION_WIDEN 40 /* a region's search takes everyone after this many seconds (the service's REGION_WIDEN_SECONDS) */
+static char *sTbRegionName[QK_REGIONS] = {"AUTO", "NORTH AMERICA", "SOUTH AMERICA", "EUROPE", "MIDDLE EAST", "AFRICA", "ASIA", "OCEANIA", "ANYWHERE"};
+static char *sTbRegionArea[QK_REGIONS] = {"auto", "NA", "SA", "EU", "ME", "AF", "AS", "OC", "any"};
 static char *sTbTime[5] = {"60 SECONDS", "90 SECONDS", "180 SECONDS", "240 SECONDS", "NO LIMIT"};
 static char sTbKeys[KEY_ROWS][KEY_COLS + 1] = {"ABCDEFGHI", "JKLMNOPQR", "STUVWXYZ0", "123456789"};
 
 /* ---------------------------------------------------------------------------------------------- small things */
-static f32 Tb_Beat(s32 period) {
-    s32 k = sTb->frames % period;
-
-    return (f32)(k * 2 < period ? k * 2 : (period - k) * 2) / (f32)period;
-}
-
 static f32 Tb_In(s32 delay) {
     f32 t = (f32)(sTb->modeT - delay) / 16.0f;
 
@@ -427,8 +502,20 @@ static void Tb_SaveChoices(void) {
     Port_SettingsWrite();
 }
 
+/* The screens' language: the one chosen here before, else the launcher's (dr_lang: 0 English, 1 Portuguese,
+   2 Spanish), else English. */
+extern int Port_TboLanguage(const char *locale); /* port/src/gs/menu_translation.c */
+static void Tb_LangSet(s32 lang) {
+    sTb->lang = lang >= 0 && lang <= 2 ? lang : 0;
+    Port_TboLanguage(sTbLangCode[sTb->lang]);
+}
+
 static void Tb_LoadChoices(void) {
+    s32 lang = Port_Setting("tbo_lang", -1);
+
+    Tb_LangSet(lang >= 0 ? lang : Port_Setting("dr_lang", 0));
     sTb->battle = Port_Setting("tbo_battle", 0);
+    sTb->rkMode = Port_Setting("tbo_rank_mode", 0) != 0;
     sTb->time = Port_Setting("tbo_time", 3);
     sTb->delay = Port_Setting("net_delay2", -1);
     sTb->roll = Port_RollCan() ? Port_Setting("net_rollback2", 8) : 0;
@@ -446,6 +533,10 @@ static void Tb_LoadChoices(void) {
     }
     sTb->roll &= ~1;
     sTb->queue = Port_Setting("tbo_queue", 0) == 1;
+    sTb->region = Port_Setting("tbo_region", 0);
+    if (sTb->region < 0 || sTb->region >= QK_REGIONS) {
+        sTb->region = 0;
+    }
     sTb->spMe = Port_Setting("tbo_spar_me", 0);
     sTb->spFoe = Port_Setting("tbo_spar_foe", 31);
     if (sTb->spMe < 0 || sTb->spMe >= TB_FIGHTERS) {
@@ -487,6 +578,10 @@ static s32 Tb_Vanilla(void) {
         return 0;
     }
     if (state == 1 && Port_DataFingerprintOriginal() == 1) {
+        return 1;
+    }
+    if (state < 0) { /* not computed in this run (Android: the app checked the disc image when it installed it, and keeps
+                        the archives whole, not as the loose files it reads): let in, as net.c does */
         return 1;
     }
     sTb->blockBack = sTb->mode;
@@ -541,16 +636,39 @@ static s32 Tb_SearchNews(void) {
        screens are again where they were then. The match has been played: back to the first page. */
     if (sTb->found && Port_NetSessionsEnded() != sTb->ended) {
         sTb->found = 0;
-        Tb_SetMode(TB_HUB);
+        if (sTb->rkLobby) { /* a ranked match: back to Ranked, where its result shows */
+            sTb->rkLobby = 0;
+            DrRanked_Open(Port_NetNameGet());
+            Tb_SetMode(TB_RANKED);
+        } else {
+            Tb_SetMode(TB_HUB);
+        }
+        return 1;
+    }
+    if (sTb->found && sTb->launchIn > 0) {
+        /* The session begins at the game's next blank, from the game's first moment, and holds the picture that
+           was shown last while it starts: a few frames of "YOUR RIVAL IS HERE!" first, so that is the picture
+           (launched at once, it was the search's, "SEARCHING..."). */
+        if (--sTb->launchIn == 0) {
+            Port_LobbyLaunch();
+        }
         return 1;
     }
     state = sTb->found ? 2 : Port_LobbyPoll();
     if (state == 2 && !sTb->found) {
+        if (sTb->rkLobby) {
+            DrRanked_Handover(); /* (the service is told the result of this one) */
+        }
         sTb->found = 1;
+        sTb->launchIn = 4;
         sTb->ended = Port_NetSessionsEnded();
         Snd_PlaySe(1, 1);
         Tb_SetMode(TB_WAIT);
-        Port_LobbyLaunch(); /* the session begins at the game's next blank, from the game's first moment */
+        return 1;
+    }
+    if (state == 5 && !sTb->found) { /* the code was a lobby's: this game is its member now (gs/net_lobby.c) */
+        Snd_PlaySe(1, 1);
+        Tb_LobbyOpen();
         return 1;
     }
     if (state <= 0 && !sTb->found) {
@@ -562,6 +680,10 @@ static s32 Tb_SearchNews(void) {
             Tb_Note("THE ROOM COULD NOT BE OPENED");
         }
         Port_LobbyCancel();
+        if (sTb->rkLobby) {
+            sTb->rkLobby = 0;
+            DrRanked_Cancel();
+        }
         Tb_SetMode(sTb->waitBack == TB_WAIT || sTb->waitBack == TB_SPAR ? TB_HUB : sTb->waitBack);
         return 1;
     }
@@ -619,12 +741,19 @@ static char *Tb_Fighter(s32 chara) {
     return name[chara];
 }
 
+/* Left / right on a row of choices, and cross too: cross changes the choice (one step on), as on the language row; it
+   does not walk down to the next row (only the last row's cross starts). */
+static s32 Tb_Side(void) {
+    s32 side = Ps_Side();
+
+    return side == 0 && (gPad[0].gamePressed & PADG_CROSS) ? 1 : side;
+}
+
 static void Tb_SparUpdate(s32 live) {
     Pad *pad = &gPad[0];
     s32 *who;
 
-    Ps_Prompt(3, "Change");
-    Ps_Prompt(0, sTb->spCur == 2 ? "Start Training" : "Next");
+    Ps_Prompt(0, sTb->spCur == 2 ? "Start Training" : "Change");
     Ps_Prompt(2, "Back");
     if (Tb_SearchNews()) {
         return;
@@ -635,7 +764,7 @@ static void Tb_SparUpdate(s32 live) {
     Ps_Move(&sTb->spCur, 3);
     who = sTb->spCur == 0 ? &sTb->spMe : sTb->spCur == 1 ? &sTb->spFoe : NULL;
     if (who != NULL) {
-        s32 step = Ps_Side();
+        s32 step = Tb_Side();
 
         if (pad->gameRepeat & PADG_R1) {
             step = 10;
@@ -661,9 +790,6 @@ static void Tb_SparUpdate(s32 live) {
             sTb->train = 1;
             sTb->leaving = 1;
             ColorFade_StartOut(0, 0, 0, 0x14);
-        } else {
-            Snd_PlaySe(1, 0);
-            sTb->spCur++;
         }
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
@@ -683,7 +809,9 @@ static void Tb_QuickStart(void) {
     Port_NetOptions(Port_RollCan() ? 8 : 0, -2);
     Port_NetNameSet(Port_NetNameGet());
     Port_SettingSave("tbo_queue", sTb->queue);
+    Port_SettingSave("tbo_region", sTb->region);
     Port_SettingsWrite();
+    Port_LobbyQuickArea(sTbRegionArea[sTb->region]);
     state = Port_LobbyStartQuick(sTb->queue);
     if (state < 0) {
         Tb_Note("THE NETWORK COULD NOT BE OPENED ON THIS PC");
@@ -698,9 +826,9 @@ static void Tb_QuickStart(void) {
 
 static void Tb_QuickUpdate(s32 live) {
     Pad *pad = &gPad[0];
+    s32 side;
 
-    Ps_Prompt(3, "Change");
-    Ps_Prompt(0, sTb->qkCur == 1 ? "Search" : "Next");
+    Ps_Prompt(0, sTb->qkCur == 2 ? "Search" : "Change");
     Ps_Prompt(2, "Back");
     if (sTb->frames - sTb->asked > 1800) { /* how many wait in each queue, asked again every half minute */
         sTb->asked = sTb->frames;
@@ -709,18 +837,19 @@ static void Tb_QuickUpdate(s32 live) {
     if (!live) {
         return;
     }
-    Ps_Move(&sTb->qkCur, 2);
-    if (sTb->qkCur == 0 && Ps_Side() != 0) {
+    Ps_Move(&sTb->qkCur, 3);
+    side = Tb_Side();
+    if (sTb->qkCur == 0 && side != 0) {
         sTb->queue = !sTb->queue;
+        Snd_PlaySe(1, 0);
+    } else if (sTb->qkCur == 1 && side != 0) {
+        sTb->region = (sTb->region + side + QK_REGIONS) % QK_REGIONS;
         Snd_PlaySe(1, 0);
     }
     if (pad->gamePressed & (PADG_CROSS | PADG_START)) {
-        if (sTb->qkCur == 1 || (pad->gamePressed & PADG_START)) {
+        if (sTb->qkCur == 2 || (pad->gamePressed & PADG_START)) {
             Snd_PlaySe(1, 1);
             Tb_QuickStart();
-        } else {
-            Snd_PlaySe(1, 0);
-            sTb->qkCur = 1;
         }
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
@@ -728,21 +857,231 @@ static void Tb_QuickUpdate(s32 live) {
     }
 }
 
-/* ---------------------------------------------------------------------------------------------- the hub */
-static void Tb_HubUpdate(s32 live) {
-    Pad *pad = &gPad[0];
+/* ---------------------------------------------------------------------------------------------- Ranked */
+/* Ranked is Dragon Net's (port/src/gs/net_dragon.c): an Elo profile per player, a search that pairs two of a level,
+   then a room of the two (the first opens it and tells the service its code, the other joins with it), and the
+   result, counted when both sides report the same one. These pages are its face; the work is net_dragon.c's. */
+static DrRanked sTbRk; /* (what Ranked says this frame) */
 
-    Ps_Prompt(0, "Enter");
+/* A message of Ranked (DRMSG_), in English: the screens' line, translated as the others. "" none. */
+static char *Tb_RkMsg(s32 m) {
+    switch (m) {
+    case DRMSG_SEARCHING: return "Searching for a rival...";
+    case DRMSG_SEARCHING_LEVEL: return "Searching for a rival of your level...";
+    case DRMSG_FOUND: return "Rival found. Connecting...";
+    case DRMSG_CONFIRMED: return "Result confirmed.";
+    case DRMSG_ENDED_NO_POINTS: return "Search over. No points.";
+    case DRMSG_WAIT_RIVAL: return "Waiting for your rival's result.";
+    case DRMSG_DISPUTED: return "The two results differ: no points.";
+    case DRMSG_VOID: return "Match void: no points.";
+    case DRMSG_NO_ANSWER: return "Ranked did not answer. Trying again...";
+    case DRMSG_REGISTER_FAILED: return "The Ranked profile could not be made.";
+    case DRMSG_PROFILE_FAILED: return "The ranking could not be updated.";
+    case DRMSG_ROOM_FAILED: return "The ranked room could not be published.";
+    case DRMSG_FINISH_FIRST: return "Your last ranked match is still being confirmed.";
+    case DRMSG_VERSION: return "The Dragon Net service does not take this version yet.";
+    case DRMSG_UPDATED: return "Profile updated.";
+    case DRMSG_BUSY: return "Too many requests: wait a moment.";
+    case DRMSG_LIMIT: return "Server busy (daily limit), try again later.";
+    }
+    return "";
+}
+
+/* The service names the tiers in Spanish (Bronce .. Maestro): in English here, then translated as the others. */
+static char *Tb_RkTier(const char *server) {
+    static char other[24];
+
+    if (strcmp(server, "Bronce") == 0) {
+        return "Bronze";
+    }
+    if (strcmp(server, "Plata") == 0) {
+        return "Silver";
+    }
+    if (strcmp(server, "Oro") == 0) {
+        return "Gold";
+    }
+    if (strcmp(server, "Platino") == 0) {
+        return "Platinum";
+    }
+    if (strcmp(server, "Diamante") == 0) {
+        return "Diamond";
+    }
+    if (strcmp(server, "Maestro") == 0) {
+        return "Master";
+    }
+    Ps_Copy(other, server, 24);
+    return other;
+}
+
+static void Tb_RankedUpdate(s32 live) {
+    Pad *pad = &gPad[0];
+    s32 side;
+
+    Ps_Prompt(0, sTb->rkCur == RK_BATTLE ? "Change" : "Enter");
     Ps_Prompt(2, "Back");
     if (!live) {
         return;
     }
-    Ps_Move(&sTb->hubCur, HUB_COUNT);
+    Ps_Move(&sTb->rkCur, RK_COUNT);
+    side = sTb->rkCur == RK_BATTLE ? Tb_Side() : 0;
+    if (side != 0) {
+        Snd_PlaySe(1, 0);
+        sTb->rkMode = !sTb->rkMode;
+        Port_SettingSave("tbo_rank_mode", sTb->rkMode);
+        Port_SettingsWrite();
+    } else if (pad->gamePressed & PADG_CROSS) {
+        switch (sTb->rkCur) {
+        case RK_SEARCH:
+            if (!Tb_Vanilla()) {
+                break;
+            }
+            Snd_PlaySe(1, 1);
+            DrRanked_Search(Port_NetNameGet(), sTb->rkMode);
+            sTb->rkLobby = 0;
+            sTb->found = 0;
+            sTb->waitFrom = sTb->frames;
+            Tb_SetMode(TB_RKWAIT);
+            break;
+        case RK_BOARD:
+            Snd_PlaySe(1, 1);
+            DrRanked_Board();
+            Tb_SetMode(TB_BOARD);
+            break;
+        case RK_UPDATE:
+            Snd_PlaySe(1, 1);
+            DrRanked_Open(Port_NetNameGet());
+            break;
+        }
+    } else if (pad->gamePressed & PADG_TRIANGLE) {
+        Snd_PlaySe(1, 2);
+        Tb_SetMode(TB_HUB);
+    }
+}
+
+/* Searching: the service pairs two players; then the first opens the room of the two (its code goes to the service)
+   and the other joins with that code, as a room's search (Tb_SearchNews: the rival comes, the match starts). */
+static void Tb_RankedWaitUpdate(s32 live) {
+    Pad *pad = &gPad[0];
+
+    if (!sTb->found) {
+        Ps_Prompt(4, "Cancel");
+    }
+    if (sTb->rkLobby) {
+        if (sTbRk.role == 1 && Port_LobbyCode()[0] != 0) {
+            DrRanked_SetRoom(Port_LobbyCode());
+        }
+        if (Tb_SearchNews()) {
+            return;
+        }
+    } else if (sTbRk.state == 3) { /* paired */
+        if (sTbRk.role == 1) {
+            Port_NetNameSet(Port_NetNameGet());
+            Port_NetOptions(Port_RollCan() ? 8 : 0, -2); /* rollback when the build has it, the delay from the line */
+            Port_NetSpeedSet(Port_NetSpeedStandard());
+            Port_NetRulesSet(sTbRk.mode ? 1 : 0, 0, 4); /* no time limit */
+            Port_SettingsWrite();
+            if (Port_LobbyStartCode(1, "") >= 0) {
+                sTb->rkLobby = 1;
+                sTb->host = 1;
+            }
+        } else if (sTbRk.role == 2 && Ps_Len(sTbRk.code) == CODE_LEN) {
+            Port_NetNameSet(Port_NetNameGet());
+            Port_NetOptions(-1, -1); /* joining: the host's choices arrive with its answer */
+            if (Port_LobbyStartCode(0, sTbRk.code) >= 0) {
+                sTb->rkLobby = 1;
+                sTb->host = 0;
+            }
+        }
+        if (sTb->rkLobby) {
+            sTb->waitBack = TB_RANKED;
+            sTb->ended = Port_NetSessionsEnded();
+        }
+    } else if (sTb->modeT > 30 && (sTbRk.state < 0 || (sTbRk.state == 0 && !sTbRk.searching))) { /* the search ended */
+        Tb_SetMode(TB_RANKED);
+        return;
+    }
+    if (!live || sTb->found) {
+        return;
+    }
+    if (pad->gamePressed & (PADG_CIRCLE | PADG_TRIANGLE)) {
+        Snd_PlaySe(1, 2);
+        if (sTb->rkLobby) {
+            Port_LobbyCancel();
+        }
+        sTb->rkLobby = 0;
+        DrRanked_Cancel();
+        Tb_SetMode(TB_RANKED);
+    }
+}
+
+static void Tb_BoardUpdate(s32 live) {
+    Pad *pad = &gPad[0];
+
+    Ps_Prompt(0, "Update");
+    Ps_Prompt(2, "Back");
+    if (!live) {
+        return;
+    }
     if (pad->gamePressed & PADG_CROSS) {
+        Snd_PlaySe(1, 1);
+        DrRanked_Board();
+    } else if (pad->gamePressed & PADG_TRIANGLE) {
+        Snd_PlaySe(1, 2);
+        Tb_SetMode(TB_RANKED);
+    }
+}
+
+/* ---------------------------------------------------------------------------------------------- the hub */
+static void Tb_HubUpdate(s32 live) {
+    Pad *pad = &gPad[0];
+
+    s32 row = Tb_HubRow(sTb->hubCur), side;
+    s32 small = sTb->hubCur == HUB_LANG || sTb->hubCur == HUB_VS;
+
+    Ps_Prompt(0, small ? "Change" : "Enter");
+    Ps_Prompt(2, "Back");
+    if (!live) {
+        return;
+    }
+    if (Ps_Move(&row, HUB_ROWS)) {
+        sTb->hubCur = sTbHubOrder[row];
+        small = sTb->hubCur == HUB_LANG || sTb->hubCur == HUB_VS;
+    }
+    side = small ? Tb_Side() : 0;
+    if (side != 0 && sTb->hubCur == HUB_LANG) {
+        Snd_PlaySe(1, 0);
+        Tb_LangSet((sTb->lang + side + 3) % 3);
+        Port_SettingSave("tbo_lang", sTb->lang);
+        Port_SettingsWrite();
+    } else if (side != 0) { /* against whom: the other service (its players online counted only on Dragon Net's) */
+        s32 mode = 1 - DrNet_Mode();
+
+        Snd_PlaySe(1, 0);
+        DrNet_SetMode(mode);
+        DrNet_PresenceActive(mode == 0);
+        Port_LobbyHelloAsk();
+    } else if (small) {
+        if (pad->gamePressed & PADG_TRIANGLE) {
+            Snd_PlaySe(1, 2);
+            sTb->leaving = 1;
+            ColorFade_StartOut(0, 0, 0, 0x14);
+        }
+    } else if (pad->gamePressed & PADG_CROSS) {
         switch (sTb->hubCur) {
+        case HUB_RANKED:
+            if (DrNet_Mode() != 0) {
+                Snd_PlaySe(1, 2);
+                Tb_Note("RANKED IS AGAINST ANDROID + SWITCH: CHOOSE IT IN PLAY AGAINST");
+                break;
+            }
+            Snd_PlaySe(1, 1);
+            DrRanked_Open(Port_NetNameGet());
+            sTb->rkCur = RK_SEARCH;
+            Tb_SetMode(TB_RANKED);
+            break;
         case HUB_QUICK:
             Snd_PlaySe(1, 1);
-            sTb->qkCur = 1;
+            sTb->qkCur = 2;
             sTb->asked = sTb->frames - 100000;
             Tb_SetMode(TB_QUICK);
             break;
@@ -758,6 +1097,9 @@ static void Tb_HubUpdate(s32 live) {
             sTb->keyCol = 0;
             sTb->keyRow = 0;
             Tb_SetMode(TB_JOIN);
+            break;
+        case HUB_LOBBY:
+            Tb_LobbyCreate();
             break;
         case HUB_PROFILE:
             Snd_PlaySe(1, 1);
@@ -781,14 +1123,13 @@ static void Tb_CreateUpdate(s32 live) {
     Pad *pad = &gPad[0];
     s32 side;
 
-    Ps_Prompt(3, "Change");
-    Ps_Prompt(0, sTb->crCur == CR_OPEN ? "Open Room" : "Next");
+    Ps_Prompt(0, sTb->crCur == CR_OPEN ? "Open Room" : "Change");
     Ps_Prompt(2, "Back");
     if (!live) {
         return;
     }
     Ps_Move(&sTb->crCur, CR_COUNT);
-    side = Ps_Side();
+    side = sTb->crCur == CR_OPEN ? Ps_Side() : Tb_Side();
     if (side != 0) {
         switch (sTb->crCur) {
         case CR_BATTLE:
@@ -814,9 +1155,6 @@ static void Tb_CreateUpdate(s32 live) {
         if (sTb->crCur == CR_OPEN || (pad->gamePressed & PADG_START)) {
             Snd_PlaySe(1, 1);
             Tb_BeginSearch(1);
-        } else {
-            Snd_PlaySe(1, 0);
-            sTb->crCur++;
         }
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
@@ -1130,14 +1468,11 @@ static void Tb_NameUpdate(s32 live) {
 /* ---------------------------------------------------------------------------------------------- what is drawn */
 /* ---------------------------------------------------------------------------------------------- the pictures */
 /* (how a screen draws: menu/port_screen.c) */
-#define TB_BAR_LEFT -30.0f /* the hub's bars start here (off the page: on a 4:3 screen, off its edge) */
 
 
 /* The left of the crest and the title: in line with the bars, but on the screen. */
 static f32 Tb_TitleLeft(void) {
-    f32 l = Ps_Left() + 6.0f;
-
-    return l > TB_BAR_LEFT ? l : TB_BAR_LEFT;
+    return Ps_Left() + 14.0f; /* (by the window's left edge: on a wide phone the list keeps to the left, beside Raditz) */
 }
 
 /* The tournament grounds over the whole window: the middle of the 16:9 picture, as wide as the window is. */
@@ -1150,17 +1485,32 @@ static void Tb_Backdrop(void) {
     Ps_SpriteScreen(TBO_BG, 0.0f, 0.0f, 512.0f, 448.0f, 0.5f - u * 0.5f, 0.5f - v * 0.5f, 0.5f + u * 0.5f, 0.5f + v * 0.5f, PS_PLAIN, 0x80);
 }
 
-/* The host in a pose (TBO_HOSTS_*), standing on `feet` around `cx`, `height` units tall; they breathe. The ones that
-   stand on the message box's line are drawn half behind it (the box is drawn over them, and is see-through): their
-   pictures run down to the foot of the screen. */
-#define TB_HOSTS_BOX_TOP 326.0f /* the top edge of the message box (the game's, MsgWin) */
-#define TB_HOSTS_SCALE 1.2f     /* those half behind the box, larger than the pages ask */
+/* Raditz, from the waist up (a film: gs_draw.c), large, on the right, always in the same place: his waist at the foot of the screen,
+   floating a little (a slow rise and fall, as the title's). `dx` moves him right (a page going off). */
+#define TB_TALK_TOP 320.0f    /* the talk box (Tb_DrawTalk): its top edge, */
+#define TB_TALK_BOTTOM 408.0f /* its bottom (the buttons under it, at 425), */
+#define TB_TALK_WIDE 400.0f   /* its width, from the list's left */
+#define TB_RADITZ_X 420.0f    /* his middle */
+#define TB_RADITZ_TOP 40.0f   /* the top of his picture (his hair starts a little lower) */
+static void Tb_RaditzBust(f32 dx) {
+    f32 h = 452.0f - TB_RADITZ_TOP; /* (down to the foot of the screen, and a little under it: he floats up and down) */
+    f32 w = h * Ps_PicW(TBO_RADITZ_BUST) / Ps_PicH(TBO_RADITZ_BUST) * 0.857f;
+    f32 x = TB_RADITZ_X + dx;
+    f32 y = TB_RADITZ_TOP + 3.0f * sinf((f32)sTb->frames * 0.04f);
+
+    Ps_Sprite(TBO_RADITZ_BUST, x - w * 0.5f, y, x + w * 0.5f, y + h, 0.0f, 0.0f, 1.0f, 1.0f, PS_PLAIN, 0x80); /* (moving: raditz.mpg) */
+}
+
+/* The host of a page: Raditz, whatever the page asked for (the announcer's poses: hosts_*.png, kept for the PC's look).
+   The pages' hosts stand on the box's line (feet 350): there he is the bust, in his one place; one page has him small
+   in its window (Tb_DrawBlock). */
 static void Tb_Hosts(s32 pose, f32 cx, f32 feet, f32 height) {
-    if (feet >= 300.0f) { /* (on the box's line) half the picture behind the box: its middle on the box's top edge */
-        height *= TB_HOSTS_SCALE;
-        feet = TB_HOSTS_BOX_TOP + height * 0.5f;
+    (void)pose;
+    if (feet >= 300.0f) {
+        Tb_RaditzBust(0.0f);
+    } else {
+        Ps_Stand(TBO_RADITZ, cx, feet, height, 0x80);
     }
-    Ps_Stand(pose, cx, feet + 2.0f * Tb_Beat(90) - 1.0f, height, 0x80);
 }
 
 /* The Dragon Radar of the search: its glass, its grid, the sweeping line, a few dragon balls blinking. */
@@ -1201,73 +1551,95 @@ static void Tb_Radar(f32 cx, f32 cy, f32 r) {
     Ps_Disc(cx, cy, 3.0f, Ps_Rgba(0xFF, 0x50, 0x40, 0x80), Ps_Rgba(0xA0, 0x10, 0x10, 0x80)); /* you */
 }
 
-static f32 Tb_HubRowY(s32 i) {
-    return 68.0f + 27.5f * (f32)i; /* the last bar (under the cursor: to +27) ends above the box (y 326) */
+/* The hub: two small rows under the title (the language, against whom), then the list, a plate each, large enough
+   for a phone's screen. The plates lean like the main menu's (kit_bar, kit_sel: the slant is in their ends); the one
+   under the cursor is longer, gold, and glides to where the cursor is. */
+#define TB_HUB_SMALL_Y 50.0f  /* the first small row, under the title */
+#define TB_HUB_SMALL_H 22.0f  /* a small row's height; they are 26 apart */
+#define TB_HUB_LIST_Y 104.0f  /* the first plate of the list */
+#define TB_HUB_PITCH 35.0f    /* from plate to plate: the last one ends above the talk box (TB_TALK_TOP) */
+#define TB_HUB_PLATE 31.0f    /* a plate's height */
+#define TB_HUB_LONG 300.0f    /* how long a plate is (from the list's left); under the cursor: longer */
+#define TB_HUB_SHORT 256.0f   /* ... a small row */
+static f32 Tb_HubRowY(s32 row) {
+    return row < HUB_SMALL ? TB_HUB_SMALL_Y + 26.0f * (f32)row : TB_HUB_LIST_Y + TB_HUB_PITCH * (f32)(row - HUB_SMALL);
 }
 
-static f32 Tb_HubRowEnd(s32 i) {
-    return 270.0f - 7.0f * (f32)i; /* the bars cascade: each a little shorter than the one above */
+static f32 Tb_HubRowH(s32 row) {
+    return row < HUB_SMALL ? TB_HUB_SMALL_H : TB_HUB_PLATE;
 }
 
 static void Tb_DrawHub(void) {
-    s32 i;
+    s32 i, cur = Tb_HubRow(sTb->hubCur);
     f32 slide = (1.0f - Tb_In(0)) * -160.0f;
-    f32 target = Tb_HubRowY(sTb->hubCur);
+    f32 left = Tb_TitleLeft() - 8.0f + slide;
 
-    Tb_Hosts(TBO_HOSTS_MIC_WAVE, 396.0f - slide * 0.6f, 350.0f, 262.0f);
-    sTb->hubY += (target - sTb->hubY) * 0.35f;
-    for (i = 0; i < HUB_COUNT; i++) {
+    Tb_RaditzBust(0.0f);
+    sTb->hubY += (Tb_HubRowY(cur) - sTb->hubY) * 0.6f; /* (quick: the gold plate is where the cursor is in a few frames) */
+    for (i = 0; i < HUB_ROWS; i++) {
         f32 y = Tb_HubRowY(i);
-        f32 x1 = Tb_HubRowEnd(i) + slide;
+        f32 end = left + (i < HUB_SMALL ? TB_HUB_SHORT : TB_HUB_LONG - 4.0f * (f32)(i - HUB_SMALL)) - slide;
 
-        if (i != sTb->hubCur) {
-            Ps_Pill(TBO_KIT_BAR, TB_BAR_LEFT + slide, y, x1, y + 24.0f, sTbHubReady[i] ? 0x80 : 0x60);
+        if (i != cur) {
+            Ps_Pill(TBO_KIT_BAR, left + 12.0f, y, end + slide, y + Tb_HubRowH(i), 0x80);
         }
     }
-    Ps_Pill(TBO_KIT_SEL, TB_BAR_LEFT + slide, sTb->hubY - 3.0f, Tb_HubRowEnd(sTb->hubCur) + 22.0f + slide, sTb->hubY + 27.0f, 0x80);
-    for (i = 0; i < HUB_COUNT; i++) {
-        if (!sTbHubReady[i]) {
-            Ps_Pill(TBO_KIT_STEEL, Tb_HubRowEnd(i) - 46.0f + slide + (i == sTb->hubCur ? 18.0f : 0.0f), Tb_HubRowY(i) + 5.0f,
-                    Tb_HubRowEnd(i) - 6.0f + slide + (i == sTb->hubCur ? 18.0f : 0.0f), Tb_HubRowY(i) + 19.0f, 0x80);
+    {   /* the cursor's plate, gliding between the rows (its height follows: the small rows are lower) */
+        f32 h = Tb_HubRowH(cur);
+        f32 end = left + (cur < HUB_SMALL ? TB_HUB_SHORT + 20.0f : TB_HUB_LONG + 26.0f) - slide;
+
+        Ps_Pill(TBO_KIT_SEL, left, sTb->hubY - 2.0f, end + slide, sTb->hubY + h + 2.0f, 0x80);
+        if (cur < HUB_SMALL) {
+            Ps_Button(3, left + 266.0f, sTb->hubY + h * 0.5f, 18.0f);
         }
     }
 }
 
 static void Tb_DrawHubText(void) {
-    s32 i;
+    s32 i, cur = Tb_HubRow(sTb->hubCur);
     f32 slide = (1.0f - Tb_In(0)) * -160.0f;
+    f32 x = Tb_TitleLeft() + 38.0f + slide;
 
-    for (i = 0; i < HUB_COUNT; i++) {
-        f32 y = Tb_HubRowY(i);
+    for (i = 0; i < HUB_ROWS; i++) {
+        s32 item = sTbHubOrder[i];
+        f32 y = i == cur ? sTb->hubY : Tb_HubRowY(i);
+        f32 mid = y + Tb_HubRowH(i) * 0.5f;
 
-        /* each label's capitals in the middle of its bar (the bar under the cursor: hubY - 3 to hubY + 27) */
-        if (i == sTb->hubCur) {
-            Ps_Text(36.0f + slide, Ps_TextTop(sTb->hubY + 12.0f, 0.84f), sTbHubName[i], 0.84f, 0.0f, 1);
-        } else {
-            Ps_Text(36.0f + slide, Ps_TextTop(y + 12.0f, 0.7f), sTbHubName[i], 0.7f, 0.0f, sTbHubReady[i] ? 0 : 4);
-        }
-        if (!sTbHubReady[i]) {
+        if (i < HUB_SMALL) { /* "Language   PORTUGUES", "Play Against   ANDROID + SWITCH": the label, then the choice */
+            char *value = sTbVsName[DrNet_Mode() != 0];
+
+            if (item == HUB_LANG) { /* (not `?:` between two tables' entries: the 32-bit pointers) */
+                value = sTbLangName[sTb->lang];
+            }
+            Ps_Text(x - 10.0f, Ps_TextTop(mid, 0.62f), sTbHubName[item], 0.62f, 96.0f, i == cur ? 1 : 0);
             Ps_Align(1);
-            Ps_Text(Tb_HubRowEnd(i) - 26.0f + slide + (i == sTb->hubCur ? 18.0f : 0.0f), Ps_TextTop(Tb_HubRowY(i) + 12.0f, 0.42f), "SOON", 0.42f,
-                    0.0f, 4);
+            Ps_Text(x + 152.0f, Ps_TextTop(mid, 0.66f), value, 0.66f, 112.0f, i == cur ? 1 : 3);
             Ps_Align(0);
+        } else if (i == cur) {
+            Ps_Text(x, Ps_TextTop(mid, 1.12f), sTbHubName[item], 1.12f, 230.0f, 1);
+        } else {
+            Ps_Text(x + 12.0f, Ps_TextTop(mid, 0.96f), sTbHubName[item], 0.96f, 200.0f, item == HUB_RANKED && DrNet_Mode() != 0 ? 4 : 0);
         }
     }
 }
 
-/* rows of label / value, as Create Room and Profile have them */
+/* rows of label / value, as Create Room and Profile have them: TB_ROW apart, TB_ROW_H high (a finger's size) */
+#define TB_ROW 42.0f
+#define TB_ROW_H 36.0f
+#define TB_ROW_LABEL 0.9f /* the label's scale, */
+#define TB_ROW_VALUE 0.72f /* the value's */
 static void Tb_DrawRows(s32 count, s32 cur, f32 y0) {
     s32 i;
 
-    Ps_Panel(TBO_KIT_WINDOW, 14.0f, y0 - 14.0f, 300.0f, y0 + 34.0f * (f32)count + 6.0f, 0x80);
+    Ps_Panel(TBO_KIT_WINDOW, 8.0f, y0 - 12.0f, 306.0f, y0 + TB_ROW * (f32)count + 4.0f, 0x80);
     for (i = 0; i < count; i++) {
-        f32 y = y0 + 34.0f * (f32)i;
+        f32 y = y0 + TB_ROW * (f32)i;
 
         if (i == cur) {
-            Ps_Pill(TBO_KIT_SEL, 20.0f, y - 2.0f, 294.0f, y + 28.0f, 0x80);
-            Ps_Button(3, 278.0f, y + 13.0f, 20.0f);
+            Ps_Pill(TBO_KIT_SEL, 14.0f, y - 2.0f, 300.0f, y + TB_ROW_H + 2.0f, 0x80);
+            Ps_Button(3, 282.0f, y + TB_ROW_H * 0.5f, 22.0f);
         } else {
-            Ps_Pill(TBO_KIT_BAR, 24.0f, y, 290.0f, y + 26.0f, 0x80);
+            Ps_Pill(TBO_KIT_BAR, 18.0f, y, 296.0f, y + TB_ROW_H, 0x80);
         }
     }
 }
@@ -1288,14 +1660,112 @@ static void Tb_DrawCreateText(void) {
     Tb_RollText(value[CR_ROLL], sTb->roll);
     value[CR_OPEN][0] = 0;
     Ps_Align(1);
-    Ps_Text(157.0f, Ps_TextTop(80.0f, 0.56f), "ROOM SETTINGS", 0.56f, 0.0f, 2);
+    Ps_Text(157.0f, Ps_TextTop(76.0f, 0.7f), "ROOM SETTINGS", 0.7f, 0.0f, 2);
     Ps_Align(0);
     for (i = 0; i < CR_COUNT; i++) {
-        f32 y = 100.0f + 34.0f * (f32)i;
+        f32 y = 100.0f + TB_ROW * (f32)i + TB_ROW_H * 0.5f;
 
-        Ps_Text(36.0f, Ps_TextTop(y + 13.0f, 0.66f), label[i], 0.66f, 120.0f, i == sTb->crCur ? 1 : 0);
+        Ps_Text(36.0f, Ps_TextTop(y, TB_ROW_LABEL), label[i], TB_ROW_LABEL, 110.0f, i == sTb->crCur ? 1 : 0);
         Ps_Align(2);
-        Ps_Text(266.0f, Ps_TextTop(y + 13.0f, 0.54f), value[i], 0.54f, 130.0f, 3);
+        Ps_Text(266.0f, Ps_TextTop(y, TB_ROW_VALUE), value[i], TB_ROW_VALUE, 120.0f, i == sTb->crCur ? 1 : 3);
+        Ps_Align(0);
+    }
+}
+
+/* Ranked: the profile's window (the tier, the points, wins and losses, the place), then the rows. */
+#define TB_RK_ROWS_Y 146.0f
+static void Tb_DrawRanked(void) {
+    Tb_RaditzBust(0.0f);
+    Ps_Panel(TBO_KIT_WINDOW, 8.0f, 60.0f, 306.0f, 126.0f, 0x80);
+    Tb_DrawRows(RK_COUNT, sTb->rkCur, TB_RK_ROWS_Y);
+}
+
+static void Tb_DrawRankedText(void) {
+    static char line[64];
+    static char *label[RK_COUNT] = {"Battle", "Search for a Rival", "Ranking", "Update Profile"};
+    s32 i;
+
+    if (!sTbRk.profile) {
+        Ps_Text(26.0f, Ps_TextTop(93.0f, 0.8f), "Loading profile...", 0.8f, 270.0f, 0);
+    } else {
+        Ps_Text(26.0f, Ps_TextTop(80.0f, 0.86f), Tb_RkTier(sTbRk.rank), 0.86f, 150.0f, 2);
+        sprintf(line, "%d ELO", sTbRk.rating);
+        Ps_Align(2);
+        Ps_Text(290.0f, Ps_TextTop(80.0f, 0.86f), line, 0.86f, 120.0f, 3);
+        Ps_Align(0);
+        sprintf(line, Tb_Fmt("%d W / %d L"), sTbRk.wins, sTbRk.losses);
+        Ps_Text(26.0f, Ps_TextTop(108.0f, 0.66f), line, 0.66f, 150.0f, 0);
+        sprintf(line, Tb_Fmt("Position %d"), sTbRk.position);
+        Ps_Align(2);
+        Ps_Text(290.0f, Ps_TextTop(108.0f, 0.66f), line, 0.66f, 120.0f, 0);
+        Ps_Align(0);
+    }
+    for (i = 0; i < RK_COUNT; i++) {
+        f32 y = TB_RK_ROWS_Y + TB_ROW * (f32)i + TB_ROW_H * 0.5f;
+
+        Ps_Text(36.0f, Ps_TextTop(y, TB_ROW_LABEL), label[i], TB_ROW_LABEL, 170.0f, i == sTb->rkCur ? 1 : 0);
+        if (i == RK_BATTLE) {
+            Ps_Align(2);
+            Ps_Text(266.0f, Ps_TextTop(y, TB_ROW_VALUE), sTb->rkMode ? "TEAM" : "SINGLE", TB_ROW_VALUE, 90.0f, i == sTb->rkCur ? 1 : 3);
+            Ps_Align(0);
+        }
+    }
+}
+
+/* Ranked's search: the radar, and a window with the battle and what the service says. */
+static void Tb_DrawRankedWait(void) {
+    Tb_RaditzBust(0.0f);
+    Tb_Radar(264.0f, 188.0f, 80.0f);
+    Ps_Panel(TBO_KIT_WINDOW, 10.0f, 84.0f, 180.0f, 246.0f, 0x80);
+}
+
+static void Tb_DrawRankedWaitText(void) {
+    static char line[48];
+    s32 secs = (sTb->frames - sTb->waitFrom) / 60;
+
+    Ps_Text(22.0f, 94.0f, "RANKED", 0.56f, 0.0f, 0);
+    Ps_Text(22.0f, 116.0f, sTb->rkMode ? "TEAM" : "SINGLE", 0.8f, 150.0f, 2);
+    if (sTbRk.state == 3 && sTbRk.peer[0] != 0) {
+        Ps_Text(22.0f, 150.0f, "RIVAL", 0.56f, 0.0f, 0);
+        Ps_Text(22.0f, 170.0f, sTbRk.peer, 0.8f, 150.0f, 3);
+    }
+    sprintf(line, "%d:%02d", (int)(secs / 60), (int)(secs % 60));
+    Ps_Text(22.0f, 214.0f, line, 0.8f, 150.0f, 0);
+}
+
+/* Ranked's table: the nine best, their points. */
+#define TB_BOARD_Y 66.0f
+#define TB_BOARD_ROW 27.0f
+static void Tb_DrawBoard(void) {
+    s32 i;
+
+    Tb_RaditzBust(0.0f);
+    Ps_Panel(TBO_KIT_WINDOW, 8.0f, TB_BOARD_Y - 8.0f, 306.0f, TB_BOARD_Y + TB_BOARD_ROW * 9.0f + 6.0f, 0x80);
+    for (i = 0; i < 9; i++) {
+        f32 y = TB_BOARD_Y + TB_BOARD_ROW * (f32)i;
+
+        Ps_Pill(TBO_KIT_BAR, 18.0f, y, 296.0f, y + TB_BOARD_ROW - 3.0f, i % 2 ? 0x60 : 0x80);
+    }
+}
+
+static void Tb_DrawBoardText(void) {
+    static char line[48];
+    s32 i;
+
+    if (sTbRk.board != 2) {
+        Ps_Text(30.0f, Ps_TextTop(TB_BOARD_Y + TB_BOARD_ROW * 0.5f - 1.5f, 0.7f), sTbRk.board == 1 ? "Updating the ranking..." : "The ranking did not answer: X tries again.",
+                0.7f, 260.0f, 0);
+        return;
+    }
+    for (i = 0; i < 9 && i < sTbRk.boardCount; i++) {
+        f32 mid = TB_BOARD_Y + TB_BOARD_ROW * (f32)i + TB_BOARD_ROW * 0.5f - 1.5f;
+
+        sprintf(line, "%d.", i + 1);
+        Ps_Text(30.0f, Ps_TextTop(mid, 0.7f), line, 0.7f, 30.0f, i == 0 ? 2 : 0);
+        Ps_Text(62.0f, Ps_TextTop(mid, 0.7f), sTbRk.boardName[i], 0.7f, 150.0f, i == 0 ? 2 : 0);
+        sprintf(line, "%d", sTbRk.boardRating[i]);
+        Ps_Align(2);
+        Ps_Text(284.0f, Ps_TextTop(mid, 0.7f), line, 0.7f, 70.0f, 3);
         Ps_Align(0);
     }
 }
@@ -1338,8 +1808,18 @@ static void Tb_DrawWait(void) {
     Ps_Panel(TBO_KIT_WINDOW, 176.0f, 292.0f, 348.0f, 328.0f, 0x80); /* the search's clock (a window, not a bar to choose) */
 }
 
+/* A name in capitals, as these pages write theirs (the letters A to Z only: a translation's others stay). */
+static void Tb_Upper(char *out, const char *text, s32 size) {
+    s32 i;
+
+    for (i = 0; text[i] != 0 && i < size - 1; i++) {
+        out[i] = text[i] >= 'a' && text[i] <= 'z' ? (char)(text[i] - 'a' + 'A') : text[i];
+    }
+    out[i] = 0;
+}
+
 static void Tb_DrawWaitText(void) {
-    static char line[96];
+    static char line[96], region[64];
     s32 secs = (sTb->frames - sTb->waitFrom) / 60;
     const char *code = Port_LobbyCode();
 
@@ -1350,11 +1830,35 @@ static void Tb_DrawWaitText(void) {
         Ps_Align(1);
         Ps_Text(95.0f, 124.0f, sTb->queue ? "TEAMS" : "ONE ON ONE", 0.86f, 156.0f, 1);
         Ps_Align(0);
-        Ps_Text(22.0f, 172.0f, "THE SERVICE PAIRS YOU", 0.46f, 150.0f, 0);
-        Ps_Text(22.0f, 190.0f, "WITH THE NEXT RIVAL", 0.46f, 150.0f, 0);
+        s32 widen = Port_LobbyWiden(), y = 214;
+        const char *from = Port_LobbyRivalRegion();
+
+        if (sTb->found && from[0] != 0) { /* where the matchmaking service placed the rival */
+            Tb_Upper(region, from, sizeof(region));
+            Ps_Text(22.0f, 172.0f, "YOUR RIVAL IS FROM", 0.46f, 150.0f, 0);
+            Ps_Text(22.0f, 190.0f, region, 0.46f, 150.0f, 5);
+        } else if (sTb->region > 0 && sTb->region < QK_REGIONS - 1 && widen > 0 && secs >= widen) {
+            Ps_Text(22.0f, 172.0f, "NO ONE THERE:", 0.46f, 150.0f, 0); /* (a region's search takes everyone now) */
+            Ps_Text(22.0f, 190.0f, "SEARCHING EVERYWHERE", 0.46f, 150.0f, 0);
+        } else if (sTb->region > 0 && sTb->region < QK_REGIONS - 1) {
+            Ps_Text(22.0f, 172.0f, "PLAYERS IN", 0.46f, 150.0f, 0);
+            Ps_Text(22.0f, 190.0f, sTbRegionName[sTb->region], 0.46f, 150.0f, 5);
+            sprintf(line, Tb_Fmt("FIRST, EVERYONE AFTER %d S"), (int)(widen > 0 ? widen : QK_REGION_WIDEN));
+            Ps_Text(22.0f, 210.0f, line, 0.4f, 150.0f, 3);
+            y = 230;
+        } else if (sTb->region == 0 && widen > 0 && secs >= widen) {
+            Ps_Text(22.0f, 172.0f, "NO ONE NEARBY:", 0.46f, 150.0f, 0);
+            Ps_Text(22.0f, 190.0f, "SEARCHING EVERYWHERE", 0.46f, 150.0f, 0);
+        } else if (sTb->region == 0 && widen > 0) {
+            Ps_Text(22.0f, 172.0f, "LOOKING FOR A RIVAL", 0.46f, 150.0f, 0);
+            Ps_Text(22.0f, 190.0f, "NEAR YOU FIRST", 0.46f, 150.0f, 0);
+        } else {
+            Ps_Text(22.0f, 172.0f, "THE SERVICE PAIRS YOU", 0.46f, 150.0f, 0);
+            Ps_Text(22.0f, 190.0f, "WITH THE NEXT RIVAL", 0.46f, 150.0f, 0);
+        }
         if (n > 0) {
             sprintf(line, Tb_Fmt("%d IN THIS QUEUE"), (int)n);
-            Ps_Text(22.0f, 214.0f, line, 0.42f, 150.0f, 5);
+            Ps_Text(22.0f, (f32)y, line, 0.42f, 150.0f, 5);
         }
     } else if (sTb->host) {
         Ps_Text(22.0f, 94.0f, "ROOM CODE", 0.56f, 0.0f, 0);
@@ -1442,61 +1946,73 @@ static void Tb_DrawName(void) {
 
 static void Tb_DrawSpar(void) {
     Tb_Hosts(TBO_HOSTS_CHEER, 406.0f, 350.0f, 200.0f);
-    Tb_DrawRows(3, sTb->spCur, 110.0f);
-    Ps_Panel(TBO_KIT_WINDOW, 14.0f, 230.0f, 300.0f, 326.0f, 0x80);
+    Tb_DrawRows(3, sTb->spCur, 96.0f);
+    Ps_Panel(TBO_KIT_WINDOW, 8.0f, 232.0f, 306.0f, 326.0f, 0x80);
 }
 
 static void Tb_DrawSparText(void) {
     static char line[64];
     s32 secs = (sTb->frames - sTb->waitFrom) / 60;
+#define SP_MID(i) (96.0f + TB_ROW * (f32)(i) + TB_ROW_H * 0.5f)
 
-    Ps_Text(26.0f, 76.0f, "SPARRING AT THE TOURNAMENT", 0.6f, 270.0f, 2);
-    Ps_Text(36.0f, 115.0f, "You", 0.66f, 70.0f, sTb->spCur == 0 ? 1 : 0);
-    Ps_Text(36.0f, 149.0f, "Partner", 0.66f, 80.0f, sTb->spCur == 1 ? 1 : 0);
-    Ps_Text(36.0f, 183.0f, "Start Training", 0.66f, 200.0f, sTb->spCur == 2 ? 1 : 0);
+    Ps_Text(22.0f, Ps_TextTop(70.0f, 0.7f), "SPARRING AT THE TOURNAMENT", 0.7f, 280.0f, 2);
+    Ps_Text(36.0f, Ps_TextTop(SP_MID(0), TB_ROW_LABEL), "You", TB_ROW_LABEL, 70.0f, sTb->spCur == 0 ? 1 : 0);
+    Ps_Text(36.0f, Ps_TextTop(SP_MID(1), TB_ROW_LABEL), "Partner", TB_ROW_LABEL, 90.0f, sTb->spCur == 1 ? 1 : 0);
+    Ps_Text(36.0f, Ps_TextTop(SP_MID(2), TB_ROW_LABEL), "Start Training", TB_ROW_LABEL, 220.0f, sTb->spCur == 2 ? 1 : 0);
     Ps_Align(2);
-    Ps_Text(266.0f, 117.0f, Tb_Fighter(sTb->spMe), 0.54f, 170.0f, 3);
-    Ps_Text(266.0f, 151.0f, Tb_Fighter(sTb->spFoe), 0.54f, 170.0f, 3);
+    Ps_Text(266.0f, Ps_TextTop(SP_MID(0), TB_ROW_VALUE), Tb_Fighter(sTb->spMe), TB_ROW_VALUE, 160.0f, sTb->spCur == 0 ? 1 : 3);
+    Ps_Text(266.0f, Ps_TextTop(SP_MID(1), TB_ROW_VALUE), Tb_Fighter(sTb->spFoe), TB_ROW_VALUE, 160.0f, sTb->spCur == 1 ? 1 : 3);
     Ps_Align(0);
-    Ps_Text(28.0f, 240.0f, sTb->host == 2 ? "QUICK MATCH SEARCH" : sTb->host ? "YOUR ROOM IS OPEN" : "JOINING A ROOM", 0.5f, 260.0f, 2);
+#undef SP_MID
+    Ps_Text(22.0f, Ps_TextTop(250.0f, 0.62f), sTb->host == 2 ? "QUICK MATCH SEARCH" : sTb->host ? "YOUR ROOM IS OPEN" : "JOINING A ROOM", 0.62f, 276.0f, 2);
     sprintf(line, Tb_Fmt("SEARCHING  %d:%02d"), (int)(secs / 60), (int)(secs % 60));
-    Ps_Text(28.0f, 264.0f, line, 0.52f, 260.0f, 5);
-    Ps_Text(28.0f, 292.0f, "THE MATCH STARTS THE MOMENT", 0.42f, 260.0f, 0);
-    Ps_Text(28.0f, 308.0f, "YOUR RIVAL ARRIVES", 0.42f, 260.0f, 0);
+    Ps_Text(22.0f, Ps_TextTop(274.0f, 0.66f), line, 0.66f, 276.0f, 5);
+    Ps_Text(22.0f, Ps_TextTop(298.0f, 0.5f), "THE MATCH STARTS THE MOMENT", 0.5f, 276.0f, 0);
+    Ps_Text(22.0f, Ps_TextTop(314.0f, 0.5f), "YOUR RIVAL ARRIVES", 0.5f, 276.0f, 0);
 }
 
 static void Tb_DrawQuick(void) {
     Tb_Hosts(TBO_HOSTS_MIC_WAVE, 404.0f, 350.0f, 240.0f);
-    Tb_DrawRows(2, sTb->qkCur, 110.0f);
-    Ps_Panel(TBO_KIT_WINDOW, 14.0f, 196.0f, 300.0f, 330.0f, 0x80);
+    Tb_DrawRows(3, sTb->qkCur, 96.0f);
+    Ps_Panel(TBO_KIT_WINDOW, 8.0f, 232.0f, 306.0f, 330.0f, 0x80);
 }
 
 static void Tb_DrawQuickText(void) {
-    static char line[64];
+    static char line[128];
     s32 q;
 
-    Ps_Text(26.0f, 76.0f, "PICK YOUR BATTLE", 0.62f, 0.0f, 2);
-    Ps_Text(36.0f, 115.0f, "Battle", 0.66f, 110.0f, sTb->qkCur == 0 ? 1 : 0);
+#define QK_ROW(i) Ps_TextTop(96.0f + TB_ROW * (f32)(i) + TB_ROW_H * 0.5f, TB_ROW_LABEL)
+#define QK_VAL(i) Ps_TextTop(96.0f + TB_ROW * (f32)(i) + TB_ROW_H * 0.5f, TB_ROW_VALUE)
+    Ps_Text(22.0f, Ps_TextTop(70.0f, 0.7f), "PICK YOUR BATTLE", 0.7f, 0.0f, 2);
+    Ps_Text(36.0f, QK_ROW(0), "Battle", TB_ROW_LABEL, 100.0f, sTb->qkCur == 0 ? 1 : 0);
     Ps_Align(2);
-    Ps_Text(266.0f, 117.0f, sTb->queue ? "TEAMS (UP TO 5)" : "ONE ON ONE", 0.54f, 140.0f, 3);
+    Ps_Text(266.0f, QK_VAL(0), sTb->queue ? "TEAMS (UP TO 5)" : "ONE ON ONE", TB_ROW_VALUE, 140.0f, sTb->qkCur == 0 ? 1 : 3);
     Ps_Align(0);
-    Ps_Text(36.0f, 149.0f, "Search", 0.66f, 110.0f, sTb->qkCur == 1 ? 1 : 0);
-    Ps_Text(28.0f, 206.0f, "WAITING RIGHT NOW", 0.52f, 0.0f, 2);
+    Ps_Text(36.0f, QK_ROW(1), "Region", TB_ROW_LABEL, 100.0f, sTb->qkCur == 1 ? 1 : 0);
+    Ps_Align(2);
+    Ps_Text(266.0f, QK_VAL(1), sTbRegionName[sTb->region], TB_ROW_VALUE, 150.0f, sTb->qkCur == 1 ? 1 : 3);
+    Ps_Align(0);
+    Ps_Text(36.0f, QK_ROW(2), "Search", TB_ROW_LABEL, 100.0f, sTb->qkCur == 2 ? 1 : 0);
+    Ps_Text(22.0f, Ps_TextTop(250.0f, 0.62f), "WAITING RIGHT NOW", 0.62f, 0.0f, 2);
     for (q = 0; q < 2; q++) {
         s32 n = Port_LobbyQueueWaiting(q);
 
-        Ps_Text(36.0f, 234.0f + 26.0f * (f32)q, q ? "Teams" : "One on One", 0.56f, 120.0f, q == sTb->queue ? 1 : 0);
+        Ps_Text(36.0f, Ps_TextTop(272.0f + 20.0f * (f32)q, 0.66f), q ? "Teams" : "One on One", 0.66f, 130.0f, q == sTb->queue ? 1 : 0);
         if (n < 0) {
             sprintf(line, "...");
         } else {
             sprintf(line, Tb_Fmt("%d WAITING"), (int)n);
         }
         Ps_Align(2);
-        Ps_Text(286.0f, 236.0f + 26.0f * (f32)q, line, 0.5f, 120.0f, n > 0 ? 5 : 3);
+        Ps_Text(290.0f, Ps_TextTop(272.0f + 20.0f * (f32)q, 0.6f), line, 0.6f, 120.0f, n > 0 ? 5 : 3);
         Ps_Align(0);
     }
-    sprintf(line, Tb_Fmt("NO TIME LIMIT - %d%% SPEED"), (int)Port_NetSpeedStandard());
-    Ps_Text(28.0f, 296.0f, line, 0.46f, 260.0f, 3);
+    /* (the queues count everyone; what the region choice means instead of the rules, which the hosts' line says) */
+    sprintf(line, Tb_Fmt("PLAYERS THERE FIRST, EVERYONE AFTER %d S"), (int)QK_REGION_WIDEN);
+    Ps_Text(22.0f, Ps_TextTop(312.0f, 0.5f), sTb->region == 0 ? "RIVALS NEAR YOU FIRST, THEN ANYWHERE" : sTb->region == QK_REGIONS - 1 ? "THE NEXT RIVAL, WHEREVER: THE FASTEST" : line,
+            0.5f, 276.0f, 3);
+#undef QK_ROW
+#undef QK_VAL
 }
 
 static void Tb_DrawProfile(void) {
@@ -1510,14 +2026,1054 @@ static void Tb_DrawProfileText(void) {
     s32 i;
 
     Ps_Copy(value[PR_NAME], Port_NetNameGet(), 32);
-    Ps_Text(26.0f, 76.0f, "PLAYER CARD", 0.62f, 0.0f, 2);
+    Ps_Text(22.0f, Ps_TextTop(80.0f, 0.7f), "PLAYER CARD", 0.7f, 0.0f, 2);
     for (i = 0; i < PR_COUNT; i++) {
-        f32 y = 110.0f + 34.0f * (f32)i;
+        f32 y = 110.0f + TB_ROW * (f32)i + TB_ROW_H * 0.5f;
 
-        Ps_Text(36.0f, Ps_TextTop(y + 13.0f, 0.66f), label[i], 0.66f, 110.0f, i == sTb->prCur ? 1 : 0);
+        Ps_Text(36.0f, Ps_TextTop(y, TB_ROW_LABEL), label[i], TB_ROW_LABEL, 100.0f, i == sTb->prCur ? 1 : 0);
         Ps_Align(2);
-        Ps_Text(266.0f, Ps_TextTop(y + 13.0f, 0.54f), value[i], 0.54f, 140.0f, 3);
+        Ps_Text(266.0f, Ps_TextTop(y, TB_ROW_VALUE), value[i], TB_ROW_VALUE, 140.0f, i == sTb->prCur ? 1 : 3);
         Ps_Align(0);
+    }
+}
+
+/* ---------------------------------------------------------------------------------------------- the lobby */
+#define TB_BOX_LINE 224 /* (a line of the box, in the game's 16-bit letters) */
+/* A lobby of up to eight (port/src/gs/net_lobby.c; docs/port/README.md, "Lobbies"): the owner's game keeps it, this
+   page shows the copy every member has (Port_LobbyView) and leaves its wishes with Port_LobbyDo. On the left the
+   eight places (1P and 2P play, the six others watch), on the right the code, the rules and the buttons; the box at
+   the foot of the screen has what happened last (who came and went, the matches, the chat). The owner moves people
+   (a name, Move, then the place: the two swap), removes them, and changes the rules with left / right. When the
+   owner starts a match every copy goes into it from here, and comes back here when it ends (the game is put back to
+   this moment: gs/state.c). */
+#define LB_ROWS 8
+#define LB_RULES 5
+#define LB_BTN 5 /* the right side's items: the rules 0..4, then the buttons 5..8 (two rows of two) */
+#define LB_RIGHT_COUNT 9
+#define LB_POP_MEMBER 1
+#define LB_POP_LEAVE 2
+#define LB_ACT_START 1
+#define LB_ACT_READY 2
+#define LB_ACT_CHAT 3
+#define LB_ACT_LEAVE 4
+
+static PortLobbyView sTbLv; /* (what the page shows this frame) */
+
+static char *sTbBattleName[5] = {"SINGLE BATTLE", "TEAM BATTLE", "DP BATTLE: 10 DP", "DP BATTLE: 15 DP", "DP BATTLE: 20 DP"};
+static char *sTbRuleName[LB_RULES] = {"Battle", "Time Limit", "Game Speed", "Rollback", "Input Delay"};
+/* What the lobby says, written by port/src/gs/net_lobby.c in English: here so that the translation file has them
+   (a whole line is looked up where it is drawn; a line with a name in it is matched by its end, Tb_LobbyLine). */
+static char *sTbLobbyLines[] = {
+    "The owner went back to the lobby.",
+    "The two players could not connect to each other.",
+    "The lobby was closed by its owner.",
+    "The lobby's owner removed you from the lobby.",
+    "The connection to the lobby's owner was lost: the lobby is closed.",
+    "This lobby is full (8 places).",
+    "The lobby owner's game is a different version: joining needs the same release.",
+    "The lobby owner's game data are not the same as yours (a modified disc image or mods on one side): you cannot join.",
+    "That address is not known.",
+    "No socket could be opened.",
+    "Lobbies need the game's state list (the .mem file beside the program): copy all the files of the release.",
+};
+static char *sTbLobbyNamed[4] = {"%s joined the lobby", "%s left the lobby", "%s was removed from the lobby", "%s lost the connection to the lobby"};
+
+/* `fmt` (in the chosen language: Tb_Fmt) with its %s parts the names a, b and its %d the number. */
+static void Tb_Subst(char *out, s32 size, char *fmt, const char *a, const char *b, s32 num) {
+    char *f = Tb_Fmt(fmt);
+    s32 n = 0;
+    s32 names = 0;
+
+    while (*f != 0 && n < size - 1) {
+        if (f[0] == '%' && f[1] == 's') {
+            const char *v = names++ == 0 ? a : b;
+
+            while (v != NULL && *v != 0 && n < size - 1) {
+                out[n++] = *v++;
+            }
+            f += 2;
+        } else if (f[0] == '%' && f[1] == 'd') {
+            char digits[16];
+            s32 k = 0;
+
+            sprintf(digits, "%d", (int)num);
+            while (digits[k] != 0 && n < size - 1) {
+                out[n++] = digits[k++];
+            }
+            f += 2;
+        } else if (f[0] == '%' && f[1] == '%') {
+            out[n++] = '%';
+            f += 2;
+        } else {
+            out[n++] = *f++;
+        }
+    }
+    out[n] = 0;
+}
+
+/* A line of the lobby's (a note or an error) in the chosen language: a whole line by the translation file, a line
+   with a name in it by its end, "Match N: A vs B" by its parts; anything else as it is. */
+static void Tb_LobbyLine(char *out, s32 size, const char *in) {
+    s32 len = Ps_Len(in);
+    s32 k;
+
+    for (k = 0; k < 4; k++) {
+        char *end = sTbLobbyNamed[k] + 2; /* (what follows the name) */
+        s32 e = Ps_Len(end);
+
+        if (len > e && strcmp(in + len - e, end) == 0) {
+            char name[24];
+            s32 i;
+
+            for (i = 0; i < len - e && i < 23; i++) {
+                name[i] = in[i];
+            }
+            name[i] = 0;
+            Tb_Subst(out, size, sTbLobbyNamed[k], name, NULL, 0);
+            return;
+        }
+    }
+    if (strncmp(in, "Match ", 6) == 0) {
+        const char *p = in + 6;
+        s32 num = 0;
+
+        while (*p >= '0' && *p <= '9') {
+            num = num * 10 + (*p++ - '0');
+        }
+        if (p[0] == ':' && p[1] == ' ') {
+            char a[24];
+            char b[24];
+            s32 i = 0;
+
+            p += 2;
+            while (*p != 0 && strncmp(p, " vs ", 4) != 0 && i < 23) {
+                a[i++] = *p++;
+            }
+            a[i] = 0;
+            if (strncmp(p, " vs ", 4) == 0) {
+                Ps_Copy(b, p + 4, 24);
+                Tb_Subst(out, size, "Match %d: %s vs %s", a, b, num);
+                return;
+            }
+        }
+    }
+    (void)sTbLobbyLines; /* (they are translated as whole lines, by Ps_Copy) */
+    Ps_Copy(out, in, size); /* (a whole line of the file in its language, as it is otherwise) */
+}
+
+static void Tb_RuleValue(char *out, s32 which) {
+    PortLobbyView *v = &sTbLv;
+
+    switch (which) {
+    case LOBBY_RULE_BATTLE:
+        Ps_Copy(out, sTbBattleName[v->battle % 5], 32);
+        break;
+    case LOBBY_RULE_TIME:
+        Ps_Copy(out, sTbTime[v->time % 5], 32);
+        break;
+    case LOBBY_RULE_SPEED:
+        sprintf(out, v->speed == Port_NetSpeedStandard() ? Tb_Fmt("%d%% (STANDARD)") : Tb_Fmt("%d%%"), (int)v->speed);
+        break;
+    case LOBBY_RULE_ROLLBACK:
+        if (v->rollback <= 0) {
+            Ps_Copy(out, "OFF", 32);
+        } else {
+            sprintf(out, Tb_Fmt("UP TO %d FRAMES"), (int)v->rollback);
+        }
+        break;
+    default:
+        Tb_DelayText(out, v->delay - 1); /* (the lobby's 0 is automatic, else the frames + 1) */
+        break;
+    }
+}
+
+/* The page opens (from the hub's Lobby, Join Room with a lobby's code, or the screens opened with a lobby on). */
+static void Tb_LobbyOpen(void) {
+    /* the hosts of the page it comes from go off to the right while the lobby's windows come in from the left (the
+       lobby's page has no room for them) */
+    sTb->lbHostPose = sTb->mode == TB_HUB ? TBO_HOSTS_MIC_WAVE : sTb->mode == TB_JOIN ? TBO_HOSTS_PUZZLED
+                    : sTb->mode == TB_WAIT ? (sTb->found ? TBO_HOSTS_CHEER : TBO_HOSTS_BINOCULARS) : -1;
+    sTb->lbHostX = sTb->mode == TB_HUB ? 396.0f : sTb->mode == TB_JOIN ? 432.0f : sTb->found ? 426.0f : 434.0f;
+    sTb->lbHostH = sTb->mode == TB_HUB ? 262.0f : sTb->mode == TB_JOIN ? 200.0f : sTb->found ? 180.0f : 210.0f;
+    sTb->lbPopClose = 0;
+    sTb->lbHostT = 0;
+    sTb->lbSeenState = sTbLv.state;
+    sTb->lbCol = 0;
+    sTb->lbPlace = 0;
+    sTb->lbRight = LB_BTN;
+    sTb->lbPicked = -1;
+    sTb->lbPop = 0;
+    sTb->lbChat = 0;
+    sTb->ended = Port_NetSessionsEnded();
+    Port_LobbyCancel(); /* (the search that found it: the lobby has its socket now) */
+    Tb_SetMode(TB_LOBBY);
+}
+
+/* The hub's Lobby: a new lobby, owned by this game, with a room code; the rules to begin with are Create Room's. */
+static void Tb_LobbyCreate(void) {
+    if (!Tb_Vanilla()) {
+        return;
+    }
+    Snd_PlaySe(1, 1);
+    Port_LobbyCancel();
+    Port_NetNameSet(Port_NetNameGet());
+    Port_LobbyCreate(1, 0, sTb->battle, sTb->time, Port_Setting("net_speed_host", Port_NetSpeedStandard()), sTb->roll, sTb->delay + 1);
+    Tb_LobbyOpen();
+}
+
+/* The buttons on the right, by place (0 top left, 1 top right, 2 bottom left, 3 bottom right): LB_ACT_, 0 none. The
+   owner has four; a member three, Leave across the bottom row. */
+static s32 Tb_LobbyAct(s32 k) {
+    static const s32 own[4] = {LB_ACT_START, LB_ACT_READY, LB_ACT_CHAT, 0};
+    static const s32 member[4] = {LB_ACT_READY, LB_ACT_CHAT, 0, 0}; /* (leaving: triangle, with its yes / no) */
+
+    return sTbLv.owner ? own[k & 3] : member[k & 3];
+}
+
+static char *Tb_LobbyActName(s32 act) {
+    PortLobbyView *v = &sTbLv;
+
+    switch (act) {
+    case LB_ACT_START:
+        return v->phase ? "Match On" : "Start Match";
+    case LB_ACT_READY:
+        return v->me >= 0 && v->ready[v->me] ? "Not Ready" : "Ready";
+    case LB_ACT_CHAT:
+        return "Chat";
+    case LB_ACT_LEAVE:
+        return v->owner ? "Close Lobby" : "Leave Lobby";
+    }
+    return "";
+}
+
+static s32 Tb_LobbyCanStart(void) {
+    return sTbLv.owner && sTbLv.phase == 0 && sTbLv.taken[0] && sTbLv.taken[1];
+}
+
+static void Tb_LobbyStart(void) {
+    if (Tb_LobbyCanStart()) {
+        Snd_PlaySe(1, 1);
+        Port_LobbyDo(LOBBY_START, 0, 0);
+    } else {
+        Snd_PlaySe(1, 2);
+        Tb_Note(sTbLv.phase ? "A MATCH IS ON ALREADY" : "TWO PLAYERS ARE NEEDED: ONE IN 1P, ONE IN 2P");
+    }
+}
+
+static void Tb_LobbyAction(s32 act) {
+    PortLobbyView *v = &sTbLv;
+
+    switch (act) {
+    case LB_ACT_START:
+        Tb_LobbyStart();
+        break;
+    case LB_ACT_READY:
+        if (v->me >= 0) {
+            Snd_PlaySe(1, 1);
+            Port_LobbyDo(LOBBY_READY, v->ready[v->me] ? 0 : 1, 0);
+        }
+        break;
+    case LB_ACT_CHAT:
+        Snd_PlaySe(1, 1);
+        sTb->lbChat = 1;
+        sTb->chatLen = 0;
+        sTb->chat[0] = 0;
+        sTb->keyRow = 0;
+        sTb->keyCol = 0;
+        sTb->typing = 1;
+        Port_TextMode(1);
+        break;
+    case LB_ACT_LEAVE:
+        Snd_PlaySe(1, 0);
+        sTb->lbPop = LB_POP_LEAVE;
+        sTb->lbPopT = 0;
+        sTb->lbPopClose = 0;
+        sTb->lbPopCur = 1; /* (on No) */
+        break;
+    }
+}
+
+/* What the chat's keypad types: the name keypad's letters, and from the PC keyboard any plain character but the
+   one that starts a tag of the game's text box. */
+static void Tb_ChatAdd(s32 c, s32 any) {
+    if (sTb->chatLen < TB_CHAT_MAX && (any ? c >= 32 && c < 127 && c != '<' && c != '>' : Tb_NameKey(c))) {
+        sTb->chat[sTb->chatLen++] = (char)c;
+        sTb->chat[sTb->chatLen] = 0;
+        Snd_PlaySe(1, 0);
+    }
+}
+
+static void Tb_ChatClose(void) {
+    sTb->lbChat = 0;
+    sTb->typing = 0;
+    Port_TextMode(0);
+}
+
+static void Tb_ChatUpdate(void) {
+    Pad *pad = &gPad[0];
+    s32 c;
+    s32 done = 0;
+
+    Ps_Prompt(0, "Enter");
+    Ps_Prompt(1, "Delete");
+    Ps_Prompt(7, "Send");
+    Ps_Prompt(2, "Cancel");
+    while ((c = Port_TextRead()) != 0) {
+        if (c == 13) {
+            done = 1;
+        } else if (c == 27) {
+            done = -1;
+            break;
+        } else if (c == 8) {
+            if (sTb->chatLen > 0) {
+                sTb->chat[--sTb->chatLen] = 0;
+                Snd_PlaySe(1, 2);
+            }
+        } else {
+            Tb_ChatAdd(c, 1);
+        }
+    }
+    if (!done) {
+        c = Tb_PadUpdate(NAME_ROWS, sTbNameKeys[sTb->lower], sTbNameBtn, 4);
+        if (c > 0) {
+            Tb_ChatAdd(c, 0);
+        } else if (c == -TB_KEY_SPACE) {
+            Tb_ChatAdd(' ', 0);
+        } else if (c == -TB_KEY_CASE) {
+            sTb->lower = !sTb->lower;
+            Snd_PlaySe(1, 0);
+        } else if (c == -TB_KEY_DELETE || (pad->gamePressed & PADG_SQUARE)) {
+            if (sTb->chatLen > 0) {
+                sTb->chat[--sTb->chatLen] = 0;
+                Snd_PlaySe(1, 2);
+            }
+        } else if (c == -TB_KEY_OK || (pad->gamePressed & PADG_START)) {
+            done = 1;
+        } else if (pad->gamePressed & PADG_TRIANGLE) {
+            done = -1;
+        }
+    }
+    if (done == 1) {
+        while (sTb->chatLen > 0 && sTb->chat[sTb->chatLen - 1] == ' ') {
+            sTb->chat[--sTb->chatLen] = 0;
+        }
+        if (sTb->chatLen > 0) {
+            Port_LobbySay(sTb->chat);
+        }
+        Snd_PlaySe(1, 1);
+        Tb_ChatClose();
+    } else if (done == -1) {
+        Snd_PlaySe(1, 2);
+        Tb_ChatClose();
+    }
+}
+
+/* The owner's window over a place: Move, Remove from the Lobby (not for the owner's own place), Back. */
+static s32 Tb_LobbyPopCount(void) {
+    return sTb->lbPop == LB_POP_MEMBER ? (sTbLv.isOwner[sTb->lbPopPlace] ? 2 : 3) : 2;
+}
+
+static char *Tb_LobbyPopItem(s32 i) {
+    if (sTb->lbPop == LB_POP_LEAVE) {
+        return i == 0 ? "Yes" : "No";
+    }
+    if (i == 0) {
+        return "Move";
+    }
+    return i == 1 && !sTbLv.isOwner[sTb->lbPopPlace] ? "Remove from the Lobby" : "Back";
+}
+
+#define TB_POP_IN 10  /* frames a window over the lobby's page takes to come in */
+#define TB_POP_OUT 8  /* ... and to go */
+
+/* How far in a window over the page is, 0..1 (eased as the pages' slide, Tb_In). */
+static f32 Tb_LobbyPopIn(void) {
+    f32 t = sTb->lbPopClose > 0 ? (f32)sTb->lbPopClose / (f32)TB_POP_OUT : (f32)sTb->lbPopT / (f32)TB_POP_IN;
+
+    if (t > 1.0f) {
+        t = 1.0f;
+    }
+    t = 1.0f - t;
+    return 1.0f - t * t * t;
+}
+
+static void Tb_LobbyPopUpdate(void) {
+    Pad *pad = &gPad[0];
+    s32 count = Tb_LobbyPopCount();
+    char *item;
+
+    Ps_Prompt(0, "Enter");
+    Ps_Prompt(2, "Back");
+    Ps_Move(&sTb->lbPopCur, count);
+    if (pad->gamePressed & (PADG_TRIANGLE | PADG_CIRCLE)) {
+        Snd_PlaySe(1, 2);
+        sTb->lbPopClose = TB_POP_OUT; /* (it slides out first) */
+        return;
+    }
+    if (!(pad->gamePressed & PADG_CROSS)) {
+        return;
+    }
+    item = Tb_LobbyPopItem(sTb->lbPopCur);
+    if (sTb->lbPop == LB_POP_LEAVE) {
+        if (sTb->lbPopCur == 0) {
+            Snd_PlaySe(1, 1);
+            Port_LobbyDo(LOBBY_LEAVE, 0, 0);
+        } else {
+            Snd_PlaySe(1, 2);
+        }
+        sTb->lbPopClose = TB_POP_OUT; /* (it slides out first) */
+        return;
+    }
+    if (strcmp(item, "Move") == 0) {
+        Snd_PlaySe(1, 1);
+        sTb->lbPicked = sTb->lbPopPlace;
+        sTb->lbCol = 0;
+    } else if (strcmp(item, "Back") == 0) {
+        Snd_PlaySe(1, 2);
+    } else {
+        Snd_PlaySe(1, 1);
+        Port_LobbyDo(LOBBY_KICK, sTb->lbPopPlace, 0);
+    }
+    sTb->lbPopClose = TB_POP_OUT; /* (it slides out first) */
+}
+
+/* Up (-1) and down (1) on the right side: the rules (the owner's), then the two rows of buttons, and round. */
+static s32 Tb_LobbyNext(s32 r, s32 dir) {
+    s32 owner = sTbLv.owner;
+    s32 row1 = Tb_LobbyAct(2) != 0; /* (a second row of buttons) */
+
+    if (dir > 0) {
+        if (r < LB_BTN) {
+            return r + 1; /* (the last rule: to the first button) */
+        }
+        if (r < LB_BTN + 2) {
+            return row1 ? (Tb_LobbyAct(r - LB_BTN + 2) != 0 ? r + 2 : LB_BTN + 2) : owner ? 0 : r;
+        }
+        return owner ? 0 : r - 2;
+    }
+    if (r == 0) {
+        return row1 ? LB_BTN + 2 : LB_BTN;
+    }
+    if (r < LB_BTN) {
+        return r - 1;
+    }
+    if (r < LB_BTN + 2) {
+        return owner ? LB_BTN - 1 : row1 ? LB_BTN + 2 : r;
+    }
+    return LB_BTN;
+}
+
+static void Tb_LobbyUpdate(s32 live) {
+    Pad *pad = &gPad[0];
+    PortLobbyView *v = &sTbLv;
+    s32 own;
+
+    if (sTb->ended != Port_NetSessionsEnded()) { /* back from a match (the game was put back to its moment): as it was */
+        sTb->ended = Port_NetSessionsEnded();
+        sTb->lbPop = 0;
+        sTb->lbPicked = -1;
+        if (sTb->lbChat) {
+            Tb_ChatClose();
+        }
+    }
+    sTb->lbHostT++;
+    if (v->state == 2 && sTb->lbSeenState == 1) {
+        sTb->modeT = 0; /* reached (joined, or the code came): the page's windows come in now, as a page's do */
+    }
+    sTb->lbSeenState = v->state;
+    if (v->state == 0) { /* left, or closed and read */
+        if (sTb->lbChat) {
+            Tb_ChatClose();
+        }
+        Tb_SetMode(TB_HUB);
+        return;
+    }
+    own = v->owner && v->phase == 0;
+    if (v->state != 2) { /* under way, or closed: the window says it (Tb_DrawLobbyWin) */
+        if (sTb->lbChat) {
+            Tb_ChatClose();
+        }
+        sTb->lbPop = 0;
+        Ps_Prompt(v->state == 3 ? 0 : 2, v->state == 3 ? "OK" : "Cancel");
+        if (!live) {
+            return;
+        }
+        if (v->state == 3 && (pad->gamePressed & (PADG_CROSS | PADG_CIRCLE | PADG_TRIANGLE))) {
+            Snd_PlaySe(1, 1);
+            Port_LobbyDo(LOBBY_OK, 0, 0);
+        } else if (v->state == 1 && (pad->gamePressed & (PADG_CIRCLE | PADG_TRIANGLE))) {
+            Snd_PlaySe(1, 2);
+            Port_LobbyDo(LOBBY_LEAVE, 0, 0);
+        }
+        return;
+    }
+    if (!own) {
+        sTb->lbPicked = -1;
+        if (sTb->lbPop == LB_POP_MEMBER) {
+            sTb->lbPop = 0;
+        }
+    }
+    if (sTb->lbChat) {
+        if (live) {
+            Tb_ChatUpdate();
+        }
+        return;
+    }
+    if (sTb->lbPop != 0) {
+        sTb->lbPopT++;
+        if (sTb->lbPopClose > 0) { /* going: no input meanwhile */
+            if (--sTb->lbPopClose == 0) {
+                sTb->lbPop = 0;
+            }
+        } else if (live) {
+            Tb_LobbyPopUpdate();
+        }
+        return;
+    }
+    if (sTb->lbPicked >= 0) {
+        Ps_Prompt(0, "Move Here");
+        Ps_Prompt(2, "Cancel");
+    } else {
+        if (sTb->lbCol == 1 && sTb->lbRight < LB_BTN && own) {
+            Ps_Prompt(3, "Change");
+        }
+        Ps_Prompt(0, "Enter");
+        if (v->code[0] != 0) {
+            Ps_Prompt(1, "Copy Code");
+        }
+        if (Tb_LobbyCanStart() && !(sTb->lbCol == 1 && sTb->lbRight < LB_BTN)) {
+            Ps_Prompt(7, "Start Match");
+        }
+        Ps_Prompt(2, v->owner ? "Close Lobby" : "Leave Lobby");
+    }
+    if (!live) {
+        return;
+    }
+    if (!v->owner && sTb->lbRight < LB_BTN) {
+        sTb->lbRight = LB_BTN;
+    }
+    if (pad->gamePressed & (PADG_L1 | PADG_R1)) { /* the shoulder buttons: the other side of the page */
+        sTb->lbCol = !sTb->lbCol;
+        Snd_PlaySe(1, 0);
+    } else if (sTb->lbCol == 0) {
+        s32 side = Ps_Side();
+
+        Ps_Move(&sTb->lbPlace, LB_ROWS);
+        if (side != 0 && sTb->lbPicked < 0) {
+            sTb->lbCol = 1;
+            Snd_PlaySe(1, 0);
+        }
+    } else {
+        s32 r = sTb->lbRight;
+        s32 side = Ps_Side();
+
+        if (pad->gameRepeat & (PADG_DOWN | PADG_DOWN2)) {
+            r = Tb_LobbyNext(r, 1);
+            Snd_PlaySe(1, 0);
+        } else if (pad->gameRepeat & (PADG_UP | PADG_UP2)) {
+            r = Tb_LobbyNext(r, -1);
+            Snd_PlaySe(1, 0);
+        }
+        sTb->lbRight = r;
+        if (side != 0 && r < LB_BTN) {
+            if (own) {
+                Port_LobbyDo(LOBBY_RULE, r, side);
+                Snd_PlaySe(1, 0);
+            } else if (v->owner) {
+                Snd_PlaySe(1, 2);
+                Tb_Note("THE RULES CANNOT CHANGE DURING A MATCH");
+            }
+        } else if (side != 0) {
+            s32 k = r - LB_BTN;
+
+            if (side < 0 && (k & 1) == 0) {
+                sTb->lbCol = 0;
+            } else if (side > 0 && (k & 1) == 0 && Tb_LobbyAct(k + 1) != 0) {
+                sTb->lbRight = r + 1;
+            } else if (side < 0) {
+                sTb->lbRight = r - 1;
+            }
+            Snd_PlaySe(1, 0);
+        }
+    }
+    if (pad->gamePressed & PADG_CROSS) {
+        if (sTb->lbCol == 0) {
+            s32 i = sTb->lbPlace;
+
+            if (sTb->lbPicked >= 0) {
+                if (i != sTb->lbPicked && own) {
+                    Snd_PlaySe(1, 1);
+                    Port_LobbyDo(LOBBY_MOVE, sTb->lbPicked, i);
+                } else {
+                    Snd_PlaySe(1, 2);
+                }
+                sTb->lbPicked = -1;
+            } else if (own && v->taken[i]) {
+                Snd_PlaySe(1, 1);
+                sTb->lbPop = LB_POP_MEMBER;
+                sTb->lbPopT = 0;
+                sTb->lbPopClose = 0;
+                sTb->lbPopPlace = i;
+                sTb->lbPopCur = 0;
+            } else if (v->owner && v->phase) {
+                Snd_PlaySe(1, 2);
+                Tb_Note("NOT DURING A MATCH: THE PLACES CHANGE BETWEEN MATCHES");
+            } else if (!v->owner) {
+                Snd_PlaySe(1, 2);
+                Tb_Note("THE LOBBY'S OWNER CHOOSES WHO PLAYS");
+            }
+        } else if (sTb->lbRight < LB_BTN) {
+            Snd_PlaySe(1, 0);
+            sTb->lbRight++;
+        } else {
+            Tb_LobbyAction(Tb_LobbyAct(sTb->lbRight - LB_BTN));
+        }
+    } else if ((pad->gamePressed & PADG_SQUARE) && v->code[0] != 0 && sTb->lbPicked < 0) {
+        PortTbo_Copy(v->code);
+        Snd_PlaySe(1, 1);
+        Tb_Note("COPIED: PASTE THE CODE TO THE OTHERS");
+    } else if ((pad->gamePressed & PADG_START) && v->owner && sTb->lbPicked < 0) {
+        Tb_LobbyStart();
+    } else if (pad->gamePressed & PADG_TRIANGLE) {
+        if (sTb->lbPicked >= 0) {
+            Snd_PlaySe(1, 2);
+            sTb->lbPicked = -1;
+        } else {
+            Tb_LobbyAction(LB_ACT_LEAVE);
+        }
+    }
+}
+
+/* ---- the lobby's drawing ---- */
+#define LB_L0 12.0f   /* the places' window */
+#define LB_L1 250.0f
+#define LB_R0 258.0f  /* the code, the rules, the buttons */
+#define LB_R1 502.0f
+
+static f32 Tb_LobbyRowY(s32 i) {
+    return i < 2 ? 76.0f + 25.0f * (f32)i : 150.0f + 25.0f * (f32)(i - 2);
+}
+
+static f32 Tb_LobbyRuleY(s32 i) {
+    return 134.0f + 22.0f * (f32)i;
+}
+
+static void Tb_LobbyBtnBox(s32 k, f32 *x0, f32 *y0, f32 *x1, f32 *y1) {
+    s32 wide = (k & 1) == 0 && Tb_LobbyAct(k + 1) == 0; /* (a button alone in its row: across it) */
+
+    *x0 = (k & 1) ? (LB_R0 + LB_R1) * 0.5f + 3.0f : LB_R0;
+    *x1 = (k & 1) || wide ? LB_R1 : (LB_R0 + LB_R1) * 0.5f - 3.0f;
+    *y0 = Tb_LobbyAct(2) == 0 ? 274.0f : k < 2 ? 260.0f : 290.0f; /* (one row: in the middle of the place for two) */
+    *y1 = *y0 + 24.0f;
+}
+
+static void Tb_PageIn(s32 on);
+/* The last page's hosts, going off to the right in front of the page's windows and behind the box (16 frames, as a
+   page comes in). */
+static void Tb_LobbyHostsOut(void) {
+    if (sTb->lbHostPose >= 0 && sTb->lbHostT < 16) {
+        f32 t = (f32)sTb->lbHostT / 16.0f;
+
+        Ps_SetShift(0.0f);
+        Tb_RaditzBust(t * t * 320.0f);
+        Tb_PageIn(1);
+    }
+}
+
+static void Tb_DrawLobby(void) {
+    PortLobbyView *v = &sTbLv;
+    s32 i;
+    s32 k;
+
+    if (v->state != 2) {
+        if (v->state == 3) { /* (closed: the window says why, the hosts are puzzled) */
+            Tb_Hosts(TBO_HOSTS_PUZZLED, 400.0f, 350.0f, 230.0f);
+        }
+        Tb_LobbyHostsOut();
+        return;
+    }
+    Ps_Panel(TBO_KIT_WINDOW, LB_L0, 52.0f, LB_L1, 316.0f, 0x80);
+    for (i = 0; i < LB_ROWS; i++) {
+        f32 y = Tb_LobbyRowY(i);
+        s32 on = sTb->lbCol == 0 && i == sTb->lbPlace && !sTb->lbChat;
+
+        if (on) {
+            Ps_Pill(TBO_KIT_SEL, LB_L0 + 6.0f, y - 2.0f, LB_L1 - 6.0f, y + 24.0f, 0x80);
+        } else if (i == sTb->lbPicked) {
+            Ps_Pill(TBO_KIT_GOLD, LB_L0 + 8.0f, y, LB_L1 - 8.0f, y + 22.0f, 0x80);
+        } else {
+            Ps_Pill(TBO_KIT_BAR, LB_L0 + 8.0f, y, LB_L1 - 8.0f, y + 22.0f, v->taken[i] ? 0x80 : 0x58);
+        }
+        if (v->taken[i] && (v->isOwner[i] || i == v->me)) { /* the owner's mark, and this game's own place */
+            Ps_Pill(TBO_KIT_STEEL, 160.0f, y + 5.0f, 200.0f, y + 17.0f, 0x80);
+        }
+    }
+    Ps_Panel(TBO_KIT_WINDOW, LB_R0, 52.0f, LB_R1, 104.0f, 0x80);
+    Ps_Panel(TBO_KIT_WINDOW, LB_R0, 108.0f, LB_R1, 254.0f, 0x80);
+    for (i = 0; i < LB_RULES; i++) {
+        f32 y = Tb_LobbyRuleY(i);
+        s32 on = sTb->lbCol == 1 && sTb->lbRight == i && !sTb->lbChat;
+
+        if (on) {
+            Ps_Pill(TBO_KIT_SEL, LB_R0 + 6.0f, y - 2.0f, LB_R1 - 6.0f, y + 22.0f, 0x80);
+            if (v->owner && v->phase == 0) {
+                Ps_Button(3, LB_R1 - 20.0f, y + 10.0f, 18.0f);
+            }
+        } else {
+            Ps_Pill(TBO_KIT_BAR, LB_R0 + 8.0f, y, LB_R1 - 8.0f, y + 20.0f, 0x80);
+        }
+    }
+    for (k = 0; k < 4; k++) {
+        f32 x0;
+        f32 y0;
+        f32 x1;
+        f32 y1;
+        s32 act = Tb_LobbyAct(k);
+        s32 on = sTb->lbCol == 1 && sTb->lbRight == LB_BTN + k && !sTb->lbChat;
+
+        if (act == 0) {
+            continue;
+        }
+        Tb_LobbyBtnBox(k, &x0, &y0, &x1, &y1);
+        if (on) {
+            Ps_Pill(TBO_KIT_SEL, x0 - 2.0f, y0 - 2.0f, x1 + 2.0f, y1 + 2.0f, 0x80);
+        } else {
+            Ps_Pill(TBO_KIT_BAR, x0, y0, x1, y1, act == LB_ACT_START && !Tb_LobbyCanStart() ? 0x58 : 0x80);
+        }
+    }
+    Tb_LobbyHostsOut();
+}
+
+static void Tb_DrawLobbyText(void) {
+    static char line[96];
+    PortLobbyView *v = &sTbLv;
+    s32 i;
+    s32 k;
+    s32 watch = 0;
+
+    if (v->state != 2) {
+        return; /* (Tb_DrawLobbyWin) */
+    }
+    for (i = 2; i < LB_ROWS; i++) {
+        watch += v->taken[i];
+    }
+    Ps_Text(26.0f, Ps_TextTop(64.0f, 0.5f), "PLAYERS", 0.5f, 0.0f, 2);
+    sprintf(line, Tb_Fmt("SPECTATORS  %d / 6"), (int)watch);
+    Ps_Text(26.0f, Ps_TextTop(138.0f, 0.5f), line, 0.5f, 210.0f, 2);
+    for (i = 0; i < LB_ROWS; i++) {
+        f32 y = Tb_LobbyRowY(i);
+        f32 mid = y + 11.0f;
+        s32 on = sTb->lbCol == 0 && i == sTb->lbPlace && !sTb->lbChat;
+        char tag[4];
+
+        if (i < 2) {
+            sprintf(tag, "%dP", (int)(i + 1));
+        } else {
+            sprintf(tag, "%d", (int)(i - 1));
+        }
+        Ps_Align(1);
+        Ps_Text(37.0f, Ps_TextTop(mid, 0.5f), tag, 0.5f, 0.0f, on ? 1 : 4);
+        Ps_Align(0);
+        if (v->taken[i]) {
+            Ps_Text(54.0f, Ps_TextTop(mid, 0.6f), v->name[i], 0.6f, v->isOwner[i] || i == v->me ? 102.0f : 140.0f, on ? 1 : i == v->me ? 3 : 0);
+            if (v->isOwner[i] || i == v->me) {
+                Ps_Align(1);
+                Ps_Text(180.0f, Ps_TextTop(mid, 0.34f), v->isOwner[i] ? "OWNER" : "YOU", 0.34f, 36.0f, 0);
+                Ps_Align(0);
+            }
+            if (v->ready[i]) {
+                Ps_Align(2);
+                Ps_Text(228.0f, Ps_TextTop(mid, 0.42f), "READY", 0.42f, 36.0f, 5); /* (inside the bar's round end) */
+                Ps_Align(0);
+            }
+        } else {
+            Ps_Text(54.0f, Ps_TextTop(mid, 0.5f), i == sTb->lbPicked ? "" : "EMPTY", 0.5f, 0.0f, 4);
+        }
+    }
+    /* the code */
+    if (v->code[0] != 0) {
+        Ps_Text(270.0f, Ps_TextTop(68.0f, 0.46f), "LOBBY CODE", 0.46f, 0.0f, 2);
+        Ps_Text(270.0f, Ps_TextTop(88.0f, 0.95f), v->code, 0.95f, 120.0f, 0);
+        Ps_Align(2);
+        Ps_Text(490.0f, Ps_TextTop(68.0f, 0.4f), v->owner ? "GIVE IT TO THE OTHERS" : "JOIN ROOM WITH IT", 0.4f, 120.0f, 4);
+        Ps_Align(0);
+    } else if (v->owner && v->port > 0) {
+        Ps_Text(270.0f, Ps_TextTop(68.0f, 0.46f), "OTHERS JOIN WITH YOUR ADDRESS AND PORT", 0.46f, 220.0f, 2);
+        sprintf(line, "%d", (int)v->port);
+        Ps_Text(270.0f, Ps_TextTop(88.0f, 0.8f), line, 0.8f, 120.0f, 0);
+    } else {
+        Ps_Text(270.0f, Ps_TextTop(68.0f, 0.46f), "LOBBY", 0.46f, 0.0f, 2);
+        Ps_Text(270.0f, Ps_TextTop(88.0f, 0.6f), "JOINED BY ADDRESS", 0.6f, 220.0f, 0);
+    }
+    if (v->phase) {
+        Ps_Align(2);
+        Ps_Text(490.0f, Ps_TextTop(90.0f, 0.46f), "A MATCH IS ON", 0.46f, 110.0f, 5);
+        Ps_Align(0);
+    }
+    /* the rules */
+    Ps_Text(270.0f, Ps_TextTop(122.0f, 0.46f), v->owner ? "RULES" : "RULES (THE OWNER'S)", 0.46f, 220.0f, 2);
+    for (i = 0; i < LB_RULES; i++) {
+        f32 mid = Tb_LobbyRuleY(i) + 10.0f;
+        s32 on = sTb->lbCol == 1 && sTb->lbRight == i && !sTb->lbChat;
+
+        Ps_Text(282.0f, Ps_TextTop(mid, 0.54f), sTbRuleName[i], 0.54f, 92.0f, on ? 1 : 0); /* (inside its bar as the places' names are) */
+        Tb_RuleValue(line, i);
+        Ps_Align(2);
+        Ps_Text(on && v->owner && v->phase == 0 ? 456.0f : 482.0f, Ps_TextTop(mid, 0.46f), line, 0.46f, 124.0f, 3);
+        Ps_Align(0);
+    }
+    /* the buttons */
+    for (k = 0; k < 4; k++) {
+        f32 x0;
+        f32 y0;
+        f32 x1;
+        f32 y1;
+        s32 act = Tb_LobbyAct(k);
+        s32 on = sTb->lbCol == 1 && sTb->lbRight == LB_BTN + k && !sTb->lbChat;
+
+        if (act == 0) {
+            continue;
+        }
+        Tb_LobbyBtnBox(k, &x0, &y0, &x1, &y1);
+        Ps_Align(1);
+        Ps_Text((x0 + x1) * 0.5f, Ps_TextTop((y0 + y1) * 0.5f, 0.56f), Tb_LobbyActName(act), 0.56f, x1 - x0 - 14.0f,
+                on ? 1 : act == LB_ACT_START && !Tb_LobbyCanStart() ? 4 : 0);
+        Ps_Align(0);
+    }
+}
+
+/* The windows over the page (drawn last): the lobby under way or closed, the owner's choices over a place, leaving,
+   and the chat's keypad. */
+#define TB_MSG_NOTE 0.88f /* a window's explanation, smaller than its heading (Ps_Heading 0.9) */
+static void Tb_MsgLines(f32 x, f32 y, f32 width, const char *text, s32 maxLines) {
+    static char part[160];
+    s32 at = 0;
+    s32 lines = 0;
+
+    while (text[at] != 0 && lines < maxLines) {
+        s32 n = 0;
+        s32 lastSpace = -1;
+
+        while (text[at + n] != 0 && n < 158) {
+            part[n] = text[at + n];
+            part[n + 1] = 0;
+            if (text[at + n] == ' ') {
+                lastSpace = n;
+            }
+            if (Ps_MsgWidth(part, TB_MSG_NOTE) > width && lastSpace > 0) {
+                n = lastSpace;
+                break;
+            }
+            n++;
+        }
+        part[n] = 0;
+        Ps_Msg(x, y + 18.0f * (f32)lines, part, TB_MSG_NOTE, 0x80);
+        at += n;
+        while (text[at] == ' ') {
+            at++;
+        }
+        lines++;
+    }
+}
+
+static void Tb_DrawLobbyWin(void) {
+    PortLobbyView *v = &sTbLv;
+    static char line[256];
+    s32 i;
+
+
+    if (v->state == 1 || v->state == 3) {
+        Ps_Panel(TBO_KIT_WINDOW, 40.0f, 110.0f, 330.0f, 250.0f, 0x80);
+        if (v->state == 1) {
+            Ps_Heading(60.0f, 118.0f, v->owner ? "Opening the Lobby" : "Joining the Lobby", 0.9f, 250.0f, 0x80);
+            Ps_Msg(60.0f, 160.0f, v->owner ? "Asking the matchmaking service for a code..." : "Looking for the lobby's owner...", 0.88f, 0x80);
+        } else {
+            Ps_Heading(60.0f, 118.0f, "No Longer in the Lobby", 0.9f, 250.0f, 0x80);
+            if (v->error[0] != 0) { /* (not `?:` between the view's line and a literal: the 32-bit pointers) */
+                Tb_LobbyLine(line, 256, v->error);
+            } else {
+                Tb_LobbyLine(line, 256, "The lobby is closed.");
+            }
+            Tb_MsgLines(60.0f, 158.0f, 254.0f, line, 4);
+        }
+        return;
+    }
+    if (sTb->lbPop == LB_POP_MEMBER || sTb->lbPop == LB_POP_LEAVE) {
+        s32 count = Tb_LobbyPopCount();
+
+        Ps_SetShift((1.0f - Tb_LobbyPopIn()) * -200.0f); /* (it slides in from the left, and out the same way) */
+        f32 y0 = sTb->lbPop == LB_POP_LEAVE ? 120.0f : Tb_LobbyRowY(sTb->lbPopPlace) - 8.0f;
+        f32 x0 = sTb->lbPop == LB_POP_LEAVE ? 126.0f : 150.0f;
+        f32 x1 = sTb->lbPop == LB_POP_LEAVE ? 386.0f : 350.0f;
+        f32 top = sTb->lbPop == LB_POP_LEAVE ? 60.0f : 34.0f;
+
+        if (y0 + top + 28.0f * (f32)count + 10.0f > 318.0f) {
+            y0 = 318.0f - top - 28.0f * (f32)count - 10.0f;
+        }
+        Ps_Panel(TBO_KIT_WINDOW, x0, y0, x1, y0 + top + 28.0f * (f32)count + 10.0f, 0x80);
+        if (sTb->lbPop == LB_POP_LEAVE) {
+            Ps_Heading(x0 + 16.0f, y0 + 6.0f, v->owner ? "Close the Lobby?" : "Leave the Lobby?", 0.9f, x1 - x0 - 32.0f, 0x80);
+            Ps_Msg(x0 + 16.0f, y0 + 36.0f, v->owner ? "Everyone in it goes back to the menus." : "You go back to the online menu.", TB_MSG_NOTE, 0x80);
+        } else {
+            Ps_Text(x0 + 16.0f, y0 + 8.0f, v->name[sTb->lbPopPlace], 0.6f, x1 - x0 - 32.0f, 3);
+        }
+        for (i = 0; i < count; i++) {
+            f32 y = y0 + top + 28.0f * (f32)i;
+            s32 on = i == sTb->lbPopCur;
+
+            if (on) {
+                Ps_Pill(TBO_KIT_SEL, x0 + 10.0f, y - 2.0f, x1 - 10.0f, y + 24.0f, 0x80);
+            } else {
+                Ps_Pill(TBO_KIT_BAR, x0 + 12.0f, y, x1 - 12.0f, y + 22.0f, 0x80);
+            }
+            Ps_Text(x0 + 28.0f, Ps_TextTop(y + 11.0f, 0.6f), Tb_LobbyPopItem(i), 0.6f, x1 - x0 - 56.0f, on ? 1 : 0);
+        }
+        Ps_SetShift(0.0f);
+    }
+    if (sTb->lbChat) { /* the name's keypad, for a line to everyone */
+        static char typed[TB_CHAT_MAX + 2];
+        s32 from = 0;
+
+        Ps_Panel(TBO_KIT_WINDOW, 64.0f, 62.0f, 448.0f, 340.0f, 0x80);
+        Ps_Text(84.0f, 70.0f, "SAY SOMETHING TO THE LOBBY", 0.6f, 340.0f, 2);
+        Ps_Pill(TBO_KIT_BAR, 84.0f, 94.0f, 428.0f, 124.0f, 0x80);
+        Ps_Copy(typed, sTb->chat, TB_CHAT_MAX + 2);
+        Ps_Cat(typed, (sTb->frames / 16) & 1 ? "_" : " ", TB_CHAT_MAX + 2);
+        while (typed[from] != 0 && Ps_TextWidth(typed + from, 0.66f) > 312.0f) { /* (the end of a long line) */
+            from++;
+        }
+        Ps_Text(100.0f, Ps_TextTop(109.0f, 0.66f), typed + from, 0.66f, 0.0f, 1);
+        Tb_Keypad(94.0f, 134.0f, NAME_ROWS, sTbNameKeys[sTb->lower], sTbNameBtn, 4);
+    }
+}
+
+/* The box at the foot of the screen on this page: the last three things that happened (notes and chat), newest
+   at the bottom, each cut to one line. NULL while nothing has (the hosts' hint then: Tb_Help). In the game's text,
+   as Tb_BoxLine makes it; another buffer for another content (the screen reader tells lines apart by that). */
+static u16 *Tb_LobbyBox(void) {
+    static u16 buf[2][TB_BOX_LINE];
+    static unsigned saidTotal = 0xFFFFFFFF;
+    static s32 cur;
+    PortLobbyView *v = &sTbLv;
+    s32 n = 1;
+    s32 room = MsgWin_PortLineRoom(400);
+    s32 e;
+    u16 *out;
+
+    if (v->state != 2 || v->logCount == 0) {
+        saidTotal = 0xFFFFFFFF;
+        return NULL;
+    }
+    if (v->logTotal == saidTotal) {
+        return buf[cur];
+    }
+    saidTotal = v->logTotal;
+    cur = !cur;
+    out = buf[cur];
+    out[0] = 0xFEFF;
+    out[1] = 0;
+    for (e = v->logCount > 3 ? v->logCount - 3 : 0; e < v->logCount; e++) {
+        static char text[224];
+        s32 start;
+        s32 k;
+
+        if (v->logName[e][0] != 0) { /* a line of chat, "Name: what was said" (what a player wrote is not translated) */
+            s32 t;
+
+            Ps_Copy(text, v->logName[e], 224);
+            Ps_Cat(text, ": ", 224);
+            t = Ps_Len(text);
+            for (k = 0; v->logText[e][k] != 0 && t < 222; k++) {
+                text[t++] = v->logText[e][k];
+            }
+            text[t] = 0;
+        } else {
+            Tb_LobbyLine(text, 224, v->logText[e]);
+        }
+        if (n > 1) {
+            out[n++] = '\n';
+        }
+        start = n;
+        for (k = 0; text[k] != 0 && n < TB_BOX_LINE - 5; k++) { /* (UTF-8 to the box's 16-bit letters) */
+            u32 c = (u8)text[k];
+
+            if (c >= 0xC0 && c < 0xE0 && text[k + 1] != 0) {
+                c = ((c & 0x1F) << 6) | ((u8)text[k + 1] & 0x3F);
+                k += 1;
+            } else if (c >= 0xE0 && c < 0xF0 && text[k + 1] != 0 && text[k + 2] != 0) {
+                c = ((c & 0x0F) << 12) | (((u8)text[k + 1] & 0x3F) << 6) | ((u8)text[k + 2] & 0x3F);
+                k += 2;
+            }
+            out[n++] = (u16)(c == '<' ? '(' : c == '>' ? ')' : c); /* (a < would start a tag of the box) */
+            out[n] = 0;
+            if (Font_GetWidth(out + start) > room) { /* one line each: the end cut off */
+                do {
+                    out[--n] = 0;
+                } while (n > start + 1 && Font_GetWidth(out + start) > room - 20);
+                out[n++] = '.';
+                out[n++] = '.';
+                out[n++] = '.';
+                out[n] = 0;
+                break;
+            }
+        }
+        out[n] = 0;
+    }
+    return out;
+}
+
+static void Tb_KeyFocus(char *out, s32 rows, char (*keys)[KEY_COLS + 1], const TbKeyBtn *b, s32 nb);
+/* What the screen reader says the lobby's cursor is on (Tb_Speak). */
+static void Tb_LobbyFocus(char *focus, char *now) {
+    static char part[64];
+    PortLobbyView *v = &sTbLv;
+    s32 i = sTb->lbPlace;
+
+    if (v->state == 1) {
+        Ps_Copy(focus, v->owner ? "Opening the lobby" : "Joining the lobby", 160);
+    } else if (v->state == 3) {
+        if (v->error[0] != 0) {
+            Tb_LobbyLine(focus, 160, v->error);
+        } else {
+            Tb_LobbyLine(focus, 160, "The lobby is closed.");
+        }
+    } else if (sTb->lbChat) {
+        Tb_KeyFocus(focus, NAME_ROWS, sTbNameKeys[sTb->lower], sTbNameBtn, 4);
+        Ps_Copy(now, sTb->chat, 40);
+    } else if (sTb->lbPop == LB_POP_LEAVE) {
+        Ps_Copy(focus, v->owner ? "Close the lobby? " : "Leave the lobby? ", 160);
+        Ps_Cat(focus, Tb_LobbyPopItem(sTb->lbPopCur), 160);
+    } else if (sTb->lbPop == LB_POP_MEMBER) {
+        Ps_Copy(focus, v->name[sTb->lbPopPlace], 160);
+        Ps_Cat(focus, ": ", 160);
+        Ps_Cat(focus, Tb_LobbyPopItem(sTb->lbPopCur), 160);
+    } else if (sTb->lbCol == 0) {
+        if (i < 2) {
+            sprintf(part, Tb_Fmt("Player %d"), (int)(i + 1));
+        } else {
+            sprintf(part, Tb_Fmt("Spectator %d"), (int)(i - 1));
+        }
+        Ps_Copy(focus, sTb->lbPicked >= 0 ? "Move to " : "", 160);
+        Ps_Cat(focus, part, 160);
+        Ps_Cat(focus, ": ", 160);
+        if (v->taken[i]) {
+            Ps_Cat(focus, v->name[i], 160);
+        } else {
+            Ps_Cat(focus, "empty", 160);
+        }
+        if (v->taken[i] && v->isOwner[i]) {
+            Ps_Cat(focus, ", owner", 160);
+        }
+        if (v->taken[i] && v->ready[i]) {
+            Ps_Cat(focus, ", ready", 160);
+        }
+    } else if (sTb->lbRight < LB_BTN) {
+        Ps_Copy(focus, sTbRuleName[sTb->lbRight], 160);
+        Ps_Cat(focus, ": ", 160);
+        Tb_RuleValue(part, sTb->lbRight);
+        Ps_Cat(focus, part, 160);
+    } else {
+        Ps_Copy(focus, Tb_LobbyActName(Tb_LobbyAct(sTb->lbRight - LB_BTN)), 160);
     }
 }
 
@@ -1525,6 +3081,19 @@ static void Tb_DrawProfileText(void) {
 static char *Tb_Help(void) {
     switch (sTb->mode) {
     case TB_HUB:
+        if (sTb->hubCur == HUB_VS) { /* against whom, and how many are online there */
+            static char line[160];
+            s32 n = DrNet_Online();
+
+            if (DrNet_Mode() != 0) {
+                return "Against PC players: rooms and quick match on the PC port's service.";
+            }
+            if (n < 0) {
+                return "Against Android and Switch players, on Dragon Net.";
+            }
+            sprintf(line, Tb_Fmt("Against Android and Switch players. Online now: about %d."), (int)n);
+            return line;
+        }
         return sTbHubSay[sTb->hubCur];
     case TB_CREATE:
         return sTb->crCur == CR_DELAY ? "How late your moves come out. Automatic measures the line when the match starts."
@@ -1539,18 +3108,52 @@ static char *Tb_Help(void) {
     case TB_SPAR:
         return "Warm up at the tournament while we search! Pick yourself and a sparring partner.";
     case TB_QUICK:
-        return "Pick a battle and we'll find you a rival! No time limit, and the game runs a little faster.";
+        return sTb->qkCur == 1 ? "Auto: rivals near you first. A region: players there first, everyone after 40 s. Anywhere: the fastest."
+                               : "Pick a battle and we'll find you a rival! No time limit, and the game runs a little faster.";
     case TB_NAME:
         return "Pick your letters, then Done! Square deletes, Start finishes.";
     case TB_PROFILE:
         return "Show everyone who you are! This is the name your rivals see.";
+    case TB_RANKED:
+        if (sTbRk.state < 0 || sTbRk.msg == DRMSG_CONFIRMED || sTbRk.msg == DRMSG_UPDATED || sTbRk.msg == DRMSG_WAIT_RIVAL ||
+            sTbRk.msg == DRMSG_DISPUTED || sTbRk.msg == DRMSG_VOID || sTbRk.msg == DRMSG_ENDED_NO_POINTS) {
+            if (Tb_RkMsg(sTbRk.msg)[0] != 0) {
+                return Tb_RkMsg(sTbRk.msg);
+            }
+        }
+        return sTb->rkCur == RK_BATTLE ? "Single or team fights. No time limit, at the standard speed."
+               : sTb->rkCur == RK_SEARCH ? "Find a rival of your level! Points change when both results agree."
+               : sTb->rkCur == RK_BOARD ? "The best fighters of the community, by their Elo points."
+                                        : "Load your profile again from the service.";
+    case TB_RKWAIT:
+        if (Tb_RkMsg(sTbRk.msg)[0] != 0) {
+            return Tb_RkMsg(sTbRk.msg);
+        }
+        return "Searching for a rival of your level...";
+    case TB_BOARD:
+        return "The table shows the community's Elo points. X updates it.";
+    case TB_LOBBY:
+        if (sTbLv.state == 1) {
+            return sTbLv.owner ? "Opening your lobby! The others join it with its code." : "Knocking at the lobby's door...";
+        }
+        if (sTbLv.state == 3) {
+            return "You are out of that lobby. OK takes you back to the online menu.";
+        }
+        if (sTb->lbChat) {
+            return "Type a line for everyone in the lobby, then Done! Start sends it too.";
+        }
+        if (!sTbLv.owner) {
+            return "Welcome to the lobby! Its owner picks who plays and starts the match. Chat while you wait!";
+        }
+        return sTbLv.code[0] != 0 ? "Your lobby is open! Give the others its code: they join with Join Room. Then put two of you in 1P and 2P."
+                                  : "Your lobby is open! The others join with your address and port. Then put two of you in 1P and 2P.";
     }
     return "";
 }
 
 /* Each page's title (by TB_ mode), as its heading shows it and the screen reader says it. */
-static char *sTbTitle[9] = {"Tenkaichi Budokai Online", "Create Room", "Join Room", "Searching", "Profile", "Profile", "Quick Match",
-                            "Train While Waiting", "Tenkaichi Budokai Online"};
+static char *sTbTitle[TB_MODES] = {"Dragon Net Online", "Create Room", "Join Room", "Searching", "Profile", "Profile", "Quick Match",
+                                   "Train While Waiting", "Dragon Net Online", "Lobby", "Ranked", "Searching", "Ranking"};
 
 /* ---- the screen reader (port/src/gs/a11y.c; silent unless the player has it on). The game's own screens are read
    from their state by port/src/a11y_game.c; these pages say what they show themselves: the page's title as it opens,
@@ -1644,6 +3247,10 @@ static void Tb_Speak(void) {
     case TB_WAIT:
         if (sTb->found) {
             Ps_Copy(focus, "Your rival is here! The match begins.", 160);
+            if (Port_LobbyRivalRegion()[0] != 0) {
+                Ps_Cat(focus, " Your rival is from ", 160);
+                Ps_Cat(focus, (char *)Port_LobbyRivalRegion(), 160);
+            }
         } else if (sTb->host == 2) {
             Ps_Copy(focus, sTb->queue ? "Quick match, teams: searching" : "Quick match, one on one: searching", 160);
         } else if (sTb->host) {
@@ -1663,6 +3270,9 @@ static void Tb_Speak(void) {
     case TB_QUICK:
         if (sTb->qkCur == 0) {
             Ps_Copy(focus, sTb->queue ? "Battle: teams" : "Battle: one on one", 160);
+        } else if (sTb->qkCur == 1) {
+            Ps_Copy(focus, "Region: ", 160);
+            Ps_Cat(focus, sTbRegionName[sTb->region], 160);
         } else {
             Ps_Copy(focus, "Search", 160);
         }
@@ -1680,6 +3290,27 @@ static void Tb_Speak(void) {
         break;
     case TB_BLOCK:
         Ps_Copy(focus, "Cannot go online. Online matches are only between two unmodded games.", 160);
+        break;
+    case TB_LOBBY:
+        Tb_LobbyFocus(focus, now);
+        break;
+    case TB_RANKED: {
+        static char *label[RK_COUNT] = {"Battle", "Search for a Rival", "Ranking", "Update Profile"};
+
+        Ps_Copy(focus, label[sTb->rkCur], 160);
+        if (sTb->rkCur == RK_BATTLE) {
+            Ps_Cat(focus, sTb->rkMode ? ": team" : ": single", 160);
+        }
+        break;
+    }
+    case TB_RKWAIT:
+        Ps_Copy(focus, sTbRk.state == 3 ? "Rival found. Connecting" : "Ranked: searching for a rival", 160);
+        break;
+    case TB_BOARD:
+        Ps_Copy(focus, sTbRk.board == 2 && sTbRk.boardCount > 0 ? "First: " : "Ranking", 160);
+        if (sTbRk.board == 2 && sTbRk.boardCount > 0) {
+            Ps_Cat(focus, sTbRk.boardName[0], 160);
+        }
         break;
     default:
         Ps_Copy(focus, "Name: ", 160);
@@ -1705,7 +3336,7 @@ static void Tb_Speak(void) {
         }
         if (now[k] != typed[k]) { /* the code or the name typed so far */
             Ps_Copy(typed, now, 40);
-            Ps_Copy(line, sTb->mode == TB_JOIN ? "Code: " : "Name: ", 256);
+            Ps_Copy(line, sTb->mode == TB_JOIN ? "Code: " : sTb->mode == TB_LOBBY ? "Chat: " : "Name: ", 256);
             if (sTb->mode == TB_JOIN) {
                 Tb_Spell(part, now, 64);
                 Ps_Cat(line, now[0] != 0 ? part : "empty", 256);
@@ -1729,91 +3360,107 @@ static void Tb_Speak(void) {
     if (sTb->note > 0 && !noted) { /* a note (copied, a code that did not work ...) */
         PortA11y_Say(sTb->noteLine, 0);
     }
+    {   /* the lobby: what happened (who came, the chat) as it comes */
+        static unsigned heard;
+        static char line[200];
+
+        if (sTb->mode == TB_LOBBY && sTbLv.state == 2 && sTbLv.logCount > 0 && sTbLv.logTotal != heard) {
+            s32 e = sTbLv.logCount - 1;
+
+            if (sTbLv.logName[e][0] != 0) {
+                Ps_Copy(line, sTbLv.logName[e], 200);
+                Ps_Cat(line, ": ", 200);
+                Ps_Cat(line, sTbLv.logText[e], 200);
+            } else {
+                Tb_LobbyLine(line, 200, sTbLv.logText[e]);
+            }
+            PortA11y_Say(line, 0);
+        }
+        heard = sTbLv.logTotal;
+    }
     noted = sTb->note > 0;
 }
 
-/* The hosts' line (Tb_Help) for the game's box, in the game's text: 16-bit, 0xFEFF first, cut at spaces into lines of
-   what fits (three at most) up to the step of the box's top right corner (at about 410 of the screen's 512: the box
-   is the game's movie, over the whole screen). Another buffer for another line (the screen reader tells them apart by
-   that). NULL: no line. */
-#define TB_BOX_LINE 224
-static u16 *Tb_BoxLine(void) {
-    static u16 buf[2][TB_BOX_LINE];
-    static char said[TB_BOX_LINE];
-    static s32 cur = -1;
+/* The hosts' line (Tb_Help) in a navy box at the foot of the screen, under the list, as wide as TB_TALK_WIDE: three
+   lines at most, cut at spaces, in the menu's letters (the game's teal box took a third of a phone's screen). The
+   box is a picture (Tb_Draw), its lines are letters (Tb_DrawText): sTbTalk says whether it is up. */
+#define TB_TALK_SCALE 0.85f
+#define TB_TALK_PITCH 24.0f
+#define TB_TALK_LINES 3
+static s32 sTbTalk;
+
+static void Tb_DrawTalk(void) {
+    Ps_Panel(TBO_KIT_WINDOW, Tb_TitleLeft(), TB_TALK_TOP, Tb_TitleLeft() + TB_TALK_WIDE, TB_TALK_BOTTOM, 0x80);
+}
+
+static void Tb_DrawTalkText(void) {
+    static char tr[512];
+    static char said[512]; /* the line cut last (it is cut again only when it changes: measuring is the fonts' work) */
+    static s32 saidLang = -1;
+    static char line[TB_TALK_LINES][128];
+    static s32 lines;
+    extern int Port_TrLine(const char *original, char *out, int size);
     char *say = Tb_Help();
-    u16 *out;
-    s32 room;
-    s32 n;
-    s32 start;
-    s32 lines;
-    s32 at;
+    f32 x = Tb_TitleLeft() + 14.0f;
+    f32 room = TB_TALK_WIDE - 28.0f;
+    s32 at = 0;
     s32 k;
 
     if (say == NULL || say[0] == 0) {
-        return NULL;
+        return;
     }
-    {   /* in the chosen language (its file's line for this one), as the rest of the menu */
-        static char tr[512];
-        extern int Port_TrLine(const char *original, char *out, int size);
+    if (saidLang == sTb->lang && strncmp(say, said, sizeof(said) - 1) == 0) {
+        goto draw;
+    }
+    Ps_Copy(said, say, sizeof(said));
+    saidLang = sTb->lang;
+    lines = 0;
+    if (Port_TrLine(say, tr, sizeof(tr))) {
+        say = tr;
+    }
+    while (lines < TB_TALK_LINES) { /* word by word while the line fits (one word at least; the last line: the rest) */
+        s32 end;
 
-        if (Port_TrLine(say, tr, sizeof(tr))) {
-            say = tr;
-        }
-    }
-    for (k = 0; cur >= 0 && say[k] == said[k] && say[k] != 0; k++) {
-    }
-    if (cur >= 0 && say[k] == said[k]) {
-        return buf[cur];
-    }
-    Ps_Copy(said, say, TB_BOX_LINE);
-    cur = cur == 0 ? 1 : 0;
-    out = buf[cur];
-    room = MsgWin_PortLineRoom(400);
-    out[0] = 0xFEFF;
-    n = 1;
-    start = 1;
-    lines = 1;
-    at = 0;
-    while (say[at] == ' ') {
-        at++;
-    }
-    while (say[at] != 0 && n < TB_BOX_LINE - 2) {
-        s32 end = at;
-        s32 mark = n;
-
-        while (say[end] != 0 && say[end] != ' ') {
-            end++;
-        }
-        if (n > start) {
-            out[n++] = ' ';
-        }
-        for (k = at; k < end && n < TB_BOX_LINE - 1; k++) { /* (UTF-8 to the box's 16-bit letters: a translation's accents) */
-            u32 c = (u8)say[k];
-
-            if (c >= 0xC0 && c < 0xE0 && k + 1 < end) {
-                c = ((c & 0x1F) << 6) | ((u8)say[k + 1] & 0x3F);
-                k += 1;
-            } else if (c >= 0xE0 && c < 0xF0 && k + 2 < end) {
-                c = ((c & 0x0F) << 12) | (((u8)say[k + 1] & 0x3F) << 6) | ((u8)say[k + 2] & 0x3F);
-                k += 2;
-            }
-            out[n++] = (u16)c;
-        }
-        out[n] = 0;
-        if (mark > start && lines < 3 && Font_GetWidth(out + start) > room) { /* the word goes to the next line */
-            out[mark] = '\n';
-            start = mark + 1;
-            lines++;
-        }
-        at = end;
         while (say[at] == ' ') {
             at++;
         }
+        if (say[at] == 0) {
+            break;
+        }
+        end = at;
+        for (;;) {
+            s32 next = end;
+
+            while (say[next] == ' ') {
+                next++;
+            }
+            while (say[next] != 0 && say[next] != ' ') {
+                next++;
+            }
+            if (next == end || next - at > 127) {
+                break;
+            }
+            for (k = at; k < next; k++) {
+                line[lines][k - at] = say[k];
+            }
+            line[lines][next - at] = 0;
+            if (end > at && lines < TB_TALK_LINES - 1 && Ps_TextWidth(line[lines], TB_TALK_SCALE) > room) {
+                break;
+            }
+            end = next;
+        }
+        line[lines][end - at] = 0;
+        at = end;
+        lines++;
     }
-    out[n] = 0;
-    return out;
+draw:
+    for (k = 0; k < lines; k++) {
+        f32 mid = (TB_TALK_TOP + TB_TALK_BOTTOM) * 0.5f + TB_TALK_PITCH * ((f32)k - (f32)(lines - 1) * 0.5f);
+
+        Ps_Text(x, Ps_TextTop(mid, TB_TALK_SCALE), line[k], TB_TALK_SCALE, room, 0);
+    }
 }
+
 
 /* What a page draws comes in from the left as it opens, as the hub's bars do (the hub moves its own: Tb_DrawHub);
    the title, the player card and the box stay where they are. The name's keypad comes in over the profile, which
@@ -1847,13 +3494,37 @@ static void Tb_Draw(void) {
         break;
     case TB_BLOCK:
         break; /* (drawn last, over the rest) */
+    case TB_LOBBY:
+        Tb_DrawLobby();
+        break;
+    case TB_RANKED:
+        Tb_DrawRanked();
+        break;
+    case TB_RKWAIT:
+        Tb_DrawRankedWait();
+        break;
+    case TB_BOARD:
+        Tb_DrawBoard();
+        break;
     default:
         Tb_DrawProfile();
         break;
     }
     Tb_PageIn(0);
     Ps_Panel(TBO_KIT_WINDOW, 300.0f, 10.0f, 504.0f, 44.0f, 0x80); /* the player card: the name alone */
-    MsgWin_PortDrawString(Tb_BoxLine()); /* the game's box with the hosts' line (the buttons under it: Tb_DrawText) */
+    {   /* the game's box with the hosts' line (the buttons under it: Tb_DrawText); in a lobby what happened last */
+        u16 *box = NULL;
+
+        if (sTb->mode == TB_LOBBY && !sTb->lbChat) {
+            box = Tb_LobbyBox();
+        }
+        sTbTalk = box == NULL;
+        if (box != NULL) { /* (a lobby's last happenings: three lines, the game's box) */
+            MsgWin_PortDrawString(box);
+        } else {
+            Tb_DrawTalk();
+        }
+    }
     if (sTb->mode == TB_BLOCK) {
         Tb_DrawBlock();
     }
@@ -1863,7 +3534,8 @@ static void Tb_DrawText(void) {
     char **title = sTbTitle;
 
     /* its capitals centred on the crest beside it (y 32); up to the player card */
-    Ps_Heading(Tb_TitleLeft() + 44.0f, Ps_TextTop(32.0f, 1.3f), title[sTb->mode], 1.3f, 248.0f, 0x80);
+    /* (it floats: a slow rise and fall of a few units) */
+    Ps_Heading(Tb_TitleLeft() + 44.0f, Ps_TextTop(32.0f + 2.2f * sinf((f32)sTb->frames * 0.045f), 1.3f), title[sTb->mode], 1.3f, 248.0f, 0x80);
     Tb_PageIn(1);
     switch (sTb->mode) {
     case TB_HUB:
@@ -1886,11 +3558,29 @@ static void Tb_DrawText(void) {
         break;
     case TB_BLOCK:
         break;
+    case TB_LOBBY:
+        Tb_DrawLobbyText();
+        break;
+    case TB_RANKED:
+        Tb_DrawRankedText();
+        break;
+    case TB_RKWAIT:
+        Tb_DrawRankedWaitText();
+        break;
+    case TB_BOARD:
+        Tb_DrawBoardText();
+        break;
     default:
         Tb_DrawProfileText();
         break;
     }
     Tb_PageIn(0);
+    if (sTbTalk) {
+        Tb_DrawTalkText();
+    }
+    if (sTb->mode == TB_LOBBY) {
+        Tb_DrawLobbyWin();
+    }
     /* (no status and no title under it: "ONLINE" was not whether the game is connected, and the title is the
        screen's heading) */
     Ps_Text(322.0f, Ps_TextTop(27.0f, 0.6f), (char *)Port_NetNameGet(), 0.6f, 166.0f, 1);
@@ -1947,12 +3637,15 @@ s32 PortTbo_Run(void) {
 
     sTb = Heap_Alloc(sizeof(TboScreen), 0x20, 0, 2);
     memset(sTb, 0, sizeof(TboScreen));
-    sTb->hubCur = HUB_CREATE;
-    sTb->hubY = Tb_HubRowY(HUB_CREATE);
+    sTb->hubCur = HUB_QUICK;
+    sTb->hubY = Tb_HubRowY(Tb_HubRow(HUB_QUICK));
     Tb_LoadChoices();
     Port_NetNameGet();
     gPortTboSpar = 0;
-    if (Port_LobbyInBackground()) { /* back with a room open (from the main menu after training): its search again */
+    if (Port_LobbyWantsScreen()) { /* in a lobby (joined from Dragon Net Battle, or the screens left meanwhile): its page */
+        Port_LobbyView(&sTbLv);
+        Tb_LobbyOpen();
+    } else if (Port_LobbyInBackground()) { /* back with a room open (from the main menu after training): its search again */
         Port_LobbyBackground(0);
         sTb->host = sTbBgKind;
         sTb->queue = sTbBgQueue;
@@ -1960,6 +3653,8 @@ s32 PortTbo_Run(void) {
         sTb->waitBack = TB_HUB;
         Tb_SetMode(TB_WAIT);
     }
+    DrNet_PresenceActive(DrNet_Mode() == 0); /* the players online: counted while these screens are up (Dragon Net) */
+    GsDraw_ScreenScaleCap(12); /* (at most 3x here: gs_draw.c; the player's own after) */
     Port_EscQuit(0);
     Tb_WinInit();
     ColorFade_StartIn(0, 0, 0, 0x14);
@@ -1976,9 +3671,22 @@ s32 PortTbo_Run(void) {
         ColorFade_Update();
         live = !sTb->leaving && ColorFade_IsInDone();
         Ps_PromptsClear();
+        Port_LobbyView(&sTbLv);
+        if (sTb->mode >= TB_RANKED || sTb->rkLobby) {
+            DrRanked_Poll(&sTbRk);
+        }
         switch (sTb->mode) {
         case TB_HUB:
             Tb_HubUpdate(live);
+            break;
+        case TB_RANKED:
+            Tb_RankedUpdate(live);
+            break;
+        case TB_RKWAIT:
+            Tb_RankedWaitUpdate(live);
+            break;
+        case TB_BOARD:
+            Tb_BoardUpdate(live);
             break;
         case TB_CREATE:
             Tb_CreateUpdate(live);
@@ -2003,6 +3711,9 @@ s32 PortTbo_Run(void) {
             break;
         case TB_BLOCK:
             Tb_BlockUpdate(live);
+            break;
+        case TB_LOBBY:
+            Tb_LobbyUpdate(live);
             break;
         }
         Tb_Speak();
@@ -2029,9 +3740,14 @@ s32 PortTbo_Run(void) {
     Port_EscQuit(1);
     Port_TextMode(0);
     Tb_WinTerm();
-    if (!sTb->train && (sTb->mode == TB_WAIT || sTb->mode == TB_SPAR)) {
+    if (!sTb->train && (sTb->mode == TB_WAIT || sTb->mode == TB_SPAR || sTb->mode == TB_RKWAIT)) {
         Port_LobbyCancel();
     }
+    if (sTb->mode == TB_RKWAIT || (sTb->rkLobby && !sTb->found)) {
+        DrRanked_Cancel();
+    }
+    DrNet_PresenceActive(0);
+    GsDraw_ScreenScaleCap(0);
     train = sTb->train;
     if (train) {
         static u8 noItems[0x10]; /* an empty set of Z items */
@@ -2084,5 +3800,56 @@ void PortTbo_SparSign(void) {
         Ps_Cat(line, sTbBgCode, 64);
     }
     Ps_Msg(146.0f, 93.0f, line, 1.0f, 0x80);
+}
+/* ----------------------------------------------------------------------------------------------- the spectator */
+/* Watching a match (port/src/gs/net.c, "Spectators"): the line over the match, drawn over every screen of the match
+   (character select, fights) from Gfx_EndFrame (sys/gfx.c). The spectator's own pause menu (START or Esc) is the
+   game's animated window, as the PC's exit question (port/src/spec_menu.c); while it is up the line is not drawn. */
+extern int Port_NetSpectating(void);
+extern const char *Port_NetName(int player);
+extern int Port_NetSpecView(void);
+extern int Port_NetSpecStatus(int *out);
+extern int Port_SpecLineShown(void);  /* headless.c: BT3_SPEC_LINE=0, the line left out (tests) */
+extern int PortSpecMenu_Frame(int vsyncs); /* port/src/spec_menu.c: the pause menu; 1 while its window is up */
+
+static char *sTbViewName[3] = {"PLAYER 1", "PLAYER 2", "SPLIT SCREEN"};
+
+/* The line over the match: who plays, the view, and how to change it and open the menu; catching up, and a
+   desync, when they are. At the foot of the screen, between the two gauges. */
+static void Tb_SpecLine(void) {
+    static char line[128];
+    int st[3] = {-1, 0, 0};
+    s32 known = Port_NetSpecStatus(st) != 0;
+    f32 y = 382.0f;
+
+    Ps_Panel(TBO_KIT_DIALOG, 136.0f, y, 376.0f, y + 52.0f, 0x60);
+    Tb_Subst(line, 128, "Spectating %s vs %s", Port_NetName(0), Port_NetName(1), 0);
+    Ps_Align(1);
+    Ps_Text(256.0f, y + 4.0f, line, 0.56f, 220.0f, 1);
+    if (known && st[0] >= 0) {
+        sprintf(line, Tb_Fmt("CATCHING UP WITH THE MATCH... %d%%"), (int)st[0]);
+        Ps_Text(256.0f, y + 26.0f, line, 0.46f, 220.0f, 5);
+    } else if (known && st[2] != 0) {
+        sprintf(line, Tb_Fmt("NO LONGER THE PLAYERS' FIGHT (SINCE FRAME %d)"), (int)st[2]);
+        Ps_Text(256.0f, y + 26.0f, line, 0.42f, 220.0f, 4);
+    } else {
+        Ps_Copy(line, "VIEW: ", 128);
+        Ps_Cat(line, sTbViewName[Port_NetSpecView() % 3], 128);
+        Ps_Cat(line, "   R1: CHANGE   START: MENU", 128);
+        Ps_Text(256.0f, y + 27.0f, line, 0.42f, 224.0f, 0);
+    }
+    Ps_Align(0);
+}
+
+/* Every frame of every screen (sys/gfx.c, Gfx_EndFrame): nothing of the game's touched unless this copy watches a
+   match (and shows the line). */
+void PortTbo_SpecDraw(s32 vsyncs) {
+    if (PortSpecMenu_Frame(vsyncs) || !Port_NetSpectating() || !Port_SpecLineShown()) {
+        return;
+    }
+    Ps_PageSet();
+    Ps_SetShift(0.0f);
+    Ps_Align(0);
+    Tb_SpecLine();
 }
 #endif

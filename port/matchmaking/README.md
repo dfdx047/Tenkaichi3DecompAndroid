@@ -3,7 +3,7 @@
 A small Cloudflare Worker that lets two players of the port find each other with a short code, without typing
 addresses or forwarding a port. It only introduces the two games to each other: no game data passes through it.
 
-Files: `worker.js` (the Worker), `schema.sql` (its one table, as ONE line without comments: the dashboard's console
+Files: `worker.js` (the Worker), `schema.sql` (its tables, each as ONE line without comments: the dashboard's console
 joins what is pasted into one line, and a `--` comment then takes the rest of the statement with it).
 
 The table `rooms`, one row per room (rows older than ten minutes are removed whenever a room is made):
@@ -20,6 +20,75 @@ The table `rooms`, one row per room (rows older than ten minutes are removed whe
 
 | `queue` | a quick-match room: which queue it waits in (`S`, `T`, `D10`, `D15`, `D20`); empty for a room with a code to hand on |
 | `who` | a quick-match room: a random text the host's game made up for this run, so that a room it left behind is not given back to it |
+| `loc` | a quick-match room of a newer game: where Cloudflare placed its host, rounded ("25,55,ME,": whole degrees, the region) and what the host chose ("" Auto, "*" Anywhere, or a region) |
+| `join_region` | ... and the region of the one who joined it |
+
+## Spectators (from the release after 0.1.38.7)
+
+A third player can watch a match with its room code (the game's chapter "Spectators", docs/port/README.md). The
+Worker only introduces the spectator to the host, as it does the two players; the match itself goes from the host
+to the spectator directly.
+
+- `/v1/watch {v, rel, code, name, addrs}` -> `{key, you, peer: {name, addrs}}`: the host's addresses (and relay
+  address, if it has one), for any room of the same `v`, joined or not. The spectator's own addresses (what the
+  other player's would be, with `seen=ip`) are kept for two minutes in the table `watchers`. At most 12 such
+  requests per room in two minutes (`full`); wrong codes count against the same 30 an hour as joins (`busy`).
+- The host's `/v1/poll` with `"watch": true` also answers `watchers`: one list of addresses per spectator of the
+  last two minutes. With `"keep": true` as well, a room someone has joined starts its ten minutes again: the
+  game's host asks every five seconds while its match is on (720 requests an hour of match) and gives the room up
+  (`/v1/leave`, which now removes its spectators too) when the session ends. A host that lets nobody watch does
+  neither, and gives its room up as soon as the match begins, as before.
+- Older games send neither field and get exactly the answers they had: two 0.1.38.7 copies play through the new
+  Worker as through the old one. A spectator asking a Worker without `/v1/watch` is answered "no room" (its
+  message says the service may not take spectators yet).
+
+The table `watchers` (one row per request, removed after two minutes):
+
+| Column | |
+|---|---|
+| `key` | a random text (not handed to the host) |
+| `code` | the room |
+| `made` | seconds since 1970 |
+| `name`, `addrs` | the spectator's name and its addresses as the host is told them (JSON) |
+
+**To deploy:** run the third line of `schema.sql` (`CREATE TABLE IF NOT EXISTS watchers ...`) in the database's
+console (the other two lines change nothing that exists), then replace the Worker's code with `worker.js` and
+Deploy. Without the table, `/v1/watch` answers `{"error":"no spectators"}` (501) and polls list no spectators;
+everything else works.
+
+## Lobbies (from the release after 0.1.38.7)
+
+Up to eight games meet at one, the lobby's owner (the game's chapter "Lobbies", docs/port/README.md). The lobby
+itself (who is in which place, the rules, the matches) lives in the owner's game and travels over the games' own
+connection; the Worker only hands out the owner's addresses for its code and keeps the code while the owner asks.
+
+- `/v1/host` with `"lobby": true` makes a lobby's room (column `lobby` = 1); no relay login is handed out with it.
+- `/v1/join` of a lobby's code from a game that says `"lobby": 1` -> `{lobby: true, key, you, peer: {name, addrs}}`:
+  the owner's addresses, and the member's (with `seen=` and, on one network, `same=1`) are kept two minutes in
+  `watchers`, where the owner's polls find them as a spectator's. Any number join (12 in two minutes at most: `busy`);
+  the owner's game says when it is full. `/v1/watch` of a lobby's code is answered the same way.
+- A game that does not say `lobby` (0.1.38.7 and older) is answered `{error: "old", lobby: true, why: "This code is
+  a lobby's: update the game to join lobbies."}` (426): it shows its own words for "old", "Update available. Online
+  servers are unreachable until you update." A new game joining an ordinary room gets the answer it always had.
+- The owner's `/v1/poll` with `watch` and `keep` keeps a lobby's room (its ten minutes start again) without anyone
+  having joined as a player, and lists the members' addresses (`same=1` left out). The game asks every four seconds
+  for as long as the lobby is open (**900 requests an hour of lobby**, the same during its matches), plus one join and
+  at most a few polls per member while it connects (a member's poll with its key gets the owner's addresses again,
+  for the relay address that may come later). `/v1/leave` when the lobby is closed.
+- `/v1/relay` is the owner's once a member has come (in the last two minutes): asked only when a member that joined
+  with the code has not reached the owner in eight seconds, once per lobby. One login serves every member.
+- A database without the column answers `/v1/host` with `lobby` with `{error: "no lobbies"}` (501); the game says
+  "The matchmaking service does not take lobbies yet. A lobby by address (a port) still works." Everything else
+  works as before.
+
+**To deploy** (in this order):
+
+1. D1 -> `bt3-rooms` -> Console, run: `ALTER TABLE rooms ADD COLUMN lobby INTEGER;`
+   (if the table `watchers` of the Spectators section is not there yet, run the third line of `schema.sql` too:
+   `CREATE TABLE IF NOT EXISTS watchers (key TEXT PRIMARY KEY, code TEXT NOT NULL, made INTEGER NOT NULL, name TEXT NOT NULL, addrs TEXT NOT NULL);`)
+2. Workers & Pages -> the Worker -> Edit code: replace everything with `worker.js`, Deploy.
+
+No new variable or secret. `node port/matchmaking/test.mjs` checks it (the lobby part: 17 checks).
 
 ## Quick match (from 0.1.27)
 
@@ -40,6 +109,56 @@ asked for per search, not per room: a search that starts again says it holds a r
 Older releases of the game are not affected: they do not send the new request, and rooms with codes work as before.
 Until the Worker is updated, a game that has the Quick match tab says "The matchmaking service does not know quick
 match yet." when a search is started.
+
+## Quick match: nearby first, and a region to choose (from the release after 0.1.38.8)
+
+A game that sends `waited` (how many seconds it has searched) and `area` ("auto", "any", or a region) is matched by
+where Cloudflare places the requests (`request.cf`), as the player chose:
+
+- **auto**: takes players within `NEAR_KM` (2,500 km, great-circle) at once, anyone once `WIDEN_SECONDS` (25) have
+  gone by, the nearest first (rooms of older games, whose place is unknown, last);
+- **a region** (`NA`, `SA`, `EU`, `ME`, `AF`, `AS`, `OC`): takes players placed in that region at once, anyone once
+  `REGION_WIDEN_SECONDS` (40) have gone by, the nearest first;
+- **any** (and an older game): takes anyone, whoever waits longest.
+
+A pair is made only when each side takes the other, the wait being the longer of the two (a room's: its age). So:
+
+| waited | Auto | a region chosen |
+|---|---|---|
+| 0-25 s | players nearby | players placed in that region |
+| 25-40 s | everyone but those who chose another region | still that region only |
+| from 40 s | everyone | everyone |
+
+The regions are Cloudflare's continents, except the Middle East: the countries AE, BH, CY, EG, IL, IQ, IR, JO, KW,
+LB, OM, PS, QA, SA, SY, TR, YE (`MIDDLE_EAST` in worker.js).
+
+When nobody suits, it gets a room of its own; the answer says `again` (10) and, for auto and a region, `widen` (25, 40: when it takes
+anyone). The game
+then searches again every `again` seconds from its room: `/v1/quick` with its room's `code` and `key` (not counted
+against the 60 searches an hour). The room is held meanwhile (`join_key` "-"), so nobody joins it in that moment;
+the answer is a join (its own room deleted), "still waiting" (the same code), `joined: true` (someone had joined it:
+its poll has them) or "no room" (run out: it searches anew). Each side gets the other's region as `region`, with the
+join's answer and with the host's poll; nothing else of the other's place.
+
+**What is kept, privacy.** Per quick-match room of a newer game, for the room's life only (ten minutes at most): the
+host's position rounded to whole degrees (about 100 km), its region and its choice; the joiner's region. Never
+logged; no country, city, colo or exact position is stored or sent to anyone.
+
+**Older games** (no `waited`) search as `any` does (the longest waiting of the rooms that take them: a newer Auto
+room far from them only after 25 s, a region's room outside it only after 40 s), and get no new fields in any
+answer. Their rooms have no place and are taken by newer games as unknown: auto after 25 s, a region after 40 s, any
+at once.
+
+**Updating a Worker that is already set up** (in this order):
+
+1. D1 -> `bt3-rooms` -> Console. Run these two lines, one at a time:
+   `ALTER TABLE rooms ADD COLUMN loc TEXT;`
+   `ALTER TABLE rooms ADD COLUMN join_region TEXT;`
+2. The Worker -> Edit code: replace everything with the new `worker.js`, Deploy.
+
+Without the columns the Worker still works: rooms are made without a place (every newer game then meets others only
+after the widening, by order of waiting). Requests: a waiting newer game asks `/v1/quick` every ten seconds besides
+its polls (60 more requests per ten minutes of waiting).
 
 ## Only the newest release (from 0.1.29)
 
@@ -190,8 +309,10 @@ official release). The first is the kinder one; do both if the key is known to b
 ## What it keeps
 
 For at most ten minutes per room: the room code, the two player names, the addresses each game reported about
-itself, and the host's address as Cloudflare saw it (to limit how many rooms one address can open). Nothing else,
-and nothing after the room has expired.
+itself, and the host's address as Cloudflare saw it (to limit how many rooms one address can open); for a
+quick-match room of a newer game, where Cloudflare placed the two players, coarsely (see the quick match's section). A room whose
+host lets spectators in lives while its match is on (the host keeps it, see Spectators), a lobby's room while its
+owner keeps it open, and a spectator's or a lobby member's name and addresses are kept for two minutes. Nothing else, and nothing after the room has expired.
 
 ## Setting it up (the Cloudflare dashboard, no tools needed)
 
@@ -294,6 +415,10 @@ the top of that file; with `BT3_BUILD_KEY` set to the made-up key the program wa
     # -> {"key":"...","you":"...","peer":{"name":"A","addrs":["203.0.113.5:7000"]}}
     curl -s -X POST $W/v1/poll -d '{"code":"ABC234","key":"<the host key>"}'
     # -> {"peer":{"name":"B","addrs":["198.51.100.9:7000"]}}
+    curl -s -X POST $W/v1/watch -d '{"v":3,"code":"ABC234","name":"C","addrs":["192.0.2.7:7000"]}'
+    # -> {"key":"...","you":"...","peer":{"name":"A","addrs":["203.0.113.5:7000"]}}
+    curl -s -X POST $W/v1/poll -d '{"code":"ABC234","key":"<the host key>","watch":true}'
+    # -> {"peer":{...},"watchers":[["192.0.2.7:7000","seen=<C's address>"]]}
 
 ## Limits
 

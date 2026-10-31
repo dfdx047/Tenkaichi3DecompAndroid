@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
 sealed interface InstallState {
     data object NotInstalled : InstallState
     data class Working(val step: String, val progress: Float, val detail: String) : InstallState
-    data class Installed(val files: Int, val bytes: Long, val modified: Boolean = false) : InstallState
+    data class Installed(val files: Int, val bytes: Long, val modified: Boolean = false, val game: Game = Game.BT3) : InstallState
     data class Failed(val message: String) : InstallState
 }
 
@@ -53,7 +53,8 @@ class GameDataInstaller(
         return InstallState.Installed(files, bytes, modified)
     }
 
-    suspend fun install(uri: Uri, report: (InstallState.Working) -> Unit): InstallState.Installed = withContext(Dispatchers.IO) {
+    /** [only]: the game the image must be (the BT2 tab takes only a BT2 image); null: whichever it is. */
+    suspend fun install(uri: Uri, only: Game? = null, report: (InstallState.Working) -> Unit): InstallState.Installed = withContext(Dispatchers.IO) {
         val pfd = resolver.openFileDescriptor(uri, "r") ?: throw Stop(context.getString(R.string.err_open_file))
         pfd.use {
             val channel = FileInputStream(pfd.fileDescriptor).channel
@@ -64,6 +65,8 @@ class GameDataInstaller(
             }
             iso.use {
                 report(InstallState.Working(context.getString(R.string.step_checking), 0f, context.getString(R.string.detail_finding)))
+                if (iso.find(BT2_ELF) != null) return@withContext installBt2(iso, report)
+                if (only == Game.BT2) throw Stop(context.getString(R.string.err_not_bt2))
                 val original = verify(iso, report)
                 if (!original) compatible(iso)
                 extract(iso, report, modified = !original)
@@ -197,6 +200,58 @@ class GameDataInstaller(
         }
     }
 
+    /** Budokai Tenkaichi 2's state: its image in place (bt2/.installed), or not. */
+    fun currentStateBt2(): InstallState {
+        if (!paths.bt2InstalledMarker.exists() || !paths.bt2Iso.exists()) return InstallState.NotInstalled
+        return InstallState.Installed(1, paths.bt2Iso.length(), game = Game.BT2)
+    }
+
+    /**
+     * Budokai Tenkaichi 2 (USA, SLUS-21441): its runtime (BT2-Recomp) reads the disc image itself, so the image is
+     * copied whole into bt2/data. Its code is recompiled from one exact program (tools/ps2recomp/generate_game.py of
+     * BT2-Recomp): another program, a mod's too, would run code that does not match it, so only that one is taken.
+     */
+    private suspend fun installBt2(iso: IsoImage, report: (InstallState.Working) -> Unit): InstallState.Installed {
+        val elf = iso.find(BT2_ELF)!!
+        report(InstallState.Working(context.getString(R.string.step_checking), 0.5f, context.getString(R.string.detail_checksums)))
+        coroutineContext.ensureActive()
+        if (checkSums && sha256(iso.read(elf.offset, elf.size.toInt())) != BT2_ELF_SHA256) {
+            throw Stop(context.getString(R.string.err_bt2_program))
+        }
+        val total = iso.size
+        val free = StatFs(paths.root.path).availableBytes + (if (paths.bt2Iso.exists()) paths.bt2Iso.length() else 0L)
+        if (free < total + 256L * 1024 * 1024) {
+            throw Stop(context.getString(R.string.err_space, formatBytes(total), formatBytes(free)))
+        }
+        uninstallBt2()
+        paths.bt2Data.mkdirs()
+        paths.bt2Saves.mkdirs()
+        val part = File(paths.bt2Data, paths.bt2Iso.name + ".part")
+        val buf = ByteBuffer.allocateDirect(8 shl 20)
+        var done = 0L
+        var lastPercent = -1
+        try {
+            copyOut(iso, 0L, total, part, buf) { n ->
+                done += n
+                val percent = if (total > 0) (done * 100 / total).toInt() else 0
+                if (percent != lastPercent) {
+                    lastPercent = percent
+                    report(InstallState.Working(context.getString(R.string.step_copying_bt2), done.toFloat() / total, "$percent%"))
+                }
+            }
+            if (part.length() != total || !part.renameTo(paths.bt2Iso)) throw Stop(context.getString(R.string.err_copy_short, paths.bt2Iso.name))
+        } finally {
+            part.delete()
+        }
+        paths.bt2InstalledMarker.writeText("bytes=$total\nserial=${Game.BT2.serial}\n")
+        return InstallState.Installed(1, total, game = Game.BT2)
+    }
+
+    fun uninstallBt2() {
+        paths.bt2InstalledMarker.delete()
+        paths.bt2Iso.delete()
+    }
+
     fun uninstall() {
         paths.installedMarker.delete()
         paths.gameData.listFiles()?.filter { it.name != "mods" }?.forEach { it.deleteRecursively() }
@@ -204,6 +259,9 @@ class GameDataInstaller(
 
     private fun sha1(data: ByteArray): String =
         MessageDigest.getInstance("SHA-1").digest(data).joinToString("") { "%02x".format(it) }
+
+    private fun sha256(data: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(data).joinToString("") { "%02x".format(it) }
 
     companion object {
         /** Why a file is not a disc image, from its first bytes: a compressed archive or disc format (the players sent
@@ -243,5 +301,9 @@ class GameDataInstaller(
         const val DBZP_SHA1 = "4f910969e05d9b25c83af7642b60da9949a4348b"
         const val ROM_BASE = 0x100000L
         const val ROM_END = 0x2FF180L
+
+        // BT2-Recomp: the program its code is generated from (tools/ps2recomp/generate_game.py, LOCAL_CANDIDATE_SHA256)
+        const val BT2_ELF = "SLUS_214.41"
+        const val BT2_ELF_SHA256 = "f7e5ba8e74657b8533c3a0fedff45de0d052be3a23fe4c475059ef888a81f03e"
     }
 }

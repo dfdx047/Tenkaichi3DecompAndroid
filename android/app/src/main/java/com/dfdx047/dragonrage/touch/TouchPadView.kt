@@ -125,7 +125,21 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
     private val safeHeight: Float
         get() = (height - safeInsetTopPx - safeInsetBottomPx).coerceAtLeast(1f)
 
+    /** A picture of the controller inside a page (the BT2 tab's preview), not the game's full screen: the display
+     * cutout is no concern of it. Its place on the screen changes as the page scrolls, and measuring the cutout
+     * against that place squeezed every control to the preview's edge. Off by default: the game's overlay and the
+     * layout editor keep the safe area as before. */
+    var ignoreCutout = false
+        set(v) {
+            if (field != v) { field = v; rebuild() }
+        }
+
     private fun updateSafeInsets(insets: WindowInsets? = rootWindowInsets) {
+        if (ignoreCutout) {
+            safeInsetLeftPx = 0f; safeInsetTopPx = 0f
+            safeInsetRightPx = 0f; safeInsetBottomPx = 0f
+            return
+        }
         if (insets == null) {
             if (!hasReceivedInsets) {
                 safeInsetLeftPx = 0f; safeInsetTopPx = 0f
