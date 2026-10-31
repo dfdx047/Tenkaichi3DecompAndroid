@@ -713,14 +713,27 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
 
     // ---- launch
 
+    /** Budokai Tenkaichi 4's renderer now: the player's choice, else the device's (Dragon Rage's on a weak GPU or with Lite). */
+    fun bt4Renderer(): Int {
+        val s = _settings.value
+        s[EngineSettings.BT4_RENDERER]?.let { return it }
+        val weak = GpuProfiles.weakChip(_gpuName.value) || (s[EngineSettings.LITE] ?: 0) != 0
+        return if (weak) 0 else s[EngineSettings.BT4_RENDERER_AUTO] ?: 1
+    }
+
     fun play() {
+        if (game == Game.BT4 && _settings.value[EngineSettings.BT4_RENDERER] == null && bt4Renderer() == 0 &&
+            _settings.value[EngineSettings.BT4_RENDERER_AUTO] != 0) {
+            settings.set(EngineSettings.BT4_RENDERER_AUTO, 0) // (now: the game reads the file as it opens)
+            _settings.value = settings.snapshot()
+        }
         if (game == Game.BT4 && _install.value is InstallState.Installed && GpuProfiles.weakChip(_gpuName.value)) {
             android.widget.Toast.makeText(getApplication(), str(R.string.bt4_weak_cpu), android.widget.Toast.LENGTH_LONG).show()
         }
         when {
             _install.value !is InstallState.Installed -> say(str(R.string.msg_install_first))
             !engineAvailable -> say(str(R.string.msg_no_engine))
-            else -> ActivityLog.info("game", "started (renderer ${_settings.value[EngineSettings.RENDERER] ?: 0}" + (if (game == Game.BT4) ", BT4 renderer ${if ((_settings.value[EngineSettings.BT4_RENDERER] ?: 1) == 1) "ARMSX2" else "Dragon Rage"}" else "") + ", online ${if ((_settings.value[OnlineStatus.MODE] ?: 0) == 0) "Dragon Net" else "PC"})").let { getApplication<android.app.Application>().startActivity(
+            else -> ActivityLog.info("game", "started (renderer ${_settings.value[EngineSettings.RENDERER] ?: 0}" + (if (game == Game.BT4) ", BT4 renderer ${if (bt4Renderer() == 1) "ARMSX2" else "Dragon Rage"}" else "") + ", online ${if ((_settings.value[OnlineStatus.MODE] ?: 0) == 0) "Dragon Net" else "PC"})").let { getApplication<android.app.Application>().startActivity(
                 android.content.Intent(getApplication(), if (game == Game.BT4) com.dfdx047.dragonrage.engine.Bt4Activity::class.java else com.dfdx047.dragonrage.engine.GameActivity::class.java)
                     .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
             ) }

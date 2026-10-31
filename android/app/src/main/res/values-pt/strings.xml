@@ -440,10 +440,11 @@
     <string name="bt4_fps60">60 fps nas lutas (experimental)</string>
     <string name="bt4_fps60_text">A luta roda a 60 quadros por segundo (o modo do BT3-Recomp, como na versão de PC do mod). Pesa muito na CPU: se o aparelho não aguentar 60 (menos de 57 por segundo durante 3 s de luta), volta sozinho para 30.</string>
     <string name="bt4_fps60_dropped">Este aparelho não aguenta 60 fps nas lutas do BT4; voltando para 30.</string>
+    <string name="bt4_renderer_dropped">Este aparelho não aguenta o BT4 com o renderizador ARMSX2: Dragon Rage na próxima vez que abrir. Dá para trocar em Ajustes.</string>
     <string name="bt4_renderer">Renderizador do Budokai Tenkaichi 4</string>
-    <string name="bt4_renderer_armsx2">ARMSX2 (padrão)</string>
+    <string name="bt4_renderer_armsx2">ARMSX2</string>
     <string name="bt4_renderer_dr">Dragon Rage (experimental)</string>
-    <string name="bt4_renderer_text">ARMSX2 (padrão): o renderizador do emulador de PlayStation 2 (o do PCSX2, com as correções do ARMSX2 para Mali e Adreno), a imagem mais fiel. Dragon Rage (experimental): o renderizador do Budokai Tenkaichi 3, com falhas em parte do cenário do BT4. Os dois usam a resolução, a proporção e a escolha Vulkan ou OpenGL ES acima. Vale na próxima vez que o jogo abrir.</string>
+    <string name="bt4_renderer_text">ARMSX2: o renderizador do emulador de PlayStation 2 (o do PCSX2, com as correções do ARMSX2 para Mali e Adreno), a imagem mais fiel. Dragon Rage (experimental): o renderizador do Budokai Tenkaichi 3, mais leve em aparelho fraco, com falhas em parte do cenário do BT4. Sem escolha sua, os aparelhos fracos usam o Dragon Rage, e também o aparelho em que o ARMSX2 fica abaixo de 27 atualizações por segundo na luta. Os dois usam a resolução, a proporção e a escolha Vulkan ou OpenGL ES acima. Vale na próxima vez que o jogo abrir.</string>
     <string name="bt4_err_not_bt4">Esta imagem não é o Budokai Tenkaichi 4 (não tem SLUS_219.78). Encontrado: %1$s. É preciso o mod do Team BT4, Beta 14 Rev2.</string>
     <string name="bt4_err_version">Esta imagem é outra versão do mod: o jogo foi recompilado para a Beta 14 Rev2 (SLUS-219.78). O SLUS_219.78 da sua imagem tem %1$d bytes (SHA-256 %2$s…); este precisa de 2115688 bytes (224525C5…). Um arquivo chamado Rev2 ainda pode ter outra compilação: pegue a imagem da Beta 14 Rev2 na versão publicada pela Team BT4.</string>
     <string name="bt4_err_permission">O Android não deixou o app continuar lendo esta imagem. Mova ela para Downloads ou para o armazenamento do celular e escolha de novo.</string>

@@ -2,6 +2,12 @@
 
 Regras e formato: [README](README.md).
 
+### 1.0.0 (este commit): Renderizador padrão por aparelho: Dragon Rage onde o ARMSX2 não aguenta
+- **Onde:** `port/bt4/host/bt4_main.cpp`, `bt4Renderer`, `armsx2Watch`; `AppViewModel.kt`, `bt4Renderer`, `play`; `Bt4Activity.kt`, `armsx2Dropped`; `EngineSettings.kt`, `BT4_RENDERER_AUTO`; `SettingsScreen.kt`, `GameMenu.kt`, `strings.xml` (3 idiomas)
+- **O que e por quê:** quem não escolheu renderizador usa `bt4_renderer_auto`: o launcher põe 0 (Dragon Rage) em GPU fraca (`weakChip`) ou com Lite ligado, e o motor põe 0 quando o ARMSX2 fica abaixo de 27 atualizações de luta por segundo por 5 s seguidos, valendo na próxima abertura, com um aviso. A escolha do jogador em Ajustes ou no menu nunca é trocada, e o log diz qual renderizador abriu e por quê.
+- **Medido/provado:** Cube como G52 MC1 sem escolha: ARMSX2, 8 a 10 atualizações/s, troca depois de 5 s; na abertura seguinte Dragon Rage, 9 a 15 atualizações/s. RP5 sem escolha: fica no ARMSX2, 30,0. A regra de `weakChip` no launcher não foi vista em aparelho, porque o Cube se chama "Mali-G57" e não entra nela.
+- **O que pode quebrar:** uma compilação longa de shaders do ARMSX2 na primeira luta pode dar 5 s abaixo de 27 e mover para Dragon Rage um aparelho que aguentaria; o jogador volta em Ajustes.
+- **Como testar de novo:** apagar `bt4_renderer*` de `files/bt4/bt3_settings.txt`, `lowend.sh on 512`, luta: log `ARMSX2's renderer: … Dragon Rage's from the next start`; abrir de novo: `bt4: renderer Dragon Rage (this device's default)`. `port/tools/lab/auto_cube.sh`, `auto_rp5.sh`. `BT4_RENDERER_KEEP=1` desliga a troca.
 
 ## Histórico: 0.9.0 para trás
 

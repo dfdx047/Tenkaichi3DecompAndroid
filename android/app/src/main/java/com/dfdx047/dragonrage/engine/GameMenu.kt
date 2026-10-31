@@ -620,9 +620,9 @@ private fun VideoPage(l: L, game: Game, v: MenuValues) {
         if (game == Game.BT4 && com.dfdx047.dragonrage.data.EngineSettings.hasArmsx2Renderer(androidx.compose.ui.platform.LocalContext.current)) {
             Choice(
                 l.t("Renderer", "Renderizador", "Renderizador"),
-                l.t("ARMSX2 (default): the PlayStation 2 emulator's renderer, the most faithful picture. Dragon Rage (experimental): Budokai Tenkaichi 3's, with faults in some of BT4's scenery. From the next start.",
-                    "ARMSX2 (padrão): o renderizador do emulador de PlayStation 2, a imagem mais fiel. Dragon Rage (experimental): o do Budokai Tenkaichi 3, com falhas em parte do cenário do BT4. Vale na próxima vez que o jogo abrir.",
-                    "ARMSX2 (predeterminado): el renderizador del emulador de PlayStation 2, la imagen más fiel. Dragon Rage (experimental): el de Budokai Tenkaichi 3, con fallos en parte del escenario de BT4. Desde el próximo inicio."),
+                l.t("ARMSX2: the PlayStation 2 emulator's renderer, the most faithful picture. Dragon Rage (experimental): Budokai Tenkaichi 3's, lighter on weak devices, with faults in some of BT4's scenery. From the next start.",
+                    "ARMSX2: o renderizador do emulador de PlayStation 2, a imagem mais fiel. Dragon Rage (experimental): o do Budokai Tenkaichi 3, mais leve em aparelho fraco, com falhas em parte do cenário do BT4. Vale na próxima vez que o jogo abrir.",
+                    "ARMSX2: el renderizador del emulador de PlayStation 2, la imagen más fiel. Dragon Rage (experimental): el de Budokai Tenkaichi 3, más ligero en equipos débiles, con fallos en parte del escenario de BT4. Desde el próximo inicio."),
                 listOf("ARMSX2" to 1, l.t("Dragon Rage (experimental)", "Dragon Rage (experimental)", "Dragon Rage (experimental)") to 0), v.get("bt4_renderer", 1),
             ) { v.set("bt4_renderer", it) }
         }

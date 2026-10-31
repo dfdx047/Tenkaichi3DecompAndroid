@@ -378,6 +378,53 @@ void fps60Watch()
     }).detach();
 }
 
+// The renderer: the player's choice (bt4_renderer) or, with none, the device's: bt4_renderer_auto, which the launcher
+// sets to 0 on a weak GPU and armsx2Watch below on a device that does not hold ARMSX2's.
+int bt4Renderer()
+{
+    return Port_Setting("bt4_renderer", Port_Setting("bt4_renderer_auto", 1));
+}
+
+// ARMSX2's renderer where the player did not choose it: below 27 of the fight's updates a second for 5 s in a row while
+// a fight runs (more than 5 a second: not its pauses, not the menus), Dragon Rage's from the next start, and the app
+// says so (Bt4Activity.armsx2Dropped). BT4_RENDERER_KEEP=1: never (measuring).
+void armsx2Watch()
+{
+    if (Port_Setting("bt4_renderer", -1) != -1 || std::getenv("BT4_RENDERER_KEEP") != nullptr)
+        return;
+    std::thread([] {
+        uint64_t last = ps2FightTicks();
+        auto at = std::chrono::steady_clock::now();
+        int slow = 0;
+        while (!g_quit)
+        {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            const uint64_t now = ps2FightTicks();
+            const auto t = std::chrono::steady_clock::now();
+            const double rate = (now - last) / std::chrono::duration<double>(t - at).count();
+            last = now;
+            at = t;
+            if (Port_Setting("bt4_renderer", -1) != -1)
+                return; // (the player chose in the game's menu)
+            slow = rate > 5.0 && rate < 27.0 ? slow + 1 : 0;
+            if (slow < 5)
+                continue;
+            std::fprintf(stderr, "bt4: ARMSX2's renderer: %.1f updates a second for 5 s, Dragon Rage's from the next start\n", rate);
+            Port_SettingSave("bt4_renderer_auto", 0);
+            Port_SettingsWrite();
+            JNIEnv *env = static_cast<JNIEnv *>(SDL_GetAndroidJNIEnv());
+            jobject act = env ? static_cast<jobject>(SDL_GetAndroidActivity()) : nullptr;
+            jclass cls = act ? env->GetObjectClass(act) : nullptr;
+            jmethodID m = cls ? env->GetMethodID(cls, "armsx2Dropped", "()V") : nullptr;
+            if (m)
+                env->CallVoidMethod(act, m);
+            if (env && env->ExceptionCheck())
+                env->ExceptionClear();
+            return;
+        }
+    }).detach();
+}
+
 void menuSnapshot()
 {
     PortVideo v;
@@ -398,7 +445,7 @@ void menuSnapshot()
     g_menuSnap["bt4_aspect"] = Bt4_AspectMode();
     g_menuSnap["bt4_fps60"] = Port_Setting("bt4_fps60", 0);
     g_menuSnap["bt4_fps60_dropped"] = Port_Setting("bt4_fps60_dropped", 0);
-    g_menuSnap["bt4_renderer"] = Port_Setting("bt4_renderer", 1);
+    g_menuSnap["bt4_renderer"] = bt4Renderer();
     g_menuGen++;
 }
 
@@ -944,8 +991,11 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char *a
 
     // the renderer: ARMSX2's (1, the default since Dragon Rage 0.9.0) or Dragon Rage's (0, experimental for BT4:
     // bt4_renderer). A build without libbt4gsx.so falls to Dragon Rage's below.
-    if (Port_Setting("bt4_renderer", 1) == 1)
+    std::fprintf(stderr, "bt4: renderer %s (%s)\n", bt4Renderer() == 1 ? "ARMSX2" : "Dragon Rage",
+                 Port_Setting("bt4_renderer", -1) != -1 ? "the player's choice" : "this device's default");
+    if (bt4Renderer() == 1)
     {
+        armsx2Watch();
         startGame();
         if (runArmsx2())
         {

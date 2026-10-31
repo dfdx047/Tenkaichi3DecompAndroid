@@ -72,7 +72,8 @@ class EngineSettings(private val file: File) {
         const val BT4_ASPECT = "bt4_aspect"       // Budokai Tenkaichi 4: 0 16:9 (the mod's own), 1 4:3, 2 the whole screen
         const val BT4_FPS60 = "bt4_fps60"         // Budokai Tenkaichi 4: 60 fps fights (BT3-Recomp's mode)
         const val BT4_FPS60_DROPPED = "bt4_fps60_dropped" // 1: they went back to 30 on this device (below 57 a second)
-        const val BT4_RENDERER = "bt4_renderer"   // Budokai Tenkaichi 4: 0 Dragon Rage's GS, 1 ARMSX2's (libbt4gsx.so)
+        const val BT4_RENDERER = "bt4_renderer"   // Budokai Tenkaichi 4: 0 Dragon Rage's GS, 1 ARMSX2's (libbt4gsx.so): the player's choice
+        const val BT4_RENDERER_AUTO = "bt4_renderer_auto" // the same with no choice: 0 where the device is weak or did not hold ARMSX2's, else 1
 
         /** Whether this build has ARMSX2's renderer for Budokai Tenkaichi 4 (port/bt4/build_bt4.py --armsx2). */
         fun hasArmsx2Renderer(context: android.content.Context): Boolean =

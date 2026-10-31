@@ -210,7 +210,7 @@ fun SettingsScreen(vm: AppViewModel) {
                 Text(stringResource(R.string.bt4_renderer), style = MaterialTheme.typography.titleSmall)
                 ChipRow(
                     options = listOf(stringResource(R.string.bt4_renderer_armsx2) to 1, stringResource(R.string.bt4_renderer_dr) to 0),
-                    selected = get(EngineSettings.BT4_RENDERER, 1),
+                    selected = vm.bt4Renderer(),
                     onSelect = { vm.setting(EngineSettings.BT4_RENDERER, it) },
                 )
                 Text(

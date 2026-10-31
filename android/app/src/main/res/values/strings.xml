@@ -441,10 +441,11 @@
     <string name="bt4_fps60">60 fps in fights (experimental)</string>
     <string name="bt4_fps60_text">The fight runs at 60 pictures a second (BT3-Recomp\'s mode, as in the mod\'s PC build). Heavy for the CPU: where the device cannot hold 60 (below 57 a second for 3 s of a fight), it goes back to 30 by itself.</string>
     <string name="bt4_fps60_dropped">This device could not hold 60 fps in BT4\'s fights; back to 30.</string>
+    <string name="bt4_renderer_dropped">This device does not hold BT4 with the ARMSX2 renderer: Dragon Rage from the next start. You can change it in Settings.</string>
     <string name="bt4_renderer">Renderer of Budokai Tenkaichi 4</string>
-    <string name="bt4_renderer_armsx2">ARMSX2 (default)</string>
+    <string name="bt4_renderer_armsx2">ARMSX2</string>
     <string name="bt4_renderer_dr">Dragon Rage (experimental)</string>
-    <string name="bt4_renderer_text">ARMSX2 (default): the PlayStation 2 emulator\'s renderer (PCSX2\'s, with ARMSX2\'s fixes for Mali and Adreno), the most faithful picture. Dragon Rage (experimental): Budokai Tenkaichi 3\'s renderer, with faults in some of BT4\'s scenery. Both use the resolution, the shape and the Vulkan or OpenGL ES choice above. From the next start.</string>
+    <string name="bt4_renderer_text">ARMSX2: the PlayStation 2 emulator\'s renderer (PCSX2\'s, with ARMSX2\'s fixes for Mali and Adreno), the most faithful picture. Dragon Rage (experimental): Budokai Tenkaichi 3\'s renderer, lighter on weak devices, with faults in some of BT4\'s scenery. If you choose neither, weak devices use Dragon Rage, and so does a device where ARMSX2 stays below 27 updates a second in a fight. Both use the resolution, the shape and the Vulkan or OpenGL ES choice above. From the next start.</string>
     <string name="bt4_err_not_bt4">This image is not Budokai Tenkaichi 4 (it has no SLUS_219.78). Found: %1$s. It needs Team BT4\'s mod, Beta 14 Rev2.</string>
     <string name="bt4_err_version">This image is another version of the mod: the game was recompiled for Beta 14 Rev2 (SLUS-219.78). The SLUS_219.78 of your image has %1$d bytes (SHA-256 %2$s…); this one needs 2115688 bytes (224525C5…). A file named Rev2 can still hold another build: get the Beta 14 Rev2 image from the Team BT4 release.</string>
     <string name="bt4_err_permission">Android did not let the app keep reading this image. Move it to Downloads or the phone\'s storage and pick it again.</string>

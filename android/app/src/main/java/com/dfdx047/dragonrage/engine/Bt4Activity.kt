@@ -78,6 +78,13 @@ class Bt4Activity : GameActivity() {
         runOnUiThread { android.widget.Toast.makeText(this, R.string.bt4_fps60_dropped, android.widget.Toast.LENGTH_LONG).show() }
     }
 
+    /** The engine (bt4_main.cpp, armsx2Watch): this device does not hold ARMSX2's renderer. From its thread. */
+    @Suppress("unused")
+    fun armsx2Dropped() {
+        ActivityLog.warn("bt4", "renderer: ARMSX2 below 27 fight updates a second for 5 s; Dragon Rage from the next start")
+        runOnUiThread { android.widget.Toast.makeText(this, R.string.bt4_renderer_dropped, android.widget.Toast.LENGTH_LONG).show() }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         runCatching { image?.close() }
