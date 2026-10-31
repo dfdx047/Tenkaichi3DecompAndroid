@@ -12,6 +12,9 @@
  * The sticks of a controller are passed through, or given a round deadzone first (stick_bytes, below). The pressure
  * bytes of the buffer are left at zero. The game's motor commands go to the player's controller (Port_PadVibrate).
  */
+#ifdef __ANDROID__
+#include <unistd.h>
+#endif
 #include <SDL3/SDL.h>
 #include <math.h>
 #include <pthread.h>
@@ -590,7 +593,18 @@ static void pads_refresh(void) {
 
     if (!sInit) {
         SDL_InitSubSystem(SDL_INIT_GAMEPAD);
+#ifdef __ANDROID__
+        {   /* (the current folder, written out whole: SDL opens a relative path inside the APK's assets, not where the
+                auto-setup below writes the file) */
+            char cwd[768], path[800];
+            if (getcwd(cwd, sizeof(cwd)) != NULL) {
+                snprintf(path, sizeof(path), "%s/%s", cwd, PAD_MAPPINGS);
+                SDL_AddGamepadMappingsFromFile(path); /* (none yet: -1, nothing added) */
+            }
+        }
+#else
         SDL_AddGamepadMappingsFromFile(PAD_MAPPINGS); /* (none yet: -1, nothing added) */
+#endif
         sInit = 1;
         test_pad();
     } else if (sPadsStale) {
