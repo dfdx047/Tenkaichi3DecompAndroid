@@ -3,7 +3,8 @@
 import random, sys
 out, blanks, seed = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])
 r = random.Random(seed)
-BTN = [0x0010, 0x0020, 0x0040, 0x0080, 0x1000, 0x2000, 0x4000, 0x8000, 0x0100, 0x0200, 0x0400, 0x0800, 0x0008]  # d-pad, shoulders, face, start
+# No triangle, circle, START or SELECT: those leave the versus mode and end the session in a second
+BTN = [0x0010, 0x0020, 0x0040, 0x0080, 0x0100, 0x0200, 0x0400, 0x0800, 0x8000] + [0x4000] * 6  # d-pad, shoulders, square, cross
 def pad(state):
     if state["left"] == 0:
         state["btn"] = r.choice(BTN) if r.random() < 0.8 else 0

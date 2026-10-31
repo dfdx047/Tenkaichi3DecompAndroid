@@ -19,10 +19,17 @@ Regras e formato: [README](README.md).
 
 ### 1.0.0 (este commit): `build.py` do BT2 também gera o `libbt2online.so`
 - **Onde:** `bt2/android/build.py`, `main`
-- **O que e por quê:** sem argumentos o script não rodava o passo `plugin`, então o APK levava o `libbt2online.so` antigo do `jniLibs` sem aviso: a correção do relay ficou de fora no primeiro build. O passo agora faz parte do padrão. Para o `libbt4gsx.so`, o build do librashader pede `rustup target add aarch64-linux-android` no PC.
+- **O que e por quê:** sem argumentos o script não rodava o passo `plugin`, então o APK levava o `libbt2online.so` antigo do `jniLibs` sem aviso: a correção do relay ficou de fora no primeiro build. O passo agora faz parte do padrão.
 - **Medido/provado:** depois do `plugin`, o md5 do `.so` no APK é igual ao do `jniLibs` (`8bd82499acb2`).
 - **O que pode quebrar:** o comando padrão fica alguns segundos mais longo.
 - **Como testar de novo:** `python3 bt2/android/build.py`: a data do `libbt2online.so` no `jniLibs` muda.
+
+### 1.0.0 (este commit): libbt4gsx.so sem librashader, e o build recusa dependência que o APK não tem
+- **Onde:** `port/bt4/build_bt4.py`, função que compila o `libbt4gsx.so` (`-DARMSX2_DISABLE_LIBRASHADER=ON` e a checagem de `NEEDED` depois do strip)
+- **O que e por quê:** o CMake do ARMSX2 liga o librashader sozinho quando o PC tem `cargo`. Com o alvo Rust `aarch64-linux-android` instalado, o `libbt4gsx.so` passou a pedir `liblibrashader_capi.so`, que não vai no APK: o `dlopen` falhava e o BT4 caía em silêncio no renderizador Dragon Rage, em todo aparelho. Agora a opção vai desligada, como na 0.9.0, e o build para com erro se a biblioteca pedir algo fora do sistema.
+- **Medido/provado:** `llvm-objdump -p`: test9 com `liblibrashader_capi.so` em `NEEDED`; test10 com a mesma lista da 0.9.0 e o mesmo tamanho (34285872 bytes). Log do aparelho: `ARMSX2's renderer is not in this version (dlopen failed…)` no test9.
+- **O que pode quebrar:** quem quiser cadeias de shader do RetroArch no BT4 precisa ligar a opção e pôr a biblioteca no APK; hoje a tela do jogo não oferece isso.
+- **Como testar de novo:** no log do BT4 com `bt4_renderer=1`: linhas `bt4gsx:` e nenhuma `could not start`. Instalar o alvo Rust e compilar de novo não pode mudar a lista de `NEEDED`.
 
 ## Histórico: 0.9.0 para trás
 
