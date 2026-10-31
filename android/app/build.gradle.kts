@@ -12,9 +12,9 @@ android {
         applicationId = "com.dfdx047.dragonrage"
         minSdk = 29
         targetSdk = 35
-        // CI passes the tag (android-v0.1.0 -> 0.1.0) and the run number
-        // Without CI (a local build) the name is 0.9.0 and the code follows it (0.9.0 -> 900), so a local build of
-        // a newer version always installs over the one before it; the same version again installs with `adb install -r`.
+        // CI passes the tag (android-v0.1.0 -> 0.1.0); a nightly (0.0.0-dev.N) also passes the run number as its code.
+        // A release's code follows its name (0.9.0 -> 900, 1.0.0 -> 10000), in CI and locally, so a newer version always
+        // installs over the one before it; the same version again installs with `adb install -r`.
         val vName = System.getenv("DR_VERSION_NAME") ?: "1.0.0"
         val vParts = vName.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
         versionCode = System.getenv("DR_VERSION_CODE")?.toInt()

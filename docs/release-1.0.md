@@ -1,8 +1,9 @@
 # Dragon Rage 1.0: relatório
 
 Branch local `release-1.0`, a partir da `main` em 0.9.0 (`e1b9207`). **Nada foi publicado: nenhum push, nenhuma tag, nenhuma
-release.** O APK testado está em `~/DragonRageRefs/1.0-final.apk` (`versionName` 1.0.0, `versionCode` 50 só para teste, assinatura
-`10db404f…2f2757`, a mesma da 0.9.0). Os aparelhos voltaram à 0.9.0, com ajustes e saves como estavam.
+release.** O APK para instalar é `~/DragonRageRefs/DragonRage-1.0.0.apk` (`versionName` 1.0.0, `versionCode` 10000, assinatura
+`10db404f…2f2757`, a mesma da 0.9.0). A bateria rodou em `~/DragonRageRefs/1.0-final.apk`, com as mesmas bibliotecas e código 50; esse não
+instala por cima da 0.9.0, não use. Os aparelhos voltaram à 0.9.0, com ajustes e saves como estavam.
 
 ## Antes de publicar: o que precisa da sua decisão
 
@@ -118,8 +119,8 @@ conferido, mensagem clara na recusa. Cartão de motor saiu; quem tinha motor imp
 ponta com salas pelo serviço: seleção de personagens igual, lutas de 11.100 e 5.700 quadros com toques reais nos dois, 0 "two games
 differ", 100%. Quem sai avisa o outro. 2.144 verificações de `session_tests`, 0 falhas.
 
-**O que a 1.0 não testou no BT3 e no BT4**: importação limpa (ver seção 7). Instalação por cima da 0.9.0 mantém saves, ajustes e ISOs: provado nos
-dois.
+**O que a 1.0 não testou no BT3 e no BT4**: importação limpa (ver seção 7). Instalação por cima da 0.9.0 mantém saves e ajustes: provado nos
+dois com `DragonRage-1.0.0.apk` e `adb install -r`, sem permitir downgrade (0 de 91 arquivos mudaram no Cube, 0 de 93 no RP5).
 
 ## 4. Logs
 
@@ -263,6 +264,7 @@ Também rastreados: `config/DBZP.yaml`, `config/SLUS_216.78.yaml` (só endereço
 - **Serviço de terceiro**: fiz um POST à mão em `bt-ranked` (`/ranked/identity`, 404) e um GET na raiz (200). Um segundo POST foi barrado. Não repeti. Não se deve mandar pedido manual a serviço de terceiro.
 - **Cube**: `restricted_networking_mode` ficou em 0 durante os testes; voltou a 1. Abri o Firefox por engano. Hoje, um toque meu caiu na folha de compartilhar do log e copiou o arquivo para a área de transferência do Cube; não enviou nada a ninguém.
 - **RP5**: um toque no meio do menu desligou "Tom através do cenário" e, às cegas, troquei uma opção do mod. Tudo restaurado do retrato de antes da sessão.
+- **O APK que deixei pronto não instalava por cima da 0.9.0**: `1.0-final.apk` tem código 50, e a 0.9.0, 55. Todos os meus testes usaram `adb install -r -d`, que libera downgrade, então escrevi "instala por cima" sem ter provado o caminho do jogador, e você pegou. Corrigido; ver seção 8.
 - **Commit misto** `80c2287b` desfeito logo depois. Logs antigos inválidos ficam em `~/DragonRageRefs/1.0/logs` e `1.0b/logs`.
 - **Logs dos jogadores**: nenhum foi copiado para o repositório.
 
@@ -290,13 +292,18 @@ git push origin release-1.0
 git checkout main && git merge --no-ff release-1.0 && git push origin main
 # esperar o workflow toolchain terminar
 git tag android-v1.0.0 && git push origin android-v1.0.0
-# o run da tag cria a release em rascunho; anote o DR_VERSION_CODE desse run (precisa ser maior que 55)
+# o run da tag cria a release em rascunho
 python3 port/tools/android.py
 python3 port/bt4/build_bt4.py --armsx2
 python3 bt2/android/build.py
-cd android && DR_VERSION_NAME=1.0.0 DR_VERSION_CODE=<do run> ./gradlew assembleRelease
-gh release upload android-v1.0.0 app/build/outputs/apk/release/app-release.apk#DragonRage-1.0.0.apk --clobber
-# conferir o rascunho e publicar quando o vídeo sair
+cd android && DR_VERSION_NAME=1.0.0 ./gradlew assembleRelease
+cp app/build/outputs/apk/release/app-release.apk ~/DragonRage-1.0.0.apk
+gh release upload android-v1.0.0 ~/DragonRage-1.0.0.apk --clobber
+# conferir o rascunho (um APK só, código 10000) e publicar quando o vídeo sair
 ```
 
-Antes do `--clobber`, confira: mesma assinatura (`10db404f…2f2757`), com `libbt3`, `libbt4`, `libbt4gsx`, `libbt2` e `libbt2online` dentro. Com `DragonRage-0.9.0.apk` solto na raiz do repositório: **nunca faça `git add -A`.**
+Antes do `--clobber`, confira: mesma assinatura (`10db404f…2f2757`), com `libbt3`, `libbt4`, `libbt4gsx`, `libbt2` e `libbt2online` dentro. **Nunca faça `git add -A`**: a raiz pode ter APKs soltos.
+
+**Por que a 0.9 não instalou por cima da 0.8.1, e a 1.0 não instalaria por cima da 0.9.0**: a release 0.8.1 tem dois APKs, `app-release.apk` com código 801 (compilado no PC) e `DragonRage-0.8.1.apk` com código 42 (CI). A 0.9.0 saiu com código 55, o número da execução do CI, e 55 é menor que 801: quem tinha o 801 foi recusado. O `#` do `gh release upload` só muda o rótulo: o arquivo continua `app-release.apk` e não substitui o do CI, por isso dois APKs, e o atualizador do app pega o primeiro que acha.
+
+Agora o código de uma release vem do nome, no CI e no PC (1.0.0 vira 10000, 1.0.1 vira 10001). Assim a 1.0 instala por cima de 42, 55, 801 e 900. O caminho a partir do 801 segue a mesma regra, mas não foi instalado de verdade. Só o nightly continua com o número da execução, porque o atualizador compara por ele: um nightly não instala por cima de uma release sem desinstalar, como já acontecia com 801 e 900.

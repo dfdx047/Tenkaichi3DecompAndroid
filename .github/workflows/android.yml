@@ -128,8 +128,8 @@ jobs:
             echo "DR_VERSION_NAME=${GITHUB_REF#refs/tags/android-v}" >> "$GITHUB_ENV"
           else
             echo "DR_VERSION_NAME=0.0.0-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+            echo "DR_VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
           fi
-          echo "DR_VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
 
       - name: Signing key
         env:

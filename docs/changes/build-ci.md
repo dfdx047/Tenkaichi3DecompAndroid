@@ -3,6 +3,13 @@
 Regras e formato: [README](README.md).
 
 
+### 1.0.0 (este commit): versionCode de release vem do nome, também no CI
+- **Onde:** `.github/workflows/android.yml`, passo "Version from the tag"; `android/app/build.gradle.kts`, comentário; `docs/release-1.0.md`, comandos de publicar.
+- **O que e por quê:** com o número da execução no CI, o código de uma release podia cair: 0.8.1 tinha 801 (PC) e 42 (CI), a 0.9.0 saiu com 55 e o Android recusou por cima do 801. Tag agora não passa `DR_VERSION_CODE`, então 1.0.0 vira 10000 no CI e no PC. Nightly continua com o número da execução, que `AppUpdates.check` compara.
+- **Medido/provado:** `adb install -r`, sem `-d`, no Cube e no RP5: 50 sobre 55 recusado (`INSTALL_FAILED_VERSION_DOWNGRADE`, no RP5), 10000 sobre 55 instalado, 0 arquivos de saves e ajustes mudados. Workflow não rodado: só roda com push da tag.
+- **O que pode quebrar:** nightly não instala por cima de release sem desinstalar. Voltar a uma release antiga exige desinstalar.
+- **Como testar de novo:** instalar sem `-d` por cima da versão publicada e conferir os saves.
+
 ### 1.0.0 (este commit): ferramentas de laboratório e logscan
 - **Onde:** `port/tools/logscan.py` (crash sem repetição por aparelho); `port/tools/lab/ppmcmp.py` (novo)
 - **O que e por quê:** o `logscan` contava o mesmo crash duas vezes (linha do log e linha do relatório do app). `ppmcmp.py` compara as pastas de quadros `BT3_SHOT` pixel a pixel.
