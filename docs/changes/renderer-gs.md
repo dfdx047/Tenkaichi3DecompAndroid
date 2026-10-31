@@ -9,6 +9,13 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** nada: o `getenv` já era chamado a cada textura nova.
 - **Como testar de novo:** `BT3_TEX_DUMP=<pasta> BT3_TEX_DUMP_W=1024`: só texturas de 1024 de largura na pasta.
 
+### 1.0.0 (este commit): BT4: cenário distante sem blocos de ruído
+- **Onde:** `port/src/gs/gs_draw.c`, `is_picture` e `draw_state`; `gGsOtherFbp` em `gs_draw.h`, `gs_sony.c`, `port/bt4/host/bt4_shim.c`; `port/bt4/host/bt4_main.cpp`, `applyPriv`
+- **O que e por quê:** no BT4 `gGsMainFbp` é o buffer na tela, e o jogo desenha no outro. Uma passada descartada (`p1b`, T8H) nesse outro buffer o marcava como buffer de trabalho perdido (`stale`); a cópia dele em `fbp 150` era descartada; o desfoque de distância (alpha 0x54, full screen, misturado pelo alfa do destino) lia `2a00` como CT32 da memória do GS, onde estão as T4 do cenário. T4 lida como 32 bits dá cinza em degradê com blocos coloridos, só onde o alfa marca "longe". A suspeita antiga (T8 1024x256, X negativo, Q pequeno) estava errada: essa textura é o céu e decodifica certa. Agora os dois buffers contam como imagem.
+- **Medido/provado:** Cube e RP5 com `BT3_TEX_DUMP`: 12 decodificações de 256x256 com mais de 257 cores, com `src 3, cleared 0, draws 0` no log temporário. Depois: RP5 com as montanhas limpas na tela; Cube sem ruído nas capturas da luta. Velocidade igual: Cube 50% (29,8 q/s), draws 8,91 → 6,96 ms; RP5 50% (30,0), draws 4,84 → 5,02 ms, passadas 31,9 → 39,5. No BT3 `gGsOtherFbp` fica em -1: os 11 quadros seguem iguais.
+- **O que pode quebrar:** o desfoque de distância e o brilho passam a rodar no BT4/DR, mais passadas em aparelho fraco. `gGsOtherFbp` só vale depois da primeira troca de buffer.
+- **Como testar de novo:** BT4, renderizador Dragon Rage, Duelo, Espectador, mapa da planície, câmera no horizonte: montanhas sem blocos. `BT3_TEX_DUMP=<pasta> BT3_TEX_DUMP_W=256` mostra as texturas decodificadas.
+
 ## Histórico: 0.9.0 para trás
 
 Linhas: lado novo do diff naquele commit; o arquivo de hoje tem outra numeração. Fontes: mensagens de commit, diffs,

@@ -127,6 +127,7 @@ extern int gsDepthByteIsFog;    /* the top byte of the depth page as the game la
 extern unsigned gsNative;       /* native effect markers seen this frame */
 extern unsigned gsSkipped;      /* primitives of PS2-only passes dropped this frame */
 extern int gGsMainFbp;          /* the frame buffer the game shows (gs_sony.c), -1 before the first swap */
+extern int gGsOtherFbp;         /* BT4: the other frame buffer, where the picture is being drawn (bt4_shim.c); BT3: -1 */
 /* created / spent since the front end last cleared them (gs_core.c's slow-frame report) */
 extern unsigned gGpuNewTex, gGpuNewTexPixels, gGpuNewPipes;
 extern unsigned gGpuTexReplaced; /* textures taken from a texture pack so far */

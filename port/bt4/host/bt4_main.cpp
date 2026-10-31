@@ -47,6 +47,7 @@ int Port_PadRead(int socket, unsigned char *data);             /* gs_input.c: co
 void Port_TouchPad(unsigned buttons, int lx, int ly, int rx, int ry);
 int Port_Setting(const char *name, int def);
 extern int gGsMainFbp;
+extern int gGsOtherFbp;
 extern unsigned gPortVBlanks;
 extern unsigned gGsFrame;                                       /* gs_core.c: the pictures (the texture cache ages by it) */
 void Bt4_Quit(void);
@@ -198,6 +199,8 @@ void applyPriv(const std::vector<uint8_t> &priv)
     std::memcpy(&dispfb1, priv.data() + 0x70, 8);
     std::memcpy(&dispfb2, priv.data() + 0x90, 8);
     const uint64_t dispfb = (pmode & 1u) || !(pmode & 2u) ? dispfb1 : dispfb2;
+    if (gGsMainFbp >= 0 && gGsMainFbp != static_cast<int>(dispfb & 0x1FFu))
+        gGsOtherFbp = gGsMainFbp;
     gGsMainFbp = static_cast<int>(dispfb & 0x1FFu);
 }
 

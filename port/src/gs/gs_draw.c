@@ -1453,6 +1453,14 @@ static void depth_clut(int ctx) {
     gsDraws[gsDrawCount++] = d;
 }
 
+/* The picture itself, not a work buffer: a pass dropped on it does not make it stale. BT4's gGsMainFbp is the buffer
+   on show, and the game draws in the other one (gGsOtherFbp): taken for a work buffer, it went stale at the first
+   dropped pass, the copy of it for the blur of distant things was not drawn, and the blur read that buffer's address
+   in GS memory, the stage's 4-bit textures (the far scenery in blocks of noise). */
+static int is_picture(uint32_t fbp) {
+    return fbp == (uint32_t)gGsMainFbp || fbp == (uint32_t)gGsOtherFbp;
+}
+
 static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *us, float *vs) {
     uint64_t prim = gGs.prim, t0 = gGs.tex0[ctx], test = gGs.test[ctx], cl = gGs.clamp[ctx], sc = gGs.scissor[ctx];
     int tme = (prim >> 4) & 1, src;
@@ -1483,7 +1491,7 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
             }
         }
         if (Gs_PsmBits(fpsm) == 16 || fbp == zbp) {
-            if (fbp != zbp && fbp != (uint32_t)gGsMainFbp) {
+            if (fbp != zbp && !is_picture(fbp)) {
                 /* A work buffer drawn through a 16-bit view (the outline's edge image): not drawable here, but
                    the game has now written the buffer, so whatever samples it next means this buffer and not the
                    stage textures that share its address. Without this the outline's later passes read those
@@ -1510,7 +1518,7 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
         if (tme && tpsm != TBO_PSM && !(tpsm == 1 && sprite && tbp / 32 == zbp) &&
             ((tpsm & 0x30) == 0x30 || tbp / 32 == zbp || tpsm == 0x1B || tpsm == 0x24 || tpsm == 0x2C)) {
             int t = GsDraw_TargetGet(fbp, 0);
-            if (t >= 0 && fbp != (uint32_t)gGsMainFbp) {
+            if (t >= 0 && !is_picture(fbp)) {
                 gsTargets[t].stale = 1; /* a work buffer missed a pass */
             }
             gsSkipped++;
@@ -1561,7 +1569,7 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
                 return 0;
             }
             if (src == d->target || tp > 1) {
-                if (d->target != src && (uint32_t)(gGs.frame[ctx] & 0x1FF) != (uint32_t)gGsMainFbp) {
+                if (d->target != src && !is_picture((uint32_t)(gGs.frame[ctx] & 0x1FF))) {
                     gsTargets[d->target].stale = 1; /* a work buffer missed a pass */
                 }
                 gsSkipped++;

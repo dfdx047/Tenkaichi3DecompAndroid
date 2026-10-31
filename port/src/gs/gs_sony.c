@@ -12,6 +12,7 @@
 
 extern void Port_GsGifChannel(uint32_t addr, uint32_t qwc, int chain);
 int gGsMainFbp = -1; /* frame-buffer address of the frame being drawn (from sceGsSwapDBuff); -1 before the first swap */
+int gGsOtherFbp = -1; /* (BT4 only: gs_draw.h) */
 
 typedef struct { uint64_t v, addr; } Reg;                      /* one A+D register write */
 typedef struct { Reg frame, zbuf, xyoffset, scissor, prmodecont, colclamp, dthe, test; } DrawEnv;

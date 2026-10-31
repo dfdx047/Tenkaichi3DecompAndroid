@@ -17,6 +17,7 @@ extern void Bt4_UiInit(const char *gpu, int gl);
 
 /* ---- the BT3 port's variables the renderer reads */
 int gGsMainFbp = -1;               /* the shown frame buffer: DISPFB1 from the live stream (bt4_main.cpp) */
+int gGsOtherFbp = -1;              /* the buffer before it, where the game is drawing now (bt4_main.cpp) */
 unsigned gPortVBlanks;             /* vertical blanks: one per frame of the stream */
 int gPortInMenus;                  /* (BT3: the menus are running; aspect and pacing choices) */
 int gPortMenuMode;
