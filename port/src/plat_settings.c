@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_SETTINGS 200
+#define MAX_SETTINGS 512 /* (the mod's and the controllers' binds alone take 183) */
 static struct { char name[24]; int value; } sSet[MAX_SETTINGS];
 /* The few settings that are text (online name, menu language): `name="text"` in the file, after the numbers. A
    release from before these reads past such a line. */

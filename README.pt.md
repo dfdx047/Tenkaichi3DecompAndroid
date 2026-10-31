@@ -163,12 +163,17 @@ opcional `match_url.txt` (uma linha, `https://...`) aponta outro serviço de mat
 | `port/` | O port para PC: camada de plataforma, renderizador, som, controles, ferramentas de build |
 | `docs/` | Notas sobre o jogo e sobre o port para PC |
 
-## Créditos
+## Equipe e créditos
 
-- **[Tenkaichi3Decomp](https://github.com/z3xox/Tenkaichi3Decomp)** de z3xox e colaboradores: o port nativo para PC em
-  que este projeto se baseia, e a decompilação por trás dele.
-- Dragon Rage (app Android e port): [dfdx047](https://github.com/dfdx047) ·
+- **[Tenkaichi3Decomp](https://github.com/z3xox/Tenkaichi3Decomp)**, de **z3xox** e colaboradores: o port nativo de PC
+  em que isto se baseia, e a decompilação por baixo dele.
+- **Dragon Rage** (app Android e port): [dfdx047](https://github.com/dfdx047) ·
   [YouTube](https://www.youtube.com/@DFDX47) · [Discord](https://discord.gg/6XXxT547Qx) · [Ko-fi](https://ko-fi.com/dfdx047)
+- **Regulus CiberSec**: BT2 Recomp no Android, Dragon Net Online, espectadores e lobbies.
+- **Androidxxt01**, **jllacchua**, **victorgonl**: contribuições ao port de PC e ao app.
+- **tehmufti e os colaboradores do Tag Team Mod**: o Tag Team Mod.
+- **Team BT4**: o mod Budokai Tenkaichi 4.
+- Arte: **MarshallPunk** (o locutor), **pluantoine** (os botões, CC BY 4.0).
 - Drivers de GPU de [Mr. Purple](https://github.com/MrPurple666/purple-turnip), [StevenMXZ](https://github.com/StevenMXZ/Adreno-Tools-Drivers)
   e [K11MCH1](https://github.com/K11MCH1/AdrenoToolsDrivers), carregados com [libadrenotools](https://github.com/bylaws/libadrenotools) (BSD-2-Clause).
 - [AMD FidelityFX Super Resolution 1](https://github.com/GPUOpen-Effects/FidelityFX-FSR) (MIT),

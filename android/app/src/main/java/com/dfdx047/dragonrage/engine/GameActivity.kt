@@ -497,9 +497,13 @@ open class GameActivity : SDLActivity() {
         val liteMali = game == com.dfdx047.dragonrage.data.Game.BT3 && runCatching {
             EngineSettings(paths.settings).get(EngineSettings.LITE, 0) != 0 && Renderer.isMali(Renderer.gpuName(paths))
         }.getOrDefault(false)
+        val tagTeam = game == com.dfdx047.dragonrage.data.Game.BT3 && runCatching {
+            EngineSettings(paths.settings).get(EngineSettings.TAG_TEAM, EngineSettings.TAG_TEAM_DEFAULT) != 0
+        }.getOrDefault(false)
         return arrayOf(
             paths.root.path, applicationInfo.nativeLibraryDir, driver?.dir?.path ?: "", driver?.library ?: "",
             if (liteMali) "1" else "0",
+            if (tagTeam) "1" else "0",
         )
     }
 }

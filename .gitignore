@@ -47,6 +47,7 @@ port/build_release/
 /android/app/src/main/assets/libbt3.so.rel
 /android/app/src/main/assets/libbt3.so.mem
 /android/app/src/main/assets/engine/
+/android/app/src/main/assets/licenses.txt
 /android/app/src/main/assets/bt4gsx/
 /android/app/src/main/java/org/libsdl/
 android/.kotlin/

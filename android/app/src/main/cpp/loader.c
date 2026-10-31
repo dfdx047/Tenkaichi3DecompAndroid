@@ -643,7 +643,10 @@ int SDL_main(int argc, char *argv[]) {
     snprintf(exe, sizeof(exe), "%s/libbt3.so", dir); /* plat_mem.c reads <BT3_EXE>.dat: the app put it there */
     setenv("BT3_EXE", exe, 1);
     setenv("BT3_GS", "gpu", 0);
-    setenv("BT3_TAG_TEAM", "1", 0); /* the Tag Team mod: SELECT in the main menu opens its modes (port/src/tagteam_trace.c) */
+    if (argc > 6 && strcmp(argv[6], "1") == 0) { /* the Tag Team mod, setting dr_tag_team (GameActivity): SELECT in the main
+                                                    menu opens its modes (port/src/tagteam_trace.c) */
+        setenv("BT3_TAG_TEAM", "1", 0);
+    }
     {   /* bt3_env.txt in the game folder: NAME=value lines, the engine's switches for testing (BT3_GS_VERBOSE=1, ...) */
         char line[512];
         FILE *fp = fopen("bt3_env.txt", "r");
@@ -652,7 +655,11 @@ int SDL_main(int argc, char *argv[]) {
             line[strcspn(line, "\r\n")] = '\0';
             if (line[0] != '#' && eq != NULL) {
                 *eq = '\0';
-                setenv(line, eq + 1, 1);
+                if (strcmp(line, "BT3_TAG_TEAM") == 0 && strcmp(eq + 1, "0") == 0) {
+                    unsetenv(line); /* (the engine asks only whether it is set) */
+                } else {
+                    setenv(line, eq + 1, 1);
+                }
                 say("env %s=%s", line, eq + 1);
             }
         }

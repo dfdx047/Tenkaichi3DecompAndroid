@@ -594,6 +594,18 @@ def install():
     # the PC port's text catalogs (0.1.37: menu_translation.c reads translations/labels/en.json and the others there)
     if (ROOT / "port/translations").exists():
         shutil.copytree(ROOT / "port/translations", eng / "translations")
+    # the third parties' licences, for the app's About page (SettingsScreen: Licences)
+    notices = [("Dragon Rage (AGPL-3.0; android/ also MIT)", ROOT / "LICENSE"), ("SDL3", ROOT / "port/licenses/SDL.txt"),
+               ("sse2neon", ROOT / "bt2/runtime/platform/sse/LICENSE.sse2neon"),
+               ("AMD FidelityFX Super Resolution 1", ROOT / "port/src/gs/shaders/ffx/LICENSE-FidelityFX-FSR.txt"),
+               ("Snapdragon Game Super Resolution", ROOT / "port/src/gs/shaders/ffx/LICENSE-Snapdragon-GSR.txt"),
+               ("Credits of the online screens' pictures (buttons: pluantoine, CC BY 4.0)", ROOT / "port/tbo/ui/CREDITS.md")]
+    for folder in sorted((ROOT / "port/third_party").rglob("*")):
+        if folder.name in ("LICENSE", "LICENSE.txt", "LICENCE.md", "COPYING.NEWLIB", "OFL.txt"):
+            notices.append((folder.parent.relative_to(ROOT / "port/third_party").as_posix(), folder))
+    with open(assets / "licenses.txt", "w", encoding="utf-8") as out:
+        for name, path in notices:
+            out.write(f"===== {name} =====\n\n{path.read_text(encoding='utf-8', errors='replace').strip()}\n\n")
     java = SDL3 / "java/org"
     if java.exists():
         shutil.copytree(java, APP / "java/org", dirs_exist_ok=True)

@@ -20,3 +20,10 @@ Regras e formato: [README](README.md).
 - **Medido/provado:** lido no código (revisão do branch); compila; teste em aparelho: ver a bateria em `docs/release-1.0.md`.
 - **O que pode quebrar:** prompts de clash no Tag Team Online, se ele passasse a ser `Port_NetSession` um dia (hoje não é).
 - **Como testar de novo:** ligar SELECT > Mod Settings > Clash Button Prompts num aparelho, Dragon Net 1x1 com outro, forçar clash: sem dessincronia.
+
+### 1.0.0 (este commit): Tag Team como opção do app, e espaço para as opções
+- **Onde:** `android/app/src/main/cpp/loader.c`; `engine/GameActivity.kt`, `getArguments`; `data/EngineSettings.kt`; `ui/screens/SettingsScreen.kt`; `port/src/plat_settings.c`, `MAX_SETTINGS`
+- **O que e por quê:** o branch deixava `BT3_TAG_TEAM=1` fixo no loader. Agora vem do sexto argumento do app, com a chave em Settings; `BT3_TAG_TEAM=0` em `bt3_env.txt` desliga para comparar. `MAX_SETTINGS` foi de 200 para 512: as opções do mod e os botões dos controles enchiam a tabela.
+- **Medido/provado:** compila; teste em aparelho: ver a bateria em `docs/release-1.0.md`.
+- **O que pode quebrar:** quem tinha `bt3_env.txt` antigo; BT4 e BT2 não recebem o argumento.
+- **Como testar de novo:** Settings > desligar Tag Team: o menu principal volta ao da 0.9.0, sem as telas do Tag.
