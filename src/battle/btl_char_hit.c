@@ -876,6 +876,9 @@ s32 BtlHit_CheckClash(void) {
                 BtlChar_SetFlag(b, 0x44);
                 BtlChar_SetFlag(b, 0x45);
                 BtlChar_SetFlag(b, 0x46);
+                if (!TagTeam_Active()) {
+                    return 1; /* (a normal fight, as on the disc: the second look at the same pair would sound it twice) */
+                }
                 result=1;
             }
         }

@@ -1164,7 +1164,8 @@ static GsTex texture_get(int ctx) {
         return gsWhite;
     }
     if (!replaced) {
-        if (getenv("BT3_TEX_DUMP") != NULL) { /* every texture as it is decoded, raw RGBA with a small header (looking at the game's art) */
+        /* every texture as it is decoded, raw RGBA with a small header (looking at the game's art); BT3_TEX_DUMP_W=<n>: only those at least n wide */
+        if (getenv("BT3_TEX_DUMP") != NULL && (getenv("BT3_TEX_DUMP_W") == NULL || rw >= (uint32_t)atoi(getenv("BT3_TEX_DUMP_W")))) {
             static unsigned n;
             char name[600];
             FILE *df;

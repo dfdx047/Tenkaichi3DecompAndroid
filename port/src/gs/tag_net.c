@@ -1077,11 +1077,6 @@ int TagNet_Room(void) {
             if(SDL_GetTicks()-told>5000){int k;told=SDL_GetTicks();fprintf(stderr,"tagnet: lobby not ready: players %x, ready",player_mask());
                 for(k=0;k<TN_PLAYERS;k++)if(player_mask()&(1u<<k))fprintf(stderr," %d:%d",k,ready[k]);fprintf(stderr,", role %d\n",role);}
         }
-        if(host && phase==2 && config.party && config.practice && !all_ready()) { /* (the lobby waits for everyone ready: who is not, in the log, every 5 s) */
-            static Uint64 told;
-            if(SDL_GetTicks()-told>5000){int k;told=SDL_GetTicks();fprintf(stderr,"tagnet: lobby not ready: players %x, ready",player_mask());
-                for(k=0;k<TN_PLAYERS;k++)if(player_mask()&(1u<<k))fprintf(stderr," %d:%d",k,ready[k]);fprintf(stderr,", role %d\n",role);}
-        }
         if(host && phase==2 && all_ready() && !valid(&config)) {
             static char said[96];const char *why=invalid_why(&config);
             if(strcmp(why,said)){snprintf(said,sizeof(said),"%s",why);fprintf(stderr,"tagnet: everyone is ready, but the room is not valid: %s\n",why);}

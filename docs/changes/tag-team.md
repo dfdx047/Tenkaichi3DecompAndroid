@@ -56,6 +56,20 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** efeitos e água dos modos do Tag, que mantêm o caminho do mod.
 - **Como testar de novo:** batalha do Tag em cenário com água e com efeito de técnica; luta normal: comparar os 11 quadros fixos.
 
+### 1.0.0 (este commit): luta normal volta ao clash e à música do disco
+- **Onde:** `src/battle/btl_char_hit.c`, `BtlHit_CheckClash`; `src/battle/battle_load.c`, escolha de `rule->bgm` com música aleatória
+- **O que e por quê:** o merge do Tag Team tirou o `return 1` da primeira detecção do clash, e a dupla (1,0) era olhada de novo em 1x1, com efeito sonoro em dobro: fora do Tag Team a função volta a sair na primeira. A música aleatória passou a sair das faixas liberadas no save e das adicionadas pelo jogador, listas diferentes em cada aparelho: online os dois podiam escolher faixas diferentes, com o mesmo `rand()` mas tamanhos de lista diferentes. Em sessão online a escolha volta a ser `rand() % 24`, como na 0.9.0.
+- **Medido/provado:** 11 quadros fixos: Cube 1x, 0 pixels contra a 0.9.0. RP5 2x: 0 pixels de 5700 a 6300, e as mesmas 5 diferenças de antes de 6450 a 7050 (demo da tela de título, ver `docs/release-1.0.md`). A escolha online não tem teste próprio: a sessão direta do teste de 10 min não usa música aleatória.
+- **O que pode quebrar:** em Tag Team nada muda (o guarda só vale fora dele). Offline, a lista do jogador continua valendo.
+- **Como testar de novo:** luta 1x1 com clash: um efeito sonoro só. Online, música aleatória nos dois aparelhos: a mesma faixa.
+
+### 1.0.0 (este commit): bloco repetido em `tag_net.c`
+- **Onde:** `port/src/gs/tag_net.c`, laço do lobby
+- **O que e por quê:** o merge deixou duas cópias do mesmo `if(host && phase==2 && config.party && config.practice && !all_ready())`. A segunda nunca fazia diferença e sai.
+- **Medido/provado:** compila; a comparação é só de leitura, as duas cópias eram iguais.
+- **O que pode quebrar:** nada: o mesmo teste já tinha rodado na linha de cima.
+- **Como testar de novo:** lobby de treino em Tag Team Online, com host e um convidado que não confirma.
+
 ## Histórico: 0.9.0 para trás
 
 Nada a registrar: a árvore de `e1b9207` não tem `tag_link` nem `TagNet_`, e nenhum commit até ali cita o Tag Team; ele só entra depois da 0.9.0, com `cb026e37`.

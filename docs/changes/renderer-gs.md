@@ -2,6 +2,12 @@
 
 Regras e formato: [README](README.md).
 
+### 1.0.0 (este commit): filtro de largura no despejo de texturas
+- **Onde:** `port/src/gs/gs_draw.c`, `texture_get`, `BT3_TEX_DUMP_W`
+- **O que e por quê:** despejar todas as texturas de uma luta do BT4 grava milhares de arquivos. Com `BT3_TEX_DUMP_W=<n>` só saem as de largura n ou maior: serve para olhar o cenário distante (T8 1024x256).
+- **Medido/provado:** só diagnóstico: sem as duas variáveis, o caminho é o mesmo.
+- **O que pode quebrar:** nada: o `getenv` já era chamado a cada textura nova.
+- **Como testar de novo:** `BT3_TEX_DUMP=<pasta> BT3_TEX_DUMP_W=1024`: só texturas de 1024 de largura na pasta.
 
 ## Histórico: 0.9.0 para trás
 
