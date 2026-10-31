@@ -9,6 +9,8 @@
 #endif
 
 extern const char *Port_FileRoot(void);
+extern long Port_FileSize(const char *rel); /* plat_fcache.c */
+extern size_t Port_FileReadAt(const char *rel, long offset, void *buf, size_t bytes);
 extern void *Port_LowAlloc(size_t size);
 static int initialized, bt4, region, spanish;
 static unsigned short costumes[250];
@@ -116,10 +118,12 @@ int PortGame_Costumes(int c) {
     if(c>=0 && c<161) {
         static int loaded;
         if(!loaded) {
+            /* (through the file cache: the Android install keeps pzs3us1 whole, inside its AFS archive) */
             unsigned char table[32768];unsigned offset;size_t size;int i;
-            FILE *f=open_data("pzs3us1/00003.bin");
-            if(!f)return 0;
-            size=fread(table,1,sizeof(table),f);fclose(f);
+            const char *rel="pzs3us1/00003.bin";
+            const long whole=Port_FileSize(rel);
+            if(whole<8)return 0;
+            size=Port_FileReadAt(rel,0,table,(size_t)whole<sizeof(table)?(size_t)whole:sizeof(table));
             if(size<8)return 0;
             offset=u32(table+4)&~3u;
             if(offset>size || size-offset<161*60)return 0;

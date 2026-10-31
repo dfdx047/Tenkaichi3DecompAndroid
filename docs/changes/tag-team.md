@@ -70,6 +70,13 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** nada: o mesmo teste já tinha rodado na linha de cima.
 - **Como testar de novo:** lobby de treino em Tag Team Online, com host e um convidado que não confirma.
 
+### 1.0.0 (este commit): Tag Team Online: a sala não é mais recusada no Android
+- **Onde:** `port/src/plat_game.c`, `PortGame_Costumes`
+- **O que e por quê:** a tabela de roupas era aberta como arquivo solto, `pzs3us1/00003.bin`. No Android esse arquivo fica dentro de `DATA/PZS3US1.AFS`, então todo personagem ficava com 0 roupas, `valid()` falhava e toda sala caía com "The room contains unsupported fighters, outfits or rules". Agora lê por `Port_FileSize` e `Port_FileReadAt`, que entendem o arquivão.
+- **Medido/provado:** antes: Cube entrando na sala do RP5, conexão encerrada na hora, com a mensagem acima. Depois: entrada por código, "Choose your fighter", "Match started", convidado no mapa de treino com HUD do mod, "guest 2 caught up", 0 divergências. Partida entre os dois a partir do menu do anfitrião não testada: ver bug aberto em `docs/release-1.0.md` (menu do anfitrião sem texto).
+- **O que pode quebrar:** só o Tag Team chama essa função. Luta normal não passa por aqui; 11 quadros repetidos neste build.
+- **Como testar de novo:** `port/tools/lab/tagroom.sh`, com `dr_tag_team=1` nos dois: o RP5 abre a sala, o Cube entra com o código. Log do convidado: `tagnet: Choose your fighter`.
+
 ## Histórico: 0.9.0 para trás
 
 Nada a registrar: a árvore de `e1b9207` não tem `tag_link` nem `TagNet_`, e nenhum commit até ali cita o Tag Team; ele só entra depois da 0.9.0, com `cb026e37`.
