@@ -135,6 +135,11 @@ int FightSession::padField(const std::uint8_t local[6], std::uint8_t p1[6], std:
             ++booted_;
             std::memcpy(p1, Lockstep::neutralSample().data(), 6);
             std::memcpy(p2, Lockstep::neutralSample().data(), 6);
+            if (env_.bootPress) {                                 // (the game's start-up takes its presses from the controller itself)
+                const std::uint16_t bits = env_.bootPress();
+                p1[0] = std::uint8_t(bits);
+                p1[1] = std::uint8_t(bits >> 8);
+            }
             return 1;
         }
         haveArrival_ = true;

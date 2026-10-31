@@ -150,8 +150,8 @@ fun Bt2HomeScreen(vm: Bt2ViewModel) {
 }
 
 /**
- * Online play, as BT3's Home shows it (HomeScreen's OnlineBanner), for BT2: Dragon Net 2 is not there yet, so the
- * card says so and the button to play online is switched off.
+ * Online play, as BT3's Home shows it (HomeScreen's OnlineBanner), for BT2: it is inside the game, on its main
+ * menu, so the card says where.
  */
 @Composable
 private fun Bt2OnlineCard() {
@@ -168,10 +168,9 @@ private fun Bt2OnlineCard() {
                 Spacer(Modifier.size(10.dp))
                 Text(stringResource(R.string.bt2_online_banner_title).uppercase(), style = MaterialTheme.typography.labelLarge, color = color)
             }
-            Text(stringResource(R.string.bt2_online_name), style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.bt2_online_name), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
             Text(stringResource(R.string.bt2_online_soon), style = MaterialTheme.typography.titleMedium, color = Dbz.GiOrange)
             Text(stringResource(R.string.bt2_online_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            FilledTonalButton(onClick = {}, enabled = false) { Text(stringResource(R.string.bt2_play_online)) }
         }
     }
 }

@@ -30,7 +30,7 @@ public:
     bool met() const {return configKnown() && arrived_ && peerArrived_;}
     std::uint32_t myField() const {return myField_;}
     std::uint32_t peerField() const {return peerField_;}
-    bool fieldsDiffer() const {return met() && myField_ != peerField_;}  // the two games did not reach the same field: their states may differ
+    bool fieldsDiffer() const {return met() && peerField_ && myField_ != peerField_;}  // the two games did not reach the same field (a peer known only by its lockstep packets has said no field): their states may differ
     // An input packet of the lockstep came: the other side is past the meeting.
     void peerIsRunning() {if (arrived_) peerArrived_ = true; if (host_) acked_ = true;}   // (it only runs with the settings in hand)
 

@@ -41,6 +41,13 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** texto longo pode não caber no painel, que ocupa 46% da largura.
 - **Como testar de novo:** trocar o idioma do aparelho e abrir Online Mode no BT2: nome, criar sala, entrar com código errado.
 
+### 1.0.0 (este commit): BT2 online: a partida abre e chega sozinha à seleção de personagens
+- **Onde:** `bt2/plugin/online/fight_session.cpp`, `FightSession::padField` (fase Booting); `fight_session.h`, `Env::bootPress`; `bt2/plugin/online/online_plugin.cpp`, `startFightProcess`, `fightFrame`, `framePad`, `walk_press`, `fight_booted`; `bt2/plugin/online/session.h`, `fieldsDiffer`
+- **O que e por quê:** a partida roda em motor novo, que anda sozinho do início até a seleção. Nos aparelhos isso nunca passava do título: a tela ficava preta para sempre, com o "Press START" por baixo, porque os toques escritos na memória do controle não chegam a esses menus. Agora o início e a caminhada apertam pelo próprio controle (`Env::bootPress`). O primeiro X no Dueling espera 120 quadros, porque o menu não aceita toque enquanto entra na tela. O log novo diz cada troca de modo. `fieldsDiffer` não acusa mais diferença quando o outro lado só foi conhecido pelos pacotes de lockstep (dizia "1909 and 0: DIFFERENT").
+- **Medido/provado:** RG Cube e Retroid Pocket 5, sala por código pelo serviço real: modos 1, 4, 30 e 31 no log, "2023 and 2023: the same", imagem na seleção de personagens igual nos dois. Lutas de 11100 e 5700 quadros com toques nos dois lados: 0 "two games differ", mesmo quadro nos dois, 100%. Cube derrubado: RP5 diz "O oponente saiu ou foi desconectado" e reinicia o motor normal. `session_tests`: 2144 checagens, 0 falhas.
+- **O que pode quebrar:** o tempo da caminhada é contado em quadros: uma versão do jogo com menus de outro tamanho não chegaria (só um SHA-256 entra). Se o jogo parar no Dueling, o jogador ainda aperta X, porque a linha já está de pé.
+- **Como testar de novo:** duas instalações na mesma versão: Online Mode, Criar Sala, Entrar em Sala. Log: `online: the game's mode is 31` e `both are at the character select`. Lutar e conferir `grep -c "two games differ"` em `bt2/user/last-run.log`. `port/tools/lab/bt2room.sh` leva os dois até a sala.
+
 ## Histórico: 0.9.0 para trás
 
 Linhas: lado novo do diff naquele commit; o arquivo de hoje tem outra numeração. Fontes: mensagens de commit, diffs, changelogs de cada tag,

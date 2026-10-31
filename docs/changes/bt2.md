@@ -24,6 +24,13 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** o toque que passa pelo SDL usa o tamanho do buffer; os controles na tela são uma camada à parte.
 - **Como testar de novo:** BT2 no menu, escala de saída 75 e 50: imagem cheia, e continua cheia depois de sair e voltar ao app.
 
+### 1.0.0 (este commit): o cartão do BT2 não diz mais "Em breve"
+- **Onde:** `android/app/src/main/java/com/dfdx047/dragonrage/ui/screens/bt2/Bt2HomeScreen.kt`, `Bt2OnlineCard`; `res/values*/strings_bt2.xml`, `bt2_online_*`
+- **O que e por quê:** o cartão dizia "Dragon Net 2, em breve" com botão desligado, com o online já funcionando dentro do jogo. Agora diz onde ele está. O botão saiu.
+- **Medido/provado:** visto no RP5 em português; título corrigido para `onSurface` (estava preto sobre fundo escuro). Inglês e espanhol: só revisão.
+- **O que pode quebrar:** nada no jogo.
+- **Como testar de novo:** aba BT2, Início, nos três idiomas.
+
 ## Histórico: 0.9.0 para trás
 
 Nada a registrar: `git log e1b9207 -- bt2` não traz nenhum commit; o BT2 só entra depois da 0.9.0, com `85cdb232`.

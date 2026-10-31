@@ -422,7 +422,8 @@ void leaveSession(bool opponent_gone) {
 // When the match is over the app is asked to start the engine once more as it normally is.
 FightSession fight;
 std::atomic<bool> fight_on{false};
-bool fight_booted=false;                    // the game reached the main menu (the walk takes over from there)
+std::atomic<std::uint32_t> walk_press{0};  // the walk's next press in a match's own process: it goes by the controller (Env::bootPress)
+std::atomic<bool> fight_booted{false};      // the game reached the main menu (the walk takes over from there)
 std::uint32_t fight_frames=0,fight_menu_frames=0,fight_over_frames=0;
 std::atomic<bool> fight_over{false};
 void startFightProcess(const SessionFile& file) {
@@ -431,6 +432,18 @@ void startFightProcess(const SessionFile& file) {
     env.ram=H->ram;
     env.ramSize=0x2000000;
     env.strictDesync=onlineFile("online_strict",false);
+    env.bootPress=[]() -> std::uint16_t { // start and cross in turn, for a few fields each, until the main menu is there; then the walk's
+        static std::uint32_t fields=0,left=0;
+        static std::uint16_t held=0;
+        if(fight_booted.load(std::memory_order_acquire)) { // from the main menu on, only the walk's presses
+            if(!left && (held=std::uint16_t(walk_press.exchange(0))))left=4;
+            if(!left)return 0;
+            --left;
+            return held;
+        }
+        const std::uint32_t at=++fields%48;
+        return at<4?0x4000:at>=24 && at<28?0x8:0;
+    };
     env.onMet=[]() { // both are at the character select: the picture and the sound come back, and the app is told who plays
         H->set_fast_forward(0);
         H->set_master_percent(100);
@@ -470,13 +483,10 @@ void fightFrame(std::uint8_t* rdram,std::uint32_t mode) {
         }
         return;
     }
-    if(!fight_booted) { // the game's start-up: start and cross until the main menu is there
-        if(mode==main_menu_mode) {fight_booted=true;auto_frames=0;std::fprintf(stderr,"online: the main menu is up after %u frames\n",fight_frames);}
-        else if(fight_frames%24==0) {
-            const std::uint32_t bits=(fight_frames/24)%2?0x8u:0x4000u;
-            write32(rdram,pad+0x144,read32(rdram,pad+0x144)|bits);
-            write32(rdram,pad+0x134,read32(rdram,pad+0x134)|bits);
-        }
+    static std::uint32_t last_mode=0;
+    if(mode!=last_mode) {std::fprintf(stderr,"online: the game's mode is %u (frame %u)\n",mode,fight_frames);last_mode=mode;}
+    if(!fight_booted.load(std::memory_order_relaxed)) { // the game's start-up: start and cross (Env::bootPress) until the main menu is there
+        if(mode==main_menu_mode) {fight_booted.store(true,std::memory_order_release);auto_frames=0;std::fprintf(stderr,"online: the main menu is up after %u frames\n",fight_frames);}
         return;
     }
     if(fight.running()) { // back at the main menu: the player left the versus, which ends the match for both
@@ -530,7 +540,7 @@ void framePad(std::uint8_t* rdram,R5900Context* c,PS2Runtime* runtime) {
     if(session && auto_phase) {
         const std::uint32_t pressed=read32(rdram,pad+0x134);
         if(duel_lock && mode_frames>20 && (pressed&0x1000))leaveSession(false); // triangle: the game's own way back, and the line closes
-        else {write32(rdram,pad+0x144,0);write32(rdram,pad+0x134,0);} // (nobody presses while the game takes itself to the selection)
+        else if(!fight_on.load(std::memory_order_relaxed)) {write32(rdram,pad+0x144,0);write32(rdram,pad+0x134,0);} // (nobody presses while the game takes itself to the selection; in a match's process the controllers are the session's: Env::bootPress)
     }
     if(session && duel_lock) {
         if(mode==duel_mode)++mode_frames;
@@ -544,8 +554,9 @@ void framePad(std::uint8_t* rdram,R5900Context* c,PS2Runtime* runtime) {
             g.call(duel_moved);
             *c=saved;
         }
-        if(menu_ready && read32(rdram,state+0xF4)==1 && ++ready_frames==12) { // "1P VS 2P" is taken, and the walk goes on from there
+        if(menu_ready && read32(rdram,state+0xF4)==1 && ++ready_frames==(fight_on.load(std::memory_order_relaxed)?120u:12u)) { // "1P VS 2P" is taken, and the walk goes on from there (a match's press goes by the controller: the menu takes none while it comes in)
             write32(rdram,pad+0x144,read32(rdram,pad+0x144)|0x4000);write32(rdram,pad+0x134,read32(rdram,pad+0x134)|0x4000);
+            if(fight_on.load(std::memory_order_relaxed))walk_press.store(0x4000);
             duel_lock=false;dim_others.store(false);
             startWalk();
         }
@@ -553,7 +564,7 @@ void framePad(std::uint8_t* rdram,R5900Context* c,PS2Runtime* runtime) {
     if(session && auto_phase) { // the end of the walk: a moment after its last press the screen and the sound come back
         const bool done=!duel_lock && !walking && walk_steps.size() && walk_at>=walk_steps.size();
         if(done && walk_end_wait==0)walk_end_wait=90;
-        if(fight_on.load(std::memory_order_relaxed) && !fight_booted) {} // (the start-up is still on its way to the main menu)
+        if(fight_on.load(std::memory_order_relaxed) && !fight_booted.load(std::memory_order_relaxed)) {} // (the start-up is still on its way to the main menu)
         else if((walk_end_wait && --walk_end_wait==0) || ++auto_frames>2400) {
             auto_phase=false;
             if(fight_on.load(std::memory_order_relaxed)) { // the picture stays covered until the other side is here too (FightSession::onMet)
@@ -579,6 +590,7 @@ void framePad(std::uint8_t* rdram,R5900Context* c,PS2Runtime* runtime) {
     const std::uint32_t bits=walk_steps[walk_at].bits;
     write32(rdram,pad+0x144,read32(rdram,pad+0x144)|bits);
     write32(rdram,pad+0x134,read32(rdram,pad+0x134)|bits);
+    if(fight_on.load(std::memory_order_relaxed))walk_press.store(bits);
     if(++walk_at>=walk_steps.size()){walking=false;std::fprintf(stderr,"Online Mode: the walk is over\n");}
     else walk_wait=walk_steps[walk_at].wait;
 }

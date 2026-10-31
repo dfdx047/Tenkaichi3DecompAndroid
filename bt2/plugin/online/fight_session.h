@@ -37,6 +37,7 @@ public:
         std::function<std::uint32_t()> nowMs;   // (tests: another clock)
         std::function<void(unsigned)> sleepMs;  // (tests: another wait)
         bool strictDesync = false;              // a difference of the state checks ends the match (else it is only said)
+        std::function<std::uint16_t()> bootPress;   // the buttons of this field while the game starts up, on its way to the main menu
         unsigned meetTimeoutMs = 180000;        // how long a game that is at the character select waits for the other
     };
     enum class Phase {Booting, Meeting, Running, Ended};

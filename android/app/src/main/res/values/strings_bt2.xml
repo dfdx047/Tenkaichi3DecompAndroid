@@ -102,10 +102,9 @@
     <string name="bt2_render_thread">Renderer on its own thread</string>
     <string name="bt2_render_thread_text">Shares the graphics work with another processor core: more FPS and speed. Turn it off if the game stutters or shows errors.</string>
     <string name="bt2_online_banner_title">Online</string>
-    <string name="bt2_online_name">Dragon Net 2</string>
-    <string name="bt2_online_soon">Coming soon</string>
-    <string name="bt2_online_text">Online play for Budokai Tenkaichi 2 is not available yet.</string>
-    <string name="bt2_play_online">Play online</string>
+    <string name="bt2_online_name">Online Mode</string>
+    <string name="bt2_online_soon">In the game\'s menu</string>
+    <string name="bt2_online_text">Open the game and choose Online Mode on the main menu: create a room, join with a code or use quick match. Both players need the same version of Dragon Rage.</string>
     <string name="found_no_ps2_program">no PlayStation 2 program</string>
     <string name="bt2_engine_replaced">The BT2 engine now comes with the app, so the motor package you imported was deleted. Nothing else changes: your ISO and saves are as they were.</string>
 </resources>
