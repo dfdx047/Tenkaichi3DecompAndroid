@@ -85,6 +85,16 @@ int Port_AfsSpan(const char *rel, char *path, unsigned n, long *base, long *size
     return 1;
 }
 
+/* The same from another thread (the labels' thread, menu_labels.c): the first look at an archive reads its table. */
+int Port_AfsSpanShared(const char *rel, char *path, unsigned n, long *base, long *size) {
+    int r;
+    while (__sync_lock_test_and_set(&sLock, 1)) {
+    }
+    r = Port_AfsSpan(rel, path, n, base, size);
+    __sync_lock_release(&sLock);
+    return r;
+}
+
 /* Opens the host file the game gets for `rel` (its path under the data root) and says which it is: a stage or a
    song added from outside the disc (the stage / song list names the file), else the file under mods/, else the
    original. NULL if there is none; `path` then holds the last place looked at. This is the ONE place that

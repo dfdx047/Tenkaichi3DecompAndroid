@@ -28,6 +28,34 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** quem tinha `bt3_env.txt` antigo; BT4 e BT2 não recebem o argumento.
 - **Como testar de novo:** Settings > desligar Tag Team: o menu principal volta ao da 0.9.0, sem as telas do Tag.
 
+### 1.0.0 (este commit): carga rápida só nos modos do Tag Team
+- **Onde:** `port/src/tagteam_trace.c`, `Port_FastFileQueue`; `src/sys/file.c`, `File_UpdateRequests`
+- **O que e por quê:** `Port_FastFileQueue` valia em todo modo offline com o Tag ligado e usa o relógio de parede (até 2 ms por quadro): uma luta normal carregava em outro número de quadros e não repetia a gravação. Agora só vale com `TagTeam_Enabled` ou `TagTeam_Active`.
+- **Medido/provado:** `BT3_TAG_LEGACY_LOADING=1` no Cube, com Tag ligado: 11 quadros da gravação com 0 pixels contra a 0.9.0 (`cube_legacy_vk1x`). Sem a chave os quadros diferiam em mais de 220 mil pixels.
+- **O que pode quebrar:** luta normal volta a carregar na velocidade da 0.9.0; modo do Tag que entre sem `TagTeam_Enable`.
+- **Como testar de novo:** `bash port/tools/lab/series_base.sh` com Tag ligado e `ppmcmp.py` contra a referência.
+
+### 1.0.0 (este commit): Square no clash olha o lutador certo em partida normal
+- **Onde:** `port/src/gs/gs_input.c`, `clash_square`
+- **O que e por quê:** com o Tag ligado, `side` virava `TagTeam_ViewActor(socket)` mesmo em 1x1, e o convidado online (lutador 1) olhava o lutador 0.
+- **Medido/provado:** compila; teste em aparelho: ver a bateria em `docs/release-1.0.md`.
+- **O que pode quebrar:** atalho de Square no clash nos modos do Tag.
+- **Como testar de novo:** Dragon Net como convidado, forçar clash, apertar Square.
+
+### 1.0.0 (este commit): Tag Team desligado por padrão
+- **Onde:** `android/app/src/main/java/com/dfdx047/dragonrage/data/EngineSettings.kt`, `TAG_TEAM_DEFAULT`
+- **O que e por quê:** decisão do desenvolvedor, e é o que a ordem manda se os modos normais não ficarem idênticos. Ligado, o Tag mostra o aviso de SELECT no menu principal, muda a seleção de personagem e liga a thread de render (`gs_core.c`, `render_thread_wanted`). O jogador liga em Configurações; vale na próxima abertura.
+- **Medido/provado:** Cube, Vulkan 1x, gravação da luta, 160 quadros de 2430 a 7200 contra a 0.9.0. Tag ligado: difere de 2730 a 3120 (aviso de SELECT) e de 3600 a 5100 (seleção de personagem). Tag desligado (`BT3_TAG_TEAM=0`): 0 pixels, salvo 5700 a 5820, onde a própria 0.9.0 difere entre duas rodadas; contra a outra rodada da 0.9.0 (`cube_shot_vk1x_a`) os 11 quadros fixos dão 0 pixels. RP5, Vulkan 2x: ainda difere de 6450 a 7050, na demonstração da abertura em Namek, com Tag ligado e desligado: aberto, ver `docs/release-1.0.md`.
+- **O que pode quebrar:** quem usava o Tag nas versões de teste precisa ligar a chave; o Tag Team Online também depende dela.
+- **Como testar de novo:** instalação limpa: sem o aviso de SELECT no menu. Ligar a chave, reabrir: SELECT abre os modos.
+
+### 1.0.0 (este commit): mudanças de desenho do Tag só valem em batalha do Tag
+- **Onde:** `src/battle/eft_ae.c`, `EftVram_Init`, `EftVram_Reset`, `EftVram_Acquire`; `src/battle/stg_c.c`, blur; `src/sys/gfxm_b.c`, água
+- **O que e por quê:** o branch trocou para todas as lutas a área de VRAM dos efeitos, o CLAMP do blur e a água. Em luta normal isso dava diferenças esporádicas de desenho. Agora olham `TagTeam_Active()`, e a luta normal desenha como na 0.9.0.
+- **Medido/provado:** Cube: 0 pixels com o Tag desligado (entrada acima). No RP5 os números de 6450 a 7050 não mudaram com isto, então a diferença de lá vem de outro ponto.
+- **O que pode quebrar:** efeitos e água dos modos do Tag, que mantêm o caminho do mod.
+- **Como testar de novo:** batalha do Tag em cenário com água e com efeito de técnica; luta normal: comparar os 11 quadros fixos.
+
 ## Histórico: 0.9.0 para trás
 
 Nada a registrar: a árvore de `e1b9207` não tem `tag_link` nem `TagNet_`, e nenhum commit até ali cita o Tag Team; ele só entra depois da 0.9.0, com `cb026e37`.

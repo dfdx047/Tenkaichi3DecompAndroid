@@ -1734,7 +1734,7 @@ static int ml_read_one(MlCtx *c, const char *dataDir, int i, int anyDisc) {
     struct stat st;
     FILE *fp;
     uint8_t *data;
-    long size;
+    long size, span = -1;
     extern int PortGame_IsBT4(void);
     int bt4 = PortGame_IsBT4();
 
@@ -1743,12 +1743,30 @@ static int ml_read_one(MlCtx *c, const char *dataDir, int i, int anyDisc) {
        letters; the USA archive CRC is not the identity of this disc. */
     { extern int PortGame_Region(void); if (bt4 || PortGame_Region()) anyDisc = 1; }
     snprintf(path, sizeof(path), "%s/%s/%05d.bin", dataDir, bt4?"pzs4us1":"pzs3us1", kMlFiles[i].number);
-    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode) || (fp = fopen(path, "rb")) == NULL) {
+    fp = stat(path, &st) == 0 && S_ISREG(st.st_mode) ? fopen(path, "rb") : NULL;
+    if (fp == NULL) {
+        /* An install that keeps the archive whole (the Android app, plat_fcache.c) has no loose files: the Menu font offered
+           only "Original" and this said the game data was missing, on every phone (69 in the players' logs). */
+        extern int Port_AfsSpanShared(const char *rel, char *path, unsigned n, long *base, long *size);
+        char rel[64], afs[1024];
+        long base;
+        snprintf(rel, sizeof(rel), "%s/%05d.bin", bt4?"pzs4us1":"pzs3us1", kMlFiles[i].number);
+        if (Port_AfsSpanShared(rel, afs, (unsigned)sizeof(afs), &base, &span) && span > 0 && (fp = fopen(afs, "rb")) != NULL &&
+            fseek(fp, base, SEEK_SET) != 0) {
+            fclose(fp);
+            fp = NULL;
+        }
+    }
+    if (fp == NULL) {
         ml_fail(c, "%s is missing (the game data of the USA release, SLUS-21678, is needed)", path);
         return MENU_LABELS_OTHER_DISC;
     }
-    if (fseek(fp, 0, SEEK_END) != 0 || (size = ftell(fp)) < 0 || fseek(fp, 0, SEEK_SET) != 0 || size > 64 * 1024 * 1024 ||
-        (!anyDisc && (uint32_t)size != kMlFiles[i].size)) {
+    if (span >= 0) {
+        size = span;
+    } else if (fseek(fp, 0, SEEK_END) != 0 || (size = ftell(fp)) < 0 || fseek(fp, 0, SEEK_SET) != 0) {
+        size = -1;
+    }
+    if (size < 0 || size > 64 * 1024 * 1024 || (!anyDisc && (uint32_t)size != kMlFiles[i].size)) {
         fclose(fp);
         ml_fail(c, "%s is not the file of the USA release (SLUS-21678): its menu textures are numbered differently", path);
         return MENU_LABELS_OTHER_DISC;

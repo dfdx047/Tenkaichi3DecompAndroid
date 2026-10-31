@@ -10,6 +10,13 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** contagens dos relatórios antigos.
 - **Como testar de novo:** `python3 port/tools/lab/ppmcmp.py <pasta a> <pasta b>`: 0 pixels entre duas rodadas da mesma gravação.
 
+### 1.0.0 (este commit): chave de teste `BT3_TEST_CPUS`, ferramentas no repositório
+- **Onde:** `android/app/src/main/cpp/loader.c`; `port/bt4/host/bt4_main.cpp`; `port/tools/lab/`; `port/tools/change_map.py`; `docs/changes/regression-tests.md`
+- **O que e por quê:** o RP5 não tem root: para simular um aparelho com menos núcleos grandes, `BT3_TEST_CPUS=0-5` em `bt3_env.txt` prende as threads novas. Não limita frequência nem GPU. `change_map.py` gera `by-file.md`. `rec4.py` converte gravação de 2 para 4 portas: desde o Tag Team, `src/sys/pad.c` lê 4.
+- **Medido/provado:** compila; teste em aparelho: ver a bateria em `docs/release-1.0.md`.
+- **O que pode quebrar:** só vale com a chave; sem ela, nenhum efeito.
+- **Como testar de novo:** `BT3_TEST_CPUS=0-5`: o log diz "only cpus 0-5: done".
+
 ## Histórico: 0.9.0 para trás
 
 Linhas: lado novo do diff naquele commit; o arquivo de hoje tem outra numeração. Fontes: mensagens de commit, diffs, changelogs de cada tag,

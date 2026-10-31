@@ -17,6 +17,20 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** nada para o disco original, que nunca pede tamanho negativo.
 - **Como testar de novo:** abrir o jogo com uma imagem assim e ler a mensagem do último erro.
 
+### 1.0.0 (este commit): parada do Tag e modelo ilegível aparecem como último erro
+- **Onde:** `android/.../data/LastRun.kt`, `diagnose`
+- **O que e por quê:** `Native Tag Team stopped` e `cannot be read from the game data` terminam em `exit(2)` sem assinatura de crash, e o app fechava sem dizer nada.
+- **Medido/provado:** leitura de `diagnose`; compila; teste em aparelho: ver a bateria em `docs/release-1.0.md`.
+- **O que pode quebrar:** nada: só amplia o que se reconhece.
+- **Como testar de novo:** `BT3_TEST_READ_FAIL` na primeira carga de modelo: o app mostra o motivo ao voltar.
+
+### 1.0.0 (este commit): letreiros e Menu font leem o arquivo AFS inteiro
+- **Onde:** `port/src/gs/menu_labels.c`, `ml_read_one`; `port/src/plat_fcache.c`, `Port_AfsSpanShared`
+- **O que e por quê:** é a linha mais comum dos logs (69 aparelhos): o Android guarda o AFS inteiro e `ml_read_one` só procurava arquivos soltos. Dizia que faltavam dados do jogo, o Menu font só oferecia "Original" e o letreiro do item de PC não vinha do disco. A consulta usa o trinco porque a lista é feita em outra thread e `Port_AfsSpan` lê a tabela na primeira vez.
+- **Medido/provado:** compila; teste em aparelho: ver a bateria em `docs/release-1.0.md`. Com a gravação a lista é feita antes de desenhar, então o teste de pixels cobre o caso.
+- **O que pode quebrar:** início um pouco mais lento na primeira abertura, em thread própria; `labels.tsv` passa a existir em `gamedata/game-text`.
+- **Como testar de novo:** abrir o jogo com o log ligado: sem "no list of labels", e Settings > fonte de menu oferece mais que Original.
+
 ## Histórico: 0.9.0 para trás
 
 Linhas: lado novo do diff naquele commit; o arquivo de hoje tem outra numeração. Fontes: mensagens de commit, diffs, changelogs de cada tag e

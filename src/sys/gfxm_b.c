@@ -976,7 +976,7 @@ void GfxWater_DrawView(s32 split, s32 view) {
             cy = h * row / 5;
             gu[row][col] = cx << 4;
             gv[row][col] = cy << 4;
-            if (row != 0 && row != 5) {
+            if (row != 0 && row != (TagTeam_Active() ? 5 : 9)) { /* (a normal fight: as on the disc, picture for picture) */
                 fw = w;
                 fx = cx;
                 fy = cy;
@@ -1034,7 +1034,7 @@ void GfxWater_DrawView(s32 split, s32 view) {
     p[0] = GS_SET_SCISSOR(0,w-1,0,h-1);
     p[1] = GS_SCISSOR_1;
     p += 2;
-    p[0] = GS_SET_CLAMP(2,2,x0,x1-1,y0,y0+srcH-1);
+    p[0] = TagTeam_Active() ? GS_SET_CLAMP(2,2,x0,x1-1,y0,y0+srcH-1) : ((s64)x0 << 4) | ((u64)0x1C0 << 34) | ((s64)x1 << 14) | 0xA;
     p[1] = GS_CLAMP_1;
     p += 2;
     p[0] = 0x44;
@@ -1062,12 +1062,14 @@ void GfxWater_DrawView(s32 split, s32 view) {
         p[1] = (s64)(GFX_OFX + (((row + 1) * step) << 4)) | ((u64)(GFX_OFY+(h<<4)) << 16);
         p += 2;
     }
-    p[0] = GIF_TAG(5, 0, 1);
+    p[0] = GIF_TAG(TagTeam_Active() ? 5 : 4, 0, 1);
     p[1] = GIF_REG_AD;
     p += 2;
-    p[0] = 0;
-    p[1] = GS_TEXFLUSH;
-    p += 2;
+    if (TagTeam_Active()) {
+        p[0] = 0;
+        p[1] = GS_TEXFLUSH;
+        p += 2;
+    }
     p[0] = 0x264022A00;
     p[1] = GS_TEX0_1;
     p += 2;
@@ -1077,7 +1079,7 @@ void GfxWater_DrawView(s32 split, s32 view) {
     p[0] = GS_SET_SCISSOR(x0,x1-1,y0,y0+srcH-1);
     p[1] = GS_SCISSOR_1;
     p += 2;
-    p[0] = GS_SET_CLAMP(2,2,0,w-1,0,h-1);
+    p[0] = TagTeam_Active() ? GS_SET_CLAMP(2,2,0,w-1,0,h-1) : ((s64)w << 14) | ((s64)h << 34) | 0xA;
     p[1] = GS_CLAMP_1;
     p += 2;
     for (row = 0; row < 5; row++) {

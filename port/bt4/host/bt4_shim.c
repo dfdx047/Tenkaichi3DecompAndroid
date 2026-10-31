@@ -34,6 +34,8 @@ int Port_NetSpectating(void) { return 0; }
 int TagNet_Enabled(void) { return 0; }
 int TagNet_Role(void) { return 0; }
 int TagTeam_ViewActor(int player) { return player; }
+int TagTeam_Active(void) { return 0; }
+volatile int gPortInBackground;      /* (BT3: net_match.c, which holds its requests while the app is not on the screen; gs_gpu.c sets it) */
 void Port_TagTestCheck(int ok, int where) { (void)ok; (void)where; }
 
 /* ---- pacing: the recompiled game paces itself */

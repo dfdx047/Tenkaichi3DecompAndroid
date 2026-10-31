@@ -1,5 +1,6 @@
 #include "common.h"
 #include "battle/eft_ae.h"
+extern s32 TagTeam_Active(void);
 #include "sys/gfx_ot.h"
 
 /*
@@ -1552,7 +1553,7 @@ void EftVram_Init(void) {
     memset(gEftVram, 0, sizeof(EftAeVram));
     gEftVram->capacity=128;
     gEftVram->entry=Heap_Alloc(128*sizeof(EftAeVramEntry),0x20,0,2);
-    gEftVram->imageNext = 0x2A00;
+    gEftVram->imageNext = TagTeam_Active() ? 0x2A00 : 0x2B00;
     gEftVram->clutNext = 0x2A00;
 }
 
@@ -1601,6 +1602,17 @@ static EftAeVramEntry *EftVram_Acquire(EftAeTex *tex, s32 flags) {
     u32 i;
     s32 next = gEftVram->imageNext > gEftVram->clutNext ?
                gEftVram->imageNext : gEftVram->clutNext;
+    if (!TagTeam_Active()) { /* (a normal fight: as on the disc, picture for picture the same as without the mod) */
+        e = EftVram_NextEntry();
+        e->tex = tex;
+        e->flags = flags;
+        e->imageBlock = (flags & 1) ? gEftVram->imageNext : 0;
+        e->clutBlock = (flags & 2) ? gEftVram->clutNext : 0;
+        if (flags & 1) gEftVram->imageNext += tex->image->imageBlocks;
+        if (flags & 2) gEftVram->clutNext += tex->image->clutBlocks;
+        gEftVram->count++;
+        return e;
+    }
     for (i = 0; i < gEftVram->count; i++) {
         if (gEftVram->entry[i].tex->image == tex->image) {
             e = &gEftVram->entry[i];
@@ -1726,7 +1738,7 @@ void EftVram_UploadAll(void) {
 
 /* Empties the list and rewinds the cursors (from BtlScene_Draw, after the upload). */
 void EftVram_Reset(void) {
-    gEftVram->imageNext = 0x2A00;
+    gEftVram->imageNext = TagTeam_Active() ? 0x2A00 : 0x2B00;
     gEftVram->clutNext = 0x2A00;
     gEftVram->count = 0;
 }

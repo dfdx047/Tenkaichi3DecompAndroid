@@ -11,9 +11,12 @@ void Port_ModelRequestTrace(int actor,int kind,int chara,int costume,int variant
 }
 int Port_FastFileQueue(void) {
     extern int Port_NetSession(void);
+    extern int TagTeam_Enabled(void), TagTeam_Active(void);
     /* The legacy step cadence remains available for comparison, and for the
-       upstream network protocol whose simulation includes loader states. */
-    return getenv("BT3_TAG_TEAM") != NULL && !Port_NetSession() &&
+       upstream network protocol whose simulation includes loader states.
+       Only in the mod's own modes: it goes by the wall clock, and a normal fight must load in the same number of frames
+       as without the mod (a pad recording then replays it picture for picture). */
+    return (TagTeam_Enabled() || TagTeam_Active()) && getenv("BT3_TAG_TEAM") != NULL && !Port_NetSession() &&
            getenv("BT3_TAG_LEGACY_LOADING") == NULL;
 }
 void Port_LoadTrace(int point) {

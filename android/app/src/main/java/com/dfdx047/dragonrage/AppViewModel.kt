@@ -546,7 +546,11 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
         viewModelScope.launch {
             val r = runCatching { AppUpdates.check(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE) }
             val info = r.getOrNull()
-            r.exceptionOrNull()?.let { ActivityLog.warn("update", "check failed: ${it.javaClass.simpleName}: ${it.message}") }
+            r.exceptionOrNull()?.let {
+                // (no internet at start is the usual case on a handheld, not a problem to look at in a log: 16 phones reported it)
+                if (it is java.net.UnknownHostException) ActivityLog.info("update", "no internet: not checked")
+                else ActivityLog.warn("update", "check failed: ${it.javaClass.simpleName}: ${it.message}")
+            }
             if (info != null) ActivityLog.info("update", "available: ${info}")
             _update.value = if (info != null) UpdateState.Available(info) else UpdateState.Idle
             if (manual && info == null) say(str(if (r.isSuccess) R.string.update_none else R.string.update_check_failed))

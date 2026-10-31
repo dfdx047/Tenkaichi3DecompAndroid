@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -665,6 +666,19 @@ int SDL_main(int argc, char *argv[]) {
         }
         if (fp != NULL) {
             fclose(fp);
+        }
+    }
+    {   /* BT3_TEST_CPUS=0-5 (testing, bt3_env.txt): a phone with fewer big cores, on a device without root. Threads made from
+           here on inherit it. The clocks and the GPU stay as they are: only the system could limit those. */
+        const char *cpus = getenv("BT3_TEST_CPUS");
+        int first, last;
+        if (cpus != NULL && sscanf(cpus, "%d-%d", &first, &last) == 2 && first >= 0 && last >= first && last < CPU_SETSIZE) {
+            cpu_set_t set;
+            CPU_ZERO(&set);
+            for (; first <= last; first++) {
+                CPU_SET(first, &set);
+            }
+            say("test: only cpus %s: %s", cpus, sched_setaffinity(0, sizeof(set), &set) == 0 ? "done" : strerror(errno));
         }
     }
     {   /* an image that is not the unmodified USA release (the app's installer says so): the engine takes its data */

@@ -89,7 +89,7 @@ class EngineSettings(private val file: File) {
         const val FRAME_SKIP = "frame_skip"       // skip pictures instead of slowing down
         const val LITE = "dr_lite"                // Lite mode for weak GPUs: 1 on (render thread, glow chains at 0 left out, render areas on Mali)
         const val TAG_TEAM = "dr_tag_team"        // the Tag Team mod: 1 on (SELECT in the main menu opens its modes), 0 off
-        const val TAG_TEAM_DEFAULT = 1
+        const val TAG_TEAM_DEFAULT = 0
         const val GLARE = "glare"                 // the sky's glare: 0..200 %, the glow's until set
         const val GPU_TIER = "dr_gpu_tier"        // the GPU's tier the launcher's optimisations were made for (GpuProfiles)
         const val TOUCH = "dr_touch"              // on-screen controls: 0 off, 1 automatic, 2 always

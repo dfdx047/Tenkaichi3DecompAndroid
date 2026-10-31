@@ -1029,8 +1029,9 @@ static void clash_square(int socket, unsigned *btn, unsigned char *lx, unsigned 
     int side = Port_NetActive() ? Port_NetMe() : socket, in = 0, down = (*btn & B_SQUARE) != 0, extra = 0;
     void *chr;
 
-    if (getenv("BT3_TAG_TEAM")) {
-        extern int TagTeam_ViewActor(int),TagNet_Enabled(void),TagNet_Role(void);
+    extern int TagTeam_Active(void),TagNet_Enabled(void);
+    if (getenv("BT3_TAG_TEAM") && (TagTeam_Active() || TagNet_Enabled())) { /* (a normal match keeps Port_NetMe: its guest is fighter 1) */
+        extern int TagTeam_ViewActor(int),TagNet_Role(void);
         int player=TagNet_Enabled()?TagNet_Role():socket;
         if(TagNet_Enabled() && (player<0 || player>=10))return; /* Free camera input never assists a clash. */
         side=TagTeam_ViewActor(player);

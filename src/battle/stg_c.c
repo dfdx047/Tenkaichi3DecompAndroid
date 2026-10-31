@@ -1064,17 +1064,21 @@ void StgBlur_Draw(s32 split, s32 view, Mtx44 *viewMtx) {
         Mtx_MulVec4(&c, &m, &blur->center);
     }
     StgBlur_BeginDraw(&d, xOffset, x1, width, srcH, half, h);
-    d.p->d[0]=GIF_TAG(1,0,1); d.p->d[1]=GIF_REG_AD; d.p++;
-    d.p->d[0]=GS_SET_CLAMP(2,2,xOffset,x1-1,yOffset,yOffset+srcH-1);
-    d.p->d[1]=GS_CLAMP_1; d.p++;
+    if (TagTeam_Active()) { /* (a normal fight: as on the disc) */
+        d.p->d[0]=GIF_TAG(1,0,1); d.p->d[1]=GIF_REG_AD; d.p++;
+        d.p->d[0]=GS_SET_CLAMP(2,2,xOffset,x1-1,yOffset,yOffset+srcH-1);
+        d.p->d[1]=GS_CLAMP_1; d.p++;
+    }
     {
         u32 tbp[2] = { 0x2A00, 0x2D80 }; /* the two work buffers as textures ... */
         u32 fbp[2] = { 0x150, 0x16C };   /* ... and as frame buffers */
 
         Dma_PutTexStrips(&d.p, 0, 0, half, h, 0, 0, xOffset, yOffset, u1, yOffset+srcH, 0, 0, 0x80808080, 0);
-        d.p->d[0]=GIF_TAG(1,0,1); d.p->d[1]=GIF_REG_AD; d.p++;
-        d.p->d[0]=GS_SET_CLAMP(2,2,0,half-1,0,h-1);
-        d.p->d[1]=GS_CLAMP_1; d.p++;
+        if (TagTeam_Active()) {
+            d.p->d[0]=GIF_TAG(1,0,1); d.p->d[1]=GIF_REG_AD; d.p++;
+            d.p->d[0]=GS_SET_CLAMP(2,2,0,half-1,0,h-1);
+            d.p->d[1]=GS_CLAMP_1; d.p++;
+        }
         f = 1.0f;
         for (i = 0; i < blur->passes; i++, f += f) {
             s32 grow;

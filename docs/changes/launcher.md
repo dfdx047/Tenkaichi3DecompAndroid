@@ -17,6 +17,13 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** nada de jogo; `licenses.txt` é gerado e fica no `.gitignore`. Se faltar um arquivo de licença, `android.py` falha na compilação.
 - **Como testar de novo:** Settings > Sobre > Licenças: a lista abre e rola.
 
+### 1.0.0 (este commit): verificação de atualização sem internet não é mais aviso
+- **Onde:** `android/app/src/main/java/com/dfdx047/dragonrage/AppViewModel.kt`, `checkForUpdate`
+- **O que e por quê:** `UnknownHostException` aparecia como falha em 16 aparelhos dos logs; portátil sem Wi-Fi é o caso normal. Agora é uma linha de informação. A verificação manual continua dizendo que falhou.
+- **Medido/provado:** compila; teste em aparelho: ver a bateria em `docs/release-1.0.md`.
+- **O que pode quebrar:** nada além do nível da linha no log.
+- **Como testar de novo:** modo avião, abrir o app: a linha no log é de informação.
+
 ## Histórico: 0.9.0 para trás
 
 Linhas: lado novo do diff naquele commit; o arquivo de hoje tem outra numeração. Fontes: mensagens de commit, diffs, changelogs de cada tag,

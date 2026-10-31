@@ -9,6 +9,7 @@
 //   - the picture: this thread (SDL's, the app's main thread for SDL) reads the ring and hands it to Dragon Rage's
 //     GS, port/src/gs, exactly the renderer of Budokai Tenkaichi 3 (Vulkan or OpenGL ES, its settings, texture
 //     packs, the on-screen controller and the gamepads of gs_input.c), and sends the pad back through the ring.
+#include <sched.h>
 #include <SDL3/SDL.h>
 #include <android/log.h>
 #include <dlfcn.h>
@@ -900,6 +901,18 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char *a
             }
         }
         std::fclose(fp);
+    }
+    if (const char *cpus = std::getenv("BT3_TEST_CPUS"))
+    {   // BT3_TEST_CPUS=0-5 (testing): a phone with fewer big cores, on a device without root (libbt3's loader does the same)
+        int first, last;
+        if (std::sscanf(cpus, "%d-%d", &first, &last) == 2 && first >= 0 && last >= first && last < CPU_SETSIZE)
+        {
+            cpu_set_t set;
+            CPU_ZERO(&set);
+            for (; first <= last; first++)
+                CPU_SET(first, &set);
+            std::fprintf(stderr, "bt4: test: only cpus %s: %d\n", cpus, sched_setaffinity(0, sizeof(set), &set));
+        }
     }
     // (the image comes open, as /proc/self/fd/<n>: opening it again by its path may be refused, see ps2xImageFd)
     const int imageFd = ps2xImageFd(g_image);
