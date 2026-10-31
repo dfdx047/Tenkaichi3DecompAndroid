@@ -96,7 +96,8 @@ static struct {
     SDL_AtomicInt relayOn; /* the room's relay at the service (a WebSocket, the app's RelaySocket) is open */
     Uint64 lastPunch;
 } L; /* (no initialiser: one would put the 16 MB of buffers in the file) */
-__attribute__((constructor)) static void link_sock_init(void) { L.sock = -1; }
+/* (volatile: the compiler runs a plain constructor at build time and writes the result into L, the same 16 MB) */
+__attribute__((constructor)) static void link_sock_init(void) { *(volatile int *)&L.sock = -1; }
 
 /* ---- small things ---- */
 

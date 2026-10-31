@@ -27,6 +27,14 @@ volatile int gPortNetWindowClose;
 int gPortMusicPercent = 100, gPortSePercent = 100, gPortVoicePercent = 100, gPortStagePercent = 100;
 unsigned char gPad[0x400];         /* (BT3: the game's pad block; only a test of gs_input.c reads it) */
 unsigned long long gPortNetWaitNs; /* (BT3 online: the time a frame waited for the other player; gs_core.c's report) */
+unsigned char gNativePad[0x400];   /* (BT3: the game's pad block; only gs_input.c's BT3_STICK_TEST reads it) */
+
+/* ---- the Tag Team mod and the spectators of BT3's online, which gs_input.c asks about: no such thing here */
+int Port_NetSpectating(void) { return 0; }
+int TagNet_Enabled(void) { return 0; }
+int TagNet_Role(void) { return 0; }
+int TagTeam_ViewActor(int player) { return player; }
+void Port_TagTestCheck(int ok, int where) { (void)ok; (void)where; }
 
 /* ---- pacing: the recompiled game paces itself */
 unsigned long long Port_BlankNs(void) { return 16683350ull; }
