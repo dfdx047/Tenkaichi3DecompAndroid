@@ -9,3 +9,7 @@ Regras e formato: [README](README.md).
 - **Medido/provado:** compila; teste em aparelho: ver a bateria em `docs/release-1.0.md`.
 - **O que pode quebrar:** quem tinha a cópia antiga em `data/BT2.iso` precisa escolher a ISO de novo (a cópia é apagada na importação; sem marcador, o motor ainda abre a antiga). Fork de CI sem `libbt2.so` mostra a mensagem de motor ausente.
 - **Como testar de novo:** instalação limpa: importar a ISO por MediaStore e por pasta, abrir, lutar, salvar, fechar, reiniciar o aparelho e abrir. Dar uma ISO de BT3: a recusa diz o serial achado.
+
+## Histórico: 0.9.0 para trás
+
+Nada a registrar: `git log e1b9207 -- bt2` não traz nenhum commit; o BT2 só entra depois da 0.9.0, com `85cdb232`.

@@ -27,3 +27,7 @@ Regras e formato: [README](README.md).
 - **Medido/provado:** compila; teste em aparelho: ver a bateria em `docs/release-1.0.md`.
 - **O que pode quebrar:** quem tinha `bt3_env.txt` antigo; BT4 e BT2 não recebem o argumento.
 - **Como testar de novo:** Settings > desligar Tag Team: o menu principal volta ao da 0.9.0, sem as telas do Tag.
+
+## Histórico: 0.9.0 para trás
+
+Nada a registrar: a árvore de `e1b9207` não tem `tag_link` nem `TagNet_`, e nenhum commit até ali cita o Tag Team; ele só entra depois da 0.9.0, com `cb026e37`.
