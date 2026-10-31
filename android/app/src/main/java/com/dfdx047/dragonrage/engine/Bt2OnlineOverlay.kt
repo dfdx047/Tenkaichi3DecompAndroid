@@ -43,7 +43,7 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
     private val who = UUID.randomUUID().toString().replace("-", "").take(16)
 
     private val box = EditText(activity).apply {
-        hint = "Seu nome online"
+        hint = Bt2Online.tr("Your online name", "Seu nome online", "Tu nombre en línea")
         setSingleLine()
         // (what the service takes: printable ASCII, 16 letters)
         filters = arrayOf(InputFilter { s, a, b, _, _, _ -> s.subSequence(a, b).filter { it.code in 0x20..0x7e } }, InputFilter.LengthFilter(MAX_NAME))
@@ -78,7 +78,7 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
             val text = code.text.toString()
             if (text.isNotEmpty()) {
                 (activity.getSystemService(Activity.CLIPBOARD_SERVICE) as? ClipboardManager)?.setPrimaryClip(ClipData.newPlainText("sala", text))
-                Toast.makeText(activity, "Código copiado", Toast.LENGTH_SHORT).show()
+                Toast.makeText(activity, Bt2Online.tr("Code copied", "Código copiado", "Código copiado"), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -205,9 +205,9 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
         val s = Session(kind).also { session = it }
         showPanel()
         when (kind) {
-            1 -> say("Criando a sala…", spinner = true)
-            2 -> say("Entrar em uma sala", detail = "Digite o código que seu amigo passou.")
-            else -> say("Procurando um oponente…", detail = "Quem estiver procurando com o mesmo jogo aparece aqui.", spinner = true)
+            1 -> say(Bt2Online.tr("Creating the room…", "Criando a sala…", "Creando la sala…"), spinner = true)
+            2 -> say(Bt2Online.tr("Join a room", "Entrar em uma sala", "Entrar en una sala"), detail = Bt2Online.tr("Type the code your friend gave you.", "Digite o código que seu amigo passou.", "Escribe el código que te dio tu amigo."))
+            else -> say(Bt2Online.tr("Looking for an opponent…", "Procurando um oponente…", "Buscando un oponente…"), detail = Bt2Online.tr("Whoever is looking with the same game shows up here.", "Quem estiver procurando com o mesmo jogo aparece aqui.", "Quien esté buscando con el mismo juego aparece aquí."), spinner = true)
         }
         if (kind == 2) {
             ask(s)
@@ -219,7 +219,7 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
     /** The room code, asked on the screen: what the player types goes to the service. */
     private fun ask(s: Session) {
         val edit = EditText(activity).apply {
-            hint = "Código da sala"
+            hint = Bt2Online.tr("Room code", "Código da sala", "Código de la sala")
             setSingleLine()
             filters = arrayOf(InputFilter.AllCaps(), InputFilter.LengthFilter(8))
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
@@ -232,12 +232,12 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
             val typed = edit.text.toString().trim()
             asking = null
             if (typed.isEmpty() || s.cancelled) return back()
-            say("Entrando na sala $typed…", spinner = true)
+            say(Bt2Online.tr("Joining room $typed…", "Entrando na sala $typed…", "Entrando en la sala $typed…"), spinner = true)
             Thread { runCatching { work(s, typed) } }.start()
         }
-        asking = AlertDialog.Builder(activity).setTitle("Entrar em uma sala").setView(edit)
-            .setPositiveButton("Entrar") { _, _ -> go() }
-            .setNegativeButton("Cancelar") { _, _ -> asking = null; back() }
+        asking = AlertDialog.Builder(activity).setTitle(Bt2Online.tr("Join a room", "Entrar em uma sala", "Entrar en una sala")).setView(edit)
+            .setPositiveButton(Bt2Online.tr("Join", "Entrar", "Entrar")) { _, _ -> go() }
+            .setNegativeButton(Bt2Online.tr("Cancel", "Cancelar", "Cancelar")) { _, _ -> asking = null; back() }
             .setOnCancelListener { asking = null; back() }
             .create().also {
                 it.show()
@@ -288,7 +288,7 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
         val name = name() ?: ""
         val mine = localAddresses(s)
         if (mine == null) {
-            if (!s.cancelled) say("O jogo não conseguiu abrir a conexão de rede.", detail = "Confira se o celular está com internet e aperte △ para voltar.", error = true)
+            if (!s.cancelled) say(Bt2Online.tr("The game could not open its network connection.", "O jogo não conseguiu abrir a conexão de rede.", "El juego no pudo abrir la conexión de red."), detail = Bt2Online.tr("Check that the device has internet and press △ to go back.", "Confira se o celular está com internet e aperte △ para voltar.", "Comprueba que el equipo tiene internet y pulsa △ para volver."), error = true)
             return
         }
         try {
@@ -301,7 +301,7 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
             if (s.cancelled) return
             first.peer?.let { return connected(s, it) }
             giveRelayLogin(first)
-            if (s.kind == 1) say("Sala criada!", code = first.code, detail = "Passe este código para um amigo (toque para copiar).\nAguardando ele entrar…", spinner = true)
+            if (s.kind == 1) say(Bt2Online.tr("Room created!", "Sala criada!", "¡Sala creada!"), code = first.code, detail = Bt2Online.tr("Give this code to a friend (tap to copy).\nWaiting for them to join…", "Passe este código para um amigo (toque para copiar).\nAguardando ele entrar…", "Pasa este código a un amigo (toca para copiar).\nEsperando a que entre…"), spinner = true)
             var room = first
             var since = System.currentTimeMillis()
             var lost = 0
@@ -334,7 +334,7 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
                 }
             }
         } catch (e: Bt2Online.Failure) {
-            if (!s.cancelled) say(Bt2Online.explain(e.why), detail = "Aperte △ para voltar.", error = true)
+            if (!s.cancelled) say(Bt2Online.explain(e.why), detail = Bt2Online.tr("Press △ to go back.", "Aperte △ para voltar.", "Pulsa △ para volver."), error = true)
         }
     }
 
@@ -345,7 +345,7 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
         val code = s.room?.code ?: ""
         putFile("online_role", if (s.room?.hosting == true) "host\n" else "guest\n")   // (the match's engine needs it: who offers the settings)
         putFile("online_peer", (listOf(peer.name, code) + peer.addrs).joinToString("\n") + "\n")
-        say("Conectando com ${peer.name}…", spinner = true)
+        say(Bt2Online.tr("Connecting to ${peer.name}…", "Conectando com ${peer.name}…", "Conectando con ${peer.name}…"), spinner = true)
     }
 
     /** What the game says of the line to the other player (15 saying hello, 14 up with its round trip, 16 no answer). */
@@ -356,15 +356,15 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
         if (s.shown == text) return
         s.shown = text
         when (state) {
-            15 -> say("Conectando com ${s.peerName}…", spinner = true)
-            14 -> say("Conectado!", detail = "Oponente: ${s.peerName}" + if (rtt >= 0) "\nAtraso: $rtt ms" else "")
-            else -> say("Não foi possível conectar com ${s.peerName}.", detail = failureReason() + "\nAperte △ para voltar.", error = true)
+            15 -> say(Bt2Online.tr("Connecting to ${s.peerName}…", "Conectando com ${s.peerName}…", "Conectando con ${s.peerName}…"), spinner = true)
+            14 -> say(Bt2Online.tr("Connected!", "Conectado!", "¡Conectado!"), detail = Bt2Online.tr("Opponent: ${s.peerName}", "Oponente: ${s.peerName}", "Oponente: ${s.peerName}") + if (rtt >= 0) Bt2Online.tr("\nDelay: $rtt ms", "\nAtraso: $rtt ms", "\nRetraso: $rtt ms") else "")
+            else -> say(Bt2Online.tr("Could not connect to ${s.peerName}.", "Não foi possível conectar com ${s.peerName}.", "No se pudo conectar con ${s.peerName}."), detail = failureReason() + Bt2Online.tr("\nPress △ to go back.", "\nAperte △ para voltar.", "\nPulsa △ para volver."), error = true)
         }
     }
 
     /** Why the line could not be made, as far as the game can tell (online_nat: what its own router looked like). */
     private fun failureReason(): String = when (runCatching { File(dir, "online_nat").readText().trim() }.getOrNull()) {
-        else -> if (peerSymmetric()) "A rede da outra pessoa (provavelmente dados móveis) não aceita conexão direta. Peça para ela tentar no Wi-Fi." else otherReason()
+        else -> if (peerSymmetric()) Bt2Online.tr("The other player's network (probably mobile data) does not take direct connections. Ask them to try on Wi-Fi.", "A rede da outra pessoa (provavelmente dados móveis) não aceita conexão direta. Peça para ela tentar no Wi-Fi.", "La red de la otra persona (probablemente datos móviles) no acepta conexión directa. Pídele que pruebe con Wi-Fi.") else otherReason()
     }
 
     /** The other player's router gives one port per destination (the same address with different ports among what he told the service). */
@@ -375,9 +375,9 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
     }
 
     private fun otherReason(): String = when (runCatching { File(dir, "online_nat").readText().trim() }.getOrNull()) {
-        "symmetric" -> "A sua rede (provavelmente os dados móveis da operadora) não aceita conexão direta com outra rede. Tente no Wi-Fi."
-        "no-address" -> "A outra pessoa não conseguiu descobrir o endereço dela na internet. Peça para ela trocar de rede (Wi-Fi ou dados) e tentar de novo."
-        else -> "Pode ser a rede de um dos dois (alguns Wi-Fi e dados móveis bloqueiam conexão direta). Tente trocar de Wi-Fi para dados, ou o contrário."
+        "symmetric" -> Bt2Online.tr("Your network (probably the carrier's mobile data) does not take direct connections with another network. Try on Wi-Fi.", "A sua rede (provavelmente os dados móveis da operadora) não aceita conexão direta com outra rede. Tente no Wi-Fi.", "Tu red (probablemente los datos móviles de la operadora) no acepta conexión directa con otra red. Prueba con Wi-Fi.")
+        "no-address" -> Bt2Online.tr("The other player could not find their address on the internet. Ask them to change network (Wi-Fi or data) and try again.", "A outra pessoa não conseguiu descobrir o endereço dela na internet. Peça para ela trocar de rede (Wi-Fi ou dados) e tentar de novo.", "La otra persona no pudo averiguar su dirección en internet. Pídele que cambie de red (Wi-Fi o datos) y lo intente de nuevo.")
+        else -> Bt2Online.tr("It may be either player's network (some Wi-Fi and mobile data block direct connections). Try changing from Wi-Fi to data, or the other way.", "Pode ser a rede de um dos dois (alguns Wi-Fi e dados móveis bloqueiam conexão direta). Tente trocar de Wi-Fi para dados, ou o contrário.", "Puede ser la red de cualquiera de los dos (algunos Wi-Fi y datos móviles bloquean la conexión directa). Prueba a cambiar de Wi-Fi a datos, o al revés.")
     }
 
     private fun endSession() {

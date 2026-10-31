@@ -2,6 +2,19 @@
 
 Regras e formato: [README](README.md).
 
+### 1.0.0 85cdb232: `origin/Regulus-optimize` (BT2, Dragon Net Online, PC 0.1.38.9)
+- **Onde:** pais `e1b9207a` (0.9.0) e `e84c359f`. `--no-ff`, sem squash nem rebase: os commits mantêm os autores.
+- **O que e por quê:** traz o BT2, o Dragon Net Online e o PC até 0.1.38.9. `git diff-tree --cc` não lista nenhum arquivo: nenhum conflito precisou de escolha nova no próprio merge, porque o branch já tinha mesclado a 0.9.0 (`33e4bbee`).
+- **Medido/provado:** build dos três motores e, depois do merge do Tag Team, a comparação da bateria. Medir antes dessa segunda mescla não foi feito em separado.
+- **O que pode quebrar:** o que a revisão listou: relay em socket de partida em curso, launcher sem controle (corrigidos); ver `docs/release-1.0.md`.
+- **Como testar de novo:** [`regression-tests.md`](regression-tests.md).
+
+### 1.0.0 cb026e37: `tag-team-android` (Tag Team Mod, PC 0.1.39)
+- **Onde:** pais `85cdb232` e `18dad4b3`. `git diff-tree --cc` lista `android/.../engine/GameActivity.kt`, `android/.../touch/TouchPadView.kt` e `src/menu/port_tbo.c` como diferentes dos dois pais; só `port_tbo.c` (`Tb_Vanilla`) mostra um trecho próprio, e `Tb_Vanilla` foi corrigido depois (`online.md`).
+- **O que e por quê:** traz o Tag Team Mod e o PC 0.1.39 (lobbies, torneios, entrar por endereço). Regra da ordem de serviço: jogo e PC como no PC 0.1.39; Android como na 0.9.0. O `codespace-*` não foi mesclado.
+- **Medido/provado:** o Tag Team ligado por padrão diferia da 0.9.0 nos menus (dica de SELECT, grade de personagens), então ficou desligado por padrão, a pedido do desenvolvedor. Desligado: 0 pixels nos 11 quadros do Cube 1x e nos 5 primeiros do RP5 2x; a demo da tela de título difere no RP5 ([`tag-team.md`](tag-team.md)).
+- **O que pode quebrar:** tudo que o mod toca em código comum; os guardas estão em [`tag-team.md`](tag-team.md). A mudança de `src/sys/pad.c` para 4 portas invalida gravações antigas (`rec4.py`).
+- **Como testar de novo:** [`regression-tests.md`](regression-tests.md).
 
 ## Histórico: 0.9.0 para trás
 
@@ -13,7 +26,7 @@ no segundo pai de `e1b9207a`, por isso ela não aparece na lista. Abaixo, primei
 
 A versão do PC de cada commit sem pai vem de `PORT_RELEASE` em `port/src/port_release.h` (desde a 0.6.0), do changelog e do
 menor `git diff --shortstat <tag> <commit> -- src port/src` entre as tags `v0.1.*`, conferido pela data. As mesclas depois
-da 0.9.0 (`85cdb232`, `cb026e37`) ficam fora deste histórico. Linhas: lado novo do diff naquele commit; o arquivo de hoje tem outra numeração.
+da 0.9.0 (`85cdb232`, `cb026e37`) estão acima, fora deste histórico. Linhas: lado novo do diff naquele commit; o arquivo de hoje tem outra numeração.
 
 ### 0.9.0 01224d08: PC 0.1.38.7, a primeira mescla com dois pais
 - **Onde:** pais `eefe5d9b` e `52b675c3` (`v0.1.38.7`). O relatório lista 10 arquivos com conflito: `gs_core.c`, `gs_draw.c` (12 trechos), `gs_draw.h`, `gs_gl.c`, `gs_gpu.c`, `gs_input.c`, `gs_texpack.h`, `net.c`, `snd_adx.c`, `ui.cpp`. `git diff-tree --cc` mostra 18 com resultado diferente dos dois pais: esses e mais `gs_texpack.c`, `shaders/gs.frag`, `ui.h`, `plat_crash.c`, `plat_stub.c`, `tools/android.py`, `tools/undefined.py`, `src/battle/eft_c.c`. `port_release.h` vai a 138.

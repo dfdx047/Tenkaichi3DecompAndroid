@@ -34,6 +34,13 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** nomes vêm do token do servidor e são curtos. Só um nome anormal passa a falhar.
 - **Como testar de novo:** BT2 online com relay, nome normal: entra como antes.
 
+### 1.0.0 (este commit): BT2 online nos três idiomas
+- **Onde:** `android/app/src/main/java/com/dfdx047/dragonrage/data/Bt2Online.kt`, `tr` e `explain`; `engine/Bt2OnlineOverlay.kt`, todos os textos da tela
+- **O que e por quê:** as telas da sala, da busca e os erros do BT2 online só existiam em português. Agora seguem o idioma do aparelho: inglês, português ou espanhol, com inglês para os demais.
+- **Medido/provado:** compila; `grep` sem texto fixo restante na tela. Não vi as telas em aparelho nos três idiomas.
+- **O que pode quebrar:** texto longo pode não caber no painel, que ocupa 46% da largura.
+- **Como testar de novo:** trocar o idioma do aparelho e abrir Online Mode no BT2: nome, criar sala, entrar com código errado.
+
 ## Histórico: 0.9.0 para trás
 
 Linhas: lado novo do diff naquele commit; o arquivo de hoje tem outra numeração. Fontes: mensagens de commit, diffs, changelogs de cada tag,

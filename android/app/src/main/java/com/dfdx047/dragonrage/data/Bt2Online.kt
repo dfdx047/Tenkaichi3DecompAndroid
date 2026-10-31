@@ -35,7 +35,7 @@ object Bt2Online {
             ?: SERVICE
 
     /** The name as the service takes it: printable ASCII, 16 letters at most ("Player" when nothing is left). */
-    fun cleanName(name: String): String = name.filter { it.code in 0x20..0x7e }.trim().take(16).ifEmpty { "Jogador" }
+    fun cleanName(name: String): String = name.filter { it.code in 0x20..0x7e }.trim().take(16).ifEmpty { tr("Player", "Jogador", "Jugador") }
 
     fun host(base: String, name: String, mine: List<String>): Room {
         val r = post(base, "/v1/host", JSONObject().put("v", VERSION).put("name", cleanName(name)).put("addrs", addrs(mine)))
@@ -73,21 +73,28 @@ object Bt2Online {
         runCatching { post(base, "/v1/leave", JSONObject().put("code", room.code).put("key", room.key)) }
     }
 
-    /** What the service said, in words for the player. */
-    fun explain(why: String): String = when (why) {
-        "version" -> "O jogo da outra pessoa é de outra versão."
-        "no room" -> "Sala não encontrada. Confira o código."
-        "full" -> "A sala já está cheia."
-        "busy" -> "Muitas tentativas. Espere um pouco."
-        "old" -> "Este jogo está desatualizado."
-        "build key" -> "O servidor só aceita versões oficiais do jogo."
-        "bad request" -> "O servidor não aceitou o pedido."
-        "network" -> "Sem conexão com o servidor."
-        "limit" -> "Servidor ocupado, tente mais tarde."
-        else -> "O servidor respondeu: $why"
+    /** A line of these screens in the device's language (English where it is neither of the other two). */
+    fun tr(en: String, pt: String, es: String): String = when (java.util.Locale.getDefault().language) {
+        "pt" -> pt
+        "es" -> es
+        else -> en
     }
 
-    private fun peer(o: JSONObject) = Peer(o.optString("name", "Jogador"), (0 until (o.optJSONArray("addrs")?.length() ?: 0)).map { o.getJSONArray("addrs").getString(it) })
+    /** What the service said, in words for the player. */
+    fun explain(why: String): String = when (why) {
+        "version" -> tr("The other player's game is another version.", "O jogo da outra pessoa é de outra versão.", "El juego de la otra persona es de otra versión.")
+        "no room" -> tr("Room not found. Check the code.", "Sala não encontrada. Confira o código.", "Sala no encontrada. Comprueba el código.")
+        "full" -> tr("The room is already full.", "A sala já está cheia.", "La sala ya está llena.")
+        "busy" -> tr("Too many tries. Wait a little.", "Muitas tentativas. Espere um pouco.", "Demasiados intentos. Espera un poco.")
+        "old" -> tr("This game is out of date.", "Este jogo está desatualizado.", "Este juego está desactualizado.")
+        "build key" -> tr("The server only takes official versions of the game.", "O servidor só aceita versões oficiais do jogo.", "El servidor solo acepta versiones oficiales del juego.")
+        "bad request" -> tr("The server did not take the request.", "O servidor não aceitou o pedido.", "El servidor no aceptó la petición.")
+        "network" -> tr("No connection to the server.", "Sem conexão com o servidor.", "Sin conexión con el servidor.")
+        "limit" -> tr("Server busy, try again later.", "Servidor ocupado, tente mais tarde.", "Servidor ocupado, inténtalo más tarde.")
+        else -> tr("The server said: $why", "O servidor respondeu: $why", "El servidor respondió: $why")
+    }
+
+    private fun peer(o: JSONObject) = Peer(o.optString("name", tr("Player", "Jogador", "Jugador")), (0 until (o.optJSONArray("addrs")?.length() ?: 0)).map { o.getJSONArray("addrs").getString(it) })
 
     /** This phone's addresses as the service wants them ("ip:port", four at most): the ones the game's socket reported (the
      *  line to the other game is that socket's: bt2/plugin/online/link.h), else the phone's own with a port of no use. */

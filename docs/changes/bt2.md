@@ -20,7 +20,7 @@ Regras e formato: [README](README.md).
 ### 1.0.0 (este commit): escala de saída abaixo de 100% enche a tela
 - **Onde:** `android/app/src/main/java/com/dfdx047/dragonrage/engine/Bt2GameActivity.kt`, `applyOutputScale`
 - **O que e por quê:** o SDL adiciona a view com wrap_content, então `setFixedSize` encolhia a própria view: a imagem ficava no canto, sem ampliar. Cada `onResume` ainda calculava sobre a largura já reduzida. O Cube cai nisso na primeira abertura, porque `lowEndPreset` escolhe 75%. A view agora fica em tela cheia.
-- **Medido/provado:** RP5 a 75%: buffer de 1440x810 enchendo a tela de 1920x1080; antes, no canto, com a camada em 1440x810. No Cube o defeito foi visto a 75% e sumiu a 100%; a 75% com a correção ainda falta conferir.
+- **Medido/provado:** RP5 a 75%: buffer de 1440x810 enchendo a tela de 1920x1080; antes, no canto, com a camada em 1440x810. No Cube, a 75% com a correção (APK de teste 7): luta e menus em tela cheia.
 - **O que pode quebrar:** o toque que passa pelo SDL usa o tamanho do buffer; os controles na tela são uma camada à parte.
 - **Como testar de novo:** BT2 no menu, escala de saída 75 e 50: imagem cheia, e continua cheia depois de sair e voltar ao app.
 

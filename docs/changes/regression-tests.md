@@ -22,6 +22,28 @@ A referência de cada aparelho só vale para ele e para a mesma resolução.
 `bash compare_env.sh <versão> <aparelho> <escala> <nome> "<env>"` faz a mesma rodada com chaves de `bt3_env.txt`:
 `BT3_TAG_TEAM=0` para comparar sem o Tag Team, `BT3_TEST_CPUS=0-5` para o RP5 como aparelho de 2 núcleos grandes.
 
+## Tempo dos testes
+
+Combinado com o desenvolvedor na 1.0: só os 11 quadros fixos (5700 a 7200, de 150 em 150) em `compare_env.sh`, sem a comparação
+densa (`dense.sh` fica para caçar uma diferença). Uma resolução por aparelho: Cube 1x, RP5 2x. Repetir medições só no que mudou.
+A bateria completa roda uma vez, no build final. A demo da tela de título não conta como teste de jogo.
+
+Limite dos 11 quadros: eles caem no fim da gravação, depois da luta. Menus e seleção de personagem só aparecem na rodada densa, feita
+uma vez na 1.0 e obrigatória de novo se menu, fontes ou Tag Team mudarem.
+
+## BT2
+
+`bash bt2run.sh <rp5|cube> <segundos> <quadros> "<script>"` usa `pad_script` em `bt2/user/android` e conta o script em campos (cerca
+de 60/s): nada de esperar pela tela. `bt2/tools/gate/pad-fight.txt` é a luta completa (boot, New Game sem salvar, Duel). Passa com
+100% de velocidade, 30 fps e 0 travadas no contador do `sample = 1`. Tire `pad_script` e `sample` ao terminar: enquanto existirem, o
+jogo ignora os botões de verdade.
+
+## Online
+
+`bash online10.sh <versão> [segundos]` faz uma sessão direta RP5 (host) e Cube, com botões aleatórios (`net_rand.tab`, de
+`nettable.py`). Passa sem nenhuma linha "the two games differ" nos dois logs. O script libera `restricted_networking_mode` no Cube e o
+põe de volta em 1.
+
 ## BT4
 
 `bash series_bt4_rp5.sh <versão>` e `bash series_bt4_cube.sh <versão>` rodam ARMSX2 e renderizador DR, no Cube também no perfil
