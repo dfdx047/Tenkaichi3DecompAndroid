@@ -45,6 +45,13 @@ Regras e formato: [README](README.md).
 - **O que pode quebrar:** Só scripts e texto. Os scripts têm IPs da rede local do laboratório.
 - **Como testar de novo:** `bash port/tools/lab/finals2.sh` com os dois aparelhos na mesma rede.
 
+### 1.0.0 (este commit): 1.0: README nos três idiomas, gráficos e relatório
+- **Onde:** README.md, README.pt.md, README.es.md; docs/images/1.0/; port/tools/perf_chart.py; docs/release-1.0.md; docs/changes/regression-tests.md; port/tools/lab/ab_bt4.sh, threads.sh
+- **O que e por quê:** Pedido do desenvolvedor: tudo o que veio de novo, com imagens, números e comparativos. Os gráficos são SVG com tema claro e escuro, gerados por `perf_chart.py` a partir de números copiados dos logs. O perfil fraco do BT4 foi medido com as versões alternadas na mesma sessão, depois que sessões separadas sugeriram uma piora que não se confirmou.
+- **Medido/provado:** Paleta conferida com o validador da skill de visualização, claro e escuro. SVGs abertos em PNG e olhados. Todo link de imagem dos três READMEs aponta para um arquivo existente. As fotos de tela são do aparelho, com APK 1.0.
+- **O que pode quebrar:** Os números do README envelhecem: refaça ao medir de novo e rode `perf_chart.py`. As fotos mostram o jogo: entraram por pedido do desenvolvedor.
+- **Como testar de novo:** `python3 port/tools/perf_chart.py`, abrir os READMEs no GitHub nos temas claro e escuro.
+
 ## Histórico: 0.9.0 para trás
 
 Linhas: lado novo do diff naquele commit; o arquivo de hoje tem outra numeração. Fontes: mensagens de commit, diffs, changelogs de cada tag,

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <b>Dragon Ball Z: Budokai Tenkaichi 3, running natively on Android.</b><br>
+  <b>Dragon Ball Z: Budokai Tenkaichi 3, 4 and 2, running natively on Android.</b><br>
   An Android port of <a href="https://github.com/z3xox/Tenkaichi3Decomp">Tenkaichi3Decomp</a>, the native PC port built on the BT3 decompilation.
 </p>
 
@@ -23,28 +23,161 @@
 ---
 
 > [!IMPORTANT]
-> **Status (0.9.0): the whole game runs natively on Android arm64**: menus, story mode and full battles at the game's
-> 30 fps on Snapdragon and on Mali, Xclipse and PowerVR GPUs. The launcher now **detects your GPU** and offers settings
-> made to keep fights at a steady 30 fps; online play (PC and Android in the same rooms), HD texture packs, a new
-> in-game menu made for touch, the new **Dragon** on-screen controller and **driver downloads** for Adreno are in.
-> 0.7.0 brings the PC port's release 0.1.37 (online works again), an **online status banner** in the launcher, a
-> touch-made **Dragon Net Battle** page, ASTC texture packs (experimental). 0.9.0 brings the PC port's 0.1.38.7
-> (faster at 2x and above, most on Mali), **Budokai Tenkaichi 4** drawn by ARMSX2's renderer by default, and the
-> online that waits when its free servers reach their daily limit. English, Portuguese and Spanish.
-> See [Roadmap](#roadmap).
+> **Status (1.0.0): three games in one app, native on Android arm64.** **Budokai Tenkaichi 2** now needs only the ISO, with
+> online play between two devices. **Budokai Tenkaichi 3** gets **Dragon Net Online**, with lobbies, spectators and Ranked,
+> and the **Tag Team Mod** as an option. **Budokai Tenkaichi 4** has its far scenery fixed on the Dragon Rage renderer and
+> picks the renderer by device. English, Portuguese and Spanish. See [what's new](#whats-new-in-10) and the
+> [numbers](#numbers-09-and-10).
 
-This repository contains **no game data**. You need your own copy of the **USA release (SLUS-21678)** as an
-`.iso`. The app reads it on your device; nothing is downloaded or uploaded.
+This repository contains **no game data**. You need your own copy of each game as an `.iso`: **USA BT3 (SLUS-21678)**,
+**USA BT2 (SLUS-21441)** and **Team BT4's BT4 (Beta 14 Rev2)**. The app reads the file on your device; nothing is downloaded
+or uploaded.
 
 ## What it is
 
 The PC port is not an emulator: it is the game's own code, decompiled and compiled for PC, with a new renderer,
-sound and input layer underneath. Dragon Rage brings that to Android in two parts:
+sound and input layer underneath. Dragon Rage brings that to Android, together with the recompiled BT4 and BT2:
 
 | Part | Where | State |
 |---|---|---|
 | **Launcher app** (Kotlin, Jetpack Compose, Material 3; English, Portuguese and Spanish) | [`android/`](android) | ✅ Done |
-| **Game engine** (the port's C code, built for arm64 as `libbt3.so`) | `src/`, `include/`, `port/` | ✅ Runs on Snapdragon, Mali, Xclipse and PowerVR; tuned per GPU tier |
+| **Budokai Tenkaichi 3** (the port's C code, built for arm64 as `libbt3.so`) | `src/`, `include/`, `port/` | ✅ Runs on Snapdragon, Mali, Xclipse and PowerVR; tuned per GPU tier |
+| **Budokai Tenkaichi 4** (Team BT4's mod, recompiled as `libbt4.so`; ARMSX2's renderer in `libbt4gsx.so`, or Dragon Rage's) | `port/bt4/` | 🧪 Experimental |
+| **Budokai Tenkaichi 2** (recompiled as `libbt2.so`) | `bt2/` | ✅ Fights, saves and online |
+
+## What's new in 1.0
+
+<p align="center"><img src="docs/images/1.0/launcher_pick.jpg" alt="The game picker: Budokai Tenkaichi 3, 4 and 2" width="90%"></p>
+
+One app, three games. Each has its own ISO, saves, textures and settings.
+
+### Budokai Tenkaichi 2 with only the ISO
+
+<table>
+<tr><td width="50%"><img src="docs/images/1.0/launcher_bt2.jpg" alt="The BT2 tab, with the Online Mode card" width="100%"></td><td width="50%"><img src="docs/images/1.0/bt2_room.jpg" alt="A room created in BT2 Online Mode, with its code" width="100%"></td></tr>
+</table>
+
+- **The engine comes inside the app.** There is no engine package to import any more; if you had one, it is deleted after a notice.
+- **The ISO stays where it is**: it is read in place, not copied. Only small files stay in the app's folder.
+- **A wrong ISO is refused**, with a message that says what was found and which tab installs it.
+- **Online Mode in the game's menu**: create a room, join with a code or use quick match. Both devices walk to the character select by themselves.
+
+<table>
+<tr><td width="50%"><img src="docs/images/1.0/bt2_select.jpg" alt="BT2 online character select" width="100%"></td><td width="50%"><img src="docs/images/1.0/bt2_c.jpg" alt="The start of a BT2 online split-screen fight" width="100%"></td></tr>
+</table>
+
+Tested between an RG Cube and a Retroid Pocket 5: two fights (11,100 and 5,700 frames) at 100% and 30 pictures a second on both, no desync. A player who leaves tells the other, who returns to Online Mode.
+
+### Dragon Net Online
+
+<table>
+<tr><td width="50%"><img src="docs/images/1.0/dragonnet_menu.jpg" alt="The Dragon Net Online menu" width="100%"></td><td width="50%"><img src="docs/images/1.0/dn_lobby2.jpg" alt="An open lobby, with players, spectators, rules and its code" width="100%"></td></tr>
+</table>
+
+- **New screens in place of Dragon Net Battle**: quick match by region, Ranked, joining by code or address, profile.
+- **Lobbies for up to eight**: two fighters, six spectators, rules on the lobby's page, rematches and tournaments.
+- **Fewer requests to the servers**: nothing in the background, a growing wait when a server refuses, and the message "Server busy, try again later" in place of an unexplained failure.
+- Random music no longer sets the two players of a match apart.
+
+Tested: a lobby between the two devices with 10 to 14 ms of ping and no rollback; 55 fights in a row over 580 s on a direct connection, with no desync. Ranked was not tested to the end and spectators need a third device we did not have: see the [known problems](#known-problems).
+
+<p align="center"><img src="docs/images/1.0/launcher_bt3_online.jpg" alt="The online status in the app, with the ISO notice in orange" width="90%"></p>
+
+**For BT3 online to work properly, use the ISO of the American disc (SLUS-21678), unmodified.** A modified ISO or another dump can fail to pair or go out of sync. The app says this on the Home screen.
+
+### Tag Team Mod
+
+<table>
+<tr><td width="33%"><img src="docs/images/1.0/tag_modes.jpg" alt="Modified modes: Team Battle, Free For All, Training, Challenge, Tournament, Online Room" width="100%"></td><td width="33%"><img src="docs/images/1.0/tag_pick.jpg" alt="Picking five fighters per team" width="100%"></td><td width="33%"><img src="docs/images/1.0/tag_fight1.jpg" alt="A Tag Team Mod fight" width="100%"></td></tr>
+</table>
+
+- Up to 10 fighters, with the modes and Tag Team Online of the mod by tehmufti and its contributors, adapted to phones.
+- **Off by default.** Turn it on in Settings; then SELECT on the main menu opens the modes. Off, it does not appear in normal fights.
+
+<p align="center"><img src="docs/images/1.0/settings_tag.jpg" alt="The Tag Team Mod option in Settings" width="70%"></p>
+
+Tested on the Retroid Pocket 5: a 5 vs 5 fight at 100% and about 30 pictures a second. The other modes were opened, not played to the end.
+
+### Budokai Tenkaichi 4
+
+<table>
+<tr><td width="50%"><img src="docs/images/1.0/bt4_far_090.jpg" alt="0.9.0: the far scenery comes out as blocks of coloured noise" width="100%"></td><td width="50%"><img src="docs/images/1.0/bt4_far_100.jpg" alt="1.0: the same renderer, with the scenery in place" width="100%"></td></tr>
+</table>
+
+*0.9.0 on the left, 1.0 on the right, on the Dragon Rage renderer.*
+
+- **Far scenery fixed**: the mountains no longer come out as blocks of coloured noise, and the game's distance blur works.
+- **Renderer by device**: a weak device or Lite mode uses Dragon Rage; if ARMSX2 stays below 27 updates a second for 5 s in a fight, the next start uses Dragon Rage. Your choice in Settings always counts.
+
+### Fixes from players' logs
+
+We read 208 logs sent by players (485 runs, 84 device models). The 15 biggest problems and the state of each are in [`docs/logs-1.0.md`](docs/logs-1.0.md).
+
+<p align="center"><img src="docs/images/1.0/refused_pack.jpg" alt="A .7z pack refused with a clear message" width="70%"></p>
+
+- Menu font and labels no longer ask for game data that is already in the ISO.
+- No false texture pack warning with an empty folder.
+- A file that fails to read: the game says why, tries again, and the fight goes on.
+- A modified disc: a negative size is a clear warning, not "out of memory".
+- `.7z` and `.rar` are refused with a clear message. Without internet, checking for updates no longer shows as a failure.
+- Controllers navigate the launcher again, on the RG Cube and the Retroid Pocket 5.
+
+### Team and licences in the app
+
+<p align="center"><img src="docs/images/1.0/about.jpg" alt="The About screen, with the team and the Licences button" width="70%"></p>
+
+## Numbers: 0.9 and 1.0
+
+How we measured: the same recorded fight, with the same inputs, on the same devices. **RG Cube** is a Mali-G57 MC4. **Retroid Pocket 5** is an Adreno 650. **RG Cube held down** is the same Cube limited to a chip like the Mali-G52 MC1 (1 GPU core at 512 MHz, only 4 small CPU cores at 1.85 GHz), to imitate a weak phone; on this profile 0.9.0 and 1.0 ran in turn in one session, because heat changes the result.
+
+<p align="center"><img src="docs/images/1.0/perf_speed_en.svg" alt="Speed in fights: the tables below have the same numbers" width="100%"></p>
+
+**Budokai Tenkaichi 3** (0.9.0 → 1.0)
+
+| Device and profile | Speed | Pictures/s | Work per frame (ms) | Drawing (ms) | Worst frame (ms) | Passes | Copies |
+|---|---|---|---|---|---|---|---|
+| RG Cube, 1x, Vulkan | 100% → 100% | 30.0 → 30.0 | 18.1 → 17.0 | 3.66 → 2.75 | 22.5 → 21.9 | 55.0 → 55.0 | 10.5 → 10.5 |
+| Retroid Pocket 5, 2x, Vulkan | 100% → 100% | 30.7 → 30.7 | 13.8 → 13.4 | 3.77 → 3.05 | 42.8 → 11.5 | 45.4 → 45.4 | 3.7 → 3.7 |
+| Retroid Pocket 5, 2x, OpenGL ES | 100% → 100% | 30.7 → 30.7 | 14.2 → 14.4 | | | | |
+| RG Cube held down, 1x | 100% → 100% | 19.3 → 18.5 | 30.9 → 31.0 | 6.89 → 7.21 | 64.1 → 83.2 | 48.5 → 49.4 | 6.6 → 7.4 |
+| RG Cube held down, 1x, Lite | 100% → 100% | 20.0 → 19.5 | 28.3 → 28.3 | 7.08 → 7.16 | | 47.9 → 46.4 | 6.5 → 6.9 |
+
+1.0 only: RG Cube on OpenGL ES, 100%, 30.0 pictures/s, 18.6 ms. Retroid Pocket 5 with the CPU held to 2 big and 4 small cores, like a Snapdragon 480+ (the GPU stays whole, as this device has no root): 100%, 30.7 pictures/s, 14.0 ms.
+
+**Budokai Tenkaichi 4** (0.9.0 → 1.0)
+
+| Device and renderer | Updates/s | Game time per frame (ms) | Drawing (ms) |
+|---|---|---|---|
+| RG Cube, ARMSX2 | 28.9 → 29.6 | 21.8 → 22.5 | |
+| RG Cube, Dragon Rage | 29.7 → 29.8 | 21.7 → 21.4 | 8.53 → 7.05 |
+| Retroid Pocket 5, ARMSX2 | 30.0 → 30.0 | 17.0 → 16.3 | |
+| Retroid Pocket 5, Dragon Rage | 30.0 → 30.0 | 14.2 → 14.8 | 6.04 → 4.89 |
+| RG Cube held down, ARMSX2 | 10.3 → 9.9 | 61.9 → 70.5 | |
+| RG Cube held down, Dragon Rage | 12.2 → 11.8 | 55.5 → 60.2 | 5.04 → 5.36 |
+
+1.0 only: OpenGL ES on the Dragon Rage renderer, RG Cube 29.6 and Retroid Pocket 5 30.0 updates/s. ARMSX2 at 60 fps on the Retroid Pocket 5: 44 pictures/s with 34.7 updates/s (experimental, falls back to 30 where the device cannot hold it). Retroid Pocket 5 with the CPU held as above: 30.0 updates/s on both renderers.
+
+<p align="center"><img src="docs/images/1.0/perf_draw_en.svg" alt="Drawing time per frame: the tables above have the same numbers" width="100%"></p>
+
+**Budokai Tenkaichi 2** (1.0 only, as it needed a separate engine package before)
+
+| Device | Speed | Pictures/s | Typical frame (ms) | Slowest frame (ms) | Stalls |
+|---|---|---|---|---|---|
+| RG Cube | 100% | 30 | 33.3 | 40.8 | 0 |
+| Retroid Pocket 5 | 100% | 30 | 33.3 | 35.1 | 0 |
+
+**Do weak phones gain performance?** In general, not in this version, and we would rather say so. On BT3 the held-down profile stayed the same as 0.9.0 (18 to 20 pictures a second on both, at 100% speed). On BT4 the game still does not reach full speed on this profile: 8 to 10 pictures a second on ARMSX2 and 10 to 11 on Dragon Rage. The useful change is the default, which now falls back to the faster renderer by itself. On this profile, two runs of the same version differ more than the two versions do: on Dragon Rage, the game time per frame was 53 and 58 ms on 0.9.0 and 53 and 68 ms on 1.0, in turn in one session (the table has the mean). The ARMSX2 row comes from separate sessions.
+
+**Is the picture the same?** We compared 11 fixed frames pixel by pixel against 0.9.0. On the RG Cube, no pixel differs. On the Retroid Pocket 5, 5 of 10 frames of the opening demo differ (see below).
+
+### Known problems
+
+- **Tag Team Online**: the host's mode menu, after "Ready" in the room, shows no letters (seen on the Retroid Pocket 5, in Portuguese). A guest joining by code reaches the fight.
+- **BT3 on the Retroid Pocket 5 at 2x**: 5 of 10 frames of the opening demo differ from 0.9.0. Cause not found yet; on the RG Cube it is 0 of 11.
+- **BT2 online**: there is no relay in the fight's process, so a player who connects only through a relay may not be able to play.
+- **Desync on Dragon Net**: there are fixes, but the problem appears in logs of several versions and stays open.
+- **BT4 on ARMSX2**: the picture can be lost when coming back from the background (seen in logs of 4 devices).
+- **Not tested yet**: a clean import of BT3 and BT4 on this version, Ranked to the end, spectators, Tag Team Online in every mode, the mode against PC.
 
 ## The app
 
@@ -85,11 +218,17 @@ To report a problem: *Debug → Export log*, then send the `DragonRage-log-….t
 
 Build it yourself:
 
+Build it yourself:
+
 ```sh
 sh port/tools/android_toolchain.sh   # LLVM 21, the NDK's sysroot, SDL3 (once)
 python3 port/tools/android.py        # the engine -> android/app/src/main/jniLibs (and its fonts and pictures -> assets)
+python3 port/bt4/build_bt4.py --armsx2   # BT4, from your own disc (only with its files on this PC; nothing goes to git)
+python3 bt2/android/build.py         # BT2, from your own disc (same)
 cd android && ./gradlew assembleRelease   # needs JDK 17+ and the Android SDK (compileSdk 35)
 ```
+
+The BT4 and BT2 libraries are made from the game's program: they only go inside the APK built on your PC, never into git.
 
 ### Where files go
 
@@ -143,6 +282,9 @@ were offered), `perf_log`, `frag_depth`. The on-screen controller is in `touch_c
       in advance), 60 fps fights (experimental, back to 30 where the device cannot hold them); the online pauses on
       HTTP 429 and says the server is busy; the classic touch pad fits square screens; measured on an RG Cube and a
       Retroid Pocket 5 (`docs/release-0.9.0.md`)
+- [x] **1.0.0**: BT2 with only the ISO and BT2 online; Dragon Net Online with lobbies, spectators and Ranked (PC 0.1.39); the
+      Tag Team Mod as an option; BT4's far scenery fixed and the renderer by device; fixes from 208 players' logs; fewer requests
+      to the servers; team and licences in the app; a change map in `docs/changes/` (`docs/release-1.0.md`, in Portuguese)
 
 ### Next
 - [ ] More GPUs measured for the tiers (send your log!)
@@ -156,7 +298,9 @@ were offered), `perf_log`, `frag_depth`. The on-screen controller is in `touch_c
 | `android/` | **Dragon Rage**, the Android app (Gradle project) |
 | `src/`, `include/` | The game's code, from the decompilation; PC changes are inside `#ifdef PORT` |
 | `port/` | The PC port: platform layer, renderer, sound, input, build tools |
-| `docs/` | Notes on the game and on the PC port |
+| `bt2/` | The recompiled Budokai Tenkaichi 2: runtime, online plugin, Android build |
+| `port/bt4/` | The recompiled Budokai Tenkaichi 4: hooks, shim and build |
+| `docs/` | Notes on the game and on the PC port; [`docs/changes/`](docs/changes) maps what changed, by area and by file |
 
 ## Team and credits
 

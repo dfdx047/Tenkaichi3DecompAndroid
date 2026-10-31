@@ -19,6 +19,10 @@ python3 ppmcmp.py ~/DragonRageRefs/0.9.0/logs/cube_shot_vk1x_a ~/DragonRageRefs/
 Passa com **0 pixels diferentes**. Antes de comparar versões, compare duas rodadas da mesma versão: elas têm de dar 0 entre si.
 A referência de cada aparelho só vale para ele e para a mesma resolução.
 
+No perfil fraco, compare sempre as versões alternadas na mesma sessão, pelo menos duas rodadas de cada (`ab_low.sh` no BT3, `ab_bt4.sh` no BT4; `threads.sh` mostra a CPU por thread durante a luta). Uma luta do BT4 não é determinística: duas rodadas da mesma versão já deram 53 e 68 ms de guest. Sessões separadas não servem: o calor e a cena mudam o resultado.
+
+Para medir OpenGL, use `dr_renderer=2 gpu_api=1` (`finals2.sh`): `gpu_api=1` sozinho é reescrito pelo launcher e a rodada sai em Vulkan. Confira no log `renderer chosen`. Depois de um `bench.py`, apague o `bt3_env.txt`: o `BT3_PAD_PLAY` que ele deixa aperta os menus sozinho. Depois de testar idiomas, volte para "Sistema": os scripts procuram os textos em português.
+
 `bash compare_env.sh <versão> <aparelho> <escala> <nome> "<env>"` faz a mesma rodada com chaves de `bt3_env.txt`:
 `BT3_TAG_TEAM=0` para comparar sem o Tag Team, `BT3_TEST_CPUS=0-5` para o RP5 como aparelho de 2 núcleos grandes.
 
