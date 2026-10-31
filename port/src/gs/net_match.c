@@ -59,6 +59,8 @@ static struct {
 } sM;
 
 /* The spectators of a poll's answer: "watchers":[["a:p","seen=a"],["b:q"]]. Kept when they changed. */
+extern int Port_NetSession(void); /* net.c */
+
 static void json_watchers(const char *json) {
     const char *p = SDL_strstr(json, "\"watchers\":[");
     char addr[MATCH_WATCH_ADDRS][64];
@@ -67,6 +69,7 @@ static void json_watchers(const char *json) {
     if (p == NULL) {
         return;
     }
+    SDL_memset(addr, 0, sizeof(addr)); /* (the whole entries are compared below) */
     for (p += 12; *p != '\0' && *p != ']' && n < MATCH_WATCH_ADDRS; p++) {
         if (*p == '[') { /* one spectator's list */
             for (p++; *p == '"' && n < MATCH_WATCH_ADDRS;) {
@@ -669,7 +672,7 @@ static int retry_code_on_other_dragon_server(char *base, const char *what, const
     }
     dailyLimit = SDL_strstr(answer, "\"error\":\"limit\"") != NULL ||
                  SDL_strstr(answer, "error code: 1027") != NULL ||
-                 (SDL_strstr(answer, "429") != NULL && SDL_strstr(answer, "\"busy\"") == NULL);
+                 (SDL_strstr(answer, "\"http\":429") != NULL && SDL_strstr(answer, "\"busy\"") == NULL);
     if (SDL_strstr(answer, "no room") == NULL && !dailyLimit) {
         return 0;
     }
@@ -1074,7 +1077,8 @@ again:
                         for (w = 0; w < wait && !STOPPED(); w++) {
                             SDL_Delay(100);
                         }
-                        if (!STOPPED() && POSTB("relay", body, answer, sizeof(answer))) {
+                        /* (a host that keeps its room for spectators: its match may have started meanwhile, on this socket) */
+                        if (!STOPPED() && !Port_NetSession() && POSTB("relay", body, answer, sizeof(answer))) {
                             if (SDL_getenv("BT3_RELAY_LOG") != NULL) {
                                 char why[160] = "";
                                 json_str(answer, "noRelay", why, sizeof(why));

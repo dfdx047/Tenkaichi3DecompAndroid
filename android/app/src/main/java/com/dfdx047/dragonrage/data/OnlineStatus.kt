@@ -26,7 +26,7 @@ sealed interface OnlineState {
 }
 
 object OnlineStatus {
-    private const val NET_VERSION = 5 // the online protocol's version (port/src/gs/net.c NET_VERSION)
+    private const val NET_VERSION = 6 // the online protocol's version (port/src/gs/net.c NET_VERSION)
     private const val DRNET_SIM = 1   // Dragon Net's simulation version (port/src/gs/net_dragon.h): v = NET_VERSION * 1000 + DRNET_SIM
     /** Dragon Net (Android + Switch): the official service of both (the Tenkaichi3DecompAndroidOnline fork's Worker,
      *  running port/dragonnet); another one in dragonnet_url.txt. */

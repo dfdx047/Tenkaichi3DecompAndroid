@@ -615,7 +615,11 @@ void Relay_Send(int sock, const void *data, int len, const struct sockaddr_in *t
     }
     {
         const RelayPeer *p = peer_find(to);
-        if (p != NULL && p->chanBound && SDL_getenv("BT3_RELAY_NOCHAN") == NULL) {
+        static int noChan = -1; /* (read once: this is every packet that goes through the relay) */
+        if (noChan < 0) {
+            noChan = SDL_getenv("BT3_RELAY_NOCHAN") != NULL;
+        }
+        if (p != NULL && p->chanBound && !noChan) {
             m[0] = (uint8_t)(p->chan >> 8);
             m[1] = (uint8_t)p->chan;
         put16(m + 2, (unsigned)len);

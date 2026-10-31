@@ -101,7 +101,7 @@ enum { CLOSE_CLOSED = 1, CLOSE_KICKED = 2 };
 #define SEC 1000000000ull
 #define QUIET_NS (15 * SEC)    /* a member, or the owner, silent this long is gone */
 #define CONNECT_NS (25 * SEC)  /* a member that has not reached the owner in this long gives up */
-#define MATCH_CONNECT_NS (40 * SEC) /* the two players have not connected to each other in this long: back to the lobby */
+#define MATCH_CONNECT_NS (70 * SEC) /* the two players have not connected to each other in this long: back to the lobby */
 #define RESULT_WAIT_NS (20 * SEC)  /* a tournament's match: one player's result and not the other's this long: played again */
 #define STATE_BYTES 620            /* STATE: the lobby (372 bytes), then the mode and the bracket (tour_put) */
 #define HOLD_NS (90 * SEC)         /* a tournament's entrant whose game fell silent keeps its place this long (a rejoin) */
@@ -2168,7 +2168,7 @@ static void timers(void) {
         }
         t_decide();
         t_holds();
-        if (sL.phase == 1 && now - sL.goNs > MATCH_CONNECT_NS) {
+        if (sL.phase == 1 && now > sL.goNs && now - sL.goNs > MATCH_CONNECT_NS) {
             int a = sL.players[0], b = sL.players[1];
             int ok = (a == 0 ? NetIo_Connected() : sL.m[a].connected) && (b == 0 ? NetIo_Connected() : sL.m[b].connected);
             if (!ok) {
@@ -2699,8 +2699,12 @@ void Lobby_Pump(void) {
     int n;
     tok_load();
     {
-        static int begun;
-        const char *e = getenv("BT3_LOBBY");
+        static int begun, read;
+        static const char *e; /* (read once: this runs on every blank, also offline) */
+        if (!read) {
+            read = 1;
+            e = getenv("BT3_LOBBY");
+        }
         if (!begun && e != NULL && (strncmp(e, "lobby", 5) == 0)) {
             static unsigned blanks;
             if (getenv("BT3_LOBBY_AT") == NULL || ++blanks >= (unsigned)atoi(getenv("BT3_LOBBY_AT"))) {
