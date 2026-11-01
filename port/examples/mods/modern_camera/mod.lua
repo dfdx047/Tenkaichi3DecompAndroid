@@ -94,6 +94,8 @@ return {
           tip = "Farther (+) or nearer (-) than the game's camera." },
         { id = "height", label = "Height", type = "slider", min = -50, max = 50, step = 1, default = 0,
           tip = "Higher (+) or lower (-) than the game's camera, the fighter kept where it was in the picture." },
+        { id = "zoom", label = "Zoom", type = "slider", min = 70, max = 100, step = 1, default = 100,
+          tip = "100: the game's picture. Lower: a wider picture (cam.zoom)." },
     },
 
     on_camera = function(cam, game)
@@ -186,5 +188,6 @@ return {
         end
         cam.pos.x, cam.pos.y, cam.pos.z = out[1], out[2], out[3]
         cam.rot.x, cam.rot.y, cam.rot.z = orot[1], orot[2], orot[3]
+        cam.zoom = bt3.setting("zoom") / 100
     end,
 }
