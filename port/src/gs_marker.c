@@ -323,7 +323,8 @@ static int clip_part(const char *name, int x, int top) {
         return top && strcmp(name, "mc_message_text") == 0 ? PORT_MENU_LEFT : PORT_MENU_NONE;
     }
     if (sMenuScreen >= 10 && top && strcmp(name, "mc_message_text") == 0) {
-        return PORT_MENU_LEFT; /* (the message window's text from its left, as on the main menu: its window fills) */
+        return PORT_MENU_LEFT; /* (the message window's text from its left, as on the main menu: its window fills;
+                                  a left window's text moved to the main menu's start, Port_MenuMessageX) */
     }
     if (sMenuScreen == 16 && top && (strcmp(name, "mc_kumo") == 0 || starts(name, "mc_kemuri_"))) {
         return PORT_MENU_FILL; /* (the versus menu: its scrolling clouds and smoke, scenery across the width) */
@@ -427,6 +428,16 @@ static int clip_part(const char *name, int x, int top) {
         return -2;
     }
     return PORT_MENU_NONE;
+}
+
+/* Where the message window's text goes from its clip (src/battle/view_a_b.c MsgWin_Draw). The window on the left
+   (side 0: Ultimate Battle, Ultimate Training, the tournaments, Character Reference, ...) has its text 108 into the 4:3
+   page, to clear a guide standing on the page's left; the one on the right (the main menu's) at 26. On a converted
+   screen in the widescreen layout the text is set against the picture's edge (clip_part, above), so the left
+   window's is moved to 26 too: the same start as the main menu's. Elsewhere as the game has it. */
+extern int Port_MenusWide(void); /* port/src/plat_stub.c */
+int Port_MenuMessageX(int side) {
+    return side == 0 && sMenuScreen >= 10 && Port_MenusWide() ? 26 - 108 : 0;
 }
 
 /* Whether a clip of a converted screen's movie is moving (sliding in or out): its position changed within the last
