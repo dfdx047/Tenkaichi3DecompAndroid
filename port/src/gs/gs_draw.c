@@ -542,7 +542,13 @@ typedef struct {
     SDL_Condition *wake;
     uint32_t *ready; /* the next picture (RGBA, the GS's alpha), NULL while it is being made */
     int want;        /* the thread makes the next one */
+    int fails;       /* pictures in a row that could not be made (the thread's, or the renderer's without it) */
+    int failed;      /* the thread gave up and has left (under lock): the renderer takes the film down */
 } TboFilm;
+/* A film whose pictures cannot be made (a damaged file, no memory) is given up after this many tries in a row,
+   about a second, and the picture (tbo/ui/<name>.png) is shown instead. Before, the thread tried again every
+   10 ms for as long as the program ran. */
+#define TBO_FILM_TRIES 100
 static TboFilm sTboFilm = {"bg", 0};
 static TboFilm sRaditzFilm = {"raditz", 1};
 
@@ -621,13 +627,50 @@ static int tbo_film_thread(void *arg) {
         free(film->ready);
         film->ready = px;
         if (px == NULL) {
+            if (++film->fails >= TBO_FILM_TRIES) {
+                /* (the film is the renderer's to take down, on its thread: it reads film->plm without the lock) */
+                film->failed = 1;
+                SDL_UnlockMutex(film->lock);
+                return 0;
+            }
             film->want = 1; /* (no picture: another try, or the renderer, which asks only when it takes one, would wait forever) */
             SDL_UnlockMutex(film->lock);
             SDL_Delay(10);
             SDL_LockMutex(film->lock);
+        } else {
+            film->fails = 0;
         }
     }
     return 0;
+}
+
+/* A film given up (TBO_FILM_TRIES): its thread (already gone or leaving), decoder, pictures and texture are let go,
+   on the renderer's thread; film->plm NULL from then on, so the picture is drawn instead. Its texture was not given
+   in this frame (tbo_film_texture comes here before it gives it), as for the other textures let go in a frame. */
+static void tbo_film_drop(TboFilm *film) {
+    if (film->thread != NULL) {
+        SDL_WaitThread(film->thread, NULL);
+        film->thread = NULL;
+    }
+    if (film->wake != NULL) {
+        SDL_DestroyCondition(film->wake);
+        film->wake = NULL;
+    }
+    if (film->lock != NULL) {
+        SDL_DestroyMutex(film->lock);
+        film->lock = NULL;
+    }
+    free(film->ready);
+    film->ready = NULL;
+    if (film->plm != NULL) {
+        plm_destroy(film->plm); /* (the file's bytes with it: made with free_when_done) */
+        film->plm = NULL;
+    }
+    if (film->tex != 0) {
+        sBackend->texDestroy(film->tex);
+        film->tex = 0;
+    }
+    fprintf(stderr, "bt3: artwork: tbo/ui/%s.mpg: %d pictures in a row could not be decoded: the picture instead\n", film->name, film->fails);
 }
 
 static GsTex tbo_film_texture(TboFilm *film) {
@@ -669,6 +712,16 @@ static GsTex tbo_film_texture(TboFilm *film) {
     if (film->tex != 0 && film->frame == gGsFrame) {
         return film->tex;
     }
+    if (film->thread != NULL) {
+        int failed;
+        SDL_LockMutex(film->lock);
+        failed = film->failed;
+        SDL_UnlockMutex(film->lock);
+        if (failed) {
+            tbo_film_drop(film);
+            return 0;
+        }
+    }
     film->frame = gGsFrame;
     step = 1.0 / (plm_get_framerate(film->plm) > 1.0 ? plm_get_framerate(film->plm) : 24.0);
     if (film->lastMs != 0 && now - film->lastMs < 500) {
@@ -693,6 +746,13 @@ static GsTex tbo_film_texture(TboFilm *film) {
     } else {
         px = film->ready != NULL ? film->ready : tbo_film_picture(film);
         film->ready = NULL;
+        if (px == NULL && ++film->fails >= TBO_FILM_TRIES) { /* (decoded here, without the thread: the same limit) */
+            tbo_film_drop(film);
+            return 0;
+        }
+        if (px != NULL) {
+            film->fails = 0;
+        }
     }
     if (px == NULL) {
         return film->tex;
