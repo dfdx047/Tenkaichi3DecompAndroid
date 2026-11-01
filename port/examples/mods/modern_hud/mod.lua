@@ -320,11 +320,12 @@ local function draw_side(hud, side, right, f, an, now)
         an.trail = hp
     end
     an.ki = an.ki + (f.ki - an.ki) * clamp01(dt * 14)
-    -- ki spent: as health, the part just lost stands in red, then runs down to the ki
+    -- ki spent: as health, the part just lost stands in red, then runs down to the ki. It stands as long as ki keeps
+    -- going: a charged attack spends it in steps, and a shorter hold ran it down between them, during the charge
     if f.ki < an.lastKi then an.kiAt = now end
     an.lastKi = f.ki
     if f.ki < an.kiTrail - 0.5 then
-        if now - (an.kiAt or 0) > 0.45 then
+        if now - (an.kiAt or 0) > 0.9 then
             an.kiTrail = max(an.kiTrail - max(15000, (an.kiTrail - f.ki) * 3) * dt, f.ki)
         end
     else
@@ -393,7 +394,11 @@ local function draw_side(hud, side, right, f, an, now)
     if barPart > 0.002 and left > 0 then
         local xe = x0 + len * barPart
         strip(hud, w, x0, xe, 18, thick(x0), thick(xe), 8, 8, col(kBar[left][1], 1, 1), col(kBar[left][2], 1, 1), true, x0, x1)
-        strip(hud, w, x0, xe, 18, 5, 4, 8, 2.5, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.35))
+        -- the shine along its top: its ends on the bar's own slanted ends (the bar's top runs 8 further than its
+        -- bottom over its thickness, so a band s deep runs 8 * s / thickness further)
+        local s0, s1 = 5, 4
+        local c0, c1 = 8 * s0 / thick(x0), 8 * s1 / thick(xe)
+        strip(hud, w, x0 + 8 - c0, xe + 8 - c1, 18, s0, s1, c0, c1, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.35))
     end
 
     -- ki: one cell per bar, close together, along the same stroke. Then the max power gauge (max_power, 0..30000):
