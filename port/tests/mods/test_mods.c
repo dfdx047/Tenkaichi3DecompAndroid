@@ -287,7 +287,8 @@ int main(void) {
     }
     CHECK(moved >= 90);
     }
-    CHECK(Mods_Count() == 2);
+    CHECK(Mods_Count() == 5); /* (example_camera, example_hud, modern_camera, modern_hud, modern_look) */
+    CHECK(Mods_Look()->shading == 100 && Mods_Look()->energy_light == 20); /* (modern_look at its defaults) */
     for (i = 0; i < Mods_Count(); i++) {
         CHECK(Mods_Info(i)->error[0] == '\0');
     }

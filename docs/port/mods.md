@@ -9,7 +9,9 @@ be used together.
 
 Code: `port/src/gs/mods.c` (the scripts), `port/src/mods_game.c` (what is read of the game, the camera hook),
 `port/src/gs/mods_ui.cpp` (drawing, the settings tab), `port/src/gs/mods_lua.c` (Lua, `port/third_party/lua`).
-Examples: `port/examples/mods/`. Tests: `port/tests/mods/test_mods.c`.
+Examples: `port/examples/mods/` (copy a folder into `mods/` to use it): two small ones, and `modern_camera`,
+`modern_hud` and `modern_look`, the BT4decomp port's camera, HUD and effects written as script mods. Tests:
+`port/tests/mods/test_mods.c`.
 
 
 ## Where they go
