@@ -323,7 +323,10 @@ static int clip_part(const char *name, int x, int top) {
         return top && strcmp(name, "mc_message_text") == 0 ? PORT_MENU_LEFT : PORT_MENU_NONE;
     }
     if (sMenuScreen >= 10 && top && strcmp(name, "mc_message_text") == 0) {
-        return PORT_MENU_LEFT; /* (the message window's text from its left, as on the main menu: its window fills) */
+        /* the message window's text from its left, as on the main menu: its window fills. Not the window that opens on
+           the left (Ultimate Battle, Ultimate Training, the tournaments, ...: its text 108 into the page, not 26): its
+           stepped corner stays with the page, and the text from the picture's edge ran into it at any wide shape */
+        return x > 64 ? PORT_MENU_NONE : PORT_MENU_LEFT;
     }
     if (sMenuScreen == 16 && top && (strcmp(name, "mc_kumo") == 0 || starts(name, "mc_kemuri_"))) {
         return PORT_MENU_FILL; /* (the versus menu: its scrolling clouds and smoke, scenery across the width) */
