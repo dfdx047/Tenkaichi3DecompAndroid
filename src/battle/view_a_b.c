@@ -64,15 +64,7 @@ void MsgWin_Draw(s32 unused0, s32 unused1, s32 line) {
     flash = gMsgWin->flash;
     if (gMsgWin->text != NULL) {
         Flash_FindLabel(flash, NULL, "mc_message_text", &ref);
-#ifdef PORT
-        {   /* widescreen menus: the text of a window on the left (side 0) where the main menu's starts
-               (port/src/gs_marker.c Port_MenuMessageX) */
-            extern s32 Port_MenuMessageX(s32 side);
-            TextBox_AttachLine(flash, &ref, Port_MenuMessageX(gMsgWin->side), 0, line, &gMsgWin->box);
-        }
-#else
         TextBox_AttachLine(flash, &ref, 0, 0, line, &gMsgWin->box);
-#endif
     }
     for (i = 0; i < 1; i++) {
         Flash_Draw(&gMsgWin->flash[i]);
