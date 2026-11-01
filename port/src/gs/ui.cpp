@@ -132,6 +132,8 @@ extern "C" unsigned Port_TouchButtons(void); // gs/gs_input.c: the on-screen con
 #endif
 extern "C" void Port_UiNotice(const char *text);
 static void spec_view_next(void);               // watching a match: the next view (player 1, player 2, both)
+void ModsUi_Tab(void);                          // gs/mods_ui.cpp: the settings window's Mods tab
+void ModsUi_Draw(void);                         // ... the script mods' shapes over the picture
 static const char *spec_view_name(int view);
 static int sForceTab = -1;                     // BT3_UI_OPEN=<tab>: open at start on that tab (testing)
 static int sTagSettingsRequest;
@@ -2514,7 +2516,7 @@ static void build(void) {
         open = false;
     }
     if (sForceTab < 0 && (pad_pressed(ImGuiKey_GamepadL1) || pad_pressed(ImGuiKey_GamepadR1))) {
-        const int tabCount = getenv("BT3_TAG_TEAM") ? 9 : 8;
+        const int tabCount = getenv("BT3_TAG_TEAM") ? 10 : 9; /* (Mods 8; the Tag Team's Mod Settings 9) */
         sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? tabCount - 1 : 1)) % tabCount;
         sPadTab = true;
     }
@@ -2646,7 +2648,8 @@ static void build(void) {
             if (tab("Cheats", 5)) { cheats_tab(); ImGui::EndTabItem(); }
             if (tab("Misc", 6)) { misc_tab(); ImGui::EndTabItem(); }
             if (tab("Online", 7)) { online_tab(); ImGui::EndTabItem(); }
-            if (getenv("BT3_TAG_TEAM") && tab(Port_TagText("Mod Settings"), 8)) {
+            if (tab("Mods", 8)) { ModsUi_Tab(); ImGui::EndTabItem(); }
+            if (getenv("BT3_TAG_TEAM") && tab(Port_TagText("Mod Settings"), 9)) {
                 TagHud_Settings();
                 ImGui::EndTabItem();
             }
@@ -3372,6 +3375,7 @@ static bool frame_build(void) {
     if (bars) {
         bars_draw();
     }
+    ModsUi_Draw(); // (the script mods' shapes over the picture: gs/mods_ui.cpp)
     if (sOpen) {
         if (sNet) {
             build_net();
