@@ -36,6 +36,9 @@ port/build_release/
 /stages/
 /songs/
 /textures/
+# script mods a player drops in next to the game, and their choices (the examples are in port/examples/mods)
+/mods/
+bt3_mods.txt
 
 # the private key that signs the releases for the automatic update (port/tools/update_key.py generate): never in the repository
 port/tools/update_signing_key.txt

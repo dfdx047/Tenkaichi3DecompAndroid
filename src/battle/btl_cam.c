@@ -367,6 +367,13 @@ void BtlCam_UpdateView(s32 side) {
         BtlCam_SetLayout(1, 0);
     }
     BtlCharApi_GetCamPose(objId, &view->pos, &view->rot);
+#ifdef PORT
+    {   /* PC only: the script mods' on_camera (port/src/mods_game.c, docs/port/mods.md) may change this view's copy of
+           the pose, which is only drawn: nothing of the fight reads it back. */
+        extern void Port_ModsCamera(s32 side, s32 objId, s32 pos, s32 rot); /* (addresses in game memory) */
+        Port_ModsCamera(side, objId, (s32)(u32)&view->pos, (s32)(u32)&view->rot);
+    }
+#endif
     view->priority = BtlCharApi_HasCamPriority(objId);
     BtlCam_BuildView(view, 1);
 }

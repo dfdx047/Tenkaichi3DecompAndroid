@@ -40,6 +40,10 @@ game's data from it, and it stays on your computer.
   lettering (cut from the disc's name pictures while the game runs). They are not written to the save and are
   not offered in an online match. See [docs/port/adding_stages.md](docs/port/adding_stages.md) and
   [adding_songs.md](docs/port/adding_songs.md).
+- Script mods: small Lua programs in the `mods` folder next to the game (`mods/<name>/mod.lua`) that draw over the
+  picture, read the fight and change how the fight camera is shown. They cannot change a fight, so they work online
+  and with replays. F1 > Mods switches them on and off and shows their settings. See [docs/port/mods.md](docs/port/mods.md)
+  and the examples in `port/examples/mods`.
 - In the game, **F1** opens the settings, or **START + SELECT** on a controller (which also works the window: d-pad and
   Cross, Circle to leave, L1 / R1 for the tabs). Controls has a row to choose another key or button. When a newer release
   is available, the main menu says so and the window offers to download it in the background, check its signature

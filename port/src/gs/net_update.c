@@ -875,14 +875,14 @@ static int user_file(const char *rel) {
         "saves/",       /* the memory cards */
         "gamedata/",    /* the game's data unpacked from the player's disc; its mods/, the menu text made from the disc,
                            the translations copied there and edited */
-        "mods/",        /* (mods kept beside the folder by some players) */
+        "mods/",        /* the script mods (gs/mods.c), and file mods kept beside the folder by some players */
         "update/",      /* the update's own folder */
         "bars/",        /* bars/faces.txt: the player's own faces of the fight panels */
         "net_session/", /* what an online session leaves for the next start */
         "screenshots/", "replays/", "shots/",
     };
     static const char *const files[] = {
-        "bt3_settings.txt", "bt3_pipelines.txt", "online_name.txt", "zdump.bin", "a11y_log.txt", "a11y_untranslated.txt",
+        "bt3_settings.txt", "bt3_mods.txt", "bt3_pipelines.txt", "online_name.txt", "zdump.bin", "a11y_log.txt", "a11y_untranslated.txt",
         "prism.dll", "libprism.so", /* the screen reader's library, placed there by the player */
     };
     static const char *const own[] = {"textures/", "songs/", "stages/"}; /* packs, added songs and stages */

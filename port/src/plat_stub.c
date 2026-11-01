@@ -404,6 +404,10 @@ void Port_VBlank(void) {
         extern void PortPanels_GameTick(void); /* fight_panels.c: what the side bars show of a fight */
         PortPanels_GameTick();
     }
+    {
+        extern void PortMods_GameTick(void); /* mods_game.c: the script mods (gs/mods.c), after the fight panels */
+        PortMods_GameTick();
+    }
     {   /* BT3_PAD_TABLE=<file>: what each pad read during the blank that ends here, 36 bytes per blank (the input
            of a session by blank and by pad: gs/net.c plays one player's column of it for its tests) */
         PORT_HOST static FILE *table = NULL;

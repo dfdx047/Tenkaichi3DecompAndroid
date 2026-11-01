@@ -43,7 +43,7 @@ In the game, F1 opens the settings: resolution, widescreen, controls and sound.
 With the European languages added, the first launch shows a language list in the game window before loading game or memory card data. Change it later with F1 > UI > Language.
 Saves are kept in saves/. A file placed in gamedata/mods/<same path as the original> replaces the original.
 Texture packs (PCSX2 naming, .dds or .png) go into textures/, stages and music from outside the disc into
-stages/ and songs/: see the note in each folder.
+stages/ and songs/: see the note in each folder. Script mods (Lua) go into mods/: see mods/README.txt.
 F1 > UI has three font settings, all starting on "Original": "Menu font" draws menu labels, "Battle font" draws
 announcements and HUD text, and "Dialogue / UI font" draws the game's ordinary text. Their fonts and licences are
 in fonts/. To add a .ttf, put it there and list it in fonts.tsv. The third column says where it can be used:
@@ -114,6 +114,19 @@ not listed while the .mp3 is there (it can be deleted). Anything else (ogg, m4a.
 Optional: a file songs.txt here, one line per song, "file|Name In The Menu", gives other names and an order.
 
 Added songs are not written to your save, and they are not offered in an online match (Tenkaichi Budokai Online).
+"""
+
+
+MODS_NOTE = """Script mods.
+
+Each mod is a folder here with a file mod.lua in it (a Lua script): mods/<name>/mod.lua. A mod can draw over the
+game's picture, read the fight (health, ki, positions) and change how the fight camera is shown. It cannot change a
+fight, read or write files or reach the network, so mods can be used in an online match.
+
+In the game, F1 > Mods lists them: switch each on or off, change its settings, see why one stopped, and load them all
+again after adding or changing one. Your choices are kept in bt3_mods.txt.
+
+How to write one: docs/port/mods.md in the source repository.
 """
 
 
@@ -236,13 +249,14 @@ def main_win():
     shutil.copy2(ROOT / "port/third_party/xxhash/LICENSE", lic / "xxhash.txt")
     shutil.copy2(ROOT / "port/third_party/miniaudio/LICENSE", lic / "miniaudio.txt")
     shutil.copy2(ROOT / "port/third_party/miniz/LICENSE", lic / "miniz.txt")
+    shutil.copy2(ROOT / "port/third_party/lua/LICENSE", lic / "lua.txt")  # (the script mods)
     shutil.copy2(ROOT / "port/third_party/monocypher/LICENCE.md", lic / "monocypher.txt")  # (the update's signature check)
 
     take_fonts(out, lic)
     take_tbo_art(out, lic)
     (out / "textures").mkdir()
     (out / "textures/README.txt").write_text(TEXTURES_NOTE.replace("\n", "\r\n"))
-    for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE)):
+    for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE), ("mods", MODS_NOTE)):
         (out / kind).mkdir()
         (out / kind / "README.txt").write_text(note.replace("\n", "\r\n"))
     (lic / "sdl3.txt").write_text("SDL3 (SDL3.dll) is distributed under the zlib license: https://www.libsdl.org/license.php\n")
@@ -320,13 +334,14 @@ def main_mac():
     shutil.copy2(ROOT / "port/third_party/xxhash/LICENSE", lic / "xxhash.txt")
     shutil.copy2(ROOT / "port/third_party/miniaudio/LICENSE", lic / "miniaudio.txt")
     shutil.copy2(ROOT / "port/third_party/miniz/LICENSE", lic / "miniz.txt")
+    shutil.copy2(ROOT / "port/third_party/lua/LICENSE", lic / "lua.txt")  # (the script mods)
     shutil.copy2(ROOT / "port/third_party/monocypher/LICENCE.md", lic / "monocypher.txt")  # (the update's signature check)
 
     take_fonts(out, lic)
     take_tbo_art(out, lic)
     (out / "textures").mkdir()
     (out / "textures/README.txt").write_text(TEXTURES_NOTE)
-    for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE)):
+    for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE), ("mods", MODS_NOTE)):
         (out / kind).mkdir()
         (out / kind / "README.txt").write_text(note)
     (lic / "sdl3.txt").write_text("SDL3 (lib/libSDL3.0.dylib) is distributed under the zlib license: https://www.libsdl.org/license.php\n")
@@ -373,13 +388,14 @@ def main():
     shutil.copy2(ROOT / "port/third_party/xxhash/LICENSE", lic / "xxhash.txt")
     shutil.copy2(ROOT / "port/third_party/miniaudio/LICENSE", lic / "miniaudio.txt")
     shutil.copy2(ROOT / "port/third_party/miniz/LICENSE", lic / "miniz.txt")
+    shutil.copy2(ROOT / "port/third_party/lua/LICENSE", lic / "lua.txt")  # (the script mods)
     shutil.copy2(ROOT / "port/third_party/monocypher/LICENCE.md", lic / "monocypher.txt")  # (the update's signature check)
 
     take_fonts(OUT, lic)
     take_tbo_art(OUT, lic)
     (OUT / "textures").mkdir()
     (OUT / "textures/README.txt").write_text(TEXTURES_NOTE)
-    for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE)):
+    for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE), ("mods", MODS_NOTE)):
         (OUT / kind).mkdir()
         (OUT / kind / "README.txt").write_text(note)
     (lic / "sdl3.txt").write_text("SDL3 (lib/libSDL3.so.0) is distributed under the zlib license: https://www.libsdl.org/license.php\n")

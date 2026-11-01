@@ -111,6 +111,8 @@ extern "C" volatile int gPortSpecMenuAsk;
 volatile int gPortSpecMenuAsk;
 extern "C" void Port_UiNotice(const char *text);
 static void spec_view_next(void);               // watching a match: the next view (player 1, player 2, both)
+void ModsUi_Tab(void);                          // gs/mods_ui.cpp: the settings window's Mods tab
+void ModsUi_Draw(void);                         // ... the script mods' shapes over the picture
 static const char *spec_view_name(int view);
 static int sForceTab = -1;                     // BT3_UI_OPEN=<tab>: open at start on that tab (testing)
 static int sCapKind, sCapPlayer, sCapAction;   // waiting for a key (1) or a controller button (2) to bind
@@ -2268,7 +2270,7 @@ static void build(void) {
         open = false;
     }
     if (sForceTab < 0 && (pad_pressed(ImGuiKey_GamepadL1) || pad_pressed(ImGuiKey_GamepadR1))) {
-        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 7 : 1)) % 8;
+        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 8 : 1)) % 9;
         sPadTab = true;
     }
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -2360,6 +2362,7 @@ static void build(void) {
             if (tab("Cheats", 5)) { cheats_tab(); ImGui::EndTabItem(); }
             if (tab("Misc", 6)) { misc_tab(); ImGui::EndTabItem(); }
             if (tab("Online", 7)) { online_tab(); ImGui::EndTabItem(); }
+            if (tab("Mods", 8)) { ModsUi_Tab(); ImGui::EndTabItem(); }
             ImGui::EndTabBar();
         }
         ImGui::EndChild();
@@ -2954,6 +2957,7 @@ static bool frame_build(void) {
     if (bars) {
         bars_draw();
     }
+    ModsUi_Draw(); // (the script mods' shapes over the picture: gs/mods_ui.cpp)
     if (sOpen) {
         if (sNet) {
             build_net();
