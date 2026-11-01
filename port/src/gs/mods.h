@@ -104,6 +104,22 @@ int Mods_HudRead(ModsHud *out);               /* any thread: a consistent copy; 
 int Mods_HudActive(void);                     /* any thread: the scripts drew something at the last blank */
 int Mods_HudHidden(void);                     /* any thread: the game's HUD pieces they stand in for (bits: 1 gauges,
                                                  2 timer, 4 combo) */
+/* The look of the fight's picture the scripts asked for at the last blank (bt3.look), 0..100 each, 0 = as the game
+   draws it; read by the renderer (gs_draw.c) on the game's thread. Several mods asking: the strongest of each.
+   shading:      the fighters' two-tone shading ramp redrawn: cool coloured shadows, a soft short edge
+   rim:          light along the fighters' silhouettes, in rim_color (0xRRGGBBAA, alpha unused)
+   vivid:        the picture's colours livelier, a little more contrast, part of the stage's colour cast taken out
+   ambient:      soft shadows in creases and where things meet the ground (from the depth buffer)
+   energy:       what adds light (ki blasts, beams, sparks) drawn stronger and more saturated
+   energy_light: that light tinting the ground, rocks and fighters round it
+   vivid, ambient and energy_light are one pass over the picture before the HUD, drawn only by the renderer of SDL's
+   GPU API outside Windows (gs_gpu.c); the others by every renderer. */
+typedef struct ModsLook {
+    int shading, rim, vivid, ambient, energy, energy_light;
+    unsigned rim_color;
+} ModsLook;
+const ModsLook *Mods_Look(void);
+
 /* Pictures a script asked for (bt3.image): the file of image `id`, and a number that changes when the list is made
    again (a reload), for the render thread's textures. NULL = no such image. */
 const char *Mods_ImagePath(int id, char *out, int size);

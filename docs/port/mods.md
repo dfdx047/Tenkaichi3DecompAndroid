@@ -1,7 +1,7 @@
 # Script mods (Lua)
 
-The port runs **script mods**: small Lua 5.4 programs that read the fight, draw over the game's picture and change
-how the fight camera is shown. A mod is a folder with a `mod.lua` in it; nothing is compiled and the same mod works
+The port runs **script mods**: small Lua 5.4 programs that read the fight, draw over the game's picture, change the
+look the renderer gives it and change how the fight camera is shown. A mod is a folder with a `mod.lua` in it; nothing is compiled and the same mod works
 on Windows, Linux and macOS.
 
 This is not the same as `gamedata/mods/`, which replaces files of the disc (textures, models, voices). The two can
@@ -161,6 +161,28 @@ They appear under the mod in F1 > Mods, are saved, and are read with `bt3.settin
 steps. Up to 24 settings, 8 choices each.
 
 
+## The look of the picture
+
+`bt3.look{...}` asks the renderer to draw the game's picture differently this blank. Call it every blank (from
+`on_frame`), like the shapes: a mod switched off or stopped gives the game's own picture back at once. Each value is
+0..100, 0 (or left out) leaving that part as the game draws it; with several mods, each is the strongest asked for.
+
+| field | |
+| --- | --- |
+| `shading` | the fighters' two-tone shading redrawn: cool coloured shadows (toward blue-violet, not too dark) with a soft, short edge, the lit side a little livelier; the colours stay each fighter's |
+| `rim`, `rim_color` | light along the fighters' silhouettes, stronger on the side facing the light, in `rim_color` (`0xRRGGBBAA`, alpha unused; default a warm white) |
+| `vivid` | livelier colours (dull ones more, skin and sand less), a little more contrast, cool shadows; part of the stage's colour cast taken out, followed slowly so a flash does not swing it |
+| `ambient` | soft shadows in creases and where things meet the ground, from the depth buffer |
+| `energy` | what adds light (ki blasts, beams, sparks, flashes) drawn stronger and more saturated |
+| `energy_light` | that light tinting the ground, rocks and fighters round it |
+
+`vivid`, `ambient` and `energy_light` are one pass over the fight's picture just before its HUD, so the HUD and the
+menus keep their colours. Only the GPU renderer draws it (F1 > Video, not OpenGL); the others are drawn by every
+renderer. A change of `shading` redraws the fighters' shading ramps once: move it in steps, not every blank.
+`BT3_AO_DEBUG=1` shows the ambient shadows alone (2 the depth, 3 the colour balance, 4 the energy light).
+Example: `mods/modern_look`.
+
+
 ## `bt3` and the rest of Lua
 
 | | |
@@ -172,6 +194,7 @@ steps. Up to 24 settings, 8 choices each.
 | `bt3.image(file)` | a PNG of the mod's folder for `hud.image`: its number, width and height (nil and why if it cannot be read) |
 | `bt3.label(id)`, `bt3.locale()` | one of the game's labels in the menus' language (`"combo-hits/0/0"`, see `port/translations/labels`), and that language |
 | `bt3.log(...)`, `print(...)` | a line in the log, with the mod's name |
+| `bt3.look{...}` | how the renderer draws the picture this blank (The look of the picture) |
 | `require("a.b")` | runs `a/b.lua` of the mod's folder once and returns its result |
 
 Lua's `string`, `table`, `math`, `utf8` and `coroutine` libraries are there. `io`, `os`, `package`, `debug`, `load`,
@@ -189,7 +212,8 @@ run compiled Lua.
 
 ## Mods and online play, replays, saves
 
-A script cannot change a fight: it only reads, draws its own shapes and changes the camera pose that is **drawn**.
+A script cannot change a fight: it only reads, draws its own shapes, changes how the picture is drawn and changes the
+camera pose that is **drawn**.
 That pose is the view's copy, which the game builds again from the fighter camera at the start of the next frame;
 the fight does not read it back (`include/battle/btl_char_cam.h`: only `BtlCharApi_GetCamPose` reads the fighter
 camera's pose; movement goes by its yaw). So:

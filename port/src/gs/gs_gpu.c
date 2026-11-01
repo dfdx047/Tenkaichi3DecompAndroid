@@ -39,6 +39,13 @@ static SDL_GPUTransferBuffer *sVxfer;
 static SDL_GPUSampler *sSamplers[16]; /* bit 0 filtered, bit 1 / 2 clamped in u / v, bit 3 with the smaller copies (mip levels) */
 static SDL_GPUTexture *sWhite;
 static SDL_GPUGraphicsPipeline *sOutlinePipe, *sKeyPipe;
+/* A script mod's look pass (native effect 6, shaders/grade.frag; gs_draw.c grade_add): its pipeline and the copy of
+   the picture it reads, and the scene's average colour followed slowly (avg.frag) for its colour balance. */
+static SDL_GPUGraphicsPipeline *sGradePipe, *sAvgPipe;
+static SDL_GPUTexture *sGradeCopy, *sBalance; /* (the copy has mipmaps; sBalance: 1 x 1) */
+static SDL_GPUSampler *sGradeSampler;         /* linear, between mipmaps too */
+static Uint32 sGradeW, sGradeH, sGradeLevels;
+static int sBalanceFresh = 1;
 static SDL_GPUTexture *sFbTex[2]; /* pictures uploaded into the two display buffers (movies) */
 static SDL_GPUShader *sFxVs, *sDclutFs;
 static SDL_GPUTexture *sDateCopy; /* the alpha bytes as they were before a run of draws that test them (TEST.DATE) */
@@ -793,6 +800,56 @@ static int vk_init(void) {
             fprintf(stderr, "bt3: alpha key pipeline: %s\n", SDL_GetError());
             return 0;
         }
+        /* the look pass: the picture's colours replaced, alpha (the objects' numbers) kept. Without it the picture
+           stays as the game draws it. */
+        fs = shader(SHADER_CODE(kGradeFrag), SDL_GPU_SHADERSTAGE_FRAGMENT, 3, 1);
+        cd.blend_state.enable_blend = false;
+        ci.fragment_shader = fs;
+        sGradePipe = fs ? SDL_CreateGPUGraphicsPipeline(sDev, &ci) : NULL;
+        if (fs) { SDL_ReleaseGPUShader(sDev, fs); }
+        if (sGradePipe == NULL) {
+            fprintf(stderr, "bt3: look pipeline: %s (the colours stay as they are)\n", SDL_GetError());
+        }
+        {   /* the scene's average, followed slowly: new * k + old * (1 - k), k the blend constant */
+            SDL_GPUColorTargetDescription ad = cd;
+            SDL_GPUGraphicsPipelineCreateInfo ai = ci;
+            SDL_GPUSamplerCreateInfo si;
+            SDL_GPUTextureCreateInfo tci;
+            ad.format = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
+            ad.blend_state.enable_blend = true;
+            ad.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_CONSTANT_COLOR;
+            ad.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_CONSTANT_COLOR;
+            ad.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+            ad.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+            ad.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+            ad.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+            ad.blend_state.enable_color_write_mask = false;
+            ai.target_info.color_target_descriptions = &ad;
+            fs = shader(SHADER_CODE(kAvgFrag), SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+            ai.fragment_shader = fs;
+            sAvgPipe = fs ? SDL_CreateGPUGraphicsPipeline(sDev, &ai) : NULL;
+            if (fs) { SDL_ReleaseGPUShader(sDev, fs); }
+            SDL_zero(si);
+            si.min_filter = SDL_GPU_FILTER_LINEAR;
+            si.mag_filter = SDL_GPU_FILTER_LINEAR;
+            si.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_LINEAR;
+            si.address_mode_u = si.address_mode_v = si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+            si.max_lod = 1000.0f;
+            sGradeSampler = SDL_CreateGPUSampler(sDev, &si);
+            SDL_zero(tci);
+            tci.type = SDL_GPU_TEXTURETYPE_2D;
+            tci.format = SDL_GPU_TEXTUREFORMAT_R16G16B16A16_FLOAT;
+            tci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+            tci.width = tci.height = 1;
+            tci.layer_count_or_depth = 1;
+            tci.num_levels = 1;
+            sBalance = SDL_CreateGPUTexture(sDev, &tci);
+            if (sAvgPipe == NULL || sGradeSampler == NULL || sBalance == NULL) {
+                fprintf(stderr, "bt3: look balance: %s (the colours stay as they are)\n", SDL_GetError());
+                if (sGradePipe) { SDL_ReleaseGPUGraphicsPipeline(sDev, sGradePipe); sGradePipe = NULL; }
+            }
+        }
+        cd.blend_state.enable_blend = true;
     }
     sDclutFs = shader(SHADER_CODE(kDclutFrag), SDL_GPU_SHADERSTAGE_FRAGMENT, 3, 1);
     copies_create();
@@ -1384,6 +1441,107 @@ static void vk_frame_end(void) {
             SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
             SDL_EndGPURenderPass(pass);
             pass = NULL;
+            continue;
+        }
+        if (d->native == 6) { /* a script mod's look: the picture copied, then drawn back over itself, changed */
+            if (pass != NULL) {
+                SDL_EndGPURenderPass(pass);
+                pass = NULL;
+            }
+            cur = -1;
+            if (sGradePipe != NULL && gsTargets[d->target].cleared) {
+                Uint32 w = GS_W * SCALE, h = GS_H * SCALE;
+                if (sGradeCopy == NULL || sGradeW != w || sGradeH != h) {
+                    SDL_GPUTextureCreateInfo tci;
+                    Uint32 m = w > h ? w : h;
+                    if (sGradeCopy != NULL) { SDL_ReleaseGPUTexture(sDev, sGradeCopy); }
+                    for (sGradeLevels = 1; (m >> sGradeLevels) > 0; sGradeLevels++) {
+                    }
+                    SDL_zero(tci);
+                    tci.type = SDL_GPU_TEXTURETYPE_2D;
+                    tci.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+                    tci.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+                    tci.width = w;
+                    tci.height = h;
+                    tci.layer_count_or_depth = 1;
+                    tci.num_levels = sGradeLevels; /* (the blur of the energy light and the scene's average) */
+                    sGradeCopy = SDL_CreateGPUTexture(sDev, &tci);
+                    sGradeW = w;
+                    sGradeH = h;
+                }
+                if (sGradeCopy != NULL) {
+                    SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
+                    SDL_GPUTextureLocation from, to;
+                    SDL_GPUColorTargetInfo ft;
+                    SDL_GPUTextureSamplerBinding fs[3];
+                    float params[16 + GS_LIGHTS * 8];
+                    SDL_zero(from);
+                    SDL_zero(to);
+                    from.texture = sTgCol[d->target];
+                    to.texture = sGradeCopy;
+                    SDL_CopyGPUTextureToTexture(cp, &from, &to, w, h, 1, false);
+                    SDL_EndGPUCopyPass(cp);
+                    SDL_GenerateMipmapsForGPUTexture(cmd, sGradeCopy);
+                    {   /* the scene's average into the slow one (the first time: taken as it is) */
+                        SDL_GPUColorTargetInfo bt;
+                        SDL_GPUTextureSamplerBinding bs;
+                        SDL_FColor k;
+                        /* a level where the picture (512 x 448 GS pixels of the 1024 x 1024 buffer) is ~8 texels across */
+                        float lod[4] = {6.0f, 512.0f / (float)GS_W, 448.0f / (float)GS_H, 0.0f};
+                        for (Uint32 sc3 = SCALE; sc3 > 1; sc3 >>= 1) { lod[0] += 1.0f; }
+                        SDL_zero(bt);
+                        bt.texture = sBalance;
+                        bt.load_op = sBalanceFresh ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD;
+                        bt.store_op = SDL_GPU_STOREOP_STORE;
+                        pass = SDL_BeginGPURenderPass(cmd, &bt, 1, NULL);
+                        SDL_BindGPUGraphicsPipeline(pass, sAvgPipe);
+                        k.r = k.g = k.b = k.a = sBalanceFresh ? 1.0f : 0.06f;
+                        SDL_SetGPUBlendConstants(pass, k);
+                        bs.texture = sGradeCopy;
+                        bs.sampler = sGradeSampler;
+                        SDL_BindGPUFragmentSamplers(pass, 0, &bs, 1);
+                        SDL_PushGPUFragmentUniformData(cmd, 0, lod, sizeof(lod));
+                        SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+                        SDL_EndGPURenderPass(pass);
+                        pass = NULL;
+                        sBalanceFresh = 0;
+                    }
+                    SDL_zero(ft);
+                    ft.texture = sTgCol[d->target];
+                    ft.load_op = SDL_GPU_LOADOP_LOAD;
+                    ft.store_op = SDL_GPU_STOREOP_STORE;
+                    pass = SDL_BeginGPURenderPass(cmd, &ft, 1, NULL);
+                    SDL_BindGPUGraphicsPipeline(pass, sGradePipe);
+                    fs[0].texture = sGradeCopy;
+                    fs[0].sampler = sGradeSampler; /* (level 0 at its own size; the blurs from the mipmaps) */
+                    fs[1].texture = sTgDep[d->target]; /* (the ambient shadows read the depth) */
+                    fs[1].sampler = sSamplers[6];
+                    fs[2].texture = sBalance;
+                    fs[2].sampler = sSamplers[6];
+                    SDL_BindGPUFragmentSamplers(pass, 0, fs, 3);
+                    memcpy(params, d->misc, sizeof(float) * 4);
+                    memcpy(params + 4, d->rect, sizeof(float) * 4);
+                    memcpy(params + 8, d->orig, sizeof(float) * 4);
+                    params[12] = d->blendc;                  /* (the depth buffer's maximum / 65536) */
+                    params[13] = (float)d->mode[0] / 100.0f; /* balance */
+                    params[14] = (float)d->mode[1] / 100.0f; /* energy light */
+                    {   /* the frame's energy lights (gs_draw.c light_add) */
+                        int set = d->src >= 0 && d->src < GS_LIGHT_SETS ? d->src : 0, n = gsGradeLightCount[set];
+                        params[15] = (float)n;
+                        for (int li = 0; li < GS_LIGHTS; li++) {
+                            const GsLight *l = &gsGradeLights[set][li];
+                            float *o = params + 16 + li * 8;
+                            if (li >= n) { memset(o, 0, sizeof(float) * 8); continue; }
+                            o[0] = l->x; o[1] = l->y; o[2] = l->rad; o[3] = l->z;
+                            o[4] = l->r; o[5] = l->g; o[6] = l->b; o[7] = l->w;
+                        }
+                    }
+                    SDL_PushGPUFragmentUniformData(cmd, 0, params, sizeof(params));
+                    SDL_DrawGPUPrimitives(pass, 3, 1, 0, 0);
+                    SDL_EndGPURenderPass(pass);
+                    pass = NULL;
+                }
+            }
             continue;
         }
         if (d->native) { /* a native full-screen effect: its own pass on the colour texture alone, reading the alpha copy */

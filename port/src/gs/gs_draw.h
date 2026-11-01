@@ -66,6 +66,16 @@ typedef struct GsTarget {
    back end replays the list by rebuilding its passes around the current target and calling the pipeline. */
 extern float gsZMax; /* gs_draw.c */
 
+/* An energy light of the frame (gs_draw.c light_add, a script mod's bt3.look energy_light): where on the screen (GS
+   pixels), how far it reaches, its depth (the game's / 65536) and colour, how strong. The grade pass (native effect
+   6, shaders/grade.frag) lights what is round it. A frame's lights are a set of their own, so a back end drawing an
+   earlier frame reads that frame's. */
+#define GS_LIGHTS 16
+#define GS_LIGHT_SETS 8
+typedef struct GsLight { float x, y, rad, z, r, g, b, w; } GsLight;
+extern GsLight gsGradeLights[GS_LIGHT_SETS][GS_LIGHTS];
+extern int gsGradeLightCount[GS_LIGHT_SETS];
+
 typedef struct GsDraw {
     int vu;      /* 1, 2, 3: vertex programs' vertices (gsVuVerts, uniform block at `uniform`); 0: gsVerts */
     int uniform;

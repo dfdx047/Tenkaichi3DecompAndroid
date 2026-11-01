@@ -1,7 +1,7 @@
 /* The script mods (port/src/gs/mods.c) on their own, without the game: scripts are written to a scratch folder and
  * run through the same calls the game makes once per blank (Mods_Tick) and from the camera hook (Mods_Camera). What
  * the game would hand over (the fight, the camera) comes from this file. Checked: loading, settings and the file they
- * are kept in, the HUD's shapes and text, the camera (and that a pose that is not a number is refused), require, and
+ * are kept in, the HUD's shapes and text, the look asked of the renderer (bt3.look), the camera (and that a pose that is not a number is refused), require, and
  * that a script cannot reach outside (no io, os, load, string.dump) and is stopped by an error, an endless loop or
  * taking too much memory, without stopping the others. Built with the address and undefined-behaviour sanitizers.
  *
@@ -105,6 +105,8 @@ int main(void) {
     put("bad_return", "mod.lua", "x = 1\n");
     put("syntax", "mod.lua", "return { on_frame = function( }\n");
     put("not_a_mod", "readme.txt", "no script here\n");
+    put("look_a", "mod.lua", "return { on_frame = function() bt3.look{ shading = 150, vivid = 40, rim = 30, rim_color = 0x11223344 } end }\n");
+    put("look_b", "mod.lua", "return { on_frame = function() bt3.look{ vivid = 70.4, ambient = 0/0, energy = -5 } end }\n");
     put("shapes", "mod.lua",
         "local img, iw, ih = bt3.image('art/frame.png')\n"
         "assert(img == 1 and iw == 300 and ih == 20, 'image size')\n"
@@ -158,7 +160,13 @@ int main(void) {
     sFp.side[0].msg = 2;
 
     Mods_Tick();
-    CHECK(Mods_Count() == 10); /* (every folder with a mod.lua; not not_a_mod) */
+    CHECK(Mods_Count() == 12); /* (every folder with a mod.lua; not not_a_mod) */
+    {   /* the look: the strongest each mod asked for, within 0..100 (NaN: 0) */
+        const ModsLook *lk = Mods_Look();
+        CHECK(mod("look_a")->error[0] == '\0' && mod("look_b")->error[0] == '\0');
+        CHECK(lk->shading == 100 && lk->vivid == 70 && lk->rim == 30 && lk->ambient == 0 && lk->energy == 0 &&
+              lk->energy_light == 0 && lk->rim_color == 0x11223344u);
+    }
     CHECK(mod("shapes") != NULL && mod("shapes")->error[0] == '\0');
     CHECK(Mods_HudHidden() == (1 | 4));
     {
@@ -222,6 +230,16 @@ int main(void) {
     Mods_SettingChanged();
     Mods_Tick();
     CHECK(Mods_HudRead(&sRead) && sRead.count == 13 && sRead.cmd[0].kind == MODS_CMD_POLY); /* (only the shapes mod's) */
+    Mods_Lock();
+    mod("look_a")->enabled = 0;
+    Mods_Unlock();
+    Mods_Tick(); /* (the look follows: what look_a asked for is gone, look_b's stays) */
+    CHECK(Mods_Look()->shading == 0 && Mods_Look()->vivid == 70 && Mods_Look()->rim == 0 && Mods_Look()->rim_color == 0xFFECD6FFu);
+    Mods_Lock();
+    mod("look_b")->enabled = 0;
+    Mods_Unlock();
+    Mods_Tick();
+    CHECK(memcmp(Mods_Look(), &kLookNone, sizeof(ModsLook)) == 0);
     {
         long size = 0;
         char *text = read_file(settings, &size);
@@ -232,7 +250,7 @@ int main(void) {
     /* loaded again: the choices come back from the file, the stopped scripts run again (and stop again) */
     Mods_ReloadAsk();
     Mods_Tick();
-    CHECK(Mods_Count() == 10 && mod("hud")->enabled == 0 && mod("hud")->set[0].value == 33.0);
+    CHECK(Mods_Count() == 12 && mod("hud")->enabled == 0 && mod("hud")->set[0].value == 33.0);
     CHECK(strstr(mod("loop")->error, "too long") != NULL);
 
     /* a long run of blanks: nothing grows */

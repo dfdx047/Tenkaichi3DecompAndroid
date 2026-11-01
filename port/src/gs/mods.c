@@ -318,6 +318,10 @@ static int sImgCount;
 static volatile unsigned sImgGen = 1;
 
 int Mods_HudHidden(void) { return sHide; }
+/* bt3.look: built during a blank's scripts like the shapes, the last blank's kept for the renderer (game's thread) */
+static const ModsLook kLookNone = {0, 0, 0, 0, 0, 0, 0xFFECD6FFu};
+static ModsLook sLookBuild = {0, 0, 0, 0, 0, 0, 0xFFECD6FFu}, sLook = {0, 0, 0, 0, 0, 0, 0xFFECD6FFu};
+const ModsLook *Mods_Look(void) { return &sLook; }
 unsigned Mods_ImageGen(void) { return sImgGen; }
 
 const char *Mods_ImagePath(int id, char *out, int size) {
@@ -768,6 +772,36 @@ static int l_hud_hide_game(lua_State *L) {
     return 0;
 }
 
+/* bt3.look{shading = 0..100, rim = 0..100, rim_color = 0xRRGGBBAA, vivid, ambient, energy, energy_light}: how the
+   renderer draws the fight's picture this blank (mods.h ModsLook). Asked again every blank, like the shapes: a mod
+   switched off or stopped leaves the picture as the game draws it. Fields left out are not changed; with several
+   mods each one is the strongest asked for. Only the picture changes, never the fight. */
+static int l_look(lua_State *L) {
+    static const char *const keys[] = {"shading", "rim", "vivid", "ambient", "energy", "energy_light"};
+    int *const out[] = {&sLookBuild.shading, &sLookBuild.rim, &sLookBuild.vivid, &sLookBuild.ambient,
+                        &sLookBuild.energy, &sLookBuild.energy_light};
+    int k;
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+    for (k = 0; k < 6; k++) {
+        lua_getfield(L, 1, keys[k]);
+        if (!lua_isnil(L, -1)) {
+            lua_Number v = luaL_checknumber(L, -1);
+            int n = !(v > 0) ? 0 : v > 100 ? 100 : (int)(v + 0.5); /* (NaN: 0) */
+            if (n > *out[k]) {
+                *out[k] = n;
+            }
+        }
+        lua_pop(L, 1);
+    }
+    lua_getfield(L, 1, "rim_color");
+    if (!lua_isnil(L, -1)) {
+        sLookBuild.rim_color = (unsigned)luaL_checkinteger(L, -1);
+    }
+    lua_pop(L, 1);
+    return 0;
+}
+
 static float hud_width(void) {
     int w = gUiPresentW, h = gUiPresentH;
     return w > 0 && h > 0 ? MODS_HUD_H * (float)w / (float)h : MODS_HUD_H * 4.0f / 3.0f;
@@ -841,6 +875,7 @@ static void hud_publish(void) {
     memcpy(sHud.cols, sBuild.cols, (size_t)sBuild.colours * sizeof(unsigned));
     __atomic_add_fetch(&sHudSeq, 1, __ATOMIC_ACQ_REL);
     sHide = sHideBuild;
+    sLook = sLookBuild;
 }
 
 static void hud_begin(void) {
@@ -850,6 +885,7 @@ static void hud_begin(void) {
     sBuild.colours = 0;
     sBuild.w = hud_width();
     sHideBuild = 0;
+    sLookBuild = kLookNone;
 }
 
 /* ------------------------------------------------------------------------------------------------ the game table */
@@ -1184,6 +1220,8 @@ static void open_libs(lua_State *L, int i) {
     lua_setfield(L, -2, "locale");
     lua_pushcfunction(L, l_print);
     lua_setfield(L, -2, "log");
+    lua_pushcfunction(L, l_look);
+    lua_setfield(L, -2, "look");
     lua_setglobal(L, "bt3");
 }
 
@@ -1359,7 +1397,7 @@ void Mods_Tick(void) {
         settings_save();
     }
     if (sCount == 0) {
-        if (sHud.count != 0 || sHide != 0) { /* (the last mod gone: its shapes too) */
+        if (sHud.count != 0 || sHide != 0 || memcmp(&sLook, &kLookNone, sizeof(sLook)) != 0) { /* (the last mod gone: its shapes and look too) */
             hud_begin();
             hud_publish();
         }

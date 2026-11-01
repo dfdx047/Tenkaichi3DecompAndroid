@@ -27,6 +27,7 @@
 #include "gs_texpack.h" /* texture packs (replacement textures) */
 #include "menu_text.h"  /* editable labels in the original menu texture slots */
 #include "menu_labels.h"      /* European menu art and native language selector pictures */
+#include "mods.h"             /* the look script mods ask for (bt3.look) */
 #include <math.h>
 
 /* Stage-name overlay: defined here (C) so both the renderer (gs_gpu.c) and the game's menu (menu_c_e.c) can
@@ -247,10 +248,131 @@ typedef struct Tex {
     uint32_t amax;           /* and the largest alpha byte of the original */
     int pack;                /* a texture pack's replacement still being read (gs_texpack.c), or -1 */
     uint32_t packAlpha;      /* and the amax it will have */
+    float avg[3];            /* its average colour, weighted by alpha, 0..1 (an energy light's colour is in its texture) */
 } Tex;
 static Tex sTex[MAX_TEX];
 static uint16_t sTexBucket[TEX_BUCKETS]; /* index + 1 of a cache entry, 0 = empty (open addressing) */
 static Tex *sLast; /* the entry the previous lookup returned */
+
+/* ---- The look script mods ask for (gs/mods.c bt3.look, mods.h ModsLook). Only the picture changes, never the fight.
+
+   Shading: the fighters' second layer (vertex program 0, layer 1; shaders/vu0.vert) looks up a small ramp texture
+   by how much a point faces the light, from the fighter's shadow colour to its lit colour. The ramp is redrawn
+   (toon_sharpen): wider (256 texels, so its filtering does not blur the edge), its shadow side one cool tone (toward
+   blue-violet, not too dark), its lit side the ramp's lightest colour a little livelier, a soft edge of a few pixels
+   between them: the look of later anime games. Its colours stay the fighter's, so it suits any model.
+   Rim: the same triangles again after that layer, adding light along the silhouette (vu0.vert layer 6).
+   Energy: what adds its light to a fight's picture (ki blasts, beams, sparks: Cs * alpha + Cd) drawn livelier.
+   Vivid, ambient, energy light: the grade pass over the picture as the HUD begins (native effect 6, marker 0x70 of
+   src/battle/hud_0.c; shaders/grade.frag, drawn by gs_gpu.c). */
+static int sToonWanted; /* the texture asked for now is a fighter's shading ramp (GsGpu_DrawVu0, layer 1) */
+static float sTexAvg[3] = {1.0f, 1.0f, 1.0f}; /* (texture_get: the average colour of the texture being made) */
+/* The energy lights of the frame: every additive draw of a fight is a light where it is on the screen, at its depth,
+   in its colour (vertex colour times its texture's average); nearby ones merged, the GS_LIGHTS strongest kept. */
+static GsLight sLights[GS_LIGHTS];
+static int sLightCount, sLightSet;
+static unsigned sLightFrame = ~0u, sGradeFrame = ~0u;
+GsLight gsGradeLights[GS_LIGHT_SETS][GS_LIGHTS];
+int gsGradeLightCount[GS_LIGHT_SETS];
+
+static void light_add(float x0, float y0, float x1, float y1, float z, float r, float g, float b) {
+    float cx = (x0 + x1) * 0.5f, cy = (y0 + y1) * 0.5f, rad = fmaxf(x1 - x0, y1 - y0) * 0.5f;
+    float w = (r + g + b) / 3.0f * fminf(rad, 160.0f);
+    int i, weakest = 0;
+    if (sLightFrame != gGsFrame) {
+        sLightFrame = gGsFrame;
+        sLightCount = 0;
+    }
+    if (rad < 2.0f || w <= 0.02f) {
+        return;
+    }
+    for (i = 0; i < sLightCount; i++) { /* one that overlaps on the screen and in depth: the two as one */
+        GsLight *l = &sLights[i];
+        float dx = l->x - cx, dy = l->y - cy;
+        if (dx * dx + dy * dy < (l->rad + rad) * (l->rad + rad) * 0.36f && fabsf(l->z - z) < 0.02f) {
+            float k = w / (l->w + w);
+            float nx0 = fminf(l->x - l->rad, cx - rad), nx1 = fmaxf(l->x + l->rad, cx + rad);
+            float ny0 = fminf(l->y - l->rad, cy - rad), ny1 = fmaxf(l->y + l->rad, cy + rad);
+            l->x = (nx0 + nx1) * 0.5f;
+            l->y = (ny0 + ny1) * 0.5f;
+            l->rad = fmaxf(nx1 - nx0, ny1 - ny0) * 0.5f;
+            l->z += (z - l->z) * k;
+            l->r += (r - l->r) * k; l->g += (g - l->g) * k; l->b += (b - l->b) * k;
+            l->w += w;
+            return;
+        }
+        if (l->w < sLights[weakest].w) {
+            weakest = i;
+        }
+    }
+    if (sLightCount < GS_LIGHTS) {
+        i = sLightCount++;
+    } else if (sLights[weakest].w < w) {
+        i = weakest;
+    } else {
+        return;
+    }
+    sLights[i].x = cx; sLights[i].y = cy; sLights[i].rad = rad; sLights[i].z = z;
+    sLights[i].r = r; sLights[i].g = g; sLights[i].b = b; sLights[i].w = w;
+}
+
+/* The ramp `px` (w x h, GS RGBA) redrawn at `sharp` (1..100) into a new picture 256 wide: *ow, *oh. NULL: left as
+   it is. */
+static uint32_t *toon_sharpen(const uint32_t *px, uint32_t w, uint32_t h, int sharp, uint32_t *ow, uint32_t *oh) {
+    static const float kCool[3] = {0.84f, 0.84f, 1.10f};
+    const uint32_t W = w < 256 ? 256 : w;
+    uint32_t *out = (uint32_t *)malloc((size_t)W * h * 4), x, y;
+    const float k = sharp / 100.0f;
+    if (out == NULL) {
+        return NULL;
+    }
+    for (y = 0; y < h; y++) {
+        const uint8_t *row = (const uint8_t *)(px + (size_t)y * w);
+        float lmin = 1e9f, lmax = -1e9f, lit[3], shade[3], ll, sl;
+        uint32_t imin = 0, imax = 0;
+        int ch;
+        for (x = 0; x < w; x++) {
+            const uint8_t *c = row + x * 4;
+            float l = c[0] * 0.3f + c[1] * 0.59f + c[2] * 0.11f;
+            if (l < lmin) { lmin = l; imin = x; }
+            if (l > lmax) { lmax = l; imax = x; }
+        }
+        for (ch = 0; ch < 3; ch++) { /* the shadow tone a little over a third of the way to the lit one: its darkest
+                                        alone made dark suits nearly black */
+            lit[ch] = row[imax * 4 + ch];
+            shade[ch] = row[imin * 4 + ch] + (lit[ch] - row[imin * 4 + ch]) * 0.38f;
+        }
+        ll = (lit[0] + lit[1] + lit[2]) / 3.0f;
+        sl = (shade[0] + shade[1] + shade[2]) / 3.0f;
+        for (x = 0; x < W; x++) {
+            /* the original at this point of the wider ramp, linearly */
+            float sx = ((float)x + 0.5f) * w / W - 0.5f, f, l, t, e;
+            int x0 = (int)floorf(sx), x1 = x0 + 1;
+            uint8_t o[4], *dst = (uint8_t *)(out + (size_t)y * W + x);
+            f = sx - (float)x0;
+            x0 = x0 < 0 ? 0 : x0 > (int)w - 1 ? (int)w - 1 : x0;
+            x1 = x1 < 0 ? 0 : x1 > (int)w - 1 ? (int)w - 1 : x1;
+            for (ch = 0; ch < 4; ch++) {
+                o[ch] = (uint8_t)(row[x0 * 4 + ch] + (row[x1 * 4 + ch] - row[x0 * 4 + ch]) * f + 0.5f);
+            }
+            l = o[0] * 0.3f + o[1] * 0.59f + o[2] * 0.11f;
+            t = lmax - lmin > 4.0f ? (l - lmin) / (lmax - lmin) : 0.5f;
+            e = t < 0.36f ? 0.0f : t > 0.6f ? 1.0f : (t - 0.36f) / 0.24f; /* (the soft edge) */
+            e = e * e * (3.0f - 2.0f * e);
+            for (ch = 0; ch < 3; ch++) {
+                float b = ll + (lit[ch] - ll) * 1.12f;                 /* (lit: a little more saturated) */
+                float a = (sl + (shade[ch] - sl) * 1.15f) * kCool[ch]; /* (shadow: saturated, cooler) */
+                float want = a + (b - a) * e;
+                want = want < 0.0f ? 0.0f : want > 255.0f ? 255.0f : want;
+                dst[ch] = (uint8_t)(o[ch] + (want - o[ch]) * k + 0.5f);
+            }
+            dst[3] = o[3];
+        }
+    }
+    *ow = W;
+    *oh = h;
+    return out;
+}
 
 /* The 256-colour tables as textures, by their entries (64 slots): found by a hash, taken only if every entry is the
    same. (By the hash alone two different tables were one: the object glow's table and the glare's ramp, which differ
@@ -687,6 +809,8 @@ static GsTex texture_get(int ctx) {
        texture identities when the artwork is still on "Original". */
     gen ^= MenuText_TexKey((int)tw, (int)th, bits <= 8, (int)tbp, (int)cbp, MenuText_RasterScale(SCALE));
     gen ^= bits <= 8 ? MenuLabels_ArtKey() : 0; /* the chosen language's menu art ready: decoded again */
+    int toonSharp = sToonWanted ? Mods_Look()->shading : 0; /* (a fighter's shading ramp, redrawn: its own copy) */
+    if (toonSharp > 0) { gen ^= 0x70017000u + (uint32_t)toonSharp * 0x9E3779B1u; }
     if (sTexPackOn && TexPack_Count() != 0) {
         gen ^= 0x5BD1E995u; /* with the pack and without it are different textures: switching it takes effect at once */
     }
@@ -777,6 +901,18 @@ static GsTex texture_get(int ctx) {
         if (px != NULL) {
             TexDecode d = {tbp, tbw, psm, bits, tw, th, lut, px};
             tex_decode(&d);
+            {   /* its average colour, by alpha (every 4th texel is plenty): the colour of an energy light */
+                double sr = 0.0, sg = 0.0, sb = 0.0, sa = 0.0;
+                uint32_t n;
+                for (n = 0; n < tw * th; n += 4) {
+                    uint32_t c = px[n];
+                    double a = (double)(c >> 24);
+                    sr += (c & 0xFF) * a; sg += ((c >> 8) & 0xFF) * a; sb += ((c >> 16) & 0xFF) * a; sa += a;
+                }
+                sTexAvg[0] = sa > 0.0 ? (float)(sr / sa / 255.0) : 1.0f;
+                sTexAvg[1] = sa > 0.0 ? (float)(sg / sa / 255.0) : 1.0f;
+                sTexAvg[2] = sa > 0.0 ? (float)(sb / sa / 255.0) : 1.0f;
+            }
         }
     }
     if (px != NULL && !replaced && bits <= 8) {
@@ -806,6 +942,16 @@ static GsTex texture_get(int ctx) {
         if (getenv("BT3_FONT_LOG") != NULL) { /* what a font setting costs: every decoded texture, and the time the text took */
             fprintf(stderr, "font: frame %u: %ux%u %s %.3f ms\n", gGsFrame, (unsigned)tw, (unsigned)th, text != NULL ? "drawn" : "left",
                     (double)(gpu_now() - font_t0) / 1e6);
+        }
+    }
+    if (toonSharp > 0 && !replaced && !menuText && px != NULL) {
+        uint32_t sw = 0, sh = 0;
+        uint32_t *sharp = toon_sharpen(px, tw, th, toonSharp, &sw, &sh);
+        if (sharp != NULL) {
+            free(px);
+            px = sharp;
+            rw = sw;
+            rh = sh;
         }
     }
     gGpuTexNs += gpu_now() - tex_t0;
@@ -855,6 +1001,8 @@ static GsTex texture_get(int ctx) {
     t->amax = replaced ? packMaxAlpha : 255u;
     t->pack = packWait;
     t->packAlpha = packMaxAlpha;
+    memcpy(t->avg, sTexAvg, sizeof(t->avg));
+    sTexAvg[0] = sTexAvg[1] = sTexAvg[2] = 1.0f;
     return t->tex;
 }
 
@@ -1686,6 +1834,43 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
             }
         }
     }
+    {   /* the look a script mod asked for (bt3.look): a fight's draws that add light (Cs * (As, Ad or FIX) + Cd: ki
+           blasts, beams, sparks, flashes), not the HUD's and not the menus' */
+        const ModsLook *lk = Mods_Look();
+        uint64_t a = gGs.alpha[ctx];
+        if ((lk->energy > 0 || lk->energy_light > 0) && !gPortMenuMode && gsAnchor == 0 && ((gGs.prim >> 6) & 1) &&
+            d.tex != gsWhite && (a & 3) == 0 && ((a >> 2) & 3) == 2 && ((a >> 6) & 3) == 1) {
+            uint32_t k;
+            if (lk->energy_light > 0 && !d.tex_is_target && gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
+                /* a light of the frame, for the grade pass */
+                float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f, z = 0.0f, r = 0.0f, g = 0.0f, b = 0.0f, nv = 0.0f;
+                const float *ta = sLast != NULL && sLast->tex == d.tex ? sLast->avg : NULL;
+                for (k = d.first; k < gsVertCount; k++) {
+                    const Vtx *w = &gsVerts[k];
+                    float al = fminf(2.0f, w->a / 128.0f);
+                    x0 = fminf(x0, w->x); x1 = fmaxf(x1, w->x); y0 = fminf(y0, w->y); y1 = fmaxf(y1, w->y);
+                    z += w->z;
+                    r += w->r / 255.0f * al; g += w->g / 255.0f * al; b += w->b / 255.0f * al;
+                    nv += 1.0f;
+                }
+                if (nv > 0.0f && x1 - x0 < 900.0f) { /* (not a full-screen flash: that is no light in a place) */
+                    r /= nv; g /= nv; b /= nv;
+                    if (ta != NULL) { r *= ta[0]; g *= ta[1]; b *= ta[2]; }
+                    light_add(x0, y0, x1, y1, z / nv * gsZMax / 65536.0f, r * 2.0f, g * 2.0f, b * 2.0f);
+                }
+            }
+            if (lk->energy > 0) { /* livelier and stronger: it feeds the glow more too */
+                float m = 1.0f + 0.55f * lk->energy / 100.0f, sat = 1.0f + 0.35f * lk->energy / 100.0f;
+                for (k = d.first; k < gsVertCount; k++) {
+                    float r = gsVerts[k].r, g = gsVerts[k].g, b = gsVerts[k].b, l = (r + g + b) / 3.0f;
+                    r = l + (r - l) * sat; g = l + (g - l) * sat; b = l + (b - l) * sat;
+                    gsVerts[k].r = (uint8_t)fminf(255.0f, fmaxf(0.0f, r * m));
+                    gsVerts[k].g = (uint8_t)fminf(255.0f, fmaxf(0.0f, g * m));
+                    gsVerts[k].b = (uint8_t)fminf(255.0f, fmaxf(0.0f, b * m));
+                }
+            }
+        }
+    }
     /* A piece of a side panel of the HUD (a health bar, a portrait) that can be seen was drawn: the frame it was
        in. What the overlay shows with the HUD (the players' names of an online fight, ui.cpp) asks through
        GsDraw_HudShown, and is not there in an intro or wherever else the game leaves the HUD out. */
@@ -1991,9 +2176,12 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
         gsVuUniCount == MAX_VU_UNIFORMS) {
         return;
     }
+    sToonWanted = layer == 1; /* (the shading ramp: toon_sharpen) */
     if (!draw_state(ctx, 0, 0, 1, &d, &us, &vs)) {
+        sToonWanted = 0;
         return;
     }
+    sToonWanted = 0;
     if (layer == 2 && d.misc[1] == 1.0f && d.misc[2] != 0.0f) {
         /* TEST.DATE rejects pixels marked by FBA. Stencil also rejects overlap within this
            draw run, which a single snapshot of the alpha buffer cannot see. */
@@ -2042,6 +2230,34 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
     d.uniform = (int)gsVuUniCount;
     gsVuUni[gsVuUniCount++] = u;
     gsDraws[gsDrawCount++] = d;
+    /* A script mod's rim light (bt3.look): after a fighter's shading layer, in the picture itself, the same triangles
+       again (layer 6 of shaders/vu0.vert): light added along the edges of the silhouette, more on the side facing
+       the light, nothing written to depth. */
+    if (Mods_Look()->rim > 0 && layer == 1 && gsTargets[d.target].fbp == (uint32_t)gGsMainFbp && gsDrawCount < MAX_DRAWS &&
+        gsVuUniCount < MAX_VU_UNIFORMS) {
+        const ModsLook *lk = Mods_Look();
+        GsDraw r = d;
+        uint64_t alpha = gGs.alpha[ctx], prim = gGs.prim, zbuf = gGs.zbuf[ctx];
+        gGs.alpha[ctx] = (alpha & ~0xFFull) | 0x48; /* Cs * As + Cd */
+        gGs.prim = prim | (1ull << 6);              /* (blending on) */
+        gGs.zbuf[ctx] = zbuf | (1ull << 32);        /* (depth not written) */
+        r.pipeline = pipeline_get(ctx, 0, 1, 0);
+        gGs.alpha[ctx] = alpha;
+        gGs.prim = prim;
+        gGs.zbuf[ctx] = zbuf;
+        r.tex = gsWhite;
+        r.mode[0] = 0; /* untextured: the colour the shader gives */
+        r.mode[3] = 0; /* no alpha test */
+        r.misc[1] = 0.0f;
+        u.misc[3] = 6.0f;
+        u.light2[0] = (float)(lk->rim_color >> 24 & 0xFF);
+        u.light2[1] = (float)(lk->rim_color >> 16 & 0xFF);
+        u.light2[2] = (float)(lk->rim_color >> 8 & 0xFF);
+        u.light2[3] = lk->rim / 100.0f * 1.4f;
+        r.uniform = (int)gsVuUniCount;
+        gsVuUni[gsVuUniCount++] = u;
+        gsDraws[gsDrawCount++] = r;
+    }
 }
 
 /* The game uploaded pixels straight into a display buffer (a movie frame). Remembers the place in the frame's
@@ -2101,8 +2317,57 @@ void GsGpu_FbUpload(int second) {
     }
 }
 
+/* A script mod's vivid colours, ambient shadows and energy light (bt3.look): native effect 6, a pass over the fight's
+   picture before its HUD (shaders/grade.frag); only the back end of SDL's GPU API draws it (gs_gpu.c). */
+static void grade_add(void) {
+    const ModsLook *lk = Mods_Look();
+    GsDraw g;
+    float k = lk->vivid / 100.0f;
+    int ls;
+
+    if ((lk->vivid <= 0 && lk->ambient <= 0 && lk->energy_light <= 0) || sBackend != &sVulkanBackend ||
+        sGradeFrame == gGsFrame || gsDrawCount >= MAX_DRAWS || gGsMainFbp < 0) {
+        return;
+    }
+    memset(&g, 0, sizeof(g));
+    g.native = 6;
+    g.target = GsDraw_TargetGet((uint32_t)gGsMainFbp, 0);
+    if (g.target < 0) {
+        return;
+    }
+    g.misc[0] = 1.0f + 0.30f * k;            /* saturation */
+    g.misc[1] = 0.35f * k;                   /* vibrance */
+    g.misc[2] = 1.0f + 0.10f * k;            /* contrast */
+    g.misc[3] = lk->vivid > 0 ? 1.0f : 0.0f; /* strength (0: the colours as they are) */
+    {   /* the ambient shadows: strength, and the ring they look in (10 PS2 pixels, as wide at any shape) */
+        static int debug = -1;
+        int zpsm = (int)((gGs.zbuf[0] >> 24) & 15);
+        if (debug < 0) { debug = getenv("BT3_AO_DEBUG") != NULL ? atoi(getenv("BT3_AO_DEBUG")) : 0; }
+        g.orig[0] = lk->ambient / 100.0f * 0.85f;
+        g.orig[1] = 10.0f / 512.0f * 1333.333f / (float)Port_PageAspectMilli();
+        g.orig[2] = 10.0f / 448.0f;
+        g.orig[3] = (float)debug;
+        g.blendc = (zpsm == 0 ? 4294967295.0f : zpsm == 1 ? 16777215.0f : 65535.0f) / 65536.0f; /* (depth's maximum) */
+    }
+    g.rect[0] = -0.4f; g.rect[1] = -0.2f; g.rect[2] = 0.9f; /* the shadows' tint: toward blue-violet */
+    g.rect[3] = (float)Port_PageAspectMilli() / 1000.0f * 448.0f / 512.0f; /* a GS pixel's width over its height */
+    g.mode[0] = lk->vivid / 2;  /* the balance: half of the scene's colour cast out, with the vivid colours */
+    g.mode[1] = lk->energy_light;
+    ls = sLightSet++ % GS_LIGHT_SETS; /* the frame's lights, as a set of their own for the pass */
+    gsGradeLightCount[ls] = sLightFrame == gGsFrame ? sLightCount : 0;
+    memcpy(gsGradeLights[ls], sLights, sizeof(sLights));
+    g.src = ls;
+    sLightCount = 0;
+    gsDraws[gsDrawCount++] = g;
+    sGradeFrame = gGsFrame;
+}
+
 void GsGpu_Native(int effect) {
     if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
+        return;
+    }
+    if (effect == 0x70) { /* the fight's HUD begins (src/battle/hud_0.c): the picture graded first, once a frame */
+        grade_add();
         return;
     }
     if (effect >= 0x72 && effect <= 0x77) {
