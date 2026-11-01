@@ -518,7 +518,7 @@ void ChrCam_SzImpact(ChrCamChr *chr, f32 power) {
         return; /* (a weaker hit does not cut a stronger push short) */
     }
     p->frame = 0.0f;
-    p->length = 8.0f + 8.0f * k;
+    p->length = 10.0f + 10.0f * k;
     p->power = k;
     sSzSign = -sSzSign;
     p->sign = sSzSign;
@@ -527,17 +527,18 @@ void ChrCam_SzImpact(ChrCamChr *chr, f32 power) {
     }
 }
 
-/* The push's share now: up in 2 frames, down over the rest, smoothly. */
+/* The push's share now: up over 4 frames, down over the rest, both eased (no sudden step for the eye). */
 static f32 sz_envelope(SzPunch *p) {
     f32 t;
 
     if (p->length <= p->frame) {
         return 0.0f;
     }
-    if (p->frame < 2.0f) {
-        return (p->frame + 1.0f) / 3.0f;
+    if (p->frame < 4.0f) {
+        t = (p->frame + 1.0f) / 4.0f;
+    } else {
+        t = 1.0f - (p->frame - 4.0f) / (p->length - 4.0f);
     }
-    t = 1.0f - (p->frame - 2.0f) / (p->length - 2.0f);
     return t * t * (3.0f - 2.0f * t);
 }
 
@@ -570,10 +571,10 @@ static void sz_apply(ChrCamChr *chr) {
         return;
     }
     Vec4_Sub(&d, &cam->target, &cam->pos);
-    Vec4_Scale(&d, &d, e * 0.4f);
+    Vec4_Scale(&d, &d, e * 0.3f);
     Vec4_Add(&cam->pos, &cam->pos, &d);
     cam->pos.w = 1.0f;
-    p->roll = p->sign * 0.16f * e;
+    p->roll = p->sign * 0.12f * e;
     cam->rot.z += p->roll;
 }
 

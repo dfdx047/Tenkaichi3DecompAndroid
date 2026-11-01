@@ -68,6 +68,13 @@ f32 ChrCam_CalcRate(ChrCamChr *chr, Vec4 *eye, Vec4 *target) {
     Vec4_Sub(&d, target, eye);
     len = Vec3_Length(&d);
     rate = len / BtlCharApi_GetHeight(chr->objId) * 0.2f + 0.2f;
+    {   /* Sparking style: the camera sits farther away (ChrCam_GetOffset), which alone would make it follow almost
+           rigidly (the rate grows with the distance); the distance it had and a little more smoothing instead */
+        extern int Port_SzStyle(void);
+        if (Port_SzStyle()) {
+            rate = (len / 1.35f / BtlCharApi_GetHeight(chr->objId) * 0.2f + 0.2f) * 0.8f;
+        }
+    }
     if (1.0f < rate) {
         rate = 1.0f;
     }
