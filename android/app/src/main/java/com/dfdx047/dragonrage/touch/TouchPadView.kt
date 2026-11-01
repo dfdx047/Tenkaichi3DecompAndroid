@@ -233,6 +233,7 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
+        gradients.clear() // (every button moves and changes size: the old gradients are of no use)
         rebuild()
     }
 
@@ -1016,6 +1017,39 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
     // ---- the Dragon look (0.6.0, the default): dark round buttons lit from above, gold icons, coloured letters
 
     private val shade = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /**
+     * The buttons' gradients, kept between redraws: a RadialGradient was made for every round button, pill and
+     * stick each time the pad was drawn (every touch). A gradient is the same object for the same centre, radius
+     * and two colours, so those five values are its key: a button moved or resized, another opacity, skin or
+     * pressed look gives other values and so another gradient, never a stale one. Used on the UI thread only (onDraw).
+     * At most [GRADIENTS_MAX], the least recently used let go first (a floating stick makes a new one per position);
+     * emptied when the view changes size or leaves the window.
+     */
+    private class GradKey(var x: Float = 0f, var y: Float = 0f, var r: Float = 0f, var c0: Int = 0, var c1: Int = 0) {
+        override fun equals(other: Any?) = other is GradKey && other.x.toBits() == x.toBits() && other.y.toBits() == y.toBits() &&
+            other.r.toBits() == r.toBits() && other.c0 == c0 && other.c1 == c1
+        override fun hashCode(): Int {
+            var h = x.toBits()
+            h = 31 * h + y.toBits()
+            h = 31 * h + r.toBits()
+            h = 31 * h + c0
+            return 31 * h + c1
+        }
+        fun copy() = GradKey(x, y, r, c0, c1)
+    }
+    private val gradProbe = GradKey() // (the lookup's key, reused: nothing is allocated when the gradient is kept)
+    private val gradients = object : LinkedHashMap<GradKey, RadialGradient>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<GradKey, RadialGradient>?) = size > GRADIENTS_MAX
+    }
+
+    private fun gradient(x: Float, y: Float, r: Float, c0: Int, c1: Int): RadialGradient {
+        val p = gradProbe
+        p.x = x; p.y = y; p.r = r; p.c0 = c0; p.c1 = c1
+        gradients[p]?.let { return it }
+        return RadialGradient(x, y, r, c0, c1, Shader.TileMode.CLAMP).also { gradients[p.copy()] = it }
+    }
+
     private val gold = Color.rgb(255, 199, 92)
     private val goldHot = Color.rgb(255, 226, 140)
     private val rim = Color.rgb(196, 188, 214)
@@ -1024,8 +1058,8 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
     private fun orb(c: Canvas, x: Float, y: Float, r: Float, k: Float, pressed: Boolean) {
         val light = if (pressed) Color.rgb(108, 92, 70) else Color.rgb(78, 72, 102)
         val dark = if (pressed) Color.rgb(40, 30, 22) else Color.rgb(20, 17, 32)
-        shade.shader = RadialGradient(x - r * 0.28f, y - r * 0.38f, r * 1.25f, a(Color.argb(238, Color.red(light), Color.green(light), Color.blue(light)), k),
-            a(Color.argb(238, Color.red(dark), Color.green(dark), Color.blue(dark)), k), Shader.TileMode.CLAMP)
+        shade.shader = gradient(x - r * 0.28f, y - r * 0.38f, r * 1.25f, a(Color.argb(238, Color.red(light), Color.green(light), Color.blue(light)), k),
+            a(Color.argb(238, Color.red(dark), Color.green(dark), Color.blue(dark)), k))
         c.drawCircle(x, y, r, shade)
         shade.shader = null
         stroke.color = a(if (pressed) goldHot else Color.argb(215, Color.red(rim), Color.green(rim), Color.blue(rim)), k)
@@ -1067,8 +1101,8 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
 
     /** The three-star Dragon Ball the stick is held by. */
     private fun dragonBall(c: Canvas, x: Float, y: Float, r: Float, k: Float, active: Boolean) {
-        shade.shader = RadialGradient(x - r * 0.3f, y - r * 0.35f, r * 1.3f, a(Color.rgb(255, 196, 96), k),
-            a(if (active) Color.rgb(232, 116, 22) else Color.rgb(206, 104, 28), k), Shader.TileMode.CLAMP)
+        shade.shader = gradient(x - r * 0.3f, y - r * 0.35f, r * 1.3f, a(Color.rgb(255, 196, 96), k),
+            a(if (active) Color.rgb(232, 116, 22) else Color.rgb(206, 104, 28), k))
         c.drawCircle(x, y, r, shade)
         shade.shader = null
         fill.color = a(Color.argb(90, 255, 255, 235), k)
@@ -1181,8 +1215,8 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
             CtlKind.PILL -> {
                 rect.set(e.cx - e.w / 2, e.cy - e.h / 2, e.cx + e.w / 2, e.cy + e.h / 2)
                 val rr = e.h / 2
-                shade.shader = RadialGradient(e.cx, e.cy - e.h * 0.4f, e.w * 0.7f, a(Color.argb(235, 78, 72, 102), k),
-                    a(Color.argb(235, 20, 17, 32), k), Shader.TileMode.CLAMP)
+                shade.shader = gradient(e.cx, e.cy - e.h * 0.4f, e.w * 0.7f, a(Color.argb(235, 78, 72, 102), k),
+                    a(Color.argb(235, 20, 17, 32), k))
                 c.drawRoundRect(rect, rr, rr, shade)
                 shade.shader = null
                 stroke.color = a(if (pressed) goldHot else Color.argb(215, Color.red(rim), Color.green(rim), Color.blue(rim)), k)
@@ -1221,8 +1255,8 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
                 val (sx, sy) = if (e.kind == CtlKind.STICK_L) lx to ly else rx to ry
                 val (ox, oy) = if (e.kind == CtlKind.STICK_L) (floatL ?: (e.cx to e.cy)) else (e.cx to e.cy)
                 val r = e.w / 2f
-                shade.shader = RadialGradient(ox, oy - r * 0.25f, r * 1.1f, a(Color.argb(225, 74, 68, 98), k),
-                    a(Color.argb(225, 22, 18, 34), k), Shader.TileMode.CLAMP)
+                shade.shader = gradient(ox, oy - r * 0.25f, r * 1.1f, a(Color.argb(225, 74, 68, 98), k),
+                    a(Color.argb(225, 22, 18, 34), k))
                 c.drawCircle(ox, oy, r, shade)
                 shade.shader = null
                 stroke.color = a(Color.argb(220, Color.red(rim), Color.green(rim), Color.blue(rim)), k)
@@ -1633,9 +1667,13 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
         players.values.forEach { it.cancel() }
         handler.removeCallbacksAndMessages(null)
         oneShotMask = 0
+        gradients.clear() // (the shaders' native memory goes with the view)
     }
 
     companion object {
+        /** Gradients kept at most (see [gradient]): every button twice (pressed or not) with room to spare. */
+        private const val GRADIENTS_MAX = 64
+
         /** The label a control shows in each console's look. Positions stay the PS2's: south is cross. */
         fun faceLabel(skin: PadSkin, c: Ctl): String = when (skin) {
             PadSkin.PLAYSTATION -> when (c) {
