@@ -1844,10 +1844,12 @@ static void vk_frame_end(void) {
     /* A picture the game uploaded straight into a display buffer (a movie frame): from GS memory into a 512 x 448
        texture here, then scaled into that buffer's texture before the frame's draws (a fade goes on top). */
     for (i = 0; i < 2; i++) {
-        SDL_GPUTransferBufferCreateInfo ti;
+        /* (one upload buffer kept for the whole run: a movie uploads every frame, and a buffer made and let go for
+           each was a 1 MB allocation of the driver's per picture; mapped with cycle, SDL hands a fresh one while the
+           last frame's is still being read, as for the textures above) */
+        static SDL_GPUTransferBuffer *tb;
         SDL_GPUTextureTransferInfo src;
         SDL_GPUTextureRegion dst;
-        SDL_GPUTransferBuffer *tb;
         uint32_t *px, x, y, fbp = i ? 0x70 : 0;
         if (!(gGsFbUploads & (1u << i))) {
             continue;
@@ -1864,11 +1866,17 @@ static void vk_frame_end(void) {
             ci.num_levels = 1;
             sFbTex[i] = SDL_CreateGPUTexture(sDev, &ci);
         }
-        SDL_zero(ti);
-        ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        ti.size = sTW * sTH * 4;
-        tb = SDL_CreateGPUTransferBuffer(sDev, &ti);
-        px = SDL_MapGPUTransferBuffer(sDev, tb, false);
+        if (tb == NULL) {
+            SDL_GPUTransferBufferCreateInfo ti;
+            SDL_zero(ti);
+            ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+            ti.size = sTW * sTH * 4; /* (sTW, sTH are set once, at the start) */
+            tb = SDL_CreateGPUTransferBuffer(sDev, &ti);
+        }
+        px = tb != NULL ? SDL_MapGPUTransferBuffer(sDev, tb, true) : NULL;
+        if (px == NULL) {
+            continue;
+        }
         for (y = 0; y < sTH; y++) {
             for (x = 0; x < sTW; x++) {
                 px[y * sTW + x] = Gs_VramRead(fbp * 32, 8, 0, x, y) | 0xFF000000u;
@@ -1883,7 +1891,6 @@ static void vk_frame_end(void) {
         dst.h = sTH;
         dst.d = 1;
         SDL_UploadToGPUTexture(copy, &src, &dst, false);
-        SDL_ReleaseGPUTransferBuffer(sDev, tb);
     }
     SDL_EndGPUCopyPass(copy);
     gGsFbUploads = 0;
