@@ -74,6 +74,9 @@ int main(void) {
     setenv("BT3_MODS_SETTINGS", settings, 1);
     fp = fopen(settings, "w");
     fputs("other.x=5\nhud.size=70\n", fp); /* (a line of a mod not installed is kept when the file is written) */
+    /* (a mod starts switched off until the player switches it on: the test mods switched on) */
+    fputs("bad_return=1\ncamera=1\ncamera_nan=1\nerr=1\nhud=1\nlook_a=1\nlook_b=1\nloop=1\nmemory=1\nnot_a_mod=1\n"
+          "sandbox=1\nshapes=1\nsyntax=1\n", fp);
     fclose(fp);
 
     put("hud", "mod.lua",
@@ -267,9 +270,18 @@ int main(void) {
         CHECK(sMod[i].L == NULL || sMod[i].mem < ((size_t)8 << 20) || strcmp(sInfo[i].folder, "memory") == 0);
     }
 
-    /* the examples shipped with the source (run from the repository's root): they load and run without stopping */
+    /* the examples shipped with the source (run from the repository's root): they load and run without stopping
+       (switched on: a mod starts off) */
     setenv("BT3_MODS", "port/examples/mods", 1);
-    setenv("BT3_MODS_SETTINGS", "", 1); /* (no file) */
+    {
+        char ex[300];
+        FILE *ef;
+        snprintf(ex, sizeof(ex), "%s-examples.txt", sDir);
+        ef = fopen(ex, "w");
+        fputs("example_camera=1\nexample_hud=1\nmodern_camera=1\nmodern_hud=1\nmodern_look=1\nskill_list=1\n", ef);
+        fclose(ef);
+        setenv("BT3_MODS_SETTINGS", ex, 1);
+    }
     sFp.gauges = 1;
     sFp.side[0].comboHits = 3;
     sFp.side[1].poweredUp = 1;

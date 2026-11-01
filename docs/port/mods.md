@@ -27,7 +27,7 @@ mods/
     mod.lua
 ```
 
-Mods are loaded at start, in the order of their folder names. **F1 > Mods** lists them: switch each one on or off,
+Mods are loaded at start, in the order of their folder names. A mod starts switched off: a folder put in `mods/` does nothing until the player switches it on. **F1 > Mods** lists them: switch each one on or off,
 change its settings, see why one stopped, and **Reload the scripts** after adding or editing one (no restart
 needed). The player's choices are kept in `bt3_mods.txt` (`$BT3_MODS_SETTINGS` names another file; an empty value:
 no file). The log (stderr) has a line for each mod loaded or stopped, and whatever a script prints.
