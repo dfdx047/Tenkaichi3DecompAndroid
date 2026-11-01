@@ -1253,7 +1253,9 @@ static void race_compare(void) {
 
 static void *render_thread(void *arg) {
     extern void PortInput_Pump(void); /* gs_input.c */
+    extern void GsAdpf_AddThread(void); /* gs_adpf.c: this thread in the system's performance hints too */
     (void)arg;
+    GsAdpf_AddThread();
     pthread_mutex_lock(&sLock);
     for (;;) {
         while (sJob == 0 && !sStopping) {
