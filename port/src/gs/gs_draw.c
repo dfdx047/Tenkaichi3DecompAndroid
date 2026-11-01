@@ -1623,9 +1623,12 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
                 sBlockSample = 0;
             }
         } else {
-            uint64_t tg0 = gpu_now();
+            int timed = getenv("BT3_DRAW_LOG") != NULL; /* (two clock reads per draw: only when the log asks) */
+            uint64_t tg0 = timed ? gpu_now() : 0;
             d->tex = texture_get(ctx);
-            gDrawLookNs += gpu_now() - tg0; /* (BT3_DRAW_LOG: all of the texture lookups, the new ones' work in it) */
+            if (timed) {
+                gDrawLookNs += gpu_now() - tg0;
+            } /* (BT3_DRAW_LOG: all of the texture lookups, the new ones' work in it) */
         }
     }
     d->sampler = (int)((gGs.tex1[ctx] >> 5) & 1) | ((cl & 3) ? 2 : 0) | (((cl >> 2) & 3) ? 4 : 0);

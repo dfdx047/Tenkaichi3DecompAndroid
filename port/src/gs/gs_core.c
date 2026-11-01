@@ -996,10 +996,13 @@ void Gs_Gif(const uint8_t *p, uint32_t qwc) {
         } else { /* IMAGE */
             uint32_t n = loops < qwc ? loops : qwc;
             extern uint64_t gDrawXferNs; /* (BT3_DRAW_LOG: the time writing pictures into GS memory) */
-            uint64_t t0 = now_ns();
+            int timed = getenv("BT3_DRAW_LOG") != NULL; /* (a clock read costs: only when the log asks for it) */
+            uint64_t t0 = timed ? now_ns() : 0;
             sStat[6] += n;
             transfer_data((const uint8_t *)q, n * 16);
-            gDrawXferNs += now_ns() - t0;
+            if (timed) {
+                gDrawXferNs += now_ns() - t0;
+            }
             q += 2 * n;
             qwc -= n;
             loops -= n;
@@ -1082,9 +1085,12 @@ static void vif(const uint32_t *w, uint32_t count) {
         case 0x05: GsVu1_SetMode(imm); break;
         case 0x14: case 0x15: case 0x17: { /* (BT3_DRAW_LOG: the time in vertex programs, their draws in it) */
             extern uint64_t gDrawVuNs;
-            uint64_t t0 = now_ns();
+            int timed = getenv("BT3_DRAW_LOG") != NULL; /* (two clock reads per program were 4% of the render thread) */
+            uint64_t t0 = timed ? now_ns() : 0;
             GsVu1_Call(cmd == 0x17 ? -1 : (int)imm);
-            gDrawVuNs += now_ns() - t0;
+            if (timed) {
+                gDrawVuNs += now_ns() - t0;
+            }
             break;
         }
         case 0x20: need = 1; break;
