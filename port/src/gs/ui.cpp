@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdint.h>
 #include "imgui.h"
+#include "imgui_internal.h" // ImGuiTabBar: the settings window as wide as its tabs
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlgpu3.h"
 #include "imgui_impl_opengl3.h"
@@ -593,7 +594,11 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
             sForceTab = -1;
             gPortNetMenuRequest = 1;
         }
-        if (sForceTab == 8) { // testing: the exit question
+        if (sForceTab == 10) { // testing: the Tech tab (8 is the exit question's)
+            sForceTab = 9;
+        } else if (sForceTab == 11) { // testing: the Mods tab
+            sForceTab = 8;
+        } else if (sForceTab == 8) { // testing: the exit question
             sForceTab = -1;
             sQuit = true;
             PortQuit_Request();
@@ -1985,6 +1990,38 @@ extern "C" int Port_GameSpeed(void);          // plat_stub.c: the player's own g
 extern "C" void Port_GameSpeedSet(int percent);
 extern "C" void Port_AudioRefresh(void);
 
+// The community's fixes of the game's fighting mechanics (port/src/bt3_zcounter2.c, bt3_bombardment.c): each one on or
+// off, read when a fight starts (src/battle/btl_char_mgr.c). Off, the game's own code runs, unchanged. Never online
+// (both players would have to agree on them) and never in a replay (it was recorded with the game's own rules).
+static void tech_tab(void) {
+    ImGui::TextWrapped("Fixes for the original game's fighting mechanics, made by the community. Each one changes how fights "
+                       "play, so they are off by default. They apply from the next fight, offline only: online matches and "
+                       "replays always use the game's original rules.");
+    ImGui::Spacing();
+    bool z = Port_Setting("tech_zcounter2", 0) != 0;
+    if (ImGui::Checkbox("Z Counter fix", &z)) {
+        Port_SettingSave("tech_zcounter2", z);
+        Port_SettingsWrite();
+    }
+    ImGui::SetItemTooltip("Keeps a valid Z Counter (Up + attack, timed) that the original game loses when your movement\n"
+                          "changes your hitbox in the same frame the attack arrives. The input timing, cooldown and\n"
+                          "requirements stay the original ones; it only checks the counter against your pose at the\n"
+                          "moment you pressed it.");
+    bool b = Port_Setting("tech_bombardment", 0) != 0;
+    if (ImGui::Checkbox("Bombardment fix", &b)) {
+        Port_SettingSave("tech_bombardment", b);
+        Port_SettingsWrite();
+    }
+    ImGui::SetItemTooltip("In a chain of smash Ki blasts with dashes between them, body contact with the opponent could\n"
+                          "stop the dash one frame before the next smash blast is ready, breaking the chain. With this,\n"
+                          "that one stop waits one frame, only when the next smash blast is exactly one frame away.\n"
+                          "Ki costs, timing (six frames) and priorities stay the original ones.");
+    ImGui::Spacing();
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextWrapped("From the community's \"BT3 PS2 Port Gameplay Source\" v0.3.1 (Z Counter 2 v0.9.0, Bombardment v2.2).");
+    ImGui::PopStyleColor();
+}
+
 static void cheats_tab(void) {
     {
         int speed = Port_GameSpeed();
@@ -2271,7 +2308,7 @@ static void build(void) {
         open = false;
     }
     if (sForceTab < 0 && (pad_pressed(ImGuiKey_GamepadL1) || pad_pressed(ImGuiKey_GamepadR1))) {
-        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 8 : 1)) % 9;
+        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 9 : 1)) % 10;
         sPadTab = true;
     }
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -2364,6 +2401,16 @@ static void build(void) {
             if (tab("Misc", 6)) { misc_tab(); ImGui::EndTabItem(); }
             if (tab("Online", 7)) { online_tab(); ImGui::EndTabItem(); }
             if (tab("Mods", 8)) { ModsUi_Tab(); ImGui::EndTabItem(); }
+            if (tab("Tech", 9)) { tech_tab(); ImGui::EndTabItem(); }
+            { // the window as wide as its row of tabs needs, at the menu's size (all in sight, none squeezed)
+                ImGuiTabBar *bar = ImGui::GetCurrentContext()->CurrentTabBar;
+                ImGuiWindow *win = ImGui::FindWindowByName("Settings"); // (the tabs' content is a child: the window itself)
+                float need = bar != NULL && bar->WidthAllTabsIdeal > 0.0f ? bar->WidthAllTabsIdeal - bar->BarRect.GetWidth() : 0.0f;
+                if (win != NULL && need > 0.5f) {
+                    float w = win->Size.x + need + U(2.0f), most = io.DisplaySize.x * 0.96f;
+                    ImGui::SetWindowSize("Settings", ImVec2(w < most ? w : most, win->Size.y));
+                }
+            }
             ImGui::EndTabBar();
         }
         ImGui::EndChild();

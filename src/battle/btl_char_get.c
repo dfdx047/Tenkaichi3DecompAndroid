@@ -1,5 +1,8 @@
 #include "common.h"
 #include "battle/btl_char_get.h"
+#ifdef PORT
+#include "bt3_zcounter2.h"
+#endif
 
 /*
  * Battle helpers and fighter accessors: 0x1DBF20..0x1DC9A0.
@@ -202,6 +205,12 @@ BtlCharGetChr *BtlChar_FindBySide(s32 side) {
 
 /* The fighter's battle object. */
 void *BtlChar_GetObj(BtlCharGetChr *chr) {
+#ifdef PORT
+    void *model = Bt3ZCounter2_ModelOverride(chr);
+    if (model != NULL) {
+        return model;
+    }
+#endif
     return BtlObj_Get(chr->objId);
 }
 
