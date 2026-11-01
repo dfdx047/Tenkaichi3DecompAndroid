@@ -44,27 +44,70 @@ void Mods_Camera(void);                       /* on_camera for the camera PortMo
 /* The picture drawn by the mods' on_hud, for the render thread (gs/mods_ui.cpp). Coordinates are in HUD units:
    the game's picture is MODS_HUD_H high and as wide as its shape makes it (ModsHud.w). */
 #define MODS_HUD_H 448.0f
-enum { MODS_CMD_RECT, MODS_CMD_FILL, MODS_CMD_LINE, MODS_CMD_CIRCLE, MODS_CMD_DISC, MODS_CMD_TEXT };
+enum {
+    MODS_CMD_RECT,     /* f0..3 x y w h, f4 thickness, f5 rounding */
+    MODS_CMD_FILL,     /* f0..3, f4 rounding */
+    MODS_CMD_LINE,     /* f0..3 x1 y1 x2 y2, f4 thickness */
+    MODS_CMD_CIRCLE,   /* f0 x, f1 y, f2 radius, f3 thickness */
+    MODS_CMD_DISC,     /* f0 x, f1 y, f2 radius */
+    MODS_CMD_TEXT,     /* f0 x, f1 y, f2 size, f3 outline size, f4 f5 shadow offset, f6 width to fit in (0: any),
+                          f7 lean; color the fill (with MODS_F_GRAD: its top, color4 its bottom), color2 outline,
+                          color3 shadow (alpha 0: none); the bytes at text[at], n of them */
+    MODS_CMD_POLY,     /* a filled convex polygon: n points at pts[at] */
+    MODS_CMD_PATH,     /* a polyline: n points at pts[at], f0 thickness, flags & MODS_F_CLOSED */
+    MODS_CMD_GRADIENT, /* f0..3, color .. color4: top-left, top-right, bottom-right, bottom-left */
+    MODS_CMD_IMAGE,    /* i0 image (bt3.image), f0..3 rect, f4..7 u0 v0 u1 v1, color tint, flags & MODS_F_FLIP */
+    MODS_CMD_PORTRAIT, /* i0 side, i1 member (-1 the active one), i2 band (0 colour, 1 grey, 2 white), f0..3 rect,
+                          f4..7 u0 v0 u1 v1 (flags & MODS_F_HEAD: f4 zoom about the head instead), color tint;
+                          MODS_F_FACE: f0 f1 is where the face goes and f2 the portrait's width (its height twice
+                          that), drawn as a grid inside the window f4..7 (x0 y0 x1 y1), faded out from f8 f9 between
+                          the radii f10 and f11 (f11 0: no fade) */
+    MODS_CMD_BAND,     /* a strip between two polylines: n points at pts[at] (the top edge) and n after them (the
+                          bottom), a colour for each at cols[i0] (top ones, then bottom ones), its edges smoothed */
+    MODS_CMD_GLOW,     /* a soft round shade: f0 x, f1 y, f2 radius, color at the middle, color2 half way, fading out */
+    MODS_CMD_CLIP,     /* f0..3: what follows is cut to this rectangle (inside the picture) */
+    MODS_CMD_UNCLIP,
+};
+#define MODS_F_CLOSED 1
+#define MODS_F_FLIP 2
+#define MODS_F_HEAD 4
+#define MODS_F_AFTER 8     /* text: x is a gap after the end of the text drawn before it (toward the right) */
+#define MODS_F_BEFORE 16   /* ... before its start (toward the left; the text ends there) */
+#define MODS_F_BASELINE 32 /* text: y is its baseline, not its top */
+#define MODS_F_GRAD 64     /* text: its fill shaded from color (top) to color4 (bottom) */
+#define MODS_F_FACE 128    /* portrait: placed by its face, see MODS_CMD_PORTRAIT */
+
 typedef struct ModsCmd {
     unsigned char kind;
     unsigned char align;   /* text: 0 left, 1 centre, 2 right */
-    unsigned short text;   /* text: its length; the bytes follow in ModsHud.chars from `at` */
-    unsigned color;        /* 0xRRGGBBAA */
-    float a, b, c, d;      /* rect / fill: x y w h; line: x1 y1 x2 y2; circle / disc: x y r; text: x y size */
-    float e;               /* line / rect / circle: thickness; fill: rounding */
-    unsigned at;
+    unsigned char font;    /* text: 0 the game's lettering (Ui_FontBold), 1 the window's */
+    unsigned char flags;
+    unsigned color, color2, color3, color4; /* 0xRRGGBBAA */
+    float f[12];
+    int i0, i1, i2;
+    unsigned at, n;
 } ModsCmd;
 
 #define MODS_HUD_CMDS 4096
 #define MODS_HUD_CHARS 32768
+#define MODS_HUD_POINTS 16384
 typedef struct ModsHud {
     float w;               /* the picture's width in HUD units when the scripts drew */
     int count;
-    unsigned chars;
+    unsigned chars, points, colours;
     ModsCmd cmd[MODS_HUD_CMDS];
     char text[MODS_HUD_CHARS];
+    float pts[MODS_HUD_POINTS * 2];
+    unsigned cols[MODS_HUD_POINTS];
 } ModsHud;
 int Mods_HudRead(ModsHud *out);               /* any thread: a consistent copy; 0 = nothing to draw */
+int Mods_HudActive(void);                     /* any thread: the scripts drew something at the last blank */
+int Mods_HudHidden(void);                     /* any thread: the game's HUD pieces they stand in for (bits: 1 gauges,
+                                                 2 timer, 4 combo) */
+/* Pictures a script asked for (bt3.image): the file of image `id`, and a number that changes when the list is made
+   again (a reload), for the render thread's textures. NULL = no such image. */
+const char *Mods_ImagePath(int id, char *out, int size);
+unsigned Mods_ImageGen(void);
 
 /* The settings window's Mods tab (gs/mods_ui.cpp): the list, guarded by Mods_Lock. */
 #define MODS_MAX 32

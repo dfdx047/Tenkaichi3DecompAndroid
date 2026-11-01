@@ -1501,7 +1501,16 @@ void GsGpu_PagesMoved(uint32_t delta) {
     }
 }
 
+/* The game's HUD pieces being drawn (markers 0x72 .. 0x77, src/battle/hud_a.c): bit 0 the gauges with the faces,
+   1 the timer, 2 the combo counter. The ones a script mod stands in for (hud.hide_game, gs/mods.c Mods_HudHidden) are
+   left out of the picture; the game builds and runs its HUD as ever. */
+static int sHudScope;
+extern int Mods_HudHidden(void);
+
 void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
+    if (sHudScope != 0 && (sHudScope & Mods_HudHidden()) != 0) { /* a script mod draws this piece of the HUD instead */
+        return;
+    }
     if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
         return;
     }
@@ -2094,6 +2103,11 @@ void GsGpu_FbUpload(int second) {
 
 void GsGpu_Native(int effect) {
     if (GS_NO_PICTURE) { /* a frame that is only being re-run, or one that is skipped: nothing is drawn */
+        return;
+    }
+    if (effect >= 0x72 && effect <= 0x77) {
+        int bit = 1 << ((effect - 0x72) >> 1);
+        sHudScope = (effect & 1) == 0 ? sHudScope | bit : sHudScope & ~bit;
         return;
     }
     uint64_t sc = gGs.scissor[0];

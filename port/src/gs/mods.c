@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "../../third_party/lua/lua.h"
 #include "../../third_party/lua/lauxlib.h"
@@ -39,6 +40,9 @@
 extern unsigned gPortVBlanks;                     /* plat_stub.c */
 extern volatile int gUiPresentW, gUiPresentH;     /* gs_draw.c: the game's picture in the window */
 extern int Port_NetSession(void), Port_NetActive(void); /* gs/net.c */
+extern int Port_HudSwap(void);                    /* gs/net.c: this copy shows the HUD's sides swapped */
+extern const char *MenuTranslation_Text(const char *id); /* gs/menu_translation.c: a label in the menus' language */
+extern const char *MenuTranslation_Locale(void);
 
 #define MOD_MEMORY ((size_t)64 << 20)     /* a script's Lua memory */
 #define MOD_FILE_MAX ((long)4 << 20)      /* the largest script file read */
@@ -87,7 +91,7 @@ static const char *settings_path(void) {
 static void say(int i, const char *fmt, ...) {
     va_list ap;
 
-    fprintf(stderr, "bt3: mod %s: ", i >= 0 ? sInfo[i].folder : "?");
+    fprintf(stderr, i >= 0 ? "bt3: mod %s: " : "bt3: mods: ", i >= 0 ? sInfo[i].folder : "");
     va_start(ap, fmt);
     vfprintf(stderr, fmt, ap);
     va_end(ap);
@@ -212,6 +216,23 @@ static int l_rgba(lua_State *L) {
     return 1;
 }
 
+/* bt3.label(id): one of the game's labels in the menus' language (port/translations/labels: "combo-hits/0/0"), or
+   nil; bt3.locale(): that language ("en", "es", ...) */
+static int l_label(lua_State *L) {
+    const char *t = MenuTranslation_Text(luaL_checkstring(L, 1));
+    if (t == NULL) {
+        lua_pushnil(L);
+    } else {
+        lua_pushstring(L, t);
+    }
+    return 1;
+}
+static int l_locale(lua_State *L) {
+    const char *t = MenuTranslation_Locale();
+    lua_pushstring(L, t != NULL ? t : "en");
+    return 1;
+}
+
 /* require(name): another .lua file of the mod's folder ("a.b" = a/b.lua), run once, its result kept */
 static int l_require(lua_State *L) {
     const char *name = luaL_checkstring(L, 1);
@@ -270,9 +291,47 @@ static int l_require(lua_State *L) {
     return 1;
 }
 
+/* A path relative to the mod's folder, from a script: letters, digits, '_', '-', '.' and '/', no "..", no leading '/'. */
+static int safe_rel(const char *name) {
+    size_t k;
+    if (name[0] == '\0' || name[0] == '/' || strstr(name, "..") != NULL) {
+        return 0;
+    }
+    for (k = 0; name[k] != '\0'; k++) {
+        char c = name[k];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.' || c == '/')) {
+            return 0;
+        }
+    }
+    return k < 200;
+}
+
 /* ---------------------------------------------------------------------------------------------------- the HUD */
 
-static ModsCmd *hud_cmd(lua_State *L, int kind) {
+static int sHideBuild;              /* the game's HUD pieces the scripts stood in for during this blank */
+static volatile int sHide;          /* ... during the last one (gs_draw.c leaves them out) */
+
+/* the pictures scripts asked for (bt3.image): their files, for the render thread */
+#define MODS_IMAGES 256
+static struct { char path[400]; } sImg[MODS_IMAGES];
+static int sImgCount;
+static volatile unsigned sImgGen = 1;
+
+int Mods_HudHidden(void) { return sHide; }
+unsigned Mods_ImageGen(void) { return sImgGen; }
+
+const char *Mods_ImagePath(int id, char *out, int size) {
+    const char *r = NULL;
+    Mods_Lock();
+    if (id >= 1 && id <= sImgCount) {
+        snprintf(out, (size_t)size, "%s", sImg[id - 1].path);
+        r = out;
+    }
+    Mods_Unlock();
+    return r;
+}
+
+static ModsCmd *hud_cmd(int kind) {
     ModsCmd *c;
 
     if (sBuild.count >= MODS_HUD_CMDS) {
@@ -281,7 +340,6 @@ static ModsCmd *hud_cmd(lua_State *L, int kind) {
     c = &sBuild.cmd[sBuild.count++];
     memset(c, 0, sizeof(*c));
     c->kind = (unsigned char)kind;
-    (void)L;
     return c;
 }
 
@@ -289,62 +347,294 @@ static unsigned colour(lua_State *L, int k) {
     return (unsigned)luaL_optinteger(L, k, 0xFFFFFFFF);
 }
 
+static float num(lua_State *L, int k) { return (float)luaL_checknumber(L, k); }
+static float opt(lua_State *L, int k, double def) { return (float)luaL_optnumber(L, k, def); }
+
+/* options table at index k: its field `name` as a number / a colour, or def */
+static float opt_num(lua_State *L, int k, const char *name, double def) {
+    double v = def;
+    if (lua_istable(L, k)) {
+        lua_getfield(L, k, name);
+        if (lua_type(L, -1) == LUA_TNUMBER) {
+            v = lua_tonumber(L, -1);
+        }
+        lua_pop(L, 1);
+    }
+    return (float)v;
+}
+static unsigned opt_col(lua_State *L, int k, const char *name, unsigned def) {
+    unsigned v = def;
+    if (lua_istable(L, k)) {
+        lua_getfield(L, k, name);
+        if (lua_isinteger(L, -1)) {
+            v = (unsigned)lua_tointeger(L, -1);
+        }
+        lua_pop(L, 1);
+    }
+    return v;
+}
+static int opt_bool(lua_State *L, int k, const char *name) {
+    int v = 0;
+    if (lua_istable(L, k)) {
+        lua_getfield(L, k, name);
+        v = lua_toboolean(L, -1);
+        lua_pop(L, 1);
+    }
+    return v;
+}
+static const char *opt_str(lua_State *L, int k, const char *name, const char *def) {
+    const char *v = def;
+    if (lua_istable(L, k)) {
+        lua_getfield(L, k, name);
+        if (lua_type(L, -1) == LUA_TSTRING) {
+            v = lua_tostring(L, -1); /* (the table keeps the string alive) */
+        }
+        lua_pop(L, 1);
+    }
+    return v;
+}
+
+/* bt3.image(file): a PNG of the mod's folder for hud.image; returns its number, width and height (nil and why when
+   it cannot be read). Loaded on the render thread when first drawn. */
+static int l_image(lua_State *L) {
+    const char *name = luaL_checkstring(L, 1);
+    int i = (int)lua_tointeger(L, lua_upvalueindex(1)), k, id = 0;
+    char path[400];
+    unsigned char head[24];
+    FILE *fp;
+    unsigned w, h;
+
+    if (!safe_rel(name)) {
+        return luaL_error(L, "bt3.image: \"%s\": a path in the mod's folder (letters, digits, _ - . /)", name);
+    }
+    snprintf(path, sizeof(path), "%s/%s/%s", Mods_Folder(), sInfo[i].folder, name);
+    fp = fopen(path, "rb");
+    if (fp == NULL || fread(head, 1, sizeof(head), fp) != sizeof(head) || memcmp(head, "\x89PNG\r\n\x1a\n", 8) != 0 ||
+        memcmp(head + 12, "IHDR", 4) != 0) {
+        if (fp != NULL) {
+            fclose(fp);
+        }
+        lua_pushnil(L);
+        lua_pushfstring(L, "%s: not a PNG file", path);
+        return 2;
+    }
+    fclose(fp);
+    w = (unsigned)head[16] << 24 | (unsigned)head[17] << 16 | (unsigned)head[18] << 8 | head[19];
+    h = (unsigned)head[20] << 24 | (unsigned)head[21] << 16 | (unsigned)head[22] << 8 | head[23];
+    Mods_Lock();
+    for (k = 0; k < sImgCount && id == 0; k++) {
+        id = strcmp(sImg[k].path, path) == 0 ? k + 1 : 0;
+    }
+    if (id == 0 && sImgCount < MODS_IMAGES) {
+        snprintf(sImg[sImgCount].path, sizeof(sImg[0].path), "%s", path);
+        id = ++sImgCount;
+    }
+    Mods_Unlock();
+    if (id == 0) {
+        return luaL_error(L, "bt3.image: more than %d pictures", MODS_IMAGES);
+    }
+    lua_pushinteger(L, id);
+    lua_pushinteger(L, (lua_Integer)w);
+    lua_pushinteger(L, (lua_Integer)h);
+    return 3;
+}
+
 static int l_hud_rect(lua_State *L) {
-    ModsCmd *c = hud_cmd(L, MODS_CMD_RECT);
+    ModsCmd *c = hud_cmd(MODS_CMD_RECT);
     if (c != NULL) {
-        c->a = (float)luaL_checknumber(L, 1); c->b = (float)luaL_checknumber(L, 2);
-        c->c = (float)luaL_checknumber(L, 3); c->d = (float)luaL_checknumber(L, 4);
+        c->f[0] = num(L, 1); c->f[1] = num(L, 2); c->f[2] = num(L, 3); c->f[3] = num(L, 4);
         c->color = colour(L, 5);
-        c->e = (float)luaL_optnumber(L, 6, 1.0);
+        c->f[4] = opt(L, 6, 1.0);
+        c->f[5] = opt(L, 7, 0.0);
     }
     return 0;
 }
 
 static int l_hud_fill(lua_State *L) {
-    ModsCmd *c = hud_cmd(L, MODS_CMD_FILL);
+    ModsCmd *c = hud_cmd(MODS_CMD_FILL);
     if (c != NULL) {
-        c->a = (float)luaL_checknumber(L, 1); c->b = (float)luaL_checknumber(L, 2);
-        c->c = (float)luaL_checknumber(L, 3); c->d = (float)luaL_checknumber(L, 4);
+        c->f[0] = num(L, 1); c->f[1] = num(L, 2); c->f[2] = num(L, 3); c->f[3] = num(L, 4);
         c->color = colour(L, 5);
-        c->e = (float)luaL_optnumber(L, 6, 0.0);
+        c->f[4] = opt(L, 6, 0.0);
     }
     return 0;
 }
 
 static int l_hud_line(lua_State *L) {
-    ModsCmd *c = hud_cmd(L, MODS_CMD_LINE);
+    ModsCmd *c = hud_cmd(MODS_CMD_LINE);
     if (c != NULL) {
-        c->a = (float)luaL_checknumber(L, 1); c->b = (float)luaL_checknumber(L, 2);
-        c->c = (float)luaL_checknumber(L, 3); c->d = (float)luaL_checknumber(L, 4);
+        c->f[0] = num(L, 1); c->f[1] = num(L, 2); c->f[2] = num(L, 3); c->f[3] = num(L, 4);
         c->color = colour(L, 5);
-        c->e = (float)luaL_optnumber(L, 6, 1.0);
+        c->f[4] = opt(L, 6, 1.0);
     }
     return 0;
 }
 
 static int l_hud_circle(lua_State *L) {
-    ModsCmd *c = hud_cmd(L, MODS_CMD_CIRCLE);
+    ModsCmd *c = hud_cmd(MODS_CMD_CIRCLE);
     if (c != NULL) {
-        c->a = (float)luaL_checknumber(L, 1); c->b = (float)luaL_checknumber(L, 2);
-        c->c = (float)luaL_checknumber(L, 3);
+        c->f[0] = num(L, 1); c->f[1] = num(L, 2); c->f[2] = num(L, 3);
         c->color = colour(L, 4);
-        c->e = (float)luaL_optnumber(L, 5, 1.0);
+        c->f[3] = opt(L, 5, 1.0);
     }
     return 0;
 }
 
 static int l_hud_disc(lua_State *L) {
-    ModsCmd *c = hud_cmd(L, MODS_CMD_DISC);
+    ModsCmd *c = hud_cmd(MODS_CMD_DISC);
     if (c != NULL) {
-        c->a = (float)luaL_checknumber(L, 1); c->b = (float)luaL_checknumber(L, 2);
-        c->c = (float)luaL_checknumber(L, 3);
+        c->f[0] = num(L, 1); c->f[1] = num(L, 2); c->f[2] = num(L, 3);
         c->color = colour(L, 4);
     }
     return 0;
 }
 
-/* hud.text(x, y, text [, colour [, size [, align]]]): size in HUD units (16 by default); align "left", "center",
-   "right" (the point x is the text's left edge, middle or right edge) */
+static int l_hud_gradient(lua_State *L) {
+    ModsCmd *c = hud_cmd(MODS_CMD_GRADIENT);
+    if (c != NULL) {
+        c->f[0] = num(L, 1); c->f[1] = num(L, 2); c->f[2] = num(L, 3); c->f[3] = num(L, 4);
+        c->color = colour(L, 5);
+        c->color2 = (unsigned)luaL_optinteger(L, 6, c->color);
+        c->color3 = (unsigned)luaL_optinteger(L, 7, c->color2);
+        c->color4 = (unsigned)luaL_optinteger(L, 8, c->color);
+    }
+    return 0;
+}
+
+/* How many points a list {x1, y1, x2, y2, ...} or {{x, y}, ...} at index k has. */
+static int count_points(lua_State *L, int k) {
+    int n, pairs;
+
+    luaL_checktype(L, k, LUA_TTABLE);
+    n = (int)lua_rawlen(L, k);
+    lua_rawgeti(L, k, 1);
+    pairs = lua_istable(L, -1);
+    lua_pop(L, 1);
+    return pairs ? n : n / 2;
+}
+
+/* The first n points of the list at index k appended to the blank's points (room was checked). */
+static void put_points(lua_State *L, int k, int n) {
+    int i, pairs;
+
+    lua_rawgeti(L, k, 1);
+    pairs = lua_istable(L, -1);
+    lua_pop(L, 1);
+    for (i = 0; i < n; i++) {
+        float *p = &sBuild.pts[(sBuild.points + (unsigned)i) * 2];
+        if (pairs) {
+            lua_rawgeti(L, k, i + 1);
+            lua_rawgeti(L, -1, 1);
+            lua_rawgeti(L, -2, 2);
+            p[0] = (float)lua_tonumber(L, -2);
+            p[1] = (float)lua_tonumber(L, -1);
+            lua_pop(L, 3);
+        } else {
+            lua_rawgeti(L, k, i * 2 + 1);
+            lua_rawgeti(L, k, i * 2 + 2);
+            p[0] = (float)lua_tonumber(L, -2);
+            p[1] = (float)lua_tonumber(L, -1);
+            lua_pop(L, 2);
+        }
+    }
+    sBuild.points += (unsigned)n;
+}
+
+/* The points of the list at index k into the blank's points, for command c. 0 = too few, or no room. */
+static int take_points(lua_State *L, int k, ModsCmd *c) {
+    int n = count_points(L, k);
+
+    if (n < 2 || sBuild.points + (unsigned)n > MODS_HUD_POINTS) {
+        return 0;
+    }
+    c->at = sBuild.points;
+    c->n = (unsigned)n;
+    put_points(L, k, n);
+    return 1;
+}
+
+/* n colours from index k (one colour for all, or a list) into the blank's colours; their first index, -1 no room. */
+static int take_colours(lua_State *L, int k, int n) {
+    int i, at = (int)sBuild.colours;
+    unsigned last = 0xFFFFFFFFu;
+
+    if (sBuild.colours + (unsigned)n > MODS_HUD_POINTS) {
+        return -1;
+    }
+    for (i = 0; i < n; i++) {
+        if (lua_istable(L, k)) {
+            lua_rawgeti(L, k, i + 1);
+            last = lua_isinteger(L, -1) ? (unsigned)lua_tointeger(L, -1) : last; /* (a short list: its last colour on) */
+            lua_pop(L, 1);
+        } else {
+            last = (unsigned)luaL_optinteger(L, k, 0xFFFFFFFF);
+        }
+        sBuild.cols[sBuild.colours++] = last;
+    }
+    return at;
+}
+
+/* hud.band(top, bottom, colours_top [, colours_bottom]): the strip between two lines of points (as many each), with a
+   colour for each point (one colour for all, or a list), its edges smoothed: brush strokes, curved bars, plates. */
+static int l_hud_band(lua_State *L) {
+    int n = count_points(L, 1), nb = count_points(L, 2);
+    ModsCmd *c;
+
+    n = n < nb ? n : nb;
+    if (n < 2 || sBuild.points + (unsigned)n * 2 > MODS_HUD_POINTS || sBuild.colours + (unsigned)n * 2 > MODS_HUD_POINTS ||
+        (c = hud_cmd(MODS_CMD_BAND)) == NULL) {
+        return 0;
+    }
+    c->at = sBuild.points;
+    c->n = (unsigned)n;
+    put_points(L, 1, n);
+    put_points(L, 2, n);
+    c->i0 = take_colours(L, 3, n);
+    take_colours(L, lua_isnoneornil(L, 4) ? 3 : 4, n);
+    return 0;
+}
+
+/* hud.glow(x, y, radius, colour_middle [, colour_half_way]): a soft round shade fading out at the radius */
+static int l_hud_glow(lua_State *L) {
+    ModsCmd *c = hud_cmd(MODS_CMD_GLOW);
+    if (c != NULL) {
+        c->f[0] = num(L, 1); c->f[1] = num(L, 2); c->f[2] = num(L, 3);
+        c->color = colour(L, 4);
+        c->color2 = (unsigned)luaL_optinteger(L, 5, c->color);
+    }
+    return 0;
+}
+
+static int l_hud_poly(lua_State *L) {
+    ModsCmd *c = hud_cmd(MODS_CMD_POLY);
+    if (c != NULL) {
+        c->color = colour(L, 2);
+        if (!take_points(L, 1, c)) {
+            sBuild.count--;
+        }
+    }
+    return 0;
+}
+
+static int l_hud_path(lua_State *L) {
+    ModsCmd *c = hud_cmd(MODS_CMD_PATH);
+    if (c != NULL) {
+        c->color = colour(L, 2);
+        c->f[0] = opt(L, 3, 1.0);
+        c->flags = lua_toboolean(L, 4) ? MODS_F_CLOSED : 0;
+        if (!take_points(L, 1, c)) {
+            sBuild.count--;
+        }
+    }
+    return 0;
+}
+
+/* hud.text(x, y, text [, colour [, size [, align [, options]]]]): size in HUD units (16 by default); align "left",
+   "center", "right" (x is the text's left edge, middle or right edge); options: outline (a colour), outline_size,
+   shadow (a colour), shadow_x, shadow_y, font ("game" or "ui"), fit (a width: the text is made smaller to fit in),
+   bottom (a colour: the fill shaded from `colour` at the top to this), lean (slant: 0.16 leans forward), baseline
+   (y is the baseline), after / before (true: x is a gap after the end, or before the start, of the text drawn just
+   before this one: words laid out after a number whose width is not known) */
 static int l_hud_text(lua_State *L) {
     size_t n;
     const char *s = luaL_checklstring(L, 3, &n);
@@ -354,18 +644,127 @@ static int l_hud_text(lua_State *L) {
     if (n > 1024) {
         n = 1024;
     }
-    if (sBuild.chars + n > MODS_HUD_CHARS || (c = hud_cmd(L, MODS_CMD_TEXT)) == NULL) {
+    if (sBuild.chars + n > MODS_HUD_CHARS || (c = hud_cmd(MODS_CMD_TEXT)) == NULL) {
         return 0;
     }
-    c->a = (float)luaL_checknumber(L, 1);
-    c->b = (float)luaL_checknumber(L, 2);
+    c->f[0] = num(L, 1);
+    c->f[1] = num(L, 2);
     c->color = colour(L, 4);
-    c->c = (float)luaL_optnumber(L, 5, 16.0);
+    c->f[2] = opt(L, 5, 16.0);
     c->align = (unsigned char)(align[0] == 'c' ? 1 : align[0] == 'r' ? 2 : 0);
+    c->color2 = opt_col(L, 7, "outline", 0);
+    c->f[3] = opt_num(L, 7, "outline_size", 1.0);
+    c->color3 = opt_col(L, 7, "shadow", 0);
+    c->f[4] = opt_num(L, 7, "shadow_x", 1.5);
+    c->f[5] = opt_num(L, 7, "shadow_y", 1.5);
+    c->f[6] = opt_num(L, 7, "fit", 0.0);
+    c->font = strcmp(opt_str(L, 7, "font", "game"), "ui") == 0 ? 1 : 0;
+    c->f[7] = opt_num(L, 7, "lean", 0.0);
+    if (lua_istable(L, 7)) {
+        lua_getfield(L, 7, "bottom");
+        if (lua_isinteger(L, -1)) {
+            c->color4 = (unsigned)lua_tointeger(L, -1);
+            c->flags |= MODS_F_GRAD;
+        }
+        lua_pop(L, 1);
+    }
+    c->flags |= (opt_bool(L, 7, "after") ? MODS_F_AFTER : 0) | (opt_bool(L, 7, "before") ? MODS_F_BEFORE : 0) |
+                (opt_bool(L, 7, "baseline") ? MODS_F_BASELINE : 0);
     c->at = sBuild.chars;
-    c->text = (unsigned short)n;
+    c->n = (unsigned)n;
     memcpy(sBuild.text + sBuild.chars, s, n);
     sBuild.chars += (unsigned)n;
+    return 0;
+}
+
+/* hud.image(image, x, y, w, h [, options]): a picture of bt3.image; options: u0, v0, u1, v1 (the part of it, 0..1),
+   tint (a colour), flip (mirrored left to right) */
+static int l_hud_image(lua_State *L) {
+    ModsCmd *c = hud_cmd(MODS_CMD_IMAGE);
+    if (c != NULL) {
+        c->i0 = (int)luaL_checkinteger(L, 1);
+        c->f[0] = num(L, 2); c->f[1] = num(L, 3); c->f[2] = num(L, 4); c->f[3] = num(L, 5);
+        c->f[4] = opt_num(L, 6, "u0", 0); c->f[5] = opt_num(L, 6, "v0", 0);
+        c->f[6] = opt_num(L, 6, "u1", 1); c->f[7] = opt_num(L, 6, "v1", 1);
+        c->color = opt_col(L, 6, "tint", 0xFFFFFFFFu);
+        c->flags = opt_bool(L, 6, "flip") ? MODS_F_FLIP : 0;
+    }
+    return 0;
+}
+
+/* hud.portrait(side, x, y, w, h [, options]): a fighter's large portrait (the character select's, 256 x 512);
+   options: member (1 = the first; the one fighting by default), band ("colour", "grey", "white": its shape in
+   white, for glows and shadows), u0, v0, u1, v1 (the part of it, 0..1), head (a zoom: a square about the head
+   instead, 1 = the head's own size), tint, flip. With face = true the portrait is placed by its face instead: (x, y)
+   is where the face goes, w the portrait's width (h is not used: it is twice as high); window = {x0, y0, x1, y1} is
+   the part of the picture it is drawn in (by default the portrait's own rectangle) and fade = {x, y, r0, r1} fades it
+   out from that point between the two radii (a soft round cut). */
+static int l_hud_portrait(lua_State *L) {
+    int side = (int)luaL_checkinteger(L, 1);
+    const char *band;
+    ModsCmd *c;
+
+    if (side < 1 || side > 2 || (c = hud_cmd(MODS_CMD_PORTRAIT)) == NULL) {
+        return 0;
+    }
+    c->i0 = side - 1;
+    c->i1 = (int)opt_num(L, 6, "member", 0) - 1;
+    band = opt_str(L, 6, "band", "colour");
+    c->i2 = band[0] == 'g' ? 1 : band[0] == 'w' || band[0] == 's' ? 2 : 0;
+    c->f[0] = num(L, 2); c->f[1] = num(L, 3); c->f[2] = num(L, 4); c->f[3] = num(L, 5);
+    c->f[4] = opt_num(L, 6, "u0", 0); c->f[5] = opt_num(L, 6, "v0", 0);
+    c->f[6] = opt_num(L, 6, "u1", 1); c->f[7] = opt_num(L, 6, "v1", 1);
+    if (opt_num(L, 6, "head", 0) > 0) {
+        c->flags |= MODS_F_HEAD;
+        c->f[4] = opt_num(L, 6, "head", 1);
+    }
+    c->color = opt_col(L, 6, "tint", 0xFFFFFFFFu);
+    c->flags |= opt_bool(L, 6, "flip") ? MODS_F_FLIP : 0;
+    if (opt_bool(L, 6, "face")) {
+        static const char *const wk[] = {"x0", "y0", "x1", "y1"}, *const fk[] = {"x", "y", "r0", "r1"};
+        int j;
+        c->flags = (unsigned char)((c->flags & ~MODS_F_HEAD) | MODS_F_FACE);
+        c->f[4] = c->f[0] - c->f[2]; /* (the window by default: a portrait's width all round the face) */
+        c->f[5] = c->f[1] - c->f[2];
+        c->f[6] = c->f[0] + c->f[2];
+        c->f[7] = c->f[1] + c->f[2] * 2.0f;
+        c->f[8] = c->f[9] = c->f[10] = c->f[11] = 0.0f;
+        lua_getfield(L, 6, "window");
+        for (j = 0; j < 4 && lua_istable(L, -1); j++) {
+            c->f[4 + j] = opt_num(L, lua_gettop(L), wk[j], c->f[4 + j]);
+        }
+        lua_pop(L, 1);
+        lua_getfield(L, 6, "fade");
+        for (j = 0; j < 4 && lua_istable(L, -1); j++) {
+            c->f[8 + j] = opt_num(L, lua_gettop(L), fk[j], 0.0);
+        }
+        lua_pop(L, 1);
+    }
+    return 0;
+}
+
+static int l_hud_clip(lua_State *L) {
+    ModsCmd *c = hud_cmd(MODS_CMD_CLIP);
+    if (c != NULL) {
+        c->f[0] = num(L, 1); c->f[1] = num(L, 2); c->f[2] = num(L, 3); c->f[3] = num(L, 4);
+    }
+    return 0;
+}
+
+static int l_hud_unclip(lua_State *L) {
+    (void)L;
+    hud_cmd(MODS_CMD_UNCLIP);
+    return 0;
+}
+
+/* hud.hide_game("gauges", "timer", "combo"): the game's own pieces are left out of the picture this blank (the mod
+   draws its own in their place). Asked again every blank, like the shapes. */
+static int l_hud_hide_game(lua_State *L) {
+    int n = lua_gettop(L), k;
+    for (k = 1; k <= n; k++) {
+        const char *s = luaL_checkstring(L, k);
+        sHideBuild |= strcmp(s, "gauges") == 0 ? 1 : strcmp(s, "timer") == 0 ? 2 : strcmp(s, "combo") == 0 ? 4 : 0;
+    }
     return 0;
 }
 
@@ -376,7 +775,11 @@ static float hud_width(void) {
 
 static void push_hud(lua_State *L) {
     static const luaL_Reg fns[] = {{"rect", l_hud_rect}, {"fill", l_hud_fill}, {"line", l_hud_line}, {"circle", l_hud_circle},
-                                   {"disc", l_hud_disc}, {"text", l_hud_text}, {NULL, NULL}};
+                                   {"disc", l_hud_disc}, {"gradient", l_hud_gradient}, {"poly", l_hud_poly},
+                                   {"path", l_hud_path}, {"text", l_hud_text}, {"image", l_hud_image},
+                                   {"portrait", l_hud_portrait}, {"clip", l_hud_clip}, {"unclip", l_hud_unclip},
+                                   {"band", l_hud_band}, {"glow", l_hud_glow},
+                                   {"hide_game", l_hud_hide_game}, {NULL, NULL}};
     lua_getfield(L, LUA_REGISTRYINDEX, "bt3_hud");
     if (lua_isnil(L, -1)) {
         lua_pop(L, 1);
@@ -402,12 +805,16 @@ int Mods_HudRead(ModsHud *out) {
         out->w = sHud.w;
         n = sHud.count;
         out->chars = sHud.chars;
-        if (n < 0 || n > MODS_HUD_CMDS || out->chars > MODS_HUD_CHARS) {
+        out->points = sHud.points;
+        out->colours = sHud.colours;
+        if (n < 0 || n > MODS_HUD_CMDS || out->chars > MODS_HUD_CHARS || out->points > MODS_HUD_POINTS || out->colours > MODS_HUD_POINTS) {
             continue;
         }
         out->count = n;
         memcpy(out->cmd, sHud.cmd, (size_t)n * sizeof(ModsCmd));
         memcpy(out->text, sHud.text, out->chars);
+        memcpy(out->pts, sHud.pts, (size_t)out->points * 2 * sizeof(float));
+        memcpy(out->cols, sHud.cols, (size_t)out->colours * sizeof(unsigned));
         __atomic_thread_fence(__ATOMIC_ACQUIRE);
         b = __atomic_load_n(&sHudSeq, __ATOMIC_ACQUIRE);
         if (a == b) {
@@ -417,14 +824,32 @@ int Mods_HudRead(ModsHud *out) {
     return 0;
 }
 
+int Mods_HudActive(void) {
+    return __atomic_load_n(&sHud.count, __ATOMIC_ACQUIRE) > 0;
+}
+
 static void hud_publish(void) {
     __atomic_add_fetch(&sHudSeq, 1, __ATOMIC_ACQ_REL);
     sHud.w = sBuild.w;
     sHud.count = sBuild.count;
     sHud.chars = sBuild.chars;
+    sHud.points = sBuild.points;
+    sHud.colours = sBuild.colours;
     memcpy(sHud.cmd, sBuild.cmd, (size_t)sBuild.count * sizeof(ModsCmd));
     memcpy(sHud.text, sBuild.text, sBuild.chars);
+    memcpy(sHud.pts, sBuild.pts, (size_t)sBuild.points * 2 * sizeof(float));
+    memcpy(sHud.cols, sBuild.cols, (size_t)sBuild.colours * sizeof(unsigned));
     __atomic_add_fetch(&sHudSeq, 1, __ATOMIC_ACQ_REL);
+    sHide = sHideBuild;
+}
+
+static void hud_begin(void) {
+    sBuild.count = 0;
+    sBuild.chars = 0;
+    sBuild.points = 0;
+    sBuild.colours = 0;
+    sBuild.w = hud_width();
+    sHideBuild = 0;
 }
 
 /* ------------------------------------------------------------------------------------------------ the game table */
@@ -446,10 +871,22 @@ static void push_game(lua_State *L, const FpState *fp, const ModsGame *g) {
 
     lua_createtable(L, 0, 8);
     set_int(L, "frame", gPortVBlanks);
+    {   /* seconds since start, on the host's clock: for animations (game.frame counts the game's blanks) */
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        set_num(L, "time", (double)ts.tv_sec + ts.tv_nsec / 1e9);
+    }
     set_bool(L, "battle", fp->battle && g->battle);
     set_bool(L, "hud_shown", fp->gauges);
     set_bool(L, "online", Port_NetSession() || Port_NetActive());
     set_bool(L, "split", g->split);
+    set_bool(L, "swapped", Port_HudSwap());
+    if (fp->battle && fp->timerSet) {
+        lua_createtable(L, 0, 2);
+        set_int(L, "value", fp->timer);
+        set_bool(L, "clock", fp->timerClock);
+        lua_setfield(L, -2, "timer");
+    }
     lua_createtable(L, 2, 0);
     for (side = 0; side < 2 && fp->battle && g->battle; side++) {
         const FpSide *s = &fp->side[side];
@@ -475,6 +912,19 @@ static void push_game(lua_State *L, const FpState *fp, const ModsGame *g) {
         set_bool(L, "powered_up", s->poweredUp);
         set_int(L, "combo_hits", s->comboHits);
         set_int(L, "combo_damage", s->comboDamage);
+        set_int(L, "hud_hits", s->hudHits);
+        set_int(L, "hud_damage", s->hudDamage);
+        set_int(L, "hit_seq", s->hitSeq);
+        set_int(L, "message", s->msg);
+        set_int(L, "message_seq", s->msgSeq);
+        lua_createtable(L, 0, 4); /* status: -1 lowered, 1 raised, 0 as it was */
+        {
+            static const char *const names[] = {"attack", "speed", "defence", "ki"};
+            for (k = 0; k < 4; k++) {
+                set_int(L, names[k], (s->statMask >> k & 1) ? ((s->statUp >> k & 1) ? 1 : -1) : 0);
+            }
+        }
+        lua_setfield(L, -2, "status");
         set_vec(L, "pos", f->pos);
         set_num(L, "yaw", f->yaw);
         lua_createtable(L, s->count, 0);
@@ -678,6 +1128,7 @@ static void settings_save(void) {
     }
     free(old);
     Mods_Lock();
+    say(-1, "settings saved to %s", path);
     for (i = 0; i < sCount; i++) {
         fprintf(fp, "%s=%d\n", sInfo[i].folder, sInfo[i].enabled);
         for (k = 0; k < sInfo[i].settings; k++) {
@@ -724,6 +1175,13 @@ static void open_libs(lua_State *L, int i) {
     lua_setfield(L, -2, "setting");
     lua_pushcfunction(L, l_rgba);
     lua_setfield(L, -2, "rgba");
+    lua_pushinteger(L, i);
+    lua_pushcclosure(L, l_image, 1);
+    lua_setfield(L, -2, "image");
+    lua_pushcfunction(L, l_label);
+    lua_setfield(L, -2, "label");
+    lua_pushcfunction(L, l_locale);
+    lua_setfield(L, -2, "locale");
     lua_pushcfunction(L, l_print);
     lua_setfield(L, -2, "log");
     lua_setglobal(L, "bt3");
@@ -829,6 +1287,8 @@ static void load_all(void) {
 
     Mods_Lock();
     unload_all();
+    sImgCount = 0; /* (the render thread lets its pictures go: Mods_ImageGen) */
+    sImgGen++;
     d = opendir(Mods_Folder());
     while (d != NULL && (e = readdir(d)) != NULL && n < MODS_MAX) {
         if (e->d_name[0] == '.' || strlen(e->d_name) >= sizeof(names[0])) {
@@ -899,9 +1359,8 @@ void Mods_Tick(void) {
         settings_save();
     }
     if (sCount == 0) {
-        if (sHud.count != 0) { /* (the last mod gone: its shapes too) */
-            sBuild.count = 0;
-            sBuild.chars = 0;
+        if (sHud.count != 0 || sHide != 0) { /* (the last mod gone: its shapes too) */
+            hud_begin();
             hud_publish();
         }
         return;
@@ -910,9 +1369,7 @@ void Mods_Tick(void) {
         memset(&fp, 0, sizeof(fp));
     }
     PortMods_Read(&g);
-    sBuild.count = 0;
-    sBuild.chars = 0;
-    sBuild.w = hud_width();
+    hud_begin();
     for (i = 0; i < sCount; i++) {
         lua_State *L = sMod[i].L;
         if (L == NULL || sMod[i].dead || !sInfo[i].enabled) {

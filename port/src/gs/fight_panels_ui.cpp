@@ -910,3 +910,20 @@ bool FightPanels_Draw(ImDrawList *dl, float lx, float rx, float y0, float y1, fl
     sAlpha = 1.0f;
     return true;
 }
+
+// For the script mods (gs/mods_ui.cpp, hud.portrait): the portrait at `path` as a texture, its three bands stacked
+// (colour, grey, a white silhouette; ART_W x ART_H each), the head's square in it and the face's point, the one these
+// panels place (pixels of a band). Shares these panels' cache. false = there is none.
+bool FightPanels_Art(const char *path, int chara, int costume, SDL_GPUTexture **tex, float *hx, float *hy, float *hs, float *fx,
+                     float *fy) {
+    Art *a = art_get(path, ImGui::GetTime());
+    if (a == NULL) {
+        return false;
+    }
+    *tex = a->tex;
+    *hx = a->hx;
+    *hy = a->hy;
+    *hs = a->hs;
+    face_point(a, chara, costume, fx, fy);
+    return true;
+}

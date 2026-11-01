@@ -627,8 +627,16 @@ void HudCombo_SelectSide(s32 side) {
 #endif
 }
 
+#ifdef PORT
+/* PC only: what the HUD is given, for HUDs drawn by the port (port/src/fight_panels.c Port_HudFeed: the script mods).
+   Presentation: nothing returns. */
+extern void Port_HudFeed(s32 kind, s32 side, s32 a, s32 b);
+#endif
 /* Starts message picture `message` (0..4) on a side. */
 void HudCombo_SetMessage(s32 side, s32 message) {
+#ifdef PORT
+    Port_HudFeed(5, side, message, 0);
+#endif
     gHudCombo->msgState[side] = 0;
     gHudCombo->msg[side] = message;
 }
@@ -645,6 +653,9 @@ void HudCombo_SetText(s32 side, s32 text) {
 void HudCombo_SetDamage(s32 side, s32 damage, s32 isNew) {
     HudCombo *w; /* the original reads gHudCombo once in front of the test and again (as written here) after it */
     f32 seconds;
+#ifdef PORT
+    Port_HudFeed(4, side, damage, isNew);
+#endif
 
     if (damage > HUD_COMBO_DAMAGE_MAX) {
         damage = HUD_COMBO_DAMAGE_MAX;
@@ -685,6 +696,9 @@ void HudCombo_SetDamage(s32 side, s32 damage, s32 isNew) {
 /* Gives the side's hit count. Below 2 the counter slides out; a count lower than the one on show slides it in
    anew, a higher one pops the digits. */
 void HudCombo_SetHits(s32 side, u32 hits) {
+#ifdef PORT
+    Port_HudFeed(3, side, (s32)hits, 0);
+#endif
     gHudCombo->hitsRaw[side] = hits;
     if (hits > HUD_COMBO_HITS_MAX) {
         hits = HUD_COMBO_HITS_MAX;

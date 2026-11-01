@@ -27,12 +27,22 @@ typedef struct FpSide {
     int maxPower;     /* 0..30000: the powered-up mode's timer */
     int poweredUp;
     int comboHits, comboDamage, comboTimer; /* the combo this side is landing on the other */
+    /* what the game's HUD was given for this side (src/battle/hud_*.c, Port_HudFeed): */
+    int statMask, statUp; /* status icons: bits 0..3 = attack, speed, defence, ki changed; set in statUp = raised */
+    int hudHits;          /* the combo counter (below 2: not shown) */
+    int hudDamage;        /* the combo damage (negative: not shown) */
+    unsigned hitSeq;      /* counts each new hit count given */
+    int msg;              /* the last event message (0..4) */
+    unsigned msgSeq;      /* counts the messages given */
     FpMember m[FP_MEMBERS];
 } FpSide;
 
 typedef struct FpState {
     int battle;  /* a battle's fighters are there */
     int gauges;  /* the fight is on with its gauges shown */
+    int timer;      /* what the timer shows: seconds left (-1: no limit), or a count */
+    int timerClock; /* 1 = seconds, 0 = a count */
+    int timerSet;   /* the HUD was given a timer this fight */
     FpSide side[2];
 } FpState;
 

@@ -113,6 +113,7 @@ extern "C" void Port_UiNotice(const char *text);
 static void spec_view_next(void);               // watching a match: the next view (player 1, player 2, both)
 void ModsUi_Tab(void);                          // gs/mods_ui.cpp: the settings window's Mods tab
 void ModsUi_Draw(void);                         // ... the script mods' shapes over the picture
+extern "C" int Mods_HudActive(void);            // gs/mods.c: they drew something at the last blank
 static const char *spec_view_name(int view);
 static int sForceTab = -1;                     // BT3_UI_OPEN=<tab>: open at start on that tab (testing)
 static int sCapKind, sCapPlayer, sCapAction;   // waiting for a key (1) or a controller button (2) to bind
@@ -2911,11 +2912,12 @@ static bool frame_build(void) {
     Uint64 now = SDL_GetTicks();
     bool saving = save_icon_on(now) && sReady && gUiPresentW > 0 && gUiPresentH > 0;
     bool watched = sReady && Port_NetWatchers() > 0 && !sOpen;  // a player's: who watches the match
+    bool mods = sReady && Mods_HudActive();                      // the script mods drew over the picture (gs/mods.c)
     meter_count();
     sBuilt = false;
     bool upd = updLine[0] != '\0';
     UiA11y_Frame(sReady && sOpen && !sQuit, !sQuit); // (the screen reader in the windows: ui_a11y.cpp)
-    if (!sReady || (!sOpen && !sQuit && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !saving && !watched && !upd)) {
+    if (!sReady || (!sOpen && !sQuit && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !saving && !watched && !upd && !mods)) {
         return false;
     }
     if (sPadHold && sCapKind != 2) { // a binding was taken: the controller works the window again once nothing is held

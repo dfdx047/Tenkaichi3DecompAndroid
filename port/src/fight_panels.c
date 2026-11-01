@@ -137,6 +137,33 @@ static void read_side(FpState *st, int side) {
     }
 }
 
+/* What the game's HUD is given (src/battle/hud_b.c, hud_c_b.c, hud_e_c.c), for HUDs the port draws (the script mods):
+   1 timer (value, is a clock), 2 status icons (mask, raised), 3 combo hits, 4 combo damage, 5 event message. Blanks
+   run again after a rollback give nothing (they were given already, or will be). */
+static struct {
+    int timer, timerClock, timerSet;
+    int statMask[2], statUp[2], hits[2], damage[2], msg[2];
+    unsigned hitSeq[2], msgSeq[2];
+} sFeed = {0, 1, 0, {0, 0}, {0, 0}, {0, 0}, {-1, -1}, {0, 0}, {0, 0}, {0, 0}};
+
+void Port_HudFeed(int kind, int side, int a, int b) {
+    if (gPortResim || side < 0 || side > 1) {
+        return;
+    }
+    switch (kind) {
+    case 1: sFeed.timer = a; sFeed.timerClock = b; sFeed.timerSet = 1; break;
+    case 2: sFeed.statMask[side] = a & 15; sFeed.statUp[side] = b & 15; break;
+    case 3:
+        if (a != sFeed.hits[side]) {
+            sFeed.hitSeq[side]++;
+        }
+        sFeed.hits[side] = a;
+        break;
+    case 4: sFeed.damage[side] = a; break;
+    case 5: sFeed.msg[side] = a; sFeed.msgSeq[side]++; break;
+    }
+}
+
 void PortPanels_GameTick(void) {
     static FpState st;
     FpHud GAME_PTR h;
@@ -154,6 +181,24 @@ void PortPanels_GameTick(void) {
     }
     if (!st.battle) {
         memset(sPathKey, 0, sizeof(sPathKey)); /* (a mod switched between fights is looked up again) */
+        sFeed.timerSet = 0;
+        sFeed.statMask[0] = sFeed.statMask[1] = 0;
+        sFeed.hits[0] = sFeed.hits[1] = 0;
+        sFeed.damage[0] = sFeed.damage[1] = -1;
+    } else {
+        int s;
+        st.timer = sFeed.timer;
+        st.timerClock = sFeed.timerClock;
+        st.timerSet = sFeed.timerSet;
+        for (s = 0; s < 2; s++) {
+            st.side[s].statMask = sFeed.statMask[s];
+            st.side[s].statUp = sFeed.statUp[s];
+            st.side[s].hudHits = sFeed.hits[s];
+            st.side[s].hudDamage = sFeed.damage[s];
+            st.side[s].hitSeq = sFeed.hitSeq[s];
+            st.side[s].msg = sFeed.msg[s];
+            st.side[s].msgSeq = sFeed.msgSeq[s];
+        }
     }
     __atomic_add_fetch(&sSeq, 1, __ATOMIC_ACQ_REL);
     memcpy(&sState, &st, sizeof(st));

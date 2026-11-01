@@ -1080,9 +1080,17 @@ void HudGauge_SetBlast(s32 side, s32 blast) {
 
 /* mask: icons to show, pos: which of them are positive. On a change keeps the old layout in statFrom, lays the
  * shown icons out 24 apart and restarts the animation. An icon keeps its old brightness unless it is in mask. */
+#ifdef PORT
+/* PC only: what the HUD is given, for HUDs drawn by the port (port/src/fight_panels.c Port_HudFeed: the script mods).
+   Presentation: nothing returns. */
+extern void Port_HudFeed(s32 kind, s32 side, s32 a, s32 b);
+#endif
 void HudGauge_SetStatIcons(s32 side, s32 mask, s32 pos) {
     s32 n = 0;
     s32 i;
+#ifdef PORT
+    Port_HudFeed(2, side, mask, pos);
+#endif
 
     if (mask == gHudGauge->statMask[side] &&
         gHudGauge->statPos[side] ==

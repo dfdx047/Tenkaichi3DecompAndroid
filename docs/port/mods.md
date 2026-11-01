@@ -66,6 +66,9 @@ What every function is given about the game, read at the last blank:
 | `game.hud_shown` | the fight is on with its gauges shown (not during cut-scenes or menus) |
 | `game.online` | an online session |
 | `game.split` | split-screen layout |
+| `game.swapped` | this copy shows the HUD's sides swapped (an online match seen from player 2's side) |
+| `game.time` | seconds on the computer's clock, for animations |
+| `game.timer` | what the game's timer shows: `value` (seconds left, -1 no limit, or a count) and `clock` (`true`: seconds) |
 | `game.fighters[1]`, `[2]` | player 1's and player 2's side (only in a fight) |
 
 Each fighter:
@@ -82,6 +85,9 @@ Each fighter:
 | `active`, `count`, `next` | the member fighting (1 = first), members in the team, the one a switch would bring in |
 | `members[i]` | each member: `present`, `chara`, `costume`, `hp`, `hp_max` |
 | `pos` (`x`, `y`, `z`), `yaw` | world position (+Y is down) and facing, in radians |
+| `status` | `attack`, `speed`, `defence`, `ki`: 1 raised, -1 lowered, 0 as it was (the game's status icons) |
+| `hud_hits`, `hud_damage` | what the game's combo counter shows (below 2 / negative: nothing shown) |
+| `hit_seq`, `message`, `message_seq` | a count that grows with each new hit count given; the last event message (0 Counter, 1 MAX POWER, 2 Lock on, 3 First Attack, 4 BOOST) and a count of messages |
 
 
 ## `hud`
@@ -98,9 +104,30 @@ under the settings window. Only what was drawn at the last blank is shown: draw 
 | `hud.line(x1, y1, x2, y2, colour [, thickness])` | |
 | `hud.circle(x, y, radius, colour [, thickness])` | |
 | `hud.disc(x, y, radius, colour)` | filled circle |
-| `hud.text(x, y, text, colour [, size [, align]])` | size in HUD units (16); align `"left"`, `"center"`, `"right"` |
+| `hud.gradient(x, y, w, h, top_left, top_right, bottom_right, bottom_left)` | rectangle with a colour at each corner |
+| `hud.poly(points, colour)` | filled convex polygon; points `{x1, y1, x2, y2, ...}` or `{{x, y}, ...}` |
+| `hud.path(points, colour [, thickness [, closed]])` | polyline |
+| `hud.band(top, bottom, colours_top [, colours_bottom])` | the strip between two lines of points (as many in each), a colour per point (one colour, or a list), edges smoothed: curved bars, brush strokes, slanted plates |
+| `hud.glow(x, y, radius, middle [, half_way])` | a soft round shade |
+| `hud.text(x, y, text, colour [, size [, align [, options]]])` | size in HUD units (16); align `"left"`, `"center"`, `"right"` |
+| `hud.image(image, x, y, w, h [, options])` | a PNG of the mod (`bt3.image`); options `u0 v0 u1 v1` (the part, 0..1), `tint`, `flip` |
+| `hud.portrait(side, x, y, w, h [, options])` | the fighter's character-select portrait (below) |
+| `hud.clip(x, y, w, h)`, `hud.unclip()` | what is drawn between them is cut to the rectangle |
+| `hud.hide_game("gauges", "timer", "combo")` | the game's own pieces are left out of the picture this blank, for a mod that draws its own (ask every blank) |
 
-At most 4096 shapes and 32 KB of text per blank, for all mods together.
+Text options: `outline` (a colour), `outline_size`, `shadow` (a colour), `shadow_x`, `shadow_y`, `bottom` (a colour:
+the fill shaded from `colour` at the top to it), `lean` (0.16 leans the letters forward), `baseline` (y is the
+baseline), `fit` (a width: the text is made smaller to fit), `font` (`"game"`, the game's lettering, or `"ui"`), and
+`after` / `before`: x is then a gap after the end (or before the start) of the text drawn just before, for words laid
+out after a number whose width is not known.
+
+Portrait options: `member` (1 = the first; the one fighting by default), `band` (`"colour"`, `"grey"`, or `"white"`:
+the shape in white, for glows), `u0 v0 u1 v1`, `head` (a zoom: a square about the head), `tint`, `flip`. With
+`face = true` it is placed by the fighter's face: (x, y) is where the face goes and w the portrait's width (it is twice
+as high); `window = {x0, y0, x1, y1}` is the part of the picture it is drawn in and `fade = {x, y, r0, r1}` fades it out
+from that point between the two radii, a soft round cut.
+
+At most 4096 shapes, 16384 points and 32 KB of text per blank, for all mods together.
 
 
 ## `cam`
@@ -142,6 +169,8 @@ steps. Up to 24 settings, 8 choices each.
 | `bt3.folder` | the mod's folder name |
 | `bt3.setting(id)` | a setting's value |
 | `bt3.rgba(r, g, b [, a])` | a colour |
+| `bt3.image(file)` | a PNG of the mod's folder for `hud.image`: its number, width and height (nil and why if it cannot be read) |
+| `bt3.label(id)`, `bt3.locale()` | one of the game's labels in the menus' language (`"combo-hits/0/0"`, see `port/translations/labels`), and that language |
 | `bt3.log(...)`, `print(...)` | a line in the log, with the mod's name |
 | `require("a.b")` | runs `a/b.lua` of the mod's folder once and returns its result |
 
