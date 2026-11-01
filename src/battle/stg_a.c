@@ -35,6 +35,7 @@
 #ifdef PORT
 #include "battle/tag_team.h"
 extern f32 Port_WideFactor(void); /* widescreen on PC: 1, or 4/3 for a 16:9 picture (port/src/plat_stub.c) */
+extern f32 Port_CamCull(void);     /* a camera mod's wider view (src/battle/btl_cam.c): 1 without */
 #endif
 
 extern void *memset(void *dst, s32 c, u32 n);
@@ -384,8 +385,10 @@ void StgFrustum_Build(StgView *view, StgFrustum *fr) {
         STG_FRUSTUM_PLANES(896.0f / 3.0f);
     }
 #ifdef PORT
-    fr->plane[0].z *= Port_WideFactor(); /* the side planes of a 16:9 view: a third more half width */
-    fr->plane[1].z *= Port_WideFactor();
+    fr->plane[0].z *= Port_WideFactor() * Port_CamCull(); /* the side planes of a 16:9 view: a third more half width */
+    fr->plane[1].z *= Port_WideFactor() * Port_CamCull();
+    fr->plane[2].z *= Port_CamCull(); /* (and a camera mod's wider view, in both directions) */
+    fr->plane[3].z *= Port_CamCull();
     if(TagTeam_Active()) {
         StgView *v=view;
         f32 halfW=(v->unk204-v->x0+1)*0.5f/v->aspectX;
@@ -393,9 +396,9 @@ void StgFrustum_Build(StgView *view, StgFrustum *fr) {
         /* The original culler only knew full-height halves. Use the actual
            viewport, including the full-width lower three-player view. */
         fr->plane[0].x=v->screenDist; fr->plane[1].x=-v->screenDist;
-        fr->plane[0].z=fr->plane[1].z=halfW;
+        fr->plane[0].z=fr->plane[1].z=halfW*Port_CamCull();
         fr->plane[2].y=v->screenDist; fr->plane[3].y=-v->screenDist;
-        fr->plane[2].z=fr->plane[3].z=halfH;
+        fr->plane[2].z=fr->plane[3].z=halfH*Port_CamCull();
     }
 #endif
     for (i = 0; i < 4; i++) {
@@ -412,13 +415,15 @@ void StgFrustum_Build(StgView *view, StgFrustum *fr) {
         left = k * -256.0f * 1.1666667f;
     }
 #ifdef PORT
-    right *= Port_WideFactor();
-    left *= Port_WideFactor();
+    right *= Port_WideFactor() * Port_CamCull();
+    left *= Port_WideFactor() * Port_CamCull();
+    top *= Port_CamCull();
+    bottom *= Port_CamCull();
     if(TagTeam_Active()) {
         StgView *v=view;
-        right=k*(v->unk204-v->x0+1)*0.5f/v->aspectX;
+        right=k*(v->unk204-v->x0+1)*0.5f/v->aspectX*Port_CamCull();
         left=-right;
-        top=k*(v->unk20C-v->x1+1)*0.5f/v->aspectY;
+        top=k*(v->unk20C-v->x1+1)*0.5f/v->aspectY*Port_CamCull();
         bottom=-top;
     }
 #endif

@@ -28,6 +28,8 @@ typedef struct ModsCam {
     float pos[3];  /* camera position */
     float rot[3];  /* Euler angles (radians), as src/sys/vu0_b_c.c Vu0View_SetRotTrans takes them */
     float target[3]; /* the point the fighter camera looks at (ChrCam target, fighter + 0x450) */
+    float zoom;    /* the picture's zoom: 1 the game's, below 1 wider (src/battle/btl_cam.c BtlCam_PortZoom) */
+    int collide;   /* the pose given kept out of the stage (btl_cam.c BtlCam_PortCollide); 1 unless a mod says no */
 } ModsCam;
 
 /* port/src/mods_game.c (the game's side) */

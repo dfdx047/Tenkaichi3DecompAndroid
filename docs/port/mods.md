@@ -89,6 +89,8 @@ Each fighter:
 | `pos` (`x`, `y`, `z`), `yaw` | world position (+Y is down) and facing, in radians |
 | `status` | `attack`, `speed`, `defence`, `ki`: 1 raised, -1 lowered, 0 as it was (the game's status icons) |
 | `hud_hits`, `hud_damage` | what the game's combo counter shows (below 2 / negative: nothing shown) |
+| `charging`, `charge_held` | the fighter is charging ki; the charge button is held |
+| `moves[1..5]` | the fighter's moves: 1, 2 skills (Blast 1), 3, 4 specials (Blast 2), 5 the ultimate. Each: `name` (as the game shows it, `""` for none), `kind` (`"skill"`, `"special"`, `"ultimate"`), `button` (`"circle"`, `"triangle"`) and `direction` (`""`, `"up"`, `"down"`) with the charge button held, `cost` (skills: blast gauge, 100000 a stock; the others: ki, 20000 a bar), `usable` (it can be paid for now) |
 | `hit_seq`, `message`, `message_seq` | a count that grows with each new hit count given; the last event message (0 Counter, 1 MAX POWER, 2 Lock on, 3 First Attack, 4 BOOST) and a count of messages |
 
 
@@ -143,9 +145,17 @@ split screen) and may change it: change `cam.pos` / `cam.rot` in place, or retur
 | `cam.rot` | Euler angles in radians: `x` pitch, `y` yaw, `z` roll |
 | `cam.target` | the point the fighter camera looks at |
 | `cam.cut` | `true` during the game's own camera work (technique and transformation cuts, fixed and scripted cameras). Change it then only if you mean to. |
+| `cam.zoom` | the picture's zoom: 1 the game's, below 1 wider (0.25..4). The stage's and the effects' culling widen with it, and the ground shadows follow it. |
+| `cam.collide` | `true` (the default): the pose given is kept out of the stage, traced from what the fighter camera looks at as the game traces its own camera, stopped a little before what it hits, held so that it does not wobble. `false` leaves it where the mod puts it. |
 
 With several camera mods, each is given the pose the one before it returned. A pose that is not a number (NaN, too
 large) is not used.
+
+`collide` only knows what the stage's collision knows. Some scenery is drawn without any (on the grassland, slopes
+beside the fighting ground): a camera moved far to the side can still end up inside it. Keep sideways moves modest.
+
+Examples: `mods/shoulder_camera` (over the shoulder, zoomed out, kept out of the stage), `mods/skill_list` (the moves
+with their buttons and costs while charge is held).
 
 
 ## Settings

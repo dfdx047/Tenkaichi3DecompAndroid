@@ -953,6 +953,31 @@ static void push_game(lua_State *L, const FpState *fp, const ModsGame *g) {
         set_int(L, "hit_seq", s->hitSeq);
         set_int(L, "message", s->msg);
         set_int(L, "message_seq", s->msgSeq);
+        set_bool(L, "charging", s->action == 0x37);   /* (ki charge: action 0x37) */
+        set_bool(L, "charge_held", s->chargeHeld);    /* (the charge button held) */
+        {   /* the moves: 1, 2 the skills (Blast 1), 3, 4 the techniques (Blast 2), 5 the ultimate; buttons with the
+               charge button held (src/battle/btl_input.c, inputs 113, 114, 108..110) */
+            static const char *const kind[FP_MOVES] = {"skill", "skill", "special", "special", "ultimate"};
+            static const char *const button[FP_MOVES] = {"circle", "circle", "triangle", "triangle", "triangle"};
+            static const char *const dir[FP_MOVES] = {"", "up", "", "up", "down"};
+            lua_createtable(L, FP_MOVES, 0);
+            for (k = 0; k < FP_MOVES; k++) {
+                const FpMove *mv = &s->moves[k];
+                lua_createtable(L, 0, 6);
+                lua_pushstring(L, mv->name);
+                lua_setfield(L, -2, "name");
+                lua_pushstring(L, kind[k]);
+                lua_setfield(L, -2, "kind");
+                lua_pushstring(L, button[k]);
+                lua_setfield(L, -2, "button");
+                lua_pushstring(L, dir[k]);
+                lua_setfield(L, -2, "direction");
+                set_int(L, "cost", mv->cost); /* (skills: 100000 a stock; techniques: 20000 a ki bar) */
+                set_bool(L, "usable", mv->name[0] != '\0' && (k < 2 ? s->blast >= mv->cost : s->ki >= mv->cost));
+                lua_rawseti(L, -2, k + 1);
+            }
+            lua_setfield(L, -2, "moves");
+        }
         lua_createtable(L, 0, 4); /* status: -1 lowered, 1 raised, 0 as it was */
         {
             static const char *const names[] = {"attack", "speed", "defence", "ki"};
@@ -1489,6 +1514,8 @@ void Mods_Camera(void) {
         set_vec(L, "pos", cam.pos);
         set_vec(L, "rot", cam.rot);
         set_vec(L, "target", cam.target);
+        set_num(L, "zoom", cam.zoom);
+        set_bool(L, "collide", cam.collide);
         push_fn(i, "on_camera");
         lua_pushvalue(L, t);
         push_last_game(i);
@@ -1500,6 +1527,17 @@ void Mods_Camera(void) {
                 memcpy(cam.rot, q, sizeof(q));
                 changed = 1;
             }
+            lua_getfield(L, r, "zoom"); /* (a number 0.25..4; anything else leaves it) */
+            if (lua_type(L, -1) == LUA_TNUMBER && lua_tonumber(L, -1) >= 0.25 && lua_tonumber(L, -1) <= 4.0) {
+                cam.zoom = (float)lua_tonumber(L, -1);
+                changed = 1;
+            }
+            lua_pop(L, 1);
+            lua_getfield(L, r, "collide");
+            if (lua_isboolean(L, -1)) {
+                cam.collide = lua_toboolean(L, -1);
+            }
+            lua_pop(L, 1);
         }
         lua_settop(L, 0);
     }
