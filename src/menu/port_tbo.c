@@ -1466,42 +1466,23 @@ static void Tb_Hosts(s32 pose, f32 cx, f32 feet, f32 height) {
     Ps_Stand(pose, cx, feet + 2.0f * Tb_Beat(90) - 1.0f, height, 0x80);
 }
 
-/* The Dragon Radar of the search: its glass, its grid, the sweeping line, a few dragon balls blinking. */
+/* The Dragon Radar of the search: an animated picture (tbo/ui/radar.png: 118 frames of 220 x 248, 11 a row, every second
+   frame of the original at 25 a second, so 12.5 a second here), its glass centred on (cx, cy), r its radius. The glass
+   is 466 pixels across in the 549 x 618 original, centred at (274, 345) (its knob above). */
+#define TB_RADAR_FRAMES 118
+#define TB_RADAR_COLS 11
 static void Tb_Radar(f32 cx, f32 cy, f32 r) {
-    f32 rx = r * 0.857f;
-    f32 sweep = (f32)sTb->frames * 0.06f;
-    s32 k;
+    s32 f = (sTb->frames * 5 / 24) % TB_RADAR_FRAMES; /* (60 menu frames a second, 12.5 radar frames) */
+    f32 h = r * 2.0f * 618.0f / 466.0f;               /* the picture's height, the glass 2r across */
+    f32 w = h * 549.0f / 618.0f * 0.857f;             /* (x units are narrower than y units: Tb_Radar's old rx) */
+    f32 x0 = cx - w * 274.0f / 549.0f;
+    f32 y0 = cy - h * 345.0f / 618.0f;
+    f32 u = 1.0f / (f32)TB_RADAR_COLS;
+    f32 v = 248.0f / 2728.0f;
+    f32 cu = (f32)(f % TB_RADAR_COLS) * u;
+    f32 cv = (f32)(f / TB_RADAR_COLS) * v;
 
-    Ps_Disc(cx, cy, r + 10.0f, Ps_Rgba(0xD8, 0xDC, 0xE4, 0x80), Ps_Rgba(0x70, 0x78, 0x88, 0x80)); /* the casing */
-    Ps_Disc(cx, cy, r + 3.0f, Ps_Rgba(0x20, 0x30, 0x28, 0x80), Ps_Rgba(0x10, 0x18, 0x14, 0x80));
-    Ps_Disc(cx, cy, r, Ps_Rgba(0x40, 0xC8, 0x60, 0x80), Ps_Rgba(0x10, 0x60, 0x28, 0x80));    /* the glass */
-    for (k = -3; k <= 3; k++) {                                                                  /* the grid */
-        f32 t = (f32)k / 3.5f;
-        f32 half = sqrtf(1.0f - t * t);
-
-        Ps_Rect(cx + t * rx - 0.6f, cy - half * r, cx + t * rx + 0.6f, cy + half * r, Ps_Rgba(0x90, 0xFF, 0xA0, 0x50), Ps_Rgba(0x90, 0xFF, 0xA0, 0x50));
-        Ps_Rect(cx - half * rx, cy + t * r - 0.6f, cx + half * rx, cy + t * r + 0.6f, Ps_Rgba(0x90, 0xFF, 0xA0, 0x50), Ps_Rgba(0x90, 0xFF, 0xA0, 0x50));
-    }
-    for (k = 0; k < 10; k++) { /* the sweep: a wedge that fades behind the line */
-        f32 a0 = sweep - (f32)(k + 1) * 0.07f;
-        f32 a1 = sweep - (f32)k * 0.07f;
-        s32 al = 0x60 - k * 6;
-
-        Ps_Quad(cx, cy, cx, cy, cx + cosf(a0) * rx, cy + sinf(a0) * r, cx + cosf(a1) * rx, cy + sinf(a1) * r, Ps_Rgba(0xD0, 0xFF, 0xC0, al),
-                Ps_Rgba(0xD0, 0xFF, 0xC0, al), Ps_Rgba(0xD0, 0xFF, 0xC0, al / 2), Ps_Rgba(0xD0, 0xFF, 0xC0, al / 2));
-    }
-    {
-        static const f32 ball[5][2] = {{0.35f, -0.4f}, {-0.5f, 0.2f}, {0.15f, 0.55f}, {-0.2f, -0.65f}, {0.62f, 0.25f}};
-
-        for (k = 0; k < 5; k++) {
-            f32 bx = cx + ball[k][0] * rx;
-            f32 by = cy + ball[k][1] * r;
-            s32 al = ((sTb->frames + k * 17) / 20) % 3 == 0 ? 0x40 : 0x80;
-
-            Ps_Disc(bx, by, 4.0f, Ps_Rgba(0xFF, 0xF8, 0x80, al), Ps_Rgba(0xFF, 0xA0, 0x20, al));
-        }
-    }
-    Ps_Disc(cx, cy, 3.0f, Ps_Rgba(0xFF, 0x50, 0x40, 0x80), Ps_Rgba(0xA0, 0x10, 0x10, 0x80)); /* you */
+    Ps_Sprite(TBO_RADAR, x0, y0, x0 + w, y0 + h, cu, cv, cu + u, cv + v, PS_PLAIN, 0x80);
 }
 
 static f32 Tb_HubRowY(s32 i) {

@@ -24,6 +24,7 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {422, 256, 0}, /* btn_leftright */
     {256, 256, 0}, /* btn_circle */
     {289, 120, 0}, /* btn_start */
+    {2420, 2728, 0}, /* radar */
 };
 
 #endif
