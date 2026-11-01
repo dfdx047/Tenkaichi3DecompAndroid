@@ -19,7 +19,7 @@ layout(set = 1, binding = 0) uniform U {
     mat4 screen;         // 14..17
     vec4 light;          // xyz: the x components of 10..12, w: of 13
     vec4 color0, color1; // 22, 23 (0..255)
-    vec4 misc;           // x, y: XYOFFSET in pixels, z: depth maximum, w: layer (0 or 1; 2 = programs 2a / 2b; 3 = program 8; 4 = program 7; 5 = program 1 layer 1)
+    vec4 misc;           // x, y: XYOFFSET in pixels, z: depth maximum, w: layer (0 or 1; 2 = programs 2a / 2b; 3 = program 8; 4 = program 7; 5 = program 1 layer 1; 6 = the rim light)
     vec4 light2;         // program 1: the y components of 10..13
     vec4 target;         // x: GS pixels per texel of the target (gs_draw.c target_lowres; 0 = 1)
 } u;
@@ -49,6 +49,16 @@ void main() {
         vec4 n1 = vec4(inNormal.xyz, 1.0);
         vColor = u.color1 / 255.0;
         vStq = vec3(dot(u.light, n1) * 0.5 + 0.5, dot(u.light2, n1) * 0.5 + 0.5, 1.0);
+    } else if (u.misc.w == 6.0) {
+        // PC only (gs_draw.c, a script mod's rim light): light added along the silhouette's edges, where the surface
+        // turns away from the camera, more on the side facing the light. light2: its colour (0..255) and strength.
+        vec3 n = normalize(mix(mat3(u.boneB) * inNormal.xyz, mat3(u.boneA) * inNormal.xyz, w));
+        vec3 fwd = normalize(vec3(u.screen[0][3], u.screen[1][3], u.screen[2][3])); // (the camera's forward: the w row)
+        float edge = pow(clamp(1.0 - abs(dot(n, fwd)), 0.0, 1.0), 2.6);
+        float lit = length(u.light.xyz) > 0.0 ? clamp(dot(n, normalize(u.light.xyz)), 0.0, 1.0) : 0.5;
+        float a = clamp(edge * (0.35 + 0.65 * lit) * u.light2.w, 0.0, 1.0);
+        vColor = vec4(u.light2.rgb / 255.0, a * 128.0 / 255.0); // (alpha as the GS has it: 0x80 = 1)
+        vStq = vec3(0.0, 0.0, 1.0);
     } else if (u.misc.w >= 3.0) {
         // programs 8 and 7: the colour of each vertex (0..255 floats in the second quadword); 7 takes the mesh's alpha
         vColor = clamp(floor(vec4(inNormal.rgb, u.misc.w == 4.0 ? u.color0.a : inNormal.a)), 0.0, 255.0) / 255.0;

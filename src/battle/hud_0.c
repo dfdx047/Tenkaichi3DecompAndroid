@@ -80,6 +80,10 @@ extern s32 CpuLevel_FromSetting(s32 setting); /* menu difficulty 0..4 -> interna
 void BtlGame_Draw(void) {
 #ifdef PORT
     extern s32 Port_TagShowcase(void);
+    {
+        extern void Port_GsMarker(s32 effect);
+        Port_GsMarker(0x70); /* the HUD begins: the picture as it is now is the fight's (a script mod's look pass) */
+    }
     if(!Port_TagShowcase())
 #endif
     Hud_Draw();
