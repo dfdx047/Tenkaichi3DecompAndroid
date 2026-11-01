@@ -17,6 +17,9 @@ unsigned gPortVBlanks;
 volatile int gUiPresentW = 1280, gUiPresentH = 896; /* (448 high in HUD units, 640 wide) */
 int Port_NetSession(void) { return 0; }
 int Port_NetActive(void) { return 0; }
+int Port_HudSwap(void) { return 0; }
+const char *MenuTranslation_Text(const char *id) { return strcmp(id, "combo-hits/0/0") == 0 ? "Golpes" : NULL; }
+const char *MenuTranslation_Locale(void) { return "es"; }
 
 static FpState sFp;
 int PortPanels_Read(FpState *out) { *out = sFp; return 1; }
@@ -102,6 +105,42 @@ int main(void) {
     put("bad_return", "mod.lua", "x = 1\n");
     put("syntax", "mod.lua", "return { on_frame = function( }\n");
     put("not_a_mod", "readme.txt", "no script here\n");
+    put("shapes", "mod.lua",
+        "local img, iw, ih = bt3.image('art/frame.png')\n"
+        "assert(img == 1 and iw == 300 and ih == 20, 'image size')\n"
+        "assert(bt3.image('missing.png') == nil, 'missing image')\n"
+        "assert(not pcall(bt3.image, '../x.png'), 'image outside')\n"
+        "return { on_hud = function(hud, game)\n"
+        "  assert(game.timer and game.timer.value == 99 and game.timer.clock, 'timer')\n"
+        "  local f = game.fighters[1]\n"
+        "  assert(f.status.attack == 1 and f.status.speed == -1 and f.status.ki == 0, 'status')\n"
+        "  assert(f.hud_hits == 7 and f.message == 2, 'combo feed')\n"
+        "  hud.hide_game('gauges', 'combo')\n"
+        "  hud.poly({ 0, 0, 10, 0, 10, 10 }, 0x11223344)\n"
+        "  hud.path({ { 0, 0 }, { 5, 5 }, { 9, 1 } }, 0xFFFFFFFF, 2, true)\n"
+        "  hud.gradient(0, 0, 10, 10, 1, 2, 3, 4)\n"
+        "  hud.text(1, 2, 'hi', 0xFFFFFFFF, 20, 'right', { outline = 0xFF00FFFF, shadow = 0x000000C0, font = 'ui', fit = 50 })\n"
+        "  hud.image(img, 0, 0, 30, 2, { flip = true, tint = 0x80FFFFFF })\n"
+        "  hud.portrait(2, 0, 0, 40, 40, { head = 1.5, band = 'white' })\n"
+        "  hud.clip(0, 0, 5, 5) hud.unclip()\n"
+        "  hud.band({ 0, 0, 10, 1, 20, 3 }, { 0, 5, 10, 6, 20, 7 }, { 0xFF0000FF, 0x00FF00FF }, 0x0000FFFF)\n"
+        "  hud.glow(5, 5, 30, 0x000000A0)\n"
+        "  hud.text(2, 9, '7', 0xFFFFFFFF, 30, 'left', { bottom = 0xFFAA00FF, lean = 0.16, baseline = true })\n"
+        "  hud.text(4, 9, bt3.label('combo-hits/0/0') or '?', 0xFFFFFFFF, 12, 'left', { after = true })\n"
+        "  hud.portrait(1, 100, 92, 236, 0, { face = true, flip = true, fade = { x = 108, y = 82, r0 = 52, r1 = 116 } })\n"
+        "  assert(bt3.locale() == 'es' and bt3.label('nothing') == nil and type(game.time) == 'number', 'labels')\n"
+        "end }\n");
+    {
+        static const unsigned char png[24] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n', 0, 0, 0, 13, 'I', 'H', 'D', 'R',
+                                               0, 0, 0x01, 0x2C, 0, 0, 0, 20};
+        char path[512];
+        snprintf(path, sizeof(path), "%s/shapes/art", sDir);
+        mkdir(path, 0755);
+        snprintf(path, sizeof(path), "%s/shapes/art/frame.png", sDir);
+        fp = fopen(path, "wb");
+        fwrite(png, 1, sizeof(png), fp);
+        fclose(fp);
+    }
 
     sFp.battle = 1;
     sG.battle = 1;
@@ -110,15 +149,49 @@ int main(void) {
     sFp.side[1].count = 1;
     sG.f[1].pos[0] = 3.0f;
     sG.f[0].found = sG.f[1].found = 1;
+    sFp.timer = 99;
+    sFp.timerClock = 1;
+    sFp.timerSet = 1;
+    sFp.side[0].statMask = 1 | 2;
+    sFp.side[0].statUp = 1;
+    sFp.side[0].hudHits = 7;
+    sFp.side[0].msg = 2;
 
     Mods_Tick();
-    CHECK(Mods_Count() == 9); /* (every folder with a mod.lua; not not_a_mod) */
+    CHECK(Mods_Count() == 10); /* (every folder with a mod.lua; not not_a_mod) */
+    CHECK(mod("shapes") != NULL && mod("shapes")->error[0] == '\0');
+    CHECK(Mods_HudHidden() == (1 | 4));
+    {
+        char path[400];
+        CHECK(Mods_ImagePath(1, path, sizeof(path)) != NULL && strstr(path, "shapes/art/frame.png") != NULL);
+        CHECK(Mods_ImagePath(2, path, sizeof(path)) == NULL);
+    }
     m = mod("hud");
     CHECK(m != NULL && strcmp(m->name, "HUD test") == 0 && m->error[0] == '\0' && m->settings == 3);
     CHECK(m != NULL && m->set[0].value == 70.0); /* (from the file) */
-    CHECK(Mods_HudRead(&sRead) && sRead.count == 2);
-    CHECK(sRead.cmd[0].kind == MODS_CMD_FILL && sRead.cmd[0].c == 70.0f && sRead.cmd[0].color == 0xFF000080u && sRead.cmd[0].e == 2.0f);
-    CHECK(sRead.cmd[1].kind == MODS_CMD_TEXT && sRead.cmd[1].align == 1 && sRead.cmd[1].text == 8 &&
+    CHECK(Mods_HudRead(&sRead) && sRead.count == 2 + 13);
+    {   /* the shapes mod's, after the hud mod's two (folders in order) */
+        const ModsCmd *c = &sRead.cmd[2];
+        CHECK(c[0].kind == MODS_CMD_POLY && c[0].n == 3 && c[0].color == 0x11223344u && sRead.pts[c[0].at * 2 + 2] == 10.0f);
+        CHECK(c[1].kind == MODS_CMD_PATH && c[1].n == 3 && (c[1].flags & MODS_F_CLOSED) && sRead.pts[(c[1].at + 1) * 2] == 5.0f);
+        CHECK(c[2].kind == MODS_CMD_GRADIENT && c[2].color == 1 && c[2].color4 == 4);
+        CHECK(c[3].kind == MODS_CMD_TEXT && c[3].align == 2 && c[3].font == 1 && c[3].color2 == 0xFF00FFFFu &&
+              c[3].color3 == 0xC0u && c[3].f[6] == 50.0f);
+        CHECK(c[4].kind == MODS_CMD_IMAGE && c[4].i0 == 1 && (c[4].flags & MODS_F_FLIP) && c[4].color == 0x80FFFFFFu);
+        CHECK(c[5].kind == MODS_CMD_PORTRAIT && c[5].i0 == 1 && c[5].i1 == -1 && c[5].i2 == 2 && (c[5].flags & MODS_F_HEAD) &&
+              c[5].f[4] == 1.5f);
+        CHECK(c[6].kind == MODS_CMD_CLIP && c[7].kind == MODS_CMD_UNCLIP);
+        CHECK(c[8].kind == MODS_CMD_BAND && c[8].n == 3 && sRead.pts[(c[8].at + 3) * 2 + 1] == 5.0f &&
+              sRead.cols[c[8].i0 + 1] == 0x00FF00FFu && sRead.cols[c[8].i0 + 2] == 0x00FF00FFu && sRead.cols[c[8].i0 + 5] == 0x0000FFFFu);
+        CHECK(c[9].kind == MODS_CMD_GLOW && c[9].f[2] == 30.0f && c[9].color2 == 0x000000A0u);
+        CHECK(c[10].kind == MODS_CMD_TEXT && (c[10].flags & MODS_F_GRAD) && (c[10].flags & MODS_F_BASELINE) && c[10].f[7] == 0.16f &&
+              c[10].color4 == 0xFFAA00FFu);
+        CHECK(c[11].kind == MODS_CMD_TEXT && (c[11].flags & MODS_F_AFTER) && c[11].n == 6);
+        CHECK(c[12].kind == MODS_CMD_PORTRAIT && (c[12].flags & MODS_F_FACE) && (c[12].flags & MODS_F_FLIP) && c[12].f[10] == 52.0f &&
+              c[12].f[4] == 100.0f - 236.0f && c[12].f[7] == 92.0f + 472.0f);
+    }
+    CHECK(sRead.cmd[0].kind == MODS_CMD_FILL && sRead.cmd[0].f[2] == 70.0f && sRead.cmd[0].color == 0xFF000080u && sRead.cmd[0].f[4] == 2.0f);
+    CHECK(sRead.cmd[1].kind == MODS_CMD_TEXT && sRead.cmd[1].align == 1 && sRead.cmd[1].n == 8 &&
           memcmp(sRead.text + sRead.cmd[1].at, "P1 12345", 8) == 0);
     CHECK(fabsf(sRead.w - 640.0f) < 0.01f); /* (448 * 1280 / 896) */
     CHECK(mod("sandbox") != NULL && mod("sandbox")->error[0] == '\0');
@@ -148,7 +221,7 @@ int main(void) {
     Mods_Unlock();
     Mods_SettingChanged();
     Mods_Tick();
-    CHECK(!Mods_HudRead(&sRead));
+    CHECK(Mods_HudRead(&sRead) && sRead.count == 13 && sRead.cmd[0].kind == MODS_CMD_POLY); /* (only the shapes mod's) */
     {
         long size = 0;
         char *text = read_file(settings, &size);
@@ -159,7 +232,7 @@ int main(void) {
     /* loaded again: the choices come back from the file, the stopped scripts run again (and stop again) */
     Mods_ReloadAsk();
     Mods_Tick();
-    CHECK(Mods_Count() == 9 && mod("hud")->enabled == 0 && mod("hud")->set[0].value == 33.0);
+    CHECK(Mods_Count() == 10 && mod("hud")->enabled == 0 && mod("hud")->set[0].value == 33.0);
     CHECK(strstr(mod("loop")->error, "too long") != NULL);
 
     /* a long run of blanks: nothing grows */
@@ -171,7 +244,7 @@ int main(void) {
         Mods_Tick();
         Mods_Camera();
     }
-    CHECK(Mods_HudRead(&sRead) && sRead.count == 2);
+    CHECK(Mods_HudRead(&sRead) && sRead.count == 2 + 13);
     for (i = 0; i < Mods_Count(); i++) {
         CHECK(sMod[i].L == NULL || sMod[i].mem < ((size_t)8 << 20) || strcmp(sInfo[i].folder, "memory") == 0);
     }

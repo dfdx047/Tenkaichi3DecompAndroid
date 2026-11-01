@@ -270,9 +270,17 @@ void HudTimer_Term(void) {
     }
 }
 
+#ifdef PORT
+/* PC only: what the HUD is given, for HUDs drawn by the port (port/src/fight_panels.c Port_HudFeed: the script mods).
+   Presentation: nothing returns. */
+extern void Port_HudFeed(s32 kind, s32 side, s32 a, s32 b);
+#endif
 /* Sets the seconds left and shows the clock's frame (64x30 at the top of texture 3); hides the counter's label. */
 void HudTimer_SetTime(s32 seconds) {
     HudESprite *spr;
+#ifdef PORT
+    Port_HudFeed(1, 0, seconds, 1);
+#endif
 
     gHudTimer->prev = gHudTimer->value;
     gHudTimer->value = seconds;
@@ -289,6 +297,9 @@ void HudTimer_SetTime(s32 seconds) {
    label. */
 void HudTimer_SetCount(s32 count) {
     HudESprite *spr;
+#ifdef PORT
+    Port_HudFeed(1, 0, count, 0);
+#endif
 
     gHudTimer->prev = count;
     gHudTimer->value = count;
