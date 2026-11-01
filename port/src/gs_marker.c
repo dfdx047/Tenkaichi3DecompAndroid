@@ -432,6 +432,15 @@ static int clip_part(const char *name, int x, int top) {
     return PORT_MENU_NONE;
 }
 
+/* Where the message window's text goes from its clip (src/battle/view_a_b.c MsgWin_Draw). The window that opens on
+   the left (side 0) has its text 108 into the page, well clear of its stepped corner, whose lower step (beside the
+   text) ends at 25; on a converted screen in the widescreen layout, where its band reaches the picture's edge, the
+   text starts at 40 instead: nearer the main menu's (26), still clear of the corner. Elsewhere as the game has it. */
+extern int Port_MenusWide(void); /* port/src/plat_stub.c */
+int Port_MenuMessageX(int side) {
+    return side == 0 && sMenuScreen >= 10 && Port_MenusWide() ? 40 - 108 : 0;
+}
+
 /* Whether a clip of a converted screen's movie is moving (sliding in or out): its position changed within the last
    10 draws of its screen. Then the clip is drawn whole, not cut at the 4:3 screen's edges (marker 0x2D, and 0x2E
    after it): the renderer's own test of a piece's motion (menu_piece_moving) cannot follow a plate drawn as several
