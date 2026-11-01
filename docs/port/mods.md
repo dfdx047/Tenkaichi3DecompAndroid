@@ -154,8 +154,8 @@ large) is not used.
 `collide` only knows what the stage's collision knows. Some scenery is drawn without any (on the grassland, slopes
 beside the fighting ground): a camera moved far to the side can still end up inside it. Keep sideways moves modest.
 
-Examples: `mods/shoulder_camera` (over the shoulder, zoomed out, kept out of the stage), `mods/skill_list` (the moves
-with their buttons and costs while charge is held).
+Examples: `mods/modern_camera` (its Zoom setting), `mods/skill_list` (the moves with their buttons and costs while
+charge is held).
 
 
 ## Settings
