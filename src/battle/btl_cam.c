@@ -2,6 +2,9 @@
 #include "main.h"
 #include "battle/battle.h"
 #include "battle/btl_cam.h"
+#ifdef PORT
+#include "battle/stg_a.h" /* (script mods' camera: the stage) */
+#endif
 #include "battle/btl_demo_cam.h"
 #include "sys/heap.h"
 #include "sys/pad.h"
@@ -327,10 +330,133 @@ void BtlCam_InitViews(void) {
     }
 }
 
+#ifdef PORT
+/* A camera mod's zoom, kept in the view's own projection (view2screen, view2clip): the passes that build their
+   transform from the view's parts (the ground shadows, Vu1Pkt_LoadProg6: view2screen * world2view2) then agree with
+   the picture; zoomed only for the moment of View_UpdateMatrices, the shadows were drawn with the game's projection
+   and a moved camera, in the wrong place. The projection without the zoom is kept here, per view, and the zoom put
+   on it again each frame (never on itself). A projection the game made anew (a new picture shape, a split-screen
+   layout copied over the view) is recognised by not being the zoomed one, and becomes the base. Returns 1 when
+   the view's projection was replaced since the last call (the caller zooms and builds again). */
+static Mtx44 sPortBase[2][2], sPortZoomed[2][2];
+static s32 sPortZoomOn[2];
+
+static s32 Mtx_PortSame(Mtx44 *a, Mtx44 *b) {
+    s32 i;
+    for (i = 0; i < 16; i++) {
+        if (((f32 *)a)[i] != ((f32 *)b)[i]) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static s32 BtlCam_PortZoom(BtlCamView *view, s32 zoom) {
+    s32 k = view->index & 1;
+    s32 replaced = 0;
+    f32 z;
+    if (sPortZoomOn[k]) {
+        if (Mtx_PortSame(&view->view.view2screen, &sPortZoomed[k][0]) && Mtx_PortSame(&view->view.view2clip, &sPortZoomed[k][1])) {
+            view->view.view2screen = sPortBase[k][0]; /* (back to the game's, to zoom it afresh) */
+            view->view.view2clip = sPortBase[k][1];
+        } else {
+            replaced = 1; /* (made anew by the game: that is the base now) */
+        }
+    }
+    sPortZoomOn[k] = 0;
+    if (zoom == 1000 || zoom <= 0) {
+        return replaced;
+    }
+    z = (f32)zoom / 1000.0f;
+    sPortBase[k][0] = view->view.view2screen;
+    sPortBase[k][1] = view->view.view2clip;
+    view->view.view2screen.m[0][0] *= z;
+    view->view.view2screen.m[1][1] *= z;
+    view->view.view2clip.m[0][0] *= z;
+    view->view.view2clip.m[1][1] *= z;
+    sPortZoomed[k][0] = view->view.view2screen;
+    sPortZoomed[k][1] = view->view.view2clip;
+    sPortZoomOn[k] = 1;
+    return replaced;
+}
+#endif
+
+#ifdef PORT
+/* The zoom the script mods asked for each view (thousandths, 1000 the game's: port/src/mods_game.c), set by
+   BtlCam_UpdateView. How much wider than the game's the selected view is drawn: the culling of what is drawn (the
+   stage's frustum, src/battle/stg_a.c; the effects' clip planes, eft_a.c) widens by as much, or what the wider view
+   shows at its edges is left out. 1 without (never narrower than the game's). */
+static s32 sPortZoomView[2] = {1000, 1000};
+f32 Port_CamCull(void) {
+    s32 zoom;
+    if (gBtlCam == NULL || gBtlCam->cur == NULL) {
+        return 1.0f;
+    }
+    zoom = sPortZoomView[gBtlCam->cur->index & 1];
+    return zoom > 0 && zoom < 1000 ? 1000.0f / (f32)zoom : 1.0f;
+}
+
+/* A pose the script mods gave (view->pos) kept out of the stage: traced from what the fighter's camera looks at
+   (the fighter) to it, as the game traces its own camera (btl_char_cam_modes.c), and a hit stops it a clearance
+   (4: a fifth of a fighter) before the stage: on the surface its face filled the picture. Held (hysteresis): a
+   nearer limit is taken at once (eased), a farther one only after the way has been clear for 15 frames, then eased
+   out; the game's camera sways, and a limit that came and went with it made the view wobble. The trace only reads
+   the stage; the collision's query mode it sets (which the game's effect queries also use) is put back. */
+static void BtlCam_PortCollide(BtlCamView *view, s32 objId) {
+    extern void *BtlChar_FindByObjId(s32 objId);
+    extern s32 gStgColMode;
+    static f32 sHeld[2] = {1.0f, 1.0f};
+    static s32 sClear[2];
+    u8 *chr = BtlChar_FindByObjId(objId);
+    s32 v = view->index & 1, mode, hit, i;
+    Vec4 target, at;
+    f32 f = 1.0f, len = 0.0f, got = 0.0f;
+
+    if (chr == NULL) {
+        return;
+    }
+    target = *(Vec4 *)(chr + 0x450); /* (ChrCam.target, include/battle/btl_char_cam.h) */
+    mode = gStgColMode;
+    gStgColMode = 0;
+    hit = BtlCam_TraceStage(&at, &view->pos, &target, NULL, NULL);
+    gStgColMode = mode;
+    if (hit) {
+        for (i = 0; i < 3; i++) {
+            f32 a = ((f32 *)&view->pos)[i] - ((f32 *)&target)[i], b = ((f32 *)&at)[i] - ((f32 *)&target)[i];
+            len += a * a;
+            got += b * b;
+        }
+        f = len > 0.0001f ? (__builtin_sqrtf(got) - 4.0f) / __builtin_sqrtf(len) : 0.0f;
+        f = f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
+    }
+    if (f < sHeld[v]) {
+        sHeld[v] += (f - sHeld[v]) * 0.5f;
+        sClear[v] = 0;
+    } else if (++sClear[v] >= 15) {
+        sHeld[v] += (f - sHeld[v]) * 0.1f;
+    }
+    f = sHeld[v];
+    for (i = 0; i < 3; i++) {
+        ((f32 *)&view->pos)[i] = ((f32 *)&target)[i] + f * (((f32 *)&view->pos)[i] - ((f32 *)&target)[i]);
+    }
+}
+#endif
+
 /* Turns a battle view's pose into its matrices and optionally loads them for drawing. */
 void BtlCam_BuildView(BtlCamView *view, s32 apply) {
     View_SetTransform(&view->view.world2view, &view->view.world2view2, &view->pos, &view->rot);
+#ifdef PORT
+    {
+        s32 zoom = sPortZoomView[view->index & 1];
+        BtlCam_PortZoom(view, zoom); /* (the zoom kept in the view: every pass that builds from its parts agrees) */
+        View_UpdateMatrices(&view->view, &view->pos);
+        if (BtlCam_PortZoom(view, zoom)) { /* (the projection was built again inside: zoomed again) */
+            View_UpdateMatrices(&view->view, &view->pos);
+        }
+    }
+#else
     View_UpdateMatrices(&view->view, &view->pos);
+#endif
     if (apply != 0) {
         View_Apply(&view->view, 1);
     }
@@ -371,7 +497,13 @@ void BtlCam_UpdateView(s32 side) {
     {   /* PC only: the script mods' on_camera (port/src/mods_game.c, docs/port/mods.md) may change this view's copy of
            the pose, which is only drawn: nothing of the fight reads it back. */
         extern void Port_ModsCamera(s32 side, s32 objId, s32 pos, s32 rot); /* (addresses in game memory) */
+        extern s32 Port_ModsCamZoom(s32 side);
+        extern s32 Port_ModsCamCollide(s32 side);
         Port_ModsCamera(side, objId, (s32)(u32)&view->pos, (s32)(u32)&view->rot);
+        sPortZoomView[view->index & 1] = Port_ModsCamZoom(side); /* (the zoom, the stage: what they also asked) */
+        if (Port_ModsCamCollide(side)) {
+            BtlCam_PortCollide(view, objId);
+        }
     }
 #endif
     view->priority = BtlCharApi_HasCamPriority(objId);

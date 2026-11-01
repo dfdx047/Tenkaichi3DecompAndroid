@@ -105,10 +105,24 @@ void PortMods_CamSet(const ModsCam *cam) {
 
 /* From BtlCam_UpdateView (src/battle/btl_cam.c): `pos` and `rot` are the addresses of the view's pose in game
    memory, just copied from the side's fighter camera. */
+/* What the scripts asked of this side's camera besides its pose, for src/battle/btl_cam.c: the zoom (thousandths,
+   1000 the game's) and whether the pose is to be kept out of the stage. The game's values when no mod changed it. */
+static int sZoom[2] = {1000, 1000}, sCollide[2];
+int Port_ModsCamZoom(int side) {
+    return side >= 0 && side < 2 ? sZoom[side] : 1000;
+}
+int Port_ModsCamCollide(int side) {
+    return side >= 0 && side < 2 ? sCollide[side] : 0;
+}
+
 void Port_ModsCamera(int side, int objId, int pos, int rot) {
     static int synctest = -1;
     uint8_t GAME_PTR chr;
 
+    if (side >= 0 && side < 2) {
+        sZoom[side] = 1000;
+        sCollide[side] = 0;
+    }
     if (synctest < 0) {
         synctest = getenv("BT3_SYNCTEST") != NULL;
     }
@@ -127,10 +141,14 @@ void Port_ModsCamera(int side, int objId, int pos, int rot) {
     rda(sCam.pos, (uint32_t)pos, 3);
     rda(sCam.rot, (uint32_t)rot, 3);
     rdf(sCam.target, chr, CHR_CAM_TARGET, 3);
+    sCam.zoom = 1.0f;
+    sCam.collide = 1;
     sCamOut = 0;
     Mods_Camera();
     if (sCamOut) {
         wra((uint32_t)pos, sCam.pos, 3);
         wra((uint32_t)rot, sCam.rot, 3);
+        sZoom[side] = (int)(sCam.zoom * 1000.0f + 0.5f);
+        sCollide[side] = sCam.collide;
     }
 }

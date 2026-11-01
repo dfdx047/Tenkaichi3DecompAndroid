@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "gs/fight_panels.h"
+#include "port_addr.h" /* (Port_Ptr: a game address as a pointer) */
 
 #if (defined(__x86_64__) || defined(__aarch64__)) && defined(__clang__)
 #undef __ptr32 /* the Windows headers of mingw define these two away */
@@ -57,6 +58,74 @@ extern int Port_FilePath(int ptid, int flid, const char *fname, char *out, int s
 #define MEMBER_PRESENT 0x08
 #define MEMBER_GAUGE 0x40 /* hp, hpMax, unk8, ki, kiMax, blast, blastMax, maxPower */
 #define CHR_COMBO 0xD40   /* damage, hits, timer: the combo landing on this fighter */
+
+/* The moves (HUD mods): include/battle/btl_tech_b.h. Read only: the cost readers and the action / input queries
+   only read the fighter; the names are read here from the fighter's own name list (battle object + 0xBC, what
+   HudPrompt_DrawNames gives BtlMenu_SetScript2; entry n of it is technique slot n, as BtlCtrl_GetTechPromptPad1's
+   index), parsed as BtlText_FindEntry does but without its shared state (the menu's script pointer). */
+extern int BtlAct_GetCurrent(void GAME_PTR chr);
+extern int BtlInput_IsHeld(void GAME_PTR chr, unsigned mask);
+extern int BtlSuper_GetKiCost(void GAME_PTR chr, int slot);
+extern int BtlSkill_GetBlastCost(void GAME_PTR chr, int slot);
+extern void GAME_PTR BtlChar_GetObj(void GAME_PTR chr);
+#define BTLB_CHARGE 0x200
+#define OBJ_NAMES 0xBC
+
+/* The name of entry n of a name list (u16 text: lines "xx[&NNN]*...name" after a first character): UTF-8 */
+static void entry_name(const uint16_t *p, int n, char *out, int size) {
+    int k = 0;
+    out[0] = '\0';
+    if (p == NULL) {
+        return;
+    }
+    p += 1;
+    while (*p != 0) {
+        const uint16_t *line;
+        p += 2;
+        if (p[-1] == 0 || p[-2] == 0) {
+            return;
+        }
+        if (p[0] == '&') {
+            p += 4; /* (an unlock condition: the entry counts whatever it says) */
+        }
+        if (p[0] == '@') {
+            return;
+        }
+        if (p[0] == '*') {
+            if (n <= 0) {
+                int i;
+                for (i = 0; i < 4 && p[i] != 0; i++) {
+                }
+                for (line = p + i; *line != 0 && *line != 10 && *line != 13 && k < size - 4; line++) {
+                    unsigned c = *line;
+                    if (c < 0x80) {
+                        out[k++] = (char)c;
+                    } else if (c < 0x800) {
+                        out[k++] = (char)(0xC0 | (c >> 6));
+                        out[k++] = (char)(0x80 | (c & 0x3F));
+                    } else {
+                        out[k++] = (char)(0xE0 | (c >> 12));
+                        out[k++] = (char)(0x80 | ((c >> 6) & 0x3F));
+                        out[k++] = (char)(0x80 | (c & 0x3F));
+                    }
+                }
+                while (k > 0 && out[k - 1] == ' ') {
+                    k--;
+                }
+                out[k] = '\0';
+                return;
+            }
+            n--;
+        }
+        while (*p != 0 && *p != 10 && *p != 13) {
+            p++;
+        }
+        if (*p != 0) {
+            p++;
+        }
+    }
+}
+
 
 static FpState sState;           /* the copy the render thread reads */
 static volatile unsigned sSeq;   /* odd while it is written */
@@ -129,6 +198,17 @@ static void read_side(FpState *st, int side) {
     i = rd(chr, CHR_SWITCH_TARGET); /* (raw: BtlMember_GetSwitchTarget would move it) */
     if (i >= 0 && i < s->count && i != s->active && s->m[i].present && s->m[i].hp > 0) {
         s->next = i;
+    }
+    s->action = BtlAct_GetCurrent(chr);
+    s->chargeHeld = BtlInput_IsHeld(chr, BTLB_CHARGE) != 0;
+    {
+        uint8_t GAME_PTR obj = (uint8_t GAME_PTR)BtlChar_GetObj(chr);
+        uint32_t at = obj != NULL ? (uint32_t)rd(obj, OBJ_NAMES) : 0;
+        const uint16_t *names = at != 0 ? (const uint16_t *)Port_Ptr(at) : NULL;
+        for (i = 0; i < FP_MOVES; i++) {
+            entry_name(names, i, s->moves[i].name, (int)sizeof(s->moves[i].name));
+            s->moves[i].cost = s->moves[i].name[0] == '\0' ? 0 : i < 2 ? BtlSkill_GetBlastCost(chr, i) : BtlSuper_GetKiCost(chr, i);
+        }
     }
     if (foe != NULL) {
         s->comboDamage = rd(foe, CHR_COMBO + 0x00);

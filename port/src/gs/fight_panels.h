@@ -8,6 +8,12 @@ extern "C" {
 
 #define FP_MEMBERS 5 /* a side's member slots (include/battle/btl_char_member.h: BTL_MEMBER_SLOTS) */
 #define FP_PATH 260
+#define FP_MOVES 5 /* technique slots: 0, 1 skills (Blast 1, blast stocks), 2, 3 techniques (Blast 2, ki), 4 ultimate */
+
+typedef struct FpMove {
+    char name[64]; /* as the game shows it (UTF-8), "" when the fighter has none in that slot */
+    int cost;      /* skills: blast gauge (100000 a stock); techniques: ki (20000 a bar) */
+} FpMove;
 
 typedef struct FpMember {
     int present;  /* the slot holds a member */
@@ -27,6 +33,9 @@ typedef struct FpSide {
     int maxPower;     /* 0..30000: the powered-up mode's timer */
     int poweredUp;
     int comboHits, comboDamage, comboTimer; /* the combo this side is landing on the other */
+    int action;       /* the active fighter's action (0x37: charging ki) */
+    int chargeHeld;   /* the charge button (BTLB_CHARGE) is held */
+    FpMove moves[FP_MOVES];
     /* what the game's HUD was given for this side (src/battle/hud_*.c, Port_HudFeed): */
     int statMask, statUp; /* status icons: bits 0..3 = attack, speed, defence, ki changed; set in statUp = raised */
     int hudHits;          /* the combo counter (below 2: not shown) */

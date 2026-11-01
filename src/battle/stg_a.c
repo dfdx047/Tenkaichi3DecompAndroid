@@ -34,6 +34,7 @@
 
 #ifdef PORT
 extern f32 Port_WideFactor(void); /* widescreen on PC: 1, or 4/3 for a 16:9 picture (port/src/plat_stub.c) */
+extern f32 Port_CamCull(void);     /* a camera mod's wider view (src/battle/btl_cam.c): 1 without */
 #endif
 
 extern void *memset(void *dst, s32 c, u32 n);
@@ -383,8 +384,10 @@ void StgFrustum_Build(StgView *view, StgFrustum *fr) {
         STG_FRUSTUM_PLANES(896.0f / 3.0f);
     }
 #ifdef PORT
-    fr->plane[0].z *= Port_WideFactor(); /* the side planes of a 16:9 view: a third more half width */
-    fr->plane[1].z *= Port_WideFactor();
+    fr->plane[0].z *= Port_WideFactor() * Port_CamCull(); /* the side planes of a 16:9 view: a third more half width */
+    fr->plane[1].z *= Port_WideFactor() * Port_CamCull();
+    fr->plane[2].z *= Port_CamCull(); /* (and a camera mod's wider view, in both directions) */
+    fr->plane[3].z *= Port_CamCull();
 #endif
     for (i = 0; i < 4; i++) {
         Vec3_Normalize(&fr->plane[i], &fr->plane[i]);
@@ -400,8 +403,10 @@ void StgFrustum_Build(StgView *view, StgFrustum *fr) {
         left = k * -256.0f * 1.1666667f;
     }
 #ifdef PORT
-    right *= Port_WideFactor();
-    left *= Port_WideFactor();
+    right *= Port_WideFactor() * Port_CamCull();
+    left *= Port_WideFactor() * Port_CamCull();
+    top *= Port_CamCull();
+    bottom *= Port_CamCull();
 #endif
     k = 1.0f / (right - left);
     fr->proj.m[0][0] = (view->nearZ + view->nearZ) * k;

@@ -1374,6 +1374,11 @@ void EftGfx_UpdateClipPlanes(void) {
     f32 angle = 30.0f * 3.14159265f / 180.0f;
 #ifdef PORT
     f32 aspect = 0.75f / Port_WideFactor(); /* the side planes of a 16:9 view */
+    extern f32 Port_CamCull(void); /* a camera mod's wider view (btl_cam.c): its half angle widened as much */
+    extern f32 tanf(f32 x);
+    if (Port_CamCull() != 1.0f) {
+        angle = atanf(tanf(angle) * Port_CamCull());
+    }
 #else
     f32 aspect = 0.75f;
 #endif
