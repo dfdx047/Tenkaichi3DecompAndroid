@@ -387,6 +387,11 @@ static struct {
    its smaller copies; the renderer only uploads it when it is ready. Meanwhile the place shows what it showed, or
    nothing (a line that is new: clear, not a white box). */
 #define TEXT_JOBS 8
+/* A job whose place has not been drawn for this many frames is given up (its picture freed): the page changed, or
+   the line did (a status that updates), before it was collected. Collected only when its own place was drawn again,
+   such jobs stayed for good; once all eight were stuck no new line got a picture and every new line stayed clear
+   (all the words of a Tag Team page gone, seen on a tablet when creating a room). */
+#define TEXT_JOB_STALE 30
 typedef struct {
     int state; /* 0 free, 1 asked, 2 being made, 3 made */
     uint32_t slot, version, *lv[12], lw[12], lh[12];
@@ -463,6 +468,22 @@ static GsTex tbo_text_texture(uint32_t id) {
         } else {
             free(clear);
         }
+    }
+    if (sTextThread != NULL) { /* jobs of places no longer drawn: given up (TEXT_JOB_STALE) */
+        SDL_LockMutex(sTextLock);
+        for (i = 0; i < TEXT_JOBS; i++) {
+            TboTextJob *j = &sTextJob[i];
+            int k;
+            if ((j->state != 1 && j->state != 3) || j->slot == slot || gGsFrame - sTboText[j->slot].frame <= TEXT_JOB_STALE) {
+                continue; /* (2: the thread is making it; it is given up once made) */
+            }
+            for (k = 0; k < j->levels; k++) {
+                free(j->lv[k]);
+            }
+            j->levels = 0;
+            j->state = 0;
+        }
+        SDL_UnlockMutex(sTextLock);
     }
     if (sTextThread == NULL) { /* (as it was: here and now) */
         uint32_t w, h, *px;
