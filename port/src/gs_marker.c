@@ -323,7 +323,10 @@ static int clip_part(const char *name, int x, int top) {
         return top && strcmp(name, "mc_message_text") == 0 ? PORT_MENU_LEFT : PORT_MENU_NONE;
     }
     if (sMenuScreen >= 10 && top && strcmp(name, "mc_message_text") == 0) {
-        return PORT_MENU_LEFT; /* (the message window's text from its left, as on the main menu: its window fills) */
+        /* the message window's text from its left, as on the main menu: its window fills. Not the window that opens on
+           the left (Ultimate Battle, Ultimate Training, the tournaments, ...: its text 108 into the page, not 26): its
+           stepped corner stays with the page, and the text from the picture's edge ran into it at any wide shape */
+        return x > 64 ? PORT_MENU_NONE : PORT_MENU_LEFT;
     }
     if (sMenuScreen == 16 && top && (strcmp(name, "mc_kumo") == 0 || starts(name, "mc_kemuri_"))) {
         return PORT_MENU_FILL; /* (the versus menu: its scrolling clouds and smoke, scenery across the width) */
@@ -427,6 +430,15 @@ static int clip_part(const char *name, int x, int top) {
         return -2;
     }
     return PORT_MENU_NONE;
+}
+
+/* Where the message window's text goes from its clip (src/battle/view_a_b.c MsgWin_Draw). The window that opens on
+   the left (side 0) has its text 108 into the page, well clear of its stepped corner, whose lower step (beside the
+   text) ends at 25; on a converted screen in the widescreen layout, where its band reaches the picture's edge, the
+   text starts at 40 instead: nearer the main menu's (26), still clear of the corner. Elsewhere as the game has it. */
+extern int Port_MenusWide(void); /* port/src/plat_stub.c */
+int Port_MenuMessageX(int side) {
+    return side == 0 && sMenuScreen >= 10 && Port_MenusWide() ? 40 - 108 : 0;
 }
 
 /* Whether a clip of a converted screen's movie is moving (sliding in or out): its position changed within the last
