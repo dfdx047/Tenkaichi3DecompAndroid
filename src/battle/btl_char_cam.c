@@ -47,6 +47,15 @@ f32 ChrCam_GetOffset(ChrCamChr *chr, Vec4 *out, s32 mode) {
             break;
     }
     out->w = 1.0f;
+    {   /* Sparking style (port/src/gs/sz_style.c): higher and farther behind, looking down a little more, so the
+           whole field and a far opponent stay in view */
+        extern int Port_SzStyle(void);
+        if (Port_SzStyle()) {
+            out->y *= 1.45f;
+            out->z *= 1.2f;
+            pitch -= 0.08f;
+        }
+    }
     return pitch;
 }
 

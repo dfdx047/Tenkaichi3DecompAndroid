@@ -459,6 +459,124 @@ void ChrCam_UpdateInput(ChrCamChr *chr) {
     Vec4_Copy(dst, *(Vec4 **)((u8 *)BtlChar_GetObj(chr) + 0xFA0));
 }
 
+/* Sparking style (port/src/gs/sz_style.c): a strong hit pushes the camera in towards what it looks at and tilts the
+   horizon for a moment, then both ease back. Only the pose the views copy changes (cam->pos after the stage test and
+   the roll of cam->rot, taken off again at the start of the next update), so the camera's own state and what the
+   fighter code reads (cam->hit, cam->yaw, cam->side) are those of the game. */
+extern int Port_SzStyle(void);
+extern void Port_SzFlash(int pictures);
+
+#define SZ_SLOTS 12
+typedef struct SzPunch {
+    ChrCamChr *chr;
+    f32 frame;   /* frames since the hit */
+    f32 length;  /* frames the push lasts */
+    f32 power;   /* 0..1 */
+    f32 roll;    /* the roll added to cam->rot.z last update */
+    f32 sign;    /* which way the horizon tilts */
+} SzPunch;
+static SzPunch sSzPunch[SZ_SLOTS];
+static f32 sSzSign = 1.0f;
+
+static SzPunch *sz_slot(ChrCamChr *chr, s32 make) {
+    s32 i;
+    SzPunch *free = NULL;
+
+    for (i = 0; i < SZ_SLOTS; i++) {
+        if (sSzPunch[i].chr == chr) {
+            return &sSzPunch[i];
+        }
+        if (free == NULL && sSzPunch[i].chr == NULL) {
+            free = &sSzPunch[i];
+        }
+    }
+    if (make && free != NULL) {
+        free->chr = chr;
+        free->frame = free->length = free->power = free->roll = 0.0f;
+    }
+    return make ? free : NULL;
+}
+
+/* A hit of shake strength `power` (the attack's own, 2 for a light blow to 10 for the heaviest) reached this fighter's
+   camera: the push, stronger and longer the harder the hit; the hardest also show the impact frame. */
+void ChrCam_SzImpact(ChrCamChr *chr, f32 power) {
+    SzPunch *p;
+    f32 k;
+
+    if (power < 3.0f || !Port_SzStyle()) {
+        return;
+    }
+    p = sz_slot(chr, 1);
+    if (p == NULL) {
+        return;
+    }
+    k = (power - 2.0f) / 6.0f;
+    if (1.0f < k) {
+        k = 1.0f;
+    }
+    if (p->frame < p->length && k < p->power) {
+        return; /* (a weaker hit does not cut a stronger push short) */
+    }
+    p->frame = 0.0f;
+    p->length = 8.0f + 8.0f * k;
+    p->power = k;
+    sSzSign = -sSzSign;
+    p->sign = sSzSign;
+    if (8.0f <= power) {
+        Port_SzFlash(2);
+    }
+}
+
+/* The push's share now: up in 2 frames, down over the rest, smoothly. */
+static f32 sz_envelope(SzPunch *p) {
+    f32 t;
+
+    if (p->length <= p->frame) {
+        return 0.0f;
+    }
+    if (p->frame < 2.0f) {
+        return (p->frame + 1.0f) / 3.0f;
+    }
+    t = 1.0f - (p->frame - 2.0f) / (p->length - 2.0f);
+    return t * t * (3.0f - 2.0f * t);
+}
+
+/* Start of ChrCam_Update: the roll added last time comes off cam->rot. */
+static void sz_restore(ChrCamChr *chr) {
+    SzPunch *p = sz_slot(chr, 0);
+
+    if (p != NULL && p->roll != 0.0f) {
+        chr->cam.rot.z -= p->roll;
+        p->roll = 0.0f;
+    }
+}
+
+/* End of ChrCam_Update (not during a scripted cut): this frame's push and tilt. */
+static void sz_apply(ChrCamChr *chr) {
+    ChrCam *cam = &chr->cam;
+    SzPunch *p = sz_slot(chr, 0);
+    Vec4 d;
+    f32 e;
+
+    if (p == NULL) {
+        return;
+    }
+    e = sz_envelope(p) * p->power;
+    p->frame += 1.0f;
+    if (e <= 0.0f || !Port_SzStyle()) {
+        if (p->length <= p->frame) {
+            p->chr = NULL; /* (done: the slot is free again) */
+        }
+        return;
+    }
+    Vec4_Sub(&d, &cam->target, &cam->pos);
+    Vec4_Scale(&d, &d, e * 0.4f);
+    Vec4_Add(&cam->pos, &cam->pos, &d);
+    cam->pos.w = 1.0f;
+    p->roll = p->sign * 0.16f * e;
+    cam->rot.z += p->roll;
+}
+
 /* Per-frame camera update: picks the mode, adds shake, smooths, and keeps the camera out of the stage. */
 void ChrCam_Update(ChrCamChr *chr) {
     ChrCam *cam = &chr->cam;
@@ -471,10 +589,12 @@ void ChrCam_Update(ChrCamChr *chr) {
     s32 keepBehind = 0;
     s32 turn = 0;
     s32 smooth;
+    s32 cut = 0;
     f32 limit;
     f32 len;
     f32 rate;
 
+    sz_restore(chr);
     if (BtlChar_TestFlag(chr, 0xCC)) {
         Vec4_Copy(&eye, &chr->cam.pos);
         Vec4_Copy(&rot, &chr->cam.rot);
@@ -485,6 +605,7 @@ void ChrCam_Update(ChrCamChr *chr) {
         }
     } else if (ChrCam_IsCutActive(chr)) {
         ChrCam_CalcCut(chr, &eye, &rot, &target);
+        cut = 1;
         goto shake;
     } else if (BtlChar_TestFlag(chr, 0xDC) || BtlChar_TestFlag(chr, 0xB8)) {
         ChrCam_CalcFixed(chr, &eye, &rot, &target);
@@ -548,6 +669,9 @@ shake:
     cam->rot.w = 0.0f;
     cam->pos.w = 1.0f;
     cam->target.w = 1.0f;
+    if (!cut) {
+        sz_apply(chr);
+    }
 }
 
 /* Largest side angle of the lock-on camera: atan(obj + 0x1000), at least pi/4. */

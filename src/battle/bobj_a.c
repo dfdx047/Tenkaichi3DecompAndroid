@@ -1332,6 +1332,69 @@ void BtlObjXf_Reset(BobjObj *obj) {
     Vec4_Copy(&obj->xf.rootPos, &xf->pos);
 }
 
+/* Sparking style (port/src/gs/sz_style.c): a fighter's body leans into fast movement, forward into a dash, sideways
+   into a strafe, from how far it moved since the last update. Only the matrix the model is drawn with turns; pos /
+   rot (what the fighter code works with) stay the game's. Setting sz_lean: percent of the lean, negative turns the
+   other way. */
+extern int Port_SzStyle(void);
+extern int Port_SzLean(void);
+extern f32 Mathf_Sin(f32 x);
+extern f32 Mathf_Cos(f32 x);
+
+#define SZ_LEAN_SLOTS 16
+typedef struct SzLean {
+    BobjObj *obj;
+    Vec4 last;   /* position at the last update */
+    f32 pitch;   /* lean now, radians */
+    f32 roll;
+    s32 age;     /* updates since this object was last seen (a free slot goes to the oldest) */
+} SzLean;
+static SzLean sSzLean[SZ_LEAN_SLOTS];
+
+static f32 sz_clamp1(f32 v) {
+    return v < -1.0f ? -1.0f : 1.0f < v ? 1.0f : v;
+}
+
+static void sz_lean(BobjObj *obj, Vec4 *r) {
+    SzLean *l = NULL, *old = &sSzLean[0];
+    f32 dx, dz, yaw, fwd, side, k;
+    s32 i;
+
+    if (obj->type != 0 || !Port_SzStyle() || Port_SzLean() == 0) {
+        return;
+    }
+    for (i = 0; i < SZ_LEAN_SLOTS; i++) {
+        sSzLean[i].age++;
+        if (sSzLean[i].obj == obj) {
+            l = &sSzLean[i];
+        }
+        if (old->age < sSzLean[i].age) {
+            old = &sSzLean[i];
+        }
+    }
+    if (l == NULL) {
+        l = old;
+        l->obj = obj;
+        Vec4_Copy(&l->last, &obj->xf.pos);
+        l->pitch = l->roll = 0.0f;
+    }
+    l->age = 0;
+    dx = obj->xf.pos.x - l->last.x;
+    dz = obj->xf.pos.z - l->last.z;
+    Vec4_Copy(&l->last, &obj->xf.pos);
+    if (3600.0f < dx * dx + dz * dz) {
+        dx = dz = 0.0f; /* (a jump of more than 60: a teleport, not a dash) */
+    }
+    yaw = obj->xf.rot.y;
+    fwd = dx * Mathf_Sin(yaw) + dz * Mathf_Cos(yaw);
+    side = dx * Mathf_Cos(yaw) - dz * Mathf_Sin(yaw);
+    k = (f32)Port_SzLean() / 100.0f;
+    l->pitch += (sz_clamp1(fwd / 6.0f) * 0.30f * k - l->pitch) * 0.2f;
+    l->roll += (sz_clamp1(side / 6.0f) * 0.18f * k - l->roll) * 0.2f;
+    r->x += l->pitch;
+    r->z += l->roll;
+}
+
 /* Rebuilds the object's matrix and its inverse from pos / rot / scale. The model faces -Z, so the yaw is turned
    by pi. */
 void BtlObjXf_Update(BobjObj *obj) {
@@ -1355,7 +1418,12 @@ void BtlObjXf_Update(BobjObj *obj) {
     }
     Vu0Cur_LoadIdentity();
     Vu0Cur_ScaleDiagUniform(scale);
-    Vu0Cur_RotateZXY(mtxRot);
+    {
+        Vec4 drawRot; /* (the leaning body of the Sparking style; mtxRot stays what the matrix was built from) */
+        Vec4_Copy(&drawRot, mtxRot);
+        sz_lean(obj, &drawRot);
+        Vu0Cur_RotateZXY(&drawRot);
+    }
     Vu0Cur_Translate(mtxPos);
     Vu0Cur_StoreMtx(mtx);
     Mtx_InverseRT(&obj->xf.inv, mtx);

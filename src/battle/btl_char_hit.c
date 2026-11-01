@@ -56,6 +56,7 @@ extern void BtlChar_AddStageTimer(f32 seconds);
 extern void BtlChar_RaiseFirstClash(HitChr *chr);
 extern void BtlCharSnd_PlayCommon(HitChr *chr, s32 id);
 extern void ChrCam_AddShake(HitChr *chr, f32 power, f32 seconds);
+extern void ChrCam_SzImpact(HitChr *chr, f32 power); /* btl_char_cam_modes.c: the Sparking-style push on a hit */
 extern s32 BtlInput_IsHeld(HitChr *chr, u32 mask);
 extern s32 BtlInput_IsCmdHeld(HitChr *chr, u32 mask);
 extern s32 BtlOpp_GetPlayer(HitChr *chr);                        /* the opponent's player index */
@@ -1262,6 +1263,26 @@ void BtlHit_ApplyHit(HitChr *atk) {
         ChrCam_AddShake(atk, power, time);
     }
     ChrCam_AddShake(def, power, time);
+    ChrCam_SzImpact(atk, power);
+    ChrCam_SzImpact(def, power);
+    {   /* Sparking style (port/src/gs/sz_style.c): a heavy blow holds both fighters still for a few frames (the
+           game's own freeze, as its guards and clashes use) */
+        extern int Port_SzStyle(void);
+        if (6.0f <= power && Port_SzStyle()) {
+            s32 stop = 2 + (s32)((power - 6.0f) * 0.5f);
+            if (5 < stop) {
+                stop = 5;
+            }
+            if (atk->stopLen < stop) {
+                atk->stopLen = stop;
+                atk->stopDelay = 0;
+            }
+            if (def->stopLen < stop) {
+                def->stopLen = stop;
+                def->stopDelay = 0;
+            }
+        }
+    }
     BtlChar_Vibrate(atk, power * 0.5f, time * 0.5f);
     BtlChar_Vibrate(def, power * 0.5f, time * 0.5f);
     if (!(af & 0x80000)) {

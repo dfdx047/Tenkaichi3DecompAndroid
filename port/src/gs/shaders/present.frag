@@ -8,7 +8,7 @@ layout(set = 2, binding = 0) uniform sampler2D src; // filtered, clamped
 layout(set = 3, binding = 0) uniform Params {
     vec4 tex;    // the source texture: 1 / width, 1 / height, width, height (texels)
     vec4 region; // xy: uv of the shown picture's bottom-right corner; zw: output pixels per source texel
-    ivec4 mode;  // x: the filter
+    ivec4 mode;  // x: the filter; y: 1 = the impact frame (sz_style.c)
 } p;
 
 float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
@@ -51,6 +51,10 @@ void main() {
         c = fxaa(uv);
     } else {
         c = texture(src, uv).rgb;
+    }
+    if (p.mode.y == 1) {
+        // the impact frame: the picture in two tones, light and dark swapped (ink lines on white)
+        c = vec3(1.0 - smoothstep(0.30, 0.42, luma(c)));
     }
     outColor = vec4(c, 1.0);
 }

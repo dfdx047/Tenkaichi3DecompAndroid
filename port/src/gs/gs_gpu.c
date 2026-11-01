@@ -1315,8 +1315,16 @@ static void filter_pass(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *dst, SDL_GPUG
 static int show_filtered(SDL_GPUCommandBuffer *cmd, int best, SDL_GPUTexture *swap, Uint32 dx, Uint32 dy, Uint32 w, Uint32 h) {
     float texW = (float)sTW * SCALE, texH = (float)sTH * SCALE, inW = 512.0f * SCALE, inH = 448.0f * SCALE;
     SDL_GPUSampler *lin = sSamplers[7], *near = sSamplers[6];
-    if (gsFilter == 0 || w == 0 || h == 0 || !filters_make()) {
+    extern int Port_SzFlashTake(void); /* sz_style.c: this picture is a strong hit's impact frame */
+    int flash = Port_SzFlashTake();
+    if ((gsFilter == 0 && !flash) || w == 0 || h == 0 || !filters_make()) {
         return 0;
+    }
+    if (flash) { /* (whatever the filter: one picture through the plain one, in two tones) */
+        struct { float tex[4], region[4]; int32_t mode[4]; } u = {
+            {1.0f / texW, 1.0f / texH, texW, texH}, {inW / texW, inH / texH, (float)w / inW, (float)h / inH}, {0, 1, 0, 0}};
+        filter_pass(cmd, swap, sPresentPipe, sTgCol[best], lin, &u, sizeof(u), (float)dx, (float)dy, (float)w, (float)h, 1);
+        return 1;
     }
     if (gsFilter == 3 && sEasuPipe != NULL && sRcasPipe != NULL) { /* AMD FSR 1: EASU to the shown size, then RCAS */
         struct { uint32_t con0[4], con1[4], con2[4], con3[4]; float origin[4]; } e;
