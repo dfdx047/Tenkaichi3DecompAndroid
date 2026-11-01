@@ -839,6 +839,11 @@ static int sSpecSkip;                      /* running blanks without picture to 
    (It began as a fixed second, SPEC_BUFFER: the view was a second late.) */
 enum { SPEC_LEAD_MIN = 18, SPEC_LEAD_START = 24, SPEC_LEAD_STEP = 12, SPEC_LEAD_QUIET = 900 };
 static int sSpecLead = SPEC_LEAD_START;
+/* The host's pace as the spectator sees it (blanks a second, measured every quarter second) and when this copy last
+   ran a blank: see spec_follow. */
+static double sSpecRate;
+static uint64_t sSpecRateNs, sSpecBlankNs;
+static uint32_t sSpecRateN;
 static unsigned sSpecLeadSince;            /* the blank it last ran out at, or grew shorter at */
 static unsigned sSpecLeadLog;
 static int sSpecNudge;                     /* this blank runs without picture and pacing: a little ahead (behind by a lot) */
@@ -1786,6 +1791,9 @@ static void net_start(int role, const char *host, const char *join) {
         sSpecApartAt = 0;
         sSpecCompared = sSpecDiffered = sSpecSkipped = 0;
         sSpecHeardNs = sSpecAckNs = sSpecGapNs = sSpecDrawNs = 0;
+        sSpecRate = 0.0;
+        sSpecRateNs = sSpecBlankNs = 0;
+        sSpecRateN = 0;
         if (role == 3) {
             snprintf(sSpecTarget, sizeof(sSpecTarget), "%s", join);
         }
@@ -2593,6 +2601,42 @@ static void spec_hold(const char *line) {
     }
 }
 
+/* The spectator follows the host's real pace. It ran its blanks at the match's nominal pace (60 a second times the
+   game speed) and the host only ever sends what its players have played: when their match runs slower than that (a
+   phone that cannot keep up, a game speed it cannot reach) the spectator kept catching up with the host, running out
+   of blanks and stopping under "Waiting for the match..." again and again (seen at a lobby's character select: 0.4 s
+   of picture, 1 to 2 s of waiting). Now, while its lead is short, each blank is held as long as the host's measured
+   pace asks (a little longer while the lead is very short), so the picture runs evenly at the players' pace; with
+   the host at full speed nothing changes. A hold longer than a quarter second is left to the wait in spec_tick (the
+   host has all but stopped: then the line in the middle is right). */
+static void spec_follow(unsigned tick) {
+    extern unsigned long long Port_BlankNs(void); /* plat_stub.c: a blank at the match's speed */
+    uint64_t now = SDL_GetTicksNS(), blankNs = Port_BlankNs();
+    uint32_t have = sLogN > tick ? sLogN - tick : 0;
+
+    if (sSpecRateNs == 0 || sLogN < sSpecRateN) {
+        sSpecRateNs = now;
+        sSpecRateN = sLogN;
+    } else if (now - sSpecRateNs >= 250000000ull) {
+        double r = (double)(sLogN - sSpecRateN) * 1e9 / (double)(now - sSpecRateNs);
+        sSpecRate = sSpecRate == 0.0 ? r : sSpecRate * 0.75 + r * 0.25;
+        sSpecRateNs = now;
+        sSpecRateN = sLogN;
+    }
+    if (have > 0 && have < (uint32_t)sSpecLead && sSpecRate > 1.0 && blankNs > 0 && sSpecRate < 1e9 / (double)blankNs * 0.98) {
+        double slow = have < (uint32_t)sSpecLead / 2 ? 0.85 : 1.0;
+        uint64_t want = (uint64_t)(1e9 / (sSpecRate * slow));
+        if (want > blankNs && want <= 250000000ull) {
+            while (SDL_GetTicksNS() < sSpecBlankNs + want && sLogN - tick < (uint32_t)sSpecLead) {
+                spec_service();
+                SDL_DelayNS(500000);
+            }
+            gPortNetWaitNs += SDL_GetTicksNS() - now; /* (waiting for the host: not a slow frame of this copy's) */
+        }
+    }
+    sSpecBlankNs = SDL_GetTicksNS();
+}
+
 /* 1 while a spectator runs blanks without picture and not held to real time, to catch up (plat_stub.c). */
 int Port_NetSpecSkip(void) {
     return sMode == 3 && (sSpecSkip || sSpecNudge);
@@ -2728,6 +2772,9 @@ static void spec_tick(unsigned tick) {
     }
     if (!sSpecSkip && sLogN > tick + (unsigned)sSpecLead + 12 && tick % 16 == 0) {
         sSpecNudge = 1; /* a little behind: one blank in sixteen runs without picture (gently back to the lead) */
+    }
+    if (!sSpecSkip && !sSpecNudge) {
+        spec_follow(tick);
     }
     if (sSpecSkip) {
         char line[96];
