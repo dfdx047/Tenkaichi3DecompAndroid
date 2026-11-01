@@ -3,8 +3,8 @@
 --   - the fighter: its character-select portrait, cut softly round the head and shoulders, facing the middle;
 --   - one pip per reserve health bar, each in its bar's colour;
 --   - the health bar along a gentle curve, thinning toward its end like a brush stroke: the bar being spent over the
---     next bar's colour, the damage just taken in white, running down after a moment;
---   - one ki cell per bar; then the max power gauge: blue spreading over the full cells while it charges, and
+--     next bar's colour, the damage just taken in red, running down after a moment;
+--   - one ki cell per bar, the ki just spent in red the same way; then the max power gauge: blue spreading over the full cells while it charges, and
 --     the powered-up mode's time running down in them;
 --   - the blast stock count, in a blade that lights up as the next stock fills;
 --   - under them, a chip per status the fighter has raised or lowered;
@@ -33,6 +33,8 @@ local kBar = {
     { { 40, 140, 245 }, { 150, 210, 255 } }, -- 6 blue
     { { 150, 90, 245 }, { 214, 180, 255 } }, -- 7 violet
 }
+local OUTLINE = { 0, 0, 0, 0.9 }    -- every part's outline
+local LOST = { 228, 28, 28, 0.95 }  -- health and ki just lost, before it runs down
 local kMp = { { 130, 210, 255 }, { 40, 110, 255 } } -- the max power gauge: blue, told apart from the ki at a glance
 local kKi = { [false] = { { 255, 222, 84 }, { 240, 168, 10 } }, [true] = { { 255, 170, 60 }, { 255, 96, 30 } } }
 local kStatColour = { { 232, 70, 52 }, { 70, 200, 255 }, { 120, 150, 255 }, { 255, 210, 60 } }
@@ -305,6 +307,7 @@ local function draw_side(hud, side, right, f, an, now)
     local key = (f.active << 16) | ((f.chara or 0) + 1)
     if key ~= an.key then
         an.key, an.trail, an.lastHp, an.ki, an.blast = key, hp, hp, f.ki, f.blast
+        an.kiTrail, an.lastKi = f.ki, f.ki
         an.mp = (f.max_power or 0) / 30000
     end
     if hp < an.lastHp then an.hitAt = now end -- (each hit of a combo keeps the white standing while it goes on)
@@ -317,6 +320,16 @@ local function draw_side(hud, side, right, f, an, now)
         an.trail = hp
     end
     an.ki = an.ki + (f.ki - an.ki) * clamp01(dt * 14)
+    -- ki spent: as health, the part just lost stands in red, then runs down to the ki
+    if f.ki < an.lastKi then an.kiAt = now end
+    an.lastKi = f.ki
+    if f.ki < an.kiTrail - 0.5 then
+        if now - (an.kiAt or 0) > 0.45 then
+            an.kiTrail = max(an.kiTrail - max(15000, (an.kiTrail - f.ki) * 3) * dt, f.ki)
+        end
+    else
+        an.kiTrail = f.ki
+    end
     an.blast = an.blast + (f.blast - an.blast) * clamp01(dt * 10)
     an.mp = an.mp + (clamp01((f.max_power or 0) / 30000) - an.mp) * clamp01(dt * 14)
 
@@ -336,7 +349,7 @@ local function draw_side(hud, side, right, f, an, now)
     local count, most = floor(stock + 0.001), (f.blast_max or 0) // 100000
     local part = (count >= most and most > 0) and 1 or stock - count
     local top, bot = blade(hud, v, 1, function() return rgba(6, 16, 40, 0.85) end)
-    outline(hud, top, bot, rgba(120, 180, 255, 0.4), 1 * U)
+    outline(hud, top, bot, rgba(OUTLINE[1], OUTLINE[2], OUTLINE[3], OUTLINE[4]), 1 * U)
     if part > 0.01 then
         blade(hud, v, part, function(t) return mix(rgba(70, 170, 255, 1), rgba(215, 250, 255, 1), t) end)
     end
@@ -354,19 +367,19 @@ local function draw_side(hud, side, right, f, an, now)
         local x, n = kPipX + i * kPipStep, i + 1
         if n < left then
             local t, b = strip(hud, w, x, x + kPipW, 4, 8, 8, 4, 4, col(kBar[n][2], 1, 1), col(kBar[n][1], 1, 1))
-            outline(hud, t, b, rgba(255, 255, 255, 0.45), 1 * U)
+            outline(hud, t, b, rgba(OUTLINE[1], OUTLINE[2], OUTLINE[3], OUTLINE[4]), 1 * U)
         else
             local t, b = strip(hud, w, x, x + kPipW, 4, 8, 8, 4, 4, rgba(8, 18, 40, 0.85), rgba(8, 18, 40, 0.85))
-            outline(hud, t, b, rgba(150, 180, 230, 0.45), 1 * U)
+            outline(hud, t, b, rgba(OUTLINE[1], OUTLINE[2], OUTLINE[3], OUTLINE[4]), 1 * U)
         end
     end
 
-    -- the health bar: the bar being spent over the next one's colour, the damage just taken in white
+    -- the health bar: the bar being spent over the next one's colour, the damage just taken in red
     local x0, x1 = kBarX0, kBarX1
     local len = x1 - x0
     local function thick(x) return 16 - 6 * (x - x0) / len end
     local t, b = strip(hud, w, x0 - 3, x1 + 3, 15, 22, 16, 10, 14, rgba(4, 10, 26, 0.9), rgba(4, 10, 26, 0.9))
-    outline(hud, t, b, rgba(140, 190, 255, 0.55), 1.2 * U)
+    outline(hud, t, b, rgba(OUTLINE[1], OUTLINE[2], OUTLINE[3], OUTLINE[4]), 1.2 * U)
     local barPart = left > 0 and clamp01((hp - (left - 1) * 10000) / 10000) or 0
     if left > 1 then
         strip(hud, w, x0, x1, 18, thick(x0), thick(x1), 8, 12, col(kBar[left - 1][1], 0.72, 1), col(kBar[left - 1][2], 0.8, 1), true, x0, x1)
@@ -374,7 +387,8 @@ local function draw_side(hud, side, right, f, an, now)
     local trailPart = left > 0 and clamp01((an.trail - (left - 1) * 10000) / 10000) or 0
     if trailPart > barPart + 0.002 then
         local xe = x0 + len * trailPart
-        strip(hud, w, x0, xe, 18, thick(x0), thick(xe), 8, 8, rgba(255, 245, 245, 0.95), rgba(255, 245, 245, 0.95))
+        strip(hud, w, x0, xe, 18, thick(x0), thick(xe), 8, 8, rgba(LOST[1], LOST[2], LOST[3], LOST[4]),
+              rgba(LOST[1], LOST[2], LOST[3], LOST[4]))
     end
     if barPart > 0.002 and left > 0 then
         local xe = x0 + len * barPart
@@ -401,8 +415,12 @@ local function draw_side(hud, side, right, f, an, now)
         local g = mp and 0 or clamp01(mpCells - i) -- (the max power filling, over the ki)
         local on = fill >= 0.999
         local tt, bb = strip(hud, w, x, x + kKiW, 44, 12, 12, 6, 6, rgba(6, 14, 34, 0.85), rgba(6, 14, 34, 0.85))
-        outline(hud, tt, bb, g >= 0.999 and col(m0, charge, 1) or on and col(k0, pulse, 1) or rgba(170, 195, 230, 0.5),
-                ((on or g > 0) and 2 or 1.2) * U)
+        outline(hud, tt, bb, rgba(OUTLINE[1], OUTLINE[2], OUTLINE[3], OUTLINE[4]), ((on or g > 0) and 2 or 1.2) * U)
+        local lost = mp and 0 or clamp01(an.kiTrail / 20000 - i) -- (the ki just spent, under what is left)
+        if lost > fill + 0.01 then
+            strip(hud, w, x + 2.5, x + 2.5 + (kKiW - 5) * lost, 46.5, 7, 7, 5, 5, rgba(LOST[1], LOST[2], LOST[3], LOST[4]),
+                  rgba(LOST[1], LOST[2], LOST[3], LOST[4]))
+        end
         if fill > 0.01 then
             strip(hud, w, x + 2.5, x + 2.5 + (kKiW - 5) * fill, 46.5, 7, 7, 5, 5, col(k0, pulse, 1), col(k1, pulse, 1))
         end
