@@ -1272,7 +1272,7 @@ static int load_one(const char *folder) {
     memset(in, 0, sizeof(*in));
     snprintf(in->folder, sizeof(in->folder), "%s", folder);
     snprintf(in->name, sizeof(in->name), "%s", folder);
-    in->enabled = 1;
+    in->enabled = 0; /* (off until the player switches it on in F1 > Mods: a mod dropped in the folder does nothing by itself) */
     snprintf(path, sizeof(path), "%s/%s/mod.lua", Mods_Folder(), folder);
     text = read_file(path, &size);
     if (text == NULL) {
