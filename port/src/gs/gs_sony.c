@@ -69,7 +69,14 @@ int sceGsPutDrawEnv(uint64_t *giftag) {
 
 int sceGsSwapDBuff(void *p, int id) {
     DBuff *db = p;
+    extern void Gs_RenderIdle(void); /* gs_core.c */
+    /* The render thread reads gGsMainFbp while it draws the previous frame's list (which 2D pieces go into the
+       picture: the widescreen narrowing, the Tag Team HUD, the glow's strength). Changed under it, the pieces of
+       every other frame were taken for work buffers and drawn a third too wide: the pause menu, the HUD and the
+       texts stretched and shrank (seen in a Tag Team fight, where the thread is on by default). So the list being
+       drawn is finished first; the packet below waited for it anyway (Port_GsGifChannel). */
+    Gs_RenderIdle();
     /* the buffer this frame is drawn into: what the renderer shows when the frame is finished */
-    gGsMainFbp = (int)(((id & 1) ? db->draw1.frame.v : db->draw0.frame.v) & 0x1FF);
+    gGsMainFbp =(int)(((id & 1) ? db->draw1.frame.v : db->draw0.frame.v) & 0x1FF);
     return sceGsPutDrawEnv((id & 1) ? db->giftag1 : db->giftag0);
 }
