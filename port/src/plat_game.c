@@ -118,8 +118,11 @@ int PortGame_Costumes(int c) {
         if(!loaded) {
             unsigned char table[32768];unsigned offset;size_t size;int i;
             FILE *f=open_data("pzs3us1/00003.bin");
-            if(!f)return 0;
-            size=fread(table,1,sizeof(table),f);fclose(f);
+            if(f){size=fread(table,1,sizeof(table),f);fclose(f);}
+            else { /* Android: no loose files, the game's own reader finds it in the disc image (and in mods/) */
+                extern size_t Port_FileReadAt(const char *rel, long offset, void *buf, size_t bytes); /* plat_fcache.c */
+                size=Port_FileReadAt("pzs3us1/00003.bin",0,table,sizeof(table));
+            }
             if(size<8)return 0;
             offset=u32(table+4)&~3u;
             if(offset>size || size-offset<161*60)return 0;
