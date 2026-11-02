@@ -1189,7 +1189,6 @@ static int sStopping; /* the program is ending: the render thread leaves its loo
 static int sListDone; /* the list being run has been drawn and its first picture shown (Smooth motion's others may follow) */
 static void run_chain(uint32_t tadr, int tte);
 static void run_frozen(void);
-static uint64_t sHbWaitNs, sHbWaits, sHbBusyNs, sHbLists, sHbGameNs, sHbFrames; /* (the heartbeat's: Gs_HbTake) */
 static void walk_chain(uint32_t tadr, int tte, void (*block)(const uint32_t *tag, const uint32_t *data, uint32_t qwc, int tte));
 static void freeze_block(const uint32_t *tag, const uint32_t *data, uint32_t qwc, int tte);
 static size_t sFrozenUsed; /* (the copy of a frame's list for the render thread: freeze_block) */
@@ -1288,12 +1287,7 @@ static void *render_thread(void *arg) {
                 extern void GsGpu_InterpHurry(int on);
                 GsGpu_InterpHurry(0);
             }
-            {
-                uint64_t t0 = now_ns();
-                run_frozen();
-                __atomic_add_fetch(&sHbBusyNs, now_ns() - t0, __ATOMIC_RELAXED);
-                __atomic_add_fetch(&sHbLists, 1, __ATOMIC_RELAXED);
-            }
+            run_frozen();
             pthread_mutex_lock(&sLock);
             sListDone = 1;
             pthread_cond_broadcast(&sDone);
@@ -1317,32 +1311,12 @@ static void *render_thread(void *arg) {
 }
 
 /* Blocks until the render thread has nothing to do. */
-/* Where a fight's time goes, for the heartbeat (gs_gpu.c, every 300 pictures): the game's thread waiting for the
-   drawing (render_wait: at the frame's hand-over and before any other transfer to the GS), and the render thread's
-   whole work on a list (the VIF/VU1 and GS walk of the list, then the back end's frame end). */
-void Gs_HbTake(uint64_t out[6]) {
-    out[0] = __atomic_exchange_n(&sHbWaitNs, 0, __ATOMIC_RELAXED);
-    out[1] = __atomic_exchange_n(&sHbWaits, 0, __ATOMIC_RELAXED);
-    out[2] = __atomic_exchange_n(&sHbBusyNs, 0, __ATOMIC_RELAXED);
-    out[3] = __atomic_exchange_n(&sHbLists, 0, __ATOMIC_RELAXED);
-    out[4] = __atomic_exchange_n(&sHbGameNs, 0, __ATOMIC_RELAXED);
-    out[5] = __atomic_exchange_n(&sHbFrames, 0, __ATOMIC_RELAXED);
-}
-
 static void render_wait(void) {
-    uint64_t t0 = 0;
     pthread_mutex_lock(&sLock);
-    if (sJob != 0) {
-        t0 = now_ns();
-    }
     while (sJob != 0) {
         pthread_cond_wait(&sDone, &sLock);
     }
     pthread_mutex_unlock(&sLock);
-    if (t0 != 0) {
-        __atomic_add_fetch(&sHbWaitNs, now_ns() - t0, __ATOMIC_RELAXED);
-        __atomic_add_fetch(&sHbWaits, 1, __ATOMIC_RELAXED);
-    }
 }
 
 /* At the program's end (atexit), from the game's thread: the list being drawn is finished, then the thread leaves
@@ -1588,8 +1562,6 @@ void Port_GsVif1Chain(uint32_t tadr, int tte) {
             }
             /* per second: where the work goes (the game's own code, walking the list, and of that the GPU side) */
             sumGame += tChain - start > waited ? tChain - start - waited : 0;
-            __atomic_add_fetch(&sHbGameNs, tChain - start > waited ? tChain - start - waited : 0, __ATOMIC_RELAXED);
-            __atomic_add_fetch(&sHbFrames, 1, __ATOMIC_RELAXED);
             sumList += t - tChain;
             sumTex += gGpuTexNs;
             sumPipe += gGpuPipeNs;
