@@ -32,6 +32,14 @@ typedef int socklen_t;
 #endif
 #include "net_relay.h"
 #include "tag_link.h"
+#ifndef _WIN32
+#include <netinet/in.h>
+#endif
+
+/* An address of a player: IPv4, or IPv6 (2026-11-02: phones on mobile data are often behind their operator's IPv4
+   NAT, where two of them cannot reach each other directly and the match went through the room's relay, 300 ms and
+   more a round trip; most Brazilian operators also give them a public IPv6 address, where they can). */
+typedef union { struct sockaddr sa; struct sockaddr_in v4; struct sockaddr_in6 v6; } TlAddr;
 
 extern int TagLink_Stun(int sock, char *out, int size);       /* net_match.c */
 extern int TagLink_Lan(int port, char *out, int size);
@@ -51,7 +59,7 @@ enum { T_SYN = 1, T_SYNACK, T_DATA, T_ACK, T_FIN, T_PUNCH };
 typedef struct {
     uint8_t data[TL_PIECE];
     int len, used, tries;
-    Uint64 sentAt;
+    Uint64 sentAt, firstAt; /* (last sent, first sent) */
 } Piece;
 
 typedef struct {
@@ -59,7 +67,7 @@ typedef struct {
     uint32_t id;
     int member; /* the service's number of the player (the owner: from its SYN) */
     int given;  /* handed to tag_net.c (TagLink_Accept) */
-    struct sockaddr_in to;
+    TlAddr to;
     uint32_t sndNext, sndUna, rcvNext;
     Piece tx[TL_WINDOW], rx[TL_WINDOW];
     uint8_t inbox[TL_INBOX];
@@ -67,18 +75,27 @@ typedef struct {
     Uint64 lastIn, lastOut, lastSyn, opened;
     int ackDue; /* pieces came in that no packet of ours has acknowledged yet */
     int srtt, rto; /* ms */
+    TlAddr direct; /* the last direct way that worked (haveDirect), kept while the relay carries it */
+    int haveDirect;
+    int quietTold;
+    Uint64 lastDirectIn; /* when something last came directly */
+    int rttvar;          /* ms: how much the round trip varies (the time before a piece goes again) */
+    Uint64 lastSample;   /* when the round trip was last measured */
+    uint32_t fastSeq;    /* the piece last sent again early (the other side had later ones), and when */
+    Uint64 fastAt;
+    int viaRelay;        /* (for the log: the way now used) */
 } Conn;
 
 typedef struct {
     int id, watch, cands;
-    struct sockaddr_in cand[TL_CANDS];
-    struct sockaddr_in seen;
+    TlAddr cand[TL_CANDS];
+    TlAddr seen;
     int haveSeen;
     Uint64 since;
 } Member;
 
 static struct {
-    int sock;
+    int sock, sock6; /* (sock6: -1 without IPv6) */
     int hosting, active;
     uint32_t tag; /* the room's code as a number: packets of another room are not ours */
     Conn conn[TL_SLOTS];
@@ -91,11 +108,11 @@ static struct {
     int version, watch, myId, codeReady;
     Member member[TL_MEMBERS];
     int members;
-    struct sockaddr_in hostCand[TL_CANDS];
+    TlAddr hostCand[TL_CANDS];
     int hostCands;
     SDL_AtomicInt relayOn; /* the room's relay at the service (a WebSocket, the app's RelaySocket) is open */
     Uint64 lastPunch;
-} L = {-1};
+} L = {-1, -1};
 
 /* ---- small things ---- */
 
@@ -108,7 +125,7 @@ static void set_status(const char *s) {
     SDL_UnlockMutex(L.lock);
 }
 
-static int parse_addr(const char *text, struct sockaddr_in *out) {
+static int parse_addr(const char *text, TlAddr *out) {
     char ip[64];
     int port = 0;
     const char *colon = SDL_strrchr(text, ':');
@@ -119,17 +136,34 @@ static int parse_addr(const char *text, struct sockaddr_in *out) {
     ip[colon - text] = 0;
     port = SDL_atoi(colon + 1);
     SDL_memset(out, 0, sizeof(*out));
-    out->sin_family = AF_INET;
-    out->sin_port = htons((unsigned short)port);
-    return port > 0 && port < 65536 && inet_pton(AF_INET, ip, &out->sin_addr) == 1;
+    if (port <= 0 || port >= 65536) {
+        return 0;
+    }
+    if (SDL_strchr(ip, ':') != NULL) { /* IPv6: "2804:5c::1:41234", the port after the last colon */
+        out->v6.sin6_family = AF_INET6;
+        out->v6.sin6_port = htons((unsigned short)port);
+        return inet_pton(AF_INET6, ip, &out->v6.sin6_addr) == 1;
+    }
+    out->v4.sin_family = AF_INET;
+    out->v4.sin_port = htons((unsigned short)port);
+    return inet_pton(AF_INET, ip, &out->v4.sin_addr) == 1;
+}
+static socklen_t addr_len(const TlAddr *a) {
+    return a->sa.sa_family == AF_INET6 ? (socklen_t)sizeof(a->v6) : (socklen_t)sizeof(a->v4);
 }
 
-static int same_addr(const struct sockaddr_in *a, const struct sockaddr_in *b) {
-    return a->sin_addr.s_addr == b->sin_addr.s_addr && a->sin_port == b->sin_port;
+static int same_addr(const TlAddr *a, const TlAddr *b) {
+    if (a->sa.sa_family != b->sa.sa_family) {
+        return 0;
+    }
+    if (a->sa.sa_family == AF_INET6) {
+        return SDL_memcmp(&a->v6.sin6_addr, &b->v6.sin6_addr, 16) == 0 && a->v6.sin6_port == b->v6.sin6_port;
+    }
+    return a->v4.sin_addr.s_addr == b->v4.sin_addr.s_addr && a->v4.sin_port == b->v4.sin_port;
 }
 
 /* The JSON list `key` of the answer (strings) into addresses; "relay=" ones too. Returns how many. */
-static int json_addrs(const char *json, const char *key, struct sockaddr_in *out, int max) {
+static int json_addrs(const char *json, const char *key, TlAddr *out, int max) {
     char pat[40];
     const char *p, *end;
     int n = 0;
@@ -184,15 +218,15 @@ static int json_int(const char *json, const char *key, int def) {
 
 /* ---- the room's relay at the service: a WebSocket of the app's (RelaySocket.kt), through JNI ----
    A player reached through it has an address of its own here: 0.0.0.0 and its number + 1 as the port (the owner: 0). */
-static struct sockaddr_in relay_addr(int id) {
-    struct sockaddr_in a;
+static TlAddr relay_addr(int id) {
+    TlAddr a;
     SDL_memset(&a, 0, sizeof(a));
-    a.sin_family = AF_INET;
-    a.sin_port = htons((unsigned short)(id + 1));
+    a.v4.sin_family = AF_INET;
+    a.v4.sin_port = htons((unsigned short)(id + 1));
     return a;
 }
-static int is_relay(const struct sockaddr_in *a) {
-    return a->sin_addr.s_addr == 0 && a->sin_port != 0;
+static int is_relay(const TlAddr *a) {
+    return a->sa.sa_family == AF_INET && a->v4.sin_addr.s_addr == 0 && a->v4.sin_port != 0;
 }
 #ifdef __ANDROID__
 #include <jni.h>
@@ -290,6 +324,65 @@ static void relay_close(void) {
         }
     }
 }
+#elif !defined(_WIN32)
+/* PC: no room relay, except for port/tools/taglink_test (TAGLINK_TEST_RELAY=<port>: a stand-in for the Durable
+   Object over UDP on this computer, its relay.mjs; the first message says who this is, "h" or "m<number>"). */
+static int sTestRelay = -1;
+static int relay_open(const char *url) {
+    const char *port = getenv("TAGLINK_TEST_RELAY");
+    struct sockaddr_in a;
+    char who[16];
+    (void)url;
+    if (port == NULL) {
+        return 0;
+    }
+    sTestRelay = (int)socket(AF_INET, SOCK_DGRAM, 0);
+    SDL_memset(&a, 0, sizeof(a));
+    a.sin_family = AF_INET;
+    a.sin_port = htons((unsigned short)SDL_atoi(port));
+    a.sin_addr.s_addr = htonl(0x7f000001);
+    if (sTestRelay < 0 || connect(sTestRelay, (struct sockaddr *)&a, sizeof(a)) != 0) {
+        return 0;
+    }
+    fcntl(sTestRelay, F_SETFL, fcntl(sTestRelay, F_GETFL, 0) | O_NONBLOCK);
+    if (L.hosting) {
+        SDL_strlcpy(who, "Rh", sizeof(who));
+    } else {
+        SDL_snprintf(who, sizeof(who), "Rm%d", L.myId);
+    }
+    send(sTestRelay, who, SDL_strlen(who), 0);
+    return 1;
+}
+static void relay_send(const uint8_t *data, int len) {
+    if (sTestRelay >= 0) {
+        send(sTestRelay, (const char *)data, (size_t)len, 0);
+    }
+}
+static int relay_recv(uint8_t *out, int max) {
+    int n;
+    static Uint64 said;
+    if (sTestRelay < 0) {
+        return -1;
+    }
+    if (SDL_GetTicks() - said > 500) { /* (who this is, again: one UDP message may be lost, a WebSocket's is not) */
+        char who[16];
+        said = SDL_GetTicks();
+        if (L.hosting) {
+            SDL_strlcpy(who, "Rh", sizeof(who));
+        } else {
+            SDL_snprintf(who, sizeof(who), "Rm%d", L.myId);
+        }
+        send(sTestRelay, who, SDL_strlen(who), 0);
+    }
+    n = (int)recv(sTestRelay, (char *)out, (size_t)max, 0);
+    return n > 0 ? n : 0;
+}
+static void relay_close(void) {
+    if (sTestRelay >= 0) {
+        close(sTestRelay);
+        sTestRelay = -1;
+    }
+}
 #else
 static int relay_open(const char *url) { (void)url; return 0; }
 static void relay_send(const uint8_t *data, int len) { (void)data; (void)len; }
@@ -299,14 +392,14 @@ static void relay_close(void) {}
 
 /* ---- the socket ---- */
 
-static void send_raw(const uint8_t *pkt, int len, const struct sockaddr_in *to) {
+static void send_raw(const uint8_t *pkt, int len, const TlAddr *to) {
     if (is_relay(to)) {
         uint8_t out[TL_HEAD + TL_PIECE + 1];
         if (!SDL_GetAtomicInt(&L.relayOn) || len > TL_HEAD + TL_PIECE) {
             return;
         }
         if (L.hosting) {
-            out[0] = (uint8_t)(ntohs(to->sin_port) - 1);
+            out[0] = (uint8_t)(ntohs(to->v4.sin_port) - 1);
             SDL_memcpy(out + 1, pkt, (size_t)len);
             relay_send(out, len + 1);
         } else {
@@ -314,14 +407,18 @@ static void send_raw(const uint8_t *pkt, int len, const struct sockaddr_in *to) 
         }
         return;
     }
-    if (Relay_Active() && Relay_IsPeer(to)) {
-        Relay_Send(L.sock, pkt, len, to);
+    if (to->sa.sa_family == AF_INET6) {
+        if (L.sock6 >= 0) {
+            sendto(L.sock6, (const char *)pkt, len, 0, &to->sa, addr_len(to));
+        }
+    } else if (Relay_Active() && Relay_IsPeer(&to->v4)) {
+        Relay_Send(L.sock, pkt, len, &to->v4);
     } else {
-        sendto(L.sock, (const char *)pkt, len, 0, (const struct sockaddr *)to, sizeof(*to));
+        sendto(L.sock, (const char *)pkt, len, 0, &to->sa, addr_len(to));
     }
 }
 
-static void send_packet(Conn *c, int type, uint32_t seq, const uint8_t *data, int len, const struct sockaddr_in *to) {
+static void send_packet(Conn *c, int type, uint32_t seq, const uint8_t *data, int len, const TlAddr *to) {
     uint8_t pkt[TL_HEAD + TL_PIECE];
     uint32_t sack = 0;
     int i;
@@ -344,6 +441,38 @@ static void send_packet(Conn *c, int type, uint32_t seq, const uint8_t *data, in
         SDL_memcpy(pkt + TL_HEAD, data, (size_t)len);
     }
     send_raw(pkt, TL_HEAD + len, to != NULL ? to : &c->to);
+    if (to == NULL && c->state == TK_LINK_OPEN) {
+        /* Nothing has come from the other side for a while: its way may have closed (a phone's network changing, a
+           router forgetting the mapping, the direct way going mute in the middle of a match: "Input from a player
+           stopped arriving"). Send by the other way too until something comes back: through the room's relay if the
+           direct way went quiet, directly if the relay did. Whatever answers first becomes the way again
+           (take_packet); a piece that arrives twice is only taken once. */
+        Uint64 now = SDL_GetTicks();
+        const Piece *oldest = &c->tx[c->sndUna & (TL_WINDOW - 1)];
+        /* (or only our way to it failing: it is heard, but what we send stays unacknowledged) */
+        int quiet = now - c->lastIn > 1200;
+        if (quiet || (c->sndUna != c->sndNext && oldest->used && oldest->tries >= 3)) {
+            TlAddr other;
+            int have = 0;
+            if (!is_relay(&c->to) && SDL_GetAtomicInt(&L.relayOn)) {
+                other = relay_addr(L.hosting ? c->member : 0);
+                have = 1;
+            } else if (is_relay(&c->to) && c->haveDirect) {
+                other = c->direct;
+                have = 1;
+            }
+            if (have) {
+                send_raw(pkt, TL_HEAD + len, &other);
+                if (!c->quietTold && quiet) {
+                    c->quietTold = 1;
+                    fprintf(stderr, "taglink: connection with player %d quiet for %u ms: also sending %s\n", c->member,
+                            (unsigned)(now - c->lastIn), is_relay(&other) ? "through the relay" : "directly");
+                }
+            }
+        } else if (c->quietTold == 2) {
+            c->quietTold = 0;
+        }
+    }
     c->lastOut = SDL_GetTicks();
     c->ackDue = 0;
 }
@@ -360,8 +489,35 @@ static Conn *conn_by_id(uint32_t id) {
 
 static void conn_reset(Conn *c) {
     SDL_memset(c, 0, sizeof(*c));
-    c->rto = 250;
-    c->srtt = 120;
+    c->rto = 500; /* (the room's relay alone is 300 ms and more a round trip: see take_ack) */
+    c->srtt = 150;
+    c->rttvar = 80;
+    c->fastSeq = 0xFFFFFFFFu;
+}
+
+/* The way to answer by, from where a packet came. The direct way is kept whenever it works: the room's relay (the
+   Worker's Durable Object) adds 100-300 ms each way, and before, any one packet through it (a SYN sent every way at
+   the start, a copy sent while a way was quiet) moved the whole connection onto it until a direct one came again:
+   the ping went up and down and inputs came late. The relay only while nothing has come directly for 1.2 s. */
+static void take_way(Conn *c, const TlAddr *from) {
+    Uint64 now = SDL_GetTicks();
+    int relay = is_relay(from);
+    if (!relay) {
+        c->direct = *from;
+        c->haveDirect = 1;
+        c->lastDirectIn = now;
+        c->to = *from;
+    } else if (!c->haveDirect || now - c->lastDirectIn > 1200) {
+        c->to = *from;
+    }
+    if (is_relay(&c->to) != c->viaRelay) {
+        static int told;
+        c->viaRelay = is_relay(&c->to);
+        if (told < 40) {
+            told++;
+            fprintf(stderr, "taglink: connection with player %d now %s\n", c->member, c->viaRelay ? "through the room's relay (slower)" : "direct");
+        }
+    }
 }
 
 /* An acknowledgement: everything before `ack`, and of the 32 after it those in `sack`. */
@@ -369,10 +525,20 @@ static void take_ack(Conn *c, uint32_t ack, uint32_t sack) {
     Uint64 now = SDL_GetTicks();
     while ((int32_t)(ack - c->sndUna) > 0 && c->sndUna != c->sndNext) {
         Piece *p = &c->tx[c->sndUna & (TL_WINDOW - 1)];
-        if (p->used && p->tries == 1) {
-            int rtt = (int)(now - p->sentAt);
+        /* A round trip is measured on a piece sent once (one sent again could be answered for either copy). But
+           when the round trip is longer than the time before a piece goes again (the relay: 300 ms and more,
+           against 250 at the start), every piece went twice and nothing was ever measured: the connection stayed
+           on its first guess, every input sent twice, for the whole match. Then, after 2 s without a measure,
+           the time from the first sending counts: longer than the truth, so the next pieces go once and are
+           measured exactly. */
+        if (p->used && (p->tries == 1 || now - c->lastSample > 2000)) {
+            int rtt = (int)(now - (p->tries == 1 ? p->sentAt : p->firstAt)), err = rtt - c->srtt;
+            c->lastSample = now;
             c->srtt = (c->srtt * 7 + rtt) / 8;
-            c->rto = SDL_clamp(c->srtt * 2 + 30, 80, 1000);
+            c->rttvar = (c->rttvar * 3 + (err < 0 ? -err : err)) / 4;
+            /* (round trip + 4 x its variation, as TCP: twice the round trip made every lost input wait far longer
+               than the rollback window, the match held still meanwhile) */
+            c->rto = SDL_clamp(c->srtt + SDL_max(4 * c->rttvar, c->srtt / 4) + 10, 60, 1000); /* (a quarter of the round trip at least: a steady relay's spread is near 0) */
         }
         p->used = 0;
         c->sndUna++;
@@ -388,6 +554,19 @@ static void take_ack(Conn *c, uint32_t ack, uint32_t sack) {
     }
     while (c->sndUna != c->sndNext && !c->tx[c->sndUna & (TL_WINDOW - 1)].used) {
         c->sndUna++;
+    }
+    /* The other side has later pieces but not the oldest one: it was lost. Sent again now, once per loss, instead
+       of after the whole retransmission time; the stream is in order, so every input after it waited too. */
+    if (sack != 0 && c->sndUna != c->sndNext) {
+        Piece *p = &c->tx[c->sndUna & (TL_WINDOW - 1)];
+        Uint64 wait = (Uint64)(c->srtt / 4 + 5);
+        if (p->used && now - p->sentAt >= wait && (c->fastSeq != c->sndUna || now - c->fastAt >= (Uint64)c->srtt)) {
+            c->fastSeq = c->sndUna;
+            c->fastAt = now;
+            p->sentAt = now;
+            p->tries++;
+            send_packet(c, T_DATA, c->sndUna, p->data, p->len, NULL);
+        }
     }
 }
 
@@ -416,7 +595,7 @@ static void take_data(Conn *c, uint32_t seq, const uint8_t *data, int len) {
 }
 
 /* One packet of the room (from the socket, or from the relay: tag_link_relay below), from `from`. */
-static void take_packet(uint8_t *pkt, int len, struct sockaddr_in from) {
+static void take_packet(uint8_t *pkt, int len, TlAddr from) {
     int type;
     uint32_t id;
     Conn *c;
@@ -432,12 +611,13 @@ static void take_packet(uint8_t *pkt, int len, struct sockaddr_in from) {
         }
         c = conn_by_id(id);
         if (type == T_PUNCH) { /* (the owner opening its router to us: answer at once, from where it came) */
-            if (!L.hosting && L.conn[0].state == TK_LINK_CONNECTING) {
+            if (!L.hosting && (L.conn[0].state == TK_LINK_CONNECTING || (L.conn[0].state == TK_LINK_OPEN && is_relay(&L.conn[0].to)))) {
                 send_packet(&L.conn[0], T_SYN, (uint32_t)L.myId, NULL, 0, &from);
             }
             return;
         }
         if (type == T_SYN && L.hosting) {
+            int fresh = c == NULL;
             if (c == NULL) {
                 int i;
                 for (i = 0; i < TL_SLOTS && L.conn[i].state != TK_LINK_FREE; i++) {
@@ -451,9 +631,19 @@ static void take_packet(uint8_t *pkt, int len, struct sockaddr_in from) {
                 c->member = (int)get32(pkt + 9);
                 c->state = TK_LINK_OPEN;
                 c->opened = SDL_GetTicks();
-                fprintf(stderr, "taglink: player %d connected (%s)\n", c->member, Relay_IsPeer(&from) ? "through the relay" : "directly");
+                fprintf(stderr, "taglink: player %d connected (%s)\n", c->member,
+                        is_relay(&from) ? "through the room's relay" : from.sa.sa_family == AF_INET6 ? "directly, IPv6" :
+                        Relay_IsPeer(&from.v4) ? "through the relay" : "directly");
+                c->viaRelay = is_relay(&from);
             }
-            c->to = from;
+            if (fresh || is_relay(&c->to) == is_relay(&from)) {
+                take_way(c, &from);
+            } else if (!is_relay(&from)) {
+                /* (a SYN by the direct way on a relayed connection: answered by that way; the connection moves when
+                   the player's packets come directly too, which shows the way works both ways) */
+                c->direct = from;
+                c->haveDirect = 1;
+            }
             c->lastIn = SDL_GetTicks();
             send_packet(c, T_SYNACK, 0, NULL, 0, &from);
             return;
@@ -461,12 +651,17 @@ static void take_packet(uint8_t *pkt, int len, struct sockaddr_in from) {
         if (c == NULL) {
             return;
         }
-        c->to = from; /* (the way that works now: directly, or the relay) */
+        if (c->quietTold == 1 && SDL_GetTicks() - c->lastIn > 1200) {
+            c->quietTold = 2; /* (said once per quiet spell: the next "quiet" line comes when it is over) */
+            fprintf(stderr, "taglink: connection with player %d answers again (%s, after %u ms)\n", c->member,
+                    is_relay(&from) ? "through the relay" : "directly", (unsigned)(SDL_GetTicks() - c->lastIn));
+        }
+        take_way(c, &from); /* (the way that works now: directly if it does, else the relay) */
         c->lastIn = SDL_GetTicks();
         if (type == T_SYNACK && c->state == TK_LINK_CONNECTING) {
             c->state = TK_LINK_OPEN;
             c->opened = SDL_GetTicks();
-            fprintf(stderr, "taglink: connected to the room's owner\n");
+            fprintf(stderr, "taglink: connected to the room's owner (%s)\n", is_relay(&c->to) ? "through the room's relay" : "directly");
             return;
         }
         if (type == T_FIN) {
@@ -515,21 +710,37 @@ static void receive(void) {
         return;
     }
     for (guard = 0; guard < 512; guard++) {
-        struct sockaddr_in from;
+        TlAddr from;
         socklen_t fl = sizeof(from);
         uint8_t *pkt = buf;
-        int n = (int)recvfrom(L.sock, (char *)buf, sizeof(buf), 0, (struct sockaddr *)&from, &fl), len = n, r;
+        int n, len, r;
+        SDL_memset(&from, 0, sizeof(from));
+        n = (int)recvfrom(L.sock, (char *)buf, sizeof(buf), 0, &from.sa, &fl);
+        len = n;
         if (n <= 0) {
             break;
         }
-        r = Relay_Unwrap(buf, n, &from, &pkt, &len);
+        r = Relay_Unwrap(buf, n, &from.v4, &pkt, &len);
         if (r == 0) {
             continue;
         }
         if (r == 2) {
-            Relay_SawDirect(&from);
+            Relay_SawDirect(&from.v4);
         }
         take_packet(pkt, len, from);
+    }
+    for (guard = 0; L.sock6 >= 0 && guard < 512; guard++) { /* (IPv6: no TURN wrapping there) */
+        TlAddr from;
+        socklen_t fl = sizeof(from);
+        int n;
+        SDL_memset(&from, 0, sizeof(from));
+        n = (int)recvfrom(L.sock6, (char *)buf, sizeof(buf), 0, &from.sa, &fl);
+        if (n <= 0) {
+            break;
+        }
+        if (from.sa.sa_family == AF_INET6) {
+            take_packet(buf, n, from);
+        }
     }
     relay_poll();
 }
@@ -552,7 +763,7 @@ static void timers(void) {
                 }
                 SDL_UnlockMutex(L.lock);
                 if (SDL_GetAtomicInt(&L.relayOn)) {
-                    struct sockaddr_in r = relay_addr(0);
+                    TlAddr r = relay_addr(0);
                     send_packet(c, T_SYN, (uint32_t)L.myId, NULL, 0, &r);
                 }
             }
@@ -560,6 +771,21 @@ static void timers(void) {
         }
         if (c->state != TK_LINK_OPEN) {
             continue;
+        }
+        if (!L.hosting && is_relay(&c->to) && now - c->lastSyn >= 1000) {
+            /* Connected through the room's relay (300 ms and more a round trip from Brazil): the direct way is
+               still tried, once a second, for as long as the connection lasts. Before, the SYNs to the owner's
+               addresses stopped at the first answer, which was the relay's when it came first, and the match
+               stayed on the relay. The owner's SYNACK by the direct way moves the connection there (take_way). */
+            int k;
+            c->lastSyn = now;
+            SDL_LockMutex(L.lock);
+            for (k = 0; k < L.hostCands; k++) {
+                if (!is_relay(&L.hostCand[k])) {
+                    send_packet(c, T_SYN, (uint32_t)L.myId, NULL, 0, &L.hostCand[k]);
+                }
+            }
+            SDL_UnlockMutex(L.lock);
         }
         if (now - c->lastIn > 20000) {
             fprintf(stderr, "taglink: connection %d silent for 20 s: closed\n", i);
@@ -593,21 +819,25 @@ static void punch(void) {
     SDL_LockMutex(L.lock);
     for (i = 0; i < L.members; i++) {
         Member *m = &L.member[i];
-        int connected = 0;
+        int connected = 0, relayed = 0;
         for (j = 0; j < TL_SLOTS; j++) {
             if (L.conn[j].state == TK_LINK_OPEN && L.conn[j].member == m->id) {
                 connected = 1;
+                relayed = is_relay(&L.conn[j].to);
             }
         }
         if (Relay_Active()) {
             if (m->haveSeen) {
-                Relay_Permit(L.sock, &m->seen);
+                Relay_Permit(L.sock, &m->seen.v4);
             }
             for (k = 0; k < m->cands; k++) {
-                Relay_Permit(L.sock, &m->cand[k]);
+                if (m->cand[k].sa.sa_family == AF_INET) {
+                    Relay_Permit(L.sock, &m->cand[k].v4);
+                }
             }
         }
-        if (connected || now - m->since > 60000) {
+        /* (a player on the room's relay keeps being punched, once a second: the direct way may open later) */
+        if (connected ? !relayed || (now / 300) % 3 != 0 : now - m->since > 60000) {
             continue;
         }
         for (k = 0; k < m->cands; k++) {
@@ -616,7 +846,13 @@ static void punch(void) {
             put32(pkt, TL_MAGIC);
             pkt[4] = T_PUNCH;
             put32(pkt + 23, L.tag);
-            sendto(L.sock, (const char *)pkt, TL_HEAD, 0, (const struct sockaddr *)&m->cand[k], sizeof(m->cand[k]));
+            if (m->cand[k].sa.sa_family == AF_INET6) {
+                if (L.sock6 >= 0) {
+                    sendto(L.sock6, (const char *)pkt, TL_HEAD, 0, &m->cand[k].sa, addr_len(&m->cand[k]));
+                }
+            } else {
+                sendto(L.sock, (const char *)pkt, TL_HEAD, 0, &m->cand[k].sa, addr_len(&m->cand[k]));
+            }
         }
     }
     SDL_UnlockMutex(L.lock);
@@ -648,10 +884,41 @@ static void say_error(const char *answer, const char *what) {
     }
 }
 
+/* This device's public IPv6 address and the IPv6 socket's port, "2804:...:41234" ("" none): the address the system
+   would send from to the internet (a UDP socket "connected" to a public address sends nothing). Link-local, loopback
+   and unique-local addresses are not reachable from another network. */
+static void own_ipv6(char *out, int size) {
+    int s;
+    struct sockaddr_in6 to, me, bound;
+    socklen_t ml = sizeof(me), bl = sizeof(bound);
+    char text[64];
+    out[0] = 0;
+    if (L.sock6 < 0 || getsockname(L.sock6, (struct sockaddr *)&bound, &bl) != 0) {
+        return;
+    }
+    s = (int)socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP);
+    if (s < 0) {
+        return;
+    }
+    SDL_memset(&to, 0, sizeof(to));
+    to.sin6_family = AF_INET6;
+    to.sin6_port = htons(53);
+    inet_pton(AF_INET6, "2001:4860:4860::8888", &to.sin6_addr);
+    if (connect(s, (struct sockaddr *)&to, sizeof(to)) == 0 && getsockname(s, (struct sockaddr *)&me, &ml) == 0 &&
+        (me.sin6_addr.s6_addr[0] & 0xE0) == 0x20 && /* (global unicast, 2000::/3) */
+        inet_ntop(AF_INET6, &me.sin6_addr, text, sizeof(text)) != NULL) {
+        SDL_snprintf(out, size, "%s:%d", text, (int)ntohs(bound.sin6_port));
+    }
+    closesocket(s);
+}
+
 /* This game's addresses as JSON strings ("lan", the internet's view), with the relay's if it holds one. */
 static void my_addrs(char *out, int size, const char *pub, const char *lan, const char *relay) {
+    char v6[80];
+    own_ipv6(v6, sizeof(v6));
     out[0] = 0;
     SDL_strlcat(out, "[", size);
+    if (v6[0]) { SDL_strlcat(out, "\"", size); SDL_strlcat(out, v6, size); SDL_strlcat(out, "\"", size); if (pub[0] || lan[0] || (relay != NULL && relay[0])) SDL_strlcat(out, ",", size); }
     if (pub[0]) { SDL_strlcat(out, "\"", size); SDL_strlcat(out, pub, size); SDL_strlcat(out, "\"", size); }
     if (lan[0]) { if (pub[0]) SDL_strlcat(out, ",", size); SDL_strlcat(out, "\"", size); SDL_strlcat(out, lan, size); SDL_strlcat(out, "\"", size); }
     if (relay != NULL && relay[0]) { if (pub[0] || lan[0]) SDL_strlcat(out, ",", size); SDL_strlcat(out, "\"relay=", size); SDL_strlcat(out, relay, size); SDL_strlcat(out, "\"", size); }
@@ -681,8 +948,8 @@ static void take_members(const char *json) {
         found[n].cands = json_addrs(one, "addrs", found[n].cand, TL_CANDS);
         if (json_str(one, "seen", seen, sizeof(seen))) {
             SDL_memset(&found[n].seen, 0, sizeof(found[n].seen));
-            found[n].seen.sin_family = AF_INET;
-            found[n].haveSeen = inet_pton(AF_INET, seen, &found[n].seen.sin_addr) == 1;
+            found[n].seen.v4.sin_family = AF_INET;
+            found[n].haveSeen = inet_pton(AF_INET, seen, &found[n].seen.v4.sin_addr) == 1; /* (an IPv6 one: not for TURN) */
         }
         n++;
         p = end + 1;
@@ -715,7 +982,8 @@ static int SDLCALL service_thread(void *arg) {
     TagLink_Stun(L.sock, pub, sizeof(pub));
     SDL_SetAtomicInt(&L.busy, 0);
     TagLink_Lan(ntohs(me.sin_port), lan, sizeof(lan));
-    fprintf(stderr, "taglink: addresses: internet %s, own network %s\n", pub[0] ? pub : "(not found)", lan[0] ? lan : "(none)");
+    { char v6[80]; own_ipv6(v6, sizeof(v6));
+      fprintf(stderr, "taglink: addresses: internet %s, own network %s, IPv6 %s\n", pub[0] ? pub : "(not found)", lan[0] ? lan : "(none)", v6[0] ? v6 : "(none)"); }
     my_addrs(addrs, sizeof(addrs), pub, lan, NULL);
     SDL_strlcpy(name, L.name, sizeof(name));
     if (L.hosting) {
@@ -831,7 +1099,7 @@ static int SDLCALL service_thread(void *arg) {
                 }
             }
         } else {
-            struct sockaddr_in c[TL_CANDS];
+            TlAddr c[TL_CANDS];
             int n = json_addrs(answer, "addrs", c, TL_CANDS);
             if (n > 0) {
                 SDL_LockMutex(L.lock);
@@ -898,6 +1166,24 @@ static int start(int hosting, const char *code, const char *name, int version, i
 #else
     fcntl(L.sock, F_SETFL, fcntl(L.sock, F_GETFL, 0) | O_NONBLOCK);
 #endif
+    L.sock6 = -1;
+    if (getenv("BT3_TAG_NO_IPV6") == NULL) { /* a second socket for IPv6 (any failure: IPv4 only, as before) */
+        int s6 = (int)socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP), one = 1;
+        struct sockaddr_in6 any6;
+        SDL_memset(&any6, 0, sizeof(any6));
+        any6.sin6_family = AF_INET6;
+        if (s6 >= 0 && setsockopt(s6, IPPROTO_IPV6, IPV6_V6ONLY, (const char *)&one, sizeof(one)) == 0 &&
+            bind(s6, (struct sockaddr *)&any6, sizeof(any6)) == 0) {
+#ifdef _WIN32
+            { u_long nb = 1; ioctlsocket(s6, FIONBIO, &nb); }
+#else
+            fcntl(s6, F_SETFL, fcntl(s6, F_GETFL, 0) | O_NONBLOCK);
+#endif
+            L.sock6 = s6;
+        } else if (s6 >= 0) {
+            closesocket(s6);
+        }
+    }
     L.hosting = hosting;
     L.active = 1;
     L.version = version;
@@ -960,6 +1246,10 @@ void TagLink_Stop(void) {
         closesocket(L.sock);
         L.sock = -1;
     }
+    if (L.sock6 >= 0) {
+        closesocket(L.sock6);
+    }
+    L.sock6 = -1;
     for (i = 0; i < TL_SLOTS; i++) {
         conn_reset(&L.conn[i]);
     }
@@ -1022,7 +1312,7 @@ int TagLink_Send(int slot, const void *data, int len) {
         p->len = n;
         p->used = 1;
         p->tries = 1;
-        p->sentAt = SDL_GetTicks();
+        p->sentAt = p->firstAt = SDL_GetTicks();
         send_packet(c, T_DATA, c->sndNext, p->data, n, NULL);
         c->sndNext++;
         taken += n;

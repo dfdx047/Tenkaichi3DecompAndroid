@@ -8,8 +8,13 @@
 #include <stdlib.h>
 #include <stdint.h>
 static int gDrop;
+static Uint64 gCutAt, gOpenAt; /* CUT_MS: from this time on the direct way loses everything (the room relay still works) */
 static ssize_t drop_sendto(int s, const void *b, size_t n, int f, const struct sockaddr *a, socklen_t l) {
     if (gDrop && (rand() % 100) < gDrop) return (ssize_t)n;
+    if (gCutAt && SDL_GetTicks() >= gCutAt) return (ssize_t)n;
+    if (gOpenAt && SDL_GetTicks() < gOpenAt) return (ssize_t)n; /* OPEN_MS: the direct way works only from then on */
+    if (getenv("CUT4") && a && a->sa_family == AF_INET) return (ssize_t)n; /* CUT4: no IPv4 at all (operators' NAT) */
+    if (getenv("CUT6") && a && a->sa_family == AF_INET6) return (ssize_t)n;
     return sendto(s, b, n, f, a, l);
 }
 /* stand-ins for net_match.c, net_relay.c, plat_file.c */
@@ -43,6 +48,8 @@ void Relay_Close(int s) {}
 int main(int argc, char **argv) {
     SDL_Init(0);
     gDrop = getenv("DROP") ? atoi(getenv("DROP")) : 0;
+    if (getenv("CUT_MS")) gCutAt = SDL_GetTicks() + (Uint64)atoi(getenv("CUT_MS"));
+    if (getenv("OPEN_MS")) gOpenAt = SDL_GetTicks() + (Uint64)atoi(getenv("OPEN_MS"));
     if (argc > 1 && !strcmp(argv[1], "host")) {
         static uint8_t buf[8192];
         int slots[8], n = 0, i, echoed = 0;
@@ -67,6 +74,31 @@ int main(int argc, char **argv) {
     } else {
         static uint8_t out[TOTAL], back[TOTAL];
         int slot = TagLink_Join(argv[2], "Guest", 5, 0), sent = 0, got = 0, i;
+        if (getenv("PING")) { /* PING=<seconds>: a match's inputs instead: 16 bytes every 16 ms, echoed; the round trips */
+            int secs = atoi(getenv("PING")), n = 0, over100 = 0, over250 = 0; double sum = 0; Uint64 worst = 0, next = 0, start = 0, t0 = SDL_GetTicks();
+            uint8_t msg[16], in[16]; int have = 0;
+            while (SDL_GetTicks() - t0 < (Uint64)(secs + 20) * 1000) {
+                Uint64 now;
+                TagLink_Pump();
+                now = SDL_GetTicks();
+                if (TagLink_State(slot) == TK_LINK_CLOSED) { fprintf(stderr, "join: closed\n"); return 1; }
+                if (TagLink_State(slot) == TK_LINK_OPEN) {
+                    if (!start) start = now + 2000; /* (the first 2 s: the ways settle) */
+                    if (getenv("TRACE")) { static Uint64 lt; if (now - lt >= 500) { Conn *cc = &L.conn[slot]; lt = now;
+                        fprintf(stderr, "  t %u: srtt %d rto %d var %d unacked %u to %s\n", (unsigned)(now - t0), cc->srtt, cc->rto, cc->rttvar, cc->sndNext - cc->sndUna, is_relay(&cc->to) ? "relay" : "direct"); } }
+                    if (now >= next && now < start + (Uint64)secs * 1000) { memset(msg, 0, 16); memcpy(msg, &now, 8); TagLink_Send(slot, msg, 16); next = now + 16; }
+                    for (;;) { int r = TagLink_Recv(slot, in + have, 16 - have); if (r <= 0) break; have += r;
+                        if (have == 16) { Uint64 t; memcpy(&t, in, 8); have = 0;
+                            if (t >= start) { Uint64 d = now - t; n++; sum += (double)d; if (d > worst) worst = d; if (d > 100) over100++; if (getenv("TRACE") && (d > 150 || n % 60 == 0)) fprintf(stderr, "  at %u ms: echo %u ms\n", (unsigned)(now - start), (unsigned)d); if (d > 250) over250++; } } }
+                    if (now > start + (Uint64)secs * 1000 + 3000) break;
+                }
+                SDL_Delay(1);
+            }
+            { Conn *cc = &L.conn[slot]; fprintf(stderr, "join: link srtt %d rto %d, unacked %u, inbox %d\n", cc->srtt, cc->rto, cc->sndNext - cc->sndUna, cc->inN); }
+            fprintf(stderr, "join: PING %d echoes, average %.1f ms, worst %u ms, over 100 ms %d, over 250 ms %d\n", n, n ? sum / n : 0, (unsigned)worst, over100, over250);
+            TagLink_Stop(); SDL_Delay(500);
+            return 0;
+        }
         Uint64 t0 = SDL_GetTicks(), opened = 0;
         for (i = 0; i < TOTAL; i++) out[i] = (uint8_t)(i * 7 + i / 251);
         while (got < TOTAL && SDL_GetTicks() - t0 < 45000) {
@@ -74,7 +106,8 @@ int main(int argc, char **argv) {
             TagLink_Pump();
             if (TagLink_State(slot) == TK_LINK_OPEN && !opened) { opened = SDL_GetTicks(); fprintf(stderr, "join: open after %d ms\n", (int)(opened - t0)); }
             if (TagLink_State(slot) == TK_LINK_CLOSED) { char st[160], c[16]; TagLink_Status(st, sizeof st, c, sizeof c); fprintf(stderr, "join: closed: %s\n", st); return 1; }
-            if (sent < TOTAL) { n = TagLink_Send(slot, out + sent, (TOTAL - sent) > 4000 ? 4000 : TOTAL - sent); if (n > 0) sent += n; }
+            /* PACE=<bytes per ms>: a stream spread over time, as a match's inputs are (to cut a way in its middle) */
+            if (sent < TOTAL && (!getenv("PACE") || !opened || sent < (int)(SDL_GetTicks() - opened) * atoi(getenv("PACE")))) { n = TagLink_Send(slot, out + sent, (TOTAL - sent) > 4000 ? 4000 : TOTAL - sent); if (n > 0) sent += n; }
             n = TagLink_Recv(slot, back + got, TOTAL - got); if (n > 0) got += n;
             SDL_Delay(1);
         }
