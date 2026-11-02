@@ -986,6 +986,20 @@ static void path_of(char *out, size_t size, const char *rel, const char *suffix)
     SDL_snprintf(out, size, "%s%s%s", sU.root, rel, suffix);
 }
 
+/* The script mods that come with a release (port/tools/package.py, mods/<name>/...): a file of one the player does not
+   have yet is installed like the program's own; one they have, changed or not, stays theirs (user_file). So a new
+   example mod reaches a player who updates, and nothing of theirs is overwritten. (One the player deleted comes back,
+   switched off as every mod starts.) */
+static int new_bundled_mod(const char *rel) {
+    char path[1024];
+    SDL_PathInfo info;
+    if (strncmp(rel, "mods/", 5) != 0 || strchr(rel + 5, '/') == NULL) { /* (a mod's folder's files; not mods/README.txt) */
+        return 0;
+    }
+    path_of(path, sizeof(path), rel, "");
+    return !SDL_GetPathInfo(path, &info);
+}
+
 /* Folders a path needs, made; those made are listed in `made` (for undoing). */
 static int make_dirs(const char *rel, char (*made)[512], int *count, int max) {
     char part[512];
@@ -1112,7 +1126,7 @@ static int SDLCALL install_thread(void *arg) {
         if (why[0] != '\0') {
             break;
         }
-        if (user_file(rel)) {
+        if (user_file(rel) && !new_bundled_mod(rel)) {
             fprintf(stderr, "bt3: update: kept yours (the archive has it, it is not written): %s\n", rel);
             kept++;
             continue;
