@@ -3,6 +3,8 @@
 The pictures of the Tenkaichi Budokai Online screens (this folder; `tbo/ui/` in a release).
 
 - **The announcer** (`hosts_*.png`): by **MarshallPunk**.
+- **The Dragon Radar** (`radar.png`): fan art by **chestergreen**. Changed for the port: every second frame of the
+  animation, scaled and laid out as one sheet of frames.
 - **The buttons** (`btn_*.png`): by **pluantoine**, under the
   [Creative Commons Attribution 4.0 International license](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0).
   Changed for the port: cut out of the sheet, their background removed and scaled; the left and right directions
