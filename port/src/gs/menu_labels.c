@@ -1743,6 +1743,35 @@ static int ml_read_one(MlCtx *c, const char *dataDir, int i, int anyDisc) {
        letters; the USA archive CRC is not the identity of this disc. */
     { extern int PortGame_Region(void); if (bt4 || PortGame_Region()) anyDisc = 1; }
     snprintf(path, sizeof(path), "%s/%s/%05d.bin", dataDir, bt4?"pzs4us1":"pzs3us1", kMlFiles[i].number);
+#ifdef __ANDROID__
+    /* Android keeps the disc's archives whole (layout=afs): no loose pzs3us1/NNNNN.bin, the file is read from its
+       archive through the file cache (plat_fcache.c), as the game's own reads are. Before: "missing (the USA
+       release is needed)" with the USA disc installed, and the Menu font setting offered only "Original". */
+    if (stat(path, &st) != 0) {
+        extern long Port_FileSize(const char *rel);
+        extern size_t Port_FileReadAt(const char *rel, long offset, void *buf, size_t bytes);
+        const char *rel = path + strlen(dataDir) + 1;
+        long n = Port_FileSize(rel);
+        if (n > 0 && n <= 64L * 1024 * 1024) {
+            if (!anyDisc && (uint32_t)n != kMlFiles[i].size) {
+                ml_fail(c, "%s is not the file of the USA release (SLUS-21678): its menu textures are numbered differently", path);
+                return MENU_LABELS_OTHER_DISC;
+            }
+            data = ml_alloc(c, (size_t)n);
+            if (data == NULL || Port_FileReadAt(rel, 0, data, (size_t)n) != (size_t)n) {
+                ml_fail(c, "%s cannot be read", path);
+                return MENU_LABELS_FAILED;
+            }
+            if (!anyDisc && ml_crc32(data, (size_t)n) != kMlFiles[i].crc) {
+                ml_fail(c, "%s is not the file of the USA release (SLUS-21678): its menu textures are numbered differently", path);
+                return MENU_LABELS_OTHER_DISC;
+            }
+            c->file[i].p = data;
+            c->file[i].n = (size_t)n;
+            return MENU_LABELS_MADE;
+        }
+    }
+#endif
     if (stat(path, &st) != 0 || !S_ISREG(st.st_mode) || (fp = fopen(path, "rb")) == NULL) {
         ml_fail(c, "%s is missing (the game data of the USA release, SLUS-21678, is needed)", path);
         return MENU_LABELS_OTHER_DISC;
