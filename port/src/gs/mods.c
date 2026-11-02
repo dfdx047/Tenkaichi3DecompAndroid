@@ -915,6 +915,10 @@ static void push_game(lua_State *L, const FpState *fp, const ModsGame *g) {
     set_bool(L, "battle", fp->battle && g->battle);
     set_bool(L, "hud_shown", fp->gauges);
     set_bool(L, "online", Port_NetSession() || Port_NetActive());
+    if (Port_NetSession() || Port_NetActive()) { /* the side this copy plays (1 the host, 2 the one who joined) */
+        extern int Port_NetMe(void);
+        set_int(L, "me", Port_NetMe() + 1);
+    }
     set_bool(L, "split", g->split);
     set_bool(L, "swapped", Port_HudSwap());
     if (fp->battle && fp->timerSet) {
@@ -955,6 +959,7 @@ static void push_game(lua_State *L, const FpState *fp, const ModsGame *g) {
         set_int(L, "message_seq", s->msgSeq);
         set_bool(L, "charging", s->action == 0x37);   /* (ki charge: action 0x37) */
         set_bool(L, "charge_held", s->chargeHeld);    /* (the charge button held) */
+        set_bool(L, "cpu", s->cpu);                   /* (played by the computer) */
         {   /* the moves: 1, 2 the skills (Blast 1), 3, 4 the techniques (Blast 2), 5 the ultimate; buttons with the
                charge button held (src/battle/btl_input.c, inputs 113, 114, 108..110) */
             static const char *const kind[FP_MOVES] = {"skill", "skill", "special", "special", "ultimate"};

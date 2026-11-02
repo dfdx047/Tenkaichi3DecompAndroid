@@ -35,6 +35,7 @@ typedef struct FpSide {
     int comboHits, comboDamage, comboTimer; /* the combo this side is landing on the other */
     int action;       /* the active fighter's action (0x37: charging ki) */
     int chargeHeld;   /* the charge button (BTLB_CHARGE) is held */
+    int cpu;          /* the side is played by the computer (BattleSide_IsCpu) */
     FpMove moves[FP_MOVES];
     /* what the game's HUD was given for this side (src/battle/hud_*.c, Port_HudFeed): */
     int statMask, statUp; /* status icons: bits 0..3 = attack, speed, defence, ki changed; set in statUp = raised */

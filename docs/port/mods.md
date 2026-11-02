@@ -67,6 +67,7 @@ What every function is given about the game, read at the last blank:
 | `game.battle` | `true` while a fight's fighters are there |
 | `game.hud_shown` | the fight is on with its gauges shown (not during cut-scenes or menus) |
 | `game.online` | an online session |
+| `game.me` | online: the side this copy plays (1 or 2); not set offline |
 | `game.split` | split-screen layout |
 | `game.swapped` | this copy shows the HUD's sides swapped (an online match seen from player 2's side) |
 | `game.time` | seconds on the computer's clock, for animations |
@@ -90,6 +91,7 @@ Each fighter:
 | `status` | `attack`, `speed`, `defence`, `ki`: 1 raised, -1 lowered, 0 as it was (the game's status icons) |
 | `hud_hits`, `hud_damage` | what the game's combo counter shows (below 2 / negative: nothing shown) |
 | `charging`, `charge_held` | the fighter is charging ki; the charge button is held |
+| `cpu` | the side is played by the computer |
 | `moves[1..5]` | the fighter's moves: 1, 2 skills (Blast 1), 3, 4 specials (Blast 2), 5 the ultimate. Each: `name` (as the game shows it, `""` for none), `kind` (`"skill"`, `"special"`, `"ultimate"`), `button` (`"circle"`, `"triangle"`) and `direction` (`""`, `"up"`, `"down"`) with the charge button held, `cost` (skills: blast gauge, 100000 a stock; the others: ki, 20000 a bar), `usable` (it can be paid for now) |
 | `hit_seq`, `message`, `message_seq` | a count that grows with each new hit count given; the last event message (0 Counter, 1 MAX POWER, 2 Lock on, 3 First Attack, 4 BOOST) and a count of messages |
 

@@ -1,6 +1,7 @@
 -- Skill list: while a player holds the charge button, their skills and specials slide in at the bottom corner on
 -- their side (Sparking Zero style): the buttons that use them (all with charge held), skills' cost in blast stocks
 -- (a number), specials' in ki bars (segments). Moves that cannot be paid for now are greyed.
+-- Only a player's own list: not the computer's, and online only this copy's player (game.me), whose picture this is.
 -- HUD units: the picture is hud.h (448) high and hud.w wide.
 
 local PLATE, PLATE_EDGE = 0x16202CE6, 0x2C3A4ACC
@@ -61,9 +62,11 @@ local function list(f, left, t, S)
             hud.text(X(x + 183 * S), y - 4 * S, tostring(math.floor(cost + 0.5)), m.usable and TEXT or TEXT_OFF,
                      24 * S, "center", { outline = 0x0B1118FF, lean = 0.12 })
         end
-        local bx = x - 13 * S                           -- the button, and the stick's direction before it
-        icon(X(bx), y + 10.5 * S, 9.5 * S, m.button)
-        if m.direction ~= "" then icon(X(bx - 23 * S), y + 10.5 * S, 9.5 * S, "stick", m.direction) end
+        if bt3.setting("buttons") then                  -- the button, and the stick's direction before it
+            local bx = x - 13 * S
+            icon(X(bx), y + 10.5 * S, 9.5 * S, m.button)
+            if m.direction ~= "" then icon(X(bx - 23 * S), y + 10.5 * S, 9.5 * S, "stick", m.direction) end
+        end
     end
 end
 
@@ -75,6 +78,8 @@ return {
         { id = "size", label = "Size", type = "slider", min = 50, max = 150, step = 5, default = 100 },
         { id = "always", label = "Always shown", type = "toggle", default = false,
           tip = "Show the list all the time, not only while charge is held." },
+        { id = "buttons", label = "Show buttons", type = "toggle", default = true,
+          tip = "The buttons (and stick directions) that use each move, beside it." },
     },
 
     on_hud = function(h, game)
@@ -83,7 +88,7 @@ return {
         local S = bt3.setting("size") / 100
         for side = 1, 2 do
             local f = game.fighters[side]
-            if f then
+            if f and not f.cpu and (game.me == nil or game.me == side) then
                 local want = (f.charge_held or bt3.setting("always")) and 1 or 0
                 slide[side] = slide[side] + (want - slide[side]) * 0.35
                 if slide[side] < 0.01 then slide[side] = 0 end
