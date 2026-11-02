@@ -337,13 +337,15 @@ local function draw_side(hud, side, right, f, an, now)
     -- the corner's shade, so that the parts read over a bright sky
     hud.glow(v.X(80), v.Y(40), 620 * U, rgba(5, 12, 32, 0.55), rgba(5, 12, 32, 0.22))
 
-    -- the fighter
-    local wx0, wx1 = v.X(0), v.X(230)
-    hud.portrait(side, v.X(kFaceX), v.Y(kFaceY), kArtW * U, 0, {
-        face = true, flip = right, tint = rgba(255, 255, 255, 1),
-        window = { x0 = min(wx0, wx1), y0 = v.Y(0), x1 = max(wx0, wx1), y1 = v.Y(210) },
-        fade = { x = v.X(kFaceX + 8), y = v.Y(kFaceY - 10), r0 = 52 * U, r1 = 116 * U },
-    })
+    -- the fighter (unless the player turned the portraits off)
+    if bt3.setting("portraits") then
+        local wx0, wx1 = v.X(0), v.X(230)
+        hud.portrait(side, v.X(kFaceX), v.Y(kFaceY), kArtW * U, 0, {
+            face = true, flip = right, tint = rgba(255, 255, 255, 1),
+            window = { x0 = min(wx0, wx1), y0 = v.Y(0), x1 = max(wx0, wx1), y1 = v.Y(210) },
+            fade = { x = v.X(kFaceX + 8), y = v.Y(kFaceY - 10), r0 = 52 * U, r1 = 116 * U },
+        })
+    end
 
     -- blast stock: the number under the fighter, the blade round it lit as the next stock fills
     local stock = an.blast / 100000
@@ -450,6 +452,8 @@ return {
           tip = "Off: the game's own timer stays." },
         { id = "combo", label = "Draw the combo counter", type = "toggle", default = true,
           tip = "Off: the game's own counter and messages stay." },
+        { id = "portraits", label = "Show portraits", type = "toggle", default = true,
+          tip = "The fighters' portraits in the top corners." },
     },
 
     on_hud = function(hud, game)
