@@ -32,8 +32,18 @@ long func_002BB390(void) {
 unsigned long long gPortRandNext = 1;
 void Port_Srand(unsigned seed) { gPortRandNext = seed; }
 extern void Port_RandNote(void *caller); /* gs/tag_net.c: who draws numbers in an online match (finding desyncs) */
+/* The game's wrappers of rand (Rand_IntRange, Rand_Libc in src/sys/randf.c) say who called them: the draw log then
+   names that function instead of the wrapper (an online desync once pointed only at "Rand_IntRange"). */
+static void *sRandCaller;
+void Port_RandCaller(void *caller) {
+    if (sRandCaller == NULL) {
+        sRandCaller = caller;
+    }
+}
 int Port_Rand(void) {
-    Port_RandNote(__builtin_return_address(0));
+    void *caller = sRandCaller != NULL ? sRandCaller : __builtin_return_address(0);
+    sRandCaller = NULL;
+    Port_RandNote(caller);
     gPortRandNext = gPortRandNext * 6364136223846793005ull + 1;
     return (int)((gPortRandNext >> 32) & 0x7FFFFFFF);
 }
