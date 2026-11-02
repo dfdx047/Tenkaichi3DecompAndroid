@@ -1640,7 +1640,11 @@ static int pipe_no_aux(int p) {
 }
 
 /* the heartbeat's sums (Android's "alive" line every 300 frames): frame-end times, frames, passes and copies */
-static uint64_t sHb[6], sHbPass, sHbCopy;
+static uint64_t sHb[6], sHbPass, sHbCopy, sHbWhy[8], sHbCopyWhy[3]; /* (copies: DATE, ids, movie pictures) */
+static unsigned sCopyWhy[3];
+/* per kind of draw (0 the GS's own primitives: HUD, 2D, effects; 1 fighters, program 0/1/2; 2 the stage, program 4; 3 program 6)
+   and the state each draw set again, over the heartbeat's frames: what the frame's draws are made of */
+static uint64_t sHbKind[4], sHbVuPush, sHbFragPush, sHbPipe, sHbTex;
 static unsigned sHbN;
 
 static void vk_frame_end(void) {
@@ -1699,9 +1703,38 @@ static void vk_frame_end(void) {
                     (double)sHb[0] / sHbN / 1e6, (double)sHb[1] / sHbN / 1e6, (double)sHb[5] / sHbN / 1e6, (double)sHb[2] / sHbN / 1e6,
                     (double)sHb[3] / sHbN / 1e6, (double)sHb[4] / sHbN / 1e6, (double)sHbPass / sHbN, (double)sHbCopy / sHbN);
         }
+        if (lastNs != 0 && nowNs > lastNs && sHbN > 0) {
+            /* the same 300 frames by thread (a fight: is it the game's tick or the drawing that holds the speed back?)
+               and what splits the render passes (each one a load and a store of the whole picture on a phone's GPU) */
+            extern void Gs_HbTake(uint64_t out[6]);
+            uint64_t w[6];
+            double f;
+            Gs_HbTake(w);
+            f = w[5] ? (double)w[5] : 1.0;
+            fprintf(stderr, "bt3: work per picture, ms: game thread %.2f (+ waiting for the drawing %.2f, %.1f waits); render thread %.2f "
+                            "(the list's VU1/GS walk %.2f, its Vulkan frame end %.2f); %u draws, %u vertices\n",
+                    (double)w[4] / f / 1e6, (double)w[0] / f / 1e6, (double)w[1] / f, w[3] ? (double)w[2] / w[3] / 1e6 : 0.0,
+                    w[3] && w[2] / w[3] > (sHb[0] + sHb[1] + sHb[5] + sHb[2] + sHb[3] + sHb[4]) / sHbN
+                        ? (double)(w[2] / w[3] - (sHb[0] + sHb[1] + sHb[5] + sHb[2] + sHb[3] + sHb[4]) / sHbN) / 1e6 : 0.0,
+                    (double)(sHb[0] + sHb[1] + sHb[5] + sHb[2] + sHb[3] + sHb[4]) / sHbN / 1e6, gsDrawCount, gsVertCount + gsVuVertCount);
+            fprintf(stderr, "bt3: render passes per picture by cause: first %.1f, another target %.1f, shadows %.1f, after a DATE copy %.1f, "
+                            "after the ids' copy %.1f, after a table pass %.1f, after a native effect %.1f, after a movie picture %.1f; "
+                            "copies: DATE %.1f, ids %.1f, movie %.1f\n",
+                    (double)sHbWhy[0] / sHbN, (double)sHbWhy[1] / sHbN, (double)sHbWhy[2] / sHbN, (double)sHbWhy[3] / sHbN,
+                    (double)sHbWhy[4] / sHbN, (double)sHbWhy[5] / sHbN, (double)sHbWhy[6] / sHbN, (double)sHbWhy[7] / sHbN,
+                    (double)sHbCopyWhy[0] / sHbN, (double)sHbCopyWhy[1] / sHbN, (double)sHbCopyWhy[2] / sHbN);
+            fprintf(stderr, "bt3: draws per picture by kind: HUD/2D/effects %.0f, fighters %.0f, stage %.0f, program 6 %.0f; set again per picture: "
+                            "vertex uniforms %.0f, fragment uniforms %.0f, pipelines %.0f, textures %.0f\n",
+                    (double)sHbKind[0] / sHbN, (double)sHbKind[1] / sHbN, (double)sHbKind[2] / sHbN, (double)sHbKind[3] / sHbN,
+                    (double)sHbVuPush / sHbN, (double)sHbFragPush / sHbN, (double)sHbPipe / sHbN, (double)sHbTex / sHbN);
+        }
+        memset(sHbKind, 0, sizeof(sHbKind));
+        sHbVuPush = sHbFragPush = sHbPipe = sHbTex = 0;
         memset(sHb, 0, sizeof(sHb));
         sHbN = 0;
         sHbPass = sHbCopy = 0;
+        memset(sHbWhy, 0, sizeof(sHbWhy));
+        memset(sHbCopyWhy, 0, sizeof(sHbCopyWhy));
         lastNs = nowNs;
         lastBlank = gPortVBlanks;
     }
@@ -1927,6 +1960,7 @@ static void vk_frame_end(void) {
             if (sFbTex[d->native - 100] != NULL) {
                 SDL_BlitGPUTexture(cmd, &bl);
                 sCopyN++;
+                sCopyWhy[2]++;
                 gsTargets[d->target].cleared = 1;
             }
             continue;
@@ -1970,6 +2004,7 @@ static void vk_frame_end(void) {
                 continue;
             }
             sCopyN++;
+            sCopyWhy[0]++;
             cp = SDL_BeginGPUCopyPass(cmd);
             SDL_zero(from);
             SDL_zero(to);
@@ -1994,6 +2029,7 @@ static void vk_frame_end(void) {
                 continue;
             }
             sCopyN++;
+            sCopyWhy[1]++;
             cp = SDL_BeginGPUCopyPass(cmd);
             SDL_zero(from);
             SDL_zero(to);
@@ -2252,6 +2288,7 @@ static void vk_frame_end(void) {
            driver (a texture binding makes the library write a new descriptor set). */
         if (d->vu && (int)d->uniform != lastUni) {
             SDL_PushGPUVertexUniformData(cmd, 0, &gsVuUni[d->uniform], sizeof(Vu0Uniform));
+            sHbVuPush++;
             lastUni = (int)d->uniform;
         }
         /* the alpha bytes: kept where they are read later, left alone elsewhere (aux_plan) */
@@ -2269,6 +2306,7 @@ static void vk_frame_end(void) {
         if ((passNoDepth ? pipe_depthless(pipe) : pipe) != lastPipe) { /* (in a pass without depth, its variant) */
             lastPipe = passNoDepth ? pipe_depthless(pipe) : pipe;
             SDL_BindGPUGraphicsPipeline(pass, sPipes[lastPipe].p);
+            sHbPipe++;
         }
         if ((SDL_GPUTexture *)(uintptr_t)d->tex != lastTex || (int)d->sampler != lastSampler) {
             SDL_GPUTextureSamplerBinding two[2];
@@ -2279,6 +2317,7 @@ static void vk_frame_end(void) {
             two[1].texture = sDateCopy;
             two[1].sampler = sSamplers[6];
             SDL_BindGPUFragmentSamplers(pass, 0, two, 2);
+            sHbTex++;
         }
         memset(&fu, 0, sizeof(fu));
         memcpy(fu.mode, d->mode, sizeof(fu.mode));
@@ -2289,6 +2328,7 @@ static void vk_frame_end(void) {
         fu.extra[1] = (sPipes[d->pipeline].key & (1u << 9)) ? 1.0f : 0.0f; /* the source scaled by its alpha */
         if (!haveFu || memcmp(&fu, &lastFu, sizeof(fu)) != 0) {
             SDL_PushGPUFragmentUniformData(cmd, 0, &fu, sizeof(fu));
+            sHbFragPush++;
             memcpy(&lastFu, &fu, sizeof(fu));
             haveFu = 1;
         }
@@ -2304,6 +2344,7 @@ static void vk_frame_end(void) {
             memcpy(lastScissor, d->scissor, sizeof(lastScissor));
             haveScissor = 1;
         }
+        sHbKind[d->vu & 3]++;
         if (fx_measure(d)) {
             continue;
         }
@@ -2537,6 +2578,16 @@ static void vk_frame_end(void) {
         if (++count == 60) {
             sHbPass += sPassN;
             sHbCopy += sCopyN;
+            {
+                int w;
+                for (w = 0; w < 8; w++) {
+                    sHbWhy[w] += sPassWhy[w];
+                }
+                for (w = 0; w < 3; w++) {
+                    sHbCopyWhy[w] += sCopyWhy[w];
+                    sCopyWhy[w] = 0;
+                }
+            }
             if (getenv("BT3_GS_VERBOSE") != NULL) {
                 fprintf(stderr, "time:   of ending the frame: uploads %.2f ms, issuing the draws %.2f, handing them to the driver %.2f, "
                                 "waiting for the screen's buffer %.2f, showing %.2f, presenting %.2f\n",
