@@ -76,10 +76,6 @@ f32 Rand_FloatRange(f32 a, f32 b) {
 
 /* libc rand(). */
 s32 Rand_Libc(void) {
-#ifdef PORT
-    extern void Port_RandCaller(void *caller); /* port/src/plat_sys.c: the online draw log names our caller */
-    Port_RandCaller(__builtin_return_address(0));
-#endif
     return rand();
 }
 
@@ -95,11 +91,5 @@ s32 Rand_IntRange(s32 a, s32 b) {
         a = b;
         b = tmp;
     }
-#ifdef PORT
-    {
-        extern void Port_RandCaller(void *caller);
-        Port_RandCaller(__builtin_return_address(0));
-    }
-#endif
     return a + Rand_Libc() % (b - a + 1);
 }

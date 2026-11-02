@@ -1589,9 +1589,7 @@ void TagNet_Tick(unsigned blank) {
         pump();publish();
     }
     if(role<TN_PLAYERS) {
-        /* (back here after a rollback: this blank's draws are made again from the start, not added to the first run's;
-           a resimulated blank once showed exactly twice the other game's draws) */
-        if(Port_RollSave()!=0){frame=blank-baseBlank;randLog[frame%RL_FRAMES].frame=~0u;}
+        if(Port_RollSave()!=0)frame=blank-baseBlank;
         for(p=0;p<TN_PLAYERS;p++)if((input_mask()&(1u<<p)) && p!=role) {
             t=frame<have[p]?frame:have[p]-1;
             memcpy(used[p][frame%RING],inputs[p][t%RING],PAD);
