@@ -124,7 +124,12 @@ game's picture, read the fight (health, ki, positions) and change how the fight 
 fight, read or write files or reach the network, so mods can be used in an online match.
 
 In the game, F1 > Mods lists them: switch each on or off, change its settings, see why one stopped, and load them all
-again after adding or changing one. Your choices are kept in bt3_mods.txt.
+again after adding or changing one. Your choices are kept in bt3_mods.txt. A mod starts switched off.
+
+The ones that come with the game: modern_hud (a HUD in the style of later games), modern_camera (inertia, tilt, hit
+reactions, distance, height and zoom), modern_look (anime shading, rim light, colours, ambient shadows), skill_list
+(your moves and their buttons while you hold charge), and two small examples to start from (example_hud,
+example_camera).
 
 How to write one: docs/port/mods.md in the source repository.
 """
@@ -184,6 +189,14 @@ def take_fonts(out, lic):
             shutil.copy2(p, out / "fonts" / p.relative_to(src))
             if p.name == "LICENSE":
                 shutil.copy2(p, lic / f"{p.parent.name}-fonts.txt")
+
+def take_example_mods(out):
+    """The example script mods (port/examples/mods) into mods/, each in its own folder. A mod starts switched off, so
+    they change nothing until the player switches one on in F1 > Mods. (The automatic update leaves mods/ alone: a
+    player who updates keeps their own mods and gets these from a fresh download.)"""
+    src = ROOT / "port/examples/mods"
+    for d in sorted(p for p in src.iterdir() if p.is_dir() and (p / "mod.lua").exists()):
+        shutil.copytree(d, out / "mods" / d.name)
 
 def take_tbo_art(out, lic):
     """The pictures of the Tenkaichi Budokai Online screens, and who made them (port/tbo/ui/CREDITS.md)."""
@@ -259,6 +272,7 @@ def main_win():
     for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE), ("mods", MODS_NOTE)):
         (out / kind).mkdir()
         (out / kind / "README.txt").write_text(note.replace("\n", "\r\n"))
+    take_example_mods(out)
     (lic / "sdl3.txt").write_text("SDL3 (SDL3.dll) is distributed under the zlib license: https://www.libsdl.org/license.php\n")
     for f in (out / "Tenkaichi3Decomp.exe", out / "Tenkaichi3Decomp-setup.exe"):
         subprocess.run([toolchain.PREFIX + "strip", "--strip-debug", str(f)], check=False)
@@ -344,6 +358,7 @@ def main_mac():
     for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE), ("mods", MODS_NOTE)):
         (out / kind).mkdir()
         (out / kind / "README.txt").write_text(note)
+    take_example_mods(out)
     (lic / "sdl3.txt").write_text("SDL3 (lib/libSDL3.0.dylib) is distributed under the zlib license: https://www.libsdl.org/license.php\n")
     if zpath.exists():
         zpath.unlink()
@@ -398,6 +413,7 @@ def main():
     for kind, note in (("stages", STAGES_NOTE), ("songs", SONGS_NOTE), ("mods", MODS_NOTE)):
         (OUT / kind).mkdir()
         (OUT / kind / "README.txt").write_text(note)
+    take_example_mods(OUT)
     (lic / "sdl3.txt").write_text("SDL3 (lib/libSDL3.so.0) is distributed under the zlib license: https://www.libsdl.org/license.php\n")
     for f in (OUT / "Tenkaichi3Decomp", OUT / "Tenkaichi3Decomp-setup"):
         subprocess.run(["strip", "--strip-debug", str(f)], check=False)  # the symbol names stay (crash reports use them)
