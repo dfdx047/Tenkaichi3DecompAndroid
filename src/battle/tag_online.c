@@ -111,6 +111,12 @@ unsigned long long TagOnline_Digest(void) {
     }
     p=(unsigned char *)&gPortRandNext;for(j=0;j<8;j++)h=(h^p[j])*1099511628211ull;
     TagNet_Audit(-2,(u32)&gPortRandNext,8);
+    { /* the game's Mersenne twister too (the CPUs' decisions): a difference shows where it starts, not later */
+        extern u32 gRandState[624];extern s32 gRandIndex;unsigned long long m=14695981039346656037ull;
+        for(j=0;j<624;j++)m=(m^gRandState[j])*1099511628211ull;
+        m=(m^(u32)gRandIndex)*1099511628211ull;h^=m*31;
+        TagNet_Audit(-3,(u32)&m,8);
+    }
     {extern unsigned long long TagLobby_Digest(void);h^=TagLobby_Digest();}
     return h;
 }

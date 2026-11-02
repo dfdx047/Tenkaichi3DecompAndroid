@@ -550,6 +550,25 @@ void DemoCam_ResetFighters(void) {
 /* The duel clock stops during transformations and other cinematics. A camera
    needs one step per simulation update, not one step per duel-timer tick. */
 void DemoCam_BeginFighterFrame(void) {fighterDemoFrame++;}
+/* Online (btl_cam.c TagOnline_BeginDraw / EndDraw): drawing must not change the battle. Each copy draws its own
+   player's camera, and DemoCam_ApplyFighter / DemoCam_FighterActive step or reset a fighter's authored camera when
+   the simulation has not this blank (a camera actor no player's view follows) or when its end was reached: one
+   copy's cinematic camera then ran ahead of the others', and what reads it in the battle (the camera priority,
+   aiming at a target with the stick through the player's view) came out differently: games out of sync on
+   cinematic attacks. */
+typedef struct DemoCamDrawCopy { DemoCam fighter[PORT_FIGHTER_CAPACITY]; s32 tick[PORT_FIGHTER_CAPACITY]; CamShake shake[PORT_FIGHTER_CAPACITY]; DemoCam main; s32 hasMain; } DemoCamDrawCopy;
+static DemoCamDrawCopy drawCopy; /* (game memory: a rollback copies it too, harmlessly; it is written before every read) */
+void DemoCam_DrawSave(void) {
+    s32 i;
+    for(i=0;i<PORT_FIGHTER_CAPACITY;i++){drawCopy.fighter[i]=fighterDemo[i];drawCopy.tick[i]=fighterDemoTick[i];drawCopy.shake[i]=fighterDemoShake[i];}
+    drawCopy.hasMain=gDemoCam!=NULL;
+    if(gDemoCam!=NULL)drawCopy.main=*gDemoCam;
+}
+void DemoCam_DrawRestore(void) {
+    s32 i;
+    for(i=0;i<PORT_FIGHTER_CAPACITY;i++){fighterDemo[i]=drawCopy.fighter[i];fighterDemoTick[i]=drawCopy.tick[i];fighterDemoShake[i]=drawCopy.shake[i];}
+    if(drawCopy.hasMain && gDemoCam!=NULL)*gDemoCam=drawCopy.main;
+}
 s32 DemoCam_FighterActive(s32 actor) {
     DemoCam *saved=gDemoCam;s32 active;
     if(!TagTeam_Active() || (u32)actor>=(u32)TagTeam_Count())return 0;

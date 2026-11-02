@@ -31,7 +31,9 @@ long func_002BB390(void) {
  */
 unsigned long long gPortRandNext = 1;
 void Port_Srand(unsigned seed) { gPortRandNext = seed; }
+extern void Port_RandNote(void *caller); /* gs/tag_net.c: who draws numbers in an online match (finding desyncs) */
 int Port_Rand(void) {
+    Port_RandNote(__builtin_return_address(0));
     gPortRandNext = gPortRandNext * 6364136223846793005ull + 1;
     return (int)((gPortRandNext >> 32) & 0x7FFFFFFF);
 }

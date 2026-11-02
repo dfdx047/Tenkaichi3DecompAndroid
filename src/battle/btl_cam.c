@@ -830,16 +830,59 @@ static BtlCamView onlineSavedView;
 static BtlCamView *onlineSavedCurrent;
 static View *onlineSavedMatrix;
 static s32 onlineSavedActor,onlineSavedSingle,onlineDrawing,onlineActor;
-static unsigned long long onlineSavedRandom;
+static unsigned long long onlineSavedRandom,onlineDigest;
+/* Both of the game's random generators, around anything only this copy draws: the C library's (gPortRandNext) and
+   the game's Mersenne twister (gRandState: the HUD, cameras and effects draw from it while drawing, and the CPU
+   fighters decide with it). Only the first was put back before: each copy drew its own camera's HUD and effects,
+   used different numbers, and the CPUs then decided differently: games out of sync. */
+extern u32 gRandState[624];extern s32 gRandIndex;extern unsigned long long gPortRandNext;
+static u32 onlineSavedMt[624];static s32 onlineSavedMtIndex;
+static u32 localSavedMt[624];static s32 localSavedMtIndex;static unsigned long long localSavedRandom;static s32 localSaved;
+void TagOnline_LocalDrawBegin(void) {
+    s32 i;
+    localSaved=TagNet_Active() && TagTeam_Active();
+    if(!localSaved)return;
+    localSavedRandom=gPortRandNext;localSavedMtIndex=gRandIndex;
+    for(i=0;i<624;i++)localSavedMt[i]=gRandState[i];
+    { extern void TagNet_RandDrawing(int); TagNet_RandDrawing(1); }
+}
+void TagOnline_LocalDrawEnd(void) {
+    s32 i;
+    if(!localSaved)return;
+    gPortRandNext=localSavedRandom;gRandIndex=localSavedMtIndex;
+    for(i=0;i<624;i++)gRandState[i]=localSavedMt[i];
+    { extern void TagNet_RandDrawing(int); TagNet_RandDrawing(0); }
+    localSaved=0;
+}
 extern unsigned long long gPortRandNext;
 extern s32 BtlScene_IsSingleView(void);
 extern void BtlScene_SetSingleView(s32);
 s32 TagOnline_PresentationActor(s32 fallback) { return onlineDrawing?onlineActor:fallback; }
+/* The fighter this copy's player controls (-1: none, a spectator): the battle's own control seat first (it follows
+   takeovers), else the room's owner list read the way Port_TagOnlineSetup assigns actors. Both are the same on every
+   copy of the match. Android: guests saw the host's fighter (view 0) instead of their own; this does not depend on
+   the published status or on the per-player camera seat having been filled. */
+static s32 online_own_actor(s32 role) {
+    TagNetConfig c;
+    s32 own=TagTeam_ControlActor(role),m,t,i,actor=0;
+    if(own>=0 && own<TagTeam_Count())return TagFusion_Owner(own);
+    TagNet_CopyConfig((u32)&c);
+    if(c.practice)return -1;
+    for(m=0;m<5;m++)for(t=0;t<2;t++)if(m<c.size[t]) {
+        i=(t?c.size[0]:0)+m;
+        if(c.owner[i]==role && !(c.party && c.mode==TL_GAUNTLET && t==1))return actor<TagTeam_Count()?TagFusion_Owner(actor):-1;
+        actor++;
+    }
+    return -1;
+}
 s32 TagOnline_BeginDraw(void) {
-    s32 actor,chosen,view=0,role=TagNet_Role(),i,t,m;
+    s32 actor,chosen,view=0,role=TagNet_Role(),i,t,m,own=-1,shared;
     TagNetConfig c;
     if(!TagNet_Active() || !TagTeam_Active())return 0;
-    if(role>=0 && role<TN_PLAYERS && !TagNet_Observer())actor=TagTeam_ViewActor(role);
+    if(role>=0 && role<TN_PLAYERS)own=online_own_actor(role);
+    /* A player whose own fighter is down follows the battle's spectator choice for that seat (a teammate). */
+    if(own>=0)actor=TagTeam_Spectating(role)?TagTeam_ViewActor(role):own;
+    else if(role>=0 && role<TN_PLAYERS && !TagNet_Observer())actor=TagTeam_ViewActor(role);
     else {
         TagNet_CopyConfig((u32)&c);chosen=TagNet_View();actor=0;
         for(m=0;m<5;m++)for(t=0;t<2;t++)if(m<c.size[t]) {
@@ -849,11 +892,18 @@ s32 TagOnline_BeginDraw(void) {
         actor=0;
 found:  actor=TagFusion_Owner(actor);
     }
-    onlineActor=actor;onlineSavedRandom=gPortRandNext;
+    { extern void DemoCam_DrawSave(void),TagNet_RandDrawing(int); DemoCam_DrawSave(); TagNet_RandDrawing(1); }
+    { extern unsigned long long TagOnline_Digest(void); onlineDigest=TagOnline_Digest(); }
+    onlineActor=actor;onlineSavedRandom=gPortRandNext;onlineSavedMtIndex=gRandIndex;
+    for(i=0;i<624;i++)onlineSavedMt[i]=gRandState[i];
     onlineSavedView=nativeViews[0];onlineSavedCurrent=gBtlCam->cur;onlineSavedMatrix=gBtlCamView;
     onlineSavedActor=nativeSharedActor;onlineSavedSingle=BtlScene_IsSingleView();onlineDrawing=1;
-    /* Shared global scenes already have the correct native camera. */
-    if(onlineSavedSingle)nativeViews[0]=*gBtlCam->cur;
+    /* Shared global scenes (a move's camera shown to everyone, an intro) already have the correct native camera.
+       Any other single view is view 0's fighter, the host's: every player keeps their own camera then. */
+    shared=onlineSavedSingle && (BtlCam_GetPriorityView()>=0 || DemoCam_IsInUse());
+    { extern void TagNet_CameraNote(int,int,int,int,int,int,int);
+      TagNet_CameraNote(role,own,actor,shared,role>=0&&role<TN_PLAYERS?TagTeam_ViewActor(role):-1,onlineSavedSingle,BtlCam_GetPriorityView()); }
+    if(shared)nativeViews[0]=*gBtlCam->cur;
     else {
         for(i=0;i<TagTeam_CameraCount();i++)if(TagTeam_ViewActor(i)==actor){view=i;break;}
         nativeViews[0]=nativeViews[view];
@@ -863,7 +913,7 @@ found:  actor=TagFusion_Owner(actor);
         }
     }
     nativeViews[0].index=0;BtlCam_SelectView(0);nativeSharedActor=actor;
-    if(!onlineSavedSingle) {
+    if(!shared) {
         BtlCam_SetLayout(0,1);
         { extern s32 DemoCam_ApplyFighter(s32,View *,Vec4 *);
           DemoCam_ApplyFighter(TagTeam_CameraActor(actor),&nativeViews[0].view,&nativeViews[0].pos); }
@@ -876,6 +926,11 @@ void TagOnline_EndDraw(void) {
     if(!onlineDrawing)return;
     nativeViews[0]=onlineSavedView;gBtlCam->cur=onlineSavedCurrent;gBtlCamView=onlineSavedMatrix;
     nativeSharedActor=onlineSavedActor;BtlScene_SetSingleView(onlineSavedSingle);View_Apply(gBtlCamView,0);onlineDrawing=0;
-    gPortRandNext=onlineSavedRandom;
+    gPortRandNext=onlineSavedRandom;gRandIndex=onlineSavedMtIndex;
+    { s32 k; for(k=0;k<624;k++)gRandState[k]=onlineSavedMt[k]; }
+    { extern void DemoCam_DrawRestore(void),TagNet_RandDrawing(int); DemoCam_DrawRestore(); TagNet_RandDrawing(0); }
+    { /* (the battle as drawing found it, and as it left it: the same, or the log says where it changed) */
+      extern unsigned long long TagOnline_Digest(void); extern void TagNet_DrawChanged(unsigned long long,unsigned long long);
+      unsigned long long after=TagOnline_Digest(); if(after!=onlineDigest)TagNet_DrawChanged(onlineDigest,after); }
 }
 #endif
