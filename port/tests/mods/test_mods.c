@@ -300,7 +300,7 @@ int main(void) {
     CHECK(moved >= 90);
     }
     CHECK(Mods_Count() == 6); /* (example_camera, example_hud, modern_camera, modern_hud, modern_look, skill_list) */
-    CHECK(Mods_Look()->shading == 100 && Mods_Look()->energy_light == 20); /* (modern_look at its defaults) */
+    CHECK(Mods_Look()->shading == 100 && Mods_Look()->energy_light == 0); /* (modern_look at its defaults) */
     for (i = 0; i < Mods_Count(); i++) {
         CHECK(Mods_Info(i)->error[0] == '\0');
     }

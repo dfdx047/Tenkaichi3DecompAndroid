@@ -36,7 +36,7 @@ return {
         slider("vivid", "Vivid colours", 100, "Livelier colours and a neutral balance (GPU renderer)."),
         slider("ambient", "Ambient shadows", 100, "Soft shadows in corners and at the foot of things (GPU renderer)."),
         slider("energy", "Brighter energy", 100, "Ki blasts, beams and sparks stronger and more saturated."),
-        slider("energy_light", "Energy light", 20, "Energy lights up the ground and fighters round it (GPU renderer)."),
+        slider("energy_light", "Energy light", 0, "Energy lights up the ground and fighters round it (GPU renderer)."),
     },
 
     -- Asked every blank: switching the mod off (F1 > Mods) gives the game's own picture back at once.
