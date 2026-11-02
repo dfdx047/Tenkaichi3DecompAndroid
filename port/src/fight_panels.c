@@ -65,6 +65,7 @@ extern int Port_FilePath(int ptid, int flid, const char *fname, char *out, int s
    index), parsed as BtlText_FindEntry does but without its shared state (the menu's script pointer). */
 extern int BtlAct_GetCurrent(void GAME_PTR chr);
 extern int BtlInput_IsHeld(void GAME_PTR chr, unsigned mask);
+extern int BattleSide_IsCpu(int side); /* (a side's control word: 2 the computer; read only) */
 extern int BtlSuper_GetKiCost(void GAME_PTR chr, int slot);
 extern int BtlSkill_GetBlastCost(void GAME_PTR chr, int slot);
 extern void GAME_PTR BtlChar_GetObj(void GAME_PTR chr);
@@ -201,6 +202,7 @@ static void read_side(FpState *st, int side) {
     }
     s->action = BtlAct_GetCurrent(chr);
     s->chargeHeld = BtlInput_IsHeld(chr, BTLB_CHARGE) != 0;
+    s->cpu = BattleSide_IsCpu(side) != 0;
     {
         uint8_t GAME_PTR obj = (uint8_t GAME_PTR)BtlChar_GetObj(chr);
         uint32_t at = obj != NULL ? (uint32_t)rd(obj, OBJ_NAMES) : 0;
