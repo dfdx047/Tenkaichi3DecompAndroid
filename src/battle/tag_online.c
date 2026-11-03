@@ -43,6 +43,11 @@ void TagOnline_SaveScope(s32 enter) {
 void TagOnline_Seed(void) {
     TagNetConfig c;unsigned seed[4];s32 i;TagNet_CopyConfig((u32)&c);
     Port_Srand((unsigned)c.seed);for(i=0;i<4;i++)seed[i]=Port_Rand();Rand_SeedByArray(seed,4);
+    { /* and the VU0 R register's generator (Rand_Float01 / Rand_FloatRange): it kept what the menus and the practice
+         map had left, different on each phone, so every particle's life and size differed from the first blank.
+         From the shared seed, without drawing from the C library's sequence; never all zero (it would stay zero). */
+      extern u32 gPortVu0R;
+      gPortVu0R=0x3F800000u|((((unsigned)c.seed*2654435761u)^0x5A5A5Au)&0x007FFFFFu)|1u; }
 }
 void Port_TagOnlineSetup(void) {
     TagNetConfig c;s32 i,t,m,actor=0;BattleItemSet items;
@@ -109,14 +114,14 @@ unsigned long long TagOnline_Digest(void) {
         TagNet_Audit(i,(u32)&a,sizeof(a));
         p=(unsigned char *)&a;for(j=0;j<sizeof(a);j++)h=(h^p[j])*1099511628211ull;
     }
-    p=(unsigned char *)&gPortRandNext;for(j=0;j<8;j++)h=(h^p[j])*1099511628211ull;
+    /* The random generators are kept in the audit (the log's lines at a desync) but not in the number that stops the
+       match: like the PC port's online (headless.c Port_NetDigest: health, positions, clock), a match stops only when
+       the fight itself differs. Two 2026-11-03 desyncs had every fighter value the same and only a generator apart
+       (effects drawn with each phone's own camera); a difference that reaches the fight shows in the values above. */
     TagNet_Audit(-2,(u32)&gPortRandNext,8);
-    { /* the game's Mersenne twister too (the CPUs' decisions): a difference shows where it starts, not later */
-        extern u32 gRandState[624];extern s32 gRandIndex;unsigned long long m=14695981039346656037ull;
+    { extern u32 gRandState[624];extern s32 gRandIndex;unsigned long long m=14695981039346656037ull;
         for(j=0;j<624;j++)m=(m^gRandState[j])*1099511628211ull;
         m=(m^(u32)gRandIndex)*1099511628211ull;
-        { extern u32 gPortVu0R; m=(m^gPortVu0R)*1099511628211ull; } /* (the VU0 generator: particles' lives and sizes) */
-        h^=m*31;
         TagNet_Audit(-3,(u32)&m,8);
     }
     {extern unsigned long long TagLobby_Digest(void);h^=TagLobby_Digest();}
