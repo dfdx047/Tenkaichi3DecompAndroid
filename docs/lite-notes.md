@@ -59,7 +59,9 @@ Limitado pela CPU (A55): seria preciso 3x. GameThread: dispatchGuestBranch 18%, 
   renderização, cadeias de brilho e glare puladas quando estão em 0 (`Port_GlowSkip`), área de render pass só em
   Mali (o `GameActivity` passa a flag ao loader, que liga `BT3_VK_AREA`).
 - SDL com os conjuntos de descritores mantidos entre pipelines do mesmo layout: vale para todos (empate no Adreno,
-  0 pixels); `DR_SDL_KEEP_SETS=0` desliga.
+  0 pixels). Em 03/11 o patch virou `vulkan-descriptor-sets.patch` (pools de 1024 conjuntos, desenho pulado em vez de
+  fechar o jogo quando não há conjunto; sem o interruptor `DR_SDL_KEEP_SETS`) mais `vulkan-fragment-set-memo.patch`
+  (conjunto de texturas já escrito reaproveitado no mesmo command buffer: 4x4 do Tag Team 74% -> 86% no Adreno).
 - Fora: TLS agrupado do BT4 (não medido; o patch está no commit dd4581d), GL com fetch, cópias DATE sem quebra de
   pass, shader mediump, ferramentas de medição (estão no dd4581d).
 
