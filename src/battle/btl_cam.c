@@ -836,20 +836,25 @@ static unsigned long long onlineSavedRandom,onlineDigest;
    fighters decide with it). Only the first was put back before: each copy drew its own camera's HUD and effects,
    used different numbers, and the CPUs then decided differently: games out of sync. */
 extern u32 gRandState[624];extern s32 gRandIndex;extern unsigned long long gPortRandNext;
+/* And the third: the VU0 R register's generator (Rand_Float01 / Rand_FloatRange, port/src/mathf_pc.c). Effects drawn
+   with this copy's camera step it; left as drawing found it, the next blank's particles came out with other lives
+   on each copy (a 2026-11-03 log: 7 more EftPart10_InitPtcl on one phone, then rand() apart: out of sync). */
+extern u32 gPortVu0R;
+static u32 onlineSavedVu0R,localSavedVu0R;
 static u32 onlineSavedMt[624];static s32 onlineSavedMtIndex;
 static u32 localSavedMt[624];static s32 localSavedMtIndex;static unsigned long long localSavedRandom;static s32 localSaved;
 void TagOnline_LocalDrawBegin(void) {
     s32 i;
     localSaved=TagNet_Active() && TagTeam_Active();
     if(!localSaved)return;
-    localSavedRandom=gPortRandNext;localSavedMtIndex=gRandIndex;
+    localSavedRandom=gPortRandNext;localSavedMtIndex=gRandIndex;localSavedVu0R=gPortVu0R;
     for(i=0;i<624;i++)localSavedMt[i]=gRandState[i];
     { extern void TagNet_RandDrawing(int); TagNet_RandDrawing(1); }
 }
 void TagOnline_LocalDrawEnd(void) {
     s32 i;
     if(!localSaved)return;
-    gPortRandNext=localSavedRandom;gRandIndex=localSavedMtIndex;
+    gPortRandNext=localSavedRandom;gRandIndex=localSavedMtIndex;gPortVu0R=localSavedVu0R;
     for(i=0;i<624;i++)gRandState[i]=localSavedMt[i];
     { extern void TagNet_RandDrawing(int); TagNet_RandDrawing(0); }
     localSaved=0;
@@ -894,7 +899,7 @@ found:  actor=TagFusion_Owner(actor);
     }
     { extern void DemoCam_DrawSave(void),TagNet_RandDrawing(int); DemoCam_DrawSave(); TagNet_RandDrawing(1); }
     { extern unsigned long long TagOnline_Digest(void); onlineDigest=TagOnline_Digest(); }
-    onlineActor=actor;onlineSavedRandom=gPortRandNext;onlineSavedMtIndex=gRandIndex;
+    onlineActor=actor;onlineSavedRandom=gPortRandNext;onlineSavedMtIndex=gRandIndex;onlineSavedVu0R=gPortVu0R;
     for(i=0;i<624;i++)onlineSavedMt[i]=gRandState[i];
     onlineSavedView=nativeViews[0];onlineSavedCurrent=gBtlCam->cur;onlineSavedMatrix=gBtlCamView;
     onlineSavedActor=nativeSharedActor;onlineSavedSingle=BtlScene_IsSingleView();onlineDrawing=1;
@@ -926,7 +931,7 @@ void TagOnline_EndDraw(void) {
     if(!onlineDrawing)return;
     nativeViews[0]=onlineSavedView;gBtlCam->cur=onlineSavedCurrent;gBtlCamView=onlineSavedMatrix;
     nativeSharedActor=onlineSavedActor;BtlScene_SetSingleView(onlineSavedSingle);View_Apply(gBtlCamView,0);onlineDrawing=0;
-    gPortRandNext=onlineSavedRandom;gRandIndex=onlineSavedMtIndex;
+    gPortRandNext=onlineSavedRandom;gRandIndex=onlineSavedMtIndex;gPortVu0R=onlineSavedVu0R;
     { s32 k; for(k=0;k<624;k++)gRandState[k]=onlineSavedMt[k]; }
     { extern void DemoCam_DrawRestore(void),TagNet_RandDrawing(int); DemoCam_DrawRestore(); TagNet_RandDrawing(0); }
     { /* (the battle as drawing found it, and as it left it: the same, or the log says where it changed) */

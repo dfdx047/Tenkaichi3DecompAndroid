@@ -423,7 +423,7 @@ static void audit_compare(const AuditSample *mine,const AuditSample *theirs,int 
         }
     }
     if(memcmp(mine->rnd,theirs->rnd,8))fprintf(stderr,"tagnet: OUT OF SYNC at %u with player %d: the random number state differs (the C library's, rand)\n",mine->frame,who);
-    if(memcmp(mine->mt,theirs->mt,8))fprintf(stderr,"tagnet: OUT OF SYNC at %u with player %d: the random number state differs (the game's Mersenne twister, Rand_*)\n",mine->frame,who);
+    if(memcmp(mine->mt,theirs->mt,8))fprintf(stderr,"tagnet: OUT OF SYNC at %u with player %d: the random number state differs (the game's Mersenne twister, Rand_*, or the VU0 generator, Rand_Float*)\n",mine->frame,who);
     if(!found)fprintf(stderr,"tagnet: OUT OF SYNC at %u with player %d: no fighter value differs (lobby/practice part of the digest)\n",mine->frame,who);
 }
 void TagNet_Audit(int actor,unsigned addr,unsigned size) {
