@@ -79,7 +79,14 @@ extern int gPortResim;
 /* The frame being computed is not shown because the machine is behind (gs_draw.c: frame skipping). Its drawing
    is left out the way a re-run frame's is; the game itself (and its sound) go on as always. */
 extern int gsSkipFrame;
-#define GS_NO_PICTURE (gPortResim || gsSkipFrame)
+/* With the render thread a list is drawn while the game already computes the next blanks, and a rollback can begin
+   (gPortResim set) in the middle of drawing a list of a frame that is shown, or end before the last re-run list is
+   drawn. So the render thread goes by what was true when the list was handed over (gs_core.c, render_post): a shown
+   frame's list is drawn whole, a re-run frame's is not drawn at all. */
+extern _Thread_local int gsOnRenderThread;
+extern int gsListResim;
+#define GS_RESIM (gsOnRenderThread ? gsListResim : gPortResim)
+#define GS_NO_PICTURE (GS_RESIM || gsSkipFrame)
 
 /* gs_core.c: with the render thread (BT3_GS_THREAD), waits until it has finished the list it runs, before the
    game's thread touches what the thread uses (GS memory and registers, the back end). At once without it, or on

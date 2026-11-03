@@ -1167,7 +1167,7 @@ static void screenshot(void) {
     for (i = 0; i < sTargetCount; i++) {
         sTargets[i].drawn = 0;
     }
-    if (!gPortResim) { /* (a frame that is only being re-run is not a frame of the picture; a skipped one is counted) */
+    if (!GS_RESIM) { /* (a frame that is only being re-run is not a frame of the picture; a skipped one is counted) */
         sFrame++;
     }
 }
@@ -1183,6 +1183,9 @@ static pthread_mutex_t sLock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t sWake = PTHREAD_COND_INITIALIZER, sDone = PTHREAD_COND_INITIALIZER;
 static int sThreaded;
 static int sJob;            /* 0 none, 1 start the GPU back end, 2 run a list */
+static int sJobResim;       /* the list handed over is of a frame that is only being re-run (gPortResim then) */
+_Thread_local int gsOnRenderThread; /* gs_internal.h: 1 on the render thread */
+int gsListResim;            /* gs_internal.h: the list the render thread runs is a re-run frame's */
 static uint32_t sJobTadr;
 static int sJobTte, sInitResult;
 static int sStopping; /* the program is ending: the render thread leaves its loop (render_stop) */
@@ -1256,6 +1259,7 @@ static void *render_thread(void *arg) {
     extern void GsAdpf_AddThread(void); /* gs_adpf.c: this thread in the system's performance hints too */
     (void)arg;
     GsAdpf_AddThread();
+    gsOnRenderThread = 1;
     pthread_mutex_lock(&sLock);
     for (;;) {
         while (sJob == 0 && !sStopping) {
@@ -1282,6 +1286,7 @@ static void *render_thread(void *arg) {
         } else {
             uint32_t tadr = sJobTadr;
             int tte = sJobTte;
+            gsListResim = sJobResim;
             pthread_mutex_unlock(&sLock);
             {
                 extern void GsGpu_InterpHurry(int on);
@@ -1372,6 +1377,7 @@ static void render_post(int job, uint32_t tadr, int tte) {
     sListDone = 0;
     sJobTadr = tadr;
     sJobTte = tte;
+    sJobResim = gPortResim;
     pthread_cond_signal(&sWake);
     pthread_mutex_unlock(&sLock);
 }
