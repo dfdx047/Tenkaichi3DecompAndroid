@@ -1543,6 +1543,22 @@ int Port_PadRead(int socket, unsigned char *data) {
     }
     clash_square(socket, &btn, &lx, &ly);
     press_age(socket, btn);
+    {   /* A stick held still is read with a tremor (a finger on the touch stick moves a pixel or two, a controller's
+           stick a step): a value is kept until it moves by 4 of 255 (1.5%), or reaches the centre or an edge. Online
+           every tiny change was a new input the other players' copies had not guessed, so they went back and ran
+           those frames again (a 2026-11-02 log: 311 rollbacks in 2 minutes). The same in every mode. */
+        static unsigned char kept[4][4] = {{0x80, 0x80, 0x80, 0x80}, {0x80, 0x80, 0x80, 0x80}, {0x80, 0x80, 0x80, 0x80}, {0x80, 0x80, 0x80, 0x80}};
+        unsigned char *v[4] = {&rx, &ry, &lx, &ly};
+        int k;
+        for (k = 0; k < 4; k++) {
+            int d = (int)*v[k] - (int)kept[socket][k];
+            if (*v[k] == 0x80 || *v[k] == 0x00 || *v[k] == 0xFF || d >= 4 || d <= -4) {
+                kept[socket][k] = *v[k];
+            } else {
+                *v[k] = kept[socket][k];
+            }
+        }
+    }
     memset(data, 0, 18);
     data[0] = (unsigned char)(~btn & 0xFF);       /* active low */
     data[1] = (unsigned char)(~(btn >> 8) & 0xFF);
