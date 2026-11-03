@@ -37,7 +37,7 @@
  X(ALL_SELECT,"tag_all_select","Shared Character Selection",5,0,1,1,0,"Let every controller use character selection. P1 can always go back.") \
  X(SLOT_LABELS,"tag_slot_labels","Player Slot Labels",5,0,1,1,1,"Show which player owns each character selection slot.") \
  X(EXTRA_INTROS,"tag_extra_intros","Fighter Intros",1,0,1,1,1,"Play an entrance for every fighter instead of only the team leaders.") \
- X(CINEMATIC_PAUSE,"tag_cinematic_pause","Special Move Pause",2,0,2,1,2,"Pause everyone else, only the target, or nobody when a move shares its camera.") \
+ X(CINEMATIC_PAUSE,"tag_cinematic_pause","Special Move Pause",2,0,2,1,2,"Pause everyone else, only the target, or nobody during a move's startup. Camera sharing is separate.") \
  X(THREE_WIDE,"tag_three_wide","Three Player Layout",3,0,1,1,1,"Full width bottom view, or a centered bottom view the same size as the top two.") \
  X(TIMED_FUSIONS,"tag_timed_fusions","Timed Dance Fusions",7,0,1,1,1,"Fusion Dance partners separate when their timer expires. Potara is permanent.") \
  X(FUSION_SECONDS,"tag_fusion_seconds","Fusion Time Limit",7,10,300,10,80,"Fusion Dance time limit in seconds.") \
@@ -95,7 +95,8 @@
  X(PRACTICE_RECOVERY_TEXT,"tag_practice_recovery_text","Practice Recovery Countdown",11,0,1,1,1,"Show the countdown before getting up again in practice.") \
  X(WAVE_TITLE_TEXT,"tag_wave_title_text","Gauntlet Wave Titles",11,0,1,1,1,"Show the title when a new gauntlet wave begins.") \
  X(ROUND_END_TEXT,"tag_round_end_text","Gauntlet Round End Text",11,0,1,1,1,"Show the round-over message between gauntlet waves.") \
- X(CORPSE_SAFETY,"tag_corpse_safety","Keep Fallen Fighters in Bounds",0,0,1,1,1,"Catch KO'd fighters at the lower stage boundary so teammates can reach them. Ring-outs remain permanent.")
+ X(CORPSE_SAFETY,"tag_corpse_safety","Keep Fallen Fighters in Bounds",0,0,1,1,1,"Catch KO'd fighters at the lower stage boundary so teammates can reach them. Ring-outs remain permanent.") \
+ X(MELEE_CONTACT,"tag_melee_contact","Hit Other Enemies",1,0,1,1,1,"Melee hits can strike every enemy touching the attack, even when you are locked onto someone else. Grabs remain one-on-one.")
 #define TAG_OPTION_ENUM(id,key,label,group,min,max,step,def,help) TAG_OPT_##id,
 enum {
     TAG_OPTION_LIST(TAG_OPTION_ENUM)

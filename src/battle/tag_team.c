@@ -80,14 +80,35 @@ s32 TagTeam_CinematicPaused(s32 actor) {
 }
 static void cinematic_pause(void) {
     s32 i,mode=Port_TagOption(TAG_OPT_CINEMATIC_PAUSE),owner;
-    u32 participants=0,targetsToPause=0;
+    u32 participants=0,targetsToPause=0,starters=0,startupPause=0;
     cinematicPaused=0;
     if(!mode || !BtlSeq_IsFighting()) return;
+    /* Native startup freezes are independent of camera sharing. The target
+       stays still during the wind-up, then becomes hittable as it ends.
+       Keep simultaneous starters running so reciprocal moves cannot deadlock. */
+    for(i=0;i<count;i++) {
+        BtlMgrChr *chr=BtlChar_Get(i);
+        if(BtlChar_TestFlag(chr,0x125)||BtlChar_TestFlag(chr,0x126)) {
+            s32 target=TagTeam_Target(i);
+            starters|=1u<<i;
+            if(mode==2)startupPause|=(1u<<count)-1;
+            else if((u32)target<(u32)count)startupPause|=1u<<target;
+        }
+    }
+    /* A caught fighter must animate with its grab, rush, or clash owner. */
+    participants=starters;
+    for(i=0;i<count;i++) {
+        s32 other=grab_other(i);
+        if(other<0)other=rush_other(i);
+        if(other<0)other=BtlClash_Opponent(i);
+        if((u32)other<(u32)count)participants|=(1u<<i)|(1u<<other);
+    }
+    cinematicPaused=startupPause&~participants;
     /* Use the same owner as the view compositor. Authored transform cameras,
        shared grabs and shared clashes must obey the same pause policy. */
     owner=BtlCam_GetPriorityView();
     if(owner<0)return;
-    participants=1u<<owner;
+    participants|=1u<<owner;
     {
         s32 other=TagTeam_Target(owner);
         if((u32)other<(u32)count) {
@@ -100,7 +121,7 @@ static void cinematic_pause(void) {
         s32 other=TagTeam_Target(i);
         if((u32)other<(u32)count && (participants&(1u<<other)))participants|=1u<<i;
     }
-    cinematicPaused=(mode==2?((1u<<count)-1):targetsToPause)&~participants;
+    cinematicPaused|=(mode==2?((1u<<count)-1):targetsToPause)&~participants;
 }
 /* Reject both collision discovery and already-queued contacts. The latter
    matters when a lower-index fighter establishes a grab earlier this frame. */
@@ -271,6 +292,9 @@ s32 TagTeam_CameraActor(s32 actor) {
 
 s32 TagTeam_Target(s32 fighter) {
     if (TagTeam_Active() && (u32)fighter < (u32)count) {
+        extern s32 TagHit_Target(s32);
+        s32 contact=TagHit_Target(fighter);
+        if(contact>=0)return contact;
         s32 clashOpponent = BtlClash_Opponent(fighter);
         if(TagAssist_Ally(fighter)>=0) clashOpponent=BtlClash_Opponent(TagAssist_Ally(fighter));
         if (clashOpponent >= 0) return clashOpponent;
@@ -408,7 +432,7 @@ void TagTeam_SetupDemo(s32 human, s32 team0, s32 team1) {
             s32 test=Port_TagCinemaTest();
             extern s32 Port_TagSpecialCharacter(void);
             if(test==13)setup->rule.unk10=1; /* Actual ultimate destroys the stage. */
-            setup->sides[0].members[0].chara=test==3?6:(test==4||test==6||test==8||test==9)?10:0;
+            setup->sides[0].members[0].chara=test==3?6:(test==4||test==6||test==8||test==9||test==14||test==15)?10:0;
             setup->sides[0].members[1].chara=test==9?10:3;
             if(Port_TagSpecialCharacter()>=0)setup->sides[0].members[0].chara=Port_TagSpecialCharacter();
             setup->sides[0].members[0].costume=setup->sides[0].members[1].costume=0;

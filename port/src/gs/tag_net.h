@@ -11,7 +11,7 @@ typedef struct TagNetConfig {
     int chara[10],costume[10],owner[10],options[TN_OPTIONS];
     int cpuLevel[10],items[10][8];
     /* Persistent-room identity is separate from a claimed battle slot. */
-    int party,practice,mode,preset,heal;
+    int party,practice,mode,preset,heal,speed;
     TlRoom lobby;
 } TagNetConfig;
 static inline void TagNet_CopyFighter(TagNetConfig *c,int to,int from) {
@@ -79,6 +79,7 @@ void TagNet_Watch(int actor,int freeCam);
 int TagNet_View(void);
 int TagNet_FreeCamera(float *position,float *rotation);
 int TagNet_Option(int id,int fallback);
+int TagNet_SpeedMilli(void);
 void TagNet_Draw(void);
 #ifdef __cplusplus
 }

@@ -11,6 +11,7 @@
 #ifdef PORT
 #include "../../port/src/gs/tag_net.h"
 #include "battle/tag_fusion.h"
+#include "battle/btl_scene.h"
 #endif
 
 static BtlCamView nativeViews[TAG_TEAM_CAPACITY];
@@ -902,12 +903,18 @@ found:  actor=TagFusion_Owner(actor);
     onlineActor=actor;onlineSavedRandom=gPortRandNext;onlineSavedMtIndex=gRandIndex;onlineSavedVu0R=gPortVu0R;
     for(i=0;i<624;i++)onlineSavedMt[i]=gRandState[i];
     onlineSavedView=nativeViews[0];onlineSavedCurrent=gBtlCam->cur;onlineSavedMatrix=gBtlCamView;
-    onlineSavedActor=nativeSharedActor;onlineSavedSingle=BtlScene_IsSingleView();onlineDrawing=1;
-    /* Shared global scenes (a move's camera shown to everyone, an intro) already have the correct native camera.
-       Any other single view is view 0's fighter, the host's: every player keeps their own camera then. */
-    shared=onlineSavedSingle && (BtlCam_GetPriorityView()>=0 || DemoCam_IsInUse());
+    /* The raw field, as EndDraw puts it back: BtlScene_IsSingleView() is 1 whenever the screen is not split (online
+       play), and writing that back set the battle's singleView after every drawn blank but not after re-run ones, so
+       the battle's state depended on which blanks were shown (from the Tag Team mod's 9b02e8c). */
+    onlineSavedActor=nativeSharedActor;onlineSavedSingle=gBtlScene->singleView;onlineDrawing=1;
+    /* One local viewport does not mean a shared cinematic. IsSingleView also returns true for ordinary online
+       gameplay, whose camera belongs to this client. Only an actual camera override (a move's shared camera, a demo
+       camera) replaces that view. */
+    shared=nativeSharedActor>=0 || DemoCam_IsActive();
     { extern void TagNet_CameraNote(int,int,int,int,int,int,int);
       TagNet_CameraNote(role,own,actor,shared,role>=0&&role<TN_PLAYERS?TagTeam_ViewActor(role):-1,onlineSavedSingle,BtlCam_GetPriorityView()); }
+    { extern void Port_TagViewTrace(s32,s32,s32,s32,s32,s32,s32);
+      Port_TagViewTrace(role,actor,TagTeam_ControlActor(role),TagTeam_CameraCount(),shared,nativeSharedActor,TagNet_IsPractice()); }
     if(shared)nativeViews[0]=*gBtlCam->cur;
     else {
         for(i=0;i<TagTeam_CameraCount();i++)if(TagTeam_ViewActor(i)==actor){view=i;break;}

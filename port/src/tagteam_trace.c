@@ -28,6 +28,11 @@ int Port_TagAvailable(void) {
     extern int Port_NetSession(void);
     return getenv("BT3_TAG_TEAM")!=NULL && !Port_NetSession();
 }
+void Port_TagViewTrace(int role,int actor,int control,int views,int shared,int owner,int practice) {
+    static unsigned tick;
+    if(getenv("BT3_TAG_CAMERA_TRACE") && ++tick%120==0)
+        fprintf(stderr,"online-view role=%d actor=%d control=%d views=%d shared=%d owner=%d practice=%d\n",role,actor,control,views,shared,owner,practice);
+}
 void Port_TagMenuTrace(int page,int a,int b,int c,int d,int e) {
     static int last[6]={-1,-1,-1,-1,-1,-1};
     extern unsigned gPortVBlanks;
