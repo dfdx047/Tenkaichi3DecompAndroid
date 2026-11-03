@@ -374,6 +374,14 @@ int TagNet_View(void) {
     if(TagNet_Observer() && getenv("BT3_TAG_NET_WATCH_TEST"))a=(frame/60)%(config.size[0]+config.size[1]);
     return a;
 }
+/* The room's game speed, per mille (gs/net.c Port_NetSpeedMilli paces the blanks with it): the host's setting from the
+   lobby on, so every copy of a room runs at the same pace (from the Tag Team mod's 9b02e8c); outside a room the
+   player's own. */
+int TagNet_SpeedMilli(void) {
+    int speed;extern int Port_GameSpeed(void);
+    SDL_LockSpinlock(&uiLock);speed=status.phase>=2 && status.phase<=4?status.config.speed:0;SDL_UnlockSpinlock(&uiLock);
+    return (speed>=50 && speed<=200?speed:Port_GameSpeed())*10;
+}
 int TagNet_Option(int id,int fallback) {
     int value=fallback;
     /* Renderer and game thread both read these. Publish one immutable rules
@@ -460,6 +468,7 @@ static int valid(const TagNetConfig *c) {
     int i,n,owners[TN_PLAYERS]={0};
     if(c->disc!=PortGame_IsBT4() || c->revision<=0 || c->size[0]<1 || c->size[0]>5 || c->size[1]<1 || c->size[1]>5 ||
        c->stage<0 || c->stage>=PortGame_StageCount() || c->stage==35 || c->music<0 || c->music>24 || c->time<0 || c->time>5 || c->cpu<0 || c->cpu>4)return 0;
+    if(c->speed<50 || c->speed>200)return 0;
     if(c->party<0 || c->party>1 || c->practice<0 || c->practice>1 || c->mode<0 || c->mode>TL_TOURNAMENT || c->preset<0 || c->preset>127 || c->heal<0 || c->heal>4)return 0;
     if(c->party)for(i=0;i<TL_MEMBERS;i++) {
         const TlMember *m=&c->lobby.members[i];int k;
@@ -490,6 +499,7 @@ static const char *invalid_why(const TagNetConfig *c) {
     if(c->size[0]<1 || c->size[0]>5 || c->size[1]<1 || c->size[1]>5)return "team sizes";
     if(c->stage<0 || c->stage>=PortGame_StageCount() || c->stage==35)return "stage";
     if(c->music<0 || c->music>24 || c->time<0 || c->time>5 || c->cpu<0 || c->cpu>4)return "music, time or cpu";
+    if(c->speed<50 || c->speed>200)return "speed";
     if(c->party<0 || c->party>1 || c->practice<0 || c->practice>1 || c->mode<0 || c->mode>TL_TOURNAMENT || c->preset<0 || c->preset>127 || c->heal<0 || c->heal>4)return "mode";
     if(c->party)for(i=0;i<TL_MEMBERS;i++) {
         const TlMember *m=&c->lobby.members[i];
@@ -1246,6 +1256,7 @@ int TagNet_Room(void) {
           dataIdentity=TagNet_DataIdentity();
           if(!identity || !dataIdentity){failed("Could not check the native build or game files. Restore the complete game data.");} }
         config.revision=1;config.disc=PortGame_IsBT4();config.seed=0x127391;
+        {extern int Port_GameSpeed(void);config.speed=Port_GameSpeed();}
         config.stage=2;config.music=0;config.time=3;config.cpu=2;config.size[0]=config.size[1]=3;
         for(i=0;i<10;i++){config.chara[i]=i%2?31:3;config.owner[i]=-1;config.cpuLevel[i]=-1;}
         config.owner[0]=0;
@@ -1284,6 +1295,10 @@ int TagNet_Room(void) {
     if(!Port_RollCan())failed("Rollback state files are missing. Rebuild or restore the complete native build.");
     while(phase!=3) {
         commands();pump();
+        if(host && phase==2) { /* (the host's speed setting changed in the lobby: the room follows) */
+            extern int Port_GameSpeed(void);int speed=Port_GameSpeed();
+            if(config.speed!=speed){TagNetConfig c=config;c.speed=speed;apply_edit(&c);}
+        }
         if((!identity || !dataIdentity) && phase!=5)failed("Could not check the native build or game files. Restore the complete game data.");
         if(phase==2 && getenv("BT3_TAG_TEST_ROLE_SWAP")) {
             if(host) {
@@ -1598,7 +1613,7 @@ void TagNet_Tick(unsigned blank) {
             if(host)broadcast(TN_DIGEST,b,16,NULL);else send_packet(&peers[0],TN_DIGEST,b,16);
         }
         check_digests(checked);sentDigest=checked;
-        if(frame%600==0)fprintf(stderr,"tagnet: frame %u, confirmed %u, players %d, rewinds %u\n",frame,confirmed(),popcount(player_mask()),status.rollbacks);
+        if(frame%600==0)fprintf(stderr,"tagnet: frame %u, confirmed %u, players %d, rewinds %u, speed %d%%\n",frame,confirmed(),popcount(player_mask()),status.rollbacks,TagNet_SpeedMilli()/10);
         pump();publish();
     }
     if(role<TN_PLAYERS) {

@@ -276,9 +276,11 @@ static int rules_speed(void) {
 }
 
 int Port_NetSession(void);
-/* 1000 = the game's own pace; only ever the match's, never the player's own setting. */
+/* 1000 = the game's own pace; only ever the match's, never the player's own setting (a Tag Team room's is its
+   host's, tag_net.c TagNet_SpeedMilli). */
 int Port_NetSpeedMilli(void) {
-    if(TagNet_Enabled())return 1000;
+    extern int TagNet_SpeedMilli(void);
+    if(TagNet_Enabled())return TagNet_SpeedMilli();
     return Port_NetSession() || Port_NetActive() ? rules_speed() * 10 : 1000;
 }
 
