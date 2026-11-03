@@ -423,7 +423,7 @@ static void audit_compare(const AuditSample *mine,const AuditSample *theirs,int 
         }
     }
     if(memcmp(mine->rnd,theirs->rnd,8))fprintf(stderr,"tagnet: OUT OF SYNC at %u with player %d: the random number state differs (the C library's, rand)\n",mine->frame,who);
-    if(memcmp(mine->mt,theirs->mt,8))fprintf(stderr,"tagnet: OUT OF SYNC at %u with player %d: the random number state differs (the game's Mersenne twister, Rand_*, or the VU0 generator, Rand_Float*)\n",mine->frame,who);
+    if(memcmp(mine->mt,theirs->mt,8))fprintf(stderr,"tagnet: OUT OF SYNC at %u with player %d: the random number state differs (the game's Mersenne twister, Rand_*)\n",mine->frame,who);
     if(!found)fprintf(stderr,"tagnet: OUT OF SYNC at %u with player %d: no fighter value differs (lobby/practice part of the digest)\n",mine->frame,who);
 }
 void TagNet_Audit(int actor,unsigned addr,unsigned size) {
@@ -778,10 +778,23 @@ static void handle(Peer *p,int type,const unsigned char *data,unsigned n) {
             else fprintf(stderr,"tagnet: refused a game: hello of %u bytes\n",n);
             send_packet(p,TN_REJECT,s,(unsigned)strlen(s)+1);return;
         }
-        if(get32(data+12)!=(uint32_t)(identity>>32) || get32(data+16)!=(uint32_t)identity)
-            fprintf(stderr,"tagnet: a game of another build (%08x%08x, this one %016llx) is let in\n",get32(data+12),get32(data+16),(unsigned long long)identity);
-        if(get32(data+24)!=(uint32_t)(dataIdentity>>32) || get32(data+28)!=(uint32_t)dataIdentity)
-            fprintf(stderr,"tagnet: a game with other game data (%08x%08x, this one %016llx) is let in\n",get32(data+24),get32(data+28),(unsigned long long)dataIdentity);
+        /* Another build of the engine (libbt3.so's fingerprint) is refused: its game code can differ, and a match with it
+           went out of sync every time (a 2026-11-03 log: a stranger with an older APK in a public room). Builds were let in
+           while the fingerprint was app_process's, which differs between phones (18dad4b); it is libbt3.so's now. The
+           game data (the ISO) is still only logged: its fingerprint includes file dates. */
+        if(identity!=0 && (get32(data+12)!=(uint32_t)(identity>>32) || get32(data+16)!=(uint32_t)identity)) {
+            const char *s="This room uses another version of the game. Install the same version as the host.";
+            fprintf(stderr,"tagnet: refused a game of another build (%08x%08x, this one %016llx)\n",get32(data+12),get32(data+16),(unsigned long long)identity);
+            send_packet(p,TN_REJECT,s,(unsigned)strlen(s)+1);return;
+        }
+        /* Other game data is refused too: BT3's identity is the gameplay fingerprint (plat_fprint.c: only what a fight is
+           computed from, never pictures, music or file dates), BT4's the contents of its volumes; two that differ compute
+           two different fights, a desync from the first moments (the PC port refuses them the same way, net.c). */
+        if(dataIdentity!=0 && (get32(data+24)!=(uint32_t)(dataIdentity>>32) || get32(data+28)!=(uint32_t)dataIdentity)) {
+            const char *s="Your game data differ from the host's (another disc image or modified files). Use the same game data as the host.";
+            fprintf(stderr,"tagnet: refused a game with other game data (%08x%08x, this one %016llx)\n",get32(data+24),get32(data+28),(unsigned long long)dataIdentity);
+            send_packet(p,TN_REJECT,s,(unsigned)strlen(s)+1);return;
+        }
         if(host) {
             int r=(int)get32(data+20);
             if(config.party && (phase==2 || phase==4)) {

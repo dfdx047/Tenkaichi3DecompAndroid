@@ -800,3 +800,5 @@ That room is full.	Essa sala está cheia.
 No online service is set for Tag Team rooms.	Nenhum serviço online foi configurado para as salas Tag Team.
 Could not open the online connection.	Não foi possível abrir a conexão online.
 Players connected: %d	Jogadores conectados: %d
+This room uses another version of the game. Install the same version as the host.	Esta sala usa outra versão do jogo. Instale a mesma versão do anfitrião.
+Your game data differ from the host's (another disc image or modified files). Use the same game data as the host.	Os seus dados do jogo são diferentes dos do anfitrião (outra imagem do disco ou arquivos modificados). Use os mesmos dados do jogo do anfitrião.
