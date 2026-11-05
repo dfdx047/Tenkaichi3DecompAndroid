@@ -24,6 +24,18 @@ Odin 3 e Cube (`192.168.1.134`, `192.168.1.183`) são da sessão do Naruto e nã
 | 07:55 | As 3 branches da Regulus CiberSec são `Regulus-optimize` (10 de 10 commits dela), `bt3-espectadores-lobbies` (10 de 13) e `tag-team-android` (34 de 37). A `ranked-flow-v2` **não é dela** (22 commits de Ariel R Rodrigues / Androidxxt01) e não foi mesclada | A ordem mandava conferir pelo autor. A `ranked-flow-v2` muda o fluxo do Ranked e o servidor (flow:2, Ranked C/D): é online e precisa de dois aparelhos e do serviço para testar. Fica para decisão do dono |
 | 08:05 | Merge 3, conflitos: `GameActivity.kt` fica o nosso (o mesmo `onCreate`); `gs_core.c` e `gs_input.c` com os dois lados (o `gsOnRenderThread` do Tag; o `#ifdef` do Android e o `sPadLock`); `menu_labels.c` e `plat_game.c` com a leitura da 1.0 (`Port_AfsSpanShared` e `Port_FileReadAt`, já testadas, que corrigem o mesmo defeito que a versão da branch); `tag_link.c`: o relay que se reabre (o mais novo, da branch) **e** o ritmo da 1.0 (2 s, recuo no 429, nada em segundo plano); o ritmo adaptativo da branch (1 s só enquanto alguém conecta, 15 s com conexão direta) fica; `L` sem inicializador (16 MB fora do arquivo), com `sock` e `sock6` em -1 | Online: o comportamento mais novo, sem perder o limite de pedidos que a 1.0 pôs por causa do 429 |
 
+## Gargalos por jogo (RP5 com `sd480p`)
+
+Como se mede: BT4 com `port/tools/lab/bt4route.sh` e `bt4stats.py` (linhas `[logicrate]` e `[fps]` do log: atualizações da luta
+por segundo, imagens por segundo, e o tempo do código do jogo, `guest_ms`, dentro de cada imagem, `wall_ms`), mais o `top -H` do
+processo no meio da luta (CPU de cada thread: 100 = um núcleo). BT3 e Tag Team com `bt3route.sh` (o resumo do `bench.py`: "jogo" é
+o código do jogo por imagem; "lista" é a lista de desenho, isto é, decodificar texturas, criar pipelines e enviar), e o mesmo `top -H`.
+Os relógios do meio da luta ficam ao lado de cada medida.
+
+| Jogo | Cena | Imagens/s | Luta/s | Código do jogo (EE) | VU1 | GS / GPU | Som | IOP | Gargalo |
+|---|---|---|---|---|---|---|---|---|---|
+| (a preencher) | | | | | | | | | |
+
 ## Histórico
 
 - 07:50 Início. Branch criada. RP5 com a 0.9.0 instalada (`versionCode` 55), sem perfil ativo.
@@ -58,9 +70,21 @@ Odin 3 e Cube (`192.168.1.134`, `192.168.1.183`) são da sessão do Naruto e nã
 - **O que um aparelho só não testa:** uma partida Dragon Net entre dois jogadores (só a criação da sala pelo serviço), o Tag Team
   online (`tag_link.c`, relay) e a `ranked-flow-v2`. O hash igual cobre a simulação; a conexão entre dois aparelhos fica para o
   teste com dois aparelhos antes da 1.0.
-- 08:23 Item 2, Tag Team pelo ajuste do launcher (`dr_tag_team` em `bt3_settings.txt`, o mesmo que a chave do Ajustes grava;
+- 08:22 Item 2, Tag Team pelo ajuste do launcher (`dr_tag_team` em `bt3_settings.txt`, o mesmo que a chave do Ajustes grava;
   `port/tools/lab/tagtoggle.sh`), BT3 aberto pelo app: com 1, o SELECT no menu principal abre os "Modos modificados" (Batalha em
   Equipe, Todos Contra Todos, Treino, Desafio, Torneio, Sala Online, Configurações; textos em português, com letras); com 0, o SELECT
   não faz nada e o menu principal é o do jogo. 0 crash nos dois. O padrão continua 0 (`EngineSettings.TAG_TEAM_DEFAULT`, lido no
   `GameActivity.getArguments` e na chave do Ajustes); o teste deixa o RP5 com 0. Imagens em `~/DragonRageRefs/dia/tag/`.
 
+- 08:24 **O perfil `sd480p` tinha se perdido** no RP5: os A77 (policy4) estavam em 2,15 a 2,42 GHz (o perfil põe teto de 1,77 GHz).
+  Algo do sistema desfez o teto entre 07:54 e 08:24 (provavelmente o serviço de desempenho do aparelho ao abrir os jogos; os testes
+  de BT3 das 08:09 a 08:23 podem ter rodado acima do sd480p, o que não muda as conclusões deles, que comparam builds entre si no
+  mesmo estado). Reaplicado (agora com `sched_boost` 0 e piso de 710 MHz nos A77); a rota grava os relógios no meio da luta
+  (`<nome>_clocks.txt`) para conferir cada medida.
+- 08:29 BT4, rota com o ARMSX2 (`fix12.apk`, `bt4route.sh`): a sequência de teclas da `bt4fight.sh` hoje entra na História Dragón
+  (o cursor do menu salvo mudou), e a luta é Goku contra Raditz; serve de rota fixa (menu, seleção, luta até o fim). Medida com os
+  A77 **acima** do sd480p (2,15 a 2,42 GHz: o perfil se perde ao abrir o jogo) e a GPU a 305 MHz: luta 24,5 atualizações/s
+  (mínimo 21,5), 24,9 imagens/s; o código do jogo é 21,5 de 48,8 ms por imagem (44 %). Threads (CPU, 100 = um núcleo): EE 53,
+  GS do ARMSX2 51, leitura do GIF no runtime (`GsThread`) 33, VIF1/VU1 (o kick worker) 23, a thread de CPU do ARMSX2 8, IOP 4,
+  som 2. 0 crash, 0 travada. Perfil reaplicado com `HL_STOP_PERF=1` (para os serviços de desempenho do aparelho; o `restore`
+  liga de novo) e a rota medida de novo.
