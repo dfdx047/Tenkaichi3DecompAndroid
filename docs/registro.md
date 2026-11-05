@@ -41,6 +41,7 @@ Os relógios do meio da luta ficam ao lado de cada medida.
 | BT4, Nominum próprio forçado (`nom2own`) | a mesma | 18,9 (mín. 3,9) | 8,2 (mín. 7,4) | 18,3 de 98,8 ms (18 %) | 8 % | **GPU 99 %** | 1 % | 2 % | **GS/GPU** (cores do cenário erradas) |
 | BT3 (`bt3`, luta gravada `fight4.rec`) | menu, seleção, luta, vitória | 30,7 | **100 %** | jogo 6,1 de 10,1 ms de trabalho por quadro (orçamento 33,4) | – (no mesmo código) | lista 4,0 ms; GPU 22 % | – | – | nenhum: folga de 2/3 do quadro |
 | Tag 5 x 5 COM x COM (`tag5`, `BT3_DEMO`) | luta | 20,7–21,9 | **69–73 %** | jogo ~10 ms; o quadro leva 40–50 ms, 50 de 60 acima do orçamento | – | **entrega do quadro ao driver (`SDL_SubmitGPUCommandBuffer`) 22–27 ms**; desenho 6–7,5 ms; 64 passes e 18 cópias por quadro (BT3: 45 e 3,7); GPU 9 % na amostra | 1 % | – | **submit do quadro** (espera dentro do SDL/driver, não GPU cheia) |
+| BT2 (`bt2`, Duel COM x COM, Goku x Kid Gohan, Wasteland) | título, menu, seleção, mapa, luta | 30 (o do jogo) | **100 %** (30 de 30) | thread do jogo (EE e GS por software no mesmo `SDLThread`) 63 % | – | fila de render do paraLLEl-GS (2º `SDLThread`) 22 %; **GPU 64 %** a 305 MHz | 1 % | – | nenhum (folga na CPU e na GPU) |
 
 ## Histórico
 
@@ -142,3 +143,11 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   `submitLock`, desfragmenta a memória se há alocações marcadas (`VULKAN_INTERNAL_DefragmentMemory`, que copia recursos), `vkQueueSubmit`,
   `vkQueuePresentKHR`, e limpa os buffers de comando prontos e as alocações vazias (`checkEmptyAllocations`). Qual dessas leva os 22–27 ms
   só se vê medindo dentro do SDL (recompilar o `sdl3` com tempos). Ficou para depois do BT2; o Tag é desligado por padrão.
+- 09:29 **BT2 no sd480p**: a ISO não estava no RP5; copiei para `/sdcard/Download` e escolhi em "Selecionar ISO" (o app só guarda o
+  caminho). Rota por teclas (`bt2key.py`): título → New Game → "No" e "Yes" para jogar sem salvar → Main Menu (2 para baixo:
+  Dragon Tournament, mais 1: Dueling) → COM VS COM (1 para baixo; 1P vs 2P fica cinza) → Single Battle → 6 X (cores, mapa
+  Wasteland) → luta. Luta a 30 imagens/s (o jogo é 30), GPU 64 %, 2 threads (63 % e 22 % de um núcleo), A77 a 1,77 GHz. 0 crash.
+
+- 09:31 BT2: a luta COM x COM terminou sozinha (Goku venceu; tela "Fight Again / Return to…", `end_now.png` em
+  `~/DragonRageRefs/dia/bt2/`). Rota completa: menu, seleção, luta, vitória. O laço de fotos foi parado pelo Claude Code por
+  falta de memória no PC (não no RP5); a foto da vitória foi tirada à parte.
