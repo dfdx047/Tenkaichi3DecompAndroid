@@ -9,7 +9,7 @@ precisa dele vai como pedido nesta página.
 |---|---|---|
 | 1. `libbt4gsx.so` do Nominum com o ARMSX2 por trás (`NOMINUM_GAME=none`) | feito, testado no RP5 sd480p | mesma imagem; luta 20,5 contra 22,1 atualizações/s com a lib do Dragon Rage (−7 %, uma rota cada); a passagem de cada pacote pelo Nominum custa ~7 % de um núcleo a mais |
 | 2. Renderizador "Nominum" (backend próprio) como terceiro valor | pendente | |
-| Dumps do GS do BT4 em `~/Downloads/gsdumps/bt4/` | pendente | |
+| Dumps do GS do BT4 em `~/Downloads/gsdumps/bt4/` | feito: 6 cenas | ver o histórico |
 
 ## Pedidos ao Nominum
 
@@ -58,3 +58,7 @@ precisa dele vai como pedido nesta página.
   - **Lento**: luta **8,2 atualizações/s** (mínimo 7,4) com a GPU a 99 % (305 MHz), contra 22,1 do ARMSX2 e 25,9 do Dragon Rage na
     mesma rota. A CPU sobra (EE 18 %, GIF 26 %).
 
+- 09:20 **Dumps do GS do BT4** em `~/Downloads/gsdumps/bt4/` (lib do Dragon Rage, renderizador ARMSX2, RP5, rota fixa; `zstd -t` ok em todos):
+  `rp5_titulo` (120 vsyncs, 0,1 MB), `rp5_menu` (120, 63 MB), `rp5_selecao` (120, 3 MB), `rp5_luta_inicio` (400, 219 MB: o fade
+  com o ReadFIFO2 PSMCT24), `rp5_luta` (300, 326 MB), `rp5_fim` (300, 325 MB). Formato do PCSX2 (`GSDumpBase::CreateZstDump`,
+  serial SLUS-21978, estado de 4194813 bytes, foto 640x480). Para N3: o cenário de `rp5_luta` no backend próprio.

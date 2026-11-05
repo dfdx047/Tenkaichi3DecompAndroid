@@ -138,3 +138,7 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   host do Tag (`chain5`) errou o caminho no menu (o SELECT não abriu os modos); refaço passo a passo.
 - 09:14 Corrigido no `bt3route.sh`: o `top` media o processo do app, não o `:game` (as linhas de thread do `bt3` saíram vazias).
 
+- 09:15 Tag 5 x 5, o que o `SDL_SubmitGPUCommandBuffer` faz (`port/build/sdl3-src/src/gpu/vulkan/SDL_gpu_vulkan.c:10816`): pega o
+  `submitLock`, desfragmenta a memória se há alocações marcadas (`VULKAN_INTERNAL_DefragmentMemory`, que copia recursos), `vkQueueSubmit`,
+  `vkQueuePresentKHR`, e limpa os buffers de comando prontos e as alocações vazias (`checkEmptyAllocations`). Qual dessas leva os 22–27 ms
+  só se vê medindo dentro do SDL (recompilar o `sdl3` com tempos). Ficou para depois do BT2; o Tag é desligado por padrão.
