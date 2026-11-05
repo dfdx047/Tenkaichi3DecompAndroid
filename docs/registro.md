@@ -227,3 +227,6 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   BT4 com o ARMSX2 (2x) 20,7 atualizações/s (mín. 18,1), 0 crash; BT2 na luta, threads 67 % e 25 %, 0 crash. Os 20,7 do BT4 ficam abaixo
   dos 22,1 de `armsx2p0` com os diagnósticos desligados nos dois (1 linha [prof]/[sched] em cada): é a variação entre rodadas desta rota,
   cerca de ±1,5. O roteiro leva cerca de 20 min e está pronto para as 18:15.
+- 11:55 SDL `PrepareTextureSubresourceForWrite` do Adreno 630 (o caso que sobrou): tentativa sem online, luta gravada com
+  `BT3_UNCAPPED=1` a 1x: 200 %, 60 imagens/s (a apresentação segura), 0 crash. No log do jogador eram 1765 % com 32 imagens/s
+  (muitos tiques por imagem, alcançando depois de sair da partida), o que não se repete assim. Continua aberto.
