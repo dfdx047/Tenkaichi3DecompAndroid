@@ -26,7 +26,7 @@ Lite, velocidade e fps médios, assinatura do crash, erros de import, de rede e 
 | 9 | HTTP 429 / erro 1027 | 11 | todas | recuo e mensagem nos três serviços |
 | 10 | `BtlObjMdl_BindFiles+0x30` | 10 | dev.51, 0.8.1, 0.9.0 | mitigado; causa raiz sem prova |
 | 11 | "Não é uma ISO válida" | 7 | 0.8.1, 0.9.0 | mensagem já clara |
-| 12 | BT4/ARMSX2: superfície perdida na volta do segundo plano | 4 | 0.9.0 | aberto |
+| 12 | BT4/ARMSX2: superfície perdida na volta do segundo plano | 4 | 0.9.0 | corrigido (`c94be361`, RP5: tela preta antes, imagem depois) |
 | 13 | ISO incompleta | 3 | 0.8.1, 0.9.0 | mensagem já clara |
 | 14 | "Sem memória" com tamanho negativo | 3 | dev.51, 0.9.0 | corrigido |
 | 15 | `VULKAN_INTERNAL_PrepareTextureSubresourceForWrite` e outros crashes de poucos aparelhos | 2 cada | várias | aberto |

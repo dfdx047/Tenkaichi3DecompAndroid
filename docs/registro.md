@@ -120,3 +120,7 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   (`iopImport` ← `sio2man` ← `SifLoadModule`, no carregamento dos módulos do IOP); o mesmo `sp` nas 3. Sem o aparelho não há
   como repetir; a hipótese é a pilha padrão de `std::thread` (1 MB no bionic) pequena para algum quadro grande nesse caminho. Não
   mudei a thread do runtime sem poder testar no aparelho que falha. Anotado como aberto.
+- 08:59 **Bug #12, antes e depois na mesma prova** (`bt4bg.sh`, 4 voltas, renderizador ARMSX2): build de antes (`m3g.apk`):
+  `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR` no `vkCreateSwapchainKHR` e no `vkCreateAndroidSurfaceKHR`, "Failed to recreate surface
+  after loss", **tela preta nas 4 voltas** (brilho médio 1 de 255) e depois das teclas; o processo não cai, mas o jogo some.
+  Com a correção (`prof0.apk`): imagem nas 4 voltas, 0 erro de superfície. **#12 corrigido** (`c94be361`).
