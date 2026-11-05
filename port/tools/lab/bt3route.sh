@@ -11,7 +11,7 @@ python3 -c "import lab,sys; lab.stop('$S'); lab.settings_set('$S', sys.argv[1].s
 printf '%s\n' BT3_GS_VERBOSE=1 "$@" | adb -s $S shell "cat > $F/bt3_env.txt"
 sleep 1; adb -s $S shell am start -n com.dfdx047.dragonrage/.PlayShortcutActivity >/dev/null
 sleep $((T / 2))
-adb -s $S shell "top -H -b -n 2 -d 10 -p \$(pidof com.dfdx047.dragonrage)" > "$O/${N}_threads.txt" 2>&1
+adb -s $S shell "top -H -b -n 2 -d 10 -p \$(pidof com.dfdx047.dragonrage:game)" > "$O/${N}_threads.txt" 2>&1
 adb -s $S shell 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "$p min $(cat $p/scaling_min_freq) max $(cat $p/scaling_max_freq) cur $(cat $p/scaling_cur_freq)"; done; echo "online $(cat /sys/devices/system/cpu/online) gpu $(cat /sys/class/kgsl/kgsl-3d0/max_gpuclk) $(cat /sys/class/kgsl/kgsl-3d0/gpuclk) busy $(cat /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage)"' > "$O/${N}_clocks.txt"
 sleep $((T - T / 2 - 12))
 adb -s $S exec-out screencap -p > "$O/${N}_end.png"
