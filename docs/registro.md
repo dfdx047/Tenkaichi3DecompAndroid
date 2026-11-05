@@ -36,6 +36,9 @@ Os relógios do meio da luta ficam ao lado de cada medida.
 |---|---|---|---|---|---|---|---|---|---|
 | BT4, ARMSX2 (`armsx2b`) | Goku x Raditz (História), luta inteira | 29,4 (mín. 16) | **20,8** (mín. 18,2) | 30,9 de 58,3 ms por imagem (53 %); thread 52 % | kick worker 20 % | GS do ARMSX2 55 % (CPU), GPU 63 % ocupada a 305 MHz; GIF no runtime 28 %; leitura do anel 10 % | 2 % | 4 % | nenhuma etapa cheia: o tempo se perde em espera entre EE → VU1 → GIF → GS (nenhuma thread chega a 1 núcleo, GPU a 63 %). Custo fixo achado: diagnósticos do runtime ligados para todo jogador (item 5) |
 | BT4, Dragon Rage (`dr`) | a mesma | 33,3 (mín. 21,6) | **25,9** (mín. 22,7) | 24,8 de 41,6 ms (60 %); thread 63 % | kick worker 31 % | **GPU 99 % ocupada** (305 MHz); o GS do Dragon Rage lê o anel na `SDLThread` (68 %); GIF no runtime 54 % | 1 % | 4 % | **GS/GPU** (GPU cheia) |
+| BT4, ARMSX2 sem diagnósticos (`armsx2p0`) | a mesma | – | **22,1** (mín. 18,0) | 19,7 de 42,6 ms (46 %); thread 41 % | 11 % | GS do ARMSX2 53 %, GPU 60 %; GIF 19 % | 2 % | 3 % | nenhuma etapa cheia (espera entre etapas) |
+| BT4, lib do Nominum + ARMSX2 (`nom1`) | a mesma | – | 20,5 (mín. 18,3) | 23,4 de 48,3 ms (48 %) | 24 % | GS 55 %, GPU 59 %; leitura do anel 13 % | 2 % | 4 % | como o ARMSX2, +7 % de um núcleo na leitura |
+| BT4, Nominum próprio forçado (`nom2own`) | a mesma | 18,9 (mín. 3,9) | 8,2 (mín. 7,4) | 18,3 de 98,8 ms (18 %) | 8 % | **GPU 99 %** | 1 % | 2 % | **GS/GPU** (cores do cenário erradas) |
 
 ## Histórico
 

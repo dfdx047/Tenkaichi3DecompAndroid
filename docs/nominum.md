@@ -17,6 +17,8 @@ precisa dele vai como pedido nesta página.
 |---|---|---|---|
 | N1 | `Bt4Gsx_SurfaceDestroyed` (`vk/armsx2_host.cpp`, e o `NominumArmsx2_SurfaceDestroyed` por trás) **só retornar depois que o GS largou o swapchain e a `VkSurfaceKHR`** (com limite de 2 s), como o `port/bt4/gsx/bt4_gsx.cpp` do Dragon Rage faz agora: a janela vira nula, `Host::RunOnCPUThread` → `MTGS::UpdateDisplayWindow()` → `MTGS::RunOnGSThread` marca "feito", e o laço do `live_next` atende a fila na hora enquanto alguém espera. O mesmo no backend próprio (`s_own`): destruir o swapchain dele antes de retornar | Bug #12 do BT4 (`VK_ERROR_NATIVE_WINDOW_IN_USE_KHR` e crash em `vkCreateAndroidSurfaceKHR` na volta do segundo plano). O host do Dragon Rage agora chama `SurfaceDestroyed`/`SurfaceChanged` de dentro do `surfaceDestroyed`/`surfaceChanged` do Android (o `SurfaceHolder.Callback` do `Bt4Activity`), com a superfície ainda viva: só adianta se a lib esperar | aberto |
 | N2 | Exportar `Bt4Gsx_GsDump(const char* base, int frames)` (o `HL_GS_DUMP` do `hl_gsx.cpp` do Hidden Leaf; o Dragon Rage tem a mesma coisa no `bt4_gsx.cpp`) | Os dumps do BT4 para o próprio Nominum saem hoje só com a lib do Dragon Rage; com a do Nominum no APK, o `BT4_GS_DUMP` diz "this libbt4gsx.so has no Bt4Gsx_GsDump" | aberto |
+| N3 | BT4 no backend próprio: cores do cenário erradas (céu verde, chão azul com faixas) com personagens e HUD certos; ver as fotos acima e um dump de `~/Downloads/gsdumps/bt4/` | aberto |
+| N4 | BT4 no backend próprio no Adreno 650 a 305 MHz: GPU 99 %, 8,2 atualizações/s (ARMSX2 22,1 com GPU 60 %) | aberto |
 
 ## Histórico
 
@@ -45,3 +47,14 @@ precisa dele vai como pedido nesta página.
   atualizações/s, 0 crash; o "crash: 4" do resumo era o texto da tabela, que cita `DEVICE_LOST`: contagem do `bt4route.sh`
   corrigida). O valor 2 cai com segurança no ARMSX2 neste aparelho. A seguir, só como teste, a mesma rota com
   `NOMINUM_SELFTEST=force NOMINUM_SELFTEST_IGNORE_TABLE=1` (o veredito é apagado depois).
+- 09:04 **Passo 2 forçado no RP5** (`NOMINUM_SELFTEST=force NOMINUM_SELFTEST_IGNORE_TABLE=1`, só teste; `selftest.txt` apagado
+  depois, a próxima abertura volta a seguir a tabela): `nominum: self-test ran: Adreno (TM) 650: Nominum, alternatives none`, backend
+  próprio, swapchain 1080x1920 girado 90. Rota inteira, **0 crash, 0 DEVICE_LOST** nesta rota (a tabela cita a campanha do HL).
+  - **ReadFIFO2 com PSMCT24**: `[gslive] readback 344064 bytes` = 3 bytes por pixel (114688 pixels; em 32 bits seriam 458752).
+    A primeira em 456,7 ms, a segunda em 4,4 ms. A luta começa e segue (o fade passa).
+  - **Imagem errada no cenário**: céu verde e amarelo, montanhas e chão azuis e roxos com faixas e moiré; personagens, HUD e
+    legendas certos (`nom2own_4fight.png`, `nom2own_5end.png` em `~/DragonRageRefs/dia/bt4/`). Cara de paleta (CLUT) ou de
+    formato de textura do cenário, não de geometria.
+  - **Lento**: luta **8,2 atualizações/s** (mínimo 7,4) com a GPU a 99 % (305 MHz), contra 22,1 do ARMSX2 e 25,9 do Dragon Rage na
+    mesma rota. A CPU sobra (EE 18 %, GIF 26 %).
+
