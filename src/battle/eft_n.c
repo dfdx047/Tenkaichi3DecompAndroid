@@ -267,6 +267,7 @@ void EftAura_DrawFlames(EftAuraWork *aura, s32 objId, f32 alpha) {
     f32 w;
     f32 h;
     f32 d;
+    s32 liteFlame = 0;
 
     camFwd.x = gBtlCamView->world2view2.m[0][2];
     camFwd.y = gBtlCamView->world2view2.m[1][2];
@@ -294,6 +295,7 @@ void EftAura_DrawFlames(EftAuraWork *aura, s32 objId, f32 alpha) {
         if (f->objId != objId) {
             continue;
         }
+        { extern int Port_TagKiLess(void); if (Port_TagKiLess() && (liteFlame++ & 1)) continue; } /* (gs_draw.c: half the flames) */
         dir.x = f->dir.x;
         clipped = 0;
         dir.y = f->dir.y;

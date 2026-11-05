@@ -391,7 +391,7 @@ void TagTeam_Begin(void) {
     TagTeam_Reset();
 }
 
-void TagTeam_End(void) { extern void Port_TagHudClear(void); count = 0; Port_TagHudClear(); }
+void TagTeam_End(void) { extern void Port_TagHudClear(void),Port_TagLiteUpdate(int); count = 0; Port_TagHudClear(); Port_TagLiteUpdate(0); }
 
 /* Reproducible roster launch using the real loader and CPU controllers. */
 void TagTeam_SetupDemo(s32 human, s32 team0, s32 team1) {
@@ -815,6 +815,7 @@ s32 TagTeam_SetCpuTarget(s32 actor,s32 target) {
 
 void TagTeam_Update(void) {
     s32 i;
+    {extern void Port_TagLiteUpdate(int);Port_TagLiteUpdate(TagTeam_Active());}
     if (!TagTeam_Active() || (Battle_GetWork()->flags & (BATTLE_FLAG_PAUSE | BATTLE_FLAG_LOADING))) return;
     TagLobby_Update();
     if(TagNet_IsParty() && TagNet_Active() && !TagLobby_Practice())for(i=0;i<count;i++) {

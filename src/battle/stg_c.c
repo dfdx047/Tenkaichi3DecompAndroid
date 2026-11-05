@@ -659,7 +659,7 @@ void StgFx_DrawPre(void) {
         if (TagTeam_Active() ? TagStage_PanBlur() : BtlStage_HasFeature(0xD)) {
             StgPanBlur_Draw();
         }
-        if (BtlStage_HasFeature(9)) {
+        if (BtlStage_HasFeature(9) && !({ extern int Port_TagLite(void); Port_TagLite(); })) { /* (light graphics: gs_draw.c) */
             StgHaze_DrawAll();
         }
         StgTint_DrawBack();

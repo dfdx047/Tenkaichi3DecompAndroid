@@ -1004,8 +1004,13 @@ void BtlObj_UpdateAll(void) {
                 BtlObjAnim_SamplePose(obj);
                 BtlObjAnim_UpdateEvents(obj);
                 BtlObjPose_CalcMatrices(obj);
-                BtlObj_UpdateChains(obj);
-                BtlObjPose_CalcMatrices(obj);
+                /* (the Tag Team's light graphics outside online: hair and cloth stay as the animation has them, gs_draw.c.
+                   Online the game keeps them: they are computed in the fight's state, the same on every phone.) */
+                { extern int Port_TagLite(void); extern s32 TagNet_Active(void);
+                  if (!Port_TagLite() || TagNet_Active()) {
+                      BtlObj_UpdateChains(obj);
+                      BtlObjPose_CalcMatrices(obj);
+                  } }
             }
             BtlObj_UpdateBounds(obj, state);
             BtlObj_UpdateFace(obj);

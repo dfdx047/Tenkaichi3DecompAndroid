@@ -102,6 +102,8 @@
     <string name="name_in_game">Name in the game</string>
     <string name="name_in_game_hint">Written with the game\'s own lettering on the select screen</string>
     <string name="mod_info">%1$d files · %2$s</string>
+    <string name="tag_flat">Tag Team: flat fighters</string>
+    <string name="tag_flat_text">Only in Tag Team: removes the shading layer from every fighter. Much less drawing work, flatter look. Applies the next time the game opens.</string>
     <string name="cheats_title">Cheats</string>
     <string name="cheats_sub">Shenron\'s wishes</string>
     <string name="unlock_all">Unlock everything</string>
@@ -417,6 +419,8 @@
     <string name="bt4_game_data_intro">Pick your image of Team BT4\'s mod: SLUS-219.78, Beta 14 Rev2 (another version does not work: the game was recompiled for that one). Only its boot files are copied; the rest is read from the image where it is, so keep it in its folder.</string>
     <string name="bt4_engine_included">The Budokai Tenkaichi 4 engine is in this build.</string>
     <string name="bt4_engine_missing">This build does not have the Budokai Tenkaichi 4 engine yet (libbt4.so). The image can be set up already.</string>
+    <string name="tag_lite">Tag Team light graphics</string>
+    <string name="tag_lite_text">Only in Tag Team: lower resolution, no shadows, fewer effects. For a smoother match on weaker phones. Also in the menu during a fight.</string>
     <string name="adpf">Performance hints</string>
     <string name="adpf_text">Tells Android how long each frame takes (Android 13 and newer), so the CPU stays fast in heavy moments instead of slowing down between frames. From the next start.</string>
     <string name="sustained">Sustained performance</string>
