@@ -217,3 +217,8 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   GameThread 65 %, SDLThread 67 %, GsThread 58 %, kick worker 44 %), imagem certa (`dr1x_4fight.png`). **BT4 com o ARMSX2 24,4**
   (era 22,1). **Tag 5 x 5 com o perfil do nível 1: 100 %**, pulando quadros (24,5–29,7 imagens/s). As configurações do BT4 no RP5
   voltaram ao que estavam (`bt4_renderer=1`, `scale4=8`).
+- 11:21 **BT4 a 1x, as threads nos núcleos** (sd480p: cpu0–3 A55, cpu4–5 A77 a 1,766 GHz). A GameThread do EE fica cerca de metade
+  das amostras num A55 (`ps -T`, 20 amostras), e nenhuma thread tem máscara (`Cpus_allowed_list 0-7`): quem escolhe é o escalonador.
+  Segunda rota igual: 29,0 atualizações/s (mín. 27,1). Teste `PS2X_PIN=4,5` (interruptor do runtime: EE no 4, GL e apresentação no 5):
+  **21,1, pior**, porque ele fixa também o processo inteiro no 5 (`sched_setaffinity(getpid())`). Nada mudado: o padrão é o melhor
+  dos dois. Configurações do BT4 no RP5 restauradas, `bt3_env.txt` removido.
