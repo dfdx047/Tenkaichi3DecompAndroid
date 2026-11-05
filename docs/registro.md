@@ -39,6 +39,8 @@ Os relógios do meio da luta ficam ao lado de cada medida.
 | BT4, ARMSX2 sem diagnósticos (`armsx2p0`) | a mesma | – | **22,1** (mín. 18,0) | 19,7 de 42,6 ms (46 %); thread 41 % | 11 % | GS do ARMSX2 53 %, GPU 60 %; GIF 19 % | 2 % | 3 % | nenhuma etapa cheia (espera entre etapas) |
 | BT4, lib do Nominum + ARMSX2 (`nom1`) | a mesma | – | 20,5 (mín. 18,3) | 23,4 de 48,3 ms (48 %) | 24 % | GS 55 %, GPU 59 %; leitura do anel 13 % | 2 % | 4 % | como o ARMSX2, +7 % de um núcleo na leitura |
 | BT4, Nominum próprio forçado (`nom2own`) | a mesma | 18,9 (mín. 3,9) | 8,2 (mín. 7,4) | 18,3 de 98,8 ms (18 %) | 8 % | **GPU 99 %** | 1 % | 2 % | **GS/GPU** (cores do cenário erradas) |
+| BT3 (`bt3`, luta gravada `fight4.rec`) | menu, seleção, luta, vitória | 30,7 | **100 %** | jogo 6,1 de 10,1 ms de trabalho por quadro (orçamento 33,4) | – (no mesmo código) | lista 4,0 ms; GPU 22 % | – | – | nenhum: folga de 2/3 do quadro |
+| Tag 5 x 5 COM x COM (`tag5`, `BT3_DEMO`) | luta | 20,7–21,9 | **69–73 %** | jogo ~10 ms; o quadro leva 40–50 ms, 50 de 60 acima do orçamento | – | **entrega do quadro ao driver (`SDL_SubmitGPUCommandBuffer`) 22–27 ms**; desenho 6–7,5 ms; 64 passes e 18 cópias por quadro (BT3: 45 e 3,7); GPU 9 % na amostra | 1 % | – | **submit do quadro** (espera dentro do SDL/driver, não GPU cheia) |
 
 ## Histórico
 
@@ -127,3 +129,12 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   `VK_ERROR_NATIVE_WINDOW_IN_USE_KHR` no `vkCreateSwapchainKHR` e no `vkCreateAndroidSurfaceKHR`, "Failed to recreate surface
   after loss", **tela preta nas 4 voltas** (brilho médio 1 de 255) e depois das teclas; o processo não cai, mas o jogo some.
   Com a correção (`prof0.apk`): imagem nas 4 voltas, 0 erro de superfície. **#12 corrigido** (`c94be361`).
+- 09:14 **BT3 no sd480p** (rota gravada, perfil segurando): 100 % de velocidade, 30,7 imagens/s, trabalho 10,1 ms por quadro de 33,4,
+  GPU 22 %, 0 crash. Nada limita o BT3 no RP5 assim.
+- 09:14 **Tag 5 x 5** (`BT3_TAG_TEAM=1 BT3_TAG_ROSTER=5,5 BT3_DEMO=1`): **69–73 %**, 21 imagens/s, 0 crash. O tempo vai em "presenting"
+  (`gs_gpu.c:2539`: só a chamada `SDL_SubmitGPUCommandBuffer`, modo mailbox), 22–27 ms por quadro contra 1,7 no BT3, com a GPU a 9 % na
+  amostra do meio. O Tag faz 18 cópias e 64 passes por quadro (BT3: 3,7 e 45). Hipótese, não provada: o SDL faz trabalho dentro do
+  submit (desfragmentação da memória do Vulkan, liberações pendentes) por causa das imagens criadas e soltas a cada quadro. A rota do
+  host do Tag (`chain5`) errou o caminho no menu (o SELECT não abriu os modos); refaço passo a passo.
+- 09:14 Corrigido no `bt3route.sh`: o `top` media o processo do app, não o `:game` (as linhas de thread do `bt3` saíram vazias).
+
