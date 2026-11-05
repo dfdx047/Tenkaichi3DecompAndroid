@@ -29,7 +29,7 @@ Lite, velocidade e fps médios, assinatura do crash, erros de import, de rede e 
 | 12 | BT4/ARMSX2: superfície perdida na volta do segundo plano | 4 | 0.9.0 | corrigido (`c94be361`, RP5: tela preta antes, imagem depois) |
 | 13 | ISO incompleta | 3 | 0.8.1, 0.9.0 | mensagem já clara |
 | 14 | "Sem memória" com tamanho negativo | 3 | dev.51, 0.9.0 | corrigido |
-| 15 | `VULKAN_INTERNAL_PrepareTextureSubresourceForWrite` e outros crashes de poucos aparelhos | 2 cada | várias | aberto |
+| 15 | `VULKAN_INTERNAL_PrepareTextureSubresourceForWrite` e outros crashes de poucos aparelhos | 2 cada | várias | 1 de 2 do SDL corrigido; o resto aberto |
 
 ## Detalhes
 
@@ -163,7 +163,7 @@ diz que não é o disco original, e `LastRun.kt` mostra isso como problema de da
 
 | Assinatura | Aparelhos | Leitura |
 |---|---|---|
-| `libSDL3.so VULKAN_INTERNAL_PrepareTextureSubresourceForWrite` | 2 | aberto |
+| `libSDL3.so VULKAN_INTERNAL_PrepareTextureSubresourceForWrite` | 2 | 1 corrigido: Xclipse 530, movimento suave ligado, a resolução muda (1x para 1,25x) num corte de câmera; a repetição do quadro redesenhava a lista com os alvos já soltos (`gs_draw.c`, ramo `repeat`). RP5 com `BT3_SCALE_FLIP=7`: crash na 2ª troca antes, 767 trocas sem crash depois. O outro (Adreno 630, dev.54, interp=0, logo após sair de uma partida online a 1765 %) é outro caminho: aberto |
 | `libbt4.so std::recursive_mutex::unlock` (moto g20) | 2 | aberto |
 | `Res_RelocateOffsets` | 2 | endereços inválidos; provável disco modificado |
 | `BtlScene_TestCharPackBit+0x34` | 1 | 0.8.1; sem repetição |

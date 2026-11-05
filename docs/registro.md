@@ -182,3 +182,11 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   (`port_screen.c:351`). Acrescentadas nas duas e geradas com `make_tag_text.py` (855 linhas, `--check` ok, argumentos de formato iguais).
   Só texto. Prova (`tagtext.apk`): BT3 100 %, 30,7 imagens/s, 0 crash, Dragon Net com código ZFCHNZ, **fightcmp: SAME em 6212 quadros**
   contra o merge 3; sala do anfitrião com "Escolha as equipes. Aperte Start para pegar uma vaga." (`~/DragonRageRefs/dia/tag/t2.png`).
+- 10:31 **Logs dos jogadores, #15 `VULKAN_INTERNAL_PrepareTextureSubresourceForWrite`: 1 dos 2 corrigido.** Log de 26/10 (Xclipse 530,
+  interp=2): "internal resolution 1.25x" e o crash na linha seguinte, em `interp_show` → `vk_frame_end` → `SDL_BeginGPURenderPass`.
+  Causa: no ramo `repeat` de `GsGpu_FrameEnd` (tique sem quadros intermediários, movimento suave ligado), `scale_apply()` solta todos os
+  alvos e zera `gsTargetCount` e, logo depois, o ramo arma `sInterpRepeat`, que redesenha a lista guardada sobre os alvos soltos.
+  Correção: o tique não repete quando a resolução muda depois dele. Teste novo `BT3_SCALE_FLIP=N` (troca 1x/1,25x a cada N quadros).
+  RP5 sd480p, luta gravada com interp=2 e FLIP=7: **antes (flip0.apk) crash na 2ª troca** (signal 5 no vulkan.adreno.so); **depois
+  (flip1.apk) 767 trocas, 0 crash**, luta a 100 %. Prova do dia: BT3 100 %, 30,7 imagens/s, 0 crash, Dragon Net com código F3EJHJ, fightcmp SAME
+  em 6212 quadros. O outro log (Adreno 630, dev.54, interp=0, ao sair de uma partida online a 1765 %) é outro caminho e continua aberto.

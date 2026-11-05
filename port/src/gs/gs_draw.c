@@ -5487,6 +5487,9 @@ void GsGpu_FrameEnd(void) {
     if (sBackend != NULL) {
         int i;
 
+        if (getenv("BT3_SCALE_FLIP") != NULL && atoi(getenv("BT3_SCALE_FLIP")) > 0 && gGsFrame % (unsigned)atoi(getenv("BT3_SCALE_FLIP")) == 0) {
+            gsPendingScale4 = gsScale4 == 4 ? 5 : 4; /* testing: the resolution changes every N pictures (1x and 1.25x) */
+        }
         if (sInterpNext != 0) { /* (pictures still waiting: the game did not reach its vertical blanks in between) */
             uint32_t verts = gsVertCount, vuVerts = gsVuVertCount, vuIdx = gsVuIdxCount, vuUni = gsVuUniCount, draws = gsDrawCount;
             /* cannot happen in the order the game works in (the list of the new tick is complete here); if it does,
@@ -5564,7 +5567,11 @@ void GsGpu_FrameEnd(void) {
                now and again at the in-between pictures' moments (sInterpRepeat), from the same list, kept as an
                in-between tick keeps it. Not where nothing is shown (BT3_INTERP_REALONLY, a run without pictures). */
             int repeat = gsInterp > 0 && sInterpSteps > 1 && !GS_NO_PICTURE && gsDrawCount != 0 && getenv("BT3_INTERP_REALONLY") == NULL &&
-                         getenv("BT3_INTERP_NOREPEAT") == NULL;
+                         getenv("BT3_INTERP_NOREPEAT") == NULL &&
+                         /* not when the resolution changes after this picture (scale_apply below): every render target the
+                            kept list draws to is dropped there, and replaying it crashed in SDL (BeginRenderPass on a
+                            released texture: a player's log, Xclipse 530, smooth motion on, 1x to 1.25x at a fight's start) */
+                         (gsPendingScale4 == 0 || gsPendingScale4 == gsScale4);
             if (gsInterp > 0) {
                 interp_remember();
                 gInterpSkipped++;
