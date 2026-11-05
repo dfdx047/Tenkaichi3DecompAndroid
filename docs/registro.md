@@ -11,10 +11,10 @@ Odin 3 e Cube (`192.168.1.134`, `192.168.1.183`) são da sessão do Naruto e nã
 |---|---|---|---|
 | 1 | Merges das branches da Regulus CiberSec | feito | 3 merges (`282f207e`, `a8f06ebd`, `b00a397d`), cada um com build e teste no RP5; `ranked-flow-v2` não é dela (ver Decisões) |
 | 2 | Tag Team liga/desliga no launcher | feito | testado nos dois sentidos depois dos merges; padrão 0 (`TAG_TEAM_DEFAULT`) |
-| 3 | Rota e medidas por jogo no RP5 sd480p | pendente | |
-| 4 | Nominum no BT4 | pendente | |
-| 5 | Outros gargalos | pendente | |
-| 6 | Bugs conhecidos | pendente | |
+| 3 | Rota e medidas por jogo no RP5 sd480p | feito | BT3, Tag 5x5, BT4 (3 renderizadores, 2x e 1x) e BT2; tabela abaixo; rota dos 4 modos num comando (`dia_final.sh`) |
+| 4 | Nominum no BT4 | passos 1 e 2 feitos | lib do Nominum com o ARMSX2 atrás; o valor "Nominum (teste)"; ReadFIFO2 PSMCT24 a 3 B/px; 6 dumps; pedidos N1–N4 em `nominum.md`; BT2/BT3 sem GS de gargalo |
+| 5 | Outros gargalos | feito | BT4: diagnósticos do runtime desligados (`c94be361`, 30,9 → 19,7 ms de jogo por imagem); 1x e gráfico leve medidos; `PS2X_PIN` piora |
+| 6 | Bugs conhecidos | 3 corrigidos | #12 (`c94be361`); mensagens da sala do Tag (`7ebbc131`); crash do SDL com movimento suave (`d42a244a`); menu sem letras não se repete; memória do Tag estável em 6 lutas; moto g20, Adreno 630 e #7 abertos |
 | 7 | licenses.txt do APK | feito (`39897130`) | conferir o `licenses.txt` no APK final |
 
 ## Decisões
