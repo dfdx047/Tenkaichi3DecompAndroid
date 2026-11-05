@@ -195,3 +195,10 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   no tique 90; `tag_team_test.c`, só fora do online), depois "Fight Again" 5 vezes. Velocidade: luta 60–90 %, resultado 100 %, 6 ciclos.
   A região chega a **112 de 160 MB na 1ª luta e fica em 112 até a 6ª** (a linha sai a cada 16 MB novos: nenhuma depois), mesmo PID, 0 "no memory".
   Os blocos da luta são reusados. Fica sem prova: a mesma coisa online (128 MB na 1ª luta da sala, com o estado do rollback), que pede dois aparelhos.
+- 10:52 **moto g20, `recursive_mutex::unlock` (BT4): a hipótese do estouro de pilha cai.** No build de hoje, os 21 quadros da
+  pilha somam menos de 30 KB (`iopImport` 0x7c0, `dispatchGuestBranch` 0x770 ×7, `loadAndRunIopModule` 0xef0, os recompilados
+  0x20–0x80; `llvm-objdump` do libbt4.so), e a GameThread é um `std::thread` com a pilha padrão do bionic (1 MB). No tombstone,
+  `sp` = 0x78d176deb0 e `x29` = 0x759de15020 ficam a ~12 GB um do outro, e a falha (SEGV_ACCERR) é em `sp-0x10`. Então o `sp` foi
+  trocado, não esgotado. Candidatos no runtime (BT3-Recomp, não é código nosso): a troca de contexto das fibras (`ps2_fiber.cpp`,
+  ucontext, guarda PROT_NONE) ou a restauração das pilhas das fibras do rollback. Nada mudado: sem o aparelho não há como testar.
+  Continua aberto em `logs-1.0.md` #15.
