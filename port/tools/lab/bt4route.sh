@@ -16,33 +16,33 @@ adb -s $S shell monkey -p com.dfdx047.dragonrage -c android.intent.category.LAUN
 python3 ui.py rp5 tap JOGAR >/dev/null || { python3 ui.py rp5 tap "BUDOKAI TENKAICHI 4" >/dev/null; sleep 3; python3 ui.py rp5 tap JOGAR >/dev/null; }
 sleep 30
 shot 1title
-printf '%s\n' "${args[@]}" | grep -q '^BT4_GS_DUMP=' && adb -s $S shell "echo 'title 120' > $B/gsdump_now.txt"
+printf '%s\n' "${args[@]}" | grep -q '^BT4_GS_DUMP=' && adb -s $S shell "echo "${DUMP_PREFIX:-rp5}_titulo 120" > $B/gsdump_now.txt"
 sleep 6
 P="python3 kpad.py $S"
 $P "start wait:3000 start wait:3000 start wait:4000 start wait:3000 cross wait:4000 start wait:3000 cross wait:4000"
 shot 2menu
-printf '%s\n' "${args[@]}" | grep -q '^BT4_GS_DUMP=' && adb -s $S shell "echo 'menu 120' > $B/gsdump_now.txt"
+printf '%s\n' "${args[@]}" | grep -q '^BT4_GS_DUMP=' && adb -s $S shell "echo "${DUMP_PREFIX:-rp5}_menu 120" > $B/gsdump_now.txt"
 sleep 5
 $P "down wait:500 down wait:500 down wait:500 cross wait:3000 down wait:500 down wait:500 cross wait:4000 cross wait:5000"
 shot 3select
-printf '%s\n' "${args[@]}" | grep -q '^BT4_GS_DUMP=' && adb -s $S shell "echo 'select 120' > $B/gsdump_now.txt"
+printf '%s\n' "${args[@]}" | grep -q '^BT4_GS_DUMP=' && adb -s $S shell "echo "${DUMP_PREFIX:-rp5}_selecao 120" > $B/gsdump_now.txt"
 sleep 5
 for i in 1 2 3 4 5 6 7 8 9; do $P "cross wait:3000"; done
 # the fight's start (the fade: ReadFIFO2 of a PSMCT24 frame) and the fight itself
-printf '%s\n' "${args[@]}" | grep -q '^BT4_GS_DUMP=' && adb -s $S shell "echo 'fightstart 400' > $B/gsdump_now.txt"
+printf '%s\n' "${args[@]}" | grep -q '^BT4_GS_DUMP=' && adb -s $S shell "echo "${DUMP_PREFIX:-rp5}_luta_inicio 400" > $B/gsdump_now.txt"
 sleep 25
 shot 4fight
-printf '%s\n' "${args[@]}" | grep -q '^BT4_GS_DUMP=' && adb -s $S shell "echo 'fight 300' > $B/gsdump_now.txt"
+printf '%s\n' "${args[@]}" | grep -q '^BT4_GS_DUMP=' && adb -s $S shell "echo "${DUMP_PREFIX:-rp5}_luta 300" > $B/gsdump_now.txt"
 adb -s $S shell "top -H -b -n 2 -d 10 -p \$(pidof com.dfdx047.dragonrage:bt4)" > "$O/${N}_threads.txt" 2>&1
 adb -s $S shell 'for p in /sys/devices/system/cpu/cpufreq/policy*; do echo "$p min $(cat $p/scaling_min_freq) max $(cat $p/scaling_max_freq) cur $(cat $p/scaling_cur_freq)"; done; echo "online $(cat /sys/devices/system/cpu/online) gpu $(cat /sys/class/kgsl/kgsl-3d0/max_gpuclk) $(cat /sys/class/kgsl/kgsl-3d0/gpuclk) busy $(cat /sys/class/kgsl/kgsl-3d0/gpu_busy_percentage)"' > "$O/${N}_clocks.txt"
 sleep $(( ${WAIT:-150} - 45 ))
 shot 5end
-printf '%s\n' "${args[@]}" | grep -q '^BT4_GS_DUMP=' && adb -s $S shell "echo 'end 300' > $B/gsdump_now.txt" && sleep 20
+printf '%s\n' "${args[@]}" | grep -q '^BT4_GS_DUMP=' && adb -s $S shell "echo "${DUMP_PREFIX:-rp5}_fim 300" > $B/gsdump_now.txt" && sleep 20
 adb -s $S shell "cat $B/bt3_log.2.txt $B/bt3_log.1.txt $B/bt3_log.txt 2>/dev/null" > "$O/${N}_log.txt"
 adb -s $S shell am force-stop com.dfdx047.dragonrage
 adb -s $S shell rm -f $B/bt3_env.txt
 L="$O/${N}_log.txt"
 echo "clocks mid-fight: $(grep policy4 $O/${N}_clocks.txt) | $(grep online $O/${N}_clocks.txt)"
-echo "$N: renderer: $(grep -a -m1 'bt4: renderer' $L | cut -c1-80) | crash: $(grep -a -c -iE 'SIGSEGV|SIGABRT|fatal|DEVICE_LOST' $L) | stalls: $(grep -a -c stallprobe $L) | dumps: $(grep -a -c 'GS dump .* done' $L)"
+echo "$N: renderer: $(grep -a -m1 'bt4: renderer' $L | cut -c1-80) | crash: $(grep -a -iE 'SIGSEGV|SIGABRT|fatal signal|DEVICE_LOST' $L | grep -v -c 'table of drivers') | stalls: $(grep -a -c stallprobe $L) | dumps: $(grep -a -c 'GS dump .* done' $L)"
 grep -a -E '^\[fps\]|logicrate' $L | tail -4
 echo ROUTE-DONE

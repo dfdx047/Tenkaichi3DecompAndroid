@@ -34,7 +34,8 @@ Os relógios do meio da luta ficam ao lado de cada medida.
 
 | Jogo | Cena | Imagens/s | Luta/s | Código do jogo (EE) | VU1 | GS / GPU | Som | IOP | Gargalo |
 |---|---|---|---|---|---|---|---|---|---|
-| (a preencher) | | | | | | | | | |
+| BT4, ARMSX2 (`armsx2b`) | Goku x Raditz (História), luta inteira | 29,4 (mín. 16) | **20,8** (mín. 18,2) | 30,9 de 58,3 ms por imagem (53 %); thread 52 % | kick worker 20 % | GS do ARMSX2 55 % (CPU), GPU 63 % ocupada a 305 MHz; GIF no runtime 28 %; leitura do anel 10 % | 2 % | 4 % | nenhuma etapa cheia: o tempo se perde em espera entre EE → VU1 → GIF → GS (nenhuma thread chega a 1 núcleo, GPU a 63 %). Custo fixo achado: diagnósticos do runtime ligados para todo jogador (item 5) |
+| BT4, Dragon Rage (`dr`) | a mesma | 33,3 (mín. 21,6) | **25,9** (mín. 22,7) | 24,8 de 41,6 ms (60 %); thread 63 % | kick worker 31 % | **GPU 99 % ocupada** (305 MHz); o GS do Dragon Rage lê o anel na `SDLThread` (68 %); GIF no runtime 54 % | 1 % | 4 % | **GS/GPU** (GPU cheia) |
 
 ## Histórico
 
@@ -88,3 +89,34 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   GS do ARMSX2 51, leitura do GIF no runtime (`GsThread`) 33, VIF1/VU1 (o kick worker) 23, a thread de CPU do ARMSX2 8, IOP 4,
   som 2. 0 crash, 0 travada. Perfil reaplicado com `HL_STOP_PERF=1` (para os serviços de desempenho do aparelho; o `restore`
   liga de novo) e a rota medida de novo.
+- 08:34 BT4 ARMSX2 de novo, **com o sd480p segurando** (A77 a 1,77 GHz no meio da luta, GPU 305 MHz e 63 % ocupada): luta
+  **20,8 atualizações/s** (mínimo 18,2), 29,4 imagens/s; o código do jogo é 30,9 de 58,3 ms por imagem (53 %). Threads: GS do
+  ARMSX2 55, EE 52, GIF no runtime 28, kick worker (VIF1/VU1) 20, leitura do anel 10, IOP 4, som 2. 0 crash, 0 travada.
+  Nenhuma thread cheia e a GPU com folga: o BT4 espera entre as etapas, não num gargalo só do GS. O fps baixo dos aparelhos fracos
+  (9 a 11) vem de EE + VU1 + GIF na CPU, não só do GS.
+- 08:36 **Item 5, achado:** o `log_level` padrão (1) do runtime do BT3-Recomp (`main.cpp:723`) liga para todo jogador o
+  `PS2X_PROFILE` (dois incrementos atômicos a cada desvio do código do jogo, 1,7 milhão por segundo na luta: as linhas `[prof]`),
+  o `PS2X_SCHED_DEBUG` (linhas `[sched]`, `[mutex]`, `[wake]`: 2869 numa rota) e o `PS2X_MCLOG`. Desligados no
+  `bt4_main.cpp` antes do runtime ler o nível (o `bt3_env.txt` ainda liga). Medida antes/depois a seguir.
+- 08:39 BT4 com o renderizador Dragon Rage, mesma rota e perfil: luta **25,9 atualizações/s** (mínimo 22,7), 33,3 imagens/s; jogo
+  24,8 de 41,6 ms por imagem; **GPU 99 % ocupada**: aqui o gargalo é o GS/GPU. Threads: leitura do anel e GS na `SDLThread` 68,
+  EE 63, GIF no runtime 54, kick worker 31. 0 crash, 0 travada. Mais rápido que o ARMSX2 (20,8) no sd480p, com a imagem do
+  Dragon Rage (falhas conhecidas em parte do cenário do BT4).
+
+- 08:44 **Item 5, antes e depois (diagnósticos do runtime do BT4 desligados, `prof0.apk`)**, ARMSX2, mesma rota, sd480p
+  segurando (GPU 60 %): luta **20,8 → 22,1 atualizações/s** (+6 %; mínimo 18,2 → 18,0), código do jogo por imagem
+  **30,9 → 19,7 ms** (−36 %), thread do EE 52 → 41 % de um núcleo, GIF no runtime 28 → 19 %, kick worker 20 → 11 %;
+  linhas `[prof]`/`[sched]` no log 2043 → 1. 0 crash. Fica.
+- 08:55 BT4, lib do Nominum (passo 1, renderizador ARMSX2 por trás): luta 20,5 atualizações/s, mesma imagem, 0 crash. Valor 2
+  (Nominum): o autoteste do Nominum manda o RP5 (Adreno 650, driver da Qualcomm) para o ARMSX2 pela tabela de drivers; rota
+  inteira, 21,3/s, 0 crash. Detalhes em `docs/nominum.md`.
+
+- 09:05 **Bug #12 com a correção** (`prof0.apk`, renderizador ARMSX2, `bt4bg.sh` 4 vezes: HOME e volta pelo launcher): o processo
+  `:bt4` é o mesmo nas 4 voltas, a imagem volta (o filme de abertura seguia), 4 linhas `bt4gsx: surface gone: the swapchain was
+  dropped first (4 a 11 ms)`, 0 `NATIVE_WINDOW_IN_USE`, 0 crash; START depois das voltas responde. A build de antes (`m3g.apk`) na
+  mesma prova a seguir, para comparar.
+- 09:06 Logs dos jogadores, `libbt4.so std::recursive_mutex::unlock` (moto g20, Android 11, 0.9.0; 3 vezes seguidas no boot):
+  não é o mutex: `Cause: stack pointer is not in a rw map; likely due to stack overflow` na `GameThread`, com só 21 quadros
+  (`iopImport` ← `sio2man` ← `SifLoadModule`, no carregamento dos módulos do IOP); o mesmo `sp` nas 3. Sem o aparelho não há
+  como repetir; a hipótese é a pilha padrão de `std::thread` (1 MB no bionic) pequena para algum quadro grande nesse caminho. Não
+  mudei a thread do runtime sem poder testar no aparelho que falha. Anotado como aberto.
