@@ -391,7 +391,7 @@ void TagTeam_Begin(void) {
     TagTeam_Reset();
 }
 
-void TagTeam_End(void) { extern void Port_TagHudClear(void),Port_TagLiteUpdate(int); count = 0; Port_TagHudClear(); Port_TagLiteUpdate(0); }
+void TagTeam_End(void) { extern void Port_TagHudClear(void),Port_TagLiteUpdate(int),ObjDraw_TagHairReset(void); count = 0; Port_TagHudClear(); Port_TagLiteUpdate(0); ObjDraw_TagHairReset(); }
 
 /* Reproducible roster launch using the real loader and CPU controllers. */
 void TagTeam_SetupDemo(s32 human, s32 team0, s32 team1) {

@@ -264,6 +264,13 @@ void ObjDraw_MakeFacingMtx(Mtx44 *m, Vec4 *dir) {
    the last 1024 or 64 bytes of the packet, after its GIF header; each palette is changed once (kept here with its sum:
    a model loaded later at the same address has another sum and is changed again). */
 static struct { void *clut; u32 sum; } sTagHair[128];
+/* (at a fight's end: the models go, and a list never cleared filled up after a few rosters: later fighters kept their colours) */
+void ObjDraw_TagHairReset(void) {
+    s32 k;
+    for (k = 0; k < 128; k++) {
+        sTagHair[k].clut = NULL;
+    }
+}
 static u32 tag_hair_sum(const u8 *c, s32 n) {
     u32 h = 0;
     s32 i;

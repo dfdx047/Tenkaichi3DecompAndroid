@@ -240,6 +240,7 @@ unsigned gDrawNewTex, gDrawImgMade, gDrawImgFreed, gDrawImgPooled; /* (the last 
 int gDrawLogged; /* the picture's line is written (Smooth motion's other pictures of the list are not) */
 
 void GsGpu_ListStart(void) {
+    gsNoToon = 0; /* (a list begins with the toon layer on, whatever a skipped picture left: GsGpu_Native returns early there) */
     gDrawStartNs = SDL_GetTicksNS(); /* (gs_gpu.c's clock, where it is compared) */
     gDrawTexNs = gDrawPipeNs = gDrawUpBytes = gDrawImgNs = gDrawLookNs = gDrawVuNs = gDrawXferNs = 0;
     gDrawNewTex = gDrawImgMade = gDrawImgFreed = gDrawImgPooled = 0;
@@ -2760,6 +2761,9 @@ void GsDraw_AspectFollow(void) {
 #endif
 
 void GsGpu_GetSettings(PortVideo *v) {
+    if (sTagLite < 0) { /* (not read yet, before the first fight: any setting changed then wrote "off" over the launcher's choice) */
+        sTagLite = Port_Setting("tag_lite", 0) != 0;
+    }
     v->scale4 = sScreenCap4 ? sUserScale4 : gsPendingScale4 ? gsPendingScale4 : gsScale4;
     v->aspectMilli = sAspectAuto ? 0 : Port_AspectMilli(); /* (0: the screen's own shape, Android) */
     v->fullscreen = sFullscreen;
