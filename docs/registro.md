@@ -260,3 +260,5 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   fechamento das 18:15 (`closing.sh`) recompila o BT3 e o BT4 do HEAD antes do APK.
 - 12:32 **Teste diário no APK do HEAD (`hd.apk`).** BT3: luta gravada SAME sobre 6212, 0 crash; Dragon Net: sala criada
   (código 3XVBW8). O APK inteiro do HEAD (BT3 e BT4) está conferido no RP5.
+- 12:50 **Relatório das 13:00 publicado:** https://claude.ai/artifact/2C19z4RaqjD59u97yMK2h5 (privado). Em seguida: teste de
+  resistência do BT4 (25 min, ARMSX2 2x, memória por minuto) rodando no RP5.
