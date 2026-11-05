@@ -21,6 +21,8 @@
     <string name="bt2_mods_title">Mods in BT2</string>
     <string name="bt2_mods_text">BT2\'s engine reads the disc image itself, so it has no file-override mods like BT3\'s yet. Images with mods that only change data (textures, models, sounds) and keep the original SLUS_214.41 work: pick them on the Home page. Mods that change the game\'s program do not, because the engine runs code recompiled from the original program.</string>
     <string name="bt2_cheats_title">Patches</string>
+    <string name="bt2_screen_fill">Fill the screen</string>
+    <string name="bt2_screen_fill_text">The game draws a wider view in the shape of this device\'s screen, with no black borders. Takes the place of Widescreen. Menus and the HUD are widened with it. Online matches stay at 16:9.</string>
     <string name="bt2_patch_widescreen">Widescreen (16:9)</string>
     <string name="bt2_patch_widescreen_text">The game\'s own picture in 16:9 instead of 4:3.</string>
     <string name="bt2_patch_60">60 fps fights</string>

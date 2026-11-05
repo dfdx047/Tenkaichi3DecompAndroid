@@ -19,6 +19,8 @@
     <string name="bt2_mods_title">Mods en BT2</string>
     <string name="bt2_mods_text">El motor de BT2 lee la imagen del disco directamente, así que todavía no tiene mods de archivo como los de BT3. Las imágenes con mods que solo cambian datos (texturas, modelos, sonidos) y mantienen el SLUS_214.41 original funcionan: elígelas en Inicio. Los mods que cambian el programa del juego no funcionan, porque el motor ejecuta código recompilado del programa original.</string>
     <string name="bt2_cheats_title">Parches</string>
+    <string name="bt2_screen_fill">Llenar la pantalla</string>
+    <string name="bt2_screen_fill_text">El juego dibuja una vista más ancha con la forma de la pantalla del equipo, sin bordes negros. Reemplaza a Pantalla ancha. Los menús y el HUD se ensanchan con ella. Las partidas en línea siguen en 16:9.</string>
     <string name="bt2_patch_widescreen">Pantalla ancha (16:9)</string>
     <string name="bt2_patch_widescreen_text">La imagen del propio juego en 16:9 en lugar de 4:3.</string>
     <string name="bt2_patch_60">Peleas a 60 fps</string>

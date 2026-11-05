@@ -1,5 +1,8 @@
 package com.dfdx047.dragonrage.data
 
+import android.content.Context
+import android.os.Build
+import android.view.WindowManager
 import java.io.File
 
 /**
@@ -33,6 +36,7 @@ class Bt2Settings(paths: GamePaths) {
         val screenEffects: Boolean = true,  // Android: effects that read the screen they draw to (distortion, trails, blur)
         val fog: Boolean = true,            // Android: the GS's fog
         val presentMode: Int = 0,           // Android: 0 automatic, 1 FIFO, 2 mailbox, 3 immediate
+        val screenFill: Boolean = false,    // Android: the game's picture drawn in the screen's own shape (not in online matches)
     ) {
         /** paraLLEl-GS's speed-for-accuracy options as BT2_GS_HACKS lists them (gs/gpu/gpu_gs_backend.cpp). */
         fun hacks(): String = listOfNotNull(
@@ -69,6 +73,7 @@ class Bt2Settings(paths: GamePaths) {
             fog = "no_fog" !in hacks,
             presentMode = androidKeys["present_mode"]?.toIntOrNull()?.coerceIn(0, 3) ?: d.presentMode,
             outputScale = androidKeys["output_scale"]?.toIntOrNull()?.takeIf { it in OUTPUT_SCALES } ?: d.outputScale,
+            screenFill = androidKeys["screen_fill"] == "1",
         )
     }
 
@@ -78,7 +83,7 @@ class Bt2Settings(paths: GamePaths) {
             "show_frame_rate" to bit(v.showFrameRate), "integer_scaling" to bit(v.integerScaling), "hd_textures" to bit(v.hdTextures),
             "master_volume" to v.masterVolume.toString(), "music_volume" to v.musicVolume.toString(), "effects_volume" to v.effectsVolume.toString(),
         ))
-        write(android, mapOf("gs_hacks" to v.hacks(), "output_scale" to v.outputScale.toString(), "present_mode" to v.presentMode.toString()))
+        write(android, mapOf("gs_hacks" to v.hacks(), "output_scale" to v.outputScale.toString(), "present_mode" to v.presentMode.toString(), "screen_fill" to bit(v.screenFill)))
     }
 
     /** The phone's defaults for keys the player never set (the engine's are a PC window's): the picture fills the
@@ -86,6 +91,17 @@ class Bt2Settings(paths: GamePaths) {
     fun applyPhoneDefaults() {
         if ("integer_scaling" !in read(file)) write(file, mapOf("integer_scaling" to "0"))
         if ("gs_hacks" !in read(android)) write(android, mapOf("gs_hacks" to Values().hacks())) // frame skipping on
+    }
+
+    /** The screen's shape (long side / short side x 1000) for "Fill the screen", measured before each start. */
+    fun setScreenAspect(context: Context) {
+        val metrics = context.resources.displayMetrics // (the fallback below Android 11; it can leave out a navigation bar)
+        val bounds = if (Build.VERSION.SDK_INT >= 30) context.getSystemService(WindowManager::class.java).maximumWindowMetrics.bounds else null
+        val width = bounds?.width() ?: metrics.widthPixels
+        val height = bounds?.height() ?: metrics.heightPixels
+        val long = maxOf(width, height)
+        val short = minOf(width, height)
+        if (short > 0) write(android, mapOf("screen_aspect" to ((long * 1000 + short / 2) / short).toString()))
     }
 
     /** The memory card the engine uses (a folder name in bt2/saves; null: the engine chooses one). */

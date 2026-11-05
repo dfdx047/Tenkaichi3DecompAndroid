@@ -144,6 +144,7 @@ class Bt2Menu(
                 activity.getString(R.string.resolution_hint)) { n -> changeR(r.copy(scale4 = Bt2Renderer.SCALES[n])) }
             chips(activity.getString(R.string.screen_filter), listOf(activity.getString(R.string.filter_bilinear), activity.getString(R.string.filter_sharp), "FXAA", "AMD FSR 1", "Snapdragon GSR"),
                 r.filter, activity.getString(R.string.screen_filter_hint)) { n -> changeR(r.copy(filter = n)) }
+            toggle(activity.getString(R.string.bt2_screen_fill), later(activity.getString(R.string.bt2_screen_fill_text)), v.screenFill) { change(v.copy(screenFill = it)) }
             toggle(activity.getString(R.string.bt2_patch_widescreen), later(activity.getString(R.string.bt2_patch_widescreen_text)), v.widescreen) { change(v.copy(widescreen = it)) }
             toggle(activity.getString(R.string.bt2_set_fps), activity.getString(R.string.bt2_set_fps_text), v.showFrameRate) { change(v.copy(showFrameRate = it)); Bt2Bridge.reloadSettings(); activity.refreshPerfOverlay() }
             return
@@ -156,6 +157,7 @@ class Bt2Menu(
         val steps = listOf(1 to R.string.bt2_ss_1, 2 to R.string.bt2_ss_2, 4 to R.string.bt2_ss_4, 8 to R.string.bt2_ss_8, 16 to R.string.bt2_ss_16)
         chips(activity.getString(R.string.bt2_set_ss), steps.map { activity.getString(it.second) }, steps.indexOfFirst { it.first == v.superSampling },
             later(activity.getString(R.string.bt2_set_ss_text))) { n -> change(v.copy(superSampling = steps[n].first)) }
+        toggle(activity.getString(R.string.bt2_screen_fill), later(activity.getString(R.string.bt2_screen_fill_text)), v.screenFill) { change(v.copy(screenFill = it)) }
         toggle(activity.getString(R.string.bt2_patch_widescreen), later(activity.getString(R.string.bt2_patch_widescreen_text)), v.widescreen) { change(v.copy(widescreen = it)) }
         toggle(activity.getString(R.string.bt2_set_integer), activity.getString(R.string.bt2_set_integer_text), v.integerScaling) { change(v.copy(integerScaling = it)); Bt2Bridge.reloadSettings() }
         toggle(activity.getString(R.string.bt2_set_fps), activity.getString(R.string.bt2_set_fps_text), v.showFrameRate) { change(v.copy(showFrameRate = it)); Bt2Bridge.reloadSettings(); activity.refreshPerfOverlay() }

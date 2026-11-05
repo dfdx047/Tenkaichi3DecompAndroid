@@ -28,6 +28,23 @@ constexpr GamePatch patches[]{
 
 std::span<const GamePatch> gamePatches() {return patches;}
 
+std::vector<GamePatchWord> screenShapeWords(int aspect_milli) {
+    const float wider=float(aspect_milli)*3.0f/4000.0f; // 1 at 4:3
+    std::vector<GamePatchWord> words;
+    for(const auto& word:widescreen) {
+        std::uint32_t patched;
+        const bool lui=word.address<0x00300000u; // (the two instructions; a float can look like a LUI: 0x3F955555)
+        float value;
+        const std::uint32_t bits=lui?word.original<<16:word.original;
+        std::memcpy(&value,&bits,4);
+        value=lui?value/wider:value*wider;
+        std::memcpy(&patched,&value,4);
+        if(lui)patched=(word.original&0xFFFF0000u)|((patched+0x8000u)>>16);
+        words.push_back({word.address,word.original,patched});
+    }
+    return words;
+}
+
 const GamePatch& gamePatch(std::string_view name) {
     for(const auto& patch:patches)if(patch.name==name)return patch;
     std::string known;

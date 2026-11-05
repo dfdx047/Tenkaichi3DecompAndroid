@@ -154,8 +154,17 @@ static int wide(void) {
     }
     return w;
 }
-int Port_AspectMilli(void) { return wide() ? 1778 : 1333; }
-int Port_PageAspectMilli(void) { return wide() ? 1778 : 1333; }
+/* "Fill the screen" (BT2_SCREEN_ASPECT, Android): the patch's words worked out for the screen's own shape. */
+static int screen_shape(void) {
+    static int s = -1;
+    if (s < 0) {
+        const char *shape = getenv("BT2_SCREEN_ASPECT");
+        s = shape != NULL ? atoi(shape) : 0;
+    }
+    return s;
+}
+int Port_AspectMilli(void) { return screen_shape() > 0 ? screen_shape() : wide() ? 1778 : 1333; }
+int Port_PageAspectMilli(void) { return Port_AspectMilli(); }
 int Port_IsWide(void) { return 0; }
 void Port_SetAspectMilli(int milli) { (void)milli; }
 

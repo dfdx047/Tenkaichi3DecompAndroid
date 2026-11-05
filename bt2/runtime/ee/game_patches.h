@@ -20,3 +20,7 @@ const GamePatch& gamePatch(std::string_view name);
 void applyGamePatch(std::span<std::uint8_t> memory,const GamePatch& patch);
 // A comma-separated list of names (BT2_GAME_PATCHES), each applied once; an empty list applies none.
 std::vector<const GamePatch*> parseGamePatches(std::string_view list);
+// The widescreen patch's words worked out for a picture of any shape (width / height x 1000, from 4:3 up):
+// the projections' widths and horizontal scales grow with the shape and the two loaded scales shrink with it,
+// so the scene is drawn wider and nothing in it is stretched. A LUI holds the upper half of its float, the nearest.
+std::vector<GamePatchWord> screenShapeWords(int aspect_milli);

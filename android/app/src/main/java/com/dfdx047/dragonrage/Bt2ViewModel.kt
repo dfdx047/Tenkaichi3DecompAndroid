@@ -217,6 +217,7 @@ class Bt2ViewModel(app: Application) : AndroidViewModel(app) {
             else -> viewModelScope.launch {
                 withContext(Dispatchers.IO) {
                     settingsFile.applyPhoneDefaults()
+                    settingsFile.setScreenAspect(getApplication())
                     Bt2Renderer(paths).applyPhoneDefaults()
                     // (a match that ended badly must not make this start one: the engine takes online_session for a match's)
                     for (name in listOf("online_session", "online_restart", "online_match")) runCatching { File(paths.bt2Root, "user/$name").delete() }
