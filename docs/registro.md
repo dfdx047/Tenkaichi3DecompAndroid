@@ -39,9 +39,12 @@ Os relógios do meio da luta ficam ao lado de cada medida.
 | BT4, ARMSX2 sem diagnósticos (`armsx2p0`) | a mesma | – | **22,1** (mín. 18,0) | 19,7 de 42,6 ms (46 %); thread 41 % | 11 % | GS do ARMSX2 53 %, GPU 60 %; GIF 19 % | 2 % | 3 % | nenhuma etapa cheia (espera entre etapas) |
 | BT4, lib do Nominum + ARMSX2 (`nom1`) | a mesma | – | 20,5 (mín. 18,3) | 23,4 de 48,3 ms (48 %) | 24 % | GS 55 %, GPU 59 %; leitura do anel 13 % | 2 % | 4 % | como o ARMSX2, +7 % de um núcleo na leitura |
 | BT4, Nominum próprio forçado (`nom2own`) | a mesma | 18,9 (mín. 3,9) | 8,2 (mín. 7,4) | 18,3 de 98,8 ms (18 %) | 8 % | **GPU 99 %** | 1 % | 2 % | **GS/GPU** (cores do cenário erradas) |
+| BT4, Dragon Rage a 1x (`dr1x`, `scale4=4`) | a mesma | 34,7 (mín. 24) | **28,5** (mín. 26,5) | 18,9 de 31,5 ms (60 %); thread 65 % | kick worker 44 % | GsThread 58 %, SDLThread 67 %, **GPU 55 %** | – | – | CPU (EE/GS/SDL); a GPU sai do limite |
+| BT4, ARMSX2 a 1x (`armsx2_1x`) | a mesma | 30,8 (mín. 18,7) | **24,4** (mín. 21,3) | 26,8 de 47,7 ms (56 %) | – | GPU 47 % | – | – | GS do ARMSX2 (CPU) |
 | BT3 (`bt3`, luta gravada `fight4.rec`) | menu, seleção, luta, vitória | 30,7 | **100 %** | jogo 6,1 de 10,1 ms de trabalho por quadro (orçamento 33,4) | – (no mesmo código) | lista 4,0 ms; GPU 22 % | – | – | nenhum: folga de 2/3 do quadro |
 | Tag 5 x 5 COM x COM (`tag5`, `BT3_DEMO`) | luta | 20,7–21,9 | **69–73 %** | jogo ~11 ms | – | **GPU 99 %** a 305 MHz (na 2ª medida; a 1ª amostra, 9 %, caiu num intervalo); o "presenting" de 22–27 ms é o SDL esperando a GPU; 64 passes e 18 cópias por quadro (BT3: 45 e 3,7) | 1 % | – | **GS/GPU** (10 lutadores, 2x) |
 | Tag 5 x 5 com gráfico leve (`tag_lite=1`, 1x na luta) | luta | 29,4 | **94–100 % (98 %)** | jogo ~29 ms | – | 50 passes, 13 cópias; com interp=2 igual (29,5), 0 crash | – | – | resolve o GPU |
+| Tag 5 x 5 com o perfil do nível 1 (`tier1`: 1x, `frag_depth=0`, `fx_off=32`, pulo de quadro, sem `tag_lite`) | luta | 24,5–29,7 | **100 %** (pulando quadros) | – | – | 63 passes, 18 cópias | – | – | segura a velocidade |
 | BT2 (`bt2`, Duel COM x COM, Goku x Kid Gohan, Wasteland) | título, menu, seleção, mapa, luta | 30 (o do jogo) | **100 %** (30 de 30) | thread do jogo (EE e GS por software no mesmo `SDLThread`) 63 % | – | fila de render do paraLLEl-GS (2º `SDLThread`) 22 %; **GPU 64 %** a 305 MHz | 1 % | – | nenhum (folga na CPU e na GPU) |
 
 ## Histórico
@@ -208,3 +211,9 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   a resolução no início de cada luta (`GsDraw_ScreenScaleCap(4)`), o mesmo caso do crash corrigido em `d42a244a`. Aqui ele correu
   com movimento suave e sem crash. O app não liga o `tag_lite` sozinho (padrão 0, `EngineSettings.kt:71`). Ligar por padrão nas
   GPUs fracas é decisão de produto e fica como recomendação para a 1.0, sem mudança.
+- 11:11 **A resolução no sd480p.** A Adreno 619 (o 480+ de verdade) é nível 1 em `GpuProfiles.kt`, e o perfil oferecido
+  põe 1x, `frag_depth=0`, `fx_off` +32 e pulo de quadro. As rotas da manhã usavam as configurações do RP5 (2x) e ficam pessimistas para
+  um jogador real. A 1x: **BT4 com o Dragon Rage 28,5 atualizações/s** (era 25,9 a 2x; GPU 99 → 55 %, o limite passa a ser a CPU:
+  GameThread 65 %, SDLThread 67 %, GsThread 58 %, kick worker 44 %), imagem certa (`dr1x_4fight.png`). **BT4 com o ARMSX2 24,4**
+  (era 22,1). **Tag 5 x 5 com o perfil do nível 1: 100 %**, pulando quadros (24,5–29,7 imagens/s). As configurações do BT4 no RP5
+  voltaram ao que estavam (`bt4_renderer=1`, `scale4=8`).
