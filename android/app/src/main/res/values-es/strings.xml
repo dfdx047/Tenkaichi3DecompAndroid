@@ -449,6 +449,7 @@
     <string name="bt4_renderer">Renderizador de Budokai Tenkaichi 4</string>
     <string name="bt4_renderer_armsx2">ARMSX2</string>
     <string name="bt4_renderer_dr">Dragon Rage (experimental)</string>
+    <string name="bt4_renderer_nominum">Nominum (prueba)</string>
     <string name="bt4_renderer_text">ARMSX2: el renderizador del emulador de PlayStation 2 (el de PCSX2, con las correcciones de ARMSX2 para Mali y Adreno), la imagen más fiel. Dragon Rage (experimental): el renderizador de Budokai Tenkaichi 3, más ligero en equipos débiles, con fallos en parte del escenario de BT4. Si no eliges, los equipos débiles usan Dragon Rage, y también el equipo en el que ARMSX2 se queda por debajo de 27 actualizaciones por segundo en la pelea. Ambos usan la resolución, la proporción y la elección Vulkan u OpenGL ES de arriba. Desde el próximo inicio.</string>
     <string name="bt4_err_not_bt4">Esta imagen no es Budokai Tenkaichi 4 (no tiene SLUS_219.78). Encontrado: %1$s. Hace falta el mod de Team BT4, Beta 14 Rev2.</string>
     <string name="bt4_err_version">Esta imagen es otra versión del mod: el juego se recompiló para la Beta 14 Rev2 (SLUS-219.78). El SLUS_219.78 de tu imagen tiene %1$d bytes (SHA-256 %2$s…); este necesita 2115688 bytes (224525C5…). Un archivo llamado Rev2 aún puede tener otra compilación: consigue la imagen de la Beta 14 Rev2 en la versión publicada por Team BT4.</string>

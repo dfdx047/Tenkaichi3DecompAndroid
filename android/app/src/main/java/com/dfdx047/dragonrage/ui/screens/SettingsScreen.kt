@@ -209,7 +209,8 @@ fun SettingsScreen(vm: AppViewModel) {
             if (vm.game == com.dfdx047.dragonrage.data.Game.BT4 && EngineSettings.hasArmsx2Renderer(androidx.compose.ui.platform.LocalContext.current)) {
                 Text(stringResource(R.string.bt4_renderer), style = MaterialTheme.typography.titleSmall)
                 ChipRow(
-                    options = listOf(stringResource(R.string.bt4_renderer_armsx2) to 1, stringResource(R.string.bt4_renderer_dr) to 0),
+                    options = listOf(stringResource(R.string.bt4_renderer_armsx2) to 1, stringResource(R.string.bt4_renderer_dr) to 0) +
+                        (if (EngineSettings.hasNominumRenderer(androidx.compose.ui.platform.LocalContext.current)) listOf(stringResource(R.string.bt4_renderer_nominum) to 2) else emptyList()),
                     selected = vm.bt4Renderer(),
                     onSelect = { vm.setting(EngineSettings.BT4_RENDERER, it) },
                 )

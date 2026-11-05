@@ -623,7 +623,8 @@ private fun VideoPage(l: L, game: Game, v: MenuValues) {
                 l.t("ARMSX2: the PlayStation 2 emulator's renderer, the most faithful picture. Dragon Rage (experimental): Budokai Tenkaichi 3's, lighter on weak devices, with faults in some of BT4's scenery. From the next start.",
                     "ARMSX2: o renderizador do emulador de PlayStation 2, a imagem mais fiel. Dragon Rage (experimental): o do Budokai Tenkaichi 3, mais leve em aparelho fraco, com falhas em parte do cenário do BT4. Vale na próxima vez que o jogo abrir.",
                     "ARMSX2: el renderizador del emulador de PlayStation 2, la imagen más fiel. Dragon Rage (experimental): el de Budokai Tenkaichi 3, más ligero en equipos débiles, con fallos en parte del escenario de BT4. Desde el próximo inicio."),
-                listOf("ARMSX2" to 1, l.t("Dragon Rage (experimental)", "Dragon Rage (experimental)", "Dragon Rage (experimental)") to 0), v.get("bt4_renderer", 1),
+                listOf("ARMSX2" to 1, l.t("Dragon Rage (experimental)", "Dragon Rage (experimental)", "Dragon Rage (experimental)") to 0) +
+                    (if (com.dfdx047.dragonrage.data.EngineSettings.hasNominumRenderer(androidx.compose.ui.platform.LocalContext.current)) listOf(l.t("Nominum (test)", "Nominum (teste)", "Nominum (prueba)") to 2) else emptyList()), v.get("bt4_renderer", 1),
             ) { v.set("bt4_renderer", it) }
         }
         val gpu = v.texts["gpu"].orEmpty()
