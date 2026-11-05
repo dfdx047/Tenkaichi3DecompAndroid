@@ -169,3 +169,11 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   correu; a luta da sala não escreve "battle finished" e as teclas depois dela levaram a uma seleção normal (`mem_room3.png`). A região
   ficou em 128 de 160 MB durante os 10 min (é o ponto mais alto já entregue: não sobe se a luta reusa os blocos). Falta: duas lutas
   online seguidas com dois aparelhos (o Cube e o Odin são da outra sessão) ou um roteiro da volta à sala depois da luta.
+- 09:51 Item 7, conferido no APK do dia (`prof0.apk`): `assets/licenses.txt` (156560 bytes, 27 seções: Dragon Rage, SDL3, sse2neon,
+  FSR1, SGSR, créditos das telas online, Nominum/PCSX2/ARMSX2/BT3-Recomp/dbz-bt4-recomp/FFmpeg/BT2 Recomp, rcheevos, GPL-3, LGPL-2.1, astcenc,
+  fontes, imgui, libadrenotools, miniaudio, miniz, monocypher, newlib, pl_mpeg, xxhash); as licenças das fontes do ARMSX2 junto delas.
+- 09:55 **BT4, onde o jogo espera**: `[gslive] … waited for the host ~690 ms/s (ring full 0.0)` (`ps2_gs_live.cpp:686-713`): a cada vsync o
+  jogo espera o host ter lido o anel até 2 vsyncs atrás (`PS2X_GSLIVE_MAXLAG`, padrão 2); o host (CPU Thread do ARMSX2 → MTGS com fila de
+  2 quadros → thread GS, 53–55 % de um núcleo, ~27 ms de CPU por quadro → GPU 54–60 %) anda a ~20–24 vsyncs/s. Teste com `MAXLAG=4`
+  (`lag4`): **22,3** atualizações/s contra 22,1, a espera continua em ~700 ms/s. Folga no anel não ajuda: o limite é a etapa do GS (thread GS
+  do ARMSX2 + GPU em série), não o EE, o VU1 nem o GIF. Fica o padrão. O que sobra do BT4 no sd480p é GS (Nominum, itens 4/N4).
