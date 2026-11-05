@@ -599,7 +599,14 @@ def install():
                ("sse2neon", ROOT / "bt2/runtime/platform/sse/LICENSE.sse2neon"),
                ("AMD FidelityFX Super Resolution 1", ROOT / "port/src/gs/shaders/ffx/LICENSE-FidelityFX-FSR.txt"),
                ("Snapdragon Game Super Resolution", ROOT / "port/src/gs/shaders/ffx/LICENSE-Snapdragon-GSR.txt"),
-               ("Credits of the online screens' pictures (buttons: pluantoine, CC BY 4.0)", ROOT / "port/tbo/ui/CREDITS.md")]
+               ("Credits of the online screens' pictures (buttons: pluantoine, CC BY 4.0)", ROOT / "port/tbo/ui/CREDITS.md"),
+               # BT4 and BT2 (libbt4.so, libbt4gsx.so, libbt2.so): Nominum, PCSX2 / ARMSX2, BT3-Recomp / PS2Recomp,
+               # dbz-bt4-recomp, FFmpeg, rcheevos, BT2 Recomp, and the GNU texts they point to
+               ("Nominum Render, PCSX2 / ARMSX2, BT3-Recomp / PS2Recomp, dbz-bt4-recomp, FFmpeg, BT2 Recomp",
+                ROOT / "port/licenses/bundled-gpl.txt"),
+               ("rcheevos", ROOT / "port/licenses/rcheevos.txt"),
+               ("GNU General Public License, version 3", ROOT / "port/licenses/GPL-3.0.txt"),
+               ("GNU Lesser General Public License, version 2.1", ROOT / "port/licenses/LGPL-2.1.txt")]
     for folder in sorted((ROOT / "port/third_party").rglob("*")):
         if folder.name in ("LICENSE", "LICENSE.txt", "LICENCE.md", "COPYING.NEWLIB", "OFL.txt"):
             notices.append((folder.parent.relative_to(ROOT / "port/third_party").as_posix(), folder))

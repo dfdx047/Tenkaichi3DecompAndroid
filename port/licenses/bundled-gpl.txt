@@ -1,0 +1,26 @@
+Parts of this app built from other projects under the GNU licences. The full texts are in this file under
+"GNU General Public License, version 3" and "GNU Lesser General Public License, version 2.1".
+
+Budokai Tenkaichi 4 (libbt4.so)
+- BT3-Recomp, https://github.com/z3xox/BT3-Recomp (revision e22a34b): the static recompiler and the runtime the
+  game runs on, with PS2Recomp inside it (https://github.com/ran-j/PS2Recomp). GNU GPL version 3.
+- dbz-bt4-recomp, https://github.com/recomp-code/dbz-bt4-recomp (revision a5771ed): Team BT4's mod patches for
+  BT3-Recomp. GNU GPL version 3.
+- FFmpeg n7.1, https://ffmpeg.org (static, decoders only, built without --enable-gpl): GNU LGPL version 2.1 or
+  later. Its source is the n7.1 tag of https://github.com/FFmpeg/FFmpeg; port/bt4/build_bt4.py has the options it
+  was configured with.
+- rcheevos, https://github.com/RetroAchievements/rcheevos: MIT, under "rcheevos" in this file.
+
+Budokai Tenkaichi 4's ARMSX2 renderer (libbt4gsx.so)
+- PCSX2, https://github.com/PCSX2/pcsx2, through ARMSX2, https://github.com/ARMSX2/ARMSX2 (revision 90126bdfea
+  with port/bt4/patches/armsx2-bt4.patch): the GS and pcsx2-gsrunner. GNU GPL version 3 or later.
+- Nominum Render (when the library is the Nominum one): GNU GPL version 3 or later; vk/armsx2_host.cpp and
+  vk/armsx2.cmake, which came from Dragon Rage, are under the GNU AGPL version 3.
+- rcheevos (ARMSX2's 3rdparty/rcheevos): MIT.
+
+Budokai Tenkaichi 2 (libbt2.so, libbt2online.so)
+- BT2 Recomp, https://github.com/oric212/BT2-Recomp, and PS2Recomp: GNU GPL version 3 (bt2/LICENSE).
+
+Together with Dragon Rage's own code (GNU AGPL version 3), the app as a whole is distributed under the GNU AGPL
+version 3, as section 13 of the GNU GPL version 3 allows. The source of every part is in the Dragon Rage
+repository or at the addresses above.
