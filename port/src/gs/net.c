@@ -3236,6 +3236,7 @@ int Port_NetSessionsEnded(void) {
 
 void Port_NetSessionEnd(void) {
     sSessionsEnded++;
+    Port_UiBanner(NULL, 0); /* (see Port_NetLeave) */
     sRivalRegion[0] = '\0';
     if (Lobby_SessionEnded()) { /* a lobby's match: the lobby goes on, with its socket, its relay and its room code */
         sMode = 0;
@@ -3271,6 +3272,9 @@ void Port_NetArrived(void) {
    normally is. */
 void Port_NetLeave(void) {
     fprintf(stderr, "bt3: net: the session has ended\n");
+    /* A session that ends before the two meet (a lobby's match when the rival's connection is gone) put up "Connecting
+       to your rival..." and nothing took it away: only meeting did. It stayed over the menus until the game was closed. */
+    Port_UiBanner(NULL, 0);
     { /* Dragon Net: a ranked match left before its fight was over is a loss for who left (net_dragon.c) */
         extern void DrNet_SessionEnding(int mine);
         DrNet_SessionEnding(!sEndedThere && !sGone);

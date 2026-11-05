@@ -5,6 +5,7 @@
 #include "battle/btl_scene.h"
 #include "sys/common.h"
 #include "sys/heap.h"
+extern s32 BtlChars_IsWorldTimeStopped(void);
 
 /*
  * Battle effect scene, 0x12C9F0..0x12DD80: the task tree the fighter-attached effects run in and the services
@@ -859,7 +860,7 @@ s32 BtlScene_Rand(void) {
     u64 state = gBtlScene->randState;
     s32 next = (state * 714025 + 0x1000) % 150889;
 
-    if (!BtlChars_IsTimeStopped()) {
+    if (!BtlChars_IsWorldTimeStopped()) {
         gBtlScene->randState = next;
     }
     return next;

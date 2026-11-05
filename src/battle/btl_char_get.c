@@ -1,5 +1,6 @@
 #include "common.h"
 #include "battle/btl_char_get.h"
+extern s32 BtlChars_IsWorldTimeStopped(void);
 
 /*
  * Battle helpers and fighter accessors: 0x1DBF20..0x1DC9A0.
@@ -259,7 +260,7 @@ s32 BtlChar_Rand(void) {
     u64 state = gBtlChars->randState;
     s32 next = (state * 714025 + 4096) % 150889;
 
-    if (!BtlChars_IsTimeStopped()) {
+    if (!BtlChars_IsWorldTimeStopped()) {
         gBtlChars->randState = next;
     }
     return next;

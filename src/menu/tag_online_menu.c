@@ -590,9 +590,10 @@ s32 TagOnlineMenu_Frame(void) {
         pendingPick=-1;memset(&member,0,sizeof(member));member.chara=c.chara[id];member.color=c.costume[id];
         for(k=0;k<8;k++)member.items.id[k]=c.items[id][k];
         TagOnlineMenu_Close();
-        accepted=TeamSel_PickOnline(&member,c.owner[id]<0,&level,c.revision);
+        accepted=TeamSel_PickOnline(&member,c.owner[id]<0,&level,id);
         TagNet_Status(&after);
-        if(accepted && after.phase==2 && after.config.revision==c.revision) {
+        if(accepted && after.phase==2 && TagNet_SameSlot(&c,&after.config,id)) {
+            c=after.config; /* (the choice goes into the room as it is now: others may have edited it meanwhile) */
             c.chara[id]=member.chara;c.costume[id]=member.color;
             if(c.owner[id]<0)c.cpuLevel[id]=level;
             for(k=0;k<8;k++)c.items[id][k]=member.items.id[k];

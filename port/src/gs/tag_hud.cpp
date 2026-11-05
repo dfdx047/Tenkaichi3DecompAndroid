@@ -154,7 +154,7 @@ void TagHud_Settings() {
             ImGui::BeginDisabled(TagNet_Active() && !TagOption_IsPresentation(i));
             int value=Port_TagOption(i); bool changed=false;
             if(i==TAG_OPT_THREE_WIDE) changed=tag_combo(o.label,&value,"Centered bottom view\0Full width bottom view\0");
-            else if(i==TAG_OPT_CINEMATIC_PAUSE) changed=tag_combo(o.label,&value,"Keep moving\0Pause target\0Pause other fighters\0");
+            else if(i==TAG_OPT_CINEMATIC_PAUSE) changed=tag_combo(o.label,&value,"Keep moving\0Pause target\0");
             else if(i==TAG_OPT_OUT_SCOPE) changed=tag_combo(o.label,&value,"Smaller team\0Smaller team or 2+ attackers\0");
             else if(i==TAG_OPT_OUT_PROTECTION) {
                 float seconds=value/10.0f;
@@ -192,7 +192,7 @@ extern "C" void Port_TagOptionFormat(int id,int v,unsigned output,int size) {
     case TAG_OPT_OUT_SCOPE:label=v?"Smaller team or 2+ attackers":"Smaller team";break;
     case TAG_OPT_OUT_PROTECTION:snprintf(p,size,Port_TagText("%d.%d seconds (Custom)"),v/10,v%10);return;
     case TAG_OPT_OUT_BREAKER:snprintf(p,size,Port_TagText(v?"%d hits (Custom)":"Off (Custom)"),v);return;
-    case TAG_OPT_CINEMATIC_PAUSE:label=v==2?"Pause other fighters":v==1?"Pause only the target":"Keep other fighters moving";break;
+    case TAG_OPT_CINEMATIC_PAUSE:label=v?"Pause only the target":"Keep other fighters moving";break;
     case TAG_OPT_THREE_WIDE:label=v?"Full width bottom view":"Centered bottom view";break;
     case TAG_OPT_UNLOCKED_HUD:label=v==0?"Always shown":v==1?"Only with one enemy":"Hidden";break;
     case TAG_OPT_REVIVE_SECONDS:case TAG_OPT_FUSION_SECONDS:case TAG_OPT_FUSION_SWAP_SECONDS:

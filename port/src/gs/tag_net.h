@@ -19,6 +19,10 @@ static inline void TagNet_CopyFighter(TagNetConfig *c,int to,int from) {
     for(j=0;j<8;j++)c->items[to][j]=c->items[from][j];
     c->lobby.draft.team[to]=c->lobby.draft.team[from];
 }
+/* Whether slot i of room b is still the slot it was in room a: same kind of room, same line-up, same owner. */
+static inline int TagNet_SameSlot(const TagNetConfig *a,const TagNetConfig *b,int i) {
+    return a->party==b->party && a->practice==b->practice && a->mode==b->mode && a->size[0]==b->size[0] && a->size[1]==b->size[1] && a->owner[i]==b->owner[i];
+}
 typedef struct TagNetStatus {
     int phase,role,host,connected,playerMask,ready[TN_PLAYERS],spectators,view,freeCam;
     unsigned frame,rollbacks;

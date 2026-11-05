@@ -2,6 +2,7 @@
 #include "battle/btl_char_move.h"
 #ifdef PORT
 #include "battle/tag_revive.h"
+extern s32 BtlChars_IsTimeStoppedFor(const void *chr);
 #endif
 
 /* Fighter movement, 0x1DC9A0-0x1E0290 (see battle/btl_char_move.h for the model and the structures).
@@ -1564,7 +1565,7 @@ void BtlMove_DeflectAtStageLimit(BtlMoveChr *chr, s32 back) {
 s32 BtlMove_ApplyImpulse(BtlMoveChr *chr) {
     BtlMovePose *pose = BtlChar_GetPos(chr);
 
-    if (!BtlChars_IsTimeStopped()) {
+    if (!BtlChars_IsTimeStoppedFor(chr)) {
         Vec4 *vel = &pose->unk70;
         f32 len;
 
@@ -1588,7 +1589,7 @@ void BtlMove_UpdateHoverOffset(BtlMoveChr *chr) {
     if (BtlChar_TestFlag(chr, 0x29)) {
         pose->unkA8 = 0.0f;
     }
-    if (BtlChars_IsTimeStopped()) {
+    if (BtlChars_IsTimeStoppedFor(chr)) {
         return;
     }
     if (BtlChar_TestFlag(chr, 0xE) && BtlChar_TestFlag(chr, 0x1C)) {

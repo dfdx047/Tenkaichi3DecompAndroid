@@ -37,7 +37,7 @@
  X(ALL_SELECT,"tag_all_select","Shared Character Selection",5,0,1,1,0,"Let every controller use character selection. P1 can always go back.") \
  X(SLOT_LABELS,"tag_slot_labels","Player Slot Labels",5,0,1,1,1,"Show which player owns each character selection slot.") \
  X(EXTRA_INTROS,"tag_extra_intros","Fighter Intros",1,0,1,1,1,"Play an entrance for every fighter instead of only the team leaders.") \
- X(CINEMATIC_PAUSE,"tag_cinematic_pause","Special Move Pause",2,0,2,1,2,"Pause everyone else, only the target, or nobody during a move's startup. Camera sharing is separate.") \
+ X(CINEMATIC_PAUSE,"tag_cinematic_pause","Special Move Pause",2,0,1,1,1,"Pause only the marked target of a move, or nobody. Other fighters keep moving. Camera sharing is separate.") \
  X(THREE_WIDE,"tag_three_wide","Three Player Layout",3,0,1,1,1,"Full width bottom view, or a centered bottom view the same size as the top two.") \
  X(TIMED_FUSIONS,"tag_timed_fusions","Timed Dance Fusions",7,0,1,1,1,"Fusion Dance partners separate when their timer expires. Potara is permanent.") \
  X(FUSION_SECONDS,"tag_fusion_seconds","Fusion Time Limit",7,10,300,10,80,"Fusion Dance time limit in seconds.") \

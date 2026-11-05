@@ -159,7 +159,7 @@ extern void BtlPartner_Update(BtlMgrChr *chr);
 extern void BtlPartner_UpdateEvents(BtlMgrChr *chr);
 extern void BtlChange_Reset(void);
 extern void BtlChange_Update(void);
-extern s32 BtlChars_IsTimeStopped(void);
+extern s32 BtlChars_IsTimeStopped(void), BtlChars_IsTimeStoppedFor(const void *), BtlChars_IsWorldTimeStopped(void);
 extern void BtlChar_ResetLook(BtlMgrChr *chr);
 extern void BtlChar_UpdateLookOffset(BtlMgrChr *chr);
 extern void BtlChar_SetLookEnabled(BtlMgrChr *chr, s32 arg1);
@@ -1077,7 +1077,7 @@ void BtlChar_UpdateSeqFlags(BtlMgrChr *chr) {
         break;
     }
     BtlChar_UpdateLockOn(chr);
-    if (BtlChars_IsTimeStopped()) {
+    if (BtlChars_IsTimeStoppedFor(chr)) {
         BtlChar_SetHeldFlag(chr, 0x135);
     } else {
         BtlChar_ClearFlag(chr, 0x135);
@@ -1165,7 +1165,7 @@ void BtlChar_UpdateStage8(BtlMgrChr *chr) {
     if (gBtlChars->flags & BTL_CHARS_STARTED) {
         started = 1;
     }
-    if (BtlChars_IsTimeStopped()) {
+    if (BtlChars_IsTimeStoppedFor(chr)) {
         started = 0;
     }
     StgCol_UpdateFighter(obj, flag, BtlCharApi_IsChanging(chr->objId) ? 0 : started);
@@ -1414,7 +1414,7 @@ void BtlChars_UpdateInput(void) {
         BtlChars_ClearObjFlag2();
         return;
     }
-    if ((gBtlChars->flags & BTL_CHARS_STARTED) && !BtlChars_IsTimeStopped()) {
+    if ((gBtlChars->flags & BTL_CHARS_STARTED) && !BtlChars_IsWorldTimeStopped()) {
         gBtlChars->frame++;
         gBtlChars->frame &= 0x3FFFFFFF;
         gBtlChars->unk1C = BtlUtil_Max(gBtlChars->unk1C - 1, 0);

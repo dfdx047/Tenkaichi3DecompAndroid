@@ -1340,6 +1340,7 @@ s32 BtlAct_SwitchLeave(BtlActHChr *chr, s32 phase) {
  * the first part's types are reached through cast macros.
  * ------------------------------------------------------------------------------------------------------------ */
 #include "battle/btl_act_i.h"
+extern s32 BtlChars_IsTimeStoppedFor(const void *chr);
 
 /*
  * Fighter action handlers and input decision functions: 0x1FFAC0..0x203168.
@@ -1948,7 +1949,7 @@ void BtlSkill_Apply(BtlActIChr *chr, s32 slot) {
 
 /* Per-frame countdown of the skill timers (not while time is stopped). */
 void BtlSkill_UpdateTimers(BtlActIChr *chr) {
-    if (BtlChars_IsTimeStopped()) {
+    if (BtlChars_IsTimeStoppedFor(chr)) {
         return;
     }
     if (--chr->skillTimerE < 0) {

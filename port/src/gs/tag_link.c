@@ -787,8 +787,10 @@ static void timers(void) {
             }
             SDL_UnlockMutex(L.lock);
         }
-        if (now - c->lastIn > 20000) {
-            fprintf(stderr, "taglink: connection %d silent for 20 s: closed\n", i);
+        /* (tag_net.c decides when a player is gone, by the match's phase: up to two minutes while a battle loads, when a
+           game does not answer. Closed here at 20 s, a guest waiting for a slow host lost the room during its load) */
+        if (now - c->lastIn > 60000) {
+            fprintf(stderr, "taglink: connection %d silent for 60 s: closed\n", i);
             c->state = TK_LINK_CLOSED;
             continue;
         }
@@ -974,12 +976,16 @@ static int SDLCALL service_thread(void *arg) {
     int mine = (int)(intptr_t)arg, sock = L.sock, hosting = L.hosting;
     struct sockaddr_in me;
     socklen_t ml = sizeof(me);
-    Uint64 lastPoll = 0, relayAsked = 0;
-    int relayRefused = 0;
+    Uint64 lastPoll = 0, relayAsked = 0, relayRetry = 0;
+    int relayRefused = 0, relayWait = 5000, pollEvery = 1000;
+    char ws[400];
     getsockname(L.sock, (struct sockaddr *)&me, &ml);
     SDL_SetAtomicInt(&L.busy, 1);
     set_status("Finding this device's internet address...");
     TagLink_Stun(L.sock, pub, sizeof(pub));
+    if (STOPPED()) { /* (the room is gone, another may have begun: nothing below is this thread's any more) */
+        return 0;
+    }
     SDL_SetAtomicInt(&L.busy, 0);
     TagLink_Lan(ntohs(me.sin_port), lan, sizeof(lan));
     { char v6[80]; own_ipv6(v6, sizeof(v6));
@@ -989,14 +995,21 @@ static int SDLCALL service_thread(void *arg) {
     if (L.hosting) {
         set_status("Creating the online room...");
         SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"name\":\"%s\",\"addrs\":%s}", L.version, name, addrs);
-        if (!post("host", body, answer, sizeof(answer)) || !json_str(answer, "code", L.code, sizeof(L.code)) || !json_str(answer, "key", L.key, sizeof(L.key))) {
-            say_error(answer, "host");
+        if (!post("host", body, answer, sizeof(answer)) || !json_str(answer, "code", code, sizeof(code)) || !json_str(answer, "key", key, sizeof(key))) {
+            if (!STOPPED()) {
+                say_error(answer, "host");
+            }
             return 0;
         }
+        if (STOPPED()) { /* (given up while the service answered: its room is not left behind, nor its code put on the next room) */
+            SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"}", code, key);
+            post("leave", body, answer, sizeof(answer));
+            return 0;
+        }
+        SDL_strlcpy(L.code, code, sizeof(L.code));
+        SDL_strlcpy(L.key, key, sizeof(L.key));
         L.tag = (uint32_t)SDL_atoi(L.code);
         L.codeReady = 1;
-        SDL_strlcpy(code, L.code, sizeof(code));
-        SDL_strlcpy(key, L.key, sizeof(key));
         {
             char line[96];
             SDL_snprintf(line, sizeof(line), "Online room code: %s", L.code);
@@ -1006,25 +1019,31 @@ static int SDLCALL service_thread(void *arg) {
     } else {
         set_status("Joining the online room...");
         SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"code\":\"%s\",\"name\":\"%s\",\"addrs\":%s,\"watch\":%s}", L.version, L.code, name, addrs, L.watch ? "true" : "false");
-        if (!post("join", body, answer, sizeof(answer)) || !json_str(answer, "key", L.key, sizeof(L.key))) {
-            say_error(answer, "join");
-            SDL_LockMutex(L.lock);
-            L.conn[0].state = TK_LINK_CLOSED;
-            SDL_UnlockMutex(L.lock);
+        SDL_strlcpy(code, L.code, sizeof(code));
+        if (!post("join", body, answer, sizeof(answer)) || !json_str(answer, "key", key, sizeof(key))) {
+            if (!STOPPED()) { /* (a stopped room's answer must not close the connection of the room after it) */
+                say_error(answer, "join");
+                SDL_LockMutex(L.lock);
+                L.conn[0].state = TK_LINK_CLOSED;
+                SDL_UnlockMutex(L.lock);
+            }
             return 0;
         }
+        if (STOPPED()) {
+            SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"}", code, key);
+            post("leave", body, answer, sizeof(answer));
+            return 0;
+        }
+        SDL_strlcpy(L.key, key, sizeof(L.key));
         L.myId = json_int(answer, "id", 1);
-        SDL_strlcpy(code, L.code, sizeof(code));
-        SDL_strlcpy(key, L.key, sizeof(key));
         SDL_LockMutex(L.lock);
         L.hostCands = json_addrs(answer, "addrs", L.hostCand, TL_CANDS);
         SDL_UnlockMutex(L.lock);
         L.codeReady = 1;
         set_status("Reaching the room's owner...");
     }
+    SDL_snprintf(ws, sizeof(ws), "%s/v1/ws?code=%s&key=%s", L.url, code, key);
     { /* the room's relay at the service: for players whose networks keep them from reaching each other directly */
-        char ws[400];
-        SDL_snprintf(ws, sizeof(ws), "%s/v1/ws?code=%s&key=%s", L.url, code, key);
         if (relay_open(ws)) {
             if (STOPPED()) {
                 if (!L.active) {
@@ -1040,7 +1059,26 @@ static int SDLCALL service_thread(void *arg) {
     }
     while (!STOPPED()) {
         Uint64 now = SDL_GetTicks();
-        if (now - lastPoll < 1000) {
+        /* The relay is the way left when the direct one fails, so it comes back when it closes (a phone's network drops
+           a connection, the service restarts); it stayed closed for the rest of the room. 5 s, then up to a minute. */
+        if (!SDL_GetAtomicInt(&L.relayOn) && now - relayRetry >= (Uint64)relayWait) {
+            relayRetry = now;
+            if (relay_open(ws)) {
+                if (STOPPED()) {
+                    if (!L.active) {
+                        relay_close();
+                    }
+                    break;
+                }
+                SDL_SetAtomicInt(&L.relayOn, 1);
+                relayWait = 5000;
+                fprintf(stderr, "taglink: the room's relay is open again\n");
+            } else if (relayWait < 60000) {
+                relayWait *= 2;
+            }
+            now = SDL_GetTicks();
+        }
+        if (now - lastPoll < (Uint64)pollEvery) {
             SDL_Delay(50);
             continue;
         }
@@ -1057,7 +1095,7 @@ static int SDLCALL service_thread(void *arg) {
             continue;
         }
         if (L.hosting) {
-            int i, j, waiting = 0;
+            int i, j, waiting = 0, pending = 0;
             take_members(answer);
             SDL_LockMutex(L.lock);
             for (i = 0; i < L.members; i++) { /* someone heard of for 4 s and still not connected: the relay is wanted */
@@ -1067,11 +1105,16 @@ static int SDLCALL service_thread(void *arg) {
                         connected = 1;
                     }
                 }
+                pending |= !connected;
                 if (!connected && now - L.member[i].since > 4000) {
                     waiting = 1;
                 }
             }
             SDL_UnlockMutex(L.lock);
+            /* The service is only needed to meet: every second from every player of every room, for a whole match, spent
+               the free plan's day (a room of three: 3 requests and 5 rows written a second). Asked often while someone is
+               arriving, every 2 s to notice who comes. */
+            pollEvery = pending ? 1000 : 2000;
             if (waiting && !relay[0] && !relayRefused && now - relayAsked > 30000) {
                 char server[128], user[160], pass[160];
                 relayAsked = now;
@@ -1101,6 +1144,8 @@ static int SDLCALL service_thread(void *arg) {
         } else {
             TlAddr c[TL_CANDS];
             int n = json_addrs(answer, "addrs", c, TL_CANDS);
+            /* (connected directly: only to stay in the room's list, whose limit is 45 s) */
+            pollEvery = L.conn[0].state == TK_LINK_OPEN && !is_relay(&L.conn[0].to) ? 15000 : 1000;
             if (n > 0) {
                 SDL_LockMutex(L.lock);
                 SDL_memcpy(L.hostCand, c, sizeof(c[0]) * (size_t)n);

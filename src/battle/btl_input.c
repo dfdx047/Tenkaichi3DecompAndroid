@@ -5,6 +5,7 @@
 #include "sys/pad.h"
 #include "sys/save.h"
 #include "battle/tag_clash.h"
+extern s32 BtlChars_IsTimeStoppedFor(const void *chr);
 
 /*
  * Per-fighter battle input: 0x1D3B40..0x1D60A0.
@@ -15,7 +16,7 @@
  *   BtlInput_BuildRecord which builds the frame's BtlInputRecord (chr->input.rec):
  *       - chr->injectOn == 0: RemapButtons (key config) -> MergeStick -> AddDoubleTaps -> BuildCommands;
  *       - chr->injectOn != 0 (CPU side): the buttons and stick the AI wrote -> MergeStick -> BuildCommands;
- *       - the fighter takes no input (flag 2 or 3 clear, flag 0x136 set, or BtlChars_IsTimeStopped() != 0): all neutral;
+ *       - the fighter takes no input (flag 2 or 3 clear, flag 0x136 set, or BtlChars_IsTimeStoppedFor(chr) != 0): all neutral;
  *       - otherwise the replay hook: when a replay is playing, buttons and stick are REPLACED by the recorded
  *         frame and the commands rebuilt; when not, {buttons, stick} are appended to the replay buffer.
  * Later in the same frame, in the fighter update (BtlChars_UpdateInput -> BtlChar_BeginFrame):
@@ -417,7 +418,7 @@ void BtlInput_BuildRecord(BtlInputChr *chr) {
     active = 0;
     if (BtlChar_TestFlag(chr, 2) || BtlChar_TestFlag(chr, 3)) {
         if (!BtlChar_TestFlag(chr, 0x136)) {
-            active = BtlChars_IsTimeStopped() == 0;
+            active = BtlChars_IsTimeStoppedFor(chr) == 0;
         }
     }
     { extern s32 Port_TagShowcase(void); if(Port_TagShowcase()) active=0; }
@@ -443,7 +444,7 @@ void BtlInput_BuildRecord(BtlInputChr *chr) {
     chr->input.rec.stickY = stick[1];
     chr->input.rec.commands = commands;
     chr->input.rec.unk5 = 0;
-    if (!BtlChars_IsTimeStopped()) {
+    if (!BtlChars_IsTimeStoppedFor(chr)) {
         BtlInput_TickCounters(&chr->input.recCount, buttons, buttons & ~prevButtons, prevButtons & ~buttons);
         BtlInput_TickCounters(&chr->input.recCmdCount, commands, commands & ~prevCommands, prevCommands & ~commands);
     }
@@ -651,7 +652,7 @@ void BtlInput_Update(BtlInputChr *chr) {
     in->cmdHeld = commands;
     in->stickRaw[0] = BtlInput_ByteToStick(stick[0]);
     in->stickRaw[1] = BtlInput_ByteToStick(stick[1]);
-    if (BtlChars_IsTimeStopped()) {
+    if (BtlChars_IsTimeStoppedFor(chr)) {
         in->stick[0] = in->stickRaw[0];
         in->stick[1] = in->stickRaw[1];
     } else {
@@ -671,7 +672,7 @@ void BtlInput_Update(BtlInputChr *chr) {
     } else {
         in->stickTurn = 0.0f;
     }
-    if (!BtlChars_IsTimeStopped()) {
+    if (!BtlChars_IsTimeStoppedFor(chr)) {
         BtlInput_TickCounters(&in->count, in->held, in->pressed, in->released);
         BtlInput_TickCounters(&in->cmdCount, in->cmdHeld, in->cmdPressed, in->cmdReleased);
     }

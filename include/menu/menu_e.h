@@ -225,7 +225,7 @@ void TeamSel_Init(s32 section);
 void TeamSel_Term(void);
 void TeamSel_Draw(void);
 #ifdef PORT
-s32 TeamSel_PickOnline(TsMember *member,s32 cpu,s32 *level,s32 revision);
+s32 TeamSel_PickOnline(TsMember *member,s32 cpu,s32 *level,s32 slot);
 #endif
 
 #endif

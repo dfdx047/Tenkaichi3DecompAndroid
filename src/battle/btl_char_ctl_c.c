@@ -1,5 +1,6 @@
 #include "common.h"
 #include "battle/btl_char_ctl.h"
+extern s32 BtlChars_IsTimeStoppedFor(const void *chr);
 
 /*
  * Head tracking: 0x1D6438..0x1D70E8.
@@ -74,7 +75,7 @@ void BtlChar_UpdateLookOffset(BtlCtlChr *chr) {
     BtlCtlLook *look = &chr->look;
     BtlCtlObj *obj = BtlChar_GetObj(chr);
 
-    if (BtlChars_IsTimeStopped()) {
+    if (BtlChars_IsTimeStoppedFor(chr)) {
         BtlChar_ResetLook(chr);
     } else {
         BtlCtlNode *node = BtlObj_GetNode(obj, 0x2F);

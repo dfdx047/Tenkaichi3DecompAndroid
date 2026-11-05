@@ -26,7 +26,7 @@ void TagSpecial_TestTick(s32 tick) {
         Port_TagOptionSet(TAG_OPT_SHARED_SPECIAL,kind==6);
         Port_TagOptionSet(TAG_OPT_SHARED_RUSH,0);
         Port_TagOptionSet(TAG_OPT_SHARED_ULTIMATE,1);
-        Port_TagOptionSet(TAG_OPT_CINEMATIC_PAUSE,kind==8?0:2);
+        Port_TagOptionSet(TAG_OPT_CINEMATIC_PAUSE,kind==8?0:1);
         for(i=0;i<4;i++) {
             BtlMgrChr *c=BtlChar_Get(i);
             Vec4 p={i==1?300.0f:i==2?-300.0f:0,-100,i==3?75.0f:0,1};

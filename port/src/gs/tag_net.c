@@ -34,15 +34,16 @@ typedef int tn_socket;
 #include "../../include/tag_text.h"
 
 extern void Gs_HoldFrame(void);
+extern void Port_UiBanner(const char *text,int ms); /* ui.cpp: a line in the middle while the game waits */
 extern int Port_RollCan(void),Port_RollSave(void),Port_PadRead(int,unsigned char *);
 extern void Port_RollBack(int),Port_UiNotice(const char *);
 extern int Port_TagOption(int);
 extern unsigned long long Port_NetDigest(void);
 extern int gPortResim;
 
-enum { PROTOCOL=5, MAGIC=0x544e4554, PAD=18, RING=8192, MAX_PACKET=4096, QUEUE=262144,
+enum { PROTOCOL=6, MAGIC=0x544e4554, PAD=18, RING=8192, MAX_PACKET=4096, QUEUE=262144,
        TN_HELLO=1, TN_CONFIG, TN_READY, TN_START, TN_LOADED, TN_GO, TN_INPUT, TN_DIGEST, TN_LEAVE, TN_REJECT, TN_EDIT, TN_FINISHED, TN_ROOM, TN_PING, TN_PEERS, TN_ROLE, TN_NOTICE, TN_PRACTICE_END,
-       TN_HISTORY,TN_REPLAY_PROGRESS,TN_MEMBER,TN_PRACTICE_EDIT,TN_PRACTICE_LOADOUT,TN_BRACKET,TN_PONG,TN_ROSTER,TN_SCORES,TN_AUDIT,TN_AUDIT_DATA,TN_RANDSUM,TN_RANDSUM_DATA,TN_RANDCALLS,TN_RANDCALLS_DATA,TN_CLOCK,
+       TN_HISTORY,TN_REPLAY_PROGRESS,TN_MEMBER,TN_PRACTICE_EDIT,TN_PRACTICE_LOADOUT,TN_BRACKET,TN_PONG,TN_ROSTER,TN_SCORES,TN_AUDIT,TN_AUDIT_DATA,TN_RANDSUM,TN_RANDSUM_DATA,TN_RANDCALLS,TN_RANDCALLS_DATA,TN_CLOCK,TN_ABORT,
        PEERS=TN_PLAYERS+TN_SPECTATORS-1, DELAY=2, ROLLBACK=8 };
 typedef struct Peer {
     tn_socket fd;
@@ -84,6 +85,7 @@ static int rosterMask,rosterPing[TN_PLAYERS];
 static void finish_room(void);
 static void coordinator(void);
 static void send_packet(Peer *,int,const void *,unsigned);
+static void peer_lost(Peer *p,const char *why);
 static unsigned practiceEnd;
 static TlRoom partyRoom;
 static int practiceMenu,practiceChoice;
@@ -96,6 +98,11 @@ static unsigned disconnectedMask;
 static PracticeEvent *practiceEvents;
 static unsigned eventCount,eventCapacity;
 static int lateJoining;
+/* A party match stopped by the host (stop_match): the battle is left through the normal teardown, the room stays. */
+static int aborted,abortFinish;
+/* (host) a player's "ready" said before this revision no longer counts: the rules changed since (apply_edit) */
+static int readyFloor;
+static Uint64 practiceLoadWait; /* since when a practice's end waits for a guest still loading (0: not waiting) */
 static unsigned replayTarget,replayReported,localJoinAt,localGeneration;
 static int pendingPracticeEdit,pendingLoadout;
 static int pendingKick=-1;
@@ -127,12 +134,43 @@ static int choose_delay(void) {
     int i,rtt=-1,d;const char *e=getenv("BT3_TAG_DELAY");
     if(e)return SDL_clamp(atoi(e),DELAY,ROLLBACK-1);
     if(config.practice || role<0 || role>=TN_PLAYERS)return DELAY;
-    if(host){for(i=0;i<PEERS;i++)if(peers[i].hello && peers[i].role<TN_PLAYERS && peers[i].ping>rtt)rtt=peers[i].ping;
-        if(rtt>=0)rtt/=2;}                         /* (the host's input reaches a guest in half a round trip) */
+    if(host) {
+        /* (the host's input reaches a guest in half a round trip.) With two guests or more, the slowest one no longer
+           sets it: the host's controls were late for all because of one bad connection, when only that guest's copy
+           has to go back for the host's input. The second slowest counts. With one guest, that guest. */
+        int worst=-1,next=-1;
+        for(i=0;i<PEERS;i++)if(peers[i].hello && peers[i].role<TN_PLAYERS && peers[i].ping>=0) {
+            if(peers[i].ping>worst){next=worst;worst=peers[i].ping;}else if(peers[i].ping>next)next=peers[i].ping;
+        }
+        rtt=next>=0?next:worst;
+        if(rtt>=0)rtt/=2;
+    }
     else if(peers[0].hello && peers[0].ping>=0)rtt=peers[0].ping*3/4; /* (another guest's comes through the host) */
     if(rtt<0)return DELAY;
     d=(rtt+8)*60/1000;                           /* one-way time in blanks, rounded */
     return SDL_clamp(d,DELAY,6);
+}
+/* The same during a real match, every 2 s: a ping that rises after the start made this player's inputs arrive late at
+   everyone (each of them going back and running blanks again, or waiting), for the rest of the match. This player's own
+   input waits a blank more instead, and only this player feels it. Up at once by one, down by one when two under what
+   it needs (a ping that comes and goes does not change it back and forth). Only this player's own stream changes: an
+   input is stamped with the blank it is for, so the other copies only see it arrive earlier. */
+static void input_take(int who,unsigned at,const unsigned char *pad);
+static int produces(int member,unsigned at);
+static void adapt_delay(void) {
+    int want;
+    if(!frame || frame%120 || config.practice || role<0 || role>=TN_PLAYERS || !produces(role,frame) || getenv("BT3_TAG_DELAY"))return;
+    want=choose_delay();
+    if(want>localDelay) {
+        unsigned char pad[PAD];
+        localDelay++;
+        /* (the blank the wait skips repeats the last input: the stream has no holes) */
+        while(have[role]<frame+localDelay && have[role]>0){memcpy(pad,inputs[role][(have[role]-1)%RING],PAD);input_take(role,have[role],pad);}
+        fprintf(stderr,"tagnet: input delay %d blanks at frame %u\n",localDelay,frame);
+    } else if(want<=localDelay-2 && localDelay>DELAY) {
+        localDelay--; /* (the next input is for a blank already covered: it is left out once) */
+        fprintf(stderr,"tagnet: input delay %d blanks at frame %u\n",localDelay,frame);
+    }
 }
 int TagNet_Enabled(void) { if(enabled<0)enabled=getenv("BT3_TAG_ONLINE")!=NULL;return enabled; }
 void TagNet_Enable(int on) { enabled=on!=0; }
@@ -214,7 +252,8 @@ void TagNet_PracticeLoadout(int member,unsigned address) {
 }
 /* A persistent room keeps its ten input streams, including guests watching a
    CPU match. This also supplies a clock when no human has claimed a fighter. */
-static unsigned input_mask(void) {return config.party?(1u<<TN_PLAYERS)-1:player_mask();}
+static unsigned matchMask=1; /* a real match: the seats taken when it began (set at its start from the shared config) */
+static unsigned input_mask(void) {return !config.party?player_mask():config.practice?(1u<<TN_PLAYERS)-1:matchMask;}
 static int produces(int member,unsigned at) {
     if(member<0 || member>=TN_PLAYERS)return 0;
     return !config.party || (at>=inputStart[member] && at<inputEnd[member]);
@@ -295,7 +334,7 @@ void TagNet_TestCheck(int passed,int id) {
 /* A joining GPU client must replay faster than real time. Rendering/pacing
    archived practice would leave it permanently behind an active host. */
 int TagNet_Resim(void) { return resim || (lateJoining && TagNet_IsPractice() && !local_produces(frame) && frame+60<replayTarget); }
-int TagNet_Stopped(void) { return TagNet_Enabled() && phase==5; }
+int TagNet_Stopped(void) { return TagNet_Enabled() && (phase==5 || aborted); }
 static void say(const char *s) { snprintf(message,sizeof(message),"%s",s);fprintf(stderr,"tagnet: %s\n",s); }
 /* A peer's socket is a TCP one (a room on the same network) or, with TN_LINK set, a connection of an online room
    (tag_link.c: its slot in the low bits). */
@@ -513,7 +552,30 @@ static const char *invalid_why(const TagNetConfig *c) {
         snprintf(why,sizeof(why),"option %s = %d (%d..%d)",tagOptionInfo[i].key,c->options[i],tagOptionInfo[i].min,tagOptionInfo[i].max);return why;}
     return valid(c)?"":"owners or items";
 }
-static void failed(const char *s) { if(phase==5)return;say(s);phase=5;go=0;resim=0;gPortResim=0;Port_UiNotice(Port_TagText(s)); }
+/* A wait for the other players holds the picture still (30 pictures a second, the game's speed at 0%): without a word
+   it looked like a dead game, a black screen before a match. After two seconds the screen says what it waits for. */
+static int waitTold;
+static void wait_say(Uint64 since,const char *line) {
+    if(!waitTold && SDL_GetTicks()-since>=2000){waitTold=1;Port_UiBanner(Port_TagText(line),0);}
+}
+static void wait_over(void) {
+    if(waitTold){waitTold=0;Port_UiBanner(NULL,0);}
+}
+static void failed(const char *s) { if(phase==5)return;wait_over();say(s);phase=5;go=0;resim=0;gPortResim=0;Port_UiNotice(Port_TagText(s)); }
+static void broadcast(int type,const void *data,unsigned size,Peer *except);
+/* A match that cannot go on. In a party room the host brings everyone back to the lobby: same connections, same code.
+   Before, every such stop closed the room, and each player had to be given a new code to play again. May run in the
+   middle of pump(): nothing here reads the network, and the room is put back in order by TagNet_Room (abortFinish). */
+static void stop_match(const char *s) {
+    unsigned char b[196];unsigned k=(unsigned)strlen(s);
+    if(aborted || phase==5)return;
+    if(!host || !config.party || config.practice || hostMenu || phase<3 || phase>4){failed(s);return;}
+    if(k>191)k=191;
+    put32(b,roundId);memcpy(b+4,s,k);broadcast(TN_ABORT,b,4+k,NULL);
+    fprintf(stderr,"tagnet: the match was stopped, everyone back to the lobby\n");
+    wait_over();say(s);Port_UiNotice(Port_TagText(s));
+    phase=2;aborted=1;abortFinish=1;go=0;resim=0;gPortResim=0;publish();
+}
 /* Who drew the battle's random numbers (Port_Rand, plat_sys.c), blank by blank, kept for the last 64 blanks: a
    2026-11-02 desync had every fighter the same and only the random state different, so some code drew numbers on
    one phone and not on the other. At a desync the two games compare these and the log names the code (an offset
@@ -557,20 +619,27 @@ static void desync(unsigned at,Peer *p) {
         unsigned char b[8];Uint64 since=SDL_GetTicks();
         audit_log("here",mine);
         put32(b,at);put32(b+4,roundId);auditAnswered=0;send_packet(p,TN_AUDIT,b,8);
-        while(!auditAnswered && p->fd!=TN_BAD && SDL_GetTicks()-since<1500){pump();SDL_Delay(2);}
+        while(!auditAnswered && p->fd!=TN_BAD && SDL_GetTicks()-since<1500){pump();Gs_HoldFrame();SDL_Delay(2);}
         if(!auditAnswered)fprintf(stderr,"tagnet: the other game did not send its values for %u\n",at);
     }
     { /* which blank's random draws differ first, and by whom */
         unsigned char b[8];Uint64 since=SDL_GetTicks();
         randAskFrom=at>=40?at-40:0;put32(b,randAskFrom);put32(b+4,at);randAnswered=0;randCallsAnswered=0;send_packet(p,TN_RANDSUM,b,8);
-        while((!randAnswered || randCallsAnswered==1) && p->fd!=TN_BAD && SDL_GetTicks()-since<6000){pump();SDL_Delay(2);}
+        while((!randAnswered || randCallsAnswered==1) && p->fd!=TN_BAD && SDL_GetTicks()-since<6000){pump();wait_say(since,"The games went out of sync. Stopping the match...");Gs_HoldFrame();SDL_Delay(2);}
         if(!randAnswered)fprintf(stderr,"tagnet: the other game did not send its random draws\n");
     }
-    failed("The games went out of sync. Match stopped.");
+    stop_match("The games went out of sync. Match stopped.");
+    wait_over();
 }
 static void send_packet(Peer *p,int type,const void *data,unsigned size) {
     if(p->fd==TN_BAD)return;
     if(size>MAX_PACKET-8 || p->tn-p->off+size+8>QUEUE) {
+        /* (the queue of one guest whose connection stands still is that guest's problem: it closed the room for everyone,
+           a 2026-11-04 match of three. In a party room that guest alone is let go, as peer_lost does for one who leaves) */
+        if(host && config.party && p->hello) {
+            fprintf(stderr,"tagnet: player %d's connection could not keep up: let go\n",p->role+1);
+            peer_lost(p,"The connection could not keep up. Match stopped.");return;
+        }
         if(p->hello && (!host || p->role<TN_PLAYERS))failed("The connection could not keep up. Match stopped.");
         close_peer(p);return;
     }
@@ -644,8 +713,33 @@ static void ready_packet(void) {
     for(i=0;i<TN_PLAYERS;i++)put32(data+4+i*4,ready[i]);
     broadcast(TN_READY,data,sizeof(data),NULL);
 }
+/* Whether a room edit changes more than who plays which fighter (and who is in the lobby): the rules everyone agreed to. */
+static int rules_differ(const TagNetConfig *a,const TagNetConfig *b) {
+    TagNetConfig x=*a,y=*b;TagNetConfig *both[2];int k;both[0]=&x;both[1]=&y;
+    for(k=0;k<2;k++) {
+        TagNetConfig *t=both[k];t->revision=0;
+        memset(t->chara,0,sizeof(t->chara));memset(t->costume,0,sizeof(t->costume));memset(t->owner,0,sizeof(t->owner));
+        memset(t->cpuLevel,0,sizeof(t->cpuLevel));memset(t->items,0,sizeof(t->items));memset(&t->lobby,0,sizeof(t->lobby));
+    }
+    return memcmp(&x,&y,sizeof(x))!=0;
+}
+/* Who has to say "ready" again: everyone when the rules or a CPU fighter changed; otherwise only the players whose own
+   fighter changed. Clearing everyone at every edit (and every guest arriving) made three players start over each time
+   any of them chose a fighter. */
+static void edit_ready(const TagNetConfig *old) {
+    int i,n=config.size[0]+config.size[1],all=rules_differ(old,&config);
+    for(i=0;!all && i<n;i++) {
+        int a=old->owner[i],b=config.owner[i];
+        if(a==b && old->chara[i]==config.chara[i] && old->costume[i]==config.costume[i] && old->cpuLevel[i]==config.cpuLevel[i] &&
+           old->lobby.draft.team[i]==config.lobby.draft.team[i] && !memcmp(old->items[i],config.items[i],sizeof(old->items[i])))continue;
+        if(a<0 && b<0){all=1;break;}
+        if(a>=0 && a<TN_PLAYERS)ready[a]=0;
+        if(b>=0 && b<TN_PLAYERS)ready[b]=0;
+    }
+    if(all){memset(ready,0,sizeof(ready));readyFloor=config.revision;}
+}
 static void apply_edit(const TagNetConfig *c) {
-    int i;config=*c;config.revision++;memset(ready,0,sizeof(ready));lastPeerState=-1;
+    int i;TagNetConfig old=config;config=*c;config.revision++;edit_ready(&old);lastPeerState=-1;
     if(config.party && !config.practice && !tournament.active)for(i=0;i<config.size[0]+config.size[1];i++)if(config.owner[i]>=0) {
         int p=config.owner[i];TlLoadout *f=&partyRoom.members[p].loadout;
         f->chara=config.chara[i];f->costume=config.costume[i];memcpy(f->items,config.items[i],sizeof(f->items));config.lobby.members[p].loadout=*f;
@@ -771,7 +865,7 @@ static int switch_role(Peer *p,int playing,int fighter) {
 }
 static void input_take(int who,unsigned at,const unsigned char *pad) {
     if(who<0 || who>=TN_PLAYERS || at>=have[who]+RING-64)return;
-    if(at<have[who]) { if(inputStamp[who][at%RING]==at && memcmp(inputs[who][at%RING],pad,PAD))failed("A player sent conflicting inputs. Match stopped.");return; }
+    if(at<have[who]) { if(inputStamp[who][at%RING]==at && memcmp(inputs[who][at%RING],pad,PAD))stop_match("A player sent conflicting inputs. Match stopped.");return; }
     memcpy(inputs[who][at%RING],pad,PAD);inputStamp[who][at%RING]=at;
     while(inputStamp[who][have[who]%RING]==have[who])have[who]++;
 }
@@ -833,7 +927,7 @@ static void handle(Peer *p,int type,const unsigned char *data,unsigned n) {
     } else if((type==TN_REJECT || type==TN_NOTICE) && !host) {
         char s[192];if(n>191)n=191;memcpy(s,data,n);s[n]=0;if(type==TN_REJECT)failed(s);else say(s);
     } else if(type==TN_ROLE && phase==2) {
-        if(host && n==12 && get32(data)==(unsigned)config.revision && get32(data+4)<=1)switch_role(p,(int)get32(data+4),(int)get32(data+8));
+        if(host && n==12 && get32(data+4)<=1)switch_role(p,(int)get32(data+4),(int)get32(data+8));
         else if(!host && (n==4 || n==8) && get32(data)<=TN_OBSERVER){role=(int)get32(data);localGeneration=n==8?get32(data+4):0;TagNet_Watch(0,0);}
     } else if(type==TN_CONFIG && !host && phase==2 && n==sizeof(config)) {
         TagNetConfig c;for(i=0;i<n/4;i++)((unsigned *)&c)[i]=get32(data+i*4);
@@ -850,13 +944,18 @@ static void handle(Peer *p,int type,const unsigned char *data,unsigned n) {
             for(i=0;i<7;i++)if(t.left[i]<-1 || t.left[i]>7 || t.right[i]<-1 || t.right[i]>7 || t.winner[i]<-1 || t.winner[i]>7)return;
         }
         tournament=t;
-    } else if(type==TN_READY && phase==2 && n==4+4*TN_PLAYERS && get32(data)==(unsigned)config.revision) {
-        if(host && p->role<TN_PLAYERS){ready[p->role]=get32(data+4+4*p->role)!=0;ready_packet();}
-        else if(!host)for(i=0;i<TN_PLAYERS;i++)ready[i]=get32(data+4+4*i)!=0;
+    } else if(type==TN_READY && phase==2 && n==4+4*TN_PLAYERS) {
+        /* (a word on its way while someone else edited the room still counts, unless the rules changed since) */
+        if(host && p->role<TN_PLAYERS){if((int)get32(data)>=readyFloor)ready[p->role]=get32(data+4+4*p->role)!=0;ready_packet();}
+        else if(!host && get32(data)==(unsigned)config.revision)for(i=0;i<TN_PLAYERS;i++)ready[i]=get32(data+4+4*i)!=0;
     } else if(type==TN_EDIT && host && phase==2 && !tournament.active && p->role<TN_PLAYERS && n==sizeof(config)) {
         TagNetConfig request,c=config;int selected=-1,previous=-1;
         for(i=0;i<n/4;i++)((unsigned *)&request)[i]=get32(data+i*4);
-        if(request.revision!=config.revision)return;
+        /* Only this player's own slot is taken from the request (below), so one made before another player's edit
+           still applies. Only a changed line-up makes its slot numbers mean other fighters: then the player is told. */
+        if(request.size[0]!=config.size[0] || request.size[1]!=config.size[1]) {
+            const char *s="The room changed. Choose your fighter again.";send_packet(p,TN_NOTICE,s,(unsigned)strlen(s)+1);return;
+        }
         for(i=0;i<(unsigned)(config.size[0]+config.size[1]);i++) {
             if(config.owner[i]==p->role)previous=(int)i;
             if(request.owner[i]==p->role){if(selected>=0)return;selected=(int)i;}
@@ -984,6 +1083,12 @@ static void handle(Peer *p,int type,const unsigned char *data,unsigned n) {
         int oneWay=p->ping>0?p->ping*60/2000:0,adv=(int)frame-(int)(get32(data)+(unsigned)oneWay);
         if(adv>60)adv=60;if(adv<-60)adv=-60;
         p->adv16+=(adv*16-p->adv16)/8;
+    } else if(type==TN_ABORT && !host && phase>=3 && n>=4 && get32(data)==roundId) {
+        /* The host stopped the match: the battle ends here too, the room goes on (also after this copy gave up by itself). */
+        char s[192];unsigned k=n-4;if(k>191)k=191;memcpy(s,data+4,k);s[k]=0;
+        wait_over();phase=2;aborted=1;go=0;resim=0;gPortResim=0;
+        if(s[0]){say(s);Port_UiNotice(Port_TagText(s));}
+        publish();
     } else if(type==TN_PING && n==4) {
         send_packet(p,TN_PONG,data,n);
     } else if(type==TN_PONG && n==4 && get32(data)==p->pingToken && p->pingSent) {
@@ -1088,7 +1193,7 @@ static void pump(void) {
             memmove(p->rx,p->rx+size,p->rn-size);p->rn-=size;
         }
         if(p->fd!=TN_BAD && !p->hello && SDL_GetTicks()-p->last>10000)close_peer(p);
-        if(p->fd!=TN_BAD && p->hello && SDL_GetTicks()-p->last>(phase==3?120000:15000)) {
+        if(p->fd!=TN_BAD && p->hello && SDL_GetTicks()-p->last>((phase==3 || (p->catching && !p->loaded))?120000:15000)) { /* (a guest still loading practice cannot answer) */
             peer_lost(p,"Connection timed out. The match has stopped.");
         }
     }
@@ -1128,9 +1233,14 @@ static void begin_socket(int r,const char *address,int port) {
     memset(&addr,0,sizeof(addr));addr.sin_family=AF_INET;addr.sin_port=htons((unsigned short)port);
     fd=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);if(fd==TN_BAD){say("Could not create the room connection.");return;}
     host=r==0;role=host?0:TN_OBSERVER;memset(ready,0,sizeof(ready));phase=2;lastPeerState=-1;roomSpectators=roomMask=0;
+    /* (a new room owes nothing to the last one: this game may have late-joined that one as a guest, and only a guest's
+       TN_START set these. Kept, an owner's local_produces was false for ever: it sent no input in its next real match,
+       everyone waited for it from the first blanks, 10 s of black picture at 0%, "Input from a player stopped arriving") */
+    lateJoining=0;localJoinAt=0;replayTarget=0;
     config.party=TagNet_IsParty();config.practice=config.party;config.mode=TL_TEAM;config.preset=0;config.heal=2;
     memset(&tournament,0,sizeof(tournament));pendingSkip=0;
     if(host){for(i=0;i<TN_FIGHTERS;i++)config.owner[i]=-1;config.owner[0]=0;config.revision++;
+        readyFloor=config.revision;
         if(config.party){
             memset(&partyRoom,0,sizeof(partyRoom));partyRoom.revision=partyRoom.generation=1;partyRoom.members[0].present=1;
             for(i=0;i<TL_MEMBERS;i++){partyRoom.members[i].loadout.chara=0;partyRoom.members[i].generation=1;}
@@ -1245,6 +1355,8 @@ int TagNet_Room(void) {
     if(getenv("BT3_TAG_SAVE_CHECK") && !checkingSave){offlineSaveHash=TagOnline_SaveFingerprint();checkingSave=1;}
     TagOnline_SaveScope(1);
     hostMenu=0;nativeMenu=1;TagOnlineMenu_Open();
+    aborted=0;
+    if(abortFinish){abortFinish=0;battleWinner=-1;if(host && phase==2)finish_room();}
     if(!roomInitialized) {
 #ifdef _WIN32
         WSADATA w;WSAStartup(MAKEWORD(2,2),&w);
@@ -1268,7 +1380,7 @@ int TagNet_Room(void) {
         if(TagNet_TestCase()) {
             for(i=0;i<10;i++)config.owner[i]=-1;
             config.owner[0]=0;/* Player seats are assigned when peers join. */
-            config.options[TAG_OPT_CINEMATIC_PAUSE]=2;
+            config.options[TAG_OPT_CINEMATIC_PAUSE]=1;
             config.options[TAG_OPT_EXTRA_INTROS]=0;
             if(TagNet_TestCase()==2) {
 
@@ -1295,6 +1407,7 @@ int TagNet_Room(void) {
     if(!Port_RollCan())failed("Rollback state files are missing. Rebuild or restore the complete native build.");
     while(phase!=3) {
         commands();pump();
+        aborted=0; /* (no battle runs here: a stop that arrives now, this copy having given up by itself, has nothing to end) */
         if(host && phase==2) { /* (the host's speed setting changed in the lobby: the room follows) */
             extern int Port_GameSpeed(void);int speed=Port_GameSpeed();
             if(config.speed!=speed){TagNetConfig c=config;c.speed=speed;apply_edit(&c);}
@@ -1356,8 +1469,8 @@ int TagNet_Room(void) {
     }
     frame=live=checked=sentDigest=0;memset(have,0,sizeof(have));TagNet_Watch(0,0);
     nextSend=DELAY+1;
-    begun=resim=loaded=go=returned=0;
-    practiceEnd=0;chosenMode=-1;
+    begun=resim=loaded=go=returned=aborted=0;
+    practiceEnd=0;chosenMode=-1;practiceLoadWait=0;
     battleWinner=-1;
     practiceMenu=practiceChoice=0;practiceButtons=0;
     historyCount=eventCount=replayReported=0;
@@ -1365,6 +1478,11 @@ int TagNet_Room(void) {
     for(i=0;i<TN_PLAYERS;i++){inputStart[i]=config.lobby.members[i].present?0:~0u;inputEnd[i]=~0u;}
     for(i=0;i<PEERS;i++){peers[i].loaded=peers[i].finished=peers[i].catching=0;peers[i].adv16=0;peers[i].replayCursor=peers[i].replayAck=0;memset(peers[i].hashStamp,255,sizeof(peers[i].hashStamp));}
     memset(inputStamp,255,sizeof(inputStamp));memset(usedStamp,255,sizeof(usedStamp));memset(digestStamp,255,sizeof(digestStamp));
+    /* Only the seats taken in this room's config have a stream in a real match. All ten did: the host sent a neutral pad
+       for every empty seat, every blank, to every guest (38 bytes x 8 seats x 68 blanks a second: a guest of a room of two
+       or three received 20 kB/s of nothing). The whole copy computes this from the same config (TN_START's revision), and
+       an empty seat reads as the same neutral pad without its stream (TagNet_Input). */
+    {int p;matchMask=1u;for(p=1;p<TN_PLAYERS;p++)if(config.lobby.members[p].present)matchMask|=1u<<p;}
     for(i=0;i<=DELAY;i++) {int p;for(p=0;p<TN_PLAYERS;p++)if(input_mask()&(1u<<p))input_take(p,i,idle);}
     localDelay=choose_delay();clockSlowed=0;
     if(localDelay>DELAY && (input_mask()&(1u<<role))) {
@@ -1379,26 +1497,44 @@ int TagNet_Room(void) {
     }
     return 1;
 }
+#define LOAD_WAIT_MS 60000 /* how long a loading guest may hold the others */
+/* The host's party match: a guest still not loaded after everyone else waited LOAD_WAIT_MS. Returns how many were let go. */
+static int drop_unloaded(void) {
+    int i,n=0;
+    if(!config.party)return 0;
+    for(i=0;i<PEERS;i++) {
+        Peer *q=&peers[i];
+        if(!q->hello || q->role>=TN_PLAYERS || q->loaded)continue;
+        fprintf(stderr,"tagnet: player %d did not finish loading in %d s: let go\n",q->role+1,LOAD_WAIT_MS/1000);
+        peer_lost(q,"A player could not finish loading. The match has stopped.");n++;
+    }
+    return n;
+}
 void TagNet_Loaded(void) {
     Uint64 since=SDL_GetTicks();int i;
     if(!TagNet_Active())return;
     if(getenv("BT3_TAG_TEST_LOAD_DELAY_MS")) {
         unsigned delay=(unsigned)atoi(getenv("BT3_TAG_TEST_LOAD_DELAY_MS"));
-        while(phase!=5 && SDL_GetTicks()-since<delay){commands();pump();Gs_HoldFrame();SDL_Delay(2);}
-        if(phase==5)return;
+        while(phase!=5 && !aborted && SDL_GetTicks()-since<delay){commands();pump();Gs_HoldFrame();SDL_Delay(2);}
+        if(phase==5 || aborted)return;
         since=SDL_GetTicks();
     }
     unsigned char packet[4];put32(packet,roundId);
     loaded=1;if(!host)send_packet(&peers[0],TN_LOADED,packet,4);
-    while(!go && phase!=5) {
+    while(!go && phase!=5 && !aborted) {
         commands();pump();
         if(host) {
             int complete=1;for(i=0;i<PEERS;i++)if(peers[i].hello && peers[i].role<TN_PLAYERS && !peers[i].loaded)complete=0;
             if(complete){go=1;broadcast(TN_GO,packet,4,NULL);}
         }
-        if(SDL_GetTicks()-since>120000)failed("A player could not finish loading. The match has stopped.");
+        /* (the host of a party room lets go of a guest who does not finish, whose fighter becomes a CPU, instead of
+           stopping the match for everyone; a guest keeps waiting longer, the host may be waiting for that other guest) */
+        if(host && SDL_GetTicks()-since>LOAD_WAIT_MS && drop_unloaded()){since=SDL_GetTicks();continue;}
+        if(SDL_GetTicks()-since>120000)stop_match("A player could not finish loading. The match has stopped.");
+        wait_say(since,"Waiting for the other players to load...");
         publish();Gs_HoldFrame();SDL_Delay(2);
     }
+    wait_over();
     if(go){
         /* Loading can reuse cached resources on existing clients while a
            newcomer loads them for the first time. Start the simulation from
@@ -1421,7 +1557,7 @@ static unsigned confirmed(void) {
 /* The host coordinates practice without loading Battle_Main, stage assets,
    voices or fighter state. Only guests own a practice simulation. */
 static void coordinator(void) {
-    Uint64 now=SDL_GetTicks();int i,complete=1,guests=0;unsigned target,limit;
+    Uint64 now=SDL_GetTicks(),rate;int i,complete=1,guests=0;unsigned target,limit;
     if(!hostMenu || !config.practice || phase<3 || phase>4)return;
     for(i=0;i<PEERS;i++)if(peers[i].hello){guests++;if(!peers[i].loaded)complete=0;}
     if(phase==3) {
@@ -1432,11 +1568,14 @@ static void coordinator(void) {
     /* No guests means no practice world needs time. Resuming still uses the
        same archive and generation-tagged membership events. */
     if(!guests){coordinatorClock=now;if(practiceEnd)frame=practiceEnd;}
-    target=frame+(unsigned)((now-coordinatorClock)*60/1000);
+    /* (at the room's speed, as the guests run: at a fixed 60 blanks a second a room at 114% had its guests at the edge
+       of what they may run ahead, 7 of 8 blanks, waiting for this clock at every blank, the map at 100%) */
+    rate=(Uint64)TagNet_SpeedMilli()*60;
+    target=frame+(unsigned)((now-coordinatorClock)*rate/1000000);
     if(target>frame+16)target=frame+16;
     /* Keep supplying inputs through the native exit fade and pending jobs.
        Guests acknowledge FINISHED only after that transition has completed. */
-    if(target>frame)coordinatorClock+=((Uint64)(target-frame)*1000+59)/60;
+    if(target>frame)coordinatorClock+=((Uint64)(target-frame)*1000000+rate-1)/rate;
     for(i=0;i<TN_PLAYERS;i++) {
         unsigned end=target+DELAY+1;
         while(have[i]<end && (!i || !produces(i,have[i]) || (disconnectedMask&(1u<<i)))) {
@@ -1453,7 +1592,24 @@ static void coordinator(void) {
     if(!practiceEnd && frame>=600 && test_practice_round() && getenv("BT3_TAG_PARTY_FLOW"))end_practice(atoi(getenv("BT3_TAG_PARTY_FLOW")));
     if(frame>=600 && getenv("BT3_TAG_TEST_KICK") && partyRoom.members[1].present)TagNet_Kick(1);
     if(practiceEnd && frame>=practiceEnd) {
-        complete=1;for(i=0;i<PEERS;i++)if(peers[i].hello && peers[i].loaded && !peers[i].finished)complete=0;
+        /* A guest who joined a moment ago and is still loading the practice map is waited for too. Leaving without it
+           (the host choosing a mode right after it came) left it behind for good: its game takes neither the room's
+           new state nor the next match while it loads, it stood on a black screen at 0% waiting for a word that was
+           never sent, and the host could never start, that guest never being ready. Once loaded it has the end of the
+           practice (TN_LOADED above), plays up to it and says it finished, like the others. */
+        complete=1;
+        {int loading=0;for(i=0;i<PEERS;i++)if(peers[i].hello && !peers[i].loaded)loading=1;if(!loading)practiceLoadWait=0;}
+        for(i=0;i<PEERS;i++)if(peers[i].hello && !peers[i].finished) {
+            if(!peers[i].loaded) {
+                if(!practiceLoadWait)practiceLoadWait=now;
+                if(now-practiceLoadWait>LOAD_WAIT_MS) {
+                    fprintf(stderr,"tagnet: guest %d did not finish loading practice in %d s: let go\n",peers[i].role+1,LOAD_WAIT_MS/1000);
+                    peer_lost(&peers[i],"A guest could not finish loading practice.");
+                    continue;
+                }
+            }
+            complete=0;
+        }
         if(complete){unsigned char b[4];put32(b,roundId);broadcast(TN_ROOM,b,4,NULL);returned=1;finish_room();}
     }
 }
@@ -1523,7 +1679,7 @@ void TagNet_Tick(unsigned blank) {
        previous match's input stream while the next roster is being loaded. */
     if(nativeMenu)return;
     unsigned t,limit;int p;Uint64 since;
-    if(phase==5){gPortResim=0;return;}
+    if(phase==5 || aborted){gPortResim=0;return;}
     if(!TagNet_Active())return;
     if(!loaded || !go){commands();pump();publish();Gs_HoldFrame();return;}
     if(!begun){begun=1;baseBlank=blank;checked=0;}
@@ -1541,6 +1697,7 @@ void TagNet_Tick(unsigned blank) {
         if(host && config.party)for(p=1;p<TL_MEMBERS;p++) {
             while((input_mask()&(1u<<p)) && have[p]<=frame+DELAY && (!produces(p,have[p]) || (disconnectedMask&(1u<<p)))){unsigned at=have[p];input_take(p,at,idle);send_input(p,at,idle);}
         }
+        adapt_delay();
         if(role<TN_PLAYERS && local_produces(frame+localDelay) && frame+localDelay>=have[role]) {
             memcpy(pad,idle,PAD);Port_PadRead(0,pad);
             if(config.party && !config.practice && !(player_mask()&(1u<<role)))memcpy(pad,idle,PAD);
@@ -1580,12 +1737,14 @@ void TagNet_Tick(unsigned blank) {
             }
         }
         since=SDL_GetTicks();
-        while(phase!=5 && frame>=confirmed()+((role==TN_OBSERVER || (lateJoining && !local_produces(frame)))?0:ROLLBACK)) {
+        while(phase!=5 && !aborted && frame>=confirmed()+((role==TN_OBSERVER || (lateJoining && !local_produces(frame)))?0:ROLLBACK)) {
             pump();commands();fill_departed();
-            if(SDL_GetTicks()-since>10000){if(drop_stalled()){since=SDL_GetTicks();continue;}failed("Input from a player stopped arriving. Match stopped.");}
+            if(SDL_GetTicks()-since>10000){if(drop_stalled()){since=SDL_GetTicks();continue;}stop_match("Input from a player stopped arriving. Match stopped.");}
+            wait_say(since,"Waiting for the other player...");
             Gs_HoldFrame();SDL_Delay(1);
         }
-        if(phase==5)return;
+        wait_over();
+        if(phase==5 || aborted)return;
         if(role<TN_PLAYERS && !config.practice) {
             int i2,most=-1000;
             if(frame%10==0) {
@@ -1613,6 +1772,7 @@ void TagNet_Tick(unsigned blank) {
             if(host)broadcast(TN_DIGEST,b,16,NULL);else send_packet(&peers[0],TN_DIGEST,b,16);
         }
         check_digests(checked);sentDigest=checked;
+        if(phase==5 || aborted)return;
         if(frame%600==0)fprintf(stderr,"tagnet: frame %u, confirmed %u, players %d, rewinds %u, speed %d%%\n",frame,confirmed(),popcount(player_mask()),status.rollbacks,TagNet_SpeedMilli()/10);
         pump();publish();
     }
@@ -1630,20 +1790,21 @@ void TagNet_Tick(unsigned blank) {
 void TagNet_Finished(void) {
     Uint64 since=SDL_GetTicks();unsigned t;int i;
     unsigned char packet[4];put32(packet,roundId);
-    if(!TagNet_Active())return;
+    if(!TagNet_Active() || aborted)return;
     if(role<TN_PLAYERS && local_produces(frame))while(nextSend<have[role]){send_input(role,nextSend,inputs[role][nextSend%RING]);nextSend++;}
-    while(phase!=5 && confirmed()<frame) {
-        commands();pump();Gs_HoldFrame();SDL_Delay(1);
-        if(SDL_GetTicks()-since>10000)failed("A player disconnected before the result was confirmed.");
+    while(phase!=5 && !aborted && confirmed()<frame) {
+        commands();pump();wait_say(since,"Waiting for the other player...");Gs_HoldFrame();SDL_Delay(1);
+        if(SDL_GetTicks()-since>10000)stop_match("A player disconnected before the result was confirmed.");
     }
-    if(phase==5)return;
+    wait_over();
+    if(phase==5 || aborted)return;
     record_history(confirmed());
     if(role<TN_PLAYERS)for(t=checked;t<frame;t++)if(!inputs_match(t)) {
         live=frame;resim=1;gPortResim=1;Port_RollBack((int)(frame-t+1));
     }
     if(!host)send_packet(&peers[0],TN_FINISHED,packet,4);
     since=SDL_GetTicks();
-    while(phase!=5 && !returned) {
+    while(phase!=5 && !aborted && !returned) {
         commands();pump();
         if(host) {
             int complete=1;
@@ -1653,9 +1814,12 @@ void TagNet_Finished(void) {
             }
             if(complete){returned=1;broadcast(TN_ROOM,packet,4,NULL);}
         }
-        if(SDL_GetTicks()-since>120000)failed("A player did not return from the match.");
+        if(SDL_GetTicks()-since>120000)stop_match("A player did not return from the match.");
+        wait_say(since,"Waiting for the other player...");
         Gs_HoldFrame();SDL_Delay(2);
     }
+    wait_over();
+    if(aborted)return;
     finish_room();
 }
 static void finish_room(void) {

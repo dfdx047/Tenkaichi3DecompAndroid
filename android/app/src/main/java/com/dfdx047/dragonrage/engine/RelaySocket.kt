@@ -7,7 +7,9 @@ import java.io.OutputStream
 import java.net.URI
 import java.security.SecureRandom
 import java.util.Base64
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
@@ -23,15 +25,44 @@ class RelaySocket private constructor(private val socket: SSLSocket, private val
     @Volatile var open = true
         private set
 
-    private val reader = Thread({ readLoop() }, "tag-relay").apply { isDaemon = true; start() }
+    /** What goes out, sent by [writer]: the engine calls [send] from the game's own thread, which must never wait for the network. */
+    private val outbox = ArrayBlockingQueue<ByteArray>(OUTBOX)
+    private val closing = ByteArray(0)
 
-    fun send(data: ByteArray): Boolean = frame(0x2, data)
+    private val reader = Thread({ readLoop() }, "tag-relay").apply { isDaemon = true; start() }
+    private val writer = Thread({ writeLoop() }, "tag-relay-out").apply { isDaemon = true; start() }
+
+    /** Queued; with the line stuck the oldest gives way (tag_link.c sends again what is not acknowledged). */
+    fun send(data: ByteArray): Boolean {
+        if (!open) return false
+        if (!outbox.offer(data)) {
+            outbox.poll()
+            outbox.offer(data)
+        }
+        return true
+    }
 
     fun receive(): ByteArray? = inbox.poll()
 
     fun close() {
         if (!open) return
-        frame(0x8, ByteArray(0))
+        outbox.clear()
+        outbox.offer(closing)
+    }
+
+    /** Also says something every [KEEP_ALIVE_S] seconds of silence: a phone's network drops an idle connection. */
+    private fun writeLoop() {
+        try {
+            while (open) {
+                val item = outbox.poll(KEEP_ALIVE_S, TimeUnit.SECONDS)
+                when {
+                    item == null -> frame(0x9, ByteArray(0))
+                    item === closing -> { frame(0x8, ByteArray(0)); break }
+                    else -> frame(0x2, item)
+                }
+            }
+        } catch (e: InterruptedException) {
+        }
         open = false
         runCatching { socket.close() }
     }
@@ -102,6 +133,9 @@ class RelaySocket private constructor(private val socket: SSLSocket, private val
     }
 
     companion object {
+        private const val OUTBOX = 256
+        private const val KEEP_ALIVE_S = 20L
+
         /** Opens the WebSocket at [url] ("https://host/path?query"); null when it could not. Blocks for the handshake. */
         fun connect(url: String): RelaySocket? = try {
             val u = URI(url)

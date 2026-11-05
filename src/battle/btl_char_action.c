@@ -1,5 +1,6 @@
 #include "common.h"
 #include "battle/btl_char_action.h"
+extern s32 BtlChars_IsTimeStoppedFor(const void *chr);
 
 /*
  * Fighter action state machine, core part: 0x1E0290..0x1E3158.
@@ -811,7 +812,7 @@ void BtlAct_UpdateGauges(BtlActChr *chr) {
     BtlActVitals *v;
     s32 cap;
 
-    if (BtlChars_IsTimeStopped()) {
+    if (BtlChars_IsTimeStoppedFor(chr)) {
         return;
     }
     if (!BtlChar_TestFlag(chr, 3)) {
@@ -974,7 +975,7 @@ void BtlAct_UpdateTimers(BtlActChr *chr) {
     if (BtlChar_TestFlag(chr, 0x8B)) {
         Vec4_Add(&BtlChar_GetPos(chr)->pos, &BtlChar_GetPos(chr)->pos, &chr->unkF30);
     }
-    if (BtlChars_IsTimeStopped()) {
+    if (BtlChars_IsTimeStoppedFor(chr)) {
         return;
     }
     if (!BtlChar_TestFlag(chr, 0x82)) {

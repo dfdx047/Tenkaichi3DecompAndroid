@@ -2677,10 +2677,11 @@ void TeamSel_PracticeEnd(void) {
     *gTsProgress=practiceSaved;onlinePick=practicePick=practicePickDone=practicePickHidden=0;
     cpuPrompt=cpuApproved=-1;
 }
-s32 TeamSel_PickOnline(TsMember *member,s32 cpu,s32 *level,s32 revision) {
+s32 TeamSel_PickOnline(TsMember *member,s32 cpu,s32 *level,s32 slot) {
     TsProgress saved=*gTsProgress;
-    TagNetStatus status;
+    TagNetStatus status,first;
     s32 result=1,accepted=0,done=0,frame=0,i,f,own=gMenuArc5==NULL;
+    TagNet_Status(&first);
     TagSession_Leave();
     onlinePick=1;onlinePickCpu=cpu;onlinePickLevel=*level;
     cpuPrompt=cpuApproved=-1;
@@ -2701,7 +2702,9 @@ s32 TeamSel_PickOnline(TsMember *member,s32 cpu,s32 *level,s32 revision) {
     Pad_SetRepeat(20,5);ColorFade_StartIn(0,0,0,12);
     while(1) {
         TagNet_MenuPoll();TagNet_Status(&status);
-        if(!done && (status.phase!=2 || status.config.revision!=revision)) {
+        /* (not at every change in the room: another player choosing a fighter, or someone arriving, sent this player
+           back out of the list. Only when this slot is no longer the one being chosen for.) */
+        if(!done && (status.phase!=2 || !TagNet_SameSlot(&first.config,&status.config,slot))) {
             done=1;result=0;ColorFade_StartOut(0,0,0,12);
         }
         Job_Run();Gfx_BeginFrame();TeamSel_UpdateFaceLoad();TeamSel_UpdateStageLoad();
