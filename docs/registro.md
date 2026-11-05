@@ -190,3 +190,8 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   RP5 sd480p, luta gravada com interp=2 e FLIP=7: **antes (flip0.apk) crash na 2ª troca** (signal 5 no vulkan.adreno.so); **depois
   (flip1.apk) 767 trocas, 0 crash**, luta a 100 %. Prova do dia: BT3 100 %, 30,7 imagens/s, 0 crash, Dragon Net com código F3EJHJ, fightcmp SAME
   em 6212 quadros. O outro log (Adreno 630, dev.54, interp=0, ao sair de uma partida online a 1765 %) é outro caminho e continua aberto.
+- 10:49 **Tag, memória por luta: não cresce.** Rota pelos menus reais (`~/DragonRageRefs/dia/tagmem3/`): SELECT → Batalha em
+  Equipe → Só CPU → Escolher Lutadores (cross ×30 por equipe: lutador, cor, dificuldade), com `BT3_TAG_TEST_RESULT=1` (a equipe 2 cai
+  no tique 90; `tag_team_test.c`, só fora do online), depois "Fight Again" 5 vezes. Velocidade: luta 60–90 %, resultado 100 %, 6 ciclos.
+  A região chega a **112 de 160 MB na 1ª luta e fica em 112 até a 6ª** (a linha sai a cada 16 MB novos: nenhuma depois), mesmo PID, 0 "no memory".
+  Os blocos da luta são reusados. Fica sem prova: a mesma coisa online (128 MB na 1ª luta da sala, com o estado do rollback), que pede dois aparelhos.
