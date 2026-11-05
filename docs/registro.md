@@ -262,3 +262,16 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   (código 3XVBW8). O APK inteiro do HEAD (BT3 e BT4) está conferido no RP5.
 - 12:50 **Relatório das 13:00 publicado:** https://claude.ai/artifact/2C19z4RaqjD59u97yMK2h5 (privado). Em seguida: teste de
   resistência do BT4 (25 min, ARMSX2 2x, memória por minuto) rodando no RP5.
+- 19:34 **BT4: vazamento de memória nativa corrigido** (registro das 13:00–13:51, escrito agora). Teste de resistência no RP5
+  sd480p: o processo do BT4 crescia ~7 MB/min nos dois renderizadores, mesmo com o jogo pausado (ARMSX2: RSS de 750 para 1072 MB em
+  26 min; Dragon Rage: Native Heap de 276 para 332 MB em 8 min). heapprofd (APK de teste `profileable`, sem commit) deu a pilha:
+  `unordered_map<uint32_t, IopThreadState>::operator[]` no `CreateThread` do `PS2Runtime::iopImport`, chamado pelo comando de
+  inicialização do SOUNDS.IRX (`sounds_998` → `sounds_6d0`, RPC do EE) ~3 vezes por segundo. Cada thread criada guarda ~32 KB
+  (`R5900Context`) e nunca roda: o escalonador do IOP só roda no carregamento de módulo (13 vezes, no boot). Correção no
+  `patches/bt3recomp-android.patch` (o BT3-Recomp não foi mexido direto): fora do carregamento de módulo, um `CreateThread` troca
+  a thread anterior de mesma entrada e mesmo módulo que nunca rodou e não nasceu num carregamento; nada que rodou, espera ou nasceu no
+  boot é apagado. Depois: **Native Heap parada** (Dragon Rage 265,7–266,1 MB por 8 min; ARMSX2 ~200 MB por 9 min), velocidade igual
+  (primeiros 28 trechos da luta: ARMSX2 22,5/s contra 22,9 e 21,1; Dragon Rage 26,7 contra 25,4), crash 0, linhas de boot do IOP
+  idênticas, a luta certa na imagem. Lib anterior guardada em ~/DragonRageRefs/dia/libbt4.hd.so.
+- 19:34 Pausa de 13:45 a 19:30 a pedido do dono (parei e esperei). Decisões do dono às 13:40: aviso do gráfico leve do Tag nas
+  GPUs dos níveis 0 e 1; branches: ficam as 3 juntadas, `sparking-gameplay` e `ranked-flow-v2` ficam de fora.

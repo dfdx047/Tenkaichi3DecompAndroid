@@ -92,10 +92,63 @@ index 086b77e..862d4b3 100644
                  seq0 = __atomic_load_n(&w.live.events->readbackSeq, __ATOMIC_ACQUIRE);
              w.writeByte(kTypeReadFifo2);
 diff --git a/ps2xRuntime/src/lib/ps2_runtime.cpp b/ps2xRuntime/src/lib/ps2_runtime.cpp
-index 8fbc98c..106e39e 100644
+index 8fbc98c..429cb84 100644
 --- a/ps2xRuntime/src/lib/ps2_runtime.cpp
 +++ b/ps2xRuntime/src/lib/ps2_runtime.cpp
-@@ -8216,7 +8216,7 @@ void PS2Runtime::run()
+@@ -2465,6 +2465,8 @@ namespace
+         int priority = 0;
+         uint32_t waitId = 0;         // sema/event id it waits on
+         int waitKind = 0;            // 3 = sema, 4 = event flag, 1 = delay/sleep
++        bool ran = false;            // [dragonrage] picked by the scheduler at least once
++        bool atLoad = false;         // [dragonrage] created while a module was loading (its entry or the scheduler after it)
+     };
+     std::unordered_map<uint32_t, IopThreadState> &iopThreads()
+     {
+@@ -2472,6 +2474,7 @@ namespace
+         return t;
+     }
+     uint32_t g_iopNextThread = 1;
++    std::atomic<int> g_iopLoading{0};   // [dragonrage] loadAndRunIopModule in progress
+     uint32_t g_iopCurThread = 0;
+     uint32_t g_iopCurGp = 0;
+     uint32_t g_iopCurBase = 0;
+@@ -2674,6 +2677,19 @@ void PS2Runtime::iopImport(uint8_t *rdram, R5900Context *ctx, const char *module
+             IopThreadState t;
+             t.id = id; t.entry = entry; t.gp = g_iopCurGp; t.base = g_iopCurBase;
+             t.moduleId = g_iopCurModule; t.priority = static_cast<int>(prio);
++            t.atLoad = g_iopLoading.load() > 0;
++            // [dragonrage] A module that creates its thread again (SOUNDS.IRX does at each init RPC, ~3 a second in
++            // BT4) left one ~32 KB state per call that never ran (the scheduler runs only at module loads): ~6 MB
++            // a minute and an ever longer map for every event flag. Outside module loads, a thread of the same entry
++            // and module that never ran (and was not made at a load) is replaced by the new one; any other stays.
++            for (auto it = iopThreads().begin(); !t.atLoad && it != iopThreads().end();)
++            {
++                const IopThreadState &o = it->second;
++                if (!o.ran && !o.atLoad && o.entry == entry && o.moduleId == g_iopCurModule && (o.status == 0 || o.status == 1))
++                    it = iopThreads().erase(it);
++                else
++                    ++it;
++            }
+             iopThreads()[id] = t;
+             if (ps2xLogLevel() >= 3) std::fprintf(stderr, "[iop-thread] create id=%u entry=0x%08x gp=0x%08x mod=%u\n",
+                          id, entry, g_iopCurGp, g_iopCurModule);
+@@ -3112,6 +3128,7 @@ static void runIopScheduler(PS2Runtime *rt, uint8_t *iopBase)
+ 
+         IopThreadState &t = iopThreads()[pickId];
+         t.status = 2;
++        t.ran = true;
+         g_iopCurThread = t.id;
+         g_iopCurModule = t.moduleId;
+         g_iopCurGp = t.gp;
+@@ -3342,6 +3359,7 @@ std::string PS2Runtime::resolveIopModulePath(const std::string &fileName)
+ 
+ bool PS2Runtime::loadAndRunIopModule(const char *path)
+ {
++    struct LoadMark { LoadMark() { ++g_iopLoading; } ~LoadMark() { --g_iopLoading; } } loadMark;   // [dragonrage]
+     if (!path || !path[0])
+         return false;
+     ps2iop::Module mod;
+@@ -8216,7 +8234,7 @@ void PS2Runtime::run()
          // GPU mode: render the recorded GS command list into the FBO and present that
          // (its texture is bottom-up, so flip Y). Software mode: upload guest VRAM.
          const bool gpuMode = GsGpuRenderer::enabled();
