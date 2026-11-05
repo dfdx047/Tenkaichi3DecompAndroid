@@ -1310,7 +1310,7 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
     }
     d->blendc = (float)((gGs.alpha[ctx] >> 32) & 0xFF) / 128.0f;
     {
-        int ts = lowres_now(d->target) ? 1 : SCALE; /* (a work buffer at the PS2's resolution: target_lowres) */
+        float ts = lowres_now(d->target) ? 1.0f : SCALE; /* (a work buffer at the PS2's resolution: target_lowres) */
         d->scissor[0] = (int)(sc & 0x7FF) * ts;
         d->scissor[1] = (int)((sc >> 32) & 0x7FF) * ts;
         d->scissor[2] = ((int)((sc >> 16) & 0x7FF) + 1) * ts - d->scissor[0];
