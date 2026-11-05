@@ -10,7 +10,7 @@ Odin 3 e Cube (`192.168.1.134`, `192.168.1.183`) são da sessão do Naruto e nã
 | # | Item | Estado | Nota |
 |---|---|---|---|
 | 1 | Merges das branches da Regulus CiberSec | feito | 3 merges (`282f207e`, `a8f06ebd`, `b00a397d`), cada um com build e teste no RP5; `ranked-flow-v2` não é dela (ver Decisões) |
-| 2 | Tag Team liga/desliga no launcher | pendente | |
+| 2 | Tag Team liga/desliga no launcher | feito | testado nos dois sentidos depois dos merges; padrão 0 (`TAG_TEAM_DEFAULT`) |
 | 3 | Rota e medidas por jogo no RP5 sd480p | pendente | |
 | 4 | Nominum no BT4 | pendente | |
 | 5 | Outros gargalos | pendente | |
@@ -58,4 +58,9 @@ Odin 3 e Cube (`192.168.1.134`, `192.168.1.183`) são da sessão do Naruto e nã
 - **O que um aparelho só não testa:** uma partida Dragon Net entre dois jogadores (só a criação da sala pelo serviço), o Tag Team
   online (`tag_link.c`, relay) e a `ranked-flow-v2`. O hash igual cobre a simulação; a conexão entre dois aparelhos fica para o
   teste com dois aparelhos antes da 1.0.
+- 08:23 Item 2, Tag Team pelo ajuste do launcher (`dr_tag_team` em `bt3_settings.txt`, o mesmo que a chave do Ajustes grava;
+  `port/tools/lab/tagtoggle.sh`), BT3 aberto pelo app: com 1, o SELECT no menu principal abre os "Modos modificados" (Batalha em
+  Equipe, Todos Contra Todos, Treino, Desafio, Torneio, Sala Online, Configurações; textos em português, com letras); com 0, o SELECT
+  não faz nada e o menu principal é o do jogo. 0 crash nos dois. O padrão continua 0 (`EngineSettings.TAG_TEAM_DEFAULT`, lido no
+  `GameActivity.getArguments` e na chave do Ajustes); o teste deixa o RP5 com 0. Imagens em `~/DragonRageRefs/dia/tag/`.
 
