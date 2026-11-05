@@ -230,3 +230,16 @@ Os relógios do meio da luta ficam ao lado de cada medida.
 - 11:55 SDL `PrepareTextureSubresourceForWrite` do Adreno 630 (o caso que sobrou): tentativa sem online, luta gravada com
   `BT3_UNCAPPED=1` a 1x: 200 %, 60 imagens/s (a apresentação segura), 0 crash. No log do jogador eram 1765 % com 32 imagens/s
   (muitos tiques por imagem, alcançando depois de sair da partida), o que não se repete assim. Continua aberto.
+- 12:02 **BT4, perfil da thread do EE** (simpleperf no RP5, sd480p, Dragon Rage a 1x, luta). APK de teste com
+  `<profileable android:shell="true"/>` (`profileable.apk`, só local: o manifesto voltou e não entrou em commit). Pelo processo, a
+  GameThread fica com 27 % das amostras no libbt4, 10 % no kernel, 5,5 % na libc e 2,6 % no `linker64`; a SDLThread com 15 % no libbt4 e
+  4,5 % no driver. Com pilha DWARF na thread do EE (tid 4809, 641 amostras):
+  - **`vector<uint8_t>::insert` com `memcpy`, 21 % com os filhos**, todo de `PS2Memory::writeIORegister` (lambda da cadeia de DMA,
+    `ps2_memory.cpp:2031`) no `bt3FrameKick`: a cadeia do quadro é copiada para um `chainBuf` a cada envio. O vetor já é pré-reservado
+    pela marca alta (`s_chainHint`), então o que sobra é a cópia em si.
+  - **`tlsdesc_resolver_dynamic` 7 %** (6,9 % dele mesmo), chamado do `dispatchGuestBranch`: os `thread_local` do runtime
+    (`g_cadBranchesSinceTick`, `g_schedIsGuest`, `s_hcPc`…, `ps2_runtime.cpp:809-835` e `3920`) passam pelo TLS dinâmico do bionic
+    em cada desvio, porque o libbt4.so é aberto com dlopen.
+  Os dois são código do BT3-Recomp. Mudança possível pelo `patches/bt3recomp-android.patch`: juntar os `thread_local` quentes num
+  bloco só, lido uma vez por chamada, e enviar a cadeia sem cópia quando ela é contígua. Nada mudado ainda; fica para a tarde, com
+  build e rota do BT4 antes e depois.
