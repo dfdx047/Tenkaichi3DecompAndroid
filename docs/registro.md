@@ -165,3 +165,7 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   99 MB na luta 5 x 5 de teste e 112 MB no BT3 normal (rota gravada). O `exit(2)` do `heap.c:244` vem quando ela acaba; uma 2ª luta
   online seguida é o teste que falta (cada luta 5 x 5 leva minutos com COM).
 
+- 09:50 Tag, memória em lutas seguidas (`~/DragonRageRefs/dia/tagmem.sh`, sala do anfitrião): **inconclusivo**. Só a 1ª luta online
+  correu; a luta da sala não escreve "battle finished" e as teclas depois dela levaram a uma seleção normal (`mem_room3.png`). A região
+  ficou em 128 de 160 MB durante os 10 min (é o ponto mais alto já entregue: não sobe se a luta reusa os blocos). Falta: duas lutas
+  online seguidas com dois aparelhos (o Cube e o Odin são da outra sessão) ou um roteiro da volta à sala depois da luta.
