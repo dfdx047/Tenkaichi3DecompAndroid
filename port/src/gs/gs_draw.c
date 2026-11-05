@@ -168,6 +168,32 @@ static unsigned long long tex_bytes_cap(void) {
 #define TEX_BYTES_CAP (6ull << 30)
 #endif
 unsigned gsFxOff;
+/* The Tag Team's light graphics (setting "tag_lite": launcher, and the in-game menu while a fight runs): only in a Tag
+   Team fight, the other modes of the game never see it. Everything it leaves out is left out where it is DRAWN, never
+   where the game computes it: a phone with it on and another with it off play the same fight in the same online match.
+   Here: the effects of the settings window off, and the picture at 1x at most (sScreenCap4). The rest is in the game's
+   drawing code (Port_TagLite): half the aura's flames, of the speed lines, of the particles and of a stage's smoke, no
+   fighters' shadows, no heat haze; and, outside online, no hair and cloth physics. */
+static int gPortTagLiteOn, sTagLite = -1;
+int Port_TagLite(void) {
+    return gPortTagLiteOn;
+}
+/* The Tag Team's own look, lighter than the game's, in its fights only: 1 no toon layer (the second drawing of every
+   strip of a fighter) on far fighters; 4 half of the ki and blast effects; 8 a softer toon layer and lighter yellows
+   (gfxm_d_c.c). With the launcher's cheat "tag_flat", 2: no toon layer on any fighter. All of it only in what is drawn.
+   Measured on a 5x5 fight at 114%: draws 5694 -> 2816 a picture, 8.1 -> 5.6 ms; with the cheat 612, 1.75 ms. */
+static int gPortTagFight, sTagDown = -1;
+int gsNoToon; /* (the render walk's: between the markers 0xC0 and 0xC1) */
+int Port_TagDown(int bit) {
+    if (sTagDown < 0) {
+        sTagDown = 1 | 4 | 8 | (Port_Setting("tag_flat", 0) != 0 ? 2 : 0);
+    }
+    return gPortTagFight && (sTagDown & bit) != 0;
+}
+int Port_TagKiLess(void) {
+    return gPortTagLiteOn || Port_TagDown(4);
+}
+#define FX_OFF() (gsFxOff | (gPortTagLiteOn ? 63u : 0u))
 int gsGlowPercent = GLOW_DEFAULT;
 int gsFilter;
 int gsGlarePercent = GLOW_DEFAULT;
@@ -214,6 +240,7 @@ unsigned gDrawNewTex, gDrawImgMade, gDrawImgFreed, gDrawImgPooled; /* (the last 
 int gDrawLogged; /* the picture's line is written (Smooth motion's other pictures of the list are not) */
 
 void GsGpu_ListStart(void) {
+    gsNoToon = 0; /* (a list begins with the toon layer on, whatever a skipped picture left: GsGpu_Native returns early there) */
     gDrawStartNs = SDL_GetTicksNS(); /* (gs_gpu.c's clock, where it is compared) */
     gDrawTexNs = gDrawPipeNs = gDrawUpBytes = gDrawImgNs = gDrawLookNs = gDrawVuNs = gDrawXferNs = 0;
     gDrawNewTex = gDrawImgMade = gDrawImgFreed = gDrawImgPooled = 0;
@@ -1505,7 +1532,7 @@ static void depth_clut(int ctx) {
     d.src = gsDepthByteIsFog ? 0 : 1;
     d.target = GsDraw_TargetGet((uint32_t)(gGs.frame[ctx] & 0x1FF), 0);
     /* switched off by the user: the passes that colour the picture (the ones that only write alpha feed the glow) */
-    if (d.target < 0 || ((gsFxOff & 4) && d.src == 0 && wm != 0x00FFFFFFu)) {
+    if (d.target < 0 || ((FX_OFF() & 4) && d.src == 0 && wm != 0x00FFFFFFu)) {
         return;
     }
     {
@@ -1513,7 +1540,7 @@ static void depth_clut(int ctx) {
         if (cbp == 0x3E8C) {
             return; /* the outline's own passes: the outline is drawn natively at its marker (outline.frag) */
         }
-        if (cbp == 0x3E94 && (gsFxOff & 2)) {
+        if (cbp == 0x3E94 && (FX_OFF() & 2)) {
             return; /* the see-through tint, switched off */
         }
     }
@@ -1645,7 +1672,7 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
                glare and the object glow, blend "source + destination") or mixed in by the destination's alpha
                (the blur of distant things). */
             if (sprite && (uint32_t)(gGs.frame[ctx] & 0x1FF) == (uint32_t)gGsMainFbp && ((prim >> 6) & 1) &&
-                ((((gGs.alpha[ctx] & 0xFF) == 0x68) && (gsFxOff & 8)) || (((gGs.alpha[ctx] & 0xFF) == 0x54) && (gsFxOff & 16)))) {
+                ((((gGs.alpha[ctx] & 0xFF) == 0x68) && (FX_OFF() & 8)) || (((gGs.alpha[ctx] & 0xFF) == 0x54) && (FX_OFF() & 16)))) {
                 gsSkipped++;
                 return 0;
             }
@@ -1713,9 +1740,12 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
                 sBlockSample = 0;
             }
         } else {
-            uint64_t tg0 = gpu_now();
+            int timed = getenv("BT3_DRAW_LOG") != NULL; /* (two clock reads per draw: only when the log asks) */
+            uint64_t tg0 = timed ? gpu_now() : 0;
             d->tex = texture_get(ctx);
-            gDrawLookNs += gpu_now() - tg0; /* (BT3_DRAW_LOG: all of the texture lookups, the new ones' work in it) */
+            if (timed) {
+                gDrawLookNs += gpu_now() - tg0;
+            } /* (BT3_DRAW_LOG: all of the texture lookups, the new ones' work in it) */
         }
     }
     d->sampler = (int)((gGs.tex1[ctx] >> 5) & 1) | ((cl & 3) ? 2 : 0) | (((cl >> 2) & 3) ? 4 : 0);
@@ -2400,6 +2430,7 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
     u.light[0] = consts[40]; u.light[1] = consts[44]; u.light[2] = consts[48]; u.light[3] = consts[52];
     memcpy(u.color0, &consts[88], 16);
     memcpy(u.color1, &consts[92], 16);
+    if (layer == 1 && Port_TagDown(8)) { u.color1[3] *= 0.7f; } /* (a softer toon layer) */
     u.misc[0] = (float)(gGs.xyoffset[ctx] & 0xFFFF) / 16.0f;
     u.misc[1] = (float)((gGs.xyoffset[ctx] >> 32) & 0xFFFF) / 16.0f;
     u.misc[2] = ((gGs.zbuf[ctx] >> 24) & 15) == 0 ? 4294967295.0f : ((gGs.zbuf[ctx] >> 24) & 15) == 1 ? 16777215.0f : 65535.0f;
@@ -2500,6 +2531,7 @@ void GsGpu_Native(int effect) {
     uint64_t sc = gGs.scissor[0];
     GsDraw d;
 
+    if(effect==0xC0 || effect==0xC1) { gsNoToon=effect==0xC0; return; }
     if(effect==0x54 || (effect>=0x80 && effect<=0xBF)) { tagHudViewport=effect; return; }
     if(effect==0x5F) { tagHudViewport=0; return; }
 
@@ -2518,7 +2550,7 @@ void GsGpu_Native(int effect) {
         sInGlowChain = effect == 0x20;
         return;
     }
-    if (effect != 1 || gsDrawCount == MAX_DRAWS || (gsFxOff & 1)) {
+    if (effect != 1 || gsDrawCount == MAX_DRAWS || (FX_OFF() & 1)) {
         return;
     }
     gsNative++;
@@ -2698,7 +2730,7 @@ int GsDraw_FullscreenEvent(const SDL_Event *ev) {
    one effect that is left out where the game draws it and not here: the blur while the view turns (32,
    src/sys/gfxm_a.c StgPanBlur_Draw), which is several passes through work buffers. */
 int Port_FxOff(int bit) {
-    return (gsFxOff & (unsigned)bit) != 0;
+    return (FX_OFF() & (unsigned)bit) != 0;
 }
 
 #ifdef __ANDROID__
@@ -2738,10 +2770,14 @@ void GsDraw_AspectFollow(void) {
 #endif
 
 void GsGpu_GetSettings(PortVideo *v) {
+    if (sTagLite < 0) { /* (not read yet, before the first fight: any setting changed then wrote "off" over the launcher's choice) */
+        sTagLite = Port_Setting("tag_lite", 0) != 0;
+    }
     v->scale4 = sScreenCap4 ? sUserScale4 : gsPendingScale4 ? gsPendingScale4 : gsScale4;
     v->aspectMilli = sAspectAuto ? 0 : Port_AspectMilli(); /* (0: the screen's own shape, Android) */
     v->fullscreen = sFullscreen;
     v->fxOff = (int)gsFxOff;
+    v->tagLite = sTagLite > 0;
     v->glow = gsGlowPercent;
     v->filter = gsFilter;
     v->glare = gsGlarePercent;
@@ -2788,6 +2824,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
         GsDraw_FullscreenSet(v->fullscreen);
     }
     gsFxOff = (unsigned)v->fxOff & 255;
+    sTagLite = v->tagLite != 0; /* (the next blank of a fight takes it: Port_TagLiteUpdate) */
     gsGlowPercent = v->glow;
     gsFilter = v->filter < 0 || v->filter > 4 ? 0 : v->filter;
     gsGlarePercent = v->glare;
@@ -2829,6 +2866,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
     Port_SettingSave("aspect_milli", sAspectAuto ? 0 : Port_AspectMilli());
     Port_SettingSave("fullscreen", sFullscreen);
     Port_SettingSave("fx_off", (int)gsFxOff);
+    Port_SettingSave("tag_lite", sTagLite > 0);
     Port_SettingSave("glow", gsGlowPercent);
     Port_SettingSave("filter", gsFilter);
     Port_SettingSave("glare", gsGlarePercent);
@@ -2843,6 +2881,21 @@ void GsGpu_SetSettings(const PortVideo *v) {
 }
 
 /* The online screens open (cap4 > 0, in quarters) or close (0): see sScreenCap4. Called by menu/port_tbo.c. */
+void GsDraw_ScreenScaleCap(int cap4);
+/* From the Tag Team's update, every blank of a fight (fight = 1), and at its end (0). */
+void Port_TagLiteUpdate(int fight) {
+    int on;
+    gPortTagFight = fight;
+    if (sTagLite < 0) {
+        sTagLite = Port_Setting("tag_lite", 0) != 0;
+    }
+    on = fight && sTagLite > 0;
+    if (on != gPortTagLiteOn) {
+        gPortTagLiteOn = on;
+        GsDraw_ScreenScaleCap(on ? 4 : 0);
+        fprintf(stderr, "bt3: Tag Team light graphics %s\n", on ? "on" : "off");
+    }
+}
 void GsDraw_ScreenScaleCap(int cap4) {
     if (cap4 > 0 && !sScreenCap4) {
         sUserScale4 = gsPendingScale4 ? gsPendingScale4 : gsScale4;
@@ -5408,7 +5461,7 @@ static void skip_decide(void) {
 
 void GsGpu_FrameEnd(void) {
     sInGlowChain = 0; /* (a chain is always within one frame) */
-    if (gPortResim) { /* a frame that is only being re-run: nothing was recorded, nothing is shown */
+    if (GS_RESIM) { /* a frame that is only being re-run: nothing was recorded, nothing is shown */
         return;
     }
     static unsigned sPackToldAt;

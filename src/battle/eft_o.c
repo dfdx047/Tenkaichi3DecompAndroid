@@ -515,8 +515,10 @@ void EftRays_Draw(EftOTask *task) {
         ray = (EftRay *)List_GetHead(&w->list);
         Vu0Cur_Push();
         Vu0Cur_LoadMtx(&gBtlCamView->screenMtx);
+        s32 lite = 0;
         for (; ray != NULL; ray = (EftRay *)List_GetNext(&ray->node)) {
             if (ray->flags & 1) {
+                { extern int Port_TagKiLess(void); if (Port_TagKiLess() && (lite++ & 1)) continue; }
                 EftRays_DrawRay(w, ray);
             }
         }

@@ -102,6 +102,7 @@ void BtlObjDraw_DrawShadows(s32 count) {
 
     BtlObjDraw_SetEnv();
     Gfx_ClearScreen(0xFFFFFF, 0);
+    { extern int Port_TagLite(void); if (Port_TagLite()) return; } /* (light graphics, gs_draw.c: no shadows) */
     for (node = List_GetHead(BtlObj_GetUsedList()); node != NULL; node = List_GetNext(node)) {
         BtlObj *obj;
         BtlObjState *state;

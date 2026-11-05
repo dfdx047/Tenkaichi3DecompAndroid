@@ -243,7 +243,18 @@ int __wrap_Progress_Main(int arg) {
     }
     if (sBattles++ > 0) {
         printf("bt3: battle finished\n");
+#ifdef __ANDROID__
+        /* (not exit(): its destructors ran while the system's audio thread still used a lock they took down, and
+           Android aborted the app, "pthread_mutex_lock called on a destroyed mutex": every test fight's end on a
+           Xiaomi phone, 2026-11-02. As the window's own quit in gs_gpu.c: the log is flushed, nothing else to write.) */
+        {
+            extern void _exit(int) __attribute__((noreturn)); /* (unistd.h: not included here) */
+            fflush(NULL);
+            _exit(0);
+        }
+#else
         exit(0);
+#endif
     }
     /* The regular first-run menu opens the streamed-audio archive. A direct
      * match skips that menu, but still needs its music and every fighter's

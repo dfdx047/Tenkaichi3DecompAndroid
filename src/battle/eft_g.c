@@ -1046,7 +1046,8 @@ void EftSmoke_Draw(EftTask *task) {
     hi = one;
     lo = zero;
     for (i = 0; i < EFT_SMOKE_PARTS; i++, part++) {
-        if (part->life != 0) {
+        extern int Port_TagKiLess(void);
+        if (part->life != 0 && !(Port_TagKiLess() && (i & 1))) { /* (light graphics: half of it, gs_draw.c) */
             life = part->life;
             alpha = work->arg.alpha;
             if (life < fade) {

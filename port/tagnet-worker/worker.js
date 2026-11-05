@@ -149,7 +149,11 @@ export async function handle(request, env, now) {
         if (!who) return reply({ error: "no room" }, 404);
         const headers = new Headers(request.headers);
         headers.set("x-tag-who", who.owner ? "h" : "m" + who.member.id);
-        const stub = env.RELAY.get(env.RELAY.idFromName(who.room.code));
+        // The room's relay is made where the room's owner is (the first to connect, at the room's creation): left to
+        // Cloudflare it may sit on another continent, 100-150 ms more each way between players in Brazil.
+        const hints = { SA: "sam", NA: "enam", EU: "weur", AS: "apac", OC: "oc", AF: "afr" };
+        const hint = hints[(request.cf && request.cf.continent) || ""] || "sam";
+        const stub = env.RELAY.get(env.RELAY.idFromName(who.room.code), { locationHint: hint });
         return stub.fetch(new Request(request.url, { headers }));
     }
     if (request.method !== "POST" || !url.pathname.startsWith("/v1/")) return reply({ error: "bad request" }, 404);

@@ -318,10 +318,12 @@ def link():
 
 # The game's own variables in the program, for saving and restoring its state (online play, gs/state.c): what
 # make_state.py writes from a GNU map for the PC, here from lld's. The same rule for what counts as the game's
+# (plat_game too, as on the PC since the Tag Team mod: its BT4 animation layers change during a fight and a rollback
+# must put them back)
 # (everything but the port's renderer, sound, input and UI files and some of its pc_* files); read-only data left
 # out (.data.rel.ro is made read-only by the loader after the move). Addresses as linked (BASE): the engine adds
 # the move (BT3_ENGINE_BIAS).
-STATE_PORT = {"headless", "mathf_pc", "plat_file", "plat_libm", "plat_mc", "plat_mem", "plat_sndstate", "plat_stub", "plat_sys", "softfloat_ps2",
+STATE_PORT = {"headless", "mathf_pc", "plat_file", "plat_game", "plat_libm", "plat_mc", "plat_mem", "plat_sndstate", "plat_stub", "plat_sys", "softfloat_ps2",
               "vu0_a", "vu0_b", "gs_marker"}
 STATE_WRITABLE = (".data", ".bss", ".sdata", ".sbss", ".tbss", ".tdata")
 

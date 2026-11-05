@@ -877,7 +877,30 @@ void *Port_LowAlloc(size_t size) {
     }
     if (p == NULL) {
         if ((size_t)(sLowArena + LOW_ARENA_SIZE - sLowNext) < total) {
-            fprintf(stderr, "bt3: no memory below 4 GB for %zu bytes\n", size);
+            /* The region is full, and freed blocks are only reused by a request of their exact size: before giving
+               up, the smallest freed block that holds this one, whole (a game closed by the memory it had freed). */
+            uint64_t freeBytes = 0, best = 0;
+            int at = -1;
+            for (i = 0; i < sLowSizes; i++) {
+                void *q;
+                for (q = sLowList[i].head; q != NULL; q = *(void **)q) {
+                    freeBytes += sLowList[i].size;
+                }
+                if (sLowList[i].head != NULL && sLowList[i].size >= total && (at < 0 || sLowList[i].size < best)) {
+                    at = i;
+                    best = sLowList[i].size;
+                }
+            }
+            if (at >= 0) {
+                fprintf(stderr, "bt3: memory: the region is full; %zu bytes come from a freed block of %llu\n", size, (unsigned long long)best);
+                p = sLowList[at].head;
+                sLowList[at].head = *(void **)p;
+                memset(p, 0, (size_t)best);
+                p[0] = best;
+                __sync_lock_release(&sLowLock);
+                return p + 8;
+            }
+            fprintf(stderr, "bt3: no memory below 4 GB for %zu bytes (%llu bytes freed, in %d sizes, none large enough)\n", size, (unsigned long long)freeBytes, sLowSizes);
             exit(2);
         }
         p = (uint64_t *)sLowNext;

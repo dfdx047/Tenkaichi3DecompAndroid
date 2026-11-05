@@ -257,6 +257,9 @@ fun SettingsScreen(vm: AppViewModel) {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            ToggleRow(stringResource(R.string.tag_lite), stringResource(R.string.tag_lite_text), get(EngineSettings.TAG_LITE, 0) != 0) {
+                vm.setting(EngineSettings.TAG_LITE, if (it) 1 else 0)
+            }
             ToggleRow(stringResource(R.string.adpf), stringResource(R.string.adpf_text), get(EngineSettings.ADPF, 1) != 0) {
                 vm.setting(EngineSettings.ADPF, if (it) 1 else 0)
             }

@@ -2126,7 +2126,7 @@ extern "C" {
 extern volatile int gPortUnlockAll, gPortUnlockDone;
 }
 
-extern "C" int Port_GameSpeed(void);          // plat_stub.c: the player's own game speed, percent; never used online
+extern "C" int Port_GameSpeed(void);          // plat_stub.c: the player's own game speed, percent; Tag Team rooms adopt the host's
 extern "C" void Port_GameSpeedSet(int percent);
 extern "C" void Port_AudioRefresh(void);
 
@@ -2140,9 +2140,9 @@ static void cheats_tab(void) {
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             Port_SettingsWrite(); // (when the slider is let go: the speed was lost at the end unless another setting was written)
         }
-        ImGui::SetItemTooltip("How fast the game runs outside online play (the sound keeps its pitch). 100%% is the game's own;\n"
-                              "114%% is what competitive play uses. An online match never uses this value:\n"
-                              "its speed is the host's or the queue's.");
+        ImGui::SetItemTooltip("How fast the game runs (the sound keeps its pitch). 100%% is the game's own;\n"
+                              "114%% is what competitive play uses. Tag Team rooms use the host's setting\n"
+                              "when starting the match. Other online modes use their host or queue speed.");
         ImGui::SameLine();
         if (ImGui::Button("Reset")) {
             Port_GameSpeedSet(100);

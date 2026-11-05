@@ -101,6 +101,8 @@
     <string name="name_in_game">Nombre en el juego</string>
     <string name="name_in_game_hint">Escrito con la tipografía del propio juego en la pantalla de selección</string>
     <string name="mod_info">%1$d archivos · %2$s</string>
+    <string name="tag_flat">Tag Team: luchadores planos</string>
+    <string name="tag_flat_text">Solo en Tag Team: quita la capa de sombra de todos los luchadores. Mucho menos trabajo de dibujo, aspecto más plano. Se aplica la próxima vez que abra el juego.</string>
     <string name="cheats_title">Trucos</string>
     <string name="cheats_sub">Los deseos de Shenlong</string>
     <string name="unlock_all">Desbloquear todo</string>
@@ -433,6 +435,8 @@
     <string name="bt4_game_data_intro">Elige tu imagen del mod de Team BT4: SLUS-219.78, Beta 14 Rev2 (otra versión no funciona: el juego se recompiló para esa). Solo se copian los archivos de arranque; el resto se lee de la imagen donde está, así que déjala en su carpeta.</string>
     <string name="bt4_engine_included">El motor de Budokai Tenkaichi 4 está en esta versión.</string>
     <string name="bt4_engine_missing">Esta versión aún no tiene el motor de Budokai Tenkaichi 4 (libbt4.so). La imagen ya se puede configurar.</string>
+    <string name="tag_lite">Gráficos ligeros en Tag Team</string>
+    <string name="tag_lite_text">Solo en Tag Team: menor resolución, sin sombras, menos efectos. Para jugar más fluido en móviles débiles. También en el menú durante la pelea.</string>
     <string name="adpf">Sugerencias de rendimiento</string>
     <string name="adpf_text">Le dice a Android cuánto tarda cada cuadro (Android 13 o más nuevo), para que la CPU siga rápida en los momentos pesados en vez de bajar entre cuadros. Desde el próximo inicio.</string>
     <string name="sustained">Rendimiento sostenido</string>

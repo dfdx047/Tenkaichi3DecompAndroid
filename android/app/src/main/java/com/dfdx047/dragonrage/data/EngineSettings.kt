@@ -67,6 +67,8 @@ class EngineSettings(private val file: File) {
         // Dragon Rage's own, read by the Android glue of the engine at start
         const val UNLOCK_ALL = "dr_unlock_all"    // 1: run Save_UnlockAll once on the next start, then 0
         const val FPS60 = "dr_fps60"              // reserved for the 60 fps mode
+        const val TAG_FLAT = "tag_flat"           // cheat: no toon layer on any fighter in Tag Team (more speed, flatter look)
+        const val TAG_LITE = "tag_lite"           // the Tag Team's light graphics (only in that mode; also in the in-game menu)
         const val ADPF = "adpf"                   // the system's performance hints (Android 13+): 1 on (default), 0 off
         const val SUSTAINED = "dr_sustained"      // Android's sustained performance mode for the game's window: 1 on
         const val BT4_ASPECT = "bt4_aspect"       // Budokai Tenkaichi 4: 0 16:9 (the mod's own), 1 4:3, 2 the whole screen

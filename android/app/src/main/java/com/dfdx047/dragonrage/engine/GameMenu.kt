@@ -217,7 +217,7 @@ private class MenuValues(private val file: () -> EngineSettings) {
     companion object {
         val KEYS = listOf(
             "scale4", "aspect_milli", "filter", "smooth_2d", "texture_pack", "texture_count", "gpu_api", "running_gl",
-            "frame_skip", "frag_depth", "interp", "present", "meter", "fx_off", "glow", "music", "effects", "voices",
+            "frame_skip", "frag_depth", "interp", "present", "meter", "fx_off", "tag_lite", "glow", "music", "effects", "voices",
             "stage_sounds", "music_follows_speed", "hud_layout", "menus_43", "side_bars", "menu_font_id", "battle_font_id",
             "text_font_id", "clash_square", "clash_square_x", "chat", "game_speed", "skip_logos", "skip_intro",
             "skip_copyright", "unlock_done", "online", "fps", "net_spectators", "lobby_match", "lobby_owner", "spectating", "spec_view",
@@ -710,6 +710,11 @@ private fun EffectsPage(l: L, v: MenuValues) {
             l.t("Depth tint", "Névoa de distância", "Niebla de distancia"), l.t("Glare and glow", "Brilho e reflexo", "Brillo y resplandor"),
             l.t("Distance blur", "Desfoque de distância", "Desenfoque de distancia"), l.t("Movement blur", "Desfoque de movimento", "Desenfoque de movimiento"),
         )
+        SwitchRow(
+            l.t("Tag Team light graphics", "Gráficos leves no Tag Team", "Gráficos ligeros en Tag Team"),
+            l.t("Only in Tag Team: lower resolution, no shadows, fewer effects.", "Só no Tag Team: resolução menor, sem sombras, menos efeitos.", "Solo en Tag Team: menor resolución, sin sombras, menos efectos."),
+            v.get("tag_lite", 0) != 0,
+        ) { on -> v.set("tag_lite", if (on) 1 else 0) }
         val off = v.get("fx_off", 0)
         names.forEachIndexed { i, name ->
             SwitchRow(name, null, off and (1 shl i) == 0) { on -> v.set("fx_off", if (on) off and (1 shl i).inv() else off or (1 shl i)) }

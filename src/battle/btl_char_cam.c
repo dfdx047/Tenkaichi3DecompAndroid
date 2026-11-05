@@ -1,5 +1,6 @@
 #include "common.h"
 #include "battle/btl_char_cam_int.h"
+extern s32 BtlChars_IsTimeStoppedFor(const void *chr);
 
 /* The fighter's own camera, 0x1C4BF8-0x1C7B30. See battle/btl_char_cam.h for the structures and the frame flow.
  *
@@ -76,7 +77,7 @@ f32 ChrCam_GetRate(ChrCamChr *chr, Vec4 *eye, Vec4 *target) {
         cam->rate = 0.25f;
     } else if (BtlChar_TestFlag(chr, 0xD1)) {
         cam->rate = 0.2f;
-    } else if (BtlChars_IsTimeStopped()) {
+    } else if (BtlChars_IsTimeStoppedFor(chr)) {
         cam->rate = 1.0f;
     }
     return cam->rate;
@@ -88,7 +89,7 @@ f32 ChrCam_GetRate(ChrCamChr *chr, Vec4 *eye, Vec4 *target) {
 f32 ChrCam_GetBob(ChrCamChr *chr) {
     ChrCam *cam = &chr->cam;
 
-    if (BtlChars_IsTimeStopped() || cam->unk98 == 0) {
+    if (BtlChars_IsTimeStoppedFor(chr) || cam->unk98 == 0) {
         cam->bob = 0.0f;
         return cam->bob;
     }

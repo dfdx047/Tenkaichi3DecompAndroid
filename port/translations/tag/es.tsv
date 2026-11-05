@@ -134,7 +134,6 @@ Keep player assignments until the game closes.	Recordar los mandos asignados has
 Let every controller use character selection. P1 can always go back.	Todos los mandos pueden elegir personajes. J1 siempre puede volver.
 Show which player owns each character selection slot.	Mostrar a qué jugador pertenece cada casilla de selección.
 Play an entrance for every fighter instead of only the team leaders.	Mostrar la presentación de todos los luchadores.
-Pause everyone else, only the target, or nobody when a move shares its camera.	Al compartir una cámara, pausar a los demás, solo al objetivo o a nadie.
 Full width bottom view, or a centered bottom view the same size as the top two.	Vista inferior a todo lo ancho o centrada del tamaño de las superiores.
 Fusion Dance partners separate when their timer expires. Potara is permanent.	La danza de fusión termina al agotarse el tiempo. Pothala es permanente.
 Fusion Dance time limit in seconds.	Duración de la danza de fusión en segundos.
@@ -800,3 +799,12 @@ That room is full.	Esa sala está llena.
 No online service is set for Tag Team rooms.	No hay ningún servicio online configurado para las salas Tag Team.
 Could not open the online connection.	No se pudo abrir la conexión online.
 Players connected: %d	Jugadores conectados: %d
+This room uses another version of the game. Install the same version as the host.	Esta sala usa otra versión del juego. Instala la misma versión que el anfitrión.
+Your game data differ from the host's (another disc image or modified files). Use the same game data as the host.	Tus datos del juego son distintos de los del anfitrión (otra imagen del disco o archivos modificados). Usa los mismos datos del juego que el anfitrión.
+Pause only the marked target of a move, or nobody. Other fighters keep moving. Camera sharing is separate.	Pausar solo al objetivo marcado del ataque, o a nadie. Los demás luchadores siguen moviéndose. Compartir la cámara es una opción independiente.
+Hit Other Enemies	Golpear a otros enemigos
+Melee hits can strike every enemy touching the attack, even when you are locked onto someone else. Grabs remain one-on-one.	Los golpes pueden alcanzar a cualquier enemigo que esté en su trayectoria, aunque fijes a otro objetivo. Los agarres siguen siendo de uno contra uno.
+Waiting for the other player...	Esperando al otro jugador...
+Waiting for the other players to load...	Esperando a que carguen los otros jugadores...
+The room changed. Choose your fighter again.	La sala cambió. Elige tu luchador de nuevo.
+The games went out of sync. Stopping the match...	Las partidas se desincronizaron. Terminando la partida...

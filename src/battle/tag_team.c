@@ -80,14 +80,35 @@ s32 TagTeam_CinematicPaused(s32 actor) {
 }
 static void cinematic_pause(void) {
     s32 i,mode=Port_TagOption(TAG_OPT_CINEMATIC_PAUSE),owner;
-    u32 participants=0,targetsToPause=0;
+    u32 participants=0,targetsToPause=0,starters=0,startupPause=0;
     cinematicPaused=0;
     if(!mode || !BtlSeq_IsFighting()) return;
+    /* Native startup freezes are independent of camera sharing. Only the
+       marked target stays still during the wind-up, then becomes hittable as
+       it ends; everyone else keeps fighting (transformations and clashes too).
+       Keep simultaneous starters running so reciprocal moves cannot deadlock. */
+    for(i=0;i<count;i++) {
+        BtlMgrChr *chr=BtlChar_Get(i);
+        if(BtlChar_TestFlag(chr,0x125)||BtlChar_TestFlag(chr,0x126)) {
+            s32 target=TagTeam_Target(i);
+            starters|=1u<<i;
+            if((u32)target<(u32)count)startupPause|=1u<<target;
+        }
+    }
+    /* A caught fighter must animate with its grab, rush, or clash owner. */
+    participants=starters;
+    for(i=0;i<count;i++) {
+        s32 other=grab_other(i);
+        if(other<0)other=rush_other(i);
+        if(other<0)other=BtlClash_Opponent(i);
+        if((u32)other<(u32)count)participants|=(1u<<i)|(1u<<other);
+    }
+    cinematicPaused=startupPause&~participants;
     /* Use the same owner as the view compositor. Authored transform cameras,
        shared grabs and shared clashes must obey the same pause policy. */
     owner=BtlCam_GetPriorityView();
     if(owner<0)return;
-    participants=1u<<owner;
+    participants|=1u<<owner;
     {
         s32 other=TagTeam_Target(owner);
         if((u32)other<(u32)count) {
@@ -100,7 +121,7 @@ static void cinematic_pause(void) {
         s32 other=TagTeam_Target(i);
         if((u32)other<(u32)count && (participants&(1u<<other)))participants|=1u<<i;
     }
-    cinematicPaused=(mode==2?((1u<<count)-1):targetsToPause)&~participants;
+    cinematicPaused|=targetsToPause&~participants;
 }
 /* Reject both collision discovery and already-queued contacts. The latter
    matters when a lower-index fighter establishes a grab earlier this frame. */
@@ -112,6 +133,10 @@ s32 TagTeam_CanContact(s32 attacker,s32 victim) {
     if(TagChallenge_Hidden(attacker)||TagChallenge_Hidden(victim))return 0;
     if(BtlChar_TestFlag(BtlChar_Get(attacker),7) || BtlChar_TestFlag(BtlChar_Get(victim),7))return 0;
     if(TagTeam_CinematicPaused(attacker)||TagTeam_CinematicPaused(victim))return 0;
+    /* The change freeze stops only the fighter whose model is being swapped;
+       nobody may touch it, nor it anyone, until the swap is done. */
+    {extern s32 BtlChars_IsTimeStoppedFor(const void *);
+     if(BtlChars_IsTimeStoppedFor(BtlChar_Get(attacker))||BtlChars_IsTimeStoppedFor(BtlChar_Get(victim)))return 0;}
     a=grab_other(attacker);b=grab_other(victim);
     if(a<0)a=rush_other(attacker);
     if(b<0)b=rush_other(victim);
@@ -271,6 +296,9 @@ s32 TagTeam_CameraActor(s32 actor) {
 
 s32 TagTeam_Target(s32 fighter) {
     if (TagTeam_Active() && (u32)fighter < (u32)count) {
+        extern s32 TagHit_Target(s32);
+        s32 contact=TagHit_Target(fighter);
+        if(contact>=0)return contact;
         s32 clashOpponent = BtlClash_Opponent(fighter);
         if(TagAssist_Ally(fighter)>=0) clashOpponent=BtlClash_Opponent(TagAssist_Ally(fighter));
         if (clashOpponent >= 0) return clashOpponent;
@@ -363,7 +391,7 @@ void TagTeam_Begin(void) {
     TagTeam_Reset();
 }
 
-void TagTeam_End(void) { extern void Port_TagHudClear(void); count = 0; Port_TagHudClear(); }
+void TagTeam_End(void) { extern void Port_TagHudClear(void),Port_TagLiteUpdate(int),ObjDraw_TagHairReset(void); count = 0; Port_TagHudClear(); Port_TagLiteUpdate(0); ObjDraw_TagHairReset(); }
 
 /* Reproducible roster launch using the real loader and CPU controllers. */
 void TagTeam_SetupDemo(s32 human, s32 team0, s32 team1) {
@@ -408,7 +436,7 @@ void TagTeam_SetupDemo(s32 human, s32 team0, s32 team1) {
             s32 test=Port_TagCinemaTest();
             extern s32 Port_TagSpecialCharacter(void);
             if(test==13)setup->rule.unk10=1; /* Actual ultimate destroys the stage. */
-            setup->sides[0].members[0].chara=test==3?6:(test==4||test==6||test==8||test==9)?10:0;
+            setup->sides[0].members[0].chara=test==3?6:(test==4||test==6||test==8||test==9||test==14||test==15)?10:0;
             setup->sides[0].members[1].chara=test==9?10:3;
             if(Port_TagSpecialCharacter()>=0)setup->sides[0].members[0].chara=Port_TagSpecialCharacter();
             setup->sides[0].members[0].costume=setup->sides[0].members[1].costume=0;
@@ -541,23 +569,44 @@ s32 TagTeam_HudTarget(s32 actor) {
     return mode==1 && enemies==1 ? TagTeam_Target(actor) : -1;
 }
 
+/* Where a fighter stands on a player's view, as a share of the view from its middle; 0 behind the camera. Online, every
+ * copy of the game must choose the same target from the same inputs, but world2screen holds each phone's own picture
+ * shape (View_SetProjection: aspect_milli, the screen's 20:9 here, 4:3 there), so x differed and two phones picked two
+ * fighters: the match went out of sync with one fighter's target as its first difference (2026-11-04: 5 here, 3 there).
+ * Online uses the view matrix, which holds no picture shape, with one fixed shape (16:9: the factor View_SetProjection gives it) for everyone. Offline there
+ * is one picture: it stays as it was, the shape the player sees. */
+static s32 view_point(const View *view,const s32 *rect,const Vec4 *p,f32 *x,f32 *y) {
+    if(TagNet_Active()) {
+        const Mtx44 *v=&view->world2view2;
+        f32 w=p->x*v->m[0][2]+p->y*v->m[1][2]+p->z*v->m[2][2]+v->m[3][2],focal=view->screenDist*view->unk258;
+        if(w<=.3f)return 0;
+        *x=(focal*.642857f*(p->x*v->m[0][0]+p->y*v->m[1][0]+p->z*v->m[2][0]+v->m[3][0])/w+view->centerX-1792-rect[0]-rect[2]*.5f)/rect[2];
+        *y=(focal*(p->x*v->m[0][1]+p->y*v->m[1][1]+p->z*v->m[2][1]+v->m[3][1])/w+view->centerY-1824-rect[1]-rect[3]*.5f)/rect[3];
+        return 1;
+    } else {
+        const Mtx44 *m=&view->world2screen;
+        f32 w=p->x*m->m[0][3]+p->y*m->m[1][3]+p->z*m->m[2][3]+m->m[3][3];
+        if(w<=.3f)return 0;
+        *x=((p->x*m->m[0][0]+p->y*m->m[1][0]+p->z*m->m[2][0]+m->m[3][0])/w-1792-rect[0]-rect[2]*.5f)/rect[2];
+        *y=((p->x*m->m[0][1]+p->y*m->m[1][1]+p->z*m->m[2][1]+m->m[3][1])/w-1824-rect[1]-rect[3]*.5f)/rect[3];
+        return 1;
+    }
+}
+
 static void relock(s32 actor) {
     extern BtlCamView *BtlCam_GetNativeView(s32);
     extern void BtlCharApi_GetPos(s32, Vec4 *);
     s32 i, v=0, best=-1, rect[4];
     f32 score=1.0e30f;
-    Mtx44 *m;
+    View *view;
     for (i=0;i<viewCount;i++) if ((TagNet_Active()||TagTeam_ViewVisible(i))&&TagTeam_ViewActor(i)==actor) { v=i; break; }
-    m=&BtlCam_GetNativeView(v)->view.world2screen;
+    view=&BtlCam_GetNativeView(v)->view;
     TagTeam_ViewRect(v,rect);
     for (i=0;i<count;i++) if (targetable(actor,i) && (unlocked[actor] || i!=targets[actor])) {
         Vec4 p, own;
-        f32 w,x,y,d;
+        f32 x,y,d;
         BtlCharApi_GetPos(i,&p); BtlCharApi_GetPos(actor,&own);
-        w=p.x*m->m[0][3]+p.y*m->m[1][3]+p.z*m->m[2][3]+m->m[3][3];
-        if (w>0.3f) {
-            x=((p.x*m->m[0][0]+p.y*m->m[1][0]+p.z*m->m[2][0]+m->m[3][0])/w-1792-rect[0]-rect[2]*0.5f)/rect[2];
-            y=((p.x*m->m[0][1]+p.y*m->m[1][1]+p.z*m->m[2][1]+m->m[3][1])/w-1824-rect[1]-rect[3]*0.5f)/rect[3];
+        if (view_point(view,rect,&p,&x,&y)) {
             d=x*x+y*y;
         } else {
             x=p.x-own.x; y=p.z-own.z;
@@ -606,20 +655,17 @@ static void aim_target(s32 actor,s32 direction) {
     extern void BtlCharApi_GetPos(s32,Vec4 *);
     s32 i,v=0,best=-1,rect[4];
     f32 score=1.0e30f,bx=0,by=0;
-    Vec4 p;Mtx44 *m;
+    Vec4 p;View *view;
     for(i=0;i<viewCount;i++) if((TagNet_Active()||TagTeam_ViewVisible(i))&&TagTeam_ViewActor(i)==actor) {v=i;break;}
-    m=&BtlCam_GetNativeView(v)->view.world2screen;TagTeam_ViewRect(v,rect);
+    view=&BtlCam_GetNativeView(v)->view;TagTeam_ViewRect(v,rect);
     /* Project into this player's actual viewport. All four directions use
        screen space, including elevated targets and rotated cameras. */
     for(i=-1;i<count;i++) {
         s32 candidate=i<0?targets[actor]:i;
-        f32 w,x,y,along,across,d;
+        f32 x,y,along,across,d;
         if(i>=0 && (i==targets[actor] || !targetable(actor,i)))continue;
         BtlCharApi_GetPos(candidate,&p);
-        w=p.x*m->m[0][3]+p.y*m->m[1][3]+p.z*m->m[2][3]+m->m[3][3];
-        if(w<=.3f)continue;
-        x=((p.x*m->m[0][0]+p.y*m->m[1][0]+p.z*m->m[2][0]+m->m[3][0])/w-1792-rect[0]-rect[2]*.5f)/rect[2];
-        y=((p.x*m->m[0][1]+p.y*m->m[1][1]+p.z*m->m[2][1]+m->m[3][1])/w-1824-rect[1]-rect[3]*.5f)/rect[3];
+        if(!view_point(view,rect,&p,&x,&y))continue;
         if(i<0) {if(!unlocked[actor]){bx=x;by=y;}continue;}
         x-=bx;y-=by;
         along=direction==PAD_RSTICK_LEFT?-x:direction==PAD_RSTICK_RIGHT?x:direction==PAD_RSTICK_UP?-y:y;
@@ -769,6 +815,7 @@ s32 TagTeam_SetCpuTarget(s32 actor,s32 target) {
 
 void TagTeam_Update(void) {
     s32 i;
+    {extern void Port_TagLiteUpdate(int);Port_TagLiteUpdate(TagTeam_Active());}
     if (!TagTeam_Active() || (Battle_GetWork()->flags & (BATTLE_FLAG_PAUSE | BATTLE_FLAG_LOADING))) return;
     TagLobby_Update();
     if(TagNet_IsParty() && TagNet_Active() && !TagLobby_Practice())for(i=0;i<count;i++) {

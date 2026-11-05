@@ -11,13 +11,17 @@ typedef struct TagNetConfig {
     int chara[10],costume[10],owner[10],options[TN_OPTIONS];
     int cpuLevel[10],items[10][8];
     /* Persistent-room identity is separate from a claimed battle slot. */
-    int party,practice,mode,preset,heal;
+    int party,practice,mode,preset,heal,speed;
     TlRoom lobby;
 } TagNetConfig;
 static inline void TagNet_CopyFighter(TagNetConfig *c,int to,int from) {
     int j;c->chara[to]=c->chara[from];c->costume[to]=c->costume[from];c->owner[to]=c->owner[from];c->cpuLevel[to]=c->cpuLevel[from];
     for(j=0;j<8;j++)c->items[to][j]=c->items[from][j];
     c->lobby.draft.team[to]=c->lobby.draft.team[from];
+}
+/* Whether slot i of room b is still the slot it was in room a: same kind of room, same line-up, same owner. */
+static inline int TagNet_SameSlot(const TagNetConfig *a,const TagNetConfig *b,int i) {
+    return a->party==b->party && a->practice==b->practice && a->mode==b->mode && a->size[0]==b->size[0] && a->size[1]==b->size[1] && a->owner[i]==b->owner[i];
 }
 typedef struct TagNetStatus {
     int phase,role,host,connected,playerMask,ready[TN_PLAYERS],spectators,view,freeCam;
@@ -79,6 +83,7 @@ void TagNet_Watch(int actor,int freeCam);
 int TagNet_View(void);
 int TagNet_FreeCamera(float *position,float *rotation);
 int TagNet_Option(int id,int fallback);
+int TagNet_SpeedMilli(void);
 void TagNet_Draw(void);
 #ifdef __cplusplus
 }

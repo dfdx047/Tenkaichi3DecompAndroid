@@ -276,9 +276,11 @@ static int rules_speed(void) {
 }
 
 int Port_NetSession(void);
-/* 1000 = the game's own pace; only ever the match's, never the player's own setting. */
+/* 1000 = the game's own pace; only ever the match's, never the player's own setting (a Tag Team room's is its
+   host's, tag_net.c TagNet_SpeedMilli). */
 int Port_NetSpeedMilli(void) {
-    if(TagNet_Enabled())return 1000;
+    extern int TagNet_SpeedMilli(void);
+    if(TagNet_Enabled())return TagNet_SpeedMilli();
     return Port_NetSession() || Port_NetActive() ? rules_speed() * 10 : 1000;
 }
 
@@ -3234,6 +3236,7 @@ int Port_NetSessionsEnded(void) {
 
 void Port_NetSessionEnd(void) {
     sSessionsEnded++;
+    Port_UiBanner(NULL, 0); /* (see Port_NetLeave) */
     sRivalRegion[0] = '\0';
     if (Lobby_SessionEnded()) { /* a lobby's match: the lobby goes on, with its socket, its relay and its room code */
         sMode = 0;
@@ -3269,6 +3272,9 @@ void Port_NetArrived(void) {
    normally is. */
 void Port_NetLeave(void) {
     fprintf(stderr, "bt3: net: the session has ended\n");
+    /* A session that ends before the two meet (a lobby's match when the rival's connection is gone) put up "Connecting
+       to your rival..." and nothing took it away: only meeting did. It stayed over the menus until the game was closed. */
+    Port_UiBanner(NULL, 0);
     { /* Dragon Net: a ranked match left before its fight was over is a loss for who left (net_dragon.c) */
         extern void DrNet_SessionEnding(int mine);
         DrNet_SessionEnding(!sEndedThere && !sGone);

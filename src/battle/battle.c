@@ -399,9 +399,15 @@ void Battle_Loop(void) {
 #ifdef PORT
         { extern void TagOnline_EndDraw(void); TagOnline_EndDraw(); }
 #endif
+#ifdef PORT
+        /* (this copy's own overlays: the practice lobby menu, the fighter picker of whoever is changing fighters,
+           the gauntlet's screens. Online they must not move the battle's random numbers: btl_cam.c) */
+        { extern void TagOnline_LocalDrawBegin(void); TagOnline_LocalDrawBegin(); }
+#endif
         TagChallenge_Draw();
 #ifdef PORT
         {extern void TagLobbyMenu_Draw(void),TagLobby_Draw(void);TagLobbyMenu_Draw();TagLobby_Draw();}
+        { extern void TagOnline_LocalDrawEnd(void); TagOnline_LocalDrawEnd(); }
 #endif
         Gfx_EndFrame(2);
         Dma_Flush();

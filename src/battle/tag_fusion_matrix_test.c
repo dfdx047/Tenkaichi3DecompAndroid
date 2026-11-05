@@ -44,7 +44,7 @@ void TagFusion_MatrixTick(s32 tick) {
     if(tick==20) {
         Port_TagOptionSet(TAG_OPT_FUSION_SECONDS,10);
         Port_TagOptionSet(TAG_OPT_SHARED_TRANSFORM,0);
-        Port_TagOptionSet(TAG_OPT_CINEMATIC_PAUSE,2);
+        Port_TagOptionSet(TAG_OPT_CINEMATIC_PAUSE,1);
         for(team=0;team<pairs;team++) {
             BtlMgrChr *c=BtlChar_Get(team),*p=BtlChar_Get(team+2);
             s32 slot=-1,partner=-1,queued;

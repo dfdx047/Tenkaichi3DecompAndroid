@@ -586,6 +586,7 @@ int PortInput_ComboPoll(void) {
 #define PAD_MAPPINGS "gamepad_mappings.txt"
 static volatile int sPadsStale; /* the list of controllers is read again at the next pads_refresh */
 
+static SDL_Mutex *sPadLock; /* (below, with the vibration's thread) */
 static void pads_refresh(void) {
     static unsigned calls;
     SDL_JoystickID *ids;
@@ -605,6 +606,7 @@ static void pads_refresh(void) {
 #else
         SDL_AddGamepadMappingsFromFile(PAD_MAPPINGS); /* (none yet: -1, nothing added) */
 #endif
+        sPadLock = SDL_CreateMutex();
         sInit = 1;
         test_pad();
     } else if (sPadsStale) {
@@ -625,8 +627,11 @@ static void pads_refresh(void) {
         for (i = 0; i < sIdCount && sIds[i] != sOpen[k].id; i++) {
         }
         if (sOpen[k].pad != NULL && i == sIdCount) {
+            fprintf(stderr, "bt3: controller gone: %s\n", SDL_GetGamepadName(sOpen[k].pad) != NULL ? SDL_GetGamepadName(sOpen[k].pad) : "?");
+            SDL_LockMutex(sPadLock); /* (not while the vibration's thread sends to it) */
             SDL_CloseGamepad(sOpen[k].pad);
             sOpen[k].pad = NULL;
+            SDL_UnlockMutex(sPadLock);
         }
     }
     for (i = 0; i < sIdCount; i++) { /* open the new ones */
@@ -636,13 +641,34 @@ static void pads_refresh(void) {
             for (k = 0; k < MAX_PADS && sOpen[k].pad != NULL; k++) {
             }
             if (k < MAX_PADS) {
+                Uint64 t0 = SDL_GetTicksNS();
                 sOpen[k].id = sIds[i];
                 sOpen[k].pad = SDL_OpenGamepad(sIds[i]);
+                if (sOpen[k].pad != NULL && !SDL_IsJoystickVirtual(sIds[i])) {
+                    /* (in the log: which controller, its link and battery, and how long opening it held the game) */
+                    int pct = -1;
+                    SDL_PowerState pw = SDL_GetGamepadPowerInfo(sOpen[k].pad, &pct);
+                    SDL_JoystickConnectionState c = SDL_GetGamepadConnectionState(sOpen[k].pad);
+                    fprintf(stderr, "bt3: controller added: %s (%04x:%04x, %s), battery %s %d%%, opened in %.1f ms\n",
+                            SDL_GetGamepadName(sOpen[k].pad) != NULL ? SDL_GetGamepadName(sOpen[k].pad) : "?", SDL_GetGamepadVendor(sOpen[k].pad),
+                            SDL_GetGamepadProduct(sOpen[k].pad),
+                            c == SDL_JOYSTICK_CONNECTION_WIRED ? "cable" : c == SDL_JOYSTICK_CONNECTION_WIRELESS ? "wireless" : "link unknown",
+                            pw == SDL_POWERSTATE_ON_BATTERY ? "on battery" : pw == SDL_POWERSTATE_CHARGING ? "charging" : pw == SDL_POWERSTATE_CHARGED ? "charged" :
+                            pw == SDL_POWERSTATE_NO_BATTERY ? "none" : "unknown", pct, (double)(SDL_GetTicksNS() - t0) / 1e6);
+                }
             }
         }
     }
     if (calls < 400) {
         test_pad_axes();
+    }
+    if (calls % 240 == 0) { /* (about every two minutes: a controller that switches itself off on a low battery shows here) */
+        for (k = 0; k < MAX_PADS; k++) {
+            int pct = -1;
+            if (sOpen[k].pad != NULL && !SDL_IsJoystickVirtual(sOpen[k].id) && SDL_GetGamepadPowerInfo(sOpen[k].pad, &pct) == SDL_POWERSTATE_ON_BATTERY) {
+                fprintf(stderr, "bt3: controller %s: battery %d%%\n", SDL_GetGamepadName(sOpen[k].pad) != NULL ? SDL_GetGamepadName(sOpen[k].pad) : "?", pct);
+            }
+        }
     }
 }
 
@@ -1246,10 +1272,77 @@ static struct {
     Uint64 cost; /* the controller's longest call, ns (0: never slow) */
     int stalls;  /* its calls of RUMBLE_OFF_NS or more */
     int off;     /* the controller held the game up: nothing more is sent to it */
+    int offTold; /* (the notice for it said, on the game's thread) */
 } sRumble[4];
 
+/* The commands are sent by a thread of their own. A Sony controller on a phone's Bluetooth took 9-13 ms for each
+   (2026-11-02/03 logs, "fewer are sent"): on the game's thread that was a stall every few frames. The game's frame
+   only leaves the newest command in its player's box; the thread sends it. sPadLock keeps a controller from being
+   closed (pads_refresh) while the thread is sending to it. */
+static SDL_Semaphore *sRumbleSem;
+static SDL_SpinLock sRumbleBoxLock;
+static struct { SDL_JoystickID id; Uint16 low, high; Uint32 ms; int pending; } sRumbleBox[4];
+static int SDLCALL rumble_thread(void *unused) {
+    (void)unused;
+    for (;;) {
+        int p;
+        SDL_WaitSemaphore(sRumbleSem);
+        for (p = 0; p < 4; p++) {
+            SDL_JoystickID id;
+            Uint16 low, high;
+            Uint32 ms;
+            int have;
+            SDL_LockSpinlock(&sRumbleBoxLock);
+            have = sRumbleBox[p].pending;
+            id = sRumbleBox[p].id;
+            low = sRumbleBox[p].low;
+            high = sRumbleBox[p].high;
+            ms = sRumbleBox[p].ms;
+            sRumbleBox[p].pending = 0;
+            SDL_UnlockSpinlock(&sRumbleBoxLock);
+            if (!have) {
+                continue;
+            }
+            SDL_LockMutex(sPadLock);
+            {
+                SDL_Gamepad *g = SDL_GetGamepadFromID(id);
+                if (g != NULL) {
+                    Uint64 took = SDL_GetTicksNS();
+                    SDL_RumbleGamepad(g, low, high, ms);
+                    took = SDL_GetTicksNS() - took;
+                    if (took >= RUMBLE_OFF_NS && __atomic_add_fetch(&sRumble[p].stalls, 1, __ATOMIC_RELAXED) >= 2) {
+                        fprintf(stderr, "rumble: player %d's controller (%s) took %llu ms for a vibration command: vibration is off for it\n",
+                                p + 1, SDL_GetGamepadName(g) != NULL ? SDL_GetGamepadName(g) : "?", (unsigned long long)(took / 1000000));
+                        __atomic_store_n(&sRumble[p].off, 1, __ATOMIC_RELAXED);
+                    } else if (took >= RUMBLE_SLOW_NS && took > __atomic_load_n(&sRumble[p].cost, __ATOMIC_RELAXED)) {
+                        if (__atomic_load_n(&sRumble[p].cost, __ATOMIC_RELAXED) == 0) {
+                            fprintf(stderr, "rumble: player %d's controller (%s) took %.1f ms for a vibration command: fewer are sent "
+                                            "(by the vibration's own thread: the game does not wait)\n",
+                                    p + 1, SDL_GetGamepadName(g) != NULL ? SDL_GetGamepadName(g) : "?", (double)took / 1e6);
+                        }
+                        __atomic_store_n(&sRumble[p].cost, took, __ATOMIC_RELAXED);
+                    }
+                }
+            }
+            SDL_UnlockMutex(sPadLock);
+        }
+    }
+    return 0;
+}
+
+/* A Sony controller (PS4, PS5) without a cable: every command becomes output reports over Bluetooth (one per motor
+   on Android, each carrying the light bar too, and one more when its time runs out). Players' DualShock 4s switched
+   themselves off in matches while the phone still listed them as connected, a known way such links fail under many
+   reports; so these get one command per RUMBLE_SONY_MS at most, with the strength in four steps (the game's 50-100%
+   swing six times a second no longer makes a new command each time). */
+#define RUMBLE_SONY_MS 200
+static int rumble_sony_wireless(SDL_Gamepad *g) {
+    SDL_JoystickConnectionState c = SDL_GetGamepadConnectionState(g);
+    return SDL_GetGamepadVendor(g) == 0x054C && c != SDL_JOYSTICK_CONNECTION_WIRED;
+}
+
 static void rumble_send(int player, SDL_Gamepad *g, Uint16 low, Uint16 high, int why) {
-    Uint64 now = SDL_GetTicks(), gap, took;
+    Uint64 now = SDL_GetTicks(), gap;
     int ms = RUMBLE_MS;
 
     if (sRumble[player].pad != g && sRumble[player].pad != NULL && (sRumble[player].low | sRumble[player].high) != 0) {
@@ -1267,8 +1360,20 @@ static void rumble_send(int player, SDL_Gamepad *g, Uint16 low, Uint16 high, int
         sRumble[player].off = 0;
     }
     sRumble[player].pad = g;
-    if (sRumble[player].off) {
+    if (__atomic_load_n(&sRumble[player].off, __ATOMIC_RELAXED)) {
+        if (!sRumble[player].offTold) {
+            extern void Port_UiNotice(const char *text);
+            sRumble[player].offTold = 1;
+            Port_UiNotice("Vibration turned off: the controller held the game up");
+        }
         return;
+    }
+    if (g != NULL && rumble_sony_wireless(g)) {
+        low = (Uint16)(low >> 14 << 14 | (low >> 14 ? 0x3FFF : 0)); /* (four steps: 0, 1/4, 1/2, 3/4, full) */
+        if ((low | high) != 0 && (sRumble[player].low | sRumble[player].high) != 0 && now - sRumble[player].at < RUMBLE_SONY_MS) {
+            return;
+        }
+        ms = RUMBLE_SONY_MS + RUMBLE_MS;
     }
     if (sRumble[player].cost >= RUMBLE_SLOW_NS) { /* a slow controller: one command per ten times its longest call */
         gap = sRumble[player].cost * 10 / 1000000;
@@ -1291,21 +1396,25 @@ static void rumble_send(int player, SDL_Gamepad *g, Uint16 low, Uint16 high, int
                 (low | high) != 0 ? ms : 0, whys[why]);
     }
     if (g != NULL) {
-        took = SDL_GetTicksNS();
-        SDL_RumbleGamepad(g, low, high, (low | high) != 0 ? ms : 0);
-        took = SDL_GetTicksNS() - took;
-        if (took >= RUMBLE_OFF_NS && ++sRumble[player].stalls >= 2) {
-            extern void Port_UiNotice(const char *text);
-            sRumble[player].off = 1;
-            fprintf(stderr, "rumble: player %d's controller (%s) took %llu ms for a vibration command: vibration is off for it\n",
-                    player + 1, SDL_GetGamepadName(g) != NULL ? SDL_GetGamepadName(g) : "?", (unsigned long long)(took / 1000000));
-            Port_UiNotice("Vibration turned off: the controller held the game up");
-        } else if (took >= RUMBLE_SLOW_NS && took > sRumble[player].cost) {
-            if (sRumble[player].cost == 0) {
-                fprintf(stderr, "rumble: player %d's controller (%s) took %.1f ms for a vibration command: fewer are sent\n", player + 1,
-                        SDL_GetGamepadName(g) != NULL ? SDL_GetGamepadName(g) : "?", (double)took / 1e6);
+        static SDL_Thread *thread;
+        if (thread == NULL && sRumbleSem == NULL) {
+            sRumbleSem = SDL_CreateSemaphore(0);
+            thread = sRumbleSem != NULL && sPadLock != NULL ? SDL_CreateThread(rumble_thread, "bt3-rumble", NULL) : NULL;
+            if (thread != NULL) {
+                SDL_DetachThread(thread);
             }
-            sRumble[player].cost = took;
+        }
+        if (thread != NULL) {
+            SDL_LockSpinlock(&sRumbleBoxLock);
+            sRumbleBox[player].id = SDL_GetGamepadID(g);
+            sRumbleBox[player].low = low;
+            sRumbleBox[player].high = high;
+            sRumbleBox[player].ms = (low | high) != 0 ? (Uint32)ms : 0;
+            sRumbleBox[player].pending = 1;
+            SDL_UnlockSpinlock(&sRumbleBoxLock);
+            SDL_SignalSemaphore(sRumbleSem);
+        } else {
+            SDL_RumbleGamepad(g, low, high, (low | high) != 0 ? ms : 0); /* (no thread: as before, on this one) */
         }
     }
     sRumble[player].low = low;
@@ -1558,6 +1667,22 @@ int Port_PadRead(int socket, unsigned char *data) {
     }
     clash_square(socket, &btn, &lx, &ly);
     press_age(socket, btn);
+    {   /* A stick held still is read with a tremor (a finger on the touch stick moves a pixel or two, a controller's
+           stick a step): a value is kept until it moves by 4 of 255 (1.5%), or reaches the centre or an edge. Online
+           every tiny change was a new input the other players' copies had not guessed, so they went back and ran
+           those frames again (a 2026-11-02 log: 311 rollbacks in 2 minutes). The same in every mode. */
+        static unsigned char kept[4][4] = {{0x80, 0x80, 0x80, 0x80}, {0x80, 0x80, 0x80, 0x80}, {0x80, 0x80, 0x80, 0x80}, {0x80, 0x80, 0x80, 0x80}};
+        unsigned char *v[4] = {&rx, &ry, &lx, &ly};
+        int k;
+        for (k = 0; k < 4; k++) {
+            int d = (int)*v[k] - (int)kept[socket][k];
+            if (*v[k] == 0x80 || *v[k] == 0x00 || *v[k] == 0xFF || d >= 4 || d <= -4) {
+                kept[socket][k] = *v[k];
+            } else {
+                *v[k] = kept[socket][k];
+            }
+        }
+    }
     memset(data, 0, 18);
     data[0] = (unsigned char)(~btn & 0xFF);       /* active low */
     data[1] = (unsigned char)(~(btn >> 8) & 0xFF);

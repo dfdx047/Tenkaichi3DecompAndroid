@@ -313,6 +313,11 @@ static void page_performance(PortVideo &v) {
 
 static void page_effects(PortVideo &v) {
     card_begin("fx", T("PlayStation 2 effects", "Efeitos do PlayStation 2", "Efectos del PlayStation 2"));
+    {
+        bool lite = v.tagLite != 0;
+        if (aswitch(T("Tag Team light graphics", "Gráficos leves no Tag Team", "Gráficos ligeros en Tag Team"),
+                    T("Only in Tag Team: lower resolution, no shadows, fewer effects.", "Só no Tag Team: resolução menor, sem sombras, menos efeitos.", "Solo en Tag Team: menor resolución, sin sombras, menos efectos."), &lite)) { v.tagLite = lite ? 1 : 0; }
+    }
     const char *names[6] = {T("Outline", "Contorno", "Contorno"), T("See-through tint", "Tom através do cenário", "Tono a través del escenario"),
                             T("Depth tint", "Névoa de distância", "Niebla de distancia"), T("Glare and glow", "Brilho e reflexo", "Brillo y resplandor"),
                             T("Distance blur", "Desfoque de distância", "Desenfoque de distancia"), T("Movement blur", "Desfoque de movimento", "Desenfoque de movimiento")};
@@ -846,6 +851,7 @@ static void nm_snapshot(void) {
     nm_put("present", sGL ? 0 : GsGpu_PresentGet());
     nm_put("meter", meter_on() ? 1 : 0);
     nm_put("fx_off", v.fxOff);
+    nm_put("tag_lite", v.tagLite);
     nm_put("glow", v.glow);
     nm_put("music", v.music);
     nm_put("effects", v.effects);
@@ -916,6 +922,7 @@ static void nm_apply(const char *key, int value) {
     else if (strcmp(key, "texture_pack") == 0) { v.texPack = value; }
     else if (strcmp(key, "frame_skip") == 0) { v.frameSkip = value; }
     else if (strcmp(key, "fx_off") == 0) { v.fxOff = value; }
+    else if (strcmp(key, "tag_lite") == 0) { v.tagLite = value; }
     else if (strcmp(key, "glow") == 0) { v.glow = value; }
     else if (strcmp(key, "music") == 0) { v.music = value; }
     else if (strcmp(key, "effects") == 0) { v.effects = value; }

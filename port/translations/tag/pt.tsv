@@ -134,7 +134,6 @@ Keep player assignments until the game closes.	Manter os jogadores nos controles
 Let every controller use character selection. P1 can always go back.	Todos os controles podem usar a seleção de personagens. O J1 sempre pode voltar.
 Show which player owns each character selection slot.	Mostrar qual jogador é dono de cada vaga na seleção de personagens.
 Play an entrance for every fighter instead of only the team leaders.	Mostrar a entrada de todos os lutadores, não só dos líderes das equipes.
-Pause everyone else, only the target, or nobody when a move shares its camera.	Pausar todos os outros, só o alvo ou ninguém quando um golpe compartilha a câmera.
 Full width bottom view, or a centered bottom view the same size as the top two.	Tela de baixo na largura toda, ou centralizada e do mesmo tamanho das duas de cima.
 Fusion Dance partners separate when their timer expires. Potara is permanent.	Os parceiros da Dança da Fusão se separam quando o tempo acaba. A Potara é permanente.
 Fusion Dance time limit in seconds.	Limite de tempo da Dança da Fusão, em segundos.
@@ -800,3 +799,12 @@ That room is full.	Essa sala está cheia.
 No online service is set for Tag Team rooms.	Nenhum serviço online foi configurado para as salas Tag Team.
 Could not open the online connection.	Não foi possível abrir a conexão online.
 Players connected: %d	Jogadores conectados: %d
+This room uses another version of the game. Install the same version as the host.	Esta sala usa outra versão do jogo. Instale a mesma versão do anfitrião.
+Your game data differ from the host's (another disc image or modified files). Use the same game data as the host.	Os seus dados do jogo são diferentes dos do anfitrião (outra imagem do disco ou arquivos modificados). Use os mesmos dados do jogo do anfitrião.
+Pause only the marked target of a move, or nobody. Other fighters keep moving. Camera sharing is separate.	Pausar só o alvo marcado do golpe, ou ninguém. Os outros lutadores continuam se mexendo. Compartilhar a câmera é uma opção separada.
+Hit Other Enemies	Golpear outros inimigos
+Melee hits can strike every enemy touching the attack, even when you are locked onto someone else. Grabs remain one-on-one.	Os golpes corpo a corpo podem acertar todo inimigo que encostar no ataque, mesmo com a mira em outro. Os agarrões continuam sendo um contra um.
+Waiting for the other player...	Esperando o outro jogador...
+Waiting for the other players to load...	Esperando os outros jogadores carregarem...
+The room changed. Choose your fighter again.	A sala mudou. Escolha seu lutador de novo.
+The games went out of sync. Stopping the match...	Os jogos dessincronizaram. Encerrando a partida...
