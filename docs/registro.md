@@ -40,7 +40,7 @@ Os relógios do meio da luta ficam ao lado de cada medida.
 | BT4, lib do Nominum + ARMSX2 (`nom1`) | a mesma | – | 20,5 (mín. 18,3) | 23,4 de 48,3 ms (48 %) | 24 % | GS 55 %, GPU 59 %; leitura do anel 13 % | 2 % | 4 % | como o ARMSX2, +7 % de um núcleo na leitura |
 | BT4, Nominum próprio forçado (`nom2own`) | a mesma | 18,9 (mín. 3,9) | 8,2 (mín. 7,4) | 18,3 de 98,8 ms (18 %) | 8 % | **GPU 99 %** | 1 % | 2 % | **GS/GPU** (cores do cenário erradas) |
 | BT3 (`bt3`, luta gravada `fight4.rec`) | menu, seleção, luta, vitória | 30,7 | **100 %** | jogo 6,1 de 10,1 ms de trabalho por quadro (orçamento 33,4) | – (no mesmo código) | lista 4,0 ms; GPU 22 % | – | – | nenhum: folga de 2/3 do quadro |
-| Tag 5 x 5 COM x COM (`tag5`, `BT3_DEMO`) | luta | 20,7–21,9 | **69–73 %** | jogo ~10 ms; o quadro leva 40–50 ms, 50 de 60 acima do orçamento | – | **entrega do quadro ao driver (`SDL_SubmitGPUCommandBuffer`) 22–27 ms**; desenho 6–7,5 ms; 64 passes e 18 cópias por quadro (BT3: 45 e 3,7); GPU 9 % na amostra | 1 % | – | **submit do quadro** (espera dentro do SDL/driver, não GPU cheia) |
+| Tag 5 x 5 COM x COM (`tag5`, `BT3_DEMO`) | luta | 20,7–21,9 | **69–73 %** | jogo ~11 ms | – | **GPU 99 %** a 305 MHz (na 2ª medida; a 1ª amostra, 9 %, caiu num intervalo); o "presenting" de 22–27 ms é o SDL esperando a GPU; 64 passes e 18 cópias por quadro (BT3: 45 e 3,7) | 1 % | – | **GS/GPU** (10 lutadores, 2x) |
 | BT2 (`bt2`, Duel COM x COM, Goku x Kid Gohan, Wasteland) | título, menu, seleção, mapa, luta | 30 (o do jogo) | **100 %** (30 de 30) | thread do jogo (EE e GS por software no mesmo `SDLThread`) 63 % | – | fila de render do paraLLEl-GS (2º `SDLThread`) 22 %; **GPU 64 %** a 305 MHz | 1 % | – | nenhum (folga na CPU e na GPU) |
 
 ## Histórico
@@ -151,3 +151,17 @@ Os relógios do meio da luta ficam ao lado de cada medida.
 - 09:31 BT2: a luta COM x COM terminou sozinha (Goku venceu; tela "Fight Again / Return to…", `end_now.png` em
   `~/DragonRageRefs/dia/bt2/`). Rota completa: menu, seleção, luta, vitória. O laço de fotos foi parado pelo Claude Code por
   falta de memória no PC (não no RP5); a foto da vitória foi tirada à parte.
+- 09:37 **Tag 5 x 5, de novo, com `BT3_GS_THREAD=0`** (a thread de render liga por padrão com o Tag no Android, `gs_core.c:1440`):
+  72,6 % (igual), "presenting" 15–18 ms, **GPU 99 %** a 305 MHz. Corrige a hipótese das 09:1x: não é trabalho dentro do SDL, é a
+  GPU cheia; o submit espera o quadro anterior sair da GPU. A thread de render não ganha nem perde aqui. Gargalo do Tag 5 x 5 no
+  sd480p: GS/GPU (10 lutadores, 2x, 18 cópias por quadro). Não é dos gargalos fora do GS do item 5.
+- 09:37 **Tag, menu do anfitrião sem letras: não se repete.** RP5, português, Tag ligado pelo launcher: SELECT → Sala Online →
+  Criar uma Sala → ENTER na porta → sala com código (903258), "CONECTADO J1 - Anfitrião", todos os modos com texto → Batalha em
+  Equipe: as 10 placas com nome e "CPU"/"J1 (VOCÊ) - ESCOLHENDO", botões, "0/1 prontos | 0/10 assistindo" → START em pronto → a
+  luta começa (5 x 5 em Namek). Fotos `h5`–`h8` em `~/DragonRageRefs/dia/tag/`. Corrigido por `ba41fe09` (01/11: os trabalhos de
+  letras parados eram soltos depois de 30 quadros; antes, os 8 ficavam presos e toda linha nova ficava vazia). Sobra: o título
+  "Choose teams. Press Start to take a place." em inglês na tela em português.
+- 09:37 **Tag, memória**: a região de 160 MB do port chega a **128 MB** no começo da primeira luta online (5 x 5, sala do anfitrião);
+  99 MB na luta 5 x 5 de teste e 112 MB no BT3 normal (rota gravada). O `exit(2)` do `heap.c:244` vem quando ela acaba; uma 2ª luta
+  online seguida é o teste que falta (cada luta 5 x 5 leva minutos com COM).
+
