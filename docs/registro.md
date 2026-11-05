@@ -14,8 +14,10 @@ Odin 3 e Cube (`192.168.1.134`, `192.168.1.183`) são da sessão do Naruto e nã
 | 3 | Rota e medidas por jogo no RP5 sd480p | feito | BT3, Tag 5x5, BT4 (3 renderizadores, 2x e 1x) e BT2; tabela abaixo; rota dos 4 modos num comando (`dia_final.sh`) |
 | 4 | Nominum no BT4 | passos 1 e 2 feitos | lib do Nominum com o ARMSX2 atrás; o valor "Nominum (teste)"; ReadFIFO2 PSMCT24 a 3 B/px; 6 dumps; pedidos N1–N4 em `nominum.md`; BT2/BT3 sem GS de gargalo |
 | 5 | Outros gargalos | feito | BT4: diagnósticos do runtime desligados (`c94be361`, 30,9 → 19,7 ms de jogo por imagem); 1x e gráfico leve medidos; `PS2X_PIN` piora |
-| 6 | Bugs conhecidos | 3 corrigidos | #12 (`c94be361`); mensagens da sala do Tag (`7ebbc131`); crash do SDL com movimento suave (`d42a244a`); menu sem letras não se repete; memória do Tag estável em 6 lutas; moto g20, Adreno 630 e #7 abertos |
-| 7 | licenses.txt do APK | feito (`39897130`) | conferir o `licenses.txt` no APK final |
+| 6 | Bugs conhecidos | 4 corrigidos | #12 (`c94be361`); mensagens da sala do Tag (`7ebbc131`); crash do SDL com movimento suave (`d42a244a`); menu sem letras não se repete; memória do Tag estável em 6 lutas; moto g20, Adreno 630 e #7 abertos; vazamento de memória do BT4, ~7 MB/min (`cb2560cb`) |
+| 7 | licenses.txt do APK | feito (`39897130`) | conferido no APK final (`assets/licenses.txt`, 156 KB) |
+| — | Decisões do dono (13:40) | feitas | aviso do gráfico leve nos níveis 0 e 1 (`e842168a`, Tag 5x5 a 98 % no sd480p); branches: as 3 ficam, `sparking-gameplay` e `ranked-flow-v2` de fora |
+| — | Fechamento | feito (20:13) | APK `DragonRage-1.0-dia-e842168a-20261105.apk` em ~/Downloads/DragonRage-builds/, instalado no RP5, rota dos 4 modos sem crash, perfil restaurado |
 
 ## Decisões
 
@@ -288,3 +290,10 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   entrada); A no "Ligar" grava tag_lite=1 e o log diz "turn on"; reabrir não pergunta de novo; "Agora não" grava tag_lite=0 e
   não pergunta mais; Adreno 650: nenhum aviso; a chave nos Ajustes liga e desliga. **Tag 5x5 com o gráfico leve: 98,0 %**, 29,4
   imagens/s, crash 0. As configurações do RP5 voltaram às de antes (dr_gpu_tier=3, tag_lite=0, sem dr_tag_lite_asked).
+- 20:14 **Fechamento** (com atraso: pausa de 13:45 a 19:30). `closing.sh`: BT3 e BT4 recompilados do HEAD `e842168a`,
+  APK `~/Downloads/DragonRage-builds/DragonRage-1.0-dia-e842168a-20261105.apk` (83.990.368 bytes, versionName 1.0.0), instalado no
+  RP5. Rota dos 4 modos como jogador (`dia_final.sh final`, sd480p): **BT3** 100 %, 30,7 imagens/s, luta gravada SAME sobre 6212,
+  crash 0; **Dragon Net** sala criada (C3AVF3); **Tag 5x5** a 2x 72,6 % (com o gráfico leve, 19:44: 98,0 %), crash 0; **BT4**
+  ARMSX2 21,6 atualizações/s (mín. 18,0), crash 0; **BT2** na luta (Goku x Kid Gohan), SDLThread 74 %, crash 0. Imagens em
+  ~/DragonRageRefs/dia/final/. `licenses.txt` no APK. Perfil do RP5 restaurado (`device-profile.sh restore`: cpu 0-7, A77 até
+  2,42 GHz, X 2,84 GHz, GPU 670 MHz). No aparelho: sem bt3_env.txt, dr_tag_team=0, BT4 bt4_renderer=1 e scale4=8.
