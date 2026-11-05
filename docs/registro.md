@@ -258,3 +258,5 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   **21,1/s** (mín. 18,7; de manhã 20,7–22,1), Dragon Rage a 1x **29,0/s** (mín. 27,9; antes 28,5–29,0), crash 0 nos dois, a luta
   certa na imagem. As configurações do BT4 voltaram (bt4_renderer=1, scale4=8, scale=2) e nenhum bt3_env.txt no aparelho. O
   fechamento das 18:15 (`closing.sh`) recompila o BT3 e o BT4 do HEAD antes do APK.
+- 12:32 **Teste diário no APK do HEAD (`hd.apk`).** BT3: luta gravada SAME sobre 6212, 0 crash; Dragon Net: sala criada
+  (código 3XVBW8). O APK inteiro do HEAD (BT3 e BT4) está conferido no RP5.
