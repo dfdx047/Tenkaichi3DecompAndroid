@@ -243,3 +243,18 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   Os dois são código do BT3-Recomp. Mudança possível pelo `patches/bt3recomp-android.patch`: juntar os `thread_local` quentes num
   bloco só, lido uma vez por chamada, e enviar a cadeia sem cópia quando ela é contígua. Nada mudado ainda; fica para a tarde, com
   build e rota do BT4 antes e depois.
+- 12:11 **BT4, TLS local-dynamic: não dá.** `-mllvm -aarch64-elf-ldtls-generation=1` no ps2_runtime e no bt4 (uma chamada
+  `tlsdesc` por função no lugar de uma por variável) compila, mas o lld do NDK recusa as relocações na ligação: `unknown relocation (528)`
+  e `(530)` (`R_AARCH64_TLSLD_ADD_DTPREL_HI12/LO12_NC`) em Thread.cpp, System.cpp e Sync.cpp. A flag foi desfeita (CMakeLists.txt
+  sem mudança, o BT4 recompilado sem ela, e o `libbt4.so` em jniLibs igual ao de antes, cmp). Mapa das 35 chamadas `tlsdesc` do
+  `dispatchGuestBranch` (por GOT e símbolo): `t_bjCtx`, `t_bjRdram`, `s_hcPc`, `s_hcFn`, `g_cadTickCounter`, `g_cadAdxCtr`,
+  `g_cadNestedFairness`, `g_cadBranchesSinceTick`, `g_schedIsGuest`, `g_schedTickDue`, `g_curFiber`, `g_schedTid` (4 vezes),
+  `g_cadMainNestedYield` e uns 15 `static thread_local` de diagnóstico. O caminho que resta é de código (um bloco por thread com os
+  quentes, lido uma vez por desvio), no despachante do runtime de terceiros: ganho estimado de 1 quadro/s no máximo, mudança grande no
+  caminho de todo desvio do EE. Escolha mais segura para a véspera do 1.0: **não mexer**; fica como pedido para depois do 1.0, com o mapa
+  em ~/DragonRageRefs/dia/tlsdesc_relocs.txt e tls_syms.txt.
+- 12:26 **BT4 do HEAD.** O `libbt4.so` liga o GS do Dragon Rage (`port/src/gs`), e o recompilado agora é o primeiro com a
+  correção das 10:31 no `gs_draw.c` (o do ensaio das 11:51 era das 08:36). APK do HEAD (`hd.apk`) no RP5, sd480p: ARMSX2 padrão
+  **21,1/s** (mín. 18,7; de manhã 20,7–22,1), Dragon Rage a 1x **29,0/s** (mín. 27,9; antes 28,5–29,0), crash 0 nos dois, a luta
+  certa na imagem. As configurações do BT4 voltaram (bt4_renderer=1, scale4=8, scale=2) e nenhum bt3_env.txt no aparelho. O
+  fechamento das 18:15 (`closing.sh`) recompila o BT3 e o BT4 do HEAD antes do APK.
