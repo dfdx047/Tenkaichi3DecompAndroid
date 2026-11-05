@@ -323,7 +323,7 @@ void Bt2Hw_ApplySettingsIfAsked(void) {
     GsGpu_SetSettings(&v);
     gsInterp = Port_Setting("interp", gsInterp);
     gGsFragDepth = Port_Setting("frag_depth", gGsFragDepth);
-    { extern int gBt2CelShade; gBt2CelShade = Port_Setting("cel_shade", 0); }
+    { extern int gBt2CelShade; gBt2CelShade = Port_Setting("cel_shade", 1); }
     GsGpu_PresentSet(Port_Setting("present", 0));
     fprintf(stderr, "BT3 renderer: settings now: scale %d/4, filter %d, effects off %d, glow %d%%, frame skip %d, smooth motion %d, precise depth %d\n",
             v.scale4, v.filter, v.fxOff, v.glow, v.frameSkip, gsInterp, gGsFragDepth);

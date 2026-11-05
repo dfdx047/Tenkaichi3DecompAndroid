@@ -18,6 +18,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import com.dfdx047.dragonrage.MainActivity
 import com.dfdx047.dragonrage.R
+import com.dfdx047.dragonrage.data.ActivityLog
 import com.dfdx047.dragonrage.data.EngineSettings
 import com.dfdx047.dragonrage.data.GamePaths
 import com.dfdx047.dragonrage.data.Renderer
@@ -70,6 +71,10 @@ open class GameActivity : SDLActivity() {
         requestedOrientation = orientationFlag()
         store = TouchStore(touchFolder())
         super.onCreate(savedInstanceState)
+        // SDL could not load the engine (loadLibraries below): it stopped before making its surface and shows a dialog
+        // with the reason. Without a surface setWindowStyle threw a NullPointerException and the dialog never showed
+        // (Bt4Activity on an Infinix X692, Android 10, 1.0.0).
+        if (mBrokenLibraries) return
         hideBars()
         addTouchPad()
         if (sustained) { // (Settings: steady clocks the phone can hold, where it supports them)
@@ -486,6 +491,17 @@ open class GameActivity : SDLActivity() {
         }
         if ((KeyEvent.isGamepadButton(event.keyCode) || fromController(event.source)) && realDevice(event.device)) padUsed()
         return super.dispatchKeyEvent(event)
+    }
+
+    /** SDL's dialog says why the engine did not load; the diary (app_activity.txt, in exported logs) keeps it too. */
+    override fun loadLibraries() {
+        try {
+            super.loadLibraries()
+        } catch (e: Throwable) {
+            ActivityLog.init(paths)
+            ActivityLog.fail("game", "the engine's libraries could not be loaded (${getLibraries().joinToString()})", e)
+            throw e
+        }
     }
 
     override fun getLibraries(): Array<String> = arrayOf("SDL3", "main")

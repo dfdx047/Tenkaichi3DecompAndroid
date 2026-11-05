@@ -860,10 +860,12 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
         uint32_t tpsm = (uint32_t)((t0 >> 20) & 0x3F), tbp = (uint32_t)(t0 & 0x3FFF);
         sWholeFrame = tme && tpsm == 1 && sprite && tbp / 32 == zbp; /* the cross-fade's picture (below) */
         /* BT2's copy: the characters' cel-shading light pass, an 8-bit ramp texture subtracted from the model as
-           (0 - Cs) * FIX + Cd, is left out unless BT2's setting "cel_shade" is on (gBt2CelShade): until its ramp is
-           drawn right here it darkens the whole model to a silhouette, and without it the model keeps its colours. */
+           (0 - Cs) * FIX + Cd. On by default ("cel_shade = 0" in BT2's renderer settings leaves it out). It was off
+           while the palettes decoded wrong (the ramp then darkened the whole model to a silhouette); since the
+           palettes are drawn right (dfe15ac) it shades as on the PS2 (checked on the phone 2026-11-01: 100% speed,
+           30 pictures/s in a fight, about 3.5 ms more of draw building a frame on the render thread). */
         if (gBt2CelShade < 0) {
-            gBt2CelShade = Port_Setting("cel_shade", 0);
+            gBt2CelShade = Port_Setting("cel_shade", 1);
         }
         if (!gBt2CelShade && tme && ((prim >> 6) & 1) && (gGs.alpha[ctx] & 0xFF) == 0x62 && tpsm == 0x13) {
             gsSkipped++;
