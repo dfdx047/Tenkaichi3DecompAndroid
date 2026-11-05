@@ -297,3 +297,6 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   ARMSX2 21,6 atualizações/s (mín. 18,0), crash 0; **BT2** na luta (Goku x Kid Gohan), SDLThread 74 %, crash 0. Imagens em
   ~/DragonRageRefs/dia/final/. `licenses.txt` no APK. Perfil do RP5 restaurado (`device-profile.sh restore`: cpu 0-7, A77 até
   2,42 GHz, X 2,84 GHz, GPU 670 MHz). No aparelho: sem bt3_env.txt, dr_tag_team=0, BT4 bt4_renderer=1 e scale4=8.
+- 20:16 **Relatório final publicado:** https://claude.ai/artifact/TVoNHDNGbpxzdNp6vfmiNg (privado). Veredito: **a 1.0 não está
+  pronta para lançar**. O bloqueio é o online sem teste com dois aparelhos depois dos merges (BT3 por código, partida rápida,
+  Classificatória; Tag Team online e espectador). As 4 rotas do APK final passaram sem crash.
