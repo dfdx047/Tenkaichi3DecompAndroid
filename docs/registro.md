@@ -41,6 +41,7 @@ Os relógios do meio da luta ficam ao lado de cada medida.
 | BT4, Nominum próprio forçado (`nom2own`) | a mesma | 18,9 (mín. 3,9) | 8,2 (mín. 7,4) | 18,3 de 98,8 ms (18 %) | 8 % | **GPU 99 %** | 1 % | 2 % | **GS/GPU** (cores do cenário erradas) |
 | BT3 (`bt3`, luta gravada `fight4.rec`) | menu, seleção, luta, vitória | 30,7 | **100 %** | jogo 6,1 de 10,1 ms de trabalho por quadro (orçamento 33,4) | – (no mesmo código) | lista 4,0 ms; GPU 22 % | – | – | nenhum: folga de 2/3 do quadro |
 | Tag 5 x 5 COM x COM (`tag5`, `BT3_DEMO`) | luta | 20,7–21,9 | **69–73 %** | jogo ~11 ms | – | **GPU 99 %** a 305 MHz (na 2ª medida; a 1ª amostra, 9 %, caiu num intervalo); o "presenting" de 22–27 ms é o SDL esperando a GPU; 64 passes e 18 cópias por quadro (BT3: 45 e 3,7) | 1 % | – | **GS/GPU** (10 lutadores, 2x) |
+| Tag 5 x 5 com gráfico leve (`tag_lite=1`, 1x na luta) | luta | 29,4 | **94–100 % (98 %)** | jogo ~29 ms | – | 50 passes, 13 cópias; com interp=2 igual (29,5), 0 crash | – | – | resolve o GPU |
 | BT2 (`bt2`, Duel COM x COM, Goku x Kid Gohan, Wasteland) | título, menu, seleção, mapa, luta | 30 (o do jogo) | **100 %** (30 de 30) | thread do jogo (EE e GS por software no mesmo `SDLThread`) 63 % | – | fila de render do paraLLEl-GS (2º `SDLThread`) 22 %; **GPU 64 %** a 305 MHz | 1 % | – | nenhum (folga na CPU e na GPU) |
 
 ## Histórico
@@ -202,3 +203,8 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   trocado, não esgotado. Candidatos no runtime (BT3-Recomp, não é código nosso): a troca de contexto das fibras (`ps2_fiber.cpp`,
   ucontext, guarda PROT_NONE) ou a restauração das pilhas das fibras do rollback. Nada mudado: sem o aparelho não há como testar.
   Continua aberto em `logs-1.0.md` #15.
+- 10:57 **Tag 5 x 5 no sd480p com o gráfico leve do Tag** (`tag_lite=1`, a luta a 1x, metade das partículas e sem sombras):
+  **94–100 %, média 98 %, 29,4 imagens/s**, contra 69–73 % sem ele (2x, GPU 99 %). Com interp=2 também 98 % e 0 crash. O `tag_lite` troca
+  a resolução no início de cada luta (`GsDraw_ScreenScaleCap(4)`), o mesmo caso do crash corrigido em `d42a244a`. Aqui ele correu
+  com movimento suave e sem crash. O app não liga o `tag_lite` sozinho (padrão 0, `EngineSettings.kt:71`). Ligar por padrão nas
+  GPUs fracas é decisão de produto e fica como recomendação para a 1.0, sem mudança.
