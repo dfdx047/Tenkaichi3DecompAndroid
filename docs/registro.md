@@ -111,11 +111,11 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   (Nominum): o autoteste do Nominum manda o RP5 (Adreno 650, driver da Qualcomm) para o ARMSX2 pela tabela de drivers; rota
   inteira, 21,3/s, 0 crash. Detalhes em `docs/nominum.md`.
 
-- 09:05 **Bug #12 com a correção** (`prof0.apk`, renderizador ARMSX2, `bt4bg.sh` 4 vezes: HOME e volta pelo launcher): o processo
+- 08:57 **Bug #12 com a correção** (`prof0.apk`, renderizador ARMSX2, `bt4bg.sh` 4 vezes: HOME e volta pelo launcher): o processo
   `:bt4` é o mesmo nas 4 voltas, a imagem volta (o filme de abertura seguia), 4 linhas `bt4gsx: surface gone: the swapchain was
   dropped first (4 a 11 ms)`, 0 `NATIVE_WINDOW_IN_USE`, 0 crash; START depois das voltas responde. A build de antes (`m3g.apk`) na
   mesma prova a seguir, para comparar.
-- 09:06 Logs dos jogadores, `libbt4.so std::recursive_mutex::unlock` (moto g20, Android 11, 0.9.0; 3 vezes seguidas no boot):
+- 08:57 Logs dos jogadores, `libbt4.so std::recursive_mutex::unlock` (moto g20, Android 11, 0.9.0; 3 vezes seguidas no boot):
   não é o mutex: `Cause: stack pointer is not in a rw map; likely due to stack overflow` na `GameThread`, com só 21 quadros
   (`iopImport` ← `sio2man` ← `SifLoadModule`, no carregamento dos módulos do IOP); o mesmo `sp` nas 3. Sem o aparelho não há
   como repetir; a hipótese é a pilha padrão de `std::thread` (1 MB no bionic) pequena para algum quadro grande nesse caminho. Não
