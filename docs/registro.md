@@ -177,3 +177,8 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   2 quadros → thread GS, 53–55 % de um núcleo, ~27 ms de CPU por quadro → GPU 54–60 %) anda a ~20–24 vsyncs/s. Teste com `MAXLAG=4`
   (`lag4`): **22,3** atualizações/s contra 22,1, a espera continua em ~700 ms/s. Folga no anel não ajuda: o limite é a etapa do GS (thread GS
   do ARMSX2 + GPU em série), não o EE, o VU1 nem o GIF. Fica o padrão. O que sobra do BT4 no sd480p é GS (Nominum, itens 4/N4).
+- 10:08 **Tag, mensagens da sala em inglês: corrigido.** 45 mensagens do `tag_net.c` (status da sala, entradas e saídas, erros da
+  partida) não tinham linha em `port/translations/tag/pt.tsv` nem `es.tsv`; o texto do Tag já passa por `Port_TagText`
+  (`port_screen.c:351`). Acrescentadas nas duas e geradas com `make_tag_text.py` (855 linhas, `--check` ok, argumentos de formato iguais).
+  Só texto. Prova (`tagtext.apk`): BT3 100 %, 30,7 imagens/s, 0 crash, Dragon Net com código ZFCHNZ, **fightcmp: SAME em 6212 quadros**
+  contra o merge 3; sala do anfitrião com "Escolha as equipes. Aperte Start para pegar uma vaga." (`~/DragonRageRefs/dia/tag/t2.png`).

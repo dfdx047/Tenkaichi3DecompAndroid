@@ -808,3 +808,48 @@ Waiting for the other player...	Esperando o outro jogador...
 Waiting for the other players to load...	Esperando os outros jogadores carregarem...
 The room changed. Choose your fighter again.	A sala mudou. Escolha seu lutador de novo.
 The games went out of sync. Stopping the match...	Os jogos dessincronizaram. Encerrando a partida...
+A guest could not finish loading practice.	Um convidado não terminou de carregar o treino.
+A guest joined the lobby.	Um convidado entrou na sala.
+A guest left the lobby.	Um convidado saiu da sala.
+A guest left the practice map.	Um convidado saiu do mapa de treino.
+A guest left. Their fighter is now a CPU.	Um convidado saiu. O lutador dele agora é da CPU.
+A player could not finish loading. The match has stopped.	Um jogador não terminou de carregar. A partida parou.
+A player did not return from the match.	Um jogador não voltou da partida.
+A player disconnected before the result was confirmed.	Um jogador desconectou antes de o resultado ser confirmado.
+A player left. Their fighter is now a CPU.	Um jogador saiu. O lutador dele agora é da CPU.
+A player sent conflicting inputs. Match stopped.	Um jogador enviou comandos conflitantes. Partida encerrada.
+Back in the lobby. Returning to practice.	De volta à sala. Voltando ao treino.
+Back in the room. Change fighters or ready up for another match.	De volta à sala. Troque de lutador ou fique pronto para outra partida.
+Checking game compatibility...	Conferindo a compatibilidade do jogo...
+Choose teams. Press Start to take a place.	Escolha as equipes. Aperte Start para pegar uma vaga.
+Choose your fighter, then ready up.	Escolha seu lutador e fique pronto.
+Connected. Choose the teams and ready up.	Conectado. Escolha as equipes e fique pronto.
+Connecting to the host...	Conectando ao anfitrião...
+Could not check the native build or game files. Restore the complete game data.	Não deu para conferir o jogo ou os arquivos do jogo. Restaure os dados completos do jogo.
+Could not connect to the host.	Não deu para conectar ao anfitrião.
+Could not create the room connection.	Não deu para criar a conexão da sala.
+Could not open that port. Try a different port.	Não deu para abrir essa porta. Tente outra.
+Could not reach the host. Check its address and port.	O anfitrião não respondeu. Confira o endereço e a porta.
+Could not synchronize the lobby membership.	Não deu para sincronizar quem está na sala.
+Each tournament team needs between one and five fighters.	Cada equipe do torneio precisa de um a cinco lutadores.
+Enter the host's IPv4 address.	Digite o endereço IPv4 do anfitrião.
+Input from a player stopped arriving. Match stopped.	Os comandos de um jogador pararam de chegar. Partida encerrada.
+Invalid lobby transition.	Mudança de sala inválida.
+Invalid network message. Match stopped.	Mensagem de rede inválida. Partida encerrada.
+Invalid practice membership event.	Evento de entrada no treino inválido.
+Invalid practice replay packet.	Pacote de repetição do treino inválido.
+Loading the match...	Carregando a partida...
+Match started.	A partida começou.
+Practice is ready. Choose a mode from the native menu.	O treino está pronto. Escolha um modo no menu do jogo.
+Rollback state files are missing. Rebuild or restore the complete native build.	Faltam os arquivos de estado do rollback. Reinstale o jogo completo.
+Room open. Invite players or spectators.	Sala aberta. Convide jogadores ou espectadores.
+Round complete. The next match is ready.	Rodada concluída. A próxima partida está pronta.
+The connection could not keep up. Match stopped.	A conexão não aguentou. Partida encerrada.
+The games went out of sync. Match stopped.	Os jogos dessincronizaram. Partida encerrada.
+The lobby event history is full. Reopen the lobby.	O histórico de eventos da sala encheu. Abra a sala de novo.
+The lobby input history is incomplete.	O histórico de comandos da sala está incompleto.
+The practice history is full. Reopen the lobby to continue.	O histórico do treino encheu. Abra a sala de novo para continuar.
+The room contains unsupported fighters, outfits or rules.	A sala tem lutadores, roupas ou regras não suportados.
+Tournament complete!	Torneio concluído!
+Tournament drawn. Ready for the next match, or skip a CPU match.	Chaves do torneio sorteadas. Fique pronto para a próxima partida ou pule uma partida da CPU.
+You left the room.	Você saiu da sala.
