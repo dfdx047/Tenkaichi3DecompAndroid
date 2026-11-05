@@ -12,6 +12,7 @@
 #include <sched.h>
 #include <SDL3/SDL.h>
 #include <android/log.h>
+#include <android/native_window_jni.h>
 #include <dlfcn.h>
 #include <jni.h>
 
@@ -22,6 +23,7 @@
 #include <chrono>
 #include <cstdarg>
 #include <cstdio>
+#include <sys/stat.h>
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
@@ -480,7 +482,7 @@ void menuApply(const std::string &key, int value)
     }
     else if (key == "bt4_renderer")
     {
-        Port_SettingSave("bt4_renderer", value ? 1 : 0); // (from the next start)
+        Port_SettingSave("bt4_renderer", value < 0 ? 0 : value > 2 ? 2 : value); // 0 Dragon Rage, 1 ARMSX2, 2 Nominum (from the next start)
         Port_SettingsWrite();
     }
     else if (key == "bt4_fps60")
@@ -563,6 +565,7 @@ struct Gsx
     void (*surfaceDestroyed)(void);
     void (*hold)(int);
     void (*stop)(void);
+    void (*gsDump)(const char *, int); // (optional: Bt4Gsx_GsDump, BT4_GS_DUMP)
 };
 
 // The launcher's texture packs (bt4/textures, one folder per pack): a .dds or .png at any depth below it. A pack
@@ -642,11 +645,40 @@ void *gsxWindowHandle(SDL_Window *w, int *pw, int *ph)
 
 bool menuFrame();
 
+// The surface for ARMSX2's GS, from Bt4Activity's own SurfaceHolder.Callback (Java, the UI thread, inside Android's
+// surfaceCreated/Changed/Destroyed): the window is handed over and taken back while it is valid. SDL's lifecycle events
+// came too late for that (a destroyed surface, then a stale SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER read at the
+// foreground event, before SDL had the new one): known bug #12. Without the callback (an older app), the events below.
+static std::atomic<Gsx *> g_gsxLive{nullptr};
+static std::atomic<bool> g_surfaceHook{false};
+
+extern "C" JNIEXPORT void JNICALL Java_com_dfdx047_dragonrage_engine_Bt4Activity_gsxSurface(JNIEnv *env, jobject, jobject surface, jint w, jint h)
+{
+    g_surfaceHook = true;
+    Gsx *g = g_gsxLive.load();
+    if (!g)
+        return; // (ARMSX2's GS not running: Dragon Rage's renderer has SDL's window)
+    if (!surface)
+    {
+        g->surfaceDestroyed(); // (returns once the GS has dropped the swapchain, the surface still alive)
+        return;
+    }
+    ANativeWindow *win = ANativeWindow_fromSurface(env, surface);
+    if (!win)
+        return;
+    g->surfaceChanged(win, w > 0 ? w : ANativeWindow_getWidth(win), h > 0 ? h : ANativeWindow_getHeight(win)); // (it takes its own reference)
+    ANativeWindow_release(win);
+}
+
 // Runs the game with ARMSX2's GS: false when it cannot (the library is missing or the stream never came), and the
 // caller then uses Dragon Rage's renderer.
 bool runArmsx2()
 {
     const std::string lib = g_libDir + "/libbt4gsx.so";
+    // Nominum Render's libbt4gsx.so (the same exports, ARMSX2 behind it): no game hooks for BT4, everything goes through
+    // the GS (its hooks/un5 would take BT4's FRAME writes for Naruto's). Read when the library loads; Dragon Rage's own
+    // library ignores it.
+    setenv("NOMINUM_GAME", "none", 0);
     void *h = dlopen(lib.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (!h)
     {
@@ -659,6 +691,7 @@ bool runArmsx2()
     g.surfaceDestroyed = reinterpret_cast<void (*)(void)>(dlsym(h, "Bt4Gsx_SurfaceDestroyed"));
     g.hold = reinterpret_cast<void (*)(int)>(dlsym(h, "Bt4Gsx_Hold"));
     g.stop = reinterpret_cast<void (*)(void)>(dlsym(h, "Bt4Gsx_Stop"));
+    g.gsDump = reinterpret_cast<void (*)(const char *, int)>(dlsym(h, "Bt4Gsx_GsDump"));
     if (!g.run || !g.surfaceChanged || !g.surfaceDestroyed || !g.hold || !g.stop)
     {
         std::fprintf(stderr, "bt4: libbt4gsx.so is not the expected one: Dragon Rage's renderer is used\n");
@@ -695,7 +728,13 @@ bool runArmsx2()
     static std::string sRoot, sIni, sRenderer, sDriverDir, sDriverLib, sHookDir;
     sRoot = root;
     sIni = ini;
-    sRenderer = Port_Setting("gpu_api", 0) == 1 ? "gl" : "vulkan";
+    // bt4_renderer 2: Nominum Render's own backend (Vulkan; its GPU self-test falls back to ARMSX2's GS by itself)
+    sRenderer = bt4Renderer() == 2 ? "nominum" : Port_Setting("gpu_api", 0) == 1 ? "gl" : "vulkan";
+    if (sRenderer == "nominum" && !dlsym(h, "nominum_create"))
+    {
+        std::fprintf(stderr, "bt4: this libbt4gsx.so is not Nominum Render's: ARMSX2's GS instead\n");
+        sRenderer = "vulkan";
+    }
     sDriverDir = g_driverDir;
     sDriverLib = g_driverLib;
     sHookDir = g_libDir;
@@ -714,16 +753,49 @@ bool runArmsx2()
     a = {ring, native, w, hgt, sRoot.c_str(), sIni.c_str(), sRenderer.c_str(), upscale,
          sDriverDir.c_str(), sDriverLib.c_str(), sHookDir.c_str()};
     std::atomic<bool> ended{false};
+    static Gsx sG;
+    sG = g;
+    g_gsxLive = &sG;
     std::thread gs([&] {
         const int code = g.run(&a);
         std::fprintf(stderr, "bt4: ARMSX2's renderer ended (%d)\n", code);
+        g_gsxLive = nullptr;
         ended = true;
     });
 
     auto lastPad = std::chrono::steady_clock::now();
+    auto lastDumpLook = lastPad;
     bool held = false;
+    // BT4_GS_DUMP=<folder> (bt3_env.txt, for Nominum Render): PCSX2 GS dumps of the stream, by scene. A file
+    // <bt4 folder>/gsdump_now.txt with "<name> [vsyncs]" (300 by default) asks for <folder>/<name>.gs.zst from the next
+    // vsync on; the file is removed when it is taken (port/tools/lab/bt4route.sh writes it at each scene of the route).
+    const char *dumpDir = std::getenv("BT4_GS_DUMP");
+    if (dumpDir && dumpDir[0])
+    {
+        mkdir(dumpDir, 0755);
+        std::fprintf(stderr, "bt4: GS dumps into %s (%s)\n", dumpDir, g.gsDump ? "on" : "this libbt4gsx.so has no Bt4Gsx_GsDump");
+    }
     while (!g_quit && !ended)
     {
+        if (dumpDir && dumpDir[0] && g.gsDump && std::chrono::steady_clock::now() - lastDumpLook >= std::chrono::milliseconds(250))
+        {
+            lastDumpLook = std::chrono::steady_clock::now();
+            const std::string ask = g_root + "/gsdump_now.txt";
+            if (FILE *f = std::fopen(ask.c_str(), "r"))
+            {
+                char name[128] = "";
+                int frames = 300;
+                const int n = std::fscanf(f, "%127s %d", name, &frames);
+                std::fclose(f);
+                std::remove(ask.c_str());
+                if (n >= 1 && name[0])
+                {
+                    const std::string base = std::string(dumpDir) + "/" + name;
+                    std::fprintf(stderr, "bt4: GS dump %s asked (%d vsyncs)\n", base.c_str(), frames);
+                    g.gsDump(base.c_str(), frames > 0 ? frames : 300);
+                }
+            }
+        }
         if (PortInput_ComboPoll())
             Bt4_OpenMenu();
         SDL_Event ev;
@@ -735,9 +807,10 @@ bool runArmsx2()
                 std::fflush(nullptr);
                 _exit(0);
             }
-            if (ev.type == SDL_EVENT_WILL_ENTER_BACKGROUND)
+            // (with Bt4Activity's callback the surface comes and goes there, gsxSurface above: these two are for an older app)
+            if (ev.type == SDL_EVENT_WILL_ENTER_BACKGROUND && !g_surfaceHook)
                 g.surfaceDestroyed(); // (the surface goes: no presenting into it)
-            else if (ev.type == SDL_EVENT_DID_ENTER_FOREGROUND || ev.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
+            else if ((ev.type == SDL_EVENT_DID_ENTER_FOREGROUND || ev.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) && !g_surfaceHook)
             {
                 int nw = 0, nh = 0;
                 if (void *n = gsxWindowHandle(win, &nw, &nh))
@@ -817,6 +890,12 @@ void ps2xAndroidPlatformInit(int &argc, char **&argv)
     setenv("PS2X_CD_IMAGE", g_image.c_str(), 1);
     setenv("PS2X_LIVE_SERIAL", "SLUS-21978", 0);
     setenv("PS2X_BARPACE", "0", 0);             // no GL in the runtime: its loop is paced by the headless raylib
+    // The runtime's log_level 1 (its default) turns on three diagnostics for every player: PS2X_PROFILE (two atomic adds
+    // on every branch of the game's code, ~1.7 million a second in a fight, for the [prof] line), PS2X_SCHED_DEBUG (the
+    // [sched] [mutex] [wake] lines) and PS2X_MCLOG. Off here; bt3_env.txt can still turn them on (it is read first).
+    setenv("PS2X_PROFILE", "0", 0);
+    setenv("PS2X_SCHED_DEBUG", "0", 0);
+    setenv("PS2X_MCLOG", "", 0);                // (it reads any first character but '\0' as on)
     static char arg0[] = "ps2EntryRunner";
     static char *args[] = {arg0, const_cast<char *>(elf.c_str()), nullptr};
     argc = 2;
@@ -991,9 +1070,10 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char *a
 
     // the renderer: ARMSX2's (1, the default since Dragon Rage 0.9.0) or Dragon Rage's (0, experimental for BT4:
     // bt4_renderer). A build without libbt4gsx.so falls to Dragon Rage's below.
-    std::fprintf(stderr, "bt4: renderer %s (%s)\n", bt4Renderer() == 1 ? "ARMSX2" : "Dragon Rage",
+    std::fprintf(stderr, "bt4: renderer %s (%s)\n", bt4Renderer() == 1 ? "ARMSX2" : bt4Renderer() == 2 ? "Nominum" : "Dragon Rage",
                  Port_Setting("bt4_renderer", -1) != -1 ? "the player's choice" : "this device's default");
-    if (bt4Renderer() == 1)
+    // 1 and 2 both go through libbt4gsx.so: 2 is Nominum Render's own backend in it (a choice only, never automatic)
+    if (bt4Renderer() == 1 || bt4Renderer() == 2)
     {
         armsx2Watch();
         startGame();
