@@ -222,3 +222,8 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   Segunda rota igual: 29,0 atualizações/s (mín. 27,1). Teste `PS2X_PIN=4,5` (interruptor do runtime: EE no 4, GL e apresentação no 5):
   **21,1, pior**, porque ele fixa também o processo inteiro no 5 (`sched_setaffinity(getpid())`). Nada mudado: o padrão é o melhor
   dos dois. Configurações do BT4 no RP5 restauradas, `bt3_env.txt` removido.
+- 11:51 **Ensaio da rota do fechamento** (`port/tools/lab/dia_final.sh meio`, APK `flip1` = código do HEAD, perfil sd480p):
+  BT3 100 %, 30,7 imagens/s, 0 crash, fightcmp SAME em 6212 quadros, Dragon Net com código NN5R4X; Tag 5 x 5 (2x) 72,6 %, 0 crash;
+  BT4 com o ARMSX2 (2x) 20,7 atualizações/s (mín. 18,1), 0 crash; BT2 na luta, threads 67 % e 25 %, 0 crash. Os 20,7 do BT4 ficam abaixo
+  dos 22,1 de `armsx2p0` com os diagnósticos desligados nos dois (1 linha [prof]/[sched] em cada): é a variação entre rodadas desta rota,
+  cerca de ±1,5. O roteiro leva cerca de 20 min e está pronto para as 18:15.
