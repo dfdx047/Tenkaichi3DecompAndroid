@@ -437,6 +437,10 @@
     <string name="bt4_engine_missing">Esta versión aún no tiene el motor de Budokai Tenkaichi 4 (libbt4.so). La imagen ya se puede configurar.</string>
     <string name="tag_lite">Gráficos ligeros en Tag Team</string>
     <string name="tag_lite_text">Solo en Tag Team: menor resolución, sin sombras, menos efectos. Para jugar más fluido en móviles débiles. También en el menú durante la pelea.</string>
+    <string name="tag_lite_offer">Tu dispositivo es más débil. ¿Activar los Gráficos ligeros para que el juego vaya más fluido?</string>
+    <string name="tag_lite_offer_later">Puedes cambiarlo después en Ajustes.</string>
+    <string name="tag_lite_offer_yes">Activar</string>
+    <string name="tag_lite_offer_no">Ahora no</string>
     <string name="adpf">Sugerencias de rendimiento</string>
     <string name="adpf_text">Le dice a Android cuánto tarda cada cuadro (Android 13 o más nuevo), para que la CPU siga rápida en los momentos pesados en vez de bajar entre cuadros. Desde el próximo inicio.</string>
     <string name="sustained">Rendimiento sostenido</string>

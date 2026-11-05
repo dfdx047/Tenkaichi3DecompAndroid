@@ -275,3 +275,16 @@ Os relógios do meio da luta ficam ao lado de cada medida.
   idênticas, a luta certa na imagem. Lib anterior guardada em ~/DragonRageRefs/dia/libbt4.hd.so.
 - 19:34 Pausa de 13:45 a 19:30 a pedido do dono (parei e esperei). Decisões do dono às 13:40: aviso do gráfico leve do Tag nas
   GPUs dos níveis 0 e 1; branches: ficam as 3 juntadas, `sparking-gameplay` e `ranked-flow-v2` ficam de fora.
+- 19:46 **Branches (decisão do dono, 13:40), conferido:** no HEAD as 3 juntadas (`Regulus-optimize`, `tag-team-android`,
+  `bt3-espectadores-lobbies`); `sparking-gameplay` (28 commits) e `ranked-flow-v2` (19) de fora, não juntadas.
+- 19:46 **Aviso do gráfico leve do Tag (decisão do dono, 13:40).** `TagLiteDialog`: nas GPUs dos níveis 0 e 1 do
+  `GpuProfiles` (Adreno 619 e abaixo, e as Mali/Xclipse/PowerVR desses níveis), uma vez, ao abrir o launcher do BT3: "O seu aparelho
+  é mais fraco. Ligar o Gráfico leve para o jogo rodar mais liso?" com **Ligar** (o foco, então o A do controle escolhe) e **Agora não**;
+  vem depois do aviso do perfil da GPU, nunca junto. A resposta fica em `dr_tag_lite_asked=1` (e `tag_lite`); quem já tem o gráfico
+  leve ligado não é perguntado; nos níveis 2 a 4 nada muda; a chave continua nos Ajustes. Voltar/tocar fora conta como "Agora não"
+  (igual ao aviso do perfil). Teste no RP5 sd480p com `gpu_name.txt` = "Adreno (TM) 619" (depois restaurado): primeira abertura
+  sem nível gravado mostra o aviso do perfil e, depois do "Agora não" dele, o do gráfico leve; **com o controle**, a 1ª versão punha o
+  foco no "Agora não" ao sair do modo de toque (corrigido: o foco é pedido dentro da janela do diálogo, a cada troca do modo de
+  entrada); A no "Ligar" grava tag_lite=1 e o log diz "turn on"; reabrir não pergunta de novo; "Agora não" grava tag_lite=0 e
+  não pergunta mais; Adreno 650: nenhum aviso; a chave nos Ajustes liga e desliga. **Tag 5x5 com o gráfico leve: 98,0 %**, 29,4
+  imagens/s, crash 0. As configurações do RP5 voltaram às de antes (dr_gpu_tier=3, tag_lite=0, sem dr_tag_lite_asked).

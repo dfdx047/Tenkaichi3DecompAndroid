@@ -218,6 +218,22 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
         _settings.value = settings.snapshot()
     }
 
+    // ---- the Tag Team's light graphics, offered once on a weak GPU (tiers 0 and 1: a Snapdragon 480+'s Adreno 619 and below)
+
+    private val _tagLiteOffer = MutableStateFlow(false)
+    /** The light graphics offer waiting for the player's answer (TagLiteDialog, after the GPU settings offer). */
+    val tagLiteOffer: StateFlow<Boolean> = _tagLiteOffer.asStateFlow()
+
+    /** [on]: "Turn on" (tag_lite 1); else "Not now". Either way it is kept and not asked again; Settings changes it later. */
+    fun answerTagLiteOffer(on: Boolean) = viewModelScope.launch(Dispatchers.IO) {
+        if (!_tagLiteOffer.value) return@launch
+        _tagLiteOffer.value = false
+        ActivityLog.info("settings", "Tag Team light graphics offer: ${if (on) "turn on" else "not now"}, GPU ${_gpuName.value}")
+        if (on) settings.set(EngineSettings.TAG_LITE, 1)
+        settings.set(EngineSettings.TAG_LITE_ASKED, 1)
+        _settings.value = settings.snapshot()
+    }
+
     // ---- the last run's numbers (Debug page)
 
     private val _perf = MutableStateFlow<PerfReport?>(null)
@@ -367,6 +383,10 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
             // the GPU's recommended settings, offered once (GpuProfiles)
             val p = GpuProfiles.profile(_gpuName.value)
             if (p != null && settings.get(EngineSettings.GPU_TIER, -1) == -1) _gpuOffer.value = p
+            // the Tag Team's light graphics, offered once on a weak GPU (TagLiteDialog); stronger GPUs: nothing changes
+            if (GpuProfiles.tierOf(_gpuName.value) in 0..1 && settings.get(EngineSettings.TAG_LITE_ASKED, 0) == 0) {
+                if (settings.get(EngineSettings.TAG_LITE, 0) != 0) settings.set(EngineSettings.TAG_LITE_ASKED, 1) else _tagLiteOffer.value = true
+            }
             _perf.value = runCatching { PerfReport.read(paths) }.getOrNull()
         }
         checkOnline()

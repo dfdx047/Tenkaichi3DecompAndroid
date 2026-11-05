@@ -97,6 +97,7 @@ class EngineSettings(private val file: File) {
         const val TAG_TEAM = "dr_tag_team"        // the Tag Team mod: 1 on (SELECT in the main menu opens its modes), 0 off
         const val TAG_TEAM_DEFAULT = 0
         const val GLARE = "glare"                 // the sky's glare: 0..200 %, the glow's until set
+        const val TAG_LITE_ASKED = "dr_tag_lite_asked" // 1: the light graphics offer (weak GPUs) was answered, not asked again
         const val GPU_TIER = "dr_gpu_tier"        // the GPU's tier the launcher's optimisations were made for (GpuProfiles)
         const val TOUCH = "dr_touch"              // on-screen controls: 0 off, 1 automatic, 2 always
         const val TOUCH_OPACITY = "dr_touch_alpha" // 10..100 %
