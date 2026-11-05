@@ -8,7 +8,7 @@ precisa dele vai como pedido nesta página.
 | Passo | Estado | Nota |
 |---|---|---|
 | 1. `libbt4gsx.so` do Nominum com o ARMSX2 por trás (`NOMINUM_GAME=none`) | feito, testado no RP5 sd480p | mesma imagem; luta 20,5 contra 22,1 atualizações/s com a lib do Dragon Rage (−7 %, uma rota cada); a passagem de cada pacote pelo Nominum custa ~7 % de um núcleo a mais |
-| 2. Renderizador "Nominum" (backend próprio) como terceiro valor | pendente | |
+| 2. Renderizador "Nominum" (backend próprio) como terceiro valor | feito, testado no RP5 sd480p | "Nominum (teste)" só com a lib do Nominum no APK (`35e7283f`); o autoteste escolhe o ARMSX2 nesta GPU (21,3/s); forçado: 0 crash, ReadFIFO2 PSMCT24 a 3 B/px, cores erradas (N3), 8,2/s (N4) |
 | Dumps do GS do BT4 em `~/Downloads/gsdumps/bt4/` | feito: 6 cenas | ver o histórico |
 
 ## Pedidos ao Nominum
