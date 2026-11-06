@@ -3,6 +3,7 @@ package com.dfdx047.dragonrage.engine
 import android.app.AlertDialog
 import android.content.Intent
 import android.hardware.input.InputManager
+import android.net.wifi.WifiManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -198,9 +199,20 @@ open class GameActivity : SDLActivity() {
         pad?.let { it.config = store.load() }
         handler.post(watchMenu)
         runCatching { (getSystemService(INPUT_SERVICE) as InputManager).registerInputDeviceListener(devices, handler) }
+        // The Wi-Fi radio stays awake while the game is in front (online play: its power saving holds packets back
+        // for the next beacon, 100 ms and more on a phone that is otherwise only receiving).
+        runCatching {
+            val lock = wifiLock ?: (applicationContext.getSystemService(WIFI_SERVICE) as WifiManager)
+                .createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "DragonRage:game")
+                .apply { setReferenceCounted(false); wifiLock = this }
+            if (!lock.isHeld) lock.acquire()
+        }
     }
 
+    private var wifiLock: WifiManager.WifiLock? = null
+
     override fun onPause() {
+        runCatching { wifiLock?.let { if (it.isHeld) it.release() } }
         runCatching { (getSystemService(INPUT_SERVICE) as InputManager).unregisterInputDeviceListener(devices) }
         handler.removeCallbacks(watchMenu)
         TouchBridge.setPad(0, 128, 128, 128, 128)
