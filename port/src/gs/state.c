@@ -145,6 +145,12 @@ extern void *Port_WorldLowLockVar(size_t *n);
 extern int Port_StateExtra(void **p, size_t *n, int max);
 /* The memory is there (taken here the first time): without it there is no viewer. */
 int Port_WorldCan(void) {
+    if (sRegions < 0) {
+        regions_init();
+    }
+    if (!sListed) { /* (without the list of the game's variables there is nothing to keep them apart with) */
+        return 0;
+    }
     if (sWorldBase == NULL) {
         sWorldBase = Port_WorldArena(&sWorldSize);
         sWorldNext = 0;
@@ -1349,7 +1355,10 @@ void Port_SessionPoll(void) {
 
 /* The session is over: the kept state comes back (does not return). */
 void Port_SessionReturn(void) {
+    extern void PortCharSel_Abandon(void);
+
     Port_NetSessionEnd();
+    PortCharSel_Abandon(); /* (left in the middle of a character select: its End will not run) */
     state_load(&sOwn);
 }
 #else

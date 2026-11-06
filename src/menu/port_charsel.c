@@ -88,6 +88,9 @@ static PORT_HOST CsView sV;
 static PORT_HOST f32 sYawOf[2];
 static PORT_HOST f32 sTabOf[2];  /* the personalization tab: 0 out of the screen, 1 in */
 static PORT_HOST f32 sItemOf[2]; /* the item panel */
+static PORT_HOST s32 sRed;           /* what is drawn now is the rival's: the blue goes red */
+static PORT_HOST f32 sFormOf[2]; /* the list of forms: 0 closed, 1 open */
+static PORT_HOST s32 sFormCell[2]; /* the roster's cell that list is of */
 static PORT_HOST f32 sAlpha = 1.0f;
 static PORT_HOST f32 sShift;  /* what is drawn now is this far to the right */
 
@@ -177,8 +180,19 @@ static void Cs_Line(char *out, s32 cap, u32 *file, s32 n) {
 
 /* ---- shapes, in the window's 512 x 448 (the whole window, whatever its shape) ---- */
 
+/* (worked out once a frame: these screens ask for it some hundreds of times, in soft floats on many phones) */
+static PORT_HOST f32 sAcrossPerDown = 1.0f;
+static PORT_HOST s32 sNarrow; /* no room for roster, fighter and details side by side: the details go under the roster */
+
+static void Cs_MeasureWindow(void) {
+    s32 aspect = Port_PageAspectMilli();
+
+    sAcrossPerDown = (512.0f / 448.0f) * 1000.0f / (f32)aspect;
+    sNarrow = aspect < 1900;
+}
+
 static f32 Cs_UnitsAcross(f32 unitsDown) { /* so many units across are as long as this many down */
-    return unitsDown * (512.0f / 448.0f) * 1000.0f / (f32)Port_PageAspectMilli();
+    return unitsDown * sAcrossPerDown;
 }
 
 static u32 Cs_A(u32 c) {
@@ -209,6 +223,90 @@ static void Cs_Frame(f32 x0, f32 y0, f32 x1, f32 y1, f32 t, u32 c) {
     Cs_Rect(x0, y0, x0 + tx, y1, c, c);
     Cs_Rect(x1 - tx, y0, x1, y1, c, c);
 }
+
+/* Between two colours; t from 0 to 256. */
+static u32 Cs_Mix(u32 a, u32 b, s32 t) {
+    u32 out = 0;
+    s32 k;
+
+    for (k = 0; k < 32; k += 8) {
+        s32 x = (s32)((a >> k) & 0xFF);
+        s32 y = (s32)((b >> k) & 0xFF);
+
+        out |= (u32)(x + ((y - x) * t >> 8)) << k;
+    }
+    return out;
+}
+
+/* The look of these screens: a panel of blue glass with round corners and a line of light around it. Some thirty flat
+   quads, no texture. */
+static void Cs_Glass(f32 x0, f32 y0, f32 x1, f32 y1, f32 r, u32 top, u32 bottom, u32 line) {
+    static const f32 kBend = 0.29f;
+    static const f32 kDir[12][2] = { { -1.0f, 0.0f }, { -0.7f, -0.7f }, { 0.0f, -1.0f }, { 0.0f, -1.0f }, { 0.7f, -0.7f }, { 1.0f, 0.0f },
+                                     { 1.0f, 0.0f }, { 0.7f, 0.7f }, { 0.0f, 1.0f }, { 0.0f, 1.0f }, { -0.7f, 0.7f }, { -1.0f, 0.0f } };
+    f32 unit = sAcrossPerDown;
+    f32 rx = r * unit;
+    u32 soft;
+    f32 xs[12];
+    f32 ys[12];
+    f32 levelY[6];
+    f32 levelX[6];
+    f32 tall = y1 - y0;
+    u32 off;
+    s32 i;
+
+    x0 += sShift;
+    x1 += sShift;
+    xs[0] = x0; ys[0] = y0 + r;
+    xs[1] = x0 + rx * kBend; ys[1] = y0 + r * kBend;
+    xs[2] = x0 + rx; ys[2] = y0;
+    xs[3] = x1 - rx; ys[3] = y0;
+    xs[4] = x1 - rx * kBend; ys[4] = y0 + r * kBend;
+    xs[5] = x1; ys[5] = y0 + r;
+    xs[6] = x1; ys[6] = y1 - r;
+    xs[7] = x1 - rx * kBend; ys[7] = y1 - r * kBend;
+    xs[8] = x1 - rx; ys[8] = y1;
+    xs[9] = x0 + rx; ys[9] = y1;
+    xs[10] = x0 + rx * kBend; ys[10] = y1 - r * kBend;
+    xs[11] = x0; ys[11] = y1 - r;
+    levelY[0] = y0; levelX[0] = rx;
+    levelY[1] = y0 + r * kBend; levelX[1] = rx * kBend;
+    levelY[2] = y0 + r; levelX[2] = 0.0f;
+    levelY[3] = y1 - r; levelX[3] = 0.0f;
+    levelY[4] = y1 - r * kBend; levelX[4] = rx * kBend;
+    levelY[5] = y1; levelX[5] = rx;
+    top = Cs_A(top);
+    bottom = Cs_A(bottom);
+    line = Cs_A(line);
+    off = line & 0xFFFFFF;
+    soft = Cs_Mix(off, line, 115);
+    for (i = 0; i < 5; i++) {
+        u32 c0 = Cs_Mix(top, bottom, (s32)((levelY[i] - y0) * 256.0f / tall));
+        u32 c1 = Cs_Mix(top, bottom, (s32)((levelY[i + 1] - y0) * 256.0f / tall));
+
+        Ps_ScreenQuad(x0 + levelX[i], levelY[i], x1 - levelX[i], levelY[i], x0 + levelX[i + 1], levelY[i + 1], x1 - levelX[i + 1], levelY[i + 1], c0, c0, c1, c1);
+    }
+    for (i = 0; i < 12; i++) {
+        s32 n = (i + 1) % 12;
+        f32 ax = xs[i] + kDir[i][0] * unit * 3.5f;
+        f32 ay = ys[i] + kDir[i][1] * 3.5f;
+        f32 bx = xs[n] + kDir[n][0] * unit * 3.5f;
+        f32 by = ys[n] + kDir[n][1] * 3.5f;
+        f32 cx = xs[i] + kDir[i][0] * unit * 1.1f;
+        f32 cy = ys[i] + kDir[i][1] * 1.1f;
+        f32 dx = xs[n] + kDir[n][0] * unit * 1.1f;
+        f32 dy = ys[n] + kDir[n][1] * 1.1f;
+
+        /* the soft light going out, then the line itself */
+        Ps_ScreenQuad(xs[i], ys[i], xs[n], ys[n], ax, ay, bx, by, soft, soft, off, off);
+        Ps_ScreenQuad(xs[i], ys[i], xs[n], ys[n], cx, cy, dx, dy, line, line, line, line);
+    }
+}
+
+#define CS_GLASS_TOP (sRed ? Ps_Rgba(0xA8, 0x14, 0x1C, 0x5C) : Ps_Rgba(0x12, 0x40, 0xA8, 0x5C))
+#define CS_GLASS_LOW (sRed ? Ps_Rgba(0x58, 0x06, 0x0C, 0x6C) : Ps_Rgba(0x04, 0x16, 0x58, 0x6C))
+#define CS_GLASS_LINE (sRed ? Ps_Rgba(0xFF, 0x60, 0x50, 0x80) : Ps_Rgba(0x5C, 0xCC, 0xFF, 0x80))
+#define CS_GLASS_GOLD Ps_Rgba(0xFF, 0xD0, 0x50, 0x80)
 
 /* Text placed in window units: Ps_TextEx works in the page's. */
 static f32 Cs_PageX(f32 x) {
@@ -262,54 +360,99 @@ static void Cs_Tex(MTexRes *res, f32 x0, f32 y0, f32 x1, f32 y1, s32 u0, s32 v0,
 }
 
 /* A roster chip: the disc's chips hold their picture in 48 x 41 of their 64 x 64 (x 8..55, y 11..51). */
+static void Cs_ChipAlpha(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 grey, s32 alpha) {
+    Cs_Tex((MTexRes *)MPACK_AT(sV.chipPack, id + 1), x0, y0, x1, y1, 8, 11, 56, 52, grey, alpha);
+}
+
 static void Cs_Chip(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 grey) {
-    Cs_Tex((MTexRes *)MPACK_AT(sV.chipPack, id + 1), x0, y0, x1, y1, 8, 11, 56, 52, grey, 0x80);
+    Cs_ChipAlpha(id, x0, y0, x1, y1, grey, 0x80);
 }
 
 /* ---- the parts of the screen ---- */
 
-static void Cs_Backdrop(f32 cx) {
+/* reds: 0 all blue, 1 all red, 2 the rival's half red */
+/* Once: the sines the round things take, kept apart from the game's state. */
+enum { CS_SIDES = 32, CS_RAYS = 12, CS_MARKS = 12 };
+static PORT_HOST f32 sRoundC[CS_SIDES + 1], sRoundS[CS_SIDES + 1];
+static PORT_HOST f32 sRayC[CS_RAYS][2], sRayS[CS_RAYS][2], sMarkC[CS_MARKS][2], sMarkS[CS_MARKS][2];
+static PORT_HOST s32 sRoundReady;
+
+static void Cs_RoundInit(void) {
+    s32 i;
+
+    if (sRoundReady) {
+        return;
+    }
+    sRoundReady = 1;
+    for (i = 0; i <= CS_SIDES; i++) {
+        f32 a = (f32)i * (6.2831853f / CS_SIDES);
+
+        sRoundC[i] = cosf(a);
+        sRoundS[i] = sinf(a);
+    }
+    for (i = 0; i < CS_RAYS; i++) {
+        f32 a = (f32)i * (6.2831853f / CS_RAYS);
+
+        sRayC[i][0] = cosf(a);
+        sRayS[i][0] = sinf(a);
+        sRayC[i][1] = cosf(a + 0.16f);
+        sRayS[i][1] = sinf(a + 0.16f);
+    }
+    for (i = 0; i < CS_MARKS; i++) {
+        f32 a = (f32)i * (6.2831853f / CS_MARKS);
+
+        sMarkC[i][0] = cosf(a);
+        sMarkS[i][0] = sinf(a);
+        sMarkC[i][1] = cosf(a + 0.10f);
+        sMarkS[i][1] = sinf(a + 0.10f);
+    }
+}
+
+static void Cs_Backdrop(f32 cx, s32 reds) {
     s32 i;
     f32 cy = 215.0f;
+    u32 blueTop = Ps_Rgba(0x06, 0x28, 0x86, 0x80);
+    u32 blueLow = Ps_Rgba(0x12, 0x68, 0xD0, 0x80);
+    u32 redTop = Ps_Rgba(0x7A, 0x08, 0x10, 0x80);
+    u32 redLow = Ps_Rgba(0xD4, 0x1C, 0x1C, 0x80);
 
-    Cs_Rect(0.0f, 0.0f, 512.0f, 448.0f, Ps_Rgba(0x10, 0x4A, 0xB0, 0x80), Ps_Rgba(0x3F, 0xB4, 0xF4, 0x80));
+    Cs_Rect(0.0f, 0.0f, reds == 2 ? 256.0f : 512.0f, 448.0f, reds == 1 ? redTop : blueTop, reds == 1 ? redLow : blueLow);
+    if (reds == 2) {
+        Cs_Rect(256.0f, 0.0f, 512.0f, 448.0f, redTop, redLow);
+    }
     /* rays behind the fighter, turning slowly */
-    for (i = 0; i < 12; i++) {
-        f32 a = (f32)sTick * 0.0025f + (f32)i * (6.2831853f / 12.0f);
-        f32 b = a + 0.16f;
+    {
+        f32 turn = (f32)sTick * 0.0025f;
+        f32 tc = cosf(turn);
+        f32 ts = sinf(turn);
         f32 r = 620.0f;
         u32 mid = Ps_Rgba(0xFF, 0xFF, 0xFF, 0x12);
         u32 end = Ps_Rgba(0xFF, 0xFF, 0xFF, 0x00);
 
-        Ps_ScreenQuad(cx, cy, cx, cy, cx + cosf(a) * r, cy + sinf(a) * r, cx + cosf(b) * r, cy + sinf(b) * r, mid, mid, end, end);
+        for (i = 0; i < CS_RAYS; i++) {
+            Ps_ScreenQuad(cx, cy, cx, cy, cx + (sRayC[i][0] * tc - sRayS[i][0] * ts) * r, cy + (sRayS[i][0] * tc + sRayC[i][0] * ts) * r,
+                          cx + (sRayC[i][1] * tc - sRayS[i][1] * ts) * r, cy + (sRayS[i][1] * tc + sRayC[i][1] * ts) * r, mid, mid, end, end);
+        }
     }
-    Cs_Rect(0.0f, 340.0f, 512.0f, 448.0f, Ps_Rgba(0x06, 0x24, 0x60, 0x00), Ps_Rgba(0x06, 0x24, 0x60, 0x50));
+    Cs_Rect(0.0f, 340.0f, 512.0f, 448.0f, Ps_Rgba(0x04, 0x08, 0x20, 0x00), Ps_Rgba(0x04, 0x08, 0x20, 0x50));
 }
 
 /* A filled ellipse, the colour going from its middle to its edge. */
 static void Cs_Ellipse(f32 cx, f32 cy, f32 rx, f32 ry, u32 mid, u32 edge) {
-    enum { SIDES = 40 };
     s32 i;
 
-    for (i = 0; i < SIDES; i++) {
-        f32 a = (f32)i * (6.2831853f / SIDES);
-        f32 b = (f32)(i + 1) * (6.2831853f / SIDES);
-
-        Ps_ScreenQuad(cx, cy, cx, cy, cx + cosf(a) * rx, cy + sinf(a) * ry, cx + cosf(b) * rx, cy + sinf(b) * ry, mid, mid, edge, edge);
+    for (i = 0; i < CS_SIDES; i++) {
+        Ps_ScreenQuad(cx, cy, cx, cy, cx + sRoundC[i] * rx, cy + sRoundS[i] * ry, cx + sRoundC[i + 1] * rx, cy + sRoundS[i + 1] * ry, mid, mid, edge, edge);
     }
 }
 
 /* The band between two ellipses around one middle. */
 static void Cs_Ring(f32 cx, f32 cy, f32 rx0, f32 ry0, f32 rx1, f32 ry1, u32 c) {
-    enum { SIDES = 40 };
     s32 i;
 
-    for (i = 0; i < SIDES; i++) {
-        f32 a = (f32)i * (6.2831853f / SIDES);
-        f32 b = (f32)(i + 1) * (6.2831853f / SIDES);
-
-        Ps_ScreenQuad(cx + cosf(a) * rx0, cy + sinf(a) * ry0, cx + cosf(b) * rx0, cy + sinf(b) * ry0,
-                      cx + cosf(a) * rx1, cy + sinf(a) * ry1, cx + cosf(b) * rx1, cy + sinf(b) * ry1, c, c, c, c);
+    for (i = 0; i < CS_SIDES; i++) {
+        Ps_ScreenQuad(cx + sRoundC[i] * rx0, cy + sRoundS[i] * ry0, cx + sRoundC[i + 1] * rx0, cy + sRoundS[i + 1] * ry0,
+                      cx + sRoundC[i] * rx1, cy + sRoundS[i] * ry1, cx + sRoundC[i + 1] * rx1, cy + sRoundS[i + 1] * ry1, c, c, c, c);
     }
 }
 
@@ -329,22 +472,42 @@ static void Cs_Pedestal(s32 side) {
         ry = rx * 0.16f; /* the camera is low: seen almost from the side it would not read as a disc */
     }
     h = ry * 0.55f;
-    Cs_Ellipse(cx, cy + h + 6.0f, rx * 1.18f, ry * 1.18f, Ps_Rgba(0x02, 0x10, 0x38, 0x40), Ps_Rgba(0x02, 0x10, 0x38, 0x00));
-    Cs_Ellipse(cx, cy + h, rx, ry, Ps_Rgba(0x10, 0x2C, 0x68, 0x80), Ps_Rgba(0x08, 0x18, 0x40, 0x80));
-    Ps_ScreenQuad(cx - rx, cy, cx + rx, cy, cx - rx, cy + h, cx + rx, cy + h, Ps_Rgba(0x18, 0x3C, 0x80, 0x80),
-                  Ps_Rgba(0x10, 0x2C, 0x68, 0x80), Ps_Rgba(0x0C, 0x20, 0x50, 0x80), Ps_Rgba(0x08, 0x18, 0x40, 0x80));
-    Cs_Ellipse(cx, cy, rx, ry, Ps_Rgba(0x5A, 0x8E, 0xD8, 0x80), Ps_Rgba(0x24, 0x54, 0xA8, 0x80));
-    Cs_Ring(cx, cy, rx, ry, rx * 0.95f, ry * 0.93f, Ps_Rgba(0xF0, 0xC0, 0x48, 0x80));
-    Cs_Ring(cx, cy, rx * 0.76f, ry * 0.76f, rx * 0.74f, ry * 0.74f, Ps_Rgba(0xFF, 0xF0, 0xC0, 0x50));
-    for (i = 0; i < 12; i++) {
-        f32 a = sYawOf[side] + (f32)i * (6.2831853f / 12.0f);
-        f32 b = a + 0.10f;
+    /* a ring of light on the floor, its dark side, its top, gold and blue rims */
+    if (sRed) {
+        Cs_Ellipse(cx, cy + h + 4.0f, rx * 1.3f, ry * 1.3f, Ps_Rgba(0xFF, 0x50, 0x40, 0x48), Ps_Rgba(0xFF, 0x50, 0x40, 0x00));
+        Cs_Ellipse(cx, cy + h, rx, ry, Ps_Rgba(0x60, 0x0A, 0x10, 0x80), Ps_Rgba(0x3C, 0x04, 0x08, 0x80));
+        Ps_ScreenQuad(cx - rx, cy, cx + rx, cy, cx - rx, cy + h, cx + rx, cy + h, Ps_Rgba(0x78, 0x0C, 0x14, 0x80),
+                      Ps_Rgba(0x78, 0x0C, 0x14, 0x80), Ps_Rgba(0x3C, 0x04, 0x08, 0x80), Ps_Rgba(0x3C, 0x04, 0x08, 0x80));
+        Cs_Ellipse(cx, cy, rx, ry, Ps_Rgba(0xE0, 0x28, 0x24, 0x80), Ps_Rgba(0x70, 0x08, 0x10, 0x80));
+    } else {
+        Cs_Ellipse(cx, cy + h + 4.0f, rx * 1.3f, ry * 1.3f, Ps_Rgba(0x50, 0xC8, 0xFF, 0x48), Ps_Rgba(0x50, 0xC8, 0xFF, 0x00));
+        Cs_Ellipse(cx, cy + h, rx, ry, Ps_Rgba(0x0A, 0x1E, 0x60, 0x80), Ps_Rgba(0x04, 0x10, 0x3C, 0x80));
+        Ps_ScreenQuad(cx - rx, cy, cx + rx, cy, cx - rx, cy + h, cx + rx, cy + h, Ps_Rgba(0x0C, 0x28, 0x78, 0x80),
+                      Ps_Rgba(0x0C, 0x28, 0x78, 0x80), Ps_Rgba(0x04, 0x10, 0x3C, 0x80), Ps_Rgba(0x04, 0x10, 0x3C, 0x80));
+        Cs_Ellipse(cx, cy, rx, ry, Ps_Rgba(0x24, 0x70, 0xE0, 0x80), Ps_Rgba(0x08, 0x20, 0x70, 0x80));
+    }
+    Cs_Ring(cx, cy, rx, ry, rx * 0.95f, ry * 0.93f, Ps_Rgba(0xFF, 0xD0, 0x50, 0x80));
+    Cs_Ring(cx, cy, rx * 0.86f, ry * 0.85f, rx * 0.83f, ry * 0.81f, sRed ? Ps_Rgba(0xFF, 0x90, 0x70, 0x80) : Ps_Rgba(0x70, 0xE0, 0xFF, 0x80));
+    {
+        f32 tc = cosf(sYawOf[side]);
+        f32 ts = sinf(sYawOf[side]);
         u32 c = Ps_Rgba(0xFF, 0xE4, 0x90, 0x70);
 
-        Ps_ScreenQuad(cx + cosf(a) * rx * 0.90f, cy + sinf(a) * ry * 0.88f, cx + cosf(b) * rx * 0.90f, cy + sinf(b) * ry * 0.88f,
-                      cx + cosf(a) * rx * 0.80f, cy + sinf(a) * ry * 0.79f, cx + cosf(b) * rx * 0.80f, cy + sinf(b) * ry * 0.79f, c, c, c, c);
+        for (i = 0; i < CS_MARKS; i++) {
+            f32 ac = sMarkC[i][0] * tc - sMarkS[i][0] * ts;
+            f32 as = sMarkS[i][0] * tc + sMarkC[i][0] * ts;
+            f32 bc = sMarkC[i][1] * tc - sMarkS[i][1] * ts;
+            f32 bs = sMarkS[i][1] * tc + sMarkC[i][1] * ts;
+
+            Ps_ScreenQuad(cx + ac * rx * 0.94f, cy + as * ry * 0.92f, cx + bc * rx * 0.94f, cy + bs * ry * 0.92f,
+                          cx + ac * rx * 0.88f, cy + as * ry * 0.87f, cx + bc * rx * 0.88f, cy + bs * ry * 0.87f, c, c, c, c);
+        }
     }
-    Cs_Ellipse(cx, cy, rx * 0.62f, ry * 0.62f, Ps_Rgba(0x04, 0x10, 0x30, 0x48), Ps_Rgba(0x04, 0x10, 0x30, 0x00));
+    if (sRed) {
+        Cs_Ellipse(cx, cy, rx * 0.62f, ry * 0.62f, Ps_Rgba(0xFF, 0xA8, 0x80, 0x30), Ps_Rgba(0xFF, 0xA8, 0x80, 0x00));
+    } else {
+        Cs_Ellipse(cx, cy, rx * 0.62f, ry * 0.62f, Ps_Rgba(0x90, 0xE8, 0xFF, 0x30), Ps_Rgba(0x90, 0xE8, 0xFF, 0x00));
+    }
 }
 
 static void Cs_Portrait(f32 middle, f32 height) {
@@ -391,8 +554,10 @@ static void Cs_Grid(void) {
         sTopRowOf[sNow] = 0;
     }
     Port_GsMarker(GS_CHIP_ON);
-    Cs_Rect(CS_GRID_X - gapW, CS_GRID_Y - CS_GAP, panelR, CS_GRID_Y + (CS_CELL_H + CS_GAP) * CS_VIS_ROWS + CS_GAP,
-            Ps_Rgba(0x06, 0x1C, 0x4C, 0x60), Ps_Rgba(0x06, 0x1C, 0x4C, 0x48));
+    Port_GsMarker(GS_CHIP_OFF);
+    Cs_Glass(CS_GRID_X - gapW * 2.0f, CS_GRID_Y - CS_GAP - 2.0f, panelR + gapW * 3.0f, CS_GRID_Y + (CS_CELL_H + CS_GAP) * CS_VIS_ROWS + CS_GAP + 1.0f, 7.0f,
+             CS_GLASS_TOP, CS_GLASS_LOW, CS_GLASS_LINE);
+    Port_GsMarker(GS_CHIP_ON);
     for (r = 0; r < CS_VIS_ROWS; r++) {
         for (c = 0; c < MCHR_COLS; c++) {
             s32 at = c + (r + sTopRowOf[sNow]) * MCHR_COLS;
@@ -435,17 +600,46 @@ static void Cs_Grid(void) {
 }
 
 static f32 Cs_Heading(f32 x0, f32 x1, f32 y, s32 word) {
-    Cs_Plate(x0, y, x1, y + 19.0f, Ps_Rgba(0x0C, 0x2C, 0x70, 0x78), Ps_Rgba(0x06, 0x1C, 0x4C, 0x60));
+    Cs_Plate(x0, y, x1, y + 19.0f, sRed ? Ps_Rgba(0x70, 0x10, 0x14, 0x78) : Ps_Rgba(0x0C, 0x2C, 0x70, 0x78),
+             sRed ? Ps_Rgba(0x4C, 0x08, 0x0C, 0x60) : Ps_Rgba(0x06, 0x1C, 0x4C, 0x60));
     Cs_Rect(x0, y, x0 + Cs_UnitsAcross(3.0f), y + 19.0f, Ps_Rgba(0xFF, 0xC8, 0x40, 0x80), Ps_Rgba(0xE0, 0x80, 0x10, 0x80));
     Cs_Text(x0 + Cs_UnitsAcross(8.0f), y - 3.0f, (char *)Cs_Words(word), 0.58f, x1 - x0 - 10.0f, 0,
             Ps_Rgba(0xFF, 0xEC, 0xA8, 0x80), Ps_Rgba(0xFF, 0xC0, 0x50, 0x80));
     return y + 23.0f;
 }
 
+/* The list of forms has two rows only where it has the room for them: six or seven on the screen of one. */
+s32 PortCharSel_FormRowSize(s32 count, s32 split, s32 team) {
+    return !split && !team && count >= 6 ? (count + 1) / 2 : count;
+}
+
+s32 PortCharSel_FormOtherRow(s32 count, s32 form, s32 split, s32 team) {
+    s32 size = PortCharSel_FormRowSize(count, split, team);
+    s32 other;
+
+    if (size >= count || form < 0 || form >= count) {
+        return -1;
+    }
+    other = form < size ? form + size : form - size;
+    return other < count ? other : count - 1;
+}
+
+/* The height of the chips, for that many in a row, so that they fit in the room there is.
+   unit: how many units across a chip is for each unit of its height; gapW: the gap across, gapH: down. */
+#define CS_FORM_TALL 36.0f
+static f32 Cs_FormFit(s32 n, s32 perRow, f32 width, f32 room, f32 unit, f32 gapW, f32 gapH) {
+    s32 rows = (n + perRow - 1) / perRow;
+    f32 byWidth = (width - gapW * (f32)(perRow - 1)) / (f32)perRow / unit;
+    f32 byRoom = (room - gapH * (f32)(rows - 1)) / (f32)rows;
+    f32 tall = byWidth < byRoom ? byWidth : byRoom;
+
+    return tall < CS_FORM_TALL ? tall : CS_FORM_TALL;
+}
+
 /* One row of a list, or a cell of a row. */
 static void Cs_Choice(f32 a, f32 b, f32 y, f32 tall, char *text, s32 lit, s32 active, f32 scale) {
-    Cs_Plate(a, y, b, y + tall, lit ? Ps_Rgba(0xFF, 0xD0, 0x40, 0x80) : Ps_Rgba(0x16, 0x4C, 0xA4, 0x70),
-             lit ? Ps_Rgba(0xE0, 0x80, 0x10, 0x80) : Ps_Rgba(0x08, 0x28, 0x68, 0x70));
+    Cs_Plate(a, y, b, y + tall, lit ? Ps_Rgba(0xFF, 0xD0, 0x40, 0x80) : sRed ? Ps_Rgba(0xA4, 0x18, 0x1C, 0x70) : Ps_Rgba(0x16, 0x4C, 0xA4, 0x70),
+             lit ? Ps_Rgba(0xE0, 0x80, 0x10, 0x80) : sRed ? Ps_Rgba(0x68, 0x0C, 0x10, 0x70) : Ps_Rgba(0x08, 0x28, 0x68, 0x70));
     if (lit && active) {
         s32 glow = (sTick & 31) < 16 ? (sTick & 31) : 31 - (sTick & 31);
 
@@ -458,15 +652,45 @@ static void Cs_Choice(f32 a, f32 b, f32 y, f32 tall, char *text, s32 lit, s32 ac
 
 static void Cs_Details(f32 x0, f32 x1, f32 y, f32 tabY) {
     s32 chara = sV.chara;
-    f32 tx = sSplit && sNow == 0 ? x0 : x1; /* the words at the outer side of a half */
-    s32 al = sSplit && sNow == 0 ? 0 : 2;
-    f32 small = sSplit ? 0.8f : 1.0f;
+    s32 stack = sSplit || sNarrow; /* the details under the roster */
+    f32 tx = stack && sNow == 0 ? x0 : x1; /* the words at the outer side of a half */
+    s32 al = stack && sNow == 0 ? 0 : 2;
+    f32 small = stack ? 0.8f : 1.0f;
     char name[128];
     char form[128];
     char line[64];
     s32 who;
     s32 want = sV.tabWant;
 
+    /* the panel of who it is; then the one of what follows, as far down as it goes (the same sums as below) */
+    {
+        f32 pad = Cs_UnitsAcross(4.0f);
+        f32 nameEnd = y + (17.0f + 35.0f + 20.0f) * small;
+        f32 end = nameEnd + 6.0f + 21.0f * small;
+        s32 at = sV.col + sV.row * MCHR_COLS;
+
+        Cs_Glass(x0 - pad, y - 3.0f, x1 + pad, nameEnd + 1.0f, 6.0f, CS_GLASS_TOP, CS_GLASS_LOW, CS_GLASS_LINE);
+        if (sV.isTeam) {
+            end += 23.0f + 34.0f + 6.0f + (sV.dpMax > 0 ? 18.0f : 0.0f);
+        }
+        /* (stretches as the list of forms opens, and back) */
+        if (sFormOf[sNow] > 0.0f && !sV.showCustom && sV.col >= 0 && sV.row >= 0 && at < sV.cellCount) {
+            CsCell *cell = &sV.cells[at];
+
+            if (cell->formCount > 0 && cell->id != MCHR_RANDOM && cell->id != MCHR_LOCKED && cell->id != MCHR_EMPTY) {
+                s32 n = cell->formCount < 7 ? cell->formCount : 7;
+                s32 per = PortCharSel_FormRowSize(n, sSplit, sV.isTeam);
+                f32 topY = end + 23.0f;
+                f32 chip = Cs_FormFit(n, per, x1 - x0, (stack ? 444.0f : 253.0f) - topY, sAcrossPerDown * 48.0f / 41.0f, Cs_UnitsAcross(3.0f), 3.0f);
+                s32 rows = (n + per - 1) / per;
+                f32 open = topY + (f32)rows * chip + (f32)(rows - 1) * 3.0f + 6.0f;
+                f32 t = sFormOf[sNow];
+
+                end += (open - end) * t * t * (3.0f - 2.0f * t);
+            }
+        }
+        Cs_Glass(x0 - pad, nameEnd + 5.0f, x1 + pad, end, 6.0f, CS_GLASS_TOP, CS_GLASS_LOW, sV.formActive ? CS_GLASS_GOLD : CS_GLASS_LINE);
+    }
     who = sV.players == 2 ? W_CPU : sV.side == 0 ? W_P1 : sV.players == 0 ? W_CPU : W_P2;
     Cs_Text(tx, y, (char *)Cs_Words(who), 0.6f, x1 - x0, al, Ps_Rgba(0xD8, 0xEE, 0xFF, 0x80), Ps_Rgba(0x98, 0xCC, 0xFF, 0x80));
     y += 17.0f * small;
@@ -486,7 +710,7 @@ static void Cs_Details(f32 x0, f32 x1, f32 y, f32 tabY) {
     if (form[0] != 0) {
         Cs_Text(tx, y, form, 0.62f, x1 - x0, al, Ps_Rgba(0xFF, 0xEC, 0xA8, 0x80), Ps_Rgba(0xFF, 0xC0, 0x50, 0x80));
     }
-    y += 20.0f * small;
+    y += 20.0f * small + 6.0f;
     if (chara >= 0 && chara < MCHR_RANDOM) {
         snprintf(line, sizeof(line), "%s: %d DP", Cs_Words(W_COST), (int)ChrTbl_GetCost(chara));
         Cs_Text(tx, y, line, 0.56f, x1 - x0, al, Ps_Rgba(255, 255, 255, 0x80), Ps_Rgba(0xD8, 0xE8, 0xFF, 0x80));
@@ -522,29 +746,74 @@ static void Cs_Details(f32 x0, f32 x1, f32 y, f32 tabY) {
         }
     }
 
-    /* the forms of the cell under the cursor */
-    if (!(sSplit && sV.isTeam && !sV.formActive) && !sV.showCustom && sV.col >= 0 && sV.row >= 0 &&
-        sV.col + sV.row * MCHR_COLS < sV.cellCount) {
-        CsCell *cell = &sV.cells[sV.col + sV.row * MCHR_COLS];
+    /* The forms of the cell under the cursor: only once it is chosen (the game's own step, with its sound), opening
+       from the first chip. Their room is kept while closed, so nothing below moves as they open. */
+    {
+        CsCell *cell = NULL;
+        s32 at = sV.col + sV.row * MCHR_COLS;
+        s32 open;
 
-        if (cell->formCount > 0 && cell->id != MCHR_RANDOM && cell->id != MCHR_LOCKED && cell->id != MCHR_EMPTY) {
-            f32 tall = 36.0f;
-            f32 w = Cs_UnitsAcross(tall) * 48.0f / 41.0f;
-            s32 i;
-
-            y = Cs_Heading(x0, x1, y, W_FORMS);
-            Port_GsMarker(GS_CHIP_ON);
-            for (i = 0; i < cell->formCount && i < 7; i++) {
-                f32 a = x0 + i * (w + Cs_UnitsAcross(3.0f));
-
-                Cs_Chip(cell->form[i], a, y, a + w, y + tall, cell->form[i] == chara ? 0x80 : 0x50);
-                if (cell->form[i] == chara) {
-                    Cs_Frame(a - 1.0f, y - 1.0f, a + w + 1.0f, y + tall + 1.0f, 2.0f,
-                             sV.formActive ? Ps_Rgba(0xFF, 0xFF, 0xFF, 0x80) : Ps_Rgba(0xFF, 0xD8, 0x30, 0x80));
-                }
+        if (!sV.showCustom && sV.col >= 0 && sV.row >= 0 && at < sV.cellCount) {
+            cell = &sV.cells[at];
+            if (cell->formCount <= 0 || cell->id == MCHR_RANDOM || cell->id == MCHR_LOCKED || cell->id == MCHR_EMPTY) {
+                cell = NULL;
             }
-            Port_GsMarker(GS_CHIP_OFF);
-            y += tall + 8.0f;
+        }
+        /* (two teams on one screen have no room for it but in its own step) */
+        open = cell != NULL && (sV.formActive || (!(stack && sV.isTeam) && (sV.tabWant || sV.done)));
+        if (cell == NULL || (!open && at != sFormCell[sNow])) {
+            sFormOf[sNow] = 0.0f; /* the list closing is not to show another fighter's forms */
+        }
+        sFormCell[sNow] = at;
+        sFormOf[sNow] += open ? 0.16f : -0.25f;
+        if (sFormOf[sNow] < 0.0f) {
+            sFormOf[sNow] = 0.0f;
+        } else if (sFormOf[sNow] > 1.0f) {
+            sFormOf[sNow] = 1.0f;
+        }
+        if (cell != NULL && !(stack && sV.isTeam && !open && sFormOf[sNow] <= 0.0f)) {
+            s32 n = cell->formCount < 7 ? cell->formCount : 7;
+            f32 gapW = Cs_UnitsAcross(3.0f);
+            f32 t = sFormOf[sNow];
+            s32 perRow;
+            s32 rows;
+            s32 i;
+            f32 tall;
+            f32 w;
+            f32 top = y + 23.0f;
+
+            /* (over a whole screen the tab comes under the list and has to end on the screen too) */
+            perRow = PortCharSel_FormRowSize(n, sSplit, sV.isTeam);
+            tall = Cs_FormFit(n, perRow, x1 - x0, (stack ? 444.0f : 253.0f) - top, Cs_UnitsAcross(1.0f) * 48.0f / 41.0f, gapW, 3.0f);
+            w = Cs_UnitsAcross(tall) * 48.0f / 41.0f;
+            rows = (n + perRow - 1) / perRow;
+            if (t > 0.0f) {
+                sAlpha = t * t * (3.0f - 2.0f * t);
+                Cs_Heading(x0, x1, y, W_FORMS);
+                Port_GsMarker(GS_CHIP_ON);
+                for (i = 0; i < n; i++) {
+                    /* one after the other */
+                    f32 p = (t * (f32)(n + 2) - (f32)i) * 0.5f;
+                    f32 a;
+                    f32 b = top + (f32)(i / perRow) * (tall + 3.0f);
+
+                    if (p <= 0.0f) {
+                        continue;
+                    }
+                    p = p > 1.0f ? 1.0f : p * p * (3.0f - 2.0f * p);
+                    a = x0 + (f32)(i % perRow) * (w + gapW) * p;
+                    Cs_ChipAlpha(cell->form[i], a, b, a + w, b + tall, cell->form[i] == chara ? 0x80 : 0x50, (s32)(128.0f * p));
+                    if (cell->form[i] == chara) {
+                        sAlpha = p;
+                        Cs_Frame(a - 1.0f, b - 1.0f, a + w + 1.0f, b + tall + 1.0f, 2.0f,
+                                 sV.formActive ? Ps_Rgba(0xFF, 0xFF, 0xFF, 0x80) : Ps_Rgba(0xFF, 0xD8, 0x30, 0x80));
+                        sAlpha = t * t * (3.0f - 2.0f * t);
+                    }
+                }
+                Port_GsMarker(GS_CHIP_OFF);
+                sAlpha = 1.0f;
+            }
+            y = top + (f32)rows * tall + (f32)(rows - 1) * 3.0f + 8.0f;
         }
     }
 
@@ -559,9 +828,9 @@ static void Cs_Details(f32 x0, f32 x1, f32 y, f32 tabY) {
         if (tabY > 0.0f) {
             y = tabY; /* (in a half: over the roster) */
         }
-        sShift = (1.0f - e) * (x1 - x0 + 14.0f) * (sSplit && sNow == 0 ? -1.0f : 1.0f);
+        sShift = (1.0f - e) * (x1 - x0 + 14.0f) * (stack && sNow == 0 ? -1.0f : 1.0f);
         sAlpha = e;
-        Cs_Rect(x0 - Cs_UnitsAcross(4.0f), y - 4.0f, x1 + Cs_UnitsAcross(4.0f), y + 188.0f, Ps_Rgba(0x06, 0x1C, 0x4C, 0x58), Ps_Rgba(0x06, 0x1C, 0x4C, 0x30));
+        Cs_Glass(x0 - Cs_UnitsAcross(4.0f), y - 4.0f, x1 + Cs_UnitsAcross(4.0f), y + 188.0f, 6.0f, CS_GLASS_TOP, CS_GLASS_LOW, CS_GLASS_GOLD);
         y = Cs_Heading(x0, x1, y, W_CUSTOM);
         for (i = 0; i < sV.plateCount && i < 4; i++) {
             Cs_Choice(x0, x1, y, 25.0f, (char *)Cs_Words(W_NORMAL + i), i == sV.plate, sV.plateActive, 0.56f);
@@ -582,20 +851,32 @@ static void Cs_Details(f32 x0, f32 x1, f32 y, f32 tabY) {
     }
 }
 
+/* The buttons and their words, all on the middle line of their box. */
 static void Cs_Foot(f32 at) {
-    f32 y = Cs_PageY(428.0f);
+    f32 mid = 426.0f;
+    f32 y = Cs_PageY(mid);
     f32 x = Cs_PageX(at);
     f32 step = Ps_X(82.0f) - Ps_X(0.0f);
     u32 top = Ps_Rgba(255, 255, 255, 0x80);
     u32 bottom = Ps_Rgba(0xD8, 0xE8, 0xFF, 0x80);
+    f32 textY = mid - PS_CELL_UNITS * 0.6f * 0.5f;
+    f32 word = at + Cs_UnitsAcross(26.0f);
+    f32 right = word + step * 2.1f + Ps_TextWidth((char *)Cs_Words(W_ROTATE), 0.52f) * (Ps_X(1.0f) - Ps_X(0.0f));
+    s32 rotate = s3D && !sSplit && right + Cs_UnitsAcross(12.0f) < 508.0f;
 
-    Ps_Button(0, x + 8.0f, y, 22.0f);
-    Cs_Text(at + Cs_UnitsAcross(26.0f), 414.0f, (char *)Cs_Words(W_OK), 0.6f, 0.0f, 0, top, bottom);
-    Ps_Button(2, x + 90.0f, y, 22.0f);
-    Cs_Text(at + Cs_UnitsAcross(26.0f) + step, 414.0f, (char *)Cs_Words(W_BACK), 0.6f, 0.0f, 0, top, bottom);
-    if (s3D && !sSplit) {
-        Cs_Text(at + Cs_UnitsAcross(26.0f) + step * 2.1f, 414.0f, (char *)Cs_Words(W_ROTATE), 0.52f, 0.0f, 0, top, bottom);
+    if (rotate) {
+        f32 smallY = mid - PS_CELL_UNITS * 0.52f * 0.5f;
+
+        Cs_Glass(at - Cs_UnitsAcross(10.0f), 409.0f, right + Cs_UnitsAcross(12.0f), 443.0f, 12.0f, CS_GLASS_TOP, CS_GLASS_LOW, CS_GLASS_GOLD);
+        Cs_Text(word + step * 2.1f, smallY, (char *)Cs_Words(W_ROTATE), 0.52f, 0.0f, 0, top, bottom);
+    } else {
+        right = word + step + Ps_TextWidth((char *)Cs_Words(W_BACK), 0.6f) * (Ps_X(1.0f) - Ps_X(0.0f));
+        Cs_Glass(at - Cs_UnitsAcross(10.0f), 409.0f, right + Cs_UnitsAcross(12.0f), 443.0f, 12.0f, CS_GLASS_TOP, CS_GLASS_LOW, CS_GLASS_GOLD);
     }
+    Ps_Button(0, x + 8.0f, y, 22.0f);
+    Cs_Text(word, textY, (char *)Cs_Words(W_OK), 0.6f, 0.0f, 0, top, bottom);
+    Ps_Button(2, x + 90.0f, y, 22.0f);
+    Cs_Text(word + step, textY, (char *)Cs_Words(W_BACK), 0.6f, 0.0f, 0, top, bottom);
 }
 
 /* The items of a set, in the screen's own look (the panel's movie still runs behind, not shown: its input is the
@@ -622,8 +903,7 @@ static void Cs_Items(s32 side) {
         Cs_Rect(0.0f, 0.0f, 512.0f, 448.0f, Ps_Rgba(0x02, 0x08, 0x20, 0x48), Ps_Rgba(0x02, 0x08, 0x20, 0x58));
     }
     sShift = (1.0f - e) * (x1 - x0 + 14.0f) * (sSplit && side == 0 ? -1.0f : 1.0f);
-    Cs_Rect(x0 - Cs_UnitsAcross(6.0f), y - 8.0f, x1 + Cs_UnitsAcross(6.0f), y + 352.0f, Ps_Rgba(0x0C, 0x2C, 0x70, 0x78), Ps_Rgba(0x06, 0x1C, 0x4C, 0x78));
-    Cs_Rect(x0 - Cs_UnitsAcross(6.0f), y - 8.0f, x1 + Cs_UnitsAcross(6.0f), y - 6.0f, Ps_Rgba(0xFF, 0xC8, 0x40, 0x80), Ps_Rgba(0xE0, 0x80, 0x10, 0x80));
+    Cs_Glass(x0 - Cs_UnitsAcross(6.0f), y - 8.0f, x1 + Cs_UnitsAcross(6.0f), y + 352.0f, 8.0f, Ps_Rgba(0x12, 0x40, 0xA8, 0x78), Ps_Rgba(0x04, 0x16, 0x58, 0x7C), CS_GLASS_LINE);
     Cs_Title(x0, y - 8.0f, (char *)Cs_Words(W_NORMAL + (p->set >= 0 && p->set <= 3 ? p->set : 0)), 0.8f, (x1 - x0) * 0.5f, 0);
     /* how many of the slots the items take */
     snprintf(line, sizeof(line), "%d / %d", (int)p->used, (int)p->limit);
@@ -688,6 +968,8 @@ void PortCharSel_Begin(s32 allow) {
         sYawOf[i] = 0.0f;
         sTabOf[i] = 0.0f;
         sItemOf[i] = 0.0f;
+        sFormOf[i] = 0.0f;
+        sFormCell[i] = -1;
     }
 }
 
@@ -703,6 +985,19 @@ void PortCharSel_End(void) {
     s3D = 0;
     sOn = 0;
     sSplit = 0;
+}
+
+/* A session was left with the screen up: the game's state goes back to before it (Port_SessionReturn), past the End
+   of the screen, and what is here is the machine's, not put back with it. Only that is cleared: the state that
+   comes back has its own idea of the 3D view. */
+void PortCharSel_Abandon(void) {
+    if (s3D) {
+        ChrView_PortEnd();
+    }
+    s3D = 0;
+    sOn = 0;
+    sSplit = 0;
+    sInScene = 0;
 }
 
 /* Non-zero: the screen's Draw shows this one instead of its own (asked with the screen in its stage choice or leaving). */
@@ -757,13 +1052,22 @@ static f32 Cs_GridWidth(void) {
     return (Cs_UnitsAcross(CS_CELL_H) * 48.0f / 41.0f + Cs_UnitsAcross(CS_GAP)) * MCHR_COLS + Cs_UnitsAcross(CS_GAP);
 }
 
-/* The roster's measures: the whole screen's, or a half's. */
+/* The roster's measures: beside the fighter on a wide window; on a narrower one, or in a half, smaller with the details
+   under it, and as small as it takes to leave a fighter its room (a chip is 48 across for 41 down). */
 static void Cs_Place(s32 side) {
-    if (sSplit) {
-        CS_CELL_H = 31.0f;
+    if (sSplit || sNarrow) {
+        f32 room = sSplit ? 150.0f : 235.0f; /* across, in the window's units */
+        f32 tall = ((room / sAcrossPerDown - 2.0f) / (f32)MCHR_COLS - 2.0f) * 41.0f / 48.0f;
+
+        CS_CELL_H = tall < 31.0f ? tall : 31.0f;
+        if (!sSplit && !sV.isTeam && tall > 36.0f) {
+            CS_CELL_H = 36.0f; /* (alone and with no team to show, there is room under it for more) */
+        } else if (!sSplit && !sV.isTeam && tall > 31.0f) {
+            CS_CELL_H = tall;
+        }
         CS_GAP = 2.0f;
         CS_GRID_Y = 34.0f;
-        CS_GRID_X = side == 0 ? 6.0f : 506.0f - Cs_GridWidth();
+        CS_GRID_X = sSplit && side != 0 ? 506.0f - Cs_GridWidth() : 6.0f;
     } else {
         CS_CELL_H = 47.0f;
         CS_GAP = 3.0f;
@@ -780,6 +1084,8 @@ void PortCharSel_Draw(void) {
 
     Port_GsMarker(GS_MUTE_OFF);
     Port_GsMarker(GS_WHOLE_ON);
+    Cs_MeasureWindow();
+    Cs_RoundInit();
     /* (Always drawn, also on a blank run again: the game's own picture is off, and the list of the last such blank is
        shown. Left out it was a black picture at every rollback. The renderer discards the others.) */
     Ps_PageSet();
@@ -790,12 +1096,16 @@ void PortCharSel_Draw(void) {
         middle[0] = (CS_GRID_X + Cs_GridWidth() + 256.0f) * 0.5f;
         Cs_Place(1);
         middle[1] = (256.0f + CS_GRID_X) * 0.5f;
+    } else if (sNarrow) {
+        Cs_Place(0);
+        middle[0] = (CS_GRID_X + Cs_GridWidth() + 512.0f) * 0.5f;
+        middle[1] = 0.0f;
     } else {
         Cs_Place(0);
         middle[0] = (CS_GRID_X + Cs_GridWidth() + 502.0f - Cs_UnitsAcross(205.0f)) * 0.5f;
         middle[1] = 0.0f;
     }
-    Cs_Backdrop(sSplit ? 256.0f : middle[0]);
+    Cs_Backdrop(sSplit ? 256.0f : middle[0], sSplit ? 2 : sViews[0].side == 1 ? 1 : 0);
     if (sSplit) {
         Cs_Rect(255.0f, 0.0f, 257.0f, 448.0f, Ps_Rgba(0xFF, 0xD8, 0x60, 0x70), Ps_Rgba(0xFF, 0xD8, 0x60, 0x10));
     }
@@ -813,7 +1123,9 @@ void PortCharSel_Draw(void) {
                     sYawOf[i] += 6.2831853f;
                 }
             }
+            sRed = sViews[i].side == 1;
             Cs_Pedestal(i);
+            sRed = 0;
         }
         if (Port_NetListShown()) {
             ChrView_PortFrame(middle, sYawOf, sShownChara, sShownCostume, sSplit);
@@ -826,15 +1138,16 @@ void PortCharSel_Draw(void) {
             Cs_Portrait(middle[i], sSplit ? 230.0f : 330.0f);
         }
     }
-    if (!sSplit) {
+    if (!sSplit && !sNarrow) {
         Cs_Title(CS_GRID_X, 18.0f, (char *)Cs_Words(W_CHOOSE), 0.95f, 0.0f, 0);
     }
     for (i = 0; i < sides; i++) {
         sNow = i;
         sV = sViews[i];
+        sRed = sV.side == 1;
         Cs_Place(i);
         Cs_Grid();
-        if (sSplit) {
+        if (sSplit || sNarrow) {
             f32 w = Cs_GridWidth();
 
             Cs_Details(CS_GRID_X, CS_GRID_X + w, CS_GRID_Y + (CS_CELL_H + CS_GAP) * CS_VIS_ROWS + 4.0f, CS_GRID_Y);
@@ -842,9 +1155,17 @@ void PortCharSel_Draw(void) {
             Cs_Details(502.0f - Cs_UnitsAcross(205.0f), 502.0f, 20.0f, 0.0f);
         }
     }
+    sRed = 0;
     sNow = 0;
     sV = sViews[0];
-    Cs_Foot(sSplit ? 256.0f - (Ps_X(82.0f) - Ps_X(0.0f)) - 6.0f : 14.0f);
+    if (sSplit) {
+        Cs_Foot(256.0f - (Ps_X(82.0f) - Ps_X(0.0f)) - 6.0f);
+    } else if (sNarrow) {
+        Cs_Place(0);
+        Cs_Foot(CS_GRID_X + Cs_GridWidth() + Cs_UnitsAcross(16.0f));
+    } else {
+        Cs_Foot(14.0f);
+    }
     Font_FlushAll();
 }
 
@@ -853,10 +1174,13 @@ void PortCharSel_DrawItems(void) {
     s32 i;
 
     Port_GsMarker(GS_MUTE_OFF);
+    Cs_MeasureWindow();
     Ps_PageSet();
     for (i = 0; i < (sSplit ? 2 : 1); i++) {
+        sRed = sViews[i].side == 1;
         Cs_Items(sViews[i].side);
     }
+    sRed = 0;
     Font_FlushAll();
 }
 

@@ -38,6 +38,7 @@ typedef struct CsView {
 
 void PortCharSel_Begin(s32 allow);
 void PortCharSel_End(void);
+void PortCharSel_Abandon(void);
 s32 PortCharSel_Shown(s32 stagePhase);
 void PortCharSel_MuteOn(void);
 /* view[0] alone, or with split the two sides, view[side]: two people choosing, both seen as they choose */
@@ -46,5 +47,10 @@ void PortCharSel_Draw(void);
 void PortCharSel_DrawItems(void);
 void PortCharSel_DrawEnd(void);
 s32 PortCharSel_NetSide(s32 fallback);
+/* How many forms a row of the list holds. It decides what the pad does, so it may depend only on what is the same on
+   every machine of an online match: never on the window's shape or a setting. */
+s32 PortCharSel_FormRowSize(s32 count, s32 split, s32 team);
+/* The form above or below this one in that list; -1 if the list has one row. */
+s32 PortCharSel_FormOtherRow(s32 count, s32 form, s32 split, s32 team);
 #endif
 #endif

@@ -894,12 +894,65 @@ s32 BtlObjAnim_PortPlay(BobjObj *obj, void *buf, s32 anim, s32 mode) {
     return 1;
 }
 
-/* Where the select's model stands and how it is turned. */
-void BtlObjAnim_PortPlace(BobjObj *obj, f32 x, f32 yaw, f32 scale) {
+/* Where the select's model stands and how it is turned. feet (x, height, z, BtlObjAnim_PortFeet), for the few fighters
+   whose poses stand well away from the model's origin or above it: the place it keeps under the turning point. */
+void BtlObjAnim_PortPlace(BobjObj *obj, f32 x, f32 yaw, f32 scale, const f32 *feet) {
+    Mtx44 *m = &obj->xf.mtx;
+
     obj->xf.pos.x = x;
     obj->xf.rot.y = yaw;
     obj->xf.scale = scale;
     BtlObjXf_Update(obj);
+    if (feet == NULL) {
+        return;
+    }
+    obj->xf.pos.x = x - (feet[0] * m->m[0][0] + feet[2] * m->m[2][0]);
+    obj->xf.pos.y = -feet[1] * m->m[1][1];
+    obj->xf.pos.z = -(feet[0] * m->m[0][2] + feet[2] * m->m[2][2]);
+    BtlObjXf_Update(obj);
+}
+
+/* In the model's own axes, from the pose worked out last: the middle of the two feet (nodes 11 and 15 on every fighter)
+   and how far the lower one is from its height at rest (y grows downwards). 0: no such thing to measure. */
+s32 BtlObjAnim_PortFeet(BobjObj *obj, f32 *feet) {
+    Mtx44 *m = &obj->xf.mtx;
+    BobjBone *bone = obj->mdl.nodes;
+    f32 size = m->m[0][0] * m->m[0][0] + m->m[0][1] * m->m[0][1] + m->m[0][2] * m->m[0][2];
+    f32 x = 0.0f;
+    f32 z = 0.0f;
+    f32 low = -1.0e6f;
+    f32 rest = -1.0e6f;
+    s32 found = 0;
+
+    if (size <= 0.0f || bone == NULL) {
+        return 0;
+    }
+    while (found < 2) {
+        if (bone->id == 11 || bone->id == 15) {
+            f32 *at = BtlObj_GetNode(obj, bone->id)->mtx.m[3];
+            f32 dx = at[0] - m->m[3][0];
+            f32 dy = at[1] - m->m[3][1];
+            f32 dz = at[2] - m->m[3][2];
+            f32 h = (dx * m->m[1][0] + dy * m->m[1][1] + dz * m->m[1][2]) / size;
+
+            x += (dx * m->m[0][0] + dy * m->m[0][1] + dz * m->m[0][2]) / size;
+            z += (dx * m->m[2][0] + dy * m->m[2][1] + dz * m->m[2][2]) / size;
+            low = h > low ? h : low;
+            rest = bone->origin.y > rest ? bone->origin.y : rest;
+            found++;
+        }
+        if (bone->last != 0) {
+            break;
+        }
+        bone = (BobjBone *)((u8 *)bone + bone->next);
+    }
+    if (found < 2) {
+        return 0;
+    }
+    feet[0] = x * 0.5f;
+    feet[1] = low - rest;
+    feet[2] = z * 0.5f;
+    return 1;
 }
 
 s32 BtlObjAnim_PortStopped(BobjObj *obj) {

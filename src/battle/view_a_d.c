@@ -446,7 +446,8 @@ extern void Port_WorldNoteDma(u32 a, u32 b, s32 size);
 extern s32 File_PortReadRaw(s32 id, void *buf, s32 cap);
 extern s32 BtlObjAnim_PortPlay(u8 *obj, void *buf, s32 anim, s32 mode);
 extern s32 BtlObjAnim_PortStopped(u8 *obj);
-extern void BtlObjAnim_PortPlace(u8 *obj, f32 x, f32 yaw, f32 scale);
+extern void BtlObjAnim_PortPlace(u8 *obj, f32 x, f32 yaw, f32 scale, const f32 *feet);
+extern s32 BtlObjAnim_PortFeet(u8 *obj, f32 *feet);
 extern u32 *gDmaCur;
 extern s32 gDmaVif1Started;
 extern u32 gDmaBuf[2];
@@ -466,6 +467,21 @@ static s32 sPortChara[2], sPortCostume[2], sPortShown[2];
 static f32 sPortX[2];
 static ChrViewSlot *sPortNew[2];
 static s32 sPortCount[2];
+/* how far the feet of the fighter shown, and of the one on its way, are from where they belong */
+static f32 sPortFeet[2][3];
+static f32 sPortFeetNew[2][3];
+static s32 sPortPinned[2], sPortPinnedNew[2];
+
+/* The fighters kept on the pedestal by their feet; every other one stands where its motion puts it. */
+#define CHRVIEW_CHARA_GARLIC_JR 118
+#define CHRVIEW_CHARA_SLUG 123
+#define CHRVIEW_CHARA_METAL_COOLER 128
+#define CHRVIEW_CHARA_TAOPAIPAI 148
+
+static s32 ChrView_PortPinned(s32 chara) {
+    return chara == CHRVIEW_CHARA_GARLIC_JR || chara == CHRVIEW_CHARA_SLUG || chara == CHRVIEW_CHARA_METAL_COOLER ||
+           chara == CHRVIEW_CHARA_TAOPAIPAI;
+}
 
 s32 ChrView_PortVisible(s32 side) {
     return sHostVisible[side];
@@ -563,7 +579,10 @@ static s32 ChrView_PortLoad(s32 side, s32 chara, s32 costume) {
         return 0;
     }
     obj = BtlObj_Get(slot->obj);
-    if (BtlObjAnim_PortPlay(obj, sPortMotion[side][at], 0x180, 1)) {
+    /* (Taopaipai's entrance comes flying from far off, on his pillar: he goes straight to his hold) */
+    if (chara == CHRVIEW_CHARA_TAOPAIPAI && BtlObjAnim_PortPlay(obj, sPortMotion[side][at], 0x181, 2)) {
+        sPortStanding[side] = 1;
+    } else if (BtlObjAnim_PortPlay(obj, sPortMotion[side][at], 0x180, 1)) {
         sPortStanding[side] = 0;
     } else {
         BtlObjAnim_PlayModel(obj, gChrView->anim, 2);
@@ -573,6 +592,8 @@ static s32 ChrView_PortLoad(s32 side, s32 chara, s32 costume) {
     BtlObj_SetPartVisible(obj, 0, 0);
     sPortNew[side] = slot;
     sPortCount[side] = 0;
+    memset(sPortFeetNew[side], 0, sizeof(sPortFeetNew[side]));
+    sPortPinnedNew[side] = ChrView_PortPinned(chara);
     sPortShown[side] = chara;
     return 1;
 }
@@ -654,6 +675,8 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
                 ChrView_PortDrop(gChrView->cur);
             }
             gChrView->cur = fresh;
+            memcpy(sPortFeet[side], sPortFeetNew[side], sizeof(sPortFeet[side]));
+            sPortPinned[side] = sPortPinnedNew[side];
             gChrView->stageOn = 1;
             gChrView->visible = 1;
         }
@@ -690,12 +713,29 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
                 }
             }
             BTL_OBJ_FLAGS(obj) &= ~0x30000000; /* no hard shadow: the screen lays a soft one on the pedestal */
-            BtlObjAnim_PortPlace(obj, sPortX[side], yaw[side], scale);
+            if (sPortPinned[side]) {
+                BtlObjAnim_PortPlace(obj, sPortX[side], yaw[side], scale, &sPortFeet[side][0]);
+            } else {
+                BtlObjAnim_PortPlace(obj, sPortX[side], yaw[side], scale, NULL);
+            }
         }
     }
     BtlObj_UpdateAll();
     for (side = 0; side < sides; side++) {
+        ChrViewSlot *cur = sPortView[side]->cur;
+        f32 now[3];
+        s32 k;
+
         sHostPedestal[side] = 0;
+        /* (eased: a pose going on to the next does not jump, and a walk on the spot does not rock the fighter) */
+        if (cur != NULL && sPortPinned[side] && BtlObjAnim_PortFeet(BtlObj_Get(cur->obj), now)) {
+            for (k = 0; k < 3; k++) {
+                sPortFeet[side][k] += (now[k] - sPortFeet[side][k]) * 0.2f;
+            }
+        }
+        if (sPortNew[side] != NULL && sPortPinnedNew[side]) {
+            BtlObjAnim_PortFeet(BtlObj_Get(sPortNew[side]->obj), sPortFeetNew[side]);
+        }
     }
     if (any) {
         gChrView = sPortView[0];

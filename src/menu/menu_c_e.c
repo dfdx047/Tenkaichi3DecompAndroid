@@ -861,6 +861,30 @@ static void CharSel_PortFill(CsView *v, s32 side) {
     v->done = s->state == CHARSEL_ST_DONE;
 }
 
+/* Up or down in a list of forms of two rows (all of this is the game's state: it may depend only on what is the same on
+   every machine). 0: there is no such move. */
+static s32 CharSel_PortFormRow(s32 n) {
+    extern int Port_NetActive(void), Port_NetSession(void);
+    CharSelSide *s = gCharSel->side[n];
+    s32 form;
+
+    /* (not online: the other player's copy may be of a release without this move, and nothing refuses that: left and
+       right reach every form there too) */
+    if (PortGame_IsBT4() || Port_NetActive() || Port_NetSession() || (s->flags & CHARSEL_SIDE_CUSTOM)) {
+        return 0;
+    }
+    form = PortCharSel_FormOtherRow(gCharSel->cells[n][s->col + s->row * 7].formCount, s->form, gCharSel->players == 1, 0);
+    if (form < 0 || form == s->form) {
+        return 0;
+    }
+    CharSel_ClipGoto(n + 1, n, CHARSEL_CLIP_FORM_CHIP, "fl_off_start");
+    s->form = form;
+    CharSel_ClipGoto(n + 1, n, CHARSEL_CLIP_FORM_CHIP, "fl_on_start");
+    s->chara = s->chip[form];
+    CharSel_RequestFace(n);
+    return 1;
+}
+
 /* One pad a side: the two people choosing are both on the screen as they choose, as on the game's own. */
 static void CharSel_PortFrame(void) {
     CsView v[2];
@@ -1660,6 +1684,10 @@ void CharSel_Input(s32 *running) {
                 CS_SIDE->chara = CS_SIDE->chip[CS_SIDE->form];
                 CharSel_RequestFace(CS_N);
                 Snd_PlaySe(2, 0);
+#ifdef PORT
+            } else if ((gPad[i].gameRepeat & 0xC) && CharSel_PortFormRow(CS_N)) {
+                Snd_PlaySe(2, 0);
+#endif
             } else if (gPad[i].gamePressed & 0x200) {
                 Flash_GotoLabel(CS_PLATE, "fl_custom_in", 1);
                 CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_FORM_CHIP, "fl_ok");
