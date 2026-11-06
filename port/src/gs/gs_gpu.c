@@ -2647,6 +2647,11 @@ static void vk_frame_end(void) {
     gsVuUniCount = 0;
     gsDrawCount = 0;
     gsAnchor = 0;
+    {
+        extern int gsWhole2D, gsChipUp;
+        gsWhole2D = 0;
+        gsChipUp = 0;
+    }
     gsSkipped = 0;
     gsNative = 0;
 }

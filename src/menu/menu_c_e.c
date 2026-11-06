@@ -823,6 +823,58 @@ void CharSel_Term(void) {
 
 /* Draws the screen: the stage picture cross fade, then the labels, texture rectangles and visibility of every
    clip of the five movies are set from the state, the movies are drawn, then the windows and the side panels. */
+#ifdef PORT
+#include "menu/port_charsel.h"
+#define CHARSEL_PORT_STAGE() ((gCharSel->flags & (CHARSEL_STAGE_PHASE | CHARSEL_LEAVING)) != 0)
+
+/* What the new screen shows of one side (src/menu/port_charsel.c). */
+static void CharSel_PortFill(CsView *v, s32 side) {
+    CharSelSide *s = gCharSel->side[side];
+
+    memset(v, 0, sizeof(*v));
+    v->chipPack = gCharSel->chipPack;
+    v->nameText = gCharSel->nameText;
+    v->formText = gCharSel->formText;
+    v->cells = (CsCell *)gCharSel->cells[side];
+    v->custom = (CsCell *)gCharSel->custom[side];
+    v->face = gCharSel->faceRes[side];
+    v->cellCount = gCharSel->cellCount[side];
+    v->customCount = gCharSel->customCount[side];
+    v->side = side;
+    v->players = gCharSel->players;
+    v->col = s->col;
+    v->row = s->row;
+    v->customCol = s->customCol;
+    v->customRow = s->customRow;
+    v->chara = s->chara;
+    v->color = s->colorPlate;
+    v->plate = s->customPlate;
+    v->colorCount = gCharSel->colorCount[side];
+    v->plateCount = gCharSel->customRows[side];
+    v->showCustom = (s->flags & CHARSEL_SIDE_CUSTOM) != 0;
+    v->tabWant = s->state == CHARSEL_ST_ITEMSET || s->state == CHARSEL_ST_ITEMS || s->state == CHARSEL_ST_ITEMINFO || s->state == CHARSEL_ST_COLOR;
+    v->plateActive = s->state == CHARSEL_ST_ITEMSET;
+    v->colorActive = s->state == CHARSEL_ST_COLOR;
+    v->formActive = s->state == CHARSEL_ST_FORM;
+    v->faceReady = (s->flags & CHARSEL_SIDE_FACE_READY) != 0;
+    v->faceAlpha = gCharSel->faceAlpha[side];
+    v->done = s->state == CHARSEL_ST_DONE;
+}
+
+/* One pad a side: the two people choosing are both on the screen as they choose, as on the game's own. */
+static void CharSel_PortFrame(void) {
+    CsView v[2];
+
+    if (gCharSel->players == 1) {
+        CharSel_PortFill(&v[0], 0);
+        CharSel_PortFill(&v[1], 1);
+        PortCharSel_Frame(v, 1, CHARSEL_PORT_STAGE());
+    } else {
+        CharSel_PortFill(&v[0], gCharSel->turn & 1);
+        PortCharSel_Frame(v, 0, CHARSEL_PORT_STAGE());
+    }
+}
+#endif
 void CharSel_Draw(void) {
     MFlashRef ref;
     MFlashUv uv;
@@ -832,6 +884,9 @@ void CharSel_Draw(void) {
     MFlash *f;
 
 #ifdef PORT
+    if (PortCharSel_Shown(CHARSEL_PORT_STAGE())) {
+        PortCharSel_MuteOn(); /* all of this still runs (the movies' state is the game's); none of it is shown */
+    }
     gUiNameIdx = -1; /* set again below only for a stage added from outside the disc */
     gUiSongIdx = -1; /* and only for a song added from outside the disc (set in the music-name block) */
 #endif
@@ -1207,6 +1262,21 @@ void CharSel_Draw(void) {
     }
     Font_FlushAll();
     IconWin_Draw();
+#ifdef PORT
+    if (PortCharSel_Shown(CHARSEL_PORT_STAGE())) {
+        Font_FlushAll();
+        PortCharSel_Draw();
+        PortCharSel_MuteOn(); /* the item panel's movie still runs; the screen draws its own */
+        ItemPanel_Draw(0);
+        ItemPanel_Draw(1);
+        Font_FlushAll();
+        PortCharSel_DrawItems();
+        ItemHelp_Draw(gCharSel->itemInfo);
+        Font_FlushAll();
+        PortCharSel_DrawEnd();
+        return;
+    }
+#endif
     ItemPanel_Draw(0);
     ItemPanel_Draw(1);
     ItemHelp_Draw(gCharSel->itemInfo);
@@ -1941,6 +2011,9 @@ s32 CharSel_Run(s32 section) {
     s32 i;
 
     CharSel_Init(section);
+#ifdef PORT
+    PortCharSel_Begin(!PortGame_IsBT4());
+#endif
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {
         Gfx_BeginFrame();
@@ -1952,6 +2025,9 @@ s32 CharSel_Run(s32 section) {
         if (!(gProgress->flags & MPROG_FREEZE)) {
             CharSel_Update();
         }
+#ifdef PORT
+        CharSel_PortFrame();
+#endif
         CharSel_Draw();
         Font_FlushAll();
         ColorFade_Draw();
@@ -1983,6 +2059,9 @@ s32 CharSel_Run(s32 section) {
             CharSel_Input(&result);
         }
     }
+#ifdef PORT
+    PortCharSel_End();
+#endif
     if (result != 0) {
         s32 flag[2] = { 1, 1 };
         s32 mode;

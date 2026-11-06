@@ -206,6 +206,17 @@ int ADXF_GetPtStat(int ptid) {
     return sPartDir[ptid & 7][0] != '\0' ? STAT_READEND : STAT_STOP;
 }
 
+/* (src/sys/file.c File_PortReadRaw) */
+int Port_FileReadRaw(int ptid, int flid, void *buf, int cap) {
+    char rel[128];
+
+    snprintf(rel, sizeof(rel), "%s/%05d.bin", sPartDir[ptid & 7], flid);
+    if (Port_FileSize(rel) < 0) {
+        return 0;
+    }
+    return (int)Port_FileReadAt(rel, 0, buf, (size_t)cap);
+}
+
 void *ADXF_OpenAfs(int ptid, int flid) {
     char rel[128];
 

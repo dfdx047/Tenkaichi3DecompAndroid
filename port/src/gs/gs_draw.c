@@ -49,6 +49,8 @@ extern unsigned long long Port_BlankNs(void); /* plat_stub.c: 16.68 ms, less in 
 extern int Port_AspectMilli(void);
 extern void Port_SetAspectMilli(int milli), Port_AudioRefresh(void), Port_SettingsWrite(void);
 extern int gPortMenuMode;       /* headless.c: the menus are running */
+int gsChipUp;                   /* markers 0x26, 0x27 */
+int gsWhole2D;                  /* markers 0x24, 0x25: the 2D being drawn is not narrowed in a wide picture */
 extern int Port_PageAspectMilli(void); /* plat_stub.c: the shape of the page shown now (4:3 in the menus if asked for) */
 extern int gPortMusicPercent, gPortSePercent, gPortVoicePercent, gPortStagePercent;
 
@@ -1108,6 +1110,30 @@ static void tex_decode(const TexDecode *d) {
 
 /* GS memory -> an RGBA texture for the current TEX0 (alpha as stored: 0x80 is opaque). The back end makes
    the texture and takes the decoded pixels (freed after it has uploaded them). */
+/* Scale2x: edges of a low-resolution picture continued along their slope instead of doubled into steps. dst holds
+   (2 * w) x (2 * h). */
+static void chip_scale2x(const uint32_t *src, uint32_t w, uint32_t h, uint32_t *dst) {
+    uint32_t x, y;
+
+    for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+            uint32_t e = src[y * w + x];
+            uint32_t b = src[(y ? y - 1 : y) * w + x], hh = src[(y + 1 < h ? y + 1 : y) * w + x];
+            uint32_t d = src[y * w + (x ? x - 1 : x)], f = src[y * w + (x + 1 < w ? x + 1 : x)];
+            uint32_t *o = dst + (size_t)y * 2 * (w * 2) + x * 2;
+
+            if (b != hh && d != f) {
+                o[0] = d == b ? d : e;
+                o[1] = b == f ? f : e;
+                o[w * 2] = d == hh ? d : e;
+                o[w * 2 + 1] = hh == f ? f : e;
+            } else {
+                o[0] = o[1] = o[w * 2] = o[w * 2 + 1] = e;
+            }
+        }
+    }
+}
+
 static GsTex texture_get(int ctx) {
     uint64_t t0 = gGs.tex0[ctx] & 0x1FFFFFFFFFFFFFFFull, texa = gGs.texa;
     uint32_t tbp = t0 & 0x3FFF, tbw = (t0 >> 14) & 0x3F, psm = (t0 >> 20) & 0x3F, tw = 1u << ((t0 >> 26) & 15), th = 1u << ((t0 >> 30) & 15);
@@ -1135,6 +1161,9 @@ static GsTex texture_get(int ctx) {
        texture identities when the artwork is still on "Original". */
     gen ^= MenuText_TexKey((int)tw, (int)th, bits <= 8, (int)tbp, (int)cbp, MenuText_RasterScale(SCALE));
     gen ^= bits <= 8 ? MenuLabels_ArtKey() : 0; /* the chosen language's menu art ready: decoded again */
+    if (gsChipUp && tw == 64 && th == 64) {
+        gen ^= 0x43484950u; /* (enlarged below: not the same texture as the same chip elsewhere) */
+    }
     if (sTexPackOn && TexPack_Count() != 0) {
         gen ^= 0x5BD1E995u; /* with the pack and without it are different textures: switching it takes effect at once */
     }
@@ -1261,6 +1290,20 @@ static GsTex texture_get(int ctx) {
             fprintf(stderr, "font: frame %u: %ux%u %s %.3f ms\n", gGsFrame, (unsigned)tw, (unsigned)th, text != NULL ? "drawn" : "left",
                     (double)(gpu_now() - font_t0) / 1e6);
         }
+    }
+    if (!replaced && !menuText && px != NULL && gsChipUp && tw == 64 && th == 64) {
+        uint32_t *two = malloc(128u * 128u * 4u), *four = malloc(256u * 256u * 4u);
+
+        if (two != NULL && four != NULL) {
+            chip_scale2x(px, 64, 64, two);
+            chip_scale2x(two, 128, 128, four);
+            free(px);
+            px = four;
+            four = NULL;
+            rw = rh = 256;
+        }
+        free(two);
+        free(four);
     }
     gGpuTexNs += gpu_now() - tex_t0;
     gDrawTexNs += gpu_now() - tex_t0;
@@ -2172,7 +2215,7 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
     /* (Not the cross-fade's picture: it is the whole frame as it was shown, wide view and all, drawn back over the
        whole frame in strips. Each strip is narrower than the screen, so the rule below took it for a piece of 2D
        art and the old shot was drawn at three quarters of the width over the new one: seen by the user.) */
-    if (Port_IsWide() && (!gPortMenuMode || (gsAnchor == 7 && Port_PageAspectMilli() > 1340) ||
+    if (!gsWhole2D && Port_IsWide() && (!gPortMenuMode || (gsAnchor == 7 && Port_PageAspectMilli() > 1340) ||
                           (battleText && Port_PageAspectMilli() > 1340)) &&
         !sWholeFrame && !d.tex_is_target && !tbo && (type == 6 || fst || battleText || gsAnchor == 8) &&
         gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
@@ -2535,6 +2578,14 @@ void GsGpu_Native(int effect) {
     }
     if (effect >= 0x10 && effect <= 0x14) {
         gsAnchor = effect == 0x13 ? 0 : effect == 0x14 ? 4 : effect - 0x0F; /* 1 left, 2 right, 3 centre, 4 by position */
+        return;
+    }
+    if (effect == 0x26 || effect == 0x27) { /* the roster's chips: enlarged when decoded (texture_get) */
+        gsChipUp = effect == 0x26;
+        return;
+    }
+    if (effect == 0x24 || effect == 0x25) { /* 2D laid out on the whole window over a 3D scene (port_charsel.c) */
+        gsWhole2D = effect == 0x24;
         return;
     }
     if (effect == 0x20 || effect == 0x21) { /* the glow chain begins / ends (target_lowres) */

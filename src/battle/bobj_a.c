@@ -870,6 +870,43 @@ void BtlObjAnim_PlayModel(BobjObj *obj, s32 anim, s32 mode) {
     }
 }
 
+#ifdef PORT
+/* A motion of the character's table on an object without a fighter's buffer (the character select's model,
+   src/battle/view_a_d.c): decoded into the caller's buffer, stepped by BtlObj_UpdateAll. 0 when it has no such motion. */
+s32 BtlObjAnim_PortPlay(BobjObj *obj, void *buf, s32 anim, s32 mode) {
+    BobjAnimPlayer *ap = &obj->anim;
+    BobjAnim *data;
+    s32 size;
+
+    if (anim < 0 || anim >= BOBJ_ANIM_MAX || obj->mdl.anims[anim] == NULL) {
+        return 0;
+    }
+    Bpe_Decode(obj->mdl.anims[anim], buf, &size);
+    data = (BobjAnim *)buf;
+    ap->layer[0].data = data;
+    ap->layer[0].id = anim;
+    ap->layer[0].length = data->length;
+    ap->frame = 0.0f;
+    ap->prevFrame = 0.0f;
+    memset(ap->layer[0].cursor, 0, sizeof(ap->layer[0].cursor));
+    ap->manual = 0;
+    ap->mode = mode;
+    return 1;
+}
+
+/* Where the select's model stands and how it is turned. */
+void BtlObjAnim_PortPlace(BobjObj *obj, f32 x, f32 yaw, f32 scale) {
+    obj->xf.pos.x = x;
+    obj->xf.rot.y = yaw;
+    obj->xf.scale = scale;
+    BtlObjXf_Update(obj);
+}
+
+s32 BtlObjAnim_PortStopped(BobjObj *obj) {
+    return obj->anim.mode == BOBJ_PLAY_NONE;
+}
+#endif
+
 /* Advances the frame of a self-stepped object by anim.step: once (stops on the last frame) or looping. */
 void BtlObjAnim_Step(BobjObj *obj) {
     BobjAnimPlayer *ap = &obj->anim;

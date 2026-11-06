@@ -656,6 +656,37 @@ int Port_GameBigFree(unsigned addr) {
     return 0;
 }
 
+/* The character selects' viewer's memory (gs/state.c), below 4 GB and in no saved state. */
+#define WORLD_ARENA_SIZE 0x2800000u /* 40 MB of address space: pages are taken as they are first used */
+uint8_t *Port_WorldArena(size_t *size) {
+    static uint8_t *arena;
+
+#if PORT_LOW_REGION
+    if (arena == NULL) {
+#ifdef _WIN32
+        arena = low_reserve(WORLD_ARENA_SIZE);
+#else
+        uint32_t at;
+
+        for (at = 0x60000000u; at + WORLD_ARENA_SIZE <= 0xF0000000u && arena == NULL; at += 0x1000000u) {
+            void *p = mmap((void *)(uintptr_t)at, WORLD_ARENA_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+
+            if (p == MAP_FAILED) {
+                continue;
+            }
+            if ((uintptr_t)p + WORLD_ARENA_SIZE < 0xFFFFFFFFu) {
+                arena = p;
+            } else {
+                munmap(p, WORLD_ARENA_SIZE);
+            }
+        }
+#endif
+    }
+#endif
+    *size = arena != NULL ? WORLD_ARENA_SIZE : 0;
+    return arena;
+}
+
 int Port_StateExtra(void **p, size_t *n, int max) {
     int k = 0;
 #if PORT_LOW_REGION
@@ -843,8 +874,47 @@ static void low_region_take(void) {
 
 #endif
 
+/* The allocator's variables are the game's state to a saved state, but the viewer's world must leave them alone: other
+   threads allocate while it is in (gs/state.c takes this lock around what it puts back). */
+void *Port_WorldLowLockVar(size_t *n) {
+#if PORT_LOW_REGION
+    *n = sizeof(sLowLock);
+    return (void *)&sLowLock;
+#else
+    *n = 0;
+    return NULL;
+#endif
+}
+
+void Port_WorldLowLock(int on) {
+#if PORT_LOW_REGION
+    if (on) {
+        while (__sync_lock_test_and_set(&sLowLock, 1)) {
+        }
+    } else {
+        __sync_lock_release(&sLowLock);
+    }
+#else
+    (void)on;
+#endif
+}
+
 void *Port_LowAlloc(size_t size) {
 #if PORT_LOW_REGION
+    {
+        /* (the viewer's world, on its own thread: its memory, zeroed as this function's is) */
+        extern unsigned Port_WorldAlloc(int size, unsigned align);
+        extern int Port_WorldInHere(void);
+
+        if (Port_WorldInHere()) {
+            unsigned world = Port_WorldAlloc((int)size, 64);
+
+            if (world != 0) {
+                memset(Port_Ptr(world), 0, size);
+                return Port_Ptr(world);
+            }
+        }
+    }
     /* From one region at a fixed address, handed out in order, freed blocks reused by size (last freed first).
        The addresses end up in the game's memory (file handles, sound buffers); with the system choosing them they
        differed from run to run, and so did the game's state. This way they depend only on the order of the
@@ -943,6 +1013,13 @@ void *Port_LowAlloc(size_t size) {
 }
 
 void Port_LowFree(void *addr) {
+    {
+        extern int Port_WorldOwns(unsigned addr);
+
+        if (addr != NULL && Port_WorldOwns(Port_Addr(addr))) {
+            return;
+        }
+    }
 #if PORT_LOW_REGION
     if (addr != NULL) {
         uint64_t *p = (uint64_t *)addr - 8, total = p[0];
