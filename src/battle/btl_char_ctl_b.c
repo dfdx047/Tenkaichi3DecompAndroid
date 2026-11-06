@@ -158,8 +158,7 @@ s32 BtlChars_IsTimeStopped(void) {
 }
 
 /* Tag Team: the native change freeze assumes a 1v1 where the opponent must wait. With more fighters it
-   stops only the fighters whose own request is active or queued; the opponent is held by the Tag Team
-   "Special Move Pause" option instead, and the rest of the battle keeps going. */
+   stops only the fighters whose own request is active or queued, and the rest of the battle keeps going. */
 extern s32 TagTeam_Active(void), BtlSeq_IsFighting(void);
 static s32 BtlChange_TagWorld(void) {
     return TagTeam_Active() && BtlSeq_IsFighting();

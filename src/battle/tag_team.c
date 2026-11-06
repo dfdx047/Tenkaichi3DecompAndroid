@@ -52,6 +52,15 @@ static s32 viewCount = 1;
 static s32 assignment[TAG_TEAM_CAPACITY], assigned, winningTeam=-1;
 static s32 grabPartner[TAG_TEAM_CAPACITY],grabOwner[TAG_TEAM_CAPACITY];
 static u32 cinematicPaused;
+/* How long the wind-up of other fighters' specials may hold one fighter: 2 s of blanks, used up slowly, then 3 s free
+   of it. Several attackers one after the other otherwise held a fighter for as long as they kept starting specials. */
+#define TAG_PAUSE_MAX 120
+#define TAG_PAUSE_REST 180
+static s32 pauseUsed[TAG_TEAM_CAPACITY],pauseRest[TAG_TEAM_CAPACITY];
+/* Blanks L3 is held to let go of the target (a firm press, not a long click: 15 was 0.17 s in a room at 150%), and how
+   long a press that takes the target back waits for a fighter being hit or held. */
+#define TAG_UNLOCK_HOLD 30
+#define TAG_RELOCK_WAIT 300
 static s32 grab_other(s32 actor),rush_other(s32 actor);
 extern s32 BtlAct_GetCurrent(BtlMgrChr *),BtlAct_GetCurrentClass(BtlMgrChr *);
 static s32 grabbing(s32 actor) {
@@ -92,7 +101,8 @@ static void cinematic_pause(void) {
         if(BtlChar_TestFlag(chr,0x125)||BtlChar_TestFlag(chr,0x126)) {
             s32 target=TagTeam_Target(i);
             starters|=1u<<i;
-            if((u32)target<(u32)count)startupPause|=1u<<target;
+            /* (a transformation raises these flags on all its frames: it stops only who transforms) */
+            if((u32)target<(u32)count && !BtlCharApi_IsChanging(BattleSide_GetObjId(i)))startupPause|=1u<<target;
         }
     }
     /* A caught fighter must animate with its grab, rush, or clash owner. */
@@ -103,7 +113,14 @@ static void cinematic_pause(void) {
         if(other<0)other=BtlClash_Opponent(i);
         if((u32)other<(u32)count)participants|=(1u<<i)|(1u<<other);
     }
-    cinematicPaused=startupPause&~participants;
+    startupPause&=~participants;
+    for(i=0;i<count;i++) {
+        if(pauseRest[i]) {pauseRest[i]--;startupPause&=~(1u<<i);continue;}
+        if(startupPause&(1u<<i)) {
+            if(++pauseUsed[i]>=TAG_PAUSE_MAX) {pauseUsed[i]=0;pauseRest[i]=TAG_PAUSE_REST;}
+        } else if(pauseUsed[i]) pauseUsed[i]--;
+    }
+    cinematicPaused=startupPause;
     /* Use the same owner as the view compositor. Authored transform cameras,
        shared grabs and shared clashes must obey the same pause policy. */
     owner=BtlCam_GetPriorityView();
@@ -488,6 +505,7 @@ void TagTeam_Reset(void) {
     traceFrame = 0;
     winningTeam=-1;
     cinematicPaused=0;
+    memset(pauseUsed,0,sizeof(pauseUsed));memset(pauseRest,0,sizeof(pauseRest));
     { extern void TagRevive_Reset(void); TagRevive_Reset(); }
     TagFusion_Reset();
     TagAssist_Reset();
@@ -621,10 +639,16 @@ static void relock(s32 actor) {
 void TagTeam_TargetInput(s32 actor, s32 held) {
     s32 paired=grab_other(actor)>=0 || rush_other(actor)>=0 || BtlClash_Opponent(actor)>=0 ||
         BtlCharApi_IsChanging(BattleSide_GetObjId(actor)) || TagAssist_Active(actor);
-    if(paired) {targetHeld[actor]=held?-1:0;tapLife[actor]=0;return;}
+    /* With the target let go, any press takes one back at once, however long it is held and whatever is happening to
+       the fighter (it waits for the fighter to be free). A press only counted when it was short, and not at all while
+       being hit, so a fighter could stay without a target for the rest of the fight. */
+    if(held && targetHeld[actor]==0 && unlocked[actor]) {
+        tapTarget[actor]=-2;tapLife[actor]=TAG_RELOCK_WAIT;targetHeld[actor]=-1;
+    }
+    if(paired) {targetHeld[actor]=held?-1:0;if(!unlocked[actor])tapLife[actor]=0;return;}
     if(held) {
         if(targetHeld[actor]==0)pressAttacker[actor]=TagCpu_Attacker(actor);
-        if(targetHeld[actor]>=0 && ++targetHeld[actor]>=15) {
+        if(targetHeld[actor]>=0 && ++targetHeld[actor]>=TAG_UNLOCK_HOLD) {
             unlocked[actor]=1;
             targetHeld[actor]=-1;tapLife[actor]=0;
         }
@@ -675,6 +699,7 @@ static void aim_target(s32 actor,s32 direction) {
         if(d<score) {score=d;best=i;}
     }
     if(best>=0) {targets[actor]=best;unlocked[actor]=0;}
+    else if(unlocked[actor]) relock(actor); /* (nobody that way: the flick still takes a target back) */
 }
 
 s32 TagTeam_TargetStickConsumed(s32 actor) {
@@ -694,7 +719,7 @@ void TagTeam_TargetStick(s32 actor,u32 buttons) {
         return;
     }
     if(stickPending[actor]) {
-        if(valid && !stickR3[actor] && (mode==2 ? !unlocked[actor] : (buttons&PAD_L3)!=0)) {
+        if(valid && !stickR3[actor] && (mode==2 || (buttons&PAD_L3)!=0)) {
             aim_target(actor,stickPending[actor]);
             if(buttons&PAD_L3) targetHeld[actor]=-1;
         }
@@ -702,7 +727,7 @@ void TagTeam_TargetStick(s32 actor,u32 buttons) {
     }
     if(stickLatch[actor]) return;
     if(valid && stickNeutral[actor]>=2 && !stickR3[actor] &&
-       !(buttons&(PAD_L2|PAD_TRIANGLE)) && (mode==2 ? !unlocked[actor] : (buttons&PAD_L3)!=0)) {
+       !(buttons&(PAD_L2|PAD_TRIANGLE)) && (mode==2 || (buttons&PAD_L3)!=0)) {
         stickLatch[actor]=1;
         stickPending[actor]=bits&-bits; /* one direction per return to neutral */
         if(buttons&PAD_L3) targetHeld[actor]=-1;
@@ -804,6 +829,18 @@ void TagTeam_CycleTarget(s32 i) {
     }
 }
 
+/* The target is gone: the next living enemy first. Going round all fighters could land on a fallen teammate (which a
+   player may aim at, to revive), and the target then stayed there for as long as that teammate lay there. */
+static void retarget(s32 i) {
+    s32 offset;
+    if(busy(i)) return;
+    for(offset=1;offset<count;offset++) {
+        s32 next=(targets[i]+offset)%count;
+        if(next!=i && TagTeam_IsEnemy(i,next) && targetable(i,next)) {targets[i]=next;return;}
+    }
+    TagTeam_CycleTarget(i);
+}
+
 s32 TagTeam_SetCpuTarget(s32 actor,s32 target) {
     if(!TagTeam_Active() || (u32)actor>=(u32)count || (u32)target>=(u32)count ||
        TagTeam_InputPlayer(actor)>=0 || sides[actor].control!=BTL_CONTROL_CPU ||
@@ -834,7 +871,7 @@ void TagTeam_Update(void) {
         /* CPU decisions also guard queued damage: changing its recipient
            before the native sequence consumes that queue hits the wrong foe. */
         if(TagChallenge_BetweenWaves()) {targetHeld[i]=0;tapLife[i]=0;stickPending[i]=0;continue;}
-        if (player>=0 && !targetable(i,targets[i])) TagTeam_CycleTarget(i);
+        if (player>=0 && !targetable(i,targets[i])) retarget(i);
         if (BtlSeq_IsFighting() && player>=0 && alive(i)) {
             TagTeam_TargetStick(i,gPad[player].held);
             TagTeam_TargetInput(i,(gPad[player].held & PAD_L3)!=0);
