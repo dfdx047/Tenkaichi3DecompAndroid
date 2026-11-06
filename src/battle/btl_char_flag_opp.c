@@ -346,9 +346,18 @@ void BtlOpp_MirrorFlags(BtlFlagChr *chr) {
     if (BtlCharApi_IsInSkill(opp->objId)) {
         BtlChar_SetHeldFlag(chr, 0xB0);
     }
+#ifdef PORT
+    /* Flag 0xB1 ("my opponent is dead", the fight is over) blocks all input (btl_input.c). A fallen teammate is a
+       target a player takes to go and revive it, not an opponent: aiming at one held the fighter still until the
+       target was changed to an enemy. */
+    if (BtlChar_IsDead(opp) && (!TagTeam_Active() || TagTeam_IsEnemy(chr->player, TagTeam_Target(chr->player)))) {
+        BtlChar_SetHeldFlag(chr, 0xB1);
+    }
+#else
     if (BtlChar_IsDead(opp)) {
         BtlChar_SetHeldFlag(chr, 0xB1);
     }
+#endif
     if (BtlChar_TestFlag(opp, 0xCC)) {
         BtlChar_SetHeldFlag(chr, 0xB4);
     }
