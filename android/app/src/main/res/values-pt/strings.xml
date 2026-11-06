@@ -418,6 +418,11 @@
     <string name="bt4_game_data_intro">Escolha sua imagem do mod da Team BT4: SLUS-219.78, Beta 14 Rev2 (outra versão não funciona: o jogo foi recompilado para essa). Só os arquivos de inicialização são copiados; o resto é lido da imagem onde ela está, então deixe ela na pasta.</string>
     <string name="bt4_engine_included">O motor do Budokai Tenkaichi 4 está nesta versão.</string>
     <string name="bt4_engine_missing">Esta versão ainda não tem o motor do Budokai Tenkaichi 4 (libbt4.so). A imagem já pode ser configurada.</string>
+    <string name="game_mode">Jogo</string>
+    <string name="tag_team_mode">Modo Tag Team</string>
+    <string name="tag_team_mode_text">O mod Tag Team: lutas de até 10 lutadores, salas online e os menus dele. Desligado, entra o Budokai Tenkaichi 3 normal. Vale na próxima vez que o jogo abrir.</string>
+    <string name="new_select">Nova seleção de personagens</string>
+    <string name="new_select_text">Grade, boneco 3D e pedestal na escolha dos lutadores, offline e online. Desligada, volta a tela original do jogo.</string>
     <string name="tag_lite">Gráficos leves no Tag Team</string>
     <string name="tag_lite_text">Só no Tag Team: resolução menor, sem sombras, menos efeitos. Para jogar mais liso em celulares fracos. Também no menu durante a luta.</string>
     <string name="adpf">Dicas de desempenho</string>

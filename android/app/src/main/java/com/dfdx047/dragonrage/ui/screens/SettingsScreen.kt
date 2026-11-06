@@ -271,6 +271,16 @@ fun SettingsScreen(vm: AppViewModel) {
         }
 
 
+        if (vm.game != com.dfdx047.dragonrage.data.Game.BT4) {
+            SectionCard(stringResource(R.string.game_mode), Icons.Rounded.AutoAwesome, accent = Dbz.SaiyanGold) {
+                ToggleRow(stringResource(R.string.tag_team_mode), stringResource(R.string.tag_team_mode_text), get(EngineSettings.TAG_TEAM, 1) != 0) {
+                    vm.setting(EngineSettings.TAG_TEAM, if (it) 1 else 0)
+                }
+                ToggleRow(stringResource(R.string.new_select), stringResource(R.string.new_select_text), get(EngineSettings.SELECT_CLASSIC, 0) == 0) {
+                    vm.setting(EngineSettings.SELECT_CLASSIC, if (it) 0 else 1)
+                }
+            }
+        }
         SectionCard(stringResource(R.string.appearance), Icons.Rounded.Palette, accent = MaterialTheme.colorScheme.tertiary) {
             Text(stringResource(R.string.theme), style = MaterialTheme.typography.titleSmall)
             ChipRow(

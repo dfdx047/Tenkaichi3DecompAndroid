@@ -643,7 +643,22 @@ int SDL_main(int argc, char *argv[]) {
     snprintf(exe, sizeof(exe), "%s/libbt3.so", dir); /* plat_mem.c reads <BT3_EXE>.dat: the app put it there */
     setenv("BT3_EXE", exe, 1);
     setenv("BT3_GS", "gpu", 0);
+    {   /* (the launcher's switch, Settings: dr_tag_team=0 in the settings file is plain BT3) */
+        char line[128];
+        int tagTeam = 1;
+        FILE *fp = fopen("bt3_settings.txt", "r");
+
+        while (fp != NULL && fgets(line, sizeof(line), fp) != NULL) {
+            if (strncmp(line, "dr_tag_team=", 12) == 0) {
+                tagTeam = atoi(line + 12) != 0;
+            }
+        }
+        if (fp != NULL) {
+            fclose(fp);
+        }
+        if (tagTeam)
     setenv("BT3_TAG_TEAM", "1", 0); /* the Tag Team mod: SELECT in the main menu opens its modes (port/src/tagteam_trace.c) */
+    }
     {   /* bt3_env.txt in the game folder: NAME=value lines, the engine's switches for testing (BT3_GS_VERBOSE=1, ...) */
         char line[512];
         FILE *fp = fopen("bt3_env.txt", "r");
