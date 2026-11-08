@@ -282,11 +282,13 @@ fun SettingsScreen(vm: AppViewModel) {
         }
 
 
-        if (vm.game != com.dfdx047.dragonrage.data.Game.BT4) {
-            SectionCard(stringResource(R.string.game_mode), Icons.Rounded.AutoAwesome, accent = Dbz.SaiyanGold) {
-                ToggleRow(stringResource(R.string.new_select), stringResource(R.string.new_select_text), get(EngineSettings.SELECT_CLASSIC, 0) == 0) {
-                    vm.setting(EngineSettings.SELECT_CLASSIC, if (it) 0 else 1)
-                }
+        if (vm.game == com.dfdx047.dragonrage.data.Game.BT3) { // (the new select is BT3's engine: BT3 and the Tag Team)
+            SectionCard(stringResource(R.string.select_style), Icons.Rounded.AutoAwesome, accent = Dbz.SaiyanGold) {
+                SelectStylePicker(get(EngineSettings.SELECT_CLASSIC, 0) != 0, { vm.setting(EngineSettings.SELECT_CLASSIC, if (it) 1 else 0) })
+                Text(
+                    stringResource(R.string.select_style_text),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         SectionCard(stringResource(R.string.appearance), Icons.Rounded.Palette, accent = MaterialTheme.colorScheme.tertiary) {

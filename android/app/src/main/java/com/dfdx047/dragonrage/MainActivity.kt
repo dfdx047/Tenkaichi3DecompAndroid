@@ -88,6 +88,7 @@ import com.dfdx047.dragonrage.ui.screens.DebugScreen
 import com.dfdx047.dragonrage.ui.screens.DriversScreen
 import com.dfdx047.dragonrage.ui.screens.GpuOfferDialog
 import com.dfdx047.dragonrage.ui.screens.TagLiteDialog
+import com.dfdx047.dragonrage.ui.screens.SelectStyleDialog
 import com.dfdx047.dragonrage.ui.screens.LastRunDialog
 import com.dfdx047.dragonrage.ui.screens.TexFailDialog
 import androidx.compose.foundation.clickable
@@ -163,6 +164,7 @@ private fun DragonRageApp(vm: AppViewModel, onSwitchGame: () -> Unit) {
     UpdateDialog(vm)
     GpuOfferDialog(vm)
     TagLiteDialog(vm)
+    SelectStyleDialog(vm)
     LastRunDialog(vm)
     TexFailDialog(vm)
 

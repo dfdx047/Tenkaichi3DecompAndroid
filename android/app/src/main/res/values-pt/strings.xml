@@ -435,9 +435,6 @@
     <string name="bt4_game_data_intro">Escolha sua imagem do mod da Team BT4: SLUS-219.78, Beta 14 Rev2 (outra versão não funciona: o jogo foi recompilado para essa). Só os arquivos de inicialização são copiados; o resto é lido da imagem onde ela está, então deixe ela na pasta.</string>
     <string name="bt4_engine_included">O motor do Budokai Tenkaichi 4 está nesta versão.</string>
     <string name="bt4_engine_missing">Esta versão ainda não tem o motor do Budokai Tenkaichi 4 (libbt4.so). A imagem já pode ser configurada.</string>
-    <string name="game_mode">Jogo</string>
-    <string name="new_select">Nova seleção de personagens</string>
-    <string name="new_select_text">Grade, boneco 3D e pedestal na escolha dos lutadores, offline e online. Desligada, volta a tela original do jogo.</string>
     <string name="tag_lite">Gráficos leves no Tag Team</string>
     <string name="tag_lite_text">Só no Tag Team: resolução menor, sem sombras, menos efeitos. Para jogar mais liso em celulares fracos. Também no menu durante a luta.</string>
     <string name="tag_lite_offer">O seu aparelho é mais fraco. Ligar o Gráfico leve para o jogo rodar mais liso?</string>
@@ -464,4 +461,12 @@
     <string name="err_iso_packed">Este arquivo é um %1$s compactado, não a imagem do disco. Extraia primeiro (com o ZArchiver, por exemplo) e escolha o .iso que estiver dentro. Imagens CHD e CSO precisam ser convertidas de volta para .iso (chdman / maxcso no PC).</string>
     <string name="err_iso_web_page">Este arquivo é uma página da web, não o jogo: o link de download salvou a página no lugar do arquivo. Baixe a ISO de novo e escolha o .iso.</string>
     <string name="err_iso_too_small">Este arquivo é pequeno demais para ser o jogo (%1$s; a ISO tem uns 3 GB). Pode ser um download incompleto ou um atalho.</string>
+    <string name="select_style">Seleção de personagens</string>
+    <string name="select_style_ask">Escolha a seleção de personagens</string>
+    <string name="select_new">Nova</string>
+    <string name="select_new_text">Grade, boneco 3D e tela dividida, em azul e vermelho.</string>
+    <string name="select_classic">Clássica</string>
+    <string name="select_classic_text">A tela original do jogo.</string>
+    <string name="select_style_text">Para o BT3 e o Tag Team. Vale na próxima vez que o jogo abrir; dá para trocar em Ajustes.</string>
+    <string name="select_style_ok">Usar esta</string>
 </resources>

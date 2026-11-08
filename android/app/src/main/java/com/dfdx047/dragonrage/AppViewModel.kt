@@ -234,6 +234,21 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
         _settings.value = settings.snapshot()
     }
 
+    // ---- the character select's look (SelectStyleDialog), asked once in BT3's launcher: the new one or the game's
+
+    private val _selectStyleOffer = MutableStateFlow(false)
+    val selectStyleOffer: StateFlow<Boolean> = _selectStyleOffer.asStateFlow()
+
+    /** [classic]: the game's own screen (select_classic 1); else the new one. Kept and not asked again. */
+    fun answerSelectStyle(classic: Boolean) = viewModelScope.launch(Dispatchers.IO) {
+        if (!_selectStyleOffer.value) return@launch
+        _selectStyleOffer.value = false
+        ActivityLog.info("settings", "character select: ${if (classic) "classic" else "new"}")
+        settings.set(EngineSettings.SELECT_CLASSIC, if (classic) 1 else 0)
+        settings.set(EngineSettings.SELECT_ASKED, 1)
+        _settings.value = settings.snapshot()
+    }
+
     // ---- the last run's numbers (Debug page)
 
     private val _perf = MutableStateFlow<PerfReport?>(null)
@@ -387,6 +402,8 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
             if (GpuProfiles.tierOf(_gpuName.value) in 0..1 && settings.get(EngineSettings.TAG_LITE_ASKED, 0) == 0) {
                 if (settings.get(EngineSettings.TAG_LITE, 0) != 0) settings.set(EngineSettings.TAG_LITE_ASKED, 1) else _tagLiteOffer.value = true
             }
+            // the character select's look, asked once (BT3 and its Tag Team mode only: BT4 and BT2 have their own)
+            if (game == Game.BT3 && settings.get(EngineSettings.SELECT_ASKED, 0) == 0) _selectStyleOffer.value = true
             _perf.value = runCatching { PerfReport.read(paths) }.getOrNull()
         }
         checkOnline()

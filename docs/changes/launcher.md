@@ -3,6 +3,13 @@
 Regras e formato: [README](README.md).
 
 
+### 1.0.0 (este commit): seleção de personagens nova ou clássica, com cartões e desenho
+- **Onde:** `android/.../ui/screens/SelectStyle.kt` (`SelectStylePicker`, `SelectStyleDialog`, desenhos); `SettingsScreen.kt`, seção "Seleção de personagens" (só no BT3); `AppViewModel.kt`, `selectStyleOffer` e `answerSelectStyle`; `EngineSettings.kt`, `SELECT_ASKED` (`dr_select_asked`); `MainActivity.kt`; textos `select_*` nos 3 idiomas (saem `new_select*` e `game_mode`).
+- **O que e por quê:** a chave "Nova seleção" da `tag-team-android` (`e988c567`) virou dois cartões, **Nova** e **Clássica**, cada um com um desenho da tela (grade, boneco no pedestal e tela dividida em azul e vermelho; contra as duas fotos dos lados e a lista no meio, nas cores quentes do jogo), título e uma linha. Toque ou A escolhe; o escolhido fica com borda e marca. O desenho é feito em Compose: nenhuma imagem do jogo. Na primeira abertura do launcher do BT3 nesta versão, os mesmos cartões num aviso (depois dos avisos da GPU e do gráfico leve, nunca junto); a resposta fica em `select_classic` e `dr_select_asked=1`. O motor lê `select_classic` ao abrir o jogo (`Port_Setting` guarda os ajustes na abertura), e o processo do jogo é encerrado ao sair, então a troca vale na próxima vez que o jogo abrir, sem reiniciar o app.
+- **Medido/provado:** compila; ver o teste da seleção nos 3 aparelhos em `docs/release-1.0.md`.
+- **O que pode quebrar:** nada no motor (a chave já existia). Quem tem o BT4 ou o BT2 como jogo do launcher não vê o aviso.
+- **Como testar de novo:** apagar `dr_select_asked` do `bt3_settings.txt`, abrir o launcher: o aviso aparece; escolher Clássica, abrir uma luta 1x1: a tela original; Ajustes > Nova, abrir de novo: a grade.
+
 ### 1.0.0 (este commit): controle volta a navegar no launcher
 - **Onde:** `android/.../MainActivity.kt`, `dispatchKeyEvent`/`dispatchGenericMotionEvent` removidos
 - **O que e por quê:** veio do BT2 (Regulus): o launcher engolia todo evento de controle, inclusive no RG Cube e no RP5, em que o direcional é o único jeito de navegar sem toque. Na 0.9.0 isso não existia, e o jogo roda em outra Activity, que recebe o controle dela.

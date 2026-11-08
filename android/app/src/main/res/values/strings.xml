@@ -436,9 +436,6 @@
     <string name="bt4_game_data_intro">Pick your image of Team BT4\'s mod: SLUS-219.78, Beta 14 Rev2 (another version does not work: the game was recompiled for that one). Only its boot files are copied; the rest is read from the image where it is, so keep it in its folder.</string>
     <string name="bt4_engine_included">The Budokai Tenkaichi 4 engine is in this build.</string>
     <string name="bt4_engine_missing">This build does not have the Budokai Tenkaichi 4 engine yet (libbt4.so). The image can be set up already.</string>
-    <string name="game_mode">Game</string>
-    <string name="new_select">New character select</string>
-    <string name="new_select_text">Roster, 3D fighter and pedestal when choosing fighters, offline and online. Off, the original game screen is back.</string>
     <string name="tag_lite">Tag Team light graphics</string>
     <string name="tag_lite_text">Only in Tag Team: lower resolution, no shadows, fewer effects. For a smoother match on weaker phones. Also in the menu during a fight.</string>
     <string name="tag_lite_offer">Your device is on the weaker side. Turn on Light graphics so the game runs smoother?</string>
@@ -465,4 +462,12 @@
     <string name="err_iso_packed">This file is a compressed %1$s, not the disc image itself. Extract it first (ZArchiver, for example) and pick the .iso inside. CHD and CSO images must be turned back into .iso (chdman / maxcso on a PC).</string>
     <string name="err_iso_web_page">This file is a web page, not the game: the download link saved its page instead of the file. Download the ISO again and pick the .iso.</string>
     <string name="err_iso_too_small">This file is too small to be the game (%1$s; the ISO is about 3 GB). It may be an unfinished download or a shortcut.</string>
+    <string name="select_style">Character select</string>
+    <string name="select_style_ask">Choose the character select</string>
+    <string name="select_new">New</string>
+    <string name="select_new_text">Roster grid, 3D fighter and split screen, in blue and red.</string>
+    <string name="select_classic">Classic</string>
+    <string name="select_classic_text">The game\'s original screen.</string>
+    <string name="select_style_text">For BT3 and the Tag Team. Applies the next time the game opens; you can change it in Settings.</string>
+    <string name="select_style_ok">Use this one</string>
 </resources>
