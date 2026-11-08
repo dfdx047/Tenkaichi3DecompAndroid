@@ -1739,11 +1739,28 @@ void TagNet_Tick(unsigned blank) {
             }
         }
         since=SDL_GetTicks();
-        while(phase!=5 && !aborted && frame>=confirmed()+((role==TN_OBSERVER || (lateJoining && !local_produces(frame)))?0:ROLLBACK)) {
-            pump();commands();fill_departed();
-            if(SDL_GetTicks()-since>10000){if(drop_stalled()){since=SDL_GetTicks();continue;}stop_match("Input from a player stopped arriving. Match stopped.");}
-            wait_say(since,"Waiting for the other player...");
-            Gs_HoldFrame();SDL_Delay(1);
+        {
+            /* (the time spent here is the other players', not this game's: counted where gs_core.c's "slow: frame" line
+               reads "waiting for the other player", which counted only the 1v1's waits and showed Tag Team's as 0) */
+            extern uint64_t gPortNetWaitNs;
+            Uint64 waitFrom=SDL_GetTicksNS();
+            while(phase!=5 && !aborted && frame>=confirmed()+((role==TN_OBSERVER || (lateJoining && !local_produces(frame)))?0:ROLLBACK)) {
+                pump();commands();fill_departed();
+                if(SDL_GetTicks()-since>10000){if(drop_stalled()){since=SDL_GetTicks();continue;}stop_match("Input from a player stopped arriving. Match stopped.");}
+                wait_say(since,"Waiting for the other player...");
+                Gs_HoldFrame();SDL_Delay(1);
+            }
+            {
+                Uint64 took=SDL_GetTicksNS()-waitFrom;
+                static unsigned told;
+                gPortNetWaitNs+=took;
+                if(took>=100000000ull && told<300) { /* (who held the match: the player whose inputs are furthest behind) */
+                    unsigned mask=input_mask(),low=~0u;int who=-1,q;
+                    for(q=0;q<TN_PLAYERS;q++)if((mask&(1u<<q)) && have[q]<low){low=have[q];who=q;}
+                    told++;
+                    fprintf(stderr,"tagnet: waited %u ms at frame %u for player %d's inputs (they had %u)\n",(unsigned)(took/1000000ull),frame,who+1,low);
+                }
+            }
         }
         wait_over();
         if(phase==5 || aborted)return;
