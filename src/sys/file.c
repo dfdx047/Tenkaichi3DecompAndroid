@@ -470,7 +470,13 @@ s32 File_UpdateRequests(void) {
 #ifdef PORT
     extern s32 Port_FastFileQueue(void);
     extern u32 Port_LoadTimeUs(void);
-    if (Port_FastFileQueue()) {
+    extern int TagNet_InMatch(void);
+    /* A Tag Team online match: the same drain without its 2 ms of real time, which made a load in the fight (a destroyed
+       stage, a transformation) end on a different blank on each phone. The reads are synchronous (plat_file.c
+       ADXF_ReadNw), so the 32 steps alone come out the same everywhere, and the load is as quick as off line. (Taking
+       the original one step per blank there instead spread every load over many blanks of the fight.) */
+    if (Port_FastFileQueue() || TagNet_InMatch()) {
+        s32 timed = !TagNet_InMatch();
         u32 started = Port_LoadTimeUs();
         s32 step;
         for (step = 0; step < 32; step++) {
@@ -478,7 +484,7 @@ s32 File_UpdateRequests(void) {
             s32 count = File_GetPendingCount();
             if (File_UpdateRequestStep()) return 1;
             if (state == gFileReq.state && count == File_GetPendingCount()) break;
-            if ((u32)(Port_LoadTimeUs() - started) >= 2000) break;
+            if (timed && (u32)(Port_LoadTimeUs() - started) >= 2000) break;
         }
         return 0;
     }
