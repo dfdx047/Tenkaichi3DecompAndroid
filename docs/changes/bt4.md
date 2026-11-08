@@ -2,6 +2,13 @@
 
 Regras e formato: [README](README.md).
 
+### 1.0.0 (este commit): GPU fraca começa em 1x com o renderizador Dragon Rage
+- **Onde:** `android/.../AppViewModel.kt`, `play()`.
+- **O que e por quê:** a resolução de 1x num aparelho fraco vinha só da oferta de ajustes da GPU (`GpuProfiles.apply`). Quem recusava ou fechava o diálogo (`dr_gpu_tier=-2`) ficava com o padrão do motor, 2x (1024 x 896), e no BT4 a GPU virava o limite. Agora, ao jogar o BT4 com o renderizador Dragon Rage numa GPU de nível 0 ou 1 e sem `scale4` no arquivo, o app grava `scale4=4` e `scale=1`. Uma resolução escolhida pelo jogador não é tocada.
+- **Medido/provado:** Mi A3 (Adreno 610), luta 1P x COM pelo toque, mesma rota (`bt4fight_xi.sh`): em 2x, 20-21 % da velocidade e 30-35 ms por quadro esperando a GPU ("presenting"); em 1x, gravado pelo app sozinho, 27-31 % e 0,7-0,9 ms. A luta de demonstração do título fica em ~28 % nos dois: ali o limite é o processador (o código do jogo leva ~40 ms por quadro). 0 crash.
+- **O que pode quebrar:** quem tem GPU fraca e queria 2x precisa escolher em Ajustes (vale a escolha). A imagem em 1x fica mais serrilhada.
+- **Como testar de novo:** aparelho fraco, apagar `scale4` de `files/bt4/bt3_settings.txt`, recusar a oferta da GPU, jogar: o log diz `internal resolution 1x`.
+
 ### 1.0.0 (este commit): símbolos novos do `gs_input.c` no shim
 - **Onde:** `port/bt4/host/bt4_shim.c`, depois de `gPortNetWaitNs`
 - **O que e por quê:** a mescla do PC 0.1.39 e do Tag Team fez o `gs_input.c` pedir `Port_NetSpectating`,

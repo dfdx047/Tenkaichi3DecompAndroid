@@ -74,6 +74,9 @@ guía con dibujos dentro de la app.
 - **Más ligero**: se apagaron diagnósticos internos que corrían para todos los jugadores.
 - **Volver a la app** ya no deja perdida la imagen de ARMSX2.
 - **Escenario lejano** en el renderizador Dragon Rage: las montañas ya no salen en bloques de ruido de colores.
+- **Los dispositivos débiles empiezan en 1x**: con el renderizador Dragon Rage en una GPU débil y sin resolución elegida, el juego
+  dibuja en 1x y no en 2x. En un Mi A3, la pelea pasó de cerca del 20 % a cerca del 30 % de la velocidad.
+- **Control en pantalla**: cambia solo entre el diseño de menú (cruceta) y el de pelea (stick), como en BT3.
 
 ## Tag Team Mod
 - **Hasta 10 luchadores**, con los modos del mod de tehmufti y sus colaboradores (Batalla por equipos, Entrenamiento, Desafío, Torneo
@@ -127,8 +130,8 @@ guía con dibujos dentro de la app.
 
 ## Problemas conocidos
 - **BT4 en dispositivos débiles**: todavía lejos de la velocidad completa. En un Snapdragon 665 (Mi A3), la pelea corre a cerca del 30 % con el renderizador Dragon Rage, que la app elige sola en estos dispositivos (con ARMSX2, cerca del 20 %). El límite es el procesador, no la GPU.
-- **Táctil en BT4**: el control en pantalla no cambia solo al diseño de menú; en los menús, toca el botón ✛ de arriba para tener la
-  cruceta (y otra vez para volver al de pelea).
+- **Táctil en BT2**: el control en pantalla no cambia solo al diseño de menú, y los menús de BT2 solo leen la cruceta; en los menús,
+  toca el botón ✛ de arriba (y otra vez para volver al de pelea).
 - **Tag Team en línea con un dispositivo débil**: toda la sala va más lenta con él (en un 5 contra 5 con un Snapdragon 665,
   cerca del 75 %). Quien tenga un dispositivo débil debería activar los Gráficos ligeros antes de entrar.
 - **Tag Team en línea**: el menú del anfitrión puede aparecer sin letras en algunos dispositivos; algunos mensajes siguen en inglés.

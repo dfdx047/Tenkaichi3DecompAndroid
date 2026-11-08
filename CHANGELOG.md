@@ -72,6 +72,9 @@ button opens a guide with drawings inside the app.
 - **Lighter**: internal diagnostics that ran for every player were turned off.
 - **Going back to the app** no longer leaves the ARMSX2 picture lost.
 - **Far scenery** on the Dragon Rage renderer: the mountains no longer come out as blocks of coloured noise.
+- **Weak devices start at 1x**: with the Dragon Rage renderer on a weak GPU and no resolution chosen, the game draws at 1x, not 2x.
+  On a Mi A3, a fight went from about 20 % to about 30 % of full speed.
+- **On-screen controller**: switches by itself between the menu layout (D-pad) and the fight layout (stick), as in BT3.
 
 ## Tag Team Mod
 - **Up to 10 fighters**, with the modes of the mod by tehmufti and its contributors (Team Battle, Training, Challenge, Tournament and
@@ -122,8 +125,8 @@ button opens a guide with drawings inside the app.
 
 ## Known issues
 - **BT4 on weak devices**: still far from full speed. On a Snapdragon 665 (Mi A3), a fight runs at about 30 % with the Dragon Rage renderer, which the app picks by itself on these devices (with ARMSX2, about 20 %). The limit is the processor, not the GPU.
-- **Touch in BT4**: the on-screen controller does not switch to the menu layout by itself; in menus, tap the ✛ button at the top to
-  get the D-pad (and again to go back to the fight layout).
+- **Touch in BT2**: the on-screen controller does not switch to the menu layout by itself, and BT2's menus only read the D-pad; in
+  menus, tap the ✛ button at the top (and again to go back to the fight layout).
 - **Tag Team Online with a weak device**: the whole room slows down with it (in a 5 against 5 with a Snapdragon 665, about
   75 %). Players on weak devices should turn on Light graphics before joining.
 - **Tag Team Online**: the host's menu can show no letters on some devices; some messages are still in English.

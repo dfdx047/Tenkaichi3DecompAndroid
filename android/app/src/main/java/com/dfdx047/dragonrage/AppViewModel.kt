@@ -765,6 +765,14 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
             settings.set(EngineSettings.BT4_RENDERER_AUTO, 0) // (now: the game reads the file as it opens)
             _settings.value = settings.snapshot()
         }
+        // Dragon Rage's renderer on a weak GPU with no resolution chosen (the GPU offer declined or closed): 1x, not the
+        // engine's 2x. Mi A3 (Adreno 610), a fight at 2x: 35 ms a picture waiting for the GPU, 20 % speed; at 1x under 1 ms.
+        if (game == Game.BT4 && bt4Renderer() == 0 && GpuProfiles.tierOf(_gpuName.value) in 0..1 &&
+            _settings.value[EngineSettings.SCALE4] == null) {
+            settings.set(EngineSettings.SCALE4, 4)
+            settings.set(EngineSettings.SCALE, 1)
+            _settings.value = settings.snapshot()
+        }
         if (game == Game.BT4 && _install.value is InstallState.Installed && GpuProfiles.weakChip(_gpuName.value)) {
             android.widget.Toast.makeText(getApplication(), str(R.string.bt4_weak_cpu), android.widget.Toast.LENGTH_LONG).show()
         }

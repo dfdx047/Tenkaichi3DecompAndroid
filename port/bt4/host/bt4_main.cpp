@@ -69,6 +69,7 @@ void Bt4_OpenMenu(void);                                       /* (below) the ap
 }
 void ps2Set60Fps(bool on, const char *sitesPath);              /* BT3-Recomp (ps2_stepcensus.cpp): 60 fps fights */
 uint64_t ps2FightTicks();                                      /* (the same): the fight's updates so far */
+extern std::atomic<uint64_t> g_bt3FrameCount;                  /* (game_overrides.cpp): the game's frames so far */
 
 // BT3-Recomp's pacing table of the 60 fps fights (games/bt3/fps60_sites.txt, which the mod keeps: it has the USA
 // layout), built into this library by CMakeLists.txt and written to the game folder for the runtime to load.
@@ -212,7 +213,23 @@ void sendPad(ps2live::RingHeader *ring)
     if ((!GsGpu_Enabled() && !gPortPadAlways) || Port_PadRead(0, d) <= 0) // (ARMSX2's renderer: gPortPadAlways)
         return;
     const unsigned buttons = static_cast<unsigned>(~(d[0] | (d[1] << 8))) & 0xFFFFu; // active high, libpad order
-    ring->padButtons = buttons;
+    // A press stays in the ring until the game has run 2 of its frames since: the game reads the ring when it wants,
+    // this runs as the pictures come (several can come between two of its reads), so a quick tap on the on-screen
+    // controller of a device where the game runs slowly (10 frames a second on a Snapdragon 665: 100 ms between
+    // reads) was there for none of them, and START seemed not to answer. At full speed that is 33 ms: a mashed
+    // button still goes up and down.
+    static unsigned s_held, s_last;
+    static uint64_t s_heldFrom;
+    const uint64_t frame = g_bt3FrameCount.load(std::memory_order_relaxed);
+    if (s_held && frame - s_heldFrom >= 2)
+        s_held = 0;
+    if (const unsigned fresh = buttons & ~s_last)
+    {
+        s_held |= fresh;
+        s_heldFrom = frame;
+    }
+    s_last = buttons;
+    ring->padButtons = buttons | s_held;
     ring->padAxes = static_cast<uint32_t>(d[4]) | (static_cast<uint32_t>(d[5]) << 8) | (static_cast<uint32_t>(d[2]) << 16) |
                     (static_cast<uint32_t>(d[3]) << 24); // lx, ly, rx, ry
     ring->padSequence = ring->padSequence + 1;
@@ -943,7 +960,24 @@ extern "C" JNIEXPORT void JNICALL Java_com_dfdx047_dragonrage_engine_TouchBridge
     Port_TouchPad(static_cast<unsigned>(buttons), lx, ly, rx, ry);
 }
 extern "C" JNIEXPORT jboolean JNICALL Java_com_dfdx047_dragonrage_engine_TouchBridge_nativeMenuOpen(JNIEnv *, jclass) { return JNI_FALSE; }
-extern "C" JNIEXPORT jint JNICALL Java_com_dfdx047_dragonrage_engine_TouchBridge_nativePlayerTeamSize(JNIEnv *, jclass) { return -1; }
+// The on-screen controller's menu/fight layout (TouchPadView.autoSwitch, asked about twice a second): BT4 has no team
+// reading here, so a fight is when the fight's update counter moves (ps2FightTicks, as fps60Watch and armsx2Watch use
+// it): 1 a fight, 0 the menus (a pause too: its menu wants the D-pad), -1 before the first second.
+extern "C" JNIEXPORT jint JNICALL Java_com_dfdx047_dragonrage_engine_TouchBridge_nativePlayerTeamSize(JNIEnv *, jclass)
+{
+    static uint64_t last = ps2FightTicks();
+    static auto at = std::chrono::steady_clock::now();
+    static jint state = -1;
+    const auto t = std::chrono::steady_clock::now();
+    const double secs = std::chrono::duration<double>(t - at).count();
+    if (secs < 0.3)
+        return state;
+    const uint64_t now = ps2FightTicks();
+    state = (now - last) / secs > 5.0 ? 1 : 0;
+    last = now;
+    at = t;
+    return state;
+}
 
 // The touch menu (MenuBridge, as libmain.so answers it for BT3).
 extern "C" JNIEXPORT jboolean JNICALL Java_com_dfdx047_dragonrage_engine_MenuBridge_nativeOpen(JNIEnv *, jclass, jboolean open)

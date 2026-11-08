@@ -28,8 +28,8 @@ As seções 1 a 8 são da sessão de 07/11; a seção 0 é a rodada final de 08/
 | Importar do zero | — | BT3 pelo seletor: 13 arquivos, 2,8 GB | BT4 pelo seletor: 23 arquivos |
 | BT3: abrir, 1x1, voltar ao menu | 100 %, 30 q/s, 0 crash | COM x COM até o fim, 100 %, 30 q/s, volta ao menu, 0 crash | Continue, 1P x COM só pelo toque, 30 q/s, 100 % |
 | Seleção Nova / Clássica | Nova (grade, Goku 3D, pedestal) | Nova, cabe na tela 1:1; o diálogo de cartões também | Clássica: a tela original do jogo |
-| Tag Team (5x5 COM) | 100 %, 30 q/s, 0 crash | — | Gráfico leve desligado: 97,5 %, 12 q/s; ligado: 99 %, 18 q/s (+50 % de quadros); 0 crash |
-| BT4 | — | — | só o Dragon Rage (escolha do app): ~30 % (18 q/s), código do jogo ~39 ms/quadro, desenho ~12,5 ms, 450 MB; ARMSX2 forçado: ~20 % (12-13 q/s), 40-58 ms, 845 MB. **O limite é a CPU.** Escolha automática certa |
+| Tag Team (5x5 COM) | 100 %, 30 q/s, 0 crash | — | Gráfico leve desligado: 97-99 %, 12 q/s (o pulo de quadros segura a velocidade); ligado (`tag_lite=1`; a primeira medição tinha a chave errada): 95-99 %, 15-17 q/s; só nos núcleos grandes (`BT3_TEST_CPUS=4-7`): igual, 15,6 q/s (o limite é a conta do jogo, ~12 ms por tique); 0 crash |
+| BT4 | — | — | (antes da correção da resolução, abaixo) só o Dragon Rage (escolha do app): ~30 % (18 q/s), código do jogo ~39 ms/quadro, desenho ~12,5 ms, 450 MB; ARMSX2 forçado: ~20 % (12-13 q/s), 40-58 ms, 845 MB. **O limite é a CPU.** Escolha automática certa |
 | BT2 só com a ISO | COM x COM até o fim, 30 q/s, 0 crash | — | — |
 | Online normal (Partida Rápida) | RP5 x Cube: pareou sozinho, ping 6-14 ms, 0 rollbacks, sem dessincronia, seleção nova online nos dois, 0 crash. Esperas de 150-220 ms só quando o adb mandava teclas (cada `input` abre um processo Java) | | |
 | Tag Online + espectador | anfitrião (sala 157844) | **espectador**: painel "Assistindo", troca de câmera | entrou na sala **só pelo toque** (código digitado no teclado do sistema), "Entrar como Jogador", Equipe 2. Os três no mesmo quadro (4200), 0 rewinds, 0 crash. A sala ficou em 71-89 %: o Mi A3 desenhava 5,8 q/s no 5x5 sem o Gráfico leve, e a sala segue o mais lento |
@@ -38,14 +38,38 @@ As seções 1 a 8 são da sessão de 07/11; a seção 0 é a rodada final de 08/
 
 **Toque Pro no Mi A3**: a seção aparece em Controles; os perfis gravam o arquivo certo; o guia abre com os 6 desenhos. Na luta:
 analógico dinâmico nasce sob o dedo e a base acompanha o polegar; um toque no L2 (toque alterna) carrega o Ki sem segurar;
-deslizar do soco ao raio de Ki; menus do BT3 e do Tag só pelo toque. No BT4 o controle fica no layout de luta nos menus (o app não
-sabe a cena do BT4) e o analógico não move o cursor: é preciso o botão ✛ (problema conhecido, igual à 0.9.0).
+deslizar do soco ao raio de Ki; menus do BT3 e do Tag só pelo toque. No BT4 o controle ficava no layout de luta nos menus; corrigido na rodada seguinte (abaixo).
 
 **Corrigido nesta rodada**: oferta "Gráficos leves no Tag Team" aparecia no BT4 (`8eaf4b11`); texto de `log_auto_failed`; título do guia
 sem contraste; rótulo do alcance do analógico em passos em vez de %. **Ferramenta**: `fight4.rec` saiu de passo com o jogo (os testes
-usaram rotas por teclas, `kpad.py`); as teclas do `kpad.py` não chegam ao jogo no Mi A3 (Android 17), lá tudo foi por toque.
+usaram rotas por teclas, `kpad.py`); no Mi A3 as teclas do `kpad.py` chegam ao BT3 (a abertura é que ignora o START) e as do `bt2key.py` não chegam ao BT2; lá quase tudo foi por toque.
 **Não feito**: medição do patch de SDL antes/depois no Cube; Classificatória; contra PC; BT4 e BT2 no Cube.
 **Regra 4**: 10 capturas de tela do jogo saíram de `docs/images/1.0/` e dos READMEs; o save do BT2 ficou (ver "Antes de publicar").
+
+### 0b. Mi A3 até os quatro jogos ficarem jogáveis (mesmo dia, depois da rodada acima)
+
+Tudo pelo toque, com o Toque Pro no perfil Padrão. Sem espaço para duas ISOs (o Mi A3 tem ~6 GB livres): BT4, depois BT2, depois
+BT4 de novo; o Android recusa instalar o APK com a ISO do BT4 no aparelho (`INSTALL_FAILED_INSUFFICIENT_STORAGE` a 98 %), então
+cada APK novo pediu tirar a ISO e copiar de novo (~16 min por Wi-Fi). Ao sumir a ISO, o app pede a importação de novo (certo).
+
+| Jogo | Resultado no Mi A3 | Jogável? |
+|---|---|---|
+| BT3 | 1P x COM, 30 q/s, 100 % (rodada acima) | sim |
+| Tag Team 5x5 | 95-99 % da velocidade, 15-17 q/s com o Gráfico leve, 12 q/s sem; o limite é a conta do jogo (núcleos grandes só: igual) | sim, com quadros pulados; 1x1 e 2x2 ficam melhores |
+| BT2 | ISO importada pelo seletor; título a ~55 % (vídeo decodificado na CPU, thread do jogo a 100 % num núcleo grande); menus pelo ✛ e direcional; luta 1P x COM a ~92 % (55 campos/s, 27-28 q/s), combo de 3 golpes pelo toque; 0 crash | sim |
+| BT4 | 1P x COM pelo toque (combo de 9 golpes); **27-31 %** da velocidade em 1x (era 20-21 % em 2x); o código do jogo leva ~40 ms por quadro (precisa de 16,7) | **não**: roda e responde, mas em câmera lenta. Limite da CPU do SD665 |
+
+**Corrigido nesta rodada** (`docs/changes/touch-input.md` e `bt4.md`):
+- BT4: o controle na tela troca sozinho entre menu e luta (antes ficava no de luta e exigia o ✛).
+- BT4 com o renderizador Dragon Rage numa GPU fraca começa em 1x quando a oferta da GPU foi recusada ou fechada (antes 2x: a GPU
+  segurava a luta em 20 %, 35 ms por quadro de espera).
+- BT4 e BT2: um toque curto fica no controle por 2 quadros do jogo, como no BT3. Sem prova de um toque perdido antes (ver o registro).
+
+**Testado e sem ganho**: `PS2X_ASYNC_KICK=1` no BT4 (o pipeline do VU1 já vem ligado: `[vu1pipe] ... ON`); fixar o BT3 nos núcleos
+grandes (`BT3_TEST_CPUS=4-7`). As threads do BT4 já rodam nos núcleos 4-7 a 2,0 GHz.
+
+**Continua**: BT2 sem troca automática de layout (os menus do BT2 só leem o direcional: ✛). O analógico dinâmico precisa de um
+arrasto (um toque parado não inclina), certo para o jogo, mas as rotas de teste precisam de `swipe`.
 
 ## 1. Revisão por branch
 

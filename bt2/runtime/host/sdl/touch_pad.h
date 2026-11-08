@@ -10,12 +10,18 @@
 class TouchPad {
 public:
     static void set(unsigned buttons,int lx,int ly,int rx,int ry) {
-        state().store(pack(buttons,lx,ly,rx,ry),std::memory_order_relaxed);
+        const std::uint64_t before=state().exchange(pack(buttons,lx,ly,rx,ry),std::memory_order_relaxed);
+        tapped().fetch_or(std::uint16_t(buttons&~unsigned(before)),std::memory_order_relaxed);
     }
-    // The controller's state; a stick at rest leaves the gamepad's stick as it was.
+    // The controller's state; a stick at rest leaves the gamepad's stick as it was. A button pressed since the last
+    // call stays pressed for 2 calls (fields), even if it was already let go: a quick tap between two reads, on a
+    // device where the game runs slowly, was otherwise never seen (the menus seemed not to answer).
     static PadInput get() {
         const std::uint64_t word=state().load(std::memory_order_relaxed);
-        PadInput out;out.pressed=std::uint16_t(word);
+        static std::uint16_t held=0;static int left=0; // (one reader: the player's session)
+        if(const std::uint16_t fresh=tapped().exchange(0,std::memory_order_relaxed)) {held|=fresh;left=2;}
+        PadInput out;out.pressed=std::uint16_t(word)|held;
+        if(left>0 && --left==0)held=0;
         out.sticks={std::uint8_t(word>>40),std::uint8_t(word>>48),std::uint8_t(word>>24),std::uint8_t(word>>32)}; // RX, RY, LX, LY
         return out;
     }
@@ -31,6 +37,10 @@ private:
     static std::uint8_t byte(int v) {return std::uint8_t(v<0?0:v>255?255:v);}
     static std::uint64_t pack(unsigned buttons,int lx,int ly,int rx,int ry) {
         return std::uint64_t(buttons&0xFFFF)|std::uint64_t(byte(lx))<<24|std::uint64_t(byte(ly))<<32|std::uint64_t(byte(rx))<<40|std::uint64_t(byte(ry))<<48;
+    }
+    static std::atomic<std::uint16_t>& tapped() {
+        static std::atomic<std::uint16_t> bits{0};
+        return bits;
     }
     static std::atomic<std::uint64_t>& state() {
         static std::atomic<std::uint64_t> word{pack(0,0x80,0x80,0x80,0x80)};
