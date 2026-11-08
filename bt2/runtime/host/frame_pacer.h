@@ -137,7 +137,11 @@ public:
         waited_=true;
         const auto begin=Clock::now();
         if(begin>=deadline_) {++late_fields;return;}
-        if(deadline_-begin>std::chrono::milliseconds(1))std::this_thread::sleep_until(deadline_-std::chrono::milliseconds(1));
+        // Sleeps to within 200 us of the deadline and yields only for that rest. The kernel's sleep on a phone wakes
+        // within about 50 us (the timer slack of a foreground app); the earlier margin of a whole millisecond left
+        // the game thread spinning on yield for up to 1 ms of every 16.7 ms field, about 6% of a big core turned
+        // into heat for nothing (BT3's pacing sleeps the whole wait, port/src/plat_stub.c).
+        if(deadline_-begin>std::chrono::microseconds(200))std::this_thread::sleep_until(deadline_-std::chrono::microseconds(200));
         while(Clock::now()<deadline_)std::this_thread::yield();
         const auto end=Clock::now();
         field_waited_+=end-begin;
