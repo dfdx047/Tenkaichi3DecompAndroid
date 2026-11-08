@@ -314,6 +314,11 @@ int TagNet_Active(void) {
     int active;SDL_LockSpinlock(&uiLock);active=status.phase>=3 && status.phase<=4;SDL_UnlockSpinlock(&uiLock);
     return TagNet_Enabled() && !nativeMenu && !hostMenu && active;
 }
+/* A match (or the practice) is running on this game: what it simulates must come out the same on every phone, blank for
+   blank (tagteam_trace.c Port_FastFileQueue). Read on the game thread, where `phase` changes. */
+int TagNet_InMatch(void) {
+    return TagNet_Enabled() && !nativeMenu && !hostMenu && phase==4;
+}
 int TagNet_Role(void) {
     int value;SDL_LockSpinlock(&uiLock);value=status.role;SDL_UnlockSpinlock(&uiLock);return value;
 }

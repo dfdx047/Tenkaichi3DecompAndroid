@@ -61,6 +61,7 @@ void TagNet_BattleResult(int winningSide);
 void TagNet_PracticeLoadout(int member,unsigned address);
 int TagNet_NativeMenu(void);
 int TagNet_Active(void);
+int TagNet_InMatch(void);
 int TagNet_Role(void);
 int TagNet_MenuInput(void);
 int TagNet_Resim(void);

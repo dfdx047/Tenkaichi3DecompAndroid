@@ -12,11 +12,17 @@ void Port_ModelRequestTrace(int actor,int kind,int chara,int costume,int variant
 int Port_FastFileQueue(void) {
     extern int Port_NetSession(void);
     extern int TagTeam_Enabled(void), TagTeam_Active(void);
+    extern int TagNet_InMatch(void);
     /* The legacy step cadence remains available for comparison, and for the
        upstream network protocol whose simulation includes loader states.
        Only in the mod's own modes: it goes by the wall clock, and a normal fight must load in the same number of frames
-       as without the mod (a pad recording then replays it picture for picture). */
-    return (TagTeam_Enabled() || TagTeam_Active()) && getenv("BT3_TAG_TEAM") != NULL && !Port_NetSession() &&
+       as without the mod (a pad recording then replays it picture for picture).
+       Not in a Tag Team online match either: the fast queue stops at 2 ms of real
+       time (src/sys/file.c), so a stage or fighter loaded during the fight (a
+       destroyed stage, a transformation) finished on a different blank on each
+       phone and the match went out of sync (2026-11-05: both divergences of a
+       12-match log came right after a destroyed stage). */
+    return (TagTeam_Enabled() || TagTeam_Active()) && getenv("BT3_TAG_TEAM") != NULL && !Port_NetSession() && !TagNet_InMatch() &&
            getenv("BT3_TAG_LEGACY_LOADING") == NULL;
 }
 void Port_LoadTrace(int point) {
