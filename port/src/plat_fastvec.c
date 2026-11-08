@@ -108,6 +108,11 @@ static inline uint32_t fast_mul(uint32_t a, uint32_t b) {
             return a;
         }
     }
+    /* An operand with exponent 0 (zero, or what the PS2 takes for zero): the product is the signed zero, as
+       mul_core_long answers before anything else (its sign is worked out before in(), so even against exponent 255) */
+    if (EXP(a) == 0 || EXP(b) == 0) {
+        return (a ^ b) & SIGN;
+    }
     return long_mul(a, b);
 }
 
@@ -128,6 +133,20 @@ static inline uint32_t fast_add(uint32_t a, uint32_t b) {
             __builtin_memcpy(&a, &f, 4);
             return a;
         }
+    }
+    /* An operand with exponent 0 against an ordinary one (or two of them), as add_core_long answers first: the
+       other operand as it is, or the zero both signs agree on. (The game's add cuts the smaller operand to its sign
+       when the exponents are 25 or more apart, so this is most of what went the long way.) Exponent 255 still goes
+       the long way, which reads it as the largest number. */
+    if (EXP(b) == 0) {
+        if (EXP(a) == 0) {
+            return a & b & SIGN;
+        }
+        if (EXP(a) != 255) {
+            return a;
+        }
+    } else if (EXP(a) == 0 && EXP(b) != 255) {
+        return b;
     }
     return long_add(a, b);
 }
@@ -411,6 +430,69 @@ void Port_Vu0Madd4(const uint32_t *acc, const uint32_t *a, const uint32_t *b, ui
     for (i = 0; i < 4; i++) {
         out[i] = fast_add(acc[i], fast_mul(a[i], b[i]));
     }
+}
+
+/* ------------------------------------------------------------------------------------------------------------
+ * The vector unit's matrix product as the game's Mtx_Mul runs it (src/port/vu0_a.c Ref_Mtx_Mul, sceVu0MulMatrix):
+ * for each row i of b, vmulax / vmadday / vmaddaz / vmaddw against the four rows of a, so out.row[i].c =
+ * ((a0.c * bi.x + a1.c * bi.y) + a2.c * bi.z) + a3.c * bi.w, every operation truncated as Sf_MulBits / Sf_AddBits
+ * (the same arithmetic as mtx_apply / Port_FastMtxApply, in doubles: exact, see the top of this file). It also
+ * gives what the sixteen instructions leave behind: the accumulator after the last vmaddaz (`acc`), the zero /
+ * sign flags of the last instruction (`last`, bit 0 zero, bit 1 sign, over the four components) and those of all
+ * sixteen ORed (`any`). Returns 0, writing nothing, wherever an operand or a result is outside what the doubles
+ * cover; the caller then runs the instructions one by one as before. One call instead of sixteen (each with its
+ * own copies of the broadcast operand): BtlObjPose_CalcMatrices does one per bone of every fighter, every frame.
+ * ---------------------------------------------------------------------------------------------------------- */
+static inline unsigned zs_flags(double x) {
+    uint64_t u = bits_of(x);
+    return ((u << 1) == 0) | (unsigned)(u >> 63) << 1;
+}
+
+int Port_FastMtxMul(const uint32_t *a, const uint32_t *b, uint32_t *out, uint32_t *acc, uint32_t *last, uint32_t *any) {
+    unsigned bad = 0, seen = 0, cur = 0;
+    double A[16], B[16], R[16], C[4];
+    int i, c;
+
+    for (i = 0; i < 16; i++) {
+        A[i] = wide(a[i], &bad);
+        B[i] = wide(b[i], &bad);
+    }
+    if (bad) {
+        return 0;
+    }
+    for (i = 0; i < 4; i++) {
+        const double bx = B[i * 4], by = B[i * 4 + 1], bz = B[i * 4 + 2], bw = B[i * 4 + 3];
+        double t[4];
+        cur = 0;
+        for (c = 0; c < 4; c++) { t[c] = mul(A[c], bx, &bad); cur |= zs_flags(t[c]); }
+        seen |= cur;
+        cur = 0;
+        for (c = 0; c < 4; c++) { t[c] = add(t[c], mul(A[4 + c], by, &bad), &bad); cur |= zs_flags(t[c]); }
+        seen |= cur;
+        cur = 0;
+        for (c = 0; c < 4; c++) { t[c] = add(t[c], mul(A[8 + c], bz, &bad), &bad); cur |= zs_flags(t[c]); }
+        seen |= cur;
+        if (i == 3) {
+            for (c = 0; c < 4; c++) { C[c] = t[c]; }
+        }
+        cur = 0;
+        for (c = 0; c < 4; c++) { R[i * 4 + c] = add(t[c], mul(A[12 + c], bw, &bad), &bad); cur |= zs_flags(R[i * 4 + c]); }
+        seen |= cur;
+    }
+    if (bad) {
+        return 0;
+    }
+    for (i = 0; i < 16; i++) {
+        float f = (float)R[i]; /* exact: 24 bits, in range */
+        __builtin_memcpy(&out[i], &f, 4);
+    }
+    for (c = 0; c < 4; c++) {
+        float f = (float)C[c];
+        __builtin_memcpy(&acc[c], &f, 4);
+    }
+    *last = cur;
+    *any = seen;
+    return 1;
 }
 
 /* The whole-number square root of n < 2^48 (src/port/vu0_a.c RefVu0_SqrtBits: the vector unit's and the FPU's

@@ -1589,6 +1589,26 @@ void Ref_Mtx_TranslateLocal(RefMtx44 *dst, RefMtx44 *src, RefVec4 *v) {
 /* 0x1201B8: dst.row[i] = ((a.row0 * b[i].x + a.row1 * b[i].y) + a.row2 * b[i].z) + a.row3 * b[i].w for i = 0..3,
  * four components each. Everything is loaded before anything is stored (dst may alias a or b). */
 void Ref_Mtx_Mul(RefMtx44 *dst, RefMtx44 *a, RefMtx44 *b) {
+#if defined(REF_VU0_EXTERN_ARITH) && defined(SF_FAST_CALLS)
+    {   /* the port: the sixteen instructions in one call (port/src/plat_fastvec.c Port_FastMtxMul), leaving the
+           registers, the accumulator and the flags as they leave them; anything it does not cover, the long way */
+        extern int Port_FastMtxMul(const uint32_t *a, const uint32_t *b, uint32_t *out, uint32_t *acc, uint32_t *last, uint32_t *any);
+        uint32_t A[16], B[16], R[16], acc[4], last, any;
+        memcpy(A, a, 64);
+        memcpy(B, b, 64);
+        if (!mode(0) && !mode(2) && Port_FastMtxMul(A, B, R, acc, &last, &any)) {
+            int i;
+            for (i = 0; i < 4; i++) {
+                memcpy(VF(4 + i).u, &A[i * 4], 16);  /* lqc2 vf4..vf7 */
+                memcpy(VF(8 + i).u, &R[i * 4], 16);  /* vf8..vf11: the rows of the product */
+            }
+            memcpy(gRefVu0.acc.u, acc, 16);
+            gRefVu0.status = (gRefVu0.status & 0xFC0) | last | (any << 6);
+            memcpy(dst, R, 64);                     /* sqc2 vf8..vf11 */
+            return;
+        }
+    }
+#endif
     op_lqc2(4, a);                         /* 1201B8  lqc2 vf4, 0x0(a1) */
     op_lqc2(5, AT(a, 0x10));               /* 1201BC  lqc2 vf5, 0x10(a1) */
     op_lqc2(6, AT(a, 0x20));               /* 1201C0  lqc2 vf6, 0x20(a1) */

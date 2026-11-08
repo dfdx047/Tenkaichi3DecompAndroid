@@ -19,6 +19,7 @@ extern uint64_t Port_FastIsqrt48(uint64_t n);
 extern void Port_Vu0Add4(const uint32_t *a, const uint32_t *b, uint32_t *out);
 extern void Port_Vu0Mul4(const uint32_t *a, const uint32_t *b, uint32_t *out);
 extern void Port_Vu0Madd4(const uint32_t *acc, const uint32_t *a, const uint32_t *b, uint32_t *out);
+extern int Port_FastMtxMul(const uint32_t *a, const uint32_t *b, uint32_t *out, uint32_t *acc, uint32_t *last, uint32_t *any);
 
 static uint64_t sState = 0x9E3779B97F4A7C15ull;
 static uint32_t rnd(void) {
@@ -46,6 +47,33 @@ static void long_way(const uint32_t *r, const uint32_t *v, uint32_t *o) {
         o[c] = Sf_AddBits(a, Sf_MulBits(r[12 + c], v[3]));
     }
 }
+/* Mtx_Mul's sixteen instructions one by one (src/port/vu0_a.c Ref_Mtx_Mul and setFlags): the product, the
+   accumulator after the last vmaddaz, the zero / sign flags of the last instruction and of all of them ORed */
+static unsigned zs(const uint32_t *r) {
+    unsigned f = 0;
+    int c;
+    for (c = 0; c < 4; c++) { f |= ((r[c] & 0x7FFFFFFF) == 0) | ((r[c] >> 31) << 1); }
+    return f;
+}
+static void mtxmul_long(const uint32_t *a, const uint32_t *b, uint32_t *out, uint32_t *acc, uint32_t *last, uint32_t *any) {
+    int i, c;
+    unsigned seen = 0, cur = 0;
+    for (i = 0; i < 4; i++) {
+        uint32_t t[4];
+        for (c = 0; c < 4; c++) { t[c] = Sf_MulBits(a[c], b[i * 4]); }
+        seen |= zs(t);
+        for (c = 0; c < 4; c++) { t[c] = Sf_AddBits(t[c], Sf_MulBits(a[4 + c], b[i * 4 + 1])); }
+        seen |= zs(t);
+        for (c = 0; c < 4; c++) { t[c] = Sf_AddBits(t[c], Sf_MulBits(a[8 + c], b[i * 4 + 2])); }
+        seen |= zs(t);
+        if (i == 3) { memcpy(acc, t, 16); }
+        for (c = 0; c < 4; c++) { out[i * 4 + c] = Sf_AddBits(t[c], Sf_MulBits(a[12 + c], b[i * 4 + 3])); }
+        cur = zs(out + i * 4);
+        seen |= cur;
+    }
+    *last = cur;
+    *any = seen;
+}
 /* the square root's loop (src/port/vu0_a.c RefVu0_SqrtBits) */
 static uint64_t isqrt_loop(uint64_t n) {
     uint64_t r = 0, bit;
@@ -55,7 +83,7 @@ static uint64_t isqrt_loop(uint64_t n) {
     return r;
 }
 int main(int argc, char **argv) {
-    unsigned long long n = (argc > 1 ? strtoull(argv[1], NULL, 10) : 50) * 1000000ull, i, bad = 0, gaveUp[4] = {0, 0, 0, 0}, per[4] = {0, 0, 0, 0};
+    unsigned long long mtxOk = 0, n = (argc > 1 ? strtoull(argv[1], NULL, 10) : 50) * 1000000ull, i, bad = 0, gaveUp[4] = {0, 0, 0, 0}, per[4] = {0, 0, 0, 0};
     { /* the square root: every mantissa, both exponent parities (all the values RefVu0_SqrtBits gives the loop) */
         uint64_t m;
         int odd;
@@ -91,6 +119,17 @@ int main(int argc, char **argv) {
             for (c = 0; c < 4; c++) { l[c] = Sf_AddBits(r[12 + c], Sf_MulBits(r[c], v[c])); }
             if (memcmp(q, l, 16) != 0 && bad++ < 10) { printf("vmadd %08x %08x %08x: %08x long %08x\n", r[12], r[0], v[0], q[0], l[0]); }
         }
+        { /* Mtx_Mul */
+            uint32_t m2[16], o1[16], o2[16], c1[4], c2[4], l1, l2, y1, y2;
+            for (k = 0; k < 16; k++) { m2[k] = operand(kind); }
+            mtxmul_long(r, m2, o1, c1, &l1, &y1);
+            if (Port_FastMtxMul(r, m2, o2, c2, &l2, &y2)) {
+                mtxOk++;
+                if ((memcmp(o1, o2, 64) != 0 || memcmp(c1, c2, 16) != 0 || l1 != l2 || y1 != y2) && bad++ < 10) {
+                    printf("mtxmul differs (kind %d): out %08x/%08x acc %08x/%08x flags %u %u / %u %u\n", kind, o1[0], o2[0], c1[0], c2[0], l1, y1, l2, y2);
+                }
+            }
+        }
         long_way(r, v, a);
         per[kind]++;
         if (!Port_FastMtxApply(r, v, b)) { gaveUp[kind]++; continue; }
@@ -100,5 +139,6 @@ int main(int argc, char **argv) {
     }
     printf("%llu million matrices, %llu differences; gave up: any bits %.1f%%, near 1.0 %.2f%%, edges %.1f%%, few bits %.2f%%\n", n / 1000000ull, bad,
            100.0 * gaveUp[0] / per[0], 100.0 * gaveUp[1] / per[1], 100.0 * gaveUp[2] / per[2], 100.0 * gaveUp[3] / per[3]);
+    printf("matrix products answered quickly: %.1f%%\n", 100.0 * mtxOk / n);
     return bad != 0;
 }
