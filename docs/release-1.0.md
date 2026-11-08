@@ -33,7 +33,7 @@ As seções 1 a 8 são da sessão de 07/11; a seção 0 é a rodada final de 08/
 | BT2 só com a ISO | COM x COM até o fim, 30 q/s, 0 crash | — | — |
 | Online normal (Partida Rápida) | RP5 x Cube: pareou sozinho, ping 6-14 ms, 0 rollbacks, sem dessincronia, seleção nova online nos dois, 0 crash. Esperas de 150-220 ms só quando o adb mandava teclas (cada `input` abre um processo Java) | | |
 | Tag Online + espectador | anfitrião (sala 157844) | **espectador**: painel "Assistindo", troca de câmera | entrou na sala **só pelo toque** (código digitado no teclado do sistema), "Entrar como Jogador", Equipe 2. Os três no mesmo quadro (4200), 0 rewinds, 0 crash. A sala ficou em 71-89 %: o Mi A3 desenhava 5,8 q/s no 5x5 sem o Gráfico leve, e a sala segue o mais lento |
-| Exportar log + reiniciar | — | log do BT3: 196 KB, com dados do jogo e o log da luta; o da aba BT4 mostra a pasta do BT4 (certo). REBOOT_RESULT | — |
+| Exportar log + reiniciar | — | log do BT3: 196 KB, com dados do jogo e o log da luta; o da aba BT4 mostra a pasta do BT4 (certo). Reiniciado no fim: o adb por Wi-Fi não volta sozinho (`persist.adb.tcp.port` vazio), então **o app depois do reinício não foi conferido por mim** | — |
 | Toque Pro | — | — | ver abaixo |
 
 **Toque Pro no Mi A3**: a seção aparece em Controles; os perfis gravam o arquivo certo; o guia abre com os 6 desenhos. Na luta:
