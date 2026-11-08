@@ -372,9 +372,10 @@ static void Cs_Chip(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 grey) {
 
 /* reds: 0 all blue, 1 all red, 2 the rival's half red */
 /* Once: the sines the round things take, kept apart from the game's state. */
-enum { CS_SIDES = 32, CS_RAYS = 12, CS_MARKS = 12 };
+enum { CS_SIDES = 32, CS_RAYS = 12, CS_RAYS2 = 20, CS_MARKS = 12 };
 static PORT_HOST f32 sRoundC[CS_SIDES + 1], sRoundS[CS_SIDES + 1];
 static PORT_HOST f32 sRayC[CS_RAYS][2], sRayS[CS_RAYS][2], sMarkC[CS_MARKS][2], sMarkS[CS_MARKS][2];
+static PORT_HOST f32 sRay2C[CS_RAYS2][2], sRay2S[CS_RAYS2][2]; /* the two players' blend: more, thinner rays */
 static PORT_HOST s32 sRoundReady;
 
 static void Cs_RoundInit(void) {
@@ -398,6 +399,14 @@ static void Cs_RoundInit(void) {
         sRayC[i][1] = cosf(a + 0.16f);
         sRayS[i][1] = sinf(a + 0.16f);
     }
+    for (i = 0; i < CS_RAYS2; i++) {
+        f32 a = (f32)i * (6.2831853f / CS_RAYS2);
+
+        sRay2C[i][0] = cosf(a);
+        sRay2S[i][0] = sinf(a);
+        sRay2C[i][1] = cosf(a + 0.11f);
+        sRay2S[i][1] = sinf(a + 0.11f);
+    }
     for (i = 0; i < CS_MARKS; i++) {
         f32 a = (f32)i * (6.2831853f / CS_MARKS);
 
@@ -408,17 +417,49 @@ static void Cs_RoundInit(void) {
     }
 }
 
-static void Cs_Backdrop(f32 cx, s32 reds) {
+static void Cs_Ellipse(f32 cx, f32 cy, f32 rx, f32 ry, u32 mid, u32 edge);
+
+/* Rays from (cx, cy), turned by the angle whose cosine and sine are tc, ts, fading out at r. */
+static void Cs_Rays(s32 n, f32 (*rc)[2], f32 (*rs)[2], f32 cx, f32 cy, f32 tc, f32 ts, f32 r, u32 mid, u32 end) {
     s32 i;
+
+    for (i = 0; i < n; i++) {
+        Ps_ScreenQuad(cx, cy, cx, cy, cx + (rc[i][0] * tc - rs[i][0] * ts) * r, cy + (rs[i][0] * tc + rc[i][0] * ts) * r,
+                      cx + (rc[i][1] * tc - rs[i][1] * ts) * r, cy + (rs[i][1] * tc + rc[i][1] * ts) * r, mid, mid, end, end);
+    }
+}
+
+static void Cs_Backdrop(f32 cx, s32 reds) {
     f32 cy = 215.0f;
     u32 blueTop = Ps_Rgba(0x06, 0x28, 0x86, 0x80);
     u32 blueLow = Ps_Rgba(0x12, 0x68, 0xD0, 0x80);
     u32 redTop = Ps_Rgba(0x7A, 0x08, 0x10, 0x80);
     u32 redLow = Ps_Rgba(0xD4, 0x1C, 0x1C, 0x80);
 
-    Cs_Rect(0.0f, 0.0f, reds == 2 ? 256.0f : 512.0f, 448.0f, reds == 1 ? redTop : blueTop, reds == 1 ? redLow : blueLow);
     if (reds == 2) {
-        Cs_Rect(256.0f, 0.0f, 512.0f, 448.0f, redTop, redLow);
+        /* two players: one blend, blue on the left going through violet in the middle to red on the right, no line
+           between them, lighter at mid height (the colours of the user's picture) */
+        static const f32 at[5] = {0.0f, 190.0f, 256.0f, 322.0f, 512.0f};
+        static const f32 high[3] = {0.0f, 215.0f, 448.0f};
+#define CS_RGB(r, g, b) ((u32)(r) | ((u32)(g) << 8) | ((u32)(b) << 16) | 0x80000000u)
+        static const u32 tone[3][5] = {
+            {CS_RGB(0x22, 0x62, 0xD2), CS_RGB(0x2A, 0x6C, 0xCE), CS_RGB(0x6E, 0x64, 0xA6), CS_RGB(0xB0, 0x42, 0x5E), CS_RGB(0xC4, 0x26, 0x36)},
+            {CS_RGB(0x4A, 0x9C, 0xEC), CS_RGB(0x4A, 0x92, 0xE8), CS_RGB(0x7E, 0x78, 0xBC), CS_RGB(0xC0, 0x40, 0x60), CS_RGB(0xD6, 0x36, 0x40)},
+            {CS_RGB(0x18, 0x58, 0xCC), CS_RGB(0x2A, 0x62, 0xC4), CS_RGB(0x6A, 0x5C, 0x98), CS_RGB(0xB0, 0x44, 0x66), CS_RGB(0xC4, 0x22, 0x32)},
+        };
+#undef CS_RGB
+        s32 row;
+        s32 col;
+
+        for (row = 0; row < 2; row++) {
+            for (col = 0; col < 4; col++) {
+                Ps_ScreenQuad(at[col], high[row], at[col + 1], high[row], at[col], high[row + 1], at[col + 1], high[row + 1],
+                              Cs_A(tone[row][col]), Cs_A(tone[row][col + 1]), Cs_A(tone[row + 1][col]), Cs_A(tone[row + 1][col + 1]));
+            }
+        }
+        Cs_Ellipse(cx, cy, 150.0f, 170.0f, Cs_A(Ps_Rgba(0xFF, 0xFF, 0xFF, 0x16)), Cs_A(Ps_Rgba(0xFF, 0xFF, 0xFF, 0x00)));
+    } else {
+        Cs_Rect(0.0f, 0.0f, 512.0f, 448.0f, reds == 1 ? redTop : blueTop, reds == 1 ? redLow : blueLow);
     }
     /* rays behind the fighter, turning slowly */
     {
@@ -426,15 +467,18 @@ static void Cs_Backdrop(f32 cx, s32 reds) {
         f32 tc = cosf(turn);
         f32 ts = sinf(turn);
         f32 r = 620.0f;
-        u32 mid = Ps_Rgba(0xFF, 0xFF, 0xFF, 0x12);
+        u32 mid = Ps_Rgba(0xFF, 0xFF, 0xFF, reds == 2 ? 0x10 : 0x12);
         u32 end = Ps_Rgba(0xFF, 0xFF, 0xFF, 0x00);
 
-        for (i = 0; i < CS_RAYS; i++) {
-            Ps_ScreenQuad(cx, cy, cx, cy, cx + (sRayC[i][0] * tc - sRayS[i][0] * ts) * r, cy + (sRayS[i][0] * tc + sRayC[i][0] * ts) * r,
-                          cx + (sRayC[i][1] * tc - sRayS[i][1] * ts) * r, cy + (sRayS[i][1] * tc + sRayC[i][1] * ts) * r, mid, mid, end, end);
+        /* (each table by its own call: a pointer chosen by `cond ? a : b` breaks the 32-bit pointer step of the build) */
+        if (reds == 2) {
+            Cs_Rays(CS_RAYS2, sRay2C, sRay2S, cx, cy, tc, ts, r, mid, end);
+        } else {
+            Cs_Rays(CS_RAYS, sRayC, sRayS, cx, cy, tc, ts, r, mid, end);
         }
     }
-    Cs_Rect(0.0f, 340.0f, 512.0f, 448.0f, Ps_Rgba(0x04, 0x08, 0x20, 0x00), Ps_Rgba(0x04, 0x08, 0x20, 0x50));
+    /* (the shade at the foot: lighter on the two players' blend, which stays bright down to the edge) */
+    Cs_Rect(0.0f, 340.0f, 512.0f, 448.0f, Ps_Rgba(0x04, 0x08, 0x20, 0x00), Ps_Rgba(0x04, 0x08, 0x20, reds == 2 ? 0x20 : 0x50));
 }
 
 /* A filled ellipse, the colour going from its middle to its edge. */
@@ -1106,9 +1150,6 @@ void PortCharSel_Draw(void) {
         middle[1] = 0.0f;
     }
     Cs_Backdrop(sSplit ? 256.0f : middle[0], sSplit ? 2 : sViews[0].side == 1 ? 1 : 0);
-    if (sSplit) {
-        Cs_Rect(255.0f, 0.0f, 257.0f, 448.0f, Ps_Rgba(0xFF, 0xD8, 0x60, 0x70), Ps_Rgba(0xFF, 0xD8, 0x60, 0x10));
-    }
     if (s3D) {
         for (i = 0; i < sides; i++) {
             f32 turn = gPad[sSplit || Port_NetActive() || Port_NetSession() ? sViews[i].side : 0].gameRight[0];

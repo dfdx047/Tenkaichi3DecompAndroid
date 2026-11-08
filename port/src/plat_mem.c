@@ -687,6 +687,21 @@ uint8_t *Port_WorldArena(size_t *size) {
     return arena;
 }
 
+/* The viewer left the screen: its first `used` bytes go back to the system (they read as zeros if touched again).
+   Kept, the pages the select's fighters had touched stayed in the game's memory through the whole fight. */
+void Port_WorldArenaRelease(uint8_t *arena, size_t used) {
+#if PORT_LOW_REGION && !defined(_WIN32)
+    if (arena != NULL && used != 0) {
+        size_t page = (size_t)sysconf(_SC_PAGESIZE);
+
+        madvise(arena, (used + page - 1) & ~(page - 1), MADV_DONTNEED);
+    }
+#else
+    (void)arena;
+    (void)used;
+#endif
+}
+
 int Port_StateExtra(void **p, size_t *n, int max) {
     int k = 0;
 #if PORT_LOW_REGION

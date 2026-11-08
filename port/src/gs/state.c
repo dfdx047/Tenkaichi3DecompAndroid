@@ -137,7 +137,7 @@ static uint32_t sWorldDma[2];
 static int sWorldDmaSize;
 static uint8_t *sWorldBase;
 static size_t sWorldLeft, sWorldSize;
-static uint32_t sWorldNext;
+static uint32_t sWorldNext, sWorldHigh; /* (sWorldHigh: the most of the arena used since the screen began) */
 static int sWorldIn;
 static SDL_ThreadID sWorldThread;
 extern void Port_WorldLowLock(int on);
@@ -178,6 +178,9 @@ unsigned Port_WorldAlloc(int size, unsigned align) {
         return 0;
     }
     sWorldNext = at + (uint32_t)size;
+    if (sWorldNext > sWorldHigh) {
+        sWorldHigh = sWorldNext;
+    }
     return Port_Addr(sWorldBase + at);
 }
 
@@ -403,11 +406,16 @@ void Port_WorldLeave(void) {
 }
 
 void Port_WorldForget(void) {
+    extern void Port_WorldArenaRelease(uint8_t *arena, size_t used);
+
     sWorldMemCount = 0;
     sWorldIn = 0;
     sWorldRunCount = 0;
     sWorldByteCount = 0;
     sWorldNext = 0;
+    /* nothing in the arena is anyone's any more: its pages go back instead of staying through the fight */
+    Port_WorldArenaRelease(sWorldBase, sWorldHigh);
+    sWorldHigh = 0;
 }
 
 uint64_t Port_StateHash(void) {
@@ -761,6 +769,30 @@ typedef struct Roll {
 static Roll *sRoll[ROLL_MAX];
 static int sRolls;
 static uint32_t sRollId;
+/* Online Tag Team goes back at most its ROLLBACK (8) blanks and one (tag_net.c: it waits rather than run further
+   ahead): 32 saves are kept there, not 64. Each save holds its own copy of the game's variables (about 2 MB), so the
+   other 32 were about 64 MB of the phone's memory that no rollback could ever use. BT3's own online keeps 64. */
+#define ROLL_TAG 32
+/* A save's list grown past this by one heavy blank (a load) is let go when the ring is forgotten, not kept for good. */
+#define ROLL_KEEP_PAGES 1024u
+
+static void roll_free(Roll *r) {
+    int k;
+    if (r == NULL) {
+        return;
+    }
+    for (k = 0; k < MAX_PARTS; k++) {
+        free(r->small.part[k].copy);
+    }
+    free(r->pg);
+    free(r->data);
+    free(r);
+}
+
+static int roll_limit(void) {
+    extern int TagNet_Active(void);
+    return TagNet_Active() ? ROLL_TAG : ROLL_MAX;
+}
 
 static int tracked_part(const uint8_t *p) {
     int t;
@@ -1023,7 +1055,7 @@ static int cmp_u32(const void *a, const void *b) {
 static int __attribute__((noinline)) roll_save(void) {
     Roll *r, *prev;
     uint32_t i, n;
-    int back;
+    int back, limit;
 
     if (!sTracking) {
         track_start();
@@ -1047,9 +1079,15 @@ static int __attribute__((noinline)) roll_save(void) {
         memcpy(sh, m, PG);
     }
     dirty_rearm();
-    if (sRolls == ROLL_MAX) { /* the oldest goes; its storage is used for the new one */
-        r = sRoll[0];
-        memmove(&sRoll[0], &sRoll[1], sizeof(sRoll[0]) * (ROLL_MAX - 1));
+    limit = roll_limit();
+    if (sRolls >= limit) {
+        while (sRolls > limit) { /* (deeper than allowed now: the oldest go for good, their places emptied) */
+            roll_free(sRoll[0]);
+            memmove(&sRoll[0], &sRoll[1], sizeof(sRoll[0]) * (size_t)(sRolls - 1));
+            sRoll[--sRolls] = NULL;
+        }
+        r = sRoll[0]; /* the oldest goes; its storage is used for the new one */
+        memmove(&sRoll[0], &sRoll[1], sizeof(sRoll[0]) * (size_t)(sRolls - 1));
         sRolls--;
     } else if (sRoll[sRolls] != NULL) {
         r = sRoll[sRolls];
@@ -1102,6 +1140,33 @@ static void roll_back(int k) {
     }
     sRollLoading = 1;
     state_load(&r->small);
+}
+
+/* Online Tag Team, the first blank of a match (tag_net.c): the saves of the match before are never gone back to.
+   Kept, the match's first save put everything written since the last one (the menus, the whole battle's load: tens of
+   MB) into the list of a save of the OLD match: a long stall on the first blank, and that list's memory held for good,
+   another one after each match. Forgotten, every match starts as the first one after the app opens does. The
+   storage of saves beyond Tag's depth, and lists grown large by one heavy blank, go back to the system. */
+void Port_RollForget(void) {
+    int i;
+    sRolls = 0;
+    for (i = 0; i < ROLL_MAX; i++) {
+        Roll *r = sRoll[i];
+        if (r == NULL) {
+            continue;
+        }
+        if (i >= ROLL_TAG) {
+            roll_free(r);
+            sRoll[i] = NULL;
+        } else if (r->cap > ROLL_KEEP_PAGES) {
+            free(r->pg);
+            free(r->data);
+            r->pg = NULL;
+            r->data = NULL;
+            r->cap = 0;
+            r->n = 0;
+        }
+    }
 }
 
 /* For online play (gs/net.c). */
@@ -1365,6 +1430,7 @@ void Port_SessionReturn(void) {
 int Port_RollCan(void) { return 0; }
 int Port_RollSave(void) { return 0; }
 void Port_RollBack(int k) { (void)k; }
+void Port_RollForget(void) {}
 void Port_StateTouch(void *p, unsigned long n) { (void)p; (void)n; }
 volatile int gPortNetWindowClose;
 void Port_SyncTest(unsigned vblank) { (void)vblank; }
