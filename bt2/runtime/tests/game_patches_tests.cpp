@@ -31,6 +31,17 @@ int main() {
     check(throws([&]{parseGamePatches("widescreen,");}),"an empty name is refused");
     std::vector<std::uint8_t> small(16);
     check(throws([&]{applyGamePatch(small,wide);}),"an address outside the memory is refused");
+    {
+        const auto at16x9=screenShapeWords(1778);
+        check(at16x9.size()==wide.words.size(),"the screen's shape changes the widescreen patch's words");
+        for(std::size_t n=0;n<at16x9.size();n++)check(at16x9[n].patched>>16==wide.words[n].patched>>16,"at 16:9 the words are about the widescreen patch's");
+        const auto at20x9=screenShapeWords(2222);
+        std::vector<std::uint8_t> shaped(32u<<20);
+        for(const auto& w:at20x9)put(shaped,w.address,w.original);
+        applyGamePatch(shaped,GamePatch{"screen","",at20x9});
+        check(word(shaped,0x0012BA08u)==0x3C013EE6u,"at 20:9 the 0.75 loaded becomes 0.45");
+        for(const auto& w:screenShapeWords(1333))if(w.address>=0x00300000u)check(w.patched>>16==w.original>>16,"at 4:3 the data stays about the original");
+    }
     std::cout<<"Game patch tests passed\n";
     return 0;
 }

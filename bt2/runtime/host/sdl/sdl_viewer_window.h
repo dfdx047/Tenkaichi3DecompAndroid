@@ -50,6 +50,8 @@ public:
     bool gpuPresented() const {return presenter_!=nullptr;}
     void setScaling(Scaling scaling) {scaling_=scaling;}
     void setWidescreen(bool widescreen) {widescreen_=widescreen;}
+    // The picture has the shape of the screen (width / height x 1000; the game draws it so: ee/game_patches.h).
+    void setScreenShape(int aspect_milli) {screen_shape_=aspect_milli;}
     void setStatus(std::string text) {status_=std::move(text);} // Not drawn yet on SDL (no text renderer here).
     unsigned largestScale() const {
         const auto [width,height]=clientSize();
@@ -101,12 +103,16 @@ public:
 
 private:
     Scaling scaling_;SDL_Window* window_=nullptr;bool closed_=false,focused_=true,background_=false,back_=false;
-    unsigned scale_=2;bool fullscreen_=false,widescreen_=false;std::string title_,status_;
+    unsigned scale_=2;bool fullscreen_=false,widescreen_=false;int screen_shape_=0;std::string title_,status_;
     WindowPresenter* presenter_=nullptr;DisplayFrame no_status_;
 
     void setTitle(const std::string& title) {if(title!=title_) {title_=title;SDL_SetWindowTitle(window_,title.c_str());}}
     WindowPresenter::Rect placement(int client_width,int client_height,unsigned width,unsigned height) const {
         const int shown_width=int(pictureWidth(width,height)),shown_height=int(height);
+        // The window has the picture's shape: all of it, with no border from rounding. (Not in a window of another
+        // shape, as the split screen makes: there the rules below keep the proportions.)
+        if(screen_shape_>0 && std::abs(std::int64_t(client_width)*1000-std::int64_t(client_height)*screen_shape_)<=std::int64_t(client_height)*screen_shape_/100)
+            return {0,0,client_width,client_height};
         int w,h;
         if(scaling_==Scaling::Integer && client_height>=shown_height) {
             int scale=std::max(1,client_height/shown_height);
@@ -127,7 +133,10 @@ private:
         const bool smooth=at.width%int(width) || at.height%int(height);
         presenter_->show(window_,frame,at,unsigned(client_width),unsigned(client_height),smooth,no_status_,{});
     }
-    unsigned pictureWidth(unsigned width,unsigned height) const {return widescreen_?(height*16+4)/9:width;}
+    unsigned pictureWidth(unsigned width,unsigned height) const {
+        if(screen_shape_>0)return unsigned((std::uint64_t(height)*unsigned(screen_shape_)+500)/1000);
+        return widescreen_?(height*16+4)/9:width;
+    }
     static unsigned nearestScale(int width,int height,int picture_width,int picture_height) {
         const bool by_width=std::int64_t(width)*picture_height<=std::int64_t(height)*picture_width;
         const int have=by_width?width:height,unit=by_width?picture_width:picture_height;

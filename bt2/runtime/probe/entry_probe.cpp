@@ -300,6 +300,9 @@ int main(int argc, char** argv) {
         {   // The widescreen patch draws 16:9; the window shows it so.
             const char* patches = std::getenv("BT2_GAME_PATCHES");
             for (const GamePatch* patch : parseGamePatches(patches ? patches : "")) if (patch->name == "widescreen") viewer.setWidescreen(true);
+#ifdef __ANDROID__
+            if (const char* shape = std::getenv("BT2_SCREEN_ASPECT"); shape && *shape) viewer.setScreenShape(std::atoi(shape));
+#endif
         }
         struct ViewerHold {bool active;~ViewerHold(){if(active && viewer.opened())viewer.waitUntilClosed();}} viewer_hold{viewer_mode && !std::getenv("BT2_VIEWER_CLOSE")}; // BT2_VIEWER_CLOSE: the window closes with the run (automated runs with a window).
 #ifndef BT2_GPU_GS
@@ -688,6 +691,12 @@ int main(int argc, char** argv) {
         // BT2_GAME_PATCHES=<name>[,<name>]: the player's optional patches of the executable (ee/game_patches.h).
         if (const char* list = std::getenv("BT2_GAME_PATCHES"))
             for (const GamePatch* patch : parseGamePatches(list)) {applyGamePatch(runtime.memory(), *patch);std::cerr << "Game patch: " << patch->name << std::endl;}
+        // BT2_SCREEN_ASPECT=<width / height x 1000>: the screen's shape (Android: "Fill the screen"), the widescreen patch for it.
+        if (const char* shape = std::getenv("BT2_SCREEN_ASPECT"); shape && *shape) {
+            const auto words=screenShapeWords(std::atoi(shape));
+            applyGamePatch(runtime.memory(), GamePatch{"screen shape","",words});
+            std::cerr << "Game patch: the screen's shape, " << shape << ":1000" << std::endl;
+        }
         const std::uint32_t osd_word=loadStartupEvidence(runtime,modes,argv);
         const std::vector<std::uint8_t> kernel_before(runtime.kernelBaseline().begin(), runtime.kernelBaseline().end());
         constexpr std::uint32_t zero_start=startup_zero_start,zero_end=startup_zero_end;

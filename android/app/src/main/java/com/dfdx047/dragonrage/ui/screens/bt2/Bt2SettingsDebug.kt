@@ -55,6 +55,7 @@ fun Bt2SettingsScreen(vm: Bt2ViewModel) {
                 }
             }
             Text(stringResource(R.string.bt2_set_output_text), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SwitchRow(stringResource(R.string.bt2_screen_fill), stringResource(R.string.bt2_screen_fill_text), s.screenFill) { on -> vm.update { it.copy(screenFill = on) } }
             SwitchRow(stringResource(R.string.bt2_patch_widescreen), null, s.widescreen) { on -> vm.update { it.copy(widescreen = on) } }
             SwitchRow(stringResource(R.string.bt2_set_integer), stringResource(R.string.bt2_set_integer_text), s.integerScaling) { on -> vm.update { it.copy(integerScaling = on) } }
             SwitchRow(stringResource(R.string.bt2_set_fps), stringResource(R.string.bt2_set_fps_text), s.showFrameRate) { on -> vm.update { it.copy(showFrameRate = on) } }

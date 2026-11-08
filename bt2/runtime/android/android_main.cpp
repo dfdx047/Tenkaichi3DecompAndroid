@@ -329,6 +329,18 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc,char* ar
         setEnv("BT2_SUPER_SAMPLING",std::to_string(settings.super_sampling));
         setEnv("BT2_GAME_PATCHES",settings.widescreen?"widescreen":"");
         setEnv("BT2_SIXTY_FPS",settings.sixty_fps?"1":"");
+        // "Fill the screen" (Dragon Rage's Bt2Settings.kt): the game's picture drawn in the screen's own shape, which the
+        // app measures and writes before each start. It takes the widescreen patch's place. Never in an online match (below).
+        {
+            std::ifstream in(user/"android");std::string line;bool fill=false;int shape=0;
+            while(std::getline(in,line)) {
+                if(line=="screen_fill = 1")fill=true;
+                if(line.rfind("screen_aspect = ",0)==0)shape=std::atoi(line.c_str()+16);
+            }
+            const bool use=fill && shape>=1334 && shape<=3600;
+            setEnv("BT2_SCREEN_ASPECT",use?std::to_string(shape):"");
+            if(use)setEnv("BT2_GAME_PATCHES","");
+        }
         setEnv("BT2_CARD_FOLDER",folders.card(settings).string());
         // An online match (plugin/online/fight_session.h; the lobby wrote online_session): both games start from the same memory card, a fresh copy of the
         // 100% save the app made (user/online-card), with the same game patch and speed whatever each player has chosen, so that the two simulate the same
@@ -339,6 +351,7 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc,char* ar
                 setEnv("BT2_CARD_FOLDER",(user/"online-card").string());
                 setEnv("BT2_SIXTY_FPS","");
                 setEnv("BT2_GAME_PATCHES","widescreen");
+                setEnv("BT2_SCREEN_ASPECT","");
                 std::fprintf(stderr,"Online match: the memory card is user/online-card; 60 fps off, the widescreen patch on\n");
             }
         }
