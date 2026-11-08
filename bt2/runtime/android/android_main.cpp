@@ -362,6 +362,8 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc,char* ar
                 // "render_thread = 0": the GIF packets taken on the game's thread, as before (by default they have a thread of
                 // their own, gs/hw/hw_gs_mirror.cpp; Vulkan only: measured 27 -> 30 fps and 90 -> 100% speed in a fight at 1.5x)
                 if(line=="render_thread = 0")render_thread=false;
+                // "render_boost = 0": the render thread left where the scheduler puts it, outside the performance hints (as before)
+                if(line=="render_boost = 0")setenv("BT2_RENDER_BOOST_OFF","1",1);
                 // "pad_script = <steps>": the buttons played by field from the start (pad_script.h), over the touch
                 // controls: the same fight for every measurement (the gate's tools/gate/pad-fight.txt is one)
                 if(line.rfind("pad_script = ",0)==0) {setenv("BT2_PAD_SCRIPT",line.c_str()+13,1);setenv("BT2_PAD_SCRIPT_OVER_LIVE","1",1);}

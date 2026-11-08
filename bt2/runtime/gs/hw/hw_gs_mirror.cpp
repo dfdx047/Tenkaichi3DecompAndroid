@@ -1,6 +1,7 @@
 #include "gs/hw/hw_gs_mirror.h"
 #include "gs/cpu/gs_command_sink.h"
 #include "host/sdl/sdl_viewer_window.h"
+#include "host/sdl/android_performance.h"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -58,6 +59,15 @@ struct RenderQueue {
         if(wake_worker)wake.notify_one();
     }
     void run() {
+#ifdef __ANDROID__
+        // Off the efficiency cores and in the game thread's performance hint session (host/sdl/android_performance.h): the game thread
+        // waits for this one at every flip, and on a phone with few fast cores the scheduler left it on a slow one ("render_boost = 0"
+        // in user/android: as before).
+        if(!std::getenv("BT2_RENDER_BOOST_OFF")) {
+            pinToFastCores("Render thread");
+            bt2_render_tid=int(gettid());
+        }
+#endif
         for(;;) {
             {
                 std::unique_lock<std::mutex> hold(lock);
