@@ -60,6 +60,7 @@ import com.dfdx047.dragonrage.Bt2ViewModel
 import com.dfdx047.dragonrage.ui.screens.ChipRow
 import com.dfdx047.dragonrage.ui.screens.StepSlider
 import com.dfdx047.dragonrage.ui.screens.ToggleRow
+import com.dfdx047.dragonrage.ui.screens.TouchProSection
 import com.dfdx047.dragonrage.R
 import com.dfdx047.dragonrage.touch.Macro
 import com.dfdx047.dragonrage.touch.MacroStep
@@ -150,9 +151,9 @@ fun Bt2ControlsScreen(vm: Bt2ViewModel) {
             )
             StepSlider(stringResource(R.string.opacity), { "${it * 10}%" }, c.opacity / 10, 1..10) { vm.updateTouch(c.copy(opacity = it * 10)) }
             StepSlider(stringResource(R.string.touch_size), { "${it * 10}%" }, (c.scale * 10).roundToInt(), 5..20) { vm.updateTouch(c.copy(scale = it / 10f)) }
-            ToggleRow(stringResource(R.string.touch_haptics), stringResource(R.string.touch_haptics_text), c.haptics) { vm.updateTouch(c.copy(haptics = it)) }
-            ToggleRow(stringResource(R.string.touch_float), stringResource(R.string.touch_float_text), c.sticksFloat) { vm.updateTouch(c.copy(sticksFloat = it)) }
         }
+
+        TouchProSection(c) { vm.updateTouch(it) }
 
         SectionCard(stringResource(R.string.macros), Icons.Rounded.Bolt, accent = Dbz.SaiyanGold) {
             Text(stringResource(R.string.macros_intro), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

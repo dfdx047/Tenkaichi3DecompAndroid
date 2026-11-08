@@ -254,14 +254,14 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
     // ---- state
 
     private class Track(var el: El?, val downX: Float, val downY: Float, var originX: Float, var originY: Float, var moved: Boolean = false,
-                        val downAt: Long = SystemClock.uptimeMillis(), var floated: Boolean = false)
+                        val downAt: Long = SystemClock.uptimeMillis(), var floated: Boolean = false, var toggle: Boolean = false)
 
     private val windowAt = IntArray(2)
 
     /** A short touch that stayed put and was not on a control (or only woke the floating stick) is a tap on the
      *  game's picture: the Tag Team menus press what is under it (TouchBridge.tap, in window pixels). */
     private fun tapEnded(t: Track, x: Float, y: Float) {
-        if (t.el != null && !t.floated) return
+        if ((t.el != null && !t.floated) || t.toggle) return
         if (SystemClock.uptimeMillis() - t.downAt > 450) return
         if (hypot(x - t.downX, y - t.downY) > 18f * resources.displayMetrics.density) return
         getLocationInWindow(windowAt)
@@ -400,6 +400,7 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
         oneShotMask = 0
         tracks.clear()
         pressedEls.clear()
+        toggledOn.clear()
         dpadBits = 0
         lx = 128; ly = 128; rx = 128; ry = 128
         floatL = null
@@ -412,6 +413,7 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
     private fun recompute() {
         var b = dpadBits
         for (e in pressedEls) if (e.ctl != null) b = b or e.ctl.bit
+        for (e in toggledOn) if (e.ctl != null) b = b or e.ctl.bit
         macroMask = 0
         for (p in players.values) macroMask = macroMask or p.mask
         b = b or macroMask or oneShotMask
@@ -423,9 +425,10 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
         invalidate()
     }
 
-    private fun buzz() {
-        if (config.haptics) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-    }
+    private fun buzz() = TouchTuning.buzz(config, this)
+
+    /** Buttons held by a tap ([TouchConfig.toggles]): pressed until the next tap on them. */
+    private val toggledOn = HashSet<El>()
 
     // ---- touches
 
@@ -486,7 +489,7 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
         }
     }
 
-    private fun find(x: Float, y: Float, slack: Float = 1.12f, kinds: Set<CtlKind>? = null): El? {
+    private fun find(x: Float, y: Float, slack: Float = TouchTuning.slack(config), kinds: Set<CtlKind>? = null): El? {
         var best: El? = null
         var bestD = Float.MAX_VALUE
         for (e in els) {
@@ -504,9 +507,12 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
     private fun down(id: Int, x: Float, y: Float) {
         var e = find(x, y)
         val stickL = els.firstOrNull { it.ctl == Ctl.STICK_L }
-        if (e == null && config.sticksFloat && stickL != null && stickL.visible && x < width * 0.45f && y > height * 0.35f) {
+        val stickFree = stickL != null && isShownInCurrentMode(stickL) && tracks.values.none { it.el === stickL }
+        if (e == null && stickFree && TouchTuning.inStickZone(config, x, y, width.toFloat(), height.toFloat())) {
             e = stickL
             floatL = x to y
+        } else if (e === stickL && config.stickMode != StickMode.FIXED) {
+            floatL = x to y // (on the drawn stick too: its centre is where the thumb is, so it does not jump)
         }
         val t = Track(e, x, y, e?.cx ?: x, e?.cy ?: y)
         if (e === stickL && floatL != null) {
@@ -521,6 +527,11 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
                     // BT3's in-battle character switch is the L3+R3 chord, not L3 by itself.
                     buzz()
                     pulseTeamSwap()
+                } else if (e.ctl != null && e.ctl in config.toggles) {
+                    // a tap holds it, the next one lets go (Ki charge, guard...): the finger is free meanwhile
+                    if (!toggledOn.remove(e)) toggledOn += e
+                    t.el = null; t.toggle = true
+                    buzz(); recompute()
                 } else {
                     pressedEls += e; buzz(); recompute()
                 }
@@ -545,19 +556,21 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
     private fun move(id: Int, x: Float, y: Float) {
         val t = tracks[id] ?: return
         val e = t.el
+        val slideKinds = if (config.slideAll) SLIDE_ALL else SLIDE_FACE
         if (e == null) {
-            // a finger that landed between buttons and slides onto one presses it
-            val n = find(x, y, 1.0f, setOf(CtlKind.BUTTON))
+            // a finger that landed between buttons (or tapped a toggle) and slides onto one presses it
+            if (t.toggle || hypot(x - t.downX, y - t.downY) < 6f * dp) return
+            val n = find(x, y, 1.0f, slideKinds)?.takeIf { it.ctl == null || it.ctl !in config.toggles && it.ctl != Ctl.L3 }
             if (n != null) {
                 t.el = n; pressedEls += n; buzz(); recompute()
             }
             return
         }
         when (e.kind) {
-            CtlKind.BUTTON -> if (!e.hit(x, y, 1.25f)) {
-                // sliding across the face buttons: the one under the finger now
-                pressedEls -= e
-                val n = find(x, y, 1.0f, setOf(CtlKind.BUTTON))
+            CtlKind.BUTTON, CtlKind.SHOULDER, CtlKind.PILL -> if (e.kind in slideKinds && !e.hit(x, y, TouchTuning.slack(config) + 0.13f)) {
+                // sliding across the buttons: the one under the finger now (a toggle or the team swap is not slid onto)
+                if (tracks.values.none { it !== t && it.el === e }) pressedEls -= e
+                val n = find(x, y, 1.0f, slideKinds)?.takeIf { it.ctl == null || it.ctl !in config.toggles && it.ctl != Ctl.L3 }
                 t.el = n
                 if (n != null) {
                     pressedEls += n; buzz()
@@ -655,14 +668,11 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
 
     private fun stick(e: El, t: Track, x: Float, y: Float) {
         val r = e.w * 0.40f
-        var dx = (x - t.originX) / r
-        var dy = (y - t.originY) / r
-        val m = hypot(dx, dy)
-        if (m > 1f) {
-            dx /= m; dy /= m
+        if (e.kind == CtlKind.STICK_L) TouchTuning.follow(config, t.originX, t.originY, x, y, r)?.let { (ox, oy) ->
+            t.originX = ox; t.originY = oy
+            if (floatL != null || config.stickMode == StickMode.DYNAMIC) floatL = ox to oy // (drawn where it went)
         }
-        val vx = (128 + dx * 127).roundToInt().coerceIn(0, 255)
-        val vy = (128 + dy * 127).roundToInt().coerceIn(0, 255)
+        val (vx, vy) = TouchTuning.stickBytes(config, x - t.originX, y - t.originY, r)
         if (e.kind == CtlKind.STICK_L) {
             lx = vx; ly = vy
         } else {
@@ -811,7 +821,7 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
         for (e in els) {
             if (!isShownInCurrentMode(e)) continue
             val k = if (!e.visible) 0.3f else alpha * (e.opacity / 100f)
-            val pressed = e in pressedEls || (e.ctl == Ctl.L3 && oneShotMask != 0) ||
+            val pressed = e in pressedEls || e in toggledOn || (e.ctl == Ctl.L3 && oneShotMask != 0) ||
                 (e.kind == CtlKind.MACRO && e.macro?.let { players[it.id]?.held } == true)
             if (config.style == PadStyle.DRAGON) drawDragon(canvas, e, k, pressed) else drawEl(canvas, e, k, pressed)
             if (editing && e === selected) {
@@ -1685,6 +1695,10 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
     }
 
     companion object {
+        /** What a sliding finger presses: the face buttons; with [TouchConfig.slideAll] the shoulders and Start/Select too. */
+        private val SLIDE_FACE = setOf(CtlKind.BUTTON)
+        private val SLIDE_ALL = setOf(CtlKind.BUTTON, CtlKind.SHOULDER, CtlKind.PILL)
+
         /** Gradients kept at most (see [gradient]): every button twice (pressed or not) with room to spare. */
         private const val GRADIENTS_MAX = 64
 

@@ -143,9 +143,9 @@ fun ControlsScreen(vm: AppViewModel) {
             )
             StepSlider(stringResource(R.string.opacity), { "${it * 10}%" }, c.opacity / 10, 1..10) { vm.updateTouch(c.copy(opacity = it * 10)) }
             StepSlider(stringResource(R.string.touch_size), { "${it * 10}%" }, (c.scale * 10).roundToInt(), 5..20) { vm.updateTouch(c.copy(scale = it / 10f)) }
-            ToggleRow(stringResource(R.string.touch_haptics), stringResource(R.string.touch_haptics_text), c.haptics) { vm.updateTouch(c.copy(haptics = it)) }
-            ToggleRow(stringResource(R.string.touch_float), stringResource(R.string.touch_float_text), c.sticksFloat) { vm.updateTouch(c.copy(sticksFloat = it)) }
         }
+
+        TouchProSection(c) { vm.updateTouch(it) }
 
         SectionCard(stringResource(R.string.clash_title), Icons.Rounded.Bolt, accent = Dbz.KiBlue) {
             ToggleRow(

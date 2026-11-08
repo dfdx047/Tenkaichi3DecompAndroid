@@ -281,7 +281,7 @@ class ClassicPadView(context: Context, initial: TouchConfig, editing: Boolean = 
     }
 
     private fun buzz() {
-        if (config.haptics) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        TouchTuning.buzz(config, this)
     }
 
     // ---- touches
@@ -321,7 +321,7 @@ class ClassicPadView(context: Context, initial: TouchConfig, editing: Boolean = 
         return true
     }
 
-    private fun find(x: Float, y: Float, slack: Float = 1.12f, kinds: Set<CtlKind>? = null): El? {
+    private fun find(x: Float, y: Float, slack: Float = TouchTuning.slack(config), kinds: Set<CtlKind>? = null): El? {
         var best: El? = null
         var bestD = Float.MAX_VALUE
         for (e in els) {
@@ -339,8 +339,11 @@ class ClassicPadView(context: Context, initial: TouchConfig, editing: Boolean = 
     private fun down(id: Int, x: Float, y: Float) {
         var e = find(x, y)
         val stickL = els.firstOrNull { it.ctl == ClassicCtl.STICK_L }
-        if (e == null && config.sticksFloat && stickL != null && stickL.visible && x < width * 0.45f && y > height * 0.35f) {
+        if (e == null && stickL != null && stickL.visible && tracks.values.none { it.el === stickL } &&
+            TouchTuning.inStickZone(config, x, y, width.toFloat(), height.toFloat())) {
             e = stickL
+            floatL = x to y
+        } else if (e === stickL && config.stickMode != StickMode.FIXED) {
             floatL = x to y
         }
         val t = Track(e, x, y, e?.cx ?: x, e?.cy ?: y)
@@ -456,14 +459,11 @@ class ClassicPadView(context: Context, initial: TouchConfig, editing: Boolean = 
 
     private fun stick(e: El, t: Track, x: Float, y: Float) {
         val r = e.w * 0.40f
-        var dx = (x - t.originX) / r
-        var dy = (y - t.originY) / r
-        val m = hypot(dx, dy)
-        if (m > 1f) {
-            dx /= m; dy /= m
+        if (e.kind == CtlKind.STICK_L) TouchTuning.follow(config, t.originX, t.originY, x, y, r)?.let { (ox, oy) ->
+            t.originX = ox; t.originY = oy
+            floatL = ox to oy
         }
-        val vx = (128 + dx * 127).roundToInt().coerceIn(0, 255)
-        val vy = (128 + dy * 127).roundToInt().coerceIn(0, 255)
+        val (vx, vy) = TouchTuning.stickBytes(config, x - t.originX, y - t.originY, r)
         if (e.kind == CtlKind.STICK_L) {
             lx = vx; ly = vy
         } else {
