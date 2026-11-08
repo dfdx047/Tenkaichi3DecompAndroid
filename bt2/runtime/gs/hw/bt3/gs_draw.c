@@ -718,7 +718,8 @@ static uint32_t blend_key(uint64_t alpha, int abe) {
    23 the fragment shader without its own depth output, 24 flat-shadow stencil mask,
    25 the draw never discards a pixel (no alpha test, no destination alpha test): the fragment shader without
    `discard`, which lets tile-based GPUs (Mali, Adreno) drop hidden pixels before shading them.
-   flags: 1 the flat-shadow stencil mask, 2 never discards. */
+   flags: 1 the flat-shadow stencil mask, 2 never discards, 4 (BT2's copy) the pass of the pixels that fail the
+   alpha test (TEST.AFAIL, see GsGpu_Draw). */
 int gGsFragDepth = 1; /* 0: no draw writes depth from the fragment shader (Android, weak GPUs: setting "frag_depth") */
 static int pipeline_get(int ctx, int topo, int vu, int flags) {
     uint64_t test = gGs.test[ctx], zb = gGs.zbuf[ctx];
@@ -733,6 +734,17 @@ static int pipeline_get(int ctx, int topo, int vu, int flags) {
        a channel whose eight mask bits are all set is not written. Partial masks are not representable. */
     wmask = ((m & 0xFF) != 0xFF ? GS_CC_R : 0) | ((m & 0xFF00) != 0xFF00 ? GS_CC_G : 0) |
             ((m & 0xFF0000) != 0xFF0000 ? GS_CC_B : 0) | ((m & 0xFF000000u) != 0xFF000000u ? GS_CC_A : 0);
+    if (flags & 4) {
+        /* BT2's copy: the pass of the pixels that fail the alpha test (GsGpu_Draw, TEST.AFAIL): 2 ZB_ONLY writes
+           only depth, 3 RGB_ONLY only the colour (neither alpha nor depth) */
+        int afail = (int)((test >> 12) & 3);
+        if (afail == 2) {
+            wmask = 0;
+        } else if (afail == 3) {
+            wmask &= ~GS_CC_A;
+            zwrite = 0;
+        }
+    }
     key = bkey | (uint32_t)ztst << 10 | (uint32_t)zwrite << 12 | (uint32_t)topo << 13 | wmask << 16 | (uint32_t)vu << 20 |
           (uint32_t)(flags & 1) << 24 | (flags & 2 ? 1u << 25 : 0);
     {   /* Bit 23: the fragment shader without its own depth output (gsnz.frag; see the end of gs.frag for why
@@ -1589,6 +1601,48 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
     d.count = gsVertCount - d.first;
     gsTargets[d.target].draws++;
     gsTargets[d.target].gen = gGsPageGen[gsTargets[d.target].fbp & 511];
+    {
+        /* BT2's copy: TEST.AFAIL, what the GS does with a pixel that fails the alpha test. draw_state switches the
+           test off for anything but KEEP (the pixel thrown away), so a failing pixel wrote everything. BT2's fight
+           HUD draws the shape of its gauge panels that way, RGB_ONLY: the panel's transparent texels fail the test
+           and must leave the buffer's alpha alone, and the tinted fill drawn next is cut to the alpha the shape
+           wrote. With the test off the whole sprite wrote alpha, and the fill showed as a blue and a red box over
+           the top of the screen. Now: ZB_ONLY without a depth write is KEEP (a failing pixel writes nothing); RGB_ONLY
+           (with alpha or depth written) and ZB_ONLY with a depth write are drawn twice, the pixels that pass with
+           everything, then a copy of the vertices with the opposite test and only what the GS writes for a failing
+           pixel. FB_ONLY stays as it was (the test off: only depth differs). BT2_AFAIL_OFF=1: as before. */
+        static const int8_t inv[8] = {1, 0, 5, 6, 7, 2, 3, 4}; /* ATST with the opposite result */
+        static int afailOff = -1;
+        uint64_t test = gGs.test[ctx];
+        int afail = (int)((test >> 12) & 3), atst = (int)((test >> 1) & 7);
+        if (afailOff < 0) {
+            afailOff = getenv("BT2_AFAIL_OFF") != NULL;
+        }
+        if (!afailOff && (test & 1) && afail >= 2 && atst != 1 && !d.native && !d.vu) {
+            int zwrite = !((gGs.zbuf[ctx] >> 32) & 1), awrite = ((uint32_t)(gGs.frame[ctx] >> 32) & 0xFF000000u) != 0xFF000000u;
+            int topo = type == 1 ? 1 : type == 0 ? 2 : 0;
+            if (afail == 2 && !zwrite) {
+                d.mode[3] = atst + 1;
+                d.pipeline = pipeline_get(ctx, topo, 0, 0);
+            } else if ((afail == 3 && (awrite || zwrite)) || afail == 2) {
+                int p1 = pipeline_get(ctx, topo, 0, 0), p2 = pipeline_get(ctx, topo, 0, 4);
+                if (p1 >= 0 && p2 >= 0 && gsDrawCount + 2 <= MAX_DRAWS && gsVertCount + d.count <= MAX_VERTS) {
+                    GsDraw f = d;
+                    d.mode[3] = atst + 1;
+                    d.pipeline = p1;
+                    f.mode[3] = inv[atst] + 1;
+                    f.pipeline = p2;
+                    f.first = gsVertCount;
+                    memcpy(&gsVerts[gsVertCount], &gsVerts[d.first], d.count * sizeof(Vtx));
+                    gsVertCount += d.count;
+                    gsDraws[gsDrawCount++] = d;
+                    gsDraws[gsDrawCount++] = f;
+                    sStateMemo.draws = gsDrawCount;
+                    return;
+                }
+            }
+        }
+    }
     last = gsDrawCount ? &gsDraws[gsDrawCount - 1] : NULL;
     if (last != NULL && same_state(last, &d)) {
         last->count += d.count; /* same state as the previous primitive: one draw call */
@@ -2160,6 +2214,13 @@ static int gpu_is_weak(const char *name) {
         return 1;
     }
     if (sscanf(name, "Mali-G%d", &n) == 1) {
+        /* (BT2's copy: also G71, G72 and G76 with four cores or fewer, "Mali-G72 MP3", "Mali-G76 MC4": the cheap phones'
+           Helio P60, P70, G80, G85, G90, about a G57's speed for this renderer. The flagships' many-core ones stay as
+           they were; a name without its core count too.) */
+        int cores = 0;
+        if ((n == 71 || n == 72 || n == 76) && sscanf(name, "Mali-G%*d %*[MPC]%d", &cores) == 1 && cores > 0 && cores <= 4) {
+            return 1;
+        }
         return n == 31 || n == 51 || n == 52 || n == 57;
     }
     if (sscanf(name, "Adreno (TM) %d", &n) == 1 || sscanf(name, "Adreno %d", &n) == 1) {
