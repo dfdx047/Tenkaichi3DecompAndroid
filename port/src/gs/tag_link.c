@@ -114,6 +114,43 @@ static struct {
     Uint64 lastPunch;
 } L = {-1, -1};
 
+/* While the service's thread asks Cloudflare's relay for an address (Relay_AllocateVia, up to ten rounds of 0.7 s): the
+   game thread goes on reading the socket and taking the room's packets, and the relay's answers (anything that is not
+   one of ours: TL_MAGIC) wait here for that thread. Before, the game thread kept off the socket for the whole time and
+   the players' packets that came then were read by the allocation and thrown away: a match held still for seconds
+   whenever the owner asked (someone in the room's list not connected for 4 s, again every 30 s while it failed). */
+static SDL_AtomicInt sAllocating;
+static struct { uint8_t data[768]; int len; struct sockaddr_in from; } sBox[8];
+static int sBoxN;
+static void box_put(const uint8_t *data, int len, const struct sockaddr_in *from) {
+    if (len <= 0 || len > (int)sizeof(sBox[0].data)) {
+        return;
+    }
+    SDL_LockMutex(L.lock);
+    if (sBoxN == (int)(sizeof(sBox) / sizeof(sBox[0]))) { /* (full: the oldest goes, the allocation sends again) */
+        SDL_memmove(&sBox[0], &sBox[1], sizeof(sBox[0]) * (size_t)(sBoxN - 1));
+        sBoxN--;
+    }
+    SDL_memcpy(sBox[sBoxN].data, data, (size_t)len);
+    sBox[sBoxN].len = len;
+    sBox[sBoxN].from = *from;
+    sBoxN++;
+    SDL_UnlockMutex(L.lock);
+}
+static int box_take(uint8_t *out, int max, struct sockaddr_in *from) {
+    int n = -1;
+    SDL_LockMutex(L.lock);
+    if (sBoxN > 0) {
+        n = sBox[0].len < max ? sBox[0].len : max;
+        SDL_memcpy(out, sBox[0].data, (size_t)n);
+        *from = sBox[0].from;
+        sBoxN--;
+        SDL_memmove(&sBox[0], &sBox[1], sizeof(sBox[0]) * (size_t)sBoxN);
+    }
+    SDL_UnlockMutex(L.lock);
+    return n;
+}
+
 /* ---- small things ---- */
 
 static void put32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16); p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v; }
@@ -411,7 +448,7 @@ static void send_raw(const uint8_t *pkt, int len, const TlAddr *to) {
         if (L.sock6 >= 0) {
             sendto(L.sock6, (const char *)pkt, len, 0, &to->sa, addr_len(to));
         }
-    } else if (Relay_Active() && Relay_IsPeer(&to->v4)) {
+    } else if (!SDL_GetAtomicInt(&sAllocating) && Relay_Active() && Relay_IsPeer(&to->v4)) {
         Relay_Send(L.sock, pkt, len, &to->v4);
     } else {
         sendto(L.sock, (const char *)pkt, len, 0, &to->sa, addr_len(to));
@@ -706,10 +743,27 @@ static void relay_poll(void) {
 static void receive(void) {
     uint8_t buf[2048];
     int guard;
-    if (SDL_GetAtomicInt(&L.busy)) {
-        return;
+    if (SDL_GetAtomicInt(&L.busy) && !SDL_GetAtomicInt(&sAllocating)) {
+        return; /* (the service's thread reads the socket itself: STUN at the room's start) */
     }
-    for (guard = 0; guard < 512; guard++) {
+    if (SDL_GetAtomicInt(&sAllocating)) {
+        for (guard = 0; guard < 512; guard++) {
+            TlAddr from;
+            socklen_t fl = sizeof(from);
+            int n;
+            SDL_memset(&from, 0, sizeof(from));
+            n = (int)recvfrom(L.sock, (char *)buf, sizeof(buf), 0, &from.sa, &fl);
+            if (n <= 0) {
+                break;
+            }
+            if (n >= TL_HEAD && get32(buf) == TL_MAGIC) {
+                take_packet(buf, n, from); /* (no relay is in use yet: what comes is direct) */
+            } else if (from.sa.sa_family == AF_INET) {
+                box_put(buf, n, &from.v4);
+            }
+        }
+    }
+    for (guard = 0; !SDL_GetAtomicInt(&sAllocating) && guard < 512; guard++) {
         TlAddr from;
         socklen_t fl = sizeof(from);
         uint8_t *pkt = buf;
@@ -977,7 +1031,7 @@ static int SDLCALL service_thread(void *arg) {
     struct sockaddr_in me;
     socklen_t ml = sizeof(me);
     Uint64 lastPoll = 0, relayAsked = 0, relayRetry = 0;
-    int relayRefused = 0, relayWait = 5000, pollEvery = 1000;
+    int relayRefused = 0, relayWait = 5000, pollEvery = 1000, got;
     char ws[400];
     getsockname(L.sock, (struct sockaddr *)&me, &ml);
     SDL_SetAtomicInt(&L.busy, 1);
@@ -1124,8 +1178,14 @@ static int SDLCALL service_thread(void *arg) {
                     if (STOPPED()) {
                         break;
                     }
+                    SDL_LockMutex(L.lock);
+                    sBoxN = 0;
+                    SDL_UnlockMutex(L.lock);
+                    SDL_SetAtomicInt(&sAllocating, 1);
                     SDL_SetAtomicInt(&L.busy, 1);
-                    if (Relay_Allocate(sock, server, user, pass, relay, sizeof(relay))) {
+                    got = Relay_AllocateVia(sock, server, user, pass, relay, sizeof(relay), box_take);
+                    SDL_SetAtomicInt(&sAllocating, 0);
+                    if (got) {
                         fprintf(stderr, "taglink: relay address %s\n", relay);
                         my_addrs(addrs, sizeof(addrs), pub, lan, relay);
                         SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\",\"addrs\":%s}", code, key, addrs);
@@ -1279,6 +1339,7 @@ void TagLink_Stop(void) {
     }
     L.thread = NULL;
     SDL_SetAtomicInt(&L.busy, 0);
+    SDL_SetAtomicInt(&sAllocating, 0);
     if (L.sock >= 0) {
         for (i = 0; i < TL_SLOTS; i++) {
             if (L.conn[i].state == TK_LINK_OPEN) {
@@ -1323,6 +1384,8 @@ void TagLink_Pump(void) {
         }
         punch();
         timers();
+    } else if (SDL_GetAtomicInt(&sAllocating)) {
+        timers(); /* (pieces lost meanwhile go again; the relay's own upkeep waits for the allocation) */
     }
 }
 

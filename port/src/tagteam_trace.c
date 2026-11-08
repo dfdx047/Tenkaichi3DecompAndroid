@@ -11,9 +11,15 @@ void Port_ModelRequestTrace(int actor,int kind,int chara,int costume,int variant
 }
 int Port_FastFileQueue(void) {
     extern int Port_NetSession(void);
+    extern int TagNet_InMatch(void);
     /* The legacy step cadence remains available for comparison, and for the
-       upstream network protocol whose simulation includes loader states. */
-    return getenv("BT3_TAG_TEAM") != NULL && !Port_NetSession() &&
+       upstream network protocol whose simulation includes loader states.
+       So does a Tag Team online match: the fast queue stops at 2 ms of real
+       time (src/sys/file.c), so a stage or fighter loaded during the fight (a
+       destroyed stage, a transformation) finished on a different blank on each
+       phone and the match went out of sync (2026-11-05: both divergences of a
+       12-match log came right after a destroyed stage). */
+    return getenv("BT3_TAG_TEAM") != NULL && !Port_NetSession() && !TagNet_InMatch() &&
            getenv("BT3_TAG_LEGACY_LOADING") == NULL;
 }
 void Port_LoadTrace(int point) {

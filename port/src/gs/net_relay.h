@@ -8,6 +8,8 @@ struct sockaddr_in;
 /* Asks `server` ("host:port") for a relay address, from socket `sock` (not blocking), with the name and password the
    matchmaking service handed out. Waits up to a few seconds. 1 = got one: `out` is "ip:port". */
 int Relay_Allocate(int sock, const char *server, const char *username, const char *password, char *out, int size);
+int Relay_AllocateVia(int sock, const char *server, const char *username, const char *password, char *out, int size,
+                      int (*recvfn)(uint8_t *buf, int max, struct sockaddr_in *from));
 /* Lets packets from this address through (the other player's; the port does not matter). Asked again by Relay_Tick. */
 void Relay_Permit(int sock, const struct sockaddr_in *peer);
 /* Whether a relay address is held. */
