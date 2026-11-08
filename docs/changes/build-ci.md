@@ -3,6 +3,13 @@
 Regras e formato: [README](README.md).
 
 
+### 1.0.0 (este commit): release da tag nasce como rascunho; atualizador não oferece código menor
+- **Onde:** `.github/workflows/android.yml`, passo "Release" (`draft: true`); `android/app/src/main/java/com/dfdx047/dragonrage/data/AppUpdates.kt`, `check` e `codeOf`.
+- **O que e por quê:** o APK do CI não tem BT4 nem BT2 (os motores vêm do programa do jogo e só são feitos aqui). Como rascunho, ele nunca fica público: o APK local entra no lugar (`gh release upload --clobber`, mesmo nome `DragonRage-X.Y.Z.apk`, um `.apk` só) e a release é publicada à mão. O atualizador, além de comparar os nomes, passa a exigir que o código da release (`X*10000+Y*100+Z`, a fórmula do `build.gradle.kts`) seja maior que o instalado, para nunca oferecer um downgrade que o Android recusa.
+- **Medido/provado:** ver o teste de instalar por cima em `docs/release-1.0.md`. O workflow só roda com push da tag.
+- **O que pode quebrar:** quem publicar uma tag e esquecer de tirar do rascunho: ninguém recebe a atualização. Nightly não é afetado (só compara o número do run).
+- **Como testar de novo:** `gh release view android-vX.Y.Z` (draft) logo depois do run da tag; o app com a versão anterior oferece a nova depois de publicada.
+
 ### 1.0.0 (este commit): versionCode de release vem do nome, também no CI
 - **Onde:** `.github/workflows/android.yml`, passo "Version from the tag"; `android/app/build.gradle.kts`, comentário; `docs/release-1.0.md`, comandos de publicar.
 - **O que e por quê:** com o número da execução no CI, o código de uma release podia cair: 0.8.1 tinha 801 (PC) e 42 (CI), a 0.9.0 saiu com 55 e o Android recusou por cima do 801. Tag agora não passa `DR_VERSION_CODE`, então 1.0.0 vira 10000 no CI e no PC. Nightly continua com o número da execução, que `AppUpdates.check` compara.

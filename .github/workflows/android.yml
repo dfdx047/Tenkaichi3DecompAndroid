@@ -170,6 +170,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: Dragon Rage ${{ env.DR_VERSION_NAME }}
+          # a draft: the APK built here has no BT4 nor BT2 (their engines come from the game's own program, built
+          # locally); the local APK replaces it (gh release upload --clobber), then the release is published by hand
+          draft: true
           prerelease: false
           make_latest: true
           generate_release_notes: true
