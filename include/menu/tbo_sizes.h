@@ -32,6 +32,10 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {1024, 512, 0}, /* db_rays */
     {256, 256, 48}, /* db_frame */
     {256, 256, 50}, /* db_dialog */
+    {1920, 864, 0}, /* db_night */
+    {1024, 1100, 0}, /* db_radar */
+    {256, 256, 0}, /* db_ring */
+    {256, 256, 48}, /* db_glass */
 };
 
 #endif

@@ -606,15 +606,17 @@ void Ps_Text(f32 x, f32 y, char *s, f32 scale, f32 width, s32 style) {
 }
 
 /* A filled circle, as a fan of quads. */
+/* The 33 points of a circle (k * 2 pi / 32), worked out once, here: the cosines and sines of every disc of every frame
+   were 128 calls of the game's slow float functions each (a dozen discs on some pages). */
+static const f32 kPsDiscCos[33] = {1.0000000f, 0.9807853f, 0.9238795f, 0.8314696f, 0.7071068f, 0.5555702f, 0.3826834f, 0.1950903f, 0.0000000f, -0.1950903f, -0.3826834f, -0.5555702f, -0.7071068f, -0.8314696f, -0.9238795f, -0.9807853f, -1.0000000f, -0.9807853f, -0.9238795f, -0.8314696f, -0.7071068f, -0.5555702f, -0.3826834f, -0.1950903f, -0.0000000f, 0.1950903f, 0.3826834f, 0.5555702f, 0.7071068f, 0.8314696f, 0.9238795f, 0.9807853f, 1.0000000f};
+static const f32 kPsDiscSin[33] = {0.0000000f, 0.1950903f, 0.3826834f, 0.5555702f, 0.7071068f, 0.8314696f, 0.9238795f, 0.9807853f, 1.0000000f, 0.9807853f, 0.9238795f, 0.8314696f, 0.7071068f, 0.5555702f, 0.3826834f, 0.1950903f, 0.0000000f, -0.1950903f, -0.3826834f, -0.5555702f, -0.7071068f, -0.8314696f, -0.9238795f, -0.9807853f, -1.0000000f, -0.9807853f, -0.9238795f, -0.8314696f, -0.7071068f, -0.5555702f, -0.3826834f, -0.1950903f, -0.0000000f};
+
 void Ps_Disc(f32 cx, f32 cy, f32 r, u32 mid, u32 edge) {
     s32 k;
     f32 rx = r * 0.857f; /* (a round thing is this much narrower in the screen's pixels) */
 
     for (k = 0; k < 32; k++) {
-        f32 a0 = (f32)k * 6.2831853f / 32.0f;
-        f32 a1 = (f32)(k + 1) * 6.2831853f / 32.0f;
-
-        Ps_Quad(cx, cy, cx, cy, cx + cosf(a0) * rx, cy + sinf(a0) * r, cx + cosf(a1) * rx, cy + sinf(a1) * r, mid, mid, edge, edge);
+        Ps_Quad(cx, cy, cx, cy, cx + kPsDiscCos[k] * rx, cy + kPsDiscSin[k] * r, cx + kPsDiscCos[k + 1] * rx, cy + kPsDiscSin[k + 1] * r, mid, mid, edge, edge);
     }
 }
 

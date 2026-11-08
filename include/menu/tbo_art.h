@@ -33,7 +33,11 @@
     X(TBO_DB_GLOW, "db_glow")               /* a soft white glow (tinted) */ \
     X(TBO_DB_RAYS, "db_rays")               /* the picture window's rays */ \
     X(TBO_DB_FRAME, "db_frame")             /* its gold frame (nine pieces) */ \
-    X(TBO_DB_DIALOG, "db_dialog")           /* the white talk box (nine pieces) */
+    X(TBO_DB_DIALOG, "db_dialog")           /* the white talk box (nine pieces) */ \
+    X(TBO_DB_NIGHT, "db_night")             /* the night behind the mod's menus (the dragon radar's look) */ \
+    X(TBO_DB_RADAR, "db_radar")             /* the dragon radar: case, button, green screen (its middle: 512, 588 of 1024 x 1100) */ \
+    X(TBO_DB_RING, "db_ring")               /* a thin white ring (tinted): the radar's pulses */ \
+    X(TBO_DB_GLASS, "db_glass")             /* dark blue glass (nine pieces): panels and plates */
 
 #define TBO_ART_ENUM(id, name) id,
 enum { TBO_ART_LIST(TBO_ART_ENUM) TBO_ART_COUNT };

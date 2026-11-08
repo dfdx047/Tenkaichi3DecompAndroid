@@ -59,6 +59,15 @@ static u8 stockLabels[2][12][512*32], tagLabels[2][12][512*32];
 static s32 tagLabelsReady;
 static s32 tmPageAt; /* (Tk frame the page came in: TagMenu_DrawPage) */
 static s32 tmRow;    /* the row under the cursor on the mod's pages */
+/* The modes' page is a dragon radar (TagMenu_DrawRadar): its seven balls, its lock */
+#define TR_BALLS 7
+#define TR_LOCK_FRAMES 22 /* the lock's length, frames */
+static s32 tmRadarRow;  /* the ball last chosen on the radar (the page comes back to it) */
+static s32 tmLockAt;    /* the frame (sTkFrames) the lock began; 0: none */
+static s32 tmLockRow;   /* the ball being locked */
+static s32 tmLockHost;  /* whether it was an online room's host menu when the lock began */
+static s32 tmSelectAt;  /* the frame of a first Select on the mod's pages (a second within two seconds leaves them) */
+static void TagMenu_Goto(s32 row);
 static s32 TagMenu_Option(s32 page,s32 row) {
     s32 i;
     for(i=0;i<TAG_OPT_COUNT;i++) if(tagOptionInfo[i].group==page-5 && row--==0) return i;
@@ -179,6 +188,9 @@ static void TagMenu_SetPage(s32 page) {
     }
     Voice_Stop(0); gMainMenu->voiceLine=-1;
     gMainMenu->flags=(gMainMenu->flags&~MAINMENU_STARTED)|MAINMENU_GREETED;
+    tmLockAt=0; /* (a lock belongs to the radar's page as it was) */
+    tmSelectAt=0;
+    if(page==1) { if(tmRadarRow<0 || tmRadarRow>=TR_BALLS || tmRadarRow>=count) tmRadarRow=0; TagMenu_Goto(tmRadarRow); }
 }
 static void TagMenu_Prepare(void) {
     extern s32 Port_MainTagLabel(s32,s32,s32,s32);
@@ -254,11 +266,255 @@ static f32 TagMenu_Button(f32 right,s32 kind,char *label,u32 bits) {
     if(bits) Tk_Region(x-bw-10.0f,cy-16.0f,right+4.0f,cy+16.0f,TK_PAD,(s32)bits);
     return x-bw-22.0f;
 }
+/* ---- The modes' page as a dragon radar (2026-11-08, the user's choice of three designs): the seven modes are the seven
+   dragon balls on a ring of the radar's green screen, each with a short name; the chosen one big, its search rings
+   pulsing, its name in gold. Left / right (and up / down) turn to the next ball, a tap on a ball enters it. Entering:
+   the ball runs to the radar's middle and is LOCKED (TagMenu_RadarLock, about a third of a second), then the mode
+   opens as before (TagMenu_RadarChoose). The panel at the right says what the mode is. The language switch at the
+   top right (PT EN ES, Square too). Everything is drawn from a few pictures (db_night, db_radar, db_balls, db_ring,
+   db_glass: port/tools/db_assets.py) and the cached lines of letters: a few dozen quads a frame. The ball's places on
+   the ring are numbers worked out once (no sines for them every frame). ---- */
+static const f32 kTrCos[TR_BALLS]={0.0f,0.78183f,0.97493f,0.43388f,-0.43388f,-0.97493f,-0.78183f};
+static const f32 kTrSin[TR_BALLS]={-1.0f,-0.62349f,0.22252f,0.90097f,0.90097f,0.22252f,-0.62349f};
+/* The radar's middle and its scale (units of the page per pixel of db_radar.png), where the page puts it. */
+static void TagMenu_RadarFrame(f32 *cx,f32 *cy,f32 *s) {
+    *cx=Tk_PX(860); *cy=Tk_PY(650); *s=Tk_PY(430)/500.0f;
+}
+/* Ball i's place on the ring (the screen's ring is 452 pixels of the picture round; the balls at 64% of it). */
+static void TagMenu_RadarBall(s32 i,f32 *x,f32 *y) {
+    f32 cx,cy,s,r;
+    TagMenu_RadarFrame(&cx,&cy,&s);
+    r=452.0f*0.62f*s;
+    *x=cx+kTrCos[i]*r*PS_UNIT_X;
+    *y=cy+kTrSin[i]*r;
+}
+/* The balls' short names on the radar (the whole name is in the panel). */
+static char *TagMenu_RadarShort(s32 i) {
+    static char names[TR_BALLS+1][24]={"TEAMS","FREE FOR ALL","TRAINING","GAUNTLET","TOURNAMENT","ONLINE","SETTINGS","LEAVE"};
+    if(TagNet_HostMenu() && i==5) return names[6];
+    if(TagNet_HostMenu() && i==6) return names[7];
+    return names[i];
+}
+/* What the panel shows of a mode: up to three short rules. */
+static void TagMenu_RadarRules(s32 i,char **out,s32 *count) {
+    static char rules[9][3][32]={
+        {"2 TEAMS","UP TO 10 FIGHTERS","REVIVE ALLIES"},
+        {"EVERY FIGHTER","LAST ONE STANDING",""},
+        {"YOUR TEAMS","TRAINING RULES",""},
+        {"WAVES OF ENEMIES","YOUR TEAM",""},
+        {"BRACKET","UP TO 4 TEAMS",""},
+        {"ROOM CODE","PLAY TOGETHER",""},
+        {"GAMEPLAY","CAMERAS","HUD"},
+        {"ENDS THE ROOM","",""},
+        {"","",""}};
+    s32 k,row=i;
+    if(TagNet_HostMenu() && i==5) row=6;
+    else if(TagNet_HostMenu() && i==6) row=7;
+    if(row<0 || row>7) row=8;
+    *count=0;
+    for(k=0;k<3;k++) if(rules[row][k][0]) out[(*count)++]=rules[row][k];
+}
+static f32 TagMenu_Ease(f32 t) {
+    if(t<0.0f) t=0.0f;
+    if(t>1.0f) t=1.0f;
+    t=1.0f-t;
+    return 1.0f-t*t*t;
+}
+/* After a first Select on the mod's pages: what a second one does, for two seconds (MainMenu_Input). */
+static void TagMenu_SelectAgain(void) {
+    f32 w;
+    if(!tmSelectAt || sTkFrames-tmSelectAt>120) return;
+    Ps_SetShift(0);
+    w=Ps_TextWidth((char *)Port_TagText("PRESS SELECT AGAIN FOR THE NORMAL MODES"),0.8f)+40.0f;
+    Tk_Pill(256.0f-w*0.5f,362.0f,256.0f+w*0.5f,388.0f,Ps_Rgba(255,230,200,128),Ps_Rgba(200,40,30,124),Ps_Rgba(140,14,10,124),
+            "PRESS SELECT AGAIN FOR THE NORMAL MODES",0.8f,0);
+}
+static void TagMenu_DrawRadar(void) {
+    extern int Port_TagLang(void);
+    extern s32 Port_TagLabelText(s32,u32,s32);
+    s32 cur=TagMenu_Cur(),i,lock=tmLockAt!=0,shown=cur,frames=sTkFrames;
+    f32 cx,cy,s,in=Tk_In(tmPageAt),p=0.0f,bob,t=(f32)frames;
+    char label[96],help[192],line[64];
+    if(lock) { shown=tmLockRow; p=(f32)(frames-tmLockAt)/(f32)TR_LOCK_FRAMES; if(p>1.0f) p=1.0f; }
+    if(shown<0 || shown>=TR_BALLS) shown=0;
+    TagMenu_RadarFrame(&cx,&cy,&s);
+    /* the title, its line, the language switch */
+    Ps_SetShift(0);
+    Ps_Align(0);
+    Ps_Heading(Tk_PX(90),Ps_TextTop(Tk_PY(100)+1.6f*sinf(t*0.045f),2.1f),"TAG TEAM",2.1f,Tk_PX(1100)-Tk_PX(90),0x80);
+    Ps_TextEx(Tk_PX(100),Ps_TextTop(Tk_PY(226),0.8f),TagNet_HostMenu()?"CHOOSE THE ROOM'S NEXT MODE":"CHOOSE A MODE ON THE RADAR",0.8f,Tk_PX(1300)-Tk_PX(100),
+        Ps_Rgba(200,255,200,0x80),Ps_Rgba(120,230,140,0x80),Ps_Rgba(0,40,12,0x80));
+    Ps_Align(1);
+    {
+        /* (left of the corner: the touch pad's R1 and R2 sit at the top right of the screen) */
+        f32 left=Tk_Languages(Tk_PX(2060),Tk_PY(95),Port_TagLang());
+        Ps_Align(2);
+        Ps_TextEx(left-6.0f,Ps_TextTop(Tk_PY(95),0.62f),"LANGUAGE",0.62f,80.0f,Ps_Rgba(220,230,255,0x80),Ps_Rgba(170,190,230,0x80),Ps_Rgba(6,16,60,0x80));
+        Ps_Align(1);
+    }
+    /* the radar: it comes in from the left as the page does */
+    Ps_SetShift((1.0f-in)*-120.0f);
+    Tk_Glow(cx-460.0f*s*PS_UNIT_X*1.3f,cy-460.0f*s*1.2f,cx+460.0f*s*PS_UNIT_X*1.3f,cy+460.0f*s*1.2f,255,140,40,0x30);
+    Ps_Sprite(TBO_DB_RADAR,cx-512.0f*s*PS_UNIT_X,cy-588.0f*s,cx+512.0f*s*PS_UNIT_X,cy+512.0f*s,0.0f,0.0f,1.0f,1.0f,PS_PLAIN,0x80);
+    { /* a slow scan: a ring from the middle out to the screen's edge, every 2.5 s (while locking: three, quick) */
+        f32 edge=452.0f*s;
+        if(lock) {
+            for(i=0;i<3;i++) {
+                f32 q=p*1.6f-(f32)i*0.25f;
+                if(q>0.0f && q<1.0f) Tk_Ring(cx,cy,edge*q,255,240,150,(s32)(110.0f*(1.0f-q)));
+            }
+        } else {
+            f32 q=(f32)(frames%150)/90.0f;
+            if(q<1.0f) Tk_Ring(cx,cy,edge*q,200,255,200,(s32)(70.0f*(1.0f-q)));
+        }
+    }
+    /* the arrow in the middle: where you are */
+    Ps_Quad(cx,cy-9.0f,cx,cy-9.0f,cx-6.5f*PS_UNIT_X,cy+7.0f,cx+6.5f*PS_UNIT_X,cy+7.0f,
+        Ps_Rgba(255,80,60,128),Ps_Rgba(255,80,60,128),Ps_Rgba(180,20,10,128),Ps_Rgba(180,20,10,128));
+    /* the balls that are not chosen, each with its short name; a place to tap each */
+    for(i=0;i<TR_BALLS;i++) {
+        f32 bx,by,w,r=Tk_PY(34);
+        if(i==shown) continue;
+        TagMenu_RadarBall(i,&bx,&by);
+        bob=1.2f*sinf(t*0.05f+(f32)i*0.9f);
+        by+=bob;
+        Tk_Region(bx-26.0f,by-24.0f,bx+26.0f,by+30.0f,TK_ROW,i);
+        if(lock) { Tk_BallA(bx,by,r,i+1,(s32)(0x80-0x58*p)); continue; }
+        Tk_Glow(bx-r*2.0f,by-r*2.0f,bx+r*2.0f,by+r*2.0f,255,220,110,0x38);
+        Tk_Ball(bx,by,r,i+1);
+        Ps_Copy(line,TagMenu_RadarShort(i),sizeof(line));
+        w=Ps_TextWidth((char *)Port_TagText(line),0.66f)+16.0f;
+        Tk_Pill(bx-w*0.5f,by+r+3.0f,bx+w*0.5f,by+r+19.0f,Ps_Rgba(170,255,170,100),Ps_Rgba(10,52,24,118),Ps_Rgba(6,36,16,122),line,0.66f,0);
+    }
+    { /* the chosen ball: search rings, a warm glow, its name in gold; while locking it runs to the middle */
+        f32 bx,by,r=Tk_PY(52),pulse=0.5f+0.5f*sinf(t*0.12f),w;
+        TagMenu_RadarBall(shown,&bx,&by);
+        if(lock) {
+            f32 e=TagMenu_Ease(p*1.4f);
+            bx+=(cx-bx)*e; by+=(cy-by)*e; r*=1.0f+0.55f*e;
+        } else by+=1.2f*sinf(t*0.05f+(f32)shown*0.9f);
+        Tk_Glow(bx-r*2.6f,by-r*2.6f,bx+r*2.6f,by+r*2.6f,255,180,50,0x60);
+        if(!lock) {
+            Tk_Ring(bx,by,r*(1.75f+0.12f*pulse),255,235,140,(s32)(0x30+0x30*pulse));
+            Tk_Ring(bx,by,r*1.38f,255,245,170,0x60);
+        }
+        Tk_Ball(bx,by,r,shown+1);
+        Tk_Region(bx-30.0f,by-30.0f,bx+30.0f,by+40.0f,TK_ROW,shown);
+        Ps_Copy(line,TagMenu_RadarShort(shown),sizeof(line));
+        w=Ps_TextWidth((char *)Port_TagText(line),0.9f)+30.0f;
+        if(lock) by=cy+Tk_PY(52)*1.55f+4.0f-r;
+        Tk_Pill(bx-w*0.5f,by+r+5.0f,bx+w*0.5f,by+r+28.0f,Ps_Rgba(255,250,215,128),Ps_Rgba(255,214,90,128),Ps_Rgba(236,128,20,128),line,0.9f,1);
+    }
+    if(lock) { /* the lock: four corners closing on the ball, then LOCKED! */
+        f32 e=TagMenu_Ease(p*1.2f),d=Tk_PY(150)*(1.8f-0.8f*e),k=Tk_PY(46),th=2.6f;
+        u32 c=Ps_Rgba(255,245,160,(s32)(128*e));
+        s32 dx,dy;
+        for(dx=-1;dx<=1;dx+=2) for(dy=-1;dy<=1;dy+=2) {
+            f32 x=cx+(f32)dx*d*PS_UNIT_X,y=cy+(f32)dy*d;
+            Ps_Rect(dx<0?x:x-k*PS_UNIT_X,y-th*0.5f,dx<0?x+k*PS_UNIT_X:x,y+th*0.5f,c,c);
+            Ps_Rect(x-th*0.5f,dy<0?y:y-k,x+th*0.5f,dy<0?y+k:y,c,c);
+        }
+        if(p>0.45f) {
+            f32 q=TagMenu_Ease((p-0.45f)*3.0f),sx=cx+Tk_PY(250)*PS_UNIT_X,sy=cy-Tk_PY(330),hw=Tk_PY(170)*(1.4f-0.4f*q),hh=Tk_PY(50)*(1.4f-0.4f*q);
+            Tk_Pill(sx-hw,sy-hh,sx+hw,sy+hh,Ps_Rgba(255,230,200,(s32)(128*q)),Ps_Rgba(220,40,30,(s32)(124*q)),Ps_Rgba(160,14,10,(s32)(124*q)),"LOCKED!",1.25f,0);
+        }
+    }
+    /* the arrows at the radar's sides: turn it (a place to tap each) */
+    for(i=-1;i<=1;i+=2) {
+        f32 ax=cx+(f32)i*(Tk_PY(500)*PS_UNIT_X),bob2=1.5f*sinf(t*0.1f)*(f32)i;
+        u32 c=Ps_Rgba(255,214,90,128),e2=Ps_Rgba(110,40,0,128);
+        ax+=bob2;
+        Ps_Quad(ax+(f32)i*11.0f,cy,ax+(f32)i*11.0f,cy,ax-(f32)i*5.0f,cy-14.0f,ax-(f32)i*5.0f,cy+14.0f,e2,e2,e2,e2);
+        Ps_Quad(ax+(f32)i*8.5f,cy,ax+(f32)i*8.5f,cy,ax-(f32)i*3.5f,cy-11.0f,ax-(f32)i*3.5f,cy+11.0f,c,c,c,c);
+        if(!lock) Tk_Region(ax-24.0f,cy-36.0f,ax+24.0f,cy+36.0f,TK_PAD,i<0?PADG_LEFT:PADG_RIGHT);
+    }
+    /* the panel: the mode, what it is, its rules */
+    Ps_SetShift((1.0f-in)*140.0f);
+    if(TagNet_HostMenu()) { /* the lobby's owner: its online code, to pass on (port/src/gs/tag_link.c), above the panel */
+        extern void TagNet_OnlineInfo(u32,u32,s32);
+        char code[64],status[64],card[96];
+        TagNet_OnlineInfo((u32)code,(u32)status,sizeof(code));
+        if(code[0]) {
+            Ps_Copy(card,(char *)Port_TagText("ONLINE CODE"),sizeof(card)); Ps_Cat(card,"  ",sizeof(card)); Ps_Cat(card,code,sizeof(card));
+            Tk_Capsule(Tk_PX(1500),Tk_PY(168),Tk_PX(2300),Tk_PY(232),card,0.9f);
+        }
+    }
+    {
+        f32 px0=Tk_PX(1480),py0=Tk_PY(250),px1=Tk_PX(2630),py1=Tk_PY(TagNet_HostMenu()?640:1000),room=px1-px0-24.0f;
+        char *rules[3];
+        s32 n,k;
+        Ps_Panel(TBO_DB_GLASS,px0,py0,px1,py1,0x80);
+        Ps_Rect(px0+10.0f,py0+1.0f,px1-10.0f,py0+4.5f,Ps_Rgba(255,170,50,128),Ps_Rgba(255,130,20,128));
+        Tk_Glow(px0+4.0f,py0+6.0f,px0+64.0f,py0+66.0f,255,170,40,0x50);
+        Tk_Ball(px0+34.0f,py0+36.0f,Tk_PY(62),shown+1);
+        sprintf(line,Port_TagText("MODE %d OF %d"),shown+1,TR_BALLS);
+        Ps_Align(0);
+        Ps_TextEx(px0+70.0f,Ps_TextTop(py0+22.0f,0.66f),line,0.66f,room-60.0f,Ps_Rgba(255,214,120,0x80),Ps_Rgba(255,170,60,0x80),Ps_Rgba(40,14,0,0x80));
+        if(!Port_TagLabelText(TagMenu_Label(1,shown),(u32)label,sizeof(label))) Ps_Copy(label,TagMenu_RadarShort(shown),sizeof(label));
+        Ps_Heading(px0+68.0f,Ps_TextTop(py0+48.0f,1.35f),(char *)Port_TagText(label),1.35f,room-58.0f,0x80);
+        Ps_Rect(px0+14.0f,py0+72.0f,px1-14.0f,py0+73.5f,Ps_Rgba(255,190,70,80),Ps_Rgba(255,190,70,80));
+        TagMenu_Help(shown,help,sizeof(help));
+        Tk_Wrap(help,0.9f,room-8.0f);
+        Tk_WrapDraw(px0+14.0f,py0+(sTkLines>2?106.0f:100.0f),0.9f,room-8.0f);
+        if(!TagNet_HostMenu()) {
+            f32 x=px0+14.0f,y=py0+150.0f;
+            TagMenu_RadarRules(shown,rules,&n);
+            for(k=0;k<n;k++) {
+                f32 w=Ps_TextWidth((char *)Port_TagText(rules[k]),0.66f)+22.0f;
+                if(x+w>px1-10.0f) { x=px0+14.0f; y+=26.0f; }
+                Tk_Pill(x,y,x+w,y+20.0f,Ps_Rgba(255,215,150,128),Ps_Rgba(236,96,26,128),Ps_Rgba(190,60,14,128),rules[k],0.66f,0);
+                x+=w+7.0f;
+            }
+            if(shown==0 || shown==1 || shown==4) { /* who meets who: blue against red, or four colours, as small pills
+                                                      (no circles: Ps_Disc's 128 sines each would cost every frame) */
+                static const u8 cols[4][3]={{40,120,235},{210,44,56},{50,170,80},{225,160,30}};
+                static char tags[2][6][6]={{"P1","P2","CPU","CPU","CPU","CPU"},{"P1","P2","P3","P4","",""}};
+                f32 y=py1-38.0f,x=px0+14.0f,w=34.0f;
+                for(k=0;k<6;k++) {
+                    s32 c=shown==1?k:(k<3?0:1);
+                    char *tag=tags[shown==1?1:0][k];
+                    if(!tag[0] || (shown==4 && k>=4)) break;
+                    if(shown!=1 && k==3) { Ps_Align(1); Ps_Text(x+12.0f,Ps_TextTop(y+11.0f,0.95f),"VS",0.95f,30.0f,2); x+=28.0f; }
+                    Tk_Pill(x,y,x+w,y+22.0f,Ps_Rgba(255,255,255,120),Ps_Rgba(cols[c][0],cols[c][1],cols[c][2],128),
+                            Ps_Rgba(cols[c][0]*2/3,cols[c][1]*2/3,cols[c][2]*2/3,128),tag,0.72f,0);
+                    x+=w+6.0f;
+                }
+            }
+        }
+        Ps_Align(1);
+    }
+    Ps_SetShift(0);
+    /* the foot: its buttons, each a place to tap */
+    /* (the whole window's width: on a wide phone the page's 0..512 is only its middle) */
+    Ps_Rect(Tk_PX(0),402.0f,Tk_PX(2712),448.0f,Ps_Rgba(4,8,24,104),Ps_Rgba(4,8,24,118));
+    Ps_Rect(Tk_PX(0),401.0f,Tk_PX(2712),402.5f,Ps_Rgba(255,170,50,128),Ps_Rgba(255,170,50,128));
+    if(!TagNet_HostMenu()) { /* (from the window's left edge: the touch pad's SELECT and START sit in the middle) */
+        static const s32 kinds[4]={0,2,3,1};
+        static const u32 bits[4]={PADG_CROSS,PADG_TRIANGLE,0,PADG_SQUARE};
+        static char words[4][12]={"Enter","Back","Turn","Language"};
+        f32 x=Tk_PX(40);
+        s32 k;
+        Ps_Align(0);
+        for(k=0;k<4;k++) {
+            f32 bw=Ps_ButtonW(kinds[k],19.0f),w=bw+5.0f+Ps_MsgWidth((char *)Port_TagText(words[k]),1.0f);
+            Ps_Button(kinds[k],x+bw*0.5f,425.0f,19.0f);
+            Ps_Msg(x+bw+5.0f,425.0f-(PS_MSG_BASE-PS_MSG_CAP*0.5f),(char *)Port_TagText(words[k]),1.0f,0x80);
+            if(bits[k]) Tk_Region(x-4.0f,402.0f,x+w+4.0f,448.0f,TK_PAD,(s32)bits[k]);
+            x+=w+14.0f;
+        }
+        Ps_Align(1);
+        Ps_Align(2);
+        Ps_TextEx(Tk_PX(2640),Ps_TextTop(424.0f,0.66f),"SELECT - NORMAL MODES",0.66f,130.0f,Ps_Rgba(255,214,120,0x80),Ps_Rgba(255,170,60,0x80),Ps_Rgba(40,14,0,0x80));
+        Ps_Align(1);
+        Tk_Region(Tk_PX(2640)-134.0f,402.0f,Tk_PX(2640)+6.0f,448.0f,TK_PAD,PADG_SELECT);
+    }
+}
 static void TagMenu_DrawPage(void) {
     extern s32 Port_TagLabelText(s32,u32,s32);
     extern void Port_TagOptionValue(s32,u32,s32),Hud_LoadTagPreview(void);
     extern s32 Port_TagPreviewAt(s32,s32,s32,s32,s32);
     static const s32 modeLabels[5]={0,1,2,TAG_LABEL_GAUNTLET,TAG_LABEL_TOURNAMENT};
+    if(tagPage==1) { TagMenu_DrawRadar(); return; }
     s32 count=TagMenu_Count(tagPage),cur=TagMenu_Cur(),first,i,option=TagMenu_IsOption(cur),preview=0;
     f32 in=Tk_In(tmPageAt),slide=(1.0f-in)*-160.0f,target,fx0,fy0,fx1,fy1,cx,cy,x;
     char heading[64],card[64],label[96],value[96],help[192];
@@ -281,7 +537,7 @@ static void TagMenu_DrawPage(void) {
     if(card[0]) Tk_Capsule(Tk_PX(105),Tk_PY(198),Tk_PX(560),Tk_PY(262),card,0.9f);
     /* the buttons, top right */
     if(!TagNet_HostMenu()) {
-        x=TagMenu_Button(Tk_PX(2620),2,"Back",PADG_TRIANGLE);
+        x=TagMenu_Button(Tk_PX(2060),2,"Back",PADG_TRIANGLE); /* (left of the touch pad's R1 and R2) */
         if(option) x=TagMenu_Button(x,3,"Change",0);
         TagMenu_Button(x,0,"Select",PADG_CROSS);
     }
@@ -290,24 +546,30 @@ static void TagMenu_DrawPage(void) {
     if(TagNet_HostMenu()) { fy0=Tk_PY(420); } /* (the lobby's roster is above it) */
     Ps_SetShift(-slide*0.5f);
     Tk_Glow(fx0-20,fy0-20,fx1+20,fy1+20,0,0,0,0x50);
-    Tk_Inside(fx0,fy0,fx1,fy1);
+    Ps_Panel(TBO_DB_GLASS,fx0,fy0,fx1,fy1,0x80); /* (the night look: dark glass, no rays) */
     if(option) {
         s32 id=TagMenu_Option(tagPage,cur);
         Hud_LoadTagPreview();
         preview=Port_TagPreviewAt(id,(s32)Ps_X(fx0+10),(s32)Ps_Y(fy0+12),(s32)Ps_X(fx1-10),(s32)Ps_Y(fy1-22));
     }
     cx=(fx0+fx1)*0.5f; cy=(fy0+fy1)*0.5f+Tk_PY(20);
-    if(!preview) {
-        f32 spin=(f32)sTkFrames*0.004f,r=Tk_PY(130)*(0.94f+0.06f*sinf((f32)sTkFrames*0.08f));
-        Ps_Sprite(TBO_DB_RAYS,fx0+4,fy0+4,fx1-4,fy1-4,0.0f,0.0f,1.0f,1.0f,PS_PLAIN,0x50);
-        for(i=0;i<7;i++) {
-            f32 a=-1.5708f+0.4488f+(f32)i*0.8976f+spin;
-            Tk_Ball(cx+cosf(a)*(fx1-fx0)*0.34f,cy+sinf(a)*(fy1-fy0)*0.34f,Tk_PY(40),i+1);
+    if(!preview) { /* the dragon radar, locked on the mode's ball (as the radar's page left it: TagMenu_DrawRadar) */
+        f32 rs=(fy1-fy0-12.0f)/1100.0f,ry=(fy0+fy1)*0.5f+(588.0f-550.0f)*rs,br=452.0f*rs*0.42f,pulse=0.5f+0.5f*sinf((f32)sTkFrames*0.12f);
+        f32 d=br*1.45f,k=br*0.45f,th=2.4f;
+        s32 dx,dy;
+        u32 c=Ps_Rgba(255,245,160,120);
+        Ps_Sprite(TBO_DB_RADAR,cx-512.0f*rs*PS_UNIT_X,ry-588.0f*rs,cx+512.0f*rs*PS_UNIT_X,ry+512.0f*rs,0.0f,0.0f,1.0f,1.0f,PS_PLAIN,0x80);
+        { f32 q=(f32)(sTkFrames%150)/90.0f; if(q<1.0f) Tk_Ring(cx,ry,452.0f*rs*q,200,255,200,(s32)(70.0f*(1.0f-q))); }
+        Tk_Glow(cx-br*2.4f,ry-br*2.4f,cx+br*2.4f,ry+br*2.4f,255,180,50,0x60);
+        Tk_Ring(cx,ry,br*(1.5f+0.1f*pulse),255,235,140,(s32)(0x30+0x30*pulse));
+        Tk_Ball(cx,ry,br,(tmRadarRow>=0 && tmRadarRow<TR_BALLS?tmRadarRow:0)+1);
+        for(dx=-1;dx<=1;dx+=2) for(dy=-1;dy<=1;dy+=2) { /* the lock's four corners, closed */
+            f32 x=cx+(f32)dx*d*PS_UNIT_X,y=ry+(f32)dy*d;
+            Ps_Rect(dx<0?x:x-k*PS_UNIT_X,y-th*0.5f,dx<0?x+k*PS_UNIT_X:x,y+th*0.5f,c,c);
+            Ps_Rect(x-th*0.5f,dy<0?y:y-k,x+th*0.5f,dy<0?y+k:y,c,c);
         }
-        Tk_Glow(cx-r*2.6f,cy-r*2.2f,cx+r*2.6f,cy+r*2.2f,255,170,40,0x70);
-        Tk_Ball(cx,cy,r,cur%7+1);
     }
-    Ps_Panel(TBO_DB_FRAME,fx0,fy0,fx1,fy1,0x80);
+    Ps_Rect(fx0+10.0f,fy0+1.0f,fx1-10.0f,fy0+4.5f,Ps_Rgba(255,170,50,128),Ps_Rgba(255,130,20,128));
     if(tagPage==2 && cur<5) { /* who plays: the players, CPU for the rest */
         s32 humans=cur<4?cur+1:0,k;
         for(k=0;k<4;k++) {
@@ -369,9 +631,10 @@ static void TagMenu_DrawPage(void) {
     /* the talk box: what the choice does, and the way back to the game's modes (SELECT) */
     {
         f32 bx0=Tk_PX(60),by0=Tk_PY(1000),bx1=Tk_PX(2650),by1=Tk_PY(1150),px=bx0+Tk_PX(130)-Tk_PX(0),py=by0+Tk_PY(40),room=bx1-bx0-Tk_PX(330)+Tk_PX(0);
-        Ps_Panel(TBO_DB_DIALOG,bx0,by0,bx1,by1,0x80);
-        Ps_Disc(px,py,Tk_PY(100),Ps_Rgba(255,200,70,128),Ps_Rgba(230,150,30,128));
-        Ps_Disc(px,py,Tk_PY(88),Ps_Rgba(30,50,130,128),Ps_Rgba(20,40,110,128));
+        Ps_Panel(TBO_DB_GLASS,bx0,by0,bx1,by1,0x80);
+        /* (the ball's round frame: a glow and a ring, two quads; two Ps_Disc were 256 sines every frame) */
+        Tk_Glow(px-Tk_PY(110),py-Tk_PY(110),px+Tk_PY(110),py+Tk_PY(110),255,170,40,0x50);
+        Tk_Ring(px,py,Tk_PY(96),255,200,70,0x80);
         Tk_Ball(px,py,Tk_PY(72),4);
         TagMenu_Help(cur,help,sizeof(help));
         Tk_Wrap(help,0.9f,room);
@@ -787,9 +1050,9 @@ void MainMenu_Draw(void) {
 #ifdef PORT
     if(Port_TagAvailable()) {
         Tk_Begin(); Ps_Align(1);
-        if(tagPage==3) TagSetup_Draw();
+        if(tagPage==3) { TagSetup_Draw(); TagMenu_SelectAgain(); }
         else {
-            if(tagPage) { Tk_Backdrop(); TagMenu_DrawPage(); }
+            if(tagPage) { Tk_Backdrop(); TagMenu_DrawPage(); TagMenu_SelectAgain(); }
             if(TagNet_HostMenu()) Ps_Text(256,Ps_TextTop(Tk_PY(1180),0.65f),TagNet_HostChoosing()?"BRINGING GUESTS TO BATTLE SETUP":"CHOOSE A MODE FOR THE LOBBY",0.65f,470,3);
             else if(!tagPage) TagMenu_SelectHint("PRESS SELECT FOR MODDED MODES");
             if(TagNet_HostMenu())TagLobbyRoster_Draw(1);
@@ -846,6 +1109,27 @@ void MainMenu_Update(void) {
         gSaveData->unkA0C = 0; \
     }
 
+#ifdef PORT
+/* What the radar's ball (the modes' page's row) `item` does: as the list's Cross did before the radar. */
+static void TagMenu_RadarChoose(s32 item) {
+    if(TagNet_HostMenu()) {
+        if(item<3)TagNet_ChoosePreset(item,0);
+        else if(item<5){tagMode=item;presetPage=0;TagMenu_SetPage(TAG_MENU_PRESET);}
+        else if(item==5)TagMenu_SetPage(4);
+        else TagNet_Leave();
+    }
+    else if(item==TagMenu_Count(1)-1) TagMenu_SetPage(0);
+    else if(item==3 || item==4) { tagMode=item==3?TAG_MODE_GAUNTLET:TAG_MODE_TOURNAMENT; TagMenu_SetPage(2); }
+    else if(item==5) {
+        TagSession_Leave();gPortScreen=PORT_SCREEN_TAG_LOBBY;
+        MAINMENU_CHOOSE(MPROG_MODE_PORT_SCREEN);
+        MainMenu_PlateGoto(0,"fl_ok");
+    }
+    else if(item==6) TagMenu_SetPage(4);
+    else { tagMode=item; TagMenu_SetPage(2); }
+}
+#endif
+
 /* Pad 0: up / down move the cursor (the ring scrolls at the ends), confirm enters a mode, cancel leaves. */
 void MainMenu_Input(s32 *result) {
 #ifdef PORT
@@ -857,10 +1141,23 @@ void MainMenu_Input(s32 *result) {
         if(TagNet_HostChoosing())return;
         if(TagLobbyRoster_Input())return;
     }
+    /* The radar locking on a ball: nothing else is taken until it ends; then the mode opens. (Dropped if the page is
+       no longer the radar's, or an online room's host menu came or went under it: its choices are another list.) */
+    if(tmLockAt) {
+        if(tagPage!=1 || (gMainMenu->flags & MAINMENU_LEAVING) || tmLockHost!=(TagNet_HostMenu()!=0)) { tmLockAt=0; }
+        else if(sTkFrames-tmLockAt>=TR_LOCK_FRAMES) {
+            s32 item=tmLockRow;
+            tmLockAt=0;
+            if(item>=0 && item<TagMenu_Count(1)) { TagMenu_RadarChoose(item); Snd_PlaySe(1,4); }
+            return;
+        }
+        else return;
+    }
     /* A tap (menu/tag_kit.h): a row is chosen and entered, a button at the foot pressed (the setup page takes its own) */
     if(tagPage!=3) {
         s32 kind,value;
         if(Tk_Tap(&kind,&value)) {
+            if(kind==TK_LANG) { extern void Port_TagLangSet(int); Port_TagLangSet(value); Snd_PlaySe(1,1); return; }
             if(kind==TK_PAD) { gPad[0].gamePressed|=value; gPad[0].gameRepeat|=value; }
             else if(tagPage && value>=0 && value<TagMenu_Count(tagPage)) {
                 if(!TagMenu_IsOption(value)) { TagMenu_Goto(value); gPad[0].gamePressed|=PADG_CROSS; }
@@ -869,8 +1166,12 @@ void MainMenu_Input(s32 *result) {
             }
         }
     }
-    /* Select is available immediately, including while the native menu enters. */
+    /* Select is available immediately, including while the native menu enters. Into the mod's pages: at once. Out of
+       them (back to the game's own modes): a second Select within two seconds. On a phone the touch pad's SELECT sits
+       over the foot of the screen, where the pages' buttons are: one tap meant for them left the mod's menus (v58). */
     if(!TagNet_HostMenu() && tagLabelsReady && !Port_TagControllersActive() && (gPad[0].gamePressed&PADG_SELECT)) {
+        if(tagPage && (tmSelectAt==0 || sTkFrames-tmSelectAt>120)) { tmSelectAt=sTkFrames?sTkFrames:1; Snd_PlaySe(1,7); return; }
+        tmSelectAt=0;
         TagSession_Leave(); TagMenu_SetPage(tagPage?0:1); Snd_PlaySe(1,0); return;
     }
     if(tagPage==3) {
@@ -881,6 +1182,44 @@ void MainMenu_Input(s32 *result) {
     }
     if(tagPage!=TAG_MENU_PRESET && tagPage>=5 && (gPad[0].gameRepeat&(PADG_LEFT|PADG_RIGHT))) {
         TagMenu_SettingChange(TagMenu_Cur(),(gPad[0].gameRepeat&PADG_LEFT)?-1:1); return;
+    }
+    if(tagPage==1 && !(gPad[0].gamePressed&(PADG_CROSS|PADG_TRIANGLE))) {
+        u32 nav=gPad[0].gameRepeat;
+        s32 balls=TagMenu_Count(1)<TR_BALLS?TagMenu_Count(1):TR_BALLS,cur=TagMenu_Cur();
+        if(gPad[0].repeat&PAD_LSTICK_LEFT) nav|=PADG_LEFT;
+        if(gPad[0].repeat&PAD_LSTICK_RIGHT) nav|=PADG_RIGHT;
+        if(gPad[0].repeat&PAD_LSTICK_UP) nav|=PADG_UP;
+        if(gPad[0].repeat&PAD_LSTICK_DOWN) nav|=PADG_DOWN;
+        if(gPad[0].gamePressed&PADG_SQUARE) { /* the language: PT, EN, ES in turn */
+            extern int Port_TagLang(void);
+            extern void Port_TagLangSet(int);
+            s32 lang=Port_TagLang(); /* (0 English, 1 Portuguese, 2 Spanish; in the switch's order PT, EN, ES) */
+            Port_TagLangSet(lang==1?0:lang==0?2:1);
+            Snd_PlaySe(1,1); return;
+        }
+        if(balls>0 && (nav&(PADG_UP|PADG_DOWN|PADG_LEFT|PADG_RIGHT))) {
+            s32 was=cur;
+            if(cur<0 || cur>=balls) cur=0;
+            else if(nav&(PADG_LEFT|PADG_RIGHT)) cur=(cur+((nav&PADG_RIGHT)?1:balls-1))%balls; /* turn the radar */
+            else { /* up / down: the nearest ball that way on the screen (none: stay) */
+                f32 x0,y0,best=100000.0f;
+                s32 k,pick=cur,down=(nav&PADG_DOWN)!=0;
+                TagMenu_RadarBall(cur,&x0,&y0);
+                for(k=0;k<balls;k++) {
+                    f32 x,y,along,across,score;
+                    if(k==cur) continue;
+                    TagMenu_RadarBall(k,&x,&y);
+                    along=down?y-y0:y0-y;
+                    across=x>x0?x-x0:x0-x;
+                    if(along<4.0f) continue;
+                    score=along+across*1.5f;
+                    if(score<best) { best=score; pick=k; }
+                }
+                cur=pick;
+            }
+            if(cur!=was) { TagMenu_Goto(cur); tmRadarRow=cur; Snd_PlaySe(1,0); }
+            return;
+        }
     }
     /* up / down on the mod's pages at once (the game's plates are not shown there: no waiting for their movie) */
     if(tagPage && !(gPad[0].gamePressed&(PADG_CROSS|PADG_TRIANGLE)) && (gPad[0].gameRepeat&(PADG_UP|PADG_DOWN)) && TagMenu_Count(tagPage)>0) {
@@ -967,11 +1306,9 @@ void MainMenu_Input(s32 *result) {
                 if(item==TagMenu_Count(tagPage)-1) TagMenu_SetPage(4);
                 else TagMenu_SettingChange(item,1);
             } else if(tagPage==4) TagMenu_SetPage(item==TAG_OPTION_GROUP_COUNT?1:5+item);
-            else if(tagPage==1 && TagNet_HostMenu()) {
-                if(item<3)TagNet_ChoosePreset(item,0);
-                else if(item<5){tagMode=item;presetPage=0;TagMenu_SetPage(TAG_MENU_PRESET);}
-                else if(item==5)TagMenu_SetPage(4);
-                else TagNet_Leave();
+            else if(tagPage==1) {
+                if(item>=0 && item<TR_BALLS && item<TagMenu_Count(1)) { tmLockRow=item; tmRadarRow=item; tmLockHost=TagNet_HostMenu()!=0; tmLockAt=sTkFrames; if(!tmLockAt) tmLockAt=1; }
+                else TagMenu_RadarChoose(item);
             }
             else if(item==TagMenu_Count(tagPage)-1) TagMenu_SetPage(tagPage==2?1:0);
             else if(tagPage==2) {
