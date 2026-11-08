@@ -105,8 +105,21 @@ s32 Progress_Main(s32 arg) {
             }
             gPortTboSpar = 0;
         }
+        {   /* A lobby's match (port/src/gs/net_lobby.c): "Return to Vs Menu", the owner's way back to the lobby window,
+               leaves for the main menu, which ends the session on every copy (there is no versus menu in it) */
+            extern int Port_NetLobbyOwnerSide(void);
+
+            if ((reason & 0x80) && Port_NetLobbyOwnerSide() >= 0) {
+                gProgress->flags &= ~MPROG_FLAG10;
+                gProgress->flags &= ~MPROG_FLAG20;
+                gProgress->mode = 4;
+            }
+        }
 #endif
     }
+#ifdef PORT
+    { extern void TagSession_Return(s32,s32); TagSession_Return(flags,reason); }
+#endif
     if (gProgress->mode == 1 || gProgress->mode == 4) {
         if (gMenuArc1 == NULL) {
             gMenuArc1 = File_LoadSync(gProgress->baseFile + 1, NULL, 0);
@@ -123,7 +136,7 @@ s32 Progress_Main(s32 arg) {
             gProgress->mode = 1;
             break;
         case 1:
-            Bgm_Play(MENU_BGM_TITLE);
+            Bgm_Play(DISC_RESOURCE(MENU_BGM_TITLE, 0x816));
             ret = Title_Run(1);
             Adx_StopAll();
             switch (ret) {
@@ -140,7 +153,7 @@ s32 Progress_Main(s32 arg) {
             }
             break;
         case 4:
-            Bgm_Play(MENU_BGM_TITLE);
+            Bgm_Play(DISC_RESOURCE(MENU_BGM_TITLE, 0x84C));
             if (MainMenu_Run(2)) {
                 Adx_StopAll();
                 MENU_ARC_FREE(gMenuArc1);

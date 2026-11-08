@@ -1,5 +1,6 @@
 package com.dfdx047.dragonrage.ui.screens
 
+import com.dfdx047.dragonrage.ui.components.SkinLegend
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -92,12 +93,14 @@ fun ControlsScreen(vm: AppViewModel) {
         ) {
             key(c.layout) { // (the other layout is another view)
                 AndroidView(
-                    factory = { ctx -> createTouchSurface(ctx, c.copy(mode = TouchMode.ALWAYS)).view },
+                    // (a preview inside a scrolling page: no display-cutout safe area, TouchPadView.ignoreCutout)
+                    factory = { ctx -> createTouchSurface(ctx, c.copy(mode = TouchMode.ALWAYS)).also { (it as? TouchPadView)?.ignoreCutout = true }.view },
                     update = { (it as TouchSurface).config = c.copy(mode = TouchMode.ALWAYS) },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
         }
+        SkinLegend(c.skin)
         FilledTonalButton(onClick = { editing = true }, modifier = Modifier.fillMaxWidth()) {
             Icon(Icons.Rounded.Edit, null, Modifier.size(18.dp)); Spacer(Modifier.size(8.dp)); Text(stringResource(R.string.touch_edit_layout))
         }
@@ -140,9 +143,9 @@ fun ControlsScreen(vm: AppViewModel) {
             )
             StepSlider(stringResource(R.string.opacity), { "${it * 10}%" }, c.opacity / 10, 1..10) { vm.updateTouch(c.copy(opacity = it * 10)) }
             StepSlider(stringResource(R.string.touch_size), { "${it * 10}%" }, (c.scale * 10).roundToInt(), 5..20) { vm.updateTouch(c.copy(scale = it / 10f)) }
-            ToggleRow(stringResource(R.string.touch_haptics), stringResource(R.string.touch_haptics_text), c.haptics) { vm.updateTouch(c.copy(haptics = it)) }
-            ToggleRow(stringResource(R.string.touch_float), stringResource(R.string.touch_float_text), c.sticksFloat) { vm.updateTouch(c.copy(sticksFloat = it)) }
         }
+
+        TouchProSection(c) { vm.updateTouch(it) }
 
         SectionCard(stringResource(R.string.clash_title), Icons.Rounded.Bolt, accent = Dbz.KiBlue) {
             ToggleRow(

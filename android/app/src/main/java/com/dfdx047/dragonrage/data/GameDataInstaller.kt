@@ -2,8 +2,10 @@ package com.dfdx047.dragonrage.data
 
 import android.content.ContentResolver
 import android.content.Context
+import android.content.Intent
 import com.dfdx047.dragonrage.R
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.os.StatFs
 import java.io.File
 import java.io.FileInputStream
@@ -19,7 +21,7 @@ import kotlinx.coroutines.withContext
 sealed interface InstallState {
     data object NotInstalled : InstallState
     data class Working(val step: String, val progress: Float, val detail: String) : InstallState
-    data class Installed(val files: Int, val bytes: Long, val modified: Boolean = false) : InstallState
+    data class Installed(val files: Int, val bytes: Long, val modified: Boolean = false, val game: Game = Game.BT3) : InstallState
     data class Failed(val message: String) : InstallState
 }
 
@@ -53,7 +55,8 @@ class GameDataInstaller(
         return InstallState.Installed(files, bytes, modified)
     }
 
-    suspend fun install(uri: Uri, report: (InstallState.Working) -> Unit): InstallState.Installed = withContext(Dispatchers.IO) {
+    /** [only]: the game the image must be (the BT2 tab takes only a BT2 image); null: whichever it is. */
+    suspend fun install(uri: Uri, only: Game? = null, report: (InstallState.Working) -> Unit): InstallState.Installed = withContext(Dispatchers.IO) {
         val pfd = resolver.openFileDescriptor(uri, "r") ?: throw Stop(context.getString(R.string.err_open_file))
         pfd.use {
             val channel = FileInputStream(pfd.fileDescriptor).channel
@@ -64,6 +67,8 @@ class GameDataInstaller(
             }
             iso.use {
                 report(InstallState.Working(context.getString(R.string.step_checking), 0f, context.getString(R.string.detail_finding)))
+                if (iso.find(BT2_ELF) != null) return@withContext installBt2(uri, iso, report)
+                if (only == Game.BT2) throw Stop(context.getString(R.string.err_not_bt2, foundInImage(context, iso)))
                 val original = verify(iso, report)
                 if (!original) compatible(iso)
                 extract(iso, report, modified = !original)
@@ -197,6 +202,62 @@ class GameDataInstaller(
         }
     }
 
+    /** Budokai Tenkaichi 2's state: its image's address and the right to read it, or the copy of an older install. */
+    fun currentStateBt2(): InstallState {
+        if (!paths.bt2InstalledMarker.exists()) return InstallState.NotInstalled
+        if (bt2ImageUri() == null && !paths.bt2Iso.exists()) return InstallState.NotInstalled
+        val bytes = paths.bt2InstalledMarker.readLines().firstOrNull { it.startsWith("bytes=") }?.substringAfter('=')?.toLongOrNull()
+        return InstallState.Installed(1, bytes ?: paths.bt2Iso.length(), game = Game.BT2)
+    }
+
+    /** The BT2 image's address, if one was set up (and its permission is still held). */
+    private fun bt2ImageUri(): Uri? = runCatching { Uri.parse(paths.bt2IsoUri.readText().trim()) }.getOrNull()
+        ?.takeIf { u -> resolver.persistedUriPermissions.any { it.uri == u && it.isReadPermission } }
+
+    /** The BT2 image, open for the engine (it reads it as /proc/self/fd/<n>); null when there is none or it is gone. */
+    fun openBt2Image(): ParcelFileDescriptor? = bt2ImageUri()?.let { runCatching { resolver.openFileDescriptor(it, "r") }.getOrNull() }
+
+    /**
+     * Budokai Tenkaichi 2 (USA, SLUS-21441): its runtime (BT2-Recomp) reads the image itself, where it lies, through a file
+     * descriptor of the document the player picked: nothing of gigabytes is copied. Its code is recompiled from one exact
+     * program (tools/ps2recomp/generate_game.py of BT2-Recomp): another program, a mod's too, would run code that does not
+     * match it, so only that one is taken.
+     */
+    private suspend fun installBt2(uri: Uri, iso: IsoImage, report: (InstallState.Working) -> Unit): InstallState.Installed {
+        val elf = iso.find(BT2_ELF)!!
+        report(InstallState.Working(context.getString(R.string.step_checking), 0.5f, context.getString(R.string.detail_checksums)))
+        coroutineContext.ensureActive()
+        val program = iso.read(elf.offset, elf.size.toInt())
+        val hash = sha256(program)
+        ActivityLog.info("iso", "bt2: $BT2_ELF ${program.size} bytes, SHA-256 $hash")
+        if (checkSums && hash != BT2_ELF_SHA256) {
+            throw Stop(context.getString(R.string.err_bt2_program, program.size, hash.take(8)))
+        }
+        // the right to open the image again: without it the game could not read the disc later
+        val persisted = runCatching { resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        persisted.exceptionOrNull()?.let { ActivityLog.warn("iso", "bt2: no lasting permission for the image: $it") }
+        if (persisted.isFailure && resolver.persistedUriPermissions.none { it.uri == uri && it.isReadPermission }) {
+            throw Stop(context.getString(R.string.bt4_err_permission))
+        }
+        val previous = bt2ImageUri()
+        if (previous != null && previous != uri) runCatching { resolver.releasePersistableUriPermission(previous, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        if (paths.bt2Iso.exists()) ActivityLog.info("iso", "bt2: the copy of an older install deleted (${paths.bt2Iso.length() shr 20} MB)")
+        paths.bt2Iso.delete() // (an older install's copy: no longer needed)
+        paths.bt2Data.mkdirs()
+        paths.bt2Saves.mkdirs()
+        paths.bt2IsoUri.parentFile?.mkdirs()
+        paths.bt2IsoUri.writeText(uri.toString() + "\n")
+        paths.bt2InstalledMarker.writeText("bytes=${iso.size}\nserial=${Game.BT2.serial}\n")
+        return InstallState.Installed(1, iso.size, game = Game.BT2)
+    }
+
+    fun uninstallBt2() {
+        bt2ImageUri()?.let { u -> runCatching { resolver.releasePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }
+        paths.bt2IsoUri.delete()
+        paths.bt2InstalledMarker.delete()
+        paths.bt2Iso.delete()
+    }
+
     fun uninstall() {
         paths.installedMarker.delete()
         paths.gameData.listFiles()?.filter { it.name != "mods" }?.forEach { it.deleteRecursively() }
@@ -205,9 +266,24 @@ class GameDataInstaller(
     private fun sha1(data: ByteArray): String =
         MessageDigest.getInstance("SHA-1").digest(data).joinToString("") { "%02x".format(it) }
 
+    private fun sha256(data: ByteArray): String =
+        MessageDigest.getInstance("SHA-256").digest(data).joinToString("") { "%02x".format(it) }
+
     companion object {
         /** Why a file is not a disc image, from its first bytes: a compressed archive or disc format (the players sent
          *  .7z, .zip, .rar and .chd files), a web page saved instead of the download, or a file far too small. */
+        /** What an image holds, in words for a refusal: the game it is, by its program, or the program's name. */
+        fun foundInImage(context: Context, iso: IsoImage): String {
+            val top = iso.files.map { it.path.substringBefore(';') }
+            fun has(name: String) = top.any { it.equals(name, ignoreCase = true) }
+            return when {
+                has(BT2_ELF) -> "Budokai Tenkaichi 2 (USA, SLUS-21441)"
+                has("SLUS_216.78") -> "Budokai Tenkaichi 3 (USA, SLUS-21678)"
+                has("SLUS_219.78") -> "Budokai Tenkaichi 4 (SLUS_219.78)"
+                else -> top.firstOrNull { PS2_PROGRAM.matches(it) } ?: context.getString(R.string.found_no_ps2_program)
+            }
+        }
+
         fun notIsoMessage(context: Context, channel: java.nio.channels.FileChannel): String {
             val head = ByteArray(16)
             val size = runCatching { channel.size() }.getOrDefault(-1L)
@@ -243,5 +319,10 @@ class GameDataInstaller(
         const val DBZP_SHA1 = "4f910969e05d9b25c83af7642b60da9949a4348b"
         const val ROM_BASE = 0x100000L
         const val ROM_END = 0x2FF180L
+
+        // BT2-Recomp: the program its code is generated from (tools/ps2recomp/generate_game.py, LOCAL_CANDIDATE_SHA256)
+        const val BT2_ELF = "SLUS_214.41"
+        private val PS2_PROGRAM = Regex("(?i)S[LC][A-Z]{2}_\\d{3}\\.\\d{2}")
+        const val BT2_ELF_SHA256 = "f7e5ba8e74657b8533c3a0fedff45de0d052be3a23fe4c475059ef888a81f03e"
     }
 }

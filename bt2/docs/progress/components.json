@@ -1,0 +1,54 @@
+{
+  "updated": "2026-10-20",
+  "flow": [
+    {"name": "Startup", "status": "verified", "note": "Boot to frame loop"},
+    {"name": "Pad & card check", "status": "verified", "note": "Native services"},
+    {"name": "Films", "status": "working", "note": "Play with sound"},
+    {"name": "Title & menus", "status": "working", "note": "All modes run"},
+    {"name": "Versus battle", "status": "working", "note": "130 characters"},
+    {"name": "Story mode", "status": "working", "note": "Parts, towns, shop"},
+    {"name": "Saves", "status": "incomplete", "note": "Loading confirmed", "current": true}
+  ],
+  "groups": [
+    {
+      "name": "Core subsystems",
+      "items": [
+        {"name": "EE CPU and kernel", "status": "working", "note": "Every mapped function native"},
+        {"name": "IOP services", "status": "working", "note": "Native; no IOP code runs"},
+        {"name": "Disc / filesystem", "status": "verified", "note": "Reads byte-identical"},
+        {"name": "Input", "status": "working", "note": "Keyboard, XInput, DualSense"},
+        {"name": "Memory card", "status": "incomplete", "note": "Loads; saving untried"}
+      ]
+    },
+    {
+      "name": "Graphics and sound",
+      "items": [
+        {"name": "GS and display", "status": "working", "note": "GPU renderer, shown on GPU"},
+        {"name": "GIF / VIF / VU", "status": "working", "note": "Native VU1, checked in gate"},
+        {"name": "IPU / video", "status": "working", "note": "Both films decode"},
+        {"name": "Audio", "status": "working", "note": "Music, voices, effects"},
+        {"name": "Launcher and menus", "status": "working", "note": "Settings, in-game menu"}
+      ]
+    },
+    {
+      "name": "Enhancements",
+      "items": [
+        {"name": "HD textures", "status": "working", "note": "PCSX2 names, pack 2"},
+        {"name": "Super-sampling", "status": "working", "note": "2x to 16x at full speed"},
+        {"name": "Widescreen", "status": "working", "note": "16:9, gameplay unchanged"},
+        {"name": "60 fps battles", "status": "working", "note": "A setting; full speed at 16x"},
+        {"name": "Performance", "status": "working", "note": "Half a core; GPU 6 to 10 ms"}
+      ]
+    },
+    {
+      "name": "Pipeline and checks",
+      "items": [
+        {"name": "Native Windows host", "status": "verified", "note": "MSVC x64, Debug and Release"},
+        {"name": "Code generation", "status": "verified", "note": "11,139 + 494 functions"},
+        {"name": "Game coverage", "status": "working", "note": "All modes; final sweep left"},
+        {"name": "Tests", "status": "verified", "note": "Unit tests, Python suites pass"},
+        {"name": "Original comparisons", "status": "incomplete", "note": "32/32 pass; 3D not compared"}
+      ]
+    }
+  ]
+}

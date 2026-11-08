@@ -47,7 +47,9 @@ object AppUpdates {
             }
         }
         val mine = parse(currentName) ?: listOf(0)
-        val found = best?.takeIf { compare(bestV!!, mine) > 0 } ?: return null
+        // (and its code, which follows the name as in build.gradle.kts, above the one installed: an older build
+        // installed with a bigger code, 0.8.1's 801 against 0.9.0's 55, would be a downgrade Android refuses)
+        val found = best?.takeIf { compare(bestV!!, mine) > 0 && codeOf(bestV!!) > currentCode } ?: return null
         // The notes: the changelog in the repository as it is at that version's tag (CHANGELOG.md / .pt.md / .es.md
         // since 0.7.3, which hold the latest version's notes; CHANGELOG-vX.Y.Z.md before), else the release's own text.
         val lang = java.util.Locale.getDefault().language
@@ -67,6 +69,9 @@ object AppUpdates {
         }
         return null
     }
+
+    /** A release's version code: X*10000 + Y*100 + Z (android/app/build.gradle.kts). */
+    private fun codeOf(v: List<Int>): Int = v.getOrElse(0) { 0 } * 10000 + v.getOrElse(1) { 0 } * 100 + v.getOrElse(2) { 0 }
 
     private fun parse(v: String): List<Int>? =
         v.substringBefore('-').split('.').map { it.toIntOrNull() ?: return null }.takeIf { it.isNotEmpty() }

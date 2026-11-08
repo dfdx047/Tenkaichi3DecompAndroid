@@ -313,6 +313,11 @@ static void page_performance(PortVideo &v) {
 
 static void page_effects(PortVideo &v) {
     card_begin("fx", T("PlayStation 2 effects", "Efeitos do PlayStation 2", "Efectos del PlayStation 2"));
+    {
+        bool lite = v.tagLite != 0;
+        if (aswitch(T("Tag Team light graphics", "Gráficos leves no Tag Team", "Gráficos ligeros en Tag Team"),
+                    T("Only in Tag Team: lower resolution, no shadows, fewer effects.", "Só no Tag Team: resolução menor, sem sombras, menos efeitos.", "Solo en Tag Team: menor resolución, sin sombras, menos efectos."), &lite)) { v.tagLite = lite ? 1 : 0; }
+    }
     const char *names[6] = {T("Outline", "Contorno", "Contorno"), T("See-through tint", "Tom através do cenário", "Tono a través del escenario"),
                             T("Depth tint", "Névoa de distância", "Niebla de distancia"), T("Glare and glow", "Brilho e reflexo", "Brillo y resplandor"),
                             T("Distance blur", "Desfoque de distância", "Desenfoque de distancia"), T("Movement blur", "Desfoque de movimento", "Desenfoque de movimiento")};
@@ -508,6 +513,19 @@ static void page_online(void) {
         }
     }
     card_end();
+
+    card_begin("watch", T("Spectators and lobbies", "Espectadores e lobbies", "Espectadores y lobbies"));
+    {
+        bool watch = Port_Setting("net_spectators", 1) != 0;
+        if (aswitch(T("Let others watch my matches", "Deixar outros assistirem minhas partidas", "Dejar que otros vean mis partidas"),
+                    T("Up to six people can watch your match, by your room code or your address; they never change the fight.", "Até seis pessoas podem assistir à sua partida, pelo código da sala ou pelo seu endereço; elas nunca mudam a luta.", "Hasta seis personas pueden ver tu partida, por el código de la sala o tu dirección; nunca cambian la pelea."), &watch)) {
+            save_setting("net_spectators", watch ? 1 : 0);
+        }
+        ImGui::TextWrapped("%s", T("- Watch a match: Dragon Net Battle > Join room, type the code and choose Watch the match. View: player 1, player 2 or split screen (R1).\n- Lobby: Dragon Net Battle > Create room > Open a lobby (or Tenkaichi Budokai Online > Lobby). Up to eight people: two fight, the rest watch, with rules, Ready and chat.\n- Quick match, Region row: Auto finds someone nearby first and everyone after 25 s; a region first, everyone after 40 s.\n- The pause menu (Back button) has Back to the lobby, Leave / Close the lobby, Change view and Stop watching when they apply.",
+            "- Assistir a uma partida: Dragon Net Battle > Entrar em sala, digite o código e escolha Assistir à partida. Câmera: jogador 1, jogador 2 ou tela dividida (R1).\n- Lobby: Dragon Net Battle > Criar sala > Abrir um lobby (ou Tenkaichi Budokai Online > Lobby). Até oito pessoas: duas lutam e as outras assistem, com regras, Pronto e chat.\n- Partida rápida, linha Região: Auto procura alguém perto primeiro e qualquer um depois de 25 s; uma região primeiro, qualquer um depois de 40 s.\n- O menu de pausa (botão Voltar) tem Voltar ao lobby, Sair / Fechar o lobby, Trocar câmera e Parar de assistir quando valem.",
+            "- Ver una partida: Dragon Net Battle > Entrar a sala, escribe el código y elige Ver la partida. Cámara: jugador 1, jugador 2 o pantalla dividida (R1).\n- Lobby: Dragon Net Battle > Crear sala > Abrir un lobby (o Tenkaichi Budokai Online > Lobby). Hasta ocho personas: dos pelean y el resto mira, con reglas, Listo y chat.\n- Partida rápida, fila Región: Auto busca a alguien cerca primero y a cualquiera tras 25 s; una región primero, cualquiera tras 40 s.\n- El menú de pausa (botón Atrás) tiene Volver al lobby, Salir / Cerrar el lobby, Cambiar cámara y Dejar de ver cuando aplican."));
+    }
+    card_end();
 }
 
 static void page_cheats(void) {
@@ -681,6 +699,42 @@ static void build_android(void) {
     }
     ImGui::Dummy(ImVec2(0.0f, fs() * 0.3f));
 
+    // a lobby's match and a watched match: the ways back and out (the PC's window has them at its top)
+    {
+        PortLobbyView lv;
+        const bool inLobby = Port_LobbyView(&lv) && lv.inMatch, watching = Port_NetSpectating() != 0;
+        if (inLobby || watching) {
+            const float bh = fs() * 2.3f;
+            card_begin("lobby", inLobby ? T("Lobby", "Lobby", "Lobby") : T("Watching", "Assistindo", "Viendo"));
+            if (inLobby && lv.code[0] != '\0') { ImGui::TextColored(kGold, "%s %s", T("Code", "Código", "Código"), lv.code); }
+            if (watching) {
+                ImGui::TextWrapped(T("Watching %s vs %s. View: %s", "Assistindo %s x %s. Câmera: %s", "Viendo %s vs %s. Cámara: %s"), Port_NetName(0),
+                                   Port_NetName(1), Port_NetSpecView() == 2 ? T("both (split screen)", "os dois (tela dividida)", "los dos (pantalla dividida)")
+                                                                           : spec_view_name(Port_NetSpecView()));
+                if (ImGui::Button(T("Change view", "Trocar câmera", "Cambiar cámara"), ImVec2(0.0f, bh))) { spec_view_next(); }
+                ImGui::SameLine();
+            }
+            if (inLobby && lv.owner) {
+                if (ImGui::Button(T("Back to the lobby", "Voltar ao lobby", "Volver al lobby"), ImVec2(0.0f, bh))) {
+                    Port_LobbyDo(LOBBY_BACK, 0, 0); // (the match ends for everyone: all go back to the lobby's page)
+                    open = false;
+                }
+                ImGui::SameLine();
+            }
+            if (inLobby) {
+                if (ImGui::Button(lv.owner ? T("Close the lobby", "Fechar o lobby", "Cerrar el lobby") : T("Leave the lobby", "Sair do lobby", "Salir del lobby"),
+                                  ImVec2(0.0f, bh))) {
+                    Port_LobbyDo(LOBBY_LEAVE, 0, 0);
+                    open = false;
+                }
+            } else if (ImGui::Button(T("Stop watching", "Parar de assistir", "Dejar de ver"), ImVec2(0.0f, bh))) {
+                Port_NetSpecLeave();
+                open = false;
+            }
+            card_end();
+        }
+    }
+
     if (askQuit) {
         card_begin("quit", T("Quit to the launcher?", "Sair para o app?", "¿Salir a la app?"));
         ImGui::TextWrapped("%s", T("The game closes and you go back to the app. Progress not saved in the game is lost.",
@@ -751,7 +805,9 @@ struct NmPair { char key[32]; int value; };
 static NmPair sNmQueue[64], sNmSnap[64];
 static int sNmQueueN, sNmSnapN;
 static char sNmFonts[3][1024], sNmDevice[256];
-static volatile int sNmAction; // 1 resume, 2 quit, 3 the controller's buttons (this window, Controls)
+static char sNmLobbyCode[8], sNmLobbyServer[12], sNmSpecNames[130]; // (a lobby's code and service; watched players, "a|b")
+static volatile int sNmAction; // 1 resume, 2 quit, 3 the controller's buttons (this window, Controls); 4 back to the lobby, 5 leave it, 6 the next view, 7 stop watching,
+                               // 8 the controller's automatic set-up (the PS2 layout)
 
 static void nm_lock(void) {
     if (sNmLock == NULL) {
@@ -795,6 +851,7 @@ static void nm_snapshot(void) {
     nm_put("present", sGL ? 0 : GsGpu_PresentGet());
     nm_put("meter", meter_on() ? 1 : 0);
     nm_put("fx_off", v.fxOff);
+    nm_put("tag_lite", v.tagLite);
     nm_put("glow", v.glow);
     nm_put("music", v.music);
     nm_put("effects", v.effects);
@@ -810,12 +867,24 @@ static void nm_snapshot(void) {
     nm_put("clash_square", Port_ClashSquare() != 0);
     nm_put("clash_square_x", Port_ClashSquareX());
     nm_put("chat", PortChat_Enabled() != 0);
+    nm_put("net_spectators", Port_Setting("net_spectators", 1) != 0);
     nm_put("game_speed", Port_GameSpeed());
     nm_put("skip_logos", Port_Setting("skip_logos", 0) != 0);
     nm_put("skip_intro", Port_Setting("skip_intro", 0) != 0);
     nm_put("skip_copyright", Port_Setting("skip_copyright", 0) != 0);
     nm_put("unlock_done", gPortUnlockDone != 0);
     nm_put("online", Port_NetActive() != 0);
+    {
+        PortLobbyView lv;
+        const bool inLobby = Port_LobbyView(&lv) && lv.inMatch;
+        nm_put("lobby_match", inLobby);
+        nm_put("lobby_owner", inLobby && lv.owner);
+        nm_put("spectating", Port_NetSpectating() != 0);
+        nm_put("spec_view", Port_NetSpecView());
+        SDL_snprintf(sNmLobbyCode, sizeof(sNmLobbyCode), "%s", inLobby ? lv.code : "");
+        SDL_snprintf(sNmLobbyServer, sizeof(sNmLobbyServer), "%s", inLobby ? Port_LobbyServer() : "");
+        SDL_snprintf(sNmSpecNames, sizeof(sNmSpecNames), "%s|%s", Port_NetName(0), Port_NetName(1));
+    }
     nm_put("fps", (int)(ImGui::GetCurrentContext() != NULL ? ImGui::GetIO().Framerate : 0.0f));
     {
         const int uses[3] = {MENU_TEXT_MENU, MENU_TEXT_BATTLE, MENU_TEXT_DIALOGUE};
@@ -853,6 +922,7 @@ static void nm_apply(const char *key, int value) {
     else if (strcmp(key, "texture_pack") == 0) { v.texPack = value; }
     else if (strcmp(key, "frame_skip") == 0) { v.frameSkip = value; }
     else if (strcmp(key, "fx_off") == 0) { v.fxOff = value; }
+    else if (strcmp(key, "tag_lite") == 0) { v.tagLite = value; }
     else if (strcmp(key, "glow") == 0) { v.glow = value; }
     else if (strcmp(key, "music") == 0) { v.music = value; }
     else if (strcmp(key, "effects") == 0) { v.effects = value; }
@@ -895,6 +965,8 @@ static void nm_apply(const char *key, int value) {
         Port_ClashSquareXSet(value);
     } else if (strcmp(key, "chat") == 0) {
         PortChat_EnabledSet(value != 0);
+    } else if (strcmp(key, "net_spectators") == 0) {
+        save_setting("net_spectators", value != 0 ? 1 : 0);
     } else if (strcmp(key, "game_speed") == 0) {
         Port_GameSpeedSet(value < 50 ? 50 : value > 200 ? 200 : value);
         Port_AudioRefresh();
@@ -936,6 +1008,30 @@ static void nm_frame(void) {
         set_open(true);
     } else if (action == 2) {
         quit_to_app();
+    } else if (action == 4 && sNativeOpen) { // a lobby's match, its owner: the match ends for everyone, all back to the lobby's page
+        Port_LobbyDo(LOBBY_BACK, 0, 0);
+    } else if (action == 5 && sNativeOpen) { // leave the lobby (its owner: close it)
+        Port_LobbyDo(LOBBY_LEAVE, 0, 0);
+    } else if (action == 6) { // watching: the next view (the menu stays)
+        spec_view_next();
+        sNmDirty = 1;
+    } else if (action == 7 && sNativeOpen) { // stop watching
+        Port_NetSpecLeave();
+    } else if (action == 8) { // the controller's automatic set-up: the PS2 layout on the wireless one (gs_input.c)
+        static char line[160];
+        char name[96];
+        int slot = PortInput_AutoConfigure(0, name, (int)sizeof(name));
+        if (slot < 0) {
+            SDL_strlcpy(line, T("No controller is connected: pair it by Bluetooth (or plug it in) and press again.",
+                                "Nenhum controle conectado: pareie pelo Bluetooth (ou ligue no cabo) e aperte de novo.",
+                                "No hay ningún control conectado: emparéjalo por Bluetooth (o conéctalo) y pulsa otra vez."), sizeof(line));
+        } else {
+            SDL_snprintf(line, sizeof(line), T("Controller %d (%s): PS2 layout, deadzone 10%%, vibration on.",
+                                               "Controle %d (%s): layout de PS2, zona morta 10%%, vibração ligada.",
+                                               "Control %d (%s): diseño de PS2, zona muerta 10%%, vibración activada."), slot + 1, name);
+        }
+        Port_UiNotice(line);
+        sNmDirty = 1;
     }
     if ((want == 0 || action == 1) && sNativeOpen) {
         sNativeOpen = 0;
@@ -999,6 +1095,9 @@ int Ui_NmText(const char *key, char *out, int size) {
     else if (strcmp(key, "fonts_menu") == 0) { t = sNmFonts[0]; }
     else if (strcmp(key, "fonts_battle") == 0) { t = sNmFonts[1]; }
     else if (strcmp(key, "fonts_text") == 0) { t = sNmFonts[2]; }
+    else if (strcmp(key, "lobby_code") == 0) { t = sNmLobbyCode; }
+    else if (strcmp(key, "lobby_server") == 0) { t = sNmLobbyServer; }
+    else if (strcmp(key, "spec_names") == 0) { t = sNmSpecNames; }
     SDL_strlcpy(out, t, (size_t)size);
     SDL_UnlockMutex(sNmLock);
     return (int)strlen(out);

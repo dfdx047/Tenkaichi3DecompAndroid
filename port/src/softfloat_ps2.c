@@ -88,9 +88,11 @@ uint32_t __divsf3(uint32_t a, uint32_t b) { return RefVu0_DivBits(a, b); }
 #endif
 
 #if PORT_FLOAT_MODEL == PORT_FLOAT_PCSX2
+#ifndef SF_FAST_CALLS /* the port's builds: in plat_fastvec.c, one call per operation instead of two */
 uint32_t __addsf3(uint32_t a, uint32_t b) { return fpu_add(a, b); }
 uint32_t __subsf3(uint32_t a, uint32_t b) { return fpu_add(a, b ^ SIGN); }
 uint32_t __mulsf3(uint32_t a, uint32_t b) { return mul_core(a, b, mode(1)); }
+#endif
 #else
 uint32_t __addsf3(uint32_t a, uint32_t b) { return RefVu0_AddBits(a, b); }
 uint32_t __subsf3(uint32_t a, uint32_t b) { return RefVu0_AddBits(a, b ^ SIGN); }
@@ -99,8 +101,12 @@ uint32_t __mulsf3(uint32_t a, uint32_t b) { return RefVu0_MulBits(a, b); }
 uint32_t __negsf2(uint32_t a) { return a ^ SIGN; }
 
 /* Comparisons: every pattern is an ordinary number (c.eq.s / c.lt.s / c.le.s never see "unordered"). */
-static int cmp(uint32_t a, uint32_t b) {
-    return RefVu0_LtBits(a, b) ? -1 : RefVu0_LtBits(b, a) ? 1 : 0;
+static inline int32_t order(uint32_t a) { /* as RefVu0_LtBits (vu0_a.c) orders them: sign and magnitude, +0 == -0 */
+    return (a & SIGN) ? -(int32_t)(a & 0x7FFFFFFF) : (int32_t)(a & 0x7FFFFFFF);
+}
+static inline int cmp(uint32_t a, uint32_t b) { /* (in place: it was two calls into vu0_a.c per comparison) */
+    int32_t x = order(a), y = order(b);
+    return x < y ? -1 : x > y ? 1 : 0;
 }
 int __eqsf2(uint32_t a, uint32_t b) { return cmp(a, b); }
 int __nesf2(uint32_t a, uint32_t b) { return cmp(a, b); }

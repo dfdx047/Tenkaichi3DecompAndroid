@@ -4,8 +4,8 @@
 Usage:
     python3 port/tools/extract_eu.py SLES-54945.iso [--data gamedata] [--selector-only | --opening-audio-only]
 
-The European disc has the game's menus, its battle HUD and their text five times, once per language (English,
-Spanish, German, French, Italian). This copies those archive entries, 60 of them, as they are into
+The European disc has the game's menus, its battle HUD and story text five times, once per language (English,
+Spanish, German, French, Italian). This copies those archive entries, 410 of them, as they are into
 gamedata/pzs3eu1/<entry>.bin (the layout the setup uses for the USA disc's archives). The game makes its
 Spanish, German, French and Italian catalogs and its menu art from them at the next start (ui_text_extract.c,
 menu_labels.c). It also copies entry 1 of PZS3EU0.AFS for the native language selector artwork and the
@@ -18,10 +18,10 @@ import struct
 import sys
 
 SECTOR = 2048
-# The USA disc's menu archives with text and painted lettering (ui_text_extract.c kUtMenuFiles, menu_labels.c
+# The USA disc's menu archives with text and painted lettering (ui_text_extract.c kUtTextFiles, menu_labels.c
 # kMlFiles): on the European disc archive 448 + k is entry 451 + k + 31 * language. The battle HUD (USA 5) is
 # entries 5 to 9, one per language. Languages in the discs' order: English, Spanish, German, French, Italian.
-USA_FILES = (448, 449, 450, 451, 452, 453, 459, 460, 461, 463, 472)
+USA_FILES = tuple(range(448, 479))
 EU_FIRST, EU_STRIDE, HUD_FIRST, LANGUAGES = 451, 31, 5, 5
 
 
@@ -30,6 +30,8 @@ def entries():
     out = [HUD_FIRST + bank for bank in range(LANGUAGES)]
     for usa in USA_FILES:
         out += [EU_FIRST + (usa - USA_FILES[0]) + bank * EU_STRIDE for bank in range(LANGUAGES)]
+    # Story dialogue: 50 episodes per language, starting with European English at 656.
+    out += list(range(656, 906))
     return sorted(out)
 
 

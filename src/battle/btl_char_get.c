@@ -1,5 +1,6 @@
 #include "common.h"
 #include "battle/btl_char_get.h"
+extern s32 BtlChars_IsWorldTimeStopped(void);
 
 /*
  * Battle helpers and fighter accessors: 0x1DBF20..0x1DC9A0.
@@ -217,7 +218,7 @@ Pad *BtlChar_GetPad(BtlCharGetChr *chr) {
 
 /* 1 while the fighter's freeze counter is running. */
 s32 BtlChar_IsFrozen(BtlCharGetChr *chr) {
-    return chr->freeze > 0;
+    return chr->freeze > 0 || TagTeam_CinematicPaused(chr->player);
 }
 
 /* 1 when the fighter is alive, flag 0xBE is clear and counter 0xFE0 has run out. */
@@ -228,8 +229,11 @@ s32 BtlChar_IsFree(BtlCharGetChr *chr) {
     return chr->unkFE0 <= 0;
 }
 
-/* 1 when the active member has no health left. */
+/* Ring-outs also defeat an actor, even when its health was not depleted. */
 s32 BtlChar_IsDead(BtlCharGetChr *chr) {
+#ifdef PORT
+    if (TagTeam_Active() && BtlChar_TestFlag(chr, 7)) return 1;
+#endif
     return BtlMember_GetActiveGauge(chr)->hp <= 0;
 }
 
@@ -256,7 +260,7 @@ s32 BtlChar_Rand(void) {
     u64 state = gBtlChars->randState;
     s32 next = (state * 714025 + 4096) % 150889;
 
-    if (!BtlChars_IsTimeStopped()) {
+    if (!BtlChars_IsWorldTimeStopped()) {
         gBtlChars->randState = next;
     }
     return next;
@@ -270,6 +274,13 @@ f32 BtlChar_RandF(void) {
 /* 1 on stages 4 and 27. */
 s32 BtlChar_IsStage4Or27(void) {
     s32 stage = Battle_GetStage();
+#ifdef PORT
+    /* Include the forced landing/action paths when disabling ring-outs. */
+    if (TagTeam_Active()) {
+        extern s32 TagTeam_RingOutEnabled(void);
+        if (!TagTeam_RingOutEnabled()) return 0;
+    }
+#endif
 
     if (stage == 4 || stage == 27) {
         return 1;

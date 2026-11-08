@@ -240,7 +240,21 @@ void Heap_Init(void) {
 }
 
 void *Heap_Alloc(s32 size, u32 align, s32 fromTail, s32 heap) {
-    HeapBlock *block = Heap_AllocBlock(size, align, fromTail, heap);
+    HeapBlock *block;
+#ifdef PORT
+    /* The character selects' viewer has a world of its own (port/src/gs/state.c): the game's heap is not touched. */
+    extern unsigned Port_WorldAlloc(int size, unsigned align);
+    unsigned world = Port_WorldAlloc(size, align);
+    if (world != 0) {
+        return (void *)world;
+    }
+#endif
+    if (size >= 0x10000 && align <= 0x40) {
+        extern unsigned Port_GameBigAlloc(int size);
+        unsigned address = Port_GameBigAlloc(size);
+        if (address) return (void *)address;
+    }
+    block = Heap_AllocBlock(size, align, fromTail, heap);
     void *data = NULL;
 
     if (block != NULL) {
@@ -253,6 +267,12 @@ void Heap_Free(void *ptr) {
     HeapBlock *block;
 
 #ifdef PORT
+    {
+        extern int Port_WorldOwns(unsigned addr);
+        if (Port_WorldOwns((u32)ptr)) {
+            return;
+        }
+    }
     {
         /* PC build: a block that is not the heap's (a large stage buffer, battle_load.c) goes back to the port */
         extern int Port_GameBigFree(unsigned addr);

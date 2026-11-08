@@ -207,13 +207,21 @@ typedef struct CharSel {
 #define CHARSEL_LOAD_ABORT 5
 #define CHARSEL_LOAD_RESTART 6
 
+#ifdef PORT
+#define CHARSEL_FACE_FILE (PortGame_IsBT4() ? 0x71C : 0x2F9)   /* + character id */
+#else
 #define CHARSEL_FACE_FILE 0x2F9   /* + character id */
+#endif
+#ifdef PORT
+#define CHARSEL_STAGE_FILE (PortGame_IsBT4() ? 0x6B9 : 0x39D)  /* + stage id */
+#else
 #define CHARSEL_STAGE_FILE 0x39D  /* + stage id */
+#endif
 #ifdef PORT
 /* The stage thumbnails are 0x39D..0x3C0 (one per stage of the disc); the loading screen files start right after,
    at 0x3C1. A stage added from outside the disc has an id past 0x23, so its thumbnail would fall on a loading
    screen: it reuses an existing thumbnail instead. */
-#define CHARSEL_STAGE_FILE_ID(id) (CHARSEL_STAGE_FILE + ((id) < 0x24 ? (id) : (id) - 0x24))
+#define CHARSEL_STAGE_FILE_ID(id) (CHARSEL_STAGE_FILE + ((id) < 0x24 || PortGame_IsBT4() ? (id) : (id) - 0x24))
 #else
 #define CHARSEL_STAGE_FILE_ID(id) (CHARSEL_STAGE_FILE + (id))
 #endif

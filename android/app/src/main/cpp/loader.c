@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -643,6 +644,10 @@ int SDL_main(int argc, char *argv[]) {
     snprintf(exe, sizeof(exe), "%s/libbt3.so", dir); /* plat_mem.c reads <BT3_EXE>.dat: the app put it there */
     setenv("BT3_EXE", exe, 1);
     setenv("BT3_GS", "gpu", 0);
+    if (argc > 6 && strcmp(argv[6], "1") == 0) { /* the Tag Team mod, setting dr_tag_team (GameActivity): SELECT in the main
+                                                    menu opens its modes (port/src/tagteam_trace.c) */
+        setenv("BT3_TAG_TEAM", "1", 0);
+    }
     {   /* bt3_env.txt in the game folder: NAME=value lines, the engine's switches for testing (BT3_GS_VERBOSE=1, ...) */
         char line[512];
         FILE *fp = fopen("bt3_env.txt", "r");
@@ -651,12 +656,29 @@ int SDL_main(int argc, char *argv[]) {
             line[strcspn(line, "\r\n")] = '\0';
             if (line[0] != '#' && eq != NULL) {
                 *eq = '\0';
-                setenv(line, eq + 1, 1);
+                if (strcmp(line, "BT3_TAG_TEAM") == 0 && strcmp(eq + 1, "0") == 0) {
+                    unsetenv(line); /* (the engine asks only whether it is set) */
+                } else {
+                    setenv(line, eq + 1, 1);
+                }
                 say("env %s=%s", line, eq + 1);
             }
         }
         if (fp != NULL) {
             fclose(fp);
+        }
+    }
+    {   /* BT3_TEST_CPUS=0-5 (testing, bt3_env.txt): a phone with fewer big cores, on a device without root. Threads made from
+           here on inherit it. The clocks and the GPU stay as they are: only the system could limit those. */
+        const char *cpus = getenv("BT3_TEST_CPUS");
+        int first, last;
+        if (cpus != NULL && sscanf(cpus, "%d-%d", &first, &last) == 2 && first >= 0 && last >= first && last < CPU_SETSIZE) {
+            cpu_set_t set;
+            CPU_ZERO(&set);
+            for (; first <= last; first++) {
+                CPU_SET(first, &set);
+            }
+            say("test: only cpus %s: %s", cpus, sched_setaffinity(0, sizeof(set), &set) == 0 ? "done" : strerror(errno));
         }
     }
     {   /* an image that is not the unmodified USA release (the app's installer says so): the engine takes its data */
@@ -810,6 +832,19 @@ JNIEXPORT void JNICALL Java_com_dfdx047_dragonrage_engine_TouchBridge_nativeSetP
     }
     if (fn != NULL) {
         fn((unsigned)buttons, lx, ly, rx, ry);
+    }
+}
+
+/* A tap between the controls, in window pixels: the Tag Team menus press what is under it (gs_input.c). */
+JNIEXPORT void JNICALL Java_com_dfdx047_dragonrage_engine_TouchBridge_nativeTap(JNIEnv *env, jclass cls, jint x, jint y) {
+    static void (*fn)(int, int);
+    (void)env;
+    (void)cls;
+    if (fn == NULL && sEngine != NULL) {
+        fn = (void (*)(int, int))dlsym(sEngine, "Port_TouchTap");
+    }
+    if (fn != NULL) {
+        fn(x, y);
     }
 }
 
@@ -970,7 +1005,24 @@ JNIEXPORT jint JNICALL Java_com_dfdx047_dragonrage_engine_TouchBridge_nativePlay
             running = 0;
         }
     }
-    if (running != 1) {
+    {   /* a Tag Team battle (the mod: src/battle/tag_team.c): every fighter is its own actor, the sides' member
+           counts say nothing about it; L3 (aim at an attacker / unlock) and the target button are used there */
+        typedef int32_t (*TagTeamActiveFn)(void);
+        static TagTeamActiveFn tag_active;
+        static int tag_looked;
+        if (!tag_looked) {
+            tag_active = (TagTeamActiveFn)dlsym(sEngine, "TagTeam_Active");
+            tag_looked = 1;
+        }
+        if (running == 1 && tag_active != NULL && tag_active()) {
+            result = 2;
+            source = "tag-team";
+            running = 2; /* (skips the side counts below) */
+        }
+    }
+    if (running == 2) {
+        /* (the Tag Team answer, above) */
+    } else if (running != 1) {
         result = 0; /* no active battle: don't show team controls in menus */
         source = "idle";
     } else if (magic != 0x736C7462u) {

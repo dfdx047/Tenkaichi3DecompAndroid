@@ -19,6 +19,16 @@ enum class TouchLayout { MOBILE, CLASSIC }
 /** When the on-screen controller shows: never, until a physical controller is used (and again on a touch), always. */
 enum class TouchMode { OFF, AUTO, ALWAYS }
 
+/**
+ * How the left stick sits under the thumb (1.0): FIXED where it was placed; FLOATING its centre where the thumb lands
+ * (anywhere in the stick's zone); DYNAMIC as floating, and the centre follows the thumb when it goes past the edge, so
+ * turning back is immediate and the stick is never "lost" (the mobile ports' default).
+ */
+enum class StickMode { FIXED, FLOATING, DYNAMIC }
+
+/** The vibration on a press: none, a light tick, a firm one. */
+enum class Haptic { OFF, LIGHT, STRONG }
+
 /** The PS2 pad's buttons, as the engine's pad buffer has them (port/src/gs/gs_input.c, include/sys/pad.h). */
 object Ps2 {
     const val SELECT = 0x0001
@@ -87,11 +97,29 @@ enum class Ctl(
     // Battle-only roster actions. The native game decides the actual team size at runtime.
     TEAM_SWAP(CtlKind.SYSTEM, 0, 54f, 0.22f, 0.325f),            // sends L3 + R3 together
     TEAM_SELECT(CtlKind.SYSTEM, 0, 48f, 0.22f, 0.435f),          // one right-stick-down input advances the roster target
-    SELECT(CtlKind.PILL, Ps2.SELECT, 50f, 0.355f, 0.065f, shownByDefault = false),
+    SELECT(CtlKind.PILL, Ps2.SELECT, 50f, 0.355f, 0.065f), // (shown: SELECT opens the Tag Team modes)
     START(CtlKind.PILL, Ps2.START, 50f, 0.645f, 0.065f),
     MENU(CtlKind.SYSTEM, 0, 40f, 0.465f, 0.065f),                // port pause / settings window
     OPTIONS(CtlKind.SYSTEM, 0, 40f, 0.535f, 0.065f),             // controller quick menu
     NAV_MODE(CtlKind.SYSTEM, 0, 42f, 0.50f, 0.155f),              // manually swap combat controls <-> menu D-pad
+}
+
+/** The ready-made tunings (ControlsScreen, "Perfis"): Standard, Online competitive, Relaxed, Classic (0.9's feel). */
+enum class TouchPreset { STANDARD, COMPETITIVE, RELAXED, CLASSIC }
+
+/** Buttons that can be set to toggle: the ones held in a fight. */
+val TOGGLE_CANDIDATES = listOf(Ctl.L2, Ctl.CIRCLE, Ctl.R1, Ctl.R2, Ctl.L1)
+
+/**
+ * A saved profile: a whole configuration (layout, look and tuning) under a name, kept as its JSON. Loading one keeps
+ * the profiles list itself (a profile does not carry the others).
+ */
+data class TouchProfile(val name: String, val config: JSONObject) {
+    fun apply(current: TouchConfig): TouchConfig = TouchConfig.fromJson(config).copy(profiles = current.profiles, mode = current.mode)
+
+    companion object {
+        fun of(name: String, c: TouchConfig) = TouchProfile(name.take(24), c.copy(profiles = emptyList()).toJson())
+    }
 }
 
 /** Where a control is: centre as a fraction of the screen, its scale, shown or not. */
@@ -125,8 +153,39 @@ data class TouchConfig(
     val autoMode: Boolean = true,   // menu buttons outside a fight, fight buttons in one (the MENU/FIGHT button still overrides)
     val classicPlaces: Map<String, Placement> = emptyMap(), // the classic layout's own moved controls (by ClassicCtl name)
     val macros: List<Macro> = emptyList(),
+    // ---- 1.0: the touch tuning ("Toque Pro")
+    val stickMode: StickMode = StickMode.DYNAMIC,
+    val deadZone: Int = 12,         // % of the stick's radius where nothing is sent (a resting thumb drifts)
+    val stickRange: Int = 75,       // % of the radius that gives full tilt: less travel for a full run
+    val stickZone: Int = 45,        // % of the screen's width, from the left, where a floating / dynamic stick can start
+    val snap8: Boolean = false,     // the stick sends one of 8 directions at full tilt (menus, dashes)
+    val hitArea: Int = 115,         // % of each button's drawn size that a touch counts on (100: the drawing only)
+    val slideAll: Boolean = true,   // a finger sliding from a button onto another presses it: shoulders and Start too
+    val toggles: Set<Ctl> = emptySet(), // buttons where a tap holds and the next tap lets go (Ki charge, guard...)
+    val haptic: Haptic = Haptic.LIGHT,
+    val leftHanded: Boolean = false, // mirrored(): the stick's zone is the right side
+    val profiles: List<TouchProfile> = emptyList(), // the player's saved tunings and layouts, by name
 ) {
     fun placeOf(c: Ctl): Placement? = places[c]
+
+    /** The tuning of a ready-made profile on top of this layout (the places, macros and look stay). */
+    fun withPreset(p: TouchPreset): TouchConfig = when (p) {
+        TouchPreset.STANDARD -> copy(stickMode = StickMode.DYNAMIC, deadZone = 12, stickRange = 75, stickZone = 45, snap8 = false,
+            hitArea = 115, slideAll = true, toggles = emptySet(), haptic = Haptic.LIGHT)
+        TouchPreset.COMPETITIVE -> copy(stickMode = StickMode.DYNAMIC, deadZone = 8, stickRange = 60, stickZone = 50, snap8 = false,
+            hitArea = 130, slideAll = true, toggles = setOf(Ctl.L2), haptic = Haptic.LIGHT, opacity = minOf(opacity, 55))
+        TouchPreset.RELAXED -> copy(stickMode = StickMode.FLOATING, deadZone = 15, stickRange = 85, stickZone = 50, snap8 = true,
+            hitArea = 135, slideAll = true, toggles = setOf(Ctl.L2, Ctl.CIRCLE), haptic = Haptic.STRONG)
+        TouchPreset.CLASSIC -> copy(stickMode = StickMode.FIXED, deadZone = 10, stickRange = 100, stickZone = 45, snap8 = false,
+            hitArea = 112, slideAll = false, toggles = emptySet(), haptic = Haptic.LIGHT)
+    }
+
+    /** The same layout mirrored: the stick on the right, the buttons on the left (left-handed players). */
+    fun mirrored(): TouchConfig = copy(
+        places = Ctl.entries.associateWith { c -> (places[c] ?: Placement(c.x, c.y)).let { it.copy(x = 1f - it.x) } },
+        macros = macros.map { m -> m.copy(place = m.place.copy(x = 1f - m.place.x)) },
+        leftHanded = !leftHanded,
+    )
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("version", 2)
@@ -141,6 +200,17 @@ data class TouchConfig(
         put("layout", layout.name)
         put("autoMode", autoMode)
         put("classicPlaces", JSONObject().apply { classicPlaces.forEach { (n, p) -> put(n, p.json()) } })
+        put("stickMode", stickMode.name)
+        put("deadZone", deadZone)
+        put("stickRange", stickRange)
+        put("stickZone", stickZone)
+        put("snap8", snap8)
+        put("hitArea", hitArea)
+        put("slideAll", slideAll)
+        put("toggles", JSONArray().apply { toggles.forEach { put(it.name) } })
+        put("haptic", haptic.name)
+        put("leftHanded", leftHanded)
+        put("profiles", JSONArray().apply { profiles.forEach { put(JSONObject().put("name", it.name).put("config", it.config)) } })
         put("macros", JSONArray().apply {
             macros.forEach { m ->
                 put(JSONObject().apply {
@@ -204,6 +274,30 @@ data class TouchConfig(
                 autoMode = o.optBoolean("autoMode", true),
                 classicPlaces = classic,
                 macros = macros,
+                // (no "stickMode" yet: a file from before 1.0, whose stick was fixed or floating by sticksFloat)
+                stickMode = o.optString("stickMode").let { m -> StickMode.entries.firstOrNull { it.name == m } }
+                    ?: if (o.optBoolean("sticksFloat", false)) StickMode.FLOATING else StickMode.DYNAMIC,
+                deadZone = o.optInt("deadZone", 12).coerceIn(0, 40),
+                stickRange = o.optInt("stickRange", 75).coerceIn(40, 100),
+                stickZone = o.optInt("stickZone", 45).coerceIn(25, 60),
+                snap8 = o.optBoolean("snap8", false),
+                hitArea = o.optInt("hitArea", 115).coerceIn(90, 160),
+                slideAll = o.optBoolean("slideAll", true),
+                toggles = buildSet {
+                    o.optJSONArray("toggles")?.let { a -> for (i in 0 until a.length()) Ctl.entries.firstOrNull { it.name == a.optString(i) }?.let { add(it) } }
+                },
+                haptic = o.optString("haptic").let { h -> Haptic.entries.firstOrNull { it.name == h } }
+                    ?: if (o.optBoolean("haptics", true)) Haptic.LIGHT else Haptic.OFF,
+                leftHanded = o.optBoolean("leftHanded", false),
+                profiles = buildList {
+                    o.optJSONArray("profiles")?.let { a ->
+                        for (i in 0 until a.length()) {
+                            val p = a.optJSONObject(i) ?: continue
+                            val c = p.optJSONObject("config") ?: continue
+                            add(TouchProfile(p.optString("name").ifEmpty { "${i + 1}" }.take(24), c))
+                        }
+                    }
+                },
             )
         }
 

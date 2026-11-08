@@ -11,6 +11,10 @@
 // bt4_main.cpp loads this library with dlopen and calls Bt4Gsx_Run on a thread of its own; the pad, the menu and
 // the window's events stay with bt4_main.cpp.
 #include "common/WindowInfo.h"
+#include "pcsx2/Config.h"
+#include "pcsx2/GS/GS.h"
+#include "pcsx2/GS/GSDump.h"
+#include "pcsx2/GS/Renderers/Common/GSRenderer.h"
 #include "pcsx2/GSDumpReplayer.h"
 #include "pcsx2/Host.h"
 #include "pcsx2/MTGS.h"
@@ -24,6 +28,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -38,6 +43,7 @@ namespace
 {
 	std::mutex s_window_lock;
 	ANativeWindow* s_window = nullptr;   // the app's (SDL's) window, while it has a surface
+	std::atomic<bool> s_pumpNow{false};  // Bt4Gsx_SurfaceDestroyed waits: the CPU thread takes its requests at once
 	ANativeWindow* s_acquired = nullptr; // the GS's own reference to it
 	int s_width = 0, s_height = 0;
 
@@ -143,6 +149,112 @@ namespace
 		return true;
 	}
 
+	// ---- BT4_GS_DUMP (bt4_main.cpp, Bt4Gsx_GsDump): PCSX2 GS dumps (.gs.zst) of the game's stream, for Nominum Render.
+	// PCSX2's own dump code (GSDumpBase::CreateZstDump), started the way GSRenderer::VSync starts one: the texture cache
+	// read back, the state frozen (GSfreeze), the privileged registers; then the stream as the game sent it. (The same
+	// as Hidden Leaf's hl_gsx.cpp, without its native renderer.)
+	struct DumpAsk
+	{
+		std::string base; // the file without .gs.zst
+		int frames;
+	};
+	struct DumpOpen
+	{
+		std::unique_ptr<GSDumpBase> dump;
+		std::string base;
+		int left; // vsyncs still to take
+	};
+	std::mutex s_dumpLock;
+	std::vector<DumpAsk> s_dumpAsked; // from the host's thread
+	std::atomic<bool> s_dumpAskedAny{false};
+	std::vector<DumpOpen> s_dumps;    // the CPU thread's
+	std::vector<uint8_t> s_dumpRegs;  // the stream's last registers packet (it comes right before each vsync)
+
+	// At a vsync of the stream, before it is handed on: the dumps asked for since the last one open here.
+	void dumpOpenAsked()
+	{
+		if (!s_dumpAskedAny.load(std::memory_order_acquire))
+			return;
+		struct Made
+		{
+			std::vector<DumpAsk> asks;
+			std::vector<DumpOpen> opened;
+			std::atomic<bool> done{false};
+		};
+		auto made = std::make_shared<Made>();
+		{
+			std::lock_guard<std::mutex> lock(s_dumpLock);
+			made->asks.swap(s_dumpAsked);
+			s_dumpAskedAny.store(false, std::memory_order_release);
+		}
+		MTGS::RunOnGSThread([made]() {
+			if (g_gs_renderer)
+			{
+				g_gs_renderer->ReadbackTextureCache();
+				freezeData fd = {0, nullptr};
+				GSfreeze(FreezeAction::Size, &fd);
+				std::vector<u8> state(fd.size);
+				fd.data = state.data();
+				GSfreeze(FreezeAction::Save, &fd);
+				u32 w = 0, h = 0;
+				std::vector<u32> pixels;
+				if (!g_gs_renderer->SaveSnapshotToMemory(640, 480, true, false, &w, &h, &pixels))
+				{
+					w = h = 0;
+					pixels.clear();
+				}
+				std::string serial = VMManager::GetDiscSerial();
+				if (serial.empty())
+					serial = "SLUS-21978";
+				const u32 crc = VMManager::GetDiscCRC();
+				for (const DumpAsk& a : made->asks)
+				{
+					DumpOpen d;
+					d.base = a.base;
+					d.left = a.frames;
+					d.dump = GSDumpBase::CreateZstDump(a.base, serial, crc, w, h, pixels.empty() ? nullptr : pixels.data(), fd, g_gs_renderer->m_regs);
+					std::fprintf(stderr, "bt4gsx: GS dump %s.gs.zst opened (%u bytes of state, picture %ux%u)\n", a.base.c_str(),
+						static_cast<unsigned>(fd.size), w, h);
+					made->opened.push_back(std::move(d));
+				}
+			}
+			made->done.store(true, std::memory_order_release);
+		});
+		const auto t0 = std::chrono::steady_clock::now(); // (the stream waits: what is read next goes into the dump)
+		while (!made->done.load(std::memory_order_acquire))
+		{
+			if (std::chrono::steady_clock::now() - t0 > std::chrono::seconds(20))
+			{
+				std::fprintf(stderr, "bt4gsx: GS dump not opened (the GS thread did not answer in 20 s)\n");
+				return;
+			}
+			std::this_thread::sleep_for(std::chrono::microseconds(200));
+		}
+		for (DumpOpen& d : made->opened)
+			s_dumps.push_back(std::move(d));
+	}
+
+	void dumpVsync(uint8_t field)
+	{
+		if (s_dumpRegs.size() != sizeof(GSPrivRegSet))
+			return;
+		const GSPrivRegSet* regs = reinterpret_cast<const GSPrivRegSet*>(s_dumpRegs.data());
+		for (size_t i = 0; i < s_dumps.size();)
+		{
+			DumpOpen& d = s_dumps[i];
+			const bool last = d.left <= 0;
+			if (d.dump->VSync(field, last, regs))
+			{
+				std::fprintf(stderr, "bt4gsx: GS dump %s.gs.zst done\n", d.base.c_str());
+				s_dumps.erase(s_dumps.begin() + static_cast<std::ptrdiff_t>(i));
+				continue;
+			}
+			if (!last)
+				--d.left;
+			++i;
+		}
+	}
+
 	// GSDumpReplayer's live source, on the VM's CPU thread: the next whole packet of the stream.
 	bool live_next(GSDumpReplayer::LivePacket* out)
 	{
@@ -150,6 +262,8 @@ namespace
 		{
 			if (s_stop || s_ring->consumerQuit)
 				return false;
+			if (s_pumpNow.load(std::memory_order_acquire))
+				Host::PumpMessagesOnCPUThread();
 			if (s_hold || available() < 1)
 			{
 				if (!s_hold)
@@ -173,6 +287,8 @@ namespace
 					s_packet.resize(length);
 					peek(6, s_packet.data(), length);
 					consume(6ull + length);
+					for (DumpOpen& d : s_dumps)
+						d.dump->Transfer(path, s_packet.data(), length);
 					*out = {type, path, s_packet.data(), length};
 					return true;
 				}
@@ -183,6 +299,9 @@ namespace
 					s_packet.resize(1);
 					peek(1, s_packet.data(), 1);
 					consume(2);
+					if (!s_dumps.empty())
+						dumpVsync(s_packet[0]);
+					dumpOpenAsked();
 					*out = {type, 0, s_packet.data(), 1};
 					return true;
 				}
@@ -193,6 +312,13 @@ namespace
 					s_packet.resize(4);
 					peek(1, s_packet.data(), 4);
 					consume(5);
+					if (!s_dumps.empty())
+					{
+						uint32_t qwords;
+						std::memcpy(&qwords, s_packet.data(), 4);
+						for (DumpOpen& d : s_dumps)
+							d.dump->ReadFIFO(qwords);
+					}
 					*out = {type, 0, s_packet.data(), 4};
 					return true;
 				}
@@ -203,6 +329,7 @@ namespace
 					s_packet.resize(kPrivRegsSize);
 					peek(1, s_packet.data(), kPrivRegsSize);
 					consume(1 + kPrivRegsSize);
+					s_dumpRegs.assign(s_packet.begin(), s_packet.begin() + kPrivRegsSize);
 					*out = {type, 0, s_packet.data(), static_cast<uint32_t>(kPrivRegsSize)};
 					return true;
 				}
@@ -296,24 +423,54 @@ __attribute__((visibility("default"))) void Bt4Gsx_SurfaceChanged(void* window, 
 	});
 }
 
+// The surface goes (Android's surfaceDestroyed, from the app's UI thread: Bt4Activity's own SurfaceHolder.Callback). It
+// returns once the GS thread has dropped the swapchain and the VkSurfaceKHR on it, or after 2 s: while the surface is
+// still alive. Returning at once (as before) left the GS presenting into a dead surface, getting SURFACE_LOST, and
+// making a new VkSurfaceKHR on a window the old one still held: VK_ERROR_NATIVE_WINDOW_IN_USE_KHR, then a crash in
+// the driver's vkCreateAndroidSurfaceKHR on some phones (known bug #12).
 __attribute__((visibility("default"))) void Bt4Gsx_SurfaceDestroyed(void)
 {
 	{
 		std::lock_guard<std::mutex> lock(s_window_lock);
-		if (s_window)
-			ANativeWindow_release(s_window);
+		if (!s_window)
+			return; // (already gone: nothing holds it)
+		ANativeWindow_release(s_window);
 		s_window = nullptr;
 	}
-	Host::RunOnCPUThread([]() {
-		if (MTGS::IsOpen())
-			MTGS::UpdateDisplayWindow();
+	auto done = std::make_shared<std::atomic<bool>>(false);
+	Host::RunOnCPUThread([done]() {
+		if (!MTGS::IsOpen())
+		{
+			done->store(true, std::memory_order_release);
+			return;
+		}
+		MTGS::UpdateDisplayWindow(); // (on the GS thread: the window is now none, the swapchain goes)
+		MTGS::RunOnGSThread([done]() { done->store(true, std::memory_order_release); });
 	});
+	s_pumpNow.store(true, std::memory_order_release);
+	const auto t0 = std::chrono::steady_clock::now();
+	while (!done->load(std::memory_order_acquire) && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(2))
+		std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	s_pumpNow.store(false, std::memory_order_release);
+	const long ms = static_cast<long>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count());
+	std::fprintf(stderr, "bt4gsx: surface gone: %s (%ld ms)\n", done->load() ? "the swapchain was dropped first" : "the GS thread did not answer in 2 s", ms);
 }
 
 // The memory page size this core was built for: it refuses to start on another (VMManager's hardware checks).
 __attribute__((visibility("default"))) int Bt4Gsx_PageSize(void)
 {
 	return static_cast<int>(__pagesize);
+}
+
+// BT4_GS_DUMP: a PCSX2 GS dump of the next `frames` vsyncs of the stream, into <base>.gs.zst (any thread; it starts at
+// the next vsync the stream reaches).
+__attribute__((visibility("default"))) void Bt4Gsx_GsDump(const char* base, int frames)
+{
+	if (!base || !base[0] || frames <= 0)
+		return;
+	std::lock_guard<std::mutex> lock(s_dumpLock);
+	s_dumpAsked.push_back({base, frames});
+	s_dumpAskedAny.store(true, std::memory_order_release);
 }
 
 __attribute__((visibility("default"))) void Bt4Gsx_Hold(int hold)
@@ -380,6 +537,9 @@ __attribute__((visibility("default"))) int Bt4Gsx_Run(const Bt4GsxArgs* a)
 	argv.push_back(nullptr);
 	const int code = bt4gsx_runner_main(static_cast<int>(args.size()), argv.data());
 	std::fprintf(stderr, "bt4gsx: ended (%d)\n", code);
+	for (DumpOpen& d : s_dumps)
+		std::fprintf(stderr, "bt4gsx: GS dump %s.gs.zst cut short (%d vsyncs left)\n", d.base.c_str(), d.left);
+	s_dumps.clear(); // (closes them: what was taken is a whole file)
 	GSDumpReplayer::SetLive(nullptr, nullptr);
 	Bt4Gsx_ReleaseWindow();
 	{

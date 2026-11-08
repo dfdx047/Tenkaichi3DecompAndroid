@@ -103,6 +103,18 @@ INCLUDE_RODATA("asm/nonmatchings/battle/bobj_a", D_002F2420);
 #define TRACK_AT(anim, off) ((BobjTrack *)((u16 *)(anim) + (off) * 2))
 #define QUAT64(q) ((u64)(q).lo + ((u64)(q).hi << 32))
 
+static f32 retarget_height(BobjObj *obj) {
+#ifdef PORT
+    /* B14 carries the skeleton scale in part 3 of each costume's model,
+       rather than the shared character parameter block. */
+    if (PortGame_IsBT4()) {
+        const u8 *rig = *(const u8 **)&obj->mdl;
+        if (rig != NULL) return *(const f32 *)(rig + 0x74);
+    }
+#endif
+    return obj->mdl.param->height;
+}
+
 /* Moves the translation keys of a motion from the skeleton it was made for to this object's skeleton: subtracts
    the source rest translation, scales y by the height ratio and adds this object's rest translation. The source
    is the built-in reference table (useTable), the character's own reference pose (useOwn) or another object. */
@@ -121,11 +133,11 @@ void BtlObjAnim_Retarget(BobjAnim *anim, BobjObj *obj, BobjObj *other, s32 useTa
         useOwn = 0;
     }
     if (useTable != 0) {
-        scale = obj->mdl.param->height;
+        scale = retarget_height(obj);
     } else if (useOwn != 0) {
-        scale = obj->mdl.param->height / 1.1f;
+        scale = retarget_height(obj) / 1.1f;
     } else {
-        scale = obj->mdl.param->height / other->mdl.param->height;
+        scale = retarget_height(obj) / retarget_height(other);
     }
     while (1) {
         id = bone->id;
@@ -365,7 +377,17 @@ BobjAnim *BtlObjAnim_Load(BobjObj *obj, void *buf, s32 anim, s32 *size) {
         ret = (tbl + anim)[0x2A]; /* mdl->anims[anim]: runs on into modelAnims[] and the tables behind it */
         *size = 1;
     } else if (obj->mdl.anims[anim] != NULL) {
+#ifdef PORT
+        if(PortGame_IsBT4()) {
+            s32 bytes=*(s32 *)obj->mdl.anims[anim];
+            if(bytes<148 || bytes>PortGame_AnimationCapacity()) {*size=0;return NULL;}
+            buf=PortGame_AnimationBuffer(buf);
+        }
+#endif
         Bpe_Decode(obj->mdl.anims[anim], buf, size);
+#ifdef PORT
+        if(PortGame_IsBT4() && PortGame_CheckAnimation(buf,*size)<0) return NULL;
+#endif
         ret = buf;
     } else {
         ret = NULL;
@@ -795,7 +817,12 @@ typedef struct BobjLayerBuf {
 void BtlObjAnim_PromoteLayer(BobjObj *obj) {
     BobjAnimPlayer *ap = &obj->anim;
 
+#ifdef PORT
+    { extern void *memcpy(void *,const void *,u32);
+      memcpy(ap->layer[0].data,ap->layer[1].data,PortGame_AnimationCapacity()); }
+#else
     *(BobjLayerBuf *)ap->layer[0].data = *(BobjLayerBuf *)ap->layer[1].data;
+#endif
     ap->layer[0].id = ap->layer[1].id;
     ap->layer[0].length = ap->layer[1].length;
     ap->frame = 0.0f;
@@ -843,14 +870,106 @@ void BtlObjAnim_PlayModel(BobjObj *obj, s32 anim, s32 mode) {
     }
 }
 
+#ifdef PORT
+/* A motion of the character's table on an object without a fighter's buffer (the character select's model,
+   src/battle/view_a_d.c): decoded into the caller's buffer, stepped by BtlObj_UpdateAll. 0 when it has no such motion. */
+s32 BtlObjAnim_PortPlay(BobjObj *obj, void *buf, s32 anim, s32 mode) {
+    BobjAnimPlayer *ap = &obj->anim;
+    BobjAnim *data;
+    s32 size;
+
+    if (anim < 0 || anim >= BOBJ_ANIM_MAX || obj->mdl.anims[anim] == NULL) {
+        return 0;
+    }
+    Bpe_Decode(obj->mdl.anims[anim], buf, &size);
+    data = (BobjAnim *)buf;
+    ap->layer[0].data = data;
+    ap->layer[0].id = anim;
+    ap->layer[0].length = data->length;
+    ap->frame = 0.0f;
+    ap->prevFrame = 0.0f;
+    memset(ap->layer[0].cursor, 0, sizeof(ap->layer[0].cursor));
+    ap->manual = 0;
+    ap->mode = mode;
+    return 1;
+}
+
+/* Where the select's model stands and how it is turned. feet (x, height, z, BtlObjAnim_PortFeet), for the few fighters
+   whose poses stand well away from the model's origin or above it: the place it keeps under the turning point. */
+void BtlObjAnim_PortPlace(BobjObj *obj, f32 x, f32 yaw, f32 scale, const f32 *feet) {
+    Mtx44 *m = &obj->xf.mtx;
+
+    obj->xf.pos.x = x;
+    obj->xf.rot.y = yaw;
+    obj->xf.scale = scale;
+    BtlObjXf_Update(obj);
+    if (feet == NULL) {
+        return;
+    }
+    obj->xf.pos.x = x - (feet[0] * m->m[0][0] + feet[2] * m->m[2][0]);
+    obj->xf.pos.y = -feet[1] * m->m[1][1];
+    obj->xf.pos.z = -(feet[0] * m->m[0][2] + feet[2] * m->m[2][2]);
+    BtlObjXf_Update(obj);
+}
+
+/* In the model's own axes, from the pose worked out last: the middle of the two feet (nodes 11 and 15 on every fighter)
+   and how far the lower one is from its height at rest (y grows downwards). 0: no such thing to measure. */
+s32 BtlObjAnim_PortFeet(BobjObj *obj, f32 *feet) {
+    Mtx44 *m = &obj->xf.mtx;
+    BobjBone *bone = obj->mdl.nodes;
+    f32 size = m->m[0][0] * m->m[0][0] + m->m[0][1] * m->m[0][1] + m->m[0][2] * m->m[0][2];
+    f32 x = 0.0f;
+    f32 z = 0.0f;
+    f32 low = -1.0e6f;
+    f32 rest = -1.0e6f;
+    s32 found = 0;
+
+    if (size <= 0.0f || bone == NULL) {
+        return 0;
+    }
+    while (found < 2) {
+        if (bone->id == 11 || bone->id == 15) {
+            f32 *at = BtlObj_GetNode(obj, bone->id)->mtx.m[3];
+            f32 dx = at[0] - m->m[3][0];
+            f32 dy = at[1] - m->m[3][1];
+            f32 dz = at[2] - m->m[3][2];
+            f32 h = (dx * m->m[1][0] + dy * m->m[1][1] + dz * m->m[1][2]) / size;
+
+            x += (dx * m->m[0][0] + dy * m->m[0][1] + dz * m->m[0][2]) / size;
+            z += (dx * m->m[2][0] + dy * m->m[2][1] + dz * m->m[2][2]) / size;
+            low = h > low ? h : low;
+            rest = bone->origin.y > rest ? bone->origin.y : rest;
+            found++;
+        }
+        if (bone->last != 0) {
+            break;
+        }
+        bone = (BobjBone *)((u8 *)bone + bone->next);
+    }
+    if (found < 2) {
+        return 0;
+    }
+    feet[0] = x * 0.5f;
+    feet[1] = low - rest;
+    feet[2] = z * 0.5f;
+    return 1;
+}
+
+s32 BtlObjAnim_PortStopped(BobjObj *obj) {
+    return obj->anim.mode == BOBJ_PLAY_NONE;
+}
+#endif
+
 /* Advances the frame of a self-stepped object by anim.step: once (stops on the last frame) or looping. */
 void BtlObjAnim_Step(BobjObj *obj) {
     BobjAnimPlayer *ap = &obj->anim;
+    extern f32 TagGiant_AnimationStep(void *);
+    f32 step=ap->step*TagGiant_AnimationStep(obj);
 
     switch (ap->mode) {
     case BOBJ_PLAY_ONCE:
         ap->prevFrame = ap->frame;
-        ap->frame = ap->frame + ap->step;
+        ap->frame = ap->frame + step;
         if (ap->layer[0].length <= ap->frame) {
             ap->mode = BOBJ_PLAY_NONE;
             ap->frame = ap->layer[0].length;
@@ -861,7 +980,7 @@ void BtlObjAnim_Step(BobjObj *obj) {
         break;
     case BOBJ_PLAY_LOOP:
         ap->prevFrame = ap->frame;
-        ap->frame = ap->frame + ap->step;
+        ap->frame = ap->frame + step;
         if (ap->layer[0].length <= ap->frame) {
             ap->frame = 0.0f;
             ap->prevFrame = 0.0f;
@@ -1175,16 +1294,39 @@ void BtlObjBody_Init(BobjObj *obj) {
         BtlObjBody_Reset(obj);
     }
 #undef bp
+    /* Spawn spacing asks for dimensions before the first pose update. */
+    { extern void TagGiant_UpdateBody(void *); TagGiant_UpdateBody(obj); }
 }
 
 /* Rebuilds the body volumes from the node matrices: the sphere (parts == 0) or the part boxes. Declared with a
    result it never sets: the calls are not tail calls in the original. */
 s32 BtlObjBody_Update(BobjObj *obj, s32 parts) {
+    extern void TagGiant_UpdateBody(void *);
+    extern f32 TagGiant_ObjectScale(void *);
+    f32 scale=TagGiant_ObjectScale(obj);
+    TagGiant_UpdateBody(obj);
     if (BtlObjBody_Exists(obj)) {
         if (parts == 0) {
             BtlObjBody_UpdateSphere(obj, &obj->body);
         } else {
             BtlObjBody_UpdateParts(&obj->body);
+            if(obj->mdl.param && ((u8 *)obj->mdl.param)[2]==4) {
+                BobjBodyPart *p=obj->body.parts;
+                for(;;p++) {
+                    s32 j;
+                    /* Broad bounds already contain scaled world corners. The
+                       narrow OBB solver needs unit axes and scaled extents. */
+                    for(j=0;j<3;j++) {
+                        p->box.axis[j].x/=scale;
+                        p->box.axis[j].y/=scale;
+                        p->box.axis[j].z/=scale;
+                    }
+                    p->box.unk10.x=p->box.local[0].x*scale;
+                    p->box.unk10.y=p->box.local[0].y*scale;
+                    p->box.unk10.z=p->box.local[0].z*scale;
+                    if(p->flags&1) break;
+                }
+            }
         }
     }
 }
@@ -1238,6 +1380,8 @@ void BtlObjHit_BuildVolumes(BobjObj *obj) {
     BobjWork *work;
     s32 i;
     BobjPart *part;
+    extern f32 TagGiant_ObjectScale(void *);
+    f32 scale=TagGiant_ObjectScale(obj);
 
     hit = &obj->hit;
     work = obj->work;
@@ -1248,6 +1392,9 @@ void BtlObjHit_BuildVolumes(BobjObj *obj) {
     work->atkSphereCount = 0;
     work->atkObbCount = 0;
     work->contact &= 0xFFFFFF;
+#ifdef PORT
+    TagContact_Clear(obj->id);
+#endif
     StgAabb_SetEmpty(&work->atkBox);
     if (obj->hit.hitIndex < 0) {
         return;
@@ -1261,7 +1408,7 @@ void BtlObjHit_BuildVolumes(BobjObj *obj) {
                 offset.z = hit->z;
                 offset.w = 1.0f;
                 Mtx_MulVec4(&center, &part->mtx, &offset);
-                ColSphere_Set(&work->atkSphere[work->atkSphereCount], &center, hit->r0);
+                ColSphere_Set(&work->atkSphere[work->atkSphereCount], &center, hit->r0*scale);
                 ColBounds_OfSphere(&box, &work->atkSphere[work->atkSphereCount]);
                 work->atkSphereCount++;
                 ColBox_AddPointKeepW(&work->atkBox, box.min);
@@ -1274,7 +1421,11 @@ void BtlObjHit_BuildVolumes(BobjObj *obj) {
                 Mtx_MulVec4(&center, &part->mtx, &offset);
                 Mtx_Copy(&m, &part->mtx);
                 Vec4_Copy((Vec4 *)m.m[3], &center);
-                ColObb_Init(&work->atkObb[work->atkObbCount], &center, hit->r0, hit->r1, hit->r2);
+                if(scale!=1) {
+                    s32 row,col;
+                    for(row=0;row<3;row++) for(col=0;col<3;col++) m.m[row][col]/=scale;
+                }
+                ColObb_Init(&work->atkObb[work->atkObbCount], &center, hit->r0*scale, hit->r1*scale, hit->r2*scale);
                 ColObb_Update(&work->atkObb[work->atkObbCount], &m);
                 ColBounds_OfObb(&box, &work->atkObb[work->atkObbCount]);
                 work->atkObbCount++;
@@ -1993,6 +2144,13 @@ s32 BtlObj_UpdateFace(BObj *obj) {
         if (face->flags & BOBJ_FACE_MOUTH) {
             BObjFace_UpdateMouth(obj, face);
         }
+#ifdef PORT
+        {
+            extern void Port_TagFaceTrace(u32,s32,s32,s32,s32,s32,s32,f32);
+            Port_TagFaceTrace((u32)obj,face->mode,face->lipArg,(s32)face->lipTime,
+                face->shape,face->lip ? face->lip[0].frame : -1,face->lipCount,face->jaw.x);
+        }
+#endif
     }
 }
 
@@ -2271,7 +2429,9 @@ s32 BtlObj_GetEyeFrame(BObj *obj) {
 /* Returns entry n of a file's offset table, NULL when the entry is empty. */
 void *BObjFile_GetEntry(BObjFile *file, s32 n) {
     u32 *buf = file->buf;
-
+#ifdef PORT
+    if (buf == NULL || n < 1 || (PortGame_IsBT4() && (u32)n > buf[0])) return NULL;
+#endif
     if (buf[n + 1] != buf[n]) {
         return (u8 *)buf + (buf[n] >> 2 << 2);
     }
@@ -2304,6 +2464,12 @@ void BtlObj_BindTables(BObj *obj) {
     mdl->unk00 = BObjFile_GetEntry(&slot->file[0], 3);
     mdl->unk04 = BObjFile_GetEntry(&slot->file[0], 0xC);
     mdl->unk3C = BObjFile_GetEntry(&slot->file[0], 2);
+#ifdef PORT
+    if (PortGame_IsBT4() && mdl->unk3C) {
+        u32 *parts=slot->file[0].buf;
+        PortGame_RepairModelBody(mdl->unk3C,(parts[3]&~3u)-(parts[2]&~3u),slot->file[0].id);
+    }
+#endif
     if (slot->file[1].buf != NULL) {
         for (i = 0; i < 0x19E; i++) {
             ((BObjBindView *)obj)->res.mdl.anims[i] = BObjFile_GetEntry(&slot->file[1], i + 1);
@@ -2348,6 +2514,22 @@ void BtlObj_BindTables(BObj *obj) {
         mdl->unk40 = BObjFile_GetEntry(&slot->file[2], 6);
     }
     mdl->unk38 = BObjFile_GetEntry(&slot->file[0], 1);
+#ifdef PORT
+    if (PortGame_IsBT4()) {
+        s32 chara = PortGame_ModelCharacter(slot->file[0].id);
+        u32 *meta = PortGame_Metadata(chara, 0);
+        u32 *lips = PortGame_Metadata(chara, (gSaveData->flags & 1) ? 3 : 2);
+        if (meta != NULL) {
+            u32 *ai = (u32 *)((u8 *)meta + (meta[3] & ~3u));
+            mdl->unk38 = (u8 *)meta + (meta[1] & ~3u);
+            for (i=0; i<3; ++i)
+                ((BObjBindView *)obj)->res.mdl.unk98[i] = ai[i+1] != ai[i+2] ? (u8 *)ai+(ai[i+1]&~3u) : NULL;
+            mdl->unkA4 = PortGame_Metadata(chara, 1);
+            for (i=0; i<100; ++i)
+                mdl->lip[i] = lips && lips[i+1]!=lips[i+2] ? (void *)((u8 *)lips+(lips[i+1]&~3u)) : NULL;
+        }
+    }
+#endif
     if (mdl->unk38 != NULL) {
         Res_RelocateOffsets(&mdl->unk38, mdl->unk38, mdl->unk38);
     }
@@ -2360,6 +2542,23 @@ void BtlObj_BindTables(BObj *obj) {
     mdl->unk918 = BObjFile_GetEntry(&slot->file[0], 0x19);
     mdl->unk91C = BObjFile_GetEntry(&slot->file[0], 0x1B);
     mdl->unk920 = BObjFile_GetEntry(&slot->file[0], 0x1C);
+#ifdef PORT
+    if (PortGame_IsBT4()) {
+        u32 *meta=PortGame_Metadata(PortGame_ModelCharacter(slot->file[0].id),0);
+        if (meta) {
+            u8 *params=(u8 *)meta+(meta[2]&~3u);
+            mdl->unk904=(s8 *)params;
+            mdl->unk908=params+0x100;
+            mdl->unk90C=params+0x2240;
+            mdl->unk910=params+0x2500;
+            mdl->unk924=params+0x25C0;
+            mdl->unk914=params+0x29D0;
+            mdl->unk918=params+0x2C50;
+            mdl->unk91C=params+0x2D50;
+            mdl->unk920=params+0x2F50;
+        }
+    }
+#endif
     mdl->chain = BObjFile_GetEntry(&slot->file[0], 0x17);
 }
 

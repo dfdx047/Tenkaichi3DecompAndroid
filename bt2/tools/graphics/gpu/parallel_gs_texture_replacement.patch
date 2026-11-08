@@ -1,0 +1,133 @@
+diff --git a/gs/gs_interface.cpp b/gs/gs_interface.cpp
+index ea00016..bfac7b5 100644
+--- a/gs/gs_interface.cpp
++++ b/gs/gs_interface.cpp
+@@ -1229,7 +1229,9 @@ void GSInterface::recycle_image_handle(Vulkan::ImageHandle image)
+ {
+ 	// If we're debugging we don't want the confusion of aliased image handles.
+ 	// It screws with debug label names.
+-	if (!debug_mode.feedback_render_target)
++	// BT2 Recomp patch: a replacement (block-compressed) is never reused for a texture from VRAM.
++	if (!debug_mode.feedback_render_target && image &&
++	    Vulkan::format_compression_type(image->get_format()) == Vulkan::FormatCompressionType::Uncompressed)
+ 		renderer.recycle_image_handle(std::move(image));
+ }
+ 
+@@ -1702,6 +1704,21 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode,
+ 		}
+ 
+ 		auto image = tracker.find_cached_texture(hasher.get());
++		if (!image && texture_replacement && desc.samples == 1)
++		{
++			// BT2 Recomp patch: a replacement is cached like a texture from VRAM (and dropped when its
++			// pages are overwritten), but nothing is uploaded into it and it is never recycled.
++			desc.hash = hasher.get();
++			image = texture_replacement(desc);
++			if (image)
++			{
++				if (long_term_cache_texture)
++					tracker.register_cached_texture(state_tracker.tex.page_rects, desc.rect.levels,
++					                                csa_mask, render_pass.clut_instance, hasher.get(), image);
++				else
++					tracker.register_short_term_cached_texture(state_tracker.tex.page_rects, desc.rect.levels, hasher.get());
++			}
++		}
+ 		if (!image)
+ 		{
+ 			TRACE("CACHE IMAGE", desc);
+@@ -1761,14 +1778,17 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode,
+ 
+ 		TextureInfo info = {};
+ 		info.view = &image->get_view();
+-		info.info.sizes = vec4(float(width), float(height),
+-							   1.0f / float(info.view->get_view_width()),
+-							   1.0f / float(info.view->get_view_height()));
++		// BT2 Recomp patch: a replacement covers the whole texture at its own resolution; it is addressed
++		// as the whole texture at the original size.
++		const bool replacement = Vulkan::format_compression_type(image->get_format()) != Vulkan::FormatCompressionType::Uncompressed;
++		const float view_width = replacement ? float(width) : float(info.view->get_view_width());
++		const float view_height = replacement ? float(height) : float(info.view->get_view_height());
++		info.info.sizes = vec4(float(width), float(height), 1.0f / view_width, 1.0f / view_height);
+ 
+ 		if (uint32_t(desc.clamp.desc.WMS) == CLAMPBits::CLAMP)
+ 		{
+ 			info.info.region.x = 0.0f;
+-			info.info.region.z = float(info.view->get_view_width()) - 1.0f;
++			info.info.region.z = view_width - 1.0f;
+ 		}
+ 		else if (uint32_t(desc.clamp.desc.WMS) == CLAMPBits::REGION_CLAMP)
+ 		{
+@@ -1779,7 +1799,7 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode,
+ 		if (uint32_t(desc.clamp.desc.WMT) == CLAMPBits::CLAMP)
+ 		{
+ 			info.info.region.y = 0.0f;
+-			info.info.region.w = float(info.view->get_view_height()) - 1.0f;
++			info.info.region.w = view_height - 1.0f;
+ 		}
+ 		else if (uint32_t(desc.clamp.desc.WMT) == CLAMPBits::REGION_CLAMP)
+ 		{
+@@ -1787,8 +1807,8 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode,
+ 			info.info.region.w = float(uint32_t(desc.clamp.desc.MAXV));
+ 		}
+ 
+-		info.info.bias.x = -float(desc.rect.x) * info.info.sizes.z;
+-		info.info.bias.y = -float(desc.rect.y) * info.info.sizes.w;
++		info.info.bias.x = replacement ? 0.0f : -float(desc.rect.x) * info.info.sizes.z;
++		info.info.bias.y = replacement ? 0.0f : -float(desc.rect.y) * info.info.sizes.w;
+ 
+ 		info.info.arrayed = int(desc.samples > 1);
+ 		info.info.flags = long_term_cache_texture ? TEX_INFO_LONG_TERM_REFERENCE : 0;
+@@ -4340,10 +4360,13 @@ void GSInterface::gif_transfer(uint32_t path_index, const void *data, size_t siz
+ 		}
+ 		else
+ 		{
+-			if (path.reg == 0 && optimized_draw_handler[path_index])
++			// BT2 Recomp patch: less than one loop left in this transfer goes the general way.
++			if (path.reg == 0 && optimized_draw_handler[path_index] && size - i >= nreg)
+ 			{
+ 				// Should this divide be optimized to use divide by constant trick?
+-				uint32_t nloops_to_run = std::min<uint32_t>(size / nreg, path.tag.NLOOP - path.loop);
++				// BT2 Recomp patch: the loops left in this transfer (size - i), not in the whole transfer, so a
++				// transfer that ends inside a packet is not read past its end.
++				uint32_t nloops_to_run = std::min<uint32_t>(uint32_t((size - i) / nreg), path.tag.NLOOP - path.loop);
+ 				(this->*optimized_draw_handler[path_index])(&qwords[i], nloops_to_run);
+ 				i += nloops_to_run * nreg;
+ 				path.loop += nloops_to_run;
+@@ -4531,8 +4554,10 @@ void GSInterface::promote_render_pass_to_backbuffer(const RenderPass &rp)
+ 
+ 			promoted_tex_index = tex_index;
+ 
+-			// Ignore if mipmapped.
+-			if (rp.textures[tex_index].view->get_image().get_create_info().levels > 1)
++			// Ignore if mipmapped (or a replacement: BT2 Recomp patch).
++			if (rp.textures[tex_index].view->get_image().get_create_info().levels > 1 ||
++			    Vulkan::format_compression_type(rp.textures[tex_index].view->get_image().get_format()) !=
++			    Vulkan::FormatCompressionType::Uncompressed)
+ 			{
+ 				is_valid_blit = false;
+ 				break;
+diff --git a/gs/gs_interface.hpp b/gs/gs_interface.hpp
+index 9f05da8..39dfd76 100644
+--- a/gs/gs_interface.hpp
++++ b/gs/gs_interface.hpp
+@@ -12,6 +12,7 @@
+ #include "intrusive_hash_map.hpp"
+ #include "dynamic_array.hpp"
+ #include <stddef.h>
++#include <functional>
+ #include <vector>
+ #include <type_traits>
+ 
+@@ -303,6 +304,12 @@ public:
+ 
+ 	void read_transfer_fifo(void *data, uint32_t num_128b_words);
+ 
++	// Texture replacement (BT2 Recomp patch): called when a texture is about to be cached from VRAM.
++	// A non-null image is used instead: it holds the whole 2^TW x 2^TH texture at any resolution, in a
++	// block-compressed format (which marks it as a replacement), and is sampled with the texture's own
++	// coordinates. Textures with super-samples are never replaced.
++	std::function<Vulkan::ImageHandle (const TextureDescriptor &)> texture_replacement;
++
+ private:
+ 	friend class PageTracker;
+ 	void flush(PageTrackerFlushFlags flags, FlushReason reason);

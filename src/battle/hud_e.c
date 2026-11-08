@@ -139,9 +139,9 @@ void HudNotice_UpdateBanner(void) {
 /* Base id of the announcer's voice lines for the voice set of the options. */
 s32 HudNotice_GetVoiceBase(void) {
     if (gSaveData->flags & SAVE_FLAG_VOICE) {
-        return 0x10B6C;
+        return DISC_RESOURCE(0x10B6C, 0x971);
     }
-    return 0x10B34;
+    return DISC_RESOURCE(0x10B34, 0x939);
 }
 
 /* Starts announcement `id` (see the top of the file): hides the word's sprites, resets node 1 and gives it the

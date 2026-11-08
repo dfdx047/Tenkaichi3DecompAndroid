@@ -12,10 +12,10 @@ android {
         applicationId = "com.dfdx047.dragonrage"
         minSdk = 29
         targetSdk = 35
-        // CI passes the tag (android-v0.1.0 -> 0.1.0) and the run number
-        // Without CI (a local build) the name is 0.9.0 and the code follows it (0.9.0 -> 900), so a local build of
-        // a newer version always installs over the one before it; the same version again installs with `adb install -r`.
-        val vName = System.getenv("DR_VERSION_NAME") ?: "0.9.0"
+        // CI passes the tag (android-v0.1.0 -> 0.1.0); a nightly (0.0.0-dev.N) also passes the run number as its code.
+        // A release's code follows its name (0.9.0 -> 900, 1.0.0 -> 10000), in CI and locally, so a newer version always
+        // installs over the one before it; the same version again installs with `adb install -r`.
+        val vName = System.getenv("DR_VERSION_NAME") ?: "1.0.0"
         val vParts = vName.substringBefore('-').split('.').map { it.toIntOrNull() ?: 0 }
         versionCode = System.getenv("DR_VERSION_CODE")?.toInt()
             ?: maxOf(1, vParts.getOrElse(0) { 0 } * 10000 + vParts.getOrElse(1) { 0 } * 100 + vParts.getOrElse(2) { 0 })
@@ -25,6 +25,10 @@ android {
         val portRelease = rootProject.file("../port/src/port_release.h").takeIf { it.exists() }?.readLines()
             ?.firstOrNull { it.startsWith("#define PORT_RELEASE ") }?.substringAfter("#define PORT_RELEASE ")?.trim()?.toIntOrNull() ?: 0
         buildConfigField("int", "PORT_RELEASE", portRelease.toString())
+        // the BT2 engine packages this app imports (bt2/runtime/android/engine_abi.h; data/Bt2Engine.kt)
+        val bt2EngineAbi = rootProject.file("../bt2/runtime/android/engine_abi.h").takeIf { it.exists() }?.readLines()
+            ?.firstOrNull { it.startsWith("#define BT2_ENGINE_ABI ") }?.substringAfter("#define BT2_ENGINE_ABI ")?.trim()?.toIntOrNull() ?: 0
+        buildConfigField("int", "BT2_ENGINE_ABI", bt2EngineAbi.toString())
 
         // The game engine will be arm64 only (see docs: 32-bit pointers lowered for AArch64).
         ndk { abiFilters += listOf("arm64-v8a") }
@@ -58,6 +62,14 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
+        // A test build installed beside Dragon Rage instead of over it (./gradlew assembleDebug -PsideBySide): its
+        // own package and the name "Dragon Rage (teste)" (src/sideBySide), so the player's app and its data stay.
+        if (project.hasProperty("sideBySide")) {
+            getByName("debug") { applicationIdSuffix = ".teste" }
+        }
+    }
+    if (project.hasProperty("sideBySide")) {
+        sourceSets.getByName("debug").res.srcDir("src/sideBySide/res")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

@@ -56,6 +56,9 @@ void Rand_SeedByArray(u32 *key, s32 keyLen) {
  * The refill lacks the reference code's second loop (kk = N-M .. N-2), so words 227..622 of the state
  * are never regenerated: this is not a true MT19937 sequence. */
 u32 Rand_Next(void) {
+#ifdef PORT
+    { extern void Port_RandNote(void *caller); Port_RandNote(__builtin_return_address(0)); } /* (gs/tag_net.c: desync finding) */
+#endif
     u32 y;
 
     if (gRandIndex >= RAND_N) {

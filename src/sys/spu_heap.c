@@ -20,7 +20,10 @@
 
 extern void *memset(void *dst, s32 c, u32 n);
 
-extern SpuBlock gSpuHeapBlocks[SPU_HEAP_BLOCKS];
+static SpuBlock nativeSpuBlocks[64];
+#undef SPU_HEAP_BLOCKS
+#define SPU_HEAP_BLOCKS 64
+#define gSpuHeapBlocks nativeSpuBlocks
 
 /* Marks a descriptor unused. */
 void SpuBlock_Clear(SpuBlock *block) {

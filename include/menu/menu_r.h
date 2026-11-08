@@ -51,7 +51,7 @@ extern void Save_AddItem(s32 idx);
 #define SIM_VOICE_IDLE 5
 /* Voice bank base of this mode group's guides (Voice_PlayWithSubtitle). */
 #define SIM_VOICE_BASE 0x8765
-#define SIM_FACE_FILE 0x2F9      /* + character id: compressed portrait */
+#define SIM_FACE_FILE DISC_RESOURCE(0x2F9, 0x71C)      /* + character id: compressed portrait */
 #define SIM_FACE_SIZE 0x16800
 #define SIM_BGM_FIRST 0x10B16    /* Bgm_Play id of music 0 */
 #define SIM_MONEY_MAX 9999999

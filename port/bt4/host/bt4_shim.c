@@ -17,6 +17,7 @@ extern void Bt4_UiInit(const char *gpu, int gl);
 
 /* ---- the BT3 port's variables the renderer reads */
 int gGsMainFbp = -1;               /* the shown frame buffer: DISPFB1 from the live stream (bt4_main.cpp) */
+int gGsOtherFbp = -1;              /* the buffer before it, where the game is drawing now (bt4_main.cpp) */
 unsigned gPortVBlanks;             /* vertical blanks: one per frame of the stream */
 int gPortInMenus;                  /* (BT3: the menus are running; aspect and pacing choices) */
 int gPortMenuMode;
@@ -27,6 +28,16 @@ volatile int gPortNetWindowClose;
 int gPortMusicPercent = 100, gPortSePercent = 100, gPortVoicePercent = 100, gPortStagePercent = 100;
 unsigned char gPad[0x400];         /* (BT3: the game's pad block; only a test of gs_input.c reads it) */
 unsigned long long gPortNetWaitNs; /* (BT3 online: the time a frame waited for the other player; gs_core.c's report) */
+unsigned char gNativePad[0x400];   /* (BT3: the game's pad block; only gs_input.c's BT3_STICK_TEST reads it) */
+
+/* ---- the Tag Team mod and the spectators of BT3's online, which gs_input.c asks about: no such thing here */
+int Port_NetSpectating(void) { return 0; }
+int TagNet_Enabled(void) { return 0; }
+int TagNet_Role(void) { return 0; }
+int TagTeam_ViewActor(int player) { return player; }
+int TagTeam_Active(void) { return 0; }
+volatile int gPortInBackground;      /* (BT3: net_match.c, which holds its requests while the app is not on the screen; gs_gpu.c sets it) */
+void Port_TagTestCheck(int ok, int where) { (void)ok; (void)where; }
 
 /* ---- pacing: the recompiled game paces itself */
 unsigned long long Port_BlankNs(void) { return 16683350ull; }

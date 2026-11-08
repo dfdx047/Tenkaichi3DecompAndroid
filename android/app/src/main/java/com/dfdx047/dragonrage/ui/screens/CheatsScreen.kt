@@ -47,6 +47,12 @@ fun CheatsScreen(vm: AppViewModel) {
     ) {
         ScreenTitle(stringResource(R.string.cheats_title), stringResource(R.string.cheats_sub))
 
+        SectionCard(stringResource(R.string.tag_flat), Icons.Rounded.LockOpen, accent = Dbz.SaiyanGold) {
+            ToggleRow(stringResource(R.string.tag_flat), stringResource(R.string.tag_flat_text), (settings[EngineSettings.TAG_FLAT] ?: 0) != 0) {
+                vm.setting(EngineSettings.TAG_FLAT, if (it) 1 else 0)
+            }
+        }
+
         SectionCard(stringResource(R.string.unlock_all), Icons.Rounded.LockOpen, accent = Dbz.SaiyanGold) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 DragonBall(stars = 7, size = 64.dp)

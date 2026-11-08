@@ -1,3 +1,4 @@
+#include "battle/btl_effect_owner.h"
 #include "common.h"
 #include "battle/eft_h.h"
 
@@ -346,7 +347,7 @@ void EftShot_DestroyChar(s32 chr) {
     EftHChar *c = &gEftShot->chars[chr];
 
     if (c->task != NULL) {
-        BtlScene_Reset(chr == 0 ? 2 : 3);
+        BtlScene_ResetCharacter(chr);
         EftShot_SetCharPool(chr);
         BtlTask_Kill(c->task);
         c->task = NULL;
@@ -744,7 +745,7 @@ void EftVolley_Init(EftHTask *task, EftHSlot *arg) {
     if ((u16)slot->param->id - 0x26E < 2U) {
         w->flags |= EFT_VOLLEY_800 | EFT_VOLLEY_1000;
     }
-    BtlTask_SetOwnerTag(task, slot->arg.chr == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(slot->arg.chr));
 }
 
 /* Instance term: releases the emitter state and, for a technique, sets the fighter's held flag 0xA8. */
@@ -1421,13 +1422,13 @@ s32 EftEmit_GetResetFlags(EftSet *set, EftSetState *st, s32 type, s32 idx) {
     return flags;
 }
 
-/* Marks the task of a spawned object as belonging to character `chr` (so BtlScene_Reset(2 + chr) reaches it),
+/* Marks the task of a spawned object as belonging to character `chr` (so BtlScene_ResetCharacter reaches it),
    except for the group types 2 and 5. */
 void EftEmit_TagTask(void *task, s32 chr, s32 type) {
     s32 flags;
 
     if (task != NULL && type != 2 && type != 5) {
-        flags = chr == 0 ? 0x800 : 0x1000;
+        flags = BtlScene_CharOwnerTag(chr);
         BtlTask_SetOwnerTag(task, flags);
         flags = 0; /* dead store: the original does not tail-call here */
     }

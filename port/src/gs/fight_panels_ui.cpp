@@ -8,6 +8,7 @@
 // draws, on the render thread, into ImGui's background list (ui.cpp: bars_draw). The portraits are read from their
 // files here (portrait_rgba) and kept as textures: colour, grey and a white silhouette stacked in one.
 #include <ctype.h>
+#include <algorithm>
 #include <float.h>
 #include <math.h>
 #include <stdint.h>
@@ -18,6 +19,8 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "fight_panels.h"
+#include "../../include/plat_game.h"
+#include "../../include/tag_text.h"
 
 extern "C" int Port_HudSwap(void);                         // gs/net.c: the HUD's sides are swapped on this copy
 SDL_GPUTexture *Ui_Texture(uint8_t *pix, uint32_t w, uint32_t h); // ui.cpp (takes pix)
@@ -62,7 +65,8 @@ static const char *const kCharaNames[] = {
 };
 
 static const char *chara_name(int chara) {
-    return chara >= 0 && chara < (int)(sizeof(kCharaNames) / sizeof(kCharaNames[0])) ? kCharaNames[chara] : NULL;
+    if(PortGame_IsBT4()) return PortGame_CharacterName(chara);
+    return chara >= 0 && chara < (int)(sizeof(kCharaNames) / sizeof(kCharaNames[0])) ? Port_TagText(kCharaNames[chara]) : NULL;
 }
 
 // ---------------------------------------------------------------------------------------------------- portrait files
@@ -910,3 +914,5 @@ bool FightPanels_Draw(ImDrawList *dl, float lx, float rx, float y0, float y1, fl
     sAlpha = 1.0f;
     return true;
 }
+
+const char *TagHud_Name(int chara) { return chara_name(chara); }

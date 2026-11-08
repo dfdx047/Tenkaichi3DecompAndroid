@@ -1,0 +1,11 @@
+{
+  "ps2recomp": {"repository": "https://github.com/ran-j/PS2Recomp.git", "revision": "c5a9d02573410a2085a4b4b831b0b68ba3515440"},
+  "dependencies": {
+    "elfio": {"repository": "https://github.com/serge1/ELFIO.git", "tag": "Release_3.12", "revision": "8ae6cec5d60495822ecd57d736f66149da9b1830"},
+    "toml11": {"repository": "https://github.com/ToruNiina/toml11.git", "tag": "v4.4.0", "revision": "be08ba2be2a964edcdb3d3e3ea8d100abc26f286"},
+    "fmt": {"repository": "https://github.com/fmtlib/fmt.git", "tag": "12.1.0", "revision": "407c905e45ad75fc29bf0f9bb7c5c2fd3475976f"},
+    "libdwarf": {"repository": "https://github.com/davea42/libdwarf-code.git", "tag": "v2.2.0", "revision": "2e088b983562860f497b4fd789a3e61524eb857c"},
+    "rabbitizer": {"repository": "https://github.com/Decompollaborate/rabbitizer.git", "tag": "1.14.3", "revision": "d5804fa488474830a47fbf9f3693048ec1e45589"},
+    "nlohmann_json": {"repository": "https://github.com/nlohmann/json.git", "tag": "v3.11.3", "revision": "9cca280a4d0ccf0c08f47a99aa71d1b0e52f8d03"}
+  }
+}

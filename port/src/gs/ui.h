@@ -22,6 +22,7 @@ typedef struct PortVideo {
     int filter;      /* the picture onto the screen: 0 bilinear, 1 sharp bilinear, 2 FXAA, 3 FSR 1, 4 Snapdragon GSR */
     int vsync;       /* 1 = a picture waits for the display's refresh (no tearing where the driver has no other way) */
     int frameSkip;   /* 1 = a tick's picture is left out when the machine is behind, instead of the game slowing down */
+    int tagLite;     /* the Tag Team's light graphics (Port_TagLiteUpdate, gs_draw.c): 1 = on */
     int hudLayout;   /* a fight's HUD in a wide picture: 0 at the edges, 1 at the edges with long health bars, 2 in the middle as in 4:3 */
     int menuFont;    /* 0 Original (default), then entries in the generated font catalog */
     int battleFont; /* 0 original battle artwork (default), otherwise a font listed for battle */
@@ -39,7 +40,8 @@ SDL_Window *GsDraw_WindowCreate(int opengl);
 SDL_Window *GsDraw_Window(void);
 void GsDraw_WindowShape(void);
 void GsDraw_FullscreenSet(int on);
-void GsDraw_FullscreenToggle(void); /* F11: switch, save it, write the settings */
+void GsDraw_FullscreenToggle(void); /* switch and remember the window mode */
+int GsDraw_FullscreenEvent(const SDL_Event *ev); /* keys before UI input; mouse after UI input */
 
 /* gs_input.c: bindings of both players. Actions 0..15 are the pad's buttons, 16..23 the two sticks' directions. */
 #define PORT_ACTIONS 24
@@ -58,6 +60,8 @@ void PortInput_Swallow(void);           /* the controller buttons held now are n
 void PortInput_SwallowKeys(void);       /* the same for the bound keys held now */
 int *PortInput_ChatKey(void);           /* the key that opens the online chat's line (scancode, 0 = none) */
 void PortInput_ResetDefaults(int player);
+/* The automatic set-up: the PS2 controller's layout on the wireless controller (else the first): its slot, -1 none */
+int PortInput_AutoConfigure(int player, char *name, int size);
 #define PORT_DEADZONE_MAX 90   /* percent */
 #define PORT_TRIGGER_AT 12000  /* of 32767: from here a trigger counts as pressed */
 int *PortInput_Deadzone(int player);  /* [2] left, right stick: -1 = the game's own (per axis), 0..PORT_DEADZONE_MAX = a round one, percent */

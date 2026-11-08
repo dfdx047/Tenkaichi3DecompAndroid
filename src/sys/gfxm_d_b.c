@@ -17,6 +17,7 @@
 #include "sys/list.h"
 #include "battle/btl_obj.h"
 #include "battle/btl_cam.h"
+#include "battle/tag_team.h"
 
 void BtlObjDraw_DrawModel(BtlObj *obj);
 void BtlObjDraw_DrawModelFade(BtlObj *obj);
@@ -44,13 +45,14 @@ void BtlObjDraw_DrawLists(s32 count) {
     BtlObjDrawList *list;
 
     for (v = 0; v < count; v++) {
+        if (count>1 && !TagTeam_ViewVisible(v)) continue;
         BtlObjDraw_ApplyView(v, count);
         list = BtlObjVis_GetList(v);
         for (i = 0; i < list->count; i++) {
             BtlObj *obj = list->objs[i];
             BtlObjState *state = &obj->state;
 
-            state->view = &state->views[v];
+            state->view = BtlObj_View(obj, v);
             BtlObjDraw_DrawModel(obj);
         }
     }
@@ -63,13 +65,14 @@ void BtlObjDraw_DrawFadeLists(s32 count) {
     BtlObjDrawList *list;
 
     for (v = 0; v < count; v++) {
+        if (count>1 && !TagTeam_ViewVisible(v)) continue;
         BtlObjDraw_ApplyView(v, count);
         list = BtlObjVis_GetList(v);
         for (i = 0; i < list->count; i++) {
             BtlObj *obj = list->objs[i];
             BtlObjState *state = &obj->state;
 
-            state->view = &state->views[v];
+            state->view = BtlObj_View(obj, v);
             if (state->view->flags & BTL_OBJ_FLAG_FADE) {
                 BtlObjDraw_DrawModelFade(obj);
             }
@@ -99,6 +102,7 @@ void BtlObjDraw_DrawShadows(s32 count) {
 
     BtlObjDraw_SetEnv();
     Gfx_ClearScreen(0xFFFFFF, 0);
+    { extern int Port_TagLite(void); if (Port_TagLite()) return; } /* (light graphics, gs_draw.c: no shadows) */
     for (node = List_GetHead(BtlObj_GetUsedList()); node != NULL; node = List_GetNext(node)) {
         BtlObj *obj;
         BtlObjState *state;
@@ -107,6 +111,7 @@ void BtlObjDraw_DrawShadows(s32 count) {
         obj = (BtlObj *)((u8 *)node + 0x10);
         state = &obj->state;
         for (i = 0; i < count; i++) {
+            if (count>1 && !TagTeam_ViewVisible(i)) continue;
             if (BtlObjDraw_IsInList(i, obj)) {
                 mask |= 1 << i;
             }
@@ -116,7 +121,7 @@ void BtlObjDraw_DrawShadows(s32 count) {
                 ObjGs_AddFlatShadowEnv();
                 for (i = 0; i < count; i++) {
                     if ((mask >> i) & 1) {
-                        state->view = &state->views[i];
+                        state->view = BtlObj_View(obj, i);
                         ObjShadow_BeginFlat(obj);
                     }
                 }
@@ -124,7 +129,7 @@ void BtlObjDraw_DrawShadows(s32 count) {
                 ObjShadow_BeginRender(obj);
                 for (i = 0; i < count; i++) {
                     if ((mask >> i) & 1) {
-                        state->view = &state->views[i];
+                        state->view = BtlObj_View(obj, i);
                         ObjShadow_Draw(obj, BtlObjVis_GetView(i));
                     }
                 }

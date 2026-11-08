@@ -1,3 +1,4 @@
+#include "battle/btl_effect_owner.h"
 #include "common.h"
 #include "battle/eft_j.h"
 
@@ -468,7 +469,7 @@ void EftMulti_Init(EftJTask *task, EftJSrc *src) {
     } else {
         w->flags |= 0x400;
     }
-    BtlTask_SetOwnerTag(task, src->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(src->objId));
 }
 
 /* Term callback of an item. */
@@ -899,7 +900,7 @@ void EftPropShot_Init(EftJTask *task, EftJSrc *src) {
     if (w->src->def->id == 0x19A) {
         w->flags |= 0x800;
     }
-    BtlTask_SetOwnerTag(task, src->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(src->objId));
 }
 
 /* Term callback of an item. */
@@ -1283,7 +1284,7 @@ void EftBlast_Init(EftJTask *task, EftJSrc *arg) {
         w->flags |= 0x200;
     }
     w->life = EftEmit_GetEndFrames(w->set);
-    BtlTask_SetOwnerTag(task, src->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(src->objId));
 }
 
 /* Term callback of an item. */
@@ -1303,6 +1304,30 @@ void EftBlast_Update(EftJTask *task) {
     EftBlast *w = task->work;
     EftJSrc *src = w->src;
     s32 advance = 0;
+
+    { /* Reuse the helper's own beam pack, pinned to the real clash point.
+         No hit record: assistance is counted by the clash's power multiplier. */
+        extern s32 TagAssist_BeamForSlot(s32,s32,EftJVec *,s32 *);
+        EftJVec end;s32 age;
+        /* EftJSrc +4 is the source technique slot (EftHStartArg.slot). */
+        if(TagAssist_BeamForSlot(src->objId,src->unk4,&end,&age)) {
+            if(BtlScene_IsCharStopped(src->objId)) return;
+            EftEmit_UpdateNodesReq(src,w->node);
+            w->origin=w->muzzle;
+            w->tail=w->head;
+            w->head=end;
+            Vec3_Sub(&w->dir,&w->head,&w->muzzle);
+            Vec3_Normalize(&w->dir,&w->dir);
+            w->flags|=0x40000000|0x40|0x10;
+            task->state=2;
+            w->drawScale=w->scale*0.25f;
+            EftEmit_UpdateTrailWidth(w->set,w->emit);
+            EftBlast_UpdateParts(src->objId,task,w->set,0);
+            EftShot_PlayFireSound(src->objId,src);
+            return;
+        }
+        if(w->flags&0x40000000) {EftEmit_KillAll(w->set,w->emit);BtlTask_SetDead(task);return;}
+    }
 
     if (BtlScene_IsCharStopped(src->objId)) {
         return;
@@ -1436,6 +1461,11 @@ void EftBlast_PostUpdate(EftJTask *task) {
     EftJVec d;
     EftBlast *w = task->work;
     EftJSrc *src = w->src;
+
+#ifdef PORT
+    extern void Port_TagBeamTrace(s32,s32,s32,s32,void *,void *);
+    Port_TagBeamTrace(src->objId,task->state,w->flags,EftShot_TestBits(src->objId,0x400),&w->muzzle,&w->head);
+#endif
 
     if (BtlScene_IsCharStopped(src->objId)) {
         return;

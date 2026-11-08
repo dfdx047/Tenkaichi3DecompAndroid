@@ -5,14 +5,22 @@
 #include "sys/list.h"
 
 #define FILE_SECTOR_SIZE 0x800
+#ifdef PORT
+#define FILE_REQ_MAX 128
+#else
 #define FILE_REQ_MAX 32
+#endif
 
 /* File ids: one global number space spread over three AFS partitions. */
 #define FILE_PT1_FIRST_ID 1     /* ids <= 0 are entries of partition 0 */
 #define FILE_PT2_FIRST_ID 0xD48 /* ids 1..0xD47 are partition 1, the rest partition 2 */
 #define FILE_PT_COUNT 3
 
+#ifdef PORT
+#define ADX_PLAYER_COUNT (2 + 2 * PORT_FIGHTER_CAPACITY)
+#else
 #define ADX_PLAYER_COUNT 6
+#endif
 
 /* CRI ADXF status values (file handle and partition load share them). */
 #define ADXF_STAT_STOP 1
@@ -38,6 +46,8 @@ typedef struct AdxPlayer {
     /* 0x0C */ void *work;
     /* 0x10 */ ADXT_HN adxt;
 } AdxPlayer;
+
+AdxPlayer *File_AdxPlayer(s32 channel);
 
 /* Argument of ADXPS2_SetupDvdFs (0x14 bytes are cleared; only the first word is set). */
 typedef struct AdxDvdFsParam {

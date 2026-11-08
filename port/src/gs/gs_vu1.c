@@ -446,7 +446,9 @@ upper_done:
                 }
                 break;
             }
-            default: sUnknown[1][lop & 63]++; break;
+            default:
+                sUnknown[1][lop & 63]++;
+                break;
             }
         }
         /* ---- commit the upper instruction's result ---- */
@@ -513,7 +515,8 @@ static int hle_program0(void) {
     if (count < 3 || top + 5 + count * 3 > 1024) {
         return 0;
     }
-    for (layer = 0; layer < 2; layer++) {
+    extern int gsNoToon; /* gs_draw.c */
+    for (layer = 0; layer < (gsNoToon ? 1 : 2); layer++) {
         memcpy(pkt, &vu.mem[top * 16], 16);
         memcpy(pkt + 16, &vu.mem[(top + 1 + (uint32_t)layer) * 16], 16);
         Gs_Gif(pkt, 2); /* the layer's TEX0 */

@@ -140,6 +140,15 @@ include/menu/port_screen.h):
 Still in port_tbo.c, to move into the kit next: the keypads (`Tb_Keypad`, `Tb_PadUpdate`), the notes (`Tb_Note`),
 the pages and their slide-in (`Tb_SetMode`, `Tb_In`), the speech (`Tb_Speak`), the windows (`Tb_WinInit`).
 
+**Drawing over the game's own screens.** The kit draws anywhere the game draws: Train While Waiting's sign from the
+battle's HUD (`PortTbo_SparSign`), and a spectator's line over every screen of a watched match from `Gfx_EndFrame`
+(src/sys/gfx.c, `PortTbo_SpecDraw`). A game's own window can be drawn with menus of ours too: a spectator's pause
+menu is the battle's pause-menu box, drawn by its engine (port/src/spec_menu.c, `BtlMenu_PortDrawMenu`) with items
+whose texts come from the port. Such a thing reads the PC's controller itself (`Port_PadRead`) when the game's pads
+are not this player's, keeps its variables out of the game's state (a port file's, or `TB_HOST`, the section
+`.porthst` that the state list leaves out), and still writes the game's draw lists: a copy that draws it differs
+from one that does not in those bytes (the fight is the same).
+
 **Coordinates.** A page is 4:3 in the middle of the window (`Ps_PageSet` once a frame; `Ps_X`, `Ps_Y` take the
 game's 512 x 448 units of the page; `Ps_Left` is the window's left edge on it). The game's movies, the windows included, cover the whole screen: where the screen's own things
 meet theirs, convert between the two.

@@ -69,6 +69,11 @@ void Load_RunBlocking(void) {
     s32 done = 0;
     s32 prev;
 
+#ifdef PORT
+    extern void Port_LoadTrace(s32);
+    Port_LoadTrace(0);
+#endif
+
     PadWatch_SetEnabled(0);
     Dma_ResetBuffers();
     Load_InitScreen();
@@ -82,6 +87,9 @@ void Load_RunBlocking(void) {
         Pad_Update();
         busy = Job_Run();
         if (prev != busy) {
+#ifdef PORT
+            Port_LoadTrace(1);
+#endif
             Fade_Start(0, 0, 1.0f);
         }
         if (!busy) {
@@ -101,6 +109,9 @@ void Load_RunBlocking(void) {
     Dma_ResetBuffers();
     gProgress->flags &= ~PROGRESS_FLAG_LOADING;
     PadWatch_SetEnabled(1);
+#ifdef PORT
+    Port_LoadTrace(2);
+#endif
 }
 
 /* Fills the sprite list for the current screen type (and scatters the items of type 2). */

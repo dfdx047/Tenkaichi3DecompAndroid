@@ -154,10 +154,14 @@ typedef struct BtlParam {
 
 /* The fighter's battle object (BtlChar_GetObj). */
 typedef struct BtlTechObj {
-    /* 0x000 */ u8 unk0[0x91C];
+    /* 0x000 */ u8 unk0[0xC];
+    /* 0x00C */ s32 chara;
+    /* 0x010 */ u8 unk10[0x91C - 0x10];
     /* 0x91C */ BtlParam *param;
     /* 0x920 */ BtlAtkRecord *atk;  /* BTL_ATK_COUNT records (a pointer, not an inline array) */
-    /* 0x924 */ u8 unk924[0xC90 - 0x924];
+    /* 0x924 */ u8 unk924[0x940 - 0x924];
+    /* 0x940 */ u8 *modelInfo;
+    /* 0x944 */ u8 unk944[0xC90 - 0x944];
     /* 0xC90 */ u8 unkC90[0x1C];    /* BtlAtk_GetId reads the two bytes below through a pointer to here */
     /* 0xCAC */ s8 hitCount;        /* hits of the current animation (inferred from the first / middle / last test) */
     /* 0xCAD */ s8 hitNo;           /* number of the current hit: 0 = first, 0 or -1 = "first" for animation 0x37 */
@@ -185,7 +189,8 @@ typedef struct BtlTechPad {
 
 /* Partial view of a fighter (0x1600 bytes). */
 typedef struct BtlTechChr {
-    /* 0x0000 */ u8 unk0[0x998];
+    /* 0x0000 */ s32 player;
+    /* 0x0004 */ u8 unk4[0x998-4];
     /* 0x0998 */ s32 memberCount;
     /* 0x099C */ u8 unk99C[0xD50 - 0x99C];
     /* 0x0D50 */ s32 unkD50;        /* BtlCtrl_GetOppUnkD50 reads the opponent's */

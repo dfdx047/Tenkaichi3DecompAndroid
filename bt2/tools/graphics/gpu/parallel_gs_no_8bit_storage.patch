@@ -1,0 +1,315 @@
+--- a/gs/shaders/vram_copy.comp
++++ b/gs/shaders/vram_copy.comp
+@@ -6,7 +6,6 @@
+ // SPDX-License-Identifier: LGPL-3.0+
+ 
+ #extension GL_EXT_shader_16bit_storage : require
+-#extension GL_EXT_shader_8bit_storage : require
+ #extension GL_EXT_scalar_block_layout : require
+ #extension GL_KHR_shader_subgroup_ballot : require
+ #extension GL_KHR_shader_subgroup_vote : require
+@@ -39,40 +38,48 @@
+ 	uint data[];
+ } vram32;
+ 
+-layout(std430, set = 0, binding = 0) buffer VRAM24
+-{
+-	u8vec3 data[];
+-} vram24;
+-
+ layout(std430, set = 0, binding = 0) buffer VRAM16
+ {
+ 	uint16_t data[];
+ } vram16;
+ 
+-layout(std430, set = 0, binding = 0) buffer VRAM8
+-{
+-	uint8_t data[];
+-} vram8;
+-
+ layout(buffer_reference, buffer_reference_align = 16, std430) readonly buffer TRANSFER32
+ {
+ 	uint data[];
+ };
+ 
+-layout(buffer_reference, buffer_reference_align = 16, scalar) readonly buffer TRANSFER24
+-{
+-	u8vec3 data[];
+-};
+-
+ layout(buffer_reference, buffer_reference_align = 16, std430) readonly buffer TRANSFER16
+ {
+ 	uint16_t data[];
+ };
+ 
+-layout(buffer_reference, buffer_reference_align = 16, std430) readonly buffer TRANSFER8
++// Bytes and 24-bit pixels through 32-bit words: some drivers (Turnip on Adreno 7xx, older Qualcomm drivers)
++// have no 8-bit storage. The stores are for an invocation that owns the whole word (has_exclusive).
++uint transfer_u8(uvec2 bda, uint byte_addr)
+ {
+-	uint8_t data[];
+-};
++	return bitfieldExtract(TRANSFER32(bda).data[byte_addr >> 2u], int(byte_addr & 3u) * 8, 8);
++}
++
++uint transfer_u24(uvec2 bda, uint index)
++{
++	uint byte_addr = index * 3u;
++	uint shift = (byte_addr & 3u) * 8u;
++	uint value = TRANSFER32(bda).data[byte_addr >> 2u] >> shift;
++	if (shift > 8u)
++		value |= TRANSFER32(bda).data[(byte_addr >> 2u) + 1u] << (32u - shift);
++	return value & 0xffffffu;
++}
++
++void vram_store_u8(uint byte_addr, uint value)
++{
++	uint word = byte_addr >> 2u;
++	vram32.data[word] = bitfieldInsert(vram32.data[word], value, int(byte_addr & 3u) * 8, 8);
++}
++
++void vram_store_u24(uint word, uint value)
++{
++	vram32.data[word] = bitfieldInsert(vram32.data[word], value, 0, 24);
++}
+ 
+ //#define SANITY_CHECK_LINKED_LIST
+ 
+@@ -208,15 +215,15 @@
+ 		}
+ 		else if (SOURCE_FMT == PSMT8)
+ 		{
+-			data = uint(TRANSFER8(bda).data[addr]);
++			data = transfer_u8(bda, addr);
+ 		}
+ 		else if (SOURCE_FMT == PSMT8H)
+ 		{
+-			data = uint(TRANSFER8(bda).data[4 * addr + 3]);
++			data = transfer_u8(bda, 4 * addr + 3);
+ 		}
+ 		else if (SOURCE_FMT == PSMT4)
+ 		{
+-			data = uint(TRANSFER8(bda).data[addr >> 1]);
++			data = transfer_u8(bda, addr >> 1);
+ 			data = bitfieldExtract(data, 4 * int(addr & 1u), 4);
+ 		}
+ 		else if (SOURCE_FMT == PSMT4HL || SOURCE_FMT == PSMT4HH)
+@@ -233,8 +240,7 @@
+ 	{
+ 		if (is_storage_tex_24bit)
+ 		{
+-			uvec3 bytes = uvec3(TRANSFER24(bda).data[addr]);
+-			data = bytes.x | (bytes.y << 8) | (bytes.z << 16);
++			data = transfer_u24(bda, addr);
+ 		}
+ 		else if (is_storage_tex_16bit)
+ 		{
+@@ -242,11 +248,11 @@
+ 		}
+ 		else if (is_storage_tex_8bit)
+ 		{
+-			data = uint(TRANSFER8(bda).data[addr]);
++			data = transfer_u8(bda, addr);
+ 		}
+ 		else if (is_storage_tex_4bit)
+ 		{
+-			data = uint(TRANSFER8(bda).data[addr >> 1]);
++			data = transfer_u8(bda, addr >> 1);
+ 			data = bitfieldExtract(data, 4 * int(addr & 1u), 4);
+ 		}
+ 		else
+@@ -347,9 +353,9 @@
+ 
+ 			if (has_exclusive)
+ 			{
+-				vram24.data[dest_addr] = u8vec3(uvec3(tex_data) >> uvec3(0, 8, 16));
++				vram_store_u24(dest_addr, tex_data);
+ 				if (INVALIDATE_SUPER_SAMPLE)
+-					vram24.data[dest_addr + (VRAM_MASK + 1) / 4] = u8vec3(uvec3(tex_data & CONSTANT_ZERO));
++					vram_store_u24(dest_addr + (VRAM_MASK + 1) / 4, tex_data & CONSTANT_ZERO);
+ 			}
+ 			else if (mask != 0u)
+ 			{
+@@ -429,9 +435,9 @@
+ 
+ 			if (has_exclusive)
+ 			{
+-				vram8.data[byte_addr] = uint8_t(write_word);
++				vram_store_u8(byte_addr, write_word);
+ 				if (INVALIDATE_SUPER_SAMPLE)
+-					vram8.data[byte_addr + (VRAM_MASK + 1)] = uint8_t(write_word & CONSTANT_ZERO);
++					vram_store_u8(byte_addr + (VRAM_MASK + 1), write_word & CONSTANT_ZERO);
+ 			}
+ 			else if (mask != 0u)
+ 			{
+@@ -466,12 +472,11 @@
+ 			ivec2 coord_hi = coord ^ ivec2(4, 2);
+ 			uint write_word;
+ 
+-			restrict TRANSFER8 t8 = TRANSFER8(transfer.source_bda);
+ 			if (TRANSFER_DIR == HOST_TO_LOCAL)
+ 			{
+-				uint source_data_lo = uint(t8.data[source_addr >> 1]);
++				uint source_data_lo = transfer_u8(transfer.source_bda, source_addr >> 1);
+ 				uint source_addr_hi = coord_hi.y * transfer.width + coord_hi.x;
+-				uint source_data_hi = uint(t8.data[source_addr_hi >> 1]);
++				uint source_data_hi = transfer_u8(transfer.source_bda, source_addr_hi >> 1);
+ 
+ 				if ((source_addr_hi & 1u) == 0)
+ 					source_data_hi <<= 4;
+@@ -484,7 +489,7 @@
+ 			{
+ 				if (SOURCE_FMT == PSMT4)
+ 				{
+-					write_word = uint(t8.data[source_addr >> 1]);
++					write_word = transfer_u8(transfer.source_bda, source_addr >> 1);
+ 				}
+ 				else if (SOURCE_FMT == PSMT4HH || SOURCE_FMT == PSMT4HL)
+ 				{
+@@ -503,9 +508,9 @@
+ 
+ 			if (has_exclusive)
+ 			{
+-				vram8.data[byte_addr] = uint8_t(write_word);
++				vram_store_u8(byte_addr, write_word);
+ 				if (INVALIDATE_SUPER_SAMPLE)
+-					vram8.data[byte_addr + (VRAM_MASK + 1)] = uint8_t(write_word & CONSTANT_ZERO);
++					vram_store_u8(byte_addr + (VRAM_MASK + 1), write_word & CONSTANT_ZERO);
+ 			}
+ 			else if (mask != 0u)
+ 			{
+--- a/gs/shaders/upload.comp
++++ b/gs/shaders/upload.comp
+@@ -6,7 +6,6 @@
+ // SPDX-License-Identifier: LGPL-3.0+
+ 
+ #extension GL_EXT_shader_16bit_storage : require
+-#extension GL_EXT_shader_8bit_storage : require
+ layout(local_size_x = 8, local_size_y = 8) in;
+ layout(constant_id = 0) const uint TEXTURE_FMT = 0;
+ layout(constant_id = 1) const uint VRAM_MASK = 4 * 1024 * 1024 - 1;
+@@ -27,10 +26,11 @@
+ 	uint16_t data[];
+ } vram16;
+ 
+-layout(std430, set = 0, binding = 0) readonly buffer VRAM8
++// A byte of VRAM, read from its 32-bit word: some drivers have no 8-bit storage (data_buffers.h).
++uint vram_u8(uint byte_addr)
+ {
+-	uint8_t data[];
+-} vram8;
++	return bitfieldExtract(vram32.data[byte_addr >> 2u], int(byte_addr & 3u) * 8, 8);
++}
+ 
+ layout(std430, set = 0, binding = BINDING_CLUT) readonly buffer CLUT16
+ {
+@@ -165,13 +165,13 @@
+ 	}
+ 	else if (is_tex_8bit)
+ 	{
+-		uint index = uint(vram8.data[addr]);
++		uint index = vram_u8(addr);
+ #if SUPER_SAMPLED
+ 		if (sample_id != ~0u)
+ 		{
+-			uint ref = uint(vram8.data[addr + VRAM_STRIDE_U8]);
++			uint ref = vram_u8(addr + VRAM_STRIDE_U8);
+ 			if (ref == 0xffu)
+-				index = uint(vram8.data[addr + (2 + sample_id) * VRAM_STRIDE_U8]);
++				index = vram_u8(addr + (2 + sample_id) * VRAM_STRIDE_U8);
+ 		}
+ #endif
+ 		payload = get_clut_color(index, registers.clut_offset);
+@@ -179,13 +179,13 @@
+ 	else if (TEXTURE_FMT == PSMT8H)
+ 	{
+ 		uint addr8h = addr * 4 + 3;
+-		uint index = uint(vram8.data[addr8h]);
++		uint index = vram_u8(addr8h);
+ #if SUPER_SAMPLED
+ 		if (sample_id != ~0u)
+ 		{
+-			uint ref = uint(vram8.data[addr8h + VRAM_STRIDE_U8]);
++			uint ref = vram_u8(addr8h + VRAM_STRIDE_U8);
+ 			if (ref == 0xffu)
+-				index = uint(vram8.data[addr8h + (2 + sample_id) * VRAM_STRIDE_U8]);
++				index = vram_u8(addr8h + (2 + sample_id) * VRAM_STRIDE_U8);
+ 		}
+ #endif
+ 		payload = get_clut_color(index, registers.clut_offset);
+@@ -194,7 +194,7 @@
+ 	{
+ 		// It's not meaningful to sample PSMT4 from a framebuffer.
+ 		int nibble_address = bitfieldExtract(int(addr), 0, 1) & 0x1;
+-		uint raw_byte = uint(vram8.data[addr >> 1]);
++		uint raw_byte = vram_u8(addr >> 1);
+ 		uint nibble = bitfieldExtract(raw_byte, nibble_address << 2, 4);
+ 		payload = get_clut_color(nibble, registers.clut_offset);
+ 	}
+--- a/gs/shaders/ubershader.comp
++++ b/gs/shaders/ubershader.comp
+@@ -10,7 +10,6 @@
+ #extension GL_KHR_shader_subgroup_arithmetic : require
+ #extension GL_KHR_shader_subgroup_shuffle : require
+ #extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+-#extension GL_EXT_shader_8bit_storage : require
+ #extension GL_EXT_nonuniform_qualifier : require
+ #extension GL_EXT_samplerless_texture_functions : require
+ 
+@@ -771,7 +770,7 @@
+ 				// The masked write ensures it won't be considered a race condition.
+ 				// color will alias, but not much we can do about that ...
+ 				if (is_zb_24bit)
+-					vram24.data[tile.fb_index_depth] = u8vec3(uvec3(fb_depth) >> uvec3(0, 8, 16));
++					vram_store_u24(tile.fb_index_depth, fb_depth);
+ 				else
+ 					vram32.data[tile.fb_index_depth] = fb_depth;
+ 			}
+--- a/gs/shaders/data_buffers.h
++++ b/gs/shaders/data_buffers.h
+@@ -14,15 +14,18 @@
+ 	uint data[];
+ } vram32;
+ 
+-layout(set = 0, binding = BINDING_VRAM, std430) buffer VRAM24
+-{
+-	u8vec3 data[];
+-} vram24;
+-
+ layout(set = 0, binding = BINDING_VRAM, std430) buffer VRAM16
+ {
+ 	uint16_t data[];
+ } vram16;
++
++// The low 24 bits of a VRAM word (PSMZ24 / PSMCT24), its top byte kept: some drivers (Turnip on Adreno 7xx,
++// older Qualcomm drivers) have no 8-bit storage. No atomics: a pixel writes its colour before its depth, so
++// when the two alias, the word read here already holds this invocation's alpha.
++void vram_store_u24(uint word, uint value)
++{
++	vram32.data[word] = bitfieldInsert(vram32.data[word], value, 0, 24);
++}
+ #endif
+ 
+ #ifdef NEED_PRIMITIVE_LIST
+--- a/gs/gs_renderer.cpp
++++ b/gs/gs_renderer.cpp
+@@ -818,10 +818,10 @@
+ 			VK_SUBGROUP_FEATURE_BASIC_BIT;
+ 
+ 	const auto &ext = device_->get_device_features();
++	// 8-bit storage is not needed: VRAM bytes go through 32-bit words (some drivers have none).
+ 	if (!ext.vk12_features.descriptorIndexing ||
+ 	    !ext.vk12_features.timelineSemaphore ||
+ 	    !ext.vk12_features.bufferDeviceAddress ||
+-	    !ext.vk12_features.storageBuffer8BitAccess ||
+ 	    !ext.vk11_features.storageBuffer16BitAccess ||
+ 	    !ext.enabled_features.shaderInt16 ||
+ 	    !ext.vk12_features.scalarBlockLayout ||
+@@ -833,7 +833,6 @@
+ 		LOGE("  - descriptorIndexing\n");
+ 		LOGE("  - timelineSemaphore\n");
+ 		LOGE("  - bufferDeviceAddress\n");
+-		LOGE("  - storageBuffer8BitAccess\n");
+ 		LOGE("  - storageBuffer16BitAccess\n");
+ 		LOGE("  - shaderInt16\n");
+ 		LOGE("  - scalarBlockLayout\n");

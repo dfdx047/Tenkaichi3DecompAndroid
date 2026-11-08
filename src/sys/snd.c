@@ -173,7 +173,7 @@ s32 Snd_QueuePlay(s32 mask, u32 id, u32 volume, u32 pan, s32 pitch, s32 loop) {
     }
     cmd = &gSndRpc->queue.cmd[gSndRpc->queue.count];
     cmd->loop = loop;
-    cmd->bank = mask;
+    cmd->bank = Snd_BankIndex(mask); /* Native queue stores the index; masks no longer fit u8. */
     cmd->id = id;
     cmd->volume = volume;
     cmd->pan = pan;
@@ -193,7 +193,7 @@ void Snd_QueueStopId(s32 mask, u32 id) {
         if (id < 0x100) {
             cmd = &gSndRpc->queue.cmd[gSndRpc->queue.count];
             cmd->type = SND_CMD_STOP_ID;
-            cmd->bank = mask;
+            cmd->bank = Snd_BankIndex(mask); /* Native queue stores the index; masks no longer fit u8. */
             cmd->id = id;
             gSndRpc->queue.count++;
         }
@@ -232,8 +232,14 @@ void Snd_RpcFlush(void) {
     Snd_RpcCall(SND_RPC_TICK, &gSndRpcBuf, 4);
     if (gSndRpc->queue.count != 0) {
         FlushCache(0);
+#ifdef PORT
+        /* The original shared RPC buffer is only 0x184 bytes. The native
+           mixer accepts the full per-roster queue directly. */
+        Snd_RpcCall(SND_RPC_QUEUE, &gSndRpc->queue, sizeof(SndQueue));
+#else
         gSndRpcBuf.queue = gSndRpc->queue;
         Snd_RpcCall(SND_RPC_QUEUE, &gSndRpcBuf, sizeof(SndQueue));
+#endif
     }
     memset(&gSndRpc->queue, 0, sizeof(SndQueue));
 }
@@ -317,6 +323,11 @@ s32 Snd_BankIndex(u32 mask) {
 
 /* Volume sent to the driver: request * bank level / 128 * SE option / 9, clamped to 0..0x7F. */
 s32 Snd_ScaleVolume(s32 bank, s32 volume) {
+#ifdef PORT
+    /* The last original table entry is an unused, muted slot. Native extra
+     * fighter banks use the same gain as the first two fighters. */
+    if (bank >= 6) bank = 4;
+#endif
     volume *= gSndBankVolume[bank];
     volume *= gSaveData->seVolume;
     volume /= 0x480;
@@ -370,6 +381,11 @@ void Snd_SetupBank(SndBank *bank, u32 mask, SndBankFile *file, s32 alloc) {
         switch (mask) {
             case 0x10:
             case 0x20:
+#ifdef PORT
+            case 0x40:
+            case 0x80:
+            case 0x100: case 0x200: case 0x400: case 0x800: case 0x1000: case 0x2000:
+#endif
                 size = 0x8F000;
                 break;
             case 8:
@@ -383,6 +399,11 @@ void Snd_SetupBank(SndBank *bank, u32 mask, SndBankFile *file, s32 alloc) {
         switch (mask) {
             case 0x10:
             case 0x20:
+#ifdef PORT
+            case 0x40:
+            case 0x80:
+            case 0x100: case 0x200: case 0x400: case 0x800: case 0x1000: case 0x2000:
+#endif
                 size = 0x1000;
                 break;
             case 8:
@@ -396,6 +417,11 @@ void Snd_SetupBank(SndBank *bank, u32 mask, SndBankFile *file, s32 alloc) {
         switch (mask) {
             case 0x10:
             case 0x20:
+#ifdef PORT
+            case 0x40:
+            case 0x80:
+            case 0x100: case 0x200: case 0x400: case 0x800: case 0x1000: case 0x2000:
+#endif
                 size = 0x800;
                 break;
             case 8:
@@ -528,6 +554,11 @@ void Snd_ReloadBank(u32 mask, SndBankFile *file, s32 sync) {
         case 8:
         case 0x10:
         case 0x20:
+#ifdef PORT
+            case 0x40:
+            case 0x80:
+            case 0x100: case 0x200: case 0x400: case 0x800: case 0x1000: case 0x2000:
+#endif
             fixed = 1;
             break;
         default:

@@ -29,7 +29,24 @@ class Bt4Activity : GameActivity() {
         image = runCatching { Bt4Installer(this, GamePaths(this, Game.BT4), contentResolver).openImage() }.getOrNull()
         runCatching { copyGsxResources() }.onFailure { ActivityLog.fail("bt4", "ARMSX2's renderer: its files could not be put in place", it) }
         super.onCreate(savedInstanceState)
+        // ARMSX2's GS gets the surface here, inside Android's own callbacks (after SDL's, in the order they were added):
+        // it lets go of a surface before surfaceDestroyed returns and takes the new one in surfaceChanged (bt4_main.cpp,
+        // gsxSurface; known bug #12: SDL's lifecycle events came too late and with a stale window).
+        runCatching {
+            mSurface?.holder?.addCallback(object : android.view.SurfaceHolder.Callback {
+                override fun surfaceCreated(holder: android.view.SurfaceHolder) {}
+                override fun surfaceChanged(holder: android.view.SurfaceHolder, format: Int, width: Int, height: Int) {
+                    runCatching { gsxSurface(holder.surface, width, height) }
+                }
+                override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
+                    runCatching { gsxSurface(null, 0, 0) }
+                }
+            })
+        }.onFailure { ActivityLog.fail("bt4", "the surface callback for ARMSX2's renderer", it) }
     }
+
+    /** bt4_main.cpp: the surface for ARMSX2's GS (null: it goes; returns once the GS has let go of it). */
+    private external fun gsxSurface(surface: android.view.Surface?, width: Int, height: Int)
 
     /** ARMSX2's renderer (libbt4gsx.so, when this build has it) reads its shaders and fonts from files: the APK's
      *  assets/bt4gsx/resources go to bt4/gsx/resources, again whenever the APK's copy is another version. */
@@ -76,6 +93,13 @@ class Bt4Activity : GameActivity() {
     fun fps60Dropped() {
         ActivityLog.warn("bt4", "60 fps fights: this device could not hold them (below 57 a second for 3 s); back to 30")
         runOnUiThread { android.widget.Toast.makeText(this, R.string.bt4_fps60_dropped, android.widget.Toast.LENGTH_LONG).show() }
+    }
+
+    /** The engine (bt4_main.cpp, armsx2Watch): this device does not hold ARMSX2's renderer. From its thread. */
+    @Suppress("unused")
+    fun armsx2Dropped() {
+        ActivityLog.warn("bt4", "renderer: ARMSX2 below 27 fight updates a second for 5 s; Dragon Rage from the next start")
+        runOnUiThread { android.widget.Toast.makeText(this, R.string.bt4_renderer_dropped, android.widget.Toast.LENGTH_LONG).show() }
     }
 
     override fun onDestroy() {

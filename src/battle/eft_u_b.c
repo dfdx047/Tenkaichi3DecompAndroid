@@ -849,6 +849,10 @@ void EftPtcl_Emit(EftPtclWork *w, EftPtclWork *w2) {
 }
 
 /* Draws the emitter's particles as square sprites (size = height). */
+/* The Tag Team's light graphics (gs_draw.c): every other particle of the pool is not drawn; always the same ones, so
+   nothing flickers. Only the drawing: the particles go on being computed, and the random numbers they use. */
+extern int Port_TagKiLess(void);
+#define EFT_PTCL_LITE_SKIP(p) (Port_TagKiLess() && (((p) - gEftPtcl->pool) & 1))
 void EftPtcl_DrawSquares(EftPtclWork *w, EftPtclWork *w2) {
     EftPtclDef *def = w2->arg.def;
     EftPtcl **list = &w->head;
@@ -856,7 +860,7 @@ void EftPtcl_DrawSquares(EftPtclWork *w, EftPtclWork *w2) {
 
     if (def->flags & 2) {
         for (p = *list; p != NULL; p = p->next) {
-            if (p->flags & 0x400) {
+            if ((p->flags & 0x400) && !EFT_PTCL_LITE_SKIP(p)) {
                 EftPrim_DrawQuadDepth(&p->pos, &p->color, def->layer, (w->flags >> 4) & 1, w->tex0, p->height,
                                       p->height, p->u0, p->v0, p->u1, p->v1, p->rot);
             }
@@ -864,7 +868,7 @@ void EftPtcl_DrawSquares(EftPtclWork *w, EftPtclWork *w2) {
     } else {
         while (*list != NULL) {
             p = *list;
-            if (p->flags & 0x400) {
+            if ((p->flags & 0x400) && !EFT_PTCL_LITE_SKIP(p)) {
                 EftGfx_DrawSprite(&p->pos, &p->color, p->height, p->height, p->u0, p->v0, p->u1,
                                   p->v1, p->rot, def->layer, (w->flags >> 4) & 1, w->tex0);
             }
@@ -881,7 +885,7 @@ void EftPtcl_DrawSprites(EftPtclWork *w, EftPtclWork *w2) {
 
     if (def->flags & 2) {
         for (p = *list; p != NULL; p = p->next) {
-            if (p->flags & 0x400) {
+            if ((p->flags & 0x400) && !EFT_PTCL_LITE_SKIP(p)) {
                 EftPrim_DrawQuadDepth(&p->pos, &p->color, def->layer, (w->flags >> 4) & 1, w->tex0, p->width,
                                       p->height, p->u0, p->v0, p->u1, p->v1, p->rot);
             }
@@ -889,7 +893,7 @@ void EftPtcl_DrawSprites(EftPtclWork *w, EftPtclWork *w2) {
     } else {
         while (*list != NULL) {
             p = *list;
-            if (p->flags & 0x400) {
+            if ((p->flags & 0x400) && !EFT_PTCL_LITE_SKIP(p)) {
                 EftGfx_DrawSprite(&p->pos, &p->color, p->width, p->height, p->u0, p->v0, p->u1,
                                   p->v1, p->rot, def->layer, (w->flags >> 4) & 1, w->tex0);
             }
@@ -943,7 +947,7 @@ void EftPtcl_DrawAxisQuads(EftPtclWork *w, EftPtclWork *w2) {
     link = &w->head;
     while (*link != NULL) {
         p = *link;
-        if (p->flags & 0x400) {
+        if ((p->flags & 0x400) && !EFT_PTCL_LITE_SKIP(p)) {
             Vec3_Sub(&side, &p->pos, &cam);
             Vec3_Cross(&side, &p->axis, &side);
             Vec3_Normalize(&side, &side);
@@ -1105,7 +1109,7 @@ void EftPtcl_DrawAxisPolys(EftPtclWork *w, EftPtclWork *w2) {
     link = &w->head;
     while (*link != NULL) {
         p = *link;
-        if (p->flags & 0x400) {
+        if ((p->flags & 0x400) && !EFT_PTCL_LITE_SKIP(p)) {
             Vec3_Sub(&side, &p->pos, &cam);
             Vec3_Cross(&side, &p->axis, &side);
             Vec3_Normalize(&side, &side);

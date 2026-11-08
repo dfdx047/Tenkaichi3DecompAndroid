@@ -1,18 +1,30 @@
 package com.dfdx047.dragonrage
 
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.dfdx047.dragonrage.data.Game
+import com.dfdx047.dragonrage.ui.screens.bt2.Bt2HomeScreen
+import com.dfdx047.dragonrage.ui.screens.bt2.Bt2TexturesScreen
+import com.dfdx047.dragonrage.ui.screens.bt2.Bt2ModsScreen
+import com.dfdx047.dragonrage.ui.screens.bt2.Bt2ControlsScreen
+import com.dfdx047.dragonrage.ui.screens.bt2.Bt2CheatsScreen
+import com.dfdx047.dragonrage.ui.screens.bt2.Bt2DriversScreen
+import com.dfdx047.dragonrage.ui.screens.bt2.Bt2DebugScreen
+import com.dfdx047.dragonrage.ui.screens.bt2.Bt2SettingsScreen
 import android.os.Bundle
+import android.view.InputDevice
+import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.verticalScroll
 import androidx.lifecycle.ViewModelProvider
-import com.dfdx047.dragonrage.data.Game
 import com.dfdx047.dragonrage.data.UiPrefs
 import com.dfdx047.dragonrage.ui.screens.WelcomeScreen
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.rounded.SwapHoriz
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -75,6 +87,8 @@ import com.dfdx047.dragonrage.ui.screens.UpdateDialog
 import com.dfdx047.dragonrage.ui.screens.DebugScreen
 import com.dfdx047.dragonrage.ui.screens.DriversScreen
 import com.dfdx047.dragonrage.ui.screens.GpuOfferDialog
+import com.dfdx047.dragonrage.ui.screens.TagLiteDialog
+import com.dfdx047.dragonrage.ui.screens.SelectStyleDialog
 import com.dfdx047.dragonrage.ui.screens.LastRunDialog
 import com.dfdx047.dragonrage.ui.screens.TexFailDialog
 import androidx.compose.foundation.clickable
@@ -92,6 +106,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.dfdx047.dragonrage.ui.theme.DragonRageTheme
 
 class MainActivity : ComponentActivity() {
+    private val bt2: Bt2ViewModel by viewModels() // (Budokai Tenkaichi 2's own: its folder, settings and pages)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -104,6 +120,10 @@ class MainActivity : ComponentActivity() {
             DragonRageTheme(mode = ui.theme, dynamicColor = ui.dynamicColor, game = game ?: Game.BT3) {
                 if (game == null) {
                     WelcomeScreen(last = prefs.game) { g -> prefs.setGame(g); chosen = g.id }
+                } else if (game == Game.BT2) {
+                    // BT2 has no AppViewModel: its pages, view model and files (bt2/) are apart from BT3's and BT4's
+                    BackHandler { chosen = null }
+                    Bt2App(bt2, onSwitchGame = { chosen = null })
                 } else {
                     val vm = remember(game) {
                         ViewModelProvider(this@MainActivity, AppViewModel.factory(application, game))["game-${game.id}", AppViewModel::class.java]
@@ -143,6 +163,8 @@ private fun DragonRageApp(vm: AppViewModel, onSwitchGame: () -> Unit) {
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refreshAll(); vm.resumeUpdate(); vm.checkLastRun() }
     UpdateDialog(vm)
     GpuOfferDialog(vm)
+    TagLiteDialog(vm)
+    SelectStyleDialog(vm)
     LastRunDialog(vm)
     TexFailDialog(vm)
 
@@ -207,6 +229,83 @@ private fun DragonRageApp(vm: AppViewModel, onSwitchGame: () -> Unit) {
                     composable(Dest.DEBUG.route) { DebugScreen(vm) }
                     composable(Dest.SETTINGS.route) { SettingsScreen(vm) }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Budokai Tenkaichi 2's pages (ui/screens/bt2), over their own Bt2ViewModel. Nothing here reads or writes BT3's or
+ * BT4's folders or settings: what is set on these pages is BT2's alone (<root>/bt2/).
+ */
+@Composable
+private fun Bt2App(bt2: Bt2ViewModel, onSwitchGame: () -> Unit) {
+    val nav = rememberNavController()
+    val entry by nav.currentBackStackEntryAsState()
+    val current = entry?.destination?.route
+    val snackbar = remember { SnackbarHostState() }
+    val wide = LocalConfiguration.current.screenWidthDp >= 600
+
+    LaunchedEffect(Unit) { bt2.messages.collect { snackbar.showSnackbar(it) } }
+    // files may have been changed from outside (file manager, adb) while the app was in the background
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { bt2.refresh() }
+
+    fun go(d: Dest) = nav.navigate(d.route) {
+        popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
+
+    val colors = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxSize().background(colors.background).kiBackground(colors.primary, colors.secondary)) {
+        if (wide) {
+            NavigationRail(containerColor = Color.Transparent, modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Dest.entries.forEach { d ->
+                        NavigationRailItem(
+                            selected = current == d.route, onClick = { go(d) },
+                            icon = { Icon(d.icon, null) }, label = { Text(stringResource(d.label)) },
+                        )
+                    }
+                    NavigationRailItem(
+                        selected = false, onClick = onSwitchGame,
+                        icon = { Icon(Icons.Rounded.SwapHoriz, null) }, label = { Text(stringResource(R.string.nav_switch_game)) },
+                    )
+                }
+            }
+        }
+        Scaffold(
+            containerColor = Color.Transparent,
+            snackbarHost = { SnackbarHost(snackbar) },
+            bottomBar = {
+                Column {
+                    if (!wide) {
+                        Surface(color = colors.surfaceContainer.copy(alpha = 0.94f)) {
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                                    .windowInsetsPadding(WindowInsets.navigationBars).padding(horizontal = 4.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                            ) {
+                                Dest.entries.forEach { d -> BarItem(d.icon, d.label, current == d.route) { go(d) } }
+                                BarItem(Icons.Rounded.SwapHoriz, R.string.nav_switch_game, false, onSwitchGame)
+                            }
+                        }
+                    }
+                }
+            },
+        ) { pad ->
+            NavHost(
+                nav, startDestination = Dest.HOME.route,
+                modifier = Modifier.padding(pad).widthIn(max = 760.dp).fillMaxSize(),
+            ) {
+                composable(Dest.HOME.route) { Bt2HomeScreen(bt2) }
+                composable(Dest.TEXTURES.route) { Bt2TexturesScreen(bt2) }
+                composable(Dest.MODS.route) { Bt2ModsScreen() }
+                composable(Dest.CONTROLS.route) { Bt2ControlsScreen(bt2) }
+                composable(Dest.CHEATS.route) { Bt2CheatsScreen(bt2) }
+                composable(Dest.DRIVERS.route) { Bt2DriversScreen(bt2) }
+                composable(Dest.DEBUG.route) { Bt2DebugScreen(bt2) }
+                composable(Dest.SETTINGS.route) { Bt2SettingsScreen(bt2) }
             }
         }
     }

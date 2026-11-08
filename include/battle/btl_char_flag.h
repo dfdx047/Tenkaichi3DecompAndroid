@@ -176,21 +176,30 @@ typedef struct BtlFlagRoster {
     /* 0xA0 */ BtlFlagSndReqList snd;
 } BtlFlagRoster;
 
+#include "battle/tag_clash_sequence.h"
+typedef struct BtlClashPair {
+    s32 actor[2], used, state, age;
+    BtlClashA a;
+    BtlClashB b;
+    BtlClashC c;
+    TagClashSequence sequence[2];
+} BtlClashPair;
+
 /* btl_char_flag_clash.c */
-s32 BtlClash_BothInClashA(void);
+s32 BtlClash_BothInClashA(BtlClashPair *pair);
 void BtlClash_HoldClashA(s32 player);
-s32 BtlClash_BothInActionFA(void);
+s32 BtlClash_BothInActionFA(BtlClashPair *pair);
 void BtlClash_EndActionFA(s32 player);
-s32 BtlClash_BothInActionFB(void);
-s32 BtlClash_BothInActionFC(void);
+s32 BtlClash_BothInActionFB(BtlClashPair *pair);
+s32 BtlClash_BothInActionFC(BtlClashPair *pair);
 void BtlClash_EndActionFC(s32 player);
-void BtlClash_SetOrbitCut(s32 player, s32 type);
-void BtlClash_SetMidCut(Vec4 *mid, f32 bias);
-void BtlClash_SetPathCut(s32 n);
+void BtlClash_SetOrbitCut(BtlClashPair *pair, s32 side, s32 type);
+void BtlClash_SetMidCut(BtlClashPair *pair, Vec4 *mid, f32 bias);
+void BtlClash_SetPathCut(BtlClashPair *pair, s32 n);
 f32 BtlClash_CalcBias(s32 lead);
-s32 BtlClash_UpdateA(s32 state);
-s32 BtlClash_UpdateB(s32 state);
-s32 BtlClash_UpdateC(s32 state);
+s32 BtlClash_UpdateA(BtlClashPair *pair, s32 state);
+s32 BtlClash_UpdateB(BtlClashPair *pair, s32 state);
+s32 BtlClash_UpdateC(BtlClashPair *pair, s32 state);
 void BtlClash_Update(void);
 
 /* btl_char_flag_snd.c */

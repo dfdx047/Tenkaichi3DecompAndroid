@@ -33,7 +33,7 @@ s32 CharRefMode_Main(void) {
         case MODE_CHAR_REF:
             if (!bgm) {
                 bgm = 1;
-                Bgm_Play(BGM_CHAR_REF);
+                Bgm_Play(DISC_RESOURCE(BGM_CHAR_REF, 0x83C));
             }
             if (CharRef_Run(1) == 0) {
                 Adx_StopAll();
@@ -69,7 +69,7 @@ s32 TrainMode_Main(void) {
     do {
         switch (gProgress->mode) {
         case MODE_TRAIN_MENU:
-            Bgm_Play(BGM_TRAIN);
+            Bgm_Play(DISC_RESOURCE(BGM_TRAIN, 0x855));
             r = Train_Run(1);
             if (r != 0) {
                 if (r != 1) {

@@ -259,6 +259,69 @@ void ObjDraw_MakeFacingMtx(Mtx44 *m, Vec4 *dir) {
 
 /* Queues the model's per-frame texture uploads: its own textures one by one (the face texture replaced by the
    current expression), then the CLUT range that matches the object's colour flag. */
+/* The Tag Team's look (gs_draw.c, Port_TagDown 8): its strongly yellow palette colours (a Super Saiyan's hair) a
+   little lighter. Only strong yellows: orange (a gi) has green under 70% of its red, skin has more blue. The colours are
+   the last 1024 or 64 bytes of the packet, after its GIF header; each palette is changed once (kept here with its sum:
+   a model loaded later at the same address has another sum and is changed again). */
+static struct { void *clut; u32 sum; } sTagHair[128];
+/* (at a fight's end: the models go, and a list never cleared filled up after a few rosters: later fighters kept their colours) */
+void ObjDraw_TagHairReset(void) {
+    s32 k;
+    for (k = 0; k < 128; k++) {
+        sTagHair[k].clut = NULL;
+    }
+}
+static u32 tag_hair_sum(const u8 *c, s32 n) {
+    u32 h = 0;
+    s32 i;
+    for (i = 0; i < n; i++) {
+        h = h * 31 + c[i];
+    }
+    return h;
+}
+static void tag_hair_clut(TexEntry *e) {
+    extern int Port_TagDown(int);
+    s32 n, i, k, free = -1;
+    u8 *c;
+    u32 sum;
+    if (!Port_TagDown(8) || e->clut == NULL) {
+        return;
+    }
+    n = e->clutSize >= 1024 && e->clutSize <= 1024 + 128 ? 1024 : e->clutSize >= 64 && e->clutSize <= 64 + 128 ? 64 : 0;
+    if (n == 0) {
+        return;
+    }
+    c = (u8 *)e->clut + e->clutSize - n;
+    sum = tag_hair_sum(c, n);
+    for (k = 0; k < 128; k++) {
+        if (sTagHair[k].clut == e->clut) {
+            if (sTagHair[k].sum == sum) {
+                return;
+            }
+            break;
+        }
+        if (sTagHair[k].clut == NULL && free < 0) {
+            free = k;
+        }
+    }
+    if (k == 128) {
+        if (free < 0) {
+            return;
+        }
+        k = free;
+    }
+    for (i = 0; i < n; i += 4) {
+        s32 r = c[i], g = c[i + 1], b = c[i + 2];
+        if (r >= 96 && g * 10 >= r * 7 && g <= r + 12 && b * 20 <= r * 9) {
+            c[i] = (u8)(r + (255 - r) / 5);
+            c[i + 1] = (u8)(g + (245 - g) / 5);
+            c[i + 2] = (u8)(b + (150 - b) / 5);
+        }
+    }
+    sTagHair[k].clut = e->clut;
+    sTagHair[k].sum = tag_hair_sum(c, n);
+}
+
 void ObjDraw_UploadTextures(ObjDrawObj *obj) {
     u32 pkt[12] = {
         DMA_TAG_CNT | 2, 0, 0, VIF_DIRECT | 2,
@@ -292,6 +355,7 @@ void ObjDraw_UploadTextures(ObjDrawObj *obj) {
             pkt[8] = 0;
             pkt[9] = (((u64)cbp << 32) | ((u64)e->clutBlt << 48)) >> 32;
             Dma_AddData(pkt, 0x30);
+            tag_hair_clut(e);
             Dma_AddRef(e->clut, e->clutSize);
         } else if (i >= first && i < first + count && i == obj->mdl.model->faceTex) {
             face = BtlObj_GetFaceTexture(obj);
@@ -306,7 +370,8 @@ void ObjDraw_UploadTextures(ObjDrawObj *obj) {
                 pkt[8] = 0;
                 pkt[9] = (((u64)cbp << 32) | ((u64)e->clutBlt << 48)) >> 32;
                 Dma_AddData(pkt, 0x30);
-                Dma_AddRef(e->clut, e->clutSize);
+                tag_hair_clut(e);
+            Dma_AddRef(e->clut, e->clutSize);
             } else {
                 pkt[8] = 0;
                 pkt[9] = (((u64)tbp << 32) | ((u64)e->pixBlt << 48)) >> 32;
@@ -315,7 +380,8 @@ void ObjDraw_UploadTextures(ObjDrawObj *obj) {
                 pkt[8] = 0;
                 pkt[9] = (((u64)cbp << 32) | ((u64)e->clutBlt << 48)) >> 32;
                 Dma_AddData(pkt, 0x30);
-                Dma_AddRef(e->clut, e->clutSize);
+                tag_hair_clut(e);
+            Dma_AddRef(e->clut, e->clutSize);
             }
         }
     }
@@ -754,7 +820,23 @@ void BtlObjDraw_DrawModel(ObjDrawObj *obj) {
     mask = ObjDraw_SetLight(obj, view);
     Vu1Pkt_LoadProg0();
     ObjSeam_Transform(obj, view);
-    ObjDraw_DrawParts(obj, view, 0, 0, mask, (view->flags >> 21) & 1);
+    {
+        extern int Port_TagDown(int);
+        extern void Port_GsMarker(s32);
+        s32 noToon = Port_TagDown(2);
+        if (!noToon && Port_TagDown(1) && obj->mdl.parts != NULL) {
+            ObjDrawNode *node = BtlObj_GetNode(obj, obj->mdl.parts->node);
+            f32 dx = node->mtxA.m[3][0] - gBtlCamView->pos.x, dy = node->mtxA.m[3][1] - gBtlCamView->pos.y, dz = node->mtxA.m[3][2] - gBtlCamView->pos.z;
+            noToon = dx * dx + dy * dy + dz * dz > 700.0f * 700.0f;
+        }
+        if (noToon) {
+            Port_GsMarker(0xC0);
+        }
+        ObjDraw_DrawParts(obj, view, 0, 0, mask, (view->flags >> 21) & 1);
+        if (noToon) {
+            Port_GsMarker(0xC1);
+        }
+    }
     ObjSeam_Draw(obj, state, view);
 }
 

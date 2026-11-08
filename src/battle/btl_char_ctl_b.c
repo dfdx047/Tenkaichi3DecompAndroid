@@ -157,6 +157,38 @@ s32 BtlChars_IsTimeStopped(void) {
     return gBtlChars->change.timeStop;
 }
 
+/* Tag Team: the native change freeze assumes a 1v1 where the opponent must wait. With more fighters it
+   stops only the fighters whose own request is active or queued, and the rest of the battle keeps going. */
+extern s32 TagTeam_Active(void), BtlSeq_IsFighting(void);
+static s32 BtlChange_TagWorld(void) {
+    return TagTeam_Active() && BtlSeq_IsFighting();
+}
+
+/* The time stop as seen by one fighter (any fighter record: the player index is its first word). */
+s32 BtlChars_IsTimeStoppedFor(const void *chr) {
+    BtlChangeQueue *q = &gBtlChars->change;
+    s32 player = *(const s32 *)chr;
+    s32 i;
+
+    if (!q->timeStop || !BtlChange_TagWorld()) {
+        return q->timeStop;
+    }
+    if (q->cur != NULL && q->cur->player == player) {
+        return 1;
+    }
+    for (i = q->read; i != q->write; i = (i + 1) % BTL_CHANGE_RING) {
+        if (q->req[i].player == player) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The time stop for world-wide state (battle frame counter, shared random generators). */
+s32 BtlChars_IsWorldTimeStopped(void) {
+    return gBtlChars->change.timeStop && !BtlChange_TagWorld();
+}
+
 /* Returns the player that owns the active request, or -1. */
 s32 BtlChange_GetPlayer(void) {
     BtlChangeReq *cur = gBtlChars->change.cur;

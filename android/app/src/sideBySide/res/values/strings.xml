@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The side-by-side test build's name (build.gradle.kts, -PsideBySide). -->
+<resources>
+    <string name="app_name" translatable="false">Dragon Rage (teste)</string>
+</resources>

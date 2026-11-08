@@ -1,0 +1,155 @@
+--- a/src/gpu/vulkan/SDL_gpu_vulkan.c
++++ b/src/gpu/vulkan/SDL_gpu_vulkan.c
+@@ -69,7 +69,7 @@
+ #define SMALL_ALLOCATION_SIZE         16777216 // 16  MiB
+ #define LARGE_ALLOCATION_INCREMENT    67108864 // 64  MiB
+ #define MAX_UBO_SECTION_SIZE          4096     // 4   KiB
+-#define DESCRIPTOR_POOL_SIZE          128
++#define DESCRIPTOR_POOL_SIZE          1024 /* Dragon Rage: 128 upstream */
+ #define WINDOW_PROPERTY_DATA          "SDL.internal.gpu.vulkan.data"
+ 
+ #define IDENTITY_SWIZZLE               \
+@@ -5150,7 +5150,7 @@
+     return descriptorSet;
+ }
+ 
+-static void VULKAN_INTERNAL_BindGraphicsDescriptorSets(
++static bool VULKAN_INTERNAL_BindGraphicsDescriptorSets(
+     VulkanRenderer *renderer,
+     VulkanCommandBuffer *commandBuffer)
+ {
+@@ -5178,7 +5178,7 @@
+         !commandBuffer->needNewFragmentUniformDescriptorSet &&
+         !commandBuffer->needNewFragmentUniformOffsets
+     ) {
+-        return;
++        return true;
+     }
+ 
+     if (commandBuffer->needVertexBufferBind && commandBuffer->vertexBufferCount > 0) {
+@@ -5201,6 +5201,9 @@
+             renderer,
+             commandBuffer,
+             descriptorSetLayout);
++        if (commandBuffer->vertexResourceDescriptorSet == VK_NULL_HANDLE) {
++            return false; /* Dragon Rage: (still needed: asked for again at the next draw) */
++        }
+ 
+         for (Uint32 i = 0; i < resourceLayout->vertexSamplerCount; i += 1) {
+             VkWriteDescriptorSet *currentWriteDescriptorSet = &writeDescriptorSets[writeCount];
+@@ -5281,6 +5284,9 @@
+             renderer,
+             commandBuffer,
+             descriptorSetLayout);
++        if (commandBuffer->vertexUniformDescriptorSet == VK_NULL_HANDLE) {
++            return false; /* Dragon Rage: (still needed: asked for again at the next draw) */
++        }
+ 
+         for (Uint32 i = 0; i < resourceLayout->vertexUniformBufferCount; i += 1) {
+             VkWriteDescriptorSet *currentWriteDescriptorSet = &writeDescriptorSets[writeCount];
+@@ -5320,6 +5326,9 @@
+             renderer,
+             commandBuffer,
+             descriptorSetLayout);
++        if (commandBuffer->fragmentResourceDescriptorSet == VK_NULL_HANDLE) {
++            return false; /* Dragon Rage: (still needed: asked for again at the next draw) */
++        }
+ 
+         for (Uint32 i = 0; i < resourceLayout->fragmentSamplerCount; i += 1) {
+             VkWriteDescriptorSet *currentWriteDescriptorSet = &writeDescriptorSets[writeCount];
+@@ -5400,6 +5409,9 @@
+             renderer,
+             commandBuffer,
+             descriptorSetLayout);
++        if (commandBuffer->fragmentUniformDescriptorSet == VK_NULL_HANDLE) {
++            return false; /* Dragon Rage: (still needed: asked for again at the next draw) */
++        }
+ 
+         for (Uint32 i = 0; i < resourceLayout->fragmentUniformBufferCount; i += 1) {
+             VkWriteDescriptorSet *currentWriteDescriptorSet = &writeDescriptorSets[writeCount];
+@@ -5457,6 +5469,7 @@
+ 
+     commandBuffer->needNewVertexUniformOffsets = false;
+     commandBuffer->needNewFragmentUniformOffsets = false;
++    return true;
+ }
+ 
+ static void VULKAN_DrawIndexedPrimitives(
+@@ -5470,7 +5483,9 @@
+     VulkanCommandBuffer *vulkanCommandBuffer = (VulkanCommandBuffer *)commandBuffer;
+     VulkanRenderer *renderer = vulkanCommandBuffer->renderer;
+ 
+-    VULKAN_INTERNAL_BindGraphicsDescriptorSets(renderer, vulkanCommandBuffer);
++    if (!VULKAN_INTERNAL_BindGraphicsDescriptorSets(renderer, vulkanCommandBuffer)) {
++        return; /* Dragon Rage: no descriptor set to be had: this draw is left out */
++    }
+ 
+     renderer->vkCmdDrawIndexed(
+         vulkanCommandBuffer->commandBuffer,
+@@ -5491,7 +5506,9 @@
+     VulkanCommandBuffer *vulkanCommandBuffer = (VulkanCommandBuffer *)commandBuffer;
+     VulkanRenderer *renderer = vulkanCommandBuffer->renderer;
+ 
+-    VULKAN_INTERNAL_BindGraphicsDescriptorSets(renderer, vulkanCommandBuffer);
++    if (!VULKAN_INTERNAL_BindGraphicsDescriptorSets(renderer, vulkanCommandBuffer)) {
++        return; /* Dragon Rage: no descriptor set to be had: this draw is left out */
++    }
+ 
+     renderer->vkCmdDraw(
+         vulkanCommandBuffer->commandBuffer,
+@@ -5513,7 +5530,9 @@
+     Uint32 pitch = sizeof(SDL_GPUIndirectDrawCommand);
+     Uint32 i;
+ 
+-    VULKAN_INTERNAL_BindGraphicsDescriptorSets(renderer, vulkanCommandBuffer);
++    if (!VULKAN_INTERNAL_BindGraphicsDescriptorSets(renderer, vulkanCommandBuffer)) {
++        return; /* Dragon Rage: no descriptor set to be had: this draw is left out */
++    }
+ 
+     if (renderer->supportsMultiDrawIndirect) {
+         // Real multi-draw!
+@@ -5550,7 +5569,9 @@
+     Uint32 pitch = sizeof(SDL_GPUIndexedIndirectDrawCommand);
+     Uint32 i;
+ 
+-    VULKAN_INTERNAL_BindGraphicsDescriptorSets(renderer, vulkanCommandBuffer);
++    if (!VULKAN_INTERNAL_BindGraphicsDescriptorSets(renderer, vulkanCommandBuffer)) {
++        return; /* Dragon Rage: no descriptor set to be had: this draw is left out */
++    }
+ 
+     if (renderer->supportsMultiDrawIndirect) {
+         // Real multi-draw!
+@@ -8092,6 +8113,10 @@
+     VulkanCommandBuffer *vulkanCommandBuffer = (VulkanCommandBuffer *)commandBuffer;
+     VulkanRenderer *renderer = vulkanCommandBuffer->renderer;
+     VulkanGraphicsPipeline *pipeline = (VulkanGraphicsPipeline *)graphicsPipeline;
++    /* Dragon Rage: the sets bound stay valid for a pipeline of the same layout; asked for again only when it changes
++       (a frame of thousands of draws changed pipeline hundreds of times, each time four new sets) */
++    bool sameLayout = vulkanCommandBuffer->currentGraphicsPipeline != NULL &&
++        vulkanCommandBuffer->currentGraphicsPipeline->resourceLayout == pipeline->resourceLayout;
+ 
+     renderer->vkCmdBindPipeline(
+         vulkanCommandBuffer->commandBuffer,
+@@ -8107,6 +8132,7 @@
+         if (vulkanCommandBuffer->vertexUniformBuffers[i] == NULL) {
+             vulkanCommandBuffer->vertexUniformBuffers[i] = VULKAN_INTERNAL_AcquireUniformBufferFromPool(
+                 vulkanCommandBuffer);
++            sameLayout = false;
+         }
+     }
+ 
+@@ -8114,9 +8140,14 @@
+         if (vulkanCommandBuffer->fragmentUniformBuffers[i] == NULL) {
+             vulkanCommandBuffer->fragmentUniformBuffers[i] = VULKAN_INTERNAL_AcquireUniformBufferFromPool(
+                 vulkanCommandBuffer);
++            sameLayout = false;
+         }
+     }
+ 
++    if (sameLayout) {
++        return;
++    }
++
+     // Mark bindings as needed
+     vulkanCommandBuffer->needNewVertexResourceDescriptorSet = true;
+     vulkanCommandBuffer->needNewFragmentResourceDescriptorSet = true;

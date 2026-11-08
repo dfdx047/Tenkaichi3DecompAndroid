@@ -82,9 +82,14 @@ typedef struct BtlSeqWaitCtx {
 typedef struct BtlSeqTalkCtx {
     /* 0x00 */ BtlSeqPollFunc poll;
     /* 0x04 */ s32 step;       /* 0 start 1st line, 1 wait, 2 start 2nd line, 3 wait, 4 done, 99 wait for skip */
+#ifdef PORT
+    s32 side[PORT_FIGHTER_CAPACITY], line[PORT_FIGHTER_CAPACITY], chara[PORT_FIGHTER_CAPACITY]; /* one entrance for every active native actor */
+    s32 count, waveIntro;
+#else
     /* 0x08 */ s32 side[2];    /* side (0/1) speaking first / second; WIN_TALK only uses [0] = winner */
     /* 0x10 */ s32 line[2];    /* voice line of each speaker */
     /* 0x18 */ s32 chara[2];   /* character id of each speaker */
+#endif
     /* 0x20 */ BtlSeqTimer timer; /* 10 s time-out of a line */
     /* 0x38 */ s32 skip;       /* set by the `extra` handler in mode 1 */
 } BtlSeqTalkCtx;
@@ -131,6 +136,8 @@ void BtlSeq_ResetSubClock(void);
 s32 BtlSeq_GetTimeLeft(void);
 void BtlSeq_StopTalk(void);
 s32 BtlSeq_CheckBattleEnd(void);
+void BtlSeq_StartWaveIntro(const s32 *actors, s32 count);
+s32 BtlSeq_WaveIntroPaused(s32 actor);
 
 /*
  * Skill-list text of the pause menu, 0x215420-0x216AC0 (the first part of src/battle/btl_seq.c).
@@ -154,7 +161,11 @@ typedef struct BtlTextWork {
     /* 0x14 */ s32 unk14;
     /* 0x18 */ u16 *text;  /* BtlMenu_GetScript() */
     /* 0x1C */ u16 *text2; /* BtlMenu_GetScript2() */
+#ifdef PORT
+    /* 0x20 */ BtlTextList list[4];
+#else
     /* 0x20 */ BtlTextList list[2];
+#endif
 } BtlTextWork;
 
 void BtlText_DrawPart(void *pkt, s32 x, s32 y, s32 w, s32 h, s32 part);

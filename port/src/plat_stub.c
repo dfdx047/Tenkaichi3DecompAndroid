@@ -355,6 +355,12 @@ void Port_VBlank(void) {
         extern void Port_AudioPause(int on);            /* gs/snd_adx.c */
         extern int Port_NetSession(void);
         if (GsGpu_Enabled() && Ui_Pauses() && !Port_NetSession() && getenv("BT3_NOPAUSE") == NULL) {
+            extern void Gs_RenderIdle(void); /* gs/gs_core.c */
+            /* The render thread (on by default in the Tag Team app) may still be showing the last picture, its settings
+               window drawn by the same ImGui: the pause frames below draw it from this thread. Two at once ended in
+               ImGui's "Forgot to call Render() or EndFrame()" assertion, an abort (2026-11-02, the settings opened in
+               a fight). The thread has nothing more to do until the game goes on. */
+            Gs_RenderIdle();
             Port_AudioPause(1);
             while (Ui_Pauses() && GsGpu_PauseFrame()) {
 #ifdef _WIN32
@@ -382,7 +388,8 @@ void Port_VBlank(void) {
         extern int gPortResim;                                /* gs/state.c: no picture, no sound */
         int warp = Port_NetWarp();
         extern int Port_NetResim(void); /* blanks being run again after a rollback: not shown, not timed either */
-        int again = Port_NetResim();
+        extern int Port_NetSpecSkip(void); /* (a spectator catching up with the match: the same) */
+        int again = Port_NetResim() || Port_NetSpecSkip();
         if (Port_NetSession() || again) {
             gPortResim = warp || again; /* an online session's start-up up to the versus menu is not shown and not timed */
         }
@@ -450,6 +457,7 @@ void Port_VBlank(void) {
         extern void Port_SyncTest(unsigned vblank); /* gs/state.c: BT3_SYNCTEST */
         extern void Port_AdxTick(void);             /* plat_sndstate.c */
         Port_AdxTick();
+        { extern void Port_BattleMusicTick(void); Port_BattleMusicTick(); }
         Port_SyncTest(gPortVBlanks);
     }
     Port_Trace(gPortVBlanks);

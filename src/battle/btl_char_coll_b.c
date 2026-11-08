@@ -1,3 +1,5 @@
+#include "battle/tag_balance.h"
+#include "battle/tag_lobby.h"
 #include "common.h"
 #include "battle/btl_char_coll.h"
 
@@ -144,6 +146,7 @@ s32 BtlColl_StartThrow(BtlCollChr *atk, BtlCollChr *def, s32 slot, u32 techFlags
     s32 back;
     f32 yaw;
 
+    if (!TagTeam_CanContact(atk->side, def->side)) return 0;
     if (atk->react.id >= 3) {
         return 0;
     }
@@ -272,6 +275,9 @@ s32 BtlColl_StartThrow(BtlCollChr *atk, BtlCollChr *def, s32 slot, u32 techFlags
         BtlEvent_Raise(atk->side, 0x2D);
         break;
     }
+#ifdef PORT
+    {extern void TagCamera_TestContact(s32,s32,s32);TagCamera_TestContact(atk->side,def->side,1);}
+#endif
     return 1;
 }
 
@@ -411,7 +417,7 @@ s32 BtlColl_GuardBlast(BtlCollChr *chr, BtlCollHit *hit) {
         return 0;
     }
     BtlChar_SetFlag(chr, 0x66);
-    BtlMember_Damage(chr, dmg, 0xC);
+    TagBalance_Damage(chr, dmg, 0xC, hit->ownerId);
     switch (BtlKiBlast_GetTypeOfHit(hit)) {
     case 2:
         BtlCharSnd_RequestAt(&hit->pos, 0, 0x42, 200.0f, 1500.0f);
@@ -463,7 +469,7 @@ s32 BtlColl_GuardStrike(BtlCollChr *chr, BtlCollHit *hit) {
         return 0;
     }
     BtlChar_SetFlag(chr, 0x66);
-    BtlMember_Damage(chr, dmg, 0xC);
+    TagBalance_Damage(chr, dmg, 0xC, hit->ownerId);
     time = 0.2f;
     BtlColl_PlayHitSound(NULL, hit, BtlSkill_GetHitSound(atk, slot));
     BtlMove_SetImpulseDir(chr, &dir, BtlSkill_GetGuardPush(atk, slot));
@@ -539,7 +545,7 @@ s32 BtlColl_GuardRush(BtlCollChr *chr, BtlCollHit *hit) {
         BtlChar_SetFlag(chr, 0x67);
         break;
     }
-    BtlMember_Damage(chr, BtlSuper_GetDamage(atk, slot, 1, 0), 0xC);
+    TagBalance_Damage(chr, BtlSuper_GetDamage(atk, slot, 1, 0), 0xC, hit->ownerId);
     BtlColl_PlayHitSound(NULL, hit, BtlSuper_GetHitSound(atk, slot, alt));
     if (alt) {
         BtlMove_SetImpulseDir(chr, &dir, BtlSuper_GetGuardPush(atk, slot));
@@ -677,7 +683,7 @@ s32 BtlColl_HitByBlast(BtlCollChr *chr, BtlCollHit *hit) {
         dmg /= hit->atk->hits;
     }
     time = 0.1f;
-    BtlMember_Damage(chr, dmg, 0);
+    TagBalance_Damage(chr, dmg, 0, hit->ownerId);
     ChrCam_AddShake(chr, 3.0f, time);
     BtlChar_Vibrate(chr, 1.0f, time);
     switch (hit->atk->kind) {
@@ -774,7 +780,7 @@ s32 BtlColl_HitByStrike(BtlCollChr *chr, BtlCollHit *hit) {
         fl = 0x400000;
         break;
     }
-    BtlMember_Damage(chr, dmg, fl);
+    TagBalance_Damage(chr, dmg, fl, hit->ownerId);
     ChrCam_AddShake(chr, 3.0f, 0.2f);
     BtlChar_Vibrate(chr, 1.0f, 0.2f);
     switch (slot) {
@@ -829,7 +835,7 @@ void BtlColl_ApplyRushHit(BtlCollChr *chr, BtlCollChr *atk, BtlCollHit *hit, s32
         fl = 0x2000100;
         break;
     }
-    BtlMember_Damage(chr, dmg, fl);
+    TagBalance_Damage(chr, dmg, fl, hit->ownerId);
     BtlCharApi_ShakeCamsNear(&hit->pos, 100.0f, 1500.0f, 5.0f, 0.3f);
     BtlCharApi_RumbleNear(&hit->pos, 100.0f, 1000.0f, 1.0f, 0.3f);
     BtlChar_SetHeldFlag(chr, 0x1D);
@@ -893,7 +899,7 @@ void BtlColl_ApplyRushNoFlinch(BtlCollChr *chr, BtlCollChr *atk, BtlCollHit *hit
         fl = 0x2000100;
         break;
     }
-    BtlMember_Damage(chr, dmg, fl);
+    TagBalance_Damage(chr, dmg, fl, hit->ownerId);
     n = BtlSuper_GetRecoilDamage(atk, slot);
     if (n > 0) {
         if (BtlMember_Damage(atk, n, 0x42B)) {
@@ -912,6 +918,7 @@ s32 BtlColl_StartRushCatch(BtlCollChr *chr, BtlCollChr *atk, BtlCollHit *hit, s3
     u32 tf;
     s32 alt;
 
+    if (!TagTeam_CanContact(atk->side, chr->side)) return 0;
     if (atk->react.id >= 3) {
         return 0;
     }
@@ -999,6 +1006,9 @@ s32 BtlColl_StartRushCatch(BtlCollChr *chr, BtlCollChr *atk, BtlCollHit *hit, s3
     chr->thr.unk58 = atk->thr.unk58;
     chr->thr.unk5C = atk->thr.unk5C;
     BtlColl_PlayHitSound(NULL, hit, BtlSuper_GetHitSound(atk, slot, alt));
+#ifdef PORT
+    {extern void TagCamera_TestContact(s32,s32,s32);TagCamera_TestContact(atk->side,chr->side,2);}
+#endif
     return 1;
 }
 
@@ -1092,6 +1102,7 @@ s32 BtlColl_TryDodge(s32 objId, BtlCollHit *hit) {
     if (chr == NULL) {
         return 0;
     }
+    if (!TagTeam_CanContact(hit->ownerId, chr->side)) return 1;
     if (BtlChar_IsFrozen(chr)) {
         return 1;
     }
@@ -1443,6 +1454,7 @@ s32 BtlColl_TryGuard(s32 objId, BtlCollHit *hit) {
     if (chr == NULL) {
         return 0;
     }
+    if (!TagTeam_CanContact(hit->ownerId, chr->side)) return 1;
     if (BtlChar_TestFlag(chr, 0x59)) {
         return 1;
     }
@@ -1471,6 +1483,7 @@ s32 BtlColl_Hit(s32 objId, BtlCollHit *hit) {
     if (chr == NULL) {
         return 0;
     }
+    if (!TagTeam_CanContact(hit->ownerId, chr->side)) return 1;
     switch (chr->react.id) {
     case 9:
     case 10:
@@ -1508,6 +1521,7 @@ s32 BtlColl_Hit(s32 objId, BtlCollHit *hit) {
         }
     }
     if (ret) {
+        TagLobby_Contact(hit->ownerId,chr->side);
         BtlChar_RaiseFirstClash(BtlChar_Get(hit->ownerId));
     }
     return ret;

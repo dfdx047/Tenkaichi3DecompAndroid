@@ -1046,7 +1046,8 @@ void EftSmoke_Draw(EftTask *task) {
     hi = one;
     lo = zero;
     for (i = 0; i < EFT_SMOKE_PARTS; i++, part++) {
-        if (part->life != 0) {
+        extern int Port_TagKiLess(void);
+        if (part->life != 0 && !(Port_TagKiLess() && (i & 1))) { /* (light graphics: half of it, gs_draw.c) */
             life = part->life;
             alpha = work->arg.alpha;
             if (life < fade) {
@@ -1453,9 +1454,11 @@ void EftBoundMgr_Init(EftTask *task) {
     gEftBound->color = (f32 *)BtlScene_GetPackEntry((s32 *)pack, 22);
     EftTexSet_Load32(&gEftBound->tex, gEftBound->texPack);
     EftBoundMgr_Enable();
-    gEftBoundList = BtlTask_CreateChildList(task, 2, sizeof(EftBoundChar));
-    EftBoundMgr_AddChar(0);
-    EftBoundMgr_AddChar(1);
+    {
+        s32 i, count = BtlScene_GetCharCount();
+        gEftBoundList = BtlTask_CreateChildList(task, count, sizeof(EftBoundChar));
+        for (i = 0; i < count; i++) EftBoundMgr_AddChar(i);
+    }
 }
 
 /* Boundary manager term callback. */
@@ -1698,12 +1701,10 @@ void EftShotMgr_Init(EftTask *task) {
     memset(gEftShot->chr, 0, size);
     gEftShot->list = BtlTask_CreateChildList(task, gEftShot->count + 1, 0);
     BtlTaskList_AddTail(gEftShot->list, gEftTechEvtClass, NULL);
-    arg[0] = 0;
-    arg[1] = 1;
-    c = gEftShot->chr;
-    c->task = BtlTaskList_AddTail(gEftShot->list, gEftShotCharClass, &arg[0]);
-    c = gEftShot->chr + 1;
-    c->task = BtlTaskList_AddTail(gEftShot->list, gEftShotCharClass, &arg[1]);
+    for (arg[0] = 0; arg[0] < gEftShot->count; arg[0]++) {
+        c = &gEftShot->chr[arg[0]];
+        c->task = BtlTaskList_AddTail(gEftShot->list, gEftShotCharClass, &arg[0]);
+    }
 }
 
 /* Shot layer term callback: frees the blocks and empties pools 3, 4 and 5. */
@@ -1766,6 +1767,9 @@ void EftShot_SetCharPool(s32 chr) {
     } else {
         pool = 5;
     }
+#ifdef PORT
+    if (chr >= 2) pool = 9 + chr - 2;
+#endif
     BtlPool_SetCurrent(pool);
 }
 
@@ -1778,6 +1782,9 @@ void EftShot_ResetCharPool(s32 chr) {
     } else {
         pool = 5;
     }
+#ifdef PORT
+    if (chr >= 2) pool = 9 + chr - 2;
+#endif
     BtlPool_Reset(pool);
 }
 

@@ -123,5 +123,10 @@ void DemoCam_PlayCharAnim0(s32 objId);
 void DemoCam_PlayCharAnim1(s32 objId);
 void DemoCam_PlayCharAnim2(s32 objId);
 s32 DemoCam_PlayStageAnim(s32 idx);
+#ifdef PORT
+void DemoCam_FighterRequest(s32 actor,s32 objId,s32 flags);
+s32 DemoCam_FighterActive(s32 actor);
+s32 DemoCam_ApplyFighter(s32 actor,View *view,Vec4 *eye);
+#endif
 
 #endif

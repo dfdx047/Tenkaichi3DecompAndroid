@@ -268,10 +268,12 @@ void EftSpdLine_DrawTrails(void) {
     Vec4 quad[4];
     EftSpdTrail *p;
     s32 inView;
+    u32 lite = 0;
 
     Mtx_Copy(&mtx, &gBtlCamView->world2screen);
     for (p = gEftSpdLine->trailHead; p != NULL; p = p->next) {
         if (p->flags & 1) {
+            { extern int Port_TagKiLess(void); if (Port_TagKiLess() && (lite++ & 1)) continue; } /* (half, the same ones each picture: gs_draw.c) */
             inView = BtlScene_IsCharInView(p->objId);
             EftSpdLine_BuildTrailQuad(quad, p);
             EftSpdLine_DrawQuad(quad, &mtx, &gEftSpdLine->tex[p->tex], 255.0f, 255.0f, 255.0f, p->alpha, p->blend,
@@ -383,6 +385,7 @@ void EftSpdLine_DrawStreaks(void) {
     Vec4 quad[4];
     EftSpdStreak *p;
     s32 inView;
+    u32 lite = 0;
 
     if (gEftSpdLine->texReady == 0) {
         return;
@@ -390,6 +393,7 @@ void EftSpdLine_DrawStreaks(void) {
     Mtx_Copy(&mtx, &gBtlCamView->world2screen);
     for (p = gEftSpdLine->streakHead; p != NULL; p = p->next) {
         if (p->flags & 1) {
+            { extern int Port_TagKiLess(void); if (Port_TagKiLess() && (lite++ & 1)) continue; } /* (half, the same ones each picture: gs_draw.c) */
             inView = BtlScene_IsCharInView(p->objId);
             EftSpdLine_BuildStreakQuad(quad, p);
             EftSpdLine_DrawQuad(quad, &mtx, &gEftSpdLine->tex[p->tex], 0.0f, 0.0f, 0.0f, p->alpha, p->blend, inView);

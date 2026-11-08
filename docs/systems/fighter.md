@@ -200,7 +200,7 @@ See combat.md for the mechanics. Corrections to the tables above (all verified b
 
 ## Fighter API, second part (`btl_capi_b.c`, 0x208430..0x20BA80)
 
-All 136 functions match per function; linked since (counts as first reported; docs/open_questions.md lists what is still assembly). Full tables are in
+All 136 functions match per function; linked since (counts as first reported; [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md) lists what is still assembly). Full tables are in
 `include/battle/btl_capi_b.h`. Four groups (verified code; names partly guessed):
 
 - **By object id** (66 functions, used by the AI): gauges, current action, whether the fighter
@@ -223,7 +223,7 @@ flag 0xBE and zeroes the stun countdown.
 `BtlCtrl_IsMotionPlaying` is confirmed inverted: it returns 1 while a one-shot motion is still
 playing. A list of proposed renames for the `BtlCtrl_*` and `BtlFacade_*` placeholders
 (PlayMotion, Transform, Fuse, UseTechnique, SetMaxPower, aura and charge effects, Ki / Blast
-gauge names) is in the agent's symbol file comments and docs/status.md follow-ups.
+gauge names) is in the agent's symbol file comments and [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/status.md) follow-ups.
 
 The code assumes a fighter's object id equals its side / player index.
 
@@ -233,7 +233,7 @@ caller in either binary. No pad, camera or sound reads; nothing depends on playe
 ## Fighter API, first part (`btl_capi_a.c`, 0x204E78..0x207020)
 
 79 of 81 functions match per function (two small ki-blast-type loops differ in block layout
-and stay in assembly); linked since (counts as first reported; docs/open_questions.md lists what is still assembly). Tables are in `include/battle/btl_capi_a.h`.
+and stay in assembly); linked since (counts as first reported; [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md) lists what is still assembly). Tables are in `include/battle/btl_capi_a.h`.
 
 - (verified) **Object +0xFF4 is the character's height** in world units, copied from the model
   header with three more floats (+0xFF8..+0x1000). Body centre = `pos.y - height * 0.5`; look
@@ -261,7 +261,7 @@ and stay in assembly); linked since (counts as first reported; docs/open_questio
 
 ## Battle object: faces, parts, nodes, secondary motion (`bobj_b.c`, `bobj_b_b.c`, 0x24F1F0..0x2527B0)
 
-43 of 49 functions match per function; linked since (counts as first reported; docs/open_questions.md lists what is still assembly). Two of the six misses need the previous
+43 of 49 functions match per function; linked since (counts as first reported; [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md) lists what is still assembly). Two of the six misses need the previous
 range's face helpers in the same file; the two large chain step functions are read from
 disassembly only. Layouts are in `include/battle/bobj_b.h`.
 
@@ -296,7 +296,7 @@ disassembly only. Layouts are in `include/battle/bobj_b.h`.
 
 ## Battle object: the animation player (`bobj_a.c`, 0x24BBE8..0x24F1F0)
 
-58 of 62 functions match per function; linked since (counts as first reported; docs/open_questions.md lists what is still assembly). The four misses include the two pose
+58 of 62 functions match per function; linked since (counts as first reported; [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md) lists what is still assembly). The four misses include the two pose
 sampling functions (`BtlObjAnim_SamplePosRot`, `BtlObjAnim_SamplePose`), so the pose rules below
 are read from disassembly; events, playback, hit volumes and the matrix walk are verified.
 Layouts and the full object field table are in `include/battle/bobj_a.h`.

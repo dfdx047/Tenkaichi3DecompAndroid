@@ -104,6 +104,23 @@ extern s32 BtlObj_GetNodeSide(s32 node);
 
 extern void *D_002C3B38[];
 
+u32 EftDiscMgr_WorkSize(void) { return (sizeof(EftDiscMgr)+15)&~15; }
+
+/* Discs can finish out of order after hitting different opponents. Removing
+   the head for every completion can leave a dead task in this owner's list. */
+static void EftDiscMgr_Unlink(s32 objId,EftPTask *task) {
+    EftDiscMgr *mgr;
+    EftDiscNode *n,*prev=NULL;
+    if(!gEftDisc || !gEftDisc->mgr || (u32)objId>=EFT_DISC_OWNERS)return;
+    mgr=gEftDisc->mgr;
+    for(n=mgr->head[objId];n;prev=n,n=n->next) if(n->task==task) {
+        if(prev)prev->next=n->next;
+        else mgr->head[objId]=n->next;
+        if(mgr->tail[objId]==n)mgr->tail[objId]=prev;
+        n->flags=0;n->task=NULL;n->next=NULL;
+        return;
+    }
+}
 
 /* Clamp as the module writes it everywhere (the update callback has four more copies). */
 static inline f32 EftDisc_Clamp(f32 x, f32 lo, f32 hi) {
@@ -174,7 +191,7 @@ void EftDisc_Term(EftPTask *task) {
     if (w->flags & EFT_DISC_PIECE) {
         EftEmit_TermState(arg->set, w->emit);
     } else if (arg->kind < 2) {
-        EftDiscMgr_PopHeld(arg->objId);
+        EftDiscMgr_Unlink(arg->objId,task);
     }
     memset(w, 0, sizeof(EftDisc));
 }
@@ -284,24 +301,15 @@ void EftDisc_AddHit(EftPTask *task) {
     EftHit_Add(rec);
 }
 
-/* Copies the ki blast parameters into the first held disc of the fighter they name. */
+/* Copies the hit parameters into the specific disc being released/created.
+   The oldest disc can already be flying at a different target. */
 void EftDisc_SetHeldAtk(EftPTask *task, EftDiscAtk *atk) {
-    EftDiscNode *n;
-    EftPTask *t;
     EftDisc *w;
 
-    if (gEftDisc == NULL) {
+    if (!gEftDisc || !task || !atk || (u32)atk->objId>=EFT_DISC_OWNERS) {
         return;
     }
-    n = gEftDisc->mgr->head[atk->objId];
-    if (n == NULL) {
-        return;
-    }
-    t = n->task;
-    if (t == NULL) {
-        return;
-    }
-    w = t->work;
+    w = task->work;
     if (w == NULL) {
         return;
     }
@@ -430,7 +438,7 @@ s32 EftDiscMgr_PushHeld(EftPTask *task, s32 objId, u8 kind) {
     EftDiscMgr *mgr;
     EftDiscNode *n;
 
-    if (task == NULL) {
+    if (task == NULL || (u32)objId>=EFT_DISC_OWNERS) {
         return 0;
     }
     if (gEftDisc == NULL) {
@@ -465,7 +473,7 @@ s32 EftDiscMgr_PopHeld(s32 objId) {
     EftDiscMgr *mgr;
     EftDiscNode *n;
 
-    if (gEftDisc == NULL) {
+    if (gEftDisc == NULL || (u32)objId>=EFT_DISC_OWNERS) {
         return 0;
     }
     mgr = gEftDisc->mgr;
@@ -474,10 +482,7 @@ s32 EftDiscMgr_PopHeld(s32 objId) {
     }
     n = mgr->head[objId];
     if (n != NULL) {
-        mgr->head[objId] = n->next;
-        n->flags = 0;
-        n->next = NULL;
-        n->task = NULL;
+        EftDiscMgr_Unlink(objId,n->task);
     }
     return 1;
 }
@@ -488,14 +493,14 @@ EftDiscNode *EftDiscMgr_AllocNode(void) {
     u8 i;
     EftDiscNode *n;
 
-    if (mgr->cursor >= 20) {
+    if (mgr->cursor >= EFT_DISC_CAPACITY) {
         mgr->cursor = 0;
     }
     i = mgr->cursor;
     do {
         n = &mgr->node[i];
         i++;
-        if (i >= 20) {
+        if (i >= EFT_DISC_CAPACITY) {
             i = 0;
         }
         if (n->flags == 0) {
@@ -510,7 +515,7 @@ EftDiscNode *EftDiscMgr_AllocNode(void) {
 s32 EftDisc_SpawnHeld(EftDiscHeldArg *a, s32 hand) {
     EftDiscArg arg;
 
-    if (gEftDisc == NULL || a == NULL) {
+    if (gEftDisc == NULL || a == NULL || (u32)a->objId>=EFT_DISC_OWNERS) {
         return 0;
     }
     if (gEftDisc->mgr == NULL) {
@@ -553,7 +558,7 @@ s32 EftDisc_Throw(EftDiscAtk *a) {
     EftPTask *task;
     EftDisc *w;
 
-    if (gEftDisc == NULL) {
+    if (gEftDisc == NULL || !gEftDisc->mgr || !a || (u32)a->objId>=EFT_DISC_OWNERS) {
         return 0;
     }
     n = gEftDisc->mgr->head[a->objId];
@@ -597,7 +602,7 @@ s32 EftDisc_SpawnThrown(EftDiscAtk *a) {
     EftDiscArg arg;
     EftPTask *task;
 
-    if (gEftDisc == NULL || a == NULL) {
+    if (gEftDisc == NULL || a == NULL || (u32)a->objId>=EFT_DISC_OWNERS) {
         return 0;
     }
     if (gEftDisc->mgr == NULL) {
@@ -645,7 +650,7 @@ s32 EftDisc_DropHeld(s32 objId) {
     EftPTask *t;
     EftDisc *w;
 
-    if (gEftDisc == NULL) {
+    if (gEftDisc == NULL || !gEftDisc->mgr || (u32)objId>=EFT_DISC_OWNERS) {
         return 0;
     }
     mgr = gEftDisc->mgr;
@@ -663,10 +668,7 @@ s32 EftDisc_DropHeld(s32 objId) {
     }
     if (w->flags & EFT_DISC_ALIVE) {
         w->flags |= EFT_DISC_DEAD;
-        mgr->head[objId] = n->next;
-        n->flags = 0;
-        n->next = NULL;
-        n->task = NULL;
+        EftDiscMgr_Unlink(objId,t);
         return 1;
     }
     return 0;
@@ -677,7 +679,7 @@ s32 EftDisc_SpawnFromNode(EftDiscAtk *a) {
     EftDiscArg arg;
     EftPTask *task;
 
-    if (gEftDisc == NULL || a == NULL) {
+    if (gEftDisc == NULL || a == NULL || (u32)a->objId>=EFT_DISC_OWNERS) {
         return 0;
     }
     if (gEftDisc->mgr == NULL) {

@@ -1086,10 +1086,14 @@ static void poll_events(void) {
     while (SDL_PollEvent(&ev)) {
 #ifdef __ANDROID__
         if (ev.type == SDL_EVENT_WILL_ENTER_BACKGROUND || ev.type == SDL_EVENT_DID_ENTER_BACKGROUND) {
+            extern volatile int gPortInBackground;
+            gPortInBackground = 1;
             window_away();
             continue;
         }
         if (ev.type == SDL_EVENT_DID_ENTER_FOREGROUND) {
+            extern volatile int gPortInBackground;
+            gPortInBackground = 0;
             sWindowBack = 1;
             continue;
         }
@@ -1104,6 +1108,7 @@ static void poll_events(void) {
             exit(0);
 #endif
         }
+        if (ev.type != SDL_EVENT_MOUSE_BUTTON_DOWN && GsDraw_FullscreenEvent(&ev)) continue;
         { extern void PortA11y_Event(const SDL_Event *ev); PortA11y_Event(&ev); } /* a11y.c: the repeat key and button */
         if (PortInput_Hotkey(&ev) || (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_AC_BACK)) {
             Ui_Toggle(); /* F1, START + SELECT, or the list's key; Android: the back button (loader.c hands it over) */
@@ -1112,6 +1117,7 @@ static void poll_events(void) {
         if (Ui_Event(&ev)) { /* the settings window is open and used it (Esc closes it) */
             continue;
         }
+        if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && GsDraw_FullscreenEvent(&ev)) continue;
 #ifndef __ANDROID__
         if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_ESCAPE) {
             if (!ev.key.repeat && !Ui_QuitAsk()) { exit(0); } /* (asks first) */
@@ -1126,9 +1132,6 @@ static void poll_events(void) {
             Port_SettingSave("interp", gsInterp);
             Port_SettingsWrite();
             fprintf(stderr, "bt3: smooth motion %s\n", gsInterp == 0 ? "off" : gsInterp == 1 ? "60" : gsInterp == 2 ? "120" : "240");
-        }
-        if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F11) {
-            GsDraw_FullscreenToggle();
         }
     }
 }
@@ -1793,29 +1796,38 @@ static void vk_frame_end(void) {
         dst.size = gsVuIdxCount * sizeof(uint32_t);
         SDL_UploadToGPUBuffer(copy, &src, &dst, true);
     }
+    /* The frame's textures through one upload buffer, each level at its own offset (16-byte aligned), mapped
+       once: a buffer made, mapped and let go for every level (a pack's picture has up to 11) cost the frame and
+       the driver's hand-over after it most of a large pack's time. The buffer stays and grows; SDL hands a
+       fresh one (cycle) while the last frame's is still being read. Grown past 4 MB by a load, it is let go once
+       120 frames in a row needed no more than that: kept, the load's peak (and SDL's cycled copies of it) stayed in
+       the phone's memory for the rest of the run. */
+    static SDL_GPUTransferBuffer *sUpBuf;
+    static uint32_t sUpBufSize, sUpSmallFrames;
+    uint32_t upTotal = 0;
+    for (i = 0; i < sPendingCount; i++) {
+        upTotal += ((sPending[i].bytes ? sPending[i].bytes : sPending[i].w * sPending[i].h * 4) + 15) & ~15u;
+    }
+    sUpSmallFrames = upTotal <= (4u << 20) ? sUpSmallFrames + 1 : 0;
+    if (sUpBuf != NULL && sUpBufSize > (4u << 20) && sUpSmallFrames >= 120) {
+        SDL_ReleaseGPUTransferBuffer(sDev, sUpBuf);
+        sUpBuf = NULL;
+        sUpBufSize = 0;
+    }
     if (sPendingCount != 0) {
-        /* The frame's textures through one upload buffer, each level at its own offset (16-byte aligned), mapped
-           once: a buffer made, mapped and let go for every level (a pack's picture has up to 11) cost the frame
-           and the driver's hand-over after it most of a large pack's time. The buffer stays and grows; SDL hands a
-           fresh one (cycle) while the last frame's is still being read. */
-        static SDL_GPUTransferBuffer *tb;
-        static uint32_t tbSize;
-        uint32_t total = 0, at = 0;
+        uint32_t total = upTotal, at = 0;
         uint8_t *p;
-        for (i = 0; i < sPendingCount; i++) {
-            total += ((sPending[i].bytes ? sPending[i].bytes : sPending[i].w * sPending[i].h * 4) + 15) & ~15u;
-        }
-        if (tb == NULL || total > tbSize) {
+        if (sUpBuf == NULL || total > sUpBufSize) {
             SDL_GPUTransferBufferCreateInfo ti;
-            if (tb != NULL) {
-                SDL_ReleaseGPUTransferBuffer(sDev, tb);
+            if (sUpBuf != NULL) {
+                SDL_ReleaseGPUTransferBuffer(sDev, sUpBuf);
             }
             SDL_zero(ti);
             ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-            ti.size = tbSize = total > (4u << 20) ? (total + 0xFFFFF) & ~0xFFFFFu : 4u << 20;
-            tb = SDL_CreateGPUTransferBuffer(sDev, &ti);
+            ti.size = sUpBufSize = total > (4u << 20) ? (total + 0xFFFFF) & ~0xFFFFFu : 4u << 20;
+            sUpBuf = SDL_CreateGPUTransferBuffer(sDev, &ti);
         }
-        p = tb != NULL ? SDL_MapGPUTransferBuffer(sDev, tb, true) : NULL;
+        p = sUpBuf != NULL ? SDL_MapGPUTransferBuffer(sDev, sUpBuf, true) : NULL;
         for (i = 0; i < sPendingCount; i++) {
             uint32_t bytes = sPending[i].bytes ? sPending[i].bytes : sPending[i].w * sPending[i].h * 4;
             if (p != NULL) {
@@ -1823,7 +1835,7 @@ static void vk_frame_end(void) {
                 SDL_GPUTextureRegion dst;
                 memcpy(p + at, sPending[i].px, bytes);
                 SDL_zero(src);
-                src.transfer_buffer = tb;
+                src.transfer_buffer = sUpBuf;
                 src.offset = at;
                 SDL_zero(dst);
                 dst.texture = sPending[i].tex;
@@ -1837,17 +1849,19 @@ static void vk_frame_end(void) {
             free(sPending[i].px);
         }
         if (p != NULL) {
-            SDL_UnmapGPUTransferBuffer(sDev, tb);
+            SDL_UnmapGPUTransferBuffer(sDev, sUpBuf);
         }
     }
     sPendingCount = 0;
     /* A picture the game uploaded straight into a display buffer (a movie frame): from GS memory into a 512 x 448
        texture here, then scaled into that buffer's texture before the frame's draws (a fade goes on top). */
     for (i = 0; i < 2; i++) {
-        SDL_GPUTransferBufferCreateInfo ti;
+        /* (one upload buffer kept for the whole run: a movie uploads every frame, and a buffer made and let go for
+           each was a 1 MB allocation of the driver's per picture; mapped with cycle, SDL hands a fresh one while the
+           last frame's is still being read, as for the textures above) */
+        static SDL_GPUTransferBuffer *tb;
         SDL_GPUTextureTransferInfo src;
         SDL_GPUTextureRegion dst;
-        SDL_GPUTransferBuffer *tb;
         uint32_t *px, x, y, fbp = i ? 0x70 : 0;
         if (!(gGsFbUploads & (1u << i))) {
             continue;
@@ -1864,11 +1878,17 @@ static void vk_frame_end(void) {
             ci.num_levels = 1;
             sFbTex[i] = SDL_CreateGPUTexture(sDev, &ci);
         }
-        SDL_zero(ti);
-        ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        ti.size = sTW * sTH * 4;
-        tb = SDL_CreateGPUTransferBuffer(sDev, &ti);
-        px = SDL_MapGPUTransferBuffer(sDev, tb, false);
+        if (tb == NULL) {
+            SDL_GPUTransferBufferCreateInfo ti;
+            SDL_zero(ti);
+            ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+            ti.size = sTW * sTH * 4; /* (sTW, sTH are set once, at the start) */
+            tb = SDL_CreateGPUTransferBuffer(sDev, &ti);
+        }
+        px = tb != NULL ? SDL_MapGPUTransferBuffer(sDev, tb, true) : NULL;
+        if (px == NULL) {
+            continue;
+        }
         for (y = 0; y < sTH; y++) {
             for (x = 0; x < sTW; x++) {
                 px[y * sTW + x] = Gs_VramRead(fbp * 32, 8, 0, x, y) | 0xFF000000u;
@@ -1883,7 +1903,6 @@ static void vk_frame_end(void) {
         dst.h = sTH;
         dst.d = 1;
         SDL_UploadToGPUTexture(copy, &src, &dst, false);
-        SDL_ReleaseGPUTransferBuffer(sDev, tb);
     }
     SDL_EndGPUCopyPass(copy);
     gGsFbUploads = 0;
@@ -2384,15 +2403,18 @@ static void vk_frame_end(void) {
         {   /* BT3_UI_SHOT=<frame>:<file.ppm>: the window's picture with the settings window on it, for checking
                 the settings window without a person or a screen capture (drawn a second time into a texture) */
             static int frame = -1;
+            static int byTime;
             static const char *file;
             if (frame < 0) {
                 frame = 0;
-                if (getenv("BT3_UI_SHOT") != NULL && (file = strchr(getenv("BT3_UI_SHOT"), ':')) != NULL) {
-                    frame = atoi(getenv("BT3_UI_SHOT"));
+                const char *shot=getenv("BT3_UI_SHOT_MS");byTime=shot!=NULL;
+                if(!shot)shot=getenv("BT3_UI_SHOT");
+                if (shot != NULL && (file = strchr(shot, ':')) != NULL) {
+                    frame = atoi(shot);
                     file++;
                 }
             }
-            if (frame > 0 && gGsFrame >= (unsigned)frame) {
+            if (frame > 0 && (byTime ? SDL_GetTicks() : gGsFrame) >= (unsigned)frame) {
                 SDL_GPUTextureCreateInfo ci;
                 SDL_GPUTransferBufferCreateInfo ti;
                 SDL_GPUTransferBuffer *tb;
@@ -2456,6 +2478,19 @@ static void vk_frame_end(void) {
                 SDL_ReleaseGPUTexture(sDev, tex);
             }
         }
+    } else if (acquired && swap != NULL && best < 0) {
+        /* (Tag Team: a native online room exists before the game's first picture; its window is shown and used) */
+        SDL_GPUColorTargetInfo color;
+        SDL_zero(color);
+        color.texture = swap;
+        color.load_op = SDL_GPU_LOADOP_CLEAR;
+        color.store_op = SDL_GPU_STOREOP_STORE;
+        color.clear_color.r = 0.025f;
+        color.clear_color.g = 0.04f;
+        color.clear_color.b = 0.065f;
+        color.clear_color.a = 1.0f;
+        SDL_EndGPURenderPass(SDL_BeginGPURenderPass(cmd, &color, 1, NULL));
+        Ui_Draw(cmd, swap);
     }
     sEndT[4] = gpu_now();
     if (getenv("BT3_LAG_LOG") != NULL) { /* (and when the graphics chip has finished it: lag_fence) */
@@ -2566,7 +2601,7 @@ static void vk_frame_end(void) {
             SDL_GPUFence *fence;
             Uint32 w = 512 * SCALE, h = 448 * SCALE, x, y;
             uint8_t *px;
-            char name[64];
+            char name[1024];
             FILE *fp;
 
             SDL_zero(ti);
@@ -2586,20 +2621,30 @@ static void vk_frame_end(void) {
             SDL_WaitForGPUFences(sDev, true, &fence, 1);
             SDL_ReleaseGPUFence(sDev, fence);
             px = SDL_MapGPUTransferBuffer(sDev, tb, false);
-            snprintf(name, sizeof(name), "port/build/shots/gpu_%05u.ppm", gGsFrame);
+            if (getenv("BT3_SHOT_DIR") != NULL) {
+                /* BT3_SHOT_DIR=<folder>: there instead, the vertical blank in the name too (several copies at once;
+                   two copies' pictures of the same blank compared) */
+                extern unsigned gPortVBlanks;
+                snprintf(name, sizeof(name), "%s/gpu_%05u_v%06u.ppm", getenv("BT3_SHOT_DIR"), gGsFrame, gPortVBlanks);
+            } else {
+                snprintf(name, sizeof(name), "port/build/shots/gpu_%05u.ppm", gGsFrame);
+            }
             fp = fopen(name, "wb");
             if (fp != NULL && px != NULL) {
                 fprintf(fp, "P6\n%u %u\n255\n", w, h);
-                for (y = 0; y < h; y++) {
+                uint8_t *row = malloc(w * 3);
+                for (y = 0; row && y < h; y++) {
                     for (x = 0; x < w; x++) {
                         if (getenv("BT3_SHOT_AUX") != NULL) { /* one byte per pixel: show it as grey, times 16 to see small ids */
-                            uint8_t g = (uint8_t)(px[y * w + x] * 16), t[3] = {g, g, px[y * w + x]};
-                            fwrite(t, 1, 3, fp);
+                            uint8_t g = (uint8_t)(px[y * w + x] * 16);
+                            row[x*3]=g;row[x*3+1]=g;row[x*3+2]=px[y*w+x];
                         } else {
-                            fwrite(&px[(y * w + x) * 4], 1, 3, fp);
+                            memcpy(row+x*3, &px[(y * w + x) * 4], 3);
                         }
                     }
+                    fwrite(row, 1, w * 3, fp);
                 }
+                free(row);
                 fclose(fp);
             }
             SDL_UnmapGPUTransferBuffer(sDev, tb);
@@ -2615,6 +2660,11 @@ static void vk_frame_end(void) {
     gsVuUniCount = 0;
     gsDrawCount = 0;
     gsAnchor = 0;
+    {
+        extern int gsWhole2D, gsChipUp;
+        gsWhole2D = 0;
+        gsChipUp = 0;
+    }
     gsSkipped = 0;
     gsNative = 0;
 }

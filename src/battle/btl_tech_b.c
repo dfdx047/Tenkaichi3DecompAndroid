@@ -1225,6 +1225,16 @@ s32 BtlSuper_GetThrowChara(BtlTechBChr *chr, s32 slot) {
     BtlSuperData *tbl = obj->super;
     s32 chara = tbl->throwChara[i];
     s32 alt = tbl->throwCharaAlt[i];
+#ifdef PORT
+    /* B14 keeps four costume-specific rows after the original technique
+       structure. +0x208 is now outfit selection, not character IDs. Reading
+       it as BT3's IDs queues spurious Goku models and can block the victim's
+       damage-model reload at the end of an ultimate. */
+    if (PortGame_IsBT4()) {
+        s32 costume = BtlMember_GetActive(chr)->costume & 3;
+        return ((s16 *)((u8 *)tbl + 0x244))[costume * 3 + i];
+    }
+#endif
 
     if (obj->chara != chara) {
         if (chara >= 0x100 && (tbl->flags[i] & 0x40000000)) {
@@ -1242,6 +1252,15 @@ s32 BtlSuper_GetThrowCostume(BtlTechBChr *chr, s32 slot) {
     BtlSuperData *tbl = BtlChar_GetObj(chr)->super;
 
     slot -= 2;
+#ifdef PORT
+    if (PortGame_IsBT4()) {
+        s32 costume = BtlMember_GetActive(chr)->costume;
+        s32 partner = ((s16 *)((u8 *)tbl + 0x244))[(costume & 3) * 3 + slot];
+        if (partner >= 0x100) return 0;
+        if (tbl->flags[slot] & 0x40000000) return costume;
+        return ((u8 *)tbl)[0x208 + slot * 4 + (costume & 3)];
+    }
+#endif
     if (tbl->throwChara[slot] < 0x100) {
         if (tbl->flags[slot] & 0x40000000) {
             return BtlMember_GetActive(chr)->costume;
@@ -1348,6 +1367,10 @@ s32 BtlSuper_GetDamage(BtlTechBChr *chr, s32 slot, s32 guard, s32 total) {
     }
     damage = BtlUtil_RoundUp(damage, 10);
     if (BtlChar_TestFlag(chr, 0xA4)) {
+#ifdef PORT
+        if (PortGame_IsBT4()) damage = BtlUtil_RoundUp(damage * 3 / 5, 10);
+        else
+#endif
         damage = BtlUtil_RoundUp(damage * 3 / 10, 10);
     }
     if (BtlChar_TestFlag(chr, 6) && slot != 4) {
@@ -1402,6 +1425,11 @@ s32 BtlSuper_GetDamage(BtlTechBChr *chr, s32 slot, s32 guard, s32 total) {
 void BtlSuper_GetStagePlacement(BtlTechBChr *chr, s32 slot, s32 n, Vec4 *pos, Vec4 *rot) {
     s32 stage = Battle_GetStage();
     BtlTechPlaceTbl *tbl;
+#ifdef PORT
+    /* B14's extra arenas reuse the first 35 authored placement rows. The
+       table itself was not expanded with the stage selector. */
+    if (PortGame_IsBT4()) stage %= 35;
+#endif
 
     if ((u32)(slot - 2) < 3 && (tbl = chr->place[slot - 2]) != NULL) {
         pos->x = tbl->rec[stage * 5 + n].x;

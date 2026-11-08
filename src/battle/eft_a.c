@@ -5,6 +5,11 @@
 #include "sys/gfx_ot.h"
 
 #ifdef PORT
+#include "battle/tag_team.h"
+#include "battle/btl_seq.h"
+static EftCam fighterCams[PORT_FIGHTER_CAPACITY];
+extern void *DemoCam_EnterFighter(s32);
+extern void DemoCam_LeaveFighter(void *);
 extern f32 Port_WideFactor(void); /* widescreen on PC: 1, or 4/3 for a 16:9 picture (port/src/plat_stub.c) */
 #endif
 
@@ -326,7 +331,7 @@ s32 EftHit_RearmImpact(EftHitRec *rec) {
 
 /* Clash of two technique records: 4 = head-on (beam struggle), 1 / 2 = which one is passed, 3 = no clash rule. */
 /* A head-on pair (a moves toward b's previous position and the two movements oppose) stops the technique timers of
- * fighters 0 and 1 by literal id (EftTechEvt_RequestStop), whoever owns the records; the caller does not gate this
+ * the fighters owning the records (EftTechEvt_RequestStop); the caller does not gate this
  * by contact. The kind test is a range test on the signed byte (`kind >= 0 && kind <= 2`) in an `if` of its own:
  * that is what gives lbu / sltiu and the later sign extension. */
 s32 EftHit_ClashTech(EftHitRec *a, EftHitRec *b) {
@@ -352,8 +357,8 @@ s32 EftHit_ClashTech(EftHitRec *a, EftHitRec *b) {
     Vec4_Sub(&d, &b->prevPos, &a->prevPos);
     if (Vec3_Dot(&moveA, &d) > 0.0f && Vec3_Dot(&moveA, &moveB) < 0.0f) {
         result = 4;
-        EftTechEvt_RequestStop(0);
-        EftTechEvt_RequestStop(1);
+        EftTechEvt_RequestStop(a->objId);
+        EftTechEvt_RequestStop(b->objId);
     } else {
         Vec4_Sub(&d, &a->pos, &b->pos);
         result = 2;
@@ -967,6 +972,9 @@ void EftHit_SpawnTechImpact(EftHitRec *rec) {
 
 /* Allocates and clears the camera cut state. */
 void EftCam_Init(void) {
+#ifdef PORT
+    memset(fighterCams,0,sizeof(fighterCams));
+#endif
     gEftCam = BtlPool_Alloc(BtlPool_GetCurrent(), sizeof(EftCam));
     memset(gEftCam, 0, sizeof(EftCam));
 }
@@ -979,6 +987,11 @@ void EftCam_Term(void) {
 
 /* Clears the camera cut state (BtlScene_Reset). */
 void EftCam_Clear(void) {
+#ifdef PORT
+    extern void DemoCam_ResetFighters(void);
+    DemoCam_ResetFighters();
+    memset(fighterCams,0,sizeof(fighterCams));
+#endif
     if (gEftCam != NULL) {
         memset(gEftCam, 0, sizeof(EftCam));
     }
@@ -986,6 +999,13 @@ void EftCam_Clear(void) {
 
 /* Starts a camera cut: plays arg->anim on the demo camera, timed by fighter arg->objId's technique timer if any. */
 void EftCam_Start(EftCamArg *arg) {
+#ifdef PORT
+    EftCam *saved=gEftCam;void *demo=NULL;s32 i;
+    if(TagTeam_Active() && BtlSeq_IsFighting()) for(i=0;i<TagTeam_Count();i++)
+        if(BattleSide_GetObjId(i)==arg->objId) {
+            gEftCam=&fighterCams[i];demo=DemoCam_EnterFighter(i);break;
+        }
+#endif
     gEftCam->arg = *arg;
     DemoCam_SetAnim(arg->anim);
     if (arg->objId != -1) {
@@ -998,6 +1018,10 @@ void EftCam_Start(EftCamArg *arg) {
     gEftCam->objId = arg->objId;
     gEftCam->active = 1;
     gEftCam->hold = 0;
+#ifdef PORT
+    if(demo)DemoCam_LeaveFighter(demo);
+    gEftCam=saved;
+#endif
 }
 
 /* Sets whether the cut holds its last frame instead of ending. */
@@ -1031,7 +1055,7 @@ void EftCam_Stop(void) {
 }
 
 /* Per-frame: moves the cut to the fighter's technique time (or 2.0 further) and ends it past the animation's length. */
-void EftCam_Update(void) {
+static void EftCam_UpdateOne(void) {
     f32 time;
 
     if (!gEftCam->active) {
@@ -1045,6 +1069,10 @@ void EftCam_Update(void) {
     }
     if (gEftCam->objId != -1) {
         if (!BtlCharApi_IsInTechnique(gEftCam->objId)) {
+#ifdef PORT
+            /* An interruption must release this actor's camera too. */
+            EftCam_Stop();
+#endif
             return;
         }
         time = BtlCharApi_GetChargedUnkC78(gEftCam->objId);
@@ -1061,6 +1089,42 @@ void EftCam_Update(void) {
         DemoCam_SetTime(time);
     }
 }
+
+void EftCam_Update(void) {
+#ifdef PORT
+    extern void DemoCam_BeginFighterFrame(void);
+    DemoCam_BeginFighterFrame();
+#endif
+    EftCam_UpdateOne();
+#ifdef PORT
+    if(TagTeam_Active()) {
+        EftCam *saved=gEftCam;s32 i;
+        for(i=0;i<TagTeam_Count();i++) if(fighterCams[i].active && !TagTeam_CinematicPaused(i)) {
+            void *demo=DemoCam_EnterFighter(i);
+            gEftCam=&fighterCams[i];EftCam_UpdateOne();DemoCam_LeaveFighter(demo);
+        }
+        gEftCam=saved;
+    }
+#endif
+}
+
+#ifdef PORT
+void EftCam_StopFighter(s32 objId) {
+    s32 i;
+    if(TagTeam_Active()) for(i=0;i<TagTeam_Count();i++) if(BattleSide_GetObjId(i)==objId && fighterCams[i].active) {
+        EftCam *saved=gEftCam;void *demo=DemoCam_EnterFighter(i);
+        gEftCam=&fighterCams[i];EftCam_Stop();gEftCam=saved;DemoCam_LeaveFighter(demo);return;
+    }
+    if(!TagTeam_Active() || gEftCam->objId==objId)EftCam_Stop();
+}
+s32 EftCam_IsFighterActive(s32 objId) {
+    s32 i;
+    if(!TagTeam_Active())return EftCam_IsActive();
+    for(i=0;i<TagTeam_Count();i++) if(BattleSide_GetObjId(i)==objId)
+        if(fighterCams[i].active)return 1;
+    return gEftCam->active && (gEftCam->objId<0 || gEftCam->objId==objId);
+}
+#endif
 
 /*
  * Lights a 256-entry palette (RGBA bytes) from a 256-entry table of normals (bytes, 128 = 0): adds the colour
@@ -1404,6 +1468,20 @@ void EftGfx_UpdateClipPlanes(void) {
     plane[3].y = 0.0f;
     plane[3].z = s;
     plane[3].w = one;
+#ifdef PORT
+    if(TagTeam_Active()) {
+        extern void BtlCam_GetFrustumSize(f32 *);
+        f32 size[3];
+        BtlCam_GetFrustumSize(size);
+        /* Clipped clouds, beams and other effects must use this view's field
+           of view. The fixed 4:3 planes left straight cuts across wider views. */
+        plane[0].y=size[2]; plane[1].y=-size[2];
+        plane[0].z=plane[1].z=size[1];
+        plane[2].x=-size[2]; plane[3].x=size[2];
+        plane[2].z=plane[3].z=size[0];
+        for(i=0;i<4;i++) Vec3_Normalize(&plane[i],&plane[i]);
+    }
+#endif
     plane[4].x = 0.0f;
     plane[4].y = 0.0f;
     plane[4].z = one;

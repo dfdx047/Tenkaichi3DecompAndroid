@@ -1,3 +1,4 @@
+#include "battle/btl_effect_owner.h"
 #include "common.h"
 #include "battle/eft_q.h"
 #include "sys/gfx_ot.h"
@@ -449,9 +450,9 @@ s32 EftGlow_IsActive(s32 objId) {
     return ret;
 }
 
-/* Changes the type of a running glow (characters 0 and 1 only). No caller. */
+/* Changes the type of a running glow. */
 void EftGlow_ChangeType(s32 objId, s32 type, s32 paramFlags) {
-    if (objId < 2) {
+    if (gEftGlow != NULL && (u32)objId < (u32)gEftGlow->charCount) {
         if (gEftGlow == NULL) {
             return;
         }
@@ -554,7 +555,7 @@ void EftRushBurst_Init(EftQTask *task, EftRushBurstArg *arg) {
     EftEmit_SetNode(w->nodes, 0, arg->node, NULL);
     w->flags |= EFT_RUSHBURST_ALIVE;
     w->life = EftEmit_GetEndFrames(w->set);
-    BtlTask_SetOwnerTag(task, arg->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(arg->objId));
 }
 
 /* Term callback: releases the emitter state and the fighter's slot. */
@@ -830,12 +831,12 @@ void EftChar_Update(EftQTask *task) {
 
 /* Makes the character's pool (7 for character 0, 8 for the others) the current one. */
 void EftChar_SetPool(s32 chr) {
-    BtlPool_SetCurrent(chr == 0 ? 7 : 8);
+    BtlPool_SetCurrent(chr < 2 ? 7 + chr : 9 + (PORT_FIGHTER_CAPACITY-2) + chr - 2);
 }
 
 /* Empties the character's pool. */
 void EftChar_ResetPool(s32 chr) {
-    BtlPool_Reset(chr == 0 ? 7 : 8);
+    BtlPool_Reset(chr < 2 ? 7 + chr : 9 + (PORT_FIGHTER_CAPACITY-2) + chr - 2);
 }
 
 /* Creates the manager task of one kind for a character; its init gets {character, kind}. */
@@ -866,7 +867,7 @@ void EftChar_Kill(s32 chr) {
     EftCharEntry *c = &gEftChar->chars[chr];
 
     if (c->task != NULL) {
-        BtlScene_Reset(chr == 0 ? 2 : 3);
+        BtlScene_ResetCharacter(chr);
         EftChar_SetPool(chr);
         BtlTask_Kill(c->task);
         c->task = NULL;
@@ -940,7 +941,7 @@ void EftCharNull_Init(EftQTask *task, s32 chr) {
     s32 *w = task->work;
 
     *w = 0;
-    BtlTask_SetOwnerTag(task, chr == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(chr));
 }
 
 /* Task term: nothing. */
@@ -1796,7 +1797,7 @@ void EftCharaFx_Init(EftQTask *task, EftCharaFxArg *arg) {
     EftEmit_SetNode(w->nodes, 0, w->node, NULL);
     w->flags |= EFT_CHARAFX_ALIVE;
     w->life = EftEmit_GetEndFrames(w->set);
-    BtlTask_SetOwnerTag(task, arg->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(arg->objId));
 }
 
 /* Term callback: releases both emitter states and the fighter's slot. */

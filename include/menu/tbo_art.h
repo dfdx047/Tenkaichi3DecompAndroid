@@ -14,6 +14,8 @@
     X(TBO_HOSTS_PUZZLED, "hosts_puzzled") \
     X(TBO_HOSTS_CHEER, "hosts_cheer") \
     X(TBO_HOSTS_THUMBS_UP, "hosts_thumbs_up") \
+    X(TBO_RADITZ, "raditz")                 /* the one who stands by the screens now (Tb_Hosts), whatever the pose */ \
+    X(TBO_RADITZ_BUST, "raditz_bust")       /* him from the waist up (Tb_RaditzBust); moving: tbo/ui/raditz.mpg in its place */ \
     X(TBO_KIT_SEL, "kit_sel")               /* the interface pieces: the chosen bar, */ \
     X(TBO_KIT_BAR, "kit_bar")               /* a bar, */ \
     X(TBO_KIT_DIALOG, "kit_dialog")         /* the hosts' box, */ \
@@ -25,7 +27,17 @@
     X(TBO_BTN_TRIANGLE, "btn_triangle") \
     X(TBO_BTN_LEFTRIGHT, "btn_leftright") \
     X(TBO_BTN_CIRCLE, "btn_circle") \
-    X(TBO_BTN_START, "btn_start")
+    X(TBO_BTN_START, "btn_start") \
+    X(TBO_DB_SKY, "db_sky")                 /* the Tag Team mod's menus, in the look of Dragon Ball (port/tools/db_assets.py): */ \
+    X(TBO_DB_BALLS, "db_balls")             /* the dragon balls: eight on a sheet, 0 to 7 stars */ \
+    X(TBO_DB_GLOW, "db_glow")               /* a soft white glow (tinted) */ \
+    X(TBO_DB_RAYS, "db_rays")               /* the picture window's rays */ \
+    X(TBO_DB_FRAME, "db_frame")             /* its gold frame (nine pieces) */ \
+    X(TBO_DB_DIALOG, "db_dialog")           /* the white talk box (nine pieces) */ \
+    X(TBO_DB_NIGHT, "db_night")             /* the night behind the mod's menus (the dragon radar's look) */ \
+    X(TBO_DB_RADAR, "db_radar")             /* the dragon radar: case, button, green screen (its middle: 512, 588 of 1024 x 1100) */ \
+    X(TBO_DB_RING, "db_ring")               /* a thin white ring (tinted): the radar's pulses */ \
+    X(TBO_DB_GLASS, "db_glass")             /* dark blue glass (nine pieces): panels and plates */
 
 #define TBO_ART_ENUM(id, name) id,
 enum { TBO_ART_LIST(TBO_ART_ENUM) TBO_ART_COUNT };

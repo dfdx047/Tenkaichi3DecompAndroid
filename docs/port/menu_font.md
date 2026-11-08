@@ -19,6 +19,7 @@ with its licence, and the list `fonts.tsv`:
 
 ```
 # file <tab> name in the list <tab> use: 1 = Menu, 2 = Dialogue / UI, 4 = Battle, added up for several
+kanit/Kanit-ExtraBoldItalic.ttf	Kanit ExtraBold Italic	1
 fira/FiraSansCondensed-Bold.ttf	Fira Sans Condensed Bold	1
 dejavu/DejaVuSansCondensed-Bold.ttf	DejaVu Sans Condensed Bold	1
 dejavu/DejaVuSansCondensed.ttf	DejaVu Sans Condensed	2
@@ -27,8 +28,8 @@ anton/Anton-Regular.ttf	Anton	4
 
 To offer one font in several settings, add their numbers: `3` for Menu and Dialogue / UI, `7` for all three. The
 column is the one it was before the Battle font came (1, 2, 3 = both), so lines added to an earlier list keep
-their meaning, and a line without it is offered for Menu and Dialogue / UI as before. Fira Sans Condensed Bold is
-first: it is the lettering of the PC's own screens (Tenkaichi Budokai Online) while the Menu font is "Original".
+their meaning, and a line without it is offered for Menu and Dialogue / UI as before. Kanit ExtraBold Italic is
+first: it is the lettering of the port's own screens (Tenkaichi Budokai Online) while the Menu font is "Original".
 To add a font, put the `.ttf` there and add a line; restart the game. A font has to be a static TrueType file
 (glyf outlines; not `.otf`, not a collection, not a variable font), have a capital `H` (the letter height is taken
 from it) and be at most 16 MB. Choices are kept by file path, not by their place in the list.
@@ -84,7 +85,7 @@ the files the game writes are the same bytes as that tool's, and a `game-text/` 
 
 ## Edit translations and labels
 
-When no English UI catalog is present, the game extracts its UTF-16 UI and dialog text into
+When no English UI catalog is present, the game extracts its UTF-16 UI, mode and story dialogue text into
 `gamedata/game-text/translations/ui/en.json` on startup. Copy it to
 `ui/<locale>.json`, set `locale` and `name`, then edit `text` while keeping each ID
 and `original`. The selected language's catalog is loaded on the next launch;
@@ -141,8 +142,8 @@ python3 port/tools/menu_font.py --compare-styles
 ```
 
 The command writes `port/build/menu-font/style-comparison.png`, names the fonts used, and applies current
-`labels.json` edits before rendering. It uses the first Menu font in `fonts.tsv` (currently Fira Sans Condensed
-Bold) by default and needs the extracted disc data, Pillow, and a C compiler. Battle rows are included when the
+`labels.json` edits before rendering. It uses the first Menu font in `fonts.tsv` (currently Kanit ExtraBold
+Italic) by default and needs the extracted disc data, Pillow, and a C compiler. Battle rows are included when the
 Battle font listed in `fonts.tsv` is present; some styles have several examples.
 Set the PNG path with `--output path/to/comparison.png`.
 

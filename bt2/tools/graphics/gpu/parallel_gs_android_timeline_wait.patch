@@ -1,0 +1,25 @@
+--- a/gs/gs_renderer.cpp
++++ b/gs/gs_renderer.cpp
+@@ -3,6 +3,7 @@
+ // SPDX-FileContributor: Runar Heyer
+ // SPDX-License-Identifier: LGPL-3.0+
+ 
++#include <chrono>
+ #include "gs_renderer.hpp"
+ #include "logging.hpp"
+ #include "gs_interface.hpp"
+@@ -777,7 +778,14 @@
+ 				break;
+ 
+ 			last_waited++;
++#ifdef __ANDROID__
++			// Qualcomm's drivers spin in vkWaitSemaphores until the GPU is done, which holds a whole big core for
++			// each renderer the game needs for itself: look and sleep instead.
++			while (!timeline->wait_timeline_timeout(last_waited, 0))
++				std::this_thread::sleep_for(std::chrono::microseconds(250));
++#else
+ 			timeline->wait_timeline(last_waited);
++#endif
+ 
+ 			{
+ 				std::lock_guard<std::mutex> holder{timeline_lock};

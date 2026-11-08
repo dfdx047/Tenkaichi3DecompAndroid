@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "measured_on": "2026-10-13",
+  "scope": "bounded native startup probe with local ISO and prepared inputs",
+  "code_state": "local implementation; final pass verification incomplete",
+  "source_report_sha256": "217684ad3bf0a1976395753b99bdcede7d4c931c3900c84dd2e351e4e42906fe",
+  "metrics": {
+    "distinct_ee_entered": 2007,
+    "distinct_ee_completed": 1998,
+    "distinct_kernel_entered": 2,
+    "distinct_kernel_completed": 2,
+    "calls": 11505514,
+    "returns": 11504887,
+    "native_module_loads": 15,
+    "ee_thread_count": 6,
+    "cri_rpc_calls": 44,
+    "heap_calls": 9,
+    "ncmd_read_calls": 200,
+    "native_disc_requests": 605,
+    "disc_rpc_calls": 6,
+    "gs_packets": 5,
+    "gs_sprites": 4,
+    "gs_pixels": 1146880,
+    "startup_worker_queries": 4,
+    "startup_worker_starts": 4,
+    "startup_worker_priority_changes": 4,
+    "startup_ready_queries": 2,
+    "startup_worker_suspends": 2
+  },
+  "boundary": {
+    "selector": "0x0",
+    "pc": "0x311908",
+    "target": "0x0"
+  }
+}

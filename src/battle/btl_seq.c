@@ -1,9 +1,12 @@
 #include "common.h"
+#include "battle/tag_challenge.h"
+#include "battle/tag_options.h"
 #include "battle/btl_seq.h"
 #include "battle/battle_setup.h"
 #include "battle/battle_work.h"
 #include "sys/heap.h"
 #include "sys/adx.h"
+#include "sys/pad.h"
 
 /* ---- Skill-list text of the pause menu, 0x215420-0x216AC0 ----
  * The list is a UTF-16 script. Every line starts with two characters whose second one is a hex digit (a mask
@@ -149,7 +152,12 @@ s32 BtlText_CheckUnlock(u16 **cursor) {
 
         p += 4;
         if (id == 0x56) {
-            if (BtlCtrl_TestMemberUnk70(work->side) != 0) {
+            s32 actor=work->side;
+#ifdef PORT
+            if(TagTeam_Active()) actor=TagTeam_ControlActor(work->side);
+            if(actor<0) actor=TagTeam_ViewActor(work->side);
+#endif
+            if (BtlCtrl_TestMemberUnk70(actor) != 0) {
                 ret = 0;
             }
         } else {
@@ -472,7 +480,7 @@ u16 *BtlText_FindEntry(s32 n) {
 
     p = BtlMenu_GetScript2();
     if (p == NULL) {
-        return;
+        return NULL;
     }
     p += 1;
     while (go && *p != 0) {
@@ -585,6 +593,7 @@ extern s32 BtlPause_GetPad(void);
 extern s32 PauseMenu_Update(s32 a, s32 b);     /* pause / result menu update */
 #ifdef PORT
 extern int Port_NetActive(void); /* port/src/gs/net.c: 1 in an online match */
+extern int TagNet_Enabled(void);
 extern int Port_NetMe(void);     /* which player this copy plays (0 or 1) */
 extern s32 gPortSeSilent;        /* src/sys/snd.c */
 extern void PauseMenu_Reset(void);
@@ -646,8 +655,7 @@ s32 BtlSeq_Reset(void) {
         break;
     }
     gBtlSeq->state = BtlSeq_FirstState(gBtlSeq->table);
-    Voice_Stop(0);
-    Voice_Stop(1);
+    for (s32 i = 0; i < TagTeam_Count(); i++) Voice_Stop(i);
     return BtlSeq_Call(gBtlSeq->table[gBtlSeq->state].enter, gBtlSeq->state);
 }
 
@@ -800,6 +808,7 @@ void BtlSeq_ResetSubClock(void) {
 
 /* Seconds left of the time limit, -1 when there is none. */
 s32 BtlSeq_GetTimeLeft(void) {
+    if(TagChallenge_BetweenWaves())return TagChallenge_Timer();
     if (Battle_IsTimeLimitOff()) {
         return -1;
     }
@@ -808,10 +817,10 @@ s32 BtlSeq_GetTimeLeft(void) {
 
 /* Stops both fighters' talk animation and both voice players. */
 void BtlSeq_StopTalk(void) {
-    BtlObj_SetSubState(BtlObj_Get(BattleSide_GetObjId(0)), 0, -1);
-    BtlObj_SetSubState(BtlObj_Get(BattleSide_GetObjId(1)), 0, -1);
-    Voice_Stop(0);
-    Voice_Stop(1);
+    for (s32 i = 0; i < TagTeam_Count(); i++) {
+        BtlObj_SetSubState(BtlObj_Get(BattleSide_GetObjId(i)), 0, -1);
+        Voice_Stop(i);
+    }
 }
 
 /* Chooses the two entrance lines: the pair's special dialogue when both have a table entry, else random. */
@@ -859,8 +868,52 @@ s32 BtlSeqIntroTalk_Setup(BtlSeqTalkCtx *ctx) {
     return 1;
 }
 
+#ifdef PORT
+/* Choose a supported opponent interaction before falling back to a generic
+   entrance. Wave arrivals use the same dialogue rules as extra fighters. */
+static void setup_extra_intro(BtlSeqTalkCtx *ctx,s32 slot,s32 actor) {
+    BtlSeqObj *extra=BtlObj_Get(BattleSide_GetObjId(actor));
+    s32 opponents[PORT_FIGHTER_CAPACITY],count=0,j,k;
+    ctx->side[slot]=actor;ctx->chara[slot]=extra->chara;
+    for(j=0;j<TagTeam_Count();j++) if(!TagChallenge_Hidden(j) && TagTeam_IsEnemy(actor,j)) {
+        BtlSeqObj *enemy=BtlObj_Get(BattleSide_GetObjId(j));
+        if(!extra->talkTbl || !enemy || enemy->chara<0 || enemy->chara>=PortGame_CharacterCount())continue;
+        if(extra->talkTbl[enemy->chara*4]==0xFF)continue;
+        for(k=0;k<count;k++)if(opponents[k]==enemy->chara)break;
+        if(k==count)opponents[count++]=enemy->chara;
+    }
+    ctx->line[slot]=count?extra->talkTbl[opponents[rand()%count]*4]+6:rand()%2;
+}
+void BtlSeq_StartWaveIntro(const s32 *actors,s32 count) {
+    BtlSeqTalkCtx *ctx;
+    s32 i;
+    if(!gBtlSeq || !BtlSeq_IsFighting() || count<1 || count>PORT_FIGHTER_CAPACITY)return;
+    BtlSeq_Call(gBtlSeq->table[gBtlSeq->state].exit,gBtlSeq->state);
+    gBtlSeq->state=BTL_SEQ_INTRO_TALK;
+    memset(&gBtlSeq->ctx,0,sizeof(gBtlSeq->ctx));
+    ctx=&gBtlSeq->ctx.talk;ctx->count=count;ctx->waveIntro=1;
+    for(i=0;i<count;i++)setup_extra_intro(ctx,i,actors[i]);
+    Battle_GetWork()->flags|=BATTLE_FLAG_DEMO;
+    Hud_ShowAll(0);
+}
+s32 BtlSeq_WaveIntroPaused(s32 actor) {
+    BtlSeqTalkCtx *ctx;
+    s32 speaker;
+    if(!gBtlSeq || gBtlSeq->state!=BTL_SEQ_INTRO_TALK)return 0;
+    ctx=&gBtlSeq->ctx.talk;
+    if(!ctx->waveIntro)return 0;
+    speaker=ctx->step/2;
+    return speaker>=ctx->count || ctx->side[speaker]!=actor;
+}
+#endif
+
 /* State 1 enter: prepares the entrance lines; mode 1 has none and waits for the skip request. */
 s32 BtlSeqIntroTalk_Enter(BtlSeqTalkCtx *ctx) {
+#ifdef PORT
+    ctx->waveIntro=0;
+    { extern int TagLobby_Practice(void); if(TagLobby_Practice()) {ctx->count=ctx->step=0;return 1;} }
+    ctx->count=Port_TagOption(TAG_OPT_EXTRA_INTROS)?TagTeam_Count():2;
+#endif
     if (Battle_GetMode() == 1) {
         BtlFacade_SetCtrl10D(0);
         BtlFacade_SetCtrl10D(1);
@@ -868,6 +921,9 @@ s32 BtlSeqIntroTalk_Enter(BtlSeqTalkCtx *ctx) {
         ctx->step = 99;
     } else {
         BtlSeqIntroTalk_Setup(ctx);
+#ifdef PORT
+        for (s32 i = 2; i < TagTeam_Count(); i++) setup_extra_intro(ctx,i,i);
+#endif
     }
     Battle_GetWork()->flags |= BATTLE_FLAG_DEMO;
     return 1;
@@ -875,6 +931,21 @@ s32 BtlSeqIntroTalk_Enter(BtlSeqTalkCtx *ctx) {
 
 /* State 1 preUpdate: at steps 0 and 2 starts a speaker's pose, camera cut, voice line and talk animation. */
 s32 BtlSeqIntroTalk_PreUpdate(BtlSeqTalkCtx *ctx) {
+#ifdef PORT
+    while(ctx->step<ctx->count*2 && !(ctx->step&1) && TagChallenge_Hidden(ctx->side[ctx->step/2]))ctx->step+=2;
+    if (ctx->step < ctx->count * 2 && !(ctx->step & 1)) {
+        s32 n = ctx->step / 2;
+        s32 actor = ctx->side[n];
+        extern void Port_TagIntroTrace(s32,s32,s32,s32);
+        BtlCtrl_StartEntrance(actor);
+        Ramp_Start(&ctx->timer, 10.0f, 0.0f, 1.0f);
+        DemoCam_PlayObjAnim(BattleSide_GetObjId(actor), 0);
+        Voice_PlayChara(actor, ctx->chara[n], ctx->line[n]);
+        BtlObj_SetSubState(BtlObj_Get(BattleSide_GetObjId(actor)), 2, ctx->line[n]);
+        Port_TagIntroTrace(actor,ctx->chara[n],ctx->line[n],0);
+        ctx->step++;
+    }
+#else
     switch (ctx->step) {
     case 0:
         BtlCtrl_StartEntrance(ctx->side[0]);
@@ -895,11 +966,33 @@ s32 BtlSeqIntroTalk_PreUpdate(BtlSeqTalkCtx *ctx) {
     case 3:
         break;
     }
+#endif
     return 1;
 }
 
 /* State 1 update: waits for each line to end (voice stopped or 10 s), or for the skip; then goes to state 2. */
 s32 BtlSeqIntroTalk_Update(BtlSeqTalkCtx *ctx) {
+#ifdef PORT
+    s32 doneStep = ctx->count * 2;
+    if (ctx->step >= doneStep && ctx->step!=99) return 2;
+    if (ctx->step < doneStep && (ctx->step & 1)) {
+        s32 n = ctx->step / 2;
+        s32 actor = ctx->side[n];
+        s32 expired = Ramp_Step(&ctx->timer);
+        if ((BtlCtrl_IsPoseReached(actor) && Voice_IsStopped(actor)) || expired) {
+            extern void Port_TagIntroTrace(s32,s32,s32,s32);
+            Port_TagIntroTrace(actor,ctx->chara[n],ctx->line[n],expired ? 2 : 1);
+            Voice_Stop(actor);
+            BtlObj_SetSubState(BtlObj_Get(BattleSide_GetObjId(actor)),0,-1);
+            ScrXfade_RequestCapture();
+            ScrXfade_Start(1,1.0f);
+            ctx->step++;
+        }
+    } else if (ctx->step == 99 && ctx->skip) {
+        ScrXfade_RequestCapture(); ScrXfade_Start(1,1.0f);
+        goto done;
+    }
+#else
     switch (ctx->step) {
     case 0:
     case 1:
@@ -935,9 +1028,14 @@ s32 BtlSeqIntroTalk_Update(BtlSeqTalkCtx *ctx) {
         }
         break;
     }
+#endif
     if (ctx->poll != NULL) {
         if (ctx->poll()) {
+#ifdef PORT
+            if (ctx->step != ctx->count * 2) {
+#else
             if (ctx->step != 4) {
+#endif
                 ScrXfade_RequestCapture();
                 ScrXfade_Start(1, 1.0f);
                 if (BtlScript_IsEventRunning()) {
@@ -956,8 +1054,13 @@ done:
 s32 BtlSeqIntroTalk_Exit(BtlSeqTalkCtx *ctx) {
     if (Battle_GetMode() != 1) {
         DemoCam_Stop();
+#ifdef PORT
+        for (s32 i = 0; i < ctx->count; i++) BtlCtrl_EndEntrance(ctx->side[i]);
+#else
         BtlCtrl_EndEntrance(ctx->side[0]);
         BtlCtrl_EndEntrance(ctx->side[1]);
+#endif
+        BtlSeq_StopTalk();
     }
     return 1;
 }
@@ -976,6 +1079,11 @@ s32 BtlSeqIntroTalk_Skip(BtlSeqTalkCtx *ctx) {
 s32 BtlSeqWinTalk_Setup(BtlSeqTalkCtx *ctx) {
     s32 winner = BattleResult_GetWinnerSide();
     s32 loser = winner == 0;
+#ifdef PORT
+    extern s32 TagTeam_WinningActor(s32);
+    winner=TagTeam_WinningActor(winner);
+    loser=TagTeam_WinningActor(loser);
+#endif
     BtlSeqObj *winObj = BtlObj_Get(BattleSide_GetObjId(winner));
     u8 *winTbl = winObj->talkTbl;
     BtlSeqObj *loseObj = BtlObj_Get(BattleSide_GetObjId(loser));
@@ -1130,12 +1238,21 @@ s32 BtlSeqWinTalk_Skip(BtlSeqTalkCtx *ctx) {
 /* State 0 enter: restarts the step counter and holds the fighters. */
 s32 BtlSeqStageIntro_Enter(BtlSeqWaitCtx *ctx) {
     ctx->step = 0;
+#ifdef PORT
+    {extern int TagLobby_Practice(void);if(TagLobby_Practice())ctx->step=6;}
+#endif
     Battle_GetWork()->flags |= BATTLE_FLAG_DEMO;
     return 1;
 }
 
 /* State 0 preUpdate: at steps 0, 2 and 4 starts stage camera cut 0, 1 and 2. */
 s32 BtlSeqStageIntro_PreUpdate(BtlSeqWaitCtx *ctx) {
+#ifdef PORT
+    if(ctx->step==0 || ctx->step==2 || ctx->step==4) {
+        extern void Port_TagMenuTrace(s32,s32,s32,s32,s32,s32);
+        Port_TagMenuTrace(84,Battle_GetMode(),Battle_GetStage(),ctx->step/2,0,0);
+    }
+#endif
     switch (ctx->step) {
     case 0:
         DemoCam_PlayStageAnim(0);
@@ -1194,6 +1311,9 @@ s32 BtlSeqStageIntro_Exit(BtlSeqWaitCtx *ctx) {
     if (DemoCam_IsActive()) {
         DemoCam_Stop();
     }
+#ifdef PORT
+    {extern int TagLobby_Practice(void);if(TagLobby_Practice())return 1;}
+#endif
     ScrXfade_RequestCapture();
     ScrXfade_Start(1, 1.0f);
     return 1;
@@ -1262,7 +1382,9 @@ s32 BtlSeq_CheckBattleEnd(void) {
     if (BtlCharApi_AnyHasFlag128()) {
         return 0;
     }
+    if(TagChallenge_BetweenWaves())return 0;
     timeUp = BtlSeq_TickClocksExt();
+    if (TagTeam_Active()) return TagTeam_CheckEnd(timeUp);
     if (Battle_GetMode() == 1) {
         return 0;
     }
@@ -1329,6 +1451,11 @@ s32 BtlSeqFight_PreUpdate(BtlSeqWaitCtx *ctx) {
 
 /* State 3 update: opens / runs the pause menu, then checks for the end of the battle (-> 4, or 6 without a finish scene). */
 s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
+#ifdef PORT
+    { s32 p; extern void Port_TagMenuTrace(s32,s32,s32,s32,s32,s32);
+      for(p=0;p<PAD_COUNT;p++) if(gPad[p].pressed)
+          Port_TagMenuTrace(93,p,gPad[p].pressed,gPad[p].gamePressed,BtlPause_GetPadCount(),gPad[p].socket); }
+#endif
     if (Battle_GetMode() != 8) {
         if (ctx->poll != NULL && !(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) && ctx->poll()) {
             if (Battle_GetMode() == 7) {
@@ -1349,7 +1476,7 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
                 {
                     Battle_GetWork()->flags |= BATTLE_FLAG_PAUSE_MENU | BATTLE_FLAG_PAUSE;
                     Adx_PauseSeVoice();
-                    Snd_SetPause(4, 1);
+                    Snd_SetPause(TagTeam_Active() ? (((1u<<(4+PORT_FIGHTER_CAPACITY))-16)|4) : 4, 1);
                 }
             }
         }
@@ -1365,7 +1492,7 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
 #endif
             if (PauseMenu_Update(BtlPause_GetMenuPad(), 0) == 0) {
                 Battle_GetWork()->flags &= ~(BATTLE_FLAG_PAUSE_MENU | BATTLE_FLAG_PAUSE);
-                Snd_SetPause(4, 0);
+                Snd_SetPause(TagTeam_Active() ? (((1u<<(4+PORT_FIGHTER_CAPACITY))-16)|4) : 4, 0);
             }
         }
     }
@@ -1393,6 +1520,9 @@ s32 BtlSeqFight_Exit(BtlSeqWaitCtx *ctx) {
 
 /* State 2 enter: holds the fighters, starts the 0.8 s wait and shows the HUD. */
 s32 BtlSeqReady_Enter(BtlSeqWaitCtx *ctx) {
+#ifdef PORT
+    { extern void TagTeam_TestStartSpacing(void); TagTeam_TestStartSpacing(); }
+#endif
     Battle_GetWork()->flags |= BATTLE_FLAG_DEMO;
     ctx->step = 0;
     Ramp_Start(&ctx->timer, 0.8f, 0.0f, 1.0f);
@@ -1407,6 +1537,10 @@ s32 BtlSeqReady_PreUpdate(BtlSeqWaitCtx *ctx) {
 
 /* State 2 update: after 0.8 s shows announcement 0 and releases the fighters; 2 s later goes to state 3. */
 s32 BtlSeqReady_Update(BtlSeqWaitCtx *ctx) {
+#ifdef PORT
+    /* Practice is an ongoing room, not a newly announced competitive round. */
+    { extern int TagLobby_Practice(void); if(TagLobby_Practice())return 3; }
+#endif
     switch (ctx->step) {
     case 0:
         if (Ramp_Step(&ctx->timer)) {
@@ -1428,12 +1562,21 @@ s32 BtlSeqReady_Update(BtlSeqWaitCtx *ctx) {
 
 /* State 2 exit: announcement 1. */
 s32 BtlSeqReady_Exit(BtlSeqWaitCtx *ctx) {
+#ifdef PORT
+    { extern int TagLobby_Practice(void); if(TagLobby_Practice())return 1; }
+#endif
     HudNotice_Show(1);
     return 1;
 }
 
 /* Gives the result menu to pad 0 when one pad plays, else to the winning side. */
 void BtlSeq_SetResultPad(void) {
+    if(TagTeam_Active()) {
+        s32 actor=TagTeam_WinningActor(BattleResult_GetWinnerSide());
+        s32 player=TagTeam_InputPlayer(actor);
+        BtlPause_SetPad(player<0?0:player);
+        return;
+    }
     if (BtlPause_GetPadCount() == 1) {
         BtlPause_SetPad(0);
     } else {
@@ -1453,7 +1596,11 @@ s32 BtlSeqEnd_Enter(BtlSeqWaitCtx *ctx) {
         Fade_Start(0, 0, 1.0f);
         Ramp_Start(&ctx->timer, 1.2f, 0.0f, 1.0f);
         ctx->step = 1;
-    } else if (BtlSeq_IsModeZero()) {
+    } else if (BtlSeq_IsModeZero()
+#ifdef PORT
+               && !TagNet_Enabled()
+#endif
+              ) {
         ctx->step = 0;
         BtlSeq_SetResultPad();
     } else {

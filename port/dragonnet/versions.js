@@ -9,6 +9,8 @@
 //   5001   Dragon Net: Dragon Rage (Android) and DBT-NX after the merge: the PC port's netcode 5 (0.1.37), and the
 //          simulation version 1 (DRNET_SIM in port/src/gs/net_dragon.h). It changes only when something that
 //          decides a fight changes, not with every release of the PC port.
+//   6001   Dragon Rage after the PC port's 0.1.39 (netcode 6: lobbies in place of rooms of two, a fingerprint always
+//          sent), simulation 1. A Worker for it lists 6001 too ("40001,5001,6001"); 5001 and 6001 never meet.
 // ALLOWED_VERSION (one number) is still read when ALLOWED_VERSIONS is not set, as the DBT-NX Worker had it.
 export function allowedVersions(env) {
     const raw = String(env.ALLOWED_VERSIONS ?? env.ALLOWED_VERSION ?? "40001");

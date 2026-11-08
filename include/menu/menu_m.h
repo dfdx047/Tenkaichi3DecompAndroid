@@ -47,7 +47,7 @@ typedef struct UbCell {
 #define UB_ID_LOCKED 0xA2
 #define UB_ID_REC 0xA3          /* the cell of the saved custom characters */
 #define UB_ID_EMPTY 0xA4        /* filler: an empty chip */
-#define UB_FACE_FILE 0x2F9      /* + character id: compressed portrait */
+#define UB_FACE_FILE DISC_RESOURCE(0x2F9, 0x71C)      /* + character id: compressed portrait */
 
 extern void ChrGrid_MoveLeft(UbCell *cells, s32 *col, s32 row);
 extern void ChrGrid_MoveRight(UbCell *cells, s32 *col, s32 row);

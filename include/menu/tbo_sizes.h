@@ -12,8 +12,10 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {636, 698, 0}, /* hosts_puzzled */
     {693, 637, 0}, /* hosts_cheer */
     {684, 711, 0}, /* hosts_thumbs_up */
-    {1280, 107, 54}, /* kit_sel */
-    {1273, 100, 50}, /* kit_bar */
+    {431, 887, 0}, /* raditz */
+    {512, 496, 0}, /* raditz_bust */
+    {640, 100, 62}, /* kit_sel */
+    {640, 100, 62}, /* kit_bar */
     {1273, 204, 73}, /* kit_dialog */
     {465, 224, 49}, /* kit_window */
     {306, 81, 40}, /* kit_gold */
@@ -24,6 +26,16 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {422, 256, 0}, /* btn_leftright */
     {256, 256, 0}, /* btn_circle */
     {289, 120, 0}, /* btn_start */
+    {1920, 864, 0}, /* db_sky */
+    {2048, 256, 0}, /* db_balls */
+    {256, 256, 0}, /* db_glow */
+    {1024, 512, 0}, /* db_rays */
+    {256, 256, 48}, /* db_frame */
+    {256, 256, 50}, /* db_dialog */
+    {1920, 864, 0}, /* db_night */
+    {1024, 1100, 0}, /* db_radar */
+    {256, 256, 0}, /* db_ring */
+    {256, 256, 48}, /* db_glass */
 };
 
 #endif

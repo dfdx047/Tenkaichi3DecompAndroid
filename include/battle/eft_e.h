@@ -2,6 +2,7 @@
 #define BATTLE_EFT_E_H
 
 #include "types.h"
+#include "battle/eft_fighter_capacity.h"
 #include "sys/math3d.h"
 #include "battle/btl_scene.h"
 
@@ -221,6 +222,10 @@ typedef struct EftWater {
     /* 0x6E */ u8 unk6E[2];
     /* 0x70 */ Mtx44 camMtx;            /* Mtx_InverseRT of the view matrix with the translation zeroed */
     /* 0xB0 */ u8 tex[0x210];           /* texture set built by EftTexSet_Load32 from stage pack entry 0x12 */
+#ifdef PORT
+    /* Keep the prefix shared with EftWaterView unchanged. */
+    u8 extraBlastWait[EFT_FIGHTER_CAPACITY - 2];
+#endif
 } EftWater; /* size 0x2C0 */
 
 /* The task that owns a hit record ("EftHitTask" in eft_a.h). */

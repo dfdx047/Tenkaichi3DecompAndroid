@@ -217,12 +217,12 @@ private class MenuValues(private val file: () -> EngineSettings) {
     companion object {
         val KEYS = listOf(
             "scale4", "aspect_milli", "filter", "smooth_2d", "texture_pack", "texture_count", "gpu_api", "running_gl",
-            "frame_skip", "frag_depth", "interp", "present", "meter", "fx_off", "glow", "music", "effects", "voices",
+            "frame_skip", "frag_depth", "interp", "present", "meter", "fx_off", "tag_lite", "glow", "music", "effects", "voices",
             "stage_sounds", "music_follows_speed", "hud_layout", "menus_43", "side_bars", "menu_font_id", "battle_font_id",
             "text_font_id", "clash_square", "clash_square_x", "chat", "game_speed", "skip_logos", "skip_intro",
-            "skip_copyright", "unlock_done", "online", "fps",
+            "skip_copyright", "unlock_done", "online", "fps", "net_spectators", "lobby_match", "lobby_owner", "spectating", "spec_view",
         )
-        val TEXT_KEYS = listOf("gpu", "device", "fonts_menu", "fonts_battle", "fonts_text")
+        val TEXT_KEYS = listOf("gpu", "device", "fonts_menu", "fonts_battle", "fonts_text", "lobby_code", "lobby_server", "spec_names")
     }
 }
 
@@ -257,6 +257,10 @@ private fun MenuScreen(
             Column(Modifier.fillMaxSize()) {
                 TopBar(l, game, onResume = onResume, onQuit = { askQuit = true })
                 Spacer(Modifier.height(8.dp))
+                if (game != Game.BT4 && (values.get("lobby_match", 0) != 0 || values.get("spectating", 0) != 0)) {
+                    NetBar(l, values, onDone = onResume)
+                    Spacer(Modifier.height(8.dp))
+                }
                 if (wide) {
                     Row(Modifier.fillMaxSize()) {
                         Column(
@@ -318,6 +322,58 @@ private fun TopBar(l: L, game: Game, onResume: () -> Unit, onQuit: () -> Unit) {
             Icon(Icons.Rounded.PlayArrow, null, Modifier.size(22.dp))
             Spacer(Modifier.width(8.dp))
             Text(l.t("Resume", "Continuar", "Continuar"), fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+/** A lobby's match or a watched match: the ways back and out, as the engine's window has them (the PC's at its top). */
+@Composable
+private fun NetBar(l: L, v: MenuValues, onDone: () -> Unit) {
+    val lobby = v.get("lobby_match", 0) != 0
+    val owner = v.get("lobby_owner", 0) != 0
+    val watching = v.get("spectating", 0) != 0
+    val names = v.texts["spec_names"].orEmpty().split('|')
+    val code = v.texts["lobby_code"].orEmpty()
+    val server = v.texts["lobby_server"].orEmpty()
+    fun act(a: Int) { MenuBridge.action(a); onDone() }
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.92f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val title = if (watching) {
+                val view = when (v.get("spec_view", 0)) {
+                    0 -> names.getOrNull(0)?.ifEmpty { null } ?: l.t("player 1", "jogador 1", "jugador 1")
+                    1 -> names.getOrNull(1)?.ifEmpty { null } ?: l.t("player 2", "jogador 2", "jugador 2")
+                    else -> l.t("both (split screen)", "os dois (tela dividida)", "los dos (pantalla dividida)")
+                }
+                l.t("Watching %s vs %s · View: %s", "Assistindo %s x %s · Câmera: %s", "Viendo %s vs %s · Cámara: %s")
+                    .format(names.getOrNull(0).orEmpty(), names.getOrNull(1).orEmpty(), view)
+            } else {
+                l.t("Lobby", "Lobby", "Lobby") + if (code.isNotEmpty()) "  $code · Server $server" else ""
+            }
+            Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.Bold)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (watching) {
+                    OutlinedButton(onClick = {
+                        MenuBridge.action(MenuBridge.ACTION_SPEC_VIEW)
+                        v.map["spec_view"] = (v.get("spec_view", 0) + 1) % 3
+                    }) { Text(l.t("Change view", "Trocar câmera", "Cambiar cámara")) }
+                }
+                if (lobby && owner) {
+                    OutlinedButton(onClick = { act(MenuBridge.ACTION_LOBBY_BACK) }) { Text(l.t("Back to the lobby", "Voltar ao lobby", "Volver al lobby")) }
+                }
+                if (lobby) {
+                    OutlinedButton(onClick = { act(MenuBridge.ACTION_LOBBY_LEAVE) }) {
+                        Text(if (owner) l.t("Close the lobby", "Fechar o lobby", "Cerrar el lobby") else l.t("Leave the lobby", "Sair do lobby", "Salir del lobby"))
+                    }
+                } else if (watching) {
+                    OutlinedButton(onClick = { act(MenuBridge.ACTION_SPEC_STOP) }) { Text(l.t("Stop watching", "Parar de assistir", "Dejar de ver")) }
+                }
+            }
         }
     }
 }
@@ -564,10 +620,11 @@ private fun VideoPage(l: L, game: Game, v: MenuValues) {
         if (game == Game.BT4 && com.dfdx047.dragonrage.data.EngineSettings.hasArmsx2Renderer(androidx.compose.ui.platform.LocalContext.current)) {
             Choice(
                 l.t("Renderer", "Renderizador", "Renderizador"),
-                l.t("ARMSX2 (default): the PlayStation 2 emulator's renderer, the most faithful picture. Dragon Rage (experimental): Budokai Tenkaichi 3's, with faults in some of BT4's scenery. From the next start.",
-                    "ARMSX2 (padrão): o renderizador do emulador de PlayStation 2, a imagem mais fiel. Dragon Rage (experimental): o do Budokai Tenkaichi 3, com falhas em parte do cenário do BT4. Vale na próxima vez que o jogo abrir.",
-                    "ARMSX2 (predeterminado): el renderizador del emulador de PlayStation 2, la imagen más fiel. Dragon Rage (experimental): el de Budokai Tenkaichi 3, con fallos en parte del escenario de BT4. Desde el próximo inicio."),
-                listOf("ARMSX2" to 1, l.t("Dragon Rage (experimental)", "Dragon Rage (experimental)", "Dragon Rage (experimental)") to 0), v.get("bt4_renderer", 1),
+                l.t("ARMSX2: the PlayStation 2 emulator's renderer, the most faithful picture. Dragon Rage (experimental): Budokai Tenkaichi 3's, lighter on weak devices, with faults in some of BT4's scenery. From the next start.",
+                    "ARMSX2: o renderizador do emulador de PlayStation 2, a imagem mais fiel. Dragon Rage (experimental): o do Budokai Tenkaichi 3, mais leve em aparelho fraco, com falhas em parte do cenário do BT4. Vale na próxima vez que o jogo abrir.",
+                    "ARMSX2: el renderizador del emulador de PlayStation 2, la imagen más fiel. Dragon Rage (experimental): el de Budokai Tenkaichi 3, más ligero en equipos débiles, con fallos en parte del escenario de BT4. Desde el próximo inicio."),
+                listOf("ARMSX2" to 1, l.t("Dragon Rage (experimental)", "Dragon Rage (experimental)", "Dragon Rage (experimental)") to 0) +
+                    (if (com.dfdx047.dragonrage.data.EngineSettings.hasNominumRenderer(androidx.compose.ui.platform.LocalContext.current)) listOf(l.t("Nominum (test)", "Nominum (teste)", "Nominum (prueba)") to 2) else emptyList()), v.get("bt4_renderer", 1),
             ) { v.set("bt4_renderer", it) }
         }
         val gpu = v.texts["gpu"].orEmpty()
@@ -654,6 +711,11 @@ private fun EffectsPage(l: L, v: MenuValues) {
             l.t("Depth tint", "Névoa de distância", "Niebla de distancia"), l.t("Glare and glow", "Brilho e reflexo", "Brillo y resplandor"),
             l.t("Distance blur", "Desfoque de distância", "Desenfoque de distancia"), l.t("Movement blur", "Desfoque de movimento", "Desenfoque de movimiento"),
         )
+        SwitchRow(
+            l.t("Tag Team light graphics", "Gráficos leves no Tag Team", "Gráficos ligeros en Tag Team"),
+            l.t("Only in Tag Team: lower resolution, no shadows, fewer effects.", "Só no Tag Team: resolução menor, sem sombras, menos efeitos.", "Solo en Tag Team: menor resolución, sin sombras, menos efectos."),
+            v.get("tag_lite", 0) != 0,
+        ) { on -> v.set("tag_lite", if (on) 1 else 0) }
         val off = v.get("fx_off", 0)
         names.forEachIndexed { i, name ->
             SwitchRow(name, null, off and (1 shl i) == 0) { on -> v.set("fx_off", if (on) off and (1 shl i).inv() else off or (1 shl i)) }
@@ -746,9 +808,15 @@ private fun ControlsPage(l: L, game: Game, v: MenuValues, actions: GameMenu.Acti
             }
         }
         Card(l.t("Physical controller", "Controle físico", "Control físico")) {
-            Note(l.t("The buttons of a Bluetooth or USB controller are set in the game's own window (made for a controller).",
-                "Os botões de um controle Bluetooth ou USB são configurados na janela do próprio jogo (feita para controle).",
-                "Los botones de un control Bluetooth o USB se configuran en la ventana del propio juego (hecha para control)."))
+            Note(l.t("Any wireless or USB controller with the PS2 controller's buttons: cross at the bottom, circle right, square left, triangle top, L1 / R1, L2 / R2, L3 / R3, START, SELECT. A controller the game does not know gets the order of the PS2 adapters.",
+                "Qualquer controle sem fio ou USB com os botões do controle de PS2: X embaixo, Círculo à direita, Quadrado à esquerda, Triângulo em cima, L1 / R1, L2 / R2, L3 / R3, START, SELECT. Um controle que o jogo não conhece recebe a ordem dos adaptadores de PS2.",
+                "Cualquier control inalámbrico o USB con los botones del control de PS2: X abajo, Círculo a la derecha, Cuadrado a la izquierda, Triángulo arriba, L1 / R1, L2 / R2, L3 / R3, START, SELECT. Un control que el juego no conoce recibe el orden de los adaptadores de PS2."))
+            BigButton(l.t("Automatic set-up (PS2 layout)", "Configuração automática (layout de PS2)", "Configuración automática (diseño de PS2)"), primary = true) {
+                MenuBridge.action(MenuBridge.ACTION_PAD_AUTO)
+            }
+            Note(l.t("To change one button, use the game's own window (made for a controller).",
+                "Para trocar um botão só, use a janela do próprio jogo (feita para controle).",
+                "Para cambiar un solo botón, usa la ventana del propio juego (hecha para control)."))
             BigButton(l.t("Controller buttons", "Botões do controle", "Botones del control")) { closeMenu(); actions.padButtons() }
         }
     }
@@ -794,6 +862,18 @@ private fun OnlinePage(l: L, v: MenuValues) {
             l.t("Typing needs a keyboard (Bluetooth or USB).", "Para escrever precisa de teclado (Bluetooth ou USB).", "Para escribir hace falta teclado (Bluetooth o USB)."),
             v.get("chat", 1) != 0,
         ) { v.set("chat", if (it) 1 else 0) }
+    }
+    Card(l.t("Spectators and lobbies", "Espectadores e lobbies", "Espectadores y lobbies")) {
+        SwitchRow(
+            l.t("Let others watch my matches", "Deixar outros assistirem minhas partidas", "Dejar que otros vean mis partidas"),
+            l.t("Up to six people can watch your match, by your room code or your address; they never change the fight.", "Até seis pessoas podem assistir à sua partida, pelo código da sala ou pelo seu endereço; elas nunca mudam a luta.", "Hasta seis personas pueden ver tu partida, por el código de la sala o tu dirección; nunca cambian la pelea."),
+            v.get("net_spectators", 1) != 0,
+        ) { v.set("net_spectators", if (it) 1 else 0) }
+        Note(l.t(
+            "- Watch a match: Dragon Net Battle > Join room, type the code and choose Watch the match. View: player 1, player 2 or split screen (R1).\n- Lobby: Dragon Net Battle > Create room > Open a lobby (or Tenkaichi Budokai Online > Lobby). Up to eight people: two fight, the rest watch, with rules, Ready and chat.\n- Quick match, Region row: Auto finds someone nearby first and everyone after 25 s; a region first, everyone after 40 s.\n- The pause menu (Back button) has Back to the lobby, Leave / Close the lobby, Change view and Stop watching when they apply.",
+            "- Assistir a uma partida: Dragon Net Battle > Entrar em sala, digite o código e escolha Assistir à partida. Câmera: jogador 1, jogador 2 ou tela dividida (R1).\n- Lobby: Dragon Net Battle > Criar sala > Abrir um lobby (ou Tenkaichi Budokai Online > Lobby). Até oito pessoas: duas lutam e as outras assistem, com regras, Pronto e chat.\n- Partida rápida, linha Região: Auto procura alguém perto primeiro e qualquer um depois de 25 s; uma região primeiro, qualquer um depois de 40 s.\n- O menu de pausa (botão Voltar) tem Voltar ao lobby, Sair / Fechar o lobby, Trocar câmera e Parar de assistir quando valem.",
+            "- Ver una partida: Dragon Net Battle > Entrar a sala, escribe el código y elige Ver la partida. Cámara: jugador 1, jugador 2 o pantalla dividida (R1).\n- Lobby: Dragon Net Battle > Crear sala > Abrir un lobby (o Tenkaichi Budokai Online > Lobby). Hasta ocho personas: dos pelean y el resto mira, con reglas, Listo y chat.\n- Partida rápida, fila Región: Auto busca a alguien cerca primero y a cualquiera tras 25 s; una región primero, cualquiera tras 40 s.\n- El menú de pausa (botón Atrás) tiene Volver al lobby, Salir / Cerrar el lobby, Cambiar cámara y Dejar de ver cuando aplican.",
+        ))
     }
 }
 
