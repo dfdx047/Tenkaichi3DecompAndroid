@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """UI helper: ui.py <dev> dump | tap <text or desc substring> | tapxy x y | key <KEYCODE> | text <s> | shot <file>"""
 import re, subprocess, sys, time, xml.etree.ElementTree as ET
-DEVS = {"cube": "192.168.1.183:5555", "rp5": "192.168.1.89:5555"}
+DEVS = {"cube": "192.168.1.184:5555", "rp5": "192.168.1.89:5555", "xiaomi": "192.168.1.136:5555"}
 
 def adb(ser, *a, **k):
     return subprocess.run(["adb", "-s", ser, *a], capture_output=True, text=k.get("text", True))

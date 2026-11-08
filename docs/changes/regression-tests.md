@@ -74,3 +74,10 @@ fraco. Confira `GAME`, `guest_ms`, `wall_ms` e o PNG de cada rodada: um PNG sem 
 
 `bash lowend.sh off`, configuração de `~/DragonRageRefs/state/` de volta, sem `bt3_env.txt` novo (o Cube tinha um antes,
 `BT3_GS_VERBOSE=1`), sem `fight*.rec`, saves com o mesmo md5, driver do sistema.
+
+## 1.0.0: rodada final com três aparelhos (`quick.sh`, Mi A3 no laboratório)
+- **Onde:** `port/tools/lab/lab.py` e `ui.py` (`DEVS`: `cube` 192.168.1.184, `rp5` 192.168.1.89, `xiaomi` 192.168.1.136); `port/tools/lab/quick.sh`, novo; resultados em `docs/release-1.0.md`, seção 0.
+- **O que e por quê:** o Mi A3 (SD665, Android 17) entra no lugar do perfil do 480 Plus. `quick.sh <aparelho> <rótulo> [bt3|classic|tag]` roda as checagens rápidas num aparelho, guarda tudo em `~/DragonRageRefs/rel10/<rótulo>/`, apaga o `bt3_env.txt` e devolve os ajustes do começo.
+- **Medido/provado:** a parte `tag` (5 contra 5 COM, `BT3_DEMO`) rodou no RP5 e no Mi A3, com o Gráfico leve desligado e ligado.
+- **O que pode quebrar:** as partes `bt3` e `classic` usam `fight4.rec`, que saiu de passo com o jogo (fica no título e nas demonstrações); a rodada final usou rotas por teclas (`kpad.py`) e, no Mi A3, onde as teclas não chegam ao jogo, toques. `bt4route.sh`, `bt2route.sh` e `dia_smoke.sh` continuam presos ao RP5.
+- **Como testar de novo:** `bash port/tools/lab/quick.sh xiaomi teste tag`, e conferir que `bt3_settings.txt` volta igual.

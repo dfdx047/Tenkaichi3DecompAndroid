@@ -9,7 +9,7 @@
 """
 import subprocess, sys, time
 
-DEVS = {"cube": "192.168.1.183:5555", "rp5": "192.168.1.89:5555"}
+DEVS = {"cube": "192.168.1.184:5555", "rp5": "192.168.1.89:5555", "xiaomi": "192.168.1.136:5555"}
 PKG = "com.dfdx047.dragonrage"
 F = f"/sdcard/Android/data/{PKG}/files"
 

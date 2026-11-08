@@ -385,7 +385,7 @@
     <string name="texfail_title">This texture pack could not be installed</string>
     <string name="log_saved_title">Log saved</string>
     <string name="log_auto_saved">The log was saved in Downloads as %1$s. Send this file to the developer (Discord or GitHub) so we can fix it.</string>
-    <string name="log_auto_failed">The log could not be saved by itself: use Debug → Export log.</string>
+    <string name="log_auto_failed">The log could not be saved by itself: use Debug → Save log to Downloads.</string>
     <string name="log_send">Send log</string>
     <string name="lastrun_textures_title">The texture pack was not used</string>
     <string name="lastrun_textures">The game played a fight without using any texture from your pack. Usually the pack is for another release of the game (Japanese or European) or is not a PCSX2 pack. Check that it is for the USA release (SLUS-21678); if it is, send us the log.</string>
@@ -466,7 +466,7 @@
     <string name="select_classic_text">The game\'s original screen.</string>
     <string name="select_style_text">For BT3 and the Tag Team. Applies the next time the game opens; you can change it in Settings.</string>
     <string name="select_style_ok">Use this one</string>
-    <string name="tp_title">Pro Touch</string>
+    <string name="tp_title">Touch Pro</string>
     <string name="tp_intro">Tune the on-screen controller for playing without a physical controller, online too: how the stick follows your thumb, how big each button is to the touch, and what holds by itself.</string>
     <string name="tp_guide">How it works</string>
     <string name="tp_presets">Ready-made profiles</string>
@@ -521,7 +521,7 @@
     <string name="tp_save_text">The layout, the look and the tuning as they are now, under a name. The same name replaces it.</string>
     <string name="tp_name">Name</string>
     <string name="tp_save_ok">Save</string>
-    <string name="tpg_title">Pro Touch guide</string>
+    <string name="tpg_title">Touch Pro guide</string>
     <string name="tpg_intro">What changed in the on-screen controller in 1.0, and how to tune it for your hands.</string>
     <string name="tpg_dynamic">Dynamic stick</string>
     <string name="tpg_dynamic_text">The stick is born where your thumb touches. If the thumb goes past the edge, the centre comes along: turning back is instant, and you never lose the stick in the middle of a fight.</string>

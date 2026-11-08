@@ -1,22 +1,51 @@
 # Dragon Rage 1.0: relatório
 
-Branch local `release-1.0`, a partir da `main` em 0.9.0 (`e1b9207`). **Nada foi publicado: nenhum push, nenhuma tag, nenhuma
-release.** O APK para instalar é `~/DragonRageRefs/DragonRage-1.0.0.apk` (`versionName` 1.0.0, `versionCode` 10000, assinatura
-`10db404f…2f2757`, a mesma da 0.9.0). A bateria rodou em `~/DragonRageRefs/1.0-final.apk`, com as mesmas bibliotecas e código 50; esse não
-instala por cima da 0.9.0, não use. Os aparelhos voltaram à 0.9.0, com ajustes e saves como estavam.
+Branch local `release-1.0`. **Nada foi publicado: nenhum push, nenhuma tag, nenhuma release.** O APK é
+`~/DragonRageRefs/DragonRage-1.0.0.apk` (`versionName` 1.0.0, `versionCode` 10000, assinatura `10db404f…2f2757`, a mesma da 0.9.0).
+As seções 1 a 8 são da sessão de 07/11; a seção 0 é a rodada final de 08/11, com o Toque Pro e três aparelhos.
 
 ## Antes de publicar: o que precisa da sua decisão
 
-1. **Arquivos do jogo ou de terceiros** (seção 6). Nada foi removido. Enquanto `bt2/unlock` estiver no APK, a frase "não contém nenhum
-   dado do jogo" do README e da tela Sobre não é verdadeira. Recomendo gerar o save no aparelho a partir da ISO e tirar os três
-   arquivos do jogo.
-2. **Regra 3 não cumprida em um caso**: BT3 no RP5 a 2x, 5 de 10 quadros da demonstração de abertura diferem da 0.9.0 (detalhe na
-   seção 5). No Cube são 0 de 11. Causa não encontrada. Decidi não reverter, porque não sei o que reverter; a velocidade não
-   piorou. A decisão de sair assim é sua.
-3. **Importação limpa do BT3 e do BT4 não foi testada nesta versão** (seção 7). O modo automático da sessão barrou o toque em "Remover
-   dados do jogo", e não contornei isso. Vale fazer à mão antes do vídeo: remover, escolher a ISO, abrir.
-4. **Tag Team Online**: o menu de modos do anfitrião depois de "Pronto" fica sem letras (seção 7). O Tag vem desligado, então só
-   atinge quem liga. A luta iniciada a partir desse menu não foi testada.
+1. **Save do BT2 dentro do APK (regra 4)**: `android/app/src/main/assets/bt2/unlock/BASLUS-21441DBZT2/*` é um save 100 % do jogo e
+   vai dentro do APK. A regra 4 proíbe. **Não removi**, porque o BT2 online começa cada partida a partir dele
+   (`Bt2Unlock.makeMatchCard`, `bt2/runtime/android/android_main.cpp:345-356`): sem ele, a partida online do BT2 não abre, e o
+   "Desbloquear tudo" do BT2 some. Opções: (a) tirar agora, e o BT2 online fica fora da 1.0 (problema conhecido); (b) sair assim e
+   gerar o cartão no aparelho numa 1.0.1. As capturas de tela do jogo de `docs/images/1.0/` já saíram (seção 0).
+2. **Vídeos e artes em `port/tbo/ui/`** (`raditz.mpg`, `bg.mpg`, `raditz*.png`): seção 6, origem a confirmar.
+3. **Regra 3 da sessão anterior** (demonstração de abertura do RP5 a 2x): seção 5, continua sem causa.
+
+## 0. Rodada final de 08/11: três aparelhos
+
+| Aparelho | Sistema | GPU e driver | Observação |
+|---|---|---|---|
+| Retroid Pocket 5 (192.168.1.89) | Android 13, `RP5_V1.0.0.189` | Adreno 650, driver V@0746, **GPU com overclock**: números não comparáveis com as tabelas antigas | sem root pelo adb |
+| RG Cube (192.168.1.184) | Android 13, firmware de fábrica V1.16 | Mali-G57 MC4, r54p1 | Dragon Rage não estava instalado; `su` falha; `restricted_networking_mode` vazio |
+| Xiaomi Mi A3 (192.168.1.136) | LineageOS, Android 17 (SDK 37), SD665 | Adreno 610, driver 512.502 | 3,6 GB; **rede restrita ligada** e mesmo assim o Dragon Net responde; nada do sistema foi mexido |
+
+| Teste | RP5 | Cube | Mi A3 |
+|---|---|---|---|
+| Instalar por cima (`adb install -r`, sem `-d`) | 10000 → 10000, 249 arquivos iguais | **0.8.1 (801) → 1.0**: OK, arquivos iguais; **0.9.0 (55) por cima da 801 é recusada** (`INSTALL_FAILED_VERSION_DOWNGRADE`), como esperado | 0.8.1 do CI (42) → 0.9.0 (55) → 1.0, 36 arquivos iguais, "Versão USA verificada" |
+| Importar do zero | — | BT3 pelo seletor: 13 arquivos, 2,8 GB | BT4 pelo seletor: 23 arquivos |
+| BT3: abrir, 1x1, voltar ao menu | 100 %, 30 q/s, 0 crash | COM x COM até o fim, 100 %, 30 q/s, volta ao menu, 0 crash | Continue, 1P x COM só pelo toque, 30 q/s, 100 % |
+| Seleção Nova / Clássica | Nova (grade, Goku 3D, pedestal) | Nova, cabe na tela 1:1; o diálogo de cartões também | Clássica: a tela original do jogo |
+| Tag Team (5x5 COM) | 100 %, 30 q/s, 0 crash | — | Gráfico leve desligado: 97,5 %, 12 q/s; ligado: 99 %, 18 q/s (+50 % de quadros); 0 crash |
+| BT4 | — | — | só o Dragon Rage (escolha do app): ~30 % (18 q/s), código do jogo ~39 ms/quadro, desenho ~12,5 ms, 450 MB; ARMSX2 forçado: ~20 % (12-13 q/s), 40-58 ms, 845 MB. **O limite é a CPU.** Escolha automática certa |
+| BT2 só com a ISO | COM x COM até o fim, 30 q/s, 0 crash | — | — |
+| Online normal (Partida Rápida) | RP5 x Cube: pareou sozinho, ping 6-14 ms, 0 rollbacks, sem dessincronia, seleção nova online nos dois, 0 crash. Esperas de 150-220 ms só quando o adb mandava teclas (cada `input` abre um processo Java) | | |
+| Tag Online + espectador | anfitrião (sala 157844) | **espectador**: painel "Assistindo", troca de câmera | entrou na sala **só pelo toque** (código digitado no teclado do sistema), "Entrar como Jogador", Equipe 2. Os três no mesmo quadro (4200), 0 rewinds, 0 crash. A sala ficou em 71-89 %: o Mi A3 desenhava 5,8 q/s no 5x5 sem o Gráfico leve, e a sala segue o mais lento |
+| Exportar log + reiniciar | — | log do BT3: 196 KB, com dados do jogo e o log da luta; o da aba BT4 mostra a pasta do BT4 (certo). REBOOT_RESULT | — |
+| Toque Pro | — | — | ver abaixo |
+
+**Toque Pro no Mi A3**: a seção aparece em Controles; os perfis gravam o arquivo certo; o guia abre com os 6 desenhos. Na luta:
+analógico dinâmico nasce sob o dedo e a base acompanha o polegar; um toque no L2 (toque alterna) carrega o Ki sem segurar;
+deslizar do soco ao raio de Ki; menus do BT3 e do Tag só pelo toque. No BT4 o controle fica no layout de luta nos menus (o app não
+sabe a cena do BT4) e o analógico não move o cursor: é preciso o botão ✛ (problema conhecido, igual à 0.9.0).
+
+**Corrigido nesta rodada**: oferta "Gráficos leves no Tag Team" aparecia no BT4 (`8eaf4b11`); texto de `log_auto_failed`; título do guia
+sem contraste; rótulo do alcance do analógico em passos em vez de %. **Ferramenta**: `fight4.rec` saiu de passo com o jogo (os testes
+usaram rotas por teclas, `kpad.py`); as teclas do `kpad.py` não chegam ao jogo no Mi A3 (Android 17), lá tudo foi por toque.
+**Não feito**: medição do patch de SDL antes/depois no Cube; Classificatória; contra PC; BT4 e BT2 no Cube.
+**Regra 4**: 10 capturas de tela do jogo saíram de `docs/images/1.0/` e dos READMEs; o save do BT2 ficou (ver "Antes de publicar").
 
 ## 1. Revisão por branch
 

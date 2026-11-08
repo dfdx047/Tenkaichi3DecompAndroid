@@ -23,15 +23,16 @@
 ---
 
 > [!IMPORTANT]
-> **Status (1.0.0): três jogos no mesmo app, nativos em Android arm64.** O **Budokai Tenkaichi 2** agora só pede a ISO,
-> com online entre dois aparelhos. O **Budokai Tenkaichi 3** ganha o **Dragon Net Online**, com lobbies, espectadores e
-> Classificatória, e o **Tag Team Mod** como opção. O **Budokai Tenkaichi 4** tem o cenário distante corrigido no
-> renderizador Dragon Rage e escolhe o renderizador pelo aparelho. Em inglês, português e espanhol. Veja as
-> [novidades](#novidades-da-10) e os [números](#números-09-e-10).
+> **Status (1.0.0): três jogos no mesmo app, nativos em Android arm64.** O **Toque Pro** refaz o controle na tela para
+> jogar sem controle físico, e uma **seleção de personagens nova** vem como opção. O **Budokai Tenkaichi 2** agora só pede
+> a ISO, com online entre dois aparelhos. O **Budokai Tenkaichi 3** ganha o **Dragon Net Online**, com lobbies, espectadores
+> e Classificatória, e o **Tag Team Mod** como opção, também online. O **Budokai Tenkaichi 4** tem o cenário distante
+> corrigido no renderizador Dragon Rage e escolhe o renderizador pelo aparelho. Instala por cima da 0.9.0 e da 0.8.x, sem
+> desinstalar. Em inglês, português e espanhol. Veja as [novidades](#novidades-da-10) e os [números](#números-09-e-10).
 
 Este repositório **não contém nenhum dado do jogo**. Você precisa da sua própria cópia de cada jogo em `.iso`: **BT3
-americano (SLUS-21678)**, **BT2 americano (SLUS-21441)** e **BT4 da Team BT4 (Beta 14 Rev2)**. O app lê o arquivo no seu
-aparelho; nada é baixado nem enviado.
+americano (SLUS-21678)**, **BT2 americano (SLUS-21441)** e **o mod BT4 da Team BT4, Beta 14 Rev2 (SLUS-219.78)**. O app lê
+o arquivo no seu aparelho; nada é baixado nem enviado.
 
 ## O que é
 
@@ -49,30 +50,40 @@ renderização, som e controles por baixo. O Dragon Rage leva isso para o Androi
 
 <p align="center"><img src="docs/images/1.0/launcher_pick.jpg" alt="A tela de escolha do jogo: Budokai Tenkaichi 3, 4 e 2" width="90%"></p>
 
-Um app, três jogos. Cada um tem a própria ISO, os próprios saves, texturas e ajustes.
+Um app, três jogos. Cada um tem a própria ISO, os próprios saves, texturas e ajustes. A 1.0 instala por cima da 0.9.0 e
+da 0.8.x, sem desinstalar: saves, ajustes, controles e jogos importados continuam.
+
+### Toque Pro
+
+<p align="center"><img src="docs/images/touch-pro/01-dynamic-stick.png" alt="O analógico dinâmico: nasce onde o polegar toca, e o centro acompanha o polegar" width="70%"></p>
+
+O controle na tela refeito para jogar sem controle físico, principalmente no online. Em **Controles > Toque Pro**, com um guia
+**Como funciona** dentro do app.
+
+- **Perfis prontos**: Padrão, Online competitivo, Tranquilo e Clássico (0.9), mais o Canhoto, que espelha o layout.
+- **Analógico dinâmico** (também Fixo e Flutuante), **zona morta**, **inclinação total** e **8 direções**.
+- **Área de toque** em volta de cada botão, **arrastar entre todos os botões**, **toque alterna** para botões que você segura,
+  **Meus perfis**, vibração.
+- Vale no BT3, no Tag Team e no BT2. O layout que você já tinha salvo continua.
+
+### Seleção de personagens nova
+
+- Grade de lutadores, o lutador em 3D num pedestal e tela dividida em azul e vermelho, em todos os modos do BT3 e do Tag Team,
+  offline e online.
+- **Nova ou Clássica**: escolhida na primeira vez que você abre o BT3 na 1.0, e dá para trocar depois em Ajustes.
 
 ### Budokai Tenkaichi 2 só com a ISO
 
-<table>
-<tr><td width="50%"><img src="docs/images/1.0/launcher_bt2.jpg" alt="A aba do BT2, com o cartão do Online Mode" width="100%"></td><td width="50%"><img src="docs/images/1.0/bt2_room.jpg" alt="Sala criada no Online Mode do BT2, com o código da sala" width="100%"></td></tr>
-</table>
+<p align="center"><img src="docs/images/1.0/launcher_bt2.jpg" alt="A aba do BT2, com o cartão do Online Mode" width="90%"></p>
 
 - **O motor vem dentro do app.** Não há mais pacote de motor para importar; se você tinha um, ele é apagado depois de um aviso.
 - **A ISO fica onde está**: é lida no lugar, sem cópia. Só arquivos pequenos ficam na pasta do app.
 - **ISO errada é recusada**, com uma mensagem que diz o que foi encontrado e em qual aba instalar.
 - **Online Mode no menu do jogo**: crie uma sala, entre com um código ou use a partida rápida. Os dois aparelhos chegam sozinhos à seleção de personagens.
 
-<table>
-<tr><td width="50%"><img src="docs/images/1.0/bt2_select.jpg" alt="Seleção de personagens do BT2 online" width="100%"></td><td width="50%"><img src="docs/images/1.0/bt2_c.jpg" alt="Início de uma luta online do BT2 em tela dividida" width="100%"></td></tr>
-</table>
-
 Testado entre um RG Cube e um Retroid Pocket 5: duas lutas (11.100 e 5.700 quadros) a 100% e 30 imagens por segundo nos dois, nenhuma dessincronia. Quem sai da partida avisa o outro, que volta ao Online Mode.
 
 ### Dragon Net Online
-
-<table>
-<tr><td width="50%"><img src="docs/images/1.0/dragonnet_menu.jpg" alt="O menu do Dragon Net Online" width="100%"></td><td width="50%"><img src="docs/images/1.0/dn_lobby2.jpg" alt="Um lobby aberto, com jogadores, espectadores, regras e código" width="100%"></td></tr>
-</table>
 
 - **Telas novas no lugar do Dragon Net Battle**: partida rápida por região, Classificatória, entrar por código ou endereço, perfil.
 - **Lobbies para até oito**: dois lutadores, seis espectadores, regras na página do lobby, revanches e torneios.
@@ -87,11 +98,9 @@ Testado: lobby entre os dois aparelhos com ping de 10 a 14 ms e nenhum rollback;
 
 ### Tag Team Mod
 
-<table>
-<tr><td width="33%"><img src="docs/images/1.0/tag_modes.jpg" alt="Modos Modificados: Batalha em Equipe, Todos Contra Todos, Treino, Desafio, Torneio, Sala Online" width="100%"></td><td width="33%"><img src="docs/images/1.0/tag_pick.jpg" alt="Seleção de cinco lutadores por equipe" width="100%"></td><td width="33%"><img src="docs/images/1.0/tag_fight1.jpg" alt="Luta do Tag Team Mod" width="100%"></td></tr>
-</table>
-
 - Até 10 lutadores, com os modos e o Tag Team Online do mod de tehmufti e dos contribuidores, adaptados para o celular.
+- **Tag Team Online**: salas por código com jogadores e espectadores; a sala inteira joga no ritmo do anfitrião.
+- **Gráfico leve**: opcional, oferecido uma vez nos aparelhos mais fracos.
 - **Vem desligado.** Ligue em Ajustes; depois, SELECT no menu principal abre os modos. Desligado, ele não aparece nas lutas normais.
 
 <p align="center"><img src="docs/images/1.0/settings_tag.jpg" alt="A opção Mod Tag Team em Ajustes" width="70%"></p>
@@ -99,12 +108,6 @@ Testado: lobby entre os dois aparelhos com ping de 10 a 14 ms e nenhum rollback;
 Testado no Retroid Pocket 5: luta 5 contra 5 a 100% e cerca de 30 imagens por segundo. Os outros modos foram abertos, mas não jogados até o fim.
 
 ### Budokai Tenkaichi 4
-
-<table>
-<tr><td width="50%"><img src="docs/images/1.0/bt4_far_090.jpg" alt="0.9.0: o cenário distante sai em blocos de ruído colorido" width="100%"></td><td width="50%"><img src="docs/images/1.0/bt4_far_100.jpg" alt="1.0: o mesmo renderizador, com o cenário no lugar" width="100%"></td></tr>
-</table>
-
-*À esquerda a 0.9.0, à direita a 1.0, no renderizador Dragon Rage.*
 
 - **Cenário distante corrigido**: as montanhas não saem mais em blocos de ruído colorido, e o desfoque de distância do jogo funciona.
 - **Renderizador por aparelho**: aparelho fraco ou modo Lite usa o Dragon Rage; se o ARMSX2 ficar abaixo de 27 atualizações por segundo por 5 s numa luta, a próxima abertura usa o Dragon Rage. Sua escolha em Ajustes sempre vale.
@@ -176,7 +179,9 @@ Só na 1.0: OpenGL ES no renderizador Dragon Rage, RG Cube 29,6 e Retroid Pocket
 - **BT3 no Retroid Pocket 5 a 2x**: 5 de 10 quadros da demonstração de abertura diferem da 0.9.0. Causa ainda não encontrada; no RG Cube são 0 de 11.
 - **BT2 online**: não há relay no processo da luta, então quem só conecta por relay pode não conseguir jogar.
 - **Dessincronia no Dragon Net**: há correções, mas o problema aparece em logs de várias versões e continua aberto.
-- **BT4 no ARMSX2**: a imagem pode se perder na volta do segundo plano (visto em logs de 4 aparelhos).
+- **Classificatória**: às vezes fica em "Carregando perfil..." quando o servidor não responde.
+- **Quem só joga BT2** não recebe o aviso de atualização do app.
+- O cartão do online no launcher ainda diz "Dragon Net Battle".
 - **Ainda sem teste**: importação limpa do BT3 e do BT4 nesta versão, Classificatória até o fim, espectadores, Tag Team Online em todos os modos, modo contra o PC.
 
 ## O app
@@ -185,11 +190,11 @@ Só na 1.0: OpenGL ES no renderizador Dragon Rage, RG Cube 29,6 e Retroid Pocket
 <tr><td><b>Início</b></td><td>Escolha sua ISO. O app confere se é a versão americana (as mesmas verificações SHA-1 da instalação do PC; uma imagem traduzida ou modificada também instala, com um aviso) e copia os dados do jogo na estrutura que o motor espera. O botão <b>Jogar</b>, um <b>atalho de Jogar</b> para a tela inicial, <b>como funciona o online</b> (e o que fazer quando não conecta) e links para YouTube, Discord, Ko-fi e GitHub.</td></tr>
 <tr><td><b>Texturas</b></td><td>Importe um pacote de texturas em <code>.zip</code>, baixe um direto pelo app (de uma lista mantida em <a href="android/texture-packs.json"><code>android/texture-packs.json</code></a>, ou de qualquer link direto para um <code>.zip</code>), ou copie a pasta dele para <code>textures/</code>. Pacotes feitos para o PCSX2 (<code>.dds</code> / <code>.png</code>) funcionam do jeito que estão: os arquivos <code>.dds</code> são descompactados para as GPUs de celular, que não leem DXT.</td></tr>
 <tr><td><b>Mods</b></td><td>Mods de substituição de arquivos em <code>.zip</code> (com ordem de prioridade), estágios extras (<code>.unk</code>) e músicas extras (<code>.adx</code>, ou <code>.mp3</code>: convertidas pelo jogo), com o nome exibido nos menus do jogo editável.</td></tr>
-<tr><td><b>Controles</b></td><td>O controle na tela: o visual <b>Dragão</b> (novo padrão: botões redondos escuros com ícones dourados, letras nas cores do Xbox, uma Esfera do Dragão de três estrelas no analógico), o visual <b>Vidro</b> da 0.5 ou o controle <b>clássico</b> de console; um layout feito para este jogo que alterna <b>sozinho</b> entre menus e lutas (modo história incluído), letras de PlayStation, Xbox ou Nintendo, editor de layout, macros, opacidade, tamanho, vibração, analógico flutuante, um botão só nos confrontos.</td></tr>
+<tr><td><b>Controles</b></td><td>O controle na tela: o visual <b>Dragão</b> (novo padrão: botões redondos escuros com ícones dourados, letras nas cores do Xbox, uma Esfera do Dragão de três estrelas no analógico), o visual <b>Vidro</b> da 0.5 ou o controle <b>clássico</b> de console; um layout feito para este jogo que alterna <b>sozinho</b> entre menus e lutas (modo história incluído), letras de PlayStation, Xbox ou Nintendo, editor de layout, macros, opacidade, tamanho, vibração, um botão só nos confrontos; <b>Toque Pro</b>: analógico dinâmico, zona morta, área de toque, arrastar, toque alterna, perfis e um guia.</td></tr>
 <tr><td><b>Cheats</b></td><td><i>Desbloquear tudo</i>: todos os personagens, estágios, músicas e itens, e Zeni no máximo (a função de debug que os desenvolvedores deixaram no jogo).</td></tr>
 <tr><td><b>Drivers</b></td><td>Drivers Vulkan personalizados para GPUs Adreno (Snapdragon) via AdrenoTools: as versões mais recentes de <b>Mr. Purple</b>, <b>StevenMXZ</b> e <b>K11MCH1</b> baixadas e instaladas com um toque, um <code>.zip</code> dos seus arquivos, escolher, remover.</td></tr>
 <tr><td><b>Depuração</b></td><td>Seu aparelho e sua GPU com o <b>nível</b> dela, as configurações recomendadas para ele, o <b>log de desempenho</b> da última sessão (velocidade nas lutas e nos menus, quadros por segundo; ligado por padrão, sem custo perceptível) e <i>Exportar log</i> para relatar bugs.</td></tr>
-<tr><td><b>Configurações</b></td><td>Renderizador (<b>Vulkan</b>, ou <b>OpenGL ES</b> para drivers em que o Vulkan falha), resolução interna de 1x a 8x em passos finos, filtro de tela (bilinear, nítido, FXAA, AMD FSR 1, Snapdragon GSR), formato da imagem, <b>orientação da tela</b> (paisagem, retrato, automática), <b>profundidade precisa</b>, <b>pular quadros</b> em vez de ficar lento, movimento suave (60 / 120), modo de apresentação, os efeitos do PS2, volumes, idioma, tema, Material You.</td></tr>
+<tr><td><b>Configurações</b></td><td>Renderizador (<b>Vulkan</b>, ou <b>OpenGL ES</b> para drivers em que o Vulkan falha), resolução interna de 1x a 8x em passos finos, filtro de tela (bilinear, nítido, FXAA, AMD FSR 1, Snapdragon GSR), formato da imagem, <b>orientação da tela</b> (paisagem, retrato, automática), <b>profundidade precisa</b>, <b>pular quadros</b> em vez de ficar lento, movimento suave (60 / 120), modo de apresentação, os efeitos do PS2, volumes, idioma, tema, Material You, a <b>seleção de personagens</b> (Nova ou Clássica), o <b>Mod Tag Team</b>.</td></tr>
 <tr><td><b>No jogo</b></td><td>Um novo menu feito para dedos e controles, no visual do launcher e no seu idioma: Vídeo, Desempenho, Efeitos, Áudio, Interface (fontes, HUD, barras laterais), Controles, <b>Online</b> (como funciona, o que fazer quando falha), Trapaças, <b>Sair para o app</b>. Botão Voltar, START + SELECT ou o botão MENU na tela.</td></tr>
 </table>
 
@@ -211,12 +216,10 @@ Na primeira vez que abre com uma GPU conhecida, o app diz qual encontrou e suger
 ### Instalação
 
 Baixe o `DragonRage-<version>.apk` da [versão mais recente](../../releases/latest) e instale. Uma versão nova
-instala por cima da antiga e mantém seus dados do jogo, configurações e saves. O app verifica o GitHub quando abre
-e oferece as versões novas com o changelog.
+instala por cima da antiga e mantém seus dados do jogo, configurações e saves; a 1.0 instala por cima da 0.9.0 e da
+0.8.x, sem desinstalar. O app verifica o GitHub quando abre e oferece as versões novas com o changelog.
 
 Para relatar um problema: *Depuração → Exportar log*, depois envie o arquivo `DragonRage-log-….txt` (no [Discord](https://discord.gg/6XXxT547Qx), por exemplo).
-
-Para compilar você mesmo:
 
 Para compilar você mesmo:
 
@@ -287,8 +290,9 @@ opcional `match_url.txt` (uma linha, `https://...`) aponta outro serviço de mat
       compilados de antemão), lutas a 60 fps (experimental, volta para 30 onde o aparelho não aguenta); o online pausa
       no HTTP 429 e avisa que o servidor está ocupado; o controle clássico cabe em telas quadradas; medida num RG Cube
       e num Retroid Pocket 5 (`docs/release-0.9.0.md`)
-- [x] **1.0.0**: BT2 só com a ISO e BT2 online; Dragon Net Online com lobbies, espectadores e Classificatória (PC 0.1.39);
-      Tag Team Mod como opção; cenário distante do BT4 corrigido e renderizador por aparelho; correções a partir de 208 logs de
+- [x] **1.0.0**: Toque Pro; a seleção de personagens nova (Nova ou Clássica); BT2 só com a ISO e BT2 online; Dragon Net
+      Online com lobbies, espectadores e Classificatória (PC 0.1.39); Tag Team Mod como opção, com Tag Team Online; instala
+      por cima da 0.9.0 e da 0.8.x; cenário distante do BT4 corrigido e renderizador por aparelho; correções a partir de 208 logs de
       jogadores; menos pedidos aos servidores; equipe e licenças no app; mapa de mudanças em `docs/changes/`
       (`docs/release-1.0.md`)
 
@@ -314,7 +318,8 @@ opcional `match_url.txt` (uma linha, `https://...`) aponta outro serviço de mat
   em que isto se baseia, e a decompilação por baixo dele.
 - **Dragon Rage** (app Android e port): [dfdx047](https://github.com/dfdx047) ·
   [YouTube](https://www.youtube.com/@DFDX47) · [Discord](https://discord.gg/6XXxT547Qx) · [Ko-fi](https://ko-fi.com/dfdx047)
-- **Regulus CiberSec**: BT2 Recomp no Android, Dragon Net Online, espectadores e lobbies.
+- **Regulus CiberSec**: BT2 Recomp no Android, Dragon Net Online, Tag Team no Android e online, a seleção de personagens
+  nova, espectadores e lobbies.
 - **Androidxxt01**, **jllacchua**, **victorgonl**: contribuições ao port de PC e ao app.
 - **tehmufti e os colaboradores do Tag Team Mod**: o Tag Team Mod.
 - **Team BT4**: o mod Budokai Tenkaichi 4.

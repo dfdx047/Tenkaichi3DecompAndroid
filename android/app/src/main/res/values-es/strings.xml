@@ -384,7 +384,7 @@
     <string name="texfail_title">Este pack de texturas no se pudo instalar</string>
     <string name="log_saved_title">Log guardado</string>
     <string name="log_auto_saved">El log se guardó en Descargas como %1$s. Envía este archivo al desarrollador (Discord o GitHub) para que lo arreglemos.</string>
-    <string name="log_auto_failed">No se pudo guardar el log solo: usa Depuración → Exportar log.</string>
+    <string name="log_auto_failed">No se pudo guardar el log solo: usa Depuración → Guardar log en Descargas.</string>
     <string name="log_send">Enviar log</string>
     <string name="lastrun_textures_title">El pack de texturas no se usó</string>
     <string name="lastrun_textures">El juego jugó una pelea sin usar ninguna textura de tu pack. Normalmente el pack es de otra versión del juego (japonesa o europea) o no es un pack de PCSX2. Comprueba que sea de la versión estadounidense (SLUS-21678); si lo es, envíanos el log.</string>

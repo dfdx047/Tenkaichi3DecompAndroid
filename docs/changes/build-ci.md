@@ -3,6 +3,15 @@
 Regras e formato: [README](README.md).
 
 
+### 1.0.0 (este commit): textos da 1.0: changelogs, READMEs e anúncio do Discord
+- **Onde:** `CHANGELOG.md`, `CHANGELOG.es.md` (tradução do `CHANGELOG.pt.md`); `README.md`, `README.pt.md`, `README.es.md`; `docs/discord-1.0.md`, novo.
+- **O que e por quê:** o changelog em português é a fonte; o inglês e o espanhol foram reescritos inteiros a partir dele, com as mesmas seções, imagens e fatos. Os nomes de perfis e opções do Toque Pro seguem as strings `tp_*` e `tpg_*` de cada idioma. Os READMEs ganharam o Toque Pro (com uma imagem), a seleção de personagens nova, o Tag Team Online, a instalação por cima da 0.9.0 e da 0.8.x e o disco do BT4 com o código SLUS-219.78. `docs/discord-1.0.md` é o anúncio curto nos três idiomas, com o link do release a preencher.
+- **Medido/provado:** os três changelogs têm 12 seções e 66 itens, e os mesmos links de imagem. Nada foi medido em aparelho.
+- **O que pode quebrar:** nada no app.
+- **Depois, nesta mesma entrada:** a linha "BT4 em aparelhos fracos" ganhou os números medidos no Mi A3 (cerca de 30 % com o Dragon Rage, 20 % com o ARMSX2); entrou o problema conhecido do toque no BT4 (layout de menu só pelo botão ✛); "Pro Touch" virou "Touch Pro" nas strings em inglês; a pergunta da seleção aparece "na primeira vez que abrir o BT3 nesta versão", não "do app"; os estilos de controle em português são "Do jogo e Clássico", como no app. **Regra 4:** saíram do git as 10 capturas de tela do jogo em `docs/images/1.0/` (`bt2_c`, `bt2_room`, `bt2_select`, `bt4_far_090`, `bt4_far_100`, `dn_lobby2`, `dragonnet_menu`, `tag_fight1`, `tag_modes`, `tag_pick`) e os blocos que as mostravam nos três READMEs; ficam só as telas do app (launcher, Ajustes, Sobre, pacote recusado) e os gráficos de desempenho. As imagens continuam no histórico dos commits já mesclados das equipes.
+- **Strings:** `log_auto_failed` dizia "Depuração → Exportar log", mas o botão se chama "Salvar log em Download" (e "Save log to Downloads", "Guardar log en Descargas"): agora o texto bate com o botão.
+- **Como testar de novo:** abrir os três changelogs lado a lado e conferir seção por seção; conferir os nomes do Toque Pro contra `values*/strings.xml`.
+
 ### 1.0.0 (este commit): release da tag nasce como rascunho; atualizador não oferece código menor
 - **Onde:** `.github/workflows/android.yml`, passo "Release" (`draft: true`); `android/app/src/main/java/com/dfdx047/dragonrage/data/AppUpdates.kt`, `check` e `codeOf`.
 - **O que e por quê:** o APK do CI não tem BT4 nem BT2 (os motores vêm do programa do jogo e só são feitos aqui). Como rascunho, ele nunca fica público: o APK local entra no lugar (`gh release upload --clobber`, mesmo nome `DragonRage-X.Y.Z.apk`, um `.apk` só) e a release é publicada à mão. O atualizador, além de comparar os nomes, passa a exigir que o código da release (`X*10000+Y*100+Z`, a fórmula do `build.gradle.kts`) seja maior que o instalado, para nunca oferecer um downgrade que o Android recusa.
