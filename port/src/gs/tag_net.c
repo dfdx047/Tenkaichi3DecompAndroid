@@ -1677,7 +1677,9 @@ void TagNet_Tick(unsigned blank) {
     if(phase==5 || aborted){gPortResim=0;return;}
     if(!TagNet_Active())return;
     if(!loaded || !go){commands();pump();publish();Gs_HoldFrame();return;}
-    if(!begun){begun=1;baseBlank=blank;checked=0;}
+    if(!begun){begun=1;baseBlank=blank;checked=0;
+        /* (the rollback saves of the match before are of no use now: gs/state.c Port_RollForget) */
+        {extern void Port_RollForget(void);Port_RollForget();}}
     frame=blank-baseBlank;
     if(resim && frame>=live)resim=0;
     auditing=frame%30==0;digest[frame%RING]=Port_NetDigest();digestStamp[frame%RING]=frame;auditing=0;

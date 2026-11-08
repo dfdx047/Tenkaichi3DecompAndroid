@@ -11,6 +11,7 @@
     <uses-feature android:name="android.hardware.opengles.aep" android:required="false" />
 
     <!-- SDL: rumble on controllers and the device -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- texture pack downloads and the update check -->
     <uses-permission android:name="android.permission.INTERNET" />

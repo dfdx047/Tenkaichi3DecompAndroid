@@ -1021,6 +1021,68 @@ void TeamSel_Term(void) {
 }
 
 /* Draws the two stage pictures (cross fade), sets up every clip of the seven movies and draws them and the windows. */
+#ifdef PORT
+#include "menu/port_charsel.h"
+#define TEAMSEL_PORT_STAGE() ((gTeamSel->flags & (TEAMSEL_STAGE | TEAMSEL_LEAVING)) != 0)
+
+/* What the new screen shows of one side (src/menu/port_charsel.c). */
+static void TeamSel_PortFill(CsView *v, s32 side) {
+    TeamSelSide *s = gTeamSel->side[side];
+    TsMember *m = &s->member[s->cur >= 0 && s->cur < TS_MEMBER_MAX ? s->cur : 0];
+    s32 i;
+
+    memset(v, 0, sizeof(*v));
+    v->chipPack = gTeamSel->chipPack;
+    v->nameText = gTeamSel->nameText;
+    v->formText = gTeamSel->formText;
+    v->cells = (CsCell *)gTeamSel->cells[side];
+    v->custom = (CsCell *)gTeamSel->custom[side];
+    v->face = gTeamSel->faceRes[side];
+    v->cellCount = gTeamSel->cellCount[side];
+    v->customCount = gTeamSel->customCount[side];
+    v->side = side;
+    v->players = gTeamSel->players;
+    v->col = m->col;
+    v->row = m->row;
+    v->customCol = m->customCol;
+    v->customRow = m->customRow;
+    v->chara = s->chara;
+    v->color = m->color;
+    v->plate = m->plate;
+    v->colorCount = gTeamSel->colorCount[side];
+    v->plateCount = gTeamSel->plateCount[side];
+    v->showCustom = s->state == TEAMSEL_ST_CUSTOM;
+    v->tabWant = s->state == TEAMSEL_ST_PLATE || s->state == TEAMSEL_ST_PANEL || s->state == TEAMSEL_ST_PANEL_HELP || s->state == TEAMSEL_ST_COLOR;
+    v->plateActive = s->state == TEAMSEL_ST_PLATE;
+    v->colorActive = s->state == TEAMSEL_ST_COLOR;
+    v->formActive = s->state == TEAMSEL_ST_FORM;
+    v->faceReady = (s->flags & TEAMSEL_SIDE_FACE_READY) != 0;
+    v->faceAlpha = gTeamSel->faceAlpha[side];
+    v->isTeam = 1;
+    for (i = 0; i < CS_TEAM_MAX; i++) {
+        v->teamChara[i] = i < s->memberCount ? s->member[i].chara : -1;
+    }
+    v->cur = s->cur;
+    v->teamActive = s->state == TEAMSEL_ST_TEAM;
+    v->cost = s->cost;
+    v->dpMax = gTeamSel->battleType == 2 ? gTeamSel->dpMax : 0;
+    v->done = s->state == TEAMSEL_ST_DONE;
+}
+
+/* One pad a side: the two people choosing are both on the screen as they choose, as on the game's own. */
+static void TeamSel_PortFrame(void) {
+    CsView v[2];
+
+    if (gTeamSel->players == 1 && !TagSession_Selected()) {
+        TeamSel_PortFill(&v[0], 0);
+        TeamSel_PortFill(&v[1], 1);
+        PortCharSel_Frame(v, 1, TEAMSEL_PORT_STAGE());
+    } else {
+        TeamSel_PortFill(&v[0], gTeamSel->base & 1);
+        PortCharSel_Frame(v, 0, TEAMSEL_PORT_STAGE());
+    }
+}
+#endif
 void TeamSel_Draw(void) {
     MFlashRef ref;
     MFlashUv uv;
@@ -1032,6 +1094,11 @@ void TeamSel_Draw(void) {
     s32 chara;
     s32 cost;
 
+#ifdef PORT
+    if (PortCharSel_Shown(TEAMSEL_PORT_STAGE())) {
+        PortCharSel_MuteOn(); /* all of this still runs (the movies' state is the game's); none of it is shown */
+    }
+#endif
     for (i = 0; i < 2; i++) {
         if (gTeamSel->flags & TEAMSEL_STAGE_READY) {
             switch (i) {
@@ -1464,6 +1531,23 @@ void TeamSel_Draw(void) {
         if(TagSession_Selected() && TagSession_Mode()==TAG_MODE_TOURNAMENT && (i==2 || i==4 || i==6))continue;
         if(!practicePickHidden)Flash_Draw(&gTeamSel->flash[i]);
     }
+#ifdef PORT
+    if (PortCharSel_Shown(TEAMSEL_PORT_STAGE())) {
+        Font_FlushAll();
+        IconWin_Draw();
+        Font_FlushAll();
+        PortCharSel_Draw();
+        PortCharSel_MuteOn(); /* the item panel's movie still runs; the screen draws its own */
+        ItemPanel_Draw(0);
+        ItemPanel_Draw(1);
+        Font_FlushAll();
+        PortCharSel_DrawItems();
+        ItemHelp_Draw(gTeamSel->help);
+        Font_FlushAll();
+        PortCharSel_DrawEnd();
+        return;
+    }
+#endif
     if(!practicePickHidden) {
         Font_FlushAll();IconWin_Draw();ItemPanel_Draw(0);ItemPanel_Draw(1);ItemHelp_Draw(gTeamSel->help);
     }
@@ -2419,6 +2503,9 @@ s32 TeamSel_Run(s32 section) {
     s32 cpuLevel;
 
     TeamSel_Init(section);
+#ifdef PORT
+    PortCharSel_Begin(!PortGame_IsBT4());
+#endif
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {
         Gfx_BeginFrame();
@@ -2442,10 +2529,14 @@ s32 TeamSel_Run(s32 section) {
         if (!(gProgress->flags & MPROG_FREEZE)) {
             TeamSel_Update();
         }
+#ifdef PORT
+        TeamSel_PortFrame();
+#endif
         TeamSel_Draw();
 #ifdef PORT
         TeamSel_DrawCpuPrompt();
-        if(TagSession_Selected() && Port_TagOption(TAG_OPT_SLOT_LABELS) && !(gTeamSel->flags&TEAMSEL_STAGE)) {
+        /* (the labels sit on the game's team plates, which the new screen does not show) */
+        if(!PortCharSel_Shown(TEAMSEL_PORT_STAGE()) && TagSession_Selected() && Port_TagOption(TAG_OPT_SLOT_LABELS) && !(gTeamSel->flags&TEAMSEL_STAGE)) {
             extern void Flash_ClipGetPos(MFlash *,MFlashRef *,s32 *,s32 *);
             extern f32 Flash_ClipGetAlpha(MFlash *,MFlashRef *);
             char parent[32],label[32],name[32];
@@ -2531,6 +2622,9 @@ s32 TeamSel_Run(s32 section) {
         TeamSel_Input(&result);
     }
 
+#ifdef PORT
+    PortCharSel_End();
+#endif
     if (result != 0) {
         s32 handicap[2] = { 1, 1 };
 
@@ -2699,6 +2793,7 @@ s32 TeamSel_PickOnline(TsMember *member,s32 cpu,s32 *level,s32 slot) {
             TeamSel_SetChips(0);gTeamSel->side[0]->chara=cell->id;TeamSel_RequestFace(0);break;
         }
     }
+    PortCharSel_Begin(!PortGame_IsBT4());
     Pad_SetRepeat(20,5);ColorFade_StartIn(0,0,0,12);
     while(1) {
         TagNet_MenuPoll();TagNet_Status(&status);
@@ -2708,7 +2803,7 @@ s32 TeamSel_PickOnline(TsMember *member,s32 cpu,s32 *level,s32 slot) {
             done=1;result=0;ColorFade_StartOut(0,0,0,12);
         }
         Job_Run();Gfx_BeginFrame();TeamSel_UpdateFaceLoad();TeamSel_UpdateStageLoad();
-        Pad_Update();Snd_Update();ColorFade_Update();TeamSel_Update();TeamSel_Draw();TeamSel_DrawCpuPrompt();
+        Pad_Update();Snd_Update();ColorFade_Update();TeamSel_Update();TeamSel_PortFrame();TeamSel_Draw();TeamSel_DrawCpuPrompt();
         Font_FlushAll();ColorFade_Draw();Gfx_EndFrame(1);Dma_Flush();File_Stub264D90();
         {extern void Port_TagMenuTrace(s32,s32,s32,s32,s32,s32);
          Port_TagMenuTrace(82,gTeamSel->side[0]->state,cpuPrompt,onlinePickLevel,gTeamSel->side[0]->chara,done);}
@@ -2721,6 +2816,7 @@ s32 TeamSel_PickOnline(TsMember *member,s32 cpu,s32 *level,s32 slot) {
         }
         if(done && ColorFade_IsOutDone() && gTeamSel->faceState==TEAMSEL_LOAD_IDLE && gTeamSel->stageState==TEAMSEL_LOAD_IDLE)break;
     }
+    PortCharSel_End();
     TeamSel_Term();if(own){Heap_Free(gMenuArc5);gMenuArc5=NULL;Snd_UnloadBank(2);}
     Dma_ResetBuffers();*gTsProgress=saved;onlinePick=0;cpuPrompt=cpuApproved=-1;
     return accepted && result;

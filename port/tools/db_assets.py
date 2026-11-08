@@ -130,6 +130,130 @@ def dialog():
     f.resize((S, S), Image.LANCZOS).save(OUT / "db_dialog.png")
 
 
+def night():
+    """The night behind the mod's menus (the radar's page and the others): deep blue, stars, rock spires in two
+    layers with a mist over them, a warm glow on the left where the radar stands. No rays."""
+    W, H = 1920, 864
+    rnd = random.Random(11)
+    img = Image.new("RGBA", (W, H))
+    col = Image.new("RGBA", (1, H))
+    for y in range(H):
+        t = y / H
+        col.putpixel((0, y), (int(8 + 18 * t), int(16 + 34 * t), int(42 + 50 * t), 255))
+    img.alpha_composite(col.resize((W, H)))
+    st = Image.new("RGBA", (W, H))
+    d = ImageDraw.Draw(st)
+    for _ in range(190):
+        x, y, r = rnd.uniform(0, W), rnd.uniform(0, H * 0.7), rnd.choice([1.0, 1.4, 1.8, 2.5])
+        d.ellipse([x - r, y - r, x + r, y + r], fill=(220, 235, 255, rnd.randint(60, 200)))
+    img.alpha_composite(st.filter(ImageFilter.GaussianBlur(0.7)))
+    warm = Image.new("RGBA", (W, H))
+    ImageDraw.Draw(warm).ellipse([140, 180, 1060, 820], fill=(255, 140, 40, 60))
+    img.alpha_composite(warm.filter(ImageFilter.GaussianBlur(130)))
+    k = W / 2712
+    for shade, base, seed, hmin, hmax in [((22, 40, 74, 255), 1010, 3, 180, 380), ((12, 24, 48, 255), 1080, 5, 90, 240)]:
+        r2 = random.Random(seed)
+        pts = [(0, H)]
+        x = 0
+        while x < 2712 + 200:
+            w = r2.uniform(90, 220)
+            h = r2.uniform(hmin, hmax)
+            pts += [(x * k, base * k), ((x + w * 0.2) * k, (base - h) * k), ((x + w * 0.75) * k, (base - h * r2.uniform(0.85, 1.0)) * k),
+                    ((x + w) * k, base * k)]
+            x += w + r2.uniform(-30, 60)
+        pts.append((W, H))
+        m = Image.new("RGBA", (W, H))
+        ImageDraw.Draw(m).polygon(pts, fill=shade)
+        img.alpha_composite(m)
+    fog = Image.new("RGBA", (W, H))
+    fd = ImageDraw.Draw(fog)
+    for y in range(int(820 * k), H):
+        t = (y - 820 * k) / (H - 820 * k)
+        fd.line([(0, y), (W, y)], fill=(40, 70, 120, int(90 * (1 - abs(t - 0.4)))))
+    img.alpha_composite(fog.filter(ImageFilter.GaussianBlur(14)))
+    img.convert("RGB").save(OUT / "db_night.png")
+
+
+def radar():
+    """The dragon radar of the mod's main page: a pale round case with its button on top, the green screen with its
+    grid and two rings, the glass's light. Its circle's middle is at (512, 588) of 1024 x 1100, the case 500 round,
+    the screen 452 (menu_a.c draws the balls on it by those numbers)."""
+    W, H, CX, CY, RO, RS = 1024, 1100, 512, 588, 500, 452
+    k = 2
+    big = Image.new("RGBA", (W * k, H * k))
+    d = ImageDraw.Draw(big)
+    S = lambda v: v * k
+    d.ellipse([S(CX - RO + 14), S(CY - RO + 26), S(CX + RO + 14), S(CY + RO + 26)], fill=(0, 0, 0, 120))
+    big = big.filter(ImageFilter.GaussianBlur(S(18)))
+    d = ImageDraw.Draw(big)
+    d.rounded_rectangle([S(CX - 80), S(CY - RO - 66), S(CX + 80), S(CY - RO + 24)], radius=S(22), fill=(225, 228, 235, 255), outline=(120, 125, 140, 255), width=S(5))
+    d.rounded_rectangle([S(CX - 52), S(CY - RO - 48), S(CX + 52), S(CY - RO - 8)], radius=S(13), fill=(250, 110, 40, 255), outline=(150, 50, 10, 255), width=S(3))
+    for i in range(60, 0, -1):
+        c = int(150 + 100 * (1 - i / 60))
+        rr = RO - (60 - i) * 0.0
+        d.ellipse([S(CX - rr), S(CY - rr), S(CX + rr), S(CY + rr)], fill=(c, c, min(255, int(c * 1.02)), 255))
+    hl = Image.new("RGBA", big.size)
+    ImageDraw.Draw(hl).ellipse([S(CX - RO * 0.9), S(CY - RO * 0.98), S(CX + RO * 0.4), S(CY - RO * 0.2)], fill=(255, 255, 255, 90))
+    case = Image.new("L", big.size)
+    ImageDraw.Draw(case).ellipse([S(CX - RO), S(CY - RO), S(CX + RO), S(CY + RO)], fill=255)
+    o = Image.new("RGBA", big.size)
+    o.paste(hl.filter(ImageFilter.GaussianBlur(S(30))), (0, 0), case)
+    big.alpha_composite(o)
+    d = ImageDraw.Draw(big)
+    d.ellipse([S(CX - RO), S(CY - RO), S(CX + RO), S(CY + RO)], outline=(110, 115, 130, 255), width=S(8))
+    d.ellipse([S(CX - RS - 14), S(CY - RS - 14), S(CX + RS + 14), S(CY + RS + 14)], fill=(60, 66, 80, 255))
+    scr = Image.new("RGBA", big.size)
+    sd = ImageDraw.Draw(scr)
+    for r in range(RS, 0, -1):
+        t = r / RS
+        sd.ellipse([S(CX - r), S(CY - r), S(CX + r), S(CY + r)], fill=(int(40 + 40 * (1 - t)), int(110 + 80 * (1 - t)), int(50 + 30 * (1 - t)), 255))
+    mask = Image.new("L", big.size)
+    ImageDraw.Draw(mask).ellipse([S(CX - RS), S(CY - RS), S(CX + RS), S(CY + RS)], fill=255)
+    gd = ImageDraw.Draw(scr)
+    for g in range(-8, 9):
+        gd.line([(S(CX + g * 84), S(CY - RS)), (S(CX + g * 84), S(CY + RS))], fill=(190, 255, 190, 70), width=S(3))
+        gd.line([(S(CX - RS), S(CY + g * 84)), (S(CX + RS), S(CY + g * 84))], fill=(190, 255, 190, 70), width=S(3))
+    for r in (RS * 0.33, RS * 0.66):
+        gd.ellipse([S(CX - r), S(CY - r), S(CX + r), S(CY + r)], outline=(200, 255, 200, 90), width=S(3))
+    ref = Image.new("RGBA", big.size)
+    ImageDraw.Draw(ref).ellipse([S(CX - RS * 0.85), S(CY - RS * 0.95), S(CX + RS * 0.55), S(CY - RS * 0.15)], fill=(255, 255, 255, 40))
+    scr.alpha_composite(ref.filter(ImageFilter.GaussianBlur(S(20))))
+    o = Image.new("RGBA", big.size)
+    o.paste(scr, (0, 0), mask)
+    big.alpha_composite(o)
+    d = ImageDraw.Draw(big)
+    d.ellipse([S(CX - RS), S(CY - RS), S(CX + RS), S(CY + RS)], outline=(20, 50, 25, 255), width=S(6))
+    big.resize((W, H), Image.LANCZOS).save(OUT / "db_radar.png")
+
+
+def ring():
+    """A thin white ring, its edges soft (tinted: the radar's pulses and the chosen ball's search rings)."""
+    S, k = 256, 4
+    r = Image.new("RGBA", (S * k, S * k))
+    ImageDraw.Draw(r).ellipse([10 * k, 10 * k, S * k - 10 * k, S * k - 10 * k], outline=(255, 255, 255, 255), width=9 * k)
+    r.filter(ImageFilter.GaussianBlur(2 * k)).resize((S, S), Image.LANCZOS).save(OUT / "db_ring.png")
+
+
+def glass():
+    """Dark blue glass with a light edge and a little light along its top (nine pieces: the panels and plates)."""
+    S, k = 256, 4
+    f = Image.new("RGBA", (S * k, S * k))
+    d = ImageDraw.Draw(f)
+    d.rounded_rectangle([0, 0, S * k - 1, S * k - 1], radius=40 * k, fill=(120, 200, 255, 190))
+    d.rounded_rectangle([3 * k, 3 * k, S * k - 3 * k, S * k - 3 * k], radius=37 * k, fill=(12, 24, 62, 232))
+    top = Image.new("RGBA", f.size)
+    td = ImageDraw.Draw(top)
+    for y in range(3 * k, 70 * k):
+        t = (y - 3 * k) / (67 * k)
+        td.line([(0, y), (S * k, y)], fill=(255, 255, 255, int(34 * (1 - t))))
+    m = Image.new("L", f.size)
+    ImageDraw.Draw(m).rounded_rectangle([3 * k, 3 * k, S * k - 3 * k, S * k - 3 * k], radius=37 * k, fill=255)
+    o = Image.new("RGBA", f.size)
+    o.paste(top, (0, 0), m)
+    f.alpha_composite(o)
+    f.resize((S, S), Image.LANCZOS).save(OUT / "db_glass.png")
+
+
 if __name__ == "__main__":
-    sky(); balls(); glow(); rays(); frame(); dialog()
+    sky(); balls(); glow(); rays(); frame(); dialog(); night(); radar(); ring(); glass()
     print("db_*.png ->", OUT)

@@ -2411,9 +2411,21 @@ static void bye_at_exit(void) {
  * that blank's save and runs up to the present again, without picture or sound (gPortResim), now with the right
  * input. It never runs more than sRollMax blanks ahead of the other player's last known input: there it waits.
  */
+static unsigned sRollTick;
+/* Will what is being drawn now be shown? The frame's list is sent after the frame has waited for its blank (Gfx_EndFrame,
+   then Dma_Flush), so it is carried out under the NEXT blank's gPortResim: the list of the last blank run again IS shown,
+   though gPortResim says "no picture" while it is drawn. */
+int Port_NetListShown(void) {
+    extern int gPortResim;
+
+    return !gPortResim || (sResim && sRollTick + 1 >= sLive);
+}
+
 static void roll_tick(unsigned tick) {
     uint32_t other = (uint32_t)!sMe, t, limit;
     uint64_t t0, last;
+
+    sRollTick = tick;
 
     if (!sRollBegun) {
         sRollBegun = 1;

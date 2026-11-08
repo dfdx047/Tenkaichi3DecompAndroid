@@ -22,10 +22,13 @@ int TagLobbyRoster_Input(void) {
     return 1;
 }
 void TagLobbyRoster_Draw(int hostMenu) {
-    TagLobbyRoster r;int i;char line[64];float y=hostMenu?48:142;
+    TagLobbyRoster r;int i;char line[64];float y=hostMenu?262:142;
     if(!hostMenu && (Port_TagOption(TAG_OPT_HIDE_ALL_HUD) || !Port_TagOption(TAG_OPT_PRACTICE_ROSTER)))return;
     TagNet_Roster((u32)&r);
     Ps_PageSet();Ps_SetShift(0);Ps_Align(1);
+    /* (the host's menu, the dragon radar's page: the room's players in a glass window under the mode's panel; the
+       top right is the language switch's) */
+    if(hostMenu)Tk_Box(340,y-14,504,y+34+(r.count<1?1:r.count)*14,0);
     Ps_Text(422,y,hostMenu?"CONNECTED":"PLAYERS / PING TO HOST",hostMenu?.60f:.49f,156,1);
     for(i=0;i<r.count;i++) {
         if(!r.member[i])sprintf(line,Port_TagText("P1  -  Host"));

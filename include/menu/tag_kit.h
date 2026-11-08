@@ -21,6 +21,7 @@ extern const char *Port_TagText(const char *english);
 #define TK_REGIONS 64
 #define TK_ROW 0 /* a region's kind: a row of a list (value: its number) */
 #define TK_PAD 1 /* ... a pad's buttons (value: PADG_ bits) */
+#define TK_LANG 2 /* ... a language (value: 0 English, 1 Portuguese, 2 Spanish) */
 
 typedef struct TkRegion {
     f32 x0, y0, x1, y1;
@@ -120,7 +121,7 @@ static TK_UNUSED void Tk_PromptsDraw(void) {
         f32 x1 = k + 1 < sTkPrompts ? Ps_PromptX(k + 1) - 6.0f : 480.0f;
 
         if (Tk_KindBits(sTkPromptKind[k])) {
-            Tk_Region(x0, 410.0f, x1, 442.0f, TK_PAD, (s32)Tk_KindBits(sTkPromptKind[k]));
+            Tk_Region(x0, 402.0f, x1, 448.0f, TK_PAD, (s32)Tk_KindBits(sTkPromptKind[k]));
         }
     }
     Ps_Align(1);
@@ -140,14 +141,72 @@ static TK_UNUSED f32 Tk_In(s32 start) {
     return 1.0f - t * t * t;
 }
 
-/* The dusk sky with its clouds over the whole window (the picture's middle, as wide as the window is). */
+static TK_UNUSED void Tk_Glow(f32 x0, f32 y0, f32 x1, f32 y1, s32 r, s32 g, s32 b, s32 alpha);
+static TK_UNUSED f32 Tk_PX(f32 px);
+static TK_UNUSED f32 Tk_PY(f32 py);
+
+/* A triangle wave of the frame count: 0..64..0 over `period` frames (a power of two), from `phase`. Whole numbers only:
+   the night's life below costs no sines (the game's are slow software ones). */
+static TK_UNUSED s32 Tk_Wave(s32 period, s32 phase) {
+    s32 t = ((sTkFrames + phase) & (period - 1)) * 128 / period;
+
+    return t < 64 ? t : 127 - t;
+}
+
+/* The night moving: stars twinkling, a shooting star now and then, mist drifting over the spires, the warm glow
+   breathing. About thirty quads of three pictures a frame (db_glow, the shapes), on every page of the mod. Points
+   are the design's (Tk_PX, Tk_PY: the window's whole width). */
+static TK_UNUSED void Tk_NightLife(void) {
+    static const s16 kStar[22][3] = { /* x, y (design pixels), size */
+        {180, 90, 5}, {420, 210, 4}, {640, 60, 6}, {910, 150, 4}, {1180, 70, 5}, {1330, 250, 4}, {1560, 120, 6}, {1760, 40, 4},
+        {1940, 200, 5}, {2140, 110, 4}, {2330, 60, 6}, {2520, 180, 4}, {2650, 300, 5}, {300, 330, 4}, {760, 380, 5}, {1030, 300, 4},
+        {1460, 400, 5}, {1700, 330, 4}, {2050, 420, 5}, {2400, 380, 4}, {90, 470, 4}, {2600, 520, 5}};
+    s32 k, cycle, at;
+
+    for (k = 0; k < 22; k++) { /* twinkling: each its own pace and phase */
+        s32 w = Tk_Wave(k & 1 ? 128 : 256, k * 37);
+        f32 x = Tk_PX((f32)kStar[k][0]), y = Tk_PY((f32)kStar[k][1]), r = (f32)kStar[k][2] * (0.6f + (f32)w / 110.0f);
+
+        Tk_Glow(x - r * 2.0f, y - r * 2.0f, x + r * 2.0f, y + r * 2.0f, 220, 235, 255, 0x18 + w);
+    }
+    /* a shooting star: once every 512 frames, 48 frames long, across the top from right to left */
+    cycle = sTkFrames & 511;
+    at = (sTkFrames >> 9) % 3;
+    if (cycle < 48) {
+        f32 q = (f32)cycle / 48.0f;
+        f32 x0 = Tk_PX(2300.0f - (f32)at * 500.0f), y0 = Tk_PY(60.0f + (f32)at * 40.0f);
+        f32 hx = x0 - q * Tk_PX(900.0f) + Tk_PX(0.0f), hy = y0 + q * Tk_PY(260.0f);
+        f32 tx = hx + 34.0f, ty = hy - 10.0f;
+        s32 a = cycle < 8 ? cycle * 16 : cycle > 36 ? (48 - cycle) * 10 : 120;
+        u32 head = Ps_Rgba(255, 250, 230, a), tail = Ps_Rgba(160, 200, 255, 0);
+
+        Ps_Quad(hx, hy - 0.8f, tx, ty - 1.6f, hx, hy + 0.8f, tx, ty + 1.6f, head, tail, head, tail);
+        Tk_Glow(hx - 6.0f, hy - 6.0f, hx + 6.0f, hy + 6.0f, 255, 250, 220, a);
+    }
+    /* mist drifting over the spires, slowly, two layers the other way round */
+    for (k = 0; k < 3; k++) {
+        s32 span = 3400, run = (sTkFrames / (k == 1 ? 3 : 2) + k * 1100) % span;
+        f32 x = Tk_PX((f32)(k == 1 ? span - run : run) - 400.0f), y = Tk_PY(930.0f + (f32)k * 60.0f);
+
+        Tk_Glow(x - Tk_PX(500) + Tk_PX(0), y - Tk_PY(90), x + Tk_PX(500) - Tk_PX(0), y + Tk_PY(90), 120, 160, 230, 0x22);
+    }
+    /* the warm glow behind the radar breathing */
+    {
+        s32 w = Tk_Wave(256, 0);
+        Tk_Glow(Tk_PX(200), Tk_PY(250), Tk_PX(1500), Tk_PY(1100), 255, 130, 40, 0x10 + w / 3);
+    }
+}
+
+/* The night with its stars and rock spires over the whole window (the picture's middle, as wide as the window is).
+   (Was the dusk sky, TBO_DB_SKY: the mod's pages took the dragon radar's look, 2026-11-08.) */
 static TK_UNUSED void Tk_Backdrop(void) {
     f32 aspect = (f32)Port_PageAspectMilli() / 1000.0f;
-    f32 pic = Ps_PicW(TBO_DB_SKY) / Ps_PicH(TBO_DB_SKY);
+    f32 pic = Ps_PicW(TBO_DB_NIGHT) / Ps_PicH(TBO_DB_NIGHT);
     f32 u = aspect < pic ? aspect / pic : 1.0f;
     f32 v = aspect < pic ? 1.0f : pic / aspect;
 
-    Ps_SpriteScreen(TBO_DB_SKY, 0.0f, 0.0f, 512.0f, 448.0f, 0.5f - u * 0.5f, 0.5f - v * 0.5f, 0.5f + u * 0.5f, 0.5f + v * 0.5f, PS_PLAIN, 0x80);
+    Ps_SpriteScreen(TBO_DB_NIGHT, 0.0f, 0.0f, 512.0f, 448.0f, 0.5f - u * 0.5f, 0.5f - v * 0.5f, 0.5f + u * 0.5f, 0.5f + v * 0.5f, PS_PLAIN, 0x80);
+    Tk_NightLife();
 }
 
 /* Where the window's left edge is, and a little in: the lists keep to it on a wide phone. */
@@ -184,6 +243,56 @@ static TK_UNUSED void Tk_Ball(f32 cx, f32 cy, f32 r, s32 stars) {
     Ps_Sprite(TBO_DB_BALLS, cx - rx, cy - r, cx + rx, cy + r, (f32)stars / 8.0f, 0.0f, (f32)(stars + 1) / 8.0f, 1.0f, PS_PLAIN, 0x80);
 }
 
+/* A dragon ball as Tk_Ball, see-through by `alpha` (0x80 whole): the radar's balls that are not chosen while it locks. */
+static TK_UNUSED void Tk_BallA(f32 cx, f32 cy, f32 r, s32 stars, s32 alpha) {
+    f32 rx = r * PS_UNIT_X;
+
+    stars = stars < 0 ? 0 : stars > 7 ? 7 : stars;
+    Ps_Sprite(TBO_DB_BALLS, cx - rx, cy - r, cx + rx, cy + r, (f32)stars / 8.0f, 0.0f, (f32)(stars + 1) / 8.0f, 1.0f, PS_PLAIN, alpha);
+}
+
+/* A thin ring `r` units round on the screen, tinted (r, g, b) (the radar's pulses, the chosen ball's search rings). */
+static TK_UNUSED void Tk_Ring(f32 cx, f32 cy, f32 r, s32 cr, s32 cg, s32 cb, s32 alpha) {
+    f32 rx = r * PS_UNIT_X;
+
+    if (alpha > 0 && r > 0.5f) {
+        Ps_Sprite(TBO_DB_RING, cx - rx, cy - r, cx + rx, cy + r, 0.0f, 0.0f, 1.0f, 1.0f, Ps_Tint(Ps_Rgba(cr, cg, cb, 0)), alpha);
+    }
+}
+
+/* A rounded label: a slanted pill of a colour with a lighter edge, its words centred (white, or the cursor's style). */
+static TK_UNUSED void Tk_Pill(f32 x0, f32 y0, f32 x1, f32 y1, u32 edge, u32 top, u32 bottom, char *text, f32 scale, s32 style) {
+    f32 sk = (y1 - y0) * 0.30f;
+
+    Tk_Para(x0 - 1.5f, y0 - 1.5f, x1 + 1.5f, y1 + 1.5f, sk, edge, edge);
+    Tk_Para(x0, y0, x1, y1, sk, top, bottom);
+    Ps_Align(1);
+    Ps_Text((x0 + x1) * 0.5f, Ps_TextTop((y0 + y1) * 0.5f, scale), text, scale, x1 - x0 - sk - 6.0f, style);
+}
+
+/* The language switch at the top right: PT, EN, ES as three pills (the chosen one gold), each a place to tap (TK_LANG),
+   as tall as a finger wants. `lang`: 0 English, 1 Portuguese, 2 Spanish. Returns the left edge. */
+static TK_UNUSED f32 Tk_Languages(f32 right, f32 cy, s32 lang) {
+    static char names[3][4] = {"PT", "EN", "ES"};
+    static const s32 ids[3] = {1, 0, 2};
+    f32 w = 30.0f, h = 24.0f, gap = 5.0f, x = right - 3.0f * w - 2.0f * gap;
+    s32 k;
+
+    for (k = 0; k < 3; k++) {
+        f32 x0 = x + (f32)k * (w + gap);
+        s32 lit = ids[k] == lang;
+
+        if (lit) {
+            Tk_Glow(x0 - 10.0f, cy - h, x0 + w + 10.0f, cy + h, 255, 180, 50, 0x50);
+        }
+        Tk_Pill(x0, cy - h * 0.5f, x0 + w, cy + h * 0.5f, lit ? Ps_Rgba(255, 245, 200, 128) : Ps_Rgba(110, 210, 255, 110),
+                lit ? Ps_Rgba(255, 210, 80, 128) : Ps_Rgba(24, 52, 130, 118), lit ? Ps_Rgba(230, 120, 20, 128) : Ps_Rgba(8, 22, 70, 122),
+                names[k], 0.74f, lit ? 1 : 0);
+        Tk_Region(x0 - gap * 0.5f, cy - h, x0 + w + gap * 0.5f, cy + h, TK_LANG, ids[k]);
+    }
+    return x;
+}
+
 /* The page's title in the game's orange lettering at the top left; `card`, if any: a red capsule at the top right. */
 static TK_UNUSED void Tk_Capsule(f32 x0, f32 y0, f32 x1, f32 y1, char *text, f32 scale) {
     f32 sk = (y1 - y0) * 0.35f;
@@ -212,23 +321,24 @@ static TK_UNUSED void Tk_Bar(f32 x0, f32 y0, f32 x1, f32 y1, s32 lit) {
         Tk_Glow(x0 - 30.0f, y0 - 16.0f, x1 + 30.0f, y1 + 16.0f, 255, 170, 40, 0x60);
         Tk_Para(x0 - 2.0f, y0 - 2.0f, x1 + 2.0f, y1 + 2.0f, sk, Ps_Rgba(120, 30, 0, 128), Ps_Rgba(120, 30, 0, 128));
         Tk_Para(x0, y0, x1, y1, sk, Ps_Rgba(255, 240, 150, 128), Ps_Rgba(240, 120, 10, 128));
-    } else {
-        Tk_Para(x0 - 2.0f, y0 - 2.0f, x1 + 2.0f, y1 + 2.0f, sk, Ps_Rgba(20, 40, 110, 128), Ps_Rgba(20, 40, 110, 128));
-        Tk_Para(x0, y0, x1, y1, sk, Ps_Rgba(110, 160, 240, 124), Ps_Rgba(35, 70, 170, 124));
+    } else { /* dark blue glass with a light edge */
+        Tk_Para(x0 - 1.5f, y0 - 1.5f, x1 + 1.5f, y1 + 1.5f, sk, Ps_Rgba(110, 210, 255, 110), Ps_Rgba(70, 160, 230, 100));
+        Tk_Para(x0, y0, x1, y1, sk, Ps_Rgba(24, 52, 130, 118), Ps_Rgba(8, 22, 70, 122));
     }
 }
 
-/* A light plate (the main list's): pale blue to blue, a navy edge; its letters are navy (Tk_NavyText). */
+/* A plate of the main list: dark blue glass with a light edge; its letters are light (Tk_NavyText). */
 static TK_UNUSED void Tk_LightBar(f32 x0, f32 y0, f32 x1, f32 y1) {
     f32 sk = (y1 - y0) * 0.55f;
 
-    Tk_Para(x0 - 2.0f, y0 - 2.0f, x1 + 2.0f, y1 + 2.0f, sk, Ps_Rgba(20, 40, 110, 128), Ps_Rgba(20, 40, 110, 128));
-    Tk_Para(x0, y0, x1, y1, sk, Ps_Rgba(235, 245, 255, 124), Ps_Rgba(150, 190, 240, 124));
+    Tk_Para(x0 - 1.5f, y0 - 1.5f, x1 + 1.5f, y1 + 1.5f, sk, Ps_Rgba(110, 210, 255, 110), Ps_Rgba(70, 160, 230, 100));
+    Tk_Para(x0, y0, x1, y1, sk, Ps_Rgba(24, 52, 130, 118), Ps_Rgba(8, 22, 70, 122));
 }
 
-/* Navy letters with a white edge (on the light plates and in the talk box). */
+/* The letters on the glass plates and in the talk box: near white, a pale blue foot, a navy edge. (Navy on white
+   before the night look; the name is kept for its callers.) */
 static TK_UNUSED void Tk_NavyText(f32 x, f32 y, char *s, f32 scale, f32 width) {
-    Ps_TextEx(x, y, s, scale, width, Ps_Rgba(30, 50, 120, 0x80), Ps_Rgba(22, 36, 96, 0x80), Ps_Rgba(255, 255, 255, 0x80));
+    Ps_TextEx(x, y, s, scale, width, Ps_Rgba(245, 250, 255, 0x80), Ps_Rgba(200, 225, 255, 0x80), Ps_Rgba(6, 16, 60, 0x80));
 }
 
 /* The gold-framed window: its inside (a night blue to a sky blue), the frame over it; lit: a glow around it. */
@@ -236,12 +346,13 @@ static TK_UNUSED void Tk_Inside(f32 x0, f32 y0, f32 x1, f32 y1) {
     Ps_Rect(x0 + 4.0f, y0 + 4.0f, x1 - 4.0f, y1 - 4.0f, Ps_Rgba(40, 70, 170, 128), Ps_Rgba(150, 150, 190, 128));
 }
 
+/* A window: the dark glass (an orange line along its top), lit: a warm glow around it. */
 static TK_UNUSED void Tk_Box(f32 x0, f32 y0, f32 x1, f32 y1, s32 lit) {
     if (lit) {
         Tk_Glow(x0 - 24.0f, y0 - 20.0f, x1 + 24.0f, y1 + 20.0f, 255, 190, 60, 0x70);
     }
-    Tk_Inside(x0, y0, x1, y1);
-    Ps_Panel(TBO_DB_FRAME, x0, y0, x1, y1, 0x80);
+    Ps_Panel(TBO_DB_GLASS, x0, y0, x1, y1, 0x80);
+    Ps_Rect(x0 + 10.0f, y0 + 1.0f, x1 - 10.0f, y0 + 3.5f, Ps_Rgba(255, 160, 40, 128), Ps_Rgba(255, 130, 20, 128));
 }
 
 /* A small triangle pointing up (dir -1) or down (1): there is more of the list that way. */
@@ -341,7 +452,7 @@ static TK_UNUSED void Tk_WrapDraw(f32 x, f32 mid, f32 scale, f32 room) {
 static TK_UNUSED void Tk_Talk(f32 x0, f32 y0, f32 x1, f32 y1, char *say, f32 scale) {
     f32 room = x1 - x0 - 28.0f;
 
-    Ps_Panel(TBO_DB_DIALOG, x0, y0, x1, y1, 0x80);
+    Ps_Panel(TBO_DB_GLASS, x0, y0, x1, y1, 0x80);
     Tk_Wrap(say, scale, room);
     Tk_WrapDraw(x0 + 14.0f, (y0 + y1) * 0.5f, scale, room);
 }

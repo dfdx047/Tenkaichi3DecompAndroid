@@ -1796,29 +1796,38 @@ static void vk_frame_end(void) {
         dst.size = gsVuIdxCount * sizeof(uint32_t);
         SDL_UploadToGPUBuffer(copy, &src, &dst, true);
     }
+    /* The frame's textures through one upload buffer, each level at its own offset (16-byte aligned), mapped
+       once: a buffer made, mapped and let go for every level (a pack's picture has up to 11) cost the frame and
+       the driver's hand-over after it most of a large pack's time. The buffer stays and grows; SDL hands a
+       fresh one (cycle) while the last frame's is still being read. Grown past 4 MB by a load, it is let go once
+       120 frames in a row needed no more than that: kept, the load's peak (and SDL's cycled copies of it) stayed in
+       the phone's memory for the rest of the run. */
+    static SDL_GPUTransferBuffer *sUpBuf;
+    static uint32_t sUpBufSize, sUpSmallFrames;
+    uint32_t upTotal = 0;
+    for (i = 0; i < sPendingCount; i++) {
+        upTotal += ((sPending[i].bytes ? sPending[i].bytes : sPending[i].w * sPending[i].h * 4) + 15) & ~15u;
+    }
+    sUpSmallFrames = upTotal <= (4u << 20) ? sUpSmallFrames + 1 : 0;
+    if (sUpBuf != NULL && sUpBufSize > (4u << 20) && sUpSmallFrames >= 120) {
+        SDL_ReleaseGPUTransferBuffer(sDev, sUpBuf);
+        sUpBuf = NULL;
+        sUpBufSize = 0;
+    }
     if (sPendingCount != 0) {
-        /* The frame's textures through one upload buffer, each level at its own offset (16-byte aligned), mapped
-           once: a buffer made, mapped and let go for every level (a pack's picture has up to 11) cost the frame
-           and the driver's hand-over after it most of a large pack's time. The buffer stays and grows; SDL hands a
-           fresh one (cycle) while the last frame's is still being read. */
-        static SDL_GPUTransferBuffer *tb;
-        static uint32_t tbSize;
-        uint32_t total = 0, at = 0;
+        uint32_t total = upTotal, at = 0;
         uint8_t *p;
-        for (i = 0; i < sPendingCount; i++) {
-            total += ((sPending[i].bytes ? sPending[i].bytes : sPending[i].w * sPending[i].h * 4) + 15) & ~15u;
-        }
-        if (tb == NULL || total > tbSize) {
+        if (sUpBuf == NULL || total > sUpBufSize) {
             SDL_GPUTransferBufferCreateInfo ti;
-            if (tb != NULL) {
-                SDL_ReleaseGPUTransferBuffer(sDev, tb);
+            if (sUpBuf != NULL) {
+                SDL_ReleaseGPUTransferBuffer(sDev, sUpBuf);
             }
             SDL_zero(ti);
             ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-            ti.size = tbSize = total > (4u << 20) ? (total + 0xFFFFF) & ~0xFFFFFu : 4u << 20;
-            tb = SDL_CreateGPUTransferBuffer(sDev, &ti);
+            ti.size = sUpBufSize = total > (4u << 20) ? (total + 0xFFFFF) & ~0xFFFFFu : 4u << 20;
+            sUpBuf = SDL_CreateGPUTransferBuffer(sDev, &ti);
         }
-        p = tb != NULL ? SDL_MapGPUTransferBuffer(sDev, tb, true) : NULL;
+        p = sUpBuf != NULL ? SDL_MapGPUTransferBuffer(sDev, sUpBuf, true) : NULL;
         for (i = 0; i < sPendingCount; i++) {
             uint32_t bytes = sPending[i].bytes ? sPending[i].bytes : sPending[i].w * sPending[i].h * 4;
             if (p != NULL) {
@@ -1826,7 +1835,7 @@ static void vk_frame_end(void) {
                 SDL_GPUTextureRegion dst;
                 memcpy(p + at, sPending[i].px, bytes);
                 SDL_zero(src);
-                src.transfer_buffer = tb;
+                src.transfer_buffer = sUpBuf;
                 src.offset = at;
                 SDL_zero(dst);
                 dst.texture = sPending[i].tex;
@@ -1840,7 +1849,7 @@ static void vk_frame_end(void) {
             free(sPending[i].px);
         }
         if (p != NULL) {
-            SDL_UnmapGPUTransferBuffer(sDev, tb);
+            SDL_UnmapGPUTransferBuffer(sDev, sUpBuf);
         }
     }
     sPendingCount = 0;
@@ -2651,6 +2660,11 @@ static void vk_frame_end(void) {
     gsVuUniCount = 0;
     gsDrawCount = 0;
     gsAnchor = 0;
+    {
+        extern int gsWhole2D, gsChipUp;
+        gsWhole2D = 0;
+        gsChipUp = 0;
+    }
     gsSkipped = 0;
     gsNative = 0;
 }

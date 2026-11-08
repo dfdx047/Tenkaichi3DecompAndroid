@@ -638,6 +638,7 @@ static void seam_widen(Vertex *t) {
     }
 }
 
+static int sGsMute;
 /* A vertex arrives (XYZ2 / XYZF2 with kick = 1, XYZ3 / XYZF3 with kick = 0). */
 static void vertex(uint32_t x, uint32_t y, uint32_t z, int kick) {
     int seamHit = 0;
@@ -687,8 +688,8 @@ static void vertex(uint32_t x, uint32_t y, uint32_t z, int kick) {
         if (kick && gs.vcount >= (type == 6 || type == 1 || type == 2 ? 2 : type == 0 ? 1 : 3)) { count++; }
         if (stop > 0 && (int)sFrame == sDrawFrom && count > (unsigned)stop) { kick = 0; }
     }
-    if ((int)sFrame < sDrawFrom) {
-        kick = 0; /* BT3_GS_FROM: uploads and state are processed, nothing is drawn yet */
+    if ((int)sFrame < sDrawFrom || sGsMute) {
+        kick = 0; /* BT3_GS_FROM (or the markers 0x22, 0x23): uploads and state are processed, nothing is drawn */
     }
     if (sDumpFrame == (int)sFrame && kick && gs.vcount >= (type == 6 || type == 1 || type == 2 ? 2 : type == 0 ? 1 : 3)) {
         const Vertex *p0 = &gs.vtx[0], *p1 = &gs.vtx[gs.vcount - 1];
@@ -913,7 +914,13 @@ static void reg_write(uint32_t addr, uint64_t d) {
     case 0x51: gs.trxpos = d; break;
     case 0x52: gs.trxreg = d; break;
     case 0x53: gs.trxdir = d; transfer_begin(); break;
-    case 0x7F: if (sGpu) { GsGpu_Native((int)d); } break; /* not a GS register: the port's marker (gs_marker.c) */
+    case 0x7F: /* not a GS register: the port's marker (gs_marker.c) */
+        if (d == 0x22 || d == 0x23) { /* what the game draws from here to 0x23 is not shown (port_charsel.c) */
+            sGsMute = d == 0x22;
+        } else if (sGpu) {
+            GsGpu_Native((int)d);
+        }
+        break;
     default: break;
     }
 }

@@ -286,7 +286,7 @@ void TagControls_TestTick(s32 tick) {
                 BtlMember_GetActiveGauge(c)->health=i==2?0:30000;
                 BtlMember_GetActiveGauge(c)->blast=0;
             }
-            for(i=0;i<15;i++)TagTeam_TargetInput(0,1);
+            for(i=0;i<30;i++)TagTeam_TargetInput(0,1);
             TagTeam_TargetInput(0,0);
         }
         if(tick>30) {
@@ -375,7 +375,7 @@ void TagControls_TestTick(s32 tick) {
     Port_TagTestCheck(TagTeam_Target(0)==3,359);
     BtlMember_GetActiveGauge(ally)->health=0;
     BtlChar_SetHeldFlag(ally,7);
-    for (i=0;i<14;i++) TagTeam_TargetInput(0,1);
+    for (i=0;i<29;i++) TagTeam_TargetInput(0,1);
     Port_TagTestCheck(!TagTeam_LockedOff(0),73);
     TagTeam_TargetInput(0,1);
     Port_TagTestCheck(TagTeam_LockedOff(0) && TagTeam_HudTarget(0)==-1,74);

@@ -2,6 +2,13 @@
 
 Regras e formato: [README](README.md).
 
+### 1.0.0 (Nov): `origin/Regulus-optimize` até `6e31a6b3` e `origin/tag-team-android` até `69ac6c98`
+- **Onde:** `release-1.0` avançado (fast-forward) até `release-1.0-dia` (`7c77d3d5`, que já tinha as duas branches até `41c638c4` e `713c9928`); depois `--no-ff` das duas, sem squash, autores mantidos. Regulus: 2 commits (BT2: texturas em lote, limite pela RAM, "Preencher a tela"), sem conflito. Tag Team: 8 commits (seleção nova, opções no launcher, Wi-Fi acordado, mira no aliado caído, Radar do Dragão).
+- **O que e por quê:** conflitos: `android/app/src/main/cpp/loader.c` fica o nosso (o `dr_tag_team` chega por `argv[6]` do `GameActivity`, padrão 0, pedido do desenvolvedor; a branch lia o `bt3_settings.txt` com padrão 1); `port/translations/tag/pt.tsv` e `es.tsv` com os dois lados (as mensagens da sala da 1.0 e os textos do Radar), `tag_text_*.inc` gerados de novo (iguais). Sem conflito mas duplicado: a branch trouxe outra constante `TAG_TEAM` (padrão 1) em `EngineSettings.kt` e outra chave "Modo Tag Team" em Ajustes: saem as dela, fica a da 1.0 (`TAG_TEAM_DEFAULT = 0`); a chave da seleção nova (`select_classic`) fica.
+- **Medido/provado:** ver a entrada do teste da 1.0 em `docs/release-1.0.md` (build e rota nos 3 aparelhos).
+- **O que pode quebrar:** a seleção nova vale também no BT3 sem o Tag Team (`PortCharSel_Begin(!PortGame_IsBT4())`): os menus de seleção não são mais os da 0.9.0 por padrão.
+- **Como testar de novo:** abrir o BT3 com `dr_tag_team` 0 e 1; nos dois, a seleção nova e a clássica (`select_classic` 0 e 1).
+
 ### 1.0.0 85cdb232: `origin/Regulus-optimize` (BT2, Dragon Net Online, PC 0.1.38.9)
 - **Onde:** pais `e1b9207a` (0.9.0) e `e84c359f`. `--no-ff`, sem squash nem rebase: os commits mantêm os autores.
 - **O que e por quê:** traz o BT2, o Dragon Net Online e o PC até 0.1.38.9. `git diff-tree --cc` não lista nenhum arquivo: nenhum conflito precisou de escolha nova no próprio merge, porque o branch já tinha mesclado a 0.9.0 (`33e4bbee`).

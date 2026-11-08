@@ -454,8 +454,14 @@ void TagHud_Draw() {
                 if(clear)text(d,p.x-width*.5f,p.y-29*hs,fs*.5f,IM_COL32(255,240,170,255),other.practiceLabel);
             }
             if(i!=actor && head.visible && i==a.target && Port_TagOption(TAG_OPT_TARGET_MARKER)) {
-                ImVec2 p=point(head.x,head.y); p.y-=(other.practiceLabel[0]&&Port_TagOption(TAG_OPT_PRACTICE_LABELS)?46:other.down?45:12)*sc;
                 int style=Port_TagOption(TAG_OPT_TARGET_STYLE);
+                // A fallen fighter: its point is already on the body lying on the floor (tag_hud.c lowers it to a
+                // fifth of the standing height). The brackets and the circle frame the body itself, the arrow's
+                // tip rests just above it. (A fixed lift of 45 screen units put the marker in the air over the
+                // body, the farther the fighter the higher above it.)
+                float lift=other.practiceLabel[0]&&Port_TagOption(TAG_OPT_PRACTICE_LABELS)?46:
+                           other.down?(style==1||style==2?0:6):12;
+                ImVec2 p=point(head.x,head.y); p.y-=lift*sc;
                 auto color=team(other.team);
                 if(style==0||style==3) marker(d,p,sc,color);
                 if(style==1||style==3) {d->AddCircle(p,6*sc,IM_COL32(0,0,0,230),24,4*sc);d->AddCircle(p,6*sc,IM_COL32(255,221,45,255),24,2*sc);}

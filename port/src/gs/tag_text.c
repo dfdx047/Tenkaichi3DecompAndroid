@@ -25,13 +25,42 @@ static const char *find(const TagTextRow *rows,int count,const char *english) {
     return english;
 }
 
-const char *Port_TagText(const char *english) {
+/* The language the mod's menus show: chosen on the dragon radar's page (its switch at the top right) and kept in the
+   settings as "tag_lang" (1 English, 2 Portuguese, 3 Spanish; 0: not chosen). Not chosen, as before: Portuguese when
+   the app is in Portuguese (dr_lang 1), Spanish when the game's menus are, English otherwise. Only what is shown changes:
+   nothing of a room or of the game's state depends on it (the online copies may each show their own language). */
+static int sTagLang=-1; /* the choice (0 English, 1 Portuguese, 2 Spanish), -1 not read yet, -2 none */
+static int sAppLang=-1; /* (asked once: the settings' search takes a lock, and this runs for every line drawn) */
+
+int Port_TagLang(void) {
     extern int Port_Setting(const char *name,int def); /* plat_settings.c */
-    static int appLang=-1; /* (asked once: the settings' search takes a lock, and this runs for every line drawn) */
-    const char *locale=MenuTranslation_Locale();
+    const char *locale;
+    int lang=__atomic_load_n(&sTagLang,__ATOMIC_RELAXED);
+    if(lang==-1) {
+        int saved=Port_Setting("tag_lang",0);
+        lang=saved>=1 && saved<=3?saved-1:-2;
+        __atomic_store_n(&sTagLang,lang,__ATOMIC_RELAXED);
+    }
+    if(lang>=0)return lang;
+    if(sAppLang<0)sAppLang=Port_Setting("dr_lang",0);
+    if(sAppLang==1)return 1;
+    locale=MenuTranslation_Locale();
+    return locale && !strcmp(locale,"es")?2:0;
+}
+
+void Port_TagLangSet(int lang) {
+    extern void Port_SettingSave(const char *name,int value),Port_SettingsWrite(void);
+    if(lang<0 || lang>2)return;
+    __atomic_store_n(&sTagLang,lang,__ATOMIC_RELAXED);
+    Port_SettingSave("tag_lang",lang+1);
+    Port_SettingsWrite();
+}
+
+const char *Port_TagText(const char *english) {
+    int lang;
     if(!english)return english;
-    if(appLang<0)appLang=Port_Setting("dr_lang",0);
-    if(appLang==1)return find(ptRows,(int)(sizeof(ptRows)/sizeof(*ptRows)),english);
-    if(!locale || strcmp(locale,"es"))return english;
-    return find(esRows,(int)(sizeof(esRows)/sizeof(*esRows)),english);
+    lang=Port_TagLang();
+    if(lang==1)return find(ptRows,(int)(sizeof(ptRows)/sizeof(*ptRows)),english);
+    if(lang==2)return find(esRows,(int)(sizeof(esRows)/sizeof(*esRows)),english);
+    return english;
 }

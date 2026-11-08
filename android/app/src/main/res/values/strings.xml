@@ -436,6 +436,9 @@
     <string name="bt4_game_data_intro">Pick your image of Team BT4\'s mod: SLUS-219.78, Beta 14 Rev2 (another version does not work: the game was recompiled for that one). Only its boot files are copied; the rest is read from the image where it is, so keep it in its folder.</string>
     <string name="bt4_engine_included">The Budokai Tenkaichi 4 engine is in this build.</string>
     <string name="bt4_engine_missing">This build does not have the Budokai Tenkaichi 4 engine yet (libbt4.so). The image can be set up already.</string>
+    <string name="game_mode">Game</string>
+    <string name="new_select">New character select</string>
+    <string name="new_select_text">Roster, 3D fighter and pedestal when choosing fighters, offline and online. Off, the original game screen is back.</string>
     <string name="tag_lite">Tag Team light graphics</string>
     <string name="tag_lite_text">Only in Tag Team: lower resolution, no shadows, fewer effects. For a smoother match on weaker phones. Also in the menu during a fight.</string>
     <string name="tag_lite_offer">Your device is on the weaker side. Turn on Light graphics so the game runs smoother?</string>
