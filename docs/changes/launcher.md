@@ -3,6 +3,13 @@
 Regras e formato: [README](README.md).
 
 
+### 1.0.0 (este commit): oferta do Gráfico leve do Tag Team só no BT3
+- **Onde:** `android/.../AppViewModel.kt`, `init` (`_tagLiteOffer`).
+- **O que e por quê:** o BT4 tem o próprio arquivo de ajustes, então num aparelho fraco a pergunta "Gráficos leves no Tag Team" aparecia de novo ao abrir o BT4, sobre um modo que o BT4 não tem (visto no Mi A3).
+- **Medido/provado:** Mi A3: antes, a pergunta aparecia no BT4 depois da oferta da GPU; o código agora pede `game == Game.BT3`.
+- **O que pode quebrar:** nada no BT3; BT4 e BT2 não perguntam mais.
+- **Como testar de novo:** aparelho fraco, abrir o BT4 pela primeira vez: só a oferta da GPU.
+
 ### 1.0.0 (este commit): seleção de personagens nova ou clássica, com cartões e desenho
 - **Onde:** `android/.../ui/screens/SelectStyle.kt` (`SelectStylePicker`, `SelectStyleDialog`, desenhos); `SettingsScreen.kt`, seção "Seleção de personagens" (só no BT3); `AppViewModel.kt`, `selectStyleOffer` e `answerSelectStyle`; `EngineSettings.kt`, `SELECT_ASKED` (`dr_select_asked`); `MainActivity.kt`; textos `select_*` nos 3 idiomas (saem `new_select*` e `game_mode`).
 - **O que e por quê:** a chave "Nova seleção" da `tag-team-android` (`e988c567`) virou dois cartões, **Nova** e **Clássica**, cada um com um desenho da tela (grade, boneco no pedestal e tela dividida em azul e vermelho; contra as duas fotos dos lados e a lista no meio, nas cores quentes do jogo), título e uma linha. Toque ou A escolhe; o escolhido fica com borda e marca. O desenho é feito em Compose: nenhuma imagem do jogo. Na primeira abertura do launcher do BT3 nesta versão, os mesmos cartões num aviso (depois dos avisos da GPU e do gráfico leve, nunca junto); a resposta fica em `select_classic` e `dr_select_asked=1`. O motor lê `select_classic` ao abrir o jogo (`Port_Setting` guarda os ajustes na abertura), e o processo do jogo é encerrado ao sair, então a troca vale na próxima vez que o jogo abrir, sem reiniciar o app.

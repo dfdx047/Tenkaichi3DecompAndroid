@@ -398,8 +398,9 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
             // the GPU's recommended settings, offered once (GpuProfiles)
             val p = GpuProfiles.profile(_gpuName.value)
             if (p != null && settings.get(EngineSettings.GPU_TIER, -1) == -1) _gpuOffer.value = p
-            // the Tag Team's light graphics, offered once on a weak GPU (TagLiteDialog); stronger GPUs: nothing changes
-            if (GpuProfiles.tierOf(_gpuName.value) in 0..1 && settings.get(EngineSettings.TAG_LITE_ASKED, 0) == 0) {
+            // the Tag Team's light graphics, offered once on a weak GPU (TagLiteDialog); stronger GPUs: nothing changes.
+            // BT3 only: the Tag Team is BT3's mod (BT4's own settings file asked it again, about a mode BT4 does not have)
+            if (game == Game.BT3 && GpuProfiles.tierOf(_gpuName.value) in 0..1 && settings.get(EngineSettings.TAG_LITE_ASKED, 0) == 0) {
                 if (settings.get(EngineSettings.TAG_LITE, 0) != 0) settings.set(EngineSettings.TAG_LITE_ASKED, 1) else _tagLiteOffer.value = true
             }
             // the character select's look, asked once (BT3 and its Tag Team mode only: BT4 and BT2 have their own)
