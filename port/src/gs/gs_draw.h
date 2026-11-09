@@ -22,7 +22,10 @@ extern int gsTargetW, gsTargetH; /* a render target's size in GS pixels, as the 
 #define MAX_TARGETS 24
 #define MAX_VU_VERTS (1 << 19)
 #define MAX_VU_IDX (1 << 20)
-#define MAX_VU_UNIFORMS 8192
+/* Four views can submit all four fighters plus scenery in each view. The old
+ * 8192 limit silently truncated the bottom views midway through their models.
+ * Keep indices within the interpolation path's signed 16-bit range. */
+#define MAX_VU_UNIFORMS 32768
 #define MAX_TEX 8192
 #define TEX_BUCKETS 32768 /* a power of two, four times MAX_TEX */
 #define MAX_CLUTS 64
@@ -124,6 +127,7 @@ extern int gsDepthByteIsFog;    /* the top byte of the depth page as the game la
 extern unsigned gsNative;       /* native effect markers seen this frame */
 extern unsigned gsSkipped;      /* primitives of PS2-only passes dropped this frame */
 extern int gGsMainFbp;          /* the frame buffer the game shows (gs_sony.c), -1 before the first swap */
+extern int gGsOtherFbp;         /* BT4: the other frame buffer, where the picture is being drawn (bt4_shim.c); BT3: -1 */
 /* created / spent since the front end last cleared them (gs_core.c's slow-frame report) */
 extern unsigned gGpuNewTex, gGpuNewTexPixels, gGpuNewPipes;
 extern unsigned gGpuTexReplaced; /* textures taken from a texture pack so far */

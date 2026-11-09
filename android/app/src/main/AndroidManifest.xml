@@ -11,12 +11,15 @@
     <uses-feature android:name="android.hardware.opengles.aep" android:required="false" />
 
     <!-- SDL: rumble on controllers and the device -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Keep the Wi-Fi radio awake during gameplay. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <!-- texture pack downloads and the update check -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- (BT2 online: the low-latency Wi-Fi lock) -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- installing an update that was downloaded in the app -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -76,6 +79,25 @@
         <activity
             android:name=".engine.Bt4Activity"
             android:process=":bt4"
+            android:exported="false"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.DragonRage.Game"
+            android:screenOrientation="sensorLandscape"
+            android:launchMode="singleTask"
+            android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:preferMinimalPostProcessing="true" />
+
+        <!-- Starts Budokai Tenkaichi 2's engine again after its own process ended (an online match: Bt2GameActivity.restartEngine). Main process. -->
+        <activity
+            android:name=".engine.Bt2RelaunchActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Budokai Tenkaichi 2 (libbt2.so): a process of its own, apart from BT3's (see Bt2GameActivity). -->
+        <activity
+            android:name=".engine.Bt2GameActivity"
+            android:process=":game_bt2"
             android:exported="false"
             android:label="@string/app_name"
             android:theme="@style/Theme.DragonRage.Game"

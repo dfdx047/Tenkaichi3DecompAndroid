@@ -5,6 +5,40 @@
 #include "battle/btl_demo_cam.h"
 #include "sys/heap.h"
 #include "sys/pad.h"
+#include "battle/tag_team.h"
+#include "battle/tag_options.h"
+#include "battle/tag_clash.h"
+#ifdef PORT
+#include "../../port/src/gs/tag_net.h"
+#include "battle/tag_fusion.h"
+#include "battle/btl_scene.h"
+#endif
+
+static BtlCamView nativeViews[TAG_TEAM_CAPACITY];
+static s32 nativeSharedActor = -1;
+static BtlCamView *battle_view(s32 i) { return TagTeam_Active() ? &nativeViews[i] : &gBtlCam->views[i]; }
+void BtlCam_GetFrustumSize(f32 *out) {
+    View *v=gBtlCamView;
+    out[0]=(v->scissorX1-v->scissorX0+1)*0.5f/v->aspectX;
+    out[1]=(v->scissorY1-v->scissorY0+1)*0.5f/v->aspectY;
+    out[2]=v->screenDist;
+}
+
+static void native_layout(BtlCamView *v, s32 split) {
+    s32 r[4];
+    View_InitLayout(&v->view, VIEW_LAYOUT_FULL);
+    if (split) {
+        TagTeam_ViewRect(v->index, r);
+        v->view.centerX = 1792.0f + r[0] + r[2] * 0.5f;
+        v->view.centerY = 1824.0f + r[1] + r[3] * 0.5f;
+        v->view.screenDist = 433.0f * r[3] / 448.0f;
+        v->view.scissorX0 = r[0]; v->view.scissorX1 = r[0] + r[2] - 1;
+        v->view.scissorY0 = r[1]; v->view.scissorY1 = r[1] + r[3] - 1;
+        View_BuildProjection(&v->view);
+    }
+    v->split = split;
+}
+
 
 /* Battle camera, 0x23E040-0x23F620. See battle/btl_cam.h for the structures and the per-frame flow. */
 
@@ -311,6 +345,14 @@ void BtlCam_SetViewLayout(BtlCamView *view, s32 layout) {
 void BtlCam_InitViews(void) {
     s32 i;
 
+    if (TagTeam_Active()) {
+        memset(nativeViews, 0, sizeof(nativeViews));
+        for (i = 0; i < TagTeam_CameraCount(); i++) {
+            nativeViews[i].index = i;
+            native_layout(&nativeViews[i], TagTeam_CameraCount() > 1);
+        }
+        return;
+    }
     View_InitLayout(&gBtlCam->layouts[0], VIEW_LAYOUT_FULL);
     View_InitLayout(&gBtlCam->layouts[1], VIEW_LAYOUT_LEFT);
     View_InitLayout(&gBtlCam->layouts[2], VIEW_LAYOUT_RIGHT);
@@ -340,7 +382,7 @@ void BtlCam_BuildView(BtlCamView *view, s32 apply) {
 void BtlCam_Reset(void) {
     memset(gBtlCam, 0, sizeof(BtlCam));
     BtlCam_InitViews();
-    gBtlCam->cur = &gBtlCam->views[0];
+    gBtlCam->cur = battle_view(0);
     DemoCam_Reset();
 }
 
@@ -361,14 +403,38 @@ void BtlCam_Term(void) {
 /* Per frame: copies one side's fighter camera pose and priority into the selected view and builds it. */
 void BtlCam_UpdateView(s32 side) {
     BtlCamView *view = gBtlCam->cur;
-    s32 objId = BattleSide_GetObjId(side);
+    s32 objId = BattleSide_GetObjId(TagTeam_Active() ? TagTeam_ViewActor(side) : side);
+
+    if (TagTeam_Active()) {
+        extern s32 TagTeam_CameraActor(s32);
+        objId=BattleSide_GetObjId(TagTeam_CameraActor(TagTeam_ViewActor(side)));
+    }
+
+    if (TagTeam_Active()) nativeSharedActor = -1;
 
     if (Battle_IsSplitScreen()) {
         BtlCam_SetLayout(1, 0);
     }
     BtlCharApi_GetCamPose(objId, &view->pos, &view->rot);
     view->priority = BtlCharApi_HasCamPriority(objId);
+    extern s32 BtlCharApi_HasAuthoredCamera(s32);
+    if(TagTeam_Active() && !view->priority && !BtlCharApi_HasAuthoredCamera(objId)) {
+        extern void BtlCharApi_GetNodePos(s32,s32,Vec4 *);
+        Vec4 anchor,desired;
+        extern f32 TagGiant_Camera(s32);
+        f32 factor=Port_TagOption(TAG_OPT_CAMERA_DISTANCE)*0.01f*TagGiant_Camera(objId);
+        BtlCharApi_GetNodePos(objId,0x11,&anchor);
+        desired=view->pos;
+        desired.x=anchor.x+(desired.x-anchor.x)*factor;
+        desired.y=anchor.y+(desired.y-anchor.y)*factor;
+        desired.z=anchor.z+(desired.z-anchor.z)*factor;
+        if(factor!=1.0f) BtlCam_TraceStage(&view->pos,&desired,&anchor,NULL,NULL);
+    }
     BtlCam_BuildView(view, 1);
+    if(TagTeam_Active()) {
+        extern s32 DemoCam_ApplyFighter(s32,View *,Vec4 *);
+        DemoCam_ApplyFighter(TagTeam_CameraActor(TagTeam_ViewActor(side)),&view->view,&view->pos);
+    }
 }
 
 /* Segment test from `to` towards `from` against the stage collision: where a camera may stand. */
@@ -457,6 +523,11 @@ s32 BtlCam_GetDefaultView(void) {
 
 /* Split-screen only: switches the selected view between its half (1) and the full screen (0), rebuilding it. */
 void BtlCam_SetLayout(s32 split, s32 apply) {
+    if (TagTeam_Active()) {
+        native_layout(gBtlCam->cur, split);
+        BtlCam_BuildView(gBtlCam->cur, apply);
+        return;
+    }
     if (Battle_IsSplitScreen()) {
         BtlCamView *view = gBtlCam->cur;
 
@@ -473,6 +544,20 @@ void BtlCam_SetLayout(s32 split, s32 apply) {
 
 /* The view whose camera has the higher priority; on a tie the default view if the priority is > 0, else -1. */
 s32 BtlCam_GetPriorityView(void) {
+    if (TagTeam_Active()) {
+        s32 a;
+        for (a = 0; a < TagTeam_Count(); a++) {
+            extern s32 TagTeam_ShareClashCamera(s32);
+            extern s32 DemoCam_FighterActive(s32);
+            s32 clash=BtlClash_State(a);
+            /* Beam struggles use the native fixed participant camera, which
+               does not request full screen by itself. The mod's explicit
+               sharing option must still be able to promote that camera. */
+            s32 beamClash=clash>=1 && clash<=5 && BtlClash_Opponent(a)>=0;
+            if ((beamClash || BtlCharApi_HasCamPriority(BattleSide_GetObjId(a)) || DemoCam_FighterActive(a)) && TagTeam_ShareClashCamera(a)) return a;
+        }
+        return -1;
+    }
     s32 best = -1;
     s32 bestPri = -9999;
     s32 count = 0;
@@ -500,7 +585,7 @@ s32 BtlCam_GetPriorityView(void) {
 
 /* Makes one of the two battle views the selected and current one. */
 void BtlCam_SelectView(s32 idx) {
-    gBtlCam->cur = &gBtlCam->views[idx];
+    gBtlCam->cur = battle_view(idx);
     gBtlCamView = &gBtlCam->cur->view;
 }
 
@@ -516,6 +601,35 @@ extern int Port_NetView(void); /* port/src/gs/net.c: the local player's view (0 
 s32 BtlCam_UpdateOverride(void) {
     s32 ret = 0;
     s32 idx;
+    if (TagTeam_Active()) {
+        idx = BtlCam_GetPriorityView();
+        nativeSharedActor = -1;
+        if (idx >= 0 || (!TagNet_Active() && TagTeam_VisibleViews() == 1)) {
+            BtlCam_SelectView(0);
+            nativeSharedActor = idx >= 0 ? idx : TagTeam_ViewActor(0);
+            if (idx >= 0) BtlCharApi_GetCamPose(BattleSide_GetObjId(idx), &gBtlCam->cur->pos, &gBtlCam->cur->rot);
+            BtlCam_SetLayout(0, 1);
+            {
+                extern s32 DemoCam_ApplyFighter(s32,View *,Vec4 *);
+                /* SetLayout rebuilds the matrix. Restore the participant's
+                   authored shot even when it only owns this one local view;
+                   the shared-camera setting concerns other players. */
+                s32 camera=idx>=0?idx:TagTeam_CameraActor(TagTeam_ViewActor(0));
+                DemoCam_ApplyFighter(camera,&gBtlCam->cur->view,&gBtlCam->cur->pos);
+            }
+            ret = 1;
+        }
+        if (DemoCam_IsActive()) {
+            BtlCam_SelectView(0);
+            BtlCam_SetLayout(0, 1);
+            DemoCam_Update();
+            ret = 1;
+        }
+        { extern s32 TagBeam_ShowcaseCamera(void); if(TagBeam_ShowcaseCamera())ret=1; }
+        { extern s32 TagLobby_TestCamera(void); if(TagLobby_TestCamera())ret=1; }
+        { extern void TagModeRush_CheckCameras(s32);TagModeRush_CheckCameras(ret); }
+        return ret;
+    }
 
     if (!Battle_IsSplitScreen() || BattleReplay_IsActive() != 0) {
         idx = BtlCam_GetPriorityView();
@@ -697,3 +811,138 @@ f32 CamShake_GetTime(CamShake *shake) {
     }
     return time;
 }
+
+s32 TagTeam_CurrentViewActor(void) {
+    s32 v;
+    if (TagTeam_Active() && nativeSharedActor >= 0 && gBtlCamView == &nativeViews[0].view)
+        return nativeSharedActor;
+    if(TagTeam_Active()) for(v=0;v<TagTeam_CameraCount();v++)
+        if(gBtlCamView==&nativeViews[v].view) return TagTeam_ViewActor(v);
+    return TagTeam_ViewActor(gBtlCam->cur->index);
+}
+
+BtlCamView *BtlCam_GetNativeView(s32 i) { return battle_view(i); }
+
+#ifdef PORT
+/* The network presents one camera without changing the canonical player cameras
+   used by input targeting or the simulated battle. Restore them before the
+   next vertical blank, so rewind snapshots never contain a spectator choice. */
+static BtlCamView onlineSavedView;
+static BtlCamView *onlineSavedCurrent;
+static View *onlineSavedMatrix;
+static s32 onlineSavedActor,onlineSavedSingle,onlineDrawing,onlineActor;
+static unsigned long long onlineSavedRandom,onlineDigest;
+/* Both of the game's random generators, around anything only this copy draws: the C library's (gPortRandNext) and
+   the game's Mersenne twister (gRandState: the HUD, cameras and effects draw from it while drawing, and the CPU
+   fighters decide with it). Only the first was put back before: each copy drew its own camera's HUD and effects,
+   used different numbers, and the CPUs then decided differently: games out of sync. */
+extern u32 gRandState[624];extern s32 gRandIndex;extern unsigned long long gPortRandNext;
+/* And the third: the VU0 R register's generator (Rand_Float01 / Rand_FloatRange, port/src/mathf_pc.c). Effects drawn
+   with this copy's camera step it; left as drawing found it, the next blank's particles came out with other lives
+   on each copy (a 2026-11-03 log: 7 more EftPart10_InitPtcl on one phone, then rand() apart: out of sync). */
+extern u32 gPortVu0R;
+static u32 onlineSavedVu0R,localSavedVu0R;
+static u32 onlineSavedMt[624];static s32 onlineSavedMtIndex;
+static u32 localSavedMt[624];static s32 localSavedMtIndex;static unsigned long long localSavedRandom;static s32 localSaved;
+void TagOnline_LocalDrawBegin(void) {
+    s32 i;
+    localSaved=TagNet_Active() && TagTeam_Active();
+    if(!localSaved)return;
+    localSavedRandom=gPortRandNext;localSavedMtIndex=gRandIndex;localSavedVu0R=gPortVu0R;
+    for(i=0;i<624;i++)localSavedMt[i]=gRandState[i];
+    { extern void TagNet_RandDrawing(int); TagNet_RandDrawing(1); }
+}
+void TagOnline_LocalDrawEnd(void) {
+    s32 i;
+    if(!localSaved)return;
+    gPortRandNext=localSavedRandom;gRandIndex=localSavedMtIndex;gPortVu0R=localSavedVu0R;
+    for(i=0;i<624;i++)gRandState[i]=localSavedMt[i];
+    { extern void TagNet_RandDrawing(int); TagNet_RandDrawing(0); }
+    localSaved=0;
+}
+extern unsigned long long gPortRandNext;
+extern s32 BtlScene_IsSingleView(void);
+extern void BtlScene_SetSingleView(s32);
+s32 TagOnline_PresentationActor(s32 fallback) { return onlineDrawing?onlineActor:fallback; }
+/* The fighter this copy's player controls (-1: none, a spectator): the battle's own control seat first (it follows
+   takeovers), else the room's owner list read the way Port_TagOnlineSetup assigns actors. Both are the same on every
+   copy of the match. Android: guests saw the host's fighter (view 0) instead of their own; this does not depend on
+   the published status or on the per-player camera seat having been filled. */
+static s32 online_own_actor(s32 role) {
+    TagNetConfig c;
+    s32 own=TagTeam_ControlActor(role),m,t,i,actor=0;
+    if(own>=0 && own<TagTeam_Count())return TagFusion_Owner(own);
+    TagNet_CopyConfig((u32)&c);
+    if(c.practice)return -1;
+    for(m=0;m<5;m++)for(t=0;t<2;t++)if(m<c.size[t]) {
+        i=(t?c.size[0]:0)+m;
+        if(c.owner[i]==role && !(c.party && c.mode==TL_GAUNTLET && t==1))return actor<TagTeam_Count()?TagFusion_Owner(actor):-1;
+        actor++;
+    }
+    return -1;
+}
+s32 TagOnline_BeginDraw(void) {
+    s32 actor,chosen,view=0,role=TagNet_Role(),i,t,m,own=-1,shared;
+    TagNetConfig c;
+    if(!TagNet_Active() || !TagTeam_Active())return 0;
+    if(role>=0 && role<TN_PLAYERS)own=online_own_actor(role);
+    /* A player whose own fighter is down follows the battle's spectator choice for that seat (a teammate). */
+    if(own>=0)actor=TagTeam_Spectating(role)?TagTeam_ViewActor(role):own;
+    else if(role>=0 && role<TN_PLAYERS && !TagNet_Observer())actor=TagTeam_ViewActor(role);
+    else {
+        TagNet_CopyConfig((u32)&c);chosen=TagNet_View();actor=0;
+        for(m=0;m<5;m++)for(t=0;t<2;t++)if(m<c.size[t]) {
+            i=(t?c.size[0]:0)+m;if(i==chosen)goto found;
+            actor++;
+        }
+        actor=0;
+found:  actor=TagFusion_Owner(actor);
+    }
+    { extern void DemoCam_DrawSave(void),TagNet_RandDrawing(int); DemoCam_DrawSave(); TagNet_RandDrawing(1); }
+    { extern unsigned long long TagOnline_Digest(void); onlineDigest=TagOnline_Digest(); }
+    onlineActor=actor;onlineSavedRandom=gPortRandNext;onlineSavedMtIndex=gRandIndex;onlineSavedVu0R=gPortVu0R;
+    for(i=0;i<624;i++)onlineSavedMt[i]=gRandState[i];
+    onlineSavedView=nativeViews[0];onlineSavedCurrent=gBtlCam->cur;onlineSavedMatrix=gBtlCamView;
+    /* The raw field, as EndDraw puts it back: BtlScene_IsSingleView() is 1 whenever the screen is not split (online
+       play), and writing that back set the battle's singleView after every drawn blank but not after re-run ones, so
+       the battle's state depended on which blanks were shown (from the Tag Team mod's 9b02e8c). */
+    onlineSavedActor=nativeSharedActor;onlineSavedSingle=gBtlScene->singleView;onlineDrawing=1;
+    /* One local viewport does not mean a shared cinematic. IsSingleView also returns true for ordinary online
+       gameplay, whose camera belongs to this client. Only an actual camera override (a move's shared camera, a demo
+       camera) replaces that view. */
+    shared=nativeSharedActor>=0 || DemoCam_IsActive();
+    { extern void TagNet_CameraNote(int,int,int,int,int,int,int);
+      TagNet_CameraNote(role,own,actor,shared,role>=0&&role<TN_PLAYERS?TagTeam_ViewActor(role):-1,onlineSavedSingle,BtlCam_GetPriorityView()); }
+    { extern void Port_TagViewTrace(s32,s32,s32,s32,s32,s32,s32);
+      Port_TagViewTrace(role,actor,TagTeam_ControlActor(role),TagTeam_CameraCount(),shared,nativeSharedActor,TagNet_IsPractice()); }
+    if(shared)nativeViews[0]=*gBtlCam->cur;
+    else {
+        for(i=0;i<TagTeam_CameraCount();i++)if(TagTeam_ViewActor(i)==actor){view=i;break;}
+        nativeViews[0]=nativeViews[view];
+        if(i==TagTeam_CameraCount()) {
+            chosen=TagTeam_CameraActor(actor);
+            BtlCharApi_GetCamPose(BattleSide_GetObjId(chosen),&nativeViews[0].pos,&nativeViews[0].rot);
+        }
+    }
+    nativeViews[0].index=0;BtlCam_SelectView(0);nativeSharedActor=actor;
+    if(!shared) {
+        BtlCam_SetLayout(0,1);
+        { extern s32 DemoCam_ApplyFighter(s32,View *,Vec4 *);
+          DemoCam_ApplyFighter(TagTeam_CameraActor(actor),&nativeViews[0].view,&nativeViews[0].pos); }
+    }
+    if(TagNet_Observer() && TagNet_FreeCamera((float *)&nativeViews[0].pos,(float *)&nativeViews[0].rot))BtlCam_SetLayout(0,1);
+    BtlScene_SetSingleView(1);BtlCam_ApplyView(1);
+    return 1;
+}
+void TagOnline_EndDraw(void) {
+    if(!onlineDrawing)return;
+    nativeViews[0]=onlineSavedView;gBtlCam->cur=onlineSavedCurrent;gBtlCamView=onlineSavedMatrix;
+    nativeSharedActor=onlineSavedActor;BtlScene_SetSingleView(onlineSavedSingle);View_Apply(gBtlCamView,0);onlineDrawing=0;
+    gPortRandNext=onlineSavedRandom;gRandIndex=onlineSavedMtIndex;gPortVu0R=onlineSavedVu0R;
+    { s32 k; for(k=0;k<624;k++)gRandState[k]=onlineSavedMt[k]; }
+    { extern void DemoCam_DrawRestore(void),TagNet_RandDrawing(int); DemoCam_DrawRestore(); TagNet_RandDrawing(0); }
+    { /* (the battle as drawing found it, and as it left it: the same, or the log says where it changed) */
+      extern unsigned long long TagOnline_Digest(void); extern void TagNet_DrawChanged(unsigned long long,unsigned long long);
+      unsigned long long after=TagOnline_Digest(); if(after!=onlineDigest)TagNet_DrawChanged(onlineDigest,after); }
+}
+#endif

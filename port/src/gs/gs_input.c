@@ -12,6 +12,9 @@
  * The sticks of a controller are passed through, or given a round deadzone first (stick_bytes, below). The pressure
  * bytes of the buffer are left at zero. The game's motor commands go to the player's controller (Port_PadVibrate).
  */
+#ifdef __ANDROID__
+#include <unistd.h>
+#endif
 #include <SDL3/SDL.h>
 #include <math.h>
 #include <pthread.h>
@@ -20,6 +23,7 @@
 #include <string.h>
 #include "gs_internal.h"
 #include "ui.h"
+#include "../../../include/menu/tag_controllers.h"
 
 int gPortOverlayOpen, gPortInputCapture, gPortChatTyping;
 
@@ -29,11 +33,13 @@ static volatile unsigned sTouchButtons;
 /* The buttons pressed since the pad was last read (Port_PadRead): a quick tap, down and up between two of the game's
    frames, still counts as one press (read as the buttons are now, it was lost: the menus seemed not to answer). */
 static unsigned sTouchTapped;
+static unsigned sTouchJoinTapped; /* (the same for the Tag Team mod's check-in, Port_TagControllersPoll: its own copy) */
 static volatile unsigned char sTouchStick[4] = {0x80, 0x80, 0x80, 0x80}; /* lx, ly, rx, ry */
 void Port_TouchPad(unsigned buttons, int lx, int ly, int rx, int ry) {
     unsigned now = buttons & 0xFFFF;
 
     __atomic_fetch_or(&sTouchTapped, now & ~sTouchButtons, __ATOMIC_ACQ_REL);
+    __atomic_fetch_or(&sTouchJoinTapped, now & ~sTouchButtons, __ATOMIC_ACQ_REL);
     sTouchButtons = now;
     sTouchStick[0] = (unsigned char)lx;
     sTouchStick[1] = (unsigned char)ly;
@@ -42,6 +48,35 @@ void Port_TouchPad(unsigned buttons, int lx, int ly, int rx, int ry) {
 }
 /* The on-screen controller's buttons as they are now (the bits below): a spectator's R1 changes the view (gs/ui.cpp). */
 unsigned Port_TouchButtons(void) { return sTouchButtons; }
+
+/* A tap on the screen that was not on a control of the on-screen controller (Android: TouchPadView), in window
+   pixels: the Tag Team mod's menus take it as a press of what was under it (gs/tag_net_ui.cpp, TagNet_MenuPointer). */
+static volatile int sTapX, sTapY;
+static volatile unsigned sTapSeq;
+static volatile Uint64 sTapAt;
+void Port_TouchTap(int x, int y) {
+    sTapX = x;
+    sTapY = y;
+    sTapAt = SDL_GetTicks();
+    __atomic_fetch_add(&sTapSeq, 1, __ATOMIC_ACQ_REL);
+}
+/* 1 and where, once per tap; a tap no menu took within a third of a second is dropped (one made in a fight must
+   not press the next menu's first row). */
+int Port_TouchTapTake(int *x, int *y) {
+    static unsigned seen;
+    unsigned seq = __atomic_load_n(&sTapSeq, __ATOMIC_ACQUIRE);
+
+    if (seq == seen) {
+        return 0;
+    }
+    seen = seq;
+    if (SDL_GetTicks() - sTapAt > 350) {
+        return 0;
+    }
+    *x = sTapX;
+    *y = sTapY;
+    return 1;
+}
 extern int Port_Setting(const char *name, int def); /* plat_settings.c */
 extern void Port_SettingSave(const char *name, int value), Port_SettingsWrite(void);
 
@@ -74,11 +109,11 @@ static const struct { const char *name, *label; unsigned bit; int key; int pad; 
     {"rs_left", "Right stick left", 0, 0, -1}, {"rs_right", "Right stick right", 0, 0, -1},
 };
 
-static int sKeys[2][PORT_ACTIONS], sPadBtn[2][PORT_PAD_BUTTONS], sPadSlot[2];
+static int sKeys[4][PORT_ACTIONS], sPadBtn[4][PORT_PAD_BUTTONS], sPadSlot[4];
 /* Per player: the deadzone of the left and of the right stick (-1 = the game's own, as the pad's bytes always were
    passed; 0..PORT_DEADZONE_MAX = a round one of that many percent, stick_bytes below), and vibration (on, strength
    in percent). */
-static int sDeadzone[2][2], sVib[2][2];
+static int sDeadzone[4][2], sVib[4][2];
 /* What opens and closes the settings window: a key (F1) and a controller button (none), both of the settings
    window's list; and START + SELECT of any controller together, always. */
 static int sOverlayKey = SDL_SCANCODE_F1, sOverlayPad = -1;
@@ -99,6 +134,9 @@ static void defaults(int player) {
         }
     }
     sPadSlot[player] = player;
+    if (player == 0 && getenv("BT3_TAG_TEAM") != NULL) {
+        sKeys[player][12] = SDL_SCANCODE_C; /* L3: native target cycling. */
+    }
     if (player == 1 && getenv("BT3_PAD_SHARED") != NULL) {
         sPadSlot[player] = 0; /* BT3_PAD_SHARED: both players on controller 1 (testing 1P vs 2P with one pad) */
     }
@@ -112,7 +150,7 @@ static int range(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; 
 static void load(void) {
     char name[32];
     int p, a;
-    for (p = 0; p < 2; p++) {
+    for (p = 0; p < 4; p++) {
         defaults(p);
         for (a = 0; a < PORT_ACTIONS; a++) {
             snprintf(name, sizeof(name), "key_p%d_%s", p + 1, kActions[a].name);
@@ -379,7 +417,7 @@ void PortInput_ResetDefaults(int player) { pthread_once(&sLoadOnce, load); defau
 void PortInput_Save(void) {
     char name[32];
     int p, a;
-    for (p = 0; p < 2; p++) {
+    for (p = 0; p < 4; p++) {
         for (a = 0; a < PORT_ACTIONS; a++) {
             snprintf(name, sizeof(name), "key_p%d_%s", p + 1, kActions[a].name);
             Port_SettingSave(name, sKeys[p][a]);
@@ -442,10 +480,24 @@ static void test_pad_axes(void) {
     }
 }
 
+static SDL_Joystick *sCheckPads[4];
+static SDL_JoystickID sCheckIds[4];
 static void test_pad(void) {
     SDL_VirtualJoystickDesc desc;
     SDL_JoystickID id;
 
+    if(getenv("BT3_TAG_CHECKIN_TEST")) {
+        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,"1");
+        for(int p=0;p<4;p++) {
+            SDL_INIT_INTERFACE(&desc);
+            desc.type=SDL_JOYSTICK_TYPE_GAMEPAD;
+            desc.naxes=SDL_GAMEPAD_AXIS_COUNT; desc.nbuttons=SDL_GAMEPAD_BUTTON_COUNT;
+            desc.name="Check-in test controller";
+            sCheckIds[p]=SDL_AttachVirtualJoystick(&desc);
+            sCheckPads[p]=SDL_OpenJoystick(sCheckIds[p]);
+        }
+        return;
+    }
     if (getenv("BT3_STICK_TEST") == NULL && getenv("BT3_RUMBLE_LOG") == NULL) {
         return;
     }
@@ -467,6 +519,27 @@ static void test_pad(void) {
 static struct { SDL_JoystickID id; SDL_Gamepad *pad; } sOpen[MAX_PADS];
 static SDL_JoystickID sIds[MAX_PADS];
 static int sIdCount, sInit;
+static TagControllerSeats sSeats, sSavedSeats;
+static int sSeatsActive,sSeatsSavedActive,sChecking;
+/* The on-screen controller in the Tag Team mod's check-in: a device of its own (START takes a seat, SELECT leaves it),
+   so one player on the touch screen and others on controllers can play together. Not an SDL device nor a keyboard
+   profile (those are > 0 and -1..-4). */
+#define TOUCH_SEAT (-100)
+static unsigned sJoinHeld[MAX_PADS+4];
+static int touch_socket(void) { /* the player the on-screen controller plays as */
+    if (sSeatsActive) {
+        for (int p = 0; p < sSeats.count; p++) if (sSeats.device[p] == TOUCH_SEAT) return p;
+    }
+    return 0;
+}
+static SDL_JoystickID sJoinIds[MAX_PADS];
+static SDL_Gamepad *pad_id(int id) {
+    int k;
+    if(id<=0) return NULL;
+    for(k=0;k<MAX_PADS;k++) if(sOpen[k].pad && sOpen[k].id==(SDL_JoystickID)id &&
+        SDL_GamepadConnected(sOpen[k].pad)) return sOpen[k].pad;
+    return NULL;
+}
 
 /* START + SELECT, polled once a frame (poll_events, gs_gpu.c), besides the events PortInput_Hotkey sees: it is the
    one way the on-screen controller can open the window (its buttons are not SDL events), and a physical pad whose
@@ -513,6 +586,7 @@ int PortInput_ComboPoll(void) {
 #define PAD_MAPPINGS "gamepad_mappings.txt"
 static volatile int sPadsStale; /* the list of controllers is read again at the next pads_refresh */
 
+static SDL_Mutex *sPadLock; /* (below, with the vibration's thread) */
 static void pads_refresh(void) {
     static unsigned calls;
     SDL_JoystickID *ids;
@@ -520,7 +594,19 @@ static void pads_refresh(void) {
 
     if (!sInit) {
         SDL_InitSubSystem(SDL_INIT_GAMEPAD);
+#ifdef __ANDROID__
+        {   /* (the current folder, written out whole: SDL opens a relative path inside the APK's assets, not where the
+                auto-setup below writes the file) */
+            char cwd[768], path[800];
+            if (getcwd(cwd, sizeof(cwd)) != NULL) {
+                snprintf(path, sizeof(path), "%s/%s", cwd, PAD_MAPPINGS);
+                SDL_AddGamepadMappingsFromFile(path); /* (none yet: -1, nothing added) */
+            }
+        }
+#else
         SDL_AddGamepadMappingsFromFile(PAD_MAPPINGS); /* (none yet: -1, nothing added) */
+#endif
+        sPadLock = SDL_CreateMutex();
         sInit = 1;
         test_pad();
     } else if (sPadsStale) {
@@ -541,8 +627,11 @@ static void pads_refresh(void) {
         for (i = 0; i < sIdCount && sIds[i] != sOpen[k].id; i++) {
         }
         if (sOpen[k].pad != NULL && i == sIdCount) {
+            fprintf(stderr, "bt3: controller gone: %s\n", SDL_GetGamepadName(sOpen[k].pad) != NULL ? SDL_GetGamepadName(sOpen[k].pad) : "?");
+            SDL_LockMutex(sPadLock); /* (not while the vibration's thread sends to it) */
             SDL_CloseGamepad(sOpen[k].pad);
             sOpen[k].pad = NULL;
+            SDL_UnlockMutex(sPadLock);
         }
     }
     for (i = 0; i < sIdCount; i++) { /* open the new ones */
@@ -552,18 +641,40 @@ static void pads_refresh(void) {
             for (k = 0; k < MAX_PADS && sOpen[k].pad != NULL; k++) {
             }
             if (k < MAX_PADS) {
+                Uint64 t0 = SDL_GetTicksNS();
                 sOpen[k].id = sIds[i];
                 sOpen[k].pad = SDL_OpenGamepad(sIds[i]);
+                if (sOpen[k].pad != NULL && !SDL_IsJoystickVirtual(sIds[i])) {
+                    /* (in the log: which controller, its link and battery, and how long opening it held the game) */
+                    int pct = -1;
+                    SDL_PowerState pw = SDL_GetGamepadPowerInfo(sOpen[k].pad, &pct);
+                    SDL_JoystickConnectionState c = SDL_GetGamepadConnectionState(sOpen[k].pad);
+                    fprintf(stderr, "bt3: controller added: %s (%04x:%04x, %s), battery %s %d%%, opened in %.1f ms\n",
+                            SDL_GetGamepadName(sOpen[k].pad) != NULL ? SDL_GetGamepadName(sOpen[k].pad) : "?", SDL_GetGamepadVendor(sOpen[k].pad),
+                            SDL_GetGamepadProduct(sOpen[k].pad),
+                            c == SDL_JOYSTICK_CONNECTION_WIRED ? "cable" : c == SDL_JOYSTICK_CONNECTION_WIRELESS ? "wireless" : "link unknown",
+                            pw == SDL_POWERSTATE_ON_BATTERY ? "on battery" : pw == SDL_POWERSTATE_CHARGING ? "charging" : pw == SDL_POWERSTATE_CHARGED ? "charged" :
+                            pw == SDL_POWERSTATE_NO_BATTERY ? "none" : "unknown", pct, (double)(SDL_GetTicksNS() - t0) / 1e6);
+                }
             }
         }
     }
     if (calls < 400) {
         test_pad_axes();
     }
+    if (calls % 240 == 0) { /* (about every two minutes: a controller that switches itself off on a low battery shows here) */
+        for (k = 0; k < MAX_PADS; k++) {
+            int pct = -1;
+            if (sOpen[k].pad != NULL && !SDL_IsJoystickVirtual(sOpen[k].id) && SDL_GetGamepadPowerInfo(sOpen[k].pad, &pct) == SDL_POWERSTATE_ON_BATTERY) {
+                fprintf(stderr, "bt3: controller %s: battery %d%%\n", SDL_GetGamepadName(sOpen[k].pad) != NULL ? SDL_GetGamepadName(sOpen[k].pad) : "?", pct);
+            }
+        }
+    }
 }
 
 static SDL_Gamepad *pad_of(int player) {
     int slot = sPadSlot[player], k;
+    if(sSeatsActive) return pad_id(sSeats.device[player]);
     if (slot < 0 || slot >= sIdCount) {
         return NULL;
     }
@@ -674,22 +785,182 @@ int PortInput_AutoConfigure(int player, char *name, int size) {
     return chosen;
 }
 
+/* Alt+Enter belongs to the window, even when input is sampled before its
+   queued event is handled. Keep Enter reserved if Alt is released first. */
+static int window_key(const bool *keys, int sc) {
+    static unsigned held;
+    unsigned bit = sc == SDL_SCANCODE_RETURN ? 1 : sc == SDL_SCANCODE_KP_ENTER ? 2 : 0;
+    if (sc == SDL_SCANCODE_F11) return 1;
+    if (!bit) return 0;
+    if (!keys[sc]) held &= ~bit;
+    else if (keys[SDL_SCANCODE_LALT] || keys[SDL_SCANCODE_RALT]) held |= bit;
+    return (held & bit) != 0;
+}
+
+static unsigned join_keys(int profile) {
+    const bool *keys=SDL_GetKeyboardState(NULL);
+    int start=sKeys[profile][14],back=sKeys[profile][15];
+    return (start>0&&start<SDL_SCANCODE_COUNT&&!window_key(keys,start)&&keys[start]?B_START:0) |
+        (back>0&&back<SDL_SCANCODE_COUNT&&!window_key(keys,back)&&keys[back]?B_SELECT:0);
+}
+static int join_key_unique(int profile) {
+    int i,key=sKeys[profile][14];
+    if(key<=0) return 0;
+    for(i=0;i<profile;i++) if(sKeys[i][14]==key) return 0;
+    return 1;
+}
+void Port_TagControllersBegin(int players) {
+    pthread_once(&sLoadOnce,load); pads_refresh();
+    sSavedSeats=sSeats; sSeatsSavedActive=sSeatsActive;
+    memset(&sSeats,0,sizeof(sSeats)); sSeats.count=range(players,1,4);
+    sChecking=1; sSeatsActive=0;
+    for(int k=0;k<MAX_PADS;k++) {
+        sJoinIds[k]=sOpen[k].id;
+        sJoinHeld[k]=sOpen[k].pad?
+            (SDL_GetGamepadButton(sOpen[k].pad,SDL_GAMEPAD_BUTTON_START)?B_START:0)|
+            (SDL_GetGamepadButton(sOpen[k].pad,SDL_GAMEPAD_BUTTON_BACK)?B_SELECT:0):0;
+    }
+    for(int k=0;k<4;k++) sJoinHeld[MAX_PADS+k]=join_keys(k);
+    __atomic_store_n(&sTouchJoinTapped,0u,__ATOMIC_RELEASE);
+}
+void Port_TagControllersPoll(void) {
+    if(!sChecking || gPortOverlayOpen || gPortInputCapture) return;
+    pads_refresh();
+    for(int k=0;k<MAX_PADS+4;k++) {
+        int id; unsigned held;
+        if(k<MAX_PADS) {
+            if(!sOpen[k].pad || !SDL_GamepadConnected(sOpen[k].pad)) continue;
+            id=(int)sOpen[k].id;
+            if(sJoinIds[k]!=sOpen[k].id) {sJoinIds[k]=sOpen[k].id;sJoinHeld[k]=0;}
+            held=(SDL_GetGamepadButton(sOpen[k].pad,SDL_GAMEPAD_BUTTON_START)?B_START:0)|
+                (SDL_GetGamepadButton(sOpen[k].pad,SDL_GAMEPAD_BUTTON_BACK)?B_SELECT:0);
+        } else {
+            int profile=k-MAX_PADS;
+            if(!join_key_unique(profile)) continue;
+            id=-1-profile; held=join_keys(profile);
+        }
+        unsigned pressed=held&~sJoinHeld[k]; sJoinHeld[k]=held;
+        if(pressed&B_SELECT) TagSeats_Leave(&sSeats,id);
+        else if(pressed&B_START) TagSeats_Join(&sSeats,id);
+    }
+    {   /* the on-screen controller: its taps since the last poll */
+        unsigned tapped=__atomic_exchange_n(&sTouchJoinTapped,0u,__ATOMIC_ACQ_REL);
+        if(tapped&B_SELECT) TagSeats_Leave(&sSeats,TOUCH_SEAT);
+        else if(tapped&B_START) TagSeats_Join(&sSeats,TOUCH_SEAT);
+    }
+    /* A disconnected seat becomes available for an explicit new check-in.
+       Nothing in an active match silently moves to a different controller. */
+    for(int p=0;p<sSeats.count;p++) if(sSeats.device[p]>0&&!pad_id(sSeats.device[p])) sSeats.device[p]=0;
+    sSeatsActive=sSeats.device[0]!=0;
+}
+int Port_TagControllersReady(int players) {
+    if(!sSeatsActive || players>sSeats.count) return 0;
+    for(int p=0;p<players;p++) {
+        int id=sSeats.device[p];
+        if(!id || (id>0&&!pad_id(id)) || (id<0&&id!=TOUCH_SEAT&&!join_key_unique(-id-1))) return 0;
+    }
+    return 1;
+}
+int Port_TagControllersCommit(void) {
+    if(!Port_TagControllersReady(sSeats.count)) return 0;
+    sChecking=0; sSwallow=2; sKeySwallow=1;
+    return 1;
+}
+void Port_TagControllersCancel(void) {
+    if(!sChecking) return;
+    sSeats=sSavedSeats; sSeatsActive=sSeatsSavedActive; sChecking=0;
+    sSwallow=2; sKeySwallow=1;
+}
+int Port_TagControllersActive(void) {return sChecking;}
+void Port_TagControllersName(int player,unsigned address,int capacity) {
+    char *out=(char *)(uintptr_t)address;
+    int id=sSeats.device[player];
+    const char *name=id>0&&pad_id(id)?SDL_GetGamepadName(pad_id(id)):NULL;
+    if(capacity<1) return;
+    if(!id) snprintf(out,capacity,"Press START to join");
+    else if(id==TOUCH_SEAT) snprintf(out,capacity,"Touch screen");
+    else if(id<0) snprintf(out,capacity,"Keyboard profile %d",-id);
+    else snprintf(out,capacity,"%s",name?name:"Disconnected - check in again");
+}
+/* Real SDL devices and the real packet reader, opt-in only. Tests shuffled
+   joins, duplicate claims, leaving, buttons, sticks, disconnect and cancel. */
+static void checkin_test(void) {
+    static int ran;
+    extern int Port_PadRead(int,unsigned char *);
+    extern void Port_TagTestCheck(int,int);
+    const int order[4]={2,0,3,1};
+    unsigned char data[18];
+    if(ran || !getenv("BT3_TAG_CHECKIN_TEST")) return;
+    ran=1;
+    Port_TagControllersBegin(4);
+    for(int p=0;p<4;p++) {
+        int source=order[p];
+        Port_TagTestCheck(sCheckPads[source]!=NULL,110+p);
+        SDL_SetJoystickVirtualButton(sCheckPads[source],SDL_GAMEPAD_BUTTON_START,true);
+        SDL_UpdateJoysticks(); Port_TagControllersPoll(); Port_TagControllersPoll();
+        Port_TagTestCheck(sSeats.device[p]==(int)sCheckIds[source],120+p);
+        Port_TagTestCheck(Port_TagControllersReady(4)==(p==3),130+p);
+        SDL_SetJoystickVirtualButton(sCheckPads[source],SDL_GAMEPAD_BUTTON_START,false);
+        SDL_UpdateJoysticks(); Port_TagControllersPoll();
+    }
+    SDL_SetJoystickVirtualButton(sCheckPads[0],SDL_GAMEPAD_BUTTON_BACK,true);
+    SDL_UpdateJoysticks(); Port_TagControllersPoll();
+    Port_TagTestCheck(sSeats.device[1]==0 && !Port_TagControllersCommit(),140);
+    SDL_SetJoystickVirtualButton(sCheckPads[0],SDL_GAMEPAD_BUTTON_BACK,false);
+    SDL_SetJoystickVirtualButton(sCheckPads[2],SDL_GAMEPAD_BUTTON_START,true);
+    SDL_UpdateJoysticks(); Port_TagControllersPoll();
+    Port_TagTestCheck(sSeats.device[1]==0,141);
+    SDL_SetJoystickVirtualButton(sCheckPads[2],SDL_GAMEPAD_BUTTON_START,false);
+    SDL_SetJoystickVirtualButton(sCheckPads[0],SDL_GAMEPAD_BUTTON_START,true);
+    SDL_UpdateJoysticks(); Port_TagControllersPoll();
+    SDL_SetJoystickVirtualButton(sCheckPads[0],SDL_GAMEPAD_BUTTON_START,false);
+    SDL_UpdateJoysticks(); Port_TagControllersPoll();
+    Port_TagTestCheck(Port_TagControllersCommit(),142);
+    Port_PadRead(0,data); /* let the commit buttons go */
+    for(int p=0;p<4;p++) {
+        int source=order[p];
+        SDL_SetJoystickVirtualButton(sCheckPads[source],SDL_GAMEPAD_BUTTON_NORTH,true);
+        SDL_SetJoystickVirtualAxis(sCheckPads[source],SDL_GAMEPAD_AXIS_LEFTX,32767);
+        SDL_UpdateJoysticks();
+        for(int k=0;k<4;k++) {
+            Port_PadRead(k,data);
+            unsigned held=(~(data[0]|data[1]<<8))&0xffff;
+            Port_TagTestCheck(((held&B_TRIANGLE)!=0)==(k==p),150+p*4+k);
+            Port_TagTestCheck((data[4]>240)==(k==p),170+p*4+k);
+        }
+        SDL_SetJoystickVirtualButton(sCheckPads[source],SDL_GAMEPAD_BUTTON_NORTH,false);
+        SDL_SetJoystickVirtualAxis(sCheckPads[source],SDL_GAMEPAD_AXIS_LEFTX,0);
+        SDL_UpdateJoysticks();
+    }
+    SDL_CloseJoystick(sCheckPads[0]); SDL_DetachVirtualJoystick(sCheckIds[0]); SDL_UpdateJoysticks();
+    Port_TagTestCheck(!Port_TagControllersReady(4)&&pad_of(1)==NULL&&pad_of(0)!=NULL,190);
+    Port_TagControllersBegin(2); Port_TagControllersCancel();
+    Port_TagTestCheck(sSeats.device[0]==(int)sCheckIds[2]&&sSeats.device[1]==(int)sCheckIds[0],191);
+    fprintf(stderr,"tagteam: SDL controller check-in and routing passed\n");
+    Port_TagTestCheck(1,99);
+}
+
 /* BT3_PAD="frame:button,frame:button,...": scripted presses for player 1, each held for 4 frames from that frame
    (frame = the renderer's frame counter). Buttons: start select up down left right cross circle square triangle
-   l1 r1 l2 r2. For tests without a person at the keyboard. */
-static unsigned script_buttons(void) {
+   l1 r1 l2 r2 l3 r3. For tests without a person at the keyboard. */
+static unsigned script_buttons(int socket) {
     static const struct { const char *name; unsigned bit; } names[] = {
         {"start", B_START}, {"select", B_SELECT}, {"up", B_UP}, {"down", B_DOWN}, {"left", B_LEFT}, {"right", B_RIGHT},
         {"cross", B_CROSS}, {"circle", B_CIRCLE}, {"square", B_SQUARE}, {"triangle", B_TRIANGLE}, {"l1", B_L1}, {"r1", B_R1},
-        {"l2", B_L2}, {"r2", B_R2},
+        {"l2", B_L2}, {"r2", B_R2}, {"l3", B_L3}, {"r3", B_R3},
     };
-    static struct { unsigned frame, bit; } ev[256];
-    static int count = -1;
+    static struct { unsigned frame, bit; } events[4][256];
+    static int counts[4] = {-1,-1,-1,-1};
+    int count=counts[socket];
+    __typeof__(events[0][0]) *ev=events[socket];
     unsigned btn = 0;
     int i;
 
     if (count < 0) {
-        const char *p = getenv("BT3_PAD");
+        static const char *const keys[] = {"BT3_PAD", "BT3_PAD_2", "BT3_PAD_3", "BT3_PAD_4"};
+        /* The renderer's getenv macro caches per call site; Port_GetEnv caches
+           by pointer. Each controller needs its own permanent key string. */
+        const char *p = Port_GetEnv(keys[socket]);
         count = 0;
         while (p != NULL && *p != 0 && count < 256) {
             char name[16];
@@ -709,6 +980,7 @@ static unsigned script_buttons(void) {
             if (*p == ',') { p++; }
         }
     }
+    counts[socket]=count;
     for (i = 0; i < count; i++) {
         if (gGsFrame >= ev[i].frame && gGsFrame < ev[i].frame + 4) {
             btn |= ev[i].bit;
@@ -779,10 +1051,17 @@ static void clash_square(int socket, unsigned *btn, unsigned char *lx, unsigned 
     extern void *BtlChar_FindByObjId(int objId); /* the game: the fighter of a side, NULL outside a fight */
     extern int BtlAct_GetCurrent(void *chr);     /* its action */
     extern int Port_NetActive(void), Port_NetMe(void);
-    static int dir[2], was[2], credit[2]; /* (credit: quarters of a point owed beyond the press's own) */
+    static int dir[4], was[4], credit[4]; /* (credit: quarters of a point owed beyond the press's own) */
     int side = Port_NetActive() ? Port_NetMe() : socket, in = 0, down = (*btn & B_SQUARE) != 0, extra = 0;
     void *chr;
 
+    extern int TagTeam_Active(void),TagNet_Enabled(void);
+    if (getenv("BT3_TAG_TEAM") && (TagTeam_Active() || TagNet_Enabled())) { /* (a normal match keeps Port_NetMe: its guest is fighter 1) */
+        extern int TagTeam_ViewActor(int),TagNet_Role(void);
+        int player=TagNet_Enabled()?TagNet_Role():socket;
+        if(TagNet_Enabled() && (player<0 || player>=10))return; /* Free camera input never assists a clash. */
+        side=TagTeam_ViewActor(player);
+    }
     if (!Port_ClashSquare()) {
         return;
     }
@@ -993,10 +1272,77 @@ static struct {
     Uint64 cost; /* the controller's longest call, ns (0: never slow) */
     int stalls;  /* its calls of RUMBLE_OFF_NS or more */
     int off;     /* the controller held the game up: nothing more is sent to it */
-} sRumble[2];
+    int offTold; /* (the notice for it said, on the game's thread) */
+} sRumble[4];
+
+/* The commands are sent by a thread of their own. A Sony controller on a phone's Bluetooth took 9-13 ms for each
+   (2026-11-02/03 logs, "fewer are sent"): on the game's thread that was a stall every few frames. The game's frame
+   only leaves the newest command in its player's box; the thread sends it. sPadLock keeps a controller from being
+   closed (pads_refresh) while the thread is sending to it. */
+static SDL_Semaphore *sRumbleSem;
+static SDL_SpinLock sRumbleBoxLock;
+static struct { SDL_JoystickID id; Uint16 low, high; Uint32 ms; int pending; } sRumbleBox[4];
+static int SDLCALL rumble_thread(void *unused) {
+    (void)unused;
+    for (;;) {
+        int p;
+        SDL_WaitSemaphore(sRumbleSem);
+        for (p = 0; p < 4; p++) {
+            SDL_JoystickID id;
+            Uint16 low, high;
+            Uint32 ms;
+            int have;
+            SDL_LockSpinlock(&sRumbleBoxLock);
+            have = sRumbleBox[p].pending;
+            id = sRumbleBox[p].id;
+            low = sRumbleBox[p].low;
+            high = sRumbleBox[p].high;
+            ms = sRumbleBox[p].ms;
+            sRumbleBox[p].pending = 0;
+            SDL_UnlockSpinlock(&sRumbleBoxLock);
+            if (!have) {
+                continue;
+            }
+            SDL_LockMutex(sPadLock);
+            {
+                SDL_Gamepad *g = SDL_GetGamepadFromID(id);
+                if (g != NULL) {
+                    Uint64 took = SDL_GetTicksNS();
+                    SDL_RumbleGamepad(g, low, high, ms);
+                    took = SDL_GetTicksNS() - took;
+                    if (took >= RUMBLE_OFF_NS && __atomic_add_fetch(&sRumble[p].stalls, 1, __ATOMIC_RELAXED) >= 2) {
+                        fprintf(stderr, "rumble: player %d's controller (%s) took %llu ms for a vibration command: vibration is off for it\n",
+                                p + 1, SDL_GetGamepadName(g) != NULL ? SDL_GetGamepadName(g) : "?", (unsigned long long)(took / 1000000));
+                        __atomic_store_n(&sRumble[p].off, 1, __ATOMIC_RELAXED);
+                    } else if (took >= RUMBLE_SLOW_NS && took > __atomic_load_n(&sRumble[p].cost, __ATOMIC_RELAXED)) {
+                        if (__atomic_load_n(&sRumble[p].cost, __ATOMIC_RELAXED) == 0) {
+                            fprintf(stderr, "rumble: player %d's controller (%s) took %.1f ms for a vibration command: fewer are sent "
+                                            "(by the vibration's own thread: the game does not wait)\n",
+                                    p + 1, SDL_GetGamepadName(g) != NULL ? SDL_GetGamepadName(g) : "?", (double)took / 1e6);
+                        }
+                        __atomic_store_n(&sRumble[p].cost, took, __ATOMIC_RELAXED);
+                    }
+                }
+            }
+            SDL_UnlockMutex(sPadLock);
+        }
+    }
+    return 0;
+}
+
+/* A Sony controller (PS4, PS5) without a cable: every command becomes output reports over Bluetooth (one per motor
+   on Android, each carrying the light bar too, and one more when its time runs out). Players' DualShock 4s switched
+   themselves off in matches while the phone still listed them as connected, a known way such links fail under many
+   reports; so these get one command per RUMBLE_SONY_MS at most, with the strength in four steps (the game's 50-100%
+   swing six times a second no longer makes a new command each time). */
+#define RUMBLE_SONY_MS 200
+static int rumble_sony_wireless(SDL_Gamepad *g) {
+    SDL_JoystickConnectionState c = SDL_GetGamepadConnectionState(g);
+    return SDL_GetGamepadVendor(g) == 0x054C && c != SDL_JOYSTICK_CONNECTION_WIRED;
+}
 
 static void rumble_send(int player, SDL_Gamepad *g, Uint16 low, Uint16 high, int why) {
-    Uint64 now = SDL_GetTicks(), gap, took;
+    Uint64 now = SDL_GetTicks(), gap;
     int ms = RUMBLE_MS;
 
     if (sRumble[player].pad != g && sRumble[player].pad != NULL && (sRumble[player].low | sRumble[player].high) != 0) {
@@ -1014,8 +1360,20 @@ static void rumble_send(int player, SDL_Gamepad *g, Uint16 low, Uint16 high, int
         sRumble[player].off = 0;
     }
     sRumble[player].pad = g;
-    if (sRumble[player].off) {
+    if (__atomic_load_n(&sRumble[player].off, __ATOMIC_RELAXED)) {
+        if (!sRumble[player].offTold) {
+            extern void Port_UiNotice(const char *text);
+            sRumble[player].offTold = 1;
+            Port_UiNotice("Vibration turned off: the controller held the game up");
+        }
         return;
+    }
+    if (g != NULL && rumble_sony_wireless(g)) {
+        low = (Uint16)(low >> 14 << 14 | (low >> 14 ? 0x3FFF : 0)); /* (four steps: 0, 1/4, 1/2, 3/4, full) */
+        if ((low | high) != 0 && (sRumble[player].low | sRumble[player].high) != 0 && now - sRumble[player].at < RUMBLE_SONY_MS) {
+            return;
+        }
+        ms = RUMBLE_SONY_MS + RUMBLE_MS;
     }
     if (sRumble[player].cost >= RUMBLE_SLOW_NS) { /* a slow controller: one command per ten times its longest call */
         gap = sRumble[player].cost * 10 / 1000000;
@@ -1038,21 +1396,25 @@ static void rumble_send(int player, SDL_Gamepad *g, Uint16 low, Uint16 high, int
                 (low | high) != 0 ? ms : 0, whys[why]);
     }
     if (g != NULL) {
-        took = SDL_GetTicksNS();
-        SDL_RumbleGamepad(g, low, high, (low | high) != 0 ? ms : 0);
-        took = SDL_GetTicksNS() - took;
-        if (took >= RUMBLE_OFF_NS && ++sRumble[player].stalls >= 2) {
-            extern void Port_UiNotice(const char *text);
-            sRumble[player].off = 1;
-            fprintf(stderr, "rumble: player %d's controller (%s) took %llu ms for a vibration command: vibration is off for it\n",
-                    player + 1, SDL_GetGamepadName(g) != NULL ? SDL_GetGamepadName(g) : "?", (unsigned long long)(took / 1000000));
-            Port_UiNotice("Vibration turned off: the controller held the game up");
-        } else if (took >= RUMBLE_SLOW_NS && took > sRumble[player].cost) {
-            if (sRumble[player].cost == 0) {
-                fprintf(stderr, "rumble: player %d's controller (%s) took %.1f ms for a vibration command: fewer are sent\n", player + 1,
-                        SDL_GetGamepadName(g) != NULL ? SDL_GetGamepadName(g) : "?", (double)took / 1e6);
+        static SDL_Thread *thread;
+        if (thread == NULL && sRumbleSem == NULL) {
+            sRumbleSem = SDL_CreateSemaphore(0);
+            thread = sRumbleSem != NULL && sPadLock != NULL ? SDL_CreateThread(rumble_thread, "bt3-rumble", NULL) : NULL;
+            if (thread != NULL) {
+                SDL_DetachThread(thread);
             }
-            sRumble[player].cost = took;
+        }
+        if (thread != NULL) {
+            SDL_LockSpinlock(&sRumbleBoxLock);
+            sRumbleBox[player].id = SDL_GetGamepadID(g);
+            sRumbleBox[player].low = low;
+            sRumbleBox[player].high = high;
+            sRumbleBox[player].ms = (low | high) != 0 ? (Uint32)ms : 0;
+            sRumbleBox[player].pending = 1;
+            SDL_UnlockSpinlock(&sRumbleBoxLock);
+            SDL_SignalSemaphore(sRumbleSem);
+        } else {
+            SDL_RumbleGamepad(g, low, high, (low | high) != 0 ? ms : 0); /* (no thread: as before, on this one) */
         }
     }
     sRumble[player].low = low;
@@ -1078,7 +1440,7 @@ void Port_PadVibrate(int socket, int small, int large) {
     int player = socket, why = 0;
     unsigned low, high;
 
-    if (!sInit || gPortResim || socket < 0 || socket > 1) {
+    if (!sInit || gPortResim || socket < 0 || socket > 9) {
         return;
     }
     if (Port_NetActive()) {
@@ -1088,6 +1450,7 @@ void Port_PadVibrate(int socket, int small, int large) {
         }
         player = 0;
     }
+    if(player>3)return;
     if (!atExit) {
         atExit = 1;
         atexit(rumble_stop);
@@ -1140,6 +1503,9 @@ void PortInput_Fresh(void) {
         return; /* (the window is the render thread's: it takes the events, every millisecond it waits: PortInput_Pump) */
     }
     SDL_PumpEvents();
+    const bool *keys = SDL_GetKeyboardState(NULL);
+    window_key(keys, SDL_SCANCODE_RETURN);
+    window_key(keys, SDL_SCANCODE_KP_ENTER);
 }
 
 /* The pads without this renderer (Budokai Tenkaichi 4 drawn by another one: port/bt4/host/bt4_main.cpp). */
@@ -1162,7 +1528,7 @@ static bool SDLCALL press_watch(void *unused, SDL_Event *ev) {
     return true;
 }
 static void press_age(int socket, unsigned btn) {
-    static unsigned prev[2];
+    static unsigned prev[4];
     static int on = -1;
     if (on < 0) {
         on = getenv("BT3_LAG_LOG") != NULL;
@@ -1190,11 +1556,12 @@ int Port_PadRead(int socket, unsigned char *data) {
     SDL_Gamepad *g;
     int a;
 
-    if ((!GsGpu_Enabled() && !gPortPadAlways) || socket < 0 || socket > 1) {
+    if ((!GsGpu_Enabled() && !gPortPadAlways) || socket < 0 || socket > 3) {
         return 0;
     }
     pthread_once(&sLoadOnce, load);
     pads_refresh();
+    checkin_test();
     if (sSwallow) { /* the buttons that opened or closed the settings window are not the game's (START would pause) */
         int k, b, held = 0;
         for (k = 0; k < MAX_PADS && sSwallow == 2; k++) { /* (2: whichever button it was) */
@@ -1230,7 +1597,7 @@ int Port_PadRead(int socket, unsigned char *data) {
     if (sKeySwallow) {
         const bool *ks = SDL_GetKeyboardState(NULL);
         int p, held = 0;
-        for (p = 0; p < 2; p++) {
+        for (p = 0; p < 4; p++) {
             for (a = 0; a < PORT_ACTIONS; a++) {
                 held = held || (sKeys[p][a] > 0 && sKeys[p][a] < SDL_SCANCODE_COUNT && ks[sKeys[p][a]]);
             }
@@ -1241,13 +1608,15 @@ int Port_PadRead(int socket, unsigned char *data) {
        controller still plays then) */
     if (!gPortOverlayOpen && !gPortChatTyping && !sKeySwallow) {
         const bool *ks = SDL_GetKeyboardState(NULL);
-        const int *k = sKeys[socket];
+        int keyProfile=sSeatsActive?sSeats.device[socket]<0&&sSeats.device[socket]>=-4?-sSeats.device[socket]-1:-1:socket;
+        static const int noKeys[PORT_ACTIONS]={0};
+        const int *k = keyProfile>=0?sKeys[keyProfile]:noKeys;
         for (a = 0; a < PORT_PAD_BUTTONS; a++) {
-            if (k[a] > 0 && k[a] < SDL_SCANCODE_COUNT && ks[k[a]] && !(gPortTboTyping && typing_key(k[a]))) {
+            if (k[a] > 0 && k[a] < SDL_SCANCODE_COUNT && !window_key(ks, k[a]) && ks[k[a]] && !(gPortTboTyping && typing_key(k[a]))) {
                 btn |= kActions[a].bit;
             }
         }
-#define HELD(n) (k[n] > 0 && k[n] < SDL_SCANCODE_COUNT && ks[k[n]] && !(gPortTboTyping && typing_key(k[n])))
+#define HELD(n) (k[n] > 0 && k[n] < SDL_SCANCODE_COUNT && !window_key(ks, k[n]) && ks[k[n]] && !(gPortTboTyping && typing_key(k[n])))
         if (HELD(16)) { ly = 0x00; }
         if (HELD(17)) { ly = 0xFF; }
         if (HELD(18)) { lx = 0x00; }
@@ -1258,9 +1627,9 @@ int Port_PadRead(int socket, unsigned char *data) {
         if (HELD(23)) { rx = 0xFF; }
 #undef HELD
     }
-    if (socket == 0) {
+    btn |= script_buttons(socket);
+    if (socket == touch_socket()) {
         unsigned touch = sTouchButtons | __atomic_exchange_n(&sTouchTapped, 0u, __ATOMIC_ACQ_REL); /* (taken even when unused) */
-        btn |= script_buttons();
         if (!gPortInputCapture) {
             btn |= sTouchSwallow ? (touch & ~0x0009u) : touch;
             if (sTouchStick[0] != 0x80 || sTouchStick[1] != 0x80) {
@@ -1273,9 +1642,10 @@ int Port_PadRead(int socket, unsigned char *data) {
             }
         }
     }
+    if (sChecking) btn &= ~(B_START | B_SELECT);
     if (socket == 0 && getenv("BT3_STICK_TEST") != NULL) { /* the numbers, once: what was read, what was passed, what the game has */
         static const char *const dirs[5] = {"-", "up", "down", "left", "right"};
-        extern unsigned char gPad[]; /* the game's (include/sys/pad.h): 0x130 left x, y, 0x138 right x, y, 0x148 held */
+        extern unsigned char gNativePad[]; /* the game's (include/sys/pad.h): 0x130 left x, y, 0x138 right x, y, 0x148 held */
         static int reads;
         if (++reads == 40 && g != NULL) {
             PortStickView v;
@@ -1290,13 +1660,29 @@ int Port_PadRead(int socket, unsigned char *data) {
         } else if (reads == 44) {
             float f[4];
             unsigned held;
-            memcpy(f, gPad + 0x130, sizeof(f));
-            memcpy(&held, gPad + 0x148, sizeof(held));
+            memcpy(f, gNativePad + 0x130, sizeof(f));
+            memcpy(&held, gNativePad + 0x148, sizeof(held));
             fprintf(stderr, "sticks: the game's pad 1 has left %+.4f %+.4f, right %+.4f %+.4f, held %08X\n", f[0], f[1], f[2], f[3], held);
         }
     }
     clash_square(socket, &btn, &lx, &ly);
     press_age(socket, btn);
+    {   /* A stick held still is read with a tremor (a finger on the touch stick moves a pixel or two, a controller's
+           stick a step): a value is kept until it moves by 4 of 255 (1.5%), or reaches the centre or an edge. Online
+           every tiny change was a new input the other players' copies had not guessed, so they went back and ran
+           those frames again (a 2026-11-02 log: 311 rollbacks in 2 minutes). The same in every mode. */
+        static unsigned char kept[4][4] = {{0x80, 0x80, 0x80, 0x80}, {0x80, 0x80, 0x80, 0x80}, {0x80, 0x80, 0x80, 0x80}, {0x80, 0x80, 0x80, 0x80}};
+        unsigned char *v[4] = {&rx, &ry, &lx, &ly};
+        int k;
+        for (k = 0; k < 4; k++) {
+            int d = (int)*v[k] - (int)kept[socket][k];
+            if (*v[k] == 0x80 || *v[k] == 0x00 || *v[k] == 0xFF || d >= 4 || d <= -4) {
+                kept[socket][k] = *v[k];
+            } else {
+                *v[k] = kept[socket][k];
+            }
+        }
+    }
     memset(data, 0, 18);
     data[0] = (unsigned char)(~btn & 0xFF);       /* active low */
     data[1] = (unsigned char)(~(btn >> 8) & 0xFF);

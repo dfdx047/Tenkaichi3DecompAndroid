@@ -13,6 +13,7 @@ import android.graphics.Shader
 import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.util.DisplayMetrics
 import android.view.HapticFeedbackConstants
@@ -125,7 +126,21 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
     private val safeHeight: Float
         get() = (height - safeInsetTopPx - safeInsetBottomPx).coerceAtLeast(1f)
 
+    /** A picture of the controller inside a page (the BT2 tab's preview), not the game's full screen: the display
+     * cutout is no concern of it. Its place on the screen changes as the page scrolls, and measuring the cutout
+     * against that place squeezed every control to the preview's edge. Off by default: the game's overlay and the
+     * layout editor keep the safe area as before. */
+    var ignoreCutout = false
+        set(v) {
+            if (field != v) { field = v; rebuild() }
+        }
+
     private fun updateSafeInsets(insets: WindowInsets? = rootWindowInsets) {
+        if (ignoreCutout) {
+            safeInsetLeftPx = 0f; safeInsetTopPx = 0f
+            safeInsetRightPx = 0f; safeInsetBottomPx = 0f
+            return
+        }
         if (insets == null) {
             if (!hasReceivedInsets) {
                 safeInsetLeftPx = 0f; safeInsetTopPx = 0f
@@ -232,12 +247,26 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
+        gradients.clear() // (every button moves and changes size: the old gradients are of no use)
         rebuild()
     }
 
     // ---- state
 
-    private class Track(var el: El?, val downX: Float, val downY: Float, var originX: Float, var originY: Float, var moved: Boolean = false)
+    private class Track(var el: El?, val downX: Float, val downY: Float, var originX: Float, var originY: Float, var moved: Boolean = false,
+                        val downAt: Long = SystemClock.uptimeMillis(), var floated: Boolean = false, var toggle: Boolean = false)
+
+    private val windowAt = IntArray(2)
+
+    /** A short touch that stayed put and was not on a control (or only woke the floating stick) is a tap on the
+     *  game's picture: the Tag Team menus press what is under it (TouchBridge.tap, in window pixels). */
+    private fun tapEnded(t: Track, x: Float, y: Float) {
+        if ((t.el != null && !t.floated) || t.toggle) return
+        if (SystemClock.uptimeMillis() - t.downAt > 450) return
+        if (hypot(x - t.downX, y - t.downY) > 18f * resources.displayMetrics.density) return
+        getLocationInWindow(windowAt)
+        TouchBridge.tap((x + windowAt[0]).toInt(), (y + windowAt[1]).toInt())
+    }
 
     private val tracks = HashMap<Int, Track>()
     private var dpadBits = 0
@@ -371,6 +400,7 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
         oneShotMask = 0
         tracks.clear()
         pressedEls.clear()
+        toggledOn.clear()
         dpadBits = 0
         lx = 128; ly = 128; rx = 128; ry = 128
         floatL = null
@@ -383,6 +413,7 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
     private fun recompute() {
         var b = dpadBits
         for (e in pressedEls) if (e.ctl != null) b = b or e.ctl.bit
+        for (e in toggledOn) if (e.ctl != null) b = b or e.ctl.bit
         macroMask = 0
         for (p in players.values) macroMask = macroMask or p.mask
         b = b or macroMask or oneShotMask
@@ -394,9 +425,10 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
         invalidate()
     }
 
-    private fun buzz() {
-        if (config.haptics) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-    }
+    private fun buzz() = TouchTuning.buzz(config, this)
+
+    /** Buttons held by a tap ([TouchConfig.toggles]): pressed until the next tap on them. */
+    private val toggledOn = HashSet<El>()
 
     // ---- touches
 
@@ -413,7 +445,10 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
             return false
         }
         if (hiddenForPad && !editing) {
-            if (ev.actionMasked == MotionEvent.ACTION_DOWN) hiddenForPad = false
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+                hiddenForPad = false
+                tracks[ev.getPointerId(0)] = Track(null, ev.x, ev.y, ev.x, ev.y) // (it may still be a tap on a menu: up)
+            }
             return true
         }
         if (editing) return editTouch(ev)
@@ -454,7 +489,7 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
         }
     }
 
-    private fun find(x: Float, y: Float, slack: Float = 1.12f, kinds: Set<CtlKind>? = null): El? {
+    private fun find(x: Float, y: Float, slack: Float = TouchTuning.slack(config), kinds: Set<CtlKind>? = null): El? {
         var best: El? = null
         var bestD = Float.MAX_VALUE
         for (e in els) {
@@ -472,13 +507,17 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
     private fun down(id: Int, x: Float, y: Float) {
         var e = find(x, y)
         val stickL = els.firstOrNull { it.ctl == Ctl.STICK_L }
-        if (e == null && config.sticksFloat && stickL != null && stickL.visible && x < width * 0.45f && y > height * 0.35f) {
+        val stickFree = stickL != null && isShownInCurrentMode(stickL) && tracks.values.none { it.el === stickL }
+        if (e == null && stickFree && TouchTuning.inStickZone(config, x, y, width.toFloat(), height.toFloat())) {
             e = stickL
             floatL = x to y
+        } else if (e === stickL && config.stickMode != StickMode.FIXED) {
+            floatL = x to y // (on the drawn stick too: its centre is where the thumb is, so it does not jump)
         }
         val t = Track(e, x, y, e?.cx ?: x, e?.cy ?: y)
         if (e === stickL && floatL != null) {
             t.originX = x; t.originY = y
+            t.floated = true
         }
         tracks[id] = t
         if (e == null) return
@@ -488,6 +527,11 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
                     // BT3's in-battle character switch is the L3+R3 chord, not L3 by itself.
                     buzz()
                     pulseTeamSwap()
+                } else if (e.ctl != null && e.ctl in config.toggles) {
+                    // a tap holds it, the next one lets go (Ki charge, guard...): the finger is free meanwhile
+                    if (!toggledOn.remove(e)) toggledOn += e
+                    t.el = null; t.toggle = true
+                    buzz(); recompute()
                 } else {
                     pressedEls += e; buzz(); recompute()
                 }
@@ -512,19 +556,21 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
     private fun move(id: Int, x: Float, y: Float) {
         val t = tracks[id] ?: return
         val e = t.el
+        val slideKinds = if (config.slideAll) SLIDE_ALL else SLIDE_FACE
         if (e == null) {
-            // a finger that landed between buttons and slides onto one presses it
-            val n = find(x, y, 1.0f, setOf(CtlKind.BUTTON))
+            // a finger that landed between buttons (or tapped a toggle) and slides onto one presses it
+            if (t.toggle || hypot(x - t.downX, y - t.downY) < 6f * dp) return
+            val n = find(x, y, 1.0f, slideKinds)?.takeIf { it.ctl == null || it.ctl !in config.toggles && it.ctl != Ctl.L3 }
             if (n != null) {
                 t.el = n; pressedEls += n; buzz(); recompute()
             }
             return
         }
         when (e.kind) {
-            CtlKind.BUTTON -> if (!e.hit(x, y, 1.25f)) {
-                // sliding across the face buttons: the one under the finger now
-                pressedEls -= e
-                val n = find(x, y, 1.0f, setOf(CtlKind.BUTTON))
+            CtlKind.BUTTON, CtlKind.SHOULDER, CtlKind.PILL -> if (e.kind in slideKinds && !e.hit(x, y, TouchTuning.slack(config) + 0.13f)) {
+                // sliding across the buttons: the one under the finger now (a toggle or the team swap is not slid onto)
+                if (tracks.values.none { it !== t && it.el === e }) pressedEls -= e
+                val n = find(x, y, 1.0f, slideKinds)?.takeIf { it.ctl == null || it.ctl !in config.toggles && it.ctl != Ctl.L3 }
                 t.el = n
                 if (n != null) {
                     pressedEls += n; buzz()
@@ -544,6 +590,7 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
 
     private fun up(id: Int, x: Float, y: Float) {
         val t = tracks.remove(id) ?: return
+        tapEnded(t, x, y)
         val e = t.el ?: return
         when (e.kind) {
             CtlKind.BUTTON, CtlKind.SHOULDER, CtlKind.PILL -> {
@@ -621,14 +668,11 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
 
     private fun stick(e: El, t: Track, x: Float, y: Float) {
         val r = e.w * 0.40f
-        var dx = (x - t.originX) / r
-        var dy = (y - t.originY) / r
-        val m = hypot(dx, dy)
-        if (m > 1f) {
-            dx /= m; dy /= m
+        if (e.kind == CtlKind.STICK_L) TouchTuning.follow(config, t.originX, t.originY, x, y, r)?.let { (ox, oy) ->
+            t.originX = ox; t.originY = oy
+            if (floatL != null || config.stickMode == StickMode.DYNAMIC) floatL = ox to oy // (drawn where it went)
         }
-        val vx = (128 + dx * 127).roundToInt().coerceIn(0, 255)
-        val vy = (128 + dy * 127).roundToInt().coerceIn(0, 255)
+        val (vx, vy) = TouchTuning.stickBytes(config, x - t.originX, y - t.originY, r)
         if (e.kind == CtlKind.STICK_L) {
             lx = vx; ly = vy
         } else {
@@ -777,7 +821,7 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
         for (e in els) {
             if (!isShownInCurrentMode(e)) continue
             val k = if (!e.visible) 0.3f else alpha * (e.opacity / 100f)
-            val pressed = e in pressedEls || (e.ctl == Ctl.L3 && oneShotMask != 0) ||
+            val pressed = e in pressedEls || e in toggledOn || (e.ctl == Ctl.L3 && oneShotMask != 0) ||
                 (e.kind == CtlKind.MACRO && e.macro?.let { players[it.id]?.held } == true)
             if (config.style == PadStyle.DRAGON) drawDragon(canvas, e, k, pressed) else drawEl(canvas, e, k, pressed)
             if (editing && e === selected) {
@@ -997,6 +1041,39 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
     // ---- the Dragon look (0.6.0, the default): dark round buttons lit from above, gold icons, coloured letters
 
     private val shade = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    /**
+     * The buttons' gradients, kept between redraws: a RadialGradient was made for every round button, pill and
+     * stick each time the pad was drawn (every touch). A gradient is the same object for the same centre, radius
+     * and two colours, so those five values are its key: a button moved or resized, another opacity, skin or
+     * pressed look gives other values and so another gradient, never a stale one. Used on the UI thread only (onDraw).
+     * At most [GRADIENTS_MAX], the least recently used let go first (a floating stick makes a new one per position);
+     * emptied when the view changes size or leaves the window.
+     */
+    private class GradKey(var x: Float = 0f, var y: Float = 0f, var r: Float = 0f, var c0: Int = 0, var c1: Int = 0) {
+        override fun equals(other: Any?) = other is GradKey && other.x.toBits() == x.toBits() && other.y.toBits() == y.toBits() &&
+            other.r.toBits() == r.toBits() && other.c0 == c0 && other.c1 == c1
+        override fun hashCode(): Int {
+            var h = x.toBits()
+            h = 31 * h + y.toBits()
+            h = 31 * h + r.toBits()
+            h = 31 * h + c0
+            return 31 * h + c1
+        }
+        fun copy() = GradKey(x, y, r, c0, c1)
+    }
+    private val gradProbe = GradKey() // (the lookup's key, reused: nothing is allocated when the gradient is kept)
+    private val gradients = object : LinkedHashMap<GradKey, RadialGradient>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<GradKey, RadialGradient>?) = size > GRADIENTS_MAX
+    }
+
+    private fun gradient(x: Float, y: Float, r: Float, c0: Int, c1: Int): RadialGradient {
+        val p = gradProbe
+        p.x = x; p.y = y; p.r = r; p.c0 = c0; p.c1 = c1
+        gradients[p]?.let { return it }
+        return RadialGradient(x, y, r, c0, c1, Shader.TileMode.CLAMP).also { gradients[p.copy()] = it }
+    }
+
     private val gold = Color.rgb(255, 199, 92)
     private val goldHot = Color.rgb(255, 226, 140)
     private val rim = Color.rgb(196, 188, 214)
@@ -1005,8 +1082,8 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
     private fun orb(c: Canvas, x: Float, y: Float, r: Float, k: Float, pressed: Boolean) {
         val light = if (pressed) Color.rgb(108, 92, 70) else Color.rgb(78, 72, 102)
         val dark = if (pressed) Color.rgb(40, 30, 22) else Color.rgb(20, 17, 32)
-        shade.shader = RadialGradient(x - r * 0.28f, y - r * 0.38f, r * 1.25f, a(Color.argb(238, Color.red(light), Color.green(light), Color.blue(light)), k),
-            a(Color.argb(238, Color.red(dark), Color.green(dark), Color.blue(dark)), k), Shader.TileMode.CLAMP)
+        shade.shader = gradient(x - r * 0.28f, y - r * 0.38f, r * 1.25f, a(Color.argb(238, Color.red(light), Color.green(light), Color.blue(light)), k),
+            a(Color.argb(238, Color.red(dark), Color.green(dark), Color.blue(dark)), k))
         c.drawCircle(x, y, r, shade)
         shade.shader = null
         stroke.color = a(if (pressed) goldHot else Color.argb(215, Color.red(rim), Color.green(rim), Color.blue(rim)), k)
@@ -1048,8 +1125,8 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
 
     /** The three-star Dragon Ball the stick is held by. */
     private fun dragonBall(c: Canvas, x: Float, y: Float, r: Float, k: Float, active: Boolean) {
-        shade.shader = RadialGradient(x - r * 0.3f, y - r * 0.35f, r * 1.3f, a(Color.rgb(255, 196, 96), k),
-            a(if (active) Color.rgb(232, 116, 22) else Color.rgb(206, 104, 28), k), Shader.TileMode.CLAMP)
+        shade.shader = gradient(x - r * 0.3f, y - r * 0.35f, r * 1.3f, a(Color.rgb(255, 196, 96), k),
+            a(if (active) Color.rgb(232, 116, 22) else Color.rgb(206, 104, 28), k))
         c.drawCircle(x, y, r, shade)
         shade.shader = null
         fill.color = a(Color.argb(90, 255, 255, 235), k)
@@ -1162,8 +1239,8 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
             CtlKind.PILL -> {
                 rect.set(e.cx - e.w / 2, e.cy - e.h / 2, e.cx + e.w / 2, e.cy + e.h / 2)
                 val rr = e.h / 2
-                shade.shader = RadialGradient(e.cx, e.cy - e.h * 0.4f, e.w * 0.7f, a(Color.argb(235, 78, 72, 102), k),
-                    a(Color.argb(235, 20, 17, 32), k), Shader.TileMode.CLAMP)
+                shade.shader = gradient(e.cx, e.cy - e.h * 0.4f, e.w * 0.7f, a(Color.argb(235, 78, 72, 102), k),
+                    a(Color.argb(235, 20, 17, 32), k))
                 c.drawRoundRect(rect, rr, rr, shade)
                 shade.shader = null
                 stroke.color = a(if (pressed) goldHot else Color.argb(215, Color.red(rim), Color.green(rim), Color.blue(rim)), k)
@@ -1202,8 +1279,8 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
                 val (sx, sy) = if (e.kind == CtlKind.STICK_L) lx to ly else rx to ry
                 val (ox, oy) = if (e.kind == CtlKind.STICK_L) (floatL ?: (e.cx to e.cy)) else (e.cx to e.cy)
                 val r = e.w / 2f
-                shade.shader = RadialGradient(ox, oy - r * 0.25f, r * 1.1f, a(Color.argb(225, 74, 68, 98), k),
-                    a(Color.argb(225, 22, 18, 34), k), Shader.TileMode.CLAMP)
+                shade.shader = gradient(ox, oy - r * 0.25f, r * 1.1f, a(Color.argb(225, 74, 68, 98), k),
+                    a(Color.argb(225, 22, 18, 34), k))
                 c.drawCircle(ox, oy, r, shade)
                 shade.shader = null
                 stroke.color = a(Color.argb(220, Color.red(rim), Color.green(rim), Color.blue(rim)), k)
@@ -1614,9 +1691,17 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
         players.values.forEach { it.cancel() }
         handler.removeCallbacksAndMessages(null)
         oneShotMask = 0
+        gradients.clear() // (the shaders' native memory goes with the view)
     }
 
     companion object {
+        /** What a sliding finger presses: the face buttons; with [TouchConfig.slideAll] the shoulders and Start/Select too. */
+        private val SLIDE_FACE = setOf(CtlKind.BUTTON)
+        private val SLIDE_ALL = setOf(CtlKind.BUTTON, CtlKind.SHOULDER, CtlKind.PILL)
+
+        /** Gradients kept at most (see [gradient]): every button twice (pressed or not) with room to spare. */
+        private const val GRADIENTS_MAX = 64
+
         /** The label a control shows in each console's look. Positions stay the PS2's: south is cross. */
         fun faceLabel(skin: PadSkin, c: Ctl): String = when (skin) {
             PadSkin.PLAYSTATION -> when (c) {

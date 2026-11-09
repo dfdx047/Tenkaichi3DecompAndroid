@@ -619,9 +619,9 @@ void BtlPartner_HandleEvents(FxObj *obj, FxChr *chr) {
     }
     BtlFxObj_HandleFlagEvents(obj);
     BtlFxObj_PlayEventSounds(obj);
-    sound = 0xCC32;
+    sound = DISC_RESOURCE(0xCC32, 0x16E6A);
     if (!(gSaveData->flags & 1)) {
-        sound = 0x8D4E;
+        sound = DISC_RESOURCE(0x8D4E, 0x10CC2);
     }
     kind = -1;
     mask = -1;

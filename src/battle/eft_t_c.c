@@ -398,10 +398,12 @@ void EftShotFx_DrawLines(void) {
     EftUMtx mtx;
     Vec4 quad[4];
     EftShotFxLine *p;
+    s32 lite = 0;
 
     Mtx_Copy((Mtx44 *)&mtx, &gBtlCamView->world2screen);
     for (p = gEftShotFx->head; p != NULL; p = p->next) {
         if (p->flags & EFT_SHOTFX_LINE_ACTIVE) {
+            { extern int Port_TagKiLess(void); if (Port_TagKiLess() && (lite++ & 1)) continue; }
             EftShotFx_BuildQuad(quad, p);
             EftShotFx_DrawQuad(quad, mtx, 0, 0, 0, (u32)p->alpha, &gEftShotFx->tex[p->tex].tex0, p->blend);
         }

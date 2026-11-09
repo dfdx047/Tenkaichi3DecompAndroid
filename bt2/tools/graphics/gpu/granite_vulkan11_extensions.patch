@@ -1,0 +1,96 @@
+diff --git a/vulkan/context.cpp b/vulkan/context.cpp
+index ded8cabc..66e7e7dc 100644
+--- a/vulkan/context.cpp
++++ b/vulkan/context.cpp
+@@ -1534,6 +1534,33 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
+ 			ADD_CHAIN(ext.storage_8bit_features, 8BIT_STORAGE_FEATURES_KHR);
+ 			enabled_extensions.push_back(VK_KHR_8BIT_STORAGE_EXTENSION_NAME);
+ 		}
++
++		// Vulkan 1.1 drivers that have the 1.2 features paraLLEl-GS needs as extensions (older Adreno drivers).
++		if (has_extension(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME))
++		{
++			ADD_CHAIN(ext.timeline_semaphore_features, TIMELINE_SEMAPHORE_FEATURES_KHR);
++			enabled_extensions.push_back(VK_KHR_TIMELINE_SEMAPHORE_EXTENSION_NAME);
++		}
++
++		if (has_extension(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME))
++		{
++			if (has_extension(VK_KHR_MAINTENANCE_3_EXTENSION_NAME))
++				enabled_extensions.push_back(VK_KHR_MAINTENANCE_3_EXTENSION_NAME);
++			ADD_CHAIN(ext.descriptor_indexing_features, DESCRIPTOR_INDEXING_FEATURES_EXT);
++			enabled_extensions.push_back(VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME);
++		}
++
++		if (has_extension(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME))
++		{
++			ADD_CHAIN(ext.buffer_device_address_features, BUFFER_DEVICE_ADDRESS_FEATURES_KHR);
++			enabled_extensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
++		}
++
++		if (has_extension(VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME))
++		{
++			ADD_CHAIN(ext.scalar_block_layout_features, SCALAR_BLOCK_LAYOUT_FEATURES_EXT);
++			enabled_extensions.push_back(VK_EXT_SCALAR_BLOCK_LAYOUT_EXTENSION_NAME);
++		}
+ 	}
+ 
+ 	if (ext.device_api_core_version >= VK_API_VERSION_1_3)
+@@ -1898,6 +1925,31 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
+ 	if (ext.storage_8bit_features.uniformAndStorageBuffer8BitAccess)
+ 		ext.vk12_features.uniformAndStorageBuffer8BitAccess = VK_TRUE;
+ 
++	if (ext.timeline_semaphore_features.timelineSemaphore)
++		ext.vk12_features.timelineSemaphore = VK_TRUE;
++	if (ext.buffer_device_address_features.bufferDeviceAddress)
++		ext.vk12_features.bufferDeviceAddress = VK_TRUE;
++	ext.buffer_device_address_features.bufferDeviceAddressCaptureReplay = VK_FALSE;
++	ext.buffer_device_address_features.bufferDeviceAddressMultiDevice = VK_FALSE;
++	if (ext.scalar_block_layout_features.scalarBlockLayout)
++		ext.vk12_features.scalarBlockLayout = VK_TRUE;
++	{
++		// Vulkan 1.2's descriptorIndexing stands for the extension with its required features.
++		const auto &di = ext.descriptor_indexing_features;
++		if (di.shaderSampledImageArrayNonUniformIndexing && di.runtimeDescriptorArray &&
++		    di.descriptorBindingPartiallyBound && di.descriptorBindingVariableDescriptorCount &&
++		    di.descriptorBindingSampledImageUpdateAfterBind && di.descriptorBindingUpdateUnusedWhilePending)
++		{
++			ext.vk12_features.descriptorIndexing = VK_TRUE;
++			ext.vk12_features.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
++			ext.vk12_features.runtimeDescriptorArray = VK_TRUE;
++			ext.vk12_features.descriptorBindingPartiallyBound = VK_TRUE;
++			ext.vk12_features.descriptorBindingVariableDescriptorCount = VK_TRUE;
++			ext.vk12_features.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
++			ext.vk12_features.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
++		}
++	}
++
+ 	if (ext.float16_int8_features.shaderFloat16)
+ 		ext.vk12_features.shaderFloat16 = VK_TRUE;
+ 	if (ext.float16_int8_features.shaderInt8)
+@@ -2234,6 +2286,10 @@ bool Context::create_device(VkPhysicalDevice gpu_, VkSurfaceKHR surface,
+ 	PROMOTE_CALL(CmdWaitEvents2, KHR);
+ 	PROMOTE_CALL(ResetQueryPool, EXT);
+ 	PROMOTE_CALL(CmdPushDescriptorSetWithTemplate, KHR);
++	PROMOTE_CALL(WaitSemaphores, KHR);
++	PROMOTE_CALL(SignalSemaphore, KHR);
++	PROMOTE_CALL(GetSemaphoreCounterValue, KHR);
++	PROMOTE_CALL(GetBufferDeviceAddress, KHR);
+ #undef PROMOTE_CALL
+ 
+ 	for (int i = 0; i < QUEUE_INDEX_COUNT; i++)
+diff --git a/vulkan/context.hpp b/vulkan/context.hpp
+index 28b36fca..2f340049 100644
+--- a/vulkan/context.hpp
++++ b/vulkan/context.hpp
+@@ -155,6 +155,10 @@ struct DeviceFeatures
+ 	// Fallback feature structs (Vulkan 1.2)
+ 	VkPhysicalDeviceFloat16Int8FeaturesKHR float16_int8_features = {};
+ 	VkPhysicalDevice8BitStorageFeaturesKHR storage_8bit_features = {};
++	VkPhysicalDeviceTimelineSemaphoreFeaturesKHR timeline_semaphore_features = {};
++	VkPhysicalDeviceDescriptorIndexingFeaturesEXT descriptor_indexing_features = {};
++	VkPhysicalDeviceBufferDeviceAddressFeaturesKHR buffer_device_address_features = {};
++	VkPhysicalDeviceScalarBlockLayoutFeaturesEXT scalar_block_layout_features = {};
+ 	// Fallback feature structs (Vulkan 1.3)
+ 	VkPhysicalDeviceSubgroupSizeControlFeatures subgroup_size_control_features = {};
+ 	VkPhysicalDeviceSynchronization2Features sync2_features = {};

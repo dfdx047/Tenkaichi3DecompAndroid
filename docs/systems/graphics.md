@@ -123,7 +123,7 @@ see netplay_notes.md.
 
 ## Text printer and button icons (`col_c.c`, `col_c_b.c`, 0x239EA0..0x23D1E8; verified unless marked)
 
-122 of 124 functions matched when first reported; linked since (docs/open_questions.md lists what is still assembly). The source file really starts at
+122 of 124 functions matched when first reported; linked since ([upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md) lists what is still assembly). The source file really starts at
 0x239BB0 (five helpers at the end of the neighbouring col_b file). Drawing only: no random
 draws, no pad, camera or sound input.
 

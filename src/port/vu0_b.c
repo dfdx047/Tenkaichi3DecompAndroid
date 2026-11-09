@@ -1120,15 +1120,46 @@ void Ref_Vec4_Swap(RefVec4f *a, RefVec4f *b) {
     *a = tb;
 }
 
+/* Four components at once for the Vec4 / Vec3 routines below. The port: one call into port/src/plat_fastvec.c
+   with the same results component by component as f_add / f_sub / f_mul. A Vec3 routine works
+   out the w component too and keeps the input's (each component is done on its own: w changes nothing else). */
+#if defined(REF_VU0_EXTERN_ARITH) && defined(SF_FAST_CALLS) && !defined(REF_VU0_B_STANDALONE)
+#define VEC_FOUR 1
+extern void Port_Vu0Add4(const uint32_t *a, const uint32_t *b, uint32_t *out);
+extern void Port_Vu0Mul4(const uint32_t *a, const uint32_t *b, uint32_t *out);
+static void four(int op, RefVec4f *va, RefVec4f vb, int n) { /* op 0 add, 1 sub, 2 multiply; n: components kept */
+    uint32_t a[4], b[4], r[4];
+    int i;
+
+    memcpy(a, va, 16);
+    memcpy(b, &vb, 16);
+    if (op == 1) {
+        for (i = 0; i < 4; i++) {
+            b[i] ^= 0x80000000u;
+        }
+    }
+    (op == 2 ? Port_Vu0Mul4 : Port_Vu0Add4)(a, b, r);
+    memcpy(va, r, (size_t)n * 4);
+}
+static RefVec4f splat(float s) {
+    RefVec4f v = {s, s, s, s};
+    return v;
+}
+#endif
+
 /* 0x121EA8 Vec4_Add: lqc2 vf4, a / lqc2 vf5, b / vadd.xyzw vf4, vf4, vf5 / sqc2 vf4. Four components. */
 void Ref_Vec4_Add(RefVec4f *out, const RefVec4f *a, const RefVec4f *b) {
     RefVec4f va = *a;
     RefVec4f vb = *b;
 
+#ifdef VEC_FOUR
+    four(0, &va, vb, 4);
+#else
     va.x = f_add(va.x, vb.x);
     va.y = f_add(va.y, vb.y);
     va.z = f_add(va.z, vb.z);
     va.w = f_add(va.w, vb.w);
+#endif
     *out = va;
 }
 
@@ -1137,9 +1168,13 @@ void Ref_Vec3_Add(RefVec4f *out, const RefVec4f *a, const RefVec4f *b) {
     RefVec4f va = *a;
     RefVec4f vb = *b;
 
+#ifdef VEC_FOUR
+    four(0, &va, vb, 3);
+#else
     va.x = f_add(va.x, vb.x);
     va.y = f_add(va.y, vb.y);
     va.z = f_add(va.z, vb.z);
+#endif
     *out = va;
 }
 
@@ -1148,10 +1183,14 @@ void Ref_Vec4_Sub(RefVec4f *out, const RefVec4f *a, const RefVec4f *b) {
     RefVec4f va = *a;
     RefVec4f vb = *b;
 
+#ifdef VEC_FOUR
+    four(1, &va, vb, 4);
+#else
     va.x = f_sub(va.x, vb.x);
     va.y = f_sub(va.y, vb.y);
     va.z = f_sub(va.z, vb.z);
     va.w = f_sub(va.w, vb.w);
+#endif
     *out = va;
 }
 
@@ -1160,9 +1199,13 @@ void Ref_Vec3_Sub(RefVec4f *out, const RefVec4f *a, const RefVec4f *b) {
     RefVec4f va = *a;
     RefVec4f vb = *b;
 
+#ifdef VEC_FOUR
+    four(1, &va, vb, 3);
+#else
     va.x = f_sub(va.x, vb.x);
     va.y = f_sub(va.y, vb.y);
     va.z = f_sub(va.z, vb.z);
+#endif
     *out = va;
 }
 
@@ -1171,10 +1214,14 @@ void Ref_Vec4_Mul(RefVec4f *out, const RefVec4f *a, const RefVec4f *b) {
     RefVec4f va = *a;
     RefVec4f vb = *b;
 
+#ifdef VEC_FOUR
+    four(2, &va, vb, 4);
+#else
     va.x = f_mul(va.x, vb.x);
     va.y = f_mul(va.y, vb.y);
     va.z = f_mul(va.z, vb.z);
     va.w = f_mul(va.w, vb.w);
+#endif
     *out = va;
 }
 
@@ -1183,9 +1230,13 @@ void Ref_Vec3_Mul(RefVec4f *out, const RefVec4f *a, const RefVec4f *b) {
     RefVec4f va = *a;
     RefVec4f vb = *b;
 
+#ifdef VEC_FOUR
+    four(2, &va, vb, 3);
+#else
     va.x = f_mul(va.x, vb.x);
     va.y = f_mul(va.y, vb.y);
     va.z = f_mul(va.z, vb.z);
+#endif
     *out = va;
 }
 
@@ -1193,10 +1244,14 @@ void Ref_Vec3_Mul(RefVec4f *out, const RefVec4f *a, const RefVec4f *b) {
 void Ref_Vec4_Scale(RefVec4f *out, const RefVec4f *v, float s) {
     RefVec4f va = *v;
 
+#ifdef VEC_FOUR
+    four(2, &va, splat(s), 4);
+#else
     va.x = f_mul(va.x, s);
     va.y = f_mul(va.y, s);
     va.z = f_mul(va.z, s);
     va.w = f_mul(va.w, s);
+#endif
     *out = va;
 }
 
@@ -1204,9 +1259,13 @@ void Ref_Vec4_Scale(RefVec4f *out, const RefVec4f *v, float s) {
 void Ref_Vec3_Scale(RefVec4f *out, const RefVec4f *v, float s) {
     RefVec4f va = *v;
 
+#ifdef VEC_FOUR
+    four(2, &va, splat(s), 3);
+#else
     va.x = f_mul(va.x, s);
     va.y = f_mul(va.y, s);
     va.z = f_mul(va.z, s);
+#endif
     *out = va;
 }
 
@@ -1219,10 +1278,14 @@ void Ref_Vec4_Div(RefVec4f *out, const RefVec4f *v, float d) {
     RefVec4f va = *v;
     float q = f_div(VF0W, d);
 
+#ifdef VEC_FOUR
+    four(2, &va, splat(q), 4);
+#else
     va.x = f_mul(va.x, q);
     va.y = f_mul(va.y, q);
     va.z = f_mul(va.z, q);
     va.w = f_mul(va.w, q);
+#endif
     *out = va;
 }
 
@@ -1231,9 +1294,13 @@ void Ref_Vec3_Div(RefVec4f *out, const RefVec4f *v, float d) {
     RefVec4f va = *v;
     float q = f_div(VF0W, d);
 
+#ifdef VEC_FOUR
+    four(2, &va, splat(q), 3);
+#else
     va.x = f_mul(va.x, q);
     va.y = f_mul(va.y, q);
     va.z = f_mul(va.z, q);
+#endif
     *out = va;
 }
 

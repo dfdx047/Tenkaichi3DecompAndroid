@@ -15,6 +15,9 @@ class IsoImage(private val channel: FileChannel) : Closeable {
 
     val files = mutableListOf<Entry>()
 
+    /** The whole image's length in bytes. */
+    val size: Long get() = channel.size()
+
     init {
         val pvd = read(16L * SECTOR, SECTOR)
         if (pvd[0].toInt() != 1 || String(pvd, 1, 5, Charsets.US_ASCII) != "CD001") {

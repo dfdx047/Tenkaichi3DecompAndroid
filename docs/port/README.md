@@ -37,7 +37,7 @@ Verified by running the tools below:
 
 - 32-bit host build first (`-m32`): the game stores pointers in 32-bit fields everywhere.
   A 64-bit build (needed for Android) is a later clean-up, not a blocker for validation.
-- First milestone (docs/roadmap.md stage 2): the fight simulation headless, fed by a replay
+- First milestone ([upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/roadmap.md) stage 2): the fight simulation headless, fed by a replay
   recorded on the original, compared frame by frame.
 
 ## State at the end of 2026-10-05
@@ -233,7 +233,7 @@ differently from the assumption, an instruction the original uses where our C co
 something else (multiply-add, the FPU square root's handling of edge cases), or a logic
 difference that only shows in the last bits.
 The decisive tool would be a small PS2 test program run in PCSX2 that prints the result bits
-of every operation class for fixed inputs (the maths harness planned in docs/roadmap.md).
+of every operation class for fixed inputs (the maths harness planned in [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/roadmap.md)).
 
 ## The replay reproduces the console's fight (2026-10-05, evening)
 
@@ -2949,7 +2949,7 @@ is noticed.
 Changed on top of the pull request, so that nothing of it reaches the Linux and Windows builds:
 
 - `AGENTS.md` (instructions to coding agents, written by the contributor) is not taken. What it said is in this
-  file, `docs/agent_rules.md` and `docs/port/macos_plan.md`.
+  file, [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/agent_rules.md) and `docs/port/macos_plan.md`.
 - The shared build tools: what was changed for every build now applies to the macOS build alone. `eeconst.py`
   (a float after `introduced=`, `deprecated=`, `obsoleted=` left as text: only with `BT3_CC=mac64`),
   `ptr32.py` (a cursor kind the Python bindings do not know taken for an attribute: only on macOS; elsewhere it

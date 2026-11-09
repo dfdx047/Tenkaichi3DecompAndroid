@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the debug builds (the test APKs): the development copy of the matchmaking service runs on the developer's
+     computer and the phone reaches it as http://127.0.0.1:8787 through `adb reverse` (bt2/tools/dev_server). The
+     release APK has none of this: its traffic is https only. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:networkSecurityConfig="@xml/bt2_dev_network" />
+</manifest>

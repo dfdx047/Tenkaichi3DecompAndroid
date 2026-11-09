@@ -3,7 +3,11 @@
 
 #include "types.h"
 
+#ifdef PORT
+#define BTL_POOL_SLOT_COUNT (5 + 2*PORT_FIGHTER_CAPACITY)
+#else
 #define BTL_POOL_SLOT_COUNT 9
+#endif
 /* Bit in BtlPool.arenaMask saying that a slot is a bump arena. */
 #define BTL_POOL_ARENA_BIT(slot) (1 << ((slot) + 1)) /* arenaMask is unsigned: a signed mask compiles to srav/andi */
 

@@ -731,7 +731,7 @@ s32 Option_Input(void) {
             gOption->cursor = OPT_ITEM_BGM;
             Flash_GotoLabel(&gOption->flash[0], "fl_bgm_cansel", 1);
             OPT_PLATE(OPT_CLIP_ROW_SOUND, "fl_on_start");
-            Bgm_Play(0x10B18);
+            Bgm_Play(DISC_RESOURCE(0x10B18, 0x83E));
             Snd_PlaySe(1, 2);
             OPT_VOICE(17);
         }

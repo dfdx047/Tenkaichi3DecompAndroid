@@ -23,6 +23,8 @@
 #include <SDL3/SDL.h>   /* the one window both back ends share */
 #include "gs_internal.h"
 #include "gs_draw.h"
+#include "../../../include/battle/tag_options.h"
+#include "../../../include/battle/tag_view_layout.h"
 #include "ui.h"         /* PortVideo and the window helpers */
 #include "gs_texpack.h" /* texture packs (replacement textures) */
 #include "menu_text.h"  /* editable labels in the original menu texture slots */
@@ -47,6 +49,8 @@ extern unsigned long long Port_BlankNs(void); /* plat_stub.c: 16.68 ms, less in 
 extern int Port_AspectMilli(void);
 extern void Port_SetAspectMilli(int milli), Port_AudioRefresh(void), Port_SettingsWrite(void);
 extern int gPortMenuMode;       /* headless.c: the menus are running */
+int gsChipUp;                   /* markers 0x26, 0x27 */
+int gsWhole2D;                  /* markers 0x24, 0x25: the 2D being drawn is not narrowed in a wide picture */
 extern int Port_PageAspectMilli(void); /* plat_stub.c: the shape of the page shown now (4:3 in the menus if asked for) */
 extern int gPortMusicPercent, gPortSePercent, gPortVoicePercent, gPortStagePercent;
 
@@ -96,7 +100,7 @@ void GsGpu_TitlePoll(void) {
     extern int Port_DataState(void);
     static int done;
     if (!done && sWindow != NULL && Port_DataState() == 2) {
-        SDL_SetWindowTitle(sWindow, "Tenkaichi3Decomp [modified game data]");
+        SDL_SetWindowTitle(sWindow, getenv("BT3_TAG_TEAM") != NULL ? "Native Tag Team prototype [modified game data]" : "Tenkaichi3Decomp [modified game data]");
         done = 1;
     }
 }
@@ -166,6 +170,32 @@ static unsigned long long tex_bytes_cap(void) {
 #define TEX_BYTES_CAP (6ull << 30)
 #endif
 unsigned gsFxOff;
+/* The Tag Team's light graphics (setting "tag_lite": launcher, and the in-game menu while a fight runs): only in a Tag
+   Team fight, the other modes of the game never see it. Everything it leaves out is left out where it is DRAWN, never
+   where the game computes it: a phone with it on and another with it off play the same fight in the same online match.
+   Here: the effects of the settings window off, and the picture at 1x at most (sScreenCap4). The rest is in the game's
+   drawing code (Port_TagLite): half the aura's flames, of the speed lines, of the particles and of a stage's smoke, no
+   fighters' shadows, no heat haze; and, outside online, no hair and cloth physics. */
+static int gPortTagLiteOn, sTagLite = -1;
+int Port_TagLite(void) {
+    return gPortTagLiteOn;
+}
+/* The Tag Team's own look, lighter than the game's, in its fights only: 1 no toon layer (the second drawing of every
+   strip of a fighter) on far fighters; 4 half of the ki and blast effects; 8 a softer toon layer and lighter yellows
+   (gfxm_d_c.c). With the launcher's cheat "tag_flat", 2: no toon layer on any fighter. All of it only in what is drawn.
+   Measured on a 5x5 fight at 114%: draws 5694 -> 2816 a picture, 8.1 -> 5.6 ms; with the cheat 612, 1.75 ms. */
+static int gPortTagFight, sTagDown = -1;
+int gsNoToon; /* (the render walk's: between the markers 0xC0 and 0xC1) */
+int Port_TagDown(int bit) {
+    if (sTagDown < 0) {
+        sTagDown = 1 | 4 | 8 | (Port_Setting("tag_flat", 0) != 0 ? 2 : 0);
+    }
+    return gPortTagFight && (sTagDown & bit) != 0;
+}
+int Port_TagKiLess(void) {
+    return gPortTagLiteOn || Port_TagDown(4);
+}
+#define FX_OFF() (gsFxOff | (gPortTagLiteOn ? 63u : 0u))
 int gsGlowPercent = GLOW_DEFAULT;
 int gsFilter;
 int gsGlarePercent = GLOW_DEFAULT;
@@ -184,6 +214,7 @@ static int sGlowIsGlare; /* the glow chain under way is the sky's glare (gfxm_a.
 static int sBlockSample; /* the draw being set up reads a work buffer at the GS's 1x (orig.x): pipeline_get, key bit 25 */
 static int sTexPackOn = 1; /* the setting: use the texture pack (if one was found) */
 int gsAnchor;
+static int tagHudViewport;
 /* A fight's HUD in a picture wider than 4:3 (setting hud_layout, BT3_HUD=<n> for a test):
      0  the side panels at the screen's edges (as since widescreen)
      1  the same, with the health bars drawn longer, up to the timer (hud_b.c, pull request #28)
@@ -211,6 +242,7 @@ unsigned gDrawNewTex, gDrawImgMade, gDrawImgFreed, gDrawImgPooled; /* (the last 
 int gDrawLogged; /* the picture's line is written (Smooth motion's other pictures of the list are not) */
 
 void GsGpu_ListStart(void) {
+    gsNoToon = 0; /* (a list begins with the toon layer on, whatever a skipped picture left: GsGpu_Native returns early there) */
     gDrawStartNs = SDL_GetTicksNS(); /* (gs_gpu.c's clock, where it is compared) */
     gDrawTexNs = gDrawPipeNs = gDrawUpBytes = gDrawImgNs = gDrawLookNs = gDrawVuNs = gDrawXferNs = 0;
     gDrawNewTex = gDrawImgMade = gDrawImgFreed = gDrawImgPooled = 0;
@@ -387,6 +419,11 @@ static struct {
    its smaller copies; the renderer only uploads it when it is ready. Meanwhile the place shows what it showed, or
    nothing (a line that is new: clear, not a white box). */
 #define TEXT_JOBS 8
+/* A job whose place has not been drawn for this many frames is given up (its picture freed): the page changed, or
+   the line did (a status that updates), before it was collected. Collected only when its own place was drawn again,
+   such jobs stayed for good; once all eight were stuck no new line got a picture and every new line stayed clear
+   (all the words of a Tag Team page gone, seen on a tablet when creating a room). */
+#define TEXT_JOB_STALE 30
 typedef struct {
     int state; /* 0 free, 1 asked, 2 being made, 3 made */
     uint32_t slot, version, *lv[12], lw[12], lh[12];
@@ -463,6 +500,22 @@ static GsTex tbo_text_texture(uint32_t id) {
         } else {
             free(clear);
         }
+    }
+    if (sTextThread != NULL) { /* jobs of places no longer drawn: given up (TEXT_JOB_STALE) */
+        SDL_LockMutex(sTextLock);
+        for (i = 0; i < TEXT_JOBS; i++) {
+            TboTextJob *j = &sTextJob[i];
+            int k;
+            if ((j->state != 1 && j->state != 3) || j->slot == slot || gGsFrame - sTboText[j->slot].frame <= TEXT_JOB_STALE) {
+                continue; /* (2: the thread is making it; it is given up once made) */
+            }
+            for (k = 0; k < j->levels; k++) {
+                free(j->lv[k]);
+            }
+            j->levels = 0;
+            j->state = 0;
+        }
+        SDL_UnlockMutex(sTextLock);
     }
     if (sTextThread == NULL) { /* (as it was: here and now) */
         uint32_t w, h, *px;
@@ -542,7 +595,13 @@ typedef struct {
     SDL_Condition *wake;
     uint32_t *ready; /* the next picture (RGBA, the GS's alpha), NULL while it is being made */
     int want;        /* the thread makes the next one */
+    int fails;       /* pictures in a row that could not be made (the thread's, or the renderer's without it) */
+    int failed;      /* the thread gave up and has left (under lock): the renderer takes the film down */
 } TboFilm;
+/* A film whose pictures cannot be made (a damaged file, no memory) is given up after this many tries in a row,
+   about a second, and the picture (tbo/ui/<name>.png) is shown instead. Before, the thread tried again every
+   10 ms for as long as the program ran. */
+#define TBO_FILM_TRIES 100
 static TboFilm sTboFilm = {"bg", 0};
 static TboFilm sRaditzFilm = {"raditz", 1};
 
@@ -621,13 +680,50 @@ static int tbo_film_thread(void *arg) {
         free(film->ready);
         film->ready = px;
         if (px == NULL) {
+            if (++film->fails >= TBO_FILM_TRIES) {
+                /* (the film is the renderer's to take down, on its thread: it reads film->plm without the lock) */
+                film->failed = 1;
+                SDL_UnlockMutex(film->lock);
+                return 0;
+            }
             film->want = 1; /* (no picture: another try, or the renderer, which asks only when it takes one, would wait forever) */
             SDL_UnlockMutex(film->lock);
             SDL_Delay(10);
             SDL_LockMutex(film->lock);
+        } else {
+            film->fails = 0;
         }
     }
     return 0;
+}
+
+/* A film given up (TBO_FILM_TRIES): its thread (already gone or leaving), decoder, pictures and texture are let go,
+   on the renderer's thread; film->plm NULL from then on, so the picture is drawn instead. Its texture was not given
+   in this frame (tbo_film_texture comes here before it gives it), as for the other textures let go in a frame. */
+static void tbo_film_drop(TboFilm *film) {
+    if (film->thread != NULL) {
+        SDL_WaitThread(film->thread, NULL);
+        film->thread = NULL;
+    }
+    if (film->wake != NULL) {
+        SDL_DestroyCondition(film->wake);
+        film->wake = NULL;
+    }
+    if (film->lock != NULL) {
+        SDL_DestroyMutex(film->lock);
+        film->lock = NULL;
+    }
+    free(film->ready);
+    film->ready = NULL;
+    if (film->plm != NULL) {
+        plm_destroy(film->plm); /* (the file's bytes with it: made with free_when_done) */
+        film->plm = NULL;
+    }
+    if (film->tex != 0) {
+        sBackend->texDestroy(film->tex);
+        film->tex = 0;
+    }
+    fprintf(stderr, "bt3: artwork: tbo/ui/%s.mpg: %d pictures in a row could not be decoded: the picture instead\n", film->name, film->fails);
 }
 
 static GsTex tbo_film_texture(TboFilm *film) {
@@ -669,6 +765,16 @@ static GsTex tbo_film_texture(TboFilm *film) {
     if (film->tex != 0 && film->frame == gGsFrame) {
         return film->tex;
     }
+    if (film->thread != NULL) {
+        int failed;
+        SDL_LockMutex(film->lock);
+        failed = film->failed;
+        SDL_UnlockMutex(film->lock);
+        if (failed) {
+            tbo_film_drop(film);
+            return 0;
+        }
+    }
     film->frame = gGsFrame;
     step = 1.0 / (plm_get_framerate(film->plm) > 1.0 ? plm_get_framerate(film->plm) : 24.0);
     if (film->lastMs != 0 && now - film->lastMs < 500) {
@@ -693,6 +799,13 @@ static GsTex tbo_film_texture(TboFilm *film) {
     } else {
         px = film->ready != NULL ? film->ready : tbo_film_picture(film);
         film->ready = NULL;
+        if (px == NULL && ++film->fails >= TBO_FILM_TRIES) { /* (decoded here, without the thread: the same limit) */
+            tbo_film_drop(film);
+            return 0;
+        }
+        if (px != NULL) {
+            film->fails = 0;
+        }
     }
     if (px == NULL) {
         return film->tex;
@@ -997,6 +1110,30 @@ static void tex_decode(const TexDecode *d) {
 
 /* GS memory -> an RGBA texture for the current TEX0 (alpha as stored: 0x80 is opaque). The back end makes
    the texture and takes the decoded pixels (freed after it has uploaded them). */
+/* Scale2x: edges of a low-resolution picture continued along their slope instead of doubled into steps. dst holds
+   (2 * w) x (2 * h). */
+static void chip_scale2x(const uint32_t *src, uint32_t w, uint32_t h, uint32_t *dst) {
+    uint32_t x, y;
+
+    for (y = 0; y < h; y++) {
+        for (x = 0; x < w; x++) {
+            uint32_t e = src[y * w + x];
+            uint32_t b = src[(y ? y - 1 : y) * w + x], hh = src[(y + 1 < h ? y + 1 : y) * w + x];
+            uint32_t d = src[y * w + (x ? x - 1 : x)], f = src[y * w + (x + 1 < w ? x + 1 : x)];
+            uint32_t *o = dst + (size_t)y * 2 * (w * 2) + x * 2;
+
+            if (b != hh && d != f) {
+                o[0] = d == b ? d : e;
+                o[1] = b == f ? f : e;
+                o[w * 2] = d == hh ? d : e;
+                o[w * 2 + 1] = hh == f ? f : e;
+            } else {
+                o[0] = o[1] = o[w * 2] = o[w * 2 + 1] = e;
+            }
+        }
+    }
+}
+
 static GsTex texture_get(int ctx) {
     uint64_t t0 = gGs.tex0[ctx] & 0x1FFFFFFFFFFFFFFFull, texa = gGs.texa;
     uint32_t tbp = t0 & 0x3FFF, tbw = (t0 >> 14) & 0x3F, psm = (t0 >> 20) & 0x3F, tw = 1u << ((t0 >> 26) & 15), th = 1u << ((t0 >> 30) & 15);
@@ -1024,6 +1161,9 @@ static GsTex texture_get(int ctx) {
        texture identities when the artwork is still on "Original". */
     gen ^= MenuText_TexKey((int)tw, (int)th, bits <= 8, (int)tbp, (int)cbp, MenuText_RasterScale(SCALE));
     gen ^= bits <= 8 ? MenuLabels_ArtKey() : 0; /* the chosen language's menu art ready: decoded again */
+    if (gsChipUp && tw == 64 && th == 64) {
+        gen ^= 0x43484950u; /* (enlarged below: not the same texture as the same chip elsewhere) */
+    }
     if (sTexPackOn && TexPack_Count() != 0) {
         gen ^= 0x5BD1E995u; /* with the pack and without it are different textures: switching it takes effect at once */
     }
@@ -1151,6 +1291,20 @@ static GsTex texture_get(int ctx) {
                     (double)(gpu_now() - font_t0) / 1e6);
         }
     }
+    if (!replaced && !menuText && px != NULL && gsChipUp && tw == 64 && th == 64) {
+        uint32_t *two = malloc(128u * 128u * 4u), *four = malloc(256u * 256u * 4u);
+
+        if (two != NULL && four != NULL) {
+            chip_scale2x(px, 64, 64, two);
+            chip_scale2x(two, 128, 128, four);
+            free(px);
+            px = four;
+            four = NULL;
+            rw = rh = 256;
+        }
+        free(two);
+        free(four);
+    }
     gGpuTexNs += gpu_now() - tex_t0;
     gDrawTexNs += gpu_now() - tex_t0;
     gDrawNewTex++;
@@ -1161,7 +1315,8 @@ static GsTex texture_get(int ctx) {
         return gsWhite;
     }
     if (!replaced) {
-        if (getenv("BT3_TEX_DUMP") != NULL) { /* every texture as it is decoded, raw RGBA with a small header (looking at the game's art) */
+        /* every texture as it is decoded, raw RGBA with a small header (looking at the game's art); BT3_TEX_DUMP_W=<n>: only those at least n wide */
+        if (getenv("BT3_TEX_DUMP") != NULL && (getenv("BT3_TEX_DUMP_W") == NULL || rw >= (uint32_t)atoi(getenv("BT3_TEX_DUMP_W")))) {
             static unsigned n;
             char name[600];
             FILE *df;
@@ -1420,7 +1575,7 @@ static void depth_clut(int ctx) {
     d.src = gsDepthByteIsFog ? 0 : 1;
     d.target = GsDraw_TargetGet((uint32_t)(gGs.frame[ctx] & 0x1FF), 0);
     /* switched off by the user: the passes that colour the picture (the ones that only write alpha feed the glow) */
-    if (d.target < 0 || ((gsFxOff & 4) && d.src == 0 && wm != 0x00FFFFFFu)) {
+    if (d.target < 0 || ((FX_OFF() & 4) && d.src == 0 && wm != 0x00FFFFFFu)) {
         return;
     }
     {
@@ -1428,7 +1583,7 @@ static void depth_clut(int ctx) {
         if (cbp == 0x3E8C) {
             return; /* the outline's own passes: the outline is drawn natively at its marker (outline.frag) */
         }
-        if (cbp == 0x3E94 && (gsFxOff & 2)) {
+        if (cbp == 0x3E94 && (FX_OFF() & 2)) {
             return; /* the see-through tint, switched off */
         }
     }
@@ -1447,6 +1602,14 @@ static void depth_clut(int ctx) {
         return; /* the next strip of the same pass */
     }
     gsDraws[gsDrawCount++] = d;
+}
+
+/* The picture itself, not a work buffer: a pass dropped on it does not make it stale. BT4's gGsMainFbp is the buffer
+   on show, and the game draws in the other one (gGsOtherFbp): taken for a work buffer, it went stale at the first
+   dropped pass, the copy of it for the blur of distant things was not drawn, and the blur read that buffer's address
+   in GS memory, the stage's 4-bit textures (the far scenery in blocks of noise). */
+static int is_picture(uint32_t fbp) {
+    return fbp == (uint32_t)gGsMainFbp || fbp == (uint32_t)gGsOtherFbp;
 }
 
 static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *us, float *vs) {
@@ -1479,7 +1642,7 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
             }
         }
         if (Gs_PsmBits(fpsm) == 16 || fbp == zbp) {
-            if (fbp != zbp && fbp != (uint32_t)gGsMainFbp) {
+            if (fbp != zbp && !is_picture(fbp)) {
                 /* A work buffer drawn through a 16-bit view (the outline's edge image): not drawable here, but
                    the game has now written the buffer, so whatever samples it next means this buffer and not the
                    stage textures that share its address. Without this the outline's later passes read those
@@ -1506,7 +1669,7 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
         if (tme && tpsm != TBO_PSM && !(tpsm == 1 && sprite && tbp / 32 == zbp) &&
             ((tpsm & 0x30) == 0x30 || tbp / 32 == zbp || tpsm == 0x1B || tpsm == 0x24 || tpsm == 0x2C)) {
             int t = GsDraw_TargetGet(fbp, 0);
-            if (t >= 0 && fbp != (uint32_t)gGsMainFbp) {
+            if (t >= 0 && !is_picture(fbp)) {
                 gsTargets[t].stale = 1; /* a work buffer missed a pass */
             }
             gsSkipped++;
@@ -1552,12 +1715,12 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
                glare and the object glow, blend "source + destination") or mixed in by the destination's alpha
                (the blur of distant things). */
             if (sprite && (uint32_t)(gGs.frame[ctx] & 0x1FF) == (uint32_t)gGsMainFbp && ((prim >> 6) & 1) &&
-                ((((gGs.alpha[ctx] & 0xFF) == 0x68) && (gsFxOff & 8)) || (((gGs.alpha[ctx] & 0xFF) == 0x54) && (gsFxOff & 16)))) {
+                ((((gGs.alpha[ctx] & 0xFF) == 0x68) && (FX_OFF() & 8)) || (((gGs.alpha[ctx] & 0xFF) == 0x54) && (FX_OFF() & 16)))) {
                 gsSkipped++;
                 return 0;
             }
             if (src == d->target || tp > 1) {
-                if (d->target != src && (uint32_t)(gGs.frame[ctx] & 0x1FF) != (uint32_t)gGsMainFbp) {
+                if (d->target != src && !is_picture((uint32_t)(gGs.frame[ctx] & 0x1FF))) {
                     gsTargets[d->target].stale = 1; /* a work buffer missed a pass */
                 }
                 gsSkipped++;
@@ -1620,9 +1783,12 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
                 sBlockSample = 0;
             }
         } else {
-            uint64_t tg0 = gpu_now();
+            int timed = getenv("BT3_DRAW_LOG") != NULL; /* (two clock reads per draw: only when the log asks) */
+            uint64_t tg0 = timed ? gpu_now() : 0;
             d->tex = texture_get(ctx);
-            gDrawLookNs += gpu_now() - tg0; /* (BT3_DRAW_LOG: all of the texture lookups, the new ones' work in it) */
+            if (timed) {
+                gDrawLookNs += gpu_now() - tg0;
+            } /* (BT3_DRAW_LOG: all of the texture lookups, the new ones' work in it) */
         }
     }
     d->sampler = (int)((gGs.tex1[ctx] >> 5) & 1) | ((cl & 3) ? 2 : 0) | (((cl >> 2) & 3) ? 4 : 0);
@@ -2058,7 +2224,7 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
     /* (Not the cross-fade's picture: it is the whole frame as it was shown, wide view and all, drawn back over the
        whole frame in strips. Each strip is narrower than the screen, so the rule below took it for a piece of 2D
        art and the old shot was drawn at three quarters of the width over the new one: seen by the user.) */
-    if (Port_IsWide() && (!gPortMenuMode || (gsAnchor == 7 && Port_PageAspectMilli() > 1340) ||
+    if (!gsWhole2D && Port_IsWide() && (!gPortMenuMode || (gsAnchor == 7 && Port_PageAspectMilli() > 1340) ||
                           (battleText && Port_PageAspectMilli() > 1340)) &&
         !sWholeFrame && !d.tex_is_target && !tbo && (type == 6 || fst || battleText || gsAnchor == 8) &&
         gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
@@ -2114,6 +2280,26 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
                 gsVerts[k].x = pivot + (gsVerts[k].x - pivot) * narrow;
             }
         }
+    }
+    if (tagHudViewport && !tbo && gsTargets[d.target].fbp == (uint32_t)gGsMainFbp) {
+        int timer=tagHudViewport==0x54;
+        int r[4],bottom=!timer && (tagHudViewport&0x20);
+        TagView_HudRect(tagHudViewport,r);
+        if(timer) {r[0]=r[1]=0;r[2]=512;r[3]=448;}
+        float scale=r[2]==512 && r[3]==448?1.0f:0.5f;
+        float x=r[0],y=r[1];
+        if(timer) { scale=0.5f; x=128.0f; }
+        float panelInset=0;
+        if(!timer && r[1]==0 && r[2]==256 && r[0]==0 && (gsAnchor==2||gsAnchor==6)) panelInset=-12;
+        if(!timer && r[1]==0 && r[2]==256 && r[0]==256 && (gsAnchor==1||gsAnchor==5)) panelInset=12;
+        if(r[2]==512 && r[3]==224) panelInset=(gsAnchor==1||gsAnchor==5)?0:
+            (gsAnchor==2||gsAnchor==6)?256:128;
+        for(uint32_t k=d.first;k<gsVertCount;k++) {
+            gsVerts[k].x=x+panelInset+gsVerts[k].x*scale;
+            gsVerts[k].y=y+(bottom?r[3]-448*scale:0)+gsVerts[k].y*scale;
+        }
+        d.scissor[0]=timer?0:(int)x*SCALE; d.scissor[1]=(int)y*SCALE;
+        d.scissor[2]=r[2]*SCALE; d.scissor[3]=r[3]*SCALE;
     }
     d.count = gsVertCount - d.first;
     if (lowres_now(d.target)) { /* into a work buffer at the PS2's resolution: its corner (target_lowres) */
@@ -2262,6 +2448,12 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
 
     if (count < 3 || gsVuVertCount + count > MAX_VU_VERTS || gsVuIdxCount + (count - 2) * 3 > MAX_VU_IDX || gsDrawCount == MAX_DRAWS ||
         gsVuUniCount == MAX_VU_UNIFORMS) {
+        if(getenv("BT3_TAG_RENDER_TRACE") && gGsFrame%150==0) {
+            static unsigned reported;
+            if(reported!=gGsFrame) { reported=gGsFrame;
+                fprintf(stderr,"tagrender geometry limit frame=%u verts=%u idx=%u uniforms=%u draws=%u\n",gGsFrame,gsVuVertCount,gsVuIdxCount,gsVuUniCount,gsDrawCount);
+            }
+        }
         return;
     }
     if (!draw_state(ctx, 0, 0, 1, &d, &us, &vs)) {
@@ -2281,6 +2473,7 @@ void GsGpu_DrawVu0(int layer, int ctx, const float *vertices, uint32_t count, co
     u.light[0] = consts[40]; u.light[1] = consts[44]; u.light[2] = consts[48]; u.light[3] = consts[52];
     memcpy(u.color0, &consts[88], 16);
     memcpy(u.color1, &consts[92], 16);
+    if (layer == 1 && Port_TagDown(8)) { u.color1[3] *= 0.7f; } /* (a softer toon layer) */
     u.misc[0] = (float)(gGs.xyoffset[ctx] & 0xFFFF) / 16.0f;
     u.misc[1] = (float)((gGs.xyoffset[ctx] >> 32) & 0xFFFF) / 16.0f;
     u.misc[2] = ((gGs.zbuf[ctx] >> 24) & 15) == 0 ? 4294967295.0f : ((gGs.zbuf[ctx] >> 24) & 15) == 1 ? 16777215.0f : 65535.0f;
@@ -2381,6 +2574,10 @@ void GsGpu_Native(int effect) {
     uint64_t sc = gGs.scissor[0];
     GsDraw d;
 
+    if(effect==0xC0 || effect==0xC1) { gsNoToon=effect==0xC0; return; }
+    if(effect==0x54 || (effect>=0x80 && effect<=0xBF)) { tagHudViewport=effect; return; }
+    if(effect==0x5F) { tagHudViewport=0; return; }
+
     /* 1 = outline. 2 (the see-through tint) is drawn by the generic table pass now (depth_clut), from the game's
        own table. */
     if (effect >= 0x15 && effect <= 0x18) {
@@ -2392,11 +2589,19 @@ void GsGpu_Native(int effect) {
         gsAnchor = effect == 0x13 ? 0 : effect == 0x14 ? 4 : effect - 0x0F; /* 1 left, 2 right, 3 centre, 4 by position */
         return;
     }
+    if (effect == 0x26 || effect == 0x27) { /* the roster's chips: enlarged when decoded (texture_get) */
+        gsChipUp = effect == 0x26;
+        return;
+    }
+    if (effect == 0x24 || effect == 0x25) { /* 2D laid out on the whole window over a 3D scene (port_charsel.c) */
+        gsWhole2D = effect == 0x24;
+        return;
+    }
     if (effect == 0x20 || effect == 0x21) { /* the glow chain begins / ends (target_lowres) */
         sInGlowChain = effect == 0x20;
         return;
     }
-    if (effect != 1 || gsDrawCount == MAX_DRAWS || (gsFxOff & 1)) {
+    if (effect != 1 || gsDrawCount == MAX_DRAWS || (FX_OFF() & 1)) {
         return;
     }
     gsNative++;
@@ -2488,7 +2693,7 @@ SDL_Window *GsDraw_WindowCreate(int opengl) {
     sFullscreen = 1; /* (the whole screen, without the system's bars) */
 #endif
     sWantAspect = want;
-    SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, "Tenkaichi3Decomp");
+    SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, getenv("BT3_TAG_TEAM") != NULL ? "Native Tag Team prototype" : "Tenkaichi3Decomp");
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, w);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, h);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
@@ -2528,14 +2733,44 @@ void GsDraw_FullscreenSet(int on) {
     if (sWindow == NULL) {
         return;
     }
-    sFullscreen = on;
-    SDL_SetWindowFullscreen(sWindow, on);
+    if (SDL_SetWindowFullscreen(sWindow, on != 0)) {
+        sFullscreen = on != 0;
+    } else {
+        fprintf(stderr, "bt3: could not change full screen: %s\n", SDL_GetError());
+    }
 }
 
 void GsDraw_FullscreenToggle(void) {
     GsDraw_FullscreenSet(!sFullscreen);
     Port_SettingSave("fullscreen", sFullscreen);
     Port_SettingsWrite();
+}
+
+int GsDraw_FullscreenEvent(const SDL_Event *ev) {
+    static unsigned held;
+    if (sWindow == NULL) return 0;
+    if (ev->type == SDL_EVENT_KEY_DOWN || ev->type == SDL_EVENT_KEY_UP) {
+        unsigned key = ev->key.scancode == SDL_SCANCODE_F11 ? 1 :
+            ev->key.scancode == SDL_SCANCODE_RETURN ? 2 :
+            ev->key.scancode == SDL_SCANCODE_KP_ENTER ? 4 : 0;
+        if (ev->key.windowID != SDL_GetWindowID(sWindow) || !key) return 0;
+        if (ev->type == SDL_EVENT_KEY_UP) {
+            int used = (held & key) != 0;
+            held &= ~key;
+            return used;
+        }
+        if (key != 1 && !(ev->key.mod & SDL_KMOD_ALT) && !(held & key)) return 0;
+        held |= key;
+        if (!ev->key.repeat) GsDraw_FullscreenToggle();
+        return 1;
+    }
+    if (ev->type == SDL_EVENT_WINDOW_FOCUS_LOST) held = 0;
+    if (ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev->button.windowID == SDL_GetWindowID(sWindow) &&
+        ev->button.button == SDL_BUTTON_LEFT && ev->button.clicks == 2) {
+        GsDraw_FullscreenToggle();
+        return 1;
+    }
+    return 0;
 }
 
 /* ------------------------------------------------------------------------------------------- the settings window
@@ -2546,7 +2781,7 @@ void GsDraw_FullscreenToggle(void) {
    one effect that is left out where the game draws it and not here: the blur while the view turns (32,
    src/sys/gfxm_a.c StgPanBlur_Draw), which is several passes through work buffers. */
 int Port_FxOff(int bit) {
-    return (gsFxOff & (unsigned)bit) != 0;
+    return (FX_OFF() & (unsigned)bit) != 0;
 }
 
 #ifdef __ANDROID__
@@ -2586,10 +2821,14 @@ void GsDraw_AspectFollow(void) {
 #endif
 
 void GsGpu_GetSettings(PortVideo *v) {
+    if (sTagLite < 0) { /* (not read yet, before the first fight: any setting changed then wrote "off" over the launcher's choice) */
+        sTagLite = Port_Setting("tag_lite", 0) != 0;
+    }
     v->scale4 = sScreenCap4 ? sUserScale4 : gsPendingScale4 ? gsPendingScale4 : gsScale4;
     v->aspectMilli = sAspectAuto ? 0 : Port_AspectMilli(); /* (0: the screen's own shape, Android) */
     v->fullscreen = sFullscreen;
     v->fxOff = (int)gsFxOff;
+    v->tagLite = sTagLite > 0;
     v->glow = gsGlowPercent;
     v->filter = gsFilter;
     v->glare = gsGlarePercent;
@@ -2636,6 +2875,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
         GsDraw_FullscreenSet(v->fullscreen);
     }
     gsFxOff = (unsigned)v->fxOff & 255;
+    sTagLite = v->tagLite != 0; /* (the next blank of a fight takes it: Port_TagLiteUpdate) */
     gsGlowPercent = v->glow;
     gsFilter = v->filter < 0 || v->filter > 4 ? 0 : v->filter;
     gsGlarePercent = v->glare;
@@ -2677,6 +2917,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
     Port_SettingSave("aspect_milli", sAspectAuto ? 0 : Port_AspectMilli());
     Port_SettingSave("fullscreen", sFullscreen);
     Port_SettingSave("fx_off", (int)gsFxOff);
+    Port_SettingSave("tag_lite", sTagLite > 0);
     Port_SettingSave("glow", gsGlowPercent);
     Port_SettingSave("filter", gsFilter);
     Port_SettingSave("glare", gsGlarePercent);
@@ -2691,6 +2932,21 @@ void GsGpu_SetSettings(const PortVideo *v) {
 }
 
 /* The online screens open (cap4 > 0, in quarters) or close (0): see sScreenCap4. Called by menu/port_tbo.c. */
+void GsDraw_ScreenScaleCap(int cap4);
+/* From the Tag Team's update, every blank of a fight (fight = 1), and at its end (0). */
+void Port_TagLiteUpdate(int fight) {
+    int on;
+    gPortTagFight = fight;
+    if (sTagLite < 0) {
+        sTagLite = Port_Setting("tag_lite", 0) != 0;
+    }
+    on = fight && sTagLite > 0;
+    if (on != gPortTagLiteOn) {
+        gPortTagLiteOn = on;
+        GsDraw_ScreenScaleCap(on ? 4 : 0);
+        fprintf(stderr, "bt3: Tag Team light graphics %s\n", on ? "on" : "off");
+    }
+}
 void GsDraw_ScreenScaleCap(int cap4) {
     if (cap4 > 0 && !sScreenCap4) {
         sUserScale4 = gsPendingScale4 ? gsPendingScale4 : gsScale4;
@@ -5256,7 +5512,7 @@ static void skip_decide(void) {
 
 void GsGpu_FrameEnd(void) {
     sInGlowChain = 0; /* (a chain is always within one frame) */
-    if (gPortResim) { /* a frame that is only being re-run: nothing was recorded, nothing is shown */
+    if (GS_RESIM) { /* a frame that is only being re-run: nothing was recorded, nothing is shown */
         return;
     }
     static unsigned sPackToldAt;
@@ -5282,6 +5538,9 @@ void GsGpu_FrameEnd(void) {
     if (sBackend != NULL) {
         int i;
 
+        if (getenv("BT3_SCALE_FLIP") != NULL && atoi(getenv("BT3_SCALE_FLIP")) > 0 && gGsFrame % (unsigned)atoi(getenv("BT3_SCALE_FLIP")) == 0) {
+            gsPendingScale4 = gsScale4 == 4 ? 5 : 4; /* testing: the resolution changes every N pictures (1x and 1.25x) */
+        }
         if (sInterpNext != 0) { /* (pictures still waiting: the game did not reach its vertical blanks in between) */
             uint32_t verts = gsVertCount, vuVerts = gsVuVertCount, vuIdx = gsVuIdxCount, vuUni = gsVuUniCount, draws = gsDrawCount;
             /* cannot happen in the order the game works in (the list of the new tick is complete here); if it does,
@@ -5359,7 +5618,11 @@ void GsGpu_FrameEnd(void) {
                now and again at the in-between pictures' moments (sInterpRepeat), from the same list, kept as an
                in-between tick keeps it. Not where nothing is shown (BT3_INTERP_REALONLY, a run without pictures). */
             int repeat = gsInterp > 0 && sInterpSteps > 1 && !GS_NO_PICTURE && gsDrawCount != 0 && getenv("BT3_INTERP_REALONLY") == NULL &&
-                         getenv("BT3_INTERP_NOREPEAT") == NULL;
+                         getenv("BT3_INTERP_NOREPEAT") == NULL &&
+                         /* not when the resolution changes after this picture (scale_apply below): every render target the
+                            kept list draws to is dropped there, and replaying it crashed in SDL (BeginRenderPass on a
+                            released texture: a player's log, Xclipse 530, smooth motion on, 1x to 1.25x at a fight's start) */
+                         (gsPendingScale4 == 0 || gsPendingScale4 == gsScale4);
             if (gsInterp > 0) {
                 interp_remember();
                 gInterpSkipped++;

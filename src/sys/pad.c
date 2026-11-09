@@ -1,5 +1,8 @@
 #include "common.h"
 #include "sys/pad.h"
+#ifdef PORT
+Pad gNativePad[PAD_COUNT] __attribute__((aligned(64)));
+#endif
 
 extern void *memset(void *dst, s32 value, u32 size);
 extern f32 sqrtf(f32 x);
@@ -25,17 +28,11 @@ void Pad_Init(void) {
     scePad2Init(0);
     memset(gPad, 0, sizeof(gPad));
 
-    memset(&param, 0, sizeof(param));
-    param.option = 2;
-    param.slot = 0;
-    param.port = 0;
-    gPad[0].socket = scePad2CreateSocket(&param, &gPad[0]);
-
-    memset(&param, 0, sizeof(param));
-    param.port = 1;
-    param.option = 2;
-    param.slot = 0;
-    gPad[1].socket = scePad2CreateSocket(&param, &gPad[1]);
+    for (i = 0; i < PAD_COUNT; i++) {
+        memset(&param, 0, sizeof(param));
+        param.option = 2; param.port = i;
+        gPad[i].socket = scePad2CreateSocket(&param, &gPad[i]);
+    }
 
     for (i = 0; i < PAD_COUNT; i++) {
         gPad[i].repeatDelay = 20;
@@ -62,14 +59,25 @@ void Pad_Stub3(void) {
 /* Once per frame: polls both controllers, builds the stick values and the held/pressed/repeat words, sends vibration. */
 void Pad_Update(void) {
     s32 i;
+    s32 ports=PAD_COUNT;
     Pad *pad;
     u32 btn;
     f32 len;
     f32 inv;
 
+#ifdef PORT
+    /* Keep the four-device offline polling/recording format unchanged. */
+    { extern s32 TagNet_Active(void); if(!TagNet_Active())ports=4; }
+#endif
     pad = gPad;
-    for (i = 0; i < PAD_COUNT; i++, pad++) {
-        pad->state = scePad2GetState(pad->socket);
+    for (i = 0; i < ports; i++, pad++) {
+        s32 socket=pad->socket;
+#ifdef PORT
+        /* Compact the views for this tournament match, while keeping the
+           controllers selected at registration attached to their players. */
+        { extern s32 TagTournament_Pad(s32);socket=gPad[TagTournament_Pad(i)].socket; }
+#endif
+        pad->state = scePad2GetState(socket);
         if (pad->state == PAD_STATE_STABLE) {
             pad->status = 0;
             switch (pad->phase) {
@@ -77,13 +85,13 @@ void Pad_Update(void) {
                 Pad_GetVibProfile(i);
                 /* fall through */
             case PAD_PHASE_BTN_PROFILE:
-                pad->profileSize = scePad2GetButtonProfile(pad->socket, pad->profile);
+                pad->profileSize = scePad2GetButtonProfile(socket, pad->profile);
                 if (pad->profileSize >= 0) {
                     pad->phase++;
                 }
                 break;
             case PAD_PHASE_READ:
-                pad->dataSize = scePad2Read(pad->socket, pad->data);
+                pad->dataSize = scePad2Read(socket, pad->data);
                 btn = ((pad->data[PAD_DATA_BTN_HI] << 8) | pad->data[PAD_DATA_BTN_LO]) ^ 0xFFFF;
                 pad->right[0] = Pad_StickToFloat(pad->data[PAD_DATA_RX], PAD_STICK_DEADZONE);
                 pad->right[1] = Pad_StickToFloat(pad->data[PAD_DATA_RY], PAD_STICK_DEADZONE);
@@ -198,7 +206,11 @@ s32 Pad_GetVibProfile(s32 pad) {
 /* Sends the accumulated vibration request to the controller and clears it. */
 void Pad_SendActuator(s32 pad) {
     Pad *p = &gPad[pad];
+    Pad *device=p;
     s32 power = p->vibPower * 127.0f;
+#ifdef PORT
+    {extern s32 TagTournament_Pad(s32);device=&gPad[TagTournament_Pad(pad)];}
+#endif
 
     if (power >= 0x80) {
         power = 0x7F;
@@ -209,7 +221,7 @@ void Pad_SendActuator(s32 pad) {
     power <<= 1;
     power |= p->vibSmall;
     p->vibData = power;
-    sceVibSetActParam(p->socket, 1, p->vibProfile, 2, &p->vibData);
+    sceVibSetActParam(device->socket, 1, device->vibProfile, 2, &p->vibData);
     p->vibPower = 0.0f;
     p->vibSmall = 0;
 }

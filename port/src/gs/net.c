@@ -40,6 +40,7 @@ typedef int socklen_t;
 #define closesocket close
 #endif
 #include "gs_internal.h"
+#include "tag_net.h"
 
 extern int Port_PadRead(int socket, unsigned char *data); /* gs_input.c: the keyboard and the controllers */
 void Port_NetLeave(void);
@@ -346,8 +347,11 @@ static int rules_speed(void) {
 }
 
 int Port_NetSession(void);
-/* 1000 = the game's own pace; only ever the match's, never the player's own setting. */
+/* 1000 = the game's own pace; only ever the match's, never the player's own setting (a Tag Team room's is its
+   host's, tag_net.c TagNet_SpeedMilli). */
 int Port_NetSpeedMilli(void) {
+    extern int TagNet_SpeedMilli(void);
+    if(TagNet_Enabled())return TagNet_SpeedMilli();
     return Port_NetSession() || Port_NetActive() ? rules_speed() * 10 : 1000;
 }
 
@@ -960,6 +964,11 @@ static int sSpecSkip;                      /* running blanks without picture to 
    (It began as a fixed second, SPEC_BUFFER: the view was a second late.) */
 enum { SPEC_LEAD_MIN = 18, SPEC_LEAD_START = 24, SPEC_LEAD_STEP = 12, SPEC_LEAD_QUIET = 900 };
 static int sSpecLead = SPEC_LEAD_START;
+/* The host's pace as the spectator sees it (blanks a second, measured every quarter second) and when this copy last
+   ran a blank: see spec_follow. */
+static double sSpecRate;
+static uint64_t sSpecRateNs, sSpecBlankNs;
+static uint32_t sSpecRateN;
 static unsigned sSpecLeadSince;            /* the blank it last ran out at, or grew shorter at */
 static unsigned sSpecLeadLog;
 static int sSpecNudge;                     /* this blank runs without picture and pacing: a little ahead (behind by a lot) */
@@ -1935,6 +1944,9 @@ static void net_start(int role, const char *host, const char *join) {
         sSpecApartAt = 0;
         sSpecCompared = sSpecDiffered = sSpecSkipped = 0;
         sSpecHeardNs = sSpecAckNs = sSpecGapNs = sSpecDrawNs = 0;
+        sSpecRate = 0.0;
+        sSpecRateNs = sSpecBlankNs = 0;
+        sSpecRateN = 0;
         if (role == 3) {
             snprintf(sSpecTarget, sizeof(sSpecTarget), "%s", join);
         }
@@ -2367,6 +2379,7 @@ const char *Port_NetName(int player) {
    and with this their own gauges are on the left, as the host's are for the host. Setting net_hud_own (on by
    default); BT3_HUD_SWAP=1 the same without a connection, for looking at it. Only this copy's picture changes. */
 int Port_HudSwap(void) {
+    if(TagNet_Enabled()) return 0;
     static int forced = -1, pref = -1;
     extern int Port_Setting(const char *name, int def);
     if (forced < 0) {
@@ -2378,10 +2391,12 @@ int Port_HudSwap(void) {
 
 /* Which player this copy plays in an online match (0 the host, 1 the one who joined). */
 int Port_NetMe(void) {
+    if(TagNet_Enabled()) return TagNet_Role();
     return sMe;
 }
 
 int Port_NetActive(void) {
+    if(TagNet_Enabled()) return TagNet_Active();
     if (sMode < 0) { /* first asked: connected from the start if the environment says so */
         const char *host = getenv("BT3_NET_HOST"), *join = getenv("BT3_NET_JOIN"), *watch = getenv("BT3_NET_SPECTATE");
         sMode = 0;
@@ -2477,9 +2492,21 @@ static void bye_at_exit(void) {
  * that blank's save and runs up to the present again, without picture or sound (gPortResim), now with the right
  * input. It never runs more than sRollMax blanks ahead of the other player's last known input: there it waits.
  */
+static unsigned sRollTick;
+/* Will what is being drawn now be shown? The frame's list is sent after the frame has waited for its blank (Gfx_EndFrame,
+   then Dma_Flush), so it is carried out under the NEXT blank's gPortResim: the list of the last blank run again IS shown,
+   though gPortResim says "no picture" while it is drawn. */
+int Port_NetListShown(void) {
+    extern int gPortResim;
+
+    return !gPortResim || (sResim && sRollTick + 1 >= sLive);
+}
+
 static void roll_tick(unsigned tick) {
     uint32_t other = (uint32_t)!sMe, t, limit;
     uint64_t t0, last;
+
+    sRollTick = tick;
 
     if (!sRollBegun) {
         sRollBegun = 1;
@@ -2774,6 +2801,42 @@ static void spec_hold(const char *line) {
     }
 }
 
+/* The spectator follows the host's real pace. It ran its blanks at the match's nominal pace (60 a second times the
+   game speed) and the host only ever sends what its players have played: when their match runs slower than that (a
+   phone that cannot keep up, a game speed it cannot reach) the spectator kept catching up with the host, running out
+   of blanks and stopping under "Waiting for the match..." again and again (seen at a lobby's character select: 0.4 s
+   of picture, 1 to 2 s of waiting). Now, while its lead is short, each blank is held as long as the host's measured
+   pace asks (a little longer while the lead is very short), so the picture runs evenly at the players' pace; with
+   the host at full speed nothing changes. A hold longer than a quarter second is left to the wait in spec_tick (the
+   host has all but stopped: then the line in the middle is right). */
+static void spec_follow(unsigned tick) {
+    extern unsigned long long Port_BlankNs(void); /* plat_stub.c: a blank at the match's speed */
+    uint64_t now = SDL_GetTicksNS(), blankNs = Port_BlankNs();
+    uint32_t have = sLogN > tick ? sLogN - tick : 0;
+
+    if (sSpecRateNs == 0 || sLogN < sSpecRateN) {
+        sSpecRateNs = now;
+        sSpecRateN = sLogN;
+    } else if (now - sSpecRateNs >= 250000000ull) {
+        double r = (double)(sLogN - sSpecRateN) * 1e9 / (double)(now - sSpecRateNs);
+        sSpecRate = sSpecRate == 0.0 ? r : sSpecRate * 0.75 + r * 0.25;
+        sSpecRateNs = now;
+        sSpecRateN = sLogN;
+    }
+    if (have > 0 && have < (uint32_t)sSpecLead && sSpecRate > 1.0 && blankNs > 0 && sSpecRate < 1e9 / (double)blankNs * 0.98) {
+        double slow = have < (uint32_t)sSpecLead / 2 ? 0.85 : 1.0;
+        uint64_t want = (uint64_t)(1e9 / (sSpecRate * slow));
+        if (want > blankNs && want <= 250000000ull) {
+            while (SDL_GetTicksNS() < sSpecBlankNs + want && sLogN - tick < (uint32_t)sSpecLead) {
+                spec_service();
+                SDL_DelayNS(500000);
+            }
+            gPortNetWaitNs += SDL_GetTicksNS() - now; /* (waiting for the host: not a slow frame of this copy's) */
+        }
+    }
+    sSpecBlankNs = SDL_GetTicksNS();
+}
+
 /* 1 while a spectator runs blanks without picture and not held to real time, to catch up (plat_stub.c). */
 int Port_NetSpecSkip(void) {
     return sMode == 3 && (sSpecSkip || sSpecNudge);
@@ -2910,6 +2973,9 @@ static void spec_tick(unsigned tick) {
     if (!sSpecSkip && sLogN > tick + (unsigned)sSpecLead + 12 && tick % 16 == 0) {
         sSpecNudge = 1; /* a little behind: one blank in sixteen runs without picture (gently back to the lead) */
     }
+    if (!sSpecSkip && !sSpecNudge) {
+        spec_follow(tick);
+    }
     if (sSpecSkip) {
         char line[96];
         sSpecSkipped++;
@@ -2919,6 +2985,7 @@ static void spec_tick(unsigned tick) {
 }
 
 void Port_NetBeginTick(unsigned tick) {
+    if(TagNet_Enabled()) {TagNet_Tick(tick);return;}
     uint64_t t0, last;
 
     if (!Port_NetActive()) {
@@ -2998,6 +3065,7 @@ void Port_NetBeginTick(unsigned tick) {
 
 /* What the game reads for a pad during this blank. */
 void Port_NetInput(int player, unsigned char *data) {
+    if(TagNet_Enabled()) {TagNet_Input(player,data);return;}
     if (sMode == 3) { /* a spectator: both players' input as the host has it */
         memcpy(data, player >= 0 && player < 2 && sTick < sLogN ? sLog + ((size_t)sTick * 2 + (size_t)player) * PAD : kIdle, PAD);
         return;
@@ -3010,6 +3078,7 @@ void Port_NetInput(int player, unsigned char *data) {
 }
 
 int Port_NetResim(void) {
+    if(TagNet_Enabled()) return TagNet_Resim();
     return sResim;
 }
 
@@ -3022,6 +3091,7 @@ unsigned Port_NetTick(void) {
    otherwise (the two views side by side, as always). BT3_VIEW=0|1: the same without a connection, for looking at
    it and for comparing the game's state between the three ways of showing a battle. */
 int Port_NetView(void) {
+    if(TagNet_Enabled()) return TagNet_Role()<TN_PLAYERS?TagNet_Role():-1;
     static int forced = -2;
     if (forced == -2) {
         const char *e = getenv("BT3_VIEW");
@@ -3259,6 +3329,7 @@ int Port_NetSessionsEnded(void) {
 
 void Port_NetSessionEnd(void) {
     sSessionsEnded++;
+    Port_UiBanner(NULL, 0); /* (see Port_NetLeave) */
     sRivalRegion[0] = '\0';
     if (Lobby_SessionEnded()) { /* a lobby's match: the lobby goes on, with its socket, its relay and its room code */
         sMode = 0;
@@ -3294,6 +3365,9 @@ void Port_NetArrived(void) {
    normally is. */
 void Port_NetLeave(void) {
     fprintf(stderr, "bt3: net: the session has ended\n");
+    /* A session that ends before the two meet (a lobby's match when the rival's connection is gone) put up "Connecting
+       to your rival..." and nothing took it away: only meeting did. It stayed over the menus until the game was closed. */
+    Port_UiBanner(NULL, 0);
     { /* Dragon Net: a ranked match left before its fight was over is a loss for who left (net_dragon.c) */
         extern void DrNet_SessionEnding(int mine);
         DrNet_SessionEnding(!sEndedThere && !sGone);

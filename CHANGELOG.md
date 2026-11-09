@@ -1,93 +1,150 @@
-# Dragon Rage 0.9.0
+# Dragon Rage 1.0.0
 
-**The PC port's 0.1.38.7, Budokai Tenkaichi 4 drawn by ARMSX2's renderer, and lighter fights on Mali GPUs.** Everything
-measured on an RG Cube (Mali-G57) and a Retroid Pocket 5 (Adreno 650), with a recorded fight and pixel-by-pixel picture
-comparison.
+**The biggest update yet: three games in one app, new online, the Tag Team Mod, a new character select and Touch Pro, the
+on-screen controller made for real play without a physical controller.**
+Installs over 0.9.0 and 0.8.x without uninstalling: saves, settings, controls and imported games stay.
 
-## Faster
-- **Internal resolution 2x and above**: drawing passes that never use depth run without it, flat shadows share a single
-  clear, and the characters' glow is drawn at the PlayStation 2's resolution (from the PC). On the RG Cube a Vulkan 2x
-  fight went from about 76% to **95%** of full speed (OpenGL 2x: 92% to 98%); on the Retroid Pocket 5, Vulkan 4x went
-  from 71% to 84%.
-- **OpenGL on Adreno**: persistent buffers on Adreno too. On the Retroid Pocket 5, OpenGL 2x took about 4 seconds a
-  frame and now runs at a steady 30.
-- **Adreno**: the flat shadows' stencil is off by default, faster on these chips.
-- **GPU profiles** measured for the Mali-G57 MC4 and the Adreno 650: the launcher suggests the resolution that keeps
-  fights at 30.
-- **Lite mode** (Settings > Performance; offered by the GPU profile on Mali-G52-class GPUs): the renderer on its own
-  thread and the glow and the sky's glare left out entirely. On a simulated Mali-G52 MC1, fights at 1x went from 53% to
-  77% of full speed.
-- **From the PC**: fewer hitches the first time a special or a transformation appears (new textures are prepared much
-  faster, on several cores), drawing buffers made ready before a fight's first big effect, and the characters' outline
-  drawn only where there is a line.
-- **Texture packs**: files are read in the background and kept in memory, and a frame takes in at most 4 MB of them.
-  Fewer hitches with large packs (from the PC).
+You need your own image of each disc:
+- **Budokai Tenkaichi 3**: the American disc, SLUS-21678.
+- **Budokai Tenkaichi 4**: Team BT4's mod, **Beta 14 Rev2** (SLUS-219.78).
+- **Budokai Tenkaichi 2**: the American disc, SLUS-21441.
 
-## Picture (from the PC)
-- **Super Saiyan glow** right at every internal resolution: it used to come out as a sharp, shifted copy of the
-  character.
-- **Distance blur** as on the console at high resolutions (leaves no longer show up as squares).
-- **Outlines** the same thickness at every aspect ratio.
-- **The back of Videl's shirt** without the dashed line.
-- **White screen** with teen Gohan's third costume on Namek fixed.
-- A texture written in a 24-bit or 4/8-bit format no longer keeps old content in its last rows.
+## Touch Pro: the on-screen controller, remade
+For anyone who plays without a physical controller, above all online. It is in **Controls > Touch Pro**, and the **How it works**
+button opens a guide with drawings inside the app.
 
-## New: Budokai Tenkaichi 4
-- **Team BT4's mod in the same app**, next to BT3: new characters, forms and stages. The launcher's opening screen
-  picks the game; each has its own image, saves and settings. It needs your image of the mod **Beta 14 Rev2
-  (SLUS-219.78)**: the game is recompiled for that version (the engine is the mod recompiled, from BT3-Recomp).
-- **ARMSX2's renderer by default**: the PlayStation 2 emulator's (PCSX2's, with ARMSX2's fixes for Mali and Adreno),
-  the most faithful picture of the mod. Dragon Rage's stays as an **experimental** option (Settings and the in-game
-  menu, with one line explaining the difference). With it, far-off scenery can still come out as blocks of
-  coloured noise; ARMSX2's draws it right.
-- **Shaders compiled in advance**: the APK carries ARMSX2's shaders compiled on a Mali and an Adreno. The first picture
-  appears in ~2.5 s instead of ~4.5 s, without the small compile hitches in menus and fights.
-- **16:9** (as Team BT4 made it), 4:3 or full screen; **custom drivers** for BT4 too; an **FPS meter**.
-- **60 fps fights (experimental)**: where the device cannot hold them (under 57 updates a second for 3 s in a fight),
-  the game goes back to 30 by itself and says so: "This device could not hold 60 fps in BT4's fights; back to 30". On
-  the devices measured it cannot yet: the RG Cube does 30 and the Retroid Pocket 5 about 36 to 41.
-- The image can be picked from Downloads and still opens after the device restarts.
+- **Ready-made profiles**: **Standard**, **Online competitive** (shorter stick travel, buttons with a bigger touch area, Ki charge
+  with one tap), **Relaxed** (floating stick, 8 directions, strong vibration) and **Classic (0.9)** (as it was before). Plus
+  **Left-handed**, which mirrors the whole layout.
 
-## Texture packs
-- **They now work on Android**: the game looked for packs in an internal folder of the app, so an imported pack was
-  never used ("it installed and nothing changed"). They are now used in **BT3** and **BT4** (with both renderers).
-  Measured with the SLUS-21678 HD pack (18,704 textures, 10.3 GB): about 3,000 textures replaced in the recorded
-  fight, at a steady 30 fps on the RG Cube and the Retroid Pocket 5.
-- **More zips open**: ones made in 7-Zip with Deflate64 or BZip2 and ones written as a stream (stored, with a data
-  descriptor) gave "a compression the app cannot read".
-- **Space**: a pack that does not fit is refused before unpacking, with its size and the free space ("Not enough
-  space: this pack takes 10.3 GB unpacked and the device has 7.8 GB free"), instead of unpacking for over a minute
-  and failing with a system error. What an interrupted import left behind is removed.
-- The file picker also shows .rar and .7z, and the app explains how to turn them into a .zip.
+![Dynamic stick](https://raw.githubusercontent.com/dfdx047/Tenkaichi3DecompAndroid/main/docs/images/touch-pro/01-dynamic-stick.png)
+
+- **Dynamic stick**: it is born where your thumb lands. If your thumb goes past the edge, the centre comes along: turning back is
+  instant, and you never lose the stick in the middle of a fight. There are also **Fixed** and **Floating**, and the **Stick zone**
+  where it is born can be adjusted.
+
+![Dead zone and full tilt](https://raw.githubusercontent.com/dfdx047/Tenkaichi3DecompAndroid/main/docs/images/touch-pro/02-dead-zone.png)
+
+- **Dead zone and full tilt**: a thumb resting in the centre does not make your fighter drift, and you choose how much movement gives
+  a full run. **8 directions** as an option, for steadier menus and dashes.
+
+![Touch area](https://raw.githubusercontent.com/dfdx047/Tenkaichi3DecompAndroid/main/docs/images/touch-pro/03-touch-area.png)
+
+- **Touch area**: each button takes a touch a little outside its drawing. In a fast exchange, a press that lands on the edge is not
+  lost.
+
+![Slide between buttons](https://raw.githubusercontent.com/dfdx047/Tenkaichi3DecompAndroid/main/docs/images/touch-pro/04-slide.png)
+
+- **Slide across all buttons**: slide your thumb from one button to another without lifting it, the shoulders and Start too. Attack,
+  Ki blast and guard come out in one motion.
+
+![Tap toggles](https://raw.githubusercontent.com/dfdx047/Tenkaichi3DecompAndroid/main/docs/images/touch-pro/05-tap-toggles.png)
+
+- **Tap toggles**: choose buttons you hold for a long time (Ki charge, Guard, R1, R2, L1). One tap holds, the next lets go, and your
+  thumb is free for the stick.
+
+![My profiles](https://raw.githubusercontent.com/dfdx047/Tenkaichi3DecompAndroid/main/docs/images/touch-pro/06-profiles.png)
+
+- **My profiles**: save your tuning under a name (layout, look and everything above) and switch with one tap. **Vibration** off,
+  light or strong.
+- Works with both on-screen controller styles (Game-specific and Classic), in BT3, in the Tag Team and in BT2. If you already had a
+  saved layout, you keep it, and the stick becomes the dynamic one (the Classic (0.9) profile brings back the old behaviour).
+
+## New character select
+- **Roster grid, the fighter in 3D on a pedestal and a split screen** in blue and red, in every mode of BT3 and the Tag Team, offline
+  and online. The cursors, forms, outfits and items are still the game's.
+- **New or Classic, you choose**: the first time you open BT3 in this version, two cards appear, each with a drawing of how the screen looks. You
+  can change it later in Settings. The change takes effect the next time the game opens.
+
+## Budokai Tenkaichi 2
+- **Only the ISO**: the engine comes inside the app, and the ISO is read where it is, not copied. A wrong ISO is refused with a
+  message that says what was found.
+- **BT2 online**: 1P VS 2P between two devices, with its own screen in the game's menu.
+- **Fill the screen** (option): the game draws a wider view in the shape of your screen, with no black borders. Online stays at 16:9.
+- **Cel shading on the characters**, on by default.
+- **Fewer stutters while loading**: new textures go to the GPU all together, and the texture memory limit follows the device's RAM.
+- A game error shows on the screen, not as a black screen.
+
+## Budokai Tenkaichi 4
+- **The renderer is chosen by device**: ARMSX2 where the device can handle it, Dragon Rage where it cannot or in Lite mode. If you
+  choose one in Settings, your choice counts.
+- **Long sessions**: the game no longer grows by ~7 MB of memory a minute (the game's sound created tasks that never ran).
+- **Lighter**: internal diagnostics that ran for every player were turned off.
+- **Going back to the app** no longer leaves the ARMSX2 picture lost.
+- **Far scenery** on the Dragon Rage renderer: the mountains no longer come out as blocks of coloured noise.
+- **Weak devices start at 1x**: with the Dragon Rage renderer on a weak GPU and no resolution chosen, the game draws at 1x, not 2x.
+  On a Mi A3, a fight went from about 20 % to about 30 % of full speed.
+- **On-screen controller**: switches by itself between the menu layout (D-pad) and the fight layout (stick), as in BT3.
+
+## Tag Team Mod
+- **Up to 10 fighters**, with the modes of the mod by tehmufti and its contributors (Team Battle, Training, Challenge, Tournament and
+  more), adapted to phones, in a new menu: the **Dragon Radar**, with a night background and the language at the top.
+- **Tag Team Online**: rooms by code with players and spectators. The whole room plays at the host's pace; rooms that dropped,
+  stuck screens, target desync and high ms were fixed; the connection rebuilds itself (relay, IPv6). Games of another version or with
+  other data cannot join the room. The room's messages are in Portuguese and Spanish.
+- **In fights**: aiming at a fallen ally no longer freezes your fighter; the target is not lost; fewer freezes; attacks hit enemies
+  standing close; hair and shadows right in every fight.
+- **Light graphics**: optional, and offered once on the weakest devices. On a limited device like a Snapdragon 480, a 5 vs 5 fight
+  went from 73% to 98% speed.
+- **Off by default**: turn it on in Settings. Off, it changes nothing in normal fights.
 
 ## Online
-- **Server busy**: when the free server reaches its daily limit (HTTP 429, Cloudflare's error 1027), the game stops
-  asking for a while (30 s, doubling up to 10 min) instead of insisting, moves to the backup server, and the launcher
-  says **"Server busy (daily limit), try again later"**. Offline play is not affected.
-- **Fewer requests**: the Ranked queue is only asked while its screen is open; a search asks every 4 s for its first
-  half minute, then every 8 s, and after two minutes every 15 s; a result the rival has not confirmed yet is sent again
-  in 5 s, doubling up to a minute (before: every round).
-- **From the PC** (for Dragon Net and against PC): the rival's sounds that went missing with rollback (Z-counter,
-  vanish, teleport), the ki charge sound that stayed the whole fight, Solar Flare blinding as offline, Japanese voices
-  replaced by English lines, and a desync is a warning instead of the end of the match. Two games with different data
-  (a modified ISO against the original) are no longer matched.
-- The app's log says why when the launcher cannot reach the online service.
+- **Dragon Net Online**: new screens in place of Dragon Net Battle, with Ranked, a quick match that prefers players near you, and
+  joining by code or by address.
+- **Lobbies** (from PC 0.1.39): up to 8 devices, 2 play and up to 6 watch. **Tournaments** inside the lobby, with brackets.
+- **Spectators**: they follow the match at its real pace, without stopping at "Waiting for the match...".
+- Wi-Fi stays awake while the game is in front. Online screens no longer lose letters; a video that does not open is skipped.
+- Fewer requests to the servers, and "Server busy, try again later" in place of an unexplained failure.
+- Random music no longer sets the two players of a match apart.
 
-## Controls and launcher
-- **Full screen**: on the Retroid Pocket 5 (and devices with a navigation bar) the game sometimes started in a smaller
-  area (1920x972) that the system stretched to the screen, everything 11% taller and black bars at the sides in 16:9.
-  The picture now fills the screen from the start, in BT3 and BT4 (10 of 10 starts right; before, 3 of 8 wrong).
-- **Classic pad on a square screen** (RG Cube 720x720): L1/L2 and R1/R2 no longer overlap, and the face buttons and the
-  d-pad stay on screen. Nothing changes on 16:9.
-- **START + SELECT** also closes the in-game menu, not only opens it.
-- The touch pad is hidden at start when a controller with a stick is connected.
-- In the Drivers tab, the whole row picks the driver.
-- The launcher's side rail scrolls (BT3's nine pages on 1080p screens).
-- When Vulkan cannot start (for example with the MaliSX2 driver on the Mali-G57), the game falls back to OpenGL
-  instead of a black screen.
-- ADPF and sustained performance mode on the devices that have them, so the system does not lower the clock in the
-  middle of a fight.
+## Performance and picture
+- 2D and characters no longer stretch with the render thread; Android's performance hints now cover the render thread too.
+- Faster game maths, with the same result bit for bit (online does not change).
+- Vulkan: SDL reuses what was already written in the same frame (less work for the driver).
+- Crash when changing the resolution with smooth motion on: fixed.
 
-## Update notes
-- Installs over 0.8.x and keeps saves, settings and the imported ISOs.
-- Online: PC mode talks to the official server of release 0.1.38; Dragon Net still plays with the Switch (DBT-NX).
+## Controls
+- Controllers navigate the launcher again.
+- Vibration no longer holds up the game; the wireless Sony controller gets fewer commands; a stick at rest sends no jitter.
+- R1 on the touch controls switches the camera; the controller mapping is read again when the game opens.
+
+## Fixes from players' logs
+- Crash when opening the settings during a fight.
+- The game screen no longer closes without explanation when the engine does not load: the error is shown.
+- Menus and labels no longer ask for data that is already in the ISO.
+- No false texture pack warning with an empty folder.
+- A file that fails to read: the game says why, tries again, and the fight goes on.
+- Modified disc: a clear warning in place of "out of memory".
+- `.7z` and `.rar` are refused with a clear message. Without internet, checking for updates no longer shows as a failure.
+
+## Updating
+- **Installs over 0.9.0 and 0.8.x.** 0.8.1 had two APKs with different numbers, and anyone who had one of them could not install 0.9.0
+  without uninstalling. From 1.0 on, each version's number comes from its name, and the app never offers a version that Android
+  would refuse.
+- Online needs the same version on both devices.
+
+## Known issues
+- **BT4 on weak devices**: still far from full speed. On a Snapdragon 665 (Mi A3), a fight runs at about 30 % with the Dragon Rage renderer, which the app picks by itself on these devices (with ARMSX2, about 20 %). The limit is the processor, not the GPU.
+- **Touch in BT2**: the on-screen controller does not switch to the menu layout by itself, and BT2's menus only read the D-pad; in
+  menus, tap the ✛ button at the top (and again to go back to the fight layout).
+- **Tag Team Online with a weak device**: the whole room slows down with it (in a 5 against 5 with a Snapdragon 665, about
+  75 %). Players on weak devices should turn on Light graphics before joining.
+- **Tag Team Online**: the host's menu can show no letters on some devices; some messages are still in English.
+- **Ranked**: sometimes stays on "Loading profile..." when the server does not answer.
+- **BT2 online** only connects directly or through STUN: no relay when both networks block it.
+- **Players who only play BT2** do not get the app's update notice.
+- The online card in the launcher still says "Dragon Net Battle".
+
+## Team and credits
+- **dfdx047**: Dragon Rage (Android app and port).
+- **Regulus CiberSec**: BT2 on Android, Dragon Net Online, Tag Team on Android and online, the new character select, lobbies and
+  spectators on Android, renderer.
+- **z3xox** and contributors: the PC port (Tenkaichi3Decomp) this is built on: lobbies, tournaments, spectators, quick match by
+  region, automatic updates.
+- **Androidxxt01**: lobby diagnostics, the lobby code with the server, retrying on another server.
+- **jllacchua**: the PC updater. **victorgonl**: story mode translation.
+- **tehmufti and the Tag Team Mod contributors**: the Tag Team Mod.
+- **Team BT4**: the Budokai Tenkaichi 4 mod.
+- Art: **MarshallPunk** (the announcer), **pluantoine** (the buttons).
+- And the projects the app stands on: BT3-Recomp/PS2Recomp, dbz-bt4-recomp, PCSX2/ARMSX2, BT2 Recomp, SDL3 and others (full list
+  in About > Licences).

@@ -1,5 +1,9 @@
+#include "battle/tag_balance.h"
+#include "battle/tag_clash.h"
 #include "common.h"
 #include "battle/btl_char_hit.h"
+#include "battle/tag_options.h"
+#include "battle/tag_team.h"
 
 /* Fighter hit resolution, 0x1C7B30-0x1CA6D0. The frame flow and the structures are in battle/btl_char_hit.h.
  *
@@ -175,7 +179,7 @@ s32 BtlHit_GetVoiceKind(s32 reaction) {
 s32 BtlHit_GetHitNo(HitChr *chr) {
     HitObj *obj = BtlChar_GetObj(chr);
 
-    if (obj->work->unk18020 & 0xF000000) {
+    if (TagContact_Has(chr->player,-1)) {
         return obj->hitNo;
     }
     if (BtlChar_TestFlag(chr, 0x65)) {
@@ -818,11 +822,16 @@ void BtlHit_BeginFrame(HitChr *chr) {
 /* Two fighters that both carry flag 0x47 (or a 0x47 / 0x48 mix) and touch: both get flag 0x61 (0x62 for a mix),
  * hit-stop and the "struck" flags 0x44..0x46. Returns 1, which ends the hit step for this frame. */
 s32 BtlHit_CheckClash(void) {
-    s32 i;
+    s32 i,j,result=0;
 
     for (i = 0; i < BtlChar_GetCount(); i++) {
         HitChr *a = BtlChar_Get(i);
-        HitChr *b = BtlChar_Get(BtlOpp_GetPlayer(a));
+        for (j=0;j<BtlChar_GetCount();j++) {
+        HitChr *b = BtlChar_Get(j);
+        if (TagTeam_Active()) {
+            extern s32 TagTeam_BodiesTouch(s32,s32);
+            if (j<=i || TagTeam_CinematicPaused(i) || TagTeam_CinematicPaused(j) || !TagTeam_BodiesTouch(i,j) || BtlClash_Opponent(i)>=0 || BtlClash_Opponent(j)>=0) continue;
+        } else if (j!=BtlOpp_GetPlayer(a)) continue;
 
         if (BtlChar_TestFlag(a, 3)) {
             s32 same = 0;
@@ -841,7 +850,8 @@ s32 BtlHit_CheckClash(void) {
             if (BtlChar_TestFlag(a, 0x48) && BtlChar_TestFlag(b, 0x47)) {
                 mixed = 1;
             }
-            if ((same || mixed) && (BtlMove_IsBlockedByOpponent(a) || BtlMove_IsBlockedByOpponent(b))) {
+            if ((same || mixed) && (TagTeam_Active() || BtlMove_IsBlockedByOpponent(a) || BtlMove_IsBlockedByOpponent(b))) {
+                if (!BtlClash_Join(a->player, b->player)) continue;
                 if (same) {
                     BtlChar_SetFlag(a, 0x61);
                     BtlChar_SetFlag(b, 0x61);
@@ -868,11 +878,15 @@ s32 BtlHit_CheckClash(void) {
                 BtlChar_SetFlag(b, 0x44);
                 BtlChar_SetFlag(b, 0x45);
                 BtlChar_SetFlag(b, 0x46);
-                return 1;
+                if (!TagTeam_Active()) {
+                    return 1; /* (a normal fight, as on the disc: the second look at the same pair would sound it twice) */
+                }
+                result=1;
             }
         }
+        }
     }
-    return 0;
+    return result;
 }
 
 /* Contact of a rushing attack (attacker flag 0x49, touching). In order: miss (0x63) against flag 0x42 or animation
@@ -889,10 +903,11 @@ s32 BtlHit_CheckRush(void) {
         u32 tf;
         s32 flag;
 
+        if(TagTeam_CinematicPaused(a->player) || TagTeam_CinematicPaused(b->player)) continue;
         if (!BtlChar_TestFlag(a, 0x49)) {
             continue;
         }
-        if (!BtlMove_IsBlockedByOpponent(a)) {
+        if (TagTeam_Active() ? !TagTeam_BodiesTouch(a->player,b->player) : !BtlMove_IsBlockedByOpponent(a)) {
             continue;
         }
         BtlAnim_GetFlags(BtlAnim_GetId(a));
@@ -1011,7 +1026,7 @@ void BtlHit_CheckProximityAll(void) {
 
     for (i = 0; i < BtlChar_GetCount(); i++) {
         for (j = 0; j < BtlChar_GetCount(); j++) {
-            if (i != j) {
+            if (TagTeam_IsEnemy(i, j) && TagTeam_CanContact(i,j)) {
                 HitChr *a = BtlChar_Get(i);
                 HitChr *b = BtlChar_Get(j);
 
@@ -1026,45 +1041,45 @@ void BtlHit_CheckProximityAll(void) {
 /* Does this fighter's attack connect this frame? Needs an attack id, active hit volumes or "contact" (0x65), and
  * the opponent within 90 degrees of the facing (or attack flag 8). Marks the hit handled (0x60), then runs the
  * avoid / guard / throw-break tests in order; if none applies the opponent is stored as the pending target. */
+/* Contact candidates belong to one collision pass, not to the camera lock.
+   Keep a target context only while native hit/guard helpers run: this gives
+   their aim and knockback the actual recipient without changing lock-on. */
+static u32 contactPending[TAG_TEAM_CAPACITY];
+static s32 contactActor=-1,contactVictim=-1;
+s32 TagHit_Target(s32 actor) {return actor==contactActor?contactVictim:-1;}
 void BtlHit_TestHit(HitChr *chr) {
-    HitStatus *st = &chr->status;
-    HitObj *obj = BtlChar_GetObj(chr);
-    s32 full;
-
-    if (BtlChar_TestFlag(chr, 0x60)) {
-        return;
-    }
-    if (BtlAtk_GetId(chr) == -1) {
-        return;
-    }
-    if ((obj->work->unk18020 & 0xF000000) || BtlChar_TestFlag(chr, 0x65)) {
-        s32 ok = 0;
-        s32 oppIdx = BtlOpp_GetPlayer(chr);
-        HitChr *opp = BtlChar_Get(oppIdx);
-
-        if (__builtin_fabsf(BtlOpp_GetYawFromFacing(chr)) < 1.5707963f) {
-            ok = 1;
-        }
-        if (BtlAtk_GetFlags(chr) & 8) {
-            ok = 1;
-        }
-        if (ok) {
-            BtlChar_SetHeldFlag(chr, 0x60);
-            if (BtlHit_IsVoid(chr, opp) || BtlHit_CheckDodge(chr, opp) || BtlHit_CheckArmor(chr, opp) ||
-                BtlHit_CheckRepel(chr, opp)) {
-                BtlChar_SetHeldFlag(chr, 0x5C);
-            } else if (BtlHit_CheckGuard(chr, opp, &full)) {
-                if (full) {
-                    BtlMember_Damage(opp, BtlAtk_GetGuardDamage(chr), 0xC);
-                }
-            } else if (!BtlHit_CheckThrowBreak(chr, opp)) {
-                st->target = oppIdx;
+    s32 actor=chr->player,locked=TagTeam_Target(actor),kind=BtlAtk_GetId(chr);
+    s32 i,full,handled=0,multi=TagTeam_Active() && Port_TagOption(TAG_OPT_MELEE_CONTACT) && kind>=0 && kind!=0x55 && kind!=0x56;
+    if(BtlChar_TestFlag(chr,0x60) || kind<0)return;
+    for(i=0;i<(multi?BtlChar_GetCount():1);i++) {
+        s32 victim=multi?i:locked;
+        HitChr *opp;
+        if(multi && !TagTeam_IsEnemy(actor,victim))continue;
+        if(!TagTeam_CanContact(actor,victim))continue;
+        if(!TagContact_Has(actor,victim) && !(victim==locked && BtlChar_TestFlag(chr,0x65)))continue;
+        contactActor=actor;contactVictim=victim;opp=BtlChar_Get(victim);
+        if(__builtin_fabsf(BtlOpp_GetYawFromFacing(chr))<1.5707963f || (BtlAtk_GetFlags(chr)&8)) {
+            handled=1;
+            if(BtlHit_IsVoid(chr,opp) || BtlHit_CheckDodge(chr,opp) || BtlHit_CheckArmor(chr,opp) || BtlHit_CheckRepel(chr,opp))
+                BtlChar_SetHeldFlag(chr,0x5C);
+            else if(BtlHit_CheckGuard(chr,opp,&full)) {
+                if(full)TagBalance_Damage(opp,BtlAtk_GetGuardDamage(chr),0xC,actor);
+            } else if(!BtlHit_CheckThrowBreak(chr,opp)) {
+                chr->status.target=victim;
+                if((u32)actor<TAG_TEAM_CAPACITY)contactPending[actor]|=1u<<victim;
             }
         }
+        contactActor=contactVictim=-1;
     }
-    if (BtlChar_TestFlag(chr, 0x65)) {
-        chr->status.contact++;
-    }
+    if(handled)BtlChar_SetHeldFlag(chr,0x60);
+    if(BtlChar_TestFlag(chr,0x65))chr->status.contact++;
+}
+static s32 pending_hit(HitChr *a,s32 b) {
+    return (contactPending[a->player]&(1u<<b))!=0;
+}
+static void cancel_hit(HitChr *a,s32 b) {
+    contactPending[a->player]&=~(1u<<b);
+    if(a->status.target==b)a->status.target=-1;
 }
 
 /* Two fighters that hit each other in the same frame: the higher attack priority wins and the other hit is
@@ -1080,17 +1095,17 @@ void BtlHit_ResolveTrades(void) {
             HitStatus *sa = &a->status;
             HitStatus *sb = &b->status;
 
-            if (sa->target == b->player && sb->target == a->player) {
+            if (pending_hit(a,b->player) && pending_hit(b,a->player)) {
                 s32 pa = BtlAtk_GetPriority(a);
                 s32 pb = BtlAtk_GetPriority(b);
 
                 if (pa > pb) {
-                    sb->target = -1;
+                    cancel_hit(b,a->player);
                 } else if (pa < pb) {
-                    sa->target = -1;
+                    cancel_hit(a,b->player);
                 } else {
-                    sa->target = -1;
-                    sb->target = -1;
+                    cancel_hit(a,b->player);
+                    cancel_hit(b,a->player);
                     BtlChar_SetFxBit(a, 0x22);
                     BtlChar_SetFxBit(b, 0x22);
                     ChrCam_AddShake(a, 2.0f, 0.3f);
@@ -1126,12 +1141,16 @@ void BtlHit_ApplyHit(HitChr *atk) {
     f32 a;
     f32 b;
 
-    if (atk->status.target < 0) {
+    if (atk->status.target < 0 || !TagTeam_CanContact(atk->player,atk->status.target)) {
         return;
     }
     def = BtlChar_Get(atk->status.target);
     dobj = BtlChar_GetObj(def);
     kind = BtlAtk_GetId(atk);
+    /* A third fighter may have landed a hit earlier in this contact pass.
+       Do not start half a grab when its attacker is already being knocked out
+       of the catch. Successful grabs are protected from subsequent contacts. */
+    if (TagTeam_Active() && kind == 0x55 && atk->react.reaction >= 3) return;
     af = BtlAtk_GetFlags(atk);
     state = BtlAnim_GetId(def);
     st = BtlAnim_GetFlags(state);
@@ -1184,6 +1203,10 @@ void BtlHit_ApplyHit(HitChr *atk) {
             }
         }
         lvl -= BtlAtk_GetUnk2C(atk);
+        {
+            extern s32 TagGiant_Armor(s32);
+            lvl += TagGiant_Armor(def->player);
+        }
         if (lvl > 0 && (af & 4)) {
             react = 2;
             if (BtlParam_GetFlags(def) & 4) {
@@ -1339,6 +1362,7 @@ void BtlHit_ApplyHit(HitChr *atk) {
     if (kind == 0x55) {
         s32 v = (BtlParam_GetFlags(atk) >> 19) & 1;
 
+        if(react!=2) TagTeam_GrabContact(atk->player,def->player);
         atk->react.unk10 = v;
         def->react.unk10 = v;
     } else {
@@ -1381,7 +1405,7 @@ void BtlHit_ApplyHit(HitChr *atk) {
             type = 0x200000 + atk->unkE0C;
             break;
         }
-        BtlMember_Damage(def, dmg, type);
+        TagBalance_Damage(def, dmg, type, *(s32 *)atk);
         break;
     }
     }
@@ -1426,13 +1450,20 @@ void BtlColl_Update(void) {
         }
         BtlHit_ResolveTrades();
         for (i = 0; i < BtlChar_GetCount(); i++) {
-            BtlHit_ApplyHit(BtlChar_Get(i));
+            HitChr *atk=BtlChar_Get(i);s32 j,original=atk->status.target;
+            for(j=0;j<BtlChar_GetCount();j++)if(pending_hit(atk,j)) {
+                contactActor=i;contactVictim=j;atk->status.target=j;
+                BtlHit_ApplyHit(atk);
+                contactActor=contactVictim=-1;
+            }
+            atk->status.target=original;
         }
     }
 }
 
 /* All the collision step does for a fighter while somebody is frozen (also run before each hit test): no target. */
 void BtlColl_UpdateFrozen(HitChr *chr) {
+    if((u32)chr->player<TAG_TEAM_CAPACITY)contactPending[chr->player]=0;
     chr->status.target = -1;
 }
 

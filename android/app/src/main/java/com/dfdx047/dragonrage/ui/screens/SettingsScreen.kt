@@ -27,6 +27,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyColumn
 import com.dfdx047.dragonrage.data.REPO_URL
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -222,8 +227,9 @@ fun SettingsScreen(vm: AppViewModel) {
             if (vm.game == com.dfdx047.dragonrage.data.Game.BT4 && EngineSettings.hasArmsx2Renderer(androidx.compose.ui.platform.LocalContext.current)) {
                 Text(stringResource(R.string.bt4_renderer), style = MaterialTheme.typography.titleSmall)
                 ChipRow(
-                    options = listOf(stringResource(R.string.bt4_renderer_armsx2) to 1, stringResource(R.string.bt4_renderer_dr) to 0),
-                    selected = get(EngineSettings.BT4_RENDERER, 1),
+                    options = listOf(stringResource(R.string.bt4_renderer_armsx2) to 1, stringResource(R.string.bt4_renderer_dr) to 0) +
+                        (if (EngineSettings.hasNominumRenderer(androidx.compose.ui.platform.LocalContext.current)) listOf(stringResource(R.string.bt4_renderer_nominum) to 2) else emptyList()),
+                    selected = vm.bt4Renderer(),
                     onSelect = { vm.setting(EngineSettings.BT4_RENDERER, it) },
                 )
                 Text(
@@ -253,6 +259,11 @@ fun SettingsScreen(vm: AppViewModel) {
             ToggleRow(stringResource(R.string.lite), stringResource(R.string.lite_text), get(EngineSettings.LITE, 0) != 0) {
                 vm.setLite(it)
             }
+            if (vm.game == com.dfdx047.dragonrage.data.Game.BT3) {
+                ToggleRow(stringResource(R.string.tag_team), stringResource(R.string.tag_team_text), get(EngineSettings.TAG_TEAM, EngineSettings.TAG_TEAM_DEFAULT) != 0) {
+                    vm.setting(EngineSettings.TAG_TEAM, if (it) 1 else 0)
+                }
+            }
             if (vm.game != com.dfdx047.dragonrage.data.Game.BT4) { // (smooth motion is the BT3 engine's)
                 Text(stringResource(R.string.fps60), style = MaterialTheme.typography.titleSmall)
                 ChipRow(
@@ -264,6 +275,9 @@ fun SettingsScreen(vm: AppViewModel) {
                     stringResource(R.string.fps60_text),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            ToggleRow(stringResource(R.string.tag_lite), stringResource(R.string.tag_lite_text), get(EngineSettings.TAG_LITE, 0) != 0) {
+                vm.setting(EngineSettings.TAG_LITE, if (it) 1 else 0)
             }
             ToggleRow(stringResource(R.string.adpf), stringResource(R.string.adpf_text), get(EngineSettings.ADPF, 1) != 0) {
                 vm.setting(EngineSettings.ADPF, if (it) 1 else 0)
@@ -286,6 +300,15 @@ fun SettingsScreen(vm: AppViewModel) {
         }
 
 
+        if (vm.game == com.dfdx047.dragonrage.data.Game.BT3) { // (the new select is BT3's engine: BT3 and the Tag Team)
+            SectionCard(stringResource(R.string.select_style), Icons.Rounded.AutoAwesome, accent = Dbz.SaiyanGold) {
+                SelectStylePicker(get(EngineSettings.SELECT_CLASSIC, 0) != 0, { vm.setting(EngineSettings.SELECT_CLASSIC, if (it) 1 else 0) })
+                Text(
+                    stringResource(R.string.select_style_text),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         SectionCard(stringResource(R.string.appearance), Icons.Rounded.Palette, accent = MaterialTheme.colorScheme.tertiary) {
             Text(stringResource(R.string.theme), style = MaterialTheme.typography.titleSmall)
             ChipRow(
@@ -317,6 +340,7 @@ fun SettingsScreen(vm: AppViewModel) {
                 stringResource(R.string.about_text),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Text(stringResource(R.string.about_team), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             val uri = LocalUriHandler.current
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { runCatching { uri.openUri(REPO_URL) } }) {
@@ -329,6 +353,21 @@ fun SettingsScreen(vm: AppViewModel) {
                     Spacer(Modifier.size(6.dp))
                     Text(stringResource(R.string.check_updates))
                 }
+            }
+            var licences by remember { mutableStateOf<List<String>?>(null) }
+            val context = LocalContext.current
+            TextButton(onClick = {
+                licences = runCatching { context.assets.open("licenses.txt").bufferedReader().readLines() }.getOrDefault(emptyList())
+            }) { Text(stringResource(R.string.licences)) }
+            licences?.let { lines ->
+                AlertDialog(
+                    onDismissRequest = { licences = null },
+                    title = { Text(stringResource(R.string.licences)) },
+                    text = {
+                        LazyColumn { items(lines) { Text(it, style = MaterialTheme.typography.bodySmall) } }
+                    },
+                    confirmButton = { TextButton(onClick = { licences = null }) { Text(stringResource(R.string.close)) } },
+                )
             }
             HorizontalDivider()
             Text(stringResource(R.string.game_folder), style = MaterialTheme.typography.titleSmall)

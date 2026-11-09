@@ -1,0 +1,17 @@
+{
+  "source": "http://redump.org/datfile/ps2/",
+  "retrieved": "2026-10-03",
+  "datfile_name": "Sony - PlayStation 2 - Datfile (11774) (2026-06-15 03-41-38).dat",
+  "datfile_sha256": "c11ea9fa2d09a754ac755c2cdf7cf6b44bad6ae7505eed9eb2a4f5b4a4e5f4a1",
+  "title": "Dragon Ball Z - Budokai Tenkaichi 2 (USA) (En,Ja)",
+  "serial": "SLUS-21441",
+  "disc": {
+    "size": 2998829056,
+    "md5": "37393b158051af0ab5cb3c86d04d51b7",
+    "sha1": "0b11f7a2a4c178b555c45a58ce8ee725e57a1423"
+  },
+  "executable": {
+    "sha256": "f7e5ba8e74657b8533c3a0fedff45de0d052be3a23fe4c475059ef888a81f03e",
+    "provenance": "Must match SLUS_214.41;1 within the hash-matched disc; not an independently published ELF hash."
+  }
+}

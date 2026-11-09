@@ -1293,6 +1293,14 @@ void Flash_ClipGetPos(Flash *flash, FlashRef *ref, s32 *x, s32 *y) {
     }
 }
 
+#ifdef PORT
+/* Let a custom menu page temporarily hide stock clips without changing
+   their timeline's visibility when it returns to the original menu. */
+s32 Flash_ClipIsVisible(Flash *flash, FlashRef *ref) {
+    return ref->index>=0 && (u32)ref->index<flash->clips->count &&
+           (flash->clips->items[ref->index].flags&FLASH_CLIP_VISIBLE)!=0;
+}
+#endif
 /* Returns a clip's alpha, 0 when the reference is empty. */
 f32 Flash_ClipGetAlpha(Flash *flash, FlashRef *ref) {
     f32 alpha = 0.0f;

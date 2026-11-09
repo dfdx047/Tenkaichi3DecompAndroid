@@ -4,6 +4,14 @@
 #include "battle/btl_cam.h"
 #include "battle/btl_pool.h"
 #include "battle/btl_scene.h"
+#ifdef PORT
+#include "battle/tag_team.h"
+/* Weather follows a camera, not a fighter. The original boolean "second view"
+   aliases P2/P3/P4 and moves that same particle bank several times per frame. */
+static EftWeatherView nativeWeatherViews[4];
+static u32 nativeWeatherFrame, nativeWeatherMoved[4];
+static s32 nativeWeather;
+#endif
 #include "sys/common.h"
 #include "sys/dma.h"
 #include "sys/gfx.h"
@@ -343,7 +351,13 @@ void EftWeather_Init(EftTask *task) {
         gEftWeather->wind.z = rec->wind[2];
         gEftWeather->flags = rec->ptclFlags;
         EftTexSet_Load32(&gEftWeather->tex, BtlScene_GetPackEntry(pack, 0xB));
+#ifdef PORT
+        nativeWeather=TagTeam_Active();
+        gEftWeather->list = BtlTask_CreateChildList(task, 1,
+            (nativeWeather?4:1) * EFT_WEATHER_PTCL_MAX * sizeof(EftWeatherPtcl));
+#else
         gEftWeather->list = BtlTask_CreateChildList(task, 1, EFT_WEATHER_PTCL_MAX * sizeof(EftWeatherPtcl));
+#endif
         gEftWeather->enabled = 1;
         BtlTaskList_AddTail(gEftWeather->list, &gEftWeatherPtclClass, NULL);
     }
@@ -362,6 +376,9 @@ void EftWeather_Update(void) {
     f32 angle;
 
     if (gEftWeather != NULL) {
+#ifdef PORT
+        if(!(Battle_GetWork()->flags & 0x100)) nativeWeatherFrame++;
+#endif
         angle = (f32)gEftWeather->angle * 3.14159265f / 180.0f;
         Vec4_Copy(&gEftWeather->windNow, &gEftWeather->wind);
         gEftWeather->windNow.x += sinf(angle) * 0.3f;
@@ -419,6 +436,15 @@ void EftWeather_Move(EftWeatherPtcl *p, EftWeatherView *view, s32 count) {
     s32 n;
     s32 i;
 
+#ifdef PORT
+    /* Each native view supplies a separate tracker, using its first entry. */
+    if(nativeWeather) second=0;
+    {
+        extern void Port_TagWeatherTrace(u32,s32,u32,u32,s32,s32);
+        if(nativeWeather) Port_TagWeatherTrace(nativeWeatherFrame,
+            BtlScene_IsSingleView()?0:gBtlCam->cur->index,(u32)p,(u32)view,count,1);
+    }
+#endif
     flags = gEftWeather->flags;
     size = gEftWeather->size;
     Vec4_Set(&offs, 0.0f, 0.0f, 55.0f, 0.0f);
@@ -584,9 +610,15 @@ void EftWeatherPtcl_PostUpdate(void) {
 /* Particle task reset: random position within +-51 units of the camera, random texture (4 rand() each). */
 void EftWeatherPtcl_Reset(EftTask *task) {
     EftWeatherPtcl *p = task->work;
-    s32 i;
+    s32 i,capacity=EFT_WEATHER_PTCL_MAX;
 
-    for (i = EFT_WEATHER_PTCL_MAX - 1; i >= 0; i--) {
+#ifdef PORT
+    if(nativeWeather) capacity*=4;
+    nativeWeatherFrame=0;
+    memset(nativeWeatherViews,0,sizeof(nativeWeatherViews));
+    memset(nativeWeatherMoved,-1,sizeof(nativeWeatherMoved));
+#endif
+    for (i = capacity - 1; i >= 0; i--) {
         p->pos.x = (f32)((rand() & 0x3FF) - 0x1FF) * 0.1f;
         p->pos.y = (f32)((rand() & 0x3FF) - 0x1FF) * 0.1f;
         p->pos.z = (f32)((rand() & 0x3FF) - 0x1FF) * 0.1f;
@@ -625,6 +657,29 @@ void EftWeatherPtcl_Draw(EftTask *task) {
     EftWeatherPtcl *p = task->work;
     s32 count = gEftWeather->count;
 
+#ifdef PORT
+    if(nativeWeather) {
+        s32 view=BtlScene_IsSingleView()?0:gBtlCam->cur->index;
+        if(view<0 || view>=4 || !gEftWeather->enabled) return;
+        /* Select the bank even while paused. Otherwise a paused P2/P3/P4
+           would suddenly draw the first camera's particles. */
+        p+=view*EFT_WEATHER_PTCL_MAX;
+        if(count<0) count=0;
+        if(count>EFT_WEATHER_PTCL_MAX) count=EFT_WEATHER_PTCL_MAX;
+        if(!BtlScene_IsSingleView()) count/=2;
+        if(!(Battle_GetWork()->flags & 0x100) && nativeWeatherMoved[view]!=nativeWeatherFrame) {
+            EftWeather_Move(p,&nativeWeatherViews[view],count);
+            nativeWeatherMoved[view]=nativeWeatherFrame;
+        }
+        {
+            extern void Port_TagWeatherTrace(u32,s32,u32,u32,s32,s32);
+            Port_TagWeatherTrace(nativeWeatherFrame,view,(u32)p,
+                (u32)&nativeWeatherViews[view],count,0);
+        }
+        if(!(gBtlStage->flags&1) && EftStage_IsDrawOn()) EftWeather_DrawPtcls(p,count);
+        return;
+    }
+#endif
     if (gEftWeather->enabled) {
         if (!(Battle_GetWork()->flags & 0x100)) {
             if (Battle_IsSplitScreen()) {

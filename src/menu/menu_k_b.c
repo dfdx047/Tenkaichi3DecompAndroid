@@ -2,6 +2,7 @@
 #include "menu/menu_k.h"
 #include "sys/pad.h"
 #include "sys/save.h"
+#include "menu/tag_tournament.h"
 
 /*
  * Bracket, 0x364DA8..0x3660A0: the tournament bracket screen (progress mode 35), first source file: the screen's
@@ -9,6 +10,12 @@
  * loader and bracket logic (menu_k_f.c, menu_l) take the work pointer as an argument and are other source files.
  */
 
+static s32 bracket_music(void) {
+#ifdef PORT
+    if(PortGame_IsBT4()) {static const s32 tracks[]={0x8C1,0x851,0x824,0x851,0x896};return tracks[TOUR_PROG2->tour];}
+#endif
+    return TOUR_PROG2->tour==TOUR_WORLD?BRK_BGM_WORLD:TOUR_PROG2->tour==TOUR_CELL?BRK_BGM_CELL:BRK_BGM_OTHER;
+}
 Bracket *gBracket = NULL; /* 0x3B5918 */
 
 #define BRK_ENT(n) (gBracket->ents.e[n])
@@ -47,8 +54,11 @@ void Bracket_Init(void) {
         TOUR_PROG2->match = 0;
         Bracket_FillEntrants(gBracket);
         Bracket_ShuffleEntrants(gBracket);
+#ifdef PORT
+        { extern void TagTournament_BuildTeams(void *);TagTournament_BuildTeams(gBracket); }
+#endif
         Bracket_InitMatches(gBracket);
-        StreamSe_PlayDefault(0, BRK_SE_FANFARE);
+        StreamSe_PlayDefault(0, PortGame_IsBT4()?0x151:BRK_SE_FANFARE);
         gBracket->flags |= BRK_FANFARE;
     }
     if (gProgress->flags & MPROG_TOUR_RUNNING) {
@@ -59,24 +69,10 @@ void Bracket_Init(void) {
         Bracket_LoadImages(gBracket);
         Bracket_ApplyResult(gBracket);
         Bracket_PlayCpuMatches(gBracket);
-        switch (TOUR_PROG2->tour) {
-        case TOUR_WORLD:
-            Bgm_Play(BRK_BGM_WORLD);
-            break;
-        case TOUR_CELL:
-            Bgm_Play(BRK_BGM_CELL);
-            break;
-        case TOUR_BIG:
-        case TOUR_OTHERWORLD:
-            Bgm_Play(BRK_BGM_OTHER);
-            break;
-        case TOUR_YAMCHA:
-            Bgm_Play(BRK_BGM_OTHER);
-            break;
-        }
+        Bgm_Play(bracket_music());
     }
     /* skip the matches no player entrant takes part in */
-    while (1) {
+    while (!TagTournament_Active()) {
         if ((BRK_ENT(BRK_MATCH.ent[0]).flags & TOUR_ENT_PLAYER) || (BRK_ENT(BRK_MATCH.ent[1]).flags & TOUR_ENT_PLAYER)) {
             break;
         }
@@ -155,6 +151,7 @@ void Bracket_Draw(void) {
         Flash_Draw(&gBracket->flash[BRK_FL_TITLE]);
     }
     GetWin_Draw();
+    TagTournament_DrawBracket(gBracket);
 }
 
 /* Advances the movies and the bracket animation: the two chips meet, the winner moves up, the next step is chosen. */
@@ -165,24 +162,12 @@ void Bracket_Update(void) {
         Flash_Advance(&gBracket->flash[i]);
     }
     if (gBracket->flags & BRK_FANFARE) {
-        if (StreamSe_GetStat(0) == 5) {
-            switch (TOUR_PROG2->tour) {
-            case TOUR_WORLD:
-                Bgm_Play(BRK_BGM_WORLD);
-                break;
-            case TOUR_CELL:
-                Bgm_Play(BRK_BGM_CELL);
-                break;
-            case TOUR_BIG:
-            case TOUR_OTHERWORLD:
-                Bgm_Play(BRK_BGM_OTHER);
-                break;
-            case TOUR_YAMCHA:
-                Bgm_Play(BRK_BGM_OTHER);
-                break;
-            }
+        if (StreamSe_IsStopped(0)) {
+            Bgm_Play(bracket_music());
             gBracket->flags &= ~BRK_FANFARE;
         }
+    } else if (!(gBracket->flags&BRK_LEAVING) && Bgm_IsStopped()) {
+        Bgm_Play(bracket_music());
     }
     if (gBracket->flags & BRK_SCROLL_BACK) {
         gBracket->scroll += gBracket->scrollSpeed;
@@ -245,7 +230,7 @@ void Bracket_Update(void) {
                 }
             } else {
                 if (BRK_MATCH.flags & TOUR_MATCH_FINAL) {
-                    if (BRK_ENT(BRK_MATCH.ent[gBracket->winSide]).flags & TOUR_ENT_PLAYER) {
+                    if (TagTournament_Active() || (BRK_ENT(BRK_MATCH.ent[gBracket->winSide]).flags & TOUR_ENT_PLAYER)) {
                         gBracket->flags ^= BRK_INPUT;
                         if (TOUR_PROG2->entry == 0) {
                             gBracket->seq = 0xFB;
@@ -269,6 +254,7 @@ void Bracket_Update(void) {
 /* Left / right scroll the tree while the player may look at it; confirm starts the next match. */
 void Bracket_Input(s32 *result) {
     if (gBracket->flags & BRK_INPUT) {
+        if(!gBracket->seq && (gPad[0].gamePressed&PADG_SQUARE) && TagTournament_CpuMatch(gBracket)) {TagTournament_SkipMatch(gBracket);Snd_PlaySe(1,1);return;}
         if (gPad[0].gameHeld & 1) {
             if (gBracket->scroll < 0.0f) {
                 gBracket->scroll += 3.0f;

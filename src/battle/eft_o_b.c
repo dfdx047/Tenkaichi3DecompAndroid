@@ -1,3 +1,4 @@
+#include "battle/btl_effect_owner.h"
 #include "common.h"
 #include "battle/eft_o.h"
 
@@ -398,7 +399,7 @@ void EftBlastObj_Init(EftOTask *task, EftBlastObjArg *arg) {
         w->model.pack = arg->model;
         EftBlastObj_InitModel(task);
     }
-    BtlTask_SetOwnerTag(task, src->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(src->objId));
 }
 
 /* Term callback. */

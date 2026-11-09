@@ -1,5 +1,6 @@
 /* Extract the game's UTF-16 menu, mode and story text tables at startup. */
 #include "ui_text_extract.h"
+#include "../../include/plat_game.h"
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -251,7 +252,7 @@ static void *ut_worker(void *arg) {
     for (i = 0; i < (int)(sizeof(kUtTextFiles) / sizeof(kUtTextFiles[0])); i++) {
         uint8_t *data;
         UtBuf b;
-        if (snprintf(path, sizeof(path), "%s/pzs3us1/%05d.bin", job->data, kUtTextFiles[i]) >= (int)sizeof(path)) continue;
+        if (snprintf(path, sizeof(path), "%s/%s/%05d.bin", job->data, PortGame_IsBT4()?"pzs4us1":"pzs3us1", kUtTextFiles[i]) >= (int)sizeof(path)) continue;
         data = ut_read(path, &size);
         if (data == NULL) continue;
         b.p = data; b.n = size; w.file = kUtTextFiles[i];

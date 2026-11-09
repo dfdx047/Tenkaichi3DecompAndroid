@@ -1,5 +1,12 @@
 #include "common.h"
 #include "menu/menu_l.h"
+#include "menu/tag_tournament.h"
+
+#ifdef PORT
+#define BRACKET_FACE_FILE (PortGame_IsBT4()?0x71C:0x2F9)
+#else
+#define BRACKET_FACE_FILE 0x2F9
+#endif
 
 /*
  * Bracket, 0x368068..0x36B3E0: the loader and the tournament logic of the bracket screen of Dragon World Tour
@@ -190,7 +197,14 @@ void Bracket_Load(LBracket *b) {
     b->nameText = MPACK_AT(b->res, 21);
     b->formText = MPACK_AT(b->res, 22);
     b->chips = (u32 *)MPACK_AT(b->res, 23);
+#ifdef PORT
+    /* Section 23 has its own count and offset table: 165 texture entries
+       on BT3, 250 on BT4. It is separate from the 165-cell gridBuf (the
+       BT4 grid has 155 base-form cells). Relocate every portrait texture. */
+    for (i = 0; i < b->chips[0] && i < 250; i++) {
+#else
     for (i = 0; i < LCHR_CELL_MAX; i++) {
+#endif
         res = (MTexRes *)MPACK_AT(b->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
@@ -505,6 +519,7 @@ void Bracket_InitMatches(LBracket *b) {
 /* 1 when no entrant chosen by a player is still in the tournament. */
 s32 Bracket_IsPlayerOut(LBracket *b) {
     s32 i;
+    if(TagTournament_Active())return 0; /* eliminated players may watch the remaining bracket */
 
     for (i = 0; i < LTOUR_ENTRANT_MAX; i++) {
         if ((b->entrant[i].flags & LTOUR_ENT_PLAYER) && !(b->entrant[i].flags & LTOUR_ENT_LOST)) {
@@ -642,6 +657,7 @@ void Bracket_SetChipTex(LBracket *b) {
 /* Plays the CPU-only matches in order until the current round's last match is passed. */
 void Bracket_PlayCpuMatches(LBracket *b) {
     s32 round = 0;
+    if(TagTournament_Active())return;
     s32 i;
 
     for (i = 0; i < LTOUR_MATCH_MAX; i++) {
@@ -676,6 +692,7 @@ void Bracket_NextMatch(LBracket *b) {
             }
         }
         b->match++;
+        if(TagTournament_Active())break;
         if (b->entrant[b->match_[b->match].ent[0]].flags & LTOUR_ENT_PLAYER) {
             break;
         }
@@ -792,8 +809,8 @@ void Bracket_UpdateImages(LBracket *b) {
         chara[0] = b->entrant[b->match_[b->match].ent[0]].chara;
         chara[1] = b->entrant[b->match_[b->match].ent[1]].chara;
         File_CancelRequests();
-        File_Request(chara[0] + 0x2F9, b->imageFile[0], 0x16800);
-        File_Request(chara[1] + 0x2F9, b->imageFile[1], 0x16800);
+        File_Request(chara[0] + BRACKET_FACE_FILE, b->imageFile[0], 0x16800);
+        File_Request(chara[1] + BRACKET_FACE_FILE, b->imageFile[1], 0x16800);
         b->loadState = LBRK_LOAD_READ;
         break;
     case LBRK_LOAD_READ:
@@ -825,8 +842,8 @@ void Bracket_LoadImages(LBracket *b) {
     memset(p, 0, 8);
     chara[0] = b->entrant[b->match_[b->match].ent[0]].chara;
     chara[1] = b->entrant[b->match_[b->match].ent[1]].chara;
-    File_LoadSync(chara[0] + 0x2F9, b->imageFile[0], 0x16800);
-    File_LoadSync(chara[1] + 0x2F9, b->imageFile[1], 0x16800);
+    File_LoadSync(chara[0] + BRACKET_FACE_FILE, b->imageFile[0], 0x16800);
+    File_LoadSync(chara[1] + BRACKET_FACE_FILE, b->imageFile[1], 0x16800);
     Sprite_Unpack(b->imageFile[0], b->imageRes[0], NULL);
     Sprite_Unpack(b->imageFile[1], b->imageRes[1], NULL);
     res = b->imageRes[0];
@@ -990,6 +1007,9 @@ void Bracket_SetupBattle(LBracket *b) {
         BattleSetup_SetMember(i, 0, chara[i], costume[i], 0,
                               b->cpu[LTOUR_PROG->level * LTOUR_ROUND_NUM + b->round].cpuLevel, health[i], item[i].id);
     }
+#ifdef PORT
+    { extern void TagTournament_SetupBattle(void *);TagTournament_SetupBattle(b); }
+#endif
     BattleSetup_Finish();
 }
 

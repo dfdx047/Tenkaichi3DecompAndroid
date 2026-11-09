@@ -22,6 +22,7 @@ typedef struct PortVideo {
     int filter;      /* the picture onto the screen: 0 bilinear, 1 sharp bilinear, 2 FXAA, 3 FSR 1, 4 Snapdragon GSR */
     int vsync;       /* 1 = a picture waits for the display's refresh (no tearing where the driver has no other way) */
     int frameSkip;   /* 1 = a tick's picture is left out when the machine is behind, instead of the game slowing down */
+    int tagLite;     /* the Tag Team's light graphics (Port_TagLiteUpdate, gs_draw.c): 1 = on */
     int hudLayout;   /* a fight's HUD in a wide picture: 0 at the edges, 1 at the edges with long health bars, 2 in the middle as in 4:3 */
     int menuFont;    /* 0 Original (default), then entries in the generated font catalog */
     int battleFont; /* 0 original battle artwork (default), otherwise a font listed for battle */
@@ -39,7 +40,8 @@ SDL_Window *GsDraw_WindowCreate(int opengl);
 SDL_Window *GsDraw_Window(void);
 void GsDraw_WindowShape(void);
 void GsDraw_FullscreenSet(int on);
-void GsDraw_FullscreenToggle(void); /* F11: switch, save it, write the settings */
+void GsDraw_FullscreenToggle(void); /* switch and remember the window mode */
+int GsDraw_FullscreenEvent(const SDL_Event *ev); /* keys before UI input; mouse after UI input */
 
 /* gs_input.c: bindings of both players. Actions 0..15 are the pad's buttons, 16..23 the two sticks' directions. */
 #define PORT_ACTIONS 24

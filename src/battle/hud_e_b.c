@@ -66,6 +66,9 @@ extern void HudNode_Show(HudENode *node, s32 show);                        /* Hu
 extern void HudNode_SetPos(HudENode *node, s32 x, s32 y);                    /* HudNode_SetPos */
 extern void BtlMenu_SetScript2(s32 arg);
 extern HudPromptObj *BtlCtrl_GetObj(s32 side);
+#ifdef PORT
+extern s32 Hud_NativeActor(s32);
+#endif
 extern HudERes *FontIcon_GetRes(void);
 extern HudPromptIconDef *FontIcon_GetDefs(void);
 extern void *memset(void *dst, s32 c, u32 n);
@@ -1119,7 +1122,11 @@ void HudPrompt_DrawNames(void) {
 #ifdef PORT
             Port_GsMarker(HUD_SCR(i) ? PORT_2D_RIGHT : PORT_2D_LEFT); /* (widescreen: each name with its side, as HudCombo_DrawText) */
 #endif
+#ifdef PORT
+            BtlMenu_SetScript2(BtlCtrl_GetObj(Hud_NativeActor(i))->unkBC);
+#else
             BtlMenu_SetScript2(BtlCtrl_GetObj(i)->unkBC);
+#endif
             BtlText_DrawEntryName(pos->x, pos->y, idx, HUD_SCR(i), alpha); /* (the 4th: left or right aligned) */
         }
     }

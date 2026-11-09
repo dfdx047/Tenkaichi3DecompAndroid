@@ -1,0 +1,123 @@
+--- a/gs/gs_interface.hpp
++++ b/gs/gs_interface.hpp
+@@ -235,6 +235,18 @@
+ 	// Can squeeze out more performance on lower powered devices in some cases
+ 	// where games abuse the GS's fill rate for e.g. ridiculously expensive fogging effects.
+ 	bool allow_blend_demote = false;
++
++	// Drops primitives that read the frame buffer they draw to (distortion, trails, blur feedback): an
++	// effects switch for weak GPUs, where these are the heaviest passes.
++	bool skip_feedback_effects = false;
++
++	// The GS's fog (PRIM.FGE) is not applied.
++	bool disable_fog = false;
++
++	// FIFO readbacks that would wait for the GPU read what the host copy of VRAM holds instead (the last copy the
++	// GPU finished, usually the frame before), and ask for a new copy without waiting. Keeps the CPU and the GPU
++	// working at the same time in games that read the frame buffer back every frame; the data is a frame late.
++	bool late_readbacks = false;
+ };
+ 
+ class SignalInterface
+@@ -260,6 +272,12 @@
+ 	void set_debug_mode(const DebugMode &mode);
+ 	void set_hacks(const Hacks &hacks);
+ 
++	// Frame skipping, the host's choice: while set, primitives are dropped (transfers, copies and uploads still
++	// happen). The timeline values tell whether the GPU has finished an earlier frame.
++	void set_skip_draws(bool skip) { skip_draws = skip; }
++	uint64_t submitted_timeline_value() const;
++	uint64_t completed_timeline_value();
++
+ 	// When false, a flush only submits: the device's next frame context is left to its owner, so a second
+ 	// interface on the same device can flush from another thread without waiting for the first one's frame.
+ 	void set_frame_boundaries(bool enable);
+@@ -323,6 +341,7 @@
+ 	std::function<Vulkan::ImageHandle (const TextureDescriptor &)> texture_replacement;
+ 
+ private:
++	bool skip_draws = false;
+ 	friend class PageTracker;
+ 	void flush(PageTrackerFlushFlags flags, FlushReason reason);
+ 	void sync_host_vram_page(uint32_t page_index, uint32_t block_mask);
+--- a/gs/gs_interface.cpp
++++ b/gs/gs_interface.cpp
+@@ -1123,7 +1123,7 @@
+ 		state.combiner |= uint32_t(ctx.tex0.desc.TFX) << COMBINER_MODE_OFFSET;
+ 	}
+ 
+-	state.combiner |= prim.desc.FGE ? COMBINER_FOG_BIT : 0;
++	state.combiner |= prim.desc.FGE && !hacks.disable_fog ? COMBINER_FOG_BIT : 0;
+ 	return find_or_place_unique_state_vector(state);
+ }
+ 
+@@ -1240,6 +1240,16 @@
+ 	return renderer.query_timeline();
+ }
+ 
++uint64_t GSInterface::submitted_timeline_value() const
++{
++	return renderer.get_submitted_timeline();
++}
++
++uint64_t GSInterface::completed_timeline_value()
++{
++	return renderer.query_timeline();
++}
++
+ void GSInterface::mark_texture_state_dirty()
+ {
+ 	state_tracker.last_texture_index = UINT32_MAX;
+@@ -2502,6 +2512,9 @@
+ template <bool list_primitive, bool fan_primitive, bool quad, unsigned num_vertices>
+ void GSInterface::drawing_kick_append()
+ {
++	if (skip_draws)
++		return;
++
+ 	auto &prim = registers.prim;
+ 	auto &ctx = registers.ctx[prim.desc.CTXT];
+ 
+@@ -2639,6 +2652,8 @@
+ 		// Some heuristics would like to know about this.
+ 		render_pass.last_triangle_is_parallelogram_candidate = is_parallelogram_candidate;
+ 		feedback_mode = deduce_color_feedback_mode<quad, num_vertices>(pos, attr, ctx, prim.desc, uv_bb, bb);
++		if (hacks.skip_feedback_effects && feedback_mode != FBFeedbackMode::None && prim.desc.TME)
++			return;
+ 	}
+ 	else if (render_pass.is_potential_feedback || (render_pass.is_potential_channel_shuffle && quad))
+ 		compute_uv_bb<quad, num_vertices, false>(attr, ctx, prim.desc, uv_bb, nullptr, nullptr);
+@@ -3260,7 +3275,9 @@
+ 
+ 		uint64_t host_timeline = tracker.get_host_read_timeline(src_rect);
+ 
+-		if (hacks.unsynced_readbacks && renderer.query_timeline() < host_timeline)
++		const bool late = hacks.late_readbacks && renderer.query_timeline() < host_timeline;
++
++		if (!late && hacks.unsynced_readbacks && renderer.query_timeline() < host_timeline)
+ 		{
+ 			memset(transfer_state.fifo_readback.data(), 0, required_bytes);
+ 			return;
+@@ -3273,7 +3290,10 @@
+ 			if (debug_mode.deterministic_timeline_query)
+ 				renderer.wait_timeline(host_timeline);
+ 		}
+-		renderer.wait_timeline(host_timeline);
++
++		// A late readback reads the host copy as it is, without waiting for the copy just asked for.
++		if (!late)
++			renderer.wait_timeline(host_timeline);
+ 
+ 		void *mapped = renderer.begin_host_vram_access();
+ 
+--- a/gs/gs_renderer.hpp
++++ b/gs/gs_renderer.hpp
+@@ -299,6 +299,8 @@
+ 	void wait_timeline(uint64_t value);
+ 	// Query current timeline value.
+ 	uint64_t query_timeline();
++	// The value the last flush_submit signals (for a host's frame skipping).
++	uint64_t get_submitted_timeline() const { return last_submitted_timeline; }
+ 
+ 	// Cache management mostly on GPUs that need it.
+ 	void *begin_host_vram_access();

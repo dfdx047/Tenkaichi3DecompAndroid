@@ -1,0 +1,152 @@
+diff --git a/src/gpu/vulkan/SDL_gpu_vulkan.c b/src/gpu/vulkan/SDL_gpu_vulkan.c
+index 27e0d42..9280370 100644
+--- a/src/gpu/vulkan/SDL_gpu_vulkan.c
++++ b/src/gpu/vulkan/SDL_gpu_vulkan.c
+@@ -754,8 +754,27 @@ typedef struct DescriptorSetCache
+     // There's only a certain number of maximum layouts possible since we de-duplicate them.
+     DescriptorSetPool *pools;
+     Uint32 poolCount;
++    /* Dragon Rage: the fragment sampler sets already written in this command buffer, by what they hold. A frame of
++       thousands of draws switches between a few textures (a fighter's texture and its toon layer): each switch took
++       a new set from the pool and wrote it again (vkUpdateDescriptorSets, a driver allocation). A set is written
++       once per command buffer and only handed out again after the command buffer is done (ReturnDescriptorSetCacheToPool),
++       so one already written is valid for the rest of this command buffer. */
++    struct DrFragMemo *fragMemo;
++    Uint32 fragMemoGen;
+ } DescriptorSetCache;
+ 
++#define DR_FRAG_MEMO_SIZE 2048
++#define DR_FRAG_MEMO_SAMPLERS 4
++typedef struct DrFragMemo
++{
++    Uint32 gen;
++    Uint32 layoutID;
++    Uint32 count;
++    VkSampler samplers[DR_FRAG_MEMO_SAMPLERS];
++    VkImageView views[DR_FRAG_MEMO_SAMPLERS];
++    VkDescriptorSet set;
++} DrFragMemo;
++
+ typedef struct DescriptorSetLayoutHashTableKey
+ {
+     VkShaderStageFlagBits shaderStage;
+@@ -3398,6 +3417,7 @@ static void VULKAN_INTERNAL_DestroyDescriptorSetCache(
+         SDL_free(descriptorSetCache->pools[i].descriptorPools);
+     }
+     SDL_free(descriptorSetCache->pools);
++    SDL_free(descriptorSetCache->fragMemo);
+     SDL_free(descriptorSetCache);
+ }
+ 
+@@ -5087,6 +5107,8 @@ static DescriptorSetCache *VULKAN_INTERNAL_AcquireDescriptorSetCache(
+         cache = SDL_malloc(sizeof(DescriptorSetCache));
+         cache->poolCount = 0;
+         cache->pools = NULL;
++        cache->fragMemo = NULL;
++        cache->fragMemoGen = 1;
+     } else {
+         cache = renderer->descriptorSetCachePool[renderer->descriptorSetCachePoolCount - 1];
+         renderer->descriptorSetCachePoolCount -= 1;
+@@ -5112,6 +5134,57 @@ static void VULKAN_INTERNAL_ReturnDescriptorSetCacheToPool(
+     for (Uint32 i = 0; i < descriptorSetCache->poolCount; i += 1) {
+         descriptorSetCache->pools[i].descriptorSetIndex = 0;
+     }
++    /* Dragon Rage: the sets are handed out again: what the memo says they hold is forgotten */
++    descriptorSetCache->fragMemoGen += 1;
++    if (descriptorSetCache->fragMemoGen == 0) {
++        if (descriptorSetCache->fragMemo != NULL) {
++            SDL_memset(descriptorSetCache->fragMemo, 0, sizeof(DrFragMemo) * DR_FRAG_MEMO_SIZE);
++        }
++        descriptorSetCache->fragMemoGen = 1;
++    }
++}
++
++/* Dragon Rage: the memo's slot for the fragment samplers bound now; *found = 1 when it holds a set written with them */
++static DrFragMemo *DR_FragMemoSlot(VulkanCommandBuffer *commandBuffer, Uint32 layoutID, Uint32 count, bool *found)
++{
++    DescriptorSetCache *cache = commandBuffer->descriptorSetCache;
++    Uint64 h = 0xCBF29CE484222325ull ^ layoutID;
++    *found = false;
++    if (count > DR_FRAG_MEMO_SAMPLERS) {
++        return NULL;
++    }
++    if (cache->fragMemo == NULL) {
++        cache->fragMemo = SDL_calloc(DR_FRAG_MEMO_SIZE, sizeof(DrFragMemo));
++        if (cache->fragMemo == NULL) {
++            return NULL;
++        }
++    }
++    for (Uint32 i = 0; i < count; i += 1) {
++        h = (h ^ (Uint64)(uintptr_t)commandBuffer->fragmentSamplerBindings[i]) * 0x100000001B3ull;
++        h = (h ^ (Uint64)(uintptr_t)commandBuffer->fragmentSamplerTextureViewBindings[i]) * 0x100000001B3ull;
++    }
++    h ^= h >> 29;
++    for (Uint32 probe = 0; probe < 8; probe += 1) {
++        DrFragMemo *m = &cache->fragMemo[(h + probe) & (DR_FRAG_MEMO_SIZE - 1)];
++        if (m->gen != cache->fragMemoGen) {
++            return m; /* free: the set about to be written goes here */
++        }
++        if (m->layoutID == layoutID && m->count == count) {
++            bool same = true;
++            for (Uint32 i = 0; i < count; i += 1) {
++                if (m->samplers[i] != commandBuffer->fragmentSamplerBindings[i] ||
++                    m->views[i] != commandBuffer->fragmentSamplerTextureViewBindings[i]) {
++                    same = false;
++                    break;
++                }
++            }
++            if (same) {
++                *found = true;
++                return m;
++            }
++        }
++    }
++    return NULL; /* (the neighbourhood is full: written as before, not remembered) */
+ }
+ 
+ static VkDescriptorSet VULKAN_INTERNAL_FetchDescriptorSet(
+@@ -5168,6 +5241,7 @@ static bool VULKAN_INTERNAL_BindGraphicsDescriptorSets(
+     Uint32 bufferInfoCount = 0;
+     Uint32 imageInfoCount = 0;
+     Uint32 dynamicOffsetCount = 0;
++    DrFragMemo *fragMemo = NULL; /* Dragon Rage: where the fragment sampler set written below is remembered */
+ 
+     if (
+         !commandBuffer->needVertexBufferBind &&
+@@ -5319,6 +5393,18 @@ static bool VULKAN_INTERNAL_BindGraphicsDescriptorSets(
+         dynamicOffsetCount += 1;
+     }
+ 
++    if (commandBuffer->needNewFragmentResourceDescriptorSet && resourceLayout->fragmentStorageTextureCount == 0 &&
++        resourceLayout->fragmentStorageBufferCount == 0) {
++        /* Dragon Rage: a set already written in this command buffer with the same samplers and textures */
++        bool found;
++        fragMemo = DR_FragMemoSlot(commandBuffer, resourceLayout->descriptorSetLayouts[2]->ID, resourceLayout->fragmentSamplerCount, &found);
++        if (found) {
++            commandBuffer->fragmentResourceDescriptorSet = fragMemo->set;
++            commandBuffer->needNewFragmentResourceDescriptorSet = false;
++            fragMemo = NULL;
++        }
++    }
++
+     if (commandBuffer->needNewFragmentResourceDescriptorSet) {
+         descriptorSetLayout = resourceLayout->descriptorSetLayouts[2];
+ 
+@@ -5451,6 +5537,17 @@ static bool VULKAN_INTERNAL_BindGraphicsDescriptorSets(
+         0,
+         NULL);
+ 
++    if (fragMemo != NULL) { /* Dragon Rage: written now: remembered for the rest of this command buffer */
++        fragMemo->gen = commandBuffer->descriptorSetCache->fragMemoGen;
++        fragMemo->layoutID = resourceLayout->descriptorSetLayouts[2]->ID;
++        fragMemo->count = resourceLayout->fragmentSamplerCount;
++        for (Uint32 i = 0; i < fragMemo->count; i += 1) {
++            fragMemo->samplers[i] = commandBuffer->fragmentSamplerBindings[i];
++            fragMemo->views[i] = commandBuffer->fragmentSamplerTextureViewBindings[i];
++        }
++        fragMemo->set = commandBuffer->fragmentResourceDescriptorSet;
++    }
++
+     VkDescriptorSet sets[4];
+     sets[0] = commandBuffer->vertexResourceDescriptorSet;
+     sets[1] = commandBuffer->vertexUniformDescriptorSet;

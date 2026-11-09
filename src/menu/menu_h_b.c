@@ -30,7 +30,7 @@ void CharRef_ScissorOff(void);
 void CharRef_Term(void);
 void CharRef_Draw(void);
 
-#define CHARREF_IMAGE_FILE 0x2F9     /* file id of character 0's large picture */
+#define CHARREF_IMAGE_FILE DISC_RESOURCE(0x2F9, 0x71C)     /* file id of character 0's large picture */
 #define CHARREF_IMAGE_SIZE 0x16800
 
 #define CR_RES(n) \
@@ -43,8 +43,8 @@ void CharRef_Init(s32 section) {
     s32 *table;
     s32 i;
 
-    gCharRef = Heap_Alloc(0x1638, 0x20, 0, 2);
-    memset(gCharRef, 0, 0x1638);
+    gCharRef = Heap_Alloc(sizeof(CharRef), 0x20, 0, 2);
+    memset(gCharRef, 0, sizeof(CharRef));
     gCharRef->pack = (u32 *)MPACK_AT(gMenuArc9, section);
     gCharRef->res = Sprite_Unpack(gCharRef->pack, NULL, NULL);
     CR_RES(15);
@@ -111,7 +111,7 @@ void CharRef_Init(s32 section) {
     table = (s32 *)MPACK_AT(gCharRef->res, 27);
     gCharRef->poseTbl = table;
     table = (s32 *)MPACK_AT(gCharRef->res, 17);
-    gCharRef->total = CHARREF_CHARA_MAX;
+    gCharRef->total = DISC_RESOURCE(161, 227);
     gCharRef->charaTbl = table;
     gCharRef->imageFile = Heap_Alloc(CHARREF_IMAGE_SIZE, 0x40, 0, 2);
     gCharRef->imageRes = Heap_Alloc(0x20800, 0x20, 0, 2);
@@ -786,7 +786,12 @@ void CharRef_BuildList(void) {
         }
         /* The quotient is never used: only the divide-by-zero check of the division is left in the code, once
            in each arm (dividend and operator are a guess; the divisor is a variable holding 3). */
-        if (!(s32)((gSaveData->charaBits[chara >> 6] >> (chara - ((chara >> 6) << 6))) & 1)) {
+        #ifdef PORT
+        if (PortGame_IsBT4() ? !PortGame_IsCharacter(chara) :
+            !(s32)((gSaveData->charaBits[chara >> 6] >> (chara & 63)) & 1)) {
+#else
+        if (!(s32)((gSaveData->charaBits[chara >> 6] >> (chara & 63)) & 1)) {
+#endif
             s32 perPage = 3;
 
             page = i / perPage;

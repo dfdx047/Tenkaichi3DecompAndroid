@@ -2,6 +2,7 @@
 #include "battle/btl_ai_mgr.h"
 #include "battle/battle.h"
 #include "battle/btl_seq.h"
+#include "battle/tag_lobby.h"
 #include "sys/heap.h"
 #include "sys/rand.h"
 
@@ -107,7 +108,7 @@ void BtlAiMgr_Reset(void) {
             gBtlAi->data = NULL;
         }
     }
-    for (s = gBtlAi->work; s != &gBtlAi->work[2]; s++) {
+    for (s = gBtlAi->work; s != &gBtlAi->work[TagTeam_Count()]; s++) {
         if (s->flags & 1) {
             if (s->param != NULL) {
                 Heap_Free(s->param);
@@ -116,7 +117,7 @@ void BtlAiMgr_Reset(void) {
         }
     }
     AiThink_BindData(0);
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < TagTeam_Count(); i++) {
         AiThink_ResetSide(i, 0);
     }
 }
@@ -129,7 +130,7 @@ void BtlAiMgr_ResetSide(s32 side) {
 /* Allocates the manager block if needed and resets it. */
 void BtlAiMgr_Init(void) {
     if (gBtlAi == NULL) {
-        memset(gBtlAi = Heap_Alloc(0xA60, 0x20, 0, 2), 0, 0xA60);
+        memset(gBtlAi = Heap_Alloc(sizeof(BtlAi), 0x20, 0, 2), 0, sizeof(BtlAi));
     }
     BtlAiMgr_Reset();
 }
@@ -144,7 +145,7 @@ void BtlAiMgr_Term(void) {
             gBtlAi->data = NULL;
         }
     }
-    for (s = gBtlAi->work; s != &gBtlAi->work[2]; s++) {
+    for (s = gBtlAi->work; s != &gBtlAi->work[TagTeam_Count()]; s++) {
         if (s->flags & 1) {
             if (s->param != NULL) {
                 Heap_Free(s->param);
@@ -217,18 +218,20 @@ s32 BtlAiMgr_IsIdleState(void) {
 }
 
 /* Measures the distance between the two fighters' centres and tests whether the stage blocks the line. */
+static s32 sightFighter;
 void BtlAiMgr_UpdateSight(void) {
     BtlAiVec a;
     BtlAiVec b;
     BtlAiVec d;
     BtlAiSegment seg;
 
-    BtlCharApi_GetPos(0, &a);
-    a.y -= BtlCharApi_GetHeight(0) * 0.5f;
-    BtlCharApi_GetPos(1, &b);
-    b.y -= BtlCharApi_GetHeight(1) * 0.5f;
+    BtlCharApi_GetPos(sightFighter, &a);
+    a.y -= BtlCharApi_GetHeight(sightFighter) * 0.5f;
+    BtlCharApi_GetPos(TagTeam_Target(sightFighter), &b);
+    b.y -= BtlCharApi_GetHeight(TagTeam_Target(sightFighter)) * 0.5f;
     Vec3_Sub(&d, &a, &b);
     gBtlAi->dist = Vec3_Length(&d);
+    gBtlAi->radiusSum = BtlCharApi_GetRadius(sightFighter) + BtlCharApi_GetRadius(TagTeam_Target(sightFighter));
     seg.from = a;
     seg.to = b;
     gBtlAi->sight = 0;
@@ -248,6 +251,10 @@ s32 BtlAiMgr_GetFrame(void) {
 /* Frame entry: runs both sides' controllers while the fight is live. */
 void BtlAiMgr_Update(void) {
     s32 i;
+#ifdef PORT
+    {extern s32 TagOnline_TestPark(void);if(TagOnline_TestPark())return;}
+    {extern s32 Port_TagModeRushTest(void);if(Port_TagModeRushTest())return;}
+#endif
 
     if (gBtlAi == NULL) {
         return;
@@ -266,10 +273,16 @@ void BtlAiMgr_Update(void) {
     }
     BtlAiMgr_UpdateSight();
     gBtlAi->frame++;
-    for (i = 0; i < BtlChar_GetCount() && i < 2; i++) {
+    for (i = 0; i < BtlChar_GetCount(); i++) {
         BtlAiWork *s = &gBtlAi->work[i];
 
         if (BtlCharApi_IsInputInjected(i) && s->param != NULL) {
+            extern s32 TagChallenge_BetweenWaves(void);
+            if(!TagLobby_CpuActive(i) || TagChallenge_BetweenWaves() || (TagTeam_Active() && !TagTeam_IsAlive(i))) {
+                BtlAiPad_Clear(&s->out,0);BtlAi_SendInput(s);continue;
+            }
+            sightFighter = i;
+            BtlAiMgr_UpdateSight();
             BtlAiSense_Update(s);
             AiThink_Think(s);
             BtlAi_RunSeq(s);
@@ -296,7 +309,7 @@ s32 BtlAiMove_PickDir(BtlAiWork *s, s32 mode) {
     f32 rad = BtlStage_GetInnerRadius() - 100.0f;
 
     BtlCharApi_GetPos(s->objId, &pos);
-    BtlCharApi_GetPos(s->objId ^ 1, &opp);
+    BtlCharApi_GetPos(TagTeam_Target(s->objId), &opp);
     list = &cand;
     list->v[0] = 0;
     if (mode == 2) {
@@ -304,7 +317,7 @@ s32 BtlAiMove_PickDir(BtlAiWork *s, s32 mode) {
             cand.v[1] = 1;
             n = 2;
         }
-        if (pos.y < BtlCharApi_GetGroundY(s->objId) - 20.0f || opp.y < BtlCharApi_GetGroundY(s->objId ^ 1) - 20.0f) {
+        if (pos.y < BtlCharApi_GetGroundY(s->objId) - 20.0f || opp.y < BtlCharApi_GetGroundY(TagTeam_Target(s->objId)) - 20.0f) {
             list->v[n++] = 2;
         }
     }
@@ -354,7 +367,7 @@ void BtlAiMove_CalcTarget(BtlAiWork *s) {
 
     BtlCharApi_GetPos(s->objId, &pos);
     a = pos;
-    BtlCharApi_GetPos(s->objId ^ 1, &opp);
+    BtlCharApi_GetPos(TagTeam_Target(s->objId), &opp);
     a.y = pos.y;
     Vec3_Sub(&dir, &a, &opp);
     Vec3_Normalize(&dir, &dir);
@@ -487,7 +500,7 @@ s32 BtlAiMove_Check(BtlAiWork *s) {
             m->remain = Vec3_Length(&d);
         }
         if (m->pathTimer == 0) {
-            BtlCharApi_GetPos(s->objId ^ 1, &opp);
+            BtlCharApi_GetPos(TagTeam_Target(s->objId), &opp);
             Vec3_Sub(&d, &opp, (BtlAiVec *)path);
             if (50.0f < Vec3_Length(&d)) {
                 if (BtlAiMove_BuildPath(s)) {
@@ -542,7 +555,7 @@ void BtlAiMove_Steer(BtlAiWork *s, BtlAiVec *to, s32 kind) {
     cls = tbl->actClass[BtlCharApi_GetUnk974(side)];
     fly = BtlCharApi_TestFlag0F(s->objId);
     BtlCharApi_GetPos(s->objId, &pos);
-    BtlCharApi_GetPos(s->objId ^ 1, &opp);
+    BtlCharApi_GetPos(TagTeam_Target(s->objId), &opp);
     dy = to->y - pos.y;
     Vec3_Sub(&d, to, &pos);
     d.y = d.w = 0.0f;
@@ -586,7 +599,7 @@ void BtlAiMove_Steer(BtlAiWork *s, BtlAiVec *to, s32 kind) {
     if (cls == 11) {
         press &= ~BTLAI_BTN_DASH;
     }
-    if (BtlCharApi_TestFlag0F(s->objId) && !BtlCharApi_TestFlag0F(s->objId ^ 1)) {
+    if (BtlCharApi_TestFlag0F(s->objId) && !BtlCharApi_TestFlag0F(TagTeam_Target(s->objId))) {
         if (pos.y > opp.y) {
             hold |= BTLAI_BTN_ASCEND;
         }

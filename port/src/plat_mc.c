@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include "plat_game.h"
 #ifdef _WIN32
 #include <direct.h>
 #define mkdir(path, mode) _mkdir(path) /* Windows: no permission bits */
@@ -153,6 +154,10 @@ int func_002A1FB8(int fd) {
     if (sHost[fd] != NULL) {
         fclose(sHost[fd]);
         sHost[fd] = NULL;
+    }
+    if((sMc[fd].mode&2) && !PortGame_SaveCustom()) {
+        sMc[fd].open=0;
+        return request(3,-4);
     }
     sMc[fd].open = 0;
     return request(3, 0);

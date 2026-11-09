@@ -588,6 +588,15 @@ s32 BtlAct_IsOppInSearchWindow(Chr *chr) {
 s32 BtlAct_SearchHandler(Chr *chr, s32 phase) {
     s32 grow;
 
+#ifdef PORT
+    /* A search may already be queued when the last enemy falls. Leave it
+       without playing the found-target voice, sound or streak effect. */
+    if ((phase == 1 || phase == 2) && TagTeam_LockedOff(chr->player)) {
+        BtlAct_Request(chr, 0xB);
+        return 0;
+    }
+#endif
+
     if (phase == 0) {
         if (BtlParam_IsType2to4(chr)) {
             BtlAnim_Play(chr, 0x17F, 0.15f);

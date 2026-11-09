@@ -1005,7 +1005,7 @@ void EftGndDust_SetSlide(s32 objId, s32 stop, f32 bright) {
     EftGndDustArg arg;
     EftGndDustEmit *w;
 
-    if (gEftGndDust == NULL) {
+    if (gEftGndDust == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) {
         return;
     }
     if (gEftGndDust->slide[objId] == NULL) {
@@ -1054,7 +1054,7 @@ void EftGndDust_SetDash(s32 objId, s32 stop, f32 bright) {
     EftGndDustArg arg;
     EftGndDustEmit *w;
 
-    if (gEftGndDust == NULL) {
+    if (gEftGndDust == NULL || (u32)objId >= EFT_FIGHTER_CAPACITY) {
         return;
     }
     if (gEftGndDust->dash[objId] == NULL) {
@@ -1259,7 +1259,8 @@ void EftGndDustMgr_Init(EftZTask *task) {
     }
     EftTexSet_Load8(&gEftGndDust->tex, BtlScene_GetCommonEntry(0xB));
     gEftGndDust->texPtr = &gEftGndDust->tex;
-    gEftGndDustList = BtlTask_CreateChildList(task, 16, sizeof(EftGndDustEmit));
+    /* Two persistent emitters per actor, plus twelve short-lived bursts. */
+    gEftGndDustList = BtlTask_CreateChildList(task, 2 * EFT_FIGHTER_CAPACITY + 12, sizeof(EftGndDustEmit));
     EftGndDust_InitTemplate();
 }
 

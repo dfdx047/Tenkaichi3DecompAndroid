@@ -267,6 +267,7 @@ void EftAura_DrawFlames(EftAuraWork *aura, s32 objId, f32 alpha) {
     f32 w;
     f32 h;
     f32 d;
+    s32 liteFlame = 0;
 
     camFwd.x = gBtlCamView->world2view2.m[0][2];
     camFwd.y = gBtlCamView->world2view2.m[1][2];
@@ -294,6 +295,7 @@ void EftAura_DrawFlames(EftAuraWork *aura, s32 objId, f32 alpha) {
         if (f->objId != objId) {
             continue;
         }
+        { extern int Port_TagKiLess(void); if (Port_TagKiLess() && (liteFlame++ & 1)) continue; } /* (gs_draw.c: half the flames) */
         dir.x = f->dir.x;
         clipped = 0;
         dir.y = f->dir.y;
@@ -986,12 +988,12 @@ s32 EftAura_Command(s32 objId, s32 cmd) {
     return 1;
 }
 
-/* Clears the hidden flag of the aura of fighter 0 or 1. */
+/* Clears the hidden flag of a fighter's aura. */
 void EftAura_Show(s32 objId) {
     EftNTask *task;
     EftAuraWork *aura;
 
-    if (gEftAuraPool != NULL && objId < 2) {
+    if (gEftAuraPool != NULL && (u32)objId < (u32)gPool->count) {
         task = gPool->tasks[objId];
         if (task != NULL) {
             aura = task->work;
@@ -1007,7 +1009,7 @@ void EftAura_Hide(s32 objId) {
     EftNTask *task;
     EftAuraWork *aura;
 
-    if (gEftAuraPool != NULL && objId < 2) {
+    if (gEftAuraPool != NULL && (u32)objId < (u32)gPool->count) {
         task = gPool->tasks[objId];
         if (task != NULL) {
             aura = task->work;
@@ -1023,7 +1025,7 @@ void EftAura_MarkModelNew(s32 objId) {
     EftNTask *task;
     EftAuraWork *aura;
 
-    if (gEftAuraPool != NULL && objId < 2) {
+    if (gEftAuraPool != NULL && (u32)objId < (u32)gPool->count) {
         task = gPool->tasks[objId];
         if (task != NULL) {
             aura = task->work;
@@ -1040,14 +1042,16 @@ void EftAura_MarkModelNew(s32 objId) {
 s32 EftAura_ChangeType(s32 objId, s32 type, s32 paramFlags) {
     EftNTask *task;
 
-    if (objId < 2) {
-        if (gEftAuraPool != NULL && type >= 0) {
+    if (gEftAuraPool != NULL && (u32)objId < (u32)gPool->count) {
+        if (type >= 0) {
             task = gPool->tasks[objId];
             if (task != NULL) {
                 EftAura_SetType(task->work, objId, type, paramFlags);
+                return 1;
             }
         }
     }
+    return 0;
 }
 
 /* Colour table entry of an aura type: the second table when the parameter flags have any of 0x5E. */

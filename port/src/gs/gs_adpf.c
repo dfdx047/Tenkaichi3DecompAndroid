@@ -30,6 +30,14 @@ static APerformanceHintSession *sSession;
 static int sState; /* 0 not tried yet, 1 running, -1 not available or off */
 static int64_t sTarget;
 static int32_t sTid;
+static int32_t sRenderTid; /* the render thread's (GsAdpf_AddThread), 0 without it */
+
+/* The render thread (gs_core.c), from itself as it starts: it does half of each frame's work beside the game's
+   thread, so the session covers it too, or the governor keeps that thread's core slow. Called before the first
+   frame (the game's thread waits for the render thread to start). */
+void GsAdpf_AddThread(void) {
+    sRenderTid = (int32_t)syscall(SYS_gettid);
+}
 
 static void adpf_start(int64_t target) {
     void *lib;
@@ -55,14 +63,26 @@ static void adpf_start(int64_t target) {
     }
     m = pGetManager();
     sTid = (int32_t)syscall(SYS_gettid);
-    sSession = m != NULL ? pCreateSession(m, &sTid, 1, target) : NULL;
+    {
+        int32_t tids[2] = {sTid, sRenderTid};
+        size_t count = sRenderTid != 0 && sRenderTid != sTid ? 2 : 1;
+        sSession = m != NULL ? pCreateSession(m, tids, count, target) : NULL;
+        if (sSession == NULL && count == 2) { /* (refused with two: the game's thread alone, as before) */
+            sSession = pCreateSession(m, tids, 1, target);
+            sRenderTid = 0;
+        }
+    }
     if (sSession == NULL) {
         fprintf(stderr, "bt3: performance hints: the system gave no session\n");
         return;
     }
     sTarget = target;
     sState = 1;
-    fprintf(stderr, "bt3: performance hints: on (thread %d, %.1f ms a frame)\n", (int)sTid, (double)target / 1e6);
+    if (sRenderTid != 0) {
+        fprintf(stderr, "bt3: performance hints: on (threads %d and render %d, %.1f ms a frame)\n", (int)sTid, (int)sRenderTid, (double)target / 1e6);
+    } else {
+        fprintf(stderr, "bt3: performance hints: on (thread %d, %.1f ms a frame)\n", (int)sTid, (double)target / 1e6);
+    }
 }
 
 /* One frame's work (without the waiting for the next frame) and the time a frame may take, in nanoseconds. From
@@ -84,6 +104,8 @@ void GsAdpf_Frame(uint64_t workNs, uint64_t targetNs) {
     pReportActual(sSession, (int64_t)workNs);
 }
 #else
+void GsAdpf_AddThread(void) {
+}
 void GsAdpf_Frame(uint64_t workNs, uint64_t targetNs) {
     (void)workNs;
     (void)targetNs;

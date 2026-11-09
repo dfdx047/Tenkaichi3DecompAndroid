@@ -1,5 +1,6 @@
 #include "common.h"
 #include "battle/btl_char_action.h"
+extern s32 BtlChars_IsTimeStoppedFor(const void *chr);
 
 /*
  * Fighter action state machine, core part: 0x1E0290..0x1E3158.
@@ -811,7 +812,7 @@ void BtlAct_UpdateGauges(BtlActChr *chr) {
     BtlActVitals *v;
     s32 cap;
 
-    if (BtlChars_IsTimeStopped()) {
+    if (BtlChars_IsTimeStoppedFor(chr)) {
         return;
     }
     if (!BtlChar_TestFlag(chr, 3)) {
@@ -974,7 +975,7 @@ void BtlAct_UpdateTimers(BtlActChr *chr) {
     if (BtlChar_TestFlag(chr, 0x8B)) {
         Vec4_Add(&BtlChar_GetPos(chr)->pos, &BtlChar_GetPos(chr)->pos, &chr->unkF30);
     }
-    if (BtlChars_IsTimeStopped()) {
+    if (BtlChars_IsTimeStoppedFor(chr)) {
         return;
     }
     if (!BtlChar_TestFlag(chr, 0x82)) {
@@ -1151,7 +1152,7 @@ void BtlAct_UpdateTimers(BtlActChr *chr) {
         chr->unk1580--;
         BtlChar_SetFlag(chr, 0x11E);
     }
-    chr->actionFrame++;
+    { extern s32 TagBalance_AgeStep(s32); chr->actionFrame+=TagBalance_AgeStep(chr->player); }
 }
 
 /*
@@ -1169,7 +1170,24 @@ void BtlAct_Update(BtlActChr *chr) {
     if (tbl[act->current] != NULL) {
         tbl[act->current](chr, BTLACT_PHASE_DECIDE);
     }
+    {
+        extern s32 TagAssist_PendingAction(s32);
+        s32 pending=TagAssist_PendingAction(chr->player);
+        if(pending>=0) BtlAct_Request(chr,pending);
+    }
     BtlAct_CheckForced(chr);
+#ifdef PORT
+    /* The original duel ends immediately on ring-out. A team fight can keep
+       going, so put the eliminated body down and reject recovery/attack
+       requests while its teammates finish the round. Let the native falling,
+       landing impact and lying-down chain finish; blocking DC/DB leaves a
+       fighter looping the falling animation even after ground collision. */
+    if (TagTeam_Active() && BtlChar_TestFlag(chr, 3) && BtlChar_TestFlag(chr, 7)) {
+        BtlAct_ClearQueue(chr);
+        if (act->current < 0xD8 || act->current > 0xDE) BtlAct_Request(chr, 0xD8);
+        else if (act->request < 0xD8 || act->request > 0xDE) act->request = -1;
+    }
+#endif
     if (act->request != -1) {
         if (tbl[act->current] != NULL) {
             tbl[act->current](chr, BTLACT_PHASE_LEAVE);

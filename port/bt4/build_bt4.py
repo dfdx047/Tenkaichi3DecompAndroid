@@ -18,6 +18,7 @@ import argparse
 import hashlib
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -236,6 +237,9 @@ set(CMAKE_PROJECT_INCLUDE "{after}")
 """)
     run(["cmake", "-S", cpp, "-B", out, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_TOOLCHAIN_FILE={tcf}",
          "-DANDROID=true", "-DANDROID_STL=c++_static", "-DARMSX2_ANDROID_HOST_PAGE_SIZE=0x1000",
+         # (off whatever this PC has: with Rust's Android target installed it builds a liblibrashader_capi.so that does
+         # not go into the APK, the library no longer opens, and the game falls silently to Dragon Rage's renderer)
+         "-DARMSX2_DISABLE_LIBRASHADER=ON",
          "-DARMSX2_EMUCORE_LIBRARY_NAME=emucore", "-DHAVE_WL_VERSION_SCRIPT=1", "-DCMAKE_HAVE_LIBC_PTHREAD=1", f"-DANDROID_NDK={GSX / 'ndk'}",
          f"-DARMSX2_EXTRA_CMAKE={GSX / 'bt4gsx.cmake'}", f"-DBT4GSX_DIR={GSX}",
          f"-DBT4GSX_RING_DIR={BT3R / 'ps2xRuntime/src/lib'}"])
@@ -243,6 +247,12 @@ set(CMAKE_PROJECT_INCLUDE "{after}")
     dst = ROOT / "android/app/src/main/jniLibs/arm64-v8a"
     dst.mkdir(parents=True, exist_ok=True)
     run([LLVM / "bin/llvm-strip", "--strip-debug", "-o", dst / "libbt4gsx.so", out / "libbt4gsx.so"])
+    needed = re.findall(r"NEEDED\s+(\S+)", subprocess.run([LLVM / "bin/llvm-objdump", "-p", dst / "libbt4gsx.so"],
+                                                           capture_output=True, text=True).stdout)
+    alien = [n for n in needed if n not in ("libandroid.so", "libEGL.so", "libGLESv2.so", "libGLESv1_CM.so", "libOpenSLES.so",
+                                            "liblog.so", "libdl.so", "libz.so", "libm.so", "libc.so")]
+    if alien:
+        sys.exit(f"libbt4gsx.so needs {alien}, not in the system or the APK: it would not open on the device")
     # its resources: the shaders it compiles at run time, its fonts, the game index
     res = src / "bin/resources"
     assets = ROOT / "android/app/src/main/assets/bt4gsx"

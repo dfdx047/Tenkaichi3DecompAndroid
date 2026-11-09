@@ -3070,6 +3070,7 @@ typedef struct {
 } A11yAdxPlayer;
 _Static_assert(sizeof(A11yAdxPlayer) == 0x14, "AdxPlayer");
 extern A11yAdxPlayer gAdxPlayerTbl[6];
+extern A11yAdxPlayer GAME_PTR File_AdxPlayer(int channel);
 #define ADX_CH_VOICE0 4
 #define ADX_CH_VOICE1 5
 
@@ -3117,10 +3118,9 @@ int PortA11y_VoicePercent(const void *player) {
     if (!sOn || player == NULL) {
         return -1;
     }
-    if (player == (const void *)gAdxPlayerTbl[ADX_CH_VOICE0].adxt ||
-        player == (const void *)gAdxPlayerTbl[ADX_CH_VOICE1].adxt) {
-        return in_battle() ? sFightVoices : sMenuVoices;
-    }
+    for (int i = ADX_CH_VOICE0; i < 14; i++)
+        if (player == (const void *)File_AdxPlayer(i)->adxt)
+            return in_battle() ? sFightVoices : sMenuVoices;
     return -1;
 }
 

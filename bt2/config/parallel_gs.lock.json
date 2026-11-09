@@ -1,0 +1,6 @@
+{
+  "parallel-gs": {"repository": "https://github.com/Arntzen-Software/parallel-gs.git", "revision": "cc6184af7e0c03da603045ca371ffa5dae9b0655"},
+  "submodules": ["Granite", "Granite/third_party/volk", "Granite/third_party/khronos/vulkan-headers"],
+  "patches": ["tools/graphics/gpu/parallel_gs_texture_replacement.patch", "tools/graphics/gpu/parallel_gs_frame_boundaries.patch", "tools/graphics/gpu/parallel_gs_vram_backup.patch", "tools/graphics/gpu/parallel_gs_android_timeline_wait.patch", "tools/graphics/gpu/parallel_gs_no_8bit_storage.patch", "tools/graphics/gpu/parallel_gs_android_options.patch"],
+  "granite_patches": ["tools/graphics/gpu/granite_vulkan11_extensions.patch", "tools/graphics/gpu/granite_failed_pipelines.patch"]
+}

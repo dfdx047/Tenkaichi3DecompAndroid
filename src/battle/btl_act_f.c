@@ -595,7 +595,11 @@ void BtlAct_SuperBeamHandler(BtlSuperChr *chr, s32 phase) {
         BtlSuper_RequestCut(chr, cls);
         BtlMember_SpendKi(chr, BtlSuper_GetKiCost(chr, cls), 1);
         BtlChar_ResetLook(chr);
-        if ((flagsB & 0x2000) && BtlMember_GetActiveGauge(chr)->variant == 0) {
+        if ((flagsB & 0x2000) && BtlMember_GetActiveGauge(chr)->variant == 0
+#ifdef PORT
+            && !(PortGame_IsBT4() && BtlMember_HasAbility(chr,0x7A))
+#endif
+            ) {
             chr->work[0] |= 1;
         }
     }
@@ -2973,7 +2977,9 @@ s32 BtlAct_UltimateStartHandler(ActGChr *chr, s32 phase) {
  * Every frame: camera shake 5.0, vibration, recoil backwards, flags 0x42..0x46, 0x134, 0x128.
  */
 void BtlAct_ClashStruggleHandler(ActGChr *chr, s32 phase) {
+    extern s32 TagAssist_Handle(s32,s32);
     s32 slot = BtlAct_GetCurrentClass(chr);
+    if(TagAssist_Handle(chr->player,phase)) return;
 
     if (phase == 0) {
         s32 anim = SUPER_ANIM(slot, 3);
@@ -3078,7 +3084,7 @@ void BtlAct_ClashLostHandler(ActGChr *chr, s32 phase) {
 
     if (phase == 0) {
         BtlAnim_Play(chr, 0x172, 0.0f);
-        ChrCam_RequestCut(chr, 1, chr->player + 0x21);
+        ChrCam_RequestCut(chr, 1, (chr->player & 1) + 0x21);
         if (BtlMember_GetActiveGauge(chr)->variant == 0) {
             chr->work[0] |= 1;
             BtlAct_SetFormCurrent(chr);

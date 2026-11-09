@@ -59,6 +59,8 @@ static struct {
 } sM;
 
 /* The spectators of a poll's answer: "watchers":[["a:p","seen=a"],["b:q"]]. Kept when they changed. */
+extern int Port_NetSession(void); /* net.c */
+
 static void json_watchers(const char *json) {
     const char *p = SDL_strstr(json, "\"watchers\":[");
     char addr[MATCH_WATCH_ADDRS][64];
@@ -67,6 +69,7 @@ static void json_watchers(const char *json) {
     if (p == NULL) {
         return;
     }
+    SDL_memset(addr, 0, sizeof(addr)); /* (the whole entries are compared below) */
     for (p += 12; *p != '\0' && *p != ']' && n < MATCH_WATCH_ADDRS; p++) {
         if (*p == '[') { /* one spectator's list */
             for (p++; *p == '"' && n < MATCH_WATCH_ADDRS;) {
@@ -626,10 +629,17 @@ static int limit_after(const char *base, const char *what, int ok, const char *o
     return 0;
 }
 
+/* The app is not on the screen (gs_gpu.c): the free Workers' daily requests are not spent on it. The request waits for
+   the player's return; a room that ran out meanwhile says so then. */
+volatile int gPortInBackground;
+
 static int http_post_to(const char *base, const char *what, const char *json, char *out, size_t size) {
     int ok, limited;
     if (base == NULL) {
         base = match_url();
+    }
+    while (gPortInBackground) {
+        SDL_Delay(200);
     }
     if (limit_before(base, out, size)) {
         return 1;
@@ -669,7 +679,7 @@ static int retry_code_on_other_dragon_server(char *base, const char *what, const
     }
     dailyLimit = SDL_strstr(answer, "\"error\":\"limit\"") != NULL ||
                  SDL_strstr(answer, "error code: 1027") != NULL ||
-                 (SDL_strstr(answer, "429") != NULL && SDL_strstr(answer, "\"busy\"") == NULL);
+                 (SDL_strstr(answer, "\"http\":429") != NULL && SDL_strstr(answer, "\"busy\"") == NULL);
     if (SDL_strstr(answer, "no room") == NULL && !dailyLimit) {
         return 0;
     }
@@ -772,6 +782,7 @@ static int json_peer(const char *json, MatchStatus *st) {
 
 /* ---- STUN (RFC 5389): one question, "which address do you see me under?" ---- */
 
+static int sStunFree; /* (asked by the Tag Team mod's rooms, TagLink_Stun: not a search of this file's to stop with) */
 static int stun_ask(int sock, const char *host, int port, char *out, size_t size) {
     struct addrinfo hints, *res = NULL;
     uint8_t req[20], pkt[512];
@@ -791,7 +802,7 @@ static int stun_ask(int sock, const char *host, int port, char *out, size_t size
     for (i = 8; i < 20; i++) {
         req[i] = (uint8_t)SDL_rand(256);
     }
-    for (tries = 0; tries < 3 && !STOPPED(); tries++) {
+    for (tries = 0; tries < 3 && (sStunFree || !STOPPED()); tries++) {
         int waited;
         sendto(sock, (const char *)req, sizeof(req), 0, res->ai_addr, (int)res->ai_addrlen);
         for (waited = 0; waited < 500; waited += 10) {
@@ -1073,7 +1084,8 @@ again:
                         for (w = 0; w < wait && !STOPPED(); w++) {
                             SDL_Delay(100);
                         }
-                        if (!STOPPED() && POSTB("relay", body, answer, sizeof(answer))) {
+                        /* (a host that keeps its room for spectators: its match may have started meanwhile, on this socket) */
+                        if (!STOPPED() && !Port_NetSession() && POSTB("relay", body, answer, sizeof(answer))) {
                             if (SDL_getenv("BT3_RELAY_LOG") != NULL) {
                                 char why[160] = "";
                                 json_str(answer, "noRelay", why, sizeof(why));
@@ -1844,4 +1856,23 @@ int Match_PostDragon(const char *what, const char *json, char *out, size_t size)
         DrNet_NoteResult(base, ok && out[0] == '{');
     }
     return ok;
+}
+
+/* ---- for the Tag Team mod's rooms over the internet (tag_link.c): the same questions, on its own socket ---- */
+
+/* This socket's address as the internet sees it ("ip:port"): STUN, Cloudflare's server then Google's. */
+int TagLink_Stun(int sock, char *out, int size) {
+    int ok;
+    sStunFree = 1;
+    ok = stun_ask(sock, "stun.cloudflare.com", 3478, out, (size_t)size) || stun_ask(sock, "stun.l.google.com", 19302, out, (size_t)size);
+    sStunFree = 0;
+    return ok;
+}
+/* This machine's address on its own network, with `port`. */
+int TagLink_Lan(int port, char *out, int size) {
+    return lan_address(port, out, (size_t)size);
+}
+/* A POST of `json` to `url` (the answer in out, error answers too). 0: nothing came back. */
+int TagLink_Http(const char *url, const char *json, char *out, int size) {
+    return http_post_native(url, json, NULL, out, (size_t)size);
 }

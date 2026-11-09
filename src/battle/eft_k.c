@@ -1,3 +1,4 @@
+#include "battle/btl_effect_owner.h"
 #include "common.h"
 #include "battle/eft_k.h"
 
@@ -133,6 +134,11 @@ extern void *EftHitArena_AllocBox(void);
 extern void EftHit_SetShapeSpheres(EftKHitRec *rec, void *a, void *b);
 extern void EftHit_SetShapeBoxes(EftKHitRec *rec, void *a, void *b);
 extern void EftCam_Start(EftKCamArg *arg);
+#ifdef PORT
+extern void EftCam_StopFighter(s32 objId);
+#else
+#define EftCam_StopFighter(objId) EftCam_Stop()
+#endif
 extern void EftCam_Stop(void);
 extern f32 EftMath_WrapAngle(f32 angle);
 extern void EftAim_GetDir(Vec4 *dir, Vec4 *from, s32 objId);
@@ -450,7 +456,7 @@ void EftShotTech_Init(EftKTask *task, EftKSrc *src) {
     if (mgr->modelPack != NULL) {
         EftShotTech_InitModel(task);
     }
-    BtlTask_SetOwnerTag(task, src->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(src->objId));
 }
 
 /* Item term: destroys the model, the eight sub-effects and the aura effect, frees the emitter state and sets the
@@ -586,7 +592,7 @@ void EftShotTech_Update(EftKTask *task) {
     if (w->flags & 1) {
         if (w->flags & 0x20) {
             if (!(w->flags & 0x40)) {
-                EftCam_Stop();
+                EftCam_StopFighter(src->objId);
                 w->flags |= 0x40;
             }
         }
@@ -832,6 +838,25 @@ void EftTechEvtTask_UpdateNormal(EftKTask *task) {
     EftKSrc *src = w->arg.src;
     EftTechEvtEntry *e = &gEftTechEvt->entries[src->objId];
     u64 ev = EftTechEvtTask_CollectEvents(w);
+
+    { /* An assist stays in its native firing loop until its own clash ends. */
+        extern s32 TagAssist_BeamForSlot(s32,s32,Vec4 *,s32 *);
+        Vec4 end;s32 age;
+        if(TagAssist_BeamForSlot(src->objId,src->slot,&end,&age)) {
+            extern void Port_TagAssistTrace(s32,s32,s32,s32);
+            if(ev)Port_TagAssistTrace(src->objId,(s32)ev,w->useFrames,3000+w->frame);
+            if(src->slot==5) ev=w->frame==0?0x200:(w->frame==1?0x400:0);
+            w->frame++;
+            if(ev&0x200) e->events|=EFT_TECH_EVT_START;
+            if(ev&0x400) e->events|=EFT_TECH_EVT_FIRE;
+            w->flags|=0x40000000;
+            return;
+        }
+        if(w->flags&0x40000000) {
+            e->events|=EFT_TECH_EVT_ABORT;
+            BtlTask_SetDead(task);return;
+        }
+    }
 
     w->frame++;
     if (ev & 0x200) {
@@ -1532,7 +1557,7 @@ void EftObjTech_Init(EftKTask *task, EftKSrc *src) {
         }
         EftObjTech_InitRings(task, roll, step, grow);
     }
-    BtlTask_SetOwnerTag(task, src->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(src->objId));
 }
 
 /* Item term: destroys the model, frees the emitter state; a technique (kind not 0) sets held flag 0xA8. */
@@ -2279,7 +2304,7 @@ void EftRushShot_Init(EftTask *task, EftTechArg *arg) {
             w->unkAB0 = v;
         }
     }
-    BtlTask_SetOwnerTag(task, arg->objId == 0 ? 0x800 : 0x1000);
+    BtlTask_SetOwnerTag(task, BtlScene_CharOwnerTag(arg->objId));
 }
 
 /* Term callback: ends the stage tint, the sub-effects and the model instance. */
@@ -2405,7 +2430,7 @@ void EftRushShot_Update(EftTask *task) {
         }
         if (w->flags & EFT_RUSHSHOT_SENT) {
             if (!(w->flags & EFT_RUSHSHOT_SENT2)) {
-                EftCam_Stop();
+                EftCam_StopFighter(arg->objId);
                 w->flags |= EFT_RUSHSHOT_SENT2;
             }
         }

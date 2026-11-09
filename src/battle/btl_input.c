@@ -4,6 +4,8 @@
 #include "battle/battle.h"
 #include "sys/pad.h"
 #include "sys/save.h"
+#include "battle/tag_clash.h"
+extern s32 BtlChars_IsTimeStoppedFor(const void *chr);
 
 /*
  * Per-fighter battle input: 0x1D3B40..0x1D60A0.
@@ -14,7 +16,7 @@
  *   BtlInput_BuildRecord which builds the frame's BtlInputRecord (chr->input.rec):
  *       - chr->injectOn == 0: RemapButtons (key config) -> MergeStick -> AddDoubleTaps -> BuildCommands;
  *       - chr->injectOn != 0 (CPU side): the buttons and stick the AI wrote -> MergeStick -> BuildCommands;
- *       - the fighter takes no input (flag 2 or 3 clear, flag 0x136 set, or BtlChars_IsTimeStopped() != 0): all neutral;
+ *       - the fighter takes no input (flag 2 or 3 clear, flag 0x136 set, or BtlChars_IsTimeStoppedFor(chr) != 0): all neutral;
  *       - otherwise the replay hook: when a replay is playing, buttons and stick are REPLACED by the recorded
  *         frame and the commands rebuilt; when not, {buttons, stick} are appended to the replay buffer.
  * Later in the same frame, in the fighter update (BtlChars_UpdateInput -> BtlChar_BeginFrame):
@@ -416,9 +418,10 @@ void BtlInput_BuildRecord(BtlInputChr *chr) {
     active = 0;
     if (BtlChar_TestFlag(chr, 2) || BtlChar_TestFlag(chr, 3)) {
         if (!BtlChar_TestFlag(chr, 0x136)) {
-            active = BtlChars_IsTimeStopped() == 0;
+            active = BtlChars_IsTimeStoppedFor(chr) == 0;
         }
     }
+    { extern s32 Port_TagShowcase(void); if(Port_TagShowcase()) active=0; }
     if (active) {
         if (BattleReplay_IsActive()) {
             BtlReplay_Play(chr, &buttons, stick);
@@ -441,7 +444,7 @@ void BtlInput_BuildRecord(BtlInputChr *chr) {
     chr->input.rec.stickY = stick[1];
     chr->input.rec.commands = commands;
     chr->input.rec.unk5 = 0;
-    if (!BtlChars_IsTimeStopped()) {
+    if (!BtlChars_IsTimeStoppedFor(chr)) {
         BtlInput_TickCounters(&chr->input.recCount, buttons, buttons & ~prevButtons, prevButtons & ~buttons);
         BtlInput_TickCounters(&chr->input.recCmdCount, commands, commands & ~prevCommands, prevCommands & ~commands);
     }
@@ -491,9 +494,20 @@ void BtlInput_Fetch(BtlInputChr *chr, u32 *outButtons, u32 *outCommands, u8 *sti
 u32 BtlInput_GetKeyMask(BtlInputChr *chr, s32 action) {
     s32 padBit[SAVE_KEY_COUNT] = { PAD_CIRCLE, PAD_CROSS, PAD_SQUARE, PAD_TRIANGLE, PAD_L1, PAD_L2, PAD_R1, PAD_R2 };
     s32 i;
+    s32 profile=chr->player;
+#ifdef PORT
+    /* The disc save contains two button-layout profiles, not four actors.
+     * P3/P4 inherit the P1/P2 layouts; all four physical devices/key bindings
+     * remain independently configurable in the native Controls window. */
+    if(TagTeam_Active()) {
+        profile=TagTeam_InputPlayer(chr->player);
+        if(profile<0) profile=TagTeam_NativeSide(chr->player);
+        profile &= 1;
+    }
+#endif
 
     for (i = 0; i < SAVE_KEY_COUNT; i++) {
-        if (gSaveData->key[chr->player][i] == action) {
+        if (gSaveData->key[profile][i] == action) {
             return padBit[i];
         }
     }
@@ -550,6 +564,14 @@ void BtlInput_Sample(BtlInputChr *chr) {
     in->padStatus = pad->status;
     in->padLastStatus = pad->lastStatus;
     in->rawHeld = pad->held;
+    {
+        extern s32 TagTeam_TargetStickConsumed(s32);
+        if(TagTeam_TargetStickConsumed(chr->player)) in->rawHeld &= ~0xF00000;
+    }
+    {
+        extern s32 TagAssist_ConsumeR3(s32);
+        if(TagAssist_ConsumeR3(chr->pad)) in->rawHeld &= ~PAD_R3;
+    }
     in->rawStickX = BtlInput_StickToByte(pad->left[0]);
     in->rawStickY = BtlInput_StickToByte(pad->left[1]);
 #ifdef PORT
@@ -630,7 +652,7 @@ void BtlInput_Update(BtlInputChr *chr) {
     in->cmdHeld = commands;
     in->stickRaw[0] = BtlInput_ByteToStick(stick[0]);
     in->stickRaw[1] = BtlInput_ByteToStick(stick[1]);
-    if (BtlChars_IsTimeStopped()) {
+    if (BtlChars_IsTimeStoppedFor(chr)) {
         in->stick[0] = in->stickRaw[0];
         in->stick[1] = in->stickRaw[1];
     } else {
@@ -650,7 +672,7 @@ void BtlInput_Update(BtlInputChr *chr) {
     } else {
         in->stickTurn = 0.0f;
     }
-    if (!BtlChars_IsTimeStopped()) {
+    if (!BtlChars_IsTimeStoppedFor(chr)) {
         BtlInput_TickCounters(&in->count, in->held, in->pressed, in->released);
         BtlInput_TickCounters(&in->cmdCount, in->cmdHeld, in->cmdPressed, in->cmdReleased);
     }
@@ -966,7 +988,7 @@ s32 BtlInput_TestAction(BtlInputChr *chr, s32 id, s32 want) {
         result = !BtlInput_IsCmdHeld(chr, BTLC_GUARD_H);
         break;
     case 51:
-        result = BtlInput_IsCmdHeld(chr, BTLC_DIR_P);
+        result = BtlClash_SequenceActive(chr->player) ? BtlClash_SequenceInput(chr->player) : BtlInput_IsCmdHeld(chr, BTLC_DIR_P);
         break;
     case 97:
         result = BtlInput_IsHeld(chr, BTLB_RS_LEFT);

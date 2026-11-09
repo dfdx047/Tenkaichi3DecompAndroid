@@ -348,6 +348,7 @@ void Ps_Align(s32 align) {
 
 
 f32 Ps_TextWidth(char *str, f32 scale) {
+    str=(char *)Port_TagText(str);
     return (f32)PortTbo_TextMeasure(str, 0) / 1000.0f * PS_CELL_UNITS * scale * PS_CAP_OF_CELL * PS_UNIT_X;
 }
 
@@ -412,6 +413,7 @@ void Ps_TextExOuterXY(f32 x, f32 y, char *str, f32 scaleX, f32 scaleY, f32 width
     s32 alpha = (s32)((top >> 24) & 0xFF);
     s32 id;
 
+    str=(char *)Port_TagText(str);
     if (str[0] == 0 || (id = PortTbo_TextId(str, 0)) < 0) {
         return;
     }
@@ -470,6 +472,7 @@ void Ps_Heading(f32 x, f32 y, char *str, f32 scale, f32 width, s32 alpha) {
     f32 y0;
     s32 id;
 
+    str=(char *)Port_TagText(str);
     if (str[0] == 0 || (id = PortTbo_TextId(str, 2)) < 0) {
         return;
     }
@@ -550,6 +553,7 @@ void Ps_PromptsClear(void) {
 }
 
 void Ps_Prompt(s32 kind, char *label) {
+    label=(char *)Port_TagText(label);
     if (sPsPromptCount < PS_PROMPTS) {
         sPsPromptKind[sPsPromptCount] = kind;
         sPsPromptLabel[sPsPromptCount++] = label;
@@ -602,15 +606,17 @@ void Ps_Text(f32 x, f32 y, char *s, f32 scale, f32 width, s32 style) {
 }
 
 /* A filled circle, as a fan of quads. */
+/* The 33 points of a circle (k * 2 pi / 32), worked out once, here: the cosines and sines of every disc of every frame
+   were 128 calls of the game's slow float functions each (a dozen discs on some pages). */
+static const f32 kPsDiscCos[33] = {1.0000000f, 0.9807853f, 0.9238795f, 0.8314696f, 0.7071068f, 0.5555702f, 0.3826834f, 0.1950903f, 0.0000000f, -0.1950903f, -0.3826834f, -0.5555702f, -0.7071068f, -0.8314696f, -0.9238795f, -0.9807853f, -1.0000000f, -0.9807853f, -0.9238795f, -0.8314696f, -0.7071068f, -0.5555702f, -0.3826834f, -0.1950903f, -0.0000000f, 0.1950903f, 0.3826834f, 0.5555702f, 0.7071068f, 0.8314696f, 0.9238795f, 0.9807853f, 1.0000000f};
+static const f32 kPsDiscSin[33] = {0.0000000f, 0.1950903f, 0.3826834f, 0.5555702f, 0.7071068f, 0.8314696f, 0.9238795f, 0.9807853f, 1.0000000f, 0.9807853f, 0.9238795f, 0.8314696f, 0.7071068f, 0.5555702f, 0.3826834f, 0.1950903f, 0.0000000f, -0.1950903f, -0.3826834f, -0.5555702f, -0.7071068f, -0.8314696f, -0.9238795f, -0.9807853f, -1.0000000f, -0.9807853f, -0.9238795f, -0.8314696f, -0.7071068f, -0.5555702f, -0.3826834f, -0.1950903f, -0.0000000f};
+
 void Ps_Disc(f32 cx, f32 cy, f32 r, u32 mid, u32 edge) {
     s32 k;
     f32 rx = r * 0.857f; /* (a round thing is this much narrower in the screen's pixels) */
 
     for (k = 0; k < 32; k++) {
-        f32 a0 = (f32)k * 6.2831853f / 32.0f;
-        f32 a1 = (f32)(k + 1) * 6.2831853f / 32.0f;
-
-        Ps_Quad(cx, cy, cx, cy, cx + cosf(a0) * rx, cy + sinf(a0) * r, cx + cosf(a1) * rx, cy + sinf(a1) * r, mid, mid, edge, edge);
+        Ps_Quad(cx, cy, cx, cy, cx + kPsDiscCos[k] * rx, cy + kPsDiscSin[k] * r, cx + kPsDiscCos[k + 1] * rx, cy + kPsDiscSin[k + 1] * r, mid, mid, edge, edge);
     }
 }
 
@@ -625,6 +631,18 @@ s32 PortScreen_Main(void) {
         gMenuArc5 = File_LoadSync(gProgress->baseFile, NULL, 0);
     }
     switch (screen) {
+    case PORT_SCREEN_TAG_TEAM:
+        { extern s32 TagSession_Run(void);
+          Bgm_Play(0x10B16+2); result=TagSession_Run(); Adx_StopAll(); }
+        break;
+    case PORT_SCREEN_TAG_ONLINE:
+    case PORT_SCREEN_TAG_LOBBY:
+        { extern void TagNet_Enable(s32),TagNet_Party(s32),Port_TagOnlineSetup(void);
+          extern s32 TagNet_Room(void);
+          TagNet_Party(screen==PORT_SCREEN_TAG_LOBBY);TagNet_Enable(1);result=TagNet_Room();
+          if(result==1)Port_TagOnlineSetup();else {result=0;TagMenu_Request(1);gProgress->mode=4;}
+        }
+        break;
     case PORT_SCREEN_TBO:
         Bgm_Play(0x10B16 + 2);
         result = PortTbo_Run();

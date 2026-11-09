@@ -288,7 +288,7 @@ action core, movement, hit, collision, member, status or flag code. The only sou
 
 ## Fighter effect layer (`btl_char_fx*.c`, 0x1D00D8..0x1D3B40)
 
-64 of 67 functions match per function (three left in assembly); linked since (counts as first reported; docs/open_questions.md lists what is still assembly). What each
+64 of 67 functions match per function (three left in assembly); linked since (counts as first reported; [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md) lists what is still assembly). What each
 effect looks like is not known: names carrying a request or event number mean the trigger is
 verified and the visual is not.
 
@@ -364,7 +364,7 @@ the class 2..4 techniques (the two Blast 2 moves and the Ultimate), three ids pe
 class being the position in the triple. `BtlAct_IsTechniqueId` (0x105..0x132) is therefore
 misnamed: it means "is a technique action id". The hit-reaction actions are the ones in the
 reaction table above (0xB8..0xE0 and 0x131..0x139). Handler names and the game terms below are
-guesses from the animation and flag sequences; linked since (counts as first reported; docs/open_questions.md lists what is still assembly).
+guesses from the animation and flag sequences; linked since (counts as first reported; [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md) lists what is still assembly).
 
 | Actions | Handler | Technique type |
 |---|---|---|
@@ -404,7 +404,7 @@ guesses from the animation and flag sequences; linked since (counts as first rep
 
 ## Neutral state and movement actions (`btl_act_d.c`, 0x1EE058..0x1F1930; verified unless marked)
 
-All 18 functions match per function; linked since (counts as first reported; docs/open_questions.md lists what is still assembly). Handler names are guesses.
+All 18 functions match per function; linked since (counts as first reported; [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md) lists what is still assembly). Handler names are guesses.
 
 **Action 0xB, neutral.** Every fighter returns here.
 - Enter: leave flight mode (flag 0xE) if within a small height of the ground; play the idle
@@ -447,7 +447,7 @@ All 18 functions match per function; linked since (counts as first reported; doc
 
 ## Dashes, steps, vanishes, approach actions and clash actions (`btl_act_e.c`, 0x1F1930..0x1F5460; verified unless marked)
 
-All 20 functions match per function; linked since (counts as first reported; docs/open_questions.md lists what is still assembly). Names and game terms are guesses.
+All 20 functions match per function; linked since (counts as first reported; [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md) lists what is still assembly). Names and game terms are guesses.
 
 | Actions | What (inferred terms) | Notes |
 |---|---|---|
@@ -483,7 +483,7 @@ All 20 functions match per function; linked since (counts as first reported; doc
 
 ## Character parameters: ki blasts, movement, techniques, skills (`btl_tech_b.c`, 0x20F0E8..0x2129C8)
 
-All 182 functions match per function; linked since (counts as first reported; docs/open_questions.md lists what is still assembly). Arithmetic and layouts verified; game
+All 182 functions match per function; linked since (counts as first reported; [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md) lists what is still assembly). Arithmetic and layouts verified; game
 terms inferred. Full field tables are in `include/battle/btl_tech_b.h`.
 
 The file is pure readers of the character's parameter file through the battle object, with
@@ -579,7 +579,7 @@ original behaviour is "previous action = 0".
 
 ## Attack ids, attack records, gauge rates (`btl_tech_a.c`, 0x20BA80..0x20F0E8; verified unless marked)
 
-All 124 functions match per function; linked since (counts as first reported; docs/open_questions.md lists what is still assembly). 102 names are guesses. Full tables
+All 124 functions match per function; linked since (counts as first reported; [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md) lists what is still assembly). 102 names are guesses. Full tables
 (attack id by action and animation, the 0x30-byte record, the parameter block) are in
 `include/battle/btl_tech_a.h`.
 
@@ -617,7 +617,7 @@ All 124 functions match per function; linked since (counts as first reported; do
 
 ## Melee: rush chain, charged smash, vanish attack (`btl_act_a.c`, 0x1E3158..0x1E6CC0; verified unless marked)
 
-All 21 functions match per function; linked since (counts as first reported; docs/open_questions.md lists what is still assembly). This file continues the object of
+All 21 functions match per function; linked since (counts as first reported; [upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md) lists what is still assembly). This file continues the object of
 `btl_char_action.c`. Handler names and game terms are guesses.
 
 | Actions | What (inferred terms) | Notes |
@@ -835,4 +835,4 @@ IsDamageId), `BtlCtrl_IsMotionPlaying` (was IsMoveDone, inverted), the stat curv
 (`BtlStat_GetKiChargeBonus` ... `GetMaxPowerExtraTime`, were GetRate0..3 / GetScale4..12).
 Files were merged where matching proved they were one original source file: the fx-bit helpers
 + `btl_char_fx.c`; `btl_act_a.c` (a + b); `btl_act_f.c` (f + g); `btl_act_h_b.c` (h_b + i).
-Seven functions of this code stay in assembly (docs/open_questions.md).
+Seven functions of this code stay in assembly ([upstream notes](https://github.com/z3xox/Tenkaichi3Decomp/blob/ec3c85a98cffd9cd22c22ac14cd62fb584d23664/docs/open_questions.md)).

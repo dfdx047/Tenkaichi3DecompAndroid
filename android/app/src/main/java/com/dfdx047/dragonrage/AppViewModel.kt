@@ -229,6 +229,37 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
         _settings.value = settings.snapshot()
     }
 
+    // ---- the Tag Team's light graphics, offered once on a weak GPU (tiers 0 and 1: a Snapdragon 480+'s Adreno 619 and below)
+
+    private val _tagLiteOffer = MutableStateFlow(false)
+    /** The light graphics offer waiting for the player's answer (TagLiteDialog, after the GPU settings offer). */
+    val tagLiteOffer: StateFlow<Boolean> = _tagLiteOffer.asStateFlow()
+
+    /** [on]: "Turn on" (tag_lite 1); else "Not now". Either way it is kept and not asked again; Settings changes it later. */
+    fun answerTagLiteOffer(on: Boolean) = viewModelScope.launch(Dispatchers.IO) {
+        if (!_tagLiteOffer.value) return@launch
+        _tagLiteOffer.value = false
+        ActivityLog.info("settings", "Tag Team light graphics offer: ${if (on) "turn on" else "not now"}, GPU ${_gpuName.value}")
+        if (on) settings.set(EngineSettings.TAG_LITE, 1)
+        settings.set(EngineSettings.TAG_LITE_ASKED, 1)
+        _settings.value = settings.snapshot()
+    }
+
+    // ---- the character select's look (SelectStyleDialog), asked once in BT3's launcher: the new one or the game's
+
+    private val _selectStyleOffer = MutableStateFlow(false)
+    val selectStyleOffer: StateFlow<Boolean> = _selectStyleOffer.asStateFlow()
+
+    /** [classic]: the game's own screen (select_classic 1); else the new one. Kept and not asked again. */
+    fun answerSelectStyle(classic: Boolean) = viewModelScope.launch(Dispatchers.IO) {
+        if (!_selectStyleOffer.value) return@launch
+        _selectStyleOffer.value = false
+        ActivityLog.info("settings", "character select: ${if (classic) "classic" else "new"}")
+        settings.set(EngineSettings.SELECT_CLASSIC, if (classic) 1 else 0)
+        settings.set(EngineSettings.SELECT_ASKED, 1)
+        _settings.value = settings.snapshot()
+    }
+
     // ---- the last run's numbers (Debug page)
 
     private val _perf = MutableStateFlow<PerfReport?>(null)
@@ -378,6 +409,13 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
             // the GPU's recommended settings, offered once (GpuProfiles)
             val p = GpuProfiles.profile(_gpuName.value)
             if (p != null && settings.get(EngineSettings.GPU_TIER, -1) == -1) _gpuOffer.value = p
+            // the Tag Team's light graphics, offered once on a weak GPU (TagLiteDialog); stronger GPUs: nothing changes.
+            // BT3 only: the Tag Team is BT3's mod (BT4's own settings file asked it again, about a mode BT4 does not have)
+            if (game == Game.BT3 && GpuProfiles.tierOf(_gpuName.value) in 0..1 && settings.get(EngineSettings.TAG_LITE_ASKED, 0) == 0) {
+                if (settings.get(EngineSettings.TAG_LITE, 0) != 0) settings.set(EngineSettings.TAG_LITE_ASKED, 1) else _tagLiteOffer.value = true
+            }
+            // the character select's look, asked once (BT3 and its Tag Team mode only: BT4 and BT2 have their own)
+            if (game == Game.BT3 && settings.get(EngineSettings.SELECT_ASKED, 0) == 0) _selectStyleOffer.value = true
             _perf.value = runCatching { PerfReport.read(paths) }.getOrNull()
         }
         checkOnline()
@@ -422,15 +460,21 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
                         ActivityLog.info("iso", "step: ${it.step} (${it.detail})")
                     }
                 }
-                val done = if (bt4 != null) bt4.install(uri, report) else installer.install(uri, report)
-                _install.value = done
-                ActivityLog.info("iso", "installed: ${done.files} files, ${done.bytes} bytes, modified image: ${done.modified}, " +
+                val done = if (bt4 != null) bt4.install(uri, report) else installer.install(uri, report = report)
+                if (done.game == Game.BT2) { // a BT2 image picked here goes to the BT2 tab (Bt2ViewModel)
+                    _install.value = installer.currentState()
+                    say(str(R.string.msg_bt2_installed_tab))
+                } else {
+                    _install.value = done
+                }
+                ActivityLog.info("iso", "installed ${done.game}: ${done.files} files, ${done.bytes} bytes, modified image: ${done.modified}, " +
                     "${(System.currentTimeMillis() - started) / 1000} s")
                 say(str(R.string.msg_data_ready))
             } catch (e: CancellationException) {
                 ActivityLog.warn("iso", "cancelled at: $step")
-                withContext(Dispatchers.IO) { if (bt4 != null) bt4.uninstall() else installer.uninstall() }
-                _install.value = InstallState.NotInstalled
+                // (BT3's data is only cleared when its own unpacking had begun: a cancelled BT2 copy leaves it as it was)
+                withContext(Dispatchers.IO) { if (bt4 != null) bt4.uninstall() else if (!paths.installedMarker.exists()) installer.uninstall() }
+                _install.value = bt4?.currentState() ?: installer.currentState()
                 throw e
             } catch (e: GameDataInstaller.Stop) {
                 val why = e.message ?: str(R.string.msg_error)
@@ -552,7 +596,11 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
         viewModelScope.launch {
             val r = runCatching { AppUpdates.check(BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE) }
             val info = r.getOrNull()
-            r.exceptionOrNull()?.let { ActivityLog.warn("update", "check failed: ${it.javaClass.simpleName}: ${it.message}") }
+            r.exceptionOrNull()?.let {
+                // (no internet at start is the usual case on a handheld, not a problem to look at in a log: 16 phones reported it)
+                if (it is java.net.UnknownHostException) ActivityLog.info("update", "no internet: not checked")
+                else ActivityLog.warn("update", "check failed: ${it.javaClass.simpleName}: ${it.message}")
+            }
             if (info != null) ActivityLog.info("update", "available: ${info}")
             _update.value = if (info != null) UpdateState.Available(info) else UpdateState.Idle
             if (manual && info == null) say(str(if (r.isSuccess) R.string.update_none else R.string.update_check_failed))
@@ -715,14 +763,35 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
 
     // ---- launch
 
+    /** Budokai Tenkaichi 4's renderer now: the player's choice, else the device's (Dragon Rage's on a weak GPU or with Lite). */
+    fun bt4Renderer(): Int {
+        val s = _settings.value
+        s[EngineSettings.BT4_RENDERER]?.let { return it }
+        val weak = GpuProfiles.weakChip(_gpuName.value) || (s[EngineSettings.LITE] ?: 0) != 0
+        return if (weak) 0 else s[EngineSettings.BT4_RENDERER_AUTO] ?: 1
+    }
+
     fun play() {
+        if (game == Game.BT4 && _settings.value[EngineSettings.BT4_RENDERER] == null && bt4Renderer() == 0 &&
+            _settings.value[EngineSettings.BT4_RENDERER_AUTO] != 0) {
+            settings.set(EngineSettings.BT4_RENDERER_AUTO, 0) // (now: the game reads the file as it opens)
+            _settings.value = settings.snapshot()
+        }
+        // Dragon Rage's renderer on a weak GPU with no resolution chosen (the GPU offer declined or closed): 1x, not the
+        // engine's 2x. Mi A3 (Adreno 610), a fight at 2x: 35 ms a picture waiting for the GPU, 20 % speed; at 1x under 1 ms.
+        if (game == Game.BT4 && bt4Renderer() == 0 && GpuProfiles.tierOf(_gpuName.value) in 0..1 &&
+            _settings.value[EngineSettings.SCALE4] == null) {
+            settings.set(EngineSettings.SCALE4, 4)
+            settings.set(EngineSettings.SCALE, 1)
+            _settings.value = settings.snapshot()
+        }
         if (game == Game.BT4 && _install.value is InstallState.Installed && GpuProfiles.weakChip(_gpuName.value)) {
             android.widget.Toast.makeText(getApplication(), str(R.string.bt4_weak_cpu), android.widget.Toast.LENGTH_LONG).show()
         }
         when {
             _install.value !is InstallState.Installed -> say(str(R.string.msg_install_first))
             !engineAvailable -> say(str(R.string.msg_no_engine))
-            else -> ActivityLog.info("game", "started (renderer ${_settings.value[EngineSettings.RENDERER] ?: 0}" + (if (game == Game.BT4) ", BT4 renderer ${if ((_settings.value[EngineSettings.BT4_RENDERER] ?: 1) == 1) "ARMSX2" else "Dragon Rage"}" else "") + ", online ${if ((_settings.value[OnlineStatus.MODE] ?: 0) == 0) "Dragon Net" else "PC"})").let { getApplication<android.app.Application>().startActivity(
+            else -> ActivityLog.info("game", "started (renderer ${_settings.value[EngineSettings.RENDERER] ?: 0}" + (if (game == Game.BT4) ", BT4 renderer ${when (bt4Renderer()) { 1 -> "ARMSX2"; 2 -> "Nominum"; else -> "Dragon Rage" }}" else "") + ", online ${if ((_settings.value[OnlineStatus.MODE] ?: 0) == 0) "Dragon Net" else "PC"})").let { getApplication<android.app.Application>().startActivity(
                 android.content.Intent(getApplication(), if (game == Game.BT4) com.dfdx047.dragonrage.engine.Bt4Activity::class.java else com.dfdx047.dragonrage.engine.GameActivity::class.java)
                     .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
             ) }

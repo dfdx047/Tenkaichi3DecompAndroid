@@ -325,7 +325,7 @@ private fun OnlineBanner(vm: AppViewModel) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.13f)),
+        colors = CardDefaults.cardColors(containerColor = color.copy(alpha = 0.13f), contentColor = MaterialTheme.colorScheme.onSurface),
         border = androidx.compose.foundation.BorderStroke(1.5.dp, color.copy(alpha = 0.6f)),
     ) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -338,6 +338,7 @@ private fun OnlineBanner(vm: AppViewModel) {
             Text(title, style = MaterialTheme.typography.titleLarge)
             if (text.isNotEmpty()) Text(text, style = MaterialTheme.typography.bodyMedium)
             Text(stringResource(R.string.online_explain), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.online_iso_notice), style = MaterialTheme.typography.bodySmall, color = Dbz.GiOrange)
             FilledTonalButton(onClick = { open = true }) { Text(stringResource(R.string.online_help_button)) }
         }
     }

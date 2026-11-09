@@ -10,8 +10,12 @@
 
 #define SND_RPC_ID 0x2000004 /* sceSifBindRpc server id of SOUNDS.IRX */
 
-#define SND_BANK_COUNT 8  /* a bank is named by a one-bit mask (1 << slot); slot = Snd_BankIndex(mask) */
-#define SND_QUEUE_MAX 32  /* queued voice commands per frame */
+#define SND_BANK_COUNT (4 + PORT_FIGHTER_CAPACITY)  /* a bank is named by a one-bit mask (1 << slot); slot = Snd_BankIndex(mask) */
+#ifdef PORT
+#define SND_QUEUE_MAX (16 * PORT_FIGHTER_CAPACITY)
+#else
+#define SND_QUEUE_MAX 32
+#endif
 #define SND_VAG_MAX 0x80  /* samples per bank the loop-flag scratch buffer has room for */
 
 /* Bank masks with a special meaning in this file. */
@@ -19,7 +23,7 @@
 #define SND_BANK_FIXED_8 0x08  /* fixed-size slot: 0x13800 bytes of SPU RAM, reloadable in place */
 #define SND_BANK_SIDE_0 0x10   /* fixed-size slot: 0x8F000 bytes of SPU RAM, muted by BtlScript_IsSlotBusy(0, 0) */
 #define SND_BANK_SIDE_1 0x20   /* fixed-size slot: 0x8F000 bytes of SPU RAM, muted by BtlScript_IsSlotBusy(1, 0) */
-#define SND_BANK_ALL 0xFF
+#define SND_BANK_ALL ((1u << SND_BANK_COUNT)-1)
 
 /* Function numbers of the SOUNDS.IRX RPC server. Every call is blocking (sceSifCallRpc mode 0); the payload is
    the shared buffer gSndRpcBuf, `size` bytes of it; the 0x40-byte reply lands in SndRpc.reply. */

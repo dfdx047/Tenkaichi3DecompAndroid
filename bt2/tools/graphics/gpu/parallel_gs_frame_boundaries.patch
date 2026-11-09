@@ -1,0 +1,76 @@
+diff --git a/gs/gs_renderer.hpp b/gs/gs_renderer.hpp
+index d9acc50..8b89a9e 100644
+--- a/gs/gs_renderer.hpp
++++ b/gs/gs_renderer.hpp
+@@ -321,6 +321,7 @@ public:
+ 	SuperSampling get_max_supported_super_sampling() const;
+ 
+ 	void set_field_aware_super_sampling(bool enable);
++	void set_frame_boundaries(bool enable);
+ 
+ private:
+ 	PageTracker &tracker;
+@@ -344,6 +345,7 @@ private:
+ 
+ 	bool last_clut_update_is_read = false;
+ 	bool field_aware_super_sampling = false;
++	bool frame_boundaries = true;
+ 
+ 	std::vector<VkImageMemoryBarrier2> pre_image_barriers;
+ 	std::vector<VkImageMemoryBarrier2> post_image_barriers;
+diff --git a/gs/gs_renderer.cpp b/gs/gs_renderer.cpp
+index dbe032d..4fb4a5f 100644
+--- a/gs/gs_renderer.cpp
++++ b/gs/gs_renderer.cpp
+@@ -352,6 +352,11 @@ SuperSampling GSRenderer::get_max_supported_super_sampling() const
+ 	return max_ssaa;
+ }
+ 
++void GSRenderer::set_frame_boundaries(bool enable)
++{
++	frame_boundaries = enable;
++}
++
+ void GSRenderer::set_field_aware_super_sampling(bool enable)
+ {
+ 	field_aware_super_sampling = enable;
+@@ -1212,7 +1217,7 @@ void GSRenderer::flush_submit(uint64_t value)
+ 
+ 	// If we have a timeline trace, we'd like it to be somewhat readable.
+ 	// Only do garbage collection at frame boundaries.
+-	if (!device->get_system_handles().timeline_trace_file)
++	if (frame_boundaries && !device->get_system_handles().timeline_trace_file)
+ 		device->next_frame_context();
+ 
+ 	log_timestamps();
+diff --git a/gs/gs_interface.hpp b/gs/gs_interface.hpp
+index 39dfd76..abc902b 100644
+--- a/gs/gs_interface.hpp
++++ b/gs/gs_interface.hpp
+@@ -260,6 +260,10 @@ public:
+ 	void set_debug_mode(const DebugMode &mode);
+ 	void set_hacks(const Hacks &hacks);
+ 
++	// When false, a flush only submits: the device's next frame context is left to its owner, so a second
++	// interface on the same device can flush from another thread without waiting for the first one's frame.
++	void set_frame_boundaries(bool enable);
++
+ 	// Optional interface if application wants to listen for these IRQ related events.
+ 	void set_signal_interface(SignalInterface *iface);
+ 
+diff --git a/gs/gs_interface.cpp b/gs/gs_interface.cpp
+index bfac7b5..b96edff 100644
+--- a/gs/gs_interface.cpp
++++ b/gs/gs_interface.cpp
+@@ -4465,6 +4465,11 @@ void GSInterface::set_debug_mode(const DebugMode &mode)
+ 	renderer.set_enable_timestamps(mode.timestamps);
+ }
+ 
++void GSInterface::set_frame_boundaries(bool enable)
++{
++	renderer.set_frame_boundaries(enable);
++}
++
+ void GSInterface::set_hacks(const Hacks &hacks_)
+ {
+ 	hacks = hacks_;

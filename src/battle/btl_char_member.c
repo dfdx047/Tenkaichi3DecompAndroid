@@ -1,3 +1,4 @@
+#include "battle/tag_balance.h"
 #include "common.h"
 #include "battle/btl_char_member.h"
 
@@ -509,6 +510,7 @@ s32 BtlMember_Damage(BtlMemberChr *chr, s32 amount, s32 flags) {
             }
         }
     }
+    {extern void TagChallenge_Damage(s32,s32);TagChallenge_Damage(chr->side,before-health);}
     return before - health;
 }
 
@@ -768,12 +770,12 @@ void BtlMembers_UpdateQueuedDamage(void) {
         other = BtlChar_Get(BtlOpp_GetPlayer(chr));
         if (BtlAnim_TestAttr(chr, 0x200000000)) {
             if (chr->queue.hits >= 2) {
-                BtlMember_Damage(other, chr->queue.perHit, chr->queue.flags);
+                TagBalance_Damage(other, chr->queue.perHit, chr->queue.flags, *(s32 *)chr);
                 chr->queue.total -= chr->queue.perHit;
                 BtlChar_Vibrate(chr, 1.0f, 0.1f);
                 BtlChar_Vibrate(other, 1.0f, 0.1f);
             } else {
-                BtlMember_Damage(other, chr->queue.total, chr->queue.flags);
+                TagBalance_Damage(other, chr->queue.total, chr->queue.flags, *(s32 *)chr);
                 chr->queue.total = 0;
                 BtlChar_Vibrate(chr, 1.0f, 0.3f);
                 BtlChar_Vibrate(other, 1.0f, 0.3f);
@@ -813,7 +815,7 @@ void BtlMembers_UpdateQueuedDamage(void) {
                 } else {
                     flags |= BTL_DMG_NO_DEFENSE | BTL_DMG_EXACT | BTL_DMG_NO_HIT;
                 }
-                lost = BtlMember_Damage(other, amount, flags);
+                lost = TagBalance_Damage(other, amount, flags, *(s32 *)chr);
                 if (!BtlChar_TestFlag(chr, 0x13C)) {
                     BtlMember_AddHealth(chr, lost);
                 }
@@ -839,7 +841,7 @@ void BtlMembers_UpdateQueuedDamage(void) {
         }
         if (BtlChar_TestFlag(chr, 0x8C)) {
             if (chr->queue.total > 0) {
-                BtlMember_Damage(other, chr->queue.total, chr->queue.flags);
+                TagBalance_Damage(other, chr->queue.total, chr->queue.flags, *(s32 *)chr);
             }
             chr->queue.unk0 = 0;
             chr->queue.total = 0;

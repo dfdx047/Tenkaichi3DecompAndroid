@@ -1,0 +1,24 @@
+{
+    // The workspace holds about 10,600 generated C++ files plus build output. Left indexed, the C/C++
+    // extension commits tens of gigabytes of memory (growing the Windows pagefile) and fills its 5 GB
+    // IntelliSense cache under %LOCALAPPDATA%. Keep it to the handwritten sources.
+    "C_Cpp.files.exclude": {
+        "**/game/generated/**": true,
+        "**/build/**": true,
+        "**/work/**": true,
+        "**/rom/**": true
+    },
+    "C_Cpp.intelliSenseCacheSize": 512,
+    "C_Cpp.intelliSenseMemoryLimit": 2048,
+    "files.watcherExclude": {
+        "**/game/generated/**": true,
+        "**/build/**": true,
+        "**/work/**": true,
+        "**/rom/**": true
+    },
+    "search.exclude": {
+        "**/game/generated/**": true,
+        "**/build/**": true,
+        "**/work/**": true
+    }
+}

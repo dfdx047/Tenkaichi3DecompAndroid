@@ -1,0 +1,47 @@
+diff --git a/vulkan/command_buffer.cpp b/vulkan/command_buffer.cpp
+index 9f2534de..7fc20c85 100644
+--- a/vulkan/command_buffer.cpp
++++ b/vulkan/command_buffer.cpp
+@@ -21,6 +21,8 @@
+  */
+ 
+ #define NOMINMAX
++#include <mutex>
++#include <unordered_set>
+ #include "command_buffer.hpp"
+ #include "device.hpp"
+ #include "format.hpp"
+@@ -1083,6 +1085,16 @@ Pipeline CommandBuffer::build_compute_pipeline(Device *device, const DeferredPip
+ 		return {};
+ 	}
+ 
++	// A pipeline the driver could not compile is not tried again: each try costs the frame milliseconds and
++	// fails the same way (older Adreno drivers' "Failed to link shaders").
++	static std::mutex failed_lock;
++	static std::unordered_set<Util::Hash> failed;
++	{
++		std::lock_guard<std::mutex> hold{failed_lock};
++		if (failed.count(compile.hash))
++			return {};
++	}
++
+ 	auto &shader = *compile.program->get_shader(ShaderStage::Compute);
+ 	VkComputePipelineCreateInfo info = { VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
+ 	info.layout = compile.layout->get_layout();
+@@ -1203,7 +1215,15 @@ Pipeline CommandBuffer::build_compute_pipeline(Device *device, const DeferredPip
+ 	if (vr != VK_SUCCESS || compute_pipeline == VK_NULL_HANDLE)
+ 	{
+ 		if (vr < 0)
+-			LOGE("Failed to create compute pipeline!\n");
++		{
++			LOGE("Failed to create compute pipeline %016llx (subgroup sizes 2^%u..2^%u, full %u); not tried again.\n",
++			     static_cast<unsigned long long>(compile.hash),
++			     unsigned(compile.static_state.state.subgroup_minimum_size_log2),
++			     unsigned(compile.static_state.state.subgroup_maximum_size_log2),
++			     unsigned(compile.static_state.state.subgroup_full_group));
++			std::lock_guard<std::mutex> hold{failed_lock};
++			failed.insert(compile.hash);
++		}
+ 		return {};
+ 	}
+ 
