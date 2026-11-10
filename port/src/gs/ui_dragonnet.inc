@@ -320,6 +320,7 @@ static const char *ranked_msg(int m) {
     case DRMSG_UPDATED: return T("Profile updated.", "Perfil atualizado.", "Perfil actualizado.");
     case DRMSG_BUSY: return T("Too many requests: wait a moment.", "Muitos pedidos: espere um pouco.", "Demasiadas solicitudes: espera un momento.");
     case DRMSG_LIMIT: return limit_text();
+    case DRMSG_BACKGROUND_TIMEOUT: return T("Ranked search canceled after 3 minutes in the background.", "Busca Ranked cancelada após 3 minutos em segundo plano.", "Búsqueda Ranked cancelada tras 3 minutos en segundo plano.");
     default: return "";
     }
 }

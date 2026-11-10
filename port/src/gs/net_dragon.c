@@ -32,6 +32,7 @@ extern void Port_SettingsWrite(void);
 extern const char *Port_FileRoot(void);
 extern int Port_NetActive(void);
 extern int gPortResim;
+extern volatile int gPortInBackground;
 
 /* ---- the mode and the version ---- */
 
@@ -816,7 +817,7 @@ static int SDLCALL worker(void *unused) {
             SDL_LockMutex(sLock);
             paired = sView.state == 3;
             SDL_UnlockMutex(sLock);
-            rounds = !search ? 100 : paired ? 150 : waited < 30000 ? 200 : waited < 120000 ? 400 : 750;
+            rounds = !search ? 100 : gPortInBackground ? 1 : paired ? MATCH_RANKED_PAIRED_MS / 20 : waited < 30000 ? MATCH_RANKED_FIRST_MS / 20 : waited < 120000 ? MATCH_RANKED_MIDDLE_MS / 20 : MATCH_RANKED_LATE_MS / 20;
             for (i = 0; i < rounds; i++) {
                 SDL_LockMutex(sLock);
                 urgent = sFlowNow || sRefresh || sWantCancel || sWantBoard || sRoomPending[0] != '\0' || sChatOutN > 0 || sPresenceLeave || sLifeReady || sLifeStarted;
@@ -824,7 +825,18 @@ static int SDLCALL worker(void *unused) {
                 if (urgent) {
                     break;
                 }
-                SDL_Delay(20);
+                if (!Match_BackgroundWait(gPortInBackground ? MATCH_BACKGROUND_POLL_MS : 20, !paired)) {
+                    SDL_LockMutex(sLock);
+                    if (!paired && sView.searching) {
+                        sWantCancel = 1;
+                        SDL_strlcpy(sCancelMatch, sView.match, sizeof(sCancelMatch));
+                        sView.searching = 0;
+                        sView.state = -1;
+                        sView.msg = DRMSG_BACKGROUND_TIMEOUT;
+                    }
+                    SDL_UnlockMutex(sLock);
+                    break;
+                }
             }
         }
     }
