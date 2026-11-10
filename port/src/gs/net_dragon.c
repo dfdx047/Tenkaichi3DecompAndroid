@@ -680,18 +680,19 @@ static int SDLCALL worker(void *unused) {
     for (;;) {
         char answer[4096], extra[256], name[20], match[33], code[8], cancelled[33];
         int refresh, search, cancel, board, mode, chat, presence, leave, urgent, i;
+        int background = gPortInBackground;
         unsigned gen;
         Uint64 now = SDL_GetTicks();
 
         SDL_LockMutex(sLock);
         SDL_strlcpy(name, sName, sizeof(name));
-        refresh = sRefresh;
-        sRefresh = 0;
+        refresh = sRefresh && !background;
+        if (refresh) sRefresh = 0;
         search = sWantSearch;
         cancel = sWantCancel;
         sWantCancel = 0;
-        board = sWantBoard;
-        sWantBoard = 0;
+        board = sWantBoard && !background;
+        if (board) sWantBoard = 0;
         gen = sSearchGen;
         mode = sView.mode;
         SDL_strlcpy(cancelled, sCancelMatch, sizeof(cancelled));
@@ -699,7 +700,7 @@ static int SDLCALL worker(void *unused) {
         SDL_strlcpy(match, sView.match, sizeof(match));
         SDL_strlcpy(code, sRoomPending, sizeof(code));
         sRoomPending[0] = '\0';
-        chat = DRNET_CHAT && sChatOpen && (now - chatAt > 3000 || sChatOutN > 0);
+        chat = !background && DRNET_CHAT && sChatOpen && (now - chatAt > 3000 || sChatOutN > 0);
         presence = (sPresenceOn && (sPresenceAt == 0 || now - sPresenceAt > 300000)) || sPresenceLeave;
         leave = sPresenceLeave;
         SDL_UnlockMutex(sLock);
@@ -820,7 +821,7 @@ static int SDLCALL worker(void *unused) {
             rounds = !search ? 100 : gPortInBackground ? 1 : paired ? MATCH_RANKED_PAIRED_MS / 20 : waited < 30000 ? MATCH_RANKED_FIRST_MS / 20 : waited < 120000 ? MATCH_RANKED_MIDDLE_MS / 20 : MATCH_RANKED_LATE_MS / 20;
             for (i = 0; i < rounds; i++) {
                 SDL_LockMutex(sLock);
-                urgent = sFlowNow || sRefresh || sWantCancel || sWantBoard || sRoomPending[0] != '\0' || sChatOutN > 0 || sPresenceLeave || sLifeReady || sLifeStarted;
+                urgent = sFlowNow || (!gPortInBackground && (sRefresh || sWantBoard || sChatOutN > 0)) || sWantCancel || sRoomPending[0] != '\0' || sPresenceLeave || sLifeReady || sLifeStarted;
                 SDL_UnlockMutex(sLock);
                 if (urgent) {
                     break;
