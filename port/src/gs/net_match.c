@@ -632,13 +632,53 @@ static int limit_after(const char *base, const char *what, int ok, const char *o
 /* The app is not on the screen (gs_gpu.c): the free Workers' daily requests are not spent on it. The request waits for
    the player's return; a room that ran out meanwhile says so then. */
 volatile int gPortInBackground;
+static SDL_AtomicInt sBackgroundSince;
+
+#ifdef __ANDROID__
+JNIEXPORT void JNICALL Java_com_dfdx047_dragonrage_engine_GameActivity_nativeSetOnlineBackground(JNIEnv *env, jobject self, jboolean paused) {
+    (void)env; (void)self;
+    gPortInBackground = paused == JNI_TRUE;
+    if (!gPortInBackground) SDL_SetAtomicInt(&sBackgroundSince, 0);
+}
+#endif
+
+int Match_BackgroundWait(Uint32 activeMs) {
+    Uint64 start = SDL_GetTicks();
+    if (gPortInBackground) {
+        Uint32 since = (Uint32)SDL_GetAtomicInt(&sBackgroundSince);
+        if (since == 0) { since = (Uint32)start; SDL_SetAtomicInt(&sBackgroundSince, (int)since); }
+        if ((Uint32)SDL_GetTicks() - since >= MATCH_BACKGROUND_CANCEL_MS) return 0;
+        activeMs = MATCH_BACKGROUND_POLL_MS;
+    } else {
+        SDL_SetAtomicInt(&sBackgroundSince, 0);
+    }
+    while (SDL_GetTicks() - start < activeMs) {
+        if (!gPortInBackground) {
+            SDL_SetAtomicInt(&sBackgroundSince, 0);
+            SDL_Delay((Uint32)(activeMs - (SDL_GetTicks() - start) > 100 ? 100 : activeMs - (SDL_GetTicks() - start)));
+            continue;
+        }
+        {
+            Uint32 since = (Uint32)SDL_GetAtomicInt(&sBackgroundSince);
+            if (since == 0) { since = (Uint32)SDL_GetTicks(); SDL_SetAtomicInt(&sBackgroundSince, (int)since); }
+            if ((Uint32)SDL_GetTicks() - since >= MATCH_BACKGROUND_CANCEL_MS) return 0;
+        }
+        SDL_Delay(100);
+    }
+    return 1;
+}
 
 static int http_post_to(const char *base, const char *what, const char *json, char *out, size_t size) {
     int ok, limited;
     if (base == NULL) {
         base = match_url();
     }
-    while (gPortInBackground) {
+    while (gPortInBackground && SDL_strcmp(what, "leave") != 0) {
+        if (SDL_strcmp(what, "poll") == 0) {
+            Uint32 since = (Uint32)SDL_GetAtomicInt(&sBackgroundSince);
+            if (since == 0) { since = (Uint32)SDL_GetTicks(); SDL_SetAtomicInt(&sBackgroundSince, (int)since); }
+            if ((Uint32)SDL_GetTicks() - since >= MATCH_BACKGROUND_CANCEL_MS) return 0;
+        }
         SDL_Delay(200);
     }
     if (limit_before(base, out, size)) {
@@ -1008,14 +1048,21 @@ again:
             goto lobby;
         }
         SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"%s}", sM.code, key, sM.watch ? ",\"watch\":true" : "");
-        Uint64 searched = SDL_GetTicks();
-        for (i = 0; i < 165 && !STOPPED(); i++) { /* a room lasts ten minutes */
-            int k;
-            /* asked every two seconds in the first minute, every four after it (the service's daily requests) */
-            for (k = 0; k < (i < 20 ? 30 : 60) && !STOPPED(); k++) {
-                SDL_Delay(100);
+        Uint64 searched = SDL_GetTicks(), roomMade = searched;
+        int quickSearch = sM.role == 3;
+        int expired = 0;
+        for (;;) {
+            Uint64 elapsed = SDL_GetTicks() - roomMade;
+            Uint32 pollMs = elapsed < MATCH_HOST_FIRST_UNTIL_MS ? MATCH_HOST_FIRST_MS : elapsed < MATCH_HOST_MIDDLE_UNTIL_MS ? MATCH_HOST_MIDDLE_MS : MATCH_HOST_LATE_MS;
+            if (!Match_BackgroundWait(pollMs)) {
+                expired = 1;
+                break;
             }
             if (STOPPED()) {
+                break;
+            }
+            if (!quickSearch && (sM.role == 1 || sM.role == 5) && SDL_GetTicks() - roomMade >= MATCH_ROOM_TTL_MS) {
+                expired = 1;
                 break;
             }
             if (sM.role == 3 && again > 0 && SDL_GetTicks() - searched >= (Uint64)again * 1000) {
@@ -1120,12 +1167,18 @@ again:
                     return 0;
                 }
                 if (SDL_strstr(answer, "no room") != NULL) {
+                    if (!quickSearch) expired = 1;
                     break;
                 }
             }
         }
         if (STOPPED()) {
             POSTB("leave", body, answer, sizeof(answer));
+            return 0;
+        }
+        if (expired) {
+            POSTB("leave", body, answer, sizeof(answer));
+            set_state(-1, "The room expired after 10 minutes with nobody joining. Host another room to keep searching.");
             return 0;
         }
         if (sM.role == 3) { /* (a quick match waits for as long as the player does) */
@@ -1204,7 +1257,7 @@ again:
     }
     return 0;
 lobby:
-    /* A lobby's owner. The room lives as long as the lobby: asked every four seconds (900 requests an hour of lobby)
+    /* A lobby's owner. The room lives as long as the lobby: asked every eight seconds
        for the members who have joined with the code (their addresses, as spectators', Match_Watchers); the lobby
        knocks at each and lets it through its relay. A relay address is asked for when the lobby says a member
        cannot reach it directly (Match_RelayAsk), once a member has come. */
@@ -1212,10 +1265,7 @@ lobby:
     {
         int first = 1;
         while (!STOPPED()) {
-            int w;
-            for (w = 0; w < (first ? 1 : 40) && !STOPPED() && SDL_GetAtomicInt(&sM.relayAsk) != 1; w++) {
-                SDL_Delay(100);
-            }
+            if (!first && SDL_GetAtomicInt(&sM.relayAsk) != 1 && !Match_BackgroundWait(MATCH_LOBBY_POLL_MS)) break;
             first = 0;
             if (STOPPED()) {
                 break;
@@ -1262,18 +1312,15 @@ lobby:
     }
     SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"}", sM.code, key);
     POSTB("leave", body, answer, sizeof(answer));
+    if (!STOPPED() && SDL_GetAtomicInt(&sBackgroundSince) != 0 && (Uint32)SDL_GetTicks() - (Uint32)SDL_GetAtomicInt(&sBackgroundSince) >= MATCH_BACKGROUND_CANCEL_MS)
+        set_state(-1, "The online lobby was closed after 3 minutes in the background.");
     return 0;
 keep:
     /* A host that lets spectators in, once the other player has come: the room is kept while the match is on (the
-       session ends this search, Match_Cancel), and asked every five seconds for spectators who have come (the
-       service's requests a day: 720 an hour of match). */
+       session ends this search, Match_Cancel), and asked every ten seconds for spectators who have come. */
     SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\",\"watch\":true,\"keep\":true}", sM.code, key);
     while (!STOPPED()) {
-        int w;
-        for (w = 0; w < 50 && !STOPPED(); w++) {
-            SDL_Delay(100);
-        }
-        if (STOPPED()) {
+        if (!Match_BackgroundWait(MATCH_KEEP_POLL_MS) || STOPPED()) {
             break;
         }
         if (POSTB("poll", body, answer, sizeof(answer))) {
@@ -1285,6 +1332,8 @@ keep:
     }
     SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"}", sM.code, key);
     POSTB("leave", body, answer, sizeof(answer));
+    if (!STOPPED() && SDL_GetAtomicInt(&sBackgroundSince) != 0 && (Uint32)SDL_GetTicks() - (Uint32)SDL_GetAtomicInt(&sBackgroundSince) >= MATCH_BACKGROUND_CANCEL_MS)
+        set_state(-1, "The online room was closed after 3 minutes in the background.");
     return 0;
 joined:
     /* The one who joined. If the host's direct addresses stay silent, the host asks for a relay address and adds it
@@ -1292,14 +1341,15 @@ joined:
        (connected, or given up) or the address has come. */
     if (key[0] != '\0' && sM.code[0] != '\0') {
         MatchStatus st;
-        int round, w, known;
+        int round, w, known, backgroundExpired = 0;
         SDL_LockMutex(sM.lock);
         known = sM.st.peerCount;
         SDL_UnlockMutex(sM.lock);
         SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"}", sM.code, key);
         for (round = 0; round < 11 && !STOPPED(); round++) {
-            for (w = 0; w < (round == 0 ? 30 : 20) && !STOPPED(); w++) {
-                SDL_Delay(100);
+            if (!Match_BackgroundWait(round == 0 ? MATCH_JOIN_FIRST_POLL_MS : MATCH_JOIN_POLL_MS)) {
+                backgroundExpired = 1;
+                break;
             }
             if (STOPPED() || !POSTB("poll", body, answer, sizeof(answer))) {
                 continue;
@@ -1316,6 +1366,10 @@ joined:
                 SDL_UnlockMutex(sM.lock);
                 break;
             }
+        }
+        if (backgroundExpired) {
+            POSTB("leave", body, answer, sizeof(answer));
+            set_state(-1, "The online connection was canceled after 3 minutes in the background.");
         }
     }
     return 0;

@@ -47,6 +47,7 @@ import org.libsdl.app.SDLActivity
  * [TouchBridge] and steps aside while the engine's own window (settings, online) is open.
  */
 open class GameActivity : SDLActivity() {
+    private external fun nativeSetOnlineBackground(paused: Boolean)
     private var wifiLock: WifiManager.WifiLock? = null
     protected lateinit var paths: GamePaths
     private lateinit var store: TouchStore
@@ -223,6 +224,7 @@ open class GameActivity : SDLActivity() {
 
     override fun onResume() {
         super.onResume()
+        runCatching { nativeSetOnlineBackground(false) }
         runCatching {
             val lock = wifiLock ?: run {
                 val wifi = getSystemService(WIFI_SERVICE) as WifiManager
@@ -245,6 +247,7 @@ open class GameActivity : SDLActivity() {
 
 
     override fun onPause() {
+        runCatching { nativeSetOnlineBackground(true) }
         runCatching { wifiLock?.let { if (it.isHeld) it.release() } }
         runCatching { (getSystemService(INPUT_SERVICE) as InputManager).unregisterInputDeviceListener(devices) }
         handler.removeCallbacks(watchMenu)

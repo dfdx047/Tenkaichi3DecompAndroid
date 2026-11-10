@@ -5,6 +5,24 @@
 #define MATCH_ADDRS 4
 #define MATCH_WATCH_ADDRS 32 /* the spectators' addresses a host is told, all together */
 
+/* Online polling schedule (milliseconds); keep these together for tuning. */
+#define MATCH_HOST_FIRST_MS 2000
+#define MATCH_HOST_MIDDLE_MS 4000
+#define MATCH_HOST_LATE_MS 8000
+#define MATCH_HOST_FIRST_UNTIL_MS 20000
+#define MATCH_HOST_MIDDLE_UNTIL_MS 60000
+#define MATCH_ROOM_TTL_MS 600000
+#define MATCH_LOBBY_POLL_MS 8000
+#define MATCH_KEEP_POLL_MS 10000
+#define MATCH_JOIN_POLL_MS 2000
+#define MATCH_JOIN_FIRST_POLL_MS 3000
+#define MATCH_RANKED_FIRST_MS 6000
+#define MATCH_RANKED_MIDDLE_MS 10000
+#define MATCH_RANKED_LATE_MS 15000
+#define MATCH_RANKED_PAIRED_MS 3000
+#define MATCH_BACKGROUND_POLL_MS 15000
+#define MATCH_BACKGROUND_CANCEL_MS 180000
+
 typedef struct MatchStatus {
     int state;                      /* 0 idle, 1 working, 2 the room is made (code), 3 the other player is known, -1 failed */
     char code[8];
@@ -47,5 +65,6 @@ int Match_SignTest(void);    /* BT3_SIGN_TEST: see net_match.c */
 #include <stddef.h>
 int Match_PostDragon(const char *what, const char *json, char *out, size_t size); /* Dragon Net's service (net_dragon.c) */
 int Match_ServiceLimited(void); /* a service answered HTTP 429 a moment ago: nothing is asked for now (net_match.c) */
+int Match_BackgroundWait(unsigned int activeMs); /* wait between polls; 0 after three background minutes */
 
 #endif
