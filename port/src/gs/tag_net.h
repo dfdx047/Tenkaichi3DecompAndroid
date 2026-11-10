@@ -46,6 +46,9 @@ typedef struct TagLobbyRoster {int count,role,host,waiting;int member[10],ping[1
 void TagNet_Roster(unsigned address);
 void TagLobbyRoster_Draw(int hostMenu);
 void TagNet_ReturnPractice(void);
+/* The host's choice on the screen after a lobby match (TL_RETURNING): 0 rematch, 1 character select (team setup). Game modes
+   is TagNet_ReturnPractice. Guests wait for it. */
+void TagNet_PostMatch(int choice);
 int TagNet_PracticeEnding(void);
 typedef struct TagPracticeUi {int visible,host,choice,role;TlRoom lobby;} TagPracticeUi;
 typedef struct TagPracticeEvent {unsigned at;int member,present,generation,kind;TlLoadout fighter;} TagPracticeEvent;

@@ -882,3 +882,29 @@ GAMEPLAY	JUGABILIDAD
 CAMERAS	CÁMARAS
 ENDS THE ROOM	CIERRA LA SALA
 PRESS SELECT AGAIN FOR THE NORMAL MODES	PULSA SELECT DE NUEVO PARA LOS MODOS NORMALES
+MATCH OVER	FIN DEL COMBATE
+CHOOSE WHAT COMES NEXT	ELIGE QUÉ SIGUE
+THE HOST CHOOSES WHAT COMES NEXT	EL ANFITRIÓN ELIGE QUÉ SIGUE
+Rematch	Revancha
+Character Select	Selección de personajes
+Game Modes	Modos de juego
+Rematch: the same teams fight again at once.	Revancha: los mismos equipos luchan de nuevo al instante.
+Character Select: everyone goes back to the team setup.	Selección de personajes: todos vuelven a la elección de equipos.
+Game Modes: back to the lobby to choose a mode.	Modos de juego: vuelven a la sala para elegir un modo.
+Waiting for the host to choose...	Esperando a que el anfitrión elija...
+Rematch, character select or game modes.	Revancha, selección de personajes o modos de juego.
+Rematch! Loading the same battle.	¡Revancha! Cargando el mismo combate.
+Match over. The host chooses what comes next.	Fin del combate. El anfitrión elige qué sigue.
+The host chose a mode. Joining the team setup...	El anfitrión eligió un modo. Yendo a la elección de equipos...
+WAITING FOR PLAYERS	ESPERANDO JUGADORES
+THE HOST IS CHOOSING A MODE	EL ANFITRIÓN ESTÁ ELIGIENDO EL MODO
+PLAYERS  %d/10	JUGADORES  %d/10
+The host is choosing a mode	El anfitrión está eligiendo el modo
+Team setup opens for everyone next.	La elección de equipos se abre para todos después.
+TIP	CONSEJO
+In team setup, Start takes a place and readies you.	En la elección de equipos, Start toma un lugar y te deja listo.
+L1 / R1 move you to the other team in team setup.	L1 / R1 te cambian de equipo en la elección de equipos.
+After a match the host chooses: rematch, character select or game modes.	Tras el combate el anfitrión elige: revancha, selección de personajes o modos de juego.
+The host can remove a CPU fighter with Square.	El anfitrión puede quitar un luchador de la CPU con Cuadrado.
+Connected. The host is choosing a mode.	Conectado. El anfitrión está eligiendo el modo.
+Choose a mode for the lobby.	Elige un modo para la sala.

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 import { handle } from "./worker.js";
 
+let writes = 0; // rows written (D1's free plan counts them)
 const db = new DatabaseSync(":memory:");
 db.exec(fs.readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
 const D1 = {
@@ -13,7 +14,7 @@ const D1 = {
             bind(...a) { this.args = a; return this; },
             async first() { return db.prepare(sql).get(...this.args) ?? null; },
             async all() { return { results: db.prepare(sql).all(...this.args) }; },
-            async run() { const r = db.prepare(sql).run(...this.args); return { meta: { changes: r.changes } }; },
+            async run() { const r = db.prepare(sql).run(...this.args); writes += r.changes; return { meta: { changes: r.changes } }; },
         };
     },
     async batch(list) { return Promise.all(list.map((s) => s.run())); },
@@ -57,4 +58,18 @@ const h2 = await call("host", { v: 5, name: "H2", addrs: [] });
 const g2 = await call("join", { v: 5, code: h2.code, name: "G", addrs: [] });
 await call("leave", { code: h2.code, key: h2.key });
 assert.equal((await call("poll", { code: h2.code, key: g2.key })).error, "no room");
-console.log("tagnet worker: all tests passed");
+// a room in use for a minute, both polling every 2 s: the two stay in, and few rows are written
+const h3 = await call("host", { v: 5, name: "H3", addrs: [] });
+const g3 = await call("join", { v: 5, code: h3.code, name: "G3", addrs: [] });
+writes = 0;
+for (let t = 0; t < 30; t++) {
+    now += 2;
+    assert.equal((await call("poll", { code: h3.code, key: g3.key })).status, 200);
+    p = await call("poll", { code: h3.code, key: h3.key });
+    assert.equal(p.members.length, 1);
+}
+assert.ok(writes <= 12, "rows written in a minute of polls: " + writes);
+// a member who stops polling still leaves the owner's list after MEMBER_IDLE, whatever the sweep's pace
+now += 46;
+assert.equal((await call("poll", { code: h3.code, key: h3.key })).members.length, 0);
+console.log("tagnet worker: all tests passed (" + writes + " rows written in the minute of polls)");

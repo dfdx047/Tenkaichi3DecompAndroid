@@ -41,6 +41,9 @@ typedef struct Target {
 
 GsState gGs;
 uint32_t gGsPageGen[512];
+/* Moved on with every change of gGsPageGen (any page's content): while it stays, nothing in GS memory changed
+   (gs_draw.c texture_get keeps a texture's page hashes by it). */
+uint32_t gGsPageEpoch;
 unsigned gGsFbUploads; /* bit 0 / 1: pixels were uploaded into display buffer 0 / 0x70 since the back end last looked */
 unsigned gGsFrame;
 #define gs gGs
@@ -217,6 +220,7 @@ void Gs_StateBack(void) {
     for (i = 0; i < 512; i++) {
         gGsPageGen[i] = sKept.gen[i] != 0 ? sKept.gen[i] + sMoved : 0;
     }
+    gGsPageEpoch++;
     GsVu1_StateKeep(1);
     if (sGpu) {
         extern void GsGpu_PagesMoved(uint32_t delta); /* gs_gpu.c */
@@ -226,6 +230,24 @@ void Gs_StateBack(void) {
 
 uint32_t Gs_VramRead(uint32_t bp, uint32_t bw, uint32_t psm, uint32_t x, uint32_t y) {
     return vram_rw(bp, bw, psm, x, y, 0, 0);
+}
+
+/* A w x h rectangle of a 32-bit buffer (PSMCT32) from (0, 0), row after row, each pixel ORed with `orBits`: what
+   Gs_VramRead(bp, bw, 0, x, y) | orBits gives for every pixel, by the uploads' table (sIn32, as transfer_data writes
+   them) instead of a call and the address worked out anew per pixel. A movie picture is 512 x 512 of them a frame. */
+void Gs_ReadRect32(uint32_t bp, uint32_t bw, uint32_t w, uint32_t h, uint32_t *out, uint32_t orBits) {
+    uint32_t x, y;
+    if (bw == 0) {
+        bw = 1;
+    }
+    for (y = 0; y < h; y++) {
+        const uint16_t *in = sIn32[y & 31];
+        uint32_t base = (bp + (y >> 5) * 32 * bw) << 6;
+        uint32_t *row = out + (size_t)y * w;
+        for (x = 0; x < w; x++) {
+            row[x] = sVram[(base + ((x >> 6) << 11) + in[x & 63]) & 0xFFFFF] | orBits;
+        }
+    }
 }
 
 /* A hash of one 8 KB page of GS memory, recomputed only after an upload touched the page. The GPU back end keys
@@ -752,6 +774,7 @@ static void vertex(uint32_t x, uint32_t y, uint32_t z, int kick) {
                 draw_sprite(sf, ctx, &gs.vtx[0], &gs.vtx[1]);
                 gGsPageGen[fb]++;
                 gGsPageGen[(fb + 1) & 511]++;
+                gGsPageEpoch++;
             } else if (kick) {
                 if (sGpu) { GsGpu_Draw(6, ctx, gs.vtx); } else { draw_sprite(sf, ctx, &gs.vtx[0], &gs.vtx[1]); }
             }
@@ -872,6 +895,7 @@ static void transfer_data(const uint8_t *p, uint32_t bytes) {
         for (i = first; i <= last; i++) {
             gGsPageGen[i & 511]++;
         }
+        gGsPageEpoch++;
     }
 }
 
@@ -1553,9 +1577,29 @@ void Port_GsVif1Chain(uint32_t tadr, int tte) {
         uint64_t waited = (uint64_t)gPortSleptNs;
         uint64_t work = t - start > waited ? t - start - waited : 0; /* without the waiting for the vertical blank */
         gPortSleptNs = 0;
-        {   /* the system's performance hints (gs_adpf.c): this frame's work against the game's 30 a second */
+        {   /* the system's performance hints (gs_adpf.c): this frame's work against the time the frame may take.
+               The work leaves out the time spent waiting for the other players' inputs online (gs/net.c,
+               tag_net.c: gPortNetWaitNs, read again below for the slow-frame report): told as work, it made the
+               system raise the clocks for a thread that was only waiting. The time a frame may take is its blanks
+               (two in a fight, one in the menus) at the game's speed (Port_BlankNs: the room's pace online, the
+               Cheats tab's game speed): a fixed 33.4 ms asked too little in the menus and above 100%. */
             extern void GsAdpf_Frame(uint64_t workNs, uint64_t targetNs);
-            GsAdpf_Frame(work, 33366700ull);
+            extern uint64_t gPortNetWaitNs;
+            extern unsigned gPortVBlanks;
+            extern unsigned long long Port_BlankNs(void);
+            static unsigned lastBlanks;
+            unsigned blanks = gPortVBlanks - lastBlanks;
+            /* (BT3_ADPF_NETWAIT=1: the waits counted as work, as before, to compare an online match both ways) */
+            static int netAsWork = -1;
+            if (netAsWork < 0) {
+                netAsWork = getenv("BT3_ADPF_NETWAIT") != NULL && atoi(getenv("BT3_ADPF_NETWAIT")) != 0;
+            }
+            uint64_t netNow = netAsWork ? 0 : gPortNetWaitNs < work ? gPortNetWaitNs : work;
+            lastBlanks = gPortVBlanks;
+            if (blanks < 1 || blanks > 4) {
+                blanks = 2; /* (the first frame, a load, a rollback's re-run blanks: as before) */
+            }
+            GsAdpf_Frame(work - netNow, (uint64_t)blanks * (uint64_t)Port_BlankNs());
         }
         {   /* a frame over budget: where the time went and what was created in it (in an online match a frame of
                100 ms or more always, without BT3_GS_VERBOSE: the other player's copy waits for this one meanwhile;

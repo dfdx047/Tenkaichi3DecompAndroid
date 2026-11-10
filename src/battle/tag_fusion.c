@@ -268,7 +268,11 @@ void TagFusion_Update(void) {
             if(interval!=f->controlInterval || next<0) {
                 f->controlInterval=interval;f->controlTicks=interval*30;
             }
-            if(next<0 && !Port_TagOption(TAG_OPT_FUSION_SWAP)) {
+            /* The controller is always one of the two halves' players: one who took over another fighter (the fused
+               body down) is not any more, and with the handoff on it was kept, so a revived fused body was moved by a
+               player who already had another fighter (two at once). */
+            if((next<0 && !Port_TagOption(TAG_OPT_FUSION_SWAP)) ||
+                (f->controller!=TagTeam_Player(i) && f->controller!=TagTeam_Player(f->partner))) {
                 s32 initial=TagTeam_Player(i)>=0?TagTeam_Player(i):TagTeam_Player(f->partner);
                 if(f->controller!=initial) {f->controller=initial;TagTeam_RefreshControl(i);}
             }

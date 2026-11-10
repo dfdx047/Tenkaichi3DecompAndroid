@@ -32,6 +32,12 @@ DispatchSlot dispatch_slots[16384]; // (16384: with 4096 functions of the overla
 // call as before. (BT2_PERF_BASELINE: the maps searched every time.)
 struct UnboundSlot {const EeRuntime* runtime=nullptr;std::uint32_t target=0;std::size_t sizes=~std::size_t(0);};
 UnboundSlot unbound_slots[16384];
+// Overlay functions whose bytes were found in main RAM during the current field (vblank_deliveries): checked again at
+// the next field, not at every call. A call into the overlay (DBZP.BIN, the game's main code) compared the function's
+// whole code with RAM each time: 400 bytes for half of them, 62 KB for the largest, at every one of a frame's calls.
+// The check still stops a run whose overlay was replaced, at its first call in the next field instead of at once.
+struct OverlaySlot {const EeRuntime* runtime=nullptr;std::uint32_t target=0;unsigned field=0;std::size_t sizes=~std::size_t(0);};
+OverlaySlot overlay_slots[16384];
 // (read at the first call, after the Android settings file has set the environment)
 bool dispatchCacheOn() {static const bool on=std::getenv("BT2_PERF_BASELINE")==nullptr;return on;}
 }
@@ -149,11 +155,15 @@ void EeRuntime::verifyKernelBinding(std::uint32_t address) {
     UnboundSlot& unbound = unbound_slots[(address >> 2) & 16383];
     const std::size_t sizes = overlay_code_bindings_.size() * 65536 + kernel_code_bindings_.size();
     if (dispatchCacheOn() && unbound.runtime == this && unbound.target == address && unbound.sizes == sizes) return;
+    OverlaySlot& checked = overlay_slots[(address >> 2) & 16383];
+    if (dispatchCacheOn() && checked.runtime == this && checked.target == address && checked.field == vblank_deliveries
+            && checked.sizes == sizes) return;
     if (const auto overlay = overlay_code_bindings_.find(address); overlay != overlay_code_bindings_.end()) {
         if (memory_.size() < address + overlay->second.size()
                 || !std::equal(overlay->second.begin(), overlay->second.end(), memory_.begin() + address))
             throw std::runtime_error("Loaded overlay code differs from its generated binding");
         ++overlay_dispatch_validations;
+        if (dispatchCacheOn()) checked = {this, address, vblank_deliveries, sizes};
         return;
     }
     const auto found = kernel_code_bindings_.find(address);

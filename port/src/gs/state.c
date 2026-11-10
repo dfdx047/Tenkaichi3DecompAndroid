@@ -416,6 +416,20 @@ void Port_WorldForget(void) {
     /* nothing in the arena is anyone's any more: its pages go back instead of staying through the fight */
     Port_WorldArenaRelease(sWorldBase, sWorldHigh);
     sWorldHigh = 0;
+    /* and the port's own copies with them (about 3 MB that stayed allocated through every fight): the game's variables
+       as they were (1.8 MB), the start-up's bytes (1 MB) and the list of the world's changes. The next screen takes them
+       again (Port_WorldEnter, Port_WorldCaptureEnd, world_note all allocate from nothing). */
+    free(sWorldSaved);
+    sWorldSaved = NULL;
+    sWorldSavedSize = 0;
+    free(sWorldMem);
+    sWorldMem = NULL;
+    free(sWorldRuns);
+    sWorldRuns = NULL;
+    sWorldRunCap = 0;
+    free(sWorldBytes);
+    sWorldBytes = NULL;
+    sWorldByteCap = 0;
 }
 
 uint64_t Port_StateHash(void) {
@@ -759,6 +773,22 @@ static volatile uint32_t sDirtyCount;
 static volatile uint8_t *sDirtyMark; /* per global page: in sDirty already */
 static uint32_t *sStamp;           /* per global page: the save whose list holds it already */
 static uint32_t sArenaPages;       /* pages of the block region in use at the last collect */
+/* Hot pages. A page written at nearly every blank (in a fight of many fighters, hundreds of them) cost each blank a
+   write fault (the signal goes through Android's signal chain: several system calls) and two mprotect calls. A page
+   written at HOT_AFTER saves in a row is left writable and counted as written at every collect, with no fault; at
+   the save its content is compared with the copy, and when it did not change it is neither copied nor listed (as a
+   page nobody wrote). A hot page unchanged at HOT_CALM saves in a row is watched again. Counting a page as written
+   when it was not only ever costs a comparison or a copy: what a save holds and what a roll back puts back are the
+   same as before. BT3_ROLL_HOT=0: no hot pages (as before, to compare). */
+#define HOT_AFTER 4
+#define HOT_CALM 30
+#define HOT_MAX 4096u
+static int sHotOn = -1;
+static uint32_t *sHot;             /* the hot pages */
+static uint32_t sHotCount;
+static uint8_t *sHotMark;          /* per global page: hot */
+static uint8_t *sStreak;           /* per global page: saves in a row it was written at (hot: in a row it was not) */
+static uint32_t *sLastSave;        /* per global page: the id of the last save it was written before */
 
 typedef struct Roll {
     Snapshot small;
@@ -770,9 +800,11 @@ static Roll *sRoll[ROLL_MAX];
 static int sRolls;
 static uint32_t sRollId;
 /* Online Tag Team goes back at most its ROLLBACK (8) blanks and one (tag_net.c: it waits rather than run further
-   ahead): 32 saves are kept there, not 64. Each save holds its own copy of the game's variables (about 2 MB), so the
-   other 32 were about 64 MB of the phone's memory that no rollback could ever use. BT3's own online keeps 64. */
-#define ROLL_TAG 32
+   ahead, and its checked frame only moves forward): 16 saves are kept there, not 64. Each save holds its own copy of
+   the game's variables (1.81 MB: the 15 regions of libbt3.so.mem) and the pages written since the one before, so the
+   other 48 were about 90 MB of the phone's memory that no rollback could ever use. (32 until 2026-11-09: still more
+   than three times the depth.) BT3's own online keeps 64. */
+#define ROLL_TAG 16
 /* A save's list grown past this by one heavy blank (a load) is let go when the ring is forgotten, not kept for good. */
 #define ROLL_KEEP_PAGES 1024u
 
@@ -933,6 +965,16 @@ static void track_start(void) {
     sDirty = malloc(sizeof(uint32_t) * sTrackPages);
     sDirtyMark = calloc(1, sTrackPages);
     sStamp = calloc(sizeof(uint32_t), sTrackPages);
+    if (sHotOn < 0) {
+        sHotOn = getenv("BT3_ROLL_HOT") == NULL || atoi(getenv("BT3_ROLL_HOT")) != 0;
+    }
+    sHot = malloc(sizeof(uint32_t) * HOT_MAX);
+    sHotMark = calloc(1, sTrackPages);
+    sStreak = calloc(1, sTrackPages);
+    sLastSave = calloc(sizeof(uint32_t), sTrackPages);
+    if (sHot == NULL || sHotMark == NULL || sStreak == NULL || sLastSave == NULL) {
+        sHotOn = 0;
+    }
     for (t = 0; t < sTracks; t++) {
         size_t used = (size_t)(t == 0 ? sTrack[t].pages : sArenaPages) * PG;
         sTrack[t].shadow = shadow_alloc((size_t)sTrack[t].pages * PG);
@@ -1003,6 +1045,13 @@ static uint32_t dirty_collect(void) {
         }
     }
 #endif
+    /* the hot pages: writable, so never faulted on: counted as written every time */
+    {
+        uint32_t h;
+        for (h = 0; h < sHotCount; h++) {
+            dirty_note(sHot[h]);
+        }
+    }
     /* the block region grew: its new pages count as written (they were nothing before: the shadow's zeros) */
     for (g = sArenaPages; g < used; g++) {
         dirty_note(sTrack[1].first + g);
@@ -1023,9 +1072,16 @@ static void dirty_rearm(void) {
     uint32_t j;
     qsort(sDirty, n, sizeof(sDirty[0]), cmp_u32);
     for (i = 0; i < n; i = j) {
-        uint8_t *sh, *m = page_at(sDirty[i], &sh);
-        int second = sDirty[i] >= sTrack[1].first && sTracks > 1;
-        for (j = i + 1; j < n && sDirty[j] == sDirty[j - 1] + 1 && (sDirty[j] >= sTrack[1].first && sTracks > 1) == second; j++) {
+        uint8_t *sh, *m;
+        int second;
+        if (sHotMark != NULL && sHotMark[sDirty[i]]) { /* (a hot page stays writable) */
+            j = i + 1;
+            continue;
+        }
+        m = page_at(sDirty[i], &sh);
+        second = sDirty[i] >= sTrack[1].first && sTracks > 1;
+        for (j = i + 1; j < n && sDirty[j] == sDirty[j - 1] + 1 && (sDirty[j] >= sTrack[1].first && sTracks > 1) == second &&
+                        !(sHotMark != NULL && sHotMark[sDirty[j]]); j++) {
         }
         mprotect(m, (size_t)(j - i) * PG, PROT_READ);
     }
@@ -1065,6 +1121,32 @@ static int __attribute__((noinline)) roll_save(void) {
     for (i = 0; i < n; i++) {
         uint32_t g = sDirty[i];
         uint8_t *sh, *m = page_at(g, &sh);
+        if (sHotOn > 0) {
+            if (sHotMark[g]) {
+                if (memcmp(sh, m, PG) == 0) { /* not changed: as a page nobody wrote */
+                    if (++sStreak[g] >= HOT_CALM) { /* quiet for a while: watched again (dirty_rearm protects it) */
+                        uint32_t h;
+                        for (h = 0; h < sHotCount && sHot[h] != g; h++) {
+                        }
+                        if (h < sHotCount) {
+                            sHot[h] = sHot[--sHotCount];
+                        }
+                        sHotMark[g] = 0;
+                        sStreak[g] = 0;
+                    }
+                    continue;
+                }
+                sStreak[g] = 0;
+            } else {
+                sStreak[g] = sLastSave[g] == sRollId && sRollId != 0 ? (uint8_t)(sStreak[g] < 255 ? sStreak[g] + 1 : 255) : 1;
+                sLastSave[g] = sRollId + 1;
+                if (sStreak[g] >= HOT_AFTER && sHotCount < HOT_MAX) { /* written at every save lately: hot from now on */
+                    sHot[sHotCount++] = g;
+                    sHotMark[g] = 1;
+                    sStreak[g] = 0;
+                }
+            }
+        }
         if (prev != NULL && sStamp[g] != prev->id) { /* as the page was at the save before: into that save's list */
             if (prev->n == prev->cap) {
                 prev->cap = prev->cap != 0 ? prev->cap * 2 : 256;

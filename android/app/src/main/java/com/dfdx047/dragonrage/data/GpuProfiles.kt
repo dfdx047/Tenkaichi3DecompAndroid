@@ -39,6 +39,11 @@ object GpuProfiles {
         Rule("adreno", 650, 669, 3), Rule("adreno", 680, 699, 3), Rule("adreno", 702, 712, 1), Rule("adreno", 720, 729, 2),
         Rule("adreno", 730, 739, 3), Rule("adreno", 740, 799, 4), Rule("adreno", 800, 899, 4),
         // Arm Mali (Midgard, Bifrost, Valhall, 5th gen) and Immortalis
+        // (Mali-G310, G510 and G620, and the Mali G1 line, had no rule: those phones got no profile and started at the
+        // engine's 2x with everything on. Placed by their family, as the rest: G310 with the G57, G510 with the G68,
+        // G620 with the G615; G1-Pro, -Premium and -Ultra one step each above. Not measured on a device.)
+        Rule("mali-g1-ultra", 0, 0, 4), Rule("mali-g1-premium", 0, 0, 3), Rule("mali-g1-pro", 0, 0, 2),
+        mali("g310", 0), mali("g510", 1), mali("g620", 2),
         Rule("mali-t\\d", 0, 0, 0), mali("g31", 0), mali("g51", 0), mali("g52", 0), mali("g57", 0), mali("g71", 1), mali("g72", 1),
         mali("g68", 1), mali("g76", 2), mali("g77", 2), mali("g78", 2), mali("g610", 2), mali("g615", 2), mali("g710", 3),
         mali("g715", 3), mali("g720", 3), mali("g725", 3), mali("g925", 4), Rule("immortalis", 0, 0, 4),

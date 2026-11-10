@@ -17,3 +17,6 @@ The pictures of the Tenkaichi Budokai Online screens (this folder; `tbo/ui/` in 
 
 A picture replaced by one of another size: run `python3 port/tools/tbo_sizes.py` (the screens lay the pictures out
 by their sizes, `include/menu/tbo_sizes.h`).
+- **The storm** (`storm_bolt.png`, `thunder_1.wav` .. `thunder_4.wav`): made for the port. The four lightning bolts
+  were drawn for it; the thunder is synthesised from filtered noise by `port/tools/make_thunder.py` (nothing
+  recorded). Shown and heard while a fighter is in full power (`src/battle/stg_c.c`, `port/src/gs/storm_snd.c`).

@@ -94,7 +94,9 @@ void GsAdpf_Frame(uint64_t workNs, uint64_t targetNs) {
     if (sState != 1 || workNs == 0) {
         return;
     }
-    if ((int64_t)targetNs != sTarget && targetNs > 0) {
+    /* (a new target only when it really changed: a fight's 2 blanks against a menu's 1, a new pace; not each step of
+       a room's pace, every one of which is a call into the system) */
+    if (targetNs > 0 && ((int64_t)targetNs > sTarget + sTarget / 16 || (int64_t)targetNs < sTarget - sTarget / 16)) {
         sTarget = (int64_t)targetNs;
         pUpdateTarget(sSession, sTarget);
     }

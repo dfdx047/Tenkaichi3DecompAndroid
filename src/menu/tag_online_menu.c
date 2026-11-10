@@ -127,6 +127,8 @@ static s32 group_option(s32 index) {
     s32 i;for(i=0;i<TN_OPTIONS;i++)if(tagOptionInfo[i].group==group && index--==0)return i;return -1;
 }
 static void select_room(void) {go(ROOM,0);}
+/* The screen after a lobby match (TagNet_PostMatch): only the host chooses; nothing else of the room page acts meanwhile. */
+static s32 match_over(void) {return room.phase==2 && room.config.party && !room.config.practice && room.config.lobby.phase==TL_RETURNING && !(room.config.mode==TL_TOURNAMENT && bracket.active);}
 static void remove_slot(s32 id) {
     TagNetConfig c=room.config;s32 team=id/5,i,k;
     if(!room.host || id<0 || id>=10)return;
@@ -207,6 +209,9 @@ static void activate(s32 id) {
         else if(id==17)ready();
         else if(id==18)TagNet_SkipTournament();
         else if(id==19)TagNet_ReturnPractice();
+        else if(id==20 && room.host && match_over())TagNet_PostMatch(0);
+        else if(id==21 && room.host && match_over())TagNet_PostMatch(1);
+        else if(id==22 && room.host && match_over())TagNet_ReturnPractice();
     } else if(page==PRESETS) {
         extern s32 TagChallenge_Count(void),TagChallenge_Capacity(void),TagChallenge_FirstCount(void),TagChallenge_FirstFighter(s32,s32);
         extern void TagChallenge_Choose(s32);
@@ -250,6 +255,7 @@ static void activate(s32 id) {
 }
 static void back(void) {
     if(editing){editing=0;Snd_PlaySe(1,2);return;}
+    if(page==ROOM && match_over())return; /* (the host chooses one of the three; nobody leaves the room from here) */
     if(page==ROOM && room.config.party && !room.config.practice) {
         if(room.host)TagNet_ReturnPractice();else TagNet_SwitchRole(0,-1);
         return;
@@ -313,9 +319,9 @@ static void input(void) {
         Snd_PlaySe(1,0);
         if(focus>=100&&(page==STAGE||page==MUSIC||page==PRESETS))choice=focus-100;
     }
-    if((p&PADG_START) && page==ROOM)ready();
-    if((p&PADG_SQUARE) && page==ROOM && !bracket.active)remove_slot(focus);
-    if(page==ROOM && room.config.party && room.config.mode==TL_TOURNAMENT && !bracket.active && focus>=0 && focus<10 && (p&(PADG_L1|PADG_R1))) {
+    if((p&PADG_START) && page==ROOM && !match_over())ready();
+    if((p&PADG_SQUARE) && page==ROOM && !bracket.active && !match_over())remove_slot(focus);
+    if(page==ROOM && !match_over() && room.config.party && room.config.mode==TL_TOURNAMENT && !bracket.active && focus>=0 && focus<10 && (p&(PADG_L1|PADG_R1))) {
         TagNetConfig c=room.config;s32 at=(focus/5?c.size[0]:0)+focus%5,j,n=0,t;
         if(focus%5<c.size[focus/5] && can_edit(at)) {
             t=Ps_Wrap(c.lobby.draft.team[at]+(p&PADG_L1?-1:1),0,3);
@@ -323,7 +329,7 @@ static void input(void) {
             if(n<5){c.lobby.draft.team[at]=t;commit(&c);}else say("That team already has five fighters.");
         }
     }
-    if(page==ROOM && room.config.party && (room.config.mode==TL_TEAM || room.config.mode==TL_TRAINING) && (p&(PADG_L1|PADG_R1))) {
+    if(page==ROOM && !match_over() && room.config.party && (room.config.mode==TL_TEAM || room.config.mode==TL_TRAINING) && (p&(PADG_L1|PADG_R1))) {
         s32 at,j,target=-1;for(at=0;at<room.config.size[0]+room.config.size[1];at++)if(room.config.owner[at]==room.role)break;
         if(at<room.config.size[0]+room.config.size[1]) {
             s32 start=at<room.config.size[0]?room.config.size[0]:0,end=at<room.config.size[0]?room.config.size[0]+room.config.size[1]:room.config.size[0];
@@ -378,13 +384,59 @@ static void lobby(void) {
         }
         button(19,151,389,210,29,"Return to Lobby",room.host);return;
     }
+    if(match_over()) {
+        heading("MATCH OVER",room.host?"CHOOSE WHAT COMES NEXT":"THE HOST CHOOSES WHAT COMES NEXT");
+        if(room.host) {
+            button(20,128,104,256,44,"Rematch",1);
+            button(21,128,160,256,44,"Character Select",1);
+            button(22,128,216,256,44,"Game Modes",1);
+            text(256,282,"Rematch: the same teams fight again at once.",.6f,470,3);
+            text(256,304,"Character Select: everyone goes back to the team setup.",.6f,470,3);
+            text(256,326,"Game Modes: back to the lobby to choose a mode.",.6f,470,3);
+        } else {
+            plate(96,150,320,70,0,0);
+            text(256,172,"Waiting for the host to choose...",.85f,300,1);
+            text(256,250,"Rematch, character select or game modes.",.62f,470,3);
+        }
+        sprintf(label,Port_TagText("Players connected: %d"),room.connected);text(256,360,label,.7f,460,2);
+        return;
+    }
     if(c->party && c->practice) {
-        heading("ONLINE LOBBY",online_line("WAITING FOR GUESTS TO ENTER PRACTICE"));
-        text(256,175,PortGame_IsBT4()?"South City - 200%":"Kami's Lookout - 200%",1.1f,460,1);
-        text(256,220,"Guests enter the practice map when connected.",.78f,460,3);
-        text(256,253,"The host stays in the mode menu.",.78f,460,3);
-        sprintf(label,Port_TagText("Players connected: %d"),room.connected);text(256,290,label,.85f,460,room.connected>1?5:2); /* (who is in: the owner counts) */
-        button(15,177,345,158,36,"Leave Lobby",1);return;
+        /* The lobby's waiting screen (no practice map since 1.0.1: tag_net.c practice_world): who is in the room with
+           their ping, the seven balls lighting one after the other round a breathing ring while the host chooses a
+           mode, and a tip that changes every five seconds. */
+        static const f32 ballX[7]={0.0000f,0.7818f,0.9749f,0.4339f,-0.4339f,-0.9749f,-0.7818f};
+        static const f32 ballY[7]={-1.0000f,-0.6235f,0.2225f,0.9010f,0.9010f,0.2225f,-0.6235f};
+        static char tips[][72]={"In team setup, Start takes a place and readies you.","L1 / R1 move you to the other team in team setup.",
+            "After a match the host chooses: rematch, character select or game modes.","The host can remove a CPU fighter with Square."};
+        static char dots[][4]={"",".","..","..."};
+        TagLobbyRoster r;s32 k,lit=(frames/8)%7;f32 cx=372,cy=164,rad=46;
+        TagNet_Roster((u32)&r);
+        heading("ONLINE LOBBY",room.host?online_line("WAITING FOR PLAYERS"):"THE HOST IS CHOOSING A MODE");
+        Tk_Box(18,84,236,382,0);
+        sprintf(label,Port_TagText("PLAYERS  %d/10"),r.count);text(127,92,label,.8f,200,1);
+        for(k=0;k<r.count && k<10;k++) {
+            f32 y=116+k*26;s32 me=r.member[k]==r.role;
+            if(!r.member[k])sprintf(label,Port_TagText("P1  -  Host"));
+            else if(r.ping[k]<0)sprintf(label,"P%d  -  ...",r.member[k]+1);
+            else sprintf(label,"P%d  -  %d ms",r.member[k]+1,r.ping[k]);
+            Tk_Bar(30,y,224,y+23,me);
+            text(127,Ps_TextTop(y+11.5f,.62f),label,.62f,184,me?1:r.ping[k]>=150?2:0);
+        }
+        Tk_Box(250,84,494,300,0);
+        Tk_Ring(cx,cy,rad+14+Tk_Wave(64,0)*0.12f,255,200,90,48+Tk_Wave(64,0)); /* (the ring breathes) */
+        for(k=0;k<7;k++) {
+            s32 d=(lit-k+7)%7; /* how many steps since this ball was lit */
+            f32 r2=d==0?13.0f+Tk_Wave(16,0)*0.04f:11.0f;
+            Tk_BallA(cx+ballX[k]*rad*PS_UNIT_X,cy+ballY[k]*rad,r2,k+1,d==0?0x80:d==1?0x60:d==2?0x48:0x30);
+        }
+        sprintf(label,"%s%s",Port_TagText("The host is choosing a mode"),dots[(frames/20)%4]);
+        text(372,236,label,.7f,232,1);
+        text(372,262,"Team setup opens for everyone next.",.55f,232,3);
+        Tk_Box(250,312,494,382,0);
+        text(372,320,"TIP",.6f,220,5);
+        text(372,344,tips[(frames/300)%4],.52f,232,3);
+        button(15,177,394,158,30,"Leave Lobby",1);return;
     }
     heading(c->party?titles[c->mode]:"ONLINE BATTLE ROOM",c->party?(c->mode==TL_TOURNAMENT?"START - CLAIM / READY    L1 / R1 - CHANGE TEAM":"START - CLAIM A SLOT / READY   TRIANGLE - RELEASE SLOT"):room.host?online_line("YOU ARE HOSTING  /  CHOOSE THE LINEUP AND READY UP"):"CHOOSE YOUR FIGHTER AND READY UP");
     for(team=0;team<2;team++) {
@@ -556,7 +608,7 @@ static void draw(void) {
     if(room.phase==5){Ps_Rect(20,155,492,291,Ps_Rgba(36,14,40,128),Ps_Rgba(36,14,40,128));text(256,169,"CONNECTION ENDED",1.1f,450,1);text(256,212,room.message,0.65f,450,2);text(256,259,"Cross - Return to Online Menu",0.74f,450,3);}
     {s32 i,found=0;for(i=0;i<buttonCount;i++)if(buttons[i].id==focus&&buttons[i].enabled)found=1;
      if(!found)for(i=0;i<buttonCount;i++)if(buttons[i].enabled){focus=buttons[i].id;break;}}
-    Ps_PromptsClear();Ps_Prompt(0,editing?"Confirm":"Select");Ps_Prompt(2,editing?"Cancel":"Back");if(page==ROOM){Ps_Prompt(7,"Ready");if(room.host)Ps_Prompt(1,"Remove CPU");}Ps_PromptsDraw();
+    Ps_PromptsClear();Ps_Prompt(0,editing?"Confirm":"Select");Ps_Prompt(2,editing?"Cancel":"Back");if(page==ROOM && !match_over()){Ps_Prompt(7,"Ready");if(room.host)Ps_Prompt(1,"Remove CPU");}Ps_PromptsDraw();
 }
 void TagOnlineMenu_Open(void) {
     s32 i;void *icons;MTexRes *pic;

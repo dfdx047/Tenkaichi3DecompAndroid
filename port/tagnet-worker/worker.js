@@ -33,6 +33,13 @@
 const ROOM_IDLE = 120;      // seconds a room lives with nobody asking about it
 const MEMBER_IDLE = 45;     // seconds a member lives without a poll (the owner is told it is gone)
 const RELAY_PER_DAY = 300;
+// D1's free plan counts every row read and written (100,000 written a day): a poll every 2 s that wrote its room's and
+// its member's time each time was most of the writes (68,000 on 2026-11-09). The time is now written only when it is
+// older than TOUCH_EVERY, the rooms and members gone quiet are deleted at most every SWEEP_EVERY (each Worker
+// instance), and what is read checks the times itself, so nothing gone is ever answered in between.
+const TOUCH_EVERY = 15;     // seconds
+const SWEEP_EVERY = 30;     // seconds
+let lastSweep = 0;
 
 function reply(obj, status = 200) {
     return new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json" } });
@@ -66,6 +73,8 @@ function randomCode() {
 }
 
 async function sweep(env, now) {
+    if (now >= lastSweep && now - lastSweep < SWEEP_EVERY) return;
+    lastSweep = now;
     await env.DB.batch([
         env.DB.prepare("DELETE FROM tag_members WHERE code IN (SELECT code FROM tag_rooms WHERE touched < ?)").bind(now - ROOM_IDLE),
         env.DB.prepare("DELETE FROM tag_rooms WHERE touched < ?").bind(now - ROOM_IDLE),
@@ -73,13 +82,13 @@ async function sweep(env, now) {
     ]);
 }
 
-async function whoIs(env, code, key) {
+async function whoIs(env, code, key, now) {
     if (typeof code !== "string" || typeof key !== "string") return null;
     const room = await env.DB.prepare("SELECT * FROM tag_rooms WHERE code = ?").bind(code).first();
-    if (!room) return null;
+    if (!room || room.touched < now - ROOM_IDLE) return null;
     if (room.host_key === key) return { room, owner: true };
     const m = await env.DB.prepare("SELECT * FROM tag_members WHERE code = ? AND key = ?").bind(code, key).first();
-    return m ? { room, owner: false, member: m } : null;
+    return m && m.touched >= now - MEMBER_IDLE ? { room, owner: false, member: m } : null;
 }
 
 // The relay of Metered (metered.ca, free plan): METERED_APP is the app's name (<name>.metered.live), METERED_KEY its
@@ -145,7 +154,7 @@ export async function handle(request, env, now) {
         if (request.headers.get("upgrade") !== "websocket") return reply({ error: "bad request" }, 426);
         if (!env.RELAY) return reply({ error: "no relay" }, 503);
         await sweep(env, now);
-        const who = await whoIs(env, url.searchParams.get("code"), url.searchParams.get("key"));
+        const who = await whoIs(env, url.searchParams.get("code"), url.searchParams.get("key"), now);
         if (!who) return reply({ error: "no room" }, 404);
         const headers = new Headers(request.headers);
         headers.set("x-tag-who", who.owner ? "h" : "m" + who.member.id);
@@ -187,10 +196,10 @@ export async function handle(request, env, now) {
     if (what === "join") {
         const code = String(body.code ?? "").replace(/\D/g, "");
         const room = await env.DB.prepare("SELECT * FROM tag_rooms WHERE code = ?").bind(code).first();
-        if (!room) return reply({ error: "no room" }, 404);
+        if (!room || room.touched < now - ROOM_IDLE) return reply({ error: "no room" }, 404);
         if (room.v !== body.v) return reply({ error: "version" }, 409);
         const max = Number(env.MAX_MEMBERS) || 19;
-        const count = await env.DB.prepare("SELECT COUNT(*) AS n, COALESCE(MAX(id), 0) AS top FROM tag_members WHERE code = ?").bind(code).first();
+        const count = await env.DB.prepare("SELECT COUNT(*) FILTER (WHERE touched >= ?) AS n, COALESCE(MAX(id), 0) AS top FROM tag_members WHERE code = ?").bind(now - MEMBER_IDLE, code).first();
         if (count.n >= max) return reply({ error: "full" }, 409);
         const key = randomKey(), id = count.top + 1;
         await env.DB.prepare("INSERT INTO tag_members (code, id, key, name, addrs, seen, watch, touched) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
@@ -199,20 +208,22 @@ export async function handle(request, env, now) {
         return reply({ key, id, you: ip, host: { name: room.host_name, addrs: JSON.parse(room.host_addrs), seen: room.host_seen } });
     }
 
-    const who = await whoIs(env, body.code, body.key);
+    const who = await whoIs(env, body.code, body.key, now);
     if (!who) return reply({ error: "no room" }, 404);
     const code = who.room.code;
 
     if (what === "poll") {
         if (who.owner) {
-            await env.DB.prepare("UPDATE tag_rooms SET touched = ? WHERE code = ?").bind(now, code).run();
-            const rows = await env.DB.prepare("SELECT id, name, addrs, seen, watch FROM tag_members WHERE code = ? ORDER BY id").bind(code).all();
+            if (now - who.room.touched >= TOUCH_EVERY) await env.DB.prepare("UPDATE tag_rooms SET touched = ? WHERE code = ?").bind(now, code).run();
+            const rows = await env.DB.prepare("SELECT id, name, addrs, seen, watch FROM tag_members WHERE code = ? AND touched >= ? ORDER BY id").bind(code, now - MEMBER_IDLE).all();
             return reply({ members: rows.results.map((m) => ({ id: m.id, name: m.name, addrs: JSON.parse(m.addrs), seen: m.seen, watch: !!m.watch })) });
         }
-        await env.DB.batch([
-            env.DB.prepare("UPDATE tag_members SET touched = ?, seen = ? WHERE code = ? AND id = ?").bind(now, ip, code, who.member.id),
-            env.DB.prepare("UPDATE tag_rooms SET touched = ? WHERE code = ?").bind(now, code),
-        ]);
+        const writes = [];
+        if (now - who.member.touched >= TOUCH_EVERY || who.member.seen !== ip) {
+            writes.push(env.DB.prepare("UPDATE tag_members SET touched = ?, seen = ? WHERE code = ? AND id = ?").bind(now, ip, code, who.member.id));
+        }
+        if (now - who.room.touched >= TOUCH_EVERY) writes.push(env.DB.prepare("UPDATE tag_rooms SET touched = ? WHERE code = ?").bind(now, code));
+        if (writes.length) await env.DB.batch(writes);
         return reply({ host: { name: who.room.host_name, addrs: JSON.parse(who.room.host_addrs), seen: who.room.host_seen } });
     }
 
@@ -275,13 +286,19 @@ export class TagRelay {
         if (typeof message === "string" || message.byteLength < 2 || message.byteLength > 2048) return;
         const tag = this.state.getTags(ws)[0] || "";
         const bytes = new Uint8Array(message);
+        // (a socket whose player is gone throws on send: each is tried on its own, so one that is closing never keeps a
+        // packet from the others, e.g. a player's new connection beside the old one)
         if (tag === "h") {
-            for (const m of this.state.getWebSockets("m" + bytes[0])) m.send(bytes.subarray(1));
+            for (const m of this.state.getWebSockets("m" + bytes[0])) {
+                try { m.send(bytes.subarray(1)); } catch (e) {}
+            }
         } else if (tag.startsWith("m")) {
             const out = new Uint8Array(bytes.length + 1);
             out[0] = Number(tag.slice(1)) & 255;
             out.set(bytes, 1);
-            for (const h of this.state.getWebSockets("h")) h.send(out);
+            for (const h of this.state.getWebSockets("h")) {
+                try { h.send(out); } catch (e) {}
+            }
         }
     }
     webSocketClose(ws, code) {

@@ -18,6 +18,7 @@
 #include "../../port/src/gs/tag_net.h"
 static TsTeam tagRemembered[2];
 static s32 tagRememberedCount[2], tagSelector, tagSelectionCommitted;
+extern int Port_NetSession(void); /* port/src/gs/net.c */
 static s32 onlinePick,onlinePickCpu,onlinePickLevel;
 static s32 practicePick,practicePickHidden,practicePickOwn,practicePickDone;
 static TsProgress practiceSaved;
@@ -2286,6 +2287,28 @@ f32 TeamSel_Input(s32 *result) {
                     }
                     TeamSel_RequestFace(CUR_N);
                     Snd_PlaySe(1, 0);
+#ifdef PORT
+                } else if ((gPad[i].gameRepeat & 4) && CUR_SIDE->cur != TS_CUR_MENU && CUR_SIDE->memberCount != 0 &&
+                           !Port_NetSession()) {
+                    /* down: to the End plate drawn under the team (port_charsel.c); offline only, so both
+                       machines of an online match keep reading the pad the same way */
+                    TeamSel_ClipGoto(CUR_N + 1, CUR_N, TEAMSEL_CLIP_TEAM, "fl_off_start");
+                    CUR_SIDE->cur = TS_CUR_MENU;
+                    TeamSel_ClipGoto(CUR_N + 1, CUR_N, TEAMSEL_CLIP_TEAM, "fl_on_start");
+                    CUR_SIDE->chara = CUR_SIDE->member[0].chara;
+                    TeamSel_RequestFace(CUR_N);
+                    Snd_PlaySe(1, 0);
+                } else if ((gPad[i].gameRepeat & 8) && CUR_SIDE->cur == TS_CUR_MENU && !Port_NetSession()) {
+                    /* up: back from End to the first free slot (or the last member) */
+                    TeamSel_ClipGoto(CUR_N + 1, CUR_N, TEAMSEL_CLIP_TEAM, "fl_off_start");
+                    CUR_SIDE->cur = CUR_SIDE->memberCount < TS_CUR_MENU ? CUR_SIDE->memberCount : TS_CUR_MENU - 1;
+                    if (TagSession_Selected() && CUR_SIDE->cur >= TagSession_Size(CUR_N))
+                        CUR_SIDE->cur = TagSession_Size(CUR_N) - 1;
+                    TeamSel_ClipGoto(CUR_N + 1, CUR_N, TEAMSEL_CLIP_TEAM, "fl_on_start");
+                    CUR_SIDE->chara = CUR_MEMBER.chara;
+                    TeamSel_RequestFace(CUR_N);
+                    Snd_PlaySe(1, 0);
+#endif
                 } else if (gPad[i].gamePressed & 0x200) {
                     if (CUR_SIDE->cur != TS_CUR_MENU) {
                         /* choose (or change) the member under the cursor */

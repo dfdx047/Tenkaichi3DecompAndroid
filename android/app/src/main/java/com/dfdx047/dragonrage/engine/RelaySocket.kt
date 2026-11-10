@@ -134,7 +134,15 @@ class RelaySocket private constructor(private val socket: SSLSocket, private val
 
     companion object {
         private const val OUTBOX = 256
-        private const val KEEP_ALIVE_S = 20L
+        /* A ping every 10 s of silence and, once open, no read time limit at all (0), as before 1.0.0: the reader kept the
+           handshake's 15 s, and with the players connected directly nothing came through the relay for 15 s, so it
+           closed and was opened again 5 s later, about every 20 s all room long (146 times in 46 minutes of a 2026-11-08
+           log; 3.2 a minute on a 2026-11-10 one, against none in ten logs of the builds without the limit), each time
+           five seconds without the relay for anyone who needed it, and a match dropped after 10 s without inputs when a
+           direct connection went quiet then. A connection that dies is still found: the ping's write fails. (60 s, the
+           first fix, still closed it every minute unless the service answered the pings, which no log has shown.) */
+        private const val KEEP_ALIVE_S = 10L
+        private const val READ_TIMEOUT_MS = 0
 
         /** Opens the WebSocket at [url] ("https://host/path?query"); null when it could not. Blocks for the handshake. */
         fun connect(url: String): RelaySocket? = try {
@@ -167,7 +175,10 @@ class RelaySocket private constructor(private val socket: SSLSocket, private val
                 Log.w("bt3", "tag relay: refused: ${status.lineSequence().firstOrNull()}")
                 runCatching { s.close() }
                 null
-            } else RelaySocket(s, input, out)
+            } else {
+                s.soTimeout = READ_TIMEOUT_MS
+                RelaySocket(s, input, out)
+            }
         } catch (e: Exception) {
             Log.w("bt3", "tag relay: could not connect: $e")
             null

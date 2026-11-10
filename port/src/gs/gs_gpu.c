@@ -70,6 +70,64 @@ static SDL_GPUBuffer *sVuIbuf;          /* gsVuIdx */
 static SDL_GPUTransferBuffer *sVuIXfer;
 static SDL_GPUShader *sVu0Vs, *sVu4Vs, *sVu6Vs;
 
+/* The vertex and index buffers and their upload buffers. They were made at their largest when the device was made
+   (MAX_VERTS and the others: 117 MB of the phone's memory in all, as GPU buffers and mapped upload buffers, which SDL
+   doubles while the last frame's is still read), for frames that use a few MB (a 5 x 5 Tag fight's heaviest picture:
+   67,161 vertices, about 3 MB). Now they start small and grow, doubling, with the frame that needs more, up to those
+   sizes: once in a run at most a few times, and never smaller again. The new buffer is made before the old one is let
+   go (SDL keeps a buffer a frame in flight still reads); if it cannot be made, the old one stays, and the draws that
+   would read past its end are left out of that frame instead of reading what is not there. Bytes, all of them. */
+#define VBUF_FIRST (2u << 20)
+#define VUBUF_FIRST (2u << 20)
+#define VUIBUF_FIRST (1u << 20)
+static uint32_t sVbufCap, sVuVbufCap, sVuIbufCap;
+static int gpu_buf_grow(SDL_GPUBuffer **buf, SDL_GPUTransferBuffer **xfer, uint32_t *cap, uint32_t need,
+                        SDL_GPUBufferUsageFlags usage, uint32_t most) {
+    SDL_GPUBufferCreateInfo bi;
+    SDL_GPUTransferBufferCreateInfo ti;
+    SDL_GPUBuffer *b;
+    SDL_GPUTransferBuffer *x;
+    uint32_t size;
+    if (need <= *cap) {
+        return 1;
+    }
+    if (need > most) {
+        return 0;
+    }
+    size = *cap != 0 ? *cap : need;
+    while (size < need) {
+        size = size > most / 2 ? most : size * 2;
+    }
+    SDL_zero(bi);
+    bi.usage = usage;
+    bi.size = size;
+    SDL_zero(ti);
+    ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+    ti.size = size;
+    b = SDL_CreateGPUBuffer(sDev, &bi);
+    x = b != NULL ? SDL_CreateGPUTransferBuffer(sDev, &ti) : NULL;
+    if (b == NULL || x == NULL) {
+        if (b != NULL) {
+            SDL_ReleaseGPUBuffer(sDev, b);
+        }
+        fprintf(stderr, "bt3: a vertex buffer of %u KB could not be made: %s\n", size >> 10, SDL_GetError());
+        return 0;
+    }
+    if (*buf != NULL) {
+        SDL_ReleaseGPUBuffer(sDev, *buf);
+    }
+    if (*xfer != NULL) {
+        SDL_ReleaseGPUTransferBuffer(sDev, *xfer);
+    }
+    if (*cap != 0) {
+        fprintf(stderr, "bt3: vertex buffer grown to %u KB\n", size >> 10);
+    }
+    *buf = b;
+    *xfer = x;
+    *cap = size;
+    return 1;
+}
+
 typedef struct Pipe {
     uint32_t key;
     SDL_GPUGraphicsPipeline *p;
@@ -349,10 +407,29 @@ static int tex_upload(GsTex handle, int level, uint32_t w, uint32_t h, int forma
     return 1;
 }
 
+/* A texture given back by the cache is released two pictures later, not at once: a draw of the list being built (or of
+   the one before) that still names it would otherwise bind freed memory. A 2026-11-09 crash (Poco, texture pack being
+   reloaded 85 times a second in an online fight) had VULKAN_BindFragmentSamplers read a texture whose container was
+   already freed (its active texture 0x2), binding the first texture of an ordinary draw in vk_frame_end. */
+#define DEAD_TEX 2048
+static struct { SDL_GPUTexture *tex; unsigned frame; } sDeadTex[DEAD_TEX];
+static unsigned sDeadHead, sDeadTail;
+static void dead_tex_release(int all) {
+    while (sDeadTail != sDeadHead && (all || sDeadTex[sDeadTail % DEAD_TEX].frame + 2 <= gGsFrame)) {
+        SDL_ReleaseGPUTexture(sDev, sDeadTex[sDeadTail % DEAD_TEX].tex);
+        sDeadTail++;
+    }
+}
 static void tex_destroy(GsTex tex) {
     extern unsigned gDrawImgFreed; /* BT3_DRAW_LOG */
     gDrawImgFreed++;
-    SDL_ReleaseGPUTexture(sDev, (SDL_GPUTexture *)(uintptr_t)tex);
+    if (sDeadHead - sDeadTail == DEAD_TEX) { /* (full: the oldest goes now; it is two pictures old or more in practice) */
+        SDL_ReleaseGPUTexture(sDev, sDeadTex[sDeadTail % DEAD_TEX].tex);
+        sDeadTail++;
+    }
+    sDeadTex[sDeadHead % DEAD_TEX].tex = (SDL_GPUTexture *)(uintptr_t)tex;
+    sDeadTex[sDeadHead % DEAD_TEX].frame = gGsFrame;
+    sDeadHead++;
 }
 
 static int tex_slots_left(void) { return MAX_PENDING - sPendingCount; }
@@ -901,13 +978,15 @@ static int vk_init(void) {
         return 0;
     }
     SDL_zero(bi);
-    bi.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
-    bi.size = MAX_VERTS * sizeof(Vtx);
-    sVbuf = SDL_CreateGPUBuffer(sDev, &bi);
     SDL_zero(ti);
-    ti.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-    ti.size = MAX_VERTS * sizeof(Vtx);
-    sVxfer = SDL_CreateGPUTransferBuffer(sDev, &ti);
+    /* (the vertex and index buffers: made small here, grown by the frame that needs more, gpu_buf_grow) */
+    gpu_buf_grow(&sVbuf, &sVxfer, &sVbufCap, VBUF_FIRST, SDL_GPU_BUFFERUSAGE_VERTEX, MAX_VERTS * sizeof(Vtx));
+    gpu_buf_grow(&sVuVbuf, &sVuXfer, &sVuVbufCap, VUBUF_FIRST, SDL_GPU_BUFFERUSAGE_VERTEX, MAX_VU_VERTS * 48);
+    gpu_buf_grow(&sVuIbuf, &sVuIXfer, &sVuIbufCap, VUIBUF_FIRST, SDL_GPU_BUFFERUSAGE_INDEX, MAX_VU_IDX * sizeof(uint32_t));
+    if (sVbuf == NULL || sVuVbuf == NULL || sVuIbuf == NULL) {
+        fprintf(stderr, "bt3: vertex buffers: %s\n", SDL_GetError());
+        return 0;
+    }
     for (i = 0; i < 16; i++) {
         SDL_GPUSamplerCreateInfo si;
         SDL_zero(si);
@@ -926,16 +1005,8 @@ static int vk_init(void) {
     sVu0Vs = shader(SHADER_CODE(kVu0Vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
     sVu4Vs = shader(SHADER_CODE(kVu4Vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
     sVu6Vs = shader(SHADER_CODE(kVu6Vert), SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
-    bi.size = MAX_VU_VERTS * 48;
-    sVuVbuf = SDL_CreateGPUBuffer(sDev, &bi);
-    ti.size = MAX_VU_VERTS * 48;
-    sVuXfer = SDL_CreateGPUTransferBuffer(sDev, &ti);
-    bi.usage = SDL_GPU_BUFFERUSAGE_INDEX;
-    bi.size = MAX_VU_IDX * sizeof(uint32_t);
-    sVuIbuf = SDL_CreateGPUBuffer(sDev, &bi);
-    bi.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
-    ti.size = MAX_VU_IDX * sizeof(uint32_t);
-    sVuIXfer = SDL_CreateGPUTransferBuffer(sDev, &ti);
+    (void)bi;
+    (void)ti;
     {
         SDL_GPUTextureCreateInfo ci;
         SDL_zero(ci);
@@ -1648,6 +1719,7 @@ static uint64_t sHb[6], sHbPass, sHbCopy;
 static unsigned sHbN;
 
 static void vk_frame_end(void) {
+    dead_tex_release(0); /* (the textures given back two pictures ago and more) */
     SDL_GPUCommandBuffer *cmd;
     SDL_GPUCopyPass *copy;
     SDL_GPURenderPass *pass = NULL;
@@ -1669,6 +1741,8 @@ static void vk_frame_end(void) {
     int lastScissor[4];
     float lastBlend = -1.0f;
     uint32_t n;
+    uint32_t fitV = 0, fitI = 0; /* the GS vertices and the vertex programs' indices the GPU's buffers took this frame */
+    int fitVuOk = 0;
 
     (void)ev;
     fx_frame();
@@ -1756,45 +1830,63 @@ static void vk_frame_end(void) {
     sEndT[0] = gpu_now();
     cmd = SDL_AcquireGPUCommandBuffer(sDev);
     /* uploads: this frame's vertices and the textures decoded for it */
+    /* (the buffers grown first where this frame needs more: gpu_buf_grow; what still does not fit is not drawn) */
+    fitV = gpu_buf_grow(&sVbuf, &sVxfer, &sVbufCap, gsVertCount * (uint32_t)sizeof(Vtx), SDL_GPU_BUFFERUSAGE_VERTEX,
+                        MAX_VERTS * sizeof(Vtx)) ? gsVertCount : sVbufCap / (uint32_t)sizeof(Vtx);
+    fitVuOk = gpu_buf_grow(&sVuVbuf, &sVuXfer, &sVuVbufCap, gsVuVertCount * 48u, SDL_GPU_BUFFERUSAGE_VERTEX, MAX_VU_VERTS * 48);
+    fitI = gpu_buf_grow(&sVuIbuf, &sVuIXfer, &sVuIbufCap, gsVuIdxCount * (uint32_t)sizeof(uint32_t), SDL_GPU_BUFFERUSAGE_INDEX,
+                        MAX_VU_IDX * sizeof(uint32_t)) ? gsVuIdxCount : sVuIbufCap / (uint32_t)sizeof(uint32_t);
     copy = SDL_BeginGPUCopyPass(cmd);
-    if (gsVertCount != 0) {
+    if (fitV != 0) {
         SDL_GPUTransferBufferLocation src;
         SDL_GPUBufferRegion dst;
         void *p = SDL_MapGPUTransferBuffer(sDev, sVxfer, true);
-        memcpy(p, gsVerts, gsVertCount * sizeof(Vtx));
-        SDL_UnmapGPUTransferBuffer(sDev, sVxfer);
-        src.transfer_buffer = sVxfer;
-        src.offset = 0;
-        dst.buffer = sVbuf;
-        dst.offset = 0;
-        dst.size = gsVertCount * sizeof(Vtx);
-        SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+        if (p != NULL) {
+            memcpy(p, gsVerts, fitV * sizeof(Vtx));
+            SDL_UnmapGPUTransferBuffer(sDev, sVxfer);
+            src.transfer_buffer = sVxfer;
+            src.offset = 0;
+            dst.buffer = sVbuf;
+            dst.offset = 0;
+            dst.size = fitV * sizeof(Vtx);
+            SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+        } else {
+            fitV = 0;
+        }
     }
-    if (gsVuVertCount != 0) {
+    if (gsVuVertCount != 0 && fitVuOk) {
         SDL_GPUTransferBufferLocation src;
         SDL_GPUBufferRegion dst;
         void *p = SDL_MapGPUTransferBuffer(sDev, sVuXfer, true);
-        memcpy(p, gsVuVerts, gsVuVertCount * 48);
-        SDL_UnmapGPUTransferBuffer(sDev, sVuXfer);
-        src.transfer_buffer = sVuXfer;
-        src.offset = 0;
-        dst.buffer = sVuVbuf;
-        dst.offset = 0;
-        dst.size = gsVuVertCount * 48;
-        SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+        if (p != NULL) {
+            memcpy(p, gsVuVerts, gsVuVertCount * 48);
+            SDL_UnmapGPUTransferBuffer(sDev, sVuXfer);
+            src.transfer_buffer = sVuXfer;
+            src.offset = 0;
+            dst.buffer = sVuVbuf;
+            dst.offset = 0;
+            dst.size = gsVuVertCount * 48;
+            SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+        } else {
+            fitVuOk = 0;
+        }
     }
-    if (gsVuIdxCount != 0) {
+    if (fitI != 0) {
         SDL_GPUTransferBufferLocation src;
         SDL_GPUBufferRegion dst;
         void *p = SDL_MapGPUTransferBuffer(sDev, sVuIXfer, true);
-        memcpy(p, gsVuIdx, gsVuIdxCount * sizeof(uint32_t));
-        SDL_UnmapGPUTransferBuffer(sDev, sVuIXfer);
-        src.transfer_buffer = sVuIXfer;
-        src.offset = 0;
-        dst.buffer = sVuIbuf;
-        dst.offset = 0;
-        dst.size = gsVuIdxCount * sizeof(uint32_t);
-        SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+        if (p != NULL) {
+            memcpy(p, gsVuIdx, fitI * sizeof(uint32_t));
+            SDL_UnmapGPUTransferBuffer(sDev, sVuIXfer);
+            src.transfer_buffer = sVuIXfer;
+            src.offset = 0;
+            dst.buffer = sVuIbuf;
+            dst.offset = 0;
+            dst.size = fitI * sizeof(uint32_t);
+            SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+        } else {
+            fitI = 0;
+        }
     }
     /* The frame's textures through one upload buffer, each level at its own offset (16-byte aligned), mapped
        once: a buffer made, mapped and let go for every level (a pack's picture has up to 11) cost the frame and
@@ -1889,10 +1981,11 @@ static void vk_frame_end(void) {
         if (px == NULL) {
             continue;
         }
-        for (y = 0; y < sTH; y++) {
-            for (x = 0; x < sTW; x++) {
-                px[y * sTW + x] = Gs_VramRead(fbp * 32, 8, 0, x, y) | 0xFF000000u;
-            }
+        {   /* (the same pixels as Gs_VramRead(fbp * 32, 8, 0, x, y) | 0xFF000000 for each, a row at a time) */
+            extern void Gs_ReadRect32(uint32_t bp, uint32_t bw, uint32_t w, uint32_t h, uint32_t *out, uint32_t orBits);
+            (void)x;
+            (void)y;
+            Gs_ReadRect32(fbp * 32, 8, sTW, sTH, px, 0xFF000000u);
         }
         SDL_UnmapGPUTransferBuffer(sDev, tb);
         SDL_zero(src);
@@ -2318,6 +2411,10 @@ static void vk_frame_end(void) {
             haveScissor = 1;
         }
         if (fx_measure(d)) {
+            continue;
+        }
+        /* (only what reached the GPU's buffers this frame: gpu_buf_grow) */
+        if (d->vu ? (!fitVuOk || d->first + d->count > fitI) : d->first + d->count > fitV) {
             continue;
         }
         if (d->vu) {

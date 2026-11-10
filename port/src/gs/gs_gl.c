@@ -22,6 +22,11 @@
 #include "gs_draw.h"
 #include "shaders.h"
 #include "ui.h"
+/* The render targets' size in GS pixels (times SCALE), as the Vulkan back end's (gs_gpu.c sTW): the game never draws
+   past 512 x 512 in a buffer of its own, and the draws keep their 1024 x 1024 page through the viewport. At 1024 x 1024
+   each target was four times the memory, and a tiled GPU (Mali, Adreno) loaded and stored four times the pixels at
+   each change of target. BT3_GPU_BIG_TARGETS=1: the full 1024 x 1024, as before. */
+static int sTW = 512, sTH = 512;
 
 extern int Port_AspectMilli(void);
 extern int Port_PageAspectMilli(void); /* plat_stub.c: 4:3 while the menus run, if asked for */
@@ -329,7 +334,7 @@ static GLuint make_present_program(void) {
     glDeleteShader(f);
     glUseProgram(p);
     glUniform1i(glGetUniformLocation(p, "tex"), 0);
-    glUniform2f(glGetUniformLocation(p, "uvScale"), 512.0f / (float)GS_W, 448.0f / (float)GS_H);
+    glUniform2f(glGetUniformLocation(p, "uvScale"), 512.0f / (float)sTW, 448.0f / (float)sTH);
     return p;
 }
 
@@ -373,13 +378,13 @@ static void target_ensure(int i) {
     GLenum bufs[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
     glGenTextures(1, &sTgCol[i]);
     glBindTexture(GL_TEXTURE_2D, sTgCol[i]);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, GS_W * SCALE, GS_H * SCALE, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, sTW * SCALE, sTH * SCALE, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     glGenTextures(1, &sTgAux[i]);
     glBindTexture(GL_TEXTURE_2D, sTgAux[i]);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, GS_W * SCALE, GS_H * SCALE, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, sTW * SCALE, sTH * SCALE, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
     glGenTextures(1, &sTgDep[i]);
     glBindTexture(GL_TEXTURE_2D, sTgDep[i]);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH32F_STENCIL8, GS_W * SCALE, GS_H * SCALE, 0,
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH32F_STENCIL8, sTW * SCALE, sTH * SCALE, 0,
                  GL_DEPTH_STENCIL, GL_FLOAT_32_UNSIGNED_INT_24_8_REV, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -453,10 +458,10 @@ static GsTex white_tex(void) { return (GsTex)sWhite; }
 static void copies_create(void) {
     glGenTextures(1, &sDateCopy);
     glBindTexture(GL_TEXTURE_2D, sDateCopy);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, GS_W * SCALE, GS_H * SCALE, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, sTW * SCALE, sTH * SCALE, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
     glGenTextures(1, &sAuxCopy);
     glBindTexture(GL_TEXTURE_2D, sAuxCopy);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, GS_W * SCALE, GS_H * SCALE, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, sTW * SCALE, sTH * SCALE, 0, GL_RED, GL_UNSIGNED_BYTE, NULL);
 }
 
 static void scale_changed(void) {
@@ -835,6 +840,12 @@ static void gl_give_up(void) {
 static int gl_init(void) {
     static const uint32_t white = 0xFFFFFFFFu;
     int i;
+
+    if (getenv("BT3_GPU_BIG_TARGETS") != NULL) {
+        sTW = sTH = 1024;
+    }
+    gsTargetW = sTW; /* (gs_draw.c: a target read as a texture is addressed in this size) */
+    gsTargetH = sTH;
 
 #if GL_ES
     /* OpenGL ES 3.2. (On Android the context's kind is part of the window's EGL configuration: asked for first.) */
@@ -1245,19 +1256,23 @@ static void frame_end(void) {
         if (sFbTex[i] == 0) {
             glGenTextures(1, &sFbTex[i]);
             glBindTexture(GL_TEXTURE_2D, sFbTex[i]);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, GS_W, GS_H, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, sTW, sTH, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
             glGenFramebuffers(1, &sFbFbo[i]);
             glBindFramebuffer(GL_FRAMEBUFFER, sFbFbo[i]);
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sFbTex[i], 0);
         }
-        px = malloc((size_t)GS_W * GS_H * 4);
-        for (y = 0; y < GS_H; y++) {
-            for (x = 0; x < GS_W; x++) {
-                px[y * GS_W + x] = Gs_VramRead(fbp * 32, 8, 0, x, y) | 0xFF000000u;
-            }
+        px = malloc((size_t)sTW * sTH * 4);
+        if (px == NULL) {
+            continue;
+        }
+        {   /* (the same pixels as Gs_VramRead(fbp * 32, 8, 0, x, y) | 0xFF000000 for each, a row at a time) */
+            extern void Gs_ReadRect32(uint32_t bp, uint32_t bw, uint32_t w, uint32_t h, uint32_t *out, uint32_t orBits);
+            (void)x;
+            (void)y;
+            Gs_ReadRect32(fbp * 32, 8, (uint32_t)sTW, (uint32_t)sTH, px, 0xFF000000u);
         }
         glBindTexture(GL_TEXTURE_2D, sFbTex[i]);
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, GS_W, GS_H, GL_RGBA, GL_UNSIGNED_BYTE, px);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, sTW, sTH, GL_RGBA, GL_UNSIGNED_BYTE, px);
         free(px);
     }
     gGsFbUploads = 0;
@@ -1288,7 +1303,7 @@ static void frame_end(void) {
             glBindFramebuffer(GL_READ_FRAMEBUFFER, sFbFbo[d->native - 100]);
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, sTgFbo[d->target]);
             glDrawBuffers(1, one);
-            glBlitFramebuffer(0, 0, GS_W, GS_H, 0, 0, GS_W * SCALE, GS_H * SCALE, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+            glBlitFramebuffer(0, 0, sTW, sTH, 0, 0, sTW * SCALE, sTH * SCALE, GL_COLOR_BUFFER_BIT, GL_LINEAR);
             glEnable(GL_SCISSOR_TEST);
             haveScissor = 0;
             gsTargets[d->target].cleared = 1;
@@ -1298,10 +1313,13 @@ static void frame_end(void) {
         if (d->native == 5 || d->native == 4) {
             GLuint dst = d->native == 5 ? sDateCopy : sAuxCopy;
             GLenum one[1] = {GL_COLOR_ATTACHMENT0};
-            int rx = 0, ry = 0, rw = GS_W * SCALE, rh = GS_H * SCALE;
+            int rx = 0, ry = 0, rw = sTW * SCALE, rh = sTH * SCALE;
             if (!gsTargets[d->target].cleared) { continue; }
             /* the DATE copy: only what the draws that follow read (gs_draw.c); rows as in the Vulkan back end */
             if (d->native == 5 && (sHasFetch || !GsDraw_DateRegion(n, &rx, &ry, &rw, &rh))) { continue; } /* (fetch: no copy) */
+            if (rx + rw > (int)(sTW * SCALE)) { rw = (int)(sTW * SCALE) - rx; } /* (the targets are sTW x sTH, as Vulkan's) */
+            if (ry + rh > (int)(sTH * SCALE)) { rh = (int)(sTH * SCALE) - ry; }
+            if (rw <= 0 || rh <= 0) { continue; }
             /* The copy of the frame's alpha ids (the outline and the DATE passes read it). glBlitFramebuffer is
                clipped by the scissor test, so with a partial scissor in force (the split screen's halves) only
                part of the alpha would be copied and the outline would draw a stale silhouette; turn it off for
@@ -1343,8 +1361,8 @@ static void frame_end(void) {
             set_native(d->native);
             set_textures(sAuxCopy, 6, 0, 6, 0, 6);
             extern int Port_PageAspectMilli(void); /* plat_stub.c: the shape of the page shown now */
-            params[0] = 1333.333f / (float)Port_PageAspectMilli() / (float)GS_W; /* one PS2 pixel across, as wide as at 4:3 (outline.frag) */
-            params[1] = 1.0f / (float)GS_H;
+            params[0] = 1333.333f / (float)Port_PageAspectMilli() / (float)sTW; /* one PS2 pixel across, as wide as at 4:3 (outline.frag) */
+            params[1] = 1.0f / (float)sTH;
             params[2] = 100.0f / 255.0f;
             params[3] = getenv("BT3_FX_DEBUG") != NULL ? 1.0f : 0.0f;
             set_params(params, 16);
@@ -1542,7 +1560,7 @@ static void gl_target_copy(int src, int dst) {
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, sScratchDraw);
     glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sTgCol[dst], 0);
     glDrawBuffers(1, one);
-    glBlitFramebuffer(0, 0, GS_W * SCALE, GS_H * SCALE, 0, 0, GS_W * SCALE, GS_H * SCALE, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBlitFramebuffer(0, 0, sTW * SCALE, sTH * SCALE, 0, 0, sTW * SCALE, sTH * SCALE, GL_COLOR_BUFFER_BIT, GL_NEAREST);
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 }

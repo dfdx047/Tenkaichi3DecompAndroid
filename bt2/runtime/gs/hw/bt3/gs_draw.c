@@ -545,18 +545,23 @@ static GsTex texture_get(int ctx) {
                     Gs_VramRead(tbp, tbw, psm, 64, 64));
         }
     }
+    /* A paletted texture's colours by index, read and expanded once (Gs_ClutEntry and Gs_Expand depend only on TEX0
+       and TEXA, which do not change in here) instead of again for every texel: most of a fight's effects are 4- and
+       8-bit (BT3's renderer does the same, gs_draw.c tex_decode). Every texel gets the same value as before. */
+    uint32_t lut[256];
+    if (px != NULL && bits <= 8) {
+        extern uint32_t Gs_ClutEntry(uint64_t t0, uint32_t index); /* (BT2's copy: the palette buffer, gs_core.c) */
+        uint32_t k, entries = bits == 8 ? 256u : 16u;
+        for (k = 0; k < entries; k++) {
+            lut[k] = Gs_Expand(Gs_ClutEntry(t0, k), cpsm);
+        }
+    }
     for (y = 0; px != NULL && y < th; y++) {
         for (x = 0; x < tw; x++) {
-            uint32_t c = Gs_VramRead(tbp, tbw, psm, x, y), a;
-            if (bits > 8) {
-                c = Gs_Expand(c, psm);
-            } else {
-                extern uint32_t Gs_ClutEntry(uint64_t t0, uint32_t index); /* (BT2's copy: the palette buffer, gs_core.c) */
-                c = Gs_Expand(Gs_ClutEntry(t0, c), cpsm);
-            }
-            (void)a; /* alpha is kept as the GS has it (0x80 = opaque, up to 0xFF): the shader rescales it. Values
-                        above 0x80 matter: the see-through pass gives palettes alpha 0xF9 to write an id */
-            px[y * tw + x] = c;
+            uint32_t c = Gs_VramRead(tbp, tbw, psm, x, y);
+            /* (alpha is kept as the GS has it, 0x80 = opaque, up to 0xFF: the shader rescales it. Values above 0x80
+               matter: the see-through pass gives palettes alpha 0xF9 to write an id) */
+            px[y * tw + x] = bits > 8 ? Gs_Expand(c, psm) : lut[bits == 8 ? c & 0xFF : c & 0xF];
         }
     }
     if (px != NULL && !replaced && bits <= 8) {
