@@ -642,12 +642,12 @@ JNIEXPORT void JNICALL Java_com_dfdx047_dragonrage_engine_GameActivity_nativeSet
 }
 #endif
 
-int Match_BackgroundWait(Uint32 activeMs) {
+int Match_BackgroundWait(Uint32 activeMs, int cancelAfterThreeMinutes) {
     Uint64 start = SDL_GetTicks();
     if (gPortInBackground) {
         Uint32 since = (Uint32)SDL_GetAtomicInt(&sBackgroundSince);
         if (since == 0) { since = (Uint32)start; SDL_SetAtomicInt(&sBackgroundSince, (int)since); }
-        if ((Uint32)SDL_GetTicks() - since >= MATCH_BACKGROUND_CANCEL_MS) return 0;
+        if (cancelAfterThreeMinutes && (Uint32)SDL_GetTicks() - since >= MATCH_BACKGROUND_CANCEL_MS) return 0;
         activeMs = MATCH_BACKGROUND_POLL_MS;
     } else {
         SDL_SetAtomicInt(&sBackgroundSince, 0);
@@ -661,7 +661,7 @@ int Match_BackgroundWait(Uint32 activeMs) {
         {
             Uint32 since = (Uint32)SDL_GetAtomicInt(&sBackgroundSince);
             if (since == 0) { since = (Uint32)SDL_GetTicks(); SDL_SetAtomicInt(&sBackgroundSince, (int)since); }
-            if ((Uint32)SDL_GetTicks() - since >= MATCH_BACKGROUND_CANCEL_MS) return 0;
+            if (cancelAfterThreeMinutes && (Uint32)SDL_GetTicks() - since >= MATCH_BACKGROUND_CANCEL_MS) return 0;
         }
         SDL_Delay(100);
     }
@@ -672,14 +672,6 @@ static int http_post_to(const char *base, const char *what, const char *json, ch
     int ok, limited;
     if (base == NULL) {
         base = match_url();
-    }
-    while (gPortInBackground && SDL_strcmp(what, "leave") != 0) {
-        if (SDL_strcmp(what, "poll") == 0) {
-            Uint32 since = (Uint32)SDL_GetAtomicInt(&sBackgroundSince);
-            if (since == 0) { since = (Uint32)SDL_GetTicks(); SDL_SetAtomicInt(&sBackgroundSince, (int)since); }
-            if ((Uint32)SDL_GetTicks() - since >= MATCH_BACKGROUND_CANCEL_MS) return 0;
-        }
-        SDL_Delay(200);
     }
     if (limit_before(base, out, size)) {
         return 1;
@@ -1054,7 +1046,7 @@ again:
         for (;;) {
             Uint64 elapsed = SDL_GetTicks() - roomMade;
             Uint32 pollMs = elapsed < MATCH_HOST_FIRST_UNTIL_MS ? MATCH_HOST_FIRST_MS : elapsed < MATCH_HOST_MIDDLE_UNTIL_MS ? MATCH_HOST_MIDDLE_MS : MATCH_HOST_LATE_MS;
-            if (!Match_BackgroundWait(pollMs)) {
+            if (!Match_BackgroundWait(pollMs, 1)) {
                 expired = 1;
                 break;
             }
@@ -1265,7 +1257,7 @@ lobby:
     {
         int first = 1;
         while (!STOPPED()) {
-            if (!first && SDL_GetAtomicInt(&sM.relayAsk) != 1 && !Match_BackgroundWait(MATCH_LOBBY_POLL_MS)) break;
+            if (!first && SDL_GetAtomicInt(&sM.relayAsk) != 1 && !Match_BackgroundWait(MATCH_LOBBY_POLL_MS, 0)) break;
             first = 0;
             if (STOPPED()) {
                 break;
@@ -1312,15 +1304,13 @@ lobby:
     }
     SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"}", sM.code, key);
     POSTB("leave", body, answer, sizeof(answer));
-    if (!STOPPED() && SDL_GetAtomicInt(&sBackgroundSince) != 0 && (Uint32)SDL_GetTicks() - (Uint32)SDL_GetAtomicInt(&sBackgroundSince) >= MATCH_BACKGROUND_CANCEL_MS)
-        set_state(-1, "The online lobby was closed after 3 minutes in the background.");
     return 0;
 keep:
     /* A host that lets spectators in, once the other player has come: the room is kept while the match is on (the
        session ends this search, Match_Cancel), and asked every ten seconds for spectators who have come. */
     SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\",\"watch\":true,\"keep\":true}", sM.code, key);
     while (!STOPPED()) {
-        if (!Match_BackgroundWait(MATCH_KEEP_POLL_MS) || STOPPED()) {
+        if (!Match_BackgroundWait(MATCH_KEEP_POLL_MS, 0) || STOPPED()) {
             break;
         }
         if (POSTB("poll", body, answer, sizeof(answer))) {
@@ -1332,8 +1322,6 @@ keep:
     }
     SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"}", sM.code, key);
     POSTB("leave", body, answer, sizeof(answer));
-    if (!STOPPED() && SDL_GetAtomicInt(&sBackgroundSince) != 0 && (Uint32)SDL_GetTicks() - (Uint32)SDL_GetAtomicInt(&sBackgroundSince) >= MATCH_BACKGROUND_CANCEL_MS)
-        set_state(-1, "The online room was closed after 3 minutes in the background.");
     return 0;
 joined:
     /* The one who joined. If the host's direct addresses stay silent, the host asks for a relay address and adds it
@@ -1347,7 +1335,8 @@ joined:
         SDL_UnlockMutex(sM.lock);
         SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"}", sM.code, key);
         for (round = 0; round < 11 && !STOPPED(); round++) {
-            if (!Match_BackgroundWait(round == 0 ? MATCH_JOIN_FIRST_POLL_MS : MATCH_JOIN_POLL_MS)) {
+            if (!Match_BackgroundWait(round == 0 ? MATCH_JOIN_FIRST_POLL_MS : MATCH_JOIN_POLL_MS,
+                                      sM.role == 2 && sM.queue[0] != '\0')) {
                 backgroundExpired = 1;
                 break;
             }
