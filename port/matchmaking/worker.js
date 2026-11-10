@@ -930,7 +930,7 @@ export default {
                     out.region = room.join_region; // (a quick match's newer game: the other player's region)
                 }
                 if (body.watch === true) { // (a game that knows spectators: older ones get the answer they always had)
-                    if (body.keep === true && (joined || room.lobby === 1)) { // (a lobby: while its owner asks)
+                    if (body.keep === true && (joined || room.lobby === 1) && now - room.made >= 60) { // cap lobby-owner D1 writes at one per minute
                         await env.DB.prepare("UPDATE rooms SET made = ? WHERE code = ?").bind(now, code).run();
                     }
                     try {
