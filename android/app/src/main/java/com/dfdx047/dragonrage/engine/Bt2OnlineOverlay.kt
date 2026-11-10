@@ -292,6 +292,8 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
             return
         }
         try {
+            while (paused && !s.cancelled) Thread.sleep(100)
+            if (s.cancelled) return
             val first = when (s.kind) {
                 1 -> Bt2Online.host(s.base, name, mine)
                 2 -> Bt2Online.join(s.base, typedCode ?: return, name, mine)
@@ -308,7 +310,8 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
             var every = 2000L // (one a second was 60 a minute per open room, on a free Worker)
             while (!s.cancelled) {
                 Thread.sleep(every)
-                if (paused) continue // (the app is not on the screen: nothing asked of the service, the room stays)
+                while (paused && !s.cancelled) Thread.sleep(100)
+                if (s.cancelled) break
                 publishRelay(s, room, mine)
                 // (a poll that fails for a moment, a signal that dips on mobile data, must not end the wait: the room is still there; ~15 in a row do)
                 val peer = try {
@@ -327,6 +330,8 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
                 // (a room the service keeps ten minutes: a search that waits longer asks again)
                 if (s.kind == 3 && System.currentTimeMillis() - since > 9 * 60_000) {
                     Bt2Online.leave(s.base, room)
+                    while (paused && !s.cancelled) Thread.sleep(100)
+                    if (s.cancelled) break
                     room = Bt2Online.quick(s.base, name, who, mine).also { s.room = it }
                     since = System.currentTimeMillis()
                     room.peer?.let { return connected(s, it) }
