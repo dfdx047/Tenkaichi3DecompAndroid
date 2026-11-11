@@ -26,6 +26,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __ANDROID__
+#include <unistd.h> /* getcwd */
+#endif
 #include <SDL3/SDL.h>
 #define XXH_INLINE_ALL
 #include "../../third_party/xxhash/xxhash.h"
@@ -61,7 +64,11 @@ typedef struct Entry {
 static Entry *sEntries;
 static uint32_t sCount, sCap, *sBucket, sBuckets;
 
-#define TEXPACK_BUDGET ((size_t)512 << 20) /* CPU images, separate from the decoded renderer working set. */
+#ifdef __ANDROID__
+#define TEXPACK_BUDGET ((size_t)256 << 20)  /* (a phone: the memory is the system's and the GPU's too) */
+#else
+#define TEXPACK_BUDGET ((size_t)1024 << 20) /* the files kept in memory: one session's two fights took 289 MB */
+#endif
 #define QUEUE 4096                          /* files waiting for the reader (a power of two) */
 static SDL_Mutex *sLock;
 static SDL_Condition *sWake;
@@ -199,9 +206,140 @@ static SDL_EnumerationResult SDLCALL walk(void *userdata, const char *dir, const
     return SDL_ENUM_CONTINUE;
 }
 
+/* ---- DXT (BC1-BC3) to 8-bit RGBA, for GPUs without DXT (phones: Adreno and Mali under Vulkan and OpenGL ES). The
+   colours and alphas are those a GPU's own decoder gives (opaque BC1 texels 255, as sampled). */
+static void bc_color(const uint8_t *b, uint8_t pal[4][4], int four) {
+    uint32_t c[2], i;
+    c[0] = b[0] | (b[1] << 8);
+    c[1] = b[2] | (b[3] << 8);
+    for (i = 0; i < 2; i++) {
+        uint32_t r = (c[i] >> 11) & 31, g = (c[i] >> 5) & 63, bl = c[i] & 31;
+        pal[i][0] = (uint8_t)((r << 3) | (r >> 2));
+        pal[i][1] = (uint8_t)((g << 2) | (g >> 4));
+        pal[i][2] = (uint8_t)((bl << 3) | (bl >> 2));
+        pal[i][3] = 255;
+    }
+    for (i = 0; i < 3; i++) {
+        if (four || c[0] > c[1]) {
+            pal[2][i] = (uint8_t)((2 * pal[0][i] + pal[1][i] + 1) / 3);
+            pal[3][i] = (uint8_t)((pal[0][i] + 2 * pal[1][i] + 1) / 3);
+        } else {
+            pal[2][i] = (uint8_t)((pal[0][i] + pal[1][i]) / 2);
+            pal[3][i] = 0;
+        }
+    }
+    pal[2][3] = 255;
+    pal[3][3] = (four || c[0] > c[1]) ? 255 : 0;
+}
+
+static void bc_block(int format, const uint8_t *b, uint8_t out[16][4]) {
+    uint8_t pal[4][4], alpha[16];
+    const uint8_t *cb = format == 1 ? b : b + 8;
+    uint32_t idx = cb[4] | (cb[5] << 8) | (cb[6] << 16) | ((uint32_t)cb[7] << 24), i;
+    bc_color(cb, pal, format != 1);
+    if (format == 2) { /* DXT3: 4 bits of alpha per texel */
+        for (i = 0; i < 16; i++) {
+            uint32_t a = (b[i / 2] >> ((i & 1) * 4)) & 15;
+            alpha[i] = (uint8_t)(a * 17);
+        }
+    } else if (format == 3) { /* DXT5: two alphas and 3-bit indices between them */
+        uint8_t a[8];
+        uint64_t bits = 0;
+        a[0] = b[0];
+        a[1] = b[1];
+        if (a[0] > a[1]) {
+            for (i = 1; i < 7; i++) { a[i + 1] = (uint8_t)(((7 - i) * a[0] + i * a[1] + 3) / 7); }
+        } else {
+            for (i = 1; i < 5; i++) { a[i + 1] = (uint8_t)(((5 - i) * a[0] + i * a[1] + 2) / 5); }
+            a[6] = 0;
+            a[7] = 255;
+        }
+        for (i = 0; i < 6; i++) { bits |= (uint64_t)b[2 + i] << (8 * i); }
+        for (i = 0; i < 16; i++) { alpha[i] = a[(bits >> (3 * i)) & 7]; }
+    }
+    for (i = 0; i < 16; i++) {
+        const uint8_t *c = pal[(idx >> (2 * i)) & 3];
+        out[i][0] = c[0];
+        out[i][1] = c[1];
+        out[i][2] = c[2];
+        out[i][3] = format == 1 ? c[3] : alpha[i];
+    }
+}
+
+/* A DXT image to 8-bit RGBA, all its levels; levels larger than `maxSide` are left out (GPU memory: a phone shares
+   it with everything else, and RGBA takes 4 to 8 times what DXT does). 0 when there is no memory for it. */
+int TexPack_Decompress(TexPackImage *img, uint32_t maxSide) {
+    uint32_t total = 0, w, h, first = 0;
+    int l, n = 0;
+    uint8_t *buf, *at;
+    TexPackImage out;
+
+    if (img->format == 0) {
+        return 1;
+    }
+    while (first + 1 < (uint32_t)img->levels && ((img->w >> first) > maxSide || (img->h >> first) > maxSide)) {
+        first++;
+    }
+    for (l = (int)first; l < img->levels; l++) {
+        w = img->w >> l ? img->w >> l : 1;
+        h = img->h >> l ? img->h >> l : 1;
+        total += w * h * 4;
+    }
+    if ((buf = SDL_malloc(total)) == NULL) {
+        return 0;
+    }
+    memset(&out, 0, sizeof(out));
+    out.file = buf;
+    out.w = img->w >> first ? img->w >> first : 1;
+    out.h = img->h >> first ? img->h >> first : 1;
+    out.format = 0;
+    at = buf;
+    for (l = (int)first; l < img->levels; l++, n++) {
+        uint32_t bw, bh, x, y, blk = img->format == 1 ? 8 : 16;
+        const uint8_t *src = img->data[l];
+        w = img->w >> l ? img->w >> l : 1;
+        h = img->h >> l ? img->h >> l : 1;
+        bw = (w + 3) / 4;
+        bh = (h + 3) / 4;
+        if (img->bytes[l] < bw * bh * blk) { /* (a level cut short in the file: the levels before it are kept) */
+            break;
+        }
+        for (y = 0; y < bh; y++) {
+            for (x = 0; x < bw; x++) {
+                uint8_t px[16][4];
+                uint32_t i, j;
+                bc_block(img->format, src + (y * bw + x) * blk, px);
+                for (j = 0; j < 4 && y * 4 + j < h; j++) {
+                    for (i = 0; i < 4 && x * 4 + i < w; i++) {
+                        memcpy(at + ((y * 4 + j) * w + x * 4 + i) * 4, px[j * 4 + i], 4);
+                    }
+                }
+            }
+        }
+        out.data[n] = at;
+        out.bytes[n] = w * h * 4;
+        at += w * h * 4;
+    }
+    if (n == 0) {
+        SDL_free(buf);
+        return 0;
+    }
+    out.levels = n;
+    SDL_free(img->file);
+    *img = out;
+    return 1;
+}
+
 void TexPack_Init(void) {
     char nextToProgram[2048];
     const char *root = getenv("BT3_TEXTURES");
+    size_t n;
+    char *dir;
+#ifdef __ANDROID__
+    if (root == NULL) {
+        root = "textures"; /* (the game's folder: made absolute below) */
+    }
+#else
     if(root==NULL){
         const char *base=SDL_GetBasePath();SDL_PathInfo at;
         SDL_snprintf(nextToProgram,sizeof(nextToProgram),"%stextures",base?base:"");
@@ -211,12 +349,25 @@ void TexPack_Init(void) {
             root=nextToProgram;
         }
     }
-    size_t n = strlen(root);
-    char *dir = malloc(n + 2);
+#endif
     uint32_t i, dup = 0;
     SDL_PathInfo info;
+#ifdef __ANDROID__
+    /* SDL on Android takes a relative path as one in the app's internal folder (/data/user/0/<app>/files), not
+       the current folder: "textures" was never the launcher's folder of packs next to gamedata/, and a pack
+       imported in the app was never used ("no folder textures" with the pack in place). From the game's folder. */
+    static char absRoot[1200];
+    char cwd[1024];
+    if (root[0] != '\0' && root[0] != '/' && getcwd(cwd, sizeof(cwd)) != NULL) {
+        snprintf(absRoot, sizeof(absRoot), "%s/%s", cwd, root);
+        root = absRoot;
+    }
+#endif
+    n = strlen(root);
+    dir = malloc(n + 2);
 
     if (root[0] == '\0' || !SDL_GetPathInfo(root, &info) || info.type != SDL_PATHTYPE_DIRECTORY) {
+        fprintf(stderr, "bt3: texture pack: no folder %s\n", root);
         free(dir);
         return;
     }
@@ -240,6 +391,8 @@ void TexPack_Init(void) {
     }
     free(dir);
     if (sCount == 0) {
+        /* (in the log: a pack whose files are not named as PCSX2 names them, or one switched off in the launcher) */
+        fprintf(stderr, "bt3: texture pack: no replacement textures (PCSX2 names) found in %s\n", root);
         return;
     }
     for (sBuckets = 1024; sBuckets < sCount * 2; sBuckets *= 2) {
@@ -479,6 +632,50 @@ static void image_free(TexPackImage *img) {
     img->file = NULL;
 }
 
+int TexPack_Load(const char *path, TexPackImage *img) {
+    Entry e;
+    memset(&e, 0, sizeof(e));
+    e.path = (char *)path;
+    e.archive = -1;
+    return load(&e, img);
+}
+
+void TexPack_Free(TexPackImage *img) {
+    image_free(img);
+}
+
+/* A file read for this GPU, on the reader's thread: on Android its ASTC copy if gs_astc.cpp made one (and one asked
+   for if not), and on a GPU without DXT the DXT unpacked to plain pixels here, not in the frame (gs_draw.c). */
+extern int gGsNoBcTextures, gGsAstcTextures;
+#ifdef __ANDROID__
+extern int GsAstc_Load(const char *src, TexPackImage *img);
+extern void GsAstc_Queue(const char *src);
+#endif
+static int load_for_gpu(const Entry *entry, TexPackImage *img) {
+    const char *path = entry->path; /* (an ASTC copy only for a loose file: one inside a .zip has no path of its own) */
+#ifdef __ANDROID__
+    const uint32_t maxSide = 2048; /* (levels above it left out: memory) */
+    if (entry->archive < 0 && GsAstc_Load(path, img)) {
+        return 1;
+    }
+#else
+    const uint32_t maxSide = 16384;
+#endif
+    if (!load(entry, img)) {
+        return 0;
+    }
+#ifdef __ANDROID__
+    if (entry->archive < 0 && gGsAstcTextures && (img->format == 0 || gGsNoBcTextures)) {
+        GsAstc_Queue(path); /* an ASTC copy for the next time, made in the background */
+    }
+#endif
+    if (img->format != 0 && gGsNoBcTextures && !TexPack_Decompress(img, maxSide)) {
+        image_free(img);
+        return 0;
+    }
+    return 1;
+}
+
 static size_t image_bytes(const TexPackImage *img) {
     size_t n = 0;
     int level;
@@ -518,7 +715,7 @@ static int SDLCALL reader(void *unused) {
         }
         id = sQueue[sTail++ & (QUEUE - 1)];
         SDL_UnlockMutex(sLock);
-        ok = load(&sEntries[id], &img);
+        ok = load_for_gpu(&sEntries[id], &img);
         SDL_LockMutex(sLock);
         store(id, ok, &img);
         SDL_UnlockMutex(sLock);
@@ -584,7 +781,7 @@ int TexPack_Get(int id, TexPackImage *img) {
     e->used = ++sTick;
     if (e->state == 0 && sSync) {
         TexPackImage read;
-        int ok = load(e, &read);
+        int ok = load_for_gpu(e, &read);
         store((uint32_t)id, ok, &read);
     } else if (e->state == 0 && sHead - sTail < QUEUE) {
         sQueue[sHead++ & (QUEUE - 1)] = (uint32_t)id;

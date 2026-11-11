@@ -9,8 +9,11 @@
  * is closed when another is needed.
  * (Its variables must NOT be part of the saved state: port/tools/make_state.py leaves this file out.)
  */
+#include <ctype.h>
+#include <errno.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdlib.h>
 extern void Port_StateTouch(void *p, unsigned long n); /* gs/state.c */
@@ -18,9 +21,80 @@ extern void Port_StateTouch(void *p, unsigned long n); /* gs/state.c */
 extern const char *Port_FileRoot(void); /* plat_file.c: BT3_DATA or "gamedata" */
 
 enum { SLOTS = 32 };
-static struct { char rel[128]; FILE *fp; long size; unsigned long used; } sSlot[SLOTS];
+/* base: where the file starts in the host file (0, or its place inside an AFS archive) */
+static struct { char rel[128]; FILE *fp; long base, size; unsigned long used; } sSlot[SLOTS];
 static unsigned long sClock;
 static volatile int sLock;
+
+/* The archives themselves. An install may keep DATA/<NAME>.AFS whole under disc/ instead of a folder of loose files
+   (the Android app does: writing ~20 000 small files is what made its install slow). A file "<name>/<index>.bin" that
+   is not there as a loose file is then read from the archive, through its table: offset and size per entry. */
+static struct { char part[64]; char path[512]; uint32_t count; uint32_t *toc; int tried; } sAfs[8];
+
+int Port_AfsSpan(const char *rel, char *path, unsigned n, long *base, long *size) {
+    char part[64];
+    const char *slash = strchr(rel, '/');
+    int index, i, k;
+    size_t pl;
+
+    if (slash == NULL || (pl = (size_t)(slash - rel)) == 0 || pl >= sizeof(part) || strchr(slash + 1, '/') != NULL ||
+        sscanf(slash + 1, "%d.bin", &index) != 1 || index < 0) {
+        return 0;
+    }
+    memcpy(part, rel, pl);
+    part[pl] = '\0';
+    for (i = 0; i < 8 && sAfs[i].tried && strcmp(sAfs[i].part, part) != 0; i++) {
+    }
+    if (i == 8) {
+        return 0;
+    }
+    if (!sAfs[i].tried) {
+        FILE *fp;
+        uint8_t head[8];
+        sAfs[i].tried = 1;
+        snprintf(sAfs[i].part, sizeof(sAfs[i].part), "%s", part);
+        k = snprintf(sAfs[i].path, sizeof(sAfs[i].path), "%s/disc/DATA/", Port_FileRoot());
+        for (pl = 0; part[pl] != '\0' && k < (int)sizeof(sAfs[i].path) - 5; pl++) {
+            sAfs[i].path[k++] = (char)toupper((unsigned char)part[pl]);
+        }
+        snprintf(sAfs[i].path + k, sizeof(sAfs[i].path) - (size_t)k, ".AFS");
+        fp = fopen(sAfs[i].path, "rb");
+        if (fp != NULL) {
+            if (fread(head, 1, 8, fp) == 8 && memcmp(head, "AFS", 4) == 0) {
+                uint32_t count = (uint32_t)head[4] | (uint32_t)head[5] << 8 | (uint32_t)head[6] << 16 | (uint32_t)head[7] << 24;
+                uint8_t *raw = count < 0x100000 ? malloc((size_t)count * 8) : NULL;
+                if (raw != NULL && fread(raw, 8, count, fp) == count) {
+                    sAfs[i].toc = malloc((size_t)count * 8);
+                    for (k = 0; sAfs[i].toc != NULL && k < (int)count * 2; k++) {
+                        sAfs[i].toc[k] = (uint32_t)raw[k * 4] | (uint32_t)raw[k * 4 + 1] << 8 | (uint32_t)raw[k * 4 + 2] << 16 |
+                                         (uint32_t)raw[k * 4 + 3] << 24;
+                    }
+                    sAfs[i].count = sAfs[i].toc != NULL ? count : 0;
+                    fprintf(stderr, "bt3: archive %s: %u files\n", sAfs[i].path, sAfs[i].count);
+                }
+                free(raw);
+            }
+            fclose(fp);
+        }
+    }
+    if (sAfs[i].toc == NULL || (uint32_t)index >= sAfs[i].count) {
+        return 0;
+    }
+    snprintf(path, n, "%s", sAfs[i].path);
+    *base = (long)sAfs[i].toc[index * 2];
+    *size = (long)sAfs[i].toc[index * 2 + 1];
+    return 1;
+}
+
+/* The same from another thread (the labels' thread, menu_labels.c): the first look at an archive reads its table. */
+int Port_AfsSpanShared(const char *rel, char *path, unsigned n, long *base, long *size) {
+    int r;
+    while (__sync_lock_test_and_set(&sLock, 1)) {
+    }
+    r = Port_AfsSpan(rel, path, n, base, size);
+    __sync_lock_release(&sLock);
+    return r;
+}
 
 /* Opens the host file the game gets for `rel` (its path under the data root) and says which it is: a stage or a
    song added from outside the disc (the stage / song list names the file), else the file under mods/, else the
@@ -59,6 +133,7 @@ FILE *Port_FileOpenHost(const char *rel, char *path, size_t n) {
 static int slot_of(const char *rel) {
     char path[512];
     int i, old = 0;
+    long base = 0, span = -1;
     FILE *fp;
 
     for (i = 0; i < SLOTS; i++) {
@@ -68,8 +143,23 @@ static int slot_of(const char *rel) {
         }
     }
     fp = Port_FileOpenHost(rel, path, sizeof(path));
+    if (fp == NULL && Port_AfsSpan(rel, path, (unsigned)sizeof(path), &base, &span)) { /* inside the archive */
+        fp = fopen(path, "rb");
+    }
     if (fp == NULL) {
-        fprintf(stderr, "bt3: file not found: %s\n", path);
+        /* the game asks again and again for a file it cannot do without (a modified disc of another layout: a
+           phone's log grew to 120 MB of this one line): said the first times, then at every power of two */
+        static char lastMissing[256];
+        static unsigned repeats;
+        if (strcmp(lastMissing, path) != 0) {
+            snprintf(lastMissing, sizeof(lastMissing), "%s", path);
+            repeats = 0;
+        }
+        repeats++;
+        if (repeats <= 3 || (repeats & (repeats - 1)) == 0) {
+            fprintf(stderr, "bt3: file not found: %s%s\n", path,
+                    repeats > 3 ? " (asked for again and again: the game data does not have it)" : "");
+        }
         return -1;
     }
     for (i = 0; i < SLOTS; i++) {
@@ -86,8 +176,13 @@ static int slot_of(const char *rel) {
     }
     snprintf(sSlot[old].rel, sizeof(sSlot[old].rel), "%s", rel);
     sSlot[old].fp = fp;
-    fseek(fp, 0, SEEK_END);
-    sSlot[old].size = ftell(fp);
+    sSlot[old].base = base;
+    if (span >= 0) {
+        sSlot[old].size = span;
+    } else {
+        fseek(fp, 0, SEEK_END);
+        sSlot[old].size = ftell(fp);
+    }
     {
         extern int Port_StageFits(const char *rel, long size); /* plat_stages.c */
         extern int Port_StageBufSize(void);
@@ -120,9 +215,49 @@ size_t Port_FileReadAt(const char *rel, long offset, void *buf, size_t bytes) {
     while (__sync_lock_test_and_set(&sLock, 1)) {
     }
     i = slot_of(rel);
-    if (i >= 0 && fseek(sSlot[i].fp, offset, SEEK_SET) == 0) {
+    if (i >= 0 && offset >= 0 && offset < sSlot[i].size && fseek(sSlot[i].fp, sSlot[i].base + offset, SEEK_SET) == 0) {
+        if ((long)bytes > sSlot[i].size - offset) { /* (in an archive the next file follows) */
+            bytes = (size_t)(sSlot[i].size - offset);
+        }
         Port_StateTouch(buf, bytes); /* (gs/state.c: file data straight into watched memory) */
         got = fread(buf, 1, bytes, sSlot[i].fp);
+#ifdef __ANDROID__
+        {   /* BT3_TEST_READ_FAIL=<n>: the n-th read gives nothing (testing what follows) */
+            static int failAt = -1, reads;
+            if (failAt < 0) {
+                failAt = getenv("BT3_TEST_READ_FAIL") != NULL ? atoi(getenv("BT3_TEST_READ_FAIL")) : 0;
+            }
+            if (failAt > 0 && ++reads == failAt) {
+                got = 0;
+                errno = EIO;
+            }
+        }
+#endif
+        if (got < bytes) {
+            /* The game's file functions give zeros for what was not read, and on a phone the file object can stop working
+               (the shared storage's service went away and came back): a model then seemed empty and the battle crashed
+               binding it (BtlObjMdl_BindFiles+0x30, 10 devices in the players' logs, without a word why). Said, and read
+               again through a new file object. */
+            static int told;
+            int why = errno, k;
+            char rel2[128];
+            size_t first = got;
+            snprintf(rel2, sizeof(rel2), "%s", rel);
+            for (k = 0; k < 3 && got < bytes; k++) {
+                fclose(sSlot[i].fp);
+                sSlot[i].fp = NULL;
+                i = slot_of(rel2);
+                if (i < 0 || fseek(sSlot[i].fp, sSlot[i].base + offset + (long)got, SEEK_SET) != 0) {
+                    break;
+                }
+                got += fread((char *)buf + got, 1, bytes - got, sSlot[i].fp);
+            }
+            if (told < 16) {
+                told++;
+                fprintf(stderr, "bt3: reading %s: %zu of %zu bytes (%s); after opening it again %zu\n", rel2, first, bytes,
+                        strerror(why), got);
+            }
+        }
     }
     __sync_lock_release(&sLock);
     return got;

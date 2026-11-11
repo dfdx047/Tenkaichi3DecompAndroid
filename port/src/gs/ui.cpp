@@ -1157,6 +1157,10 @@ extern "C" void PortA11y_Say(const char *text, int flags);
 extern "C" const char *PortA11y_Label(const char *label);
 static void say_quit_button(int which, int flags);
 
+int Ui_Pauses(void) { /* the settings window is open and the game waits behind it (Dragon Rage's ui.h) */
+    return sReady && sOpen && !sNet;
+}
+
 int Ui_QuitAsk(void) {
     if (!sReady) {
         return 0;
@@ -1828,12 +1832,12 @@ static void video_tab(PortVideo &v) {
     char label[64];
     int best = 0, count = 0;
 
-    snprintf(label, sizeof(label), "%dx  (%d x %d)", v.scale, 512 * v.scale, 448 * v.scale);
+    snprintf(label, sizeof(label), "%gx  (%d x %d)", v.scale4 * 0.25, 512 * v.scale4 / 4, 448 * v.scale4 / 4); /* (quarters: Dragon Rage's ui.h) */
     ImGui::BeginDisabled(GsDraw_PerformanceMode() != 0);
     if (ImGui::BeginCombo(f1_text("Internal resolution"), label)) {
         for (int n = 1; n <= 8; n++) {
             snprintf(label, sizeof(label), "%dx  (%d x %d)", n, 512 * n, 448 * n);
-            if (ImGui::Selectable(label, n == v.scale)) { v.scale = n; }
+            if (ImGui::Selectable(label, n * 4 == v.scale4)) { v.scale4 = n * 4; }
         }
         ImGui::EndCombo();
     }

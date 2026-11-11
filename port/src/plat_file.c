@@ -32,6 +32,12 @@ extern void Port_TestSlow(int what, int amount); /* gs/net.c: testing, a machine
 extern size_t Port_FileReadAt(const char *rel, long offset, void *buf, size_t bytes);
 
 static char sPartDir[8][64] = {"pzs4us0", "pzs4us1", "pzs4us2", "pzs4us3"};
+static const char *partition_dir(int ptid) {
+    extern int gPortVariant; /* plat_mem.c: 1 in the BT4 build */
+    static const char *bt4[] = {"pzs4us0", "pzs4us1", "pzs4us2", "pzs4us3"};
+    if (gPortVariant && ptid >= 0 && ptid < 4) return bt4[ptid];
+    return sPartDir[ptid & 7];
+}
 char gPortMoviePath[512]; /* host path of the movie file opened last */
 int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size);
 extern void *Port_LowAlloc(size_t size); /* plat_mem.c */
@@ -109,7 +115,7 @@ int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size) {
         }
         rel[n] = '\0';
     } else {
-        snprintf(rel, sizeof(rel), "%s/%05d.bin", sPartDir[ptid & 7], flid);
+        snprintf(rel, sizeof(rel), "%s/%05d.bin", partition_dir(ptid), flid);
     }
     {
         /* The streamed audio (a song added from outside the disc) reads through this path, so the manifest's
@@ -136,10 +142,49 @@ int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size) {
         fp = fopen(out, "rb");
     }
     if (fp == NULL) {
+        /* inside the archive (plat_fcache.c): "<archive>#<offset>+<size>", which Port_OpenSpan opens */
+        extern int Port_AfsSpan(const char *rel, char *path, unsigned n, long *base, long *size);
+        char afs[400];
+        long base, span;
+        if (fname == NULL && Port_AfsSpan(rel, afs, (unsigned)sizeof(afs), &base, &span)) {
+            snprintf(out, (size_t)size, "%s#%ld+%ld", afs, base, span);
+            return 1;
+        }
         return 0;
     }
     fclose(fp);
     return 1;
+}
+
+/* Opens a path from Port_FilePath at the start of the file: a plain path, or "<archive>#<offset>+<size>".
+   *size gets the file's size. */
+FILE *Port_OpenSpan(const char *path, long *size) {
+    char host[512];
+    const char *hash = strrchr(path, '#');
+    long base = 0, span = -1;
+    FILE *fp;
+
+    if (hash != NULL && sscanf(hash + 1, "%ld+%ld", &base, &span) == 2 && (size_t)(hash - path) < sizeof(host)) {
+        memcpy(host, path, (size_t)(hash - path));
+        host[hash - path] = '\0';
+    } else {
+        snprintf(host, sizeof(host), "%s", path);
+        base = 0;
+        span = -1;
+    }
+    fp = fopen(host, "rb");
+    if (fp == NULL) {
+        return NULL;
+    }
+    if (span < 0) {
+        fseek(fp, 0, SEEK_END);
+        span = ftell(fp);
+    }
+    fseek(fp, base, SEEK_SET);
+    if (size != NULL) {
+        *size = span;
+    }
+    return fp;
 }
 
 /* "pzs3us1.afs" (any case, any directory, optional ";1") -> folder "pzs3us1". */
@@ -166,10 +211,21 @@ int ADXF_GetPtStat(int ptid) {
     return sPartDir[ptid & 7][0] != '\0' ? STAT_READEND : STAT_STOP;
 }
 
-void *ADXF_OpenAfs(int ptid, int flid) {
+/* (src/sys/file.c File_PortReadRaw) */
+int Port_FileReadRaw(int ptid, int flid, void *buf, int cap) {
     char rel[128];
 
     snprintf(rel, sizeof(rel), "%s/%05d.bin", sPartDir[ptid & 7], flid);
+    if (Port_FileSize(rel) < 0) {
+        return 0;
+    }
+    return (int)Port_FileReadAt(rel, 0, buf, (size_t)cap);
+}
+
+void *ADXF_OpenAfs(int ptid, int flid) {
+    char rel[128];
+
+    snprintf(rel, sizeof(rel), "%s/%05d.bin", partition_dir(ptid), flid);
     return open_rel(rel);
 }
 

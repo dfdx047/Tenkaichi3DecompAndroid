@@ -26,5 +26,10 @@ const char *TexPack_Path(int id);
 /* Replacement `id`'s pixels: 1 and *img (kept by the pack: valid until the next call), 0 while the file is still
    being read (in the background: ask again later), -1 if it cannot be read. */
 int TexPack_Get(int id, TexPackImage *img);
+/* A file read at once, as it is (gs_astc.cpp's conversions), and freed */
+int TexPack_Load(const char *path, TexPackImage *img);
+void TexPack_Free(TexPackImage *img);
+/* A DXT (BC1-BC3) image made 8-bit RGBA in place, levels above maxSide left out (for GPUs without DXT); 0 = failed. */
+int TexPack_Decompress(TexPackImage *img, uint32_t maxSide);
 
 #endif

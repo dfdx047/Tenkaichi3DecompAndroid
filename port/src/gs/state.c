@@ -54,8 +54,14 @@ static void regions_init(void) {
     uint32_t cap = sizeof(exe) - 1;
     long n = _NSGetExecutablePath(exe, &cap) == 0 ? (long)strlen(exe) : -1;
 #else
-    long n = (long)readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    /* (Android: the engine is a library; the app puts <BT3_EXE>.mem next to the game's files, android.py writes it) */
+    long n = getenv("BT3_EXE") != NULL ? (long)snprintf(exe, sizeof(exe), "%s", getenv("BT3_EXE"))
+                                        : (long)readlink("/proc/self/exe", exe, sizeof(exe) - 1);
 #endif
+    /* Android: the engine may have been loaded elsewhere than it was linked (loader.c); the list has the linked
+       addresses */
+    long long bias = getenv("BT3_ENGINE_BIAS") != NULL ? atoll(getenv("BT3_ENGINE_BIAS")) : 0;
+    extern int gPortScratchpadMapped; /* plat_mem.c */
 
     sRegions = 0;
     if (n > 0 && n < (long)sizeof(exe) - 1) {
@@ -77,14 +83,14 @@ static void regions_init(void) {
 #ifdef __APPLE__ /* (the list holds game addresses: offsets in the window, port_addr.h) */
                     marks += size == Port_Addr(a == 0 ? (const void *)&gPortResim : (const void *)&gPortVBlanks);
 #else
-                    marks += (uintptr_t)size == (a == 0 ? (uintptr_t)&gPortResim : (uintptr_t)&gPortVBlanks);
+                    marks += (uintptr_t)(size + (unsigned long long)bias) == (a == 0 ? (uintptr_t)&gPortResim : (uintptr_t)&gPortVBlanks);
 #endif
                     continue;
                 }
 #ifdef __APPLE__
                 sRegion[sRegions].p = (const uint8_t *)Port_Ptr((uint32_t)a);
 #else
-                sRegion[sRegions].p = (const uint8_t *)(uintptr_t)a;
+                sRegion[sRegions].p = (const uint8_t *)(uintptr_t)(a + (unsigned long long)bias);
 #endif
                 sRegion[sRegions].n = (size_t)size;
                 sRegion[sRegions].what = "globals";
@@ -106,10 +112,310 @@ static void regions_init(void) {
     sRegion[sRegions].n = heapSize;
     sRegion[sRegions].what = "heap";
     sRegions++;
-    sRegion[sRegions].p = (const uint8_t *)Port_Ptr(0x70000000u);
-    sRegion[sRegions].n = 0x4000;
-    sRegion[sRegions].what = "scratchpad";
-    sRegions++;
+    if (gPortScratchpadMapped) { /* (Android: only where its address was free; the game addresses nothing there) */
+        sRegion[sRegions].p = (const uint8_t *)Port_Ptr(0x70000000u);
+        sRegion[sRegions].n = 0x4000;
+        sRegion[sRegions].what = "scratchpad";
+        sRegions++;
+    }
+}
+
+/* ---- a world of its own, for what must leave no trace in the game (src/battle/view_a_d.c, the fighter of the character
+   selects). Port_WorldEnter keeps the game's variables and puts in them what the code left there the last time;
+   Port_WorldLeave notes what that code changed, byte by byte, and puts the game's values back. Its heap is a part of
+   the port's memory that no saved state holds, and nothing else is reached. At no point is another thread looking:
+   the game's memory is the game thread's. */
+extern uint8_t *Port_WorldArena(size_t *size);
+#define WORLD_CHUNK 4096u
+typedef struct { uint8_t *at; uint32_t len; uint32_t ofs; } WorldRun;
+static uint8_t *sWorldSaved;     /* the game's variables as they were at Port_WorldEnter */
+static size_t sWorldSavedSize;
+static WorldRun *sWorldRuns;
+static uint8_t *sWorldBytes;
+static uint32_t sWorldRunCount, sWorldRunCap, sWorldByteCount, sWorldByteCap;
+static uint32_t sWorldDma[2];
+static int sWorldDmaSize;
+static uint8_t *sWorldBase;
+static size_t sWorldLeft, sWorldSize;
+static uint32_t sWorldNext, sWorldHigh; /* (sWorldHigh: the most of the arena used since the screen began) */
+static int sWorldIn;
+static SDL_ThreadID sWorldThread;
+extern void Port_WorldLowLock(int on);
+extern void *Port_WorldLowLockVar(size_t *n);
+extern int Port_StateExtra(void **p, size_t *n, int max);
+/* The memory is there (taken here the first time): without it there is no viewer. */
+int Port_WorldCan(void) {
+    if (sRegions < 0) {
+        regions_init();
+    }
+    if (!sListed) { /* (without the list of the game's variables there is nothing to keep them apart with) */
+        return 0;
+    }
+    if (sWorldBase == NULL) {
+        sWorldBase = Port_WorldArena(&sWorldSize);
+        sWorldNext = 0;
+    }
+    return sWorldBase != NULL;
+}
+
+/* Only for the thread that went in: others keep allocating as ever while it is there. */
+int Port_WorldInHere(void) {
+    return sWorldIn && SDL_GetCurrentThreadID() == sWorldThread;
+}
+
+unsigned Port_WorldAlloc(int size, unsigned align) {
+    uint32_t at;
+
+    if (!Port_WorldInHere() || size <= 0) {
+        return 0;
+    }
+    if (align < 16) {
+        align = 16;
+    }
+    at = (sWorldNext + align - 1) & ~(align - 1);
+    if (at + (uint32_t)size > (uint32_t)sWorldSize) {
+        fprintf(stderr, "bt3: select: the viewer's memory is full (%d bytes asked)\n", size);
+        return 0;
+    }
+    sWorldNext = at + (uint32_t)size;
+    if (sWorldNext > sWorldHigh) {
+        sWorldHigh = sWorldNext;
+    }
+    return Port_Addr(sWorldBase + at);
+}
+
+int Port_WorldOwns(unsigned addr) {
+    uint8_t *p;
+
+    if (sWorldBase == NULL || addr == 0) {
+        return 0;
+    }
+    p = Port_Ptr(addr);
+    return p >= sWorldBase && p < sWorldBase + sWorldSize;
+}
+
+/* What the viewer's start-up writes into blocks the game already has, in its heap or the port's region (a few pointers):
+   found once by comparing them around it, and from then on handled like the variables, in and out with each frame. */
+typedef struct { uint8_t *at; uint8_t world, game; } WorldByte;
+static WorldByte *sWorldMem;
+static uint32_t sWorldMemCount;
+static uint8_t *sWorldScanCopy[2], *sWorldScanAt[2];
+static size_t sWorldScanSize[2];
+#define WORLD_MEM_MAX 65536u
+
+void Port_WorldCaptureBegin(void) {
+    void *xp[8];
+    size_t xn[8];
+    uint8_t *heap;
+    uint32_t heapSize;
+    int extra = Port_StateExtra(xp, xn, 8), i;
+
+    Port_HeapRegion(&heap, &heapSize);
+    sWorldScanAt[0] = heap;
+    sWorldScanSize[0] = heapSize;
+    sWorldScanAt[1] = extra >= 4 ? xp[3] : NULL;
+    sWorldScanSize[1] = extra >= 4 ? xn[3] : 0;
+    for (i = 0; i < 2; i++) {
+        sWorldScanCopy[i] = sWorldScanAt[i] != NULL ? malloc(sWorldScanSize[i]) : NULL;
+        if (sWorldScanCopy[i] != NULL) {
+            memcpy(sWorldScanCopy[i], sWorldScanAt[i], sWorldScanSize[i]);
+        }
+    }
+}
+
+void Port_WorldCaptureEnd(void) {
+    int i;
+
+    sWorldMemCount = 0;
+    if (sWorldMem == NULL) {
+        sWorldMem = malloc(WORLD_MEM_MAX * sizeof(WorldByte));
+    }
+    for (i = 0; i < 2; i++) {
+        size_t o;
+
+        if (sWorldScanCopy[i] == NULL) {
+            continue;
+        }
+        for (o = 0; o < sWorldScanSize[i]; o += WORLD_CHUNK) {
+            size_t len = sWorldScanSize[i] - o < WORLD_CHUNK ? sWorldScanSize[i] - o : WORLD_CHUNK, k;
+            uint32_t ga = Port_Addr(sWorldScanAt[i] + o);
+
+            if (sWorldDmaSize > 0 && ((ga + WORLD_CHUNK > sWorldDma[0] && ga < sWorldDma[0] + (uint32_t)sWorldDmaSize) ||
+                                      (ga + WORLD_CHUNK > sWorldDma[1] && ga < sWorldDma[1] + (uint32_t)sWorldDmaSize))) {
+                continue;
+            }
+            if (memcmp(sWorldScanAt[i] + o, sWorldScanCopy[i] + o, len) == 0) {
+                continue;
+            }
+            for (k = 0; k < len; k++) {
+                if (sWorldScanAt[i][o + k] != sWorldScanCopy[i][o + k] && sWorldMem != NULL && sWorldMemCount < WORLD_MEM_MAX) {
+                    sWorldMem[sWorldMemCount].at = sWorldScanAt[i] + o + k;
+                    sWorldMem[sWorldMemCount].game = sWorldScanCopy[i][o + k];
+                    sWorldMem[sWorldMemCount].world = sWorldScanAt[i][o + k];
+                    sWorldMemCount++;
+                }
+            }
+        }
+        free(sWorldScanCopy[i]);
+        sWorldScanCopy[i] = NULL;
+    }
+    fprintf(stderr, "bt3: select: the viewer's start-up wrote %u bytes of blocks the game has\n", sWorldMemCount);
+}
+
+void Port_WorldNoteDma(unsigned a, unsigned b, int size) {
+    sWorldDma[0] = a;
+    sWorldDma[1] = b;
+    sWorldDmaSize = size;
+}
+
+void Port_WorldEnter(void) {
+    int r;
+    size_t need = 0;
+    uint8_t *to;
+    uint32_t i;
+
+    if (sRegions < 0) {
+        regions_init();
+    }
+    Port_WorldCan();
+    for (r = 0; r < sRegions; r++) {
+        if (strcmp(sRegion[r].what, "heap") != 0) {
+            need += sRegion[r].n;
+        }
+    }
+    if (need > sWorldSavedSize) {
+        free(sWorldSaved);
+        sWorldSaved = malloc(need);
+        sWorldSavedSize = need;
+    }
+    to = sWorldSaved;
+    for (r = 0; r < sRegions; r++) {
+        if (strcmp(sRegion[r].what, "heap") != 0) {
+            memcpy(to, sRegion[r].p, sRegion[r].n);
+            to += sRegion[r].n;
+        }
+    }
+    for (i = 0; i < sWorldRunCount; i++) {
+        memcpy(sWorldRuns[i].at, sWorldBytes + sWorldRuns[i].ofs, sWorldRuns[i].len);
+    }
+    for (i = 0; i < sWorldMemCount; i++) {
+        sWorldMem[i].game = *sWorldMem[i].at;
+        *sWorldMem[i].at = sWorldMem[i].world;
+    }
+    sWorldThread = SDL_GetCurrentThreadID();
+    sWorldIn = 1;
+}
+
+static void world_note(uint8_t *at, const uint8_t *value, uint32_t len) {
+    if (sWorldRunCount == sWorldRunCap) {
+        sWorldRunCap = sWorldRunCap ? sWorldRunCap * 2 : 4096;
+        sWorldRuns = realloc(sWorldRuns, sWorldRunCap * sizeof(WorldRun));
+    }
+    if (sWorldByteCount + len > sWorldByteCap) {
+        sWorldByteCap = (sWorldByteCount + len) * 2 + 65536;
+        sWorldBytes = realloc(sWorldBytes, sWorldByteCap);
+    }
+    sWorldRuns[sWorldRunCount].at = at;
+    sWorldRuns[sWorldRunCount].len = len;
+    sWorldRuns[sWorldRunCount].ofs = sWorldByteCount;
+    memcpy(sWorldBytes + sWorldByteCount, value, len);
+    sWorldRunCount++;
+    sWorldByteCount += len;
+}
+
+void Port_WorldLeave(void) {
+    int r;
+    const uint8_t *was = sWorldSaved;
+
+    void *xp[8];
+    size_t xn[8];
+    int extra, x;
+
+    sWorldIn = 0;
+    sWorldRunCount = 0;
+    sWorldByteCount = 0;
+    /* The port's allocator: not the viewer's (it has its own memory, Port_LowAlloc), and other threads use it now. What
+       they did stays: those variables count as unchanged. */
+    Port_WorldLowLock(1);
+    extra = Port_StateExtra(xp, xn, 8);
+    if (extra > 3) {
+        extra = 3;
+    }
+    /* (and the lock itself, held just now: taken for a change of the viewer's it would come back locked next frame, and
+       nobody would ever get past it) */
+    xp[extra] = Port_WorldLowLockVar(&xn[extra]);
+    if (xp[extra] != NULL) {
+        extra++;
+    }
+    for (x = 0; x < extra; x++) {
+        const uint8_t *in = sWorldSaved;
+
+        for (r = 0; r < sRegions; r++) {
+            const uint8_t *q = xp[x];
+
+            if (strcmp(sRegion[r].what, "heap") == 0) {
+                continue;
+            }
+            if (q >= sRegion[r].p && q + xn[x] <= sRegion[r].p + sRegion[r].n) {
+                memcpy((uint8_t *)in + (q - sRegion[r].p), q, xn[x]);
+            }
+            in += sRegion[r].n;
+        }
+    }
+    for (r = 0; r < sRegions; r++) {
+        size_t n, at;
+        uint8_t *live = (uint8_t *)sRegion[r].p;
+
+        if (strcmp(sRegion[r].what, "heap") == 0) {
+            continue;
+        }
+        n = sRegion[r].n;
+        for (at = 0; at < n; at += WORLD_CHUNK) {
+            size_t len = n - at < WORLD_CHUNK ? n - at : WORLD_CHUNK;
+            size_t i = 0;
+
+            if (memcmp(live + at, was + at, len) == 0) {
+                continue;
+            }
+            while (i < len) {
+                size_t from;
+
+                if (live[at + i] == was[at + i]) {
+                    i++;
+                    continue;
+                }
+                from = i;
+                while (i < len && live[at + i] != was[at + i]) {
+                    i++;
+                }
+                world_note(live + at + from, live + at + from, (uint32_t)(i - from));
+            }
+            memcpy(live + at, was + at, len);
+        }
+        was += n;
+    }
+    Port_WorldLowLock(0);
+    {
+        uint32_t m;
+
+        for (m = 0; m < sWorldMemCount; m++) {
+            sWorldMem[m].world = *sWorldMem[m].at;
+            *sWorldMem[m].at = sWorldMem[m].game;
+        }
+    }
+}
+
+void Port_WorldForget(void) {
+    extern void Port_WorldArenaRelease(uint8_t *arena, size_t used);
+
+    sWorldMemCount = 0;
+    sWorldIn = 0;
+    sWorldRunCount = 0;
+    sWorldByteCount = 0;
+    sWorldNext = 0;
+    /* nothing in the arena is anyone's any more: its pages go back instead of staying through the fight */
+    Port_WorldArenaRelease(sWorldBase, sWorldHigh);
+    sWorldHigh = 0;
 }
 
 uint64_t Port_StateHash(void) {
@@ -206,7 +512,7 @@ void Port_StateLog(unsigned vblank, const void *fight, unsigned fightSize) {
  *                    one's checksum, restore, run the n again and compare each. What online play does when an
  *                    input arrives late: several frames are undone and replayed.
  * ------------------------------------------------------------------------------------------------------------- */
-#if defined(__x86_64__) || defined(__APPLE__)
+#if defined(__x86_64__) || defined(__aarch64__) || defined(__APPLE__)
 #ifdef __APPLE__
 /* macOS: as on Windows, the registers are kept with a setjmp (the C library's, without the signal mask: macOS has
    no ucontext functions on arm64) and the copy back runs on another stack through the port's stack switch. */
@@ -217,6 +523,61 @@ extern void Port_CallOnStack(void (*fn)(void), void *top);
    continue; everything else counts as lost over it, which is what a restore is), and the copy back runs on another
    stack through the port's stack switch (plat_mem.c). */
 extern void Port_CallOnStack(void (*fn)(void), void *top);
+#elif defined(__aarch64__)
+/* AArch64 (Android): no getcontext there. The registers a call keeps (x19..x30, the stack pointer, d8..d15) are
+   saved by port_jmp_save, which returns 0, and port_jmp_jump puts them back and returns 1 from that save, as the
+   Windows path does with setjmp; the copy back runs on another stack (call_on_stack). x18 is the platform's and is
+   left alone (it is the same thread). */
+typedef struct PortJmp { uint64_t r[21]; } PortJmp; /* x19..x28, x29, x30, sp, d8..d15 */
+extern int port_jmp_save(PortJmp *j) __attribute__((returns_twice));
+extern void port_jmp_jump(PortJmp *j) __attribute__((noreturn));
+__asm__(".text\n"
+        ".p2align 2\n"
+        ".globl port_jmp_save\n"
+        ".hidden port_jmp_save\n"
+        ".type port_jmp_save, %function\n"
+        "port_jmp_save:\n"
+        "    stp x19, x20, [x0, #0]\n"
+        "    stp x21, x22, [x0, #16]\n"
+        "    stp x23, x24, [x0, #32]\n"
+        "    stp x25, x26, [x0, #48]\n"
+        "    stp x27, x28, [x0, #64]\n"
+        "    stp x29, x30, [x0, #80]\n"
+        "    mov x16, sp\n"
+        "    str x16, [x0, #96]\n"
+        "    stp d8, d9, [x0, #104]\n"
+        "    stp d10, d11, [x0, #120]\n"
+        "    stp d12, d13, [x0, #136]\n"
+        "    stp d14, d15, [x0, #152]\n"
+        "    mov w0, #0\n"
+        "    ret\n"
+        ".size port_jmp_save, .-port_jmp_save\n"
+        ".p2align 2\n"
+        ".globl port_jmp_jump\n"
+        ".hidden port_jmp_jump\n"
+        ".type port_jmp_jump, %function\n"
+        "port_jmp_jump:\n"
+        "    ldp x19, x20, [x0, #0]\n"
+        "    ldp x21, x22, [x0, #16]\n"
+        "    ldp x23, x24, [x0, #32]\n"
+        "    ldp x25, x26, [x0, #48]\n"
+        "    ldp x27, x28, [x0, #64]\n"
+        "    ldp x29, x30, [x0, #80]\n"
+        "    ldr x16, [x0, #96]\n"
+        "    mov sp, x16\n"
+        "    ldp d8, d9, [x0, #104]\n"
+        "    ldp d10, d11, [x0, #120]\n"
+        "    ldp d12, d13, [x0, #136]\n"
+        "    ldp d14, d15, [x0, #152]\n"
+        "    mov w0, #1\n"
+        "    ret\n"
+        ".size port_jmp_jump, .-port_jmp_jump\n");
+
+/* fn on the stack that ends at top (16-byte aligned); fn does not come back. */
+static void __attribute__((noinline, noreturn)) call_on_stack(void (*fn)(void), void *top) {
+    __asm__ volatile("mov sp, %1\n\tblr %0\n\tbrk #0" : : "r"(fn), "r"(top) : "memory");
+    __builtin_unreachable();
+}
 #else
 #include <ucontext.h>
 #endif
@@ -234,6 +595,8 @@ typedef struct Snapshot {
     jmp_buf jb;
 #elif defined(_WIN32)
     void *jb[5];
+#elif defined(__aarch64__)
+    PortJmp jb;
 #else
     ucontext_t ctx;
 #endif
@@ -291,6 +654,11 @@ static int __attribute__((noinline)) state_save(Snapshot *s) {
         return 1;
     }
     return 0;
+#elif defined(__aarch64__)
+    if (port_jmp_save(&s->jb) != 0) {
+        return 1;
+    }
+    return 0;
 #else
     getcontext(&s->ctx);
     return s->loaded;
@@ -298,7 +666,7 @@ static int __attribute__((noinline)) state_save(Snapshot *s) {
 }
 
 static Snapshot *sLoading;
-#if !defined(_WIN32) && !defined(__APPLE__)
+#if !defined(_WIN32) && !defined(__aarch64__)
 static ucontext_t sLoaderCtx;
 #endif
 
@@ -314,6 +682,8 @@ static void loader(void) {
     _longjmp(s->jb, 1);
 #elif defined(_WIN32)
     __builtin_longjmp(s->jb, 1);
+#elif defined(__aarch64__)
+    port_jmp_jump(&s->jb);
 #else
     setcontext(&s->ctx);
 #endif
@@ -330,6 +700,8 @@ static void state_load(Snapshot *s) {
     sLoading = s;
 #if defined(_WIN32) || defined(__APPLE__)
     Port_CallOnStack(loader, stack + (1 << 20) - 64); /* (does not come back: the loader continues at the save) */
+#elif defined(__aarch64__)
+    call_on_stack(loader, stack + (1 << 20) - 64);
 #else
     getcontext(&sLoaderCtx);
     sLoaderCtx.uc_stack.ss_sp = stack;
@@ -397,6 +769,30 @@ typedef struct Roll {
 static Roll *sRoll[ROLL_MAX];
 static int sRolls;
 static uint32_t sRollId;
+/* Online Tag Team goes back at most its ROLLBACK (8) blanks and one (tag_net.c: it waits rather than run further
+   ahead): 32 saves are kept there, not 64. Each save holds its own copy of the game's variables (about 2 MB), so the
+   other 32 were about 64 MB of the phone's memory that no rollback could ever use. BT3's own online keeps 64. */
+#define ROLL_TAG 32
+/* A save's list grown past this by one heavy blank (a load) is let go when the ring is forgotten, not kept for good. */
+#define ROLL_KEEP_PAGES 1024u
+
+static void roll_free(Roll *r) {
+    int k;
+    if (r == NULL) {
+        return;
+    }
+    for (k = 0; k < MAX_PARTS; k++) {
+        free(r->small.part[k].copy);
+    }
+    free(r->pg);
+    free(r->data);
+    free(r);
+}
+
+static int roll_limit(void) {
+    extern int TagNet_Active(void);
+    return TagNet_Active() ? ROLL_TAG : ROLL_MAX;
+}
 
 static int tracked_part(const uint8_t *p) {
     int t;
@@ -659,7 +1055,7 @@ static int cmp_u32(const void *a, const void *b) {
 static int __attribute__((noinline)) roll_save(void) {
     Roll *r, *prev;
     uint32_t i, n;
-    int back;
+    int back, limit;
 
     if (!sTracking) {
         track_start();
@@ -683,9 +1079,15 @@ static int __attribute__((noinline)) roll_save(void) {
         memcpy(sh, m, PG);
     }
     dirty_rearm();
-    if (sRolls == ROLL_MAX) { /* the oldest goes; its storage is used for the new one */
-        r = sRoll[0];
-        memmove(&sRoll[0], &sRoll[1], sizeof(sRoll[0]) * (ROLL_MAX - 1));
+    limit = roll_limit();
+    if (sRolls >= limit) {
+        while (sRolls > limit) { /* (deeper than allowed now: the oldest go for good, their places emptied) */
+            roll_free(sRoll[0]);
+            memmove(&sRoll[0], &sRoll[1], sizeof(sRoll[0]) * (size_t)(sRolls - 1));
+            sRoll[--sRolls] = NULL;
+        }
+        r = sRoll[0]; /* the oldest goes; its storage is used for the new one */
+        memmove(&sRoll[0], &sRoll[1], sizeof(sRoll[0]) * (size_t)(sRolls - 1));
         sRolls--;
     } else if (sRoll[sRolls] != NULL) {
         r = sRoll[sRolls];
@@ -738,6 +1140,33 @@ static void roll_back(int k) {
     }
     sRollLoading = 1;
     state_load(&r->small);
+}
+
+/* Online Tag Team, the first blank of a match (tag_net.c): the saves of the match before are never gone back to.
+   Kept, the match's first save put everything written since the last one (the menus, the whole battle's load: tens of
+   MB) into the list of a save of the OLD match: a long stall on the first blank, and that list's memory held for good,
+   another one after each match. Forgotten, every match starts as the first one after the app opens does. The
+   storage of saves beyond Tag's depth, and lists grown large by one heavy blank, go back to the system. */
+void Port_RollForget(void) {
+    int i;
+    sRolls = 0;
+    for (i = 0; i < ROLL_MAX; i++) {
+        Roll *r = sRoll[i];
+        if (r == NULL) {
+            continue;
+        }
+        if (i >= ROLL_TAG) {
+            roll_free(r);
+            sRoll[i] = NULL;
+        } else if (r->cap > ROLL_KEEP_PAGES) {
+            free(r->pg);
+            free(r->data);
+            r->pg = NULL;
+            r->data = NULL;
+            r->cap = 0;
+            r->n = 0;
+        }
+    }
 }
 
 /* For online play (gs/net.c). */
@@ -991,13 +1420,17 @@ void Port_SessionPoll(void) {
 
 /* The session is over: the kept state comes back (does not return). */
 void Port_SessionReturn(void) {
+    extern void PortCharSel_Abandon(void);
+
     Port_NetSessionEnd();
+    PortCharSel_Abandon(); /* (left in the middle of a character select: its End will not run) */
     state_load(&sOwn);
 }
 #else
 int Port_RollCan(void) { return 0; }
 int Port_RollSave(void) { return 0; }
 void Port_RollBack(int k) { (void)k; }
+void Port_RollForget(void) {}
 void Port_StateTouch(void *p, unsigned long n) { (void)p; (void)n; }
 volatile int gPortNetWindowClose;
 void Port_SyncTest(unsigned vblank) { (void)vblank; }

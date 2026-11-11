@@ -74,7 +74,23 @@ static inline double wide(uint32_t u, unsigned *bad) {
  * ---------------------------------------------------------------------------------------------------------- */
 #include "softfloat_ps2_inl.h"
 
-uint32_t Port_FastMul(uint32_t a, uint32_t b) {
+/* The long ways, out of line: inlined into the quick functions they made every call save a dozen registers. */
+static __attribute__((noinline)) uint32_t long_mul(uint32_t a, uint32_t b) { return mul_core(a, b, 0); }
+static __attribute__((noinline)) uint32_t long_add(uint32_t a, uint32_t b) { return add_core(a, b, 0); }
+
+/* The experiment switches (softfloat_ps2_inl.h mode()), read once: 1 when the game's FPU (fpu) or the vector unit
+   (vu) must take the long way. */
+static int sSwitches = -1;
+static __attribute__((noinline)) int read_switches(void) {
+    sSwitches = (mode(1) | mode(3)) | (mode(0) | mode(2)) << 1;
+    return sSwitches;
+}
+static inline int switches(void) {
+    int s = sSwitches;
+    return __builtin_expect(s < 0, 0) ? read_switches() : s;
+}
+
+static inline uint32_t fast_mul(uint32_t a, uint32_t b) {
     if ((uint32_t)(EXP(a) - 1) < 254u && (uint32_t)(EXP(b) - 1) < 254u) {
         float fa, fb, f;
         uint64_t u;
@@ -92,10 +108,10 @@ uint32_t Port_FastMul(uint32_t a, uint32_t b) {
             return a;
         }
     }
-    return mul_core(a, b, 0);
+    return long_mul(a, b);
 }
 
-uint32_t Port_FastAdd(uint32_t a, uint32_t b) {
+static inline uint32_t fast_add(uint32_t a, uint32_t b) {
     if ((uint32_t)(EXP(a) - 1) < 254u && (uint32_t)(EXP(b) - 1) < 254u && (uint32_t)((int32_t)EXP(a) - (int32_t)EXP(b) + 28) <= 56u) {
         float fa, fb, f;
         uint64_t u;
@@ -113,37 +129,142 @@ uint32_t Port_FastAdd(uint32_t a, uint32_t b) {
             return a;
         }
     }
-    return add_core(a, b, 0);
+    return long_add(a, b);
 }
+
+uint32_t Port_FastMul(uint32_t a, uint32_t b) { return fast_mul(a, b); }
+uint32_t Port_FastAdd(uint32_t a, uint32_t b) { return fast_add(a, b); }
+
+/* ------------------------------------------------------------------------------------------------------------
+ * The game's own float add, subtract and multiply (the calls -msoft-float makes for every one of them). They were
+ * in softfloat_ps2.c, which is software float itself and so had to call Port_FastAdd / Port_FastMul in turn: two
+ * calls per operation. Here, one. The same results: fpu_add's operand cut, then the quick way or the long way of
+ * softfloat_ps2_inl.h; the experiment switches (BT3_FPU_NEAREST, BT3_FPU_NOADDHACK) take the long way as before.
+ * softfloat_ps2.c keeps its own definitions for builds without SF_FAST_CALLS (port/tests/ps2float).
+ * ---------------------------------------------------------------------------------------------------------- */
+static __attribute__((noinline)) uint32_t slow_fpu_add(uint32_t a, uint32_t b) { return fpu_add(a, b); }
+static __attribute__((noinline)) uint32_t slow_fpu_mul(uint32_t a, uint32_t b) { return mul_core(a, b, mode(1)); }
+
+static inline __attribute__((always_inline)) uint32_t game_add(uint32_t a, uint32_t b) {
+    int32_t d;
+
+    if (__builtin_expect(switches() & 1, 0)) {
+        return slow_fpu_add(a, b);
+    }
+    d = (int32_t)EXP(a) - (int32_t)EXP(b);
+    if (d >= 25) {
+        b &= SIGN;
+    } else if (d > 0) {
+        b &= 0xFFFFFFFFu << (d - 1);
+    } else if (d <= -25) {
+        a &= SIGN;
+    } else if (d < 0) {
+        a &= 0xFFFFFFFFu << (-d - 1);
+    }
+    return fast_add(a, b);
+}
+
+uint32_t __addsf3(uint32_t a, uint32_t b) { return game_add(a, b); }
+uint32_t __subsf3(uint32_t a, uint32_t b) { return game_add(a, b ^ SIGN); }
+uint32_t __mulsf3(uint32_t a, uint32_t b) { return __builtin_expect(switches() & 1, 0) ? slow_fpu_mul(a, b) : fast_mul(a, b); }
+
+/* The compiler's vector types, two components per register: NEON on arm64 (Android), SSE2 on x86. Lane by lane
+   they are mul / add / wide / cut above; `bad` collects lanes' flags as all-ones masks. */
+typedef double V2d __attribute__((vector_size(16)));
+typedef uint64_t V2u __attribute__((vector_size(16)));
+typedef int64_t V2i __attribute__((vector_size(16)));
+
+static inline V2u v_bits(V2d x) { V2u u; __builtin_memcpy(&u, &x, 16); return u; }
+static inline V2d v_dbl(V2u u) { V2d x; __builtin_memcpy(&x, &u, 16); return x; }
+
+/* a lane's exponent field 0 (zero) or 897..1150 (ordinary single): 0 there, all ones otherwise */
+static inline V2u v_out_of_range(V2u u) {
+    V2u e = (u >> 52) & 0x7FF;
+    return (V2u)((e != 0) & ((e - 897u) > 253u));
+}
+
+static inline V2d v_cut(V2d x, V2u *bad) {
+    V2u u = v_bits(x) & ~(uint64_t)0x1FFFFFFF;
+    *bad |= v_out_of_range(u);
+    return v_dbl(u);
+}
+
+static inline V2d v_mul(V2d a, V2d b, V2u *bad) {
+    return v_cut(a * b, bad);
+}
+
+static inline V2d v_add(V2d a, V2d b, V2u *bad) {
+    V2u ua = v_bits(a), ub = v_bits(b), ea = (ua >> 52) & 0x7FF, eb = (ub >> 52) & 0x7FF;
+    V2u far = (V2u)((ea != 0) & (eb != 0) & ((ea - eb + 28u) > 56u));
+    V2u aBig = (V2u)((ua << 1) > (ub << 1));
+    V2u big = (aBig & ua) | (~aBig & ub), u;
+
+    big -= ((ua ^ ub) >> 63) << 29;
+    u = v_bits(a + b) & ~(uint64_t)0x1FFFFFFF;
+    u = (far & big) | (~far & u);
+    *bad |= v_out_of_range(u);
+    return v_dbl(u);
+}
+
+/* two singles as doubles; flags what is not an ordinary number or a true zero (one widening instruction: fcvtl) */
+typedef float V2f __attribute__((vector_size(8)));
+typedef uint32_t V2w __attribute__((vector_size(8)));
+static inline V2d v_wide(const uint32_t *p, V2u *bad) {
+    V2w w;
+    V2f f;
+    V2u u, e;
+
+    __builtin_memcpy(&w, p, 8);
+    __builtin_memcpy(&f, p, 8);
+    u = __builtin_convertvector(w, V2u);
+    e = (u >> 23) & 0xFF;
+    *bad |= (V2u)(((e - 1u) > 253u) & ((u & 0x7FFFFFFFu) != 0));
+    return __builtin_convertvector(f, V2d);
+}
+
+static inline V2d v_splat(double x) { return (V2d){x, x}; }
+
+static inline void v_store(uint32_t *out, V2d lo, V2d hi) { /* exact: 24 bits, in range (fcvtn) */
+    V2f a = __builtin_convertvector(lo, V2f), b = __builtin_convertvector(hi, V2f);
+    __builtin_memcpy(out, &a, 8);
+    __builtin_memcpy(out + 2, &b, 8);
+}
+
+static inline int v_any(V2u bad) { return (bad[0] | bad[1]) != 0; }
 
 /*
  * per component c: ((r0.c * v.x + r1.c * v.y) + r2.c * v.z) + r3.c * v.w      (mtx_apply of src/port/vu0_b.c)
  * r: four rows of four singles, v: four singles, out: four singles. Returns 1 if out was written.
  */
-#ifndef __SSE2__
+#if !defined(__SSE2__) || defined(FASTVEC_GENERIC)
+/*
+ * The same with the compiler's vector types, two components per register: NEON on arm64 (Android), SSE2 on x86
+ * when FASTVEC_GENERIC is defined (port/tools/fastvec_check.c builds it that way too, so this is checked on a PC
+ * bit for bit, with the arithmetic that the phone does: IEEE double add / multiply, no fused multiply-add).
+ * Measured on a Redmi Note 13 Pro (Cortex-A78): 103 -> 101 ns against the scalar version it replaces.
+ */
 int Port_FastMtxApply(const uint32_t *r, const uint32_t *v, uint32_t *out) {
-    unsigned bad = 0;
-    double vx = wide(v[0], &bad), vy = wide(v[1], &bad), vz = wide(v[2], &bad), vw = wide(v[3], &bad);
-    double acc[4];
-    int c;
+    V2u bad = {0, 0};
+    V2d vlo = v_wide(v, &bad), vhi = v_wide(v + 2, &bad);
+    V2d vx = v_splat(vlo[0]), vy = v_splat(vlo[1]), vz = v_splat(vhi[0]), vw = v_splat(vhi[1]);
+    V2d lo, hi;
 
-    for (c = 0; c < 4; c++) {
-        double a = mul(wide(r[c], &bad), vx, &bad);
-        a = add(a, mul(wide(r[4 + c], &bad), vy, &bad), &bad);
-        a = add(a, mul(wide(r[8 + c], &bad), vz, &bad), &bad);
-        a = add(a, mul(wide(r[12 + c], &bad), vw, &bad), &bad);
-        acc[c] = a;
-    }
-    if (bad) {
+    lo = v_mul(v_wide(r, &bad), vx, &bad);
+    hi = v_mul(v_wide(r + 2, &bad), vx, &bad);
+    lo = v_add(lo, v_mul(v_wide(r + 4, &bad), vy, &bad), &bad);
+    hi = v_add(hi, v_mul(v_wide(r + 6, &bad), vy, &bad), &bad);
+    lo = v_add(lo, v_mul(v_wide(r + 8, &bad), vz, &bad), &bad);
+    hi = v_add(hi, v_mul(v_wide(r + 10, &bad), vz, &bad), &bad);
+    lo = v_add(lo, v_mul(v_wide(r + 12, &bad), vw, &bad), &bad);
+    hi = v_add(hi, v_mul(v_wide(r + 14, &bad), vw, &bad), &bad);
+    if (v_any(bad)) {
         return 0;
     }
-    for (c = 0; c < 4; c++) {
-        float f = (float)acc[c]; /* exact: 24 bits, in range */
-        __builtin_memcpy(&out[c], &f, sizeof(f));
-    }
+    v_store(out, lo, hi);
     return 1;
 }
-#else
+
+#else /* SSE2: the PC */
 /*
  * The same with SSE2, two components per register (the functions above, lane by lane; `bad` collects lanes'
  * flags as all-ones masks). The check program runs whichever of the two the compiler flags select.
@@ -227,3 +348,83 @@ int Port_FastMtxApply(const uint32_t *r, const uint32_t *v, uint32_t *out) {
     return 1;
 }
 #endif
+
+/* ------------------------------------------------------------------------------------------------------------
+ * The vector unit's four-component add / multiply / multiply-add (src/port/vu0_a.c op_vadd, op_vmulbc, op_vmaddbc
+ * ..., the Vec4 / Vec3 routines of vu0_b.c): out[i] = a[i] + b[i], a[i] * b[i], acc[i] + a[i] * b[i], each operation
+ * truncated as Sf_AddBits / Sf_MulBits do. One call for the four components instead of one per component (two
+ * for the multiply-add). Measured on a Redmi Note 13 Pro (Cortex-A78): an add of four 30 -> 21 ns, a multiply-add
+ * of four 62 -> 42 ns. Component by component, not in NEON registers: the two-lane double version (as
+ * Port_FastMtxApply) was SLOWER there (41 / 53 ns), its exactness checks cost more than the arithmetic.
+ * ---------------------------------------------------------------------------------------------------------- */
+static inline int vu_plain(void) { return !(switches() & 2); } /* (the experiment switches: the usual way) */
+static __attribute__((noinline)) void slow_add4(const uint32_t *a, const uint32_t *b, uint32_t *out) {
+    int i;
+    for (i = 0; i < 4; i++) {
+        out[i] = Sf_AddBits(a[i], b[i]);
+    }
+}
+static __attribute__((noinline)) void slow_mul4(const uint32_t *a, const uint32_t *b, uint32_t *out) {
+    int i;
+    for (i = 0; i < 4; i++) {
+        out[i] = Sf_MulBits(a[i], b[i]);
+    }
+}
+static __attribute__((noinline)) void slow_madd4(const uint32_t *acc, const uint32_t *a, const uint32_t *b, uint32_t *out) {
+    int i;
+    for (i = 0; i < 4; i++) {
+        out[i] = Sf_AddBits(acc[i], Sf_MulBits(a[i], b[i]));
+    }
+}
+
+void Port_Vu0Add4(const uint32_t *a, const uint32_t *b, uint32_t *out) {
+    int i;
+
+    if (__builtin_expect(!vu_plain(), 0)) {
+        slow_add4(a, b, out);
+        return;
+    }
+    for (i = 0; i < 4; i++) {
+        out[i] = fast_add(a[i], b[i]);
+    }
+}
+
+void Port_Vu0Mul4(const uint32_t *a, const uint32_t *b, uint32_t *out) {
+    int i;
+
+    if (__builtin_expect(!vu_plain(), 0)) {
+        slow_mul4(a, b, out);
+        return;
+    }
+    for (i = 0; i < 4; i++) {
+        out[i] = fast_mul(a[i], b[i]);
+    }
+}
+
+void Port_Vu0Madd4(const uint32_t *acc, const uint32_t *a, const uint32_t *b, uint32_t *out) {
+    int i;
+
+    if (__builtin_expect(!vu_plain(), 0)) {
+        slow_madd4(acc, a, b, out);
+        return;
+    }
+    for (i = 0; i < 4; i++) {
+        out[i] = fast_add(acc[i], fast_mul(a[i], b[i]));
+    }
+}
+
+/* The whole-number square root of n < 2^48 (src/port/vu0_a.c RefVu0_SqrtBits: the vector unit's and the FPU's
+   sqrt, truncated): the processor's double square root, then put right by one where it rounded up. n and every
+   square compared are exact in 64-bit integers. Checked for every n the root can get (port/tools/fastvec_check.c);
+   it replaced a loop of 24 steps. */
+uint64_t Port_FastIsqrt48(uint64_t n) {
+    uint64_t r = (uint64_t)__builtin_sqrt((double)n);
+
+    while (r * r > n) {
+        r--;
+    }
+    while ((r + 1) * (r + 1) <= n) {
+        r++;
+    }
+    return r;
+}

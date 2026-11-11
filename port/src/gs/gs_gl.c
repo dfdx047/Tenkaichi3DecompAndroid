@@ -1,5 +1,6 @@
 /*
- * Graphics Synthesizer, OpenGL back end (GL 3.3 core: SDL3 window + a core context).
+ * Graphics Synthesizer, OpenGL back end (GL 3.3 core: SDL3 window + a core context; on Android OpenGL ES 3.2, the
+ * same code with the shaders translated to GLSL ES and the few things ES lacks left out, see GL_ES below).
  *
  * gs_draw.c records the frame (every primitive as a GsDraw, the vertices, the decoded textures) and installs
  * this file as the sGlBackend. It owns the GL objects (programs translated from the Vulkan GLSL at run time,
@@ -39,6 +40,17 @@ static SDL_EGLAttrib *SDLCALL angle_platform(void *unused) {
     return attrs; /* EGL_PLATFORM_ANGLE_TYPE_ANGLE = D3D11; EGL_NONE */
 }
 #endif
+extern int Port_PageAspectMilli(void); /* plat_stub.c: 4:3 while the menus run, if asked for */
+
+/* Android: OpenGL ES 3.2 (every function used here is in it). What it lacks against desktop GL 3.3: depth clamping
+   (GL_EXT_depth_clamp where the driver has it), S3TC (DXT) textures (a texture pack's .dds files are then unpacked to
+   RGBA on the CPU, gs_draw.c), a default point size (the shaders write one). */
+#ifdef __ANDROID__
+#define GL_ES 1
+#else
+#define GL_ES 0
+#endif
+int gGsNoBcTextures; /* gs_draw.c: the renderer cannot take BC1-BC3 (DXT) textures: a pack's .dds are unpacked to RGBA */
 
 /* ---- GL 3.3 core entry points (loaded through SDL_GL_GetProcAddress) ------------------------------ */
 typedef unsigned int GLenum; typedef unsigned int GLuint; typedef int GLint; typedef int GLsizei;
@@ -89,7 +101,10 @@ typedef void GLvoid; typedef ptrdiff_t GLsizeiptr; typedef ptrdiff_t GLintptr; t
     X(glUniform2f, void, (GLint, GLfloat, GLfloat), (GLint, GLfloat, GLfloat)) \
     X(glGetUniformBlockIndex, GLuint, (GLuint, const GLchar *), (GLuint, const GLchar *)) \
     X(glUniformBlockBinding, void, (GLuint, GLuint, GLuint), (GLuint, GLuint, GLuint)) \
-    X(glBindBufferBase, void, (GLenum, GLuint, GLuint), (GLenum, GLuint, GLuint))     X(glBindBufferRange, void, (GLenum, GLuint, GLuint, GLintptr, GLsizeiptr), (GLenum, GLuint, GLuint, GLintptr, GLsizeiptr)) \
+    X(glBindBufferBase, void, (GLenum, GLuint, GLuint), (GLenum, GLuint, GLuint)) \
+    X(glBindBufferRange, void, (GLenum, GLuint, GLuint, GLintptr, GLsizeiptr), (GLenum, GLuint, GLuint, GLintptr, GLsizeiptr)) \
+    X(glMapBufferRange, void *, (GLenum, GLintptr, GLsizeiptr, GLbitfield), (GLenum, GLintptr, GLsizeiptr, GLbitfield)) \
+    X(glUnmapBuffer, GLboolean, (GLenum), (GLenum)) \
     X(glGenBuffers, void, (GLsizei, GLuint *), (GLsizei, GLuint *)) \
     X(glBindBuffer, void, (GLenum, GLuint), (GLenum, GLuint)) \
     X(glBufferData, void, (GLenum, GLsizeiptr, const void *, GLenum), (GLenum, GLsizeiptr, const void *, GLenum)) \
@@ -229,75 +244,9 @@ static int load_gl(void) {
     return 1;
 }
 
-/* ---- shader translation: Vulkan GLSL 450 -> GL 3.3 core ------------------------------------------ */
-/* The rules port/tools/glprobe.c proved on hardware: #version, strip layout(set/binding) on uniforms and
-   samplers, gl_VertexIndex -> gl_VertexID, and layout(location) kept only where GL 3.3 core allows it
-   (vertex inputs and fragment outputs). */
-static char *translate(const char *src, int is_vertex) {
-    size_t cap = strlen(src) + 128, len = 0;
-    char *out = malloc(cap);
-#define PUSHN(s, n_) do { size_t _n = (n_); \
-    while (len + _n + 1 > cap) cap *= 2; out = realloc(out, cap); memcpy(out + len, (s), _n); len += _n; } while (0)
-#define PUSH(str) PUSHN((str), strlen(str))
-    const char *p = src;
-    while (*p) {
-        if (!strncmp(p, "#version 450", 12)) {
-            if (sAngleApi) {
-                PUSH("#version 300 es\n");
-                if (sConservativeDepth) { PUSH("#extension GL_EXT_conservative_depth : require\n"); }
-                PUSH("precision highp float;\nprecision highp int;\nprecision highp sampler2D;");
-            } else { PUSH("#version 330 core"); }
-            p += 12; continue;
-        }
-        if (!strncmp(p, "gl_VertexIndex", 14)) { PUSH("gl_VertexID"); p += 14; continue; }
-        if (!sConservativeDepth && !strncmp(p, "layout(depth_less)", 18)) {
-            while (*p && *p != '\n') { p++; }
-            continue;
-        }
-        if (!strncmp(p, "layout(set", 10)) {
-            const char *e = strchr(p, ')');
-            if (e) { p = e + 1; if (*p == ' ') p++; continue; }
-        }
-        if (!strncmp(p, "layout(location", 15)) {
-            const char *e = strchr(p, ')');
-            if (e) {
-                const char *q = e + 1;
-                while (*q == ' ' || *q == '\t') q++;
-                int in_out = !strncmp(q, "in ", 3) || !strncmp(q, "out ", 4);
-                int bad = in_out && (is_vertex ? !strncmp(q, "out ", 4) : !strncmp(q, "in ", 3));
-                if (bad) { p = q; continue; }
-                PUSHN(p, (size_t)(e + 1 - p));
-                p = e + 1;
-                continue;
-            }
-        }
-        out[len++] = *p++;
-    }
-    out[len] = 0;
-    /* SDL GPU (Vulkan) maps clip-space +Y to the TOP of the render target; OpenGL maps it to the BOTTOM, so
-       the same shader would store the picture in the other half of the target (black window). Voltear
-       gl_Position.y makes OpenGL store the picture exactly where the Vulkan back end does, so the present,
-       the screenshots, gl_FragCoord and every texture taken from a target all agree. */
-    if (is_vertex) {
-        char *m = strstr(out, "void main");
-        if (m != NULL) {
-            size_t rest = strlen(m + 5) + 1;
-            memmove(m + 8, m + 5, rest);
-            memcpy(m + 5, "gs_", 3);
-            len += 3;
-        }
-        /* Depth: the shaders put z in Vulkan's clip range (0..w, stored as z / w). OpenGL's is -w..w, stored as
-           0.5 + z / 2w, unless glClipControl(GL_ZERO_TO_ONE) is there (GL 4.5 / ARB_clip_control); without it z
-           is moved to OpenGL's range here so that the stored depth is again z / w (the fog pass reads it). */
-        PUSH(sHasClipControl ? "\nvoid main() { gs_main(); gl_Position.y = -gl_Position.y; }\n"
-                             : "\nvoid main() { gs_main(); gl_Position.y = -gl_Position.y; gl_Position.z = 2.0 * gl_Position.z - gl_Position.w; }\n");
-        out[len] = 0;
-    }
-#undef PUSH
-#undef PUSHN
-    return out;
-}
+#include "gl_translate.h"
 
+static int sGlFailed; /* a shader did not compile or link (Android: the renderer gives up, see gl_init) */
 static GLuint compile(GLenum stage, const char *src, const char *tag) {
     GLuint sh = glCreateShader(stage);
     GLint ok = 0;
@@ -319,13 +268,19 @@ static GLuint compile(GLenum stage, const char *src, const char *tag) {
         glGetShaderInfoLog(sh, n, NULL, log);
         fprintf(stderr, "bt3: gl: %s compile FAILED\n%s\n", tag, log);
         free(log);
+#if GL_ES
+        sGlFailed = 1; /* (Android: gl_init gives up and the Vulkan renderer is started instead) */
+        glDeleteShader(sh);
+        return 0;
+#else
         exit(1);
+#endif
     }
     return sh;
 }
 
-static GLuint make_program(const unsigned char *vsrc, const unsigned char *fsrc, const char *tag, const char *const *samplers, int ns) {
-    char *vt = translate((const char *)vsrc, 1), *ft = translate((const char *)fsrc, 0);
+static GLuint make_program(const unsigned char *vsrc, const unsigned char *fsrc, const char *tag, const char *const *samplers, int ns, int nodiscard) {
+    char *vt = gl_translate((const char *)vsrc, 1, GL_ES || sAngleApi, 0, sHasClipControl), *ft = gl_translate((const char *)fsrc, 0, GL_ES || sAngleApi, nodiscard, sHasClipControl);
     GLuint v = compile(GL_VERTEX_SHADER, vt, tag), f = compile(GL_FRAGMENT_SHADER, ft, tag), p;
     GLint ok = 0, i;
     free(vt); free(ft);
@@ -341,7 +296,12 @@ static GLuint make_program(const unsigned char *vsrc, const unsigned char *fsrc,
         glGetProgramInfoLog(p, n, NULL, log);
         fprintf(stderr, "bt3: gl: %s link FAILED\n%s\n", tag, log);
         free(log);
+#if GL_ES
+        sGlFailed = 1;
+        return 0;
+#else
         exit(1);
+#endif
     }
     glDeleteShader(v);
     glDeleteShader(f);
@@ -362,11 +322,16 @@ static GLuint make_program(const unsigned char *vsrc, const unsigned char *fsrc,
    set to the letterboxed rectangle. (A textured quad, as the OpenGL framebuffer guide does it, instead of a
    scaled/flipped blit.) */
 static GLuint make_present_program(void) {
-    static const char *vs = "#version 330 core\nout vec2 vUv;\nvoid main() {\n"
+#if GL_ES
+#define PRESENT_HEAD "#version 300 es\nprecision highp float;\n"
+#else
+#define PRESENT_HEAD "#version 330 core\n"
+#endif
+    static const char *vs = PRESENT_HEAD "out vec2 vUv;\nvoid main() {\n"
         "    vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);\n"
         "    vUv = vec2((p.x + 1.0) * 0.5, (1.0 - p.y) * 0.5);\n"  /* y flipped: the scene's top row to the window's top */
         "    gl_Position = vec4(p, 0.0, 1.0);\n}\n";
-    static const char *fs = "#version 330 core\nin vec2 vUv;\nout vec4 o;\nuniform sampler2D tex;\nuniform vec2 uvScale;\n"
+    static const char *fs = PRESENT_HEAD "in vec2 vUv;\nout vec4 o;\nuniform sampler2D tex;\nuniform vec2 uvScale;\n"
         "void main() { o = texture(tex, vUv * uvScale); }\n";
     GLuint v = compile(GL_VERTEX_SHADER, vs, "present.vs"), f = compile(GL_FRAGMENT_SHADER, fs, "present.fs"), p;
     GLint ok = 0;
@@ -377,7 +342,12 @@ static GLuint make_present_program(void) {
     glGetProgramiv(p, GL_LINK_STATUS, &ok);
     if (!ok) {
         fprintf(stderr, "bt3: gl: present link FAILED\n");
+#if GL_ES
+        sGlFailed = 1;
+        return 0;
+#else
         exit(1);
+#endif
     }
     glDeleteShader(v);
     glDeleteShader(f);
@@ -391,6 +361,11 @@ static GLuint make_present_program(void) {
 static SDL_Window *sWindow;
 static SDL_GLContext sCtx;
 static GLuint sMainProg[9]; /* gs.vert / vu0 / vu4 / vu6 + gs.frag; 4..7: the same with gsnz.frag (key bit 23); 8: gs.vert + gswb.frag (bit 25) */
+extern int Port_Setting(const char *name, int def); /* plat_settings.c */
+static GLuint sMainProgFetch[8]; /* the same for the draws that test the destination alpha, reading it from the frame buffer (sHasFetch) */
+static int sHasFetch;     /* EXT_shader_framebuffer_fetch: no copy of the alpha bytes for TEST.DATE (tile-based GPUs keep their pass) */
+static int sWantFetch;    /* the draw being set up tests the destination alpha */
+static GLuint sMainProgNd[8]; /* the same with the fragment shader without its discards (pipeline key bit 27, as the Vulkan back end) */
 static GLuint sOutlineProg, sKeyProg, sDclutProg, sPresentProg;
 static GLuint sVaoGs, sVaoVu, sVboGs, sVboVu, sIboVu;
 static GLuint sSamplers[16];
@@ -402,6 +377,9 @@ static size_t sParamCapacity, sUCapacity, sParamStride, sUStride;
 static int sUniformBatch;
 static uint32_t sParamDraw;
 static GLuint sTgCol[MAX_TARGETS], sTgAux[MAX_TARGETS], sTgDep[MAX_TARGETS], sTgFbo[MAX_TARGETS];
+/* the same target without its depth buffer: for the runs of draws that neither test nor write depth (most of a
+   fight's: the effects' work buffers and the 2D), which a tiled GPU then neither loads nor stores (see gs_gpu.c) */
+static GLuint sTgFboNd[MAX_TARGETS];
 static GLuint sDateCopy, sAuxCopy;
 static GLuint sScratchRead, sScratchDraw;
 static GLuint sFbTex[2], sFbFbo[2];
@@ -410,14 +388,14 @@ static const char *sGsSamplers[2] = {"tex", "dateTex"};
 static const char *sOneSampler[1] = {"aux"};
 static const char *sDclutSamplers[3] = {"depthTex", "auxTex", "clutTex"};
 
-typedef struct Pipe { uint32_t key, bkey, wmask; int ztst, zwrite, topo, vu, fx, nz, wb, shadow; } Pipe;
+typedef struct Pipe { uint32_t key, bkey, wmask; int ztst, zwrite, topo, vu, fx, nd, nz, wb, shadow; } Pipe;
 static Pipe sPipes[1024];
 static int sPipeCount;
 
 static void target_ensure(int i);
 static void target_drop(int i);
 static void set_pipe(int pipe);
-static void bind_target(int i, int clear);
+static void bind_target(int i, int clear, int nodepth);
 
 /* ---- the attachments of the shared targets ------------------------------------------------------ */
 static void target_ensure(int i) {
@@ -443,6 +421,15 @@ static void target_ensure(int i) {
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         fprintf(stderr, "bt3: gl: target %d framebuffer incomplete\n", i);
     }
+    glGenFramebuffers(1, &sTgFboNd[i]);
+    glBindFramebuffer(GL_FRAMEBUFFER, sTgFboNd[i]);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sTgCol[i], 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, sTgAux[i], 0);
+    glDrawBuffers(2, bufs);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        glDeleteFramebuffers(1, &sTgFboNd[i]);
+        sTgFboNd[i] = 0; /* (the target is then always bound with its depth) */
+    }
 }
 
 static void target_drop(int i) {
@@ -450,7 +437,10 @@ static void target_drop(int i) {
     glDeleteTextures(1, &sTgAux[i]);
     glDeleteTextures(1, &sTgDep[i]);
     glDeleteFramebuffers(1, &sTgFbo[i]);
-    sTgCol[i] = sTgAux[i] = sTgDep[i] = sTgFbo[i] = 0;
+    if (sTgFboNd[i] != 0) {
+        glDeleteFramebuffers(1, &sTgFboNd[i]);
+    }
+    sTgCol[i] = sTgAux[i] = sTgDep[i] = sTgFbo[i] = sTgFboNd[i] = 0;
 }
 
 static GsTex target_color(int i) { return (GsTex)sTgCol[i]; }
@@ -477,7 +467,8 @@ static int tex_upload(GsTex handle, int level, uint32_t w, uint32_t h, int forma
         glTexImage2D(GL_TEXTURE_2D, level, GL_RGBA8, (GLsizei)w, (GLsizei)h, 0, GL_RGBA, GL_UNSIGNED_BYTE, px);
     } else {
         GLenum ifmt = format == GS_TEXFMT_BC1 ? GL_COMPRESSED_RGBA_S3TC_DXT1_EXT :
-                      format == GS_TEXFMT_BC2 ? GL_COMPRESSED_RGBA_S3TC_DXT3_EXT : GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
+                      format == GS_TEXFMT_BC2 ? GL_COMPRESSED_RGBA_S3TC_DXT3_EXT :
+                      format == GS_TEXFMT_ASTC4 ? 0x93B0 /* GL_COMPRESSED_RGBA_ASTC_4x4_KHR */ : GL_COMPRESSED_RGBA_S3TC_DXT5_EXT;
         glCompressedTexImage2D(GL_TEXTURE_2D, level, ifmt, (GLsizei)w, (GLsizei)h, 0, (GLsizei)bytes, px);
     }
     free((void *)px);
@@ -522,6 +513,7 @@ static void pipe_decode(Pipe *p, uint32_t key) {
     p->shadow = (int)((key >> 24) & 1);
     p->fx = (int)((key >> 22) & 1);
     p->wmask = (key >> 16) & 15;
+    p->nd = (int)((key >> 27) & 1);
 }
 
 static int pipe_get(uint32_t key) {
@@ -575,6 +567,153 @@ static void apply_masks(uint32_t wmask) {
     }
 }
 
+#if GL_ES
+/* The uniform blocks: a fresh slice of a large buffer per draw, written without waiting (unsynchronized) and bound
+   by range. Rewriting one small buffer for every draw (2 000 a fight frame) made a Mali GPU's driver copy or wait
+   on the buffer each time: 2 to 3 pictures a second in a fight with OpenGL ES on a Mali-G52, 60 in the menus.
+   The buffer is given fresh storage at each frame's start (ubo_frame), so nothing the GPU still reads is
+   written over. */
+#define UBO_RING (4 << 20)
+#define GL_MAP_WRITE_BIT 0x0002
+#define GL_MAP_INVALIDATE_RANGE_BIT 0x0004
+#define GL_MAP_UNSYNCHRONIZED_BIT 0x0020
+#define GL_MAP_PERSISTENT_BIT_EXT 0x0040
+#define GL_MAP_COHERENT_BIT_EXT 0x0080
+#define GL_SYNC_GPU_COMMANDS_COMPLETE 0x9117
+#define GL_SYNC_FLUSH_COMMANDS_BIT 0x00000001
+#define GL_WAIT_FAILED 0x911D
+#define GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT 0x8A34
+static GLint sUboAlign = 256;
+static GLintptr sUboOff[2];
+
+/* The same, on drivers whose unsynchronized maps are slow or broken (ARMSX2's GPU driver table: every Mali OpenGL ES
+   driver, "buffer streaming / unsynchronized mapping"): one buffer per block kind, mapped ONCE for good
+   (EXT_buffer_storage, persistent and coherent) and written in order like a ring. It is cut into UBO_SEGS pieces;
+   a fence goes in when the writing leaves a piece, and a piece is written again only after its fence has passed, so
+   the GPU never reads a byte that is being overwritten. No map, unmap or orphan per draw. Setting "gl_persist":
+   0 automatic (Mali and Adreno with EXT_buffer_storage), 1 always where the extension is, 2 never; BT3_GL_PERSIST=0/1.
+   Adreno: the map per draw stalled the Adreno 650's driver (a fight at 2x: about 4 s a picture; with the ring 100 %
+   speed, 14 ms of work a picture). Mali-G57 MC4: the same speed either way (92.5 % and 93.8 % at 2x). */
+#define UBO_SEGS 8
+#define UBO_SEG (1 << 20)
+typedef struct __GLsync *GLsync_;
+static void (*glBufferStorageEXT_)(GLenum, GLsizeiptr, const void *, GLbitfield);
+static GLsync_ (*glFenceSync_)(GLenum, GLbitfield);
+static GLenum (*glClientWaitSync_)(GLsync_, GLbitfield, uint64_t);
+static void (*glDeleteSync_)(GLsync_);
+static struct { uint8_t *ptr; int seg; GLintptr off; GLsync_ fence[UBO_SEGS]; } sPer[2];
+static int sPersist;
+static unsigned sPersistWaits;
+
+static void ubo_persist_init(GLuint bufU, GLuint bufP) {
+    const char *r = (const char *)glGetString(GL_RENDERER);
+    const char *e = getenv("BT3_GL_PERSIST");
+    int want = Port_Setting("gl_persist", 0), tiled = r != NULL && (strstr(r, "Mali") != NULL || strstr(r, "Immortalis") != NULL ||
+                                                                    strstr(r, "Adreno") != NULL);
+    int on = e != NULL ? atoi(e) != 0 : want == 1 ? 1 : want == 2 ? 0 : tiled;
+    GLuint bufs[2] = {bufU, bufP};
+    int k;
+    sPersist = 0;
+    if (!on || !SDL_GL_ExtensionSupported("GL_EXT_buffer_storage")) {
+        fprintf(stderr, "bt3: gl: uniform blocks: orphaned per frame%s\n", on ? " (no EXT_buffer_storage)" : "");
+        return;
+    }
+    glBufferStorageEXT_ = (void (*)(GLenum, GLsizeiptr, const void *, GLbitfield))SDL_GL_GetProcAddress("glBufferStorageEXT");
+    glFenceSync_ = (GLsync_ (*)(GLenum, GLbitfield))SDL_GL_GetProcAddress("glFenceSync");
+    glClientWaitSync_ = (GLenum (*)(GLsync_, GLbitfield, uint64_t))SDL_GL_GetProcAddress("glClientWaitSync");
+    glDeleteSync_ = (void (*)(GLsync_))SDL_GL_GetProcAddress("glDeleteSync");
+    if (glBufferStorageEXT_ == NULL || glFenceSync_ == NULL || glClientWaitSync_ == NULL || glDeleteSync_ == NULL) {
+        fprintf(stderr, "bt3: gl: uniform blocks: orphaned per frame (EXT_buffer_storage without its functions)\n");
+        return;
+    }
+    while (glGetError() != 0) {} /* (errors left from before are not this one's) */
+    for (k = 0; k < 2; k++) {
+        /* (a buffer given its storage this way can never be given another: these two are made fresh for it) */
+        glGenBuffers(1, &bufs[k]);
+        glBindBuffer(GL_UNIFORM_BUFFER, bufs[k]);
+        glBufferStorageEXT_(GL_UNIFORM_BUFFER, (GLsizeiptr)UBO_SEGS * UBO_SEG, NULL, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT_EXT | GL_MAP_COHERENT_BIT_EXT);
+        sPer[k].ptr = (uint8_t *)glMapBufferRange(GL_UNIFORM_BUFFER, 0, (GLsizeiptr)UBO_SEGS * UBO_SEG,
+                                                  GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT_EXT | GL_MAP_COHERENT_BIT_EXT);
+        sPer[k].seg = 0;
+        sPer[k].off = 0;
+        memset(sPer[k].fence, 0, sizeof(sPer[k].fence));
+        if (sPer[k].ptr == NULL || glGetError() != 0) {
+            fprintf(stderr, "bt3: gl: uniform blocks: the persistent buffer could not be made: orphaned per frame\n");
+            sPer[0].ptr = sPer[1].ptr = NULL;
+            while (glGetError() != 0) {}
+            return;
+        }
+    }
+    sUboU = bufs[0];
+    sUboParams = bufs[1];
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, sUboU);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 1, sUboParams);
+    sPersist = 1;
+    fprintf(stderr, "bt3: gl: uniform blocks: persistent ring (EXT_buffer_storage, %d x %d KB)\n", UBO_SEGS, UBO_SEG >> 10);
+}
+
+static void ubo_orphan(GLuint buf) {
+    glBindBuffer(GL_UNIFORM_BUFFER, buf);
+    glBufferData(GL_UNIFORM_BUFFER, UBO_RING, NULL, GL_STREAM_DRAW);
+}
+static void ubo_frame(void) {
+    if (sPersist) {
+        return; /* (the ring's fences keep what the GPU reads; nothing to do at a frame's start) */
+    }
+    ubo_orphan(sUboU);
+    ubo_orphan(sUboParams);
+    sUboOff[0] = sUboOff[1] = 0;
+}
+static void ubo_put_persist(int which, GLuint buf, GLuint binding, const void *p, size_t n, size_t block) {
+    GLintptr off = (sPer[which].off + sUboAlign - 1) / sUboAlign * sUboAlign;
+    int s = sPer[which].seg;
+    if (off + (GLintptr)block > UBO_SEG) { /* this piece is full: fence it, go on to the next once the GPU is done with it */
+        sPer[which].fence[s] = glFenceSync_(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        s = (s + 1) % UBO_SEGS;
+        if (sPer[which].fence[s] != NULL) {
+            if (glClientWaitSync_(sPer[which].fence[s], GL_SYNC_FLUSH_COMMANDS_BIT, 2000000000ull) == GL_WAIT_FAILED) {
+                fprintf(stderr, "bt3: gl: uniform ring: a fence failed\n");
+            }
+            glDeleteSync_(sPer[which].fence[s]);
+            sPer[which].fence[s] = NULL;
+            sPersistWaits++;
+        }
+        sPer[which].seg = s;
+        off = 0;
+    }
+    memcpy(sPer[which].ptr + (GLintptr)s * UBO_SEG + off, p, n);
+    glBindBufferRange(GL_UNIFORM_BUFFER, binding, buf, (GLintptr)s * UBO_SEG + off, (GLsizeiptr)block);
+    sPer[which].off = off + (GLintptr)block;
+}
+static void ubo_put(int which, GLuint buf, GLuint binding, const void *p, size_t n, size_t block) {
+    GLintptr off = (sUboOff[which] + sUboAlign - 1) / sUboAlign * sUboAlign;
+    void *m;
+    if (sPersist) {
+        ubo_put_persist(which, buf, binding, p, n, block);
+        return;
+    }
+    if (off + (GLintptr)block > UBO_RING) {
+        ubo_orphan(buf);
+        off = 0;
+    }
+    glBindBuffer(GL_UNIFORM_BUFFER, buf);
+    m = glMapBufferRange(GL_UNIFORM_BUFFER, off, (GLsizeiptr)n, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+    if (m != NULL) {
+        memcpy(m, p, n);
+        glUnmapBuffer(GL_UNIFORM_BUFFER);
+    } else {
+        glBufferSubData(GL_UNIFORM_BUFFER, off, (GLsizeiptr)n, p);
+    }
+    glBindBufferRange(GL_UNIFORM_BUFFER, binding, buf, off, (GLsizeiptr)block);
+    sUboOff[which] = off + (GLintptr)block;
+}
+static void set_params(const void *p, size_t n) {
+    ubo_put(1, sUboParams, 1, p, n, 80);
+}
+static void set_uniform_u(const Vu0Uniform *u) {
+    ubo_put(0, sUboU, 0, u, sizeof(Vu0Uniform), sizeof(Vu0Uniform));
+}
+#else
 static void set_params(const void *p, size_t n) {
     if (sUniformBatch) {
         glBindBufferRange(GL_UNIFORM_BUFFER, 1, sUboParams, (GLintptr)(sParamDraw * sParamStride), sizeof(GlParams));
@@ -594,14 +733,17 @@ static void set_uniform_u(const Vu0Uniform *u) {
     glBindBufferRange(GL_UNIFORM_BUFFER, 0, sUboU, 0, sizeof(Vu0Uniform));
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Vu0Uniform), u);
 }
+#endif
 
 static void set_pipe(int pipe) {
     Pipe *p;
-    if (pipe == sCurPipe) { return; }
-    sCurPipe = pipe;
+    if (pipe * 2 + sWantFetch == sCurPipe) { return; }
+    sCurPipe = pipe * 2 + sWantFetch;
     p = &sPipes[pipe];
     {
-        GLuint prog = p->fx ? sDclutProg : p->wb ? sMainProg[8] : sMainProg[p->vu + (p->nz ? 4 : 0)];
+        int pi = p->vu + (p->nz ? 4 : 0);
+        GLuint prog = p->fx ? sDclutProg : p->wb ? sMainProg[8] : sWantFetch && sMainProgFetch[pi] != 0 ? sMainProgFetch[pi] :
+                      p->nd && sMainProgNd[pi] != 0 ? sMainProgNd[pi] : sMainProg[pi];
         if (sCurProgram != prog) { sCurProgram = prog; glUseProgram(prog); }
     }
     apply_blend(p->bkey);
@@ -681,9 +823,14 @@ static void set_textures(GLuint t0, int s0, GLuint t1, int s1, GLuint t2, int s2
     }
 }
 
-static void bind_target(int i, int clear) {
+static unsigned sBindN, sBlitN, sFrameN; /* the frames' target changes and copies since the last heartbeat (the log) */
+static unsigned sNoDepthN; /* of those target changes, the ones bound without the depth buffer */
+static int depthless = -1; /* framebuffers without depth where it is not used (the frame's replay) */
+
+static void bind_target(int i, int clear, int nodepth) {
     GLenum bufs[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
-    glBindFramebuffer(GL_FRAMEBUFFER, sTgFbo[i]);
+    sBindN++;
+    glBindFramebuffer(GL_FRAMEBUFFER, nodepth && !clear && sTgFboNd[i] != 0 ? sTgFboNd[i] : sTgFbo[i]);
     glDrawBuffers(2, bufs);
     glViewport(0, 0, GS_W * SCALE, GS_H * SCALE);
     if (clear) {
@@ -766,11 +913,38 @@ static void prepare_uniforms(void) {
 }
 
 /* ---- init --------------------------------------------------------------------------------------- */
+/* The renderer cannot start: the context and the window go, so that the other renderer can make its own (gs_draw.c
+   tries Vulkan next when the OpenGL one was only chosen in the settings). */
+static void gl_give_up(void) {
+    if (sCtx != NULL) {
+        SDL_GL_MakeCurrent(sWindow, NULL);
+        SDL_GL_DestroyContext(sCtx);
+        sCtx = NULL;
+    }
+    if (sWindow != NULL) {
+        GsDraw_WindowDestroy();
+        sWindow = NULL;
+    }
+    sAngleApi = 0;
+#ifndef __ANDROID__
+    SDL_GL_UnloadLibrary();
+#endif
+}
+
 static int gl_init_api(int api) {
     static const uint32_t white = 0xFFFFFFFFu;
     int i;
     sAngleApi = api;
-#ifdef _WIN32
+#if GL_ES
+    (void)api;
+    sAngleApi = 0;
+    /* OpenGL ES 3.2. (On Android the context's kind is part of the window's EGL configuration: asked for first.) */
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 2);
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);   /* (the window's own buffer is only presented to) */
+    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 0);
+#elif defined(_WIN32)
     if (api) {
         char egl[2048], gles[2048];
         const char *base = SDL_GetBasePath();
@@ -800,36 +974,41 @@ static int gl_init_api(int api) {
     sWindow = GsDraw_WindowCreate(1);
     if (sWindow == NULL) { sAngleApi = 0; return 0; }
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: the window is there\n"); }
+#if !GL_ES
     if (!api) {
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     }
+#endif
     if (getenv("BT3_GPU_DEBUG") != NULL) { SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG); }
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: window made, creating the context\n"); }
     sCtx = SDL_GL_CreateContext(sWindow);
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: context %p (%s)\n", (void *)sCtx, sCtx == NULL ? SDL_GetError() : "ok"); }
     if (sCtx == NULL || !SDL_GL_MakeCurrent(sWindow, sCtx)) {
-        fprintf(stderr, "bt3: gl: no GL 3.3 core context: %s\n", SDL_GetError());
-        if (sCtx) { SDL_GL_DestroyContext(sCtx); sCtx = NULL; }
-        GsDraw_WindowDestroy(); sWindow = NULL; sAngleApi = 0;
-        SDL_GL_UnloadLibrary();
+        fprintf(stderr, "bt3: gl: no %s context: %s\n", GL_ES ? "OpenGL ES 3.2" : "GL 3.3 core", SDL_GetError());
+        gl_give_up();
         return 0;
     }
+#if GL_ES
+    {   /* the present mode chosen for Vulkan, as near as GL has it: FIFO (VSync) waits for the screen, the others not */
+        extern int Port_Setting(const char *name, int def);
+        SDL_GL_SetSwapInterval(Port_Setting("present", 0) == 1 ? 1 : 0);
+    }
+#else
     SDL_GL_SetSwapInterval(Port_Setting("vsync", 0) != 0);
+#endif
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: current, loading the functions\n"); }
-    if (!load_gl()) {
-        SDL_GL_DestroyContext(sCtx); sCtx = NULL;
-        GsDraw_WindowDestroy(); sWindow = NULL; sAngleApi = 0;
-        SDL_GL_UnloadLibrary();
-        return 0;
-    }
+    if (!load_gl()) { gl_give_up(); return 0; }
     if (api && getenv("BT3_GL_DEBUG_MESSAGES")) {
         typedef void (SDLCALL *DebugMessage)(void (SDLCALL *)(unsigned,unsigned,unsigned,unsigned,int,const char *,const void *), const void *);
         DebugMessage callback = (DebugMessage)SDL_GL_GetProcAddress("glDebugMessageCallbackKHR");
         if (callback) { callback(gl_debug_message, NULL); glEnable(0x92E0); }
     }
     fprintf(stderr, "bt3: GL renderer: %s (%s)\n", (const char *)glGetString(GL_RENDERER), (const char *)glGetString(GL_VERSION));
+    if (!api) { /* the meter's and the reports' name of the GPU (as the Vulkan back end prints it) */
+        fprintf(stderr, "bt3: GPU renderer: opengl%s\n", GL_ES ? " es" : "");
+    }
     if (api) {
         /* ES 3.0 exposes these through EXT_draw_buffers_indexed, not the ES
            3.2 core entry points. ANGLE exports both but validates them separately. */
@@ -855,8 +1034,32 @@ static int gl_init_api(int api) {
     }
     sHasIndexed = glEnablei != NULL && glColorMaski != NULL;
     sConservativeDepth = api && SDL_GL_ExtensionSupported("GL_EXT_conservative_depth");
+#if GL_ES
+    glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &sUboAlign);
+    if (sUboAlign <= 0 || sUboAlign > 4096) { sUboAlign = 256; }
+#endif
     /* Depth as the Vulkan back end has it: clip-space z in 0..w stored as z / w, and (SDL GPU's default, depth
        clip off) nothing cut at the near and far planes, the depth clamped to 0..1 instead. */
+#if GL_ES
+    /* ES: glClipControlEXT and depth clamping only where the driver has the extensions (Mali mostly has neither:
+       z is moved to GL's range in the shaders, and what comes nearer than the near plane is cut, as with the Vulkan
+       renderer on GPUs without depth clamping) */
+    if (getenv("BT3_GL_NOCLIPCONTROL") == NULL && SDL_GL_ExtensionSupported("GL_EXT_clip_control")) {
+        glClipControl = (void (*)(GLenum, GLenum))SDL_GL_GetProcAddress("glClipControlEXT");
+    }
+    sHasClipControl = glClipControl != NULL;
+    if (sHasClipControl) { glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE); }
+    if (SDL_GL_ExtensionSupported("GL_EXT_depth_clamp")) { glEnable(GL_DEPTH_CLAMP); }
+    gGsNoBcTextures = !SDL_GL_ExtensionSupported("GL_EXT_texture_compression_s3tc");
+#if GL_ES
+    {   /* ASTC LDR is part of OpenGL ES 3.2 (and KHR_texture_compression_astc_ldr before it): gs_astc.cpp's copies */
+        extern int gGsAstcTextures;
+        gGsAstcTextures = 1; /* (the context is OpenGL ES 3.2, which has ASTC LDR in its core) */
+    }
+#endif
+    fprintf(stderr, "bt3: gl es: clip control %s, depth clamp %s, DXT textures %s\n", sHasClipControl ? "yes" : "no",
+            SDL_GL_ExtensionSupported("GL_EXT_depth_clamp") ? "yes" : "no", gGsNoBcTextures ? "no (a pack's .dds are unpacked on the CPU)" : "yes");
+#else
     if (getenv("BT3_GL_NOCLIPCONTROL") == NULL && SDL_GL_ExtensionSupported("GL_ARB_clip_control")) {
         glClipControl = (void (*)(GLenum, GLenum))SDL_GL_GetProcAddress("glClipControl");
     }
@@ -866,21 +1069,64 @@ static int gl_init_api(int api) {
     sHasClipControl = glClipControl != NULL;
     if (sHasClipControl) { glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE); }
     glEnable(GL_DEPTH_CLAMP);
+#endif
     if (!sHasIndexed) { fprintf(stderr, "bt3: gl: no per-attachment blend/mask (GL 3.0 indexed): the aux byte may be wrong\n"); }
 
-    sMainProg[0] = make_program(kGsVertGlsl, kGsFragGlsl, "gs", sGsSamplers, 2);
-    sMainProg[1] = make_program(kVu0VertGlsl, kGsFragGlsl, "vu0", sGsSamplers, 2);
-    sMainProg[2] = make_program(kVu4VertGlsl, kGsFragGlsl, "vu4", sGsSamplers, 2);
-    sMainProg[3] = make_program(kVu6VertGlsl, kGsFragGlsl, "vu6", sGsSamplers, 2);
-    sMainProg[4] = make_program(kGsVertGlsl, kGsnzFragGlsl, "gs nz", sGsSamplers, 2);
-    sMainProg[5] = make_program(kVu0VertGlsl, kGsnzFragGlsl, "vu0 nz", sGsSamplers, 2);
-    sMainProg[6] = make_program(kVu4VertGlsl, kGsnzFragGlsl, "vu4 nz", sGsSamplers, 2);
-    sMainProg[7] = make_program(kVu6VertGlsl, kGsnzFragGlsl, "vu6 nz", sGsSamplers, 2);
-    sMainProg[8] = make_program(kGsVertGlsl, kGswbFragGlsl, "gs wb", sGsSamplers, 2);
-    sOutlineProg = make_program(kFxVertGlsl, kOutlineFragGlsl, "outline", sOneSampler, 1);
-    sKeyProg = make_program(kFxVertGlsl, kAlphakeyFragGlsl, "alphakey", sOneSampler, 1);
-    sDclutProg = make_program(kFxVertGlsl, kDclutFragGlsl, "dclut", sDclutSamplers, 3);
+    sMainProg[0] = make_program(kGsVertGlsl, kGsFragGlsl, "gs", sGsSamplers, 2, 0);
+    sMainProg[1] = make_program(kVu0VertGlsl, kGsFragGlsl, "vu0", sGsSamplers, 2, 0);
+    sMainProg[2] = make_program(kVu4VertGlsl, kGsFragGlsl, "vu4", sGsSamplers, 2, 0);
+    sMainProg[3] = make_program(kVu6VertGlsl, kGsFragGlsl, "vu6", sGsSamplers, 2, 0);
+    sMainProg[4] = make_program(kGsVertGlsl, kGsnzFragGlsl, "gs nz", sGsSamplers, 2, 0);
+    sMainProg[5] = make_program(kVu0VertGlsl, kGsnzFragGlsl, "vu0 nz", sGsSamplers, 2, 0);
+    sMainProg[6] = make_program(kVu4VertGlsl, kGsnzFragGlsl, "vu4 nz", sGsSamplers, 2, 0);
+    sMainProg[7] = make_program(kVu6VertGlsl, kGsnzFragGlsl, "vu6 nz", sGsSamplers, 2, 0);
+    sMainProg[8] = make_program(kGsVertGlsl, kGswbFragGlsl, "gs wb", sGsSamplers, 2, 0);
+    sOutlineProg = make_program(kFxVertGlsl, kOutlineFragGlsl, "outline", sOneSampler, 1, 0);
+    sKeyProg = make_program(kFxVertGlsl, kAlphakeyFragGlsl, "alphakey", sOneSampler, 1, 0);
+    sDclutProg = make_program(kFxVertGlsl, kDclutFragGlsl, "dclut", sDclutSamplers, 3, 0);
+    /* the draws that never discard: a shader with `discard` in it keeps tile-based GPUs from dropping hidden pixels
+       early (BT3_GPU_DISCARD=1: always the one with discard) */
+    if (getenv("BT3_GPU_DISCARD") == NULL) {
+        sMainProgNd[0] = make_program(kGsVertGlsl, kGsFragGlsl, "gs-nd", sGsSamplers, 2, 1);
+        sMainProgNd[1] = make_program(kVu0VertGlsl, kGsFragGlsl, "vu0-nd", sGsSamplers, 2, 1);
+        sMainProgNd[2] = make_program(kVu4VertGlsl, kGsFragGlsl, "vu4-nd", sGsSamplers, 2, 1);
+        sMainProgNd[3] = make_program(kVu6VertGlsl, kGsFragGlsl, "vu6-nd", sGsSamplers, 2, 1);
+        sMainProgNd[4] = make_program(kGsVertGlsl, kGsnzFragGlsl, "gs nz-nd", sGsSamplers, 2, 1);
+        sMainProgNd[5] = make_program(kVu0VertGlsl, kGsnzFragGlsl, "vu0 nz-nd", sGsSamplers, 2, 1);
+        sMainProgNd[6] = make_program(kVu4VertGlsl, kGsnzFragGlsl, "vu4 nz-nd", sGsSamplers, 2, 1);
+        sMainProgNd[7] = make_program(kVu6VertGlsl, kGsnzFragGlsl, "vu6 nz-nd", sGsSamplers, 2, 1);
+    }
+#if GL_ES
+    /* The destination alpha test (TEST.DATE: the HUD's bars, some of a stage's layers) read a copy of the alpha bytes,
+       taken before each run of such draws: on a tile-based GPU (Mali) every copy ends the tiles' pass and starts
+       another, and a fight with many of them ran at a fraction of its speed (50 passes a picture on a Mali-G52). With
+       EXT_shader_framebuffer_fetch the shader reads the bytes where they are: no copy, no break.
+       OFF unless asked for (setting "gl_fetch" = 1, or BT3_GL_FETCH=1; BT3_GL_NOFETCH=1 always off): on two Mali-G52
+       (drivers r32p1 and r49p1, 0.7.0) it drew black blocks over the picture and then hung the GPU (no picture came
+       back from the driver after 6 to 30 seconds). The copies are what 0.6.0 did. */
+    if (getenv("BT3_GL_NOFETCH") == NULL &&
+        (getenv("BT3_GL_FETCH") != NULL ? atoi(getenv("BT3_GL_FETCH")) != 0 : Port_Setting("gl_fetch", 0) != 0) &&
+        SDL_GL_ExtensionSupported("GL_EXT_shader_framebuffer_fetch") && !sGlFailed) {
+        static const unsigned char *const vs[4] = {kGsVertGlsl, kVu0VertGlsl, kVu4VertGlsl, kVu6VertGlsl};
+        int k;
+        sHasFetch = 1;
+        for (k = 0; k < 8 && sHasFetch; k++) {
+            sMainProgFetch[k] = make_program(vs[k & 3], k < 4 ? kGsFragGlsl : kGsnzFragGlsl, "fetch", sGsSamplers, 2, 2);
+            sHasFetch = sMainProgFetch[k] != 0 && !sGlFailed;
+        }
+        if (!sHasFetch) {
+            sGlFailed = 0; /* (only these could not be made: the copies are used) */
+            memset(sMainProgFetch, 0, sizeof(sMainProgFetch));
+        }
+    }
+    fprintf(stderr, "bt3: gl: destination alpha %s\n", sHasFetch ? "read from the frame buffer (framebuffer fetch)" : "from copies");
+#endif
     sPresentProg = make_present_program();
+    if (sGlFailed) {
+        fprintf(stderr, "bt3: gl: the shaders could not be made: this renderer gives up\n");
+        gl_give_up();
+        return 0;
+    }
 
     glGenBuffers(1, &sVboGs);
     glBindBuffer(GL_ARRAY_BUFFER, sVboGs);
@@ -918,6 +1164,10 @@ static int gl_init_api(int api) {
     glBindBuffer(GL_UNIFORM_BUFFER, sUboParams);
     glBufferData(GL_UNIFORM_BUFFER, 80, NULL, GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_UNIFORM_BUFFER, 1, sUboParams);
+#if GL_ES
+    ubo_persist_init(sUboU, sUboParams);
+    ubo_frame();
+#endif
 
     for (i = 0; i < 16; i++) {
         int lin = (i & 1) != 0;
@@ -965,6 +1215,107 @@ void GsGl_StripTextureFree(unsigned id) {
     glDeleteTextures(1, &t);
 }
 
+/* The shown buffer's picture onto the window, letterboxed (the window's own framebuffer, not yet swapped). */
+static void present_picture(int best) {
+    glBindVertexArray(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    {
+        int sw, sh;
+        SDL_GetWindowSize(sWindow, &sw, &sh);
+        SDL_GetWindowSizeInPixels(sWindow, &sw, &sh); /* the drawable's real pixels (differs from the window on HiDPI / fullscreen) */
+        glViewport(0, 0, sw, sh);
+        glDisable(GL_SCISSOR_TEST);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        glEnable(GL_SCISSOR_TEST);
+        if (best >= 0 && gsTargets[best].cleared) {
+            float want = (float)Port_PageAspectMilli() / 1000.0f;
+            int w = sw, h = sh, dx, dy;
+            if ((float)sw > (float)sh * want) { w = (int)((float)sh * want + 0.5f); } else { h = (int)((float)sw / want + 0.5f); }
+            dx = (sw - w) / 2;
+            dy = (sh - h) / 2;
+#if GL_ES
+            if (sh > sw + sw / 5) { /* portrait: the picture at the top (GL counts from the bottom) */
+                dy = sh - h - sh / 16;
+            }
+#endif
+            if (getenv("BT3_GS_VERBOSE") != NULL) {
+                int ww, wh;
+                SDL_GetWindowSize(sWindow, &ww, &wh);
+                fprintf(stderr, "gl: present window %dx%d pixels %dx%d aspect %d -> picture %dx%d at (%d,%d)\n", ww, wh, sw, sh, Port_AspectMilli(), w, h, dx, dy);
+            }
+            {   /* where the picture is in the window, for the overlay's stage and song names (ui.cpp), counted from
+                   the top as the overlay does */
+                extern volatile int gUiPresentX, gUiPresentY, gUiPresentW, gUiPresentH;
+                gUiPresentX = dx;
+                gUiPresentY = sh - dy - h;
+                gUiPresentW = w;
+                gUiPresentH = h;
+            }
+            glViewport(dx, dy, w, h);
+            glDisable(GL_SCISSOR_TEST);
+            glDisable(GL_DEPTH_TEST);
+            glDisable(GL_BLEND);
+            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+            glUseProgram(sPresentProg);
+            glBindVertexArray(sVaoGs); /* core profile needs a bound VAO to draw (the present uses no attributes) */
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, sTgCol[best]);
+            glBindSampler(0, sSamplers[7]); /* linear, clamped */
+            glDrawArrays(GL_TRIANGLES, 0, 3);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
+    }
+}
+
+static int sLastBest = -1; /* the target shown last (shown again while the game is paused) */
+extern void GsGpu_PollEvents(void); /* gs_gpu.c */
+
+#ifdef __ANDROID__
+/* The log's heartbeat, as the Vulkan renderer's (gs_gpu.c): every 300 frames, what is drawn and how fast the game runs. */
+static void gl_heartbeat(void) {
+    extern unsigned gPortVBlanks;
+    static uint64_t lastNs;
+    static unsigned lastBlank, lastFrame;
+    uint64_t now;
+    extern int gPortInMenus; /* headless.c */
+    extern int Port_Setting(const char *name, int def);
+    static unsigned hbFrame = ~0u; /* (smooth motion shows a frame twice: one heartbeat for it) */
+    if (gGsFrame % 300 != 0 || gGsFrame == hbFrame || Port_Setting("perf_log", 1) == 0) {
+        return;
+    }
+    hbFrame = gGsFrame;
+    now = SDL_GetTicksNS();
+    fprintf(stderr, "bt3: alive: frame %u, game blank %u, %u draws, %u vertices, %d targets, %d textures\n", gGsFrame, gPortVBlanks,
+            gsDrawCount, gsVertCount + gsVuVertCount, gsTargetCount, gsTexCount);
+    if (lastNs != 0 && now > lastNs && (int)(gPortVBlanks - lastBlank) >= 0) { /* (the count starts again online) */
+        double secs = (double)(now - lastNs) / 1e9, bps = (double)(gPortVBlanks - lastBlank) / secs;
+        fprintf(stderr, "bt3: speed %.0f%% (%.1f game blanks/s, %.1f pictures/s over %.1f s%s), OpenGL ES; per frame %.1f target changes, "
+                        "%.1f copies, %.1f without depth\n", bps * 100.0 / 60.0, bps, (double)(gGsFrame - lastFrame) / secs, secs,
+                Ui_Pauses() ? ", the menu was open" : gPortInMenus ? ", menus" : ", fight", sFrameN ? (double)sBindN / sFrameN : 0.0,
+                sFrameN ? (double)sBlitN / sFrameN : 0.0, sFrameN ? (double)sNoDepthN / sFrameN : 0.0);
+    }
+    lastNs = now;
+    lastBlank = gPortVBlanks;
+    lastFrame = gGsFrame;
+    sBindN = sBlitN = sFrameN = sNoDepthN = 0;
+}
+#endif
+
+/* While the game is paused (the settings window open, plat_stub.c): the last picture again with the window on it, and
+   the window's events. 0: not this renderer, or nothing shown yet (the game goes on). */
+int GsGl_PauseFrame(void) {
+    if (sCtx == NULL || sLastBest < 0 || sLastBest >= gsTargetCount || sTgFbo[sLastBest] == 0) {
+        return 0;
+    }
+    GsGpu_PollEvents();
+    present_picture(sLastBest);
+    Ui_DrawGL();
+    SDL_GL_SwapWindow(sWindow);
+    SDL_Delay(8); /* (nothing moves behind the window: about 100 pictures a second are plenty, and spare the battery) */
+    return 1;
+}
+
 /* ---- the frame ---------------------------------------------------------------------------------- */
 static void frame_end(void) {
     SDL_Event ev;
@@ -973,12 +1324,19 @@ static void frame_end(void) {
     GlParams fu, lastFu;
     int haveFu = 0, lastUniform = -1;
 
+#ifdef __ANDROID__
+    (void)ev;
+    GsGpu_PollEvents(); /* gs_gpu.c: the same events as the Vulkan renderer (back key, START + SELECT, leaving) */
+    gl_heartbeat();
+#else
     GsGpu_TitlePoll();
     while (SDL_PollEvent(&ev)) {
         if (ev.type == SDL_EVENT_QUIT) { exit(0); }
+        if (ev.type != SDL_EVENT_MOUSE_BUTTON_DOWN && GsDraw_FullscreenEvent(&ev)) continue;
         { extern void PortA11y_Event(const SDL_Event *ev); PortA11y_Event(&ev); } /* a11y.c: the repeat key and button */
         if (PortInput_Hotkey(&ev)) { Ui_Toggle(); continue; }
         if (Ui_Event(&ev)) { continue; }
+        if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && GsDraw_FullscreenEvent(&ev)) continue;
         if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_ESCAPE) { if (!ev.key.repeat && !Ui_QuitAsk()) { exit(0); } /* (asks first) */ }
         if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F9) { /* in-between pictures on / off */
             extern int gsInterp;
@@ -990,8 +1348,8 @@ static void frame_end(void) {
             Port_SettingsWrite();
             fprintf(stderr, "bt3: smooth motion %s\n", gsInterp == 0 ? "off" : gsInterp == 1 ? "60" : gsInterp == 2 ? "120" : "240");
         }
-        if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F11) { GsDraw_FullscreenToggle(); }
     }
+#endif
     if (getenv("BT3_GS_VERBOSE") != NULL && gGsFrame % 30 == 0) {
         fprintf(stderr, "gpu: frame %u: %u draws, %u vertices, %d targets, %d textures, %d pipelines, %u primitives of PS2-only passes dropped, %u native effects\n",
                 gGsFrame, gsDrawCount, gsVertCount + gsVuVertCount, gsTargetCount, gsTexCount, sPipeCount, gsSkipped, gsNative);
@@ -1010,6 +1368,24 @@ static void frame_end(void) {
         }
     }
 
+#if GL_ES
+    /* the vertices into fresh storage (the last frame's may still be read by the GPU: rewriting them in place made
+       the driver copy or wait), the uniform blocks likewise (ubo_frame) */
+    ubo_frame();
+    if (gsVertCount != 0) {
+        glBindBuffer(GL_ARRAY_BUFFER, sVboGs);
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(gsVertCount * sizeof(Vtx)), gsVerts, GL_STREAM_DRAW);
+    }
+    if (gsVuVertCount != 0) {
+        glBindBuffer(GL_ARRAY_BUFFER, sVboVu);
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(gsVuVertCount * 48), gsVuVerts, GL_STREAM_DRAW);
+    }
+    if (gsVuIdxCount != 0) {
+        glBindVertexArray(sVaoVu);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)(gsVuIdxCount * sizeof(uint32_t)), gsVuIdx, GL_STREAM_DRAW);
+        glBindVertexArray(0);
+    }
+#else
     if (gsVertCount != 0) {
         glBindBuffer(GL_ARRAY_BUFFER, sVboGs);
         glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)(gsVertCount * sizeof(Vtx)), gsVerts);
@@ -1023,6 +1399,7 @@ static void frame_end(void) {
         glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, (GLsizeiptr)(gsVuIdxCount * sizeof(uint32_t)), gsVuIdx);
         glBindVertexArray(0);
     }
+#endif
     for (i = 0; i < 2; i++) {
         uint32_t *px, x, y, fbp = i ? 0x70 : 0;
         if (!(gGsFbUploads & (1u << i))) { continue; }
@@ -1059,6 +1436,11 @@ static void frame_end(void) {
        back on for the frame's own draws, or every partial scissor (the split screen's halves, the HUD, the
        fighters' shadows) is ignored and the two views overlap across the whole screen. */
     glEnable(GL_SCISSOR_TEST);
+    if (depthless < 0) { /* BT3_GPU_DEPTHLESS=0/1, setting "depthless_passes" (0 automatic: on, 1 on, 2 off) */
+        const char *e = getenv("BT3_GPU_DEPTHLESS");
+        depthless = e != NULL ? atoi(e) != 0 : Port_Setting("depthless_passes", 0) != 2;
+        fprintf(stderr, "bt3: gl: framebuffers without the depth buffer where it is not used: %s\n", depthless ? "on" : "off");
+    }
     for (n = 0; n < gsDrawCount; n++) {
         const GsDraw *d = &gsDraws[n];
         if (d->native) drawVao = 0;
@@ -1084,7 +1466,7 @@ static void frame_end(void) {
             int rx = 0, ry = 0, rw = GS_W * SCALE, rh = GS_H * SCALE;
             if (!gsTargets[d->target].cleared) { continue; }
             /* the DATE copy: only what the draws that follow read (gs_draw.c); rows as in the Vulkan back end */
-            if (d->native == 5 && !GsDraw_DateRegion(n, &rx, &ry, &rw, &rh)) { continue; }
+            if (d->native == 5 && (sHasFetch || !GsDraw_DateRegion(n, &rx, &ry, &rw, &rh))) { continue; } /* (fetch: no copy) */
             /* The copy of the frame's alpha ids (the outline and the DATE passes read it). glBlitFramebuffer is
                clipped by the scissor test, so with a partial scissor in force (the split screen's halves) only
                part of the alpha would be copied and the outline would draw a stale silhouette; turn it off for
@@ -1097,6 +1479,7 @@ static void frame_end(void) {
             glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, dst, 0);
             glDrawBuffers(1, one);
             glBlitFramebuffer(rx, ry, rx + rw, ry + rh, rx, ry, rx + rw, ry + rh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+            sBlitN++;
             glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
             glEnable(GL_SCISSOR_TEST);
@@ -1107,7 +1490,8 @@ static void frame_end(void) {
         if (d->native == 3) {
             float params[4] = {(float)d->src, d->misc[0], 0.0f, 0.0f};
             if (!gsTargets[d->target].cleared) { continue; }
-            if (cur != d->target) { bind_target(d->target, 0); cur = d->target; }
+            if (cur != d->target) { bind_target(d->target, 0, 0); cur = d->target; }
+            sWantFetch = 0;
             set_pipe(d->pipeline);
             set_textures(sTgDep[d->target], 6, sAuxCopy, 6, (GLuint)d->tex, 6);
             set_params(params, 16);
@@ -1120,7 +1504,7 @@ static void frame_end(void) {
         if (d->native) {
             float params[4];
             if (!gsTargets[d->target].cleared) { continue; }
-            if (cur != d->target) { bind_target(d->target, 0); cur = d->target; }
+            if (cur != d->target) { bind_target(d->target, 0, 0); cur = d->target; }
             set_native(d->native);
             set_textures(sAuxCopy, 6, 0, 6, 0, 6);
             extern int Port_PageAspectMilli(void); /* plat_stub.c: the shape of the page shown now */
@@ -1139,7 +1523,22 @@ static void frame_end(void) {
             (n == 0 || gsDraws[n - 1].native || gsDraws[n - 1].target != d->target ||
              !sPipes[gsDraws[n - 1].pipeline].shadow);
         if (cur != d->target) {
-            bind_target(d->target, !gsTargets[d->target].cleared);
+            int nodepth = 0;
+            if (depthless && gsTargets[d->target].cleared) {
+                /* the draws on this target until the next copy or change of target (the table passes and native
+                   effects in between stay in the same framebuffer and use no depth buffer) */
+                uint32_t j;
+                nodepth = 1;
+                for (j = n; nodepth && j < gsDrawCount && gsDraws[j].target == d->target &&
+                            !(gsDraws[j].native >= 4); j++) {
+                    const Pipe *q = &sPipes[gsDraws[j].pipeline];
+                    if (!gsDraws[j].native && !q->fx) {
+                        nodepth = q->ztst == 1 && !q->zwrite && !q->shadow;
+                    }
+                }
+            }
+            sNoDepthN += nodepth;
+            bind_target(d->target, !gsTargets[d->target].cleared, nodepth);
             gsTargets[d->target].cleared = 1;
             cur = d->target;
             haveFu = 0;
@@ -1157,6 +1556,7 @@ static void frame_end(void) {
             glEnable(GL_SCISSOR_TEST);
             haveScissor = 0;
         }
+        sWantFetch = sHasFetch && d->misc[1] != 0.0f; /* (a draw that tests the destination alpha) */
         set_pipe(d->pipeline);
         GLuint wantVao = d->vu ? sVaoVu : sVaoGs;
         if (wantVao != drawVao) { glBindVertexArray(wantVao); drawVao = wantVao; }
@@ -1180,52 +1580,12 @@ static void frame_end(void) {
     /* the shown buffer: the one sceGsSwapDBuff set up for this frame, else the first target */
     best = gGsMainFbp >= 0 ? GsDraw_TargetGet((uint32_t)gGsMainFbp, 0) : -1;
     for (i = 0; best < 0 && i < gsTargetCount; i++) { best = i; }
-    glBindVertexArray(0);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDisable(GL_STENCIL_TEST);
-    {
-        int sw, sh;
-        SDL_GetWindowSize(sWindow, &sw, &sh);
-        SDL_GetWindowSizeInPixels(sWindow, &sw, &sh); /* the drawable's real pixels (differs from the window on HiDPI / fullscreen) */
-        glViewport(0, 0, sw, sh);
-        glDisable(GL_SCISSOR_TEST);
-        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        glEnable(GL_SCISSOR_TEST);
-        if (best >= 0 && gsTargets[best].cleared) {
-            extern int Port_PageAspectMilli(void); /* plat_stub.c: 4:3 while the menus run, if asked for */
-            float want = (float)Port_PageAspectMilli() / 1000.0f;
-            int w = sw, h = sh, dx, dy;
-            if ((float)sw > (float)sh * want) { w = (int)((float)sh * want + 0.5f); } else { h = (int)((float)sw / want + 0.5f); }
-            dx = (sw - w) / 2;
-            dy = (sh - h) / 2;
-            if (getenv("BT3_GS_VERBOSE") != NULL) {
-                int ww, wh;
-                SDL_GetWindowSize(sWindow, &ww, &wh);
-                fprintf(stderr, "gl: present window %dx%d pixels %dx%d aspect %d -> picture %dx%d at (%d,%d)\n", ww, wh, sw, sh, Port_AspectMilli(), w, h, dx, dy);
-            }
-            {   /* where the picture is in the window, for the overlay's stage and song names (ui.cpp), counted from
-                   the top as the overlay does */
-                extern volatile int gUiPresentX, gUiPresentY, gUiPresentW, gUiPresentH;
-                gUiPresentX = dx;
-                gUiPresentY = sh - dy - h;
-                gUiPresentW = w;
-                gUiPresentH = h;
-            }
-            glViewport(dx, dy, w, h);
-            glDisable(GL_SCISSOR_TEST);
-            glDisable(GL_DEPTH_TEST);
-            glDisable(GL_BLEND);
-            glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-            glUseProgram(sPresentProg);
-            glBindVertexArray(sVaoGs); /* core profile needs a bound VAO to draw (the present uses no attributes) */
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, sTgCol[best]);
-            glBindSampler(0, sSamplers[7]); /* linear, clamped */
-            glDrawArrays(GL_TRIANGLES, 0, 3);
-            glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        }
+    if (best >= 0 && gsTargets[best].cleared) {
+        sLastBest = best; /* (shown again while the game is paused: GsGl_PauseFrame) */
     }
+    present_picture(best);
+    /* (the overlay and the swap: below, after the captures) */
     /* BT3_GL_WINSHOT=<n>: dump the window's own framebuffer every n frames (what the user sees) */
     if (getenv("BT3_GL_WINSHOT") != NULL && atoi(getenv("BT3_GL_WINSHOT")) > 0 && (int)gGsFrame % atoi(getenv("BT3_GL_WINSHOT")) == 0) {
         int sw, sh, x, y;
@@ -1325,6 +1685,7 @@ static void frame_end(void) {
         }
     }
 
+    sFrameN++;
     for (i = 0; i < gsTargetCount; i++) { gsTargets[i].draws = 0; }
     gsVertCount = 0;
     gsVuVertCount = 0;
@@ -1352,7 +1713,7 @@ static int gl_target_read(int i, uint8_t *rgba) {
     glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
     for (y = 0; y < 448; y++) { /* (rows come back in texture order: the first is the scene's top) */
         for (x = 0; x < 512; x++) {
-            memcpy(rgba + (y * 512 + x) * 4, px + ((size_t)(y * SCALE + SCALE / 2) * w + x * SCALE + SCALE / 2) * 4, 4);
+            memcpy(rgba + (y * 512 + x) * 4, px + ((size_t)(y * SCALE + SCALE / 2) * (size_t)w + (size_t)(x * SCALE + SCALE / 2)) * 4, 4);
         }
     }
     free(px);

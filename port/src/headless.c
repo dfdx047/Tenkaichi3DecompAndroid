@@ -15,10 +15,16 @@
 #include "plat_stages.h"
 #include "plat_songs.h"
 #include "port_addr.h"
+/* (Dragon Rage's Tag Team mod online, gs/tag_net.h: not in this BT4 build) */
+#define TagNet_Enabled() 0
+#define TagNet_Room() 0
 
 extern void Battle_ClearWork(void);
 extern int BattleReplay_Load(void *buf, int size);
 extern void Demo_SetupBattle(void);
+extern void TagTeam_Enable(int enabled);
+extern void TagTeam_SetupDemo(int human, int team0, int team1);
+extern void TagTeam_Configure(int players, int views, int coop);
 
 #define REPLAY_FILE_SIZE 0x1AC00
 #define REPLAY_HEADER 0x38
@@ -35,10 +41,12 @@ static int sFromMenu;
 #define GAME_PTR *
 #endif
 
+
 /* Linked with --wrap=Progress_Main: the game's call in Game_Main comes here. BT3_REPLAY or BT3_DEMO: the battle is
    set up without menus (below); otherwise the real menus run (the overlay's Progress_Main, src/menu/menu_a_b.c). */
 extern int __real_Progress_Main(int arg);
 int gPortMenuMode;
+int gPortInMenus; /* 1 while the menus run (Progress_Main), whatever they show: the Android controller's automatic layout */
 /* A menu screen that is a 3D scene (the character reference's model viewer) asks, every frame, to be shown as a
    fight is while it runs: the wide projection, 2D kept in proportion. Only between the two lines of Progress_Main
    below that set and clear the menu mode. */
@@ -52,6 +60,9 @@ void Port_MenuScene3D(int on) {
 }
 
 volatile int gPortUnlockAll, gPortUnlockDone;
+extern int Port_Setting(const char *name, int def); /* plat_settings.c */
+extern void Port_SettingSave(const char *name, int value);
+extern void Port_SettingsWrite(void);
 extern struct SaveData GAME_PTR gSaveData;
 extern void Save_UnlockAll(void *opt);
 extern int Port_NetSession(void); /* gs/net.c */
@@ -122,7 +133,27 @@ int __wrap_Progress_Main(int arg) {
         Port_VerifyStart();
     }
     port_stage_replace_init();
+    if(TagNet_Enabled()) {
+        extern void Port_TagOnlineSetup(void);
+        extern void File_LoadPartitionNw(int),TagSession_Leave(void),TagLobby_LeavePractice(void),BattleResult_Clear(void);
+        extern int File_WaitPartition(int);
+        File_LoadPartitionNw(2);File_WaitPartition(2);
+        gPortMenuMode=1;
+        {int result=TagNet_Room();
+         if(result==1){gPortMenuMode=0;Port_TagOnlineSetup();sFromMenu=1;sBattles++;return 0;}
+         if(!result && getenv("BT3_TAG_AUTO_READY"))exit(0);}
+
+        /* The connected host returns to the normal mode menu, not the
+           previous battle's character select or tournament bracket. */
+        TagSession_Leave();TagLobby_LeavePractice();BattleResult_Clear();
+        {extern void TagMenu_Request(int);TagMenu_Request(1);}
+        gProgress->flags&=~0x40;gProgress->mode=4;
+        gPortMenuMode=0;
+    }
+    /* Explicit native experiment; never silently enable it in upstream netplay. */
     path = getenv("BT3_REPLAY");
+    if(path!=NULL || getenv("BT3_DEMO")!=NULL)
+        TagTeam_Enable(getenv("BT3_TAG_TEAM") != NULL && !Port_NetSession());
 
     if (path == NULL && getenv("BT3_DEMO") == NULL) {
         {
@@ -216,7 +247,9 @@ int __wrap_Progress_Main(int arg) {
                 }
             }
             gPortMenuMode = 1; /* the renderer treats all 2D as one centred 4:3 page while the menus run */
+            gPortInMenus = 1;
             r = __real_Progress_Main(arg);
+            gPortInMenus = 0;
             gPortMenuMode = 0;
             sFromMenu = 1; /* a battle set up by the real menus follows: the traces apply to it too */
             return r;
@@ -224,7 +257,27 @@ int __wrap_Progress_Main(int arg) {
     }
     if (sBattles++ > 0 && !(getenv("BT4_RENDER_TEST") && getenv("BT4_MEMORY_BATTLES") && sBattles<=atoi(getenv("BT4_MEMORY_BATTLES")))) {
         printf("bt3: battle finished\n");
+#ifdef __ANDROID__
+        /* (not exit(): its destructors ran while the system's audio thread still used a lock they took down, and
+           Android aborted the app, "pthread_mutex_lock called on a destroyed mutex": every test fight's end on a
+           Xiaomi phone, 2026-11-02. As the window's own quit in gs_gpu.c: the log is flushed, nothing else to write.) */
+        {
+            extern void _exit(int) __attribute__((noreturn)); /* (unistd.h: not included here) */
+            fflush(NULL);
+            _exit(0);
+        }
+#else
         exit(0);
+#endif
+    }
+    /* The regular first-run menu opens the streamed-audio archive. A direct
+     * match skips that menu, but still needs its music and every fighter's
+     * spoken lines; loading the sample banks alone is not enough. */
+    {
+        extern void File_LoadPartitionNw(int);
+        extern int File_WaitPartition(int);
+        File_LoadPartitionNw(2);
+        File_WaitPartition(2);
     }
     if (path != NULL) {
         static uint8_t buf[REPLAY_FILE_SIZE] __attribute__((aligned(16)));
@@ -360,7 +413,11 @@ int Port_NetMenuListed(void) {
     if (e != NULL) {
         return atoi(e) != 0;
     }
+#ifdef __ANDROID__
+    return Port_Setting("net_dnb_menu", 1) != 0; /* (Android: Dragon Net Battle is the way in, to the online screens: menu_a.c) */
+#else
     return Port_Setting("net_dnb_menu", 0) != 0;
+#endif
 }
 
 /* "Unlock everything" on the Cheats tab of the settings window (port/src/gs/ui.cpp): the game's own leftover debug
@@ -374,6 +431,7 @@ int Port_NetMenuListed(void) {
    two-fighter digest. Tag Team online uses a separate branch that hashes every active actor, since its roster can
    contain ten fighters. */
 unsigned long long Port_NetDigest(void) {
+    if(TagNet_Enabled()) {extern unsigned long long TagOnline_Digest(void);return TagOnline_Digest();}
     struct { unsigned arrived; int mode, first, battle, seq, clock, hp[2]; unsigned pos[2][3]; } d;
     float q[4] __attribute__((aligned(16)));
     unsigned long long h = 0xCBF29CE484222325ull;
@@ -522,6 +580,8 @@ void Port_Trace(unsigned vblanks) {
         }
     }
     static int every = -1;
+    static int testLimit = -1, testTicks;
+    static unsigned testClock = ~0u;
     float p[2][4] __attribute__((aligned(16)));
     unsigned u[2][3];
     int *clock;
@@ -737,6 +797,17 @@ void Port_Trace(unsigned vblanks) {
             exit((action>=0xFD && action<=0x13B) || (simultaneous && *(int GAME_PTR)(other+0x948)>=0xFD && *(int GAME_PTR)(other+0x948)<=0x13B) ? 3 : 0);
         }
     }
+    if(testLimit<0) testLimit=getenv("BT3_TEST_FRAMES")?atoi(getenv("BT3_TEST_FRAMES")):0;
+    if(testLimit>0 && sBattles && gBtlSeq && gBtlSeq->state==3) {
+        unsigned now=(unsigned)BtlSeq_GetClock()[0];
+        if(now!=testClock) {
+            testClock=now;
+            if(++testTicks>=testLimit) {
+                printf("bt3: test frames complete: %d\n",testTicks);fflush(stdout);exit(0);
+            }
+        }
+    }
+
     {
         /* gs/state.c: BT3_HASH. With it, during a fight, the fight's own values: both fighters' health and
            position, the battle clock and the C library generator's state. Two players' machines differ in much
@@ -768,6 +839,24 @@ void Port_Trace(unsigned vblanks) {
     if (Port_NetWarp() && sNetEntered && gProgress != NULL && !(gProgress->flags & 0x40)) {
         Port_NetArrived(); /* the logos and the card check are over: the character select is next, with picture and sound */
     }
+#ifdef __ANDROID__
+    {   /* The app's "Unlock everything" (dr_unlock_all=1 in bt3_settings.txt). The memory card is read some time after
+           the start and replaces the save in memory, so the unlock is done every 10 seconds for the first two minutes
+           (it only sets things: doing it again changes nothing), then the setting is cleared. */
+        static int asked = -1, times = 0;
+        if (asked < 0) {
+            asked = Port_Setting("dr_unlock_all", 0) != 0;
+        }
+        if (asked && gSaveData != NULL && vblanks % 600 == 0) {
+            gPortUnlockAll = 1;
+            if (++times == 12) {
+                asked = 0;
+                Port_SettingSave("dr_unlock_all", 0);
+                Port_SettingsWrite();
+            }
+        }
+    }
+#endif
     if (gPortUnlockAll) {
         gPortUnlockAll = 0;
         if (gSaveData != NULL) {

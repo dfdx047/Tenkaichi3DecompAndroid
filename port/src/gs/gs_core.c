@@ -625,9 +625,11 @@ static uint8_t sVtxSeam[3];
    resolution). Even at their exact positions the seam and the parts beside it left a pixel open here and there,
    where one's edge has a corner the other's has not; overlapping them a little closes those. */
 static void seam_widen(Vertex *t) {
-    extern int gsScale;
+    /* (Android: the internal resolution in quarter steps, gsScale4; the PC's whole-step gsScale is not in this
+       renderer, and an `extern int gsScale` here was linked to a function of the game's of that name) */
+    extern int gsScale4;
     float cx = (t[0].x + t[1].x + t[2].x) / 3.0f, cy = (t[0].y + t[1].y + t[2].y) / 3.0f;
-    float d = 0.5f / (float)(gsScale > 0 ? gsScale : 1);
+    float d = 0.5f / (gsScale4 > 0 ? (float)gsScale4 * 0.25f : 1.0f);
     int i;
     for (i = 0; i < 3; i++) {
         float dx = t[i].x - cx, dy = t[i].y - cy, len = sqrtf(dx * dx + dy * dy);
@@ -638,6 +640,7 @@ static void seam_widen(Vertex *t) {
     }
 }
 
+static int sGsMute;
 /* A vertex arrives (XYZ2 / XYZF2 with kick = 1, XYZ3 / XYZF3 with kick = 0). */
 static void vertex(uint32_t x, uint32_t y, uint32_t z, int kick) {
     int seamHit = 0;
@@ -687,8 +690,8 @@ static void vertex(uint32_t x, uint32_t y, uint32_t z, int kick) {
         if (kick && gs.vcount >= (type == 6 || type == 1 || type == 2 ? 2 : type == 0 ? 1 : 3)) { count++; }
         if (stop > 0 && (int)sFrame == sDrawFrom && count > (unsigned)stop) { kick = 0; }
     }
-    if ((int)sFrame < sDrawFrom) {
-        kick = 0; /* BT3_GS_FROM: uploads and state are processed, nothing is drawn yet */
+    if ((int)sFrame < sDrawFrom || sGsMute) {
+        kick = 0; /* BT3_GS_FROM (or the markers 0x22, 0x23): uploads and state are processed, nothing is drawn */
     }
     if (sDumpFrame == (int)sFrame && kick && gs.vcount >= (type == 6 || type == 1 || type == 2 ? 2 : type == 0 ? 1 : 3)) {
         const Vertex *p0 = &gs.vtx[0], *p1 = &gs.vtx[gs.vcount - 1];
@@ -865,9 +868,12 @@ static void transfer_data(const uint8_t *p, uint32_t bytes) {
         }
         vram_rw(dbp, dbw, dpsm, x, y, 1, c);
     }
-    /* which pages changed: every page the rectangle can touch (pages are 8 KB = 32 blocks) */
+    /* which pages changed: every page the rectangle can touch (pages are 8 KB = 32 blocks). In memory a 24-bit
+       pixel takes 32 bits, and the 8H / 4HL / 4HH formats are bytes or nibbles of 32-bit pixels: counted with their
+       own sizes the last pages of the rectangle were missed, and a texture there could keep its old content. */
     {
-        uint32_t rowbytes = (dbw ? dbw : 1) * 64 * bits / 8, first = dbp / 32 + (gs.ty * rowbytes) / 8192;
+        uint32_t mbits = bits == 24 || dpsm == 0x1B || dpsm == 0x24 || dpsm == 0x2C ? 32 : bits;
+        uint32_t rowbytes = (dbw ? dbw : 1) * 64 * mbits / 8, first = dbp / 32 + (gs.ty * rowbytes) / 8192;
         uint32_t last = dbp / 32 + ((gs.ty + gs.th) * rowbytes + 8191) / 8192;
         for (i = first; i <= last; i++) {
             gGsPageGen[i & 511]++;
@@ -914,7 +920,13 @@ static void reg_write(uint32_t addr, uint64_t d) {
     case 0x51: gs.trxpos = d; break;
     case 0x52: gs.trxreg = d; break;
     case 0x53: gs.trxdir = d; transfer_begin(); break;
-    case 0x7F: if (sGpu) { GsGpu_Native((int)d); } break; /* not a GS register: the port's marker (gs_marker.c) */
+    case 0x7F: /* not a GS register: the port's marker (gs_marker.c) */
+        if (d == 0x22 || d == 0x23) { /* what the game draws from here to 0x23 is not shown (port_charsel.c) */
+            sGsMute = d == 0x22;
+        } else if (sGpu) {
+            GsGpu_Native((int)d);
+        }
+        break;
     default: break;
     }
 }
@@ -999,10 +1011,13 @@ void Gs_Gif(const uint8_t *p, uint32_t qwc) {
         } else { /* IMAGE */
             uint32_t n = loops < qwc ? loops : qwc;
             extern uint64_t gDrawXferNs; /* (BT3_DRAW_LOG: the time writing pictures into GS memory) */
-            uint64_t t0 = now_ns();
+            int timed = getenv("BT3_DRAW_LOG") != NULL; /* (a clock read costs: only when the log asks for it) */
+            uint64_t t0 = timed ? now_ns() : 0;
             sStat[6] += n;
             transfer_data((const uint8_t *)q, n * 16);
-            gDrawXferNs += now_ns() - t0;
+            if (timed) {
+                gDrawXferNs += now_ns() - t0;
+            }
             q += 2 * n;
             qwc -= n;
             loops -= n;
@@ -1085,9 +1100,12 @@ static void vif(const uint32_t *w, uint32_t count) {
         case 0x05: GsVu1_SetMode(imm); break;
         case 0x14: case 0x15: case 0x17: { /* (BT3_DRAW_LOG: the time in vertex programs, their draws in it) */
             extern uint64_t gDrawVuNs;
-            uint64_t t0 = now_ns();
+            int timed = getenv("BT3_DRAW_LOG") != NULL; /* (two clock reads per program were 4% of the render thread) */
+            uint64_t t0 = timed ? now_ns() : 0;
             GsVu1_Call(cmd == 0x17 ? -1 : (int)imm);
-            gDrawVuNs += now_ns() - t0;
+            if (timed) {
+                gDrawVuNs += now_ns() - t0;
+            }
             break;
         }
         case 0x20: need = 1; break;
@@ -1164,7 +1182,7 @@ static void screenshot(void) {
     for (i = 0; i < sTargetCount; i++) {
         sTargets[i].drawn = 0;
     }
-    if (!gGsResim) { /* (a frame that is only being re-run is not a frame of the picture; a skipped one is counted) */
+    if (!GS_RESIM) { /* (a frame that is only being re-run is not a frame of the picture; a skipped one is counted) */
         sFrame++;
     }
 }
@@ -1180,6 +1198,8 @@ static pthread_mutex_t sLock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t sWake = PTHREAD_COND_INITIALIZER, sDone = PTHREAD_COND_INITIALIZER;
 static int sThreaded;
 static int sJob;            /* 0 none, 1 init, 2 DMA list, 3 held frame, 4 register, 5 GIF channel */
+_Thread_local int gsOnRenderThread; /* gs_internal.h: 1 on the render thread */
+int gsListResim;            /* gs_internal.h: the list the render thread runs is a re-run frame's */
 static uint32_t sJobTadr;
 static uint32_t sJobReg, sJobGifQwc;
 static uint64_t sJobRegData;
@@ -1255,7 +1275,10 @@ static void race_compare(void) {
 
 static void *render_thread(void *arg) {
     extern void PortInput_Pump(void); /* gs_input.c */
+    extern void GsAdpf_AddThread(void); /* gs_adpf.c: this thread in the system's performance hints too */
     (void)arg;
+    GsAdpf_AddThread();
+    gsOnRenderThread = 1;
     pthread_mutex_lock(&sLock);
     for (;;) {
         while (sJob == 0 && !sStopping) {
@@ -1304,6 +1327,7 @@ static void *render_thread(void *arg) {
             uint32_t tadr = sJobTadr;
             int tte = sJobTte;
             gGsResim = sJobResim;
+            gsListResim = sJobResim;
             pthread_mutex_unlock(&sLock);
             {
                 extern void GsGpu_InterpHurry(int on);
@@ -1500,7 +1524,13 @@ static int render_thread_wanted(void) {
     extern int SDL_GetNumLogicalCPUCores(void);
     const char *e = getenv("BT3_GS_THREAD");
     const char *api = getenv("BT3_GPU_API");
-    int want = e != NULL ? atoi(e) != 0 : Port_Setting("render_thread", 1) != 0;
+    /* (Android's Tag Team app: on unless the player switched it off. Its fights draw two to ten fighters, and the
+       frame's drawing, 8 to 17 ms a picture on a mid-range phone, otherwise waits for the game's tick and the tick for it.) */
+    int dflt = 0;
+#ifdef __ANDROID__
+    dflt = getenv("BT3_TAG_TEAM") != NULL;
+#endif
+    int want = e != NULL ? atoi(e) != 0 : Port_Setting("render_thread", dflt) != 0 || Port_Setting("dr_lite", 0) != 0;
 #ifdef __APPLE__
     want = 0;
 #endif
@@ -1524,7 +1554,8 @@ static int gs_on(void) {
             sscanf(getenv("BT3_GS_PROBE"), "%d,%d", &sProbeX, &sProbeY);
         }
         if (on && strcmp(gs_mode(), "gpu") == 0) {
-            /* The render thread (setting "render_thread", F1 > Video; BT3_GS_THREAD=0/1 over it): the back end, the
+            /* The render thread (setting "render_thread", F1 > Video, or Lite mode, "dr_lite"; BT3_GS_THREAD=0/1 over
+               them): the back end, the
                window and the list run on a thread of their own while the game computes the next tick. Not with
                OpenGL (its context is one thread's, and the game's thread asks the back end for a few things), not
                on macOS (a window there is the main thread's), not with two logical processors or fewer. */
@@ -1605,6 +1636,10 @@ void Port_GsVif1Chain(uint32_t tadr, int tte) {
         uint64_t waited = (uint64_t)gPortSleptNs;
         uint64_t work = t - start > waited ? t - start - waited : 0; /* without the waiting for the vertical blank */
         gPortSleptNs = 0;
+        {   /* the system's performance hints (gs_adpf.c): this frame's work against the game's 30 a second */
+            extern void GsAdpf_Frame(uint64_t workNs, uint64_t targetNs);
+            GsAdpf_Frame(work, 33366700ull);
+        }
         {   /* a frame over budget: where the time went and what was created in it (in an online match a frame of
                100 ms or more always, without BT3_GS_VERBOSE: the other player's copy waits for this one meanwhile;
                the time this copy itself waited for the other player is said apart, gs/net.c) */
