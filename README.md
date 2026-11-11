@@ -23,15 +23,16 @@
 ---
 
 > [!IMPORTANT]
-> **Status (1.0.0): three games in one app, native on Android arm64.** **Touch Pro** remakes the on-screen controller for
+> **Status (1.0.2): three games in one app, native on Android arm64.** **Touch Pro** remakes the on-screen controller for
 > playing without a physical controller, and a **new character select** comes as an option. **Budokai Tenkaichi 2** now needs
 > only the ISO, with online play between two devices. **Budokai Tenkaichi 3** gets **Dragon Net Online**, with lobbies,
-> spectators and Ranked, and the **Tag Team Mod** as an option, online too. **Budokai Tenkaichi 4** has its far scenery fixed
-> on the Dragon Rage renderer and picks the renderer by device. Installs over 0.9.0 and 0.8.x without uninstalling. English,
-> Portuguese and Spanish. See [what's new](#whats-new-in-10) and the [numbers](#numbers-09-and-10).
+> spectators and Ranked, and the **Tag Team Mod** as an option, online too. **Budokai Tenkaichi 4** now runs
+> **BT4decomp**, NauTaro's decompilation, with Beta 14 Rev2 in English or Spanish. Installs over 1.0.x, 0.9.0 and 0.8.x
+> without uninstalling. English, Portuguese and Spanish. See [what's new in 1.0.2](#whats-new-in-102), [in
+> 1.0](#whats-new-in-10) and the [numbers](#numbers-09-and-10).
 
 This repository contains **no game data**. You need your own copy of each game as an `.iso`: **USA BT3 (SLUS-21678)**,
-**USA BT2 (SLUS-21441)** and **Team BT4's BT4 mod, Beta 14 Rev2 (SLUS-219.78)**. The app reads the file on your device;
+**USA BT2 (SLUS-21441)** and **Team BT4's BT4 mod, Beta 14 Rev2 (SLUS-219.78), in English or Spanish**. The app reads the file on your device;
 nothing is downloaded or uploaded.
 
 ## What it is
@@ -43,8 +44,22 @@ sound and input layer underneath. Dragon Rage brings that to Android, together w
 |---|---|---|
 | **Launcher app** (Kotlin, Jetpack Compose, Material 3; English, Portuguese and Spanish) | [`android/`](android) | ✅ Done |
 | **Budokai Tenkaichi 3** (the port's C code, built for arm64 as `libbt3.so`) | `src/`, `include/`, `port/` | ✅ Runs on Snapdragon, Mali, Xclipse and PowerVR; tuned per GPU tier |
-| **Budokai Tenkaichi 4** (Team BT4's mod, recompiled as `libbt4.so`; ARMSX2's renderer in `libbt4gsx.so`, or Dragon Rage's) | `port/bt4/` | 🧪 Experimental |
+| **Budokai Tenkaichi 4** (BT4decomp, [NauTaro's decompilation](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp) of Team BT4's mod, as `libbt4dec.so`) | branch `bt4dec-proto` | 🧪 Experimental |
 | **Budokai Tenkaichi 2** (recompiled as `libbt2.so`) | `bt2/` | ✅ Fights, saves and online |
+
+## What's new in 1.0.2
+
+- **Budokai Tenkaichi 4 with BT4decomp**: the BT4 card opens [BT4decomp](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp), the decompilation of Team BT4's mod
+  by **NauTaro**, built on Tenkaichi3Decomp, with Dragon Rage's Android port. It replaces the previous engine (the
+  recompiled mod with ARMSX2's renderer).
+- **Beta 14 Rev2 in English or Spanish**. The import copies the game's files (about 5.7 GB) and checks each one; then the
+  ISO can be deleted. If you had BT4 on 1.0.0 or 1.0.1, import the ISO again (the format changed; saves stay).
+- **BT4's settings** are BT3's, with smooth motion; the old engine's aspect ratio and 60 fps are gone.
+- **Tag Team in BT4**: the Local Room (against the CPU) works without a network; online depends on Dragon Net being enabled for this version.
+- BT3 and BT2 are the same as in 1.0.1. Every change: [`CHANGELOG.md`](CHANGELOG.md).
+
+**1.0.1** brought stable Tag Team online (rooms that stay up, rematch by the host only, an after-match menu, a new lobby),
+performance work on BT3, Tag and BT2, and the Full Power storm.
 
 ## What's new in 1.0
 
@@ -181,6 +196,7 @@ How we measured: the same recorded fight, with the same inputs, on the same devi
 - **Ranked**: sometimes stays on "Loading profile..." when the server does not answer.
 - **Players who only play BT2** do not get the app's update notice.
 - The online card in the launcher still says "Dragon Net Battle".
+- **BT4 (BT4decomp)**: online Tag Team depends on Dragon Net being enabled for 1.0.2; the Local Room works.
 - **Not tested yet**: a clean import of BT3 and BT4 on this version, Ranked to the end, spectators, Tag Team Online in every mode, the mode against PC.
 
 ## The app
@@ -192,7 +208,7 @@ How we measured: the same recorded fight, with the same inputs, on the same devi
 <tr><td><b>Controls</b></td><td>The on-screen controller: the <b>Dragon</b> look (new default: dark round buttons with gold icons, Xbox-coloured letters, a three-star Dragon Ball for the stick), the <b>Glass</b> look of 0.5, or the <b>classic</b> console pad; a layout made for this game that switches <b>by itself</b> between menus and fights (story mode included), PlayStation, Xbox or Nintendo letters, layout editor, macros, opacity, size, vibration, one button in clashes; <b>Touch Pro</b>: dynamic stick, dead zone, touch area, slide, tap toggles, profiles and a guide.</td></tr>
 <tr><td><b>Cheats</b></td><td><i>Unlock everything</i>: every character, stage, song and item, and max Zeni (the debug function the developers left in the game).</td></tr>
 <tr><td><b>Drivers</b></td><td>Custom Vulkan drivers for Adreno (Snapdragon) GPUs through AdrenoTools: the latest releases of <b>Mr. Purple</b>, <b>StevenMXZ</b> and <b>K11MCH1</b> downloaded and installed in one tap, a <code>.zip</code> from your files, choose, remove.</td></tr>
-<tr><td><b>Debug</b></td><td>Your device and GPU with its <b>tier</b>, the recommended settings for it, the <b>performance log</b> of the last run (speed in fights and menus, pictures a second; on by default, no cost you can feel) and <i>Export log</i> for bug reports.</td></tr>
+<tr><td><b>Debug</b></td><td>Your device and GPU with its <b>tier</b>, the recommended settings for it, the <b>performance log</b> of the last run (speed in fights and menus, pictures a second; on by default, no cost you can feel) and <i>Save log to Downloads</i> for bug reports.</td></tr>
 <tr><td><b>Settings</b></td><td>Renderer (<b>Vulkan</b>, or <b>OpenGL ES</b> for drivers whose Vulkan fails), internal resolution 1x–8x in fine steps, screen filter (bilinear, sharp, FXAA, AMD FSR 1, Snapdragon GSR), picture shape, <b>screen orientation</b> (landscape, portrait, automatic), <b>precise depth</b>, <b>skip pictures</b> instead of slowing down, smooth motion (60 / 120), present mode, the PS2 effects, volumes, language, theme, Material You, the <b>character select</b> (New or Classic), the <b>Tag Team Mod</b>.</td></tr>
 <tr><td><b>In game</b></td><td>A new menu made for fingers and controllers, in the launcher's look and in your language: Video, Performance, Effects, Audio, Interface (fonts, HUD, side bars), Controls, <b>Online</b> (how it works, what to do when it fails), Cheats, <b>Quit to launcher</b>. Back button, START + SELECT or the on-screen MENU button.</td></tr>
 </table>
@@ -215,22 +231,24 @@ list and say yes or not now; everything stays changeable):
 ### Install
 
 Download `DragonRage-<version>.apk` from the [latest release](../../releases/latest) and install it. A newer
-version installs over the older one and keeps your game data, settings and saves; 1.0 installs over 0.9.0 and 0.8.x
-without uninstalling. The app checks GitHub when it opens and offers new versions with their changelog.
+version installs over the older one and keeps your game data, settings and saves; 1.0.2 installs over 1.0.x, 0.9.0 and
+0.8.x without uninstalling. The app checks GitHub when it opens and offers new versions with their changelog.
 
-To report a problem: *Debug → Export log*, then send the `DragonRage-log-….txt` file (on [Discord](https://discord.gg/6XXxT547Qx), for example).
+To report a problem: *Debug → Save log to Downloads*, then send the `DragonRage-log-….txt` file (on [Discord](https://discord.gg/6XXxT547Qx), for example).
 
 Build it yourself:
 
 ```sh
 sh port/tools/android_toolchain.sh   # LLVM 21, the NDK's sysroot, SDL3 (once)
 python3 port/tools/android.py        # the engine -> android/app/src/main/jniLibs (and its fonts and pictures -> assets)
-python3 port/bt4/build_bt4.py --armsx2   # BT4, from your own disc (only with its files on this PC; nothing goes to git)
-python3 bt2/android/build.py         # BT2, from your own disc (same)
+sh .github/bt4dec-engine.sh            # BT4 (BT4decomp): libbt4dec.so and libdatachannel.so from the draft release bt4dec-engine
+                                       # (built from the branch bt4dec-proto with blank data tables: no game data)
+python3 bt2/android/build.py         # BT2, from your own disc (only with its files on this PC; nothing goes to git)
 cd android && ./gradlew assembleRelease   # needs JDK 17+ and the Android SDK (compileSdk 35)
 ```
 
-The BT4 and BT2 libraries are made from the game's program: they only go inside the APK built on your PC, never into git.
+The BT2 library is made from the game's program: it only goes inside the APK built on your PC, never into git. BT4decomp
+carries no game data: its tables are blank and are read from your ISO at import.
 
 ### Where files go
 
@@ -288,6 +306,10 @@ were offered), `perf_log`, `frag_depth`. The on-screen controller is in `touch_c
       Online with lobbies, spectators and Ranked (PC 0.1.39); the Tag Team Mod as an option, with Tag Team Online; installs
       over 0.9.0 and 0.8.x; BT4's far scenery fixed and the renderer by device; fixes from 208 players' logs; fewer requests
       to the servers; team and licences in the app; a change map in `docs/changes/` (`docs/release-1.0.md`, in Portuguese)
+- [x] **1.0.1**: stable Tag Team online (rooms that stay up, rematch by the host only, after-match menu, new lobby);
+      performance on BT3, Tag and BT2; the Full Power storm; fewer requests to Dragon Net
+- [x] **1.0.2**: Budokai Tenkaichi 4 on BT4decomp (NauTaro), Beta 14 Rev2 in English or Spanish, an import checked file
+      by file, BT3's settings on BT4
 
 ### Next
 - [ ] More GPUs measured for the tiers (send your log!)
@@ -302,7 +324,7 @@ were offered), `perf_log`, `frag_depth`. The on-screen controller is in `touch_c
 | `src/`, `include/` | The game's code, from the decompilation; PC changes are inside `#ifdef PORT` |
 | `port/` | The PC port: platform layer, renderer, sound, input, build tools |
 | `bt2/` | The recompiled Budokai Tenkaichi 2: runtime, online plugin, Android build |
-| `port/bt4/` | The recompiled Budokai Tenkaichi 4: hooks, shim and build |
+| `port/bt4/` | The previous Budokai Tenkaichi 4 engine (up to 1.0.1): hooks, shim and build. BT4decomp lives in the branch `bt4dec-proto` |
 | `docs/` | Notes on the game and on the PC port; [`docs/changes/`](docs/changes) maps what changed, by area and by file |
 
 ## Team and credits
@@ -316,6 +338,7 @@ were offered), `perf_log`, `frag_depth`. The on-screen controller is in `touch_c
 - **Androidxxt01**, **jllacchua**, **victorgonl**: contributions to the PC port and the app.
 - **tehmufti and the Tag Team Mod contributors**: the Tag Team Mod.
 - **Team BT4**: the Budokai Tenkaichi 4 mod.
+- **[NauTaro](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp)**: BT4decomp, the decompilation of the BT4 mod that runs on the BT4 card.
 - Art: **MarshallPunk** (the announcer), **pluantoine** (the buttons, CC BY 4.0).
 - GPU drivers by [Mr. Purple](https://github.com/MrPurple666/purple-turnip), [StevenMXZ](https://github.com/StevenMXZ/Adreno-Tools-Drivers)
   and [K11MCH1](https://github.com/K11MCH1/AdrenoToolsDrivers), loaded with [libadrenotools](https://github.com/bylaws/libadrenotools) (BSD-2-Clause).
