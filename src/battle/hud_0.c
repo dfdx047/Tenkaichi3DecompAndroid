@@ -6,6 +6,10 @@
 #include "battle/tag_team.h"
 static BtlMenu tagResultMenu;
 static BtlMenuItem tagResultItems[7];
+/* Tag Team online: the fight's pause menu without its restart entries (PauseMenu_Init). */
+static BtlMenu tagPauseMenu;
+static BtlMenuItem tagPauseItems[16];
+static s32 tagPauseOn;
 #endif
 
 /*
@@ -103,6 +107,11 @@ s32 BtlGame_IsReplay(void) {
 BtlMenu *PauseMenu_GetMenu(s32 which) {
     BtlMenu *menu = NULL;
 
+#ifdef PORT
+    if (which == 0 && tagPauseOn) {
+        return &tagPauseMenu;
+    }
+#endif
     switch (which) {
     case 0:
         switch (Battle_GetMode()) {
@@ -433,6 +442,44 @@ void PauseMenu_Init(void) {
             s32 id=gPauseMenuResultVersus.items[i].id;
             if(id==0xE || id==0x18 || id==0x17) continue;
             tagResultItems[tagResultMenu.count++]=gPauseMenuResultVersus.items[i];
+        }
+        /* Online, "Fight Again" (the restart entries: reason 0x8000 / 0x10000) is left out: this menu runs on the pad
+           the battle picks for the result (a guest's, often), and its restart started the match again for the whole
+           room. A rematch is the host's, on the room's own screen after the match (tag_online_menu.c). The same on
+           every copy of the room (TagNet_Enabled), so the menus agree. */
+        {
+            extern int TagNet_Enabled(void);
+            if(TagNet_Enabled()) {
+                PauseMenu_PortRemove(&tagResultMenu,0xC);
+                PauseMenu_PortRemove(&tagResultMenu,0x13);
+                PauseMenu_PortRemove(&tagResultMenu,0x19);
+            }
+        }
+    }
+    /* Online Tag Team, the pause menu in the fight: Start opens it on the pad of whoever pressed it, a guest too, and
+       its restart entries (reason 0x8000 / 0x10000) started the match again for the whole room. They are left out of
+       a copy of this battle's pause menu (the game's own stays as it is, for offline); a rematch is the host's, after
+       the match. The same on every copy of the room. */
+    tagPauseOn = 0;
+    {
+        extern int TagNet_Enabled(void);
+        if (TagTeam_Active() && TagNet_Enabled()) {
+            BtlMenu *base = PauseMenu_GetMenu(0);
+
+            if (base != NULL && base->count >= 0 && base->count <= (s32)(sizeof(tagPauseItems) / sizeof(tagPauseItems[0]))) {
+                s32 i;
+
+                tagPauseMenu = *base;
+                for (i = 0; i < base->count; i++) {
+                    tagPauseItems[i] = base->items[i];
+                }
+                tagPauseMenu.items = tagPauseItems;
+                PauseMenu_PortRemove(&tagPauseMenu, 0xC);
+                PauseMenu_PortRemove(&tagPauseMenu, 0x13);
+                PauseMenu_PortRemove(&tagPauseMenu, 0x18);
+                PauseMenu_PortRemove(&tagPauseMenu, 0x19);
+                tagPauseOn = 1;
+            }
         }
     }
     {
