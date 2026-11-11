@@ -22,7 +22,6 @@ void TagSession_SetPlayerTeam(s32 player,s32 team);
 s32 TagSession_Time(void);
 s32 TagSession_Level(void);
 s32 TagSession_Music(void);
-s32 TagSession_BattleMusic(void);
 s32 TagSession_CpuSetting(s32 side,s32 member);
 void TagSession_SetCpuSetting(s32 side,s32 member,s32 level);
 s32 TagSession_CpuLevel(s32 side,s32 member);
