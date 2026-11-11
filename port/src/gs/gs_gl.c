@@ -888,6 +888,13 @@ static void prepare_uniforms(void) {
     size_t ubytes = (size_t)gsVuUniCount * sUStride;
     uint32_t n;
     sUniformBatch = 0;
+#if GL_ES
+    /* (OpenGL ES, Android: the uniform blocks go through their own ring (ubo_put), which does not use this batch. With
+       EXT_buffer_storage the two buffers are immutable and persistently mapped: the glBufferData below unmapped them and
+       the ring's next write crashed, ubo_put on Adreno at the first frames) */
+    (void)pbytes; (void)ubytes; (void)n;
+    return;
+#endif
     if (getenv("BT4_GL_LEGACY_UNIFORMS") || !pbytes || !sParamStride) { return; }
     if (pbytes > sParamCapacity) {
         unsigned char *p = realloc(sParamStaging, pbytes);
