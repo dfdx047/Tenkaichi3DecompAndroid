@@ -1109,6 +1109,9 @@ static void Tb_TagUpdate(s32 live){
     if(sTb->tagCur<6){++sTb->tagCur;if(sTb->tagPreset!=3&&sTb->tagCur==1)sTb->tagCur=3;return;}
     if(sTb->tagCur==7){sTb->tagJoin=1;sTb->code[0]=0;sTb->codeLen=sTb->keyCol=sTb->keyRow=0;Tb_SetMode(TB_JOIN);return;}
     {unsigned long long content=0;s32 offline=getenv("BT4_RENDER_TEST")&&!getenv("BT4_TAG_ONLINE_TEST");
+#ifdef __ANDROID__
+        offline=1; /* Android (Dragon Rage prototype): Create Room is the in-process room (gs/tag_team_net.c) with CPU fighters; no TAG TEAM server yet */
+#endif
         if(!offline&&(!Tb_Vanilla(0)||Port_TagDataFingerprint(&content)!=1))return;
         Port_TagCPUOptions(sTb->tagCPU,sTb->tagDifficulty);
         if(!Port_TagConnect(offline?NULL:Port_TagEndpoint())){Tb_Note((char*)Port_TagError());return;}
@@ -1254,7 +1257,11 @@ static void Tb_HubUpdate(s32 live) {
     }
     Ps_Move(&sTb->hubCur, HUB_COUNT);
     if (pad->gamePressed & PADG_CROSS) {
-        if (sTb->hubCur != HUB_RANKED && sTb->hubCur != HUB_PROFILE && !Tb_NicknameCanPlay()) return;
+        if (sTb->hubCur != HUB_RANKED && sTb->hubCur != HUB_PROFILE &&
+#ifdef __ANDROID__
+            sTb->hubCur != HUB_TAG && /* (Android: TAG TEAM's local room needs no online nickname, and no service can check one) */
+#endif
+            !Tb_NicknameCanPlay()) return;
         switch (sTb->hubCur) {
         case HUB_QUICK:
             Snd_PlaySe(1, 1);
