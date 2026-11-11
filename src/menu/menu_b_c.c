@@ -2,7 +2,11 @@
 #include "menu/menu_b.h"
 #include "sys/pad.h"
 #include "sys/save.h"
+#include "port_variant.h"
 #ifdef PORT
+#include <stdlib.h>
+#include <stdio.h>
+extern void Hist_StoryAudit(void);
 extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
 extern void Port_MenuFill(int on);
 #endif
@@ -37,10 +41,10 @@ void HistOutro_GuideGoto(s32 movie, s32 side, s32 out) {
     MFlash *flash = &gHistOutro->flash[movie];
 
     if (side == 0) {
-        sprintf(name, "mc_guide_%02d", gProgress->subMenu);
+        sprintf(name, "mc_guide_%02d", PORT_V(gProgress->subMenu,0));
         strcpy(label, out ? "fl_right_out" : "fl_right_in");
     } else {
-        sprintf(name, "mc_guide_%02d", gHistOutro->partner);
+        sprintf(name, "mc_guide_%02d", PORT_V(gHistOutro->partner,6));
         strcpy(label, out ? "fl_left_out" : "fl_left_in");
     }
     Flash_FindLabel(flash, NULL, name, &ref);
@@ -69,7 +73,8 @@ void HistOutro_GuideGoto(s32 movie, s32 side, s32 out) {
         gSaveData->unk1008 |= 1; \
     }
 
-#define OUTRO_BGM 0x10B1C
+#define OUTRO_BGM PORT_V(0x10B1C,0x81C)
+extern void HistGuide_OriginalPortrait(MFlash *flash, s32 guide);
 
 /* Loads the screen (section `section` of archive 2 and the saga's own file) and starts the music. */
 void HistOutro_Init(s32 section) {
@@ -111,7 +116,7 @@ void HistOutro_Init(s32 section) {
     gHistOutro->fileRes = Sprite_Unpack(gHistOutro->file, NULL, NULL);
     ModeBg_Init(gHistOutro->fileRes);
     OUTRO_RES(gHistOutro->fileRes, 7);
-    switch (gProgress->subMenu) {
+    switch (PORT_V(gProgress->subMenu,0)) {
     case 0:
         OUTRO_ICONS(1, 2, 3);
         break;
@@ -138,7 +143,7 @@ void HistOutro_Init(s32 section) {
         break;
     }
     OUTRO_RES(gHistOutro->fileRes, 8);
-    switch (gHistOutro->partner) {
+    switch (PORT_V(gHistOutro->partner,6)) {
     case 0:
         OUTRO_ICONS(1, 2, 3);
         break;
@@ -195,16 +200,16 @@ void HistOutro_Init(s32 section) {
     switch (gProgress->subMenu) {
     case 0:
         Bgm_Play(OUTRO_BGM);
-        StreamSe_PlayDefault(0, 0x10BDC);
+        StreamSe_PlayDefault(0, 0x159);
         break;
     case 1:
         Bgm_Play(OUTRO_BGM);
-        StreamSe_PlayDefault(0, 0x10BDD);
+        StreamSe_PlayDefault(0, 0x15A);
         OUTRO_COUNT(1);
         break;
     case 2:
         Bgm_Play(OUTRO_BGM);
-        StreamSe_PlayDefault(0, 0x10BDE);
+        StreamSe_PlayDefault(0, 0x15B);
         break;
     case 3:
         Bgm_Play(OUTRO_BGM);
@@ -214,11 +219,11 @@ void HistOutro_Init(s32 section) {
         OUTRO_COUNT(4);
         break;
     case 5:
-        Bgm_Play(0x10B1E);
+        Bgm_Play(0x81E);
         OUTRO_COUNT(5);
         break;
     case 6:
-        Bgm_Play(0x10B28);
+        Bgm_Play(0x828);
         break;
     case 7:
         Bgm_Play(OUTRO_BGM);
@@ -267,9 +272,9 @@ void HistOutro_Draw(void) {
     flash = &gHistOutro->flash[0];
     for (i = 0; i < 2; i++) {
         if (i != 0) {
-            guide = gHistOutro->partner;
+            guide = PORT_V(gHistOutro->partner,6);
         } else {
-            guide = gProgress->subMenu;
+            guide = PORT_V(gProgress->subMenu,0);
         }
         sprintf(name, "mc_guide_%02d", guide);
         sprintf(sub, "mc_guide_%02d_eye", guide);
@@ -282,6 +287,7 @@ void HistOutro_Draw(void) {
         } else {
             FlashAnim_ShowNext2(flash, &ref, 0);
         }
+        HistGuide_OriginalPortrait(flash, guide);
     }
     for (i = 0; i < 3; i++) {
         sprintf(name, "mc_episode_text_%d", i + 1);
@@ -424,7 +430,7 @@ void HistOutro_UpdateStep(void) {
         break;
     /* saga 0 */
     case 101:
-        OUTRO_SAY_FIRST(0);
+        OUTRO_SAY_FIRST(PORT_V(0,1));
         break;
     case 103:
     case 109:
@@ -454,12 +460,12 @@ void HistOutro_UpdateStep(void) {
         OUTRO_WAIT();
         break;
     case 105:
-        HistOutro_GuideGoto(0, 1, 0);
+        HistOutro_GuideGoto(0, PORT_V(1,0), 0);
         gHistOutro->step++;
         break;
     /* saga 1 */
     case 151:
-        OUTRO_SAY_FIRST(0);
+        OUTRO_SAY_FIRST(PORT_V(0,1));
         break;
     case 153:
     case 155:
@@ -487,12 +493,12 @@ void HistOutro_UpdateStep(void) {
         gHistOutro->step++;
         break;
     case 157:
-        HistOutro_GuideGoto(0, 1, 0);
+        HistOutro_GuideGoto(0, PORT_V(1,0), 0);
         gHistOutro->step++;
         break;
     /* saga 2 */
     case 201:
-        OUTRO_SAY_FIRST(0);
+        OUTRO_SAY_FIRST(PORT_V(0,1));
         break;
     case 207:
     case 213:
@@ -518,7 +524,7 @@ void HistOutro_UpdateStep(void) {
         OUTRO_WAIT();
         break;
     case 203:
-        HistOutro_GuideGoto(0, 1, 0);
+        HistOutro_GuideGoto(0, PORT_V(1,0), 0);
         gHistOutro->step++;
         break;
     case 219:
@@ -531,7 +537,7 @@ void HistOutro_UpdateStep(void) {
         break;
     /* saga 3 */
     case 251:
-        OUTRO_SAY_FIRST(0);
+        OUTRO_SAY_FIRST(PORT_V(0,1));
         break;
     case 253:
     case 255:
@@ -561,7 +567,7 @@ void HistOutro_UpdateStep(void) {
         OUTRO_WAIT();
         break;
     case 257:
-        HistOutro_GuideGoto(0, 1, 0);
+        HistOutro_GuideGoto(0, PORT_V(1,0), 0);
         gHistOutro->step++;
         break;
     case 273:
@@ -574,7 +580,7 @@ void HistOutro_UpdateStep(void) {
         break;
     /* saga 4 */
     case 301:
-        OUTRO_SAY_FIRST(0);
+        OUTRO_SAY_FIRST(PORT_V(0,1));
         break;
     case 305:
     case 307:
@@ -603,7 +609,7 @@ void HistOutro_UpdateStep(void) {
         break;
     /* saga 5 */
     case 351:
-        OUTRO_SAY_FIRST(0);
+        OUTRO_SAY_FIRST(PORT_V(0,1));
         break;
     case 357:
     case 373:
@@ -633,7 +639,7 @@ void HistOutro_UpdateStep(void) {
         OUTRO_WAIT();
         break;
     case 353:
-        HistOutro_GuideGoto(0, 1, 0);
+        HistOutro_GuideGoto(0, PORT_V(1,0), 0);
         gHistOutro->step++;
         break;
     case 371:
@@ -646,7 +652,7 @@ void HistOutro_UpdateStep(void) {
         break;
     /* saga 6 */
     case 401:
-        OUTRO_SAY_FIRST(0);
+        OUTRO_SAY_FIRST(PORT_V(0,1));
         break;
     case 403:
     case 405:
@@ -675,7 +681,7 @@ void HistOutro_UpdateStep(void) {
         break;
     case 407:
         HistOutro_GuideGoto(0, 0, 1);
-        HistOutro_GuideGoto(0, 1, 0);
+        HistOutro_GuideGoto(0, PORT_V(1,0), 0);
         gHistOutro->step++;
         break;
     /* saga 7 */
@@ -846,10 +852,27 @@ s32 Hist_Main(void) {
     s32 played; /* set in the modes that follow a battle and never read */
 
     HIST_LOAD_ARC();
+#ifdef PORT
+    /* Local regression starts the actual selected BT4 story script and keeps
+       the normal return to its result menu. No user saves or network involved. */
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_STORY_SCENARIO_TEST")){
+        static s32 started;
+        if(!started){
+            extern void BattleSetup_Clear(void), BattleSetup_SetScript(s32 script);
+            s32 script=atoi(getenv("BT4_STORY_SCENARIO_TEST"));
+            HistResult_SplitEpisode(script,&gProgress->subMenu,&gProgress->subMenuItem);
+            gProgress->prevMode=7;gProgress->mode=8;started=1;
+            BattleSetup_Clear();BattleSetup_SetScript(script);
+            printf("story-scenario script=%d saga=%d episode=%d\n",script,gProgress->subMenu,gProgress->subMenuItem);fflush(stdout);
+            return 1;
+        }
+    }
+    if(getenv("BT4_STORY_AUDIT"))Hist_StoryAudit();
+#endif
     do {
         switch (gProgress->mode) {
         case 6:
-            Bgm_Play(0x10B18);
+            Bgm_Play(0x86C);
             r = HistSel_Run(1);
             Adx_StopAll();
             gProgress->prevMode = gProgress->mode;

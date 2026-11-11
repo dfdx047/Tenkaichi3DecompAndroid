@@ -546,7 +546,7 @@ s32 BtlAct_VanishStepHandler(BtlActEChr *chr, s32 phase) {
             }
             --*counter;
             if (*counter >= 2) {
-                c = BtlAct_ScaleSpeedByDist(chr, BtlMoveParam_GetSpeed(chr, 0x12), 3.14159265f, 6.0f);
+                c = BtlChar_TestFlag(chr, 0x76) ? 18.625f : BtlAct_ScaleSpeedByDist(chr, BtlMoveParam_GetSpeed(chr, 0x12), 3.14159265f, 6.0f);
             } else if (*counter == 1) {
                 c = 0.0f;
                 BtlChar_SetFxBit(chr, 0xD);
@@ -1362,9 +1362,9 @@ void BtlAct_ClashBlowsHandler(BtlActEChr *chr, s32 phase) {
             case 0x173:
             case 0x174:
                 BtlAnim_AdvanceLoop(chr, 0);
-                BtlChar_SetFlag(chr, 0xE6);
+                BtlChar_SetFlag(chr, 0x13C);
                 BtlChar_SetFlag(chr, 0xED);
-                if (BtlInput_TestAction(chr, 0x33, 1)) {
+                if (BtlInput_TestAction(chr, 0x4F, 1)) {
                     BtlAct_CountAndMarkOpponent(chr);
 #ifdef PORT /* PC build: BT3_CLASH_LOG=1 */
                     Port_ClashLog(chr->player, "blow clash", 1, chr->clashCountB, chr->actionFrame);
@@ -1586,7 +1586,8 @@ s32 BtlAct_ClashExchangeHandler(BtlActEChr *chr, s32 phase) {
                     BtlChar_SetFlag(chr, c->pick + 0xE9);
                     if (chr->unkE58 == -1) {
                         if (BtlInput_IsPressed(chr, 0x78000000)) {
-                            if (BtlInput_IsPressed(chr, 0x8000000 << c->pick)) {
+                            if (BtlInput_IsPressed(chr, 0x8000000 << c->pick) &&
+                                !BtlInput_IsPressed(chr, 0x78000000 ^ (0x8000000 << c->pick))) {
                                 chr->unkE58 = chr->actionFrame;
                                 if (!chr->injected) {
                                     BtlCharSnd_PlayCommonFar(chr, 0x14);
@@ -1610,7 +1611,7 @@ s32 BtlAct_ClashExchangeHandler(BtlActEChr *chr, s32 phase) {
                     BtlAct_Request(chr, 0xD5);
                 }
                 if (BtlAnim_PassedRatio(chr, 0.5f)) {
-                    BtlMember_Damage(chr, BtlOpp_GetClashCountB(chr) * 600, 8);
+                    BtlMember_Damage(chr, BtlOpp_GetClashCountB(chr) * 792, 8);
                     BtlChar_PlayVoice(chr, 0x1A);
                 }
                 BtlChar_SetFlag(chr, 0x95);

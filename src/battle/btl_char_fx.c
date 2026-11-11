@@ -730,6 +730,9 @@ void BtlFx_UpdateScreenFilter(FxChr *chr) {
     a = chr->filter * 8.0f;
     b = chr->filter * 32.0f;
     c = chr->filter * 128.0f;
+    /* Screen filters address a viewport, not an actor. Extra actors keep their
+       filter state but must not index the original two viewport buffers. */
+    if (chr->side >= 2) return;
     StgBlur_SetPasses(chr->side, 3);
     StgBlur_SetColor3Rgba(chr->side, 0x80, 0x80, 0x80, 0x40);
     StgBlur_SetColor0Rgba(chr->side, 0x80, 0x80, 0x80, a);

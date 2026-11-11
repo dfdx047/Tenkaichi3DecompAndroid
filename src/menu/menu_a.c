@@ -8,6 +8,8 @@ extern void Port_NetLeave(void);
 #endif
 #include "sys/pad.h"
 #include "sys/save.h"
+#include <stdlib.h>
+#include <stdio.h>
 #ifdef PORT
 extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
 extern void Port_MenuFill(int on);
@@ -37,6 +39,39 @@ MainMenu *gMainMenu = NULL;
  * menu/port_tbo.c. It has no voiced line of the guides.
  */
 #include "port_tbo_label.h"
+#include "port_bt4_label.h"
+#include "port_bt4_label_eng.h"
+#include "../../port/src/gs/game_profile.h"
+
+#include "menu/port_screen.h"
+#include "menu/tbo_art.h"
+extern void Flash_ClipSetCustomDraw(MFlash *,MFlashRef *,void *,void *);
+typedef struct OnlineLabelProp {
+    u32 flags;f32 x,y,alpha,scaleX,scaleY,color;MFlashUv uv;
+    f32 m[9],mul[4];s16 add[4];
+} OnlineLabelProp;
+static u32 PortMainMenu_LabelTint(const OnlineLabelProp *p){
+    u32 tint=0;
+    for(s32 channel=0;channel<3;channel++){
+        s32 value=(s32)(128*p->mul[channel])+p->add[channel];
+        if(p->flags&32)value=(s32)(value*p->color);
+        if(value<0)value=0;
+        if(value>255)value=255;
+        tint|=(u32)value<<(channel*8);
+    }
+    return tint;
+}
+static void PortMainMenu_OnlineLabel(void *arg,OnlineLabelProp *p){
+    s32 alpha=(s32)(p->mul[3]*128)+p->add[3];
+    f32 sx=p->m[0],sy=p->m[4],x=p->m[2],y=p->m[5];
+    if(p->flags&16){sx*=p->scaleX;sy*=p->scaleY;}
+    if(p->flags&2){x+=p->x;y+=p->y;}
+    if(p->flags&8)alpha=(s32)(alpha*p->alpha);
+    Ps_PageSet();Ps_SetShift(0);
+    /* The long name stays inside the plate's cursor end cap, while retaining
+       the native row's height, baseline and normal/highlight animation. */
+    Ps_Sprite(arg?TBO_MAIN_ONLINE_ON:TBO_MAIN_ONLINE_OFF,Ps_Left()+x,y,Ps_Left()+x+512*sx*.9f,y+32*sy,0,0,1,1,PortMainMenu_LabelTint(p),alpha);
+}
 
 #define MAINMENU_TBO 11
 #define MM_ICON(item) ((item) == MAINMENU_TBO ? 4 : (item)) /* whose icon an item shows */
@@ -53,8 +88,27 @@ static s32 PortMainMenu_PixelAt(s32 x, s32 y) {
 /* Writes runs of palette indices into label row `row` of a sheet. */
 static void PortMainMenu_WriteRuns(u8 *tex, s32 row, const PortLabelRun *run, s32 count) {
     u8 *px = *(u8 **)(tex + 0x38) + 0x60;
+    u64 layout = *(u64 *)(tex + 0x30);
     s32 i;
     s32 k;
+
+    if (row == 3 && ((layout >> 26) & 15) == 9 && ((layout >> 30) & 15) == 7) {
+        const Bt4LabelPatch *patch;
+        s32 patches;
+        if (run == sPortTboOff && ((layout >> 20) & 63) == 20) {
+            patch = Port_GameProfileEnglish() ? sBt4TboOffEng : sBt4TboOff;
+            patches = Port_GameProfileEnglish() ? sizeof(sBt4TboOffEng)/sizeof(sBt4TboOffEng[0]) : sizeof(sBt4TboOff)/sizeof(sBt4TboOff[0]);
+        } else if (run == sPortTboOn && ((layout >> 20) & 63) == 19) {
+            patch = Port_GameProfileEnglish() ? sBt4TboOnEng : sBt4TboOn;
+            patches = Port_GameProfileEnglish() ? sizeof(sBt4TboOnEng)/sizeof(sBt4TboOnEng[0]) : sizeof(sBt4TboOn)/sizeof(sBt4TboOn[0]);
+        } else return;
+        for (i = 0; i < patches; i++) {
+            px[patch[i].off] = (px[patch[i].off] & ~patch[i].mask) | patch[i].value;
+        }
+        return;
+    }
+    if (((layout >> 20) & 0x3F) != 0x13 || ((layout >> 26) & 15) != 9 ||
+        (1 << ((layout >> 30) & 15)) < (row + 1) * 32) return;
 
     for (i = 0; i < count; i++) {
         for (k = 0; k < run[i].len; k++) {
@@ -85,6 +139,35 @@ static s32 PortMainMenu_WriteDisc(u8 *tex, s32 row, s32 lit) {
 #else
 #define MM_ICON(item) (item)
 #define MAINMENU_VOICED(item) 1
+#endif
+
+
+#ifdef PORT
+static u32 *sOnlineDescriptions;
+static const u16 sOnlineDescription0[]={65279,70,105,103,104,116,32,119,105,116,104,32,102,97,114,97,119,97,121,32,102,114,105,101,110,100,115,10,97,110,100,32,111,116,104,101,114,32,112,108,97,121,101,114,115,46,0};
+static const u16 sOnlineDescription1[]={65279,67,111,109,112,101,116,101,32,119,105,116,104,32,112,108,97,121,101,114,115,10,102,114,111,109,32,102,97,114,97,119,97,121,32,112,108,97,99,101,115,33,0};
+static const u16 sOnlineDescription2[]={65279,77,121,32,102,97,109,105,108,121,32,97,110,100,32,84,114,117,110,107,115,39,115,10,102,97,109,105,108,121,32,99,97,110,32,99,111,109,112,101,116,101,46,0};
+static const u16 sOnlineDescription3[]={65279,67,111,109,112,101,116,101,32,119,105,116,104,32,112,108,97,121,101,114,115,10,102,114,111,109,32,97,114,111,117,110,100,32,116,104,101,32,119,111,114,108,100,46,10,65,109,97,122,105,110,103,33,0};
+static u32 *PortMainMenu_Descriptions(u32 *original){
+    const u16 *replacement[4]={sOnlineDescription0,sOnlineDescription1,sOnlineDescription2,sOnlineDescription3};
+    s32 count=(s32)original[0],i,chars;u32 bytes,at;const u16 *text;u16 *to;
+    if(!Port_GameProfileEnglish()||count<36||count>256)return original;
+    bytes=(count+1)*4;
+    for(i=0;i<count;i++){
+        text=i>=32&&i<36?replacement[i-32]:(u16 *)((u8 *)original+(original[i+1]&~3));
+        for(chars=0;text[chars];chars++);bytes+=((chars+1)*2+3)&~3;
+    }
+    sOnlineDescriptions=Heap_Alloc(bytes,0x20,0,2);
+    if(!sOnlineDescriptions)return original;
+    memset(sOnlineDescriptions,0,bytes);sOnlineDescriptions[0]=count;at=(count+1)*4;
+    for(i=0;i<count;i++){
+        text=i>=32&&i<36?replacement[i-32]:(u16 *)((u8 *)original+(original[i+1]&~3));
+        sOnlineDescriptions[i+1]=at;to=(u16 *)((u8 *)sOnlineDescriptions+at);
+        for(chars=0;text[chars];chars++)to[chars]=text[chars];to[chars]=0;
+        at+=((chars+1)*2+3)&~3;
+    }
+    return sOnlineDescriptions;
+}
 #endif
 
 /* Starts the idle loop of the seven dragon balls (all seven collected). */
@@ -159,7 +242,7 @@ void MainMenu_Init(s32 section) {
     gMainMenu->tex[49] = MTEX(res, 5);
     MM_RES(13);
     gMainMenu->tex[22] = MTEX(res, 0);
-    MM_RES(26);
+    MM_RES(29 + Rand_Range(3) * 2 + 1);
     gMainMenu->tex[27] = MTEX(res, 0);
     gMainMenu->tex[28] = MTEX(res, 1);
     gMainMenu->tex[29] = MTEX(res, 2);
@@ -168,7 +251,7 @@ void MainMenu_Init(s32 section) {
     gMainMenu->tex[13] = MTEX(res, 1);
     gMainMenu->tex[14] = MTEX(res, 2);
     gMainMenu->tex[15] = MTEX(res, 3);
-    MM_RES(14);
+    MM_RES(29 + Rand_Range(3) * 2);
     gMainMenu->tex[31] = MTEX(res, 0);
     gMainMenu->tex[32] = MTEX(res, 1);
     gMainMenu->tex[33] = MTEX(res, 2);
@@ -201,6 +284,9 @@ void MainMenu_Init(s32 section) {
     IconWin_Init(MPACK_AT(gMainMenu->res, 22), res);
     IconWin_Open();
     gMainMenu->msgText = MPACK_AT(gMainMenu->res, 28);
+#ifdef PORT
+    gMainMenu->msgText = PortMainMenu_Descriptions(gMainMenu->msgText);
+#endif
     gMainMenu->subtitles = MPACK_AT(gMainMenu->res, 27);
     MsgWin_Init(MPACK_AT(gMainMenu->res, 21), gMainMenu->msgText, 1, 0);
     MsgWin_Open();
@@ -209,10 +295,9 @@ void MainMenu_Init(s32 section) {
 #ifdef PORT
         /* Item 4, "Dragon Net Battle", is the one entry the PS2 game never lists: it has its plate, label, icon and
            the guides' voiced lines on the disc, and no mode behind it (the Wii version's online mode). The port
-           lists it only when the player asks for it (F1 > Online > Advanced: Port_NetMenuListed, port/src/headless.c):
-           Tenkaichi Budokai Online, listed after Duel then, is the way into online play. BT3_MENU_ITEM4=1 lists it
-           whatever the setting (tests: the pad recordings made while it was always listed count on that menu). */
-        if (i == 4 && !Port_NetMenuListed()) {
+           lists it: it is the way into online play. BT3_MENU_ITEM4=0 hides it again (the pad recordings made
+           before it was listed count on the old menu). */
+        if (i == 4) {
             continue;
         }
         if (i == MAINMENU_TBO) { /* (listed after Dragon Net Battle, below: not again at the end) */
@@ -228,18 +313,19 @@ void MainMenu_Init(s32 section) {
         }
         gMainMenu->items[gMainMenu->itemCount++] = i;
 #ifdef PORT
-        if (i == (Port_NetMenuListed() ? 4 : 3)) {
+        if (i == 3) {
             gMainMenu->items[gMainMenu->itemCount++] = MAINMENU_TBO;
         }
 #endif
     }
 #ifdef PORT
     /* the second sheet of each state (slot 8 not chosen, 12 chosen) is the entry behind the first */
-    if (!PortMainMenu_WriteDisc(gMainMenu->tex[8] + 0x40, 3, 0) || !PortMainMenu_WriteDisc(gMainMenu->tex[12] + 0x40, 3, 1)) {
+    if (1) { /* The BT4 sheets use their own lettering; the port's bundled online label occupies the spare row. */
         PortMainMenu_WriteRuns(gMainMenu->tex[8] + 0x40, 3, sPortTboOff, sizeof(sPortTboOff) / sizeof(sPortTboOff[0]));
         PortMainMenu_WriteRuns(gMainMenu->tex[12] + 0x40, 3, sPortTboOn, sizeof(sPortTboOn) / sizeof(sPortTboOn[0]));
     }
 #endif
+    if(gProgress->mainMenuItem==4)gProgress->mainMenuItem=MAINMENU_TBO;
     gMainMenu->top = gMainMenu->itemCount - 1;
     for (i = 0; i < gMainMenu->itemCount; i++) {
         if (gMainMenu->items[i] == gProgress->mainMenuItem) {
@@ -251,6 +337,11 @@ void MainMenu_Init(s32 section) {
         }
     }
     gMainMenu->voiceLine = -1;
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MAINMENU_REVIEW")){
+        fprintf(stderr,"main menu entries:");for(i=0;i<gMainMenu->itemCount;i++)fprintf(stderr," %d",gMainMenu->items[i]);fprintf(stderr,"\n");
+    }
+#endif
     for (i = 0; i < 4; i++) {
         gMainMenu->blink[i] = Rand_Range(0x20);
     }
@@ -265,6 +356,9 @@ void MainMenu_Term(void) {
     s32 i;
 
     MsgWin_Term();
+#ifdef PORT
+    if(sOnlineDescriptions){Heap_Free(sOnlineDescriptions);sOnlineDescriptions=NULL;}
+#endif
     IconWin_Term();
     for (i = 0; i < MAINMENU_FLASH_NUM; i++) {
         Flash_Destroy(&gMainMenu->flash[i]);
@@ -340,9 +434,11 @@ void MainMenu_Draw(void) {
             Flash_FindLabel(flash, name, "mc_menu_text_off", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
             Flash_ClipSetTex(flash, &ref, item / 8);
+            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:NULL,NULL);
             Flash_FindLabel(flash, name, "mc_menu_text_on", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
             Flash_ClipSetTex(flash, &ref, item / 8);
+            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:NULL,(void*)1);
             uv.x0 = (MM_ICON(item) % 4) * 0x40;
             uv.y0 = (MM_ICON(item) / 4) * 0x40;
             uv.x1 = uv.x0 + 0x40;
@@ -372,9 +468,11 @@ void MainMenu_Draw(void) {
         Flash_FindLabel(flash, "mc_menu_plate_7", "mc_menu_text_off", &ref);
         Flash_ClipSetUv(flash, &ref, &uv);
         Flash_ClipSetTex(flash, &ref, item / 8);
+            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:NULL,NULL);
         Flash_FindLabel(flash, "mc_menu_plate_7", "mc_menu_text_on", &ref);
         Flash_ClipSetUv(flash, &ref, &uv);
         Flash_ClipSetTex(flash, &ref, item / 8);
+            Flash_ClipSetCustomDraw(flash,&ref,item==MAINMENU_TBO?(void*)PortMainMenu_OnlineLabel:NULL,(void*)1);
         uv.x0 = (MM_ICON(item) % 4) * 0x40;
         uv.y0 = (MM_ICON(item) / 4) * 0x40;
         uv.x1 = uv.x0 + 0x40;
@@ -429,7 +527,11 @@ void MainMenu_Draw(void) {
         Flash_Draw(&gMainMenu->flash[i]);
     }
     IconWin_Draw();
+#ifdef PORT
+    MsgWin_Draw(0, 0, MAINMENU_CUR(gMainMenu)==MAINMENU_TBO ? 0x20+gMainMenu->guide : gMainMenu->voiceLine);
+#else
     MsgWin_Draw(0, 0, gMainMenu->voiceLine);
+#endif
 #ifdef PORT
     Port_MenuPage(0);
 #endif
@@ -566,7 +668,7 @@ void MainMenu_Input(s32 *result) {
             break;
         case 4:
 #ifdef PORT
-            Port_NetMenuOpen(); /* the port's own screen for online play (port/src/gs/ui.cpp); the menu stays where it is */
+            Port_NetMenuOpen(); /* the port's own online lobby */
 #endif
             break;
         case 5:
@@ -627,6 +729,34 @@ s32 MainMenu_Run(s32 section) {
     while (1) {
         Gfx_BeginFrame();
         Pad_Update();
+#ifdef PORT
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MAINMENU_REVIEW")){
+            static s32 reviewTick,reviewHeld,reviewCaptured;
+            if(ColorFade_IsInDone()&&(gMainMenu->flash[0].flags&MFLASH_PAD)&&!(gMainMenu->flags&MAINMENU_LEAVING)){
+                reviewTick++;
+                if(reviewTick>90&&reviewTick%18==0&&MAINMENU_CUR(gMainMenu)!=MAINMENU_TBO)gPad[0].gameRepeat=PADG_DOWN;
+                if(MAINMENU_CUR(gMainMenu)==MAINMENU_TBO){
+                    reviewHeld++;
+                    if(reviewHeld==60&&!reviewCaptured){
+                        extern int gPortTagUiCaptureRequest;gPortTagUiCaptureRequest=1;reviewCaptured=1;
+                        fprintf(stderr,"main menu review: online selected, description=%d, English=%d\n",0x20+gMainMenu->guide,Port_GameProfileEnglish());
+                    }
+                }
+            }
+        }
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_VIDEO_TEST")){
+            static s32 videoTick,videoReady;
+            if(ColorFade_IsInDone()&&(gMainMenu->flash[0].flags&MFLASH_PAD)&&!(gMainMenu->flags&MAINMENU_LEAVING)){
+                ++videoTick;
+                if(videoTick>90&&videoTick%18==0){
+                    extern s32 TagHudEditor_RecordDone(void);
+                    s32 wanted=getenv("BT4_TAG_RECORD_HUD")&&!TagHudEditor_RecordDone()?9:MAINMENU_TBO;
+                    if(MAINMENU_CUR(gMainMenu)!=wanted)gPad[0].gameRepeat=PADG_DOWN;
+                    else if(++videoReady>=4){gPad[0].gamePressed=PADG_CROSS;fprintf(stderr,"tag video: main menu chose %s\n",wanted==9?"Options":"Tenkaichi Budokai Online");videoReady=0;}
+                }
+            }
+        }
+#endif
         Snd_Update();
         ColorFade_Update();
         if (!(gProgress->flags & MPROG_FREEZE)) {

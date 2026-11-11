@@ -98,7 +98,7 @@ typedef struct DuelProgress {
 
 #define DUEL_PROG ((DuelProgress *)gProgress)
 
-#define DUEL_BGM 0x10B1B
+#define DUEL_BGM PORT_V(0x10B1B, 0x83D)
 #define DUEL_VOICE_BASE 0x85C7
 #define DUEL_IDLE_FRAMES 0xE10  /* 3600 frames without input: the second guide speaks line 8 */
 

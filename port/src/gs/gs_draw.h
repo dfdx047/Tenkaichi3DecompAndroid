@@ -77,6 +77,8 @@ extern GsLight gsGradeLights[GS_LIGHT_SETS][GS_LIGHTS];
 extern int gsGradeLightCount[GS_LIGHT_SETS];
 
 typedef struct GsDraw {
+    uint32_t object; /* display-list actor/model identity; presentation only */
+    uint32_t hud; /* 0 outside the HUD, otherwise 1 + its 2D anchor */
     int vu;      /* 1, 2, 3: vertex programs' vertices (gsVuVerts, uniform block at `uniform`); 0: gsVerts */
     int uniform;
     int native; /* 0: primitives; otherwise a native full-screen effect (PORT_FX_*) at this point of the frame;
@@ -93,6 +95,7 @@ typedef struct GsDraw {
     float rect[4];  /* a frame buffer as texture: the part of it the GS would address (u0, v0, u1, v1 in its uv);
                        a texture pack's replacement drawn as 2D art: the piece's own rectangle of the sheet */
     float orig[4];  /* a texture pack's replacement: xy = the original texture's size in texels, z = its largest alpha */
+    float portrait[2]; /* outer screen edge and signed fade width; zero width outside portraits */
     float blendc;
     int scissor[4]; /* x, y, width, height, at SCALE */
     int wall;       /* triangles of the wall at the edge of the map (gs_draw.c, Port_WallMesh): in-between pictures draw it anew */
@@ -168,6 +171,12 @@ typedef struct GsBackend {
 
 extern GsBackend sVulkanBackend; /* gs_gpu.c */
 extern GsBackend sGlBackend;     /* gs_gl.c */
+#ifdef _WIN32
+extern GsBackend sDirect3D9Backend;
+extern GsBackend sDirect3D11Backend;
+extern GsBackend sDirect3D12Backend; /* same SDL GPU command path, offline DXIL shaders */
+#endif
+void GsDraw_WindowDestroy(void); /* failed initialization only */
 
 /* gs_draw.c: the shared target table's entry for a frame-buffer address (create: one is made if absent,
    with the back end's attachments through GsBackend.targetEnsure). */

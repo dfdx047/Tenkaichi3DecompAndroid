@@ -1,5 +1,8 @@
+extern int TagBattle_Active(void);
 #include "common.h"
 #include "sys/heap.h"
+extern int printf(const char *, ...);
+extern void exit(int);
 
 extern void *malloc(u32 size);
 s32 Mem_Align4Pad(u32 value);
@@ -17,6 +20,24 @@ extern s32 gHeapUnk70[HEAP_COUNT];
 extern s32 gHeapUnk78[HEAP_COUNT];
 
 void Heap_ReportBadFree(void);
+void Heap_TagCheck(s32 phase) {
+    extern s32 TagBattle_Count(void);
+    extern char *getenv(const char *name);
+    static s32 enabled=-1;
+    s32 i;
+    if(enabled<0)enabled=getenv("BT4_TAG_CHECK_HEAP")!=NULL;
+    if(!enabled)return;
+    if(!TagBattle_Active())return;
+    for(i=0;i<HEAP_COUNT;++i){
+        HeapBlock *b=gHeapStart[i];
+        while(b!=NULL && (u32)b<(u32)gHeapEnd[i]){
+            if(b->magic!=HEAP_MAGIC || b->size<0x20 || (u32)b+(u32)b->size>(u32)gHeapEnd[i]){
+                printf("tag heap corruption phase=%d heap=%d block=%08x magic=%08x size=%08x\n",phase,i,(u32)b,b->magic,b->size);exit(12);
+            }
+            b=(HeapBlock *)((u8 *)b+b->size);
+        }
+    }
+}
 
 u32 Heap_BlockData(HeapBlock *block) {
     return (u32)block + sizeof(HeapBlock);
@@ -121,6 +142,10 @@ HeapBlock *Heap_FindFreeFromHead(s32 heap, s32 size) {
     HeapBlock *block;
 
     for (block = gHeapStart[heap]; block != NULL; block = Heap_NextBlock(block)) {
+        if (block->magic != HEAP_MAGIC || block->size < 0x20 || (u32)block + block->size > (u32)gHeapEnd[heap]) {
+            printf("bt4: corrupt heap %d block %08x magic %08x size %08x end %08x\n", heap, (u32)block, block->magic, block->size, (u32)gHeapEnd[heap]);
+            exit(11);
+        }
         if (block->used == 0 && block->size >= size) {
             found = block;
             break;

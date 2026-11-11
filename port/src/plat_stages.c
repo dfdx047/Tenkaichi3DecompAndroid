@@ -5,9 +5,9 @@
 #include <string.h>
 #include "plat_stages.h"
 
-/* The added stages' models: files 70000.. of the second archive, past its end (65,201 files); the same number
-   as PORT_ADDED_STAGE_FILE in src/battle/battle_load.c. */
-#define PORT_STAGE_FILE_INDEX 70000
+/* Added map models use global IDs 0x30000+n. BT4 resolves them to archive 3 entries
+   65536+n, outside the disc data; see PORT_ADDED_STAGE_FILE in battle_load.c. */
+#define PORT_STAGE_FILE_INDEX 65536 /* archive 3, global ID 0x30000; outside all disc data */
 
 char gPortStageNames[PORT_STAGE_MAX][64];
 int gPortExtraStageCount;
@@ -87,6 +87,7 @@ static void add_stage(const char *file, const char *name) {
             size = ftell(fp);
             fclose(fp);
         }
+        if(size<=0){fprintf(stderr,"bt4: stages: missing or empty map ignored: %s\n",file);return;}
         if (size > PORT_STAGE_BUF_MAX) {
             fprintf(stderr, "bt3: stages: %s is %ld bytes, more than the %d a stage can have here: left out\n", file, size, PORT_STAGE_BUF_MAX);
             return;
@@ -106,7 +107,7 @@ static void add_stage(const char *file, const char *name) {
        also the split-screen model of a disc stage from the fourth added stage on; and a second redirection, for
        a sound bank at 0x14E + stage, took the place of the disc stages' own models, the first added stage that
        of stage 1: with a stage added, a one-player fight on that disc stage was given the wrong file.) */
-    snprintf(sAliases[sAliasCount].rel, sizeof(sAliases[sAliasCount].rel), "pzs3us2/%05d.bin", PORT_STAGE_FILE_INDEX + i);
+    snprintf(sAliases[sAliasCount].rel, sizeof(sAliases[sAliasCount].rel), "pzs4us3/%05d.bin", PORT_STAGE_FILE_INDEX + i);
     snprintf(sAliases[sAliasCount].target, sizeof(sAliases[sAliasCount].target), "%s/%s", sDir, file);
     sAliasCount++;
 
@@ -143,12 +144,23 @@ void PortStages_Init(void) {
         return;
     }
     sDone = 1;
-    if (!PortExtras_Dir("stages", "BT3_STAGES", sDir, sizeof(sDir))) {
+    {int found=PortExtras_Dir("stages", "BT3_STAGES", sDir, sizeof(sDir));
+     /* Accept the documented maps/ spelling even when an empty stages/ folder
+      * was shipped in an older portable package. Explicit BT3_STAGES wins. */
+     if(!getenv("BT3_STAGES")){
+        char maps[256],one[1][128];
+        if(PortExtras_Dir("maps","BT3_MAPS",maps,sizeof(maps))&&
+           (!found||(!PortExtras_Scan(sDir,".unk",one,1)&&PortExtras_Scan(maps,".unk",one,1)))){
+            snprintf(sDir,sizeof(sDir),"%s",maps);found=1;
+        }
+     }
+     if (!found) {
         from_env();
         if (gPortExtraStageCount > 0) {
             fprintf(stderr, "bt3: stages: %d from BT3_EXTRA_STAGES (no stages folder)\n", gPortExtraStageCount);
         }
         return;
+     }
     }
     /* the list first (its names and its order), then whatever else is in the folder, by name */
     snprintf(path, sizeof(path), "%s/maps.txt", sDir);
@@ -194,6 +206,15 @@ const char *PortStages_Name(int index) {
     return gPortStageNames[index];
 }
 
+int PortStages_ImagePath(int index,char *out,unsigned size){
+    char name[128],*dot;int n;
+    if(index<0||index>=gPortExtraStageCount||!out||!size)return 0;
+    snprintf(name,sizeof(name),"%s",sFiles[index]);
+    dot=strrchr(name,'.');if(dot)*dot=0;
+    n=snprintf(out,size,"%s/%s.png",sDir,name);
+    return n>0&&(unsigned)n<size;
+}
+
 int PortStages_Alias(const char *rel, char *out, unsigned n) {
     int i;
     for (i = 0; i < sAliasCount; i++) {
@@ -229,7 +250,7 @@ int Port_StageBufSize(void) {
    would overrun the buffer and corrupt the game's heap, which showed as a crash seconds later). */
 int Port_StageFits(const char *rel, long size) {
     int index = -1;
-    if (strncmp(rel, "pzs3us2/", 8) == 0 && sscanf(rel + 8, "%d", &index) == 1 && index >= PORT_STAGE_FILE_INDEX) {
+    if (strncmp(rel, "pzs4us3/", 8) == 0 && sscanf(rel + 8, "%d", &index) == 1 && index >= PORT_STAGE_FILE_INDEX) {
         return size <= Port_StageBufSize(); /* an added stage */
     }
     if (strncmp(rel, "pzs3us1/", 8) != 0 || sscanf(rel + 8, "%d", &index) != 1) {

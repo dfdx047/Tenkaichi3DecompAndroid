@@ -217,8 +217,8 @@ typedef struct SimEventRow {
     s32 weight[5];
 } SimEventRow; /* 0x14 */
 
-#define SIMDAY_BGM_FIRST 0x10B16  /* Bgm_Play id of music 0 */
-#define SIMDAY_FACE_FILE 0x2F9     /* + character id: compressed portrait */
+#define SIMDAY_BGM_FIRST 0x816  /* Bgm_Play id of music 0 */
+#define SIMDAY_FACE_FILE 0x71C     /* + character id: compressed portrait */
 #define SIMDAY_FACE_SIZE 0x16800
 #define SIMDAY_FACE_RES_SIZE 0x20800
 
@@ -280,7 +280,7 @@ typedef struct SimDay {
     /* 0x598 */ s32 talk[2];        /* [0] the guide's closing line to say (1..5), 0 = none; [1] the last one said */
     /* 0x5A0 */ s32 msgLine;        /* line of the message window, -1 = none */
     /* 0x5A4 */ s32 menuText;       /* 1 = the window shows the item names, 0 = its plates */
-    /* 0x5A8 */ s32 bgm;            /* + 0x10B16 = music of the round */
+    /* 0x5A8 */ s32 bgm;            /* + 0x816 = music of the round */
     /* 0x5AC */ s32 wait;           /* frames the round picture stays (300) */
     /* 0x5B0 */ s32 day;            /* turn of the round, 0..9 */
     /* 0x5B4 */ s32 preview[5];     /* what a script wants shown for each stat */

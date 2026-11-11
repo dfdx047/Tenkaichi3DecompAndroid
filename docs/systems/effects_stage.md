@@ -1,17 +1,17 @@
-# Effects and stage (seventh batch, in progress)
+# Effects and stage
 
 Sources: `src/battle/eft_*.c`, `src/battle/stg_*.c` with headers under `include/battle/`.
 Everything in the module table is linked and byte-identical. At the second integration eft_t.c went into eft_s.c, eft_u.c
 into eft_t_c.c, eft_v.c into eft_u_b.c, eft_ac.c into eft_ab_c.c, and eft_y.c's tail into
 eft_z.c; `BtlFx_SpawnDamageSparks` became `BtlFx_FireKiBlast` and the eft_a.h task flags got
 their real names (GUARDED, HIT_STAGE, LOST_CLASH, ABSORBED, DEFLECTED, REFLECTED, STRUGGLE,
-MULTI_CONTACT). File names in the table are as the agents wrote them:
+MULTI_CONTACT). Original module names in the table correspond to these source mappings:
 at integration eft_e.c's transition half moved into eft_d_b.c, eft_f.c into eft_e.c, eft_l.c
 into eft_k.c, and stg_a.c was split into stg_a.c + stg_a_b.c around three assembly-only VU0
 functions. "Match" means per function. **Verified** = matching C;
 **inferred** = read from disassembly or a judgement about meaning.
 
-The question this batch answers for the port: which of this code affects the fight
+This reference distinguishes: which of this code affects the fight
 (simulation) and which only draws.
 
 ## Screen effects (`stg_c.c`, 0x245F58..0x248F28): visual only
@@ -46,7 +46,7 @@ records, battle objects, rigid bodies or collision. (verified)
 Still without an owner: the stage's rigid bodies, debris and destructibles (0x22FDA0..0x230AA0
 and the stage update at 0x243568).
 
-## Module table (filled as agents report)
+## Module reference
 
 | Range | File | Module | Simulation? | Random draws | Match |
 |---|---|---|---|---|---|
@@ -313,7 +313,7 @@ what btl_scene.c calls a record's "definition flags" is the owning task's event 
   count follows the number of live projectiles.
 - (evidence) Source file boundaries: 0x13C300..0x13F3D8 (transition; `EftBurst_Update` needs
   three functions of eft_d.c in the same file) and 0x140338.. through eft_f (water).
-- (prelude, to verify) `EftBurst_Update` also needs the HI/LO hazard handled: the agent got a
+- (prelude, to verify) `EftBurst_Update` also needs the HI/LO hazard handled: the compiler comparison showed a
   match with `.set mips64` instead of `.set mips4` in `__gp_forget` on a private prelude copy;
   it did not test other files with that change.
 
@@ -412,7 +412,7 @@ blasts, simulation); layer 4 is the stage-change transition.
   for a skill) and starts the event timeline with a lead time of 0.85 s (0.8 s for some
   techniques; per-id values for the ultimate), read from disassembly.
 
-First wave complete: all sixteen agents reported; every file was re-diffed.
+The module files were compared against the original binary.
 
 ## Stage debris and stage update order (verified, stg_d)
 

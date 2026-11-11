@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 extern void Port_StateTouch(void *p, unsigned long n); /* gs/state.c */
 
 extern const char *Port_FileRoot(void); /* plat_file.c: BT3_DATA or "gamedata" */
@@ -40,6 +41,9 @@ FILE *Port_FileOpenHost(const char *rel, char *path, size_t n) {
             snprintf(path, n, "%s/%s", Port_FileRoot(), target);
             fp = fopen(path, "rb");
         }
+    }
+    if(fp==NULL&&getenv("BT4_PTBR_ROOT")){
+        snprintf(path,n,"%s/gamedata/mods/%s",getenv("BT4_PTBR_ROOT"),rel);fp=fopen(path,"rb");
     }
     if (fp == NULL) { /* a file under mods/ wins over the original */
         snprintf(path, n, "%s/mods/%s", Port_FileRoot(), rel);

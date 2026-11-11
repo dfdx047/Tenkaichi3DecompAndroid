@@ -965,8 +965,22 @@ void EftHit_SpawnTechImpact(EftHitRec *rec) {
     }
 }
 
+/* Per-fighter effect camera state is shared simulation data. Only applying
+ * the matching demo pose is local to a viewer. Concurrent attacks cannot
+ * change another client's effect lifetimes or overwrite its private camera. */
+static EftCam sTagEffectCams[10];
+extern s32 TagBattle_Active(void),TagBattle_Count(void),TagBattle_CameraActor(s32),TagBattle_ViewActor(void);
+extern void *BtlChar_Get(s32),*BtlChar_FindByObjId(s32);
+extern f32 DemoCam_AnimLength(void *);
+extern s32 DemoCam_OwnedBy(void *,void *);
+static s32 EftCam_TagActor(s32 objId){s32 i;void *chr=BtlChar_FindByObjId(objId);for(i=0;i<TagBattle_Count();++i)if(chr==BtlChar_Get(i))return i;return -1;}
+static void EftCam_TagStop(EftCam *cam){
+    if(cam->active&&DemoCam_OwnedBy(cam->arg.anim,BtlObj_Get(cam->objId)))DemoCam_Stop();
+    cam->active=0;
+}
 /* Allocates and clears the camera cut state. */
 void EftCam_Init(void) {
+    memset(sTagEffectCams,0,sizeof(sTagEffectCams));
     gEftCam = BtlPool_Alloc(BtlPool_GetCurrent(), sizeof(EftCam));
     memset(gEftCam, 0, sizeof(EftCam));
 }
@@ -979,6 +993,7 @@ void EftCam_Term(void) {
 
 /* Clears the camera cut state (BtlScene_Reset). */
 void EftCam_Clear(void) {
+    memset(sTagEffectCams,0,sizeof(sTagEffectCams));
     if (gEftCam != NULL) {
         memset(gEftCam, 0, sizeof(EftCam));
     }
@@ -986,6 +1001,14 @@ void EftCam_Clear(void) {
 
 /* Starts a camera cut: plays arg->anim on the demo camera, timed by fighter arg->objId's technique timer if any. */
 void EftCam_Start(EftCamArg *arg) {
+    EftCam *cam=gEftCam;
+    if(TagBattle_Active()&&arg->objId>=0){
+        s32 actor=EftCam_TagActor(arg->objId);if(actor<0)return;
+        cam=&sTagEffectCams[actor];cam->arg=*arg;cam->objId=arg->objId;cam->active=1;cam->paused=cam->hold=0;
+        if(actor!=TagBattle_CameraActor(TagBattle_ViewActor()))return;
+        DemoCam_SetAnim(arg->anim);DemoCam_SetChr(BtlObj_Get(arg->objId));DemoCam_SetTime(BtlCharApi_GetChargedUnkC78(arg->objId));DemoCam_Start();return;
+    }
+
     gEftCam->arg = *arg;
     DemoCam_SetAnim(arg->anim);
     if (arg->objId != -1) {
@@ -1019,6 +1042,7 @@ s32 EftCam_IsPaused(void) {
 
 /* Returns 1 while a cut is playing. */
 s32 EftCam_IsActive(void) {
+    if(TagBattle_Active()){s32 i;for(i=0;i<TagBattle_Count();++i)if(sTagEffectCams[i].active)return 1;}
     return gEftCam->active;
 }
 
@@ -1030,9 +1054,30 @@ void EftCam_Stop(void) {
     }
 }
 
+/* A projectile may only stop the effect camera it started. */
+void EftCam_StopFor(s32 objId){
+    if(TagBattle_Active()){s32 actor=EftCam_TagActor(objId);if(actor>=0){EftCam_TagStop(&sTagEffectCams[actor]);return;}}
+    if(gEftCam->active&&gEftCam->objId==objId)EftCam_Stop();
+}
+
 /* Per-frame: moves the cut to the fighter's technique time (or 2.0 further) and ends it past the animation's length. */
 void EftCam_Update(void) {
     f32 time;
+    if(TagBattle_Active()&&!(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE)){
+        s32 i,focus=TagBattle_CameraActor(TagBattle_ViewActor());
+        for(i=0;i<TagBattle_Count();++i){EftCam *cam=&sTagEffectCams[i];f32 length;
+            if(!cam->active||cam->paused)continue;
+            if(!BtlCharApi_IsInTechnique(cam->objId)){EftCam_TagStop(cam);continue;}
+            time=BtlCharApi_GetChargedUnkC78(cam->objId);length=DemoCam_AnimLength(cam->arg.anim);
+            if(time>length&&!cam->hold){EftCam_TagStop(cam);continue;}
+            if(i==focus){
+                if(!DemoCam_OwnedBy(cam->arg.anim,BtlObj_Get(cam->objId))){
+                    DemoCam_SetAnim(cam->arg.anim);DemoCam_SetChr(BtlObj_Get(cam->objId));DemoCam_Start();
+                }
+                DemoCam_SetTime(time>length?length:time);
+            }
+        }
+    }
 
     if (!gEftCam->active) {
         return;

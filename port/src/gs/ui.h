@@ -64,6 +64,7 @@ void PortInput_ResetDefaults(int player);
 #define PORT_DEADZONE_MAX 90   /* percent */
 #define PORT_TRIGGER_AT 12000  /* of 32767: from here a trigger counts as pressed */
 int *PortInput_Deadzone(int player);  /* [2] left, right stick: -1 = the game's own (per axis), 0..PORT_DEADZONE_MAX = a round one, percent */
+int *PortInput_TargetStick(int player); /* optional directional enemy targeting */
 int *PortInput_Vibration(int player); /* [2] on (0 / 1), strength (0..100 percent) */
 void PortInput_VibrationTest(int player); /* half a second of both motors */
 typedef struct PortStickView { /* [0] the left stick / trigger, [1] the right */
@@ -83,6 +84,9 @@ extern int gPortChatTyping;    /* a line of the online chat is being typed: the 
 
 /* ui.cpp */
 int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const char *gpu_name); /* device: the SDL GPU back end; NULL and a GL context: the OpenGL one */
+int Ui_InitD3D9(SDL_Window *window, void *device, const char *gpu_name);
+void Ui_DrawD3D9(void);
+void Ui_D3D9Reset(int create);
 void Ui_DrawGL(void); /* the OpenGL back end: draws this frame's window with the context current */
 int Ui_Event(const SDL_Event *ev); /* 1 = the window used the event */
 int GsDraw_FrameSkip(void);       /* gs_draw.c */

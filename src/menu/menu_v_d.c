@@ -776,6 +776,12 @@ void Shop_Input(s32 *result) {
     if (!(gShop->flash[SHOP_FL_MAIN].flags & MFLASH_PAD)) {
         return;
     }
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_SHOP_LIST_TEST") && gShop->level==SHOP_LV_MENU) {
+        gShop->cursor[SHOP_LV_MENU]=0;
+        gPad[0].gamePressed=PADG_CROSS;
+    }
+#endif
     if (!(gShop->flags & SHOP_STARTED)) {
         Shop_SetPlate(0, 0, 0, "fl_on_start");
         gShop->flags |= SHOP_STARTED;

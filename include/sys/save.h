@@ -12,11 +12,11 @@
 
 #define SAVE_SIZE 0x4000
 
-#define SAVE_CHARA_COUNT 161  /* bits in charaBits (ids 0..160; 161..164 are list markers in ChrGrid_Build) */
+#define SAVE_CHARA_COUNT 161  /* BT4's additional fighters are unlocked by the grid's extended-ID rule. */
 #define SAVE_CHARA_WORDS 3
-#define SAVE_STAGE_COUNT 35   /* bits in stageBits */
-#define SAVE_BGM_LIST_COUNT 25 /* entries of the list bgmBits belongs to (loop bound) */
-#define SAVE_BGM_COUNT 20     /* entries of that list that have a bit */
+#define SAVE_STAGE_COUNT 64   /* bits in stageBits */
+#define SAVE_BGM_LIST_COUNT 32 /* entries of the list bgmBits belongs to (loop bound) */
+#define SAVE_BGM_COUNT 32     /* entries of that list that have a bit */
 #define SAVE_FLAG8_COUNT 7    /* bits of unlockFlags set by Save_UnlockAll */
 #define SAVE_ITEM_COUNT 350   /* entries of item[] and of the item table in common file 4 */
 #define SAVE_SLOT_COUNT 9

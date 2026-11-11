@@ -1,4 +1,8 @@
-# Translations
+# Translation catalogs
+
+This guide describes the port's text catalogs. Complete Spanish and English
+BT4 installations also require their corresponding game data and voices;
+see [language installation](../../README.md#languages).
 
 The port uses one selected language for three kinds of text. Each kind has its
 own JSON catalog under `gamedata/game-text/translations/`:
@@ -132,7 +136,7 @@ Adding an ID to a JSON file alone cannot translate an arbitrary hardcoded
 string: the code or data that displays it must use the corresponding
 translation system.
 
-## What happens when a translation does not cover every ID?
+## Missing translations
 
 Each catalog handles missing entries differently:
 

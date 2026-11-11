@@ -59,7 +59,7 @@ void SoloSel_SetRowTex(void) {
     }
 }
 
-/* One step of the background loader of the large picture (file 0x2F9 + character). */
+/* One step of the background loader of the large picture (file 0x71C + character). */
 void SoloSel_UpdateImage(void) {
     MTexRes *res;
 
@@ -75,7 +75,7 @@ void SoloSel_UpdateImage(void) {
         break;
     case SOLOSEL_LOAD_REQUEST:
         File_CancelRequests();
-        File_Request(gSoloSel->sel->image + 0x2F9, gSoloSel->imageFile, 0x16800);
+        File_Request(gSoloSel->sel->image + 0x71C, gSoloSel->imageFile, 0x16800);
         gSoloSel->loadState = SOLOSEL_LOAD_READ;
         break;
     case SOLOSEL_LOAD_READ:
@@ -220,7 +220,7 @@ void SoloSel_Init(s32 section) {
     gSoloSel->nameText = MPACK_AT(gSoloSel->res, 28);
     gSoloSel->formText = MPACK_AT(gSoloSel->res, 29);
     gSoloSel->chips = (u32 *)MPACK_AT(gSoloSel->res, 27);
-    for (i = 0; i < LCHR_CELL_MAX; i++) {
+    for (i = 0; i < Menu_CharacterChipCount(gSoloSel->chips); i++) {
         res = (MTexRes *)MPACK_AT(gSoloSel->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
@@ -254,7 +254,7 @@ void SoloSel_Init(s32 section) {
         gSoloSel->blink[i] = Rand_Range(0x20);
     }
     gSoloSel->voiceLine = -1;
-    File_LoadSync(gSoloSel->sel->image + 0x2F9, gSoloSel->imageFile, 0x16800);
+    File_LoadSync(gSoloSel->sel->image + 0x71C, gSoloSel->imageFile, 0x16800);
     Sprite_Unpack(gSoloSel->imageFile, gSoloSel->imageRes, NULL);
     res = gSoloSel->imageRes;
     Res_RelocateOffsets(&res, res, res);
@@ -366,7 +366,7 @@ void SoloSel_Draw(void) {
             Flash_ClipSetFlags(flash, &ref, 2, 0);
         }
     }
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < 8; i++) {
         /* costume plates */
         uv.x0 = (i % 2) * 0x40;
         uv.y0 = (i / 2) * 0x20;
@@ -374,16 +374,10 @@ void SoloSel_Draw(void) {
         uv.y1 = uv.y0 + 0x20;
         sprintf(name, "mc_color_plate_%d", i + 1);
         Flash_FindLabel(flash, NULL, name, &ref);
-        if (i < gSoloSel->colorCount) {
+        if (i < gSoloSel->colorCount && i == SS_CUR.costume) {
             Flash_ClipSetFlags(flash, &ref, 2, 1);
-            switch (gSoloSel->colorCount) {
-            case 2:
-                Flash_ClipSetOffset(flash, &ref, 0x2D, 0);
-                break;
-            case 3:
-                Flash_ClipSetOffset(flash, &ref, 0x16, 0);
-                break;
-            }
+            /* BT4 stacks these plates at one location, unlike BT3. */
+            Flash_ClipSetOffset(flash, &ref, 0, 0);
             Flash_FindLabel(flash, name, "mc_color_text_off", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
             Flash_FindLabel(flash, name, "mc_color_text_on", &ref);
@@ -392,6 +386,9 @@ void SoloSel_Draw(void) {
             Flash_ClipSetFlags(flash, &ref, 2, 0);
         }
     }
+#ifdef PORT
+    {extern void Bt4Costume_FixArrows(MFlash *);Bt4Costume_FixArrows(&gSoloSel->flash[2]);}
+#endif
     flash = &gSoloSel->flash[1];
     uv.x0 = 0;
     uv.y0 = 0;
@@ -432,11 +429,18 @@ void SoloSel_Draw(void) {
         Flash_FindLabel(flash, NULL, name, &ref);
         Flash_ClipSetFlags(flash, &ref, 0x80, (u8)gSoloSel->sel->rowAnim);
     }
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *, const void *);
+    Flash_PortPortraits(gSoloSel->texA[17], NULL);
+#endif
     Flash_Draw(&gSoloSel->flash[0]);
     Flash_Draw(&gSoloSel->flash[1]);
     Font_FlushAll();
     Flash_Draw(&gSoloSel->flash[2]);
     MsgWin_Draw(0, 0, gSoloSel->voiceLine);
+#ifdef PORT
+    Flash_PortPortraits(NULL, NULL);
+#endif
     ItemPanel_Draw(0);
     ItemHelp_Draw(gSoloSel->helpItem);
 #ifdef PORT

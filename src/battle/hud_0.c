@@ -1,4 +1,8 @@
 #include "common.h"
+#ifdef PORT
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 #include "battle/hud_0.h"
 #include "battle/battle.h"
 #include "sys/pad.h"
@@ -40,6 +44,30 @@ extern BtlMenu gPauseMenuMode4;
 extern BtlMenu gPauseMenuMode5;
 extern BtlMenu gPauseMenuMode6;
 extern BtlMenu gPauseMenuMode7;
+#ifdef PORT
+extern s32 TagBattle_Network(void);
+extern s32 TagBattle_Active(void);
+static BtlMenu sTagPauseMenu;
+static BtlMenuItem sTagPauseItems[5];
+static BtlMenu sPresentationPauseMenu;
+static BtlMenuItem sPresentationPauseItems[32];
+static s32 sPresentationPauseReady;
+static s32 sHudPauseDismissRequested;
+extern int PortHud_Hidden(void);
+extern void PortHud_Toggle(void);
+/* The menu input is simulated on both 1v1 peers; only its owner changes
+   local presentation. The shared menu still closes identically. */
+static s32 PauseMenu_HudToggle(BtlMenuEvent *ev) {
+    extern int Port_NetActive(void),Port_NetMe(void),Port_NetSpectating(void);
+    if (ev->selected) {
+        if (!Port_NetActive() || Port_NetSpectating() || BtlMenu_GetWork()->pad == Port_NetMe())
+            PortHud_Toggle();
+        sHudPauseDismissRequested = 1;
+        ev->menu->state=BTL_MENU_STATE_CLOSE;
+    }
+    return 1;
+}
+#endif
 /* The cursor words (BtlMenu + 0x18) of the yes / no box at 0x2C4F00 and of the CPU level menu at 0x2C5158. */
 extern s32 gPauseMenuConfirmCursor[8];
 extern s32 gPauseMenuCpuLevelCursor[8];
@@ -83,6 +111,9 @@ void BtlGame_Draw(void) {
     }
 #endif
     BtlScript_UpdateView();
+#ifdef PORT
+    { extern void Port_GsMarker(s32);Port_GsMarker(0x71); }
+#endif
     PauseMenu_Draw();
 }
 
@@ -99,6 +130,10 @@ s32 BtlGame_IsReplay(void) {
 /* Returns the menu tree for the battle: which = 0 the pause menu, 1 the result menu (modes 0 and 1 only). */
 BtlMenu *PauseMenu_GetMenu(s32 which) {
     BtlMenu *menu = NULL;
+#ifdef PORT
+    if (which == 0 && sPresentationPauseReady) return &sPresentationPauseMenu;
+    if (which == 0 && TagBattle_Active()) return &sTagPauseMenu;
+#endif
 
     switch (which) {
     case 0:
@@ -416,6 +451,33 @@ BtlMenu *PauseMenu_PortConfirmBox(void) {
 /* Battle start: allocates the menu work. */
 void PauseMenu_Init(void) {
 #ifdef PORT
+    sPresentationPauseReady=0;
+    sHudPauseDismissRequested=0;
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_HUD_MENU_MATRIX")) {
+        BtlMenu *menus[]={&gPauseMenuVersus,&gPauseMenuReplayRec,&gPauseMenuReplayPlay,
+            &gPauseMenuMode1,&gPauseMenuMode2,&gPauseMenuMode3,&gPauseMenuMode4,
+            &gPauseMenuMode5,&gPauseMenuMode6,&gPauseMenuMode7};
+        s32 m,i;
+        for(m=0;m<10;++m) {
+            s32 skill=-1;
+            if(!menus[m]->items || menus[m]->count<1 || menus[m]->count>30)exit(4);
+            for(i=0;i<menus[m]->count;++i)
+                if(menus[m]->items[i].sub && BtlMenu_IsSkillList(menus[m]->items[i].sub))skill=i;
+            fprintf(stderr,"HUD menu descriptor: variant=%d count=%d skill=%d\n",m,menus[m]->count,skill);
+        }
+    }
+    if (TagBattle_Active()) {
+        s32 i;
+        sTagPauseMenu = gPauseMenuVersus;
+        sTagPauseMenu.items = sTagPauseItems;
+        sTagPauseMenu.count = 0;
+        for (i = 0; i < gPauseMenuVersus.count && i < 5; ++i) {
+            /* 0xD is Character Select. The original menu retains Continue,
+               Skill List and its confirmed exit, with its original artwork. */
+            if (gPauseMenuVersus.items[i].id != 0xD)
+                sTagPauseItems[sTagPauseMenu.count++] = gPauseMenuVersus.items[i];
+        }
+    }
     {
         /* Online the menu at the end of a battle does without three of its six entries (asked for by the user):
            "Return to Vs Menu" (id 0xE; a session has no versus menu, the host sets the rules in the lobby window),
@@ -426,9 +488,18 @@ void PauseMenu_Init(void) {
         if (Port_NetActive() && Port_NetLobbyOwnerSide() >= 0) {
             PauseMenu_PortLobby(); /* a lobby's match: the menus' two forms (above) */
         } else if (Port_NetActive()) {
+            extern int Port_RankedActive(void);
             PauseMenu_PortRemove(&gPauseMenuResultVersus, 0xE);
             PauseMenu_PortRemove(&gPauseMenuResultVersus, 0x18);
             PauseMenu_PortRemove(&gPauseMenuResultVersus, 0x17);
+            if(Port_RankedActive()){
+                // One rated battle per server-issued match. Return to Online
+                // to search again instead of silently playing unscored rematches.
+                PauseMenu_PortRemove(&gPauseMenuResultVersus,0x13);
+                PauseMenu_PortRemove(&gPauseMenuResultVersus,0xD);
+                PauseMenu_PortRemove(&gPauseMenuVersus,0xD);
+                PauseMenu_PortRemove(&gPauseMenuVersus,0xC);
+            }
         }
     }
     {
@@ -448,6 +519,31 @@ void PauseMenu_Init(void) {
             gPauseMenuMode1.count = 5;
         }
     }
+    {
+        BtlMenu *base=PauseMenu_GetMenu(0);
+        s32 i,n=0,insertAfter=0;
+        if (base && base->count>0 && base->count<31) {
+            insertAfter=base->count>2?2:base->count-1;
+            for(i=0;i<base->count;++i) {
+                if(base->items[i].sub && BtlMenu_IsSkillList(base->items[i].sub)) {
+                    insertAfter=i;break;
+                }
+            }
+            sPresentationPauseMenu=*base;
+            sPresentationPauseMenu.items=sPresentationPauseItems;
+            for(i=0;i<base->count;++i) {
+                sPresentationPauseItems[n++]=base->items[i];
+                if(i==insertAfter) {
+                    BtlMenuItem *item=&sPresentationPauseItems[n++];
+                    memset(item,0,sizeof(*item));
+                    item->id=0x7100;item->text[0]=item->text[1]=0x7100;
+                    item->func=PauseMenu_HudToggle;item->type=BTL_MENU_ITEM_VALUE;
+                }
+            }
+            sPresentationPauseMenu.count=n;
+            sPresentationPauseReady=1;
+        }
+    }
 #endif
     BtlMenu_Init();
 #ifdef PORT
@@ -461,6 +557,10 @@ void PauseMenu_Term(void) {
     gPortBtlMenuLive = 0;
 #endif
     BtlMenu_Term();
+#ifdef PORT
+    sPresentationPauseReady=0;
+    sHudPauseDismissRequested=0;
+#endif
 }
 
 /* One frame of the pause menu (which = 0) or the result menu (which = 1) for controller port `pad`.
@@ -475,7 +575,15 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
 #ifdef PORT
     PauseMenu_PortLobbyPick(menu, pad);
 #endif
+#ifdef PORT
+    {
+        extern s32 TagBattle_LocalActor(void);
+        s32 actor = TagBattle_Network() ? TagBattle_LocalActor() : pad;
+        BtlMenu_SetScript(BtlObj_Get(BattleSide_GetObjId(actor))->skillText);
+    }
+#else
     BtlMenu_SetScript(BtlObj_Get(BattleSide_GetObjId(pad))->skillText);
+#endif
     set = BattleResult_Set;
     if (BtlMenu_Update(which, NULL, menu, pad)) {
         Battle_GetWork()->flags &= ~BATTLE_FLAG_PAUSE;
@@ -483,10 +591,38 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
         Adx_ResumeSeVoice();
         return 0;
     }
+#ifdef PORT
+    if (which == 0 && sHudPauseDismissRequested) {
+        /* Hide the pause tree on the same update as the HUD toggle. Reset its
+         * root so a later Start opens it normally on every peer. */
+        sHudPauseDismissRequested = 0;
+        BtlMenu_Reset(menu);
+        Battle_GetWork()->flags &= ~BATTLE_FLAG_PAUSE;
+        BtlMenu_ClearActive();
+        Adx_ResumeSeVoice();
+        return 0;
+    }
+#endif
     BtlMenu_SetTop(menu);
     item = BtlMenu_FindResult(NULL, menu);
     if (item != NULL) {
         Snd_PlaySe(1, 1);
+#ifdef PORT
+        {
+            extern int TagBattle_Network(void);
+            extern void Port_TagClose(void);
+            extern void TagBattle_SetReturn(s32 choice);
+            if (TagBattle_Network()) {
+                /* A Tag Team pause-menu exit leaves the match locally and returns to the online hub. */
+                TagBattle_SetReturn(2);
+                Port_TagClose();
+                Battle_GetWork()->flags &= ~(BATTLE_FLAG_PAUSE_MENU | BATTLE_FLAG_PAUSE);
+                BtlMenu_ClearActive();
+                set(BTL_RESULT_ABORT, 0);
+                return 1;
+            }
+        }
+#endif
         switch (item->id) {
         case 0xC:
             set(BTL_RESULT_ABORT, 0x8000);

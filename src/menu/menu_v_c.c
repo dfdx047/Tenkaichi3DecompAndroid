@@ -62,6 +62,10 @@ void ItemHelp_Term(void) {
 
 /* Advances and draws the page for one item (0-based index into the item table). */
 void ItemHelp_Draw(s32 item) {
+#ifdef PORT
+    extern int Port_MenuPart(int part);
+    int menuPart = Port_MenuPart(4); /* frame and all glyphs share one transform */
+#endif
     MFlashRef ref;
     MFlashUv uv;
     MFlash *flash;
@@ -108,6 +112,9 @@ void ItemHelp_Draw(s32 item) {
 
     Flash_Draw(&gItemHelp->flash[0]);
     Font_FlushAll();
+#ifdef PORT
+    Port_MenuPart(menuPart);
+#endif
 }
 
 /* Plays the page's opening animation. */

@@ -18,6 +18,9 @@ extern void Flash_Play(Flash *flash, s32 arg);
 extern void Flash_GotoLabel(Flash *flash, char *label, s32 arg);
 extern void Flash_FindLabel(Flash *flash, char *parent, char *name, FlashRef *out);
 extern void Font_FlushAll(void);
+#ifdef PORT
+extern int Port_MenuFooter(int side), Port_MenuPart(int part);
+#endif
 
 /* text box module, after 0x2600B0 (not decompiled) */
 extern void TextBox_AttachLine(Flash *flash, FlashRef *ref, s32 a, s32 b, s32 line, TextBox *box);
@@ -56,6 +59,9 @@ void MsgWin_Term(void) {
 
 /* Steps and draws the window with one line of its text file. The first two arguments are not used. */
 void MsgWin_Draw(s32 unused0, s32 unused1, s32 line) {
+#ifdef PORT
+    int menuPart = Port_MenuFooter(gMsgWin->side);
+#endif
     FlashRef ref;
     Flash *flash;
     s32 i;
@@ -78,6 +84,9 @@ void MsgWin_Draw(s32 unused0, s32 unused1, s32 line) {
         Flash_Draw(&gMsgWin->flash[i]);
     }
     Font_FlushAll();
+#ifdef PORT
+    if (menuPart >= 0) Port_MenuPart(menuPart);
+#endif
 }
 
 /* Starts the slide-in animation of the window's side. */
@@ -128,9 +137,10 @@ static void MsgWin_PortDrawClip(void *draw, f32 *prop) {
 
 /* As MsgWin_Draw, with `str` (16-bit, 0xFEFF first; NULL: no line). A changed line is another buffer: the screen
    reader tells lines apart by where they are. */
-void MsgWin_PortDrawString(u16 *str) {
+static void MsgWin_PortDrawStringEx(u16 *str,s32 hdText) {
     FlashRef ref;
     Flash *flash;
+    int menuPart = Port_MenuFooter(gMsgWin->side);
 
     Flash_Advance(gMsgWin->flash);
     flash = gMsgWin->flash;
@@ -138,13 +148,18 @@ void MsgWin_PortDrawString(u16 *str) {
     Flash_FindLabel(flash, NULL, "mc_message_text", &ref);
     if (str != NULL) {
         TextBox_AttachString(flash, &ref, 0, 0, str, &gMsgWin->box);
-        Flash_ClipSetCallbackC(flash, &ref, MsgWin_PortDrawClip, &((TextBoxFull *)&gMsgWin->box)->draw);
+        Flash_ClipSetCallbackC(flash, &ref, hdText?NULL:MsgWin_PortDrawClip, hdText?NULL:&((TextBoxFull *)&gMsgWin->box)->draw);
     } else {
         Flash_ClipSetCallbackC(flash, &ref, NULL, NULL);
     }
     Flash_Draw(flash);
     Font_FlushAll();
+    if (menuPart >= 0) Port_MenuPart(menuPart);
 }
+void MsgWin_PortDrawString(u16 *str){MsgWin_PortDrawStringEx(str,0);}
+/* Retain the text record read by accessibility while the online page draws
+ * a proportional TrueType caption instead of the legacy glyph sheet. */
+void MsgWin_PortDrawStringHd(u16 *str){MsgWin_PortDrawStringEx(str,1);}
 
 /* How wide a line may be, in the font's pixels: from where the line starts up to `right` (the screen's 512). */
 s32 MsgWin_PortLineRoom(s32 right) {

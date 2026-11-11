@@ -169,7 +169,7 @@ typedef struct DcView {
 typedef struct DcList {
     /* 0x000 */ void *pack;         /* this screen's section of archive 8 (compressed) */
     /* 0x004 */ u32 *res;           /* the same unpacked: a pack of 23 sections */
-    /* 0x008 */ void *faceFile;     /* 0x16800 bytes: file 0x2F9 + character, compressed */
+    /* 0x008 */ void *faceFile;     /* 0x16800 bytes: file 0x71C + character, compressed */
     /* 0x00C */ MTexRes *faceRes;   /* 0x20800 bytes: the same unpacked */
     /* 0x010 */ s32 section;
     /* 0x014 */ DcView view;
@@ -212,7 +212,7 @@ typedef struct DcList {
 #define DCLIST_LEAVING 0x20
 #define DCLIST_FACE_READY 0x40  /* the picture is loaded and fades in */
 
-#define DCLIST_FACE_FILE 0x2F9
+#define DCLIST_FACE_FILE 0x71C
 #define DCLIST_FACE_SIZE 0x16800
 
 /* ---- DcMenu: the top menu of the Data Center (mode 53); a whole object. ---- */
@@ -267,7 +267,7 @@ typedef struct DcMenu {
 #define DCPASS_TEXT_LEN 0x22    /* 34 cells: two lines of 17 */
 #define DCPASS_TEXT_LAST 0x21   /* index of the last of the 34 password characters */
 #define DCPASS_LIST_ROWS 3      /* rows of the "which slot" list that the cursor can be on */
-#define DCPASS_FACE_FILE 0x2F9
+#define DCPASS_FACE_FILE 0x71C
 #define DCPASS_FACE_SIZE 0x16800
 
 /* Codes in the key table that are not characters: where they are ... */
@@ -354,7 +354,7 @@ typedef struct DcPassView {
 typedef struct DcPass {
     /* 0x000 */ void *pack;         /* this screen's section of archive 8 (compressed) */
     /* 0x004 */ u32 *res;           /* the same unpacked: a pack of 22 sections */
-    /* 0x008 */ void *faceFile;     /* 0x16800 bytes: file 0x2F9 + character, compressed */
+    /* 0x008 */ void *faceFile;     /* 0x16800 bytes: file 0x71C + character, compressed */
     /* 0x00C */ MTexRes *faceRes;   /* 0x20800 bytes: the same unpacked */
     /* 0x010 */ s32 section;
     /* 0x014 */ DcPassView view;

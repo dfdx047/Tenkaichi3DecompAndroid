@@ -1,3 +1,4 @@
+extern int TagBattle_Active(void);
 /*
  * Battle objects (0x248F28..0x24BBE8): the table of animated models of a battle, their per-frame update, the
  * battle's light, the per-view draw lists, and the model resource slots the objects are built from.
@@ -22,6 +23,10 @@
  * one file here because their constants are contiguous (.rodata 0x2F23F0..0x2F2420, .lit4 0x2FE630..0x2FE640).
  */
 #include "common.h"
+#include "battle/tag_team_native.h"
+u8 *gTagCharaWork[10];
+#include "port_variant.h"
+extern s32 Bt4_ModelFile(s32, s32, s32);
 #include "battle/btl_obj.h"
 #include "battle/battle.h"
 #include "battle/btl_cam.h"
@@ -266,12 +271,13 @@ BtlObjPoolE0Work *BtlObjPoolE0_Get(void) {
 /* Puts all 512 nodes on the free list. */
 void BtlObjPoolE0_Init(void) {
     BtlObjPoolE0Work *pool = BtlObjPoolE0_Get();
+    static BtlObjPoolE0 tagNodes[2048];
     BtlObjPoolE0 *node;
     s32 i;
 
     memset(pool, 0, sizeof(BtlObjPoolE0Work));
-    node = pool->nodes;
-    for (i = 0; i < 512; i++) {
+    node = TagBattle_Active() ? tagNodes : pool->nodes;
+    for (i = 0; i < (TagBattle_Active() ? 2048 : 512); i++) {
         SList_PushFront(&pool->free, &node->link);
         node++;
     }
@@ -309,11 +315,12 @@ BtlObjPool70Work *BtlObjPool70_Get(void) {
 /* Puts all 4 nodes on the free list. */
 void BtlObjPool70_Init(void) {
     BtlObjPool70Work *pool = BtlObjPool70_Get();
+    static BtlObjPool70 tagFaces[12];
     s32 i;
 
     memset(pool, 0, sizeof(BtlObjPool70Work));
-    for (i = 0; i < 4; i++) {
-        SList_PushFront(&pool->free, &pool->nodes[i].link);
+    for (i = 0; i < (TagBattle_Active() ? 12 : 4); i++) {
+        SList_PushFront(&pool->free, TagBattle_Active() ? &tagFaces[i].link : &pool->nodes[i].link);
     }
 }
 
@@ -440,7 +447,14 @@ BtlObj *BtlObj_Get(s32 id) {
 /* Returns the big work buffer that goes with a fighter object id. */
 u8 *BtlObj_GetCharaWork(u32 id) {
     BtlObjTable *tbl = BtlObj_GetTable();
-
+    extern u8 *gTagCharaWork[10];
+    if (TagBattle_Active() && id >= 2 && id < 12) {
+        if (gTagCharaWork[id-2] == NULL) {
+            gTagCharaWork[id-2] = Heap_Alloc(0x1A0C0,0x40,0,HEAP_ANY);
+            memset(gTagCharaWork[id-2],0,0x1A0C0);
+        }
+        return gTagCharaWork[id-2];
+    }
     if (id < 3) {
         return tbl->charaWork[id];
     }
@@ -453,7 +467,7 @@ void BtlObj_Setup(BtlObj *obj, s32 type, BtlResSlot *res, s32 id, s32 active) {
     BtlObjMdl_Create(type, obj, res);
     obj->active = active;
     obj->id = id;
-    obj->chara = (res->file[0].id - 0x590) / 10;
+    { extern s32 Bt4_CharaFromModelFile(s32 id); obj->chara = Bt4_CharaFromModelFile(res->file[0].id); }
     BtlObj_InitChains(obj);
 }
 
@@ -467,6 +481,9 @@ s32 BtlObj_Create(s32 type, BtlResSlot *res, s32 active) {
     }
     obj = BtlObj_Get(id);
     BtlObj_Setup(obj, type, res, id, active);
+#ifdef PORT
+    if(getenv("BT4_VFX_TRACE"))printf("bt4-vfx object-create id=%d type=%d file=%x flags=%x active=%d\n",id,type,res->file[0].id,obj->state.flags,obj->active);
+#endif
     if (type == BTL_OBJ_TYPE_CHARA) {
         obj->charaWork = BtlObj_GetCharaWork(id);
         BtlObjFlash_Reset(obj);
@@ -513,6 +530,12 @@ BtlResWork *BtlRes_GetWork(void) {
 s32 BtlObj_RequestCharaModel(s32 side, s32 chara, s32 costume, s32 variant) {
     s32 model;
 
+#ifdef PORT
+    if (gPortVariant != 0) {
+        /* the mod: SLUS_219.78 at 0x249C60 */
+        return BtlRes_Request(side < 2, Bt4_ModelFile(chara, costume, variant), 0x141E + chara, 0x1518 + chara);
+    }
+#endif
     if (variant != 0) {
         model = chara * 10 + costume + 0x594;
     } else {
@@ -553,12 +576,17 @@ void BtlObj_Init(s32 prealloc) {
 
 /* Shuts the parts down and frees the work block. */
 void BtlObj_Term(void) {
+    s32 actor;
+    extern u8 *gTagCharaWork[10];
+    extern void Bt4_FreeCharaPacks(void);
+    Bt4_FreeCharaPacks();
     BtlObj_TermDraw();
     BtlObj_TermNop();
     BtlRes_Term();
     ObjShadow_TermPool();
     Heap_Free(gBtlObjWork);
     gBtlObjWork = NULL;
+    for(actor=0;actor<10;++actor)if(gTagCharaWork[actor]!=NULL){Heap_Free(gTagCharaWork[actor]);gTagCharaWork[actor]=NULL;}
 }
 
 /* Rebuilds the object's world box from the bounds records of its model. */
@@ -851,6 +879,10 @@ void BtlObj_BuildDrawList(BtlObjDrawList *list, s32 view) {
              node = (BtlObjNode *)List_GetNext(&node->link)) {
             obj = &node->obj;
             state = &node->obj.state;
+#ifdef PORT
+            /* Opt-in asset capture of the real stage, without fighters. */
+            if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MAP_ART_CAPTURE")&&obj->type==BTL_OBJ_TYPE_CHARA)continue;
+#endif
             if (obj->unk04 != 0 && obj->active != 0) {
                 rec = state->view;
                 if (rec->flags & BTL_OBJ_FLAG_VISIBLE) {
@@ -1150,9 +1182,16 @@ s32 BtlRes_FreeFile(BtlResFile *file) {
 /* Queues the read of a file: into a new heap buffer (fromHeap == 1) or into the record's own buffer. */
 void BtlRes_LoadFile(BtlResFile *file, s32 fromHeap) {
     if (fromHeap == 1) {
+        s32 requested=file->id;
         BtlRes_FreeFile(file);
+        BtlRes_SetFileId(file,requested);
         if (file->id >= 0) {
-            file->buf = File_Request3(file->id, NULL, 0);
+            if (TagBattle_Active()) {
+                extern unsigned Port_GameBigAlloc(int size);
+                file->size=File_GetSize(file->id);
+                file->buf=(void *)Port_GameBigAlloc(file->size);
+                file->buf=File_Request3(file->id,file->buf,file->size);
+            } else file->buf = File_Request3(file->id, NULL, 0);
         }
     } else {
         if (file->id >= 0) {
@@ -1161,9 +1200,32 @@ void BtlRes_LoadFile(BtlResFile *file, s32 fromHeap) {
     }
 }
 
+/* Additional fighters use heap slots, not either of the original fixed
+ * slots. Stage replacement files until the owner permits the atomic rebind. */
+static BtlResFile sTagReloadFiles[3];
+static s32 sTagReloadSlot=-1;
+static u32 sTagReloadMask;
+static void BtlRes_TagDiscardReload(void){
+    s32 i;for(i=0;i<3;++i)BtlRes_FreeFile(&sTagReloadFiles[i]);
+    memset(sTagReloadFiles,0,sizeof(sTagReloadFiles));sTagReloadSlot=-1;sTagReloadMask=0;
+}
+static s32 BtlRes_TagCommitReload(void){
+    BtlResWork *res=BtlRes_GetWork();BtlResSlot *slot;s32 i;
+    if(sTagReloadSlot<0||sTagReloadSlot!=res->pending)return 0;
+    slot=BtlRes_GetSlot(res->pending);
+    if(slot)for(i=0;i<3;++i)if(sTagReloadMask&(1u<<i)){
+        BtlRes_SwapFile(&slot->file[i],&sTagReloadFiles[i]);
+    }
+    /* BtlObj_Rebind destroys the old model after this commit and still reads
+     * its alpha row. Keep the retired buffers alive, as the original fixed
+     * slot's spare does. The next serial reload (or teardown) releases them. */
+    sTagReloadSlot=-1;sTagReloadMask=0;res->pending=-1;return 1;
+}
+
 /* After a reload has been read: swaps the new model buffer into the fixed slot. */
 void BtlRes_CommitReload(void) {
     BtlResWork *res = BtlRes_GetWork();
+    if(BtlRes_TagCommitReload())return;
 
     if (res->pending >= 0) {
         BtlRes_SwapFile(&BtlRes_GetSlot(res->pending)->file[0], res->next);
@@ -1179,6 +1241,7 @@ void BtlRes_Init(s32 prealloc) {
     BtlResFile *spare;
     s32 i;
 
+    BtlRes_TagDiscardReload();
     memset(res, 0, sizeof(BtlResWork));
     res->prealloc = prealloc;
     if (prealloc != 0) {
@@ -1215,6 +1278,7 @@ void BtlRes_Init(s32 prealloc) {
 /* Frees every slot and the preallocated buffers. */
 void BtlRes_Term(void) {
     BtlResWork *res = BtlRes_GetWork();
+    BtlRes_TagDiscardReload();
     BtlResSlot *slot;
     s32 i;
 
@@ -1313,6 +1377,18 @@ void BtlRes_Reload(s32 number, s32 model, s32 anim0, s32 anim1) {
     BtlResSlot *slot;
     s32 modelOnly = 0;
 
+    if(TagBattle_Active() && number>=BTL_RES_FIXED_MAX && res->pending<0){
+        s32 ids[3],i;slot=BtlRes_GetSlot(number);
+        if(!slot || !(slot->flags&BTL_RES_SLOT_HEAP))return;
+        BtlRes_TagDiscardReload();ids[0]=model;ids[1]=anim0;ids[2]=anim1;
+        modelOnly=model>=0&&anim0==-1&&anim1==-1;
+        for(i=0;i<3;++i)if(ids[i]!=BTL_RES_ID_KEEP&&!(modelOnly&&i>0)){
+            sTagReloadMask|=1u<<i;
+            BtlRes_SetFileId(&sTagReloadFiles[i],ids[i]);
+            if(ids[i]>=0)BtlRes_LoadFile(&sTagReloadFiles[i],1);
+        }
+        sTagReloadSlot=number;res->pending=number;return;
+    }
     if (res->pending < 0 && number < BTL_RES_FIXED_MAX) {
         slot = BtlRes_GetSlot(number);
         if (slot != NULL) {
@@ -1337,6 +1413,7 @@ void BtlRes_Reload(s32 number, s32 model, s32 anim0, s32 anim1) {
 /* Same as BtlRes_CommitReload (battle_load.c calls this copy). */
 void BtlRes_CommitReload2(void) {
     BtlResWork *res = BtlRes_GetWork();
+    if(BtlRes_TagCommitReload())return;
 
     if (res->pending >= 0) {
         BtlRes_SwapFile(&BtlRes_GetSlot(res->pending)->file[0], res->next);

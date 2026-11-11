@@ -1,4 +1,10 @@
 #include "common.h"
+#ifdef PORT
+#include <stdio.h>
+#include <stdlib.h>
+static s32 sTagSelectActive,sTagFacesHidden;
+static void TeamSel_TagDrawFilter(void);
+#endif
 #include "menu/menu_e.h"
 #include "menu/menu_f.h"
 #include "sys/pad.h"
@@ -12,22 +18,24 @@ extern volatile int gUiSongIdx, gUiSongReady, gUiSongLit;
 static s32 sPortSongNameHidden;
 #include "plat_stages.h" /* the stages added from outside the disc: their ids and names */
 /* The port's stage-name overlay, as the duel's select uses it. */
+static void *sPortStagePictures[2];
 extern volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;
 extern volatile int gUiNameIdx, gUiNameReady;
 static s32 sPortStageNameHidden;
 static s32 sPortStagesAdded; /* this stage select shows stages from outside the disc */
 static s32 sPortSongsAdded;  /* ... and its music list songs from outside the disc */
-static s32 sPortStageRows = TS_STAGE_COLS; /* rows of the stage reel: the game's 6, more with stages added */
+static s32 sPortStageRows = 11; /* rows of the stage reel: the game's 6, more with stages added */
 /* The picture behind the reel: a disc stage's own (0x39D + id); an added stage borrows one (its id past 0x23
    would fall on the loading screens' files), as in the duel's select. */
-#define TS_STAGE_PICTURE(id) (TS_STAGE_FILE + ((id) < 0x24 ? (id) : (id) - 0x24))
+#define TS_STAGE_PICTURE(id) (TS_STAGE_FILE + ((id)>=0x63?0:(id)))
 /* include/battle/view_a.h holds these; repeated here (pulling it in clashes with the menu headers). The PC build
    moves the locked / empty markers up so added stages keep their own ids. */
-#define STGGRID_ID_LOCKED 0x3E
-#define STGGRID_ID_EMPTY 0x3F
+#define STGGRID_ID_LOCKED 0x24
+#define STGGRID_ID_EMPTY 0x25
 #endif
 #ifdef PORT
 extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
+extern void Port_MenuMovie(int index);
 extern void Port_MenuFill(int on);
 #endif
 
@@ -46,6 +54,7 @@ TeamSel *gTeamSel = NULL;
 
 extern s32 ChrTbl_GetCost(s32 chara);
 extern s32 ChrTbl_IsRelated(s32 a, s32 b);
+extern void Bt4Costume_AttachCaption(MFlash *flash, MFlashRef *ref, s32 number, s32 total, const u16 *name, void *storage);
 extern void TextBox_Init(MTextBox *box, void *text, u32 preset);
 extern void TextBox_SetUnk80(MTextBox *box, s32 value);
 extern void TextBox_AttachLine(MFlash *flash, MFlashRef *ref, s32 x, s32 y, s32 line, MTextBox *box);
@@ -56,6 +65,8 @@ extern s32 StgGrid_IsSelectable(s32 *ids, s32 index);
 extern void ChrGrid_Build(s32 *outCount, TsCell *out, s32 *inCount, TsCell *in, s32 *customCount, TsCell *custom);
 extern void StgGrid_ApplyUnlocks(s32 *count, s32 *ids);
 extern void BgmList_ApplyUnlocks(s32 *count, s32 *ids);
+extern s32 Bt4_BgmNormalize(s32 count,s32 *ids,s32 random);
+extern s32 Bt4_BgmRandom(s32 count,s32 *ids);
 
 /* First word of a section of a pack (the count of a list section, whose entries start at +0x10). */
 #define TS_PACK_WORD(pack, n) (*(s32 *)(((((u32 *)(pack))[n] >> 2) << 2) + (u32)(pack)))
@@ -90,11 +101,18 @@ void TeamSel_SumCost(s32 side, s32 skipCur) {
     }
 }
 
+static s32 TeamSel_IsRealChara(s32 id){return id>=0&&id<512&&id!=TS_RANDOM&&id!=TS_LOCKED&&id!=TS_CUSTOM&&id!=TS_EMPTY;}
+
 /* Returns 0 if another member of the side's team is the same person as `chara` (a form of the same character). */
 s32 TeamSel_IsCharaFree(s32 side, s32 chara) {
     s32 ok = 1;
     s32 i;
-
+#ifdef PORT
+    if(sTagSelectActive){
+        extern int Port_TagCapacity(void),Port_TagTeam(int),Port_TagConfirmed(int),Port_TagPlayerChara(int);
+        for(i=0;i<Port_TagCapacity();++i)if(Port_TagTeam(i)==side&&Port_TagConfirmed(i)&&ChrTbl_IsRelated(chara,Port_TagPlayerChara(i)))return 0;
+    }
+#endif
     for (i = 0; i < gTeamSel->side[side]->memberCount; i++) {
         if (i != gTeamSel->side[side]->cur) {
             if (ChrTbl_IsRelated(chara, gTeamSel->side[side]->member[i].chara)) {
@@ -148,7 +166,7 @@ void TeamSel_SetStageChips(void) {
         /* PC build: the markers moved up, so they keep the locked / empty icons (37, 38). */
         {
             /* (a stage added from outside the disc, id 0x24 on, borrows an icon as in the duel's select) */
-            s32 icon = id == STGGRID_ID_LOCKED ? 37 : (id == STGGRID_ID_EMPTY ? 38 : (id >= 0x24 ? 1 + (id - 0x24) % 36 : id + 1));
+            s32 icon = id == STGGRID_ID_LOCKED ? 37 : (id == STGGRID_ID_EMPTY ? 38 : id>=0x63 ? 1 : id+1);
             res = (MTexRes *)MPACK_AT(gTeamSel->stagePack, icon);
         }
 #else
@@ -156,6 +174,9 @@ void TeamSel_SetStageChips(void) {
 #endif
         gTeamSel->tex[41 + i] = gTeamSel->tex[slot[i]];
         gTeamSel->tex[slot[i]] = res->tex;
+#ifdef PORT
+        {u32 art=Port_StageArt(id,0);if(art)gTeamSel->tex[slot[i]]=(void*)art;}
+#endif
     }
 }
 
@@ -382,6 +403,9 @@ void TeamSel_UpdateStageLoad(void) {
         res = gTeamSel->stageRes[gTeamSel->stageBuf];
         Res_RelocateOffsets(&res, res, res);
         gTeamSel->bg[0] = res;
+#ifdef PORT
+        {u32 art=Port_StageArt(gTeamSel->stage->stage,1);sPortStagePictures[gTeamSel->stageBuf]=art?(void*)art:(void*)res;gTeamSel->bg[0]=sPortStagePictures[gTeamSel->stageBuf];}
+#endif
         gTeamSel->stageBuf ^= 1;
         gTeamSel->flags |= TEAMSEL_STAGE_READY;
         gTeamSel->stageState = TEAMSEL_LOAD_IDLE;
@@ -399,6 +423,9 @@ void TeamSel_UpdateStageLoad(void) {
 
 /* The stage under the cursor changed: start the cross fade, or abort a load in progress, and ask for the new picture. */
 void TeamSel_RequestStage(void) {
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MAP_BROWSE_TEST"))fprintf(stderr,"team map browse request: stage=%d row=%d col=%d\n",gTeamSel->stage->stage,gTeamSel->stage->row,gTeamSel->stage->col);
+#endif
     if (gTeamSel->flags & TEAMSEL_STAGE_READY) {
         gTeamSel->flags ^= TEAMSEL_STAGE_READY;
     } else {
@@ -407,6 +434,9 @@ void TeamSel_RequestStage(void) {
     gTeamSel->flags |= TEAMSEL_STAGE_CHANGE;
     gTeamSel->bg[0] = gTeamSel->stageRes[gTeamSel->stageBuf];
     gTeamSel->bg[1] = gTeamSel->stageRes[gTeamSel->stageBuf ^ 1];
+#ifdef PORT
+    if(sPortStagePictures[gTeamSel->stageBuf^1])gTeamSel->bg[1]=sPortStagePictures[gTeamSel->stageBuf^1];
+#endif
 }
 
 /* Sends the clip of one chip or plate of a movie to a label; `kind` says which clip and from which cursor. */
@@ -632,12 +662,12 @@ void TeamSel_Init(s32 section) {
     gTeamSel->nameText = MPACK_AT(gTeamSel->res, 43);
     gTeamSel->formText = MPACK_AT(gTeamSel->res, 44);
     gTeamSel->chipPack = (u32 *)MPACK_AT(gTeamSel->res, 45);
-    for (i = 0; i < TS_CELL_MAX; i++) {
+    for (i = 0; i < 250; i++) {
         res = (MTexRes *)MPACK_AT(gTeamSel->chipPack, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
     gTeamSel->stagePack = (u32 *)MPACK_AT(gTeamSel->res, 46);
-    for (i = 0; i < 38; i++) {
+    for (i = 0; i < 99; i++) {
         res = (MTexRes *)MPACK_AT(gTeamSel->stagePack, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
@@ -651,21 +681,21 @@ void TeamSel_Init(s32 section) {
            DP battles). After the save's unlocks; nothing of them is looked up in the save or written to it. Not in
            an online session. The list is ours, with whole rows: the reel reads rows of six. */
         extern int gPortStageReplaceCount, gPortReplaceOld[16], gPortReplaceNew[16];
-        extern int Port_NetSession(void); /* port/src/gs/net.c */
-        static s32 sAllIds[96];
-        s32 extra = Port_NetSession() ? 0 : gPortExtraStageCount;
+        extern int Port_NetSession(void),Port_TagNetwork(void);
+        static s32 sAllIds[132];
+        s32 extra = Port_NetSession()||Port_TagNetwork() ? 0 : gPortExtraStageCount;
         s32 swaps = Port_NetSession() ? 0 : gPortStageReplaceCount;
         s32 n = gTeamSel->stageCount, k, r;
-        sPortStageRows = TS_STAGE_COLS;
+        sPortStageRows = 11;
         sPortStagesAdded = extra > 0 || swaps > 0;
         if (extra > 0 || swaps > 0) {
-            if (n > 64) {
-                n = 64;
+            if (n > 99) {
+                n = 99;
             }
-            for (k = 0; k < 96; k++) {
+            for (k = 0; k < 132; k++) {
                 sAllIds[k] = k < n ? gTeamSel->stageIds[k] : STGGRID_ID_EMPTY;
             }
-            for (k = 0; k < extra && n < 90; k++) {
+            for (k = 0; k < extra && n < 125; k++) {
                 sAllIds[n++] = (s32)gPortExtraStages[k];
             }
             for (r = 0; r < swaps; r++) {
@@ -680,7 +710,7 @@ void TeamSel_Init(s32 section) {
             gTeamSel->stageCount = n;
             sPortStageRows = (n + TS_STAGE_COLS - 1) / TS_STAGE_COLS;
             if (sPortStageRows < TS_STAGE_COLS) {
-                sPortStageRows = TS_STAGE_COLS;
+                sPortStageRows = 11;
             }
         }
     }
@@ -690,7 +720,7 @@ void TeamSel_Init(s32 section) {
     BgmList_ApplyUnlocks(&gTeamSel->bgmCount, gTeamSel->bgmIds);
     /* the last four entries of the list are not offered; the last one kept becomes "random" */
     gTeamSel->bgmCount -= 4;
-    gTeamSel->bgmIds[gTeamSel->bgmCount - 1] = TS_BGM_RANDOM;
+    gTeamSel->bgmCount = Bt4_BgmNormalize(gTeamSel->bgmCount,gTeamSel->bgmIds,1);
 #ifdef PORT
     {
         /* PC build: the tracks added from outside the disc, after the disc's and before the "random" entry, as in
@@ -705,10 +735,10 @@ void TeamSel_Init(s32 section) {
         sPortSongsAdded = 0;
         Port_NameFontSheets((int)(u32)gTeamSel->tex[39], (int)(u32)gTeamSel->tex[19], (int)(u32)gTeamSel->tex[20]);
         if (added > 0) {
-            static s32 sBgmIds[72];
+            static s32 sBgmIds[PORT_SONG_FIRST_OFFSET + PORT_SONG_MAX + 1];
             s32 n = gTeamSel->bgmCount, k, last = gTeamSel->bgmIds[n - 1];
-            if (n > 30) {
-                n = 30;
+            if (n > PORT_SONG_FIRST_OFFSET) {
+                n = PORT_SONG_FIRST_OFFSET;
             }
             if (added > PORT_SONG_MAX) {
                 added = PORT_SONG_MAX;
@@ -731,6 +761,16 @@ void TeamSel_Init(s32 section) {
     gTeamSel->masterCount[0] = TS_PACK_WORD(gTeamSel->res, 42);
     gTeamSel->cells[1] = gTeamSel->cells[0];
     gTeamSel->masterCount[1] = gTeamSel->masterCount[0];
+#ifdef PORT
+    if(getenv("BT3_BGM_DEBUG")!=NULL) {
+        s32 b;fprintf(stderr,"bgm final(+added): count %d, ids:",gTeamSel->bgmCount);
+        for(b=0;b<gTeamSel->bgmCount;++b)fprintf(stderr," %02x",gTeamSel->bgmIds[b]);
+        fprintf(stderr,"\n");
+        fprintf(stderr,"bgm filemap:");
+        for(b=0;b<gTeamSel->bgmCount;++b)fprintf(stderr," %x",PORT_BGM_FILE(gTeamSel->bgmIds[b]));
+        fprintf(stderr,"\n");
+    }
+#endif
     for (i = 0; i < TEAMSEL_SIDES; i++) {
         s32 cols = TS_COLS;
 
@@ -764,7 +804,7 @@ void TeamSel_Init(s32 section) {
         s32 rows = TS_STAGE_COLS;
 
         gTeamSel->stage->col = gTsProgress->stageCell % cols;
-        gTeamSel->stage->row = gTsProgress->stageCell / rows;
+        gTeamSel->stage->row = gTsProgress->stageCell / cols;
     }
     for (i = 0; i < gTeamSel->bgmCount; i++) {
         if (gTeamSel->bgmIds[i] == gTsProgress->bgm) {
@@ -796,7 +836,8 @@ void TeamSel_Init(s32 section) {
             }
         }
     }
-    if (!StgGrid_IsSelectable(gTeamSel->stageIds, gTsProgress->stageCell)) {
+    if (gTsProgress->stageCell < 0 || gTsProgress->stageCell >= gTeamSel->stageCount ||
+        !StgGrid_IsSelectable(gTeamSel->stageIds, gTsProgress->stageCell)) {
         gTsProgress->stageCell = 0;
         gTeamSel->stage->col = 0;
         gTeamSel->stage->row = 0;
@@ -831,18 +872,21 @@ void TeamSel_Init(s32 section) {
     Res_RelocateOffsets(&res, res, res);
     gTeamSel->bg[0] = res;
     gTeamSel->bg[1] = res;
+#ifdef PORT
+    {u32 art=Port_StageArt(gTeamSel->stage->stage,1);sPortStagePictures[0]=sPortStagePictures[1]=art?(void*)art:(void*)res;gTeamSel->bg[0]=gTeamSel->bg[1]=sPortStagePictures[0];}
+#endif
     gTeamSel->stageState = TEAMSEL_LOAD_IDLE;
     gTeamSel->flags |= TEAMSEL_STAGE_READY;
     gTeamSel->bgAlpha[0] = 0x80;
     gTeamSel->bgAlpha[1] = 0;
     gTeamSel->stageBuf = 1;
     if (gTeamSel->bgmIds[gTeamSel->stage->bgm] == TS_BGM_RANDOM) {
-        Bgm_Play(Rand_Range(9) + 0x10B1E);
+        Bgm_Play(PORT_BGM_FILE(Bt4_BgmRandom(gTeamSel->bgmCount,gTeamSel->bgmIds)));
     } else {
 #ifdef PORT /* (a song added from outside the disc has a file id of its own) */
         Bgm_Play(PORT_BGM_FILE(gTeamSel->bgmIds[gTeamSel->stage->bgm]));
 #else
-        Bgm_Play(gTeamSel->bgmIds[gTeamSel->stage->bgm] + 0x10B16);
+        Bgm_Play(gTeamSel->bgmIds[gTeamSel->stage->bgm] + 0x816);
 #endif
     }
     for (i = 0; i < TEAMSEL_SIDES; i++) {
@@ -850,6 +894,9 @@ void TeamSel_Init(s32 section) {
         TextBox_SetUnk80(&gTeamSel->nameBox[i], 1);
         TextBox_Init(&gTeamSel->formBox[i], gTeamSel->formText, i + 3);
         TextBox_SetUnk80(&gTeamSel->formBox[i], 1);
+        gTeamSel->costumeText = MPACK_AT(gTeamSel->res, 57);
+        TextBox_Init(&gTeamSel->costumeBox[i], (u8 *)gTeamSel->costumeText + ((u32 *)gTeamSel->costumeText)[1], 7);
+        TextBox_SetUnk80(&gTeamSel->costumeBox[i], 1);
     }
 }
 
@@ -944,7 +991,9 @@ void TeamSel_Draw(void) {
             }
         }
 #ifdef PORT
-        Port_MenuPage(15); /* widescreen menus: this screen's page, its backdrop filling the width */
+        /* Native team selection and Tag draft share the two-player movie
+         * layout, including the stage reel. Keep masks and pictures together. */
+        Port_MenuPage(3);
         Port_MenuFill(1);
         Sprite_DrawPicture(gTeamSel->bg[i], 0, 0, gTeamSel->bgAlpha[i]);
         Port_MenuFill(0);
@@ -970,6 +1019,9 @@ void TeamSel_Draw(void) {
         }
         Flash_FindLabel(flash, NULL, i ? "mc_single_chara_r" : "mc_single_chara_l", &ref);
         Flash_ClipSetAlpha(flash, &ref, gTeamSel->faceAlpha[i]);
+#ifdef PORT
+        Flash_ClipSetFlags(flash, &ref, 2, (gTeamSel->flags & TEAMSEL_STAGE) == 0);
+#endif
         Flash_ClipSetFlags(flash, &ref, 0x80, (u8)gTeamSel->faceMask);
         Flash_FindLabel(flash, NULL, i ? "mc_name_text_r" : "mc_name_text_l", &ref);
         TextBox_AttachLine(flash, &ref, 0, 0, gTeamSel->side[i]->chara, &gTeamSel->nameBox[i]);
@@ -987,8 +1039,8 @@ void TeamSel_Draw(void) {
         extern void Flash_ClipGetPos(MFlash *flash, MFlashRef *ref, s32 *x, s32 *y);
         s32 nameId = gTeamSel->stage->stage;
 
-        if (nameId >= 0x24) {
-            s32 nx = 0, ny = 0, idx = nameId - 0x24;
+        if (nameId >= 0x63) {
+            s32 nx = 0, ny = 0, idx = nameId - 0x63;
             Flash_ClipSetFlags(flash, &ref, 2, 0);
             sPortStageNameHidden = 1;
             Flash_ClipGetPos(flash, &ref, &nx, &ny);
@@ -1176,29 +1228,27 @@ void TeamSel_Draw(void) {
                                        TS_RANDOM);
             }
         }
-        for (j = 0; j < 4; j++) {
-            uv.x0 = (j % 2) * 0x40;
-            uv.x1 = uv.x0 + 0x40;
-            uv.y0 = (j / 2) * 0x20;
-            uv.y1 = uv.y0 + 0x20;
+#ifdef PORT
+        {extern void Bt4Costume_FixArrows(MFlash *);Bt4Costume_FixArrows(flash);}
+#endif
+        /* BT4's helper 0x269778 draws per-character costume names from section 57.
+           The old BT3 four-digit atlas is not the BT4 costume label. */
+        for (j = 0; j < 8; j++) {
             sprintf(name, "mc_color_plate_%d", j + 1);
             Flash_FindLabel(flash, NULL, name, &ref);
-            if (j < gTeamSel->colorCount[i]) {
-                Flash_ClipSetFlags(flash, &ref, 2, 1);
-                switch (gTeamSel->colorCount[i]) {
-                case 2:
-                    Flash_ClipSetOffset(flash, &ref, 0x2D, 0);
-                    break;
-                case 3:
-                    Flash_ClipSetOffset(flash, &ref, 0x16, 0);
-                    break;
-                }
-                Flash_FindLabel(flash, name, "mc_color_text_off", &ref);
-                Flash_ClipSetUv(flash, &ref, &uv);
-                Flash_FindLabel(flash, name, "mc_color_text_on", &ref);
-                Flash_ClipSetUv(flash, &ref, &uv);
+            Flash_ClipSetFlags(flash, &ref, 2, 0);
+        }
+        if (gTeamSel->side[i]->chara >= 0) {
+            *(void **)((u8 *)&gTeamSel->costumeBox[i] + 4) =
+                (u8 *)gTeamSel->costumeText + ((u32 *)gTeamSel->costumeText)[1 + gTeamSel->side[i]->chara];
+            Flash_FindLabel(flash, NULL, "mc_color_name_text", &ref);
+            if(gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color>=0 && gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color<gTeamSel->colorCount[i]) {
+                u32 *row = *(u32 **)((u8 *)&gTeamSel->costumeBox[i] + 4);
+                const u16 *label = (const u16 *)((u8 *)row + (row[1 + gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color] & ~3u));
+                Bt4Costume_AttachCaption(flash, &ref, gTeamSel->side[i]->member[gTeamSel->side[i]->cur].color + 1, gTeamSel->colorCount[i], label, &gTeamSel->costumeBox[i]);
             } else {
-                Flash_ClipSetFlags(flash, &ref, 2, 0);
+                /* Native TextBox_AttachLine also clears its callback for line -1. */
+                TextBox_AttachLine(flash, &ref, 0, 0, -1, &gTeamSel->costumeBox[i]);
             }
         }
     }
@@ -1267,7 +1317,7 @@ void TeamSel_Draw(void) {
             Flash_ClipSetFlags(flash, &ref, 0x80, (u8)gTeamSel->side[i]->mask);
             chara = gTeamSel->side[i]->chip[j / cols][j % cols];
             if (gTeamSel->battleType == 2) {
-                if (chara < TS_RANDOM) {
+                if (TeamSel_IsRealChara(chara)) {
                     cost = ChrTbl_GetCost(chara);
                 } else {
                     cost = 0;
@@ -1276,14 +1326,14 @@ void TeamSel_Draw(void) {
                 Flash_FindLabel(flash, name, name2, &ref);
                 if (gTeamSel->side[i]->cost + cost > gTeamSel->dpMax) {
                     Flash_ClipSetColor(flash, &ref, 0.4f);
-                } else if (chara < TS_RANDOM) {
+                } else if (TeamSel_IsRealChara(chara)) {
                     Flash_ClipSetColor(flash, &ref, TeamSel_IsCharaFree(i, chara) ? 1.0f : 0.4f);
                 } else {
                     Flash_ClipSetColor(flash, &ref, 1.0f);
                 }
                 sprintf(name2, "mc_dp_num_%03d", j);
                 Flash_FindLabel(flash, name, name2, &ref);
-                if (chara < TS_RANDOM) {
+                if (TeamSel_IsRealChara(chara)) {
                     uv.x0 = (cost % 4) * 0x20;
                     uv.x1 = uv.x0 + 0x20;
                     uv.y0 = (cost / 4) * 0x20;
@@ -1296,7 +1346,7 @@ void TeamSel_Draw(void) {
             } else {
                 sprintf(name2, "mc_chara_%03d", j);
                 Flash_FindLabel(flash, name, name2, &ref);
-                if (chara < TS_RANDOM) {
+                if (TeamSel_IsRealChara(chara)) {
                     Flash_ClipSetColor(flash, &ref, TeamSel_IsCharaFree(i, chara) ? 1.0f : 0.4f);
                 } else {
                     Flash_ClipSetColor(flash, &ref, 1.0f);
@@ -1344,9 +1394,24 @@ void TeamSel_Draw(void) {
             }
         }
     }
+#ifdef PORT
+    if(sTagSelectActive)TeamSel_TagDrawFilter();
+#endif
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *,const void *);
+    Flash_PortPortraits(gTeamSel->tex[23],gTeamSel->tex[22]);
+#endif
     for (i = 0; i < TEAMSEL_FLASH_NUM; i++) {
+#ifdef PORT
+        if(sTagSelectActive && (gTeamSel->flags&TEAMSEL_STAGE) && i>0)continue;
+        Port_MenuMovie(i);
+#endif
         Flash_Draw(&gTeamSel->flash[i]);
     }
+#ifdef PORT
+    Port_MenuMovie(0);
+    Flash_PortPortraits(NULL,NULL);
+#endif
     Font_FlushAll();
     IconWin_Draw();
     ItemPanel_Draw(0);
@@ -1446,6 +1511,29 @@ f32 TeamSel_Input(s32 *result) {
     s32 r;
     s32 chara;
     s32 idx;
+
+#ifdef PORT
+    /* Hidden regression enters the actual team stage reel, then sends normal
+     * directional input through the same handler as the player's controller. */
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TEAM_MAP_BROWSE_TEST")&&!sTagSelectActive){
+        static int selected,tick;
+        gPad[0].gamePressed=gPad[0].gameRepeat=gPad[0].gameHeld=0;
+        if(!selected&&(gTeamSel->flash[0].flags&MFLASH_PAD)){
+            for(idx=0;idx<gTeamSel->stageCount;++idx)if(gTeamSel->stageIds[idx]==0){
+                Flash_GotoLabel(&gTeamSel->flash[0],"fl_map",1);
+                gTeamSel->flags|=TEAMSEL_STAGE|TEAMSEL_STARTED;
+                gTeamSel->faceMask=1;gTeamSel->stage->state=TEAMSEL_STAGE_GRID;
+                gTeamSel->stage->row=idx/TS_STAGE_COLS;gTeamSel->stage->col=idx%TS_STAGE_COLS;gTeamSel->stage->stage=0;
+                TeamSel_SetStageChips();TeamSel_ClipGoto(0,0,TEAMSEL_CLIP_STAGE_CHIP,"fl_on_start");TeamSel_RequestStage();
+                fprintf(stderr,"team map selector fixture: stage=0 index=%d count=%d\n",idx,gTeamSel->stageCount);selected=1;break;
+            }
+        }
+        if(selected&&++tick>=170&&(tick-170)%40==0){
+            int step=(tick-170)/40;gPad[0].gameRepeat=step<10?2:step<20?1:step<40?4:8;
+            if(step==60){fprintf(stderr,"team map browse fixture: complete\n");exit(0);}
+        }
+    }
+#endif
 
     if (!(gTeamSel->flash[0].flags & MFLASH_PAD)) {
         return;
@@ -1963,7 +2051,7 @@ f32 TeamSel_Input(s32 *result) {
                             } while (!TeamSel_IsCharaFree(CUR_N, chara));
                             CUR_MEMBER.chara = chara;
                         } else {
-                            CUR_MEMBER.chara = CUR_SIDE->chip[0][CUR_MEMBER.col];
+                            CUR_MEMBER.chara = CUR_CELL.id;
                             idx = CUR_MEMBER.col + CUR_MEMBER.row * TS_COLS;
                         }
                         if (CUR_MEMBER.plate != 0) {
@@ -2204,7 +2292,7 @@ f32 TeamSel_Input(s32 *result) {
 /* The song a chosen "random" stands for: one of the nine battle songs. PC build, with songs added from outside
    the disc: any entry of the music list before "random", the disc's and the added ones alike. */
 #ifdef PORT
-#define TS_RANDOM_BGM() (sPortSongsAdded ? gTeamSel->bgmIds[Rand_Range(gTeamSel->bgmCount - 1)] : Rand_Range(9) + 8)
+#define TS_RANDOM_BGM() Bt4_BgmRandom(gTeamSel->bgmCount,gTeamSel->bgmIds)
 #else
 #define TS_RANDOM_BGM() (Rand_Range(9) + 8)
 #endif
@@ -2275,13 +2363,13 @@ s32 TeamSel_Run(s32 section) {
         if (gTeamSel->stage->stage == TS_STAGE_RANDOM && sPortStagesAdded) {
             do {
                 gTeamSel->stage->stage = gTeamSel->stageIds[Rand_Range(gTeamSel->stageCount)];
-            } while (gTeamSel->stage->stage == TS_STAGE_RANDOM || gTeamSel->stage->stage >= STGGRID_ID_LOCKED);
+            } while (gTeamSel->stage->stage == TS_STAGE_RANDOM || !((gTeamSel->stage->stage < TS_STAGE_RANDOM) || (gTeamSel->stage->stage >= 0x27 && gTeamSel->stage->stage < 0x63)));
         }
 #endif
         if (gTeamSel->stage->stage == TS_STAGE_RANDOM) {
             do {
                 gTeamSel->stage->stage = gTeamSel->stageIds[Rand_Range(gTeamSel->stageCount - 1)];
-            } while (gTeamSel->stage->stage >= TS_STAGE_RANDOM);
+            } while (!((gTeamSel->stage->stage < TS_STAGE_RANDOM) || (gTeamSel->stage->stage >= 0x27 && gTeamSel->stage->stage < 0x63)));
         }
         bgm = gTeamSel->bgmIds[gTeamSel->stage->bgm];
         if (bgm == TS_BGM_RANDOM) {
@@ -2339,3 +2427,7 @@ s32 TeamSel_Run(s32 section) {
     Dma_ResetBuffers();
     return result;
 }
+
+#ifdef PORT
+#include "tag_team_select.inc"
+#endif

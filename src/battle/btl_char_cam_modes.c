@@ -1,3 +1,4 @@
+extern int TagBattle_Active(void);
 #include "common.h"
 #include "battle/btl_char_cam_int.h"
 
@@ -475,6 +476,16 @@ void ChrCam_Update(ChrCamChr *chr) {
     f32 len;
     f32 rate;
 
+    if (TagBattle_Active()) {
+        extern s32 BtlAct_GetCurrent(ChrCamChr *chr);
+        extern void BtlChar_ClearFlag(ChrCamChr *chr, s32 flag);
+        s32 action = BtlAct_GetCurrent(chr);
+        if (action >= 0xB4 && action <= 0xBF && ChrCam_IsCutActive(chr)) {
+            ChrCam_EndCut(chr);
+            BtlChar_ClearFlag(chr, 0xDB);
+            BtlChar_SetFlag(chr, 0xCD);
+        }
+    }
     if (BtlChar_TestFlag(chr, 0xCC)) {
         Vec4_Copy(&eye, &chr->cam.pos);
         Vec4_Copy(&rot, &chr->cam.rot);
@@ -570,6 +581,14 @@ void ChrCam_AddShake(ChrCamChr *chr, f32 strength, f32 time) {
 
 /* Fighter flags 0xDA / 0xD7 / 0xD8 / 0xD9: stop the scripted camera / play one of the character's three camera animations. */
 void ChrCam_UpdateDemo(ChrCamChr *chr) {
+    extern s32 TagBattle_Count(void),TagBattle_Presentation(void),TagBattle_Target(s32),TagBattle_ViewActor(void),TagBattle_CutVisible(s32,s32);
+    extern s32 BtlAct_GetCurrent(ChrCamChr *chr);
+    s32 action=BtlAct_GetCurrent(chr);
+    if(TagBattle_Active()){
+        if(action>=0xB4 && action<=0xBF)return;
+        s32 view=TagBattle_ViewActor();
+        if(!TagBattle_CutVisible(chr->side,view))return;
+    }
     if (BtlChar_TestFlag(chr, 0xDA)) {
         DemoCam_Stop();
     }
@@ -679,6 +698,9 @@ void ChrCam_BlendToCut(ChrCamChr *chr, Vec4 *vecADelta, Vec4 *vecBDelta, Vec4 *v
 
 /* Asks for cut `index` of table `table` (0: the character's own, 1: the common one); ChrCam_StartCut acts on it. */
 void ChrCam_RequestCut(ChrCamChr *chr, s32 table, s32 index) {
+    extern s32 TagBattle_Count(void),BtlAct_GetCurrent(ChrCamChr *chr);
+    s32 action=BtlAct_GetCurrent(chr);
+    if(TagBattle_Active() && action>=0xB4 && action<=0xBF)return;
     chr->cut.unk0 = table;
     chr->cut.unk4 = index;
     BtlChar_SetFlag(chr, 0xDB);
@@ -897,3 +919,37 @@ s32 ChrCam_IsCutActive(ChrCamChr *chr) {
     }
     return BtlChar_TestFlag(chr, 0xDB) != 0;
 }
+
+#ifdef PORT
+/* Native regression uses loaded model nodes, not substitute camera math. */
+s32 ChrCam_TagRegression(void) {
+    extern s32 TagBattle_SetTarget(s32, s32);
+    extern void BtlChar_ClearFlag(ChrCamChr *, s32);
+    extern s32 BtlAct_GetCurrent(ChrCamChr *);
+    ChrCamChr *chr = BtlChar_Get(2);
+    Vec4 eye, rot, target, own, opp, expected, delta;
+    s32 fail = 0, i;
+    TagBattle_SetTarget(2, 3);
+    for (i = 0; i < 4; ++i) {
+        memset(&chr->cut, 0, sizeof(chr->cut));
+        chr->cut.unk88 = chr->cut.unk8C = chr->cut.unk90 = chr->cut.unk94 = -1;
+        ((s32 *)&chr->cut.unk88)[i] = CHRCUT_NODE_MID | 3;
+        chr->cut.timer = chr->cut.total = 30;
+        ChrCam_CalcCut(chr, &eye, &rot, &target);
+        BtlCharApi_GetNodePos(chr->objId, 3, &own);
+        BtlOpp_GetNodePos(chr, 3, &opp);
+        Vec4_Lerp(&expected, &own, &opp, 0.5f);
+        Vec4_Sub(&delta, i == 0 ? &chr->cut.vecA : i == 1 ? &chr->cut.vecADelta : i == 2 ? &chr->cut.vecC : &chr->cut.vecCDelta, &expected);
+        if (Vec3_Length(&delta) > 0.01f) ++fail;
+    }
+    /* A held cut left by a previous attack must not survive a real-time grab. */
+    memset(&chr->cut, 0, sizeof(chr->cut));
+    chr->cut.flags = CHRCUT_F_HOLD;
+    *(s32 *)((u8 *)chr + 0x948) = 0xB7;
+    BtlChar_SetFlag(chr, 0xDB);
+    ChrCam_Update(chr);
+    if (ChrCam_IsCutActive(chr)) ++fail;
+    printf("tag camera geometry: midpoint_checks=4 grab_checks=1 failures=%d\n", fail);
+    return fail;
+}
+#endif

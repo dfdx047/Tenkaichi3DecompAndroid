@@ -181,15 +181,16 @@ extern int Port_NetFixedStart(void);
 s32 FirstRun_Main(void) {
     u32 *res;
 
-#ifdef PORT
-    PortLanguage_Run(); /* first choose a language in the game window, before loading the game partition */
-#endif
     File_LoadPartitionNw(2);
     FirstRun_WaitPad(0, 0);
     PadWatch_SetEnabled(0);
     if (gMenuArc0 == NULL) {
         gMenuArc0 = File_LoadSync(gProgress->baseFile + 0x19, NULL, 0);
     }
+#ifdef PORT
+    BootCard_Init(2);
+    PortLanguage_Run();
+#endif
     BootCard_Run(2);
     res = Sprite_Unpack(MPACK_AT(gMenuArc0, 3), NULL, NULL);
     if (FIRSTRUN_SHOW("skip_logos")) {

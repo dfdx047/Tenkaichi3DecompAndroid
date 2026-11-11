@@ -80,7 +80,7 @@ local function v3(t) return { t.x, t.y, t.z } end
 
 return {
     name = "Modern camera",
-    version = "1.0",
+    version = "1.1",
     author = "BT4decomp",
     description = "Inertia, a tilt into turns, a shake when a hit lands, and your own distance and height. "
         .. "Technique cuts and fixed cameras stay the game's.",
@@ -98,6 +98,10 @@ return {
           tip = "100: the game's picture. Lower: a wider picture (cam.zoom)." },
     },
 
+    on_frame = function(game)
+        if not game.battle then sides = { {}, {} } end
+    end,
+
     on_camera = function(cam, game)
         local c = sides[cam.side]
         if cam.cut then
@@ -107,6 +111,17 @@ return {
         local lag, tilt, react = bt3.setting("lag"), bt3.setting("tilt"), bt3.setting("react")
         local dist_set, height_set = bt3.setting("distance"), bt3.setting("height")
         local pos, rot, target = v3(cam.pos), v3(cam.rot), v3(cam.target)
+        -- Follow translation immediately. Smoothing absolute world positions made
+        -- the camera trail behind a moving fighter and continually change distance.
+        -- Only the offset around the moving target should have inertia.
+        if c.have and c.target then
+            for i = 1, 3 do
+                local shift = target[i] - c.target[i]
+                c.pos[i] = c.pos[i] + shift
+                c.gamePos[i] = c.gamePos[i] + shift
+            end
+        end
+        c.target = { target[1], target[2], target[3] }
         c.clock = (c.clock or 0) + 1
 
         -- the reactions: health fell on this side (hit), or on the other (a hit landed)

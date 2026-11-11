@@ -1089,7 +1089,7 @@ FontCmd *Font_AllocCmd(void) {
 #ifdef PORT
     if (gFontCmdCount < FONT_PART_MAX) {
         int part = Port_MenuPartNow();
-        sFontPart[gFontCmdCount] = (signed char)(part == 1 || part == 8 ? 0 : part); /* (text is never stretched: in a
+        sFontPart[gFontCmdCount] = (signed char)(part == 11 || part == 12 ? 5 : part == 1 || part == 8 ? 0 : part); /* (text is never stretched: in a
             part that fills the width, 1, or the item shop's page, 8, whose room fills it, it is kept in the middle, 0) */
     }
 #endif
@@ -1133,6 +1133,13 @@ FontCmd *Font_NewCmd(s32 arg, s32 digits, s32 x, s32 y, s32 homeX, s32 kind) {
     cmd->tagArg = gFontStyle.tagArg;
     cmd->vramBase = -1;
 #ifdef PORT
+    if(Port_MenuPartNow()==11 || Port_MenuPartNow()==12){
+        extern float Port_MenuReadableScale(void);
+        extern int Port_PageAspectMilli(void);
+        float scale=Port_MenuReadableScale();
+        cmd->scaleX*=scale;cmd->scaleY*=scale;
+        if(scale>1.0f)cmd->clipX1=(s32)(512.0f*Port_PageAspectMilli()/1333.333333f);
+    }
     {
         extern void PortA11y_FontText(s32 kind, s32 arg, s32 flags); /* PC build: the screen reader (port/src/a11y_game.c) */
         PortA11y_FontText(kind, arg, cmd->flags);

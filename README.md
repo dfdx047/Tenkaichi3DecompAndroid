@@ -1,187 +1,124 @@
-# Tenkaichi3Decomp
+<div align="center">
+  <img src="docs/presentation/bt4-intro-hq.gif" width="800" alt="Dragon Ball Z Budokai Tenkaichi 4 Tag Team opening animation">
+  <h1>BT4decomp</h1>
+  <p><strong>Budokai Tenkaichi 4 B14 Rev2. Native desktop runtime. Simultaneous team battles.</strong></p>
+  <p>Online Tag Team, tournaments, spectator rooms and proximity voice, built on Tenkaichi3Decomp.</p>
+  <p><strong><a href="https://discord.gg/EBhh5ef3T6">Join the official Discord community</a></strong> for matchmaking, project news and support.</p>
+  <p>
+    <a href="https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/latest"><img src="https://img.shields.io/badge/Download-Latest%20release-ef8b24?style=flat-square" alt="Download the latest published release"></a>
+    <img src="https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-1f6feb?style=flat-square" alt="Windows, Linux and macOS">
+    <img src="https://img.shields.io/badge/upstream-0.1.39.5-7c3aed?style=flat-square" alt="Tenkaichi3Decomp engine 0.1.39.5">
+    <a href="https://ko-fi.com/nautaro"><img src="https://img.shields.io/badge/Ko--fi-Support%20NauTaro-ff5e5b?style=flat-square&amp;logo=ko-fi&amp;logoColor=white" alt="Support NauTaro on Ko-fi"></a>
+  </p>
+  <p><strong><a href="https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/latest">Download</a> &nbsp; · &nbsp; <a href="#installation">Install</a> &nbsp; · &nbsp; <a href="docs/README.md">Documentation</a> &nbsp; · &nbsp; <a href="https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/issues/new/choose">Report an issue</a></strong></p>
+</div>
 
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/RsPFr4pkaN)
+BT4decomp adapts **BT4 B14 Rev2** for Windows, Linux and Apple Silicon. It runs the game code natively rather than emulating a console. Installation requires your own compatible Spanish or English BT4 ISO; disc images and extracted game data are not distributed here.
 
-A native PC port of **Dragon Ball Z: Budokai Tenkaichi 3** (PlayStation 2, USA release, SLUS-21678), built on
-the matching decompilation in **BT3-Decompiled**. It is the game's own code compiled for PC, with a new
-renderer, sound and input layer underneath; it is not an emulator.
+> **Windows security review in progress.** Users reported antivirus alerts for the R5 package. See the [investigation and executable hashes](docs/security/windows-antivirus-review.md).
 
-This repository contains **no game data**. You need your own disc image of that release: the setup reads the
-game's data from it, and it stays on your computer.
+## Fight together
 
-> **Official source.** This project lives only at
-> [github.com/z3xox/Tenkaichi3Decomp](https://github.com/z3xox/Tenkaichi3Decomp), and it never ships the game:
-> you need your own disc. We do not make, run or endorse any website that lets you play Budokai Tenkaichi 3 in a
-> browser, with or without ads; such sites are not affiliated with this project. A site that runs the game
-> without your own disc is handing out the game's copyrighted code and data. Our releases are free and have no
-> ads, accounts or payments.
+<img src="docs/presentation/tag-team-battle.jpg" width="960" alt="Simultaneous five-versus-five Tag Team combat with ally health bars, target indicators and radar">
 
-## What works
+| Mode | What it offers |
+| --- | --- |
+| **Tag Team** | Simultaneous battles with up to five fighter slots per team, six-player Free for All, room codes and individual targeting. Tag Team Quick Match gathers four players for 2 vs 2; Create Room offers team and Free for All presets. |
+| **1 vs 1** | Peer rollback netplay, custom rooms with configurable rollback and input delay, and duel Quick Match. |
+| **Tournaments** | Two to eight entrants, automatic byes, a live bracket and match rejoining. |
+| **Spectators** | Join without occupying a fighter slot; follow either side or use a split view. |
 
-- The whole game loop: boot, opening movie, menus, saving, fights, split screen.
-- A GPU renderer (Vulkan) with the PS2's effects (outline, glow, depth tint, distance blur), each switchable.
-  An OpenGL 3.3 renderer draws the same picture for machines without a working Vulkan (F1, Video, Renderer; it
-  is also tried by itself when Vulkan cannot start). It is slower than Vulkan.
-- Internal resolution from 1x to 8x; 4:3, 16:9, 21:9 and wider without stretching the fight.
-- Smooth motion (experimental, off by default; F1, Video, or F9): the game computes a fight 30 times a second, as
-  on the console; with this the renderer draws pictures in between, for 60, 120 or 240 a second. The fight itself,
-  replays and online play are unchanged, and the two players of an online match need not agree on it. The newest
-  picture reaches the screen 17 to 29 ms later than without. Known limits: pictures are left out at camera cuts
-  and where the camera would pass through scenery; 240 is uneven; little tested with OpenGL. Works in both halves
-  of a split screen.
-- Music, voices and sound effects; keyboard and controllers, fully rebindable; two players.
-- Clashes: Square counts as a direction (off by default; F1, Controls): in a clash of two beams or two rushes the
-  game counts newly pressed directions, which is why the stick is turned; with this each press of Square counts as
-  one, as a tap of the d-pad does. It changes only your own pad, so it can be used online. A press can be made to
-  count for 1, 1.5, 1.75 or 2 (1.75 unless set: the d-pad has four buttons to tap in turn, Square is one).
-- Texture packs made for PCSX2 (`.dds` or `.png`): copied into the `textures` folder next to the game, they are used as they are.
-- Stages and music from outside the disc: a stage model (`.unk`) dropped into the `stages` folder next to the
-  game, or a song (`.mp3`, converted in the background when the game starts, or `.adx`) into `songs`, is added to the stage select, its name written in the game's own
-  lettering (cut from the disc's name pictures while the game runs). They are not written to the save and are
-  not offered in an online match. See [docs/port/adding_stages.md](docs/port/adding_stages.md) and
-  [adding_songs.md](docs/port/adding_songs.md).
-- Script mods: small Lua programs in the `mods` folder next to the game (`mods/<name>/mod.lua`) that draw over the
-  picture, read the fight and change how the fight camera is shown. They cannot change a fight, so they work online
-  and with replays. F1 > Mods switches them on and off and shows their settings. See [docs/port/mods.md](docs/port/mods.md)
-  and the examples in `port/examples/mods`.
-- In the game, **F1** opens the settings, or **START + SELECT** on a controller (which also works the window: d-pad and
-  Cross, Circle to leave, L1 / R1 for the tabs). Controls has a row to choose another key or button. When a newer release
-  is available, the main menu says so and the window offers to download it in the background, check its signature
-  and, when you choose "Restart now", install it and start the new version (your saves, settings, game data, mods
-  and texture packs are never touched).
-  **Esc** asks before it closes the game, and the window has an "Exit game" button. Its Cheats tab has "Unlock everything" (a debug function the game's
-  developers left in: all characters, stages, music, items and Zenni).
+Game menus support **English and Spanish**, with an optional Brazilian Portuguese pack. Setup supports **English, Spanish and Brazilian Portuguese**. F1 settings support **English, Spanish and Brazilian Portuguese**. **F1 > Spectator** offers free camera, fighter tracking and fight overview, with target, speed, zoom and reset controls. Keyboard and controller camera input replaces local fighter input while the camera is active; Start remains available. Panoramic mode expands menus and HUD across the viewport. Hiding the combat HUD also dismisses the Start pause menu; press Start to open it again.
 
-- **Online play, experimental** (from release 0.1.8): the main menu's **Tenkaichi Budokai Online**, the game's own
-  online screens. To play friends, one player opens a **lobby** (Lobby > Open Lobby) and gets a six-character code;
-  the others type it on **Join**: no port forwarding. A lobby has up to eight places: two play, six watch, and its
-  owner chooses who plays, the rules, rematches and tournaments; playing one friend is a lobby of two. Lobby > Host
-  by Address and Join > By Address do the same without a code (the owner's address and port, typed on a keypad).
-  Quick Match pairs you with a stranger. (Since 0.1.39 there are no rooms of two and no Watch button: a spectator is
-  a lobby member in a spectator's place. The first online window, "Dragon Net Battle", is kept under F1 > Online >
-  Advanced, and opens and joins lobbies the same way.)
-  Both players get the same roster with everything unlocked, each sees their own fighter's view full screen, and leaving
-  the match puts each player back where they were with their own save. Linux and Windows play against each
-  other. With rollback (the lobby's owner chooses how many frames, and the input delay) your own moves come out at
-  once and the game corrects itself when the other player's buttons arrive.
-  The owner also chooses the battle (single, team, or DP battle with a limit of 10, 15 or 20), the time limit and the
-  game speed, on the lobby's page.
-  Each player sees their own gauges on the left with the players' names under them, and hears the voice language
-  chosen in their own save.
-  The two players can write to each other: Tab opens a line, Enter sends it, Esc or Tab puts it away (the keyboard
-  does not play while a line is typed; a controller does; the key can be changed under Controls). Lines show in the
-  lower left corner for a few seconds. F1 > Online turns the chat off; the line also has "Mute rival". It is not
-  part of the game's state and a copy without it simply sees nothing.
+## Voice and presentation
 
-Online play is new. It has been played over the internet between a Linux and a Windows machine. The input delay
-is chosen from the connection when a match starts (or set by the host), both players need the same release (the
-game says so when they differ; 0.1.10 does not play against 0.1.8 / 0.1.9, 0.1.15 does not play against
-0.1.14 and earlier, and 0.1.39 does not play against 0.1.38.x). F1, Video has a meter for the frame rate and, in a match, the ping, rollbacks and waits. The 32-bit
-Linux build has no rollback. [docs/netplay_notes.md](docs/netplay_notes.md) is the working log of how it is built
-and what was checked.
+<table>
+  <tr>
+    <td width="48%" valign="top"><img src="docs/presentation/voice-chat-settings.png" width="420" alt="Microphone, voice activation, input level and playback volume settings"></td>
+    <td valign="top">
+      <h3>Proximity voice</h3>
+      <p>Talk across both teams, with volume adjusted by fighter distance. Choose microphone and output devices, voice activation, threshold and playback volume.</p>
+      <h3>Display controls</h3>
+      <p>Windows offers Vulkan, Direct3D 12 and OpenGL. Adjust render scale, aspect ratio, effects and motion presentation independently of combat simulation.</p>
+      <h3>Custom content</h3>
+      <p>Add compatible stages with matching PNG previews, or install custom music. See the <a href="docs/port/adding_stages.md">stage guide</a> and <a href="docs/port/adding_songs.md">music guide</a>.</p>
+    </td>
+  </tr>
+</table>
 
-Lobby codes and quick matches go through a small matchmaking service (a Cloudflare Worker; its whole source is in
-[port/matchmaking](port/matchmaking), and `BT3_MATCH_URL` points the game at another copy of it). The game tells it
-the name of your Profile and the addresses it can be reached at; the service keeps them with the code for at
-most ten minutes and hands them to the player who enters the code. The games then send to each other
-directly. Where the routers do not allow that, the match goes through a relay (Cloudflare's TURN service), which
-passes the match's packets (the buttons pressed) on and keeps nothing. By address none of this is used.
+## Script mods
 
-See [docs/port/README.md](docs/port/README.md) for the running log of what is done, what is verified and what is not.
+F1 > Mods manages the included Modern HUD, Modern Camera, Modern Look and Skill List scripts. Mods start disabled. Each player can choose their own presentation settings; existing scripts and settings are preserved by automatic updates. F1 > Controls offers optional right-stick enemy targeting. F1 > Spectator can keep the normal camera during special attacks. See the [Lua mod guide](docs/port/mods.md). F1 > Tech offers optional mechanics adjustments for offline duels; online matches, Tag Team and replays retain their original rules.
 
-## Requirements
+## Installation
 
-- A 64-bit x86 processor and a graphics card with Vulkan support. Most of the work is on the processor (the
-  game's arithmetic is reproduced exactly as on the PS2); a recent mid-range CPU is recommended.
-- Linux (glibc 2.35 or newer) or Windows 10 / 11.
-- macOS on Apple Silicon: **experimental**, built from source only (see below).
-- About 4 GB of disc space, and your disc image as an `.iso` file.
+| System | Package | Requirement |
+| --- | --- | --- |
+| Windows | `BT4decomp-windows-x64.zip` | x64 |
+| Linux | `BT4decomp-linux-x64.zip` | x86-64, glibc 2.35 or later |
+| macOS | `BT4decomp-macos-arm64.zip` | Apple Silicon, macOS 15 or later |
 
-## Installing a release
+1. Download your platform's ZIP from the [latest published release](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/latest) and extract it completely.
+2. Run `BT4decomp-setup.exe` on Windows, or `./BT4decomp-setup` on Linux and macOS.
+3. Select the setup language, game language and your compatible **BT4 B14 Rev2 ISO**.
+4. Start `BT4decomp.exe` on Windows, or `./BT4decomp` on Linux and macOS.
 
-Unpack the release, start `Tenkaichi3Decomp-setup` (`Tenkaichi3Decomp-setup.exe` on Windows), choose your disc image, press Play. The
-setup checks that the image is the unmodified USA release and unpacks the game's data next to the program.
+<details>
+<summary><strong>Language installation and setup preview</strong></summary>
 
-On a machine without a working Vulkan the setup window and the game use OpenGL by themselves. To ask for OpenGL
-from the start (a Vulkan driver that starts but is incomplete, as on Intel Ivy Bridge), set `BT3_GPU_API=gl`:
-`BT3_GPU_API=gl ./Tenkaichi3Decomp-setup`, and the same for `./Tenkaichi3Decomp`. The setup also runs without a
-window: `./Tenkaichi3Decomp-setup --install <disc image>`.
+A single-language installation opens directly in that language. Selecting both languages downloads the alternate package from this repository and enables language selection at startup. Public language and HD texture packages download without GitHub sign-in.
 
-**Updates.** Once per start the game asks GitHub for the newest release (F1 > Misc > "Check for updates" turns that
-off). A newer one is announced over the main menu; F1 has Update now, Later and What's new. The download runs while
-you play, its signature is checked, and "Restart now" replaces the program's files (the old ones are kept as `.old`
-until the next start, and put back if anything fails) and starts the new version. Updating by hand, by copying the
-new files over the old ones, works as before. The in-game updater is based on PR #107 by JosephLlacchua.
+<p align="center"><img src="docs/presentation/installer-en.png" width="640" alt="English installer with Spanish, English and bilingual installation options"></p>
 
-## Building from source
+For Linux permissions, macOS download handling and source builds, see [native platform setup](docs/port/native_platforms.md). Intel Macs and Linux ARM are not targets of these packages.
 
-```
-python3 install.py --iso <your disc image>
-```
+</details>
 
-does everything on Linux: checks the tools, reads the disc, builds the 64-bit program and runs the game's demo
-fight as a test. `python3 install.py --check` lists what is missing. `port/setup/build.sh && ./Tenkaichi3Decomp-setup` is
-the same with a window.
+## Automatic updates
 
-### macOS (experimental)
+Open **F1 > Updates > Check for updates** to look for a new version. The game also checks this repository automatically for the latest signed package for its platform. It verifies the archive SHA-256 and Ed25519 signature, then asks for a game restart to apply the update at the offline main menu. Saves, settings, installed game data and custom content remain outside the replacement list. Updating does not restart an active battle or online session.
 
-Apple Silicon Macs, native arm64, built from source on the Mac itself; there is no macOS release archive. The
-attract-demo fight gives the same state as the Linux program on every frame, the rewind test (rollback) passes,
-and the game draws through Metal with sound; online play against Linux / Windows has not been tried on two machines
-yet. With [Homebrew](https://brew.sh):
+Installations that predate the signed updater need one initial package installation. Subsequent published signed updates can install through the launcher.
 
-```
-xcode-select --install                       # (once: Apple's command line tools)
-brew install llvm sdl3 shaderc spirv-cross
-python3 install.py --iso <your disc image>   # then ./play.sh
-```
+Revision tags follow the upstream engine version, for example `v0.1.39.5-R1`. A new upstream adaptation starts at R1; subsequent BT4 changes increment the revision. Patch revisions are also supported. All Tag Team participants must use the same room protocol and a compatible published build.
 
-`python3 install.py --check` lists what is missing. How the build works and what is left:
-[docs/port/macos_plan.md](docs/port/macos_plan.md).
+## Source and online compatibility
 
-The release archives for Linux and Windows are built from the repository alone, with no disc involved:
-`port/release/build.sh` (needs only docker) or the GitHub workflow in `.github/workflows/release.yml`. The
-repository carries the shape of the game's built-in data tables without their values (`port/data`); the
-finished program fetches the values from your disc when it starts.
+The source integrates **Tenkaichi3Decomp 0.1.39.5**, with BT4 revisions tracked separately as **R1, R2, R3** and onward. The `main` branch can contain changes awaiting release; the Download button points to the published package. See the [changelog](CHANGELOG.md) for source changes and [release notes](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases) for packaged builds.
 
-## Layout
+Use compatible BT4 data and the same published launcher on every participating computer. The selected language does not define the online compatibility family.
 
-| Path | Contents |
-|---|---|
-| `src/`, `include/` | The game's code, from BT3-Decompiled; changes for PC are inside `#ifdef PORT` |
-| `port/src/` | The PC side: memory, files, memory card, movies; `gs/` renderer, sound, input, settings window |
-| `port/tools/` | The build: pointer rewriting for 64-bit, packaging, extraction |
-| `port/data/` | The game's built-in data tables as shape only (labels, sizes, pointer slots), no values |
-| `port/release/` | The container and scripts that build the release archives |
-| `port/setup/` | The setup window |
-| `port/third_party/` | Dear ImGui (MIT), the maths library of newlib |
-| `docs/` | Notes on the game (from the decompilation) and `docs/port/` on the port |
+<details>
+<summary><strong>Networking implementation and validation</strong></summary>
 
-This project was made with the help of AI.
+1 vs 1 uses the upstream peer rollback path. Lobby matches can relay through the lobby owner when the assigned fighters cannot connect directly.
 
-## Contributors
+Rooms and Quick Match use authenticated private Supabase signaling. Tag Team room authority runs on the owner's computer from admission onward; gameplay and voice travel between participants. The default connection no longer uses Cloudflare coordination or a hosted game/audio relay. STUN assists direct connection discovery. Networks that block peer traffic, including some CGNAT configurations, can still prevent a direct connection. No public relay is bundled.
 
-- [RexxColder](https://github.com/RexxColder): the OpenGL 3.3 renderer beside Vulkan (the split of the renderer
-  into a shared recorder and two back ends), and stages and songs from outside the disc (the manifest, the
-  install scripts, the menu changes and their documentation), in
-  [pull request #1](https://github.com/z3xox/Tenkaichi3Decomp/pull/1). Both were brought onto the main line
-  with changes; the documents under `docs/port/` say which.
+The Free signaling project has provider quotas, including concurrent Realtime connection limits. P2P reduces server traffic; it does not provide unlimited hosting capacity. R6 was validated with local native multi-client combat, tournaments and synthetic voice; this is not a cross-ISP or load-capacity benchmark.
 
-## Licence
+The online hub shows an authenticated aggregate of players in the online menus, refreshed every five minutes. Entries expire after a missed refresh. The active route supplies measured ping. A single human fighting CPU uses local input scheduling. If the native coordinator leaves, the round ends; live coordinator migration is not implemented. Geographic routes and network conditions still affect latency.
 
-The port's own code (everything under `port/` except `port/third_party/`, the setup, the build tools, and the
-PC changes inside `#ifdef PORT`) is under the [GNU Affero General Public License, version 3](LICENSE)
-(AGPL-3.0-only) in every commit after `06e4671` (2026-10-14). Up to and including that commit it was under the
-[MIT licence](LICENSE-MIT), and that code, as it was then, stays available under MIT; contributions made under
-MIT keep their MIT notice inside the AGPL whole. Whoever passes the program on, changed or not, or runs a
-changed version for others over a network (a lobby or relay server, a web page), has to offer its source under
-the same licence. The libraries in `port/third_party/` keep their own licences (Dear ImGui: MIT; newlib's maths
-library: its BSD-style terms, in that folder).
-The game's code in `src/` and `include/` comes from the decompilation and is not ours to license: it belongs
-to the game's rights holders.
+Voice and gameplay have separate queues. Native packages include the RTC SDK. SDP and ICE negotiation use private Supabase inboxes; Opus audio travels over peer media tracks. The default provider does not relay voice through WebSockets.
 
-## Legal
+See the [compatibility and validation profile](BT4_PROFILE.md), [signaling architecture](supabase/README.md) and [native SDK build notes](port/release/RTC_SDK.md). Local tests and package builds do not establish performance on every remote PC, router or graphics driver.
 
-This project is not affiliated with or endorsed by the game's developers, publishers or rights holders. It
-exists for preservation, study and interoperability, and distributes none of the game's assets. All rights to
-the game belong to their owners. You need your own legally obtained copy of the game to use it.
+</details>
+
+## Development and feedback
+
+Start with the [contribution guide](CONTRIBUTING.md) and [documentation index](docs/README.md). Bug reports should include `BT4_VERSION.txt`, system specifications, game mode, renderer, resolution scale, reproduction steps and relevant excerpts from `bt3_log.txt` or `bt3_crash.txt`.
+
+For combat issues, include characters, costumes, stage and player count. Remove credentials and personal information before attaching logs. [Open a bug report](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/issues/new/choose).
+
+## Support development
+
+Support work on BT4decomp through [NauTaro's Ko-fi](https://ko-fi.com/nautaro).
+
+<a href="https://ko-fi.com/nautaro"><img src="https://img.shields.io/badge/Support%20BT4decomp-Ko--fi-ff5e5b?style=for-the-badge&amp;logo=ko-fi&amp;logoColor=white" alt="Support BT4decomp on Ko-fi"></a>
+
+## Credits and licenses
+
+The original decompilation and native runtime are developed by the [Tenkaichi3Decomp contributors](https://github.com/z3xox/Tenkaichi3Decomp). BT4decomp adapts that work for BT4 B14 Rev2. [UPSTREAM_LOCK.json](UPSTREAM_LOCK.json) records the exact source revision; [README_UPSTREAM.md](README_UPSTREAM.md) preserves the upstream reference.
+
+BT4 content, artwork and icons retain their respective authors' rights. See [presentation credits](docs/presentation/CREDITS.md), [AGPL](LICENSE), [MIT](LICENSE-MIT) and the bundled third-party notices.

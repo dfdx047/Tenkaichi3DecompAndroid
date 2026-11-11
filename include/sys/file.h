@@ -10,7 +10,7 @@
 /* File ids: one global number space spread over three AFS partitions. */
 #define FILE_PT1_FIRST_ID 1     /* ids <= 0 are entries of partition 0 */
 #define FILE_PT2_FIRST_ID 0xD48 /* ids 1..0xD47 are partition 1, the rest partition 2 */
-#define FILE_PT_COUNT 3
+#define FILE_PT_COUNT 4
 
 #define ADX_PLAYER_COUNT 6
 

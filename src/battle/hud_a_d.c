@@ -86,6 +86,7 @@ void HudGauge_UpdateHp(void) {
     s32 bars;
     s32 rem2;
     s32 bars2;
+    s32 underBars;
     s32 w;
 
     rem = gHudGauge->hpShown[side] % HUD_GAUGE_BAR;
@@ -133,7 +134,7 @@ void HudGauge_UpdateHp(void) {
     }
     HudSprite_Show(tip, 1);
     HudSprite_Show(bar, 1);
-    if (bars >= 7) {
+    if (bars >= 4) {
         HudSprite_SetTex(tip, 8, 5);
     } else if (bars >= 2) {
         HudSprite_SetTex(tip, 8, 1);
@@ -158,13 +159,19 @@ void HudGauge_UpdateHp(void) {
         }
     }
     bar = &gHudGauge->sprites[3];
-    if (bars - 1 >= 7) {
+    /* A partially consumed blue tier reveals the green tier beneath it.
+       Only an exactly full tier uses its own colour around the outer bevel. */
+    underBars = bars - 1;
+    if (rem == HUD_GAUGE_BAR && rem2 == HUD_GAUGE_BAR && bars == bars2) {
+        underBars = bars;
+    }
+    if (underBars >= 4) {
         HudSprite_SetTex(bar, 8, 5);
-    } else if (bars - 1 >= 2) {
+    } else if (underBars >= 2) {
         HudSprite_SetTex(bar, 8, 1);
-    } else if (bars - 1 > 0) {
+    } else if (underBars > 0) {
         HudSprite_SetTex(bar, 8, 4);
-    } else if (bars - 1 >= 0) {
+    } else if (underBars >= 0) {
         HudSprite_SetTex(bar, 8, 3);
     } else {
         HudSprite_Show(bar, 0);

@@ -351,6 +351,8 @@ void BtlMember_PrevSwitchTarget(BtlMemberChr *chr) {
  */
 /* Only matches with BtlColl_NextPoolMember defined above in this file (bgtz, not bgtzl, after BtlMember_CountAlive). */
 s32 BtlMember_Damage(BtlMemberChr *chr, s32 amount, s32 flags) {
+    extern s32 DevRules_ProtectHealth(void);
+    if(amount>0&&DevRules_ProtectHealth())return 0;
     BtlMemberCombo *combo = &chr->combo;
     BtlMemberGauge *g = BtlMember_GetActiveGauge(chr);
     s32 before = g->health;
@@ -752,6 +754,8 @@ s32 BtlMember_HasAnyListedAbility(BtlMemberChr *chr) {
     return 0;
 }
 
+void BtlMember_ClearQueuedDamage(BtlMemberChr *chr){memset(&chr->queue,0,sizeof(chr->queue));}
+
 /* Per frame: deals the damage each fighter has queued against its opponent, and runs its health / ki drain. */
 void BtlMembers_UpdateQueuedDamage(void) {
     s32 i;
@@ -765,7 +769,10 @@ void BtlMembers_UpdateQueuedDamage(void) {
         if (BtlChar_IsFrozen(chr)) {
             continue;
         }
-        other = BtlChar_Get(BtlOpp_GetPlayer(chr));
+        {extern s32 TagBattle_Active(void),TagBattle_DamageTarget(s32),TagBattle_PairAttacker(s32);
+         s32 locked=TagBattle_DamageTarget(i),attacker=TagBattle_PairAttacker(i);
+         if(TagBattle_Active()&&attacker>=0&&attacker!=i){BtlMember_ClearQueuedDamage(chr);continue;}
+         other=BtlChar_Get(locked>=0?locked:BtlOpp_GetPlayer(chr));}
         if (BtlAnim_TestAttr(chr, 0x200000000)) {
             if (chr->queue.hits >= 2) {
                 BtlMember_Damage(other, chr->queue.perHit, chr->queue.flags);
@@ -841,6 +848,7 @@ void BtlMembers_UpdateQueuedDamage(void) {
             if (chr->queue.total > 0) {
                 BtlMember_Damage(other, chr->queue.total, chr->queue.flags);
             }
+            {extern void TagBattle_ClearDamageTarget(s32);TagBattle_ClearDamageTarget(i);}
             chr->queue.unk0 = 0;
             chr->queue.total = 0;
             chr->queue.hits = 0;
@@ -855,4 +863,16 @@ void BtlMembers_UpdateQueuedDamage(void) {
             chr->queue.drainFrom = 0;
         }
     }
+}
+
+/* BT4 helper 0x3BFAB8: drain ki, or the ISO's max-power fraction while powered up. */
+void Bt4_SpendTransformKi(BtlMemberChr *chr, s32 amount) {
+    if (BtlChar_TestFlag(chr, 6)) BtlMember_SubMaxPower(chr, amount / 2 - amount / 5);
+    else BtlMember_DrainKi(chr, amount);
+}
+
+/* BT4 helper 0x1E118C: an already damaged model or Sturdy Clothes (0x7A)
+   suppresses another clothing-damage model reload. */
+s32 Bt4_HasRecoveryVariant(BtlMemberChr *chr) {
+    return BtlMember_GetActiveGauge(chr)->variant != 0 || BtlMember_HasAbility(chr, 0x7A);
 }

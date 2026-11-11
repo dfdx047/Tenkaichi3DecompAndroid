@@ -33,11 +33,13 @@
 #include <unistd.h>
 #endif
 
-#define MATCH_URL_DEFAULT "https://odd-surf-0af7.bt3decomp.workers.dev"
+#define MATCH_URL_DEFAULT "" /* legacy HTTP adapter requires an explicit test/operator override */
 #include "net_match.h"
+#include "match_supabase.h"
 #include "../port_release.h"
 #include "net_relay.h"
 #include "net_sign.h"
+static int supabase_discovery(void){const char *override=SDL_getenv("BT3_MATCH_URL");return !override||!override[0];}
 
 static struct {
     SDL_Mutex *lock;
@@ -162,7 +164,7 @@ static int http_post_native(const char *url, const char *json, const char *const
     if (!WinHttpCrackUrl(wurl, 0, 0, &uc)) {
         return 0;
     }
-    ses = WinHttpOpen(L"Tenkaichi3Decomp", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    ses = WinHttpOpen(L"BT4decomp", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (ses != NULL) {
         WinHttpSetTimeouts(ses, 8000, 8000, 8000, 12000);
         con = WinHttpConnect(ses, host, uc.nPort, 0);
@@ -238,7 +240,7 @@ static int http_post_native(const char *url, const char *json, const char *const
     if (json != NULL) {
         setopt(h, 10015 /* CURLOPT_POSTFIELDS */, json);
     } else { /* a GET (the update check): GitHub answers nothing without a name, and sends on to another address */
-        setopt(h, 10018 /* CURLOPT_USERAGENT */, "Tenkaichi3Decomp");
+        setopt(h, 10018 /* CURLOPT_USERAGENT */, "BT4decomp");
         setopt(h, 52 /* CURLOPT_FOLLOWLOCATION */, 1L);
     }
     for (; headers != NULL && *headers != NULL; headers++) {
@@ -418,6 +420,12 @@ static int json_peer(const char *json, MatchStatus *st) {
 
 /* ---- STUN (RFC 5389): one question, "which address do you see me under?" ---- */
 
+static struct sockaddr_in sStunKeep[2];
+static int sStunKeepCount;
+static void stun_keepalive(int sock){
+    static const unsigned char indication[20]={0,0x11,0,0,0x21,0x12,0xa4,0x42};
+    int i;for(i=0;i<sStunKeepCount;i++)sendto(sock,(const char*)indication,sizeof(indication),0,(struct sockaddr*)&sStunKeep[i],sizeof(sStunKeep[i]));
+}
 static int stun_ask(int sock, const char *host, int port, char *out, size_t size) {
     struct addrinfo hints, *res = NULL;
     uint8_t req[20], pkt[512];
@@ -444,7 +452,7 @@ static int stun_ask(int sock, const char *host, int port, char *out, size_t size
             struct sockaddr_in from;
             socklen_t fromLen = sizeof(from);
             int n = (int)recvfrom(sock, (char *)pkt, sizeof(pkt), 0, (struct sockaddr *)&from, &fromLen), at;
-            if (n < 20 || pkt[0] != 0x01 || pkt[1] != 0x01 || SDL_memcmp(pkt + 8, req + 8, 12) != 0) {
+            if (n < 20 || pkt[0] != 0x01 || pkt[1] != 0x01 || SDL_memcmp(pkt + 4, req + 4, 16) != 0) {
                 SDL_Delay(10);
                 continue;
             }
@@ -462,6 +470,7 @@ static int stun_ask(int sock, const char *host, int port, char *out, size_t size
                         ip[0] ^= 0x21; ip[1] ^= 0x12; ip[2] ^= 0xA4; ip[3] ^= 0x42;
                     }
                     SDL_snprintf(out, size, "%u.%u.%u.%u:%u", ip[0], ip[1], ip[2], ip[3], p);
+                    if(sStunKeepCount<2)memcpy(&sStunKeep[sStunKeepCount++],res->ai_addr,sizeof(struct sockaddr_in));
                     freeaddrinfo(res);
                     return 1;
                 }
@@ -503,8 +512,44 @@ static int lan_address(int localPort, char *out, size_t size) {
 
 /* ---- the thread ---- */
 
+static int supabase_match_loop(const char *name,const char *addrs){
+    unsigned generation=(unsigned)(uintptr_t)SDL_GetTLS(&sMine);
+    Uint64 nextKeep=SDL_GetTicks()+15000;
+    unsigned long long content=0;char addresses[192],identityError[256];Bt4DiscoveryStatus status;
+    extern int Port_BuildIdentity(unsigned long long *);
+    extern const char *Port_BuildIdentitySummary(void);
+    if(Port_BuildIdentity(&content)!=1){
+        SDL_snprintf(identityError,sizeof(identityError),"The installed battle data is incompatible with this build: %.180s",Port_BuildIdentitySummary());
+        set_state(-1,identityError);return 0;
+    }
+    SDL_snprintf(addresses,sizeof(addresses),"[%s]",addrs);
+    if(!Bt4Discovery_Begin(generation,sM.role,sM.version,content,name,sM.code,addresses,sM.queue)){
+        set_state(-1,"The matchmaking could not be started.");return 0;
+    }
+    while(!STOPPED()){
+        if(SDL_GetTicks()>=nextKeep){stun_keepalive(sM.sock);nextKeep=SDL_GetTicks()+15000;}
+        if(!Bt4Discovery_Poll(generation,&status))break;
+        SDL_LockMutex(sM.lock);
+        if(!STOPPED()){
+            sM.st.state=status.state;sM.st.role=status.role;sM.st.lobby=status.lobby;
+            SDL_strlcpy(sM.st.code,status.code,sizeof(sM.st.code));SDL_strlcpy(sM.st.error,status.error,sizeof(sM.st.error));
+            SDL_strlcpy(sM.st.peerName,status.peerName,sizeof(sM.st.peerName));
+            if(sM.st.peerCount!=status.peerCount||SDL_memcmp(sM.st.peerAddr,status.peerAddr,sizeof(sM.st.peerAddr)))++sM.st.addrGen;
+            sM.st.peerCount=status.peerCount;SDL_memcpy(sM.st.peerAddr,status.peerAddr,sizeof(sM.st.peerAddr));
+            if(sM.watchCount!=status.watchCount||SDL_memcmp(sM.watchAddr,status.watchAddr,sizeof(sM.watchAddr))){
+                sM.watchCount=status.watchCount;SDL_memcpy(sM.watchAddr,status.watchAddr,sizeof(sM.watchAddr));++sM.watchGen;
+            }
+        }
+        SDL_UnlockMutex(sM.lock);
+        if(STOPPED())break;
+        if(status.state<0)break;
+        SDL_Delay(10);
+    }
+    Bt4Discovery_End(generation);return 0;
+}
+
 static int SDLCALL match_thread(void *arg) {
-    char pub[64] = "", lan[64] = "", addrs[160], body[512], answer[4096], key[40] = "", you[64] = "", name[20], relayAddr[64] = "";
+    char pub[64] = "", alternate[64] = "", lan[64] = "", addrs[192], body[512], answer[4096], key[40] = "", you[64] = "", name[20], relayAddr[64] = "";
     int i, n = 0, hosting, searches = 0, again = 0;
     Uint64 began = SDL_GetTicks(); /* (a quick match: when the search began, for `waited`) */
 
@@ -516,9 +561,14 @@ static int SDLCALL match_thread(void *arg) {
         }
     }
     name[n] = '\0';
-    if (!stun_ask(sM.sock, "stun.cloudflare.com", 3478, pub, sizeof(pub))) {
-        stun_ask(sM.sock, "stun.l.google.com", 19302, pub, sizeof(pub));
-    }
+    if (!name[0]) SDL_strlcpy(name, "Player", sizeof(name));
+    sStunKeepCount=0;
+    if (!stun_ask(sM.sock, "stun.l.google.com", 19302, pub, sizeof(pub)))
+        stun_ask(sM.sock, "stun1.l.google.com", 19302, pub, sizeof(pub));
+    stun_ask(sM.sock,"global.stun.twilio.com",3478,alternate,sizeof(alternate));
+    if(!pub[0]&&alternate[0]){SDL_strlcpy(pub,alternate,sizeof(pub));alternate[0]=0;}
+    if(!strcmp(pub,alternate))alternate[0]=0;
+    fprintf(stderr,"bt4: connect: STUN public=%d alternate=%d mapping-varies=%d\n",pub[0]!=0,alternate[0]!=0,pub[0]&&alternate[0]);
     lan_address(sM.localPort, lan, sizeof(lan));
     if (STOPPED()) {
         return 0;
@@ -530,10 +580,12 @@ static int SDLCALL match_thread(void *arg) {
        place, below, once the Worker has said what it sees) */
     SDL_snprintf(addrs, sizeof(addrs), "%s%s%s%s%s%s%s", pub[0] ? "\"" : "", pub, pub[0] ? "\"" : "", pub[0] && lan[0] ? "," : "", lan[0] ? "\"" : "", lan,
                  lan[0] ? "\"" : "");
+    if(alternate[0]){size_t used=SDL_strlen(addrs);SDL_snprintf(addrs+used,sizeof(addrs)-used,"%s\"%s\"",used?",":"",alternate);}
     if (addrs[0] == '\0') {
         set_state(-1, "This computer's address could not be found (no network?).");
         return 0;
     }
+    if(supabase_discovery())return supabase_match_loop(name,addrs);
 again:
     hosting = sM.role == 1 || sM.role == 5;
     if (sM.role == 3) {
@@ -915,8 +967,10 @@ joined:
     if (key[0] != '\0' && sM.code[0] != '\0') {
         MatchStatus st;
         int round, w, known;
+        char knownAddr[MATCH_ADDRS][64];
         SDL_LockMutex(sM.lock);
         known = sM.st.peerCount;
+        SDL_memcpy(knownAddr,sM.st.peerAddr,sizeof(knownAddr));
         SDL_UnlockMutex(sM.lock);
         SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"}", sM.code, key);
         for (round = 0; round < 11 && !STOPPED(); round++) {
@@ -930,7 +984,7 @@ joined:
                 break; /* (the host has given the room up: it is connected, or gone) */
             }
             SDL_memset(&st, 0, sizeof(st));
-            if (json_peer(answer, &st) && SDL_strstr(answer, "relay=") != NULL && st.peerCount != known && !STOPPED()) {
+            if (json_peer(answer, &st) && SDL_strstr(answer, "relay=") != NULL && (st.peerCount != known || SDL_memcmp(st.peerAddr,knownAddr,sizeof(knownAddr))!=0) && !STOPPED()) {
                 SDL_LockMutex(sM.lock);
                 SDL_memcpy(sM.st.peerAddr, st.peerAddr, sizeof(st.peerAddr));
                 sM.st.peerCount = st.peerCount;
@@ -997,6 +1051,12 @@ static int SDLCALL queues_thread(void *arg) {
     int i;
 
     (void)arg;
+    if(supabase_discovery()){
+        unsigned long long content=0;int counts[MATCH_QUEUES];extern int Port_BuildIdentity(unsigned long long *);
+        if(Port_BuildIdentity(&content)==1&&Bt4Discovery_Counts(sQueueVersion,content,counts))
+            for(i=0;i<MATCH_QUEUES;++i)SDL_SetAtomicInt(&sQueueCount[i],counts[i]+1);
+        SDL_SetAtomicInt(&sQueueBusy,0);return 0;
+    }
     SDL_snprintf(body, sizeof(body), "{\"v\":%d}", sQueueVersion);
     if (http_post("queues", body, answer, sizeof(answer)) && SDL_strstr(answer, "\"waiting\"") != NULL) {
         for (i = 0; i < MATCH_QUEUES; i++) {
@@ -1034,6 +1094,7 @@ static int SDLCALL hello_thread(void *arg) {
 
 void Match_HelloAsk(void) {
     SDL_Thread *t;
+    if(supabase_discovery())return; /* signed GitHub updater owns release discovery */
     if (SDL_GetAtomicInt(&sRelBusy)) {
         return;
     }
@@ -1105,6 +1166,7 @@ int Match_SocketBusy(void) {
 }
 
 void Match_RelayAsk(void) {
+    if(supabase_discovery())return; /* No hosted relay is configured for this provider. */
     SDL_CompareAndSwapAtomicInt(&sM.relayAsk, 0, 1);
 }
 
@@ -1137,6 +1199,8 @@ void Match_Cancel(void) {
         SDL_UnlockMutex(sM.lock);
     }
 }
+
+int Match_KeepSession(void) { return supabase_discovery(); }
 
 /* BT3_SIGN_TEST (called before the game starts, plat_mem.c; the program ends after it): the build key's signature
    for a fixed request, for port/matchmaking/test_sign.py. BT3_SIGN_TEST=post also sends one "hello" the way every

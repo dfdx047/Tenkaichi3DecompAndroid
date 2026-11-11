@@ -57,7 +57,8 @@ s32 BtlPause_CheckOpen(void) {
 #ifdef PORT
         /* (online nothing stops the fight, btl_seq.c: a pad pulled out does not either) */
         extern int Port_NetActive(void);
-        if (Port_NetActive()) {
+        extern int TagBattle_Network(void);
+        if (Port_NetActive() || TagBattle_Network()) {
             return 0;
         }
 #endif
@@ -76,6 +77,12 @@ s32 BtlPause_CheckOpen(void) {
 
 /* Sequence condition "START pressed": while a loaded replay plays only pad 0 counts, else any pad of the list. */
 s32 BtlPause_CheckStart(void) {
+#ifdef PORT
+    /* Intro/win-scene transitions are simulation state. A local START may
+     * request a shared skip, but must not advance this client on its own. */
+    extern int TagBattle_Network(void),TagBattle_NetIntroSkip(void);
+    if(TagBattle_Network())return TagBattle_NetIntroSkip();
+#endif
     BtlPause *work = BtlPause_GetWork();
     s32 i;
 

@@ -1,13 +1,16 @@
-# Menus: how they work, and how to make one
+# Native menu implementation
 
-How the game's menus are built, and how the PC port adds an entry to the main menu and a screen behind it (as it
-does for Tenkaichi Budokai Online, src/menu/port_tbo.c). A reference for adding menus now, and for the mod
-framework later. How each part was found, and what went wrong on the way, is in [README.md](README.md) (section
-"Tenkaichi Budokai Online: lettered like the game's menus").
+This guide describes the original menu system and the PC port's
+Tenkaichi Budokai Online integration in `src/menu/port_tbo.c`. It covers
+main-menu entries, screen layout, text and input handling.
 
-Throughout: the decomp's own files change only inside `#ifdef PORT` (the PS2 matching build must still pass);
-nothing from the disc is committed (what is made from it exists in memory only); an online session runs the stock
-game.
+The implementation notes below describe the inherited BT3 port. For BT4
+installation and online behavior, see the [port guide](README.md) and
+[BT4 compatibility profile](../../BT4_PROFILE.md).
+
+Changes specific to the PC port use `#ifdef PORT` where required to preserve
+the PS2 matching build. Disc-derived assets are generated at runtime and are
+not committed to the source tree.
 
 ## 1. How the game's menus work
 

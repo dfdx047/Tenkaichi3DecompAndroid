@@ -27,6 +27,7 @@
 #endif
 
 extern int gPortResim; /* gs/state.c: blanks being run again */
+extern int gsSkipFrame;
 
 /* src/battle/btl_char_mgr.c / btl_seq.c: there from Battle_Init to Battle_Term, NULL outside (see a11y_game.c) */
 extern void GAME_PTR gBtlChars;
@@ -44,8 +45,8 @@ extern int BtlChar_TestFlag(void GAME_PTR chr, unsigned n);
 #define CHR_POWERED_UP 6
 
 extern int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size); /* plat_file.c */
-#define FACE_FILE 0x2F9 /* the large portraits (the character select's): file FACE_FILE + character of partition 1 */
-#define CHARA_MAX 0xA1 /* the grid's marker cells and up are not characters */
+#define FACE_FILE 0x71C /* BT4: TS_FACE_FILE / UB_FACE_FILE, the character select's portraits */
+#define CHARA_MAX 0x100 /* BT4 includes forms beyond BT3's 161 base character ids */
 
 /* include/battle/btl_char_member.h: BtlMemberChr */
 #define CHR_ACTIVE 0x994
@@ -158,9 +159,12 @@ static void portrait_path(int side, int slot, int chara, int costume) {
 }
 
 static void read_side(FpState *st, int side) {
+    extern int PortMods_ViewActor(int side);
+    extern int BattleSide_GetObjId(int side);
     FpSide *s = &st->side[side];
-    uint8_t GAME_PTR chr = (uint8_t GAME_PTR)BtlChar_FindBySide(side);
-    uint8_t GAME_PTR foe = (uint8_t GAME_PTR)BtlChar_FindBySide(side ^ 1);
+    int actor=PortMods_ViewActor(side);
+    uint8_t GAME_PTR chr = (uint8_t GAME_PTR)BtlChar_FindBySide(actor);
+    uint8_t GAME_PTR foe = (uint8_t GAME_PTR)BtlChar_FindBySide(PortMods_ViewActor(side ^ 1));
     uint8_t GAME_PTR m;
     int i, objChara;
 
@@ -175,7 +179,7 @@ static void read_side(FpState *st, int side) {
         return;
     }
     s->found = 1;
-    objChara = BtlCharApi_GetChara(side);
+    objChara = BtlCharApi_GetChara(BattleSide_GetObjId(actor));
     for (i = 0; i < s->count; i++) {
         FpMember *o = &s->m[i];
         m = chr + CHR_MEMBERS + i * MEMBER_SIZE;
@@ -202,7 +206,7 @@ static void read_side(FpState *st, int side) {
     }
     s->action = BtlAct_GetCurrent(chr);
     s->chargeHeld = BtlInput_IsHeld(chr, BTLB_CHARGE) != 0;
-    s->cpu = BattleSide_IsCpu(side) != 0;
+    s->cpu = BattleSide_IsCpu(actor) != 0;
     {
         uint8_t GAME_PTR obj = (uint8_t GAME_PTR)BtlChar_GetObj(chr);
         uint32_t at = obj != NULL ? (uint32_t)rd(obj, OBJ_NAMES) : 0;
@@ -250,7 +254,7 @@ void PortPanels_GameTick(void) {
     static FpState st;
     FpHud GAME_PTR h;
 
-    if (gPortResim) {
+    if (gPortResim || gsSkipFrame) {
         return;
     }
     memset(&st, 0, sizeof(st));

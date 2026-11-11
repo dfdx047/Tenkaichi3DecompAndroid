@@ -5,52 +5,62 @@
 #include <SDL3/SDL.h>
 #include <string.h>
 
-int UpdateVer_Parse(const char *text, int out[4]) {
-    int n = 0, i;
-    const char *p = text;
-
-    for (i = 0; i < 4; i++) {
-        out[i] = 0;
-    }
-    if (p == NULL) {
-        return 0;
-    }
-    if (*p == 'v' || *p == 'V') {
-        p++;
-    }
-    for (;;) {
-        long v = 0;
-        int digits = 0;
-        while (*p >= '0' && *p <= '9' && digits < 9) {
-            v = v * 10 + (*p++ - '0');
-            digits++;
+static int version_parts(const char *text, int out[4], int *revision, int *revision_patch) {
+    const char *p=text;int n=0,i,explicit_revision=0;
+    for(i=0;i<4;i++)out[i]=0;
+    *revision=0;*revision_patch=0;if(!p)return 0;
+    if(*p=='v'||*p=='V')p++;
+    for(;;) {
+        long v=0;int digits=0;
+        while(*p>='0'&&*p<='9'&&digits<9){v=v*10+(*p++-'0');digits++;}
+        if(!digits||n==4||(*p>='0'&&*p<='9'))return 0;
+        out[n++]=(int)v;
+        if(*p=='.'){p++;continue;}
+        if(*p=='-'||*p==' ') {
+            p++;if(*p!='R'&&*p!='r')return 0;p++;v=0;digits=0;
+            while(*p>='0'&&*p<='9'&&digits<9){v=v*10+(*p++-'0');digits++;}
+            if(!digits)return 0;
+            *revision=(int)v;
+            if(*p=='.') {
+                p++;v=0;digits=0;
+                while(*p>='0'&&*p<='9'&&digits<9){v=v*10+(*p++-'0');digits++;}
+                if(!digits)return 0;
+                *revision_patch=(int)v;
+            }
+            if(*p)return 0;
+            explicit_revision=1;
         }
-        if (digits == 0 || n == 4 || (*p >= '0' && *p <= '9')) {
-            return 0;
-        }
-        out[n++] = (int)v;
-        if (*p == '\0') {
-            break;
-        }
-        if (*p != '.') {
-            return 0; /* "0.1.39-rc1", "dev": not a release's number */
-        }
-        p++;
+        if(*p)return 0;
+        break;
     }
-    return n >= 2;
+    if(n<2)return 0;
+    /* Historic fork numbers, before BT4 adopted R revisions. Explicit R tags
+     * always refer to the actual upstream base and are never remapped. */
+    if(!explicit_revision&&out[0]==0&&out[1]==1&&out[2]==39&&(out[3]==2||out[3]==3)) {
+        *revision=out[3]-1;*revision_patch=0;out[3]=1;
+    }
+    return 1;
 }
-
-int UpdateVer_Compare(const char *a, const char *b) {
-    int x[4], y[4], i;
-    if (!UpdateVer_Parse(a, x) || !UpdateVer_Parse(b, y)) {
-        return -2;
-    }
-    for (i = 0; i < 4; i++) {
-        if (x[i] != y[i]) {
-            return x[i] < y[i] ? -1 : 1;
-        }
-    }
-    return 0;
+int UpdateVer_Parse(const char *text,int out[4]) {
+    int revision,revision_patch;return version_parts(text,out,&revision,&revision_patch);
+}
+int UpdateVer_Compare(const char *a,const char *b) {
+    int x[4],y[4],xr,yr,xp,yp,i;
+    if(!version_parts(a,x,&xr,&xp)||!version_parts(b,y,&yr,&yp))return -2;
+    for(i=0;i<4;i++)if(x[i]!=y[i])return x[i]<y[i]?-1:1;
+    if(xr!=yr)return xr<yr?-1:1;
+    return xp==yp?0:xp<yp?-1:1;
+}
+void UpdateVer_Display(const char *text,char *out,size_t size) {
+    int base[4],revision,revision_patch;
+    if(!version_parts(text,base,&revision,&revision_patch)){SDL_snprintf(out,size,"%s",text?text:"");return;}
+    if(base[0]==0 && base[1]==1 && base[2]==39 && base[3]==2 && revision==7 && revision_patch==1)
+        SDL_snprintf(out,size,"0.1.39.2 R7 Hotfix");
+    else if(base[0]==0 && base[1]==1 && base[2]==39 && base[3]==2 && revision==8 && revision_patch==1)
+        SDL_snprintf(out,size,"0.1.39.2 R8 Hotfix");
+    else if(revision_patch)SDL_snprintf(out,size,"%d.%d.%d.%d R%d.%d",base[0],base[1],base[2],base[3],revision,revision_patch);
+    else if(revision)SDL_snprintf(out,size,"%d.%d.%d.%d R%d",base[0],base[1],base[2],base[3],revision);
+    else SDL_snprintf(out,size,"%s",text);
 }
 
 /* ---- SHA-256 (FIPS 180-4) ---- */

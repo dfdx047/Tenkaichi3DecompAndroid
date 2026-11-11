@@ -64,6 +64,35 @@ extern const u16 *UiText_TranslateLine(const u32 *table, int line, const u16 *or
 #define DIALOG_TEXT(tbl, i) ((u16 *)((u8 *)(tbl) + ((tbl)[(i) + 1] / 4 * 4)))
 #define DIALOG_PART(file, i) ((DialogResHdr *)((u8 *)(file) + ((file)[i] / 4 * 4)))
 
+#ifdef PORT
+extern int Port_GameProfileMenuActive(void);
+static u16 *sChoiceLabels[2];
+void Dialog_SetChoiceLabels(u16 *first,u16 *second){
+    DialogFlashRef ref;char name[64];s32 i;
+    sChoiceLabels[0]=first;sChoiceLabels[1]=second;
+    if(!gDialog)return;
+    for(i=0;i<2;i++){
+        sprintf(name,"mc_menu_plate_%d",i+1);
+        Flash_FindLabel(gDialog->flash,name,"mc_menu_text_off",&ref);
+        if(ref.id>=0)Flash_ClipSetFlags(gDialog->flash,&ref,2,sChoiceLabels[i]?0:1);
+        Flash_FindLabel(gDialog->flash,name,"mc_menu_text_on",&ref);
+        if(ref.id>=0)Flash_ClipSetFlags(gDialog->flash,&ref,2,sChoiceLabels[i]?0:1);
+    }
+}
+static void Dialog_DrawChoiceLabels(void){
+    DialogFlashRef ref;s32 i,x,y;f32 alpha;char name[64];
+    if(Port_GameProfileMenuActive())return; /* crisp text is drawn at the window's resolution */
+    for(i=0;i<2;i++)if(sChoiceLabels[i]){
+        sprintf(name,"mc_menu_plate_%d",i+1);Flash_FindLabel(gDialog->flash,NULL,name,&ref);
+        if(ref.id<0)continue;
+        Flash_ClipGetPos(gDialog->flash,&ref,&x,&y);alpha=Flash_ClipGetAlpha(gDialog->flash,&ref);
+        Font_PushStyle();Font_SetAlign(1);Font_SetScaleXY(1.0f,1.0f);
+        Font_SetShadowMode(2);Font_SetShadowOffset(1,2);Font_SetShadowColor(0x60202020);
+        Font_SetColorRGBA(255,255,255,(s32)(alpha*128.0f));Font_PrintAt(x+64,y+8,sChoiceLabels[i]);Font_PopStyle();
+    }
+}
+#endif
+
 /* Layout 0: prints text msgIdx of the caller's table, centred on the anchor clip and shifted down by its line count. */
 void Dialog_DrawText(void) {
     DialogFlashRef ref;
@@ -273,6 +302,9 @@ void Dialog_Init(u32 *file, u32 *msgTbl, s32 size) {
     gDialog->titleIdx = -1;
     gDialog->port = 0;
     gDialog->size = size;
+#ifdef PORT
+    sChoiceLabels[0]=sChoiceLabels[1]=NULL;
+#endif
 }
 
 /* Destroys the animation and frees the window. */
@@ -332,11 +364,15 @@ rect.y0 = i * 0x20;
     }
     gDialog->res.tex0 = visible != 0 ? gDialog->tex0 : NULL;
 #ifdef PORT
+    if(sChoiceLabels[0]||sChoiceLabels[1])Dialog_SetChoiceLabels(sChoiceLabels[0],sChoiceLabels[1]);
     if (gPortMenuMode) {
         Port_MenuPage(50); /* widescreen menus: the dialog a page of its own, at its true shape (port/src/gs_marker.c) */
     }
 #endif
     Flash_Draw(gDialog->flash);
+#ifdef PORT
+    Dialog_DrawChoiceLabels();
+#endif
     Font_FlushAll();
 #ifdef PORT
     if (gPortMenuMode) {

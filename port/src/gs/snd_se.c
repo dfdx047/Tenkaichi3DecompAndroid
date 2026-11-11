@@ -35,6 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "gs_internal.h"
+#include "spatial_audio.h"
 #include "../port_addr.h"
 
 #define SPU_SIZE 0x200000
@@ -65,6 +66,7 @@ typedef struct Bank {
 
 typedef struct Voice {
     int on, bank, id, handle;
+    int owner,loopSound;float proximity;
     uint32_t pos, loopPos;     /* next block / loop start, addresses in sSpu */
     int h1, h2;                /* decoder history */
     int16_t buf[28];
@@ -80,10 +82,21 @@ typedef struct Voice {
 
 /* Beside the sound chip's memory: room for the clip banks this copy plays in the place of the game's (voice_own_bank). */
 #define OWN_SLOT 0x100000 /* a megabyte each; the largest voice bank file of the disc has 591,104 bytes */
-#define SPU_TOTAL (SPU_SIZE + 8 * OWN_SLOT)
+#define SPU_TOTAL (SPU_SIZE + 18 * OWN_SLOT)
 static uint8_t sSpu[SPU_TOTAL];
 static uint8_t *sOwnTables[8]; /* the two tables of such a bank (one allocation) */
 static Bank sBanks[8];
+static Bank sActorBanks[10];
+static uint8_t *sActorFiles[10];
+static int sActorFileIds[10];
+static uint32_t sActorHdSizes[10];
+static signed char sHandleOwner[65536];
+static int sOwnersReady;
+void Port_SeBind(int handle,int actor){
+    if(handle<0)return;if(!sOwnersReady){memset(sHandleOwner,-1,sizeof(sHandleOwner));sOwnersReady=1;}
+    sHandleOwner[handle&65535]=(signed char)(actor>=0&&actor<10?actor:-1);
+}
+
 static Voice sVoices[VOICES];
 static SDL_AudioStream *sStream;
 static int sMono, sTried;
@@ -190,6 +203,12 @@ static void SDLCALL mix(void *user, SDL_AudioStream *stream, int additional, int
             if (!v->on || sBanks[v->bank].paused) {
                 continue;
             }
+            if(v->owner>=0){
+                float target=PortAudio_Gain(v->owner,v->bank==4||v->bank==5);
+                v->proximity+=(target-v->proximity)*0.12f;
+                if(fabsf(target-v->proximity)<0.0005f)v->proximity=target;
+                if(v->loopSound&&!PortAudio_Alive(v->owner))v->stopping=1;
+            }
             for (i = 0; i < n; i++) {
                 float s, a, b;
                 int ip;
@@ -207,7 +226,7 @@ static void SDLCALL mix(void *user, SDL_AudioStream *stream, int additional, int
                 ip = (int)v->frac;
                 a = (float)(ip == 0 ? v->prev : v->buf[ip - 1]);
                 b = (float)v->buf[ip];
-                s = (a + (b - a) * (float)(v->frac - (double)ip)) * v->fade;
+                s = (a + (b - a) * (float)(v->frac - (double)ip)) * v->fade * v->proximity;
                 acc[i * 2] += s * v->gl;
                 acc[i * 2 + 1] += s * v->gr;
                 v->frac += v->step;
@@ -381,13 +400,16 @@ static void heard(int slot, int id, int voice) {
 #undef H
 }
 
-static void play(int mask, int id, int volume, int pan, int pitch, int handle) {
+static void play(int mask, int id, int volume, int pan, int pitch, int handle,int loop) {
     int slot = slot_of(mask), k, pick = -1;
     uint32_t start, rate;
     double theta;
     Voice *v;
+    int actor=sOwnersReady?sHandleOwner[handle&65535]:-1;
+    Bank *bank=slot>=0?&sBanks[slot]:NULL;
+    if(actor>=0&&actor<10&&(slot==4||slot==5)&&sActorBanks[actor].set)bank=&sActorBanks[actor];
 
-    if (slot < 0 || muted(slot, id, handle) || !sBanks[slot].set || !lookup(&sBanks[slot], id, &start, &rate)) {
+    if (slot < 0 || muted(slot, id, handle) || !bank->set || !lookup(bank, id, &start, &rate)) {
         return;
     }
     for (k = 0; k < VOICES; k++) {
@@ -403,7 +425,7 @@ static void play(int mask, int id, int volume, int pan, int pitch, int handle) {
     }
     v = &sVoices[pick];
     memset(v, 0, sizeof(*v));
-    v->bank = slot;
+    v->bank = slot;v->owner=actor;v->proximity=actor>=0?PortAudio_Gain(actor,slot==4||slot==5):1;v->loopSound=loop!=0;
     v->id = id;
     v->handle = handle;
     v->pos = start;
@@ -488,6 +510,40 @@ static int bank_parts(const uint8_t *b, long size, uint32_t *hd, uint32_t *hdSiz
         }
     }
     return have == 7;
+}
+
+/* Each Tag Team actor keeps its actual character bank, independent of the
+ * original two hardware slots. Loading happens before combat / on form swaps. */
+void Port_SeActorFile(int actor,int file){
+    uint8_t *data;FILE *fp;char path[512];long size;
+    uint32_t hd=0,hs=0,sq=0,ss=0,smp=0,bs=0;int part,index;
+    if(actor<0||actor>=10||file<=0||sActorFileIds[actor]==file)return;
+    if(file>=0x20000){part=3;index=file-0x20000;}
+    else if(file>=0x10CC0){part=0;index=file-0x10CC0;}
+    else if(file>=0xD48){part=2;index=file-0xD48;}else{part=1;index=file-1;}
+    if(!Port_FilePath(part,index,NULL,path,sizeof(path))||(fp=fopen(path,"rb"))==NULL)return;
+    fseek(fp,0,SEEK_END);size=ftell(fp);rewind(fp);
+    if(size<64||size>4*1024*1024){fclose(fp);return;}
+    data=malloc((size_t)size);if(!data){fclose(fp);return;}
+    if(fread(data,1,size,fp)!=(size_t)size){fclose(fp);free(data);return;}fclose(fp);
+    if(!bank_parts(data,size,&hd,&hs,&sq,&ss,&smp,&bs)||bs>OWN_SLOT){free(data);return;}
+    if(sStream)SDL_LockAudioStream(sStream);
+    for(int k=0;k<VOICES;k++)if(sVoices[k].owner==actor&&(sVoices[k].bank==4||sVoices[k].bank==5))sVoices[k].on=0;
+    free(sActorFiles[actor]);sActorFiles[actor]=data;sActorFileIds[actor]=file;
+    sActorHdSizes[actor]=hs;
+    Bank *b=&sActorBanks[actor];memset(b,0,sizeof(*b));b->set=1;b->volume=1;
+    b->spu=SPU_SIZE+(8+actor)*OWN_SLOT;b->hd=data+hd;b->sq=data+sq;
+    memcpy(sSpu+b->spu,data+smp,bs);
+    if(sStream)SDL_UnlockAudioStream(sStream);
+    if(getenv("BT3_SND_VERBOSE"))fprintf(stderr,"tag audio bank: actor=%d file=%x bytes=%ld\n",actor,file,size);
+}
+int Port_SeActorLoop(int actor,int id){
+    if(actor<0||actor>=10||id<0||id>255||!sActorBanks[actor].set)return 0;
+    const uint8_t *vagi=chunk(sActorBanks[actor].hd,"Vagi",sActorHdSizes[actor]);
+    if(!vagi)return 0;
+    uint32_t remaining=sActorHdSizes[actor]-(uint32_t)(vagi-sActorBanks[actor].hd);
+    if((uint32_t)id>le32(vagi+12)||16+4*(uint32_t)id+4>remaining)return 0;
+    uint32_t offset=le32(vagi+16+4*id);return remaining>=7&&offset<=remaining-7&&vagi[offset+6]!=0;
 }
 
 /* Bank slot `slot` was just set by the game: if it is a fighter's default voice bank and this player chose the other
@@ -659,7 +715,7 @@ int sceSifCallRpc(void *client, int fno, int mode, void *send, int sendSize, voi
         for (i = 0; ready && i < (int)count && i < 32; i++) {
             const uint8_t *c = q + 4 + i * 12;
             if (c[0] == 0) {
-                play(c[4], c[5], c[6], c[7], (int32_t)le32(c + 8), (int)le16(c + 2));
+                play(c[4], c[5], c[6], c[7], (int32_t)le32(c + 8), (int)le16(c + 2),c[1]);
             } else if (c[0] == 1) {
                 stop(c[4], c[5], -1);
             } else if (c[0] == 2) {

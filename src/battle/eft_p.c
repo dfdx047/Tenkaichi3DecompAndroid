@@ -1,5 +1,12 @@
 #include "common.h"
 #include "battle/eft_p.h"
+#include "battle/tag_team_native.h"
+static EftDiscNode *sTagDiscHead[10],*sTagDiscTail[10];
+void TagDisc_Reset(void){s32 i;for(i=0;i<10;++i)sTagDiscHead[i]=sTagDiscTail[i]=NULL;}
+static EftDiscNode **TagDisc_Head(EftDiscMgr *m,s32 i){return TagBattle_Active()?&sTagDiscHead[i]:&m->head[i];}
+#define DISC_HEAD(m,i) (*TagDisc_Head((m),(i)))
+static EftDiscNode **TagDisc_Tail(EftDiscMgr *m,s32 i){return TagBattle_Active()?&sTagDiscTail[i]:&m->tail[i];}
+#define DISC_TAIL(m,i) (*TagDisc_Tail((m),(i)))
 
 /*
  * Disc projectile, tail of the module: 0x16C2E0..0x16DCA0 (29 functions, 28 matching; EftDisc_Home is left in
@@ -293,7 +300,7 @@ void EftDisc_SetHeldAtk(EftPTask *task, EftDiscAtk *atk) {
     if (gEftDisc == NULL) {
         return;
     }
-    n = gEftDisc->mgr->head[atk->objId];
+    n = DISC_HEAD(gEftDisc->mgr,atk->objId);
     if (n == NULL) {
         return;
     }
@@ -450,12 +457,12 @@ s32 EftDiscMgr_PushHeld(EftPTask *task, s32 objId, u8 kind) {
     if (kind == 1) {
         n->flags |= 0x10;
     }
-    if (mgr->head[objId] == NULL) {
-        mgr->head[objId] = n;
-        mgr->tail[objId] = n;
+    if (DISC_HEAD(mgr,objId) == NULL) {
+        DISC_HEAD(mgr,objId) = n;
+        DISC_TAIL(mgr,objId) = n;
     } else {
-        mgr->tail[objId]->next = n;
-        mgr->tail[objId] = n;
+        DISC_TAIL(mgr,objId)->next = n;
+        DISC_TAIL(mgr,objId) = n;
     }
     return 1;
 }
@@ -472,9 +479,9 @@ s32 EftDiscMgr_PopHeld(s32 objId) {
     if (mgr == NULL) {
         return 0;
     }
-    n = mgr->head[objId];
+    n = DISC_HEAD(mgr,objId);
     if (n != NULL) {
-        mgr->head[objId] = n->next;
+        DISC_HEAD(mgr,objId) = n->next;
         n->flags = 0;
         n->next = NULL;
         n->task = NULL;
@@ -556,7 +563,7 @@ s32 EftDisc_Throw(EftDiscAtk *a) {
     if (gEftDisc == NULL) {
         return 0;
     }
-    n = gEftDisc->mgr->head[a->objId];
+    n = DISC_HEAD(gEftDisc->mgr,a->objId);
     while (n != NULL && (n->flags & 0x30)) {
         n = n->next;
     }
@@ -649,7 +656,7 @@ s32 EftDisc_DropHeld(s32 objId) {
         return 0;
     }
     mgr = gEftDisc->mgr;
-    n = mgr->head[objId];
+    n = DISC_HEAD(mgr,objId);
     if (n == NULL) {
         return 0;
     }
@@ -663,7 +670,7 @@ s32 EftDisc_DropHeld(s32 objId) {
     }
     if (w->flags & EFT_DISC_ALIVE) {
         w->flags |= EFT_DISC_DEAD;
-        mgr->head[objId] = n->next;
+        DISC_HEAD(mgr,objId) = n->next;
         n->flags = 0;
         n->next = NULL;
         n->task = NULL;

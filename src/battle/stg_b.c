@@ -1,3 +1,4 @@
+#include "port_variant.h"
 #include "common.h"
 
 /*
@@ -485,6 +486,11 @@ s32 BtlStage_GetChangeTarget(void) {
     if (!BtlStage_IsReady()) {
         return -1;
     }
+    if (PORT_V(0, 1)) {
+        /* BT4 stores the signed destination stage in byte 0x0D, independently
+           of the transition animation selected by byte 0x0C. */
+        return ((s8 *)gBtlStage->data->info)[0x0D];
+    }
     kind = gBtlStage->data->info->changeKind;
     if (kind == 1) {
         return 0xF;
@@ -928,7 +934,7 @@ void StgAmb_Start(void) {
         gStgAmb.update = StgAmb_Update22;
         break;
     }
-    MapBgm_Play(id + 0x10BA4);
+    MapBgm_Play(id + PORT_V(0x916, 0x916));
     StgAmb_SetBgmVolume(0);
 }
 

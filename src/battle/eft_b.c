@@ -3,6 +3,7 @@
 #include "sys/gfx_ot.h"
 
 #ifdef PORT
+#include "port_render_markers.h"
 extern f32 Port_WideFactor(void); /* widescreen on PC: 1, or 4/3 for a 16:9 picture (port/src/plat_stub.c) */
 #endif
 
@@ -546,6 +547,9 @@ void EftPrim_DrawTriangle(EftBIVec *v0, EftBIVec *v1, EftBIVec *v2, Vec4 *c0, Ve
     p = (EftBTriPkt *)gOtCur;
     gOtCur = (u32 *)(p + 1);
     p->prim = ((u64)abe << 6) | ((u64)ctx << 9) | 0x1B;
+#ifdef PORT
+    if(Port_BoundaryDrawing())p->prim|=PORT_PRIM_BOUNDARY;
+#endif
     p->dmaTag = 0x20000007;
     p->vif0 = 0x10000000;
     p->vif1 = 0x50000007;

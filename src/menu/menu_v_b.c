@@ -747,7 +747,7 @@ void EvoZ_UpdateFace(EvoZ *ez) {
         break;
     case 1:
         File_CancelRequests();
-        File_Request(ez->side->chara + 0x2F9, ez->faceFile, 0x16800);
+        File_Request(ez->side->chara + 0x71C, ez->faceFile, 0x16800);
         ez->faceState = 2;
         break;
     case 2:

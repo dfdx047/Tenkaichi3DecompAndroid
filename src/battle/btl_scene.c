@@ -1,5 +1,7 @@
+extern int TagBattle_Active(void);
 #include "common.h"
 #include "battle/battle.h"
+#include "battle/tag_team_native.h"
 #include "battle/battle_setup.h"
 #include "battle/btl_pool.h"
 #include "battle/btl_scene.h"
@@ -129,7 +131,7 @@ void BtlScene_Init(s32 layerMask) {
     if (layerMask == 0) {
         gBtlScene->layerMask = BTL_SCENE_LAYER_ALL;
     }
-    BtlScene_SetCharCount(2);
+    BtlScene_SetCharCount(TagBattle_Count());
     if (Battle_IsSplitScreen()) {
         BtlScene_SetSingleView(0);
     } else {
@@ -327,6 +329,7 @@ extern int Port_NetView(void);          /* port/src/gs/net.c: the local player's
 extern s32 BtlCam_GetPriorityView(void);
 #endif
 s32 BtlScene_IsCharInView(s32 objId) {
+    if(TagBattle_Active())return BtlCharApi_IsCamShown(objId);
     if (Battle_IsSplitScreen()) {
         if (BtlScene_IsSingleView()) {
             if (EftCam_IsActive()) {
@@ -440,9 +443,12 @@ void BtlScene_CreateChar(s32 chr) {
 /* Tells a task of the given kind (0..6) attached to an object whether its time is stopped this frame. */
 s32 BtlScene_IsEffectStopped(s32 objId, s32 kind) {
     s32 result = 0;
+    /* An unrelated cinematic does not stop this actor's effect tasks. The
+       kind's own hit-stop/pause rule below still applies. */
 
     switch (kind) {
     case 0:
+        if(TagBattle_Active())return BtlScene_IsCharStopped(objId);
         if (BtlScene_IsAnyCharStopped()) {
             result = 1;
         }
@@ -477,7 +483,7 @@ s32 BtlScene_IsEffectStopped(s32 objId, s32 kind) {
 }
 
 /* Second per-kind test of the tasks, on the object's state (0x205DC8) and its fighter's actions. */
-#if 0
+#if defined(PORT)
 /* Not matching (12 of 92 after alignment, 90 instructions against 92): only the tails of the first switch differ.
  * Before delay-slot filling this C gives: case 0 `beqz v0,END / X: s2 = 1 / b END`, case 1 `bnez v0,END / b X`,
  * cases 3 and 6 `beq -> X`: the final jump pass has cross-jumped the three `result = 1; break;` tails into the
@@ -507,6 +513,7 @@ s32 BtlScene_IsEffectStopped(s32 objId, s32 kind) {
  * - An inline helper for the first switch (five shapes): 39 to 50. */
 s32 BtlScene_IsEffectHidden(s32 objId, s32 kind) {
     s32 result = 0;
+    if(TagBattle_Active() && kind==0)return BtlCharApi_IsHidden(objId)||BtlCharApi_IsChanging(objId);
 
     if (BtlCharApi_IsHidden(objId)) {
         switch (kind) {
@@ -562,8 +569,9 @@ s32 BtlScene_IsEffectHidden(s32 objId, s32 kind) {
     }
     return result;
 }
-#endif
+#else
 INCLUDE_ASM("asm/nonmatchings/battle/btl_scene", BtlScene_IsEffectHidden);
+#endif
 
 /* Asks BtlScene_CheckStageChange to change the stage on the next frame (no caller). */
 void BtlScene_RequestStageChange(void) {

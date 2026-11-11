@@ -103,6 +103,31 @@ INCLUDE_RODATA("asm/nonmatchings/battle/bobj_a", D_002F2420);
 #define TRACK_AT(anim, off) ((BobjTrack *)((u16 *)(anim) + (off) * 2))
 #define QUAT64(q) ((u64)(q).lo + ((u64)(q).hi << 32))
 
+#ifdef PORT
+/* BT4 motions can retain offsets for optional nodes that point inside another
+   track. Keep the model's rest pose for those invalid tracks. */
+static void Bt4_ValidateMotion(BobjAnim *data, s32 size, s32 anim) {
+    s32 node, k;
+    for (node = 0; node < BOBJ_NODE_MAX; node++) {
+        s32 off = data->track[node] * 4;
+        BobjTrack *trk;
+        s32 bytes;
+        if (!off) continue;
+        if (off < 0x94 || off > size - 4) goto invalid;
+        trk = (BobjTrack *)((u8 *)data + off);
+        bytes = 4 + trk->count * (BOBJ_TRACK_ROT_ONLY(trk) ? 10 : 24);
+        if (!trk->count || bytes > size - off) goto invalid;
+        for (k = 0; k < trk->count; k++) {
+            BobjPackedQuat *q = BOBJ_TRACK_ROT_ONLY(trk) ? &trk->u.rot[k] : &trk->u.key[k].rot;
+            if ((q->hi >> 28) > 3) goto invalid;
+        }
+        continue;
+invalid:
+        data->track[node] = 0;
+    }
+}
+#endif
+
 /* Moves the translation keys of a motion from the skeleton it was made for to this object's skeleton: subtracts
    the source rest translation, scales y by the height ratio and adds this object's rest translation. The source
    is the built-in reference table (useTable), the character's own reference pose (useOwn) or another object. */
@@ -121,11 +146,11 @@ void BtlObjAnim_Retarget(BobjAnim *anim, BobjObj *obj, BobjObj *other, s32 useTa
         useOwn = 0;
     }
     if (useTable != 0) {
-        scale = obj->mdl.param->height;
+        scale = (*(f32 *)((u8 *)(*(void **)&obj->mdl) + 0x74));
     } else if (useOwn != 0) {
-        scale = obj->mdl.param->height / 1.1f;
+        scale = (*(f32 *)((u8 *)(*(void **)&obj->mdl) + 0x74)) / 1.1f;
     } else {
-        scale = obj->mdl.param->height / other->mdl.param->height;
+        scale = (*(f32 *)((u8 *)(*(void **)&obj->mdl) + 0x74)) / (*(f32 *)((u8 *)(*(void **)&other->mdl) + 0x74));
     }
     while (1) {
         id = bone->id;
@@ -366,6 +391,9 @@ BobjAnim *BtlObjAnim_Load(BobjObj *obj, void *buf, s32 anim, s32 *size) {
         *size = 1;
     } else if (obj->mdl.anims[anim] != NULL) {
         Bpe_Decode(obj->mdl.anims[anim], buf, size);
+#ifdef PORT
+        Bt4_ValidateMotion((BobjAnim *)buf, *size, anim);
+#endif
         ret = buf;
     } else {
         ret = NULL;
@@ -1627,6 +1655,9 @@ void BtlObjFace_Init(BobjObj *obj, BobjFace *face) {
     BobjMdl *mdl = &obj->mdl;
 
     BtlObjMdl_CopyTexAlpha(mdl, mdl->faceTex, mdl->eyeTex);
+    if (*(BobjTexTable **)((u8 *)mdl + 8) != NULL) {
+        BtlObjMdl_CopyTexAlpha(mdl, *(BobjTexTable **)((u8 *)mdl + 8), *(BobjTexTable **)((u8 *)mdl + 12));
+    }
     BtlObjFace_Nop(face);
 }
 
@@ -2186,7 +2217,7 @@ BObjTexEntry *BtlObj_GetFaceTexture(BObj *obj) {
     if (shape >= 4) {
         set = obj->mdl.mouthB[shape];
         if (set != NULL) {
-            return set->entries;
+            return set->entries + ((*(void **)((u8 *)obj + 0x20) == *(void **)((u8 *)obj + 0x48)) ? 1 : 0);
         }
     } else if (face->eye != 0) {
         return &obj->mdl.eyes->entries[face->eye] - 1;
@@ -2292,18 +2323,60 @@ typedef struct BObjBindView {
     } res;
 } BObjBindView;
 
+/* BT4 stores these tables once per fighter rather than inside every costume.
+   They remain live until the scene's resource manager shuts down. */
+static void *sBt4CharaPack[250][3];
+extern s32 File_GetSize(s32 id);
+extern void *File_LoadSync(s32 id, void *buf, s32 unused);
+extern unsigned Port_GameBigAlloc(int size);
+extern void Heap_Free(void *ptr);
+
+void Bt4_FreeCharaPacks(void) {
+    s32 c, k;
+    for (c = 0; c < 250; c++) for (k = 0; k < 3; k++) {
+        if (sBt4CharaPack[c][k] != NULL) {
+            Heap_Free(sBt4CharaPack[c][k]);
+            sBt4CharaPack[c][k] = NULL;
+        }
+    }
+}
+
+static void *Bt4_CharaPack(BObjSlot *slot, s32 kind) {
+    s32 c = slot->file[1].id - 0x141E;
+    s32 id, size;
+    if (c < 0 || c >= 250) return NULL;
+    if (sBt4CharaPack[c][kind] == NULL) {
+        id = c + (kind == 0 ? 0x1036 : kind == 1 ? 0x1130 :
+                  (gSaveData->flags & 1) ? 0x1324 : 0x122A);
+        size = File_GetSize(id);
+        sBt4CharaPack[c][kind] = (void *)Port_GameBigAlloc(size);
+        File_LoadSync(id, sBt4CharaPack[c][kind], 0);
+    }
+    return sBt4CharaPack[c][kind];
+}
+
+static void *Bt4_PackEntry(void *pack, s32 n) {
+    u32 *p = pack;
+    return p != NULL && p[n] != p[n + 1] ? (u8 *)p + (p[n] & ~3) : NULL;
+}
+
 void BtlObj_BindTables(BObj *obj) {
     BObjMdl *mdl;
     BObjSlot *slot;
     s32 i;
     s32 j;
     s32 base;
+    void *aux;
+    u8 *tables;
 
     mdl = &obj->mdl;
     slot = obj->slot;
     mdl->unk00 = BObjFile_GetEntry(&slot->file[0], 3);
     mdl->unk04 = BObjFile_GetEntry(&slot->file[0], 0xC);
     mdl->unk3C = BObjFile_GetEntry(&slot->file[0], 2);
+    *(void **)(mdl->unk08 + 0) = BObjFile_GetEntry(&slot->file[0], 0x1A);
+    *(void **)(mdl->unk08 + 4) = BObjFile_GetEntry(&slot->file[0], 0x34);
+    *(void **)(mdl->unk08 + 8) = BObjFile_GetEntry(&slot->file[0], 0xD);
     if (slot->file[1].buf != NULL) {
         for (i = 0; i < 0x19E; i++) {
             ((BObjBindView *)obj)->res.mdl.anims[i] = BObjFile_GetEntry(&slot->file[1], i + 1);
@@ -2325,7 +2398,7 @@ void BtlObj_BindTables(BObj *obj) {
     }
     mdl->eyes = BObjFile_GetEntry(&slot->file[0], 0xD);
     for (i = 0; i < 3; i++) {
-        ((BObjBindView *)obj)->res.mdl.unk98[i] = BObjFile_GetEntry(&slot->file[0], i + 0x29);
+        ((BObjBindView *)obj)->res.mdl.unk98[i] = Bt4_PackEntry(Bt4_PackEntry(Bt4_CharaPack(slot, 0), 3), i + 1);
     }
     for (i = 0; i < 8; i++) {
         mdl->unk8D0[i] = BObjFile_GetEntry(&slot->file[0], i + 0x1D);
@@ -2333,13 +2406,13 @@ void BtlObj_BindTables(BObj *obj) {
     for (i = 0; i < 4; i++) {
         mdl->unk8F0[i] = BObjFile_GetEntry(&slot->file[0], i + 0x25);
     }
-    mdl->unkA4 = BObjFile_GetEntry(&slot->file[0], gProgress->unk00 + 0x2D);
+    mdl->unkA4 = Bt4_CharaPack(slot, 1);
     base = 0x64;
     if (!(gSaveData->flags & 1)) {
         base = 0;
     }
     for (i = 0; i < 100; i++) {
-        mdl->lip[i] = BObjFile_GetEntry(&slot->file[0], base + 0x35 + i);
+        mdl->lip[i] = Bt4_PackEntry(Bt4_CharaPack(slot, 2), i + 1);
     }
     if (slot->file[2].buf != NULL) {
         for (i = 0; i < 5; i++) {
@@ -2347,19 +2420,22 @@ void BtlObj_BindTables(BObj *obj) {
         }
         mdl->unk40 = BObjFile_GetEntry(&slot->file[2], 6);
     }
-    mdl->unk38 = BObjFile_GetEntry(&slot->file[0], 1);
+    mdl->unk38 = Bt4_PackEntry(Bt4_CharaPack(slot, 0), 1);
     if (mdl->unk38 != NULL) {
         Res_RelocateOffsets(&mdl->unk38, mdl->unk38, mdl->unk38);
     }
-    mdl->unk924 = BObjFile_GetEntry(&slot->file[0], 0x16);
-    mdl->unk904 = BObjFile_GetEntry(&slot->file[0], 0x12);
-    mdl->unk908 = BObjFile_GetEntry(&slot->file[0], 0x13);
-    mdl->unk90C = BObjFile_GetEntry(&slot->file[0], 0x14);
-    mdl->unk910 = BObjFile_GetEntry(&slot->file[0], 0x15);
-    mdl->unk914 = BObjFile_GetEntry(&slot->file[0], 0x18);
-    mdl->unk918 = BObjFile_GetEntry(&slot->file[0], 0x19);
-    mdl->unk91C = BObjFile_GetEntry(&slot->file[0], 0x1B);
-    mdl->unk920 = BObjFile_GetEntry(&slot->file[0], 0x1C);
+    tables = Bt4_PackEntry(Bt4_CharaPack(slot, 0), 2);
+    if (tables != NULL) {
+        mdl->unk904 = (s8 *)tables;
+        mdl->unk908 = tables + 0x100;
+        mdl->unk90C = tables + 0x2240;
+        mdl->unk910 = tables + 0x2500;
+        mdl->unk924 = tables + 0x25C0;
+        mdl->unk914 = tables + 0x29D0;
+        mdl->unk918 = tables + 0x2C50;
+        mdl->unk91C = tables + 0x2D50;
+        mdl->unk920 = tables + 0x2F50;
+    }
     mdl->chain = BObjFile_GetEntry(&slot->file[0], 0x17);
 }
 
@@ -2443,40 +2519,7 @@ void BtlObj_SetColorPreset(BObj *obj, s32 row, s32 set) {
 
 /* Points the object's lip tracks and two more tables at common file 3. */
 void BtlObj_BindCommonTables(BObj *obj) {
-    BObjCommon *res;
-    BObjMdl *mdl;
-    s32 first;
-    s32 ofs;
-    s32 i;
-    u32 *p;
-
-    first = 0x64;
-    if (!(gSaveData->flags & 1)) {
-        first = 0;
-    }
-    res = gCommonRes;
-    mdl = &obj->mdl;
-    /* Entry 0xE + first + i, written the way the original's address arithmetic comes out. */
-    ofs = first * 4 + 0x38;
-    for (i = 0; i < 100; i++) {
-        p = (u32 *)(ofs + (u32)res->file3.buf);
-        ofs += 4;
-        if (p[1] != p[0]) {
-            obj->mdl.lip[i] = (BObjLipData *)((u8 *)res->file3.buf + (p[0] >> 2 << 2));
-        } else {
-            obj->mdl.lip[i] = NULL;
-        }
-    }
-    if (res->file3.buf[0xD] != res->file3.buf[0xC]) {
-        mdl->common9C = (u8 *)res->file3.buf + (res->file3.buf[0xC] >> 2 << 2);
-    } else {
-        mdl->common9C = NULL;
-    }
-    if (res->file3.buf[0xE] != res->file3.buf[0xD]) {
-        mdl->common900 = (u8 *)res->file3.buf + (res->file3.buf[0xD] >> 2 << 2);
-    } else {
-        mdl->common900 = NULL;
-    }
+    obj->mdl.common900 = Bt4_PackEntry(gCommonRes->file3.buf, 0xD);
 }
 
 /* Copies the 100 lip track pointers of another object. */
@@ -2512,7 +2555,7 @@ void BtlObj_SetColorMode(BObj *obj, s32 bit, s32 on) {
     } else if (state->modeBits & 8) {
         SET_COLOR(obj, 0x80000);
     } else if (state->modeBits & 4) {
-        SET_COLOR(obj, 0x40000);
+        state->flags = (state->flags & 0xFF02FFFFu) | 0x40000;
     } else if (state->modeBits & 0x40) {
         SET_COLOR(obj, 0x400000);
     } else if (state->modeBits & 1) {

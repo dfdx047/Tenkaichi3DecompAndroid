@@ -653,6 +653,10 @@ s32 BtlCharApi_IsCamShown(s32 objId) {
     if (BtlCharApi_IsInClashBC(objId)) {
         return 0;
     }
+    /* Clashes use the external framing, including in Tag. View-only aura and
+       foreground effects must not treat a clash participant as a chase view. */
+    {extern s32 TagBattle_Active(void),TagBattle_CameraActor(s32),TagBattle_ViewActor(void);
+     if(TagBattle_Active())return chr->side==TagBattle_CameraActor(TagBattle_ViewActor());}
     if (DemoCam_IsActive()) {
         return 1;
     }

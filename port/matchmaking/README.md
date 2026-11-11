@@ -1,10 +1,15 @@
-# Matchmaking Worker (room codes)
+# Two-player matchmaking service
 
-A small Cloudflare Worker that lets two players of the port find each other with a short code, without typing
-addresses or forwarding a port. It only introduces the two games to each other: no game data passes through it.
+This Cloudflare Worker handles room codes and quick match for the two-player
+online modes. It exchanges connection information; gameplay data does not pass
+through its matchmaking endpoints.
 
-Files: `worker.js` (the Worker), `schema.sql` (its tables, each as ONE line without comments: the dashboard's console
-joins what is pasted into one line, and a `--` comment then takes the rest of the statement with it).
+Tag Team uses a separate room kernel and input transport, documented in the
+[Tag Team service guide](../../cloudflare/README.md).
+
+The service consists of `worker.js` and `schema.sql`. When pasting SQL into the
+dashboard console, keep statements on one line and omit `--` comments; the
+console may join lines and treat the remaining statement as a comment.
 
 The table `rooms`, one row per room (rows older than ten minutes are removed whenever a room is made):
 
@@ -20,8 +25,6 @@ The table `rooms`, one row per room (rows older than ten minutes are removed whe
 
 | `queue` | a quick-match room: which queue it waits in (`S`, `T`, `D10`, `D15`, `D20`); empty for a room with a code to hand on |
 | `who` | a quick-match room: a random text the host's game made up for this run, so that a room it left behind is not given back to it |
-| `loc` | a quick-match room of a newer game: where Cloudflare placed its host, rounded ("25,55,ME,": whole degrees, the region) and what the host chose ("" Auto, "*" Anywhere, or a region) |
-| `join_region` | ... and the region of the one who joined it |
 
 ## Spectators (from the release after 0.1.38.7)
 
@@ -109,56 +112,6 @@ asked for per search, not per room: a search that starts again says it holds a r
 Older releases of the game are not affected: they do not send the new request, and rooms with codes work as before.
 Until the Worker is updated, a game that has the Quick match tab says "The matchmaking service does not know quick
 match yet." when a search is started.
-
-## Quick match: nearby first, and a region to choose (from the release after 0.1.38.8)
-
-A game that sends `waited` (how many seconds it has searched) and `area` ("auto", "any", or a region) is matched by
-where Cloudflare places the requests (`request.cf`), as the player chose:
-
-- **auto**: takes players within `NEAR_KM` (2,500 km, great-circle) at once, anyone once `WIDEN_SECONDS` (25) have
-  gone by, the nearest first (rooms of older games, whose place is unknown, last);
-- **a region** (`NA`, `SA`, `EU`, `ME`, `AF`, `AS`, `OC`): takes players placed in that region at once, anyone once
-  `REGION_WIDEN_SECONDS` (40) have gone by, the nearest first;
-- **any** (and an older game): takes anyone, whoever waits longest.
-
-A pair is made only when each side takes the other, the wait being the longer of the two (a room's: its age). So:
-
-| waited | Auto | a region chosen |
-|---|---|---|
-| 0-25 s | players nearby | players placed in that region |
-| 25-40 s | everyone but those who chose another region | still that region only |
-| from 40 s | everyone | everyone |
-
-The regions are Cloudflare's continents, except the Middle East: the countries AE, BH, CY, EG, IL, IQ, IR, JO, KW,
-LB, OM, PS, QA, SA, SY, TR, YE (`MIDDLE_EAST` in worker.js).
-
-When nobody suits, it gets a room of its own; the answer says `again` (10) and, for auto and a region, `widen` (25, 40: when it takes
-anyone). The game
-then searches again every `again` seconds from its room: `/v1/quick` with its room's `code` and `key` (not counted
-against the 60 searches an hour). The room is held meanwhile (`join_key` "-"), so nobody joins it in that moment;
-the answer is a join (its own room deleted), "still waiting" (the same code), `joined: true` (someone had joined it:
-its poll has them) or "no room" (run out: it searches anew). Each side gets the other's region as `region`, with the
-join's answer and with the host's poll; nothing else of the other's place.
-
-**What is kept, privacy.** Per quick-match room of a newer game, for the room's life only (ten minutes at most): the
-host's position rounded to whole degrees (about 100 km), its region and its choice; the joiner's region. Never
-logged; no country, city, colo or exact position is stored or sent to anyone.
-
-**Older games** (no `waited`) search as `any` does (the longest waiting of the rooms that take them: a newer Auto
-room far from them only after 25 s, a region's room outside it only after 40 s), and get no new fields in any
-answer. Their rooms have no place and are taken by newer games as unknown: auto after 25 s, a region after 40 s, any
-at once.
-
-**Updating a Worker that is already set up** (in this order):
-
-1. D1 -> `bt3-rooms` -> Console. Run these two lines, one at a time:
-   `ALTER TABLE rooms ADD COLUMN loc TEXT;`
-   `ALTER TABLE rooms ADD COLUMN join_region TEXT;`
-2. The Worker -> Edit code: replace everything with the new `worker.js`, Deploy.
-
-Without the columns the Worker still works: rooms are made without a place (every newer game then meets others only
-after the widening, by order of waiting). Requests: a waiting newer game asks `/v1/quick` every ten seconds besides
-its polls (60 more requests per ten minutes of waiting).
 
 ## Only the newest release (from 0.1.29)
 
@@ -253,7 +206,7 @@ still works."
 the releases it has a key for (never a key), the stage, and how today's new rooms, joins and searches checked
 out; `"problem"` is there when `BUILD_KEYS` or `REQUIRE_KEY` is not as it should be.
 
-### Step by step, for the keeper
+### Maintainer configuration
 
 Nothing below needs a tool but a browser, and Python for one line. `<key>` stands for the key you make; it is
 written nowhere in this repository and should not be pasted anywhere but the two places named.
@@ -306,15 +259,14 @@ official release). The first is the kinder one; do both if the key is known to b
 
 **A fork** that runs its own Worker makes its own keys, or none: without the secrets everything is as it was.
 
-## What it keeps
+## Stored data
 
 For at most ten minutes per room: the room code, the two player names, the addresses each game reported about
-itself, and the host's address as Cloudflare saw it (to limit how many rooms one address can open); for a
-quick-match room of a newer game, where Cloudflare placed the two players, coarsely (see the quick match's section). A room whose
+itself, and the host's address as Cloudflare saw it (to limit how many rooms one address can open). A room whose
 host lets spectators in lives while its match is on (the host keeps it, see Spectators), a lobby's room while its
 owner keeps it open, and a spectator's or a lobby member's name and addresses are kept for two minutes. Nothing else, and nothing after the room has expired.
 
-## Setting it up (the Cloudflare dashboard, no tools needed)
+## Dashboard deployment
 
 1. **Database.** Storage & Databases -> D1 -> Create. Name it `bt3-rooms`. Open its Console, paste the
    contents of `schema.sql`, run it.
@@ -375,7 +327,7 @@ the last two hours: a ceiling that cannot be checked is not relied on. To measur
 answers for instance `{"measured":true,"monthGB":0.42,"limitGB":500,"relay":"on","loginsSeen":3,"loginsEnded":0,
 "loginsToday":7,...}`, or `"measured":false` and why.
 
-## What a player is told about the other
+## Peer information
 
 The name, the public address and port, and for the one who joins the host's relay address. An address of a
 private network (192.168.x.x and the like) is handed over only when the two are on one network: seen by the
@@ -406,7 +358,7 @@ which addresses, the limits, and the build key's checks in each stage. Nothing i
 Python's `hmac` and `hashlib`, and looks at the headers the program really sends, on a listener on 127.0.0.1 (see
 the top of that file; with `BT3_BUILD_KEY` set to the made-up key the program was built with, or without one).
 
-## Trying it by hand
+## Manual API checks
 
     W=https://<worker>.<subdomain>.workers.dev
     curl -s -X POST $W/v1/host -d '{"v":3,"name":"A","addrs":["203.0.113.5:7000"]}'

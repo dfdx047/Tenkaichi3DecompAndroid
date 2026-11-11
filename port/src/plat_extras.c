@@ -21,11 +21,15 @@ static int is_dir(const char *path) {
 
 /* The folder for `kind` ("stages" or "songs") into `out`. Returns 0 if there is none. */
 int PortExtras_Dir(const char *kind, const char *env, char *out, unsigned size) {
-    const char *e = getenv(env), *data = getenv("BT3_DATA");
+    const char *e = getenv(env), *data = getenv("BT3_DATA"), *base = getenv("BT4_CONTENT_ROOT");
 
     if (e != NULL && e[0] != '\0') {
         snprintf(out, size, "%s", e);
         return is_dir(out);
+    }
+    if (base != NULL && base[0] != '\0') {
+        snprintf(out, size, "%s/%s", base, kind);
+        if (is_dir(out)) { return 1; }
     }
     snprintf(out, size, "%s", kind);
     if (is_dir(out)) {

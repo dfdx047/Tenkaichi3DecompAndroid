@@ -182,6 +182,9 @@ s32 Snd_QueuePlay(s32 mask, u32 id, u32 volume, u32 pan, s32 pitch, s32 loop) {
     cmd->handle = gSndSerial;
     gSndRpc->queue.count++;
     gSndSerial++;
+#ifdef PORT
+    {extern void Port_SeBind(s32,s32);Port_SeBind(cmd->handle,-1);}
+#endif
     return cmd->handle;
 }
 

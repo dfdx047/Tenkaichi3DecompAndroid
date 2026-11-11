@@ -23,23 +23,35 @@
  * Nothing in this file is game state (port/tools/make_state.py).
  */
 #include <dirent.h>
+#include <fcntl.h>
 #include <math.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
+#ifdef _WIN32
+#include <direct.h>
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "../../third_party/lua/lua.h"
 #include "../../third_party/lua/lauxlib.h"
 #include "../../third_party/lua/lualib.h"
 #include "fight_panels.h"
 #include "mods.h"
+#include "bundled_skill_list_0394.h"
+#include "bundled_mods_r1.h"
+#include "bundled_modern_hud_r2.h"
 
 extern unsigned gPortVBlanks;                     /* plat_stub.c */
 extern volatile int gUiPresentW, gUiPresentH;     /* gs_draw.c: the game's picture in the window */
 extern int Port_NetSession(void), Port_NetActive(void); /* gs/net.c */
+extern int Port_TagNetwork(void),Port_TagLocalBattle(void);
 extern int Port_HudSwap(void);                    /* gs/net.c: this copy shows the HUD's sides swapped */
 extern const char *MenuTranslation_Text(const char *id); /* gs/menu_translation.c: a label in the menus' language */
 extern const char *MenuTranslation_Locale(void);
@@ -914,10 +926,14 @@ static void push_game(lua_State *L, const FpState *fp, const ModsGame *g) {
     }
     set_bool(L, "battle", fp->battle && g->battle);
     set_bool(L, "hud_shown", fp->gauges);
-    set_bool(L, "online", Port_NetSession() || Port_NetActive());
-    if (Port_NetSession() || Port_NetActive()) { /* the side this copy plays (1 the host, 2 the one who joined) */
+    set_bool(L, "online", Port_NetSession() || Port_NetActive() || (Port_TagNetwork()&&!Port_TagLocalBattle()));
+    if (Port_NetSession() || Port_NetActive()) {
         extern int Port_NetMe(void);
         set_int(L, "me", Port_NetMe() + 1);
+    } else if (Port_TagNetwork() && !Port_TagLocalBattle()) {
+        /* The two presentation slots are already remapped to the local actor
+           and its target by PortMods_ViewActor. game.me indexes those slots. */
+        set_int(L, "me", 1);
     }
     set_bool(L, "split", g->split);
     set_bool(L, "swapped", Port_HudSwap());
@@ -1264,6 +1280,30 @@ static int has_fn(lua_State *L, int t, const char *k) {
 }
 
 /* Loads the script of mods/<folder> into the next slot. 1 = the slot is used (a mod, running or stopped). */
+/* Updaters preserve mods/. Only substitute exact, unmodified bundled scripts
+ * in memory; edited scripts and the user's files/settings stay intact. */
+static void upgrade_bundled_text(const char *source, const char *folder, char **text, long *size) {
+    char path[512], *replacement;
+    long count = 0;
+    int match = !strcmp(folder,"skill_list") && *size == sizeof(kSkillList0394) && !memcmp(*text,kSkillList0394,*size);
+    struct Stock { const char *name; const unsigned char *data; long size; } stock[] = {
+        {"modern_hud", kR2_modern_hud, sizeof(kR2_modern_hud)},
+        {"modern_camera", kR1_modern_camera, sizeof(kR1_modern_camera)},
+        {"modern_look", kR1_modern_look, sizeof(kR1_modern_look)},
+        {"skill_list", kR1_skill_list, sizeof(kR1_skill_list)}
+    };
+    for (unsigned i=0;i<sizeof(stock)/sizeof(stock[0]);++i)
+        if (!strcmp(folder,stock[i].name) && *size==stock[i].size && !memcmp(*text,stock[i].data,*size)) match=1;
+    if (!match) return;
+    snprintf(path, sizeof(path), "%s/%s/mod.lua", source,folder);
+    replacement = read_file(path, &count);
+    if (replacement && count > 0) {
+        free(*text);
+        *text = replacement;
+        *size = count;
+    } else free(replacement);
+}
+
 static int load_one(const char *folder) {
     int i = sCount;
     Mod *m = &sMod[i];
@@ -1283,6 +1323,7 @@ static int load_one(const char *folder) {
     if (text == NULL) {
         return 0; /* (a folder without a script: not a script mod) */
     }
+    upgrade_bundled_text("tbo/bundled-mods", folder, &text, &size);
     m->table = m->game = LUA_NOREF;
     m->L = lua_newstate(mod_alloc, m);
     if (m->L == NULL) {
@@ -1335,6 +1376,47 @@ static int by_name(const void *a, const void *b) {
     return strcmp((const char *)a, (const char *)b);
 }
 
+/* Older BT4 updaters protect mods/ in its entirety. Their signed update can
+ * deliver this reserved copy, which the new runtime installs without replacing
+ * any file the player already has. No script is enabled by installing it. */
+static void seed_bundled(const char *source, const char *destination) {
+    static const char *const names[] = {
+        "example_camera", "example_hud", "modern_camera", "modern_hud", "modern_look", "skill_list"
+    };
+    char path[1024], directory[1024], target[1100];
+    size_t i;
+    for (i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        char *data;
+        long size = 0;
+        FILE *fp;
+        int ok, descriptor;
+        if (snprintf(path, sizeof(path), "%s/%s/mod.lua", source, names[i]) >= (int)sizeof(path) ||
+            snprintf(directory, sizeof(directory), "%s/%s", destination, names[i]) >= (int)sizeof(directory) ||
+            snprintf(target, sizeof(target), "%s/mod.lua", directory) >= (int)sizeof(target)) continue;
+        data = read_file(path, &size);
+        if (data == NULL) continue;
+#ifdef _WIN32
+        _mkdir(destination); _mkdir(directory);
+        descriptor = _open(target, _O_WRONLY | _O_CREAT | _O_EXCL | _O_BINARY, _S_IREAD | _S_IWRITE);
+        fp = descriptor < 0 ? NULL : _fdopen(descriptor, "wb");
+        if (descriptor >= 0 && fp == NULL) { _close(descriptor); remove(target); }
+#else
+        mkdir(destination, 0755); mkdir(directory, 0755);
+        descriptor = open(target, O_WRONLY | O_CREAT | O_EXCL, 0644);
+        fp = descriptor < 0 ? NULL : fdopen(descriptor, "wb");
+        if (descriptor >= 0 && fp == NULL) { close(descriptor); remove(target); }
+#endif
+        /* Exclusive creation keeps existing scripts, including empty ones. */
+        if (fp != NULL) {
+            ok = fwrite(data, 1, (size_t)size, fp) == (size_t)size;
+            if (fclose(fp) != 0) ok = 0;
+            if (!ok) remove(target); /* Only the incomplete file this call created. */
+            else say(-1, "installed bundled %s", names[i]);
+        }
+        free(data);
+    }
+}
+
 static void unload_all(void) {
     int i;
 
@@ -1353,6 +1435,10 @@ static void load_all(void) {
     struct dirent *e;
     int n = 0, i;
 
+    /* A custom mod directory is owned entirely by its caller. */
+    if (getenv("BT3_MODS") == NULL || getenv("BT3_MODS")[0] == '\0') {
+        seed_bundled("tbo/bundled-mods", Mods_Folder());
+    }
     Mods_Lock();
     unload_all();
     sImgCount = 0; /* (the render thread lets its pictures go: Mods_ImageGen) */

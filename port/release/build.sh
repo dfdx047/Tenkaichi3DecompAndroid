@@ -1,10 +1,10 @@
 #!/bin/sh
 # Builds both release archives (Linux and Windows) in the container of port/release/Dockerfile:
-#     port/release/build.sh   ->   port/build_release/Tenkaichi3Decomp-linux-x64.zip, Tenkaichi3Decomp-windows-x64.zip
+#     port/release/build.sh   ->   port/build_release/BT4decomp-linux-x64.zip, BT4decomp-windows-x64.zip
 # Needs only docker and this repository: no disc, no game data, no build on the host.
 # BT3_BUILD_KEY in the environment (an official release's key: port/tools/buildkey.py, port/matchmaking/README.md) is
 # handed on to the build by name, so its value is on no command line; without it the programs have no key.
-# BT3_VERSION=0.1.38.10 names the release's full number (the workflow takes the tag's); without it the programs are "dev"
+# BT3_VERSION=0.1.39 names the release's full number (the workflow takes the tag's); without it the programs are "dev"
 # and never offer to update themselves. Signing for the automatic update is a separate step: port/release/README.md.
 set -e
 cd "$(dirname "$0")/../.."

@@ -1610,7 +1610,7 @@ s32 BtlCtrl_Transform(s32 player, s32 id) {
             return 0;
         }
         g = BtlMember_GetActiveGauge(chr);
-        g->blast = BtlUtil_Clamp(BtlParam_GetSlotCost(chr, slot), g->blast, g->blastMax);
+        g->ki = BtlUtil_Clamp(BtlParam_GetSlotCost(chr, slot), g->ki, g->kiMax);
         BtlChar_SetHeldFlag(chr, slot + 0x116);
         BtlChar_ClearFlag(chr, 0xBE);
         chr->stunTimer = 0;

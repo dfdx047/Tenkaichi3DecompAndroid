@@ -1,4 +1,5 @@
 #include "common.h"
+#include "port_variant.h"
 #include "menu/menu_w.h"
 
 /*
@@ -12,7 +13,7 @@
 #define MODE_EVOZ_CUSTOM 49  /* the character customising screen (EvoZ, chunk menu_u) */
 #define MODE_EVOZ_SHOP 50    /* the item shop */
 
-#define BGM_EVOZ 0x10B18
+#define BGM_EVOZ PORT_V(0x10B18, 0x839)
 
 extern s32 EvoTop_Run(s32 section); /* 0x39F9D0, next chunk: 0 back, 1 customise, 2 shop */
 extern s32 EvoZ_Run(s32 section);   /* 0x393AB0, chunk menu_u: the character customising screen */

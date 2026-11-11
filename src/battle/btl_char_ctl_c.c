@@ -1,4 +1,5 @@
 #include "common.h"
+extern s32 TagBattle_IsActorLoading(s32 actor);
 #include "battle/btl_char_ctl.h"
 
 /*
@@ -74,7 +75,7 @@ void BtlChar_UpdateLookOffset(BtlCtlChr *chr) {
     BtlCtlLook *look = &chr->look;
     BtlCtlObj *obj = BtlChar_GetObj(chr);
 
-    if (BtlChars_IsTimeStopped()) {
+    if (TagBattle_IsActorLoading(chr->player)) {
         BtlChar_ResetLook(chr);
     } else {
         BtlCtlNode *node = BtlObj_GetNode(obj, 0x2F);

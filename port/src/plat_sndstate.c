@@ -9,7 +9,7 @@
  */
 #include <stdint.h>
 
-#define PORT_ADX_PLAYERS 16
+#define PORT_ADX_PLAYERS 40
 typedef struct PortAdxView {
     int stat;   /* as ADXT_GetStat reports it: 0 stopped, 3 playing, 5 played to the end */
     int paused;

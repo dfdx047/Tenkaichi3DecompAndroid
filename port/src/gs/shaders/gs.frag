@@ -57,6 +57,7 @@ void main() {
     }
     vec3 rgb = vColor.rgb;
     float a = vColor.a * k;
+    float portraitFade = 1.0;
     if (p.mode.x != 0) {
         vec2 uv = vStq.xy / vStq.z;
         if (p.misc.w != 0.0) {
@@ -109,6 +110,11 @@ void main() {
 #else
         vec4 t = texture(tex, uv);
 #endif
+        // A single continuous mask across the whole large portrait. Artwork
+        // atlas pieces and transparent rows share exactly the same edge.
+        // Screen coordinates keep the fade smooth even with native texel sampling.
+        if (p.extra.w != 0.0)
+            portraitFade=smoothstep(0.0,1.0,(gl_FragCoord.x-p.extra.z)/p.extra.w);
         if (p.mode.x == 1 || p.mode.x == 3) t.a *= k; // a texture from GS memory keeps the GS alpha (0x80 opaque, up to 0xFF)
         // A texture pack's replacement. The game does more with a texture's alpha than blend: the alpha it writes
         // into the picture is tested by later draws, bit 7 as a mask (a texture that stays at 0x7F never sets it,
@@ -165,6 +171,7 @@ void main() {
         gl_FragDepth = gl_FragCoord.z;
     }
 #endif
+    a *= portraitFade; // after the original GS alpha test
     if (p.extra.y != 0.0) rgb *= a; // (the GS's factor As / 0x80, which goes up to 2: no blend factor does)
     outColor = vec4(clamp(rgb, 0.0, 1.0), clamp(a, 0.0, 1.0));
     float ab = clamp(a * 128.0 / 255.0, 0.0, 1.0);

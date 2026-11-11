@@ -18,6 +18,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+int gPortVariant = 1; /* Dedicated BT4 build. */
+
 #define HEAP_BASE 0x003BE000u  /* page that holds the first address */
 #define HEAP_FIRST 0x003BE730u /* what the PS2's malloc returns for the game heap (gHeapStart in a PCSX2 save state) */
 #define HEAP_END 0x02000000u
@@ -346,7 +348,7 @@ int __wrap_main(int argc, char **argv) {
 /* ---- The game's own data, fetched from the user's disc (release builds).
    A program made by port/tools/strip_data.py has the data tables of the game's two programs and the VU1
    microprograms set to zero, and a list next to it (<program>.dat) of where each run of bytes comes from: the
-   user's SLUS_216.78 (as a flat image from 0x100000) or BIN/DBZP.BIN. This copies them in before anything else
+   user's SLUS_219.78 (as a flat image from 0x100000) or BIN/DBZP.BIN. This copies them in before anything else
    runs. A program without that list still has the data linked in (the developer's build) and nothing happens. */
 #define ROM_BASE 0x100000u
 #define ROM_END 0x2FF180u
@@ -378,7 +380,7 @@ static uint8_t *read_file(const char *path, size_t *size) {
 }
 
 static void data_fail(const char *what, const char *path) {
-    fprintf(stderr, "bt3: %s%s%s\n     The game's data comes from your own disc image; run the setup (Tenkaichi3Decomp-setup) to unpack it.\n", what,
+    fprintf(stderr, "bt3: %s%s%s\n     The game's data comes from your own disc image; run the setup (BT4decomp-setup) to unpack it.\n", what,
             path != NULL ? ": " : "", path != NULL ? path : "");
     exit(2);
 }
@@ -408,7 +410,7 @@ static void Port_LoadGameData(void) {
            settings are next to it. If there is no gamedata here but there is next to the program, work there. */
         char dir[1024], probe[1200];
         char *slash;
-        FILE *here = fopen("gamedata/disc/SLUS_216.78", "rb");
+        FILE *here = fopen("gamedata/disc/SLUS_219.78", "rb");
         if (here != NULL) {
             fclose(here);
         } else {
@@ -421,7 +423,7 @@ static void Port_LoadGameData(void) {
 #endif
             if (slash != NULL) {
                 *slash = '\0';
-                snprintf(probe, sizeof(probe), "%s/gamedata/disc/SLUS_216.78", dir);
+                snprintf(probe, sizeof(probe), "%s/gamedata/disc/SLUS_219.78", dir);
                 here = fopen(probe, "rb");
                 if (here != NULL) {
                     fclose(here);
@@ -431,6 +433,7 @@ static void Port_LoadGameData(void) {
             }
         }
     }
+    { extern void Port_GameProfileInit(void); Port_GameProfileInit(); root = getenv("BT3_DATA"); }
     if (n > 4 && (strcmp(exe + n - 4, ".exe") == 0 || strcmp(exe + n - 4, ".EXE") == 0)) {
         exe[n - 4] = '\0'; /* Name.exe keeps its list in Name.dat */
     }
@@ -450,7 +453,7 @@ static void Port_LoadGameData(void) {
     if (listSize < 16 + (size_t)count * 16) {
         data_fail("damaged file", path);
     }
-    snprintf(path, sizeof(path), "%s/disc/SLUS_216.78", root);
+    snprintf(path, sizeof(path), "%s/disc/SLUS_219.78", root);
     elf = read_file(path, &elfSize);
     if (elf == NULL || elfSize < 0x34 || memcmp(elf, "\177ELF", 4) != 0) {
         data_fail("the game's program was not found", path);
@@ -494,7 +497,16 @@ static void Port_LoadGameData(void) {
     free(src[1]);
     free(list);
     if (hash != want) {
-        data_fail("the game's programs in your game data are not the unmodified USA release (SLUS-21678)", NULL);
+        extern int Port_BuildIdentity(unsigned long long *);
+        extern const char *Port_BuildIdentitySummary(void);
+        /* Setup records this installation's table checksum in the .dat file.
+           A signed update replaces that file with the release reference. Accept
+           that difference only for an exactly verified Spanish/English BT4 base,
+           using the same program-file checks as online compatibility. */
+        if (Port_BuildIdentity(NULL) != 1) {
+            data_fail(Port_BuildIdentitySummary(), NULL);
+        }
+        fprintf(stderr, "bt4: release table checksum differs; verified BT4 B14 Rev2 base programs, reusing installed data\n");
     }
 }
 
@@ -592,7 +604,7 @@ __attribute__((constructor)) static void Port_MapMemory(void) {
        system set to move every program, "Mandatory ASLR", moved builds that still had the table: a crash at the
        first write, before anything was printed), say so instead of crashing. */
     if ((uintptr_t)GetModuleHandleA(NULL) != 0x20000000u) {
-        static const char msg[] = "Tenkaichi3Decomp was loaded at a different address than the one it needs (0x20000000) and cannot run.\n"
+        static const char msg[] = "BT4decomp was loaded at a different address than the one it needs (0x20000000) and cannot run.\n"
                                   "If \"Force randomization for images (Mandatory ASLR)\" is switched on in Windows Security > App & browser "
                                   "control > Exploit protection, switch it off for this program.\n";
         HANDLE err = GetStdHandle(STD_ERROR_HANDLE);
@@ -600,7 +612,7 @@ __attribute__((constructor)) static void Port_MapMemory(void) {
         if (err != NULL && err != INVALID_HANDLE_VALUE) {
             WriteFile(err, msg, sizeof(msg) - 1, &done, NULL);
         } else {
-            MessageBoxA(NULL, msg, "Tenkaichi3Decomp", MB_OK | MB_ICONERROR);
+            MessageBoxA(NULL, msg, "BT4decomp", MB_OK | MB_ICONERROR);
         }
         ExitProcess(4);
     }

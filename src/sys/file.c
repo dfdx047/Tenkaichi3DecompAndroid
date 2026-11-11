@@ -1,3 +1,4 @@
+extern int TagBattle_Active(void);
 #include "common.h"
 #include "sys/file.h"
 #include "sys/heap.h"
@@ -35,7 +36,11 @@ extern void ADXT_SetSvrFreq(ADXT_HN adxt, s32 freq);
 extern void ADXT_StartAfs(ADXT_HN adxt, s32 patid, s32 fid);
 
 extern u32 gVsyncCount;
-extern AfsPartition gAfsPartitionTbl[];
+static AfsPartition sBt4Partitions[4] = {
+    {"pzs4us0.afs", 0x800, NULL}, {"pzs4us1.afs", 0x800, NULL},
+    {"pzs4us2.afs", 0x800, NULL}, {"pzs4us3.afs", 0x800, NULL}
+};
+#define gAfsPartitionTbl sBt4Partitions
 extern AdxPlayer gAdxPlayerTbl[];
 extern char *gDiscExeNameTbl[];
 extern AdxDvdFsParam gAdxDvdFsParam;
@@ -150,8 +155,11 @@ void File_InitAdx(void) {
 
 /* Loads the directory of partition 1 and waits for it. */
 void File_LoadPartition1(void) {
-    File_LoadPartitionNw(1);
-    File_WaitPartition(1);
+    s32 part;
+    for (part = 1; part < 4; part++) {
+        File_LoadPartitionNw(part);
+        File_WaitPartition(part);
+    }
 }
 
 /* Empty stub called once per frame by three frame loops. */
@@ -342,6 +350,16 @@ void *File_Request(s32 id, void *buf) {
     ADXF_Close(adxf);
 
     req = (FileReq *)List_PopFront(&queue->free);
+    if(req==NULL){
+        extern s32 TagBattle_Count(void);
+        /* More than two models can exhaust the original request descriptors.
+           Complete the queued batch before reusing a descriptor. */
+        if(TagBattle_Active()){
+            while(!File_UpdateRequests()){}
+            req=(FileReq *)List_PopFront(&queue->free);
+        }
+    }
+    if(req==NULL){extern int printf(const char *,...);extern void exit(int);printf("file request descriptors exhausted\n");exit(4);}
     req->flags = flags;
     req->id = id;
     req->sectors = sectors;
@@ -434,14 +452,71 @@ FileReqQueue *File_GetRequestQueue(void) {
     return &gFileReq;
 }
 
+#ifdef PORT
+extern int gPortVariant; /* plat_mem.c: 1 = the Budokai Tenkaichi 4 mod (SLUS_219.78) */
+
+/* The mod's translation of a global id, read from its program (SLUS_219.78): 0x100954 (the archive) calls 0x19BDC4
+   below 0x20000, and 0x100974 (the index) calls 0x19BE04 outside the fourth archive. File_OpenById (0x2654D8) and
+   the copy of File_StartAdxById the mod moved to 0x19BE34 both use them.
+     id >= 0x20000        archive 3, index id - 0x20000       (pzs4us3.afs, 30000 files)
+     id <= 0              archive 0, index id - 0x10CC0       (negative: no such file)
+     1 .. 0xD47           archive 1, index id - 1
+     0xD48 .. 0x10CBF     archive 2, index id - 0xD48
+     0x10CC0 .. 0x1FFFF   archive 0, index id - 0x10CC0      (pzs4us0.afs, 50503 files) */
+#define BT4_PT0_FIRST_ID 0x10CC0
+#define BT4_PT3_FIRST_ID 0x20000
+
+static s32 Bt4_PartitionOf(s32 id) {
+    if (id >= BT4_PT3_FIRST_ID) {
+        return 3;
+    }
+    if (id <= 0) {
+        return 0;
+    }
+    if (id < FILE_PT2_FIRST_ID) {
+        return 1;
+    }
+    if (id < BT4_PT0_FIRST_ID) {
+        return 2;
+    }
+    return 0;
+}
+
+static s32 Bt4_IndexOf(s32 pt, s32 id) {
+    if (pt == 3) {
+        return id - BT4_PT3_FIRST_ID;
+    }
+    if (pt == 0) {
+        return id - BT4_PT0_FIRST_ID;
+    }
+    if (pt == 2) {
+        return id - FILE_PT2_FIRST_ID;
+    }
+    return id - FILE_PT1_FIRST_ID;
+}
+#endif
+
 /* Opens file `id`, translating the global id into (partition, index). */
 ADXF File_OpenById(s32 id) {
+#ifdef PORT
+    if (gPortVariant != 0) {
+        s32 pt = Bt4_PartitionOf(id);
+        return ADXF_OpenAfs(pt, Bt4_IndexOf(pt, id));
+    }
+#endif
     return ADXF_OpenAfs(id <= 0 ? 0 : id < FILE_PT2_FIRST_ID ? 1 : 2,
                         id <= 0 ? id : id < FILE_PT2_FIRST_ID ? id - FILE_PT1_FIRST_ID : id - FILE_PT2_FIRST_ID);
 }
 
 /* Starts streaming file `id` on an ADXT player, with the same id translation as File_OpenById. */
 void File_StartAdxById(ADXT_HN adxt, s32 id) {
+#ifdef PORT
+    if (gPortVariant != 0) {
+        s32 pt = Bt4_PartitionOf(id);
+        ADXT_StartAfs(adxt, pt, Bt4_IndexOf(pt, id));
+        return;
+    }
+#endif
     ADXT_StartAfs(adxt, id <= 0 ? 0 : id < FILE_PT2_FIRST_ID ? 1 : 2,
                   id <= 0 ? id : id < FILE_PT2_FIRST_ID ? id - FILE_PT1_FIRST_ID : id - FILE_PT2_FIRST_ID);
 }

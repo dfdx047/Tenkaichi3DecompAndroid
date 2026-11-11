@@ -1220,37 +1220,19 @@ f32 BtlSuper_GetRushSpeed(BtlTechBChr *chr, s32 slot) {
 
 /* Character the technique's throw brings in: the table entry, or the alternate when the user is that character or (ids of 0x100 and above, flag 0x40000000) the user wears costume 1. */
 s32 BtlSuper_GetThrowChara(BtlTechBChr *chr, s32 slot) {
-    BtlTechBObj *obj = BtlChar_GetObj(chr);
-    s32 i = slot - 2;
-    BtlSuperData *tbl = obj->super;
-    s32 chara = tbl->throwChara[i];
-    s32 alt = tbl->throwCharaAlt[i];
-
-    if (obj->chara != chara) {
-        if (chara >= 0x100 && (tbl->flags[i] & 0x40000000)) {
-            if (BtlMember_GetActive(chr)->costume == 1) {
-                return alt;
-            }
-        }
-        return chara;
-    }
-    return alt;
+    BtlSuperData *tbl = BtlChar_GetObj(chr)->super;
+    s32 costume = BtlMember_GetActive(chr)->costume & 3;
+    /* BT4 stores a row of three partner ids for each of four costumes. */
+    return *(s16 *)((u8 *)tbl + 0x244 + costume * 6 + (slot - 2) * 2);
 }
 
-/* Costume for that character: the user's with flag 0x40000000, else 1 for technique 0x27F, else 0; 0 for ids of 0x100 and above. */
 s32 BtlSuper_GetThrowCostume(BtlTechBChr *chr, s32 slot) {
     BtlSuperData *tbl = BtlChar_GetObj(chr)->super;
-
-    slot -= 2;
-    if (tbl->throwChara[slot] < 0x100) {
-        if (tbl->flags[slot] & 0x40000000) {
-            return BtlMember_GetActive(chr)->costume;
-        }
-        if (tbl->id[slot] == 0x27F) {
-            return 1;
-        }
-    }
-    return 0;
+    s32 costume = BtlMember_GetActive(chr)->costume;
+    s32 i = slot - 2;
+    if (BtlSuper_GetThrowChara(chr, slot) >= 0x100) return 0;
+    if (tbl->flags[i] & 0x40000000) return costume;
+    return *((u8 *)tbl + 0x208 + i * 4 + (costume & 3));
 }
 
 /* The user's gauge +0x20 when the entry is below 0x100 and the technique has flag 0x40000000, else 0. */
@@ -1400,7 +1382,7 @@ s32 BtlSuper_GetDamage(BtlTechBChr *chr, s32 slot, s32 guard, s32 total) {
 
 /* Position and yaw of the technique's cutscene on the current stage, entry n of 5. */
 void BtlSuper_GetStagePlacement(BtlTechBChr *chr, s32 slot, s32 n, Vec4 *pos, Vec4 *rot) {
-    s32 stage = Battle_GetStage();
+    s32 stage = Battle_GetStage() % 0x23;
     BtlTechPlaceTbl *tbl;
 
     if ((u32)(slot - 2) < 3 && (tbl = chr->place[slot - 2]) != NULL) {

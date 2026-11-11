@@ -232,6 +232,17 @@ u16 *BtlMenu_GetText(s32 n) {
 /* Text of a menu item. */
 u16 *BtlMenu_GetItemText(s32 n) {
 #ifdef PORT
+    if(n>=0x7110&&n<=0x7113){extern u16 *TagBattle_ResultText(s32);return TagBattle_ResultText(n);}
+    if (n==0x7100) {
+        extern int PortHud_Hidden(void),Port_GameProfileEnglish(void);
+        static u16 line[32];
+        const char *label=Port_GameProfileEnglish()
+            ? (PortHud_Hidden()?"Show HUD":"Hide HUD")
+            : (PortHud_Hidden()?"Mostrar HUD":"Ocultar HUD");
+        s32 i;
+        for(i=0;label[i] && i<31;++i)line[i]=(u8)label[i];
+        line[i]=0;return line;
+    }
     /* Tenkaichi Budokai Online's sparring fight goes back to its search, and its pause menu says so */
     static const char from[] = "Return to Character Select";
     static const char to[] = "Back to Budokai Online";
@@ -239,7 +250,15 @@ u16 *BtlMenu_GetItemText(s32 n) {
     extern s32 gPortTboSpar; /* menu/port_tbo.c */
     u16 *s;
 
-    if (n >= 0x6FFE) { /* the port's own (port/src/spec_menu.c): a lobby's "Back to the Lobby" (0x6FFE), a spectator's
+    {
+        extern s32 TagBattle_Network(void);
+        if (TagBattle_Network() && n == 6) {
+            static u16 onlineHub[] = {'T','e','n','k','a','i','c','h','i',' ','B','u','d','o','k','a','i',' ','O','n','l','i','n','e',0};
+            return onlineHub;
+        }
+    }
+
+    if (n >= 0x6FFE && n < 0x7100) { /* the port's own (port/src/spec_menu.c): a lobby's "Back to the Lobby" (0x6FFE), a spectator's
                           own pause menu (0x6FFF its header, 0x7000 on its items) */
         extern u16 *PortSpecMenu_Text(s32 k);
         return PortSpecMenu_Text(n == 0x6FFE ? 8 : n == 0x6FFF ? 7 : n - 0x7000);
@@ -506,14 +525,14 @@ void BtlMenu_Draw(u64 **pkt, BtlMenu *menu) {
                     }
                     text = menu->items[i].text[pad];
 #ifdef PORT
-                    if (text == 0x6FFF) { /* a header row in letters (a spectator's own pause menu, port/src/spec_menu.c:
+                    if (text == 0x6FFF || text == 0x7110) { /* a header row in letters (a spectator's own pause menu, port/src/spec_menu.c:
                                              its note where the battle's menus have their title picture) */
                         extern u16 *PortSpecMenu_Text(s32 k);
 
                         Font_PushCursor();
                         Font_SetHome(0x100, ty + 0xE);
                         Font_SetColorRGBA(0xFF, 0xB0, 0x40, 0x80);
-                        Font_Print(PortSpecMenu_Text(7));
+                        Font_Print(text==0x7110?BtlMenu_GetItemText(text):PortSpecMenu_Text(7));
                         Font_PopCursor();
                         continue;
                     }

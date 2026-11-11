@@ -140,7 +140,7 @@ void TourMenu_Init(s32 section) {
     MsgWin_Open();
     gTourMenu->info = (TourInfo *)MPACK_AT(gTourMenu->res, 27);
     gTourMenu->voiceLine = -1;
-    StreamSe_PlayDefault(0, 0x10BDF);
+    StreamSe_PlayDefault(0, 0x15C);
 }
 
 /* Frees everything TourMenu_Init made. */

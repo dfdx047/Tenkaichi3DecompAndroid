@@ -39,21 +39,32 @@ local function list(f, left, t, S)
     local function X(x) return left and x or W - x end
     local rows = {}
     for _, m in ipairs(f.moves or {}) do
-        if m.name ~= "" and m.kind ~= "ultimate" then rows[#rows + 1] = m end
+        if m.name ~= "" then rows[#rows + 1] = m end
     end
     local step = 31 * S
     local y0 = hud.h - 16 - #rows * step            -- the last row ends 16 above the bottom
     local off = (1 - t) * -210 * S                  -- slides in from the screen's edge
     for row, m in ipairs(rows) do
         local y = y0 + (row - 1) * step
-        local special = m.kind == "special"
+        local ultimate = m.kind == "ultimate"
+        local special = m.kind == "special" or ultimate
         local x = 16 + 12 * S + 24 * S + off + (special and 10 * S or 0)
         local cost = special and m.cost / 20000 or m.cost / 100000
         plate(X, x - 2 * S, y - 2 * S, 196 * S, 25 * S, 11 * S, PLATE_EDGE)
         plate(X, x, y, 192 * S, 21 * S, 10 * S, PLATE)
         hud.text(X(x + 14 * S), y + 3 * S, m.name, m.usable and (special and SPECIAL or TEXT) or TEXT_OFF,
                  13 * S, left and "left" or "right", { fit = 160 * S, font = "game" })
-        if special then                                 -- ki cost: one segment a bar
+        if ultimate then
+            -- The ultimate requires maximum power, rather than ordinary ki.
+            local ready = f.powered_up and m.usable
+            local color = ready and SPECIAL or TEXT_OFF
+            hud.text(X(x + 183 * S), y - 2 * S, "S", color, 19 * S, "center")
+            local locale = bt3.locale() or "en"
+            local label = bt3.label("combo-max-power/0/0") or
+                (locale == "pt-BR" and "PODER MÁXIMO" or locale == "es" and "MÁXIMO PODER" or "MAX POWER")
+            hud.text(X(x + 14 * S), y + 23 * S, label, color,
+                     9 * S, left and "left" or "right", { fit = 160 * S, font = "game" })
+        elseif special then                             -- ki cost: one segment a bar
             for k = 1, math.max(1, math.floor(cost + 0.5)) do
                 local sx = x + 16 * S + (k - 1) * 24 * S
                 plate(X, sx, y + 23 * S, 21 * S, 4 * S, 2 * S, f.ki >= k * 20000 and KI_ON or KI_OFF)

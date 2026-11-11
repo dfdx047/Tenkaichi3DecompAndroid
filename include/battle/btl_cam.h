@@ -13,7 +13,7 @@
  *
  *   0x23E040..0x23E950  View_*     the generic view object: view matrix, projection, scissor, screen layout
  *   0x23E950..0x23F0B0  BtlCam_*   the two per-side battle views and the choice between them
- *   0x23F0B0..0x23F3C8  DbgCam_*   a free-fly camera driven straight from a pad; nothing calls it
+ *   0x23F0B0..0x23F3C8  DbgCam_*   a free-fly camera driven straight from a pad; PORT can use it for battles
  *   0x23F3C8..0x23F620  CamShake_* four {time, strength} slots turned into a random jitter
  *
  * == How a battle frame gets its cameras ==
@@ -49,7 +49,7 @@
  * Nothing in View_*, BtlCam_* or CamShake_* reads a pad. DbgCam_Update(view, pos, rot, pad, speed) reads
  * gPad[pad].gameHeld & PADG_L1, gameLeft[0], gameLeft[1] and gameRight[1], and changes only the pos / rot
  * it is given and the view it builds; it has no caller and no table entry in the executable or the menu
- * overlay (and DbgCam_Init / DbgCam_SetLocked have none either), so it is dead debug code.
+ * overlay. PORT's F1 > Spectator setting may call it on a separate view, leaving the fighter cameras intact.
  *
  * == What leaves this file ==
  * gBtlCamView (the view being built / drawn) and the matrices loaded into VU0. gBtlCamView is read by about

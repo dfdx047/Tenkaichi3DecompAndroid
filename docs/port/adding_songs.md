@@ -1,241 +1,54 @@
-# Adding songs to the music select
+# Custom music
 
-The port can **add tracks** to the music ("BGM") list shown in the menu. A song is an audio file (mp3, wav,
-flac, or the game's own ADX): the port gives it its own entry in the list, with its name, and plays it — an
-mp3/wav/flac as it is, through miniaudio; an ADX with the game's own decoder.
+Create a `songs` folder next to the game executable and add `.mp3`, `.wav`,
+`.flac` or `.adx` files. Restart the game to refresh the music list.
+`BT3_SONGS` can select another folder.
 
-Everything is driven by a **manifest** (`<data>/songs/songs.txt`) that the port reads at start-up. No code
-change and no environment variable is needed.
+## Names and ordering
 
+File names become menu names, with underscores replaced by spaces. An optional
+`songs.txt` manifest sets display names and ordering:
 
-## Where they go (main line)
+```text
+track.mp3|Track Name
+another-track.adx|Another Track
+```
 
-A folder **`songs`** next to the game, like `textures`. Drop an `.adx`, `.mp3`, `.wav` or `.flac` file in and it
-is used: its name in the menu is the file's name (`My_Song.adx` is shown as "My Song"). `$BT3_SONGS` names another
-folder.
+Unlisted files follow in alphabetical order. The runtime supports up to 40 added
+songs. Native audio formats use miniaudio; ADX uses the game's decoder.
 
-- The list (`songs.txt` in that folder, `file|Name In The Menu` per line) is optional: it gives other names and an
-  order. Files it does not mention follow, by name without regard to case (the same order on every machine).
-- The name strip (`names.rgba`, made by the script below) is optional too: without one for an entry the overlay
-  writes the name as text in the same place.
-- The folder of that name inside the game's data folder, which is where the pull request put them and what the
-  rest of this document describes, is still used when there is none next to the game. The script now writes to
-  the folder next to the game (the repository root) unless `--data` names another place.
-- Code: `port/src/plat_extras.c` (the folder, the scan), `plat_stages.c`, `plat_songs.c`.
-- **mp3, wav and flac are played as they are** (2026-10-19): a file in one of those three formats is decoded and
-  mixed by **miniaudio** (`port/src/gs/snd_ma.c`, `port/third_party/miniaudio`) instead of being converted to ADX
-  at start-up. There is no conversion pass, no `.adx` written next to the file, and no `mp3-failed.txt`: a file
-  that cannot be read is left out with one line in the log. An added song is in the list from the next start (the
-  folder is read once, at start); `PortSongs_Refresh` is kept for the game's select screens but does nothing. The
-  game's own files and any `.adx` are untouched: they stay on the ADX path (`port/src/gs/snd_adx.c`), which asks
-  `PortMa_Format` whether a starting file is one of the three formats and only then hands it to miniaudio. An added
-  song is played round and round, as before (`PortSongs_IsFile`), whether it is an ADX or a native file. Not
-  carried over to a native stream: the game's speed time-stretch (`music_follows_speed`) and the stereo/mono
-  option, which take effect the next time the stream starts. The engine (its own device, beside SDL's for the ADX
-  streams) is made the first time a native stream starts, so a run with none never touches it. The old converter
-  (`port/src/gs/song_mp3.c`) and its decoder (`port/third_party/dr_libs`) are gone.
-- **Volume** (2026-10-19): a native stream is given the same figure the ADX path is (`ADXT_SetOutVol` → `player_gain`)
-  and miniaudio passes it through unchanged — measured, a tone of 0.8000 read through the engine comes back 0.8000
-  out, with pan 0 and spatialization off, mono file included. So a song that still sounds quieter than the game's own
-  is mastered quieter: the game's ADX music is loud and a file dropped in from outside usually is not. A native stream
-  is therefore lifted **1.5x (+3.5 dB)**. `BT3_MA_GAIN=<n>` sets it (a multiplier: 1 is off, 2 is twice as loud). Above
-  about 2 a file already near full scale clips, as the engine does not compress.
-
-## The name in the game's own lettering (main line)
-
-The game has no font for these names: every song name of the disc is a picture. `port/src/gs/namefont.c` reads
-those pictures from the stage select's own pack when the menu is set up (36 stage names in `gCharSel->tex[39]`,
-24 song names in `tex[19]` and again in the lit colours in `tex[20]`; 512 x 256 sheets, 8-bit with a table),
-cuts them into letters in memory and writes an added name with them. Nothing made from the game's art is stored
-or shipped; the letters exist while the program runs, made from the player's own disc.
-
-- Fill letters are cut from the pictures; the outline and the shadow are drawn again around the composed name
-  (neighbouring outlines run into each other on the disc). Spacing is solved from the disc names' own gaps.
-- Characters the disc's names have: most letters, `' - !`. None of `J Q X Y Z j q x`, no digits, no other
-  punctuation. A letter missing in one size is taken from the other and resampled. A name with a character
-  that exists nowhere is written as plain styled text instead, whole.
-- A strip made by the script (`names.rgba`) still comes first.
-- The tables of what each picture says are in namefont.c; a disc whose pictures do not have those letter counts
-  (another edition or language) leaves the names as plain text.
-- `BT3_NAMEFONT_TEST="Stage Name|Song Name" BT3_NAMEFONT_OUT=<folder>` writes test pictures and the coverage.
-- Checked: every disc name put together again from the kept letters against its own picture (mean difference
-  under 1 of 128); an added stage's name seen in the menu under Vulkan and once under OpenGL. Not seen: an added
-  song's name in the menu, in either of its two states (the lit one while the music list is open).
-
-> **How this differs from the pull request it came from** (main line, 2026-10-07):
-> - Nothing is written to the save: added songs are appended after the game has applied the save's unlocks to its
->   own list, and no unlock bit is set for them. A save stays valid for a copy of the game without them.
-> - In an online session (Tenkaichi Budokai Online) added songs are not offered: both players must have the same list.
-> - With nothing installed the game is unchanged.
-> - The styled name over the menu is drawn by the Vulkan renderer only; under OpenGL the game's plain font is used.
-
----
-
-## Team battles, and playing round (2026-10-10)
-
-Two reports, both true:
-
-- **Added songs were missing in team and DP battles.** The team select (src/menu/menu_e_b.c) builds its own music
-  list, and only the duel's select (menu_c_e.c) had been given the added songs. It has them now, the same way:
-  appended after the disc's and before "random", their own file numbers for the preview (`PORT_BGM_FILE`), their
-  names drawn by the port or, without the overlay, in the game's plain font.
-- **An added song played once and then the fight was silent.** The port plays a track round only if the ADX file
-  has loop points (the disc's music has them: flag at 0x24, start and end samples at 0x28 and 0x30). A file made
-  from an mp3 has none. Such a file is now played again from its start, when it is the file of an added song
-  (`PortSongs_IsFile`, port/src/gs/snd_adx.c `start`); the game is told it never ends, as for the disc's music. A
-  file that has loop points of its own keeps them.
-
-Checked: a 2.7-second file without loop points, installed as a song and forced as a fight's music
-(`BT3_TEST_BGM=26`, a dummy sound device): it is started once as a looping track and not again in a minute's
-fight; the replay check is unchanged. NOT seen: the team select's music list with added songs in it (no recorded
-session reaches that screen).
-
-## Quick start (script)
+## Import tool
 
 From the repository root:
 
 ```sh
-# install a song (the name is the one shown in the menu)
-port/tools/add_song.py add "/path/Song.mp3" "Song Name"
-
-# list the installed ones (with their list offset)
-port/tools/add_song.py list
-
-# remove one
-port/tools/add_song.py remove "Song Name"
-
-# regenerate only the name strip (after a font/style change)
-port/tools/add_song.py rebuild
+python port/tools/add_song.py add "/path/Track.mp3" "Track Name"
+python port/tools/add_song.py list
+python port/tools/add_song.py remove "Track Name"
+python port/tools/add_song.py rebuild
 ```
 
-`add` **converts the audio to ADX** with `ffmpeg` (24000 Hz, stereo — like the game's own tracks), copies it
-into `gamedata/songs/`, adds the line to the manifest and **regenerates the name strip** (`names.rgba`). It is
-only needed when you want the game's own ADX format or a generated name strip: an mp3, wav or flac can be dropped
-in the folder as it is.
+The import tool can convert audio to ADX using FFmpeg and generate a menu-name
+strip. Directly adding supported files to the `songs` folder does not require conversion.
 
-| option | effect |
-|---|---|
-| `--data <dir>` | data folder (default `gamedata`, or `$BT3_DATA`) |
-| `--font <ttf>` | font for the name strip (default `$BT3_STAGE_FONT`, or `port/tools/compacta.ttf`, or a system one) |
-| `--ffmpeg <path>` | the ffmpeg binary (default `ffmpeg`) |
-| `--rate <hz>` | the ADX sample rate (default 24000) |
-| `--no-strip` | only edit the manifest; leave the strip alone |
+| Option | Purpose |
+| --- | --- |
+| `--data <dir>` | Select the data directory |
+| `--font <ttf>` | Select the font for generated name strips |
+| `--ffmpeg <path>` | Select the FFmpeg executable |
+| `--rate <hz>` | Set ADX output sample rate; default 24000 |
+| `--no-strip` | Update the manifest without regenerating name strips |
 
-### The font of the names
+## Playback and menu labels
 
-The songs' names are **pre-rendered images** in the game (like the stages), so the name strip is **generated**
-from a TTF. Without Pillow or without a font the manifest still works (the songs appear and play) but the name
-is drawn with the game's own plain font.
+Added tracks loop during battles. Native streams receive a default gain of 1.5;
+`BT3_MA_GAIN` selects another multiplier. High gain can clip loud source files.
 
-Put the TTF at `port/tools/compacta.ttf` (or pass it with `--font`). The style (cream→orange fill, brown
-outline, shadow, left-aligned) lives in the constants of `port/tools/add_song.py`.
+Menu labels use generated strips, the game's lettering where available, or
+plain text fallback. Added resources are subject to the runtime's online
+compatibility rules and may be unavailable during network sessions.
 
----
-
-## Manual use
-
-An mp3, wav or flac needs none of this: drop it in the folder and it is played. For an ADX:
-
-1. Convert the audio to ADX: `ffmpeg -i Song.mp3 -ar 24000 -ac 2 -c:a adpcm_adx my_song.adx`.
-2. Copy the `.adx` into `gamedata/songs/`.
-3. Add a line to `gamedata/songs/songs.txt`:
-   ```
-   my_song.adx|Name In The Menu
-   ```
-4. Regenerate the strip: `port/tools/add_song.py rebuild`.
-
----
-
-## How it works
-
-### The music list
-
-The menu keeps the music as **offsets** into a range of BGM files:
-
-```
-BGM id = 0x10B16 + offset      ->      pzs3us2/<64974 + offset>.bin
-```
-
-- Offsets `0x00..0x13` (20) = the disc's tracks (0x10B16..0x10B29).
-- `0x14..0x17` exist in the raw list but the menu drops them (a gap).
-- `0x18` = **Random** (a marker), `0x19` = **Locked** (a marker).
-- Offsets `0x1A` onward = **free** (their files, `0x10B30+`, are 30 KB stubs).
-
-The added songs take `0x1A`, `0x1B`, … The port:
-
-1. **Aliases** the file `pzs3us2/<64974 + 0x1A + i>.bin` → `songs/<file>` (`plat_songs.c`; `plat_file.c`
-   consults it both for the normal load and for the **streamed** ADX).
-2. **Extends the list**: copies `bgmIds` into a buffer, inserts the new offsets **before** Random and raises
-   `bgmCount` (in `menu_c_e.c`, `#ifdef PORT` only). It sets their bits in `gSaveData->bgmBits` (a u32, so
-   offsets `0x1A..0x1F` fit).
-3. **Draws the name**: the music strip is fixed; the port draws it as an image (`gamedata/songs/names.rgba`)
-   over the frame (the overlay, on the **Vulkan/SDL_GPU** back end). Without the overlay (e.g. **OpenGL**)
-   the name is printed with the **game's font**.
-
-### The name (overlay)
-
-`names.rgba`: a header `w`, `h`, `count` (u32) and then `count` images of `w×h` in RGBA, one per song in the
-manifest's order. The port draws them at the **clip's real position** (`mc_bgm_now`, parent + child of the
-game), mapped through the letterbox.
-
-## Known issue: the name's position
-
-In the music select the game shows the name in **two** different places:
-
-- over the **reel** (the entry being scrolled; the "selection"),
-- in the **bottom bar** (the track already chosen; the "selected").
-
-It is the **same clip** (`mc_bgm_now`), moved by each screen/state, so the port follows it and draws the name
-where the game would. The **selected** one (the bar) lands in place; the **selection** one (over the reel) can
-sit **a bit high** compared with the game (the clip is animated and its position is not final). Refining it is
-still pending. The same mechanism serves the **Map Select**, where the name goes in the bar like the stages.
-
----
-
-## Replacing a disc track
-
-That already works through the mods mechanism: just put the file at `gamedata/mods/pzs3us2/<index>.bin` (e.g.
-`64974.bin` is track 0). An ADX needs nothing from the port; an mp3, wav or flac is recognized by its first bytes
-even under a `.bin` name and played by miniaudio. A native file on one of the two music players (BGM and MAP)
-plays round and round like the track it replaced; a native voice line or streaming effect plays once and reports
-its end, as the game waits for those.
-
-## Limits and notes
-
-- **40 added songs** at most (see the end of this file; it was 6).
-- An mp3, wav or flac is played as it is (miniaudio); an ADX with the game's own decoder. Anything else (ogg,
-  m4a…) makes no sound; convert it first.
-- The music list is a **reel**: the added ones appear before Random.
-- The overlay runs on **Vulkan (SDL_GPU)**. On OpenGL the game font's text is used.
-
-## Checking it
-
-```sh
-port/tools/add_song.py list
-BT3_STAGE_FONT=/path/to/compacta.ttf port/tools/add_song.py rebuild
-BT3_64=1 port/run.sh menu     # Duel -> Character/Stage Select -> BGM Select
-```
-
-At start-up the port logs how many songs it read:
-
-```
-bt3: songs: 1 added track(s) from gamedata/songs/songs.txt
-bt3: song-name overlay: 1 names, 1024x64 each
-```
-
-## The added songs' file numbers were disc files; 40 songs (2026-10-08)
-
-An added song was played as file 0x10B16 + its list entry, entries 0x1A..0x1F. Those are disc files: 0x10B30 to
-0x10B33 are silent files of 30,720 bytes, but 0x10B34 and 0x10B35 are the first two lines of the announcer
-(`HudNotice_GetVoiceBase`, the voice set used when `SAVE_FLAG_VOICE` is clear). With five or six songs added,
-those two lines were answered with the songs (releases 0.1.8 to 0.1.11).
-
-- Now an added song's file is 0xD48 + 73000 + n, past the end of the second archive (`PORT_BGM_FILE` in
-  port/include/plat_songs.h; used where the fight and the duel's music select play an entry).
-- The limit was 6 "because the save's music bits are one 32-bit word". An added song is never looked up there
-  (the unlocks are applied to the disc's list before the added ones are appended), and the entry is an s32
-  everywhere it is kept. The limit is 40: the list the menu is given has 72 places.
-- `BT3_TEST_BGM=<entry>`: every battle plays that entry (0x1A is the first added song).
-- Checked with 45 files in the folder: 40 are taken (the rest named in the log), the music select's list has 61
-  entries with "random" last, and a fight set to entries 0x1A, 0x1E, 0x1F and 0x41 opens the 1st, 5th, 6th and 40th
-  file; a disc entry opens none of them. Not checked: the forty names on screen, and scrolling the list by hand.
+Custom tracks use reserved BT4 file IDs, independently of the installed Spanish
+or English data. With **F1 > Audio > Music follows game speed** disabled,
+music retains its original tempo at 114%, including ADX tracks without loop
+metadata. The F1 language setting does not change audio timing.

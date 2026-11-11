@@ -162,7 +162,7 @@ void Port_NameFontSheets(int stage, int song, int songLit) {
                 break;
             }
         }
-        if (i != kNeed[s] && s != NF_SONG_LIT) { /* (the second song style is an extra: without it the first is used) */
+        if (i != kNeed[s] && s == NF_STAGE) { /* (the second song style is an extra: without it the first is used) */
             bad = 1;
         }
     }
@@ -818,8 +818,34 @@ static void style_lend(NfStyle *to, const NfStyle *from) {
     }
 }
 
+static int bt4_stage_style(void){
+    extern int Port_GameProfileEnglish(void);
+    static const int esRows[]={2,3,5,6,7,12,13,15,16,17,18,19,20};
+    static const char *esNames[]={"Namek","Torneo del Poder (Final)","Templo de Kamisama","Ring de Cell (Desierto)","Planeta Sagrado","Kame House","Glaciar","Planeta Destruido","Espacio","Torneo del Poder (Medio)","Infierno","Desierto","Ciudad (Central)"};
+    static const char *enNames[]={"Wasteland - Evening","Rocky Area - Noon","Planet Namek","Tournament of Power - Final","World Tournament - Noon","Kami's Lookout - Noon","Cell Game Arena - Ruins","Supreme Kai's World","Hyperbolic Time Chamber","City Ruins - Noon","Mountain Road - Noon","Archipelago - Evening","Kame House - Noon","Glacier","Ice Continent","Dying Planet","Outer Space - Earth","Tournament of Power - Climax","Hell","Desert - Noon","King's Castle","Penguin Village - Noon","Mount Paozu","Plains - Noon"};
+    int en=Port_GameProfileEnglish(),n=en?24:sizeof(esRows)/sizeof(esRows[0]),j;
+    unsigned char *original[MAX_SHEETS],*packed[MAX_SHEETS]={0};
+    memcpy(original,sSheet[NF_STAGE],sizeof(original));
+    for(j=0;j<(n+3)/4;++j){packed[j]=calloc(SHEET_W*SHEET_H,4);if(!packed[j])break;}
+    if(j!=(n+3)/4){while(j--)free(packed[j]);return 0;}
+    for(j=0;j<n;++j){int row=en?j:esRows[j];
+        if(!original[row/4]){for(j=0;j<MAX_SHEETS;++j)free(packed[j]);return 0;}
+        memcpy(packed[j/4]+(j%4)*SHEET_W*64*4,original[row/4]+(row%4)*SHEET_W*64*4,SHEET_W*64*4);
+    }
+    for(j=0;j<MAX_SHEETS;++j)free(original[j]);
+    memcpy(sSheet[NF_STAGE],packed,sizeof(packed));sSheetCount[NF_STAGE]=(n+3)/4;
+    return style_build(NF_STAGE,en?enNames:esNames,n,64);
+}
+
 static void build_all(void) {
     int s, i;
+    /* BT4's stage atlas is present regardless of optional BT3 translations. */
+    bt4_stage_style();
+    if(sStyle[NF_STAGE].ok){
+        fprintf(stderr,"bt4 map font: native-stage-atlas=1 samples=%d glyphs=%d\n",sStyle[NF_STAGE].names,sStyle[NF_STAGE].used);
+        goto release_sheets;
+    }
+
     if (!MenuTranslation_Ensure()) return;
     style_build(NF_STAGE, kStageNames, STAGE_NAMES, 64);
     style_build(NF_SONG, kSongNames, SONG_NAMES, 32);
@@ -827,6 +853,7 @@ static void build_all(void) {
     style_lend(&sStyle[NF_STAGE], &sStyle[NF_SONG]); /* (the plain song style: its fill is one colour, so the amount of fill reads cleanest) */
     style_lend(&sStyle[NF_SONG], &sStyle[NF_STAGE]);
     style_lend(&sStyle[NF_SONG_LIT], &sStyle[NF_STAGE]);
+release_sheets:
     if (getenv("BT3_NAMEFONT_TEST") == NULL) { /* (the test compares against the sheets afterwards) */
         for (s = 0; s < NF_STYLES; s++) {
             for (i = 0; i < MAX_SHEETS; i++) {

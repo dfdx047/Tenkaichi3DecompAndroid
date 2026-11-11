@@ -111,18 +111,19 @@ typedef struct BattleRes {
 } BattleRes; /* size 0x50 */
 
 /* File ids used by the loader. */
-#define BTL_FILE_CHARA_DATA 8        /* + character * 2 + side: 0x1000-byte per-member block */
+#define BTL_FILE_CHARA_DATA 0xD48        /* + character * 2 + side: 0x1000-byte per-member block */
 #define BTL_FILE_SND_COMMON 0x14A
-#define BTL_FILE_SND_STAGE 0x14E     /* + stage */
-#define BTL_FILE_STAGE 0x171         /* + stage */
-#define BTL_FILE_STAGE_SPLIT 0x198   /* + stage, split-screen version */
+#define BTL_FILE_SND_STAGE 0x590     /* + stage */
+#define BTL_FILE_STAGE 0x5F3         /* + stage */
+#define BTL_FILE_STAGE_SPLIT 0x656   /* + stage, split-screen version */
 #define BTL_FILE_TRANSITION_3 0x1BF  /* stage change to stage 3 */
 #define BTL_FILE_TRANSITION 0x1C0
 #define BTL_FILE_SCRIPT 0x1FF        /* + setup.script - 1 */
+#define BTL_VOICE_FILE(chara, alt) ((chara) + ((alt) ? BTL_FILE_VOICE_ALT : BTL_FILE_VOICE))
 #define BTL_FILE_CHARA 0x590         /* + character * 10 + costume; +4: variant; +8, +9: two more files */
-#define BTL_FILE_VOICE 0xBDA         /* + character */
-#define BTL_FILE_VOICE_ALT 0xC7B     /* + character, when gSaveData->flags bit 0 */
-#define BTL_FILE_OBJECT 0xC1C        /* + id, for ids >= 0x100 */
+#define BTL_FILE_VOICE 0x1D012         /* + character */
+#define BTL_FILE_VOICE_ALT 0x1D10C     /* + character, when gSaveData->flags bit 0 */
+#define BTL_FILE_OBJECT 0xC1C         /* SLUS 0x1276F4: extra cinematic model + id >= 0x100 */
 
 #define BTL_STAGE_BUF_SIZE 0x6CB800
 #define BTL_BANK_BUF_SIZE 0x90800

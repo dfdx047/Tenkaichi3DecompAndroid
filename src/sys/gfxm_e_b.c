@@ -1,9 +1,13 @@
+extern int TagBattle_Active(void);
 #include "common.h"
 #include "battle/battle.h"
 #include "sys/dma.h"
 #include "sys/gfx.h"
 #include "sys/heap.h"
 #include "sys/gfxm_e.h"
+extern s32 TagBattle_Count(void);
+static ObjShadow sTagShadows[12];
+static ObjShadow *TagShadow_Node(ObjShadowPool *pool,s32 i){return TagBattle_Active()?&sTagShadows[i]:&pool->nodes[i];}
 
 /*
  * Battle object model binding and ground shadow, 0x1131D8..0x114860. See include/sys/gfxm_e.h.
@@ -123,7 +127,7 @@ typedef struct ObjPlane8 {
    entries become (slot + row * 15), and the slot's base alpha is copied into the model header. */
 void BtlObjMdl_InitAlphaSlots(void *res, ObjMdl *mdl, s32 row) {
     ObjMdlFile *model = mdl->model;
-    TexFile *tex = mdl->tex;
+    TexFile *tex = res;
     s32 first;
     s32 count;
     s32 skip;
@@ -185,10 +189,19 @@ void BtlObjMdl_BindFiles(ObjMdlObj *obj) {
                                    0, 0);
             }
         }
+        if (*(TexFile **)mdl->unk08 != NULL) {
+            TexFile **extra = (TexFile **)mdl->unk08;
+            Res_RelocateOffsets(extra, (u8 *)*extra, *extra);
+            BtlObjMdl_InitAlphaSlots(*extra, mdl, mdl->model->alphaRow);
+        }
         Res_RelocateOffsets(&mdl->tex, (u8 *)mdl->texFile, mdl->texFile);
-        BtlObjMdl_InitAlphaSlots(res, mdl, mdl->model->alphaRow);
+        BtlObjMdl_InitAlphaSlots(mdl->tex, mdl, mdl->model->alphaRow);
         mdl->model->bound = 1;
     } else {
+        if (*(TexFile **)mdl->unk08 != NULL) {
+            TexFile **extra = (TexFile **)mdl->unk08;
+            Res_RelocateOffsets(extra, (u8 *)*extra, *extra);
+        }
         Res_RelocateOffsets(&obj->mdl.tex, (u8 *)mdl->texFile, mdl->texFile);
         BtlObjVis_AllocBit(mdl->model->alphaRow);
     }
@@ -793,17 +806,18 @@ void ObjShadow_InitPool(void) {
 
     memset(pool, 0, sizeof(ObjShadowPool));
     size = ObjShadow_CalcPacketWords(OBJ_SHADOW_PKT_TRIS) * 4;
-    for (i = 0; i < OBJ_SHADOW_MAX; i++) {
+    memset(sTagShadows,0,sizeof(sTagShadows));
+    for (i = 0; i < (TagBattle_Active()?12:OBJ_SHADOW_MAX); i++) {
         ObjShadowWork *work;
 
-        pool->nodes[i].work = Heap_Alloc(sizeof(ObjShadowWork), 0x20, 0, 2);
-        memset(pool->nodes[i].work, 0, sizeof(ObjShadowWork));
-        work = pool->nodes[i].work;
+        TagShadow_Node(pool,i)->work = Heap_Alloc(sizeof(ObjShadowWork), 0x20, 0, 2);
+        memset(TagShadow_Node(pool,i)->work, 0, sizeof(ObjShadowWork));
+        work = TagShadow_Node(pool,i)->work;
         work->pkt[0] = Heap_Alloc(size, 0x40, 0, 2);
         work->pkt[1] = Heap_Alloc(size, 0x40, 0, 2);
         memset(work->pkt[0], 0, size);
         memset(work->pkt[1], 0, size);
-        SList_PushFront(&pool->free, &pool->nodes[i].link);
+        SList_PushFront(&pool->free, &TagShadow_Node(pool,i)->link);
     }
 }
 
@@ -812,11 +826,11 @@ void ObjShadow_TermPool(void) {
     ObjShadowPool *pool = BtlObjPool3_Get();
     s32 i;
 
-    for (i = 0; i < OBJ_SHADOW_MAX; i++) {
-        ObjShadowWork *work = pool->nodes[i].work;
+    for (i = 0; i < (TagBattle_Active()?12:OBJ_SHADOW_MAX); i++) {
+        ObjShadowWork *work = TagShadow_Node(pool,i)->work;
 
         Heap_Free(work->pkt[0]);
         Heap_Free(work->pkt[1]);
-        Heap_Free(pool->nodes[i].work);
+        Heap_Free(TagShadow_Node(pool,i)->work);
     }
 }

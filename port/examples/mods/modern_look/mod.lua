@@ -9,7 +9,7 @@
 --   - brighter energy: ki blasts, beams and sparks stronger and more saturated;
 --   - energy light: that light tinting the ground, the rocks and the fighters round it.
 -- Only the picture changes: the fight, replays and online play are the same with or without it.
--- Vivid colours, ambient shadows and the energy light need the GPU renderer (F1 > Video), not OpenGL.
+-- Vivid colours, ambient shadows and energy light use DirectX 12 or Vulkan (F1 > Video).
 -- (The BT4decomp port's "Effects" settings, written as a script mod: docs/port/mods.md, bt3.look.)
 
 local RIM_COLOURS = {
@@ -25,7 +25,7 @@ end
 
 return {
     name = "Modern look",
-    version = "1.0",
+    version = "1.1",
     author = "BT4decomp",
     description = "Anime shading, rim light, vivid colours, ambient shadows and glowing energy.",
     settings = {
@@ -36,7 +36,7 @@ return {
         slider("vivid", "Vivid colours", 100, "Livelier colours and a neutral balance (GPU renderer)."),
         slider("ambient", "Ambient shadows", 100, "Soft shadows in corners and at the foot of things (GPU renderer)."),
         slider("energy", "Brighter energy", 100, "Ki blasts, beams and sparks stronger and more saturated."),
-        slider("energy_light", "Energy light", 0, "Energy lights up the ground and fighters round it (GPU renderer)."),
+        slider("energy_light", "Energy light", 50, "Energy lights up the ground and fighters round it (GPU renderer)."),
     },
 
     -- Asked every blank: switching the mod off (F1 > Mods) gives the game's own picture back at once.

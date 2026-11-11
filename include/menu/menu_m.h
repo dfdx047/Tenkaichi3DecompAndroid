@@ -47,7 +47,7 @@ typedef struct UbCell {
 #define UB_ID_LOCKED 0xA2
 #define UB_ID_REC 0xA3          /* the cell of the saved custom characters */
 #define UB_ID_EMPTY 0xA4        /* filler: an empty chip */
-#define UB_FACE_FILE 0x2F9      /* + character id: compressed portrait */
+#define UB_FACE_FILE 0x71C      /* + character id: compressed portrait */
 
 extern void ChrGrid_MoveLeft(UbCell *cells, s32 *col, s32 row);
 extern void ChrGrid_MoveRight(UbCell *cells, s32 *col, s32 row);
@@ -176,7 +176,7 @@ typedef struct UbTeamState {
 typedef struct UbTeamSel {
     /* 0x0000 */ u32 *pack;          /* this screen's section of archive 3 (compressed) */
     /* 0x0004 */ u32 *res;           /* the same unpacked */
-    /* 0x0008 */ void *faceFile;     /* 0x16800 bytes: compressed portrait (file 0x2F9 + character) */
+    /* 0x0008 */ void *faceFile;     /* 0x16800 bytes: compressed portrait (file 0x71C + character) */
     /* 0x000C */ MTexRes *faceRes;   /* 0x20800 bytes: the same unpacked */
     /* 0x0010 */ u32 *chips;         /* section 27: 165 texture lists, section id + 1 = chip of a character */
     /* 0x0014 */ void *nameText;     /* section 28 */

@@ -1,3 +1,4 @@
+#include "port_variant.h"
 #include "common.h"
 #include "battle/hud_e.h"
 #include "battle/battle.h"
@@ -139,9 +140,9 @@ void HudNotice_UpdateBanner(void) {
 /* Base id of the announcer's voice lines for the voice set of the options. */
 s32 HudNotice_GetVoiceBase(void) {
     if (gSaveData->flags & SAVE_FLAG_VOICE) {
-        return 0x10B6C;
+        return PORT_V(0x971, 0x971);
     }
-    return 0x10B34;
+    return PORT_V(0x939, 0x939);
 }
 
 /* Starts announcement `id` (see the top of the file): hides the word's sprites, resets node 1 and gives it the

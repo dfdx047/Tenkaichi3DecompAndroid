@@ -44,7 +44,7 @@ void BootCard_Term(void) {
 
 /* The screen's frame loop: fade in, run the boot-load card flow, wait 15 frames, fade out. Returns 1. */
 s32 BootCard_Run(s32 section) {
-    BootCard_Init(section);
+    if(gBootCard==NULL)BootCard_Init(section);
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {
         Gfx_BeginFrame();

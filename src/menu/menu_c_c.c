@@ -3,7 +3,9 @@
 #include "sys/pad.h"
 #include "sys/save.h"
 #ifdef PORT
-extern void Port_MenuPage(int screen);
+#include <stdio.h>
+#include <stdlib.h>
+extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
 extern int Port_MenuPart(int part); /* port/src/gs_marker.c: widescreen menus */
 extern void Port_MenuFill(int on);
 #endif
@@ -179,6 +181,11 @@ void HistResult_Init(s32 section) {
     s32 bg;
 
     flags = BattleResult_GetFlags();
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_STORY_SCENARIO_TEST")){
+        printf("story-result enter saga=%d episode=%d flags=%x\n",gProgress->subMenu,gProgress->subMenuItem,flags);fflush(stdout);
+    }
+#endif
     gHistResult = Heap_Alloc(0x140, 0x20, 0, 2);
     memset(gHistResult, 0, 0x140);
     gHistResult->pack = (u32 *)MPACK_AT(gMenuArc2, section);
@@ -186,31 +193,20 @@ void HistResult_Init(s32 section) {
     gHistResult->file = File_LoadSync(gProgress->baseFile + gProgress->subMenu + 0x10, NULL, 0);
     gHistResult->fileRes = Sprite_Unpack(gHistResult->file, NULL, NULL);
     if (flags & 1) {
-        bg = Rand_Range(3);
+        /* BT4 chooses the result sheet by saga, SLUS helper 0x3BE8A4. */
+        static const s8 bt4ResultSheets[8] = {0, 1, 0, 0, 4, 2, 0, 0};
+        bg = bt4ResultSheets[gProgress->subMenu];
         MSAVE->slot[gProgress->subMenu].val[1] |= (s32)(1U << gProgress->subMenuItem);
     } else {
         bg = 3;
         gHistResult->flags |= HISTRESULT_LOST;
     }
-    gHistResult->bgFile = File_LoadSync(bg + 0x3FE, NULL, 0);
+    gHistResult->bgFile = File_LoadSync(bg + 8, NULL, 0);
     gHistResult->bgRes = Sprite_Unpack(gHistResult->bgFile, NULL, NULL);
     res = gHistResult->bgRes;
     Res_RelocateOffsets(&res, res, res);
-    switch (bg) {
-    case 0:
-        gHistResult->tex[10] = MTEX(res, 0);
-        gHistResult->tex[9] = MTEX(res, 1);
-        break;
-    case 1:
-        gHistResult->tex[11] = MTEX(res, 0);
-        break;
-    case 2:
-        gHistResult->tex[12] = MTEX(res, 0);
-        break;
-    case 3:
-        gHistResult->tex[13] = MTEX(res, 0);
-        break;
-    }
+    gHistResult->tex[10] = MTEX(res, 0);
+    gHistResult->tex[9] = MTEX(res, 1);
     HR_RES(gHistResult->res, 1);
     gHistResult->bg = res;
     HR_RES(gHistResult->fileRes, 2);
@@ -230,12 +226,12 @@ void HistResult_Init(s32 section) {
     GetWin_Init(MPACK_AT(gHistResult->res, 5), 1);
     if (gHistResult->flags & HISTRESULT_LOST) {
         gHistResult->pointsTotal = 0;
-        StreamSe_PlayPausedDefault(0, 0x10BC8);
+        StreamSe_PlayPausedDefault(0, 0x14F);
     } else {
         if (HistResult_IsMenuCleared() && !(MSAVE->slot[gProgress->subMenu].flags & MSLOT_OUTRO_SEEN)) {
-            StreamSe_PlayPausedDefault(0, 0x10BC9);
+            StreamSe_PlayPausedDefault(0, 0x150);
         } else {
-            StreamSe_PlayPausedDefault(0, 0x10BC7);
+            StreamSe_PlayPausedDefault(0, 0x14E);
         }
         HistResult_BuildRewards();
     }
@@ -515,7 +511,7 @@ void HistResult_UpdateSe(void) {
         }
         break;
     case 3:
-        Bgm_Play(0x10B18);
+        Bgm_Play(0x86C);
         gHistResult->seState = 0;
         break;
     }
@@ -538,6 +534,16 @@ s32 HistResult_Run(s32 section) {
             HistResult_UpdateState();
         }
         HistResult_Draw();
+#ifdef PORT
+        if(getenv("BT4_RENDER_TEST") && getenv("BT4_STORY_SCENARIO_TEST")){
+            static s32 checkedFrames;
+            if(++checkedFrames==120){
+                s32 lost=(gHistResult->flags&HISTRESULT_LOST)!=0;
+                printf("story-result PASS saga=%d episode=%d lost=%d frames=%d\n",gProgress->subMenu,gProgress->subMenuItem,lost,checkedFrames);
+                fflush(stdout);exit(getenv("BT4_STORY_LOSS_TEST")&&!lost?3:0);
+            }
+        }
+#endif
         ColorFade_Draw();
         Gfx_EndFrame(1);
         Dma_Flush();

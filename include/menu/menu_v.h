@@ -151,7 +151,7 @@ typedef struct EvoZDialog {
 typedef struct EvoZ {
     /* 0x0000 */ u32 * pack;  /* this screen's section of archive 7 (compressed) */
     /* 0x0004 */ u32 * res;  /* the same unpacked: a pack of 40 sections */
-    /* 0x0008 */ void * faceFile;  /* 0x16800 bytes: compressed portrait (file 0x2F9 + character) */
+    /* 0x0008 */ void * faceFile;  /* 0x16800 bytes: compressed portrait (file 0x71C + character) */
     /* 0x000C */ MTexRes * faceRes;  /* the same unpacked */
     /* 0x0010 */ void * chipFile;  /* file 0x3C0 (compressed) */
     /* 0x0014 */ MTexRes * chipRes;  /* the same unpacked */

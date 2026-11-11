@@ -71,7 +71,7 @@ typedef struct CharSelSide {
     /* 0x30 */ s32 chip[7];        /* character ids on the seven chips of the reel */
     /* 0x4C */ s32 prevChip[7];    /* the same before the last change */
     /* 0x68 */ s32 flags;          /* CHARSEL_SIDE_ */
-    /* 0x6C */ s32 chara;          /* character under the cursor: portrait file 0x2F9 + chara, name line */
+    /* 0x6C */ s32 chara;          /* character under the cursor: portrait file 0x71C + chara, name line */
     /* 0x70 */ s32 state;          /* step of this side's choice (CharSel_Input) */
     /* 0x74 */ s32 mask;           /* non-zero while the chips are hidden for a reel change */
     /* 0x78 */ s32 unk78[30];
@@ -133,13 +133,13 @@ typedef struct CharSelProgress {
 #define CHARSEL_BGM_RANDOM 0x18          /* the "random" entry of the music list */
 #define CHARSEL_STAGE_RANDOM 0x23        /* the "random" stage id; ids from here on are not real stages */
 #define CHARSEL_STAGE_COLS 6             /* columns of the stage grid (gProgress keeps col + row * 6) */
-#define CHARSEL_BGM_FIRST 0x10B16        /* Bgm_Play id of music list entry 0 */
+#define CHARSEL_BGM_FIRST 0x816        /* Bgm_Play id of music list entry 0 */
 #ifdef PORT /* (a song added from outside the disc has a file id of its own: port/include/plat_songs.h) */
 #define CHARSEL_BGM_FILE(n) PORT_BGM_FILE(n)
 #else
 #define CHARSEL_BGM_FILE(n) (CHARSEL_BGM_FIRST + (n))
 #endif
-#define CHARSEL_BGM_RANDOM_FIRST 0x10B1E /* + Rand_Range(9) */
+#define CHARSEL_BGM_RANDOM_FIRST 0x816 /* + Rand_Range(9) */
 
 typedef struct CharSel {
     /* 0x0000 */ u32 *pack;                 /* this screen's section of archive 5 or 6 (compressed) */
@@ -190,7 +190,9 @@ typedef struct CharSel {
     /* 0x3818 */ MTextBox nameBox[CHARSEL_SIDES];
     /* 0x3930 */ MTextBox formBox[CHARSEL_SIDES];
     /* 0x3A48 */ void *unk3A48;             /* section 2 of common file 4 (gCommonRes->data[2]); not used in this range */
-} CharSel; /* 0x3A4C */
+    void *costumeText;
+    MTextBox costumeBox[2];
+} CharSel; /* BT4 appends costume-name text and two text boxes. */
 
 #define CHARSEL_STARTED 2          /* the cursors were lit once */
 #define CHARSEL_STAGE_PHASE 4      /* both sides are done: the stage / music choice has the input */
@@ -207,13 +209,13 @@ typedef struct CharSel {
 #define CHARSEL_LOAD_ABORT 5
 #define CHARSEL_LOAD_RESTART 6
 
-#define CHARSEL_FACE_FILE 0x2F9   /* + character id */
-#define CHARSEL_STAGE_FILE 0x39D  /* + stage id */
+#define CHARSEL_FACE_FILE 0x71C   /* + character id */
+#define CHARSEL_STAGE_FILE 0x6B9  /* + stage id */
 #ifdef PORT
 /* The stage thumbnails are 0x39D..0x3C0 (one per stage of the disc); the loading screen files start right after,
    at 0x3C1. A stage added from outside the disc has an id past 0x23, so its thumbnail would fall on a loading
    screen: it reuses an existing thumbnail instead. */
-#define CHARSEL_STAGE_FILE_ID(id) (CHARSEL_STAGE_FILE + ((id) < 0x24 ? (id) : (id) - 0x24))
+#define CHARSEL_STAGE_FILE_ID(id) (CHARSEL_STAGE_FILE + ((id)>=0x63?0:(id)))
 #else
 #define CHARSEL_STAGE_FILE_ID(id) (CHARSEL_STAGE_FILE + (id))
 #endif

@@ -830,12 +830,12 @@ void EftChar_Update(EftQTask *task) {
 
 /* Makes the character's pool (7 for character 0, 8 for the others) the current one. */
 void EftChar_SetPool(s32 chr) {
-    BtlPool_SetCurrent(chr == 0 ? 7 : 8);
+    BtlPool_SetCurrent(chr>=2 ? 10+(chr-2)*2 : chr == 0 ? 7 : 8);
 }
 
 /* Empties the character's pool. */
 void EftChar_ResetPool(s32 chr) {
-    BtlPool_Reset(chr == 0 ? 7 : 8);
+    BtlPool_Reset(chr>=2 ? 10+(chr-2)*2 : chr == 0 ? 7 : 8);
 }
 
 /* Creates the manager task of one kind for a character; its init gets {character, kind}. */

@@ -57,7 +57,7 @@ extern void Save_UnlockAll(void *opt);
 extern int Port_NetSession(void); /* gs/net.c */
 extern int Port_NetWarp(void);
 extern void Port_NetArrived(void);
-extern struct { int unk0[2]; int loadPack, loadRes, loadSprites; int flags; int mode; } GAME_PTR gProgress; /* include/menu/menu_a.h */
+extern struct { int unk0[2]; int loadPack, loadRes, loadSprites; int flags; int mode,prevMode,reserved[5],subMenu,subMenuItem; } GAME_PTR gProgress; /* include/menu/menu_a.h */
 static int sNetEntered;
 /* The vertical blank at which the session's start-up was over (0: not yet). Part of the game's state like the rest
    of this file's variables, so it goes back with a rollback: it is always what the blanks as they were last run
@@ -113,6 +113,7 @@ static void port_stage_replace_init(void) {
 extern void Port_NetRules(int *type, int *dp, int *time); /* gs/net.c */
 
 int __wrap_Progress_Main(int arg) {
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_VOICE_SELFTEST")){extern int PortVoice_TestRun(void);exit(PortVoice_TestRun());}
     const char *path;
     PortStages_Init();
     PortSongs_Init();
@@ -126,6 +127,24 @@ int __wrap_Progress_Main(int arg) {
     if (path == NULL && getenv("BT3_DEMO") == NULL) {
         {
             int r;
+            /* Local regression hook: open a real menu through the normal boot path. */
+            if (!Port_NetSession() && gProgress != NULL && gSaveData != NULL && getenv("BT4_TEST_MODE") != NULL) {
+                static int testEntered;
+                if (!testEntered) {
+                    gProgress->mode = atoi(getenv("BT4_TEST_MODE"));
+                    if(getenv("BT4_RENDER_TEST") && getenv("BT4_TEST_SUBMENU")) {
+                        Save_UnlockAll(gSaveData);
+                        gProgress->subMenu=atoi(getenv("BT4_TEST_SUBMENU"));
+                        gProgress->subMenuItem=0;
+                    }
+                    if (!getenv("BT4_TAG_VIDEO_TEST") && (getenv("BT4_RENDER_TBO") != NULL || getenv("BT4_TAG_DRAFT_TEST") != NULL || getenv("BT4_TAG_PREVIEW") != NULL)) {
+                        extern int gPortScreen;
+                        gProgress->mode=80;gPortScreen=1;
+                    }
+                    testEntered = 1;
+                    fprintf(stderr, "bt4: test menu mode %d\n", gProgress->mode);
+                }
+            }
             /* An online session (gs/net.c) goes straight to the versus mode's character select, with the game's
                default save and everything in it unlocked: the same on both sides. (The overlay's first-run part, the
                logos and the memory card check, still runs first; without picture: Port_NetWarp.) */
@@ -203,7 +222,7 @@ int __wrap_Progress_Main(int arg) {
             return r;
         }
     }
-    if (sBattles++ > 0) {
+    if (sBattles++ > 0 && !(getenv("BT4_RENDER_TEST") && getenv("BT4_MEMORY_BATTLES") && sBattles<=atoi(getenv("BT4_MEMORY_BATTLES")))) {
         printf("bt3: battle finished\n");
         exit(0);
     }
@@ -224,15 +243,51 @@ int __wrap_Progress_Main(int arg) {
         printf("bt3: replay %s\n", path);
     } else {
         Demo_SetupBattle();
+        if(getenv("BT4_STORY_BATTLE_TEST")) {
+            extern void BattleSetup_Clear(void);
+            extern void BattleSetup_SetScript(int script);
+            BattleSetup_Clear();BattleSetup_SetScript(atoi(getenv("BT4_STORY_BATTLE_TEST")));
+        }
+        if (getenv("BT4_TEST_TECH") != NULL || getenv("BT4_HUD_TEST") != NULL) {
+            extern unsigned char GAME_PTR Battle_GetSetup(void);
+            unsigned char GAME_PTR setup = Battle_GetSetup();
+            *(int GAME_PTR)(setup + 8) = 0;
+            *(int GAME_PTR)(setup + 0xC0 + 0x208) = 0;
+            *(int GAME_PTR)(setup + 0xC0 + 0x270 + 0x208) = 0;
+        }
         printf("bt3: attract-demo battle\n");
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_NATIVE_DUEL_TEST")) {
+            extern unsigned char GAME_PTR Battle_GetSetup(void);
+            *(int GAME_PTR)(Battle_GetSetup()+8)=0;
+        }
         /* BT3_CHARA=<id> (and BT3_COSTUME=<n>, BT3_VARIANT=1 for the damaged model): side 0's fighter of the demo
            battle, for looking at one character's model without going through the menus */
+        extern struct { int chara, costume, variant; } GAME_PTR BattleSide_GetMember(int side, int index);
         if (getenv("BT3_CHARA") != NULL) {
-            extern struct { int chara, costume, variant; } GAME_PTR BattleSide_GetMember(int side, int index);
             BattleSide_GetMember(0, 0)->chara = atoi(getenv("BT3_CHARA"));
             BattleSide_GetMember(0, 0)->costume = getenv("BT3_COSTUME") != NULL ? atoi(getenv("BT3_COSTUME")) : 0;
             BattleSide_GetMember(0, 0)->variant = getenv("BT3_VARIANT") != NULL;
+            /* Rebuild startForm too: the loader reads that snapshot, not members[]. */
+            { extern void BattleSetup_Finish(void); BattleSetup_Finish(); }
             printf("bt3: side 0 is character %d, costume %d\n", BattleSide_GetMember(0, 0)->chara, BattleSide_GetMember(0, 0)->costume);
+        }
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TEST_OPP_CHARA")){
+            extern void BattleSetup_Finish(void);
+            BattleSide_GetMember(1,0)->chara=atoi(getenv("BT4_TEST_OPP_CHARA"));BattleSide_GetMember(1,0)->costume=0;BattleSide_GetMember(1,0)->variant=0;BattleSetup_Finish();
+        }
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TRAINING_MAP_TEST")){
+            extern unsigned char GAME_PTR Battle_GetSetup(void);
+            extern void BattleSetup_SetRule(int,int,int,int,int,int,int),BattleSetup_Finish(void);
+            unsigned char GAME_PTR setup=Battle_GetSetup();int stage=atoi(getenv("BT4_TRAINING_MAP_TEST"));
+            /* The real training rule and inert opponent, not the demo sequence.
+             * This opt-in fixture does not run in ordinary player sessions. */
+            BattleSetup_SetRule(0,6,54,0,7,stage,0);
+            *(int GAME_PTR)(setup+0xC0+0x208)=0;
+            *(int GAME_PTR)(setup+0xC0+0x270+0x208)=2;
+            *(int GAME_PTR)(setup+0xC0+0x270+0x10)=-1;
+            BattleSetup_Finish();
+            {extern int Battle_GetMode(void);
+             fprintf(stderr,"training map fixture: mode=%d stage=%d opponent-level=-1\n",Battle_GetMode(),stage);}
         }
     }
     fflush(stdout);
@@ -315,12 +370,9 @@ int Port_NetMenuListed(void) {
    here, on the game's side, at a vertical blank. */
 
 
-/* For gs/net.c's check that the two copies of an online match still compute the same game: a number made of what
-   has to be the same on both at a vertical blank whatever each player's settings, view and system are. Where the
-   game is (the start-up's end, the menu mode, whether the first-run part still runs) and, in a fight, the values
-   BT3_HASH logs as the fight's own without the generator: both fighters' health and position, the sequence's
-   state and the battle clock. (Not the whole state: each copy shows its own view, and two systems' programs keep
-   other addresses in the game's memory.) */
+/* For gs/net.c's check that the two copies of an online match still compute the same game: 1v1 keeps its original
+   two-fighter digest. Tag Team online uses a separate branch that hashes every active actor, since its roster can
+   contain ten fighters. */
 unsigned long long Port_NetDigest(void) {
     struct { unsigned arrived; int mode, first, battle, seq, clock, hp[2]; unsigned pos[2][3]; } d;
     float q[4] __attribute__((aligned(16)));
@@ -328,6 +380,57 @@ unsigned long long Port_NetDigest(void) {
     const unsigned char *b = (const unsigned char *)&d;
     unsigned i;
     int k;
+
+    /* Tag Team's lockstep roster can contain up to ten actors. Keep its
+       synchronization identity separate from the two-fighter 1v1 digest. */
+    {
+        extern int TagBattle_Network(void), TagBattle_Count(void), TagBattle_Team(int), TagBattle_Target(int);
+        if (TagBattle_Network() && gBtlSeq != NULL && gBtlSeq->state >= 2) {
+            struct TagActorDigest {
+                int hp, ki, chara, costume, action, target, team;
+                int pos[3];
+            };
+            struct TagDigest {
+                int mode, first, seq, clock, count;
+                struct TagActorDigest actors[10];
+            } tag;
+            extern unsigned char GAME_PTR BtlChar_Get(int);
+            extern int BtlSide_GetKi(int), BtlCharApi_GetChara(int), BtlCharApi_GetCostume(int);
+            extern int BtlAct_GetCurrent(void *);
+            int count = TagBattle_Count();
+            int actor, axis;
+
+            memset(&tag, 0, sizeof(tag));
+            tag.mode = gProgress != NULL ? gProgress->mode : 0;
+            tag.first = gProgress != NULL && (gProgress->flags & 0x40) != 0;
+            tag.seq = gBtlSeq->state;
+            tag.clock = BtlSeq_GetClock()[0];
+            if (count < 0) count = 0;
+            if (count > 10) count = 10;
+            tag.count = count;
+            for (actor = 0; actor < count; ++actor) {
+                float pos[4] __attribute__((aligned(16)));
+                struct TagActorDigest *d = &tag.actors[actor];
+                d->hp = BtlCharApi_GetHp(actor);
+                d->ki = BtlSide_GetKi(actor);
+                d->chara = BtlCharApi_GetChara(actor);
+                d->costume = BtlCharApi_GetCostume(actor);
+                d->action = BtlAct_GetCurrent(BtlChar_Get(actor));
+                d->target = TagBattle_Target(actor);
+                d->team = TagBattle_Team(actor);
+                BtlCharApi_GetPos(actor, pos);
+                for (axis = 0; axis < 3; ++axis) {
+                    float scaled = pos[axis] * 16.0f;
+                    d->pos[axis] = (int)(scaled + (scaled >= 0.0f ? 0.5f : -0.5f));
+                }
+            }
+            b = (const unsigned char *)&tag;
+            for (i = 0; i < sizeof(tag); ++i) {
+                h = (h ^ b[i]) * 0x100000001B3ull;
+            }
+            return h;
+        }
+    }
 
     memset(&d, 0, sizeof(d));
     d.arrived = sNetArrivedAt;
@@ -352,12 +455,288 @@ unsigned long long Port_NetDigest(void) {
 }
 
 void Port_Trace(unsigned vblanks) {
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TEST_CAMERA_GEOMETRY")&&gBtlSeq&&gBtlSeq->state==3&&BtlSeq_GetClock()[0]>=150){
+        extern int ChrCam_TagRegression(void);
+        int failed=ChrCam_TagRegression();fflush(stdout);exit(failed?3:0);
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TEST_CAPTURE_ATTACK")&&gBtlSeq&&gBtlSeq->state==3){
+        static unsigned captured;extern void Port_TagCapture(void);
+        if(BtlSeq_GetClock()[0]>=140 && vblanks%12==0 && captured<60){Port_TagCapture();++captured;}
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_OWNERSHIP_TEST")&&gBtlSeq&&gBtlSeq->state==3){
+        extern int TagBattle_Count(void),TagBattle_LocalActor(void),TagBattle_ViewActor(void),TagBattle_CameraActor(int),TagBattle_Pair(int);
+        extern unsigned char GAME_PTR BtlChar_Get(int);
+        extern unsigned char GAME_PTR BtlObj_Get(int);
+        extern int GAME_PTR BtlMember_GetActive(void *);
+        extern int BattleSide_GetObjId(int);
+        int a,view=TagBattle_ViewActor();
+        if(vblanks%30==0){
+            extern void BtlCharApi_GetCamPose(int,float *,float *);
+            float camera[4],rotation[4];int owner=TagBattle_CameraActor(view);
+            float GAME_PTR pos=(float GAME_PTR)(BtlChar_Get(owner)+0x10);
+            BtlCharApi_GetCamPose(BattleSide_GetObjId(owner),camera,rotation);
+            float dx=camera[0]-pos[0],dy=camera[1]-pos[1],dz=camera[2]-pos[2];
+            fprintf(stderr,"tag camera distance: frame=%u view=%d owner=%d distance=%.2f action=%x\n",vblanks,view,owner,sqrtf(dx*dx+dy*dy+dz*dz),*(int GAME_PTR)(BtlChar_Get(owner)+0x948));
+        }
+        if(vblanks%30==0)for(a=0;a<TagBattle_Count();++a){
+            int GAME_PTR member=BtlMember_GetActive(BtlChar_Get(a));
+            unsigned char GAME_PTR obj=BtlObj_Get(BattleSide_GetObjId(a));
+            fprintf(stderr,"tag ownership: frame=%u local=%d view=%d actor=%d chara=%d hp=%d pair=%d camera=%d model=%d\n",vblanks,TagBattle_LocalActor(),view,a,member[0],BtlCharApi_GetHp(a),TagBattle_Pair(a),TagBattle_CameraActor(view),*(int GAME_PTR)(obj+0xC));
+        }
+    }
+    /* Snapshot positions for audio outside the rollback heap. No network or
+     * device operation runs here, and lobby voice keeps its normal level. */
+    {
+        extern int Port_NetActive(void),Port_NetView(void),TagBattle_Active(void),TagBattle_Count(void),TagBattle_ViewActor(void);
+        extern void PortVoice_World(int,int,int,const float *);
+        extern int BattleSide_GetObjId(int);
+        extern void BtlCharApi_GetBasePos(int,float *);
+        extern void PortAudio_World(int,int,int,const float *,const int *);
+        float positions[40]={0};int alive[10]={0};int count=0,mode=0,listener=0,a;
+        if(gBtlSeq&&gBtlSeq->state==3){
+            if(TagBattle_Active()){mode=2;count=TagBattle_Count();listener=TagBattle_ViewActor();}
+            else if(Port_NetActive()){mode=1;count=2;listener=Port_NetView();}
+            for(a=0;a<count;++a){int object=BattleSide_GetObjId(a);BtlCharApi_GetBasePos(object,positions+a*4);alive[a]=BtlCharApi_GetHp(object)>0;}
+        }
+        PortVoice_World(mode,listener,count,positions);
+        PortAudio_World(mode==2,listener,count,positions,alive);
+    }
+    if ((getenv("BT4_TAG_ACTOR_TEST") != NULL || getenv("BT4_TAG_LOCAL_TEST") != NULL) && gBtlSeq != NULL && gBtlSeq->state >= 2 && vblanks % 120 == 0) {
+        extern int TagBattle_Count(void),TagBattle_Team(int),TagBattle_Target(int), BtlAiMgr_GetLevel(int side);
+        extern unsigned char GAME_PTR BtlChar_Get(int side);
+        int actor;
+        if(getenv("BT4_TAG_LONG_VIDEO")){
+            extern unsigned char GAME_PTR Battle_GetWork(void);
+            extern int BtlChars_IsTimeStopped(void),BtlChange_GetPlayer(void),BtlStage_IsReady(void);
+            fprintf(stderr,"tag live: vb=%u flags=%llx stage-ready=%d stop=%d loader-owner=%d clock=%d\n",vblanks,*(unsigned long long GAME_PTR)(Battle_GetWork()+0x19F0),BtlStage_IsReady(),BtlChars_IsTimeStopped(),BtlChange_GetPlayer(),BtlSeq_GetClock()[0]);
+        }
+        for (actor=0;actor<TagBattle_Count();++actor) {
+            float q[4];unsigned char GAME_PTR chr=BtlChar_Get(actor);
+            BtlCharApi_GetPos(actor,q);
+            fprintf(stderr,"tag actor vb=%u id=%d pos=%.2f,%.2f,%.2f hp=%d action=%x ai=%d level=%d team=%d target=%d\n",vblanks,actor,q[0],q[1],q[2],BtlCharApi_GetHp(actor),*(int GAME_PTR)(chr+0x948),*(int GAME_PTR)(chr+0x1278),BtlAiMgr_GetLevel(actor),TagBattle_Team(actor),TagBattle_Target(actor));
+            if(getenv("BT4_TAG_RUSH_SCENE")){
+                extern int TagBattle_IsActorLoading(int);
+                extern float BtlAnim_GetFrame(void *);
+                fprintf(stderr,"tag rush motion: actor=%d freeze=%d loading=%d frame=%.2f\n",actor,*(int GAME_PTR)(chr+0x1320),TagBattle_IsActorLoading(actor),BtlAnim_GetFrame(chr));
+            }
+        }
+    }
     static int every = -1;
     float p[2][4] __attribute__((aligned(16)));
     unsigned u[2][3];
     int *clock;
     int i;
 
+    if (getenv("BT4_TEST_TRANSFORM") != NULL && !Port_NetSession() && gBtlSeq != NULL && gBtlSeq->state == 3) {
+        extern unsigned char GAME_PTR BtlChar_Get(int side);
+        extern int GAME_PTR BtlMember_GetActive(void *chr);
+        extern int GAME_PTR BtlMember_GetActiveGauge(void *chr);
+        extern int BtlParam_GetSlotId(void *chr, int slot);
+        extern int BtlAct_CanTransform(void *chr, int slot, int need, int allowed);
+        extern int BtlAct_QueueTransform(void *chr, int slot);
+        extern int BtlAct_GetQueued(void *chr);
+        extern void BtlAct_Request(void *chr, int action);
+        static int started, target, origin, completed;
+        static unsigned began;
+        int actor=getenv("BT4_TEST_TECH_ACTOR")?atoi(getenv("BT4_TEST_TECH_ACTOR")):0;
+        unsigned char GAME_PTR chr = BtlChar_Get(actor);
+        int GAME_PTR member = BtlMember_GetActive(chr);
+        int action=*(int GAME_PTR)(chr+0x948);
+        if(getenv("BT4_RENDER_TEST")){
+            extern int TagBattle_Count(void);int n;
+            for(n=0;n<TagBattle_Count();++n)*(int GAME_PTR)(BtlChar_Get(n)+0x1278)=0;
+        }
+        extern unsigned char GAME_PTR BtlObj_Get(int);extern int BattleSide_GetObjId(int);
+        int model=*(int GAME_PTR)(BtlObj_Get(BattleSide_GetObjId(actor))+12);
+        if (!started && BtlSeq_GetClock()[0] >= 150) {
+            int slot=atoi(getenv("BT4_TEST_TRANSFORM"));
+            int GAME_PTR gauge=BtlMember_GetActiveGauge(chr);
+            gauge[3]=100000;gauge[5]=0;*(int GAME_PTR)(chr+0x1300)=1;
+            if(completed&&getenv("BT4_TEST_TRANSFORM_STEPS")){
+                int n;for(n=0;n<4;++n)if(BtlParam_GetSlotId(chr,n)!=255&&BtlAct_CanTransform(chr,n,1,1)){slot=n;break;}
+            }
+            target=BtlParam_GetSlotId(chr,slot);origin=member[0];
+            if(target==255 || !BtlAct_CanTransform(chr,slot,1,1)) {
+                fprintf(stderr,"bt4-transform: unavailable source=%d slot=%d target=%d\n",origin,slot,target);exit(4);
+            }
+            BtlAct_QueueTransform(chr,slot);
+            BtlAct_Request(chr,BtlAct_GetQueued(chr));
+            began=vblanks;started=1;
+            fprintf(stderr,"bt4-transform: begin source=%d slot=%d target=%d\n",origin,slot,target);
+        }
+        if(started && vblanks-began>180 && member[0]==target && model==target && (action<0xEC || action>0xF0)) {
+            fprintf(stderr,"bt4-transform: PASS target=%d model=%d action=%x elapsed=%u\n",member[0],model,action,vblanks-began);
+            ++completed;
+            if(getenv("BT4_TEST_TRANSFORM_STEPS")&&completed<atoi(getenv("BT4_TEST_TRANSFORM_STEPS"))){started=0;return;}
+            exit(0);
+        }
+        if(started && vblanks-began>1500) {
+            fprintf(stderr,"bt4-transform: FAIL target=%d actual=%d model=%d action=%x\n",target,member[0],model,action);exit(3);
+        }
+    }
+
+    if (getenv("BT4_HUD_TEST") != NULL && !Port_NetSession() && gBtlSeq != NULL && gBtlSeq->state == 3) {
+        extern unsigned char GAME_PTR BtlChar_Get(int side);
+        extern int GAME_PTR BtlMember_GetActiveGauge(void *chr);
+        int side;
+        for(side=0;side<2;++side) {
+            int GAME_PTR gauge=BtlMember_GetActiveGauge(BtlChar_Get(side));
+            const char *health=getenv("BT4_TEST_HEALTH");
+            gauge[0]=getenv("BT4_RENDER_TEST") && health ? atoi(health) : side ? 5000 : 42000;
+            if(getenv("BT4_RENDER_TEST")&&getenv("BT4_HEALTH_SWEEP")) {
+                static const int hp[]={50000,48000,45000,42000,40000,35000,30000,20000,10000,5000};
+                gauge[0]=hp[(BtlSeq_GetClock()[0]/90)%10];
+            }
+            gauge[3]=side ? 60000 : 0;
+            gauge[5]=side ? 400000 : 0;
+        }
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_WALL_SCENE_TEST")&&!Port_NetSession()&&gBtlSeq&&gBtlSeq->state==3) {
+        extern float BtlStage_GetInnerRadius(void);
+        extern unsigned char GAME_PTR BtlChar_Get(int);
+        extern void BtlChar_Place(void *,const float *,const float *,int);
+        extern int BtlStage_FindZoneNear(int,const float *);
+        int tick=BtlSeq_GetClock()[0],side;
+        float radius=BtlStage_GetInnerRadius()-8.f;
+        for(side=0;side<2;++side){
+            float a=tick*.002f+side*.015f;
+            float pos[4]={radius*cosf(a),-100.f,radius*sinf(a),1.f};
+            float rot[4]={0.f,1.5707963f-a+side*3.14159265f,0.f,0.f};
+            BtlChar_Place(BtlChar_Get(side),pos,rot,BtlStage_FindZoneNear(0,pos));
+        }
+    }
+    if (getenv("BT4_TEST_RULES") != NULL && !Port_NetSession() && gBtlSeq != NULL &&
+        gBtlSeq->state == 3 && BtlSeq_GetClock()[0] >= 150) {
+        extern int Bt4_RunRulesRegression(void);
+        int failed = Bt4_RunRulesRegression();
+        fflush(stdout);
+        exit(failed ? 3 : 0);
+    }
+    if (getenv("BT4_TAG_CLASH_REGRESSION") && gBtlSeq && gBtlSeq->state==3 && BtlSeq_GetClock()[0]>=150) {
+        extern int TagClash_RunRegression(void);
+        int failed=TagClash_RunRegression();fflush(stdout);exit(failed?3:0);
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_CLASH_ANSWER_TEST")&&gBtlSeq&&gBtlSeq->state==3&&BtlSeq_GetClock()[0]>=60){
+        extern int ClashAnswers_RunRegression(void);int failed=ClashAnswers_RunRegression();fflush(stdout);exit(failed?3:0);
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MISSION_TEST")&&gBtlSeq&&gBtlSeq->state==3){
+        static int checked;
+        if(!checked){int a=BtlCharApi_GetHp(0),b=BtlCharApi_GetHp(1);checked=1;
+            fprintf(stderr,"mission-start index=%s hp=%d,%d %s\n",getenv("BT4_MISSION_TEST"),a,b,a>0&&b>0?"PASS":"FAIL");
+            if(a<=0||b<=0)exit(3);
+        }
+        if(BtlSeq_GetClock()[0]>=60){fprintf(stderr,"mission-play index=%s tick=%d PASS\n",getenv("BT4_MISSION_TEST"),BtlSeq_GetClock()[0]);exit(0);}
+    }
+
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_STICK_AUDIT")&&gBtlSeq&&gBtlSeq->state==3&&BtlSeq_GetClock()[0]>=60){
+        extern int TagBattle_RunTargetAudit(void);int failed=TagBattle_RunTargetAudit();fflush(stdout);exit(failed?3:0);
+    }
+    if(getenv("BT4_TAG_COMBAT_AUDIT") && gBtlSeq && gBtlSeq->state==3 && BtlSeq_GetClock()[0]>=60){
+        extern int TagBattle_RunCombatAudit(void);int failed=TagBattle_RunCombatAudit();fflush(stdout);exit(failed?3:0);
+    }
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_TEST_FINISH") && gBtlSeq && gBtlSeq->state==3 && BtlSeq_GetClock()[0]>=180){
+        extern int TagBattle_Count(void);
+        extern unsigned char GAME_PTR BtlChar_Get(int side);
+        extern int GAME_PTR BtlMember_GetActiveGauge(void *chr);
+        int a;for(a=1;a<TagBattle_Count();a+=2)BtlMember_GetActiveGauge(BtlChar_Get(a))[0]=0;
+    }
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_STORY_LOSS_TEST") && gBtlSeq && gBtlSeq->state==3 && BtlSeq_GetClock()[0]>=180){
+        extern unsigned char GAME_PTR BtlChar_Get(int actor);
+        extern int BtlMember_Damage(void *chr,int damage,int flags);
+        static int injected;
+        if(!injected){
+            /* Use normal damage bookkeeping so the story receives KO events. */
+            BtlMember_Damage(BtlChar_Get(0),1000000,0x3C1);injected=1;
+            fprintf(stderr,"story-loss damage injected with KO events\n");
+        }
+    }
+    if(getenv("BT4_STORY_BATTLE_TEST") && !getenv("BT4_STORY_CONTINUE_TEST") && gBtlSeq && gBtlSeq->state==3 && BtlSeq_GetClock()[0]>=60) {
+        fprintf(stderr,"story-play script=%s state=3 tick=%d PASS\n",getenv("BT4_STORY_BATTLE_TEST"),BtlSeq_GetClock()[0]);exit(0);
+    }
+    if (getenv("BT4_TEST_TECH") != NULL && gBtlSeq != NULL && gBtlSeq->state == 3) {
+        extern unsigned char GAME_PTR BtlChar_Get(int side);
+        extern int GAME_PTR BtlMember_GetActiveGauge(void *chr);
+        extern int BtlAct_GetTechniqueAction(void *chr, int slot);
+        extern void BtlAct_Request(void *chr, int action);
+        static int started;
+        static unsigned began;
+        static int entered;
+        static unsigned recovered;
+        int actor=getenv("BT4_TEST_TECH_ACTOR")?atoi(getenv("BT4_TEST_TECH_ACTOR")):0;
+        int simultaneous=getenv("BT4_TEST_TECH_SIMULTANEOUS")!=NULL;
+        int victim=getenv("BT4_TEST_TARGET")?atoi(getenv("BT4_TEST_TARGET")):(actor^1);
+        unsigned char GAME_PTR chr = BtlChar_Get(actor);
+        int support=getenv("BT4_RENDER_TEST")&&getenv("BT4_TEST_SUPPORT_ACTOR")?atoi(getenv("BT4_TEST_SUPPORT_ACTOR")):(actor==0?2:0);
+        unsigned char GAME_PTR other = simultaneous?BtlChar_Get(support):chr;
+        int tick = BtlSeq_GetClock()[0];
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TEST_CONTACT")&&!started&&tick>=100){
+            extern void BtlChar_Place(void *,const float *,const float *,int);
+            extern int BtlStage_FindZoneNear(int,const float *);
+            extern int TagBattle_Count(void),TagBattle_SetTarget(int,int);
+            static int placed;int n;
+            for(n=0;n<TagBattle_Count();++n){
+                float pos[4]={350.f,-150.f,350.f+n*40.f,1.f};
+                float rot[4]={0.f,0.f,0.f,0.f};
+                *(int GAME_PTR)(BtlChar_Get(n)+0x1278)=0;
+                if(!placed)BtlAct_Request(BtlChar_Get(n),0xB);
+                if(n==actor){pos[0]=0.f;pos[2]=getenv("BT4_TEST_BEAM_SCENE")?-800.f:-40.f;}
+                if(n==victim){pos[0]=0.f;pos[2]=0.f;rot[1]=3.14159265f;}
+                BtlChar_Place(BtlChar_Get(n),pos,rot,BtlStage_FindZoneNear(-1,pos));
+            }
+            TagBattle_SetTarget(actor,victim);TagBattle_SetTarget(victim,actor);
+            placed=1;
+        }
+        if(getenv("BT4_RENDER_TEST")){
+            extern int TagBattle_Count(void);
+            int fixtureActor;
+            for(fixtureActor=0;fixtureActor<TagBattle_Count();++fixtureActor)
+                *(int GAME_PTR)(BtlChar_Get(fixtureActor)+0x1278)=((!getenv("BT4_TEST_CONTACT")||(started&&getenv("BT4_TEST_OUTSIDERS_AI")))&&getenv("BT4_TAG_RUSH_SCENE")&&fixtureActor!=actor&&fixtureActor!=victim)?1:0;
+        }
+        if (!started && tick >= 150) {
+            int slot = atoi(getenv("BT4_TEST_TECH"));
+            int GAME_PTR gauge = BtlMember_GetActiveGauge(chr);
+            int act = getenv("BT4_RENDER_TEST")&&getenv("BT4_TEST_ACTION")?(int)strtol(getenv("BT4_TEST_ACTION"),NULL,0):BtlAct_GetTechniqueAction(chr, slot);
+            gauge[3] = gauge[4];
+            if(getenv("BT4_TAG_RUSH_SCENE")){
+                extern int TagBattle_SetTarget(int,int);
+                TagBattle_SetTarget(2,3);TagBattle_SetTarget(3,2);
+            }
+            BtlAct_Request(chr, act);
+            if(simultaneous){
+                extern int TagBattle_ReservePair(int,int);
+                int GAME_PTR extraGauge=BtlMember_GetActiveGauge(other);
+                extraGauge[3]=extraGauge[4];
+                TagBattle_ReservePair(0,1);TagBattle_ReservePair(2,3);
+                int otherSlot=getenv("BT4_TEST_SUPPORT_TECH")?atoi(getenv("BT4_TEST_SUPPORT_TECH")):slot;
+                BtlAct_Request(other,BtlAct_GetTechniqueAction(other,otherSlot));
+                fprintf(stderr,"bt4: concurrent tech start actors=%d,%d slot=%d\n",actor,support,slot);
+            }
+            fprintf(stderr,"bt4: requested tech actor=%d\n",actor);
+            started = 1; began = vblanks;
+            fprintf(stderr, "bt4: tech start slot=%d action=%x tick=%d vb=%u\n", slot, act, tick, vblanks);
+        }
+        if (started && *(int GAME_PTR)(chr+0x948) >= 0x106 && *(int GAME_PTR)(chr+0x948) <= 0x126) entered = 1;
+        if(started&&getenv("BT4_TEST_ACTION")&&*(int GAME_PTR)(chr+0x948)>=0xB4&&*(int GAME_PTR)(chr+0x948)<=0xBF)entered=1;
+        if (entered && vblanks-began > 180 && *(int GAME_PTR)(chr+0x948) < 0xFD && *(int GAME_PTR)(other+0x948) < 0xFD && (!getenv("BT4_TEST_ACTION")||*(int GAME_PTR)(chr+0x948)<0xB4||*(int GAME_PTR)(chr+0x948)>0xBF)) {
+            if(!recovered){recovered=vblanks;fprintf(stderr,"bt4: tech recovered vb=%u\n",vblanks);}
+            if(getenv("BT4_TAG_OWNERSHIP_TEST")&&vblanks-recovered<120)return;
+            fprintf(stderr,"bt4: tech end action=%x tick=%d\n",*(int GAME_PTR)(chr+0x948),tick);
+            if(simultaneous)fprintf(stderr,"bt4: concurrent tech complete actors=0,2\n");
+            exit(0);
+        }
+        if (started && (vblanks-began)%120 == 0) {
+            unsigned char GAME_PTR opp=BtlChar_Get(victim);
+            extern float BtlAnim_GetFrame(void *),BtlAnim_GetLength(void *),BtlAnim_GetStep(void *);
+            extern int TagBattle_IsActorLoading(int);
+            fprintf(stderr,"bt4: tech state actor=%d freeze=%d loading=%d anim-frame=%.2f/%.2f step=%.3f\n",actor,*(int GAME_PTR)(chr+0x1320),TagBattle_IsActorLoading(actor),BtlAnim_GetFrame(chr),BtlAnim_GetLength(chr),BtlAnim_GetStep(chr));
+            fprintf(stderr, "bt4: tech trace vb=%u tick=%d action=%x anim=%x opponent=%x/%x\n",vblanks,tick,*(int GAME_PTR)(chr+0x948),*(int GAME_PTR)(chr+0x974),*(int GAME_PTR)(opp+0x948),*(int GAME_PTR)(opp+0x974));
+        }
+        if(started && vblanks-began>1800) {
+            int action=*(int GAME_PTR)(chr+0x948);
+            fprintf(stderr,"bt4: tech end action=%x tick=%d\n",action,tick);
+            exit((action>=0xFD && action<=0x13B) || (simultaneous && *(int GAME_PTR)(other+0x948)>=0xFD && *(int GAME_PTR)(other+0x948)<=0x13B) ? 3 : 0);
+        }
+    }
     {
         /* gs/state.c: BT3_HASH. With it, during a fight, the fight's own values: both fighters' health and
            position, the battle clock and the C library generator's state. Two players' machines differ in much
@@ -465,6 +844,13 @@ void Port_Trace(unsigned vblanks) {
             printf("bt3: end of battle: gBtlSeq %p clock %08x %08x %08x %08x hp %d %d; heap dumped\n", (void *)gBtlSeq,
                    clock[0], clock[1], clock[2], clock[3], BtlCharApi_GetHp(0), BtlCharApi_GetHp(1));
             exit(0);
+        }
+    }
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_TAUNT_AUDIT") && gBtlSeq && gBtlSeq->state==3){
+        extern unsigned char GAME_PTR BtlChar_Get(int);
+        static int lastAction[2]={-1,-1};int i;
+        for(i=0;i<2;++i){unsigned char GAME_PTR chr=BtlChar_Get(i);int action=*(int GAME_PTR)(chr+0x948);
+            if(action!=lastAction[i]){lastAction[i]=action;fprintf(stderr,"BT4 action audit: vb=%u actor=%d action=%X animation=%X\n",vblanks,i,action,*(int GAME_PTR)(chr+0x974));}
         }
     }
     if ((sBattles != 0 || sFromMenu) && gBtlSeq != NULL && getenv("BT3_TRACE_SEQ") != NULL) { /* when the battle sequence changes state */

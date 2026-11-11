@@ -172,7 +172,7 @@ void EvoTop_Init(EvoTop *menu, s32 section) {
     menu->blink = Rand_Range(32);
     menu->cursor = EVO_PROGRESS_CURSOR;
     menu->voiceLine = -1;
-    StreamSe_PlayDefault(0, 0x10BE0);
+    StreamSe_PlayDefault(0, 0x15D);
 }
 
 /* Frees the screen. */

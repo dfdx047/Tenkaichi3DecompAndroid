@@ -1,4 +1,5 @@
 #include "common.h"
+extern s32 TagBattle_Active(void);
 #include "battle/eft_aa.h"
 
 /*
@@ -1608,7 +1609,7 @@ void EftAnimPart_Draw(EftAaTask *task) {
     if (BtlScene_IsEffectHidden(chr, w->type)) {
         return;
     }
-    if (!EftCam_IsActive()) {
+    if (TagBattle_Active() || !EftCam_IsActive()) {
         other = BtlScene_IsCharInView(chr) == 0;
     }
     other++;

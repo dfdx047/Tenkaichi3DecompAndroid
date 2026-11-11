@@ -1,0 +1,112 @@
+name: Native Linux and macOS packages
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Launcher tag embedded in the release packages
+        required: true
+        type: string
+      platform:
+        description: Native platform to build
+        required: false
+        default: all
+        type: string
+    secrets:
+      BT3_BUILD_KEY:
+        required: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Launcher version embedded in the test packages
+        required: true
+        default: "0.1.39.2-R7.1"
+        type: string
+
+      platform:
+        description: Native platform to build
+        required: true
+        default: all
+        type: choice
+        options: [all, linux, macos]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-platforms-${{ github.ref }}-${{ inputs.platform }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    if: inputs.platform != 'macos'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: port/release
+          tags: bt4-port-release:jammy
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build native Linux x86-64 package
+        env:
+          BT3_VERSION: ${{ inputs.version }}
+          BT3_BUILD_KEY: ${{ secrets.BT3_BUILD_KEY }}
+        run: |
+          mkdir -p port/build
+          docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e BT3_VERSION -e BT3_BUILD_KEY \
+            -e BT3_SDL3=/usr/local -v "$PWD":/src -w /src bt4-port-release:jammy \
+            sh port/release/inside_native.sh linux
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-build-logs
+          path: port/build/*_clang64.txt
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BT4decomp-linux-x64
+          path: port/build/BT4decomp-linux-x64.zip
+          if-no-files-found: error
+          retention-days: 14
+
+  macos:
+    if: inputs.platform != 'linux'
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native arm64 build dependencies
+        run: |
+          brew install llvm sdl3 shaderc spirv-cross curl pkgconf opus openssl@3 cmake ninja
+          python3 -m venv --system-site-packages .venv
+          .venv/bin/python -m pip install --quiet libclang==18.1.1
+          echo "BT3_CURL=$(brew --prefix curl)" >> "$GITHUB_ENV"
+          echo "BT3_SDL3=$(brew --prefix sdl3)" >> "$GITHUB_ENV"
+      - name: Build pinned RTC media and SCTP SDK
+        run: |
+          python3 port/release/build_rtc.py --prefix "$PWD/port/build/native-rtc" \
+            --work "$RUNNER_TEMP/bt4-native-rtc" --openssl-prefix "$(brew --prefix openssl@3)" --jobs 2
+          echo "BT3_RTC=$PWD/port/build/native-rtc" >> "$GITHUB_ENV"
+      - name: Build native Apple Silicon package
+        env:
+          BT3_VERSION: ${{ inputs.version }}
+          BT3_BUILD_KEY: ${{ secrets.BT3_BUILD_KEY }}
+          PYTHON: .venv/bin/python
+        run: sh port/release/inside_native.sh mac
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-build-logs
+          path: port/build/*_mac64.txt
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BT4decomp-macos-arm64
+          path: port/build/BT4decomp-macos-arm64.zip
+          if-no-files-found: error
+          retention-days: 14

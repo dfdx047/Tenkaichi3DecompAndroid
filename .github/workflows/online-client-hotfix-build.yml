@@ -1,0 +1,52 @@
+name: Online client hotfix build
+
+on:
+  push:
+    branches: [codex/online-room-fix]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: online-client-hotfix-build
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: port/release
+          tags: bt4-port-release:jammy
+          load: true
+      - name: Build the Windows Dev package without running tests
+        env:
+          BT3_BUILD_KEY: ${{ secrets.BT3_BUILD_KEY }}
+          BT3_VERSION: dev
+          BT4_DEVELOPMENT_BUILD: "1"
+        run: |
+          mkdir -p port/build
+          docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e BT3_BUILD_KEY -e BT3_VERSION \
+            -e BT4_DEVELOPMENT_BUILD -e BT3_SDL3=/opt/sdl3-mingw/SDL3-3.4.12/x86_64-w64-mingw32 \
+            -v "$PWD":/src -w /src bt4-port-release:jammy bash -lc '
+              set -e
+              export BT3_SKELETON=1 BT3_CC=win64
+              python3 port/tools/undefined.py > port/build/compile_win64.txt 2>&1
+              if grep -q "^FAILED" port/build/compile_win64.txt; then grep -A8 "^FAILED" port/build/compile_win64.txt | head -80; exit 1; fi
+              python3 port/tools/link.py > port/build/link_win64.txt 2>&1
+              sh port/setup/build.sh win
+              cp /usr/local/share/licenses/BT4-RTC/libdatachannel-build-source.zip port/build/libdatachannel-build-source.zip
+              cp /usr/local/share/licenses/BT4-RTC/BUILD.json port/build/libdatachannel-BUILD.json
+              python3 port/tools/prepare_windows_runtime.py
+              python3 port/tools/package.py
+            '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BT4decomp-R4-online-room-fix-Dev
+          path: port/build/BT4decomp-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 3

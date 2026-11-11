@@ -60,7 +60,7 @@ void EvoZ_Init(s32 section) {
         gEvoZ->list.top[i] = gEvoZ->list.cur[i];
         gEvoZ->list.bottom[i] = gEvoZ->list.cur[i] + gEvoZ->list.rows - 1;
     }
-    File_LoadSync(gEvoZ->side->chara + 0x2F9, gEvoZ->faceFile, 0x16800);
+    File_LoadSync(gEvoZ->side->chara + 0x71C, gEvoZ->faceFile, 0x16800);
     Sprite_Unpack(gEvoZ->faceFile, gEvoZ->faceRes, 0);
     res = gEvoZ->faceRes;
     Res_RelocateOffsets(&res, res, res);
@@ -136,12 +136,19 @@ void EvoZ_Draw(void) {
     Sprite_DrawPicture(gEvoZ->bg, 0, 0, 0x80);
 #endif
     EvoZ_Refresh(gEvoZ);
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *, const void *);
+    Flash_PortPortraits(NULL, gEvoZ->tex0[42]);
+#endif
     for (i = 0; i < UEVOZ_FLASH_NUM; i++) {
         if (i != 1 || !(gEvoZ->flags & UEVOZ_REEL_READY)) {
             Flash_Draw(&gEvoZ->flash[i]);
         }
     }
     Font_FlushAll();
+#ifdef PORT
+    Flash_PortPortraits(NULL, NULL);
+#endif
     PassWin_Draw();
     ItemHelp_Draw(gEvoZ->helpItem);
 #ifdef PORT

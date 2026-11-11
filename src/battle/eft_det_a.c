@@ -1,4 +1,8 @@
+extern int TagBattle_Team(int),TagBattle_TeamIndex(int),TagBattle_TeamCount(int);
+extern int TagBattle_Active(void);
 #include "common.h"
+extern s32 TagBattle_Count(void);
+extern s32 TagBattle_Target(s32 actor);
 #include "battle/eft_det_a.h"
 
 /*
@@ -705,14 +709,22 @@ s32 BtlBodyHit_Test(EftDetObj *atk, EftDetObj *def) {
     if (!BtlBodyHit_TestVolumes(work, body)) {
         return 0;
     }
-    work->hitFlags |= 1 << (def->id + 0x18);
-    defWork->hitFlags |= 1 << (atk->id + 0x1C);
+    /* Original contact words reserve four bits per direction. Keep their
+       team marker in range; the TAG pass tests each actor's current target. */
+    work->hitFlags |= 1u << ((TagBattle_Active() ? TagBattle_Team(def->id) : def->id) + 0x18);
+    defWork->hitFlags |= 1u << ((TagBattle_Active() ? TagBattle_Team(atk->id) : atk->id) + 0x1C);
     return 1;
 }
 
 /* Fighter against fighter: the object of side 0 against the object of side 1, then the reverse. */
 void BtlBodyHit_Update(void) {
     EftDetObj *a;
+    if(TagBattle_Active()) {
+        s32 actor;
+        for(actor=0;actor<TagBattle_Count();++actor)
+            BtlBodyHit_Test(BtlObj_Get(BattleSide_GetObjId(actor)),BtlObj_Get(BattleSide_GetObjId(TagBattle_Target(actor))));
+        return;
+    }
 
     a = BtlObj_Get(BattleSide_GetObjId(0));
     BtlBodyHit_Test(a, BtlObj_Get(BattleSide_GetObjId(1)));
@@ -952,11 +964,14 @@ void EftDet_FighterPass(void) {
     for (i = 0; i < list->count; i++) {
         rec = &list->rec[i];
         if (EftHit_CanHit(rec, 1)) {
-            s32 target = list->rec[i].objId ^ 1;
+            s32 target = TagBattle_Target(list->rec[i].objId);
             s32 ok;
             EftDetObj *obj;
 
-            if (target == 0) {
+            if(TagBattle_Active()){
+                if(target<0||target>=TagBattle_Count())continue;
+                obj=BtlObj_Get(BattleSide_GetObjId(target));
+            } else if (target == 0) {
                 obj = BtlObj_Get(BattleSide_GetObjId(0));
             } else {
                 obj = BtlObj_Get(BattleSide_GetObjId(1));
@@ -1145,7 +1160,8 @@ void EftDet_ClashPass(void) {
                 s32 hit = 0;
                 s32 result;
 
-                if (list->rec[i].objId != list->rec[j].objId) {
+                if (list->rec[i].objId != list->rec[j].objId &&
+                    (!TagBattle_Active() || !TagBattle_Allied(list->rec[i].objId,list->rec[j].objId))) {
                     if (EftHit_CanHit(&list->rec[j], 2)) {
                         if (list->rec[i].shape.type == 0 && list->rec[j].shape.type == 0) {
                             if (EftDet_SpheresVsSpheres(&list->rec[i].shape, &list->rec[j].shape)) {

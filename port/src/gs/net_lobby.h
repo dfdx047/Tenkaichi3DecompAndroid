@@ -7,12 +7,14 @@
 extern "C" {
 #endif
 
-enum { T_LOBBY_FIRST = 30, T_LOBBY_LAST = 41 }; /* the lobby's packet types (net_lobby.c); a release without lobbies ignores them */
+enum { T_LOBBY_FIRST = 30, T_LOBBY_LAST = 42 }; /* the lobby's packet types (net_lobby.c); a release without lobbies ignores them */
 
 #ifndef __cplusplus
 struct sockaddr_in;
 
 /* ---- net.c, for the lobby ---- */
+int Lobby_RouteSend(const void *data,int n,const struct sockaddr_in *to);
+int Lobby_RouteRecv(uint8_t *data,int n,struct sockaddr_in *from);
 int NetIo_Sock(void);                     /* the socket of the lobby (and of the session that follows), -1 none */
 int NetIo_Open(int port);                 /* a new socket on `port` (0: the system's choice); its local port, -1 failed */
 void NetIo_Close(void);                   /* the lobby's socket, closed (and its relay address given up) */

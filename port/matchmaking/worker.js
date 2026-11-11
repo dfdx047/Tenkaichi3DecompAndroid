@@ -38,7 +38,7 @@
 //       "D20" DP battle), or, if nobody waits, is given a room of its own in that queue and waits there as a host
 //       does (poll, addrs, leave as for any room). `who` names the caller's game (a random text it made up), so that
 //       a room it left behind is not the one it is given. relay: false = it holds a relay address already.
-//   Nearby first (from the release after 0.1.38.8): a game that sends `waited` (seconds it has been searching) and
+//   Nearby first (from the release after 0.1.38.9): a game that sends `waited` (seconds it has been searching) and
 //       `area` (what the player chose: "auto", "any", or a region of REGIONS) is put with a room by where Cloudflare
 //       places the two requests (see "Where players are" below, and pick()):
 //         auto  within NEAR_KM at once; anyone once WIDEN_SECONDS have gone by, the nearest first (rooms of older
@@ -56,7 +56,7 @@
 //       "host", ..., joined: true} (someone has joined its room meanwhile: its poll has the other player) | {error:
 //       "no room"} (the room has run out: it searches anew). Each side is told the other's region as `region`
 //       ("ME": with the join's answer, and with the host's poll once someone has joined), and nothing else of the
-//       other's place. A game that does not send `waited` (0.1.38.8 and older) searches as Anywhere does, gets no new
+//       other's place. A game that does not send `waited` (0.1.38.9 and older) searches as Anywhere does, gets no new
 //       fields, and its room is taken by a newer game as one whose place is not known (auto: after WIDEN_SECONDS;
 //       any: at once; a region: after REGION_WIDEN_SECONDS).
 //   /v1/queues {v}                     -> {waiting: {S: n, T: n, D10: n, D15: n, D20: n}}
@@ -653,6 +653,7 @@ export default {
         let body, raw; // (raw: the body's bytes as they came, for the build key's signature)
         try {
             raw = await request.arrayBuffer();
+            if(raw.byteLength>8192)return reply({error:"body too large"},413);
             body = JSON.parse(new TextDecoder().decode(raw));
         } catch (e) {
             return reply({ error: "bad request" }, 400);
@@ -674,9 +675,9 @@ export default {
         // for an answer it does not know ("gave no room", "gave no answer"); a newer one says to get the new release.
         const minRelease = Number(env.MIN_RELEASE ?? 0) || 0;
         if (what === "hello") { // a game asks, when its online screen opens, whether it is new enough (and what the newest is)
-            return reply({ min: minRelease, latest: Number(env.LATEST_RELEASE ?? 0) || 0, now });
+            return reply({ min: minRelease, latest: Number(env.LATEST_RELEASE ?? 0) || 0, now, tag:{protocol:TAG_PROTOCOL,maxPlayers:TAG_MAX_PLAYERS,transport:"introductions"} });
         }
-        const entry = what === "host" || what === "join" || what === "quick" || what === "watch";
+        const entry = what === "host" || what === "join" || what === "quick" || what === "watch" || what === "tag/host" || what === "tag/join";
         if (minRelease > 0 && entry && !(Number.isInteger(body.rel) && body.rel >= minRelease)) {
             return reply({ error: "old", need: minRelease }, 426);
         }
@@ -696,6 +697,7 @@ export default {
                 return reply({ error: "build key", why, now }, 403);
             }
         }
+        if (what.startsWith("tag/")) return tagRooms(what,body,env,ip,now);
         if (what === "host") {
             const addrs = cleanAddrs(body.addrs);
             if (!Number.isInteger(body.v) || addrs === null) {
@@ -979,3 +981,125 @@ export default {
         ctx.waitUntil(relayCheck(env, Math.floor(Date.now() / 1000)));
     },
 };
+
+// Tag Team introductions and lobby. Game traffic does not pass through D1.
+// Uses the upstream Worker's release checks, build signatures and TURN quota.
+const TAG_PROTOCOL = 0x54540005;
+const TAG_MAX_PLAYERS = 10;
+function tagTeams(value) {
+    return Array.isArray(value) && value.length === 2 && value.every(n => Number.isInteger(n) && n > 0) && value[0] + value[1] <= TAG_MAX_PLAYERS;
+}
+function tagSlots(teams) {
+    return Array.from({length: teams[0]+teams[1]}, (_,i) => ({team:i < teams[0] ? 0 : 1, member:null, cpu:false, difficulty:2}));
+}
+function tagPublic(room, caller, code) {
+    return {code, protocol:TAG_PROTOCOL, revision:room.revision, phase:room.phase, host:room.host,
+        you:caller.id, teams:room.teams, seed:room.seed, settings:room.settings, chat:room.chat,
+        slots:room.slots.map((s,index) => ({index, team:s.team, cpu:s.cpu, difficulty:s.difficulty,
+            player:s.member ? {id:s.member.id,name:s.member.name,ready:s.member.ready,
+                addrs:shown(s.member.addrs,sameNetwork(caller.ip,caller.addrs,s.member.ip,s.member.addrs))} : null}))};
+}
+function tagMember(room,key) {
+    return room.slots.map(s=>s.member).find(p=>p && p.key===key);
+}
+function tagError(error,status=400) { return reply({error},status); }
+async function tagRooms(what,body,env,ip,now) {
+    if (!env.DB) return tagError('tag service unavailable',503);
+    if (what === 'tag/host') {
+        const addrs=cleanAddrs(body.addrs);
+        if(body.v!==TAG_PROTOCOL || !tagTeams(body.teams) || addrs===null || !/^[0-9a-f]{16,64}$/.test(body.content ?? '')) return tagError('bad tag request');
+        await env.DB.prepare('DELETE FROM tag_rooms WHERE made < ?').bind(now-ROOM_SECONDS).run();
+        const open=await env.DB.prepare('SELECT COUNT(*) AS n FROM tag_rooms WHERE ip = ?').bind(ip).first();
+        if(open.n>=ROOMS_PER_ADDRESS || (await getValue(env,'taghost:'+ip,now-now%3600)??0)>=HOSTS_PER_HOUR) return tagError('busy',429);
+        await countUse(env,'taghost:'+ip,now-now%3600);
+        const id=randomText(16,ALPHABET),key=randomText(48,ALPHABET);
+        const member={id,key,name:cleanName(body.name),ip,addrs,ready:false};
+        const room={revision:1,host:id,phase:'lobby',teams:body.teams,content:body.content,seed:crypto.getRandomValues(new Uint32Array(1))[0],
+            settings:{time:4,delay:2,attacks:0},slots:tagSlots(body.teams),chat:[]};
+        room.slots[0].member=member;
+        if(body.fillCPU===true) for(const s of room.slots.slice(1))s.cpu=true;
+        for(let attempt=0;attempt<4;++attempt) {
+            const code=randomText(6,ALPHABET);
+            const result=await env.DB.prepare('INSERT OR IGNORE INTO tag_rooms (code,made,ip,version,revision,state) VALUES (?,?,?,?,?,?)').bind(code,now,ip,TAG_PROTOCOL,1,JSON.stringify(room)).run();
+            if(result.meta.changes) return reply({...tagPublic(room,member,code),key});
+        }
+        return tagError('busy',503);
+    }
+    const code=String(body.code??'').toUpperCase();
+    if(!/^[A-Z2-9]{6}$/.test(code))return tagError('no room',404);
+    // Revision compare-and-swap serializes simultaneous joins without a full-table lock.
+    for(let attempt=0;attempt<8;++attempt) {
+        const row=await env.DB.prepare('SELECT * FROM tag_rooms WHERE code = ? AND made >= ?').bind(code,now-ROOM_SECONDS).first();
+        if(!row)return tagError('no room',404);
+        const room=JSON.parse(row.state);let caller=tagMember(room,body.key),joinKey=null;
+        if(what==='tag/join') {
+            if(caller)return reply(tagPublic(room,caller,code)); // Idempotent retry with returned key.
+            if(body.v!==row.version || body.content!==room.content)return tagError('version or data',409);
+            if(room.phase!=='lobby')return tagError('battle already starting',409);
+            const addrs=cleanAddrs(body.addrs);if(addrs===null)return tagError('bad tag request');
+            const slot=room.slots.find(s=>!s.member && !s.cpu) ?? room.slots.find(s=>!s.member);
+            if(!slot)return tagError('full',409);
+            joinKey=randomText(48,ALPHABET);caller={id:randomText(16,ALPHABET),key:joinKey,name:cleanName(body.name),ip,addrs,ready:false};
+            slot.member=caller;slot.cpu=false;
+        } else {
+            if(!caller)return tagError('no room',404);
+            if(what==='tag/poll')return reply(tagPublic(room,caller,code));
+            if(what==='tag/relay') {
+                const refused=await relayAllowed(env,ip,now);
+                const turn=refused?{why:refused}:await turnAccess(env);
+                return reply(turn.server?{turn}:{noRelay:turn.why});
+            }
+            if(what==='tag/addrs') {
+                const addrs=cleanAddrs(body.addrs);if(addrs===null)return tagError('bad tag request');caller.addrs=addrs;
+            } else if(what==='tag/chat') {
+                if(typeof body.text!=='string')return tagError('bad tag request');
+                const text=body.text.replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,160);if(!text)return tagError('empty message');
+                const minute=now-now%60;
+                if((await getValue(env,'tagchat:'+caller.id,minute)??0)>=20)return tagError('chat rate',429);
+                await countUse(env,'tagchat:'+caller.id,minute);
+                room.chat.push({id:room.revision+1,player:caller.id,name:caller.name,text});room.chat=room.chat.slice(-30);
+            } else if(what==='tag/ready') {
+                if(room.phase!=='lobby' || typeof body.ready!=='boolean')return tagError('bad phase',409);caller.ready=body.ready;
+            } else if(what==='tag/slot') {
+                if(room.phase!=='lobby')return tagError('bad phase',409);
+                const slot=room.slots[body.slot];if(!slot)return tagError('bad slot');
+                if(body.action==='move') {
+                    if(slot.member)return tagError('occupied',409);
+                    const previous=room.slots.find(s=>s.member?.id===caller.id);previous.member=null;previous.cpu=false;slot.member=caller;slot.cpu=false;caller.ready=false;
+                } else {
+                    if(caller.id!==room.host)return tagError('host only',403);
+                    if(slot.member || typeof body.cpu!=='boolean' || !Number.isInteger(body.difficulty) || body.difficulty<0 || body.difficulty>4)return tagError('bad slot');
+                    slot.cpu=body.cpu;slot.difficulty=body.difficulty;
+                }
+            } else if(what==='tag/settings') {
+                if(caller.id!==room.host)return tagError('host only',403);
+                if(room.phase!=='lobby')return tagError('bad phase',409);
+                if(!tagTeams(body.teams) || !Number.isInteger(body.time) || body.time<0 || body.time>4 || !Number.isInteger(body.delay) || body.delay<0 || body.delay>12 || ![0,1].includes(body.attacks))return tagError('bad settings');
+                const members=room.slots.filter(s=>s.member).map(s=>({member:s.member,team:s.team}));
+                const slots=tagSlots(body.teams);
+                for(const p of members){const dst=slots.find(s=>s.team===p.team&&!s.member);if(!dst)return tagError('team occupied',409);dst.member=p.member;dst.member.ready=false;}
+                room.slots=slots;room.teams=body.teams;room.settings={time:body.time,delay:body.delay,attacks:body.attacks};
+            } else if(what==='tag/start') {
+                if(caller.id!==room.host)return tagError('host only',403);
+                if(room.phase!=='lobby')return tagError('bad phase',409);
+                if([0,1].some(t=>!room.slots.some(s=>s.team===t&&(s.member||s.cpu))) || room.slots.some(s=>s.member&&!s.member.ready))return tagError('not ready',409);
+                room.phase='connecting';
+            } else if(what==='tag/leave') {
+                const slot=room.slots.find(s=>s.member?.id===caller.id);slot.member=null;
+                const survivors=room.slots.filter(s=>s.member);
+                if(room.phase!=='lobby')room.phase='aborted';
+                if(!survivors.length) {
+                    const result=await env.DB.prepare('DELETE FROM tag_rooms WHERE code = ? AND revision = ?').bind(code,row.revision).run();
+                    if(result.meta.changes)return reply({left:true});else continue;
+                }
+                if(caller.id===room.host)room.host=survivors[0].member.id;
+            } else return tagError('bad request',404);
+        }
+        ++room.revision;
+        const result=await env.DB.prepare('UPDATE tag_rooms SET state = ?, revision = ? WHERE code = ? AND revision = ?').bind(JSON.stringify(room),room.revision,code,row.revision).run();
+        if(!result.meta.changes)continue;
+        if(what==='tag/leave')return reply({left:true});
+        return reply({...tagPublic(room,caller,code),...(joinKey?{key:joinKey}:{})});
+    }
+    return tagError('room changed; retry',409);
+}

@@ -2,6 +2,7 @@
 #define BATTLE_BTL_AI_H
 
 #include "types.h"
+extern void *BtlAi_ActorWork(s32 actor);
 
 /*
  * CPU player: the one definition of the AI manager block (0xA60 bytes) and of everything inside it. Used by

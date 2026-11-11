@@ -172,7 +172,7 @@ s32 SimEv28(TSimDay *day) {
         day->seqTimer = 0;
         break;
     case 8:
-        StreamSe_PlayDefault(0, 0x10BE1);
+        StreamSe_PlayDefault(0, 0x15E);
         Bgm_Stop();
         SimEv28_Deal(gSimTrain0[gSimCardRank].param);
         day->msgLine = 0xA1;

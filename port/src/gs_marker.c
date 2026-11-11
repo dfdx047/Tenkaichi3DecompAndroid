@@ -22,8 +22,9 @@ void Port_GsMarker(int effect) {
     Dma_AddData(pkt, sizeof(pkt));
 }
 
-/* Widescreen menus (the menu layout "Widescreen", port/src/gs/gs_draw.c). A screen converted for it marks its draw,
-   and each 2D piece of it is kept at its true shape, anchored where the screen's design has it:
+/* Widescreen menu markers (port/src/gs/gs_draw.c). Converted screens and clips are marked so the renderer can keep
+   page bounds and animation clipping. The beta panoramic layout expands the whole interface to the viewport.
+   Other paths use these anchors:
      PORT_MENU_CENTER  about the middle of the picture (the default of a page)
      PORT_MENU_LEFT    against the left edge (a menu's column)
      PORT_MENU_RIGHT   against the right edge (the characters beside it)
@@ -49,11 +50,12 @@ void Port_GsMarker(int effect) {
      PORT_MENU_LEFT_UP  as LEFT_ALL, moved up (Sim Dragon's portrait and health bar, into the counter's row; 0x34)
      PORT_MENU_CENTER_FREE  as CENTER, not cut at the 4:3 screen's edges: a picture that flies across the whole of
                        the wide picture (World Tour's announcer poster)
-   Which clip of a screen's movie goes where is the table in Port_MenuClipPart, by the clips' names. A screen that
-   marks nothing is stretched as before. The renderer acts on the markers only with that layout chosen. */
+   Which clip of a screen's movie receives an anchor is the table in Port_MenuClipPart. A screen that marks nothing
+   is stretched as before. The renderer acts on these markers only with that layout chosen. */
 enum { PORT_MENU_NONE = -1, PORT_MENU_CENTER, PORT_MENU_FILL, PORT_MENU_LEFT, PORT_MENU_RIGHT, PORT_MENU_CENTER_ALL, PORT_MENU_LEFT_ALL,
-       PORT_MENU_RIGHT_ALL, PORT_MENU_PAGE, PORT_MENU_PAGE_TOP, PORT_MENU_PAGE_EDGE, PORT_MENU_CENTER_FREE, PORT_MENU_SPLIT,
-       PORT_MENU_PAGE_EDGE_TOP, PORT_MENU_PAGE_LIST, PORT_MENU_CENTER_NUDGE, PORT_MENU_LEFT_UP };
+       PORT_MENU_RIGHT_ALL, PORT_MENU_PAGE, PORT_MENU_PAGE_TOP, PORT_MENU_PAGE_EDGE, PORT_MENU_CENTER_FREE,
+       PORT_MENU_FOOTER_LEFT, PORT_MENU_FOOTER_RIGHT, PORT_MENU_SPLIT, PORT_MENU_PAGE_EDGE_TOP,
+       PORT_MENU_PAGE_LIST, PORT_MENU_CENTER_NUDGE, PORT_MENU_LEFT_UP };
 static int sMenuPart = PORT_MENU_NONE;
 static int sDuelSettings; /* the versus menu's battle settings are open (or the last of its windows): in the middle */
 
@@ -62,6 +64,8 @@ void Port_MenuDuelSettings(int on) {
 }
 static int sMenuMovie;               /* which of the screen's movies is being drawn (Port_MenuMovie) */
 static int sMenuScreen;              /* PORT_MENU_SCREEN_* of the page being drawn, 0: none */
+static volatile int sUpdateMenuScreen;
+int Port_UpdateMenuScreen(void){return sUpdateMenuScreen;}
 
 int Port_MenuPart(int part);
 
@@ -79,7 +83,7 @@ int Port_MenuPart(int part) {
     int prev = sMenuPart;
     if (part != sMenuPart) {
         sMenuPart = part;
-        Port_GsMarker(part == PORT_MENU_NONE ? 0x13 : part == PORT_MENU_SPLIT ? 0x2F : part == PORT_MENU_PAGE_EDGE_TOP ? 0x30 :
+        Port_GsMarker(part == PORT_MENU_NONE ? 0x13 : part == PORT_MENU_FOOTER_LEFT ? 0x35 : part == PORT_MENU_FOOTER_RIGHT ? 0x36 : part == PORT_MENU_SPLIT ? 0x2F : part == PORT_MENU_PAGE_EDGE_TOP ? 0x30 :
                       part == PORT_MENU_PAGE_LIST ? 0x31 : part == PORT_MENU_CENTER_NUDGE ? 0x33 :
                       part == PORT_MENU_LEFT_UP ? 0x34 : 0x22 + part);
         if (sMenuScreen == 16 && part != PORT_MENU_NONE) {
@@ -102,6 +106,7 @@ static int sMoveDraw; /* converted screens' draws so far (Port_MenuPage): Port_M
 void Port_MenuPage(int screen) {
     if (screen != 0 && sPageDepth == 0) {
         sMoveDraw++; /* (a draw of a converted screen: Port_MenuClipMoving's clock) */
+        sUpdateMenuScreen=screen;
     }
     if (screen != 0) {
         if (screen == sMenuScreen) {
@@ -122,7 +127,7 @@ void Port_MenuPage(int screen) {
        too, but so is its window of rows: in the middle, the shelves meet the backdrop at the 4:3 page's edges.) */
     /* (the title, 1: its logo is a picture as wide as the 4:3 screen, kept at its true shape; its sky and clouds fill
        by their own markers)
-       (Evolution Z's character customising, 37, is laid out as character select: its bars at their true shape too;
+       (Evolution Z's character customising, 37, keeps composite rows in one centered coordinate space;
        the Data Center's password, 44: its keyboard is one picture as wide as the 4:3 screen, its letters on it)
        (Character Reference's pages of a character, 53: the picture on the left, the name and the choices on the right
        (the user's choice), the introduction's window and the voice's button in the middle) */
@@ -130,7 +135,7 @@ void Port_MenuPage(int screen) {
     Port_MenuPart(screen == 0 ? PORT_MENU_NONE : screen == 2 ? PORT_MENU_LEFT
                   : screen == 52 ? PORT_MENU_FILL /* (Tenkaichi Budokai Online: its page stretched as before) */
                   : screen == 51 ? PORT_MENU_CENTER_FREE /* (the logo page before the title: a picture of the whole 4:3 screen) */
-                  : screen == 37 ? PORT_MENU_SPLIT /* (Evolution Z's customising: the player's side left, the points right) */
+                  : screen == 37 ? PORT_MENU_CENTER_ALL /* one coordinate space for composite Potara rows and tooltips */
                   : screen == 1 ? PORT_MENU_CENTER_FREE /* (the title: its characters' art goes on past the 4:3 screen's edges,
                                                     Piccolo's cape at the top right: not cut there; its plates, parked off
                                                     the screen, are by their own rule) */
@@ -153,6 +158,20 @@ void Port_MenuFill(int on) {
 
 static int starts(const char *name, const char *prefix) {
     return strncmp(name, prefix, strlen(prefix)) == 0;
+}
+
+float Port_MenuReadableScale(void) {
+    extern int Port_MenusWide(void),Port_PageAspectMilli(void);
+    return sMenuScreen && Port_MenusWide() && Port_PageAspectMilli() >= 2000 ? 1.25f : 1.0f;
+}
+
+float Port_MenuLabelScale(const char *name) {
+    /* Raster labels already contain the game's outlined lettering. Enlarge
+       that complete label, never individual glyphs or its containing panel. */
+    if(starts(name,"mc_menu_text_") || starts(name,"mc_mode_text_") ||
+       starts(name,"mc_level_text_") || starts(name,"mc_battle_set_text_"))
+        return Port_MenuReadableScale();
+    return 1.0f;
 }
 
 /* The side of a measured clip that lies from x0 to x1 on the 4:3 screen: one touching its left edge (a guide on the
@@ -187,6 +206,9 @@ static int clip_part(const char *name, int x, int top);
    an edge keeps all of its pieces at their true shape, one as wide as the 4:3 screen too (the *_ALL parts): a
    plate's sprite sliding in is that wide for a frame, and would be taken for scenery and stretched. */
 int Port_MenuClipPart(const char *name, int x, int top) {
+    /* A message window is one composite. Its children must not be classified
+       again as scenery or as a separate page. Glyphs are anchored when queued. */
+    if (sMenuPart == PORT_MENU_FOOTER_LEFT || sMenuPart == PORT_MENU_FOOTER_RIGHT) return PORT_MENU_NONE;
     int part = clip_part(name, x, top);
     if (sMenuScreen < 2) {
         return part;
@@ -198,6 +220,12 @@ int Port_MenuClipPart(const char *name, int x, int top) {
     /* (the main menu too: its selected plate's streak is a piece as wide as the 4:3 screen at some places of the
        column, and was then stretched across the screen, scrolling up) */
     return part == PORT_MENU_LEFT ? PORT_MENU_LEFT_ALL : part == PORT_MENU_RIGHT ? PORT_MENU_RIGHT_ALL : part;
+}
+
+/* Message panels repeat their plain body across the extra width. Their end
+   ornaments and text keep the source scale. Zero outside native menu pages. */
+int Port_MenuFooter(int side) {
+    return sMenuScreen ? Port_MenuPart(side ? PORT_MENU_FOOTER_RIGHT : PORT_MENU_FOOTER_LEFT) : -1;
 }
 
 int Port_MenuClipPlace(int x0, int x1);
@@ -375,7 +403,13 @@ static int clip_part(const char *name, int x, int top) {
         if (n > 2 && name[n - 2] == '_' && name[n - 1] == 'l' && !starts(name, "mc_single_chara_")) {
             return PORT_MENU_LEFT;
         }
-        if (starts(name, "mc_chara_chip_") || strcmp(name, "mc_plate") == 0 || starts(name, "mc_yajirusi_") || strcmp(name, "mc_chara_mask") == 0) {
+        if (starts(name, "mc_color_") || starts(name, "mc_custom_")) {
+            return PORT_MENU_CENTER_ALL;
+        }
+        if (strcmp(name, "mc_yajirusi_left") == 0 || strcmp(name, "mc_yajirusi_right") == 0) {
+            return PORT_MENU_CENTER_ALL;
+        }
+        if (starts(name, "mc_chara_chip_") || strcmp(name, "mc_plate") == 0 || starts(name, "mc_yajirusi_up") || starts(name, "mc_yajirusi_down") || strcmp(name, "mc_chara_mask") == 0) {
             /* (with its mask: the cells outside the bar are hidden by it, so it has to be where they are) */
             return PORT_MENU_LEFT_ALL; /* (the player's roster against the left edge, as the versus one's: the user's choice) */
         }
@@ -383,16 +417,14 @@ static int clip_part(const char *name, int x, int top) {
             return PORT_MENU_CENTER_ALL;
         }
     }
-    if (sMenuScreen == 37 && top) { /* Evolution Z's customising (the user's choice): the player's side on the left, the
-                                        points on the right; the page's own pieces by the half they start in (SPLIT) */
+    if (sMenuScreen == 37 && top) { /* Keep each customization widget and its text in the same coordinate space. */
         if (starts(name, "mc_chara_chip_") || strcmp(name, "mc_plate") == 0 || starts(name, "mc_yajirusi_") ||
-            starts(name, "mc_name_") || starts(name, "mc_form_") || strcmp(name, "mc_single_chara_l") == 0 ||
-            starts(name, "mc_status_ability_") || strcmp(name, "mc_status_attribute") == 0) {
+            starts(name, "mc_name_") || starts(name, "mc_form_") || strcmp(name, "mc_single_chara_l") == 0) {
             return PORT_MENU_LEFT_ALL;
         }
         if (strcmp(name, "mc_status_power_base") == 0 || strcmp(name, "mc_status_base_1") == 0 || starts(name, "mc_text_power_") ||
             strcmp(name, "mc_exp_bar_point") == 0 || starts(name, "mc_ability_limit_") || starts(name, "mc_num_zp_")) {
-            return PORT_MENU_RIGHT_ALL;
+            return PORT_MENU_CENTER_ALL;
         }
     }
     if (sMenuScreen == 38 && top && starts(name, "menu_plate_")) {
@@ -407,6 +439,11 @@ static int clip_part(const char *name, int x, int top) {
     }
     if (sMenuScreen == 39 && top && starts(name, "mc_bottom_plate_")) {
         return PORT_MENU_LEFT; /* (Options: "EXIT" below them, from the left) */
+    }
+    if (sMenuScreen == 39 && starts(name, "mc_layout_")) {
+        /* The screen-position preview is one picture, split into texture
+           tiles. Keep its background and instruction frame in one space. */
+        return PORT_MENU_CENTER_ALL;
     }
     if ((sMenuScreen >= 10 || sMenuScreen == 3) && sMenuScreen != 54 && top && (starts(name, "mc_title") || strcmp(name, "mc_icon") == 0)) {
         return PORT_MENU_LEFT; /* (the title row against the left edge, as on the main menu) */
@@ -432,13 +469,11 @@ static int clip_part(const char *name, int x, int top) {
     return PORT_MENU_NONE;
 }
 
-/* Where the message window's text goes from its clip (src/battle/view_a_b.c MsgWin_Draw). The window that opens on
-   the left (side 0) has its text 108 into the page, well clear of its stepped corner, whose lower step (beside the
-   text) ends at 25; on a converted screen in the widescreen layout, where its band reaches the picture's edge, the
-   text starts at 40 instead: nearer the main menu's (26), still clear of the corner. Elsewhere as the game has it. */
+/* No custom displacement: retain the ISO message inset clear of ornaments and hosts. */
 extern int Port_MenusWide(void); /* port/src/plat_stub.c */
 int Port_MenuMessageX(int side) {
-    return side == 0 && sMenuScreen >= 10 && Port_MenusWide() ? 40 - 108 : 0;
+    /* Keep the ISO's inset clear of the stepped ornament and host. */
+    return 0;
 }
 
 /* Whether a clip of a converted screen's movie is moving (sliding in or out): its position changed within the last

@@ -1,0 +1,136 @@
+{
+  "revision": "0.1.39.2 R7",
+  "scope": "Local Windows x64 / Direct3D 12. No remote ISP or physical Linux/macOS gameplay validation.",
+  "display_cases": [
+    {
+      "case": "characters",
+      "resolution": [
+        2520,
+        1080
+      ],
+      "captured": true
+    },
+    {
+      "case": "costumes",
+      "resolution": [
+        2520,
+        1080
+      ],
+      "captured": true
+    },
+    {
+      "case": "dragon-wisdom",
+      "resolution": [
+        2520,
+        1080
+      ],
+      "captured": true
+    },
+    {
+      "case": "hud-editor",
+      "resolution": [
+        2520,
+        1080
+      ],
+      "captured": true
+    },
+    {
+      "case": "maps",
+      "resolution": [
+        2520,
+        1080
+      ],
+      "captured": true
+    },
+    {
+      "case": "screen-options",
+      "resolution": [
+        2520,
+        1080
+      ],
+      "captured": true
+    },
+    {
+      "case": "characters",
+      "resolution": [
+        1920,
+        1080
+      ],
+      "captured": true
+    },
+    {
+      "case": "costumes",
+      "resolution": [
+        1920,
+        1080
+      ],
+      "captured": true
+    },
+    {
+      "case": "hud-editor",
+      "resolution": [
+        1920,
+        1080
+      ],
+      "captured": true
+    },
+    {
+      "case": "maps",
+      "resolution": [
+        1920,
+        1080
+      ],
+      "captured": true
+    }
+  ],
+  "combat_checks": [
+    {
+      "case": "duel-pause",
+      "passed": true,
+      "events": [
+        "free camera audit: PASS mode=0 tag=0 moved=1 native-pose-unchanged=1",
+        "HUD fixture: hidden=1 expected=1 menu=0",
+        "HUD fixture: hidden=0 expected=0 menu=0",
+        "HUD fixture: complete"
+      ]
+    },
+    {
+      "case": "tag-pause",
+      "passed": true,
+      "events": [
+        "free camera audit: PASS mode=0 tag=1 moved=1 native-pose-unchanged=1",
+        "HUD fixture: hidden=1 expected=1 menu=0",
+        "HUD fixture: hidden=0 expected=0 menu=0",
+        "HUD fixture: complete"
+      ]
+    },
+    {
+      "case": "training-camera",
+      "passed": true,
+      "events": [
+        "free camera audit: PASS mode=6 tag=0 moved=1 native-pose-unchanged=1",
+        "HUD fixture: hidden=1 expected=1 menu=0",
+        "HUD fixture: hidden=0 expected=0 menu=0",
+        "HUD fixture: complete"
+      ]
+    }
+  ],
+  "updater_checks_passed": 60,
+  "panoramic_layout": "Full viewport width for menus and HUD.",
+  "free_camera": "Render-local pose excluded from rollback memory; input does not advance during re-simulation.",
+  "macos_packaging": {
+    "regression_tests": 9,
+    "local_result": "passed",
+    "coverage": [
+      "nested Brotli @rpath dependencies",
+      "inherited and loader rpaths",
+      "dependency cycles",
+      "missing libraries",
+      "basename collisions",
+      "packaged dependency closure",
+      "Mach-O load command parsing"
+    ],
+    "native_runtime_validation": "performed by the macOS release build before packaging is accepted",
+    "physical_macos_client_tested": false
+  }
+}

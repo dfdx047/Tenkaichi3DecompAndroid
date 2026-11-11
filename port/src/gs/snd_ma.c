@@ -42,6 +42,25 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Lossless disc cache: decoder only, with no second audio device, gain, rate
+ * conversion or engine. snd_adx.c owns playback, pan, loops and time stretch. */
+void *PortPcm_Open(const char *path,unsigned channels,unsigned rate,unsigned long long samples){
+    ma_decoder *d=(ma_decoder *)calloc(1,sizeof(*d));ma_uint64 length=0;
+    ma_decoder_config config=ma_decoder_config_init(ma_format_s16,0,0);
+    if(!d)return NULL;
+    if(ma_decoder_init_file(path,&config,d)!=MA_SUCCESS){free(d);return NULL;}
+    if(d->outputChannels!=channels||d->outputSampleRate!=rate||
+       ma_decoder_get_length_in_pcm_frames(d,&length)!=MA_SUCCESS||length!=samples){
+        ma_decoder_uninit(d);free(d);return NULL;
+    }
+    return d;
+}
+unsigned PortPcm_Read(void *handle,int16_t *out,unsigned frames){
+    ma_uint64 read=0;ma_decoder_read_pcm_frames((ma_decoder *)handle,out,frames,&read);return (unsigned)read;
+}
+int PortPcm_Seek(void *handle,unsigned frame){return ma_decoder_seek_to_pcm_frame((ma_decoder *)handle,frame)==MA_SUCCESS;}
+void PortPcm_Close(void *handle){if(handle){ma_decoder_uninit((ma_decoder *)handle);free(handle);}}
+
 /* PAN_AUTO of snd_adx.c: a channel's pan was never set (the file's own balance is kept). */
 #define MA_PAN_AUTO (-128)
 

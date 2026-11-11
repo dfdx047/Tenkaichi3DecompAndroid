@@ -368,25 +368,33 @@ int UiText_Load(const char *gameTextDir, const char *locale) {
     __atomic_store_n(&sReady, 1, __ATOMIC_RELEASE);
     return 1;
 }
+/* Exact BT4 Spanish disc typo: 00460.bin / 3 / BPE / 5 / 11 / 37.
+   Keep source assets and catalog lookup keys intact. Like the translation arena,
+   these immutable lines live outside the rollback state and in the text pointer domain. */
+static const uint16_t *UiText_FixDiscString(const uint16_t *original) {
+    static const uint16_t from[]={0xfeff,'L','a',' ','B','a','r','r','a','r','a',' ','a',' ','S','u','p','e','r','a','r',0};
+    static const uint16_t to[]={0xfeff,'L','a',' ','B','a','r','r','e','r','a',' ','a',' ','S','u','p','e','r','a','r',0};
+    return ui_equal(original,from)?to:original;
+}
 const uint16_t *UiText_TranslateString(const uint16_t *original) {
     uint64_t h;
     unsigned slot;
     UiWord *w;
-    if (!__atomic_load_n(&sReady, __ATOMIC_ACQUIRE) || !original || *original != 0xfeff) return original;
+    if (!__atomic_load_n(&sReady, __ATOMIC_ACQUIRE) || !original || *original != 0xfeff) return UiText_FixDiscString(original);
     if (sOwnCount && bsearch(&original, sOwn, (size_t)sOwnCount, sizeof(*sOwn), ui_ptr_compare)) return original;
     h = ui_hash_line(UINT64_C(1469598103934665603), original);
     if (!h) return original;
     slot = (unsigned)h & (UI_WORD_SLOTS - 1);
     while (sWords[slot].original && !ui_equal(sWords[slot].original, original)) slot = (slot + 1) & (UI_WORD_SLOTS - 1);
     w = &sWords[slot];
-    return w->original && !w->ambiguous && w->translated ? w->translated : original;
+    return UiText_FixDiscString(w->original && !w->ambiguous && w->translated ? w->translated : original);
 }
 const uint16_t *UiText_TranslateLine(const uint32_t *table, int line, const uint16_t *original) {
     uint32_t count, i;
     uint64_t h;
     const uint16_t *candidate = NULL;
     int found = 0;
-    if (!__atomic_load_n(&sReady, __ATOMIC_ACQUIRE) || !table || line < 0 || !original) return original;
+    if (!__atomic_load_n(&sReady, __ATOMIC_ACQUIRE) || !table || line < 0 || !original) return UiText_FixDiscString(original);
     count = table[0];
     if (count == 0 || count > UI_MAX_LINE || (uint32_t)line >= count) return UiText_TranslateString(original);
     h = ui_hash_char(UINT64_C(1469598103934665603), (uint16_t)count);
@@ -405,6 +413,6 @@ const uint16_t *UiText_TranslateLine(const uint32_t *table, int line, const uint
         candidate = text;
         found = 1;
     }
-    if (found) return ui_equal(candidate, original) ? original : candidate;
+    if (found) return UiText_FixDiscString(ui_equal(candidate, original) ? original : candidate);
     return UiText_TranslateString(original);
 }

@@ -79,7 +79,7 @@ hand-written VU0 code, kept as top-level assembly blocks in that file (three as 
 `Vec3_Normalize` and two others the disassembler does not decode). Every one has an exact portable reference
 implementation, `Ref_<Name>` in `src/port/vu0_b.c` (not part of the matching build; it has been
 compiled and sanity-tested on the host, not checked against a console or emulator). The full
-table "address, name, exact semantics" is in the agent notes at the top of that file.
+table "address, name, exact semantics" is in the source comments at the top of that file.
 
 Register conventions (read from disassembly): vf0 = (0,0,0,1); vf1 / vf2 / vf3 = the z / y / x
 unit vectors, set at boot by 0x120088; vf16..19 the current matrix with a stack in VU0 memory;

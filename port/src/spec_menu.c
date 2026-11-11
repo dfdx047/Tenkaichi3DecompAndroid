@@ -32,6 +32,8 @@ extern int Port_TrLine(const char *original, char *out, int size);
 extern void PortA11y_Say(const char *text, int flags);
 extern volatile int gPortSpecMenuAsk;
 
+#include "gs/online_language.h"
+
 #define PORT_SPEC_TEXT 0x7000 /* an item's text number from here on is one of ours (hud_0_b.c) */
 enum { IT_NOTE, IT_CONTINUE, IT_VIEW, IT_BACK, IT_LEAVE, IT_YES, IT_NO };
 
@@ -45,6 +47,7 @@ static unsigned sHeld;
 static int sRepeat;
 
 static const char *tr(const char *english, char *buf, int size) {
+    english=PortOnline_Text(english);
     if (Port_TrLine(english, buf, size)) {
         return buf;
     }

@@ -301,6 +301,7 @@ s32 EftBodyFx_Stop(s32 objId) {
 
 /* Init callback of the manager: two texture sets, two model templates, a list of 20 discs. */
 void EftDiscMgr_Init(EftOTask *task) {
+    extern void TagDisc_Reset(void);TagDisc_Reset();
     gEftDisc = BtlPool_Alloc(BtlPool_GetCurrent(), sizeof(EftODiscMgr));
     gEftDisc->res = NULL;
     gEftDisc->res = BtlPool_Alloc(BtlPool_GetCurrent(), 0x660);

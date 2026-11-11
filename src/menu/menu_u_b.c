@@ -92,7 +92,7 @@ s32 SimEv32(USimDay *day) {
         day->seqTimer = 0;
         break;
     case 9:
-        StreamSe_PlayDefault(0, 0x10BE1);
+        StreamSe_PlayDefault(0, 0x15E);
         Bgm_Stop();
         day->msgLine = 0xBD;
         SimDay_Cmd(0x37);

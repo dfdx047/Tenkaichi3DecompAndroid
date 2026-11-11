@@ -29,7 +29,7 @@
 #define TS_CUSTOM_ROWS 2           /* rows of the custom-character list */
 #define TS_CUR_MENU 5              /* TeamSelSide.cur on the "team complete" plate */
 #define TS_BGM_LOCKED 0x19         /* music list id of a locked entry (BgmList_ApplyUnlocks) */
-#define TS_BGM_FILE 0x10B16        /* Bgm_Play id of music list id 0 */
+#define TS_BGM_FILE 0x816        /* Bgm_Play id of music list id 0 */
 
 /* TeamSelSide.flags, further bits */
 #define TEAMSEL_SIDE_CUSTOM 0x80   /* the member is being chosen from the custom-character list */

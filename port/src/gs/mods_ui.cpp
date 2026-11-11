@@ -12,6 +12,8 @@
 #include "imgui_internal.h" // (ShadeVertsLinearColorGradientKeepAlpha)
 #include "fight_panels.h"
 #include "mods.h"
+extern "C" const char *Port_F1Text(const char *text);
+static const char *M(const char *text){return Port_F1Text(text);}
 #include "ui.h"
 
 ImFont *Ui_FontBold(void); // ui.cpp: the first of the game's fonts (NULL: the window's own)
@@ -232,8 +234,13 @@ static void portrait_face(ImDrawList *dl, SDL_GPUTexture *tex, const ModsCmd &c,
             float a = 1.0f;
             if (r1 > r0) {
                 float d = sqrtf((x - mx) * (x - mx) + (y - my) * (y - my)), t = clamp01((d - r0) / (r1 - r0));
-                a = t < 0.55f ? 1.0f - 0.15f * t / 0.55f : 0.85f * (1.0f - (t - 0.55f) / 0.45f);
+                a = 1.0f-t*t*(3.0f-2.0f*t);
             }
+            /* Feather the photo's rectangular crop as well as its round mask.
+               This keeps the window and screen edges from cutting the art. */
+            float edge=fminf(fminf(x-wx0,wx1-x),fminf(y-wy0,wy1-y));
+            float feather=clamp01(edge/8.0f);
+            a*=feather*feather*(3.0f-2.0f*feather);
             float uu = (x - left) / pw, vv = (y - top) / ph;
             if (uu < 0.0f || uu > 1.0f || vv < 0.0f || vv > 1.0f) {
                 a = 0.0f;
@@ -399,7 +406,7 @@ static void setting_ui(ModsSetting &s) {
 
     if (s.kind == MODS_SET_TOGGLE) {
         bool on = v != 0.0;
-        if (ImGui::Checkbox(s.label, &on)) {
+        if (ImGui::Checkbox(M(s.label), &on)) {
             v = on ? 1.0 : 0.0;
             changed = true;
         }
@@ -407,9 +414,9 @@ static void setting_ui(ModsSetting &s) {
         int at = (int)v;
         const char *names[8];
         for (int k = 0; k < s.choices; k++) {
-            names[k] = s.choice[k];
+            names[k] = M(s.choice[k]);
         }
-        if (ImGui::Combo(s.label, &at, names, s.choices)) {
+        if (ImGui::Combo(M(s.label), &at, names, s.choices)) {
             v = at;
             changed = true;
         }
@@ -421,20 +428,20 @@ static void setting_ui(ModsSetting &s) {
         bool whole = floor(s.step) == s.step && floor(s.min) == s.min;
         char shown[32];
         snprintf(shown, sizeof(shown), whole ? "%.0f" : "%.2f", s.min + at * s.step);
-        if (ImGui::SliderInt(s.label, &at, 0, steps, shown)) {
+        if (ImGui::SliderInt(M(s.label), &at, 0, steps, shown)) {
             at = at < 0 ? 0 : at > steps ? steps : at;
             v = s.min + at * s.step;
             changed = true;
         }
     } else {
         float fv = (float)v;
-        if (ImGui::SliderFloat(s.label, &fv, (float)s.min, (float)s.max, "%.2f")) {
+        if (ImGui::SliderFloat(M(s.label), &fv, (float)s.min, (float)s.max, "%.2f")) {
             v = fv;
             changed = true;
         }
     }
     if (s.tip[0] != '\0') {
-        ImGui::SetItemTooltip("%s", s.tip);
+        ImGui::SetItemTooltip(M("%s"), M(s.tip));
     }
     if (changed) {
         s.value = v < s.min ? s.min : v > s.max ? s.max : v;
@@ -443,51 +450,49 @@ static void setting_ui(ModsSetting &s) {
 }
 
 void ModsUi_Tab(void) {
-    ImGui::TextWrapped("Script mods: Lua scripts in the folder \"%s\" next to the game, one folder per mod with a mod.lua "
-                       "in it. They can draw over the picture and change how the fight camera is shown; they cannot "
-                       "change a fight, so they can be used online. See docs/port/mods.md.", Mods_Folder());
-    if (ImGui::Button("Reload the scripts")) {
+    ImGui::TextWrapped(M("Manage Lua presentation mods from %s. Each mod has its own folder and settings."), Mods_Folder());
+    if (ImGui::Button(M("Reload the scripts"))) {
         Mods_ReloadAsk();
     }
-    ImGui::SetItemTooltip("Loads every mod again from its folder (after adding one, or after changing a script).");
+    ImGui::SetItemTooltip(M("Loads every mod again from its folder (after adding one, or after changing a script)."));
     ImGui::Separator();
     Mods_Lock();
     int n = Mods_Count();
     if (n == 0) {
-        ImGui::TextDisabled("No mods found.");
+        ImGui::TextDisabled(M("No mods found."));
     }
     for (int i = 0; i < n; i++) {
         ModsInfo *m = Mods_Info(i);
         ImGui::PushID(i);
         char head[200];
-        snprintf(head, sizeof(head), "%s%s%s###mod", m->name, m->version[0] != '\0' ? "  " : "", m->version);
+        snprintf(head, sizeof(head), "%s%s%s###mod", M(m->name), m->version[0] != '\0' ? "  " : "", m->version);
         bool open = ImGui::CollapsingHeader(head, ImGuiTreeNodeFlags_AllowOverlap | ImGuiTreeNodeFlags_DefaultOpen);
         ImGui::SameLine(ImGui::GetContentRegionAvail().x - ImGui::GetFrameHeight() * 3.0f);
         bool on = m->enabled != 0;
-        if (ImGui::Checkbox("On", &on)) {
+        if (ImGui::Checkbox(M("On"), &on)) {
             m->enabled = on;
             Mods_SettingChanged();
         }
         if (m->error[0] != '\0') {
-            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "Stopped: %s", m->error);
+            ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), M("Stopped: %s"), m->error);
         }
         if (open) {
             ImGui::Indent();
             if (m->author[0] != '\0') {
-                ImGui::TextDisabled("by %s", m->author);
+                ImGui::TextDisabled(M("by %s"), m->author);
             }
             if (m->about[0] != '\0') {
-                ImGui::TextWrapped("%s", m->about);
+                ImGui::TextWrapped("%s", M(m->about));
             }
-            ImGui::TextDisabled("Folder: %s/%s   Uses:%s%s%s", Mods_Folder(), m->folder, m->hooks & MODS_HOOK_FRAME ? " frame" : "",
-                                m->hooks & MODS_HOOK_HUD ? " hud" : "", m->hooks & MODS_HOOK_CAMERA ? " camera" : "");
+            ImGui::TextDisabled(M("Folder: %s/%s   Uses:%s%s%s"), Mods_Folder(), m->folder, m->hooks & MODS_HOOK_FRAME ? M(" frame") : "",
+                                m->hooks & MODS_HOOK_HUD ? M(" hud") : "", m->hooks & MODS_HOOK_CAMERA ? M(" camera") : "");
             ImGui::BeginDisabled(!on);
             for (int k = 0; k < m->settings; k++) {
                 ImGui::PushID(k);
                 setting_ui(m->set[k]);
                 ImGui::PopID();
             }
-            if (m->settings > 0 && ImGui::Button("Defaults")) {
+            if (m->settings > 0 && ImGui::Button(M("Defaults"))) {
                 for (int k = 0; k < m->settings; k++) {
                     m->set[k].value = m->set[k].def;
                 }

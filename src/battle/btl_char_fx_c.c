@@ -445,44 +445,82 @@ void BtlFx_UpdateObjEvents(FxChr *chr) {
 /* Manager pass (camera stage): every effect request and animation event of the fighter, in a fixed order. */
 void BtlFx_UpdateAll(FxChr *chr) {
     FxObj *obj = BtlChar_GetObj(chr);
+    extern void Heap_TagCheck(s32 phase);
 
     BtlFx_UpdateAura(chr);
+    Heap_TagCheck(300+chr->player);
     BtlFx_UpdateChargeFx(chr);
+    Heap_TagCheck(310+chr->player);
     BtlChar_SpawnFxBits3C(chr);
+    Heap_TagCheck(320+chr->player);
     BtlFx_FireKiBlast(chr);
+    Heap_TagCheck(330+chr->player);
     BtlFx_SpawnHitSparkReq17(chr);
+    Heap_TagCheck(340+chr->player);
     BtlChar_SpawnFxBits0(chr);
+    Heap_TagCheck(350+chr->player);
     BtlFx_UpdateObjFlagReq3(chr);
+    Heap_TagCheck(360+chr->player);
     BtlFx_HandleImpactEvents(chr);
+    Heap_TagCheck(370+chr->player);
     BtlFx_HandleFlag30Events(chr);
+    Heap_TagCheck(380+chr->player);
     BtlFx_PlaySwingSound(chr);
+    Heap_TagCheck(390+chr->player);
     BtlFxObj_HandleFlagEvents(obj);
+    Heap_TagCheck(400+chr->player);
     BtlFxObj_PlayEventSounds(obj);
+    Heap_TagCheck(410+chr->player);
     BtlFx_UpdatePowerUpLook(chr);
+    Heap_TagCheck(420+chr->player);
     BtlFx_SpawnReq6(chr);
+    Heap_TagCheck(430+chr->player);
     BtlFx_UpdateScreenFilter(chr);
+    Heap_TagCheck(440+chr->player);
     BtlFx_SpawnBurstReqC(chr);
+    Heap_TagCheck(450+chr->player);
     BtlFx_SpawnPartFxEvent8(chr);
+    Heap_TagCheck(460+chr->player);
     BtlFx_SpawnFastMoveFx(chr);
+    Heap_TagCheck(470+chr->player);
     BtlFx_SpawnSpeedLines(chr);
+    Heap_TagCheck(480+chr->player);
     BtlFx_SpawnReq18(chr);
+    Heap_TagCheck(490+chr->player);
     BtlFx_UpdateGroundFx(chr);
+    Heap_TagCheck(500+chr->player);
     BtlFx_UpdateWaterFx(chr);
+    Heap_TagCheck(510+chr->player);
     BtlFx_UpdateAimedFxReq28(chr);
+    Heap_TagCheck(520+chr->player);
     BtlFx_UpdateReq1A(chr);
+    Heap_TagCheck(530+chr->player);
     BtlFx_UpdateReq38(chr);
+    Heap_TagCheck(540+chr->player);
     BtlFx_TriggerObjReq1E(chr);
+    Heap_TagCheck(550+chr->player);
     BtlFx_TriggerObjReq1F(chr);
+    Heap_TagCheck(560+chr->player);
     BtlFx_SpawnFlashReq2B(chr);
+    Heap_TagCheck(570+chr->player);
     BtlFx_UpdateObjCmdFlag137(chr);
+    Heap_TagCheck(580+chr->player);
     BtlFx_UpdateSubStateFlag96(chr);
+    Heap_TagCheck(590+chr->player);
     BtlFx_UpdateObjFlag80(chr);
+    Heap_TagCheck(600+chr->player);
     BtlFx_SpawnPartFlashes(chr);
+    Heap_TagCheck(610+chr->player);
     BtlFx_PushBackOnEvent400(chr);
+    Heap_TagCheck(620+chr->player);
     BtlFx_SetObjMaskOnEvent400(chr);
+    Heap_TagCheck(630+chr->player);
     BtlFx_ShakeCamOnEvent(chr);
+    Heap_TagCheck(640+chr->player);
     BtlFx_VibrateOnEvent(chr);
+    Heap_TagCheck(650+chr->player);
     BtlFx_UpdateCharaFx(chr);
+    Heap_TagCheck(660+chr->player);
 }
 
 /* Manager pass (stage 10, after hit detection): the requests raised by hits. */
@@ -747,6 +785,9 @@ void BtlPartner_PlayAnim(FxChr *chr, s32 anim) {
     }
     obj = BtlObj_Get(p->objId);
     BtlObjAnim_PlayModel(obj, anim - 0x19E, 0);
+#ifdef PORT
+    if(getenv("BT4_VFX_TRACE"))printf("bt4-vfx partner obj=%d anim=%d head=%p flags=%x\n",p->objId,anim-0x19E,obj->anim.head,obj->flags);
+#endif
     if (obj->anim.head == NULL) {
         obj->flags &= ~2;
     } else if (obj->anim.head->unk2 == 0) {

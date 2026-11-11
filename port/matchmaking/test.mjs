@@ -4,10 +4,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import nodeCrypto from "node:crypto";
+import { pathToFileURL } from "node:url";
 const src = fs.readFileSync(new URL("./worker.js", import.meta.url), "utf8").replace("export default", "const worker =") + "\nexport { worker, network, isPrivate, sameNetwork, shown };";
 const copy = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "worker-test-")), "worker.mjs");
 fs.writeFileSync(copy, src);
-const { worker, network, sameNetwork } = await import(copy);
+const { worker, network, sameNetwork } = await import(pathToFileURL(copy).href);
 const rooms = new Map(), used = new Map(), watchers = new Map();
 let rowids = 0;
 let noLobbyColumn = false; // (a database made before lobbies: rooms without the column)

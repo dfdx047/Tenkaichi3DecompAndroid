@@ -1,4 +1,5 @@
 #include "common.h"
+extern s32 TagBattle_IsActorLoading(s32 actor);
 #include "battle/btl_char_cam_int.h"
 
 /* The fighter's own camera, 0x1C4BF8-0x1C7B30. See battle/btl_char_cam.h for the structures and the frame flow.
@@ -76,7 +77,7 @@ f32 ChrCam_GetRate(ChrCamChr *chr, Vec4 *eye, Vec4 *target) {
         cam->rate = 0.25f;
     } else if (BtlChar_TestFlag(chr, 0xD1)) {
         cam->rate = 0.2f;
-    } else if (BtlChars_IsTimeStopped()) {
+    } else if (TagBattle_IsActorLoading(chr->side)) {
         cam->rate = 1.0f;
     }
     return cam->rate;
@@ -88,7 +89,7 @@ f32 ChrCam_GetRate(ChrCamChr *chr, Vec4 *eye, Vec4 *target) {
 f32 ChrCam_GetBob(ChrCamChr *chr) {
     ChrCam *cam = &chr->cam;
 
-    if (BtlChars_IsTimeStopped() || cam->unk98 == 0) {
+    if (TagBattle_IsActorLoading(chr->side) || cam->unk98 == 0) {
         cam->bob = 0.0f;
         return cam->bob;
     }

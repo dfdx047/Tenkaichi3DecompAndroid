@@ -223,7 +223,7 @@ s32 BtlAct_CanTransform(BtlActJChr *chr, u32 index, s32 needBlast, s32 needAllow
     if (kind == 3 && !BtlStage_HasMoon()) {
         return 0;
     }
-    if (needBlast && !BtlMember_HasBlast(chr, cost)) {
+    if (needBlast && !BtlMember_HasKi(chr, cost)) {
         return 0;
     }
     return 1;
@@ -285,8 +285,13 @@ s32 BtlAct_QueueTransform(BtlActJChr *chr, s32 index) {
     chr->form.animChara = chara;
     chr->form.unk1C = chara;
     chr->form.voiceChara = chara;
-    if (BtlMember_GetActive(chr)->chara == 0x6A) {
-        chr->form.unk28 = 2;
+    /* BT4 0x3BF0B4: per-source-costume target costume, four bytes per slot. */
+    {
+        extern void *BtlChar_GetObj(BtlActJChr *chr);
+        u8 *param = *(u8 **)((u8 *)BtlChar_GetObj(chr) + 0x91C);
+        s32 targetCostume = param[0xD4 + index * 4 + BtlMember_GetActive(chr)->costume];
+        chr->form.unk28 = targetCostume;
+        if (unk24 >= 0x100) chr->form.unk24 = unk24 + targetCostume;
     }
     if (BtlParam_TestUnkADBit(chr, index)) {
         chr->form.variant = 0;

@@ -1,5 +1,6 @@
 #include "common.h"
 #include "menu/menu_u.h"
+#include "port_variant.h"
 
 /*
  * EvoZ, 0x393C58..0x395E30: the screen's per-frame set-up of its three movies. A second source file (it has
@@ -540,7 +541,8 @@ void EvoZ_Load(UEvoZ *ez, s32 section) {
 
     ez->pack = (u32 *)MPACK_AT(gMenuArc7, section);
     ez->res = Sprite_Unpack(ez->pack, NULL, NULL);
-    ez->chipFile = File_LoadSync(0x3C0, NULL, 0);
+    /* BT4 DBZP.BIN 0x395E98 loads 0x6DC; 0x3C0 is an empty legacy file. */
+    ez->chipFile = File_LoadSync(PORT_V(0x3C0, 0x6DC), NULL, 0);
     ez->chipRes = Sprite_Unpack(ez->chipFile, NULL, NULL);
     res = ez->chipRes;
     Res_RelocateOffsets(&res, res, res);
@@ -666,7 +668,8 @@ void EvoZ_Load(UEvoZ *ez, s32 section) {
     ez->text[1] = MPACK_AT(ez->res, 35);
     ez->text[2] = MPACK_AT(ez->res, 37);
     ez->chipPack = (u32 *)MPACK_AT(ez->res, 36);
-    for (i = 0; i < 165; i++) {
+    /* BT4's relocation loop at 0x3967D4 covers all 250 character sheets. */
+    for (i = 0; i < PORT_V(165, 250); i++) {
         res = (MTexRes *)MPACK_AT(ez->chipPack, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }

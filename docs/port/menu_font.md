@@ -1,16 +1,17 @@
 # Menu fonts
 
-Three settings in F1 > UI draw text from a TrueType font instead of the game's own lettering. All three start on
-"Original" and can be changed independently.
+The **F1 > UI** menu provides three independent font settings. Each defaults
+to **Original** and can use a TrueType font in place of the game's lettering.
 
-| setting | what it replaces |
+| Setting | Text affected |
 |---|---|
 | Menu font | the labels of the menus (pictures on the disc: "Dragon History", "1P VS COM", ...) and the names of added stages and songs |
 | Battle font | Battle announcements, combo HUD, timer digits, Wins label, and blast stock digits |
 | Dialogue / UI font | the game's shared text font (`Font_Print`): dialogue, subtitles, explanations, ordinary menu text |
 
-So the Dialogue / UI font does change the game's ordinary `Font_Print` text: that is what it is for. Placement,
-line breaks, colours, shadows and the button icons stay the game's; only the glyph pictures are drawn again.
+The Dialogue / UI setting applies to text rendered through `Font_Print`.
+It replaces glyph artwork while preserving placement, line breaks, colors,
+shadows and button icons.
 
 ## The fonts
 

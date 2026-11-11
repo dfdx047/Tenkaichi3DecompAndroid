@@ -1,4 +1,5 @@
 #include "common.h"
+extern s32 TagBattle_IsActorLoading(s32 actor);
 #include "battle/btl_char_move.h"
 
 /* Fighter movement, 0x1DC9A0-0x1E0290 (see battle/btl_char_move.h for the model and the structures).
@@ -1558,7 +1559,7 @@ void BtlMove_DeflectAtStageLimit(BtlMoveChr *chr, s32 back) {
 s32 BtlMove_ApplyImpulse(BtlMoveChr *chr) {
     BtlMovePose *pose = BtlChar_GetPos(chr);
 
-    if (!BtlChars_IsTimeStopped()) {
+    if (!TagBattle_IsActorLoading(chr->player)) {
         Vec4 *vel = &pose->unk70;
         f32 len;
 
@@ -1582,7 +1583,7 @@ void BtlMove_UpdateHoverOffset(BtlMoveChr *chr) {
     if (BtlChar_TestFlag(chr, 0x29)) {
         pose->unkA8 = 0.0f;
     }
-    if (BtlChars_IsTimeStopped()) {
+    if (TagBattle_IsActorLoading(chr->player)) {
         return;
     }
     if (BtlChar_TestFlag(chr, 0xE) && BtlChar_TestFlag(chr, 0x1C)) {
@@ -1654,9 +1655,9 @@ void BtlMove_UpdateDefenseTimers(BtlMoveChr *chr) {
         chr->unk106C = -30;
         if (on) {
             if (BtlChar_TestFlag(chr, 0x138)) {
-                chr->unk106C = 4;
-            } else {
                 chr->unk106C = 2;
+            } else {
+                chr->unk106C = 1;
             }
         }
     } else {
@@ -1668,7 +1669,7 @@ void BtlMove_UpdateDefenseTimers(BtlMoveChr *chr) {
     if (chr->unk1070 < -30) {
         chr->unk1070 = -30;
         if (BtlInput_TestAction(chr, 0x26, 1)) {
-            chr->unk1070 = 1;
+            chr->unk1070 = 3;
         }
     } else {
         if (BtlInput_TestAction(chr, 0x26, 1)) {

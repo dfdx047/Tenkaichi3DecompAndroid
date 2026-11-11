@@ -1911,6 +1911,8 @@ static int ml_item_pics(MlCtx *c, unsigned char *out[2]) {
     return ok;
 }
 
+#include "bt4_main_lettering.inc"
+
 int MenuLabels_MainItem(const char *dataDir, unsigned char *out[2]) {
     MlCtx *c = calloc(1, sizeof(*c));
     int ok = 0;

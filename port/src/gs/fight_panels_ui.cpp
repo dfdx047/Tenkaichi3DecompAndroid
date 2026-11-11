@@ -18,6 +18,7 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "fight_panels.h"
+#include "bt4_eye_anchors.h"
 
 extern "C" int Port_HudSwap(void);                         // gs/net.c: the HUD's sides are swapped on this copy
 SDL_GPUTexture *Ui_Texture(uint8_t *pix, uint32_t w, uint32_t h); // ui.cpp (takes pix)
@@ -185,7 +186,7 @@ static int csm1(int i) {
 }
 
 // The portrait file at path as RGBA (256 x 512 x 4 bytes, the PS2's alpha doubled). 1 = read.
-static int portrait_rgba(const char *path, uint8_t *rgba) {
+static int portrait_rgba(const char *path, uint8_t *rgba, uint32_t *signature = NULL) {
     FILE *fp = fopen(path, "rb");
     if (fp == NULL) {
         return 0;
@@ -200,6 +201,7 @@ static int portrait_rgba(const char *path, uint8_t *rgba) {
         return 0;
     }
     fclose(fp);
+    if(signature)*signature=SDL_crc32(0,pk,(size_t)len);
     uint32_t size = 0, f[2];
     uint8_t *raw = bpe_decode(pk, len, &size);
     free(pk);
@@ -238,6 +240,7 @@ static int portrait_rgba(const char *path, uint8_t *rgba) {
 // ---------------------------------------------------------------------------------------------------- portraits
 struct Art {
     char path[FP_PATH];
+    uint32_t signature;
     SDL_GPUTexture *tex;
     bool ok;
     float hx, hy, hs;   // the head's square in the portrait (pixels)
@@ -357,7 +360,7 @@ static const short kFace[][2] = {
     {115,165}, {130,175}, {130,160}, {110,170}, {110,160}, {130,165}, {120,160}, {110,170}, {133,118}, {128,140},
     {128,151},
 };
-static short sFaceOwn[sizeof(kFace) / sizeof(kFace[0])][2];
+static short sFaceOwn[256][2];
 static bool sFaceRead;
 
 static void faces_read(void) {
@@ -369,7 +372,7 @@ static void faces_read(void) {
     char line[128];
     int c, x, y, n = 0;
     while (fgets(line, sizeof(line), fp) != NULL) {
-        if (sscanf(line, "%d %d %d", &c, &x, &y) == 3 && c >= 0 && c < (int)(sizeof(kFace) / sizeof(kFace[0]))) {
+        if (sscanf(line, "%d %d %d", &c, &x, &y) == 3 && c >= 0 && c < 256 && x>=0 && x<ART_W && y>=0 && y<ART_H) {
             sFaceOwn[c][0] = (short)x;
             sFaceOwn[c][1] = (short)y;
             n++;
@@ -384,13 +387,26 @@ static void face_point(const Art *art, int chara, int costume, float *x, float *
     if (!sFaceRead) {
         faces_read();
     }
+    if(chara>=0&&chara<256&&(sFaceOwn[chara][0]||sFaceOwn[chara][1])){
+        *x=sFaceOwn[chara][0];*y=sFaceOwn[chara][1];return;
+    }
+    if(chara>=0&&chara<250&&art->signature==kBt4Eyes[chara].crc&&art->signature){
+        *x=kBt4Eyes[chara].x;*y=kBt4Eyes[chara].y;return;
+    }
     if (costume < 8 && chara >= 0 && chara < (int)(sizeof(kFace) / sizeof(kFace[0]))) {
         if (sFaceOwn[chara][0] != 0 || sFaceOwn[chara][1] != 0) {
             *x = sFaceOwn[chara][0];
             *y = sFaceOwn[chara][1];
-        } else {
+        } else if([&](){
+            const char *name=art->path;
+            for(const char *p=name;*p;++p)if(*p=='/'||*p=='\\')name=p+1;
+            char *end=NULL;long id=strtol(name,&end,10);
+            return end!=name && !strcmp(end,".bin") && id==0x2F8+chara;
+        }()) {
             *x = kFace[chara][0];
             *y = kFace[chara][1];
+        } else {
+            *x=art->fx;*y=art->fy;
         }
         return;
     }
@@ -410,6 +426,35 @@ static void face_of(const uint8_t *px, Art *a) {
     xb = xb > ART_W ? ART_W : xb;
     a->fx = a->hx + a->hs * 0.5f;
     a->fy = a->hy + a->hs * 0.45f;
+    /* A raised fist may be the first skin in a BT4 portrait. Consider complete
+       connected regions in the upper body and prefer the central head region,
+       rather than anchoring the HUD to the first exposed hand. */
+    {
+        int limit=(top<0?0:top)+240;limit=limit>ART_H?ART_H:limit;
+        uint8_t *seen=(uint8_t *)calloc((size_t)ART_W*limit,1);
+        int *queue=(int *)malloc((size_t)ART_W*limit*sizeof(int));
+        float best=0.0f,bx=a->fx,by=a->fy;
+        if(seen&&queue)for(int y=0;y<limit;++y)for(int x=0;x<ART_W;++x){
+            int at=y*ART_W+x;if(seen[at]||!skin(px+at*4))continue;
+            int begin=0,end=1,minY=y;queue[0]=at;seen[at]=1;
+            while(begin<end){int q=queue[begin++],qx=q%ART_W,qy=q/ART_W;
+                const int next[4]={qx? q-1:-1,qx+1<ART_W?q+1:-1,qy?q-ART_W:-1,qy+1<limit?q+ART_W:-1};
+                for(int k=0;k<4;++k)if(next[k]>=0&&!seen[next[k]]&&skin(px+next[k]*4)){
+                    seen[next[k]]=1;queue[end++]=next[k];if(next[k]/ART_W<minY)minY=next[k]/ART_W;
+                }
+            }
+            if(end<100)continue;
+            float sx=0.0f;int n=0;
+            for(int k=0;k<end;++k)if(queue[k]/ART_W<minY+55){sx+=queue[k]%ART_W;++n;}
+            if(n<80)continue;
+            float cx=sx/n,central=fabsf(cx-ART_W*0.5f)/64.0f;
+            float score=(float)n/((1.0f+central)*(1.0f+central));
+            if(minY>(top<0?0:top)+170)score*=0.25f;
+            if(score>best){best=score;bx=cx;by=(float)minY+28.0f;}
+        }
+        free(seen);free(queue);
+        if(best>0.0f){a->fx=bx;a->fy=by;return;}
+    }
     for (int y = top < 0 ? 0 : top; y < top + 260 && y < ART_H && first < 0; y++) {
         int n = 0;
         for (int x = xa; x < xb; x++) {
@@ -468,13 +513,19 @@ static Art *art_get(const char *path, double now) {
     snprintf(slot->path, sizeof(slot->path), "%s", path);
     slot->used = now;
     uint8_t *pix = (uint8_t *)malloc((size_t)ART_W * ART_H * 4 * 3);
-    if (pix == NULL || !portrait_rgba(path, pix)) {
+    if (pix == NULL || !portrait_rgba(path, pix, &slot->signature)) {
         free(pix);
         fprintf(stderr, "bt3: fight panels: no portrait in %s\n", path);
         return NULL;
     }
     head_of(pix, &slot->hx, &slot->hy, &slot->hs);
     face_of(pix, slot);
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_PORTRAIT_DUMP")){
+        char output[2048];SDL_snprintf(output,sizeof(output),"%s/portrait-%02d.png",getenv("BT4_PORTRAIT_DUMP"),(int)(slot-sArt));
+        SDL_Surface *surface=SDL_CreateSurfaceFrom(ART_W,ART_H,SDL_PIXELFORMAT_RGBA32,pix,ART_W*4);
+        if(surface){SDL_SavePNG(surface,output);SDL_DestroySurface(surface);}
+        fprintf(stderr,"portrait crop: %s face=%.1f,%.1f head=%.1f,%.1f,%.1f dump=%s\n",path,slot->fx,slot->fy,slot->hx,slot->hy,slot->hs,output);
+    }
     slot->theme = theme_of(pix);
     uint8_t *grey = pix + ART_W * ART_H * 4, *sil = grey + ART_W * ART_H * 4;
     for (int i = 0; i < ART_W * ART_H; i++) {

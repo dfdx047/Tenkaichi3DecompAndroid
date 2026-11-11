@@ -1,6 +1,8 @@
 #include "common.h"
 #include "battle/view_a.h"
 #include "battle/view_b.h"
+#include "menu/port_screen.h"
+#include <stdio.h>
 
 /*
  * TextBox, second half: 0x2600B0..0x260D20. The module starts in view_a_e.c (TextBox_Init at 0x25FE00) and this
@@ -23,6 +25,9 @@ extern s32 Font_CountLines(u16 *str);
 extern void Font_PrintAt(s32 x, s32 y, u16 *str);
 extern void Font_PushStyle(void);
 extern void Font_PopStyle(void);
+extern void Font_PrintNumAt(s32 x, s32 y, s32 value, s32 digits);
+extern void Flash_ClipSetFlags(Flash *flash, FlashRef *ref, s32 props, u8 on);
+
 extern void Font_SetScaleXY(f32 sx, f32 sy);
 extern void Font_SetAlign(s32 align);
 extern void Font_SetShadowMode(s32 mode);
@@ -267,4 +272,128 @@ void TextBox_AttachString(Flash *flash, FlashRef *ref, s32 x, s32 y, u16 *str, T
 #define TB_ATTACH_STR(str, box)
     TB_ATTACH(flash, ref, x, y, str, box);
 #undef TB_ATTACH_STR
+}
+
+
+/* A single replacement caption for BT4's costume window. It uses the port's
+   cached, antialiased TrueType line renderer, keeping the movie's fade/position. */
+extern int PortTbo_TextId(const char *text, int kind);
+extern int PortTbo_TextInfo(int id, int what);
+typedef struct Bt4CostumeCaption {
+    const void *key;
+    unsigned stamp;
+    s32 number, total;
+    char name[128];
+} Bt4CostumeCaption;
+/* The caller's storage is an active TextBox, not spare callback memory.
+ * Never overwrite its resource pointer or retain a label from its file. */
+static Bt4CostumeCaption sCostumeCaptions[16];
+static unsigned sCostumeCaptionStamp;
+
+static void Bt4Costume_Utf8(char *out, const u16 *in) {
+    s32 n = 0, i;
+    for (i = 0; in != NULL && i < 96 && in[i] && n < 120; i++) {
+        u32 c = in[i];
+        if (c < 32 || (c >= 0xD800 && c <= 0xDFFF) || c >= 0xFFF0) continue;
+        if (c < 128) out[n++] = c;
+        else if (c < 2048) { out[n++] = 0xC0 | (c >> 6); out[n++] = 0x80 | (c & 63); }
+        else { out[n++] = 0xE0 | (c >> 12); out[n++] = 0x80 | ((c >> 6) & 63); out[n++] = 0x80 | (c & 63); }
+    }
+    out[n] = 0;
+}
+
+static void Bt4Costume_Line(char *text, f32 cx, f32 base, f32 cap, f32 maxWidth,
+                            u32 top, u32 bottom, s32 alpha) {
+    s32 id = PortTbo_TextId(text, 0), band, bands = cap <= 9 ? 1 : 3;
+    f32 ky, kx, width, x0, x1, y0, height;
+    if (id < 0) return;
+    ky = cap / 1000.0f; kx = ky * 0.857f;
+    width = PortTbo_TextInfo(id, 0) * kx;
+    if (width > maxWidth) { kx *= maxWidth / width; width = maxWidth; }
+    x0 = cx - width * 0.5f - PortTbo_TextInfo(id, 4) * kx;
+    x1 = x0 + PortTbo_TextInfo(id, 1) * kx;
+    y0 = base - PortTbo_TextInfo(id, 3) * ky;
+    height = PortTbo_TextInfo(id, 2) * ky;
+    { extern int Port_MenusWide(void);
+      if (Port_MenusWide()) {
+          /* This caption is a TBO texture on a native Flash costume plate.
+           * It bypasses the renderer's native-art pass, so use the SAME
+           * parent anchor as the plate, once, rather than a centred page. */
+          extern int Port_MenuPartNow(void), Port_PageAspectMilli(void);
+          int part=Port_MenuPartNow(),aspect=Port_PageAspectMilli();
+          f32 pivot=part==2||part==5?0.0f:part==3||part==6?512.0f:256.0f;
+          f32 scale=aspect>1333?1333.333333f/(f32)aspect:1.0f;
+          x0=pivot+(x0-pivot)*scale;x1=pivot+(x1-pivot)*scale;
+      }
+    }
+    Ps_SpriteScreen(id, x0, y0, x1, y0 + height, 0, 0.5f, 1, 1,
+                    Ps_Tint(Ps_Rgba(10, 35, 49, 255)), alpha);
+    for (band = 0; band < bands; band++) {
+        f32 t0 = band / (f32)bands, t1 = (band + 1) / (f32)bands;
+        Ps_SpriteScreen(id, x0, y0 + height*t0, x1, y0 + height*t1,
+                       0, t0*0.5f, 1, t1*0.5f,
+                       Ps_Tint(Ps_Mix(top, bottom, (band + 0.5f)/(f32)bands)), alpha);
+    }
+}
+
+static void Bt4Costume_DrawCaption(void *arg, TextBoxClipProp *prop) {
+    Bt4CostumeCaption *caption = arg;
+    s32 alpha = (s32)(128.0f * prop->mul[3]) + prop->add[3];
+    f32 cx = prop->x + 24.0f;
+    char number[16], name[128], counter[32];
+    if (alpha <= 0) return;
+    if (alpha > 128) alpha = 128;
+    sprintf(number, "%02d", caption->number);
+    {
+        extern int Port_GameProfileEnglish(void);
+        s32 english=Port_GameProfileEnglish();
+        sprintf(counter,english?"COSTUME %d/%d":"TRAJE %d/%d",caption->number,caption->total);
+        strcpy(name,caption->name);
+        if(!name[0])sprintf(name,english?"Costume %d":"Traje %d",caption->number);
+    }
+    Bt4Costume_Line(number, cx, prop->y + 18, 18, 42,
+                    Ps_Rgba(255,255,235,255), Ps_Rgba(105,231,240,255), alpha);
+    Bt4Costume_Line(name, cx, prop->y + 43, 10, 184,
+                    Ps_Rgba(255,255,243,255), Ps_Rgba(225,249,248,255), alpha);
+    Bt4Costume_Line(counter, cx, prop->y + 61, 9.0f, 150,
+                    Ps_Rgba(248,255,255,255), Ps_Rgba(248,255,255,255), alpha);
+    Gfx_AddDefaultEnv();
+}
+
+/* BT4 uses the left-pointing atlas arrow for both costume controls. Keep the
+   right control's UV mirrored, in every selector which uses that movie. */
+void Bt4Costume_FixArrows(Flash *flash) {
+    FlashRef ref;
+    Flash_FindLabel(flash, "mc_yajirusi_right", "mc_yajirusi_icon_right", &ref);
+    Flash_ClipSetFlags(flash, &ref, 4, 1);
+}
+
+void Bt4Costume_AttachCaption(Flash *flash, FlashRef *ref, s32 number, s32 total,
+                              const u16 *name, void *storage) {
+    Bt4CostumeCaption *caption = NULL;
+    s32 i,pick=0;
+    for(i=0;i<16;++i){
+        if(sCostumeCaptions[i].key==storage){caption=&sCostumeCaptions[i];break;}
+        if(sCostumeCaptions[i].stamp<sCostumeCaptions[pick].stamp)pick=i;
+    }
+    if(!caption)caption=&sCostumeCaptions[pick];
+    caption->key=storage;caption->stamp=++sCostumeCaptionStamp;
+    caption->number=number;caption->total=total;
+    {
+        const u32 *row=*(const u32 **)((const u8 *)storage+4);
+        u32 offset=(u32)name-(u32)row;
+        /* A costume name is a short line in the current character's table.
+         * Reject missing/header entries instead of treating table metadata as
+         * a UTF-16 pointer. The visible fallback still identifies the costume. */
+        if(!row || !name || offset<(u32)(number+1)*4 || offset>65536u){
+            if(getenv("BT4_RENDER_TEST")){
+                static s32 shown;
+                if(shown++<16)fprintf(stderr,"costume caption fallback: number=%d total=%d offset=%08X header=%08X\n",number,total,offset,row?row[0]:0);
+            }
+            name=NULL;
+        }
+        Bt4Costume_Utf8(caption->name,name);
+    }
+    Flash_ClipSetFlags(flash, ref, 0x800, 1);
+    Flash_ClipSetCallbackC(flash, ref, Bt4Costume_DrawCaption, caption);
 }

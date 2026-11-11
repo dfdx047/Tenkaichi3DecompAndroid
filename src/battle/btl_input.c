@@ -1,9 +1,15 @@
+extern int TagBattle_Active(void);
 #include "common.h"
+extern s32 TagBattle_IsActorLoading(s32 actor);
 #include "battle/btl_input.h"
+#include "battle/tag_team_native.h"
 #include "battle/btl_char_ctl.h"
 #include "battle/battle.h"
 #include "sys/pad.h"
 #include "sys/save.h"
+extern s32 TagBattle_Count(void);
+extern void TagBattle_CycleTarget(s32 actor);
+#include <stdio.h>
 
 /*
  * Per-fighter battle input: 0x1D3B40..0x1D60A0.
@@ -14,7 +20,7 @@
  *   BtlInput_BuildRecord which builds the frame's BtlInputRecord (chr->input.rec):
  *       - chr->injectOn == 0: RemapButtons (key config) -> MergeStick -> AddDoubleTaps -> BuildCommands;
  *       - chr->injectOn != 0 (CPU side): the buttons and stick the AI wrote -> MergeStick -> BuildCommands;
- *       - the fighter takes no input (flag 2 or 3 clear, flag 0x136 set, or BtlChars_IsTimeStopped() != 0): all neutral;
+ *       - the fighter takes no input (flag 2 or 3 clear, flag 0x136 set, or TagBattle_IsActorLoading(chr->player) != 0): all neutral;
  *       - otherwise the replay hook: when a replay is playing, buttons and stick are REPLACED by the recorded
  *         frame and the commands rebuilt; when not, {buttons, stick} are appended to the replay buffer.
  * Later in the same frame, in the fighter update (BtlChars_UpdateInput -> BtlChar_BeginFrame):
@@ -405,9 +411,12 @@ void BtlInput_BuildRecord(BtlInputChr *chr) {
         BtlCharInput *raw = BtlInput_Get(chr);
 
         if (raw != NULL) {
-            buttons = BtlInput_RemapButtons(raw->rawHeld, raw->mask);
-            stick[0] = raw->rawStickX;
-            stick[1] = raw->rawStickY;
+            if(TagBattle_Network()){
+                u8 *p=TagBattle_NetPad(chr->player);memcpy(&buttons,p,4);stick[0]=p[4];stick[1]=p[5];
+            }else{
+                buttons = BtlInput_RemapButtons(raw->rawHeld, raw->mask);
+                stick[0] = raw->rawStickX;stick[1] = raw->rawStickY;
+            }
         }
         buttons = BtlInput_MergeStick(chr, buttons, stick);
         buttons = BtlInput_AddDoubleTaps(chr, buttons, prevButtons, in->padStatus);
@@ -416,7 +425,7 @@ void BtlInput_BuildRecord(BtlInputChr *chr) {
     active = 0;
     if (BtlChar_TestFlag(chr, 2) || BtlChar_TestFlag(chr, 3)) {
         if (!BtlChar_TestFlag(chr, 0x136)) {
-            active = BtlChars_IsTimeStopped() == 0;
+            active = TagBattle_IsActorLoading(chr->player) == 0;
         }
     }
     if (active) {
@@ -441,7 +450,7 @@ void BtlInput_BuildRecord(BtlInputChr *chr) {
     chr->input.rec.stickY = stick[1];
     chr->input.rec.commands = commands;
     chr->input.rec.unk5 = 0;
-    if (!BtlChars_IsTimeStopped()) {
+    if (!TagBattle_IsActorLoading(chr->player)) {
         BtlInput_TickCounters(&chr->input.recCount, buttons, buttons & ~prevButtons, prevButtons & ~buttons);
         BtlInput_TickCounters(&chr->input.recCmdCount, commands, commands & ~prevCommands, prevCommands & ~commands);
     }
@@ -493,7 +502,7 @@ u32 BtlInput_GetKeyMask(BtlInputChr *chr, s32 action) {
     s32 i;
 
     for (i = 0; i < SAVE_KEY_COUNT; i++) {
-        if (gSaveData->key[chr->player][i] == action) {
+        if (gSaveData->key[TagBattle_Active()?chr->pad:chr->player][i] == action) {
             return padBit[i];
         }
     }
@@ -546,10 +555,32 @@ void BtlInput_Init(BtlInputChr *chr) {
 void BtlInput_Sample(BtlInputChr *chr) {
     Pad *pad = BtlChar_GetPad(chr);
     BtlCharInput *in = &chr->input;
+    u32 targetPressed=TagBattle_Network()?((TagBattle_NetPad(chr->player)[6]&1)?PAD_L3:0):pad->pressed;
+    s32 targetDirection=TagBattle_Network()?((TagBattle_NetPad(chr->player)[6]>>1)&7):
+        (pad->data[17]&0x80)?pad->data[17]&7:0;
+    if(TagBattle_Active() && !chr->injectOn){
+        extern s32 TagBattle_TargetDirection(s32 actor,s32 direction);
+        if(targetDirection)TagBattle_TargetDirection(chr->player,targetDirection);
+        extern char *getenv(const char *name);
+        static s32 tested;
+        if(!tested && getenv("BT4_TAG_TARGET_TEST") && BtlChar_TestFlag(chr,3) && BtlChar_FrameMod(240)==0){targetPressed|=PAD_L3;tested=1;}
+        if(getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_HUD_SWEEP") && BtlChar_TestFlag(chr,3) && BtlChar_FrameMod(30)==0)targetPressed|=PAD_L3;
+        if(targetPressed & PAD_L3){
+            extern s32 TagBattle_Target(s32 actor);
+            TagBattle_CycleTarget(chr->player);
+            if(getenv("BT4_TAG_TARGET_TEST"))fprintf(stderr,"tag target: actor %d now targets %d through L3 input\n",chr->player,TagBattle_Target(chr->player));
+        }
+    }
 
     in->padStatus = pad->status;
     in->padLastStatus = pad->lastStatus;
+    if(TagBattle_Network()){in->padLastStatus=in->padStatus;in->padStatus=TagBattle_NetPad(chr->player)[7];}
     in->rawHeld = pad->held;
+    if(!TagBattle_Active() && !chr->injectOn && targetDirection){
+        /* Find the configured raw lock-on button rather than assuming L1.
+           The resulting battle button is recorded/replayed normally. */
+        in->rawHeld |= in->mask[14];
+    }
     in->rawStickX = BtlInput_StickToByte(pad->left[0]);
     in->rawStickY = BtlInput_StickToByte(pad->left[1]);
 #ifdef PORT
@@ -630,7 +661,7 @@ void BtlInput_Update(BtlInputChr *chr) {
     in->cmdHeld = commands;
     in->stickRaw[0] = BtlInput_ByteToStick(stick[0]);
     in->stickRaw[1] = BtlInput_ByteToStick(stick[1]);
-    if (BtlChars_IsTimeStopped()) {
+    if (TagBattle_IsActorLoading(chr->player)) {
         in->stick[0] = in->stickRaw[0];
         in->stick[1] = in->stickRaw[1];
     } else {
@@ -650,7 +681,7 @@ void BtlInput_Update(BtlInputChr *chr) {
     } else {
         in->stickTurn = 0.0f;
     }
-    if (!BtlChars_IsTimeStopped()) {
+    if (!TagBattle_IsActorLoading(chr->player)) {
         BtlInput_TickCounters(&in->count, in->held, in->pressed, in->released);
         BtlInput_TickCounters(&in->cmdCount, in->cmdHeld, in->cmdPressed, in->cmdReleased);
     }
@@ -1332,6 +1363,14 @@ s32 BtlInput_TestAction(BtlInputChr *chr, s32 id, s32 want) {
             result = 1;
         }
         break;
+#ifdef PORT
+    /* BT4 action predicate 115: original disc patch at 0x1D4E20. */
+    case 115:
+        result = BtlInput_IsPressed(chr, BTLB_GUARD);
+        if(result && getenv("BT4_RENDER_TEST") && getenv("BT4_TAUNT_AUDIT"))
+            fprintf(stderr,"BT4 input audit: predicate=115 actor=%d held=%08X action=%X\n",chr->player,chr->input.held,*(s32 *)((u8 *)chr+0x948));
+        break;
+#endif
     }
     return result ^ invert;
 }

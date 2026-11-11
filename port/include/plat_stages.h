@@ -5,12 +5,15 @@
 #ifndef PORT_PLAT_STAGES_H
 #define PORT_PLAT_STAGES_H
 
-#define PORT_STAGE_FIRST 0x24 /* first added stage id: the disc's stages are 0x00..0x23 */
-#define PORT_STAGE_MAX 26     /* ids 0x24..0x3D (the stage-list bit field is 64 bits) */
+#define PORT_STAGE_FIRST 0x63 /* BT4 owns 0..98. Added maps must not replace a built-in map. */
+#define PORT_STAGE_MAX 26     /* offline-only IDs 99..124, appended after save unlock filtering */
 
 void PortStages_Init(void); /* reads the manifest (or the BT3_EXTRA_STAGES fallback); once */
 int PortStages_Count(void);
 const char *PortStages_Name(int index); /* the display name of the index-th added map */
+int PortStages_ImagePath(int index, char *out, unsigned size);
+/* Native PNG art. kind0 returns a 64x64 TexEntry, kind1 a SpriteRes preview. */
+unsigned Port_StageArt(int stage, int kind);
 /* 1 if the file the game asks for (its path under the data root, e.g. "pzs3us1/00404.bin") is served from
    somewhere else; `out` gets the replacement path (under the data root, or absolute). */
 int PortStages_Alias(const char *rel, char *out, unsigned n);

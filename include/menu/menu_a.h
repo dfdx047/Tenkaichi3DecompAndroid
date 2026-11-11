@@ -54,6 +54,12 @@ typedef struct MTexRes {
 /* A section of a pack: header word n is a byte offset, rounded down to a multiple of 4. */
 #define MPACK_AT(pack, n) ((u8 *)(pack) + ((((u32 *)(pack))[n] >> 2) << 2))
 
+/* The chip archive lists individual forms, not selectable grid cells. BT4 has
+ * 250 sheets while the native grid still contains at most 165 cells. */
+static inline s32 Menu_CharacterChipCount(const u32 *pack) {
+    return pack[0] < 250 ? (s32)pack[0] : 250;
+}
+
 /* gProgress (0x7FC bytes, main executable): the fields this file uses. */
 typedef struct MenuProgress {
     /* 0x000 */ s32 unk0;
@@ -84,7 +90,7 @@ typedef struct MenuProgress {
 
 /* ---- Main executable ---- */
 
-extern s32 sprintf(char *, const char *, ...);
+extern s32 (sprintf)(char *, const char *, ...);
 extern void *memset(void *, s32, u32);
 extern void *File_LoadSync(s32 id, void *buf, s32 unused);
 extern void *Heap_Alloc(s32 size, u32 align, s32 fromTail, s32 heap);

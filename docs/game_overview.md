@@ -232,7 +232,7 @@ Debug output was stripped; no file names, function names or assert macros surviv
 6. Init callees 0x116BA8, 0x239FF0, 0x23D0E0 and the struct at gp 0x2FF158.
 7. `Heap_Create` calls 0x2A8F68 with the heap size; whether that is `malloc` or a direct `sbrk`-style grab was not checked.
 
-## Corrections from the decompiled code (2026-10-03)
+## Source-level clarifications
 
 These supersede the static-analysis notes above where they differ; each is confirmed by C that
 compiles to the original bytes.

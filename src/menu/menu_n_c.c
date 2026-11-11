@@ -213,7 +213,7 @@ void UbRank_Init(void) {
     gUbRank->texC[9] = MTEX(res, 9);
     gUbRank->texC[12] = MTEX(res, 10);
     gUbRank->chips = (u32 *)MPACK_AT(gUbRank->res, 6);
-    for (i = 0; i < N_CHIP_NUM; i++) {
+    for (i = 0; i < (s32)gUbRank->chips[0] && i < 512; i++) {
         res = (MTexRes *)MPACK_AT(gUbRank->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
@@ -436,11 +436,18 @@ void UbRank_Draw(void) {
         Flash_SetFlag(flash, 4, 1);
         break;
     }
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *, const void *);
+    Flash_PortPortraits(gUbRank->texC[11], gUbRank->texC[10]);
+#endif
     for (i = 0; i < UBRANK_FLASH_NUM; i++) {
         if (gUbRank->state != UBRANK_ST_WAIT || i == 2) {
             Flash_Draw(&gUbRank->flash[i]);
         }
     }
+#ifdef PORT
+    Flash_PortPortraits(NULL, NULL);
+#endif
     if (gUbRank->state != UBRANK_ST_WAIT) {
         IconWin_Draw();
     }
@@ -701,7 +708,7 @@ void UbRank_ClipGoto(s32 movie, s32 state, char *label) {
     Flash_ClipGotoLabel(flash, &ref, label);
 }
 
-/* Background loader of the two fighters' large pictures (files 0x2F9 + character), one step per frame. */
+/* Background loader of the two fighters' large pictures (files 0x71C + character), one step per frame. */
 void UbRank_UpdateFaceLoad(void) {
     s32 chara[2];
     MTexRes *res;

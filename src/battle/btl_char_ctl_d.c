@@ -1,3 +1,5 @@
+extern int TagBattle_Team(int),TagBattle_TeamIndex(int),TagBattle_TeamCount(int);
+extern int TagBattle_Active(void);
 #include "common.h"
 #include "battle/btl_char_ctl.h"
 #include "sys/mathf.h"
@@ -186,7 +188,16 @@ void BtlChar_PlaceAtStart(BtlCtlChr *chr) {
     Vec4 pos;
     Vec4 rot;
 
-    BtlChar_Place(chr, &pos, &rot, BtlStage_GetStartPlace(chr->player, &pos, &rot, 0));
+    s32 area = BtlStage_GetStartPlace(TagBattle_Team(chr->player), &pos, &rot, 0);
+    {extern s32 TagBattle_Local(void),TagBattle_Count(void);
+    if(TagBattle_Local()){
+        Vec4 home,away,unused;
+        BtlStage_GetStartPlace(0,&home,&unused,0);BtlStage_GetStartPlace(1,&away,&unused,0);
+        pos.x=(home.x+away.x)*0.5f+(pos.x-(home.x+away.x)*0.5f)*0.3f;
+        pos.z=(home.z+away.z)*0.5f+(pos.z-(home.z+away.z)*0.5f)*0.3f;
+        pos.x+=((f32)TagBattle_TeamIndex(chr->player)-(f32)(TagBattle_TeamCount(TagBattle_Team(chr->player))-1)*0.5f)*44.0f;
+    }else pos.x += (f32)(chr->player / 2) * 90.0f;}
+    BtlChar_Place(chr, &pos, &rot, area);
 }
 
 /* Flag 0xF3: places the fighter at its player's second start position. */
@@ -195,7 +206,7 @@ void BtlChar_PlaceRestart(BtlCtlChr *chr) {
     Vec4 rot;
 
     if (BtlChar_TestFlag(chr, 0xF3)) {
-        BtlChar_Place(chr, &pos, &rot, BtlStage_GetStartPlace(chr->player, &pos, &rot, 1));
+        BtlChar_Place(chr, &pos, &rot, BtlStage_GetStartPlace(TagBattle_Team(chr->player), &pos, &rot, 1));
     }
 }
 
@@ -369,6 +380,35 @@ f32 BtlChar_GetSpacing(BtlCtlChr *chr, s32 mode) {
 }
 
 /* Keeps a held fighter (flag 0x97) attached to its holder (flag 0x8B): moves one so that the two hold nodes meet. */
+static void TagHold_Apply(BtlCtlChr *holder,BtlCtlChr *held){
+    Vec4 holderPos,heldPos,delta;
+        BtlCtlObj *holderObj = BtlChar_GetObj(holder);
+        BtlCtlObj *heldObj = BtlChar_GetObj(held);
+        s32 node = heldObj->holdNode;
+
+        BtlCharApi_GetNodePos(holder->objId, 0x34, &holderPos);
+        BtlCharApi_GetNodePos(held->objId, node, &heldPos);
+        if (BtlChar_TestFlag(holder, 0x9B)) {
+            Vec4_Sub(&delta, &heldPos, &holderPos);
+            if (BtlChar_TestFlag(held, 0x34)) {
+                Vec4_Scale(&delta, &delta, 1.0f - heldObj->unkC84);
+            }
+            Vec4_Add(&BtlChar_GetPos(holder)->pos, &BtlChar_GetPos(holder)->pos, &delta);
+            BtlChar_PoseToObj(holder, 0);
+            BtlObjPose_CalcMatrices(holderObj);
+            BtlChar_ObjToPose(holder);
+        } else {
+            Vec4_Sub(&delta, &holderPos, &heldPos);
+            if (BtlChar_TestFlag(held, 0x34)) {
+                Vec4_Scale(&delta, &delta, 1.0f - heldObj->unkC84);
+            }
+            Vec4_Add(&BtlChar_GetPos(held)->pos, &BtlChar_GetPos(held)->pos, &delta);
+            BtlChar_PoseToObj(held, 0);
+            BtlObjPose_CalcMatrices(heldObj);
+            BtlChar_ObjToPose(held);
+            BtlChar_SetFlag(held, 0x23);
+        }
+}
 void BtlChars_UpdateHold(void) {
     Vec4 holderPos;
     Vec4 heldPos;
@@ -377,6 +417,14 @@ void BtlChars_UpdateHold(void) {
     BtlCtlChr *holder = NULL;
     s32 i;
 
+    {extern s32 TagBattle_Count(void),TagBattle_Target(s32);
+    if(TagBattle_Active()){
+        for(i=0;i<BtlChar_GetCount();++i){
+            holder=BtlChar_Get(i);held=BtlChar_Get(TagBattle_Target(i));
+            if(holder!=held && !BtlChar_IsFrozen(holder) && !BtlChar_IsFrozen(held) && BtlChar_TestFlag(holder,0x8B) && BtlChar_TestFlag(held,0x97))TagHold_Apply(holder,held);
+        }
+        return;
+    }}
     for (i = 0; i < BtlChar_GetCount(); i++) {
         BtlCtlChr *chr = BtlChar_Get(i);
 

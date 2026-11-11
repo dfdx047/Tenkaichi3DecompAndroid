@@ -233,7 +233,7 @@ void LipSync_Clear(void);
 #define SHENSCENE_ACTOR_COUNT 2
 #define SHENSCENE_ACTOR_DRAGON 0  /* BtlObj type 1 */
 #define SHENSCENE_ACTOR_BALLS 1   /* BtlObj type 3: what is on screen before the dragon appears */
-#define SHENSCENE_FILE_STAGE 0x194 /* + dragon: the backdrop */
+#define SHENSCENE_FILE_STAGE 0x616 /* + dragon: the backdrop */
 
 /* ShenSeq.state: what the wish screen (sys/late_a.c) reads and requests. */
 #define SHENSCENE_STATE_INTRO 0   /* the summoning plays; also set again when the farewell starts */

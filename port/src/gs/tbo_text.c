@@ -14,6 +14,7 @@
  * Nothing here is game state: the screens are a menu of the PC's, before and outside an online match.
  */
 #include "menu_text.h"
+#include "online_language.h"
 #include "menu_translation.h" /* the online menus' lines in the chosen language */
 #include "../../../include/menu/tbo_art.h"
 #include <SDL3/SDL.h>
@@ -22,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+extern unsigned gGsFrame;
 #define TEXT_MAX 128
 #define IDLE_MS 1000 /* a line not asked for that long gives its place to another */
 
@@ -31,17 +33,22 @@ typedef struct {
     uint32_t generation; /* of the fonts it was measured with */
     uint32_t version;    /* changes whenever what the place holds changes (0: never used) */
     uint64_t askedMs;
+    unsigned askedFrame;
     int advance, w, h, base, pad, cap, outline;
 } TboLine;
 
 static TboLine sLines[TBO_TEXT_SLOTS];
 static uint32_t sVersion;
 static pthread_mutex_t sLock = PTHREAD_MUTEX_INITIALIZER;
+unsigned PortTbo_TextGeneration(void){return MenuText_LineGeneration();}
 
 /* The size the letters are drawn at, by kind (capitals, in pixels: the screens show them smaller, from smaller
    copies), and the outline's thickness: as the letter sheet had it, about a 16th of the capitals. */
 static int line_cap(int kind) { return kind == 0 ? 80 : 48; }
-static int line_outline(int kind) { return kind == 0 ? 5 : 3; }
+static int line_outline(int kind) { return kind == 0 ? 3 : 2; }
+/* Keep the fill and outline on aligned, power-of-two rows. Otherwise their
+ * shared edge drifts through odd mip heights and clips short menu labels. */
+static int line_extent(int value){int size=1;while(size<value&&size<16384)size*=2;return size;}
 
 static int line_measure(TboLine *l, uint32_t generation) {
     l->generation = generation;
@@ -62,7 +69,8 @@ static int line_measure(TboLine *l, uint32_t generation) {
 }
 
 /* The number of a line (TBO_TEXT_BASE and on), -1 if it cannot be written (no font, no text, no room). */
-int PortTbo_TextId(const char *text, int kind) {
+static int text_id(const char *text, int kind, int translate) {
+    if(translate)text=PortOnline_Text(text);
     uint32_t generation = MenuText_LineGeneration();
     uint64_t now = SDL_GetTicks();
     int i, spare = -1, id = -1;
@@ -72,7 +80,7 @@ int PortTbo_TextId(const char *text, int kind) {
     }
     {   /* a line of the menu in the chosen language (translations/port/<language>.json; as it is without one), here
            where each is drawn and measured, so the two always agree */
-        const char *t = MenuTranslation_Line(text);
+        const char *t = translate ? MenuTranslation_Line(text) : NULL;
         if (t != NULL) {
             text = t;
         }
@@ -81,14 +89,14 @@ int PortTbo_TextId(const char *text, int kind) {
     for (i = 0; i < TBO_TEXT_SLOTS; i++) {
         TboLine *l = &sLines[i];
         if (l->version != 0 && l->kind == kind && strncmp(l->text, text, TEXT_MAX - 1) == 0) {
-            l->askedMs = now;
+            l->askedMs = now; l->askedFrame = gGsFrame;
             if (l->generation != generation && !line_measure(l, generation)) {
                 break;
             }
             id = l->advance > 0 ? TBO_TEXT_BASE + i : -1;
             break;
         }
-        if (spare < 0 && (l->version == 0 || now - l->askedMs >= IDLE_MS)) {
+        if (spare < 0 && (l->version == 0 || (now - l->askedMs >= IDLE_MS && gGsFrame - l->askedFrame > 2))) {
             spare = i;
         }
     }
@@ -96,7 +104,7 @@ int PortTbo_TextId(const char *text, int kind) {
         TboLine *l = &sLines[spare];
         SDL_strlcpy(l->text, text, sizeof(l->text));
         l->kind = kind;
-        l->askedMs = now;
+        l->askedMs = now; l->askedFrame = gGsFrame;
         if (line_measure(l, generation)) {
             id = TBO_TEXT_BASE + spare;
         }
@@ -104,16 +112,19 @@ int PortTbo_TextId(const char *text, int kind) {
     pthread_mutex_unlock(&sLock);
     return id;
 }
+int PortTbo_TextId(const char *text,int kind){return text_id(text,kind,1);}
+int PortTbo_TextIdLiteral(const char *text,int kind){return text_id(text,kind,0);}
 
 /* How far the pen goes for a line, in thousandths of its capitals' height, without keeping it (for laying out:
    where to break a line). 0 without a font. */
-int PortTbo_TextMeasure(const char *text, int kind) {
+static int text_measure(const char *text, int kind, int translate) {
+    if(translate)text=PortOnline_Text(text);
     int w, h, base, cap, adv;
     if (text == NULL || text[0] == '\0' || kind < 0 || kind > 1) {
         return 0;
     }
     {
-        const char *t = MenuTranslation_Line(text); /* (as PortTbo_TextId) */
+        const char *t = translate ? MenuTranslation_Line(text) : NULL;
         if (t != NULL) {
             text = t;
         }
@@ -122,6 +133,8 @@ int PortTbo_TextMeasure(const char *text, int kind) {
     adv = MenuText_LineMeasure(kind, text, cap, 0, &w, &h, &base);
     return (int)((int64_t)adv * 1000 / cap);
 }
+int PortTbo_TextMeasure(const char *text,int kind){return text_measure(text,kind,1);}
+int PortTbo_TextMeasureLiteral(const char *text,int kind){return text_measure(text,kind,0);}
 
 /* A measure of a line, in thousandths of its capitals' height: 0 how far the pen goes, 1 the picture's width,
    2 its height (of one of its two halves; a heading's: all of it), 3 the baseline from its top, 4 the room left of
@@ -131,7 +144,7 @@ int PortTbo_TextInfo(int id, int what) {
     pthread_mutex_lock(&sLock);
     if (id >= TBO_TEXT_BASE && id < TBO_TEXT_BASE + TBO_TEXT_SLOTS) {
         const TboLine *l = &sLines[id - TBO_TEXT_BASE];
-        v = what == 0 ? l->advance : what == 1 ? l->w : what == 2 ? l->h : what == 3 ? l->base : what == 4 ? l->pad : 0;
+        v = what == 0 ? l->advance : what == 1 ? (l->kind==2?l->w:line_extent(l->w)) : what == 2 ? (l->kind==2?l->h:line_extent(l->h)) : what == 3 ? l->base : what == 4 ? l->pad : 0;
         r = l->cap > 0 ? (int)((int64_t)v * 1000 / l->cap) : 0;
     }
     pthread_mutex_unlock(&sLock);
@@ -156,7 +169,7 @@ uint32_t *TboText_Pixels(uint32_t id, uint32_t *version, uint32_t *w, uint32_t *
     TboLine l;
     uint8_t *cov;
     uint32_t *px;
-    int lw, lh, lb, x, y, dx, dy, r;
+    int lw, lh, lb, x, y, dx, dy, r,tw,th;
 
     if (id < TBO_TEXT_BASE || id >= TBO_TEXT_BASE + TBO_TEXT_SLOTS) {
         return NULL;
@@ -186,12 +199,14 @@ uint32_t *TboText_Pixels(uint32_t id, uint32_t *version, uint32_t *w, uint32_t *
         free(cov);
         return NULL;
     }
-    px = malloc((size_t)lw * lh * 2 * 4);
+    tw=line_extent(lw);th=line_extent(lh);
+    px = malloc((size_t)tw * th * 2 * 4);
     if (px == NULL) {
         free(cov);
         return NULL;
     }
     r = l.outline;
+    for(y=0;y<th*2;++y)for(x=0;x<tw;++x)px[(size_t)y*tw+x]=0x00FFFFFFu;
     for (y = 0; y < lh; y++) {
         for (x = 0; x < lw; x++) {
             int fill = cov[(size_t)y * lw + x], line = 0;
@@ -211,12 +226,12 @@ uint32_t *TboText_Pixels(uint32_t id, uint32_t *version, uint32_t *w, uint32_t *
                     }
                 }
             }
-            px[(size_t)y * lw + x] = 0xFFFFFFu | (uint32_t)((fill * 128 + 127) / 255) << 24;
-            px[(size_t)(y + lh) * lw + x] = 0xFFFFFFu | (uint32_t)((line * 128 + 127) / 255) << 24;
+            px[(size_t)y * tw + x] = 0xFFFFFFu | (uint32_t)((fill * 128 + 127) / 255) << 24;
+            px[(size_t)(y + th) * tw + x] = 0xFFFFFFu | (uint32_t)((line * 128 + 127) / 255) << 24;
         }
     }
     free(cov);
-    *w = (uint32_t)lw;
-    *h = (uint32_t)lh * 2;
+    *w = (uint32_t)tw;
+    *h = (uint32_t)th * 2;
     return px;
 }

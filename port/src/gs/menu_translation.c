@@ -31,6 +31,7 @@ enum { TR_LINES_MAX = 2048, TR_LINES_HASH = 4096 };
 typedef struct TrLine { char *original, *text; } TrLine;
 typedef struct TrLines { TrLine line[TR_LINES_MAX]; int count; short hash[TR_LINES_HASH]; } TrLines;
 static TrLines *sLines;
+static int tr_bundled_dir(char *,size_t);
 static const struct { const char *id, *original; } kPortText[TR_PORT_TEXT_COUNT] = {
     {PORT_TEXT_QUIT_CONFIRM, "Close the game?\nUnsaved progress will be lost."},
     {PORT_TEXT_NET_CONNECTING, "Connecting to your rival..."},
@@ -45,11 +46,11 @@ static const struct { const char *id, *original; } kPortText[TR_PORT_TEXT_COUNT]
     {"region/AF", "Africa"},
     {"region/AS", "Asia"},
     {"region/OC", "Oceania"},
-    {PORT_TEXT_UPDATE_AVAILABLE, "Update {version} available. F1 to update."},
+    {PORT_TEXT_UPDATE_AVAILABLE, "Update {version} available. Downloading automatically."},
     {PORT_TEXT_UPDATE_DOWNLOADING, "Downloading update {version}: {percent}%"},
-    {PORT_TEXT_UPDATE_READY, "Update {version} is ready. F1 > Restart now."},
+    {PORT_TEXT_UPDATE_READY, "Update {version} verified. It will install at the main menu."},
     {PORT_TEXT_UPDATE_DONE, "Updated to {version}."},
-    {PORT_TEXT_UPDATE_ONLINE_OFF, "An update is being installed: online play is off until the game restarts (F1 > Restart now)."},
+    {PORT_TEXT_UPDATE_ONLINE_OFF, "An update is being installed: online play is off until the game restarts."},
 };
 typedef struct TrPortCatalog {
     char text[TR_PORT_TEXT_COUNT][TR_PORT_TEXT_MAX];
@@ -339,6 +340,9 @@ static int tr_port_row(TrParser *p, const char *id, TrPortCatalog *catalog) {
     } while (tr_take(p, ','));
     if (!closed || !original || !text) goto done;
     if (strncmp(id, "tbo/", 4) == 0) {
+        /* Legacy fragment substitutions were applied during line wrapping.
+         * They include padding placeholders, not player-facing translations. */
+        if(!strncmp(id,"tbo/wrap-fix/",13)){ok=1;goto done;}
         /* (a line left as its English, or empty, is not a translation; one that lost a slot is not used: see
            tr_slots_same) */
         if (text[0] && strcmp(text, original) != 0 && strlen(text) < TR_PORT_TEXT_MAX) {
@@ -396,12 +400,11 @@ static int tr_port_parse(const char *buf, size_t size, const char *locale, TrPor
     } while (tr_take(&p, ','));
     return 0;
 }
-static int tr_port_read(const char *outDir, const char *locale, TrPortCatalog *catalog) {
-    char path[1200], *data;
+static int tr_port_read_path(const char *path, const char *locale, TrPortCatalog *catalog) {
+    char *data;
     FILE *fp;
     long size;
     int ok;
-    if (snprintf(path, sizeof(path), "%s/translations/port/%s.json", outDir, locale) >= (int)sizeof(path)) return 0;
     fp = fopen(path, "rb");
     if (!fp) return 0;
     if (fseek(fp, 0, SEEK_END) || (size = ftell(fp)) < 1 || size > TR_PORT_MAX_FILE || fseek(fp, 0, SEEK_SET)) { fclose(fp); return 0; }
@@ -412,6 +415,16 @@ static int tr_port_read(const char *outDir, const char *locale, TrPortCatalog *c
     if (ok) { data[size] = 0; ok = tr_port_parse(data, (size_t)size, locale, catalog); }
     free(data);
     return ok;
+}
+static int tr_port_read(const char *outDir,const char *locale,TrPortCatalog *catalog){
+    char path[1400],bundled[1100];
+    /* Port-owned menus ship with each engine update. Do not keep an obsolete
+     * copy from an optional language pack ahead of the matching runtime. */
+    if(!strcmp(locale,"pt-BR")&&tr_bundled_dir(bundled,sizeof(bundled))&&
+       snprintf(path,sizeof(path),"%s/port/%s.json",bundled,locale)<(int)sizeof(path)&&
+       tr_port_read_path(path,locale,catalog))return 1;
+    if(snprintf(path,sizeof(path),"%s/translations/port/%s.json",outDir,locale)>=(int)sizeof(path))return 0;
+    return tr_port_read_path(path,locale,catalog);
 }
 static void tr_port_load(const char *outDir, const char *locale) {
     static TrPortCatalog catalog; /* (big: not on the stack) */
@@ -627,6 +640,11 @@ static int tr_bundled_dir(char *out, size_t size) {
         if (access(path, 0) == 0) { snprintf(out, size, "%s%s", exe, kByProgram[i]); return 1; }
     }
     return 0;
+}
+int MenuTranslation_NativeLabelsPath(char *out,size_t size) {
+    char dir[1100];
+    if(!getenv("BT4_PTBR_ROOT")||!tr_bundled_dir(dir,sizeof(dir)))return 0;
+    return snprintf(out,size,"%s/labels/pt-BR-native.tsv",dir)<(int)size;
 }
 static void tr_copy_all(const char *outDir, const char *labelsDir) {
     const char *src = NULL;
@@ -907,10 +925,7 @@ void MenuTranslation_SaveChoice(const char *locale) {
     if (locale == NULL || locale[0] == '\0') return;
     Port_SettingTextSave("menu_lang", locale);
     __atomic_store_n(&sBootChoiceMade, 1, __ATOMIC_RELEASE);
-    if (strcmp(locale, "en") != 0) {
-        if (Port_Setting("menu_font_id", 0) == 0) Port_SettingSave("menu_font_id", MenuText_FirstFontId(MENU_TEXT_MENU));
-        if (Port_Setting("battle_font_id", 0) == 0) Port_SettingSave("battle_font_id", MenuText_FirstFontId(MENU_TEXT_BATTLE));
-    }
+    /* Font choices, including Original, belong to the user rather than the locale. */
     Port_SettingsWrite();
 }
 int MenuTranslation_Load(const char *outDir, char *why, size_t whyLen) {

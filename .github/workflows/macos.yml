@@ -1,26 +1,19 @@
 # Builds the experimental macOS version (native Apple Silicon, docs/port/macos_plan.md) on GitHub's Mac, from the
-# repository alone: a check that it still builds, on every push and pull request. As the release build, no disc and
+# repository alone: a check that it still builds, as a manual workflow. Windows remains the supported BT4 release. As the release build, no disc and
 # no game data are involved (BT3_SKELETON=1: the data tables are built blank and the program fetches their values
 # from the player's disc at start), so the demo fight cannot be run here; install.py runs it on a Mac with the disc.
 # The tools are the ones install.py asks for: Homebrew's LLVM, SDL3, glslc and spirv-cross, and libclang 18 in .venv
-# for ptr32.py. The program is kept as an artifact of the run for a while (for testers); on a tag, release.yml calls
-# this workflow and attaches the zip to the release.
+# for ptr32.py. The program is kept as an artifact of the run for a while (for testers; not a release).
 name: macos
 
 on:
-  push:
-    branches: ["**"]   # (a tag's build is release.yml's, which calls this one with the release's key and number)
-    paths-ignore: ["docs/**", "**.md", "LICENSE", "LICENSE-MIT"]
-  workflow_call:       # release.yml: the Mac zip of a release
-  pull_request:
-    paths-ignore: ["docs/**", "**.md", "LICENSE", "LICENSE-MIT"]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: macos-${{ github.workflow }}-${{ github.ref }}   # (called by release.yml: that workflow's name, its own group)
+  group: macos-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -30,41 +23,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # SDL3 from source for macOS 11, the oldest any Apple Silicon Mac runs (Homebrew's is built for the runner's
-      # own macOS, 15, and the release carries it); the same version as the Linux and Windows releases. Cached.
-      - name: SDL3 for macOS 11 (cache)
-        id: sdl
-        uses: actions/cache@v4
-        with:
-          path: sdl3-mac11
-          key: sdl3-3.4.12-macos11-arm64
-
-      - name: SDL3 for macOS 11 (build)
-        if: steps.sdl.outputs.cache-hit != 'true'
-        run: |
-          curl -fsSL -o sdl.tar.gz https://github.com/libsdl-org/SDL/releases/download/release-3.4.12/SDL3-3.4.12.tar.gz
-          tar -xzf sdl.tar.gz
-          cmake -S SDL3-3.4.12 -B sdl-build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PWD/sdl3-mac11" \
-                -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
-                -DSDL_SHARED=ON -DSDL_STATIC=OFF -DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF -DSDL_EXAMPLES=OFF
-          cmake --build sdl-build -j 4 && cmake --install sdl-build
-          rm -rf sdl.tar.gz SDL3-3.4.12 sdl-build
-
       - name: Tools
         run: |
-          echo "BT3_SDL3=$PWD/sdl3-mac11" >> "$GITHUB_ENV"
-          brew install llvm shaderc spirv-cross
+          brew install llvm sdl3 shaderc spirv-cross
           python3 -m venv --system-site-packages .venv
           .venv/bin/python -m pip install --quiet libclang==18.1.1
           /opt/homebrew/opt/llvm/bin/clang --version | head -1
 
-      # As the Linux and Windows release (release.yml): a tag's build carries the release's key and number
       - name: Build
         env:
           BT3_CC: mac64
           BT3_SKELETON: "1"
-          BT3_BUILD_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.BT3_BUILD_KEY || '' }}
-          BT3_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: |
           mkdir -p port/build
           .venv/bin/python port/tools/undefined.py > port/build/compile_mac64.txt 2>&1 || { tail -40 port/build/compile_mac64.txt; exit 1; }
@@ -81,10 +50,6 @@ jobs:
           sh port/setup/build.sh
           file Tenkaichi3Decomp-setup
           otool -L Tenkaichi3Decomp-setup | grep -i sdl
-          # every program and library of the Mac zip starts on macOS 11 (the oldest of Apple Silicon)
-          for f in port/build/bt3_mac Tenkaichi3Decomp-setup "$BT3_SDL3/lib/libSDL3.0.dylib"; do
-            v=$(otool -l "$f" | awk '/minos/ {print $2; exit}'); echo "$f: macOS $v or later"; [ "$v" = "11.0" ]
-          done
 
       # The experimental Mac download, as the Linux and Windows zips (not published: a run artifact, for testers)
       - name: Package
@@ -100,13 +65,7 @@ jobs:
           if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
-          name: Tenkaichi3Decomp-macos-arm64
-          path: port/build/Tenkaichi3Decomp-macos-arm64.zip
-          if-no-files-found: error
-          retention-days: 30
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bt3_mac-arm64
+          name: BT4decomp-macos-arm64
           path: |
             port/build/bt3_mac
             port/build/bt3_mac.dat

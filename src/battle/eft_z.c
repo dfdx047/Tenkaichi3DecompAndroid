@@ -1,4 +1,6 @@
+extern int TagBattle_Active(void);
 #include "common.h"
+extern s32 TagBattle_Count(void);
 #include "battle/eft_y.h"
 #include "sys/math3d.h"
 #include "sys/gfx_ot.h"
@@ -1001,6 +1003,11 @@ void EftGndDust_SpawnDebris(Vec4 *pos, f32 scale, f32 unused, f32 bright) {
 
 /* Fighter request 0x30: starts (stop = 0) or stops (stop = 1) the fighter's first continuous emitter, creating
    it the first time. */
+static EftZTask *sTagDustSlide[12], *sTagDustDash[12];
+static EftZTask **TagDust_Slot(s32 actor,s32 dash) {
+    if(actor>=2 && actor<12)return dash?&sTagDustDash[actor]:&sTagDustSlide[actor];
+    return dash?&gEftGndDust->dash[actor]:&gEftGndDust->slide[actor];
+}
 void EftGndDust_SetSlide(s32 objId, s32 stop, f32 bright) {
     EftGndDustArg arg;
     EftGndDustEmit *w;
@@ -1008,7 +1015,7 @@ void EftGndDust_SetSlide(s32 objId, s32 stop, f32 bright) {
     if (gEftGndDust == NULL) {
         return;
     }
-    if (gEftGndDust->slide[objId] == NULL) {
+    if ((*TagDust_Slot(objId,0)) == NULL) {
         memset(&arg, 0, sizeof(arg));
         Vec4_Set(V(&arg.pos), 0.0f, 0.0f, 0.0f, 1.0f);
         Vec4_Set(V(&arg.dir), 0.0f, -1.0f, 0.0f, 1.0f);
@@ -1031,12 +1038,12 @@ void EftGndDust_SetSlide(s32 objId, s32 stop, f32 bright) {
         arg.drag = 1.0f;
         arg.unk5C = 0.0f;
         arg.scale = BtlScene_GetCharScale(objId);
-        gEftGndDust->slide[objId] = EftGndDust_Create(&arg, 1);
-        if (gEftGndDust->slide[objId] == NULL) {
+        (*TagDust_Slot(objId,0)) = EftGndDust_Create(&arg, 1);
+        if ((*TagDust_Slot(objId,0)) == NULL) {
             return;
         }
     }
-    w = gEftGndDust->slide[objId]->work;
+    w = (*TagDust_Slot(objId,0))->work;
     switch (stop) {
     case 0:
         w->flags |= EFT_GDUST_EMIT;
@@ -1057,7 +1064,7 @@ void EftGndDust_SetDash(s32 objId, s32 stop, f32 bright) {
     if (gEftGndDust == NULL) {
         return;
     }
-    if (gEftGndDust->dash[objId] == NULL) {
+    if ((*TagDust_Slot(objId,1)) == NULL) {
         memset(&arg, 0, sizeof(arg));
         Vec4_Set(V(&arg.pos), 0.0f, 0.0f, 0.0f, 1.0f);
         Vec4_Set(V(&arg.dir), 0.0f, -1.0f, 0.0f, 1.0f);
@@ -1080,12 +1087,12 @@ void EftGndDust_SetDash(s32 objId, s32 stop, f32 bright) {
         arg.drag = 1.0f;
         arg.unk5C = 0.005f;
         arg.scale = BtlScene_GetCharScale(objId);
-        gEftGndDust->dash[objId] = EftGndDust_Create(&arg, 2);
-        if (gEftGndDust->dash[objId] == NULL) {
+        (*TagDust_Slot(objId,1)) = EftGndDust_Create(&arg, 2);
+        if ((*TagDust_Slot(objId,1)) == NULL) {
             return;
         }
     }
-    w = gEftGndDust->dash[objId]->work;
+    w = (*TagDust_Slot(objId,1))->work;
     switch (stop) {
     case 0:
         w->flags |= EFT_GDUST_EMIT;
@@ -1245,6 +1252,7 @@ void EftGndDust_InitTemplate(void) {
 void EftGndDustMgr_Init(EftZTask *task) {
     s32 i;
 
+    memset(sTagDustSlide,0,sizeof(sTagDustSlide));memset(sTagDustDash,0,sizeof(sTagDustDash));
     gEftGndDust = BtlPool_Alloc(BtlPool_GetCurrent(), sizeof(EftGndDustWork));
     memset(gEftGndDust, 0, sizeof(EftGndDustWork));
     gEftGndDust->pool[0] = gEftGndDust->partsA;
@@ -1259,7 +1267,7 @@ void EftGndDustMgr_Init(EftZTask *task) {
     }
     EftTexSet_Load8(&gEftGndDust->tex, BtlScene_GetCommonEntry(0xB));
     gEftGndDust->texPtr = &gEftGndDust->tex;
-    gEftGndDustList = BtlTask_CreateChildList(task, 16, sizeof(EftGndDustEmit));
+    gEftGndDustList = BtlTask_CreateChildList(task, TagBattle_Active()?32:16, sizeof(EftGndDustEmit));
     EftGndDust_InitTemplate();
 }
 
@@ -1396,7 +1404,7 @@ void EftGndDustSlide_Term(EftZTask *task) {
     EftGndDustEmit *w = task->work;
 
     EftGndDust_FreeParts(w);
-    gEftGndDust->slide[w->arg.chr] = NULL;
+    (*TagDust_Slot(w->arg.chr,0)) = NULL;
 }
 
 /* Kind 1 reset: kills the task. */
@@ -1492,7 +1500,7 @@ void EftGndDustDash_Term(EftZTask *task) {
     EftGndDustEmit *w = task->work;
 
     EftGndDust_FreeParts(w);
-    gEftGndDust->dash[w->arg.chr] = NULL;
+    (*TagDust_Slot(w->arg.chr,1)) = NULL;
 }
 
 /* Kind 2 reset: kills the task. */

@@ -1558,6 +1558,34 @@ BtlTask *BtlTask_GetParent(BtlTask *task) {
     return task->list->parent;
 }
 
+/* The PS2 queue has 128 entries. Ten independent fighters can exceed it.
+ * Keep the PS2 block layout intact and put the PC upload entries in a sidecar.
+ * This is render-only data, rebuilt on every frame, not simulation state. */
+#ifdef PORT
+#include <stdio.h>
+#include <stdlib.h>
+#define EFT_UPLOAD_CAPACITY 2048
+static EftAeVramEntry sEftUploads[EFT_UPLOAD_CAPACITY];
+#define EFT_UPLOAD_ENTRY(i) (&sEftUploads[i])
+#else
+#define EFT_UPLOAD_CAPACITY 128
+#define EFT_UPLOAD_ENTRY(i) (&gEftVram->entry[i])
+#endif
+static EftAeVramEntry *EftVram_QueueEntry(void) {
+    if(gEftVram->count>=EFT_UPLOAD_CAPACITY)return NULL;
+    return EFT_UPLOAD_ENTRY(gEftVram->count);
+}
+static EftAeVramEntry *EftVram_Existing(EftAeTex *tex,s32 flags) {
+#ifdef PORT
+    u32 i;
+    for(i=0;i<gEftVram->count;++i){
+        EftAeVramEntry *e=EFT_UPLOAD_ENTRY(i);
+        if(e->flags==flags && e->tex && e->tex->image==tex->image)return e;
+    }
+#endif
+    return NULL;
+}
+
 /* Allocates the effect VRAM list (from BtlScene_Init). */
 void EftVram_Init(void) {
     gEftVram = Heap_Alloc(sizeof(EftAeVram), 0x20, 0, 2);
@@ -1589,8 +1617,12 @@ void EftVram_GetCursor(s32 *imageBlock, s32 *clutBlock) {
 /* Gives a texture VRAM for this frame (image and CLUT), queues its upload and returns its TEX0 with the new
    TBP0 / CBP and the given TCC / TFX. The entry's own TEX0 keeps the base and palette fields cleared. */
 u64 EftVram_AddTex(EftAeTex *tex, s32 tcc, s32 tfx) {
-    EftAeVramEntry *e = &gEftVram->entry[gEftVram->count];
+    EftAeVramEntry *e = EftVram_QueueEntry();
     u64 tex0;
+
+    EftAeVramEntry *cached=EftVram_Existing(tex,3);
+    if(cached)return ((tex->tex0 & 0xFFF80003FFFFC000ull) | ((u64)tcc<<34) | ((u64)tfx<<35) | (u32)cached->imageBlock | ((u64)(u32)cached->clutBlock<<37));
+    if(!e || !tex || !tex->image)return 0;
 
     e->tex = tex;
     e->imageBlock = gEftVram->imageNext;
@@ -1607,8 +1639,12 @@ u64 EftVram_AddTex(EftAeTex *tex, s32 tcc, s32 tfx) {
 
 /* The same for the image only (the CLUT field stays cleared). */
 u64 EftVram_AddImage(EftAeTex *tex, s32 tcc, s32 tfx) {
-    EftAeVramEntry *e = &gEftVram->entry[gEftVram->count];
+    EftAeVramEntry *e = EftVram_QueueEntry();
     u64 tex0;
+
+    EftAeVramEntry *cached=EftVram_Existing(tex,1);
+    if(cached)return ((tex->tex0 & 0xFFF80003FFFFC000ull) | ((u64)tcc<<34) | ((u64)tfx<<35) | (u32)cached->imageBlock);
+    if(!e || !tex || !tex->image)return 0;
 
     e->tex = tex;
     e->imageBlock = gEftVram->imageNext;
@@ -1623,8 +1659,12 @@ u64 EftVram_AddImage(EftAeTex *tex, s32 tcc, s32 tfx) {
 
 /* Gives a texture's CLUT VRAM for this frame and returns its block. */
 u64 EftVram_AddClut(EftAeTex *tex) {
-    EftAeVramEntry *e = &gEftVram->entry[gEftVram->count];
+    EftAeVramEntry *e = EftVram_QueueEntry();
     u64 block;
+
+    EftAeVramEntry *cached=EftVram_Existing(tex,2);
+    if(cached)return (u32)cached->clutBlock;
+    if(!e || !tex || !tex->image)return 0;
 
     e->tex = tex;
     e->imageBlock = 0;
@@ -1638,7 +1678,9 @@ u64 EftVram_AddClut(EftAeTex *tex) {
 
 /* Queues a texture's upload at given blocks and returns its TEX0. No caller. */
 u64 EftVram_AddTexAt(EftAeTex *tex, s32 imageBlock, s32 clutBlock, s32 tcc, s32 tfx) {
-    EftAeVramEntry *e = &gEftVram->entry[gEftVram->count];
+    EftAeVramEntry *e = EftVram_QueueEntry();
+
+    if(!e || !tex || !tex->image)return 0;
 
     e->flags = 3;
     e->imageBlock = imageBlock;
@@ -1689,8 +1731,23 @@ void EftTexSet_Keep16(EftAeTexSet16 *set, s32 tcc, s32 tfx) {
 void EftVram_UploadAll(void) {
     u32 i;
 
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TEST_EFFECT_CAPACITY")){
+        static u32 imageHigh,clutHigh;
+        if(gEftVram->imageNext>imageHigh||gEftVram->clutNext>clutHigh){
+            imageHigh=gEftVram->imageNext>imageHigh?gEftVram->imageNext:imageHigh;
+            clutHigh=gEftVram->clutNext>clutHigh?gEftVram->clutNext:clutHigh;
+            fprintf(stderr,"effect capacity: count=%u image_end=%x clut_end=%x palette_overlap=%d address_wrap=%d\n",gEftVram->count,gEftVram->imageNext,gEftVram->clutNext,gEftVram->clutNext>0x2B00,gEftVram->imageNext>0x4000);
+        }
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_RENDER_AUDIT")){
+        static u32 audit; if(++audit%60==0)fprintf(stderr,"tag vram audit: count=%u image=%x clut=%x\n",gEftVram->count,gEftVram->imageNext,gEftVram->clutNext);
+    }
+    {static u32 high; if(gEftVram->count>high){high=gEftVram->count;
+        if(high>128 && getenv("BT4_VFX_TRACE"))printf("tag vram: upload high-water=%u capacity=%u\n",high,EFT_UPLOAD_CAPACITY);}}
+#endif
     for (i = 0; i < gEftVram->count; i++) {
-        EftAeVramEntry *e = &gEftVram->entry[i];
+        EftAeVramEntry *e = EFT_UPLOAD_ENTRY(i);
         s32 clutBlock = -1;
         s32 imageBlock = -1;
 
@@ -1748,3 +1805,20 @@ void EftTexSet_Load4(EftAeTexSet4 *set, void *pack) {
         set->tex[i].tex0 = hdr->images[i].tex0;
     }
 }
+
+#ifdef PORT
+/* Opt-in native regression; the caller exits before another draw. */
+s32 Bt4_TestEffectUploadQueue(void) {
+    static EftAeImage images[200];static EftAeTex textures[200];
+    s32 i,bad=0,imageEnd,clutEnd;
+    EftVram_Reset();
+    memset(images,0,sizeof(images));memset(textures,0,sizeof(textures));
+    for(i=0;i<200;++i){images[i].imageBlocks=1;images[i].clutBlocks=1;textures[i].image=&images[i];EftVram_AddTex(&textures[i],1,0);}
+    if(gEftVram->count!=200)++bad;
+    for(i=0;i<200;++i)if(EFT_UPLOAD_ENTRY(i)->tex!=&textures[i])++bad;
+    imageEnd=gEftVram->imageNext;clutEnd=gEftVram->clutNext;
+    for(i=0;i<200;++i)EftVram_AddTex(&textures[i],1,0);
+    if(gEftVram->count!=200 || gEftVram->imageNext!=imageEnd || gEftVram->clutNext!=clutEnd)++bad;
+    EftVram_Reset();return bad;
+}
+#endif

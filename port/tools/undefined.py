@@ -20,6 +20,7 @@ MAC_FLAGS = ["-fno-vectorize", "-fno-slp-vectorize", "-Wno-error=return-mismatch
 MAC_IR = ["-Xclang", "-disable-llvm-passes"]  # the window pass sees the code as written ((u32)p is still a ptrtoint and a
 # trunc, not folded into a shift or a mask); macwin.run optimises after it
 MAC_LLC = ["-mtriple=arm64-apple-macos11", "-mattr=-fp-armv8,-neon", "-relocation-model=pic"]
+DEVELOPMENT_FLAGS = ["-DBT4_DEVELOPMENT_BUILD"] if os.environ.get("BT4_DEVELOPMENT_BUILD") == "1" else []
 
 def variant(cmd):
     """The command for this build variant: clang for everything built with software float, 64-bit or Windows flags."""
@@ -27,20 +28,20 @@ def variant(cmd):
         soft = "-msoft-float" in cmd
         cc = llvm("clang++" if cmd[0] == "g++" else "clang") if soft else ("clang++" if cmd[0] == "g++" else "clang")
         target = CLANG_TARGET if soft else ["-arch", "arm64", "-mmacosx-version-min=11.0", f"-I{os.environ.get('BT3_SDL3', '/opt/homebrew/opt/sdl3')}/include"]
-        return [cc] + target + [a for a in cmd[1:] if a not in MAC_DROP] + (["-fms-extensions"] + MAC_FLAGS if soft else [])
+        return [cc] + target + [f"-I{os.environ.get('BT3_CURL', '/opt/homebrew/opt/curl')}/include"] + [a for a in cmd[1:] if a not in MAC_DROP] + DEVELOPMENT_FLAGS + (["-fms-extensions"] + MAC_FLAGS if soft else [])
     if BITS64:
         cmd = ["-m64" if a == "-m32" else a for a in cmd if a != "-malign-double"]
     if WIN:
         cmd = [a for a in cmd if a != "-m64"]
         inc = [f"-I{sdl3() / 'include'}"] if sdl3() else []
         if cmd[0] in ("gcc", "g++") and "-msoft-float" not in cmd:  # the renderer, the settings window: the Windows gcc
-            return [PREFIX + cmd[0]] + cmd[1:] + inc
+            return [PREFIX + cmd[0]] + cmd[1:] + inc + DEVELOPMENT_FLAGS
     if VARIANT == "gcc" or "-msoft-float" not in cmd:
-        return cmd
+        return cmd + DEVELOPMENT_FLAGS
     extra = ["-fms-extensions"] if BITS64 else []
     if WIN:  # GCC's structure layout, not Microsoft's bit-field rules: the game's structures are the PS2's
         extra += ["-mno-ms-bitfields", "-D__CRT__NO_INLINE"]  # (no inline maths of the headers: they use long double) + ([f"-I{sdl3() / 'include'}"] if sdl3() else [])
-    return ["clang"] + CLANG_TARGET + cmd[1:] + ["-mno-x87", "-Wno-error=return-mismatch"] + extra
+    return ["clang"] + CLANG_TARGET + cmd[1:] + ["-mno-x87", "-Wno-error=return-mismatch"] + extra + DEVELOPMENT_FLAGS
 
 def run(cmd, **kw):
     if MAC and "-msoft-float" in cmd:  # software float on arm64 is a code-generator option: through IR and llc
@@ -123,7 +124,7 @@ def compile_ee(cmd, src, o):
     return subprocess.run(cmd + ["-fpreprocessed", str(i), "-o", str(o)], cwd=ROOT, capture_output=True, text=True)
 
 def cc(f):
-    o = OBJ / (str(f.relative_to(ROOT / "src")).replace("/", "_")[:-2] + ".o")
+    o = OBJ / (f.relative_to(ROOT / "src").as_posix().replace("/", "_")[:-2] + ".o")
     src, done, missing = portsrc.prepare(f)
     r = compile_ee(CC + [f"-I{f.parent}"], src, o)
     if missing:
@@ -134,12 +135,14 @@ def main():
     OBJ.mkdir(parents=True, exist_ok=True)
     key = buildkey.flags()  # (first: a key that cannot be used stops the build before anything is compiled)
     fs = portsrc.sources()
-    with concurrent.futures.ProcessPoolExecutor(16) as ex:
+    with concurrent.futures.ProcessPoolExecutor(int(os.environ.get("BT3_BUILD_JOBS","4"))) as ex:
         res = list(ex.map(cc, fs))
     pending = [p for _, _, _, p in res if p]  # (the macOS build: files waiting for mac_finish)
     bad = [(f, e) for o, f, e, _ in res if o is None]
     for f, e in bad:
         print("FAILED", f.name, next((l for l in e.splitlines() if "rror" in l or l.startswith("ptr32")), e.strip()[:150])[:200])
+        for detail in e.splitlines()[:8]:
+            print("  " + detail)
     objs = [str(o) for o, _, _, _ in res if o]
     if BITS64:
         # The game's data tables, assembled for this target: with their values (gen_data.py's sources, made from the
@@ -212,7 +215,10 @@ def main():
         stage = src.suffix[1:]
         name = "k" + src.stem.capitalize() + stage.capitalize() + "Spv"
         spv = gen / (src.name + ".spv")
-        if shutil.which("glslc") is None and spv.exists() and spv.stat().st_mtime >= src.stat().st_mtime:
+        import shader_spirv
+        if WIN and shader_spirv.prepare(ROOT, gen, src):
+            pass
+        elif shutil.which("glslc") is None and spv.exists() and spv.stat().st_mtime >= src.stat().st_mtime:
             pass  # no shader compiler here (the release container): the compiled shader that was put in place is current
         else:
             if shutil.which("glslc") is not None:
@@ -245,6 +251,10 @@ def main():
                    for n in ("trim", "fill"))
     (gen / "bars_png.h").write_text("/* generated from port/assets/bars by port/tools/undefined.py */\n" + bars)
     (gen / "shaders.h").write_text("/* generated from port/src/gs/shaders by port/tools/undefined.py */\n" + "".join(arrays))
+    import dx12_shaders
+    dx12_shaders.prepare(ROOT, gen, WIN)
+    import d3d9_shaders
+    d3d9_shaders.prepare(ROOT, gen, WIN)
     for f in sorted((ROOT / "port/src/gs").glob("*.c")):
         o = OBJ / ("gs_" + f.stem + ".o")
         r = run(["gcc", "-m32", "-std=gnu99", "-c", "-O2", "-g", "-fno-pic", "-msse2", "-mfpmath=sse", "-fno-strict-aliasing",
@@ -259,6 +269,8 @@ def main():
     # an object of the library built before it was given lacks them (delete port/build/obj/cxx_imgui*.o once).
     imgui = ROOT / "port/third_party/imgui"
     for f in sorted(imgui.glob("*.cpp")) + sorted((ROOT / "port/src/gs").glob("*.cpp")):
+        if f.name == "imgui_impl_dx9.cpp" and not WIN:
+            continue
         o = OBJ / ("cxx_" + f.stem + ".o")
         if f.parent == imgui and o.exists() and o.stat().st_mtime > f.stat().st_mtime:
             objs.append(str(o))
@@ -271,6 +283,10 @@ def main():
         else:
             objs.append(str(o))
     for f in [ROOT / "src/port/vu0_a.c", ROOT / "src/port/vu0_b.c"] + sorted((ROOT / "port/src").glob("*.c")):
+        # TAG TEAM's native room core is embedded in gs/tag_team_net.c, outside the game's ptr32 ABI.
+        if f.name in ("tag_team.c", "tag_team_wire.c"):
+            (OBJ / ("pc_" + f.stem + ".o")).unlink(missing_ok=True)
+            continue
         o = OBJ / ("pc_" + f.stem + ".o")
         names = ["-include", "vu0_names.h", "-DREF_VU0_EXTERN_ARITH"] if f.parent.name == "port" and f.parent.parent.name == "src" else []
         soft = [] if f.name in ("plat_libm.c", "plat_fastvec.c") else ["-msoft-float", "-mno-sse", "-mno-mmx", "-DSF_FAST_CALLS", "-include", "math.h", "-include", "stdlib.h", "-include", "port_libm.h"]

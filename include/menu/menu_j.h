@@ -147,7 +147,7 @@ typedef struct ESelState {
 typedef struct ESel {
     /* 0x0000 */ u32 *pack;          /* this screen's section of archive 4 (compressed) */
     /* 0x0004 */ u32 *res;           /* the same unpacked */
-    /* 0x0008 */ void *imageFile;    /* 0x16800 bytes: compressed large picture (file 0x2F9 + character) */
+    /* 0x0008 */ void *imageFile;    /* 0x16800 bytes: compressed large picture (file 0x71C + character) */
     /* 0x000C */ MTexRes *imageRes;  /* 0x20800 bytes: the same unpacked */
     /* 0x0010 */ u32 *chips;         /* section 32: pack of the small character pictures */
     /* 0x0014 */ void *nameText;     /* section 30 */

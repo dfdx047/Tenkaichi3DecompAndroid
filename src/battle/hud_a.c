@@ -1,7 +1,12 @@
+extern int TagBattle_Active(void);
 #include "common.h"
+extern s32 TagBattle_Count(void),TagBattle_Target(s32 actor);
 #include "battle/hud_a.h"
 #include "battle/battle.h"
 #include "sys/heap.h"
+#ifdef PORT
+#include <stdlib.h>
+#endif
 
 /*
  * Battle HUD manager. Source range 0x2187E0-0x219EB0.
@@ -348,6 +353,10 @@ void Hud_Term(void) {
    Everything that starts an animation is skipped while BATTLE_FLAG_PAUSE is set. */
 void Hud_PreUpdate(void) {
     s32 side;
+    s32 preview=0;
+#ifdef PORT
+    preview=getenv("BT4_RENDER_TEST") && getenv("BT4_HUD_PREVIEW_CAPTURE");
+#endif
 
     if (Battle_GetMode() == 3) {
         HudTimer_SetCount(BtlCtrl_GetWork5A8Count());
@@ -364,16 +373,18 @@ void Hud_PreUpdate(void) {
         HudNotice_ShowReplayMark(0);
     }
     for (side = 0; side < 2; side++) {
+        extern s32 TagBattle_ViewActor(void);
+        s32 actor=TagBattle_Active()?(side?TagBattle_Target(TagBattle_ViewActor()):TagBattle_ViewActor()):side;
         s32 v;
         s32 i;
         s32 mask;
         s32 up;
         s32 isNew;
 
-        HudGauge_SetHp(side, BtlSide_GetHp(side));
-        HudGauge_SetKi(side, BtlSide_GetKi(side));
-        v = BtlSide_GetParamUnk2C(side);
-        if (BtlSide_TestFlagBE(side)) {
+        HudGauge_SetHp(side, BtlSide_GetHp(actor));
+        HudGauge_SetKi(side, BtlSide_GetKi(actor));
+        v = BtlSide_GetParamUnk2C(actor);
+        if (BtlSide_TestFlagBE(actor)) {
             HudGauge_SetKiReserve(side, v);
         } else {
             HudGauge_SetKiReserve(side, 0);
@@ -383,16 +394,16 @@ void Hud_PreUpdate(void) {
         for (i = 0; i < 4; i++) {
             switch (i) {
                 case 0:
-                    v = BtlCtrl_GetStatMod0(side);
+                    v = BtlCtrl_GetStatMod0(actor);
                     break;
                 case 1:
-                    v = BtlCtrl_GetStatMod3(side);
+                    v = BtlCtrl_GetStatMod3(actor);
                     break;
                 case 2:
-                    v = BtlCtrl_GetStatMod1(side);
+                    v = BtlCtrl_GetStatMod1(actor);
                     break;
                 case 3:
-                    v = BtlCtrl_GetStatMod2(side);
+                    v = BtlCtrl_GetStatMod2(actor);
                     break;
                 default:
                     continue;
@@ -404,22 +415,23 @@ void Hud_PreUpdate(void) {
                 }
             }
         }
+        if(preview){mask=side?7:15;up=side?3:7;}
         HudGauge_SetStatIcons(side, mask, up);
-        HudGauge_SetBlast(side, BtlSide_GetBlast(side));
-        HudGauge_SetMaxPower(side, BtlSide_GetMaxPower(side));
-        HudGauge_SetFighter(side, BtlCtrl_GetObj(side));
-        if (!(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE)) {
-            isNew = BtlSide_IsComboHitNew(side);
+        HudGauge_SetBlast(side, BtlSide_GetBlast(actor));
+        HudGauge_SetMaxPower(side, BtlSide_GetMaxPower(actor));
+        HudGauge_SetFighter(side, BtlCtrl_GetObj(actor));
+        if (!preview && !(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE)) {
+            isNew = BtlSide_IsComboHitNew(actor);
             if (isNew == 1) {
-                v = BtlCtrl_GetClashCount(side);
+                v = BtlCtrl_GetClashCount(actor);
                 if (v != 0) {
                     HudCombo_SetHits(side, v);
                 } else {
-                    HudCombo_SetHits(side, BtlSide_GetComboHits(side));
+                    HudCombo_SetHits(side, BtlSide_GetComboHits(actor));
                 }
             }
-            if (BtlCtrl_GetOppUnkD50(side)) {
-                v = BtlSide_GetComboDamage(side);
+            if (BtlCtrl_GetOppUnkD50(actor)) {
+                v = BtlSide_GetComboDamage(actor);
                 if (v >= 0) {
                     HudCombo_SetDamage(side, v, isNew);
                 }
@@ -431,29 +443,29 @@ void Hud_PreUpdate(void) {
                     HudGauge_ShakeHp(side == 0, 5, 2);
                 }
             }
-            if (!BtlSide_IsComboShown(side)) {
+            if (!BtlSide_IsComboShown(actor)) {
                 HudCombo_SetHits(side, 0);
                 HudCombo_SetDamage(side, -1, isNew);
             }
         }
-        v = BtlCtrl_GetFlagDEtoE2(side);
+        v = BtlCtrl_GetFlagDEtoE2(actor);
         if (v >= 0) {
             HudCombo_SetText(side, v);
         }
-        if (BtlCtrl_IsFlag6Raised(side)) {
+        if (BtlCtrl_IsFlag6Raised(actor)) {
             HudCombo_SetMessage(side, 1);
             HudGauge_ShakeKi(side, 8, 2);
         }
-        if (BtlCtrl_TestFlag71(side)) {
+        if (BtlCtrl_TestFlag71(actor)) {
             HudCombo_SetMessage(side, 0);
         }
-        if (BtlCtrl_IsFlag5RaisedInFight(side)) {
+        if (BtlCtrl_IsFlag5RaisedInFight(actor)) {
             HudCombo_SetMessage(side, 2);
         }
-        if (BtlCtrl_TestFlagE3(side)) {
+        if (BtlCtrl_TestFlagE3(actor)) {
             HudCombo_SetMessage(side, 3);
         }
-        if (BtlCtrl_IsFlag9CRaised(side)) {
+        if (BtlCtrl_IsFlag9CRaised(actor)) {
             HudCombo_SetMessage(side, 4);
         }
         /* Single button prompt (flags 0xE7..0xEC through BtlCtrl_GetChangePrompt, else flag 0xE6). The icon
@@ -466,7 +478,7 @@ void Hud_PreUpdate(void) {
             s32 kind;
             s32 pad;
 
-            if (BtlCtrl_GetChangePrompt(side, &button, &kind, &pad)) {
+            if (BtlCtrl_GetChangePrompt(actor, &button, &kind, &pad)) {
                 s32 n = button;
 
                 button = tbl[button];
@@ -477,12 +489,12 @@ void Hud_PreUpdate(void) {
                "press this button again and again" (as when ki has run out) with Square, not the turning stick.
                In an online match only on this player's own side. */
             } else if (Port_ClashSquare() && (!Port_NetActive() || Port_NetMe() == side) &&
-                       (BtlCtrl_TestFlagE6Pad1(side) || BtlCtrl_TestFlagE6Pad(side, &pad))) {
+                       (BtlCtrl_TestFlagE6Pad1(actor) || BtlCtrl_TestFlagE6Pad(actor, &pad))) {
                 HudPrompt_SetButton(side, 1, 0); /* icon 1 = Square, style 0 = pressed and released */
 #endif
-            } else if (BtlCtrl_TestFlagE6Pad1(side)) {
+            } else if (BtlCtrl_TestFlagE6Pad1(actor)) {
                 HudPrompt_SetButton(side, 12, 1);
-            } else if (BtlCtrl_TestFlagE6Pad(side, &pad)) {
+            } else if (BtlCtrl_TestFlagE6Pad(actor, &pad)) {
                 HudPrompt_SetButton(side, 12, pad);
             } else {
                 HudPrompt_ClearButton(side);
@@ -492,7 +504,7 @@ void Hud_PreUpdate(void) {
            one icon: 5 for kind 3, else the row + 0x47. Otherwise the 1 or 2 button icons are spread to the
            even slots with icon 0x20 (kind 2) between them; icons 0x10..0x13 are moved by 4 * pad status, and
            icons below 0x10 get the kind map[kind]. */
-        if (BtlCtrl_IsFlag9ERaised(side)) {
+        if (BtlCtrl_IsFlag9ERaised(actor)) {
             HudPrompt_AcceptCommand(side);
         } else {
             s32 buttons[4];
@@ -502,7 +514,7 @@ void Hud_PreUpdate(void) {
             s32 count;
             s32 pad;
 
-            if (BtlCtrl_GetTechPromptPad1(side, buttons, &kind, &idx)) {
+            if (BtlCtrl_GetTechPromptPad1(actor, buttons, &kind, &idx)) {
                 if (kind == 3) {
                     kinds[0] = kind;
                     buttons[0] = 5;
@@ -517,7 +529,7 @@ void Hud_PreUpdate(void) {
                     idx = -1;
                 }
                 HudPrompt_SetCommand(side, 1, buttons, kinds, idx);
-            } else if (BtlCtrl_GetSwitchPrompt(side, buttons, &count, &kind, &pad, &idx)) {
+            } else if (BtlCtrl_GetSwitchPrompt(actor, buttons, &count, &kind, &pad, &idx)) {
                 s32 map[4] = { 3, 2, 1, 0 };
 
                 for (i = count - 1; i >= 0; i--) {
@@ -542,19 +554,19 @@ void Hud_PreUpdate(void) {
             }
         }
         if (!(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE)) {
-            if (BtlCtrl_TestFlagE4(side)) {
+            if (BtlCtrl_TestFlagE4(actor)) {
                 HudTeam_StartFlipNext(side);
             }
-            if (BtlCtrl_TestFlagE5(side)) {
+            if (BtlCtrl_TestFlagE5(actor)) {
                 HudTeam_StartFlipPrev(side);
             }
-            v = BtlSide_CountAlive(side);
+            v = BtlSide_CountAlive(actor);
             HudTeam_SetReserveCount(side, v - (v > 0));
-            HudTeam_SetSwitchGauge(side, BtlSide_GetSwitchGauge(side));
-            HudTeam_SetTargetHp(side, BtlSide_GetSwitchTargetHp(side));
-            HudTeam_SetTargetHpMax(side, BtlSide_GetSwitchTargetHpMax(side));
-            HudTeam_SetTarget(side, BtlSide_GetSwitchTarget(side));
-            v = BtlCtrl_IsSwitching(side);
+            HudTeam_SetSwitchGauge(side, BtlSide_GetSwitchGauge(actor));
+            HudTeam_SetTargetHp(side, BtlSide_GetSwitchTargetHp(actor));
+            HudTeam_SetTargetHpMax(side, BtlSide_GetSwitchTargetHpMax(actor));
+            HudTeam_SetTarget(side, BtlSide_GetSwitchTarget(actor));
+            v = BtlCtrl_IsSwitching(actor);
             HudGauge_SetSwitching(side, v);
             HudTeam_SetSwitching(side, v);
         }
@@ -562,6 +574,18 @@ void Hud_PreUpdate(void) {
     if (BtlCtrl_TestProgressFrameBit()) {
         HudNotice_Show(8);
     }
+#ifdef PORT
+    /* Capture fixture: render real BT4 combo/stat widgets for the HUD editor's
+       background. It runs only in the hidden render harness, outside netplay. */
+    if(preview){
+        static s32 given;
+        if(!given){
+        HudCombo_SetHits(0,12);HudCombo_SetDamage(0,4680,0);
+        HudCombo_SetHits(1,8);HudCombo_SetDamage(1,2340,0);
+        given=1;
+        }
+    }
+#endif
 }
 
 /* Round reset: resets the parts and hides them all. */
@@ -796,5 +820,9 @@ void Hud_Draw(void) {
         PortTbo_SparSign();
     }
 #endif
+    {
+        extern void TagBattle_DrawRoster(void);
+        TagBattle_DrawRoster();
+    }
     Hud_ClearTexMarks();
 }

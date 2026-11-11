@@ -1,4 +1,5 @@
 #include "common.h"
+#include "port_variant.h"
 #include "menu/menu_g.h"
 #ifdef PORT
 extern int Port_NetSession(void); /* port/src/gs/net.c */

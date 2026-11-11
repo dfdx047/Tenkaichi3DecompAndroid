@@ -76,10 +76,13 @@ void GsGpu_FrameEnd(void);
    uploads and vertex programs that later frames count on, but no draw is recorded, nothing is shown, and no
    sound starts. (gs/state.c) */
 extern int gPortResim;
+/* GS-owned replay status, captured with the submitted DMA list. The game can
+   start or end a rollback while the render thread is still drawing that list. */
+extern int gGsResim;
 /* The frame being computed is not shown because the machine is behind (gs_draw.c: frame skipping). Its drawing
    is left out the way a re-run frame's is; the game itself (and its sound) go on as always. */
 extern int gsSkipFrame;
-#define GS_NO_PICTURE (gPortResim || gsSkipFrame)
+#define GS_NO_PICTURE (gGsResim || gsSkipFrame)
 
 /* gs_core.c: with the render thread (BT3_GS_THREAD), waits until it has finished the list it runs, before the
    game's thread touches what the thread uses (GS memory and registers, the back end). At once without it, or on

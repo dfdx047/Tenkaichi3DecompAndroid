@@ -12,13 +12,14 @@
 /* include/battle/view_a.h holds these, but pulling it in clashes with menu_d.h (MsgWin_Init); the values are
    fixed, so they are repeated here for the stage list of the PC build. */
 #define STGGRID_COLS 6
-#define STGGRID_ID_LOCKED 0x3E
-#define STGGRID_ID_EMPTY 0x3F
+#define STGGRID_ID_LOCKED 0x24
+#define STGGRID_ID_EMPTY 0x25
 static s32 sPortStagesAdded; /* this stage select shows stages from outside the disc */
 static s32 sPortSongsAdded;  /* ... and its music list songs from outside the disc */
 static s32 sPortSongNameHidden, sPortStageNameHidden;
 /* The port's stage-name overlay (port/src/gs/ui.cpp / gs_draw.c): the names of added stages are drawn by the
    port, over the picture, from its own stylized art. The menu only fills the name's rectangle and which image. */
+static void *sPortStagePictures[2];
 extern volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;
 extern volatile int gUiNameIdx, gUiNameReady;
 extern volatile int gUiSongX, gUiSongY, gUiSongW, gUiSongH;
@@ -46,6 +47,7 @@ extern void Port_MenuMovie(int index);
 
 CharSel *gCharSel = NULL;
 
+extern void Bt4Costume_AttachCaption(MFlash *flash, MFlashRef *ref, s32 number, s32 total, const u16 *name, void *storage);
 extern void TextBox_Init(MTextBox *box, void *text, u32 preset);
 extern void TextBox_SetUnk80(MTextBox *box, s32 value);
 extern void TextBox_AttachLine(MFlash *flash, MFlashRef *ref, s32 x, s32 y, s32 line, MTextBox *box);
@@ -68,6 +70,8 @@ extern void ChrGrid_Build(s32 *outCount, MChrCell *out, s32 *inCount, MChrCell *
                           MChrCell *custom);
 extern void StgGrid_ApplyUnlocks(s32 *count, s32 *ids);
 extern void BgmList_ApplyUnlocks(s32 *count, s32 *ids);
+extern s32 Bt4_BgmNormalize(s32 count,s32 *ids,s32 random);
+extern s32 Bt4_BgmRandom(s32 count,s32 *ids);
 extern s32 ChrTbl_WrapCostume(s32 chara, s32 *costume);
 
 extern void *memcpy(void *, const void *, u32);
@@ -107,8 +111,8 @@ void CharSel_SetStageChips(void) {
                 icon = 37;
             } else if (id == STGGRID_ID_EMPTY) {
                 icon = 38;
-            } else if (id >= 0x24) {
-                icon = 1 + (id - 0x24) % 36;
+            } else if (id >= 0x63) {
+                icon = 1;
             } else {
                 icon = id + 1;
             }
@@ -119,6 +123,9 @@ void CharSel_SetStageChips(void) {
 #endif
         gCharSel->tex[41 + i] = gCharSel->tex[slot[i]];
         gCharSel->tex[slot[i]] = res->tex;
+#ifdef PORT
+        {u32 art=Port_StageArt(id,0);if(art)gCharSel->tex[slot[i]]=(void*)art;}
+#endif
     }
 }
 
@@ -297,10 +304,16 @@ void CharSel_UpdateStageLoad(void) {
         }
         break;
     case CHARSEL_LOAD_UNPACK:
+#ifdef PORT
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MAP_BROWSE_TEST"))fprintf(stderr,"map browse decode: stage=%d raw=%u packed=%u\n",gCharSel->stage->stage,((u32*)gCharSel->stageFile)[0],((u32*)gCharSel->stageFile)[1]);
+#endif
         Sprite_Unpack(gCharSel->stageFile, gCharSel->stageRes[gCharSel->stageBuf], NULL);
         res = gCharSel->stageRes[gCharSel->stageBuf];
         Res_RelocateOffsets(&res, res, res);
         gCharSel->bg[0] = res;
+#ifdef PORT
+        {u32 art=Port_StageArt(gCharSel->stage->stage,1);sPortStagePictures[gCharSel->stageBuf]=art?(void*)art:(void*)res;gCharSel->bg[0]=sPortStagePictures[gCharSel->stageBuf];}
+#endif
         gCharSel->stageBuf ^= 1;
         gCharSel->flags |= CHARSEL_STAGE_READY;
         gCharSel->stageState = CHARSEL_LOAD_IDLE;
@@ -318,6 +331,9 @@ void CharSel_UpdateStageLoad(void) {
 
 /* The stage under the cursor changed: start the cross fade, or abort a load in progress, and ask for the new picture. */
 void CharSel_RequestStage(void) {
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MAP_BROWSE_TEST"))fprintf(stderr,"map browse request: stage=%d row=%d col=%d\n",gCharSel->stage->stage,gCharSel->stage->row,gCharSel->stage->col);
+#endif
     if (gCharSel->flags & CHARSEL_STAGE_READY) {
         gCharSel->flags ^= CHARSEL_STAGE_READY;
     } else {
@@ -326,6 +342,9 @@ void CharSel_RequestStage(void) {
     gCharSel->flags |= CHARSEL_STAGE_CHANGE;
     gCharSel->bg[0] = gCharSel->stageRes[gCharSel->stageBuf];
     gCharSel->bg[1] = gCharSel->stageRes[gCharSel->stageBuf ^ 1];
+#ifdef PORT
+    if(sPortStagePictures[gCharSel->stageBuf^1])gCharSel->bg[1]=sPortStagePictures[gCharSel->stageBuf^1];
+#endif
 }
 
 /* Sends the clip of one chip or plate of a movie to a label; `kind` says which clip and from which cursor. */
@@ -387,8 +406,8 @@ void CharSel_Init(s32 section) {
     s32 stageRows;
     void *data;
 
-    gCharSel = Heap_Alloc(0x3A4C, 0x20, 0, 2);
-    memset(gCharSel, 0, 0x3A4C);
+    gCharSel = Heap_Alloc(sizeof(CharSel), 0x20, 0, 2);
+    memset(gCharSel, 0, sizeof(CharSel));
     if (gProgress->mode == 0x2D) {
         gCharSel->pack = (u32 *)MPACK_AT(gMenuArc6, section);
         gCharSel->res = Sprite_Unpack(gCharSel->pack, NULL, NULL);
@@ -531,11 +550,11 @@ void CharSel_Init(s32 section) {
     gCharSel->nameText = MPACK_AT(gCharSel->res, 43);
     gCharSel->formText = MPACK_AT(gCharSel->res, 44);
     gCharSel->chipPack = (u32 *)MPACK_AT(gCharSel->res, 45);
-    for (i = 0; i < MCHR_CELL_MAX; i++) {
+    for (i = 0; i < 250; i++) {
         CS_RES(gCharSel->chipPack, i + 1);
     }
     gCharSel->stagePack = (u32 *)MPACK_AT(gCharSel->res, 46);
-    for (i = 0; i < 38; i++) {
+    for (i = 0; i < 99; i++) {
         CS_RES(gCharSel->stagePack, i + 1);
     }
 
@@ -557,18 +576,18 @@ void CharSel_Init(s32 section) {
         /* Room for the disc's 36 and all 26 added ones, and the padding of the last row: 62 are 11 rows of 6, 66
            cells. (It was 64 cells with the adding stopped at 60, the last whole row that fits: with every disc
            stage unlocked only 24 of 26 added stages were listed. Reported by a player.) */
-        static s32 sAllIds[96];
-        extern int Port_NetSession(void); /* port/src/gs/net.c */
-        s32 extra = Port_NetSession() ? 0 : gPortExtraStageCount;
+        static s32 sAllIds[132];
+        extern int Port_NetSession(void),Port_TagNetwork(void); /* online lists contain only shared built-in stages */
+        s32 extra = Port_NetSession()||Port_TagNetwork() ? 0 : gPortExtraStageCount;
         s32 swaps = Port_NetSession() ? 0 : gPortStageReplaceCount;
         s32 n = gCharSel->stageCount, i, rows, r;
-        if (n > 64) {
-            n = 64;
+        if (n > 99) {
+            n = 99;
         }
         for (i = 0; i < n; i++) {
             sAllIds[i] = gCharSel->stageIds[i];
         }
-        for (i = 0; i < extra && n < 90; i++) {
+        for (i = 0; i < extra && n < 125; i++) {
             sAllIds[n++] = (s32)gPortExtraStages[i];
         }
         for (r = 0; r < swaps; r++) {
@@ -583,7 +602,7 @@ void CharSel_Init(s32 section) {
         sPortStagesAdded = extra > 0 || swaps > 0;
         if (sPortStagesAdded) {
             rows = (n + STGGRID_COLS - 1) / STGGRID_COLS;
-            for (i = n; i < rows * STGGRID_COLS && i < 96; i++) {
+            for (i = n; i < rows * STGGRID_COLS && i < 132; i++) {
                 sAllIds[i] = STGGRID_ID_EMPTY;
             }
             gCharSel->stageIds = sAllIds;
@@ -601,7 +620,7 @@ void CharSel_Init(s32 section) {
         fprintf(stderr, "\n");
     }
 #endif
-    gCharSel->stageRows = 6;
+    gCharSel->stageRows = 11;
 #ifdef PORT
     if (sPortStagesAdded) { /* (with nothing added the grid is the game's own, 6 rows) */
         gCharSel->stageRows = (gCharSel->stageCount + STGGRID_COLS - 1) / STGGRID_COLS;
@@ -621,7 +640,7 @@ void CharSel_Init(s32 section) {
     }
 #endif
     gCharSel->bgmCount -= 4;
-    gCharSel->bgmIds[gCharSel->bgmCount - 1] = CHARSEL_BGM_RANDOM;
+    gCharSel->bgmCount = Bt4_BgmNormalize(gCharSel->bgmCount,gCharSel->bgmIds,1);
 #ifdef PORT
     {
         /* PC build: append the tracks added from outside the disc (BT3_SONG manifest), keeping the game's
@@ -635,10 +654,10 @@ void CharSel_Init(s32 section) {
         added = Port_NetSession() ? 0 : gPortSongCount;
         sPortSongsAdded = 0;
         if (added > 0) {
-            static s32 sBgmIds[72];
+            static s32 sBgmIds[PORT_SONG_FIRST_OFFSET + PORT_SONG_MAX + 1];
             s32 n = gCharSel->bgmCount, k, last = gCharSel->bgmIds[n - 1];
-            if (n > 30) {
-                n = 30;
+            if (n > PORT_SONG_FIRST_OFFSET) {
+                n = PORT_SONG_FIRST_OFFSET;
             }
             if (added > PORT_SONG_MAX) {
                 added = PORT_SONG_MAX;
@@ -665,6 +684,9 @@ void CharSel_Init(s32 section) {
             fprintf(stderr, " %02x", (int)(u32)gCharSel->bgmIds[dbg]);
         }
         fprintf(stderr, "\n");
+        fprintf(stderr,"bgm filemap:");
+        for(dbg=0;dbg<gCharSel->bgmCount;++dbg)fprintf(stderr," %x",CHARSEL_BGM_FILE(gCharSel->bgmIds[dbg]));
+        fprintf(stderr,"\n");
     }
 #endif
 
@@ -698,9 +720,9 @@ void CharSel_Init(s32 section) {
     *(CharSelPick *)gCharSel->side[1] = CSPROG->side[1].pick;
     gCharSel->players = CSPROG->players;
     stageCols = 6;
-    stageRows = 6;
+    stageRows = 11;
     gCharSel->stage->col = CSPROG->stage % stageCols;
-    gCharSel->stage->row = CSPROG->stage / stageRows;
+    gCharSel->stage->row = CSPROG->stage / stageCols;
     for (i = 0; i < gCharSel->bgmCount; i++) {
         if (gCharSel->bgmIds[i] == CSPROG->bgm) {
             gCharSel->stage->bgm = i;
@@ -714,7 +736,8 @@ void CharSel_Init(s32 section) {
             CSPROG->side[i].pick = *(CharSelPick *)gCharSel->side[i];
         }
     }
-    if (!StgGrid_IsSelectable(gCharSel->stageIds, CSPROG->stage)) {
+    if (CSPROG->stage < 0 || CSPROG->stage >= gCharSel->stageCount ||
+        !StgGrid_IsSelectable(gCharSel->stageIds, CSPROG->stage)) {
         CSPROG->stage = 0;
         gCharSel->stage->col = 0;
         gCharSel->stage->row = 0;
@@ -741,6 +764,9 @@ void CharSel_Init(s32 section) {
     Res_RelocateOffsets(&res, res, res);
     gCharSel->bg[0] = res;
     gCharSel->bg[1] = res;
+#ifdef PORT
+    {u32 art=Port_StageArt(gCharSel->stage->stage,1);sPortStagePictures[0]=sPortStagePictures[1]=art?(void*)art:(void*)res;gCharSel->bg[0]=gCharSel->bg[1]=sPortStagePictures[0];}
+#endif
     gCharSel->stageState = CHARSEL_LOAD_IDLE;
     gCharSel->flags |= CHARSEL_STAGE_READY;
     gCharSel->bgAlpha[0] = 0x80;
@@ -748,7 +774,7 @@ void CharSel_Init(s32 section) {
     gCharSel->stageBuf = 1;
 
     if (gCharSel->bgmIds[gCharSel->stage->bgmPlaying] == CHARSEL_BGM_RANDOM) {
-        Bgm_Play(CHARSEL_BGM_RANDOM_FIRST + Rand_Range(9));
+        Bgm_Play(CHARSEL_BGM_FILE(Bt4_BgmRandom(gCharSel->bgmCount,gCharSel->bgmIds)));
     } else {
         Bgm_Play(CHARSEL_BGM_FILE(gCharSel->bgmIds[gCharSel->stage->bgmPlaying]));
     }
@@ -757,6 +783,9 @@ void CharSel_Init(s32 section) {
         TextBox_SetUnk80(&gCharSel->nameBox[i], 1);
         TextBox_Init(&gCharSel->formBox[i], gCharSel->formText, i + 3);
         TextBox_SetUnk80(&gCharSel->formBox[i], 1);
+        gCharSel->costumeText = MPACK_AT(gCharSel->res, 57);
+        TextBox_Init(&gCharSel->costumeBox[i], (u8 *)gCharSel->costumeText + ((u32 *)gCharSel->costumeText)[1], 7);
+        TextBox_SetUnk80(&gCharSel->costumeBox[i], 1);
     }
 }
 
@@ -883,7 +912,16 @@ void CharSel_Draw(void) {
             gCharSel->faceAlpha[i] = 0.0f;
         }
         Flash_FindLabel(f, NULL, i ? "mc_single_chara_r" : "mc_single_chara_l", &ref);
+#ifdef PORT
+        /* BT4 keeps this portrait clip in the map movie. Do not let its
+         * selection fade remain visible over the stage preview. */
+        Flash_ClipSetAlpha(f, &ref, (gCharSel->flags & CHARSEL_STAGE_PHASE) ? 0.0f : gCharSel->faceAlpha[i]);
+        /* The movie can add alpha after the multiplier. Visibility also
+         * suppresses that additive pass over the map preview. */
+        Flash_ClipSetFlags(f, &ref, 2, (gCharSel->flags & CHARSEL_STAGE_PHASE) == 0);
+#else
         Flash_ClipSetAlpha(f, &ref, gCharSel->faceAlpha[i]);
+#endif
         Flash_ClipSetFlags(f, &ref, 0x80, (u8)gCharSel->faceMask);
         Flash_FindLabel(f, NULL, i ? "mc_name_text_r" : "mc_name_text_l", &ref);
         TextBox_AttachLine(f, &ref, 0, 0, gCharSel->side[i]->chara, &gCharSel->nameBox[i]);
@@ -910,9 +948,9 @@ void CharSel_Draw(void) {
         extern FontStyle gFontStyle;
         s32 nameId = gCharSel->stage->stage;
 
-        if (nameId >= 0x24) {
+        if (nameId >= 0x63) {
             s32 nx = 0, ny = 0; /* (an empty clip reference leaves them untouched) */
-            s32 idx = nameId - 0x24;
+            s32 idx = nameId - 0x63;
             Flash_ClipSetFlags(f, &ref, 2, 0); /* FLASH_PROP_VISIBLE: hide the atlas name */
             sPortStageNameHidden = 1;
             Flash_ClipGetPos(f, &ref, &nx, &ny);
@@ -1110,29 +1148,27 @@ void CharSel_Draw(void) {
                                    gCharSel->cells[i][gCharSel->side[i]->col + gCharSel->side[i]->row * 7].id != MCHR_RANDOM);
             }
         }
-        for (j = 0; j < 4; j++) {
-            uv.x0 = (j % 2) * 0x40;
-            uv.y0 = (j / 2) * 0x20;
-            uv.x1 = uv.x0 + 0x40;
-            uv.y1 = uv.y0 + 0x20;
+#ifdef PORT
+        {extern void Bt4Costume_FixArrows(MFlash *);Bt4Costume_FixArrows(f);}
+#endif
+        /* BT4's helper 0x269778 draws per-character costume names from section 57.
+           The old BT3 four-digit atlas is not the BT4 costume label. */
+        for (j = 0; j < 8; j++) {
             sprintf(name, "mc_color_plate_%d", j + 1);
             Flash_FindLabel(f, NULL, name, &ref);
-            if (j < gCharSel->colorCount[i]) {
-                Flash_ClipSetFlags(f, &ref, 2, 1);
-                switch (gCharSel->colorCount[i]) {
-                case 2:
-                    Flash_ClipSetOffset(f, &ref, 0x2D, 0);
-                    break;
-                case 3:
-                    Flash_ClipSetOffset(f, &ref, 0x16, 0);
-                    break;
-                }
-                Flash_FindLabel(f, name, "mc_color_text_off", &ref);
-                Flash_ClipSetUv(f, &ref, &uv);
-                Flash_FindLabel(f, name, "mc_color_text_on", &ref);
-                Flash_ClipSetUv(f, &ref, &uv);
+            Flash_ClipSetFlags(f, &ref, 2, 0);
+        }
+        if (gCharSel->side[i]->chara >= 0) {
+            *(void **)((u8 *)&gCharSel->costumeBox[i] + 4) =
+                (u8 *)gCharSel->costumeText + ((u32 *)gCharSel->costumeText)[1 + gCharSel->side[i]->chara];
+            Flash_FindLabel(f, NULL, "mc_color_name_text", &ref);
+            if(gCharSel->side[i]->colorPlate>=0 && gCharSel->side[i]->colorPlate<gCharSel->colorCount[i]) {
+                u32 *row = *(u32 **)((u8 *)&gCharSel->costumeBox[i] + 4);
+                const u16 *label = (const u16 *)((u8 *)row + (row[1 + gCharSel->side[i]->colorPlate] & ~3u));
+                Bt4Costume_AttachCaption(f, &ref, gCharSel->side[i]->colorPlate + 1, gCharSel->colorCount[i], label, &gCharSel->costumeBox[i]);
             } else {
-                Flash_ClipSetFlags(f, &ref, 2, 0);
+                /* Native TextBox_AttachLine also clears its callback for line -1. */
+                TextBox_AttachLine(f, &ref, 0, 0, -1, &gCharSel->costumeBox[i]);
             }
         }
     }
@@ -1200,11 +1236,16 @@ void CharSel_Draw(void) {
     }
 
 #ifdef PORT
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *,const void *);
+    Flash_PortPortraits(gCharSel->tex[23],gCharSel->tex[22]);
+#endif
     for (i = 0; i < CHARSEL_FLASH_NUM; i++) {
         Port_MenuMovie(i); /* widescreen menus: which of the screen's movies (port/src/gs_marker.c) */
         Flash_Draw(&gCharSel->flash[i]);
     }
     Port_MenuMovie(0);
+    Flash_PortPortraits(NULL,NULL);
 #else
     for (i = 0; i < CHARSEL_FLASH_NUM; i++) {
         Flash_Draw(&gCharSel->flash[i]);
@@ -1291,6 +1332,89 @@ void CharSel_Input(s32 *running) {
     s32 id;
     s32 chara;
     s32 r;
+
+#ifdef PORT
+    if (getenv("BT4_RENDER_TEST") && getenv("BT4_FIGHTER_SELECTION_TEST") &&
+        (gCharSel->flash[0].flags & MFLASH_PAD) && (gCharSel->flags & CHARSEL_STARTED)) {
+        static int frame, positioned;
+        s32 wanted = atoi(getenv("BT4_FIGHTER_SELECTION_TEST"));
+        if (!positioned) {
+            for (j = 0; j < gCharSel->masterCount[0]; ++j) {
+                MChrCell *cell = &gCharSel->cells[0][j];
+                if (cell->id != wanted) continue;
+                CharSel_ClipGoto(1, 0, CHARSEL_CLIP_CHIP, "fl_off_start");
+                gCharSel->side[0]->col = j % 7;
+                gCharSel->side[0]->row = j / 7;
+                CharSel_SetRowChips(0);
+                gCharSel->side[0]->chara = cell->id;
+                CharSel_RequestFace(0);
+                CharSel_ClipGoto(1, 0, CHARSEL_CLIP_CHIP, "fl_on_start");
+                {
+                    u8 *table = gCharSel->nameText;
+                    u16 *name = (u16 *)(table + (((u32 *)table)[wanted + 1] & ~3));
+                    fprintf(stderr, "fighter selection: requested=%d slot=%d forms=%d name=", wanted, j, cell->formCount);
+                    for (n = 0; n < 40 && name[n]; ++n) if (name[n] < 128) fputc(name[n], stderr);
+                    fputc('\n', stderr);
+                }
+                positioned = 1;
+                break;
+            }
+            if (!positioned) exit(3);
+        }
+        if (gCharSel->turn == 1 || gCharSel->side[0]->state == CHARSEL_ST_DONE) {
+            fprintf(stderr, "fighter selection: confirmed=%d costume=%d\n", gCharSel->side[0]->picked, gCharSel->side[0]->colorPlate);
+            exit(gCharSel->side[0]->picked != wanted);
+        }
+        if (++frame % 30 == 0) {
+            const char *stale = getenv("BT4_FIGHTER_SELECTION_STALE");
+            CharSelSide *side = gCharSel->side[0];
+            if (stale && side->state == CHARSEL_ST_COLOR) side->chip[side->col] = atoi(stale);
+            gPad[0].gamePressed = PADG_CROSS;
+        }
+    }
+    /* Opt-in render regression: traverse the real training selector, then capture its map reel. */
+    if (getenv("BT4_RENDER_TEST") && (getenv("BT4_MAP_SELECTOR_TEST") || getenv("BT4_COSTUME_SELECTOR_TEST"))) {
+        static int fixtureTick, fixtureSelected, fixtureShot;
+        static int costumeTick;
+        int costumeOnly = getenv("BT4_COSTUME_SELECTOR_TEST") != NULL;
+        extern void Port_TagUiCapture(int index);
+        gPad[0].gamePressed = gPad[0].gameRepeat = gPad[0].gameHeld = 0;
+        if ((gCharSel->flags & CHARSEL_STAGE_PHASE) && !fixtureSelected) {
+            int wanted = getenv("BT4_MAP_SELECTOR_TEST") ? atoi(getenv("BT4_MAP_SELECTOR_TEST")) : 0;
+            for (j = 0; j < gCharSel->stageCount; ++j) {
+                if (gCharSel->stageIds[j] == wanted) {
+                    CharSel_ClipGoto(0, 0, CHARSEL_CLIP_STAGE_CHIP, "fl_off_start");
+                    gCharSel->stage->row = j / STGGRID_COLS;
+                    gCharSel->stage->col = j % STGGRID_COLS;
+                    gCharSel->stage->stage = wanted;
+                    CharSel_SetStageChips();
+                    CharSel_ClipGoto(0, 0, CHARSEL_CLIP_STAGE_CHIP, "fl_on_start");
+                    CharSel_RequestStage();
+                    fprintf(stderr, "map selector fixture: stage=%d index=%d count=%d row=%d col=%d\n",
+                            wanted, j, gCharSel->stageCount, gCharSel->stage->row, gCharSel->stage->col);
+                    fixtureSelected = 1;
+                    fixtureTick = 0;
+                    break;
+                }
+            }
+        }
+        if (costumeOnly && gCharSel->side[0]->state == CHARSEL_ST_COLOR) {
+            if (++costumeTick == 60) Port_TagUiCapture(21);
+        } else if (gCharSel->flags & CHARSEL_STAGE_PHASE) {
+            if(fixtureSelected&&getenv("BT4_MAP_BROWSE_TEST")&&fixtureTick>=170&&(fixtureTick-170)%40==0){
+                int step=(fixtureTick-170)/40;
+                gPad[0].gameRepeat=step<10?2:step<20?1:step<40?4:8;
+                if(step==60){fprintf(stderr,"map browse fixture: complete\n");exit(0);}
+            }
+            if (fixtureSelected && ++fixtureTick >= 150 && !fixtureShot) {
+                Port_TagUiCapture(20);
+                fixtureShot = 1;
+            }
+        } else if ((gCharSel->flash[0].flags & MFLASH_PAD) && ++fixtureTick % 30 == 0) {
+            gPad[0].gamePressed = PADG_CROSS;
+        }
+    }
+#endif
 
     if (!(gCharSel->flash[0].flags & MFLASH_PAD)) {
         return;
@@ -1778,7 +1902,8 @@ void CharSel_Input(s32 *running) {
                         }
                         CS_SIDE->picked = chara;
                     } else {
-                        CS_SIDE->picked = CS_SIDE->chip[CS_SIDE->col];
+                        /* The reel can still contain the previous row or form. */
+                        CS_SIDE->picked = CS_CELL.id;
                         n = CS_SIDE->col + CS_SIDE->row * 7;
                     }
                     if (CS_SIDE->customPlate != 0) {
@@ -1922,7 +2047,7 @@ extern s32 CpuLevel_FromSetting(u32 setting);
 /* The song a chosen "random" stands for: one of the nine battle songs. PC build, with songs added from outside
    the disc: any entry of the music list before "random", the disc's and the added ones alike. */
 #ifdef PORT
-#define CHARSEL_RANDOM_BGM() (sPortSongsAdded ? gCharSel->bgmIds[Rand_Range(gCharSel->bgmCount - 1)] : Rand_Range(9) + 8)
+#define CHARSEL_RANDOM_BGM() Bt4_BgmRandom(gCharSel->bgmCount,gCharSel->bgmIds)
 #else
 #define CHARSEL_RANDOM_BGM() (Rand_Range(9) + 8)
 #endif
@@ -1994,13 +2119,13 @@ s32 CharSel_Run(s32 section) {
         if (gCharSel->stage->stage == CHARSEL_STAGE_RANDOM && sPortStagesAdded) {
             do {
                 gCharSel->stage->stage = gCharSel->stageIds[Rand_Range(gCharSel->stageCount)];
-            } while (gCharSel->stage->stage == CHARSEL_STAGE_RANDOM || gCharSel->stage->stage >= STGGRID_ID_LOCKED);
+            } while (gCharSel->stage->stage == CHARSEL_STAGE_RANDOM || !((gCharSel->stage->stage < CHARSEL_STAGE_RANDOM) || (gCharSel->stage->stage >= 0x27 && gCharSel->stage->stage < 0x63)));
         }
 #endif
         if (gCharSel->stage->stage == CHARSEL_STAGE_RANDOM) {
             do {
                 gCharSel->stage->stage = gCharSel->stageIds[Rand_Range(gCharSel->stageCount - 1)];
-            } while (gCharSel->stage->stage >= CHARSEL_STAGE_RANDOM);
+            } while (!((gCharSel->stage->stage < CHARSEL_STAGE_RANDOM) || (gCharSel->stage->stage >= 0x27 && gCharSel->stage->stage < 0x63)));
         }
         if (gProgress->mode == 0x2D) {
             mode = 6;

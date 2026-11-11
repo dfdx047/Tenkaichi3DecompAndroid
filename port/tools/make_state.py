@@ -21,6 +21,8 @@ WRITABLE = (".data", ".bss", ".sdata", ".sbss", ".ldata", ".lbss", ".tbss", ".td
 
 def is_game(obj):
     p = pathlib.Path(obj.split("(")[0])
+    if p.name == "menu_port_language.o":
+        return False  # Startup UI only; a language restart must not alter online state.
     if p.parent == DATA:
         return True
     if p.parent != OBJ or p.name.startswith(("gs_", "cxx_", "ui", "imgui")):

@@ -248,25 +248,14 @@ void Movie_Close(void) {
 
 /* Plays the opening movie from start to end (or until it is skipped). */
 void Movie_PlayOpening(void) {
-#ifdef PORT
-    /* The European opening soundtrack is almost exactly as long as the USA movie. Keep the USA picture,
-       and choose the EU ADX only when that file was installed. */
-    {
-        extern int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size);
-        char audio[512];
-        Movie_Open("zs3usop.pss", Port_FilePath(0, 0, "zs3euop.adx", audio, sizeof(audio)) ?
-                   "zs3euop.adx" : "zs3usop.adx");
-    }
-#else
-    Movie_Open("zs3usop.pss", "zs3usop.adx");
-#endif
+    Movie_Open("zs4usop.pss", "zs4usop.adx");
     Movie_Run();
     Movie_Close();
 }
 
 /* Plays the ending movie. */
 void Movie_PlayEnding(void) {
-    Movie_Open("zs3used.pss", "zs3used.adx");
+    Movie_Open("zs4used.pss", "zs4used.adx");
     Movie_Run();
     Movie_Close();
 }

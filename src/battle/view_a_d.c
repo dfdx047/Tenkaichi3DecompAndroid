@@ -1,4 +1,5 @@
 #include "common.h"
+#include "port_variant.h"
 #include "battle/view_a.h"
 #include "battle/orbit_cam.h"
 #include "sys/common.h"
@@ -81,11 +82,41 @@ extern void *File_Request3(s32 id, void *buf, s32 unused) __asm__("File_Request"
 
 /* Defined here: this object's .sdata (0x2FF108). */
 ChrView *gChrView = NULL;
+#ifdef PORT
+/* BT4's encyclopedia poses live outside the model's battle animation bank.
+ * Keep one allocation per model slot: a replacement is prepared while the old
+ * object can still be drawn, and cancelling a load must release only its slot. */
+static void *sBt4ViewerMotion[CHRVIEW_SLOT_COUNT];
+#endif
 
 #define BTL_OBJ_FLAGS(obj) (*(u32 *)((obj) + 0xA40))
 
+static s32 Bt4_Costumes(s32 chara) {
+    ChrViewInfo *info = ChrView_GetCharaInfo(chara);
+    return info != NULL ? *(u16 *)((u8 *)info + 0x28) : 0;
+}
+s32 Bt4_ModelFile(s32 chara, s32 costume, s32 damaged) {
+    s32 i, file = 0x1612;
+    for (i = 0; i < chara; i++) file += 2 * Bt4_Costumes(i);
+    return file + costume + (damaged ? Bt4_Costumes(chara) : 0);
+}
+
+s32 Bt4_CharaFromModelFile(s32 id) {
+    s32 c, base = 0x1612;
+    for (c = 0; c < 250; c++) {
+        s32 end = base + 2 * Bt4_Costumes(c);
+        if (id >= base && id < end) return c;
+        base = end;
+    }
+    return -1;
+}
 /* File id of a character's model: costume n, or its damaged version. */
 s32 ChrView_GetModelFile(s32 chara, s32 costume, s32 damaged) {
+#ifdef PORT
+    if (gPortVariant != 0) {
+        return Bt4_ModelFile(chara, costume, damaged != 0);
+    }
+#endif
     if (damaged != 0) {
         return chara * 10 + costume + (CHRVIEW_FILE_FIRST + 4);
     }
@@ -114,6 +145,13 @@ ChrViewSlot *ChrView_AllocSlot(void) {
 /* Puts a model buffer back on the free list. */
 s32 ChrView_FreeSlot(ChrViewSlot *slot) {
     if (slot != NULL) {
+#ifdef PORT
+        s32 index = slot - gChrView->slot;
+        if (index >= 0 && index < CHRVIEW_SLOT_COUNT && sBt4ViewerMotion[index] != NULL) {
+            Heap_Free(sBt4ViewerMotion[index]);
+            sBt4ViewerMotion[index] = NULL;
+        }
+#endif
         SList_PushFront(&gChrView->free, &slot->node);
         return 1;
     }
@@ -154,7 +192,7 @@ void ChrView_SetupCamera(s32 chara) {
         OrbitCam_SetAngles(0.0f, 3.14159265f, 0.0f);
         OrbitCam_SetDist(info->dist);
         if (gChrView->zoom != 0) {
-            OrbitCam_SetDistRange(3.0f, 100.0f);
+            OrbitCam_SetDistRange(PORT_V(3.0f, *(f32 *)((u8 *)info + 0x38)), 100.0f);
         } else {
             OrbitCam_SetDistRange(info->dist, info->dist);
         }
@@ -192,6 +230,16 @@ s32 ChrView_StepLoad(ChrViewJob *job) {
         }
         job->slot->obj = BtlObj_Create(3, &job->slot->file, 1);
         job->obj = BtlObj_Get(job->slot->obj);
+#ifdef PORT
+        if (gPortVariant != 0) {
+            s32 index = job->slot - gChrView->slot;
+            /* BT4 ELF 0x26BF0C: pose file 0xF3C + character, installed before
+             * playing animation 7. File_LoadSync allocates the complete file;
+             * its third parameter is unused, not a destination capacity. */
+            sBt4ViewerMotion[index] = File_LoadSync(0xF3C + job->chara, NULL, 0);
+            *(void **)(job->obj + 0x754) = sBt4ViewerMotion[index];
+        }
+#endif
         BtlObjAnim_PlayModel(job->obj, gChrView->anim, 2);
         BTL_OBJ_FLAGS(job->obj) &= ~0x02000000;
         BtlObj_SetPartVisible(job->obj, 0, 0);
@@ -202,6 +250,15 @@ s32 ChrView_StepLoad(ChrViewJob *job) {
         if (job->count++ >= 3) {
             ChrView_SetupCamera(job->chara);
             BtlObj_SetPartVisible(job->obj, 0, 1);
+#ifdef PORT
+            if (gPortVariant != 0) {
+                s32 part;
+                /* BT4's third Show argument includes visible costume parts. */
+                for (part = 4; part >= 1; --part) {
+                    if ((job->damaged >> part) & 1) BtlObj_SetPartVisible(job->obj, part, 1);
+                }
+            }
+#endif
             old = ChrView_GetCur();
             if (old != NULL) {
                 BtlObj_Destroy(old->obj);
@@ -349,6 +406,9 @@ void ChrView_Init(void) {
     Battle_GetWork()->flags &= ~0x100;
     gChrView = Heap_Alloc(sizeof(ChrView), 0x20, 0, HEAP_ANY);
     memset(gChrView, 0, sizeof(ChrView));
+#ifdef PORT
+    memset(sBt4ViewerMotion, 0, sizeof(sBt4ViewerMotion));
+#endif
     gChrView->anim = 7;
     for (i = 0; i < CHRVIEW_SLOT_COUNT; i++) {
         gChrView->slot[i].file[0].buf = Heap_Alloc(CHRVIEW_MODEL_SIZE, 0x40, 0, HEAP_ANY);
@@ -385,6 +445,12 @@ void ChrView_Term(void) {
     File_CancelRequests();
     Job_Clear();
     BtlObj_Term();
+#ifdef PORT
+    for (i = 0; i < CHRVIEW_SLOT_COUNT; i++) {
+        if (sBt4ViewerMotion[i] != NULL) Heap_Free(sBt4ViewerMotion[i]);
+        sBt4ViewerMotion[i] = NULL;
+    }
+#endif
     OrbitCam_Term();
     StgFx_Term();
     BtlStage_Term();

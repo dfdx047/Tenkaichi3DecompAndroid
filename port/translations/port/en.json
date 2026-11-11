@@ -61,7 +61,7 @@
     },
     "update/available": {
       "original": "Update {version} available. F1 to update.",
-      "text": "Update {version} available. F1 to update."
+      "text": "Update {version} available. Downloading automatically."
     },
     "update/downloading": {
       "original": "Downloading update {version}: {percent}%",
@@ -69,7 +69,7 @@
     },
     "update/ready": {
       "original": "Update {version} is ready. F1 > Restart now.",
-      "text": "Update {version} is ready. F1 > Restart now."
+      "text": "Update {version} verified. It will install at the main menu."
     },
     "update/done": {
       "original": "Updated to {version}.",
@@ -77,7 +77,7 @@
     },
     "update/online_off": {
       "original": "An update is being installed: online play is off until the game restarts (F1 > Restart now).",
-      "text": "An update is being installed: online play is off until the game restarts (F1 > Restart now)."
+      "text": "An update is being installed: online play is off until the game restarts."
     }
   }
 }

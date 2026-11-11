@@ -92,14 +92,14 @@
 #define MAGIC 0x4E335442u
 enum { T_HELLO = 1, T_HELLO_ACK = 2, T_SPEC_HELLO = 20, T_SPEC_NO = 22, SPEC_NO_VERSION = 1 };
 enum { T_L_HELLO = 30, T_L_NO, T_L_STATE, T_L_ALIVE, T_L_GO, T_L_BACK, T_L_LEAVE, T_L_CLOSE, T_L_CHAT, T_L_SAID, T_L_INVITE, T_L_TOKEN };
-enum { LOBBY_VERSION = 3, /* 2: STATE carries the member's nonce (its greeting's), which a member connecting asks for; 3: tournaments (the bracket in STATE, results in ALIVE, the rejoin token in HELLO, TOKEN) */ FP_MARK = 0x46505231, LOBBY_CAP = 0x4C4F4231 /* "1BOL": a game's 1v1 greeting says it knows lobbies */ };
+enum { LOBBY_VERSION = 4, /* BT4: match packets through the owner for non-owner pairs. */ /* 2: STATE carries the member's nonce (its greeting's), which a member connecting asks for; 3: tournaments (the bracket in STATE, results in ALIVE, the rejoin token in HELLO, TOKEN) */ FP_MARK = 0x46505231, LOBBY_CAP = 0x4C4F4231 /* "1BOL": a game's 1v1 greeting says it knows lobbies */ };
 enum { LNO_VERSION = 1, LNO_DATA = 2, LNO_FULL = 3 };
 enum { CLOSE_CLOSED = 1, CLOSE_KICKED = 2 };
 #define NOTE 96
 #define NAMEB 20
 #define TEXT 160
 #define SEC 1000000000ull
-#define QUIET_NS (15 * SEC)    /* a member, or the owner, silent this long is gone */
+#include "../../include/online_room_policy.h"
 #define CONNECT_NS (25 * SEC)  /* a member that has not reached the owner in this long gives up */
 #define MATCH_CONNECT_NS (40 * SEC) /* the two players have not connected to each other in this long: back to the lobby */
 #define RESULT_WAIT_NS (20 * SEC)  /* a tournament's match: one player's result and not the other's this long: played again */
@@ -222,6 +222,9 @@ static struct {
     uint64_t otherNs;          /* the owner: when someone of another version last tried to join (said once a minute) */
     uint32_t nonce, seqSeen, goGen, inGen, backGen;
     char self[64];
+    uint32_t routePeerId;
+    int routeViaOwner;
+    struct sockaddr_in routePeer;
     /* both */
     int leaving, closing, closedBy; /* closedBy: the owner closed it / removed this member (CLOSE) */
     int wantReady;             /* a member: READY asked for, until the owner's word says it (-1 none) */
@@ -455,7 +458,9 @@ static void view_update(int force) {
     SDL_UnlockSpinlock(&sLock);
 }
 
+static PortLobbyView sReviewView;static int sReviewActive;
 int Port_LobbyView(PortLobbyView *out) {
+    if(sReviewActive){*out=sReviewView;return out->state!=0;}
     SDL_LockSpinlock(&sLock);
     *out = sView;
     SDL_UnlockSpinlock(&sLock);
@@ -781,7 +786,7 @@ static void go_for(int k, int *role, struct sockaddr_in *t, struct sockaddr_in *
 }
 
 static void go_send(int k) {
-    uint8_t p[60];
+    uint8_t p[64];
     int role;
     struct sockaddr_in t, alt, kn, kn2;
     go_for(k, &role, &t, &alt, &kn, &kn2);
@@ -796,6 +801,7 @@ static void go_send(int k) {
     addr_put(p, 9, &alt);
     addr_put(p, 11, &kn);
     addr_put(p, 13, &kn2);
+    put(p,15,sL.slot[0]>0&&sL.slot[1]>0&&role<3?sL.m[sL.slot[role==1?1:0]].id:0);
     send_to(p, (int)sizeof(p), &sL.m[k].addr);
     sL.m[k].goSentNs = now_ns();
 }
@@ -1055,6 +1061,35 @@ static void t_new(void) {
     }
     fprintf(stderr, "bt3: lobby: tournament %u drawn (seed %08x)\n", (unsigned)sL.t.gen, (unsigned)sL.t.seed);
     t_resolve();
+}
+
+/* Hidden review only: exercise the real bracket resolver without opening
+ * sockets or starting matches. The normal lobby state is restored afterwards. */
+void Port_LobbyReviewFixture(int entrants){
+    __typeof__(sL) saved;__typeof__(sTok) savedToken;int n,i,checks=0,games=0;
+    static const char *names[8]={"NauTaro","Player 2","Player 3","Player 4","Player 5","Player 6","Player 7","Player 8"};
+    if(!getenv("BT4_RENDER_TEST"))return;
+    saved=sL;savedToken=sTok;
+    for(n=2;n<=8;++n){
+        int played=0;memset(&sL,0,sizeof(sL));sL.on=1;sL.state=2;sL.mode=1;sL.entrants=n;sL.ownerId=sL.myId=101;
+        for(i=0;i<LOBBY_SLOTS;++i)sL.slot[i]=-1;
+        for(i=0;i<n;++i){sL.slot[i]=i;sL.m[i].on=1;sL.m[i].id=101+i;sL.ids[i]=101+i;SDL_strlcpy(sL.m[i].name,names[i],NAMEB);SDL_strlcpy(sL.names[i],names[i],NAMEB);}
+        t_new();
+        while(sL.t.state==1&&sL.t.cur>=0&&played<8){
+            int m=sL.t.cur,a=t_part(m,0),b=t_part(m,1);
+            if(a<0||b<0||a==b){fprintf(stderr,"tournament review FAILED: invalid pairing\n");exit(3);}
+            sL.t.win[m]=a;sL.t.how[m]=HOW_PLAYED;++played;t_resolve();
+        }
+        if(sL.t.state!=2||sL.t.champ<0||sL.t.champ>=n||played!=n-1){fprintf(stderr,"tournament review FAILED: entrants=%d played=%d\n",n,played);exit(3);}
+        ++checks;games+=played;
+    }
+    n=entrants<2?2:entrants>8?8:entrants;
+    memset(&sL,0,sizeof(sL));sL.on=1;sL.state=2;sL.mode=1;sL.entrants=n;sL.ownerId=sL.myId=101;
+    for(i=0;i<LOBBY_SLOTS;++i)sL.slot[i]=-1;
+    for(i=0;i<n;++i){sL.slot[i]=i;sL.m[i].on=1;sL.m[i].id=101+i;sL.ids[i]=101+i;SDL_strlcpy(sL.m[i].name,names[i],NAMEB);SDL_strlcpy(sL.names[i],names[i],NAMEB);}
+    t_new();view_update(1);sReviewView=sView;sReviewActive=1;
+    sL=saved;sTok=savedToken;
+    fprintf(stderr,"tournament review: entrant-counts=%d resolved-matches=%d champion-checks=passed fixture-entrants=%d network-sockets-opened=0\n",checks,games,n);
 }
 
 static int member_by_id(uint32_t id) {
@@ -1793,7 +1828,7 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
         }
         sL.owner = *from;
         sL.state = 2;
-        Match_Cancel(); /* (a code's search: it has done its work, the owner's relay address is not needed now) */
+        if (!Match_KeepSession()) Match_Cancel();
         fprintf(stderr, "bt3: lobby: in the lobby (%s)\n", Relay_IsPeer(from) ? "through the relay" : "the owner answered");
     }
     if (!same(from, &sL.owner)) {
@@ -1858,7 +1893,7 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
                 sL.wantReady = -1;
             }
         }
-    } else if (type == T_L_GO && n >= 60) {
+    } else if (type == T_L_GO && n >= 64) {
         uint32_t gen = get(pkt, 2);
         struct sockaddr_in t, alt, kn, kn2;
         int role = (int)get(pkt, 3);
@@ -1872,6 +1907,9 @@ static void member_packet(const uint8_t *pkt, int n, const struct sockaddr_in *f
         if (t.sin_port == 0) {
             t = sL.owner; /* (the owner's address, as this member knows it) */
         }
+        sL.routePeerId=role<3?get(pkt,15):0;
+        sL.routePeer=role==1?kn:t;
+        sL.routeViaOwner=0;sL.goNs=now_ns();
         sL.goGen = gen;
         sL.inGen = gen;
         fprintf(stderr, "bt3: lobby: match %u: %s\n", (unsigned)gen, role == 1 ? "hosting it (player 1)" : role == 2 ? "joining it (player 2)" : "watching it");
@@ -1953,7 +1991,7 @@ static void lobby_off(void) {
     int was = sL.on;
     sL.on = 0;
     sL.state = sL.error[0] != '\0' ? 3 : 0;
-    if (was == 1 && sL.byCode) {
+    if ((was == 1 && sL.byCode) || (was == 2 && Match_KeepSession())) {
         Match_Cancel(); /* (the room is given up) */
     }
     if (NetIo_SessionMode() == 0 && !NetIo_SessionStarting()) {
@@ -2146,7 +2184,7 @@ static void timers(void) {
             if (!m->on) {
                 continue;
             }
-            if (now > m->heardNs && now - m->heardNs > QUIET_NS) {
+            if (Bt4Room_IsIdleNs(now,m->heardNs)) {
                 member_drop(k, "lost the connection to the lobby", 1);
                 continue;
             }
@@ -2212,15 +2250,14 @@ static void timers(void) {
                 if (sTok.has && strcmp(sTok.code, sJoinCode) == 0) {
                     tok_forget("its lobby does not answer");
                 }
-                member_closed("The lobby's owner did not answer. A firewall on the owner's PC may be blocking the game: "
-                              "allow Tenkaichi3Decomp through it (Windows Firewall: allow an app), then try again.");
+                member_closed("Could not reach the lobby. Check that its owner is still connected, then try joining again.");
                 return;
             }
         } else {
             if (now - sL.aliveNs > SEC) {
                 alive_send();
             }
-            if (now > sL.heardNs && now - sL.heardNs > QUIET_NS) {
+            if (Bt4Room_IsIdleNs(now,sL.heardNs)) {
                 SDL_strlcpy(sL.error, "The connection to the lobby's owner was lost: the lobby is closed.", sizeof(sL.error));
                 sL.closedBy = 1;
                 if (NetIo_SessionMode() != 0 || NetIo_SessionStarting()) {
@@ -2694,7 +2731,7 @@ void Lobby_Tick(void) {
 }
 
 void Lobby_Pump(void) {
-    uint8_t pkt[2048];
+    uint8_t pkt[4096];
     struct sockaddr_in from;
     int n;
     tok_load();
@@ -2822,3 +2859,5 @@ int Lobby_SessionEnded(void) {
     return 1;
 }
 
+
+#include "net_lobby_route.inc"

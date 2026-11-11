@@ -30,6 +30,7 @@
 #endif
 
 extern int gPortResim; /* gs/state.c: blanks being run again */
+extern int gsSkipFrame; /* gs_draw.c: a presentation frame deliberately discarded */
 extern void GAME_PTR gBtlChars;
 extern void GAME_PTR gBtlSeq;
 extern void GAME_PTR BtlChar_FindByObjId(int objId);
@@ -37,6 +38,18 @@ extern void GAME_PTR BtlChar_FindBySide(int side);
 extern int BtlChar_TestFlag(void GAME_PTR chr, unsigned n);
 extern int ChrCam_IsCutActive(void GAME_PTR chr);
 extern int Battle_IsSplitScreen(void);
+extern int TagBattle_Active(void),TagBattle_Count(void),TagBattle_ViewActor(void),TagBattle_Target(int actor);
+extern int BattleSide_GetObjId(int side);
+extern int PortSpectator_Mode(void);
+
+int PortMods_ViewActor(int side) {
+    int own,target,count;
+    if(!TagBattle_Active())return side;
+    count=TagBattle_Count();own=TagBattle_ViewActor();
+    if(own<0 || own>=count)own=0;
+    target=TagBattle_Target(own);
+    return side==0?own:target>=0&&target<count?target:own;
+}
 
 #define CHR_POSE 0x10        /* include/battle/btl_act_a.h: the pose block; pos at +0x00 */
 #define POSE_YAW 0x94        /* ... heading yaw */
@@ -45,6 +58,21 @@ extern int Battle_IsSplitScreen(void);
 static ModsGame sGame;
 static ModsCam sCam;
 static int sCamOut;
+/* Presentation-only, one last requested pose per view, not a frame history. */
+static struct { int valid,obj; ModsCam pose; } sPausedCamera[2];
+struct NaturalPose { int valid,obj; float pos[3],rot[3],anchor[3]; };
+static struct NaturalPose sNatural[10];
+int PortMods_InBattle(void) { return sGame.battle; }
+
+/* Host presentation preference, never included in gameplay snapshots. */
+int Port_SpecialMoveCameras(int change) {
+    extern int Port_Setting(const char *,int);
+    extern void Port_SettingSave(const char *,int),Port_SettingsWrite(void);
+    static int enabled=-1;
+    if(enabled<0)enabled=Port_Setting("special_move_cameras",1)!=0;
+    if(change>=0){enabled=change!=0;Port_SettingSave("special_move_cameras",enabled);Port_SettingsWrite();}
+    return enabled;
+}
 
 static void rdf(float *out, uint8_t GAME_PTR p, int off, int n) {
     int i;
@@ -64,6 +92,25 @@ static void wra(uint32_t addr, const float *in, int n) {
     memcpy(Port_Ptr(addr), in, (size_t)n * 4);
 }
 
+/* Keep a regular chase framing during special-move cuts. The cached pose and
+   its anchor are presentation data; no fighter camera or input is changed. */
+void Port_NaturalFightCamera(int objId,int pos,int rot) {
+    extern int BtlAct_GetCurrent(void GAME_PTR);
+    uint8_t GAME_PTR chr=(uint8_t GAME_PTR)BtlChar_FindByObjId(objId);
+    float anchor[3],p[3],r[3];int action,cut,i,slot=objId>=0?objId%10:0;
+    struct NaturalPose *s=&sNatural[slot];
+    if(gPortResim)return;
+    if(!chr)return;
+    action=BtlAct_GetCurrent(chr);
+    cut=ChrCam_IsCutActive(chr)||(action>=0xFD && action<=0x13B);
+    rdf(anchor,chr,CHR_POSE,3);rda(p,(uint32_t)pos,3);rda(r,(uint32_t)rot,3);
+    if(!cut){s->valid=1;s->obj=objId;memcpy(s->pos,p,sizeof(p));memcpy(s->rot,r,sizeof(r));memcpy(s->anchor,anchor,sizeof(anchor));}
+    else if(!Port_SpecialMoveCameras(-1)&&s->valid&&s->obj==objId){
+        for(i=0;i<3;++i)p[i]=s->pos[i]+anchor[i]-s->anchor[i];
+        wra((uint32_t)pos,p,3);wra((uint32_t)rot,s->rot,3);
+    }
+}
+
 void PortMods_GameTick(void) {
     int side;
     uint8_t GAME_PTR chr;
@@ -74,7 +121,7 @@ void PortMods_GameTick(void) {
     memset(&sGame, 0, sizeof(sGame));
     if (gBtlChars != NULL && gBtlSeq != NULL) {
         for (side = 0; side < 2; side++) {
-            chr = (uint8_t GAME_PTR)BtlChar_FindBySide(side);
+            chr = (uint8_t GAME_PTR)BtlChar_FindBySide(PortMods_ViewActor(side));
             if (chr != NULL) {
                 sGame.f[side].found = 1;
                 rdf(sGame.f[side].pos, chr, CHR_POSE, 3);
@@ -83,7 +130,7 @@ void PortMods_GameTick(void) {
         }
         sGame.battle = sGame.f[0].found && sGame.f[1].found;
         sGame.split = sGame.battle && Battle_IsSplitScreen();
-    }
+    } else { memset(sNatural,0,sizeof(sNatural)); memset(sPausedCamera,0,sizeof(sPausedCamera)); }
     Mods_Tick();
 }
 
@@ -100,6 +147,8 @@ int PortMods_CamGet(ModsCam *out) {
 void PortMods_CamSet(const ModsCam *cam) {
     memcpy(sCam.pos, cam->pos, sizeof(sCam.pos));
     memcpy(sCam.rot, cam->rot, sizeof(sCam.rot));
+    sCam.zoom=cam->zoom;
+    sCam.collide=cam->collide;
     sCamOut = 1;
 }
 
@@ -115,18 +164,21 @@ int Port_ModsCamCollide(int side) {
     return side >= 0 && side < 2 ? sCollide[side] : 0;
 }
 
-void Port_ModsCamera(int side, int objId, int pos, int rot) {
+void Port_ModsCamera(int side, int objId, int pos, int rot, int paused) {
     static int synctest = -1;
     uint8_t GAME_PTR chr;
 
-    if (side >= 0 && side < 2) {
-        sZoom[side] = 1000;
-        sCollide[side] = 0;
-    }
     if (synctest < 0) {
         synctest = getenv("BT3_SYNCTEST") != NULL;
     }
-    if (gPortResim || synctest || side < 0 || side > 1 || !Mods_WantCamera()) {
+    /* A render skip is chosen on the renderer thread. It must not decide
+       whether the simulation builds a native or modified view: the choice
+       can change before this tick's list is consumed. Only rollback skips
+       presentation state. Renderer frame dropping remains independent. */
+    if (gPortResim || side < 0 || side > 1) return;
+    sZoom[side]=1000;sCollide[side]=0;
+    if (synctest || PortSpectator_Mode() || !Mods_WantCamera()) {
+        sPausedCamera[side].valid=0;
         return;
     }
     chr = (uint8_t GAME_PTR)BtlChar_FindByObjId(objId);
@@ -144,7 +196,15 @@ void Port_ModsCamera(int side, int objId, int pos, int rot) {
     sCam.zoom = 1.0f;
     sCam.collide = 1;
     sCamOut = 0;
-    Mods_Camera();
+    if (paused && !sCam.cut && sPausedCamera[side].valid && sPausedCamera[side].obj==objId) {
+        sCam=sPausedCamera[side].pose;
+        sCamOut=1;
+    } else {
+        Mods_Camera();
+        sPausedCamera[side].valid=sCamOut && !sCam.cut;
+        sPausedCamera[side].obj=objId;
+        sPausedCamera[side].pose=sCam;
+    }
     if (sCamOut) {
         wra((uint32_t)pos, sCam.pos, 3);
         wra((uint32_t)rot, sCam.rot, 3);

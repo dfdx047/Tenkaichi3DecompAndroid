@@ -28,6 +28,15 @@ extern void ObjShadow_BeginRender(BtlObj *obj);
 extern void ObjShadow_Draw(BtlObj *obj, void *view);
 extern void ObjShadow_ResetEnv(void);
 
+#ifdef PORT
+extern void Port_GsMarker(int effect);
+static void ObjDraw_PortIdentity(BtlObj *obj) {
+    Port_GsMarker(0x40000000 | (obj ? ((obj->id+1)&15) | (((obj->chara+1)&0xFFFF)<<4) : 0));
+}
+#else
+#define ObjDraw_PortIdentity(obj) ((void)0)
+#endif
+
 #define FLAG_BITS(p) ((BtlObjFlagBits *)&(p)->flags)
 
 /* In split screen (two or more views) makes view `view` the current one, with its scissor. */
@@ -51,7 +60,9 @@ void BtlObjDraw_DrawLists(s32 count) {
             BtlObjState *state = &obj->state;
 
             state->view = &state->views[v];
+            ObjDraw_PortIdentity(obj);
             BtlObjDraw_DrawModel(obj);
+            ObjDraw_PortIdentity(NULL);
         }
     }
 }
@@ -71,7 +82,9 @@ void BtlObjDraw_DrawFadeLists(s32 count) {
 
             state->view = &state->views[v];
             if (state->view->flags & BTL_OBJ_FLAG_FADE) {
+                ObjDraw_PortIdentity(obj);
                 BtlObjDraw_DrawModelFade(obj);
+                ObjDraw_PortIdentity(NULL);
             }
         }
     }
@@ -111,6 +124,7 @@ void BtlObjDraw_DrawShadows(s32 count) {
                 mask |= 1 << i;
             }
         }
+        ObjDraw_PortIdentity(obj);
         if (mask != 0 && FLAG_BITS(&obj->state)->visible && FLAG_BITS(&obj->state)->bits4 & 1) {
             if (obj->state.flags & 0x20000000) {
                 ObjGs_AddFlatShadowEnv();
@@ -131,6 +145,7 @@ void BtlObjDraw_DrawShadows(s32 count) {
             }
         }
     }
+    ObjDraw_PortIdentity(NULL);
     ObjShadow_ResetEnv();
 }
 

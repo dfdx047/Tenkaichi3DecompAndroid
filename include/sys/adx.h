@@ -29,8 +29,8 @@ enum {
 #define ADX_OPT_VOL_VOICE 2 /* channels 2-5 */
 
 /* File ids of the character voice lines: base + character * 100 + line. */
-#define VOICE_CHARA_BASE 0x8D4E
-#define VOICE_CHARA_BASE_ALT 0xCC32 /* used when AdxSaveView.flags bit 0 is set */
+#define VOICE_CHARA_BASE 0x10CC2
+#define VOICE_CHARA_BASE_ALT 0x16E6A /* used when AdxSaveView.flags bit 0 is set */
 #define VOICE_CHARA_LINES 100
 
 #define SAVE_FLAG_ALT_VOICE 1

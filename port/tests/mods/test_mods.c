@@ -12,11 +12,19 @@
 
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <direct.h>
+#define mkdir(path,mode) _mkdir(path)
+#define setenv(key,value,overwrite) _putenv_s(key,value)
+#endif
 
 unsigned gPortVBlanks;
 volatile int gUiPresentW = 1280, gUiPresentH = 896; /* (448 high in HUD units, 640 wide) */
 int Port_NetSession(void) { return 0; }
 int Port_NetActive(void) { return 0; }
+int Port_NetMe(void) { return 0; }
+int Port_TagNetwork(void) { return 0; }
+int Port_TagLocalBattle(void) { return 0; }
 int Port_HudSwap(void) { return 0; }
 const char *MenuTranslation_Text(const char *id) { return strcmp(id, "combo-hits/0/0") == 0 ? "Golpes" : NULL; }
 const char *MenuTranslation_Locale(void) { return "es"; }
@@ -65,7 +73,7 @@ int main(void) {
     ModsInfo *m;
     int i;
 
-    snprintf(sDir, sizeof(sDir), "/tmp/bt3_mods_test_XXXXXX");
+    snprintf(sDir, sizeof(sDir), "%s/bt4_mods_test_XXXXXX",getenv("TMPDIR")?getenv("TMPDIR"):"/tmp");
     if (mkdtemp(sDir) == NULL) {
         return 1;
     }
@@ -226,6 +234,37 @@ int main(void) {
     CHECK(!sSet);
 
     /* switched off from the window: no shapes; the choice is written to the file with the other mod's line */
+    /* Upgrade the known old script without replacing the installed file or
+       mistaking a customized/empty script for a stock copy. */
+    {
+        char *text = malloc(sizeof(kSkillList0394) + 1);
+        long size = sizeof(kSkillList0394), expectedSize = 0;
+        char *expected = read_file("port/examples/mods/skill_list/mod.lua", &expectedSize);
+        memcpy(text, kSkillList0394, sizeof(kSkillList0394)); text[size] = 0;
+        upgrade_bundled_text("port/examples/mods", "skill_list", &text, &size);
+        CHECK(expected && size == expectedSize && !memcmp(text, expected, size));
+        free(text); free(expected);
+        text = malloc(sizeof(kSkillList0394) + 1); size = sizeof(kSkillList0394);
+        memcpy(text, kSkillList0394, size); text[0] ^= 1; text[size] = 0;
+        upgrade_bundled_text("port/examples/mods", "skill_list", &text, &size);
+        CHECK(size == sizeof(kSkillList0394) && text[0] == (kSkillList0394[0] ^ 1));
+        free(text);
+        text = malloc(sizeof(kR2_modern_hud) + 1); size = sizeof(kR2_modern_hud);
+        memcpy(text, kR2_modern_hud, size); text[size] = 0;
+        expected = read_file("port/examples/mods/modern_hud/mod.lua", &expectedSize);
+        upgrade_bundled_text("port/examples/mods", "modern_hud", &text, &size);
+        CHECK(expected && size == expectedSize && !memcmp(text, expected, size));
+        free(text); free(expected);
+        text = malloc(sizeof(kR2_modern_hud) + 1); size = sizeof(kR2_modern_hud);
+        memcpy(text, kR2_modern_hud, size); text[0] ^= 1; text[size] = 0;
+        upgrade_bundled_text("port/examples/mods", "modern_hud", &text, &size);
+        CHECK(size == sizeof(kR2_modern_hud) && text[0] == (kR2_modern_hud[0] ^ 1));
+        free(text);
+        text = malloc(1); text[0] = 0; size = 0;
+        upgrade_bundled_text("port/examples/mods", "skill_list", &text, &size);
+        CHECK(size == 0 && text[0] == 0); free(text);
+    }
+
     Mods_Lock();
     mod("hud")->enabled = 0;
     mod("hud")->set[0].value = 33.0;
@@ -283,6 +322,9 @@ int main(void) {
         setenv("BT3_MODS_SETTINGS", ex, 1);
     }
     sFp.gauges = 1;
+    sFp.side[0].chargeHeld=1;
+    strcpy(sFp.side[0].moves[4].name,"Ultimate regression");
+    sFp.side[0].moves[4].cost=100000;
     sFp.side[0].comboHits = 3;
     sFp.side[1].poweredUp = 1;
     Mods_ReloadAsk();
@@ -300,11 +342,69 @@ int main(void) {
     CHECK(moved >= 90);
     }
     CHECK(Mods_Count() == 6); /* (example_camera, example_hud, modern_camera, modern_hud, modern_look, skill_list) */
-    CHECK(Mods_Look()->shading == 100 && Mods_Look()->energy_light == 0); /* (modern_look at its defaults) */
+    CHECK(Mods_Look()->shading == 100 && Mods_Look()->energy_light == 50); /* (modern_look at its defaults) */
     for (i = 0; i < Mods_Count(); i++) {
         CHECK(Mods_Info(i)->error[0] == '\0');
     }
     CHECK(Mods_HudRead(&sRead) && sRead.count >= 4);
+
+    /* The modern overlay keeps drawing its last gauges during its exit fade.
+       Native gauges must stay hidden for that same interval. */
+    sFp.gauges = 0;
+    ++gPortVBlanks;
+    Mods_Tick();
+    CHECK(Mods_HudRead(&sRead) && sRead.count > 0);
+    CHECK((Mods_HudHidden() & 1) != 0);
+    { struct timespec fadeWait = {0, 250000000}; nanosleep(&fadeWait, NULL); }
+    gPortVBlanks += 120;
+    Mods_Tick();
+    CHECK((Mods_HudHidden() & 1) == 0);
+    sFp.gauges = 1;
+    ++gPortVBlanks;
+    Mods_Tick();
+
+    /* An update from a launcher that omits mods/: recover all six scripts
+       from the reserved package copy, off by default, and preserve an edit. */
+    {
+        char destination[512], path[600];
+        snprintf(destination, sizeof(destination), "%s/upgrade-mods", sDir);
+        seed_bundled("port/examples/mods", destination);
+        setenv("BT3_MODS", destination, 1);
+        setenv("BT3_MODS_SETTINGS", "", 1);
+        Mods_ReloadAsk(); Mods_Tick();
+        CHECK(Mods_Count() == 6);
+        for (i = 0; i < Mods_Count(); i++) CHECK(!Mods_Info(i)->enabled && !Mods_Info(i)->error[0]);
+        snprintf(path, sizeof(path), "%s/modern_hud/mod.lua", destination);
+        fp = fopen(path, "w"); CHECK(fp != NULL);
+        if (fp != NULL) { fputs("return { name='My own HUD' }", fp); fclose(fp); }
+        seed_bundled("port/examples/mods", destination);
+        Mods_ReloadAsk(); Mods_Tick();
+        CHECK(mod("modern_hud") != NULL && !strcmp(mod("modern_hud")->name, "My own HUD"));
+        /* An empty existing script is also the player's file. */
+        fp = fopen(path, "w"); CHECK(fp != NULL); if (fp != NULL) fclose(fp);
+        seed_bundled("port/examples/mods", destination);
+        fp = fopen(path, "r"); CHECK(fp != NULL);
+        if (fp != NULL) { CHECK(fgetc(fp) == EOF); fclose(fp); }
+    }
+
+    /* Translation of a chase target must not create increasing camera lag.
+       Exercise both side caches, maximum inertia and a moving world anchor. */
+    setenv("BT3_MODS", "port/examples/mods", 1);
+    fp=fopen(settings,"w");CHECK(fp!=NULL);
+    if(fp){fputs("modern_camera=1\nmodern_camera.lag=100\nmodern_camera.tilt=0\nmodern_camera.react=0\nmodern_camera.distance=50\n",fp);fclose(fp);}
+    setenv("BT3_MODS_SETTINGS",settings,1);Mods_ReloadAsk();
+    sG.battle=1;sFp.battle=1;
+    for(i=0;i<120;++i){
+        ++gPortVBlanks;Mods_Tick();
+        for(int side=0;side<2;++side){
+            memset(&sIn,0,sizeof(sIn));sIn.side=side;sIn.zoom=1;
+            sIn.pos[0]=i*3.0f;sIn.pos[2]=-100;
+            sIn.target[0]=i*3.0f;
+            sSet=0;Mods_Camera();
+            CHECK(sSet && fabsf(sOut.pos[0]-sIn.pos[0])<0.001f);
+            CHECK(fabsf(sOut.pos[2]+150)<0.001f);
+        }
+    }
 
     Mods_Lock();
     unload_all();

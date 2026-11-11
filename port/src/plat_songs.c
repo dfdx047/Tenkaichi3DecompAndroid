@@ -79,10 +79,10 @@ static void add_song(const char *file, const char *name) {
     i = gPortSongCount;
     snprintf(sFiles[i], sizeof(sFiles[i]), "%s", file);
     offset = PORT_SONG_FIRST_OFFSET + i;
-    index = PORT_SONG_FILE_INDEX + i; /* PORT_BGM_FILE(offset), as an index of the second archive */
+    index = PORT_SONG_FILE_INDEX + i; /* PORT_BGM_FILE(offset), as an archive-3 index */
     gPortSongOffsets[i] = offset;
     snprintf(gPortSongNames[i], 64, "%s", name);
-    snprintf(sAliases[sAliasCount].rel, sizeof(sAliases[sAliasCount].rel), "pzs3us2/%05d.bin", index);
+    snprintf(sAliases[sAliasCount].rel, sizeof(sAliases[sAliasCount].rel), "pzs4us3/%05d.bin", index);
     snprintf(sAliases[sAliasCount].target, sizeof(sAliases[sAliasCount].target), "%s/%s", sDir, file);
     sAliasCount++;
     gPortSongCount++;

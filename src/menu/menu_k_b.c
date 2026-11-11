@@ -1,4 +1,5 @@
 #include "common.h"
+#include "port_variant.h"
 #include "menu/menu_k.h"
 #include "sys/pad.h"
 #include "sys/save.h"
@@ -75,7 +76,7 @@ void Bracket_Init(void) {
             Bgm_Play(BRK_BGM_OTHER);
             break;
         case TOUR_YAMCHA:
-            Bgm_Play(BRK_BGM_OTHER);
+            Bgm_Play(BRK_BGM_YAMCHA);
             break;
         }
     }
@@ -146,6 +147,10 @@ void Bracket_Draw(void) {
     Port_MenuPage(21); /* widescreen menus: this screen's page */
 #endif
     TourBg_Draw();
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *, const void *);
+    Flash_PortPortraits(gBracket->texVs[6], gBracket->texVs[5]);
+#endif
     Bracket_SetupDraw(gBracket);
     Flash_Draw(&gBracket->flash[BRK_FL_TREE]);
     Flash_Draw(&gBracket->flash[BRK_FL_MOVE_A]);
@@ -161,6 +166,9 @@ void Bracket_Draw(void) {
         Flash_Draw(&gBracket->flash[BRK_FL_VS]);
         Flash_Draw(&gBracket->flash[BRK_FL_TITLE]);
     }
+#ifdef PORT
+    Flash_PortPortraits(NULL, NULL);
+#endif
     GetWin_Draw();
 #ifdef PORT
     Port_MenuPage(0);
@@ -188,7 +196,7 @@ void Bracket_Update(void) {
                 Bgm_Play(BRK_BGM_OTHER);
                 break;
             case TOUR_YAMCHA:
-                Bgm_Play(BRK_BGM_OTHER);
+                Bgm_Play(BRK_BGM_YAMCHA);
                 break;
             }
             gBracket->flags &= ~BRK_FANFARE;

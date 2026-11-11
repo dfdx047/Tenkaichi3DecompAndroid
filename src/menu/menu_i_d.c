@@ -74,7 +74,7 @@ void EntrySel_SetMemberTex(void) {
     }
 }
 
-/* One step of the background loader of the large picture (file 0x2F9 + character). */
+/* One step of the background loader of the large picture (file 0x71C + character). */
 void EntrySel_UpdateImage(void) {
     MTexRes *res;
 
@@ -90,7 +90,7 @@ void EntrySel_UpdateImage(void) {
         break;
     case ESEL_LOAD_REQUEST:
         File_CancelRequests();
-        File_Request(gEntrySel->sel->image + 0x2F9, gEntrySel->imageFile, 0x16800);
+        File_Request(gEntrySel->sel->image + 0x71C, gEntrySel->imageFile, 0x16800);
         gEntrySel->loadState = ESEL_LOAD_READ;
         break;
     case ESEL_LOAD_READ:
@@ -272,7 +272,7 @@ void EntrySel_Init(s32 section) {
     gEntrySel->nameText = MPACK_AT(gEntrySel->res, 30);
     gEntrySel->formText = MPACK_AT(gEntrySel->res, 31);
     gEntrySel->chips = (u32 *)MPACK_AT(gEntrySel->res, 32);
-    for (i = 0; i < ESEL_CELL_MAX; i++) {
+    for (i = 0; i < Menu_CharacterChipCount(gEntrySel->chips); i++) {
         res = (MTexRes *)MPACK_AT(gEntrySel->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
@@ -334,7 +334,7 @@ void EntrySel_Init(s32 section) {
     for (i = 0; i < 2; i++) {
         gEntrySel->blink[i] = Rand_Range(0x20);
     }
-    File_LoadSync(gEntrySel->sel->image + 0x2F9, gEntrySel->imageFile, 0x16800);
+    File_LoadSync(gEntrySel->sel->image + 0x71C, gEntrySel->imageFile, 0x16800);
     Sprite_Unpack(gEntrySel->imageFile, gEntrySel->imageRes, NULL);
     res = gEntrySel->imageRes;
     Res_RelocateOffsets(&res, res, res);
@@ -384,6 +384,8 @@ void EntrySel_Term(void) {
         gEntrySel = NULL;
     }
 }
+
+static s32 EntrySel_SelectionLocked(void);
 
 /* Sets up every clip of the four movies from the current state and draws the screen. */
 void EntrySel_Draw(void) {
@@ -472,7 +474,7 @@ void EntrySel_Draw(void) {
             Flash_ClipSetFlags(flash, &ref, 2, ES_CELL.id != ESEL_ID_RANDOM);
         }
     }
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < 8; i++) {
         /* costume plates */
         uv.x0 = (i % 2) * 0x40;
         uv.y0 = (i / 2) * 0x20;
@@ -480,16 +482,10 @@ void EntrySel_Draw(void) {
         uv.y1 = uv.y0 + 0x20;
         sprintf(name, "mc_color_plate_%d", i + 1);
         Flash_FindLabel(flash, NULL, name, &ref);
-        if (i < gEntrySel->colorCount) {
+        if (i < gEntrySel->colorCount && i == ES_CUR.costume) {
             Flash_ClipSetFlags(flash, &ref, 2, 1);
-            switch (gEntrySel->colorCount) {
-            case 2:
-                Flash_ClipSetOffset(flash, &ref, 0x2D, 0);
-                break;
-            case 3:
-                Flash_ClipSetOffset(flash, &ref, 0x16, 0);
-                break;
-            }
+            /* BT4 stacks these plates at one location, unlike BT3. */
+            Flash_ClipSetOffset(flash, &ref, 0, 0);
             Flash_FindLabel(flash, name, "mc_color_text_off", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
             Flash_FindLabel(flash, name, "mc_color_text_on", &ref);
@@ -498,6 +494,9 @@ void EntrySel_Draw(void) {
             Flash_ClipSetFlags(flash, &ref, 2, 0);
         }
     }
+#ifdef PORT
+    {extern void Bt4Costume_FixArrows(MFlash *);Bt4Costume_FixArrows(flash);}
+#endif
     flash = &gEntrySel->flash[1];
     if (TOUR_PROG->t.entryNum - 1 < gEntrySel->sel->cur) {
         uv.x0 = ((gEntrySel->sel->cur - 1) % 2) * 0x40;
@@ -521,7 +520,7 @@ void EntrySel_Draw(void) {
             Flash_FindLabel(flash, i != 0 ? "mc_yajirusi_down" : "mc_yajirusi_up",
                             i != 0 ? "mc_yajirusi_icon_down" : "mc_yajirusi_icon_up", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
-            if ((gEntrySel->sel->flags & ESEL_SEL_FORM) || TOUR_PROG->t.tour == TOUR_YAMCHA) {
+            if ((gEntrySel->sel->flags & ESEL_SEL_FORM) || EntrySel_SelectionLocked()) {
                 Flash_ClipSetFlags(flash, &ref, 2, 0);
             } else {
                 Flash_ClipSetFlags(flash, &ref, 2, 1);
@@ -579,12 +578,19 @@ void EntrySel_Draw(void) {
         }
         break;
     }
+#ifdef PORT
+    extern void Flash_PortPortraits(const void *, const void *);
+    Flash_PortPortraits(NULL, gEntrySel->texA[5]);
+#endif
     Flash_Draw(&gEntrySel->flash[0]);
     Font_FlushAll();
     Flash_Draw(&gEntrySel->flash[1]);
     Flash_Draw(&gEntrySel->flash[2]);
     MsgWin_Draw(0, 0, gEntrySel->voiceLine);
     Flash_Draw(&gEntrySel->flash[3]);
+#ifdef PORT
+    Flash_PortPortraits(NULL, NULL);
+#endif
     ItemPanel_Draw(0);
     ItemHelp_Draw(gEntrySel->helpItem);
 #ifdef PORT
@@ -605,6 +611,17 @@ void EntrySel_Update(void) {
     }
 }
 
+/* BT4 DBZP.BIN EntrySel_Input gates its ten cursor/form/item/costume
+ * branches on tournament 1 (e.g. 0x360488..0x360494), not BT3 Yamcha 4.
+ * Keep the original PS2 reconstruction separate from BT4's PC data. */
+static s32 EntrySel_SelectionLocked(void) {
+#ifdef PORT
+    return TOUR_PROG->t.tour == 1;
+#else
+    return TOUR_PROG->t.tour == TOUR_YAMCHA;
+#endif
+}
+
 /* Pad 0: grid cursor, form, item set, item panel and costume of the entrant being chosen. */
 void EntrySel_Input(s32 *result) {
     if (!(gEntrySel->flash[0].flags & MFLASH_PAD)) {
@@ -617,21 +634,21 @@ void EntrySel_Input(s32 *result) {
     }
     switch (gEntrySel->sel->step) {
     case ESEL_STEP_CHARA:
-        if ((gPad[0].gameRepeat & 1) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        if ((gPad[0].gameRepeat & 1) && !EntrySel_SelectionLocked()) {
             EntrySel_ClipGoto(1, 0, "fl_off_start");
             ChrGrid_MoveLeft(gEntrySel->grid, &ES_CUR.col, ES_CUR.row);
             EntrySel_ClipGoto(1, 0, "fl_on_start");
             gEntrySel->sel->image = gEntrySel->sel->rowChara[ES_CUR.col];
             EntrySel_ChangeImage();
             Snd_PlaySe(2, 0);
-        } else if ((gPad[0].gameRepeat & 2) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        } else if ((gPad[0].gameRepeat & 2) && !EntrySel_SelectionLocked()) {
             EntrySel_ClipGoto(1, 0, "fl_off_start");
             ChrGrid_MoveRight(gEntrySel->grid, &ES_CUR.col, ES_CUR.row);
             EntrySel_ClipGoto(1, 0, "fl_on_start");
             gEntrySel->sel->image = gEntrySel->sel->rowChara[ES_CUR.col];
             EntrySel_ChangeImage();
             Snd_PlaySe(2, 0);
-        } else if ((gPad[0].gameRepeat & 8) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        } else if ((gPad[0].gameRepeat & 8) && !EntrySel_SelectionLocked()) {
             if (gEntrySel->rows >= 2) {
                 Flash_GotoLabel(&gEntrySel->flash[1], "fl_reel_down", 1);
                 gEntrySel->sel->rowAnim = 1;
@@ -643,7 +660,7 @@ void EntrySel_Input(s32 *result) {
                 EntrySel_ChangeImage();
                 Snd_PlaySe(2, 2);
             }
-        } else if ((gPad[0].gameRepeat & 4) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        } else if ((gPad[0].gameRepeat & 4) && !EntrySel_SelectionLocked()) {
             if (gEntrySel->rows >= 2) {
                 Flash_GotoLabel(&gEntrySel->flash[1], "fl_reel_up", 1);
                 gEntrySel->sel->rowAnim = 1;
@@ -717,14 +734,14 @@ void EntrySel_Input(s32 *result) {
         }
         break;
     case ESEL_STEP_FORM:
-        if ((gPad[0].gameRepeat & 1) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        if ((gPad[0].gameRepeat & 1) && !EntrySel_SelectionLocked()) {
             EntrySel_ClipGoto(1, 1, "fl_off_start");
             ChrGrid_PrevForm(gEntrySel->sel->rowChara, &ES_CUR.form);
             EntrySel_ClipGoto(1, 1, "fl_on_start");
             gEntrySel->sel->image = gEntrySel->sel->rowChara[ES_CUR.form];
             EntrySel_ChangeImage();
             Snd_PlaySe(2, 0);
-        } else if ((gPad[0].gameRepeat & 2) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        } else if ((gPad[0].gameRepeat & 2) && !EntrySel_SelectionLocked()) {
             EntrySel_ClipGoto(1, 1, "fl_off_start");
             ChrGrid_NextForm(gEntrySel->sel->rowChara, &ES_CUR.form);
             EntrySel_ClipGoto(1, 1, "fl_on_start");
@@ -756,7 +773,7 @@ void EntrySel_Input(s32 *result) {
         }
         break;
     case ESEL_STEP_CUSTOM:
-        if ((gPad[0].gameRepeat & 8) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        if ((gPad[0].gameRepeat & 8) && !EntrySel_SelectionLocked()) {
             if (gEntrySel->customCount >= 2) {
                 EntrySel_ClipGoto(2, 2, "fl_off_start");
                 ES_CUR.custom--;
@@ -766,7 +783,7 @@ void EntrySel_Input(s32 *result) {
                 EntrySel_ClipGoto(2, 2, "fl_on_start");
                 Snd_PlaySe(1, 0);
             }
-        } else if ((gPad[0].gameRepeat & 4) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        } else if ((gPad[0].gameRepeat & 4) && !EntrySel_SelectionLocked()) {
             if (gEntrySel->customCount >= 2) {
                 EntrySel_ClipGoto(2, 2, "fl_off_start");
                 ES_CUR.custom++;
@@ -830,7 +847,7 @@ void EntrySel_Input(s32 *result) {
         }
         break;
     case ESEL_STEP_COLOR:
-        if ((gPad[0].gameRepeat & 1) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        if ((gPad[0].gameRepeat & 1) && !EntrySel_SelectionLocked()) {
             EntrySel_ClipGoto(2, 5, "fl_off_start");
             ES_CUR.costume--;
             if (ES_CUR.costume < 0) {
@@ -838,7 +855,7 @@ void EntrySel_Input(s32 *result) {
             }
             EntrySel_ClipGoto(2, 5, "fl_on_start");
             Snd_PlaySe(1, 0);
-        } else if ((gPad[0].gameRepeat & 2) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
+        } else if ((gPad[0].gameRepeat & 2) && !EntrySel_SelectionLocked()) {
             EntrySel_ClipGoto(2, 5, "fl_off_start");
             ES_CUR.costume++;
             if (ES_CUR.costume >= gEntrySel->colorCount) {
@@ -1098,7 +1115,7 @@ s32 Tour_Main(void) {
                     gMenuArc4 = File_LoadSync(gProgress->baseFile + 2, NULL, 0);
                 }
             }
-            Bgm_Play(0x10B19);
+            Bgm_Play(0x83B);
             if (TourMenu_Run(1)) {
                 Adx_StopAll();
                 gProgress->mode = 34;
@@ -1115,7 +1132,7 @@ s32 Tour_Main(void) {
                     gMenuArc4 = File_LoadSync(gProgress->baseFile + 2, NULL, 0);
                 }
             }
-            Bgm_Play(0x10B1B);
+            Bgm_Play(0x81B);
             if (EntrySel_Run(2)) {
                 Adx_StopAll();
                 gProgress->mode = 35;

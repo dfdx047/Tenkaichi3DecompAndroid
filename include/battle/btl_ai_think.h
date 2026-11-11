@@ -2,6 +2,7 @@
 #define BATTLE_BTL_AI_THINK_H
 
 #include "types.h"
+extern void *BtlAi_ActorWork(s32 actor);
 
 /*
  * CPU opponent: rule conditions 35..117, the rule evaluator, the thinker and the data / side binding

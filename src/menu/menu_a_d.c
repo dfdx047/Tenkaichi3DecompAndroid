@@ -2,7 +2,10 @@
 #include "menu/menu_b.h"
 #include "sys/pad.h"
 #include "sys/save.h"
+#include "port_variant.h"
 #ifdef PORT
+#include <stdlib.h>
+#include <stdio.h>
 extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
 extern void Port_MenuFill(int on);
 #endif
@@ -22,7 +25,7 @@ extern void TextBox_SetUnk50(MTextBox *box, s32 value);
 extern void TextBox_SetRect(MTextBox *box, s32 a, s32 b, s32 c, s32 d);
 extern void TextBox_AttachLine(MFlash *flash, MFlashRef *ref, s32 x, s32 y, s32 line, MTextBox *box);
 
-#define MODEMENU_BGM 0x10B1C
+extern void HistGuide_OriginalPortrait(MFlash *flash, s32 guide);
 
 /* Index of an item's first line in a text shared by the sub menus: items are numbered through all of them, and
    lines 20..23 are rotated by one. */
@@ -214,9 +217,16 @@ void ModeMenu_Init(s32 section) {
     for (i = 0; i < gModeMenu->itemMax; i++) {
         SaveSlot *slot = &gSaveData->slot[gProgress->subMenu];
 
+        /* BT4 puts the Broly episode last without changing its save/script ID. */
+        if (gProgress->subMenu == 4 && i == 1) {
+            continue;
+        }
         if (slot->val[0] & (s32)(1U << i)) {
             gModeMenu->items[gModeMenu->itemCount++] = i;
         }
+    }
+    if (gProgress->subMenu == 4 && (gSaveData->slot[4].val[0] & 2)) {
+        gModeMenu->items[gModeMenu->itemCount++] = 1;
     }
     for (i = gModeMenu->itemCount; i < MODEMENU_ROWS; i++) {
         gModeMenu->items[gModeMenu->itemCount++] = gModeMenu->itemMax;
@@ -253,29 +263,29 @@ void ModeMenu_Init(s32 section) {
 
     switch (gProgress->subMenu) {
     case 0:
-        Bgm_Play(MODEMENU_BGM);
-        StreamSe_PlayDefault(0, 0x10BDC);
+        Bgm_Play(PORT_V(0x10B1C,0x834));
+        StreamSe_PlayDefault(0, 0x159);
         break;
     case 1:
-        Bgm_Play(MODEMENU_BGM);
-        StreamSe_PlayDefault(0, 0x10BDD);
+        Bgm_Play(PORT_V(0x10B1C,0x834));
+        StreamSe_PlayDefault(0, 0x15A);
         break;
     case 2:
-        Bgm_Play(MODEMENU_BGM);
-        StreamSe_PlayDefault(0, 0x10BDE);
+        Bgm_Play(PORT_V(0x10B1C,0x835));
+        StreamSe_PlayDefault(0, 0x15B);
         break;
     case 3:
     case 4:
-        Bgm_Play(MODEMENU_BGM);
+        Bgm_Play(PORT_V(0x10B1C,0x81C));
         break;
     case 5:
-        Bgm_Play(0x10B1E);
+        Bgm_Play(0x837);
         break;
     case 6:
-        Bgm_Play(0x10B28);
+        Bgm_Play(0x838);
         break;
     case 7:
-        Bgm_Play(MODEMENU_BGM);
+        Bgm_Play(PORT_V(0x10B1C,0x82D));
         break;
     }
 }
@@ -327,6 +337,7 @@ void ModeMenu_Draw(void) {
     sprintf(sub, "mc_guide_%02d_mouth", gProgress->subMenu);
     Flash_FindLabel(flash, name, sub, &ref);
     FlashAnim_Talk(flash, &ref, &gModeMenu->talk, 0);
+    HistGuide_OriginalPortrait(flash, gProgress->subMenu);
 
     if (gModeMenu->flags & MODEMENU_IMAGE_READY) {
         gModeMenu->imageAlpha += 0.075f;
@@ -360,10 +371,10 @@ void ModeMenu_Draw(void) {
     }
 
     for (i = 0; i < 2; i++) {
-        uv.y0 = 0;
+        uv.y0 = 0x20;
         uv.x0 = i * 0x20;
         uv.x1 = uv.x0 + 0x20;
-        uv.y1 = 0x20;
+        uv.y1 = 0x40;
         switch (i) {
         case 0:
             Flash_FindLabel(flash, "mc_yajirusi_left", "mc_yajirusi_icon_left", &ref);
@@ -499,7 +510,7 @@ void ModeMenu_Input(s32 *result) {
     }
     switch (gModeMenu->focus) {
     case 0:
-        if (gPad[0].gameRepeat & 1) {
+        if (gPad[0].gameRepeat & 8) {
             gModeMenu->unk124 = 0;
             if (gModeMenu->cursor[gModeMenu->focus] > 0 &&
                 gModeMenu->items[gModeMenu->cursor[gModeMenu->focus] - 1] != gModeMenu->itemMax) {
@@ -513,7 +524,7 @@ void ModeMenu_Input(s32 *result) {
                 }
                 MODEMENU_MOVED();
             }
-        } else if (gPad[0].gameRepeat & 2) {
+        } else if (gPad[0].gameRepeat & 4) {
             gModeMenu->unk124 = 0;
             if (gModeMenu->cursor[gModeMenu->focus] < gModeMenu->itemCount - 1 &&
                 gModeMenu->items[gModeMenu->cursor[gModeMenu->focus] + 1] != gModeMenu->itemMax) {
@@ -645,7 +656,28 @@ void ModeMenu_UpdateStep(void) {
 s32 ModeMenu_Run(s32 section) {
     s32 result = 1;
 
+#ifdef PORT
+    if (getenv("BT4_TEST_STORY_MENU")) {
+        gProgress->subMenu=4;
+        gSaveData->slot[4].val[0]=0xFFFF;
+    }
+#endif
     ModeMenu_Init(section);
+#ifdef PORT
+    if (getenv("BT4_TEST_STORY_MENU")) {
+        s32 i,ok=1,r=0,flags=gModeMenu->flash[0].flags;
+        for(i=0;i<16;++i)if(gModeMenu->items[i]!=(i==0?0:i==15?1:i+1))ok=0;
+        gModeMenu->flash[0].flags|=MFLASH_PAD;
+        gModeMenu->flags|=MODEMENU_STARTED;
+        gPad[0].gamePressed=0;gPad[0].gameRepeat=4;ModeMenu_Input(&r);
+        ok &= gModeMenu->cursor[0]==1;
+        gPad[0].gameRepeat=8;ModeMenu_Input(&r);ok &= gModeMenu->cursor[0]==0;
+        gPad[0].gameRepeat=3;ModeMenu_Input(&r);ok &= gModeMenu->cursor[0]==0;
+        gPad[0].gameRepeat=0;gModeMenu->flash[0].flags=flags;
+        printf("bt4-story: chapter_order_and_vertical_input=%s\n",ok?"PASS":"FAIL");fflush(stdout);
+        if(!ok)exit(3);
+    }
+#endif
     if (gProgress->prevMode == 6) {
         ColorFade_StartIn(0xFF, 0xFF, 0xFF, 0x14);
     } else {

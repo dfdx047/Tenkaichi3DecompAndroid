@@ -1,14 +1,21 @@
-# Tenkaichi Budokai Online: credits for the pictures
+# Tenkaichi Budokai Online interface credits
 
-The pictures of the Tenkaichi Budokai Online screens (this folder; `tbo/ui/` in a release).
+These assets are stored here in the source tree and in `tbo/ui/` in release
+packages.
 
-- **The announcer** (`hosts_*.png`): by **MarshallPunk**.
-- **The Dragon Radar** (`radar.png`): fan art by **chestergreen**. Changed for the port: every second frame of the
-  animation, scaled and laid out as one sheet of frames.
-- **The buttons** (`btn_*.png`): by **pluantoine**, under the
-  [Creative Commons Attribution 4.0 International license](https://creativecommons.org/licenses/by/4.0/) (CC BY 4.0).
-  Changed for the port: cut out of the sheet, their background removed and scaled; the left and right directions
-  combined into one picture (`btn_leftright.png`).
+- **Announcer artwork** (`hosts_*.png`): **MarshallPunk**.
+- **Button artwork** (`btn_*.png`): **pluantoine**, licensed under
+  [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/)
+  (CC BY 4.0). Adaptations include extracting individual buttons, removing
+  their backgrounds, resizing them and combining the left and right arrows
+  into `btn_leftright.png`.
+- **Dragon Radar** (`radar.png`): fan art by **chestergreen**. Adapted into a scaled animation sheet for the port.
 
-A picture replaced by one of another size: run `python3 port/tools/tbo_sizes.py` (the screens lay the pictures out
-by their sizes, `include/menu/tbo_sizes.h`).
+After replacing an image with one of a different size, run:
+
+```sh
+python3 port/tools/tbo_sizes.py
+```
+
+The tool updates `include/menu/tbo_sizes.h`, which the screens use to lay out
+the artwork.

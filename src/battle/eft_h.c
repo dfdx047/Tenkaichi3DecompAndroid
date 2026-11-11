@@ -321,6 +321,7 @@ void EftShot_Start(EftHStartArg *arg) {
         return;
     }
     if (s->pack == NULL) {
+        if(getenv("BT4_VFX_TRACE"))printf("tag shot: missing pack actor=%d slot=%d\n",arg->chr,arg->slot);
         return;
     }
     cls = gEftShotClass[TYPE_ROW(s->param->type)].inst;
@@ -338,7 +339,10 @@ void EftShot_Start(EftHStartArg *arg) {
     }
     EftShot_SetCurSlot(arg->chr, arg->slot);
     EftTechEvt_Start(s, EftShot_GetLeadTime(s), s->param->life);
-    BtlTaskList_AddTail(group->children, cls, s);
+    {
+        EftHTask *instance = BtlTaskList_AddTail(group->children, cls, s);
+        if(getenv("BT4_VFX_TRACE"))printf("tag shot: actor=%d slot=%d group=%d instance=%d\n",arg->chr,arg->slot,group!=NULL,instance!=NULL);
+    }
 }
 
 /* Kills the character task of the layer, after resetting the scene tasks that belong to the character. */

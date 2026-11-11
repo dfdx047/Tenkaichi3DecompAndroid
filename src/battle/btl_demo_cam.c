@@ -512,3 +512,7 @@ s32 DemoCam_PlayStageAnim(s32 idx) {
     }
     return 0;
 }
+
+/* Effect simulation never reads the locally selected demo animation's length. */
+f32 DemoCam_AnimLength(void *value){DemoCamAnim *anim=value;return anim?anim->length:0.0f;}
+s32 DemoCam_OwnedBy(void *anim,void *chr){return gDemoCam->anim==anim&&gDemoCam->chr==chr;}

@@ -18,7 +18,7 @@
 static struct { char name[24]; int value; } sSet[MAX_SETTINGS];
 /* The few settings that are text (online name, menu language): `name="text"` in the file, after the numbers. A
    release from before these reads past such a line. */
-#define MAX_TEXTS 8
+#define MAX_TEXTS 16
 static struct { char name[24]; char value[64]; } sText[MAX_TEXTS];
 static int sTextCount;
 static int sDirty;
@@ -37,11 +37,18 @@ static void load(void) {
     FILE *fp = path() != NULL ? fopen(path(), "r") : NULL;
 
     while (fp != NULL && fgets(line, sizeof(line), fp) != NULL && sCount < MAX_SETTINGS) {
-        char text[64];
-        if (sscanf(line, " %23[a-z0-9_]=\"%63[^\"\n]", name, text) == 2) {
-            if (sTextCount < MAX_TEXTS) {
-                strcpy(sText[sTextCount].name, name);
-                strcpy(sText[sTextCount++].value, text);
+        int start = 0;
+        sscanf(line, " %23[a-z0-9_]=\"%n", name, &start);
+        if (start > 0) {
+            char *end = strchr(line + start, '"');
+            int i, length = end != NULL ? (int)(end - line - start) : -1;
+            if (length < 0 || length >= (int)sizeof(sText[0].value)) continue;
+            for (i = 0; i < sTextCount && strcmp(sText[i].name, name) != 0; ++i) {}
+            if (i < MAX_TEXTS) {
+                if (i == sTextCount) ++sTextCount;
+                strcpy(sText[i].name, name);
+                memcpy(sText[i].value, line + start, length);
+                sText[i].value[length] = '\0';
             }
         } else if (sscanf(line, " %23[a-z0-9_]=%d", name, &value) == 2) {
             strcpy(sSet[sCount].name, name);

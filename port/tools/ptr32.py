@@ -17,6 +17,10 @@ All game memory has to lie below 4 GB for this to hold (see docs/port/README.md)
 import bisect, ctypes, re, sys
 import clang.cindex as ci
 from clang.cindex import CursorKind as K, TokenKind, TypeKind
+import os
+if os.environ.get("BT3_LIBCLANG"):
+    ci.Config.set_library_file(os.environ["BT3_LIBCLANG"])
+    ci.Config.set_compatibility_check(False)
 
 _kind_from_id = K.from_id
 def _known_kind(kind_id):
@@ -69,10 +73,10 @@ def apply(data, edits):
     return b"".join(out)
 
 def parse(data, args):
-    tu = ci.Index.create().parse("in.i", args=args, unsaved_files=[("in.i", data.decode("latin-1"))])
+    tu = ci.Index.create().parse("in.i", args=args + ["-Wno-error=return-type", "-Wno-error=return-mismatch"], unsaved_files=[("in.i", data.decode("latin-1"))])
     errs = [d for d in tu.diagnostics if d.severity >= 3]
     if errs:
-        raise RuntimeError(f"{errs[0].spelling} (line {errs[0].location.line})")
+        raise RuntimeError(str(errs[0]) + "; context: " + data[max(0,errs[0].location.offset-100):errs[0].location.offset+160].decode("latin-1").replace("\n"," "))
     return tu
 
 def game_test(data):

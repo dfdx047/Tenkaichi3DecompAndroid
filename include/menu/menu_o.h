@@ -348,7 +348,7 @@ typedef struct MisSelDef {
     /* 0x0C */ s32 stage;       /* MISSEL_RANDOM = Rand_Range(35) */
     /* 0x10 */ s32 bgm;         /* MISSEL_RANDOM = 0x18, the "random" music id */
     /* 0x14 */ s32 unk14;       /* non-zero: side 1's unk1FC = 1 */
-    /* 0x18 */ s32 kind;        /* 0..10: text line 0x148 + kind; decides the player's team size */
+    /* 0x18 */ s32 kind;        /* low u16: type 0..10; BT4 type 9 high u16: battle script id */
     /* 0x1C */ s32 dpRule;      /* text line 0x156 + dpRule when non-zero */
     /* 0x20 */ s32 opp[5];      /* indices into section 11 */
 } MisSelDef; /* 0x34 */

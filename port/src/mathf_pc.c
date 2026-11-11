@@ -33,6 +33,13 @@ static float from(uint32_t u) {
 float Mathf_WrapAngle(float angle, float half) {
     uint32_t a = bits(angle), h = bits(half);
     uint32_t range = RefVu0_AddBits(h, h);
+    /* BT4's secondary model chains can reach angles for which subtracting one
+       turn rounds back to the same float. Reduce only that large-angle path;
+       ordinary battle angles retain the original sequence of PS2 operations. */
+    if ((a & 0x7FFFFFFFu) > 0x47800000u) {
+        extern float fmodf(float, float);
+        a = bits(fmodf(from(a), from(range)));
+    }
 
     while (RefVu0_LtBits(a, range)) {
         a = RefVu0_AddBits(a, range);

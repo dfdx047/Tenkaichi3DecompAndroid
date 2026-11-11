@@ -1,3 +1,4 @@
+#include "port_variant.h"
 #include "common.h"
 #include "battle/btl_script.h"
 #include "battle/btl_seq.h"
@@ -397,12 +398,12 @@ s32 BtlScript_IsTriggered(s32 trigger, s32 range) {
 
 /* Returns the id of the streamed voice file of a line: 300 lines per story, two language sets. */
 s32 BtlScript_GetVoiceFile(s32 line) {
-    s32 base = 0xD48;
+    s32 base = PORT_V(0xD48, 0x20000);
 
     if (gSaveData->flags & SAVE_FLAG_VOICE) {
-        base = 0x47E0;
+        base = PORT_V(0x47E0, 0x23A98);
     }
-    return base + BtlScript_GetStory() * 300 + line;
+    return base + BtlScript_GetStory() * PORT_V(300, 200) + line;
 }
 
 /* Registers "say this line when the trigger fires"; once = the line is switched off after it was said. */

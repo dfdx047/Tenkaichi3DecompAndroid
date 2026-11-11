@@ -211,9 +211,9 @@ typedef struct BtlResSlot {
 #define BTL_RES_ID_KEEP (-99) /* BtlRes_SetFileId: leave the file as it is */
 
 /* Buffer sizes of a fixed slot. */
-#define BTL_RES_MODEL_SIZE 0xCE000
+#define BTL_RES_MODEL_SIZE 0xE7000
 #define BTL_RES_ANIM0_SIZE 0x160800
-#define BTL_RES_ANIM1_SIZE 0xCE800
+#define BTL_RES_ANIM1_SIZE 0xD4800
 
 /* The resource part of the work block (gBtlObjWork + 0x6B3EC). */
 typedef struct BtlResWork {

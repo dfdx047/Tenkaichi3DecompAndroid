@@ -40,6 +40,7 @@ int MenuTranslation_ShouldPrompt(const MenuTranslationOption *options, int count
 int MenuTranslation_BootPending(void);
 void MenuTranslation_SaveChoice(const char *locale);
 const char *MenuTranslation_Locale(void);
+int MenuTranslation_NativeLabelsPath(char *out, size_t size);
 const char *MenuTranslation_Text(const char *id);
 /* Port-owned UI text, decoded from translations/port/<locale>.json; NULL uses the built-in English string. */
 const char *MenuTranslation_PortText(const char *id);

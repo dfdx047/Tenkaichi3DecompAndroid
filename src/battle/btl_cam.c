@@ -1,4 +1,6 @@
+extern int TagBattle_Active(void);
 #include "common.h"
+#include <stdio.h>
 #include "main.h"
 #include "battle/battle.h"
 #include "battle/btl_cam.h"
@@ -6,8 +8,13 @@
 #include "battle/stg_a.h" /* (script mods' camera: the stage) */
 #endif
 #include "battle/btl_demo_cam.h"
+#include "battle/tag_team_native.h"
 #include "sys/heap.h"
 #include "sys/pad.h"
+#ifdef PORT
+#include "../../port/src/port_host.h"
+#include "../../port/src/gs/presentation.h"
+#endif
 
 /* Battle camera, 0x23E040-0x23F620. See battle/btl_cam.h for the structures and the per-frame flow. */
 
@@ -48,6 +55,11 @@ extern s32 D_002FF280[2];
 
 extern View gDbgCamView;
 extern s32 gDbgCamLocked;
+#ifdef PORT
+PORT_HOST static BtlCamView sPortFreeCam;
+PORT_HOST static Vec4 sPortFreeCamPos, sPortFreeCamRot;
+PORT_HOST static s32 sPortFreeCamLive;
+#endif
 
 /* Rebuilds the projection matrices of a view from its parameters. */
 void View_BuildProjection(View *view) {
@@ -387,6 +399,16 @@ static s32 BtlCam_PortZoom(BtlCamView *view, s32 zoom) {
    stage's frustum, src/battle/stg_a.c; the effects' clip planes, eft_a.c) widens by as much, or what the wider view
    shows at its edges is left out. 1 without (never narrower than the game's). */
 static s32 sPortZoomView[2] = {1000, 1000};
+/* Host presentation state. A priority/chase override can read the same view
+ * twice during one blank, and rollback can rebuild old blanks. Neither should
+ * advance Lua inertia or stage-collision hysteresis a second time. */
+PORT_HOST static struct {
+    s32 valid, side, obj, zoom;
+    u32 blank;
+    Vec4 pos, rot;
+} sPortCameraPose[2];
+PORT_HOST static f32 sPortCollisionHeld[2] = {1.0f, 1.0f};
+PORT_HOST static s32 sPortCollisionClear[2], sPortCollisionObj[2];
 f32 Port_CamCull(void) {
     s32 zoom;
     if (gBtlCam == NULL || gBtlCam->cur == NULL) {
@@ -402,40 +424,40 @@ f32 Port_CamCull(void) {
    nearer limit is taken at once (eased), a farther one only after the way has been clear for 15 frames, then eased
    out; the game's camera sways, and a limit that came and went with it made the view wobble. The trace only reads
    the stage; the collision's query mode it sets (which the game's effect queries also use) is put back. */
+static f32 SpecCamera_StageRay(const f32 *from,const f32 *to);
 static void BtlCam_PortCollide(BtlCamView *view, s32 objId) {
     extern void *BtlChar_FindByObjId(s32 objId);
-    extern s32 gStgColMode;
-    static f32 sHeld[2] = {1.0f, 1.0f};
-    static s32 sClear[2];
     u8 *chr = BtlChar_FindByObjId(objId);
-    s32 v = view->index & 1, mode, hit, i;
-    Vec4 target, at;
+    s32 v = view->index & 1, i;
+    Vec4 target;
     f32 f = 1.0f, len = 0.0f, got = 0.0f;
 
     if (chr == NULL) {
         return;
     }
+    if (sPortCollisionObj[v] != objId) {
+        sPortCollisionHeld[v] = 1.0f;
+        sPortCollisionClear[v] = 0;
+        sPortCollisionObj[v] = objId;
+    }
     target = *(Vec4 *)(chr + 0x450); /* (ChrCam.target, include/battle/btl_char_cam.h) */
-    mode = gStgColMode;
-    gStgColMode = 0;
-    hit = BtlCam_TraceStage(&at, &view->pos, &target, NULL, NULL);
-    gStgColMode = mode;
-    if (hit) {
+    /* Presentation collision reads the stage BVH without changing simulation scratch globals. */
+    f = SpecCamera_StageRay((const f32 *)&target,(const f32 *)&view->pos);
+    if (f < 1.0f) {
         for (i = 0; i < 3; i++) {
-            f32 a = ((f32 *)&view->pos)[i] - ((f32 *)&target)[i], b = ((f32 *)&at)[i] - ((f32 *)&target)[i];
+            f32 a = ((f32 *)&view->pos)[i] - ((f32 *)&target)[i];
             len += a * a;
-            got += b * b;
         }
-        f = len > 0.0001f ? (__builtin_sqrtf(got) - 4.0f) / __builtin_sqrtf(len) : 0.0f;
+        f = len > 0.0001f ? f - 4.0f / __builtin_sqrtf(len) : 0.0f;
         f = f < 0.0f ? 0.0f : f > 1.0f ? 1.0f : f;
     }
-    if (f < sHeld[v]) {
-        sHeld[v] += (f - sHeld[v]) * 0.5f;
-        sClear[v] = 0;
-    } else if (++sClear[v] >= 15) {
-        sHeld[v] += (f - sHeld[v]) * 0.1f;
+    if (f < sPortCollisionHeld[v]) {
+        sPortCollisionHeld[v] += (f - sPortCollisionHeld[v]) * 0.5f;
+        sPortCollisionClear[v] = 0;
+    } else if (++sPortCollisionClear[v] >= 15) {
+        sPortCollisionHeld[v] += (f - sPortCollisionHeld[v]) * 0.1f;
     }
-    f = sHeld[v];
+    f = sPortCollisionHeld[v];
     for (i = 0; i < 3; i++) {
         ((f32 *)&view->pos)[i] = ((f32 *)&target)[i] + f * (((f32 *)&view->pos)[i] - ((f32 *)&target)[i]);
     }
@@ -464,6 +486,14 @@ void BtlCam_BuildView(BtlCamView *view, s32 apply) {
 
 /* Clears the camera block, rebuilds the views, selects view 0 and resets the demo camera. */
 void BtlCam_Reset(void) {
+#ifdef PORT
+    sPortFreeCamLive = 0;
+    memset(sPortCameraPose, 0, sizeof(sPortCameraPose));
+    sPortCollisionHeld[0] = sPortCollisionHeld[1] = 1.0f;
+    memset(sPortCollisionClear, 0, sizeof(sPortCollisionClear));
+    sPortCollisionObj[0] = sPortCollisionObj[1] = -1;
+    PortSpectator_EndBattle();
+#endif
     memset(gBtlCam, 0, sizeof(BtlCam));
     BtlCam_InitViews();
     gBtlCam->cur = &gBtlCam->views[0];
@@ -479,10 +509,47 @@ void BtlCam_Init(void) {
 
 /* Frees the camera block and the demo camera. */
 void BtlCam_Term(void) {
+#ifdef PORT
+    sPortFreeCamLive = 0;
+    PortSpectator_EndBattle();
+#endif
     Heap_Free(gBtlCam);
     gBtlCam = NULL;
     DemoCam_Term();
 }
+
+#ifdef PORT
+static void BtlCam_PortMods(BtlCamView *view,s32 side,s32 objId) {
+        extern s32 gPortResim;
+        extern u32 gPortLiveBlanks;
+        extern void Port_NaturalFightCamera(s32,s32,s32);
+        extern void Port_ModsCamera(s32 side, s32 objId, s32 pos, s32 rot, s32 paused); /* (addresses in game memory) */
+        extern s32 Port_ModsCamZoom(s32 side);
+        extern s32 Port_ModsCamCollide(s32 side);
+        s32 k = view->index & 1;
+        if (gPortResim) return;
+        if (sPortCameraPose[k].valid && sPortCameraPose[k].blank == gPortLiveBlanks &&
+            sPortCameraPose[k].side == side && sPortCameraPose[k].obj == objId) {
+            view->pos = sPortCameraPose[k].pos;
+            view->rot = sPortCameraPose[k].rot;
+            sPortZoomView[k] = sPortCameraPose[k].zoom;
+            return;
+        }
+        Port_NaturalFightCamera(objId,(s32)(u32)&view->pos,(s32)(u32)&view->rot);
+        Port_ModsCamera(side, objId, (s32)(u32)&view->pos, (s32)(u32)&view->rot, (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE)!=0);
+        sPortZoomView[view->index & 1] = Port_ModsCamZoom(side); /* (the zoom, the stage: what they also asked) */
+        if (Port_ModsCamCollide(side)) {
+            BtlCam_PortCollide(view, objId);
+        }
+        sPortCameraPose[k].valid = 1;
+        sPortCameraPose[k].blank = gPortLiveBlanks;
+        sPortCameraPose[k].side = side;
+        sPortCameraPose[k].obj = objId;
+        sPortCameraPose[k].pos = view->pos;
+        sPortCameraPose[k].rot = view->rot;
+        sPortCameraPose[k].zoom = sPortZoomView[k];
+}
+#endif
 
 /* Per frame: copies one side's fighter camera pose and priority into the selected view and builds it. */
 void BtlCam_UpdateView(s32 side) {
@@ -494,17 +561,10 @@ void BtlCam_UpdateView(s32 side) {
     }
     BtlCharApi_GetCamPose(objId, &view->pos, &view->rot);
 #ifdef PORT
-    {   /* PC only: the script mods' on_camera (port/src/mods_game.c, docs/port/mods.md) may change this view's copy of
-           the pose, which is only drawn: nothing of the fight reads it back. */
-        extern void Port_ModsCamera(s32 side, s32 objId, s32 pos, s32 rot); /* (addresses in game memory) */
-        extern s32 Port_ModsCamZoom(s32 side);
-        extern s32 Port_ModsCamCollide(s32 side);
-        Port_ModsCamera(side, objId, (s32)(u32)&view->pos, (s32)(u32)&view->rot);
-        sPortZoomView[view->index & 1] = Port_ModsCamZoom(side); /* (the zoom, the stage: what they also asked) */
-        if (Port_ModsCamCollide(side)) {
-            BtlCam_PortCollide(view, objId);
-        }
-    }
+    /* Tag selects its actual viewer in UpdateOverride. Applying the Lua
+       camera here as well advances side 0's inertia for two different actors
+       in one tick, before the local actor's final camera is known. */
+    if(!TagBattle_Active())BtlCam_PortMods(view,side,objId);
 #endif
     view->priority = BtlCharApi_HasCamPriority(objId);
     BtlCam_BuildView(view, 1);
@@ -650,11 +710,124 @@ void BtlCam_ApplyView(s32 scissor) {
 
 #ifdef PORT
 extern int Port_NetView(void); /* port/src/gs/net.c: the local player's view (0 or 1), or -1 */
+
+#include "spectator_collision.inc"
+/* A separate local view, with camera settings and raw input in host memory. */
+static s32 BtlCam_PortFreeCamera(s32 selected) {
+    extern int gPortResim,Port_Setting(const char *,int);
+    extern void BtlCharApi_GetBasePos(s32,Vec4 *);
+    extern f32 BtlCharApi_GetHeight(s32),BtlCharApi_GetRadius(s32);
+    BtlCamView *native;
+    Vec4 targets[10],eye,rotation,previous,nativeEye,nativeRotation;
+    f32 zoom,tanY;
+    s32 count,i,idx,mode=PortSpectator_Mode();
+    if(gPortResim)return 0;
+    PortSpectator_SetInputActive(gBtlCam!=NULL && !(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU));
+    if(!mode){sPortFreeCamLive=0;return 0;}
+    if(!gBtlCam || !gBtlCam->cur)return 0;
+    native=gBtlCam->cur;
+    if(!selected) {
+        idx=BtlCam_GetPriorityView();if(idx<0)idx=BtlCam_GetDefaultView();
+        if(idx<0 || idx>1)idx=0;native=&gBtlCam->views[idx];
+    }
+    nativeEye=native->pos;nativeRotation=native->rot;
+    count=TagBattle_Active()?TagBattle_Count():2;
+    if(count<1 || count>10)return 0;
+    for(i=0;i<count;i++) {
+        s32 object=BattleSide_GetObjId(i);
+        f32 height=BtlCharApi_GetHeight(object),radius=BtlCharApi_GetRadius(object);
+        BtlCharApi_GetBasePos(object,&targets[i]);
+        targets[i].y-=height*.5f;targets[i].w=fmaxf(fabsf(height)*.65f,fabsf(radius))+2;
+    }
+    previous=sPortFreeCamLive?sPortFreeCamPos:native->pos;
+    tanY=224.f/gBtlCam->layouts[0].screenDist;
+    if(!PortSpectator_Camera((f32 *)&native->pos,(f32 *)&native->rot,(f32 *)targets,count,
+        tanY,Port_Setting("aspect_milli",1333)/1000.f,(f32 *)&eye,(f32 *)&rotation,&zoom))return 0;
+    if(sPortFreeCamLive)SpecCamera_AvoidStage(&eye,&previous);
+    PortSpectator_ResolveEye((f32 *)&eye);
+    sPortFreeCam.view=gBtlCam->layouts[0];sPortFreeCamPos=eye;sPortFreeCamRot=rotation;
+    sPortFreeCam.view.screenDist*=zoom;View_BuildProjection(&sPortFreeCam.view);
+    View_SetTransform(&sPortFreeCam.view.world2view,&sPortFreeCam.view.world2view2,&sPortFreeCamPos,&sPortFreeCamRot);
+    View_UpdateMatrices(&sPortFreeCam.view,&sPortFreeCamPos);View_Apply(&sPortFreeCam.view,1);
+    sPortFreeCamLive=1;
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_FREE_CAMERA_AUDIT")) {
+        PORT_HOST static s32 ticks;
+        for(i=0;i<4;i++)if(((f32 *)&nativeEye)[i]!=((f32 *)&native->pos)[i] ||
+                          ((f32 *)&nativeRotation)[i]!=((f32 *)&native->rot)[i]) {
+            fprintf(stderr,"free camera audit: FAIL native-pose changed\\n");exit(6);
+        }
+        if(!__builtin_isfinite(eye.x) || !__builtin_isfinite(eye.y) || !__builtin_isfinite(eye.z)) {
+            fprintf(stderr,"free camera audit: FAIL non-finite eye\\n");exit(6);
+        }
+        if(++ticks==30)fprintf(stderr,"free camera audit: PASS mode=%d tag=%d moved=1 native-pose-unchanged=1 camera-mode=%d\n",Battle_GetMode(),TagBattle_Active(),mode);
+    }
+    return 1;
+}
+#endif
+#ifdef PORT
+static void BtlCam_PortChaseView(s32 side) {
+    BtlCam_SelectView(side);
+    BtlCam_UpdateView(side);
+    /* UpdateView restores the native split-screen projection. Apply the
+     * local full-screen projection only after copying that pose. */
+    BtlCam_SetLayout(0,1);
+    BtlCam_ApplyView(1);
+}
 #endif
 /* Decides whether one full-screen view replaces the per-player views this frame; returns 1 if so. */
 s32 BtlCam_UpdateOverride(void) {
     s32 ret = 0;
     s32 idx;
+
+    if (TagBattle_Active()) {
+        /* Each TAG client keeps its own fighter's camera. Another fighter's
+         * cut must not replace the local view. Advance shared demo animation
+         * time normally, then restore the local view when it has another owner. */
+        void *own;
+        s32 localActor=TagBattle_ViewActor();
+        s32 actor,focus=localActor,priority=-1,demoOwner=-1;
+        s32 defaultOwner=TagBattle_DefaultCutOwner();
+        extern void *BtlChar_Get(s32 actor);
+        extern s32 BtlAct_GetCurrent(void *chr),ChrCam_IsCutActive(void *chr);
+        extern void *BtlObj_Get(s32 objId);
+        focus=TagBattle_CameraActor(localActor);
+        for(actor=0;actor<TagBattle_Count();++actor){
+            void *obj=BtlObj_Get(BattleSide_GetObjId(actor));
+            if(gDemoCam->obj==obj || gDemoCam->chr==obj)demoOwner=actor;
+        }
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_RUSH_SCENE")){
+            static s32 last=-1;int action=BtlAct_GetCurrent(BtlChar_Get(0));
+            if(action!=last){printf("tag rush camera: viewer=%d action=%x focus=%d pair=%d global=%d demo=%d active=%d visible=%d\n",localActor,action,focus,TagBattle_Pair(0),defaultOwner,demoOwner,DemoCam_IsActive(),demoOwner>=0?TagBattle_CutVisible(demoOwner,localActor):0);last=action;}
+        }
+        BtlCam_SelectView(0);
+        BtlCam_SetLayout(0, 1);
+        BtlCharApi_GetCamPose(BattleSide_GetObjId(focus),&gBtlCam->cur->pos,&gBtlCam->cur->rot);
+#ifdef PORT
+        BtlCam_PortMods(gBtlCam->cur,0,BattleSide_GetObjId(focus));
+#endif
+        BtlCam_BuildView(gBtlCam->cur,1);
+        own=BtlObj_Get(BattleSide_GetObjId(0));
+        if(DemoCam_IsActive()) {
+            extern s32 Port_SpecialMoveCameras(s32 change);
+            s32 local=demoOwner>=0 && demoOwner==focus && Port_SpecialMoveCameras(-1);
+            DemoCam_Update();
+            if(!local) { BtlCam_SelectView(0); BtlCam_ApplyView(1); }
+        }
+        if(getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_HUD_VIEW_TEST")){
+            extern s32 BtlChar_FrameMod(s32 n);
+            s32 phase=BtlChar_FrameMod(240)/60;
+            /* A hidden renderer fixture, using the real scene and projection.
+             * Holds front/right/rear/left views long enough to inspect edge
+             * indicators. It never changes the character's pose or inputs. */
+            BtlCam_SelectView(0);
+            gBtlCam->cur->rot.y+=phase*1.57079632679f;
+            BtlCam_BuildView(gBtlCam->cur,1);
+        }
+#ifdef PORT
+        (void)BtlCam_PortFreeCamera(1);
+#endif
+        return 1;
+    }
 
     if (!Battle_IsSplitScreen() || BattleReplay_IsActive() != 0) {
         idx = BtlCam_GetPriorityView();
@@ -685,8 +858,63 @@ s32 BtlCam_UpdateOverride(void) {
         DemoCam_Update();
         ret = 1;
     }
+#ifdef PORT
+    {
+        extern s32 Port_SpecialMoveCameras(s32 change);
+        extern s32 Battle_GetHumanSide(void);
+        extern void *BtlChar_Get(s32 actor);
+        extern s32 BtlAct_GetCurrent(void *chr),ChrCam_IsCutActive(void *chr);
+        s32 side=Port_NetView(),i,special=0;
+        if(side<0)side=Battle_GetHumanSide();if(side<0||side>1)side=0;
+        for(i=0;i<2;++i){s32 a=BtlAct_GetCurrent(BtlChar_Get(i));if(a>=0xFD&&a<=0x13B)special=1;}
+        if(special&&!Port_SpecialMoveCameras(-1)){
+            BtlCam_PortChaseView(side);
+            ret=1;
+        }
+    }
+    if (BtlCam_PortFreeCamera(ret)) {
+        ret = 1;
+    }
+#endif
     return ret;
 }
+
+#include "battle/tag_team_hud_math.h"
+static f32 sTagHudView[16],sTagHudProjection[16],sTagHudNear;
+static s32 sTagHudViewValid;
+/* Snapshot the view used to draw the scene, before any effect/HUD pass can
+ * replace the global current view. UI queries do not change render state. */
+void TagBattle_HudCaptureView(void *ptr) {
+    View *view=ptr;s32 i;
+    sTagHudViewValid=TagBattle_Active() && view!=NULL;
+    if(!sTagHudViewValid)return;
+    for(i=0;i<16;++i){sTagHudView[i]=((f32 *)&view->world2view2)[i];sTagHudProjection[i]=((f32 *)&view->world2screen)[i];}
+    sTagHudNear=view->nearZ;
+    if(getenv("BT4_TAG_HUD_LOG")){
+        extern void Port_TagHudView(f32 *v,f32 *p,f32 *nearZ);
+        Port_TagHudView(sTagHudView,sTagHudProjection,&sTagHudNear);
+    }
+}
+s32 TagBattle_HudCamera(f32 *basis) { return sTagHudViewValid && ThBasis(sTagHudView,basis); }
+s32 TagBattle_HudHead(s32 actor,f32 *out) {
+    Vec4 p,base;
+    s32 j;
+    extern void BtlCharApi_GetPos(s32 actor,Vec4 *out);
+    extern void BtlCharApi_GetNodePos(s32 actor,s32 node,Vec4 *out);
+    extern f32 BtlCharApi_GetHeight(s32 actor);
+    if(!sTagHudViewValid || actor<0 || actor>=TagBattle_Count())return 0;
+    BtlCharApi_GetPos(BattleSide_GetObjId(actor),&base);
+    /* Node 0x2F is also used by the engine's head-tracking code. Following
+     * its animated pose keeps the marker attached during jumps and attacks. */
+    BtlCharApi_GetNodePos(BattleSide_GetObjId(actor),0x2F,&p);
+    if(p.x==base.x && p.y==base.y && p.z==base.z)
+        p.y-=BtlCharApi_GetHeight(BattleSide_GetObjId(actor))*0.7f;
+    p.y-=3.0f;
+    for(j=0;j<4;++j)out[j]=((f32 *)&p)[j];
+    return 1;
+}
+s32 TagBattle_HudProject(f32 *head,f32 *out) { return sTagHudViewValid && ThProject(sTagHudProjection,head,sTagHudNear,out); }
+void TagBattle_HudRear(f32 *head,f32 *out) { ThRear(sTagHudView,head,out); }
 
 /* Clears the debug camera's own view and gives it the full-screen layout. */
 void DbgCam_Init(void) {

@@ -194,7 +194,7 @@ typedef struct UEvoZList {
 typedef struct UEvoZ {
     /* 0x0000 */ u32 *pack;
     /* 0x0004 */ u32 *res;
-    /* 0x0008 */ void *faceFile;        /* 0x16800 bytes: compressed portrait (file 0x2F9 + character) */
+    /* 0x0008 */ void *faceFile;        /* 0x16800 bytes: compressed portrait (file 0x71C + character) */
     /* 0x000C */ MTexRes *faceRes;      /* 0x20800 bytes: the same unpacked */
     /* 0x0010 */ void *chipFile;
     /* 0x0014 */ MTexRes *chipRes;

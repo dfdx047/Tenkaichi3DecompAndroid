@@ -145,7 +145,7 @@ void UbzSel_Init(void) {
     gUbzSel->tex[23] = NULL;
     gUbzSel->tex[24] = NULL;
     gUbzSel->chips = (u32 *)MPACK_AT(gUbzSel->res, 6);
-    for (i = 0; i < N_CHIP_NUM; i++) {
+    for (i = 0; i < (s32)gUbzSel->chips[0] && i < 512; i++) {
         res = (MTexRes *)MPACK_AT(gUbzSel->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
@@ -228,7 +228,7 @@ void UbzSel_Draw(void) {
         MTexRes *res;
         s32 chara = gUbzSel->foe[gUbzSel->course[gUbzSel->cursor[0]].foe[i]].chara;
 
-        if (chara == N_NONE) {
+        if (chara < 0 || chara >= Menu_CharacterChipCount(gUbzSel->chips)) {
             res = (MTexRes *)MPACK_AT(gUbzSel->chips, N_CHIP_NUM);
         } else {
             res = (MTexRes *)MPACK_AT(gUbzSel->chips, chara + 1);

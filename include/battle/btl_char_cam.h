@@ -109,7 +109,7 @@ typedef struct ChrCamCut {
 
 /* Node ids in ChrCamCut.unk88..unk94: a model node index of the fighter, or with one of these bits; -1 = none. */
 #define CHRCUT_NODE_OPP 0x40000000 /* node of the opponent's model */
-#define CHRCUT_NODE_MID 0x20000000 /* midpoint of that node on fighter 0 and fighter 1 */
+#define CHRCUT_NODE_MID 0x20000000 /* midpoint of that node on this fighter and its opponent */
 #define CHRCUT_NODE_MASK 0x9FFFFFFF
 
 /* ChrCamCutDef.flags */

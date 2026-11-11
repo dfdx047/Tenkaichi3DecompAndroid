@@ -1,6 +1,7 @@
 #include "common.h"
 #include "menu/menu_c.h"
 #include "sys/pad.h"
+#include "port_variant.h"
 
 /*
  * HistGuide, 0x33F700..0x3405A0: the scripted dialogues of the history menu (HistSel). An object of its own:
@@ -27,6 +28,9 @@ void HistGuide_ClipGoto(HistSel *menu, s32 guide, char *label) {
     char name[64];
     MFlash *flash = &menu->flash[0];
 
+    if (guide == 6) {
+        menu->flags |= 0x80;
+    }
     sprintf(name, "mc_guide_%02d", guide);
     Flash_FindLabel(flash, NULL, name, &ref);
     Flash_ClipGotoLabel(flash, &ref, label);
@@ -181,7 +185,7 @@ void HistGuide_Update(HistSel *menu, s32 *result) {
         break;
     case 151:
         Flash_GotoLabel(&menu->flash[0], "fl_scenario_ok", 1);
-        menu->guest = menu->items[menu->cursor[1]];
+        menu->guest = PORT_V(menu->items[menu->cursor[1]],6);
         HistGuide_ClipGoto(menu, menu->guest, "fl_in");
         menu->guide = menu->items[menu->cursor[1]];
         menu->script++;
@@ -243,13 +247,22 @@ void HistGuide_Update(HistSel *menu, s32 *result) {
         break;
     case 303:
     case 307:
-        G_SAY(1);
-    case 305:
+    case 311:
         G_SAY(0);
+    case 305:
+        G_SAY(1);
+    case 309:
+        menu->voiceLine = 0x14;
+        menu->talker = 1;
+        HistSel_PlayVoice();
+        menu->script++;
+        break;
     case 302:
     case 304:
     case 306:
     case 308:
+    case 310:
+    case 312:
         G_WAIT();
     case 351:
         menu->voiceLine = 0;
@@ -375,11 +388,11 @@ void HistGuide_Update(HistSel *menu, s32 *result) {
         menu->script++;
         break;
     case 553:
-    case 557:
-        G_SAY(0);
     case 555:
-    case 559:
+    case 557:
     case 561:
+        G_SAY(0);
+    case 559:
         G_SAY(1);
     case 552:
     case 554:
@@ -413,7 +426,7 @@ void HistGuide_Update(HistSel *menu, s32 *result) {
     case 616:
         G_WAIT();
     case 267:
-    case 309:
+    case 313:
     case 369:
     case 421:
     case 469:

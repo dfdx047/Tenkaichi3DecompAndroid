@@ -26,6 +26,7 @@
 #include <string.h>
 #include <time.h>
 #include "gs_internal.h"
+#include "../../include/port_render_markers.h"
 #include "../port_addr.h"
 
 #define SURF_W 1024
@@ -42,6 +43,7 @@ typedef struct Target {
 GsState gGs;
 uint32_t gGsPageGen[512];
 unsigned gGsFbUploads; /* bit 0 / 1: pixels were uploaded into display buffer 0 / 0x70 since the back end last looked */
+int gGsResim; /* replay status captured with the list, never read live from the game thread */
 unsigned gGsFrame;
 #define gs gGs
 #define Vertex GsVertex
@@ -745,7 +747,11 @@ static void vertex(uint32_t x, uint32_t y, uint32_t z, int kick) {
                buffer): the game paints over its fighters' palettes this way, to give them all one alpha before the
                see-through pass. That has to happen in GS memory, where the GPU back end reads palettes from. */
             uint32_t fb = (uint32_t)(gs.frame[ctx] & 0x1FF);
-            if (kick && sGpu && ((gs.frame[ctx] >> 16) & 0x3F) == 1 && gGsPageGen[fb] != 0) {
+            /* Only a solid palette fill can be evaluated from CPU GS memory.
+               A textured sprite can read a GPU framebuffer. The 64-pixel glow
+               pages reuse uploaded memory too; routing their blur copies here
+               samples stale CPU pixels and feeds coloured blocks into the glow. */
+            if (kick && sGpu && !(gs.prim & 0x10) && ((gs.frame[ctx] >> 16) & 0x3F) == 1 && gGsPageGen[fb] != 0) {
                 draw_sprite(sf, ctx, &gs.vtx[0], &gs.vtx[1]);
                 gGsPageGen[fb]++;
                 gGsPageGen[(fb + 1) & 511]++;
@@ -872,7 +878,7 @@ static void transfer_data(const uint8_t *p, uint32_t bytes) {
 /* PRMODECONT.AC = 1: the attributes (shading, texturing, fogging, blending, ...) are PRIM's own; AC = 0: they come
    from PRMODE and PRIM only gives the primitive type. The game switches to PRMODE for its shadow passes. */
 static void prim_update(void) {
-    gs.prim = (gs.prmodecont & 1) ? gs.primRaw : (gs.primRaw & 7) | (gs.prmode & 0x7F8);
+    gs.prim = (gs.prmodecont & 1) ? gs.primRaw : (gs.primRaw & (7 | PORT_PRIM_METADATA)) | (gs.prmode & 0x7F8);
 }
 
 static void reg_write(uint32_t addr, uint64_t d) {
@@ -913,7 +919,9 @@ static void reg_write(uint32_t addr, uint64_t d) {
     }
 }
 
+static int render_register(uint32_t addr, uint64_t data);
 void Gs_RegWrite(uint32_t addr, uint64_t d) {
+    if (render_register(addr, d)) return;
     reg_write(addr, d);
 }
 
@@ -955,7 +963,7 @@ void Gs_Gif(const uint8_t *p, uint32_t qwc) {
             uint64_t lo = q[0], hi = q[1];
 
             switch (r) {
-            case 0x0: reg_write(0, lo & 0x7FF); break;
+            case 0x0: reg_write(0, lo & (0x7FF | PORT_PRIM_METADATA)); break;
             case 0x1: reg_write(1, (lo & 0xFF) | ((lo >> 32) & 0xFF) << 8 | (hi & 0xFF) << 16 | ((hi >> 32) & 0xFF) << 24 |
                                    (uint64_t)*(uint32_t *)&gs.q << 32); break;
             case 0x2: gs.st = lo; { uint32_t qq = (uint32_t)hi; memcpy(&gs.q, &qq, 4); } break;
@@ -1156,7 +1164,7 @@ static void screenshot(void) {
     for (i = 0; i < sTargetCount; i++) {
         sTargets[i].drawn = 0;
     }
-    if (!gPortResim) { /* (a frame that is only being re-run is not a frame of the picture; a skipped one is counted) */
+    if (!gGsResim) { /* (a frame that is only being re-run is not a frame of the picture; a skipped one is counted) */
         sFrame++;
     }
 }
@@ -1171,13 +1179,18 @@ static pthread_t sThread;
 static pthread_mutex_t sLock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t sWake = PTHREAD_COND_INITIALIZER, sDone = PTHREAD_COND_INITIALIZER;
 static int sThreaded;
-static int sJob;            /* 0 none, 1 start the GPU back end, 2 run a list */
+static int sJob;            /* 0 none, 1 init, 2 DMA list, 3 held frame, 4 register, 5 GIF channel */
 static uint32_t sJobTadr;
-static int sJobTte, sInitResult;
+static uint32_t sJobReg, sJobGifQwc;
+static uint64_t sJobRegData;
+static int sJobGifChain;
+static int sJobTte, sJobResim, sInitResult;
 static int sStopping; /* the program is ending: the render thread leaves its loop (render_stop) */
+static int sNetworkWaiting; /* atomic: present the completed picture while simulation needs network input */
 static int sListDone; /* the list being run has been drawn and its first picture shown (Smooth motion's others may follow) */
 static void run_chain(uint32_t tadr, int tte);
 static void run_frozen(void);
+void Port_GsGifChannel(uint32_t addr, uint32_t qwc, int chain);
 static void walk_chain(uint32_t tadr, int tte, void (*block)(const uint32_t *tag, const uint32_t *data, uint32_t qwc, int tte));
 static void freeze_block(const uint32_t *tag, const uint32_t *data, uint32_t qwc, int tte);
 static size_t sFrozenUsed; /* (the copy of a frame's list for the render thread: freeze_block) */
@@ -1255,9 +1268,22 @@ static void *render_thread(void *arg) {
                 until.tv_sec++;
             }
             if (pthread_cond_timedwait(&sWake, &sLock, &until) != 0 && sJob == 0 && !sStopping && sGpu) {
+                int present = __atomic_load_n(&sNetworkWaiting, __ATOMIC_ACQUIRE);
+                if (present) sJob = 3; /* idle presentation still owns the back end until it finishes */
                 pthread_mutex_unlock(&sLock);
                 PortInput_Pump();
+                if (present) {
+                    extern void Gs_HoldFrame(void);
+                    Gs_HoldFrame(); /* the window and GL context stay on their owning thread */
+                }
                 pthread_mutex_lock(&sLock);
+                if (present) {
+                    sJob = 0;
+                    pthread_cond_broadcast(&sDone);
+                }
+                /* A timeout only serviced window events (and, when waiting,
+                   presented the held frame). Do not replay sJobTadr here. */
+                continue;
             }
         }
         if (sStopping && sJob == 0) {
@@ -1266,9 +1292,18 @@ static void *render_thread(void *arg) {
         }
         if (sJob == 1) {
             sInitResult = GsGpu_Init();
+        } else if (sJob == 4) {
+            reg_write(sJobReg, sJobRegData);
+        } else if (sJob == 5) {
+            uint32_t addr = sJobTadr, qwc = sJobGifQwc;
+            int chain = sJobGifChain;
+            pthread_mutex_unlock(&sLock);
+            Port_GsGifChannel(addr, qwc, chain);
+            pthread_mutex_lock(&sLock);
         } else {
             uint32_t tadr = sJobTadr;
             int tte = sJobTte;
+            gGsResim = sJobResim;
             pthread_mutex_unlock(&sLock);
             {
                 extern void GsGpu_InterpHurry(int on);
@@ -1345,6 +1380,17 @@ int Gs_OnRenderThread(void) {
     return sThreaded && pthread_equal(pthread_self(), sThread);
 }
 
+/* Called from a packet wait, without advancing simulation or replaying a draw
+   list. Threaded renderers service this on their own event loop; the single
+   thread path throttles presentation inside Gs_HoldFrame. */
+void Gs_NetworkWait(int waiting) {
+    __atomic_store_n(&sNetworkWaiting, waiting != 0, __ATOMIC_RELEASE);
+    if (waiting && !sThreaded && sGpu) {
+        extern void Gs_HoldFrame(void);
+        Gs_HoldFrame();
+    }
+}
+
 /* For the game's thread before it touches what the render thread uses while it runs a list (GS memory and registers,
    the back end): returns once the thread has nothing to do. Without the thread, at once. */
 void Gs_RenderIdle(void) {
@@ -1353,12 +1399,50 @@ void Gs_RenderIdle(void) {
     }
 }
 
+/* Sony's path wait is used before freeing a scene's DMA-referenced buffers.
+   A nonblocking poll reports work in flight; a wait drains it. Neither one
+   advances the simulation or changes the pacing of ordinary frames. */
+int Gs_SyncPath(int poll) {
+    int busy;
+    if (!sThreaded || pthread_equal(pthread_self(), sThread)) return 0;
+    pthread_mutex_lock(&sLock);
+    if (!poll) while (sJob != 0) pthread_cond_wait(&sDone, &sLock);
+    busy = sJob != 0;
+    pthread_mutex_unlock(&sLock);
+    return busy;
+}
+
+/* Immediate Sony calls can draw too, including the clear during a scene
+   change. Keep those calls on the context's owning thread, just like DMA. */
+static int render_register(uint32_t addr, uint64_t data) {
+    if (!sThreaded || pthread_equal(pthread_self(), sThread)) return 0;
+    pthread_mutex_lock(&sLock);
+    while (sJob != 0) pthread_cond_wait(&sDone, &sLock);
+    sJobReg = addr; sJobRegData = data; sJob = 4;
+    pthread_cond_signal(&sWake);
+    while (sJob != 0) pthread_cond_wait(&sDone, &sLock);
+    pthread_mutex_unlock(&sLock);
+    return 1;
+}
+
+static int render_gif(uint32_t addr, uint32_t qwc, int chain) {
+    if (!sThreaded || pthread_equal(pthread_self(), sThread)) return 0;
+    pthread_mutex_lock(&sLock);
+    while (sJob != 0) pthread_cond_wait(&sDone, &sLock);
+    sJobTadr = addr; sJobGifQwc = qwc; sJobGifChain = chain; sJob = 5;
+    pthread_cond_signal(&sWake);
+    while (sJob != 0) pthread_cond_wait(&sDone, &sLock);
+    pthread_mutex_unlock(&sLock);
+    return 1;
+}
+
 static void render_post(int job, uint32_t tadr, int tte) {
     pthread_mutex_lock(&sLock);
     sJob = job;
     sListDone = 0;
     sJobTadr = tadr;
     sJobTte = tte;
+    sJobResim = gPortResim;
     pthread_cond_signal(&sWake);
     pthread_mutex_unlock(&sLock);
 }
@@ -1415,11 +1499,13 @@ static int render_thread_wanted(void) {
     extern int Port_Setting(const char *name, int def);
     extern int SDL_GetNumLogicalCPUCores(void);
     const char *e = getenv("BT3_GS_THREAD");
-    int want = e != NULL ? atoi(e) != 0 : Port_Setting("render_thread", 0) != 0;
+    const char *api = getenv("BT3_GPU_API");
+    int want = e != NULL ? atoi(e) != 0 : Port_Setting("render_thread", 1) != 0;
 #ifdef __APPLE__
     want = 0;
 #endif
-    if (want && e == NULL && (Port_Setting("gpu_api", 0) == 1 || SDL_GetNumLogicalCPUCores() <= 2)) {
+    if (want && e == NULL && ((api && (!strcmp(api, "gl") || !strcmp(api, "opengl"))) ||
+                             Port_Setting("gpu_api", 0) == 1 || SDL_GetNumLogicalCPUCores() <= 2)) {
         want = 0;
     }
     return want;
@@ -1468,9 +1554,8 @@ void Port_GsGifChannel(uint32_t addr, uint32_t qwc, int chain) {
     if (!gs_on()) {
         return;
     }
-    if (sThreaded) {
-        render_wait(); /* the GS is one device: this transfer goes after the list that is being drawn */
-    }
+    if (render_gif(addr, qwc, chain)) return;
+    gGsResim = gPortResim;
     if (!chain) {
         Gs_Gif((const uint8_t *)Port_Ptr(addr), qwc);
         return;
@@ -1675,6 +1760,7 @@ static void walk_chain(uint32_t tadr, int tte, void (*block)(const uint32_t *tag
 static void run_chain(uint32_t tadr, int tte) {
     extern void GsGpu_ListStart(void);
 
+    gGsResim = gPortResim;
     GsGpu_ListStart();
     walk_chain(tadr, tte, chain_block);
     chain_end();

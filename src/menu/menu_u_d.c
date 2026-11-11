@@ -188,7 +188,7 @@ s32 SimEv34(USimDay *day) {
         day->seqTimer = 0;
         break;
     case 8:
-        StreamSe_PlayDefault(0, 0x10BE1);
+        StreamSe_PlayDefault(0, 0x15E);
         Bgm_Stop();
         day->msgLine = 0xCA;
         SimDay_Cmd(0x2D);

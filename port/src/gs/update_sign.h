@@ -8,11 +8,13 @@
 extern "C" {
 #endif
 
-/* A release's number: "0.1.38.9" or "v0.1.38.9", two to four numbers. 1 and the numbers in out (missing ones 0), or
+/* A release's number: "0.1.39" or "v0.1.39", two to four numbers, optionally followed by -R<number>[.<patch>]. 1 and the numbers in out (missing ones 0), or
    0 for anything else ("dev", "0.1.39-rc1", ""). */
 int UpdateVer_Parse(const char *text, int out[4]);
 /* -1: a is older than b, 0 the same, 1 newer; -2: either is not a release's number (a "dev" build: never updated). */
 int UpdateVer_Compare(const char *a, const char *b);
+/* Human-facing upstream version plus independent BT4 revision. */
+void UpdateVer_Display(const char *text,char *out,size_t size);
 
 typedef struct {
     uint32_t h[8];

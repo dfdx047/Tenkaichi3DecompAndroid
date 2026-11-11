@@ -2,6 +2,8 @@
 #include "menu/menu_a.h"
 #include "sys/pad.h"
 #ifdef PORT
+#include <stdio.h>
+#include <stdlib.h>
 extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
 extern void Port_MenuFill(int on);
 #endif
@@ -227,6 +229,16 @@ void Title_Input(s32 *result) {
 #ifdef PORT
     if (gPortOverlayOpen) {
         return;
+    }
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_VIDEO_TEST")){
+        static s32 state=-1,tick;
+        if(state!=gTitle->state){state=gTitle->state;tick=0;}
+        if(++tick==1)fprintf(stderr,"tag video: title state=%d\n",state);
+        if(state<2 && tick>=120 && tick%60==0)gPad[0].gamePressed=PADG_START;
+        if(state==2 && tick>=90 && tick%30==0){
+            if(gTitle->itemCount>1 && gTitle->cursor==0)gPad[0].gameRepeat=PADG_DOWN;
+            else gPad[0].gamePressed=PADG_CROSS;
+        }
     }
 #endif
     if (gTitle->state == 0) {

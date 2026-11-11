@@ -3,6 +3,7 @@
 #include "menu/menu_e.h"
 #include "sys/pad.h"
 #include "menu/port_screen.h"
+#include "../../port/src/gs/online_language.h"
 
 #ifdef PORT
 /*
@@ -13,6 +14,7 @@
  */
 
 extern s32 PortTbo_Run(void); /* menu/port_tbo.c: 1 = left for "Train While Waiting" (its fight is set up) */
+extern s32 TeamSel_TagRun(s32 section);
 
 s32 gPortScreen;
 
@@ -153,7 +155,6 @@ static s32 sPsAlign;                                      /* 0 a line starts at 
 void Ps_PageSet(void) {
     f32 aspect = (f32)Port_PageAspectMilli() / 1000.0f;
     f32 page = 4.0f / 3.0f;
-
     if (aspect >= page) { /* wider: the whole height, the grounds at the sides */
         sPsPh = 448.0f;
         sPsPw = 512.0f * page / aspect;
@@ -194,7 +195,7 @@ u32 Ps_Uv(f32 t) {
 }
 
 /* A picture's part (u, v in 0..1) over a box of the SCREEN, tinted (0x80 per channel = as it is). */
-void Ps_SpriteScreen(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 v0, f32 u1, f32 v1, u32 tint, s32 alpha) {
+static void Ps_SpriteScreenFiltered(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 v0, f32 u1, f32 v1, u32 tint, s32 alpha,s32 mips) {
     u64 *p;
 
     if (alpha <= 0 || x1 <= x0 || y1 <= y0) {
@@ -210,7 +211,7 @@ void Ps_SpriteScreen(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 v0, f32
     p[0] = 0x44;
     p[1] = 0x42; /* ALPHA_1: blended by the source's alpha */
     p += 2;
-    p[0] = 0x60;
+    p[0] = mips?0x60:0x61; /* fixed base LOD for an extremely compressed bar centre */
     p[1] = 0x14; /* TEX1_1: bilinear */
     p += 2;
     p[0] = 0x30000;
@@ -237,6 +238,9 @@ void Ps_SpriteScreen(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 v0, f32
     p[1] = (u64)((s32)(x1 * 16.0f) + 0x7000) | ((u64)((s32)(y1 * 16.0f) + 0x7200) << 16);
     p += 2;
     Dma_EndDirect(p);
+}
+void Ps_SpriteScreen(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 v0, f32 u1, f32 v1, u32 tint, s32 alpha){
+    Ps_SpriteScreenFiltered(id,x0,y0,x1,y1,u0,v0,u1,v1,tint,alpha,1);
 }
 
 /* The same over a box of the page. */
@@ -275,11 +279,20 @@ void Ps_Pill(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 alpha) {
     f32 cap = c * (y1 - y0) / h * 0.857f;
     f32 cu = c / w;
 
+    if ((id==TBO_KIT_BAR || id==TBO_KIT_SEL) && x1-x0<(y1-y0)*2.5f) {
+        Ps_Sprite(id==TBO_KIT_BAR?TBO_KIT_BAR_COMPACT:TBO_KIT_SEL_COMPACT,
+            x0,y0,x1,y1,0,0,1,1,PS_PLAIN,alpha);
+        return;
+    }
     if (cap * 2.0f > x1 - x0) {
         cap = (x1 - x0) * 0.5f;
     }
     Ps_Sprite(id, x0, y0, x0 + cap, y1, 0.0f, 0.0f, cu, 1.0f, PS_PLAIN, alpha);
-    Ps_Sprite(id, x0 + cap, y0, x1 - cap, y1, cu, 0.0f, 1.0f - cu, 1.0f, PS_PLAIN, alpha);
+    /* The centre samples almost the full 1,280-pixel bar. On short keys its
+     * horizontal minification selected a mip that erased the top/bottom rim,
+     * leaving an opaque vertical stripe. Keep its vertical detail at base LOD. */
+    Ps_SpriteScreenFiltered(id,Ps_X(x0+cap),Ps_Y(y0),Ps_X(x1-cap),Ps_Y(y1),cu,0,1-cu,1,PS_PLAIN,alpha,
+        x1-x0-2*cap>=(y1-y0)*4);
     Ps_Sprite(id, x1 - cap, y0, x1, y1, 1.0f - cu, 0.0f, 1.0f, 1.0f, PS_PLAIN, alpha);
 }
 
@@ -408,6 +421,16 @@ void Ps_Line(s32 id, f32 x, f32 base, f32 cap, f32 fit, u32 top, u32 bottom, u32
 /* A line of letters with independent horizontal and vertical size, and an optional outer border. */
 void Ps_TextExOuterXY(f32 x, f32 y, char *str, f32 scaleX, f32 scaleY, f32 width,
                       u32 top, u32 bottom, u32 line, u32 outer, f32 outerWidth) {
+    extern int Port_MenusWide(void),gPortMenuMode;
+    extern int Port_UpdateMenuScreen(void);
+    /* Every online submenu uses this path, not just the hub's six buttons.
+       Preserve the centre of each row while enlarging small labels. */
+    if(gPortMenuMode&&Port_UpdateMenuScreen()==52&&scaleY<.85f){
+        y-=PS_CELL_UNITS*scaleY*.10f;scaleX*=1.20f;scaleY*=1.20f;
+    }
+    if(gPortMenuMode&&Port_MenusWide()&&Port_PageAspectMilli()>=2000){
+        y-=PS_CELL_UNITS*scaleY*.08f;scaleX*=1.20f;scaleY*=1.20f;
+    }
     f32 cell = PS_CELL_UNITS * scaleY;
     f32 cap = cell * PS_CAP_OF_CELL;
     f32 fit = 1.0f;
@@ -504,16 +527,22 @@ f32 Ps_MsgWidth(char *str, f32 scale) {
     return (f32)PortTbo_TextMeasure(str, 1) / 1000.0f * PS_MSG_CAP * scale * PS_UNIT_X * Port_MenuTextNarrow();
 }
 
-void Ps_Msg(f32 x, f32 y, char *str, f32 scale, s32 alpha) {
+extern int PortTbo_TextIdLiteral(const char *,int),PortTbo_TextMeasureLiteral(const char *,int);
+f32 Ps_MsgWidthLiteral(char *str,f32 scale){
+    return (f32)PortTbo_TextMeasureLiteral(str,1)/1000.0f*PS_MSG_CAP*scale*PS_UNIT_X*Port_MenuTextNarrow();
+}
+static void Ps_MsgDraw(f32 x, f32 y, char *str, f32 scale, s32 alpha,s32 literal) {
     s32 id;
 
-    if (str[0] == 0 || (id = PortTbo_TextId(str, 1)) < 0) {
+    if (str[0] == 0 || (id = literal?PortTbo_TextIdLiteral(str,1):PortTbo_TextId(str, 1)) < 0) {
         return;
     }
     Ps_Line(id, x, y + PS_MSG_BASE * scale, PS_MSG_CAP * scale, 1.0f, 0, 0, Ps_Rgba(16, 20, 40, 255), 0, alpha);
     Ps_Line(id, x, y + PS_MSG_BASE * scale, PS_MSG_CAP * scale, 1.0f, Ps_Rgba(255, 255, 255, 255),
             Ps_Rgba(255, 255, 255, 255), 0, 1, alpha);
 }
+void Ps_Msg(f32 x,f32 y,char *str,f32 scale,s32 alpha){Ps_MsgDraw(x,y,str,scale,alpha,0);}
+void Ps_MsgLiteral(f32 x,f32 y,char *str,f32 scale,s32 alpha){Ps_MsgDraw(x,y,str,scale,alpha,1);}
 
 /* ---- the pad's buttons ---- */
 /* kind: 0 cross, 1 square, 2 triangle, 3 left / right, 4 circle, 7 START */
@@ -560,8 +589,7 @@ void Ps_Prompt(s32 kind, char *label) {
     }
 }
 
-f32 Ps_PromptX(s32 k) { /* where prompt k starts: laid from the right edge leftwards */
-    f32 x = 470.0f;
+static f32 Ps_PromptX(s32 k, f32 x) { /* where prompt k starts: laid from the right edge leftwards */
     s32 i;
 
     for (i = sPsPromptCount - 1; i >= k; i--) {
@@ -570,16 +598,20 @@ f32 Ps_PromptX(s32 k) { /* where prompt k starts: laid from the right edge leftw
     return x;
 }
 
-void Ps_PromptsDraw(void) {
+void Ps_PromptsDrawAt(f32 right) {
     s32 k;
 
     for (k = 0; k < sPsPromptCount; k++) {
         f32 bw = Ps_ButtonW(sPsPromptKind[k], 19.0f);
-        f32 x = Ps_PromptX(k);
+        f32 x = Ps_PromptX(k, right);
 
         Ps_Button(sPsPromptKind[k], x + bw * 0.5f, 425.0f, 19.0f);
         Ps_Msg(x + bw + 5.0f, 425.0f - (PS_MSG_BASE - PS_MSG_CAP * 0.5f), sPsPromptLabel[k], 1.0f, 0x80); /* its capitals beside the button's middle */
     }
+}
+
+void Ps_PromptsDraw(void) {
+    Ps_PromptsDrawAt(470.0f);
 }
 
 void Ps_Text(f32 x, f32 y, char *s, f32 scale, f32 width, s32 style) {
@@ -630,15 +662,38 @@ s32 PortScreen_Main(void) {
     }
     switch (screen) {
     case PORT_SCREEN_TBO:
-        Bgm_Play(0x10B16 + 2);
-        result = PortTbo_Run();
+        {extern s32 Port_TagNetwork(void),Port_TagPhase(void),Port_TagResultChoice(void),TagBattle_ConfigureLocal(void);
+        if(Port_TagNetwork()&&Port_TagPhase()==3&&Port_TagResultChoice()==0&&TagBattle_ConfigureLocal()){
+            gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;return 3;
+        }}
+        {extern s32 TagBattle_TakeReturn(void);
+        extern void Port_TagClose(void);
+        s32 back=TagBattle_TakeReturn();
+        /* Returning nonzero here starts a battle. Leave the menu dispatcher
+           running and open the online hub after a room exit instead. */
+        if(back==2)Port_TagClose();
+        if(back==1 || (Port_TagPhase()==2 && Port_TagResultChoice()==1)) {
+            if(TeamSel_TagRun(2)){result=3;gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;break;}
+        }}
+        Bgm_Play(0x816 + 2);
+        do {
+            result = PortTbo_Run();
+            if (result == 2 && TeamSel_TagRun(2)) { result=3; break; }
+        } while (result == 2);
         Adx_StopAll();
-        gProgress->mode = result ? 45 : 4; /* the Ultimate Training's fight, or back to the main menu */
+        if(result==3){gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;}
+        else gProgress->mode = result ? 45 : 4; /* training, or back to the main menu */
         break;
     default:
         gProgress->mode = 4;
         break;
     }
     return result;
+}
+#endif
+
+#ifdef PORT
+void Ps_TextRaw(f32 x,f32 y,char *s,f32 scale,f32 width,s32 style){
+    PortOnline_Raw(1);Ps_Text(x,y,s,scale,width,style);PortOnline_Raw(0);
 }
 #endif

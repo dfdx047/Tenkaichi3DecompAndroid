@@ -1,3 +1,4 @@
+#include "port_variant.h"
 #include "common.h"
 #include "battle/btl_script_cmd.h"
 #include "battle/btl_script.h"
@@ -462,10 +463,10 @@ s32 BtlScriptCmd_LoadText(u32 phase, void *taskWork) {
         base = -1;
         switch (gProgress->unk0) {
         case 0:
-            base = 0x231;
+            base = PORT_V(0x231, 0x26F);
             break;
         case 1:
-            base = 0x263;
+            base = PORT_V(0x263, 0x26F);
             break;
         }
         BtlScript_RequestTextFile(base + BtlScript_GetStory());
@@ -479,9 +480,9 @@ s32 BtlScriptCmd_LoadFile8(u32 phase, void *taskWork) {
         s32 base;
 
         if (gSaveData->flags & SAVE_FLAG_VOICE) {
-            base = 0x2C7;
+            base = PORT_V(0x2C7, 0x34E);
         } else {
-            base = 0x295;
+            base = PORT_V(0x295, 0x2DE);
         }
         BtlScript_RequestFile8(base + BtlScript_GetStory());
     }
@@ -541,7 +542,7 @@ s32 BtlScriptCmd_SetWindow(u32 phase, void *taskWork) {
 /* Command 1501 "music": n. Plays stream 0x10B16 + n as the battle music. */
 s32 BtlScriptCmd_PlayBgm(u32 phase, void *taskWork) {
     if (phase == GSC_PHASE_BEGIN || phase == GSC_PHASE_BEGIN_ABORT) {
-        Bgm_Play(Gsc_GetInt() + 0x10B16);
+        Bgm_Play(Gsc_GetInt() + PORT_V(0x816, 0x816));
     }
     return 1;
 }

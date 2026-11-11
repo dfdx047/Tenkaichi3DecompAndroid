@@ -1,4 +1,5 @@
 #include "common.h"
+extern s32 Bt4_HasRecoveryVariant(void *chr);
 #include "battle/btl_char_coll.h"
 
 /*
@@ -53,6 +54,16 @@ extern u32 BtlAnim_GetFlags(s32 state);                  /* roster tbl[0][state]
 extern f32 BtlAnim_GetFrame(BtlCollChr *chr);
 extern f32 BtlAnim_GetLength(BtlCollChr *chr);
 extern f32 BtlAnim_GetStep(BtlCollChr *chr);
+static void Bt4_UpdateDamageTextures(BtlCollChr *chr) {
+    u8 *obj = (u8 *)BtlChar_GetObj(chr);
+    extern BtlCollGauge *BtlMember_GetActiveGauge(BtlCollChr *chr);
+    u32 *state = (u32 *)((u8 *)BtlMember_GetActiveGauge(chr) + 0x24);
+    if (*(void **)(obj + 0x20) != NULL && *state != 0 && *state != 3) {
+        *state |= 2;
+        *(void **)(obj + 0x48) = *(void **)(obj + 0x20);
+        *(void **)(obj + 0x4C) = *(void **)(obj + 0x24);
+    }
+}
 extern BtlCollGauge *BtlMember_GetActiveGauge(BtlCollChr *chr);  /* active member's gauge block */
 extern s32 BtlMember_Damage(BtlCollChr *chr, s32 damage, s32 flags); /* applies damage */
 extern s32 BtlMember_AddKi(BtlCollChr *chr, s32 n);     /* gauge +0xC += n, returns the overflow */
@@ -156,6 +167,8 @@ s32 BtlColl_StartThrow(BtlCollChr *atk, BtlCollChr *def, s32 slot, u32 techFlags
     if (!BtlChar_TestFlag(atk, 3)) {
         return 0;
     }
+    {extern s32 TagBattle_ReservePair(s32,s32);
+    if(!TagBattle_ReservePair(atk->side,def->side))return 0;}
     BtlChar_SetFlag(atk, 0x72);
     atk->thr.tech = BtlSuper_GetId(atk, slot);
     atk->thr.atkSide = atk->side;
@@ -196,13 +209,13 @@ s32 BtlColl_StartThrow(BtlCollChr *atk, BtlCollChr *def, s32 slot, u32 techFlags
     atk->thr.unk44 = 0;
     atk->thr.unk48 = 0;
     if (techFlags & 0x2000) {
-        if (BtlMember_GetActiveGauge(atk)->unk20 == 0) {
+        if (!Bt4_HasRecoveryVariant(atk)) {
             atk->thr.unk48 = 1;
         }
     }
     atk->thr.unk4C = 0;
     if (techFlags & 0x80000) {
-        if (BtlMember_GetActiveGauge(def)->unk20 == 0) {
+        if (!Bt4_HasRecoveryVariant(def)) {
             atk->thr.unk4C = 1;
         }
     }
@@ -678,6 +691,7 @@ s32 BtlColl_HitByBlast(BtlCollChr *chr, BtlCollHit *hit) {
     }
     time = 0.1f;
     BtlMember_Damage(chr, dmg, 0);
+    Bt4_UpdateDamageTextures(chr);
     ChrCam_AddShake(chr, 3.0f, time);
     BtlChar_Vibrate(chr, 1.0f, time);
     switch (hit->atk->kind) {
@@ -830,6 +844,7 @@ void BtlColl_ApplyRushHit(BtlCollChr *chr, BtlCollChr *atk, BtlCollHit *hit, s32
         break;
     }
     BtlMember_Damage(chr, dmg, fl);
+    Bt4_UpdateDamageTextures(chr);
     BtlCharApi_ShakeCamsNear(&hit->pos, 100.0f, 1500.0f, 5.0f, 0.3f);
     BtlCharApi_RumbleNear(&hit->pos, 100.0f, 1000.0f, 1.0f, 0.3f);
     BtlChar_SetHeldFlag(chr, 0x1D);
@@ -924,6 +939,8 @@ s32 BtlColl_StartRushCatch(BtlCollChr *chr, BtlCollChr *atk, BtlCollHit *hit, s3
     if (!BtlChar_TestFlag(atk, 3)) {
         return 0;
     }
+    {extern s32 TagBattle_ReservePair(s32,s32);
+     if(!TagBattle_ReservePair(atk->side,chr->side))return 0;}
     alt = (hit->flags >> 4) & 1;
     r->id = react;
     r->unk18 = 0;
@@ -1192,9 +1209,8 @@ s32 BtlColl_TryDodge(s32 objId, BtlCollHit *hit) {
     if (rush) {
         if (!BtlChar_TestFlag(chr, 0x80)) {
             if (free) {
-                if (BtlMember_HasAbility(chr, 0x22)) {
-                    BtlMember_AddBlast(chr, 100000);
-                }
+                /* BT4 awards the stock for a timed evasion without requiring ability 0x22. */
+                BtlMember_AddBlast(chr, 100000);
             }
         }
         BtlChar_SetHeldFlag(chr, 0x80);

@@ -1,114 +1,135 @@
-# Builds the Linux and Windows release archives on GitHub's machines, from the repository alone, and the Mac one
-# (macos.yml, on GitHub's Mac).
-# No disc and no game data are involved: the game's data tables are built blank (port/data) and the finished
-# program fetches their values from the user's own disc at start. The same build runs locally with
-# port/release/build.sh.
-#
-#   every push to main        the archives as downloadable artifacts of the run (a check that everything builds)
-#   a tag  v*                 the same, and a draft release with the three archives attached (and their .sig, for the
-#                             game's automatic update, when the secret UPDATE_SIGNING_KEY is set)
-#   "Run workflow" button     the same as a push
-name: release
+name: BT4 release
 
 on:
   push:
-    branches: [main]
     tags: ["v*"]
-    paths-ignore: ["docs/**", "**.md", "LICENSE", "LICENSE-MIT"]
   workflow_dispatch:
 
 permissions:
-  contents: write   # to create the draft release on a tag
+  contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: bt4-release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
+    outputs:
+      title: ${{ steps.version.outputs.title }}
     steps:
       - uses: actions/checkout@v4
 
-      # The build container (port/release/Dockerfile): Ubuntu 22.04, clang/LLVM 22, SDL3 from source, mingw-w64.
-      # Its layers are cached between runs, so only the first run pays for building it.
+      - name: Check the release identity
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+          source = pathlib.Path('port/include/bt4_version.h').read_text()
+          def value(name):
+              return re.search(r'^#define ' + name + r' "([^"]+)"$', source, re.M)[1]
+          canonical = value('BT4_CANONICAL_VERSION')
+          release_title = value('BT4_RELEASE_TITLE')
+          bridge = value('BT4_LEGACY_BRIDGE_VERSION')
+          revision = int(re.search(r'^#define BT4_REVISION (\d+)$', source, re.M)[1])
+          patch_match = re.search(r'^#define BT4_REVISION_PATCH (\d+)$', source, re.M)
+          revision_patch = int(patch_match[1]) if patch_match else 0
+          upstream = value('BT4_UPSTREAM_VERSION')
+          suffix = str(revision) + ('.' + str(revision_patch) if revision_patch else '')
+          assert canonical == upstream + '-R' + suffix, 'Canonical revision is inconsistent'
+          assert value('BT4_DISPLAY_VERSION') == release_title, 'Display version and release title disagree'
+          tag = os.environ['RELEASE_TAG'].removeprefix('v')
+          assert tag == canonical or (revision == 2 and revision_patch == 0 and tag == bridge), 'Tag and BT4 revision disagree'
+          title = release_title
+          marker = pathlib.Path('port/release/BT4_VERSION.txt').read_text().splitlines()[0]
+          assert marker.endswith(title), 'Package marker and BT4 version disagree'
+          notes = pathlib.Path('CHANGELOG.md').read_text().split('\n# ', 1)[0]
+          for locale in ('en', 'es', 'pt'):
+              assert '<!-- bt4-update:' + locale + '\n' in notes, 'Missing localized updater notes: ' + locale
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('title=BT4decomp ' + title + '\n')
+          PY
+
       - uses: docker/setup-buildx-action@v3
       - uses: docker/build-push-action@v6
         with:
           context: port/release
-          tags: bt3-port-release:jammy
+          tags: bt4-port-release:jammy
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # BT3_BUILD_KEY: the release's build key (port/matchmaking/README.md), from the repository secret of that
-      # name, for a tag's build only: the archives of an ordinary push are not a release and carry no key. Where
-      # there is no such secret (a fork) it is empty, and the programs are built without a key as well.
-      # BT3_VERSION: the program's full number, from the tag (v0.1.38.10 -> 0.1.38.10), which the automatic update
-      # compares with the newest release's tag; an ordinary push's archives are "dev" and never offered updates.
-      - name: Build both archives
+      - name: Build the Windows package
         env:
           BT3_BUILD_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.BT3_BUILD_KEY || '' }}
           BT3_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: |
           mkdir -p port/build
           docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e BT3_BUILD_KEY -e BT3_VERSION -v "$PWD":/src -w /src \
-            bt3-port-release:jammy sh port/release/inside.sh
+            bt4-port-release:jammy sh port/release/inside.sh
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Tenkaichi3Decomp-linux-x64
-          path: port/build/Tenkaichi3Decomp-linux-x64.zip
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Tenkaichi3Decomp-windows-x64
-          path: port/build/Tenkaichi3Decomp-windows-x64.zip
+          name: DBZ-BT4-Tag-Team-Decomp-windows-x64
+          path: port/build/BT4decomp-windows-x64.zip
           if-no-files-found: error
 
-
-  # The Mac zip (Apple Silicon), built by macos.yml on GitHub's Mac, with the release's key and number on a tag
-  macos:
-    if: startsWith(github.ref, 'refs/tags/v')   # (a push's Mac check is macos.yml's own run)
-    uses: ./.github/workflows/macos.yml
+  native:
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/native-platforms.yml
+    with:
+      version: ${{ github.ref_name }}
+      platform: all
     secrets: inherit
 
-  # A tag: the three archives signed for the automatic update and attached to a draft release
-  publish:
+  prepare-release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, macos]
+    needs: [build, native]
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          path: port/build
-          pattern: Tenkaichi3Decomp-*
-          merge-multiple: true
-      - run: ls -l port/build
-
-      # The automatic update's signatures (port/release/README.md): each zip signed with the private key of the
-      # repository secret UPDATE_SIGNING_KEY, as <zip>.sig beside it. Without the secret the release is made all the
-      # same, unsigned: games then say an update exists but do not install it themselves. A key that is not the one in
-      # port/src/update_key.h stops the release (no game could check its signatures).
-      - name: Sign the archives for the automatic update
+          name: DBZ-BT4-Tag-Team-Decomp-windows-x64
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: BT4decomp-linux-x64
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: BT4decomp-macos-arm64
+          path: release-assets
+      - name: Sign and verify every automatic update package
         env:
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
         run: |
-          Z="port/build/Tenkaichi3Decomp-linux-x64.zip port/build/Tenkaichi3Decomp-windows-x64.zip port/build/Tenkaichi3Decomp-macos-arm64.zip"
           if [ -z "$UPDATE_SIGNING_KEY" ]; then
-            echo "::warning title=Unsigned release::The secret UPDATE_SIGNING_KEY is not set: the archives are NOT signed, and games will not install this release by themselves (they still say it exists). See port/release/README.md."
-          else
-            python3 port/tools/update_key.py sign $Z
-            for z in $Z; do python3 port/tools/update_key.py verify "$z"; done
+            echo "UPDATE_SIGNING_KEY is required before publishing an automatic update." >&2
+            exit 1
           fi
-
-      - name: Draft release
+          for platform in windows-x64 linux-x64 macos-arm64; do
+            archive="release-assets/BT4decomp-${platform}.zip"
+            test -s "$archive"
+            python3 port/tools/update_key.py sign "$archive"
+            python3 port/tools/update_key.py verify "$archive"
+          done
+      - name: Prepare the complete signed draft
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TITLE: ${{ needs.build.outputs.title }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" --draft --title "${GITHUB_REF_NAME}" --generate-notes \
-            port/build/Tenkaichi3Decomp-linux-x64.zip port/build/Tenkaichi3Decomp-windows-x64.zip \
-            port/build/Tenkaichi3Decomp-macos-arm64.zip $(ls port/build/Tenkaichi3Decomp-*.zip.sig 2>/dev/null)
+          python3 - <<'PY'
+          import os, pathlib
+          section = pathlib.Path('CHANGELOG.md').read_text().split('\n# ', 1)[0]
+          heading, body = section.split('\n', 1)
+          assert 'BT4decomp ' + heading.removeprefix('# ') == os.environ['RELEASE_TITLE'], 'Changelog and release title disagree'
+          pathlib.Path('release-assets/notes.md').write_text(body.strip() + '\n')
+          PY
+          python3 port/tools/release_draft.py --assets release-assets             --notes release-assets/notes.md --title "$RELEASE_TITLE"             --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"
+          echo "Signed packages are ready in a draft. Publish explicitly after gameplay validation." >> "$GITHUB_STEP_SUMMARY"

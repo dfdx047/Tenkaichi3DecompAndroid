@@ -1,4 +1,5 @@
 #include "common.h"
+#include "port_variant.h"
 #include "menu/menu_o.h"
 
 /*
@@ -64,7 +65,7 @@ s32 Ub_Main(void) {
         }
         switch (UO_PROG->mode) {
         case 13:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x840));
             r = UbMenu_Run(1);
             if (r) {
                 switch (r) {
@@ -89,8 +90,13 @@ s32 Ub_Main(void) {
             Adx_StopAll();
             break;
         case 14:
-            Bgm_Play(UB_BGM);
-            if (MisSel_Run(2)) {
+            Bgm_Play(PORT_V(UB_BGM, 0x84A));
+            r=MisSel_Run(2);
+            if (r>=2) {
+                /* BT4 scripted parallel mission, native DBZP 0x3BE7B4:
+                   no player/team selector and no zero-member setup. */
+                done=1;UO_PROG->mode=16;
+            } else if (r) {
                 UO_PROG->mode = 15;
             } else {
                 UO_PROG->mode = 13;
@@ -98,12 +104,22 @@ s32 Ub_Main(void) {
             Adx_StopAll();
             break;
         case 15:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x83F));
+#ifdef PORT
+            {extern char *getenv(const char *);
+            if(getenv("BT4_RENDER_TEST") && getenv("BT4_MISSION_TEST")){
+                s32 i;for(i=0;i<5;++i){UO_PROG->team[i].chara=i;UO_PROG->team[i].color=0;memset(UO_PROG->team[i].items,0,sizeof(UO_PROG->team[i].items));}
+                r=1;
+            }else
+#endif
             if (UO_PROG->teamSize >= 2) {
                 r = UbTeamSel_Run(4);
             } else {
                 r = SoloSel_Run(4);
             }
+#ifdef PORT
+            }
+#endif
             if (r) {
                 Ub_SetupTeam();
                 done = 1;
@@ -114,13 +130,13 @@ s32 Ub_Main(void) {
             Adx_StopAll();
             break;
         case 16:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x841));
             MisResult_Run(3);
             UO_PROG->mode = 14;
             Adx_StopAll();
             break;
         case 17:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x840));
             if (SurvSel_Run(2)) {
                 UO_PROG->mode = 18;
             } else {
@@ -129,7 +145,7 @@ s32 Ub_Main(void) {
             Adx_StopAll();
             break;
         case 18:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x83F));
             if (SoloSel_Run(4)) {
                 Ub_SetupSolo();
                 done = 1;
@@ -140,13 +156,13 @@ s32 Ub_Main(void) {
             Adx_StopAll();
             break;
         case 19:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x841));
             SurvResult_Run(3);
             UO_PROG->mode = 17;
             Adx_StopAll();
             break;
         case 20:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x842));
             if (SimTop_Run(5)) {
                 UO_PROG->mode = 21;
             } else {
@@ -155,7 +171,7 @@ s32 Ub_Main(void) {
             Adx_StopAll();
             break;
         case 21:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x83F));
             if (SoloSel_Run(4)) {
                 UO_PROG->mode = 22;
             } else {
@@ -182,7 +198,7 @@ s32 Ub_Main(void) {
             Adx_StopAll();
             break;
         case 24:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x84B));
             if (DiscFusion_Run(6)) {
                 if (UO_PROG->cursor == 0) {
                     UO_PROG->teamSize = 1;
@@ -197,7 +213,7 @@ s32 Ub_Main(void) {
             Adx_StopAll();
             break;
         case 25:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x83F));
             if (SoloSel_Run(4)) {
                 UO_PROG->mode = 26;
             } else {
@@ -206,7 +222,7 @@ s32 Ub_Main(void) {
             Adx_StopAll();
             break;
         case 26:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x84A));
             if (UbRank_Run(0)) {
                 UO_PROG->mode = 27;
                 done = 1;
@@ -216,13 +232,13 @@ s32 Ub_Main(void) {
             Adx_StopAll();
             break;
         case 27:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x841));
             UbResult_Run(3);
             UO_PROG->mode = 26;
             Adx_StopAll();
             break;
         case 28:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x84A));
             if (UbzSel_Run(0)) {
                 UO_PROG->mode = 29;
             } else {
@@ -231,7 +247,7 @@ s32 Ub_Main(void) {
             Adx_StopAll();
             break;
         case 29:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x83F));
             if (SoloSel_Run(4)) {
                 Ub_SetupSolo2();
                 done = 1;
@@ -242,7 +258,7 @@ s32 Ub_Main(void) {
             Adx_StopAll();
             break;
         case 30:
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x841));
             UbResult_Run(3);
             UO_PROG->mode = 28;
             Adx_StopAll();

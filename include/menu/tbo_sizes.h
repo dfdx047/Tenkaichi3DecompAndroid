@@ -24,7 +24,12 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {422, 256, 0}, /* btn_leftright */
     {256, 256, 0}, /* btn_circle */
     {289, 120, 0}, /* btn_start */
+    {1280, 720, 0}, /* tag_hud_preview, actual native framebuffer */
+    {640, 64, 0}, /* tag_hud_faces */
+    {160, 100, 50}, /* compact keyboard bar */
+    {160, 107, 54}, /* compact keyboard selection */
     {2420, 2728, 0}, /* radar */
+    {512, 512, 0}, /* discord */
 };
 
 #endif

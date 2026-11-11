@@ -190,7 +190,7 @@ void Bracket_Load(LBracket *b) {
     b->nameText = MPACK_AT(b->res, 21);
     b->formText = MPACK_AT(b->res, 22);
     b->chips = (u32 *)MPACK_AT(b->res, 23);
-    for (i = 0; i < LCHR_CELL_MAX; i++) {
+    for (i = 0; i < Menu_CharacterChipCount(b->chips); i++) {
         res = (MTexRes *)MPACK_AT(b->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
@@ -778,7 +778,7 @@ void Bracket_StartWin(LBracket *b) {
     Flash_GotoLabel(flash, name, 1);
 }
 
-/* One step of the background loader of the two fighters' large pictures (files 0x2F9 + character). */
+/* One step of the background loader of the two fighters' large pictures (files 0x71C + character). */
 void Bracket_UpdateImages(LBracket *b) {
     s32 chara[2];
     MTexRes *res;
@@ -792,8 +792,8 @@ void Bracket_UpdateImages(LBracket *b) {
         chara[0] = b->entrant[b->match_[b->match].ent[0]].chara;
         chara[1] = b->entrant[b->match_[b->match].ent[1]].chara;
         File_CancelRequests();
-        File_Request(chara[0] + 0x2F9, b->imageFile[0], 0x16800);
-        File_Request(chara[1] + 0x2F9, b->imageFile[1], 0x16800);
+        File_Request(chara[0] + 0x71C, b->imageFile[0], 0x16800);
+        File_Request(chara[1] + 0x71C, b->imageFile[1], 0x16800);
         b->loadState = LBRK_LOAD_READ;
         break;
     case LBRK_LOAD_READ:
@@ -825,8 +825,8 @@ void Bracket_LoadImages(LBracket *b) {
     memset(p, 0, 8);
     chara[0] = b->entrant[b->match_[b->match].ent[0]].chara;
     chara[1] = b->entrant[b->match_[b->match].ent[1]].chara;
-    File_LoadSync(chara[0] + 0x2F9, b->imageFile[0], 0x16800);
-    File_LoadSync(chara[1] + 0x2F9, b->imageFile[1], 0x16800);
+    File_LoadSync(chara[0] + 0x71C, b->imageFile[0], 0x16800);
+    File_LoadSync(chara[1] + 0x71C, b->imageFile[1], 0x16800);
     Sprite_Unpack(b->imageFile[0], b->imageRes[0], NULL);
     Sprite_Unpack(b->imageFile[1], b->imageRes[1], NULL);
     res = b->imageRes[0];

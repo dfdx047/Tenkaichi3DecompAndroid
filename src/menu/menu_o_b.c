@@ -1,4 +1,5 @@
 #include "common.h"
+#include "port_variant.h"
 #include "menu/menu_o.h"
 #include "sys/pad.h"
 #ifdef PORT
@@ -426,7 +427,7 @@ void DiscFusion_UpdateDisc(void) {
     case DISCFUSION_DLG_CLOSE:
         if (Dialog_IsClosed()) {
             Adx_StopAll();
-            Bgm_Play(UB_BGM);
+            Bgm_Play(PORT_V(UB_BGM, 0x81B));
             gDiscFusion->dlgStep = 0;
             if (gDiscFusion->chosen == 0) {
                 if (UO_PROG->discFlags & UB_DISC_0) {

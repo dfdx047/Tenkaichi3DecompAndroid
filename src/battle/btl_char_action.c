@@ -1,4 +1,6 @@
+extern int TagBattle_Active(void);
 #include "common.h"
+extern s32 TagBattle_IsActorLoading(s32 actor),TagBattle_Count(void);
 #include "battle/btl_char_action.h"
 
 /*
@@ -720,6 +722,11 @@ void BtlAct_CheckForced(BtlActChr *chr) {
     if (BtlChar_TestFlag(chr, 0x7C)) {
         BtlDecide_QueueAttack(chr, BtlAct_GetEvasionAttack(chr));
         BtlAct_Request(chr, BtlAct_GetQueued_(chr));
+        /* BT4 0x19BEDC: three exchanges promote the contact into the aerial clash. */
+        if (chr == BtlChar_Get(0) && chr->unkD88 >= 3) {
+            BtlChar_SetFlag(BtlChar_Get(0), 0x62);
+            BtlChar_SetFlag(BtlChar_Get(1), 0x62);
+        }
     }
     if (BtlChar_TestFlag(chr, 0x6D)) {
         BtlAct_Request(chr, 0xC9);
@@ -811,7 +818,7 @@ void BtlAct_UpdateGauges(BtlActChr *chr) {
     BtlActVitals *v;
     s32 cap;
 
-    if (BtlChars_IsTimeStopped()) {
+    if (TagBattle_IsActorLoading(chr->player)) {
         return;
     }
     if (!BtlChar_TestFlag(chr, 3)) {
@@ -856,7 +863,7 @@ void BtlAct_UpdateGauges(BtlActChr *chr) {
         chr->secTimer = 0;
         tick = 1;
     }
-    if (mflags & 0x10000) {
+    if ((mflags & 0x10000) || (TagBattle_Active() && BtlAct_GetCurrent(chr)==0xEA && BtlChar_TestFlag(chr,0xBE))) {
         if (BtlChar_TestFlag(chr, 0xBE)) {
             amount = BtlParam_GetKiRecoverRate(chr);
             BtlChar_SetFlag(chr, 0xE7);
@@ -866,6 +873,15 @@ void BtlAct_UpdateGauges(BtlActChr *chr) {
             BtlMember_AddKi(chr, amount);
             if (BtlMember_HasKi(chr, BtlParam_GetGaugeB(chr))) {
                 BtlChar_ClearFlag(chr, 0xBE);
+            } else if (Battle_GetMode() != 1) {
+                /* BT4 0x3BFA20: exhaustion can request the fourth form slot's reversion. */
+                extern s32 BtlParam_GetSlotId(void *chr, s32 slot);
+                extern s32 BtlParam_GetSlotA0(void *chr, s32 slot);
+                extern s32 BtlAct_QueueTransform(void *chr, s32 slot);
+                if (BtlParam_GetSlotId(chr, 3) != 0xFF && BtlParam_GetSlotA0(chr, 3) == 1) {
+                    BtlAct_QueueTransform(chr, 3);
+                    BtlAct_Request(chr, BtlAct_GetQueued_(chr));
+                }
             }
         } else if (!BtlChar_TestFlag(chr, 0x98)) {
             if (!BtlMember_HasKi(chr, BtlParam_GetKiRegenLimit(chr))) {
@@ -974,7 +990,7 @@ void BtlAct_UpdateTimers(BtlActChr *chr) {
     if (BtlChar_TestFlag(chr, 0x8B)) {
         Vec4_Add(&BtlChar_GetPos(chr)->pos, &BtlChar_GetPos(chr)->pos, &chr->unkF30);
     }
-    if (BtlChars_IsTimeStopped()) {
+    if (TagBattle_IsActorLoading(chr->player)) {
         return;
     }
     if (!BtlChar_TestFlag(chr, 0x82)) {
@@ -1012,7 +1028,7 @@ void BtlAct_UpdateTimers(BtlActChr *chr) {
     /* Stun: counts down only in a motion with flag 0x10000; mashing (input bit 20) takes 3 more per press. */
     if (chr->unkFE0 > 0) {
         BtlChar_SetFxBit(chr, 0x1A);
-        if (mflags & 0x10000) {
+        if ((mflags & 0x10000) || (TagBattle_Active() && BtlAct_GetCurrent(chr)==0xD3)) {
             chr->unkFE0--;
             BtlChar_SetSmallVibration(chr, 0.1f);
             BtlChar_SetFlag(chr, 0xE7);

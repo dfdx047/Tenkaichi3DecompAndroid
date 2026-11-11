@@ -25,8 +25,11 @@ def blanks(path):
         return 0
     header = struct.unpack_from(">H", h, 2)[0] + 4
     rate, total = struct.unpack_from(">II", h, 8)
-    if h[0x12] == 4 and header >= 0x38 and any(h[0x24:0x28]):
-        return -1
+    base = 0x14 if h[0x12] == 3 else 0x20 if h[0x12] == 4 else 0
+    if base and h[0x13] == 0 and 1 <= h[7] <= 2 and header >= base + 0x18 + 6:
+        flag, first, last = (struct.unpack_from('>I', h, base + off)[0] for off in (4, 8, 16))
+        if flag and first < last <= total:
+            return -1
     return 0 if rate == 0 else (total * 60000 + rate * 1001 - 1) // (rate * 1001) + 1
 
 

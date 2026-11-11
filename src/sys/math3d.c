@@ -305,6 +305,13 @@ void Quat_Unpack(Quat *out, u64 packed) {
     float w;
 
     largest = packed >> 60;
+#ifdef PORT
+    if (largest > 3) {
+        extern int printf(const char *, ...);
+        printf("bt4: invalid packed quaternion %08x%08x\n", (u32)(packed >> 32), (u32)packed);
+        __builtin_trap();
+    }
+#endif
     for (i = 0; i < 3; i++) {
         sum = (u32)(packed >> (i * 20)) & 0xFFFFF;
         v[i] = (sum * (1.0f / 1048575.0f) - 0.5f) * 1.41421356f;

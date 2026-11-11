@@ -539,6 +539,10 @@ s32 BtlCtrl_GetChangePrompt(s32 side, s32 *button, s32 *kind, s32 *padStatus) {
     if (chr->injectOn) {
         return 0;
     }
+    if (BtlChar_TestFlag(chr, 0x13C)) {
+        btn = BtlCharApi_GetButtonIcon(chr, 0x1E);
+        k = 1;
+    }
     if (BtlChar_TestFlag(chr, 0xE7)) {
         btn = BtlCharApi_GetButtonIcon(chr, 0);
         k = 1;
@@ -1357,7 +1361,7 @@ s32 BtlParam_GetSlotId(BtlTechChr *chr, s32 slot) {
 
 /* Parameter +0x9C + slot, times 100000: blast gauge a transformation costs. */
 s32 BtlParam_GetSlotCost(BtlTechChr *chr, s32 slot) {
-    return BtlChar_GetObj(chr)->param->transCost[slot] * 100000;
+    return BtlChar_GetObj(chr)->param->transCost[slot] * 20000;
 }
 
 /* Parameter +0xA0 + slot. */
@@ -1372,7 +1376,7 @@ s32 BtlParam_GetSlotA4(BtlTechChr *chr, s32 slot) {
 
 /* Parameter +0xA8 + slot. */
 s32 BtlParam_GetSlotA8(BtlTechChr *chr, s32 slot) {
-    return BtlChar_GetObj(chr)->param->transA8[slot];
+    return *(s16 *)((u8 *)BtlChar_GetObj(chr)->param + 0xCC + slot * 2);
 }
 
 /* Parameter +0xAD. */

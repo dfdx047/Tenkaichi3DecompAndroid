@@ -3,19 +3,19 @@
  * in-game download with its progress, miniz to unpack, the rename trick, the restart), with the player's choice of
  * when, and the checks, on top.
  *
- *   1. A few seconds after start (gs/ui.cpp, unless "Check for updates" is off) one GET of the repository's newest
+ *   1. A few seconds after start (gs/ui.cpp) one GET of the repository's newest
  *      published release (api.github.com .../releases/latest; drafts and pre-releases are not it). Its tag is compared
- *      with this build's full number (PORT_VERSION, generated from the release workflow's tag: "0.1.38.9"; a local
+ *      with this build's full number (PORT_VERSION, generated from the release workflow's tag: "0.1.39"; a local
  *      build is "dev" and is never offered anything). Nothing is sent but the request itself.
- *   2. Newer: the main menu and the online screens say so; F1 has Update now, Later and What's new (the release's
- *      notes). Update now downloads this system's zip into update/ beside the program, in a thread, while the game
- *      goes on; no new online session starts meanwhile (Update_BlocksOnline).
+ *   2. Newer: the launcher downloads this system's zip and signature into update/ beside the program, in a thread,
+ *      while the game goes on; no new online session starts while the verified update is ready (Update_BlocksOnline).
  *   3. The zip is checked: its size and SHA-256 against what GitHub lists for it, and its Ed25519 signature (the
  *      .sig beside it in the release, made by the release workflow with the private key) against the public key
  *      compiled in (port/src/update_key.h; Monocypher, gs/update_crypto.c). A release without a .sig, or a build
  *      without a key, is only announced (with its page); a wrong signature: nothing is installed, and the game says
  *      so and shows the release page.
- *   4. Restart now (the player's choice, never during an online session) installs it, in two steps, with the
+ *   4. At the next safe main-menu screen (never during an online session or while settings are open), the launcher
+ *      installs it in two steps, with the
  *      program's own folder as the base of every path (not the working folder: a shortcut can start the game from
  *      anywhere):
  *        a. every file of the zip is written beside its place as <name>.new (folders made as needed). The player's
@@ -26,8 +26,8 @@
  *           libraries can be renamed (Windows does not let them be written or deleted, but renamed, yes): that is
  *           the trick that lets the game replace itself. A failure here: every swap done so far is undone (the
  *           .old back to its name), and the old version goes on as it was.
- *      Then update/result.txt says the new number, the new program is started and this one closes. The new one says
- *      "Updated to 0.1.38.10" and removes the .old files (Update_Cleanup, by the list in update/cleanup.txt).
+ *      Then update/result.txt says the new number, the new program is started and this one closes. The new one reports
+ *      its installed version and removes the .old files (Update_Cleanup, by the list in update/cleanup.txt).
  *      Nothing is ever deleted but those .old files and the update's own downloads.
  *
  * HTTPS as the rest of the port has it (gs/net_match.c): WinHTTP on Windows, the system's curl library on Linux, and
@@ -48,8 +48,11 @@
 #include <unistd.h>
 #endif
 #include "net_update.h"
+#include "update_notes.h"
 #include "update_sign.h"
-#include "port_version.h" /* (generated: PORT_VERSION) */
+#include "port_version.h" /* internal bridge/canonical update identifier */
+#include "../../include/bt4_version.h"
+#include "../../include/bt4_texture_update.h"
 #include "../port_release.h"
 #include "../update_key.h"
 
@@ -63,15 +66,16 @@ int UpdCrypto_Check(const uint8_t sig[64], const uint8_t pub[32], const uint8_t 
 #include "../../third_party/miniz/miniz.h"
 #include "../../third_party/miniz/miniz.c"
 
-#define GAME "Tenkaichi3Decomp"
+#define GAME "BT4decomp"
+#define UPDATE_ASSET_BASE "BT4decomp"
 #ifdef _WIN32
-#define ASSET GAME "-windows-x64.zip"
+#define ASSET UPDATE_ASSET_BASE "-windows-x64.zip"
 #define GAME_EXE GAME ".exe"
-#elif defined(__APPLE__)
-#define ASSET GAME "-macos-arm64.zip" /* (the release's Mac zip, Apple Silicon) */
+#elif defined(__APPLE__) && defined(__aarch64__)
+#define ASSET UPDATE_ASSET_BASE "-macos-arm64.zip"
 #define GAME_EXE GAME
 #else
-#define ASSET GAME "-linux-x64.zip"
+#define ASSET UPDATE_ASSET_BASE "-linux-x64.zip"
 #define GAME_EXE GAME
 #endif
 #define JSON_MAX (4 << 20) /* the release's description, notes and list of files */
@@ -97,7 +101,7 @@ static struct {
 } sU;
 
 const char *Update_Version(void) {
-    return PORT_VERSION;
+    return BT4_DISPLAY_VERSION;
 }
 
 static void lock(void) {
@@ -191,7 +195,7 @@ static int http_native(const char *url, int json, Sink *s) {
     if (WinHttpCrackUrl(wurl, 0, 0, &uc)) {
         _snwprintf(full, 4096, L"%ls%ls", path, extra);
         full[4095] = 0;
-        ses = WinHttpOpen(L"Tenkaichi3Decomp", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+        ses = WinHttpOpen(L"BT4decomp", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     }
     if (ses != NULL) {
         WinHttpSetTimeouts(ses, 15000, 15000, 30000, 60000);
@@ -275,7 +279,7 @@ static int http_native(const char *url, int json, Sink *s) {
         return 0;
     }
     setopt(h, 10002 /* CURLOPT_URL */, url);
-    setopt(h, 10018 /* CURLOPT_USERAGENT */, "Tenkaichi3Decomp");
+    setopt(h, 10018 /* CURLOPT_USERAGENT */, "BT4decomp");
     setopt(h, 52 /* CURLOPT_FOLLOWLOCATION */, 1L);
     setopt(h, 45 /* CURLOPT_FAILONERROR */, 1L);
     setopt(h, 99 /* CURLOPT_NOSIGNAL */, 1L);
@@ -319,7 +323,7 @@ static int http_program(const char *url, int json, const char *path, Sink *s) {
     args[n++] = "-Y";
     args[n++] = "100";
     args[n++] = "-A";
-    args[n++] = "Tenkaichi3Decomp";
+    args[n++] = "BT4decomp";
     if (json) {
         args[n++] = "-H";
         args[n++] = "Accept: application/vnd.github+json";
@@ -387,6 +391,16 @@ static int http_get(const char *url, int json, const char *path, char **mem, siz
     }
     SDL_free(s.buf);
     return ok;
+}
+
+/* The signaling worker verifies the signed envelope before using it. This
+   fixed URL cannot redirect the client to an arbitrary matchmaking endpoint. */
+int Update_FetchOnlineRoute(char *out,size_t capacity) {
+    char *body=NULL;size_t bytes=0;int ok;
+    if(!out||capacity<2)return 0;
+    ok=http_get("https://raw.githubusercontent.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/online-routing/policy.json",0,NULL,&body,&bytes,8192);
+    if(ok && bytes<capacity){memcpy(out,body,bytes);out[bytes]=0;}else ok=0;
+    SDL_free(body);return ok;
 }
 
 /* ---- just enough JSON for GitHub's answer ---- */
@@ -650,9 +664,8 @@ static int SDLCALL check_thread(void *arg) {
     (void)arg;
     SDL_snprintf(url, sizeof(url), "%s/repos/" PORT_UPDATE_REPO "/releases/latest", api_base());
     if (!http_get(url, 1, NULL, &json, &len, JSON_MAX) || !js_string(js_get(json, "tag_name"), tag, sizeof(tag))) {
-        fprintf(stderr, "bt3: update check: no answer\n");
         SDL_free(json);
-        SDL_SetAtomicInt(&sU.state, UPD_NONE);
+        fail("Could not check for updates. Check your connection and try again.");
         return 0;
     }
     cmp = UpdateVer_Compare(PORT_VERSION, tag);
@@ -717,25 +730,37 @@ static void folders(void) {
     }
 }
 
-void Update_Check(void) {
+static void check_start(int manual) {
     SDL_Thread *t;
-    if (SDL_GetAtomicInt(&sU.state) != UPD_IDLE) {
+    int st = SDL_GetAtomicInt(&sU.state);
+    if ((st != UPD_IDLE && !(manual && (st == UPD_NONE || st == UPD_FAILED))) ||
+        SDL_GetAtomicInt(&sU.busy) || !SDL_CompareAndSwapAtomicInt(&sU.state, st, UPD_CHECKING)) {
         return;
     }
     folders();
+    lock();
+    sU.latest[0] = sU.page[0] = sU.why[0] = sU.cannot[0] = '\0';
+    sU.canInstall = 0;
+    SDL_zero(sU.zip);
+    SDL_zero(sU.sig);
+    SDL_free(sU.notes);
+    sU.notes = NULL;
+    unlock();
     if (UpdateVer_Compare(PORT_VERSION, PORT_VERSION) == -2) { /* a "dev" build: nothing to compare with */
         fprintf(stderr, "bt3: update check: this is a development build (%s): no updates are offered\n", PORT_VERSION);
         SDL_SetAtomicInt(&sU.state, UPD_NONE);
         return;
     }
-    SDL_SetAtomicInt(&sU.state, UPD_CHECKING);
     t = SDL_CreateThread(check_thread, "bt3-update", NULL);
     if (t == NULL) {
-        SDL_SetAtomicInt(&sU.state, UPD_NONE);
+        fail("Could not check for updates. Check your connection and try again.");
     } else {
         SDL_DetachThread(t);
     }
 }
+
+void Update_Check(void) { check_start(0); }
+void Update_Recheck(void) { check_start(1); }
 
 /* ---- the download and its checks ---- */
 static int SDLCALL download_thread(void *arg) {
@@ -826,13 +851,20 @@ void Update_Download(void) {
 
 void Update_Status(UpdateStatus *out) {
     memset(out, 0, sizeof(*out));
-    out->current = PORT_VERSION;
+    out->current = BT4_DISPLAY_VERSION;
+    /* Hidden UI-only fixture. The real state stays idle, so this cannot swap
+       files or relaunch even if the preview button is activated. */
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_UPDATE_NOTICE_TEST")){
+        out->state=UPD_READY;out->canInstall=1;
+        SDL_strlcpy(out->latest,BT4_DISPLAY_VERSION,sizeof(out->latest));
+        return;
+    }
     out->state = SDL_GetAtomicInt(&sU.state);
     if (out->state < UPD_AVAILABLE) {
         return;
     }
     lock();
-    SDL_strlcpy(out->latest, sU.latest, sizeof(out->latest));
+    UpdateVer_Display(sU.latest,out->latest,sizeof(out->latest));
     SDL_strlcpy(out->page, sU.page, sizeof(out->page));
     SDL_strlcpy(out->why, sU.why, sizeof(out->why));
     SDL_strlcpy(out->cannot, sU.cannot, sizeof(out->cannot));
@@ -856,14 +888,34 @@ const char *Update_Notes(void) {
     return sU.notes != NULL ? sU.notes : "";
 }
 
+void Update_NotesFor(const char *locale,char *out,size_t size) {
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_UPDATE_NOTICE_TEST")){
+        size_t n;
+        const char *file=getenv("BT4_UPDATE_NOTES_FILE");
+        char *body=file?(char*)SDL_LoadFile(file,&n):NULL;
+        UpdNotes_Select(body,locale,out,size);SDL_free(body);return;
+    }
+    lock();
+    UpdNotes_Select(sU.notes,locale,out,size);
+    unlock();
+}
+
+static SDL_AtomicInt sOnlineRequired;
+int Update_OnlineRequired(void){return SDL_GetAtomicInt(&sOnlineRequired)!=0;}
+void Update_SetOnlineRequired(int required){
+    int previous=SDL_SetAtomicInt(&sOnlineRequired,required!=0);
+    if(required && !previous)Update_Recheck();
+}
+
 int Update_BlocksOnline(void) {
     int st = SDL_GetAtomicInt(&sU.state);
-    return st == UPD_DOWNLOADING || st == UPD_VERIFYING || st == UPD_READY || st == UPD_INSTALLING || st == UPD_INSTALLED;
+    return Update_OnlineRequired() || st == UPD_DOWNLOADING || st == UPD_VERIFYING || st == UPD_READY || st == UPD_INSTALLING || st == UPD_INSTALLED;
 }
 
 const char *Update_OnlineNote(void) {
-    return SDL_GetAtomicInt(&sU.state) >= UPD_READY ? "An update is ready: online play is off until it is installed (F1 > Restart now)."
-                                                     : "An update is being downloaded: online play is off until it is installed.";
+    if(Update_OnlineRequired())return "A game update is required for online play. Return to a menu to download it and restart.";
+    return SDL_GetAtomicInt(&sU.state) >= UPD_READY ? "An update is ready: online play resumes after it installs at the main menu."
+                                                     : "An update is downloading: new online sessions are paused until it is verified.";
 }
 
 /* ---- the install: the rename trick ---- */
@@ -1260,6 +1312,30 @@ void Update_Install(void) {
 
 /* The new version, started from the same place (its own folder's program; the working folder stays the one this
    game was started in). */
+int Update_StartTextureMaintenance(int locale) {
+    const char *root=SDL_GetBasePath();
+    char exe[4096], language[4]; SDL_PathInfo info;
+    if(!root||SDL_getenv("BT4_TEXTURE_UPDATE_SKIP")||SDL_getenv("BT4_RENDER_TEST")||
+       SDL_getenv("BT3_REPLAY")||SDL_getenv("BT3_DEMO")||!Bt4Texture_NeedsUpdate(root))return 0;
+#ifdef _WIN32
+    SDL_snprintf(exe,sizeof(exe),"%sBT4decomp-setup.exe",root);
+#else
+    SDL_snprintf(exe,sizeof(exe),"%sBT4decomp-setup",root);
+#endif
+    if(!SDL_GetPathInfo(exe,&info)||info.type!=SDL_PATHTYPE_FILE)return 0;
+    SDL_snprintf(language,sizeof(language),"%d",locale>=0&&locale<=2?locale:0);
+    const char *args[]={exe,"--update-textures","--ui-language",language,NULL};
+    SDL_PropertiesID props=SDL_CreateProperties();
+    SDL_SetPointerProperty(props,SDL_PROP_PROCESS_CREATE_ARGS_POINTER,(void *)args);
+    SDL_SetStringProperty(props,SDL_PROP_PROCESS_CREATE_WORKING_DIRECTORY_STRING,root);
+    SDL_SetNumberProperty(props,SDL_PROP_PROCESS_CREATE_STDIN_NUMBER,SDL_PROCESS_STDIO_NULL);
+    SDL_SetBooleanProperty(props,SDL_PROP_PROCESS_CREATE_BACKGROUND_BOOLEAN,true);
+    SDL_Process *child=SDL_CreateProcessWithProperties(props);
+    SDL_DestroyProperties(props);
+    if(!child){fprintf(stderr,"bt3: texture maintenance could not start: %s\n",SDL_GetError());return 0;}
+    SDL_DestroyProcess(child);return 1;
+}
+
 int Update_Relaunch(void) {
     char exe[1300];
     const char *args[2];
@@ -1356,6 +1432,7 @@ int Update_LastResult(const char **version) {
                 result = 1;
                 SDL_strlcpy(ver, data + 3, sizeof(ver));
                 ver[strcspn(ver, "\r\n ")] = '\0';
+                { char label[32];UpdateVer_Display(ver,label,sizeof(label));SDL_strlcpy(ver,label,sizeof(ver)); }
                 fprintf(stderr, "bt3: update: updated to %s (this is %s)\n", ver, PORT_VERSION);
             }
             SDL_free(data);

@@ -180,7 +180,7 @@ and then goes through the same stick merge, command building and replay hook.
   callers look like a viewer screen, not the battle (inferred).
 - `func_001D8590`: pad 0 up/down. Not examined.
 
-## Additions from the fighter-core batch (verified)
+## Fighter input reference (verified)
 
 - `BtlInput_TestAction(chr, id, want)` and the stick readers belong to the same original source
   file as `btl_input.c`. It evaluates 114 numbered input conditions; the table is in

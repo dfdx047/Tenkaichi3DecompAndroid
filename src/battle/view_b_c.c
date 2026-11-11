@@ -8,6 +8,9 @@
 #include "sys/rand.h"
 #include "sys/save.h"
 #include "sys/snd.h"
+#ifdef PORT
+#include <stdlib.h>
+#endif
 
 /*
  * MenuUtil, 0x2614B0..0x261ED8: small helpers of the menus.
@@ -208,6 +211,13 @@ void Demo_SetupBattle(void) {
         break;
     }
     Battle_ClearWork();
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TEST_STAGE")){
+        s32 testStage=atoi(getenv("BT4_TEST_STAGE"));
+        extern s32 gPortVariant;
+        if(testStage>=0&&testStage<(gPortVariant?99:35))stage=testStage;
+    }
+#endif
     BattleSetup_SetRule(0, 7, bgm, 5, 4, stage, 0);
     BattleSetup_SetSide(0, 2, 0, 1, 1, 1, 0, NULL);
     BattleSetup_SetSide(1, 2, 1, 1, 1, 1, 0, NULL);

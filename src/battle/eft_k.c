@@ -134,6 +134,7 @@ extern void EftHit_SetShapeSpheres(EftKHitRec *rec, void *a, void *b);
 extern void EftHit_SetShapeBoxes(EftKHitRec *rec, void *a, void *b);
 extern void EftCam_Start(EftKCamArg *arg);
 extern void EftCam_Stop(void);
+extern void EftCam_StopFor(s32);
 extern f32 EftMath_WrapAngle(f32 angle);
 extern void EftAim_GetDir(Vec4 *dir, Vec4 *from, s32 objId);
 extern void EftAim_GetDirKeep(EftKSrc *src, Vec4 *dir, Vec4 *from, s32 objId);
@@ -586,7 +587,7 @@ void EftShotTech_Update(EftKTask *task) {
     if (w->flags & 1) {
         if (w->flags & 0x20) {
             if (!(w->flags & 0x40)) {
-                EftCam_Stop();
+                EftCam_StopFor(src->objId);
                 w->flags |= 0x40;
             }
         }
@@ -835,10 +836,12 @@ void EftTechEvtTask_UpdateNormal(EftKTask *task) {
 
     w->frame++;
     if (ev & 0x200) {
+        if(getenv("BT4_VFX_TRACE"))printf("tag shot: START actor=%d frame=%d\n",src->objId,w->frame);
         e->events |= EFT_TECH_EVT_START;
         w->flags |= 2;
     }
     if (ev & 0x400) {
+        if(getenv("BT4_VFX_TRACE"))printf("tag shot: FIRE actor=%d frame=%d\n",src->objId,w->frame);
         e->events |= EFT_TECH_EVT_FIRE;
         if (src->def->kind != 0) {
             w->flags |= 4;
@@ -847,6 +850,7 @@ void EftTechEvtTask_UpdateNormal(EftKTask *task) {
         }
     }
     if (ev & 0x800) {
+        if(getenv("BT4_VFX_TRACE"))printf("tag shot: END actor=%d frame=%d\n",src->objId,w->frame);
         e->events |= EFT_TECH_EVT_END;
         BtlTask_SetDead(task);
         return;
@@ -1989,6 +1993,7 @@ typedef struct EftSparkTbl {
 
 #define EftCam_Start ((void (*)(EftRushShotMsg *msg))EftCam_Start)
 extern void EftCam_Stop(void);
+extern void EftCam_StopFor(s32);
 extern f32 EftMath_WrapAngle(f32 angle);
 #define EftAim_GetDir ((void (*)(void *dst, void *src, s32 objId))EftAim_GetDir)
 #define EftAim_GetDirKeep ((void (*)(EftTechArg *arg, Vec4 *dir, Vec4 *pos, s32 objId))EftAim_GetDirKeep)
@@ -2017,8 +2022,7 @@ extern void EftTechEvt_RequestStop(s32 objId);
 #define EftRushShot_CreateModels ((void (*)(EftTask *task))EftRushShot_CreateModels)
 #define EftRushShot_UpdateModels ((void (*)(EftTask *task))EftRushShot_UpdateModels)
 extern void EftFlash_Start(EftFlashArg *arg);
-extern s32 EftStreak_Start(s32 objId, s32 kind, s32 arg2, f32 angle);
-#define EftStreak_Stop ((void (*)(s32 handle))EftStreak_Stop)
+extern void *EftStreak_Start(s32 objId, s32 kind, s32 arg2, f32 angle);
 extern void EftDelaySe_Start(s32 objId, EftSparkTbl *tbl, s32 count);
 extern void EftObj_Destroy(s32 handle);
 #define BtlTask_SetDead ((void (*)(EftTask *task))BtlTask_SetDead)
@@ -2106,7 +2110,7 @@ void EftRushShot_UpdateStageFx(EftTask *task) {
     EftTechArg *arg = w->arg;
     s32 opp = BtlCharApi_GetOpponentObjId(arg->objId);
 
-    if (EftShot_TestBits(opp, 0x80)) {
+    if (EftShot_TestBits(opp, 0x80) && w->stage >= 0 && w->stage < 8) {
         s32 i = w->stage;
         f32 angle = arg->def->unk60[i] * 3.14159265f / 180.0f;
         s32 kind = arg->def->unk58[i];
@@ -2124,6 +2128,9 @@ void EftRushShot_UpdateStageFx(EftTask *task) {
 
         if (i < 0) {
             i = 0;
+        }
+        if (i >= 8) {
+            i = 7;
         }
         if (w->flags & EFT_RUSHSHOT_STAGE_FX) {
             EftStreak_Stop(w->stageFx[i]);
@@ -2405,7 +2412,7 @@ void EftRushShot_Update(EftTask *task) {
         }
         if (w->flags & EFT_RUSHSHOT_SENT) {
             if (!(w->flags & EFT_RUSHSHOT_SENT2)) {
-                EftCam_Stop();
+                EftCam_StopFor(arg->objId);
                 w->flags |= EFT_RUSHSHOT_SENT2;
             }
         }

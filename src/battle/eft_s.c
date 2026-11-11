@@ -1,4 +1,5 @@
 #include "common.h"
+extern s32 TagBattle_Active(void);
 #include "battle/eft_s.h"
 #include "sys/gfx_ot.h"
 
@@ -2286,7 +2287,7 @@ void EftRay_DrawRays(EftRayWork *w) {
     s32 j;
 
     if (w->objId >= 0) {
-        if (!EftCam_IsActive()) {
+        if (TagBattle_Active() || !EftCam_IsActive()) {
             if (!BtlScene_IsCharInView(w->objId)) {
                 return;
             }

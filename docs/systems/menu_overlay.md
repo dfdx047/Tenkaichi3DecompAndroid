@@ -2,13 +2,13 @@
 
 Loaded at 0x334C00; code 0x334C00..0x3B0E04 (737 functions), data from 0x3B0E80. Built with
 -G0 (verified: no gp-relative access anywhere). Data is laid out per object as `.data` then
-`.rodata`. Source goes in src/menu/. Brief and chunk table: docs/briefs_menu_overlay.md.
+`.rodata`. Source goes in src/menu/. The module sections below describe the address ranges.
 
-## Link state (eleventh step, 2026-10-05): the whole overlay is linked from C
+## Overlay layout
 
 build/DBZP.BIN is byte-identical from 69 C files (the 93 chunk files after 24 merges of head / tail halves);
 no assembly code chunk is left, only the zero padding between `.text` and the data (0x3B0E04..0x3B0E80). 728 of
-the 737 functions are C; 9 are INCLUDE_ASM inside linked files (docs/open_questions.md). The file names in the
+the 737 functions are C; 9 are INCLUDE_ASM inside linked files. The file names in the
 chunk sections below are the ORIGINAL chunk files; where a section says "append to" / "merge with", that is done
 and the tail file is gone:
 
@@ -121,7 +121,7 @@ item; +0x34 sub menu; +0x38 last sub-menu item.
 ## Story mode ("Hist"), modes 6..10 and 3 (chunk 2, 0x339610..0x33E108; src/menu/menu_b*.c; all 22 functions match)
 
 Names are guesses from behaviour. Files: menu_b.c = ModeMenu tail (must be appended to
-menu_a_d.c: one source file, shared string; merged test in build/scratch_menu_b/), menu_b_b.c
+menu_a_d.c: one source file, shared string), menu_b_b.c
 = `ModeBg` (scrolling backdrop), menu_b_c.c = `HistOutro` + `Hist_Main`, menu_b_d.c = head of
 `HistSel` (continues in chunk 3).
 
@@ -374,7 +374,7 @@ Verified by matching C:
 ## Dragon World Tour: handler, entrant select, tournament menu (chunk 10, 0x35F650..0x364358; src/menu/menu_j.c, menu_j_b.c; all 14 functions match)
 
 menu_j.c is the second half of the `EntrySel` object (0x35E0F8..0x3623A8; merge behind
-menu_i_d.c, recipe in the agent's notes at the top of the file); menu_j_b.c is the head of
+menu_i_d.c, implementation notes at the top of the source file); menu_j_b.c is the head of
 the `TourMenu` object (continues in menu_k.c).
 
 Verified by matching C:

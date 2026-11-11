@@ -18,6 +18,8 @@ int MenuText_MayHaveBattleTexture(int width, int height, int indexed);
 int MenuText_RasterScale(int internalScale);
 /* For the renderer's texture cache: changes with font settings, raster scale, or a newly made label catalog.
    The catalog change refreshes Battle texture classification even when all fonts are Original. */
+int MenuText_IsSharedTexture(int tbp, int cbp);
+int MenuText_WantsTexture(int width, int height, int indexed, int tbp, int cbp);
 uint32_t MenuText_TexKey(int width, int height, int indexed, int tbp, int cbp, int scale);
 /* 0: Original game sprites (default); other choices come from the font list (fonts.tsv next to the fonts).
    A font is read and checked when it is chosen; one that cannot be used leaves the choice on Original. */

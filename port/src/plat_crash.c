@@ -11,6 +11,7 @@
 #include <wchar.h>
 #include <stdint.h>
 #include <stdio.h>
+#include "bt4_build_identity.h"
 extern const char *Port_DataSummary(void); /* plat_verify.c */
 
 extern const char *volatile gPortStage; /* plat_mem.c: how far the start got */
@@ -58,6 +59,27 @@ static void crash_where(void *addr) {
     }
 }
 
+/* A handler backtrace loses the caller that faulted. Read the saved fault
+ * stack separately, without dereferencing game pointers or allocating memory.
+ * These are candidates, not an unwound call chain. */
+static void crash_fault_stack(EXCEPTION_POINTERS *e){
+#ifdef __x86_64__
+    uintptr_t base=(uintptr_t)e->ContextRecord->Rsp;
+    unsigned i;
+    crash_put("\r\nfault-stack executable return candidates (not an unwound backtrace):\r\n");
+    for(i=0;i<256;++i){
+        uintptr_t value=0;SIZE_T got=0;MEMORY_BASIC_INFORMATION info;
+        uintptr_t slot=base+i*sizeof(value);
+        if(!ReadProcessMemory(GetCurrentProcess(),(LPCVOID)slot,&value,sizeof(value),&got)||got!=sizeof(value))break;
+        if(!VirtualQuery((LPCVOID)value,&info,sizeof(info))||info.State!=MEM_COMMIT||
+           !(info.Protect&(PAGE_EXECUTE|PAGE_EXECUTE_READ|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY))||
+           (info.Protect&PAGE_GUARD))continue;
+        crash_put("  stack ");crash_hex(slot);crash_put(" -> ");crash_hex(value);
+        crash_where((void*)value);crash_put("\r\n");
+    }
+#endif
+}
+
 static LONG WINAPI on_crash(EXCEPTION_POINTERS *e) {
     static LONG once;
     DWORD code = e->ExceptionRecord->ExceptionCode;
@@ -79,6 +101,7 @@ static LONG WINAPI on_crash(EXCEPTION_POINTERS *e) {
     crash_put(" at ");
     crash_hex((unsigned long long)(uintptr_t)e->ExceptionRecord->ExceptionAddress);
     crash_where(e->ExceptionRecord->ExceptionAddress);
+    crash_put("\r\nbuild: " BT4_BUILD_IDENTITY "\r\nthread: ");crash_hex(GetCurrentThreadId());
     if (code == EXCEPTION_ACCESS_VIOLATION && e->ExceptionRecord->NumberParameters >= 2) {
         crash_put(e->ExceptionRecord->ExceptionInformation[0] == 1 ? "\r\nwriting address " : e->ExceptionRecord->ExceptionInformation[0] == 8 ? "\r\nexecuting address " : "\r\nreading address ");
         crash_hex(e->ExceptionRecord->ExceptionInformation[1]);
@@ -105,7 +128,8 @@ static LONG WINAPI on_crash(EXCEPTION_POINTERS *e) {
         crash_put("\r\n");
         crash_put(Port_DataSummary());
     }
-    crash_put("\r\nbacktrace (innermost first; addresses in Tenkaichi3Decomp.exe are looked up in the build's map file):\r\n");
+    crash_fault_stack(e);
+    crash_put("\r\nexception-handler backtrace (not the original fault stack):\r\n");
     n = RtlCaptureStackBackTrace(0, 32, frames, NULL);
     for (i = 0; i < n; i++) {
         crash_hex((unsigned long long)(uintptr_t)frames[i]);

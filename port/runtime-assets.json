@@ -1,0 +1,112 @@
+[
+  {
+    "source": "port/tbo/ui/tag_hud_preview.png",
+    "target": "tbo/ui/tag_hud_preview.png",
+    "sha256": "05ec11c96fc90aa48a9fd77c95e622c9e077c5c962b8a4ee6aacf075d3c8ab0c"
+  },
+  {
+    "source": "port/tbo/ui/tag_hud_faces.png",
+    "target": "tbo/ui/tag_hud_faces.png",
+    "sha256": "6a357563a9e9cb0a6d0e8f8e1cdc90163b6c99b136c3fd291b40810d11e08ac7"
+  },
+  {
+    "source": "port/voice-runtime/libdatachannel.dll",
+    "target": "libdatachannel.dll",
+    "sha256": "4a90d22d9d232da2906857f3b58044165215a1bfb481f9f4cf4be4f33a5c9909"
+  },
+  {
+    "source": "port/voice-runtime/libopus-0.dll",
+    "target": "libopus-0.dll",
+    "sha256": "e747edad6bf02cf5cdcce417b95be3b7ba108f93df1b024778be5d73fa6dae39"
+  },
+  {
+    "source": "port/voice-runtime/libwinpthread-1.dll",
+    "target": "libwinpthread-1.dll",
+    "sha256": "a5df05bf091bc2ba0a89f83a60d2049e9d434bb9631fec82faf20ff64a53456a"
+  },
+  {
+    "source": "port/voice-runtime/licenses/voice/compiler-libwinpthread-COPYING.txt",
+    "target": "licenses/voice/compiler-libwinpthread-COPYING.txt",
+    "sha256": "63263614cdd29f2f93cba85e992f041b31f9fc7b4033692f31269489a8a1b177"
+  },
+  {
+    "source": "port/voice-runtime/licenses/voice/compiler-winpthreads-COPYING.txt",
+    "target": "licenses/voice/compiler-winpthreads-COPYING.txt",
+    "sha256": "63263614cdd29f2f93cba85e992f041b31f9fc7b4033692f31269489a8a1b177"
+  },
+  {
+    "source": "port/voice-runtime/licenses/voice/libdatachannel-MPL-2.0.txt",
+    "target": "licenses/voice/libdatachannel-MPL-2.0.txt",
+    "sha256": "cde215e5b42363eb28ca2462c4558ff4807b38f383c537624c31e44657ac58f4"
+  },
+  {
+    "source": "port/voice-runtime/licenses/voice/libjuice-MPL-2.0.txt",
+    "target": "licenses/voice/libjuice-MPL-2.0.txt",
+    "sha256": "cde215e5b42363eb28ca2462c4558ff4807b38f383c537624c31e44657ac58f4"
+  },
+  {
+    "source": "port/voice-runtime/licenses/voice/libsrtp-BSD.txt",
+    "target": "licenses/voice/libsrtp-BSD.txt",
+    "sha256": "56151b4acf86106f0756d130187fb9c855d07b0378933cb245ded359dc39f682"
+  },
+  {
+    "source": "port/voice-runtime/licenses/voice/nlohmann-json-MIT.txt",
+    "target": "licenses/voice/nlohmann-json-MIT.txt",
+    "sha256": "b9715282b2f1db1359a919bb3a542dd4362fd9e38ae72d421367eb11abe62eec"
+  },
+  {
+    "source": "port/voice-runtime/licenses/voice/openssl-LICENSE.txt",
+    "target": "licenses/voice/openssl-LICENSE.txt",
+    "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a"
+  },
+  {
+    "source": "port/voice-runtime/licenses/voice/opus-COPYING.txt",
+    "target": "licenses/voice/opus-COPYING.txt",
+    "sha256": "01e1167d54a096d123cf6dfbbeb19587278845c6481d2d66d545669846079551"
+  },
+  {
+    "source": "port/voice-runtime/licenses/voice/plog-MIT.txt",
+    "target": "licenses/voice/plog-MIT.txt",
+    "sha256": "b88260cd359627f608e831653db4e23e639a6c044cb4e4babdff51898c7bc7e5"
+  },
+  {
+    "source": "port/voice-runtime/licenses/voice/README.txt",
+    "target": "licenses/voice/README.txt",
+    "sha256": "d4eefdb8757d5f7174f364536d2f11a255aff780c54f287b77612e31bd713302"
+  },
+  {
+    "source": "port/voice-runtime/licenses/voice/SOURCES.json",
+    "target": "licenses/voice/SOURCES.json",
+    "sha256": "938dbfdf570c73ff1fc5d3f14177a849811aa5932edc4c839b43cef95a1fd18d"
+  },
+  {
+    "source": "port/voice-runtime/licenses/voice/usrsctp-BSD.txt",
+    "target": "licenses/voice/usrsctp-BSD.txt",
+    "sha256": "654779a3c456296fe43d4f452a441a257f0afb2f3a7495cde5d35d02f08e916d"
+  },
+  {
+    "source": "port/release/BT4_VERSION.txt",
+    "target": "BT4_VERSION.txt",
+    "sha256": "fa777f1776cc6ec8bf9330702f08f600f8d51735a53ca267d152be990800e154"
+  },
+  {
+    "source": "port/tbo/ui/kit_bar_compact.png",
+    "target": "tbo/ui/kit_bar_compact.png",
+    "sha256": "bb648533ddb4bb8a0171de57b3b13993d4c9b3bb5734ee2e38edf20acb4582fb"
+  },
+  {
+    "source": "port/tbo/ui/kit_sel_compact.png",
+    "target": "tbo/ui/kit_sel_compact.png",
+    "sha256": "72c2d0072b916878908b2880993b419408868d2a5f81b26f3043bb2b8dcc2f6e"
+  },
+  {
+    "source": "port/release/icon_game.ico",
+    "target": "fonts/icon_game.ico",
+    "sha256": "78caca6f0c3db69cd89a62e806400407177786b70a6fc62bdf8b5bf9df8a71e9"
+  },
+  {
+    "source": "port/voice-runtime/licenses/voice/WINDOWS-BUILD.json",
+    "target": "licenses/voice/WINDOWS-BUILD.json",
+    "sha256": "8acf8bbc853e817799fd19d63a50f5ae582c8ccbc9d6824e03b083bb03c98f40"
+  }
+]

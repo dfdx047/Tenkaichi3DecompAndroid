@@ -1,0 +1,86 @@
+{
+  "revision": "0.1.39.2 R7 Hotfix",
+  "tag": "v0.1.39.2-R7.1",
+  "reference": "Archived F1 spectator panel in the local source-ideas-before.zip backup",
+  "restored_controls": [
+    "game camera",
+    "free camera",
+    "follow fighter",
+    "fight overview",
+    "fighter target",
+    "25-400 percent movement speed",
+    "reset",
+    "keyboard and controller controls",
+    "HUD toggle"
+  ],
+  "zoom": "100-300 percent; the lens does not widen beyond the native projection",
+  "labels_reviewed": [
+    "es",
+    "en",
+    "pt-BR"
+  ],
+  "updater_checks_passed": 65,
+  "math_tests": "frame-rate independent movement, speed, lens bounds, target following, 10-fighter framing at 4:3/16:9/21:9",
+  "collision_tests": "two-sided BVH wall intersections, intact/broken meshes, loading guard, no collision-world writes",
+  "host_tests": "legacy R7 migration, settings persistence, rollback isolation, F1/pause input isolation, Start/Select passthrough, battle reset",
+  "battle_cases": [
+    {
+      "case": "duel-pause",
+      "events": [
+        "free camera audit: PASS mode=0 tag=0 moved=1 native-pose-unchanged=1 camera-mode=1",
+        "HUD fixture: hidden=1 expected=1 menu=0",
+        "HUD fixture: hidden=0 expected=0 menu=0",
+        "HUD fixture: complete"
+      ],
+      "passed": true
+    },
+    {
+      "case": "tag-pause",
+      "events": [
+        "free camera audit: PASS mode=0 tag=1 moved=1 native-pose-unchanged=1 camera-mode=2",
+        "HUD fixture: hidden=1 expected=1 menu=0",
+        "HUD fixture: hidden=0 expected=0 menu=0",
+        "HUD fixture: complete"
+      ],
+      "passed": true
+    },
+    {
+      "case": "training-camera",
+      "events": [
+        "free camera audit: PASS mode=6 tag=0 moved=1 native-pose-unchanged=1 camera-mode=3",
+        "HUD fixture: hidden=1 expected=1 menu=0",
+        "HUD fixture: hidden=0 expected=0 menu=0",
+        "HUD fixture: complete"
+      ],
+      "passed": true
+    }
+  ],
+  "online": {
+    "same_room": true,
+    "last_common_frame": 900,
+    "mismatches": [],
+    "injected_start": true,
+    "shared_start_commands": [
+      [
+        [
+          "308",
+          "1"
+        ]
+      ],
+      [
+        [
+          "308",
+          "1"
+        ]
+      ]
+    ],
+    "camera_modes": [
+      3,
+      2
+    ]
+  },
+  "limitations": [
+    "Windows Direct3D 12 local gameplay only; physical Linux/macOS gameplay not tested",
+    "Online verification uses two local processes in one live Supabase room; it is not a cross-ISP test"
+  ]
+}

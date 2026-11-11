@@ -14,7 +14,7 @@ def sources():
     # the main executable (engine, battle) and the menu overlay (DBZP.BIN on the PS2; one program here)
     fs = [ROOT / "src/main.c"] + sorted((ROOT / "src/sys").glob("*.c")) + sorted((ROOT / "src/battle").glob("*.c")) + \
          sorted((ROOT / "src/menu").glob("*.c"))
-    return [f for f in fs if str(f.relative_to(ROOT)) not in REPLACED]
+    return [f for f in fs if f.relative_to(ROOT).as_posix() not in REPLACED]
 
 def enable_attempts(text):
     """Returns (text, enabled names, names with no attempt found)."""

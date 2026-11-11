@@ -83,7 +83,7 @@ button layout.
 
 +Y is down: the AI holds ASCEND when the target's Y is more than 30 below the fighter's.
 
-## Additions from the fighter-core batch
+## Fighter core reference
 
 Sources: `src/battle/btl_ai_act.c` (virtual pad, attack actions, sense; 55 of 56 match) and
 `src/battle/btl_ai_think.c` (rules and thinking; 36 of 43 match, so the rule evaluator below

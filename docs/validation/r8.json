@@ -1,0 +1,172 @@
+{
+  "version": "0.1.39.2 R8",
+  "tag": "v0.1.39.2-R8",
+  "upstream": "0.1.39.2",
+  "repository_tests_passed": 40,
+  "kernel_parity_scenarios": 8,
+  "kernel_frames_per_scenario": 2000,
+  "ffa_results": "All six survivor identities, pre-existing native KO flags, timeout, ties, loading/pause gates, team and duel regression checks",
+  "tag_timing": "Local CPU ping/delay zero; 240 local frames without network input packets; measured fixture RTT 40 ms; regression confirms input ring updates from one to four players as a same-room quick match fills",
+  "sql_contract": {
+    "passed": true,
+    "checks": [
+      "applied 202610300001_bt4_signaling.sql",
+      "applied 202610300002_discovery_members.sql",
+      "applied 202610300003_voice_negotiation.sql",
+      "applied 202610300004_direct_voice.sql",
+      "applied 202610310001_online_presence.sql",
+      "applied 202610310002_tag_quick_queues.sql",
+      "atomic R8 bundle can be applied again",
+      "four distinct authenticated players match once in one 2v2 room with ordered host and private notifications",
+      "only 2v2 enters the Tag quick queue",
+      "legacy duel queue still admits two players",
+      "custom six-player room enforces capacity and preserves admission",
+      "presence aggregate hides identities, expires stale entries and removes an explicit departure",
+      "anonymous presence and direct authenticated table reads are rejected",
+      "presence refresh budget is enforced"
+    ],
+    "scope": "Production SQL executed in local PostgreSQL WASM. Auth and Realtime delivery are test substitutes; this is not a hosted or concurrent load test."
+  },
+  "tag_captures": [
+    {
+      "ratio": "4x3",
+      "resolution": [
+        720,
+        540
+      ],
+      "states": [
+        "draft",
+        "costume",
+        "stage",
+        "combat"
+      ],
+      "actors": 10
+    },
+    {
+      "ratio": "16x9",
+      "resolution": [
+        960,
+        540
+      ],
+      "states": [
+        "draft",
+        "costume",
+        "stage",
+        "combat"
+      ],
+      "actors": 10
+    },
+    {
+      "ratio": "21x9",
+      "resolution": [
+        1260,
+        540
+      ],
+      "states": [
+        "draft",
+        "costume",
+        "stage",
+        "combat"
+      ],
+      "actors": 10
+    },
+    {
+      "ratio": "32x9",
+      "resolution": [
+        1920,
+        540
+      ],
+      "states": [
+        "draft",
+        "costume",
+        "stage",
+        "combat"
+      ],
+      "actors": 10
+    }
+  ],
+  "online_custom_room": {
+    "native_instances": 4,
+    "same_room": true,
+    "last_common_frame": 900,
+    "mismatches": [],
+    "injected_start": true,
+    "shared_start_commands": [
+      [
+        [
+          "308",
+          "1"
+        ]
+      ],
+      [
+        [
+          "308",
+          "1"
+        ]
+      ],
+      [
+        [
+          "308",
+          "1"
+        ]
+      ],
+      [
+        [
+          "308",
+          "1"
+        ]
+      ]
+    ]
+  },
+  "hosted_backend": {
+    "presence_deployed": true,
+    "presence_reply": {"online": 0, "version": 1, "refresh_seconds": 300},
+    "checks_passed": 7,
+    "presence_uses_realtime": false,
+    "private_realtime_notifications": true
+  },
+  "online_quick_match": {
+    "native_instances": 4,
+    "same_room": true,
+    "last_common_frame": 900,
+    "mismatches": [],
+    "injected_start": true,
+    "windows_executable_sha256": "5abc648ba889915a6ef4f59ded1955eb45daa9f6b8ff3ccc48caf7717c2cf571",
+    "shared_start_commands": [
+      [["309", "1"]], [["309", "1"]], [["309", "1"]], [["309", "1"]]
+    ]
+  },
+  "scope": "Background Windows validation with isolated runtimes and no physical input/audio. Four local game processes joined one hosted Supabase quick-match room and reached 900 common frames. This is not a cross-ISP or capacity benchmark.",
+  "ci": {
+    "release_run": "41267810252",
+    "release_checks": {
+      "prepare-release": "success",
+      "build": "success",
+      "native-linux": "success",
+      "native-macos": "success"
+    },
+    "repository_checks_run": "41267810141",
+    "portable_layout": {
+      "ubuntu-latest": "success",
+      "windows-latest": "success"
+    }
+  },
+  "published_release": {
+    "id": 430333795,
+    "url": "https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases/tag/v0.1.39.2-R8",
+    "published_at": "2026-11-01T03:18:18Z",
+    "assets_verified": {
+      "windows-x64": "01d7ab79cd93b541eb66f58227f36fce13ae00e00aa495dede884e9b7e4edd1e",
+      "linux-x64": "b3ed122955a69529ac01e32e812f6fa46df1479ef660ea673dbeeaa13d765876",
+      "macos-arm64": "b32328f76b5206975165abfc5ae8abd9a1b42cc6db7a1553a4dfb7820ade8f88"
+    },
+    "all_signatures_verified": true,
+    "all_zip_crc_checks_passed": true
+  },
+  "pending_before_publication": [],
+  "limitations": [
+    "Native Linux/macOS gameplay is not tested on physical hardware here",
+    "Panoramic backgrounds use proportional cover and can crop source scenery; not every animation or menu transition has been certified"
+  ],
+  "legacy_negotiation_checks_passed": 35
+}

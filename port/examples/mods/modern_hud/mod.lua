@@ -474,11 +474,11 @@ return {
         alphaAll = fade * bt3.setting("opacity") / 100
         U, W = hud.h / 940, hud.w
         local drawTimer, drawCombo = bt3.setting("timer"), bt3.setting("combo")
-        if on then
-            hud.hide_game("gauges")
-            if drawTimer then hud.hide_game("timer") end
-            if drawCombo then hud.hide_game("combo") end
-        end
+        -- Keep native elements suppressed while this overlay is still visible,
+        -- including the exit fade that draws the last available fight state.
+        hud.hide_game("gauges")
+        if drawTimer then hud.hide_game("timer") end
+        if drawCombo then hud.hide_game("combo") end
         local swap = game.swapped and 1 or 0
         for place = 0, 1 do
             local side = (place ~ swap) + 1

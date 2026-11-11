@@ -175,10 +175,10 @@ void IconWin_SetIcon(s32 icon);
 /* ---- ChrView (view_a_d.c) ---- */
 
 #define CHRVIEW_SLOT_COUNT 2
-#define CHRVIEW_MODEL_SIZE 0xCE000
+#define CHRVIEW_MODEL_SIZE 0xE7000
 #define CHRVIEW_FILE_FIRST 0x590   /* model of character c, costume n: 0x590 + c * 10 + n (+4 for the damaged model) */
-#define CHRVIEW_FILE_STAGE 0x197   /* the viewer's backdrop, loaded once by ChrView_Init */
-#define CHRVIEW_CHARA_COUNT 0xA1
+#define CHRVIEW_FILE_STAGE 0x619   /* the viewer's backdrop, loaded once by ChrView_Init */
+#define CHRVIEW_CHARA_COUNT 250
 
 /* One file of a model resource slot (BtlResFile in battle/btl_obj.h). */
 typedef struct ChrViewFile {
@@ -230,6 +230,7 @@ typedef struct ChrViewInfo {
     /* 0x38 */ u8 unk38[4];
 } ChrViewInfo; /* size 0x3C */
 
+s32 Bt4_ModelFile(s32 chara, s32 costume, s32 damaged);
 s32 ChrView_GetModelFile(s32 chara, s32 costume, s32 damaged);
 ChrViewInfo *ChrView_GetCharaInfo(u32 chara);
 ChrViewSlot *ChrView_AllocSlot(void);
@@ -304,8 +305,8 @@ typedef struct ChrGridCell {
 /* Stage grid: 6 columns of stage ids. */
 #define STGGRID_COLS 6
 #ifdef PORT /* the PC build adds stages from outside the disc, so the "locked"/"empty" markers move past them */
-#define STGGRID_ID_LOCKED 0x3E
-#define STGGRID_ID_EMPTY 0x3F
+#define STGGRID_ID_LOCKED 0x24
+#define STGGRID_ID_EMPTY 0x25
 #else
 #define STGGRID_ID_LOCKED 0x24
 #define STGGRID_ID_EMPTY 0x25

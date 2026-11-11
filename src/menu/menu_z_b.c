@@ -1,4 +1,5 @@
 #include "common.h"
+#include "port_variant.h"
 #include "menu/menu_z.h"
 
 /*
@@ -7,7 +8,7 @@
  * file cannot be told from the layout.
  */
 
-#define DC_BGM 0x10B18
+#define DC_BGM PORT_V(0x10B18, 0x818)
 
 /*
  * Runs the Data Center until it is left: mode 53 the top menu, 54 the password screen, 55 the list of saved

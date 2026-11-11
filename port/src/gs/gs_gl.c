@@ -23,6 +23,22 @@
 #include "ui.h"
 
 extern int Port_AspectMilli(void);
+static int sAngleApi; /* 11: ES 3.0 through the pinned D3D11 implementation */
+static int sConservativeDepth;
+static void SDLCALL gl_debug_message(unsigned source, unsigned type, unsigned id, unsigned severity,
+                                     int length, const char *message, const void *unused) {
+    (void)source; (void)type; (void)id; (void)unused;
+    if (severity != 0x826B) { fprintf(stderr, "bt3: GL diagnostic: %.*s\n", length > 1000 ? 1000 : length, message); }
+}
+int GsGl_DirectXVersion(void) { return sAngleApi; }
+#ifdef _WIN32
+static SDL_EGLAttrib *SDLCALL angle_platform(void *unused) {
+    SDL_EGLAttrib *attrs = SDL_malloc(3 * sizeof(*attrs));
+    (void)unused;
+    if (attrs) { attrs[0] = 0x3203; attrs[1] = 0x3208; attrs[2] = 0x3038; }
+    return attrs; /* EGL_PLATFORM_ANGLE_TYPE_ANGLE = D3D11; EGL_NONE */
+}
+#endif
 
 /* ---- GL 3.3 core entry points (loaded through SDL_GL_GetProcAddress) ------------------------------ */
 typedef unsigned int GLenum; typedef unsigned int GLuint; typedef int GLint; typedef int GLsizei;
@@ -73,7 +89,7 @@ typedef void GLvoid; typedef ptrdiff_t GLsizeiptr; typedef ptrdiff_t GLintptr; t
     X(glUniform2f, void, (GLint, GLfloat, GLfloat), (GLint, GLfloat, GLfloat)) \
     X(glGetUniformBlockIndex, GLuint, (GLuint, const GLchar *), (GLuint, const GLchar *)) \
     X(glUniformBlockBinding, void, (GLuint, GLuint, GLuint), (GLuint, GLuint, GLuint)) \
-    X(glBindBufferBase, void, (GLenum, GLuint, GLuint), (GLenum, GLuint, GLuint)) \
+    X(glBindBufferBase, void, (GLenum, GLuint, GLuint), (GLenum, GLuint, GLuint))     X(glBindBufferRange, void, (GLenum, GLuint, GLuint, GLintptr, GLsizeiptr), (GLenum, GLuint, GLuint, GLintptr, GLsizeiptr)) \
     X(glGenBuffers, void, (GLsizei, GLuint *), (GLsizei, GLuint *)) \
     X(glBindBuffer, void, (GLenum, GLuint), (GLenum, GLuint)) \
     X(glBufferData, void, (GLenum, GLsizeiptr, const void *, GLenum), (GLenum, GLsizeiptr, const void *, GLenum)) \
@@ -225,9 +241,16 @@ static char *translate(const char *src, int is_vertex) {
 #define PUSH(str) PUSHN((str), strlen(str))
     const char *p = src;
     while (*p) {
-        if (!strncmp(p, "#version 450", 12)) { PUSH("#version 330 core"); p += 12; continue; }
+        if (!strncmp(p, "#version 450", 12)) {
+            if (sAngleApi) {
+                PUSH("#version 300 es\n");
+                if (sConservativeDepth) { PUSH("#extension GL_EXT_conservative_depth : require\n"); }
+                PUSH("precision highp float;\nprecision highp int;\nprecision highp sampler2D;");
+            } else { PUSH("#version 330 core"); }
+            p += 12; continue;
+        }
         if (!strncmp(p, "gl_VertexIndex", 14)) { PUSH("gl_VertexID"); p += 14; continue; }
-        if (!strncmp(p, "layout(depth_less)", 18)) { /* (GL 4.2's; without it gl_FragDepth is simply written) */
+        if (!sConservativeDepth && !strncmp(p, "layout(depth_less)", 18)) {
             while (*p && *p != '\n') { p++; }
             continue;
         }
@@ -278,7 +301,15 @@ static char *translate(const char *src, int is_vertex) {
 static GLuint compile(GLenum stage, const char *src, const char *tag) {
     GLuint sh = glCreateShader(stage);
     GLint ok = 0;
+    char *es = NULL;
+    if (sAngleApi && !strncmp(src, "#version 330 core", 17)) {
+        static const char prefix[] = "#version 300 es\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;";
+        es = malloc(sizeof(prefix) + strlen(src + 17));
+        if (!es) { fprintf(stderr, "bt3: ANGLE shader allocation failed\n"); exit(1); }
+        strcpy(es, prefix); strcat(es, src + 17); src = es;
+    }
     glShaderSource(sh, 1, &src, NULL);
+    free(es);
     glCompileShader(sh);
     glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
     if (!ok) {
@@ -365,6 +396,11 @@ static GLuint sVaoGs, sVaoVu, sVboGs, sVboVu, sIboVu;
 static GLuint sSamplers[16];
 static GLuint sWhite;
 static GLuint sUboU, sUboParams;
+typedef struct GlParams { int32_t mode[4]; float misc[4], rect[4], orig[4], extra[4]; } GlParams;
+static unsigned char *sParamStaging, *sUStaging;
+static size_t sParamCapacity, sUCapacity, sParamStride, sUStride;
+static int sUniformBatch;
+static uint32_t sParamDraw;
 static GLuint sTgCol[MAX_TARGETS], sTgAux[MAX_TARGETS], sTgDep[MAX_TARGETS], sTgFbo[MAX_TARGETS];
 static GLuint sDateCopy, sAuxCopy;
 static GLuint sScratchRead, sScratchDraw;
@@ -540,12 +576,22 @@ static void apply_masks(uint32_t wmask) {
 }
 
 static void set_params(const void *p, size_t n) {
+    if (sUniformBatch) {
+        glBindBufferRange(GL_UNIFORM_BUFFER, 1, sUboParams, (GLintptr)(sParamDraw * sParamStride), sizeof(GlParams));
+        return;
+    }
     glBindBuffer(GL_UNIFORM_BUFFER, sUboParams);
+    glBindBufferRange(GL_UNIFORM_BUFFER, 1, sUboParams, 0, sizeof(GlParams));
     glBufferSubData(GL_UNIFORM_BUFFER, 0, (GLsizeiptr)n, p);
 }
 
 static void set_uniform_u(const Vu0Uniform *u) {
+    if (sUniformBatch) {
+        glBindBufferRange(GL_UNIFORM_BUFFER, 0, sUboU, (GLintptr)((u - gsVuUni) * sUStride), sizeof(Vu0Uniform));
+        return;
+    }
     glBindBuffer(GL_UNIFORM_BUFFER, sUboU);
+    glBindBufferRange(GL_UNIFORM_BUFFER, 0, sUboU, 0, sizeof(Vu0Uniform));
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Vu0Uniform), u);
 }
 
@@ -663,34 +709,159 @@ void GsGl_Vsync(int on) { /* the settings window's "V-sync" */
     }
 }
 
+static void draw_params(const GsDraw *d, GlParams *fu) {
+    memset(fu, 0, sizeof(*fu));
+    if (d->native) {
+        float values[4] = {0};
+        if (d->native == 3) { values[0] = (float)d->src; values[1] = d->misc[0]; }
+        else {
+            extern int Port_PageAspectMilli(void);
+            values[0] = 1333.333f / (float)Port_PageAspectMilli() / (float)GS_W;
+            values[1] = 1.0f / (float)GS_H;
+            values[2] = 100.0f / 255.0f;
+            values[3] = getenv("BT3_FX_DEBUG") != NULL ? 1.0f : 0.0f;
+        }
+        memcpy(fu, values, sizeof(values));
+        return;
+    }
+    memcpy(fu->mode, d->mode, sizeof(fu->mode));
+    memcpy(fu->misc, d->misc, sizeof(fu->misc));
+    memcpy(fu->rect, d->rect, sizeof(fu->rect));
+    memcpy(fu->orig, d->orig, sizeof(fu->orig));
+    fu->extra[0] = d->vu ? (gsVuUni[d->uniform].misc[2] > 0.0f ? gsVuUni[d->uniform].misc[2] : 0.0f) : gsZMax;
+    fu->extra[1] = (sPipes[d->pipeline].key & (1u << 9)) ? 1.0f : 0.0f;
+    fu->extra[2] = d->portrait[0];
+    fu->extra[3] = d->portrait[1];
+}
+
+/* One streamed upload per frame; binding a range does not overwrite constants
+   still in use by earlier draws. Kept specific to ANGLE while it is validated. */
+static void prepare_uniforms(void) {
+    size_t pbytes = (size_t)gsDrawCount * sParamStride;
+    size_t ubytes = (size_t)gsVuUniCount * sUStride;
+    uint32_t n;
+    sUniformBatch = 0;
+    if (getenv("BT4_GL_LEGACY_UNIFORMS") || !pbytes || !sParamStride) { return; }
+    if (pbytes > sParamCapacity) {
+        unsigned char *p = realloc(sParamStaging, pbytes);
+        if (!p) { return; } sParamStaging = p; sParamCapacity = pbytes;
+    }
+    if (ubytes > sUCapacity) {
+        unsigned char *p = realloc(sUStaging, ubytes);
+        if (!p) { return; } sUStaging = p; sUCapacity = ubytes;
+    }
+    memset(sParamStaging, 0, pbytes);
+    for (n = 0; n < gsDrawCount; n++) {
+        if (gsDraws[n].native < 4) { draw_params(&gsDraws[n], (GlParams *)(sParamStaging + n * sParamStride)); }
+    }
+    glBindBuffer(GL_UNIFORM_BUFFER, sUboParams);
+    glBufferData(GL_UNIFORM_BUFFER, (GLsizeiptr)pbytes, sParamStaging, GL_STREAM_DRAW);
+    if (ubytes) {
+        memset(sUStaging, 0, ubytes);
+        for (n = 0; n < gsVuUniCount; n++) { memcpy(sUStaging + n * sUStride, &gsVuUni[n], sizeof(Vu0Uniform)); }
+        glBindBuffer(GL_UNIFORM_BUFFER, sUboU);
+        glBufferData(GL_UNIFORM_BUFFER, (GLsizeiptr)ubytes, sUStaging, GL_STREAM_DRAW);
+    }
+    sUniformBatch = 1;
+}
+
 /* ---- init --------------------------------------------------------------------------------------- */
-static int gl_init(void) {
+static int gl_init_api(int api) {
     static const uint32_t white = 0xFFFFFFFFu;
     int i;
-
+    sAngleApi = api;
+#ifdef _WIN32
+    if (api) {
+        char egl[2048], gles[2048];
+        const char *base = SDL_GetBasePath();
+        snprintf(egl, sizeof(egl), "%stbo/renderers/angle/bt4_egl.dll", base ? base : "");
+        snprintf(gles, sizeof(gles), "%stbo/renderers/angle/av_libglesv2.dll", base ? base : "");
+        SDL_SetHint(SDL_HINT_VIDEO_FORCE_EGL, "1");
+        SDL_SetHint(SDL_HINT_OPENGL_LIBRARY, gles);
+        SDL_SetHint(SDL_HINT_EGL_LIBRARY, egl);
+        if (!SDL_Init(SDL_INIT_VIDEO)) { sAngleApi = 0; return 0; }
+        SDL_EGL_SetAttributeCallbacks(angle_platform, NULL, NULL, NULL);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+        SDL_GL_SetAttribute(SDL_GL_EGL_PLATFORM, 0x3202); /* EGL_PLATFORM_ANGLE_ANGLE */
+    } else {
+        if (!SDL_Init(SDL_INIT_VIDEO)) { return 0; }
+        SDL_ResetHint(SDL_HINT_VIDEO_FORCE_EGL);
+        SDL_ResetHint(SDL_HINT_OPENGL_LIBRARY);
+        SDL_ResetHint(SDL_HINT_EGL_LIBRARY);
+        SDL_EGL_SetAttributeCallbacks(NULL, NULL, NULL, NULL);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_EGL_PLATFORM, 0);
+    }
+#endif
     sWindow = GsDraw_WindowCreate(1);
-    if (sWindow == NULL) { return 0; }
+    if (sWindow == NULL) { sAngleApi = 0; return 0; }
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: the window is there\n"); }
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    if (!api) {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    }
     if (getenv("BT3_GPU_DEBUG") != NULL) { SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG); }
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: window made, creating the context\n"); }
     sCtx = SDL_GL_CreateContext(sWindow);
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: context %p (%s)\n", (void *)sCtx, sCtx == NULL ? SDL_GetError() : "ok"); }
     if (sCtx == NULL || !SDL_GL_MakeCurrent(sWindow, sCtx)) {
         fprintf(stderr, "bt3: gl: no GL 3.3 core context: %s\n", SDL_GetError());
+        if (sCtx) { SDL_GL_DestroyContext(sCtx); sCtx = NULL; }
+        GsDraw_WindowDestroy(); sWindow = NULL; sAngleApi = 0;
+        SDL_GL_UnloadLibrary();
         return 0;
     }
     SDL_GL_SetSwapInterval(Port_Setting("vsync", 0) != 0);
     if (getenv("BT3_GL_TRACE") != NULL) { fprintf(stderr, "gl: current, loading the functions\n"); }
-    if (!load_gl()) { return 0; }
+    if (!load_gl()) {
+        SDL_GL_DestroyContext(sCtx); sCtx = NULL;
+        GsDraw_WindowDestroy(); sWindow = NULL; sAngleApi = 0;
+        SDL_GL_UnloadLibrary();
+        return 0;
+    }
+    if (api && getenv("BT3_GL_DEBUG_MESSAGES")) {
+        typedef void (SDLCALL *DebugMessage)(void (SDLCALL *)(unsigned,unsigned,unsigned,unsigned,int,const char *,const void *), const void *);
+        DebugMessage callback = (DebugMessage)SDL_GL_GetProcAddress("glDebugMessageCallbackKHR");
+        if (callback) { callback(gl_debug_message, NULL); glEnable(0x92E0); }
+    }
     fprintf(stderr, "bt3: GL renderer: %s (%s)\n", (const char *)glGetString(GL_RENDERER), (const char *)glGetString(GL_VERSION));
+    if (api) {
+        /* ES 3.0 exposes these through EXT_draw_buffers_indexed, not the ES
+           3.2 core entry points. ANGLE exports both but validates them separately. */
+        glEnablei = (void (*)(GLenum, GLuint))SDL_GL_GetProcAddress("glEnableiEXT");
+        glDisablei = (void (*)(GLenum, GLuint))SDL_GL_GetProcAddress("glDisableiEXT");
+        glColorMaski = (void (*)(GLuint, GLboolean, GLboolean, GLboolean, GLboolean))SDL_GL_GetProcAddress("glColorMaskiEXT");
+        const char *renderer = (const char *)glGetString(GL_RENDERER);
+        if (!renderer || !strstr(renderer, "Direct3D11") || !glEnablei || !glDisablei || !glColorMaski ||
+            !SDL_GL_ExtensionSupported("GL_EXT_draw_buffers_indexed")) {
+            fprintf(stderr, "bt3: requested D3D11 but ANGLE returned a different backend\n");
+            SDL_GL_DestroyContext(sCtx); sCtx = NULL;
+            GsDraw_WindowDestroy(); sWindow = NULL; sAngleApi = 0;
+            SDL_GL_UnloadLibrary(); return 0;
+        }
+        fprintf(stderr, "bt3: GPU renderer: direct3d11 (ANGLE)\n");
+    }
+    {
+        GLint alignment = 0;
+        glGetIntegerv(0x8A34, &alignment); /* GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT */
+        if (alignment < 16) { alignment = 16; }
+        sParamStride = (sizeof(GlParams) + alignment - 1) / alignment * alignment;
+        sUStride = (sizeof(Vu0Uniform) + alignment - 1) / alignment * alignment;
+    }
     sHasIndexed = glEnablei != NULL && glColorMaski != NULL;
+    sConservativeDepth = api && SDL_GL_ExtensionSupported("GL_EXT_conservative_depth");
     /* Depth as the Vulkan back end has it: clip-space z in 0..w stored as z / w, and (SDL GPU's default, depth
        clip off) nothing cut at the near and far planes, the depth clamped to 0..1 instead. */
     if (getenv("BT3_GL_NOCLIPCONTROL") == NULL && SDL_GL_ExtensionSupported("GL_ARB_clip_control")) {
         glClipControl = (void (*)(GLenum, GLenum))SDL_GL_GetProcAddress("glClipControl");
+    }
+    if (api && SDL_GL_ExtensionSupported("GL_EXT_clip_control")) {
+        glClipControl = (void (*)(GLenum, GLenum))SDL_GL_GetProcAddress("glClipControlEXT");
     }
     sHasClipControl = glClipControl != NULL;
     if (sHasClipControl) { glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE); }
@@ -799,8 +970,8 @@ static void frame_end(void) {
     SDL_Event ev;
     int cur = -1, best = -1, i;
     uint32_t n;
-    struct { int32_t mode[4]; float misc[4]; float rect[4]; float orig[4]; float extra[4]; } fu, lastFu;
-    int haveFu = 0;
+    GlParams fu, lastFu;
+    int haveFu = 0, lastUniform = -1;
 
     GsGpu_TitlePoll();
     while (SDL_PollEvent(&ev)) {
@@ -875,7 +1046,9 @@ static void frame_end(void) {
     }
     gGsFbUploads = 0;
 
+    prepare_uniforms();
     glBindVertexArray(sVaoGs);
+    GLuint drawVao = sVaoGs;
     sCurPipe = -1;
     sCurProgram = 0;
     sCurTex0 = sCurTex1 = sCurTex2 = 0;
@@ -888,7 +1061,9 @@ static void frame_end(void) {
     glEnable(GL_SCISSOR_TEST);
     for (n = 0; n < gsDrawCount; n++) {
         const GsDraw *d = &gsDraws[n];
+        if (d->native) drawVao = 0;
         int shadowStart;
+        sParamDraw = n;
         if (d->native >= 100) {
             GLenum one[1] = {GL_COLOR_ATTACHMENT0};
             if (sFbTex[d->native - 100] == 0) { continue; }
@@ -983,15 +1158,10 @@ static void frame_end(void) {
             haveScissor = 0;
         }
         set_pipe(d->pipeline);
-        glBindVertexArray(d->vu ? sVaoVu : sVaoGs);
-        if (d->vu) { set_uniform_u(&gsVuUni[d->uniform]); }
-        memset(&fu, 0, sizeof(fu));
-        memcpy(fu.mode, d->mode, sizeof(fu.mode));
-        memcpy(fu.misc, d->misc, sizeof(fu.misc));
-        memcpy(fu.rect, d->rect, sizeof(fu.rect));
-        memcpy(fu.orig, d->orig, sizeof(fu.orig));
-        fu.extra[0] = d->vu ? (gsVuUni[d->uniform].misc[2] > 0.0f ? gsVuUni[d->uniform].misc[2] : 0.0f) : gsZMax;
-        fu.extra[1] = (sPipes[d->pipeline].key & (1u << 9)) ? 1.0f : 0.0f; /* the source scaled by its alpha */
+        GLuint wantVao = d->vu ? sVaoVu : sVaoGs;
+        if (wantVao != drawVao) { glBindVertexArray(wantVao); drawVao = wantVao; }
+        if (d->vu && d->uniform != lastUniform) { set_uniform_u(&gsVuUni[d->uniform]); lastUniform = d->uniform; }
+        draw_params(d, &fu);
         if (!haveFu || memcmp(&fu, &lastFu, sizeof(fu)) != 0) {
             set_params(&fu, sizeof(fu));
             memcpy(&lastFu, &fu, sizeof(fu));
@@ -1081,7 +1251,36 @@ static void frame_end(void) {
         free(wp);
     }
     Ui_DrawGL(); /* the overlay, over the presented picture */
-    SDL_GL_SwapWindow(sWindow);
+    /* Same isolated UI capture hook as the SDL GPU backend, after mod HUDs. */
+    {
+        static int captured;
+        const char *request=getenv("BT3_UI_SHOT"),*path=request?strchr(request,':'):NULL;
+        if(!captured&&path&&atoi(request)>0&&gGsFrame>=(unsigned)atoi(request)){
+            int w,h,x,y;uint8_t *pixels;FILE *file;
+            captured=1;SDL_GetWindowSizeInPixels(sWindow,&w,&h);
+            pixels=malloc((size_t)w*h*4);file=fopen(path+1,"wb");
+            if(pixels&&file){
+                glBindFramebuffer(GL_READ_FRAMEBUFFER,0);glReadBuffer(GL_BACK);
+                glPixelStorei(GL_PACK_ALIGNMENT,1);glReadPixels(0,0,w,h,GL_RGBA,GL_UNSIGNED_BYTE,pixels);
+                fprintf(file,"P6\n%d %d\n255\n",w,h);
+                for(y=h-1;y>=0;--y)for(x=0;x<w;++x)fwrite(pixels+((size_t)y*w+x)*4,1,3,file);
+            }
+            if(file)fclose(file);free(pixels);
+        }
+    }
+    {
+        Uint64 start = SDL_GetTicksNS();
+        if (sAngleApi && getenv("BT4_RENDER_TEST") && getenv("BT4_ANGLE_TEST_NO_SWAP")) {
+            /* An occluded HWND may be throttled by DXGI. This test-only path
+               completes the real offscreen draws without presenting to it. */
+            glFinish();
+        } else { SDL_GL_SwapWindow(sWindow); }
+        if (sAngleApi && getenv("BT4_RENDER_TEST") && gGsFrame % 60 == 0) {
+            fprintf(stderr, "bt3: ANGLE test presentation: %.2f ms (%s)\n",
+                    (SDL_GetTicksNS() - start) / 1000000.0,
+                    getenv("BT4_ANGLE_TEST_NO_SWAP") ? "offscreen finish" : "hidden window swap");
+        }
+    }
     if (getenv("BT3_GS_VERBOSE") != NULL) {
         GLenum e = glGetError();
         if (e != GL_NO_ERROR) { fprintf(stderr, "bt3: gl: frame error 0x%x\n", e); }
@@ -1177,6 +1376,11 @@ static void gl_target_copy(int src, int dst) {
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
 }
 
+static int gl_init(void) { return gl_init_api(0); }
+#ifdef _WIN32
+static int dx11_init(void) { return gl_init_api(11); }
+#endif
+
 GsBackend sGlBackend = {
     "opengl",
     gl_init,
@@ -1196,3 +1400,25 @@ GsBackend sGlBackend = {
     gl_target_read,
     gl_target_copy,
 };
+
+#ifdef _WIN32
+GsBackend sDirect3D11Backend = {
+    "direct3d11",
+    dx11_init,
+    frame_end,
+    scale_changed,
+    white_tex,
+    tex_create,
+    tex_upload,
+    tex_destroy,
+    tex_slots_left,
+    target_ensure,
+    target_drop,
+    target_color,
+    target_aux,
+    target_depth,
+    pipe_get,
+    gl_target_read,
+    gl_target_copy,
+};
+#endif

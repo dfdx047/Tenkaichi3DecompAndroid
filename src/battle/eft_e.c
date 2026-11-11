@@ -583,6 +583,19 @@ s32 EftWater_GetSurfaceY(f32 *y) {
 }
 
 /* Starts (off == 0) or stops (off == 1) the wake behind a fighter. Does nothing in split-screen. */
+#ifdef PORT
+/* Object IDs of Tag Team fighters extend beyond the original two slots. A
+   wake written past that allocation corrupts the neighbouring particle lists. */
+#define EFT_WATER_WAKE_CAPACITY 10
+static s32 EftWater_WakeCount(void) {
+    extern s32 TagBattle_Count(void);
+    s32 n = TagBattle_Count();
+    return n >= 2 && n <= EFT_WATER_WAKE_CAPACITY ? n : 2;
+}
+#else
+#define EFT_WATER_WAKE_CAPACITY 2
+#define EftWater_WakeCount() 2
+#endif
 s32 EftWater_SetWake(s32 objId, u8 off) {
     EftWaterWake *wake;
 
@@ -592,6 +605,11 @@ s32 EftWater_SetWake(s32 objId, u8 off) {
     if (Battle_IsSplitScreen()) {
         return 0;
     }
+#ifdef PORT
+    if (objId < 0 || objId >= EftWater_WakeCount()) {
+        return 0;
+    }
+#endif
     wake = &gEftDust->wake[objId];
     switch (off) {
     case 0:
@@ -898,8 +916,8 @@ void EftWater_Init(void *task) {
         memset(gEftDust, 0, sizeof(EftWater));
     }
     if (gEftDust->wake == NULL) {
-        gEftDust->wake = BtlPool_Alloc(BtlPool_GetCurrent(), 0x18);
-        memset(gEftDust->wake, 0, 0x18);
+        gEftDust->wake = BtlPool_Alloc(BtlPool_GetCurrent(), sizeof(EftWaterWake) * EFT_WATER_WAKE_CAPACITY);
+        memset(gEftDust->wake, 0, sizeof(EftWaterWake) * EFT_WATER_WAKE_CAPACITY);
     }
     if (gEftDust->splash == NULL) {
         gEftDust->splash = BtlPool_Alloc(BtlPool_GetCurrent(), 0x280);
@@ -995,7 +1013,7 @@ void EftWater_PostUpdate(void) {
 void EftWater_Reset(void) {
     s32 i;
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < EftWater_WakeCount(); i++) {
         EftWater_SetWake(i, 1);
     }
 }
@@ -1045,7 +1063,7 @@ void EftWater_UpdateWakes(void) {
 
     if (!EFT_PAUSED()) {
         wake = gEftDust->wake;
-        for (n = 0; n < 2; n++, wake++) {
+        for (n = 0; n < EftWater_WakeCount(); n++, wake++) {
             if (wake->on != 0) {
                 BtlCharApi_GetPos(wake->objId, (Vec4 *)&pos);
                 if (EftWater_GetSurfaceY(&y)) {

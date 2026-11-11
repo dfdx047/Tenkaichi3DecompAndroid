@@ -178,7 +178,7 @@ typedef struct EftRushShotWork {
     /* 0x5A0 */ f32 timer;
     /* 0x5A4 */ f32 life;
     /* 0x5A8 */ f32 fade;
-    /* 0x5AC */ s32 stageFx[8]; /* handles of the EftStreak_Start effects */
+    /* 0x5AC */ void *stageFx[8]; /* game pointers returned by EftStreak_Start */
     /* 0x5CC */ s32 stage;      /* how many events 0x80 were seen */
     /* 0x5D0 */ s32 subCount;   /* 7 when the manager has a model pack */
     /* 0x5D4 */ u8 unk5D4[0x5E0 - 0x5D4];

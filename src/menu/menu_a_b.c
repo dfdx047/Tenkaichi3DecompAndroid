@@ -49,7 +49,7 @@ extern s32 Dc_Main(void);
 extern void CharRefMode_Main(void);
 extern void OptMode_Main(void);
 
-#define MENU_BGM_TITLE 0x10B16
+#define MENU_BGM_TITLE 0x816
 
 #define MENU_ARC_FREE(p) \
     if ((p) != NULL) { \

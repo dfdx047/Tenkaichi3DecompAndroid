@@ -1,9 +1,18 @@
+extern int TagBattle_Team(int),TagBattle_TeamIndex(int),TagBattle_TeamCount(int);
+extern int TagBattle_Active(void);
 #include "common.h"
 #include "battle/btl_seq.h"
 #include "battle/battle_setup.h"
 #include "battle/battle_work.h"
 #include "sys/heap.h"
 #include "sys/adx.h"
+#ifdef PORT
+#include <stdio.h>
+#include <stdlib.h>
+#include "sys/pad.h"
+#endif
+extern s32 TagBattle_Count(void);
+extern s32 BtlCharApi_GetHp(s32 actor);
 
 /* ---- Skill-list text of the pause menu, 0x215420-0x216AC0 ----
  * The list is a UTF-16 script. Every line starts with two characters whose second one is a hex digit (a mask
@@ -584,10 +593,17 @@ extern s32 BtlPause_GetMenuPad(void);
 extern s32 BtlPause_GetPad(void);
 extern s32 PauseMenu_Update(s32 a, s32 b);     /* pause / result menu update */
 #ifdef PORT
+/* Read only after the Ranked observer has seen a battle abort. Both peers
+ * run the same pause menu, so only the player driving it surrendered. */
+s32 Port_RankedPauseAbortPad(void) {
+    if (!(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) || !BattleResult_IsAborted() || Battle_IsRematchRequested()) return -1;
+    return BtlPause_GetMenuPad();
+}
 extern int Port_NetActive(void); /* port/src/gs/net.c: 1 in an online match */
 extern int Port_NetMe(void);     /* which player this copy plays (0 or 1) */
 extern s32 gPortSeSilent;        /* src/sys/snd.c */
 extern void PauseMenu_Reset(void);
+extern int TagBattle_Network(void);
 #endif
 extern void PauseMenu_Draw(void);
 extern void Snd_SetPause(s32 a, s32 b);
@@ -1247,6 +1263,21 @@ s32 BtlSeq_CheckBattleEnd(void) {
     BattleResult *result = Battle_GetResult();
     s32 timeUp;
 
+    if(TagBattle_FreeForAll() && (result->winner&7)){
+        /* Native two-sided KO flags do not identify the surviving FFA actor.
+         * Resolve that actor even if the native result was already set. */
+        s32 a,alive=0,last=-1;
+        for(a=0;a<TagBattle_Count();++a)if(BtlCharApi_GetHp(a)>0){++alive;last=a;}
+        if(alive<=1){
+            TagBattle_SetWinningActor(last);
+            result->reason=BTL_REASON_KO;
+            result->winner=last<0?BTL_RESULT_DRAW:TagBattle_Team(last)?BTL_RESULT_WIN_P2:BTL_RESULT_WIN_P1;
+        }else{result->winner=0;result->reason=0;}
+    }else if(TagBattle_Active() && (result->winner&3)){
+        s32 a,alive[2]={0,0};
+        for(a=0;a<TagBattle_Count();++a)if(BtlCharApi_GetHp(a)>0)alive[TagBattle_Team(a)]++;
+        if(alive[0] && alive[1]){result->winner=0;result->reason=0;}
+    }
     if (result->winner & 0x1F) {
         return 1;
     }
@@ -1263,6 +1294,33 @@ s32 BtlSeq_CheckBattleEnd(void) {
         return 0;
     }
     timeUp = BtlSeq_TickClocksExt();
+    if(TagBattle_FreeForAll()){
+        s32 actor,alive=0,best=-1,hpBest=-1,tied=0;
+        for(actor=0;actor<TagBattle_Count();++actor){s32 hp=BtlCharApi_GetHp(actor);
+            if(hp>0){++alive;if(hp>hpBest){hpBest=hp;best=actor;tied=0;}else if(hp==hpBest)tied=1;}}
+        if(timeUp||alive<=1){
+            if(tied)best=-1;
+            TagBattle_SetWinningActor(best);
+            result->reason=timeUp?BTL_REASON_TIME_UP:BTL_REASON_KO;
+            result->winner=best<0?BTL_RESULT_DRAW:TagBattle_Team(best)?BTL_RESULT_WIN_P2:BTL_RESULT_WIN_P1;
+            return 1;
+        }
+        return 0;
+    }
+    if(TagBattle_Active()){
+        s32 actor,alive[2]={0,0};
+        result->health[0]=result->health[1]=0;
+        for(actor=0;actor<TagBattle_Count();++actor){s32 hp=BtlCharApi_GetHp(actor);
+            if(hp>0){alive[TagBattle_Team(actor)]++;result->health[TagBattle_Team(actor)]+=hp;}}
+        if(timeUp){result->reason=BTL_REASON_TIME_UP;
+            result->winner=result->health[0]>result->health[1]?BTL_RESULT_WIN_P1:result->health[1]>result->health[0]?BTL_RESULT_WIN_P2:BTL_RESULT_DRAW;return 1;}
+        if(!alive[0]||!alive[1]){
+            result->reason=BTL_REASON_KO;
+            result->winner=alive[0]?BTL_RESULT_WIN_P1:alive[1]?BTL_RESULT_WIN_P2:BTL_RESULT_DRAW;
+            return 1;
+        }
+        return 0;
+    }
     if (Battle_GetMode() == 1) {
         return 0;
     }
@@ -1329,7 +1387,43 @@ s32 BtlSeqFight_PreUpdate(BtlSeqWaitCtx *ctx) {
 
 /* State 3 update: opens / runs the pause menu, then checks for the end of the battle (-> 4, or 6 without a finish scene). */
 s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
+#ifdef PORT
+    if(getenv("BT4_RENDER_TEST") && getenv("BT4_HUD_MENU_TEST")) {
+        static s32 step;
+        extern s32 PortHud_Hidden(void);
+        extern volatile s32 gPortTagUiCaptureRequest;
+        ++step;gPad[0].gamePressed=0;
+        if(step==30)gPortTagUiCaptureRequest=30;
+        if(step==60 || step==110)gPad[0].gamePressed=PADG_START;
+        if(step==80 || step==82 || step==118 || step==120)gPad[0].gamePressed=PADG_DOWN;
+        if(step==85 || step==130)gPad[0].gamePressed=PADG_CROSS;
+        if(step==70)gPortTagUiCaptureRequest=31;
+        if(step==100){gPortTagUiCaptureRequest=32;fprintf(stderr,"HUD fixture: hidden=%d expected=1 menu=%d\n",PortHud_Hidden(),!!(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU));
+            if(!PortHud_Hidden() || (Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU))exit(6);}
+        if(step==122)gPortTagUiCaptureRequest=33;
+        if(step==145){gPortTagUiCaptureRequest=34;fprintf(stderr,"HUD fixture: hidden=%d expected=0 menu=%d\n",PortHud_Hidden(),!!(Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU));
+            if(PortHud_Hidden() || (Battle_GetWork()->flags&BATTLE_FLAG_PAUSE_MENU))exit(6);}
+        if(step==155){fprintf(stderr,"HUD fixture: complete\n");exit(0);}
+    }
+#endif
+#ifdef PORT
+    if (TagBattle_Network() && getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_PAUSE_TEST")) {
+        static s32 was = -1;
+        s32 opened = (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) != 0;
+        if (opened != was || gPad[0].gamePressed) {
+            fprintf(stderr, "tag native pause: clock=%d mode=%d menu=%d frozen=%d pressed=%x pads=%d poll=%d\n",
+                    BtlSeq_GetClock()->ticks, Battle_GetMode(), opened,
+                    (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE) != 0,
+                    gPad[0].gamePressed, BtlPause_GetPadCount(), ctx->poll != NULL);
+            was = opened;
+        }
+    }
+#endif
+#ifdef PORT
+    if (Battle_GetMode() != 8 || TagBattle_Active()) {
+#else
     if (Battle_GetMode() != 8) {
+#endif
         if (ctx->poll != NULL && !(Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) && ctx->poll()) {
             if (Battle_GetMode() == 7) {
                 BattleResult_Set(BTL_RESULT_ABORT, 0);
@@ -1342,7 +1436,7 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
                    long as they liked): the menu opens for the one who pressed START, the fight, its clock and its
                    sound go on. That player's fighter takes no buttons meanwhile (BtlInput_Sample) and the menu is
                    drawn on that player's screen only (PauseMenu_Draw). */
-                if (Port_NetActive()) {
+                if (Port_NetActive() || TagBattle_Network()) {
                     Battle_GetWork()->flags |= BATTLE_FLAG_PAUSE_MENU;
                 } else
 #endif
@@ -1355,8 +1449,12 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
         }
         if (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) {
 #ifdef PORT
-            if (Port_NetActive()) {
-                gPortSeSilent = BtlPause_GetMenuPad() != Port_NetMe(); /* (its sounds are for its owner) */
+            if (Port_NetActive() || TagBattle_Network()) {
+                if (Port_NetActive()) {
+                    gPortSeSilent = BtlPause_GetMenuPad() != Port_NetMe(); /* (its sounds are for its owner) */
+                } else {
+                    gPortSeSilent = 0;
+                }
                 if (PauseMenu_Update(BtlPause_GetMenuPad(), 0) == 0) {
                     Battle_GetWork()->flags &= ~BATTLE_FLAG_PAUSE_MENU;
                 }
@@ -1373,12 +1471,12 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
 #ifdef PORT
         /* Online the fight can end under an open pause menu (it does not stop for it): the menu is closed, unless
            it is what ended the battle (as in the original, where it stays up through the fade). */
-        if (Port_NetActive() && (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) && !BattleResult_IsAborted()) {
+        if ((Port_NetActive() || TagBattle_Network()) && (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) && !BattleResult_IsAborted()) {
             PauseMenu_Reset();
             Battle_GetWork()->flags &= ~BATTLE_FLAG_PAUSE_MENU;
         }
 #endif
-        if (Battle_GetMode() == 7) {
+        if (Battle_GetMode() == 7 || TagBattle_Active()) {
             return 6;
         }
         return BattleResult_IsAborted() ? 6 : 4;
@@ -1449,11 +1547,15 @@ s32 BtlSeq_IsModeZero(void) {
 /* State 6 enter: mode 0 with a finished battle opens the result menu (step 0); otherwise starts the 1.2 s fade out (step 1). */
 s32 BtlSeqEnd_Enter(BtlSeqWaitCtx *ctx) {
     Battle_GetWork()->flags |= BATTLE_FLAG_DEMO;
+    if(TagBattle_Active() && !BattleResult_IsAborted()){
+        extern void TagBattle_ResultBegin(void);
+        TagBattle_ResultBegin();ctx->step=2;return 1;
+    }
     if (BattleResult_IsAborted()) {
         Fade_Start(0, 0, 1.0f);
         Ramp_Start(&ctx->timer, 1.2f, 0.0f, 1.0f);
         ctx->step = 1;
-    } else if (BtlSeq_IsModeZero()) {
+    } else if (BtlSeq_IsModeZero() && !TagBattle_Active()) {
         ctx->step = 0;
         BtlSeq_SetResultPad();
     } else {
@@ -1472,6 +1574,12 @@ s32 BtlSeqEnd_PreUpdate(BtlSeqWaitCtx *ctx) {
 /* State 6 update: step 0 runs the result menu until it aborts the battle, step 1 waits for the fade and returns 99. */
 s32 BtlSeqEnd_Update(BtlSeqWaitCtx *ctx) {
     switch (ctx->step) {
+    case 2:
+        {extern s32 TagBattle_ResultUpdate(void);
+        if(TagBattle_ResultUpdate()){
+            Fade_Start(0,0,1.0f);Ramp_Start(&ctx->timer,1.2f,0.0f,1.0f);ctx->step=1;
+        }}
+        break;
     case 0:
         PauseMenu_Update(BtlPause_GetMenuPad(), 1);
         PauseMenu_Draw();

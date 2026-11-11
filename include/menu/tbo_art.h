@@ -26,7 +26,15 @@
     X(TBO_BTN_LEFTRIGHT, "btn_leftright") \
     X(TBO_BTN_CIRCLE, "btn_circle") \
     X(TBO_BTN_START, "btn_start") \
-    X(TBO_RADAR, "radar")                   /* the Dragon Radar of the search: its frames, 11 a row (src/menu/port_tbo.c Tb_Radar) */
+    X(TBO_TAG_HUD_PREVIEW, "tag_hud_preview") \
+    X(TBO_TAG_HUD_FACES, "tag_hud_faces") \
+    X(TBO_KIT_BAR_COMPACT, "kit_bar_compact") \
+    X(TBO_KIT_SEL_COMPACT, "kit_sel_compact") \
+    X(TBO_RADAR, "radar") \
+    X(TBO_DISCORD, "discord")
+
+#define TBO_MAIN_ONLINE_OFF (TBO_ART_COUNT + 16)
+#define TBO_MAIN_ONLINE_ON (TBO_ART_COUNT + 17)
 
 #define TBO_ART_ENUM(id, name) id,
 enum { TBO_ART_LIST(TBO_ART_ENUM) TBO_ART_COUNT };

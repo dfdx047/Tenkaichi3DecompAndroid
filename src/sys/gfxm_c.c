@@ -16,6 +16,11 @@ extern int Port_MenuClipMoving(const char *name, int x, int top);
 extern int Port_MenuFree(int on);
 static int gPortFlashMeasure;  /* FlashDraw_Quad only measures (gPortFlashBox: the leftmost and rightmost x) */
 static float gPortFlashBox[2];
+#include "port_render_markers.h"
+static const void *sPortraitFade[2];
+static u64 sPortraitPrim;
+void Flash_PortPortraits(const void *a,const void *b){sPortraitFade[0]=a;sPortraitFade[1]=b;}
+
 extern int Port_MenuPart(int part);
 #endif
 #include "sys/gfxm_b_b.h"
@@ -675,17 +680,25 @@ void FlashSlot_Draw(FlashSlot *slot, FlashProp *parent, Flash *flash) {
             int moving = Port_MenuClipMoving(clip->name, (int)(prop.mtx.m[2] + (f32)flash->ofs[0]), parent == NULL);
             int freePrev = moving ? Port_MenuFree(1) : -1;
             int prev;
+            extern float Port_MenuLabelScale(const char *name);
+            float labelScale=Port_MenuLabelScale(clip->name);
+            if(labelScale!=1.0f){
+                prop.mtx.m[0]*=labelScale;prop.mtx.m[1]*=labelScale;
+                prop.mtx.m[3]*=labelScale;prop.mtx.m[4]*=labelScale;
+                prop.mtx.m[5]-=2.0f;
+            }
             if (part == -2) {
                 gPortFlashMeasure = 1;
                 gPortFlashBox[0] = 1e9f;
                 gPortFlashBox[1] = -1e9f;
-                FlashTl_Draw(&clip->tl, &prop);
+                if (!(clip->flags & 0x10)) FlashTl_Draw(&clip->tl, &prop);
                 gPortFlashMeasure = 0;
-                part = Port_MenuClipPlace((int)gPortFlashBox[0], (int)gPortFlashBox[1]);
+                part = gPortFlashBox[0] <= gPortFlashBox[1] ?
+                    Port_MenuClipPlace((int)gPortFlashBox[0], (int)gPortFlashBox[1]) : -1;
             }
             prev = part >= 0 ? Port_MenuPart(part) : 0;
 #endif
-        FlashTl_Draw(&clip->tl, &prop);
+        if (!(clip->flags & 0x10)) FlashTl_Draw(&clip->tl, &prop);
         if (clip->drawOver != NULL) {
             clip->drawOver(clip->overArg, &prop);
         }
@@ -758,6 +771,9 @@ u64 *FlashDraw_PutSprite(u64 *p, FlashQuad *q, u64 tex0) {
     p += 2;
     p[0] = tex0;
     p[1] = 0x154;
+#ifdef PORT
+    p[1] |= sPortraitPrim;
+#endif
     p += 2;
     uv[0] = q->uv.u0 + 1;
     uv[2] = q->uv.u1 - 1;
@@ -953,7 +969,16 @@ void FlashDraw_Quad(FlashTex *tex, FlashQuad *q) {
     }
     p[1] = 8;
     p += 2;
+#ifdef PORT
+    /* Mark only the large portraits, never their roster icons or labels.
+       The renderer fades the opaque outside cut, using the original alpha. */
+    sPortraitPrim = tex && tex == sPortraitFade[0] ? PORT_PRIM_PORTRAIT_LEFT :
+                    tex && tex == sPortraitFade[1] ? PORT_PRIM_PORTRAIT_RIGHT : 0;
+#endif
     Dma_EndDirect(FlashDraw_PutSprite(p, q, tex0));
+#ifdef PORT
+    sPortraitPrim = 0;
+#endif
 }
 
 /* Brings a shape's quad to the screen: the shape's matrix and colour transform, then the owning sprite's drawing
@@ -1252,11 +1277,26 @@ void Flash_ClipSetCallbackC(Flash *flash, FlashRef *ref, void *fn, void *arg) {
     }
 }
 
+#ifdef PORT
+/* A port-owned menu sprite in place of a clip's baked picture. The original timeline,
+   transforms, visibility and fade still control the replacement. */
+void Flash_ClipSetCustomDraw(Flash *flash, FlashRef *ref, void *fn, void *arg) {
+    if(ref->index>=0) {
+        FlashClip *clip=&flash->clips->items[ref->index];
+        if(fn)clip->flags|=0x10;else clip->flags&=~0x10;
+        FlashClipList_SetDrawOver(flash->clips,ref,fn,arg);
+    }
+}
+#endif
+
 /* Sets or clears properties of a clip, one bit of `props` each: 1 playing, 2 visible, 4 flip x, 8 flip y,
    0x10 no screen offset, 0x20 additive, 0x40 subtractive, 0x80 masked, 0x100 mask writer, 0x200 repeat,
    0x400 keeps running while its parent is stopped. */
 s32 Flash_ClipSetFlags(Flash *flash, FlashRef *ref, s32 props, u8 on) {
     if (ref->index >= 0) {
+        if (props & 0x800) {
+            FlashClipList_SetFlags(flash->clips, ref, 0x10, on);
+        }
         if (props & 1) {
             if (on) {
                 FlashClipList_Play(flash->clips, ref);

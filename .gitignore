@@ -42,3 +42,10 @@ bt3_mods.txt
 
 # the private key that signs the releases for the automatic update (port/tools/update_key.py generate): never in the repository
 port/tools/update_signing_key.txt
+
+# Local Supabase tooling and private player/test sessions.
+.env
+.env.*
+supabase/.temp/
+supabase/.branches/
+supabase/*session*.json

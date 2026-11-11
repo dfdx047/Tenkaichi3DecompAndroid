@@ -20,6 +20,7 @@
 #include <string.h>
 #include "gs_internal.h"
 #include "ui.h"
+#include "presentation.h"
 
 int gPortOverlayOpen, gPortInputCapture, gPortChatTyping;
 extern int Port_Setting(const char *name, int def); /* plat_settings.c */
@@ -55,10 +56,13 @@ static const struct { const char *name, *label; unsigned bit; int key; int pad; 
 };
 
 static int sKeys[2][PORT_ACTIONS], sPadBtn[2][PORT_PAD_BUTTONS], sPadSlot[2];
+static unsigned sQuickPress[2];
+static SDL_SpinLock sQuickPressLock;
+extern int gPortTboTyping;
 /* Per player: the deadzone of the left and of the right stick (-1 = the game's own, as the pad's bytes always were
    passed; 0..PORT_DEADZONE_MAX = a round one of that many percent, stick_bytes below), and vibration (on, strength
    in percent). */
-static int sDeadzone[2][2], sVib[2][2];
+static int sDeadzone[2][2], sVib[2][2], sTargetStick[2], sTargetLatch[2];
 /* What opens and closes the settings window: a key (F1) and a controller button (none), both of the settings
    window's list; and START + SELECT of any controller together, always. */
 static int sOverlayKey = SDL_SCANCODE_F1, sOverlayPad = -1;
@@ -82,6 +86,7 @@ static void defaults(int player) {
         sPadSlot[player] = 0; /* BT3_PAD_SHARED: both players on controller 1 (testing 1P vs 2P with one pad) */
     }
     sDeadzone[player][0] = sDeadzone[player][1] = -1;
+    sTargetStick[player] = sTargetLatch[player] = 0;
     sVib[player][0] = 1;
     sVib[player][1] = 100;
 }
@@ -110,6 +115,8 @@ static void load(void) {
             snprintf(name, sizeof(name), "deadzone_p%d_%s", p + 1, a == 0 ? "ls" : "rs");
             sDeadzone[p][a] = range(Port_Setting(name, -1), -1, PORT_DEADZONE_MAX);
         }
+        snprintf(name, sizeof(name), "target_stick_p%d", p + 1);
+        sTargetStick[p] = Port_Setting(name, 0) != 0;
         snprintf(name, sizeof(name), "vibration_p%d", p + 1);
         sVib[p][0] = Port_Setting(name, 1) != 0;
         snprintf(name, sizeof(name), "vibration_p%d_strength", p + 1);
@@ -125,6 +132,7 @@ int *PortInput_Keys(int player) { pthread_once(&sLoadOnce, load); return sKeys[p
 int *PortInput_PadButtons(int player) { pthread_once(&sLoadOnce, load); return sPadBtn[player]; }
 int *PortInput_PadSlot(int player) { pthread_once(&sLoadOnce, load); return &sPadSlot[player]; }
 int *PortInput_Deadzone(int player) { pthread_once(&sLoadOnce, load); return sDeadzone[player]; }
+int *PortInput_TargetStick(int player) { pthread_once(&sLoadOnce, load); return &sTargetStick[player]; }
 int *PortInput_Vibration(int player) { pthread_once(&sLoadOnce, load); return sVib[player]; }
 int *PortInput_OverlayKey(void) { pthread_once(&sLoadOnce, load); return &sOverlayKey; }
 int *PortInput_OverlayPad(void) { pthread_once(&sLoadOnce, load); return &sOverlayPad; }
@@ -141,6 +149,13 @@ int PortInput_Hotkey(const SDL_Event *ev) {
         return 0;
     }
     if (ev->type == SDL_EVENT_KEY_DOWN && !ev->key.repeat) {
+        if (!gPortOverlayOpen && !gPortChatTyping && !gPortTboTyping && !sKeySwallow) {
+            int p, a;
+            SDL_LockSpinlock(&sQuickPressLock);
+            for (p = 0; p < 2; p++) for (a = 0; a < PORT_PAD_BUTTONS; a++)
+                if (sKeys[p][a] == (int)ev->key.scancode) sQuickPress[p] |= kActions[a].bit;
+            SDL_UnlockSpinlock(&sQuickPressLock);
+        }
         return sOverlayKey > 0 && (int)ev->key.scancode == sOverlayKey;
     }
     if (ev->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
@@ -179,6 +194,43 @@ int gPortTboTyping;
 static char sTboKeys[64];
 static unsigned sTboHead, sTboTail;
 static SDL_SpinLock sTboLock;
+static struct {
+    float left, top, right, bottom;
+    int active, clicked;
+} sCommunity;
+
+void PortTbo_CommunityBounds(int active, float left, float top, float right, float bottom) {
+    SDL_LockSpinlock(&sTboLock);
+    sCommunity.active = active;
+    sCommunity.left = left;
+    sCommunity.top = top;
+    sCommunity.right = right;
+    sCommunity.bottom = bottom;
+    if (!active) sCommunity.clicked = 0;
+    SDL_UnlockSpinlock(&sTboLock);
+}
+
+int PortTbo_CommunityTake(void) {
+    SDL_LockSpinlock(&sTboLock);
+    int clicked = sCommunity.clicked;
+    sCommunity.clicked = 0;
+    SDL_UnlockSpinlock(&sTboLock);
+    return clicked;
+}
+
+static void SDLCALL community_open(void *unused) {
+    (void)unused;
+    if (!SDL_OpenURL("https://discord.gg/EBhh5ef3T6"))
+        fprintf(stderr, "bt4 community: %s\n", SDL_GetError());
+}
+
+void PortTbo_OpenCommunity(void) {
+    if (getenv("BT4_RENDER_TEST")) {
+        fprintf(stderr, "bt4 community: activation verified\n");
+        return;
+    }
+    SDL_RunOnMainThread(community_open, NULL, false);
+}
 
 static int typing_key(int sc) {
     return (sc >= SDL_SCANCODE_A && sc <= SDL_SCANCODE_SLASH && sc != SDL_SCANCODE_TAB) ||
@@ -217,8 +269,7 @@ int PortTbo_TextRead(void) {
    puts it on the clipboard (PortInput_TboClipboard, from the overlay's frame: SDL wants the clipboard there). */
 static char sTboCopy[64];
 static int sTboCopyDue;
-static int sTboPasteDue; /* the keypad's PASTE: 1 the clipboard's code (Join), 2 its plain characters (Join
-                            by Address), typed on the window's thread */
+static int sTboPasteDue; /* the keypad's PASTE: 1 the clipboard's code (Join), 2 its plain characters (Join by Address) */
 
 void PortTbo_Copy(const char *text) {
     SDL_LockSpinlock(&sTboLock);
@@ -237,25 +288,6 @@ void PortTbo_PasteText(void) {
     SDL_LockSpinlock(&sTboLock);
     sTboPasteDue = 2;
     SDL_UnlockSpinlock(&sTboLock);
-}
-
-/* An address in a copied text: its last word ("192.168.1.20:7000" of "My address: 192.168.1.20:7000"), typed as if
-   by hand; the page keeps the characters an address can have. */
-static void tbo_paste_text(const char *clip) {
-    const unsigned char *p = (const unsigned char *)clip, *from = p;
-    int n = 0;
-
-    for (; p != NULL && *p; p++) {
-        if (*p == ' ' && p[1] != '\0' && p[1] != ' ') {
-            from = p + 1; /* (the last word is the address) */
-        }
-    }
-    for (p = from; p != NULL && *p && *p != ' ' && *p != '\n' && *p != '\r' && n < 48; p++) {
-        if (*p > 32 && *p < 127) {
-            tbo_push(*p);
-            n++;
-        }
-    }
 }
 
 /* The room code in a copied text: the last run of exactly six letters and digits ("Room code: MFT8FD"); without
@@ -285,6 +317,24 @@ static void tbo_paste_code(const char *clip) {
     }
 }
 
+/* An address in copied text: use its last word ("192.168.1.20:7000" of "My address: 192.168.1.20:7000"). */
+static void tbo_paste_text(const char *clip) {
+    const unsigned char *p = (const unsigned char *)clip, *from = p;
+    int n = 0;
+
+    for (; p != NULL && *p; p++) {
+        if (*p == ' ' && p[1] != '\0' && p[1] != ' ') {
+            from = p + 1;
+        }
+    }
+    for (p = from; p != NULL && *p && *p != ' ' && *p != '\n' && *p != '\r' && n < 48; p++) {
+        if (*p > 32 && *p < 127) {
+            tbo_push(*p);
+            n++;
+        }
+    }
+}
+
 void PortInput_TboClipboard(void) {
     char text[sizeof(sTboCopy)];
     int due, paste;
@@ -296,10 +346,14 @@ void PortInput_TboClipboard(void) {
     memcpy(text, sTboCopy, sizeof(text));
     SDL_UnlockSpinlock(&sTboLock);
     if (due) {
-        SDL_SetClipboardText(text);
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_CLIPBOARD_OUT")){
+            FILE *f=fopen(getenv("BT4_TAG_CLIPBOARD_OUT"),"ab");
+            if(f){fprintf(f,"%s\n",text);fclose(f);}
+        }else SDL_SetClipboardText(text);
     }
     if (paste) {
-        char *clip = SDL_GetClipboardText();
+        char *clip = getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_CLIPBOARD_TEXT")?
+            SDL_strdup(getenv("BT4_TAG_CLIPBOARD_TEXT")):SDL_GetClipboardText();
         if (paste == 2) {
             tbo_paste_text(clip);
         } else {
@@ -309,8 +363,28 @@ void PortInput_TboClipboard(void) {
     }
 }
 
-/* 1: the event was the keypad's. Only plain characters (32..126) are typed: a name or a room code. */
+static int community_click(const SDL_MouseButtonEvent *ev) {
+    const int width = gUiPresentW, height = gUiPresentH;
+    if (width <= 0 || height <= 0) return 0;
+    SDL_Window *window = SDL_GetWindowFromID(ev->windowID);
+    int w, h, pixelW, pixelH;
+    if (!window || !SDL_GetWindowSize(window, &w, &h) || w <= 0 || h <= 0 ||
+        !SDL_GetWindowSizeInPixels(window, &pixelW, &pixelH)) return 0;
+    float x = (ev->x * pixelW / w - gUiPresentX) * 512.0f / width;
+    float y = (ev->y * pixelH / h - gUiPresentY) * 448.0f / height;
+
+    SDL_LockSpinlock(&sTboLock);
+    int hit = sCommunity.active && x >= sCommunity.left && x <= sCommunity.right &&
+                                  y >= sCommunity.top && y <= sCommunity.bottom;
+    if (hit) sCommunity.clicked = 1;
+    SDL_UnlockSpinlock(&sTboLock);
+    return hit;
+}
+
+/* 1: handled by the online menu. The keypad only types plain characters (32..126). */
 int PortInput_TboEvent(const SDL_Event *ev) {
+    if (ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN && ev->button.button == SDL_BUTTON_LEFT)
+        return community_click(&ev->button);
     if (!gPortTboTyping) {
         return 0;
     }
@@ -325,6 +399,13 @@ int PortInput_TboEvent(const SDL_Event *ev) {
     }
     if (ev->type == SDL_EVENT_KEY_DOWN) {
         SDL_Scancode sc = ev->key.scancode;
+        /* Back means the configured Triangle key even while a keypad takes
+         * text. Send the keypad's cancel command, not a held gameplay button. */
+        pthread_once(&sLoadOnce, load);
+        if (sKeys[0][7] > 0 && sc == sKeys[0][7] && !(ev->key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI | SDL_KMOD_ALT))) {
+            if (!ev->key.repeat) tbo_push(27);
+            return 1;
+        }
         if (sc == SDL_SCANCODE_V && (ev->key.mod & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) && !ev->key.repeat) {
             /* Ctrl+V (Cmd+V): the clipboard's text, as if typed (a room code copied from a message); only its
                plain characters, and no more than the keypad can hold */
@@ -372,6 +453,8 @@ void PortInput_Save(void) {
             snprintf(name, sizeof(name), "deadzone_p%d_%s", p + 1, a == 0 ? "ls" : "rs");
             Port_SettingSave(name, sDeadzone[p][a]);
         }
+        snprintf(name, sizeof(name), "target_stick_p%d", p + 1);
+        Port_SettingSave(name, sTargetStick[p]);
         snprintf(name, sizeof(name), "vibration_p%d", p + 1);
         Port_SettingSave(name, sVib[p][0]);
         snprintf(name, sizeof(name), "vibration_p%d_strength", p + 1);
@@ -450,6 +533,7 @@ static void pads_refresh(void) {
     static unsigned calls;
     SDL_JoystickID *ids;
     int n = 0, i, k;
+    if(getenv("BT4_RENDER_TEST") != NULL)return;
 
     if (!sInit) {
         SDL_InitSubSystem(SDL_INIT_GAMEPAD);
@@ -569,6 +653,36 @@ static unsigned script_buttons(void) {
  * This is done to the pad's own bytes, before they reach the game or the other player of an online match: the
  * game sees an ordinary pad, so the two copies of an online match compute the same fight whoever has it on. */
 static int sClashSquare = -1;
+static int sClashStick = -1;
+int Port_ClashStick(void) {
+    if(sClashStick<0)sClashStick=Port_Setting("clash_stick",0)!=0;
+    return sClashStick;
+}
+void Port_ClashStickSet(int on) {
+    sClashStick=on!=0;Port_SettingSave("clash_stick",sClashStick);Port_SettingsWrite();
+}
+
+/* Adapt only local pad bytes before networking/recording. Keep the original
+ * BT4 scoring and let peers replay ordinary button presses. One sector change
+ * earns one tap, with a release between taps, never one tap per held frame. */
+static void clash_stick(int socket,unsigned *btn,unsigned char lx,unsigned char ly) {
+    extern void *BtlChar_FindByObjId(int), *BtlChar_FindBySide(int);
+    extern int BtlAct_GetCurrent(void *),Port_NetActive(void),Port_NetMe(void);
+    extern int PortMods_ViewActor(int);
+    static int sector[2]={-1,-1},pulse[2];
+    int side=Port_NetActive()?Port_NetMe():socket;
+    void *chr=BtlChar_FindBySide(PortMods_ViewActor(side));
+    int action=chr?BtlAct_GetCurrent(chr):-1;
+    int in=(action>=0x130&&action<=0x132)||action==0xFA||action==0xFB||action==0xFC;
+    int x=(int)lx-128,y=(int)ly-128,next=-1;
+    if(!Port_ClashStick()||!in){sector[socket]=-1;pulse[socket]=0;return;}
+    if(abs(x)>80||abs(y)>80)next=abs(x)>abs(y)?(x>0?1:3):(y>0?2:0);
+    if(pulse[socket]){pulse[socket]=0;return;}
+    if(next>=0&&next!=sector[socket]){
+        *btn|=B_SQUARE|B_TRIANGLE;pulse[socket]=1;
+    }
+    sector[socket]=next;
+}
 
 int Port_ClashSquare(void) {
     if (sClashSquare < 0) {
@@ -776,6 +890,34 @@ void PortInput_StickView(int player, PortStickView *out) {
     }
 }
 
+/* Physical local input only. Never read a replayed or remote fighter's pad. */
+void PortInput_Spectator(float *axes) {
+    const bool *keys;SDL_Gamepad *pad;SDL_Window *window;int i;
+    for(i=0;i<7;i++)axes[i]=0;
+    if(getenv("BT4_RENDER_TEST") || gPortOverlayOpen || gPortInputCapture ||
+       gPortChatTyping || gPortTboTyping || sKeySwallow)return;
+    window=GsDraw_Window();
+    if(!window || !(SDL_GetWindowFlags(window)&SDL_WINDOW_INPUT_FOCUS))return;
+    keys=SDL_GetKeyboardState(NULL);
+    axes[0]=(float)keys[SDL_SCANCODE_D]-keys[SDL_SCANCODE_A];
+    axes[1]=(float)keys[SDL_SCANCODE_W]-keys[SDL_SCANCODE_S];
+    axes[2]=(float)keys[SDL_SCANCODE_E]-keys[SDL_SCANCODE_Q];
+    axes[3]=(float)keys[SDL_SCANCODE_RIGHT]-keys[SDL_SCANCODE_LEFT];
+    axes[4]=(float)keys[SDL_SCANCODE_UP]-keys[SDL_SCANCODE_DOWN];
+    axes[5]=(float)(keys[SDL_SCANCODE_EQUALS]||keys[SDL_SCANCODE_KP_PLUS])-
+                  (keys[SDL_SCANCODE_MINUS]||keys[SDL_SCANCODE_KP_MINUS]);
+    axes[6]=keys[SDL_SCANCODE_LSHIFT]||keys[SDL_SCANCODE_RSHIFT];
+    pthread_once(&sLoadOnce,load);pad=pad_of(0);
+    if(pad && !sSwallow) {
+        PortStickView sticks;PortInput_StickView(0,&sticks);
+        axes[0]+=sticks.game[0][0];axes[1]-=sticks.game[0][1];
+        axes[3]+=sticks.game[1][0];axes[4]-=sticks.game[1][1];
+        axes[2]+=(float)SDL_GetGamepadButton(pad,SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER)-SDL_GetGamepadButton(pad,SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
+        axes[5]+=sticks.trigger[1]-sticks.trigger[0];
+        axes[6]=axes[6] || SDL_GetGamepadButton(pad,SDL_GAMEPAD_BUTTON_LEFT_STICK);
+    }
+}
+
 /* Vibration.
  *
  * The game drives the DualShock 2's two motors itself: every frame Pad_Update (src/sys/pad.c) ends with
@@ -903,7 +1045,7 @@ void Port_PadVibrate(int socket, int small, int large) {
     int player = socket, why = 0;
     unsigned low, high;
 
-    if (!sInit || gPortResim || socket < 0 || socket > 1) {
+    if (getenv("BT4_RENDER_TEST") != NULL || !sInit || gPortResim || socket < 0 || socket > 1) {
         return;
     }
     if (Port_NetActive()) {
@@ -1013,7 +1155,7 @@ int Port_PadRead(int socket, unsigned char *data) {
     SDL_Gamepad *g;
     int a;
 
-    if (!GsGpu_Enabled() || socket < 0 || socket > 1) {
+    if (getenv("BT4_RENDER_TEST") != NULL || !GsGpu_Enabled() || socket < 0 || socket > 1) {
         return 0;
     }
     pthread_once(&sLoadOnce, load);
@@ -1084,6 +1226,10 @@ int Port_PadRead(int socket, unsigned char *data) {
     if (socket == 0) {
         btn |= script_buttons();
     }
+    SDL_LockSpinlock(&sQuickPressLock);
+    if (!gPortOverlayOpen && !gPortChatTyping && !sKeySwallow) btn |= sQuickPress[socket];
+    sQuickPress[socket] = 0;
+    SDL_UnlockSpinlock(&sQuickPressLock);
     if (socket == 0 && getenv("BT3_STICK_TEST") != NULL) { /* the numbers, once: what was read, what was passed, what the game has */
         static const char *const dirs[5] = {"-", "up", "down", "left", "right"};
         extern unsigned char gPad[]; /* the game's (include/sys/pad.h): 0x130 left x, y, 0x138 right x, y, 0x148 held */
@@ -1106,11 +1252,30 @@ int Port_PadRead(int socket, unsigned char *data) {
             fprintf(stderr, "sticks: the game's pad 1 has left %+.4f %+.4f, right %+.4f %+.4f, held %08X\n", f[0], f[1], f[2], f[3], held);
         }
     }
+    clash_stick(socket, &btn, lx, ly);
     clash_square(socket, &btn, &lx, &ly);
     press_age(socket, btn);
+    /* Filter captured local input before it is sent or recorded. Applying this
+       to gPad inside the simulation would make network peers disagree. */
+    if(socket==0 && PortSpectator_ConsumesInput()) {
+        btn=PortSpectator_FilterButtons(btn);rx=ry=lx=ly=0x80;
+    }
     memset(data, 0, 18);
     data[0] = (unsigned char)(~btn & 0xFF);       /* active low */
     data[1] = (unsigned char)(~(btn >> 8) & 0xFF);
     data[2] = rx; data[3] = ry; data[4] = lx; data[5] = ly;
+    {
+        extern int PortMods_InBattle(void);
+        if (sTargetStick[socket] && PortMods_InBattle() && !PortSpectator_ConsumesInput()) {
+            float axes[2]; int dir;
+            unsigned char b[2]={rx,ry};
+            game_stick(b,axes,&dir);
+            /* Byte 17 is otherwise unused by this port. It travels with the
+               original pad report, including rollback input history. */
+            data[17]=(unsigned char)(0x80 | (dir && !sTargetLatch[socket] ? dir : 0));
+            sTargetLatch[socket]=dir!=0;
+            data[2]=data[3]=0x80;
+        } else sTargetLatch[socket]=0;
+    }
     return 18;
 }

@@ -328,8 +328,10 @@ void ObjDraw_UploadTextures(ObjDrawObj *obj) {
             BtlObjLight_FindRes1(mdl->model->clutTbp + j * 4);
         }
     } else if (obj->state.flags & 0x40000) {
+        typedef struct { Vec4 dir, half, color; TexFile *res; } Bt4DrawLight;
+        extern Bt4DrawLight *BtlObjLight_Get(void);
         for (j = 0; j < obj->mdl.model->clutCount; j++) {
-            TexFile_UploadRange(obj->mdl.tex, mdl->model->clutFirst, mdl->model->clutCount, mdl->model->clutTbp, -1);
+            TexFile_UploadOne(BtlObjLight_Get()->res, 2, mdl->model->clutTbp + j * 4, -1);
         }
     } else if (obj->state.flags & 0x400000) {
         for (j = 0; j < obj->mdl.model->clutCount; j++) {

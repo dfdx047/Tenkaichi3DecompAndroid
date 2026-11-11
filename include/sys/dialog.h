@@ -81,6 +81,9 @@ typedef struct Dialog {
 extern Dialog *gDialog;
 
 void Dialog_DrawText(void);
+#ifdef PORT
+void Dialog_SetChoiceLabels(u16 *first,u16 *second);
+#endif
 void Dialog_DrawTitle(void);
 void Dialog_DrawBody(void);
 void Dialog_PlayCursorPlate(s32 flash, const char *label);

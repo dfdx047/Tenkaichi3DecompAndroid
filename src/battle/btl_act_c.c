@@ -1,4 +1,6 @@
 #include "common.h"
+extern s32 TagBattle_Target(s32 actor);
+extern void Bt4_SpendTransformKi(void *chr, s32 amount);
 #include "battle/btl_act_c.h"
 
 /*
@@ -909,6 +911,13 @@ s32 BtlAct_GuardHandler(Chr *chr, s32 phase) {
 s32 BtlAct_Action39(Chr *chr, s32 phase) {
     if (phase == 0) {
         BtlAnim_Play(chr, 0xEC, 0.0f);
+        /* BT4: successful Z-counter grants stock and one Ki bar (20000), capped by the member maximum. */
+        {
+            s32 *m = (s32 *)BtlMember_GetActive(chr);
+            s32 stock = m[0x14/4] + 1;
+            m[0x14/4] = stock < -20 ? -20 : stock > 80 ? 80 : stock;
+            BtlMember_AddKi(chr, 20000);
+        }
     }
     if (phase == 1) {
         if (BtlAnim_Advance(chr, 0)) {
@@ -1248,7 +1257,7 @@ s32 BtlAct_Action42(Chr *chr, s32 phase) {
         BtlChar_SetHeldFlag(chr, 0xE);
         BtlChar_GetPos(chr)->unk98 = 0.0f;
         BtlChar_GetPos(chr)->unk9C = 0.0f;
-        BtlMember_Damage(chr, 5000, 0x42B);
+        BtlMember_Damage(chr, 8000, 0x42B);
         BtlChar_SetHeldFlag(chr, 0x4B);
         BtlCharSnd_PlayCommon(chr, 0x24);
         BtlChar_PlayVoice(chr, 6);
@@ -1286,6 +1295,18 @@ s32 BtlAct_Action43(Chr *chr, s32 phase) {
     if (phase == 1) {
         if (BtlAnim_Advance(chr, 0)) {
             BtlAct_Request(chr, 0xB);
+            /* BT4 0x19BFA0: stock gain and the opponent's ki cost after the recovery animation. */
+            {
+                s32 count = BtlMember_GetActive(chr)->unkA0;
+                extern Chr *BtlChar_Get(s32 side);
+                extern void BtlMember_AddBlast(Chr *chr, s32 amount);
+                Chr *opp = BtlChar_Get(TagBattle_Target(chr->player));
+                if (count < 1) count = 1;
+                BtlMember_AddBlast(chr, 50000 / count);
+                if (!BtlChar_TestFlag(opp, 0xBE) &&
+                    (BtlChar_TestFlag(opp, 6) || BtlMember_GetActiveGauge(opp)->maxPower == 0))
+                    Bt4_SpendTransformKi(opp, 40000 / count);
+            }
         }
         BtlMove_Step(chr, 6, 5, 2, 0.0f, BTL_KMH(100.0f));
         BtlMove_ApplyGravity(chr);

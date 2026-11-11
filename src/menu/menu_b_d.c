@@ -1,8 +1,11 @@
 #include "common.h"
+#include "port_variant.h"
 #include "menu/menu_c.h"
 #include "sys/pad.h"
 #include "sys/save.h"
 #ifdef PORT
+#include <stdlib.h>
+#include "story_audit.inc"
 extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
 extern void Port_MenuFill(int on);
 #endif
@@ -16,6 +19,23 @@ HistSel *gHistSel = NULL; /* 0x3B12FC */
  */
 
 extern void Voice_StopWithLip(void);
+
+/* BT4 reuses resource 33 for every guest (SLUS 0x33D9E4). The face is
+   baked into that portrait. Apply this to every instance, including outgoing
+   guests, rather than only the currently selected saga. */
+void HistGuide_OriginalPortrait(MFlash *flash, s32 guide) {
+    MFlashRef ref;
+    char name[64];
+    char sub[64];
+    if (!PORT_V(0,1) || guide < 0 || guide >= 8) return;
+    sprintf(name, "mc_guide_%02d", guide);
+    sprintf(sub, "mc_guide_%02d_eye", guide);
+    Flash_FindLabel(flash, name, sub, &ref);
+    Flash_ClipSetFlags(flash, &ref, 2, 0);
+    sprintf(sub, "mc_guide_%02d_mouth", guide);
+    Flash_FindLabel(flash, name, sub, &ref);
+    Flash_ClipSetFlags(flash, &ref, 2, 0);
+}
 
 /* Says line voiceLine with the voice set of guide `guide` (0..7 the sagas' guides, 8 this screen's own). */
 void HistSel_PlayVoice(void) {
@@ -145,11 +165,11 @@ void HistSel_Init(s32 section) {
     s32 j;
     s32 cleared;
 
-    gHistSel = Heap_Alloc(0x254, 0x20, 0, 2);
-    memset(gHistSel, 0, 0x254);
+    gHistSel = Heap_Alloc(0x258, 0x20, 0, 2);
+    memset(gHistSel, 0, 0x258);
     gHistSel->pack = (u32 *)MPACK_AT(gMenuArc2, section);
     gHistSel->res = Sprite_Unpack(gHistSel->pack, NULL, NULL);
-    StreamSe_PlayDefault(0, 0x10BDB);
+    StreamSe_PlayDefault(0, 0x158);
     SEL_RES(1);
     gHistSel->bg = res;
     SEL_RES(2);
@@ -204,7 +224,7 @@ void HistSel_Init(s32 section) {
     SEL_TEX(38, 6);
     SEL_TEX(77, 8);
     for (i = 0; i < 8; i++) {
-        SEL_RES(33 + i);
+        SEL_RES(33);
         switch (i) {
         case 0:
             SEL_ICONS(46, 47, 48);
@@ -308,7 +328,7 @@ void HistSel_Init(s32 section) {
         gHistSel->blink[i] = Rand_Range(0x20);
     }
     if (gSaveData->unlockFlags & 0x80) {
-        HistSel_RollEvent();
+        /* BT4 removes the random guide event at SLUS 0x33E09C. */
         if (gHistSel->guest >= 0) {
             gHistSel->flags |= HISTSEL_EVENT;
         }
@@ -388,6 +408,15 @@ void HistSel_Draw(void) {
             FlashAnim_ShowNext2(flash, &ref, 0);
         }
     }
+    for (i = 0; i < 8; i++) HistGuide_OriginalPortrait(flash, i);
+    if (gHistSel->flags & 0x80) {
+        gHistSel->foregroundAlpha -= 0.075f;
+        if (gHistSel->foregroundAlpha < 0.0f) gHistSel->foregroundAlpha = 0.0f;
+    } else {
+        gHistSel->foregroundAlpha = 1.0f;
+    }
+    Flash_FindLabel(flash, NULL, "mc_taki", &ref);
+    Flash_ClipSetAlpha(flash, &ref, gHistSel->foregroundAlpha);
     Num_Draw(flash, "mc_tassei_num_%d", 0, 3, gHistSel->percent, 0x20, 0x20, 0);
 
     for (i = 0; i < 2; i++) {
@@ -735,8 +764,20 @@ void HistSel_Input(s32 *result) {
    (gProgress->subMenu), 2 for the ending movie. */
 s32 HistSel_Run(s32 section) {
     s32 result = 1;
+#ifdef PORT
+    s32 previewFrames=0;
+#endif
 
+    #ifdef PORT
+    if(getenv("BT4_TEST_STORY_GUIDE")){
+        Save_UnlockAll(gSaveData);
+        gProgress->subMenu=atoi(getenv("BT4_TEST_STORY_GUIDE"));
+    }
+    #endif
     HistSel_Init(section);
+#ifdef PORT
+    if (getenv("BT4_TEST_STORY_GUIDE"))gHistSel->flags=HISTSEL_GREETED;
+#endif
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {
         Gfx_BeginFrame();
@@ -745,6 +786,19 @@ s32 HistSel_Run(s32 section) {
         ColorFade_Update();
         if (!(gProgress->flags & MPROG_FREEZE)) {
             HistSel_Update();
+#ifdef PORT
+            if (getenv("BT4_TEST_STORY_GUIDE") && ++previewFrames==120) {
+                s32 guide=atoi(getenv("BT4_TEST_STORY_GUIDE"));
+                if(guide>=0 && guide<8){
+                    gHistSel->guest=PORT_V(guide,6);gHistSel->guide=guide;
+                    Flash_GotoLabel(&gHistSel->flash[0],"fl_scenario_ok",1);
+                    HistGuide_ClipGoto(gHistSel,gHistSel->guest,"fl_in");
+                    gHistSel->script=getenv("BT4_TEST_STORY_GUIDE_STEP")?atoi(getenv("BT4_TEST_STORY_GUIDE_STEP")):251+50*guide;
+                    HistGuide_Update(gHistSel,&result);
+                }
+            }
+            if (!getenv("BT4_TEST_STORY_GUIDE"))
+#endif
             HistGuide_Update(gHistSel, &result);
         }
         HistSel_Draw();

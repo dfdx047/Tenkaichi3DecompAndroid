@@ -1,5 +1,6 @@
 #include "common.h"
 #include "battle/btl_char_flag.h"
+extern s32 TagBattle_Active(void);
 
 /*
  * Opponent helpers: 0x1DB048..0x1DBF20. Each takes a fighter and answers about the other one
@@ -37,7 +38,8 @@ extern s32 BtlParam_GetUnk0(BtlFlagChr *chr);                        /* u16 at +
 extern s32 BtlParam_GetUnk2(BtlFlagChr *chr);                        /* s8 at +2 of the object's parameter block */
 extern f32 BtlParam_GetUnkC7Scale(BtlFlagChr *chr);
 
-#define OPPONENT(chr) ((chr)->player == 0 ? BtlChar_Get(1) : BtlChar_Get(0))
+extern s32 TagBattle_Target(s32 actor);
+#define OPPONENT(chr) (BtlChar_Get(TagBattle_Target((chr)->player)))
 
 /* Where to aim at the opponent: its override position 6 when set, else its position. */
 void BtlOpp_GetTargetPos(BtlFlagChr *chr, Vec4 *out) {
@@ -77,11 +79,18 @@ void BtlOpp_GetDelta(BtlFlagChr *chr, Vec4 *out) {
 
 /* Copies the vector at +0x30 of the opponent's pose. */
 void BtlOpp_GetPoseVec30(BtlFlagChr *chr, Vec4 *out) {
+    /* In Tag Team the attacker can advance while this target is held by a
+     * finite hit stop. EndFrame leaves the held fighter's previous delta
+     * untouched, so it must not be extrapolated as current movement. */
+    extern s32 BtlChar_IsFrozen(BtlFlagChr *);
+    if(TagBattle_Active()&&BtlChar_IsFrozen(OPPONENT(chr))){memset(out,0,sizeof(*out));return;}
     Vec4_Copy(out, &BtlChar_GetPos(OPPONENT(chr))->unk30);
 }
 
 /* Copies the opponent's velocity (pose +0x40). */
 void BtlOpp_GetVelocity(BtlFlagChr *chr, Vec4 *out) {
+    extern s32 BtlChar_IsFrozen(BtlFlagChr *);
+    if(TagBattle_Active()&&BtlChar_IsFrozen(OPPONENT(chr))){memset(out,0,sizeof(*out));return;}
     Vec4_Copy(out, &BtlChar_GetPos(OPPONENT(chr))->vel);
 }
 
@@ -318,7 +327,9 @@ s32 BtlOpp_GetClashCountB(BtlFlagChr *chr) {
 void BtlOpp_MirrorFlags(BtlFlagChr *chr) {
     BtlFlagChr *opp;
 
-    if (chr->player == 0) {
+    if (TagBattle_Active()) {
+        opp = BtlChar_Get(TagBattle_Target(chr->player));
+    } else if (chr->player == 0) {
         opp = BtlChar_Get(1);
     } else {
         opp = BtlChar_Get(0);

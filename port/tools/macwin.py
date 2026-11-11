@@ -1,7 +1,7 @@
 """The macOS build's step between clang and llc for the game's code (undefined.py): applies the window memory model
 (port/tools/macwin/macwin.cpp, an LLVM pass plugin built here on first use with Homebrew's LLVM) to an .ll file in
 place. See the top of macwin.cpp."""
-import os, pathlib, re, subprocess
+import os, pathlib, re, subprocess, threading
 from toolchain import ROOT, llvm
 
 SRC = ROOT / "port/tools/macwin/macwin.cpp"
@@ -10,13 +10,35 @@ PLUGIN = ROOT / "port/build/macwin.dylib"
 # two, which the IR reader rejects (irfix.py does the same fix for the Linux and Windows builds)
 BITCAST = re.compile(r'^(\s*%[\w.$-]+ = )bitcast (ptr(?: addrspace\(27[12]\))? \S+) to (ptr(?: addrspace\(27[12]\))?)(?=,|$)', re.M)
 
+_plugin_lock = threading.Lock()
+
 def plugin():
+    # Compiler workers share this plugin. Build it once and publish it atomically
+    # so another worker cannot load a missing or partially linked dylib.
+    with _plugin_lock:
+        PLUGIN.parent.mkdir(parents=True, exist_ok=True)
+        if os.name == "posix":
+            import fcntl
+            with PLUGIN.with_suffix(".lock").open("a+b") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                try:
+                    return _plugin_locked()
+                finally:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+        return _plugin_locked()
+
+def _plugin_locked():
     if PLUGIN.exists() and PLUGIN.stat().st_mtime >= SRC.stat().st_mtime:
         return PLUGIN
     flags = subprocess.run([llvm("llvm-config"), "--cxxflags", "--ldflags"], capture_output=True, text=True, check=True).stdout.split()
     PLUGIN.parent.mkdir(parents=True, exist_ok=True)
-    subprocess.run([llvm("clang++"), "-shared", "-fPIC", "-O2", "-isysroot", subprocess.run(["xcrun", "--show-sdk-path"], capture_output=True, text=True).stdout.strip(),
-                    "-undefined", "dynamic_lookup", str(SRC), "-o", str(PLUGIN)] + flags, check=True)
+    temporary = PLUGIN.with_suffix(".tmp.dylib")
+    try:
+        subprocess.run([llvm("clang++"), "-shared", "-fPIC", "-O2", "-isysroot", subprocess.run(["xcrun", "--show-sdk-path"], capture_output=True, text=True).stdout.strip(),
+                        "-undefined", "dynamic_lookup", str(SRC), "-o", str(temporary)] + flags, check=True)
+        os.replace(temporary, PLUGIN)
+    finally:
+        temporary.unlink(missing_ok=True)
     return PLUGIN
 
 # GNU ld's --wrap and --defsym of link.py's `common` flags, applied by the pass (ld64 has neither)

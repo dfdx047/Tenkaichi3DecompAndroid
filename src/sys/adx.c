@@ -110,6 +110,9 @@ void Adx_StopAll(void) {
 
 /* Pauses the two SE and the two voice players (music keeps playing). */
 void Adx_PauseSeVoice(void) {
+#ifdef PORT
+    {extern s32 TagBattle_Active(void);extern void Port_ActorAdxPauseAll(s32);if(TagBattle_Active())Port_ActorAdxPauseAll(1);}
+#endif
     ADXT_Pause(gAdxPlayerTbl[ADX_CH_SE0].adxt, 1);
     ADXT_Pause(gAdxPlayerTbl[ADX_CH_SE1].adxt, 1);
     ADXT_Pause(gAdxPlayerTbl[ADX_CH_VOICE0].adxt, 1);
@@ -118,6 +121,9 @@ void Adx_PauseSeVoice(void) {
 
 /* Resumes the two SE and the two voice players. */
 void Adx_ResumeSeVoice(void) {
+#ifdef PORT
+    {extern s32 TagBattle_Active(void);extern void Port_ActorAdxPauseAll(s32);if(TagBattle_Active())Port_ActorAdxPauseAll(0);}
+#endif
     ADXT_Pause(gAdxPlayerTbl[ADX_CH_SE0].adxt, 0);
     ADXT_Pause(gAdxPlayerTbl[ADX_CH_SE1].adxt, 0);
     ADXT_Pause(gAdxPlayerTbl[ADX_CH_VOICE0].adxt, 0);
@@ -299,6 +305,10 @@ void MapBgm_FadeOutStep(void) {
     Adx_FadeOutStep(ADX_CH_MAP);
 }
 
+/* Shared file selection for independent Tag Team voice streams. */
+s32 Voice_CharaFile(s32 chara,s32 line){
+    return (gSaveData->flags & SAVE_FLAG_ALT_VOICE ? VOICE_CHARA_BASE_ALT : VOICE_CHARA_BASE)+chara*VOICE_CHARA_LINES+line;
+}
 /* Plays line `line` of character `chara` on voice player `voice`, from the voice set chosen in the options. */
 void Voice_PlayCharaEx(s32 voice, s32 chara, s32 line, s32 vol, s32 pan) {
     s32 id;

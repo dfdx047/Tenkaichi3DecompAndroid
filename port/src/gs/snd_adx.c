@@ -4,8 +4,8 @@
  *
  * The game owns a few "players" (ADXT_Create), starts a file on one (ADXT_StartAfs: a file of an archive;
  * ADXT_StartFname: a loose file next to the movies), and controls it with pause, volume and pan. Every ADX file of
- * the game is the plain kind: type 3, 4-bit ADPCM in 18-byte frames, version 4, not encrypted, mono or stereo at
- * 16 / 24 / 48 kHz (measured over all 65,201 files of the third archive and the two movie tracks).
+ * the game is the plain kind: type 3, 4-bit ADPCM in 18-byte frames, version 3 or 4, not encrypted, mono or stereo at
+ * 16 / 24 / 48 kHz. BT4 also contains version 3 music with an earlier loop block.
  *
  * Format (big-endian): 0x8000, u16 header size - 4, u8 type, u8 frame size, u8 bits, u8 channels, u32 sample rate,
  * u32 samples, u16 high-pass frequency, u8 version, u8 flags. Version 4 with a loop: flag at 0x24, loop start
@@ -25,9 +25,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include "gs_internal.h"
+#include "music_cache.h"
+#include "adx_loop.h"
+#include "spatial_audio.h"
 
 enum { ADXT_STAT_STOP = 0, ADXT_STAT_PLAYING = 3, ADXT_STAT_PLAYEND = 5 };
-#define MAX_PLAYERS 16
+#define MAX_PLAYERS 40
+#define STANDARD_PLAYERS 16
+#define ACTOR_FIRST 16
+#define ACTOR_LAST 36
 #define FRAME 18
 #define PAN_AUTO (-128)
 #define ST_CAP 12288   /* sample pairs a stretcher holds */
@@ -36,6 +42,8 @@ enum { ADXT_STAT_STOP = 0, ADXT_STAT_PLAYING = 3, ADXT_STAT_PLAYEND = 5 };
 typedef struct Player {
     SDL_AudioStream *stream;
     void *ma;               /* the miniaudio stream of an mp3/wav/flac file (snd_ma.c), NULL on the ADX path */
+    void *lossless;         /* FLAC decoder only; the existing SDL mixer still owns playback */
+    uint32_t losslessPos;
     char path[512];         /* the file it plays */
     uint8_t *file;          /* the whole ADX file */
     uint32_t size, data;    /* file size; offset of the first frame */
@@ -45,7 +53,9 @@ typedef struct Player {
     uint32_t pos;           /* next sample */
     int c1, c2;
     int hist[2][2];
+    int loopHist[2][2], loopHistSet;
     int stat, paused;
+    float proximity;
     int vol;                /* 0.1 dB, 0 = full, -960 and below = silent */
     int pan[2];             /* per input channel: -15 left .. 15 right, PAN_AUTO */
     /* the game speed's time stretch (stretch_feed): decoded sound waiting to be laid out, and the end of the
@@ -71,15 +81,19 @@ static int by_ticks(void) {
     if (on < 0) {
         on = getenv("BT3_SYNCTEST") != NULL || getenv("BT3_SOUND_TICKS") != NULL;
     }
-    return on || Port_NetSession();
+    /* Tag Team also waits for character voices during introductions and
+     * action scripts. Device playback advances while a client waits for
+     * network input, so it cannot decide the shared simulation's timing. */
+    extern int Port_TagNetwork(void);
+    return on || Port_NetSession() || Port_TagNetwork();
 }
 
 /* The length of an ADX file in vertical blanks (59.94 a second), -1 if it loops, 0 if it cannot be read. */
 static int adx_blanks(const char *path) {
     uint8_t h[0x40];
-    FILE *fp = fopen(path, "rb");
+    FILE *fp;
     size_t got;
-    uint32_t header, rate, total;
+    uint32_t rate, total, loopStart, loopEnd;
 
     {
         /* Not ADX at all: an mp3/wav/flac stream (snd_ma.c). An added song is played round and round, so it never
@@ -91,6 +105,7 @@ static int adx_blanks(const char *path) {
             return PortSongs_IsFile(path) ? -1 : PortMa_Blanks(path);
         }
     }
+    fp = fopen(path, "rb");
     if (fp == NULL) {
         return 0;
     }
@@ -99,10 +114,9 @@ static int adx_blanks(const char *path) {
     if (got < sizeof(h) || ((uint32_t)h[0] << 8 | h[1]) != 0x8000) {
         return 0;
     }
-    header = ((uint32_t)h[2] << 8 | h[3]) + 4;
     rate = (uint32_t)h[8] << 24 | (uint32_t)h[9] << 16 | (uint32_t)h[10] << 8 | h[11];
     total = (uint32_t)h[12] << 24 | (uint32_t)h[13] << 16 | (uint32_t)h[14] << 8 | h[15];
-    if (h[0x12] == 4 && header >= 0x38 && (h[0x24] | h[0x25] | h[0x26] | h[0x27]) != 0) {
+    if (bt4_adx_loop(h, got, total, &loopStart, &loopEnd)) {
         return -1;
     }
     {
@@ -117,9 +131,13 @@ static int adx_blanks(const char *path) {
 /* How long a stream of the ORIGINAL disc lasts, by its place in the data (plat_adxlen_tab.h); 0 when the table does
    not know the file. */
 #include "../plat_adxlen_tab.h"
+#include "bt4_adx_timing.h"
 static int disc_blanks(const char *path) {
     const char *at = strstr(path, "pzs3us2/"), *name;
     int fid, i;
+
+    {const char *bt4=strstr(path,"pzs4us");int part;
+     if(bt4&&sscanf(bt4,"pzs4us%d/%d.bin",&part,&fid)==2&&part>=0&&part<4&&fid>=0&&(unsigned)fid<kBt4AdxCount[part])return kBt4AdxTime[part][fid];}
 
     if (at != NULL && sscanf(at + 8, "%d.bin", &fid) == 1 && strchr(at + 8, '/') == NULL) {
         return fid >= 0 && fid < ADXLEN_COUNT ? kAdxLen[fid] : 0;
@@ -145,7 +163,8 @@ static void view_start(Player *p, const char *path, int found) {
     PortAdxView *v = &gPortAdxView[p - sPlayers];
     int own = found ? adx_blanks(path) : 0, blanks = own;
 
-    if (by_ticks() && Port_NetActive() && disc_blanks(path) != 0) {
+    extern int Port_TagNetwork(void);
+    if (by_ticks() && (Port_NetActive()||Port_TagNetwork()) && disc_blanks(path) != 0) {
         blanks = disc_blanks(path);
         if (blanks != own) {
             static int said;
@@ -180,7 +199,20 @@ extern int PortSongs_IsFile(const char *path); /* plat_songs.c: whether the file
 
 static uint32_t be32(const uint8_t *p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
 static uint32_t be16(const uint8_t *p) { return (uint32_t)p[0] << 8 | p[1]; }
+extern void *PortPcm_Open(const char *,unsigned,unsigned,unsigned long long);
+extern unsigned PortPcm_Read(void *,int16_t *,unsigned);
+extern int PortPcm_Seek(void *,unsigned);
+extern void PortPcm_Close(void *);
 
+/* Internal recording fixture: only this game's SDL mixer, never desktop audio. */
+static void SDLCALL bt4_record_audio(void *unused,const SDL_AudioSpec *spec,float *buffer,int bytes){
+    static FILE *file;static int opened;extern unsigned gPortVBlanks;
+    if(!opened){opened=1;file=fopen(getenv("BT4_TAG_AUDIO_FILE"),"wb");
+        fprintf(stderr,"tag audio capture: first-ms=%llu blank=%u rate=%d channels=%d format=f32\n",(unsigned long long)SDL_GetTicks(),gPortVBlanks,spec->freq,spec->channels);}
+    if(file){fwrite(buffer,1,bytes,file);fflush(file);}
+    (void)unused;
+}
+SDL_AudioDeviceID Port_AudioPeekDevice(void){return sDevice;}
 static int device(void) {
     /* not before the renderer has decided whether there is a window (its first frame) */
     if (!sTried && (GsGpu_Enabled() || getenv("BT3_SOUND") != NULL || gGsFrame > 2)) {
@@ -192,6 +224,7 @@ static int device(void) {
                 fprintf(stderr, "bt3: no sound device: %s\n", SDL_GetError());
             }
             else {
+                if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_AUDIO_FILE"))SDL_SetAudioPostmixCallback(sDevice,bt4_record_audio,NULL);
                 SDL_ResumeAudioDevice(sDevice);
                 fprintf(stderr, "bt3: sound: %s\n", SDL_GetCurrentAudioDriver());
             }
@@ -228,10 +261,24 @@ static int decode(Player *p, int16_t *out, int frames) {
         gl[ch] = pan <= 0 ? 1.0f : (float)(15 - pan) / 15.0f;
         gr[ch] = pan >= 0 ? 1.0f : (float)(15 + pan) / 15.0f;
     }
+    if(p->channels==2){
+        if(sMono){
+            /* Downmix with headroom. L+R at unity clipped before the game's
+             * volume control, even when the final playback volume was low. */
+            gl[0]=gl[1]=gr[0]=gr[1]=0.5f;
+        }else if(p->pan[0]==p->pan[1]){
+            /* Adx_Play sends the same balance value to both channels. A
+             * centered stereo song must retain L/R, not sum both into each
+             * output. Preserve independent-channel routing when pans differ. */
+            int balance=p->pan[0]==PAN_AUTO?0:p->pan[0];
+            gl[0]=balance<=0?1.0f:(float)(15-balance)/15.0f;gr[0]=0;
+            gl[1]=0;gr[1]=balance>=0?1.0f:(float)(15+balance)/15.0f;
+        }
+    }
     for (f = 0; f < frames; f++) {
-        uint32_t end = p->loop ? p->loopEnd : p->total, index = p->pos / 32;
+        uint32_t end = p->loop ? p->loopEnd : p->total, index;
         int16_t pcm[2][32];
-        const uint8_t *src = p->file + p->data + (size_t)index * FRAME * p->channels;
+        const uint8_t *src;
         int count;
 
         if (p->pos >= end) {
@@ -239,8 +286,22 @@ static int decode(Player *p, int16_t *out, int frames) {
                 break;
             }
             p->pos = p->loopStart & ~31u; /* loop starts are frame-aligned by the encoder */
-            continue;
+            if (p->loopHistSet) memcpy(p->hist, p->loopHist, sizeof(p->hist));
         }
+        index = p->pos / 32;
+        src = p->file + p->data + (size_t)index * FRAME * p->channels;
+        if (p->loop && !p->loopHistSet && p->pos == (p->loopStart & ~31u)) {
+            memcpy(p->loopHist, p->hist, sizeof(p->hist));
+            p->loopHistSet = 1;
+        }
+        if (p->lossless) {
+            int16_t raw[64];
+            count=(int)(end-p->pos<32?end-p->pos:32);
+            if(p->losslessPos!=p->pos&&!PortPcm_Seek(p->lossless,p->pos))break;
+            if(PortPcm_Read(p->lossless,raw,(unsigned)count)!=(unsigned)count)break;
+            p->losslessPos=p->pos+(unsigned)count;
+            for(i=0;i<count;i++)for(ch=0;ch<(int)p->channels;ch++)pcm[ch][i]=raw[i*p->channels+ch];
+        } else {
         if (src + FRAME * p->channels > p->file + p->size) {
             p->loop = 0;
             p->total = p->pos;
@@ -260,6 +321,7 @@ static int decode(Player *p, int16_t *out, int frames) {
             }
             p->hist[ch][0] = h1;
             p->hist[ch][1] = h2;
+        }
         }
         count = (int)(end - p->pos < 32 ? end - p->pos : 32);
         for (i = (int)(p->pos & 31); i < count; i++) {
@@ -284,16 +346,33 @@ static int decode(Player *p, int16_t *out, int frames) {
    over (16 bits, stereo, the file's rate), to look at without listening. */
 static void put_pcm(Player *p, SDL_AudioStream *stream, const int16_t *data, int bytes) {
     static FILE *dump;
+    static FILE *voiceDump;
     static int tried;
     if (!tried) {
         tried = 1;
         dump = getenv("BT3_SND_DUMP") != NULL ? fopen(getenv("BT3_SND_DUMP"), "wb") : NULL;
+        voiceDump = getenv("BT4_VOICE_DUMP") != NULL ? fopen(getenv("BT4_VOICE_DUMP"), "wb") : NULL;
     }
     if (dump != NULL && p == &sPlayers[0]) {
         fwrite(data, 1, (size_t)bytes, dump);
         fflush(dump);
     }
-    SDL_PutAudioStreamData(stream, data, bytes);
+    if (voiceDump != NULL && p == &sPlayers[4]) {
+        fwrite(data, 1, (size_t)bytes, voiceDump);
+        fflush(voiceDump);
+    }
+    if(p>=sPlayers+ACTOR_FIRST && p<sPlayers+ACTOR_LAST){
+        int index=(int)(p-sPlayers),actor=(index-ACTOR_FIRST)/2;
+        float target=PortAudio_Gain(actor,index&1),step=1.0f/((float)p->rate*.08f);
+        int16_t scaled[8192];int count=bytes/2;
+        if(count>8192)count=8192;
+        for(int i=0;i<count;i+=2){
+            p->proximity+=(target-p->proximity)*step;
+            if(fabsf(target-p->proximity)<.00005f)p->proximity=target;
+            scaled[i]=(int16_t)(data[i]*p->proximity);scaled[i+1]=(int16_t)(data[i+1]*p->proximity);
+        }
+        SDL_PutAudioStreamData(stream,scaled,count*2);
+    }else SDL_PutAudioStreamData(stream, data, bytes);
 }
 
 /* The game at another speed than its own (an online match at 120%, the Cheats tab's speed): a stream has to end
@@ -370,7 +449,9 @@ static void SDLCALL feed(void *user, SDL_AudioStream *stream, int additional, in
     (void)total;
     while (additional > 0 && p->stat == ADXT_STAT_PLAYING && !p->paused) {
         int speed = Port_SpeedMilli();
-        if (p->loop && p - sPlayers <= 1 && gPortMusicFollows <= 0) {
+        /* BT4 also restarts music from its scripts, without ADX loop points.
+           The setting belongs to the music channel, not the file's loop bit. */
+        if (p - sPlayers <= 1 && gPortMusicFollows <= 0) {
             speed = 1000;
         }
         if (speed != 1000) {
@@ -406,10 +487,9 @@ static void SDLCALL feed(void *user, SDL_AudioStream *stream, int additional, in
      voices  the two voice players and the two fighters' effect banks (slots 4 and 5)
      effects the rest: the two effect players, the common banks */
 int gPortMusicPercent = 100, gPortSePercent = 100, gPortVoicePercent = 100, gPortStagePercent = 100;
-/* "Music follows game speed" (Audio tab, setting music_follows_speed, off by default). Off: music and a stage's
-   background that loop are played as they are at any game speed: the game never waits for the end of a loop, so
-   nothing has to fit, and the songs are heard untouched. What plays once (a jingle, a spoken line) is always
-   fitted to the speed, because the game counts its length in vertical blanks. */
+/* "Music follows game speed" (Audio tab, setting music_follows_speed, off by default). Off: both music channels
+   retain their original tempo, including BT4 tracks restarted by a script instead of ADX loop metadata.
+   Voices, streamed effects and movies retain their simulation timing. */
 int gPortMusicFollows = -1; /* (-1: not read from the settings yet) */
 
 extern float PortA11y_StreamGain(const void *player); /* a11y.c: the voices are lower in the menus */
@@ -417,7 +497,8 @@ extern void PortMa_SetVolume(void *handle, float gain); /* gs/snd_ma.c: the mini
 
 /* A player's linear gain: the game's own volume and the settings overlay's four percents (and a11y). */
 static float player_gain(Player *p) {
-    int ch = (int)(p - sPlayers); /* (the game makes its six players in the order of include/sys/adx.h) */
+    int ch = (int)(p - sPlayers); /* Standard channels keep their original ordering. */
+    if(ch>=ACTOR_FIRST&&ch<ACTOR_LAST)ch=(ch&1)?4:2;
     int percent = ch == 0 ? gPortMusicPercent : ch == 1 ? gPortStagePercent : ch == 4 || ch == 5 ? gPortVoicePercent : gPortSePercent;
 
     return p->vol <= -960 ? 0.0f : (float)pow(10.0, (double)p->vol / 200.0) * (float)percent / 100.0f * PortA11y_StreamGain(p);
@@ -449,6 +530,7 @@ static void stop(Player *p) {
         SDL_DestroyAudioStream(p->stream); /* waits for a running callback */
         p->stream = NULL;
     }
+    PortPcm_Close(p->lossless);p->lossless=NULL;
     free(p->file);
     p->file = NULL;
     p->stat = ADXT_STAT_STOP;
@@ -566,12 +648,7 @@ static void start(Player *p, const char *path) {
     p->rate = be32(p->file + 8);
     p->total = be32(p->file + 12);
     highpass = be16(p->file + 16);
-    p->loop = 0;
-    if (p->file[0x12] == 4 && header >= 0x38 && be32(p->file + 0x24) != 0) {
-        p->loopStart = be32(p->file + 0x28);
-        p->loopEnd = be32(p->file + 0x30);
-        p->loop = p->loopEnd > p->loopStart && p->loopEnd <= p->total;
-    }
+    p->loop = bt4_adx_loop(p->file, p->size, p->total, &p->loopStart, &p->loopEnd);
     if (!p->loop && p->total >= 64) {
         /* A song added from outside the disc: the disc's music has its loop in the file and goes on for as long as
            the fight does; a file made from an mp3 has none and stopped after one play, leaving the rest of the fight
@@ -585,7 +662,15 @@ static void start(Player *p, const char *path) {
     }
     adx_coefs(highpass, p->rate, &p->c1, &p->c2);
     memset(p->hist, 0, sizeof(p->hist));
+    memset(p->loopHist, 0, sizeof(p->loopHist));
+    p->loopHistSet = 0;
     p->pos = 0;
+    if(p==sPlayers && !getenv("BT4_MUSIC_NO_CACHE")){
+        char cached[256];bt4_music_path(cached,sizeof(cached),bt4_music_key(p->file,p->size));
+        p->lossless=PortPcm_Open(cached,p->channels,p->rate,p->total);
+        p->losslessPos=0;
+        if(p->lossless&&getenv("BT3_SND_VERBOSE"))fprintf(stderr,"bt4: lossless music %s (%u Hz, %u channels, unity gain)\n",cached,p->rate,p->channels);
+    }
     spec.format = SDL_AUDIO_S16;
     spec.channels = 2;
     spec.freq = (int)p->rate;
@@ -602,8 +687,12 @@ static void start(Player *p, const char *path) {
         gPortMusicFollows = Port_Setting("music_follows_speed", 0) != 0;
     }
     if (getenv("BT3_SND_VERBOSE") != NULL) {
-        fprintf(stderr, "adx: player %d: start %s: %u ch, %u Hz, %.1f s, loop %d, volume %d (0.1 dB), paused %d\n", (int)(p - sPlayers), path,
-                p->channels, p->rate, (double)p->total / (double)p->rate, p->loop, p->vol, p->paused);
+        fprintf(stderr, "adx: player %d: start %s: %u ch, %u Hz, %.1f s, loop %d, volume %d (0.1 dB), paused %d, pan %d/%d\n", (int)(p - sPlayers), path,
+                p->channels, p->rate, (double)p->total / (double)p->rate, p->loop, p->vol, p->paused,p->pan[0],p->pan[1]);
+    }
+    if(p>=sPlayers+ACTOR_FIRST&&p<sPlayers+ACTOR_LAST){
+        int index=(int)(p-sPlayers);p->proximity=PortAudio_Gain((index-ACTOR_FIRST)/2,index&1);
+        if(getenv("BT3_SND_VERBOSE"))fprintf(stderr,"tag stream: actor=%d voice=%d path=%s gain=%.4f\n",(index-ACTOR_FIRST)/2,index&1,path,p->proximity);
     }
     p->stat = ADXT_STAT_PLAYING;
     apply_volume(p);
@@ -613,12 +702,39 @@ static void start(Player *p, const char *path) {
     }
 }
 
+/* Native regression probe: decode the active game's stream through this decoder.
+   Called only by the explicit story audit; no physical audio device is needed. */
+int Port_AdxStoryProbe(int channel, int partition, int file) {
+    Player *p;
+    int peak=0, frames=0, n, i, savedHist[2][2];
+    uint32_t savedPos;
+    int16_t pcm[1024];
+    char expected[512];
+    if(channel<0 || channel>=MAX_PLAYERS)return -1;
+    p=&sPlayers[channel];
+    if(!Port_FilePath(partition,file,NULL,expected,sizeof(expected)) ||
+       strcmp(expected,p->path) || !p->stream || !p->file)return -1;
+    SDL_LockAudioStream(p->stream);
+    savedPos=p->pos;memcpy(savedHist,p->hist,sizeof(savedHist));
+    p->pos=0;memset(p->hist,0,sizeof(p->hist));
+    while(frames<(int)p->rate*5 && (n=decode(p,pcm,16))>0){
+        frames+=n;
+        for(i=0;i<n*2;i++){int v=abs((int)pcm[i]);if(v>peak)peak=v;}
+    }
+    p->pos=savedPos;memcpy(p->hist,savedHist,sizeof(savedHist));
+    fprintf(stderr,"story-audio ch=%d part=%d file=%d samples=%d peak=%d gain=%.4f paused=%d\n",
+            channel,partition,file,frames,peak,player_gain(p),p->paused);
+    if(player_gain(p)<=0 || p->paused)peak=-2;
+    SDL_UnlockAudioStream(p->stream);
+    return peak;
+}
+
 /* ------------------------------------------------------------------------------- the library's functions */
 
 void ADXT_Init(void) {}
 
 void *ADXT_Create(int maxnch, void *work, int worksize) {
-    Player *p = &sPlayers[gPortAdxCount < MAX_PLAYERS ? gPortAdxCount++ : MAX_PLAYERS - 1];
+    Player *p = &sPlayers[gPortAdxCount < STANDARD_PLAYERS ? gPortAdxCount++ : STANDARD_PLAYERS - 1];
 
     (void)maxnch; (void)work; (void)worksize;
     stop(p); /* (a frame run again after a restore creates its players again: whatever played there ends) */
@@ -770,7 +886,7 @@ void Port_AdxResync(void) {
         Player *p = &sPlayers[i];
         PortAdxView *v = &gPortAdxView[i];
         stop(p);
-        if (i < gPortAdxCount) {
+        if (i < gPortAdxCount || (i>=ACTOR_FIRST&&i<ACTOR_LAST)) {
             p->vol = v->vol;
             p->pan[0] = v->pan[0];
             p->pan[1] = v->pan[1];
@@ -781,3 +897,12 @@ void Port_AdxResync(void) {
         }
     }
 }
+
+/* Actor handles occupy reserved presentation channels, not the six standard
+ * game channels. Their timing views are still counted by simulation ticks. */
+void *Port_ActorAdx(int actor,int voice){
+    return actor>=0&&actor<10?&sPlayers[ACTOR_FIRST+actor*2+(voice!=0)]:NULL;
+}
+void Port_ActorAdxStop(int actor,int voice){ADXT_Stop(Port_ActorAdx(actor,voice));}
+void Port_ActorAdxStopAll(void){for(int i=ACTOR_FIRST;i<ACTOR_LAST;i++)ADXT_Stop(&sPlayers[i]);}
+void Port_ActorAdxPauseAll(int paused){for(int i=ACTOR_FIRST;i<ACTOR_LAST;i++)ADXT_Pause(&sPlayers[i],paused);}

@@ -56,6 +56,7 @@ void MisSel_SetupBattle(void) {
     s32 unk1FC;
     s32 unk10;
     MisSelDef *def = &gMisSel->missions[gMisSel->mission];
+    s32 kind = def->kind & 0xFFFF;
     s32 announcer;
     s32 timeLimit;
     s32 stage;
@@ -83,7 +84,7 @@ void MisSel_SetupBattle(void) {
         bgm = 0x18;
     }
     teamSize = 0;
-    switch (def->kind) {
+    switch (kind) {
     case 0:
         teamSize = 1;
         break;
@@ -111,7 +112,14 @@ void MisSel_SetupBattle(void) {
         }
     }
     Battle_ClearWork();
+#ifdef PORT
+    /* BT4's jump-table entry for kind 9 (DBZP 0x3BE7A0) selects the script
+       stored in the upper halfword. This mission owns its player setup. */
+    if(kind==9){extern void BattleSetup_SetScript(s32);BattleSetup_SetScript((u32)def->kind>>16);}
+    BattleSetup_SetRule(0, def->announcer, bgm, timeLimit, announcer, stage, unk10);
+#else
     BattleSetup_SetRule(0, 2, bgm, timeLimit, announcer, stage, unk10);
+#endif
     BattleSetup_SetSide(1, 2, 1, count, unk1FC, 1, 0, NULL);
     for (i = 0; i < count; i++) {
         opp = &gMisSel->opps[def->opp[i]];
@@ -193,7 +201,7 @@ void MisSel_Init(s32 section) {
     gMisSel->tex[25] = NULL;
     gMisSel->tex[27] = NULL;
     gMisSel->chips = (u32 *)MPACK_AT(gMisSel->res, 15);
-    for (i = 0; i < MISSEL_CHIP_NUM; i++) {
+    for (i = 0; i < (s32)gMisSel->chips[0] && i < 512; i++) {
         res = (MTexRes *)MPACK_AT(gMisSel->chips, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
@@ -289,13 +297,14 @@ void MisSel_Draw(void) {
     }
     cur = gMisSel->mission;
     Flash_FindLabel(flash, NULL, "mc_missionkari01", &ref);
-    TextBox_AttachLine(flash, &ref, 0, 0, gMisSel->missions[cur].kind + 0x148, &gMisSel->box[5]);
+    TextBox_AttachLine(flash, &ref, 0, 0, (gMisSel->missions[cur].kind & 0xFFFF) + 0x148, &gMisSel->box[5]);
     Flash_FindLabel(flash, NULL, "mc_missionkari02", &ref);
     if (gMisSel->missions[cur].dpRule != 0) {
         TextBox_AttachLine(flash, &ref, 0, 0, gMisSel->missions[cur].dpRule + 0x156, &gMisSel->box[6]);
     }
     for (i = 0; i < MISSEL_ROWS; i++) {
-        if (gMisSel->opps[gMisSel->missions[cur].opp[i]].chara == MISSEL_NONE) {
+        s32 chara=gMisSel->opps[gMisSel->missions[cur].opp[i]].chara;
+        if (chara<0||chara>=Menu_CharacterChipCount(gMisSel->chips)) {
             chip = (MTexRes *)MPACK_AT(gMisSel->chips, MISSEL_CHIP_NUM);
         } else {
             chip = (MTexRes *)MPACK_AT(gMisSel->chips, gMisSel->opps[gMisSel->missions[cur].opp[i]].chara + 1);
@@ -488,6 +497,46 @@ s32 MisSel_Run(s32 section) {
     s32 result = 1;
 
     MisSel_Init(section);
+#ifdef PORT
+    {
+        extern char *getenv(const char *);
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_MISSION_VIEW_TEST")){
+            extern s32 atoi(const char *);s32 n=atoi(getenv("BT4_MISSION_VIEW_TEST"));
+            if(n>=0&&n<100){gMisSel->mission=n;gMisSel->page=n/5;gMisSel->pageCount=20;
+                gMisSel->cursor[0]=n%5;gMisSel->level=1;
+                {char name[48];sprintf(name,"fl_mission_%02d_in",n%5+1);Flash_GotoLabel(&gMisSel->flash[0],name,1);}
+            }
+        }
+        if (getenv("BT4_RENDER_TEST") && getenv("BT4_MISSION_TABLE_TEST")) {
+            s32 n,j;
+            extern s32 printf(const char *,...);
+            printf("mission-table definitions=%u unlocked=%d\n",((u32)gMisSel->opps-(u32)gMisSel->missions)/(u32)sizeof(MisSelDef),gMisSel->pageCount*MISSEL_ROWS);
+            printf("mission-chips sections=%u forms=%d\n",gMisSel->chips[0],Menu_CharacterChipCount(gMisSel->chips));
+            for(n=0;n<(s32)(((u32)gMisSel->opps-(u32)gMisSel->missions)/sizeof(MisSelDef))&&n<100;++n){
+                MisSelDef *d=&gMisSel->missions[n];
+                {u32 *text=(u32 *)gMisSel->text;u16 *s=(u16 *)((u8 *)text+(text[0xD8+n+1]&~3u));
+                 printf("mission-name index=%d value=",n);for(j=0;j<100&&s[j];++j)printf("%c",s[j]<128?s[j]:'?');printf("\n");}
+                printf("mission-table index=%d kind=%d mode=%d stage=%d time=%d dp=%d opponents=",n,d->kind,d->announcer,d->stage,d->timeLimit,d->dpRule);
+                for(j=0;j<5;++j)printf("%s%d:%d",j?",":"",d->opp[j],gMisSel->opps[d->opp[j]].chara);
+                printf("\n");
+                if(n==99){
+                    u32 *text=(u32 *)gMisSel->text;s32 k,line;
+                    printf("mission-text header=%u\n",text[0]);
+                    for(line=0x148;line<0x156;++line){u16 *s=(u16 *)((u8 *)text+(text[line+1]&~3u));
+                        printf("mission-text line=%d value=",line);for(k=0;k<180&&s[k];++k)printf("%c",s[k]<128?s[k]:'?');printf("\n");}
+                }
+            }
+            {extern void exit(s32);exit(0);}
+        }
+        if (getenv("BT4_RENDER_TEST") && getenv("BT4_MISSION_TEST")) {
+            extern s32 atoi(const char *);
+            s32 n=atoi(getenv("BT4_MISSION_TEST"));
+            if(n<0 || n>=100 || n>=(s32)(((u32)gMisSel->opps-(u32)gMisSel->missions)/sizeof(MisSelDef))){extern void exit(s32);exit(4);}
+            gMisSel->mission=n;gMisSel->page=n/MISSEL_ROWS;gMisSel->cursor[0]=n%MISSEL_ROWS;
+            MisSel_SetupBattle();result=(gMisSel->missions[n].kind&0xFFFF)==9?2:1;MisSel_Term();return result;
+        }
+    }
+#endif
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {
         Gfx_BeginFrame();
@@ -524,6 +573,9 @@ s32 MisSel_Run(s32 section) {
     }
     if (result) {
         MisSel_SetupBattle();
+#ifdef PORT
+        if((gMisSel->missions[gMisSel->mission].kind&0xFFFF)==9)result=2;
+#endif
     }
     MisSel_Term();
     Dma_ResetBuffers();

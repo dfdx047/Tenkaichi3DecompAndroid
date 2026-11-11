@@ -3,6 +3,7 @@
 // Everything it shows lives elsewhere (ui.h): the renderer's settings in gs_gpu.c, the bindings in gs_input.c.
 // It runs on the render thread, which owns the window and its events.
 #include <math.h>
+#include <float.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,15 +13,29 @@
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlgpu3.h"
 #include "imgui_impl_opengl3.h"
+#ifdef _WIN32
+#include "imgui_impl_dx9.h"
+static void *sD3D9;
+extern "C" void *GsDx9_StripTexture(const void *, int, int);
+extern "C" void GsDx9_StripTextureFree(void *);
+#endif
+extern "C" int GsGl_DirectXVersion(void);
 #include "ui.h"
+#include "presentation.h"
 #include "namefont.h"
 #include "../port_release.h"
 #include "menu_text.h"
+#include "game_profile.h"
+extern "C" int GsDraw_PerformanceMode(void);
+extern "C" int Port_SpecialMoveCameras(int change);
 #include "menu_translation.h"
+#include "online_language.h"
 #include "../quit_dialog.h"
 #include "net_chat.h"
+#include "voice.h"
 #include "net_lobby.h"
 #include "net_update.h"
+#include "update_notes.h"
 
 static int sMeter = -1; // the meter (frame rate, connection): -1 not read yet
 static bool meter_on(void);
@@ -40,6 +55,8 @@ extern "C" int gPortTboTyping;                     // gs_input.c: a keypad of Te
 extern "C" int PortInput_TboEvent(const SDL_Event *ev);
 extern "C" void PortInput_TboClipboard(void);      // ... and its "Copy Code": onto the clipboard, from this thread
 int Port_GameMode(void);                       // a11y_game.c: the game's progress mode (4 the main menu, 80 the port's screens)
+int Port_UpdateMenuScreen(void);               // gs_marker.c: last outer menu actually drawn
+extern int gPortMenuMode;
 const char *Port_OnlineBlocked(void);          // gs/net.c: an update is under way, no new online session (the line), or NULL
 int Lobby_Active(void);                        // gs/net_lobby.c: this copy is in a lobby
 int Port_Menus43(void);                       // plat_stub.c: the menus are shown at 4:3 in a wider picture
@@ -56,6 +73,7 @@ int Port_NetActive(void);
 int Port_NetMe(void);                          // gs/net.c: this copy's side, 0 or 1
 void *BtlChar_FindByObjId(int objId);          // the game: the fighter of a side, NULL outside a fight
 int Port_NetStats(int *out);                   // gs/net.c: the meter's numbers of an online match
+int Port_TagNetwork(void),Port_TagPing(void),Port_TagLocalBattle(void);
 int Port_LobbyOther(void);
 extern unsigned gPortLiveBlanks;               // plat_stub.c: vertical blanks the game has gone through
 int Port_RollCan(void);                        // gs/state.c
@@ -75,11 +93,15 @@ void Port_SettingTextSave(const char *name, const char *value);
 void Port_SettingsWrite(void);
 int Port_ClashSquare(void);                    // gs_input.c: Square counts as a direction in clashes
 void Port_ClashSquareSet(int on);
+int Port_ClashStick(void);
+void Port_ClashStickSet(int on);
 int Port_ClashSquareX(void);                   // what a press is worth, in quarters of a point (4, 6, 7, 8)
 void Port_ClashSquareXSet(int quarters);
 extern int gsInterp;                           // gs_draw.c: in-between pictures on (1) / off (0); -1 before the first frame
+int Port_TagBattleRenderActive(void);
 void Port_SettingsWrite(void);
-int Port_LobbyStartCode(int host, const char *code);         // gs/net.c: a code of the matchmaking service (a lobby's)
+int Port_LobbyStart(int host, const char *address, int port); // gs/net.c
+int Port_LobbyStartCode(int host, const char *code);         // the same with a room code (the matchmaking service)
 int Port_LobbyStartQuick(int queue);                         // a quick match: 0 single, 1 team, 2..4 DP battle of 10 / 15 / 20
 void Port_LobbyQueuesAsk(void);                              // asks the service how many wait in each queue
 void Port_LobbyHelloAsk(void);                               // asks it whether this release is new enough
@@ -105,6 +127,9 @@ static bool sReady, sOpen;
 static MenuTranslationOption sLanguages[256];
 static int sLanguageCount, sLanguageChoice;
 static bool sLanguageRestartPending;
+static int sF1Language = -1;                 // independent of the installed disc's text and voice profile
+static bool sUpdPromptQueued, sUpdPromptOpen, sUpdPromptDismissed;
+static volatile int sSaving;
 static bool sNet;                              // the open window is the online screen (Dragon Net Battle), not the settings
 // A spectator's own pause menu is the game's (src/menu/port_tbo.c, PortTbo_SpecDraw): Esc, or the test's moment, asks
 // for it here; the controller's START and the key bound to it reach it through the pad.
@@ -125,6 +150,450 @@ static bool sPadHold;                          // the controller does not work t
 static int sTab;                               // the settings tab that is open (the shoulder buttons go to its neighbours)
 static bool sPadTab;                           // the shoulder buttons changed the tab this frame
 static SDL_GPUDevice *sDevice;
+
+static int f1_language(void) {
+    char saved[16];
+    if(sF1Language==-2)return Port_GameProfileLanguage();
+    if (sF1Language >= 0) return sF1Language;
+    Port_SettingText("f1_language", "", saved, sizeof(saved));
+    if (!strcmp(saved, "es")) sF1Language = 0;
+    else if (!strcmp(saved, "en")) sF1Language = 1;
+    else if (!strcmp(saved, "pt")) sF1Language = 2;
+    else {sF1Language=-2;return Port_GameProfileLanguage();}
+    return sF1Language;
+}
+
+static void f1_language_set(int language) {
+    static const char *const locales[] = {"es", "en", "pt"};
+    if (language < 0 || language >= (int)(sizeof(locales) / sizeof(locales[0]))) return;
+    sF1Language = language;
+    Port_SettingTextSave("f1_language", locales[language]);
+    Port_SettingsWrite();
+}
+
+static const char *f1_text(const char *english) {
+    struct Row { const char *en, *es, *pt; };
+    static const Row rows[] = {
+#include "mods_locale.inc"
+        {"Settings", "Ajustes", "Configurações"},
+        {"Video", "Vídeo", "Vídeo"},
+        {"Effects", "Efectos", "Efeitos"},
+        {"Audio", "Audio", "Áudio"},
+        {"UI", "Interfaz", "Interface"},
+        {"Controls", "Controles", "Controles"},
+        {"Cheats", "Trucos", "Trapaças"},
+        {"Misc", "Varios", "Outros"},
+        {"Online", "En línea", "Online"},
+        {"Spectator", "Espectador", "Espectador"},
+        {"Exit game", "Salir del juego", "Sair do jogo"},
+        {"D-pad: move   Cross / A: choose   Circle / B: back   L1 / R1: tab", "Cruceta: mover   Cruz / A: elegir   Círculo / B: volver   L1 / R1: pestaña", "Direcional: mover   X / A: escolher   Círculo / B: voltar   L1 / R1: aba"},
+        {"Menu language", "Idioma del menú", "Idioma do menu"},
+        {"Game language", "Idioma del juego", "Idioma do jogo"},
+        {"Spanish", "Español", "Espanhol"},
+        {"English", "Inglés", "Inglês"},
+        {"Portuguese", "Portugués", "Português"},
+        {"Language saved for the next launch.", "Idioma guardado para el próximo inicio.", "Idioma salvo para a próxima inicialização."},
+        {"Full disc profile: text and voices. Install each ISO once using the launcher. The startup selector confirms your choice before the game begins.", "Perfil completo del disco: textos y voces. Instala cada ISO una vez con el instalador. El selector inicial confirma tu elección antes de empezar.", "Perfil completo do disco: textos e vozes. Instale cada ISO uma vez pelo instalador. A seleção inicial confirma a escolha antes do jogo começar."},
+        {"Menu font", "Fuente de los menús", "Fonte dos menus"},
+        {"Battle font", "Fuente de combate", "Fonte de batalha"},
+        {"Dialogue / UI font", "Fuente de diálogos e interfaz", "Fonte de diálogos e interface"},
+        {"HUD Style", "Estilo del HUD", "Estilo do HUD"},
+        {"Side bars", "Barras laterales", "Barras laterais"},
+        {"Menus", "Menús", "Menus"},
+        {"Stretched", "Estirados", "Esticados"},
+        {"Widescreen (beta)", "Panorámico (beta)", "Widescreen (beta)"},
+        {"Menu display on a picture wider than 4:3. Stretched fills the window. 4:3 keeps side bars. Widescreen (beta) anchors menus and HUD to the wider view while preserving artwork proportions.", "Menús en una imagen más ancha que 4:3. Estirado ocupa toda la ventana. 4:3 conserva las barras laterales. Panorámico (beta) adapta la posición de los menús y el HUD conservando las proporciones de sus texturas.", "Menus em uma imagem mais larga que 4:3. Esticado ocupa toda a janela. 4:3 mantém as barras laterais. Widescreen (beta) adapta a posição dos menus e do HUD preservando as proporções das texturas."},
+        {"Original", "Original", "Original"},
+        {"Black", "Negro", "Preto"},
+        {"Border", "Borde", "Moldura"},
+        {"Fighter panels", "Paneles de luchadores", "Painéis dos lutadores"},
+        {"Name font", "Fuente del nombre", "Fonte do nome"},
+        {"Form font", "Fuente de la transformación", "Fonte da forma"},
+        {"BT4 original, en los bordes", "BT4 original, en los bordes", "BT4 original, nas bordas"},
+        {"BT4 original, at the edges", "BT4 original, en los bordes", "BT4 original, nas bordas"},
+        {"BT4 original, centered", "BT4 original, centrado", "BT4 original, centralizado"},
+        {"Extended health bars", "Barras extendidas", "Barras de vida estendidas"},
+        {"Show HUD", "Mostrar HUD", "Mostrar HUD"},
+        {"Hide HUD", "Ocultar HUD", "Ocultar HUD"},
+        {"Game camera", "Cámara del juego", "Câmera do jogo"},
+        {"Free camera", "Cámara libre", "Câmera livre"},
+        {"Follow fighter", "Seguir luchador", "Seguir lutador"},
+        {"Fight overview", "Vista general del combate", "Visão geral da batalha"},
+        {"Fighter", "Luchador", "Lutador"},
+        {"Camera speed", "Velocidad de cámara", "Velocidade da câmera"},
+        {"Camera zoom", "Zoom de cámara", "Zoom da câmera"},
+        {"Reset camera", "Restablecer cámara", "Redefinir câmera"},
+        {"Close F1 to control the camera. WASD: move; Q/E: descend/ascend; arrows: turn; Shift: accelerate; +/-: zoom.", "Cierra F1 para controlar la cámara. WASD: mover; Q/E: bajar/subir; flechas: girar; Shift: acelerar; +/-: zoom.", "Feche F1 para controlar a câmera. WASD: mover; Q/E: descer/subir; setas: girar; Shift: acelerar; +/-: zoom."},
+        {"Controller: left stick moves, right stick turns, L1/R1 descend/ascend, L2/R2 zoom, L3 accelerates.", "Mando: palanca izquierda para mover, derecha para girar, L1/R1 para bajar/subir, L2/R2 para zoom y L3 para acelerar.", "Controle: analógico esquerdo move, direito gira, L1/R1 descem/sobem, L2/R2 ajustam o zoom e L3 acelera."},
+        {"Camera controls replace your local fighter controls during battle. Start still opens the pause menu.", "Durante el combate, los controles de cámara sustituyen a los de tu luchador local. Start sigue abriendo el menú de pausa.", "Durante a batalha, os comandos da câmera substituem os do seu lutador local. Start continua abrindo o menu de pausa."},
+        {"Spanish (text and voices)", "Español (textos y voces)", "Espanhol (texto e vozes)"},
+        {"English (text and voices)", "Inglés (textos y voces)", "Inglês (texto e vozes)"},
+        {"New update available. Restart required.", "Nueva actualización disponible, requiere reiniciar.", "Nova atualização disponível. É necessário reiniciar."},
+        {"Restart now", "Reiniciar ahora", "Reiniciar agora"},
+        {"Online play requires this update. Offline play remains available.", "Necesitas esta actualización para jugar online. Puedes seguir jugando sin conexión.", "Esta atualização é necessária para jogar online. Você pode continuar jogando offline."},
+        {"A game update is required for online play. Return to a menu to download it and restart.", "Necesitas actualizar el juego para jugar online. Vuelve a un menú para descargarla y reiniciar.", "É necessário atualizar o jogo para jogar online. Volte a um menu para baixar e reiniciar."},
+        {"Later", "Más tarde", "Mais tarde"},
+        {"This update is ready. Restart now to apply it, or choose Later to install it another time.", "La actualización está lista. Reinicia ahora para aplicarla o elige Más tarde para instalarla en otro momento.", "A atualização está pronta. Reinicie agora para aplicá-la ou escolha Mais tarde para instalá-la depois."},
+        {"Downloading automatically", "Descargando automáticamente", "Baixando automaticamente"},
+        {"Restart required to finish installing the update.", "Debes reiniciar para terminar de instalar la actualización.", "É necessário reiniciar para concluir a instalação da atualização."},
+        {"Changes the language of this settings menu immediately. It does not change BT4 text or voices.", "Cambia de inmediato el idioma de este menú de ajustes. No modifica los textos ni las voces de BT4.", "Altera imediatamente o idioma deste menu de configurações. Não muda os textos nem as vozes de BT4."},
+        {"Original uses the game's sprites. Other fonts replace matching menu labels immediately.\nBattle announcements have their own setting below.", "Original usa los sprites del juego. Las demás fuentes reemplazan de inmediato las etiquetas compatibles.\nLos anuncios de combate tienen su propia opción más abajo.", "Original usa os sprites do jogo. As outras fontes substituem imediatamente os rótulos compatíveis.\nOs anúncios de batalha têm uma opção própria abaixo."},
+        {"Choose original battle announcements and HUD text, or any battle font listed in fonts.tsv.", "Elige los anuncios y textos del HUD originales o una fuente de combate incluida en fonts.tsv.", "Escolha os anúncios e textos do HUD originais ou uma fonte de batalha listada em fonts.tsv."},
+        {"Replace the shared font used by dialogue, subtitles and ordinary UI text.\nOriginal keeps the game's glyphs. Text placement, colors, shadows and icons are preserved.", "Reemplaza la fuente compartida de diálogos, subtítulos y textos de interfaz.\nOriginal conserva los glifos del juego. Se mantienen posiciones, colores, sombras e iconos.", "Substitui a fonte compartilhada de diálogos, legendas e textos da interface.\nOriginal mantém os caracteres do jogo. Posições, cores, sombras e ícones são preservados."},
+        {"Where a fight's health bars and gauges sit in a picture wider than 4:3.\nLong health bars: the bars reach from the edges to the timer.\nIn the middle: the original 4:3 arrangement, next to the timer.", "Posición de las barras de vida y medidores en una imagen más ancha que 4:3.\nBarras extendidas: van desde los bordes hasta el temporizador.\nCentrado: disposición original 4:3, junto al temporizador.", "Posição das barras de vida e medidores em uma imagem mais larga que 4:3.\nBarras longas: vão das bordas até o cronômetro.\nCentralizado: disposição original 4:3, ao lado do cronômetro."},
+        {"What fills the sides where the picture is narrower than the window:\na 4:3 picture, or the menus with \"Menus: 4:3\", in a wide window.\nFighter panels: the border, and in a fight each side's fighter with its name and form.\nYour own: a folder \"bars\" next to the game with trim.png (the strip along the\npicture, kept in proportion) and fill.png (stretched over the rest). Read at start.", "Qué aparece en los laterales cuando la imagen es más estrecha que la ventana:\nla imagen 4:3 o los menús con \"Menús: 4:3\" en una ventana panorámica.\nPaneles de luchadores: el borde y, durante el combate, el luchador de cada lado con su nombre y transformación.\nPersonalizadas: carpeta \"bars\" junto al juego con trim.png (borde proporcional) y fill.png (relleno estirado). Se leen al iniciar.", "O que aparece nas laterais quando a imagem é mais estreita que a janela:\na imagem 4:3 ou os menus com \"Menus: 4:3\" em uma janela widescreen.\nPainéis dos lutadores: a moldura e, na batalha, o lutador de cada lado com nome e forma.\nPersonalizadas: pasta \"bars\" ao lado do jogo com trim.png (moldura proporcional) e fill.png (preenchimento esticado). Lida ao iniciar."},
+        {"Hide what's new", "Ocultar novedades", "Ocultar novidades"},
+        {"What's new", "Novedades", "Novidades"},
+        {"Release page", "Página de la versión", "Página da versão"},
+        {"Cancel", "Cancelar", "Cancelar"},
+        {"Game Audio", "Audio del juego", "Áudio do jogo"},
+        {"Music", "Música", "Música"},
+        {"Sound effects", "Efectos de sonido", "Efeitos sonoros"},
+        {"Voices", "Voces", "Vozes"},
+        {"Stage sounds", "Sonidos del escenario", "Sons do cenário"},
+        {"Voice Chat", "Chat de voz", "Bate-papo por voz"},
+        {"Enable voice chat", "Activar chat de voz", "Ativar bate-papo por voz"},
+        {"Mute microphone", "Silenciar micrófono", "Silenciar microfone"},
+        {"Microphone", "Micrófono", "Microfone"},
+        {"Voice output", "Salida de voz", "Saída de voz"},
+        {"Transmit mode", "Modo de transmisión", "Modo de transmissão"},
+        {"Push to Talk", "Pulsar para hablar", "Pressione para falar"},
+        {"Voice Activation", "Activación por voz", "Ativação por voz"},
+        {"Activation threshold", "Umbral de activación", "Limite de ativação"},
+        {"Microphone level", "Nivel del micrófono", "Nível do microfone"},
+        {"Voice volume", "Volumen de voz", "Volume da voz"},
+        {"Show microphone icon", "Mostrar icono del micrófono", "Mostrar ícone do microfone"},
+        {"System default", "Predeterminado del sistema", "Padrão do sistema"},
+        {"No microphone (listen only)", "Sin micrófono (solo escuchar)", "Sem microfone (somente ouvir)"},
+        {"Push-to-Talk key", "Tecla para hablar", "Tecla para falar"},
+        {"Press a key...", "Pulsa una tecla...", "Pressione uma tecla..."},
+        {"Push-to-Talk controller button", "Botón del mando para hablar", "Botão do controle para falar"},
+        {"Press a controller button...", "Pulsa un botón del mando...", "Pressione um botão do controle..."},
+        {"Not assigned", "Sin asignar", "Não atribuído"},
+        {"Transmitting", "Transmitiendo", "Transmitindo"},
+        {"Proximity voice reaches both teams. Volume fades smoothly with distance; players outside its reach are silent.", "La voz por proximidad llega a ambos equipos. El volumen baja gradualmente con la distancia; los jugadores fuera de alcance no se oyen.", "A voz por proximidade alcança as duas equipes. O volume diminui gradualmente com a distância; jogadores fora do alcance não são ouvidos."},
+        {"Proximity voice: all players, both teams", "Voz por proximidad: todos los jugadores, ambos equipos", "Voz por proximidade: todos os jogadores, as duas equipes"},
+        {"Mute", "Silenciar", "Silenciar"},
+        {"Test", "Probar", "Testar"},
+        {"Reset", "Restablecer", "Redefinir"},
+        {"Internal resolution", "Resolución interna", "Resolução interna"},
+        {"Aspect ratio", "Relación de aspecto", "Proporção da tela"},
+        {"2D filtering", "Filtro 2D", "Filtro 2D"},
+        {"Sharp (console)", "Nítido (consola)", "Nítido (console)"},
+        {"Smooth", "Suave", "Suave"},
+        {"Full screen", "Pantalla completa", "Tela cheia"},
+        {"V-sync", "Sincronización vertical", "Sincronização vertical"},
+        {"Skip pictures instead of slowing down", "Omitir imágenes en vez de ralentizar", "Pular quadros em vez de reduzir a velocidade"},
+        {"Low input lag", "Reducir latencia de entrada", "Reduzir latência de entrada"},
+        {"Render on a second processor core (restart required)", "Renderizar en otro núcleo del procesador (requiere reiniciar)", "Renderizar em outro núcleo do processador (requer reinicialização)"},
+        {"Display", "Pantalla", "Monitor"},
+        {"Chosen by the desktop", "Elegida por el sistema", "Escolhida pelo sistema"},
+        {"Renderer", "Renderizador", "Renderizador"},
+        {"Smooth motion", "Movimiento fluido", "Movimento suave"},
+        {"Menu size", "Tamaño de los menús", "Tamanho dos menus"},
+        {"Show frame rate, and the connection in an online match", "Mostrar FPS y conexión durante una partida en línea", "Mostrar FPS e conexão durante uma partida online"},
+        {"Texture pack (none found)", "Paquete de texturas (no se encontró ninguno)", "Pacote de texturas (nenhum encontrado)"},
+        {"Weather amount", "Intensidad del clima", "Intensidade do clima"},
+        {"Full", "Completo", "Completo"},
+        {"Light", "Suave", "Leve"},
+        {"Glow strength", "Intensidad del resplandor", "Intensidade do brilho"},
+        {"Glare strength", "Intensidad del destello", "Intensidade do reflexo"},
+        {"Sharp stage blur", "Desenfoque nítido del escenario", "Desfoque nítido do cenário"},
+        {"Game speed", "Velocidad del juego", "Velocidade do jogo"},
+        {"Unlock everything...", "Desbloquear todo...", "Desbloquear tudo..."},
+        {"Unlock everything?", "¿Desbloquear todo?", "Desbloquear tudo?"},
+        {"Unlock", "Desbloquear", "Desbloquear"},
+        {"Done.", "Listo.", "Concluído."},
+        {"Skip logos", "Omitir logotipos", "Pular logotipos"},
+        {"Skip intro video", "Omitir video de introducción", "Pular vídeo de abertura"},
+        {"Skip copyright page", "Omitir página de derechos de autor", "Pular página de direitos autorais"},
+        {"Hide the mouse pointer during play", "Ocultar el puntero durante la partida", "Ocultar o ponteiro durante o jogo"},
+        {"Quick saving", "Guardado rápido", "Salvamento rápido"},
+        {"End an online match on a desync", "Terminar la partida en línea si se desincroniza", "Encerrar a partida online em caso de dessincronização"},
+        {"Online chat", "Chat en línea", "Chat online"},
+        {"Chat size", "Tamaño del chat", "Tamanho do chat"},
+        {"Advanced", "Avanzado", "Avançado"},
+        {"Open Dragon Net Battle", "Abrir Dragon Net Battle", "Abrir Dragon Net Battle"},
+        {"List Dragon Net Battle in the main menu", "Mostrar Dragon Net Battle en el menú principal", "Mostrar Dragon Net Battle no menu principal"},
+        {"Music follows game speed", "La música sigue la velocidad del juego", "A música acompanha a velocidade do jogo"},
+        {"Player 1", "Jugador 1", "Jogador 1"},
+        {"Player 2", "Jugador 2", "Jogador 2"},
+        {"Controller", "Control", "Controle"},
+        {"Reset to defaults", "Restablecer valores", "Restaurar padrões"},
+        {"Sticks, triggers and vibration", "Palancas, gatillos y vibración", "Analógicos, gatilhos e vibração"},
+        {"Action", "Acción", "Ação"},
+        {"Keyboard", "Teclado", "Teclado"},
+        {"Open this window", "Abrir esta ventana", "Abrir esta janela"},
+        {"Open online chat", "Abrir el chat en línea", "Abrir o chat online"},
+        {"Left stick", "Palanca izquierda", "Analógico esquerdo"},
+        {"Right stick", "Palanca derecha", "Analógico direito"},
+        {"Left trigger", "Gatillo izquierdo", "Gatilho esquerdo"},
+        {"Right trigger", "Gatillo derecho", "Gatilho direito"},
+        {"Vibration", "Vibración", "Vibração"},
+        {"Strength", "Intensidad", "Intensidade"},
+        {"No controller", "Sin mando", "Sem controle"},
+        {"None", "Ninguno", "Nenhum"},
+        {"Performance mode: 1x resolution, reduced post-processing and no HD texture pack. Your other renderers keep their saved quality settings.", "Modo de rendimiento: resolución 1x, posprocesado reducido y sin paquete de texturas HD. Los demás renderizadores conservan sus ajustes de calidad.", "Modo de desempenho: resolução 1x, pós-processamento reduzido e sem pacote de texturas HD. Os outros renderizadores mantêm as configurações de qualidade salvas."},
+        {"4:3 (original)", "4:3 (original)", "4:3 (original)"},
+        {"How finely the game is drawn. 1x is the PlayStation 2's own resolution.\nHigher is sharper and uses more video memory.", "Nivel de detalle de la imagen. 1x es la resolución original de PlayStation 2.\nLos valores mayores ofrecen más nitidez y usan más memoria de vídeo.", "Nível de detalhe da imagem. 1x é a resolução original do PlayStation 2.\nValores maiores oferecem mais nitidez e usam mais memória de vídeo."},
+        {"How the display of a fight, the menus and text are drawn above 1x internal resolution.\nSharp: each of the PlayStation 2's pixels is a block. Smooth: as an emulator shows them.\nNo difference at 1x.", "Cómo se muestran los combates, los menús y los textos por encima de la resolución interna 1x.\nNítido: cada píxel de PlayStation 2 forma un bloque. Suave: como en un emulador.\nNo hay diferencia en 1x.", "Como as lutas, os menus e os textos são exibidos acima da resolução interna 1x.\nNítido: cada pixel do PlayStation 2 forma um bloco. Suave: como em um emulador.\nNão há diferença em 1x."},
+        {"Each picture waits for the display's refresh. Turn it on if the picture tears.\nOff is the default: it adds a little delay.", "Cada imagen espera al refresco de la pantalla. Actívalo si la imagen se corta.\nEstá desactivado por defecto: activarlo añade un poco de retraso.", "Cada quadro espera a atualização da tela. Ative se a imagem apresentar cortes.\nFica desativado por padrão: ativá-lo acrescenta um pequeno atraso."},
+        {"When this machine cannot show a picture in time, the game normally runs slower.\nWith this on it stays at full speed and leaves pictures out instead (choppier,\nnot slower). It helps where the graphics chip is the slow part. On by default.", "Si el equipo no puede mostrar una imagen a tiempo, normalmente el juego se ralentiza.\nCon esta opción sigue a velocidad normal y omite imágenes (menos fluido,\npero no más lento). Ayuda cuando la GPU es el límite. Activado por defecto.", "Se o computador não consegue exibir um quadro a tempo, o jogo normalmente fica mais lento.\nCom esta opção, mantém a velocidade e pula quadros (menos fluido,\nmas não mais lento). Ajuda quando a GPU é o limite. Ativado por padrão."},
+        {"The game reads the controller, computes, and then waits before the picture is shown:\nabout 33 ms in a fight. With this on the wait comes first, so the picture follows\nyour press by the few milliseconds the machine needs. The game itself is unchanged.\nWith Smooth motion as well: its in-between picture then follows your press at once and\nthe full one a refresh later. Not used online. Off by default: on a machine that\ncannot keep up it may stutter where the original order would not.", "El juego lee el mando, calcula y espera antes de mostrar la imagen:\naproximadamente 33 ms durante una pelea. Al activarlo, la espera ocurre primero y la imagen\nsigue tu pulsación con los pocos milisegundos que necesita el equipo. El juego no cambia.\nCon Movimiento fluido, la imagen intermedia sigue la pulsación de inmediato y la completa llega un refresco después.\nNo se usa en línea. Desactivado por defecto: si el equipo no puede mantener el ritmo, puede producir tirones.", "O jogo lê o controle, calcula e espera antes de exibir o quadro:\ncerca de 33 ms durante uma luta. Ao ativar, a espera vem primeiro e a imagem\nsegue o comando com os poucos milissegundos de que o computador precisa. O jogo não muda.\nCom Movimento suave, o quadro intermediário acompanha o comando imediatamente e o completo chega uma atualização depois.\nNão é usado online. Desativado por padrão: em computadores que não acompanham o ritmo, pode causar travamentos."},
+        {"The picture is prepared and shown on a core of its own while the game computes the next\nmoment: faster where the processor is the slow part (older or low-power machines).\nThe same picture and the same game. Takes effect when the game is started again.\nNot with the OpenGL renderer, and not on machines with two cores or fewer.", "La imagen se prepara y muestra en otro núcleo mientras el juego calcula el siguiente instante:\npuede ayudar cuando el procesador es el límite, sobre todo en equipos antiguos o de bajo consumo.\nNo cambia la imagen ni el juego. Se aplica al reiniciar.\nNo funciona con OpenGL ni en equipos con dos núcleos o menos.", "A imagem é preparada e exibida em outro núcleo enquanto o jogo calcula o próximo instante:\npode ajudar quando o processador é o limite, sobretudo em computadores antigos ou de baixo consumo.\nNão muda a imagem nem o jogo. É aplicado ao reiniciar.\nNão funciona com OpenGL nem em computadores com dois núcleos ou menos."},
+        {"Takes effect the next time the game starts.", "Se aplica la próxima vez que inicies el juego.", "Entra em vigor na próxima vez que o jogo iniciar."},
+        {"Takes effect after restarting the game. Performance depends on your GPU and drivers.\nIf the saved renderer is unavailable, the game tries Vulkan and then OpenGL.", "Se aplica al reiniciar el juego. El rendimiento depende de la GPU y sus controladores.\nSi el renderizador guardado no está disponible, el juego prueba Vulkan y luego OpenGL.", "Entra em vigor após reiniciar o jogo. O desempenho depende da GPU e dos drivers.\nSe o renderizador salvo não estiver disponível, o jogo tenta Vulkan e depois OpenGL."},
+        {"Running now: %s", "En uso: %s", "Em uso: %s"},
+        {"The requested renderer could not start. Using %s.", "No se pudo iniciar el renderizador solicitado. Se usa %s.", "Não foi possível iniciar o renderizador escolhido. Usando %s."},
+        {"After restart: %s", "Después de reiniciar: %s", "Após reiniciar: %s"},
+        {"Active GPU: %s", "GPU activa: %s", "GPU ativa: %s"},
+        {"Off (30, as the console)", "Desactivado (30, como en la consola)", "Desativado (30, como no console)"},
+        {"60 pictures a second", "60 imágenes por segundo", "60 quadros por segundo"},
+        {"120 pictures a second", "120 imágenes por segundo", "120 quadros por segundo"},
+        {"240 pictures a second", "240 imágenes por segundo", "240 quadros por segundo"},
+        {"The game computes a fight 30 times a second. With this, more pictures are\ndrawn between each two. The fight itself does not change, and neither does online play.\nThe newest picture reaches the screen later: 17 ms at 60, 25 ms at 120, 29 ms at 240.\nChoose what your screen can show. F9 switches it off and on.", "El juego calcula la pelea 30 veces por segundo. Esta opción dibuja imágenes adicionales\nentre cada una. No cambia la pelea ni el juego en línea.\nLa imagen más reciente llega más tarde: 17 ms a 60, 25 ms a 120 y 29 ms a 240.\nElige lo que pueda mostrar tu pantalla. F9 activa o desactiva la opción.", "O jogo calcula a luta 30 vezes por segundo. Esta opção desenha quadros adicionais\nentre cada um. Não muda a luta nem o jogo online.\nO quadro mais recente chega depois: 17 ms a 60, 25 ms a 120 e 29 ms a 240.\nEscolha o que sua tela consegue exibir. F9 ativa ou desativa a opção."},
+        {"The size of this window, the online windows, the chat and the notices. They already grow\nwith a picture taller than 1080 pixels; this makes them larger or smaller than that.", "Tamaño de esta ventana, de las salas en línea, del chat y de los avisos. Ya aumentan\ncon imágenes de más de 1080 píxeles; este ajuste los hace aún mayores o menores.", "Tamanho desta janela, das salas online, do chat e dos avisos. Eles já aumentam\nem imagens com mais de 1080 pixels; este ajuste os deixa ainda maiores ou menores."},
+        {"Texture pack", "Paquete de texturas", "Pacote de texturas"},
+        {"Light: half of the haze's sprites, a thinner haze; about half of what switching it off gains.", "Suave: la mitad de los sprites de neblina; el efecto de apagarla por completo es aproximadamente el doble.", "Leve: metade dos sprites da névoa; desligá-la por completo oferece aproximadamente o dobro desse ganho."},
+        {"The glow around characters and things (a Super Saiyan's hair, auras).\n100%% is what the PlayStation 2 draws; the default here is 60%%.", "Resplandor alrededor de personajes y objetos (pelo de Super Saiyan, auras).\n100%% equivale a PlayStation 2; el valor predeterminado aquí es 60%%.", "Brilho ao redor de personagens e objetos (cabelo de Super Saiyajin, auras).\n100%% equivale ao PlayStation 2; o padrão aqui é 60%%."},
+        {"The glare of the sky and the stage's light.\n100%% is what the PlayStation 2 draws; the default here is 60%%.", "Destello del cielo y de la iluminación del escenario.\n100%% equivale a PlayStation 2; el valor predeterminado aquí es 60%%.", "Reflexo do céu e da iluminação do cenário.\n100%% equivale ao PlayStation 2; o padrão aqui é 60%%."},
+        {"On: the stage's blur keeps the detail of the internal resolution (crisper, as other\nemulators show it upscaled). Off: as soft as the PlayStation 2 draws it. No difference at 1x.", "Activado: el desenfoque conserva el detalle de la resolución interna (más nítido al ampliar).\nDesactivado: mantiene la suavidad de PlayStation 2. Sin diferencia en 1x.", "Ativado: o desfoque preserva os detalhes da resolução interna (mais nítido ao ampliar).\nDesativado: mantém a suavidade do PlayStation 2. Sem diferença em 1x."},
+        {"Start without the publisher and developer logos. From the next start of the game.", "Inicia el juego sin los logotipos de la editora y del equipo desarrollador. Se aplica al próximo inicio.", "Inicia o jogo sem os logotipos da publicadora e da equipe de desenvolvimento. Entra em vigor na próxima inicialização."},
+        {"Start without the opening movie. From the next start of the game.", "Inicia el juego sin el vídeo de apertura. Se aplica al próximo inicio.", "Inicia o jogo sem o vídeo de abertura. Entra em vigor na próxima inicialização."},
+        {"The page of legal text shown for five seconds before the title screen, every time.", "Página legal que aparece durante cinco segundos antes del título en cada inicio.", "Página de informações legais exibida por cinco segundos antes do título, a cada início."},
+        {"The pointer is hidden over the game and shown in this window, the online windows, the\nquestion before the game closes and while a chat line is typed.", "El puntero se oculta sobre el juego y aparece en esta ventana, las salas en línea,\nla confirmación antes de cerrar el juego y mientras escribes en el chat.", "O ponteiro fica oculto sobre o jogo e aparece nesta janela, nas salas online,\nna confirmação antes de fechar o jogo e enquanto uma mensagem é digitada no chat."},
+        {"Save and load without the memory card pages: no question, no waiting, a small card in the\ncorner while it saves, and the save loaded at start without a page. Load in the options\nstill asks first, then loads at once. A missing card, a full card or a failed save is\nstill shown. Online the game's own pages always run. Off: the game's own pages.", "Guarda y carga sin las pantallas de la tarjeta de memoria: sin preguntas ni esperas; aparece\nuna tarjeta pequeña en la esquina mientras guarda y carga la partida al iniciar sin mostrar una pantalla.\nLa opción Cargar sigue pidiendo confirmación y luego carga de inmediato. Se muestran los errores\npor tarjeta ausente, llena o guardado fallido. En línea siempre se usan las pantallas del juego. Desactivado: pantallas originales.", "Salva e carrega sem as telas do cartão de memória: sem perguntas ou espera; aparece um cartão\npequeno no canto durante o salvamento e a partida é carregada sem tela na inicialização.\nA opção Carregar ainda pede confirmação e depois carrega imediatamente. Erros de cartão ausente,\ncheio ou falha ao salvar continuam sendo exibidos. Online, as telas originais são sempre usadas. Desativado: telas originais."},
+        {"The two games compare what they compute. Off: when they no longer agree you are told, and the match\ngoes on (the two screens may then show different fights). On: the match ends there.", "Ambos juegos comparan sus cálculos. Desactivado: recibirás un aviso si dejan de coincidir, pero la partida\ncontinúa (las pantallas podrían mostrar peleas distintas). Activado: la partida termina en ese momento.", "Os dois jogos comparam os resultados calculados. Desativado: você recebe um aviso se houver divergência, mas a luta\ncontinua (as telas podem mostrar lutas diferentes). Ativado: a luta termina nesse momento."},
+        {"Text with the other player of an online match. Tab opens a line (setting key_chat), Enter sends it,\nEsc puts it away; while it is typed the keyboard does not play, a controller does. Off: no lines\nare shown or sent. A player without it sees nothing.", "Mensajes con los demás jugadores en línea. Tab abre el campo de texto (configurable en Controles) y Enter lo envía.\nEsc lo cierra; al escribir, el teclado no controla el juego, pero el mando sí. Desactivado: no se muestran\nni se envían mensajes. Los jugadores que lo desactiven no verán el chat.", "Mensagens para os outros jogadores online. Tab abre o campo de texto (configurável em Controles) e Enter envia.\nEsc fecha; enquanto digita, o teclado não controla o jogo, mas o controle sim. Desativado: nenhuma mensagem\né exibida ou enviada. Jogadores que desativarem não verão o chat."},
+        {"Compact", "Compacto", "Compacto"},
+        {"Normal", "Normal", "Normal"},
+        {"Large", "Grande", "Grande"},
+        {"How wide the online chat is and how many lines it shows (while typing / otherwise).\nCompact: 4 / 2, narrower.\nNormal: 6 / 4.\nLarge: 8 / 6, wider, for large screens.", "Ancho del chat y cantidad de líneas visibles (al escribir / en reposo).\nCompacto: 4 / 2, más estrecho.\nNormal: 6 / 4.\nGrande: 8 / 6, más ancho, para pantallas grandes.", "Largura do chat e quantidade de linhas exibidas (digitando / em repouso).\nCompacto: 4 / 2, mais estreito.\nNormal: 6 / 4.\nGrande: 8 / 6, mais largo, para telas grandes."},
+        {"Shows the entry beside Tenkaichi Budokai Online the next time the main menu is opened.", "Muestra esta opción junto a Tenkaichi Budokai Online la próxima vez que abras el menú principal.", "Mostra esta opção ao lado de Tenkaichi Budokai Online na próxima vez que o menu principal for aberto."},
+        {"Use stick rotation in clashes", "Girar la palanca en los choques", "Girar o analógico nos confrontos"},
+        {"Rotate the left stick during beam or melee clashes. Button controls remain available.", "Gira la palanca izquierda durante los choques de poderes o cuerpo a cuerpo. También puedes usar los botones.", "Gire o analógico esquerdo nos confrontos de poderes ou corpo a corpo. Os botões continuam disponíveis."},
+        {"BT4 clashes use repeated button presses. Follow the on-screen prompt.", "Los choques de BT4 requieren pulsar los botones repetidamente. Sigue las indicaciones en pantalla.", "Os choques de BT4 exigem pressionar os botões repetidamente. Siga as instruções na tela."},
+        {"Choose a binding, then press the new key or button. Esc keeps it, Delete clears it;", "Elige una asignación y pulsa la nueva tecla o botón. Esc la conserva y Supr la borra;", "Escolha uma atribuição e pressione a nova tecla ou botão. Esc mantém e Delete apaga;"},
+        {"with a controller, press nothing for five seconds to keep it.", "con un mando, no pulses nada durante cinco segundos para conservarla.", "com um controle, não pressione nada por cinco segundos para manter."},
+        {"press a key...", "pulsa una tecla...", "pressione uma tecla..."},
+        {"press a button...", "pulsa un botón...", "pressione um botão..."},
+        {"START + SELECT", "START + SELECT", "START + SELECT"},
+        {"Controller %d (not connected)", "Mando %d (no conectado)", "Controle %d (desconectado)"},
+        {"Lobby%s%s", "Sala%s%s", "Sala%s%s"},
+        {"Back to the lobby", "Volver a la sala", "Voltar à sala"},
+        {"Ends the match for everyone: all go back to the lobby window, where the rules can be changed.", "Finaliza la partida para todos y vuelve a la sala, donde se pueden cambiar las reglas.", "Encerra a partida para todos e volta à sala, onde as regras podem ser alteradas."},
+        {"Close the lobby", "Cerrar la sala", "Fechar a sala"},
+        {"Leave the lobby", "Abandonar la sala", "Sair da sala"},
+        {"Ends the match and the lobby for everyone.", "Finaliza la partida y cierra la sala para todos.", "Encerra a partida e fecha a sala para todos."},
+        {"Back to the main menu. A player leaving ends the match; a spectator leaving changes nothing for the others.", "Vuelve al menú principal. Si un jugador se va, la partida termina; si se va un espectador, los demás continúan.", "Volta ao menu principal. Se um jogador sair, a partida termina; se um espectador sair, nada muda para os demais."},
+        {"Spectating %s vs %s", "Viendo a %s contra %s", "Assistindo %s contra %s"},
+        {"Change view", "Cambiar vista", "Mudar visualização"},
+        {"Player 1's view, player 2's, or both (split screen). Also V or R1 while watching.", "Vista del jugador 1, del jugador 2 o de ambos (pantalla dividida). También puedes pulsar V o R1 mientras observas.", "Visão do jogador 1, do jogador 2 ou de ambos (tela dividida). Também é possível pressionar V ou R1 enquanto assiste."},
+        {"Stop watching", "Dejar de observar", "Parar de assistir"},
+        {"View: %s", "Vista: %s", "Visão: %s"},
+        {"up", "arriba", "cima"},
+        {"down", "abajo", "baixo"},
+        {"left", "izquierda", "esquerda"},
+        {"right", "derecha", "direita"},
+        {"stick", "palanca", "analógico"},
+        {"game", "juego", "jogo"},
+        {"no controller", "sin mando", "sem controle"},
+        {" pressed", " pulsado", " pressionado"},
+        {"D-pad up", "Cruceta arriba", "Direcional para cima"},
+        {"D-pad down", "Cruceta abajo", "Direcional para baixo"},
+        {"D-pad left", "Cruceta izquierda", "Direcional para a esquerda"},
+        {"D-pad right", "Cruceta derecha", "Direcional para a direita"},
+        {"Cross", "Cruz", "X"},
+        {"Circle", "Círculo", "Círculo"},
+        {"Square", "Cuadrado", "Quadrado"},
+        {"Triangle", "Triángulo", "Triângulo"},
+        {"Left stick up", "Palanca izquierda arriba", "Analógico esquerdo para cima"},
+        {"Left stick down", "Palanca izquierda abajo", "Analógico esquerdo para baixo"},
+        {"Left stick left", "Palanca izquierda a la izquierda", "Analógico esquerdo para a esquerda"},
+        {"Left stick right", "Palanca izquierda a la derecha", "Analógico esquerdo para a direita"},
+        {"Right stick up", "Palanca derecha arriba", "Analógico direito para cima"},
+        {"Right stick down", "Palanca derecha abajo", "Analógico direito para baixo"},
+        {"Right stick left", "Palanca derecha a la izquierda", "Analógico direito para a esquerda"},
+        {"Right stick right", "Palanca derecha a la derecha", "Analógico direito para a direita"},
+        {"Voice ready; join an online room.", "Chat de voz listo; únete a una sala en línea.", "Bate-papo por voz pronto; entre em uma sala online."},
+        {"Voice chat is off.", "El chat de voz está desactivado.", "O bate-papo por voz está desativado."},
+        {"Voice output unavailable; check your audio device.", "La salida de voz no está disponible; revisa el dispositivo de audio.", "A saída de voz está indisponível; verifique o dispositivo de áudio."},
+        {"Listening; microphone unavailable.", "Escuchando; el micrófono no está disponible.", "Ouvindo; microfone indisponível."},
+        {"Voice connected; waiting for another player.", "Chat de voz conectado; esperando a otro jugador.", "Bate-papo por voz conectado; aguardando outro jogador."},
+        {"Voice connected directly.", "Chat de voz conectado directamente.", "Bate-papo por voz conectado diretamente."},
+        {"Voice connected; relay available.", "Chat de voz conectado; retransmisión disponible.", "Bate-papo por voz conectado; retransmissão disponível."},
+        {"Optional voice during online battles. The microphone is opened only while voice is enabled and connected to a room.", "Chat de voz opcional durante las partidas en línea. El micrófono solo se activa si el chat está habilitado y conectado a una sala.", "Bate-papo por voz opcional durante partidas online. O microfone só é ativado quando o recurso está habilitado e conectado a uma sala."},
+        {"Higher values ignore quieter sounds. Use a headset to avoid sending game audio back to other players.", "Los valores altos ignoran los sonidos suaves. Usa auriculares para evitar que el audio del juego se transmita a los demás.", "Valores altos ignoram sons baixos. Use fones de ouvido para evitar que o áudio do jogo seja transmitido aos outros jogadores."},
+        {"Hold this key to transmit. Escape cancels binding.", "Mantén pulsada esta tecla para hablar. Escape cancela la asignación.", "Mantenha esta tecla pressionada para falar. Escape cancela a atribuição."},
+        {"Choose a button that does not conflict with your combat controls.", "Elige un botón que no interfiera con los controles de combate.", "Escolha um botão que não conflite com os comandos de combate."},
+        {"A: move   B: choose   Esc: back", "A: mover   B: elegir   Esc: volver", "A: mover   B: escolher   Esc: voltar"},
+        {"both (split screen)", "ambos (pantalla dividida)", "ambos (tela dividida)"},
+        {"player 1", "jugador 1", "jogador 1"},
+        {"player 2", "jugador 2", "jogador 2"},
+        {"Outline", "Contorno", "Contorno"},
+        {"The black line around the fighters.", "Línea negra alrededor de los luchadores.", "Linha preta ao redor dos lutadores."},
+        {"See-through tint", "Tinte de transparencia", "Tonalidade de transparência"},
+        {"The tint that shows a fighter behind scenery.", "Tinte que permite ver a un luchador detrás del escenario.", "Tonalidade que permite ver um lutador atrás do cenário."},
+        {"Depth tint", "Tinte de profundidad", "Tonalidade de profundidade"},
+        {"The haze that colours distant things.", "Neblina que da color a los elementos lejanos.", "Névoa que colore os elementos distantes."},
+        {"Glare and glow", "Destello y resplandor", "Reflexo e brilho"},
+        {"The bloom around bright things and the sky's glare.", "Resplandor alrededor de los elementos brillantes y destello del cielo.", "Brilho ao redor de elementos luminosos e reflexo do céu."},
+        {"Distance blur", "Desenfoque de distancia", "Desfoque de distância"},
+        {"The soft focus on distant scenery.", "Enfoque suave de los elementos lejanos del escenario.", "Foco suave nos elementos distantes do cenário."},
+        {"Movement blur", "Desenfoque de movimiento", "Desfoque de movimento"},
+        {"The blur of the scenery while the view turns or moves fast.", "Desenfoque del escenario cuando la cámara gira o se mueve rápido.", "Desfoque do cenário quando a câmera gira ou se move rapidamente."},
+        {"Weather", "Clima", "Clima"},
+        {"The haze of dust or mist that drifts over some stages (Desert and Rocky Area at noon, Rocky Area\nin the evening, Kami's Lookout; Glacier, Muscle Tower and the Time Chamber have a little of it too).\nA faint tint, made of big soft sprites over the whole picture: off, those stages run as fast as the\nothers (a fifth faster at 3x).", "Neblina de polvo o bruma presente en algunos escenarios (Desierto y Área rocosa al mediodía, Área rocosa\nal atardecer, Torre de Karin; también aparece un poco en Glaciar, Torre Muscle y Sala del Tiempo).\nEs un tinte leve creado con sprites grandes y suaves sobre toda la imagen. Al desactivarlo, esos escenarios\nfuncionan igual de rápido que los demás (un quinto más rápido en 3x).", "Névoa de poeira ou bruma presente em alguns cenários (Deserto e Área Rochosa ao meio-dia, Área Rochosa\nao entardecer, Torre de Karin; também aparece um pouco na Geleira, Torre Muscle e Sala do Tempo).\nÉ uma tonalidade suave criada por sprites grandes sobre toda a imagem. Desativada, esses cenários\nfuncionam tão rápido quanto os outros (um quinto mais rápido em 3x)."},
+        {"Restart the update from an offline menu.", "Reinicia la actualización desde un menú sin conexión.", "Reinicie a atualização em um menu offline."},
+        {"The update is installed, but the new version could not be started: close the game and start it again.", "La actualización se instaló, pero no se pudo iniciar la nueva versión. Cierra el juego y vuelve a abrirlo.", "A atualização foi instalada, mas não foi possível iniciar a nova versão. Feche o jogo e abra-o novamente."},
+        {"Updated to %s.", "Actualizado a %s.", "Atualizado para %s."},
+        {"Updates", "Actualizaciones", "Atualizações"},
+        {"Installed version: %s", "Versión instalada: %s", "Versão instalada: %s"},
+        {"Check for updates", "Buscar actualizaciones", "Verificar atualizações"},
+        {"Checking for updates...", "Buscando actualizaciones...", "Verificando atualizações..."},
+        {"No newer release is available for this build.", "No hay una versión más reciente disponible para esta compilación.", "Não há uma versão mais recente disponível para esta compilação."},
+        {"Could not check for updates. Check your connection and try again.", "No se pudieron buscar actualizaciones. Revisa la conexión e inténtalo de nuevo.", "Não foi possível verificar as atualizações. Verifique a conexão e tente novamente."},
+        {"Retry download", "Reintentar descarga", "Tentar baixar novamente"},
+        {"Return to an offline menu to apply the update.", "Vuelve a un menú sin conexión para aplicar la actualización.", "Volte a um menu offline para aplicar a atualização."},
+        {"Update %s found. Downloading automatically.", "Se encontró la actualización %s. Se descargará automáticamente.", "Atualização %s encontrada. O download será feito automaticamente."},
+        {"Downloading %s: %d%% (%.1f of %.1f MB). You can go on playing.", "Descargando %s: %d%% (%.1f de %.1f MB). Puedes seguir jugando.", "Baixando %s: %d%% (%.1f de %.1f MB). Você pode continuar jogando."},
+        {"Checking the download of %s (its signature)...", "Verificando la descarga de %s (firma digital)...", "Verificando o download de %s (assinatura)..."},
+        {"Installing %s...", "Instalando %s...", "Instalando %s..."},
+        {"The update to %s was not installed: %s", "No se instaló la actualización %s: %s", "A atualização %s não foi instalada: %s"},
+        {"Automatic installation is unavailable: %s", "La instalación automática no está disponible: %s", "A instalação automática não está disponível: %s"},
+        {"Opens the release page. Verified updates install automatically at the main menu.", "Abre la página de la versión. Las actualizaciones verificadas se aplican después de que confirmes el reinicio en el menú principal.", "Abre a página da versão. Atualizações verificadas são aplicadas depois que você confirma a reinicialização no menu principal."},
+        {"(The release has no notes.)", "(Esta versión no tiene notas.)", "(Esta versão não tem notas.)"},
+        {"Automatic updates: %s", "Actualizaciones automáticas: %s", "Atualizações automáticas: %s"},
+        {"The launcher checks for signed releases, downloads them in the background, and installs them at the main menu.", "El juego busca versiones firmadas y las descarga en segundo plano. En el menú principal, te pregunta antes de reiniciar e instalarlas.", "O jogo procura versões assinadas e as baixa em segundo plano. No menu principal, pede confirmação antes de reiniciar e instalá-las."},
+        {"Opens the release page. A verified update is applied only after you confirm a restart from an offline menu.", "Abre la página de la versión. La actualización verificada solo se aplica después de que confirmes el reinicio desde un menú sin conexión.", "Abre a página da versão. A atualização verificada só é aplicada depois que você confirma a reinicialização em um menu offline."},
+        {"The updater checks for signed releases and downloads them in the background. In an offline menu, it asks before restarting to apply an update.", "El actualizador busca versiones firmadas y las descarga en segundo plano. En un menú sin conexión, pregunta antes de reiniciar para aplicar la actualización.", "O atualizador procura versões assinadas e as baixa em segundo plano. Em um menu offline, pede confirmação antes de reiniciar para aplicar a atualização."},
+        {"Update {version} found. Downloading automatically.", "Se encontró la actualización {version}. Se descargará automáticamente.", "Atualização {version} encontrada. O download será feito automaticamente."},
+        {"Downloading update {version}: {percent}%", "Descargando actualización {version}: {percent}%", "Baixando atualização {version}: {percent}%"},
+        {"How fast the game runs outside online play (the sound keeps its pitch). 100%% is the game's own;\n114%% is what competitive play uses. An online match never uses this value:\nits speed is the host's or the queue's.", "Velocidad del juego fuera de las partidas en línea (el sonido conserva su tono). 100%% es el valor original;\nel modo competitivo usa 114%%. Las partidas en línea usan la velocidad del anfitrión o de la cola.", "Velocidade do jogo fora das partidas online (o som mantém o tom). 100%% é o padrão do jogo;\no modo competitivo usa 114%%. Partidas online usam a velocidade do anfitrião ou da fila."},
+        {"Unlock everything: all characters, stages, music and items, and the largest amount of Zenni. This is a debug function the game's developers left in.", "Desbloquea todos los personajes, escenarios, música y objetos, además de la cantidad máxima de Zenni. Es una función de depuración que dejaron los desarrolladores.", "Desbloqueia todos os personagens, cenários, músicas e itens, além da quantidade máxima de Zenni. É uma função de depuração deixada pelos desenvolvedores."},
+        {"It also empties your records list, and it becomes permanent the next time the game saves. Use it after your save has been loaded (from the main menu on).", "También borra la lista de récords y el cambio será permanente cuando el juego guarde. Úsalo después de cargar la partida, desde el menú principal.", "Também apaga a lista de recordes, e a alteração será permanente quando o jogo salvar. Use depois de carregar o jogo, a partir do menu principal."},
+        {"Your records list will be emptied. This cannot be undone once the game saves.", "Se borrará tu lista de récords. No se puede deshacer después de que el juego guarde.", "Sua lista de recordes será apagada. Não é possível desfazer depois que o jogo salvar."},
+        {"A controller counts as pressed from %d%% on. The game is told pressed or not, nothing between.", "El juego considera pulsado el gatillo desde el %d%%. Solo recibe el estado pulsado o suelto.", "O jogo considera o gatilho pressionado a partir de %d%%. O estado enviado é pressionado ou solto."},
+        {"The game's own vibration (hits, clashes, charging), on this player's controller.\nStrength applies to both vibration motors. Test plays them for half a second.", "Vibración del juego (golpes, choques, carga) en el mando de este jugador.\nLa intensidad afecta a ambos motores. Probar los activa durante medio segundo.", "Vibração do jogo (golpes, choques, carregamento) no controle deste jogador.\nA intensidade se aplica aos dois motores. Testar ativa ambos por meio segundo."},
+        {"Half a second of both motors at this strength.", "Activa ambos motores durante medio segundo con esta intensidad.", "Ativa os dois motores por meio segundo nesta intensidade."},
+        {"(this controller has none)", "(este mando no tiene vibración)", "(este controle não tem vibração)"},
+        {"Default", "Predeterminada", "Padrão"},
+        {"Exit", "Salir", "Sair"},
+        {"Close the game?\nUnsaved progress will be lost.", "¿Cerrar el juego?\nSe perderá el progreso sin guardar.", "Fechar o jogo?\nO progresso não salvo será perdido."},
+        {"Deadzone", "Zona muerta", "Zona morta"},
+        {"A stage's background sound (wind, water) and its own effects.", "Sonido ambiente del escenario (viento, agua) y sus efectos.", "Som ambiente do cenário (vento, água) e seus efeitos."},
+        {"A trigger counts as pressed from %d%% on. The game is told pressed or not, nothing between.", "El gatillo se considera pulsado a partir del %d%%. El juego solo recibe pulsado o suelto.", "O gatilho é considerado pressionado a partir de %d%%. O jogo só recebe pressionado ou solto."},
+        {"Dragon Net Battle is the first online window of this port. Tenkaichi Budokai Online (the main menu) does everything it does: lobbies by code or by address, and quick matches.", "Dragon Net Battle es la ventana de conexión original de este port. Tenkaichi Budokai Online, en el menú principal, ofrece las mismas opciones: salas por código o dirección y partidas rápidas.", "Dragon Net Battle é a janela de conexão original deste port. Tenkaichi Budokai Online, no menu principal, oferece as mesmas opções: salas por código ou endereço e partidas rápidas."},
+        {"Hits, blasts, menu sounds. Takes effect with the next sound that starts.", "Golpes, ataques de energía y sonidos de los menús. Se aplica al siguiente sonido que comience.", "Golpes, ataques de energia e sons dos menus. A alteração se aplica ao próximo som que começar."},
+        {"How far the stick has to be moved before the game is told anything (the shaded middle).\nOriginal: the game's own, 39%% for left / right and for up / down separately, a square.\n0%% to 90%%: a round one of that size instead; from its edge the value grows evenly\nto full at full tilt, and the stick counts as a direction half way between the two.\nThe white dot is the stick, the ring what the game is given; after the stick's name,\nthe direction the game takes it for. Choose a size that covers where the dot rests\nwhen the stick is let go.", "Distancia que debes mover la palanca antes de que el juego responda (centro sombreado).\nOriginal: zona cuadrada del juego, del 39%% en cada eje.\nDe 0%% a 90%%: zona circular de ese tamaño; la respuesta aumenta gradualmente desde el borde\nhasta la inclinación máxima. La dirección se activa a mitad de ese recorrido.\nEl punto blanco muestra la palanca; el anillo, la entrada que recibe el juego.\nElige un tamaño que cubra la posición del punto cuando sueltes la palanca.", "Distância que o analógico deve percorrer antes de o jogo responder (centro sombreado).\nOriginal: zona quadrada do jogo, de 39%% em cada eixo.\nDe 0%% a 90%%: zona circular desse tamanho; a resposta aumenta gradualmente da borda\naté a inclinação máxima. A direção é ativada na metade desse percurso.\nO ponto branco mostra o analógico; o anel, a entrada recebida pelo jogo.\nEscolha um tamanho que cubra a posição do ponto quando soltar o analógico."},
+        {"Put a ZIP pack or PNG/DDS files (PCSX2 naming) into the \"textures\" folder next to the game.", "Coloca el paquete ZIP o sus archivos PNG/DDS (con nombres de PCSX2) en la carpeta \"textures\" junto al juego.", "Coloque o pacote ZIP ou os arquivos PNG/DDS (com nomes do PCSX2) na pasta \"textures\" ao lado do jogo."},
+        {"Replacement textures from the folder \"textures\" next to the game.", "Texturas de reemplazo de la carpeta \"textures\" junto al juego.", "Texturas de substituição da pasta \"textures\" ao lado do jogo."},
+        {"The fighters' voices in a fight and the spoken lines outside one.", "Voces de los luchadores en combate y diálogos fuera de él.", "Vozes dos lutadores em batalha e diálogos fora dela."},
+        {"The game's own vibration (hits, clashes, charging), on this player's controller.\nThe game's Options > Controller > Vibration has to be on as well: it is, unless you turned it off.\nThe game gives none in a replay or for a side the computer plays.", "Vibración del juego (golpes, choques y carga) en el mando de este jugador.\nTambién debes activar Opciones > Mando > Vibración dentro del juego.\nNo hay vibración en repeticiones ni para los luchadores controlados por la CPU.", "Vibração do jogo (golpes, choques e carregamento) no controle deste jogador.\nAtive também Opções > Controle > Vibração dentro do jogo.\nNão há vibração em replays nem para os lutadores controlados pela CPU."},
+        {"When the game runs at another speed than 100%% (an online match, the Cheats tab):\noff, the music plays as it is; on, it is sped up or slowed down with the game,\nat its own pitch, as an emulator does. Spoken lines always follow the game.", "Cuando el juego funciona a una velocidad distinta del 100%%:\ndesactivado, la música mantiene su velocidad; activado, sigue la velocidad del juego\nsin cambiar el tono. Los diálogos siempre siguen la velocidad del juego.", "Quando o jogo funciona em uma velocidade diferente de 100%%:\ndesativado, a música mantém a velocidade original; ativado, acompanha o jogo\nsem mudar o tom. Os diálogos sempre acompanham a velocidade do jogo."},
+        {"The fighter's name down the panel. The game's fonts, as for the Menu font\n(a font of your own: add it to fonts/fonts.tsv). Default: the first of the list.", "Fuente del nombre del luchador en el panel. Usa la lista de fuentes de los menús.\nPara añadir una fuente, inclúyela en fonts/fonts.tsv. Predeterminada: primera de la lista.", "Fonte do nome do lutador no painel. Usa a lista de fontes dos menus.\nPara adicionar uma fonte, inclua-a em fonts/fonts.tsv. Padrão: primeira da lista."},
+        {"The form under the portrait. The game's fonts, as for the Menu font.\nDefault: the first of the list.", "Fuente de la transformación debajo del retrato. Usa la lista de fuentes de los menús.\nPredeterminada: primera de la lista.", "Fonte da forma abaixo do retrato. Usa a lista de fontes dos menus.\nPadrão: primeira da lista."},
+        {"%s (%d textures)", "%s (%d texturas)", "%s (%d texturas)"},
+        {"Checking your game data... The search begins when it is done.", "Verificando los datos del juego... La búsqueda comenzará al finalizar.", "Verificando os dados do jogo... A busca começará ao terminar."},
+        {"Found a player. Connecting...", "Jugador encontrado. Conectando...", "Jogador encontrado. Conectando..."},
+        {"Searching for a player in this queue...", "Buscando un jugador en esta cola...", "Buscando um jogador nesta fila..."},
+        {"Searching for %d:%02d more. Leave the window open.", "Tiempo de búsqueda restante: %d:%02d. Mantén abierta esta ventana.", "Tempo de busca restante: %d:%02d. Mantenha esta janela aberta."},
+        {"The games could not establish a connection. Search again for another player.", "No se pudo establecer la conexión entre los juegos. Busca otro jugador.", "Não foi possível estabelecer a conexão entre os jogos. Busque outro jogador."},
+        {"The other player's game is a different version. Search again.", "El otro jugador usa una versión distinta del juego. Vuelve a buscar.", "O outro jogador usa uma versão diferente do jogo. Busque novamente."},
+        {"Nobody was searching this queue in the last three minutes. Search again, or try another queue.", "No se encontraron jugadores en esta cola durante los últimos tres minutos. Vuelve a buscar o prueba otra cola.", "Nenhum jogador foi encontrado nesta fila nos últimos três minutos. Busque novamente ou tente outra fila."},
+        {"Checking your game data...", "Verificando los datos del juego...", "Verificando os dados do jogo..."},
+        {"Search again", "Volver a buscar", "Buscar novamente"},
+        {"Search for a match", "Buscar partida", "Buscar partida"},
+        {"Update available. Online servers are unreachable until you update.", "Hay una actualización disponible. Actualiza el juego para conectarte al modo en línea.", "Há uma atualização disponível. Atualize o jogo para se conectar ao modo online."},
+        {"You have 0.%d.%d; 0.%d.%d or newer is needed. github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases", "Versión instalada: 0.%d.%d. Se requiere 0.%d.%d o posterior. github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases", "Versão instalada: 0.%d.%d. É necessário 0.%d.%d ou posterior. github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases"},
+        {"Update available: release 0.%d.%d.", "Actualización disponible: versión 0.%d.%d.", "Atualização disponível: versão 0.%d.%d."},
+        {"Fight a player on another computer. One of you hosts, the other joins with the host's address.", "Juega con otra persona. Un jugador crea la sala y el otro se une con su código o dirección.", "Jogue com outra pessoa. Um jogador cria a sala e o outro entra com o código ou endereço."},
+        {"Player name", "Nombre del jugador", "Nome do jogador"},
+        {"Host", "Crear sala", "Criar sala"},
+        {"Use a code (no port forwarding needed)", "Usar un código (sin redirección de puertos)", "Usar um código (sem redirecionamento de portas)"},
+        {"Your lobby gets a short code to tell the others, and the games find each other through a\nsmall matchmaking service. Works with most home routers. Without it the lobby is on a port,\nwhich must be reachable from the others (port forwarding or a virtual network).", "La sala recibe un código para compartir. El servicio de conexión permite que los juegos se encuentren\ny funciona con la mayoría de routers domésticos. Sin código, los demás deben poder acceder\nal puerto de la sala mediante redirección de puertos o una red virtual.", "A sala recebe um código para compartilhar. O serviço de conexão permite que os jogos se encontrem\ne funciona com a maioria dos roteadores domésticos. Sem código, os outros precisam acessar\na porta da sala por redirecionamento de portas ou uma rede virtual."},
+        {"Port", "Puerto", "Porta"},
+        {"Rollback", "Rollback", "Rollback"},
+        {"Off (wait for each other)", "Desactivado (espera sincronizada)", "Desativado (espera sincronizada)"},
+        {"Up to 2 frames", "Hasta 2 fotogramas", "Até 2 quadros"},
+        {"Up to 4 frames", "Hasta 4 fotogramas", "Até 4 quadros"},
+        {"Up to 6 frames", "Hasta 6 fotogramas", "Até 6 quadros"},
+        {"Up to 8 frames", "Hasta 8 fotogramas", "Até 8 quadros"},
+        {"With rollback your own moves come out at once and the game corrects itself when the\nother player's buttons arrive. More frames cope with a slower connection and cost\nmore processor time. Off: both games wait for each other every frame.", "El rollback responde a tus acciones y corrige el estado cuando recibe la entrada del otro jugador.\nMás fotogramas permiten compensar conexiones más lentas, pero requieren más CPU.\nDesactivado: ambos juegos se esperan en cada fotograma.", "O rollback responde às suas ações e corrige o estado ao receber os comandos do outro jogador.\nMais quadros permitem compensar conexões mais lentas, mas exigem mais CPU.\nDesativado: os dois jogos esperam um pelo outro a cada quadro."},
+        {"Automatic (from the connection)", "Automático (según la conexión)", "Automático (conforme a conexão)"},
+        {"0 frames", "0 fotogramas", "0 quadros"},
+        {"1 frame", "1 fotograma", "1 quadro"},
+        {"2 frames", "2 fotogramas", "2 quadros"},
+        {"3 frames", "3 fotogramas", "3 quadros"},
+        {"4 frames", "4 fotogramas", "4 quadros"},
+        {"5 frames", "5 fotogramas", "5 quadros"},
+        {"6 frames", "6 fotogramas", "6 quadros"},
+        {"Input delay", "Retardo de entrada", "Atraso de entrada"},
+        {"How long after a press your own move comes out. A slow connection needs more, or the game\nhas to guess too far ahead and stutters. Automatic measures the connection when the match\nstarts: 1 frame on a good one, more on a slow one.", "Tiempo entre pulsar un botón y ejecutar la acción. Una conexión lenta puede necesitar más retardo\npara limitar las predicciones y correcciones. Automático mide la conexión al iniciar la partida:\n1 fotograma en una conexión buena y más en una lenta.", "Tempo entre pressionar um botão e executar a ação. Uma conexão lenta pode exigir mais atraso\npara limitar previsões e correções. Automático mede a conexão no início da partida:\n1 quadro em uma conexão boa e mais em uma lenta."},
+        {"Single battle", "Combate individual", "Batalha individual"},
+        {"Team battle", "Combate por equipos", "Batalha em equipes"},
+        {"DP battle (10 DP)", "Combate PD (10 PD)", "Batalha PD (10 PD)"},
+        {"DP battle (15 DP)", "Combate PD (15 PD)", "Batalha PD (15 PD)"},
+        {"DP battle (20 DP)", "Combate PD (20 PD)", "Batalha PD (20 PD)"},
+        {"60 seconds", "60 segundos", "60 segundos"},
+        {"90 seconds", "90 segundos", "90 segundos"},
+        {"180 seconds", "180 segundos", "180 segundos"},
+        {"240 seconds", "240 segundos", "240 segundos"},
+        {"No limit", "Sin límite", "Sem limite"},
+        {"Battle", "Combate", "Batalha"},
+        {"Time limit", "Tiempo límite", "Limite de tempo"},
+        {"How fast the match runs, for both players; the sound keeps its pitch.\n100%% is the game's own speed. %d%% is the competitive standard used by quick matches.", "Velocidad de la partida para ambos jugadores, sin cambiar el tono del sonido.\n100%% es la velocidad original. %d%% es el estándar competitivo de las partidas rápidas.", "Velocidade da partida para ambos os jogadores, sem mudar o tom do som.\n100%% é a velocidade original. %d%% é o padrão competitivo das partidas rápidas."},
+        {"The lobby's first rules; its owner changes them on its page. Everyone needs the same game data.", "Reglas iniciales de la sala. El anfitrión puede cambiarlas en la sala. Todos necesitan datos de juego compatibles.", "Regras iniciais da sala. O anfitrião pode alterá-las na sala. Todos precisam de dados de jogo compatíveis."},
+        {"Quick match", "Partida rápida", "Partida rápida"},
+        {"Be matched with whoever is searching the same queue. All quick matches have no time limit and run at %d%% speed, between games with the original disc's data.", "Busca jugadores en la misma cola. Las partidas rápidas no tienen límite de tiempo y funcionan al %d%%, con datos compatibles de BT4.", "Busque jogadores na mesma fila. Partidas rápidas não têm limite de tempo e funcionam a %d%%, com dados compatíveis de BT4."},
+        {"%s   (%d searching)###q%d", "%s   (%d buscando)###q%d", "%s   (%d buscando)###q%d"},
+        {"The two games connect to each other directly when they can, as in most online fighting", "Los juegos se conectan directamente cuando es posible. Un jugador que inspeccione su", "Os jogos se conectam diretamente quando possível. Um jogador que inspecione o próprio"},
+        {"games: a player who inspects their own network traffic can see the other's address.", "tráfico de red puede ver la dirección del otro jugador.", "tráfego de rede pode ver o endereço do outro jogador."},
+        {"Join", "Unirse", "Entrar"},
+        {"Room code", "Código de sala", "Código da sala"},
+        {"Paste", "Pegar", "Colar"},
+        {"or, without a code, the host's address and port:", "O, sin código, la dirección y el puerto del anfitrión:", "Ou, sem código, o endereço e a porta do anfitrião:"},
+        {"Host's address", "Dirección del anfitrión", "Endereço do anfitrião"},
+        {"Checking your game data... Connecting begins when it is done.", "Verificando los datos del juego... La conexión comenzará al finalizar.", "Verificando os dados do jogo... A conexão começará ao terminar."},
+        {"Found the lobby. Connecting to its owner...", "Sala encontrada. Conectando con el anfitrión...", "Sala encontrada. Conectando ao anfitrião..."},
+        {"Looking for the lobby...", "Buscando la sala...", "Buscando a sala..."},
+        {"The games could not establish a connection. Hosting on a port (with port forwarding or a virtual network such as Tailscale) still works.", "No se pudo establecer la conexión entre los juegos. Puedes crear una sala por puerto con redirección de puertos o una red virtual como Tailscale.", "Não foi possível estabelecer a conexão entre os jogos. Você pode criar uma sala por porta com redirecionamento de portas ou uma rede virtual como Tailscale."},
+        {"Open a lobby", "Crear una sala", "Criar uma sala"},
+        {"Join the lobby", "Unirse a la sala", "Entrar na sala"},
+        {"Back", "Volver", "Voltar"},
+        {"You are in the lobby. Its screen opens from the main menu (Tenkaichi Budokai Online).", "Te has unido a la sala. Puedes abrirla desde el menú principal, en Tenkaichi Budokai Online.", "Você entrou na sala. Abra-a pelo menu principal, em Tenkaichi Budokai Online."},
+        {"The other game is a different version. Everyone needs the same release.", "El otro juego usa una versión distinta. Todos necesitan la misma versión.", "O outro jogo usa uma versão diferente. Todos precisam da mesma versão."},
+        {"The search could not be started.", "No se pudo iniciar la búsqueda.", "Não foi possível iniciar a busca."},
+        {"In a match both players get the same roster, with everything unlocked, and your own save is", "En línea, ambos jugadores tienen la misma plantilla, con todo desbloqueado. Tu partida guardada", "Online, ambos os jogadores têm a mesma lista de lutadores, com tudo desbloqueado. Seu arquivo salvo"},
+        {"left alone. When the match ends everyone is back on the lobby's page.", "se conserva. Al finalizar el combate, todos vuelven a la sala.", "é preservado. Ao terminar a batalha, todos voltam à sala."},
+        {"Button %d", "Botón %d", "Botão %d"},
+        {"A / Cross", "A / Cruz", "A / X"},
+        {"B / Circle", "B / Círculo", "B / Círculo"},
+        {"X / Square", "X / Cuadrado", "X / Quadrado"},
+        {"Y / Triangle", "Y / Triángulo", "Y / Triângulo"},
+        {"Back / Select", "Atrás / Select", "Voltar / Select"},
+        {"Guide", "Guía", "Guia"},
+        {"Start", "Start", "Start"},
+        {"Left stick click", "Clic de palanca izquierda", "Clique no analógico esquerdo"},
+        {"Right stick click", "Clic de palanca derecha", "Clique no analógico direito"},
+        {"Left shoulder", "Botón superior izquierdo", "Botão superior esquerdo"},
+        {"Right shoulder", "Botón superior derecho", "Botão superior direito"},
+        {"Misc 1", "Adicional 1", "Adicional 1"},
+        {"Right paddle 1", "Palanca trasera derecha 1", "Botão traseiro direito 1"},
+        {"Left paddle 1", "Palanca trasera izquierda 1", "Botão traseiro esquerdo 1"},
+        {"Right paddle 2", "Palanca trasera derecha 2", "Botão traseiro direito 2"},
+        {"Left paddle 2", "Palanca trasera izquierda 2", "Botão traseiro esquerdo 2"},
+        {"Touchpad", "Panel táctil", "Painel de toque"},
+        {"Updated to {version}.", "Actualizado a {version}.", "Atualizado para {version}."},
+    };
+    int language = f1_language();
+    if (english == NULL || language == 1) return english;
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        if (strcmp(english, rows[i].en) == 0) return language == 0 ? rows[i].es : rows[i].pt;
+    }
+    return english;
+}
+extern "C" const char *Port_F1Text(const char *text) { return f1_text(text); }
 // The online chat (net_chat.c): its key opens a line to type, Enter sends it, Esc puts it away.
 static bool sChat;                             // a line is being typed
 static bool sChatFocus;                        // ... and its field takes the keyboard next frame
@@ -176,6 +645,12 @@ static SDL_GPUTexture *make_strip(uint8_t *pix, size_t bytes, uint32_t w, uint32
     SDL_GPUTexture *tex;
     void *map;
 
+#ifdef _WIN32
+    if (sD3D9) {
+        void *texture = GsDx9_StripTexture(pix, w, h * count);
+        free(pix); return (SDL_GPUTexture *)texture;
+    }
+#endif
     if (sGL) { // the OpenGL back end: a GL texture, its name carried in the pointer (ImGui's OpenGL3 backend takes it so)
         unsigned id = GsGl_StripTexture(pix, (int)w, (int)(h * count));
         free(pix);
@@ -311,6 +786,9 @@ void Ui_TextureFree(SDL_GPUTexture *tex) {
     if (tex == NULL) {
         return;
     }
+#ifdef _WIN32
+    if (sD3D9) { GsDx9_StripTextureFree(tex); return; }
+#endif
     if (sGL) {
         GsGl_StripTextureFree((unsigned)(intptr_t)tex);
     } else {
@@ -369,20 +847,20 @@ static void fonts_apply(void) {
 
 // A combo of the game's fonts; the choice is loaded before the next frame.
 static void font_picker(const char *label, PanelFont &pf, const char *tip) {
-    if (ImGui::BeginCombo(label, pf.choice > 0 ? MenuText_FontName(pf.choice) : "Default")) {
-        if (ImGui::Selectable("Default", pf.choice == 0)) {
+    if (ImGui::BeginCombo(f1_text(label), f1_text(pf.choice > 0 ? MenuText_FontName(pf.choice) : "Default"))) {
+        if (ImGui::Selectable(f1_text("Default"), pf.choice == 0)) {
             pf.pending = 0;
         }
         for (int i = 1; i < MenuText_FontCount(); i++) {
             ImGui::PushID(i);
-            if (ImGui::Selectable(MenuText_FontName(i), pf.choice == i)) {
+            if (ImGui::Selectable(f1_text(MenuText_FontName(i)), pf.choice == i)) {
                 pf.pending = i;
             }
             ImGui::PopID();
         }
         ImGui::EndCombo();
     }
-    ImGui::SetItemTooltip("%s", tip);
+    ImGui::SetItemTooltip("%s", f1_text(tip));
 }
 
 static void bars_draw(void) {
@@ -533,6 +1011,7 @@ static void language_choose(int choice) {
 }
 
 int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const char *gpu_name) {
+    sGL = 0;
     static const char *fonts[] = { // a proportional system font if there is one; else the library's built-in font
         "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/noto/NotoSans-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
@@ -547,8 +1026,8 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
     ImGuiIO &io = ImGui::GetIO();
     io.IniFilename = NULL; // no window-layout file next to the game
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad; // (a controller opens it too: START + SELECT)
+    if (getenv("BT4_RENDER_TEST")) { io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange; }
     style();
-    Update_Cleanup(); // (the files the last update replaced, kept until this start: gs/net_update.c)
     for (size_t i = 0; i < sizeof(fonts) / sizeof(fonts[0]); i++) {
         FILE *fp = fopen(fonts[i], "rb");
         if (fp != NULL) {
@@ -567,9 +1046,14 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
             pf.font = panel_font_load(pf.choice);
         }
     }
+#ifdef _WIN32
+    if (sD3D9) {
+        if (!ImGui_ImplSDL3_InitForD3D(window) || !ImGui_ImplDX9_Init((IDirect3DDevice9 *)sD3D9)) { return 0; }
+    } else
+#endif
     if (device == NULL) { // the OpenGL back end (gs_gl.c), with its context current
         sGL = 1;
-        if (!ImGui_ImplSDL3_InitForOpenGL(window, (SDL_GLContext)gl_context) || !ImGui_ImplOpenGL3_Init("#version 330 core")) {
+        if (!ImGui_ImplSDL3_InitForOpenGL(window, (SDL_GLContext)gl_context) || !ImGui_ImplOpenGL3_Init(GsGl_DirectXVersion() ? "#version 300 es" : "#version 330 core")) {
             return 0;
         }
     } else {
@@ -595,24 +1079,51 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
             gPortNetMenuRequest = 1;
         }
         if (sForceTab == 10) { // testing: the Tech tab (8 is the exit question's)
-            sForceTab = 9;
+            sForceTab = 10;
         } else if (sForceTab == 11) { // testing: the Mods tab
-            sForceTab = 8;
+            sForceTab = 9;
         } else if (sForceTab == 8) { // testing: the exit question
             sForceTab = -1;
             sQuit = true;
             PortQuit_Request();
         }
+        if (!strcmp(getenv("BT3_UI_OPEN"), "spectator")) sForceTab = 8;
+        if (!strcmp(getenv("BT3_UI_OPEN"), "updates")) sForceTab = 11;
         sOpen = !sQuit;
         gPortOverlayOpen = 1;
     }
     return 1;
 }
 
+int Ui_InitD3D9(SDL_Window *window, void *device, const char *gpu_name) {
+#ifdef _WIN32
+    sD3D9 = device;
+    int ok = Ui_Init(window, NULL, NULL, gpu_name);
+    if (!ok) {
+        if (ImGui::GetCurrentContext()) {
+            if (ImGui::GetIO().BackendRendererUserData) { ImGui_ImplDX9_Shutdown(); }
+            if (ImGui::GetIO().BackendPlatformUserData) { ImGui_ImplSDL3_Shutdown(); }
+            ImGui::DestroyContext();
+        }
+        sD3D9 = NULL; sReady = false;
+    }
+    return ok;
+#else
+    return 0;
+#endif
+}
+void Ui_D3D9Reset(int create) {
+#ifdef _WIN32
+    if (!sD3D9) { return; }
+    if (create) { ImGui_ImplDX9_CreateDeviceObjects(); }
+    else { ImGui_ImplDX9_InvalidateDeviceObjects(); }
+#endif
+}
+
 // The game gets nothing from keyboard or controller while the window or the exit question is up; and the button
 // that closed either is not the game's.
 static void input_owner(void) {
-    int up = sOpen || sQuit;
+    int up = sOpen || sQuit || sUpdPromptOpen;
     if (gPortOverlayOpen && !up) {
         PortInput_Swallow();
     }
@@ -678,13 +1189,14 @@ static void build_quit(void) {
     int focus = -1;
 
     sQuitNo = false;
-    if (!ImGui::IsPopupOpen("Exit game")) {
-        ImGui::OpenPopup("Exit game");
+    char title[128];
+    snprintf(title, sizeof(title), "%s###exit-game", f1_text("Exit game"));
+    if (!ImGui::IsPopupOpen(title)) {
+        ImGui::OpenPopup(title);
     }
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    if (ImGui::BeginPopupModal("Exit game", NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) {
-        const char *translated = MenuTranslation_PortText(PORT_TEXT_QUIT_CONFIRM);
-        const char *kAsk = translated ? translated : "Close the game?\nUnsaved progress will be lost.";
+    if (ImGui::BeginPopupModal(title, NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings)) {
+        const char *kAsk = f1_text("Close the game?\nUnsaved progress will be lost.");
         // the two buttons under the middle of the question (the window is as wide as its text)
         float line = ImGui::CalcTextSize(kAsk).x, pair = U(140.0f) * 2.0f + ImGui::GetStyle().ItemSpacing.x;
         ImGui::TextUnformatted(kAsk);
@@ -692,18 +1204,18 @@ static void build_quit(void) {
         if (line > pair) {
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (line - pair) * 0.5f);
         }
-        if (ImGui::Button("Exit", ImVec2(U(140.0f), 0.0f))) {
+        if (ImGui::Button(f1_text("Exit"), ImVec2(U(140.0f), 0.0f))) {
             exit(0);
         }
         focus = ImGui::IsItemFocused() ? 0 : focus;
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(U(140.0f), 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)) {
+        if (ImGui::Button(f1_text("Cancel"), ImVec2(U(140.0f), 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)) {
             stay = true;
         }
         focus = ImGui::IsItemFocused() ? 1 : focus;
         if (ImGui::IsWindowAppearing()) {
             ImGui::SetItemDefaultFocus(); // (on Cancel: a second press of the same button does not close the game)
-            PortA11y_Say(translated ? translated : PortA11y_Label("Close the game? Progress that was not saved is lost."), 1);
+            PortA11y_Say(kAsk, 1);
             say_quit_button(1, 0);
             PortA11y_Say(PortA11y_Label("Left and right choose, Enter confirms, Escape goes back to the game"), 0);
             said = 1;
@@ -758,13 +1270,13 @@ static void quick_status(int state, int &lastState, const char *name) {
         state = 0;
     }
     if (state == 3 || state == 1) {
-        ImGui::TextUnformatted(Port_LobbyCheckingData() ? "Checking your game data... The search begins when it is done."
-                               : state == 1 ? "Found a player. Connecting..." : "Searching for a player in this queue...");
+        ImGui::TextUnformatted(f1_text(Port_LobbyCheckingData() ? "Checking your game data... The search begins when it is done."
+                               : state == 1 ? "Found a player. Connecting..." : "Searching for a player in this queue..."));
         if (state == 3 && since != 0 && !Port_LobbyCheckingData()) {
             Uint64 left = kSearchMs - (SDL_GetTicks() - since);
-            ImGui::TextDisabled("Searching for %d:%02d more. Leave the window open.", (int)(left / 60000), (int)(left / 1000 % 60));
+            ImGui::TextDisabled(f1_text("Searching for %d:%02d more. Leave the window open."), (int)(left / 60000), (int)(left / 1000 % 60));
         }
-        if (ImGui::Button("Cancel", ImVec2(U(120.0f), 0.0f))) {
+        if (ImGui::Button(f1_text("Cancel"), ImVec2(U(120.0f), 0.0f))) {
             Port_LobbyCancel();
             lastState = 0;
         }
@@ -773,11 +1285,11 @@ static void quick_status(int state, int &lastState, const char *name) {
     if (lastState == -3) {
         ImGui::TextWrapped("%s", Port_LobbyError());
     } else if (lastState == -4) {
-        ImGui::TextWrapped("The two games could not reach each other, directly or through the relay. Search again for another player.");
+        ImGui::TextWrapped(f1_text("The games could not establish a connection. Search again for another player."));
     } else if (lastState == -2) {
-        ImGui::TextWrapped("The other player's game is a different version. Search again.");
+        ImGui::TextWrapped(f1_text("The other player's game is a different version. Search again."));
     } else if (lastState == -5) {
-        ImGui::TextWrapped("Nobody was searching this queue in the last three minutes. Search again, or try another queue.");
+        ImGui::TextWrapped(f1_text("Nobody was searching this queue in the last three minutes. Search again, or try another queue."));
     }
     // Quick match is with strangers: the original disc's data only (gs/net.c refuses the search otherwise; said here
     // before it is asked for). With friends, by code or address, the same data on both sides is enough.
@@ -787,17 +1299,17 @@ static void quick_status(int state, int &lastState, const char *name) {
         ImGui::TextWrapped("%s", refused);
         ImGui::PopStyleColor();
     } else if (refused != NULL) {
-        ImGui::TextDisabled("Checking your game data...");
+        ImGui::TextDisabled(f1_text("Checking your game data..."));
     }
     ImGui::BeginDisabled(refused != NULL && refused[0] != '\0');
-    bool search = ImGui::Button(lastState == -5 ? "Search again" : "Search for a match", ImVec2(U(200.0f), 0.0f));
+    bool search = ImGui::Button(f1_text(lastState == -5 ? "Search again" : "Search for a match"), ImVec2(U(200.0f), 0.0f));
     ImGui::EndDisabled();
     if (search) {
         since = SDL_GetTicks() + 1;
-        // The same for everyone in a quick match, whoever turns out to be the host: rollback of up to 8 frames and
+        // The same for everyone in a quick match, whoever turns out to be the host: rollback of up to 4 frames and
         // the input delay measured from the connection. (The Host tab's own choices are for matches with someone
         // you can agree them with; a stranger's saved ones were not to be inherited unseen.)
-        Port_NetOptions(Port_RollCan() ? 8 : 0, -2);
+        Port_NetOptions(Port_RollCan() ? 4 : 0, -2);
         Port_NetSpeedSet(Port_NetSpeedStandard()); // (every quick match: the competitive standard)
         Port_NetRulesSet(sQueue == 0 ? 0 : sQueue == 1 ? 1 : 2, sQueue >= 2 ? sQueue - 2 : 0, 4);
         Port_NetNameSet(name);
@@ -828,24 +1340,17 @@ static void build_net(void) {
             int min = 0, latest = 0, mine = Port_LobbyRelease(&min, &latest);
             if (min > mine) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.55f, 0.35f, 1.0f));
-                ImGui::TextWrapped("Update available. Online servers are unreachable until you update.");
+                ImGui::TextWrapped(f1_text("Update available. Online servers are unreachable until you update."));
                 ImGui::PopStyleColor();
-                ImGui::TextDisabled("You have 0.%d.%d; 0.%d.%d or newer is needed. github.com/z3xox/Tenkaichi3Decomp/releases", mine / 100, mine % 100, min / 100, min % 100);
+                ImGui::TextDisabled(f1_text("You have 0.%d.%d; 0.%d.%d or newer is needed. github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases"), mine / 100, mine % 100, min / 100, min % 100);
                 ImGui::Separator();
             } else if (latest > mine) {
                 ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Update available: release 0.%d.%d.", latest / 100, latest % 100);
-                ImGui::TextDisabled("F1 to update, or github.com/z3xox/Tenkaichi3Decomp/releases");
-                ImGui::Separator();
-            }
-            if (Port_OnlineBlocked() != NULL) { // an update is under way (gs/net_update.c): no new session starts
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.55f, 0.35f, 1.0f));
-                ImGui::TextWrapped("%s", Port_OnlineBlocked());
-                ImGui::PopStyleColor();
+                ImGui::TextDisabled("github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases");
                 ImGui::Separator();
             }
         }
-        ImGui::TextWrapped("Fight players on other computers. One of you opens a lobby, the others join it with its code or "
-                           "the owner's address; its page (Tenkaichi Budokai Online) has the places, the rules and the matches.");
+        ImGui::TextWrapped(f1_text("Fight a player on another computer. One of you hosts, the other joins with the host's address."));
         ImGui::Spacing();
         ImGui::SetNextItemWidth(U(260.0f));
         {
@@ -855,7 +1360,7 @@ static void build_net(void) {
                 Port_SettingText("net_name", "Player", name, sizeof(name));
             }
         }
-        ImGui::InputText("Player name", name, sizeof(name));
+        ImGui::InputText(f1_text("Player name"), name, sizeof(name));
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             Port_SettingTextSave("net_name", name);
             Port_SettingsWrite();
@@ -869,47 +1374,47 @@ static void build_net(void) {
                 ImGuiTabItemFlags f = firstTab != NULL && strcmp(firstTab, which) == 0 ? ImGuiTabItemFlags_SetSelected : 0;
                 return f;
             };
-            if (ImGui::BeginTabItem("Host", NULL, tabFlags("host"))) {
-                static const char *const kRoll[] = {"Off (wait for each other)", "Up to 2 frames", "Up to 4 frames", "Up to 6 frames", "Up to 8 frames"};
+            if (ImGui::BeginTabItem(f1_text("Host"), NULL, tabFlags("host"))) {
+                const char *const kRoll[] = {f1_text("Off (wait for each other)"), f1_text("Up to 2 frames"), f1_text("Up to 4 frames"), f1_text("Up to 6 frames"), f1_text("Up to 8 frames")};
                 tab = 0;
-                ImGui::Checkbox("Use a code (no port forwarding needed)", &useCode);
-                ImGui::SetItemTooltip("Your lobby gets a short code to tell the others, and the games find each other through a\n"
+                ImGui::Checkbox(f1_text("Use a code (no port forwarding needed)"), &useCode);
+                ImGui::SetItemTooltip(f1_text("Your lobby gets a short code to tell the others, and the games find each other through a\n"
                                       "small matchmaking service. Works with most home routers. Without it the lobby is on a port,\n"
-                                      "which must be reachable from the others (port forwarding or a virtual network).");
+                                      "which must be reachable from the others (port forwarding or a virtual network)."));
                 ImGui::BeginDisabled(useCode);
                 ImGui::SetNextItemWidth(U(120.0f));
-                ImGui::InputText("Port", port, sizeof(port), ImGuiInputTextFlags_CharsDecimal);
+                ImGui::InputText(f1_text("Port"), port, sizeof(port), ImGuiInputTextFlags_CharsDecimal);
                 ImGui::EndDisabled();
                 if (roll < 0) { // the choices of last time (new names: the first ones' defaults were 4 frames and delay 1)
-                    roll = Port_RollCan() ? Port_Setting("net_rollback2", 8) / 2 : 0;
+                    roll = Port_RollCan() ? Port_Setting("net_rollback2", 4) / 2 : 0;
                     delay = Port_Setting("net_delay2", -1) + 1; // 0 = automatic, else the delay + 1
                     if (roll < 0 || roll > 4) { roll = 4; }
                     if (delay < 0 || delay > 7) { delay = 0; }
                 }
                 ImGui::BeginDisabled(!Port_RollCan());
                 ImGui::SetNextItemWidth(U(260.0f));
-                ImGui::Combo("Rollback", &roll, kRoll, 5);
+                ImGui::Combo(f1_text("Rollback"), &roll, kRoll, 5);
                 ImGui::EndDisabled();
                 if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-                    ImGui::SetTooltip("With rollback your own moves come out at once and the game corrects itself when the\n"
+                    ImGui::SetTooltip(f1_text("With rollback your own moves come out at once and the game corrects itself when the\n"
                                       "other player's buttons arrive. More frames cope with a slower connection and cost\n"
-                                      "more processor time. Off: both games wait for each other every frame.");
+                                      "more processor time. Off: both games wait for each other every frame."));
                 }
                 ImGui::SetNextItemWidth(U(260.0f));
                 {
-                    static const char *const kDelay[] = {"Automatic (from the connection)", "0 frames", "1 frame", "2 frames", "3 frames",
-                                                         "4 frames", "5 frames", "6 frames"};
-                    ImGui::Combo("Input delay", &delay, kDelay, 8);
+                    const char *const kDelay[] = {f1_text("Automatic (from the connection)"), f1_text("0 frames"), f1_text("1 frame"), f1_text("2 frames"), f1_text("3 frames"),
+                                                         f1_text("4 frames"), f1_text("5 frames"), f1_text("6 frames")};
+                    ImGui::Combo(f1_text("Input delay"), &delay, kDelay, 8);
                 }
                 if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("How long after a press your own move comes out. A slow connection needs more, or the game\n"
+                    ImGui::SetTooltip(f1_text("How long after a press your own move comes out. A slow connection needs more, or the game\n"
                                       "has to guess too far ahead and stutters. Automatic measures the connection when the match\n"
-                                      "starts: 1 frame on a good one, more on a slow one.");
+                                      "starts: 1 frame on a good one, more on a slow one."));
                 }
                 {
                     // The match's rules: the game's own versus menu is not shown online, so they are chosen here.
-                    static const char *const kBattle[] = {"Single battle", "Team battle", "DP battle (10 DP)", "DP battle (15 DP)", "DP battle (20 DP)"};
-                    static const char *const kTime[] = {"60 seconds", "90 seconds", "180 seconds", "240 seconds", "No limit"};
+                    const char *const kBattle[] = {f1_text("Single battle"), f1_text("Team battle"), f1_text("DP battle (10 DP)"), f1_text("DP battle (15 DP)"), f1_text("DP battle (20 DP)")};
+                    const char *const kTime[] = {f1_text("60 seconds"), f1_text("90 seconds"), f1_text("180 seconds"), f1_text("240 seconds"), f1_text("No limit")};
                     if (battle < 0) {
                         battle = Port_Setting("net_battle", 0);
                         timeLimit = Port_Setting("net_time", 3);
@@ -918,27 +1423,24 @@ static void build_net(void) {
                     }
                     ImGui::Spacing();
                     ImGui::SetNextItemWidth(U(260.0f));
-                    ImGui::Combo("Battle", &battle, kBattle, 5);
+                    ImGui::Combo(f1_text("Battle"), &battle, kBattle, 5);
                     ImGui::SetNextItemWidth(U(260.0f));
-                    ImGui::Combo("Time limit", &timeLimit, kTime, 5);
+                    ImGui::Combo(f1_text("Time limit"), &timeLimit, kTime, 5);
                     {
                         if (speed < 0) {
                             speed = Port_Setting("net_speed_host", Port_NetSpeedStandard()) /* (a new name with 0.1.31: the standard went from 120 to 114) */;
                         }
                         ImGui::SetNextItemWidth(U(260.0f));
-                        ImGui::SliderInt("Game speed", &speed, 100, 150, "%d%%", ImGuiSliderFlags_AlwaysClamp);
-                        ImGui::SetItemTooltip("How fast the match runs, for both players; the sound keeps its pitch.\n"
-                                              "100%% is the game's own speed. %d%% is the competitive standard, and what\n"
-                                              "quick matches run at.\n"
-                                              "With a player on 0.1.29 only 100%% and 120%% are possible, with an older\n"
-                                              "release only 100%%.", Port_NetSpeedStandard());
+                        ImGui::SliderInt(f1_text("Game speed"), &speed, 100, 150, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+                        ImGui::SetItemTooltip(f1_text("How fast the match runs, for both players; the sound keeps its pitch.\n"
+                                              "100%% is the game's own speed. %d%% is the competitive standard used by quick matches."), Port_NetSpeedStandard());
                     }
                 }
-                ImGui::TextDisabled("The lobby's first rules; its owner changes them on its page. Everyone needs the same game data.");
+                ImGui::TextDisabled(f1_text("The lobby's first rules; its owner changes them on its page. Everyone needs the same game data."));
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Quick match", NULL, tabFlags("quick"))) {
-                static const char *const kQueue[] = {"Single battle", "Team battle", "DP battle (10 DP)", "DP battle (15 DP)", "DP battle (20 DP)"};
+            if (ImGui::BeginTabItem(f1_text("Quick match"), NULL, tabFlags("quick"))) {
+                const char *const kQueue[] = {f1_text("Single battle"), f1_text("Team battle"), f1_text("DP battle (10 DP)"), f1_text("DP battle (15 DP)"), f1_text("DP battle (20 DP)")};
                 static Uint64 asked;
                 bool busy = sNetBusy; // (a search is under way: the queue is not changed under it)
                 tab = 2;
@@ -963,8 +1465,8 @@ static void build_net(void) {
                         Port_LobbyQueuesAsk();
                     }
                 }
-                ImGui::TextWrapped("Be matched with whoever is searching the same queue. All quick matches have no time limit and run at %d%% speed, "
-                                   "between games with the original disc's data.", Port_NetSpeedStandard());
+                ImGui::TextWrapped(f1_text("Be matched with whoever is searching the same queue. All quick matches have no time limit and run at %d%% speed, "
+                                   "between games with the original disc's data."), Port_NetSpeedStandard());
                 ImGui::BeginDisabled(busy);
                 for (int i = 0; i < 5; i++) {
                     char label[80];
@@ -972,22 +1474,22 @@ static void build_net(void) {
                     if (n < 0) {
                         snprintf(label, sizeof(label), "%s", kQueue[i]);
                     } else {
-                        snprintf(label, sizeof(label), "%s   (%d searching)###q%d", kQueue[i], n, i);
+                        snprintf(label, sizeof(label), f1_text("%s   (%d searching)###q%d"), kQueue[i], n, i);
                     }
                     ImGui::RadioButton(label, &sQueue, i);
                     UiA11y_Radio(sQueue == i);
                 }
                 ImGui::EndDisabled();
-                ImGui::TextDisabled("The two games connect to each other directly when they can, as in most online fighting");
-                ImGui::TextDisabled("games: a player who inspects their own network traffic can see the other's address.");
+                ImGui::TextDisabled(f1_text("The two games connect to each other directly when they can, as in most online fighting"));
+                ImGui::TextDisabled(f1_text("games: a player who inspects their own network traffic can see the other's address."));
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Join", NULL, tabFlags("join"))) {
+            if (ImGui::BeginTabItem(f1_text("Join"), NULL, tabFlags("join"))) {
                 tab = 1;
                 ImGui::SetNextItemWidth(U(120.0f));
-                ImGui::InputText("Room code", roomCode, sizeof(roomCode), ImGuiInputTextFlags_CharsUppercase | ImGuiInputTextFlags_CharsNoBlank);
+                ImGui::InputText(f1_text("Room code"), roomCode, sizeof(roomCode), ImGuiInputTextFlags_CharsUppercase | ImGuiInputTextFlags_CharsNoBlank);
                 ImGui::SameLine();
-                if (ImGui::Button("Paste")) { // the letters and digits of what was copied, as capitals
+                if (ImGui::Button(f1_text("Paste"))) { // the letters and digits of what was copied, as capitals
                     char *clip = SDL_GetClipboardText();
                     size_t n = 0;
                     for (const char *c = clip; c != NULL && *c != '\0' && n + 1 < sizeof(roomCode); c++) {
@@ -998,12 +1500,12 @@ static void build_net(void) {
                     roomCode[n] = '\0';
                     SDL_free(clip);
                 }
-                ImGui::TextDisabled("or, without a code, the host's address and port:");
+                ImGui::TextDisabled(f1_text("or, without a code, the host's address and port:"));
                 ImGui::BeginDisabled(roomCode[0] != '\0');
                 ImGui::SetNextItemWidth(U(260.0f));
-                ImGui::InputText("Host's address", address, sizeof(address));
+                ImGui::InputText(f1_text("Host's address"), address, sizeof(address));
                 ImGui::SetNextItemWidth(U(120.0f));
-                ImGui::InputText("Port", port, sizeof(port), ImGuiInputTextFlags_CharsDecimal);
+                ImGui::InputText(f1_text("Port"), port, sizeof(port), ImGuiInputTextFlags_CharsDecimal);
                 ImGui::EndDisabled();
                 ImGui::EndTabItem();
             }
@@ -1036,9 +1538,9 @@ static void build_net(void) {
             if (tab == 2) {
                 quick_status(state, lastState, name);
             } else if (state == 3 || state == 1) { // joining a code: asking the service, then reaching the lobby's owner
-                ImGui::TextUnformatted(Port_LobbyCheckingData() ? "Checking your game data... Connecting begins when it is done."
-                                       : state == 1 ? "Found the lobby. Connecting to its owner..." : "Looking for the lobby...");
-                if (ImGui::Button("Cancel", ImVec2(U(120.0f), 0.0f))) {
+                ImGui::TextUnformatted(f1_text(Port_LobbyCheckingData() ? "Checking your game data... Connecting begins when it is done."
+                                       : state == 1 ? "Found the lobby. Connecting to its owner..." : "Looking for the lobby..."));
+                if (ImGui::Button(f1_text("Cancel"), ImVec2(U(120.0f), 0.0f))) {
                     Port_LobbyCancel();
                     lastState = 0;
                 }
@@ -1046,13 +1548,13 @@ static void build_net(void) {
                 if (lastState == -3) {
                     ImGui::TextWrapped("%s", Port_LobbyError());
                 } else if (lastState == -4) {
-                    ImGui::TextWrapped("The two games could not reach each other, directly or through the relay. "
-                                       "Hosting on a port (with port forwarding or a virtual network such as Tailscale) still works.");
+                    ImGui::TextWrapped(f1_text("The games could not establish a connection. "
+                                       "Hosting on a port (with port forwarding or a virtual network such as Tailscale) still works."));
                 }
                 bool can = Port_OnlineBlocked() == NULL && (byCode ? (tab == 0 || strlen(roomCode) == 6) : atoi(port) > 0 && atoi(port) < 65536 && (tab == 0 || address[0] != '\0'));
                 bool lobby = false; // a lobby was opened or joined: its page is the screens' (the main menu opens it)
                 ImGui::BeginDisabled(!can);
-                if (ImGui::Button(tab == 0 ? "Open a lobby" : "Join the lobby", ImVec2(U(200.0f), 0.0f))) {
+                if (ImGui::Button(f1_text(tab == 0 ? "Open a lobby" : "Join the lobby"), ImVec2(U(200.0f), 0.0f))) {
                     Port_NetNameSet(name);
                     Port_SettingTextSave("net_name", name);
                     lastState = 0;
@@ -1086,7 +1588,7 @@ static void build_net(void) {
                 }
                 ImGui::EndDisabled();
                 ImGui::SameLine();
-                if (ImGui::Button("Back", ImVec2(U(120.0f), 0.0f))) {
+                if (ImGui::Button(f1_text("Back"), ImVec2(U(120.0f), 0.0f))) {
                     open = false;
                 }
                 if (lobby) {
@@ -1097,15 +1599,15 @@ static void build_net(void) {
                     return;
                 }
                 if (state == -2) {
-                    ImGui::TextWrapped("The other game is a different version. Everyone needs the same release.");
+                    ImGui::TextWrapped(f1_text("The other game is a different version. Everyone needs the same release."));
                 } else if (state < 0) {
-                    ImGui::TextWrapped("The search could not be started.");
+                    ImGui::TextWrapped(f1_text("The search could not be started."));
                 }
             }
         }
         ImGui::Spacing();
-        ImGui::TextDisabled("In a match both players get the same roster, with everything unlocked, and your own save is");
-        ImGui::TextDisabled("left alone. When the match ends everyone is back on the lobby's page.");
+        ImGui::TextDisabled(f1_text("In a match both players get the same roster, with everything unlocked, and your own save is"));
+        ImGui::TextDisabled(f1_text("left alone. When the match ends everyone is back on the lobby's page."));
     }
     ImGui::End();
     if (!open) {
@@ -1115,7 +1617,7 @@ static void build_net(void) {
 }
 
 void Ui_Toggle(void) {
-    if (sReady && !sQuit) {
+    if (sReady && !sQuit && !sUpdPromptOpen) {
         set_open(!sOpen);
     }
 }
@@ -1185,12 +1687,19 @@ static int chat_event(const SDL_Event *ev) {
 }
 
 int Ui_Event(const SDL_Event *ev) {
+    PortVoice_Event(ev);
     if (!sReady) {
         return 0;
     }
     if (ev->type == SDL_EVENT_GAMEPAD_ADDED || ev->type == SDL_EVENT_GAMEPAD_REMOVED) { // (also while it is closed: its list of controllers)
         ImGui_ImplSDL3_ProcessEvent(ev);
         return 0;
+    }
+    if (sUpdPromptOpen) {
+        ImGui_ImplSDL3_ProcessEvent(ev);
+        return ev->type == SDL_EVENT_KEY_DOWN || ev->type == SDL_EVENT_KEY_UP || ev->type == SDL_EVENT_TEXT_INPUT ||
+               ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev->type == SDL_EVENT_MOUSE_BUTTON_UP || ev->type == SDL_EVENT_MOUSE_WHEEL ||
+               ev->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN || ev->type == SDL_EVENT_GAMEPAD_BUTTON_UP || ev->type == SDL_EVENT_GAMEPAD_AXIS_MOTION;
     }
     if (!sOpen && !sQuit && !sChat && PortInput_TboEvent(ev)) { // typed on a keypad of Tenkaichi Budokai Online
         return 1;
@@ -1288,17 +1797,19 @@ static const char *pad_source_name(int src) {
                                   "D-pad down", "D-pad left", "D-pad right", "Misc 1", "Right paddle 1", "Left paddle 1",
                                   "Right paddle 2", "Left paddle 2", "Touchpad"};
     static char other[24];
-    if (src == PORT_PAD_LT) { return "Left trigger"; }
-    if (src == PORT_PAD_RT) { return "Right trigger"; }
+    if (src == PORT_PAD_LT) { return f1_text("Left trigger"); }
+    if (src == PORT_PAD_RT) { return f1_text("Right trigger"); }
     if (src < 0) { return "-"; }
-    if (src < (int)(sizeof(names) / sizeof(names[0]))) { return names[src]; }
-    snprintf(other, sizeof(other), "Button %d", src);
+    if (src < (int)(sizeof(names) / sizeof(names[0]))) { return f1_text(names[src]); }
+    snprintf(other, sizeof(other), f1_text("Button %d"), src);
     return other;
 }
 
 static bool tab(const char *label, int index) {
+    char stable[192];
+    snprintf(stable, sizeof(stable), "%s###settings-tab-%d", label, index);
     ImGuiTabItemFlags flags = sForceTab == index ? ImGuiTabItemFlags_SetSelected : 0;
-    bool on = ImGui::BeginTabItem(label, NULL, flags);
+    bool on = ImGui::BeginTabItem(stable, NULL, flags);
     if (on && sForceTab < 0) {
         sTab = index;
     }
@@ -1306,119 +1817,144 @@ static bool tab(const char *label, int index) {
 }
 
 static void video_tab(PortVideo &v) {
+    const char *hudLabel=PortHud_Hidden() ? f1_text("Show HUD") : f1_text("Hide HUD");
+    if(ImGui::Button(hudLabel))PortHud_Toggle();
+    ImGui::Separator();
+    if (GsDraw_PerformanceMode()) {
+        ImGui::TextWrapped("%s", f1_text("Performance mode: 1x resolution, reduced post-processing and no HD texture pack. Your other renderers keep their saved quality settings."));
+        ImGui::Separator();
+    }
     static const struct { const char *name; int milli; } aspects[] = {{"4:3 (original)", 1333}, {"16:10", 1600}, {"16:9", 1778}, {"21:9", 2389}, {"32:9", 3556}};
     char label[64];
     int best = 0, count = 0;
 
     snprintf(label, sizeof(label), "%dx  (%d x %d)", v.scale, 512 * v.scale, 448 * v.scale);
-    if (ImGui::BeginCombo("Internal resolution", label)) {
+    ImGui::BeginDisabled(GsDraw_PerformanceMode() != 0);
+    if (ImGui::BeginCombo(f1_text("Internal resolution"), label)) {
         for (int n = 1; n <= 8; n++) {
             snprintf(label, sizeof(label), "%dx  (%d x %d)", n, 512 * n, 448 * n);
             if (ImGui::Selectable(label, n == v.scale)) { v.scale = n; }
         }
         ImGui::EndCombo();
     }
-    ImGui::SetItemTooltip("How finely the game is drawn. 1x is the PlayStation 2's own resolution.\nHigher is sharper and uses more video memory.");
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip(f1_text("How finely the game is drawn. 1x is the PlayStation 2's own resolution.\nHigher is sharper and uses more video memory."));
     for (int i = 1; i < (int)(sizeof(aspects) / sizeof(aspects[0])); i++) {
         if (abs(aspects[i].milli - v.aspectMilli) < abs(aspects[best].milli - v.aspectMilli)) { best = i; }
     }
-    if (ImGui::BeginCombo("Aspect ratio", aspects[best].name)) {
+    if (ImGui::BeginCombo(f1_text("Aspect ratio"), f1_text(aspects[best].name))) {
         for (int i = 0; i < (int)(sizeof(aspects) / sizeof(aspects[0])); i++) {
-            if (ImGui::Selectable(aspects[i].name, i == best)) { v.aspectMilli = aspects[i].milli; }
+            if (ImGui::Selectable(f1_text(aspects[i].name), i == best)) { v.aspectMilli = aspects[i].milli; }
         }
         ImGui::EndCombo();
     }
-    ImGui::SetItemTooltip("Wider than 4:3 shows more of the fight to the sides. Menus are stretched.");
-    if (ImGui::BeginCombo("2D filtering", v.smooth2d ? "Smooth" : "Sharp (console)")) {
-        if (ImGui::Selectable("Sharp (console)", !v.smooth2d)) { v.smooth2d = 0; }
-        if (ImGui::Selectable("Smooth", v.smooth2d != 0)) { v.smooth2d = 1; }
+    ImGui::SetItemTooltip(f1_text("Wider than 4:3 shows more of the fight to the sides. Menus are stretched."));
+    if (ImGui::BeginCombo(f1_text("2D filtering"), f1_text(v.smooth2d ? "Smooth" : "Sharp (console)"))) {
+        if (ImGui::Selectable(f1_text("Sharp (console)"), !v.smooth2d)) { v.smooth2d = 0; }
+        if (ImGui::Selectable(f1_text("Smooth"), v.smooth2d != 0)) { v.smooth2d = 1; }
         ImGui::EndCombo();
     }
-    ImGui::SetItemTooltip("How the display of a fight, the menus and text are drawn above 1x internal resolution.\n"
+    ImGui::SetItemTooltip(f1_text("How the display of a fight, the menus and text are drawn above 1x internal resolution.\n"
                           "Sharp: each of the PlayStation 2's pixels is a block. Smooth: as an emulator shows them.\n"
-                          "No difference at 1x.");
+                          "No difference at 1x."));
     bool full = v.fullscreen != 0;
-    if (ImGui::Checkbox("Full screen", &full)) { v.fullscreen = full; }
+    if (ImGui::Checkbox(f1_text("Full screen"), &full)) { v.fullscreen = full; }
     ImGui::SameLine();
     ImGui::TextDisabled("(F11)");
     {
         bool vs = v.vsync != 0, fs = v.frameSkip != 0;
-        if (ImGui::Checkbox("V-sync", &vs)) { v.vsync = vs; }
-        ImGui::SetItemTooltip("Each picture waits for the display's refresh. Turn it on if the picture tears.\n"
-                              "Off is the default: it adds a little delay.");
-        if (ImGui::Checkbox("Skip pictures instead of slowing down", &fs)) { v.frameSkip = fs; }
-        ImGui::SetItemTooltip("When this machine cannot show a picture in time, the game normally runs slower.\n"
+        if (ImGui::Checkbox(f1_text("V-sync"), &vs)) { v.vsync = vs; }
+        ImGui::SetItemTooltip(f1_text("Each picture waits for the display's refresh. Turn it on if the picture tears.\n"
+                              "Off is the default: it adds a little delay."));
+        if (ImGui::Checkbox(f1_text("Skip pictures instead of slowing down"), &fs)) { v.frameSkip = fs; }
+        ImGui::SetItemTooltip(f1_text("When this machine cannot show a picture in time, the game normally runs slower.\n"
                               "With this on it stays at full speed and leaves pictures out instead (choppier,\n"
-                              "not slower). It helps where the graphics chip is the slow part. On by default.");
+                              "not slower). It helps where the graphics chip is the slow part. On by default."));
         {
             bool late = Port_LateInput() != 0;
-            if (ImGui::Checkbox("Low input lag (experimental)", &late)) { Port_LateInputSet(late); }
-            ImGui::SetItemTooltip("The game reads the controller, computes, and then waits before the picture is shown:\n"
+            if (ImGui::Checkbox(f1_text("Low input lag"), &late)) { Port_LateInputSet(late); }
+            ImGui::SetItemTooltip(f1_text("The game reads the controller, computes, and then waits before the picture is shown:\n"
                                   "about 33 ms in a fight. With this on the wait comes first, so the picture follows\n"
                                   "your press by the few milliseconds the machine needs. The game itself is unchanged.\n"
                                   "With Smooth motion as well: its in-between picture then follows your press at once and\n"
                                   "the full one a refresh later. Not used online. Off by default: on a machine that\n"
-                                  "cannot keep up it may stutter where the original order would not.");
+                                  "cannot keep up it may stutter where the original order would not."));
         }
         {
             extern int Port_Setting(const char *name, int def);
             extern void Port_SettingSave(const char *name, int value);
-            bool thr = Port_Setting("render_thread", 0) != 0;
-            if (ImGui::Checkbox("Render on a second processor core (experimental, after a restart)", &thr)) {
+            bool thr = Port_Setting("render_thread", 1) != 0;
+            if (ImGui::Checkbox(f1_text("Render on a second processor core (restart required)"), &thr)) {
                 Port_SettingSave("render_thread", thr ? 1 : 0);
                 Port_SettingsWrite(); /* (kept outside the window's own values: written here, or it was lost at the end) */
             }
-            ImGui::SetItemTooltip("The picture is prepared and shown on a core of its own while the game computes the next\n"
+            ImGui::SetItemTooltip(f1_text("The picture is prepared and shown on a core of its own while the game computes the next\n"
                                   "moment: faster where the processor is the slow part (older or low-power machines).\n"
                                   "The same picture and the same game. Takes effect when the game is started again.\n"
-                                  "Not with the OpenGL renderer, and not on machines with two cores or fewer.");
+                                  "Not with the OpenGL renderer, and not on machines with two cores or fewer."));
         }
     }
     SDL_DisplayID *displays = SDL_GetDisplays(&count);
     if (v.display > count) { v.display = 0; }
-    snprintf(label, sizeof(label), "%s", v.display == 0 ? "Chosen by the desktop" : SDL_GetDisplayName(displays[v.display - 1]));
-    if (ImGui::BeginCombo("Display", label)) {
-        if (ImGui::Selectable("Chosen by the desktop", v.display == 0)) { v.display = 0; }
+    snprintf(label, sizeof(label), "%s", v.display == 0 ? f1_text("Chosen by the desktop") : SDL_GetDisplayName(displays[v.display - 1]));
+    if (ImGui::BeginCombo(f1_text("Display"), label)) {
+        if (ImGui::Selectable(f1_text("Chosen by the desktop"), v.display == 0)) { v.display = 0; }
         for (int i = 0; i < count; i++) {
             snprintf(label, sizeof(label), "%d: %s", i + 1, SDL_GetDisplayName(displays[i]));
             if (ImGui::Selectable(label, v.display == i + 1)) { v.display = i + 1; }
         }
         ImGui::EndCombo();
     }
-    ImGui::SetItemTooltip("Takes effect the next time the game starts.");
+    ImGui::SetItemTooltip(f1_text("Takes effect the next time the game starts."));
     SDL_free(displays);
-    {   // which renderer draws the game: Vulkan (the default) or OpenGL 3.3, for machines without a working Vulkan
-        static const char *const kApi[] = {"Vulkan", "OpenGL"};
+    {   // Persisted choice; the active device is reported separately after fallback.
+        static const char *const kApi[] = {"Vulkan", "OpenGL",
+#ifdef _WIN32
+                                          "DirectX 12"
+#endif
+        };
         static int api = -1;
+        const int count = IM_ARRAYSIZE(kApi);
+        int active = sGL ? 1 : 0;
+#ifdef _WIN32
+        if (!sGL && sDevice && strcmp(SDL_GetGPUDeviceDriver(sDevice), "direct3d12") == 0) { active = 2; }
+#endif
         if (api < 0) {
-            api = Port_Setting("gpu_api", 0) == 1 ? 1 : 0;
+            api = Port_Setting("gpu_api", 0);
+            if (api == 3 || api == 4) { api = 2; }
+            if (api < 0 || api >= count) { api = 0; }
         }
-        if (ImGui::Combo("Renderer", &api, kApi, 2)) {
+        if (ImGui::Combo(f1_text("Renderer"), &api, kApi, count)) {
             Port_SettingSave("gpu_api", api);
             Port_SettingsWrite();
         }
-        ImGui::SetItemTooltip("Takes effect the next time the game starts. Both draw the same picture; Vulkan is faster.\n"
-                              "If the chosen one cannot start, the game tries the other.");
-        if (api != (sGL ? 1 : 0)) {
-            ImGui::TextDisabled("Running now: %s. %s from the next start.", kApi[sGL ? 1 : 0], kApi[api]);
+        ImGui::SetItemTooltip(f1_text("Takes effect after restarting the game. Performance depends on your GPU and drivers.\n"
+                              "If the saved renderer is unavailable, the game tries Vulkan and then OpenGL."));
+        ImGui::TextDisabled(f1_text("Running now: %s"), kApi[active]);
+        static const int requestedAtStartup = Port_Setting("gpu_api", 0);
+        if (api != active) {
+            if (api == requestedAtStartup) { ImGui::TextWrapped(f1_text("The requested renderer could not start. Using %s."), kApi[active]); }
+            else { ImGui::TextDisabled(f1_text("After restart: %s"), kApi[api]); }
         }
-        ImGui::TextWrapped("Active GPU: %s", sGpuName);
+        ImGui::TextWrapped(f1_text("Active GPU: %s"), sGpuName);
     }
     {
         // In-between pictures (gs_draw.c): the fight is computed 30 times a second, as on the console; with this
         // on one more picture is drawn between each two. The game itself, its replays and online play are the same.
-        static const char *kSmooth[] = { "Off (30, as the console)", "60 pictures a second", "120 pictures a second", "240 pictures a second" };
-        int smooth = gsInterp < 0 ? 0 : gsInterp > 3 ? 3 : gsInterp;
+        const char *kSmooth[] = {f1_text("Off (30, as the console)"), f1_text("60 pictures a second"), f1_text("120 pictures a second"), f1_text("240 pictures a second")};
+        int smooth = gsInterp < 0 ? 1 : gsInterp > 3 ? 3 : gsInterp;
         ImGui::SetNextItemWidth(U(416.0f));
-        if (ImGui::Combo("Smooth motion", &smooth, kSmooth, 4)) {
+        ImGui::BeginDisabled(GsDraw_PerformanceMode());
+        if (ImGui::Combo(f1_text("Smooth motion"), &smooth, kSmooth, 4)) {
             gsInterp = smooth;
             Port_SettingSave("interp", gsInterp);
             Port_SettingsWrite();
         }
-        ImGui::SetItemTooltip("Experimental. The game computes a fight 30 times a second. With this, more pictures are\n"
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip(f1_text("The game computes a fight 30 times a second. With this, more pictures are\n"
                               "drawn between each two. The fight itself does not change, and neither does online play.\n"
                               "The newest picture reaches the screen later: 17 ms at 60, 25 ms at 120, 29 ms at 240.\n"
-                              "Choose what your screen can show. F9 switches it off and on.");
+                              "Choose what your screen can show. F9 switches it off and on."));
     }
     {
         // The size of these windows, the chat and the notices: larger with a taller picture by itself (sUiScale)
@@ -1426,7 +1962,7 @@ static void video_tab(PortVideo &v) {
         char shown[16];
         snprintf(shown, sizeof(shown), "%d%%%%", steps * 5);
         ImGui::SetNextItemWidth(U(416.0f));
-        ImGui::SliderInt("Menu size", &steps, 10, 40, shown, ImGuiSliderFlags_AlwaysClamp);
+        ImGui::SliderInt(f1_text("Menu size"), &steps, 10, 40, shown, ImGuiSliderFlags_AlwaysClamp);
         int pct = steps * 5;
         if (ImGui::IsItemDeactivatedAfterEdit()) { // (applied on letting go: the slider would move under the pointer)
             sUiScalePct = pct;
@@ -1435,12 +1971,12 @@ static void video_tab(PortVideo &v) {
         } else if (!ImGui::IsItemActive()) {
             steps = (sUiScalePct < 0 ? 100 : sUiScalePct) / 5;
         }
-        ImGui::SetItemTooltip("The size of this window, the online windows, the chat and the notices. They already grow\n"
-                              "with a picture taller than 1080 pixels; this makes them larger or smaller than that.");
+        ImGui::SetItemTooltip(f1_text("The size of this window, the online windows, the chat and the notices. They already grow\n"
+                              "with a picture taller than 1080 pixels; this makes them larger or smaller than that."));
     }
     {
         bool on = meter_on();
-        if (ImGui::Checkbox("Show frame rate, and the connection in an online match", &on)) {
+        if (ImGui::Checkbox(f1_text("Show frame rate, and the connection in an online match"), &on)) {
             sMeter = on;
             Port_SettingSave("meter", sMeter);
             Port_SettingsWrite();
@@ -1449,15 +1985,15 @@ static void video_tab(PortVideo &v) {
     ImGui::Spacing();
     if (v.texPackCount > 0) {
         bool on = v.texPack != 0;
-        snprintf(label, sizeof(label), "Texture pack (%d textures)", v.texPackCount);
+        snprintf(label, sizeof(label), f1_text("%s (%d textures)"), f1_text("Texture pack"), v.texPackCount);
         if (ImGui::Checkbox(label, &on)) { v.texPack = on; }
-        ImGui::SetItemTooltip("Replacement textures from the folder \"textures\" next to the game.");
+        ImGui::SetItemTooltip(f1_text("Replacement textures from the folder \"textures\" next to the game."));
     } else {
         ImGui::BeginDisabled();
         bool off = false;
-        ImGui::Checkbox("Texture pack (none found)", &off);
+        ImGui::Checkbox(f1_text("Texture pack (none found)"), &off);
         ImGui::EndDisabled();
-        ImGui::SetItemTooltip("Put a pack's files (PCSX2 naming, .dds or .png) into a folder \"textures\" next to the game.");
+        ImGui::SetItemTooltip(f1_text("Put a ZIP pack or PNG/DDS files (PCSX2 naming) into the \"textures\" folder next to the game."));
     }
 }
 
@@ -1476,58 +2012,53 @@ static void effects_tab(PortVideo &v) {
     };
     for (int i = 0; i < 7; i++) {
         bool on = !((v.fxOff >> i) & 1);
-        if (ImGui::Checkbox(fx[i].name, &on)) { v.fxOff = (v.fxOff & ~(1 << i)) | (on ? 0 : 1 << i); }
-        ImGui::SetItemTooltip("%s", fx[i].tip);
+        if (ImGui::Checkbox(f1_text(fx[i].name), &on)) { v.fxOff = (v.fxOff & ~(1 << i)) | (on ? 0 : 1 << i); }
+        ImGui::SetItemTooltip("%s", f1_text(fx[i].tip));
         if (i == 6 && on) { /* Weather on: how much of it (fx_off bit 128: half the sprites) */
-            static const char *const amount[2] = {"Full", "Light"};
+            const char *const amount[2] = {f1_text("Full"), f1_text("Light")};
             int light = (v.fxOff >> 7) & 1;
             ImGui::Indent();
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
-            if (ImGui::Combo("Weather amount", &light, amount, 2)) { v.fxOff = (v.fxOff & ~128) | (light ? 128 : 0); }
-            ImGui::SetItemTooltip("Light: half of the haze's sprites, a thinner haze; about half of what switching it off gains.");
+            if (ImGui::Combo(f1_text("Weather amount"), &light, amount, 2)) { v.fxOff = (v.fxOff & ~128) | (light ? 128 : 0); }
+        ImGui::SetItemTooltip(f1_text("Light: half of the haze's sprites, a thinner haze; about half of what switching it off gains."));
             ImGui::Unindent();
         }
     }
     ImGui::Spacing();
-    ImGui::SliderInt("Glow strength", &v.glow, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
-    ImGui::SetItemTooltip("The glow around characters and things (a Super Saiyan's hair, auras).\n"
-                          "100%% is what the PlayStation 2 draws; the default here is 60%%.");
-    ImGui::SliderInt("Glare strength", &v.glare, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
-    ImGui::SetItemTooltip("The glare of the sky and the stage's light.\n"
-                          "100%% is what the PlayStation 2 draws; the default here is 60%%.");
+    ImGui::SliderInt(f1_text("Glow strength"), &v.glow, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetItemTooltip(f1_text("The glow around characters and things (a Super Saiyan's hair, auras).\n"
+                           "100%% is what the PlayStation 2 draws; the default here is 60%%."));
+    ImGui::SliderInt(f1_text("Glare strength"), &v.glare, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetItemTooltip(f1_text("The glare of the sky and the stage's light.\n"
+                           "100%% is what the PlayStation 2 draws; the default here is 60%%."));
     bool sharp = v.sharpBlur != 0;
-    if (ImGui::Checkbox("Sharp stage blur", &sharp)) { v.sharpBlur = sharp; }
-    ImGui::SetItemTooltip("On: the stage's blur keeps the detail of the internal resolution (crisper, as other\n"
-                          "emulators show it upscaled). Off: as soft as the PlayStation 2 draws it. No difference at 1x.");
+    if (ImGui::Checkbox(f1_text("Sharp stage blur"), &sharp)) { v.sharpBlur = sharp; }
+    ImGui::SetItemTooltip(f1_text("On: the stage's blur keeps the detail of the internal resolution (crisper, as other\n"
+                           "emulators show it upscaled). Off: as soft as the PlayStation 2 draws it. No difference at 1x."));
 }
 
 // ---- the automatic update (gs/net_update.c) ----
-// (Based on PR #107 by JosephLlacchua: the in-game download, its progress bar, the restart into the new version.)
-// A few seconds after start the newest published release is asked of GitHub, unless "Check for updates" is off. If it
-// is newer than this build (its full number: 0.1.38.9; a local "dev" build is offered nothing): a line over the main
-// menu and the online screens, and at the top of this window Update now / Later / What's new. Update now downloads
-// and checks it in the background; Restart now (never during an online session) installs it over the folder and
-// starts the new version. Later: no line over the menus until the next start.
-// Not when nobody is looking (the offscreen and dummy video drivers); BT3_UPDATE_CHECK=1 / 0 says otherwise.
-// BT3_UPDATE_AUTO=1 (testing) presses Update now and Restart now by itself.
-static int sUpdCheck = -1;   // the setting; -1 not read yet
+// Check GitHub after startup, download and verify a signed release, then ask before restarting to apply it.
+// Restart only after confirmation in an eligible offline menu, outside saves and fighter selection.
+// BT3_UPDATE_CHECK=0 is reserved for offline build and renderer tests.
 static bool sUpdAsked;       // the check was started (or decided against)
+static bool sUpdAutomatic;
+static Uint64 sUpdNextCheck;
 static Uint64 sUpdSince;     // when the game was first ready (the check waits a few seconds after it)
-static bool sUpdLater;       // "Later": no line over the menus for the rest of this run
 static bool sUpdNotes;       // "What's new" is open
 static bool sUpdTold;        // the result of the last start's update was put over the picture
-static char sUpdWhy[256];    // Restart now could not be done: why
+static int sUpdAttempts;
+static Uint64 sUpdRetryAt;
+static char sUpdWhy[256];    // why an automatic install could not start
 static void set_notice(const char *text, Uint64 ms);
 
 // {version} and {percent} of a port catalog line put in (the English when the language has none)
 static void upd_fill(char *out, size_t size, const char *id, const char *english, const char *version, int percent) {
-    const char *line = MenuTranslation_PortText(id);
+    const char *line = f1_text(english);
     char num[16];
     size_t n = 0;
 
-    if (line == NULL || line[0] == '\0') {
-        line = english;
-    }
+    (void)id;
     SDL_snprintf(num, sizeof(num), "%d", percent);
     for (size_t i = 0; line[i] != '\0' && n + 1 < size; i++) {
         const char *put = SDL_strncmp(line + i, "{version}", 9) == 0 ? version : SDL_strncmp(line + i, "{percent}", 9) == 0 ? num : NULL;
@@ -1548,22 +2079,35 @@ static int upd_percent(const UpdateStatus &u) {
 }
 
 static bool upd_online(void) { // an online session or a lobby is on: it is never interrupted
-    return Port_NetActive() || Lobby_Active() || Port_NetSpectating();
+    return Port_NetActive() || Lobby_Active() || Port_NetSpectating() || Port_TagNetwork();
 }
 
-static void upd_restart(void) {
+static bool upd_menu(void) {
+    // Character Reference's 3D viewer changes projection, but remains a menu.
+    return UpdUi_MenuAllowed(gPortMenuMode||Port_GameMode()==60,Port_UpdateMenuScreen())!=0&&sSaving<=0;
+}
+
+static void update_summary_draw(void) {
+    char summary[4096];
+    static const char *const locales[]={"es","en","pt"};
+    Update_NotesFor(locales[f1_language()],summary,sizeof(summary));
+    ImGui::TextDisabled("%s",f1_text("What's new"));
+    ImGui::BeginChild("update-summary",ImVec2(0,U(112.0f)),ImGuiChildFlags_Borders);
+    ImGui::TextWrapped("%s",summary[0]?summary:f1_text("(The release has no notes.)"));
+    ImGui::EndChild();
+}
+
+static void upd_apply(void) {
     sUpdWhy[0] = '\0';
-    if (upd_online()) {
-        SDL_strlcpy(sUpdWhy, "Finish the online session first.", sizeof(sUpdWhy));
+    if (upd_online() || !upd_menu()) {
+        SDL_strlcpy(sUpdWhy, "Restart the update from an offline menu.", sizeof(sUpdWhy));
         return;
     }
-    Update_Install(); // (in a thread: update_tick starts the new version when it is done)
+    sUpdPromptDismissed = true;
+    Update_Install(); // relaunch is allowed only after the player accepts the prompt
 }
 
 static void update_tick(void) {
-    if (sUpdCheck < 0) {
-        sUpdCheck = Port_Setting("update_check", 1) != 0;
-    }
     if (!sReady) {
         return;
     }
@@ -1583,6 +2127,13 @@ static void update_tick(void) {
             }
         }
     }
+    // Migration runs once at a safe offline menu. No pack swap or 2.54 GB
+    // download is started in a match, a character selector or a lobby.
+    static bool texturesChecked;
+    if(!texturesChecked&&!sOpen&&!sQuit&&upd_menu()&&!upd_online()){
+        texturesChecked=true;
+        if(Update_StartTextureMaintenance(f1_language())){Port_SettingsWrite();exit(0);}
+    }
     if (!sUpdTold) { // the update installed before this start
         const char *ver;
         char line[256];
@@ -1599,38 +2150,53 @@ static void update_tick(void) {
             const char *drv = SDL_GetCurrentVideoDriver(), *env = SDL_getenv("BT3_UPDATE_CHECK");
             bool seen = drv == NULL || (SDL_strcmp(drv, "offscreen") != 0 && SDL_strcmp(drv, "dummy") != 0);
             sUpdAsked = true;
-            if (env != NULL ? SDL_atoi(env) != 0 : (sUpdCheck != 0 && seen)) {
+            sUpdAutomatic=env != NULL ? SDL_atoi(env) != 0 : seen&&Port_Setting("update_check",1)!=0;
+            sUpdNextCheck=SDL_GetTicks()+300000;
+            if (sUpdAutomatic) {
                 Update_Check();
             }
         }
     }
-    if (SDL_getenv("BT3_UPDATE_AUTO") != NULL && SDL_atoi(SDL_getenv("BT3_UPDATE_AUTO")) != 0) { // (testing)
+    {
         UpdateStatus u;
         Update_Status(&u);
-        if (u.state == UPD_AVAILABLE && u.canInstall) {
+        if(sUpdAutomatic&&upd_menu()&&!upd_online()&&SDL_GetTicks()>=sUpdNextCheck&&
+           (u.state==UPD_NONE||(u.state==UPD_FAILED&&!u.canInstall))){
+            sUpdNextCheck=SDL_GetTicks()+300000;
+            sUpdAttempts=0;Update_Recheck();
+        }
+        if (u.state == UPD_AVAILABLE && u.canInstall && sUpdAttempts == 0) {
+            ++sUpdAttempts;
+            sUpdRetryAt = SDL_GetTicks() + 5000;
             Update_Download();
-        } else if (u.state == UPD_READY && !upd_online()) {
-            upd_restart();
+        } else if (u.state == UPD_FAILED && u.canInstall && sUpdAttempts < 3 && SDL_GetTicks() >= sUpdRetryAt) {
+            ++sUpdAttempts;
+            sUpdRetryAt = SDL_GetTicks() + 15000;
+            Update_Download();
+        } else if (u.state == UPD_READY && !upd_online() && !sOpen && !sQuit && upd_menu() &&
+                   !sUpdPromptOpen && !sUpdPromptDismissed) {
+            sUpdPromptQueued = true;
         }
     }
 }
 
-// The line over the main menu and the online screens (empty: none now).
+// Update status only over eligible menus, never over fighter selection or gameplay.
 static void update_line(char *out, size_t size) {
     UpdateStatus u;
-    int mode = Port_GameMode();
 
     out[0] = '\0';
-    if (!sReady || sOpen || (mode != 4 && mode != 80)) {
+    if (!sReady || sOpen || sUpdPromptOpen || !upd_menu()) {
         return;
     }
     Update_Status(&u);
-    if (u.state == UPD_AVAILABLE && !sUpdLater) {
-        upd_fill(out, size, PORT_TEXT_UPDATE_AVAILABLE, "Update {version} available. F1 to update.", u.latest, 0);
+    if(Update_OnlineRequired() && u.state!=UPD_READY) {
+        SDL_strlcpy(out,f1_text("Online play requires this update. Offline play remains available."),size);
+    } else if (u.state == UPD_AVAILABLE && u.canInstall) {
+        upd_fill(out, size, PORT_TEXT_UPDATE_AVAILABLE, "Update {version} found. Downloading automatically.", u.latest, 0);
     } else if (u.state == UPD_DOWNLOADING || u.state == UPD_VERIFYING) {
         upd_fill(out, size, PORT_TEXT_UPDATE_DOWNLOADING, "Downloading update {version}: {percent}%", u.latest, upd_percent(u));
     } else if (u.state == UPD_READY) {
-        upd_fill(out, size, PORT_TEXT_UPDATE_READY, "Update {version} is ready. F1 > Restart now.", u.latest, 0);
+        SDL_strlcpy(out, f1_text("New update available. Restart required."), size);
     }
 }
 
@@ -1643,113 +2209,115 @@ static void update_panel(void) {
 
     Update_Status(&u);
     if (last > 0 && u.state < UPD_AVAILABLE) {
-        ImGui::TextColored(green, "Updated to %s.", ver);
+        ImGui::TextColored(green, f1_text("Updated to %s."), ver);
         ImGui::Separator();
     }
+    if(Update_OnlineRequired())ImGui::TextWrapped("%s",f1_text("Online play requires this update. Offline play remains available."));
     if (u.state < UPD_AVAILABLE) {
         return;
     }
     // the line that says where it stands
     if (u.state == UPD_AVAILABLE) {
-        ImGui::TextColored(gold, "Update %s available (this is %s).", u.latest, u.current);
+        ImGui::TextColored(gold, f1_text("Update %s found. Downloading automatically."), u.latest);
     } else if (u.state == UPD_DOWNLOADING) {
-        ImGui::TextColored(gold, "Downloading %s: %d%% (%.1f of %.1f MB). You can go on playing.", u.latest, upd_percent(u), (double)u.got / 1e6,
+        ImGui::TextColored(gold, f1_text("Downloading %s: %d%% (%.1f of %.1f MB). You can go on playing."), u.latest, upd_percent(u), (double)u.got / 1e6,
                            (double)u.total / 1e6);
         ImGui::ProgressBar((float)upd_percent(u) / 100.0f, ImVec2(-1.0f, 0.0f), "");
     } else if (u.state == UPD_VERIFYING) {
-        ImGui::TextColored(gold, "Checking the download of %s (its signature)...", u.latest);
+        ImGui::TextColored(gold, f1_text("Checking the download of %s (its signature)..."), u.latest);
         ImGui::ProgressBar(1.0f, ImVec2(-1.0f, 0.0f), "");
     } else if (u.state == UPD_READY) {
-        ImGui::TextColored(green, "Update %s is downloaded and verified.", u.latest);
+        ImGui::TextColored(green, "%s", f1_text("Restart required to finish installing the update."));
+        update_summary_draw();
+        bool safe = !upd_online() && upd_menu();
+        ImGui::BeginDisabled(!safe);
+        if (ImGui::Button(f1_text("Restart now"))) {
+            upd_apply();
+        }
+        ImGui::EndDisabled();
+        if (!safe) ImGui::TextWrapped("%s", f1_text("Return to an offline menu to apply the update."));
+        ImGui::SameLine();
+        if (ImGui::Button(f1_text("Later"))) {
+            sUpdPromptDismissed = true;
+        }
     } else if (u.state == UPD_INSTALLING || u.state == UPD_INSTALLED) {
-        ImGui::TextColored(gold, "Installing %s...", u.latest);
+        ImGui::TextColored(gold, f1_text("Installing %s..."), u.latest);
     } else if (u.state == UPD_FAILED) {
         ImGui::PushStyleColor(ImGuiCol_Text, red);
-        ImGui::TextWrapped("The update to %s was not installed: %s", u.latest, u.why);
+        if (u.latest[0]) ImGui::TextWrapped(f1_text("The update to %s was not installed: %s"), u.latest, u.why);
+        else ImGui::TextWrapped("%s", f1_text(u.why));
         ImGui::PopStyleColor();
     }
-    // the buttons
-    if (u.state == UPD_AVAILABLE && u.canInstall) {
-        if (ImGui::Button("Update now")) {
-            Update_Download();
-        }
-        ImGui::SetItemTooltip("Downloads the new version in the background and checks its signature; you go on playing\n"
-                              "meanwhile (online play waits until it is installed). Then Restart now installs it.\n"
-                              "Your saves, settings, game data, mods and texture packs are not touched.");
-        ImGui::SameLine();
-        if (!sUpdLater) {
-            if (ImGui::Button("Later")) {
-                sUpdLater = true;
-            }
-            ImGui::SetItemTooltip("No reminder over the menus until the next start.");
-            ImGui::SameLine();
-        }
-    } else if (u.state == UPD_READY) {
-        bool busy = upd_online();
-        if (busy) {
-            ImGui::BeginDisabled();
-        }
-        if (ImGui::Button("Restart now")) {
-            upd_restart();
-        }
-        if (busy) {
-            ImGui::EndDisabled();
-        }
-        ImGui::SetItemTooltip(busy ? "Not during an online session: finish it first."
-                                   : "Installs the update over the game's folder and starts the new version (if anything\n"
-                                     "goes wrong, every file is put back). Your saves and settings are not touched.");
-        ImGui::SameLine();
-    } else if (u.state == UPD_FAILED && u.canInstall) {
-        if (ImGui::Button("Try again")) {
-            Update_Download();
-        }
-        ImGui::SameLine();
+    if (u.state == UPD_AVAILABLE && !u.canInstall && u.cannot[0] != '\0') {
+        ImGui::TextWrapped(f1_text("Automatic installation is unavailable: %s"), u.cannot);
     }
-    if (ImGui::Button(sUpdNotes ? "Hide what's new" : "What's new")) {
+    if (u.page[0] && ImGui::Button(f1_text(sUpdNotes ? "Hide what's new" : "What's new"))) {
         sUpdNotes = !sUpdNotes;
     }
-    ImGui::SameLine();
-    if (ImGui::Button("Release page")) {
+    if (u.page[0]) ImGui::SameLine();
+    if (u.page[0] && ImGui::Button(f1_text("Release page"))) {
         SDL_OpenURL(u.page);
     }
-    ImGui::SetItemTooltip("Opens the release page in your browser. To update by hand, copy the new files over the old ones.");
+    ImGui::SetItemTooltip(f1_text("Opens the release page. A verified update is applied only after you confirm a restart from an offline menu."));
     if (!u.canInstall && u.cannot[0] != '\0') {
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-        ImGui::TextWrapped("%s", u.cannot);
+        ImGui::TextWrapped("%s", f1_text(u.cannot));
         ImGui::PopStyleColor();
     }
     if (Port_OnlineBlocked() != NULL && u.state != UPD_INSTALLED) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-        ImGui::TextWrapped("%s", Port_OnlineBlocked());
+        ImGui::TextWrapped("%s", f1_text(Port_OnlineBlocked()));
         ImGui::PopStyleColor();
     }
     if (sUpdWhy[0] != '\0') {
         ImGui::PushStyleColor(ImGuiCol_Text, red);
-        ImGui::TextWrapped("%s", sUpdWhy);
+        ImGui::TextWrapped("%s", f1_text(sUpdWhy));
         ImGui::PopStyleColor();
     }
     if (sUpdNotes) {
-        const char *notes = Update_Notes();
+        char notes[8192];
+        static const char *const locales[]={"es","en","pt"};
+        Update_NotesFor(locales[f1_language()],notes,sizeof(notes));
         ImGui::BeginChild("notes", ImVec2(0.0f, U(180.0f)), ImGuiChildFlags_Borders);
-        ImGui::TextWrapped("%s", notes[0] != '\0' ? notes : "(The release has no notes.)");
+        ImGui::TextWrapped("%s", notes[0] != '\0' ? notes : f1_text("(The release has no notes.)"));
         ImGui::EndChild();
     }
     ImGui::Separator();
 }
 
+static void updates_tab(void) {
+    UpdateStatus u;
+    Update_Status(&u);
+    ImGui::Text(f1_text("Installed version: %s"), Update_Version());
+    ImGui::TextWrapped("%s", f1_text("The updater checks for signed releases and downloads them in the background. In an offline menu, it asks before restarting to apply an update."));
+    ImGui::Spacing();
+    if (u.state == UPD_IDLE || u.state == UPD_NONE || u.state == UPD_FAILED) {
+        if (ImGui::Button(f1_text("Check for updates"))) {
+            sUpdAsked = true;
+            sUpdAttempts = 0;
+            sUpdNotes = sUpdPromptDismissed = false;
+            sUpdWhy[0] = '\0';
+            Update_Recheck();
+        }
+        if (u.state == UPD_FAILED && u.canInstall) {
+            ImGui::SameLine();
+            if (ImGui::Button(f1_text("Retry download"))) {
+                sUpdAttempts = 1;
+                sUpdRetryAt = SDL_GetTicks() + 15000;
+                Update_Download();
+            }
+        }
+    } else if (u.state == UPD_CHECKING) {
+        ImGui::TextWrapped("%s", f1_text("Checking for updates..."));
+    }
+    if (u.state == UPD_NONE) ImGui::TextWrapped("%s", f1_text("No newer release is available for this build."));
+    update_panel();
+}
+
 static void misc_tab(void) {
     {
-        bool chk = sUpdCheck != 0;
-        if (ImGui::Checkbox("Check for updates", &chk)) {
-            sUpdCheck = chk;
-            Port_SettingSave("update_check", sUpdCheck);
-            Port_SettingsWrite();
-        }
-        ImGui::SetItemTooltip("Once per start, ask GitHub for the newest release and say so if it is newer than this one.\n"
-                              "Nothing is downloaded until you press Update now (at the top of this window).");
-        ImGui::SameLine();
-        ImGui::TextDisabled("(installed: %s)", Update_Version()); // (PR #107: the version that is running)
-        ImGui::SetItemTooltip("The version of Tenkaichi3Decomp currently running (\"dev\": built locally, never offered updates).");
+        ImGui::TextDisabled(f1_text("Automatic updates: %s"), Update_Version());
+        ImGui::SetItemTooltip(f1_text("The updater checks for signed releases and downloads them in the background. In an offline menu, it asks before restarting to apply an update."));
     }
     // the start of the game (PR #50): read by FirstRun_Main, so they count from the next start
     static int sSkipLogos = -1, sSkipIntro = -1, sSkipCopy = -1;
@@ -1760,40 +2328,40 @@ static void misc_tab(void) {
     }
     bool logos = sSkipLogos != 0, intro = sSkipIntro != 0, copy = sSkipCopy != 0;
     ImGui::Spacing();
-    if (ImGui::Checkbox("Skip logos", &logos)) {
+    if (ImGui::Checkbox(f1_text("Skip logos"), &logos)) {
         sSkipLogos = logos;
         Port_SettingSave("skip_logos", sSkipLogos);
         Port_SettingsWrite();
     }
-    ImGui::SetItemTooltip("Start without the publisher and developer logos. From the next start of the game.");
-    if (ImGui::Checkbox("Skip intro video", &intro)) {
+    ImGui::SetItemTooltip(f1_text("Start without the publisher and developer logos. From the next start of the game."));
+    if (ImGui::Checkbox(f1_text("Skip intro video"), &intro)) {
         sSkipIntro = intro;
         Port_SettingSave("skip_intro", sSkipIntro);
         Port_SettingsWrite();
     }
-    ImGui::SetItemTooltip("Start without the opening movie. From the next start of the game.");
-    if (ImGui::Checkbox("Skip copyright page", &copy)) {
+    ImGui::SetItemTooltip(f1_text("Start without the opening movie. From the next start of the game."));
+    if (ImGui::Checkbox(f1_text("Skip copyright page"), &copy)) {
         sSkipCopy = copy;
         Port_SettingSave("skip_copyright", sSkipCopy);
         Port_SettingsWrite();
     }
-    ImGui::SetItemTooltip("The page of legal text shown for five seconds before the title screen, every time.");
+    ImGui::SetItemTooltip(f1_text("The page of legal text shown for five seconds before the title screen, every time."));
     bool hidePointer = Port_Setting("hide_pointer", 1) != 0;
-    if (ImGui::Checkbox("Hide the mouse pointer during play", &hidePointer)) {
+    if (ImGui::Checkbox(f1_text("Hide the mouse pointer during play"), &hidePointer)) {
         Port_SettingSave("hide_pointer", hidePointer);
         Port_SettingsWrite();
     }
-    ImGui::SetItemTooltip("The pointer is hidden over the game and shown in this window, the online windows, the\n"
-                          "question before the game closes and while a chat line is typed.");
+    ImGui::SetItemTooltip(f1_text("The pointer is hidden over the game and shown in this window, the online windows, the\n"
+                          "question before the game closes and while a chat line is typed."));
     bool quickSave = Port_Setting("save_quick", 1) != 0;
-    if (ImGui::Checkbox("Quick saving", &quickSave)) {
+    if (ImGui::Checkbox(f1_text("Quick saving"), &quickSave)) {
         Port_SettingSave("save_quick", quickSave);
         Port_SettingsWrite();
     }
-    ImGui::SetItemTooltip("Save and load without the memory card pages: no question, no waiting, a small card in the\n"
+    ImGui::SetItemTooltip(f1_text("Save and load without the memory card pages: no question, no waiting, a small card in the\n"
                           "corner while it saves, and the save loaded at start without a page. Load in the options\n"
                           "still asks first, then loads at once. A missing card, a full card or a failed save is\n"
-                          "still shown. Online the game's own pages always run. Off: the game's own pages.");
+                          "still shown. Online the game's own pages always run. Off: the game's own pages."));
 }
 
 // F1 > Online: the settings of online play (Tenkaichi Budokai Online's screens are the way in: the game's main menu), and
@@ -1803,150 +2371,226 @@ static void misc_tab(void) {
 // row "Let others watch your matches", for the rooms of two, went with them.)
 static void online_tab(void) {
     bool desyncEnds = Port_Setting("net_desync_end", 0) != 0;
-    if (ImGui::Checkbox("End an online match on a desync", &desyncEnds)) {
+    if (ImGui::Checkbox(f1_text("End an online match on a desync"), &desyncEnds)) {
         Port_SettingSave("net_desync_end", desyncEnds);
         Port_SettingsWrite();
     }
-    ImGui::SetItemTooltip("The two games compare what they compute. Off: when they no longer agree you are told, and the match\n"
-                          "goes on (the two screens may then show different fights). On: the match ends there.");
+    ImGui::SetItemTooltip(f1_text("The two games compare what they compute. Off: when they no longer agree you are told, and the match\n"
+                          "goes on (the two screens may then show different fights). On: the match ends there."));
     bool chat = PortChat_Enabled() != 0;
-    if (ImGui::Checkbox("Online chat", &chat)) {
+    if (ImGui::Checkbox(f1_text("Online chat"), &chat)) {
         PortChat_EnabledSet(chat);
     }
-    ImGui::SetItemTooltip("Text with the other player of an online match. Tab opens a line (setting key_chat), Enter sends it,\n"
+    ImGui::SetItemTooltip(f1_text("Text with the other player of an online match. Tab opens a line (setting key_chat), Enter sends it,\n"
                           "Esc puts it away; while it is typed the keyboard does not play, a controller does. Off: no lines\n"
-                          "are shown or sent. A player without it sees nothing.");
+                          "are shown or sent. A player without it sees nothing."));
     if (chat) {
         if (sChatSize < 0) {
             sChatSize = Port_Setting("chat_size", 1);
             if (sChatSize < 0 || sChatSize > 2) sChatSize = 1;
         }
-        static const char *const kChatSizes[] = {"Compact", "Normal", "Large"};
+        const char *const kChatSizes[] = {f1_text("Compact"), f1_text("Normal"), f1_text("Large")};
         int size = sChatSize;
-        if (ImGui::Combo("Chat size", &size, kChatSizes, 3)) {
+        if (ImGui::Combo(f1_text("Chat size"), &size, kChatSizes, 3)) {
             sChatSize = size;
             Port_SettingSave("chat_size", sChatSize);
             Port_SettingsWrite();
         }
-        ImGui::SetItemTooltip("How wide the online chat is and how many lines it shows (while typing / otherwise).\n"
+        ImGui::SetItemTooltip(f1_text("How wide the online chat is and how many lines it shows (while typing / otherwise).\n"
                               "Compact: 4 / 2, narrower.\n"
                               "Normal: 6 / 4.\n"
-                              "Large: 8 / 6, wider, for large screens.");
+                              "Large: 8 / 6, wider, for large screens."));
     }
     ImGui::Spacing();
     if (getenv("BT3_UI_ADVANCED") != NULL) { // (testing, with BT3_UI_OPEN=7: the section opened, for a picture of it)
         ImGui::SetNextItemOpen(true, ImGuiCond_Once);
     }
-    if (ImGui::CollapsingHeader("Advanced")) {
-        ImGui::TextWrapped("Dragon Net Battle is the first online window of this port. Tenkaichi Budokai Online (the main "
-                           "menu) does everything it does: lobbies by code or by address, and quick matches.");
+    if (ImGui::CollapsingHeader(f1_text("Advanced"))) {
+        ImGui::TextWrapped("%s", f1_text("Dragon Net Battle is the first online window of this port. Tenkaichi Budokai Online (the main "
+                           "menu) does everything it does: lobbies by code or by address, and quick matches."));
         ImGui::BeginDisabled(Port_NetActive() != 0);
-        if (ImGui::Button("Open Dragon Net Battle")) {
+        if (ImGui::Button(f1_text("Open Dragon Net Battle"))) {
             gPortNetMenuRequest = 1; // (opened in place of this window at the next frame: frame_build)
             set_open(false);
         }
         ImGui::EndDisabled();
         bool listed = Port_Setting("net_dnb_menu", 0) != 0;
-        if (ImGui::Checkbox("List Dragon Net Battle in the main menu", &listed)) {
+        if (ImGui::Checkbox(f1_text("List Dragon Net Battle in the main menu"), &listed)) {
             Port_SettingSave("net_dnb_menu", listed ? 1 : 0);
             Port_SettingsWrite();
         }
-        ImGui::SetItemTooltip("Shows the entry beside Tenkaichi Budokai Online the next time the main menu is opened.");
+        ImGui::SetItemTooltip(f1_text("Shows the entry beside Tenkaichi Budokai Online the next time the main menu is opened."));
     }
 }
 
+// The existing free, tracking and overview camera controls.
+static void spectator_tab(void) {
+    bool cinematic=Port_SpecialMoveCameras(-1)!=0;
+    if(ImGui::Checkbox(f1_text("Special-move cinematic cameras"),&cinematic))Port_SpecialMoveCameras(cinematic);
+    ImGui::SetItemTooltip(f1_text("Turn off to keep the regular fight framing during special and ultimate moves. Attack animations, damage and timing are unchanged."));
+    ImGui::Separator();
+    int mode=PortSpectator_Mode();
+    const char *modes[]={"Game camera","Free camera","Follow fighter","Fight overview"};
+    for(int n=0;n<4;n++)if(ImGui::RadioButton(f1_text(modes[n]),mode==n)){PortSpectator_SetMode(n);mode=n;}
+    ImGui::BeginDisabled(mode==0);
+    if(mode==2) {
+        int actor=PortSpectator_Target()+1,count=PortSpectator_Count();
+        if(actor>count){actor=count;PortSpectator_SetTarget(actor-1);}
+        if(ImGui::SliderInt(f1_text("Fighter"),&actor,1,count))PortSpectator_SetTarget(actor-1);
+    }
+    int speed=PortSpectator_Speed();
+    if(ImGui::SliderInt(f1_text("Camera speed"),&speed,25,400,"%d%%"))PortSpectator_SetSpeed(speed);
+    int zoom=PortSpectator_Zoom();
+    if(ImGui::SliderInt(f1_text("Camera zoom"),&zoom,100,300,"%d%%",ImGuiSliderFlags_AlwaysClamp))PortSpectator_SetZoom(zoom);
+    if(ImGui::Button(f1_text("Reset camera")))PortSpectator_ResetCamera();
+    ImGui::EndDisabled();ImGui::Separator();
+    bool hidden=PortHud_Hidden()!=0;
+    if(ImGui::Checkbox(f1_text("Hide HUD"),&hidden))PortHud_SetHidden(hidden);
+    ImGui::TextWrapped("%s",f1_text("Close F1 to control the camera. WASD: move; Q/E: descend/ascend; arrows: turn; Shift: accelerate; +/-: zoom."));
+    ImGui::TextWrapped("%s",f1_text("Controller: left stick moves, right stick turns, L1/R1 descend/ascend, L2/R2 zoom, L3 accelerates."));
+    ImGui::TextWrapped("%s",f1_text("Camera controls replace your local fighter controls during battle. Start still opens the pause menu."));
+}
+
+static void update_prompt_draw(void) {
+    const char *popup = "###update-restart-required";
+    if(sUpdPromptOpen&&(!upd_menu()||upd_online())){
+        ImGui::ClosePopupToLevel(0,true);
+        sUpdPromptOpen=false;input_owner();return;
+    }
+    if (sUpdPromptQueued) {
+        sUpdPromptQueued = false;
+        if (!upd_online() && !sOpen && !sQuit && upd_menu()) {
+            sUpdPromptOpen = true;
+            if (sChat) chat_close();
+            input_owner();
+            ImGui::OpenPopup(popup);
+        }
+    }
+    if (!sUpdPromptOpen) return;
+    ImGuiIO &io = ImGui::GetIO();
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(U(360.0f), 0.0f), ImVec2(U(560.0f), FLT_MAX));
+    if (!ImGui::BeginPopupModal(popup, NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove |
+                                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoTitleBar)) {
+        return;
+    }
+    ImGui::TextWrapped("%s", f1_text("New update available. Restart required."));
+    if(Update_OnlineRequired())ImGui::TextWrapped("%s",f1_text("Online play requires this update. Offline play remains available."));
+    UpdateStatus status;Update_Status(&status);
+    ImGui::TextDisabled("%s",status.latest);
+    ImGui::Spacing();
+    ImGui::TextWrapped("%s", f1_text("This update is ready. Restart now to apply it, or choose Later to install it another time."));
+    ImGui::Spacing();
+    update_summary_draw();
+    ImGui::Spacing();
+    bool close = false;
+    if (ImGui::Button(f1_text("Restart now"), ImVec2(U(180.0f), 0.0f))) {
+        upd_apply();
+        close = true;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(f1_text("Later"), ImVec2(U(140.0f), 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
+        ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false)) {
+        sUpdPromptDismissed = true;
+        close = true;
+    }
+    if (ImGui::IsWindowAppearing()) ImGui::SetItemDefaultFocus();
+    if (close) {
+        ImGui::CloseCurrentPopup();
+        sUpdPromptOpen = false;
+        input_owner();
+    }
+    ImGui::EndPopup();
+}
+
 static void ui_tab(PortVideo &v) {
-    if (sLanguageCount > 0) {
-        bool overridden = getenv("BT3_MENU_LANG") != NULL && getenv("BT3_MENU_LANG")[0] != '\0';
-        ImGui::BeginDisabled(overridden || Port_NetActive());
-        if (ImGui::BeginCombo("Language", sLanguages[sLanguageChoice].name)) {
-            for (int i = 0; i < sLanguageCount; i++) {
-                if (ImGui::Selectable(sLanguages[i].name, i == sLanguageChoice) && i != sLanguageChoice) language_choose(i);
-                if (i == sLanguageChoice) ImGui::SetItemDefaultFocus();
+    {
+        static const char *const names[] = {"Espa\xC3\xB1ol", "English", "Portugu\xC3\xAAs"};
+        int language = f1_language();
+        if (ImGui::BeginCombo(f1_text("Menu language"), names[language])) {
+            for (int i = 0; i < 3; i++) {
+                if (ImGui::Selectable(names[i], language == i)) f1_language_set(i);
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SetItemTooltip(f1_text("Changes the language of this settings menu immediately. It does not change BT4 text or voices."));
+        ImGui::Separator();
+    }
+    {
+        static int choice = -1;
+        if (choice < 0) choice = Port_GameProfileLanguage();
+        const char *names[] = {f1_text("Spanish (text and voices)"), f1_text("English (text and voices)"), "Português (Brasil)"};
+        ImGui::BeginDisabled(Port_NetActive() || Port_TagBattleRenderActive());
+        if (ImGui::BeginCombo(f1_text("Game language"), names[choice])) {
+            for (int i=0;i<3;i++) {
+                ImGui::BeginDisabled(!Port_GameProfileAvailable(i));
+                if (ImGui::Selectable(names[i],choice==i)) {
+                    choice=i; Port_SettingTextSave("game_language",i==2?"pt-BR":i?"en":"es"); Port_SettingsWrite();
+                }
+                ImGui::EndDisabled();
             }
             ImGui::EndCombo();
         }
         ImGui::EndDisabled();
-        ImGui::SetItemTooltip("Game language based on available translations.");
-        bool alwaysPrompt = Port_Setting("language_prompt_always", 0) != 0;
-        if (ImGui::Checkbox("Show language selector at startup", &alwaysPrompt)) {
-            Port_SettingSave("language_prompt_always", alwaysPrompt);
-            Port_SettingsWrite();
-        }
-        ImGui::SetItemTooltip("Show the language list at every normal startup when more than one language is available.");
-        if (sLanguageRestartPending) {
-            ImGui::TextColored(ImVec4(1.0f, 0.86f, 0.35f, 1.0f), "Language saved. It will apply on the next launch.");
-        }
+        ImGui::SetItemTooltip(f1_text("Full disc profile: text and voices. Install each ISO once using the launcher. The startup selector confirms your choice before the game begins."));
+        if (choice != Port_GameProfileLanguage()) ImGui::TextWrapped("%s", f1_text("Language saved for the next launch."));
         ImGui::Separator();
     }
-    if (ImGui::BeginCombo("Menu font", MenuText_FontName(v.menuFont))) {
-        for (int i = 0; i < MenuText_FontCount(); i++) {
-            if (!MenuText_FontAvailable(i, MENU_TEXT_MENU)) { continue; }
-            ImGui::PushID(i);
-            if (ImGui::Selectable(MenuText_FontName(i), v.menuFont == i)) { v.menuFont = i; }
-            if (v.menuFont == i) { ImGui::SetItemDefaultFocus(); }
-            ImGui::PopID();
+    struct FontSetting { const char *label; int *choice; int role; const char *tip; };
+    FontSetting fonts[] = {
+        {"Menu font", &v.menuFont, MENU_TEXT_MENU,
+         "Original uses the game's sprites. Other fonts replace matching menu labels immediately.\nBattle announcements have their own setting below."},
+        {"Battle font", &v.battleFont, MENU_TEXT_BATTLE,
+         "Choose original battle announcements and HUD text, or any battle font listed in fonts.tsv."},
+        {"Dialogue / UI font", &v.textFont, MENU_TEXT_DIALOGUE,
+         "Replace the shared font used by dialogue, subtitles and ordinary UI text.\nOriginal keeps the game's glyphs. Text placement, colors, shadows and icons are preserved."}
+    };
+    for (FontSetting &font : fonts) {
+        if (ImGui::BeginCombo(f1_text(font.label), f1_text(MenuText_FontName(*font.choice)))) {
+            for (int i = 0; i < MenuText_FontCount(); ++i) {
+                if (!MenuText_FontAvailable(i, font.role)) continue;
+                ImGui::PushID(i);
+                if (ImGui::Selectable(f1_text(MenuText_FontName(i)), *font.choice == i)) *font.choice = i;
+                if (*font.choice == i) ImGui::SetItemDefaultFocus();
+                ImGui::PopID();
+            }
+            ImGui::EndCombo();
         }
-        ImGui::EndCombo();
+        ImGui::SetItemTooltip(f1_text(font.tip));
     }
-    ImGui::SetItemTooltip("Original uses the game's sprites. Other fonts replace matching menu labels immediately.\nBattle announcements have their own setting below.");
-    if (ImGui::BeginCombo("Battle font", MenuText_FontName(v.battleFont))) {
-        for (int i = 0; i < MenuText_FontCount(); i++) {
-            if (!MenuText_FontAvailable(i, MENU_TEXT_BATTLE)) { continue; }
-            ImGui::PushID(i);
-            if (ImGui::Selectable(MenuText_FontName(i), v.battleFont == i)) { v.battleFont = i; }
-            if (v.battleFont == i) { ImGui::SetItemDefaultFocus(); }
-            ImGui::PopID();
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::SetItemTooltip("Choose original battle announcements and HUD text, or any battle font listed in fonts.tsv.");
-    if (ImGui::BeginCombo("Dialogue / UI font", MenuText_FontName(v.textFont))) {
-        for (int i = 0; i < MenuText_FontCount(); i++) {
-            if (!MenuText_FontAvailable(i, MENU_TEXT_DIALOGUE)) { continue; }
-            ImGui::PushID(i);
-            if (ImGui::Selectable(MenuText_FontName(i), v.textFont == i)) { v.textFont = i; }
-            if (v.textFont == i) { ImGui::SetItemDefaultFocus(); }
-            ImGui::PopID();
-        }
-        ImGui::EndCombo();
-    }
-    ImGui::SetItemTooltip("Replace the shared font used by dialogue, subtitles and ordinary UI text.\n"
-                          "Original keeps the game's glyphs. Text placement, colors, shadows and icons are preserved.");
-    static const char *const kHud[] = {"At the screen's edges", "At the edges, long health bars", "In the middle, as in 4:3"};
-    ImGui::Combo("HUD Style", &v.hudLayout, kHud, 3);
-    ImGui::SetItemTooltip("Where a fight's health bars and gauges sit in a picture wider than 4:3.\n"
+    static const char *const kHud[] = {"BT4 original, at the edges", "Extended health bars", "BT4 original, centered"};
+    int bt4Hud = v.hudLayout >= 0 && v.hudLayout < 3 ? v.hudLayout : 0;
+    const char *hudNames[] = {f1_text(kHud[0]), f1_text(kHud[1]), f1_text(kHud[2])};
+    if (ImGui::Combo(f1_text("HUD Style"), &bt4Hud, hudNames, 3)) v.hudLayout = bt4Hud;
+    ImGui::SetItemTooltip(f1_text("Where a fight's health bars and gauges sit in a picture wider than 4:3.\n"
                           "Long health bars: the bars reach from the edges to the timer.\n"
-                          "In the middle: the original 4:3 arrangement, next to the timer.");
+                          "In the middle: the original 4:3 arrangement, next to the timer."));
     {
-        static const char *const kMenus[] = {"Stretched", "4:3", "Widescreen (beta)"};
+        const char *const kMenus[] = {f1_text("Stretched"), "4:3", f1_text("Widescreen (beta)")};
         int m = Port_Menus43() ? 1 : Port_MenusWide() ? 2 : 0;
-        if (ImGui::Combo("Menus", &m, kMenus, 3)) {
+        if (ImGui::Combo(f1_text("Menus"), &m, kMenus, 3)) {
             Port_Menus43Set(m == 1);
             Port_MenusWideSet(m == 2);
             Port_SettingSave("menus_43", m == 1);
             Port_SettingSave("menus_wide", m == 2);
             Port_SettingsWrite();
         }
-        ImGui::SetItemTooltip("How the menus fill a picture wider than 4:3 (fights keep the wide picture):\n"
-                              "Stretched: the 4:3 menus stretched to the width.\n"
-                              "4:3: at their own shape, with the side bars at the sides.\n"
-                              "Widescreen (beta): at their own shape across the whole width, the backdrops filling it,\n"
-                              "each menu's parts against the side they belong to.");
+        ImGui::SetItemTooltip(f1_text("Menu display on a picture wider than 4:3. Stretched fills the window. 4:3 keeps side bars. Widescreen (beta) anchors menus and HUD to the wider view while preserving artwork proportions."));
     }
     {
         static const char *const kBars[] = {"Black", "Border", "Fighter panels"};
+        const char *barNames[] = {f1_text(kBars[0]), f1_text(kBars[1]), f1_text(kBars[2])};
         int b = sBars < 0 ? 0 : sBars;
-        if (ImGui::Combo("Side bars", &b, kBars, 3)) {
+        if (ImGui::Combo(f1_text("Side bars"), &b, barNames, 3)) {
             sBars = b;
             Port_SettingSave("side_bars", sBars);
             Port_SettingsWrite();
         }
-        ImGui::SetItemTooltip("What fills the sides where the picture is narrower than the window:\n"
+        ImGui::SetItemTooltip(f1_text("What fills the sides where the picture is narrower than the window:\n"
                               "a 4:3 picture, or the menus with \"Menus: 4:3\", in a wide window.\n"
                               "Fighter panels: the border, and in a fight each side's fighter with its name and form.\n"
                               "Your own: a folder \"bars\" next to the game with trim.png (the strip along the\n"
-                              "picture, kept in proportion) and fill.png (stretched over the rest). Read at start.");
+                              "picture, kept in proportion) and fill.png (stretched over the rest). Read at start."));
     }
     if (sBars == 2) { // the fighter panels' faces
         font_picker("Name font", sPanelFont[0], "The fighter's name down the panel. The game's fonts, as for the Menu font\n"
@@ -1958,25 +2602,28 @@ static void ui_tab(PortVideo &v) {
 
 extern "C" int gPortMusicFollows; // snd_adx.c: 1 = looping music is sped up or slowed down with the game
 
+#include "voice_ui.inc"
 static void audio_tab(PortVideo &v) {
-    ImGui::SliderInt("Music", &v.music, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
-    ImGui::SliderInt("Sound effects", &v.effects, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
-    ImGui::SetItemTooltip("Hits, blasts, menu sounds. Takes effect with the next sound that starts.");
-    ImGui::SliderInt("Voices", &v.voices, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
-    ImGui::SetItemTooltip("The fighters' voices in a fight and the spoken lines outside one.");
-    ImGui::SliderInt("Stage sounds", &v.stage, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
-    ImGui::SetItemTooltip("A stage's background sound (wind, water) and its own effects.");
+    voice_settings_draw();
+    ImGui::SeparatorText(f1_text("Game Audio"));
+    ImGui::SliderInt(f1_text("Music"), &v.music, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SliderInt(f1_text("Sound effects"), &v.effects, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetItemTooltip(f1_text("Hits, blasts, menu sounds. Takes effect with the next sound that starts."));
+    ImGui::SliderInt(f1_text("Voices"), &v.voices, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetItemTooltip(f1_text("The fighters' voices in a fight and the spoken lines outside one."));
+    ImGui::SliderInt(f1_text("Stage sounds"), &v.stage, 0, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SetItemTooltip(f1_text("A stage's background sound (wind, water) and its own effects."));
     {
         bool follows = gPortMusicFollows > 0;
         ImGui::Spacing();
-        if (ImGui::Checkbox("Music follows game speed", &follows)) {
+        if (ImGui::Checkbox(f1_text("Music follows game speed"), &follows)) {
             gPortMusicFollows = follows;
             Port_SettingSave("music_follows_speed", follows);
             Port_SettingsWrite(); // (in the file at once: it was lost at the end unless another setting was written after it)
         }
-        ImGui::SetItemTooltip("When the game runs at another speed than 100%% (an online match, the Cheats tab):\n"
+        ImGui::SetItemTooltip(f1_text("When the game runs at another speed than 100%% (an online match, the Cheats tab):\n"
                               "off, the music plays as it is; on, it is sped up or slowed down with the game,\n"
-                              "at its own pitch, as an emulator does. Spoken lines always follow the game.");
+                              "at its own pitch, as an emulator does. Spoken lines always follow the game."));
     }
 }
 
@@ -1994,49 +2641,30 @@ extern "C" void Port_AudioRefresh(void);
 // off, read when a fight starts (src/battle/btl_char_mgr.c). Off, the game's own code runs, unchanged. Never online
 // (both players would have to agree on them) and never in a replay (it was recorded with the game's own rules).
 static void tech_tab(void) {
-    ImGui::TextWrapped("Fixes for the original game's fighting mechanics, made by the community. Each one changes how fights "
-                       "play, so they are off by default. They apply from the next fight, offline only: online matches and "
-                       "replays always use the game's original rules.");
-    ImGui::Spacing();
-    bool z = Port_Setting("tech_zcounter2", 0) != 0;
-    if (ImGui::Checkbox("Z Counter fix", &z)) {
-        Port_SettingSave("tech_zcounter2", z);
-        Port_SettingsWrite();
-    }
-    ImGui::SetItemTooltip("Keeps a valid Z Counter (Up + attack, timed) that the original game loses when your movement\n"
-                          "changes your hitbox in the same frame the attack arrives. The input timing, cooldown and\n"
-                          "requirements stay the original ones; it only checks the counter against your pose at the\n"
-                          "moment you pressed it.");
-    bool b = Port_Setting("tech_bombardment", 0) != 0;
-    if (ImGui::Checkbox("Bombardment fix", &b)) {
-        Port_SettingSave("tech_bombardment", b);
-        Port_SettingsWrite();
-    }
-    ImGui::SetItemTooltip("In a chain of smash Ki blasts with dashes between them, body contact with the opponent could\n"
-                          "stop the dash one frame before the next smash blast is ready, breaking the chain. With this,\n"
-                          "that one stop waits one frame, only when the next smash blast is exactly one frame away.\n"
-                          "Ki costs, timing (six frames) and priorities stay the original ones.");
-    ImGui::Spacing();
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-    ImGui::TextWrapped("From the community's \"BT3 PS2 Port Gameplay Source\" v0.3.1 (Z Counter 2 v0.9.0, Bombardment v2.2).");
-    ImGui::PopStyleColor();
+    ImGui::TextWrapped("%s",f1_text("Optional mechanics adjustments for offline duels. Disabled by default; not applied to online play, Tag Team or replays."));
+    bool z=Port_Setting("tech_zcounter2",0)!=0,b=Port_Setting("tech_bombardment",0)!=0;
+    if(ImGui::Checkbox(f1_text("Z Counter fix"),&z)){Port_SettingSave("tech_zcounter2",z);Port_SettingsWrite();}
+    ImGui::SetItemTooltip("%s",f1_text("Retains a correctly timed Z Counter when movement changes the hitbox on the same frame."));
+    if(ImGui::Checkbox(f1_text("Bombardment fix"),&b)){Port_SettingSave("tech_bombardment",b);Port_SettingsWrite();}
+    ImGui::SetItemTooltip("%s",f1_text("Keeps a valid chain of smash Ki blasts from stopping one frame too early."));
+    ImGui::TextDisabled("BT3 PS2 Port Gameplay Source v0.3.1 | Z Counter 2 v0.9.0 | Bombardment v2.2");
 }
 
 static void cheats_tab(void) {
     {
         int speed = Port_GameSpeed();
-        if (ImGui::SliderInt("Game speed", &speed, 50, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
+        if (ImGui::SliderInt(f1_text("Game speed"), &speed, 50, 200, "%d%%", ImGuiSliderFlags_AlwaysClamp)) {
             Port_GameSpeedSet(speed);
             Port_AudioRefresh();
         }
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             Port_SettingsWrite(); // (when the slider is let go: the speed was lost at the end unless another setting was written)
         }
-        ImGui::SetItemTooltip("How fast the game runs outside online play (the sound keeps its pitch). 100%% is the game's own;\n"
+        ImGui::SetItemTooltip(f1_text("How fast the game runs outside online play (the sound keeps its pitch). 100%% is the game's own;\n"
                               "114%% is what competitive play uses. An online match never uses this value:\n"
-                              "its speed is the host's or the queue's.");
+                              "its speed is the host's or the queue's."));
         ImGui::SameLine();
-        if (ImGui::Button("Reset")) {
+        if (ImGui::Button(f1_text("Reset"))) {
             Port_GameSpeedSet(100);
             Port_AudioRefresh();
             Port_SettingsWrite();
@@ -2044,28 +2672,28 @@ static void cheats_tab(void) {
         ImGui::Separator();
         ImGui::Spacing();
     }
-    ImGui::TextWrapped("Unlock everything: all characters, stages, music and items, and the largest amount of Zenni. "
-                       "This is a debug function the game's developers left in.");
+    ImGui::TextWrapped("%s", f1_text("Unlock everything: all characters, stages, music and items, and the largest amount of Zenni. "
+                       "This is a debug function the game's developers left in."));
     ImGui::Spacing();
-    ImGui::TextWrapped("It also empties your records list, and it becomes permanent the next time the game saves. "
-                       "Use it after your save has been loaded (from the main menu on).");
+    ImGui::TextWrapped("%s", f1_text("It also empties your records list, and it becomes permanent the next time the game saves. "
+                       "Use it after your save has been loaded (from the main menu on)."));
     ImGui::Spacing();
-    if (ImGui::Button("Unlock everything...")) {
-        ImGui::OpenPopup("Unlock everything?");
+    if (ImGui::Button(f1_text("Unlock everything..."))) {
+        ImGui::OpenPopup(f1_text("Unlock everything?"));
     }
     if (gPortUnlockDone) {
         ImGui::SameLine();
-        ImGui::TextUnformatted("Done.");
+        ImGui::TextUnformatted(f1_text("Done."));
     }
-    if (ImGui::BeginPopupModal("Unlock everything?", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextUnformatted("Your records list will be emptied. This cannot be undone once the game saves.");
+    if (ImGui::BeginPopupModal(f1_text("Unlock everything?"), NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextUnformatted(f1_text("Your records list will be emptied. This cannot be undone once the game saves."));
         ImGui::Spacing();
-        if (ImGui::Button("Unlock", ImVec2(U(140.0f), 0.0f))) {
+        if (ImGui::Button(f1_text("Unlock"), ImVec2(U(140.0f), 0.0f))) {
             gPortUnlockAll = 1;
             ImGui::CloseCurrentPopup();
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(U(140.0f), 0.0f))) {
+        if (ImGui::Button(f1_text("Cancel"), ImVec2(U(140.0f), 0.0f))) {
             ImGui::CloseCurrentPopup();
         }
         ImGui::EndPopup();
@@ -2120,63 +2748,63 @@ static void sticks_panel(int player) {
         ImGui::BeginGroup();
         ImGui::AlignTextToFramePadding(); // (in both cells: the second one's lines start that much lower anyway)
         if (view.connected) {
-            ImGui::Text(view.dir[s] != 0 ? "%s: %s" : "%s", kStick[s], kDir[view.dir[s]]);
-            ImGui::Text("stick  %+.2f %+.2f", view.raw[s][0], view.raw[s][1]);
-            ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(colGame), "game   %+.2f %+.2f", view.game[s][0], view.game[s][1]);
+            ImGui::Text(view.dir[s] != 0 ? "%s: %s" : "%s", f1_text(kStick[s]), f1_text(kDir[view.dir[s]]));
+            ImGui::Text("%s  %+.2f %+.2f", f1_text("stick"), view.raw[s][0], view.raw[s][1]);
+            ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(colGame), "%s   %+.2f %+.2f", f1_text("game"), view.game[s][0], view.game[s][1]);
         } else {
-            ImGui::TextUnformatted(kStick[s]);
-            ImGui::TextDisabled("no controller");
+            ImGui::TextUnformatted(f1_text(kStick[s]));
+            ImGui::TextDisabled("%s", f1_text("no controller"));
             ImGui::TextDisabled(" ");
         }
         ImGui::SetNextItemWidth(U(100.0f));
-        snprintf(label, sizeof(label), "Deadzone##%d", s);
-        ImGui::SliderInt(label, &dead[s], -1, PORT_DEADZONE_MAX, dead[s] < 0 ? "Original" : "%d%%", ImGuiSliderFlags_AlwaysClamp);
+        snprintf(label, sizeof(label), "%s##%d", f1_text("Deadzone"), s);
+        ImGui::SliderInt(label, &dead[s], -1, PORT_DEADZONE_MAX, dead[s] < 0 ? f1_text("Original") : "%d%%", ImGuiSliderFlags_AlwaysClamp);
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             PortInput_Save();
         }
-        ImGui::SetItemTooltip("How far the stick has to be moved before the game is told anything (the shaded middle).\n"
+        ImGui::SetItemTooltip(f1_text("How far the stick has to be moved before the game is told anything (the shaded middle).\n"
                               "Original: the game's own, 39%% for left / right and for up / down separately, a square.\n"
                               "0%% to 90%%: a round one of that size instead; from its edge the value grows evenly\n"
                               "to full at full tilt, and the stick counts as a direction half way between the two.\n"
                               "The white dot is the stick, the ring what the game is given; after the stick's name,\n"
                               "the direction the game takes it for. Choose a size that covers where the dot rests\n"
-                              "when the stick is let go.");
+                              "when the stick is let go."));
         ImGui::EndGroup();
     }
     for (int s = 0; s < 2; s++) {
         ImGui::TableNextColumn();
-        snprintf(label, sizeof(label), "%d%%%s", (int)(view.trigger[s] * 100.0f + 0.5f), view.triggerHeld[s] ? " pressed" : "");
+        snprintf(label, sizeof(label), "%d%%%s", (int)(view.trigger[s] * 100.0f + 0.5f), view.triggerHeld[s] ? f1_text(" pressed") : "");
         ImGui::ProgressBar(view.trigger[s], ImVec2(U(144.0f), 0.0f), label);
-        ImGui::SetItemTooltip("A trigger counts as pressed from %d%% on. The game is told pressed or not, nothing between.",
+        ImGui::SetItemTooltip(f1_text("A trigger counts as pressed from %d%% on. The game is told pressed or not, nothing between."),
                               (PORT_TRIGGER_AT * 100 + 16383) / 32767);
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        ImGui::TextUnformatted(kTrigger[s]);
+        ImGui::TextUnformatted(f1_text(kTrigger[s]));
     }
     ImGui::EndTable();
     bool on = vib[0] != 0;
-    if (ImGui::Checkbox("Vibration", &on)) {
+    if (ImGui::Checkbox(f1_text("Vibration"), &on)) {
         vib[0] = on;
         PortInput_Save();
     }
-    ImGui::SetItemTooltip("The game's own vibration (hits, clashes, charging), on this player's controller.\n"
+    ImGui::SetItemTooltip(f1_text("The game's own vibration (hits, clashes, charging), on this player's controller.\n"
                           "The game's Options > Controller > Vibration has to be on as well: it is, unless you turned it off.\n"
-                          "The game gives none in a replay or for a side the computer plays.");
+                          "The game gives none in a replay or for a side the computer plays."));
     ImGui::BeginDisabled(!on);
     ImGui::SameLine();
     ImGui::SetNextItemWidth(U(160.0f));
-    ImGui::SliderInt("Strength", &vib[1], 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp);
+    ImGui::SliderInt(f1_text("Strength"), &vib[1], 0, 100, "%d%%", ImGuiSliderFlags_AlwaysClamp);
     if (ImGui::IsItemDeactivatedAfterEdit()) {
         PortInput_Save();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Test")) {
+    if (ImGui::Button(f1_text("Test"))) {
         PortInput_VibrationTest(player);
     }
-    ImGui::SetItemTooltip("Half a second of both motors at this strength.");
+    ImGui::SetItemTooltip(f1_text("Half a second of both motors at this strength."));
     ImGui::EndDisabled();
     if (view.connected && !view.canVibrate) {
         ImGui::SameLine();
-        ImGui::TextDisabled("(this controller has none)");
+        ImGui::TextDisabled("%s", f1_text("(this controller has none)"));
     }
 }
 
@@ -2185,28 +2813,28 @@ static void controls_tab(void) {
     char label[96];
     int count = 0;
 
-    ImGui::RadioButton("Player 1", &player, 0);
+    ImGui::RadioButton(f1_text("Player 1"), &player, 0);
     UiA11y_Radio(player == 0);
     ImGui::SameLine();
-    ImGui::RadioButton("Player 2", &player, 1);
+    ImGui::RadioButton(f1_text("Player 2"), &player, 1);
     UiA11y_Radio(player == 1);
     int *slot = PortInput_PadSlot(player), *keys = PortInput_Keys(player), *pads = PortInput_PadButtons(player);
     SDL_JoystickID *ids = SDL_GetGamepads(&count);
     if (*slot < 0) {
-        snprintf(label, sizeof(label), "None");
+        snprintf(label, sizeof(label), "%s", f1_text("None"));
     } else if (*slot < count) {
         snprintf(label, sizeof(label), "%d: %s", *slot + 1, SDL_GetGamepadNameForID(ids[*slot]));
     } else {
-        snprintf(label, sizeof(label), "Controller %d (not connected)", *slot + 1);
+        snprintf(label, sizeof(label), f1_text("Controller %d (not connected)"), *slot + 1);
     }
     ImGui::SetNextItemWidth(U(300.0f));
-    if (ImGui::BeginCombo("Controller", label)) {
-        if (ImGui::Selectable("None", *slot < 0)) { *slot = -1; PortInput_Save(); }
+    if (ImGui::BeginCombo(f1_text("Controller"), label)) {
+        if (ImGui::Selectable(f1_text("None"), *slot < 0)) { *slot = -1; PortInput_Save(); }
         for (int i = 0; i < (count > 4 ? count : 4); i++) {
             if (i < count) {
                 snprintf(label, sizeof(label), "%d: %s", i + 1, SDL_GetGamepadNameForID(ids[i]));
             } else {
-                snprintf(label, sizeof(label), "Controller %d (not connected)", i + 1);
+                snprintf(label, sizeof(label), f1_text("Controller %d (not connected)"), i + 1);
             }
             if (ImGui::Selectable(label, *slot == i)) { *slot = i; PortInput_Save(); }
         }
@@ -2214,22 +2842,29 @@ static void controls_tab(void) {
     }
     SDL_free(ids);
     ImGui::SameLine();
-    if (ImGui::Button("Reset to defaults")) {
+    if (ImGui::Button(f1_text("Reset to defaults"))) {
         PortInput_ResetDefaults(player);
         PortInput_Save();
     }
-    if (ImGui::CollapsingHeader("Sticks, triggers and vibration", ImGuiTreeNodeFlags_DefaultOpen)) {
+    if (ImGui::CollapsingHeader(f1_text("Sticks, triggers and vibration"), ImGuiTreeNodeFlags_DefaultOpen)) {
         sticks_panel(player);
     }
-    ImGui::TextDisabled("Choose a binding, then press the new key or button. Esc keeps it, Delete clears it;");
-    ImGui::TextDisabled("with a controller, press nothing for five seconds to keep it.");
+    {
+        int *setting=PortInput_TargetStick(player);bool enabled=*setting!=0;
+        if(ImGui::Checkbox(f1_text("Right stick enemy targeting"),&enabled)){
+            *setting=enabled;PortInput_Save();
+        }
+        ImGui::SetItemTooltip(f1_text("Flick toward an enemy to switch targets in Tag Team. In a duel, lock onto your opponent. Release the stick before switching again. Original right-stick actions remain available when this is off."));
+    }
+    ImGui::TextDisabled("%s", f1_text("Choose a binding, then press the new key or button. Esc keeps it, Delete clears it;"));
+    ImGui::TextDisabled("%s", f1_text("with a controller, press nothing for five seconds to keep it."));
     // (never lower than a few rows: in a small window the tab scrolls as a whole instead)
     if (ImGui::BeginTable("bindings", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_BordersInnerV,
                           ImVec2(0.0f, ImGui::GetContentRegionAvail().y > U(140.0f) ? ImGui::GetContentRegionAvail().y : U(140.0f)))) {
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("Action");
-        ImGui::TableSetupColumn("Keyboard");
-        ImGui::TableSetupColumn("Controller");
+        ImGui::TableSetupColumn(f1_text("Action"));
+        ImGui::TableSetupColumn(f1_text("Keyboard"));
+        ImGui::TableSetupColumn(f1_text("Controller"));
         ImGui::TableHeadersRow();
         {   // what opens and closes this window (not a player's: one for the program)
             const int a = PORT_ACTIONS;
@@ -2238,14 +2873,14 @@ static void controls_tab(void) {
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
             ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted("Open this window");
+            ImGui::TextUnformatted(f1_text("Open this window"));
             ImGui::TableNextColumn();
-            snprintf(label, sizeof(label), "%s##k%d", waitKey ? "press a key..." : key > 0 ? SDL_GetScancodeName((SDL_Scancode)key) : "-", a);
+            snprintf(label, sizeof(label), "%s##k%d", waitKey ? f1_text("press a key...") : key > 0 ? SDL_GetScancodeName((SDL_Scancode)key) : "-", a);
             if (ImGui::Button(label, ImVec2(-FLT_MIN, 0.0f))) {
                 capture(1, player, a);
             }
             ImGui::TableNextColumn();
-            snprintf(label, sizeof(label), "%s##p%d", waitPad ? "press a button..." : pad >= 0 ? pad_source_name(pad) : "START + SELECT", a);
+            snprintf(label, sizeof(label), "%s##p%d", waitPad ? f1_text("press a button...") : pad >= 0 ? pad_source_name(pad) : f1_text("START + SELECT"), a);
             if (ImGui::Button(label, ImVec2(-FLT_MIN, 0.0f))) {
                 capture(2, player, a);
             }
@@ -2257,9 +2892,9 @@ static void controls_tab(void) {
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
             ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted("Open online chat");
+            ImGui::TextUnformatted(f1_text("Open online chat"));
             ImGui::TableNextColumn();
-            snprintf(label, sizeof(label), "%s##k%d", waitKey ? "press a key..." : key > 0 ? SDL_GetScancodeName((SDL_Scancode)key) : "Tab", a);
+            snprintf(label, sizeof(label), "%s##k%d", waitKey ? f1_text("press a key...") : key > 0 ? SDL_GetScancodeName((SDL_Scancode)key) : "Tab", a);
             if (ImGui::Button(label, ImVec2(-FLT_MIN, 0.0f))) {
                 capture(1, player, a);
             }
@@ -2272,21 +2907,21 @@ static void controls_tab(void) {
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
             ImGui::AlignTextToFramePadding();
-            ImGui::TextUnformatted(PortInput_ActionLabel(a));
+            ImGui::TextUnformatted(f1_text(PortInput_ActionLabel(a)));
             ImGui::TableNextColumn();
-            snprintf(label, sizeof(label), "%s##k%d", waitKey ? "press a key..." : keys[a] > 0 ? SDL_GetScancodeName((SDL_Scancode)keys[a]) : "-", a);
+            snprintf(label, sizeof(label), "%s##k%d", waitKey ? f1_text("press a key...") : keys[a] > 0 ? SDL_GetScancodeName((SDL_Scancode)keys[a]) : "-", a);
             if (ImGui::Button(label, ImVec2(-FLT_MIN, 0.0f))) {
                 capture(1, player, a);
             }
             ImGui::TableNextColumn();
             if (a < PORT_PAD_BUTTONS) {
-                snprintf(label, sizeof(label), "%s##p%d", waitPad ? "press a button..." : pad_source_name(pads[a]), a);
+                snprintf(label, sizeof(label), "%s##p%d", waitPad ? f1_text("press a button...") : pad_source_name(pads[a]), a);
                 if (ImGui::Button(label, ImVec2(-FLT_MIN, 0.0f))) {
                     capture(2, player, a);
                 }
             } else {
                 ImGui::AlignTextToFramePadding();
-                ImGui::TextDisabled(a < 20 ? "Left stick" : "Right stick");
+                ImGui::TextDisabled("%s", f1_text(a < 20 ? "Left stick" : "Right stick"));
             }
         }
         ImGui::EndTable();
@@ -2308,7 +2943,7 @@ static void build(void) {
         open = false;
     }
     if (sForceTab < 0 && (pad_pressed(ImGuiKey_GamepadL1) || pad_pressed(ImGuiKey_GamepadR1))) {
-        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 9 : 1)) % 10;
+        sForceTab = (sTab + (ImGui::IsKeyPressed(ImGuiKey_GamepadL1, false) ? 11 : 1)) % 12;
         sPadTab = true;
     }
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -2318,97 +2953,78 @@ static void build(void) {
         ImGui::SetNextWindowSize(ImVec2(sw < io.DisplaySize.x * 0.96f ? sw : io.DisplaySize.x * 0.96f,
                                         sh < io.DisplaySize.y * 0.94f ? sh : io.DisplaySize.y * 0.94f), ImGuiCond_Appearing);
     }
-    if (ImGui::Begin("Settings", &open, ImGuiWindowFlags_NoCollapse)) {
+    char title[128];
+    snprintf(title, sizeof(title), "%s###settings", f1_text("Settings"));
+    if (ImGui::Begin(title, &open, ImGuiWindowFlags_NoCollapse)) {
         PortLobbyView lv;
         bool inLobby = Port_LobbyView(&lv) && lv.inMatch;
         if (inLobby) { // a lobby's match: the ways back (the owner: for everyone) and out
             ImGui::AlignTextToFramePadding();
-            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Lobby%s%s", lv.code[0] != '\0' ? " " : "", lv.code);
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), f1_text("Lobby%s%s"), lv.code[0] != '\0' ? " " : "", lv.code);
             if (lv.owner) {
                 ImGui::SameLine();
-                if (ImGui::Button("Back to the lobby")) {
+                if (ImGui::Button(f1_text("Back to the lobby"))) {
                     Port_LobbyDo(LOBBY_BACK, 0, 0);
                     open = false;
                 }
-                ImGui::SetItemTooltip("Ends the match for everyone: all go back to the lobby window, where the rules can be changed.");
+                ImGui::SetItemTooltip(f1_text("Ends the match for everyone: all go back to the lobby window, where the rules can be changed."));
             }
             ImGui::SameLine();
-            if (ImGui::Button(lv.owner ? "Close the lobby" : "Leave the lobby")) {
+            if (ImGui::Button(f1_text(lv.owner ? "Close the lobby" : "Leave the lobby"))) {
                 Port_LobbyDo(LOBBY_LEAVE, 0, 0);
                 open = false;
             }
-            ImGui::SetItemTooltip(lv.owner ? "Ends the match and the lobby for everyone." : "Back to the main menu. A player leaving ends the match; a spectator leaving changes nothing for the others.");
+            ImGui::SetItemTooltip(f1_text(lv.owner ? "Ends the match and the lobby for everyone." : "Back to the main menu. A player leaving ends the match; a spectator leaving changes nothing for the others."));
             ImGui::Separator();
         }
         if (Port_NetSpectating()) { // watching a match: whose view, and the way out
             ImGui::AlignTextToFramePadding();
-            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), "Spectating %s vs %s", Port_NetName(0), Port_NetName(1));
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.3f, 1.0f), f1_text("Spectating %s vs %s"), Port_NetName(0), Port_NetName(1));
             ImGui::SameLine();
-            if (ImGui::Button("Change view")) {
+            if (ImGui::Button(f1_text("Change view"))) {
                 spec_view_next();
             }
-            ImGui::SetItemTooltip("Player 1's view, player 2's, or both (split screen). Also V or R1 while watching.");
+            ImGui::SetItemTooltip(f1_text("Player 1's view, player 2's, or both (split screen). Also V or R1 while watching."));
             if (!inLobby) { // (in a lobby: "Leave the lobby", above)
                 ImGui::SameLine();
-                if (ImGui::Button("Stop watching")) {
+                if (ImGui::Button(f1_text("Stop watching"))) {
                     Port_NetSpecLeave();
                     open = false;
                 }
             }
-            ImGui::TextDisabled("View: %s", spec_view_name(Port_NetSpecView()));
+            ImGui::TextDisabled(f1_text("View: %s"), f1_text(spec_view_name(Port_NetSpecView())));
             ImGui::Separator();
         }
-        update_panel();
         // the tabs in a region of their own, above a last line that is always there
         ImGui::BeginChild("body", ImVec2(0.0f, -ImGui::GetFrameHeightWithSpacing() - ImGui::GetStyle().ItemSpacing.y), ImGuiChildFlags_NavFlattened);
         if (ImGui::BeginTabBar("tabs")) {
-            if (tab("Video", 0)) { video_tab(v); ImGui::EndTabItem(); }
-            if (tab("Effects", 1)) { effects_tab(v); ImGui::EndTabItem(); }
-            if (tab("Audio", 2)) { audio_tab(v); ImGui::EndTabItem(); }
-            if (tab("UI", 3)) { ui_tab(v); ImGui::EndTabItem(); }
-            if (tab("Controls", 4)) {
-                bool cs = Port_ClashSquare() != 0;
-                if (ImGui::Checkbox("Clashes: Square counts as a direction", &cs)) {
-                    Port_ClashSquareSet(cs);
-                }
-                ImGui::SetItemTooltip("In a clash of two beams or two rushes the game counts newly pressed directions:\n"
-                                      "turning the stick, or tapping the d-pad. With this on, each press of Square\n"
-                                      "counts as one of them while the clash lasts, as a tap of the d-pad does.\n"
-                                      "It only changes your own pad, so it can be used in online play.");
-                if (cs) {
-                    static const int kQuarters[] = {4, 6, 7, 8, 9};
-                    static const char *const kWorth[] = {"1", "1.5", "1.75", "2", "2.25"};
-                    int at = 4;
-                    for (int i = 0; i < 5; i++) {
-                        if (kQuarters[i] == Port_ClashSquareX()) {
-                            at = i;
-                        }
-                    }
-                    ImGui::SameLine();
-                    ImGui::SetNextItemWidth(U(80.0f));
-                    if (ImGui::Combo("per press", &at, kWorth, 5)) {
-                        Port_ClashSquareXSet(kQuarters[at]);
-                    }
-                    ImGui::SetItemTooltip("What one press of Square is worth. The d-pad has four buttons to tap in turn and the\n"
-                                          "stick four directions a turn; Square is one button. 1 is a single d-pad tap.\n"
-                                          "Never more than one a frame, which is the most the game counts from any pad.");
-                }
+            if (tab(f1_text("Video"), 0)) { video_tab(v); ImGui::EndTabItem(); }
+            if (tab(f1_text("Effects"), 1)) { ImGui::BeginDisabled(GsDraw_PerformanceMode() != 0); effects_tab(v); ImGui::EndDisabled(); ImGui::EndTabItem(); }
+            if (tab(f1_text("Audio"), 2)) { audio_tab(v); ImGui::EndTabItem(); }
+            if (tab(f1_text("UI"), 3)) { ui_tab(v); ImGui::EndTabItem(); }
+            if (tab(f1_text("Controls"), 4)) {
+                bool stickClash=Port_ClashStick()!=0;
+                if(ImGui::Checkbox(f1_text("Use stick rotation in clashes"),&stickClash))Port_ClashStickSet(stickClash);
+                ImGui::TextWrapped("%s", f1_text("Rotate the left stick during beam or melee clashes. Button controls remain available."));
                 ImGui::Separator();
                 controls_tab();
                 ImGui::EndTabItem();
             }
-            if (tab("Cheats", 5)) { cheats_tab(); ImGui::EndTabItem(); }
-            if (tab("Misc", 6)) { misc_tab(); ImGui::EndTabItem(); }
-            if (tab("Online", 7)) { online_tab(); ImGui::EndTabItem(); }
-            if (tab("Mods", 8)) { ModsUi_Tab(); ImGui::EndTabItem(); }
-            if (tab("Tech", 9)) { tech_tab(); ImGui::EndTabItem(); }
-            { // the window as wide as its row of tabs needs, at the menu's size (all in sight, none squeezed)
-                ImGuiTabBar *bar = ImGui::GetCurrentContext()->CurrentTabBar;
-                ImGuiWindow *win = ImGui::FindWindowByName("Settings"); // (the tabs' content is a child: the window itself)
-                float need = bar != NULL && bar->WidthAllTabsIdeal > 0.0f ? bar->WidthAllTabsIdeal - bar->BarRect.GetWidth() : 0.0f;
-                if (win != NULL && need > 0.5f) {
-                    float w = win->Size.x + need + U(2.0f), most = io.DisplaySize.x * 0.96f;
-                    ImGui::SetWindowSize("Settings", ImVec2(w < most ? w : most, win->Size.y));
+            if (tab(f1_text("Cheats"), 5)) { cheats_tab(); ImGui::EndTabItem(); }
+            if (tab(f1_text("Misc"), 6)) { misc_tab(); ImGui::EndTabItem(); }
+            if (tab(f1_text("Online"), 7)) { online_tab(); ImGui::EndTabItem(); }
+            if (tab(f1_text("Spectator"), 8)) { spectator_tab(); ImGui::EndTabItem(); }
+            if (tab(f1_text("Mods"), 9)) { ModsUi_Tab(); ImGui::EndTabItem(); }
+            if (tab(f1_text("Tech"), 10)) { tech_tab(); ImGui::EndTabItem(); }
+            if (tab(f1_text("Updates"), 11)) { updates_tab(); ImGui::EndTabItem(); }
+            ImGuiTabBar *bar=ImGui::GetCurrentContext()->CurrentTabBar;
+            if(bar && bar->WidthAllTabsIdeal>bar->BarRect.GetWidth()+0.5f){
+                ImGuiWindow *parent=ImGui::GetCurrentWindow()->ParentWindow;
+                if(parent){
+                    float width=ImMin(parent->Size.x+bar->WidthAllTabsIdeal-bar->BarRect.GetWidth()+U(4),io.DisplaySize.x*0.96f);
+                    float x=ImClamp(parent->Pos.x-(width-parent->Size.x)*0.5f,0.0f,ImMax(0.0f,io.DisplaySize.x-width));
+                    ImGui::SetWindowSize(parent,ImVec2(width,parent->Size.y));
+                    ImGui::SetWindowPos(parent,ImVec2(x,parent->Pos.y));
                 }
             }
             ImGui::EndTabBar();
@@ -2422,12 +3038,12 @@ static void build(void) {
             sForceTab = -1;
         }
         ImGui::Separator();
-        if (ImGui::Button("Exit game")) {
+        if (ImGui::Button(f1_text("Exit game"))) {
             Ui_QuitAsk();
         }
         if ((io.BackendFlags & ImGuiBackendFlags_HasGamepad) != 0) {
             ImGui::SameLine();
-            ImGui::TextDisabled("D-pad: move   Cross / A: choose   Circle / B: back   L1 / R1: tab");
+            ImGui::TextDisabled("%s", f1_text("D-pad: move   Cross / A: choose   Circle / B: back   L1 / R1: tab"));
         }
     }
     ImGui::End();
@@ -2480,7 +3096,7 @@ static char sBanner[256];
 static Uint64 sBannerUntil; // 0: while the game waits
 extern "C" void Port_UiBanner(const char *text, int ms) {
     if (text != NULL) {
-        SDL_strlcpy(sBanner, text, sizeof(sBanner));
+        SDL_strlcpy(sBanner, PortOnline_Text(text), sizeof(sBanner));
     }
     if (text == NULL && ms <= 0) {
         sBanner[0] = '\0';
@@ -2488,10 +3104,11 @@ extern "C" void Port_UiBanner(const char *text, int ms) {
     sBannerUntil = ms > 0 ? SDL_GetTicks() + (Uint64)ms : 0;
 }
 
+#include "tag_team_menu_ui.inc"
+
 // The save icon (quick saving, src/sys/mcflow_a.c): a small memory card in the bottom right corner of the picture
 // while the game saves, at least a second, then it fades. Set from the game's thread: 1 saving, 0 saved, -1 the
 // game's own window took over (an error: the icon goes at once).
-static volatile int sSaving;
 static Uint64 sSaveFrom, sSaveEnd; // (0: not shown; the end, 0 while it saves)
 extern "C" void Port_UiSaving(int state) {
     sSaving = state;
@@ -2623,6 +3240,10 @@ static void meter_draw(void) {
             if (n[9] != 0) { // the desync check found the two games apart (the match goes on)
                 ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "desync since frame %d", n[9]);
             }
+        } else if (Port_TagNetwork() && !Port_TagLocalBattle()) {
+            int ping=Port_TagPing();
+            if (ping >= 0) ImGui::Text("%s %d ms", PortOnline_Text("server ping"), ping);
+            else ImGui::Text("%s ...", PortOnline_Text("server ping"));
         }
     }
     ImGui::End();
@@ -2676,11 +3297,7 @@ static const FontName *font_name(int style, const char *text) {
     }
     FontName &n = sFontNames[sFontNext++ % (sizeof(sFontNames) / sizeof(sFontNames[0]))];
     if (n.used && n.tex != NULL) {
-        if (sGL) {
-            GsGl_StripTextureFree((unsigned)(intptr_t)n.tex);
-        } else {
-            SDL_ReleaseGPUTexture(sDevice, n.tex);
-        }
+        Ui_TextureFree(n.tex);
     }
     n.tex = NULL;
     n.w = n.h = 0;
@@ -2955,16 +3572,24 @@ static bool frame_build(void) {
     if (sBanner[0] != '\0' && sBannerUntil != 0 && SDL_GetTicks() >= sBannerUntil) {
         sBanner[0] = '\0';
     }
-    bool banner = sReady && sBanner[0] != '\0';
+    bool tagMenu = sReady && sTagMenuOpen;
+    bool updateAvailable=updLine[0]!=0;
+    extern int gPortMenuMode;
+    if(PortHud_Hidden() && !gPortMenuMode)meter=names=chat=bars=notice=false;
+    PortVoiceOptions voiceOptions;PortVoice_Options(&voiceOptions);
+    PortVoiceState voiceState;PortVoice_State(&voiceState);
+    bool voice = sReady && voiceOptions.indicators && (voiceState.sessionMode!=0||(getenv("BT4_RENDER_TEST")&&getenv("BT4_VOICE_ICON_TEST")));
+    bool banner = sReady && sBanner[0] != '\0' && !tagMenu;
     Uint64 now = SDL_GetTicks();
     bool saving = save_icon_on(now) && sReady && gUiPresentW > 0 && gUiPresentH > 0;
     bool watched = sReady && Port_NetWatchers() > 0 && !sOpen;  // a player's: who watches the match
-    bool mods = sReady && Mods_HudActive();                      // the script mods drew over the picture (gs/mods.c)
+    if(PortHud_Hidden() && !gPortMenuMode)voice=banner=saving=false;
+    if(PortHud_Hidden() && !gPortMenuMode)watched=false;
+    bool mods = sReady && Mods_HudActive() && !PortHud_Hidden();
     meter_count();
     sBuilt = false;
-    bool upd = updLine[0] != '\0';
-    UiA11y_Frame(sReady && sOpen && !sQuit, !sQuit); // (the screen reader in the windows: ui_a11y.cpp)
-    if (!sReady || (!sOpen && !sQuit && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !saving && !watched && !upd && !mods)) {
+    UiA11y_Frame(sReady && sOpen && !sQuit, !sQuit);
+    if (!sReady || (!sOpen && !sQuit && !sUpdPromptOpen && !sUpdPromptQueued && !notice && !overlay && !meter && !names && !bars && !chat && !banner && !saving && !tagMenu && !voice && !watched && !updateAvailable && !mods)) {
         return false;
     }
     if (sPadHold && sCapKind != 2) { // a binding was taken: the controller works the window again once nothing is held
@@ -2988,6 +3613,10 @@ static bool frame_build(void) {
         ImGui::GetIO().ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
     }
     sBuilt = true;
+#ifdef _WIN32
+    if (sD3D9) { ImGui_ImplDX9_NewFrame(); }
+    else
+#endif
     if (sGL) {
         ImGui_ImplOpenGL3_NewFrame();
     } else {
@@ -2997,16 +3626,17 @@ static bool frame_build(void) {
     ui_scale_apply(); // (the window's size is known from here)
     fonts_apply(); // (a face chosen for the fight panels, between two frames)
     ImGui::NewFrame();
+    update_prompt_draw();
     // The mouse pointer is hidden over the game's picture and shown with a window of this file that takes the mouse:
     // the settings, the online windows, the question before the game closes, a chat line being typed (setting
     // hide_pointer, on unless 0). The SDL back end hides it for this cursor at the next frame.
-    if (!sOpen && !sQuit && !sChat && Port_Setting("hide_pointer", 1) != 0) {
+    if (!sOpen && !sQuit && !sChat && !sUpdPromptOpen && Port_Setting("hide_pointer", 1) != 0) {
         ImGui::SetMouseCursor(ImGuiMouseCursor_None);
     }
     if (bars) {
         bars_draw();
     }
-    ModsUi_Draw(); // (the script mods' shapes over the picture: gs/mods_ui.cpp)
+    if(mods)ModsUi_Draw(); // The player's Hide HUD choice also hides script overlays.
     if (sOpen) {
         if (sNet) {
             build_net();
@@ -3054,6 +3684,7 @@ static bool frame_build(void) {
             dl->AddText(font, size, ImVec2(x, y), IM_COL32(255, 255, 255, 255), text);
         }
     }
+    if (tagMenu)tag_menu_draw();
     if (banner) { // the start of an online match (Port_UiBanner): in the middle, large, outlined
         ImGuiIO &io = ImGui::GetIO();
         ImDrawList *dl = ImGui::GetForegroundDrawList();
@@ -3082,7 +3713,7 @@ static bool frame_build(void) {
     if (watched) {
         watchers_line();
     }
-    if (upd) { // the update's line (update_line): at the top, over the main menu and the online screens
+    if (updLine[0] != '\0') { // the update's line (update_line): at the top, over the main menu and the online screens
         ImGuiIO &io = ImGui::GetIO();
         ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.035f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
         ImGui::SetNextWindowBgAlpha(0.80f);
@@ -3131,10 +3762,16 @@ static bool frame_build(void) {
             }
         }
     }
+    voice_indicator_draw();
     ImGui::Render();
     return true;
 }
 
+void Ui_DrawD3D9(void) {
+#ifdef _WIN32
+    if (sD3D9 && frame_build()) { ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData()); }
+#endif
+}
 void Ui_Draw(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *target) {
     if (!sGL && frame_build()) {
         Ui_DrawAgain(cmd, target);

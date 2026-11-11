@@ -1,9 +1,14 @@
+extern int TagBattle_Active(void);
 #include "common.h"
+extern s32 TagBattle_Target(s32 actor);
 #include "battle/btl_ai_mgr.h"
 #include "battle/battle.h"
+#include "battle/tag_team_native.h"
 #include "battle/btl_seq.h"
 #include "sys/heap.h"
 #include "sys/rand.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 /*
  * CPU opponent manager and the "move" action: 0x1BB128..0x1BC8A8.
@@ -95,11 +100,15 @@ static inline s32 BtlAiMove_Mod(s32 a, s32 b) {
 extern void BtlAiSense_Update(BtlAiWork *s);
 
 extern BtlAi *gBtlAi;
+static BtlAiWork sTagAI[8];
+static s32 sTagTargetSince[10];
+void *BtlAi_ActorWork(s32 actor) { return actor>=2 && actor<10 ? &sTagAI[actor-2] : &gBtlAi->work[actor]; }
 
 /* Frees what the block owns, rebinds the shared AI data and resets both sides from their fighters. */
 void BtlAiMgr_Reset(void) {
     BtlAiWork *s;
     s32 i;
+    memset(sTagTargetSince,0,sizeof(sTagTargetSince));
 
     if (gBtlAi->flags & 1) {
         if (gBtlAi->data != NULL) {
@@ -107,7 +116,8 @@ void BtlAiMgr_Reset(void) {
             gBtlAi->data = NULL;
         }
     }
-    for (s = gBtlAi->work; s != &gBtlAi->work[2]; s++) {
+    for (i=0;i<TagBattle_Count();++i) {
+        s=BtlAi_ActorWork(i);
         if (s->flags & 1) {
             if (s->param != NULL) {
                 Heap_Free(s->param);
@@ -116,7 +126,7 @@ void BtlAiMgr_Reset(void) {
         }
     }
     AiThink_BindData(0);
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < TagBattle_Count(); i++) {
         AiThink_ResetSide(i, 0);
     }
 }
@@ -129,14 +139,14 @@ void BtlAiMgr_ResetSide(s32 side) {
 /* Allocates the manager block if needed and resets it. */
 void BtlAiMgr_Init(void) {
     if (gBtlAi == NULL) {
-        memset(gBtlAi = Heap_Alloc(0xA60, 0x20, 0, 2), 0, 0xA60);
+        memset(gBtlAi = Heap_Alloc(sizeof(BtlAi), 0x20, 0, 2), 0, sizeof(BtlAi));
     }
     BtlAiMgr_Reset();
 }
 
 /* Frees what the block owns, then the block. */
 void BtlAiMgr_Term(void) {
-    BtlAiWork *s;
+    BtlAiWork *s; s32 i;
 
     if (gBtlAi->flags & 1) {
         if (gBtlAi->data != NULL) {
@@ -144,7 +154,8 @@ void BtlAiMgr_Term(void) {
             gBtlAi->data = NULL;
         }
     }
-    for (s = gBtlAi->work; s != &gBtlAi->work[2]; s++) {
+    for (i=0;i<TagBattle_Count();++i) {
+        s=BtlAi_ActorWork(i);
         if (s->flags & 1) {
             if (s->param != NULL) {
                 Heap_Free(s->param);
@@ -176,12 +187,12 @@ void BtlAiMgr_BuildRates(BtlAiWork *s) {
 
 /* Returns a side's aiType. */
 s32 BtlAiMgr_GetType(s32 side) {
-    return gBtlAi->work[side].type;
+    return ((BtlAiWork *)BtlAi_ActorWork(side))->type;
 }
 
 /* Sets a side's aiType, rebuilds what depends on it and clears the side's work and action state. */
 void BtlAiMgr_SetType(s32 side, s32 aiType) {
-    BtlAiWork *s = &gBtlAi->work[side];
+    BtlAiWork *s = BtlAi_ActorWork(side);
 
     s->type = aiType;
     BtlAiMgr_BuildRates(s);
@@ -192,12 +203,12 @@ void BtlAiMgr_SetType(s32 side, s32 aiType) {
 
 /* Returns a side's CPU level. */
 s32 BtlAiMgr_GetLevel(s32 side) {
-    return gBtlAi->work[side].level;
+    return ((BtlAiWork *)BtlAi_ActorWork(side))->level;
 }
 
 /* Sets a side's CPU level, rebuilds what depends on it and clears the side's work and action state. */
 void BtlAiMgr_SetLevel(s32 side, s32 cpuLevel) {
-    BtlAiWork *s = &gBtlAi->work[side];
+    BtlAiWork *s = BtlAi_ActorWork(side);
 
     s->level = cpuLevel;
     BtlAiMgr_BuildRates(s);
@@ -217,18 +228,20 @@ s32 BtlAiMgr_IsIdleState(void) {
 }
 
 /* Measures the distance between the two fighters' centres and tests whether the stage blocks the line. */
-void BtlAiMgr_UpdateSight(void) {
+static void TagAi_UpdateSight(s32 actor) {
     BtlAiVec a;
     BtlAiVec b;
     BtlAiVec d;
     BtlAiSegment seg;
 
-    BtlCharApi_GetPos(0, &a);
-    a.y -= BtlCharApi_GetHeight(0) * 0.5f;
-    BtlCharApi_GetPos(1, &b);
-    b.y -= BtlCharApi_GetHeight(1) * 0.5f;
+    s32 opponent=TagBattle_Target(actor);
+    BtlCharApi_GetPos(actor, &a);
+    a.y -= BtlCharApi_GetHeight(actor) * 0.5f;
+    BtlCharApi_GetPos(opponent, &b);
+    b.y -= BtlCharApi_GetHeight(opponent) * 0.5f;
     Vec3_Sub(&d, &a, &b);
     gBtlAi->dist = Vec3_Length(&d);
+    if(TagBattle_Active())gBtlAi->radiusSum=BtlCharApi_GetRadius(actor)+BtlCharApi_GetRadius(opponent);
     seg.from = a;
     seg.to = b;
     gBtlAi->sight = 0;
@@ -239,10 +252,48 @@ void BtlAiMgr_UpdateSight(void) {
         }
     }
 }
+void BtlAiMgr_UpdateSight(void) { TagAi_UpdateSight(0); }
 
 /* Returns the number of frames the AI has run. */
 s32 BtlAiMgr_GetFrame(void) {
     return gBtlAi->frame;
+}
+
+/* Reconsider at staggered intervals, without interrupting an attack, stun,
+ * grab or cinematic. The decision uses shared simulation state only. */
+static void TagAi_SelectTarget(s32 actor){
+    extern s32 BtlCharApi_GetHp(s32),BtlAct_GetCurrent(void *),ChrCam_IsCutActive(void *);
+    s32 i,j,old=TagBattle_Target(actor),best=old,frame=gBtlAi->frame,action;
+    f32 pos[4],other[4],bestScore=1.0e30f;
+    if(!TagBattle_Active()||BtlCharApi_GetHp(actor)<=0||TagBattle_Pair(actor)>=0)return;
+    if(frame<2)sTagTargetSince[actor]=frame;
+    if((frame+actor*17)%90 && BtlCharApi_GetHp(old)>0)return;
+    action=BtlAct_GetCurrent(BtlChar_Get(actor));
+    /* Neutral, walking and flying states. All attacks and reactions
+     * keep their original opponent until their action has completed. */
+    if(action<0xB || action>0x1B || ChrCam_IsCutActive(BtlChar_Get(actor)))return;
+    BtlCharApi_GetPos(actor,(BtlAiVec *)pos);
+    for(i=0;i<TagBattle_Count();++i){
+        s32 candidate=(i+actor+frame/180)%TagBattle_Count(),pressure=0;
+        f32 dx,dy,dz,score;
+        if(TagBattle_Allied(candidate,actor)||BtlCharApi_GetHp(candidate)<=0||!TagBattle_CanInteract(actor,candidate))continue;
+        BtlCharApi_GetPos(candidate,(BtlAiVec *)other);
+        dx=pos[0]-other[0];dy=pos[1]-other[1];dz=pos[2]-other[2];
+        for(j=0;j<TagBattle_Count();++j)if(j!=actor && BtlCharApi_GetHp(j)>0 &&
+            TagBattle_Allied(j,actor)&&TagBattle_Target(j)==candidate)++pressure;
+        score=dx*dx+dy*dy+dz*dz+pressure*90000.0f;
+        if(candidate==old){
+            score-=22500.0f; /* hysteresis: do not oscillate between nearby foes */
+            if(frame-sTagTargetSince[actor]>240)score+=160000.0f;
+        }
+        if(score<bestScore){bestScore=score;best=candidate;}
+    }
+    if(best!=old && TagBattle_SetTarget(actor,best)){
+        sTagTargetSince[actor]=frame;
+        /* Rebuild the movement plan against the new opponent. */
+        BtlAiSeq_Reset(&((BtlAiWork *)BtlAi_ActorWork(actor))->seq);
+        if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_TARGET_TRACE"))fprintf(stderr,"tag target: frame=%d actor=%d old=%d target=%d alive=%d\n",frame,actor,old,best,BtlCharApi_GetHp(best));
+    }
 }
 
 /* Frame entry: runs both sides' controllers while the fight is live. */
@@ -255,7 +306,7 @@ void BtlAiMgr_Update(void) {
     if (Battle_GetWork()->flags & 0x100) {
         return;
     }
-    if (Battle_GetWork()->flags & 0x1000) {
+    if ((Battle_GetWork()->flags & BATTLE_FLAG_LOAD_OBJECT) && !TagBattle_Active()) {
         return;
     }
     if (!BtlStage_IsReady()) {
@@ -266,15 +317,22 @@ void BtlAiMgr_Update(void) {
     }
     BtlAiMgr_UpdateSight();
     gBtlAi->frame++;
-    for (i = 0; i < BtlChar_GetCount() && i < 2; i++) {
-        BtlAiWork *s = &gBtlAi->work[i];
+    for (i = 0; i < BtlChar_GetCount() && i < TagBattle_Count(); i++) {
+        BtlAiWork *s = BtlAi_ActorWork(i);
+        if(TagBattle_Active()){
+            extern s32 BtlChar_IsFrozen(void *);
+            if(BtlChar_IsFrozen(BtlChar_Get(i)))continue;
+        }
 
         if (BtlCharApi_IsInputInjected(i) && s->param != NULL) {
+            if(TagBattle_Active()){TagAi_SelectTarget(i);TagAi_UpdateSight(i);}
             BtlAiSense_Update(s);
             AiThink_Think(s);
             BtlAi_RunSeq(s);
             BtlAi_SendInput(s);
         }
+        if (TagBattle_Active() && getenv("BT4_RENDER_TEST") && getenv("BT4_TAG_TARGET_TRACE") && gBtlAi->frame%120==0)
+            fprintf(stderr,"tag ai frame=%d slot=%d obj=%d param=%p type=%d level=%d depth=%d flags=%llx buttons=%x stick=%.2f,%.2f\n",gBtlAi->frame,i,s->objId,s->param,s->type,s->level,s->seq.depth,(unsigned long long)s->status.flags,s->out.buttons,s->out.stickX,s->out.stickY);
     }
 }
 
@@ -296,7 +354,7 @@ s32 BtlAiMove_PickDir(BtlAiWork *s, s32 mode) {
     f32 rad = BtlStage_GetInnerRadius() - 100.0f;
 
     BtlCharApi_GetPos(s->objId, &pos);
-    BtlCharApi_GetPos(s->objId ^ 1, &opp);
+    BtlCharApi_GetPos(TagBattle_Target(s->objId), &opp);
     list = &cand;
     list->v[0] = 0;
     if (mode == 2) {
@@ -304,7 +362,7 @@ s32 BtlAiMove_PickDir(BtlAiWork *s, s32 mode) {
             cand.v[1] = 1;
             n = 2;
         }
-        if (pos.y < BtlCharApi_GetGroundY(s->objId) - 20.0f || opp.y < BtlCharApi_GetGroundY(s->objId ^ 1) - 20.0f) {
+        if (pos.y < BtlCharApi_GetGroundY(s->objId) - 20.0f || opp.y < BtlCharApi_GetGroundY(TagBattle_Target(s->objId)) - 20.0f) {
             list->v[n++] = 2;
         }
     }
@@ -354,7 +412,7 @@ void BtlAiMove_CalcTarget(BtlAiWork *s) {
 
     BtlCharApi_GetPos(s->objId, &pos);
     a = pos;
-    BtlCharApi_GetPos(s->objId ^ 1, &opp);
+    BtlCharApi_GetPos(TagBattle_Target(s->objId), &opp);
     a.y = pos.y;
     Vec3_Sub(&dir, &a, &opp);
     Vec3_Normalize(&dir, &dir);
@@ -487,7 +545,7 @@ s32 BtlAiMove_Check(BtlAiWork *s) {
             m->remain = Vec3_Length(&d);
         }
         if (m->pathTimer == 0) {
-            BtlCharApi_GetPos(s->objId ^ 1, &opp);
+            BtlCharApi_GetPos(TagBattle_Target(s->objId), &opp);
             Vec3_Sub(&d, &opp, (BtlAiVec *)path);
             if (50.0f < Vec3_Length(&d)) {
                 if (BtlAiMove_BuildPath(s)) {
@@ -542,7 +600,7 @@ void BtlAiMove_Steer(BtlAiWork *s, BtlAiVec *to, s32 kind) {
     cls = tbl->actClass[BtlCharApi_GetUnk974(side)];
     fly = BtlCharApi_TestFlag0F(s->objId);
     BtlCharApi_GetPos(s->objId, &pos);
-    BtlCharApi_GetPos(s->objId ^ 1, &opp);
+    BtlCharApi_GetPos(TagBattle_Target(s->objId), &opp);
     dy = to->y - pos.y;
     Vec3_Sub(&d, to, &pos);
     d.y = d.w = 0.0f;
@@ -586,7 +644,7 @@ void BtlAiMove_Steer(BtlAiWork *s, BtlAiVec *to, s32 kind) {
     if (cls == 11) {
         press &= ~BTLAI_BTN_DASH;
     }
-    if (BtlCharApi_TestFlag0F(s->objId) && !BtlCharApi_TestFlag0F(s->objId ^ 1)) {
+    if (BtlCharApi_TestFlag0F(s->objId) && !BtlCharApi_TestFlag0F(TagBattle_Target(s->objId))) {
         if (pos.y > opp.y) {
             hold |= BTLAI_BTN_ASCEND;
         }

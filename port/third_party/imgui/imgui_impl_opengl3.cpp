@@ -1,3 +1,5 @@
+// BT4 modification: use SDL context entry points for both WGL and ANGLE.
+#include <SDL3/SDL.h>
 // dear imgui: Renderer Backend for modern OpenGL with shaders / programmatic pipeline
 // - Desktop GL: 2.x 3.x 4.x
 // - Embedded GL: ES 2.0 (WebGL 1.0), ES 3.0 (WebGL 2.0)
@@ -304,7 +306,9 @@ bool ImGui_ImplOpenGL3_InitLoader()
     // Lazily initialize our loader if not already done
     // (to facilitate handling multiple DLL boundaries and multiple context shutdowns we call this from all main entry points)
 #ifdef IMGUI_IMPL_OPENGL_LOADER_IMGL3W
-    if (glGetIntegerv == nullptr && imgl3wInit() != 0)
+    if (glGetIntegerv == nullptr && imgl3wInit2([](const char *name) -> GL3WglProc {
+        return (GL3WglProc)SDL_GL_GetProcAddress(name);
+    }) != 0)
     {
         fprintf(stderr, "Failed to initialize OpenGL loader!\n");
         return false;

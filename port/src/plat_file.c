@@ -31,7 +31,7 @@ extern long Port_FileSize(const char *rel); /* plat_fcache.c */
 extern void Port_TestSlow(int what, int amount); /* gs/net.c: testing, a machine that is slow at this */
 extern size_t Port_FileReadAt(const char *rel, long offset, void *buf, size_t bytes);
 
-static char sPartDir[8][64];
+static char sPartDir[8][64] = {"pzs4us0", "pzs4us1", "pzs4us2", "pzs4us3"};
 char gPortMoviePath[512]; /* host path of the movie file opened last */
 int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size);
 extern void *Port_LowAlloc(size_t size); /* plat_mem.c */
@@ -83,6 +83,7 @@ static const char *alias_target(const char *rel) {
 static PortFile *open_rel(const char *rel) {
     PortFile *f;
     long size = Port_FileSize(rel); /* (says so itself when the file is missing) */
+    if (getenv("BT4_FILE_TRACE") != NULL) fprintf(stderr, "bt4: open %s bytes %ld\n", rel, size);
 
     if (size < 0) {
         return NULL;
@@ -123,6 +124,10 @@ int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size) {
             }
             snprintf(rel, sizeof(rel), "%s", a);
         }
+    }
+    if(getenv("BT4_PTBR_ROOT")){
+        snprintf(out,(size_t)size,"%s/gamedata/mods/%s",getenv("BT4_PTBR_ROOT"),rel);
+        fp=fopen(out,"rb");if(fp){fclose(fp);return 1;}
     }
     snprintf(out, (size_t)size, "%s/mods/%s", root(), rel);
     fp = fopen(out, "rb");

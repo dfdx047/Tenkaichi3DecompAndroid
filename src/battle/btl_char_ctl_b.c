@@ -1,3 +1,4 @@
+extern int TagBattle_Active(void);
 #include "common.h"
 #include "battle/btl_char_ctl.h"
 
@@ -77,7 +78,7 @@ void BtlChange_Update(void) {
 }
 
 /* Queues a character model change (transformation, fusion, member switch) for a player. */
-void BtlChange_RequestChara(s32 player, s32 chara, s32 costume, s32 variant, s32 animChara, s32 unk18, s32 voiceChara) {
+s32 BtlChange_TryRequestChara(s32 player, s32 chara, s32 costume, s32 variant, s32 animChara, s32 unk18, s32 voiceChara) {
     BtlChangeReq *req = BtlChange_Alloc();
 
     if (req != NULL) {
@@ -90,7 +91,12 @@ void BtlChange_RequestChara(s32 player, s32 chara, s32 costume, s32 variant, s32
         req->voiceChara = voiceChara;
         req->kind = BTL_CHANGE_KIND_CHARA;
         req->slot = 0;
+        return 1;
     }
+    return 0;
+}
+void BtlChange_RequestChara(s32 player, s32 chara, s32 costume, s32 variant, s32 animChara, s32 unk18, s32 voiceChara) {
+    BtlChange_TryRequestChara(player,chara,costume,variant,animChara,unk18,voiceChara);
 }
 
 /* Queues the load of an extra object for a player. */
@@ -183,4 +189,11 @@ void BtlChange_SetDone(s32 player) {
     if (q->cur != NULL && q->cur->player == player) {
         q->state = BTL_CHANGE_DONE;
     }
+}
+
+/* TAG loading blocks only the owner waiting for its streamed model. */
+s32 TagBattle_IsActorLoading(s32 actor) {
+    extern s32 TagBattle_Count(void);
+    BtlChangeQueue *q=&gBtlChars->change;
+    return q->timeStop && (!TagBattle_Active() || (q->cur && q->cur->player==actor));
 }
