@@ -261,6 +261,9 @@ typedef struct EftFlashMgr {
     /* 0x4 */ s32 flags;        /* 1 a flash is running, 2 / 4 it was started for character 0 / 1's action 0x104 */
     /* 0x8 */ s32 rushState;    /* EftFlash_GetRushState(), refreshed every frame while a flash runs */
     /* 0xC */ s32 rushBits;     /* 1 / 2: character 0 / 1 is in rush-finish phase 1; 4 / 8: phase 2 */
+#ifdef PORT
+    s32 victim;                 /* Tag Team: the fighter whose action 0x104 started the flash (the port's) */
+#endif
 } EftFlashMgr;
 
 /* A GS screen position as the projection helpers write it. */

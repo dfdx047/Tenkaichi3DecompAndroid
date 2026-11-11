@@ -16,7 +16,9 @@
 #include "namefont.h"
 #ifdef __ANDROID__
 #include <jni.h>
-#include <unistd.h>
+#endif
+#if defined(__linux__) || defined(__ANDROID__)
+#include <unistd.h> // (sysconf: the meter's CPU)
 #endif
 #include "../port_release.h"
 #include "menu_text.h"
@@ -2814,10 +2816,94 @@ static bool meter_on(void) {
     return sMeter != 0;
 }
 static float sFps, sSpeed; // frames shown per second; the game's vertical blanks per second as a share of 60
+static int sCpu = -1, sGpu = -1; // the whole app's CPU over all cores and the GPU's load, in percent; -1: not known
+
+/* utime + stime of a /proc stat line, in clock ticks (the 14th and 15th fields; the command name in parentheses may
+   hold spaces, so counted from its closing parenthesis). 0 where it cannot be read. */
+static unsigned long long meter_cpu_ticks(void) {
+#if defined(__linux__) || defined(__ANDROID__)
+    char line[512];
+    FILE *f = fopen("/proc/self/stat", "r");
+    if (f == NULL) return 0;
+    size_t got = fread(line, 1, sizeof(line) - 1, f);
+    fclose(f);
+    line[got] = '\0';
+    const char *p = strrchr(line, ')');
+    if (p == NULL) return 0;
+    unsigned long long ut = 0, st = 0;
+    // after ")": state ppid pgrp session tty tpgid flags minflt cminflt majflt cmajflt utime stime
+    if (sscanf(p + 1, " %*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %llu %llu", &ut, &st) != 2) return 0;
+    return ut + st;
+#else
+    return 0;
+#endif
+}
+
+/* The GPU's load in percent, or -1 when the driver lets nothing be read: Adreno's kgsl "gpubusy" (busy and total
+   time of its last window), or a percent file (Adreno, Mali). The file found is kept; none found is not asked again. */
+static int meter_gpu_load(void) {
+#if defined(__linux__) || defined(__ANDROID__)
+    static const char *const files[] = {
+        "/sys/class/kgsl/kgsl-3d0/gpubusy",             // Adreno: busy and total
+        "/sys/class/kgsl/kgsl-3d0/gpu_busy_percentage", // Adreno: percent
+        "/sys/kernel/gpu/gpu_busy",                     // Mali (Samsung): percent
+        "/sys/class/misc/mali0/device/utilization",     // Mali: percent
+        "/sys/devices/platform/mali.0/utilization",     // Mali: percent
+    };
+    static int which = -1; // -1 not looked for yet, -2 none readable
+    if (which == -2) return -1;
+    for (int i = which >= 0 ? which : 0; i < (int)(sizeof(files) / sizeof(files[0])); i++) {
+        FILE *f = fopen(files[i], "r");
+        if (f == NULL) {
+            if (which >= 0) return -1; // (it was readable before: a passing failure)
+            continue;
+        }
+        long a = -1, b = -1;
+        int n = fscanf(f, " %ld %ld", &a, &b);
+        fclose(f);
+        if (n < 1 || a < 0) {
+            if (which >= 0) return -1;
+            continue;
+        }
+        which = i;
+        if (i == 0) return n == 2 && b > 0 ? (int)(a * 100 / b > 100 ? 100 : a * 100 / b) : 0;
+        return a > 100 ? 100 : (int)a;
+    }
+    which = -2;
+#endif
+    return -1;
+}
+
+/* An online match's connection numbers (ping, rollbacks, waits, delay, desync) go to the log every 10 seconds
+   instead of the meter (they made it a large box over the game). */
+static void meter_net_log(Uint64 now) {
+    static Uint64 last;
+    static int lastWhy = -1, lastApart;
+    int n[10];
+    if (!Port_NetStats(n)) {
+        lastWhy = -1;
+        lastApart = 0;
+        return;
+    }
+    bool why = n[8] != lastWhy && n[8] != 0, apart = n[9] != 0 && n[9] != lastApart;
+    if (now - last < 10000 && !why && !apart) return;
+    last = now;
+    lastWhy = n[8];
+    lastApart = n[9];
+    char roll[64];
+    if (n[5] > 0) snprintf(roll, sizeof(roll), "rollbacks %d/s, %.1f frames each", n[1], (float)n[2] / 10.0f);
+    else snprintf(roll, sizeof(roll), "rollback off");
+    fprintf(stderr, "bt3: meter: %.0f fps, speed %.0f%%, cpu %d%%, gpu %d%%; ping %d ms%s; %s; waited %d ms/s (%d times)%s; "
+                    "delay %d%s, rollback up to %d; desync since frame %d\n",
+            sFps, sSpeed, sCpu, sGpu, n[0], Port_LobbyRelayed() ? " (relay)" : "", roll, n[4], n[3],
+            n[8] == 1 ? ", the other player's game is behind" : n[8] == 2 ? ", nothing arrived from the other player" : "",
+            n[6], n[7] ? " (auto)" : "", n[5], n[9]);
+}
 
 static void meter_count(void) { // once per frame shown
     static Uint64 t0;
     static unsigned frames, blanks0;
+    static unsigned long long cpu0;
     Uint64 now = SDL_GetTicks();
     frames++;
     if (t0 == 0) {
@@ -2826,44 +2912,56 @@ static void meter_count(void) { // once per frame shown
     } else if (now - t0 >= 500) {
         sFps = (float)frames * 1000.0f / (float)(now - t0);
         sSpeed = (float)(gPortLiveBlanks - blanks0) * 1000.0f / (float)(now - t0) / 60.0f * 100.0f;
+        if (sReady && meter_on()) { // (the /proc and /sys reads only while the meter is shown)
+            static long hz, cores;
+            if (hz == 0) {
+#if defined(__linux__) || defined(__ANDROID__)
+                hz = sysconf(_SC_CLK_TCK);
+                cores = sysconf(_SC_NPROCESSORS_CONF);
+#endif
+                if (hz <= 0) hz = 100;
+                if (cores <= 0) cores = 1;
+            }
+            unsigned long long cpu = meter_cpu_ticks();
+            if (cpu0 != 0 && cpu >= cpu0) {
+                long pct = (long)((double)(cpu - cpu0) * 100.0 / (double)hz / ((double)(now - t0) / 1000.0) / (double)cores + 0.5);
+                sCpu = pct > 100 ? 100 : (int)pct;
+            }
+            cpu0 = cpu;
+            sGpu = meter_gpu_load();
+        } else {
+            cpu0 = 0;
+            sCpu = sGpu = -1;
+        }
         frames = 0;
         blanks0 = gPortLiveBlanks;
         t0 = now;
     }
+    meter_net_log(now);
 }
 
+/* The meter: one small line in the upper left corner, FPS, the game's speed, CPU and GPU. The speed is what should
+   stay at 100% (a fight shows 30 frames a second and the menus 60, as on the console); its colour turns yellow, then
+   red, when the game runs slow. A setting (launcher, "Show FPS"). */
 static void meter_draw(void) {
-    int n[10];
-    ImGui::SetNextWindowPos(ImVec2(U(8.0f), U(8.0f)), ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.6f);
+    char cpu[16], gpu[16];
+    if (sCpu >= 0) snprintf(cpu, sizeof(cpu), "%d%%", sCpu); else snprintf(cpu, sizeof(cpu), "--");
+    if (sGpu >= 0) snprintf(gpu, sizeof(gpu), "%d%%", sGpu); else snprintf(gpu, sizeof(gpu), "--");
+    ImGui::SetNextWindowPos(ImVec2(U(4.0f), U(4.0f)), ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.45f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(U(5.0f), U(2.0f)));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowMinSize, ImVec2(1.0f, 1.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, U(4.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     if (ImGui::Begin("##meter", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoInputs |
                                           ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoSavedSettings)) {
-        // a fight shows 30 frames a second and the menus 60, as on the console; the speed is what should stay at 100%
-        ImGui::Text("%.0f fps   speed %.0f%%", sFps, sSpeed);
-        if (Port_NetStats(n)) {
-            if (n[0] >= 0) {
-                ImGui::Text("ping %d ms%s", n[0], Port_LobbyRelayed() ? " (relay)" : "");
-            } else {
-                ImGui::TextUnformatted("ping ...");
-            }
-            if (n[5] > 0) {
-                ImGui::Text("rollbacks %d/s, %.1f frames", n[1], (float)n[2] / 10.0f);
-            } else {
-                ImGui::TextUnformatted("rollback off");
-            }
-            ImGui::Text("waited %d ms/s (%d times)", n[4], n[3]);
-            if (n[8] == 1) { // gs/net.c wait_end: input packets came, without the frame this copy needed
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "  the other player's game is behind");
-            } else if (n[8] == 2) { // nothing came for most of the wait
-                ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "  nothing arrived from the other player");
-            }
-            ImGui::Text("delay %d%s, rollback up to %d", n[6], n[7] ? " (auto)" : "", n[5]);
-            if (n[9] != 0) { // the desync check found the two games apart (the match goes on)
-                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "desync since frame %d", n[9]);
-            }
-        }
+        ImGui::SetWindowFontScale(0.6f);
+        ImVec4 col = sSpeed >= 97.0f ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : sSpeed >= 85.0f ? ImVec4(1.0f, 0.84f, 0.35f, 1.0f) : ImVec4(1.0f, 0.43f, 0.4f, 1.0f);
+        ImGui::TextColored(col, "FPS %.0f  VEL %.0f%%  CPU %s  GPU %s", sFps, sSpeed, cpu, gpu);
+        ImGui::SetWindowFontScale(1.0f);
     }
     ImGui::End();
+    ImGui::PopStyleVar(4);
 }
 
 // The name of an added stage or song as text, in the rectangle the menu gives (the strip images' place): cream

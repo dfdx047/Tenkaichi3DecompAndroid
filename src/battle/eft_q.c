@@ -2,6 +2,9 @@
 #include "common.h"
 #include "battle/eft_q.h"
 #include "sys/gfx_ot.h"
+#ifdef PORT
+extern s32 TagTeam_Active(void);
+#endif
 
 /*
  * Effect tasks, 0x170A50..0x174A70. See include/battle/eft_q.h.
@@ -1046,6 +1049,9 @@ void EftFlashMgr_Update(EftQTask *task) {
                 } else {
                     gEftFlash->flags |= 4;
                 }
+#ifdef PORT
+                gEftFlash->victim = i; /* (after EftFlash_Start: its Init clears the flags, not this) */
+#endif
             }
         }
     }
@@ -1125,6 +1131,17 @@ void EftFlash_Update(EftQTask *task) {
             if (gEftFlash->rushState != 0 && gEftFlash->rushState != 2) {
                 break;
             }
+#ifdef PORT
+            /* Tag Team: the game knows two fighters, so a flash started for any fighter but 0 waited on fighter 1's
+               flag. With more fighters the one hit is often 2 to 9: the hold then waited on a fighter the technique
+               never touched and the screen stayed white until the 180-frame limit. It waits on the fighter hit. */
+            if (TagTeam_Active() && (gEftFlash->flags & 6)) {
+                if (!BtlCharApi_GetMemberUnk60(gEftFlash->victim)) {
+                    break;
+                }
+            } else
+#endif
+            {
             if (gEftFlash->flags & 2) {
                 if (!BtlCharApi_GetMemberUnk60(0)) {
                     break;
@@ -1134,6 +1151,7 @@ void EftFlash_Update(EftQTask *task) {
                 if (!BtlCharApi_GetMemberUnk60(1)) {
                     break;
                 }
+            }
             }
         }
         w->arg.hold -= 1.0f;
@@ -1198,6 +1216,27 @@ s32 EftFlash_GetRushState(void) {
     s32 i = 0;
     s32 ret = 0;
     s32 count = BtlScene_GetCharCount();
+
+#ifdef PORT
+    /* Tag Team: the same question for every fighter. The game's own count names fighter 0 and "the other" (1), and
+       each fighter not in a rush clears what the ones before it set, so with up to ten fighters the answer came from
+       whoever was last in the list and from fighter 1's flag: a rush anywhere on the field held a flash it had
+       nothing to do with. Here: 0 when no fighter is in rush-finish phase 1, 2 when every one that is has flag 0x2B,
+       else 1. */
+    if (TagTeam_Active()) {
+        s32 any = 0, all = 1;
+        for (; i < count; i++) {
+            if (BtlCharApi_IsInRushSequence(i) && BtlCharApi_GetRushFinishPhase(i) == 1) {
+                any = 1;
+                if (!BtlCharApi_TestFlag2B(i)) {
+                    all = 0;
+                }
+            }
+        }
+        gEftFlash->rushBits = 0;
+        return !any ? 0 : all ? 2 : 1;
+    }
+#endif
 
     for (; i < count; i++) {
         if (BtlCharApi_IsInRushSequence(i)) {

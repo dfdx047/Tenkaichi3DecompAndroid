@@ -1326,6 +1326,21 @@ s32 BtlObjBody_Update(BobjObj *obj, s32 parts) {
                     p->box.unk10.z=p->box.local[0].z*scale;
                     if(p->flags&1) break;
                 }
+                if(scale!=1) {
+                    /* The bounds a shot or beam is first tested against (BtlObj + 0xFD8, EftDet_SpheresVsFighter):
+                       each part's centre with its sphere's radius (the float after the centre), enlarged as
+                       eft_det_a.c enlarges the sphere itself. Built above with the model's own radius, they left
+                       most of a giant outside, and the shot was never tested against the body. */
+                    struct { Vec4 pos; f32 radius, radiusSq, pad[2]; } sph;
+                    StgAabb_SetEmpty(&obj->body.centerBox);
+                    for(p=obj->body.parts;;p++) {
+                        sph.pos=p->center;
+                        sph.radius=*(f32 *)p->unk30*scale;
+                        sph.radiusSq=sph.radius*sph.radius;
+                        ColBounds_AddSphere(&obj->body.centerBox,(Vec4 *)&sph);
+                        if(p->flags&1) break;
+                    }
+                }
             }
         }
     }

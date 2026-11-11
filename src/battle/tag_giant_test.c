@@ -48,6 +48,12 @@ void TagGiant_TestTick(s32 tick) {
                 Port_TagTestCheck(near(a.x*a.x+a.y*a.y+a.z*a.z,1),305);
             }
             Port_TagTestCheck(near(part->box.unk10.x,part->box.local[0].x*2),306);
+            /* the bounds shots are tested against hold each part's sphere at twice its radius */
+            {
+                f32 r=*(f32 *)part->unk30*2;
+                Port_TagTestCheck(obj->body.centerBox.max[0]>=part->center.x+r-0.01f &&
+                    obj->body.centerBox.min[1]<=part->center.y-r+0.01f,314);
+            }
             if(part->flags&1) break;
         }
         Port_TagTestCheck(TagGiant_Damage(0,1000)==1500 && TagGiant_Damage(1,1000)==1000,307);

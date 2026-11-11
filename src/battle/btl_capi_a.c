@@ -1180,6 +1180,18 @@ s32 BtlCharApi_IsInClashBC(s32 objId) {
     return 0;
 }
 
+#ifdef PORT
+/* A fighter flag by object, 0 for no fighter (src/battle/stg_c.c: the full power storm reads flag 6). */
+s32 BtlCharApi_PortFlag(s32 objId, s32 flag) {
+    BtlCapiChr *chr = BtlChar_FindByObjId(objId);
+
+    if (chr != NULL) {
+        return BtlChar_TestFlag(chr, flag);
+    }
+    return 0;
+}
+#endif
+
 /* Fighter flag 0xC (raised by the ki charge loop). No caller. */
 s32 BtlCharApi_IsChargingKi(s32 objId) {
     BtlCapiChr *chr = BtlChar_FindByObjId(objId);

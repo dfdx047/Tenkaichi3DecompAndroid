@@ -882,3 +882,29 @@ GAMEPLAY	JOGABILIDADE
 CAMERAS	CÂMERAS
 ENDS THE ROOM	FECHA A SALA
 PRESS SELECT AGAIN FOR THE NORMAL MODES	APERTE SELECT DE NOVO PARA OS MODOS NORMAIS
+MATCH OVER	FIM DA PARTIDA
+CHOOSE WHAT COMES NEXT	ESCOLHA O QUE VEM AGORA
+THE HOST CHOOSES WHAT COMES NEXT	O ANFITRIÃO ESCOLHE O QUE VEM AGORA
+Rematch	Revanche
+Character Select	Seleção de Personagens
+Game Modes	Modos de Jogo
+Rematch: the same teams fight again at once.	Revanche: os mesmos times lutam de novo na hora.
+Character Select: everyone goes back to the team setup.	Seleção de Personagens: todos voltam para a escolha de times.
+Game Modes: back to the lobby to choose a mode.	Modos de Jogo: volta ao lobby para escolher um modo.
+Waiting for the host to choose...	Aguardando o anfitrião escolher...
+Rematch, character select or game modes.	Revanche, seleção de personagens ou modos de jogo.
+Rematch! Loading the same battle.	Revanche! Carregando a mesma luta.
+Match over. The host chooses what comes next.	Fim da partida. O anfitrião escolhe o que vem agora.
+The host chose a mode. Joining the team setup...	O anfitrião escolheu um modo. Indo para a escolha de times...
+WAITING FOR PLAYERS	AGUARDANDO JOGADORES
+THE HOST IS CHOOSING A MODE	O ANFITRIÃO ESTÁ ESCOLHENDO O MODO
+PLAYERS  %d/10	JOGADORES  %d/10
+The host is choosing a mode	O anfitrião está escolhendo o modo
+Team setup opens for everyone next.	A escolha de times abre para todos em seguida.
+TIP	DICA
+In team setup, Start takes a place and readies you.	Na escolha de times, Start pega uma vaga e deixa você pronto.
+L1 / R1 move you to the other team in team setup.	L1 / R1 trocam você de time na escolha de times.
+After a match the host chooses: rematch, character select or game modes.	Depois da luta o anfitrião escolhe: revanche, seleção de personagens ou modos de jogo.
+The host can remove a CPU fighter with Square.	O anfitrião pode remover um lutador da CPU com Quadrado.
+Connected. The host is choosing a mode.	Conectado. O anfitrião está escolhendo o modo.
+Choose a mode for the lobby.	Escolha um modo para a sala.

@@ -741,7 +741,10 @@ s32 TagTeam_Spectating(s32 view) {
     if(view>=wantedPlayers) return 1;
     actor=controlActors[view];
     if(actor<0)return 1;
-    return !TagFusion_Hidden(actor) && !alive(actor);
+    /* A player whose fighter is the hidden half of a fusion plays as the fused body: when that body is down, this player
+       is down too (before, only the owner's player was, and the partner's could neither watch nor take over). */
+    if(TagFusion_Hidden(actor))actor=TagFusion_Owner(actor);
+    return !alive(actor);
 }
 static s32 watchable(s32 actor) {
     return (u32)actor<(u32)count && !TagFusion_Hidden(actor) &&
@@ -768,7 +771,7 @@ s32 TagTeam_TakeoverCandidate(s32 player) {
     if (!TagTeam_Active() || TagLobby_Practice() || (u32)player>=(u32)wantedPlayers || !Port_TagOption(TAG_OPT_TAKEOVER)) return -1;
     actor=controlActors[player];
     if(actor<0)return -1;
-    if(TagFusion_Hidden(actor)) return -1;
+    if(TagFusion_Hidden(actor) && alive(TagFusion_Owner(actor))) return -1; /* (the fused body plays on: see TagTeam_Spectating) */
     if (alive(actor)) return -1;
     if(spectatorChosen[player]) return takeover_allowed(player,viewActors[player])?viewActors[player]:-1;
     for (i=0;i<count;i++) if (takeover_allowed(player,i)) return i;
@@ -798,7 +801,8 @@ static void bind_control(s32 actor, s32 player) {
 
 s32 TagTeam_Takeover(s32 player) {
     s32 candidate=TagTeam_TakeoverCandidate(player);
-    if (candidate<0 || busy(candidate) || busy(controlActors[player])) return 0;
+    /* (the hidden half of a fusion is held still by the fusion itself, not busy: its player leaves a fused body that is down) */
+    if (candidate<0 || busy(candidate) || (busy(controlActors[player]) && !TagFusion_Hidden(controlActors[player]))) return 0;
     bind_control(controlActors[player],-1);
     bind_control(candidate,player);
     viewActors[player]=controlActors[player]=candidate;

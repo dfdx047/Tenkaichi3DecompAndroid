@@ -119,13 +119,14 @@ static const char *Cs_Words(s32 id) {
         { "Empty", "Vazio", "Vac\xC3\xADo" },
         { "Team", "Time", "Equipo" },
         { "Ready!", "Pronto!", "\xC2\xA1Listo!" },
+        { "End", "Fim", "Fin" },
     };
     s32 lang = Port_Setting("dr_lang", 0);
 
     return kWords[id][lang >= 0 && lang < LANGS ? lang : 0];
 }
 enum { W_P1, W_P2, W_CPU, W_CHOOSE, W_FORMS, W_COSTUME, W_CUSTOM, W_NORMAL, W_C1, W_C2, W_C3, W_COST, W_OK, W_BACK,
-       W_RANDOM, W_LOCKED, W_SAVED, W_ROTATE, W_ITEMS, W_EMPTY, W_TEAM, W_READY };
+       W_RANDOM, W_LOCKED, W_SAVED, W_ROTATE, W_ITEMS, W_EMPTY, W_TEAM, W_READY, W_END };
 
 /* The side a screen is about online (this machine's); otherwise the one its caller worked out. */
 s32 PortCharSel_NetSide(s32 fallback) {
@@ -715,7 +716,7 @@ static void Cs_Details(f32 x0, f32 x1, f32 y, f32 tabY) {
 
         Cs_Glass(x0 - pad, y - 3.0f, x1 + pad, nameEnd + 1.0f, 6.0f, CS_GLASS_TOP, CS_GLASS_LOW, CS_GLASS_LINE);
         if (sV.isTeam) {
-            end += 23.0f + 34.0f + 6.0f + (sV.dpMax > 0 ? 18.0f : 0.0f);
+            end += 23.0f + 34.0f + 6.0f + (sV.dpMax > 0 ? 18.0f : 0.0f) + 22.0f;
         }
         /* (stretches as the list of forms opens, and back) */
         if (sFormOf[sNow] > 0.0f && !sV.showCustom && sV.col >= 0 && sV.row >= 0 && at < sV.cellCount) {
@@ -783,6 +784,13 @@ static void Cs_Details(f32 x0, f32 x1, f32 y, f32 tabY) {
         }
         Port_GsMarker(GS_CHIP_OFF);
         y += tall + 6.0f;
+        /* the game's own End plate (cursor past the last slot): X there closes the team */
+        {
+            f32 b = x0 + CS_TEAM_MAX * w + (CS_TEAM_MAX - 1) * Cs_UnitsAcross(3.0f);
+
+            Cs_Choice(x0, b < x1 ? b : x1, y, 18.0f, (char *)Cs_Words(W_END), sV.cur >= CS_TEAM_MAX, sV.teamActive, 0.5f);
+            y += 22.0f;
+        }
         if (sV.dpMax > 0) {
             snprintf(line, sizeof(line), "DP %d / %d", (int)sV.cost, (int)sV.dpMax);
             Cs_Text(tx, y - 2.0f, line, 0.56f, x1 - x0, al, Ps_Rgba(0xFF, 0xEC, 0xA8, 0x80), Ps_Rgba(0xFF, 0xC0, 0x50, 0x80));

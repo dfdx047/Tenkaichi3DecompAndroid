@@ -805,6 +805,27 @@ void EftDet_Update(void) {
     EftDet_FighterPass();
 }
 
+#ifdef PORT
+/* Tag Team's giants (battle/tag_giant.c): a body part's sphere for shots and beams, enlarged with the giant. Its
+   radius is the model's own (the part list is the model's data, shared and never written per object), so it is
+   scaled in a copy here and not in place. The strikes' boxes are scaled where they are built (bobj_a.c). Without
+   this a shot met a 2x to 4x giant only within a normal fighter's radius of each bone. */
+static void *giant_part_sphere(EftDetObj *obj, EftDetPart *part, EftDetSphere *tmp) {
+    extern f32 TagGiant_ObjectScale(void *);
+    f32 scale = TagGiant_ObjectScale(obj);
+    if (scale == 1.0f) {
+        return part->box;
+    }
+    __builtin_memcpy(tmp, part->box, sizeof(*tmp));
+    tmp->radius *= scale;
+    tmp->unk14[0] = tmp->radius * tmp->radius; /* (the squared radius, as ColSphere_Set keeps it) */
+    return tmp;
+}
+#define GIANT_PART(obj, part, tmp) giant_part_sphere((obj), (part), (tmp))
+#else
+#define GIANT_PART(obj, part, tmp) ((part)->box)
+#endif
+
 /* Shape type 0 against a fighter: sphere b swept along delta against every body part; the earliest contact wins.
  * A part the sphere already overlaps at the start ends the search. */
 s32 EftDet_SpheresVsFighter(EftDetObj *obj, EftDetShape *shape) {
@@ -819,9 +840,11 @@ s32 EftDet_SpheresVsFighter(EftDetObj *obj, EftDetShape *shape) {
         return 0;
     }
     for (part = *body;; part++) {
-        if (ColSphere_SweepSphere(b, part->box, &shape->delta, &D_002EC2C0, &t)) {
+        EftDetSphere giant;
+        void *vol = GIANT_PART(obj, part, &giant);
+        if (ColSphere_SweepSphere(b, vol, &shape->delta, &D_002EC2C0, &t)) {
             if (t <= 0.000001f || 1.0f <= t) {
-                if (ColSphere_TestSphere(b, part->box)) {
+                if (ColSphere_TestSphere(b, vol)) {
                     Vec4_Copy(&shape->hitPos, &b->pos);
                     Vec4_Copy(&shape->contact, &b->pos);
                     hits++;
@@ -865,9 +888,11 @@ s32 EftDet_CapsuleVsFighter(EftDetObj *obj, EftDetShape *shape) {
     }
     ColSphere_Set(&sphere, a, a->radius);
     for (part = *body;; part++) {
-        if (ColSphere_SweepSphere(&sphere, part->box, &shape->delta, &D_002EC2C0, &t)) {
+        EftDetSphere giant;
+        void *vol = GIANT_PART(obj, part, &giant);
+        if (ColSphere_SweepSphere(&sphere, vol, &shape->delta, &D_002EC2C0, &t)) {
             if (t <= 0.000001f || 1.0f <= t) {
-                if (ColSphere_TestSphere(&sphere, part->box)) {
+                if (ColSphere_TestSphere(&sphere, vol)) {
                     hits++;
                     Vec4_Copy(&shape->hitPos, &sphere.pos);
                     Vec4_Copy(&shape->contact, &sphere.pos);

@@ -312,7 +312,17 @@ static int same_addr(const struct sockaddr_in *a, const struct sockaddr_in *b) {
     return a->sin_addr.s_addr == b->sin_addr.s_addr && a->sin_port == b->sin_port;
 }
 
+/* recvfn: where the answers are read (NULL: the socket itself, as before). Tag Team's rooms (tag_link.c) keep reading
+   their socket on the game thread during the allocation and hand the relay's answers over through it: before, the
+   game thread stayed off the socket for the whole allocation (up to ten rounds of 0.7 s) and the players' packets
+   that came meanwhile were read here and thrown away, which held a match still for seconds. */
+int Relay_AllocateVia(int sock, const char *server, const char *username, const char *password, char *out, int size,
+                      int (*recvfn)(uint8_t *buf, int max, struct sockaddr_in *from));
 int Relay_Allocate(int sock, const char *server, const char *username, const char *password, char *out, int size) {
+    return Relay_AllocateVia(sock, server, username, password, out, size, NULL);
+}
+int Relay_AllocateVia(int sock, const char *server, const char *username, const char *password, char *out, int size,
+                      int (*recvfn)(uint8_t *buf, int max, struct sockaddr_in *from)) {
     struct addrinfo hints, *res = NULL;
     char host[128], *colon;
     uint8_t m[768], pkt[768];
@@ -361,7 +371,8 @@ int Relay_Allocate(int sock, const char *server, const char *username, const cha
         for (waited = 0; waited < 700; waited += 10) {
             struct sockaddr_in from;
             socklen_t fromLen = sizeof(from);
-            int n = (int)recvfrom(sock, (char *)pkt, sizeof(pkt), 0, (struct sockaddr *)&from, &fromLen), len = 0;
+            int n = recvfn != NULL ? recvfn(pkt, (int)sizeof(pkt), &from)
+                                   : (int)recvfrom(sock, (char *)pkt, sizeof(pkt), 0, (struct sockaddr *)&from, &fromLen), len = 0;
             unsigned type;
             if (n < 20 || !same_addr(&from, &sR.server) || memcmp(pkt + 8, m + 8, 12) != 0) {
                 SDL_Delay(10);

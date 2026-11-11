@@ -569,6 +569,146 @@ static void set_params(const void *p, size_t n) {
 static void set_uniform_u(const Vu0Uniform *u) {
     ubo_put(0, sUboU, 0, u, sizeof(Vu0Uniform), sizeof(Vu0Uniform));
 }
+/* BT2's copy: the frame's uniform blocks written in one go. ubo_put maps and unmaps the buffer for every draw whose
+   blocks change (about 2 000 a fight frame): each map is a trip into the driver, a cost a weak phone's CPU pays on
+   the frame's thread. Before the draws are replayed, every block they will need is laid out here in draw order (a
+   block equal to the one before is shared), copied into the freshly orphaned buffers with one map each, and each
+   draw then only binds its range. What does not fit in the ring, or a frame with BT2_UBO_BATCH_OFF set, goes
+   through ubo_put as before. */
+#define UBO_PARAMS_BLOCK 80
+static int32_t *sBatchOff[2];             /* per draw: the offset of its block in each buffer, -1 = not batched */
+static uint8_t *sBatchStage[2];
+static size_t sBatchCap[2];
+static GLintptr sBatchBound[2] = {-1, -1}; /* the range now bound at each binding point (-1: not known) */
+static int ubo_batch_append(int which, const void *p, size_t n, size_t block, GLintptr *used, int *last) {
+    GLintptr off;
+    if (*last >= 0 && memcmp(sBatchStage[which] + *last, p, n) == 0) {
+        return *last;
+    }
+    off = (*used + sUboAlign - 1) / sUboAlign * sUboAlign;
+    if (off + (GLintptr)block > UBO_RING) {
+        return -1;
+    }
+    if ((size_t)off + block > sBatchCap[which]) {
+        size_t cap = sBatchCap[which] ? sBatchCap[which] : (256u << 10);
+        uint8_t *grown;
+        while (cap < (size_t)off + block) { cap *= 2; }
+        grown = realloc(sBatchStage[which], cap);
+        if (grown == NULL) {
+            return -1;
+        }
+        sBatchStage[which] = grown;
+        sBatchCap[which] = cap;
+    }
+    memset(sBatchStage[which] + off, 0, block);
+    memcpy(sBatchStage[which] + off, p, n);
+    *used = off + (GLintptr)block;
+    *last = (int)off;
+    return (int)off;
+}
+/* The Params block an ordinary primitive draws with (the same as frame_end's `fu`). */
+static void ubo_draw_params(const GsDraw *d, float out[20]) {
+    int32_t mode[4];
+    memset(out, 0, 20 * sizeof(float));
+    memcpy(mode, d->mode, sizeof(mode));
+    memcpy(&out[0], mode, sizeof(mode));
+    memcpy(&out[4], d->misc, sizeof(d->misc));
+    memcpy(&out[8], d->rect, sizeof(d->rect));
+    memcpy(&out[12], d->orig, sizeof(d->orig));
+    out[16] = d->vu ? (gsVuUni[d->uniform].misc[2] > 0.0f ? gsVuUni[d->uniform].misc[2] : 0.0f) : gsZMax;
+    out[17] = (sPipes[d->pipeline].key & (1u << 9)) ? 1.0f : 0.0f;
+}
+static void ubo_batch(void) {
+    static int off = -1;
+    GLintptr used[2] = {0, 0};
+    int last[2] = {-1, -1}, lastUni = -1, full = 0, which;
+    uint32_t n;
+    if (off < 0) {
+        off = getenv("BT2_UBO_BATCH_OFF") != NULL;
+    }
+    sBatchBound[0] = sBatchBound[1] = -1;
+    if (sBatchOff[0] == NULL) {
+        sBatchOff[0] = malloc(MAX_DRAWS * sizeof(int32_t));
+        sBatchOff[1] = malloc(MAX_DRAWS * sizeof(int32_t));
+    }
+    if (sBatchOff[0] == NULL || sBatchOff[1] == NULL) {
+        return;
+    }
+    for (n = 0; n < gsDrawCount; n++) {
+        const GsDraw *d = &gsDraws[n];
+        float params[20];
+        sBatchOff[0][n] = sBatchOff[1][n] = -1;
+        if (off || full || d->native >= 100 || d->native == 4 || d->native == 5) {
+            continue;
+        }
+        if (d->native == 3) {
+            float p4[4] = {(float)d->src, d->misc[0], 0.0f, 0.0f};
+            memset(params, 0, sizeof(params));
+            memcpy(params, p4, sizeof(p4));
+        } else if (d->native) {
+            float p4[4] = {1.0f / (float)GS_W, 1.0f / (float)GS_H, 100.0f / 255.0f, getenv("BT3_FX_DEBUG") != NULL ? 1.0f : 0.0f};
+            memset(params, 0, sizeof(params));
+            memcpy(params, p4, sizeof(p4));
+        } else {
+            if (d->pipeline < 0) {
+                continue;
+            }
+            ubo_draw_params(d, params);
+            if (d->vu) {
+                if (lastUni == d->uniform && last[0] >= 0) {
+                    sBatchOff[0][n] = last[0];
+                } else {
+                    sBatchOff[0][n] = ubo_batch_append(0, &gsVuUni[d->uniform], sizeof(Vu0Uniform), sizeof(Vu0Uniform), &used[0], &last[0]);
+                    lastUni = d->uniform;
+                }
+                if (sBatchOff[0][n] < 0) {
+                    full = 1;
+                    continue;
+                }
+            }
+        }
+        sBatchOff[1][n] = ubo_batch_append(1, params, sizeof(params), UBO_PARAMS_BLOCK, &used[1], &last[1]);
+        if (sBatchOff[1][n] < 0) {
+            sBatchOff[0][n] = -1;
+            full = 1;
+        }
+    }
+    if (full) { /* (the rest of the frame through ubo_put) */
+        for (; n < gsDrawCount; n++) {
+            sBatchOff[0][n] = sBatchOff[1][n] = -1;
+        }
+    }
+    for (which = 0; which < 2; which++) {
+        GLuint buf = which ? sUboParams : sUboU;
+        void *m;
+        if (used[which] == 0) {
+            continue;
+        }
+        glBindBuffer(GL_UNIFORM_BUFFER, buf);
+        m = glMapBufferRange(GL_UNIFORM_BUFFER, 0, used[which], GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+        if (m != NULL) {
+            memcpy(m, sBatchStage[which], (size_t)used[which]);
+            glUnmapBuffer(GL_UNIFORM_BUFFER);
+        } else {
+            glBufferSubData(GL_UNIFORM_BUFFER, 0, used[which], sBatchStage[which]);
+        }
+        sUboOff[which] = used[which]; /* (ubo_put appends after the batch) */
+    }
+}
+/* Binds draw n's batched block for `which` (0 the vertex program's, 1 Params); 0 when it has none (use ubo_put). */
+static int ubo_batch_bind(int which, uint32_t n) {
+    GLintptr off = sBatchOff[which] != NULL ? sBatchOff[which][n] : -1;
+    if (off < 0) {
+        sBatchBound[which] = -1;
+        return 0;
+    }
+    if (off != sBatchBound[which]) {
+        glBindBufferRange(GL_UNIFORM_BUFFER, (GLuint)which, which ? sUboParams : sUboU, off,
+                          which ? UBO_PARAMS_BLOCK : (GLsizeiptr)sizeof(Vu0Uniform));
+        sBatchBound[which] = off;
+    }
+    return 1;
+}
 #else
 static void set_params(const void *p, size_t n) {
     glBindBuffer(GL_UNIFORM_BUFFER, sUboParams);
@@ -579,6 +719,8 @@ static void set_uniform_u(const Vu0Uniform *u) {
     glBindBuffer(GL_UNIFORM_BUFFER, sUboU);
     glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Vu0Uniform), u);
 }
+static void ubo_batch(void) {}
+static int ubo_batch_bind(int which, uint32_t n) { (void)which; (void)n; return 0; }
 #endif
 
 static void set_pipe(int pipe) {
@@ -1140,6 +1282,7 @@ static void frame_end(void) {
     /* the vertices into fresh storage (the last frame's may still be read by the GPU: rewriting them in place made
        the driver copy or wait), the uniform blocks likewise (ubo_frame) */
     ubo_frame();
+    ubo_batch();
     if (gsVertCount != 0) {
         glBindBuffer(GL_ARRAY_BUFFER, sVboGs);
         glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)(gsVertCount * sizeof(Vtx)), gsVerts, GL_STREAM_DRAW);
@@ -1179,7 +1322,17 @@ static void frame_end(void) {
             glBindFramebuffer(GL_FRAMEBUFFER, sFbFbo[i]);
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, sFbTex[i], 0);
         }
-        px = malloc((size_t)GS_W * GS_H * 4);
+        {   /* BT2's copy: one buffer for the whole run (a movie uploads a picture every frame: 1.1 MB malloc'ed and freed
+               each time, as the Vulkan back end did before its persistent buffer) */
+            static uint32_t *sFbPx;
+            if (sFbPx == NULL) {
+                sFbPx = malloc((size_t)GS_W * GS_H * 4);
+            }
+            px = sFbPx;
+        }
+        if (px == NULL) {
+            continue;
+        }
         for (y = 0; y < GS_H; y++) {
             for (x = 0; x < GS_W; x++) {
                 px[y * GS_W + x] = Gs_VramRead(fbp * 32, 8, 0, x, y) | 0xFF000000u;
@@ -1187,7 +1340,6 @@ static void frame_end(void) {
         }
         glBindTexture(GL_TEXTURE_2D, sFbTex[i]);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, GS_W, GS_H, GL_RGBA, GL_UNSIGNED_BYTE, px);
-        free(px);
     }
     gGsFbUploads = 0;
 
@@ -1281,7 +1433,7 @@ static void frame_end(void) {
             sWantFetch = 0;
             set_pipe(d->pipeline);
             set_textures(sTgDep[d->target], 6, sAuxCopy, 6, (GLuint)d->tex, 6);
-            set_params(params, 16);
+            if (!ubo_batch_bind(1, n)) { set_params(params, 16); }
             haveFu = 0; /* the Params block now holds this pass's: the next primitive sends its own again */
             if (d->blendc != lastBlendc) { glBlendColor(d->blendc, d->blendc, d->blendc, d->blendc); lastBlendc = d->blendc; }
             set_scissor(d->scissor);
@@ -1298,7 +1450,7 @@ static void frame_end(void) {
             params[1] = 1.0f / (float)GS_H;
             params[2] = 100.0f / 255.0f;
             params[3] = getenv("BT3_FX_DEBUG") != NULL ? 1.0f : 0.0f;
-            set_params(params, 16);
+            if (!ubo_batch_bind(1, n)) { set_params(params, 16); }
             haveFu = 0;
             set_scissor(d->scissor);
             glDrawArrays(GL_TRIANGLES, 0, 3);
@@ -1330,7 +1482,7 @@ static void frame_end(void) {
         sWantFetch = sHasFetch && d->misc[1] != 0.0f; /* (a draw that tests the destination alpha) */
         set_pipe(d->pipeline);
         glBindVertexArray(d->vu ? sVaoVu : sVaoGs);
-        if (d->vu) { set_uniform_u(&gsVuUni[d->uniform]); }
+        if (d->vu && !ubo_batch_bind(0, n)) { set_uniform_u(&gsVuUni[d->uniform]); }
         memset(&fu, 0, sizeof(fu));
         memcpy(fu.mode, d->mode, sizeof(fu.mode));
         memcpy(fu.misc, d->misc, sizeof(fu.misc));
@@ -1338,7 +1490,9 @@ static void frame_end(void) {
         memcpy(fu.orig, d->orig, sizeof(fu.orig));
         fu.extra[0] = d->vu ? (gsVuUni[d->uniform].misc[2] > 0.0f ? gsVuUni[d->uniform].misc[2] : 0.0f) : gsZMax;
         fu.extra[1] = (sPipes[d->pipeline].key & (1u << 9)) ? 1.0f : 0.0f; /* the source scaled by its alpha */
-        if (!haveFu || memcmp(&fu, &lastFu, sizeof(fu)) != 0) {
+        if (ubo_batch_bind(1, n)) {
+            haveFu = 0; /* (the batched block is bound: a draw through ubo_put after it sends its own again) */
+        } else if (!haveFu || memcmp(&fu, &lastFu, sizeof(fu)) != 0) {
             set_params(&fu, sizeof(fu));
             memcpy(&lastFu, &fu, sizeof(fu));
             haveFu = 1;

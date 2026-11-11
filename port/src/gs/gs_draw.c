@@ -825,6 +825,12 @@ static GsTex tbo_film_texture(TboFilm *film) {
     return film->tex;
 }
 
+/* 1: the picture is on the card; 0: not yet (the first draw asks for it); -1: no such file (src/battle/stg_c.c, the storm). */
+int Port_TboArtState(int id) {
+    if (id < 0 || id >= TBO_ART_COUNT || sTboMissing[id]) return -1;
+    return sTboTex[id] != 0;
+}
+
 static GsTex tbo_texture(uint32_t id) {
     char path[1024] = {0};
     SDL_Surface *png = NULL, *rgba = NULL;
@@ -1151,11 +1157,32 @@ static GsTex texture_get(int ctx) {
     rw = tw; rh = th;
     pages = ((tbw ? tbw : 1) * 64 * th * (bits == 24 ? 32 : bits) / 8 + 8191) / 8192;
     /* `gen` identifies the CONTENT: a hash over the pages the texture and its palette occupy */
-    for (i = 0; i <= pages; i++) {
-        gen = (gen ^ Gs_PageHash(tbp / 32 + i)) * 16777619u + i;
-    }
-    if (bits <= 8) {
-        gen = (gen ^ clut_hash(cbp, cpsm, bits == 8 ? 256 : 16)) * 16777619u;
+    {   /* That part depends only on TEX0 (the pages, the palette's address and format) and on GS memory. Nothing in GS
+           memory has changed while gGsPageEpoch stays (gs_core.c: it moves with every gGsPageGen change, which every
+           write into GS memory makes, as Gs_PageHash's own cache already counts on), so for the same TEX0 it is the
+           value worked out last time: most primitives use the texture of the one before. (BT3_TEX_MEMO=0: always
+           worked out, as before.) */
+        extern uint32_t gGsPageEpoch;
+        static uint64_t memoT0;
+        static uint32_t memoEpoch, memoGen;
+        static int memoOk, memoOn = -1;
+        if (memoOn < 0) {
+            memoOn = getenv("BT3_TEX_MEMO") == NULL || atoi(getenv("BT3_TEX_MEMO")) != 0;
+        }
+        if (memoOn && memoOk && memoT0 == t0 && memoEpoch == gGsPageEpoch) {
+            gen = memoGen;
+        } else {
+            for (i = 0; i <= pages; i++) {
+                gen = (gen ^ Gs_PageHash(tbp / 32 + i)) * 16777619u + i;
+            }
+            if (bits <= 8) {
+                gen = (gen ^ clut_hash(cbp, cpsm, bits == 8 ? 256 : 16)) * 16777619u;
+            }
+            memoT0 = t0;
+            memoEpoch = gGsPageEpoch;
+            memoGen = gen;
+            memoOk = 1;
+        }
     }
     /* Font replacements follow their settings and resolution. A new label catalog also refreshes cached Battle
        texture identities when the artwork is still on "Original". */

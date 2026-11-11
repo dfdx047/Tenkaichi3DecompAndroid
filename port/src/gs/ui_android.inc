@@ -522,19 +522,19 @@ static void page_online(void) {
         "- \"Update available\" or \"different version\": update Dragon Rage (the launcher says when there is one).\n"
         "- \"Room codes need an official release\": the service only takes codes from signed releases; use Quick match or play by address.\n"
         "- Stuck on connecting: try Wi-Fi instead of mobile data (or the other way round), turn off VPN and data saver.\n"
-        "- Lag: both on Wi-Fi, near the router; the frame rate meter shows the connection.\n"
+        "- Lag: both on Wi-Fi, near the router; the log (Debug page) records the connection.\n"
         "- Still failing: export the log in the launcher (Debug page) and send it on our Discord.",
         "- \"Too many rooms\" ou \"busy\": o serviço gratuito de partidas tem limite por hora. Espere alguns minutos.\n"
         "- \"Update available\" ou \"different version\": atualize o Dragon Rage (o app avisa quando tem versão nova).\n"
         "- \"Room codes need an official release\": o serviço só aceita códigos de versões assinadas; use Partida rápida ou jogue por endereço (IP).\n"
         "- Travado em conectando: troque Wi-Fi por dados móveis (ou o contrário), desligue VPN e economia de dados.\n"
-        "- Lag: os dois no Wi-Fi, perto do roteador; o medidor de FPS mostra a conexão.\n"
+        "- Lag: os dois no Wi-Fi, perto do roteador; o log (página Debug) registra a conexão.\n"
         "- Continua falhando: exporte o log no app (página Depuração) e mande no nosso Discord.",
         "- \"Too many rooms\" o \"busy\": el servicio gratuito de partidas tiene límite por hora. Espera unos minutos.\n"
         "- \"Update available\" o \"different version\": actualiza Dragon Rage (la app avisa cuando hay versión nueva).\n"
         "- \"Room codes need an official release\": el servicio solo acepta códigos de versiones firmadas; usa Partida rápida o juega por dirección (IP).\n"
         "- Se queda conectando: cambia Wi-Fi por datos móviles (o al revés), apaga VPN y ahorro de datos.\n"
-        "- Lag: los dos en Wi-Fi, cerca del router; el medidor de FPS muestra la conexión.\n"
+        "- Lag: los dos en Wi-Fi, cerca del router; el log (página Debug) registra la conexión.\n"
         "- Sigue fallando: exporta el log en la app (página Depuración) y mándalo en nuestro Discord."));
     card_end();
 

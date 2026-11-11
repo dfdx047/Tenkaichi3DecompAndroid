@@ -681,6 +681,20 @@ s32 BtlAct_ChargeHandler(Chr *chr, s32 phase) {
                 if (BtlAnim_AdvanceThen(chr, 0x35, 0.15f, 1)) {
                     BtlCharSnd_PlayCommon(chr, BtlParam_GetChargeStartSound(chr));
                     BtlChar_PlayVoice(chr, 0xD);
+#ifdef PORT
+                    /* the port, in the normal game's offline fights (not online, not Tag Team): the fighter's camera
+                       shakes as the charge starts. Not online: the shake draws on the game's random numbers and turns
+                       the camera the moves are read against, and Dragon Net does not refuse a player of another
+                       version (it compares the game's data, not the program), whose game would go another way. */
+                    {
+                        extern s32 TagTeam_Active(void);
+                        extern int TagNet_Enabled(void);
+                        extern int Port_NetActive(void);
+                        if (!TagTeam_Active() && !TagNet_Enabled() && !Port_NetActive()) {
+                            ChrCam_AddShake(chr, 4.0f, 0.35f);
+                        }
+                    }
+#endif
                 }
                 break;
             case 0x35:

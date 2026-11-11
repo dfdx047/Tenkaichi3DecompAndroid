@@ -229,6 +229,24 @@ uint32_t Gs_VramRead(uint32_t bp, uint32_t bw, uint32_t psm, uint32_t x, uint32_
     return vram_rw(bp, bw, psm, x, y, 0, 0);
 }
 
+/* A w x h rectangle of a 32-bit buffer (PSMCT32) from (0, 0), row after row, each pixel ORed with `orBits`: what
+   Gs_VramRead(bp, bw, 0, x, y) | orBits gives for every pixel, by the uploads' table (sIn32, as transfer_data writes
+   them) instead of a call and the address worked out anew per pixel. A movie picture is 512 x 512 of them a frame. */
+void Gs_ReadRect32(uint32_t bp, uint32_t bw, uint32_t w, uint32_t h, uint32_t *out, uint32_t orBits) {
+    uint32_t x, y;
+    if (bw == 0) {
+        bw = 1;
+    }
+    for (y = 0; y < h; y++) {
+        const uint16_t *in = sIn32[y & 31];
+        uint32_t base = (bp + (y >> 5) * 32 * bw) << 6;
+        uint32_t *row = out + (size_t)y * w;
+        for (x = 0; x < w; x++) {
+            row[x] = sVram[(base + ((x >> 6) << 11) + in[x & 63]) & 0xFFFFF] | orBits;
+        }
+    }
+}
+
 /* A hash of one 8 KB page of GS memory, recomputed only after an upload touched the page. The GPU back end keys
    its texture cache on these, so a texture the game uploads again unchanged (it streams the stage's textures to
    one address many times per frame) is recognised instead of decoded again. */

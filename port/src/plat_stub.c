@@ -67,6 +67,7 @@ unsigned gPortVBlanks; /* vertical blanks since start: the headless build's cloc
    the menus (60 frames per second) and two in a battle (30), as on the console. Headless runs do not wait. */
 extern int GsGpu_Enabled(void);
 PORT_HOST unsigned long long gPortSleptNs = 0; /* time spent waiting here (the renderer's frame timing subtracts it) */
+PORT_HOST unsigned long long gPortSleptTotalNs = 0; /* the same, never cleared (tag_net.c: how much of a match's time the game slept) */
 
 static unsigned long long now_ns(void) {
     struct timespec ts;
@@ -263,6 +264,7 @@ static void vblank_wait(void) {
 #endif
         after = now_ns();
         gPortSleptNs += after - t; /* the time really spent waiting (a sleep can return early or late) */
+        gPortSleptTotalNs += after - t;
         next += BLANK_NS;
         sPaceSlack = 1;
     } else {
