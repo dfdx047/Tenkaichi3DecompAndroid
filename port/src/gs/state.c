@@ -1138,7 +1138,16 @@ static int __attribute__((noinline)) roll_save(void) {
                 }
                 sStreak[g] = 0;
             } else {
-                sStreak[g] = sLastSave[g] == sRollId && sRollId != 0 ? (uint8_t)(sStreak[g] < 255 ? sStreak[g] + 1 : 255) : 1;
+                /* In a row: written at the save before, or at the one before that. A fight computes one frame every two blanks
+                   and a save is made at each blank, so a page the game writes at every frame is written at every other save:
+                   with "the save before" only, its count went back to 1 each time and no page of a fight ever became hot
+                   (2026-11-11, a 5 vs 5 Tag fight rolled back 6 blanks at a time: 0 hot pages, about 300 write faults a save;
+                   with this rule 330 to 550 hot pages, 70 to 90 faults, restores a third faster, the same state at every
+                   blank of the sync test). Which pages are hot only decides how they are watched: a hot one is compared with
+                   its copy at every save, so what a save holds is the same either way. */
+                sStreak[g] = sRollId != 0 && (sLastSave[g] == sRollId || (sLastSave[g] != 0 && sLastSave[g] + 1 == sRollId))
+                                 ? (uint8_t)(sStreak[g] < 255 ? sStreak[g] + 1 : 255)
+                                 : 1;
                 sLastSave[g] = sRollId + 1;
                 if (sStreak[g] >= HOT_AFTER && sHotCount < HOT_MAX) { /* written at every save lately: hot from now on */
                     sHot[sHotCount++] = g;
