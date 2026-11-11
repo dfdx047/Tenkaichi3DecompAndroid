@@ -12,6 +12,13 @@
  *   0x70000000              the 16 KB scratchpad.
  */
 #include "port_host.h"
+/* The 64-bit builds (x86-64 PC, arm64 Android): the game's pointers stay 4 bytes (port/tools/ptr32.py), so all of
+   its memory, the program included, has to lie below 4 GB. */
+#if defined(__x86_64__) || defined(__aarch64__)
+#define PORT_LP64 1
+#else
+#define PORT_LP64 0
+#endif
 #include "port_addr.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -28,7 +35,7 @@ static uint32_t sHeapNext = HEAP_FIRST, sHeapEnd = HEAP_END;
 
 /* The 64-bit builds (the game's pointers 4 bytes wide, ptr32.py) keep the port's blocks for the game in a region of
    their own (Port_LowAlloc); the 32-bit build uses the C library's. */
-#if defined(__x86_64__) || defined(__APPLE__)
+#if defined(__x86_64__) || defined(__aarch64__) || defined(__APPLE__)
 #define PORT_LOW_REGION 1
 #else
 #define PORT_LOW_REGION 0
@@ -279,22 +286,76 @@ int __wrap_main(int argc, char **argv) {
 /* -------------------------------------------------------------------------------------------------------- Linux */
 #include <sys/mman.h>
 #include <unistd.h>
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
+
+#ifndef MAP_FIXED_NOREPLACE
+#define MAP_FIXED_NOREPLACE 0x100000
+#endif
+/* Android: ranges the loader claimed for the engine as soon as it was loaded (BT3_LOW_RESERVED, "lo-hi;lo-hi" in
+   hex). The engine maps over its own reservation there (MAP_FIXED); anywhere else it must not replace a mapping. */
+static int fixed_flag(uintptr_t lo, size_t len) {
+    const char *p = getenv("BT3_LOW_RESERVED");
+    while (p != NULL && *p != '\0') {
+        unsigned long a = 0, b = 0;
+        if (sscanf(p, "%lx-%lx", &a, &b) == 2 && lo >= a && lo + len <= b) {
+            return MAP_FIXED;
+        }
+        p = strchr(p, ';');
+        p = p != NULL ? p + 1 : NULL;
+    }
+    return MAP_FIXED_NOREPLACE;
+}
 
 static void map(uint32_t addr, uint32_t size, const char *what) {
-    void *p = mmap((void *)(uintptr_t)addr, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE,
+    /* whole pages around the region (the system's pages may be 16 KB: an Android device's) */
+    uint32_t page = (uint32_t)sysconf(_SC_PAGESIZE), base = addr & ~(page - 1), len = (addr - base + size + page - 1) & ~(page - 1);
+    void *p = mmap((void *)(uintptr_t)base, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | fixed_flag(base, len),
                    -1, 0);
 
-    if (p != (void *)(uintptr_t)addr) {
+    if (p != (void *)(uintptr_t)base) {
         fprintf(stderr, "bt3: cannot map %s at 0x%08X\n", what, addr);
+#ifdef __ANDROID__
+        /* (straight to the system log too: the process ends before the app's log thread reads stderr) */
+        __android_log_print(6 /* ANDROID_LOG_ERROR */, "bt3", "cannot map %s at 0x%08X", what, addr);
+#endif
         exit(2);
     }
 }
 
 static void map_heap(void) {
+#ifdef __ANDROID__
+    /* At its PS2 address if that is free; else, as on Windows, anywhere between 0x30000000 and the scratchpad (0x70000000) (nothing in the
+       game depends on the address: Port_Malloc starts wherever the region is). Some phones have something of their
+       own there (a Redmi with HyperOS 2: "cannot map the game heap at 0x003BE000", the game closed at once). */
+    uint32_t page = (uint32_t)sysconf(_SC_PAGESIZE), len = (HEAP_END - HEAP_BASE + page - 1) & ~(page - 1);
+    uintptr_t at;
+    void *p = mmap((void *)(uintptr_t)HEAP_BASE, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | fixed_flag(HEAP_BASE, len), -1, 0);
+    if (p == (void *)(uintptr_t)HEAP_BASE) {
+        return;
+    }
+    if (p != MAP_FAILED) {
+        munmap(p, len);
+    }
+    for (at = 0x30000000u; at + len <= 0x70000000u; at += 0x01000000u) { /* (below the scratchpad at 0x70000000) */
+        p = mmap((void *)at, len, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+        if (p == (void *)at) {
+            sHeapNext = (uint32_t)at + (HEAP_FIRST - HEAP_BASE);
+            sHeapEnd = (uint32_t)at + (HEAP_END - HEAP_BASE);
+            fprintf(stderr, "bt3: the game heap's PS2 address is taken in this process: the heap is at 0x%08X instead\n", (unsigned)at);
+            __android_log_print(5 /* ANDROID_LOG_WARN */, "bt3", "the game heap is at 0x%08X (its PS2 address is taken)", (unsigned)at);
+            return;
+        }
+        if (p != MAP_FAILED) {
+            munmap(p, len);
+        }
+    }
+#endif
     map(HEAP_BASE, HEAP_END - HEAP_BASE, "the game heap");
 }
 
-#ifdef __x86_64__
+#if PORT_LP64
 /* The 64-bit build: the game's pointers are still 4 bytes wide (port/tools/ptr32.py), so everything the game can
    point at has to lie below 4 GB.
      - the program itself: linked at 0x20000000 (port/tools/link.py), clear of the regions above;
@@ -309,6 +370,16 @@ static void map_heap(void) {
 #include <pthread.h>
 #define STACK_BASE 0x02000000u
 #define STACK_SIZE 0x01000000u
+#ifdef __ANDROID__
+/* Android: where an app's Java heap sits below 4 GB differs from device to device (0x02000000 on some), so the
+   stack goes at STACK_BASE when that is free, else in the first free place below 4 GB (plat_mem's map_anywhere). */
+static uint32_t sStackBase = STACK_BASE;
+#define STACK_AT sStackBase
+uint8_t gPortHwRegs[0x10000] __attribute__((aligned(65536))); /* the PS2's registers at 0x10000000 (irfix.py) */
+uint8_t gPortGsRegs[0x2000] __attribute__((aligned(65536)));  /* and at 0x12000000 */
+#else
+#define STACK_AT STACK_BASE
+#endif
 extern int __real_main(int argc, char **argv);
 PORT_HOST static int sArgc = 0, sResult = 0; /* (the process's own arguments: an address on its stack, not game state) */
 PORT_HOST static char **sArgv = NULL;
@@ -334,7 +405,7 @@ int __wrap_main(int argc, char **argv) {
         return Match_SignTest();
     }
     pthread_attr_init(&attr);
-    pthread_attr_setstack(&attr, (void *)(uintptr_t)STACK_BASE, STACK_SIZE);
+    pthread_attr_setstack(&attr, (void *)(uintptr_t)STACK_AT, STACK_SIZE);
     if (pthread_create(&th, &attr, game_thread, NULL) != 0) {
         fprintf(stderr, "bt3: cannot start the game thread\n");
         return 2;
@@ -392,13 +463,17 @@ static void Port_LoadGameData(void) {
     size_t listSize = 0, elfSize = 0, srcSize[2] = {0, 0};
     uint64_t hash = 0xCBF29CE484222325ull, want;
     uint32_t count, i, k;
+    /* Android: the engine may have been loaded elsewhere than it was linked (android/.../loader.c), and the list has
+       the linked addresses */
+    long bias = getenv("BT3_ENGINE_BIAS") != NULL ? atol(getenv("BT3_ENGINE_BIAS")) : 0;
 #ifdef _WIN32
     long n = (long)GetModuleFileNameA(NULL, exe, sizeof(exe) - 1);
 #elif defined(__APPLE__)
     uint32_t exeSize = sizeof(exe) - 1;
     long n = _NSGetExecutablePath(exe, &exeSize) == 0 ? (long)strlen(exe) : -1;
 #else
-    long n = (long)readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    long n = getenv("BT3_EXE") != NULL ? (long)snprintf(exe, sizeof(exe), "%s", getenv("BT3_EXE"))
+                                        : (long)readlink("/proc/self/exe", exe, sizeof(exe) - 1);
 #endif
 
     if (n <= 0 || n >= (long)sizeof(exe) - 1) {
@@ -445,7 +520,7 @@ static void Port_LoadGameData(void) {
         }
         return; /* no list: the data is linked in */
     }
-    if (listSize < 16 || memcmp(list, "BT3D", 4) != 0) {
+    if (listSize < 16 || (memcmp(list, "BT3D", 4) != 0 && memcmp(list, "TTMD", 4) != 0)) {
         data_fail("damaged file", path);
     }
     memcpy(&count, list + 4, 4);
@@ -488,7 +563,7 @@ static void Port_LoadGameData(void) {
             data_fail("damaged file (list of the game's data)", NULL);
         }
         from = src[r[1]] + r[2];
-        memcpy(Port_Ptr(r[0]), from, r[3]);
+        memcpy(Port_Ptr(r[0] + bias), from, r[3]);
         for (k = 0; k < r[3]; k++) {
             hash = (hash ^ from[k]) * 0x100000001B3ull;
         }
@@ -512,11 +587,21 @@ static void Port_LoadGameData(void) {
 
 #if PORT_LOW_REGION
 /* (between the GS registers at 0x12000000 and the program at 0x20000000: see the note at STACK_BASE) */
+#ifdef __ANDROID__
+/* Android: an app's Java heap is reserved from 0x12C00000 up, so the engine (linked at 0x03000000,
+   port/tools/android.py) and this region sit in the free space below it: 0x05000000..0x0F000000. */
+#define LOW_ARENA_BASE 0x05000000u
+#define LOW_ARENA_SIZE 0x0A000000u
+#else
 #define LOW_ARENA_BASE 0x13000000u
 #define LOW_ARENA_SIZE 0x0C000000u /* address space only: pages are taken as they are first used */
+#endif
 enum { LOW_SIZES = 256 };
 PORT_HOST static uint8_t *sLowArena = NULL; /* where the region is: fixed once it is taken, not game state */
 static uint8_t *sLowNext;
+/* The highest the region was ever handed out to (not game state: a restored state can bring sLowNext below it).
+   Above it the pages were never touched: the system's zero pages, not yet backed by memory. */
+PORT_HOST static uint8_t *sLowHigh = NULL;
 #ifdef _WIN32
 PORT_HOST static uint8_t *sLowCommitted = NULL; /* how far the region's pages are committed (never given back) */
 #endif
@@ -566,6 +651,52 @@ int Port_GameBigFree(unsigned addr) {
     return 0;
 }
 
+/* The character selects' viewer's memory (gs/state.c), below 4 GB and in no saved state. */
+#define WORLD_ARENA_SIZE 0x2800000u /* 40 MB of address space: pages are taken as they are first used */
+uint8_t *Port_WorldArena(size_t *size) {
+    static uint8_t *arena;
+
+#if PORT_LOW_REGION
+    if (arena == NULL) {
+#ifdef _WIN32
+        arena = low_reserve(WORLD_ARENA_SIZE);
+#else
+        uint32_t at;
+
+        for (at = 0x60000000u; at + WORLD_ARENA_SIZE <= 0xF0000000u && arena == NULL; at += 0x1000000u) {
+            void *p = mmap((void *)(uintptr_t)at, WORLD_ARENA_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+
+            if (p == MAP_FAILED) {
+                continue;
+            }
+            if ((uintptr_t)p + WORLD_ARENA_SIZE < 0xFFFFFFFFu) {
+                arena = p;
+            } else {
+                munmap(p, WORLD_ARENA_SIZE);
+            }
+        }
+#endif
+    }
+#endif
+    *size = arena != NULL ? WORLD_ARENA_SIZE : 0;
+    return arena;
+}
+
+/* The viewer left the screen: its first `used` bytes go back to the system (they read as zeros if touched again).
+   Kept, the pages the select's fighters had touched stayed in the game's memory through the whole fight. */
+void Port_WorldArenaRelease(uint8_t *arena, size_t used) {
+#if PORT_LOW_REGION && !defined(_WIN32)
+    if (arena != NULL && used != 0) {
+        size_t page = (size_t)sysconf(_SC_PAGESIZE);
+
+        madvise(arena, (used + page - 1) & ~(page - 1), MADV_DONTNEED);
+    }
+#else
+    (void)arena;
+    (void)used;
+#endif
+}
+
 int Port_StateExtra(void **p, size_t *n, int max) {
     int k = 0;
 #if PORT_LOW_REGION
@@ -597,6 +728,7 @@ void Port_HeapRegion(uint8_t **base, uint32_t *size) {
 #if PORT_LOW_REGION
 static void low_region_take(void);
 #endif
+int gPortScratchpadMapped; /* gs/state.c: the scratchpad is mapped at 0x70000000 (Android: only if that was free) */
 __attribute__((constructor)) static void Port_MapMemory(void) {
 #ifdef _WIN32
     /* The program only works at the address it was linked for (the game's pointers are 4 bytes and absolute). It
@@ -626,19 +758,62 @@ __attribute__((constructor)) static void Port_MapMemory(void) {
 #if defined(__APPLE__)
     map(STACK_BASE, STACK_SIZE, "the game thread's stack");
     low_region_take(); /* the region of Port_LowAlloc, now (see there) */
-#elif defined(__x86_64__) && !defined(_WIN32)
+#elif PORT_LP64 && !defined(_WIN32)
+#ifndef __ANDROID__
     mallopt(M_MMAP_MAX, 0);
     mallopt(M_ARENA_MAX, 1);
+#endif
+#ifdef __ANDROID__
+    {   /* the stack: at its usual place, or anywhere free below 4 GB */
+        void *p = mmap((void *)(uintptr_t)STACK_BASE, STACK_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | fixed_flag(STACK_BASE, STACK_SIZE),
+                       -1, 0);
+        uintptr_t at;
+        if (p != (void *)(uintptr_t)STACK_BASE) {
+            if (p != MAP_FAILED) {
+                munmap(p, STACK_SIZE);
+            }
+            p = MAP_FAILED;
+            for (at = 0x02000000u; at + STACK_SIZE <= 0xFF000000u && p == MAP_FAILED; at += 0x01000000u) {
+                p = mmap((void *)at, STACK_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+                if (p != MAP_FAILED && p != (void *)at) {
+                    munmap(p, STACK_SIZE);
+                    p = MAP_FAILED;
+                }
+            }
+            if (p == MAP_FAILED) {
+                fprintf(stderr, "bt3: no room below 4 GB for the game thread's stack\n");
+                exit(2);
+            }
+            fprintf(stderr, "bt3: the game thread's stack is at %p\n", p);
+        }
+        sStackBase = (uint32_t)(uintptr_t)p;
+    }
+#else
     map(STACK_BASE, STACK_SIZE, "the game thread's stack");
+#endif
     low_region_take(); /* the region of Port_LowAlloc, now (see there) */
 #endif
-#if defined(__x86_64__) && defined(_WIN32)
+#if PORT_LP64 && defined(_WIN32)
     low_region_take();
 #endif
     map_heap();
+#ifndef __ANDROID__ /* (Android: arrays in the engine, above) */
     map(0x10000000u, 0x10000, "the hardware registers");
     map(0x12000000u, 0x2000, "the GS registers");
+#endif
+#ifdef __ANDROID__
+    /* The game addresses no memory there itself (its 0x70000000 words are DMA tags), and in an Android app's process
+       the system's boot image is often mapped around that address: taken if free, not required. */
+    if (mmap((void *)(uintptr_t)0x70000000u, 0x4000, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0) !=
+        (void *)(uintptr_t)0x70000000u) {
+        fprintf(stderr, "bt3: the scratchpad's address is taken (not needed)\n");
+    } else {
+        gPortScratchpadMapped = 1;
+    }
+#else
     map(0x70000000u, 0x4000, "the scratchpad");
+    gPortScratchpadMapped = 1;
+#endif
     gPortStage = "memory ready, before the program's main";
 }
 
@@ -681,9 +856,23 @@ static void low_region_take(void) {
         }
 #else
         sLowArena = mmap((void *)(uintptr_t)LOW_ARENA_BASE, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE,
-                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+                         MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | fixed_flag(LOW_ARENA_BASE, LOW_ARENA_SIZE), -1, 0);
         if (sLowArena == MAP_FAILED || sLowArena != (uint8_t *)(uintptr_t)LOW_ARENA_BASE) { /* taken: anywhere below 4 GB */
+#ifdef MAP_32BIT
             sLowArena = mmap(NULL, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_32BIT, -1, 0);
+#else
+            /* (no MAP_32BIT on arm64: try fixed addresses below 4 GB, 16 MB apart) */
+            uintptr_t at;
+            sLowArena = MAP_FAILED;
+            for (at = 0x02000000u; at + LOW_ARENA_SIZE <= 0xFF000000u && sLowArena == MAP_FAILED; at += 0x01000000u) {
+                sLowArena = mmap((void *)at, LOW_ARENA_SIZE, PROT_READ | PROT_WRITE,
+                                 MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED_NOREPLACE, -1, 0);
+                if (sLowArena != MAP_FAILED && sLowArena != (uint8_t *)at) {
+                    munmap(sLowArena, LOW_ARENA_SIZE);
+                    sLowArena = MAP_FAILED;
+                }
+            }
+#endif
         }
         if (sLowArena == MAP_FAILED) {
             fprintf(stderr, "bt3: no memory below 4 GB for the port's own blocks\n");
@@ -695,18 +884,63 @@ static void low_region_take(void) {
 
 #endif
 
+/* The allocator's variables are the game's state to a saved state, but the viewer's world must leave them alone: other
+   threads allocate while it is in (gs/state.c takes this lock around what it puts back). */
+void *Port_WorldLowLockVar(size_t *n) {
+#if PORT_LOW_REGION
+    *n = sizeof(sLowLock);
+    return (void *)&sLowLock;
+#else
+    *n = 0;
+    return NULL;
+#endif
+}
+
+void Port_WorldLowLock(int on) {
+#if PORT_LOW_REGION
+    if (on) {
+        while (__sync_lock_test_and_set(&sLowLock, 1)) {
+        }
+    } else {
+        __sync_lock_release(&sLowLock);
+    }
+#else
+    (void)on;
+#endif
+}
+
 void *Port_LowAlloc(size_t size) {
 #if PORT_LOW_REGION
+    {
+        /* (the viewer's world, on its own thread: its memory, zeroed as this function's is) */
+        extern unsigned Port_WorldAlloc(int size, unsigned align);
+        extern int Port_WorldInHere(void);
+
+        if (Port_WorldInHere()) {
+            unsigned world = Port_WorldAlloc((int)size, 64);
+
+            if (world != 0) {
+                memset(Port_Ptr(world), 0, size);
+                return Port_Ptr(world);
+            }
+        }
+    }
     /* From one region at a fixed address, handed out in order, freed blocks reused by size (last freed first).
        The addresses end up in the game's memory (file handles, sound buffers); with the system choosing them they
        differed from run to run, and so did the game's state. This way they depend only on the order of the
        requests. */
-    size_t total = (size + 16 + 255) & ~(size_t)255;
+    /* Native fighter resources request 64-byte alignment. Keep the allocation
+       header in a full cache line so every returned buffer honors that. */
+    size_t total = (size + 64 + 255) & ~(size_t)255;
     uint64_t *p = NULL;
     int i;
 
     if (total > 4096) {
         total = (total + 4095) & ~(size_t)4095;
+    }
+    if ((long long)size < 0) { /* (a size read from the disc: seen with images of 3400 files in the first archive; LastRun.kt tells the player) */
+        fprintf(stderr, "bt3: the game data asks for %lld bytes: this is not the unmodified USA release\n", (long long)size);
+        exit(2);
     }
     while (__sync_lock_test_and_set(&sLowLock, 1)) {
     }
@@ -723,7 +957,30 @@ void *Port_LowAlloc(size_t size) {
     }
     if (p == NULL) {
         if ((size_t)(sLowArena + LOW_ARENA_SIZE - sLowNext) < total) {
-            fprintf(stderr, "bt3: no memory below 4 GB for %zu bytes\n", size);
+            /* The region is full, and freed blocks are only reused by a request of their exact size: before giving
+               up, the smallest freed block that holds this one, whole (a game closed by the memory it had freed). */
+            uint64_t freeBytes = 0, best = 0;
+            int at = -1;
+            for (i = 0; i < sLowSizes; i++) {
+                void *q;
+                for (q = sLowList[i].head; q != NULL; q = *(void **)q) {
+                    freeBytes += sLowList[i].size;
+                }
+                if (sLowList[i].head != NULL && sLowList[i].size >= total && (at < 0 || sLowList[i].size < best)) {
+                    at = i;
+                    best = sLowList[i].size;
+                }
+            }
+            if (at >= 0) {
+                fprintf(stderr, "bt3: memory: the region is full; %zu bytes come from a freed block of %llu\n", size, (unsigned long long)best);
+                p = sLowList[at].head;
+                sLowList[at].head = *(void **)p;
+                memset(p, 0, (size_t)best);
+                p[0] = best;
+                __sync_lock_release(&sLowLock);
+                return p + 8;
+            }
+            fprintf(stderr, "bt3: no memory below 4 GB for %zu bytes (%llu bytes freed, in %d sizes, none large enough)\n", size, (unsigned long long)freeBytes, sLowSizes);
             exit(2);
         }
         p = (uint64_t *)sLowNext;
@@ -743,21 +1000,43 @@ void *Port_LowAlloc(size_t size) {
 #endif
         /* cleared: after the game's state was restored to an earlier moment, the memory above the restored end
            of the region still holds the blocks of the frames that were undone (a file handle with its read
-           position, which made the re-run frame's read loop spin for ever) */
-        memset(p, 0, total);
+           position, which made the re-run frame's read loop spin for ever). Only that part: what lies above the
+           highest point ever handed out is still zero, and clearing it would make the system back every page of
+           a large buffer at once (the Tag Team mod's two 16 MB display lists, a stage's buffer) when the game
+           uses a fraction of it: memory a phone does not have to spare. */
+        if (sLowHigh == NULL || sLowHigh < sLowArena) {
+            sLowHigh = sLowArena;
+        }
+        if ((uint8_t *)p < sLowHigh) {
+            memset(p, 0, (size_t)((sLowHigh < sLowNext ? sLowHigh : sLowNext) - (uint8_t *)p));
+        }
+        if (sLowNext > sLowHigh) {
+            if ((size_t)(sLowNext - sLowArena) / 0x1000000 != (size_t)(sLowHigh - sLowArena) / 0x1000000) {
+                fprintf(stderr, "bt3: memory: the port's region has %zu of %u MB handed out\n",
+                        (size_t)(sLowNext - sLowArena) >> 20, (unsigned)(LOW_ARENA_SIZE >> 20));
+            }
+            sLowHigh = sLowNext;
+        }
     }
     p[0] = total;
     __sync_lock_release(&sLowLock);
-    return p + 2;
+    return p + 8;
 #else
     return calloc(1, size);
 #endif
 }
 
 void Port_LowFree(void *addr) {
+    {
+        extern int Port_WorldOwns(unsigned addr);
+
+        if (addr != NULL && Port_WorldOwns(Port_Addr(addr))) {
+            return;
+        }
+    }
 #if PORT_LOW_REGION
     if (addr != NULL) {
-        uint64_t *p = (uint64_t *)addr - 2, total = p[0];
+        uint64_t *p = (uint64_t *)addr - 8, total = p[0];
         int i;
         while (__sync_lock_test_and_set(&sLowLock, 1)) {
         }

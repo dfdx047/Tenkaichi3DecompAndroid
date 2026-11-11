@@ -15,6 +15,7 @@ MEM = re.compile(r'@llvm\.mem(cpy|move|set)((?:\.inline)?)((?:\.p\d+)+)\.(i\d+)'
 CALL = re.compile(r'^(\s*(?:%[\w.$-]+ = )?(?:tail |musttail |notail )?call (?:\w+ )*?)addrspace\(271\) (.*)$')
 
 CASTED = "ptr addrspace(271) addrspacecast (ptr "
+SAMECAST = re.compile(r'(?<!\()addrspacecast ptr (%[\w.$-]+) to ptr(,|$)')
 
 def data_line(line):
     """A global's definition or a type definition: 4-byte pointers written as i32, so that the address of a symbol in
@@ -40,12 +41,67 @@ BITCAST = re.compile(r'^(\s*%[\w.$-]+ = )bitcast (ptr(?: addrspace\(271\))? \S+)
 GLOBAL = re.compile(r'^@[^=]+ = .*\b(global|constant)\b')
 TYPEDEF = re.compile(r'^%[^=]+ = type ')
 
-def fix(text):
+STORE = re.compile(r'^(\s*)store ')
+
+def store_line(line, n):
+    """`store ..., ptr addrspace(27x) P` -> a cast of P to an ordinary pointer, then the store through that.
+    The AArch64 code generator of LLVM 21 drops the truncation of a store through a 32-bit pointer: `store i8` becomes
+    a 4-byte `str w`, and a `store i32` of a truncated i64 an 8-byte `str x`, so every byte and halfword the game wrote
+    through a pointer also cleared the bytes after it. Through an ordinary pointer the store is selected correctly.
+    Returns (pre-line or None, line, n)."""
+    depth, k, i = 0, -1, 0
+    while i < len(line):
+        ch = line[i]
+        if ch in "([{<":
+            depth += 1
+        elif ch in ")]}>":
+            depth -= 1
+        elif depth == 0 and line.startswith(", ptr addrspace(27", i):
+            k = i
+        i += 1
+    if k < 0:
+        return None, line, n
+    start = k + 2
+    sp = line.index(")", start) + 2          # after "ptr addrspace(27x) "
+    j, depth = sp, 0
+    while j < len(line) and not (depth == 0 and line[j] == ","):
+        depth += line[j] in "([{<"
+        depth -= line[j] in ")]}>"
+        j += 1
+    n += 1
+    pre = f"  %p32st.{n} = addrspacecast {line[start:j]} to ptr"
+    return pre, line[:start] + f"ptr %p32st.{n}" + line[j:], n
+
+HWREG = re.compile(r'inttoptr \(i(?:32|64) (\d+) to ptr addrspace\(271\)\)')
+HWREG_AREAS = ((0x10000000, 0x10010000, "gPortHwRegs"), (0x12000000, 0x12002000, "gPortGsRegs"))
+
+
+def hwreg_line(line, used):
+    """Android: the PS2's hardware registers (0x10000000 timers/DMA, 0x12000000 GS) are two arrays inside the engine
+    (plat_mem.c) instead of memory at those addresses, which an Android process may not have free."""
+    def sub(m):
+        v = int(m.group(1))
+        for lo, hi, name in HWREG_AREAS:
+            if lo <= v < hi:
+                used.add(name)
+                return f"getelementptr (i8, ptr addrspace(271) addrspacecast (ptr @{name} to ptr addrspace(271)), i32 {v - lo})"
+        return m.group(0)
+    return HWREG.sub(sub, line)
+
+
+def fix(text, stores=False):
     out, n, declared, need = [], 0, set(), {}
+    hw_used = set()
     for line in text.split("\n"):
         if "addrspace(271)" in line and (GLOBAL.match(line) or TYPEDEF.match(line)):
             out.append(data_line(line))
             continue
+        if stores and "inttoptr" in line and not line.startswith("@"):
+            line = hwreg_line(line, hw_used)
+        if stores and "addrspace(27" in line and STORE.match(line):
+            pre, line, n = store_line(line, n)
+            if pre is not None:
+                out.append(pre)
         if " bitcast " in line and "addrspace(271)" in line:
             # clang writes a plain bitcast between a 4-byte and an ordinary pointer in a conditional expression that
             # mixes the two (`a ? param : &obj->field`); the conversion that exists for that is addrspacecast
@@ -100,11 +156,18 @@ def fix(text):
                     n += 1
                     out.append(f"  %p32fix.{n} = addrspacecast ptr addrspace(271) {c.group(1)} to ptr")
                     line = m.group(1) + rest[:c.start()] + f"%p32fix.{n}" + rest[c.end(1):]
+        if "addrspacecast ptr " in line:
+            # a cast between two ordinary pointers (`c ? &arr[i] : NULL` with a 4-byte NULL): llc refuses an
+            # addrspacecast within one address space; the no-op conversion there is bitcast
+            line = SAMECAST.sub(r"bitcast ptr \1 to ptr\2", line)
         out.append(line)
     extra = []
     for name, (kind, ptrs, size) in need.items():
         if name not in declared:
             extra.append(f"declare void {name}(ptr, {'ptr' if kind != 'set' else 'i8'}, {size}, i1)")
+    for name in sorted(hw_used):
+        if f"@{name} = " not in text:
+            extra.append(f"@{name} = external global [0 x i8], align 65536")
     text = "\n".join(out)
     if extra:
         text += "\n" + "\n".join(extra) + "\n"
