@@ -1140,19 +1140,6 @@ static void chip_scale2x(const uint32_t *src, uint32_t w, uint32_t h, uint32_t *
     }
 }
 
-/* Switches read on every draw of a texture pack's replacement: looked up once (getenv walks the whole environment, a
-   few thousand times a frame with a pack). -1 not looked up yet; else 0 unset, 1 set to 0, 2 set to anything else. */
-static int sEnvTexAlpha = -1, sEnvTex2d = -1, sEnvTexGrid = -1;
-static int env_state(int *v, const char *name) {
-    if (*v < 0) {
-        const char *e = getenv(name);
-        *v = e == NULL ? 0 : atoi(e) == 0 ? 1 : 2;
-    }
-    return *v;
-}
-static int env_zero(int *v, const char *name) { return env_state(v, name) == 1; }    /* (set, to 0) */
-static int env_nonzero(int *v, const char *name) { return env_state(v, name) == 2; } /* (set, not to 0) */
-
 static GsTex texture_get(int ctx) {
     uint64_t t0 = gGs.tex0[ctx] & 0x1FFFFFFFFFFFFFFFull, texa = gGs.texa;
     uint32_t tbp = t0 & 0x3FFF, tbw = (t0 >> 14) & 0x3F, psm = (t0 >> 20) & 0x3F, tw = 1u << ((t0 >> 26) & 15), th = 1u << ((t0 >> 30) & 15);
@@ -1841,7 +1828,7 @@ static int draw_state(int ctx, int topo, int sprite, int vu, GsDraw *d, float *u
     d->mode[0] = !tme ? 0 : d->tex_is_target ? 2 : 1; /* 2: a frame buffer as texture, its alpha is already rescaled */
     /* (BT3_TEX_ALPHA=0 switches the replacement's alpha treatment off, for telling which one a fault comes from) */
     if (d->mode[0] == 1 && sLast != NULL && sLast->tex == d->tex && sLast->replaced == 1 &&
-        !env_zero(&sEnvTexAlpha, "BT3_TEX_ALPHA")) {
+        !(getenv("BT3_TEX_ALPHA") != NULL && atoi(getenv("BT3_TEX_ALPHA")) == 0)) {
         d->mode[0] = 3; /* a texture pack's replacement: the alpha test allows for its filtered, compressed alpha (gs.frag) */
         d->orig[2] = (float)sLast->amax / 128.0f; /* its alpha is kept at or below the original's largest (1.0 = 0x80) */
     }
@@ -2108,7 +2095,7 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
            the piece's rectangle of its sheet (gs.frag has the rule for it, another than the replacement's). Off,
            a GS pixel of 2D art is one block of output pixels, as on the console. */
         if ((sSmooth2d && d.tex != gsWhite) ||
-            (sLast != NULL && sLast->tex == d.tex && sLast->replaced && !env_zero(&sEnvTex2d, "BT3_TEX_2D"))) {
+            (sLast != NULL && sLast->tex == d.tex && sLast->replaced && !(getenv("BT3_TEX_2D") != NULL && atoi(getenv("BT3_TEX_2D")) == 0))) {
             packed2d = 1; /* its rectangle is worked out below, from the vertices */
         } else {
             d.misc[3] = (float)SCALE;
@@ -2166,7 +2153,7 @@ void GsGpu_Draw(int type, int ctx, const GsVertex *v) {
         /* A replacement follows its piece smoothly whatever "2D filtering" says: sharp means the game's own art as
            blocks of a GS pixel, which a replacement of several texels per GS pixel is not; held to the GS's grid
            its letters stepped one after the other while a piece glided (BT3_TEX_GRID=1: the grid rule, to compare). */
-        d.orig[3] = env_nonzero(&sEnvTexGrid, "BT3_TEX_GRID") ? 0.0f : 1.0f;
+        d.orig[3] = getenv("BT3_TEX_GRID") != NULL && atoi(getenv("BT3_TEX_GRID")) != 0 ? 0.0f : 1.0f;
     }
     if (type == 3 && sWallTex0 != 0 && t0 == sWallTex0) { /* the wall at the edge of the map (Port_WallMesh) */
         d.wall = 1;
