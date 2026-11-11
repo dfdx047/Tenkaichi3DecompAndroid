@@ -1311,15 +1311,15 @@ extern void EftPart10_DrawBillboard(Vec4 *pos, Vec4 *color, f32 w, s32 offX, s32
                                     f32 u1, f32 v1, s32 noDepth, u64 tex0, f32 rot);
 /* The three vectors are passed by value (hidden pointers); declared as pointers here. */
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftPart10_DrawQuadClipped(Vec4 *corner, Vec4 uv0, Vec4 uv1, Vec4 col, s32 layer, s32 texIdx, s32 noDepth, EftWTexSet *tex);
-#define EftPart10_DrawQuadClipped(corner, uv0, uv1, col, layer, texIdx, noDepth, tex) EftPart10_DrawQuadClipped(corner, *(Vec4 *)(uv0), *(Vec4 *)(uv1), *(Vec4 *)(col), layer, texIdx, noDepth, tex)
+extern void EftPart10_DrawQuadClipped(Vec4 *corner, PortVec4 uv0, PortVec4 uv1, PortVec4 col, s32 layer, s32 texIdx, s32 noDepth, EftWTexSet *tex);
+#define EftPart10_DrawQuadClipped(corner, uv0, uv1, col, layer, texIdx, noDepth, tex) EftPart10_DrawQuadClipped(corner, *(PortVec4 *)(uv0), *(PortVec4 *)(uv1), *(PortVec4 *)(col), layer, texIdx, noDepth, tex)
 #else
 extern void EftPart10_DrawQuadClipped(Vec4 *corner, Vec4 *uv0, Vec4 *uv1, Vec4 *col, s32 layer, s32 texIdx, s32 noDepth,
                                       EftWTexSet *tex);
 #endif
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftPart10_DrawQuad(Vec4 *corner, Vec4 uv0, Vec4 uv1, Vec4 col, s32 layer, s32 texIdx, s32 noDepth, EftWTexSet *tex);
-#define EftPart10_DrawQuad(corner, uv0, uv1, col, layer, texIdx, noDepth, tex) EftPart10_DrawQuad(corner, *(Vec4 *)(uv0), *(Vec4 *)(uv1), *(Vec4 *)(col), layer, texIdx, noDepth, tex)
+extern void EftPart10_DrawQuad(Vec4 *corner, PortVec4 uv0, PortVec4 uv1, PortVec4 col, s32 layer, s32 texIdx, s32 noDepth, EftWTexSet *tex);
+#define EftPart10_DrawQuad(corner, uv0, uv1, col, layer, texIdx, noDepth, tex) EftPart10_DrawQuad(corner, *(PortVec4 *)(uv0), *(PortVec4 *)(uv1), *(PortVec4 *)(col), layer, texIdx, noDepth, tex)
 #else
 extern void EftPart10_DrawQuad(Vec4 *corner, Vec4 *uv0, Vec4 *uv1, Vec4 *col, s32 layer, s32 texIdx, s32 noDepth,
                                EftWTexSet *tex);

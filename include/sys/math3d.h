@@ -12,6 +12,15 @@ typedef struct Vec4 {
     /* 0x0C */ float w;
 } Vec4; /* size 0x10 */
 
+#ifdef PORT
+/* A Vec4 passed by value, as the effect code's own vector types are (EftXVec and friends: 16-byte aligned). The
+   declarations that call those functions from other files use this, not Vec4: on AArch64 a 16-byte aligned argument
+   goes in an even pair of registers, a 4-byte aligned one in the next free pair, so the two do not match there. */
+typedef struct PortVec4 {
+    float x, y, z, w;
+} __attribute__((aligned(16))) PortVec4;
+#endif
+
 /* Unit quaternion, vector part first. Copied with Vec4_Copy. */
 typedef struct Quat {
     /* 0x00 */ float x;

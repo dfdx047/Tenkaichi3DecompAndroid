@@ -93,14 +93,14 @@ extern s32 ClipPoly_ClipPlane(EftSurfVtx *poly, Vec4 *plane, s32 count); /* clip
 extern void ClipPoly_ProjectCur(s32 (*xyz)[4], Vec4 *st, EftSurfVtx *poly, s32 count); /* projects count vertices */
 extern void EftMath_CalcTangentFrame(Mtx44 *out, EftVec *a, EftVec *b);
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftGfx_LightClutDiffuse(EftSurfClut *dst, EftSurfClut *src, Vec4 light, u8 r, u8 g, u8 b);
-#define EftGfx_LightClutDiffuse(dst, src, light, r, g, b) EftGfx_LightClutDiffuse(dst, src, *(Vec4 *)(light), r, g, b)
+extern void EftGfx_LightClutDiffuse(EftSurfClut *dst, EftSurfClut *src, PortVec4 light, u8 r, u8 g, u8 b);
+#define EftGfx_LightClutDiffuse(dst, src, light, r, g, b) EftGfx_LightClutDiffuse(dst, src, *(PortVec4 *)(light), r, g, b)
 #else
 extern void EftGfx_LightClutDiffuse(EftSurfClut *dst, EftSurfClut *src, Vec4 *light, u8 r, u8 g, u8 b);
 #endif
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftGfx_LightClutSpecular(EftSurfClut *dst, EftSurfClut *src, Mtx44 view, Mtx44 frame, Vec4 light, f32 k);
-#define EftGfx_LightClutSpecular(dst, src, view, frame, light, k) EftGfx_LightClutSpecular(dst, src, *(Mtx44 *)(view), *(Mtx44 *)(frame), *(Vec4 *)(light), k)
+extern void EftGfx_LightClutSpecular(EftSurfClut *dst, EftSurfClut *src, Mtx44 view, Mtx44 frame, PortVec4 light, f32 k);
+#define EftGfx_LightClutSpecular(dst, src, view, frame, light, k) EftGfx_LightClutSpecular(dst, src, *(Mtx44 *)(view), *(Mtx44 *)(frame), *(PortVec4 *)(light), k)
 #else
 extern void EftGfx_LightClutSpecular(EftSurfClut *dst, EftSurfClut *src, Mtx44 *view, Mtx44 *frame, Vec4 *light, f32 k);
 #endif

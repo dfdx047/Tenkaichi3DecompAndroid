@@ -149,20 +149,20 @@ extern void EftQuad_Stop(void *h);
 extern void EftQuad_SetFade(void *h, s32 v);
 extern void EftQuad_Kill(void *h);
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftQuad_SetPos(void *h, Vec4 pos);
-#define EftQuad_SetPos(h, pos) EftQuad_SetPos(h, *(Vec4 *)(pos))
+extern void EftQuad_SetPos(void *h, PortVec4 pos);
+#define EftQuad_SetPos(h, pos) EftQuad_SetPos(h, *(PortVec4 *)(pos))
 #else
 extern void EftQuad_SetPos(void *h, Vec4 *pos);
 #endif
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftQuad_Warp(void *h, Vec4 pos);
-#define EftQuad_Warp(h, pos) EftQuad_Warp(h, *(Vec4 *)(pos))
+extern void EftQuad_Warp(void *h, PortVec4 pos);
+#define EftQuad_Warp(h, pos) EftQuad_Warp(h, *(PortVec4 *)(pos))
 #else
 extern void EftQuad_Warp(void *h, Vec4 *pos);
 #endif
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftQuad_SetDir(void *h, Vec4 dir);
-#define EftQuad_SetDir(h, dir) EftQuad_SetDir(h, *(Vec4 *)(dir))
+extern void EftQuad_SetDir(void *h, PortVec4 dir);
+#define EftQuad_SetDir(h, dir) EftQuad_SetDir(h, *(PortVec4 *)(dir))
 #else
 extern void EftQuad_SetDir(void *h, Vec4 *dir);
 #endif
@@ -191,20 +191,20 @@ extern void EftPart10_Stop(void *h);
 extern void EftPart10_SetFade(void *h, s32 v);
 extern void EftPart10_Kill(void *h);
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftPart10_SetPos(void *h, Vec4 pos);
-#define EftPart10_SetPos(h, pos) EftPart10_SetPos(h, *(Vec4 *)(pos))
+extern void EftPart10_SetPos(void *h, PortVec4 pos);
+#define EftPart10_SetPos(h, pos) EftPart10_SetPos(h, *(PortVec4 *)(pos))
 #else
 extern void EftPart10_SetPos(void *h, Vec4 *pos);
 #endif
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftPart10_Warp(void *h, Vec4 pos);
-#define EftPart10_Warp(h, pos) EftPart10_Warp(h, *(Vec4 *)(pos))
+extern void EftPart10_Warp(void *h, PortVec4 pos);
+#define EftPart10_Warp(h, pos) EftPart10_Warp(h, *(PortVec4 *)(pos))
 #else
 extern void EftPart10_Warp(void *h, Vec4 *pos);
 #endif
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftPart10_SetDir(void *h, Vec4 dir);
-#define EftPart10_SetDir(h, dir) EftPart10_SetDir(h, *(Vec4 *)(dir))
+extern void EftPart10_SetDir(void *h, PortVec4 dir);
+#define EftPart10_SetDir(h, dir) EftPart10_SetDir(h, *(PortVec4 *)(dir))
 #else
 extern void EftPart10_SetDir(void *h, Vec4 *dir);
 #endif
@@ -231,26 +231,26 @@ extern void EftLink_Stop(void *h);
 extern void EftLink_Kill(void *h);
 extern void EftLink_SetFade(void *h, s32 v);
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftLink_SetPos(void *h, Vec4 pos);
-#define EftLink_SetPos(h, pos) EftLink_SetPos(h, *(Vec4 *)(pos))
+extern void EftLink_SetPos(void *h, PortVec4 pos);
+#define EftLink_SetPos(h, pos) EftLink_SetPos(h, *(PortVec4 *)(pos))
 #else
 extern void EftLink_SetPos(void *h, Vec4 *pos);
 #endif
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftLink_SetPos2(void *h, Vec4 pos2);
-#define EftLink_SetPos2(h, pos2) EftLink_SetPos2(h, *(Vec4 *)(pos2))
+extern void EftLink_SetPos2(void *h, PortVec4 pos2);
+#define EftLink_SetPos2(h, pos2) EftLink_SetPos2(h, *(PortVec4 *)(pos2))
 #else
 extern void EftLink_SetPos2(void *h, Vec4 *pos2);
 #endif
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftLink_Warp(void *h, Vec4 pos);
-#define EftLink_Warp(h, pos) EftLink_Warp(h, *(Vec4 *)(pos))
+extern void EftLink_Warp(void *h, PortVec4 pos);
+#define EftLink_Warp(h, pos) EftLink_Warp(h, *(PortVec4 *)(pos))
 #else
 extern void EftLink_Warp(void *h, Vec4 *pos);
 #endif
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftLink_SetDir(void *h, Vec4 dir);
-#define EftLink_SetDir(h, dir) EftLink_SetDir(h, *(Vec4 *)(dir))
+extern void EftLink_SetDir(void *h, PortVec4 dir);
+#define EftLink_SetDir(h, dir) EftLink_SetDir(h, *(PortVec4 *)(dir))
 #else
 extern void EftLink_SetDir(void *h, Vec4 *dir);
 #endif
@@ -275,20 +275,20 @@ extern void *EftZap_Create(EftArg12 *arg);
 extern void EftZap_Kill(void *h);
 extern void EftZap_Stop(void *h);
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftZap_SetPos(void *h, Vec4 pos);
-#define EftZap_SetPos(h, pos) EftZap_SetPos(h, *(Vec4 *)(pos))
+extern void EftZap_SetPos(void *h, PortVec4 pos);
+#define EftZap_SetPos(h, pos) EftZap_SetPos(h, *(PortVec4 *)(pos))
 #else
 extern void EftZap_SetPos(void *h, Vec4 *pos);
 #endif
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftZap_WarpPos(void *h, Vec4 pos);
-#define EftZap_WarpPos(h, pos) EftZap_WarpPos(h, *(Vec4 *)(pos))
+extern void EftZap_WarpPos(void *h, PortVec4 pos);
+#define EftZap_WarpPos(h, pos) EftZap_WarpPos(h, *(PortVec4 *)(pos))
 #else
 extern void EftZap_WarpPos(void *h, Vec4 *pos);
 #endif
 #ifdef PORT /* PC build: by value, as the definition takes it (the PS2 passes a struct of this size by address) */
-extern void EftZap_SetDir(void *h, Vec4 dir);
-#define EftZap_SetDir(h, dir) EftZap_SetDir(h, *(Vec4 *)(dir))
+extern void EftZap_SetDir(void *h, PortVec4 dir);
+#define EftZap_SetDir(h, dir) EftZap_SetDir(h, *(PortVec4 *)(dir))
 #else
 extern void EftZap_SetDir(void *h, Vec4 *dir);
 #endif
