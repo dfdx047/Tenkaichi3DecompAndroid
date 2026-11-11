@@ -325,7 +325,9 @@ s32 TeamSel_TagRun(s32 section){
         if(!exit && sTagTransition && --sTagTransition==0){TeamSel_TagOpenMap();stageFrames=0;}
         if(!exit && (gTeamSel->flags&TEAMSEL_STAGE)){
             gPad[0]=savedPads[0];
-            if(getenv("BT4_TAG_LOCAL_TEST") && !getenv("BT4_TAG_STAGE_PREVIEW") && (!sTagSelectTest || !strcmp(sTagSelectTest,"timeout") || !strcmp(sTagSelectTest,"invalid")) && ++stageFrames>(getenv("BT4_TAG_WIDE_AUDIT")?100:45)){gPad[0].gamePressed=PADG_CROSS;gPad[0].gameRepeat=0;}
+            /* (BT4_TAG_STAGE_TEST, Dragon Rage: an online room's owner confirms the stage as the local test does, the room's
+               own time limit kept: two or more headless test games in one online room) */
+            if((getenv("BT4_TAG_LOCAL_TEST")||(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_STAGE_TEST"))) && !getenv("BT4_TAG_STAGE_PREVIEW") && (!sTagSelectTest || !strcmp(sTagSelectTest,"timeout") || !strcmp(sTagSelectTest,"invalid")) && ++stageFrames>(getenv("BT4_TAG_WIDE_AUDIT")?100:45)){gPad[0].gamePressed=PADG_CROSS;gPad[0].gameRepeat=0;}
             TeamSel_TagApplyArena();
             if(ColorFade_IsInDone()&&(!Port_TagNetwork()||Port_TagHost()))TeamSel_Input(&result);
             TeamSel_TagPublishArena();

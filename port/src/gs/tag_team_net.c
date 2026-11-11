@@ -375,14 +375,15 @@ static TtChannel client={TT_INVALID};static TtRoom state;static uint32_t member;
 static char room_code[7],error[128];static time_t last_ping,last_heard;static int connecting;
 
 #ifdef __ANDROID__
-/* Android (Dragon Rage prototype): the local room only; inert stand-ins for the transports below (none is built) */
+/* Android (Dragon Rage prototype): the participant-hosted room (tag_team_p2p.cpp, WebRTC) through Dragon Net, and the
+   local room; inert stand-ins for the other transports (the TCP/WebSocket servers, the direct route, voice) */
 #include "tag_team_offline.inc"
 #else
 #include "tag_team_ws.h"
 #include "tag_team_direct.h"
-#include "tag_team_p2p.h"
-#include "supabase_signal.h"
 #endif
+#include "tag_team_p2p.h"
+#include "tag_signal.h"
 #include "update_sign.h"
 static int tag_direct_supported,tag_direct_ticket,tag_direct_route;
 static Uint64 tag_direct_ticket_at;
@@ -413,13 +414,9 @@ static int configured_ffa,configured_quick;
 void Port_TagModeOptions(int free_for_all,int quick){configured_ffa=free_for_all==1;configured_quick=quick==1;}
 int Port_TagFreeForAll(void){return state.free_for_all;}
 int Port_TagQueueWaiting(int queue){
-#ifdef __ANDROID__
-    (void)queue;return -1; /* (no matchmaking service on Android: match_supabase.cpp is not built) */
-#else
-    extern int Bt4Discovery_TagCounts(uint64_t,int *);int counts[3];unsigned long long content;
-    if(queue<0||queue>=3||Port_TagDataFingerprint(&content)!=1||!Bt4Discovery_TagCounts(content,counts))return -1;
+    int counts[3];unsigned long long content; /* (Supabase's discovery, or Dragon Net: tag_signal.h) */
+    if(queue<0||queue>=3||Port_TagDataFingerprint(&content)!=1||!TagSignal_QueueCounts(content,counts))return -1;
     return counts[queue];
-#endif
 }
 
 static char ws_endpoint[384];
@@ -485,7 +482,7 @@ static uint64_t tag_load_digest(const TtRoom *r){
     return hash;
 }
 
-const char *Port_TagEndpoint(void){const char *s=getenv("BT4_TAG_SERVER");return s&&s[0]?s:Bt4Signal_Project();}
+const char *Port_TagEndpoint(void){const char *s=getenv("BT4_TAG_SERVER");return s&&s[0]?s:TagSignal_Project();}
 
 /* Keep clipboard strings and the 64-bit release fingerprint in the native
  * facade. The menu only passes its bounded code and receives a status. */
@@ -565,12 +562,12 @@ int Port_TagConnect(const char *server){
     }
 
 #ifdef __ANDROID__
-    /* Android (Dragon Rage prototype): no TAG TEAM server yet, the room service included (Quick Match, Join). Refused
-       before any socket or thread opens; only the local room above plays. */
-    snprintf(error,sizeof(error),"Online TAG TEAM is not available on Android yet.");return 0;
+    /* Android (Dragon Rage prototype): Dragon Net's rooms only (TagSignal_Project); the TCP and WebSocket room servers
+       are not built. Refused before any socket or thread opens. */
+    if(strcmp(server,TagSignal_Project())){snprintf(error,sizeof(error),"This TAG TEAM server is not supported on Android.");return 0;}
 #endif
 
-    if(!strcmp(server,Bt4Signal_Project())){
+    if(!strcmp(server,TagSignal_Project())){
         if(!TagPeer_Open()){snprintf(error,sizeof(error),"Cannot initialize the direct connection.");return 0;}
         peer_mode=ws_mode=ws_started=1;tag_paced=1;tag_caps_sent=1;
         snprintf(ws_endpoint,sizeof(ws_endpoint),"%s",server);last_ping=last_heard=time(NULL);return 1;
@@ -833,7 +830,8 @@ void Port_TagPoll(void){
         }
 
         if(!Ttw_Decode(client.in,&state,&member,&result,room_code)){fail("Incompatible TAG TEAM server.");return;}
-        if(peer_mode&&!result){
+        /* (voice's negotiation goes through Supabase only: none for a Dragon Net room, tag_signal.h) */
+        if(peer_mode&&!result&&!TagSignal_DragonNet()){
             char descriptor[8192];PortVoiceRoomMember people[TT_MAX_PLAYERS];int i,count=0;
             if(TagPeer_Descriptor(descriptor,sizeof(descriptor))){
                 for(i=0;i<Tt_Count(&state);++i)if(!state.players[i].cpu&&state.players[i].member){

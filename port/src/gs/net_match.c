@@ -434,6 +434,15 @@ static int http_post(const char *what, const char *json, char *out, size_t size)
     return ok;
 }
 
+/* For TAG TEAM's rooms through Dragon Net (dragonnet_tag.cpp): this file's HTTPS (WinHTTP, the curl library, Android's
+   Java side), a POST of `json` to `url`, the answer's text in out (1), or nothing came (0); and this service's address. */
+int Match_HttpPost(const char *url, const char *json, char *out, size_t size) {
+    if (url == NULL || json == NULL || out == NULL || size < 2) return 0;
+    out[0] = '\0';
+    return http_post_native(url, json, NULL, out, size);
+}
+const char *Match_ServiceUrl(void) { return match_url(); }
+
 /* What the window says when the service lets only official releases in (its REQUIRE_KEY) and refused this program:
    `plain` for a program without a key, or with one the service does not know. */
 static const char *key_refused(const char *answer, const char *plain) {

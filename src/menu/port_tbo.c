@@ -304,6 +304,10 @@ extern const char *Port_TagEndpoint(void),*Port_TagChatLine(int i);
 extern void Port_TagInitialTeams(int,int),Port_TagChatSend(const char *);
 extern void Port_TagClose(void), Port_TagPoll(void);
 extern void Port_TagOpen(int size, int time, int delay, const char *name, unsigned long long content);
+/* Dragon Rage: TAG TEAM's rooms through Dragon Net (gs/dragonnet_tag.cpp; Android always): its menu has a fourth entry,
+   "Local Room", the room on this device with CPU fighters that needs no network (Create Room is online there) */
+extern int TagSignal_DragonNet(void);
+static s32 Tb_TagEntries(void) { return TagSignal_DragonNet() ? 4 : 3; }
 extern void Port_TagCPUOptions(int fill, int difficulty);
 extern int Port_TagHumans(void), Port_TagCPU(int seat), Port_TagDifficulty(int seat);
 extern void Port_TagJoin(const char *code, const char *name, unsigned long long content);
@@ -392,6 +396,7 @@ typedef struct TboScreen {
     s32 tagLeft,tagRight,tagRoomCur,tagRoomAction;
     s32 tagCur, tagSize, tagJoin, tagTestSent, tagCPU, tagDifficulty, tagAttacks,tagDelay;
     s32 tagChatTyping,tagChatLen,tagMoving;char tagChat[160];
+    s32 tagLocal; /* (Dragon Rage: the room being set up is the local one, "Local Room") */
     s32 frames;
     s32 mode;
     s32 modeT;
@@ -1085,11 +1090,11 @@ static void Tb_TagUpdate(s32 live){
     Pad *pad=&gPad[0];s32 dir;
     if(!sTb->tagSetup){
         Ps_Prompt(0,"Confirm");Ps_Prompt(2,"Back");if(!live)return;
-        Ps_Move(&sTb->tagCur,3);
+        Ps_Move(&sTb->tagCur,Tb_TagEntries());
         if(pad->gamePressed&PADG_TRIANGLE){Tb_SetMode(TB_HUB);return;}
         if(!(pad->gamePressed&PADG_CROSS))return;
         if(sTb->tagCur==0){sTb->quickFromTag=1;sTb->queue=2;Tb_QuickStart();return;}
-        if(sTb->tagCur==1){sTb->tagSetup=1;sTb->tagCur=0;return;}
+        if(sTb->tagCur==1||sTb->tagCur==3){sTb->tagLocal=sTb->tagCur==3;sTb->tagSetup=1;sTb->tagCur=0;return;}
         sTb->tagJoin=1;sTb->code[0]=0;sTb->codeLen=sTb->keyCol=sTb->keyRow=0;Tb_SetMode(TB_JOIN);return;
     }
     Ps_Prompt(3,"Change");Ps_Prompt(0,"Confirm");Ps_Prompt(2,"Back");if(!live)return;
@@ -1104,14 +1109,11 @@ static void Tb_TagUpdate(s32 live){
         if(sTb->tagCur==5)sTb->tagDifficulty=Ps_Wrap(sTb->tagDifficulty+dir,0,4);
         Snd_PlaySe(1,0);
     }
-    if(pad->gamePressed&PADG_TRIANGLE){sTb->tagSetup=0;sTb->tagCur=1;return;}
+    if(pad->gamePressed&PADG_TRIANGLE){sTb->tagSetup=0;sTb->tagCur=sTb->tagLocal?3:1;return;}
     if(!(pad->gamePressed&PADG_CROSS))return;
     if(sTb->tagCur<6){++sTb->tagCur;if(sTb->tagPreset!=3&&sTb->tagCur==1)sTb->tagCur=3;return;}
     if(sTb->tagCur==7){sTb->tagJoin=1;sTb->code[0]=0;sTb->codeLen=sTb->keyCol=sTb->keyRow=0;Tb_SetMode(TB_JOIN);return;}
-    {unsigned long long content=0;s32 offline=getenv("BT4_RENDER_TEST")&&!getenv("BT4_TAG_ONLINE_TEST");
-#ifdef __ANDROID__
-        offline=1; /* Android (Dragon Rage prototype): Create Room is the in-process room (gs/tag_team_net.c) with CPU fighters; no TAG TEAM server yet */
-#endif
+    {unsigned long long content=0;s32 offline=(getenv("BT4_RENDER_TEST")&&!getenv("BT4_TAG_ONLINE_TEST"))||sTb->tagLocal;
         if(!offline&&(!Tb_Vanilla(0)||Port_TagDataFingerprint(&content)!=1))return;
         Port_TagCPUOptions(sTb->tagCPU,sTb->tagDifficulty);
         if(!Port_TagConnect(offline?NULL:Port_TagEndpoint())){Tb_Note((char*)Port_TagError());return;}
@@ -2086,8 +2088,8 @@ static s32 Tb_TagSetupRow(s32 i){return i-((sTb->tagPreset!=3&&i>=3)?2:0);}
 static void Tb_DrawTag(void){
     s32 i;f32 left=Tb_TagWideLeft();Tb_Hosts(TBO_HOSTS_ARMS_CROSSED,408-left,350,250);
     if(!sTb->tagSetup){
-        Ps_Panel(TBO_KIT_WINDOW,14+left,96,300,222,0x80);
-        for(i=0;i<3;++i){f32 y=110+34.0f*i;Ps_Pill(i==sTb->tagCur?TBO_KIT_SEL:TBO_KIT_BAR,22+left,y,292,y+26,0x80);}
+        Ps_Panel(TBO_KIT_WINDOW,14+left,96,300,222+34.0f*(Tb_TagEntries()-3),0x80);
+        for(i=0;i<Tb_TagEntries();++i){f32 y=110+34.0f*i;Ps_Pill(i==sTb->tagCur?TBO_KIT_SEL:TBO_KIT_BAR,22+left,y,292,y+26,0x80);}
         return;
     }
     Ps_Panel(TBO_KIT_WINDOW,14+left,78,300,321,0x80);
@@ -2098,11 +2100,11 @@ static void Tb_DrawTagText(void){
     char value[48];s32 i;f32 left=Tb_TagWideLeft();
     static char *labels[8]={"Mode","Team 1","Team 2","Time Limit","Empty Slots","CPU Difficulty","Create Room","Join Room"};
     if(!sTb->tagSetup){
-        static char *entry[3]={"Quick Match","Create Room","Join Room"};
-        for(i=0;i<3;++i)Ps_Text(36+left,Ps_TextTop(123+34.0f*i,.66f),entry[i],.66f,240-left,i==sTb->tagCur?1:0);
+        static char *entry[4]={"Quick Match","Create Room","Join Room","Local Room"};
+        for(i=0;i<Tb_TagEntries();++i)Ps_Text(36+left,Ps_TextTop(123+34.0f*i,.66f),entry[i],.66f,240-left,i==sTb->tagCur?1:0);
         return;
     }
-    Ps_Text(26+left,65,"CREATE MATCH",.47f,274-left,2);
+    Ps_Text(26+left,65,sTb->tagLocal?"LOCAL MATCH":"CREATE MATCH",.47f,274-left,2);
     for(i=0;i<8;++i){f32 y=82+29.0f*Tb_TagSetupRow(i);if(sTb->tagPreset!=3&&(i==1||i==2))continue;
         Ps_Text(36+left,Ps_TextTop(y+11,.56f),labels[i],.56f,126-left,i==sTb->tagCur?1:0);value[0]=0;
         if(i==0){static char *modes[4]={"2 vs 2","5 vs 5","Free for All","Custom Teams"};Ps_Copy(value,modes[sTb->tagPreset],48);}
@@ -4166,7 +4168,7 @@ static char *Tb_Help(void) {
     case TB_HUB:
         return sTbHubSay[sTb->hubCur];
     case TB_TAG:{
-        if(!sTb->tagSetup)return sTb->tagCur==0?"Search for a simultaneous 2 vs 2 battle.":sTb->tagCur==1?"Create a room for 2 vs 2, 5 vs 5 or six-player Free for All.":"Join a room with its code.";
+        if(!sTb->tagSetup)return sTb->tagCur==0?"Search for a simultaneous 2 vs 2 battle.":sTb->tagCur==1?"Create a room for 2 vs 2, 5 vs 5 or six-player Free for All.":sTb->tagCur==3?"Play a room on this device with CPU fighters. No network is needed.":"Join a room with its code.";
         static char *help[9]={
             "Choose team battles or a six-player free-for-all.",
             "Set the number of slots on Team 1. Both teams can have up to ten fighters in total.",

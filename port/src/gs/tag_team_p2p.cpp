@@ -14,7 +14,7 @@
 #include <mutex>
 #include "tag_team_p2p.h"
 #include "../../include/online_room_policy.h"
-#include "supabase_signal.h"
+#include "tag_signal.h" /* (Supabase's signaling, or Dragon Net's: dragonnet_tag.cpp) */
 #include "voice_platform.inc"
 #include "../../third_party/voice/rtc/rtc.h"
 #define JSON_NOEXCEPTION
@@ -88,13 +88,19 @@ struct Session {
         if((!reliable&&!input)||(reliable?p.control.load():p.input.load())>=0){rtc.rtcDeleteDataChannel(dc);return;}
         if(reliable)p.control=dc;else p.input=dc;rtc.rtcSetUserPointer(dc,&p);rtc.rtcSetOpenCallback(dc,opened);rtc.rtcSetMessageCallback(dc,message);
     }
-    void open(Peer &p){const char *stun[]={"stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302","stun:global.stun.twilio.com:3478"};rtcConfiguration cfg={};cfg.iceServers=stun;cfg.iceServersCount=3;cfg.disableAutoNegotiation=true;cfg.maxMessageSize=2048;
+    void open(Peer &p){const char *stun[]={"stun:stun.l.google.com:19302","stun:stun1.l.google.com:19302","stun:global.stun.twilio.com:3478"};rtcConfiguration cfg={};cfg.iceServers=stun;cfg.iceServersCount=3;
+        /* (BT4_TAG_STUN: other ICE servers, comma separated, or "none" for this network's own addresses only: LAN tests) */
+        static std::vector<std::string> custom;static std::vector<const char*> customPointers;static bool customRead=false;
+        if(!customRead){customRead=true;if(const char *e=SDL_getenv("BT4_TAG_STUN")){std::string list=e,item;
+            for(size_t i=0;i<=list.size();++i){if(i==list.size()||list[i]==','){if(!item.empty()&&item!="none"&&custom.size()<4)custom.push_back(item);item.clear();}else item+=list[i];}
+            for(auto &c:custom)customPointers.push_back(c.c_str());if(customPointers.empty())customPointers.push_back(nullptr);}}
+        if(!customPointers.empty()){cfg.iceServers=customPointers[0]?customPointers.data():nullptr;cfg.iceServersCount=customPointers[0]?(int)customPointers.size():0;}cfg.disableAutoNegotiation=true;cfg.maxMessageSize=2048;
         int pc=rtc.rtcCreatePeerConnection(&cfg);if(pc<0){service.status=-1;return;}p.pc=pc;p.heard=SDL_GetTicks();rtc.rtcSetUserPointer(pc,&p);
         rtc.rtcSetLocalDescriptionCallback(pc,description);rtc.rtcSetLocalCandidateCallback(pc,candidate);rtc.rtcSetDataChannelCallback(pc,channel);rtc.rtcSetStateChangeCallback(pc,changed);
         if(self==1){rtcDataChannelInit control={};control.protocol="bt4-room-control-v1";bind(p,rtc.rtcCreateDataChannelEx(pc,"BT4 Room",&control));
             rtcDataChannelInit input={};input.protocol="bt4-tag-input-v1";input.reliability.unordered=true;input.reliability.unreliable=true;input.reliability.maxRetransmits=0;
             bind(p,rtc.rtcCreateDataChannelEx(pc,"BT4 Inputs",&input));rtc.rtcSetLocalDescription(pc,"offer");}}
-    void rpc(const char *op,const Pj &args,unsigned serial=0){if(!Bt4Signal_Command(1,serial?serial:++rpcSerial,op,args.dump().c_str())){if(initializing)service.status=-1;}}
+    void rpc(const char *op,const Pj &args,unsigned serial=0){if(!TagSignal_Command(1,serial?serial:++rpcSerial,op,args.dump().c_str())){if(initializing)service.status=-1;}}
     void signal(unsigned to,const char *kind,const Pj &body){
         Pj args={{"generation",generation},{"to",to},{"channel","tag"},{"kind",kind},{"body",body}};
         unsigned id=++rpcSerial;
@@ -185,7 +191,7 @@ struct Session {
         drainSignals();
     }
     void signaling(){char raw[24577];unsigned count=0;
-        while(count++<64&&Bt4Signal_Read(1,raw,sizeof(raw))>0){Pj j=Pj::parse(raw,nullptr,false);if(!j.is_object())continue;auto body=j.find("body");if(body==j.end()||!body->is_object())continue;
+        while(count++<64&&TagSignal_Read(1,raw,sizeof(raw))>0){Pj j=Pj::parse(raw,nullptr,false);if(!j.is_object())continue;auto body=j.find("body");if(body==j.end()||!body->is_object())continue;
             auto event=text(j,"event");
             if(event=="reply"){
                 if(recovery&&number(j,"serial")==recovery){
@@ -250,6 +256,8 @@ struct Session {
                 if(self==1)command(self,packet);else if(auto *p=find(1)){if(cmd==TTW_INPUT)send(*p,packet,false);else send(*p,packet,true);}}
             Uint64 now=SDL_GetTicks();retrySignals(now);
             bool negotiating=!room.empty()&&std::any_of(peers.begin(),peers.end(),[](const Peer &p){return p.id&&!p.admitted;});
+            /* (how soon news is needed: a negotiation, an admission or a search; the owner's lobby, where players join; else none) */
+            TagSignal_Pace(negotiating||(room.empty()&&!waiting)?2:room.empty()||(self==1&&Kernel_Phase()==TT_LOBBY)?1:0);
             if(negotiating&&now>=recoverAt){recovery=++rpcSerial;recoverAt=now+25000;rpc("get_signals",{{"generation",generation},{"after",signalCursor}},recovery);}
             if(waiting&&now>=nextLease){initSerial=++rpcSerial;rpc("queue",queueProfile,initSerial);nextLease=now+60000;}
             if(service.status==0&&!waiting&&now-began>60000){service.status=-1;break;}
@@ -272,11 +280,11 @@ struct Session {
 static int thread(void*){Session s;s.run();return 0;}
 }
 extern "C" int TagPeer_Open(void){
-    TagPeer_Close();if(!rtc.load()||!Bt4Signal_Open())return 0;Bt4Signal_Listen(1,1);service.quit=false;service.status=0;service.ping=-1;
+    TagPeer_Close();if(!rtc.load()||!TagSignal_Open())return 0;TagSignal_Listen(1,1);service.quit=false;service.status=0;service.ping=-1;
     service.wake=SDL_CreateSemaphore(0);if(!service.wake)return 0;service.thread=SDL_CreateThread(thread,"BT4 P2P room",nullptr);return service.thread!=nullptr;
 }
 extern "C" void TagPeer_Close(void){service.quit=true;service.notify();if(service.thread)SDL_WaitThread(service.thread,nullptr);service.thread=nullptr;if(service.wake)SDL_DestroySemaphore(service.wake);service.wake=nullptr;
-    Bt4Signal_Listen(1,0);std::lock_guard<std::mutex> g(service.lock);service.events.clear();service.requests.clear();service.incoming.clear();service.descriptor.clear();service.status=0;}
+    TagSignal_Listen(1,0);std::lock_guard<std::mutex> g(service.lock);service.events.clear();service.requests.clear();service.incoming.clear();service.descriptor.clear();service.status=0;}
 extern "C" int TagPeer_Send(const unsigned char *packet){if(!packet||!service.thread||service.status<0)return 0;std::lock_guard<std::mutex> g(service.lock);if(service.requests.size()>=256)return 0;
     Packet p;memcpy(p.data(),packet,512);service.requests.push_back(p);service.notify();return 1;}
 extern "C" int TagPeer_Read(unsigned char *packet,uint64_t *at){std::lock_guard<std::mutex> g(service.lock);if(service.incoming.empty())return service.status<0?-1:0;auto f=service.incoming.front();service.incoming.pop_front();memcpy(packet,f.bytes.data(),512);if(at)*at=f.at;return 1;}

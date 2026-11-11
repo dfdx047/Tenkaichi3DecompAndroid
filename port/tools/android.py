@@ -233,9 +233,11 @@ def compile_all():
     jobs += [(gs_source, f) for f in sorted((ROOT / "port/src/gs").glob("*.c"))]
     jobs += [(cxx_source, f) for f in sorted((ROOT / "port/third_party/imgui").glob("*.cpp")) + sorted((ROOT / "port/src/gs").glob("*.cpp"))]
     jobs += [(astc_source, f) for f in sorted((ROOT / "port/third_party/astcenc").glob("*.cpp"))]
-    # BT4 prototype: online (curl, WebRTC, voice) and Windows-only files stay out; their symbols become stubs.
-    # gs/tag_team_net.c is in: on Android it is TAG TEAM's local room only (its transports: gs/tag_team_offline.inc)
-    skip = {"supabase_signal.cpp", "match_supabase.cpp", "voice.cpp", "tag_team_p2p.cpp",
+    # BT4 prototype: NauTaro's online services (Supabase signaling and discovery), voice, TAG TEAM's room-server
+    # transports and Windows-only files stay out; their symbols become stubs. TAG TEAM's participant-hosted rooms are in:
+    # gs/tag_team_p2p.cpp (WebRTC: libdatachannel.so, loaded at run time) through Dragon Net (gs/dragonnet_tag.cpp);
+    # gs/tag_team_net.c's other transports are inert stand-ins on Android (gs/tag_team_offline.inc)
+    skip = {"supabase_signal.cpp", "match_supabase.cpp", "voice.cpp",
             "tag_team_direct.cpp", "imgui_impl_dx9.cpp", "gs_d3d9.cpp", "imgui_impl_dx12.cpp", "imgui_impl_win32.cpp"}
     jobs = [j for j in jobs if j[1].name not in skip]
     only = os.environ.get("BT3_ONLY")  # a few files: BT3_ONLY=btl_obj,plat_mem

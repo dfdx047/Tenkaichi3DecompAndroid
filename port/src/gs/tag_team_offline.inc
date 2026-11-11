@@ -1,10 +1,9 @@
-/* Android prototype (Dragon Rage): TAG TEAM's local room only. Included by tag_team_net.c in place of its transports
- * (tag_team_ws.h: curl WebSocket; tag_team_direct.cpp / tag_team_p2p.cpp: direct UDP and WebRTC; supabase_signal.cpp:
- * the room service; voice.cpp: voice chat), none of which this build compiles. The in-process room that "Create Room"
- * opens without a server (Port_TagConnect(NULL): local_room, "LOCAL0") needs none of them; these stand-ins keep the
- * facade's network paths closed: nothing opens, sends or receives. Port_TagConnect also refuses every server on
- * Android, so ws_mode, peer_mode and the TCP client never start. Online play is a later step (its servers are not
- * chosen yet). */
+/* Android prototype (Dragon Rage): TAG TEAM's transports this build does not compile, as inert stand-ins. Included by
+ * tag_team_net.c in place of tag_team_ws.h (curl WebSocket to a Tag room server), tag_team_direct.cpp (that server's
+ * direct route) and voice.cpp (voice chat). Online rooms are the participant-hosted ones (tag_team_p2p.cpp: WebRTC,
+ * libdatachannel.so loaded at run time) through Dragon Net (dragonnet_tag.cpp), which need none of these; the local
+ * room ("LOCAL0") needs no transport at all. Port_TagConnect refuses every other server on Android, so ws_mode without
+ * peer_mode and the TCP client never start: nothing here opens, sends or receives. */
 #include <SDL3/SDL.h>
 #include "voice.h"
 
@@ -28,19 +27,6 @@ static int TagDirect_Send(const unsigned char packet[512]){(void)packet;return 0
 static int TagDirect_Read(unsigned char packet[512],uint64_t *arrived){(void)packet;(void)arrived;return 0;}
 static int TagDirect_Pending(void){return 0;}
 void Port_TagIncomingWake(void);
-
-/* tag_team_p2p.h */
-static int TagPeer_Open(void){return 0;}
-static void TagPeer_Close(void){}
-static int TagPeer_Send(const unsigned char packet[512]){(void)packet;return 0;}
-static int TagPeer_Read(unsigned char packet[512],uint64_t *at){(void)packet;(void)at;return 0;}
-static int TagPeer_Status(void){return -1;}
-static int TagPeer_Ping(void){return -1;}
-static int TagPeer_Descriptor(char *json,unsigned capacity){(void)json;(void)capacity;return 0;}
-
-/* supabase_signal.h: no room service. Not empty: an empty server would make Port_TagEndpoint's callers (Quick Match,
- * Join) open the local room; this name is refused by Port_TagConnect like any other server. */
-static const char *Bt4Signal_Project(void){return "none";}
 
 /* voice.h's sessions (voice.cpp is not built) */
 #define PortVoice_Session(mode,endpoint,room,cap,seat,name) ((void)0)
