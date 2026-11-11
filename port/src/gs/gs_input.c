@@ -587,6 +587,9 @@ int PortInput_ComboPoll(void) {
 static volatile int sPadsStale; /* the list of controllers is read again at the next pads_refresh */
 
 static SDL_Mutex *sPadLock; /* (below, with the vibration's thread) */
+#ifdef __ANDROID__
+static void triggers_from_keys(SDL_Gamepad *pad, SDL_JoystickID id); /* (below, with pad_of) */
+#endif
 static void pads_refresh(void) {
     static unsigned calls;
     SDL_JoystickID *ids;
@@ -644,6 +647,11 @@ static void pads_refresh(void) {
                 Uint64 t0 = SDL_GetTicksNS();
                 sOpen[k].id = sIds[i];
                 sOpen[k].pad = SDL_OpenGamepad(sIds[i]);
+#ifdef __ANDROID__
+                if (sOpen[k].pad != NULL && !SDL_IsJoystickVirtual(sIds[i])) {
+                    triggers_from_keys(sOpen[k].pad, sIds[i]);
+                }
+#endif
                 if (sOpen[k].pad != NULL && !SDL_IsJoystickVirtual(sIds[i])) {
                     /* (in the log: which controller, its link and battery, and how long opening it held the game) */
                     int pct = -1;
@@ -672,6 +680,51 @@ static void pads_refresh(void) {
     }
 }
 
+#ifdef __ANDROID__
+/* L2 and R2 as buttons only. SDL's own mapping for an Android controller has triggers only when the controller reports
+   six axes or more (SDLControllerManager.getAxisMask: lefttrigger:a4, righttrigger:a5); one that reports its two sticks
+   and L2 / R2 as keys (KEYCODE_BUTTON_L2 / R2: SDL's buttons 15 and 16) got no trigger at all, and the game reads L2 and
+   R2 as the trigger axes only: they did nothing, and could not be set on the Controls page either. Many controllers do
+   that over Bluetooth in their Android mode (with a cable they are often XInput pads, triggers as axes). Such a
+   controller (the L2 key is bit 15 of the button mask SDL keeps in its GUID, SDL_sysjoystick.c) gets its keys as the
+   triggers: SDL reports a trigger at full while the key is down. Nothing changes for one with trigger axes, or whose
+   mapping uses buttons 15 or 16 for something else. */
+static int mapping_uses(const char *m, const char *input) {
+    size_t n = strlen(input);
+    const char *at;
+    for (at = strstr(m, input); at != NULL; at = strstr(at + 1, input)) {
+        if (at > m && at[-1] == ':' && (at[n] == ',' || at[n] == '\0')) {
+            return 1;
+        }
+    }
+    return 0;
+}
+static void triggers_from_keys(SDL_Gamepad *pad, SDL_JoystickID id) {
+    SDL_GUID guid = SDL_GetGamepadGUIDForID(id);
+    unsigned keys = (unsigned)guid.data[12] | (unsigned)guid.data[13] << 8;
+    char *m, *more;
+    int r2;
+    if (SDL_GamepadHasAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) || SDL_GamepadHasAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) ||
+        !(keys & (1u << 15)) || SDL_GetNumJoystickButtons(SDL_GetGamepadJoystick(pad)) < 16) {
+        return;
+    }
+    r2 = SDL_GetNumJoystickButtons(SDL_GetGamepadJoystick(pad)) >= 17; /* (button 16: R2, the highest key SDL saw then) */
+    m = SDL_GetGamepadMapping(pad);
+    if (m == NULL || mapping_uses(m, "b15") || mapping_uses(m, "b16")) {
+        SDL_free(m);
+        return;
+    }
+    if (SDL_asprintf(&more, "%s%slefttrigger:b15,%s", m, m[0] != '\0' && m[strlen(m) - 1] != ',' ? "," : "", r2 ? "righttrigger:b16," : "") > 0) {
+        if (SDL_AddGamepadMapping(more) >= 0) {
+            fprintf(stderr, "bt3: controls: %s has L2 / R2 as keys only: they are its triggers\n",
+                    SDL_GetGamepadName(pad) != NULL ? SDL_GetGamepadName(pad) : "?");
+        }
+        SDL_free(more);
+    }
+    SDL_free(m);
+}
+#endif
+
 static SDL_Gamepad *pad_of(int player) {
     int slot = sPadSlot[player], k;
     if(sSeatsActive) return pad_id(sSeats.device[player]);
@@ -695,13 +748,24 @@ static int generic_mapping(SDL_Joystick *js, char *out, size_t size) {
     static const char *const kAxis[4] = {"leftx", "lefty", "rightx", "righty"};
     char guid[64];
     const char *name = SDL_GetJoystickName(js);
-    int buttons = SDL_GetNumJoystickButtons(js), axes = SDL_GetNumJoystickAxes(js), b;
+    int buttons = SDL_GetNumJoystickButtons(js), axes = SDL_GetNumJoystickAxes(js), b, first = 0;
     size_t used;
+
+#ifdef __ANDROID__
+    /* A controller with none of Android's gamepad keys (A, B, X, Y...) sends BUTTON_1..16 (Android's Generic.kl for
+       a USB or Bluetooth joystick it has no layout for: the PS2 adapters, 0810:0001 "Twin USB Joystick" and the like),
+       and SDL numbers those from 20 (SDL_sysjoystick.c: button = 20 + (keycode - AKEYCODE_BUTTON_1)); it reports 21
+       or more buttons only then. The PS2 order below starts at BUTTON_1: at b0 it named buttons such a controller
+       does not have, and none of its buttons did anything, nor could they be set on the Controls page. */
+    if (buttons > 20) {
+        first = 20;
+    }
+#endif
 
     SDL_GUIDToString(SDL_GetJoystickGUID(js), guid, (int)sizeof(guid));
     used = (size_t)snprintf(out, size, "%s,%s,", guid, name != NULL && name[0] != '\0' ? name : "Controller");
-    for (b = 0; b < 12 && b < buttons && used < size; b++) {
-        used += (size_t)snprintf(out + used, size - used, "%s:b%d,", kButton[b], b);
+    for (b = 0; b < 12 && first + b < buttons && used < size; b++) {
+        used += (size_t)snprintf(out + used, size - used, "%s:b%d,", kButton[b], first + b);
     }
     if (SDL_GetNumJoystickHats(js) > 0 && used < size) {
         used += (size_t)snprintf(out + used, size - used, "dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,");
@@ -709,7 +773,7 @@ static int generic_mapping(SDL_Joystick *js, char *out, size_t size) {
     for (b = 0; b < 4 && b < axes && used < size; b++) {
         used += (size_t)snprintf(out + used, size - used, "%s:a%d,", kAxis[b], b);
     }
-    return buttons >= 4 && used < size;
+    return buttons - first >= 4 && used < size;
 }
 
 /* The automatic set-up (the Controls page's button): every connected controller SDL does not know gets the PS2
@@ -1280,6 +1344,13 @@ static struct {
    only leaves the newest command in its player's box; the thread sends it. sPadLock keeps a controller from being
    closed (pads_refresh) while the thread is sending to it. */
 static SDL_Semaphore *sRumbleSem;
+/* While a vibration command is being sent. SDL keeps its lock of all controllers (SDL_LockJoysticks) for the whole of
+   SDL_RumbleGamepad, and over Bluetooth that can be seconds; every read of a button or a stick, and the window's events
+   (SDL_PumpEvents updates the controllers), waits for that lock: the game and the picture stood still together (a
+   2026-11-10 stall report: 2.2 s in SDL_GetGamepadConnectionState). Now the game's reads take the last state of the
+   controller instead (Port_PadRead, through sPadLock, which the thread holds for each command), its own commands wait
+   for the next frame (Port_PadVibrate), and the render thread leaves its event pump for the next millisecond. */
+static int sRumbleSending;
 static SDL_SpinLock sRumbleBoxLock;
 static struct { SDL_JoystickID id; Uint16 low, high; Uint32 ms; int pending; } sRumbleBox[4];
 static int SDLCALL rumble_thread(void *unused) {
@@ -1308,9 +1379,12 @@ static int SDLCALL rumble_thread(void *unused) {
                 SDL_Gamepad *g = SDL_GetGamepadFromID(id);
                 if (g != NULL) {
                     Uint64 took = SDL_GetTicksNS();
+                    __atomic_store_n(&sRumbleSending, 1, __ATOMIC_RELEASE);
                     SDL_RumbleGamepad(g, low, high, ms);
+                    __atomic_store_n(&sRumbleSending, 0, __ATOMIC_RELEASE);
                     took = SDL_GetTicksNS() - took;
-                    if (took >= RUMBLE_OFF_NS && __atomic_add_fetch(&sRumble[p].stalls, 1, __ATOMIC_RELAXED) >= 2) {
+                    /* (off at the second command of 50 ms or more, or at once after one of 250 ms: each held the game) */
+                    if (took >= RUMBLE_OFF_NS && (__atomic_add_fetch(&sRumble[p].stalls, 1, __ATOMIC_RELAXED) >= 2 || took >= RUMBLE_OFF_NS * 5)) {
                         fprintf(stderr, "rumble: player %d's controller (%s) took %llu ms for a vibration command: vibration is off for it\n",
                                 p + 1, SDL_GetGamepadName(g) != NULL ? SDL_GetGamepadName(g) : "?", (unsigned long long)(took / 1000000));
                         __atomic_store_n(&sRumble[p].off, 1, __ATOMIC_RELAXED);
@@ -1470,7 +1544,13 @@ void Port_PadVibrate(int socket, int small, int large) {
     if (why != 0) {
         low = high = 0;
     }
+    if (sPadLock != NULL && !SDL_TryLockMutex(sPadLock)) {
+        return; /* (the thread is still sending the one before: this frame's waits; the game says it again next frame) */
+    }
     rumble_send(player, pad_of(player), (Uint16)low, (Uint16)high, why);
+    if (sPadLock != NULL) {
+        SDL_UnlockMutex(sPadLock);
+    }
 }
 
 /* 1 with BT3_RUMBLE_TEST set: the game's rule "no vibration in a replay" is lifted (src/battle/btl_char_get.c). */
@@ -1496,13 +1576,47 @@ void PortInput_VibrationTest(int player) {
     }
 }
 
+/* The game's read of a port. While the vibration's thread sends a command (it holds sPadLock for it), SDL's controller
+   lock is taken and any read would wait as long as the command does: the port's last state is given again instead,
+   as if nothing moved for that moment. The lock is held for the read itself, so a command does not start in the middle
+   of one either (the same order of locks everywhere: sPadLock, then SDL's). */
+static int pad_read(int socket, unsigned char *data);
+int Port_PadRead(int socket, unsigned char *data) {
+    static unsigned char last[4][18];
+    static int haveLast[4];
+    int r, locked = 0;
+
+    if (socket >= 0 && socket <= 3 && sPadLock != NULL) {
+        if (SDL_TryLockMutex(sPadLock)) {
+            locked = 1;
+        } else if (haveLast[socket]) {
+            memcpy(data, last[socket], 18);
+            return 18;
+        } else {
+            SDL_LockMutex(sPadLock); /* (nothing read yet for this port: wait, as before) */
+            locked = 1;
+        }
+    }
+    r = pad_read(socket, data);
+    if (locked) {
+        SDL_UnlockMutex(sPadLock);
+    }
+    if (r == 18 && socket >= 0 && socket <= 3) {
+        memcpy(last[socket], data, 18);
+        haveLast[socket] = 1;
+    }
+    return r;
+}
+
 /* The controllers' and the keyboard's state as it is at this moment (plat_stub.c, "Low input lag": the pads are
    read long after the window's events were last taken). The events themselves stay queued for the window. */
 void PortInput_Fresh(void) {
     if (Gs_RenderThreaded() && !Gs_OnRenderThread()) {
         return; /* (the window is the render thread's: it takes the events, every millisecond it waits: PortInput_Pump) */
     }
-    SDL_PumpEvents();
+    if (!__atomic_load_n(&sRumbleSending, __ATOMIC_ACQUIRE)) {
+        SDL_PumpEvents();
+    }
     const bool *keys = SDL_GetKeyboardState(NULL);
     window_key(keys, SDL_SCANCODE_RETURN);
     window_key(keys, SDL_SCANCODE_KP_ENTER);
@@ -1513,6 +1627,9 @@ int gPortPadAlways;
 /* The render thread (BT3_GS_THREAD): the window's events, taken while it waits for work or for a picture's time.
    The controllers' and the keys' state the game's thread reads is then never more than a millisecond old. */
 void PortInput_Pump(void) {
+    if (__atomic_load_n(&sRumbleSending, __ATOMIC_ACQUIRE)) {
+        return; /* (SDL's controller lock is the vibration's now: the events wait for the next millisecond) */
+    }
     SDL_PumpEvents();
 }
 
@@ -1550,7 +1667,7 @@ static void press_age(int socket, unsigned btn) {
     prev[socket] = btn;
 }
 
-int Port_PadRead(int socket, unsigned char *data) {
+static int pad_read(int socket, unsigned char *data) {
     unsigned btn = 0;
     unsigned char rx = 0x80, ry = 0x80, lx = 0x80, ly = 0x80;
     SDL_Gamepad *g;

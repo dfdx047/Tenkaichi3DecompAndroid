@@ -1088,7 +1088,7 @@ static void handle(Peer *p,int type,const unsigned char *data,unsigned n) {
         put32(out,from);put32(out+4,k);send_packet(p,TN_RANDSUM_DATA,out,8+k*16);
     } else if(type==TN_RANDSUM_DATA && n>=8) {
         unsigned k=get32(data+4),i;int asked=0;
-        if(n!=8+k*16)return;
+        if(k>64 || n!=8+k*16)return; /* (k*16 wrapped around for a k from a broken packet: the loop read past it) */
         for(i=0;i<k;i++) {
             unsigned f=get32(data+8+i*16),cnt=get32(data+12+i*16);uint64_t h=(uint64_t)get32(data+16+i*16)<<32|get32(data+20+i*16);
             RandFrame *r=rand_find(f);
@@ -1783,7 +1783,11 @@ static void pace_update(int me,int cap) {
 static void pace_measure(void) {
     extern unsigned long long gPortSleptTotalNs;
     Uint64 now=SDL_GetTicksNS(),busy;int cap;
-    if(config.practice || role<0 || role>=TN_PLAYERS)return;
+    static int on=-1;
+    /* (the room pace is off unless BT3_TAG_ROOM_PACE=1 on every phone, pace_update: without it nobody measures, and a guest
+       no longer sends the host a TN_CAP every 120 blanks that the host then ignored; roomPace stays 0, pace_reset) */
+    if(on<0)on=getenv("BT3_TAG_ROOM_PACE")!=NULL;
+    if(!on || config.practice || role<0 || role>=TN_PLAYERS)return;
     /* (blanks by the frame number, not by calls: the blank a rollback was found at is taken a second time) */
     if(!capWall || frame<capFrame){capWall=now;capSlept=gPortSleptTotalNs;capWait=tagWaitNs;capFrame=frame;capBlanks=0;return;}
     capBlanks=frame-capFrame;

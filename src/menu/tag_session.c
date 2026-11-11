@@ -23,12 +23,6 @@ static void music_reset(void) {
         musicIds[musicCount++]=gPortSongOffsets[i];
 }
 s32 TagSession_Music(void) {return musicCount?musicIds[musicChoice]:TS_BGM_RANDOM;}
-s32 TagSession_BattleMusic(void) {
-    s32 id=TagSession_Music();
-    /* Resolve Random from the same playable choices shown in setup, rather
-       than the stage screen's raw disc list (which may include placeholders). */
-    return id!=TS_BGM_RANDOM?id:musicCount>1?musicIds[1+Rand_Range(musicCount-1)]:8;
-}
 static s32 cpuSetting[4][5];
 static s32 selection_side(s32 side) {return selected && mode==TAG_MODE_TOURNAMENT && !TagTournament_Active() && side==0?TagTournament_DraftTeam():side;}
 s32 TagSession_CpuSetting(s32 side,s32 member) {side=selection_side(side);return cpuSetting[side][member]<0?(mode==TAG_MODE_TOURNAMENT?gSaveData->rule[1]:comLevel):cpuSetting[side][member];}

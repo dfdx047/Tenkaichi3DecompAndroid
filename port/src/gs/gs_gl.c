@@ -793,6 +793,16 @@ static unsigned sBindN, sBlitN, sFrameN; /* the frames' target changes and copie
 static unsigned sNoDepthN; /* of those target changes, the ones bound without the depth buffer */
 static int depthless = -1; /* framebuffers without depth where it is not used (the frame's replay) */
 
+/* A full-screen effect (fx.vert: one triangle over the viewport, uv 0..1 across it): the alpha copy, the depth and the
+   target it reads are sTW x sTH, so the triangle must cover exactly that, as in the Vulkan back end (its effect pass
+   keeps the default viewport, the target's size). The ordinary draws' viewport is the GS page (GS_W x GS_H): kept
+   for them, the effect read texel x/2 at pixel x with 512 targets and drew the outline twice as big, off the model. */
+static void fx_draw(void) {
+    glViewport(0, 0, sTW * SCALE, sTH * SCALE);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glViewport(0, 0, GS_W * SCALE, GS_H * SCALE);
+}
+
 static void bind_target(int i, int clear, int nodepth) {
     GLenum bufs[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
     sBindN++;
@@ -1351,7 +1361,7 @@ static void frame_end(void) {
             haveFu = 0; /* the Params block now holds this pass's: the next primitive sends its own again */
             if (d->blendc != lastBlendc) { glBlendColor(d->blendc, d->blendc, d->blendc, d->blendc); lastBlendc = d->blendc; }
             set_scissor(d->scissor);
-            glDrawArrays(GL_TRIANGLES, 0, 3);
+            fx_draw();
             continue;
         }
         if (d->native) {
@@ -1368,7 +1378,7 @@ static void frame_end(void) {
             set_params(params, 16);
             haveFu = 0;
             set_scissor(d->scissor);
-            glDrawArrays(GL_TRIANGLES, 0, 3);
+            fx_draw();
             continue;
         }
         /* an ordinary primitive */
