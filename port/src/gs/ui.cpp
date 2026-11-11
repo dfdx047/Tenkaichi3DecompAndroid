@@ -23,6 +23,10 @@ extern "C" int GsGl_DirectXVersion(void);
 #include "ui.h"
 #include "presentation.h"
 #include "namefont.h"
+#ifdef __ANDROID__
+#include <jni.h>
+#include <unistd.h>
+#endif
 #include "../port_release.h"
 #include "menu_text.h"
 #include "game_profile.h"
@@ -108,6 +112,7 @@ void Port_LobbyHelloAsk(void);                               // asks it whether 
 int Port_LobbyRelease(int *min, int *latest);                // this release's number; the oldest let in and the newest (0: not known)
 int Port_LobbyQueueWaiting(int queue);                       // ... as last heard, -1 if not known
 const char *Port_LobbyCode(void);                            // the host's room code, "" until it is known
+const char *Port_LobbyServer(void);                          // (Dragon Net, BT3: the matchmaking service; plat_bt3only.c "")
 const char *Port_LobbyError(void);                           // why the matchmaking failed (state -3)
 int Port_LobbyRelayed(void);                                 // the other player was reached through the relay
 int Port_LobbyPoll(void);
@@ -135,6 +140,9 @@ static bool sNet;                              // the open window is the online 
 // for it here; the controller's START and the key bound to it reach it through the pad.
 extern "C" volatile int gPortSpecMenuAsk;
 volatile int gPortSpecMenuAsk;
+#ifdef __ANDROID__
+extern "C" unsigned Port_TouchButtons(void); // gs/gs_input.c: the on-screen controller's buttons now
+#endif
 extern "C" void Port_UiNotice(const char *text);
 static void spec_view_next(void);               // watching a match: the next view (player 1, player 2, both)
 void ModsUi_Tab(void);                          // gs/mods_ui.cpp: the settings window's Mods tab
@@ -1016,6 +1024,7 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
         "/usr/share/fonts/TTF/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/noto/NotoSans-Regular.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
         "/usr/share/fonts/liberation/LiberationSans-Regular.ttf", "C:\\Windows\\Fonts\\segoeui.ttf",
+        "/system/fonts/Roboto-Regular.ttf", "/system/fonts/NotoSans-Regular.ttf", // Android
     };
     ImGui_ImplSDLGPU3_InitInfo info;
 
@@ -1028,11 +1037,24 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad; // (a controller opens it too: START + SELECT)
     if (getenv("BT4_RENDER_TEST")) { io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange; }
     style();
+#ifdef __ANDROID__
+    // a phone's or a handheld's dense screen, touched or driven with the controller: everything larger, and the
+    // controller moves through the window (the back button opens and closes it, gs_gpu.c)
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
+    float uiScale = SDL_GetWindowDisplayScale(window);
+    if (uiScale < 1.5f) {
+        uiScale = 1.5f;
+    }
+    ImGui::GetStyle().ScaleAllSizes(uiScale);
+#else
+    float uiScale = 1.0f;
+#endif
     for (size_t i = 0; i < sizeof(fonts) / sizeof(fonts[0]); i++) {
         FILE *fp = fopen(fonts[i], "rb");
         if (fp != NULL) {
             fclose(fp);
-            io.Fonts->AddFontFromFileTTF(fonts[i], 18.0f);
+            io.Fonts->AddFontFromFileTTF(fonts[i], 18.0f * uiScale);
             break;
         }
     }
@@ -1053,7 +1075,13 @@ int Ui_Init(SDL_Window *window, SDL_GPUDevice *device, void *gl_context, const c
 #endif
     if (device == NULL) { // the OpenGL back end (gs_gl.c), with its context current
         sGL = 1;
-        if (!ImGui_ImplSDL3_InitForOpenGL(window, (SDL_GLContext)gl_context) || !ImGui_ImplOpenGL3_Init(GsGl_DirectXVersion() ? "#version 300 es" : "#version 330 core")) {
+        if (!ImGui_ImplSDL3_InitForOpenGL(window, (SDL_GLContext)gl_context) || !ImGui_ImplOpenGL3_Init(
+#ifdef __ANDROID__
+                                                                                     "#version 300 es"
+#else
+                                                                                     GsGl_DirectXVersion() ? "#version 300 es" : "#version 330 core"
+#endif
+                                                                                     )) {
             return 0;
         }
     } else {
@@ -1156,10 +1184,6 @@ static bool pad_pressed(ImGuiKey key) {
 extern "C" void PortA11y_Say(const char *text, int flags);
 extern "C" const char *PortA11y_Label(const char *label);
 static void say_quit_button(int which, int flags);
-
-int Ui_Pauses(void) { /* the settings window is open and the game waits behind it (Dragon Rage's ui.h) */
-    return sReady && sOpen && !sNet;
-}
 
 int Ui_QuitAsk(void) {
     if (!sReady) {
@@ -1325,7 +1349,14 @@ static void quick_status(int state, int &lastState, const char *name) {
     }
 }
 
+#if defined(__ANDROID__) && defined(DR_DRAGONNET) /* (BT4: Dragon Net is BT3's service; the PC online window stays) */
+static void build_net_android(void); /* ui_dragonnet.inc: Dragon Net Battle, in DBT-NX's look, for touch and pad */
+#endif
 static void build_net(void) {
+#if defined(__ANDROID__) && defined(DR_DRAGONNET)
+    build_net_android();
+    return;
+#endif
     static char name[17] = "Player", address[64] = "", port[8] = "7000";
     static int tab, roll = -1, delay = 1, battle = -1, timeLimit = 3, speed = -1;
     static bool useCode = true;       // a lobby with a code (no port forwarding) or on a port
@@ -1626,6 +1657,24 @@ void Ui_Toggle(void) {
     }
 }
 
+// The game waits while the settings window is open (plat_stub.c), except behind the online screen and in a match.
+#ifdef __ANDROID__
+static int nm_pauses(void); // ui_android.inc: the app's touch menu is up
+#endif
+int Ui_Pauses(void) {
+#ifdef __ANDROID__
+    if (sReady && nm_pauses()) {
+        return 1;
+    }
+#endif
+    return sReady && sOpen && !sNet;
+}
+
+// Any of the windows is open (Android: the on-screen controller steps aside, so touches reach the window).
+int Ui_IsOpen(void) {
+    return sReady && sOpen;
+}
+
 static void bind(int value) {
     if (sCapAction == PORT_ACTIONS) { // the row "Open this window"
         if (sCapKind == 1) {
@@ -1790,6 +1839,34 @@ int Ui_Event(const SDL_Event *ev) {
         set_open(false);
         return 1;
     }
+    if (ev->type == SDL_EVENT_FINGER_DOWN || ev->type == SDL_EVENT_FINGER_MOTION || ev->type == SDL_EVENT_FINGER_UP ||
+        ev->type == SDL_EVENT_FINGER_CANCELED) {
+        // A finger is the mouse, from the touch itself (the mouse events SDL makes from touches are not used): one
+        // finger at a time; its position in the window's units, which are the window's (ImGui's display size).
+        static SDL_FingerID finger;
+        ImGuiIO &io = ImGui::GetIO();
+        bool down = ev->type == SDL_EVENT_FINGER_DOWN, up = ev->type == SDL_EVENT_FINGER_UP || ev->type == SDL_EVENT_FINGER_CANCELED;
+        if (down && finger == 0) {
+            finger = ev->tfinger.fingerID;
+        }
+        if (finger == 0 || ev->tfinger.fingerID != finger) {
+            return 1;
+        }
+        io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);
+        io.AddMousePosEvent(ev->tfinger.x * io.DisplaySize.x, ev->tfinger.y * io.DisplaySize.y);
+        if (down) {
+            io.AddMouseButtonEvent(0, true);
+        }
+        if (up) {
+            io.AddMouseButtonEvent(0, false);
+            finger = 0;
+        }
+        return 1;
+    }
+    if ((ev->type == SDL_EVENT_MOUSE_MOTION && ev->motion.which == SDL_TOUCH_MOUSEID) ||
+        ((ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev->type == SDL_EVENT_MOUSE_BUTTON_UP) && ev->button.which == SDL_TOUCH_MOUSEID)) {
+        return 1; // (the same touch again, as a mouse)
+    }
     ImGui_ImplSDL3_ProcessEvent(ev);
     return ev->type == SDL_EVENT_KEY_DOWN || ev->type == SDL_EVENT_KEY_UP || ev->type == SDL_EVENT_TEXT_INPUT ||
            ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev->type == SDL_EVENT_MOUSE_BUTTON_UP || ev->type == SDL_EVENT_MOUSE_WHEEL;
@@ -1930,6 +2007,9 @@ static void video_tab(PortVideo &v) {
         }
         if (ImGui::Combo(f1_text("Renderer"), &api, kApi, count)) {
             Port_SettingSave("gpu_api", api);
+#ifdef __ANDROID__
+            Port_SettingSave("dr_renderer", api + 1); /* (the player's choice: the launcher no longer picks by GPU) */
+#endif
             Port_SettingsWrite();
         }
         ImGui::SetItemTooltip(f1_text("Takes effect after restarting the game. Performance depends on your GPU and drivers.\n"
@@ -1960,6 +2040,22 @@ static void video_tab(PortVideo &v) {
                               "The newest picture reaches the screen later: 17 ms at 60, 25 ms at 120, 29 ms at 240.\n"
                               "Choose what your screen can show. F9 switches it off and on."));
     }
+#ifdef __ANDROID__
+    {   // how finished pictures reach the screen (gs_gpu.c); applied between two frames, kept for the next start
+        static const char *kPresent[] = { "Automatic (Mailbox where the device has it)", "FIFO (VSync)", "Mailbox", "Immediate" };
+        int pm = GsGpu_PresentGet();
+        pm = pm < 0 || pm > 3 ? 0 : pm;
+        ImGui::SetNextItemWidth(416.0f);
+        if (ImGui::Combo("Present mode", &pm, kPresent, 4)) {
+            GsGpu_PresentSet(pm);
+            Port_SettingsWrite();
+        }
+        ImGui::SetItemTooltip("How the finished pictures reach the screen.\n"
+                              "FIFO (VSync): no tearing, a little more latency, steadier pace on some devices.\n"
+                              "Mailbox: no tearing, no waiting. Immediate: least latency, may tear.\n"
+                              "A mode the device does not offer falls back to Automatic.");
+    }
+#endif
     {
         // The size of these windows, the chat and the notices: larger with a taller picture by itself (sUiScale)
         static int steps = 20; // (in fives of a percent; while it is dragged)
@@ -2812,6 +2908,7 @@ static void sticks_panel(int player) {
     }
 }
 
+
 static void controls_tab(void) {
     static int player;
     char label[96];
@@ -2932,7 +3029,59 @@ static void controls_tab(void) {
     }
 }
 
+// A finger dragged up or down scrolls the window it is on, also when it started on a button (the button is let go:
+// a vertical drag is never meant for one; sliders are moved sideways).
+static void touch_scroll(void) {
+    ImGuiIO &io = ImGui::GetIO();
+    ImGuiContext &g = *GImGui;
+    static bool scrolling;
+    if (io.MouseSource != ImGuiMouseSource_TouchScreen || !io.MouseDown[0]) {
+        scrolling = false;
+        return;
+    }
+    ImVec2 drag = ImGui::GetMouseDragDelta(0, 0.0f);
+    if (!scrolling && fabsf(drag.y) > 14.0f && fabsf(drag.y) > fabsf(drag.x) * 1.5f) {
+        scrolling = true;
+        if (g.ActiveId != 0) {
+            ImGui::ClearActiveID();
+        }
+    }
+    if (scrolling && g.HoveredWindow != NULL) {
+        ImGuiWindow *w = g.HoveredWindow;
+        while (w->ScrollMax.y <= 0.0f && w->ParentWindow != NULL) {
+            w = w->ParentWindow; // the nearest one that can scroll
+        }
+        ImGui::SetScrollY(w, w->Scroll.y - io.MouseDelta.y);
+    }
+}
+
+#ifdef __ANDROID__
+// "Quit to the launcher": the activity (GameActivity.quitToApp) brings the launcher forward and ends the game's own
+// process, which cannot be started again in place (the engine needs the fixed addresses a fresh process has).
+static void quit_to_app(void) {
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject act = env != NULL ? (jobject)SDL_GetAndroidActivity() : NULL;
+    jclass cls = act != NULL ? env->GetObjectClass(act) : NULL;
+    jmethodID m = cls != NULL ? env->GetMethodID(cls, "quitToApp", "()V") : NULL;
+    if (m == NULL) {
+        if (env != NULL) { env->ExceptionClear(); }
+        fflush(NULL);
+        _exit(0); /* (no activity to ask: at least the game ends) */
+    }
+    env->CallVoidMethod(act, m);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); }
+}
+#include "ui_android.inc"
+#ifdef DR_DRAGONNET
+#include "ui_dragonnet.inc"
+#endif
+#endif
+
 static void build(void) {
+#ifdef __ANDROID__
+    build_android(); // (ui_android.inc: the touch menu in the launcher's look)
+    return;
+#endif
     PortVideo v, was;
     ImGuiIO &io = ImGui::GetIO();
     bool open = true;
@@ -2951,15 +3100,23 @@ static void build(void) {
         sPadTab = true;
     }
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+#ifdef __ANDROID__
+    // most of the screen, fixed: fingers move through it by dragging its content, not its frame
+    ImGui::SetNextWindowSize(ImVec2(io.DisplaySize.x * 0.92f, io.DisplaySize.y * 0.9f), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+#else
     // (760 high where the picture has the room: the Controls tab's sticks and its list of bindings together)
     { // (a large "Menu size" in a small window: no larger than the window)
         float sw = U(640.0f), sh = io.DisplaySize.y >= U(800.0f) ? U(760.0f) : U(600.0f);
         ImGui::SetNextWindowSize(ImVec2(sw < io.DisplaySize.x * 0.96f ? sw : io.DisplaySize.x * 0.96f,
                                         sh < io.DisplaySize.y * 0.94f ? sh : io.DisplaySize.y * 0.94f), ImGuiCond_Appearing);
     }
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+#endif
     char title[128];
     snprintf(title, sizeof(title), "%s###settings", f1_text("Settings"));
-    if (ImGui::Begin(title, &open, ImGuiWindowFlags_NoCollapse)) {
+    if (ImGui::Begin(title, &open, flags)) {
         PortLobbyView lv;
         bool inLobby = Port_LobbyView(&lv) && lv.inMatch;
         if (inLobby) { // a lobby's match: the ways back (the owner: for everyone) and out
@@ -2999,6 +3156,31 @@ static void build(void) {
             ImGui::TextDisabled(f1_text("View: %s"), f1_text(spec_view_name(Port_NetSpecView())));
             ImGui::Separator();
         }
+#ifdef __ANDROID__
+        if (ImGui::Button("  Resume  ")) {
+            open = false;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("  Quit to launcher  ")) {
+            ImGui::OpenPopup("Quit to launcher?");
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Back button or START + SELECT: resume");
+        if (ImGui::BeginPopupModal("Quit to launcher?", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextUnformatted("The game closes and you go back to the app's menu.");
+            ImGui::TextUnformatted("Progress that has not been saved in the game is lost.");
+            ImGui::Spacing();
+            if (ImGui::Button("Quit", ImVec2(160.0f, 0.0f))) {
+                quit_to_app();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Stay", ImVec2(160.0f, 0.0f))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::Separator();
+#endif
         // the tabs in a region of their own, above a last line that is always there
         ImGui::BeginChild("body", ImVec2(0.0f, -ImGui::GetFrameHeightWithSpacing() - ImGui::GetStyle().ItemSpacing.y), ImGuiChildFlags_NavFlattened);
         if (ImGui::BeginTabBar("tabs")) {
@@ -3050,6 +3232,7 @@ static void build(void) {
             ImGui::TextDisabled("%s", f1_text("D-pad: move   Cross / A: choose   Circle / B: back   L1 / R1: tab"));
         }
     }
+    touch_scroll();
     ImGui::End();
     if (memcmp(&v, &was, sizeof(v)) != 0) {
         GsGpu_SetSettings(&v);
@@ -3516,6 +3699,11 @@ static void chat_draw(void) {
 // Builds this frame's picture of the overlay (the settings or the online window, the line over the picture).
 // false: there is nothing to draw. The same for both back ends; each then draws ImGui's data its own way.
 static bool frame_build(void) {
+#ifdef __ANDROID__
+    if (sReady) {
+        nm_frame(); // (ui_android.inc: the app's touch menu)
+    }
+#endif
     PortInput_TboClipboard();
     { // a keypad of Tenkaichi Budokai Online takes text: the system's text input is on for it (letters as typed)
         static SDL_Window *on = NULL;
@@ -3551,9 +3739,23 @@ static bool frame_build(void) {
             }
         }
     }
-    update_tick();
+#ifdef __ANDROID__
+    { // the on-screen controller's R1 while watching: the next view, as a controller's R1 (its buttons are no SDL events)
+        static bool held;
+        const bool r1 = (Port_TouchButtons() & 0x0800u) != 0;
+        if (r1 && !held && sReady && !sOpen && !sNativeOpen && Port_NetSpectating()) {
+            spec_view_next();
+        }
+        held = r1;
+    }
+#endif
     char updLine[256];
+#ifdef __ANDROID__
+    updLine[0] = '\0'; // (Android updates through the app's APK, not the game's folder)
+#else
+    update_tick();
     update_line(updLine, sizeof(updLine)); // (the update's line over the main menu and the online screens)
+#endif
     bool notice = sNotice[0] != '\0' && SDL_GetTicks() < sNoticeUntil;
     if (sNoticeNew) { // (set from the game's side: the time starts when it is first drawn)
         sNoticeNew = 0;

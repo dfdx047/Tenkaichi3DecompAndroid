@@ -188,6 +188,62 @@ static int http_post_native(const char *url, const char *json, const char *const
     if (ses != NULL) { WinHttpCloseHandle(ses); }
     return ok;
 }
+#elif defined(__ANDROID__)
+/* Android: no curl. The app's Java side does the request (GameActivity.netPost, HttpsURLConnection), called here
+   through JNI on this thread (SDL attaches it). */
+#include <jni.h>
+
+static int http_post_native(const char *url, const char *json, const char *const *headers, char *out, size_t size) {
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject act;
+    jclass cls;
+    jmethodID m;
+    jstring ju, jb, jh, jr;
+    char head[512];
+    int ok = 0, i;
+
+    if (env == NULL || (act = (jobject)SDL_GetAndroidActivity()) == NULL) {
+        return 0;
+    }
+    head[0] = '\0'; /* the extra header lines, one per line ("Name: value") */
+    for (i = 0; headers != NULL && headers[i] != NULL; i++) {
+        SDL_strlcat(head, headers[i], sizeof(head));
+        SDL_strlcat(head, "\n", sizeof(head));
+    }
+    cls = (*env)->GetObjectClass(env, act);
+    m = cls != NULL ? (*env)->GetMethodID(env, cls, "netRequest", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;") : NULL;
+    if (m == NULL) {
+        (*env)->ExceptionClear(env);
+    } else {
+        ju = (*env)->NewStringUTF(env, url);
+        jb = json != NULL ? (*env)->NewStringUTF(env, json) : NULL; /* NULL: a GET */
+        jh = (*env)->NewStringUTF(env, head);
+        jr = (jstring)(*env)->CallObjectMethod(env, act, m, ju, jb, jh);
+        if ((*env)->ExceptionCheck(env)) {
+            (*env)->ExceptionClear(env);
+            jr = NULL;
+        }
+        if (jr != NULL) {
+            const char *r = (*env)->GetStringUTFChars(env, jr, NULL);
+            if (r != NULL) {
+                SDL_strlcpy(out, r, size);
+                ok = out[0] != '\0';
+                (*env)->ReleaseStringUTFChars(env, jr, r);
+            }
+            (*env)->DeleteLocalRef(env, jr);
+        }
+        (*env)->DeleteLocalRef(env, ju);
+        if (jb != NULL) {
+            (*env)->DeleteLocalRef(env, jb);
+        }
+        (*env)->DeleteLocalRef(env, jh);
+    }
+    if (cls != NULL) {
+        (*env)->DeleteLocalRef(env, cls);
+    }
+    (*env)->DeleteLocalRef(env, act);
+    return ok;
+}
 #else
 /* Linux: the system's curl library, if it is there (it nearly always is), loaded when first needed. */
 static int http_post_native(const char *url, const char *json, const char *const *headers, char *out, size_t size) {
@@ -306,6 +362,10 @@ static int http_post_once(const char *what, const char *json, char *out, size_t 
     if (SDL_getenv("BT3_MATCH_CURL") == NULL && http_post_native(url, json, headers[0] != NULL ? headers : NULL, out, size)) {
         return 1;
     }
+#ifdef __ANDROID__
+    (void)args; (void)p; (void)got; (void)code; (void)n; (void)data;
+    return 0; /* (no curl program to fall back on) */
+#endif
 #ifdef _WIN32
     args[n++] = "curl.exe";
 #else
