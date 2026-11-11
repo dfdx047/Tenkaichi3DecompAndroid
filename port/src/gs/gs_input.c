@@ -1280,6 +1280,13 @@ static struct {
    only leaves the newest command in its player's box; the thread sends it. sPadLock keeps a controller from being
    closed (pads_refresh) while the thread is sending to it. */
 static SDL_Semaphore *sRumbleSem;
+/* While a vibration command is being sent. SDL keeps its lock of all controllers (SDL_LockJoysticks) for the whole of
+   SDL_RumbleGamepad, and over Bluetooth that can be seconds; every read of a button or a stick, and the window's events
+   (SDL_PumpEvents updates the controllers), waits for that lock: the game and the picture stood still together (a
+   2026-11-10 stall report: 2.2 s in SDL_GetGamepadConnectionState). Now the game's reads take the last state of the
+   controller instead (Port_PadRead, through sPadLock, which the thread holds for each command), its own commands wait
+   for the next frame (Port_PadVibrate), and the render thread leaves its event pump for the next millisecond. */
+static int sRumbleSending;
 static SDL_SpinLock sRumbleBoxLock;
 static struct { SDL_JoystickID id; Uint16 low, high; Uint32 ms; int pending; } sRumbleBox[4];
 static int SDLCALL rumble_thread(void *unused) {
@@ -1308,9 +1315,12 @@ static int SDLCALL rumble_thread(void *unused) {
                 SDL_Gamepad *g = SDL_GetGamepadFromID(id);
                 if (g != NULL) {
                     Uint64 took = SDL_GetTicksNS();
+                    __atomic_store_n(&sRumbleSending, 1, __ATOMIC_RELEASE);
                     SDL_RumbleGamepad(g, low, high, ms);
+                    __atomic_store_n(&sRumbleSending, 0, __ATOMIC_RELEASE);
                     took = SDL_GetTicksNS() - took;
-                    if (took >= RUMBLE_OFF_NS && __atomic_add_fetch(&sRumble[p].stalls, 1, __ATOMIC_RELAXED) >= 2) {
+                    /* (off at the second command of 50 ms or more, or at once after one of 250 ms: each held the game) */
+                    if (took >= RUMBLE_OFF_NS && (__atomic_add_fetch(&sRumble[p].stalls, 1, __ATOMIC_RELAXED) >= 2 || took >= RUMBLE_OFF_NS * 5)) {
                         fprintf(stderr, "rumble: player %d's controller (%s) took %llu ms for a vibration command: vibration is off for it\n",
                                 p + 1, SDL_GetGamepadName(g) != NULL ? SDL_GetGamepadName(g) : "?", (unsigned long long)(took / 1000000));
                         __atomic_store_n(&sRumble[p].off, 1, __ATOMIC_RELAXED);
@@ -1470,7 +1480,13 @@ void Port_PadVibrate(int socket, int small, int large) {
     if (why != 0) {
         low = high = 0;
     }
+    if (sPadLock != NULL && !SDL_TryLockMutex(sPadLock)) {
+        return; /* (the thread is still sending the one before: this frame's waits; the game says it again next frame) */
+    }
     rumble_send(player, pad_of(player), (Uint16)low, (Uint16)high, why);
+    if (sPadLock != NULL) {
+        SDL_UnlockMutex(sPadLock);
+    }
 }
 
 /* 1 with BT3_RUMBLE_TEST set: the game's rule "no vibration in a replay" is lifted (src/battle/btl_char_get.c). */
@@ -1496,13 +1512,47 @@ void PortInput_VibrationTest(int player) {
     }
 }
 
+/* The game's read of a port. While the vibration's thread sends a command (it holds sPadLock for it), SDL's controller
+   lock is taken and any read would wait as long as the command does: the port's last state is given again instead,
+   as if nothing moved for that moment. The lock is held for the read itself, so a command does not start in the middle
+   of one either (the same order of locks everywhere: sPadLock, then SDL's). */
+static int pad_read(int socket, unsigned char *data);
+int Port_PadRead(int socket, unsigned char *data) {
+    static unsigned char last[4][18];
+    static int haveLast[4];
+    int r, locked = 0;
+
+    if (socket >= 0 && socket <= 3 && sPadLock != NULL) {
+        if (SDL_TryLockMutex(sPadLock)) {
+            locked = 1;
+        } else if (haveLast[socket]) {
+            memcpy(data, last[socket], 18);
+            return 18;
+        } else {
+            SDL_LockMutex(sPadLock); /* (nothing read yet for this port: wait, as before) */
+            locked = 1;
+        }
+    }
+    r = pad_read(socket, data);
+    if (locked) {
+        SDL_UnlockMutex(sPadLock);
+    }
+    if (r == 18 && socket >= 0 && socket <= 3) {
+        memcpy(last[socket], data, 18);
+        haveLast[socket] = 1;
+    }
+    return r;
+}
+
 /* The controllers' and the keyboard's state as it is at this moment (plat_stub.c, "Low input lag": the pads are
    read long after the window's events were last taken). The events themselves stay queued for the window. */
 void PortInput_Fresh(void) {
     if (Gs_RenderThreaded() && !Gs_OnRenderThread()) {
         return; /* (the window is the render thread's: it takes the events, every millisecond it waits: PortInput_Pump) */
     }
-    SDL_PumpEvents();
+    if (!__atomic_load_n(&sRumbleSending, __ATOMIC_ACQUIRE)) {
+        SDL_PumpEvents();
+    }
     const bool *keys = SDL_GetKeyboardState(NULL);
     window_key(keys, SDL_SCANCODE_RETURN);
     window_key(keys, SDL_SCANCODE_KP_ENTER);
@@ -1513,6 +1563,9 @@ int gPortPadAlways;
 /* The render thread (BT3_GS_THREAD): the window's events, taken while it waits for work or for a picture's time.
    The controllers' and the keys' state the game's thread reads is then never more than a millisecond old. */
 void PortInput_Pump(void) {
+    if (__atomic_load_n(&sRumbleSending, __ATOMIC_ACQUIRE)) {
+        return; /* (SDL's controller lock is the vibration's now: the events wait for the next millisecond) */
+    }
     SDL_PumpEvents();
 }
 
@@ -1550,7 +1603,7 @@ static void press_age(int socket, unsigned btn) {
     prev[socket] = btn;
 }
 
-int Port_PadRead(int socket, unsigned char *data) {
+static int pad_read(int socket, unsigned char *data) {
     unsigned btn = 0;
     unsigned char rx = 0x80, ry = 0x80, lx = 0x80, ly = 0x80;
     SDL_Gamepad *g;

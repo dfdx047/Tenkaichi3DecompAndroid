@@ -1088,7 +1088,7 @@ static void handle(Peer *p,int type,const unsigned char *data,unsigned n) {
         put32(out,from);put32(out+4,k);send_packet(p,TN_RANDSUM_DATA,out,8+k*16);
     } else if(type==TN_RANDSUM_DATA && n>=8) {
         unsigned k=get32(data+4),i;int asked=0;
-        if(n!=8+k*16)return;
+        if(k>64 || n!=8+k*16)return; /* (k*16 wrapped around for a k from a broken packet: the loop read past it) */
         for(i=0;i<k;i++) {
             unsigned f=get32(data+8+i*16),cnt=get32(data+12+i*16);uint64_t h=(uint64_t)get32(data+16+i*16)<<32|get32(data+20+i*16);
             RandFrame *r=rand_find(f);
