@@ -64,12 +64,15 @@ android {
         }
         // A test build installed beside Dragon Rage instead of over it (./gradlew assembleDebug -PsideBySide): its
         // own package and the name "Dragon Rage (teste)" (src/sideBySide), so the player's app and its data stay.
+        // (the release too: ./gradlew assembleRelease -PsideBySide, signed with the test key when no release key is set)
         if (project.hasProperty("sideBySide")) {
             getByName("debug") { applicationIdSuffix = ".teste" }
+            getByName("release") { applicationIdSuffix = ".teste" }
         }
     }
     if (project.hasProperty("sideBySide")) {
         sourceSets.getByName("debug").res.srcDir("src/sideBySide/res")
+        sourceSets.getByName("release").res.srcDir("src/sideBySide/res")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

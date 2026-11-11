@@ -131,6 +131,23 @@ static void log_low_maps(void) {
     fclose(fp);
 }
 
+/* Which engine this process starts: the BT4 card's process (":bt4", Bt4Activity) runs BT4decomp,
+   libbt4dec.so; every other one Budokai Tenkaichi 3's libbt3.so. Read from /proc/self/cmdline, as the constructor
+   below runs before the activity hands over any argument. */
+static const char *engine_library(void) {
+    static char name[32];
+    if (name[0] == '\0') {
+        char cmd[256] = {0};
+        FILE *fp = fopen("/proc/self/cmdline", "r");
+        size_t n = fp != NULL ? fread(cmd, 1, sizeof(cmd) - 1, fp) : 0;
+        if (fp != NULL) fclose(fp);
+        cmd[n] = '\0';
+        n = strlen(cmd);
+        snprintf(name, sizeof(name), "%s", n >= 4 && strcmp(cmd + n - 4, ":bt4") == 0 ? "libbt4dec.so" : "libbt3.so");
+    }
+    return name;
+}
+
 /* The address range the program's segments take, from its program headers. */
 static int program_span(const char *path, uintptr_t *lo, uintptr_t *hi) {
     Elf64_Ehdr eh;
@@ -223,7 +240,7 @@ __attribute__((constructor)) static void reserve_early(void) {
         char engine[1024];
         const char *slash = strrchr(info.dli_fname, '/');
         uintptr_t lo, hi;
-        snprintf(engine, sizeof(engine), "%.*s/libbt3.so", slash != NULL ? (int)(slash - info.dli_fname) : 1, slash != NULL ? info.dli_fname : ".");
+        snprintf(engine, sizeof(engine), "%.*s/%s", slash != NULL ? (int)(slash - info.dli_fname) : 1, slash != NULL ? info.dli_fname : ".", engine_library());
         if (program_span(engine, &lo, &hi)) {
             lo &= ~(page - 1);
             hi = (hi + page - 1) & ~(page - 1);
@@ -640,7 +657,8 @@ int SDL_main(int argc, char *argv[]) {
     say("Dragon Rage engine loader: device %s, Android %d, page size %lu", prop, android_get_device_api_level(), (unsigned long)page);
     say("game folder %s", dir);
 
-    snprintf(engine, sizeof(engine), "%s/libbt3.so", libdir);
+    snprintf(engine, sizeof(engine), "%s/%s", libdir, engine_library());
+    say("engine %s", engine_library());
     snprintf(exe, sizeof(exe), "%s/libbt3.so", dir); /* plat_mem.c reads <BT3_EXE>.dat: the app put it there */
     setenv("BT3_EXE", exe, 1);
     setenv("BT3_GS", "gpu", 0);

@@ -428,13 +428,13 @@
     <string name="msg_no_engine_bt2">This build of the app has no BT2 engine (the automatic builds leave it out): install the release APK.</string>
     <string name="welcome_pick">Choose the game</string>
     <string name="welcome_bt3">The original game (USA disc). Online with Dragon Net, mods, stages, songs, cheats and custom drivers.</string>
-    <string name="welcome_bt4">Team BT4\'s mod: new characters, forms and stages. Experimental: its own engine (the mod recompiled), drawn by ARMSX2\'s renderer (Dragon Rage\'s is an experimental option).</string>
+    <string name="welcome_bt4">Team BT4\'s mod: new characters, forms and stages. Test build: BT4decomp (NauTaro\'s decompilation), English or Spanish.</string>
     <string name="welcome_bt2">The classic: Budokai Tenkaichi 2 (USA disc), with its own engine. Online Mode with 1P VS 2P. What you set here is kept apart from BT3 and BT4.</string>
     <string name="welcome_note">Each game keeps its own disc image, saves, textures and settings. You can switch from the menu (Game) at any time.</string>
     <string name="welcome_last">Last played</string>
     <string name="nav_switch_game">Game</string>
     <string name="bt4_tagline">Budokai Tenkaichi 4 · Team BT4</string>
-    <string name="bt4_game_data_intro">Pick your image of Team BT4\'s mod: SLUS-219.78, Beta 14 Rev2 (another version does not work: the game was recompiled for that one). Only its boot files are copied; the rest is read from the image where it is, so keep it in its folder.</string>
+    <string name="bt4_game_data_intro">Pick your image of Team BT4\'s mod, Beta 14 Rev2, in English or in Spanish. The game\'s files are copied out of it (about 5.7 GB, some minutes) and each one is checked; the image is not needed afterwards.</string>
     <string name="bt4_engine_included">The Budokai Tenkaichi 4 engine is in this build.</string>
     <string name="bt4_engine_missing">This build does not have the Budokai Tenkaichi 4 engine yet (libbt4.so). The image can be set up already.</string>
     <string name="tag_lite">Tag Team light graphics</string>
@@ -541,4 +541,8 @@
     <string name="tpg_profiles">Profiles and left-handed</string>
     <string name="tpg_profiles_text">Start from a ready-made profile (Online competitive is tuned for Dragon Net), save your own under a name, and mirror the whole layout for the left hand.</string>
     <string name="tpg_online">Online, every lost or late press costs a round. With these settings a touch player loses fewer inputs in Dragon Net and in the Tag Team online rooms: the game receives the same buttons a controller would send.</string>
+    <string name="bt4dec_err_version">This image is not Team BT4\'s Beta 14 Rev2 in English or in Spanish (its BIN/DBZ4.BIN is another one: SHA-1 %1$s…).</string>
+    <string name="bt4dec_err_file">A file of the image is not the one of Beta 14 Rev2 (%1$s): the image may be damaged. Nothing was installed.</string>
+    <string name="bt4dec_err_space">Not enough room: the game needs %1$d MB free and there are %2$d MB.</string>
+    <string name="bt4dec_data_ok">Beta 14 Rev2 verified · %1$d files · %2$s</string>
 </resources>

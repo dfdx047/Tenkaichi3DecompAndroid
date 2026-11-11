@@ -14,7 +14,7 @@ package com.dfdx047.dragonrage.data
  */
 enum class Game(val id: String, val folder: String, val engine: String, val serial: String, val library: String) {
     BT3("bt3", "", "bt3", "SLUS-21678", "bt3"),
-    BT4("bt4", "bt4", "bt4", "SLUS-219.78", "bt4"),
+    BT4("bt4", "bt4", "bt4dec", "SLUS-219.78", "bt4dec"), // (BT4decomp, libbt4dec.so; loader.c picks it in the :bt4 process)
     BT2("bt2", "", "bt2", "SLUS-21441", "bt2");
 
     companion object {

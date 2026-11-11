@@ -151,7 +151,7 @@ fun HomeScreen(vm: AppViewModel) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Rounded.CheckCircle, null, tint = Dbz.ShenronGreen)
                         Spacer(Modifier.size(8.dp))
-                        Text(stringResource(if (s.modified) R.string.game_data_ok_mod else R.string.game_data_ok, s.files, formatBytes(s.bytes)), style = MaterialTheme.typography.bodyMedium)
+                        Text(stringResource(if (bt4) R.string.bt4dec_data_ok else if (s.modified) R.string.game_data_ok_mod else R.string.game_data_ok, s.files, formatBytes(s.bytes)), style = MaterialTheme.typography.bodyMedium)
                     }
                     if (s.modified) {
                         Row(verticalAlignment = Alignment.Top) {

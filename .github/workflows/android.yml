@@ -122,6 +122,17 @@ jobs:
           tail -2 bt2_plugin.txt
           ls -la android/app/src/main/jniLibs/arm64-v8a
 
+      # Budokai Tenkaichi 4 (BT4decomp, libbt4dec.so + libdatachannel.so): built locally from the branch bt4dec-proto
+      # and kept in the release "bt4dec-engine" (.github/bt4dec-engine.sh). Without it the BT4 card cannot start.
+      - name: Engine BT4 (BT4decomp)
+        continue-on-error: true
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sh .github/bt4dec-engine.sh
+          ls -la android/app/src/main/jniLibs/arm64-v8a
+
       - name: Version from the tag
         run: |
           if [[ "$GITHUB_REF" == refs/tags/android-v* ]]; then
