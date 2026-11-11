@@ -695,13 +695,24 @@ static int generic_mapping(SDL_Joystick *js, char *out, size_t size) {
     static const char *const kAxis[4] = {"leftx", "lefty", "rightx", "righty"};
     char guid[64];
     const char *name = SDL_GetJoystickName(js);
-    int buttons = SDL_GetNumJoystickButtons(js), axes = SDL_GetNumJoystickAxes(js), b;
+    int buttons = SDL_GetNumJoystickButtons(js), axes = SDL_GetNumJoystickAxes(js), b, first = 0;
     size_t used;
+
+#ifdef __ANDROID__
+    /* A controller with none of Android's gamepad keys (A, B, X, Y...) sends BUTTON_1..16 (Android's Generic.kl for
+       a USB or Bluetooth joystick it has no layout for: the PS2 adapters, 0810:0001 "Twin USB Joystick" and the like),
+       and SDL numbers those from 20 (SDL_sysjoystick.c: button = 20 + (keycode - AKEYCODE_BUTTON_1)); it reports 21
+       or more buttons only then. The PS2 order below starts at BUTTON_1: at b0 it named buttons such a controller
+       does not have, and none of its buttons did anything, nor could they be set on the Controls page. */
+    if (buttons > 20) {
+        first = 20;
+    }
+#endif
 
     SDL_GUIDToString(SDL_GetJoystickGUID(js), guid, (int)sizeof(guid));
     used = (size_t)snprintf(out, size, "%s,%s,", guid, name != NULL && name[0] != '\0' ? name : "Controller");
-    for (b = 0; b < 12 && b < buttons && used < size; b++) {
-        used += (size_t)snprintf(out + used, size - used, "%s:b%d,", kButton[b], b);
+    for (b = 0; b < 12 && first + b < buttons && used < size; b++) {
+        used += (size_t)snprintf(out + used, size - used, "%s:b%d,", kButton[b], first + b);
     }
     if (SDL_GetNumJoystickHats(js) > 0 && used < size) {
         used += (size_t)snprintf(out + used, size - used, "dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,");
@@ -709,7 +720,7 @@ static int generic_mapping(SDL_Joystick *js, char *out, size_t size) {
     for (b = 0; b < 4 && b < axes && used < size; b++) {
         used += (size_t)snprintf(out + used, size - used, "%s:a%d,", kAxis[b], b);
     }
-    return buttons >= 4 && used < size;
+    return buttons - first >= 4 && used < size;
 }
 
 /* The automatic set-up (the Controls page's button): every connected controller SDL does not know gets the PS2
