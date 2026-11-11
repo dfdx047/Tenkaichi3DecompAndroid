@@ -1783,7 +1783,11 @@ static void pace_update(int me,int cap) {
 static void pace_measure(void) {
     extern unsigned long long gPortSleptTotalNs;
     Uint64 now=SDL_GetTicksNS(),busy;int cap;
-    if(config.practice || role<0 || role>=TN_PLAYERS)return;
+    static int on=-1;
+    /* (the room pace is off unless BT3_TAG_ROOM_PACE=1 on every phone, pace_update: without it nobody measures, and a guest
+       no longer sends the host a TN_CAP every 120 blanks that the host then ignored; roomPace stays 0, pace_reset) */
+    if(on<0)on=getenv("BT3_TAG_ROOM_PACE")!=NULL;
+    if(!on || config.practice || role<0 || role>=TN_PLAYERS)return;
     /* (blanks by the frame number, not by calls: the blank a rollback was found at is taken a second time) */
     if(!capWall || frame<capFrame){capWall=now;capSlept=gPortSleptTotalNs;capWait=tagWaitNs;capFrame=frame;capBlanks=0;return;}
     capBlanks=frame-capFrame;

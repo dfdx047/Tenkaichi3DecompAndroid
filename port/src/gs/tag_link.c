@@ -72,8 +72,7 @@ typedef struct {
     Piece tx[TL_WINDOW], rx[TL_WINDOW];
     uint8_t inbox[TL_INBOX];
     int inN;
-    Uint64 lastIn, lastOut, lastSyn, opened;
-    int ackDue; /* pieces came in that no packet of ours has acknowledged yet */
+    Uint64 lastIn, lastOut, lastSyn;
     int srtt, rto; /* ms */
     TlAddr direct; /* the last direct way that worked (haveDirect), kept while the relay carries it */
     int haveDirect;
@@ -189,16 +188,6 @@ static int parse_addr(const char *text, TlAddr *out) {
 }
 static socklen_t addr_len(const TlAddr *a) {
     return a->sa.sa_family == AF_INET6 ? (socklen_t)sizeof(a->v6) : (socklen_t)sizeof(a->v4);
-}
-
-static int same_addr(const TlAddr *a, const TlAddr *b) {
-    if (a->sa.sa_family != b->sa.sa_family) {
-        return 0;
-    }
-    if (a->sa.sa_family == AF_INET6) {
-        return SDL_memcmp(&a->v6.sin6_addr, &b->v6.sin6_addr, 16) == 0 && a->v6.sin6_port == b->v6.sin6_port;
-    }
-    return a->v4.sin_addr.s_addr == b->v4.sin_addr.s_addr && a->v4.sin_port == b->v4.sin_port;
 }
 
 /* The JSON list `key` of the answer (strings) into addresses; "relay=" ones too. Returns how many. */
@@ -513,7 +502,6 @@ static void send_packet(Conn *c, int type, uint32_t seq, const uint8_t *data, in
         }
     }
     c->lastOut = SDL_GetTicks();
-    c->ackDue = 0;
 }
 
 static Conn *conn_by_id(uint32_t id) {
@@ -669,7 +657,6 @@ static void take_packet(uint8_t *pkt, int len, TlAddr from) {
                 c->id = id;
                 c->member = (int)get32(pkt + 9);
                 c->state = TK_LINK_OPEN;
-                c->opened = SDL_GetTicks();
                 fprintf(stderr, "taglink: player %d connected (%s)\n", c->member,
                         is_relay(&from) ? "through the room's relay" : from.sa.sa_family == AF_INET6 ? "directly, IPv6" :
                         Relay_IsPeer(&from.v4) ? "through the relay" : "directly");
@@ -699,7 +686,6 @@ static void take_packet(uint8_t *pkt, int len, TlAddr from) {
         c->lastIn = SDL_GetTicks();
         if (type == T_SYNACK && c->state == TK_LINK_CONNECTING) {
             c->state = TK_LINK_OPEN;
-            c->opened = SDL_GetTicks();
             fprintf(stderr, "taglink: connected to the room's owner (%s)\n", is_relay(&c->to) ? "through the room's relay" : "directly");
             return;
         }
@@ -1381,14 +1367,8 @@ int TagLink_Active(void) {
 }
 
 void TagLink_Pump(void) {
-    int i;
     if (!L.active || L.sock < 0) {
         return;
-    }
-    for (i = 0; i < TL_SLOTS; i++) { /* pieces that came last frame and that no piece of ours carried an answer to */
-        if (L.conn[i].state == TK_LINK_OPEN && L.conn[i].ackDue) {
-            send_packet(&L.conn[i], T_ACK, 0, NULL, 0, NULL);
-        }
     }
     receive();
     if (!SDL_GetAtomicInt(&L.busy)) {
