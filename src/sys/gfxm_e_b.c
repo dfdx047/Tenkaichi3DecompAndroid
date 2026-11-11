@@ -240,6 +240,15 @@ s32 BtlObjMdl_FreeParts(ObjMdlObj *obj) {
 /* Builds everything of an object whose type and resource slot are set. */
 void BtlObjMdl_Init(ObjMdlObj *obj) {
     BtlObj_BindTables(obj);
+#ifdef PORT
+    {
+        /* the model not read (its table empty): read again and bind again (btl_obj.c) */
+        extern s32 BtlRes_PortReloadModel(void *slot);
+        if (obj->mdl.file == NULL && BtlRes_PortReloadModel(obj->res)) {
+            BtlObj_BindTables(obj);
+        }
+    }
+#endif
     BtlObjMdl_BindFiles(obj);
     BtlObjMdl_AllocParts(obj);
     BtlObj_InitFlags(obj);

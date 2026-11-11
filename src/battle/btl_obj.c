@@ -521,10 +521,60 @@ void BtlObj_Rebind(s32 id, s32 slot) {
     BtlObjFlash_Reset(obj);
 }
 
+#ifdef PORT
+#include <stdio.h>
+/* Android / PC build: a fighter's model that is not in its buffer when the battle builds the fighter (the model
+   file's table read as empty: BtlObjMdl_BindFiles+0x30, address 0x6c, seen in team battles on phones). Says what
+   the slot holds and reads the model again, synchronously, into the same buffer; 1 if it was read again. */
+s32 BtlRes_PortReloadModel(void *slotPtr) {
+    BtlResSlot *slot = slotPtr;
+    BtlResFile *file;
+    static int told;
+
+    if (slot == NULL) {
+        fprintf(stderr, "bt3: battle: a fighter has no model slot\n");
+        return 0;
+    }
+    file = &slot->file[0];
+    if (told < 8) {
+        told++;
+        fprintf(stderr, "bt3: battle: the model of slot %d was not in its buffer (file %d, %d bytes, buffer %s, flags %u); "
+                "read again\n", (int)slot->number, (int)file->id, (int)file->size, file->buf != NULL ? "set" : "none",
+                (unsigned)slot->flags);
+    }
+    if (file->id < 0) {
+        return 0;
+    }
+    if (file->buf != NULL && !(slot->flags & BTL_RES_SLOT_HEAP) && file->size > BTL_RES_MODEL_SIZE) {
+        fprintf(stderr, "bt3: battle: the model file %d (%d bytes) is larger than the buffer (%d)\n", (int)file->id,
+                (int)file->size, BTL_RES_MODEL_SIZE);
+        return 0;
+    }
+    file->buf = File_LoadSyncEx(file->id, NULL, file->buf, 0);
+    return file->buf != NULL;
+}
+#endif
+
 /* Returns the model resource slot block. */
 BtlResWork *BtlRes_GetWork(void) {
     return &gBtlObjWork->res;
 }
+
+#ifdef PORT
+/* A fighter's model file, or its first costume's when that one is empty (a costume or a battle-worn form the
+   character does not have: the read gives a model with no table and the battle crashed binding it). The same on
+   both games of an online match. Also for a change of form in the fight (battle_load.c). */
+s32 BtlObj_PortModel(s32 chara, s32 model) {
+    s32 first = chara * 10 + 0x590;
+
+    if (model != first && File_GetSize(model) <= 0 && File_GetSize(first) > 0) {
+        fprintf(stderr, "bt3: battle: model file %d of fighter %d is empty; its first costume is used (file %d)\n",
+                (int)model, (int)chara, (int)first);
+        return first;
+    }
+    return model;
+}
+#endif
 
 /* Requests a character's model and its two animation files; returns the resource slot number. */
 s32 BtlObj_RequestCharaModel(s32 side, s32 chara, s32 costume, s32 variant) {
@@ -541,6 +591,16 @@ s32 BtlObj_RequestCharaModel(s32 side, s32 chara, s32 costume, s32 variant) {
     } else {
         model = chara * 10 + costume + 0x590;
     }
+#ifdef PORT
+    {
+        /* Android: which model each side's fighter is read from (the battles that crashed in BtlObjMdl_BindFiles read
+           an empty model) */
+        extern s32 BtlObj_PortModel(s32 chara, s32 model);
+        fprintf(stderr, "bt3: battle: side %d fighter %d costume %d%s: model file %d\n", (int)side, (int)chara, (int)costume,
+                variant ? " (variant)" : "", (int)model);
+        model = BtlObj_PortModel(chara, model);
+    }
+#endif
     return BtlRes_Request(1, model, chara * 10 + 0x598, chara * 10 + 0x599);
 }
 

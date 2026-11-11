@@ -49,6 +49,27 @@ extern FileReqQueue gFileReq;
 extern char gFileRootDir[];
 extern char gFileDirName[];
 
+#ifdef PORT
+/* Android / PC build: a read whose buffer the game heap had no room for. The PS2 went on with a null buffer (the
+   read landed at address 0 and the battle crashed when it bound the model: BtlObjMdl_BindFiles+0x30, address
+   0x6c, seen in team battles on phones). The block comes from the port's memory instead, which Heap_Free knows
+   (Port_GameBigFree), and the log says so with the heap's state. */
+extern unsigned Port_GameBigAlloc(int size);
+extern s32 Heap_GetFreeSize(void);
+#include <stdio.h>
+static void *File_PortNoRoom(s32 id, s32 size) {
+    static int told;
+    void *dst = (void *)Port_GameBigAlloc(size);
+
+    if (told < 16) {
+        told++;
+        fprintf(stderr, "bt3: game heap: no room for file %d (%d bytes, %d free in all); %s\n", (int)id, (int)size,
+                (int)Heap_GetFreeSize(), dst != NULL ? "read into the port's memory" : "the port's memory is full too");
+    }
+    return dst;
+}
+#endif
+
 /* Unused stub that returns 0. */
 s32 File_Stub264A50(void) {
     return 0;
@@ -285,6 +306,11 @@ void *File_LoadSyncEx(s32 id, char *name, void *buf, s32 unused) {
     dst = buf;
     if (buf == NULL) {
         dst = Heap_Alloc(sectors * FILE_SECTOR_SIZE, 0x40, 0, HEAP_ANY);
+#ifdef PORT
+        if (dst == NULL) {
+            dst = File_PortNoRoom(id, sectors * FILE_SECTOR_SIZE);
+        }
+#endif
     }
     while (ADXF_ReadNw(adxf, sectors, dst) != sectors) {
     }
@@ -345,6 +371,11 @@ void *File_Request(s32 id, void *buf) {
     dst = buf;
     if (buf == NULL) {
         dst = Heap_Alloc(sectors * FILE_SECTOR_SIZE, 0x40, 0, HEAP_ANY);
+#ifdef PORT
+        if (dst == NULL) {
+            dst = File_PortNoRoom(id, sectors * FILE_SECTOR_SIZE);
+        }
+#endif
         flags = FILE_REQ_OWNS_BUF;
     }
     ADXF_Close(adxf);

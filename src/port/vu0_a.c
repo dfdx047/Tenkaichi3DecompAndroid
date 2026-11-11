@@ -288,6 +288,13 @@ uint32_t RefVu0_SqrtBits(uint32_t a) {
         e -= 1;
     }
     n <<= 23; /* 2^46 <= n < 2^48, root in [2^23, 2^24) */
+#if defined(REF_VU0_EXTERN_ARITH) && defined(SF_FAST_CALLS)
+    {   /* the port: the processor's square root, made the same whole-number root (port/src/plat_fastvec.c) */
+        extern uint64_t Port_FastIsqrt48(uint64_t n);
+        (void)bit;
+        r = Port_FastIsqrt48(n);
+    }
+#else
     r = 0;
     for (bit = (uint64_t)1 << 46; bit != 0; bit >>= 2) {
         if (n >= r + bit) {
@@ -297,6 +304,7 @@ uint32_t RefVu0_SqrtBits(uint32_t a) {
             r >>= 1;
         }
     }
+#endif
     return ((uint32_t)(e / 2 + 127) << 23) | ((uint32_t)r & 0x7FFFFF);
 }
 
@@ -304,15 +312,14 @@ uint32_t RefVu0_SqrtBits(uint32_t a) {
 uint32_t RefVu0_ItofBits(int32_t v, int fracBits) {
     uint32_t sign = v < 0 ? SIGN : 0;
     uint32_t u = v < 0 ? 0u - (uint32_t)v : (uint32_t)v;
-    int32_t e = 31;
+    int32_t e, n;
 
     if (u == 0) {
         return 0;
     }
-    while (!(u & 0x80000000u)) {
-        u <<= 1;
-        e--;
-    }
+    n = __builtin_clz(u); /* (was a loop of one step per leading zero: 31 steps for 1, every int -> float) */
+    u <<= n;
+    e = 31 - n;
     return sign | ((uint32_t)(e + 127 - fracBits) << 23) | ((u >> 8) & 0x7FFFFF);
 }
 
@@ -409,6 +416,40 @@ static void putAcc(const uint32_t r[4], int m) {
     }
 }
 
+/* Four components at once (the op_ routines below). The port: one call into port/src/plat_fastvec.c instead of
+   one per component, with the same results component by component as the loops of the other builds. */
+#if defined(REF_VU0_EXTERN_ARITH) && defined(SF_FAST_CALLS)
+extern void Port_Vu0Add4(const uint32_t *a, const uint32_t *b, uint32_t *out);
+extern void Port_Vu0Mul4(const uint32_t *a, const uint32_t *b, uint32_t *out);
+extern void Port_Vu0Madd4(const uint32_t *acc, const uint32_t *a, const uint32_t *b, uint32_t *out);
+#define add4 Port_Vu0Add4
+#define mul4 Port_Vu0Mul4
+#define madd4 Port_Vu0Madd4
+#else
+static void add4(const uint32_t *a, const uint32_t *b, uint32_t *r) {
+    int i;
+    for (i = 0; i < 4; i++) {
+        r[i] = RefVu0_AddBits(a[i], b[i]);
+    }
+}
+static void mul4(const uint32_t *a, const uint32_t *b, uint32_t *r) {
+    int i;
+    for (i = 0; i < 4; i++) {
+        r[i] = RefVu0_MulBits(a[i], b[i]);
+    }
+}
+static void madd4(const uint32_t *acc, const uint32_t *a, const uint32_t *b, uint32_t *r) {
+    int i;
+    for (i = 0; i < 4; i++) {
+        r[i] = RefVu0_AddBits(acc[i], RefVu0_MulBits(a[i], b[i]));
+    }
+}
+#endif
+static inline void sub4(const uint32_t *a, const uint32_t *b, uint32_t *r) { /* a - b is a + (-b): RefVu0_SubBits */
+    uint32_t n[4] = {b[0] ^ SIGN, b[1] ^ SIGN, b[2] ^ SIGN, b[3] ^ SIGN};
+    add4(a, n, r);
+}
+
 static void op_lqc2(int ft, const void *p) {
     RefVec4 t;
 
@@ -423,33 +464,21 @@ static void op_sqc2(int ft, void *p) {
 /* fd = fs + ft / fs - ft / fs * ft */
 static void op_vadd(int m, int fd, int fs, int ft) {
     uint32_t r[4];
-    int i;
-
-    for (i = 0; i < 4; i++) {
-        r[i] = RefVu0_AddBits(VF(fs).u[i], VF(ft).u[i]);
-    }
+    add4(VF(fs).u, VF(ft).u, r);
     setFlags(r, m);
     put(fd, r, m);
 }
 
 static void op_vsub(int m, int fd, int fs, int ft) {
     uint32_t r[4];
-    int i;
-
-    for (i = 0; i < 4; i++) {
-        r[i] = RefVu0_SubBits(VF(fs).u[i], VF(ft).u[i]);
-    }
+    sub4(VF(fs).u, VF(ft).u, r);
     setFlags(r, m);
     put(fd, r, m);
 }
 
 static void op_vmul(int m, int fd, int fs, int ft) {
     uint32_t r[4];
-    int i;
-
-    for (i = 0; i < 4; i++) {
-        r[i] = RefVu0_MulBits(VF(fs).u[i], VF(ft).u[i]);
-    }
+    mul4(VF(fs).u, VF(ft).u, r);
     setFlags(r, m);
     put(fd, r, m);
 }
@@ -457,33 +486,27 @@ static void op_vmul(int m, int fd, int fs, int ft) {
 /* fd = fs + ft.c / fs - ft.c / fs * ft.c (one component of ft for all) */
 static void op_vaddbc(int m, int fd, int fs, int ft, int c) {
     uint32_t r[4], b = VF(ft).u[c];
-    int i;
+    uint32_t bb[4] = {b, b, b, b};
 
-    for (i = 0; i < 4; i++) {
-        r[i] = RefVu0_AddBits(VF(fs).u[i], b);
-    }
+    add4(VF(fs).u, bb, r);
     setFlags(r, m);
     put(fd, r, m);
 }
 
 static void op_vsubbc(int m, int fd, int fs, int ft, int c) {
     uint32_t r[4], b = VF(ft).u[c];
-    int i;
+    uint32_t bb[4] = {b, b, b, b};
 
-    for (i = 0; i < 4; i++) {
-        r[i] = RefVu0_SubBits(VF(fs).u[i], b);
-    }
+    sub4(VF(fs).u, bb, r);
     setFlags(r, m);
     put(fd, r, m);
 }
 
 static void op_vmulbc(int m, int fd, int fs, int ft, int c) {
     uint32_t r[4], b = VF(ft).u[c];
-    int i;
+    uint32_t bb[4] = {b, b, b, b};
 
-    for (i = 0; i < 4; i++) {
-        r[i] = RefVu0_MulBits(VF(fs).u[i], b);
-    }
+    mul4(VF(fs).u, bb, r);
     setFlags(r, m);
     put(fd, r, m);
 }
@@ -491,11 +514,9 @@ static void op_vmulbc(int m, int fd, int fs, int ft, int c) {
 /* ACC = fs + ft.c */
 static void op_vaddabc(int m, int fs, int ft, int c) {
     uint32_t r[4], b = VF(ft).u[c];
-    int i;
+    uint32_t bb[4] = {b, b, b, b};
 
-    for (i = 0; i < 4; i++) {
-        r[i] = RefVu0_AddBits(VF(fs).u[i], b);
-    }
+    add4(VF(fs).u, bb, r);
     setFlags(r, m);
     putAcc(r, m);
 }
@@ -503,11 +524,9 @@ static void op_vaddabc(int m, int fs, int ft, int c) {
 /* ACC = fs * ft.c */
 static void op_vmulabc(int m, int fs, int ft, int c) {
     uint32_t r[4], b = VF(ft).u[c];
-    int i;
+    uint32_t bb[4] = {b, b, b, b};
 
-    for (i = 0; i < 4; i++) {
-        r[i] = RefVu0_MulBits(VF(fs).u[i], b);
-    }
+    mul4(VF(fs).u, bb, r);
     setFlags(r, m);
     putAcc(r, m);
 }
@@ -515,11 +534,9 @@ static void op_vmulabc(int m, int fs, int ft, int c) {
 /* ACC = ACC + fs * ft.c */
 static void op_vmaddabc(int m, int fs, int ft, int c) {
     uint32_t r[4], b = VF(ft).u[c];
-    int i;
+    uint32_t bb[4] = {b, b, b, b};
 
-    for (i = 0; i < 4; i++) {
-        r[i] = RefVu0_AddBits(gRefVu0.acc.u[i], RefVu0_MulBits(VF(fs).u[i], b));
-    }
+    madd4(gRefVu0.acc.u, VF(fs).u, bb, r);
     setFlags(r, m);
     putAcc(r, m);
 }
@@ -527,11 +544,9 @@ static void op_vmaddabc(int m, int fs, int ft, int c) {
 /* fd = ACC + fs * ft.c */
 static void op_vmaddbc(int m, int fd, int fs, int ft, int c) {
     uint32_t r[4], b = VF(ft).u[c];
-    int i;
+    uint32_t bb[4] = {b, b, b, b};
 
-    for (i = 0; i < 4; i++) {
-        r[i] = RefVu0_AddBits(gRefVu0.acc.u[i], RefVu0_MulBits(VF(fs).u[i], b));
-    }
+    madd4(gRefVu0.acc.u, VF(fs).u, bb, r);
     setFlags(r, m);
     put(fd, r, m);
 }
@@ -539,22 +554,18 @@ static void op_vmaddbc(int m, int fd, int fs, int ft, int c) {
 /* fd = fs * Q / fs + Q */
 static void op_vmulq(int m, int fd, int fs) {
     uint32_t r[4];
-    int i;
+    uint32_t qq[4] = {gRefVu0.q, gRefVu0.q, gRefVu0.q, gRefVu0.q};
 
-    for (i = 0; i < 4; i++) {
-        r[i] = RefVu0_MulBits(VF(fs).u[i], gRefVu0.q);
-    }
+    mul4(VF(fs).u, qq, r);
     setFlags(r, m);
     put(fd, r, m);
 }
 
 static void op_vaddq(int m, int fd, int fs) {
     uint32_t r[4];
-    int i;
+    uint32_t qq[4] = {gRefVu0.q, gRefVu0.q, gRefVu0.q, gRefVu0.q};
 
-    for (i = 0; i < 4; i++) {
-        r[i] = RefVu0_AddBits(VF(fs).u[i], gRefVu0.q);
-    }
+    add4(VF(fs).u, qq, r);
     setFlags(r, m);
     put(fd, r, m);
 }

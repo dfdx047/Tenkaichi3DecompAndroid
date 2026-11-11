@@ -244,11 +244,24 @@ s32 BtlScene_GetPackEntrySize(s32 *base, s32 idx) {
  * register), `bit` across the first, and the second scheduling pass sinks all three instructions below both
  * calls, which is where the original has them although it uses $s0 / $s1 for them. */
 s32 BtlScene_TestCharPackBit(s32 side, s32 bit) {
+#ifdef PORT
+    /* (a character whose pack is not there: no effect bit set, not a crash at address 4; seen loading a fighter) */
+    s32 *pack = BtlScene_GetCharPackEntry(side, 1);
+    u32 mask = 1 << (bit - 1);
+    u32 *flags;
+
+    if (pack == NULL) {
+        return 0;
+    }
+    flags = (u32 *)BtlScene_GetPackEntry(pack, 1);
+    return (*flags & mask) != 0;
+#else
     s32 *pack = BtlScene_GetCharPackEntry(side, 1);
     u32 mask = 1 << (bit - 1);
     u32 *flags = (u32 *)BtlScene_GetPackEntry(pack, 1);
 
     return (*flags & mask) != 0;
+#endif
 }
 
 /* Returns entry idx of a character's pack (0x2053B0), or NULL when the character has none. */

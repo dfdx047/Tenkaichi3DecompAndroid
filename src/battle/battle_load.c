@@ -449,6 +449,12 @@ s32 BtlLoad_StepChara(BtlJob *job) {
         } else {
             model = job->chara * 10 + job->costume + BTL_FILE_CHARA;
         }
+#ifdef PORT
+        {
+            extern s32 BtlObj_PortModel(s32 chara, s32 model); /* btl_obj.c: an empty model file falls back */
+            model = BtlObj_PortModel(job->chara, model);
+        }
+#endif
         if (job->modelOnly == 0) {
 #ifdef PORT
             if (gPortVariant != 0) {

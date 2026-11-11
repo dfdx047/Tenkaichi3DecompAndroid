@@ -3,6 +3,9 @@
 #include "battle/battle.h"
 #include "sys/randf.h"
 #include "sys/heap.h"
+#ifdef PORT
+#include <stdio.h>
+#endif
 
 /*
  * Battle HUD: the gauge part (health, ki, blast stock, powered-up timer, status icons, face), 0x21CA60-0x222400.
@@ -979,6 +982,11 @@ void HudGauge_ClearFaceTexMark(void) {
         if (gHudGauge->faceRes[i] != NULL) {
             HudBTex *tex = gHudGauge->faceRes[i]->tex;
 
+#ifdef PORT
+            if (tex == NULL) { /* a face sheet without its pictures (seen with modified discs): nothing to mark */
+                continue;
+            }
+#endif
             tex += HUD_SCR(i);
             tex->mark = 0;
         }
@@ -991,6 +999,18 @@ void HudGauge_DrawFace(HudBGroup *node) {
     HudBSprite *spr;
 
     gHudGauge->faceRes[gHudGauge->side] = gHudGauge->obj[gHudGauge->side]->faceRes;
+#ifdef PORT
+    /* Android: a fighter whose face sheet came without its pictures (a modified disc's character) has no face drawn;
+       the PS2 wrote through the empty pointer and the port crashed there (HudGauge_DrawFace+0xac, address 0x68) */
+    if (gHudGauge->faceRes[gHudGauge->side] != NULL && gHudGauge->faceRes[gHudGauge->side]->tex == NULL) {
+        static int told;
+        if (!told) {
+            told = 1;
+            fprintf(stderr, "bt3: a fighter's face picture is missing (modified disc?); the gauge is drawn without it\n");
+        }
+        return;
+    }
+#endif
     if (gHudGauge->faceRes[gHudGauge->side] != NULL) {
         HudGauge_ClearFaceTexMark();
         for (i = 0; i < node->sprCount; i++) {
