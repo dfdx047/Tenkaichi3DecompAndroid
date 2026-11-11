@@ -587,6 +587,9 @@ int PortInput_ComboPoll(void) {
 static volatile int sPadsStale; /* the list of controllers is read again at the next pads_refresh */
 
 static SDL_Mutex *sPadLock; /* (below, with the vibration's thread) */
+#ifdef __ANDROID__
+static void triggers_from_keys(SDL_Gamepad *pad, SDL_JoystickID id); /* (below, with pad_of) */
+#endif
 static void pads_refresh(void) {
     static unsigned calls;
     SDL_JoystickID *ids;
@@ -644,6 +647,11 @@ static void pads_refresh(void) {
                 Uint64 t0 = SDL_GetTicksNS();
                 sOpen[k].id = sIds[i];
                 sOpen[k].pad = SDL_OpenGamepad(sIds[i]);
+#ifdef __ANDROID__
+                if (sOpen[k].pad != NULL && !SDL_IsJoystickVirtual(sIds[i])) {
+                    triggers_from_keys(sOpen[k].pad, sIds[i]);
+                }
+#endif
                 if (sOpen[k].pad != NULL && !SDL_IsJoystickVirtual(sIds[i])) {
                     /* (in the log: which controller, its link and battery, and how long opening it held the game) */
                     int pct = -1;
@@ -671,6 +679,51 @@ static void pads_refresh(void) {
         }
     }
 }
+
+#ifdef __ANDROID__
+/* L2 and R2 as buttons only. SDL's own mapping for an Android controller has triggers only when the controller reports
+   six axes or more (SDLControllerManager.getAxisMask: lefttrigger:a4, righttrigger:a5); one that reports its two sticks
+   and L2 / R2 as keys (KEYCODE_BUTTON_L2 / R2: SDL's buttons 15 and 16) got no trigger at all, and the game reads L2 and
+   R2 as the trigger axes only: they did nothing, and could not be set on the Controls page either. Many controllers do
+   that over Bluetooth in their Android mode (with a cable they are often XInput pads, triggers as axes). Such a
+   controller (the L2 key is bit 15 of the button mask SDL keeps in its GUID, SDL_sysjoystick.c) gets its keys as the
+   triggers: SDL reports a trigger at full while the key is down. Nothing changes for one with trigger axes, or whose
+   mapping uses buttons 15 or 16 for something else. */
+static int mapping_uses(const char *m, const char *input) {
+    size_t n = strlen(input);
+    const char *at;
+    for (at = strstr(m, input); at != NULL; at = strstr(at + 1, input)) {
+        if (at > m && at[-1] == ':' && (at[n] == ',' || at[n] == '\0')) {
+            return 1;
+        }
+    }
+    return 0;
+}
+static void triggers_from_keys(SDL_Gamepad *pad, SDL_JoystickID id) {
+    SDL_GUID guid = SDL_GetGamepadGUIDForID(id);
+    unsigned keys = (unsigned)guid.data[12] | (unsigned)guid.data[13] << 8;
+    char *m, *more;
+    int r2;
+    if (SDL_GamepadHasAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) || SDL_GamepadHasAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) ||
+        !(keys & (1u << 15)) || SDL_GetNumJoystickButtons(SDL_GetGamepadJoystick(pad)) < 16) {
+        return;
+    }
+    r2 = SDL_GetNumJoystickButtons(SDL_GetGamepadJoystick(pad)) >= 17; /* (button 16: R2, the highest key SDL saw then) */
+    m = SDL_GetGamepadMapping(pad);
+    if (m == NULL || mapping_uses(m, "b15") || mapping_uses(m, "b16")) {
+        SDL_free(m);
+        return;
+    }
+    if (SDL_asprintf(&more, "%s%slefttrigger:b15,%s", m, m[0] != '\0' && m[strlen(m) - 1] != ',' ? "," : "", r2 ? "righttrigger:b16," : "") > 0) {
+        if (SDL_AddGamepadMapping(more) >= 0) {
+            fprintf(stderr, "bt3: controls: %s has L2 / R2 as keys only: they are its triggers\n",
+                    SDL_GetGamepadName(pad) != NULL ? SDL_GetGamepadName(pad) : "?");
+        }
+        SDL_free(more);
+    }
+    SDL_free(m);
+}
+#endif
 
 static SDL_Gamepad *pad_of(int player) {
     int slot = sPadSlot[player], k;
