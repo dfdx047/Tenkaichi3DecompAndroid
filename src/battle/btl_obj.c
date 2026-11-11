@@ -34,6 +34,9 @@ extern s32 Bt4_ModelFile(s32, s32, s32);
 #include "sys/dma.h"
 #include "sys/file.h"
 #include "sys/heap.h"
+#ifdef PORT
+#include <stdio.h> /* (before the printf of BT4_VFX_TRACE below) */
+#endif
 
 extern void *memset(void *dst, s32 c, u32 n);
 extern f32 sqrtf(f32 x);
@@ -522,7 +525,6 @@ void BtlObj_Rebind(s32 id, s32 slot) {
 }
 
 #ifdef PORT
-#include <stdio.h>
 /* Android / PC build: a fighter's model that is not in its buffer when the battle builds the fighter (the model
    file's table read as empty: BtlObjMdl_BindFiles+0x30, address 0x6c, seen in team battles on phones). Says what
    the slot holds and reads the model again, synchronously, into the same buffer; 1 if it was read again. */
