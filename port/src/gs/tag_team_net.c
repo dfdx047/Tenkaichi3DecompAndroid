@@ -374,10 +374,15 @@ static TtChannel client={TT_INVALID};static TtRoom state;static uint32_t member;
 
 static char room_code[7],error[128];static time_t last_ping,last_heard;static int connecting;
 
+#ifdef __ANDROID__
+/* Android (Dragon Rage prototype): the local room only; inert stand-ins for the transports below (none is built) */
+#include "tag_team_offline.inc"
+#else
 #include "tag_team_ws.h"
 #include "tag_team_direct.h"
 #include "tag_team_p2p.h"
 #include "supabase_signal.h"
+#endif
 #include "update_sign.h"
 static int tag_direct_supported,tag_direct_ticket,tag_direct_route;
 static Uint64 tag_direct_ticket_at;
@@ -408,9 +413,13 @@ static int configured_ffa,configured_quick;
 void Port_TagModeOptions(int free_for_all,int quick){configured_ffa=free_for_all==1;configured_quick=quick==1;}
 int Port_TagFreeForAll(void){return state.free_for_all;}
 int Port_TagQueueWaiting(int queue){
+#ifdef __ANDROID__
+    (void)queue;return -1; /* (no matchmaking service on Android: match_supabase.cpp is not built) */
+#else
     extern int Bt4Discovery_TagCounts(uint64_t,int *);int counts[3];unsigned long long content;
     if(queue<0||queue>=3||Port_TagDataFingerprint(&content)!=1||!Bt4Discovery_TagCounts(content,counts))return -1;
     return counts[queue];
+#endif
 }
 
 static char ws_endpoint[384];
@@ -554,6 +563,12 @@ int Port_TagConnect(const char *server){
         local_room=1; member=1; return 1;
 
     }
+
+#ifdef __ANDROID__
+    /* Android (Dragon Rage prototype): no TAG TEAM server yet, the room service included (Quick Match, Join). Refused
+       before any socket or thread opens; only the local room above plays. */
+    snprintf(error,sizeof(error),"Online TAG TEAM is not available on Android yet.");return 0;
+#endif
 
     if(!strcmp(server,Bt4Signal_Project())){
         if(!TagPeer_Open()){snprintf(error,sizeof(error),"Cannot initialize the direct connection.");return 0;}

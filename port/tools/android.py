@@ -223,12 +223,19 @@ def compile_all():
     jobs = []
     jobs += [(game_source, f) for f in portsrc.sources()]
     jobs += [(newlib_source, f) for f in sorted((ROOT / "port/third_party/newlib_libm").glob("*.c"))]
-    jobs += [(port_source, f) for f in [ROOT / "src/port/vu0_a.c", ROOT / "src/port/vu0_b.c"] + sorted((ROOT / "port/src").glob("*.c"))]
+    # TAG TEAM's room core (tag_team.c, tag_team_wire.c) is embedded in gs/tag_team_net.c, outside the game's ptr32 ABI
+    # (as undefined.py): not compiled on its own, and an object of it from an earlier build is removed (link takes obj/*.o)
+    embedded = {"tag_team.c", "tag_team_wire.c"}
+    for name in embedded:
+        (OBJ / ("pc_" + name[:-2] + ".o")).unlink(missing_ok=True)
+    jobs += [(port_source, f) for f in [ROOT / "src/port/vu0_a.c", ROOT / "src/port/vu0_b.c"] + sorted((ROOT / "port/src").glob("*.c"))
+             if f.name not in embedded]
     jobs += [(gs_source, f) for f in sorted((ROOT / "port/src/gs").glob("*.c"))]
     jobs += [(cxx_source, f) for f in sorted((ROOT / "port/third_party/imgui").glob("*.cpp")) + sorted((ROOT / "port/src/gs").glob("*.cpp"))]
     jobs += [(astc_source, f) for f in sorted((ROOT / "port/third_party/astcenc").glob("*.cpp"))]
-    # BT4 prototype: online (curl, WebRTC, voice) and Windows-only files stay out; their symbols become stubs
-    skip = {"tag_team_net.c", "supabase_signal.cpp", "match_supabase.cpp", "voice.cpp", "tag_team_p2p.cpp",
+    # BT4 prototype: online (curl, WebRTC, voice) and Windows-only files stay out; their symbols become stubs.
+    # gs/tag_team_net.c is in: on Android it is TAG TEAM's local room only (its transports: gs/tag_team_offline.inc)
+    skip = {"supabase_signal.cpp", "match_supabase.cpp", "voice.cpp", "tag_team_p2p.cpp",
             "tag_team_direct.cpp", "imgui_impl_dx9.cpp", "gs_d3d9.cpp", "imgui_impl_dx12.cpp", "imgui_impl_win32.cpp"}
     jobs = [j for j in jobs if j[1].name not in skip]
     only = os.environ.get("BT3_ONLY")  # a few files: BT3_ONLY=btl_obj,plat_mem
