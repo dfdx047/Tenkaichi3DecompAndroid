@@ -1224,6 +1224,11 @@ static void Tb_OpenName(s32 required) {
 }
 
 static s32 Tb_NicknameCanPlay(void) {
+#ifdef __ANDROID__
+    return 1; /* (Android: Dragon Net has no nickname service; the player's name is the one set in the game) */
+#else
+    if (getenv("BT3_MATCH_URL") != NULL && getenv("BT3_MATCH_URL")[0] != '\0') return 1; /* (the legacy HTTP adapter: no nickname service either) */
+#endif
     if (getenv("BT4_RENDER_TEST") || sTb->nicknameState == BT4_NICKNAME_READY ||
         sTb->nicknameState == BT4_NICKNAME_DISABLED || sTb->nicknameState == BT4_NICKNAME_OPTIONAL) return 1;
     if (sTb->nicknameState == BT4_NICKNAME_UNAVAILABLE) {

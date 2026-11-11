@@ -39,7 +39,17 @@
 #include "../port_release.h"
 #include "net_relay.h"
 #include "net_sign.h"
+#ifdef __ANDROID__
+/* Dragon Rage (Android): BT4's 1 vs 1 rooms and quick match go through Dragon Net (port/dragonnet in Dragon Rage: the
+   same /v1/host, /v1/join, /v1/quick as this legacy adapter), never through the PC's Supabase signaling, which
+   admits only NauTaro's published builds. Its own `v` keeps BT4 apart from BT3's 5001 on the same service: the
+   service pairs only equal versions, and lists the ones it takes in ALLOWED_VERSIONS. */
+#define DRNET_BT4_VERSION 140001
+#define DRNET_URL_DEFAULT "https://mitigo-rooms.minetivacraft.workers.dev"
+static int supabase_discovery(void){return 0;}
+#else
 static int supabase_discovery(void){const char *override=SDL_getenv("BT3_MATCH_URL");return !override||!override[0];}
+#endif
 
 static struct {
     SDL_Mutex *lock;
@@ -113,7 +123,23 @@ static SDL_TLSID sMine; /* the thread's own search number */
 
 static const char *match_url(void) {
     const char *e = SDL_getenv("BT3_MATCH_URL");
+#ifdef __ANDROID__
+    /* (another service: dragonnet_url.txt in the game folder, one line https://..., as Dragon Rage's BT3) */
+    static char fromFile[256];
+    if (e != NULL && e[0] != '\0') return e;
+    if (fromFile[0] == '\0') {
+        FILE *f = fopen("dragonnet_url.txt", "r");
+        size_t n = f != NULL ? fread(fromFile, 1, sizeof(fromFile) - 1, f) : 0;
+        if (f != NULL) fclose(f);
+        fromFile[n] = '\0';
+        fromFile[strcspn(fromFile, "\r\n \t")] = '\0';
+        while (n > 0 && fromFile[0] != '\0' && fromFile[SDL_strlen(fromFile) - 1] == '/') fromFile[SDL_strlen(fromFile) - 1] = '\0';
+        if (SDL_strncmp(fromFile, "http://", 7) != 0 && SDL_strncmp(fromFile, "https://", 8) != 0) SDL_strlcpy(fromFile, DRNET_URL_DEFAULT, sizeof(fromFile));
+    }
+    return fromFile;
+#else
     return e != NULL && e[0] != '\0' ? e : MATCH_URL_DEFAULT;
+#endif
 }
 
 static void set_state(int state, const char *error) {
@@ -1079,6 +1105,11 @@ void Match_Begin(int role, int sock, int localPort, const char *code, const char
     sM.sock = sock;
     sM.localPort = localPort;
     sM.version = version;
+#ifdef __ANDROID__
+    sM.version = DRNET_BT4_VERSION; /* (Dragon Net's number for BT4, not the netcode's own) */
+#else
+    if (SDL_getenv("BT3_MATCH_V") != NULL) sM.version = SDL_atoi(SDL_getenv("BT3_MATCH_V")); /* (tests against Dragon Net: the Android build's number) */
+#endif
     sM.code[0] = '\0';
     for (i = 0; code != NULL && code[i] != '\0' && n < 6; i++) { /* letters and digits, capitals */
         char c = code[i];
@@ -1183,6 +1214,11 @@ void Match_QueuesAsk(int version) {
     }
     SDL_SetAtomicInt(&sQueueBusy, 1);
     sQueueVersion = version;
+#ifdef __ANDROID__
+    sQueueVersion = DRNET_BT4_VERSION;
+#else
+    if (SDL_getenv("BT3_MATCH_V") != NULL) sQueueVersion = SDL_atoi(SDL_getenv("BT3_MATCH_V"));
+#endif
     t = SDL_CreateThread(queues_thread, "bt3-queues", NULL);
     if (t == NULL) {
         SDL_SetAtomicInt(&sQueueBusy, 0);
