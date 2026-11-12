@@ -1,0 +1,1442 @@
+/*
+ * The game's state as one number: a checksum of everything the game itself owns in memory. For online play two
+ * machines have to stay bit for bit the same; this is how that is checked, first of all between two runs on one
+ * machine.
+ *
+ * What it covers: the game's global variables (the address ranges port/tools/make_state.py took from the linker's
+ * map, in <program>.mem next to the program), the game's heap and the scratchpad. Not covered: the port's own
+ * memory (renderer, sound, input), and the game thread's stack and registers.
+ *
+ *   BT3_HASH=<file>       one line per vertical blank: its number, the checksum of everything, and during a fight
+ *                         the checksum of the fight's own values (health, positions, clock, generator) and
+ *                         the values themselves
+ *   BT3_HASH_AT=<n>       at that vertical blank, also <file>.pages (a checksum per 4 KB of every region) and
+ *                         <file>.dump (the regions themselves), for finding WHERE two runs differ
+ *                         (port/tools/compare_hash.py)
+ *
+ * The numbers of two runs of the SAME program can be compared. Not those of different builds: the state holds
+ * addresses of functions and variables, which differ from build to build.
+ */
+#include <SDL3/SDL.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h> /* _NSGetExecutablePath */
+#endif
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+#define XXH_INLINE_ALL
+#include "../../third_party/xxhash/xxhash.h"
+#include "gs_internal.h"
+#include "../port_addr.h"
+
+extern void Port_HeapRegion(uint8_t **base, uint32_t *size); /* plat_mem.c */
+
+int gPortResim; /* gs_internal.h: frames are being re-run, without picture or sound */
+
+#define MAX_REGIONS 64
+static struct { const uint8_t *p; size_t n; const char *what; } sRegion[MAX_REGIONS];
+static int sRegions = -1;
+static int sListed; /* the list of the game's variables was found: without it a saved state is not whole */
+
+static void regions_init(void) {
+    char exe[1024], path[1100];
+    uint8_t *heap;
+    uint32_t heapSize;
+    FILE *fp;
+#ifdef _WIN32
+    long n = (long)GetModuleFileNameA(NULL, exe, sizeof(exe) - 1);
+#elif defined(__APPLE__)
+    uint32_t cap = sizeof(exe) - 1;
+    long n = _NSGetExecutablePath(exe, &cap) == 0 ? (long)strlen(exe) : -1;
+#else
+    /* (Android: the engine is a library; the app puts <BT3_EXE>.mem next to the game's files, android.py writes it) */
+    long n = getenv("BT3_EXE") != NULL ? (long)snprintf(exe, sizeof(exe), "%s", getenv("BT3_EXE"))
+                                        : (long)readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+#endif
+    /* Android: the engine may have been loaded elsewhere than it was linked (loader.c); the list has the linked
+       addresses */
+    long long bias = getenv("BT3_ENGINE_BIAS") != NULL ? atoll(getenv("BT3_ENGINE_BIAS")) : 0;
+    extern int gPortScratchpadMapped; /* plat_mem.c */
+
+    sRegions = 0;
+    if (n > 0 && n < (long)sizeof(exe) - 1) {
+        unsigned long long a, size;
+        exe[n] = '\0';
+        snprintf(path, sizeof(path), "%s.mem", exe);
+        fp = fopen(path, "r");
+        if (fp == NULL) {
+            fprintf(stderr, "bt3: state: %s is missing (written by port/tools/make_state.py at link time)\n", path);
+        } else {
+            /* The list's first two lines say which program it was made for: "0 <address of gPortResim>" and
+               "1 <address of gPortVBlanks>" there. A list of another release (seen on Windows: a new .exe put
+               next to the old files) names addresses that are something else here, code among them, and the
+               first state put back was written over that: a crash at the start of an online match. */
+            extern unsigned gPortVBlanks; /* plat_stub.c */
+            int marks = 0;
+            while (sRegions < MAX_REGIONS - 2 && fscanf(fp, "%llx %llx", &a, &size) == 2) {
+                if (a < 2) {
+#ifdef __APPLE__ /* (the list holds game addresses: offsets in the window, port_addr.h) */
+                    marks += size == Port_Addr(a == 0 ? (const void *)&gPortResim : (const void *)&gPortVBlanks);
+#else
+                    marks += (uintptr_t)(size + (unsigned long long)bias) == (a == 0 ? (uintptr_t)&gPortResim : (uintptr_t)&gPortVBlanks);
+#endif
+                    continue;
+                }
+#ifdef __APPLE__
+                sRegion[sRegions].p = (const uint8_t *)Port_Ptr((uint32_t)a);
+#else
+                sRegion[sRegions].p = (const uint8_t *)(uintptr_t)(a + (unsigned long long)bias);
+#endif
+                sRegion[sRegions].n = (size_t)size;
+                sRegion[sRegions].what = "globals";
+                sRegions++;
+            }
+            fclose(fp);
+            if (marks != 2) {
+                extern void Port_UiNotice(const char *text);
+                fprintf(stderr, "bt3: state: %s is not this program's (it is from another release). Online play starts the slow way and "
+                                "without rollback. Copy ALL the files of a release, not only the program.\n", path);
+                Port_UiNotice("Files of two different releases are mixed: copy all the files of the release, not only the program.");
+                sRegions = 0;
+            }
+            sListed = sRegions > 0;
+        }
+    }
+    Port_HeapRegion(&heap, &heapSize);
+    sRegion[sRegions].p = heap;
+    sRegion[sRegions].n = heapSize;
+    sRegion[sRegions].what = "heap";
+    sRegions++;
+    if (gPortScratchpadMapped) { /* (Android: only where its address was free; the game addresses nothing there) */
+        sRegion[sRegions].p = (const uint8_t *)Port_Ptr(0x70000000u);
+        sRegion[sRegions].n = 0x4000;
+        sRegion[sRegions].what = "scratchpad";
+        sRegions++;
+    }
+}
+
+/* ---- a world of its own, for what must leave no trace in the game (src/battle/view_a_d.c, the fighter of the character
+   selects). Port_WorldEnter keeps the game's variables and puts in them what the code left there the last time;
+   Port_WorldLeave notes what that code changed, byte by byte, and puts the game's values back. Its heap is a part of
+   the port's memory that no saved state holds, and nothing else is reached. At no point is another thread looking:
+   the game's memory is the game thread's. */
+extern uint8_t *Port_WorldArena(size_t *size);
+#define WORLD_CHUNK 4096u
+typedef struct { uint8_t *at; uint32_t len; uint32_t ofs; } WorldRun;
+static uint8_t *sWorldSaved;     /* the game's variables as they were at Port_WorldEnter */
+static size_t sWorldSavedSize;
+static WorldRun *sWorldRuns;
+static uint8_t *sWorldBytes;
+static uint32_t sWorldRunCount, sWorldRunCap, sWorldByteCount, sWorldByteCap;
+static uint32_t sWorldDma[2];
+static int sWorldDmaSize;
+static uint8_t *sWorldBase;
+static size_t sWorldLeft, sWorldSize;
+static uint32_t sWorldNext, sWorldHigh; /* (sWorldHigh: the most of the arena used since the screen began) */
+static int sWorldIn;
+static SDL_ThreadID sWorldThread;
+extern void Port_WorldLowLock(int on);
+extern void *Port_WorldLowLockVar(size_t *n);
+extern int Port_StateExtra(void **p, size_t *n, int max);
+/* The memory is there (taken here the first time): without it there is no viewer. */
+int Port_WorldCan(void) {
+    if (sRegions < 0) {
+        regions_init();
+    }
+    if (!sListed) { /* (without the list of the game's variables there is nothing to keep them apart with) */
+        return 0;
+    }
+    if (sWorldBase == NULL) {
+        sWorldBase = Port_WorldArena(&sWorldSize);
+        sWorldNext = 0;
+    }
+    return sWorldBase != NULL;
+}
+
+/* Only for the thread that went in: others keep allocating as ever while it is there. */
+int Port_WorldInHere(void) {
+    return sWorldIn && SDL_GetCurrentThreadID() == sWorldThread;
+}
+
+unsigned Port_WorldAlloc(int size, unsigned align) {
+    uint32_t at;
+
+    if (!Port_WorldInHere() || size <= 0) {
+        return 0;
+    }
+    if (align < 16) {
+        align = 16;
+    }
+    at = (sWorldNext + align - 1) & ~(align - 1);
+    if (at + (uint32_t)size > (uint32_t)sWorldSize) {
+        fprintf(stderr, "bt3: select: the viewer's memory is full (%d bytes asked)\n", size);
+        return 0;
+    }
+    sWorldNext = at + (uint32_t)size;
+    if (sWorldNext > sWorldHigh) {
+        sWorldHigh = sWorldNext;
+    }
+    return Port_Addr(sWorldBase + at);
+}
+
+int Port_WorldOwns(unsigned addr) {
+    uint8_t *p;
+
+    if (sWorldBase == NULL || addr == 0) {
+        return 0;
+    }
+    p = Port_Ptr(addr);
+    return p >= sWorldBase && p < sWorldBase + sWorldSize;
+}
+
+/* What the viewer's start-up writes into blocks the game already has, in its heap or the port's region (a few pointers):
+   found once by comparing them around it, and from then on handled like the variables, in and out with each frame. */
+typedef struct { uint8_t *at; uint8_t world, game; } WorldByte;
+static WorldByte *sWorldMem;
+static uint32_t sWorldMemCount;
+static uint8_t *sWorldScanCopy[2], *sWorldScanAt[2];
+static size_t sWorldScanSize[2];
+#define WORLD_MEM_MAX 65536u
+
+void Port_WorldCaptureBegin(void) {
+    void *xp[8];
+    size_t xn[8];
+    uint8_t *heap;
+    uint32_t heapSize;
+    int extra = Port_StateExtra(xp, xn, 8), i;
+
+    Port_HeapRegion(&heap, &heapSize);
+    sWorldScanAt[0] = heap;
+    sWorldScanSize[0] = heapSize;
+    sWorldScanAt[1] = extra >= 4 ? xp[3] : NULL;
+    sWorldScanSize[1] = extra >= 4 ? xn[3] : 0;
+    for (i = 0; i < 2; i++) {
+        sWorldScanCopy[i] = sWorldScanAt[i] != NULL ? malloc(sWorldScanSize[i]) : NULL;
+        if (sWorldScanCopy[i] != NULL) {
+            memcpy(sWorldScanCopy[i], sWorldScanAt[i], sWorldScanSize[i]);
+        }
+    }
+}
+
+void Port_WorldCaptureEnd(void) {
+    int i;
+
+    sWorldMemCount = 0;
+    if (sWorldMem == NULL) {
+        sWorldMem = malloc(WORLD_MEM_MAX * sizeof(WorldByte));
+    }
+    for (i = 0; i < 2; i++) {
+        size_t o;
+
+        if (sWorldScanCopy[i] == NULL) {
+            continue;
+        }
+        for (o = 0; o < sWorldScanSize[i]; o += WORLD_CHUNK) {
+            size_t len = sWorldScanSize[i] - o < WORLD_CHUNK ? sWorldScanSize[i] - o : WORLD_CHUNK, k;
+            uint32_t ga = Port_Addr(sWorldScanAt[i] + o);
+
+            if (sWorldDmaSize > 0 && ((ga + WORLD_CHUNK > sWorldDma[0] && ga < sWorldDma[0] + (uint32_t)sWorldDmaSize) ||
+                                      (ga + WORLD_CHUNK > sWorldDma[1] && ga < sWorldDma[1] + (uint32_t)sWorldDmaSize))) {
+                continue;
+            }
+            if (memcmp(sWorldScanAt[i] + o, sWorldScanCopy[i] + o, len) == 0) {
+                continue;
+            }
+            for (k = 0; k < len; k++) {
+                if (sWorldScanAt[i][o + k] != sWorldScanCopy[i][o + k] && sWorldMem != NULL && sWorldMemCount < WORLD_MEM_MAX) {
+                    sWorldMem[sWorldMemCount].at = sWorldScanAt[i] + o + k;
+                    sWorldMem[sWorldMemCount].game = sWorldScanCopy[i][o + k];
+                    sWorldMem[sWorldMemCount].world = sWorldScanAt[i][o + k];
+                    sWorldMemCount++;
+                }
+            }
+        }
+        free(sWorldScanCopy[i]);
+        sWorldScanCopy[i] = NULL;
+    }
+    fprintf(stderr, "bt3: select: the viewer's start-up wrote %u bytes of blocks the game has\n", sWorldMemCount);
+}
+
+void Port_WorldNoteDma(unsigned a, unsigned b, int size) {
+    sWorldDma[0] = a;
+    sWorldDma[1] = b;
+    sWorldDmaSize = size;
+}
+
+void Port_WorldEnter(void) {
+    int r;
+    size_t need = 0;
+    uint8_t *to;
+    uint32_t i;
+
+    if (sRegions < 0) {
+        regions_init();
+    }
+    Port_WorldCan();
+    for (r = 0; r < sRegions; r++) {
+        if (strcmp(sRegion[r].what, "heap") != 0) {
+            need += sRegion[r].n;
+        }
+    }
+    if (need > sWorldSavedSize) {
+        free(sWorldSaved);
+        sWorldSaved = malloc(need);
+        sWorldSavedSize = need;
+    }
+    to = sWorldSaved;
+    for (r = 0; r < sRegions; r++) {
+        if (strcmp(sRegion[r].what, "heap") != 0) {
+            memcpy(to, sRegion[r].p, sRegion[r].n);
+            to += sRegion[r].n;
+        }
+    }
+    for (i = 0; i < sWorldRunCount; i++) {
+        memcpy(sWorldRuns[i].at, sWorldBytes + sWorldRuns[i].ofs, sWorldRuns[i].len);
+    }
+    for (i = 0; i < sWorldMemCount; i++) {
+        sWorldMem[i].game = *sWorldMem[i].at;
+        *sWorldMem[i].at = sWorldMem[i].world;
+    }
+    sWorldThread = SDL_GetCurrentThreadID();
+    sWorldIn = 1;
+}
+
+static void world_note(uint8_t *at, const uint8_t *value, uint32_t len) {
+    if (sWorldRunCount == sWorldRunCap) {
+        sWorldRunCap = sWorldRunCap ? sWorldRunCap * 2 : 4096;
+        sWorldRuns = realloc(sWorldRuns, sWorldRunCap * sizeof(WorldRun));
+    }
+    if (sWorldByteCount + len > sWorldByteCap) {
+        sWorldByteCap = (sWorldByteCount + len) * 2 + 65536;
+        sWorldBytes = realloc(sWorldBytes, sWorldByteCap);
+    }
+    sWorldRuns[sWorldRunCount].at = at;
+    sWorldRuns[sWorldRunCount].len = len;
+    sWorldRuns[sWorldRunCount].ofs = sWorldByteCount;
+    memcpy(sWorldBytes + sWorldByteCount, value, len);
+    sWorldRunCount++;
+    sWorldByteCount += len;
+}
+
+void Port_WorldLeave(void) {
+    int r;
+    const uint8_t *was = sWorldSaved;
+
+    void *xp[8];
+    size_t xn[8];
+    int extra, x;
+
+    sWorldIn = 0;
+    sWorldRunCount = 0;
+    sWorldByteCount = 0;
+    /* The port's allocator: not the viewer's (it has its own memory, Port_LowAlloc), and other threads use it now. What
+       they did stays: those variables count as unchanged. */
+    Port_WorldLowLock(1);
+    extra = Port_StateExtra(xp, xn, 8);
+    if (extra > 3) {
+        extra = 3;
+    }
+    /* (and the lock itself, held just now: taken for a change of the viewer's it would come back locked next frame, and
+       nobody would ever get past it) */
+    xp[extra] = Port_WorldLowLockVar(&xn[extra]);
+    if (xp[extra] != NULL) {
+        extra++;
+    }
+    for (x = 0; x < extra; x++) {
+        const uint8_t *in = sWorldSaved;
+
+        for (r = 0; r < sRegions; r++) {
+            const uint8_t *q = xp[x];
+
+            if (strcmp(sRegion[r].what, "heap") == 0) {
+                continue;
+            }
+            if (q >= sRegion[r].p && q + xn[x] <= sRegion[r].p + sRegion[r].n) {
+                memcpy((uint8_t *)in + (q - sRegion[r].p), q, xn[x]);
+            }
+            in += sRegion[r].n;
+        }
+    }
+    for (r = 0; r < sRegions; r++) {
+        size_t n, at;
+        uint8_t *live = (uint8_t *)sRegion[r].p;
+
+        if (strcmp(sRegion[r].what, "heap") == 0) {
+            continue;
+        }
+        n = sRegion[r].n;
+        for (at = 0; at < n; at += WORLD_CHUNK) {
+            size_t len = n - at < WORLD_CHUNK ? n - at : WORLD_CHUNK;
+            size_t i = 0;
+
+            if (memcmp(live + at, was + at, len) == 0) {
+                continue;
+            }
+            while (i < len) {
+                size_t from;
+
+                if (live[at + i] == was[at + i]) {
+                    i++;
+                    continue;
+                }
+                from = i;
+                while (i < len && live[at + i] != was[at + i]) {
+                    i++;
+                }
+                world_note(live + at + from, live + at + from, (uint32_t)(i - from));
+            }
+            memcpy(live + at, was + at, len);
+        }
+        was += n;
+    }
+    Port_WorldLowLock(0);
+    {
+        uint32_t m;
+
+        for (m = 0; m < sWorldMemCount; m++) {
+            sWorldMem[m].world = *sWorldMem[m].at;
+            *sWorldMem[m].at = sWorldMem[m].game;
+        }
+    }
+}
+
+void Port_WorldForget(void) {
+    extern void Port_WorldArenaRelease(uint8_t *arena, size_t used);
+
+    sWorldMemCount = 0;
+    sWorldIn = 0;
+    sWorldRunCount = 0;
+    sWorldByteCount = 0;
+    sWorldNext = 0;
+    /* nothing in the arena is anyone's any more: its pages go back instead of staying through the fight */
+    Port_WorldArenaRelease(sWorldBase, sWorldHigh);
+    sWorldHigh = 0;
+}
+
+uint64_t Port_StateHash(void) {
+    XXH3_state_t st;
+    int i;
+
+    if (sRegions < 0) {
+        regions_init();
+    }
+    XXH3_64bits_reset(&st);
+    for (i = 0; i < sRegions; i++) {
+        XXH3_64bits_update(&st, sRegion[i].p, sRegion[i].n);
+    }
+    return XXH3_64bits_digest(&st);
+}
+
+/* Called at every vertical blank (Port_Trace, headless.c). */
+void Port_StateLog(unsigned vblank, const void *fight, unsigned fightSize) {
+    static FILE *fp;
+    static int mode = -1, at = -1;
+
+    if (mode < 0) {
+        const char *path = getenv("BT3_HASH");
+        mode = 0;
+        if (path != NULL && (fp = fopen(path, "w")) != NULL) {
+            mode = 1;
+            at = getenv("BT3_HASH_AT") != NULL ? atoi(getenv("BT3_HASH_AT")) : -1;
+        }
+    }
+    if (mode != 1) {
+        return;
+    }
+    /* blank, checksum of everything, checksum of the fight's own values (0 outside a fight) and those values */
+    fprintf(fp, "%u %016llx %016llx", vblank, (unsigned long long)Port_StateHash(), fight != NULL ? (unsigned long long)XXH3_64bits(fight, fightSize) : 0ull);
+    if (fight != NULL) {
+        const int *w = fight;
+        fprintf(fp, " hp %d %d pos %08x %08x %08x  %08x %08x %08x clock %d rnd %08x%08x", w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7], w[8], w[11], w[10]);
+    }
+    {
+        extern long Port_PadPlayPos(void); /* plat_stub.c: how far a pad recording has been played */
+        long pos = Port_PadPlayPos();
+        if (pos >= 0) {
+            fprintf(fp, " pad %ld", pos);
+        }
+    }
+    fputc('\n', fp);
+    if ((int)vblank == at) {
+        char path[1100];
+        FILE *pg;
+        int i;
+        snprintf(path, sizeof(path), "%s.pages", getenv("BT3_HASH"));
+        pg = fopen(path, "w");
+        if (pg != NULL) {
+            for (i = 0; i < sRegions; i++) {
+                size_t off;
+                for (off = 0; off < sRegion[i].n; off += 4096) {
+                    size_t n = sRegion[i].n - off < 4096 ? sRegion[i].n - off : 4096;
+                    fprintf(pg, "%s %llx %016llx\n", sRegion[i].what, (unsigned long long)(uintptr_t)(sRegion[i].p + off),
+                            (unsigned long long)XXH3_64bits(sRegion[i].p + off, n));
+                }
+            }
+            fclose(pg);
+        }
+        /* and <file>.dump: the regions themselves, each after a line "what address size", for a byte-wise look */
+        snprintf(path, sizeof(path), "%s.dump", getenv("BT3_HASH"));
+        pg = fopen(path, "wb");
+        if (pg != NULL) {
+            for (i = 0; i < sRegions; i++) {
+                fprintf(pg, "%s %llx %llx\n", sRegion[i].what, (unsigned long long)(uintptr_t)sRegion[i].p, (unsigned long long)sRegion[i].n);
+                fwrite(sRegion[i].p, 1, sRegion[i].n, pg);
+            }
+            fclose(pg);
+        }
+        fflush(fp);
+    }
+    if (vblank % 600 == 0) {
+        fflush(fp);
+    }
+}
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Saving and restoring the game's state, and the test of it. (The 64-bit programs: Linux and Windows.)
+ *
+ * A snapshot is: the regions the checksum covers, the port's own memory that belongs to the game's state
+ * (Port_StateExtra), the used part of the game thread's stack, and the processor's registers at the moment of
+ * saving. Restoring copies all of it back and continues from the moment of saving: the function that saved
+ * returns a second time. The copy back is done from another stack (the game thread's own is being overwritten).
+ *
+ *   BT3_SYNCTEST=1   every vertical blank: save; run to the next blank; note the checksum; restore; run to the
+ *                    next blank AGAIN; compare. A game that cannot be rewound and replayed to the same state shows
+ *                    here, with the place in memory that came out differently. Every frame runs twice.
+ *                    (=<n>: start at blank n.)
+ *   BT3_SYNCTEST_DEPTH=<n>  rewind n blanks at a time instead of one (up to 64): save, run n blanks noting each
+ *                    one's checksum, restore, run the n again and compare each. What online play does when an
+ *                    input arrives late: several frames are undone and replayed.
+ * ------------------------------------------------------------------------------------------------------------- */
+#if defined(__x86_64__) || defined(__aarch64__) || defined(__APPLE__)
+#ifdef __APPLE__
+/* macOS: as on Windows, the registers are kept with a setjmp (the C library's, without the signal mask: macOS has
+   no ucontext functions on arm64) and the copy back runs on another stack through the port's stack switch. */
+#include <setjmp.h>
+extern void Port_CallOnStack(void (*fn)(void), void *top);
+#elif defined(_WIN32)
+/* Windows: the registers are kept with the compiler's own minimal setjmp (frame, stack pointer and the place to
+   continue; everything else counts as lost over it, which is what a restore is), and the copy back runs on another
+   stack through the port's stack switch (plat_mem.c). */
+extern void Port_CallOnStack(void (*fn)(void), void *top);
+#elif defined(__aarch64__)
+/* AArch64 (Android): no getcontext there. The registers a call keeps (x19..x30, the stack pointer, d8..d15) are
+   saved by port_jmp_save, which returns 0, and port_jmp_jump puts them back and returns 1 from that save, as the
+   Windows path does with setjmp; the copy back runs on another stack (call_on_stack). x18 is the platform's and is
+   left alone (it is the same thread). */
+typedef struct PortJmp { uint64_t r[21]; } PortJmp; /* x19..x28, x29, x30, sp, d8..d15 */
+extern int port_jmp_save(PortJmp *j) __attribute__((returns_twice));
+extern void port_jmp_jump(PortJmp *j) __attribute__((noreturn));
+__asm__(".text\n"
+        ".p2align 2\n"
+        ".globl port_jmp_save\n"
+        ".hidden port_jmp_save\n"
+        ".type port_jmp_save, %function\n"
+        "port_jmp_save:\n"
+        "    stp x19, x20, [x0, #0]\n"
+        "    stp x21, x22, [x0, #16]\n"
+        "    stp x23, x24, [x0, #32]\n"
+        "    stp x25, x26, [x0, #48]\n"
+        "    stp x27, x28, [x0, #64]\n"
+        "    stp x29, x30, [x0, #80]\n"
+        "    mov x16, sp\n"
+        "    str x16, [x0, #96]\n"
+        "    stp d8, d9, [x0, #104]\n"
+        "    stp d10, d11, [x0, #120]\n"
+        "    stp d12, d13, [x0, #136]\n"
+        "    stp d14, d15, [x0, #152]\n"
+        "    mov w0, #0\n"
+        "    ret\n"
+        ".size port_jmp_save, .-port_jmp_save\n"
+        ".p2align 2\n"
+        ".globl port_jmp_jump\n"
+        ".hidden port_jmp_jump\n"
+        ".type port_jmp_jump, %function\n"
+        "port_jmp_jump:\n"
+        "    ldp x19, x20, [x0, #0]\n"
+        "    ldp x21, x22, [x0, #16]\n"
+        "    ldp x23, x24, [x0, #32]\n"
+        "    ldp x25, x26, [x0, #48]\n"
+        "    ldp x27, x28, [x0, #64]\n"
+        "    ldp x29, x30, [x0, #80]\n"
+        "    ldr x16, [x0, #96]\n"
+        "    mov sp, x16\n"
+        "    ldp d8, d9, [x0, #104]\n"
+        "    ldp d10, d11, [x0, #120]\n"
+        "    ldp d12, d13, [x0, #136]\n"
+        "    ldp d14, d15, [x0, #152]\n"
+        "    mov w0, #1\n"
+        "    ret\n"
+        ".size port_jmp_jump, .-port_jmp_jump\n");
+
+/* fn on the stack that ends at top (16-byte aligned); fn does not come back. */
+static void __attribute__((noinline, noreturn)) call_on_stack(void (*fn)(void), void *top) {
+    __asm__ volatile("mov sp, %1\n\tblr %0\n\tbrk #0" : : "r"(fn), "r"(top) : "memory");
+    __builtin_unreachable();
+}
+#else
+#include <ucontext.h>
+#endif
+
+extern int Port_StateExtra(void **p, size_t *n, int max); /* plat_mem.c */
+extern uint8_t *Port_GameStackTop(void);
+extern long Port_PadPlayPos(void);                         /* plat_stub.c */
+extern void Port_PadPlaySeek(long pos);
+
+#define MAX_PARTS (MAX_REGIONS + 8)
+typedef struct Snapshot {
+    struct { uint8_t *at; size_t n; uint8_t *copy; size_t cap; } part[MAX_PARTS];
+    int parts;
+#ifdef __APPLE__
+    jmp_buf jb;
+#elif defined(_WIN32)
+    void *jb[5];
+#elif defined(__aarch64__)
+    PortJmp jb;
+#else
+    ucontext_t ctx;
+#endif
+    long padPos;
+    volatile int loaded;
+} Snapshot;
+
+static void part_save(Snapshot *s, uint8_t *at, size_t n) {
+    int k = s->parts++;
+    if (s->part[k].cap < n) {
+        free(s->part[k].copy);
+        s->part[k].copy = malloc(n + 4096);
+        s->part[k].cap = n + 4096;
+    }
+    s->part[k].at = at;
+    s->part[k].n = n;
+    memcpy(s->part[k].copy, at, n);
+}
+
+/* Returns 0 after saving, 1 when it returns the second time (the state was restored). */
+static int sSaveSmall; /* state_save leaves out the regions the page tracking covers (the roll ring keeps those) */
+static int tracked_part(const uint8_t *p);
+
+static int __attribute__((noinline)) state_save(Snapshot *s) {
+    void *xp[8];
+    size_t xn[8];
+    uint8_t *sp = (uint8_t *)__builtin_frame_address(0) - 1024, *top = Port_GameStackTop();
+    int i, extra;
+
+    if (sRegions < 0) {
+        regions_init();
+    }
+    s->parts = 0;
+    for (i = 0; i < sRegions; i++) {
+        if (!(sSaveSmall && tracked_part(sRegion[i].p))) {
+            part_save(s, (uint8_t *)sRegion[i].p, sRegion[i].n);
+        }
+    }
+    extra = Port_StateExtra(xp, xn, 8);
+    for (i = 0; i < extra; i++) {
+        if (!(sSaveSmall && tracked_part(xp[i]))) {
+            part_save(s, xp[i], xn[i]);
+        }
+    }
+    s->padPos = Port_PadPlayPos();
+    s->loaded = 0;
+    part_save(s, sp, (size_t)(top - sp)); /* the stack last: this frame's own contents as they are now */
+#ifdef __APPLE__
+    if (_setjmp(s->jb) != 0) {
+        return 1;
+    }
+    return 0;
+#elif defined(_WIN32)
+    if (__builtin_setjmp(s->jb) != 0) {
+        return 1;
+    }
+    return 0;
+#elif defined(__aarch64__)
+    if (port_jmp_save(&s->jb) != 0) {
+        return 1;
+    }
+    return 0;
+#else
+    getcontext(&s->ctx);
+    return s->loaded;
+#endif
+}
+
+static Snapshot *sLoading;
+#if !defined(_WIN32) && !defined(__aarch64__)
+static ucontext_t sLoaderCtx;
+#endif
+
+static void loader(void) {
+    Snapshot *s = sLoading;
+    int k;
+    for (k = 0; k < s->parts; k++) {
+        memcpy(s->part[k].at, s->part[k].copy, s->part[k].n);
+    }
+    Port_PadPlaySeek(s->padPos);
+    s->loaded = 1;
+#ifdef __APPLE__
+    _longjmp(s->jb, 1);
+#elif defined(_WIN32)
+    __builtin_longjmp(s->jb, 1);
+#elif defined(__aarch64__)
+    port_jmp_jump(&s->jb);
+#else
+    setcontext(&s->ctx);
+#endif
+}
+
+static void roll_forget(void);
+
+static void state_load(Snapshot *s) {
+    static uint8_t *stack;
+    if (stack == NULL) {
+        stack = malloc(1 << 20);
+    }
+    roll_forget();
+    sLoading = s;
+#if defined(_WIN32) || defined(__APPLE__)
+    Port_CallOnStack(loader, stack + (1 << 20) - 64); /* (does not come back: the loader continues at the save) */
+#elif defined(__aarch64__)
+    call_on_stack(loader, stack + (1 << 20) - 64);
+#else
+    getcontext(&sLoaderCtx);
+    sLoaderCtx.uc_stack.ss_sp = stack;
+    sLoaderCtx.uc_stack.ss_size = 1 << 20;
+    sLoaderCtx.uc_link = NULL;
+    makecontext(&sLoaderCtx, loader, 0);
+    setcontext(&sLoaderCtx);
+#endif
+}
+
+/* a checksum of a snapshot's memory, the stack left out (the last part) */
+static uint64_t parts_hash(void) {
+    XXH3_state_t st;
+    void *xp[8];
+    size_t xn[8];
+    int i, extra = Port_StateExtra(xp, xn, 8);
+    XXH3_64bits_reset(&st);
+    for (i = 0; i < sRegions; i++) {
+        XXH3_64bits_update(&st, sRegion[i].p, sRegion[i].n);
+    }
+    for (i = 0; i < extra; i++) {
+        XXH3_64bits_update(&st, xp[i], xn[i]);
+    }
+    return XXH3_64bits_digest(&st);
+}
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * The roll ring: a saved state per vertical blank, cheap enough to keep many (rollback).
+ *
+ * Nearly all of a state is the game's heap and the port's block region (30 MB and more), of which a blank changes
+ * about one page in a hundred. So those two are not copied: the system is asked which pages were written
+ * (Linux: the pages are read-only and the first write to one arrives here as a fault, which notes the page and
+ * opens it; Windows: the regions are allocated with write tracking and GetWriteWatch lists the pages), a copy of
+ * both regions as of the latest save is kept (the shadow), and at each save the pages written since the save
+ * before go, as they were then (from the shadow), to that earlier save's own list. Going back k saves: the pages
+ * written since the latest save come back from the shadow, then each save's list is put back, newest first.
+ * The small rest (the game's variables, the stack, the registers) is copied whole per save, as before.
+ *
+ * A read() into a read-only page does not fault, it fails: whatever lets the system write file data straight
+ * into the game's memory calls Port_StateTouch first.
+ * ------------------------------------------------------------------------------------------------------------- */
+#ifdef __APPLE__
+#define PG 16384u /* the page size of Apple Silicon: what mprotect works in */
+#else
+#define PG 4096u
+#endif
+#define ROLL_MAX 64
+
+typedef struct Track { uint8_t *base, *shadow; uint32_t pages, first; } Track; /* first: its first global page number */
+static Track sTrack[2];
+static int sTracks, sTracking;
+static uint32_t sTrackPages;       /* global page numbers in use */
+static uint32_t *sDirty;           /* global page numbers written since the last collect */
+static volatile uint32_t sDirtyCount;
+static volatile uint8_t *sDirtyMark; /* per global page: in sDirty already */
+static uint32_t *sStamp;           /* per global page: the save whose list holds it already */
+static uint32_t sArenaPages;       /* pages of the block region in use at the last collect */
+
+typedef struct Roll {
+    Snapshot small;
+    uint32_t *pg;
+    uint8_t *data;
+    uint32_t n, cap, id;
+} Roll;
+static Roll *sRoll[ROLL_MAX];
+static int sRolls;
+static uint32_t sRollId;
+/* Online Tag Team goes back at most its ROLLBACK (8) blanks and one (tag_net.c: it waits rather than run further
+   ahead): 32 saves are kept there, not 64. Each save holds its own copy of the game's variables (about 2 MB), so the
+   other 32 were about 64 MB of the phone's memory that no rollback could ever use. BT3's own online keeps 64. */
+#define ROLL_TAG 32
+/* A save's list grown past this by one heavy blank (a load) is let go when the ring is forgotten, not kept for good. */
+#define ROLL_KEEP_PAGES 1024u
+
+static void roll_free(Roll *r) {
+    int k;
+    if (r == NULL) {
+        return;
+    }
+    for (k = 0; k < MAX_PARTS; k++) {
+        free(r->small.part[k].copy);
+    }
+    free(r->pg);
+    free(r->data);
+    free(r);
+}
+
+static int roll_limit(void) {
+    extern int TagNet_Active(void);
+    return TagNet_Active() ? ROLL_TAG : ROLL_MAX;
+}
+
+static int tracked_part(const uint8_t *p) {
+    int t;
+    for (t = 0; t < sTracks; t++) {
+#ifdef __APPLE__
+        if (p >= sTrack[t].base && p < sTrack[t].base + PG) { /* (the heap starts inside its first tracked page) */
+#else
+        if (p == sTrack[t].base) {
+#endif
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static inline uint8_t *page_at(uint32_t g, uint8_t **shadow) {
+    Track *t = &sTrack[g >= sTrack[1].first && sTracks > 1];
+    *shadow = t->shadow + (size_t)(g - t->first) * PG;
+    return t->base + (size_t)(g - t->first) * PG;
+}
+
+static inline void dirty_note(uint32_t g) {
+    if (!__atomic_exchange_n(&sDirtyMark[g], 1, __ATOMIC_SEQ_CST)) {
+        sDirty[__atomic_fetch_add(&sDirtyCount, 1, __ATOMIC_SEQ_CST)] = g;
+    }
+}
+
+#ifndef _WIN32
+#include <signal.h>
+#include <sys/mman.h>
+static struct sigaction sOldSegv;
+#ifdef __APPLE__
+static struct sigaction sOldBus; /* macOS reports a write to a read-only page as SIGBUS */
+#endif
+
+static void on_write_fault(int sig, siginfo_t *si, void *uc) {
+    uintptr_t a = (uintptr_t)si->si_addr;
+    int t;
+    for (t = 0; t < sTracks; t++) {
+        uintptr_t b = (uintptr_t)sTrack[t].base;
+        if (a >= b && a < b + (uintptr_t)sTrack[t].pages * PG) {
+            uint32_t page = (uint32_t)((a - b) / PG);
+            dirty_note(sTrack[t].first + page);
+            mprotect((void *)(b + (uintptr_t)page * PG), PG, PROT_READ | PROT_WRITE);
+            return;
+        }
+    }
+    /* not ours: to whoever handled it before, or to the default (the write is tried again and ends the program) */
+#ifdef __APPLE__
+    struct sigaction *old = sig == SIGBUS ? &sOldBus : &sOldSegv;
+    if (old->sa_flags & SA_SIGINFO) {
+        old->sa_sigaction(sig, si, uc);
+    } else if (old->sa_handler != SIG_DFL && old->sa_handler != SIG_IGN) {
+        old->sa_handler(sig);
+    } else {
+        sigaction(sig, old, NULL);
+    }
+#else
+    if (sOldSegv.sa_flags & SA_SIGINFO) {
+        sOldSegv.sa_sigaction(sig, si, uc);
+    } else if (sOldSegv.sa_handler != SIG_DFL && sOldSegv.sa_handler != SIG_IGN) {
+        sOldSegv.sa_handler(sig);
+    } else {
+        sigaction(SIGSEGV, &sOldSegv, NULL);
+    }
+#endif
+}
+
+static void *shadow_alloc(size_t n) {
+    void *p = mmap(NULL, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    return p == MAP_FAILED ? NULL : p;
+}
+#else
+static void *shadow_alloc(size_t n) {
+    return VirtualAlloc(NULL, n, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+}
+#endif
+
+/* A page of a tracked region is about to be written by other means than an ordinary store. */
+static void touch_page(uint32_t g) {
+    if (!sDirtyMark[g]) {
+#ifndef _WIN32
+        uint8_t *sh, *m = page_at(g, &sh);
+        mprotect(m, PG, PROT_READ | PROT_WRITE);
+#endif
+        dirty_note(g);
+    }
+}
+
+void Port_StateTouch(void *p, unsigned long n) {
+    uintptr_t a = (uintptr_t)p;
+    int t;
+    if (!sTracking || n == 0) {
+        return;
+    }
+    for (t = 0; t < sTracks; t++) {
+        uintptr_t b = (uintptr_t)sTrack[t].base, e = b + (uintptr_t)sTrack[t].pages * PG;
+        if (a + n > b && a < e) {
+            uintptr_t lo = a < b ? b : a, hi = a + n > e ? e : a + n, q;
+            for (q = (lo - b) / PG; q <= (hi - 1 - b) / PG; q++) {
+                touch_page(sTrack[t].first + (uint32_t)q);
+            }
+        }
+    }
+}
+
+static void track_start(void) {
+    void *xp[8];
+    size_t xn[8];
+    uint8_t *heap;
+    uint32_t heapSize;
+    int extra, t;
+
+    if (sRegions < 0) {
+        regions_init();
+    }
+    Port_HeapRegion(&heap, &heapSize);
+#ifdef __APPLE__
+    /* the heap starts inside a 16 KB page (0x003BE000); the mapping starts on that page, and so does the tracking */
+    heapSize += (uint32_t)((uintptr_t)heap & (PG - 1));
+    heap -= (uintptr_t)heap & (PG - 1);
+#endif
+    sTrack[0].base = heap;
+    sTrack[0].pages = heapSize / PG;
+    sTrack[0].first = 0;
+    sTracks = 1;
+    sTrackPages = sTrack[0].pages;
+    extra = Port_StateExtra(xp, xn, 8);
+    if (extra >= 4) { /* the block region: all of its address range, used or not yet */
+        extern uint32_t Port_LowRegionSize(void); /* plat_mem.c */
+        sTrack[1].base = xp[3];
+        sTrack[1].pages = Port_LowRegionSize() / PG;
+        sTrack[1].first = sTrackPages;
+        sTrackPages += sTrack[1].pages;
+        sTracks = 2;
+        sArenaPages = (uint32_t)((xn[3] + PG - 1) / PG);
+    }
+    sDirty = malloc(sizeof(uint32_t) * sTrackPages);
+    sDirtyMark = calloc(1, sTrackPages);
+    sStamp = calloc(sizeof(uint32_t), sTrackPages);
+    for (t = 0; t < sTracks; t++) {
+        size_t used = (size_t)(t == 0 ? sTrack[t].pages : sArenaPages) * PG;
+        sTrack[t].shadow = shadow_alloc((size_t)sTrack[t].pages * PG);
+        if (sTrack[t].shadow == NULL) {
+            fprintf(stderr, "bt3: state: no memory for the copy of the game's memory\n");
+            exit(2);
+        }
+        memcpy(sTrack[t].shadow, sTrack[t].base, used);
+    }
+#ifndef _WIN32
+    {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_sigaction = on_write_fault;
+        sa.sa_flags = SA_SIGINFO | SA_NODEFER;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGSEGV, &sa, &sOldSegv);
+#ifdef __APPLE__
+        sigaction(SIGBUS, &sa, &sOldBus);
+#endif
+        mprotect(sTrack[0].base, (size_t)sTrack[0].pages * PG, PROT_READ);
+        if (sTracks > 1 && sArenaPages != 0) {
+            mprotect(sTrack[1].base, (size_t)sArenaPages * PG, PROT_READ);
+        }
+    }
+#else
+    for (t = 0; t < sTracks; t++) {
+        ResetWriteWatch(sTrack[t].base, (size_t)(t == 0 ? sTrack[t].pages : sArenaPages) * PG);
+    }
+#endif
+    sTracking = 1;
+}
+
+/* The pages written since the last collect, into sDirty (each once). Returns how many. */
+static uint32_t dirty_collect(void) {
+    void *xp[8];
+    size_t xn[8];
+    uint32_t used = sArenaPages, g;
+
+    if (sTracks > 1 && Port_StateExtra(xp, xn, 8) >= 4) {
+        used = (uint32_t)((xn[3] + PG - 1) / PG);
+    }
+#ifdef _WIN32
+    {
+        static void **addr;
+        int t;
+        if (addr == NULL) {
+            addr = malloc(sizeof(void *) * sTrackPages);
+        }
+        for (t = 0; t < sTracks; t++) {
+            ULONG_PTR count = sTrackPages;
+            DWORD gran = 0;
+            size_t len = (size_t)(t == 0 ? sTrack[t].pages : (used > sArenaPages ? used : sArenaPages)) * PG;
+            ULONG_PTR i;
+            UINT rc = len != 0 ? GetWriteWatch(WRITE_WATCH_FLAG_RESET, sTrack[t].base, len, addr, &count, &gran) : 0;
+            if (rc != 0) {
+                static int said;
+                if (!said++) {
+                    fprintf(stderr, "bt3: state: the system does not list the written pages of %p + %u MB (error %lu)\n", (void *)sTrack[t].base,
+                            (unsigned)(len >> 20), (unsigned long)GetLastError());
+                }
+            }
+            if (len != 0 && rc == 0) {
+                for (i = 0; i < count; i++) {
+                    dirty_note(sTrack[t].first + (uint32_t)(((uintptr_t)addr[i] - (uintptr_t)sTrack[t].base) / PG));
+                }
+            }
+        }
+    }
+#endif
+    /* the block region grew: its new pages count as written (they were nothing before: the shadow's zeros) */
+    for (g = sArenaPages; g < used; g++) {
+        dirty_note(sTrack[1].first + g);
+    }
+    if (used > sArenaPages) {
+        sArenaPages = used;
+    }
+    return sDirtyCount;
+}
+
+static int cmp_u32(const void *a, const void *b);
+
+/* After a collect has been dealt with: nothing counts as written, every page is watched again. */
+static void dirty_rearm(void) {
+    uint32_t i, n = sDirtyCount;
+#ifndef _WIN32
+    /* read-only again, neighbours in one call (the list is in the order of the writes: sort it first) */
+    uint32_t j;
+    qsort(sDirty, n, sizeof(sDirty[0]), cmp_u32);
+    for (i = 0; i < n; i = j) {
+        uint8_t *sh, *m = page_at(sDirty[i], &sh);
+        int second = sDirty[i] >= sTrack[1].first && sTracks > 1;
+        for (j = i + 1; j < n && sDirty[j] == sDirty[j - 1] + 1 && (sDirty[j] >= sTrack[1].first && sTracks > 1) == second; j++) {
+        }
+        mprotect(m, (size_t)(j - i) * PG, PROT_READ);
+    }
+#endif
+    for (i = 0; i < n; i++) {
+        sDirtyMark[sDirty[i]] = 0;
+    }
+    sDirtyCount = 0;
+}
+
+/* A whole state is about to be put back by other means than roll_back (state_load): the ring's saves do not
+   lead to it. (Its pages arrive as written at the next collect, and the shadow follows.) */
+static int sRollLoading;
+static void roll_forget(void) {
+    if (!sRollLoading) {
+        sRolls = 0;
+    }
+    sRollLoading = 0;
+}
+
+static int cmp_u32(const void *a, const void *b) {
+    uint32_t x = *(const uint32_t *)a, y = *(const uint32_t *)b;
+    return x < y ? -1 : x > y;
+}
+
+/* Saves the state as the newest of the ring. Returns 0 after saving, 1 when a roll_back has come back to it. */
+static int __attribute__((noinline)) roll_save(void) {
+    Roll *r, *prev;
+    uint32_t i, n;
+    int back, limit;
+
+    if (!sTracking) {
+        track_start();
+    }
+    n = dirty_collect();
+    prev = sRolls != 0 ? sRoll[sRolls - 1] : NULL;
+    for (i = 0; i < n; i++) {
+        uint32_t g = sDirty[i];
+        uint8_t *sh, *m = page_at(g, &sh);
+        if (prev != NULL && sStamp[g] != prev->id) { /* as the page was at the save before: into that save's list */
+            if (prev->n == prev->cap) {
+                prev->cap = prev->cap != 0 ? prev->cap * 2 : 256;
+                prev->pg = realloc(prev->pg, sizeof(uint32_t) * prev->cap);
+                prev->data = realloc(prev->data, (size_t)prev->cap * PG);
+            }
+            prev->pg[prev->n] = g;
+            memcpy(prev->data + (size_t)prev->n * PG, sh, PG);
+            prev->n++;
+            sStamp[g] = prev->id;
+        }
+        memcpy(sh, m, PG);
+    }
+    dirty_rearm();
+    limit = roll_limit();
+    if (sRolls >= limit) {
+        while (sRolls > limit) { /* (deeper than allowed now: the oldest go for good, their places emptied) */
+            roll_free(sRoll[0]);
+            memmove(&sRoll[0], &sRoll[1], sizeof(sRoll[0]) * (size_t)(sRolls - 1));
+            sRoll[--sRolls] = NULL;
+        }
+        r = sRoll[0]; /* the oldest goes; its storage is used for the new one */
+        memmove(&sRoll[0], &sRoll[1], sizeof(sRoll[0]) * (size_t)(sRolls - 1));
+        sRolls--;
+    } else if (sRoll[sRolls] != NULL) {
+        r = sRoll[sRolls];
+    } else {
+        r = calloc(1, sizeof(*r));
+    }
+    sRoll[sRolls++] = r;
+    r->n = 0;
+    r->id = ++sRollId;
+    sSaveSmall = 1;
+    back = state_save(&r->small);
+    sSaveSmall = 0;
+    return back;
+}
+
+/* Back to the state of k saves ago (1: the newest). Does not return: roll_save of that save returns 1. */
+static void roll_back(int k) {
+    int target = sRolls - k, j;
+    uint32_t i, n;
+    Roll *r;
+
+    if (target < 0) {
+        fprintf(stderr, "bt3: state: asked to go back %d saves, the ring holds %d\n", k, sRolls);
+        exit(2);
+    }
+    /* what was written since the newest save: back from the shadow (the pages stay noted as written) */
+    n = dirty_collect();
+    for (i = 0; i < n; i++) {
+        uint8_t *sh, *m = page_at(sDirty[i], &sh);
+        touch_page(sDirty[i]);
+        memcpy(m, sh, PG);
+    }
+    /* then each save's own pages, from the one before the newest down to the target */
+    for (j = sRolls - 2; j >= target; j--) {
+        r = sRoll[j];
+        for (i = 0; i < r->n; i++) {
+            uint8_t *sh, *m = page_at(r->pg[i], &sh);
+            touch_page(r->pg[i]);
+            memcpy(m, r->data + (size_t)i * PG, PG);
+            memcpy(sh, r->data + (size_t)i * PG, PG);
+        }
+    }
+    r = sRoll[target];
+    for (j = target + 1; j < sRolls; j++) { /* the newer saves are gone (their storage is kept for reuse) */
+        sRoll[j]->n = 0;
+    }
+    sRolls = target + 1;
+    for (i = 0; i < r->n; i++) { /* the target's list is still right: the pages in it are not noted a second time */
+        sStamp[r->pg[i]] = r->id;
+    }
+    sRollLoading = 1;
+    state_load(&r->small);
+}
+
+/* Online Tag Team, the first blank of a match (tag_net.c): the saves of the match before are never gone back to.
+   Kept, the match's first save put everything written since the last one (the menus, the whole battle's load: tens of
+   MB) into the list of a save of the OLD match: a long stall on the first blank, and that list's memory held for good,
+   another one after each match. Forgotten, every match starts as the first one after the app opens does. The
+   storage of saves beyond Tag's depth, and lists grown large by one heavy blank, go back to the system. */
+void Port_RollForget(void) {
+    int i;
+    sRolls = 0;
+    for (i = 0; i < ROLL_MAX; i++) {
+        Roll *r = sRoll[i];
+        if (r == NULL) {
+            continue;
+        }
+        if (i >= ROLL_TAG) {
+            roll_free(r);
+            sRoll[i] = NULL;
+        } else if (r->cap > ROLL_KEEP_PAGES) {
+            free(r->pg);
+            free(r->data);
+            r->pg = NULL;
+            r->data = NULL;
+            r->cap = 0;
+            r->n = 0;
+        }
+    }
+}
+
+/* For online play (gs/net.c). */
+int Port_RollCan(void) {
+    if (sRegions < 0) {
+        regions_init();
+    }
+    return sListed;
+}
+int Port_RollSave(void) {
+    return roll_save();
+}
+void Port_RollBack(int k) {
+    roll_back(k);
+}
+
+#define SYNC_MAX_DEPTH 64
+
+void Port_SyncTest(unsigned vblank) {
+    static struct Ctl {
+        int mode, phase, depth, step, roll;
+        unsigned from, frames, bad;
+        uint64_t h1[SYNC_MAX_DEPTH + 1];
+        uint64_t tPrev, nsSilent, nsLoud, nsSave, nsLoad, tLoad; /* how long things take (reported with the count) */
+        unsigned nSilent, nLoud, nSave, nLoad;
+        Snapshot snap, first;
+    } *c;
+    uint64_t tNow = SDL_GetTicksNS();
+
+    if (c == NULL) {
+        const char *e = getenv("BT3_SYNCTEST"), *d = getenv("BT3_SYNCTEST_DEPTH");
+        c = calloc(1, sizeof(*c)); /* (outside everything a snapshot restores) */
+        c->mode = e != NULL;
+        c->from = e != NULL ? (unsigned)atoi(e) : 0;
+        c->depth = d != NULL ? atoi(d) : 1;
+        c->roll = getenv("BT3_SYNCTEST_ROLL") != NULL; /* with the roll ring (pages written, not whole copies) */
+        if (c->depth < 1) { c->depth = 1; }
+        if (c->depth > SYNC_MAX_DEPTH) { c->depth = SYNC_MAX_DEPTH; }
+    }
+    if (!c->mode || vblank < c->from) {
+        return;
+    }
+    if (sRegions < 0) {
+        regions_init();
+    }
+    if (c->phase == 1) {
+        /* first pass: note what each blank of the stretch ended with; after the last, go back to its start */
+        c->nsSilent += tNow - c->tPrev;
+        c->nSilent++;
+        c->h1[++c->step] = parts_hash();
+        c->tPrev = SDL_GetTicksNS();
+        if (c->step < c->depth) {
+            if (c->roll) { /* a save at every blank, as rollback makes them */
+                tNow = SDL_GetTicksNS();
+                roll_save();
+                c->nsSave += SDL_GetTicksNS() - tNow;
+                c->nSave++;
+                c->tPrev = SDL_GetTicksNS();
+            }
+            return;
+        }
+        c->phase = 2;
+        c->step = 0;
+        if (c->roll) {
+            c->tLoad = SDL_GetTicksNS();
+            roll_back(c->depth);
+        }
+        if (c->depth > 1 || state_save(&c->first) == 0) { /* (depth 1: kept to say WHERE a difference is) */
+            c->tLoad = SDL_GetTicksNS();
+            state_load(&c->snap);
+        }
+        return; /* not reached: the load continues in the save below, `depth` blanks ago */
+    }
+    if (c->phase == 2) {
+        uint64_t h2;
+        c->nsLoud += tNow - c->tPrev;
+        c->nLoud++;
+        h2 = parts_hash();
+        c->tPrev = SDL_GetTicksNS();
+        c->step++;
+        if (h2 != c->h1[c->step]) {
+            int k, shown = 0;
+            c->bad++;
+            if (c->bad <= 8) {
+                fprintf(stderr, "sync: blank %u (step %d of %d after the restore): run again from the saved state it ends differently\n",
+                        vblank, c->step, c->depth);
+                for (k = 0; c->depth == 1 && k + 1 < c->first.parts && shown < 6; k++) { /* (not the stack) */
+                    const uint8_t *a = c->first.part[k].copy, *b = c->first.part[k].at;
+                    size_t n = c->first.part[k].n, i;
+                    for (i = 0; i < n && shown < 6; i++) {
+                        if (a[i] != b[i]) {
+                            size_t j = i;
+                            while (j < n && a[j] != b[j]) {
+                                j++;
+                            }
+                            fprintf(stderr, "sync:   %s %p, %u bytes: %02x %02x %02x %02x -> %02x %02x %02x %02x\n",
+                                    k < sRegions ? sRegion[k].what : "port", (void *)(b + i), (unsigned)(j - i), a[i], a[i + 1], a[i + 2],
+                                    a[i + 3], b[i], b[i + 1], b[i + 2], b[i + 3]);
+                            shown++;
+                            i = j + 64;
+                        }
+                    }
+                }
+            }
+        }
+        if (c->step < c->depth) {
+            if (c->roll) {
+                roll_save();
+                c->tPrev = SDL_GetTicksNS();
+            }
+            return;
+        }
+        c->frames += (unsigned)c->depth;
+        if (c->frames / 600 != (c->frames - (unsigned)c->depth) / 600) {
+            fprintf(stderr, "sync: %u blanks each run twice, rewinding %d at a time; %u ended differently\n", c->frames, c->depth, c->bad);
+            if (getenv("BT3_GS_VERBOSE") != NULL && c->nSilent != 0 && c->nLoud != 0 && c->nSave != 0 && c->nLoad != 0) {
+                fprintf(stderr, "sync:   per blank: re-run without output %.2f ms, with output %.2f ms; saving the state %.2f ms, restoring it %.2f ms\n",
+                        (double)c->nsSilent / c->nSilent / 1e6, (double)c->nsLoud / c->nLoud / 1e6, (double)c->nsSave / c->nSave / 1e6,
+                        (double)c->nsLoad / c->nLoad / 1e6);
+            }
+            c->nsSilent = c->nsLoud = c->nsSave = c->nsLoad = 0;
+            c->nSilent = c->nLoud = c->nSave = c->nLoad = 0;
+        }
+    }
+    c->phase = 1;
+    c->step = 0;
+    tNow = SDL_GetTicksNS();
+    if ((c->roll ? roll_save() : state_save(&c->snap)) != 0) {
+        c->nsLoad += SDL_GetTicksNS() - c->tLoad;
+        c->nLoad++;
+        c->tPrev = SDL_GetTicksNS();
+        /* back here after the restore: the same stretch runs a second time (phase 2 was set before the load),
+           this time with its picture and sound */
+        gPortResim = 0;
+    } else {
+        /* the pass that will be undone runs without picture and sound (BT3_SYNCTEST_LOUD=1: with them, as the
+           test first did): what online play does with the frames it re-runs. It has to leave the same state. */
+        gPortResim = getenv("BT3_SYNCTEST_LOUD") == NULL;
+        c->nsSave += SDL_GetTicksNS() - tNow;
+        c->nSave++;
+        c->tPrev = SDL_GetTicksNS();
+    }
+}
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Exchanging the game's state: into an online session and back, without starting the program again.
+ *
+ * Two copies of the game stay in step only if they start from the same state. So a snapshot is taken at the very
+ * first vertical blank of every run (sBoot: the same on every machine with this program); to begin a session the
+ * game's present state is kept (sOwn, with the emulated GS's memory, which is not in a snapshot) and the game is
+ * put back to that first blank, now as a session (gs/net.c); when the session ends, the kept state is put back
+ * and the player is where they were, with their own save. The sound is made to fit the state each time.
+ * ------------------------------------------------------------------------------------------------------------- */
+extern void Gs_StateKeep(void), Gs_StateBack(void);                       /* gs_core.c */
+extern void Port_AdxResync(void);                                         /* snd_adx.c */
+extern void Port_NetSessionBegin(int role, const char *address, int port); /* net.c */
+extern void Port_NetSessionEnd(void);
+volatile int gPortNetWindowClose; /* for the overlay (ui.cpp): back from a session, the online window closes.
+                                     (Here and not with the game's variables: it is not part of the state.) */
+
+static Snapshot sBoot, sOwn;
+static int sBootTaken, sReqRole, sReqPort;
+static volatile int sReq;
+static char sReqAddr[128];
+
+void Port_SessionReturn(void);
+
+int Port_SessionCan(void) {
+    return sBootTaken > 0;
+}
+
+/* 1 when the session that runs was asked for in this run (the state before it is kept, to go back to); 0 for a
+   program started as the session (BT3_NET_SESSION: tests, and the start again of a program without the list),
+   which starts the program again when the session ends. */
+static int sOwnKept;
+int Port_SessionAsked(void) {
+    return sOwnKept;
+}
+
+void Port_SessionRequest(int role, const char *address, int port) {
+    sReqRole = role;
+    sReqPort = port;
+    snprintf(sReqAddr, sizeof(sReqAddr), "%s", address != NULL ? address : "");
+    sReq = 1;
+}
+
+/* At the top of every vertical blank, on the game's thread (Port_VBlank). */
+void Port_SessionPoll(void) {
+    if (sBootTaken < 0) {
+        return;
+    }
+    if (!sBootTaken) {
+        if (sRegions < 0) {
+            regions_init();
+        }
+        if (!sListed) { /* no whole state without the list: sessions start the program again, as before */
+            sBootTaken = -1;
+            return;
+        }
+        sBootTaken = 1;
+        if (state_save(&sBoot) != 0) {
+            Port_AdxResync(); /* a session begins: this is the game's first blank again; whatever sounded stops */
+        }
+        return;
+    }
+    {
+        /* testing: BT3_SESSION_TEST=<role>:<address>:<port>:<blank> asks for a session at that blank, and
+           BT3_SESSION_LEAVE=<n> leaves it n blanks after it began; BT3_SESSION_AGAIN=<n> asks for the next one n
+           blanks after each return */
+        static unsigned blank, began;
+        static int role, port, at = -1, leave;
+        static char addr[128];
+        if (at < 0) {
+            const char *t = getenv("BT3_SESSION_TEST");
+            at = 0;
+            if (t != NULL && sscanf(t, "%d:%127[^:]:%d:%d", &role, addr, &port, &at) != 4) {
+                at = 0;
+            }
+            leave = getenv("BT3_SESSION_LEAVE") != NULL ? atoi(getenv("BT3_SESSION_LEAVE")) : 0;
+        }
+        blank++;
+        if (at > 0 && blank == (unsigned)at) {
+            fprintf(stderr, "bt3: session test: asked for at blank %u\n", blank);
+            began = blank;
+            Port_SessionRequest(role, addr, port);
+        } else if (began != 0 && leave > 0 && blank == began + (unsigned)leave) {
+            fprintf(stderr, "bt3: session test: leaving\n");
+            began = 0;
+            if (getenv("BT3_SESSION_AGAIN") != NULL) { /* and another one, that many blanks later */
+                at = (int)blank + atoi(getenv("BT3_SESSION_AGAIN"));
+            }
+            { extern void Port_NetLeave(void); Port_NetLeave(); } /* (as the game leaves: the other side is told) */
+        }
+    }
+    if (sReq) {
+        sReq = 0;
+        Gs_StateKeep();
+        if (state_save(&sOwn) == 0) {
+            sOwnKept = 1;
+            Port_NetSessionBegin(sReqRole, sReqAddr, sReqPort); /* connects (waits for the other side) */
+            state_load(&sBoot);
+        } else {
+            /* back from the session, at the blank it was asked for */
+            gPortResim = 0; /* (a session left before its start-up was over was still running without picture) */
+            Gs_StateBack();
+            Port_AdxResync();
+            gPortNetWindowClose = 1;
+        }
+    }
+}
+
+/* The session is over: the kept state comes back (does not return). */
+void Port_SessionReturn(void) {
+    extern void PortCharSel_Abandon(void);
+
+    Port_NetSessionEnd();
+    PortCharSel_Abandon(); /* (left in the middle of a character select: its End will not run) */
+    state_load(&sOwn);
+}
+#else
+int Port_RollCan(void) { return 0; }
+int Port_RollSave(void) { return 0; }
+void Port_RollBack(int k) { (void)k; }
+void Port_RollForget(void) {}
+void Port_StateTouch(void *p, unsigned long n) { (void)p; (void)n; }
+volatile int gPortNetWindowClose;
+void Port_SyncTest(unsigned vblank) { (void)vblank; }
+int Port_SessionCan(void) { return 0; }
+void Port_SessionRequest(int role, const char *address, int port) { (void)role; (void)address; (void)port; }
+void Port_SessionPoll(void) {}
+void Port_SessionReturn(void) {}
+int Port_SessionAsked(void) { return 0; }
+#endif

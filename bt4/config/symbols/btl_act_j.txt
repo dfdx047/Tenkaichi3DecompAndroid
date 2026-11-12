@@ -1,0 +1,62 @@
+// src/battle/btl_act_j.c (0x203168..0x204E78): end of the fighter action decision code.
+
+// Flag 6 + input 80 during a rush combo: queues a technique (0x115.., 0x118.., 0x127..) as the combo finisher.
+BtlAct_QueueComboFinish = 0x00203168; // type:func // guess
+
+// Transformation: availability test (BattleSide_IsCharaUsable on the target), R3 tap inputs 99..103, and the
+// form request at fighter + 0x12CC with actions 0xEC..0xF0.
+BtlAct_CanTransform = 0x002033C8; // type:func
+BtlAct_CheckTransformInput = 0x002034F0; // type:func
+BtlAct_QueueTransform = 0x00203610; // type:func
+
+// Fusion: availability test (partner member present and alive), R3 hold inputs 104..106, form request with
+// kind 5 and actions 0xF1 / 0xF2.
+BtlAct_CanFuse = 0x00203788; // type:func
+BtlAct_CheckFusionInput = 0x00203900; // type:func
+BtlAct_QueueFusion = 0x002039B0; // type:func
+
+// Member switch: needs the gauge at fighter + 0x99C full and two living members; input 107; action 0xF3.
+BtlAct_CanSwitch = 0x00203B18; // type:func
+BtlAct_CheckSwitchInput = 0x00203BA0; // type:func
+BtlAct_QueueSwitch = 0x00203C08; // type:func
+
+// Techniques (slots 2..4, ki cost, inputs 108..110) and skills (slots 0..1, blast cost, inputs 113 / 114).
+BtlAct_GetTechniqueAction = 0x00203C40; // type:func
+BtlAct_CanUseTechnique = 0x00203CE0; // type:func
+BtlAct_CheckTechniqueInput = 0x00203E00; // type:func
+BtlAct_GetSkillAction = 0x00203F50; // type:func
+BtlAct_CanUseSkill = 0x00203FB0; // type:func
+BtlAct_CheckSkillInput = 0x00204128; // type:func
+
+// Pending hit reaction id -> damage action (called by BtlAct_CheckForced with fighter + 0xFB0).
+BtlAct_QueueReaction = 0x00204200; // type:func
+
+// Action picked by a 0..7 kind after actions 0x12D..0x12F / 0x133..0x135 (meaning of the kind unknown).
+BtlAct_GetLandingAction = 0x00204598; // type:func // guess
+
+// Flags 0x21 / 0x22 -> actions 0x25 / 0x27 / 0x28, and 0x29 / 0x2A (called by the handler of 0xD5, 0xD6, 0xDF).
+BtlAct_QueueFlag21Action = 0x00204600; // type:func // guess
+BtlAct_QueueFlag21ActionB = 0x002046C8; // type:func // guess
+
+// Direction / face button input of a downed fighter -> actions 0xE1..0xE6, relative to the fighter camera yaw.
+BtlAct_CheckRecoveryInput = 0x00204748; // type:func // guess
+
+// Mode 1 only: fighter flags 0xFA, 0x110..0x11D set by the script force actions 4..10, transformations,
+// fusions and a member switch.
+BtlAct_CheckStoryForced = 0x00204918; // type:func
+
+// 0xE0 while fighter + 0xFE0 counts down, else 0xD8.
+BtlAct_GetDownAction = 0x00204C38; // type:func // guess
+
+// Attack id (0x89..0x8C) queued for flag 0x7C and by action 0x39.
+BtlAct_GetEvasionAttack = 0x00204C50; // type:func // guess
+
+// Follow-up of actions 0x67..0x69: 0x6A or attack 0x9E..0xA1 (owns jtbl_002F15E0).
+BtlAct_GetChainAction = 0x00204CF8; // type:func // guess
+
+// Idle (0xB) unless the input decision or a status override queues something: end of the damage actions.
+BtlAct_GetIdleFollowUp = 0x00204DB0; // type:func // guess
+
+// Selectors used by the handlers of actions 0x10..0x13.
+BtlAct_GetAction14or16 = 0x00204DF8; // type:func // guess
+BtlAct_GetAction11or15 = 0x00204E28; // type:func // guess

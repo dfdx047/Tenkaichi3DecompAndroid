@@ -1,0 +1,44 @@
+// Fighter action handlers 0x1EE058..0x1F1930 (src/battle/btl_act_d.c). Handlers are s32 handler(chr, phase);
+// the action ids are those of gBtlActHandlers (0x2C4980).
+
+// Actions 0xB2 / 0xB3: ki blasts paid with func_0020FEC0 and aimed through BtlCharApi_CalcAimDir into chr +0xDD0
+// (18..45 degrees down). 0xB3 holds motion 0x8E until input 0x5B (BLAST released). Queued by func_00201E18 on a
+// BLAST tap / hold, hence "ki blast"; why these two variants exist is not known.
+BtlAct_KiBlastB2 = 0x001EE058; // type:func // guess
+BtlAct_KiBlastChargeB3 = 0x001EE210; // type:func // guess
+// Action 0x95: latched attack (record 0x25): motions 0x71 / 0x72 of 0.1 s, ki paid per motion, ten in all.
+BtlAct_KiVolley95 = 0x001EE510; // type:func // guess
+// (chr, hard): landing rumble / shake / sound / effect; called by the jump landing (0) and the descend landing (1).
+BtlAct_PlayLandFx = 0x001EE7D0; // type:func // guess
+// (chr): motion 0 / 1 on the ground, 0x26 / 0x27 in flight, 0x18B for a non-flyer in the air. Played by 0xB and 0xC.
+BtlAct_GetIdleMotion = 0x001EE8D8; // type:func // guess
+// Action 0xB: plays the idle motion, runs the three decision functions and requests queue[0].
+BtlAct_NeutralHandler = 0x001EE968; // type:func
+// Action 0xC: the idle motion once (1 s), no decision, then 0xB.
+BtlAct_IdleOnceHandler = 0x001EEC30; // type:func // guess
+// Action 0xD: queued by BtlDecide_Main for input 1 (direction held) without flag 0x13; motions 2 / 3; ends when
+// input 1 is false.
+BtlAct_MoveHandler = 0x001EED28; // type:func // guess
+// Action 0xE: the same with flag 0x13 (close to the opponent): faces the opponent, motions 8 / 9; ends on input 2.
+BtlAct_CloseMoveHandler = 0x001EF0D8; // type:func // guess
+// Action 0xF: queued for input 3 (DASH held); motions 0xC..0xE, 0x15; speed kinds 4 / 5; inputs 4, 5, 6 turn and stop.
+// (0x1F1930, action 0x1A, was named BtlAct_DashHandler by the next file; this is the plain dash.)
+BtlAct_DashMoveHandler = 0x001EF4E8; // type:func // guess
+// Actions 0x10 / 0x12 (queued for input 8, ASCEND pressed on the ground; 0x12 from the dash): motion 0x1F, sets the
+// vertical speed with BtlMove_CalcJumpSpeed at 30% of the motion, then 0x11 / 0x13.
+BtlAct_JumpStartHandler = 0x001EFCA0; // type:func // guess
+// Actions 0x11 / 0x13: motions 0x20 (rising), 0x21 (falling), 0x22 (landing, BtlAct_PlayLandFx), then 0xB.
+BtlAct_JumpAirHandler = 0x001EFF48; // type:func // guess
+// Action 0x14: rises at speed kind 0x10 while ASCEND is held (input 0xB ends it).
+BtlAct_AscendHandler = 0x001F03F8; // type:func // guess
+// Action 0x15: sinks at speed kind 0x11 while DESCEND is held (input 0xD ends it); lands with motion 0x2D.
+BtlAct_DescendHandler = 0x001F0640; // type:func // guess
+// Action 0x16: what BtlAct_GetAction14or16 returns for a fighter that cannot fly: motion 0x18C, a rise that fades out.
+BtlAct_HopHandler = 0x001F09F0; // type:func // guess
+// Actions 0x17 / 0x18 (queued for inputs 0xF / 0x11, ASCEND / DESCEND double tap): vertical speed kind 9, ki drain
+// kind 2 per frame, flag 9, vibration.
+BtlAct_FastAscendHandler = 0x001F0BA8; // type:func // guess
+BtlAct_FastDescendHandler = 0x001F0E88; // type:func // guess
+// Action 0x19 (queued for input 0x14 with lock-on and 1000 ki): BtlMove_SteerAtOpponent at speed kind 6, ki drain
+// kind 0, stops when blocked, slow for 16 frames, out of ki or lock lost; continues into 0x1A.
+BtlAct_HomingDashHandler = 0x001F11B8; // type:func // guess

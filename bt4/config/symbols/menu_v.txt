@@ -1,0 +1,38 @@
+// Menu overlay DBZP.BIN, 0x395E30..0x39A978.
+// ItemHelp (0x399240..0x399790): the item details page ("fl_details_in" / "mc_item_details"); the callers' debug
+// string names its pack "ez_item_details".
+ItemHelp_Init = 0x00399240; // type:func
+ItemHelp_Term = 0x00399430; // type:func
+ItemHelp_Draw = 0x00399478; // type:func
+ItemHelp_Open = 0x00399730; // type:func
+ItemHelp_Close = 0x00399760; // type:func
+gItemHelp = 0x003BB144; // size:0x4
+// Shop (0x399790..; head of the object that continues in the next chunk): the item shop. Names from what the
+// code does (clips "mc_shop_num_%d", guides "mc_guide_ranchi" / "mc_ch_uron").
+Shop_CheckStockLevel = 0x00399790; // type:func // guess
+Shop_IsSoldOut = 0x00399878; // type:func // guess
+Shop_CanBuy = 0x003998E0; // type:func // guess
+Shop_PlayVoice = 0x00399930; // type:func // guess
+Shop_SetListScissor = 0x003999A0; // type:func // guess
+Shop_SetWindowScissor = 0x00399A08; // type:func // guess
+Shop_ResetScissor = 0x00399A30; // type:func // guess
+Shop_SwapGuide = 0x00399A58; // type:func // guess
+Shop_Init = 0x00399B18; // type:func
+gShop = 0x003BB148; // size:0x4
+// EvoZ (0x392F10..0x399240, two source files; the first is in the previous chunk up to EvoZ_Load): the
+// character customising screen of modes 48..50 (item sets, slots, experience). Names from what the code does;
+// the callers' debug strings call the mode's files "ez_".
+EvoZ_Load = 0x00395E30; // type:func // guess
+EvoZ_ClipGoto = 0x00396838; // type:func // guess
+EvoZ_Input = 0x003969D0; // type:func // guess
+EvoZ_UpdateDialog = 0x00398650; // type:func // guess
+EvoZ_ToggleList = 0x003988E8; // type:func // guess
+EvoZ_Pow = 0x00398A20; // type:func // guess
+EvoZ_GetLevelExp = 0x00398A60; // type:func // guess
+EvoZ_RefreshStatus = 0x00398AC8; // type:func // guess
+EvoZ_SetRowChips = 0x00398CC8; // type:func // guess
+EvoZ_UpdateFace = 0x00398DC0; // type:func // guess
+EvoZ_RequestFace = 0x00398EF8; // type:func // guess
+EvoZ_CanEquip = 0x00398F38; // type:func // guess
+EvoZ_RemoveItem = 0x003990C0; // type:func // guess
+EvoZ_RemoveAllItems = 0x003991D8; // type:func // guess

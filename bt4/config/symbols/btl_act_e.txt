@@ -1,0 +1,50 @@
+// Fighter action handlers, src/battle/btl_act_e.c = 0x1F1930..0x1F5460. Evidence: the matching C.
+// Handlers are (chr, phase); the action ids are those of gBtlActHandlers (0x2C4980). All names are guesses
+// about intent made from the animations, flags, inputs and movement calls each handler uses.
+
+// Action 0x1A: free-direction dash (animations 0x18 / 0x2D start, 0x19 loop, 0x1A / 0x15 stop): speed kind 7,
+// vertical speed kind 8 with ASCEND / DESCEND, ki drain kind 1; inputs 0x14 / 0x15 chain into 0x19 / 0x1A.
+BtlAct_DragonDashHandler = 0x001F1930; // type:func // guess
+// Actions 0x1B (back), 0x1C / 0x1D (sideways): step away from the line to the opponent (speed kinds 0xB / 0xC).
+BtlAct_StepHandler = 0x001F1E78; // type:func // guess
+// Actions 0x1E, 0x1F: short forward dash (animation 0x1B, speed kind 0xA) that takes attack inputs / queues
+// attacks 0x8F, 0x8D, 0x8E.
+BtlAct_StepInHandler = 0x001F2308; // type:func // guess
+// Actions 0x20..0x23: vanishing step (animation 0xF6), seven frames, invulnerable; forced by flags 0x76 / 0x74 / 0x75.
+BtlAct_VanishStepHandler = 0x001F2558; // type:func // guess
+// Action 0x24: vanish and reappear behind the opponent (BtlMove_WarpBehindOpponent), costs ki.
+BtlAct_VanishBehindHandler = 0x001F2AB8; // type:func // guess
+// Actions 0x25..0x2A: recover in the air (animations 0xFE..0x102), costs ki; then 0xB, 0xF or 0x19.
+BtlAct_RecoverHandler = 0x001F2D40; // type:func // guess
+// (chr, attack block, part, time): plays part `part` of a multi-part attack motion as the sub-animation and
+// returns the new lead time. Called by the approach actions 0x2B, 0x2C and 0x31 with the pending attack block.
+BtlAct_PlayAttackPart = 0x001F2F90; // type:func // guess
+// Actions 0x2B..0x32: approaches that run before a queued attack (they all end by requesting queue[0] and set
+// held flag 0xDD on leaving).
+// 0x2B: vanish for six frames (animation 0x26), then BtlMove_SnapToOpponent.
+BtlAct_VanishAttackHandler = 0x001F30E0; // type:func // guess
+// 0x2C: the same with a one-frame wait.
+BtlAct_VanishAttackQuickHandler = 0x001F3270; // type:func // guess
+// 0x2D: BtlMove_WarpBehindOpponent on the first frame.
+BtlAct_WarpBehindAttackHandler = 0x001F33D0; // type:func // guess
+// 0x2E: BtlMove_WarpAheadOfOpponent by the attack's lead time.
+BtlAct_WarpAheadAttackHandler = 0x001F3520; // type:func // guess
+// 0x2F, 0x30: slide in four frames to a point beside the opponent's predicted position (BtlMove_CalcApproachPoint).
+BtlAct_SlideToAttackHandler = 0x001F3668; // type:func // guess
+// 0x31: rush at the opponent (animation 0xD) until the closing time is below the attack's lead time.
+BtlAct_RushToAttackHandler = 0x001F3868; // type:func // guess
+// 0x32: hop back (animation 0x28) for half the animation.
+BtlAct_HopBackAttackHandler = 0x001F3B58; // type:func // guess
+// Action 0x33: dash in a circle round the opponent (BtlMove_CircleOpponent, speed kind 0x13, ki drain kind 3).
+BtlAct_CircleDashHandler = 0x001F3C80; // type:func // guess
+// Action 0x34: rush dash at the opponent (animations 0x23..0x25, 1800 km/h; 2200 km/h and vanished for characters
+// with parameter flag bit 20); attack 0x9C or inputs 0x34 / 0x5D follow.
+BtlAct_RushDashHandler = 0x001F4148; // type:func // guess
+// Action 0x35: vanished dash at 2000 km/h (animations 0xC..0xE), 13 frames.
+BtlAct_VanishDashHandler = 0x001F4470; // type:func // guess
+// Action 0xFA (forced by flag 0x61): clash B, trading blows; counts inputs into chr +0xE50.
+BtlAct_ClashBlowsHandler = 0x001F47C8; // type:func // guess
+// Action 0xFB (forced by flag 0x62): start of clash C, vanish for seven frames, then 0xFC.
+BtlAct_ClashVanishHandler = 0x001F4D50; // type:func // guess
+// Action 0xFC: one exchange of clash C; records the frame of the asked-for button press in chr +0xE58.
+BtlAct_ClashExchangeHandler = 0x001F4E98; // type:func // guess

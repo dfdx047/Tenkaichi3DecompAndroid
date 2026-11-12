@@ -1,0 +1,55 @@
+// Fighter action handlers, second slice: src/battle/btl_act_b.c = 0x1E6CC0..0x1EA5F8.
+// Evidence: matching C (except the two marked INCLUDE_ASM) and the handler table gBtlActHandlers at 0x2C4980.
+// Every name is a guess about what the action is in the game.
+
+// Action 0x63: animation 0x93 with attack inputs, then the queued action or 0xB.
+BtlAct_Action63 = 0x001E6CC0; // type:func // guess
+// Actions 0x70..0xAD except 0x92, 0x95, 0x99, 0x9B, 0xAB: the generic attack driven by the latched attack block.
+BtlAct_AttackHandler = 0x001E6DC8; // type:func // guess
+// Actions 0x67..0x69: animation 0xF7 spending ki each frame; flag 0x70 chains into BtlAct_GetChainAction.
+BtlAct_Action67to69 = 0x001E70F0; // type:func // guess
+// Action 0x6A: 1000 km/h lunge (animation 0xF8); on contact queues attack 0xA2.
+BtlAct_Action6A = 0x001E72E0; // type:func // guess
+// Actions 0x92, 0x9B, 0xAB: attack with a dash (animation 0x197 loop) and a strike (0x198). INCLUDE_ASM until
+// BtlAct_RequestAttackEnd is in the same file (then its C matches).
+BtlAct_AttackDashHandler = 0x001E7408; // type:func // guess
+// Action 0x99: attack with a dash (0x2D, 0x19 loop, flag 0x4F pulsed) and a strike (0x1A).
+BtlAct_AttackVolleyDashHandler = 0x001E7790; // type:func // guess
+// Actions 0x6B..0x6F: 1500 km/h homing strikes with follow-ups by the opponent's action.
+BtlAct_Action6Bto6F = 0x001E7BA0; // type:func // guess
+
+// Helpers of the damage actions.
+// (chr, n): chr +0xFB8 = (chr +0xFB8 + 1) % n, returned; picks the next stagger animation variant.
+BtlActB_NextVariant = 0x001E7E98; // type:func // guess
+// Flags 0xD5, 0x95, 0x96, and flight mode under flag 0x11: every damage action, also in the next slice.
+BtlActB_SetReactionFlags = 0x001E7ED0; // type:func // guess
+// (chr, unused): animation 0xD2..0xD8 of a downed fighter by water, speed and ground / air set.
+BtlActB_PickDownAnim = 0x001E7F38; // type:func // guess
+// (chr, f32 *rate, scaled): animation step raised by mashing (button bit 20), 1..4.
+BtlActB_UpdateMashRate = 0x001E7FC8; // type:func // guess
+// (chr, s32 *frames): a dead fighter with members left is replaced once this has returned 0 thirty times. INCLUDE_ASM.
+BtlActB_TickMemberChange = 0x001E80C0; // type:func // guess
+
+// Damage actions.
+// Actions 0xBD, 0xC0..0xCA: hit reactions in place (one animation each, variants cycled).
+BtlAct_HitStaggerHandler = 0x001E8178; // type:func // guess
+// Actions 0xCB, 0xCC: animation 0xAE / 0xAF at the mash rate.
+BtlAct_ActionCBtoCC = 0x001E8438; // type:func // guess
+// Action 0xCD: on the ground after a fall (animations 0xDC, 0xDD), then get up / roll / recover.
+BtlAct_GroundBounceHandler = 0x001E8648; // type:func // guess
+// Action 0xCE: knocked upward (animation 0xDA), then falling (0xDB) to 0xDC / walls / recoveries.
+BtlAct_LaunchedHandler = 0x001E88D8; // type:func // guess
+// Actions 0xCF..0xD1: pushed back at 500 km/h (0xD1 in place), animations 0xBB / 0xBC, 0xC5, 0x17C / 0x17D.
+BtlAct_ActionCFtoD1 = 0x001E8D80; // type:func // guess
+// Action 0xD2: animation 0xD9, then BtlAct_GetDownAction.
+BtlAct_ActionD2 = 0x001E9110; // type:func // guess
+// Action 0xD4: knocked back at 700 km/h for a time (animations 0xBD..0xBF / 0xC0..0xC2).
+BtlAct_KnockBackHandler = 0x001E9218; // type:func // guess
+// Actions 0xD5, 0xD6, 0xDF: blown away at 1000 / 2000 km/h until the time runs out or something is hit.
+BtlAct_BlowAwayHandler = 0x001E9590; // type:func // guess
+// Action 0xD7: recovery from being blown away (animation 0x18D / 0x18E), reached by mashing.
+BtlAct_BlowRecoverHandler = 0x001E9D88; // type:func // guess
+// Action 0xD8: lying down; member change (0xF6) for a dead fighter; get-up inputs.
+BtlAct_LieDownHandler = 0x001E9EC8; // type:func // guess
+// Action 0xD9: falling helplessly (animation 0xC6 / 0xC7) until landing (0xDC).
+BtlAct_FallHandler = 0x001EA298; // type:func // guess

@@ -1,0 +1,71 @@
+// Fighter manager, src/battle/btl_char_mgr.c = 0x1C0058..0x1C2FF0. Evidence for every name is the matching C
+// (see the header comment of the C file); names are descriptive guesses unless noted.
+// BtlChar_AllocAll / BtlChar_FreeAll / BtlChar_ResetAll (this file, 0x1C2640 / 0x1C2810 / 0x1C2858) are named in battle.txt;
+// BtlChar_Get / BtlChar_GetCount / gBtlChars in game.txt.
+
+// --- per-fighter setup -----------------------------------------------------------------------------------------
+// 0x1C0058(chr): objId = BattleSide_GetObjId(side), caches the three table pointers of the object's files, clears
+// flag 0xBE and flags 0x98..0x99, resets the object's work (0x250CD0) and the fighter's +0xE00 / +0xF50 blocks.
+BtlChar_BindObject = 0x001C0058; // type:func // guess
+// 0x1C0128(chr, idx): members[idx].bonus[0..6] = BattleMember.bonus[1..7]. 0x1C01A8: for every member.
+BtlChar_CopyMemberBonus = 0x001C0128; // type:func
+BtlChar_CopyAllBonus = 0x001C01A8; // type:func
+// 0x1C0200(chr, idx): members[idx].ability[0..3] = BattleMember.ability[]. 0x1C0270: for every member.
+BtlChar_CopyMemberAbility = 0x001C0200; // type:func
+BtlChar_CopyAllAbility = 0x001C0270; // type:func
+// 0x1C02C8(chr): the per-fighter reset: copies the battle setup of the fighter's side into the fighter.
+BtlChar_Reset = 0x001C02C8; // type:func
+// 0x1C0538(chr): run by the character loader job (BtlLoad_StepChara) once a new model is in: rebinds the object and
+// applies the form change selected by the current action (0xEC..0xF0 transform, 0xF1..0xF2 fusion, 0xF3..0xF8 member
+// switch, 0x104 / 0x106..0x108 / 0x12D..0x12F / 0x139..0x13B).
+BtlChar_OnModelLoaded = 0x001C0538; // type:func // guess
+// 0x1C0AA8(chr): run for every fighter by the stage loader job after a stage change: clears the pose block.
+BtlChar_OnStageLoaded = 0x001C0AA8; // type:func // guess
+// 0x1C0BA0(chr): puts the fighter into action 0xF9 with its timers cleared; run for everybody when one fighter
+// raises flag 0xF9 (0x1C1928). In mode 3 side 0 also gets 10000 health back.
+BtlChar_ResetRound = 0x001C0BA0; // type:func // guess
+// 0x1C0C98(chr): 0x250CD0(BtlObj) again.
+BtlChar_ResetObjWork = 0x001C0C98; // type:func // guess
+
+// --- whole-roster helpers of the phases ------------------------------------------------------------------------
+// 0x1C0CB8(): hit-stop bookkeeping: flags 0x125 / 0x126 / 0x127 decide who is frozen, then counts chr+0x1320 down.
+BtlChars_UpdateFreeze = 0x001C0CB8; // type:func // guess
+// 0x1C0EB8(): sets or clears bit 1 of BtlObj+0xA40 from flags 0x12A / 0x30 / 0xB. 0x1C1040(): clears it for everybody.
+BtlChars_UpdateObjFlag2 = 0x001C0EB8; // type:func // guess
+BtlChars_ClearObjFlag2 = 0x001C1040; // type:func // guess
+// 0x1C10A8(): when nobody is frozen 0x1AF740 + 0x1CA520, else 0x1CA618 per fighter.
+BtlChars_UpdateCollision = 0x001C10A8; // type:func // guess
+// 0x1C1158(chr): turns this frame's fighter state into BtlEvent_Raise(side, n) calls (35 different events).
+BtlChar_RaiseEvents = 0x001C1158; // type:func
+// 0x1C1928(): if any fighter has flag 0xF9, BtlChar_ResetRound on all and BtlScene_Reset(4).
+BtlChars_CheckRoundReset = 0x001C1928; // type:func // guess
+// 0x1C19E0 / 0x1C1A58(chr): flags 0x103..0x107 / 0x108..0x10C ask for member n's bonus / ability to be re-read.
+BtlChar_ApplyBonusRequests = 0x001C19E0; // type:func // guess
+BtlChar_ApplyAbilityRequests = 0x001C1A58; // type:func // guess
+
+// --- per-fighter phase bodies (each one returns at once while chr+0x1320 > 0) ---------------------------------
+BtlChar_SampleInput = 0x001C1AD0; // type:func
+BtlChar_BeginFrame = 0x001C1B20; // type:func // guess
+BtlChar_UpdateSeqFlags = 0x001C1D50; // type:func // guess
+BtlChar_UpdateMotion = 0x001C1EA0; // type:func // guess
+BtlChar_UpdateStage6 = 0x001C1FB0; // type:func // guess
+BtlChar_UpdateStage7 = 0x001C2008; // type:func // guess
+BtlChar_UpdateStage8 = 0x001C2098; // type:func // guess
+BtlChar_UpdateStage9 = 0x001C2198; // type:func // guess
+BtlChar_UpdateCamera = 0x001C2218; // type:func // guess
+BtlChar_UpdateStage10 = 0x001C22C0; // type:func // guess
+BtlChar_PostScene = 0x001C2318; // type:func // guess
+BtlChar_UpdateLate = 0x001C2478; // type:func // guess
+BtlChar_EndFrame = 0x001C2570; // type:func // guess
+
+// --- entry points ----------------------------------------------------------------------------------------------
+// 0x1C29A0(side): BtlChar_OnModelLoaded(BtlChar_Get(side)) when it exists. 0x1C29D8(): BtlChar_OnStageLoaded on all.
+BtlChars_OnModelLoaded = 0x001C29A0; // type:func // guess
+BtlChars_OnStageLoaded = 0x001C29D8; // type:func // guess
+// The six per-frame phases, in the order Battle_Loop / Battle_Update call them.
+BtlChars_CheckStart = 0x001C2AA8; // type:func
+BtlChars_SampleInput = 0x001C2A28; // type:func
+BtlChars_UpdateInput = 0x001C2B30; // type:func // guess
+BtlChars_UpdateMain = 0x001C2C80; // type:func // guess
+BtlChars_PostScene = 0x001C2E90; // type:func // guess
+BtlChars_EndFrame = 0x001C2F10; // type:func // guess

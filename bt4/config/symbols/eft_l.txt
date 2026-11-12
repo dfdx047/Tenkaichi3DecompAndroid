@@ -1,0 +1,95 @@
+// Effect modules 0x15B550..0x15F728: src/battle/eft_l.c, eft_l_b.c, eft_l_c.c, eft_l_d.c; include/battle/eft_l.h.
+//
+// eft_l.c 0x15B550..0x15C728: technique effect type 9 "rush shot" (gEftShotClass row 10: manager 0x2C3988, task
+// 0x2C39A0), everything but its first three helpers, which end eft_k.c (EftRushShot_AddHitRecord / _CreateModels /
+// _UpdateModels). Same translation unit as eft_k.c: EftRushShot_UpdateAttached only matches with 0x15AD78 defined
+// above it. "Rush shot" because BtlCharApi_IsRushConnected switches it from flying to sitting on the victim.
+// FreeModels: func_001A8CA0 on each swarm model. StartCam: EftCam_Start {camera animation, owner, effect id} once
+// the rush connected. UpdateFade: stage blur between the victim's events 0x10 / 0x20 (definition flag 0x200).
+// UpdateStageFx: victim's event 0x80 starts effect 0x180760 number n of the definition, 0x100 stops it.
+// UpdateFlash / UpdateSparks: victim's event 0x40 -> white screen flash (0x172480) and five node sparks (0x19B7F8).
+// Draw: steps the 19 emitter groups (despite the name it runs from Update; the draw callback is empty).
+// UpdateAttached: swarm models, the node position while attached, then the four event handlers.
+EftRushShot_FreeModels = 0x0015B550; // type:func
+EftRushShot_StartCam = 0x0015B5B8; // type:func
+EftRushShot_UpdateFade = 0x0015B638; // type:func // guess
+EftRushShot_UpdateStageFx = 0x0015B7E8; // type:func // guess
+EftRushShot_UpdateFlash = 0x0015B930; // type:func
+EftRushShot_UpdateSparks = 0x0015BA00; // type:func // guess
+EftRushShot_Draw = 0x0015BAA8; // type:func // guess
+EftRushShot_UpdateAttached = 0x0015BC90; // type:func // guess
+// Callbacks of the task class 0x2C39A0 (table order: update, init, term, postUpdate, reset, draw).
+EftRushShot_Init = 0x0015BDB8; // type:func
+EftRushShot_Term = 0x0015BF08; // type:func
+EftRushShot_Update = 0x0015BFB8; // type:func
+EftRushShot_PostUpdate = 0x0015C488; // type:func
+EftRushShot_Reset = 0x0015C5A0; // type:func
+EftRushShot_Nop = 0x0015C5E8; // type:func
+// Callbacks of the manager class 0x2C3988: loads the emitter set, the swarm's model pack and the camera animations,
+// creates the child list of two 0xAC0-byte tasks.
+EftRushShotMgr_Init = 0x0015C5F0; // type:func
+EftRushShotMgr_Term = 0x0015C6F0; // type:func
+EftRushShotMgr_Update = 0x0015C708; // type:func
+EftRushShotMgr_Reset = 0x0015C720; // type:func
+gEftRushShotMgrClass = 0x002C3988; // size:0x18
+gEftRushShotClass = 0x002C39A0; // size:0x18
+// Five {kind 0x47, node} pairs (nodes 0, 3, 0xA, 0xE, 0x15) EftRushShot_UpdateSparks copies and hands to 0x19B7F8;
+// a function-local initialiser, last item of the object's .rodata (the object ends at 0x2ECBA0).
+gEftRushShotSparkTbl = 0x002ECB70; // size:0x28 // guess
+//
+// eft_l_b.c 0x15C728..0x15E5D0: technique effect type 4 "ring shot" (gEftShotClass row 5: manager 0x2C39B8, task
+// 0x2C39D0). One task creates up to 20 blast objects (0x16A7D0) and places them until they are launched; the
+// variant comes from the effect id: 0x26D ring around the opponent, 0x18D ring around the owner, 0x156 / 0x1DC /
+// 0x2EC a carrier point flying an arc that then fires a volley, 0x197 / 0x198 / 0x200 / 0x2A4 only a hit volume
+// on the opponent. Named after variants 0 and 1.
+// AllocShot: a free entry of the 20. Fire: creates the blast objects of one event. BobShot: holds a waiting shot,
+// bobbing. UpdateRing / UpdatePath / UpdateFixed: the variants. ReapShots: drops entries whose object is gone.
+// UpdateShots: variant dispatch + ReapShots. AddHit: this frame's hit record. Draw: steps the emitter groups.
+EftRingShot_AllocShot = 0x0015C728; // type:func
+EftRingShot_Fire = 0x0015C788; // type:func
+EftRingShot_BobShot = 0x0015D2B0; // type:func // guess
+EftRingShot_UpdateRing = 0x0015D338; // type:func // guess
+EftRingShot_UpdatePath = 0x0015D690; // type:func // guess
+EftRingShot_UpdateFixed = 0x0015D948; // type:func // guess
+EftRingShot_ReapShots = 0x0015DA00; // type:func // guess
+EftRingShot_UpdateShots = 0x0015DA68; // type:func
+EftRingShot_AddHit = 0x0015DB00; // type:func
+EftRingShot_Draw = 0x0015DCA8; // type:func // guess
+EftRingShot_Init = 0x0015DE08; // type:func
+EftRingShot_Term = 0x0015DF68; // type:func
+EftRingShot_Update = 0x0015DFD8; // type:func
+EftRingShot_PostUpdate = 0x0015E3D0; // type:func
+EftRingShot_Reset = 0x0015E4C0; // type:func
+EftRingShot_Nop = 0x0015E508; // type:func
+EftRingShotMgr_Init = 0x0015E510; // type:func
+EftRingShotMgr_Term = 0x0015E588; // type:func
+EftRingShotMgr_Update = 0x0015E5A8; // type:func
+EftRingShotMgr_Reset = 0x0015E5C8; // type:func
+gEftRingShotMgrClass = 0x002C39B8; // size:0x18
+gEftRingShotClass = 0x002C39D0; // size:0x18
+//
+// eft_l_c.c 0x15E5D0..0x15EF18: the glow of fighter effect requests 0x38 (set every frame of the drain window by
+// the drain technique, btl_act_h_b.c) and 0x37 (set when a blast is absorbed, btl_char_coll_b.c). Manager class
+// 0x2C39E8, task class 0x2C3A00. Start / Stop / StartHands are the fighter layer's entry points
+// (BtlFx request handlers at 0x1D1180 and 0x1D11E8).
+EftAbsorb_DrawOne = 0x0015E5D0; // type:func // guess
+EftAbsorb_Init = 0x0015E700; // type:func
+EftAbsorb_Term = 0x0015E8F8; // type:func
+EftAbsorb_Update = 0x0015E960; // type:func
+EftAbsorb_Reset = 0x0015EBC0; // type:func
+EftAbsorb_PostUpdate = 0x0015EC20; // type:func
+EftAbsorb_Nop = 0x0015EC98; // type:func
+EftAbsorbMgr_Init = 0x0015ECA0; // type:func
+EftAbsorbMgr_Term = 0x0015ED58; // type:func
+EftAbsorbMgr_Update = 0x0015EDC0; // type:func
+EftAbsorb_Start = 0x0015EDF0; // type:func
+EftAbsorb_Stop = 0x0015EE78; // type:func
+EftAbsorb_StartHands = 0x0015EEC0; // type:func
+gEftAbsorbMgrClass = 0x002C39E8; // size:0x18
+gEftAbsorbClass = 0x002C3A00; // size:0x18
+//
+// eft_l_d.c 0x15EF18..0x15F728: the two spawners at the head of the speed-line module (eft_m.c, gEftSpdLine).
+// SpawnBodyTrails: fighter effect request 0xB (0x1D0900): EftSpdLine_AddTrail behind eleven body nodes.
+// SpawnPartStreaks: animation event 8 (0x1D22F8): fifteen EftSpdLine_AddStreak around one model part.
+EftSpdLine_SpawnBodyTrails = 0x0015EF18; // type:func
+EftSpdLine_SpawnPartStreaks = 0x0015F3D8; // type:func

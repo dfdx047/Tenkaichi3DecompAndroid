@@ -1,0 +1,75 @@
+# Builds the experimental macOS version (native Apple Silicon, docs/port/macos_plan.md) on GitHub's Mac, from the
+# repository alone: a check that it still builds, as a manual workflow. Windows remains the supported BT4 release. As the release build, no disc and
+# no game data are involved (BT3_SKELETON=1: the data tables are built blank and the program fetches their values
+# from the player's disc at start), so the demo fight cannot be run here; install.py runs it on a Mac with the disc.
+# The tools are the ones install.py asks for: Homebrew's LLVM, SDL3, glslc and spirv-cross, and libclang 18 in .venv
+# for ptr32.py. The program is kept as an artifact of the run for a while (for testers; not a release).
+name: macos
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15   # Apple Silicon (arm64)
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tools
+        run: |
+          brew install llvm sdl3 shaderc spirv-cross
+          python3 -m venv --system-site-packages .venv
+          .venv/bin/python -m pip install --quiet libclang==18.1.1
+          /opt/homebrew/opt/llvm/bin/clang --version | head -1
+
+      - name: Build
+        env:
+          BT3_CC: mac64
+          BT3_SKELETON: "1"
+        run: |
+          mkdir -p port/build
+          .venv/bin/python port/tools/undefined.py > port/build/compile_mac64.txt 2>&1 || { tail -40 port/build/compile_mac64.txt; exit 1; }
+          if grep -q "^FAILED" port/build/compile_mac64.txt; then grep -A12 "^FAILED" port/build/compile_mac64.txt | head -80; exit 1; fi
+          .venv/bin/python port/tools/link.py 2>&1 | tee port/build/link_mac64.txt
+          test -x port/build/bt3_mac
+          file port/build/bt3_mac
+          # macOS on Apple Silicon kills a program without a page zero before it starts: 4 GB, as linked
+          otool -l port/build/bt3_mac | grep -B1 -A4 'segname __PAGEZERO'
+          otool -l port/build/bt3_mac | grep -A3 'segname __PAGEZERO' | grep -q 'vmsize 0x0000000100000000'
+
+      - name: Setup window
+        run: |
+          sh port/setup/build.sh
+          file Tenkaichi3Decomp-setup
+          otool -L Tenkaichi3Decomp-setup | grep -i sdl
+
+      # The experimental Mac download, as the Linux and Windows zips (not published: a run artifact, for testers)
+      - name: Package
+        env:
+          BT3_CC: mac64
+        run: .venv/bin/python port/tools/package.py
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-build-logs
+          path: port/build/*_mac64.txt
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BT4decomp-macos-arm64
+          path: |
+            port/build/bt3_mac
+            port/build/bt3_mac.dat
+            port/build/bt3_mac.mem
+            Tenkaichi3Decomp-setup
+          if-no-files-found: warn
+          retention-days: 14

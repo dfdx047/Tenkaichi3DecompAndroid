@@ -1,0 +1,52 @@
+{
+  "name": "bt4-tag-team",
+  "main": "worker.mjs",
+  "compatibility_date": "2025-10-01",
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bt4-tag-rooms",
+      "database_id": "YOUR_D1_DATABASE_ID"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TAG_SESSIONS",
+        "class_name": "TagSession"
+      },
+      {
+        "name": "VOICE_DUELS",
+        "class_name": "VoiceDuelRoom"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "tag-v1",
+      "new_sqlite_classes": [
+        "TagSession"
+      ]
+    },
+    {
+      "tag": "voice-v1",
+      "new_sqlite_classes": [
+        "VoiceDuelRoom"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "type": "CompiledWasm",
+      "globs": [
+        "**/*.wasm"
+      ],
+      "fallthrough": true
+    }
+  ],
+  "observability": {
+    "enabled": false
+  },
+  "preview_urls": false
+}

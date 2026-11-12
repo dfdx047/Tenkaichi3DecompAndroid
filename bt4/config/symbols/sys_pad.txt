@@ -1,0 +1,45 @@
+// Controller module, src/sys/pad.c = 0x122940..0x123130. Pad_Init/Pad_Update/Pad_GetSticks/Pad_AddVibration/
+// Pad_SendActuator/Pad_Reset/gPad keep their entries in game.txt.
+
+// 0x122A18..0x122A30: four empty functions (jr ra) between Pad_Init and Pad_Update, no callers anywhere.
+Pad_Stub0 = 0x00122A18; // type:func // guess
+Pad_Stub1 = 0x00122A20; // type:func // guess
+Pad_Stub2 = 0x00122A28; // type:func // guess
+Pad_Stub3 = 0x00122A30; // type:func // guess
+// (pad, mask): tail-call Pad_TestMask on gPad[pad].held (+0x148) / .pressed (+0x150) / .repeat (+0x154).
+// Pad_IsHeld has 25 callers, all in the game-button mapper 0x2574F0; the other two have none.
+Pad_IsHeld = 0x00122DB0; // type:func
+Pad_IsPressed = 0x00122DE0; // type:func
+Pad_IsRepeat = 0x00122E10; // type:func
+// 0x122ED8(pad): sceVibGetProfile(gPad[pad].socket, &gPad[pad].vibProfile); Pad_Update calls it in phase 0.
+Pad_GetVibProfile = 0x00122ED8; // type:func
+// 0x123070(pad): true when the 4-byte button profile at +0x10C is F9 FF 00 00 (all digital buttons except L3/R3, no sticks).
+Pad_IsDigitalOnly = 0x00123070; // type:func // guess
+// 0x1230A8(unused, bits, mask): (bits & mask) != 0.
+Pad_TestMask = 0x001230A8; // type:func
+// 0x1230B8(raw byte, deadzone): ((raw - 127.5) moved toward 0 by deadzone, clamped at 0) / (127.5 - deadzone).
+Pad_StickToFloat = 0x001230B8; // type:func
+
+// Functions of other files that pad.c calls.
+// 0x2577B0(held, pressed, &timer, &last, delay, interval): auto-repeat; returns pressed, or held each time the timer runs out.
+Pad_CalcRepeat = 0x002577B0; // type:func // guess
+// 0x2574F0(pad): translates gPad[pad].held into the game's own button word (+0x188 held, +0x18C pressed, +0x190 repeat) and copies the sticks to +0x1A4/+0x1AC.
+Pad_UpdateGameButtons = 0x002574F0; // type:func // guess
+
+// Sony libdbc / libpad2 / libvib.
+// 0x294BB8: binds SIF RPC 0x80001300, prints "libdbc: bind failed" / "libdbc: Module version mismatch".
+sceDbcInit = 0x00294BB8; // type:func
+// 0x295DB0: clears the 16 libpad2 socket slots (0x334 bytes each at 0x323E88) and sets the init flag.
+scePad2Init = 0x00295DB0; // type:func
+// 0x295E58(param, work): "libpad2: buffer addr is not 64 byte align", then sceDbcCreateSocket(param, work, work + 0x80).
+scePad2CreateSocket = 0x00295E58; // type:func
+// 0x295FB8(socket, buf): copies the latest button data out of the socket buffer, returns its length or -1.
+scePad2Read = 0x00295FB8; // type:func
+// 0x296090(socket, profile): calls scePad2GetState, then copies the profile bytes that follow the button data; returns the length.
+scePad2GetButtonProfile = 0x00296090; // type:func
+// 0x296160(socket): returns the socket state byte (1 = stable), falling back to sceDbcReceiveData.
+scePad2GetState = 0x00296160; // type:func
+// 0x2A4E40(socket, profile): sceDbcReceiveData with command 2 / device class 3 (vibration).
+sceVibGetProfile = 0x002A4E40; // type:func // guess
+// 0x2A4EC0(socket, profileSize, profile, dataSize, data): packs both buffers and calls sceDbcSendData2 with command 0xB.
+sceVibSetActParam = 0x002A4EC0; // type:func

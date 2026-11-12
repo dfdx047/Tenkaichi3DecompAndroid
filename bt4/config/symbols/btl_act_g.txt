@@ -1,0 +1,37 @@
+// src/battle/btl_act_g.c: 0x1F8C00..0x1FC2B0. Blast 2 / Ultimate Blast actions (slot 2..4 techniques), second part:
+// the rush techniques, the clash struggle, and two helpers of the throw handlers. Continues btl_act_f.c.
+// Handler ids come from gBtlActHandlers (0x2C4980). All match except BtlAct_SuperRushDashHandler (one instruction).
+// The game terms are a reading of the animations, flags and callers; the behaviour is in the header comments of the C.
+
+// 0x11B..0x11D (homing) and 0x11E..0x120 (straight): start-up under hit-stop, then the dash at the opponent;
+// flag 0x72 (the hit connected) leads to the sequence 0x12D..0x12F.
+BtlAct_SuperRushDashHandler = 0x001F8C00; // type:func
+// 0x121..0x123: the same technique struck from where the fighter stands (technique kind 10).
+BtlAct_SuperRushStrikeHandler = 0x001F93D0; // type:func // guess
+// 0x12D..0x12F (attacker) and 0x139..0x13B (victim, hit reaction 0x22): the scripted sequence driven by the
+// throw block at fighter +0xE90.
+BtlAct_SuperRushSequenceHandler = 0x001F97F8; // type:func
+// 0x124..0x126: a dash steered by the player (technique kind 8), ended by flag 0xA8 or the loss of lock-on.
+BtlAct_SuperRushFlyHandler = 0x001FA498; // type:func // guess
+// 0x127..0x129: the same dash as a follow-up: no hit-stop, cut or ki cost, flag 0xA4.
+BtlAct_SuperRushFollowHandler = 0x001FA9D8; // type:func // guess
+// 0x12A..0x12C: closing animation of the attacker, damage queue filled from its own hit events.
+BtlAct_SuperRushFinishHandler = 0x001FAE48; // type:func // guess
+// 0x133..0x135 (hit reactions 0x1D / 0x1E): victim of a catch without a sequence; held, then the landing action.
+BtlAct_SuperRushCaughtHandler = 0x001FB0F8; // type:func // guess
+// 0x105: pose in front of an Ultimate Blast: motion 0x16B, camera cut 3, level 2 hit-stop every frame.
+BtlAct_UltimateStartHandler = 0x001FB440; // type:func // guess
+// 0x130..0x132: both fighters during clash A; score at fighter +0xE4C raised by input 51.
+BtlAct_ClashStruggleHandler = 0x001FB660; // type:func
+// 0x104 (flag 0xAB, or flag 0xC2 from the struggle): blown back under hit-stop, model reloaded as variant 1.
+BtlAct_ClashLostHandler = 0x001FBA90; // type:func // guess
+// 0x136..0x138 (hit reaction 0x29): motion 0x21 of the slot while moving up at 1500 km/h, then action 0xD0.
+BtlAct_SuperLaunchedUpHandler = 0x001FBD98; // type:func // guess
+// 0x103: the fighter is replaced by one of six fixed characters (BtlAct_SetFormRandom), frozen until loaded.
+BtlAct_ChangeRandomCharaHandler = 0x001FBE70; // type:func // guess
+
+// Throw helpers; their only callers are the throw handlers of btl_act_h.c (0x1FC60C, 0x1FCBAC and 0x1FC970).
+// (chr, extraHit): fills the damage queue at fighter +0xD94 from the current attack record.
+BtlActThrow_SetupDamage = 0x001FC008; // type:func
+// Turns the heading by minus the yaw of the animation's first root rotation key.
+BtlActThrow_TurnByRootYaw = 0x001FC1E8; // type:func // guess

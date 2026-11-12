@@ -1,0 +1,50 @@
+// Menu overlay DBZP.BIN, 0x37AFF8..0x37F430: three screens of the mode group 13..30 (handler 0x379A58, archive
+// gMenuArc3, main-menu item 1) and the head of their score module. All names are guesses from what the code does.
+// MisSel tail (menu_p.c): the mission select of mode 14 (labels "fl_mission_%02d_in", "fl_rank_in",
+// "fl_mission100_menu_cansel"); the object starts in the previous chunk (menu_o_d.c, names in menu_o.txt), work
+// pointer gMisSel. Update: timer + movie; UpdateVoice: the guide's line queue; Input: pad 0; ClipGoto: sends the
+// cursor's plate to a label; Run: the frame loop the mode handler calls.
+MisSel_Update = 0x0037AFF8; // type:func // guess
+MisSel_UpdateVoice = 0x0037B050; // type:func // guess
+MisSel_Input = 0x0037B168; // type:func // guess
+MisSel_ClipGoto = 0x0037B5A0; // type:func // guess
+MisSel_Run = 0x0037B640; // type:func // guess
+// MisResult (menu_p_b.c): the result screen of a mission (mode 16): score lines and bonuses counted into a total,
+// the total converted into money, rank, record and reward windows. Work area gMisResult, 0x820 bytes.
+MisResult_MarkCleared = 0x0037B7C0; // type:func // guess
+MisResult_ClipScissorOn = 0x0037B848; // type:func // guess
+MisResult_ClipScissorOff = 0x0037B870; // type:func // guess
+MisResult_Init = 0x0037B898; // type:func // guess
+MisResult_Term = 0x0037C0D8; // type:func // guess
+MisResult_Draw = 0x0037C148; // type:func // guess
+MisResult_Update = 0x0037CBC0; // type:func // guess
+MisResult_UpdateVoice = 0x0037CF78; // type:func // guess
+MisResult_Input = 0x0037D160; // type:func // guess
+MisResult_Run = 0x0037DAC8; // type:func // guess
+gMisResult = 0x003B737C; // size:0x4 // guess
+// UbMenu (menu_p_c.c): the menu of mode 13, four plates ("mc_menu_plate_%d") and two guides ("mc_guide_17go",
+// "mc_guide_18go"). Work area gUbMenu, 0xC8 bytes.
+UbMenu_CursorUp = 0x0037DC38; // type:func // guess
+UbMenu_CursorDown = 0x0037DC88; // type:func // guess
+UbMenu_Init = 0x0037DCD8; // type:func // guess
+UbMenu_Term = 0x0037E0D0; // type:func // guess
+UbMenu_Draw = 0x0037E148; // type:func // guess
+UbMenu_Update = 0x0037E3F8; // type:func // guess
+UbMenu_UpdateVoice = 0x0037E4F8; // type:func // guess
+UbMenu_Input = 0x0037E820; // type:func // guess
+UbMenu_ClipGoto = 0x0037EBE0; // type:func // guess
+UbMenu_Run = 0x0037EC80; // type:func // guess
+gUbMenu = 0x003B7380; // size:0x4 // guess
+// Uninitialised global of UbMenu (below the overlay, where its other uninitialised globals are): non-zero when the
+// third plate is open (gSaveData + 0x208 bit 0 at the time the screen was entered). Only UbMenu uses it.
+gUbMenuPlate3Open = 0x0031EA90; // size:0x4 // guess
+// UbScore (menu_p_d.c): the score sheet behind the result screens (0x2A8 bytes): filled from the battle result,
+// priced from a table of the screen pack, summed into a rank, counted down line by line. The object continues
+// in the next chunk (menu_q).
+UbScore_Fill = 0x0037EE18; // type:func // guess
+UbScore_CalcPoints = 0x0037F008; // type:func // guess
+UbScore_CalcRank = 0x0037F180; // type:func // guess
+UbScore_Transfer = 0x0037F2B0; // type:func // guess
+UbScore_CountLine = 0x0037F380; // type:func // guess
+// Read-only table of 100 thresholds (999, 1999, ... 98999, 99989) by which line 2 of the sheet is priced.
+gUbScoreTimeSteps = 0x003B8DF0; // size:0x190 // guess

@@ -1,0 +1,39 @@
+// --- Screen fades (src/sys/fade.c, 0x2527B0-0x252F68; all functions match) -------------------
+// Existing names kept (config/symbols/game.txt, battle.txt): Fade_Init, Fade_ResetAll, Fade_IsDone, Fade_Start, gFade.
+// 0x2527B0(fade): one Dma_BeginDirect/Dma_EndDirect packet: 0x102208 state, TEST/ZBUF/PRIM/RGBAQ from fade->color, 16 sprites 32x448. Only caller: 0x252BA8.
+Fade_DrawRect = 0x002527B0; // type:func
+// Per-slot helpers taking a Fade *; only called from inside this file.
+// 0x252A18: flags (+0x58) = 0 and 0x267AB8(ramp at +0x40).
+FadeSlot_Reset = 0x00252A18; // type:func
+// 0x252A38(fade, on): if the slot is on, sets / clears flag bit 3. Bit 3 makes 0x252B10 skip the slot, hence "pause". No caller outside the file reaches it.
+FadeSlot_SetPause = 0x00252A38; // type:func // guess
+// 0x252A90: Vec4_Scale(color, delta, ramp.value); Vec4_Add(color, color, from).
+FadeSlot_CalcColor = 0x00252A90; // type:func
+// 0x252AC8: (flags >> 3) & 1.
+FadeSlot_IsPaused = 0x00252AC8; // type:func // guess
+// 0x252AD8: flags != 0.
+FadeSlot_IsActive = 0x00252AD8; // type:func
+// 0x252AE8: 1 when flags & 4 or flags == 0.
+FadeSlot_IsDone = 0x00252AE8; // type:func
+// 0x252B10: the per-frame step (see include/sys/fade.h).
+FadeSlot_Update = 0x00252B10; // type:func
+// 0x252BA8: Fade_DrawRect if the slot is on.
+FadeSlot_Draw = 0x00252BA8; // type:func
+// 0x252C10: empty and never called; sits between Fade_Init and Fade_ResetAll.
+Fade_Term = 0x00252C10; // type:func // guess
+// Wrappers taking a slot index (gFade + idx * 0x60) or looping over the 3 slots.
+// 0x252C60(idx): FadeSlot_Reset. Callers: Movie_Run, script commands 0x25A810 / 0x25A900 / 0x25A9F0.
+Fade_Reset = 0x00252C60; // type:func
+// 0x252C90(on) / 0x252CE8(idx, on) / 0x252D18(idx) / 0x252D48(idx): no callers in the executable or the menu overlay.
+Fade_PauseAll = 0x00252C90; // type:func // guess
+Fade_Pause = 0x00252CE8; // type:func // guess
+Fade_IsPaused = 0x00252D18; // type:func // guess
+Fade_IsActive = 0x00252D48; // type:func
+// 0x252EC8(): FadeSlot_Update on the 3 slots; only caller is Gfx_BeginFrame.
+Fade_UpdateAll = 0x00252EC8; // type:func
+// 0x252F10(): FadeSlot_Draw on slots 0 and 1; only caller is Gfx_EndFrame.
+Fade_DrawScreen = 0x00252F10; // type:func
+// 0x252F48(): FadeSlot_Draw on slot 2 (gFade + 0xC0); only caller is 0x247688, itself called from 0x262E10 (battle scene drawing).
+Fade_DrawSlot2 = 0x00252F48; // type:func // guess
+// 3 x { f32 clear[4]; f32 opaque[4]; }: black, white, white; alpha 0 / 128. Indexed by slot in Fade_Start. Replaces D_002C6E60 + D_002C6E70.
+gFadeColors = 0x002C6E60; // size:0x60

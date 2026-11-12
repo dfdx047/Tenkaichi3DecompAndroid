@@ -1,0 +1,102 @@
+// Battle object, second part (first part of src/battle/bobj_a.c = 0x24BBE8..0x24F1F0): animation player, events and attack volumes,
+// body volumes, object transform and node matrices, flash / fade timers, face animation. Layouts and the animation
+// file format: include/battle/bobj_a.h. All names below come from the matching C unless marked.
+
+// Animation data. Retarget(anim, obj, other, useTable, useOwn): rewrites the translation keys of every track for
+// this object's skeleton (reference = the table at 0x2F2420, the object's own table, or another object's bones).
+// SampleRot / SamplePosRot: one track at a frame (rotation-only / full keys), cursor = last key index.
+// Load(obj, buf, anim, &size): motion < 0x19E is BPE-decoded into buf, else the table entry is returned.
+// ZeroRootAxes / RebaseRoot / ClearNodeRot: edits of a decoded motion (root translation axes, root start at the
+// origin, identity rotation for one node); callers are BtlAnim_Play's table flags in btl_char_status_anim.c.
+BtlObjAnim_Retarget = 0x0024BBE8; // type:func // guess
+BtlObjAnim_SampleRot = 0x0024BF58; // type:func
+BtlObjAnim_SamplePosRot = 0x0024C1A8; // type:func
+BtlObjAnim_Load = 0x0024C590; // type:func
+BtlObjAnim_ZeroRootAxes = 0x0024C728; // type:func
+BtlObjAnim_RebaseRoot = 0x0024C800; // type:func
+BtlObjAnim_ClearNodeRot = 0x0024C890; // type:func
+
+// Player. Init: step = BtlObj_GetUnk44FC4() (2.0), identity extra rotations, volume scale 1. StartBlend(obj, s):
+// stores every node's pose and sets blend = 1, blendStep = 1 / (s * 30). SamplePose: local pose of every node for
+// the current frame. UpdateEvents: hit window, hit counters and the events of (previous frame, frame].
+// Play(obj, layer, anim, reset) / PlayFrom(obj, other, anim, useTable) / PromoteLayer / PlayAuto(obj, anim, mode) /
+// PlayModel(obj, 0..7, mode). Step: advance of a self-stepped object (mode 1 once, 2 loop).
+// TestEvent / GetEventArg(obj, mask64): this frame's events. MaskToNode: event argument bit -> model node id.
+// QueryEvent(obj, mask64, layer, what 0..8): scan of the whole motion. GetMode: play mode.
+BtlObjAnim_Init = 0x0024C608; // type:func
+BtlObjAnim_StartBlend = 0x0024C668; // type:func
+BtlObjAnim_SamplePose = 0x0024C958; // type:func
+BtlObjAnim_UpdateEvents = 0x0024CC88; // type:func
+BtlObjAnim_SetStep = 0x0024D030; // type:func
+BtlObjAnim_Play = 0x0024D038; // type:func
+BtlObjAnim_PlayFrom = 0x0024D178; // type:func
+BtlObjAnim_PromoteLayer = 0x0024D238; // type:func
+BtlObjAnim_PlayAuto = 0x0024D330; // type:func // guess
+BtlObjAnim_PlayModel = 0x0024D390; // type:func // guess
+BtlObjAnim_Step = 0x0024D410; // type:func
+BtlObjAnim_TestEvent = 0x0024D498; // type:func
+BtlObjAnim_GetEventArg = 0x0024D4D0; // type:func
+BtlObjAnim_MaskToNode = 0x0024D518; // type:func
+BtlObjAnim_QueryEvent = 0x0024D610; // type:func
+BtlObjAnim_GetMode = 0x0024D770; // type:func
+
+// Body volumes of a fighter object (object + 0xF50). Exists: type 0 and the model has body data. Swap: exchanges
+// the two sphere records unless the battle is paused. BtlObjObb_SetMtx(box, m): axes, centre and 8 world corners.
+// UpdateSphere / UpdateParts / Update(obj, parts): rebuild from the node matrices. Init: from the model.
+// BeginFrame: stage contact word -> previous, cleared; Swap. Reset: marks a teleport. Warp(obj, pos): both spheres.
+BtlObjBody_Exists = 0x0024D778; // type:func
+BtlObjBody_Swap = 0x0024D798; // type:func // guess
+BtlObjObb_SetMtx = 0x0024D7F8; // type:func
+BtlObjBody_SetCenter = 0x0024D908; // type:func // guess
+BtlObjBody_UpdateSphere = 0x0024D920; // type:func
+BtlObjBody_UpdateParts = 0x0024D9D0; // type:func
+BtlObjBody_Init = 0x0024DB28; // type:func
+BtlObjBody_Update = 0x0024DC58; // type:func
+BtlObjBody_BeginFrame = 0x0024DCB8; // type:func // guess
+BtlObjBody_Reset = 0x0024DD20; // type:func // guess
+BtlObjBody_Warp = 0x0024DD80; // type:func // guess
+
+// BuildVolumes: part boxes, then one sphere / oriented box per attack node of the open hit window.
+BtlObjHit_BuildVolumes = 0x0024DDF0; // type:func
+
+// Pose. GetNodeMtx(obj, out, part): local rotation matrix of a node with the fighter's extra rotations.
+// CalcMatrices: world matrix of every node (VU0 matrix stack). BtlObjXf_*: the object's own matrix from
+// pos (+0x950) / rot (+0x960) / scale (+0xA20); SetMtx sets matrix and inverse directly.
+BtlObjPose_GetNodeMtx = 0x0024E100; // type:func
+BtlObjXf_Reset = 0x0024E238; // type:func
+BtlObjXf_Update = 0x0024E2B0; // type:func
+BtlObjXf_SetMtx = 0x0024E3B8; // type:func
+BtlObjPose_CalcMatrices = 0x0024E3F8; // type:func
+
+// Fighter buffer (object + 0x1660). Flash block at +0x18000: colour, 0.2 s timer, fade value.
+// Start(obj, kind 0..2), Step (-1/30 per call), GetColor(obj, color, alpha). Fade: +-0.1 per call by flag 0x40000.
+BtlObj_HasWork = 0x0024E500; // type:func
+BtlObjFlash_Get = 0x0024E510; // type:func
+BtlObjFlash_Clear = 0x0024E550; // type:func
+BtlObjFlash_Reset = 0x0024E5A0; // type:func
+BtlObjFlash_Start = 0x0024E5B8; // type:func // guess
+BtlObjFlash_Step = 0x0024E6B0; // type:func // guess
+BtlObjFlash_GetColor = 0x0024E700; // type:func // guess
+BtlObjFade_Step = 0x0024E790; // type:func // guess
+BtlObjFade_Get = 0x0024E810; // type:func // guess
+// Stores a byte at object + 0xB30 (one caller at 0x259EC8.., meaning unknown).
+BtlObj_SetUnkB30 = 0x0024E860; // type:func
+
+// Face (the state block is the second part's BObjFace). Reset(face, keep): stop the talk pattern. HasLipTrack(mdl, n):
+// lip track n (0..99) exists. CopyTexAlpha: alpha bytes of the model's face texture record -> every eye texture.
+// HasJaw: model flags & 0xC00000. PickJawKeys: one of 4 (x2 sets) jaw key tables by rand() % 4. Init: CopyTexAlpha
+// + an empty hook. StepBlink: eye frame of this update (forced / shut / random blink, two rand()). CanStart(face,
+// mode): modes 9..12 only yield to 0 or 9..12. Step: one update of the mouth mode. HasMouthSet(mdl, n): mouth
+// texture set n (1-based). HasMouth: any mouth texture set or a jaw.
+BtlObjFace_Reset = 0x0024E868; // type:func
+BtlObjMdl_HasLipTrack = 0x0024E8E8; // type:func // guess
+BtlObjMdl_CopyTexAlpha = 0x0024E910; // type:func // guess
+BtlObjMdl_HasJaw = 0x0024E9C8; // type:func // guess
+BtlObjFace_PickJawKeys = 0x0024E9E0; // type:func // guess
+BtlObjFace_Nop = 0x0024EB30; // type:func
+BtlObjFace_Init = 0x0024EB38; // type:func // guess
+BtlObjFace_StepBlink = 0x0024EB70; // type:func
+BtlObjFace_CanStart = 0x0024EC80; // type:func // guess
+BtlObjFace_Step = 0x0024ECC0; // type:func
+BtlObjMdl_HasMouthSet = 0x0024F170; // type:func // guess
+BtlObjMdl_HasMouth = 0x0024F198; // type:func // guess

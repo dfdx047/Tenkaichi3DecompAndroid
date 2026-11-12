@@ -1,0 +1,130 @@
+// Movie player, 2D sprite helpers and a colour screen fade: the code between src/sys/snd.c and src/battle/battle_work.c.
+//   src/sys/movie.c      = 0x125568..0x126608
+//   src/sys/sprite.c     = 0x126608..0x126B88
+//   src/sys/color_fade.c = 0x126B88..0x126EC8
+// Movie_PlayOpening and Movie_Run keep their entries in game.txt.
+
+// --- src/sys/movie.c: GS image-upload packet builders (0x125568..0x1259F0) --------------------------------------------
+// The same job as setImageTag() in Sony's mpeg samples: a DMA chain that uploads a decoded RGBA32 picture to the frame
+// buffer one 16x16 macroblock at a time (the IPU's colour conversion outputs macroblocks in column order).
+// 0x1255D8(tags, image, step, x, y, w, h): header (cnt tag, GIF A+D tag, BITBLTBUF dbp 0 / dbw 8 / CT32, TRXREG 16x16),
+// then per macroblock, columns first: cnt tag, GIF A+D tag, TRXPOS, TRXDIR 0, GIF IMAGE tag of 0x40 quadwords (EOP on
+// the last block), ref tag to image; image += step. Ends with an end tag.
+MovieTag_BuildBlocks = 0x001255D8; // type:func
+// 0x125568(tags, image, x, y, w, h): BuildBlocks with step 0x400 (one macroblock of RGBA32). Callers: Movie_Open twice.
+MovieTag_BuildImage = 0x00125568; // type:func
+// 0x1255A0: the same with step 0, so every block shows the same 16x16 pixels. No callers.
+MovieTag_BuildFill = 0x001255A0; // type:func // guess
+// 0x125840(p, spr, addr, irq, id, pce, qwc): one DMA source-chain tag as a 64-bit word.
+MovieTag_SetDmaTag = 0x00125840; // type:func
+// 0x125890(p, regs, nreg, flg, prim, pre, eop, nloop): one GIF tag as four words.
+MovieTag_SetGifTag = 0x00125890; // type:func
+// 0x1258E0(p, reg, value): one A+D quadword. 0x125910 / 0x125940 / 0x125970 / 0x125998 call it with GS register
+// 0x50 BITBLTBUF (dbp, dbw, dpsm), 0x51 TRXPOS (dir, dsax, dsay), 0x52 TRXREG (w, h), 0x53 TRXDIR (dir).
+MovieTag_SetReg = 0x001258E0; // type:func
+MovieTag_SetBitBltBuf = 0x00125910; // type:func
+MovieTag_SetTrxPos = 0x00125940; // type:func
+MovieTag_SetTrxReg = 0x00125970; // type:func
+MovieTag_SetTrxDir = 0x00125998; // type:func
+// 0x1259B8(tags): D2_TADR = tags, D2_QWC = 0, D2_CHCR = 0x105: starts the chain on the GIF channel. Caller: Movie_Run.
+MovieTag_Send = 0x001259B8; // type:func
+
+// --- src/sys/movie.c: the player (0x1259F0..0x126608) -----------------------------------------------------------------
+// 0x1259F0: tail-calls sceMpegInit. Called once by Game_Main.
+Movie_Init = 0x001259F0; // type:func
+// 0x125A08: tail-calls Movie_Close. No callers.
+Movie_Term = 0x00125A08; // type:func // guess
+// 0x125A20(pss, adx): opens the .PSS (retrying forever), starts the .ADX paused on player 0, allocates the 0xF8-byte
+// state and its buffers, creates the decoder, registers the four callbacks and builds both upload chains.
+Movie_Open = 0x00125A20; // type:func
+// 0x125C40: Adx_Stop(0), sceMpegReset, sceMpegDelete, ADXF_Close, frees every buffer and the state. No-op when closed.
+Movie_Close = 0x00125C40; // type:func
+// 0x125D20: Movie_PlayOpening with "zs3used.pss" / "zs3used.adx". No jal callers in either binary.
+Movie_PlayEnding = 0x00125D20; // type:func
+// libmpeg callbacks registered by Movie_Open: 0x125F98 video elementary stream data (copies into the ring buffer, 0 when
+// it does not fit), 0x1260A8 "no data" (the decoder wants more: demux until 0x1000 bytes are queued, then start DMA
+// channel 4 to the IPU), 0x1261D8 "background" (called while the decoder waits: demux and read ahead), 0x126238 error
+// (returns 1).
+Movie_CbVideoData = 0x00125F98; // type:func
+Movie_CbNoData = 0x001260A8; // type:func
+Movie_CbBackground = 0x001261D8; // type:func
+Movie_CbError = 0x00126238; // type:func
+// CRI calls: ADXF_Tell 0x26B580(adxf) = locked wrapper around adxf_Tell (0x26B5B8), returns
+// the file position in sectors; 0x277A70(adxt) = locked wrapper around 0x277AA8, non-zero while the player's stream
+// is reading (inferred from use: a video read is only started when it returns 0).
+// 0x126240(full): full != 0 -> the filled read buffer with the lowest sequence number (waiting until the disc read that
+// fills it has got that far), else the first empty one. NULL when there is none.
+Movie_FindBuf = 0x00126240; // type:func
+// 0x126328(buf, tag): waits for the previous read, then ADXF_ReadNw(adxf, 0x100 sectors, buf->data) and marks the buffer
+// filled. The tag is a string ("idle", "nodata", "background", "full") that is never used. INCLUDE_ASM (5 instructions
+// differ in order / register choice).
+Movie_ReadBuf = 0x00126328; // type:func
+// 0x1263D8(sector): waits until the file position reaches the sector (or, with -1, until the read ends), pausing the
+// audio while the wait lasts longer than 4 fields and resuming it afterwards.
+Movie_WaitRead = 0x001263D8; // type:func
+// 0x1264C8(tag): Movie_ReadBuf on the first empty buffer, 0 when all are filled.
+Movie_ReadAhead = 0x001264C8; // type:func
+// 0x126510: Movie_ReadBuf until no buffer is empty.
+Movie_FillBufs = 0x00126510; // type:func
+// 0x126568: sceMpegDemuxPss over the filled buffers in order until the decoder stops accepting data.
+Movie_Demux = 0x00126568; // type:func
+// State pointer (NULL when no movie is open) and a counter of Movie_Run calls that nothing reads.
+gMovie = 0x002FE970; // size:0x4
+gMovieRunCount = 0x002FE978; // size:0x4
+// Video elementary-stream ring buffer fed to the IPU: base, size, write pointer, start and end of the last DMA transfer.
+gMovieEsBuf = 0x002FF190; // size:0x4
+gMovieEsSize = 0x002FF194; // size:0x4
+gMovieEsWrite = 0x002FF198; // size:0x4
+gMovieEsDmaStart = 0x002FF19C; // size:0x4
+gMovieEsDmaEnd = 0x002FF1A0; // size:0x4
+// Debug tags passed to Movie_ReadBuf (.sdata strings "idle", "nodata", "full").
+gMovieTagIdle = 0x002FE980; // size:0x8
+gMovieTagNoData = 0x002FE988; // size:0x8
+gMovieTagFull = 0x002FE990; // size:0x8
+
+// Sony libmpeg, identified by how Movie_Open / Movie_Run / Movie_Close use them: the argument lists and order match the
+// library's API, the callback type numbers (0 error, 1 nodata, 4 background) match the strings the callbacks pass on,
+// and the 0x48-byte object at Movie+0x10 has the size of `sceMpeg`.
+sceMpegInit = 0x00297B60; // type:func
+sceMpegCreate = 0x00296FB8; // type:func
+sceMpegDelete = 0x00297C10; // type:func
+sceMpegGetPicture = 0x00297C58; // type:func
+sceMpegReset = 0x00297CF8; // type:func
+sceMpegIsEnd = 0x00297D78; // type:func
+sceMpegAddCallback = 0x00297DD0; // type:func
+sceMpegDemuxPss = 0x0029C230; // type:func
+sceMpegAddStrCallback = 0x0029C250; // type:func
+
+// --- src/sys/sprite.c (0x126608..0x126B88) ----------------------------------------------------------------------------
+// 0x126608: tail-calls Bpe_Decode. Callers: Load_InitScreen, 0x2BDF78, 0x2BF398 (they unpack a sprite sheet with it).
+Sprite_Unpack = 0x00126608; // type:func // guess
+// 0x126620(y): returns y. Applied to every screen Y in this file and by 0x225170 (probably a video-mode scale that is
+// the identity in the NTSC build).
+Sprite_ConvY = 0x00126620; // type:func // guess
+// 0x126628(res, x, y, alpha): full-screen picture from textures 0..7 of a sheet: 4 x 2 tiles of 128x256 texels, each
+// drawn 128x224, modulated by 0x808080 and the alpha. No jal callers. INCLUDE_ASM (12 instructions differ in order /
+// register choice).
+Sprite_DrawPicture = 0x00126628; // type:func // guess
+// 0x126880(res, x, y, list): draws LoadSprite records until one has flag 2. Callers: Load_DrawScreen.
+Sprite_DrawList = 0x00126880; // type:func
+// 0x126B08: returns 0. No callers.
+Sprite_Stub126B08 = 0x00126B08; // type:func
+// 0x126B10(x0, x1, y0, y1): Dma_AddScissor with 0x200 / 0x1C0 turned into 0x1FF / 0x1BF. Tail-called at 0x2BD91C, 0x2BD944.
+Sprite_SetScissor = 0x00126B10; // type:func
+
+// --- src/sys/color_fade.c (0x126B88..0x126EC8) ------------------------------------------------------------------------
+// A full-screen colour overlay with an integer alpha ramp, separate from gFade. Callers are all in 0x2BE990..0x2BF588.
+// 0x126B88: draws the 512x448 sprite when the clamped alpha is not 0.
+ColorFade_Draw = 0x00126B88; // type:func
+// 0x126CC0: flag 1: alpha -= step until <= 0, then flags = 4. Flag 2: alpha += step until >= 0x80, then flags = 8.
+ColorFade_Update = 0x00126CC0; // type:func
+// 0x126D40(r, g, b, frames): alpha 0x80 -> 0 (uncovers the screen); also clears the 0x14 bytes at 0x31E570 (0x261EB0).
+ColorFade_StartIn = 0x00126D40; // type:func
+// 0x126DD8(r, g, b, frames): alpha 0 -> 0x80 (covers the screen).
+ColorFade_StartOut = 0x00126DD8; // type:func
+// Flag tests: bit 2, bit 3, bit 0, bit 1.
+ColorFade_IsInDone = 0x00126E70; // type:func
+ColorFade_IsOutDone = 0x00126E88; // type:func
+ColorFade_IsFadingIn = 0x00126EA0; // type:func
+ColorFade_IsFadingOut = 0x00126EB0; // type:func
+gColorFade = 0x00301048; // size:0x10

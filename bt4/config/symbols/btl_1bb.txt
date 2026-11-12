@@ -1,0 +1,53 @@
+// CPU opponent (AI) manager and its "move" action: src/battle/btl_ai_mgr.c = 0x1BB128..0x1BC8A8.
+// Evidence for every name is the matching C. The AI heap block pointer (gp 0x2FEB10) is gBtlAi in btl_ai.txt.
+// "BtlAiMgr" and not "BtlAi": btl_ai.txt (0x1B6B08..) uses that prefix for the rule / sequence code.
+
+// Frees the data and per-side parameters the block owns, func_001BAD50(0), func_001BAF68(side, 0) for both sides.
+BtlAiMgr_Reset = 0x001BB128; // type:func
+// (side): func_001BAF68(side, 0). Called by the character load job (battle_load.c).
+BtlAiMgr_ResetSide = 0x001BB1F0; // type:func
+// Heap_Alloc(0xA60) + memset when gBtlAi is NULL, then BtlAiMgr_Reset. Called by Battle_Init.
+BtlAiMgr_Init = 0x001BB208; // type:func
+// Frees what the block owns and the block. Called by Battle_Term.
+BtlAiMgr_Term = 0x001BB250; // type:func
+// (side *): 14 bytes at side+0x340 = BtlAi_GetPairRate(side, i, func_001B82C0(i, 3), tbl+4, tbl+0x2C4, 0) with tbl the
+// side's aiType table. "Rates" follows the callee's name; what the bytes mean was not read.
+BtlAiMgr_BuildRates = 0x001BB308; // type:func // guess
+// Getters / setters of side+4 and side+8. The setters also rebuild the rates, call func_001BA308, clear 0x188 bytes
+// of work and the action state. "Type" / "Level": func_001BAF68 fills them from the fighter's member entry +0x3C /
+// +0x38, which battle.h documents as BattleMember.aiType / cpuLevel.
+BtlAiMgr_GetType = 0x001BB3B8; // type:func
+BtlAiMgr_SetType = 0x001BB3E0; // type:func
+BtlAiMgr_GetLevel = 0x001BB450; // type:func
+BtlAiMgr_SetLevel = 0x001BB478; // type:func
+// 1 unless BtlSeq_GetState() is 2 or 3.
+BtlAiMgr_IsIdleState = 0x001BB4E8; // type:func
+// Distance between the fighters' centres into gBtlAi+4, stage line test between them into gBtlAi+0xC.
+BtlAiMgr_UpdateSight = 0x001BB510; // type:func
+// Returns gBtlAi+0xA50, the counter BtlAiMgr_Update increments. No caller found.
+BtlAiMgr_GetFrame = 0x001BB610; // type:func
+// The per-frame entry called by Battle_Loop.
+BtlAiMgr_Update = 0x001BB620; // type:func
+
+// The move action. Its phase table {Init, Start, Run, End} is indexed by act.phase in the dispatcher func_001BC8A8.
+gBtlAiMovePhases = 0x002C4940; // size:0x10
+// (side *, mode) -> 0..4 chosen with Rand_Range among candidates. The result is stored at move+0x158 and not read in
+// this file, so "direction" is a guess from the geometry tests (height limits, the two sides at +-60 degrees).
+BtlAiMove_PickDir = 0x001BB730; // type:func // guess
+// Target = opponent + (self - opponent) normalised * dist[type], clamped to the stage; sets act flags 4 / 8 / 0x10.
+BtlAiMove_CalcTarget = 0x001BB9A8; // type:func
+// (side *, point, flat) -> 1 when within 20 units or 5 * fighter transform +0x98.
+BtlAiMove_IsNear = 0x001BBCF8; // type:func
+// func_001B3A50(pos, target, path); returns 1 when the path has no point.
+BtlAiMove_BuildPath = 0x001BBDD0; // type:func
+// Returns the 0..4 code BtlAiMove_Run switches on.
+BtlAiMove_Check = 0x001BBE70; // type:func
+// (side *, point, kind): writes stick and buttons to head for the point.
+BtlAiMove_Steer = 0x001BC0B8; // type:func
+// Used by Run for move type 0: writes buttons with a neutral stick. Name from that (it does not steer).
+BtlAiMove_Hold = 0x001BC468; // type:func // guess
+// The four entries of gBtlAiMovePhases.
+BtlAiMove_Init = 0x001BC520; // type:func
+BtlAiMove_Start = 0x001BC540; // type:func
+BtlAiMove_Run = 0x001BC638; // type:func
+BtlAiMove_End = 0x001BC7D8; // type:func

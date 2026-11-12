@@ -1,0 +1,89 @@
+// CPU opponent: weighted rule conditions, the rule evaluator, the thinker, data and side binding.
+// 0x1B80F8..0x1BB128, the second half of src/battle/btl_ai_cond.c (one object from 0x1B6D50 on; BtlAi_ScaleByLevel,
+// 0x1B6D00, is the last function of the object before it).
+
+// (work, column, lo table, hi table): BtlAi_ScaleByLevel of the byte pair in row plan.sub of a table of 20 / 4 rows
+// of 8 (the profile's tables at +0x1B0 and +0x288). Same switch shape as BtlAi_GetPairRate.
+AiThink_GetSubRate = 0x001B80F8; // type:func // guess
+AiThink_GetSubRate4 = 0x001B8218; // type:func // guess
+// (class, code): index of `code` in row `class` of D_002EDC70, -1 not found, -2 for class 14. Also called by
+// BtlAiMgr_BuildRates with code 3.
+AiThink_FindBasicColumn = 0x001B82C0; // type:func
+// Adds the rate of the condition's column in the profile's first table to the running sum of the condition
+// position and compares it with the pre-drawn roll.
+AiThink_TestBasic = 0x001B8338; // type:func
+// Entry 38 of the condition table: TestBasic unless fighter flag 6 (0x20B7C0) or func_00209DF8.
+AiThCond_BasicNoFlag6 = 0x001B8428; // type:func
+// (plan): index of (plan.cond - 40) in the row of the code table that belongs to plan.next (six tables
+// D_002EDCE0..D_002EDEE8, row plan.cls or plan.sub).
+AiThink_FindWeightColumn = 0x001B8480; // type:func
+// (work, byGauge): same accumulate-and-compare with the rate taken from the profile table of plan.next.
+AiThink_TestWeighted = 0x001B8608; // type:func
+// Pick a usable move slot (fighter data 0x208B98: kind byte +0x9E, id +0x10, stock +0x94) / skill slot (0x208B58:
+// kind +0x165, cost +0x19C) into plan+8, then TestWeighted. "Move" and "skill" are working names for the two slot
+// tables; what they are in game terms is not established.
+AiThink_TestMove = 0x001B88E8; // type:func // guess
+AiThink_TestSkill = 0x001B8B40; // type:func // guess
+// Entry 40: TestWeighted while bit 0 of 0x209378 is set.
+AiThCond_WeightedIfBit0 = 0x001B8FF8; // type:func
+// Entries 77..80: one Rand_Range(100) against a level-scaled byte of the profile's last table (+0x2B8 lo / +0x578
+// hi): bytes 0 or 3 by argument, 1, 2, 4.
+AiThCond_MiscRate0Or3 = 0x001B9048; // type:func
+AiThCond_MiscRate1 = 0x001B9138; // type:func
+AiThCond_MiscRate2 = 0x001B91A8; // type:func
+AiThCond_MiscRate4 = 0x001B9218; // type:func
+// Entries 108, 109: bytes +0x2B4 / +0x2B5, and BtlAi_NoteOpponent with 0x4000 / 0x8000.
+AiThCond_React4000 = 0x001B9288; // type:func // guess
+AiThCond_React8000 = 0x001B9318; // type:func // guess
+// Entries 35, 36, 37, 39 / 41..53 and others: plain wrappers of TestBasic / TestWeighted(0).
+AiThCond_Basic = 0x001B93A8; // type:func
+AiThCond_Weighted = 0x001B93C0; // type:func
+// Entries 54, 55, 83, 84: TestWeighted after comparing the two fighters' Y (0x2053F0) with the height (0x204EA0).
+AiThCond_WeightedByHeight = 0x001B93D8; // type:func
+// Entries 56..76: Rand_Range(100) against profile byte +0x154[n] / +0x414[n] (n from D_002EDDC0), then one bit of
+// the fighter's own word +0x1288 chosen by the entry.
+AiThCond_ActRateByFlags = 0x001B9580; // type:func // guess
+// (work, condition id): the rate roll of the same without the flag test. Called at 0x1B4ACC (func_001B4A50).
+AiThink_RollActRate = 0x001B9838; // type:func // guess
+// Entries 114, 115, 117: TestWeighted with fighter flag 6 and one bit (0x10, 0x200, 8) of 0x2093E8.
+AiThCond_WeightedIfAbility = 0x001B98F0; // type:func // guess
+// Entries 85..93 / 94..100, 106, 107: wrappers of TestMove / TestSkill.
+AiThCond_Move = 0x001B99D8; // type:func // guess
+AiThCond_Skill = 0x001B99F0; // type:func // guess
+// (group): 7,8,9,10,11,12,14,16,17,18,19,20,23,24 -> 0..13, anything else 14. Row index of the per-class tables.
+AiThink_GetGroupClass = 0x001B9A08; // type:func
+// (work, kind): one of the two move kinds / three skill kinds equals kind.
+AiThink_HasMoveKind = 0x001B9AA8; // type:func // guess
+AiThink_HasSkillKind = 0x001B9B08; // type:func // guess
+// (work, mask): 0x2093E8 & mask.
+AiThink_HasAbility = 0x001B9B68; // type:func // guess
+// (work, code): whether the fighter has what condition code (id - 40) needs: codes 0x34..0x3C a move kind,
+// 0x3D..0x43, 0x49, 0x4A a skill kind, 0x52..0x55 a bit of 0x2093E8, 0 bit 0 of 0x209378, anything else yes.
+AiThink_IsCodeUsable = 0x001B9B98; // type:func
+// (work, class, lo, hi, codes): sum of the level-scaled rates of the usable columns of one row.
+AiThink_SumPairRates = 0x001B9D40; // type:func
+AiThink_SumQuadRates = 0x001B9F48; // type:func
+AiThink_SumSubRates = 0x001BA188; // type:func
+// (work): fills work+0x351 [3][14] and work+0x37B [4] with those sums. Called by BtlAiMgr_SetType / SetLevel.
+AiThink_BuildTotals = 0x001BA308; // type:func
+// (work, table): the stored sum for the class in hand (100 when it is 0): the range of the rolls the evaluator draws.
+AiThink_GetRollRange = 0x001BA448; // type:func
+// 100 + rate * (BtlAi_GetLowGaugeFactor - 1): the range when the group's first condition is function 38.
+AiThink_GetCond38Range = 0x001BA548; // type:func // guess
+// Rand_Range(100) against the summed row plan.sub of the profile table +0x288; 1 = skip the group.
+AiThink_RollGroupGate = 0x001BA5B0; // type:func // guess
+// (work, rule list): the rule evaluator.
+AiThink_EvalRules = 0x001BA760; // type:func
+// (work): 1 for own action class 15, else for actions 0x3C..0x3F a step number. Only caller is 0x1B5098 (func_001B5040, a step handler).
+AiThink_GetBlastStep = 0x001BAB90; // type:func // guess
+// Counts work+0x38C down to 0.
+AiThink_TickCooldown = 0x001BAC10; // type:func
+// Called once per frame per CPU fighter by BtlAiMgr_Update, after 0x1BFF70: evaluates rule lists 7, 4, 0 and one more.
+AiThink_Think = 0x001BAC30; // type:func
+// (owned): points gBtlAi at member 4 of common file 2 and fills its 41 section pointers. Called by BtlAiMgr_Reset.
+AiThink_BindData = 0x001BAD50; // type:func
+// (work): work+0xC bits and work+0x10 / +0x14 from the fighter's move kinds and skill costs.
+AiThink_ReadKit = 0x001BAE48; // type:func // guess
+// (side, owned): frees an owned parameter block, clears the 0x520-byte work, reads object +0x934, level, type,
+// keep-distances. Called by BtlAiMgr_Reset / BtlAiMgr_ResetSide.
+AiThink_ResetSide = 0x001BAF68; // type:func

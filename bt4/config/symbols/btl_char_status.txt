@@ -1,0 +1,147 @@
+// Fighter stat modifiers and fighter animation control, 0x1C2FF0..0x1C4BF8:
+//   src/battle/btl_char_status.c       0x1C2FF0..0x1C3CA8
+//   src/battle/btl_char_status_anim.c  0x1C3CA8..0x1C4BF8
+// Evidence for every name is the matching C (all 79 functions) plus the callers named below. All names are guesses.
+
+// --- Stat modifier table: fighter +0xF50, four records of 0x18 bytes (BtlStatMod), one per stat ---------------------
+// 0x1C2FF0(chr, slot, kind): if the slot's skill kind (func_002123B0: byte (obj +0x930)[0x66 + slot]) == kind,
+// fighter +0xE38[slot != 0] = 0.
+BtlStat_ClearSlotOn = 0x001C2FF0; // type:func // guess
+// 0x1C3040 / 0x1C30A8 / 0x1C3110(chr): zero bytes +4,+5 / +6,+7 / +8,+9 of all four records, then ClearSlotOn for both
+// slots with kind 2 / 3 / 4; the first two also clear fighter +0xE30 / +0xE34. Callers: BtlStat_Update; 0x1E16C0; 0x1E1208.
+BtlStat_EndKind2 = 0x001C3040; // type:func // guess
+BtlStat_EndKind3 = 0x001C30A8; // type:func // guess
+BtlStat_EndKind4 = 0x001C3110; // type:func // guess
+// 0x1C3170(chr): zero bytes +0xA,+0xB of all four records. Caller: 0x1EB718.
+BtlStat_ClearPenalty = 0x001C3170; // type:func // guess
+// 0x1C31A0(chr): zero byte +0xC of all four records. Caller: the manager, every frame.
+BtlStat_ClearFrameMods = 0x001C31A0; // type:func // guess
+// 0x1C31D0(chr): zero every field of the four records. Caller: BtlChar_BindObject.
+BtlStat_Reset = 0x001C31D0; // type:func // guess
+// 0x1C3288(chr): counts the eight timers (+0x10) down; at 0 clears the timed byte (+2) and ClearSlotOn(slot, 1); then
+// EndKind2 when the action was in 0x105..0x132 (func_001E03A8) last frame and is not now, unless flag 0xA4 is in the
+// second flag pair. Caller: 0x1E16C0.
+BtlStat_Update = 0x001C3288; // type:func // guess
+// (chr, stat, slot, value, add): add != 0 adds to the byte, else stores it. 0x1C3398 bytes +0,+1; 0x1C3410 bytes +2,+3
+// plus a sixth argument stored in the timer; 0x1C3470 / 0x1C34A8 / 0x1C34E0 bytes +4.. / +6.. / +8..; 0x1C3518 bytes
+// +0xA.. (no add). All called only by the skill routine 0x2004C8, four times each (once per stat).
+BtlStat_SetBase = 0x001C3398; // type:func // guess
+BtlStat_SetTimed = 0x001C3410; // type:func // guess
+BtlStat_SetKind2 = 0x001C3470; // type:func // guess
+BtlStat_SetKind3 = 0x001C34A8; // type:func // guess
+BtlStat_SetKind4 = 0x001C34E0; // type:func // guess
+BtlStat_SetPenalty = 0x001C3518; // type:func // guess
+// 0x1C33D8(chr, stat, value, add): byte +0xC. Caller: the manager, (chr, n, -10, 1) when a gauge mode flag is set.
+BtlStat_SetFrameMod = 0x001C33D8; // type:func // guess
+// 0x1C3538(chr, stat): sum of the record's bytes (+0xA,+0xB only without flag 6), + 3 per lost 10000 health with ability
+// 0x58 / 0x71 / 0x72 / 0x73 for stat 0 / 1 / 2 / 3, + 15 on stage 2, 3 with ability 0x59, + 10 on stage 7, 8, 13, 16,
+// 18, 34 with ability 0x5B, + 5 elsewhere with ability 0x5A; clamped to -20..20. Also called by 0x20C750..0x20C810.
+BtlStat_GetMod = 0x001C3538; // type:func // guess
+// 0x1C3788..0x1C3938(chr): clamp(active member's bonus[n] + GetMod(chr, stat), -20, 80) for (n, stat) =
+// (0, 2) (1, 0) (2, 1) (3, 2) (4, 3) (5, 3) (6, 3).
+BtlStat_GetLevel0 = 0x001C3788; // type:func // guess
+BtlStat_GetLevel1 = 0x001C37D0; // type:func // guess
+BtlStat_GetLevel2 = 0x001C3818; // type:func // guess
+BtlStat_GetLevel3 = 0x001C3860; // type:func // guess
+BtlStat_GetLevel4 = 0x001C38A8; // type:func // guess
+BtlStat_GetLevel5 = 0x001C38F0; // type:func // guess
+BtlStat_GetLevel6 = 0x001C3938; // type:func // guess
+// 0x1C3980(level, row): t = gBtlStatCurve[row]; level >= 0: t[1] + (t[0] - t[1]) * level / 80, else
+// t[1] + (t[2] - t[1]) * level / -20.
+BtlStat_EvalCurve = 0x001C3980; // type:func // guess
+// 0x1C3A20..0x1C3AF8(chr): (int)(EvalCurve(level, row) / 30) for (level, row) = (0, 0) (0, 1) (0, 2) (4, 3).
+// Callers: 0x20EC00 / 0x20EC88, 0x20ED10, 0x20ED60, 0x20EF20.
+BtlStat_GetKiChargeBonus = 0x001C3A20; // type:func // guess
+BtlStat_GetKiRegenBonus = 0x001C3A68; // type:func // guess
+BtlStat_GetKiRecoverBonus = 0x001C3AB0; // type:func // guess
+BtlStat_GetBlastGainBonus = 0x001C3AF8; // type:func // guess
+// 0x1C3B40..0x1C3C80(chr): EvalCurve(level, row) for (level, row) = (1, 4) (1, 5) (1, 6) (2, 7) (3, 8) (5, 9) (6, 10)
+// (0, 11) (0, 12). Row 7 is called by 0x1CE630 (the health-loss routine); rows 4..6 by 0x20D418.., 0x20D6D0, 0x20FB78..
+BtlStat_GetMeleeDamageScale = 0x001C3B40; // type:func // guess
+BtlStat_GetGuardKiCostScale = 0x001C3B68; // type:func // guess
+BtlStat_GetKiBlastDamageScale = 0x001C3B90; // type:func // guess
+BtlStat_GetScale7 = 0x001C3BB8; // type:func // guess
+BtlStat_GetSpeedScale = 0x001C3BE0; // type:func // guess
+BtlStat_GetBlast2DamageScale = 0x001C3C08; // type:func // guess
+BtlStat_GetUltimateDamageScale = 0x001C3C30; // type:func // guess
+BtlStat_GetMaxPowerChargeScale = 0x001C3C58; // type:func // guess
+BtlStat_GetMaxPowerExtraTime = 0x001C3C80; // type:func // guess
+// f32[13][3] in the .rodata of btl_char_status.c: {value at level 80, at 0, at -20} per row.
+gBtlStatCurve = 0x002EE7C0; // size:0x9C // guess
+
+// --- Fighter animation: ids at fighter +0x974, player at object +0xB40 ---------------------------------------------
+// 0x1C3CA8(handle, anim): table flag 0x40000000: func_0024C728(handle, 1, 1, 1); else flag 0x80000000:
+// func_0024C800(handle) and with flag 2 func_0024C728(handle, 1, 0, 0).
+BtlAnim_ApplyTableFlags = 0x001C3CA8; // type:func // guess
+// 0x1C3D58(handle, model): func_0024C890(handle, node) for nodes {0x10, 0x11, 0x2E, 0x2F} (model 0x98), {0x11} (0x99),
+// {0x11, 0x2E, 0x23, 0x15} (0x78). 0x1C3E30: node 0x10 for model 0x78.
+BtlAnim_HideModelNodes = 0x001C3D58; // type:func // guess
+BtlAnim_HideModelNode10 = 0x001C3E30; // type:func // guess
+// 0x1C3E60(chr, anim, blend): starts `anim` on the main layer (func_0024D038, or func_0024D178 with table flag
+// 0x20000000), clears object flags 0x20 / 0x40 and fighter flags 0x30, 0x2D..0x31, raises 0x2B, +0x974 = anim,
+// +0x978 = -1, +0x98C = 0; blend > 0: SetBlend + ApplyBlend. 133 call sites.
+BtlAnim_Play = 0x001C3E60; // type:func // guess
+// 0x1C4030(chr, anim, blend): the same through func_0024D038(obj, 0, anim, 0) without the object state reset; raises 0x2C.
+BtlAnim_PlayKeep = 0x001C4030; // type:func // guess
+// 0x1C4118(chr): func_0024D238(obj); +0x974 = +0x980; raises 0x2B.
+BtlAnim_SubToMain = 0x001C4118; // type:func // guess
+// 0x1C41A0 / 0x1C41F0(chr, anim, blend): hold flag 0x2D / 0x2E, +0x978 = anim, SetBlend. 0x1C4240(chr): hold flag 0x2F.
+BtlAnim_Request = 0x001C41A0; // type:func // guess
+BtlAnim_RequestKeep = 0x001C41F0; // type:func // guess
+BtlAnim_RequestSubToMain = 0x001C4240; // type:func // guess
+// 0x1C4258(chr, blend): hold flag 0x32, +0x984 = blend. 0x1C4290(chr): the same with 0 (no caller).
+BtlAnim_SetBlend = 0x001C4258; // type:func // guess
+BtlAnim_SetNoBlend = 0x001C4290; // type:func // guess
+// 0x1C42A8 / 0x1C42F0 / 0x1C4338(chr): with flag 0x2D / 0x2E / 0x2F: Play / PlayKeep(chr, +0x978, +0x984) / SubToMain
+// (only if +0x980 >= 0). Callers: 0x1E23D0 (all three) and BtlChar_OnModelLoaded (the first).
+BtlAnim_FlushRequest = 0x001C42A8; // type:func // guess
+BtlAnim_FlushRequestKeep = 0x001C42F0; // type:func // guess
+BtlAnim_FlushSubToMain = 0x001C4338; // type:func // guess
+// 0x1C4388(chr): flag 0x37: func_0024C668(obj, 0); else flag 0x32: func_0024C668(obj, +0x984) and one step off the
+// object's blend counter; clears flag 0x32 and +0x984.
+BtlAnim_ApplyBlend = 0x001C4388; // type:func // guess
+// 0x1C4450(chr, anim): if +0x980 != anim: func_0024D038(obj, 1, anim, 0) on the second layer (handle obj +0xBD8), +0x980 = anim.
+BtlAnim_PlaySub = 0x001C4450; // type:func // guess
+// Setters: obj +0xC8C; obj +0xC80 (step); step = length / (seconds * 30), or length when seconds < 1/30; obj +0xCB8;
+// fighter +0x988.
+BtlAnim_SetUnkC8C = 0x001C44D0; // type:func // guess
+BtlAnim_SetStep = 0x001C44F8; // type:func // guess
+BtlAnim_SetDuration = 0x001C4520; // type:func // guess
+BtlAnim_SetObjRate = 0x001C4580; // type:func // guess
+BtlAnim_SetRate = 0x001C45A8; // type:func // guess
+// 0x1C45B0(chr): frame = prev frame = length, blend counter 0, clears flag 0x34, holds 0x31.
+BtlAnim_JumpToEnd = 0x001C45B0; // type:func // guess
+// 0x1C4608(chr): func_0024C728(obj +0xB40 handle, 1, 1, 1).
+BtlAnim_EnableHandle = 0x001C4608; // type:func // guess
+// Getters: fighter +0x974 / +0x978 / +0x97C.
+BtlAnim_GetId = 0x001C4638; // type:func // guess
+BtlAnim_GetNextId = 0x001C4640; // type:func // guess
+BtlAnim_GetPrevId = 0x001C4648; // type:func // guess
+// 0x1C4650(anim): gBtlChars->tbl[0][anim] for anim < 0x19E, else 0.
+BtlAnim_GetFlags = 0x001C4650; // type:func // guess
+// Getters: obj +0xC78 (frame); frame / length; obj +0xB44 (length); obj +0xC80 (step); obj +0xCB8.
+BtlAnim_GetFrame = 0x001C4688; // type:func // guess
+BtlAnim_GetProgress = 0x001C46A8; // type:func // guess
+BtlAnim_GetLength = 0x001C46E0; // type:func // guess
+BtlAnim_GetStep = 0x001C4700; // type:func // guess
+BtlAnim_GetObjRate = 0x001C4720; // type:func // guess
+// 0x1C4740(chr, mask): 0 while fighter +0x990 > 0, else func_0024D498(obj, mask).
+BtlAnim_TestAttr = 0x001C4740; // type:func // guess
+// 0x1C47A8(chr, flags): blend counter -= its step (flag 0x34 held while > 0); prev frame = frame; unless (flags & 1 and
+// still blending): frame += step, and at frame >= length - 0.1: frame = length, hold flag 0x31, return 1. Then
+// +0x990 = +0x98C and +0x98C = (frame unchanged) ? +0x98C + 1 : 0. 129 call sites.
+BtlAnim_Advance = 0x001C47A8; // type:func // guess
+// 0x1C48B8(chr, next, flags, blend): Advance; when it returns 1, Request(chr, next, blend). 82 call sites.
+BtlAnim_AdvanceThen = 0x001C48B8; // type:func // guess
+// 0x1C4920(chr, flags): Advance for a loop: at the end frame = 0, no flag, no result. 70 call sites.
+BtlAnim_AdvanceLoop = 0x001C4920; // type:func // guess
+// Event timing against the frames (prev, cur] of the last advance, also when the animation wrapped (cur < prev):
+// 0x1C4A08(chr, ratio): prev <= length * ratio < cur. 0x1C4A80(chr, frame): prev <= frame < cur.
+// 0x1C4B40(chr, lo, hi): prev <= hi and lo <= cur. 0x1C4AF0: the same with ratios (no caller).
+BtlAnim_PassedRatio = 0x001C4A08; // type:func // guess
+BtlAnim_PassedFrame = 0x001C4A80; // type:func // guess
+BtlAnim_InRatioRange = 0x001C4AF0; // type:func // guess
+BtlAnim_InFrameRange = 0x001C4B40; // type:func // guess
+// 0x1C4BB8(chr): BtlChar_TestFlag(chr, 0x2B) != 0. 0x1C4BD8(chr): func_001DACB0(chr, 0x2B) != 0.
+BtlAnim_IsNew = 0x001C4BB8; // type:func // guess
+BtlAnim_WasNew = 0x001C4BD8; // type:func // guess

@@ -1,0 +1,359 @@
+// Game-side (developer code) symbols for SLUS_216.78, found by reading the disassembly.
+// See docs/game_overview.md for the reasoning. Lines tagged "guess" are fairly but not fully certain.
+
+// --- Boot ---------------------------------------------------------------------------------
+// _start (0x100008) does `jal 0x100258` with (argc, argv) and passes the result to exit: this is main.
+// main calls 0x2A6AB0 (run-once flag + call to the ctor walker: gcc's __main) then 0x100558, which never returns.
+main = 0x00100258; // type:func
+__main = 0x002A6AB0; // type:func
+// 0x100558: runs every subsystem init in order, then loops forever { Overlay_Load(0); overlay entry 0x336A90; Battle_Main }.
+Game_Main = 0x00100558; // type:func
+// 0x100280(idx): sceOpen(gOverlayTbl[idx].path) / lseek for size / read to 0x334C00 / FlushCache / close.
+Overlay_Load = 0x00100280; // type:func
+// table of {char *label; char *path} pairs; entry 0 = {"PROGRESS\n", "cdrom0:\BIN\DBZP.BIN;1"}
+gOverlayTbl = 0x002C3400; // size:0x8
+// 0x100330: references "cdrom0:\IRX\IOPRP300.IMG;1", loops on the reboot call then on the sync call.
+Sys_RebootIop = 0x00100330; // type:func
+// 0x1003A0: 13 retry loops, one per "cdrom0:\IRX\*.IRX;1" string (SIO2MAN ... CRI_ADXI).
+Sys_LoadIopModules = 0x001003A0; // type:func
+
+// --- Graphics / DMA -----------------------------------------------------------------------
+// 0x101F18: clears gGfx (0x250 bytes), resets GS, builds a 640x448 double buffer; called once from Game_Main.
+Gfx_Init = 0x00101F18; // type:func
+// 0x101D40: second env set-up (0x200x0x1C0) writing GS register values into gGfx; only called by Gfx_Init.
+Gfx_InitDrawEnv = 0x00101D40; // type:func // guess
+// 0x101E58: writes the GS privileged registers 0x12000000..0x120000D0 (PMODE/DISPFB/DISPLAY) using the screen offsets in gSaveData.
+Gfx_SetDisplayRegs = 0x00101E58; // type:func // guess
+// 0x102038 / 0x102060 bracket every frame loop in the game (6 loops call both, always in this order with Pad_Update between).
+// 0x102060(n) finishes the frame: Vsync_Wait(n), toggles gGfx+0x230 (buffer index), ++gGfx+0x234 (frame counter), swaps buffers.
+Gfx_BeginFrame = 0x00102038; // type:func
+Gfx_EndFrame = 0x00102060; // type:func
+gGfx = 0x00331B30; // size:0x250
+// 0x100670: two Heap_Alloc(0x100000) buffers stored in gDmaBuf[2], ends in gDmaBufEnd[2], size, index, write pointer.
+Dma_InitBuffers = 0x00100670; // type:func
+// 0x1008F8: writes an END dma tag (0x70000000) at the head of both buffers and rewinds gDmaCur.
+Dma_ResetBuffers = 0x001008F8; // type:func
+// 0x100798: appends closing tags at gDmaCur, sends gDmaBuf[gDmaBufIdx] with Dma_SendVif1, flips gDmaBufIdx, rewinds gDmaCur.
+Dma_Flush = 0x00100798; // type:func
+// 0x100AB8: waits on VIF1 status (0x10003C00) and GIF status, then starts DMA channel 1 (0x10009000 = 0x145) on the chain.
+Dma_SendVif1 = 0x00100AB8; // type:func
+// 0x1010A8: same shape for DMA channel 2 (0x1000A000, GIF) with address/qwc, waits for completion.
+Dma_SendGif = 0x001010A8; // type:func
+gDmaBuf = 0x002FE880; // size:0x8
+gDmaBufEnd = 0x002FE888; // size:0x8
+gDmaBufSize = 0x002FE890; // size:0x4
+gDmaBufIdx = 0x002FE894; // size:0x4
+gDmaCur = 0x002FE898; // size:0x4
+
+// --- Heap ---------------------------------------------------------------------------------
+// Block header is 0x20 bytes: +0 magic 0x53484254 ("TBHS"), +4 used, +8 allocated-from-tail flag, +0xC align,
+// +0x10 block size, +0x14 user pointer, +0x18 payload size; the block size is repeated in the last word of the block.
+// 0x254F80: heap spans from _end (0x3BE71C, also the end of DBZP.BIN) up to 0x1EFB000; stores start/end/size.
+Heap_Create = 0x00254F80; // type:func
+Heap_Init = 0x002554B8; // type:func
+// 0x254E30(block, size): writes a free-block header + trailer.
+Heap_InitFreeBlock = 0x00254E30; // type:func
+// 0x254E68: writes a used-block header (used=1, align, user pointer aligned up).
+Heap_InitUsedBlock = 0x00254E68; // type:func
+// 0x254F10 / 0x254F48: step to previous (via trailer size) / next (via +0x10) block, NULL at heap bounds.
+Heap_PrevBlock = 0x00254F10; // type:func
+Heap_NextBlock = 0x00254F48; // type:func
+// 0x254FE0: walks all blocks looking for used && block->userPtr == ptr.
+Heap_FindBlock = 0x00254FE0; // type:func
+// 0x2550F8 / 0x2551E0: first-fit search forward from gHeapStart[i] / backward from gHeapEnd[i].
+Heap_FindFreeFromHead = 0x002550F8; // type:func
+Heap_FindFreeFromTail = 0x002551E0; // type:func
+// 0x255250(size, align, fromTail, heap): finds a free block, splits it if the remainder is > 0x80, marks it used.
+Heap_AllocBlock = 0x00255250; // type:func
+// 0x255380(block): marks free and merges with free neighbours.
+Heap_FreeBlock = 0x00255380; // type:func
+// 0x2554D8(size, align, fromTail, heap) -> user pointer (block+0x14) or NULL. 257 call sites; heap==2 means "any".
+Heap_Alloc = 0x002554D8; // type:func
+// 0x255508(ptr): Heap_FindBlock then Heap_FreeBlock. 309 call sites.
+Heap_Free = 0x00255508; // type:func
+gHeapStart = 0x002FF080; // size:0x8
+gHeapEnd = 0x002FF088; // size:0x8
+gHeapSize = 0x002FF090; // size:0x8
+
+// --- Battle-side memory pools (the f1A71B8(f1A7240(), ptr) idiom) ----------------------------
+// gBtlPool points at a 0x9C struct: 9 slots of {base, cur, size, used} (0x10 each), +0x90 arena memory,
+// +0x94 current slot id, +0x98 bitmask of slots that are bump arenas (bit slot+1); BtlPool_Init always sets it to 0x3FE, i.e. every slot.
+// 0x1A7110(slot, size): rounds size up to 32; bump-allocates if the slot is an arena, else Heap_Alloc(size, 0x20, 0, 2).
+BtlPool_Alloc = 0x001A7110; // type:func
+// 0x1A71B8(slot, ptr): Heap_Free(ptr) only when the slot is NOT an arena and ptr != NULL.
+BtlPool_Free = 0x001A71B8; // type:func
+// 0x1A71F8(slot): rewinds an arena slot (cur = base, used = 0).
+BtlPool_Reset = 0x001A71F8; // type:func
+BtlPool_SetCurrent = 0x001A7230; // type:func
+BtlPool_GetCurrent = 0x001A7240; // type:func
+// 0x1A7018 / 0x1A70C0: allocate + set mask 0x3FE + carve arenas / free everything.
+BtlPool_Init = 0x001A7018; // type:func
+BtlPool_Term = 0x001A70C0; // type:func
+BtlPool_AlignUp32 = 0x001A75E0; // type:func
+gBtlPool = 0x002FEAE0; // size:0x4
+
+// --- Random -------------------------------------------------------------------------------
+// 0x254C38 is MT19937 genrand (624-word state, tempering constants 0x9D2C5680 / 0xEFC60000), except that the refill
+// lacks the reference code's second loop (kk = 227..622), so the output is not a true MT19937 sequence. See src/sys/rand.c.
+Rand_Next = 0x00254C38; // type:func
+// 0x254DE8(n): n ? Rand_Next() % n : 0. 263 call sites.
+Rand_Range = 0x00254DE8; // type:func
+// 0x254D70: seeds libc rand from a clock value, takes 4 words from it and seeds the twister by array.
+Rand_Init = 0x00254D70; // type:func
+gRandState = 0x0031DBB0; // size:0x9C0
+gRandIndex = 0x002FF060; // size:0x4
+// 0x11F880(lo, hi): float in [lo, hi] using the VU0 R register generator (0x11F830 returns the 0..1 fraction).
+Rand_FloatRange = 0x0011F880; // type:func
+Rand_Float01 = 0x0011F830; // type:func // guess
+
+// --- Intrusive list / fixed-capacity queue --------------------------------------------------
+// list = {head, tail, count}; node = {prev, next, ...}
+List_Init = 0x002558D8; // type:func
+List_GetHead = 0x002558E8; // type:func
+List_GetNext = 0x00255C20; // type:func
+List_PushBack = 0x00255978; // type:func
+// queue = {capacity, nodes, freeList, head, used}; node = {next, value}. `used` counts pool nodes handed out so far,
+// not queued items. The doubly linked list here is separate from the singly linked SList_* (config/symbols/sys_util.txt).
+Queue_Init = 0x00255F88; // type:func
+Queue_Clear = 0x00256028; // type:func
+Queue_Push = 0x00256038; // type:func
+Queue_Peek = 0x002560A0; // type:func
+Queue_Pop = 0x002560B8; // type:func
+Queue_Count = 0x002560F0; // type:func
+
+// --- Load jobs (queue of objects whose +4 callback is polled once per frame) -----------------
+Job_Init = 0x00263490; // type:func
+Job_Clear = 0x00263478; // type:func
+// 0x263508: peeks the queue head, calls head->func(head); pops when it returns 1; returns 0 when the queue is empty and 1 when a job was stepped.
+Job_Run = 0x00263508; // type:func
+// 0x263558(job): pushes; if it is the only entry calls job->func once immediately.
+Job_Push = 0x00263558; // type:func
+// 0x2635C8: a complete frame loop (BeginFrame, Pad_Update, Job_Run, EndFrame, Dma_Flush) that runs until the jobs are done.
+Load_RunBlocking = 0x002635C8; // type:func
+gJobQueue = 0x002FF120; // size:0x4
+
+// --- File layer over CRI ADXF ---------------------------------------------------------------
+// 0x264BD0 = 0x264BF0 + 0x264D70. 0x264BF0 sets root dir "data/", registers "pzs3us.dir", installs the vsync
+// handler, creates the 6 ADXT players and loads AFS partition 0; 0x264D70 loads partition 1.
+File_Init = 0x00264BD0; // type:func
+File_InitAdx = 0x00264BF0; // type:func
+File_LoadPartition1 = 0x00264D70; // type:func
+// 0x264AB8(pt): starts the partition load for gAfsPartitionTbl[pt] {name, ptinfo size, ptinfo buffer}.
+File_LoadPartitionNw = 0x00264AB8; // type:func
+// 0x264B18(pt): spins on the partition status until it reads 3 (read end).
+File_WaitPartition = 0x00264B18; // type:func
+// 0x2654D8(id): id <= 0 -> (pt 0, id); 1..0xD47 -> (pt 1, id-1); >= 0xD48 -> (pt 2, id-0xD48); returns an ADXF handle.
+File_OpenById = 0x002654D8; // type:func
+// 0x265418(id): opens, reads size in sectors, closes, returns sectors << 11.
+File_GetSize = 0x00265418; // type:func
+// 0x264FF8(id, name, buf): blocking read of a whole file (by name when id < 0); allocates (align 0x40) when buf == NULL.
+File_LoadSyncEx = 0x00264FF8; // type:func
+// 0x2654A0(id, buf, x) -> File_LoadSyncEx(id, NULL, buf, x)
+File_LoadSync = 0x002654A0; // type:func
+// Async request queue in gFileReq: +0 state (0..4), +4 current ADXF handle, +8 free list, +0x14 pending list, +0x20 32 nodes of 0x18.
+File_InitRequests = 0x00264F78; // type:func
+// 0x2651C0(id, buf) -> buf: queues a read (allocating sectors*0x800 when buf == NULL).
+File_Request = 0x002651C0; // type:func
+// 0x265298: state machine open -> ReadNw -> wait stat 3 -> close -> next; returns 1 when the pending list is empty.
+File_UpdateRequests = 0x00265298; // type:func
+// 0x265108: stops the current read, frees buffers the queue allocated itself, clears the list.
+File_CancelRequests = 0x00265108; // type:func
+gFileReq = 0x0031E760; // size:0x320
+gAfsPartitionTbl = 0x002C7038; // size:0x24
+// {char *label; int workSize; int ?; void *work; ADXT handle} x 6: "BGM", "MAP", "SE ", "SE ", "VIC", "VIC"
+gAdxPlayerTbl = 0x002C7060; // size:0x78
+
+// --- VSync --------------------------------------------------------------------------------
+// 0x264A58: ++gVsyncCount, then a CRI call, ei. Registered by 0x264A90.
+Vsync_Handler = 0x00264A58; // type:func
+Vsync_InstallHandler = 0x00264A90; // type:func
+// 0x264D98(n): blocks until gVsyncCount >= n (at least one wait), then zeroes the counter. Called by Gfx_EndFrame.
+Vsync_Wait = 0x00264D98; // type:func
+gVsyncCount = 0x002FF128; // size:0x4
+
+// --- ADX stream players ---------------------------------------------------------------------
+// 0x265850(player, fileId, vol, x): start AFS file on gAdxPlayerTbl[player].
+Adx_Play = 0x00265850; // type:func
+// 0x265970 / 0x265B18(player): tail-call the CRI stop / get-status wrappers with the player's handle.
+Adx_Stop = 0x00265970; // type:func
+Adx_GetStat = 0x00265B18; // type:func
+// 0x265728: stops all 6 players and waits until every status is 0.
+Adx_StopAll = 0x00265728; // type:func
+// player 0 wrappers (0x265CC8 = volume 0x40)
+Bgm_PlayEx = 0x00265C98; // type:func
+Bgm_Play = 0x00265CC8; // type:func
+// player (n + 4) wrappers
+Voice_Play = 0x00265EB8; // type:func
+Voice_Stop = 0x00265F40; // type:func
+Voice_GetStat = 0x00265F58; // type:func
+// 0x2614B0(subtitleTbl, baseId, idx): Voice_Play(0, baseId+idx (+0x55C when gSaveData+0x1608 bit0), 0x80) then starts the matching subtitle entry.
+Voice_PlayWithSubtitle = 0x002614B0; // type:func // guess
+
+// --- Pad (libpad2; gPad = 2 pads x 0x1C0) ---------------------------------------------------
+// per pad: +0x100 socket, +0x104 state, +0x108 phase, +0x114 raw 18-byte data, +0x130..0x13C stick floats,
+// +0x148 held, +0x14C previous, +0x150 pressed, +0x154 repeat, +0x160 vibration, +0x19C/+0x1A0 repeat delay/interval.
+Pad_Init = 0x00122940; // type:func
+// 0x122A38: called once per frame by all 6 frame loops; reads both pads, builds the button words (sticks -> bits 16..23).
+Pad_Update = 0x00122A38; // type:func
+Pad_GetSticks = 0x00122E40; // type:func
+Pad_AddVibration = 0x00122E88; // type:func // guess
+Pad_SendActuator = 0x00122F10; // type:func // guess
+Pad_Reset = 0x00122FA0; // type:func
+// 0x2577F8(delay, interval): writes +0x19C/+0x1A0 of both pads.
+Pad_SetRepeat = 0x002577F8; // type:func
+gPad = 0x00333800; // size:0x380
+
+// --- Sound effects (SOUNDS.IRX over SIF RPC) ------------------------------------------------
+// gSndMgr -> 0x2A8 bytes: 8 bank slots of 0x4C, +0x260 a 0xA4800-byte transfer buffer. Banks are addressed by a bit mask.
+Snd_Init = 0x00124938; // type:func
+// 0x123FE0: allocates gSndRpc (0x1EC) and loops binding RPC id 0x2000004.
+Snd_RpcInit = 0x00123FE0; // type:func
+Snd_Update = 0x00124A70; // type:func
+// 0x1245F0(mask) -> slot index (bit position); 0x1252D8(mask) -> slot has data.
+Snd_BankIndex = 0x001245F0; // type:func
+Snd_IsBankLoaded = 0x001252D8; // type:func
+Snd_LoadBank = 0x00124B50; // type:func
+// 0x124D70(mask, fileId): File_LoadSync, Snd_LoadBank(mask, data, 1), Heap_Free.
+Snd_LoadBankFile = 0x00124D70; // type:func
+Snd_UnloadBank = 0x00124DC0; // type:func
+// 0x124F68(mask, id) -> 0x124F88(mask, id, 0x40, 0, 0). 472 call sites (428 from DBZP.BIN).
+Snd_PlaySe = 0x00124F68; // type:func
+Snd_PlaySeEx = 0x00124F88; // type:func
+gSndMgr = 0x002FF18C; // size:0x4
+gSndRpc = 0x002FF188; // size:0x4
+
+// --- Top-level game state -------------------------------------------------------------------
+// 0x25DE68: allocates the 0x7FC "progress" struct (+0x14 flags, +0x18 current mode 1..70) used by DBZP.BIN's dispatcher.
+Progress_Init = 0x0025DE68; // type:func
+gProgress = 0x002FF10C; // size:0x4
+// 0x263240 / 0x2630E8 / 0x263198: 0x70 struct holding the always-loaded files (ids 5, 2, 3, 4) and their sizes.
+Common_Init = 0x00263240; // type:func
+Common_LoadBoot = 0x002630E8; // type:func
+Common_Reload = 0x00263198; // type:func // guess
+gCommonRes = 0x002FF11C; // size:0x4
+// 0x266608: allocates a 0x4000 struct; +0x1608 bit0 selects the alternate voice set, +0x169C/+0x16A0 are screen X/Y offsets.
+Save_Init = 0x00266608; // type:func // guess
+gSaveData = 0x002FF28C; // size:0x4
+// 0x125CF0: plays "zs3usop.pss" + "zs3usop.adx" (progress mode 2). 0x125D50 is its frame loop.
+Movie_PlayOpening = 0x00125CF0; // type:func
+Movie_Run = 0x00125D50; // type:func // guess
+// gFade: 3 entries of 0x60. 0x252DA8(idx, dir, seconds) starts one; 0x252D78(idx) polls it.
+Fade_Init = 0x00252BE8; // type:func // guess
+Fade_Start = 0x00252DA8; // type:func // guess
+Fade_IsDone = 0x00252D78; // type:func // guess
+gFade = 0x0031C670;
+
+// --- Battle scene ---------------------------------------------------------------------------
+// 0x12BD10: work->0x19F8 = 1; Battle_Init; Battle_Loop; Battle_Term; work->0x19F8 = 0. Third call of Game_Main's loop.
+Battle_Main = 0x0012BD10; // type:func
+Battle_Init = 0x0012B5E0; // type:func
+// 0x12BBD0: the in-battle frame loop (see overview).
+Battle_Loop = 0x0012BBD0; // type:func
+Battle_Term = 0x0012B650; // type:func
+// 0x12B570: called by Battle_Init and again whenever flag 0x8000 of work->0x19F0 is set (rematch).
+Battle_Restart = 0x0012B570; // type:func // guess
+// 0x12B6E0: per-frame simulation; returns non-zero when the frame should be drawn normally.
+Battle_Update = 0x0012B6E0; // type:func
+// 0x12B7F8 draws one view; 0x12B9C0 is the same sequence with the scene passes run for views 0 and 1.
+Battle_Draw = 0x0012B7F8; // type:func
+Battle_DrawSplit = 0x0012B9C0; // type:func // guess
+// 0x126EC8: returns &gBattleWork (205 call sites). 0x126FF0 returns the same pointer; +0x1938 and +0x1980 are sub-structs.
+Battle_GetWork = 0x00126EC8; // type:func
+Battle_GetSetup = 0x00126FF0; // type:func // guess
+// 0x12AB38: work->0x8 (compared against 1..7 to pick state tables); 0x12AB10: work->0x24 == 1 (selects Battle_DrawSplit).
+Battle_GetMode = 0x0012AB38; // type:func // guess
+Battle_IsSplitScreen = 0x0012AB10; // type:func // guess
+gBattleWork = 0x00331DC8; // size:0x1A00
+
+// Battle sequence state machine. gBtlSeq -> 0x12C struct: +0 state index, +4 state argument, +0x104 state table.
+// Table entry (0x18): {enter, preUpdate, update (returns next state), exit, extra, arg}. 7 states; 99 = finished.
+BtlSeq_Init = 0x00216C28; // type:func
+BtlSeq_Reset = 0x00216B48; // type:func
+BtlSeq_Term = 0x00216C68; // type:func
+BtlSeq_FirstState = 0x00216AC0; // type:func
+BtlSeq_Call = 0x00216AF8; // type:func
+BtlSeq_PreUpdate = 0x00216C90; // type:func
+BtlSeq_Update = 0x00216CC8; // type:func
+BtlSeq_CallExtra = 0x00216E80; // type:func
+BtlSeq_GetState = 0x00216E20; // type:func
+gBtlSeq = 0x002FEB38; // size:0x4
+gBtlSeqTblDefault = 0x002C6070; // size:0xA8
+gBtlSeqTblMode1 = 0x002C6118; // size:0xA8
+gBtlSeqTblMode5to7 = 0x002C61C0; // size:0xA8
+
+// Fighters. gBtlChars -> {count, array}; elements are 0x1600 bytes.
+BtlChar_GetCount = 0x001DC168; // type:func // guess
+BtlChar_Get = 0x001DC178; // type:func // guess
+gBtlChars = 0x002FEB14; // size:0x4
+// 0x1DABE8(chr, bit) / 0x1DAC78(chr, bit): set / test a bit in the per-character flag arrays at +0x1085.. (837 / 823 call sites).
+BtlChar_SetFlag = 0x001DABE8; // type:func // guess
+BtlChar_TestFlag = 0x001DAC78; // type:func // guess
+// 0x2499B0(i): gBtlObjTbl[i], a 12-entry pointer table rebuilt by Gfx_BeginFrame's callee 0x248F38.
+BtlObj_Get = 0x002499B0; // type:func // guess
+gBtlObjTbl = 0x0031C640; // size:0x30
+
+// --- Vector maths (hand-written VU0 macro-mode routines, 0x121E18-0x1222xx) ------------------
+Vec4_Set = 0x00121E28; // type:func
+Vec4_Copy = 0x00121FA8; // type:func
+Vec4_Add = 0x00121EA8; // type:func
+Vec3_Add = 0x00121EC0; // type:func
+Vec4_Sub = 0x00121ED8; // type:func
+Vec3_Sub = 0x00121EF0; // type:func
+Vec4_Scale = 0x00121F38; // type:func
+Vec3_Scale = 0x00121F50; // type:func
+Mtx_MulVec4 = 0x00121FD0; // type:func
+Vec3_Dot = 0x00122088; // type:func
+Vec3_Cross = 0x001220B0; // type:func
+// emitted as raw .word by the disassembler; instruction count and first/last ops match a normalize / length routine.
+Vec3_Normalize = 0x00121E50; // splat emits this VU0 routine as raw words, so no type:func // guess
+Vec3_Length = 0x001221B8; // splat emits this VU0 routine as raw words, so no type:func // guess
+Mtx_StoreIdentity = 0x00120098; // type:func // guess
+
+// --- UI animation ("mc_" clips / "fl_" frame labels) ----------------------------------------
+// 0x10D8B0(obj, clipName, labelName, out8): strcmp search through the clip table then its label table (983 call sites).
+Flash_FindLabel = 0x0010D8B0; // type:func // guess
+// 0x10D4F0(obj, data, arg): clears the 0x2C object and allocates its 0x18 / 0xC / 8 byte sub-objects.
+Flash_Create = 0x0010D4F0; // type:func // guess
+// 0x10A028(out, base, hdr): turns word offsets in a resource header and its 0x40-byte entries into pointers (545 call sites).
+Res_RelocateOffsets = 0x0010A028; // type:func // guess
+
+// --- Empty stubs left from debug builds ------------------------------------------------------
+// both are called in pairs around every draw pass with an RGBA constant (0x80FF4040 ...): CPU/GPU profiler bars.
+Dbg_ProfMark = 0x00263028; // type:func // guess
+Dbg_ProfColor = 0x00263030; // type:func // guess
+
+// --- Heap, added while decompiling src/sys/heap.c ---------------------------------------------
+// 0x254E28(block): returns block + 0x20, the first byte after the header.
+Heap_BlockData = 0x00254E28; // type:func
+// 0x255078 / 0x255168 (size, heap): Heap_FindFreeFromHead/Tail on one heap, or on each heap in turn when heap == 2.
+Heap_SearchFromHead = 0x00255078; // type:func
+Heap_SearchFromTail = 0x00255168; // type:func
+// 0x255728: empty function; its only caller is Heap_Free when the pointer is not a live block (stripped debug report).
+Heap_ReportBadFree = 0x00255728; // type:func // guess
+// 0x256158(v): (-(v & 3)) & 3, bytes needed to round v up to a multiple of 4. 0x256128(v): v & 3.
+Mem_Align4Pad = 0x00256158; // type:func
+Mem_Align4Rem = 0x00256128; // type:func
+// 0x255548(value, flag) calls the two one-line setters at 0x255570 / 0x255578. The globals they write are cleared by
+// Heap_Init and never read anywhere in either binary, so what they were for is unknown.
+Heap_SetDebug = 0x00255548; // type:func // guess
+Heap_SetDebugValue = 0x00255570; // type:func // guess
+Heap_SetDebugFlag = 0x00255578; // type:func // guess
+gHeapDebugValue = 0x002FF20C; // size:0x4 // guess
+gHeapDebugFlag = 0x002FF210; // size:0x1 // guess
+gHeapDebugUnused = 0x002FF214; // size:0x4 // guess
+// 0x255580 / 0x255600 / 0x255690: walk every block of both heaps summing dataSize of free blocks / of used blocks /
+// keeping the largest free dataSize. 0x255710: gHeapSize[0] + gHeapSize[1].
+Heap_GetFreeSize = 0x00255580; // type:func
+Heap_GetUsedSize = 0x00255600; // type:func
+Heap_GetLargestFree = 0x00255690; // type:func
+Heap_GetTotalSize = 0x00255710; // type:func
+// 0x255730..0x2557A8: one-line getters returning gHeapStart[i], gHeapEnd[i], gHeapSize[i] and two unnamed per-heap tables.
+Heap_GetStart = 0x00255730; // type:func
+Heap_GetEnd = 0x00255748; // type:func
+Heap_GetSize = 0x00255760; // type:func
+Heap_GetUnk70 = 0x00255778; // type:func // guess
+Heap_GetUnk78 = 0x00255790; // type:func // guess
+// Two per-heap int tables right before gHeapStart, initialised to {0, 0} and {2, 0}. Only the two uncalled getters
+// above read them, so their meaning is unknown.
+gHeapUnk70 = 0x002FF070; // size:0x8
+gHeapUnk78 = 0x002FF078; // size:0x8

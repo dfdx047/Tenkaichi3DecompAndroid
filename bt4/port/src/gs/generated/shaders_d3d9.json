@@ -1,0 +1,101 @@
+{
+  "source_sha256": {
+    "alphakey.frag": "d5bbdb44c879bf72a205cbc26707db44e3ae6de7ffbe97b4e9ed56dfd8427bc2",
+    "avg.frag": "052d84fce22da90cfd7d3eaea87e34e0b99126b21f64b97da71d769e3cefc464",
+    "dclut.frag": "1d28c6df9af61c003fd293d26aeedbc775a0cecaf8e53f12a37956d748e7d2df",
+    "fx.vert": "793c060e4086765c9a98de91eb3647113f896153d34fb952190ce846dc7c8b1b",
+    "grade.frag": "11e7b5a45b3018020bdfde9f1f0dc45aee2cee9f2344fc8bcf6ae8d851f4f43b",
+    "gs.frag": "c168b34977cb6240149c20867ff5b3203e67601850f84e19283b8e822180698b",
+    "gs.vert": "2823d430a36db73f5aa4dd6b6bbc34eb3ccf5438937820573a0eabc27dd72f2a",
+    "outline.frag": "7cc526bb6f2689e5e5f070d20b0e75cddc3148a6d87941707ec06879771d756d",
+    "vu0.vert": "99b3dec435e0202247b0dbf5edd577321803ee000381307dfe07a5cb5ccc7841",
+    "vu4.vert": "e6a76cfcae39d10b10a039c88700b17d69b374fca1ab124903729ea1627c8a7a",
+    "vu6.vert": "ede902d15fedbaf21f0b5804481ecbe87262172ac7629198e94967a00c9f7058"
+  },
+  "generator_sha256": "5b945b67a936f5417c0e65b6d37ec5cb7dca9b00d00f805932b331c63d434378",
+  "header_sha256": "8a6b953d8cf8d62ab2b25070b28d8fa97d6bf6a69bf767b4ab2b368cd93892e2",
+  "spv_sha256": {
+    "gs.vert": "90128f47106627bfb227b81a481179f2745f59d34b1027000bf1e182f76e95fb",
+    "gs.frag": "83b902bb2fa77cfc99a09cd27cc7e1face565541a453e6a8167d659dcc834023",
+    "gsnz.frag": "abc2bbe935ee8c30493ffb8f5e5258f1ff097a4a2b9fa96eb0547c5939d8e918",
+    "gswb.frag": "451496b1565f56160f528ff3fb1650622de1bfad6a66cd359440a1da45632200",
+    "vu0.vert": "272e252cbe44d14bf738516c01df6ef1c400c1fbfadd0b50a9183154c87efb71",
+    "vu4.vert": "ebfad4ef4e3ad7aaa02733ef88d4a2eb48f57d9f6775ce392f31ab95a14401ab",
+    "vu6.vert": "b1ba44b470eec68d2359b230a58b0fa0d10b023c6b6cabdd177c124090fe3539",
+    "fx.vert": "a968c60d2b6bbb96a6b5f8282b9e4b52f74e015de6f49ba5f2a8598bce1d6ca1",
+    "outline.frag": "f309bdfbf779da02549d496dab3b45556c18e0d16b2be74359f47d17f2f99425",
+    "alphakey.frag": "221ad6437b80ff3ef3dbfe53d3670842c993f58ae703a3c17e1aab47757ace9f",
+    "dclut.frag": "99d584df3317bc1b8f9a3fef72499e240c9b0781bb8098a6143b103c2d215e5c"
+  },
+  "shaders": [
+    {
+      "shader": "alphakey.frag",
+      "compiled": true,
+      "bytes": 848,
+      "sha256": "de96984595298241a98ea6be55b6efc1d876ed6f66f9cec1645d7b7ba4012294"
+    },
+    {
+      "shader": "dclut.frag",
+      "compiled": true,
+      "bytes": 876,
+      "sha256": "5995b1af764aedccd2d212c5cb12dbc6aca61f2c2ce4b822b97a7ece389c925f"
+    },
+    {
+      "shader": "fx.vert",
+      "compiled": true,
+      "bytes": 320,
+      "sha256": "8c0eccbd508d36a0f5cdff1884bba14d3a2d530d4db24180bd31624124738035"
+    },
+    {
+      "shader": "gs.frag",
+      "compiled": true,
+      "diagnostics": "C:\\Users\\ygonzalezgarcia\\Documents\\Codex\\2026-10-18\\quiero-que-me-ayudes-a-solucionar-2\\gs.frag(106,45-78): warning X4121: gradient-based operations must be moved out of flow control to prevent divergence. Performance may improve by using a non-gradient operation\n\u0000",
+      "bytes": 3608,
+      "sha256": "1743533b2f713bd2043d59061f32cf2c3a74d643b4d2d8326d345c1c2553d587"
+    },
+    {
+      "shader": "gs.vert",
+      "compiled": true,
+      "bytes": 408,
+      "sha256": "a183b3f4a59acd0a1168fd6815b9622c8344afc823ef13ace9b2ed66d0c29ec7"
+    },
+    {
+      "shader": "gsnz.frag",
+      "compiled": true,
+      "diagnostics": "C:\\Users\\ygonzalezgarcia\\Documents\\Codex\\2026-10-18\\quiero-que-me-ayudes-a-solucionar-2\\gsnz.frag(104,45-78): warning X4121: gradient-based operations must be moved out of flow control to prevent divergence. Performance may improve by using a non-gradient operation\n\u0000",
+      "bytes": 3336,
+      "sha256": "46c462820a99a877de45ab7f523684ccde8995762d1a81e1fe3e5bddacd5640c"
+    },
+    {
+      "shader": "gswb.frag",
+      "compiled": true,
+      "diagnostics": "C:\\Users\\ygonzalezgarcia\\Documents\\Codex\\2026-10-18\\quiero-que-me-ayudes-a-solucionar-2\\gswb.frag(138,45-78): warning X4121: gradient-based operations must be moved out of flow control to prevent divergence. Performance may improve by using a non-gradient operation\n\u0000",
+      "bytes": 4772,
+      "sha256": "9b1d1db344cc23a6e7d9d1c11a6cedd12928eb22cb34a8914be0ab5bff5084ed"
+    },
+    {
+      "shader": "outline.frag",
+      "compiled": true,
+      "bytes": 7016,
+      "sha256": "ba0a68180d8b2e47fa60da3d027ac78680491d4bd3191c23ef0a27d9e1afb16d"
+    },
+    {
+      "shader": "vu0.vert",
+      "compiled": true,
+      "bytes": 2464,
+      "sha256": "3e2d57cf311790266f30701997cfe69752d3b1801052c620c4a5b9ddbaeaea83"
+    },
+    {
+      "shader": "vu4.vert",
+      "compiled": true,
+      "bytes": 924,
+      "sha256": "692d20dc90147fd643d46a161876a2c429f18648c6d24bc5b51d02b6cbb11459"
+    },
+    {
+      "shader": "vu6.vert",
+      "compiled": true,
+      "bytes": 1024,
+      "sha256": "f4b58cbaad1b3ea63ef2df3ad796d874b21bc529e1713def0649f05357e25cf6"
+    }
+  ]
+}

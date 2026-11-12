@@ -1,0 +1,65 @@
+// src/battle/eft_d.c = 0x13A9D0..0x13C300, src/battle/eft_d_b.c = 0x13C300..0x13EA00. All names are guesses from
+// structure and callers.
+// --- End of the stage surface module (eft_c.txt: EftSurf_*, work block gEftSurf): triangle output ---
+// 0x13A9D0(poly, unused, tex pair, fog, zBias): clips against the five planes, projects, queues every fan
+// triangle in the ordering table (once, or twice with fog). Caller: EftSurf_DrawMeshes (0x138BE0).
+EftSurf_DrawPolyOtClipped = 0x0013A9D0; // type:func // guess
+// 0x13B0D0 / 0x13B108 / 0x13B140(vector by value): copy into the parameter block, work + 0x12C0 / 0x12D0 / 0x12E0
+// (colorA, colorB, lightDir of EftSurfParam). No caller (debug menu, inferred).
+EftSurf_SetColorA = 0x0013B0D0; // type:func // guess
+EftSurf_SetColorB = 0x0013B108; // type:func // guess
+EftSurf_SetLightDir = 0x0013B140; // type:func // guess
+// 0x13B178(f): work + 0x12F4 (animFrames) = (int)f. 0x13B188(f): work + 0x12F0 = f. 0x13B198: &work->0x12C0 or NULL.
+// No caller.
+EftSurf_SetAnimFrames = 0x0013B178; // type:func // guess
+EftSurf_SetParam30 = 0x0013B188; // type:func // guess
+EftSurf_GetParam = 0x0013B198; // type:func // guess
+// 0x13B1B0(tri, unused, tex pair, fog, zBias): the unclipped version: skipped when all three vertices are off
+// screen. No caller.
+EftSurf_DrawTriOt = 0x0013B1B0; // type:func // guess
+// 0x13B908: the same packet from separate screen / colour / st pointers. No caller.
+EftSurf_DrawTriOtEx = 0x0013B908; // type:func // guess
+// 0x13BF38: the same triangle sent at once with Dma_BeginDirect, pass i through GS context i
+// (callers EftSurf_DrawReflectTri 0x139A40, EftSurf_DrawReflectTriClipped 0x139C40).
+EftSurf_DrawTriDirect = 0x0013BF38; // type:func // guess
+// --- Stage-change transition, first half (eft_e.txt has the task: EftBurst_Init / Update / Draw / Start) ---
+// Draw callbacks stored in particle + 0x58: camera-facing quad with a life fade / quad with per-axis scale,
+// rotation and tint / two-corner sprite.
+EftBurst_DrawQuad = 0x0013C300; // type:func // guess
+EftBurst_DrawQuadRot = 0x0013C638; // type:func // guess
+EftBurst_DrawSprite = 0x0013CA80; // type:func // guess
+// 0x13CDE8(model): turns the file offsets of the model into pointers once (flag at +0x14). Caller EftBurst_Start.
+EftBurst_RelocateModel = 0x0013CDE8; // type:func // guess
+// GS register packets before / after the model, and a full-screen sprite that sets the frame buffer's alpha plane.
+EftBurst_PutModelEnv = 0x0013CE90; // type:func // guess
+EftBurst_PutModelEnvEnd = 0x0013CFF8; // type:func // guess
+EftBurst_ClearAlphaPlane = 0x0013D098; // type:func // guess
+// 0x13D230(model, unused): draws the model's triangles around the camera. Caller EftBurst_Draw.
+EftBurst_DrawModel = 0x0013D230; // type:func // guess
+// 0x13DB90(tex, x, y): uploads a texture (func_0010A288) unless it is the current one (work + 0x230).
+EftBurst_SetTexture = 0x0013DB90; // type:func // guess
+// 0x13DBC8: first of the 350 particles whose life is 0.
+EftBurst_AllocPtcl = 0x0013DBC8; // type:func // guess
+// Particle initialisers, called by EftBurst_Update at fixed frames; each stores its update / draw callback.
+EftBurst_InitSpark = 0x0013DC08; // type:func // guess
+EftBurst_InitStreak = 0x0013DDC0; // type:func // guess
+EftBurst_InitFlash = 0x0013E0B8; // type:func // guess
+EftBurst_InitRing = 0x0013E178; // type:func // guess
+EftBurst_InitGlow = 0x0013E248; // type:func // guess
+EftBurst_InitDebris = 0x0013E308; // type:func // guess
+// Update callbacks stored in particle + 0x54; return 0 when the particle ends. 0x13E788 is referenced nowhere.
+EftBurst_UpdateFlash = 0x0013E510; // type:func // guess
+EftBurst_UpdateStreak = 0x0013E598; // type:func // guess
+EftBurst_UpdateSpark = 0x0013E6F8; // type:func // guess
+EftBurst_UpdateMove = 0x0013E788; // type:func // guess
+EftBurst_UpdateRing = 0x0013E7F8; // type:func // guess
+EftBurst_UpdateGlow = 0x0013E8D0; // type:func // guess
+EftBurst_UpdateDebris = 0x0013E950; // type:func // guess
+// gp 0x2FE9C4: work block of the surface module (0x1380 bytes, eft_c.c).
+gEftSurf = 0x002FE9C4; // size:0x4 // guess
+// gp 0x2FE9C8: work block of the transition (frame counter, 350 particles; allocated by EftBurst_Init).
+gEftBurst = 0x002FE9C8; // size:0x4 // guess
+// gp 0x2FE9CC: angle in degrees advanced by a random 0..63 for every streak created, wrapped to -180..180.
+gEftBurstStreakAngle = 0x002FE9CC; // size:0x4 // guess
+// 0x31BE60: static state of the transition (task list, texture pack, camera animation, model, requests).
+gEftBurstRes = 0x0031BE60; // size:0x18 // guess

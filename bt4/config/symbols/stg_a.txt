@@ -1,0 +1,160 @@
+// Battle stage, first part (src/battle/stg_a.c = 0x23FB20..0x242D28, include/battle/stg_a.h).
+// gBtlStage (0x2FEBE0) and gBtlStageFxRes (0x2FEBF4, the "MEF0" block bound here) are named in stg_b.txt;
+// BtlStage_IsReady (0x23FBF8, also in this range) is named in btl_scene.txt. They are not repeated here.
+
+// Offset tables of the stage file. 0x23FB20(t): once, entries[i] += t (count at +8, done flag at +0xC, entries
+// from +0x10). 0x23FB70(t, i): entry i or 0. 0x23FB98(t): count. Callers: the stage model code 0x115170..0x115478.
+StgOfsTable_Relocate = 0x0023FB20; // type:func
+StgOfsTable_Get = 0x0023FB70; // type:func
+StgOfsTable_GetCount = 0x0023FB98; // type:func
+// 0x23FBA0(t): once, the path list pointer (+0xC) and each path's point pointer (+4 of 0x10-byte entries) += t.
+// Only caller: BtlStage_BindPaths.
+StgPathTable_Relocate = 0x0023FBA0; // type:func
+
+// The stage object. 0x23FC40(): flags = 0, bind the file if not bound, all objects whole, then the model / rigid
+// body / ambience resets. 0x23FC80(stage, arg): gBtlStage = stage, model + rigid init, then Reset; only caller
+// 0x115170. 0x23FCD8(): rigid term, gBtlStage = NULL, ambience stop, model term; callers Battle term, the loader.
+BtlStage_Reset = 0x0023FC40; // type:func
+BtlStage_Init = 0x0023FC80; // type:func
+BtlStage_Term = 0x0023FCD8; // type:func
+
+// A stage viewer's helpers: none has a caller in the main executable or the menu overlay. They keep three words
+// of state (0x2FEBE4 / E8 / EC), request and free the stage file, and 0x23FD28 copies one of six fixed
+// (position, zero vector) pairs picked with rand() % 6. Names are guesses from what they touch.
+StgDbg_SetState = 0x0023FD00; // type:func // guess
+StgDbg_Bind = 0x0023FD08; // type:func // guess
+StgDbg_PickRandomPlace = 0x0023FD28; // type:func // guess
+StgDbg_GetState = 0x0023FDA0; // type:func // guess
+StgDbg_ClearState = 0x0023FDA8; // type:func // guess
+StgDbg_FreeFile = 0x00240940; // type:func // guess
+StgDbg_Reset = 0x00240990; // type:func // guess
+StgDbg_Unload = 0x002409B8; // type:func // guess
+StgDbg_RequestFile = 0x00240A30; // type:func // guess
+StgDbg_BindFile = 0x00240AA0; // type:func // guess
+
+// Zones: gBtlStage +0x38 count, +0x3C array of 0x40-byte rectangles (centre +0x20, half extents +0x30, x and z).
+// 0x23FDB0(pos): first zone containing pos, -1 if none. 0x23FF78(zone, pos): tries `zone` and its neighbour list
+// (+8 count, +0xC indices) first, then all; 0 if none. 0x240110(i): &zones[i]. 0x240128(): zones[i].+0 = 0.
+// Callers: the stage collision code 0x1AF7B8..0x1B3440, the fighter placement code, BtlCam.
+BtlStage_FindZone = 0x0023FDB0; // type:func
+BtlStage_FindZoneNear = 0x0023FF78; // type:func
+BtlStage_GetZone = 0x00240110; // type:func
+BtlStage_ClearZoneMarks = 0x00240128; // type:func
+
+// Bounds: three floats at *(gBtlStage +0x40). Each getter returns the last value it read while the stage is not
+// ready (BtlStage_IsReady() == 0). 0x23FE70: radius. 0x23FEB0: radius - 100, the limit fighters, AI targets and
+// stage rigid bodies are clamped to (BtlMove_ClampToStage). 0x23FEF8: top (smallest y). 0x23FF38: bottom.
+BtlStage_GetRadius = 0x0023FE70; // type:func
+BtlStage_GetInnerRadius = 0x0023FEB0; // type:func
+BtlStage_GetTop = 0x0023FEF8; // type:func
+BtlStage_GetBottom = 0x0023FF38; // type:func
+
+// Culling for the stage draw. 0x240168(view, out): five view-space plane normals, the view matrix, a projection
+// (only caller: the stage draw 0x115950). 0x2403F8(fr, x, y, z, r): the 8 corners of a cube through both
+// matrices, outcodes, 0 inside / 1 crossing / 2 outside. 0x2405F8(part, fr): bounding sphere against the side
+// planes, same result. Callers of both tests: 0x1156E0.
+StgFrustum_Build = 0x00240168; // type:func
+StgFrustum_TestBox = 0x002403F8; // type:func
+StgFrustum_TestPart = 0x002405F8; // type:func
+// 0x240AC8(a, b): (b - a) / 30 if b - a < 30 else 1. 0x240B00(pos, v): v scaled by the distance from gBtlCamView's
+// position beyond its near plane (0 up to 75, linear to 100). Both only called by the stage draw 0x115A78.
+Stg_FadeRatio = 0x00240AC8; // type:func // guess
+Stg_FadeByCamDist = 0x00240B00; // type:func // guess
+
+// Debris pieces. 0x240AB8(node): node->keyCount == 1 (rigid-body piece). 0x240BD8(part, out): row 3 of the
+// node matrix. 0x240BF8(lo, hi, v): wrap v into lo..hi. 0x240C68 / CD8 / D48: VU0 macro code, multiply the
+// VU0 matrix registers by a rotation about Z / X / Y. 0x240DB8(part, frame, out): key-frame pose of a piece.
+StgNode_IsRigid = 0x00240AB8; // type:func
+StgPart_GetPos = 0x00240BD8; // type:func
+Stg_WrapRange = 0x00240BF8; // type:func
+StgVu_RotateZ = 0x00240C68; // type:func
+StgVu_RotateX = 0x00240CD8; // type:func
+StgVu_RotateY = 0x00240D48; // type:func
+StgPart_Animate = 0x00240DB8; // type:func
+
+// Destructible objects: gBtlStage +0x44 count, +0x48 array of 0x50-byte StgObj.
+// 0x241238(obj, &scale): -1 without type bits 0..2, else the material 0 / 1 / 2 and scale 0.7 (bit 9) or 1.
+// 0x241298(obj): the material. 0x2412C8(out, obj, idx): type bit 29: copies objDefs[0].pos, 1 (the item holder).
+// 0x241308(idx, hitPos, info): break idx and every object whose parent is idx; camera shake and rumble by size.
+// 0x241630(mode): all objects whole (mode != 1, reloading hp / type / parent) or all broken (mode == 1).
+// 0x241818(objId, idx, hitPos): break with sound; the mode-1 hidden item on one rand() draw in 8.
+//   Callers: stage collision 0x1B0E88 (after DamageObj) and 0x1B24B8 (a fighter flying through), EftSweep_AddMark.
+// 0x241958(idx): broken? 0x241980(idx, dmg): hp -= dmg, 1 when <= 0. 0x2419C0(idx): type bits, 0 when broken.
+// 0x2419F8(): per frame from BtlStage_Update: debris animation, rigid bodies, dust and splashes.
+// 0x242A70(obj, idx): hp / type / parent from the stage data. 0x242AC8(idx): &objDefs[idx].
+StgObj_GetDust = 0x00241238; // type:func
+StgObj_GetMaterial = 0x00241298; // type:func
+StgObj_GetItemPos = 0x002412C8; // type:func // guess
+BtlStage_BreakObj = 0x00241308; // type:func
+BtlStage_ResetObjs = 0x00241630; // type:func
+BtlStage_DestroyObj = 0x00241818; // type:func
+BtlStage_IsObjBroken = 0x00241958; // type:func
+BtlStage_DamageObj = 0x00241980; // type:func
+BtlStage_GetObjType = 0x002419C0; // type:func
+BtlStage_UpdateObjs = 0x002419F8; // type:func
+StgObj_LoadDef = 0x00242A70; // type:func
+BtlStage_GetObjDef = 0x00242AC8; // type:func
+
+// 0x241E38(): BtlLoad_RequestStageChange(BtlStage_GetChangeTarget()). Callers: BtlScene_CheckStageChange, the facade.
+BtlStage_RequestChange = 0x00241E38; // type:func
+// Stage paths: gStgPaths = stage file + (header word at +0x60, rounded down to 4). 0x241E90 is empty and
+// 0x241E98 / 0x241EF8 have no caller. 0x241EA0: path count. 0x241EC8(n): 0x10-byte path n (end, points, first).
+BtlStage_BindPaths = 0x00241E58; // type:func
+BtlStage_PathStub = 0x00241E90; // type:func // guess
+BtlStage_ClearPaths = 0x00241E98; // type:func
+BtlStage_GetPathCount = 0x00241EA0; // type:func
+BtlStage_GetPath = 0x00241EC8; // type:func
+BtlStage_GetPath0 = 0x00241EF8; // type:func
+
+// 0x241F10(x0, z0, x1, z1): atan2f of the normalised (x0 - x1, 1, z0 - z1) minus pi, wrapped to -pi..pi.
+Stg_CalcYaw = 0x00241F10; // type:func
+// Binding of the stage file. 0x2425F0(stage): when stage->data is NULL and the file is loaded: data = file +
+// header[+8], "MEF0" block = file + header[+0x4C] unless header[+0x50] is equal, then the three binders.
+// 0x242170(stage, data): 20 offsets to pointers, y and z negated in nine sections. 0x242050(): the MEF0 lists.
+BtlStage_BindMef = 0x00242050; // type:func
+BtlStage_BindData = 0x00242170; // type:func
+BtlStage_BindFile = 0x002425F0; // type:func
+
+// 0x242668(&y): water. env = data +0x14: flags bit 1 -> returns 1, y = env +8; else 0 and 0.
+// 0x2426E0(zone, pos, out): zone of pos, ground point under it through the collision code 0x1B14C0.
+// 0x2427A0(side, pos, rot, alt): start placement (data +0x2C [side], or +0x34 when alt == 1) on the ground.
+// 0x2428B8(pos, rot): the placement at data +0x3C (fighter placement requests 0xF4 / 0xF6 / 0xF7).
+// Both return the zone, which the fighter keeps as its area.
+BtlStage_GetWaterLevel = 0x00242668; // type:func
+BtlStage_ProbeGround = 0x002426E0; // type:func
+BtlStage_GetStartPlace = 0x002427A0; // type:func
+BtlStage_GetPlace = 0x002428B8; // type:func // guess
+
+// The two vectors of the light record (data +0x1C). 0x2429E8 is the one btl_obj.c uses as light direction
+// (stg_b.txt already has a BtlStage_GetLightDir at 0x243310, hence "VecB"); 0x242960 is read by 0x105F30.
+BtlStage_GetLightVecA = 0x00242960; // type:func // guess
+BtlStage_GetLightVecB = 0x002429E8; // type:func // guess
+
+// Sections of the stage data without a known meaning: pointer when the count is positive (0x242B08 takes an
+// index into 0x10-byte entries). The number in the name is the offset of the count. 0x242CC8 = light colours
+// (btl_obj.c).
+BtlStage_GetList40 = 0x00242B08; // type:func // guess
+BtlStage_GetList48 = 0x00242B48; // type:func // guess
+BtlStage_GetList50 = 0x00242B78; // type:func // guess
+BtlStage_GetList90 = 0x00242BA8; // type:func // guess
+BtlStage_GetListA0 = 0x00242BD8; // type:func // guess
+BtlStage_GetList98 = 0x00242C08; // type:func // guess
+BtlStage_GetList60 = 0x00242C38; // type:func // guess
+BtlStage_GetList68 = 0x00242C68; // type:func // guess
+BtlStage_GetList58 = 0x00242C98; // type:func // guess
+BtlStage_GetLightColors = 0x00242CC8; // type:func
+BtlStage_GetList80 = 0x00242CF8; // type:func // guess
+
+// Data.
+gStgDbgState = 0x002FEBE4; // size:0x4 // guess
+gStgDbgUnk = 0x002FEBE8; // size:0x4 // guess
+gStgDbgExternFile = 0x002FEBEC; // size:0x4 // guess
+gStgPaths = 0x002FEBF0; // size:0x4
+gStgHasWater = 0x002FEBF8; // size:0x4
+gStgWaterY = 0x002FEBFC; // size:0x4
+gStgLastRadius = 0x002FF1FC; // size:0x4
+gStgLastTop = 0x002FF200; // size:0x4
+gStgLastBottom = 0x002FF204; // size:0x4
+gStgDbgPlaces = 0x002C6B30; // size:0xC0 // guess
+gStgLastLightVecA = 0x002C6BF0; // size:0x10
+gStgLastLightVecB = 0x002C6C00; // size:0x10

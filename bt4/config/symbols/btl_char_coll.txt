@@ -1,0 +1,54 @@
+// Fighter side of hit resolution: the tail of src/battle/btl_char_hit.c (0x1CA520..0x1CA6D0) and
+// src/battle/btl_char_coll_b.c (0x1CA6D0..0x1CDCA8; the last function, 0x1CDCA8, is in src/battle/btl_char_member.c). All names are guesses from what the matching C does; the evidence is given per group.
+// 0x1CA520: called once per frame by BtlChars_UpdateCollision when nobody is frozen; runs the BtlHit_ steps in order.
+// 0x1CA618(chr): fighter +0xF40 = -1; called per fighter instead of the step while somebody is frozen, and by the step.
+BtlColl_Update = 0x001CA520; // type:func // guess
+BtlColl_UpdateFrozen = 0x001CA618; // type:func // guess
+// 0x1CA628(chr) maps animation ids 0xEC..0xF7 (BtlAnim_GetId) to 0..5; 0x1CA698 is "1..4". The callers (btl_char_hit.c)
+// use the result as the guard kind.
+BtlColl_GetGuardKind = 0x001CA628; // type:func // guess
+BtlColl_IsGuarding = 0x001CA698; // type:func // guess
+// 0x1CA6D0(attacker, victim, slot, techFlags): fills fighter +0xE90 of both, victim reaction 0x22, flags 0x44..0x46 on
+// both, flag 0x128 on the attacker, events 0x2B..0x2D by slot.
+BtlColl_StartThrow = 0x001CA6D0; // type:func // guess
+// 0x1CAB40(chr, yaw): |wrap(pose.rot.y - yaw)| < pi/2. 0x1CAB88(chr, hit, out): unit direction and yaw of a hit.
+BtlColl_IsFacing = 0x001CAB40; // type:func // guess
+BtlColl_GetHitDir = 0x001CAB88; // type:func // guess
+// 0x1CAD68(chr, hit, kind 0..4): positional sound at hit +0x20 and BtlChar_PlayVoice on chr.
+BtlColl_PlayHitSound = 0x001CAD68; // type:func // guess
+// 0x1CAEF0 / 0x1CB100 / 0x1CB288(chr, hit): a blast / strike (slot 0,1) / rush attack (slot 2..4) hits a guarding
+// fighter (guard kind 1..4, not from behind): flag 0x66 / 0x67, BtlMember_Damage(.., 0xC). Dispatched by 0x1CD258.
+BtlColl_GuardBlast = 0x001CAEF0; // type:func // guess
+BtlColl_GuardStrike = 0x001CB100; // type:func // guess
+BtlColl_GuardRush = 0x001CB288; // type:func // guess
+// 0x1CB630 / 0x1CBA68 / 0x1CC588(chr, hit): the same three hit kinds when not guarded (dispatched by 0x1CD320): they
+// write the reaction block at fighter +0xFB0 and call BtlMember_Damage.
+BtlColl_HitByBlast = 0x001CB630; // type:func // guess
+BtlColl_HitByStrike = 0x001CBA68; // type:func // guess
+// Helpers of 0x1CC588: plain rush hit, rush hit on a fighter that does not flinch (reaction 2), catch (0x1D / 0x1E).
+BtlColl_ApplyRushHit = 0x001CBD70; // type:func // guess
+BtlColl_ApplyRushNoFlinch = 0x001CC0F8; // type:func // guess
+BtlColl_StartRushCatch = 0x001CC2A0; // type:func // guess
+BtlColl_HitByRush = 0x001CC588; // type:func // guess
+// Queries the hit detection (0x1B0030) makes, in this order, before a hit lands; argument 0 is the target's object id.
+// Non-zero: ignored / deflected (record flag 0x40) / reflected (0x80) / absorbed (0x20).
+BtlColl_TryDodge = 0x001CC820; // type:func // guess
+BtlColl_TryDeflect = 0x001CCB98; // type:func // guess
+BtlColl_TryReflect = 0x001CCE58; // type:func // guess
+BtlColl_TryAbsorb = 0x001CCFE8; // type:func // guess
+// 0x1CD258 then 0x1CD320(objId, hit): called by the hit detection (0x1AFDB0, 0x1AFE70) when a hit lands.
+BtlColl_TryGuard = 0x001CD258; // type:func // guess
+BtlColl_Hit = 0x001CD320; // type:func // guess
+// 0x1CD420(hit): sound only, called from 0x1B10F0.
+BtlColl_PlayContactSound = 0x001CD420; // type:func // guess
+// 0x1CD558(chr): per fighter at stage 9: ground snap, flags 0xF / 0x11 / 0x12 / 0x1F / 0x20 / 7, hazard damage.
+BtlColl_UpdateGround = 0x001CD558; // type:func // guess
+// 0x1CD9C8: begin-frame pass, zeroes the u64 at +0x1288 and sets +0x1294 = -1; 0x1CD9E8(chr, id) ORs one bit into the
+// u64 by id (0x19..0xD7); 0x1CDBE0 sets +0x1294; 0x1CDBE8(chr, k) sets it to the frames until the animation reaches
+// k * length.
+BtlColl_ClearActionBits = 0x001CD9C8; // type:func // guess
+BtlColl_AddActionBit = 0x001CD9E8; // type:func // guess
+BtlColl_SetUnk1294 = 0x001CDBE0; // type:func // guess
+BtlColl_SetFramesToReach = 0x001CDBE8; // type:func // guess
+// 0x1CDCA8(chr): side 1 only, advances the opponent pool (battle work +0x5A8) through BtlMember_Replace.
+BtlColl_NextPoolMember = 0x001CDCA8; // type:func // guess

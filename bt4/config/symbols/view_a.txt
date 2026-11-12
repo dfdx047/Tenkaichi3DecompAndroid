@@ -1,0 +1,105 @@
+// Menu support code, 0x25C2A8..0x2600B0 (src/battle/view_a*.c). Every name is a guess from what the code does
+// and from the movie-clip names it uses.
+
+// GetWin (view_a.c): the reward window. Its movie has the clips "title_get", "mc_icon_get_N_loop",
+// "mc_pay_num_%d", "mc_text_base_N", and the frame labels "fl_get_in" / "fl_get_out" / "fl_next_get".
+GetWin_Init = 0x0025C2A8; // type:func // guess
+GetWin_Term = 0x0025C610; // type:func // guess
+GetWin_Draw = 0x0025C648; // type:func // guess
+GetWin_Open = 0x0025CC38; // type:func // guess
+GetWin_Close = 0x0025CC70; // type:func // guess
+GetWin_Next = 0x0025CC98; // type:func // guess
+GetWin_IsAnimating = 0x0025CCD0; // type:func // guess
+GetWin_Setup = 0x0025CCE8; // type:func // guess
+gGetWin = 0x002FF0D0; // size:0x4 // guess
+
+// MsgWin (view_a_b.c): the message window; clip "mc_message_text", labels "fl_l_in" / "fl_r_in" / "fl_l_out" /
+// "fl_r_out". MsgWin_SetBoxParam forwards to func_00260140 of the text box module.
+MsgWin_Init = 0x0025CFC0; // type:func // guess
+MsgWin_Term = 0x0025D0C0; // type:func // guess
+MsgWin_Draw = 0x0025D0F8; // type:func // guess
+MsgWin_Open = 0x0025D1B0; // type:func // guess
+MsgWin_Close = 0x0025D1F8; // type:func // guess
+MsgWin_SetText = 0x0025D240; // type:func // guess
+MsgWin_SetSide = 0x0025D258; // type:func // guess
+MsgWin_SetBoxParam = 0x0025D268; // type:func // guess
+gMsgWin = 0x002FF0D8; // size:0x4 // guess
+
+// IconWin (view_a_c.c): a window with a changeable icon texture; labels "fl_in" / "fl_out".
+IconWin_Init = 0x0025D290; // type:func // guess
+IconWin_Term = 0x0025D390; // type:func // guess
+IconWin_Draw = 0x0025D3C8; // type:func // guess
+IconWin_Open = 0x0025D3F0; // type:func // guess
+IconWin_Close = 0x0025D418; // type:func // guess
+IconWin_SetIcon = 0x0025D440; // type:func // guess
+gIconWin = 0x002FF0F0; // size:0x4 // guess
+
+// ChrView (view_a_d.c): the character model viewer. It calls BtlObj_Create(3, ...), BtlObjAnim_PlayModel,
+// OrbitCam_*, BtlStage_Update / StgFx_DrawPreNoCheck / BtlScene_Draw, and loads file 0x590 + chara * 10 + costume.
+ChrView_GetModelFile = 0x0025D468; // type:func // guess
+ChrView_GetCharaInfo = 0x0025D498; // type:func // guess
+ChrView_AllocSlot = 0x0025D4D8; // type:func // guess
+ChrView_FreeSlot = 0x0025D4F8; // type:func // guess
+ChrView_Get = 0x0025D530; // type:func // guess
+ChrView_GetCur = 0x0025D538; // type:func // guess
+ChrView_SetCur = 0x0025D548; // type:func // guess
+ChrView_IsLoading = 0x0025D558; // type:func // guess
+ChrView_SetLoading = 0x0025D568; // type:func // guess
+ChrView_SetupCamera = 0x0025D578; // type:func // guess
+ChrView_StepLoad = 0x0025D638; // type:func // guess
+ChrView_StepLoadStage = 0x0025D850; // type:func // guess
+ChrView_CancelLoad = 0x0025D8D0; // type:func // guess
+ChrView_Hide = 0x0025D948; // type:func // guess
+ChrView_Show = 0x0025D9C0; // type:func // guess
+ChrView_Update = 0x0025DA58; // type:func // guess
+ChrView_IsVisible = 0x0025DC10; // type:func // guess
+ChrView_Init = 0x0025DC20; // type:func // guess
+ChrView_Term = 0x0025DDB0; // type:func // guess
+gChrView = 0x002FF108; // size:0x4 // guess
+
+// TextBox (view_a_f.c): the head of the text box module that continues at 0x2600B0. TextBox_Init clears 0x8C
+// bytes, stores the text file and applies a preset; the setters are named after the fields they write.
+TextBox_Init = 0x0025FE00; // type:func // guess
+TextBox_SetUnk50 = 0x00260010; // type:func // guess
+TextBox_SetUnk80 = 0x00260018; // type:func // guess
+TextBox_SetUnkC = 0x00260020; // type:func // guess
+TextBox_SetRect = 0x00260030; // type:func // guess
+TextBox_SetColor = 0x00260050; // type:func // guess
+TextBox_SetColor2 = 0x00260080; // type:func // guess
+
+// Progress and menu helpers (view_a_e.c). Progress_Init was named before; Progress_ClearSession is what
+// sys/save.c calls "clears the per-session parts of gProgress". FlashAnim_*: per-frame animation of one movie
+// clip. Num_*: numbers drawn with digit clips (Num_ToDigits / Num_CountDigits are used by sys/loading.c).
+// ChrGrid_* / StgGrid_* / BgmList_*: the select-screen grids, their cursor movement and the unlock tests
+// against gSaveData->charaBits / stageBits / bgmBits.
+Progress_ClearSession = 0x0025DF30; // type:func // guess
+FlashAnim_Blink = 0x0025DFF8; // type:func // guess
+FlashAnim_ShowNext = 0x0025E120; // type:func // guess
+FlashAnim_Talk = 0x0025E190; // type:func // guess
+FlashAnim_ShowNext2 = 0x0025E300; // type:func // guess
+FlashAnim_Sheet = 0x0025E370; // type:func // guess
+FlashAnim_Scroll = 0x0025E460; // type:func // guess
+Num_ToDigits = 0x0025E5E8; // type:func // guess
+Num_DrawDigits = 0x0025E728; // type:func // guess
+Num_Pow = 0x0025E828; // type:func // guess
+Num_Draw = 0x0025E868; // type:func // guess
+Num_DrawChild = 0x0025EA50; // type:func // guess
+Num_CountDigits = 0x0025EC78; // type:func // guess
+Num_DrawEx = 0x0025ECC8; // type:func // guess
+ChrGrid_IsSelectable = 0x0025EF98; // type:func // guess
+ChrGrid_MoveRight = 0x0025EFC8; // type:func // guess
+ChrGrid_MoveLeft = 0x0025F048; // type:func // guess
+ChrGrid_MoveDown = 0x0025F0D0; // type:func // guess
+ChrGrid_MoveUp = 0x0025F190; // type:func // guess
+ChrGrid_NextForm = 0x0025F248; // type:func // guess
+ChrGrid_PrevForm = 0x0025F298; // type:func // guess
+ChrGrid_FixCursor = 0x0025F2E8; // type:func // guess
+StgGrid_IsSelectable = 0x0025F380; // type:func // guess
+StgGrid_MoveRight = 0x0025F398; // type:func // guess
+StgGrid_MoveLeft = 0x0025F400; // type:func // guess
+StgGrid_MoveRightWrap = 0x0025F458; // type:func // guess
+StgGrid_MoveDown = 0x0025F4C8; // type:func // guess
+StgGrid_MoveUp = 0x0025F570; // type:func // guess
+ChrGrid_Build = 0x0025F610; // type:func // guess
+StgGrid_ApplyUnlocks = 0x0025FC50; // type:func // guess
+BgmList_ApplyUnlocks = 0x0025FD60; // type:func // guess

@@ -1,0 +1,63 @@
+// Collision primitive library, 0x230B38..0x236190 (src/battle/col_a.c, include/battle/col_a.h). All names are
+// descriptive (no strings in the binary name them); evidence is the matching C unless a line says guess.
+
+// Axis-aligned box helpers; StgAabb_SetEmpty (0x230B10, stg_d.txt) is the first of them. 0x230B38: min = c - h,
+// max = c + h. 0x230BA0 / 0x230C38: grow to contain a point (the first also writes pt.w = 1). 0x230CC8 / 0x230D20 /
+// 0x230D78: (max+min)/2, (max-min)/2, max-min, w = 1. 0x230DB8: max >= min + 1e-6 on all axes (no caller).
+// 0x230E10: point inside, faces included.
+ColBox_SetCenterHalf = 0x00230B38; // type:func
+ColBox_AddPoint = 0x00230BA0; // type:func
+ColBox_AddPointKeepW = 0x00230C38; // type:func
+ColBox_GetCenter = 0x00230CC8; // type:func
+ColBox_GetHalf = 0x00230D20; // type:func
+ColBox_GetSize = 0x00230D78; // type:func
+ColBox_HasVolume = 0x00230DB8; // type:func // guess
+ColBox_ContainsPoint = 0x00230E10; // type:func
+
+// Collision mesh. 0x230E88: node->right == -1. 0x230E98: right == -1 && left == -1 (no caller). 0x230EC0: copies a
+// polygon's three vertices. 0x230F48: polygon by index. 0x230F68: sets the base pointer (called by BtlStage_Init).
+ColNode_IsLeaf = 0x00230E88; // type:func
+ColNode_IsEmptyLeaf = 0x00230E98; // type:func // guess
+ColMesh_GetPolyVerts = 0x00230EC0; // type:func
+ColMesh_GetPoly = 0x00230F48; // type:func
+ColMesh_SetBase = 0x00230F68; // type:func
+
+// Oriented box (0x190 bytes). 0x230F70(obb, center, hx, hy, hz): centre, half extents, eight local corners.
+// 0x231038(obb, mtx): copies the matrix, takes axes and centre from its rows, transforms the corners.
+// Both are called only by BtlObjHit_BuildVolumes (0x24DDF0).
+ColObb_Init = 0x00230F70; // type:func
+ColObb_Update = 0x00231038; // type:func
+
+// 0x231148: closed overlap of two boxes. 0x2311C8: where a ray enters a box (Woo), 0.001 tolerance.
+// 0x231428: segment against box by separating axes (no caller). 0x231590: 0x231148 with the arguments swapped,
+// result as 0 / 1 (the node test of the walks, also called by StgShadow_Cb).
+ColBox_Overlaps = 0x00231148; // type:func
+ColBox_ClipRay = 0x002311C8; // type:func
+ColBox_TestSegment = 0x00231428; // type:func
+ColNode_TestBox = 0x00231590; // type:func
+
+// Walks of a mesh's box tree. 0x2315B8 / 0x231670: collect leaf polygon indices as u16 (no caller of 0x231670).
+// 0x2316D0 / 0x231768(mesh, box, ctx, cb): callback per overlapping leaf, results OR-ed (the stage collision's
+// StgCol_QueryZone is the only caller).
+ColMesh_CollectNode = 0x002315B8; // type:func
+ColMesh_CollectBox = 0x00231670; // type:func
+ColMesh_WalkNode = 0x002316D0; // type:func
+ColMesh_WalkBox = 0x00231768; // type:func
+
+// 0x2317C0(a, b, eps): |a - b| <= eps. 0x2317E0(&s, &t, p1, d1, p2, d2): closest-point parameters of two lines
+// (only called by 0x231F38). 0x231930(a, b): fifteen-axis overlap test of two oriented boxes (called by
+// BtlBodyHit_TestVolumes). 0x231F38(a, b, normal, point, depth): contact of two oriented boxes; no caller, left in
+// assembly.
+Col_NearEq = 0x002317C0; // type:func
+Col_LineLineParams = 0x002317E0; // type:func
+ColObb_Overlaps = 0x00231930; // type:func
+ColObb_Contact = 0x00231F38; // type:func // guess
+
+// .sdata (initialised to 0) and .sbss: the mesh base and the state of the walk in progress.
+gColMeshBase = 0x002FEB90; // size:0x4
+gColWalkCount = 0x002FEB94; // size:0x4
+gColWalkMax = 0x002FEB98; // size:0x4
+gColWalkBuf = 0x002FEB9C; // size:0x4
+gColWalkBox = 0x002FEBA0; // size:0x4
+gColWalkCb = 0x002FEBA4; // size:0x4
+gColWalkCtx = 0x002FF1D0; // size:0x4

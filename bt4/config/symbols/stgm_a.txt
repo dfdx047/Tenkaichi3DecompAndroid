@@ -1,0 +1,74 @@
+// Stage model drawing (src/battle/stgm_a.c = 0x115478..0x116B98), the tail of the stage model code at 0x114C60.
+// Called once per view by the battle draw and by ChrView_Update pass 1: StgModel_Cull(view), then StgModel_Draw(view).
+// 0x115478: draws every animated stage object (animation table gStgAnimTable) with VU1 program 8.
+StgModel_DrawAnims = 0x00115478; // type:func
+// 0x1156E0: recursive walk of the culling tree (eight children per cell); marks the meshes of visible parts.
+StgModel_CullCell = 0x001156E0; // type:func
+// 0x115950: clears the visibility table, culls the tree against the view's frustum, marks the always-drawn parts.
+StgModel_Cull = 0x00115950; // type:func
+// 0x115A78: marks the pieces of falling objects visible and gives them an alpha from age and camera distance.
+StgModel_FadeDebris = 0x00115A78; // type:func
+// 0x115C30: uploads texture n of the stage texture file to block 0x2A00 / CLUT 0x32C0 and selects it (TEX0).
+StgModel_SetTexture = 0x00115C30; // type:func
+// 0x115C98: draws group 6 (program 7, per-mesh matrix and alpha): the debris. Returns 0 when it drew, else its argument.
+StgModel_DrawDebris = 0x00115C98; // type:func
+// 0x115DE0: draws the stage for one view, group by group.
+StgModel_Draw = 0x00115DE0; // type:func
+// GS register packets (FRAME / ZBUF / ALPHA / TEST / TEX1 / FBA / CLAMP / COLCLAMP) queued with Dma_AddData.
+// 0x1165D0 and 0x1169F8 differ only in the TEST value (0x5001B / 0x507FB); 0x116770 sets ZBUF, TEST, FBA for the
+// blended groups; 0x116860, 0x1168E8, 0x116970 set TEST alone (0x507FB, 0x51809, 0x5001B).
+StgModel_SetDrawEnv = 0x001165D0; // type:func
+StgModel_SetBlendEnv = 0x00116770; // type:func // guess
+StgModel_SetTestOpaque = 0x00116860; // type:func // guess
+StgModel_SetTestDebris = 0x001168E8; // type:func // guess
+StgModel_SetTestDefault = 0x00116970; // type:func // guess
+StgModel_SetAnimDrawEnv = 0x001169F8; // type:func
+// Memory card operations (src/battle/stgm_a_b.c, 0x116B98..0x1198D8; proper home src/sys/mcard.c). A layer over
+// Sony libmc: each operation is called once per frame until it returns 1 and does one library call or one
+// sceMcSync poll per call. Callers: the save / load flow at 0x1198D8.. (McFlow_*), McCard_Init from main().
+// The current step of the running operation / back to step 0.
+McCard_GetStep = 0x00116B98; // type:func
+McCard_ResetStep = 0x00116BA0; // type:func
+// Boot: clears both port records, sceMcInit, then starts a blocking-style sceMcGetInfo on port 0.
+McCard_Init = 0x00116BA8; // type:func
+// cmd 10: sceMcGetInfo(port) into the port record (type, free, format), then waits for sceMcSync == 1.
+McCard_GetInfo = 0x00116BE0; // type:func
+// cmd 24: sceMcGetInfo with the three outputs, then sceMcSync(0) (blocking). No callers.
+McCard_GetInfoSync = 0x00116D08; // type:func // guess
+// cmd 25: sceMcGetInfo without outputs + blocking sceMcSync: only the result (card present / changed) is kept.
+McCard_Probe = 0x00116D90; // type:func // guess
+// cmd 11: the same call, polled; returns 1 when the sync finished. No callers.
+McCard_CheckChange = 0x00116E10; // type:func // guess
+// cmd 12: sceMcFormat, polled; returns 1 when it finished without error.
+McCard_Format = 0x00116F30; // type:func
+// cmd 14, 14 steps: mkdir, write icon.sys (built here from the request), write the icon file.
+McCard_CreateSave = 0x00117050; // type:func
+// cmd 15, 20 steps: writes the data file (creating it if needed), checks the written size, then rewrites the
+// icon file when it is missing or its size differs.
+McCard_WriteSave = 0x001177B8; // type:func
+// cmd 16, 6 steps: opens the data file, reads `size` bytes into the caller's buffer, flags same / different size.
+McCard_ReadFile = 0x00117E80; // type:func
+// cmd 17, 10 steps: opens the data file, measures it with seek, allocates a heap block and reads it all. No callers.
+McCard_LoadFile = 0x00118118; // type:func // guess
+// cmd 18, 12 steps: opens and closes the data file, icon.sys and the icon: 1 when all three exist.
+McCard_CheckFiles = 0x00118500; // type:func
+// Builds the directory name and the paths of a save request from a name and an optional number.
+McCardFile_SetNames = 0x00118938; // type:func
+// 1 for the libmc result codes -19..-11, -49..-40, -59..-50 and -79..-70.
+McCard_IsFatalError = 0x00118C60; // type:func // guess
+// cmd 22: sceMcGetDir("*") into the caller's table. No callers.
+McCard_ReadDir = 0x00118CA0; // type:func // guess
+// cmd 23: sceMcGetDir on "BASLUS-21678DBZT3" (maxent -1, no table) / on the request's directory: does the save exist.
+McCard_FindSystemSave = 0x00118DC8; // type:func // guess
+McCard_FindSave = 0x00118EF0; // type:func // guess
+// 16-bit sum over the bytes after the first 8 (odd bytes weigh 256); stores it in the first two words or compares.
+McCard_Checksum = 0x00119010; // type:func
+// cmd 26, 24 steps: measures the three files of a save that already exist and computes the clusters still needed.
+McCard_CalcNeed = 0x001190C8; // type:func // guess
+// State of the layer: the step within the running operation and the operation (MCCARD_CMD_*) that owns it.
+gMcCardStep = 0x002FE918; // size:0x4
+gMcCardCmd = 0x002FE91C; // size:0x4
+// Two port records of 0x24 bytes (McCardPort); only port 0 is used by the callers.
+gMcCardPort = 0x00331D80; // size:0x48
+// The icon.sys image built by McCard_CreateSave (sceMcIconSys, 0x3C4 bytes).
+gMcCardIconSys = 0x00300A00; // size:0x3C4

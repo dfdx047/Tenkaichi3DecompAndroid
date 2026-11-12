@@ -1,0 +1,5338 @@
+{
+  "schema_version": 1,
+  "labels_version": 3,
+  "translation_version": 2,
+  "labels_count": 1309,
+  "locale": "pt-BR",
+  "name": "PORTUGUÊS (BR)",
+  "order": 3,
+  "labels": {
+    "quit/confirm": {
+      "original": "Close the game?\nUnsaved progress will be lost.",
+      "text": "Fechar o jogo?\nO progresso não salvo será perdido."
+    },
+    "net/connecting": {
+      "original": "Connecting to your rival...",
+      "text": "Conectando ao adversário..."
+    },
+    "net/rival_here": {
+      "original": "Your rival \"{name}\" is here! The match begins.",
+      "text": "Seu adversário \"{name}\" chegou! A partida vai começar."
+    },
+    "net/lobby_joined": {
+      "original": "You are in the lobby. Its screen opens from the main menu (Tenkaichi Budokai Online).",
+      "text": "Você entrou no lobby. Acesse-o pelo menu principal (Tenkaichi Budokai Online)."
+    },
+    "net/rival_from": {
+      "original": "Your rival \"{name}\" from {region} is here! The match begins.",
+      "text": "Seu adversário \"{name}\", de {region}, chegou! A partida vai começar."
+    },
+    "net/round_trip": {
+      "original": "Round trip: ~{ms} ms",
+      "text": "Latência: ~{ms} ms"
+    },
+    "region/NA": {
+      "original": "North America",
+      "text": "América do Norte"
+    },
+    "region/SA": {
+      "original": "South America",
+      "text": "América do Sul"
+    },
+    "region/EU": {
+      "original": "Europe",
+      "text": "Europa"
+    },
+    "region/ME": {
+      "original": "the Middle East",
+      "text": "Oriente Médio"
+    },
+    "region/AF": {
+      "original": "Africa",
+      "text": "África"
+    },
+    "region/AS": {
+      "original": "Asia",
+      "text": "Ásia"
+    },
+    "region/OC": {
+      "original": "Oceania",
+      "text": "Oceania"
+    },
+    "update/available": {
+      "original": "Update {version} available. Downloading automatically.",
+      "text": "Atualização {version} disponível. Baixando automaticamente."
+    },
+    "update/downloading": {
+      "original": "Downloading update {version}: {percent}%",
+      "text": "Baixando atualização {version}: {percent}%"
+    },
+    "update/ready": {
+      "original": "Update {version} verified. It will install at the main menu.",
+      "text": "Atualização {version} verificada. Será instalada no menu principal."
+    },
+    "update/done": {
+      "original": "Updated to {version}.",
+      "text": "Atualizado para {version}."
+    },
+    "update/online_off": {
+      "original": "An update is being installed: online play is off until the game restarts.",
+      "text": "Instalando uma atualização. O modo online ficará indisponível até o jogo reiniciar."
+    },
+    "tbo/bt4/000": {
+      "original": "Menus",
+      "text": "Menus"
+    },
+    "tbo/bt4/001": {
+      "original": "Stretched",
+      "text": "Esticado"
+    },
+    "tbo/bt4/002": {
+      "original": "Widescreen (beta)",
+      "text": "Tela ampla (beta)"
+    },
+    "tbo/bt4/003": {
+      "original": "%d FRAME",
+      "text": "%d QUADRO"
+    },
+    "tbo/bt4/004": {
+      "original": "%d FRAMES",
+      "text": "%d QUADROS"
+    },
+    "tbo/bt4/005": {
+      "original": "Chat",
+      "text": "Chat"
+    },
+    "tbo/bt4/006": {
+      "original": "CPU",
+      "text": "CPU"
+    },
+    "tbo/bt4/007": {
+      "original": "Host by Address",
+      "text": "Criar por endereço"
+    },
+    "tbo/bt4/008": {
+      "original": "THE OWNER'S ADDRESS:PORT",
+      "text": "ENDEREÇO:PORTA DO ANFITRIÃO"
+    },
+    "tbo/bt4/009": {
+      "original": "NO :PORT TYPED: PORT 7000",
+      "text": "SEM :PORTA INFORMADA: PORTA 7000"
+    },
+    "tbo/bt4/010": {
+      "original": "JOINING A LOBBY",
+      "text": "ENTRANDO NO LOBBY"
+    },
+    "tbo/bt4/011": {
+      "original": "Tournament: %d entrants",
+      "text": "Torneio: %d participantes"
+    },
+    "tbo/bt4/012": {
+      "original": "OFF",
+      "text": "Desligado"
+    },
+    "tbo/bt4/013": {
+      "original": "Send",
+      "text": "Enviar"
+    },
+    "tbo/bt4/014": {
+      "original": "Copy Address",
+      "text": "Copiar endereço"
+    },
+    "tbo/bt4/015": {
+      "original": "THE OTHERS JOIN WITH IT",
+      "text": "OS OUTROS ENTRAM COM ESTE ENDEREÇO"
+    },
+    "tbo/bt4/016": {
+      "original": "PORT",
+      "text": "PORTA"
+    },
+    "tbo/bt4/017": {
+      "original": "ON YOUR NETWORK",
+      "text": "NA SUA REDE"
+    },
+    "tbo/bt4/018": {
+      "original": "LOBBY",
+      "text": "LOBBY"
+    },
+    "tbo/bt4/019": {
+      "original": "Its bracket is lost; the lobby is Versus again.",
+      "text": "A chave do torneio foi perdida; o lobby voltou ao modo Versus."
+    },
+    "tbo/bt4/020": {
+      "original": "Call off the tournament? ",
+      "text": "Cancelar o torneio? "
+    },
+    "tbo/bt4/021": {
+      "original": "Joining lobby ",
+      "text": "Entrando no lobby "
+    },
+    "tbo/bt4/022": {
+      "original": "Cannot go online. Online matches are only between two matching BT4 B14 Rev2 builds.",
+      "text": "Não é possível jogar online. Os dois jogadores precisam usar a mesma versão do BT4 B14 Rev2."
+    },
+    "tbo/bt4/023": {
+      "original": "Searching for a rival...  %d:%02d",
+      "text": "Buscando adversário...  %d:%02d"
+    },
+    "tbo/bt4/024": {
+      "original": "Quick Match: ",
+      "text": "Partida rápida: "
+    },
+    "tbo/bt4/025": {
+      "original": "The game at that address is a different version: joining needs the same release.",
+      "text": "O jogo nesse endereço está em outra versão. Para entrar, use a mesma versão."
+    },
+    "tbo/bt4/026": {
+      "original": "Someone with another version of the game tried to join.",
+      "text": "Alguém com outra versão do jogo tentou entrar."
+    },
+    "tbo/bt4/027": {
+      "original": "The host's game data are not the same as yours (a modified disc image or mods on one side): you cannot watch this match.",
+      "text": "Os dados do anfitrião são diferentes dos seus (ISO modificada ou mods em um dos lados). Não é possível assistir a esta partida."
+    },
+    "tbo/bt4/028": {
+      "original": "This match already has as many spectators as it can take (6).",
+      "text": "Esta partida já atingiu o limite de espectadores (6)."
+    },
+    "tbo/bt4/029": {
+      "original": "The host does not let anyone watch its matches.",
+      "text": "O anfitrião não permite espectadores nas partidas."
+    },
+    "tbo/bt4/030": {
+      "original": "This match cannot be watched (it was not started from the online menus).",
+      "text": "Não é possível assistir a esta partida, pois ela não foi iniciada pelos menus online."
+    },
+    "tbo/bt4/031": {
+      "original": "That is the address of the player who joined, not of the host: spectators connect to the host.",
+      "text": "Esse é o endereço de quem entrou na partida. Os espectadores precisam se conectar ao anfitrião."
+    },
+    "tbo/bt4/032": {
+      "original": "This match is a lobby's: join the lobby (its code, or its owner's address) to watch it.",
+      "text": "Esta partida pertence a um lobby. Entre nele pelo código ou pelo endereço do anfitrião para assistir."
+    },
+    "tbo/bt4/033": {
+      "original": "The host's game is a different version: watching needs the same release as the host's.",
+      "text": "O anfitrião usa outra versão do jogo. Para assistir, use a mesma versão."
+    },
+    "tbo/bt4/034": {
+      "original": "No answer from the host. Check the address and port. Watching a match needs a release newer than 0.1.38.7 on the host as well (an older host does not answer spectators).",
+      "text": "O anfitrião não respondeu. Confira o endereço e a porta. Para receber espectadores, ele também precisa de uma versão posterior à 0.1.38.7."
+    },
+    "tbo/bt4/035": {
+      "original": "Your game data and the other player's are not the same (a modified disc image or mods on one side): an online match needs the same on both.",
+      "text": "Seus dados e os do outro jogador são diferentes (ISO modificada ou mods em um dos lados). Para jogar online, ambos precisam dos mesmos dados."
+    },
+    "tbo/bt4/036": {
+      "original": "Too many have asked to watch that room in the last two minutes; try again soon.",
+      "text": "Muitas pessoas tentaram assistir a essa sala nos últimos dois minutos. Tente novamente em breve."
+    },
+    "tbo/bt4/037": {
+      "original": "No room with that code, or the matchmaking service does not take spectators yet. (Codes last ten minutes; a host on 0.1.38.7 or older gives its room up when the match begins.)",
+      "text": "Não há sala com esse código ou o serviço de partidas ainda não aceita espectadores. Os códigos duram dez minutos. Nas versões 0.1.38.7 e anteriores, a sala deixa de ser anunciada quando a partida começa."
+    },
+    "tbo/bt4/038": {
+      "original": "The matchmaking service could not be reached (is the network up?).",
+      "text": "Não foi possível acessar o serviço de partidas. Verifique sua conexão."
+    },
+    "tbo/bt4/039": {
+      "original": "Too many wrong codes from this address; try again in an hour.",
+      "text": "Muitos códigos incorretos foram enviados desse endereço. Tente novamente em uma hora."
+    },
+    "tbo/bt4/040": {
+      "original": "Could not reach the lobby. Check that its owner is still connected, then try joining again.",
+      "text": "Não foi possível acessar o lobby. Confira se o anfitrião continua conectado e tente entrar novamente."
+    },
+    "tbo/bt4/041": {
+      "original": "Join",
+      "text": "Entrar"
+    },
+    "tbo/bt4/042": {
+      "original": "BY ADDRESS",
+      "text": "POR ENDEREÇO"
+    },
+    "tbo/bt4/043": {
+      "original": "Opening the port...",
+      "text": "Abrindo a porta..."
+    },
+    "tbo/bt4/044": {
+      "original": "PLAYERS",
+      "text": "JOGADORES"
+    },
+    "tbo/bt4/045": {
+      "original": "PLAYERS  %d / %d",
+      "text": "JOGADORES  %d / %d"
+    },
+    "tbo/bt4/046": {
+      "original": "SPECTATORS  %d / %d",
+      "text": "ESPECTADORES  %d / %d"
+    },
+    "tbo/bt4/047": {
+      "original": "OWNER",
+      "text": "ANFITRIÃO"
+    },
+    "tbo/bt4/048": {
+      "original": "EMPTY",
+      "text": "VAZIO"
+    },
+    "tbo/bt4/049": {
+      "original": "RULES",
+      "text": "REGRAS"
+    },
+    "tbo/bt4/050": {
+      "original": "RULES (THE OWNER'S)",
+      "text": "REGRAS DO ANFITRIÃO"
+    },
+    "tbo/bt4/051": {
+      "original": "TOURNAMENT",
+      "text": "TORNEIO"
+    },
+    "tbo/bt4/052": {
+      "original": "VERSUS",
+      "text": "VERSUS"
+    },
+    "tbo/bt4/053": {
+      "original": "%d PLAYERS",
+      "text": "%d JOGADORES"
+    },
+    "tbo/bt4/054": {
+      "original": "%d%% (STANDARD)",
+      "text": "%d%% (PADRÃO)"
+    },
+    "tbo/bt4/055": {
+      "original": "The host's match has not begun yet. Waiting for it...",
+      "text": "A partida do anfitrião ainda não começou. Aguardando..."
+    },
+    "tbo/bt4/056": {
+      "original": "The host's match did not begin in two minutes.",
+      "text": "A partida do anfitrião não começou em dois minutos."
+    },
+    "tbo/bt4/057": {
+      "original": "The match has ended.",
+      "text": "A partida terminou."
+    },
+    "tbo/bt4/058": {
+      "original": "Quick match requires compatible BT4 B14 Rev2 data. Check your installation and try again.",
+      "text": "A partida rápida exige dados compatíveis do BT4 B14 Rev2. Confira a instalação e tente novamente."
+    },
+    "tbo/bt4/059": {
+      "original": "Region",
+      "text": "Região"
+    },
+    "tbo/bt4/060": {
+      "original": "Region: ",
+      "text": "Região: "
+    },
+    "tbo/bt4/061": {
+      "original": "AUTO",
+      "text": "AUTO"
+    },
+    "tbo/bt4/062": {
+      "original": "ANYWHERE",
+      "text": "QUALQUER REGIÃO"
+    },
+    "tbo/bt4/063": {
+      "original": "NORTH AMERICA",
+      "text": "AMÉRICA DO NORTE"
+    },
+    "tbo/bt4/064": {
+      "original": "SOUTH AMERICA",
+      "text": "AMÉRICA DO SUL"
+    },
+    "tbo/bt4/065": {
+      "original": "EUROPE",
+      "text": "EUROPA"
+    },
+    "tbo/bt4/066": {
+      "original": "MIDDLE EAST",
+      "text": "ORIENTE MÉDIO"
+    },
+    "tbo/bt4/067": {
+      "original": "AFRICA",
+      "text": "ÁFRICA"
+    },
+    "tbo/bt4/068": {
+      "original": "ASIA",
+      "text": "ÁSIA"
+    },
+    "tbo/bt4/069": {
+      "original": "OCEANIA",
+      "text": "OCEANIA"
+    },
+    "tbo/bt4/070": {
+      "original": "server ping",
+      "text": "ping do servidor"
+    },
+    "tbo/bt4/071": {
+      "original": "local match",
+      "text": "partida local"
+    },
+    "tbo/bt4/072": {
+      "original": "North America",
+      "text": "América do Norte"
+    },
+    "tbo/bt4/073": {
+      "original": "South America",
+      "text": "América do Sul"
+    },
+    "tbo/bt4/074": {
+      "original": "Europe",
+      "text": "Europa"
+    },
+    "tbo/bt4/075": {
+      "original": "the Middle East",
+      "text": "Oriente Médio"
+    },
+    "tbo/bt4/076": {
+      "original": "Africa",
+      "text": "África"
+    },
+    "tbo/bt4/077": {
+      "original": "Asia",
+      "text": "Ásia"
+    },
+    "tbo/bt4/078": {
+      "original": "Oceania",
+      "text": "Oceania"
+    },
+    "tbo/bt4/079": {
+      "original": "Auto: rivals near you first. A region: players there first, everyone after 40 s. Anywhere: the fastest.",
+      "text": "Automático prioriza adversários próximos. Uma região prioriza seus jogadores por 40 s. Qualquer região busca a conexão mais rápida."
+    },
+    "tbo/bt4/080": {
+      "original": "FIRST, EVERYONE AFTER %d S",
+      "text": "PRIMEIRO A REGIÃO, TODOS APÓS %d S"
+    },
+    "tbo/bt4/081": {
+      "original": "LOOKING FOR A RIVAL",
+      "text": "BUSCANDO ADVERSÁRIO"
+    },
+    "tbo/bt4/082": {
+      "original": "NEAR YOU FIRST",
+      "text": "PRIMEIRO PERTO DE VOCÊ"
+    },
+    "tbo/bt4/083": {
+      "original": "NO ONE NEARBY:",
+      "text": "NINGUÉM POR PERTO:"
+    },
+    "tbo/bt4/084": {
+      "original": "NO ONE THERE:",
+      "text": "NINGUÉM NESSA REGIÃO:"
+    },
+    "tbo/bt4/085": {
+      "original": "PLAYERS IN",
+      "text": "JOGADORES EM"
+    },
+    "tbo/bt4/086": {
+      "original": "PLAYERS THERE FIRST, EVERYONE AFTER %d S",
+      "text": "PRIMEIRO NESSA REGIÃO, TODOS APÓS %d S"
+    },
+    "tbo/bt4/087": {
+      "original": "RIVALS NEAR YOU FIRST, THEN ANYWHERE",
+      "text": "PRIMEIRO PERTO DE VOCÊ, DEPOIS EM QUALQUER REGIÃO"
+    },
+    "tbo/bt4/088": {
+      "original": "Round trip: ~{ms} ms",
+      "text": "Latência: ~{ms} ms"
+    },
+    "tbo/bt4/089": {
+      "original": "SEARCHING EVERYWHERE",
+      "text": "BUSCANDO EM TODAS AS REGIÕES"
+    },
+    "tbo/bt4/090": {
+      "original": "THE NEXT RIVAL, WHEREVER: THE FASTEST",
+      "text": "O PRÓXIMO ADVERSÁRIO, DE QUALQUER REGIÃO"
+    },
+    "tbo/bt4/091": {
+      "original": "YOUR RIVAL IS FROM",
+      "text": "SEU ADVERSÁRIO É DE"
+    },
+    "tbo/bt4/092": {
+      "original": " Your rival is from ",
+      "text": " Seu adversário é de "
+    },
+    "tbo/bt4/093": {
+      "original": "Your rival \"{name}\" from {region} is here! The match begins.",
+      "text": "Seu adversário \"{name}\", de {region}, chegou! A partida vai começar."
+    },
+    "tbo/bt4/094": {
+      "original": "The other player's game lost contact with yours (a connection problem on one side or between you): the match has ended.",
+      "text": "A conexão com o outro jogador foi perdida. A partida terminou."
+    },
+    "tbo/bt4/095": {
+      "original": "The other player's game was closed: the match has ended.",
+      "text": "O outro jogador fechou o jogo. A partida terminou."
+    },
+    "tbo/bt4/096": {
+      "original": "The other player left the match.",
+      "text": "O outro jogador saiu da partida."
+    },
+    "tbo/bt4/097": {
+      "original": "left the match",
+      "text": "saiu da partida"
+    },
+    "tbo/bt4/098": {
+      "original": "Lobby",
+      "text": "Lobby"
+    },
+    "tbo/bt4/099": {
+      "original": "PLAYER 1",
+      "text": "JOGADOR 1"
+    },
+    "tbo/bt4/100": {
+      "original": "PLAYER 2",
+      "text": "JOGADOR 2"
+    },
+    "tbo/bt4/101": {
+      "original": "Player 1",
+      "text": "Jogador 1"
+    },
+    "tbo/bt4/102": {
+      "original": "Player 2",
+      "text": "Jogador 2"
+    },
+    "tbo/bt4/103": {
+      "original": "Player %d",
+      "text": "Jogador %d"
+    },
+    "tbo/bt4/104": {
+      "original": "Spectator %d",
+      "text": "Espectador %d"
+    },
+    "tbo/bt4/105": {
+      "original": "Split Screen",
+      "text": "Tela dividida"
+    },
+    "tbo/bt4/106": {
+      "original": "SPLIT SCREEN",
+      "text": "TELA DIVIDIDA"
+    },
+    "tbo/bt4/107": {
+      "original": "Create a lobby for two fighters and up to six spectators. Watch matches and rotate the next challenger.",
+      "text": "Crie um lobby para dois lutadores e até seis espectadores. Assista às partidas e alterne os desafiantes."
+    },
+    "tbo/bt4/108": {
+      "original": "Your screen only: the fight goes on",
+      "text": "Só na sua tela: a luta continua"
+    },
+    "tbo/bt4/109": {
+      "original": "View: ",
+      "text": "Visão: "
+    },
+    "tbo/bt4/110": {
+      "original": "VIEW: ",
+      "text": "VISÃO: "
+    },
+    "tbo/bt4/111": {
+      "original": "Stop Watching",
+      "text": "Parar de assistir"
+    },
+    "tbo/bt4/112": {
+      "original": "Back to the Lobby",
+      "text": "Voltar ao lobby"
+    },
+    "tbo/bt4/113": {
+      "original": "Close the Lobby",
+      "text": "Fechar o lobby"
+    },
+    "tbo/bt4/114": {
+      "original": "Leave the Lobby",
+      "text": "Sair do lobby"
+    },
+    "tbo/bt4/115": {
+      "original": "Continue",
+      "text": "Continuar"
+    },
+    "tbo/bt4/116": {
+      "original": "Yes",
+      "text": "Sim"
+    },
+    "tbo/bt4/117": {
+      "original": "No",
+      "text": "Não"
+    },
+    "tbo/bt4/118": {
+      "original": "Close Lobby",
+      "text": "Fechar lobby"
+    },
+    "tbo/bt4/119": {
+      "original": "Leave Lobby",
+      "text": "Sair do lobby"
+    },
+    "tbo/bt4/120": {
+      "original": "Close the Lobby?",
+      "text": "Fechar o lobby?"
+    },
+    "tbo/bt4/121": {
+      "original": "Leave the Lobby?",
+      "text": "Sair do lobby?"
+    },
+    "tbo/bt4/122": {
+      "original": "Close the lobby? ",
+      "text": "Fechar o lobby? "
+    },
+    "tbo/bt4/123": {
+      "original": "Leave the lobby? ",
+      "text": "Sair do lobby? "
+    },
+    "tbo/bt4/124": {
+      "original": "%s joined the lobby",
+      "text": "%s entrou no lobby"
+    },
+    "tbo/bt4/125": {
+      "original": "%s left the lobby",
+      "text": "%s saiu do lobby"
+    },
+    "tbo/bt4/126": {
+      "original": "%s lost the connection to the lobby",
+      "text": "%s perdeu a conexão com o lobby"
+    },
+    "tbo/bt4/127": {
+      "original": "%s was removed from the lobby",
+      "text": "%s foi removido do lobby"
+    },
+    "tbo/bt4/128": {
+      "original": ", owner",
+      "text": ", anfitrião"
+    },
+    "tbo/bt4/129": {
+      "original": ", ready",
+      "text": ", pronto"
+    },
+    "tbo/bt4/130": {
+      "original": "A MATCH IS ON",
+      "text": "PARTIDA EM ANDAMENTO"
+    },
+    "tbo/bt4/131": {
+      "original": "A MATCH IS ON ALREADY",
+      "text": "JÁ HÁ UMA PARTIDA EM ANDAMENTO"
+    },
+    "tbo/bt4/132": {
+      "original": "Asking the matchmaking service for a code...",
+      "text": "Solicitando um código ao serviço de partidas..."
+    },
+    "tbo/bt4/133": {
+      "original": "CATCHING UP WITH THE MATCH... %d%%",
+      "text": "SINCRONIZANDO COM A PARTIDA... %d%%"
+    },
+    "tbo/bt4/134": {
+      "original": "COPIED: PASTE THE CODE TO THE OTHERS",
+      "text": "COPIADO: ENVIE O CÓDIGO AOS OUTROS"
+    },
+    "tbo/bt4/135": {
+      "original": "Chat: ",
+      "text": "Chat: "
+    },
+    "tbo/bt4/136": {
+      "original": "DP BATTLE: 10 DP",
+      "text": "BATALHA POR PD: 10 PD"
+    },
+    "tbo/bt4/137": {
+      "original": "DP BATTLE: 15 DP",
+      "text": "BATALHA POR PD: 15 PD"
+    },
+    "tbo/bt4/138": {
+      "original": "DP BATTLE: 20 DP",
+      "text": "BATALHA POR PD: 20 PD"
+    },
+    "tbo/bt4/139": {
+      "original": "Everyone in it goes back to the menus.",
+      "text": "Todos no lobby voltarão aos menus."
+    },
+    "tbo/bt4/140": {
+      "original": "GIVE IT TO THE OTHERS",
+      "text": "COMPARTILHE COM OS OUTROS"
+    },
+    "tbo/bt4/141": {
+      "original": "Game Speed",
+      "text": "Velocidade do jogo"
+    },
+    "tbo/bt4/142": {
+      "original": "JOIN ROOM WITH IT",
+      "text": "USE PARA ENTRAR NA SALA"
+    },
+    "tbo/bt4/143": {
+      "original": "JOINED BY ADDRESS",
+      "text": "ENTROU POR ENDEREÇO"
+    },
+    "tbo/bt4/144": {
+      "original": "Joining the Lobby",
+      "text": "Entrando no lobby"
+    },
+    "tbo/bt4/145": {
+      "original": "Joining the lobby",
+      "text": "Entrando no lobby"
+    },
+    "tbo/bt4/146": {
+      "original": "Knocking at the lobby's door...",
+      "text": "Entrando na sala..."
+    },
+    "tbo/bt4/147": {
+      "original": "LOBBY CODE",
+      "text": "CÓDIGO DO LOBBY"
+    },
+    "tbo/bt4/148": {
+      "original": "Lobbies need the game's state list (the .mem file beside the program): copy all the files of the release.",
+      "text": "Os lobbies precisam da lista de estados do jogo (arquivo .mem junto do programa). Copie todos os arquivos da versão."
+    },
+    "tbo/bt4/149": {
+      "original": "Looking for the lobby's owner...",
+      "text": "Buscando o anfitrião do lobby..."
+    },
+    "tbo/bt4/150": {
+      "original": "Match ",
+      "text": "Partida "
+    },
+    "tbo/bt4/151": {
+      "original": "Match %d: %s vs %s",
+      "text": "Partida %d: %s vs %s"
+    },
+    "tbo/bt4/152": {
+      "original": "Match N: A vs B",
+      "text": "Partida N: A vs B"
+    },
+    "tbo/bt4/153": {
+      "original": "Match On",
+      "text": "Partida em andamento"
+    },
+    "tbo/bt4/154": {
+      "original": "Move Here",
+      "text": "Mover para cá"
+    },
+    "tbo/bt4/155": {
+      "original": "Move to ",
+      "text": "Mover para "
+    },
+    "tbo/bt4/156": {
+      "original": "NO LONGER THE PLAYERS' FIGHT (SINCE FRAME %d)",
+      "text": "OS JOGADORES NÃO ESTÃO MAIS NESTA PARTIDA (DESDE O QUADRO %d)"
+    },
+    "tbo/bt4/157": {
+      "original": "NOT DURING A MATCH: THE PLACES CHANGE BETWEEN MATCHES",
+      "text": "AGUARDE O FIM DA PARTIDA PARA TROCAR AS POSIÇÕES"
+    },
+    "tbo/bt4/158": {
+      "original": "Name: what was said",
+      "text": "Nome: mensagem"
+    },
+    "tbo/bt4/159": {
+      "original": "No Longer in the Lobby",
+      "text": "Você saiu do lobby"
+    },
+    "tbo/bt4/160": {
+      "original": "No socket could be opened.",
+      "text": "Não foi possível abrir uma conexão de rede."
+    },
+    "tbo/bt4/161": {
+      "original": "Not Ready",
+      "text": "Não está pronto"
+    },
+    "tbo/bt4/162": {
+      "original": "OTHERS JOIN WITH YOUR ADDRESS AND PORT",
+      "text": "OS OUTROS ENTRAM COM SEU ENDEREÇO E PORTA"
+    },
+    "tbo/bt4/163": {
+      "original": "Opening the Lobby",
+      "text": "Criando o lobby"
+    },
+    "tbo/bt4/164": {
+      "original": "Opening the lobby",
+      "text": "Criando o lobby"
+    },
+    "tbo/bt4/165": {
+      "original": "Opening your lobby! The others join it with its code.",
+      "text": "Abrindo sua sala. Compartilhe o código para convidar outros jogadores."
+    },
+    "tbo/bt4/166": {
+      "original": "Remove from the Lobby",
+      "text": "Remover do lobby"
+    },
+    "tbo/bt4/167": {
+      "original": "SAY SOMETHING TO THE LOBBY",
+      "text": "ENVIE UMA MENSAGEM AO LOBBY"
+    },
+    "tbo/bt4/168": {
+      "original": "SINGLE BATTLE",
+      "text": "BATALHA INDIVIDUAL"
+    },
+    "tbo/bt4/169": {
+      "original": "SPECTATORS  %d / 6",
+      "text": "ESPECTADORES  %d / 6"
+    },
+    "tbo/bt4/170": {
+      "original": "Spectating %s vs %s",
+      "text": "Assistindo a %s vs %s"
+    },
+    "tbo/bt4/171": {
+      "original": "Start Match",
+      "text": "Iniciar partida"
+    },
+    "tbo/bt4/172": {
+      "original": "TEAM BATTLE",
+      "text": "BATALHA EM EQUIPE"
+    },
+    "tbo/bt4/173": {
+      "original": "THE LOBBY'S OWNER CHOOSES WHO PLAYS",
+      "text": "O ANFITRIÃO ESCOLHE QUEM JOGA"
+    },
+    "tbo/bt4/174": {
+      "original": "THE RULES CANNOT CHANGE DURING A MATCH",
+      "text": "AS REGRAS NÃO PODEM MUDAR DURANTE A PARTIDA"
+    },
+    "tbo/bt4/175": {
+      "original": "TWO PLAYERS ARE NEEDED: ONE IN 1P, ONE IN 2P",
+      "text": "É PRECISO UM JOGADOR EM 1P E OUTRO EM 2P"
+    },
+    "tbo/bt4/176": {
+      "original": "That address is not known.",
+      "text": "Esse endereço é desconhecido."
+    },
+    "tbo/bt4/177": {
+      "original": "The connection to the lobby's owner was lost: the lobby is closed.",
+      "text": "A conexão com o anfitrião foi perdida. O lobby foi fechado."
+    },
+    "tbo/bt4/178": {
+      "original": "The lobby is closed.",
+      "text": "O lobby está fechado."
+    },
+    "tbo/bt4/179": {
+      "original": "The lobby owner's game data are not the same as yours (a modified disc image or mods on one side): you cannot join.",
+      "text": "Os dados do anfitrião são diferentes dos seus (ISO modificada ou mods em um dos lados). Não é possível entrar."
+    },
+    "tbo/bt4/180": {
+      "original": "The lobby owner's game is a different version: joining needs the same release.",
+      "text": "O anfitrião usa outra versão do jogo. Para entrar, use a mesma versão."
+    },
+    "tbo/bt4/181": {
+      "original": "The lobby was closed by its owner.",
+      "text": "O anfitrião fechou o lobby."
+    },
+    "tbo/bt4/182": {
+      "original": "The lobby's owner removed you from the lobby.",
+      "text": "O anfitrião removeu você do lobby."
+    },
+    "tbo/bt4/183": {
+      "original": "The owner went back to the lobby.",
+      "text": "O anfitrião voltou ao lobby."
+    },
+    "tbo/bt4/184": {
+      "original": "The two players could not connect to each other.",
+      "text": "Os dois jogadores não conseguiram se conectar."
+    },
+    "tbo/bt4/185": {
+      "original": "This lobby is full (8 places).",
+      "text": "Este lobby está cheio (8 vagas)."
+    },
+    "tbo/bt4/186": {
+      "original": "Type a line for everyone in the lobby, then Done! Start sends it too.",
+      "text": "Digite uma mensagem para a sala e confirme em Concluir. START também envia."
+    },
+    "tbo/bt4/187": {
+      "original": "UP TO %d FRAMES",
+      "text": "ATÉ %d QUADROS"
+    },
+    "tbo/bt4/188": {
+      "original": "Welcome to the lobby! Its owner picks who plays and starts the match. Chat while you wait!",
+      "text": "Bem-vindo à sala! O anfitrião escolhe os jogadores e inicia a partida. Converse enquanto espera."
+    },
+    "tbo/bt4/189": {
+      "original": "You are out of that lobby. OK takes you back to the online menu.",
+      "text": "Você saiu da sala. Confirme para voltar ao menu online."
+    },
+    "tbo/bt4/190": {
+      "original": "You go back to the online menu.",
+      "text": "Você voltará ao menu online."
+    },
+    "tbo/bt4/191": {
+      "original": "Your lobby is open! Give the others its code: they join with Join Room. Then put two of you in 1P and 2P.",
+      "text": "Sua sala está aberta! Compartilhe o código. Os outros jogadores entram por Entrar na sala. Depois, escolha quem ocupa 1P e 2P."
+    },
+    "tbo/bt4/192": {
+      "original": "Your lobby is open! The others join with your address and port. Then put two of you in 1P and 2P.",
+      "text": "Sua sala está aberta! Compartilhe seu endereço e porta. Depois, escolha quem ocupa 1P e 2P."
+    },
+    "tbo/bt4/193": {
+      "original": "Quick Match",
+      "text": "Partida rápida"
+    },
+    "tbo/bt4/194": {
+      "original": "Ranked Match",
+      "text": "Partida ranqueada"
+    },
+    "tbo/bt4/195": {
+      "original": "Create Room",
+      "text": "Criar sala"
+    },
+    "tbo/bt4/196": {
+      "original": "Join Room",
+      "text": "Entrar na sala"
+    },
+    "tbo/bt4/197": {
+      "original": "Friends",
+      "text": "Amigos"
+    },
+    "tbo/bt4/198": {
+      "original": "Tournament",
+      "text": "Torneio"
+    },
+    "tbo/bt4/199": {
+      "original": "Replays",
+      "text": "Replays"
+    },
+    "tbo/bt4/200": {
+      "original": "Leaderboard",
+      "text": "Classificação"
+    },
+    "tbo/bt4/201": {
+      "original": "Profile",
+      "text": "Perfil"
+    },
+    "tbo/bt4/202": {
+      "original": "Fight whoever is searching right now! No time limit, and you can train while you wait.",
+      "text": "Enfrente quem estiver buscando partida! Sem limite de tempo, e você pode treinar enquanto espera."
+    },
+    "tbo/bt4/203": {
+      "original": "Fights that move your rank, season by season. That one is coming soon!",
+      "text": "Dispute posições na classificação a cada temporada. Em breve!"
+    },
+    "tbo/bt4/204": {
+      "original": "Open a room with your own rules, then give your rival its code. No port forwarding needed!",
+      "text": "Crie uma sala com suas regras e envie o código ao adversário. Não é preciso abrir portas no roteador!"
+    },
+    "tbo/bt4/205": {
+      "original": "Got a room code from your rival? Type it in and jump right into their room!",
+      "text": "Recebeu um código do adversário? Digite-o para entrar na sala!"
+    },
+    "tbo/bt4/206": {
+      "original": "Simultaneous team battles for up to ten fighters. Arrange the teams and choose from five CPU difficulty levels.",
+      "text": "Batalhas simultâneas em equipe para até dez lutadores. Organize as equipes e escolha entre cinco níveis de dificuldade da CPU."
+    },
+    "tbo/bt4/207": {
+      "original": "Your rivals, who is online, and invites. That one is coming soon!",
+      "text": "Veja seus adversários, quem está online e os convites. Em breve!"
+    },
+    "tbo/bt4/208": {
+      "original": "The Tenkaichi Budokai itself: brackets of 4 to 16 players. That one is coming soon!",
+      "text": "O próprio Tenkaichi Budokai: torneios de 4 a 16 jogadores. Em breve!"
+    },
+    "tbo/bt4/209": {
+      "original": "Your last matches, saved to watch again. That one is coming soon!",
+      "text": "Suas últimas partidas salvas para assistir novamente. Em breve!"
+    },
+    "tbo/bt4/210": {
+      "original": "The strongest in the world, among your friends, and with each fighter. Coming soon!",
+      "text": "Os melhores do mundo, entre seus amigos e com cada lutador. Em breve!"
+    },
+    "tbo/bt4/211": {
+      "original": "The name your rivals see.",
+      "text": "O nome que seus adversários veem."
+    },
+    "tbo/bt4/212": {
+      "original": "60 seconds",
+      "text": "60 segundos"
+    },
+    "tbo/bt4/213": {
+      "original": "90 seconds",
+      "text": "90 segundos"
+    },
+    "tbo/bt4/214": {
+      "original": "180 seconds",
+      "text": "180 segundos"
+    },
+    "tbo/bt4/215": {
+      "original": "240 seconds",
+      "text": "240 segundos"
+    },
+    "tbo/bt4/216": {
+      "original": "No limit",
+      "text": "Sem limite"
+    },
+    "tbo/bt4/217": {
+      "original": "Very easy",
+      "text": "Muito fácil"
+    },
+    "tbo/bt4/218": {
+      "original": "Easy",
+      "text": "Fácil"
+    },
+    "tbo/bt4/219": {
+      "original": "Hard",
+      "text": "Difícil"
+    },
+    "tbo/bt4/220": {
+      "original": "Very hard",
+      "text": "Muito difícil"
+    },
+    "tbo/bt4/221": {
+      "original": "VERY EASY",
+      "text": "MUITO FÁCIL"
+    },
+    "tbo/bt4/222": {
+      "original": "EASY",
+      "text": "FÁCIL"
+    },
+    "tbo/bt4/223": {
+      "original": "HARD",
+      "text": "DIFÍCIL"
+    },
+    "tbo/bt4/224": {
+      "original": "VERY HARD",
+      "text": "MUITO DIFÍCIL"
+    },
+    "tbo/bt4/225": {
+      "original": "Automatic",
+      "text": "Automático"
+    },
+    "tbo/bt4/226": {
+      "original": "%d frame",
+      "text": "%d quadro"
+    },
+    "tbo/bt4/227": {
+      "original": "%d frames",
+      "text": "%d quadros"
+    },
+    "tbo/bt4/228": {
+      "original": "Unavailable",
+      "text": "Indisponível"
+    },
+    "tbo/bt4/229": {
+      "original": "Off",
+      "text": "Desligado"
+    },
+    "tbo/bt4/230": {
+      "original": "Up to %d frames",
+      "text": "Até %d quadros"
+    },
+    "tbo/bt4/231": {
+      "original": "This is an old or incompatible version. Please update the complete BT4 launcher.",
+      "text": "Esta versão é antiga ou incompatível. Atualize o pacote completo do BT4."
+    },
+    "tbo/bt4/232": {
+      "original": "Back",
+      "text": "Voltar"
+    },
+    "tbo/bt4/233": {
+      "original": "THE NETWORK COULD NOT BE OPENED ON THIS PC",
+      "text": "NÃO FOI POSSÍVEL INICIAR A REDE NESTE PC"
+    },
+    "tbo/bt4/234": {
+      "original": "THE TWO GAMES COULD NOT REACH EACH OTHER, EVEN THROUGH THE RELAY",
+      "text": "OS DOIS JOGOS NÃO CONSEGUIRAM SE CONECTAR, NEM PELO SERVIDOR INTERMEDIÁRIO"
+    },
+    "tbo/bt4/235": {
+      "original": "THE ROOM COULD NOT BE OPENED",
+      "text": "NÃO FOI POSSÍVEL CRIAR A SALA"
+    },
+    "tbo/bt4/236": {
+      "original": "Copy Code",
+      "text": "Copiar código"
+    },
+    "tbo/bt4/237": {
+      "original": "Train While Waiting",
+      "text": "Treinar enquanto espera"
+    },
+    "tbo/bt4/238": {
+      "original": "Cancel",
+      "text": "Cancelar"
+    },
+    "tbo/bt4/239": {
+      "original": "COPIED: PASTE THE CODE TO YOUR RIVAL",
+      "text": "COPIADO: ENVIE O CÓDIGO AO ADVERSÁRIO"
+    },
+    "tbo/bt4/240": {
+      "original": "Change",
+      "text": "Alterar"
+    },
+    "tbo/bt4/241": {
+      "original": "Start Training",
+      "text": "Iniciar treino"
+    },
+    "tbo/bt4/242": {
+      "original": "Next",
+      "text": "Próximo"
+    },
+    "tbo/bt4/243": {
+      "original": "Search",
+      "text": "Buscar"
+    },
+    "tbo/bt4/244": {
+      "original": "Confirm",
+      "text": "Confirmar"
+    },
+    "tbo/bt4/245": {
+      "original": "Select",
+      "text": "Selecionar"
+    },
+    "tbo/bt4/246": {
+      "original": "Copy",
+      "text": "Copiar"
+    },
+    "tbo/bt4/247": {
+      "original": "Start",
+      "text": "Iniciar"
+    },
+    "tbo/bt4/248": {
+      "original": "Close",
+      "text": "Fechar"
+    },
+    "tbo/bt4/249": {
+      "original": "CHOOSE A DESTINATION SLOT. TRIANGLE CANCELS.",
+      "text": "ESCOLHA A VAGA DE DESTINO. TRIÂNGULO CANCELA."
+    },
+    "tbo/bt4/250": {
+      "original": "ROOM CODE COPIED.",
+      "text": "CÓDIGO DA SALA COPIADO."
+    },
+    "tbo/bt4/251": {
+      "original": "EACH TEAM NEEDS AT LEAST ONE FIGHTER.",
+      "text": "CADA EQUIPE PRECISA DE PELO MENOS UM LUTADOR."
+    },
+    "tbo/bt4/252": {
+      "original": "Enter",
+      "text": "Confirmar"
+    },
+    "tbo/bt4/253": {
+      "original": "NOT OPEN YET: IT NEEDS MORE FROM THE MATCHMAKING SERVICE THAN ROOM CODES",
+      "text": "AINDA INDISPONÍVEL: DEPENDE DE MAIS RECURSOS DO SERVIÇO DE PARTIDAS"
+    },
+    "tbo/bt4/254": {
+      "original": "Open Room",
+      "text": "Criar sala"
+    },
+    "tbo/bt4/255": {
+      "original": "DELETE",
+      "text": "APAGAR"
+    },
+    "tbo/bt4/256": {
+      "original": "PASTE",
+      "text": "COLAR"
+    },
+    "tbo/bt4/257": {
+      "original": "JOIN",
+      "text": "ENTRAR"
+    },
+    "tbo/bt4/258": {
+      "original": "SPACE",
+      "text": "ESPAÇO"
+    },
+    "tbo/bt4/259": {
+      "original": "DONE",
+      "text": "CONCLUIR"
+    },
+    "tbo/bt4/260": {
+      "original": "ROOM CODES HAVE SIX CHARACTERS.",
+      "text": "OS CÓDIGOS DAS SALAS TÊM SEIS CARACTERES."
+    },
+    "tbo/bt4/261": {
+      "original": "A ROOM CODE HAS SIX LETTERS AND NUMBERS",
+      "text": "UM CÓDIGO DE SALA TEM SEIS LETRAS E NÚMEROS"
+    },
+    "tbo/bt4/262": {
+      "original": "Delete",
+      "text": "Apagar"
+    },
+    "tbo/bt4/263": {
+      "original": "Type Name",
+      "text": "Digitar nome"
+    },
+    "tbo/bt4/264": {
+      "original": "SAVED: YOUR RIVALS WILL SEE THIS NAME",
+      "text": "SALVO: SEUS ADVERSÁRIOS VERÃO ESTE NOME"
+    },
+    "tbo/bt4/265": {
+      "original": "SOON",
+      "text": "EM BREVE"
+    },
+    "tbo/bt4/266": {
+      "original": "Battle",
+      "text": "Batalha"
+    },
+    "tbo/bt4/267": {
+      "original": "Time Limit",
+      "text": "Limite de tempo"
+    },
+    "tbo/bt4/268": {
+      "original": "Input Delay",
+      "text": "Atraso dos comandos"
+    },
+    "tbo/bt4/269": {
+      "original": "Teams (up to 5)",
+      "text": "Equipes (até 5)"
+    },
+    "tbo/bt4/270": {
+      "original": "ROOM SETTINGS",
+      "text": "CONFIGURAÇÕES DA SALA"
+    },
+    "tbo/bt4/271": {
+      "original": "Team 1",
+      "text": "Equipe 1"
+    },
+    "tbo/bt4/272": {
+      "original": "Team 2",
+      "text": "Equipe 2"
+    },
+    "tbo/bt4/273": {
+      "original": "Empty Slots",
+      "text": "Vagas vazias"
+    },
+    "tbo/bt4/274": {
+      "original": "CPU Difficulty",
+      "text": "Dificuldade da CPU"
+    },
+    "tbo/bt4/275": {
+      "original": "SIMULTANEOUS TEAM BATTLES",
+      "text": "BATALHAS SIMULTÂNEAS EM EQUIPE"
+    },
+    "tbo/bt4/276": {
+      "original": "%d slot",
+      "text": "%d vaga"
+    },
+    "tbo/bt4/277": {
+      "original": "%d slots",
+      "text": "%d vagas"
+    },
+    "tbo/bt4/278": {
+      "original": "Open",
+      "text": "Criar"
+    },
+    "tbo/bt4/279": {
+      "original": "ROOM %s  |  %d/%d FIGHTERS",
+      "text": "SALA %s  |  %d/%d LUTADORES"
+    },
+    "tbo/bt4/280": {
+      "original": "%d/%d FIGHTERS  |  ROOM ACTIVE",
+      "text": "%d/%d LUTADORES  |  SALA ATIVA"
+    },
+    "tbo/bt4/281": {
+      "original": "ROOM CODE",
+      "text": "CÓDIGO DA SALA"
+    },
+    "tbo/bt4/282": {
+      "original": "SELECT TO COPY CODE",
+      "text": "SELECIONE PARA COPIAR O CÓDIGO"
+    },
+    "tbo/bt4/283": {
+      "original": "ROOM CHAT",
+      "text": "CHAT DA SALA"
+    },
+    "tbo/bt4/284": {
+      "original": "Type a message...",
+      "text": "Digite uma mensagem..."
+    },
+    "tbo/bt4/285": {
+      "original": "ENTER: SEND   |   ESC: CLOSE",
+      "text": "ENTER: ENVIAR   |   ESC: FECHAR"
+    },
+    "tbo/bt4/286": {
+      "original": "TEAM 1",
+      "text": "EQUIPE 1"
+    },
+    "tbo/bt4/287": {
+      "original": "TEAM 2",
+      "text": "EQUIPE 2"
+    },
+    "tbo/bt4/288": {
+      "original": "Empty",
+      "text": "Vazio"
+    },
+    "tbo/bt4/289": {
+      "original": " (YOU)",
+      "text": " (VOCÊ)"
+    },
+    "tbo/bt4/290": {
+      "original": "SELECT: COPY CODE",
+      "text": "SELECT: COPIAR CÓDIGO"
+    },
+    "tbo/bt4/291": {
+      "original": "QUICK MATCH",
+      "text": "PARTIDA RÁPIDA"
+    },
+    "tbo/bt4/292": {
+      "original": "TEAMS",
+      "text": "EQUIPES"
+    },
+    "tbo/bt4/293": {
+      "original": "ONE ON ONE",
+      "text": "UM CONTRA UM"
+    },
+    "tbo/bt4/294": {
+      "original": "THE SERVICE PAIRS YOU",
+      "text": "O SERVIÇO ENCONTRA"
+    },
+    "tbo/bt4/295": {
+      "original": "WITH THE NEXT RIVAL",
+      "text": "O PRÓXIMO ADVERSÁRIO"
+    },
+    "tbo/bt4/296": {
+      "original": "%d IN THIS QUEUE",
+      "text": "%d NESTA FILA"
+    },
+    "tbo/bt4/297": {
+      "original": "GETTING A CODE...",
+      "text": "OBTENDO UM CÓDIGO..."
+    },
+    "tbo/bt4/298": {
+      "original": "GIVE THIS CODE TO",
+      "text": "COMPARTILHE ESTE CÓDIGO COM"
+    },
+    "tbo/bt4/299": {
+      "original": "ASKING THE",
+      "text": "SOLICITANDO AO"
+    },
+    "tbo/bt4/300": {
+      "original": "YOUR RIVAL",
+      "text": "SEU ADVERSÁRIO"
+    },
+    "tbo/bt4/301": {
+      "original": "MATCHMAKING SERVICE",
+      "text": "SERVIÇO DE PARTIDAS"
+    },
+    "tbo/bt4/302": {
+      "original": "ANOTHER VERSION TRIED",
+      "text": "OUTRA VERSÃO TENTOU ENTRAR"
+    },
+    "tbo/bt4/303": {
+      "original": "JOINING ROOM",
+      "text": "ENTRANDO NA SALA"
+    },
+    "tbo/bt4/304": {
+      "original": "LOOKING FOR",
+      "text": "BUSCANDO"
+    },
+    "tbo/bt4/305": {
+      "original": "THE HOST...",
+      "text": "O ANFITRIÃO..."
+    },
+    "tbo/bt4/306": {
+      "original": "YOUR RIVAL IS HERE!",
+      "text": "SEU ADVERSÁRIO CHEGOU!"
+    },
+    "tbo/bt4/307": {
+      "original": "SEARCHING...  %d:%02d",
+      "text": "BUSCANDO...  %d:%02d"
+    },
+    "tbo/bt4/308": {
+      "original": "Unable to Connect",
+      "text": "Não foi possível conectar"
+    },
+    "tbo/bt4/309": {
+      "original": "Tag Team requires matching BT4 builds",
+      "text": "O Tag Team exige a mesma versão do BT4"
+    },
+    "tbo/bt4/310": {
+      "original": "and the same B14 Rev2 data on every computer.",
+      "text": "e os mesmos dados B14 Rev2 em todos os computadores."
+    },
+    "tbo/bt4/311": {
+      "original": "Game data verification has not passed.",
+      "text": "A verificação dos dados do jogo falhou."
+    },
+    "tbo/bt4/312": {
+      "original": "Check your game files, then try again.",
+      "text": "Confira os arquivos do jogo e tente novamente."
+    },
+    "tbo/bt4/313": {
+      "original": "BACK",
+      "text": "VOLTAR"
+    },
+    "tbo/bt4/314": {
+      "original": "Cannot Go Online",
+      "text": "Não é possível jogar online"
+    },
+    "tbo/bt4/315": {
+      "original": "Online matches are only between",
+      "text": "As partidas online exigem"
+    },
+    "tbo/bt4/316": {
+      "original": "two matching BT4 B14 Rev2 builds.",
+      "text": "a mesma versão do BT4 B14 Rev2 nos dois lados."
+    },
+    "tbo/bt4/317": {
+      "original": "Changed: ",
+      "text": "Alterado: "
+    },
+    "tbo/bt4/318": {
+      "original": "Your data differs from BT4 B14 Rev2.",
+      "text": "Seus dados são diferentes dos do BT4 B14 Rev2."
+    },
+    "tbo/bt4/319": {
+      "original": "BT4 data verification has not passed.",
+      "text": "A verificação dos dados do BT4 falhou."
+    },
+    "tbo/bt4/320": {
+      "original": "Use this BT4 build on both computers.",
+      "text": "Use esta versão do BT4 nos dois computadores."
+    },
+    "tbo/bt4/321": {
+      "original": "(Original BT3 and other mods use different data.)",
+      "text": "(O BT3 original e outros mods usam dados diferentes.)"
+    },
+    "tbo/bt4/322": {
+      "original": "TYPE YOUR NAME",
+      "text": "DIGITE SEU NOME"
+    },
+    "tbo/bt4/323": {
+      "original": "SPARRING AT THE TOURNAMENT",
+      "text": "TREINO NO TORNEIO"
+    },
+    "tbo/bt4/324": {
+      "original": "You",
+      "text": "Você"
+    },
+    "tbo/bt4/325": {
+      "original": "Partner",
+      "text": "Parceiro"
+    },
+    "tbo/bt4/326": {
+      "original": "QUICK MATCH SEARCH",
+      "text": "BUSCA POR PARTIDA RÁPIDA"
+    },
+    "tbo/bt4/327": {
+      "original": "YOUR ROOM IS OPEN",
+      "text": "SUA SALA ESTÁ ABERTA"
+    },
+    "tbo/bt4/328": {
+      "original": "JOINING A ROOM",
+      "text": "ENTRANDO EM UMA SALA"
+    },
+    "tbo/bt4/329": {
+      "original": "SEARCHING  %d:%02d",
+      "text": "BUSCANDO  %d:%02d"
+    },
+    "tbo/bt4/330": {
+      "original": "THE MATCH STARTS THE MOMENT",
+      "text": "A PARTIDA COMEÇA ASSIM QUE"
+    },
+    "tbo/bt4/331": {
+      "original": "YOUR RIVAL ARRIVES",
+      "text": "SEU ADVERSÁRIO CHEGAR"
+    },
+    "tbo/bt4/332": {
+      "original": "PICK YOUR BATTLE",
+      "text": "ESCOLHA SUA BATALHA"
+    },
+    "tbo/bt4/333": {
+      "original": "TEAMS (UP TO 5)",
+      "text": "EQUIPES (ATÉ 5)"
+    },
+    "tbo/bt4/334": {
+      "original": "WAITING RIGHT NOW",
+      "text": "AGUARDANDO AGORA"
+    },
+    "tbo/bt4/335": {
+      "original": "Teams",
+      "text": "Equipes"
+    },
+    "tbo/bt4/336": {
+      "original": "One on One",
+      "text": "Um contra um"
+    },
+    "tbo/bt4/337": {
+      "original": "%d WAITING",
+      "text": "%d AGUARDANDO"
+    },
+    "tbo/bt4/338": {
+      "original": "NO TIME LIMIT - %d%% SPEED",
+      "text": "SEM LIMITE DE TEMPO - VELOCIDADE %d%%"
+    },
+    "tbo/bt4/339": {
+      "original": "Name",
+      "text": "Nome"
+    },
+    "tbo/bt4/340": {
+      "original": "PLAYER CARD",
+      "text": "PERFIL DO JOGADOR"
+    },
+    "tbo/bt4/341": {
+      "original": "Set the number of slots on Team 1. Both teams can have up to ten fighters in total.",
+      "text": "Defina as vagas da Equipe 1. As duas equipes podem ter até dez lutadores no total."
+    },
+    "tbo/bt4/342": {
+      "original": "Set the number of slots on Team 2. The teams can have different numbers of fighters.",
+      "text": "Defina as vagas da Equipe 2. As equipes podem ter quantidades diferentes de lutadores."
+    },
+    "tbo/bt4/343": {
+      "original": "Choose a time limit or play until one team is defeated.",
+      "text": "Escolha um limite de tempo ou lute até uma equipe ser derrotada."
+    },
+    "tbo/bt4/344": {
+      "original": "Set the input delay in frames. Higher values allow more time for network fluctuations.",
+      "text": "Defina o atraso dos comandos em quadros. Valores maiores dão mais tempo para lidar com variações na rede."
+    },
+    "tbo/bt4/345": {
+      "original": "Fill empty slots with CPU fighters or leave them open. You can also edit each slot in the room.",
+      "text": "Preencha as vagas com lutadores CPU ou deixe-as abertas. Cada vaga também pode ser alterada na sala."
+    },
+    "tbo/bt4/346": {
+      "original": "Set the starting CPU difficulty. Each CPU slot can have its own difficulty in the room.",
+      "text": "Escolha a dificuldade inicial da CPU. Na sala, cada lutador CPU pode ter sua própria dificuldade."
+    },
+    "tbo/bt4/347": {
+      "original": "Create a room and share its code. You can start with empty slots if both teams have a fighter.",
+      "text": "Crie uma sala e compartilhe o código. Vagas vazias são permitidas se houver um lutador em cada equipe."
+    },
+    "tbo/bt4/348": {
+      "original": "Join your friends with a six-character room code. Everyone must use the same BT4 build.",
+      "text": "Entre com o código de seis caracteres. Todos os jogadores precisam usar uma versão compatível do BT4."
+    },
+    "tbo/bt4/349": {
+      "original": "Type your message with the keyboard. ENTER sends it and ESC closes the chat.",
+      "text": "Digite sua mensagem. ENTER envia e ESC fecha o chat."
+    },
+    "tbo/bt4/350": {
+      "original": "Share the code to invite friends. The host arranges the teams and starts character selection.",
+      "text": "Compartilhe o código para convidar amigos. O anfitrião organiza as equipes e inicia a seleção de personagens."
+    },
+    "tbo/bt4/351": {
+      "original": "SELECT copies the room code. The host arranges the teams and starts character selection.",
+      "text": "SELECT copia o código da sala. O anfitrião organiza as equipes e inicia a seleção de personagens."
+    },
+    "tbo/bt4/352": {
+      "original": "Choose a destination slot and confirm to move or swap the player. TRIANGLE cancels.",
+      "text": "Escolha uma vaga de destino e confirme para mover ou trocar o jogador. TRIÂNGULO cancela."
+    },
+    "tbo/bt4/353": {
+      "original": "Choose a destination with X. TRIANGLE cancels. SELECT copies the room code.",
+      "text": "Escolha o destino com X. TRIÂNGULO cancela e SELECT copia o código da sala."
+    },
+    "tbo/bt4/354": {
+      "original": "X toggles a CPU in this slot. L1/R1 changes its difficulty. SQUARE starts character selection.",
+      "text": "X adiciona ou remove uma CPU nesta vaga. L1/R1 muda a dificuldade. QUADRADO inicia a seleção de personagens."
+    },
+    "tbo/bt4/355": {
+      "original": "X toggles the CPU. L1/R1 changes its difficulty. SELECT copies the code; SQUARE starts.",
+      "text": "X adiciona ou remove a CPU. L1/R1 muda a dificuldade. SELECT copia o código; QUADRADO inicia."
+    },
+    "tbo/bt4/356": {
+      "original": "Select a player with X, then choose a destination slot. Empty slots can hold CPU fighters. SQUARE starts selection.",
+      "text": "Selecione um jogador com X e escolha a vaga de destino. As vagas vazias podem receber CPUs. QUADRADO inicia a seleção."
+    },
+    "tbo/bt4/357": {
+      "original": "X selects players and slots. L1/R1 changes CPU difficulty. SELECT copies the code; SQUARE starts.",
+      "text": "X seleciona jogadores e vagas. L1/R1 muda a dificuldade da CPU. SELECT copia o código; QUADRADO inicia."
+    },
+    "tbo/bt4/358": {
+      "original": "Choose input delay in frames. Automatic adjusts it when the match starts.",
+      "text": "Escolha o atraso dos comandos em quadros. O modo Automático ajusta o atraso no início da partida."
+    },
+    "tbo/bt4/359": {
+      "original": "Choose the rollback window. A larger window allows more frames of prediction and correction.",
+      "text": "Escolha a janela de rollback. Uma janela maior permite prever e corrigir mais quadros."
+    },
+    "tbo/bt4/360": {
+      "original": "Choose your battle rules, create the room, and share its code with your opponent.",
+      "text": "Escolha as regras da batalha, crie a sala e compartilhe o código com seu adversário."
+    },
+    "tbo/bt4/361": {
+      "original": "Enter the six-character room code or paste it from the clipboard, then confirm to join.",
+      "text": "Digite ou cole o código de seis caracteres e confirme para entrar."
+    },
+    "tbo/bt4/362": {
+      "original": "Here we go! The match is starting!",
+      "text": "A partida vai começar!"
+    },
+    "tbo/bt4/363": {
+      "original": "Looking for a worthy challenger... Warm up in Training meanwhile!",
+      "text": "Buscando um desafiante à altura... Enquanto isso, aqueça no Treinamento!"
+    },
+    "tbo/bt4/364": {
+      "original": "Every player needs the same BT4 B14 Rev2 build and verified game data.",
+      "text": "Todos os jogadores precisam usar uma versão compatível do BT4 B14 Rev2 e dados verificados."
+    },
+    "tbo/bt4/365": {
+      "original": "Online fights require the same BT4 B14 Rev2 build and verified data on both computers.",
+      "text": "As partidas online exigem versões compatíveis do BT4 B14 Rev2 e dados verificados nos dois computadores."
+    },
+    "tbo/bt4/366": {
+      "original": "Warm up at the tournament while we search! Pick yourself and a sparring partner.",
+      "text": "Treine enquanto buscamos um adversário. Escolha seu lutador e um parceiro de treino."
+    },
+    "tbo/bt4/367": {
+      "original": "Choose a battle type to search for an opponent. Quick Match has no time limit and uses the listed game speed.",
+      "text": "Escolha um tipo de batalha para buscar um adversário. A Partida rápida não tem limite de tempo e usa a velocidade indicada."
+    },
+    "tbo/bt4/368": {
+      "original": "Enter your player name, then choose Done. SQUARE deletes a character; START confirms.",
+      "text": "Digite seu nome e escolha Concluir. QUADRADO apaga um caractere e START confirma."
+    },
+    "tbo/bt4/369": {
+      "original": "Choose the player name shown to opponents and other players in your rooms.",
+      "text": "Escolha o nome exibido aos adversários e aos outros jogadores da sala."
+    },
+    "tbo/bt4/370": {
+      "original": "Searching",
+      "text": "Buscando"
+    },
+    "tbo/bt4/371": {
+      "original": "Room Open",
+      "text": "Sala aberta"
+    },
+    "tbo/bt4/372": {
+      "original": "Joining Room",
+      "text": "Entrando na sala"
+    },
+    "tbo/bt4/373": {
+      "original": "WAITING...  %d:%02d",
+      "text": "AGUARDANDO...  %d:%02d"
+    },
+    "tbo/bt4/374": {
+      "original": "Quick Match searches its public queue. It only matches players using the same battle type. To enter a room code, choose Join Room.",
+      "text": "A Partida rápida reúne jogadores do mesmo tipo de batalha na fila pública. Para usar um código, escolha Entrar na sala."
+    },
+    "tbo/bt4/375": {
+      "original": "Your private room is open. Share its code; your rival must choose Join Room and enter it. Quick Match does not use room codes.",
+      "text": "Sua sala privada está aberta. Compartilhe o código; seu adversário deve digitá-lo em Entrar na sala. A Partida rápida usa uma fila separada."
+    },
+    "tbo/bt4/376": {
+      "original": "Joining the private room with this code. Wait for the host to connect.",
+      "text": "Entrando na sala privada. Aguarde a conexão com o anfitrião."
+    },
+    "tbo/bt4/377": {
+      "original": "Press Search to enter the public queue. It only matches players searching the same battle type. To use a room code, choose Join Room.",
+      "text": "Escolha Buscar para entrar na fila pública do mesmo tipo de batalha. Para usar um código, escolha Entrar na sala."
+    },
+    "tbo/bt4/378": {
+      "original": "Tag Team Room",
+      "text": "Sala Tag Team"
+    },
+    "tbo/bt4/379": {
+      "original": "Tag Team Settings",
+      "text": "Configurações do Tag Team"
+    },
+    "tbo/bt4/380": {
+      "original": "Teams, up to 5",
+      "text": "Equipes, até 5"
+    },
+    "tbo/bt4/381": {
+      "original": "One on one",
+      "text": "Um contra um"
+    },
+    "tbo/bt4/382": {
+      "original": "Connecting to your rival...",
+      "text": "Conectando ao adversário..."
+    },
+    "tbo/bt4/383": {
+      "original": "Your rival \"{name}\" is here! The match begins.",
+      "text": "Seu adversário \"{name}\" chegou! A partida vai começar."
+    },
+    "tbo/bt4/384": {
+      "original": "Your rival is here! The match begins.",
+      "text": "Seu adversário chegou! A partida vai começar."
+    },
+    "tbo/bt4/385": {
+      "original": "Quick match, teams: searching",
+      "text": "Partida rápida em equipe: buscando"
+    },
+    "tbo/bt4/386": {
+      "original": "Quick match, one on one: searching",
+      "text": "Partida rápida individual: buscando"
+    },
+    "tbo/bt4/387": {
+      "original": "Your room code: ",
+      "text": "Código da sua sala: "
+    },
+    "tbo/bt4/388": {
+      "original": "Getting a room code",
+      "text": "Obtendo um código de sala"
+    },
+    "tbo/bt4/389": {
+      "original": "Joining room ",
+      "text": "Entrando na sala "
+    },
+    "tbo/bt4/390": {
+      "original": "Battle: teams",
+      "text": "Batalha: equipes"
+    },
+    "tbo/bt4/391": {
+      "original": "Battle: one on one",
+      "text": "Batalha: um contra um"
+    },
+    "tbo/bt4/392": {
+      "original": "You: ",
+      "text": "Você: "
+    },
+    "tbo/bt4/393": {
+      "original": "Partner: ",
+      "text": "Parceiro: "
+    },
+    "tbo/bt4/394": {
+      "original": "Start training",
+      "text": "Iniciar treino"
+    },
+    "tbo/bt4/395": {
+      "original": "Name: ",
+      "text": "Nome: "
+    },
+    "tbo/bt4/396": {
+      "original": "Code: ",
+      "text": "Código: "
+    },
+    "tbo/bt4/397": {
+      "original": "empty",
+      "text": "vazio"
+    },
+    "tbo/bt4/398": {
+      "original": "%d/%d | %d PLAYER + %d CPU",
+      "text": "%d/%d | %d JOGADOR + %d CPU"
+    },
+    "tbo/bt4/399": {
+      "original": "%d/%d | %d PLAYERS + %d CPU",
+      "text": "%d/%d | %d JOGADORES + %d CPU"
+    },
+    "tbo/bt4/400": {
+      "original": "Rematch",
+      "text": "Revanche"
+    },
+    "tbo/bt4/401": {
+      "original": "Character Select",
+      "text": "Seleção de personagens"
+    },
+    "tbo/bt4/402": {
+      "original": "Main Menu",
+      "text": "Menu principal"
+    },
+    "tbo/bt4/403": {
+      "original": "TEAM 1 WINS",
+      "text": "EQUIPE 1 VENCEU"
+    },
+    "tbo/bt4/404": {
+      "original": "TEAM 2 WINS",
+      "text": "EQUIPE 2 VENCEU"
+    },
+    "tbo/bt4/405": {
+      "original": "DRAW",
+      "text": "EMPATE"
+    },
+    "tbo/bt4/406": {
+      "original": "HOST CHOOSES THE NEXT ROUND",
+      "text": "O ANFITRIÃO ESCOLHE A PRÓXIMA RODADA"
+    },
+    "tbo/bt4/407": {
+      "original": "WAITING FOR PLAYERS...",
+      "text": "AGUARDANDO JOGADORES..."
+    },
+    "tbo/bt4/408": {
+      "original": "TAG TEAM | MATCH COMPLETE",
+      "text": "TAG TEAM | PARTIDA ENCERRADA"
+    },
+    "tbo/bt4/409": {
+      "original": "Leave Room",
+      "text": "Sair da sala"
+    },
+    "tbo/bt4/410": {
+      "original": "Choose",
+      "text": "Escolher"
+    },
+    "tbo/bt4/411": {
+      "original": "Confirm / Start",
+      "text": "Confirmar / Iniciar"
+    },
+    "tbo/bt4/412": {
+      "original": "TAG TEAM ONLINE",
+      "text": "TAG TEAM ONLINE"
+    },
+    "tbo/bt4/413": {
+      "original": "The match continues while this menu is open.",
+      "text": "A partida continua enquanto este menu está aberto."
+    },
+    "tbo/bt4/414": {
+      "original": "X: Confirm | TRIANGLE / START: Back",
+      "text": "X: confirmar | TRIÂNGULO / START: voltar"
+    },
+    "tbo/bt4/415": {
+      "original": "TAG TEAM endpoint is too long.",
+      "text": "O endereço do servidor de TAG TEAM é longo demais."
+    },
+    "tbo/bt4/416": {
+      "original": "Set a TAG TEAM server (IPv4:port) first.",
+      "text": "Primeiro, configure um servidor de TAG TEAM (IPv4:porta)."
+    },
+    "tbo/bt4/417": {
+      "original": "Invalid TAG TEAM server address.",
+      "text": "Endereço de servidor de TAG TEAM inválido."
+    },
+    "tbo/bt4/418": {
+      "original": "Cannot open TAG TEAM connection.",
+      "text": "Não foi possível abrir a conexão de TAG TEAM."
+    },
+    "tbo/bt4/419": {
+      "original": "TAG TEAM server is unavailable.",
+      "text": "O servidor de TAG TEAM está indisponível."
+    },
+    "tbo/bt4/420": {
+      "original": "TAG TEAM WebSocket send failed.",
+      "text": "Falha no envio pelo WebSocket de TAG TEAM."
+    },
+    "tbo/bt4/421": {
+      "original": "TAG TEAM send queue overflow.",
+      "text": "A fila de envio de TAG TEAM excedeu o limite."
+    },
+    "tbo/bt4/422": {
+      "original": "Cannot open secure TAG TEAM room.",
+      "text": "Não foi possível abrir uma sala segura de TAG TEAM."
+    },
+    "tbo/bt4/423": {
+      "original": "Cannot create a secure room code.",
+      "text": "Não foi possível criar um código de sala segura."
+    },
+    "tbo/bt4/424": {
+      "original": "TAG TEAM connection timed out.",
+      "text": "A conexão de TAG TEAM excedeu o tempo de espera."
+    },
+    "tbo/bt4/425": {
+      "original": "TAG TEAM connection was lost.",
+      "text": "A conexão de TAG TEAM foi perdida."
+    },
+    "tbo/bt4/426": {
+      "original": "The TAG TEAM coordinator connection was lost.",
+      "text": "A conexão com o coordenador de TAG TEAM foi perdida."
+    },
+    "tbo/bt4/427": {
+      "original": "This client fell too far behind the TAG TEAM coordinator.",
+      "text": "Este cliente ficou muito atrasado em relação ao coordenador de TAG TEAM."
+    },
+    "tbo/bt4/428": {
+      "original": "Stale TAG TEAM battle input.",
+      "text": "Os comandos de batalha de TAG TEAM estão desatualizados."
+    },
+    "tbo/bt4/429": {
+      "original": "Invalid TAG TEAM input frame.",
+      "text": "Quadro de comandos de TAG TEAM inválido."
+    },
+    "tbo/bt4/430": {
+      "original": "Incompatible TAG TEAM server.",
+      "text": "Servidor de TAG TEAM incompatível."
+    },
+    "tbo/bt4/431": {
+      "original": "Wrong room phase.",
+      "text": "Estado da sala incorreto."
+    },
+    "tbo/bt4/432": {
+      "original": "Room or player not found.",
+      "text": "Sala ou jogador não encontrado."
+    },
+    "tbo/bt4/433": {
+      "original": "This room is full.",
+      "text": "Esta sala está cheia."
+    },
+    "tbo/bt4/434": {
+      "original": "Only the host can do that.",
+      "text": "Só o anfitrião pode fazer isso."
+    },
+    "tbo/bt4/435": {
+      "original": "Wait for your team's turn.",
+      "text": "Aguarde a vez da sua equipe."
+    },
+    "tbo/bt4/436": {
+      "original": "Invalid fighter or room settings.",
+      "text": "Lutador ou configurações da sala inválidos."
+    },
+    "tbo/bt4/437": {
+      "original": "Waiting for all players.",
+      "text": "Aguardando todos os jogadores."
+    },
+    "tbo/bt4/438": {
+      "original": "The room changed. Try again.",
+      "text": "A sala mudou. Tente novamente."
+    },
+    "tbo/bt4/439": {
+      "original": "Game data does not match the room.",
+      "text": "Os dados do jogo não correspondem aos da sala."
+    },
+    "tbo/bt4/440": {
+      "original": "BT4 base data is missing or unsupported. Repair the game data with Install.exe.",
+      "text": "Os dados-base do BT4 estão ausentes ou são incompatíveis. Repare os dados do jogo com Install.exe."
+    },
+    "tbo/bt4/441": {
+      "original": "The room setup or base game data does not match.",
+      "text": "As configurações da sala ou os dados-base do jogo são diferentes."
+    },
+    "tbo/bt4/442": {
+      "original": "The battle states remained different. A synchronization report was saved in tbo/logs.",
+      "text": "Os estados da batalha continuaram diferentes. Um relatório de sincronização foi salvo em tbo/logs."
+    },
+    "tbo/bt4/443": {
+      "original": "TAG TEAM request rejected.",
+      "text": "Solicitação de TAG TEAM recusada."
+    },
+    "tbo/bt4/444": {
+      "original": "TAG TEAM server stopped responding.",
+      "text": "O servidor de TAG TEAM parou de responder."
+    },
+    "tbo/bt4/445": {
+      "original": "Allies",
+      "text": "Aliados"
+    },
+    "tbo/bt4/446": {
+      "original": "Targets",
+      "text": "Alvos"
+    },
+    "tbo/bt4/447": {
+      "original": "Team Score",
+      "text": "Placar da equipe"
+    },
+    "tbo/bt4/448": {
+      "original": "ALLIES",
+      "text": "ALIADOS"
+    },
+    "tbo/bt4/449": {
+      "original": "L3 CHANGE TARGET",
+      "text": "L3: MUDAR ALVO"
+    },
+    "tbo/bt4/450": {
+      "original": "Save",
+      "text": "Salvar"
+    },
+    "tbo/bt4/451": {
+      "original": "Reset Panel",
+      "text": "Restaurar painel"
+    },
+    "tbo/bt4/452": {
+      "original": "D-PAD: MOVE | L2: FASTER | SELECT: RESET ALL",
+      "text": "DIRECIONAL: MOVER | L2: MAIS RÁPIDO | SELECT: RESTAURAR TUDO"
+    },
+    "tbo/bt4/453": {
+      "original": "TAG TEAM | PREPARING STAGE SELECT",
+      "text": "TAG TEAM | PREPARANDO ESCOLHA DO CENÁRIO"
+    },
+    "tbo/bt4/454": {
+      "original": "TAG TEAM | CHARACTER SELECT",
+      "text": "TAG TEAM | SELEÇÃO DE PERSONAGENS"
+    },
+    "tbo/bt4/455": {
+      "original": "TRIANGLE: BACK",
+      "text": "TRIÂNGULO: VOLTAR"
+    },
+    "tbo/bt4/456": {
+      "original": "RED TEAM: ",
+      "text": "EQUIPE VERMELHA: "
+    },
+    "tbo/bt4/457": {
+      "original": "BLUE TEAM: ",
+      "text": "EQUIPE AZUL: "
+    },
+    "tbo/bt4/458": {
+      "original": "READY",
+      "text": "PRONTO"
+    },
+    "tbo/bt4/459": {
+      "original": " | CONFIRMING",
+      "text": " | CONFIRMANDO"
+    },
+    "tbo/bt4/460": {
+      "original": " | SELECT CPU",
+      "text": " | ESCOLHER CPU"
+    },
+    "tbo/bt4/461": {
+      "original": " | YOUR TURN",
+      "text": " | SUA VEZ"
+    },
+    "tbo/bt4/462": {
+      "original": "TARGET 01",
+      "text": "ALVO 01"
+    },
+    "tbo/bt4/463": {
+      "original": "TARGET 02",
+      "text": "ALVO 02"
+    },
+    "tbo/bt4/464": {
+      "original": "TARGET 03",
+      "text": "ALVO 03"
+    },
+    "tbo/bt4/465": {
+      "original": "TARGET 04",
+      "text": "ALVO 04"
+    },
+    "tbo/bt4/466": {
+      "original": "TARGET 05",
+      "text": "ALVO 05"
+    },
+    "tbo/bt4/467": {
+      "original": "TARGET 06",
+      "text": "ALVO 06"
+    },
+    "tbo/bt4/468": {
+      "original": "TARGET 07",
+      "text": "ALVO 07"
+    },
+    "tbo/bt4/469": {
+      "original": "TARGET 08",
+      "text": "ALVO 08"
+    },
+    "tbo/bt4/470": {
+      "original": "TARGET 09",
+      "text": "ALVO 09"
+    },
+    "tbo/bt4/471": {
+      "original": "TARGET 10",
+      "text": "ALVO 10"
+    },
+    "tbo/bt4/472": {
+      "original": "%d ENTRANTS",
+      "text": "%d PARTICIPANTES"
+    },
+    "tbo/bt4/473": {
+      "original": "%d fighter",
+      "text": "%d lutador"
+    },
+    "tbo/bt4/474": {
+      "original": "%d fighters",
+      "text": "%d lutadores"
+    },
+    "tbo/bt4/475": {
+      "original": "%s is the champion! Congratulations!",
+      "text": "%s é o campeão! Parabéns!"
+    },
+    "tbo/bt4/476": {
+      "original": "BYE",
+      "text": "AVANÇA SEM LUTAR"
+    },
+    "tbo/bt4/477": {
+      "original": "CHAMPION",
+      "text": "CAMPEÃO"
+    },
+    "tbo/bt4/478": {
+      "original": "CHOOSE FIGHTERS",
+      "text": "ESCOLHER LUTADORES"
+    },
+    "tbo/bt4/479": {
+      "original": "CHOOSE THE WINNER OF THE DISPUTED MATCH ON THE BRACKET",
+      "text": "ESCOLHA O VENCEDOR DA PARTIDA CONTESTADA NA CHAVE DO TORNEIO"
+    },
+    "tbo/bt4/480": {
+      "original": "Choose the winner: ",
+      "text": "Escolha o vencedor: "
+    },
+    "tbo/bt4/481": {
+      "original": "DISCONNECTED %d:%02d",
+      "text": "DESCONECTADO %d:%02d"
+    },
+    "tbo/bt4/482": {
+      "original": "Enter to send. Esc to close.",
+      "text": "Enter para enviar. Esc para fechar."
+    },
+    "tbo/bt4/483": {
+      "original": "FINAL",
+      "text": "FINAL"
+    },
+    "tbo/bt4/484": {
+      "original": "Final",
+      "text": "Final"
+    },
+    "tbo/bt4/485": {
+      "original": "Host",
+      "text": "Anfitrião"
+    },
+    "tbo/bt4/486": {
+      "original": "LEFT",
+      "text": "ESQUERDA"
+    },
+    "tbo/bt4/487": {
+      "original": "NO MATCH LEFT TO PLAY",
+      "text": "NENHUMA PARTIDA RESTANTE"
+    },
+    "tbo/bt4/488": {
+      "original": "New Tournament",
+      "text": "Novo torneio"
+    },
+    "tbo/bt4/489": {
+      "original": "New Tournament draws another of the player places.",
+      "text": "Novo torneio sorteia novamente as posições dos jogadores."
+    },
+    "tbo/bt4/490": {
+      "original": "Next: %s vs %s",
+      "text": "Próxima: %s vs %s"
+    },
+    "tbo/bt4/491": {
+      "original": "Now: %s vs %s",
+      "text": "Agora: %s vs %s"
+    },
+    "tbo/bt4/492": {
+      "original": "Open slot",
+      "text": "Vaga livre"
+    },
+    "tbo/bt4/493": {
+      "original": "PUT AT LEAST TWO PLAYERS IN THE PLAYER PLACES",
+      "text": "COLOQUE PELO MENOS DOIS JOGADORES NAS VAGAS DE JOGADOR"
+    },
+    "tbo/bt4/494": {
+      "original": "Player",
+      "text": "Jogador"
+    },
+    "tbo/bt4/495": {
+      "original": "Press Square",
+      "text": "Pressione Quadrado"
+    },
+    "tbo/bt4/496": {
+      "original": "Quarterfinal",
+      "text": "Quartas de final"
+    },
+    "tbo/bt4/497": {
+      "original": "Select to add a CPU",
+      "text": "Selecione para adicionar uma CPU"
+    },
+    "tbo/bt4/498": {
+      "original": "Select to copy",
+      "text": "Selecione para copiar"
+    },
+    "tbo/bt4/499": {
+      "original": "Semifinal",
+      "text": "Semifinal"
+    },
+    "tbo/bt4/500": {
+      "original": "Start Next Match",
+      "text": "Iniciar próxima partida"
+    },
+    "tbo/bt4/501": {
+      "original": "Start it when both are here!",
+      "text": "Inicie quando os dois estiverem aqui!"
+    },
+    "tbo/bt4/502": {
+      "original": "THE OWNER IS CHOOSING THE WINNER",
+      "text": "O ANFITRIÃO ESTÁ ESCOLHENDO O VENCEDOR"
+    },
+    "tbo/bt4/503": {
+      "original": "THE TWO GAMES DISAGREE ON THIS MATCH: CHOOSE THE WINNER",
+      "text": "OS DOIS JOGOS DIVERGIRAM: ESCOLHA O VENCEDOR"
+    },
+    "tbo/bt4/504": {
+      "original": "TOURNAMENT ON",
+      "text": "TORNEIO EM ANDAMENTO"
+    },
+    "tbo/bt4/505": {
+      "original": "TOURNAMENT OVER",
+      "text": "TORNEIO ENCERRADO"
+    },
+    "tbo/bt4/506": {
+      "original": "The host starts the match",
+      "text": "O anfitrião inicia a partida"
+    },
+    "tbo/bt4/507": {
+      "original": "The owner is choosing the winner.",
+      "text": "O anfitrião está escolhendo o vencedor."
+    },
+    "tbo/bt4/508": {
+      "original": "The owner starts it.",
+      "text": "O anfitrião inicia."
+    },
+    "tbo/bt4/509": {
+      "original": "The tournament is over.",
+      "text": "O torneio terminou."
+    },
+    "tbo/bt4/510": {
+      "original": "The two games disagree on this match: choose the winner.",
+      "text": "Os dois jogos divergiram nesta partida. Escolha o vencedor."
+    },
+    "tbo/bt4/511": {
+      "original": "Tournaments",
+      "text": "Torneios"
+    },
+    "tbo/bt4/512": {
+      "original": "WAITING FOR A PLAYER WHO LOST THE CONNECTION",
+      "text": "AGUARDANDO UM JOGADOR QUE PERDEU A CONEXÃO"
+    },
+    "tbo/bt4/513": {
+      "original": "WAITING FOR HOST",
+      "text": "AGUARDANDO O ANFITRIÃO"
+    },
+    "tbo/bt4/514": {
+      "original": "Waiting for %s to come back.",
+      "text": "Aguardando %s voltar."
+    },
+    "tbo/bt4/515": {
+      "original": "Waiting for the next match...",
+      "text": "Aguardando a próxima partida..."
+    },
+    "tbo/bt4/516": {
+      "original": "YOU",
+      "text": "VOCÊ"
+    },
+    "tbo/bt4/517": {
+      "original": "Add CPU",
+      "text": "Adicionar CPU"
+    },
+    "tbo/bt4/518": {
+      "original": "Remove CPU",
+      "text": "Remover CPU"
+    },
+    "tbo/bt4/519": {
+      "original": "Move player",
+      "text": "Mover jogador"
+    },
+    "tbo/bt4/520": {
+      "original": "Copy code",
+      "text": "Copiar código"
+    },
+    "tbo/bt4/521": {
+      "original": "L1 and R1 adjust the selected CPU difficulty.",
+      "text": "L1 e R1 ajustam a dificuldade da CPU selecionada."
+    },
+    "tbo/bt4/522": {
+      "original": "Choose a slot to manage the teams. Press Square when everyone is ready.",
+      "text": "Escolha uma vaga para organizar as equipes. Pressione QUADRADO quando todos estiverem prontos."
+    },
+    "tbo/bt4/523": {
+      "original": "Create an online tournament for 2 to 8 players. Follow the bracket and watch each match.",
+      "text": "Crie um torneio online para 2 a 8 jogadores. Acompanhe as chaves e assista às partidas."
+    },
+    "tbo/bt4/524": {
+      "original": "New Lobby",
+      "text": "Novo lobby"
+    },
+    "tbo/bt4/525": {
+      "original": "Open Lobby",
+      "text": "Criar lobby"
+    },
+    "tbo/bt4/526": {
+      "original": "A NEW LOBBY",
+      "text": "NOVO LOBBY"
+    },
+    "tbo/bt4/527": {
+      "original": "WITH A CODE",
+      "text": "COM UM CÓDIGO"
+    },
+    "tbo/bt4/528": {
+      "original": "PORT %d",
+      "text": "PORTA %d"
+    },
+    "tbo/bt4/529": {
+      "original": "Join by Address",
+      "text": "Entrar por endereço"
+    },
+    "tbo/bt4/530": {
+      "original": "Host a lobby by address. Share your address and port with the other players.",
+      "text": "Crie uma sala por endereço. Compartilhe seu endereço e porta com os outros jogadores."
+    },
+    "tbo/bt4/531": {
+      "original": "Open a lobby and share its code. Set the match rules inside the lobby.",
+      "text": "Abra uma sala, compartilhe o código e configure as regras da partida."
+    },
+    "tbo/bt4/532": {
+      "original": "Enter the host address and port, then choose Join.",
+      "text": "Digite o endereço e a porta do anfitrião e escolha Entrar."
+    },
+    "tbo/bt4/533": {
+      "original": "Mode",
+      "text": "Modo"
+    },
+    "tbo/bt4/534": {
+      "original": "Versus",
+      "text": "Versus"
+    },
+    "tbo/bt4/535": {
+      "original": "Entrants",
+      "text": "Participantes"
+    },
+    "tbo/bt4/536": {
+      "original": "Bracket",
+      "text": "Chave do torneio"
+    },
+    "tbo/bt4/537": {
+      "original": "Start Tournament",
+      "text": "Iniciar torneio"
+    },
+    "tbo/bt4/538": {
+      "original": "Call Off the Tournament?",
+      "text": "Cancelar o torneio?"
+    },
+    "tbo/bt4/539": {
+      "original": "Call Off Tournament",
+      "text": "Cancelar torneio"
+    },
+    "tbo/bt4/540": {
+      "original": "The tournament was called off.",
+      "text": "O torneio foi cancelado."
+    },
+    "tbo/bt4/541": {
+      "original": "The match will be played again.",
+      "text": "A partida será repetida."
+    },
+    "tbo/bt4/542": {
+      "original": "No winner: the match will be played again.",
+      "text": "Sem vencedor: a partida será repetida."
+    },
+    "tbo/bt4/543": {
+      "original": "The players' results differ: the match will be played again.",
+      "text": "Os resultados dos jogadores são diferentes. A partida será repetida."
+    },
+    "tbo/bt4/544": {
+      "original": "Only one player's result came: the match will be played again.",
+      "text": "Só um jogador enviou o resultado. A partida será repetida."
+    },
+    "tbo/bt4/545": {
+      "original": "The two games disagree on this match: the owner chooses the winner.",
+      "text": "Os dois jogos divergiram nesta partida. O anfitrião escolhe o vencedor."
+    },
+    "tbo/bt4/546": {
+      "original": "%s won the match",
+      "text": "%s venceu a partida"
+    },
+    "tbo/bt4/547": {
+      "original": "%s won by walkover",
+      "text": "%s venceu por desistência"
+    },
+    "tbo/bt4/548": {
+      "original": "%s is the champion!",
+      "text": "%s é o campeão!"
+    },
+    "tbo/bt4/549": {
+      "original": "%s lost the connection: the place is held for 90 s",
+      "text": "%s perdeu a conexão: a vaga ficará reservada por 90 s"
+    },
+    "tbo/bt4/550": {
+      "original": "%s is back in the tournament",
+      "text": "%s voltou ao torneio"
+    },
+    "tbo/bt4/551": {
+      "original": "%s did not come back in time",
+      "text": "%s não voltou a tempo"
+    },
+    "tbo/bt4/552": {
+      "original": "%s won the match (the owner's choice)",
+      "text": "%s venceu a partida (decisão do anfitrião)"
+    },
+    "tbo/bt4/553": {
+      "original": "Moving",
+      "text": "Movendo"
+    },
+    "tbo/bt4/554": {
+      "original": "Search for an opponent in a public queue.",
+      "text": "Busque um adversário na fila pública."
+    },
+    "tbo/bt4/555": {
+      "original": "Open a lobby, choose the rules and invite players or spectators.",
+      "text": "Abra uma sala, configure as regras e convide jogadores ou espectadores."
+    },
+    "tbo/bt4/556": {
+      "original": "Join a lobby with its code or the host address.",
+      "text": "Entre em uma sala pelo código ou endereço do anfitrião."
+    },
+    "tbo/bt4/557": {
+      "original": "Build two teams for simultaneous battles with players and CPU fighters.",
+      "text": "Organize duas equipes para batalhas simultâneas entre jogadores e lutadores CPU."
+    },
+    "tbo/bt4/558": {
+      "original": "Set the name other players see.",
+      "text": "Escolha o nome exibido aos outros jogadores."
+    },
+    "tbo/bt4/559": {
+      "original": "Choose Fighters",
+      "text": "Escolher lutadores"
+    },
+    "tbo/bt4-costume/000": {
+      "original": "King Kai Logo",
+      "text": "Símbolo do Sr. Kaioh"
+    },
+    "tbo/bt4-costume/001": {
+      "original": "End of DB",
+      "text": "Fim de Dragon Ball"
+    },
+    "tbo/bt4-costume/002": {
+      "original": "Turtle Logo (No Heavy Clothing)",
+      "text": "Símbolo da Tartaruga (sem pesos)"
+    },
+    "tbo/bt4-costume/003": {
+      "original": "End of DB (No Heavy Clothing)",
+      "text": "Fim de Dragon Ball (sem pesos)"
+    },
+    "tbo/bt4-costume/004": {
+      "original": "Turtle Logo",
+      "text": "Símbolo da Tartaruga"
+    },
+    "tbo/bt4-costume/005": {
+      "original": "Goku Logo",
+      "text": "Símbolo de Goku"
+    },
+    "tbo/bt4-costume/006": {
+      "original": "Color 7",
+      "text": "Cor 7"
+    },
+    "tbo/bt4-costume/007": {
+      "original": "Color 8",
+      "text": "Cor 8"
+    },
+    "tbo/bt4-costume/008": {
+      "original": "Saiyan Armor",
+      "text": "Armadura Saiyajin"
+    },
+    "tbo/bt4-costume/009": {
+      "original": "Battle Damaged",
+      "text": "Danificado em batalha"
+    },
+    "tbo/bt4-costume/010": {
+      "original": "Yardrat Clothes",
+      "text": "Traje de Yardrat"
+    },
+    "tbo/bt4-costume/011": {
+      "original": "No Logo (Original)",
+      "text": "Sem símbolo (Original)"
+    },
+    "tbo/bt4-costume/012": {
+      "original": "Saiyan Armor (Original)",
+      "text": "Armadura Saiyajin (Original)"
+    },
+    "tbo/bt4-costume/013": {
+      "original": "Battle Damaged (Original)",
+      "text": "Danificado em batalha (Original)"
+    },
+    "tbo/bt4-costume/014": {
+      "original": "Yardrat Clothes (Original)",
+      "text": "Traje de Yardrat (Original)"
+    },
+    "tbo/bt4-costume/015": {
+      "original": "No Logo",
+      "text": "Sem símbolo"
+    },
+    "tbo/bt4-costume/016": {
+      "original": "End of Z",
+      "text": "Fim de Dragon Ball Z"
+    },
+    "tbo/bt4-costume/017": {
+      "original": "Resurrection F",
+      "text": "Ressurreição F"
+    },
+    "tbo/bt4-costume/018": {
+      "original": "Goku Logo (DBS)",
+      "text": "Símbolo de Goku (DBS)"
+    },
+    "tbo/bt4-costume/019": {
+      "original": "Goku Logo (DBS Broly)",
+      "text": "Símbolo de Goku (DBS Broly)"
+    },
+    "tbo/bt4-costume/020": {
+      "original": "GT Outfit",
+      "text": "Traje GT"
+    },
+    "tbo/bt4-costume/021": {
+      "original": "Color 5",
+      "text": "Cor 5"
+    },
+    "tbo/bt4-costume/022": {
+      "original": "Color 6",
+      "text": "Cor 6"
+    },
+    "tbo/bt4-costume/023": {
+      "original": "Blue Gi",
+      "text": "Quimono azul"
+    },
+    "tbo/bt4-costume/024": {
+      "original": "Path to the Power",
+      "text": "Caminho para o Poder"
+    },
+    "tbo/bt4-costume/025": {
+      "original": "Training",
+      "text": "Treinamento"
+    },
+    "tbo/bt4-costume/026": {
+      "original": "Default",
+      "text": "Padrão"
+    },
+    "tbo/bt4-costume/027": {
+      "original": "Opening Coloration",
+      "text": "Cores da abertura"
+    },
+    "tbo/bt4-costume/028": {
+      "original": "GT Coloration",
+      "text": "Cores de GT"
+    },
+    "tbo/bt4-costume/029": {
+      "original": "Early DB Coloration",
+      "text": "Cores do início de Dragon Ball"
+    },
+    "tbo/bt4-costume/030": {
+      "original": "Kai Coloration",
+      "text": "Cores de Kai"
+    },
+    "tbo/bt4-costume/031": {
+      "original": "Short Hair",
+      "text": "Cabelo curto"
+    },
+    "tbo/bt4-costume/032": {
+      "original": "Headband",
+      "text": "Faixa de cabeça"
+    },
+    "tbo/bt4-costume/033": {
+      "original": "Armor",
+      "text": "Armadura"
+    },
+    "tbo/bt4-costume/034": {
+      "original": "Long Hair",
+      "text": "Cabelo longo"
+    },
+    "tbo/bt4-costume/035": {
+      "original": "Piccolo's Gi",
+      "text": "Quimono de Piccolo"
+    },
+    "tbo/bt4-costume/036": {
+      "original": "Goku's Gi",
+      "text": "Quimono de Goku"
+    },
+    "tbo/bt4-costume/037": {
+      "original": "Movie 8",
+      "text": "Filme 8"
+    },
+    "tbo/bt4-costume/038": {
+      "original": "Saiyaman Outfit",
+      "text": "Traje de Saiyaman"
+    },
+    "tbo/bt4-costume/039": {
+      "original": "School Uniform",
+      "text": "Uniforme escolar"
+    },
+    "tbo/bt4-costume/040": {
+      "original": "Tracksuit",
+      "text": "Agasalho esportivo"
+    },
+    "tbo/bt4-costume/041": {
+      "original": "Supreme Kai Robes",
+      "text": "Vestes de Kaioshin"
+    },
+    "tbo/bt4-costume/042": {
+      "original": "Helmet",
+      "text": "Capacete"
+    },
+    "tbo/bt4-costume/043": {
+      "original": "Turbant and Sunglasses",
+      "text": "Turbante e óculos de sol"
+    },
+    "tbo/bt4-costume/044": {
+      "original": "Manga Turbant",
+      "text": "Turbante do mangá"
+    },
+    "tbo/bt4-costume/045": {
+      "original": "Super Great Saiyaman",
+      "text": "Super Grande Saiyaman"
+    },
+    "tbo/bt4-costume/046": {
+      "original": "Cape and Turbant",
+      "text": "Capa e turbante"
+    },
+    "tbo/bt4-costume/047": {
+      "original": "Turbant",
+      "text": "Turbante"
+    },
+    "tbo/bt4-costume/048": {
+      "original": "Manga Colors",
+      "text": "Cores do mangá"
+    },
+    "tbo/bt4-costume/049": {
+      "original": "Potential Unlocked",
+      "text": "Potencial Desbloqueado"
+    },
+    "tbo/bt4-costume/050": {
+      "original": "Nail's Clothes",
+      "text": "Traje de Nail"
+    },
+    "tbo/bt4-costume/051": {
+      "original": "Color 3",
+      "text": "Cor 3"
+    },
+    "tbo/bt4-costume/052": {
+      "original": "Color 4",
+      "text": "Cor 4"
+    },
+    "tbo/bt4-costume/053": {
+      "original": "Buu Saga",
+      "text": "Saga de Majin Buu"
+    },
+    "tbo/bt4-costume/054": {
+      "original": "Special 2008",
+      "text": "Especial 2008"
+    },
+    "tbo/bt4-costume/055": {
+      "original": "Desert Bandit",
+      "text": "Bandido do Deserto"
+    },
+    "tbo/bt4-costume/056": {
+      "original": "Battle of Gods",
+      "text": "Batalha de Deuses"
+    },
+    "tbo/bt4-costume/057": {
+      "original": "Galactic Patrol",
+      "text": "Patrulha Galáctica"
+    },
+    "tbo/bt4-costume/058": {
+      "original": "Desert Bandit (Short Hair)",
+      "text": "Bandido do deserto (cabelo curto)"
+    },
+    "tbo/bt4-costume/059": {
+      "original": "Tien's Gi",
+      "text": "Quimono de Tenshinhan"
+    },
+    "tbo/bt4-costume/060": {
+      "original": "Topless",
+      "text": "Sem camisa"
+    },
+    "tbo/bt4-costume/061": {
+      "original": "Tanktop",
+      "text": "Regata"
+    },
+    "tbo/bt4-costume/062": {
+      "original": "Chiaotzu's Chang Pao",
+      "text": "Chang Pao de Chaos"
+    },
+    "tbo/bt4-costume/063": {
+      "original": "Inner Shirt",
+      "text": "Camiseta interna"
+    },
+    "tbo/bt4-costume/064": {
+      "original": "Saiyan Saga",
+      "text": "Saga dos Saiyajins"
+    },
+    "tbo/bt4-costume/065": {
+      "original": "Frieza Saga",
+      "text": "Saga de Freeza"
+    },
+    "tbo/bt4-costume/066": {
+      "original": "Old Model Armor",
+      "text": "Armadura antiga"
+    },
+    "tbo/bt4-costume/067": {
+      "original": "DBS Broly Armor",
+      "text": "Armadura de DBS: Broly"
+    },
+    "tbo/bt4-costume/068": {
+      "original": "Armor (DBS Broly)",
+      "text": "Armadura (DBS Broly)"
+    },
+    "tbo/bt4-costume/069": {
+      "original": "Goku Black's Gi",
+      "text": "Quimono de Goku Black"
+    },
+    "tbo/bt4-costume/070": {
+      "original": "Super Saiyan",
+      "text": "Super Saiyajin"
+    },
+    "tbo/bt4-costume/071": {
+      "original": "Zamasu's Robes",
+      "text": "Vestes de Zamasu"
+    },
+    "tbo/bt4-costume/072": {
+      "original": "Zamasu's Robes (SS)",
+      "text": "Vestes de Zamasu (SS)"
+    },
+    "tbo/bt4-costume/073": {
+      "original": "Android 21 Clone",
+      "text": "Clone da Androide Nº 21"
+    },
+    "tbo/bt4-costume/074": {
+      "original": "Copy Vegeta",
+      "text": "Vegeta Duplicado"
+    },
+    "tbo/bt4-costume/075": {
+      "original": "Time Patroller",
+      "text": "Patrulheiro do Tempo"
+    },
+    "tbo/bt4-costume/076": {
+      "original": "Jacket",
+      "text": "Jaqueta"
+    },
+    "tbo/bt4-costume/077": {
+      "original": "Jacketless",
+      "text": "Sem jaqueta"
+    },
+    "tbo/bt4-costume/078": {
+      "original": "Jacket (DBS)",
+      "text": "Jaqueta (DBS)"
+    },
+    "tbo/bt4-costume/079": {
+      "original": "Sweater (DBS)",
+      "text": "Suéter (DBS)"
+    },
+    "tbo/bt4-costume/080": {
+      "original": "Movie 9",
+      "text": "Filme 9"
+    },
+    "tbo/bt4-costume/081": {
+      "original": "Loose Long Hair",
+      "text": "Cabelo longo solto"
+    },
+    "tbo/bt4-costume/082": {
+      "original": "Kid Trunks' Gi",
+      "text": "Quimono de Trunks Criança"
+    },
+    "tbo/bt4-costume/083": {
+      "original": "Movie 10",
+      "text": "Filme 10"
+    },
+    "tbo/bt4-costume/084": {
+      "original": "Gi (DB Heroes)",
+      "text": "Quimono (DB Heroes)"
+    },
+    "tbo/bt4-costume/085": {
+      "original": "Mr Satan's Gi",
+      "text": "Quimono de Mr. Satan"
+    },
+    "tbo/bt4-costume/086": {
+      "original": "Tournament",
+      "text": "Torneio"
+    },
+    "tbo/bt4-costume/087": {
+      "original": "FIGHT Shirt",
+      "text": "Camiseta FIGHT"
+    },
+    "tbo/bt4-costume/088": {
+      "original": "Movie 12",
+      "text": "Filme 12"
+    },
+    "tbo/bt4-costume/089": {
+      "original": "Cabba's Armor",
+      "text": "Armadura de Cabba"
+    },
+    "tbo/bt4-costume/090": {
+      "original": "Vegeta's Armor",
+      "text": "Armadura de Vegeta"
+    },
+    "tbo/bt4-costume/091": {
+      "original": "Manga Colors A",
+      "text": "Cores do mangá A"
+    },
+    "tbo/bt4-costume/092": {
+      "original": "Manga Colors B",
+      "text": "Cores do mangá B"
+    },
+    "tbo/bt4-costume/093": {
+      "original": "Yajirobe's Clothes",
+      "text": "Traje de Yajirobe"
+    },
+    "tbo/bt4-costume/094": {
+      "original": "Beard",
+      "text": "Barba"
+    },
+    "tbo/bt4-costume/095": {
+      "original": "Pikkon's Clothes",
+      "text": "Traje de Paikuhan"
+    },
+    "tbo/bt4-costume/096": {
+      "original": "No Heavy Clothing",
+      "text": "Sem pesos"
+    },
+    "tbo/bt4-costume/097": {
+      "original": "Super Pikkon",
+      "text": "Super Paikuhan"
+    },
+    "tbo/bt4-costume/098": {
+      "original": "Tapion's Outfit",
+      "text": "Traje de Tapion"
+    },
+    "tbo/bt4-costume/099": {
+      "original": "Alt Colors",
+      "text": "Cores alternativas"
+    },
+    "tbo/bt4-costume/100": {
+      "original": "GT Clothes",
+      "text": "Traje GT"
+    },
+    "tbo/bt4-costume/101": {
+      "original": "Gi",
+      "text": "Quimono"
+    },
+    "tbo/bt4-costume/102": {
+      "original": "Kid",
+      "text": "Criança"
+    },
+    "tbo/bt4-costume/103": {
+      "original": "Battle Damaged (Topless)",
+      "text": "Danificado em batalha (sem camisa)"
+    },
+    "tbo/bt4-costume/104": {
+      "original": "Capsule Corp. Logo",
+      "text": "Símbolo da Corporação Cápsula"
+    },
+    "tbo/bt4-costume/105": {
+      "original": "Master Clothes",
+      "text": "Traje de mestre"
+    },
+    "tbo/bt4-costume/106": {
+      "original": "2010 Special",
+      "text": "Especial de 2010"
+    },
+    "tbo/bt4-costume/107": {
+      "original": "Powered Up Form",
+      "text": "Forma fortalecida"
+    },
+    "tbo/bt4-costume/108": {
+      "original": "God of Destruction Clothes",
+      "text": "Traje de Deus da Destruição"
+    },
+    "tbo/bt4-costume/109": {
+      "original": "God of Destruction Robes",
+      "text": "Vestes de Deus da Destruição"
+    },
+    "tbo/bt4-costume/110": {
+      "original": "Bardock's Armor",
+      "text": "Armadura de Bardock"
+    },
+    "tbo/bt4-costume/111": {
+      "original": "2011 Special",
+      "text": "Especial de 2011"
+    },
+    "tbo/bt4-costume/112": {
+      "original": "Fasha's Armor",
+      "text": "Armadura de Fasha"
+    },
+    "tbo/bt4-costume/113": {
+      "original": "Mutation",
+      "text": "Mutação"
+    },
+    "tbo/bt4-costume/114": {
+      "original": "Giant Mutation",
+      "text": "Mutação Gigante"
+    },
+    "tbo/bt4-costume/115": {
+      "original": "Raditz's Armor",
+      "text": "Armadura de Raditz"
+    },
+    "tbo/bt4-costume/116": {
+      "original": "Hit's Coat",
+      "text": "Casaco de Hit"
+    },
+    "tbo/bt4-costume/117": {
+      "original": "No Lower Coat",
+      "text": "Sem a parte inferior do casaco"
+    },
+    "tbo/bt4-costume/118": {
+      "original": "Frieza Soldier A",
+      "text": "Soldado de Freeza A"
+    },
+    "tbo/bt4-costume/119": {
+      "original": "Frieza Soldier B",
+      "text": "Soldado de Freeza B"
+    },
+    "tbo/bt4-costume/120": {
+      "original": "Nappa's Armor",
+      "text": "Armadura de Nappa"
+    },
+    "tbo/bt4-costume/121": {
+      "original": "Armorless",
+      "text": "Sem armadura"
+    },
+    "tbo/bt4-costume/122": {
+      "original": "Young Nappa",
+      "text": "Nappa jovem"
+    },
+    "tbo/bt4-costume/123": {
+      "original": "Ghost Nappa",
+      "text": "Nappa fantasma"
+    },
+    "tbo/bt4-costume/124": {
+      "original": "Pride Trooper Uniform",
+      "text": "Uniforme da Tropa do Orgulho"
+    },
+    "tbo/bt4-costume/125": {
+      "original": "Zarbon's Armor",
+      "text": "Armadura de Zarbon"
+    },
+    "tbo/bt4-costume/126": {
+      "original": "Dodoria's Armor",
+      "text": "Armadura de Dodoria"
+    },
+    "tbo/bt4-costume/127": {
+      "original": "Ginyu Force Armor (Black)",
+      "text": "Armadura das Forças Ginyu (preta)"
+    },
+    "tbo/bt4-costume/128": {
+      "original": "Native Race Robes",
+      "text": "Vestes da raça de origem"
+    },
+    "tbo/bt4-costume/129": {
+      "original": "Ginyu Force Armor (White)",
+      "text": "Armadura das Forças Ginyu (branca)"
+    },
+    "tbo/bt4-costume/130": {
+      "original": "No Armor",
+      "text": "Sem armadura"
+    },
+    "tbo/bt4-costume/131": {
+      "original": "SDBZ Upgrades",
+      "text": "Atualizações do SDBZ"
+    },
+    "tbo/bt4-costume/132": {
+      "original": "Armor with Cape",
+      "text": "Armadura com capa"
+    },
+    "tbo/bt4-costume/133": {
+      "original": "GT Clothes A",
+      "text": "Traje GT A"
+    },
+    "tbo/bt4-costume/134": {
+      "original": "GT Clothes B",
+      "text": "Traje GT B"
+    },
+    "tbo/bt4-costume/135": {
+      "original": "Goku Black's Gi (SS)",
+      "text": "Quimono de Goku Black (SS)"
+    },
+    "tbo/bt4-costume/136": {
+      "original": "Android 16's Armor",
+      "text": "Armadura de Android 16"
+    },
+    "tbo/bt4-costume/137": {
+      "original": "Android 17's Clothes",
+      "text": "Traje de Android 17"
+    },
+    "tbo/bt4-costume/138": {
+      "original": "Park Ranger",
+      "text": "Guarda florestal"
+    },
+    "tbo/bt4-costume/139": {
+      "original": "Android 18's Clothes",
+      "text": "Traje de Android 18"
+    },
+    "tbo/bt4-costume/140": {
+      "original": "Chi-Chi's Vest",
+      "text": "Colete de Chi-Chi"
+    },
+    "tbo/bt4-costume/141": {
+      "original": "Android 19's Clothes",
+      "text": "Traje de Android 19"
+    },
+    "tbo/bt4-costume/142": {
+      "original": "Android 20's Clothes",
+      "text": "Traje de Android 20"
+    },
+    "tbo/bt4-costume/143": {
+      "original": "Dabura's Clothes",
+      "text": "Traje de Dabura"
+    },
+    "tbo/bt4-costume/144": {
+      "original": "Shape-Up",
+      "text": "Em forma"
+    },
+    "tbo/bt4-costume/145": {
+      "original": "Piccolo Absorbed",
+      "text": "Piccolo Absorvido"
+    },
+    "tbo/bt4-costume/146": {
+      "original": "Gogeta Absorbed",
+      "text": "Gogeta absorvido"
+    },
+    "tbo/bt4-costume/147": {
+      "original": "Shirtless",
+      "text": "Sem camisa"
+    },
+    "tbo/bt4-costume/148": {
+      "original": "Vegito Absorbed",
+      "text": "Vegetto absorvido"
+    },
+    "tbo/bt4-costume/149": {
+      "original": "Android 21 Clones",
+      "text": "Clones da Androide Nº 21"
+    },
+    "tbo/bt4-costume/150": {
+      "original": "Caulifla's Clothes",
+      "text": "Traje de Caulifla"
+    },
+    "tbo/bt4-costume/151": {
+      "original": "Turles' Armor",
+      "text": "Armadura de Turles"
+    },
+    "tbo/bt4-costume/152": {
+      "original": "Cape",
+      "text": "Cabo."
+    },
+    "tbo/bt4-costume/153": {
+      "original": "Slug's Clothes",
+      "text": "Traje de Slug"
+    },
+    "tbo/bt4-costume/154": {
+      "original": "No Helmet and Gloves",
+      "text": "Sem capacete e luvas"
+    },
+    "tbo/bt4-costume/155": {
+      "original": "Uub's Clothes",
+      "text": "Traje de Uub"
+    },
+    "tbo/bt4-costume/156": {
+      "original": "Metal Cooler",
+      "text": "Metal Coola"
+    },
+    "tbo/bt4-costume/157": {
+      "original": "Lighter Tones",
+      "text": "Tons mais claros"
+    },
+    "tbo/bt4-costume/158": {
+      "original": "Golden Cooler",
+      "text": "Coola Dourado"
+    },
+    "tbo/bt4-costume/159": {
+      "original": "Matal Cooler Core",
+      "text": "Núcleo de Metal Coola"
+    },
+    "tbo/bt4-costume/160": {
+      "original": "Alt. Colors",
+      "text": "Cores alternativas"
+    },
+    "tbo/bt4-costume/161": {
+      "original": "Golden Metal Cooler",
+      "text": "Metal Coola Dourado"
+    },
+    "tbo/bt4-costume/162": {
+      "original": "Android 13's Clothes",
+      "text": "Traje de Android 13"
+    },
+    "tbo/bt4-costume/163": {
+      "original": "No Trucker Hat",
+      "text": "Sem boné"
+    },
+    "tbo/bt4-costume/164": {
+      "original": "Frieza Force's Armor",
+      "text": "Armadura de Frieza Force"
+    },
+    "tbo/bt4-costume/165": {
+      "original": "Black Shirt",
+      "text": "Camisa preta"
+    },
+    "tbo/bt4-costume/166": {
+      "original": "Bojack's Clothes",
+      "text": "Traje de Bojack"
+    },
+    "tbo/bt4-costume/167": {
+      "original": "Vegeta's Clothes",
+      "text": "Traje de Vegeta"
+    },
+    "tbo/bt4-costume/168": {
+      "original": "Super Baby 1's Armor",
+      "text": "Armadura de Super Baby 1"
+    },
+    "tbo/bt4-costume/169": {
+      "original": "Super Baby 2's Suit",
+      "text": "Traje de Super Baby 2"
+    },
+    "tbo/bt4-costume/170": {
+      "original": "Super Baby 2's Armor",
+      "text": "Armadura de Super Baby 2"
+    },
+    "tbo/bt4-costume/171": {
+      "original": "Great Ape Oren",
+      "text": "Oren Oozaru"
+    },
+    "tbo/bt4-costume/172": {
+      "original": "Super 17's Clothes",
+      "text": "Traje de Super 17"
+    },
+    "tbo/bt4-costume/173": {
+      "original": "Full Power",
+      "text": "Poder Total"
+    },
+    "tbo/bt4-costume/174": {
+      "original": "Base Form",
+      "text": "Forma base"
+    },
+    "tbo/bt4-costume/175": {
+      "original": "Tao's Chang Pao",
+      "text": "Chang Pao de Tao"
+    },
+    "tbo/bt4-costume/176": {
+      "original": "Mystical Adventure",
+      "text": "Aventura Mística"
+    },
+    "tbo/bt4-costume/177": {
+      "original": "Pride Troopers Uniform",
+      "text": "Uniforme da Tropa do Orgulho"
+    },
+    "tbo/bt4-costume/178": {
+      "original": "Demon King's Gi",
+      "text": "Quimono de Piccolo Daimaoh"
+    },
+    "tbo/bt4-costume/179": {
+      "original": "Arale's Clothes",
+      "text": "Traje de Arale"
+    },
+    "tbo/bt4-costume/180": {
+      "original": "No Cap",
+      "text": "Sem boné"
+    },
+    "tbo/bt4-costume/181": {
+      "original": "Orange Earrings",
+      "text": "Brincos laranja"
+    },
+    "tbo/bt4-costume/182": {
+      "original": "Gi (DBS)",
+      "text": "Quimono (DBS)"
+    },
+    "tbo/bt4-costume/183": {
+      "original": "Future Gohan's Gi",
+      "text": "Quimono de Gohan do Futuro"
+    },
+    "tbo/bt4-costume/184": {
+      "original": "Both Arms",
+      "text": "Com os dois braços"
+    },
+    "tbo/bt4-costume/185": {
+      "original": "Random",
+      "text": "Aleatório"
+    },
+    "tbo/bt4-costume/186": {
+      "original": "Color 1",
+      "text": "Cor 1"
+    },
+    "tbo/bt4-costume/187": {
+      "original": "Color 2",
+      "text": "Cor 2"
+    },
+    "tbo/bt4-costume/188": {
+      "original": "Alt Color 1",
+      "text": "Cor alternativa 1"
+    },
+    "tbo/bt4-costume/189": {
+      "original": "Alt Color 2",
+      "text": "Cor alternativa 2"
+    },
+    "tbo/bt4-costume/190": {
+      "original": "Alt Color 3",
+      "text": "Cor alternativa 3"
+    },
+    "tbo/bt4-costume/191": {
+      "original": "King Vegeta's Armor",
+      "text": "Armadura de King Vegeta"
+    },
+    "tbo/bt4-costume/192": {
+      "original": "Devilman's Suit",
+      "text": "Traje de Akkuman"
+    },
+    "tbo/bt4-costume/193": {
+      "original": "General Blue's Uniform",
+      "text": "Uniforme do General Blue"
+    },
+    "tbo/bt4-costume/194": {
+      "original": "Kid Chi-Chi's Outfit",
+      "text": "Traje de Chi-Chi Criança"
+    },
+    "tbo/bt4-costume/195": {
+      "original": "Grandpa Gohan's Clothes",
+      "text": "Traje de Grandpa Gohan"
+    },
+    "tbo/bt4-costume/196": {
+      "original": "No Mask",
+      "text": "Sem máscara"
+    },
+    "tbo/bt4-costume/197": {
+      "original": "Eighter's Clothes",
+      "text": "Traje de Androide Nº 8"
+    },
+    "tbo/bt4-costume/198": {
+      "original": "Nam's Clothes",
+      "text": "Traje de Nam"
+    },
+    "tbo/bt4-costume/199": {
+      "original": "Garlic Jr.'s Clothes",
+      "text": "Traje de Garlic Jr."
+    },
+    "tbo/bt4-costume/200": {
+      "original": "Pilaf's Look",
+      "text": "Visual de Pilaf"
+    },
+    "tbo/bt4-costume/201": {
+      "original": "Alt Colors 1",
+      "text": "Cor alternativa 1"
+    },
+    "tbo/bt4-costume/202": {
+      "original": "Alt Colors 2",
+      "text": "Cor alternativa 2"
+    },
+    "tbo/bt4-costume/203": {
+      "original": "Green",
+      "text": "Verde"
+    },
+    "tbo/bt4-costume/204": {
+      "original": "Yellow",
+      "text": "Amarelo"
+    },
+    "tbo/bt4-costume/205": {
+      "original": "Red",
+      "text": "Vermelho"
+    },
+    "tbo/bt4-costume/206": {
+      "original": "Pink",
+      "text": "Rosa"
+    },
+    "tbo/bt4-costume/207": {
+      "original": "Cooler's Armored Squad Armor",
+      "text": "Armadura de Coolaed Squad Armor"
+    },
+    "tbo/bt4-costume/208": {
+      "original": "Zangya's Clothes",
+      "text": "Traje de Zangya"
+    },
+    "tbo/bt4-costume/209": {
+      "original": "Broly's Clothes",
+      "text": "Traje de Broly"
+    },
+    "tbo/bt4-costume/210": {
+      "original": "Babidi's Clothes",
+      "text": "Traje de Babidi"
+    },
+    "tbo/bt4-costume/211": {
+      "original": "Spopovich's Clothes",
+      "text": "Traje de Spopovich"
+    },
+    "tbo/bt4-costume/212": {
+      "original": "Young Spopovich",
+      "text": "Jovem Spopovich"
+    },
+    "tbo/bt4-costume/213": {
+      "original": "Post-Transformation",
+      "text": "Após a transformação"
+    },
+    "tbo/bt4-costume/214": {
+      "original": "Pre-Transformation",
+      "text": "Pré-Transformação"
+    },
+    "tbo/bt4-costume/215": {
+      "original": "Uub's Gi",
+      "text": "Quimono de Uub"
+    },
+    "tbo/bt4-costume/216": {
+      "original": "Kale's Clothes",
+      "text": "Traje de Kale"
+    },
+    "tbo/bt4-costume/217": {
+      "original": "Hair Down",
+      "text": "Cabelo solto"
+    },
+    "tbo/bt4-costume/218": {
+      "original": "Super Saiyan Colors",
+      "text": "Cores Super Saiyajin"
+    },
+    "tbo/bt4-costume/219": {
+      "original": "Superhero Suit 1",
+      "text": "Traje de super-herói 1"
+    },
+    "tbo/bt4-costume/220": {
+      "original": "Superhero Suit 2",
+      "text": "Traje de super-herói 2"
+    },
+    "tbo/bt4-costume/221": {
+      "original": "God Broly",
+      "text": "Deus Broly"
+    },
+    "tbo/bt4-costume/222": {
+      "original": "Tarble's Armor",
+      "text": "Armadura de Tarble"
+    },
+    "tbo/bt4-costume/223": {
+      "original": "Armor (Royal Family Logo)",
+      "text": "Armadura (símbolo da família real)"
+    },
+    "tbo/bt4-costume/224": {
+      "original": "Android 14's Clothes",
+      "text": "Traje de Android 14"
+    },
+    "tbo/bt4-costume/225": {
+      "original": "Android 15's Clothes",
+      "text": "Traje de Android 15"
+    },
+    "tbo/bt4-costume/226": {
+      "original": "GT Jacket",
+      "text": "Jaqueta GT"
+    },
+    "tbo/bt4-costume/227": {
+      "original": "Appule's Race Soldier B",
+      "text": "Soldado da raça de Appule B"
+    },
+    "tbo/bt4-costume/228": {
+      "original": "Dodoria's Subordinate C",
+      "text": "Subordinado de Dodoria C"
+    },
+    "tbo/bt4-costume/229": {
+      "original": "Appule's Race Soldier (BT2)",
+      "text": "Soldado da raça de Appule (BT2)"
+    },
+    "tbo/bt4-costume/230": {
+      "original": "Dodoria's Subordinate D",
+      "text": "Subordinado de Dodoria D"
+    },
+    "tbo/bt4-costume/231": {
+      "original": "Frieza Soldier C",
+      "text": "Soldado de Freeza C"
+    },
+    "tbo/bt4-costume/232": {
+      "original": "Deserter Soldier",
+      "text": "Soldado desertor"
+    },
+    "tbo/bt4-costume/233": {
+      "original": "Frieza Soldier E",
+      "text": "Soldado de Freeza E"
+    },
+    "tbo/bt4-costume/234": {
+      "original": "Frieza Soldier F",
+      "text": "Soldado de Freeza F"
+    },
+    "tbo/bt4-costume/235": {
+      "original": "COSTUME 1/1",
+      "text": "TRAJE 1/1"
+    },
+    "tbo/bt4-costume/236": {
+      "original": "COSTUME 1/2",
+      "text": "TRAJE 1/2"
+    },
+    "tbo/bt4-costume/237": {
+      "original": "COSTUME 2/2",
+      "text": "TRAJE 2/2"
+    },
+    "tbo/bt4-costume/238": {
+      "original": "COSTUME 1/3",
+      "text": "TRAJE 1/3"
+    },
+    "tbo/bt4-costume/239": {
+      "original": "COSTUME 2/3",
+      "text": "TRAJE 2/3"
+    },
+    "tbo/bt4-costume/240": {
+      "original": "COSTUME 3/3",
+      "text": "TRAJE 3/3"
+    },
+    "tbo/bt4-costume/241": {
+      "original": "COSTUME 1/4",
+      "text": "TRAJE 1/4"
+    },
+    "tbo/bt4-costume/242": {
+      "original": "COSTUME 2/4",
+      "text": "TRAJE 2/4"
+    },
+    "tbo/bt4-costume/243": {
+      "original": "COSTUME 3/4",
+      "text": "TRAJE 3/4"
+    },
+    "tbo/bt4-costume/244": {
+      "original": "COSTUME 4/4",
+      "text": "TRAJE 4/4"
+    },
+    "tbo/bt4-costume/245": {
+      "original": "COSTUME 1/5",
+      "text": "TRAJE 1/5"
+    },
+    "tbo/bt4-costume/246": {
+      "original": "COSTUME 2/5",
+      "text": "TRAJE 2/5"
+    },
+    "tbo/bt4-costume/247": {
+      "original": "COSTUME 3/5",
+      "text": "TRAJE 3/5"
+    },
+    "tbo/bt4-costume/248": {
+      "original": "COSTUME 4/5",
+      "text": "TRAJE 4/5"
+    },
+    "tbo/bt4-costume/249": {
+      "original": "COSTUME 5/5",
+      "text": "TRAJE 5/5"
+    },
+    "tbo/bt4-costume/250": {
+      "original": "COSTUME 1/6",
+      "text": "TRAJE 1/6"
+    },
+    "tbo/bt4-costume/251": {
+      "original": "COSTUME 2/6",
+      "text": "TRAJE 2/6"
+    },
+    "tbo/bt4-costume/252": {
+      "original": "COSTUME 3/6",
+      "text": "TRAJE 3/6"
+    },
+    "tbo/bt4-costume/253": {
+      "original": "COSTUME 4/6",
+      "text": "TRAJE 4/6"
+    },
+    "tbo/bt4-costume/254": {
+      "original": "COSTUME 5/6",
+      "text": "TRAJE 5/6"
+    },
+    "tbo/bt4-costume/255": {
+      "original": "COSTUME 6/6",
+      "text": "TRAJE 6/6"
+    },
+    "tbo/bt4-costume/256": {
+      "original": "COSTUME 1/7",
+      "text": "TRAJE 1/7"
+    },
+    "tbo/bt4-costume/257": {
+      "original": "COSTUME 2/7",
+      "text": "TRAJE 2/7"
+    },
+    "tbo/bt4-costume/258": {
+      "original": "COSTUME 3/7",
+      "text": "TRAJE 3/7"
+    },
+    "tbo/bt4-costume/259": {
+      "original": "COSTUME 4/7",
+      "text": "TRAJE 4/7"
+    },
+    "tbo/bt4-costume/260": {
+      "original": "COSTUME 5/7",
+      "text": "TRAJE 5/7"
+    },
+    "tbo/bt4-costume/261": {
+      "original": "COSTUME 6/7",
+      "text": "TRAJE 6/7"
+    },
+    "tbo/bt4-costume/262": {
+      "original": "COSTUME 7/7",
+      "text": "TRAJE 7/7"
+    },
+    "tbo/bt4-costume/263": {
+      "original": "COSTUME 1/8",
+      "text": "TRAJE 1/8"
+    },
+    "tbo/bt4-costume/264": {
+      "original": "COSTUME 2/8",
+      "text": "TRAJE 2/8"
+    },
+    "tbo/bt4-costume/265": {
+      "original": "COSTUME 3/8",
+      "text": "TRAJE 3/8"
+    },
+    "tbo/bt4-costume/266": {
+      "original": "COSTUME 4/8",
+      "text": "TRAJE 4/8"
+    },
+    "tbo/bt4-costume/267": {
+      "original": "COSTUME 5/8",
+      "text": "TRAJE 5/8"
+    },
+    "tbo/bt4-costume/268": {
+      "original": "COSTUME 6/8",
+      "text": "TRAJE 6/8"
+    },
+    "tbo/bt4-costume/269": {
+      "original": "COSTUME 7/8",
+      "text": "TRAJE 7/8"
+    },
+    "tbo/bt4-costume/270": {
+      "original": "COSTUME 8/8",
+      "text": "TRAJE 8/8"
+    },
+    "tbo/bt4-costume/271": {
+      "original": "COSTUME 1/9",
+      "text": "TRAJE 1/9"
+    },
+    "tbo/bt4-costume/272": {
+      "original": "COSTUME 2/9",
+      "text": "TRAJE 2/9"
+    },
+    "tbo/bt4-costume/273": {
+      "original": "COSTUME 3/9",
+      "text": "TRAJE 3/9"
+    },
+    "tbo/bt4-costume/274": {
+      "original": "COSTUME 4/9",
+      "text": "TRAJE 4/9"
+    },
+    "tbo/bt4-costume/275": {
+      "original": "COSTUME 5/9",
+      "text": "TRAJE 5/9"
+    },
+    "tbo/bt4-costume/276": {
+      "original": "COSTUME 6/9",
+      "text": "TRAJE 6/9"
+    },
+    "tbo/bt4-costume/277": {
+      "original": "COSTUME 7/9",
+      "text": "TRAJE 7/9"
+    },
+    "tbo/bt4-costume/278": {
+      "original": "COSTUME 8/9",
+      "text": "TRAJE 8/9"
+    },
+    "tbo/bt4-costume/279": {
+      "original": "COSTUME 9/9",
+      "text": "TRAJE 9/9"
+    },
+    "tbo/bt4-costume/280": {
+      "original": "COSTUME 1/10",
+      "text": "TRAJE 1/10"
+    },
+    "tbo/bt4-costume/281": {
+      "original": "COSTUME 2/10",
+      "text": "TRAJE 2/10"
+    },
+    "tbo/bt4-costume/282": {
+      "original": "COSTUME 3/10",
+      "text": "TRAJE 3/10"
+    },
+    "tbo/bt4-costume/283": {
+      "original": "COSTUME 4/10",
+      "text": "TRAJE 4/10"
+    },
+    "tbo/bt4-costume/284": {
+      "original": "COSTUME 5/10",
+      "text": "TRAJE 5/10"
+    },
+    "tbo/bt4-costume/285": {
+      "original": "COSTUME 6/10",
+      "text": "TRAJE 6/10"
+    },
+    "tbo/bt4-costume/286": {
+      "original": "COSTUME 7/10",
+      "text": "TRAJE 7/10"
+    },
+    "tbo/bt4-costume/287": {
+      "original": "COSTUME 8/10",
+      "text": "TRAJE 8/10"
+    },
+    "tbo/bt4-costume/288": {
+      "original": "COSTUME 9/10",
+      "text": "TRAJE 9/10"
+    },
+    "tbo/bt4-costume/289": {
+      "original": "COSTUME 10/10",
+      "text": "TRAJE 10/10"
+    },
+    "tbo/bt4-costume/290": {
+      "original": "COSTUME 1/11",
+      "text": "TRAJE 1/11"
+    },
+    "tbo/bt4-costume/291": {
+      "original": "COSTUME 2/11",
+      "text": "TRAJE 2/11"
+    },
+    "tbo/bt4-costume/292": {
+      "original": "COSTUME 3/11",
+      "text": "TRAJE 3/11"
+    },
+    "tbo/bt4-costume/293": {
+      "original": "COSTUME 4/11",
+      "text": "TRAJE 4/11"
+    },
+    "tbo/bt4-costume/294": {
+      "original": "COSTUME 5/11",
+      "text": "TRAJE 5/11"
+    },
+    "tbo/bt4-costume/295": {
+      "original": "COSTUME 6/11",
+      "text": "TRAJE 6/11"
+    },
+    "tbo/bt4-costume/296": {
+      "original": "COSTUME 7/11",
+      "text": "TRAJE 7/11"
+    },
+    "tbo/bt4-costume/297": {
+      "original": "COSTUME 8/11",
+      "text": "TRAJE 8/11"
+    },
+    "tbo/bt4-costume/298": {
+      "original": "COSTUME 9/11",
+      "text": "TRAJE 9/11"
+    },
+    "tbo/bt4-costume/299": {
+      "original": "COSTUME 10/11",
+      "text": "TRAJE 10/11"
+    },
+    "tbo/bt4-costume/300": {
+      "original": "COSTUME 11/11",
+      "text": "TRAJE 11/11"
+    },
+    "tbo/bt4-costume/301": {
+      "original": "COSTUME 1/12",
+      "text": "TRAJE 1/12"
+    },
+    "tbo/bt4-costume/302": {
+      "original": "COSTUME 2/12",
+      "text": "TRAJE 2/12"
+    },
+    "tbo/bt4-costume/303": {
+      "original": "COSTUME 3/12",
+      "text": "TRAJE 3/12"
+    },
+    "tbo/bt4-costume/304": {
+      "original": "COSTUME 4/12",
+      "text": "TRAJE 4/12"
+    },
+    "tbo/bt4-costume/305": {
+      "original": "COSTUME 5/12",
+      "text": "TRAJE 5/12"
+    },
+    "tbo/bt4-costume/306": {
+      "original": "COSTUME 6/12",
+      "text": "TRAJE 6/12"
+    },
+    "tbo/bt4-costume/307": {
+      "original": "COSTUME 7/12",
+      "text": "TRAJE 7/12"
+    },
+    "tbo/bt4-costume/308": {
+      "original": "COSTUME 8/12",
+      "text": "TRAJE 8/12"
+    },
+    "tbo/bt4-costume/309": {
+      "original": "COSTUME 9/12",
+      "text": "TRAJE 9/12"
+    },
+    "tbo/bt4-costume/310": {
+      "original": "COSTUME 10/12",
+      "text": "TRAJE 10/12"
+    },
+    "tbo/bt4-costume/311": {
+      "original": "COSTUME 11/12",
+      "text": "TRAJE 11/12"
+    },
+    "tbo/bt4-costume/312": {
+      "original": "COSTUME 12/12",
+      "text": "TRAJE 12/12"
+    },
+    "tbo/bt4-costume/313": {
+      "original": "COSTUME 1/13",
+      "text": "TRAJE 1/13"
+    },
+    "tbo/bt4-costume/314": {
+      "original": "COSTUME 2/13",
+      "text": "TRAJE 2/13"
+    },
+    "tbo/bt4-costume/315": {
+      "original": "COSTUME 3/13",
+      "text": "TRAJE 3/13"
+    },
+    "tbo/bt4-costume/316": {
+      "original": "COSTUME 4/13",
+      "text": "TRAJE 4/13"
+    },
+    "tbo/bt4-costume/317": {
+      "original": "COSTUME 5/13",
+      "text": "TRAJE 5/13"
+    },
+    "tbo/bt4-costume/318": {
+      "original": "COSTUME 6/13",
+      "text": "TRAJE 6/13"
+    },
+    "tbo/bt4-costume/319": {
+      "original": "COSTUME 7/13",
+      "text": "TRAJE 7/13"
+    },
+    "tbo/bt4-costume/320": {
+      "original": "COSTUME 8/13",
+      "text": "TRAJE 8/13"
+    },
+    "tbo/bt4-costume/321": {
+      "original": "COSTUME 9/13",
+      "text": "TRAJE 9/13"
+    },
+    "tbo/bt4-costume/322": {
+      "original": "COSTUME 10/13",
+      "text": "TRAJE 10/13"
+    },
+    "tbo/bt4-costume/323": {
+      "original": "COSTUME 11/13",
+      "text": "TRAJE 11/13"
+    },
+    "tbo/bt4-costume/324": {
+      "original": "COSTUME 12/13",
+      "text": "TRAJE 12/13"
+    },
+    "tbo/bt4-costume/325": {
+      "original": "COSTUME 13/13",
+      "text": "TRAJE 13/13"
+    },
+    "tbo/bt4-costume/326": {
+      "original": "COSTUME 1/14",
+      "text": "TRAJE 1/14"
+    },
+    "tbo/bt4-costume/327": {
+      "original": "COSTUME 2/14",
+      "text": "TRAJE 2/14"
+    },
+    "tbo/bt4-costume/328": {
+      "original": "COSTUME 3/14",
+      "text": "TRAJE 3/14"
+    },
+    "tbo/bt4-costume/329": {
+      "original": "COSTUME 4/14",
+      "text": "TRAJE 4/14"
+    },
+    "tbo/bt4-costume/330": {
+      "original": "COSTUME 5/14",
+      "text": "TRAJE 5/14"
+    },
+    "tbo/bt4-costume/331": {
+      "original": "COSTUME 6/14",
+      "text": "TRAJE 6/14"
+    },
+    "tbo/bt4-costume/332": {
+      "original": "COSTUME 7/14",
+      "text": "TRAJE 7/14"
+    },
+    "tbo/bt4-costume/333": {
+      "original": "COSTUME 8/14",
+      "text": "TRAJE 8/14"
+    },
+    "tbo/bt4-costume/334": {
+      "original": "COSTUME 9/14",
+      "text": "TRAJE 9/14"
+    },
+    "tbo/bt4-costume/335": {
+      "original": "COSTUME 10/14",
+      "text": "TRAJE 10/14"
+    },
+    "tbo/bt4-costume/336": {
+      "original": "COSTUME 11/14",
+      "text": "TRAJE 11/14"
+    },
+    "tbo/bt4-costume/337": {
+      "original": "COSTUME 12/14",
+      "text": "TRAJE 12/14"
+    },
+    "tbo/bt4-costume/338": {
+      "original": "COSTUME 13/14",
+      "text": "TRAJE 13/14"
+    },
+    "tbo/bt4-costume/339": {
+      "original": "COSTUME 14/14",
+      "text": "TRAJE 14/14"
+    },
+    "tbo/bt4-costume/340": {
+      "original": "COSTUME 1/15",
+      "text": "TRAJE 1/15"
+    },
+    "tbo/bt4-costume/341": {
+      "original": "COSTUME 2/15",
+      "text": "TRAJE 2/15"
+    },
+    "tbo/bt4-costume/342": {
+      "original": "COSTUME 3/15",
+      "text": "TRAJE 3/15"
+    },
+    "tbo/bt4-costume/343": {
+      "original": "COSTUME 4/15",
+      "text": "TRAJE 4/15"
+    },
+    "tbo/bt4-costume/344": {
+      "original": "COSTUME 5/15",
+      "text": "TRAJE 5/15"
+    },
+    "tbo/bt4-costume/345": {
+      "original": "COSTUME 6/15",
+      "text": "TRAJE 6/15"
+    },
+    "tbo/bt4-costume/346": {
+      "original": "COSTUME 7/15",
+      "text": "TRAJE 7/15"
+    },
+    "tbo/bt4-costume/347": {
+      "original": "COSTUME 8/15",
+      "text": "TRAJE 8/15"
+    },
+    "tbo/bt4-costume/348": {
+      "original": "COSTUME 9/15",
+      "text": "TRAJE 9/15"
+    },
+    "tbo/bt4-costume/349": {
+      "original": "COSTUME 10/15",
+      "text": "TRAJE 10/15"
+    },
+    "tbo/bt4-costume/350": {
+      "original": "COSTUME 11/15",
+      "text": "TRAJE 11/15"
+    },
+    "tbo/bt4-costume/351": {
+      "original": "COSTUME 12/15",
+      "text": "TRAJE 12/15"
+    },
+    "tbo/bt4-costume/352": {
+      "original": "COSTUME 13/15",
+      "text": "TRAJE 13/15"
+    },
+    "tbo/bt4-costume/353": {
+      "original": "COSTUME 14/15",
+      "text": "TRAJE 14/15"
+    },
+    "tbo/bt4-costume/354": {
+      "original": "COSTUME 15/15",
+      "text": "TRAJE 15/15"
+    },
+    "tbo/bt4-costume/355": {
+      "original": "COSTUME 1/16",
+      "text": "TRAJE 1/16"
+    },
+    "tbo/bt4-costume/356": {
+      "original": "COSTUME 2/16",
+      "text": "TRAJE 2/16"
+    },
+    "tbo/bt4-costume/357": {
+      "original": "COSTUME 3/16",
+      "text": "TRAJE 3/16"
+    },
+    "tbo/bt4-costume/358": {
+      "original": "COSTUME 4/16",
+      "text": "TRAJE 4/16"
+    },
+    "tbo/bt4-costume/359": {
+      "original": "COSTUME 5/16",
+      "text": "TRAJE 5/16"
+    },
+    "tbo/bt4-costume/360": {
+      "original": "COSTUME 6/16",
+      "text": "TRAJE 6/16"
+    },
+    "tbo/bt4-costume/361": {
+      "original": "COSTUME 7/16",
+      "text": "TRAJE 7/16"
+    },
+    "tbo/bt4-costume/362": {
+      "original": "COSTUME 8/16",
+      "text": "TRAJE 8/16"
+    },
+    "tbo/bt4-costume/363": {
+      "original": "COSTUME 9/16",
+      "text": "TRAJE 9/16"
+    },
+    "tbo/bt4-costume/364": {
+      "original": "COSTUME 10/16",
+      "text": "TRAJE 10/16"
+    },
+    "tbo/bt4-costume/365": {
+      "original": "COSTUME 11/16",
+      "text": "TRAJE 11/16"
+    },
+    "tbo/bt4-costume/366": {
+      "original": "COSTUME 12/16",
+      "text": "TRAJE 12/16"
+    },
+    "tbo/bt4-costume/367": {
+      "original": "COSTUME 13/16",
+      "text": "TRAJE 13/16"
+    },
+    "tbo/bt4-costume/368": {
+      "original": "COSTUME 14/16",
+      "text": "TRAJE 14/16"
+    },
+    "tbo/bt4-costume/369": {
+      "original": "COSTUME 15/16",
+      "text": "TRAJE 15/16"
+    },
+    "tbo/bt4-costume/370": {
+      "original": "COSTUME 16/16",
+      "text": "TRAJE 16/16"
+    },
+    "tbo/bt4-costume/371": {
+      "original": "Costume 1",
+      "text": "Traje 1"
+    },
+    "tbo/bt4-costume/372": {
+      "original": "Costume 2",
+      "text": "Traje 2"
+    },
+    "tbo/bt4-costume/373": {
+      "original": "Costume 3",
+      "text": "Traje 3"
+    },
+    "tbo/bt4-costume/374": {
+      "original": "Costume 4",
+      "text": "Traje 4"
+    },
+    "tbo/bt4-costume/375": {
+      "original": "Costume 5",
+      "text": "Traje 5"
+    },
+    "tbo/bt4-costume/376": {
+      "original": "Costume 6",
+      "text": "Traje 6"
+    },
+    "tbo/bt4-costume/377": {
+      "original": "Costume 7",
+      "text": "Traje 7"
+    },
+    "tbo/bt4-costume/378": {
+      "original": "Costume 8",
+      "text": "Traje 8"
+    },
+    "tbo/bt4-costume/379": {
+      "original": "Costume 9",
+      "text": "Traje 9"
+    },
+    "tbo/bt4-costume/380": {
+      "original": "Costume 10",
+      "text": "Traje 10"
+    },
+    "tbo/bt4-costume/381": {
+      "original": "Costume 11",
+      "text": "Traje 11"
+    },
+    "tbo/bt4-costume/382": {
+      "original": "Costume 12",
+      "text": "Traje 12"
+    },
+    "tbo/bt4-costume/383": {
+      "original": "Costume 13",
+      "text": "Traje 13"
+    },
+    "tbo/bt4-costume/384": {
+      "original": "Costume 14",
+      "text": "Traje 14"
+    },
+    "tbo/bt4-costume/385": {
+      "original": "Costume 15",
+      "text": "Traje 15"
+    },
+    "tbo/bt4-costume/386": {
+      "original": "Costume 16",
+      "text": "Traje 16"
+    },
+    "tbo/bt4-costume/387": {
+      "original": "﻿King Kai Logo",
+      "text": "Símbolo do Sr. Kaioh"
+    },
+    "tbo/bt4-costume/388": {
+      "original": "﻿End of DB",
+      "text": "Fim de Dragon Ball"
+    },
+    "tbo/bt4-costume/389": {
+      "original": "﻿Turtle Logo (No Heavy Clothing)",
+      "text": "Símbolo da Tartaruga (sem pesos)"
+    },
+    "tbo/bt4-costume/390": {
+      "original": "﻿End of DB (No Heavy Clothing)",
+      "text": "Fim de Dragon Ball (sem pesos)"
+    },
+    "tbo/bt4-costume/391": {
+      "original": "﻿Turtle Logo",
+      "text": "Símbolo da Tartaruga"
+    },
+    "tbo/bt4-costume/392": {
+      "original": "﻿Goku Logo",
+      "text": "Símbolo de Goku"
+    },
+    "tbo/bt4-costume/393": {
+      "original": "﻿Color 7",
+      "text": "Cor 7"
+    },
+    "tbo/bt4-costume/394": {
+      "original": "﻿Color 8",
+      "text": "Cor 8"
+    },
+    "tbo/bt4-costume/395": {
+      "original": "﻿Saiyan Armor",
+      "text": "Armadura Saiyajin"
+    },
+    "tbo/bt4-costume/396": {
+      "original": "﻿Battle Damaged",
+      "text": "Danificado em batalha"
+    },
+    "tbo/bt4-costume/397": {
+      "original": "﻿Yardrat Clothes",
+      "text": "Traje de Yardrat"
+    },
+    "tbo/bt4-costume/398": {
+      "original": "﻿No Logo (Original)",
+      "text": "Sem símbolo (Original)"
+    },
+    "tbo/bt4-costume/399": {
+      "original": "﻿Saiyan Armor (Original)",
+      "text": "Armadura Saiyajin (Original)"
+    },
+    "tbo/bt4-costume/400": {
+      "original": "﻿Battle Damaged (Original)",
+      "text": "Danificado em batalha (Original)"
+    },
+    "tbo/bt4-costume/401": {
+      "original": "﻿Yardrat Clothes (Original)",
+      "text": "Traje de Yardrat (Original)"
+    },
+    "tbo/bt4-costume/402": {
+      "original": "﻿No Logo",
+      "text": "Sem símbolo"
+    },
+    "tbo/bt4-costume/403": {
+      "original": "﻿End of Z",
+      "text": "Fim de Dragon Ball Z"
+    },
+    "tbo/bt4-costume/404": {
+      "original": "﻿Resurrection F",
+      "text": "Ressurreição F"
+    },
+    "tbo/bt4-costume/405": {
+      "original": "﻿Goku Logo (DBS)",
+      "text": "Símbolo de Goku (DBS)"
+    },
+    "tbo/bt4-costume/406": {
+      "original": "﻿Goku Logo (DBS Broly)",
+      "text": "Símbolo de Goku (DBS Broly)"
+    },
+    "tbo/bt4-costume/407": {
+      "original": "﻿GT Outfit",
+      "text": "Traje GT"
+    },
+    "tbo/bt4-costume/408": {
+      "original": "﻿Color 5",
+      "text": "Cor 5"
+    },
+    "tbo/bt4-costume/409": {
+      "original": "﻿Color 6",
+      "text": "Cor 6"
+    },
+    "tbo/bt4-costume/410": {
+      "original": "﻿Blue Gi",
+      "text": "Quimono azul"
+    },
+    "tbo/bt4-costume/411": {
+      "original": "﻿Path to the Power",
+      "text": "Caminho para o Poder"
+    },
+    "tbo/bt4-costume/412": {
+      "original": "﻿Training",
+      "text": "Treinamento"
+    },
+    "tbo/bt4-costume/413": {
+      "original": "﻿Default",
+      "text": "Padrão"
+    },
+    "tbo/bt4-costume/414": {
+      "original": "﻿Opening Coloration",
+      "text": "Cores da abertura"
+    },
+    "tbo/bt4-costume/415": {
+      "original": "﻿GT Coloration",
+      "text": "Cores de GT"
+    },
+    "tbo/bt4-costume/416": {
+      "original": "﻿Early DB Coloration",
+      "text": "Cores do início de Dragon Ball"
+    },
+    "tbo/bt4-costume/417": {
+      "original": "﻿Kai Coloration",
+      "text": "Cores de Kai"
+    },
+    "tbo/bt4-costume/418": {
+      "original": "﻿Short Hair",
+      "text": "Cabelo curto"
+    },
+    "tbo/bt4-costume/419": {
+      "original": "﻿Headband",
+      "text": "Faixa de cabeça"
+    },
+    "tbo/bt4-costume/420": {
+      "original": "﻿Armor",
+      "text": "Armadura"
+    },
+    "tbo/bt4-costume/421": {
+      "original": "﻿Long Hair",
+      "text": "Cabelo longo"
+    },
+    "tbo/bt4-costume/422": {
+      "original": "﻿Piccolo's Gi",
+      "text": "Quimono de Piccolo"
+    },
+    "tbo/bt4-costume/423": {
+      "original": "﻿Goku's Gi",
+      "text": "Quimono de Goku"
+    },
+    "tbo/bt4-costume/424": {
+      "original": "﻿Movie 8",
+      "text": "Filme 8"
+    },
+    "tbo/bt4-costume/425": {
+      "original": "﻿Saiyaman Outfit",
+      "text": "Traje de Saiyaman"
+    },
+    "tbo/bt4-costume/426": {
+      "original": "﻿School Uniform",
+      "text": "Uniforme escolar"
+    },
+    "tbo/bt4-costume/427": {
+      "original": "﻿Tracksuit",
+      "text": "Agasalho esportivo"
+    },
+    "tbo/bt4-costume/428": {
+      "original": "﻿Supreme Kai Robes",
+      "text": "Vestes de Kaioshin"
+    },
+    "tbo/bt4-costume/429": {
+      "original": "﻿Helmet",
+      "text": "Capacete"
+    },
+    "tbo/bt4-costume/430": {
+      "original": "﻿Turbant and Sunglasses",
+      "text": "Turbante e óculos de sol"
+    },
+    "tbo/bt4-costume/431": {
+      "original": "﻿Manga Turbant",
+      "text": "Turbante do mangá"
+    },
+    "tbo/bt4-costume/432": {
+      "original": "﻿Super Great Saiyaman",
+      "text": "Super Grande Saiyaman"
+    },
+    "tbo/bt4-costume/433": {
+      "original": "﻿Cape and Turbant",
+      "text": "Capa e turbante"
+    },
+    "tbo/bt4-costume/434": {
+      "original": "﻿Turbant",
+      "text": "Turbante"
+    },
+    "tbo/bt4-costume/435": {
+      "original": "﻿Manga Colors",
+      "text": "Cores do mangá"
+    },
+    "tbo/bt4-costume/436": {
+      "original": "﻿Potential Unlocked",
+      "text": "Potencial Desbloqueado"
+    },
+    "tbo/bt4-costume/437": {
+      "original": "﻿Nail's Clothes",
+      "text": "Traje de Nail"
+    },
+    "tbo/bt4-costume/438": {
+      "original": "﻿Color 3",
+      "text": "Cor 3"
+    },
+    "tbo/bt4-costume/439": {
+      "original": "﻿Color 4",
+      "text": "Cor 4"
+    },
+    "tbo/bt4-costume/440": {
+      "original": "﻿Buu Saga",
+      "text": "Saga de Majin Buu"
+    },
+    "tbo/bt4-costume/441": {
+      "original": "﻿Special 2008",
+      "text": "Especial 2008"
+    },
+    "tbo/bt4-costume/442": {
+      "original": "﻿Desert Bandit",
+      "text": "Bandido do Deserto"
+    },
+    "tbo/bt4-costume/443": {
+      "original": "﻿Battle of Gods",
+      "text": "Batalha de Deuses"
+    },
+    "tbo/bt4-costume/444": {
+      "original": "﻿Galactic Patrol",
+      "text": "Patrulha Galáctica"
+    },
+    "tbo/bt4-costume/445": {
+      "original": "﻿Desert Bandit (Short Hair)",
+      "text": "Bandido do deserto (cabelo curto)"
+    },
+    "tbo/bt4-costume/446": {
+      "original": "﻿Tien's Gi",
+      "text": "Quimono de Tenshinhan"
+    },
+    "tbo/bt4-costume/447": {
+      "original": "﻿Topless",
+      "text": "Sem camisa"
+    },
+    "tbo/bt4-costume/448": {
+      "original": "﻿Tanktop",
+      "text": "Regata"
+    },
+    "tbo/bt4-costume/449": {
+      "original": "﻿Chiaotzu's Chang Pao",
+      "text": "Chang Pao de Chaos"
+    },
+    "tbo/bt4-costume/450": {
+      "original": "﻿Inner Shirt",
+      "text": "Camiseta interna"
+    },
+    "tbo/bt4-costume/451": {
+      "original": "﻿Saiyan Saga",
+      "text": "Saga dos Saiyajins"
+    },
+    "tbo/bt4-costume/452": {
+      "original": "﻿Frieza Saga",
+      "text": "Saga de Freeza"
+    },
+    "tbo/bt4-costume/453": {
+      "original": "﻿Old Model Armor",
+      "text": "Armadura antiga"
+    },
+    "tbo/bt4-costume/454": {
+      "original": "﻿DBS Broly Armor",
+      "text": "Armadura de DBS: Broly"
+    },
+    "tbo/bt4-costume/455": {
+      "original": "﻿Armor (DBS Broly)",
+      "text": "Armadura (DBS Broly)"
+    },
+    "tbo/bt4-costume/456": {
+      "original": "﻿Goku Black's Gi",
+      "text": "Quimono de Goku Black"
+    },
+    "tbo/bt4-costume/457": {
+      "original": "﻿Super Saiyan",
+      "text": "Super Saiyajin"
+    },
+    "tbo/bt4-costume/458": {
+      "original": "﻿Zamasu's Robes",
+      "text": "Vestes de Zamasu"
+    },
+    "tbo/bt4-costume/459": {
+      "original": "﻿Zamasu's Robes (SS)",
+      "text": "Vestes de Zamasu (SS)"
+    },
+    "tbo/bt4-costume/460": {
+      "original": "﻿Android 21 Clone",
+      "text": "Clone da Androide Nº 21"
+    },
+    "tbo/bt4-costume/461": {
+      "original": "﻿Copy Vegeta",
+      "text": "Vegeta Duplicado"
+    },
+    "tbo/bt4-costume/462": {
+      "original": "﻿Time Patroller",
+      "text": "Patrulheiro do Tempo"
+    },
+    "tbo/bt4-costume/463": {
+      "original": "﻿Jacket",
+      "text": "Jaqueta"
+    },
+    "tbo/bt4-costume/464": {
+      "original": "﻿Jacketless",
+      "text": "Sem jaqueta"
+    },
+    "tbo/bt4-costume/465": {
+      "original": "﻿Jacket (DBS)",
+      "text": "Jaqueta (DBS)"
+    },
+    "tbo/bt4-costume/466": {
+      "original": "﻿Sweater (DBS)",
+      "text": "Suéter (DBS)"
+    },
+    "tbo/bt4-costume/467": {
+      "original": "﻿Movie 9",
+      "text": "Filme 9"
+    },
+    "tbo/bt4-costume/468": {
+      "original": "﻿Loose Long Hair",
+      "text": "Cabelo longo solto"
+    },
+    "tbo/bt4-costume/469": {
+      "original": "﻿Kid Trunks' Gi",
+      "text": "Quimono de Trunks Criança"
+    },
+    "tbo/bt4-costume/470": {
+      "original": "﻿Movie 10",
+      "text": "Filme 10"
+    },
+    "tbo/bt4-costume/471": {
+      "original": "﻿Gi (DB Heroes)",
+      "text": "Quimono (DB Heroes)"
+    },
+    "tbo/bt4-costume/472": {
+      "original": "﻿Mr Satan's Gi",
+      "text": "Quimono de Mr. Satan"
+    },
+    "tbo/bt4-costume/473": {
+      "original": "﻿Tournament",
+      "text": "Torneio"
+    },
+    "tbo/bt4-costume/474": {
+      "original": "﻿FIGHT Shirt",
+      "text": "Camiseta FIGHT"
+    },
+    "tbo/bt4-costume/475": {
+      "original": "﻿Movie 12",
+      "text": "Filme 12"
+    },
+    "tbo/bt4-costume/476": {
+      "original": "﻿Cabba's Armor",
+      "text": "Armadura de Cabba"
+    },
+    "tbo/bt4-costume/477": {
+      "original": "﻿Vegeta's Armor",
+      "text": "Armadura de Vegeta"
+    },
+    "tbo/bt4-costume/478": {
+      "original": "﻿Manga Colors A",
+      "text": "Cores do mangá A"
+    },
+    "tbo/bt4-costume/479": {
+      "original": "﻿Manga Colors B",
+      "text": "Cores do mangá B"
+    },
+    "tbo/bt4-costume/480": {
+      "original": "﻿Yajirobe's Clothes",
+      "text": "Traje de Yajirobe"
+    },
+    "tbo/bt4-costume/481": {
+      "original": "﻿Beard",
+      "text": "Barba"
+    },
+    "tbo/bt4-costume/482": {
+      "original": "﻿Pikkon's Clothes",
+      "text": "Traje de Paikuhan"
+    },
+    "tbo/bt4-costume/483": {
+      "original": "﻿No Heavy Clothing",
+      "text": "Sem pesos"
+    },
+    "tbo/bt4-costume/484": {
+      "original": "﻿Super Pikkon",
+      "text": "Super Paikuhan"
+    },
+    "tbo/bt4-costume/485": {
+      "original": "﻿Tapion's Outfit",
+      "text": "Traje de Tapion"
+    },
+    "tbo/bt4-costume/486": {
+      "original": "﻿Alt Colors",
+      "text": "Cores alternativas"
+    },
+    "tbo/bt4-costume/487": {
+      "original": "﻿GT Clothes",
+      "text": "Traje GT"
+    },
+    "tbo/bt4-costume/488": {
+      "original": "﻿Gi",
+      "text": "Quimono"
+    },
+    "tbo/bt4-costume/489": {
+      "original": "﻿Kid",
+      "text": "Criança"
+    },
+    "tbo/bt4-costume/490": {
+      "original": "﻿Battle Damaged (Topless)",
+      "text": "Danificado em batalha (sem camisa)"
+    },
+    "tbo/bt4-costume/491": {
+      "original": "﻿Capsule Corp. Logo",
+      "text": "Símbolo da Corporação Cápsula"
+    },
+    "tbo/bt4-costume/492": {
+      "original": "﻿Master Clothes",
+      "text": "Traje de mestre"
+    },
+    "tbo/bt4-costume/493": {
+      "original": "﻿2010 Special",
+      "text": "Especial de 2010"
+    },
+    "tbo/bt4-costume/494": {
+      "original": "﻿Powered Up Form",
+      "text": "Forma fortalecida"
+    },
+    "tbo/bt4-costume/495": {
+      "original": "﻿God of Destruction Clothes",
+      "text": "Traje de Deus da Destruição"
+    },
+    "tbo/bt4-costume/496": {
+      "original": "﻿God of Destruction Robes",
+      "text": "Vestes de Deus da Destruição"
+    },
+    "tbo/bt4-costume/497": {
+      "original": "﻿Bardock's Armor",
+      "text": "Armadura de Bardock"
+    },
+    "tbo/bt4-costume/498": {
+      "original": "﻿2011 Special",
+      "text": "Especial de 2011"
+    },
+    "tbo/bt4-costume/499": {
+      "original": "﻿Fasha's Armor",
+      "text": "Armadura de Fasha"
+    },
+    "tbo/bt4-costume/500": {
+      "original": "﻿Mutation",
+      "text": "Mutação"
+    },
+    "tbo/bt4-costume/501": {
+      "original": "﻿Giant Mutation",
+      "text": "Mutação Gigante"
+    },
+    "tbo/bt4-costume/502": {
+      "original": "﻿Raditz's Armor",
+      "text": "Armadura de Raditz"
+    },
+    "tbo/bt4-costume/503": {
+      "original": "﻿Hit's Coat",
+      "text": "Casaco de Hit"
+    },
+    "tbo/bt4-costume/504": {
+      "original": "﻿No Lower Coat",
+      "text": "Sem a parte inferior do casaco"
+    },
+    "tbo/bt4-costume/505": {
+      "original": "﻿Frieza Soldier A",
+      "text": "Soldado de Freeza A"
+    },
+    "tbo/bt4-costume/506": {
+      "original": "﻿Frieza Soldier B",
+      "text": "Soldado de Freeza B"
+    },
+    "tbo/bt4-costume/507": {
+      "original": "﻿Nappa's Armor",
+      "text": "Armadura de Nappa"
+    },
+    "tbo/bt4-costume/508": {
+      "original": "﻿Armorless",
+      "text": "Sem armadura"
+    },
+    "tbo/bt4-costume/509": {
+      "original": "﻿Young Nappa",
+      "text": "Nappa jovem"
+    },
+    "tbo/bt4-costume/510": {
+      "original": "﻿Ghost Nappa",
+      "text": "Nappa fantasma"
+    },
+    "tbo/bt4-costume/511": {
+      "original": "﻿Pride Trooper Uniform",
+      "text": "Uniforme da Tropa do Orgulho"
+    },
+    "tbo/bt4-costume/512": {
+      "original": "﻿Zarbon's Armor",
+      "text": "Armadura de Zarbon"
+    },
+    "tbo/bt4-costume/513": {
+      "original": "﻿Dodoria's Armor",
+      "text": "Armadura de Dodoria"
+    },
+    "tbo/bt4-costume/514": {
+      "original": "﻿Ginyu Force Armor (Black)",
+      "text": "Armadura das Forças Ginyu (preta)"
+    },
+    "tbo/bt4-costume/515": {
+      "original": "﻿Native Race Robes",
+      "text": "Vestes da raça de origem"
+    },
+    "tbo/bt4-costume/516": {
+      "original": "﻿Ginyu Force Armor (White)",
+      "text": "Armadura das Forças Ginyu (branca)"
+    },
+    "tbo/bt4-costume/517": {
+      "original": "﻿No Armor",
+      "text": "Sem armadura"
+    },
+    "tbo/bt4-costume/518": {
+      "original": "﻿SDBZ Upgrades",
+      "text": "Atualizações do SDBZ"
+    },
+    "tbo/bt4-costume/519": {
+      "original": "﻿Armor with Cape",
+      "text": "Armadura com capa"
+    },
+    "tbo/bt4-costume/520": {
+      "original": "﻿GT Clothes A",
+      "text": "Traje GT A"
+    },
+    "tbo/bt4-costume/521": {
+      "original": "﻿GT Clothes B",
+      "text": "Traje GT B"
+    },
+    "tbo/bt4-costume/522": {
+      "original": "﻿Goku Black's Gi (SS)",
+      "text": "Quimono de Goku Black (SS)"
+    },
+    "tbo/bt4-costume/523": {
+      "original": "﻿Android 16's Armor",
+      "text": "Armadura de Android 16"
+    },
+    "tbo/bt4-costume/524": {
+      "original": "﻿Android 17's Clothes",
+      "text": "Traje de Android 17"
+    },
+    "tbo/bt4-costume/525": {
+      "original": "﻿Park Ranger",
+      "text": "Guarda florestal"
+    },
+    "tbo/bt4-costume/526": {
+      "original": "﻿Android 18's Clothes",
+      "text": "Traje de Android 18"
+    },
+    "tbo/bt4-costume/527": {
+      "original": "﻿Chi-Chi's Vest",
+      "text": "Colete de Chi-Chi"
+    },
+    "tbo/bt4-costume/528": {
+      "original": "﻿Android 19's Clothes",
+      "text": "Traje de Android 19"
+    },
+    "tbo/bt4-costume/529": {
+      "original": "﻿Android 20's Clothes",
+      "text": "Traje de Android 20"
+    },
+    "tbo/bt4-costume/530": {
+      "original": "﻿Dabura's Clothes",
+      "text": "Traje de Dabura"
+    },
+    "tbo/bt4-costume/531": {
+      "original": "﻿Shape-Up",
+      "text": "Em forma"
+    },
+    "tbo/bt4-costume/532": {
+      "original": "﻿Piccolo Absorbed",
+      "text": "Piccolo Absorvido"
+    },
+    "tbo/bt4-costume/533": {
+      "original": "﻿Gogeta Absorbed",
+      "text": "Gogeta absorvido"
+    },
+    "tbo/bt4-costume/534": {
+      "original": "﻿Shirtless",
+      "text": "Sem camisa"
+    },
+    "tbo/bt4-costume/535": {
+      "original": "﻿Vegito Absorbed",
+      "text": "Vegetto absorvido"
+    },
+    "tbo/bt4-costume/536": {
+      "original": "﻿Android 21 Clones",
+      "text": "Clones da Androide Nº 21"
+    },
+    "tbo/bt4-costume/537": {
+      "original": "﻿Caulifla's Clothes",
+      "text": "Traje de Caulifla"
+    },
+    "tbo/bt4-costume/538": {
+      "original": "﻿Turles' Armor",
+      "text": "Armadura de Turles"
+    },
+    "tbo/bt4-costume/539": {
+      "original": "﻿Cape",
+      "text": "Cabo."
+    },
+    "tbo/bt4-costume/540": {
+      "original": "﻿Slug's Clothes",
+      "text": "Traje de Slug"
+    },
+    "tbo/bt4-costume/541": {
+      "original": "﻿No Helmet and Gloves",
+      "text": "Sem capacete e luvas"
+    },
+    "tbo/bt4-costume/542": {
+      "original": "﻿Uub's Clothes",
+      "text": "Traje de Uub"
+    },
+    "tbo/bt4-costume/543": {
+      "original": "﻿Metal Cooler",
+      "text": "Metal Coola"
+    },
+    "tbo/bt4-costume/544": {
+      "original": "﻿Lighter Tones",
+      "text": "Tons mais claros"
+    },
+    "tbo/bt4-costume/545": {
+      "original": "﻿Golden Cooler",
+      "text": "Coola Dourado"
+    },
+    "tbo/bt4-costume/546": {
+      "original": "﻿Matal Cooler Core",
+      "text": "Núcleo de Metal Coola"
+    },
+    "tbo/bt4-costume/547": {
+      "original": "﻿Alt. Colors",
+      "text": "Cores alternativas"
+    },
+    "tbo/bt4-costume/548": {
+      "original": "﻿Golden Metal Cooler",
+      "text": "Metal Coola Dourado"
+    },
+    "tbo/bt4-costume/549": {
+      "original": "﻿Android 13's Clothes",
+      "text": "Traje de Android 13"
+    },
+    "tbo/bt4-costume/550": {
+      "original": "﻿No Trucker Hat",
+      "text": "Sem boné"
+    },
+    "tbo/bt4-costume/551": {
+      "original": "﻿Frieza Force's Armor",
+      "text": "Armadura de Frieza Force"
+    },
+    "tbo/bt4-costume/552": {
+      "original": "﻿Black Shirt",
+      "text": "Camisa preta"
+    },
+    "tbo/bt4-costume/553": {
+      "original": "﻿Bojack's Clothes",
+      "text": "Traje de Bojack"
+    },
+    "tbo/bt4-costume/554": {
+      "original": "﻿Vegeta's Clothes",
+      "text": "Traje de Vegeta"
+    },
+    "tbo/bt4-costume/555": {
+      "original": "﻿Super Baby 1's Armor",
+      "text": "Armadura de Super Baby 1"
+    },
+    "tbo/bt4-costume/556": {
+      "original": "﻿Super Baby 2's Suit",
+      "text": "Traje de Super Baby 2"
+    },
+    "tbo/bt4-costume/557": {
+      "original": "﻿Super Baby 2's Armor",
+      "text": "Armadura de Super Baby 2"
+    },
+    "tbo/bt4-costume/558": {
+      "original": "﻿Great Ape Oren",
+      "text": "Oren Oozaru"
+    },
+    "tbo/bt4-costume/559": {
+      "original": "﻿Super 17's Clothes",
+      "text": "Traje de Super 17"
+    },
+    "tbo/bt4-costume/560": {
+      "original": "﻿Full Power",
+      "text": "Poder Total"
+    },
+    "tbo/bt4-costume/561": {
+      "original": "﻿Base Form",
+      "text": "Forma base"
+    },
+    "tbo/bt4-costume/562": {
+      "original": "﻿Tao's Chang Pao",
+      "text": "Chang Pao de Tao"
+    },
+    "tbo/bt4-costume/563": {
+      "original": "﻿Mystical Adventure",
+      "text": "Aventura Mística"
+    },
+    "tbo/bt4-costume/564": {
+      "original": "﻿Pride Troopers Uniform",
+      "text": "Uniforme da Tropa do Orgulho"
+    },
+    "tbo/bt4-costume/565": {
+      "original": "﻿Demon King's Gi",
+      "text": "Quimono de Piccolo Daimaoh"
+    },
+    "tbo/bt4-costume/566": {
+      "original": "﻿Arale's Clothes",
+      "text": "Traje de Arale"
+    },
+    "tbo/bt4-costume/567": {
+      "original": "﻿No Cap",
+      "text": "Sem boné"
+    },
+    "tbo/bt4-costume/568": {
+      "original": "﻿Orange Earrings",
+      "text": "Brincos laranja"
+    },
+    "tbo/bt4-costume/569": {
+      "original": "﻿Gi (DBS)",
+      "text": "Quimono (DBS)"
+    },
+    "tbo/bt4-costume/570": {
+      "original": "﻿Future Gohan's Gi",
+      "text": "Quimono de Gohan do Futuro"
+    },
+    "tbo/bt4-costume/571": {
+      "original": "﻿Both Arms",
+      "text": "Com os dois braços"
+    },
+    "tbo/bt4-costume/572": {
+      "original": "﻿Random",
+      "text": "Aleatório"
+    },
+    "tbo/bt4-costume/573": {
+      "original": "﻿Color 1",
+      "text": "Cor 1"
+    },
+    "tbo/bt4-costume/574": {
+      "original": "﻿Color 2",
+      "text": "Cor 2"
+    },
+    "tbo/bt4-costume/575": {
+      "original": "﻿Alt Color 1",
+      "text": "Cor alternativa 1"
+    },
+    "tbo/bt4-costume/576": {
+      "original": "﻿Alt Color 2",
+      "text": "Cor alternativa 2"
+    },
+    "tbo/bt4-costume/577": {
+      "original": "﻿Alt Color 3",
+      "text": "Cor alternativa 3"
+    },
+    "tbo/bt4-costume/578": {
+      "original": "﻿King Vegeta's Armor",
+      "text": "Armadura de King Vegeta"
+    },
+    "tbo/bt4-costume/579": {
+      "original": "﻿Devilman's Suit",
+      "text": "Traje de Akkuman"
+    },
+    "tbo/bt4-costume/580": {
+      "original": "﻿General Blue's Uniform",
+      "text": "Uniforme do General Blue"
+    },
+    "tbo/bt4-costume/581": {
+      "original": "﻿Kid Chi-Chi's Outfit",
+      "text": "Traje de Chi-Chi Criança"
+    },
+    "tbo/bt4-costume/582": {
+      "original": "﻿Grandpa Gohan's Clothes",
+      "text": "Traje de Grandpa Gohan"
+    },
+    "tbo/bt4-costume/583": {
+      "original": "﻿No Mask",
+      "text": "Sem máscara"
+    },
+    "tbo/bt4/560": {
+      "original": "Waiting for host",
+      "text": "Aguardando o anfitrião"
+    },
+    "tbo/bt4/561": {
+      "original": "Arrange the teams and choose your fighters.",
+      "text": "Organize as equipes e escolha os lutadores."
+    },
+    "tbo/bt4/562": {
+      "original": "L1/R1: Change difficulty.",
+      "text": "L1/R1: Alterar dificuldade."
+    },
+    "tbo/bt4-costume/584": {
+      "original": "﻿Eighter's Clothes",
+      "text": "Traje de Androide Nº 8"
+    },
+    "tbo/bt4-costume/585": {
+      "original": "﻿Nam's Clothes",
+      "text": "Traje de Nam"
+    },
+    "tbo/bt4-costume/586": {
+      "original": "﻿Garlic Jr.'s Clothes",
+      "text": "Traje de Garlic Jr."
+    },
+    "tbo/bt4-costume/587": {
+      "original": "﻿Pilaf's Look",
+      "text": "Visual de Pilaf"
+    },
+    "tbo/bt4-costume/588": {
+      "original": "﻿Alt Colors 1",
+      "text": "Cor alternativa 1"
+    },
+    "tbo/bt4-costume/589": {
+      "original": "﻿Alt Colors 2",
+      "text": "Cor alternativa 2"
+    },
+    "tbo/bt4-costume/590": {
+      "original": "﻿Green",
+      "text": "Verde"
+    },
+    "tbo/bt4-costume/591": {
+      "original": "﻿Yellow",
+      "text": "Amarelo"
+    },
+    "tbo/bt4-costume/592": {
+      "original": "﻿Red",
+      "text": "Vermelho"
+    },
+    "tbo/bt4-costume/593": {
+      "original": "﻿Pink",
+      "text": "Rosa"
+    },
+    "tbo/bt4-costume/594": {
+      "original": "﻿Cooler's Armored Squad Armor",
+      "text": "Armadura de Coolaed Squad Armor"
+    },
+    "tbo/bt4-costume/595": {
+      "original": "﻿Zangya's Clothes",
+      "text": "Traje de Zangya"
+    },
+    "tbo/bt4-costume/596": {
+      "original": "﻿Broly's Clothes",
+      "text": "Traje de Broly"
+    },
+    "tbo/bt4-costume/597": {
+      "original": "﻿Babidi's Clothes",
+      "text": "Traje de Babidi"
+    },
+    "tbo/bt4-costume/598": {
+      "original": "﻿Spopovich's Clothes",
+      "text": "Traje de Spopovich"
+    },
+    "tbo/bt4-costume/599": {
+      "original": "﻿Young Spopovich",
+      "text": "Jovem Spopovich"
+    },
+    "tbo/bt4-costume/600": {
+      "original": "﻿Post-Transformation",
+      "text": "Após a transformação"
+    },
+    "tbo/bt4-costume/601": {
+      "original": "﻿Pre-Transformation",
+      "text": "Pré-Transformação"
+    },
+    "tbo/bt4-costume/602": {
+      "original": "﻿Uub's Gi",
+      "text": "Quimono de Uub"
+    },
+    "tbo/bt4-costume/603": {
+      "original": "﻿Kale's Clothes",
+      "text": "Traje de Kale"
+    },
+    "tbo/bt4-costume/604": {
+      "original": "﻿Hair Down",
+      "text": "Cabelo solto"
+    },
+    "tbo/bt4-costume/605": {
+      "original": "﻿Super Saiyan Colors",
+      "text": "Cores Super Saiyajin"
+    },
+    "tbo/bt4-costume/606": {
+      "original": "﻿Superhero Suit 1",
+      "text": "Traje de super-herói 1"
+    },
+    "tbo/bt4-costume/607": {
+      "original": "﻿Superhero Suit 2",
+      "text": "Traje de super-herói 2"
+    },
+    "tbo/bt4-costume/608": {
+      "original": "﻿God Broly",
+      "text": "Deus Broly"
+    },
+    "tbo/bt4-costume/609": {
+      "original": "﻿Tarble's Armor",
+      "text": "Armadura de Tarble"
+    },
+    "tbo/bt4-costume/610": {
+      "original": "﻿Armor (Royal Family Logo)",
+      "text": "Armadura (símbolo da família real)"
+    },
+    "tbo/bt4-costume/611": {
+      "original": "﻿Android 14's Clothes",
+      "text": "Traje de Android 14"
+    },
+    "tbo/bt4-costume/612": {
+      "original": "﻿Android 15's Clothes",
+      "text": "Traje de Android 15"
+    },
+    "tbo/bt4-costume/613": {
+      "original": "﻿GT Jacket",
+      "text": "Jaqueta GT"
+    },
+    "tbo/bt4-costume/614": {
+      "original": "﻿Appule's Race Soldier B",
+      "text": "Soldado da raça de Appule B"
+    },
+    "tbo/bt4-costume/615": {
+      "original": "﻿Dodoria's Subordinate C",
+      "text": "Subordinado de Dodoria C"
+    },
+    "tbo/bt4-costume/616": {
+      "original": "﻿Appule's Race Soldier (BT2)",
+      "text": "Soldado da raça de Appule (BT2)"
+    },
+    "tbo/bt4-costume/617": {
+      "original": "﻿Dodoria's Subordinate D",
+      "text": "Subordinado de Dodoria D"
+    },
+    "tbo/bt4-costume/618": {
+      "original": "﻿Frieza Soldier C",
+      "text": "Soldado de Freeza C"
+    },
+    "tbo/bt4-costume/619": {
+      "original": "﻿Deserter Soldier",
+      "text": "Soldado desertor"
+    },
+    "tbo/bt4-costume/620": {
+      "original": "﻿Frieza Soldier E",
+      "text": "Soldado de Freeza E"
+    },
+    "tbo/bt4-costume/621": {
+      "original": "﻿Frieza Soldier F",
+      "text": "Soldado de Freeza F"
+    },
+    "tbo/native-r7/000": {
+      "original": "Tag Team HUD",
+      "text": "Interface Tag Team"
+    },
+    "tbo/native-r7/001": {
+      "original": "ALLIES",
+      "text": "ALIADOS"
+    },
+    "tbo/native-r7/002": {
+      "original": "Allies",
+      "text": "Aliados"
+    },
+    "tbo/native-r7/003": {
+      "original": "Targets",
+      "text": "Alvos"
+    },
+    "tbo/native-r7/004": {
+      "original": "Team Score",
+      "text": "Placar da equipe"
+    },
+    "tbo/native-r7/005": {
+      "original": "L3 CHANGE TARGET",
+      "text": "L3: MUDAR ALVO"
+    },
+    "tbo/native-r7/006": {
+      "original": "D-PAD: MOVE | L2: FASTER | SELECT: RESET ALL",
+      "text": "DIRECIONAL: MOVER | L2: MAIS RÁPIDO | SELECT: RESTAURAR TUDO"
+    },
+    "tbo/native-r7/007": {
+      "original": "Reset Panel",
+      "text": "Restaurar painel"
+    },
+    "tbo/bt4/563": {
+      "original": "Tag Team HUD",
+      "text": "Interface Tag Team"
+    },
+    "tbo/r1-1/000": {
+      "original": "Auto: rivals near you first. A region: players there first, everyone after 40 s. Anywhere: the fastest.",
+      "text": "Automático prioriza adversários próximos. Uma região prioriza seus jogadores por 40 s. Qualquer região busca a conexão mais rápida."
+    },
+    "tbo/r1-1/001": {
+      "original": "Knocking at the lobby's door...",
+      "text": "Entrando na sala..."
+    },
+    "tbo/r1-1/002": {
+      "original": "Opening your lobby! The others join it with its code.",
+      "text": "Abrindo sua sala. Compartilhe o código para convidar outros jogadores."
+    },
+    "tbo/r1-1/003": {
+      "original": "Type a line for everyone in the lobby, then Done! Start sends it too.",
+      "text": "Digite uma mensagem para a sala e confirme em Concluir. START também envia."
+    },
+    "tbo/r1-1/004": {
+      "original": "Welcome to the lobby! Its owner picks who plays and starts the match. Chat while you wait!",
+      "text": "Bem-vindo à sala! O anfitrião escolhe os jogadores e inicia a partida. Converse enquanto espera."
+    },
+    "tbo/r1-1/005": {
+      "original": "You are out of that lobby. OK takes you back to the online menu.",
+      "text": "Você saiu da sala. Confirme para voltar ao menu online."
+    },
+    "tbo/r1-1/006": {
+      "original": "Your lobby is open! Give the others its code: they join with Join Room. Then put two of you in 1P and 2P.",
+      "text": "Sua sala está aberta! Compartilhe o código. Os outros jogadores entram por Entrar na sala. Depois, escolha quem ocupa 1P e 2P."
+    },
+    "tbo/r1-1/007": {
+      "original": "Your lobby is open! The others join with your address and port. Then put two of you in 1P and 2P.",
+      "text": "Sua sala está aberta! Compartilhe seu endereço e porta. Depois, escolha quem ocupa 1P e 2P."
+    },
+    "tbo/r1-1/008": {
+      "original": "Set the number of slots on Team 1. Both teams can have up to ten fighters in total.",
+      "text": "Defina as vagas da Equipe 1. As duas equipes podem ter até dez lutadores no total."
+    },
+    "tbo/r1-1/009": {
+      "original": "Set the number of slots on Team 2. The teams can have different numbers of fighters.",
+      "text": "Defina as vagas da Equipe 2. As equipes podem ter quantidades diferentes de lutadores."
+    },
+    "tbo/r1-1/010": {
+      "original": "Choose a time limit or play until one team is defeated.",
+      "text": "Escolha um limite de tempo ou lute até uma equipe ser derrotada."
+    },
+    "tbo/r1-1/011": {
+      "original": "Fill empty slots with CPU fighters or leave them open. You can also edit each slot in the room.",
+      "text": "Preencha as vagas com lutadores CPU ou deixe-as abertas. Cada vaga também pode ser alterada na sala."
+    },
+    "tbo/r1-1/012": {
+      "original": "Set the starting CPU difficulty. Each CPU slot can have its own difficulty in the room.",
+      "text": "Escolha a dificuldade inicial da CPU. Na sala, cada lutador CPU pode ter sua própria dificuldade."
+    },
+    "tbo/r1-1/013": {
+      "original": "Create a room and share its code. You can start with empty slots if both teams have a fighter.",
+      "text": "Crie uma sala e compartilhe o código. Vagas vazias são permitidas se houver um lutador em cada equipe."
+    },
+    "tbo/r1-1/014": {
+      "original": "Join your friends with a six-character room code. Everyone must use the same BT4 build.",
+      "text": "Entre com o código de seis caracteres. Todos os jogadores precisam usar uma versão compatível do BT4."
+    },
+    "tbo/r1-1/015": {
+      "original": "Type your message with the keyboard. ENTER sends it and ESC closes the chat.",
+      "text": "Digite sua mensagem. ENTER envia e ESC fecha o chat."
+    },
+    "tbo/r1-1/016": {
+      "original": "SELECT copies the room code. The host arranges the teams and starts character selection.",
+      "text": "SELECT copia o código da sala. O anfitrião organiza as equipes e inicia a seleção de personagens."
+    },
+    "tbo/r1-1/017": {
+      "original": "Choose a destination with X. TRIANGLE cancels. SELECT copies the room code.",
+      "text": "Escolha o destino com X. TRIÂNGULO cancela e SELECT copia o código da sala."
+    },
+    "tbo/r1-1/018": {
+      "original": "Enter the six-character room code or paste it from the clipboard, then confirm to join.",
+      "text": "Digite ou cole o código de seis caracteres e confirme para entrar."
+    },
+    "tbo/r1-1/019": {
+      "original": "Here we go! The match is starting!",
+      "text": "A partida vai começar!"
+    },
+    "tbo/r1-1/020": {
+      "original": "Every player needs the same BT4 B14 Rev2 build and verified game data.",
+      "text": "Todos os jogadores precisam usar uma versão compatível do BT4 B14 Rev2 e dados verificados."
+    },
+    "tbo/r1-1/021": {
+      "original": "Online fights require the same BT4 B14 Rev2 build and verified data on both computers.",
+      "text": "As partidas online exigem versões compatíveis do BT4 B14 Rev2 e dados verificados nos dois computadores."
+    },
+    "tbo/r1-1/022": {
+      "original": "Warm up at the tournament while we search! Pick yourself and a sparring partner.",
+      "text": "Treine enquanto buscamos um adversário. Escolha seu lutador e um parceiro de treino."
+    },
+    "tbo/r1-1/023": {
+      "original": "Enter your player name, then choose Done. SQUARE deletes a character; START confirms.",
+      "text": "Digite seu nome e escolha Concluir. QUADRADO apaga um caractere e START confirma."
+    },
+    "tbo/r1-1/024": {
+      "original": "Choose the player name shown to opponents and other players in your rooms.",
+      "text": "Escolha o nome exibido aos adversários e aos outros jogadores da sala."
+    },
+    "tbo/r1-1/025": {
+      "original": "Quick Match searches its public queue. It only matches players using the same battle type. To enter a room code, choose Join Room.",
+      "text": "A Partida rápida reúne jogadores do mesmo tipo de batalha na fila pública. Para usar um código, escolha Entrar na sala."
+    },
+    "tbo/r1-1/026": {
+      "original": "Your private room is open. Share its code; your rival must choose Join Room and enter it. Quick Match does not use room codes.",
+      "text": "Sua sala privada está aberta. Compartilhe o código; seu adversário deve digitá-lo em Entrar na sala. A Partida rápida usa uma fila separada."
+    },
+    "tbo/r1-1/027": {
+      "original": "Joining the private room with this code. Wait for the host to connect.",
+      "text": "Entrando na sala privada. Aguarde a conexão com o anfitrião."
+    },
+    "tbo/r1-1/028": {
+      "original": "Press Search to enter the public queue. It only matches players searching the same battle type. To use a room code, choose Join Room.",
+      "text": "Escolha Buscar para entrar na fila pública do mesmo tipo de batalha. Para usar um código, escolha Entrar na sala."
+    },
+    "tbo/r1-1/029": {
+      "original": "Create an online tournament for 2 to 8 players. Follow the bracket and watch each match.",
+      "text": "Crie um torneio online para 2 a 8 jogadores. Acompanhe as chaves e assista às partidas."
+    },
+    "tbo/r1-1/030": {
+      "original": "Host a lobby by address. Share your address and port with the other players.",
+      "text": "Crie uma sala por endereço. Compartilhe seu endereço e porta com os outros jogadores."
+    },
+    "tbo/r1-1/031": {
+      "original": "Open a lobby and share its code. Set the match rules inside the lobby.",
+      "text": "Abra uma sala, compartilhe o código e configure as regras da partida."
+    },
+    "tbo/r1-1/032": {
+      "original": "Enter the host address and port, then choose Join.",
+      "text": "Digite o endereço e a porta do anfitrião e escolha Entrar."
+    },
+    "tbo/r1-1/033": {
+      "original": "Search for an opponent in a public queue.",
+      "text": "Busque um adversário na fila pública."
+    },
+    "tbo/r1-1/034": {
+      "original": "Open a lobby, choose the rules and invite players or spectators.",
+      "text": "Abra uma sala, configure as regras e convide jogadores ou espectadores."
+    },
+    "tbo/r1-1/035": {
+      "original": "Join a lobby with its code or the host address.",
+      "text": "Entre em uma sala pelo código ou endereço do anfitrião."
+    },
+    "tbo/r1-1/036": {
+      "original": "Build two teams for simultaneous battles with players and CPU fighters.",
+      "text": "Organize duas equipes para batalhas simultâneas entre jogadores e lutadores CPU."
+    },
+    "tbo/r1-1/037": {
+      "original": "Set the name other players see.",
+      "text": "Escolha o nome exibido aos outros jogadores."
+    },
+    "tbo/r1-1/038": {
+      "original": "Arrange the teams and choose your fighters.",
+      "text": "Organize as equipes e escolha os lutadores."
+    },
+    "tbo/r1-1/039": {
+      "original": "Search for a simultaneous 2 vs 2 battle.",
+      "text": "Busque jogadores para uma batalha simultânea de 2 contra 2."
+    },
+    "tbo/r1-1/040": {
+      "original": "Create a room for 2 vs 2, 5 vs 5 or six-player Free for All.",
+      "text": "Crie uma sala de 2 contra 2, 5 contra 5 ou Todos contra todos com seis jogadores."
+    },
+    "tbo/r1-1/041": {
+      "original": "Join a room with its code.",
+      "text": "Entre em uma sala usando o código."
+    },
+    "tbo/r1-1/042": {
+      "original": "Choose team battles or a six-player free-for-all.",
+      "text": "Escolha batalhas por equipes ou Todos contra todos com seis jogadores."
+    },
+    "tbo/r1-1/043": {
+      "original": "Find players for Free for All, 2 vs 2 or 5 vs 5.",
+      "text": "Encontre jogadores para Todos contra todos, 2 contra 2 ou 5 contra 5."
+    },
+    "tbo/r1-1/044": {
+      "original": "Waiting for four players to join the 2 vs 2 battle.",
+      "text": "Aguardando quatro jogadores para a batalha de 2 contra 2."
+    },
+    "tbo/r1-1/045": {
+      "original": "Choose the match rules, create a room and share its code.",
+      "text": "Escolha as regras, crie uma sala e compartilhe o código."
+    },
+    "tbo/r1-1/046": {
+      "original": "Fighters online: ",
+      "text": "Lutadores online: "
+    },
+    "tbo/r1-1/047": {
+      "original": "Free for All",
+      "text": "Todos contra todos"
+    },
+    "tbo/r1-1/048": {
+      "original": "Create Match",
+      "text": "Criar partida"
+    },
+    "tbo/r1-1/049": {
+      "original": "Create Room",
+      "text": "Criar sala"
+    },
+    "tbo/r1-1/050": {
+      "original": "Join Room",
+      "text": "Entrar na sala"
+    },
+    "tbo/r1-1/051": {
+      "original": "Choose Fighters",
+      "text": "Escolher lutadores"
+    },
+    "tbo/r1-1/052": {
+      "original": "Waiting for host",
+      "text": "Aguardando o anfitrião"
+    },
+    "tbo/r1-1/053": {
+      "original": "L1/R1: Change difficulty.",
+      "text": "L1/R1: Alterar dificuldade."
+    },
+    "tbo/r1-1/054": {
+      "original": "Screen Position",
+      "text": "Posição da tela"
+    },
+    "tbo/r1-1/055": {
+      "original": "Return to Default",
+      "text": "Restaurar padrão"
+    },
+    "tbo/native-r1-1/0": {
+      "original": "Dragon Ball Super Saga",
+      "text": "Saga Dragon Ball Super"
+    },
+    "tbo/native-r1-1/1": {
+      "original": "Broly",
+      "text": "Broly"
+    },
+    "tbo/native-r1-1/2": {
+      "original": "Universe 6's Strongest Warrior",
+      "text": "O guerreiro mais forte\ndo Universo 6"
+    },
+    "online/setup/create-title": {
+      "original": "CREATE MATCH",
+      "text": "CRIAR PARTIDA"
+    },
+    "online/setup/connection": {
+      "original": "Connection",
+      "text": "Conexão"
+    },
+    "online/setup/room-code": {
+      "original": "Room Code",
+      "text": "Código da sala"
+    },
+    "online/setup/by-address": {
+      "original": "By Address",
+      "text": "Por endereço"
+    },
+    "online/setup/port": {
+      "original": "Port",
+      "text": "Porta"
+    },
+    "tbo/ranked/00": {
+      "original": "Ranked",
+      "text": "Classificatórias"
+    },
+    "tbo/ranked/01": {
+      "original": "View your competitive season, rating and the global leaderboard.",
+      "text": "Consulte sua temporada competitiva, pontuação e classificação mundial."
+    },
+    "tbo/ranked/02": {
+      "original": "Find Ranked Match",
+      "text": "Buscar classificatória"
+    },
+    "tbo/ranked/03": {
+      "original": "Global Top",
+      "text": "Top global"
+    },
+    "tbo/ranked/04": {
+      "original": "How Ranked Works",
+      "text": "Como funcionam as ranqueadas"
+    },
+    "tbo/ranked/05": {
+      "original": "COMPETITIVE SEASON",
+      "text": "TEMPORADA COMPETITIVA"
+    },
+    "tbo/ranked/06": {
+      "original": "Ranked matchmaking",
+      "text": "Partidas classificatórias"
+    },
+    "tbo/ranked/07": {
+      "original": "Rating: unranked",
+      "text": "Pontos: sem classificação"
+    },
+    "tbo/ranked/08": {
+      "original": "No ranking published yet.",
+      "text": "Nenhuma classificação publicada."
+    },
+    "tbo/ranked/09": {
+      "original": "Updates every hour.",
+      "text": "Atualização a cada hora."
+    },
+    "tbo/ranked/10": {
+      "original": "Weekly reset: Sunday 23:59",
+      "text": "Reinício: domingo 23:59"
+    },
+    "tbo/ranked/11": {
+      "original": "Argentina time (UTC-3)",
+      "text": "Horário da Argentina (UTC-3)"
+    },
+    "tbo/ranked/12": {
+      "original": "Weekly competitive seasons.",
+      "text": "Temporadas semanais."
+    },
+    "tbo/ranked/13": {
+      "original": "Global Top updates every hour.",
+      "text": "O Top global é atualizado a cada hora."
+    },
+    "tbo/ranked/14": {
+      "original": "Sunday 23:59: new season.",
+      "text": "Domingo 23:59: nova temporada."
+    },
+    "tbo/ranked/15": {
+      "original": "Separate queues for solo and native Team Battle.",
+      "text": "Filas separadas para individual e Combate de Equipe clássico."
+    },
+    "tbo/ranked/16": {
+      "original": "Play rated solo or native Team Battle matches.",
+      "text": "Jogue partidas classificatórias individuais ou de equipes clássicas."
+    },
+    "tbo/ranked/17": {
+      "original": "Earn points in solo and native Team Battle; points carry over each week.",
+      "text": "Ganhe pontos no individual e no Combate de Equipe clássico; eles são mantidos a cada semana."
+    },
+    "tbo/ranked/unavailable": {
+      "original": "Ranked service unavailable",
+      "text": "Serviço classificatório indisponível"
+    },
+    "tbo/ranked/rating": {
+      "original": "Rating: %d",
+      "text": "Pontos: %d"
+    },
+    "tbo/ranked/page": {
+      "original": "Page %d/%d",
+      "text": "Página %d/%d"
+    },
+    "tbo/ranked/persistent-points": {
+      "original": "Points carry over between weeks.",
+      "text": "A pontuação é mantida entre semanas."
+    },
+    "tbo/ranked/rules-duration": {
+      "original": "240 seconds. Standard speed.",
+      "text": "240 segundos. Velocidade padrão."
+    },
+    "tbo/ranked/help-live": {
+      "original": "Choose individual or native team battles to earn ranking points.",
+      "text": "Escolha batalhas individuais ou por equipes clássicas para ganhar pontos."
+    },
+    "tbo/ranked/temporary": {
+      "original": "Ranked is temporarily unavailable. Please try again later.",
+      "text": "As classificatórias estão indisponíveis. Tente novamente mais tarde."
+    },
+    "tbo/ranked/result-points": {
+      "original": "Ranked: %+d points (%d total)",
+      "text": "Classificatórias: %+d pontos (%d no total)"
+    },
+    "tbo/ranked/help/0": {
+      "original": "Start at 1000 points.",
+      "text": "Comece com 1000 pontos."
+    },
+    "tbo/ranked/help/1": {
+      "original": "Win to gain points; lose to drop.",
+      "text": "Vencer soma pontos; perder reduz."
+    },
+    "tbo/ranked/help/2": {
+      "original": "Points depend on your rival's rating.",
+      "text": "A mudança depende dos pontos do rival."
+    },
+    "tbo/ranked/help/3": {
+      "original": "Solo and teams have separate ratings.",
+      "text": "Solo e equipes têm pontuações separadas."
+    },
+    "tbo/ranked/help/5": {
+      "original": "Weekly records reset: Sunday 23:59",
+      "text": "Registro semanal: reinicia domingo 23h59"
+    },
+    "tbo/ranked/help/7": {
+      "original": "Your points carry over each week.",
+      "text": "Seus pontos são mantidos a cada semana."
+    },
+    "tbo/ranked/guide": {
+      "original": "Ranked is a one-on-one competition that starts you at 1000 points. Winning earns points and losing costs points based on both players' ratings. The Global Top refreshes every 10 minutes. The weekly standings renew on Sundays at 23:59 Argentina time (UTC-3), and you carry your points into the next week.",
+      "text": "Nas ranqueadas, você joga um contra um e começa com 1000 pontos. Vitórias somam pontos e derrotas descontam, de acordo com a pontuação dos dois jogadores. O Top global é atualizado a cada 10 minutos. A classificação semanal se renova aos domingos, às 23h59 da Argentina (UTC-3), e você mantém seus pontos para a próxima semana."
+    },
+    "tbo/hub/community": {"original": "Join our Discord Server!", "text": "Entre no nosso servidor do Discord!"},
+    "tbo/ranked/most-wanted": {"original": "Most Dangerous Fighters", "text": "Lutadores mais perigosos"},
+    "tbo/ranked/top-interval": {"original": "Updates every 10 minutes.", "text": "Atualiza a cada 10 minutos."},
+    "tbo/ranked/top-loading": {"original": "Loading Global Top...", "text": "Carregando o Top global..."},
+    "tbo/ranked/top-unavailable": {"original": "Global Top unavailable", "text": "Top global indisponível"},
+    "tbo/ranked/loading": {"original": "Loading Ranked status...", "text": "Carregando ranqueadas..."},
+    "tbo/nickname/required": {"original": "Choose a nickname before playing online.", "text": "Escolha um apelido para jogar online."},
+    "tbo/nickname/checking": {"original": "Checking your online nickname...", "text": "Verificando seu apelido..."},
+    "tbo/nickname/saving": {"original": "Reserving your nickname...", "text": "Reservando seu apelido..."},
+    "tbo/nickname/taken": {"original": "That nickname is already taken.", "text": "Esse apelido já está em uso."},
+    "tbo/nickname/invalid": {"original": "Choose a valid nickname.", "text": "Escolha um apelido válido."},
+    "tbo/nickname/unavailable": {"original": "Could not verify your nickname. Try again.", "text": "Não foi possível verificar o apelido. Tente novamente."},
+    "tbo/profile/language": {"original": "Language", "text": "Idioma"},
+    "tbo/profile/language_help": {"original": "Choose the language of the online screens. It changes at once.", "text": "Escolha o idioma das telas online. Muda na hora."},
+    "tbo/redesign/001": {"original": "TIME MACHINE", "text": "MÁQUINA DO TEMPO"},
+    "tbo/redesign/002": {"original": "CAPSULE CORP. • DESTINATION SELECT", "text": "CAPSULE CORP. • ESCOLHA DO DESTINO"},
+    "tbo/redesign/003": {"original": "HOPE!!", "text": "ESPERANÇA!!"},
+    "tbo/redesign/004": {"original": "DESTINATION", "text": "DESTINO"},
+    "tbo/redesign/005": {"original": "TIME ENERGY", "text": "ENERGIA TEMPORAL"},
+    "tbo/redesign/006": {"original": "AGE 767", "text": "ANO 767"},
+    "tbo/redesign/007": {"original": "AGE 774", "text": "ANO 774"},
+    "tbo/redesign/008": {"original": "AGE 784", "text": "ANO 784"},
+    "tbo/redesign/009": {"original": "AGE 785", "text": "ANO 785"},
+    "tbo/redesign/010": {"original": "AGE 788", "text": "ANO 788"},
+    "tbo/redesign/011": {"original": "AGE 790", "text": "ANO 790"},
+    "tbo/redesign/012": {"original": "AGE 794", "text": "ANO 794"},
+    "tbo/redesign/013": {"original": "Online", "text": "Online"},
+    "tbo/redesign/014": {"original": "FIGHTER", "text": "LUTADOR"},
+    "tbo/redesign/015": {"original": "RATING %d", "text": "PONTOS %d"},
+    "tbo/redesign/016": {"original": "RATING", "text": "PONTOS"},
+    "tbo/redesign/017": {"original": "POINTS", "text": "PONTOS"},
+    "tbo/redesign/018": {"original": "W %d  L %d", "text": "V %d  D %d"},
+    "tbo/redesign/019": {"original": "SEASON MENU", "text": "MENU DA TEMPORADA"},
+    "tbo/redesign/020": {"original": "ONE ON ONE OR NATIVE TEAMS", "text": "UM CONTRA UM OU EQUIPES"},
+    "tbo/redesign/021": {"original": "THE BEST OF THE WEEK", "text": "OS MELHORES DA SEMANA"},
+    "tbo/redesign/022": {"original": "POINTS, SEASONS, RESETS", "text": "PONTOS, TEMPORADAS, REINÍCIOS"},
+    "tbo/redesign/023": {"original": "10 MIN", "text": "10 MIN"},
+    "tbo/redesign/024": {"original": "SUN", "text": "DOM"},
+    "tbo/redesign/025": {"original": "ROOM RULES", "text": "REGRAS DA SALA"},
+    "tbo/redesign/026": {"original": "A CODE, OR YOUR ADDRESS", "text": "UM CÓDIGO OU SEU ENDEREÇO"},
+    "tbo/redesign/027": {"original": "ONE ON ONE, TEAMS, 10/15/20 DP", "text": "UM CONTRA UM, EQUIPES, 10/15/20 DP"},
+    "tbo/redesign/028": {"original": "ONE ON ONE OR TEAMS (UP TO 5)", "text": "UM CONTRA UM OU EQUIPES (ATÉ 5)"},
+    "tbo/redesign/029": {"original": "RIVALS THERE FIRST, THEN ANYWHERE", "text": "PRIMEIRO OS DE LÁ, DEPOIS QUALQUER UM"},
+    "tbo/redesign/030": {"original": "NO TIME LIMIT - 114% SPEED", "text": "SEM LIMITE DE TEMPO - VELOCIDADE 114%"},
+    "tbo/redesign/031": {"original": "SEARCHING", "text": "BUSCANDO"},
+    "tbo/redesign/032": {"original": "FIND A TEAM BATTLE NOW", "text": "ACHE UMA LUTA EM EQUIPE AGORA"},
+    "tbo/redesign/033": {"original": "YOUR RULES, YOUR TEAMS", "text": "SUAS REGRAS, SUAS EQUIPES"},
+    "tbo/redesign/034": {"original": "ENTER A ROOM CODE", "text": "DIGITE O CÓDIGO DE UMA SALA"},
+    "tbo/redesign/035": {"original": "PLAY ON THIS DEVICE", "text": "JOGUE NESTE APARELHO"},
+    "tbo/redesign/036": {"original": "Local Room", "text": "Sala local"},
+    "tbo/redesign/037": {"original": "LOCAL MATCH", "text": "PARTIDA LOCAL"},
+    "tbo/redesign/038": {"original": "2 VS 2, 5 VS 5, FREE FOR ALL, CUSTOM", "text": "2 VS 2, 5 VS 5, TODOS CONTRA TODOS, PERSONALIZADO"},
+    "tbo/redesign/039": {"original": "TAG TEAM", "text": "TAG TEAM"},
+    "tbo/redesign/040": {"original": "FREE FOR ALL", "text": "TODOS CONTRA TODOS"},
+    "tbo/redesign/041": {"original": "FREE FOR ALL (6)", "text": "TODOS CONTRA TODOS (6)"},
+    "tbo/redesign/042": {"original": "FIGHTERS", "text": "LUTADORES"},
+    "tbo/redesign/043": {"original": "2 VS 2", "text": "2 VS 2"},
+    "tbo/redesign/044": {"original": "5 VS 5", "text": "5 VS 5"},
+    "tbo/redesign/045": {"original": "2 vs 2", "text": "2 vs 2"},
+    "tbo/redesign/046": {"original": "5 vs 5", "text": "5 vs 5"},
+    "tbo/redesign/047": {"original": "Custom Teams", "text": "Equipes personalizadas"},
+    "tbo/redesign/048": {"original": "Connecting players...", "text": "Conectando os jogadores..."},
+    "tbo/redesign/049": {"original": "Searching for players...", "text": "Procurando jogadores..."},
+    "tbo/redesign/050": {"original": "AUTOMATIC, ENGLISH, PORTUGUÊS, ESPAÑOL", "text": "AUTOMÁTICO, ENGLISH, PORTUGUÊS, ESPAÑOL"},
+    "tbo/redesign/051": {"original": "BRACKET", "text": "CHAVE"},
+    "tbo/tag-errors/01": {"original": "Cannot initialize the direct connection.", "text": "Não foi possível iniciar a conexão direta."},
+    "tbo/tag-errors/02": {"original": "Could not establish or maintain a direct connection to the room.", "text": "Não foi possível criar ou manter uma conexão direta com a sala."},
+    "tbo/tag-errors/03": {"original": "Enter a six-character room code.", "text": "Digite um código de sala de seis caracteres."},
+    "tbo/tag-errors/04": {"original": "Invalid CPU practice input frame.", "text": "Quadro de comando inválido no treino contra a CPU."},
+    "tbo/tag-errors/05": {"original": "Invalid CPU practice startup frame.", "text": "Quadro inicial inválido no treino contra a CPU."},
+    "tbo/tag-errors/06": {"original": "The direct connection to the room was lost.", "text": "A conexão direta com a sala caiu."},
+    "tbo/tag-errors/07": {"original": "This TAG TEAM server is not supported on Android.", "text": "Este servidor de TAG TEAM não funciona no Android."},
+    "tbo/tag-errors/08": {"original": "This client fell too far behind the battle. The other players can continue.", "text": "Este jogo ficou muito atrás da luta. Os outros jogadores podem continuar."},
+    "tbo/tag-errors/09": {"original": "This is an old or incompatible version. Apply the complete BT4 patch.", "text": "Esta versão é antiga ou incompatível. Aplique o patch completo do BT4."},
+    "tbo/tag-errors/10": {"original": "Unexpected TAG TEAM input epoch.", "text": "Sequência de comandos do TAG TEAM inesperada."},
+    "tbo/net-notices/01": {"original": "Checking your game data...", "text": "Verificando os dados do jogo..."},
+    "tbo/net-notices/02": {"original": "Nobody answered in two minutes.", "text": "Ninguém respondeu em dois minutos."},
+    "tbo/net-notices/03": {"original": "Spectating: this screen no longer shows the players' fight (desync). Following the match again from the start...", "text": "Assistindo: esta tela não mostra mais a luta dos jogadores (dessincronia). Acompanhando a partida de novo desde o início..."},
+    "tbo/net-notices/04": {"original": "Spectating: this screen no longer shows the players' fight (desync). The players' match is not affected.", "text": "Assistindo: esta tela não mostra mais a luta dos jogadores (dessincronia). A partida dos jogadores não é afetada."},
+    "tbo/net-notices/05": {"original": "Tenkaichi Budokai Online: your opponent is here! The match begins.", "text": "Tenkaichi Budokai Online: seu adversário chegou! A partida vai começar."},
+    "tbo/net-notices/06": {"original": "The other player's game did not say which game data it has (release 0.1.37, or it was still checking its data): both need 0.1.38 or newer.", "text": "O jogo do outro jogador não informou quais dados de jogo usa (versão 0.1.37, ou ainda estava verificando os dados): os dois precisam da 0.1.38 ou mais nova."},
+    "tbo/net-notices/07": {"original": "The other player's game is a different version.", "text": "O jogo do outro jogador é de outra versão."},
+    "tbo/net-notices/08": {"original": "The players' match has ended.", "text": "A partida dos jogadores terminou."},
+    "tbo/net-notices/09": {"original": "The two games no longer agree (desync): your screen and the other player's may now show different fights.", "text": "Os dois jogos não estão mais iguais (dessincronia): sua tela e a do outro jogador podem mostrar lutas diferentes."},
+    "tbo/net-notices/10": {"original": "Vibration turned off: the controller held the game up", "text": "Vibração desligada: o controle estava travando o jogo"},
+    "tbo/net-notices/11": {"original": "Back to the lobby.", "text": "De volta ao lobby."},
+    "tbo/net-notices/12": {"original": "The connection to the host was lost.", "text": "A conexão com o anfitrião caiu."},
+    "tbo/net-notices/13": {"original": "The connection to the other player was lost.", "text": "A conexão com o outro jogador caiu."},
+    "tbo/net-notices/14": {"original": "The two games no longer agree (desync): the match has ended.", "text": "Os dois jogos não estão mais iguais (dessincronia): a partida terminou."},
+    "tbo/net-notices/15": {"original": "Catching up with the match... %u%%", "text": "Alcançando a partida... %u%%"},
+    "tbo/net-notices/16": {"original": "Port %d cannot be used (another program has it?).", "text": "A porta %d não pode ser usada (outro programa está com ela?)."}
+  }
+}

@@ -1,0 +1,65 @@
+// Replay input tracks, src/battle/btl_replay.c = 0x1D8330..0x1D8750. Evidence: the matching C.
+// (chr): rewinds the fighter's track (pos = 0); when no replay is playing also empties it (count = 0).
+BtlReplay_Rewind = 0x001D8330; // type:func
+// (chr, buttons, commands, stick): appends {stick[2], buttons}; at 9000 frames sets the end flag instead.
+BtlReplay_Record = 0x001D8388; // type:func
+// (chr, &buttons, stick): reads the next frame; past the end sets the end flag and returns neutral.
+BtlReplay_Play = 0x001D8470; // type:func
+// Replay viewer control on pad 0 (roster +0x130 / +0x134): left/right picks the viewed side, up/down the HUD mode.
+BtlReplay_ResetViewer = 0x001D8578; // type:func
+BtlReplay_UpdateViewer = 0x001D8590; // type:func
+BtlReplay_GetViewSide = 0x001D8728; // type:func
+// HUD mode (0..2) chosen with up/down while watching a replay; passed to func_00218A48 (HUD work +0x34). Never reset.
+gBtlReplayHudMode = 0x002FEB18; // size:0x4 // guess
+
+// Battle helpers and fighter accessors, src/battle/btl_char_get.c = 0x1DBF20..0x1DC9A0. Evidence: the matching C.
+// Scalar helpers: wrap an angle into -pi..pi (one turn at most), component-wise on a Vec4, sqrt(x*x + z*z),
+// move a value toward a target by a step, clamp / min / max (float and int), round up to a multiple,
+// angle -> one of four 90 degree sectors.
+BtlUtil_WrapAngle = 0x001DBF20; // type:func
+BtlUtil_WrapAngles = 0x001DBF58; // type:func
+BtlUtil_LengthXZ = 0x001DBFB0; // type:func
+BtlUtil_ApproachF = 0x001DBFF8; // type:func
+BtlUtil_Approach = 0x001DC030; // type:func
+BtlUtil_ClampF = 0x001DC060; // type:func
+BtlUtil_MinF = 0x001DC088; // type:func
+BtlUtil_MaxF = 0x001DC0A0; // type:func
+BtlUtil_Clamp = 0x001DC0B8; // type:func
+BtlUtil_Min = 0x001DC0D0; // type:func
+BtlUtil_Max = 0x001DC0E0; // type:func
+BtlUtil_RoundUp = 0x001DC0F0; // type:func
+BtlUtil_AngleToSector = 0x001DC118; // type:func
+// Fighter whose +8 equals the argument (BtlChar_ResetAll stores the roster index in +0 and +8). "Side": guess.
+BtlChar_FindBySide = 0x001DC210; // type:func // guess
+// BtlObj_Get(chr->objId); &chr->pos (+0x10); &gPad[chr->pad].
+BtlChar_GetObj = 0x001DC280; // type:func
+BtlChar_GetPos = 0x001DC298; // type:func // guess
+BtlChar_GetPad = 0x001DC2A0; // type:func
+// chr+0x1320 > 0. The per-fighter passes skip a fighter while it is set (hit stop / freeze: guess).
+BtlChar_IsFrozen = 0x001DC2C0; // type:func // guess
+// Health above 0, flag 0xBE clear and chr+0xFE0 <= 0.
+BtlChar_IsFree = 0x001DC2D0; // type:func // guess
+// Active member's health (s32 at member +0x40) < 1; active member's +0x70 != 0.
+BtlChar_IsDead = 0x001DC320; // type:func
+BtlChar_TestMemberUnk70 = 0x001DC348; // type:func // guess
+// Roster frame counter (+0x14, ticked by func_001C2B30, 30 bits) and counter % max(n, 1).
+BtlChar_GetFrame = 0x001DC370; // type:func
+BtlChar_FrameMod = 0x001DC380; // type:func
+// The fighters' own generator: roster+0x18 = (state * 714025 + 4096) % 150889; float form divides by 150889.
+BtlChar_Rand = 0x001DC3A8; // type:func
+BtlChar_RandF = 0x001DC428; // type:func
+// Battle_GetStage() is 4 or 27.
+BtlChar_IsStage4Or27 = 0x001DC480; // type:func
+// On those stages adds seconds * 30 to roster+0x1C, capped at 150 (counts down in func_001C2B30).
+BtlChar_AddStageTimer = 0x001DC4C0; // type:func // guess
+// Pad vibration request block at chr+0x15D0 and its per-frame update (Pad_AddVibration).
+BtlChar_SetVibration = 0x001DC520; // type:func
+BtlChar_SetSmallVibration = 0x001DC578; // type:func
+BtlChar_Vibrate = 0x001DC5A8; // type:func
+BtlChar_UpdateVibration = 0x001DC5E0; // type:func
+// Voice table at roster+0x28: 8-byte entries {s16 first, s16 count, f32 interval}; kinds 0..56 with a cooldown each.
+BtlChar_GetVoiceEntry = 0x001DC720; // type:func // guess
+BtlChar_PlayVoice = 0x001DC738; // type:func // guess
+BtlChar_StopVoiceOnFlag = 0x001DC8A8; // type:func // guess
+BtlChar_TickVoiceTimers = 0x001DC918; // type:func // guess
+BtlChar_PlayVoiceSingle = 0x001DC950; // type:func // guess

@@ -1,0 +1,70 @@
+// Collision primitive library, second part: 0x236190..0x239BB0 (src/battle/col_b.c). Names follow what the matching
+// C does; shapes are described in include/battle/col_b.h.
+// 0x236190: intersection parameter of two 2D lines (only caller: ColSweep_TestTri, edge case).
+ColLine2_Intersect = 0x00236190; // type:func
+// 0x236228: sphere moved along a segment against a triangle (callers: StgCol_SweepCb, EftDet stage test).
+ColSweep_TestTri = 0x00236228; // type:func
+// 0x2368C8: segment against a triangle, front side only (caller: StgCol_SegCb).
+ColSeg_TestTri = 0x002368C8; // type:func
+// 0x236B10 / 0x2372A8: sphere against an oriented box, with contact / yes-no.
+ColSphere_ContactObb = 0x00236B10; // type:func
+ColSphere_TestObb = 0x002372A8; // type:func
+// 0x2374C0: ray against a sphere (no caller in the main executable).
+ColSphere_TestRay = 0x002374C0; // type:func
+// 0x237608: line through two points against a sphere: number of roots and both parameters.
+ColSphere_TestLine = 0x00237608; // type:func
+// 0x237838 / 0x237898: two spheres overlap, yes-no / with contact (the second has no caller).
+ColSphere_TestSphere = 0x00237838; // type:func
+ColSphere_ContactSphere = 0x00237898; // type:func
+// 0x237A10: two moving spheres: time of first touch in the frame. 0x237B70: push two touching spheres apart.
+ColSphere_SweepSphere = 0x00237A10; // type:func
+ColSphere_SeparateSphere = 0x00237B70; // type:func
+// 0x237D28: squared distance from a point to a triangle with the parameters of the nearest point; 0x238260 turns
+// the parameters into the point; 0x238310 = both, compared with the sphere's squared radius.
+ColTri_DistSqPoint = 0x00237D28; // type:func
+ColTri_GetPoint = 0x00238260; // type:func
+ColSphere_TestTri = 0x00238310; // type:func
+// 0x238388..0x238698: axis-aligned bounds of a capsule, sphere, oriented box, segment (ColBox_AddPoint per corner).
+ColBounds_OfCapsule = 0x00238388; // type:func
+ColBounds_OfSphere = 0x00238490; // type:func
+ColRay_FromSeg = 0x00238540; // type:func
+ColBounds_AddSphere = 0x00238590; // type:func
+ColBounds_OfObb = 0x00238638; // type:func
+ColBounds_OfSeg = 0x00238698; // type:func
+// 0x2386E0 / 0x2387E0: the capsule's segment lengthened by the radius at both ends (the second also returns the
+// direction); 0x238900: sphere around a capsule.
+ColCapsule_GetLongSeg = 0x002386E0; // type:func
+ColCapsule_GetLongSegDir = 0x002387E0; // type:func
+ColCapsule_GetBoundSphere = 0x00238900; // type:func
+// 0x238960..0x239230: nearest points of two segments (the routine of Game Programming Gems 2, "Fast, robust
+// intersection of 3D line segments": FindNearestPointOnLineSegment, ...OfParallelLineSegments, AdjustNearestPoints,
+// IntersectLineSegments). 0x238A08 / 0x238AF0: point to line distance.
+ColSeg_ClosestToSeg = 0x00238960; // type:func
+ColLine_DistSqPoint = 0x00238A08; // type:func
+ColLine_DistPoint = 0x00238AF0; // type:func
+ColSeg_NearestOnLine = 0x00238B38; // type:func
+ColSeg_NearestParallel = 0x00238C60; // type:func
+ColSeg_AdjustNearest = 0x00238E98; // type:func
+ColSeg_Nearest = 0x00239230; // type:func
+// 0x239588..0x239A40: shape builders and small plane / triangle helpers.
+ColCapsule_Set = 0x00239588; // type:func
+ColSeg_GetMidpoint3 = 0x002395D8; // type:func
+ColSweep_FromCapsule = 0x00239620; // type:func
+ColPlane_FromPoints = 0x00239738; // type:func
+ColPlane_ProjectPoint = 0x002397E0; // type:func
+ColPlane_DistPoint = 0x00239878; // type:func
+ColSeg_Set2 = 0x002398A8; // type:func
+ColSeg_Set = 0x002398F0; // type:func
+ColSeg_GetMidpoint = 0x00239938; // type:func
+ColSphere_Set = 0x002399A0; // type:func
+ColTri_Set = 0x002399D8; // type:func
+ColTri_ContainsPoint = 0x00239A40; // type:func
+// 0x239BB0..0x239EA0 (head of src/battle/col_c.c): not collision. The first five functions of the text printer whose
+// rest is in col_c.txt (Font_PutScissor 0x239EA0 ..): coordinate range test, clip test, packet begin (default
+// environment + CLAMP/TEST/TEXA/ZBUF/PRIM), packet end, one textured sprite in the REGLIST format that
+// Font_OpenSpriteTag announces. Callers: 0x23A3A4 / 0x23A41C (Font_Flush) and the glyph drawing at 0x23BF94..0x23C298.
+Font_IsInGsRange = 0x00239BB0; // type:func
+Font_IsInClip = 0x00239BD8; // type:func
+Font_BeginPacket = 0x00239C18; // type:func
+Font_EndPacket = 0x00239D20; // type:func
+Font_PutSprite = 0x00239D38; // type:func

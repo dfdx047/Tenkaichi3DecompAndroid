@@ -1,0 +1,90 @@
+// Effect tasks, 0x18D618..0x191D28 (src/battle/eft_x.c, eft_x_b.c, eft_x_c.c). Visual only: nothing here writes
+// a fighter, a hit record or a battle object.
+//
+// --- Particle emitter of effect pack part kind 10, second half (eft_x.c, 0x18D618..0x190CC8) ---
+// The module starts at 0x18C190 (eft_w: EftPart10Mgr_*, EftPart10_Init / Update / Draw / Term, EftPart10_EmitRings,
+// EftPart10_Step, EftPart10_NewGroup); its emitter class is 0x2C3F80 = { update 0x18C4E8, init 0x18C238, term
+// 0x18CA38, stub 0x18C7C0, reset 0x18CA20, draw 0x18C7C8 }. Names come from the matching C and from the callers
+// (the module's first half, and EftEmit_SpawnType10 in eft_i.c for 0x190610..0x190C48).
+// List helpers: a burst group (0x14 bytes, links at +0xC / +0x10) in an emitter's list (emitter +0x3C4 / +0x3C8),
+// a particle (0x150 bytes, links at +0x144 / +0x148) in a group's list.
+EftPart10_LinkGroup = 0x0018D618; // type:func
+EftPart10_UnlinkGroup = 0x0018D648; // type:func
+EftPart10_LinkPtcl = 0x0018DFD0; // type:func
+EftPart10_UnlinkPtcl = 0x0018E000; // type:func
+// 0x18D6B0(emitter, group, yaw, pitch): takes a free particle of the 150, fills it (0x18D838) and starts it on the
+// unit sphere at the two angles. 0x18D838 draws every particle value from the emitter's current [value, range]
+// pairs (VU0 generator; libc rand() for the coin flips). 0x18DE10 builds the four world-space corners.
+EftPart10_Emit = 0x0018D6B0; // type:func
+EftPart10_InitPtcl = 0x0018D838; // type:func
+EftPart10_BuildCorners = 0x0018DE10; // type:func
+// The four ways the module's draw callback queues one particle: a strip through four world corners, the same
+// through the clipping polygon path (definition flag 8), and the two camera-facing forms (definition draw mode 1).
+EftPart10_DrawQuad = 0x0018E068; // type:func
+EftPart10_DrawQuadClipped = 0x0018E4A8; // type:func
+EftPart10_DrawBillboardClipped = 0x0018E718; // type:func
+EftPart10_DrawBillboard = 0x0018EA48; // type:func
+// Emitter animation. InitSpin / UpdateSpin: the emitter's own rotation, scale and burst count (definition flag
+// 0x40). StartKeys / UpdateKeys / SetKey: the three-key animation of every emitter value (definition flag 0x200;
+// without it the init calls SetKey(2)). The names of the animated values are mostly unknown.
+EftPart10_InitSpin = 0x0018F128; // type:func // guess
+EftPart10_UpdateSpin = 0x0018F3A8; // type:func // guess
+EftPart10_StartKeys = 0x0018F4A0; // type:func // guess
+EftPart10_UpdateKeys = 0x0018FBC0; // type:func // guess
+EftPart10_SetKey = 0x001901E8; // type:func
+// Textures: SelectTex copies two entries of the pack's texture table into the emitter; BuildTex makes the TEX0
+// of texture A with the CLUT of texture B once per frame (tail call of the update).
+EftPart10_SelectTex = 0x00190518; // type:func
+EftPart10_BuildTex = 0x00190568; // type:func
+// The calls of the effect pack library (handle = the emitter task). Every one checks that the module exists and
+// that the task's update callback is this module's. SetRate and SetTex have no caller.
+EftPart10_Create = 0x00190610; // type:func
+EftPart10_Stop = 0x00190658; // type:func
+EftPart10_SetFade = 0x00190708; // type:func
+EftPart10_Kill = 0x00190770; // type:func
+EftPart10_SetPos = 0x001907C8; // type:func
+EftPart10_Warp = 0x00190838; // type:func
+EftPart10_SetDir = 0x00190950; // type:func
+EftPart10_SetSize = 0x001909C0; // type:func
+EftPart10_SetRate = 0x00190A10; // type:func // guess
+EftPart10_SetTex = 0x00190A60; // type:func
+EftPart10_SetDelay = 0x00190AD8; // type:func
+EftPart10_SetHold = 0x00190B30; // type:func // guess
+EftPart10_SetNoDepth = 0x00190B88; // type:func
+EftPart10_SetKind = 0x00190BE8; // type:func // guess
+EftPart10_IsAlive = 0x00190C48; // type:func
+// 0x190C98(x, y, z): non-zero when a GS screen position is outside 1..0xFFEF or z <= 0 (used by DrawBillboard).
+EftPart10_IsCornerOffScreen = 0x00190C98; // type:func
+gEftPart10Class = 0x002C3F80; // size:0x18
+//
+// --- Effect scene layer 3 (eft_x_b.c, 0x190CC8..0x190DA8) ---
+// Class 0x2C3F98 = { update 0x190D98, init 0x190CC8, term 0x190D60, 0, reset 0x190DA0, 0 }, created by
+// BtlScene (btl_scene.c, gBtlScene->layer[3]). The init makes BtlPool slot 1 current and creates one child task per
+// entry of the table at 0x2C3FB0: 31 pairs { manager class, 1 } (speed lines, aura, the effect pack part modules...).
+EftLayer3_Init = 0x00190CC8; // type:func
+EftLayer3_Term = 0x00190D60; // type:func
+EftLayer3_Update = 0x00190D98; // type:func
+EftLayer3_Reset = 0x00190DA0; // type:func
+gEftLayer3Class = 0x002C3F98; // size:0x18
+gEftLayer3Classes = 0x002C3FB0; // size:0xF8
+gEftLayer3 = 0x002FEA8C; // size:0x4
+//
+// --- Quad emitter of effect pack part kind 9, first half (eft_x_c.c, 0x190DA8..0x191D28) ---
+// It continues in eft_y (EftQuad_StepAll 0x191D28 ...), whose prefix is used here. Manager class 0x2C40A8 =
+// { update 0x190E18, init 0x190DA8, term 0x190E48, 0, reset 0x190E20, 0 }; emitter class 0x2C40C0 = { update
+// 0x190FE8, init 0x190E78, term 0x191428, stub 0x191340, reset 0x191410, draw 0x191348 }.
+EftQuadMgr_Init = 0x00190DA8; // type:func
+EftQuadMgr_Update = 0x00190E18; // type:func
+EftQuadMgr_Reset = 0x00190E20; // type:func
+EftQuadMgr_Term = 0x00190E48; // type:func
+EftQuad_Init = 0x00190E78; // type:func
+EftQuad_Update = 0x00190FE8; // type:func
+EftQuad_PostUpdate = 0x00191340; // type:func
+EftQuad_Draw = 0x00191348; // type:func
+EftQuad_Reset = 0x00191410; // type:func
+EftQuad_Term = 0x00191428; // type:func
+// 0x191498(quad, emitter): fills a new quad from the emitter's current ranges; 0 when its life comes out as 0.
+EftQuad_InitQuad = 0x00191498; // type:func
+gEftQuadMgrClass = 0x002C40A8; // size:0x18
+gEftQuadClass = 0x002C40C0; // size:0x18
+gEftQuadMgr = 0x002FEA90; // size:0x4

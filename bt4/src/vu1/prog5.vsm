@@ -1,0 +1,567 @@
+; prog5 -- VU1 microprogram 5: prog4 with an object matrix (429 instructions, 0x2C1180..0x2C1F00).
+; Notes with the full description and the instruction-level differences: docs/systems/vu1/prog4_prog5.md.
+; "(inferred)" = not confirmed from code.
+;
+; WHAT IT DRAWS
+;   The same batches as prog4 (triangle strips, colour and texture coordinate per vertex, six-plane clipper), but the
+;   positions first go through a 4x4 object matrix: init multiplies the screen and clip matrices by it.
+;   Read src/vu1/prog4.vsm first; only the differences are spelled out here:
+;     - constants: object matrix at VU 0..3, the other three matrices four quadwords later; init builds vf1..vf8;
+;     - the output packet is at TOP + 0xC0 (prog4: TOP + 0xDD);
+;     - the clipper does not enlarge the triangle (prog4: 0.5% about its centroid);
+;     - 0x8000 is rebuilt in vi11 where needed (prog4 keeps it in vi13);
+;     - the code is scheduled more loosely (vertex loop 24 instructions instead of 20, more registers pushed).
+;
+; WHO USES IT (src/sys/vu1_packet.c)
+;   Vu1Pkt_LoadProg5(mtx)        uploads the program and 16 quadwords of constants: identity, screen matrix, clip matrix,
+;                                mtx. BASE 0x8D, OFFSET 0x1B4.
+;   Vu1Pkt_CallProg5(chain, mtx) FLUSHE, UNPACK of mtx to VU 0..3 (the object matrix), MSCALF 0, BASE / OFFSET, then
+;                                calls the DMA chain.
+;   Neither builder has a caller in the game (no reference found in src/ or asm/): the program is unused.
+;
+; ENTRY POINTS
+;   init (0)            MSCALF 0: loads the constants, multiplies the matrices, sets the stack pointer.
+;   object_header (40)  the first MSCNT after it: one quadword at TOP is copied to VU address 30.
+;   batch (46)          every later MSCNT: one batch = one triangle strip (resumes at batch_resume (97) -> batch).
+;
+; VU MEMORY (quadword addresses)
+;   0x000..0x003  object matrix (identity from LoadProg5, the argument of CallProg5)       vf13..vf16 during init
+;   0x004..0x007  screen matrix (Vu0Screen_StoreMtx)                                       vf17..vf20 during init
+;   0x008..0x00B  clip matrix (Vu0Clip_StoreMtx)                                           vf21..vf24 during init
+;   0x00C..0x00F  clip space -> screen matrix (the mtx argument of LoadProg5)              vf9..vf12
+;   0x010..0x01D  not used
+;   0x01E         GIF tag of the fan packet = the object header quadword
+;   0x01F..0x03C  fan vertices (ST, RGBAQ, XYZ2)
+;   0x03D..0x064  clipper polygon A (clip position, colour, texcoord per vertex)
+;   0x065..0x08C  clipper polygon B
+;   0x08D.. / 0x241..  TOP of the two buffers: input batch at +0, output packet at +0xC0
+;   ..0x3FF       stack, grows down from 0x400 (vi14); nine quadwords while the clipper runs
+;
+; INPUT BATCH and OUTPUT: as prog4 (+0 A+D tag, +1 data, +2 strip tag, +3 vertices of position / colour / texcoord;
+;   output = the same three header quadwords and ST / RGBAQ / XYZ2 per vertex; fans from VU 0x1E).
+;
+; REGISTERS
+;   vf1..vf4  screen matrix * object matrix     vf5..vf8  clip matrix * object matrix     vf9..vf12  clip -> screen
+;   Everything else as in prog4, except: vi13 is not used; vi11 is a scratch register for 0x8000 outside the clipper.
+;   After init vf13..vf24 are free: vf17..vf24 are the working registers of prog4's loop and clipper.
+;
+; Labels that the disassembler made for addresses nothing branches to have been removed.
+.vif 0x00000000
+.mpg 0
+
+; ---- MSCALF 0: constants. vf1..vf4 = screen * object, vf5..vf8 = clip * object (column by column:
+; result column j = M * column j of the object matrix).
+init:
+    nop                                | lq.xyzw vf13, 0(vi0)               ; vf13..vf16 = VU 0..3: object matrix
+    nop                                | lq.xyzw vf17, 4(vi0)               ; vf17..vf20 = VU 4..7: screen matrix
+    nop                                | lq.xyzw vf18, 5(vi0)
+    nop                                | lq.xyzw vf19, 6(vi0)
+    nop                                | lq.xyzw vf20, 7(vi0)
+    mulax.xyzw acc, vf17, vf13x        | lq.xyzw vf14, 1(vi0)               ; acc .. vf1 = screen matrix * object column 0
+    madday.xyzw acc, vf18, vf13y       | lq.xyzw vf15, 2(vi0)
+    maddaz.xyzw acc, vf19, vf13z       | lq.xyzw vf16, 3(vi0)
+    maddw.xyzw vf1, vf20, vf13w        | lq.xyzw vf21, 8(vi0)               ; vf21..vf24 = VU 8..11: clip matrix
+    mulax.xyzw acc, vf17, vf14x        | lq.xyzw vf22, 9(vi0)               ; vf2 = screen matrix * object column 1
+    madday.xyzw acc, vf18, vf14y       | lq.xyzw vf23, 10(vi0)
+    maddaz.xyzw acc, vf19, vf14z       | lq.xyzw vf24, 11(vi0)
+    maddw.xyzw vf2, vf20, vf14w        | lq.xyzw vf9, 12(vi0)               ; vf9..vf12 = VU 12..15: clip -> screen matrix (fans only)
+    mulax.xyzw acc, vf17, vf15x        | lq.xyzw vf10, 13(vi0)              ; vf3 = screen matrix * object column 2
+    madday.xyzw acc, vf18, vf15y       | lq.xyzw vf11, 14(vi0)
+    maddaz.xyzw acc, vf19, vf15z       | lq.xyzw vf12, 15(vi0)
+    maddw.xyzw vf3, vf20, vf15w        | iaddiu vi14, vi0, 0x400            ; vi14 = stack pointer
+    mulax.xyzw acc, vf17, vf16x        | nop                                ; vf4 = screen matrix * object column 3
+    madday.xyzw acc, vf18, vf16y       | nop
+    maddaz.xyzw acc, vf19, vf16z       | nop
+    maddw.xyzw vf4, vf20, vf16w        | nop
+    mulax.xyzw acc, vf21, vf13x        | nop                                ; vf5..vf8 = clip matrix * object columns 0..3
+    madday.xyzw acc, vf22, vf13y       | nop
+    maddaz.xyzw acc, vf23, vf13z       | nop
+    maddw.xyzw vf5, vf24, vf13w        | nop
+    mulax.xyzw acc, vf21, vf14x        | nop
+    madday.xyzw acc, vf22, vf14y       | nop
+    maddaz.xyzw acc, vf23, vf14z       | nop
+    maddw.xyzw vf6, vf24, vf14w        | nop
+    mulax.xyzw acc, vf21, vf15x        | nop
+    madday.xyzw acc, vf22, vf15y       | nop
+    maddaz.xyzw acc, vf23, vf15z       | nop
+    maddw.xyzw vf7, vf24, vf15w        | nop
+    mulax.xyzw acc, vf21, vf16x        | nop
+    madday.xyzw acc, vf22, vf16y       | nop
+    maddaz.xyzw acc, vf23, vf16z       | nop
+    maddw.xyzw vf8, vf24, vf16w        | nop
+    nop                                | nop
+    nop                                | nop [E]                            ; end of the MSCALF 0 run
+    nop                                | nop
+
+; ---- first MSCNT: the object header
+object_header:
+    nop                                | xtop vi1                           ; vi1 = TOP
+    mulx.xyzw vf31, vf31, vf0x         | lq.xyzw vf30, 0(vi1)               ; vf31 = 0 (vf0x is 0) | vf30 = the header quadword
+    nop                                | sq.xyzw vf30, 30(vi0)              ; VU 30 = GIF tag of the fan packet
+    nop                                | nop
+    nop                                | nop [E]                            ; end; the next MSCNT starts at batch
+    nop                                | nop
+
+; ---- every later MSCNT: one batch = one triangle strip
+batch:
+    nop                                | xtop vi1                           ; vi1 = TOP
+    nop                                | lq.xyzw vf17, 0(vi1)               ; vf17 = +0: A+D GIF tag
+    nop                                | lq.xyzw vf18, 1(vi1)               ; vf18 = +1: its data
+    nop                                | iaddiu vi1, vi1, 0x2               ; vi1 -> +2: GIF tag of the strip
+    nop                                | iaddiu vi3, vi1, 0x1               ; vi3 -> +3: vertex 0
+    nop                                | lq.xyzw vf20, 0(vi3)               ; vf20 = position of vertex 0
+    nop                                | iaddiu vi11, vi0, 0x7fff
+    nop                                | ilwr.x vi10, (vi1)
+    nop                                | iand vi10, vi10, vi11              ; vi10 = NLOOP = vertex count
+    mulax.xyzw acc, vf1, vf20x         | lq.xyzw vf19, 0(vi1)               ; acc .. vf25 = screen matrix * position | vf19 = GIF tag of the strip
+    madday.xyzw acc, vf2, vf20y        | iaddiu vi2, vi3, 0xbd              ; vi2 = TOP + 3 + 0xBD: output packet
+    maddaz.xyzw acc, vf3, vf20z        | iaddi vi4, vi0, -2                 ; vi4, vi5, vi6 = -2: no triangle yet
+    maddw.xyzw vf25, vf4, vf20w        | iaddi vi5, vi0, -2
+    nop                                | iaddi vi6, vi0, -2
+    nop                                | div q, vf0w, vf25w                 ; q = 1 / w
+    nop                                | sq.xyzw vf17, 0(vi2)               ; output +0, +1, +2 = the three header quadwords
+    nop                                | sq.xyzw vf18, 1(vi2)
+    nop                                | sq.xyzw vf19, 2(vi2)
+    nop                                | iaddiu vi7, vi2, 0x4               ; vi7 = output cursor
+    nop                                | move.xyzw vf22, vf0                ; clip position history = (0, 0, 0, 1)
+    nop                                | move.xyzw vf23, vf0
+    nop                                | move.xyzw vf24, vf0
+    nop                                | xgkick vi2                         ; kick output +0 (tag and data only: EOP): the texture
+    nop                                | iaddiu vi2, vi2, 0x2               ; vi2 -> output +2: the strip packet, kicked after the loop
+
+; ---- per vertex (24 instructions). Same work as prog4's loop in a different order.
+vertex_loop:
+    mulax.xyzw acc, vf5, vf20x         | move.xyzw vf22, vf23               ; acc .. vf24 = clip matrix * position | shift the clip position history
+    madday.xyzw acc, vf6, vf20y        | move.xyzw vf23, vf24
+    maddaz.xyzw acc, vf7, vf20z        | lq.xyzw vf19, 2(vi3)               ; vf19 = texcoord
+    maddw.xyzw vf24, vf8, vf20w        | lq.xyzw vf21, 1(vi3)               ; vf24 = clip position | vf21 = colour (floats)
+    clip.xyz vf22, vf22                | iadd vi4, vi0, vi5                 ; clip judgement, oldest vertex of the triangle | vi4 = flag of the vertex two back
+    mulq.xyzw vf25, vf25               | iadd vi5, vi0, vi6                 ; vf25 = screen position / w | vi5 = flag of the previous vertex
+    mulq.xyz vf28, vf19                | lq.xyzw vf20, 3(vi3)               ; vf28 = (s, t, q) / w | vf20 = position of the next vertex
+    clip.xyz vf23, vf23                | iaddiu vi3, vi3, 0x3               ; clip judgement, middle vertex
+    clip.xyz vf24, vf24                | iaddiu vi7, vi7, 0x3               ; clip judgement, this vertex
+    ftoi4.xyzw vf27, vf25              | nop                                ; vf27 = 12.4 fixed point
+    mulax.xyzw acc, vf1, vf20x         | sq.xyzw vf28, -4(vi7)              ; acc .. vf25 = screen matrix * next position | store ST
+    madday.xyzw acc, vf2, vf20y        | iadd vi4, vi4, vi5
+    ftoi0.xyzw vf26, vf21              | iaddi vi10, vi10, -1               ; vf26 = colour as integers | vi10 = vertices left
+    maddaz.xyzw acc, vf3, vf20z        | sq.xyzw vf27, -2(vi7)              ; store XYZ2
+    maddw.xyzw vf25, vf4, vf20w        | fcand vi1, 0x3f                    ; vf25 = next screen position | vi1 = 1 if this vertex is outside any plane
+    nop                                | iadd vi6, vi0, vi1                 ; vi6 = flag of this vertex
+    nop                                | sq.xyzw vf26, -3(vi7)              ; store RGBAQ
+    nop                                | iadd vi4, vi4, vi6                 ; vi4 = outside vertices in the triangle
+    nop                                | nop
+    nop                                | ibgtz vi4, triangle_outside        ; any outside: clipper
+    nop                                | nop
+vertex_next:
+    nop                                | div q, vf0w, vf25w                 ; q = 1 / w of the next vertex
+    nop                                | ibne vi10, vi0, vertex_loop
+    nop                                | nop
+    nop                                | xgkick vi2                         ; kick the strip
+    nop                                | nop [E]                            ; end of this batch
+    nop                                | nop
+batch_resume:
+    nop                                | b batch                            ; the next MSCNT resumes here
+    nop                                | nop
+
+; ---- the newest triangle has a vertex outside the clip volume. As in prog4: fcor gives 1 when all three
+; vertices (clipping flag bits 12..17, 6..11, 0..5) are outside the same plane -> drop the triangle.
+triangle_outside:
+    nop                                | fcor vi1, 0xff7df7                 ; vi1 = 1 if all three vertices have y < -w
+    nop                                | ibne vi1, vi0, triangle_drop
+    nop                                | nop
+    nop                                | fcor vi1, 0xffbefb                 ; vi1 = 1 if all three vertices have y > +w
+    nop                                | ibne vi1, vi0, triangle_drop
+    nop                                | nop
+    nop                                | fcor vi1, 0xffdf7d                 ; vi1 = 1 if all three vertices have x < -w
+    nop                                | ibne vi1, vi0, triangle_drop
+    nop                                | nop
+    nop                                | fcor vi1, 0xffefbe                 ; vi1 = 1 if all three vertices have x > +w
+    nop                                | ibne vi1, vi0, triangle_drop
+    nop                                | nop
+    nop                                | fcor vi1, 0xfdf7df                 ; vi1 = 1 if all three vertices have z < -w
+    nop                                | ibne vi1, vi0, triangle_drop
+    nop                                | nop
+    nop                                | fcor vi1, 0xfefbef                 ; vi1 = 1 if all three vertices have z > +w
+    nop                                | ibne vi1, vi0, triangle_drop
+    nop                                | nop
+
+; ---- the triangle crosses the volume: clip it. Pushed: vf20..vf25 and vf31, then vi2, vi3, vi5 / vi6, vi7,
+; vi10 as two quadwords (more than is needed: vf21, vf22 are reloaded by the loop and vf31 is never changed).
+triangle_clip:
+    nop                                | sqd.xyzw vf20, (--vi14)            ; push vf20..vf25, vf31
+    nop                                | sqd.xyzw vf21, (--vi14)
+    nop                                | sqd.xyzw vf22, (--vi14)
+    nop                                | sqd.xyzw vf23, (--vi14)
+    nop                                | sqd.xyzw vf24, (--vi14)
+    nop                                | sqd.xyzw vf25, (--vi14)
+    nop                                | sqd.xyzw vf31, (--vi14)
+    nop                                | isubiu vi14, vi14, 0x1
+    nop                                | iswr.x vi2, (vi14)                 ; push vi2, vi3, vi5
+    nop                                | iswr.y vi3, (vi14)
+    nop                                | iswr.z vi5, (vi14)
+    nop                                | isubiu vi14, vi14, 0x1
+    nop                                | iswr.x vi6, (vi14)                 ; push vi6, vi7, vi10
+    nop                                | iswr.y vi7, (vi14)
+    nop                                | iswr.z vi10, (vi14)
+    nop                                | bal vi15, clip_triangle
+    nop                                | nop
+    nop                                | ilwr.x vi6, (vi14)                 ; pop vi6, vi7, vi10
+    nop                                | ilwr.y vi7, (vi14)
+    nop                                | ilwr.z vi10, (vi14)
+    nop                                | iaddiu vi14, vi14, 0x1
+    nop                                | ilwr.x vi2, (vi14)                 ; pop vi2, vi3, vi5
+    nop                                | ilwr.y vi3, (vi14)
+    nop                                | ilwr.z vi5, (vi14)
+    nop                                | iaddiu vi14, vi14, 0x1
+    nop                                | lqi.xyzw vf31, (vi14++)            ; pop vf31, vf25..vf20
+    nop                                | lqi.xyzw vf25, (vi14++)
+    nop                                | lqi.xyzw vf24, (vi14++)
+    nop                                | lqi.xyzw vf23, (vi14++)
+    nop                                | lqi.xyzw vf22, (vi14++)
+    nop                                | lqi.xyzw vf21, (vi14++)
+    nop                                | lqi.xyzw vf20, (vi14++)
+
+; ---- the triangle is not drawn by the strip: ADC bit on its last vertex
+triangle_drop:
+    nop                                | iaddiu vi11, vi0, 0x7fff
+    nop                                | iaddi vi11, vi11, 1                ; vi11 = 0x8000
+    nop                                | isw.w vi11, -2(vi7)                ; ADC bit (0x8000 in the fourth word) of the XYZ2 just stored
+    nop                                | b vertex_next
+    nop                                | nop
+
+; ---- clip_triangle (return address vi15): Sutherland-Hodgman against the six planes, then emit_fan.
+; In: vf22, vf23, vf24 = the three clip positions (used as they are: no enlargement here); vi3 / vi7 = main loop
+; cursors. Planes in the order z = -w, z = +w, x = -w, x = +w, y = -w, y = +w; polygon A -> B -> A ...
+clip_triangle:
+    nop                                | iaddiu vi8, vi0, 0x3d              ; vi8 = polygon A
+    nop                                | iaddiu vi9, vi0, 0x65              ; vi9 = polygon B
+    nop                                | sq.xyzw vf22, 0(vi8)               ; polygon A: positions of v0, v1, v2, v0 (closed), at +0, +3, +6, +9
+    nop                                | sq.xyzw vf23, 3(vi8)
+    nop                                | sq.xyzw vf24, 6(vi8)
+    nop                                | sq.xyzw vf22, 9(vi8)
+    nop                                | lq.xyzw vf22, -7(vi3)              ; input texcoords of the three vertices (vi3 is already past the newest)
+    nop                                | lq.xyzw vf23, -4(vi3)
+    nop                                | lq.xyzw vf24, -1(vi3)
+    nop                                | sq.xyzw vf22, 2(vi8)               ; -> polygon A +2, +5, +8, +11
+    nop                                | sq.xyzw vf23, 5(vi8)
+    nop                                | sq.xyzw vf24, 8(vi8)
+    nop                                | sq.xyzw vf22, 11(vi8)
+    nop                                | lq.xyzw vf22, -9(vi7)              ; their colours as just stored in the output packet (integers)
+    nop                                | lq.xyzw vf23, -6(vi7)
+    nop                                | lq.xyzw vf24, -3(vi7)
+    itof0.xyzw vf22, vf22              | nop                                ; back to floats
+    itof0.xyzw vf23, vf23              | nop
+    itof0.xyzw vf24, vf24              | nop
+    nop                                | sq.xyzw vf22, 1(vi8)               ; -> polygon A +1, +4, +7, +10
+    nop                                | sq.xyzw vf23, 4(vi8)
+    nop                                | sq.xyzw vf24, 7(vi8)
+    nop                                | sq.xyzw vf22, 10(vi8)
+
+; ---- plane 1 of 6: z = -w. Polygon A -> polygon B.
+    nop                                | iaddiu vi5, vi0, 0x800             ; vi5 = "outside this plane" bit of the edge's first vertex (older clip judgement)
+    nop                                | iaddiu vi6, vi0, 0x20              ; vi6 = the same bit of its second vertex (newest judgement)
+    nop                                | iaddiu vi7, vi0, 0x2               ; vi7 = mr32 rotations that bring the component to x (0 = x, 1 = y, 2 = z)
+    nop                                | iaddiu vi8, vi0, 0x3d              ; vi8 = source polygon (A)
+    nop                                | iaddiu vi9, vi0, 0x65              ; vi9 = destination polygon (B)
+    nop                                | iaddiu vi10, vi0, 0x3              ; vi10 = edges to do (the triangle's three)
+    subw.x vf30, vf0, vf0w             | iaddiu vi11, vi0, 0x0              ; vf30x = plane sign (-1) | vi11 = vertices written = 0
+    nop                                | lqi.xyzw vf21, (vi8++)             ; vf21, vf22, vf23 = first source vertex (position, colour, texcoord)
+    nop                                | lqi.xyzw vf22, (vi8++)
+    nop                                | lqi.xyzw vf23, (vi8++)
+clip_zneg_loop:
+    nop                                | isubiu vi10, vi10, 0x1
+    nop                                | bal vi2, clip_edge                 ; one edge
+    nop                                | nop
+    nop                                | ibne vi10, vi0, clip_zneg_loop
+    nop                                | nop
+    nop                                | iaddiu vi8, vi0, 0x65              ; vi8 = start of the destination polygon
+    nop                                | bal vi2, close_polygon             ; append its first vertex again (closes it)
+    nop                                | nop
+    nop                                | ibeq vi11, vi0, clip_triangle_ret  ; nothing left of the triangle
+    nop                                | nop
+
+; ---- plane 2 of 6: z = +w. Polygon B -> polygon A.
+    nop                                | iaddiu vi5, vi0, 0x400             ; vi5 = "outside this plane" bit of the edge's first vertex (older clip judgement)
+    nop                                | iaddiu vi6, vi0, 0x10              ; vi6 = the same bit of its second vertex (newest judgement)
+    nop                                | iaddiu vi7, vi0, 0x2               ; vi7 = mr32 rotations that bring the component to x (0 = x, 1 = y, 2 = z)
+    nop                                | iaddiu vi8, vi0, 0x65              ; vi8 = source polygon (B)
+    nop                                | iaddiu vi9, vi0, 0x3d              ; vi9 = destination polygon (A)
+    nop                                | iadd vi10, vi0, vi11               ; vi10 = edges to do = vertices the last plane wrote
+    addw.x vf30, vf0, vf0w             | iaddiu vi11, vi0, 0x0              ; vf30x = plane sign (+1) | vi11 = vertices written = 0
+    nop                                | lqi.xyzw vf21, (vi8++)             ; vf21, vf22, vf23 = first source vertex (position, colour, texcoord)
+    nop                                | lqi.xyzw vf22, (vi8++)
+    nop                                | lqi.xyzw vf23, (vi8++)
+clip_zpos_loop:
+    nop                                | isubiu vi10, vi10, 0x1
+    nop                                | bal vi2, clip_edge                 ; one edge
+    nop                                | nop
+    nop                                | ibne vi10, vi0, clip_zpos_loop
+    nop                                | nop
+    nop                                | iaddiu vi8, vi0, 0x3d              ; vi8 = start of the destination polygon
+    nop                                | bal vi2, close_polygon             ; append its first vertex again (closes it)
+    nop                                | nop
+    nop                                | ibeq vi11, vi0, clip_triangle_ret  ; nothing left of the triangle
+    nop                                | nop
+
+; ---- plane 3 of 6: x = -w. Polygon A -> polygon B.
+    nop                                | iaddiu vi5, vi0, 0x80              ; vi5 = "outside this plane" bit of the edge's first vertex (older clip judgement)
+    nop                                | iaddiu vi6, vi0, 0x2               ; vi6 = the same bit of its second vertex (newest judgement)
+    nop                                | iaddiu vi7, vi0, 0x0               ; vi7 = mr32 rotations that bring the component to x (0 = x, 1 = y, 2 = z)
+    nop                                | iaddiu vi8, vi0, 0x3d              ; vi8 = source polygon (A)
+    nop                                | iaddiu vi9, vi0, 0x65              ; vi9 = destination polygon (B)
+    nop                                | iadd vi10, vi0, vi11               ; vi10 = edges to do = vertices the last plane wrote
+    subw.x vf30, vf0, vf0w             | iaddiu vi11, vi0, 0x0              ; vf30x = plane sign (-1) | vi11 = vertices written = 0
+    nop                                | lqi.xyzw vf21, (vi8++)             ; vf21, vf22, vf23 = first source vertex (position, colour, texcoord)
+    nop                                | lqi.xyzw vf22, (vi8++)
+    nop                                | lqi.xyzw vf23, (vi8++)
+clip_xneg_loop:
+    nop                                | isubiu vi10, vi10, 0x1
+    nop                                | bal vi2, clip_edge                 ; one edge
+    nop                                | nop
+    nop                                | ibne vi10, vi0, clip_xneg_loop
+    nop                                | nop
+    nop                                | iaddiu vi8, vi0, 0x65              ; vi8 = start of the destination polygon
+    nop                                | bal vi2, close_polygon             ; append its first vertex again (closes it)
+    nop                                | nop
+    nop                                | ibeq vi11, vi0, clip_triangle_ret  ; nothing left of the triangle
+    nop                                | nop
+
+; ---- plane 4 of 6: x = +w. Polygon B -> polygon A.
+    nop                                | iaddiu vi5, vi0, 0x40              ; vi5 = "outside this plane" bit of the edge's first vertex (older clip judgement)
+    nop                                | iaddiu vi6, vi0, 0x1               ; vi6 = the same bit of its second vertex (newest judgement)
+    nop                                | iaddiu vi7, vi0, 0x0               ; vi7 = mr32 rotations that bring the component to x (0 = x, 1 = y, 2 = z)
+    nop                                | iaddiu vi8, vi0, 0x65              ; vi8 = source polygon (B)
+    nop                                | iaddiu vi9, vi0, 0x3d              ; vi9 = destination polygon (A)
+    nop                                | iadd vi10, vi0, vi11               ; vi10 = edges to do = vertices the last plane wrote
+    addw.x vf30, vf0, vf0w             | iaddiu vi11, vi0, 0x0              ; vf30x = plane sign (+1) | vi11 = vertices written = 0
+    nop                                | lqi.xyzw vf21, (vi8++)             ; vf21, vf22, vf23 = first source vertex (position, colour, texcoord)
+    nop                                | lqi.xyzw vf22, (vi8++)
+    nop                                | lqi.xyzw vf23, (vi8++)
+clip_xpos_loop:
+    nop                                | isubiu vi10, vi10, 0x1
+    nop                                | bal vi2, clip_edge                 ; one edge
+    nop                                | nop
+    nop                                | ibne vi10, vi0, clip_xpos_loop
+    nop                                | nop
+    nop                                | iaddiu vi8, vi0, 0x3d              ; vi8 = start of the destination polygon
+    nop                                | bal vi2, close_polygon             ; append its first vertex again (closes it)
+    nop                                | nop
+    nop                                | ibeq vi11, vi0, clip_triangle_ret  ; nothing left of the triangle
+; (not a boundary of the program: one VIF MPG code carries at most 256 instructions)
+.vif 0x00000000
+.mpg 256
+    nop                                | nop
+
+; ---- plane 5 of 6: y = -w. Polygon A -> polygon B.
+    nop                                | iaddiu vi5, vi0, 0x200             ; vi5 = "outside this plane" bit of the edge's first vertex (older clip judgement)
+    nop                                | iaddiu vi6, vi0, 0x8               ; vi6 = the same bit of its second vertex (newest judgement)
+    nop                                | iaddiu vi7, vi0, 0x1               ; vi7 = mr32 rotations that bring the component to x (0 = x, 1 = y, 2 = z)
+    nop                                | iaddiu vi8, vi0, 0x3d              ; vi8 = source polygon (A)
+    nop                                | iaddiu vi9, vi0, 0x65              ; vi9 = destination polygon (B)
+    nop                                | iadd vi10, vi0, vi11               ; vi10 = edges to do = vertices the last plane wrote
+    subw.x vf30, vf0, vf0w             | iaddiu vi11, vi0, 0x0              ; vf30x = plane sign (-1) | vi11 = vertices written = 0
+    nop                                | lqi.xyzw vf21, (vi8++)             ; vf21, vf22, vf23 = first source vertex (position, colour, texcoord)
+    nop                                | lqi.xyzw vf22, (vi8++)
+    nop                                | lqi.xyzw vf23, (vi8++)
+clip_yneg_loop:
+    nop                                | isubiu vi10, vi10, 0x1
+    nop                                | bal vi2, clip_edge                 ; one edge
+    nop                                | nop
+    nop                                | ibne vi10, vi0, clip_yneg_loop
+    nop                                | nop
+    nop                                | iaddiu vi8, vi0, 0x65              ; vi8 = start of the destination polygon
+    nop                                | bal vi2, close_polygon             ; append its first vertex again (closes it)
+    nop                                | nop
+    nop                                | ibeq vi11, vi0, clip_triangle_ret  ; nothing left of the triangle
+    nop                                | nop
+
+; ---- plane 6 of 6: y = +w. Polygon B -> polygon A.
+    nop                                | iaddiu vi5, vi0, 0x100             ; vi5 = "outside this plane" bit of the edge's first vertex (older clip judgement)
+    nop                                | iaddiu vi6, vi0, 0x4               ; vi6 = the same bit of its second vertex (newest judgement)
+    nop                                | iaddiu vi7, vi0, 0x1               ; vi7 = mr32 rotations that bring the component to x (0 = x, 1 = y, 2 = z)
+    nop                                | iaddiu vi8, vi0, 0x65              ; vi8 = source polygon (B)
+    nop                                | iaddiu vi9, vi0, 0x3d              ; vi9 = destination polygon (A)
+    nop                                | iadd vi10, vi0, vi11               ; vi10 = edges to do = vertices the last plane wrote
+    addw.x vf30, vf0, vf0w             | iaddiu vi11, vi0, 0x0              ; vf30x = plane sign (+1) | vi11 = vertices written = 0
+    nop                                | lqi.xyzw vf21, (vi8++)             ; vf21, vf22, vf23 = first source vertex (position, colour, texcoord)
+    nop                                | lqi.xyzw vf22, (vi8++)
+    nop                                | lqi.xyzw vf23, (vi8++)
+clip_ypos_loop:
+    nop                                | isubiu vi10, vi10, 0x1
+    nop                                | bal vi2, clip_edge                 ; one edge
+    nop                                | nop
+    nop                                | ibne vi10, vi0, clip_ypos_loop
+    nop                                | nop
+    nop                                | iaddiu vi8, vi0, 0x3d              ; vi8 = start of the destination polygon
+    nop                                | bal vi2, close_polygon             ; append its first vertex again (closes it)
+    nop                                | nop
+    nop                                | ibeq vi11, vi0, clip_triangle_ret  ; nothing left of the triangle
+    nop                                | nop
+
+; ---- all six planes done: the result is polygon A, vi11 vertices
+    nop                                | iaddiu vi8, vi0, 0x3d
+    nop                                | iaddiu vi9, vi0, 0x65
+    nop                                | iadd vi10, vi0, vi11               ; vi10 = vertex count
+    nop                                | iaddiu vi11, vi0, 0x0
+    nop                                | bal vi1, emit_fan                  ; emit_fan
+    nop                                | nop
+clip_triangle_ret:
+    nop                                | jr vi15
+    nop                                | nop
+
+; ---- close_polygon (return address vi2): copies the vertex at vi8 (the polygon's first) to vi9 (its end),
+; so that the next pass finds the edge last -> first. Leaves that vertex in vf21, vf22, vf23.
+close_polygon:
+    nop                                | lq.xyzw vf21, 0(vi8)
+    nop                                | lq.xyzw vf22, 1(vi8)
+    nop                                | lq.xyzw vf23, 2(vi8)
+    nop                                | sqi.xyzw vf21, (vi9++)
+    nop                                | sqi.xyzw vf22, (vi9++)
+    nop                                | sqi.xyzw vf23, (vi9++)
+    nop                                | jr vi2
+    nop                                | nop
+
+; ---- clip_edge (return address vi2): one polygon edge A -> B against the current plane.
+; In: vf21, vf22, vf23 = A (left by the previous call or the plane setup), vi8 -> B in the source polygon,
+;     vi5 / vi6 = the plane's bit for A / B in the clipping flags, vi7 and vf30x for intersect.
+; Writes to the destination polygon (vi9), counting in vi11:
+;     A inside,  B inside:   A                 A outside, B inside:   the intersection
+;     A inside,  B outside:  A, intersection   A outside, B outside:  nothing
+; Out: vf21, vf22, vf23 = B.
+clip_edge:
+    add.xyzw vf17, vf31, vf21          | lqi.xyzw vf21, (vi8++)             ; vf17 = A position (vf31 is 0: a move in the upper half) | vf21 = B position
+    add.xyzw vf18, vf31, vf22          | lqi.xyzw vf22, (vi8++)             ; vf18 = A colour | vf22 = B colour
+    add.xyzw vf19, vf31, vf23          | lqi.xyzw vf23, (vi8++)             ; vf19 = A texcoord | vf23 = B texcoord
+    nop                                | nop
+    clip.xyz vf17, vf17                | nop                                ; clip judgement of A ...
+    clip.xyz vf21, vf21                | nop                                ; ... then of B
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | fcget vi1                          ; vi1 = clipping flags: bits 0..5 B, bits 6..11 A
+    nop                                | iand vi4, vi1, vi5                 ; A outside?
+    nop                                | nop
+    nop                                | ibeq vi4, vi0, edge_a_inside       ; no
+    nop                                | nop
+    nop                                | iand vi4, vi1, vi6                 ; A outside. B outside?
+    nop                                | nop
+    nop                                | ibeq vi4, vi0, edge_enters         ; no: the edge enters
+    nop                                | nop
+    nop                                | b clip_edge_ret                    ; both outside: write nothing
+    nop                                | nop
+edge_enters:
+    nop                                | bal vi1, intersect
+    nop                                | nop
+    nop                                | sqi.xyzw vf25, (vi9++)             ; write the intersection
+    nop                                | sqi.xyzw vf26, (vi9++)
+    nop                                | sqi.xyzw vf27, (vi9++)
+    nop                                | iaddiu vi11, vi11, 0x1
+    nop                                | b clip_edge_ret
+    nop                                | nop
+edge_a_inside:
+    nop                                | iand vi4, vi1, vi6                 ; B outside?
+    nop                                | nop
+    nop                                | ibeq vi4, vi0, edge_both_inside    ; no: both inside
+    nop                                | nop
+    nop                                | bal vi1, intersect                 ; the edge leaves
+    nop                                | nop
+    nop                                | sqi.xyzw vf17, (vi9++)             ; write A ...
+    nop                                | sqi.xyzw vf18, (vi9++)
+    nop                                | sqi.xyzw vf19, (vi9++)
+    nop                                | sqi.xyzw vf25, (vi9++)             ; ... and the intersection
+    nop                                | sqi.xyzw vf26, (vi9++)
+    nop                                | sqi.xyzw vf27, (vi9++)
+    nop                                | iaddiu vi11, vi11, 0x2
+    nop                                | b clip_edge_ret
+    nop                                | nop
+edge_both_inside:
+    nop                                | sqi.xyzw vf17, (vi9++)             ; write A
+    nop                                | sqi.xyzw vf18, (vi9++)
+    nop                                | sqi.xyzw vf19, (vi9++)
+    nop                                | iaddiu vi11, vi11, 0x1
+clip_edge_ret:
+    nop                                | jr vi2
+    nop                                | nop
+
+; ---- intersect (return address vi1): the point where edge A -> B crosses the current plane.
+; d = component - sign * w is the signed distance to the plane in clip space (component chosen by vi7, sign in
+; vf30x). t = dA / (dA - dB); result = A + t * (B - A) for all four components of position, colour and texcoord.
+; In: vf17, vf18, vf19 = A; vf21, vf22, vf23 = B. Out: vf25, vf26, vf27 = the new vertex. Uses vf29x, vi12, q.
+intersect:
+    mulx.w vf25, vf17, vf30x           | nop                                ; vf25w = sign * wA
+    mulx.w vf26, vf21, vf30x           | nop                                ; vf26w = sign * wB
+    nop                                | iadd vi12, vi0, vi7                ; vi12 = rotations
+    subw.xyzw vf25, vf17, vf25w        | nop                                ; vf25 = A - sign * wA (every component)
+    subw.xyzw vf26, vf21, vf26w        | nop                                ; vf26 = B - sign * wB
+    nop                                | nop
+intersect_rotate:
+    nop                                | ibeq vi12, vi0, intersect_rotated
+    nop                                | nop
+    nop                                | mr32.xyzw vf25, vf25               ; (x, y, z, w) <- (y, z, w, x)
+    nop                                | mr32.xyzw vf26, vf26
+    nop                                | isubiu vi12, vi12, 0x1
+    nop                                | b intersect_rotate
+    nop                                | nop
+intersect_rotated:
+    sub.xyz vf27, vf26, vf25           | nop                                ; vf27x = dB - dA
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | div q, vf25x, vf27x                ; q = dA / (dB - dA)
+    nop                                | waitq
+    addq.x vf29, vf0                   | nop                                ; vf29x = q
+    abs.x vf29, vf29                   | nop                                ; t = |q| = dA / (dA - dB), 0..1
+    sub.xyzw vf25, vf21, vf17          | nop                                ; B - A: position, colour, texcoord
+    sub.xyzw vf26, vf22, vf18          | nop
+    sub.xyzw vf27, vf23, vf19          | nop
+    mulx.xyzw vf25, vf25, vf29x        | nop                                ; * t
+    mulx.xyzw vf26, vf26, vf29x        | nop
+    mulx.xyzw vf27, vf27, vf29x        | nop
+    add.xyzw vf25, vf25, vf17          | nop                                ; + A
+    add.xyzw vf26, vf26, vf18          | nop
+    add.xyzw vf27, vf27, vf19          | nop
+    nop                                | jr vi1
+    nop                                | nop
+
+; ---- emit_fan (return address vi1): sends the polygon at vi8 (vi10 vertices) as one GIF packet from VU 30.
+; Same result as prog4's; here vi7 points at the RGBAQ slot when the colour is stored.
+emit_fan:
+    nop                                | lq.xyzw vf20, 0(vi8)               ; vf20 = clip position of polygon vertex 0
+    nop                                | iadd vi3, vi0, vi8                 ; vi3 = input cursor
+    nop                                | nop
+    nop                                | iaddiu vi2, vi0, 0x1e              ; vi2 = the fan packet
+    mulax.xyzw acc, vf9, vf20x         | iaddiu vi11, vi0, 0x7fff           ; acc .. vf25 = clip -> screen matrix * position | vi11 = 0x8000 (two steps)
+    madday.xyzw acc, vf10, vf20y       | iaddiu vi11, vi11, 0x1
+    maddaz.xyzw acc, vf11, vf20z       | isw.x vi11, 0(vi2)                 ; tag: NLOOP = 0, EOP
+    maddw.xyzw vf25, vf12, vf20w       | iaddiu vi7, vi2, 0x2               ; vi7 = output cursor
+    nop                                | iaddiu vi11, vi10, 0x7fff          ; vi11 = vertex count + 0x8000 (two steps)
+    nop                                | iaddiu vi11, vi11, 0x1
+    nop                                | xgkick vi2                         ; kick the empty tag: (inferred) waits for the previous kick of this buffer to finish before rewriting it
+    nop                                | div q, vf0w, vf25w                 ; q = 1 / w
+    nop                                | isw.x vi11, 0(vi2)                 ; tag: NLOOP = vertex count, EOP
+fan_loop:
+    nop                                | lq.xyzw vf20, 1(vi3)               ; vf20 = colour
+    nop                                | lq.xyzw vf21, 2(vi3)               ; vf21 = texcoord
+    nop                                | nop
+    nop                                | nop
+    ftoi0.xyzw vf29, vf20              | nop                                ; vf29 = colour as integers
+    mulq.xyz vf28, vf21                | lq.xyzw vf20, 3(vi3)               ; vf28 = texcoord / w | vf20 = position of the next vertex
+    mulq.xyzw vf25, vf25               | iaddi vi10, vi10, -1               ; vf25 = screen position / w | vi10 = vertices left
+    mulax.xyzw acc, vf9, vf20x         | nop                                ; acc .. vf25 = next screen position
+    madday.xyzw acc, vf10, vf20y       | nop
+    maddaz.xyzw acc, vf11, vf20z       | sq.xyzw vf29, 0(vi7)               ; store RGBAQ
+    ftoi4.xyzw vf26, vf25              | nop                                ; vf26 = 12.4 fixed point
+    maddw.xyzw vf25, vf12, vf20w       | sq.xyzw vf28, -1(vi7)              ; store ST
+    nop                                | iaddiu vi7, vi7, 0x3
+    nop                                | iaddiu vi3, vi3, 0x3
+    nop                                | sq.xyzw vf26, -2(vi7)              ; store XYZ2
+    nop                                | div q, vf0w, vf25w                 ; q = 1 / w of the next vertex
+    nop                                | ibne vi10, vi0, fan_loop
+    nop                                | nop
+    nop                                | xgkick vi2                         ; kick the fan
+    nop                                | nop
+    nop                                | jr vi1
+    nop                                | nop
+.vif 0x00000000
+.vif 0x00000000
+

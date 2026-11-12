@@ -1,0 +1,156 @@
+// Vector / matrix library, second half: 0x121008..0x122940 (src/port/vu0_b.c has an exact C reference of every routine;
+// src/sys/vu0_b_c.c has the ones that are compiled C). Most routines are hand-written VU0 macro-mode assembly.
+// Register conventions (set up by 0x120088 / 0x120A80 in the first half): vf0 = (0,0,0,1), vf1 = (0,0,1,0),
+// vf2 = (0,1,0,0), vf3 = (1,0,0,0); vf16-19 = the "current" matrix (top of a matrix stack kept in VU0 memory, vi15 =
+// stack pointer); vf20-23, vf24-27, vf28-31 = three more matrices that the camera code loads (world-to-clip,
+// world-to-screen, world-to-view by the callers' argument names). Names already in game.txt (Vec4_Set, Vec3_Normalize,
+// Vec4_Add, Vec3_Add, Vec4_Sub, Vec3_Sub, Vec4_Scale, Vec3_Scale, Vec4_Copy, Mtx_MulVec4, Vec3_Dot, Vec3_Cross,
+// Vec3_Length) are kept there and not repeated here; their addresses were checked against the instructions.
+
+// 0x121008(out, angles, v): current matrix = identity (0x120A98), rotated by the Euler angles (0x120F00), out = cur * v
+// (0x120FC8, all four components). 0x121058: the same with 0x120FE8 (x, y, z written into a copy of v, so out.w = v.w).
+// Neither saves the current matrix. No callers.
+Vu0Cur_RotEulerMulVec4 = 0x00121008; // type:func // guess
+Vu0Cur_RotEulerMulVec3 = 0x00121058; // type:func // guess
+
+// Perspective projection with the current matrix (vf16-19): p = cur * v, Q = 1 / p.w, p.xyz *= Q.
+// 0x1210A8(out, v): all four components to integers (vftoi0). 1 caller.
+// 0x1210D8(out, v): x, y to 12.4 fixed point (vftoi4), z, w to integers; returns 1 when 0 < x < 4096, 0 < y < 4096 and
+// w > 0 (status flag test), else 0. 0x121140(out, v, n): the same for n points, stops after the first that fails.
+// 0x1211C8(out, stq, v, uv): one point plus stq = (uv.x, uv.y, 1) * Q, stq.w = uv.w. No callers.
+// 0x121240(out, stq, v, uv, n): n points with stq; stq.w is whatever vf7.w held (not written).
+Vu0Cur_ProjectInt = 0x001210A8; // type:func
+Vu0Cur_ProjectPoint = 0x001210D8; // type:func
+Vu0Cur_ProjectPoints = 0x00121140; // type:func
+Vu0Cur_ProjectPointStq = 0x001211C8; // type:func
+Vu0Cur_ProjectPointsStq = 0x00121240; // type:func
+
+// Three matrices kept in VU0 registers. Load(m): registers = m. Store(m): m = registers. SetMul(a, b): registers =
+// a * b (row i = a.row0 * b[i][0] + a.row1 * b[i][1] + a.row2 * b[i][2] + a.row3 * b[i][3]).
+// The role names come from the callers in the camera code (world2clip, world2screen, world2view arguments).
+Vu0Clip_LoadMtx = 0x001212D8; // type:func // guess
+Vu0Clip_StoreMtx = 0x001212F0; // type:func // guess
+Vu0Clip_SetMulMtx = 0x00121308; // type:func // guess
+Vu0Screen_LoadMtx = 0x00121370; // type:func // guess
+Vu0Screen_StoreMtx = 0x00121388; // type:func // guess
+Vu0Screen_SetMulMtx = 0x001213A0; // type:func // guess
+Vu0View_LoadMtx = 0x00121408; // type:func // guess
+Vu0View_StoreMtx = 0x00121420; // type:func // guess
+Vu0View_SetMulMtx = 0x00121438; // type:func // guess
+
+// 0x1214A0(rot, trans): vf28-31 = rotation X(rot.x), then Z(rot.z), then Y(rot.y) built with libm sinf / cosf, row 3 =
+// (M * trans).xyz with w = trans.w. 1 caller (camera). 0x121640(rot, trans): takes vf28-31, row 3 = (M * trans).xyz,
+// then Y, Z, X rotations, back into vf28-31. No callers. Both save and restore the current matrix on the VU0 stack.
+Vu0View_SetRotTrans = 0x001214A0; // type:func // guess
+Vu0View_ApplyTransRot = 0x00121640; // type:func // guess
+// 0x1217D0(rot): current matrix *= Y(rot.y), then X(rot.x), then Z(rot.z); libm cosf / sinf. Compiled C with inline VU0.
+Vu0Cur_RotateYXZ = 0x001217D0; // type:func // guess
+
+// Eight empty functions (jr ra), no callers: debug hooks compiled out.
+Vu0_Stub0 = 0x00121910; // type:func // guess
+Vu0_Stub1 = 0x00121918; // type:func // guess
+Vu0_Stub2 = 0x00121920; // type:func // guess
+Vu0_Stub3 = 0x00121928; // type:func // guess
+Vu0_Stub4 = 0x00121930; // type:func // guess
+Vu0_Stub5 = 0x00121938; // type:func // guess
+Vu0_Stub6 = 0x00121940; // type:func // guess
+Vu0_Stub7 = 0x00121948; // type:func // guess
+
+// The polygon clipper's vertex is three quadwords (position, uv, colour = 0x30 bytes).
+// 0x121950(vtx, pos, uv, col): fills one. 0x121970(dst, src): copies one. 0x121990(vtx, pos[], uv[], col[], n): fills n.
+// 0x1219D8(dst, src, n): copies n.
+ClipVtx_Set = 0x00121950; // type:func
+ClipVtx_Copy = 0x00121970; // type:func
+ClipVtx_SetArray = 0x00121990; // type:func
+ClipVtx_CopyArray = 0x001219D8; // type:func
+// 0x121A10(poly, plane, n) -> new count: Sutherland-Hodgman against one plane (inside = distance >= 0); at most 9 vertices.
+// 0x121C18(out, a, b, t): out = a * t + b * (1 - t) on all three quadwords. 0x121C68(plane, a, b, d): d / dot(plane, a - b)
+// with an FPU divide. 0x121C98(dist[], poly, plane, n): dist[i].x = dot(plane.xyz, pos) + plane.w.
+ClipPoly_ClipPlane = 0x00121A10; // type:func
+ClipVtx_Lerp = 0x00121C18; // type:func
+ClipPlane_EdgeParam = 0x00121C68; // type:func // guess
+ClipPlane_DistArray = 0x00121C98; // type:func // guess
+// 0x121CD8(scr[], stq[], mtx, poly, n) / 0x121D48(scr[], stq[], poly, n): project a clipped polygon with a matrix / the
+// current matrix; no on-screen test; stq = (uv.x, uv.y, 1) * Q with stq.w left as vf13.w. 0x121CD8 has no callers.
+ClipPoly_ProjectMtx = 0x00121CD8; // type:func
+ClipPoly_ProjectCur = 0x00121D48; // type:func
+
+// 0x121DA8(): Rand_SeedFloat(0.1234141f), constants vf1-3 (0x120088), current matrix = identity and stack pointer = 0
+// (0x120A80, 0x120B18), Rand_Init(). Called once at boot. 0x121DE0(): builds an identity, memcmp()s it against the
+// constant identity at 0x2EC260 and reads the stack depth, discarding both results: what is left of an assert.
+Vu0_Init = 0x00121DA8; // type:func
+Vu0_CheckState = 0x00121DE0; // type:func // guess
+
+// 0x121E18(v): v = vf0 = (0, 0, 0, 1): callers' comments say "zero", but w is 1. 0x121E20(v): v = (0, 0, 0, 0).
+// 0x121E40(v, x, y, z): sets x, y, z and leaves w. 0x121E90(a, b): swaps two vectors (no callers).
+Vec4_SetZeroW1 = 0x00121E18; // type:func
+Vec4_SetZero = 0x00121E20; // type:func
+Vec3_Set = 0x00121E40; // type:func
+Vec4_Swap = 0x00121E90; // type:func
+
+// Per-component product (all four / x, y, z with w from a). Division by a scalar is a multiply by the VU0 reciprocal
+// Q = 1 / d (all four / x, y, z with w from the source). 0x121FB8(dst, src): copies x, y, z and keeps dst.w.
+Vec4_Mul = 0x00121F08; // type:func
+Vec3_Mul = 0x00121F20; // type:func
+Vec4_Div = 0x00121F68; // type:func
+Vec3_Div = 0x00121F88; // type:func
+Vec3_Copy = 0x00121FB8; // type:func
+
+// 0x122000(out, m, v): the full four-term product like Mtx_MulVec4, but only x, y, z are taken; out.w = v.w.
+// 0x122030(out, angles, v): matrix = identity rotated by the Euler angles (0x1204B8, VU0 polynomial sine), out = m * v.
+Mtx_MulVec3 = 0x00122000; // type:func
+Vec4_RotateEuler = 0x00122030; // type:func
+
+// Float to integer, truncating and saturating: * 4096 (vftoi12), * 16 (vftoi4), * 1 (vftoi0), and the GS position form
+// (x, y * 16, z, w * 1). 0x1220D0 and 0x122100 have no callers.
+Vec4_ToFixed12 = 0x001220D0; // type:func
+Vec4_ToFixed4 = 0x001220E0; // type:func
+Vec4_ToInt = 0x001220F0; // type:func
+Vec4_ToFixed4XY = 0x00122100; // type:func
+
+// 0x122118 / 0x122140(dst, src, lo, hi): min(max(c, lo), hi) on four / three components.
+// 0x122168 / 0x122190(dst, a, b, t): a * t + b * (1 - t) on four / three components (w from a): t = 1 gives a.
+Vec4_Clamp = 0x00122118; // type:func
+Vec3_Clamp = 0x00122140; // type:func
+Vec4_Lerp = 0x00122168; // type:func
+Vec3_Lerp = 0x00122190; // type:func
+
+// 0x1221E0(v): (x*x + y*y) + z*z. 0x122200(a, b): VU0 square root of the same on a - b. 0x122230(a, b): squared distance.
+Vec3_LengthSq = 0x001221E0; // type:func
+Vec3_Dist = 0x00122200; // splat emits this VU0 routine as raw words, so no type:func
+Vec3_DistSq = 0x00122230; // type:func
+
+// 0x122258(out, dir): out.y = atan2f(dir.x, dir.z), out.x = -atan2f(dir.y, length(dir.x, 0, dir.z)), out.z = 0.
+// 0x1222D8(out, a, b): the same on a - b. 3 callers / none.
+Vec3_DirToEuler = 0x00122258; // type:func
+Vec3_DiffToEuler = 0x001222D8; // type:func
+
+// The projections above with the matrix passed as an argument instead of the current matrix.
+// 0x122310(out, m, v): integers. 0x122350(out, m, v) -> on screen. 0x1223C8(out, m, v[], n). 0x122458(out, stq, m, v, uv):
+// stq = (uv.x, uv.y, 1) * Q, stq.w = uv.w. 0x1224E0(out, stq, m, v[], uv[], n): stq.w left as vf14.w.
+Mtx_ProjectInt = 0x00122310; // type:func
+Mtx_ProjectPoint = 0x00122350; // type:func
+Mtx_ProjectPoints = 0x001223C8; // type:func
+Mtx_ProjectPointStq = 0x00122458; // type:func
+Mtx_ProjectPointsStq = 0x001224E0; // type:func
+
+// Empty function, no callers.
+Vu0_Stub8 = 0x00122588; // type:func // guess
+
+// x, y, z sums; w comes from the first vector loaded into the result register (noted per function in vu0_b.c).
+// 0x122590: a + b - c. 0x1225B0: a - b + c. 0x1225D0(dst, dir, base, s): dir * s + base (w = base.w).
+// 0x1225F0: dir * s - base. 0x122610: a + b + c + d. 0x122638 / 0x122668(dst, a, b, lo, hi): clamp(a + b).
+// 0x122590, 0x1225B0, 0x1225F0, 0x122638 and 0x122668 have no callers.
+Vec3_AddSub = 0x00122590; // type:func
+Vec3_SubAdd = 0x001225B0; // type:func
+Vec3_ScaleAdd = 0x001225D0; // type:func
+Vec3_ScaleSub = 0x001225F0; // type:func
+Vec3_Add4 = 0x00122610; // type:func
+Vec4_AddClamp = 0x00122638; // type:func
+Vec3_AddClamp = 0x00122668; // type:func
+
+// Rodrigues rotation with Mathf_Cos / Mathf_Sin: v cos + (axis x v) sin + axis (axis . v)(1 - cos); w copied from the
+// source AFTER the result is written. 0x122698(out, v, axis, angle); 0x122790 / 0x122868(out, v, angle) about X / Y.
+Vec3_RotateAxis = 0x00122698; // type:func
+Vec3_RotateX = 0x00122790; // type:func
+Vec3_RotateY = 0x00122868; // type:func

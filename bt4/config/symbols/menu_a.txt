@@ -1,0 +1,51 @@
+// Menu overlay DBZP.BIN, 0x334C00..0x339610.
+// MainMenu: the main menu screen (progress mode 4). Work area gMainMenu (0x188 bytes).
+MainMenu_StartBallLoops = 0x00334C00; // type:func
+MainMenu_Init = 0x00334CA0; // type:func
+MainMenu_Term = 0x003356B0; // type:func
+MainMenu_Draw = 0x00335728; // type:func
+MainMenu_PlateGoto = 0x00336018; // type:func
+MainMenu_Update = 0x003360B0; // type:func
+MainMenu_Input = 0x003361A0; // type:func
+MainMenu_Run = 0x00336838; // type:func
+// The overlay entry and mode dispatcher: Game_Main calls it after Overlay_Load(0). Name from the overlay's
+// label "PROGRESS" in gOverlayTbl.
+Progress_Main = 0x00336A90; // type:func
+// Globals of the first object (.data 0x3B0E80..0x3B0EC0).
+gMainMenu = 0x003B0E80; // size:0x4
+gMenuArc0 = 0x003B0E84; // size:0x4
+gMenuArc1 = 0x003B0E88; // size:0x4
+gMenuArc2 = 0x003B0E8C; // size:0x4
+gMenuArc3 = 0x003B0E90; // size:0x4
+gMenuArc4 = 0x003B0E94; // size:0x4
+gMenuArc5 = 0x003B0E98; // size:0x4
+gMenuArc6 = 0x003B0E9C; // size:0x4
+gMenuArc7 = 0x003B0EA0; // size:0x4
+gMenuArc8 = 0x003B0EA4; // size:0x4
+gMenuArc9 = 0x003B0EA8; // size:0x4
+gMenuArc10 = 0x003B0EAC; // size:0x4
+gMenuArc11 = 0x003B0EB0; // size:0x4
+gTitle = 0x003B0EB8; // size:0x4
+// Title: the title screen (progress mode 1). Work area gTitle (0xD0 bytes).
+Title_Idle = 0x00336FC0; // type:func
+Title_Init = 0x00337090; // type:func
+Title_Term = 0x00337598; // type:func
+Title_Draw = 0x00337610; // type:func
+Title_ClipGoto = 0x00337830; // type:func
+Title_Update = 0x00337900; // type:func
+// McFlow_SetDoneCb callbacks 0 and 1 of the "new save" flow started from the title menu.
+Title_OnCardDone = 0x00337958; // type:func
+Title_OnCardCancel = 0x00337998; // type:func
+Title_Input = 0x003379C0; // type:func
+Title_Run = 0x00337D70; // type:func
+// ModeMenu: the sub menu of one game mode (gProgress->subMenu 0..7); the module continues after 0x339610.
+// Work area gModeMenu (0x33C bytes). Names are guesses: only the head of the module was read.
+ModeMenu_GetLine = 0x00338020; // type:func // guess
+ModeMenu_UpdateImage = 0x00338100; // type:func // guess
+ModeMenu_ChangeImage = 0x00338288; // type:func // guess
+ModeMenu_Init = 0x003382C8; // type:func // guess
+ModeMenu_Term = 0x00338DD0; // type:func // guess
+ModeMenu_Draw = 0x00338EC8; // type:func // guess
+gModeMenu = 0x003B12F0; // size:0x4
+// thirteenth archive pointer, file baseFile + 0x18, also loaded by the wish screen (src/sys/late_a.c)
+gMenuArc12 = 0x003B0EB4; // size:0x4

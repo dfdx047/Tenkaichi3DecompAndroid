@@ -1,0 +1,26 @@
+// --- Two-choice confirmation window (game code, 0x268248-0x269228; src/sys/dialog.c) ---
+gDialog = 0x002FF160; // size:0x4
+// The two label strings Dialog_SetCursor (still assembly) refers to; defined as named objects in dialog.c.
+Dialog_DrawText = 0x00268248; // type:func
+Dialog_DrawTitle = 0x002684E8; // type:func
+Dialog_DrawBody = 0x00268678; // type:func
+Dialog_PlayCursorPlate = 0x002688A0; // type:func
+Dialog_Init = 0x00268930; // type:func
+Dialog_Term = 0x00268B28; // type:func
+Dialog_Draw = 0x00268B60; // type:func
+Dialog_Start = 0x00268DB0; // type:func
+Dialog_Input = 0x00268F78; // type:func
+Dialog_SetChoices = 0x00269130; // type:func
+Dialog_SetPort = 0x00269140; // type:func
+Dialog_SetLayout = 0x00269150; // type:func
+Dialog_SetMsgTable = 0x00269160; // type:func
+Dialog_SetMsg = 0x00269170; // type:func
+Dialog_SetTitle = 0x00269180; // type:func
+Dialog_SetCursor = 0x00269190; // type:func
+Dialog_IsClosed = 0x002691E8; // type:func
+Dialog_IsOpen = 0x00269200; // type:func
+Dialog_GetTitleTable = 0x00269218; // type:func
+// Evidence: strings "mc_dummy_text_1..4", "mc_menu_plate_%d", "fl_window_s_in" ..., all 19 functions use gDialog.
+// Callers: the eight memory-card / confirmation flows at 0x119FB8-0x11E1E8 (main executable) and
+// 0x2BDF78 / 0x2BF398 (Dialog_Init), 0x2BE2D0 / 0x2BF488 (Dialog_Term). Dialog_Draw is passed by address.
+

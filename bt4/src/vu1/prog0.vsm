@@ -1,0 +1,225 @@
+; prog0 -- fighter model parts, lit draw: two-bone skinning, two GS layers (texture + shading ramp)
+;
+; Notes: docs/systems/vu1/prog0_prog1.md. Numbers in [..] are instruction addresses (VU1 micro memory).
+; "(inferred)" = not confirmed from code in this repository.
+;
+; WHO USES IT
+;   Vu1Pkt_LoadProg0 (src/sys/vu1_packet.c) uploads these 127 instructions; BtlObjDraw_DrawModel calls it once per
+;   object. Vu1Pkt_CallProg0 builds one call packet per model part (ObjDraw_DrawParts, mode 0, src/sys/gfxm_d_c.c):
+;   FLUSHE, UNPACK V4-32 of 0x22 quadwords to VU address 0, MSCALF 0, BASE 0x22, OFFSET 0x1EF, then a DMA "call" into
+;   the part's own VIF chain (model data, part record + 0x60), which unpacks the batches and runs them.
+;
+; ENTRY POINTS
+;   [0]    MSCALF 0, once per part: precomputes the constants at 26..33 and loads the persistent registers; ends at
+;          [34] (E), [35] still runs.
+;   [36]   where the first MSCNT after that continues: one batch (one triangle strip); ends at [123] (E), [124].
+;   [125]  where every later MSCNT continues: branches back to [36].
+;   The MSCNT codes are in the model's VIF chain, not in the C code (one MSCNT per batch: seen on the PC port's dumps).
+;
+; VU MEMORY, CONSTANTS (quadword addresses; ObjDrawPkt field = what ObjDraw_DrawParts stores there)
+;    0..3   mtxA    bone matrix A (node->mtxA), used as q0*x + q1*y + q2*z + q3
+;    4..7   mtxB    bone matrix B (node->mtxB)
+;    8      ofsA    pivot subtracted from the position before A (part->ofsA)
+;    9      ofsB    pivot subtracted before B (part->ofsB)
+;   10..13  light   Mtx_MakeNormalLight(lightDir, 0, 0): the x components of 10..12 are the negated, normalised
+;                   light direction, so (light * n).x = -L . n. Only x of the product is used [102].
+;   14..17  screen  model space (after the bones) to GS screen coordinates, before the divide (Vu0Screen_StoreMtx)
+;   18..21  clip    the same to clip space, only for the reject test (Vu0Clip_StoreMtx)
+;   22      color   layer 0 vertex colour, floats 0..255 (view->color)
+;   23      k       layer 1 vertex colour, floats (128, 128, 128, 128)
+;   24, 25          not read
+;   26..29          written by [0]: light * A (columns 0..2 by the product, column 3 = light's own column 3)
+;   30..33          written by [0]: light * B, same shape
+;   (the UNPACK also covers 26..33 with whatever is in the packet; the program overwrites them before reading)
+;
+; VU MEMORY, ONE INPUT BATCH (at TOP = xtop; BASE 0x22 / OFFSET 0x1EF: TOP alternates between 34 and 529)
+;   +0      GIF tag for one A+D register (copied in front of each layer; no EOP, or the kick would end there)
+;   +1      A+D data of layer 0: TEX0_1 of the model texture (register seen on the port's dumps)
+;   +2      A+D data of layer 1: TEX0_2 of the shading ramp (same)
+;   +3      GIF tag of layer 0's strip; its low 15 bits (NLOOP) are the vertex count n
+;   +4      GIF tag of layer 1's strip (same NLOOP, and the EOP that ends the kick: inferred)
+;   +5+3i   vertex i: position xyz, w = weight of bone A (bone B gets 1 - w)
+;   +6+3i             normal xyz
+;   +7+3i             texture coordinates (s, t, 1)
+;   The three registers per vertex are named by the tags, not by the program: ST, RGBAQ, XYZF2 with PRIM 0x5C
+;   (layer 0, context 1) and 0x25C (layer 1, context 2) on the port's dumps.
+;
+; OUTPUT, ONE GIF PACKET AT TOP + 257 (vi2), sent by one xgkick
+;   +0  tag (+0)   +1  A+D (+1)   +2  tag (+3)   +3..        n * (STQ, RGBA, XYZF)   layer 0
+;   then           tag (+0)       A+D (+2)       tag (+4)    n * (STQ, RGBA, XYZF)   layer 1
+;   layer 0: STQ = (s, t, 1) / w', RGBA = int(color)
+;   layer 1: STQ = (u, 0, 1) / w' with u = 0.5 + 0.5 * (light * n').x, RGBA = int(k)
+;   XYZF  = ftoi4 of screen.xyz / w' (12.4 fixed point; the fourth word is ftoi4(1) = 16, or 0x8000 = "do not draw"
+;           when this vertex or one of the two before it is outside the clip volume)
+;   Space: 6 + 6n quadwords in the 238 between TOP + 257 and the end of the buffer, so n <= 38 (inferred from
+;   the arithmetic; the program does not check).
+;
+; REGISTERS IN THE VERTEX LOOP
+;   vi2  output packet                 vi3  current input vertex        vi10 vertices left
+;   vi7  layer 0 output vertex         vi4  layer 1 output vertex       vi1  result of the clip test
+;   vi11 0x7fff (NLOOP mask)           vi13 0x8000 (the ADC bit as written into word 3 of XYZF)
+;   vf1..vf4   bone A while skinning, then screen matrix, bone A again from [95]
+;   vf5..vf8   bone B, then clip matrix, bone B again from [104]
+;   vf9..vf12  light * A               vf13..vf16 light * B
+;   vf17 STQ of layer 0                vf18 int(k), set once at [30]    vf19 position (w = weight)
+;   vf20 skinned position, then color  vf21 normal                      vf22 STQ of layer 1
+;   vf23 int(color)                    vf24 screen position             vf25 clip position
+;   vf26 / vf27 light * normal by A / by B, then the blend in vf26
+;   vf28 / vf29 position by A / by B; vf29 then the fixed-point XYZF
+;   vf30 ofsA, vf31 ofsB (set once at [30], [31])
+;   I = 0.5, q = 1 / w'
+;
+; The listing came out of the disassembler with a label on most lines: scripts/vuasm.py decodes the low 11 bits of
+; every lower instruction as a branch offset before it looks at the opcode, so every non-branch produced a bogus
+; "target". Only the three real branch targets are kept below.
+
+.vif 0x00000000
+.mpg 0
+
+; ---------------------------------------------------------------------------------------------- [0] setup (MSCALF 0)
+; vf9..12 = light. For A then B: column c of (light * bone) = light0*c.x + light1*c.y + light2*c.z + light3*c.w for
+; c = bone column 0..2; the fourth stored column is light's own column 3 (a normal is not translated).
+setup:
+    nop                                | lq.xyzw vf1, 0(vi0)                ; vf1..4 = A (kept for the first batch)
+    nop                                | lq.xyzw vf9, 10(vi0)
+    nop                                | lq.xyzw vf10, 11(vi0)
+    nop                                | lq.xyzw vf11, 12(vi0)
+    nop                                | lq.xyzw vf12, 13(vi0)
+    mulax.xyzw acc, vf9, vf1x          | lq.xyzw vf2, 1(vi0)
+    madday.xyzw acc, vf10, vf1y        | lq.xyzw vf3, 2(vi0)
+    maddaz.xyzw acc, vf11, vf1z        | lq.xyzw vf4, 3(vi0)
+    maddw.xyzw vf13, vf12, vf1w        | lq.xyzw vf5, 4(vi0)                ; vf13 = light * A.col0
+    mulax.xyzw acc, vf9, vf2x          | lq.xyzw vf6, 5(vi0)
+    madday.xyzw acc, vf10, vf2y        | lq.xyzw vf7, 6(vi0)
+    maddaz.xyzw acc, vf11, vf2z        | lq.xyzw vf8, 7(vi0)
+    maddw.xyzw vf14, vf12, vf2w        | sq.xyzw vf13, 26(vi0)              ; vf14 = light * A.col1
+    mulax.xyzw acc, vf9, vf3x          | lq.xyzw vf20, 22(vi0)              ; color
+    madday.xyzw acc, vf10, vf3y        | lq.xyzw vf21, 23(vi0)              ; k
+    maddaz.xyzw acc, vf11, vf3z        | nop
+    maddw.xyzw vf15, vf12, vf3w        | move.xyzw vf16, vf12               ; vf15 = light * A.col2
+    mulax.xyzw acc, vf9, vf5x          | sq.xyzw vf14, 27(vi0)
+    madday.xyzw acc, vf10, vf5y        | nop
+    maddaz.xyzw acc, vf11, vf5z        | nop
+    maddw.xyzw vf13, vf12, vf5w        | sq.xyzw vf15, 28(vi0)              ; vf13 = light * B.col0
+    mulax.xyzw acc, vf9, vf6x          | sq.xyzw vf16, 29(vi0)              ; 29 = light.col3
+    madday.xyzw acc, vf10, vf6y        | nop
+    maddaz.xyzw acc, vf11, vf6z        | nop
+    maddw.xyzw vf14, vf12, vf6w        | sq.xyzw vf13, 30(vi0)              ; vf14 = light * B.col1
+    mulax.xyzw acc, vf9, vf7x          | iaddiu vi11, vi0, 0x7fff
+    madday.xyzw acc, vf10, vf7y        | iaddi vi13, vi11, 1                ; vi13 = 0x8000
+    maddaz.xyzw acc, vf11, vf7z        | nop
+    maddw.xyzw vf15, vf12, vf7w        | sq.xyzw vf16, 33(vi0)              ; vf15 = light * B.col2; 33 = light.col3
+    ftoi0.xyzw vf23, vf20              | sq.xyzw vf14, 31(vi0)              ; int(color); redone per vertex at [100]
+    ftoi0.xyzw vf18, vf21              | lq.xyzw vf30, 8(vi0)               ; vf18 = int(k), vf30 = ofsA
+    nop                                | lq.xyzw vf31, 9(vi0)               ; vf31 = ofsB
+    nop                                | sq.xyzw vf15, 32(vi0)
+    nop                                | nop
+    nop                                | nop [E]
+    nop                                | nop
+
+; ------------------------------------------------------------------------------------------- [36] one batch (MSCNT)
+batch_entry:
+    nop                                | xtop vi3
+    nop                                | lqi.xyzw vf17, (vi3++)             ; +0 A+D tag
+    nop                                | lqi.xyzw vf27, (vi3++)             ; +1 layer 0 A+D data
+    nop                                | lqi.xyzw vf20, (vi3++)             ; +2 layer 1 A+D data
+    nop                                | ilwr.x vi10, (vi3)                 ; low 16 bits of the strip tag
+    nop                                | lqi.xyzw vf25, (vi3++)             ; +3 layer 0 strip tag
+    nop                                | lqi.xyzw vf26, (vi3++)             ; +4 layer 1 strip tag; vi3 = first vertex
+    nop                                | lq.xyzw vf19, 0(vi3)               ; first position
+    nop                                | iaddiu vi11, vi0, 0x7fff
+    nop                                | iand vi10, vi10, vi11              ; vi10 = n (NLOOP without the EOP bit)
+    nop                                | iaddiu vi2, vi3, 0xfc              ; vi2 = TOP + 257: output packet
+    sub.xyzw vf28, vf19, vf30          | sq.xyzw vf17, 0(vi2)               ; pos - ofsA
+    sub.xyzw vf29, vf19, vf31          | sq.xyzw vf27, 1(vi2)               ; pos - ofsB
+    nop                                | sq.xyzw vf25, 2(vi2)
+    nop                                | iaddiu vi7, vi2, 0x3               ; vi7 = layer 0 vertices
+    nop                                | iadd vi4, vi7, vi10
+    nop                                | iadd vi4, vi4, vi10
+    nop                                | iadd vi4, vi4, vi10                ; vi4 = vi7 + 3n: layer 1 header
+    nop                                | sq.xyzw vf17, 0(vi4)
+    nop                                | sq.xyzw vf20, 1(vi4)
+    nop                                | sq.xyzw vf26, 2(vi4)
+    nop                                | iaddiu vi4, vi4, 0x3               ; vi4 = layer 1 vertices
+    ; first vertex by A; the loop does this for the next vertex in its tail ([111]..[116]). Reload B.
+    mulax.xyzw acc, vf1, vf28x         | lq.xyzw vf5, 4(vi0)
+    madday.xyzw acc, vf2, vf28y        | lq.xyzw vf6, 5(vi0)
+    maddaz.xyzw acc, vf3, vf28z        | lq.xyzw vf7, 6(vi0)
+    maddw.xyzw vf28, vf4, vf0w         | lq.xyzw vf8, 7(vi0)                ; vf28 = A * (pos - ofsA, 1)
+
+; ------------------------------------------------------------------------------------------------ [62] vertex loop
+; On entry: vf28 = position by A, vf29 = pos - ofsB, vf19 = position (w = weight), vf5..8 = B.
+vertex_loop:
+    mulax.xyzw acc, vf5, vf29x         | lq.xyzw vf21, 1(vi3)               ; normal
+    madday.xyzw acc, vf6, vf29y        | lq.xyzw vf9, 26(vi0)               ; vf9..12 = light * A
+    maddaz.xyzw acc, vf7, vf29z        | lq.xyzw vf10, 27(vi0)
+    maddw.xyzw vf29, vf8, vf0w         | lq.xyzw vf11, 28(vi0)              ; vf29 = B * (pos - ofsB, 1)
+    nop                                | lq.xyzw vf12, 29(vi0)
+    mulax.xyzw acc, vf9, vf21x         | lq.xyzw vf13, 30(vi0)              ; vf13..16 = light * B
+    madday.xyzw acc, vf10, vf21y       | lq.xyzw vf14, 31(vi0)
+    sub.xyzw vf20, vf28, vf29          | lq.xyzw vf15, 32(vi0)              ; pA - pB (acc untouched)
+    maddaz.xyzw acc, vf11, vf21z       | lq.xyzw vf16, 33(vi0)
+    maddw.xyzw vf26, vf12, vf0w        | lq.xyzw vf1, 14(vi0)               ; vf26 = lightA * (n, 1); vf1..4 = screen
+    mulax.xyzw acc, vf13, vf21x        | lq.xyzw vf2, 15(vi0)
+    mulw.xyzw vf20, vf20, vf19w        | lq.xyzw vf3, 16(vi0)               ; (pA - pB) * weight
+    madday.xyzw acc, vf14, vf21y       | lq.xyzw vf4, 17(vi0)
+    maddaz.xyzw acc, vf15, vf21z       | lq.xyzw vf5, 18(vi0)               ; vf5..8 = clip
+    maddw.xyzw vf27, vf16, vf0w        | lq.xyzw vf6, 19(vi0)               ; vf27 = lightB * (n, 1)
+    add.xyzw vf20, vf29, vf20          | lq.xyzw vf7, 20(vi0)               ; vf20 = p = pB + (pA - pB) * weight
+    nop                                | lq.xyzw vf8, 21(vi0)
+    nop                                | nop
+    sub.xyzw vf26, vf26, vf27          | nop
+    mulax.xyzw acc, vf1, vf20x         | nop
+    madday.xyzw acc, vf2, vf20y        | nop
+    maddaz.xyzw acc, vf3, vf20z        | nop
+    maddw.xyzw vf24, vf4, vf0w         | nop                                ; vf24 = screen * (p, 1)
+    mulw.xyzw vf26, vf26, vf19w        | nop                                ; (lA - lB) * weight
+    mulax.xyzw acc, vf5, vf20x         | nop
+    madday.xyzw acc, vf6, vf20y        | loi 0x3F000000 [I]   ; 0.5
+    maddaz.xyzw acc, vf7, vf20z        | div q, vf0w, vf24w                 ; q = 1 / w', ready at [95]
+    maddw.xyzw vf25, vf8, vf0w         | lq.xyzw vf17, 2(vi3)               ; vf25 = clip * (p, 1); vf17 = (s, t, 1)
+    add.xyzw vf26, vf27, vf26          | nop                                ; vf26 = lB + (lA - lB) * weight
+    nop                                | nop
+    nop                                | nop
+    clip.xyz vf25, vf25                | nop                                ; x, y, z against |w|: 6 new clip flag bits
+    muli.xyz vf26, vf26                | nop                                ; * 0.5
+    mulq.xyzw vf24, vf24               | lq.xyzw vf1, 0(vi0)                ; screen / w' (w becomes 1); vf1..4 = A
+    mulq.xyz vf17, vf17                | lq.xyzw vf20, 22(vi0)              ; (s, t, 1) * q; vf20 = color
+    nop                                | lq.xyzw vf2, 1(vi0)
+    addi.xyz vf26, vf26                | lq.xyzw vf3, 2(vi0)                ; + 0.5
+    ftoi4.xyzw vf29, vf24              | lq.xyzw vf4, 3(vi0)                ; XYZF, 12.4 fixed point
+    ftoi0.xyzw vf23, vf20              | fcand vi1, 0x3ffff                 ; vi1 = any flag of the last 3 vertices
+    nop                                | sq.xyzw vf17, 0(vi7)               ; layer 0 STQ
+    add.x vf22, vf0, vf26              | iaddiu vi3, vi3, 0x3               ; u = 0.5 + 0.5 * (light * n').x
+    add.y vf22, vf0, vf0               | lq.xyzw vf19, 0(vi3)               ; v = 0; next position (see note below)
+    addw.z vf22, vf0, vf0w             | lq.xyzw vf5, 4(vi0)                ; 1; vf5..8 = B
+    nop                                | lq.xyzw vf6, 5(vi0)
+    nop                                | lq.xyzw vf7, 6(vi0)
+    sub.xyzw vf28, vf19, vf30          | sq.xyzw vf29, 2(vi7)               ; next - ofsA; layer 0 XYZF
+    mulq.xyz vf22, vf22                | sq.xyzw vf29, 2(vi4)               ; (u, 0, 1) * q; layer 1 XYZF
+    sub.xyzw vf29, vf19, vf31          | lq.xyzw vf8, 7(vi0)                ; next - ofsB
+    nop                                | sq.xyzw vf18, 1(vi4)               ; layer 1 RGBA = int(k)
+    mulax.xyzw acc, vf1, vf28x         | iaddi vi10, vi10, -1
+    madday.xyzw acc, vf2, vf28y        | iaddiu vi7, vi7, 0x3
+    nop                                | iaddiu vi4, vi4, 0x3
+    maddaz.xyzw acc, vf3, vf28z        | sq.xyzw vf23, -2(vi7)              ; layer 0 RGBA = int(color)
+    nop                                | sq.xyzw vf22, -3(vi4)              ; layer 1 STQ
+    maddw.xyzw vf28, vf4, vf0w         | ibeq vi1, vi0, vertex_next         ; vf28 = A * (next - ofsA, 1)
+    nop                                | nop
+    ; clip_reject: the triangle this vertex completes is not drawn (ADC bit in both layers)
+    nop                                | isw.w vi13, -1(vi7)                ; word 3 of layer 0 XYZF = 0x8000
+    nop                                | isw.w vi13, -1(vi4)                ; same, layer 1
+vertex_next:
+    nop                                | ibne vi10, vi0, vertex_loop
+    nop                                | nop
+    ; After the last vertex the tail has read and transformed one position past the batch; the result is unused.
+    ; The clip flags are never reset, so the first two vertices of a strip are tested together with the end of the
+    ; previous one; those two complete no triangle.
+
+; ------------------------------------------------------------------------------------------------------ [122] kick
+    nop                                | xgkick vi2                         ; both layers in one packet
+    nop                                | nop [E]
+    nop                                | nop
+batch_resume:                                                               ; [125] the next MSCNT lands here
+    nop                                | b batch_entry
+    nop                                | nop

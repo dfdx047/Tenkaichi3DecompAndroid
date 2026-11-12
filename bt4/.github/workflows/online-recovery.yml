@@ -1,0 +1,24 @@
+name: Recover unhealthy secondary
+on:
+  workflow_dispatch:
+    inputs:
+      observe:
+        description: Only observe an already requested restart
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: bt4-secondary-recovery
+  cancel-in-progress: false
+jobs:
+  recover:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Recover secondary only after failed service checks
+        env:
+          SUPABASE_SECONDARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_SECONDARY_MANAGEMENT_TOKEN }}
+          OBSERVE: ${{ inputs.observe }}
+        run: python3 port/tools/recover_secondary.py $([ "$OBSERVE" = true ] && echo --observe)

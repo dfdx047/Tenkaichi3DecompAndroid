@@ -1,0 +1,30 @@
+// Menu overlay DBZP.BIN, 0x364358..0x368C18: Dragon World Tour (progress modes 33..35), menu and bracket screen.
+// TourMenu (menu_k.c): tail of the tournament menu of mode 33; the object starts at 0x3623A8 (menu_j_b.c).
+// Steps the guide's scripted speech (field 0x134 is a step number: greeting, invitation, per-level explanations).
+TourMenu_UpdateSeq = 0x00364358; // type:func // guess
+TourMenu_Run = 0x00364B18; // type:func
+// Bracket (menu_k_b.c): the tournament bracket screen of mode 35; work area gBracket, 0x2090 bytes.
+// Evidence: the screen pattern (Init allocates, Term frees, Draw draws the six movies, Run has the frame loop).
+// Callback given to McFlow_SetDoneCb for both outcomes of the save flow: leaves the screen with result 0.
+Bracket_OnSaveDone = 0x00364DA8; // type:func // guess
+Bracket_Init = 0x00364DE8; // type:func
+Bracket_Term = 0x003652F0; // type:func
+Bracket_Draw = 0x00365468; // type:func
+Bracket_Update = 0x00365578; // type:func
+Bracket_Input = 0x00365B30; // type:func
+Bracket_Run = 0x00365C48; // type:func
+// Bracket, second source file (menu_k_c.c): the guide's speech.
+// Chooses which guide picture set / which of two guides is shown for a subtitle line.
+Bracket_SetTalker = 0x003660A0; // type:func // guess
+// Steps the guide's scripted speech and the result sequence (field 0x1A3C is a step number).
+Bracket_UpdateSeq = 0x00366188; // type:func // guess
+gBracket = 0x003B5918; // size:0x4
+// TourBg (menu_k_d.c): the scrolling-cloud backdrop shared by the entrant select and the bracket; work area 0x68 bytes.
+TourBg_Init = 0x00366F58; // type:func // guess
+TourBg_Term = 0x00367230; // type:func // guess
+TourBg_Draw = 0x00367298; // type:func // guess
+gTourBg = 0x003B591C; // size:0x4
+// Bracket (menu_k_e.c): per-frame clip set-up before drawing (texture rectangles, positions, visibility).
+Bracket_SetupDraw = 0x003673F8; // type:func // guess
+// Bracket (menu_k_f.c): the loader; first function of the object that goes on in menu_l (its .rodata starts at 0x3B6FD0).
+Bracket_Load = 0x00368068; // type:func // guess

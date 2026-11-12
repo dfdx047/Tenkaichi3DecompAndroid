@@ -1,0 +1,120 @@
+// System helpers, 0x11EC10..0x11FA10: src/sys/iop_heap.c, spu_heap.c, timer.c, mathf.c, randf.c, mem_read.c.
+// Sys_InitIopHeap (0x11EC10, boot.txt) and Rand_Float01 / Rand_FloatRange (0x11F830 / 0x11F880, game.txt) keep their entries.
+
+// --- src/sys/iop_heap.c = 0x11EC10..0x11ECB8 -------------------------------------------------------------------
+// Each is a bare tail call into Sony's iopheap library. Alloc: 3 call sites (Snd_Init, Snd_SetupBank x2); Free: 3
+// (Snd_Term, Snd_UnloadBank x2). The two queries are only called by 0x11EC88, which drops both results and has no
+// callers (a stripped debug print, hence guess).
+IopHeap_Alloc = 0x0011EC28; // type:func
+IopHeap_Free = 0x0011EC40; // type:func
+IopHeap_GetTotalFree = 0x0011EC58; // type:func
+IopHeap_GetMaxFree = 0x0011EC70; // type:func
+IopHeap_PrintFree = 0x0011EC88; // type:func // guess
+// Sony libkernl iopheap.c, the functions after sceSifInitIopHeap. All call sceSifCallRpc on the client bound to
+// 0x80000003; named by the function number each sends, which is the IOP sysmem export order (1 alloc, 2 free, 3 load,
+// 4 alloc sysmem, 5 mem size, 6 max free, 7 total free, 8 block top, 9 block size). 0x2B8E48 only calls 0x2B8DD0.
+sceSifAllocIopHeap = 0x002B8CE0; // type:func
+sceSifAllocSysMemory = 0x002B8D50; // type:func // guess
+sceSifFreeSysMemory = 0x002B8DD0; // type:func // guess
+sceSifFreeIopHeap = 0x002B8E48; // type:func
+sceSifLoadIopHeap = 0x002B8E68; // type:func // guess
+sceSifQueryMemSize = 0x002B8F58; // type:func // guess
+sceSifQueryMaxFreeMemSize = 0x002B8FC8; // type:func // guess
+sceSifQueryTotalFreeMemSize = 0x002B9038; // type:func // guess
+sceSifQueryBlockTopAddress = 0x002B90A8; // type:func // guess
+sceSifQueryBlockSize = 0x002B9128; // type:func // guess
+
+// --- src/sys/spu_heap.c = 0x11ECB8..0x11F190 -------------------------------------------------------------------
+// Address allocator for sound RAM: 17 descriptors {state (0 unused, 1 free, 2 used), addr, size} at 0x300DC8,
+// region 0x5010 + 0x1F0FD0. State 1 is "free": Init gives the whole region state 1 and Alloc only takes state 1.
+// 0x11ECB8 / 0x11ECC8 / 0x11ED08(block, addr, size): write a descriptor as unused / free (unused when size <= 0) / used.
+SpuBlock_Clear = 0x0011ECB8; // type:func
+SpuBlock_SetFree = 0x0011ECC8; // type:func
+SpuBlock_SetUsed = 0x0011ED08; // type:func
+// 0x11ED20(addr, mode): descriptor whose start (mode 0) or end (mode 1) equals addr.
+SpuHeap_FindBlock = 0x0011ED20; // type:func
+// 0x11ED80: memset + one free range; called by Snd_Init. 0x11EDC8(size) -> SPU address, first fit in address order;
+// called by Snd_SetupBank. 0x11EEC8(addr): free + merge both sides; called by Snd_UnloadBank.
+SpuHeap_Init = 0x0011ED80; // type:func
+SpuHeap_Alloc = 0x0011EDC8; // type:func
+SpuHeap_Free = 0x0011EEC8; // type:func
+// 0x11F078: sum of state-2 sizes (no callers). 0x11F0C0: sum of state-1 sizes, i.e. FREE bytes (Snd_PushSpuMark,
+// Snd_PopSpuMark). 0x11F108: largest state-1 size (no callers).
+SpuHeap_GetUsedSize = 0x0011F078; // type:func
+SpuHeap_GetFreeSize = 0x0011F0C0; // type:func
+SpuHeap_GetMaxFree = 0x0011F108; // type:func
+// 0x11F150: walks the ranges by address and returns nothing useful; no callers (debug dump with the prints removed).
+SpuHeap_Walk = 0x0011F150; // type:func // guess
+gSpuHeapBlocks = 0x00300DC8; // size:0xCC
+
+// --- src/sys/timer.c = 0x11F190..0x11F548 ----------------------------------------------------------------------
+// EE timers T0 / T1 (registers 0x10000000 / 0x10000800 + 0x00 count, 0x10 mode, 0x20 compare) as a stopwatch.
+// 0x11F190(ch, value, op): op is a character, '=' / '&' / '|', applied to Tn_MODE. 0x11F280(ch): reads Tn_MODE.
+// 0x11F2C0(ch, v): Tn_COMP = v. 0x11F2F8(ch, v): Tn_COUNT = v and the software count [ch] = 0.
+Timer_SetMode = 0x0011F190; // type:func
+Timer_GetMode = 0x0011F280; // type:func
+Timer_SetCompare = 0x0011F2C0; // type:func
+Timer_SetCount = 0x0011F2F8; // type:func
+// 0x11F338(ch): (Tn_COUNT + software count) * 1000000 / 15734 (64-bit, __udivdi3); when mode bit 0x400 (compare
+// reached) is set it first adds 0xFFFF to the software count and writes the flag back to clear it.
+Timer_ReadMicros = 0x0011F338; // type:func
+// 0x11F430: returns 0; no callers.
+Timer_Stub = 0x0011F430; // type:func // guess
+// 0x11F438(ch): mode = 0x343 (hblank clock, clear on compare, both interrupt enables), compare = 0xFFFF. 0x11F470(ch):
+// mode |= 0x80 (count enable) then reset. 0x11F4A0(ch): mode &= ~0x80 (no callers). 0x11F4C0(ch): SetCount(ch, 0).
+// Init / Start / Reset are called by Movie_Run.
+Timer_Init = 0x0011F438; // type:func
+Timer_Start = 0x0011F470; // type:func
+Timer_Stop = 0x0011F4A0; // type:func
+Timer_Reset = 0x0011F4C0; // type:func
+// 0x11F4D8(ch): tail call to 0x11F338. 0x11F4F0(ch): (u32)(micros * 60) / 1000000.0f, so the unit is 1/60 s
+// (callers: Movie_Run, 0x1263D8).
+Timer_GetMicros = 0x0011F4D8; // type:func
+Timer_GetFrames = 0x0011F4F0; // type:func
+// u32[2]: horizontal blanks accumulated from counter wraps, per timer.
+gTimerLines = 0x002FF180; // size:0x8
+
+// --- src/sys/mathf.c = 0x11F548..0x11F7D8 ----------------------------------------------------------------------
+// 0x11F548(angle, half): hand-written; adds 2*half while angle < 2*half, then subtracts 2*half while angle > half.
+// Called only by the two sines below, with half = pi.
+Mathf_WrapAngle = 0x0011F548; // type:func
+// 0x11F588: sinf(wrap(angle)) (101 call sites). 0x11F620: the same on angle + pi/2 (78 sites).
+Mathf_Sin = 0x0011F588; // type:func
+Mathf_Cos = 0x0011F620; // type:func
+// 0x11F5B0: wrap, then x + c3 x^3 + c5 x^5 + c7 x^7 + c9 x^9 on VU0 with the coefficients at 0x2C3450 (18 sites).
+// 0x11F640: the same on angle + pi/2 (20 sites).
+Mathf_SinFast = 0x0011F5B0; // type:func
+Mathf_CosFast = 0x0011F640; // type:func
+// 0x11F660: wraps to [-pi, pi] by 2*pi steps, tail-calls tanf (2 sites).
+Mathf_Tan = 0x0011F660; // type:func
+// 0x11F6E0: VU0 vsqrt of the argument, result from Q (1 site, 0x2670B8).
+Mathf_Sqrt = 0x0011F6E0; // type:func
+// 0x11F700(out, angle): out[0] = sine, out[1] = cosine (libm pair). No callers.
+Mathf_SinCos = 0x0011F700; // type:func
+// 0x11F740 / 0x11F780: clamp to [-1, 1] then asinf / acosf (33 / 5 sites). 0x11F7C0: bare atanf wrapper (3 sites).
+Mathf_Asin = 0x0011F740; // type:func
+Mathf_Acos = 0x0011F780; // type:func
+Mathf_Atan = 0x0011F7C0; // type:func
+// f32[4] {2.601887e-6, -1.980741e-4, 8.333026e-3, -0.16666657} = 0x362E9C14, 0xB94FB21F, 0x3C08873E, 0xBE2AAAA4: sine coefficients for x^9, x^7, x^5, x^3 (.data).
+gMathfSinCoef = 0x002C3450; // size:0x10
+
+// --- src/sys/randf.c = 0x11F7D8..0x11F968 ----------------------------------------------------------------------
+// 0x11F7D8(seed): vrinit R from the float's bits, then srand((u32)(seed * 1e7f)). One caller, 0x121DA8.
+Rand_SeedFloat = 0x0011F7D8; // type:func
+// 0x11F8E0: bare rand() wrapper (also called 12 times from the menu overlay). 0x11F8F8(a, b): lo + rand() % (hi - lo + 1)
+// (34 sites).
+Rand_Libc = 0x0011F8E0; // type:func
+Rand_IntRange = 0x0011F8F8; // type:func
+
+// --- src/sys/mem_read.c = 0x11F968..0x11FA10 -------------------------------------------------------------------
+// 0x11F968 / 0x11F970 / 0x11F978(p): lw / lwc1 / lhu from p. The five after them only call one of the three; which
+// is signed and which unsigned is a guess for the two 32-bit ones (identical code), and follows from the missing /
+// present sign extension for the 16-bit ones. Callers: 0x261C78 (0x11F980 once, 0x11F9C8 once), 0x261D10 (0x11F9C8 x3).
+Mem_LoadWord = 0x0011F968; // type:func
+Mem_LoadFloat = 0x0011F970; // type:func
+Mem_LoadHalf = 0x0011F978; // type:func
+Mem_ReadS32 = 0x0011F980; // type:func // guess
+Mem_ReadU32 = 0x0011F998; // type:func // guess
+Mem_ReadF32 = 0x0011F9B0; // type:func
+Mem_ReadU16 = 0x0011F9C8; // type:func
+Mem_ReadS16 = 0x0011F9E8; // type:func

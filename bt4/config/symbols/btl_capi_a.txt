@@ -1,0 +1,127 @@
+// --- Fighter interface, first part (src/battle/btl_capi_a.c), 0x204E78..0x207020 ----------------------------------
+// Accessors keyed by battle object id (BtlChar_FindByObjId / BtlObj_Get on the first argument); the same original
+// file continues in btl_char_api.c at 0x207020. Names without `// guess` say what the matching code does; the game
+// meaning in a guessed name comes from the callers or from the code that writes the field or flag.
+
+// Object / model data by object id. 0x204E78: obj +0xC (BtlObj.chara). 0x204EA0..0x204F30: the four floats func_0024DB28 copies
+// from the model header (+0x18..+0x24) to obj +0xFF4..+0x1000; +0xFF4 is the character's height in world units (callers:
+// body centre = pos.y - height * 0.5, look height = height * 0.7, BtlScene scale = height / 19.35); +0xFFC is added to a
+// path point's y by BtlChar_PlaceOnPath. Defaults without an object: 10, 10, 5, 5.
+BtlCharApi_GetChara = 0x00204E78; // type:func
+BtlCharApi_GetHeight = 0x00204EA0; // type:func
+BtlCharApi_GetBodyUnkFF8 = 0x00204ED0; // type:func // guess
+BtlCharApi_GetCenterHeight = 0x00204F00; // type:func // guess
+BtlCharApi_GetBodyUnk1000 = 0x00204F30; // type:func // guess
+// Character parameter block (obj +0x91C): u16 +0 (callers test bits 4, 8, 0x80), word +0x10, float +0xC8.
+// 0x204FC0: aura type = 3 with object flag 0x40000, else parameter byte +3 (BtlParam_GetAuraKind for a fighter); the two
+// callers pass it with the u16 to the aura effect constructors (0x164410, 0x170BB8).
+BtlCharApi_ObjGetParamFlags0 = 0x00204F60; // type:func
+BtlCharApi_ObjGetParamFlags = 0x00204F90; // type:func
+BtlCharApi_GetAuraType = 0x00204FC0; // type:func // guess
+BtlCharApi_GetParamUnkC8 = 0x00205068; // type:func
+// 0x2050A0: BtlMember_GetActive(chr)->costume. 0x2050D8 / 0x205158: any of the 13 ki blast records (obj +0x924, 0x34 bytes,
+// type byte +2) has type 2 / 3; the caller 0x171F10 picks effect resources with it. NOT MATCHING (INCLUDE_ASM).
+BtlCharApi_GetCostume = 0x002050A0; // type:func
+BtlCharApi_HasKiBlastType2 = 0x002050D8; // type:func
+BtlCharApi_HasKiBlastType3 = 0x00205158; // type:func
+// Identity: is a fighter; object id of roster entry `player`; roster index of an object id (-1); the opponent's object id;
+// the partner object's id (fighter +0x1338 while +0x1330 is set), else the id itself.
+BtlCharApi_IsFighter = 0x002051D8; // type:func
+BtlCharApi_GetObjIdOfPlayer = 0x002051F8; // type:func
+BtlCharApi_GetPlayer = 0x00205230; // type:func
+BtlCharApi_GetOpponentObjId = 0x00205260; // type:func
+BtlCharApi_GetPartnerObjId = 0x00205298; // type:func
+// By roster index: obj +0x9C[n] (n < 5), obj +0x92C (technique table), obj +0x930 (skill table), obj +0x58.
+BtlCharApi_GetPlayerObjUnk9C = 0x002052D8; // type:func
+BtlCharApi_GetPlayerSuperData = 0x00205330; // type:func
+BtlCharApi_GetPlayerSkillData = 0x00205370; // type:func
+BtlCharApi_GetPlayerObjUnk58 = 0x002053B0; // type:func
+// Pose readers. 0x2053F0: pose.pos + pose +0x20 (display offset) for a fighter, obj +0x970 otherwise: the position every
+// outside module uses. 0x2054A0: without the offset. 0x205528: pose +0x10 / obj +0x960. 0x2055B0: rotation plus root motion
+// rotation (pose +0x60), or plus the Euler angles of node 0's quaternion. 0x2056A0: pose +0x94 / obj +0x964. 0x2056F8,
+// 0x205750, 0x2057A8: pose +0x30, +0x40, +0x80. 0x205800, 0x205838: pose +0x98, +0x9C. 0x205870: pose +0xB4 (ground point y).
+// 0x2058A8: ground y - position y.
+BtlCharApi_GetPos = 0x002053F0; // type:func
+BtlCharApi_GetBasePos = 0x002054A0; // type:func
+BtlCharApi_GetRot = 0x00205528; // type:func
+BtlCharApi_GetModelRot = 0x002055B0; // type:func
+BtlCharApi_GetYaw = 0x002056A0; // type:func
+BtlCharApi_GetVelocity = 0x002056F8; // type:func
+BtlCharApi_GetFrameMove = 0x00205750; // type:func
+BtlCharApi_GetDir = 0x002057A8; // type:func
+BtlCharApi_GetSpeed = 0x00205800; // type:func
+BtlCharApi_GetFallSpeed = 0x00205838; // type:func
+BtlCharApi_GetGroundY = 0x00205870; // type:func
+BtlCharApi_GetAltitude = 0x002058A8; // type:func
+// Model nodes (func_002505A8(obj, node)): node +0x40 (position), +0x90, matrix +0x10, matrix +0x50, func_00250940, quaternion
+// +0xA0. 0x205C00: float +0x5C of func_00250570(obj, n), default 1.0.
+BtlCharApi_GetNodePos = 0x002058E0; // type:func
+BtlCharApi_GetNodeUnk90 = 0x00205978; // type:func
+BtlCharApi_GetNodeMtx = 0x00205A10; // type:func
+BtlCharApi_GetNodeMtx50 = 0x00205A98; // type:func
+BtlCharApi_GetNodeRot = 0x00205B20; // type:func // guess
+BtlCharApi_GetNodeQuat = 0x00205B78; // type:func
+BtlCharApi_GetPartUnk5C = 0x00205C00; // type:func
+// 0x205C58: BtlChar_GetSpacing(chr, 0), the range BtlChar_UpdateLockOn compares the opponent distance with. 0x205C98: 1.0 /
+// 0.0 for an existing object.
+BtlCharApi_GetCloseRange = 0x00205C58; // type:func
+BtlCharApi_ObjExistsF = 0x00205C98; // type:func
+// Fighter flags by object id: 0x13 (opponent within the close range), 0xBA (sight blocked), 0xF (on the ground), 0x11 (in
+// water). 0x205DC8: object flag bit 1 (drawn) clear. 0x205E00 / 0x205E38: hit-stop freeze of one / any fighter.
+BtlCharApi_IsClose = 0x00205CC8; // type:func
+BtlCharApi_IsSightBlocked = 0x00205D08; // type:func
+BtlCharApi_IsOnGround = 0x00205D48; // type:func
+BtlCharApi_IsInWater = 0x00205D88; // type:func
+BtlCharApi_IsHidden = 0x00205DC8; // type:func
+BtlCharApi_IsFrozen = 0x00205E00; // type:func
+BtlCharApi_AnyFrozen = 0x00205E38; // type:func
+// 0x205EA0: (parameter flag 0x800 and not flag 0xA) or flag 9. 0x205F18: flag 0xA without flags 0x21 / 0x22. Their one
+// caller, 0x1B24B8, calls func_00241818 for the fighter when either is true (stage contact; meaning inferred).
+BtlCharApi_TestStageBreakA = 0x00205EA0; // type:func // guess
+BtlCharApi_TestStageBreakB = 0x00205F18; // type:func // guess
+// 0x205F90: max(0, fighter +0xD78, fighter +0xDEC), what BtlAiAtk_Run waits for while holding a button. 0x205FE0: 3 for
+// actions 0x17 / 0xF3, 4 for 0x18 / 0xBB, 5 for 0x12D..0x12F, else 1 (effect callers). 0x206080: roster +0x5C.
+// 0x206098: fighter +0xFFC / 90 clamped to 0..1 (0x19D318 turns it into a 0..255 overlay level per viewport).
+// 0x2060F8: see the source.
+BtlCharApi_GetChargeRate = 0x00205F90; // type:func
+BtlCharApi_GetActionFxKind = 0x00205FE0; // type:func // guess
+BtlCharApi_GetClashBias = 0x00206080; // type:func
+BtlCharApi_GetBlindRatio = 0x00206098; // type:func // guess
+BtlCharApi_GetRushFinishPhase = 0x002060F8; // type:func // guess
+// 0x2061B8 / 0x206240: func_00250B88(obj, vector, arg) with a vector built from a yaw or a direction. No callers.
+BtlCharApi_ObjPushYaw = 0x002061B8; // type:func // guess
+BtlCharApi_ObjPushDir = 0x00206240; // type:func // guess
+// 0x2062F0: body radius. 0x206350: *(obj +0xFA0).
+BtlCharApi_GetRadius = 0x002062F0; // type:func
+BtlCharApi_GetBodyPos = 0x00206350; // type:func
+// 0x206390(id, node, from, out, minPitch, maxPitch): aim direction at the opponent's node with the pitch clamped; called by
+// the ki blast action handlers. 0x206778: node 0x11, +-45 degrees. 0x2067A8(id, out): random direction by the fighter's
+// animation (two BtlChar_RandF draws); the callers 0x1764E8 / 0x178630 pass the other fighter's id and store the result as
+// the new direction of their own object.
+BtlCharApi_CalcAimDir = 0x00206390; // type:func
+BtlCharApi_CalcAimDir45 = 0x00206778; // type:func
+BtlCharApi_GetDeflectDir = 0x002067A8; // type:func // guess
+// Action and flag tests: flag 5; flag 0x8E; action in 0x105..0x132 (BtlAct_IsTechniqueId); that and the previous action not;
+// flag 0xA1; action 0x12D..0x12F / 0x139..0x13B; action 0xFD..0x102; that with flag 8; flag 0x9A; action 0x130..0x132;
+// action 0xFA / 0xFC; flags 0xC, 0xD; action 0xEC..0xF8 / 0x103 / 0x104; bit 4 of the animation's table word; action 0x33;
+// flag 0x12B.
+BtlCharApi_IsLockedOn = 0x00206AA8; // type:func
+BtlCharApi_IsChargingKiBlast = 0x00206AE8; // type:func // guess
+BtlCharApi_IsInTechnique = 0x00206B28; // type:func
+BtlCharApi_EnteredTechnique = 0x00206B70; // type:func
+BtlCharApi_IsRushConnected = 0x00206BE0; // type:func // guess
+BtlCharApi_IsInRushSequence = 0x00206C20; // type:func
+BtlCharApi_IsInSkill = 0x00206C88; // type:func
+BtlCharApi_IsSkillStart = 0x00206CC0; // type:func
+BtlCharApi_IsSkillApplied = 0x00206D28; // type:func // guess
+BtlCharApi_IsInClashA = 0x00206D68; // type:func
+BtlCharApi_IsInClashBC = 0x00206DB8; // type:func
+BtlCharApi_IsChargingKi = 0x00206E08; // type:func // guess
+BtlCharApi_IsMaxPowerStart = 0x00206E48; // type:func // guess
+BtlCharApi_IsChanging = 0x00206E88; // type:func
+BtlCharApi_TestAnimFlag10 = 0x00206EF0; // type:func
+BtlCharApi_IsCircleDash = 0x00206F30; // type:func
+BtlCharApi_IsModelNew = 0x00206F68; // type:func // guess
+// 0x206FA8: (parameter flag 0x40 and object flags 0x22) or (parameter flag 0x80 and object flags 0x42); the hit effect code
+// switches to another spark kind and sound when it is true.
+BtlCharApi_HasWeaponOut = 0x00206FA8; // type:func // guess

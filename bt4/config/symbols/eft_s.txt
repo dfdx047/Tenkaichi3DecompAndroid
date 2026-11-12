@@ -1,0 +1,67 @@
+// Effect tasks, 0x178AB0..0x17CB40 (src/battle/eft_s.c, include/battle/eft_s.h). 27 of 31 functions match.
+//
+// --- Ki blast type 2, second half (the first half, 0x178530..0x178AB0, is in eft_r: EftKiObj_AddHitRecord, _Turn,
+// _Launch, _StepTex, _Init, _Term, _Update). A model thrown under gravity that breaks into five sprite fragments.
+// Task class 0x2C3E18 = { EftKiObj_Update, EftKiObj_Init, EftKiObj_Term, EftKiObj_PostUpdateCb, EftKiObj_Reset,
+// EftKiObj_DrawCb }; manager class 0x2C3E00 = { EftKiObjMgr_Update, EftKiObjMgr_Init, EftKiObjMgr_Term, 0, 0, 0 }
+// (a per-character sub-manager: its init registers the child list with EftChar_SetList).
+// The three callbacks are one-call wrappers; the names follow their slot in the class table.
+EftKiObj_Reset = 0x00178AB0; // type:func
+EftKiObj_PostUpdateCb = 0x00178AC8; // type:func
+EftKiObj_DrawCb = 0x00178AE0; // type:func
+// Manager: Init allocates 0x58 bytes of resources (character pack entry 3: model = sub-entry 1, fragment texture =
+// sub-entry 2) and a list of 10 tasks of 0x1E0 bytes; Term frees them; Update clears the "texture built" bit.
+EftKiObjMgr_Init = 0x00178AF8; // type:func
+EftKiObjMgr_Term = 0x00178BB8; // type:func
+EftKiObjMgr_Update = 0x00178C00; // type:func
+// 0x178C10(arg by value, 0x50 bytes): adds a task to the owner's list 1. Called by the fighter's ki blast launcher
+// (BtlFx_FireKiBlast) for blast type 2.
+EftKiObj_Create = 0x00178C10; // type:func
+// 0x178C98(task, 0x40-byte block): copies the block to work + 0x90 of a live task of this class. No caller.
+EftKiObj_SetBlock = 0x00178C98; // type:func // guess
+// 0x178D18 (called by EftKiObj_Update): position += velocity, velocity.y += gravity, spin angle from the frame
+// counter, death when the fragment timer is 0 or there is no model; then the fragments.
+EftKiObj_Step = 0x00178D18; // type:func
+// 0x178E40: after the hit pass. Model visibility; a hit (task result & 0x3F) breaks the blast at the hit position;
+// a deflection (result & 0xC0) calls EftKiObj_Turn and takes the corrected position.
+EftKiObj_PostUpdate = 0x00178E40; // type:func
+// 0x178F88: model matrix (scale, rotation about X, position), then the fragments.
+EftKiObj_Draw = 0x00178F88; // type:func
+// Fragments: Break creates five (20 libc rand() draws), StepFrags moves them for 15 frames, DrawFrags draws them
+// as sprites (EftSpr_DrawRot).
+EftKiObj_Break = 0x00179078; // type:func
+EftKiObj_StepFrags = 0x001791E8; // type:func
+EftKiObj_DrawFrags = 0x00179288; // type:func
+//
+// --- "Chain" effect, first half (the class callbacks from 0x17CB40 on and the public API are in eft_t:
+// EftChain_PostUpdate, _Reset, _Draw, EftChainMgr_*, EftChain_Create ...). Up to 16 strands of ribbon nodes
+// radiating from a point, driven by a three-key parameter block; nodes come from the shared pool gEftChain (500
+// nodes of 0x60 bytes). Drawing only. Task class 0x2C3E48 = { EftChain_Update, EftChain_Init, EftChain_Term,
+// EftChain_PostUpdate, EftChain_Reset, EftChain_Draw }.
+// Texture: SetTex(work, set, a, b) picks two entries of the texture set; BuildTex builds TEX0 once per frame per
+// set entry (called at the end of every update).
+EftChain_SetTex = 0x001793A8; // type:func
+EftChain_BuildTex = 0x001793E0; // type:func
+// Parameters: SetKey(out, work, key) loads one key (seconds to frames, angle rows times pi); BlendKeys(work)
+// interpolates between two keys by the key timer.
+EftChain_SetKey = 0x001794A0; // type:func
+EftChain_BlendKeys = 0x001798D8; // type:func
+// Node pool: AllocNodes(strand, count) links up to count free nodes, FreeNodes(strand) releases them.
+EftChain_AllocNodes = 0x0017A458; // type:func
+EftChain_FreeNodes = 0x0017A568; // type:func
+// Strands: InitStrand lays the nodes out, UpdateStrand moves them each frame, DrawStrand / DrawStrandClipped
+// draw the ribbon (GS packet / shared polygon clipper), StartStrand sets up a new strand, UpdateStrands and
+// DrawStrands loop over the 16 slots (DrawStrands is called by EftChain_Draw).
+EftChain_InitStrand = 0x0017A5A0; // type:func
+EftChain_UpdateStrand = 0x0017A9D0; // type:func
+EftChain_DrawStrand = 0x0017AEA0; // type:func
+EftChain_DrawStrandClipped = 0x0017B568; // type:func
+EftChain_StartStrand = 0x0017B8F8; // type:func
+EftChain_UpdateStrands = 0x0017BE70; // type:func
+EftChain_DrawStrands = 0x0017C358; // type:func
+// 0x17C3F0: starts a burst of strands when the spawn timer is due.
+EftChain_Spawn = 0x0017C3F0; // type:func
+// Class callbacks (slots 1, 2, 0 of 0x2C3E48).
+EftChain_Init = 0x0017C698; // type:func
+EftChain_Term = 0x0017C8A8; // type:func
+EftChain_Update = 0x0017C8F8; // type:func

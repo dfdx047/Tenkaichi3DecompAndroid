@@ -1,0 +1,51 @@
+*.iso
+*.rvz
+/disc/
+/wii/
+/tools/
+/.venv/
+/build/
+/asm/
+/assets/
+*.o
+.splache
+__pycache__/
+/build.ninja
+.ninja_*
+/port/build/
+/gamedata/
+port/tests/ps2float/*.o
+port/tests/ps2float/*.s
+!port/tests/ps2float/crt0*.s
+port/tests/ps2float/*.elf
+port/tests/ps2float/*.bin
+bt3_pipelines.txt
+bt3_crash.txt
+saves/
+bt3_settings.txt
+docs/port/img/
+port/tests/ps2float/test.elf
+port/tests/ps2float/*.o
+/bt3-setup
+/Tenkaichi3Decomp-setup
+/play.sh
+install.log
+port/build_release/
+
+# stages and songs from outside the disc that a player drops in next to the game (never committed)
+/stages/
+/songs/
+/textures/
+# script mods a player drops in next to the game, and their choices (the examples are in port/examples/mods)
+/mods/
+bt3_mods.txt
+
+# the private key that signs the releases for the automatic update (port/tools/update_key.py generate): never in the repository
+port/tools/update_signing_key.txt
+
+# Local Supabase tooling and private player/test sessions.
+.env
+.env.*
+supabase/.temp/
+supabase/.branches/
+supabase/*session*.json

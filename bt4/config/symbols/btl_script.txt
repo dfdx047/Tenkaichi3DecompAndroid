@@ -1,0 +1,195 @@
+// GSC script engine, src/sys/gsc.c = 0x257870..0x258D20. "Gsc" is the file magic ("GSCF", "GSHD", "GSCD",
+// "GSAC", "GSDT"); every function name below is a guess from what the matching C does (no strings survive).
+
+// 0x257870(commands, fileMax, taskMax): allocates both pools, inits the four lists, fills the free lists.
+Gsc_Init = 0x00257870; // type:func // guess
+// 0x2579C0(commands): Gsc_Init(commands, 10, 50). Called by the battle load with the battle command table.
+Gsc_InitDefault = 0x002579C0; // type:func // guess
+// 0x2579E0: empties the lists, frees both pools, clears the active flag.
+Gsc_Exit = 0x002579E0; // type:func // guess
+// 0x257A40: empty.
+Gsc_Nop = 0x00257A40; // type:func // guess
+// 0x257A48(commands): stores the command table pointer.
+Gsc_SetCommands = 0x00257A48; // type:func // guess
+// 0x257A50: steps every running task once (called each unpaused battle frame).
+Gsc_Update = 0x00257A50; // type:func // guess
+// 0x257AB0(id): steps one task, found by id.
+Gsc_StepTaskById = 0x00257AB0; // type:func // guess
+// 0x257AE8: calls the current command handler of every task with phase 3.
+Gsc_NotifyAll = 0x00257AE8; // type:func // guess
+// 0x257B80(task): runs a task until a command waits or the action ends.
+Gsc_StepTask = 0x00257B80; // type:func // guess
+// 0x257DA0(file): registers a loaded GSCF file, returns its handle. 0x257E80(handle): kills its tasks, releases it.
+Gsc_LoadFile = 0x00257DA0; // type:func // guess
+Gsc_UnloadFile = 0x00257E80; // type:func // guess
+// 0x257EB8 / 0x257F20 / 0x257F40: loaded file by handle, is it loaded, loaded file count.
+Gsc_FindFile = 0x00257EB8; // type:func // guess
+Gsc_IsFileLoaded = 0x00257F20; // type:func // guess
+Gsc_GetFileCount = 0x00257F40; // type:func // guess
+// 0x257F60 / 0x257FC8 / 0x257FE8 / 0x258008: running task by id, is it running, task count, task's wait time.
+Gsc_FindTask = 0x00257F60; // type:func // guess
+Gsc_IsTaskAlive = 0x00257FC8; // type:func // guess
+Gsc_GetTaskCount = 0x00257FE8; // type:func // guess
+Gsc_GetTaskTime = 0x00258008; // type:func // guess
+// 0x258038(handle): Gsc_StartAction(handle, -1). 0x258050(handle, action): start and step until it ends.
+Gsc_StartMain = 0x00258038; // type:func // guess
+Gsc_RunAction = 0x00258050; // type:func // guess
+// 0x258098(handle, action): takes a task from the pool, points it at the action, returns the task id.
+Gsc_StartAction = 0x00258098; // type:func // guess
+// 0x258140(id): frees the task. 0x258178(id): sets its abort flag. 0x2581A8(handle, action): action exists.
+Gsc_KillTask = 0x00258140; // type:func // guess
+Gsc_AbortTask = 0x00258178; // type:func // guess
+Gsc_HasAction = 0x002581A8; // type:func // guess
+// 0x2581E0: the task being stepped. 0x2581E8(action): start an action of the same file and step it at once.
+Gsc_GetCurrentTask = 0x002581E0; // type:func // guess
+Gsc_CallAction = 0x002581E8; // type:func // guess
+// 0x258248: wait time of the current task. 0x258268: bit 0 of its flags.
+Gsc_GetCurrentTime = 0x00258248; // type:func // guess
+Gsc_IsCurrentBegun = 0x00258268; // type:func // guess
+// 0x258290..0x258470: walkers over a file / a command whose output was compiled out (debug dump). Names from the shape only.
+Gsc_DumpFile = 0x00258290; // type:func // guess
+Gsc_DumpCurrent = 0x002582B0; // type:func // guess
+Gsc_DumpCommand = 0x002582D8; // type:func // guess
+Gsc_DumpFileNode = 0x00258340; // type:func // guess
+Gsc_DumpCommandsById = 0x00258470; // type:func // guess
+// 0x2585C8..0x2586B0: fetch the next operand of the current command as int / float / pointer; the "Or" forms
+// return the argument when the command has no operand left.
+Gsc_GetInt = 0x002585C8; // type:func // guess
+Gsc_GetFloat = 0x002585F0; // type:func // guess
+Gsc_GetString = 0x00258618; // type:func // guess
+Gsc_GetIntOr = 0x00258638; // type:func // guess
+Gsc_GetFloatOr = 0x00258678; // type:func // guess
+Gsc_GetStringOr = 0x002586B0; // type:func // guess
+// 0x2586E0: skip one operand. 0x258710: operand cursor back to the first operand.
+Gsc_SkipOperand = 0x002586E0; // type:func // guess
+Gsc_ResetOperands = 0x00258710; // type:func // guess
+// 0x258728(letter) / 0x258748(letter, n): point the operand cursor at the n-th option with that letter.
+Gsc_FindOption = 0x00258728; // type:func // guess
+Gsc_FindOptionN = 0x00258748; // type:func // guess
+// 0x258810(n): point the cursor at the n-th option of any letter, return the letter. 0x2588B8 / 0x258928: counts.
+Gsc_SeekOption = 0x00258810; // type:func // guess
+Gsc_CountOptions = 0x002588B8; // type:func // guess
+Gsc_CountOption = 0x00258928; // type:func // guess
+// 0x2589A8: the word at the cursor is an operand.
+Gsc_HasOperand = 0x002589A8; // type:func // guess
+// 0x2589C8 / 0x2589D0 / 0x2589E0: serial << 16, handle | serial, id & 0xFFFF0000.
+Gsc_MakeFileHandle = 0x002589C8; // type:func // guess
+Gsc_MakeTaskId = 0x002589D0; // type:func // guess
+Gsc_GetFileHandle = 0x002589E0; // type:func // guess
+// 0x2589F0(cmd): address of the command after this one.
+Gsc_NextCommand = 0x002589F0; // type:func // guess
+// 0x258A60(task): value address of the operand at the cursor or NULL. 0x258A98(task, type): same, and advance.
+GscTask_PeekOperand = 0x00258A60; // type:func // guess
+GscTask_NextOperand = 0x00258A98; // type:func // guess
+// 0x258AD0(id): handler from the command table.
+Gsc_FindHandler = 0x00258AD0; // type:func // guess
+// 0x258B00..0x258C58: pool moves between the free and the used list, for files then for tasks.
+Gsc_GetFreeFile = 0x00258B00; // type:func // guess
+Gsc_LinkFile = 0x00258B20; // type:func // guess
+Gsc_FreeFile = 0x00258B60; // type:func // guess
+Gsc_GetFreeTask = 0x00258BF8; // type:func // guess
+Gsc_LinkTask = 0x00258C18; // type:func // guess
+Gsc_FreeTask = 0x00258C58; // type:func // guess
+// 0x258C98(code, action, unused): first command word of the GSAC chunk with that id.
+Gsc_FindAction = 0x00258C98; // type:func // guess
+
+// Engine globals (sdata 0x2FF098..0x2FF0B8, bss 0x333B80..0x333BC0).
+gGscActive = 0x002FF098; // size:0x4 // guess
+gGscCommands = 0x002FF09C; // size:0x4 // guess
+gGscFileSerial = 0x002FF0A0; // size:0x4 // guess
+gGscFileMax = 0x002FF0A4; // size:0x4 // guess
+gGscFilePool = 0x002FF0A8; // size:0x4 // guess
+gGscCurTask = 0x002FF0AC; // size:0x4 // guess
+gGscTaskMax = 0x002FF0B0; // size:0x4 // guess
+gGscTaskPool = 0x002FF0B4; // size:0x4 // guess
+gGscTaskList = 0x00333B80; // size:0x10 // guess
+gGscFileFree = 0x00333B90; // size:0x10 // guess
+gGscFileList = 0x00333BA0; // size:0x10 // guess
+gGscTaskFree = 0x00333BB0; // size:0x10 // guess
+
+// Battle event script, src/battle/btl_script.c = 0x258D20..0x259EC8. Names are guesses from what the matching C
+// does and from who calls it; the module's own callers are the command handlers 0x259EC8..0x25C200.
+// 0x258D20: memset of the work (0xBE0), text id -1, story -1, 300 speaker slots = {0, 0x7FFF}.
+BtlScript_InitWork = 0x00258D20; // type:func // guess
+// 0x258D98: calls BtlScript_InitWork; called by Battle_Load right after Gsc_InitDefault.
+BtlScript_Init = 0x00258D98; // type:func // guess
+// 0x258DB0: empty; called by the load job after BtlScript_ScanEvents.
+BtlScript_Nop = 0x00258DB0; // type:func // guess
+// 0x258DB8(script): walks every action with id >= 10000 and fills the one-byte records at work+0x14C.
+BtlScript_ScanEvents = 0x00258DB8; // type:func // guess
+// 0x259008: clears work+0x180 / +0x184 and calls BtlScript_ResetView; called by Battle_ResetWork in mode 1 before the
+// main action is started again.
+BtlScript_Restart = 0x00259008; // type:func // guess
+// 0x259030: every unpaused frame after Gsc_Update; calls BtlScript_UpdateEvents when BtlSeq_GetState() is 3 or 5.
+BtlScript_Update = 0x00259030; // type:func // guess
+// Work of the module (bss 0x333BC0, 0xBE0 bytes; splat splits it at every address the code takes).
+gBtlScript = 0x00333BC0; // size:0xBE0 // guess
+// The battle's command table {id, handler}, 47 entries + terminator, handed to Gsc_InitDefault.
+gBtlScriptCommands = 0x002C6EC0; // size:0x178 // guess
+// 0x259070: shake while work->shakeTime != 0, camera key interpolation into BtlFacade_SetFixedCamera, text draw.
+// One caller, 0x2129D8 (battle frame code, not decompiled).
+BtlScript_UpdateView = 0x00259070; // type:func // guess
+// 0x259288: Heap_Free of work+4 and work+8 when set, then BtlScript_InitWork. No caller.
+BtlScript_Free = 0x00259288; // type:func // guess
+// 0x2592D8 / 0x259360: walk the engine's running tasks for an action id in 10000..10051: found / abort them.
+// Neither has a caller.
+BtlScript_IsEventRunning = 0x002592D8; // type:func // guess
+BtlScript_AbortEvents = 0x00259360; // type:func // guess
+// 0x2593D0 / 0x2593E0: set / get work+0. The setter is called by command 2; the getter feeds the file ids
+// (voice = base + value * 300 + line, text = base + value), which is why it is called a story number.
+BtlScript_SetStory = 0x002593D0; // type:func // guess
+BtlScript_GetStory = 0x002593E0; // type:func // guess
+// 0x2593F0(id) / 0x259440(id): work+4 / work+8 = File_Request(id, 0, 0). 0x259418(n) / 0x259468(n): entry n
+// through the offset table at file + 4. BtlScript_UpdateView draws GetText(textId), hence "text file".
+// Callers: commands 0x2BD (id = story + 0x231 or 0x263 by gProgress->unk0[0]), 0x2BE (id = story + 0x295, or
+// 0x2C7 with the save's voice flag) and 0x643.
+BtlScript_RequestTextFile = 0x002593F0; // type:func // guess
+BtlScript_GetText = 0x00259418; // type:func // guess
+BtlScript_RequestFile8 = 0x00259440; // type:func // guess
+BtlScript_GetFile8Entry = 0x00259468; // type:func // guess
+// 0x259490(n): &work->windows[n] (0x50 bytes each, at work+0x354).
+BtlScript_GetWindow = 0x00259490; // type:func // guess
+// 0x2594B0(window, text) / 0x2594C8(text): set the shown text; clear it if it is still that one.
+BtlScript_SetText = 0x002594B0; // type:func // guess
+BtlScript_ClearText = 0x002594C8; // type:func // guess
+// 0x2594E8(n, who) / 0x259510(n): the 300 {side, member} slots at work+0x3F4, indexed by line number
+// (0x2597A0 reads the slot of the line it plays to pick the voice channel and window). Set by command 0xF.
+BtlScript_SetSpeaker = 0x002594E8; // type:func // guess
+BtlScript_GetSpeaker = 0x00259510; // type:func // guess
+// 0x259528: returns work+0x184, the BtlScriptEvent pointer copied from the request that was started. No caller
+// (command 4 reads the word directly).
+BtlScript_GetCurrentEvent = 0x00259528; // type:func // guess
+// 0x259538: clears the request count, text, camera move and shake, then tail-calls BtlScript_StopVoices.
+BtlScript_ResetView = 0x00259538; // type:func // guess
+// 0x259570(trigger, range): 0xFFFF -> BtlFacade_IsWaitOff(); else BtlEvent_IsNew(side = bit 15, low 12 bits),
+// with a fall-through switch over events 0x16..0x1C when range is set.
+BtlScript_IsTriggered = 0x00259570; // type:func // guess
+// 0x259680(line): (voice flag ? 0x47E0 : 0xD48) + story * 300 + line; handed to Voice_PlayDefault.
+BtlScript_GetVoiceFile = 0x00259680; // type:func // guess
+// 0x2596E0(trigger, line, once) / 0x259720(trigger, action): append a request of kind 1 / kind 2. Both are
+// called by command 7 only: one AddEvent per option 'a', one AddLine(.., 1) per option 'v'.
+BtlScript_AddLine = 0x002596E0; // type:func // guess
+BtlScript_AddEvent = 0x00259720; // type:func // guess
+// 0x259768(line): Voice_IsStopped(side of the line's speaker) != 0.
+BtlScript_IsLineVoiceStopped = 0x00259768; // type:func // guess
+// 0x2597A0(line): Voice_PlayDefault(side, voice file), slot = line, BtlScript_SetText(window, line).
+BtlScript_PlayLine = 0x002597A0; // type:func // guess
+// 0x259860(&side, &window, speaker): window 0 when the speaker is BtlCtrl_GetActiveMember(side), else 1.
+BtlScript_GetSpeakerSlot = 0x00259860; // type:func // guess
+// 0x2598C8: any of the four slots at work+0xBC8 is set.
+BtlScript_IsLinePlaying = 0x002598C8; // type:func // guess
+// 0x259910: called by BtlEvent_Raise for events 0x5A / 0x5B; starts every kind-2 request whose trigger is 0xFFFF.
+BtlScript_StartWaitEvents = 0x00259910; // type:func // guess
+// 0x2599E8: the four per-frame steps below, in order; called by BtlScript_Update.
+BtlScript_UpdateEvents = 0x002599E8; // type:func // guess
+BtlScript_UpdateLines = 0x00259A18; // type:func // guess
+BtlScript_UpdateRequests = 0x00259AD0; // type:func // guess
+BtlScript_StartPending = 0x00259C20; // type:func // guess
+BtlScript_UpdateHud = 0x00259D90; // type:func // guess
+// 0x259E20(side, window): slot in use. 0x259E40(side): slot [side][0] = 0, Voice_Stop(side). Neither has a caller.
+BtlScript_IsSlotBusy = 0x00259E20; // type:func // guess
+BtlScript_StopVoice = 0x00259E40; // type:func // guess
+// 0x259E68: clears the four slots, Voice_Stop(0/1), StreamSe_Stop(0/1).
+BtlScript_StopVoices = 0x00259E68; // type:func // guess
+// 0x259EB0: work->textId >= 0. Callers 0x1D9F40 and 0x1DC8C8 (fighter code).
+BtlScript_IsTextShown = 0x00259EB0; // type:func // guess

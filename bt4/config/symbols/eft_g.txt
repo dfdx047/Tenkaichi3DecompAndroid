@@ -1,0 +1,109 @@
+// src/battle/eft_g.c = 0x00147050..0x0014B108. Effect code: shared helpers, three sub-tasks of scene layer 0
+// (the stage effects: storm, smoke emitters, boundary wall) and the start of scene layer 1 (the shot slots).
+// Evidence for the class tables: D_002C3568 (the sub-class list of layer 0) holds {class, index} pairs with
+// 0x2C3658 = index 3, 0x2C3670 = index 4, 0x2C36A0 = index 8; btl_scene.c creates layer 1 from 0x2C36D0.
+
+// Helpers called by the module before this one (0x1410D8..0x146AB0).
+// (rec): class 0..4 of a blast record from its definition (rec+0x64 -> +0x24: kind byte +5, id word +0).
+EftRec_GetDefClass = 0x00147050; // type:func // guess
+// (mtx, dir, pos): orientation matrix whose Z axis is dir bent half way towards the camera's view axis.
+EftUtil_MakeFacingMtx = 0x001470C8; // type:func // guess
+// (out, a, b): the point of segment a-b at the water surface height (EftWater_GetSurfaceY, eft_e).
+EftUtil_ClipSegToWater = 0x001472E8; // type:func // guess
+// 1 when the camera's Y is at or past the stage's water level (BtlStage_GetWaterLevel).
+EftUtil_IsCamUnderWater = 0x001473E8; // type:func // guess
+// (xyz): 1 when a GS screen position is outside 1..0xFFEF or has z <= 0. No caller.
+EftUtil_IsScreenPosClipped = 0x00147430; // type:func // guess
+// Queues one textured Gouraud triangle in the ordering table. No caller.
+EftUtil_DrawTri = 0x00147478; // type:func // guess
+
+// Storm (lightning sprites far away + rain lines around the camera). Class table 0x2C3658:
+// {Update, Init, Term, PostUpdate, Reset, Draw}. Named for what it draws: 4 billboards at distance ~5000 that
+// live 16..31 frames with alpha life/lifeMax, and 64 line primitives falling 19.6 per frame.
+gEftStormClass = 0x002C3658; // size:0x18 // guess
+gEftStorm = 0x002FE9E0; // size:0x4 // guess
+EftStorm_Init = 0x00147928; // type:func // guess
+EftStorm_Term = 0x001479C8; // type:func // guess
+EftStorm_Update = 0x001479F0; // type:func // guess
+EftStorm_DrawBolts = 0x00147AA0; // type:func // guess
+EftStorm_Draw = 0x00148490; // type:func // guess
+EftStorm_PostUpdate = 0x001484B0; // type:func // guess
+EftStorm_Reset = 0x001484B8; // type:func // guess
+EftStorm_SpawnBolt = 0x00148500; // type:func // guess
+EftStorm_InitRain = 0x001486E0; // type:func // guess
+EftStorm_MoveRain = 0x001487B8; // type:func // guess
+EftStorm_DrawRainLines = 0x00148810; // type:func // guess
+EftStorm_WrapRain = 0x00148A38; // type:func // guess
+EftStorm_DrawRain = 0x00148C10; // type:func // guess
+
+// Smoke emitters (40 particles rising from a point, lit by the stage light). Manager class 0x2C3670
+// {Update, Init, Term}; emitter class 0x2C3688 {Update, Init, Term, -, Reset, Draw}. The manager creates one
+// emitter per record of the stage's list (BtlStage_GetFxResB2); 0x136AA8 creates more with EftSmoke_Create.
+gEftSmokeMgrClass = 0x002C3670; // size:0x18 // guess
+gEftSmokeClass = 0x002C3688; // size:0x18 // guess
+gEftSmokeMgr = 0x002FE9E8; // size:0x4 // guess
+EftSmoke_Create = 0x00148DF8; // type:func // guess
+EftSmoke_Stop = 0x00148E38; // type:func // guess
+EftSmoke_GetPos = 0x00148E88; // type:func // guess
+EftSmoke_SetPos = 0x00148ED0; // type:func // guess
+EftSmokeMgr_Init = 0x00148F30; // type:func // guess
+EftSmokeMgr_Term = 0x00149100; // type:func // guess
+EftSmokeMgr_Update = 0x00149130; // type:func // guess
+EftSmoke_Init = 0x00149170; // type:func // guess
+EftSmoke_Term = 0x00149250; // type:func // guess
+EftSmoke_Reset = 0x00149258; // type:func // guess
+EftSmoke_Update = 0x00149260; // type:func // guess
+EftSmoke_Draw = 0x001494B8; // type:func // guess
+
+// Stage boundary wall: a curved textured mesh in front of each fighter that fades in as the fighter nears
+// the stage radius. Manager class 0x2C36A0 {Update, Init, Term}; per-fighter class 0x2C36B8 (all six).
+gEftBoundMgrClass = 0x002C36A0; // size:0x18 // guess
+gEftBoundClass = 0x002C36B8; // size:0x18 // guess
+gEftBound = 0x002FE9F0; // size:0x4 // guess
+gEftBoundList = 0x002FE9F4; // size:0x4 // guess
+EftBound_UpdateAngle = 0x00149818; // type:func // guess
+EftBound_BuildWall = 0x00149870; // type:func // guess
+EftBound_DrawTri = 0x00149EA0; // type:func // guess
+EftBound_DrawMeshCulled = 0x0014A108; // type:func // guess
+EftBound_DrawMesh = 0x0014A2D8; // type:func // guess
+EftBound_Init = 0x0014A448; // type:func // guess
+EftBound_Term = 0x0014A520; // type:func // guess
+EftBound_Update = 0x0014A528; // type:func // guess
+EftBound_PostUpdate = 0x0014A5E0; // type:func // guess
+EftBound_Reset = 0x0014A600; // type:func // guess
+EftBound_Draw = 0x0014A608; // type:func // guess
+EftBoundMgr_Init = 0x0014A6B8; // type:func // guess
+EftBoundMgr_Term = 0x0014A780; // type:func // guess
+EftBoundMgr_Update = 0x0014A7B8; // type:func // guess
+EftBoundMgr_AddChar = 0x0014A7C8; // type:func // guess
+EftBoundMgr_Enable = 0x0014A7F8; // type:func // guess
+EftBoundMgr_Disable = 0x0014A810; // type:func // guess
+
+// Shot slots, scene layer 1 (class 0x2C36D0, left as D_002C36D0 because btl_scene.c uses that name):
+// per character five slots (0, 1 = ki blasts, 2..4 = techniques; the kinds of BtlMemberAuraReq). The per
+// character class is 0x2C36E8 {Update, Init, Term}. The module continues after 0x14B108.
+gEftShotCharClass = 0x002C36E8; // size:0x18 // guess
+gEftShot = 0x002FE9F8; // size:0x4 // guess
+EftShot_AttrMaskFromBits = 0x0014A828; // type:func // guess
+EftShot_TestBits = 0x0014A8C0; // type:func // guess
+EftShot_GetAttrValue = 0x0014A8F0; // type:func // guess
+EftShot_GetAttrKind = 0x0014A958; // type:func // guess
+EftShot_IsSlotFlag2000 = 0x0014AA18; // type:func // guess
+EftShot_HasTwoAttrs = 0x0014AA60; // type:func // guess
+EftShot_GetAttrPair = 0x0014AAB8; // type:func // guess
+EftShot_SetHeldFlagA8 = 0x0014AB60; // type:func
+EftShot_SetHeldFlagA9 = 0x0014AB78; // type:func
+EftShot_Request = 0x0014AB90; // type:func // guess
+EftShot_Nop = 0x0014ABA8; // type:func
+EftShot_SetCurSlot = 0x0014ABB0; // type:func // guess
+EftShot_GetCurSlot = 0x0014ABD8; // type:func // guess
+EftShot_PlayFireSound = 0x0014AC00; // type:func // guess
+EftShotMgr_Init = 0x0014ACB0; // type:func // guess
+EftShotMgr_Term = 0x0014ADE8; // type:func // guess
+EftShotMgr_Update = 0x0014AE48; // type:func // guess
+EftShotChar_Init = 0x0014AE50; // type:func // guess
+EftShotChar_Term = 0x0014AF18; // type:func // guess
+EftShotChar_Update = 0x0014AF30; // type:func // guess
+EftShot_SetCharPool = 0x0014AFC8; // type:func // guess
+EftShot_ResetCharPool = 0x0014AFF0; // type:func // guess
+EftShot_InitSlot = 0x0014B018; // type:func // guess

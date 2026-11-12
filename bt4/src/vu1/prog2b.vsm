@@ -1,0 +1,207 @@
+; ============================================================================================================
+; VU1 program 2b (packet at 0x2C01C0..0x2C04F0, 101 instructions; "prog 3" in the header of vu1_packet.c): FLAT-
+; COLOUR draw of a fighter model, WITHOUT the clip test. Uploaded by Vu1Pkt_LoadProg2(1), whose only caller is
+; ObjShadow_LoadProg (src/sys/gfxm_e_b.c, from ObjShadow_BeginRender): the first shadow pass, the model's
+; silhouette drawn from the shadow camera into the 256 x 256 shadow page, colour 128,128,128,128.
+; Twin of program 2a (prog2a.vsm); the differences are listed at the end of this header.
+;
+; BUILDERS (src/sys/vu1_packet.c)
+;   Vu1Pkt_LoadProg2(alt)   MPG upload (alt != 0: 2b, else 2a), FLUSHE, UNPACK V4-32 of 0x13 quadwords to
+;                           address 0, BASE 0x13, OFFSET 0x1F6. The caller fills 11..18 only.
+;   Vu1Pkt_CallProg2(part)  one per model part (ObjDraw_DrawParts mode 2, src/sys/gfxm_d_c.c): FLUSHE, UNPACK
+;                           V4-32 of 0xB quadwords to address 0 (so 0..10; 11..18 stay), MSCALF 0, BASE, OFFSET,
+;                           then DMA "call" of the part's VIF chain (part + 0x60).
+;
+; ENTRY POINTS (instruction addresses)
+;    0   MSCALF 0 from Vu1Pkt_CallProg2: per-part setup, stops at the E bit at 14 (15 still runs).
+;   16   where the first MSCNT of the part's chain resumes: one batch, ends at the E bit after the xgkick.
+;   99   where every later MSCNT resumes: `b` back to 16.
+;   (inferred) that the chains use MSCNT, one per batch: the chain data is not in this repository as source; the
+;   port's notes on program 0, which draws the same chains, say so (bt3-port docs/port/README.md).
+;
+; VU MEMORY, constants (quadword addresses; filled by the two builders and their callers)
+;    0.. 3   matrix A (columns), ObjDrawPkt.mtxA = the part's node mtxA
+;    4.. 7   matrix B (columns), ObjDrawPkt.mtxB = the node's mtxB
+;    8       offset subtracted from the position before A (ObjDrawPart.ofsA)
+;    9       offset subtracted from the position before B (ObjDrawPart.ofsB)
+;   10       flat colour as floats, r g b a (ftoi0 at init -> vf9). ObjDraw_DrawParts copies the view's colour
+;            (+0x30; ObjShadow_LoadProg sets it to 128,128,128,128) and forces a = 128.0
+;   11..14   matrix S (columns): position -> GS screen coordinates. Here: shadow camera projection times the
+;            flattening matrix (ObjShadow_LoadProg)
+;   15..18   matrix C (columns): fed to the clip instruction. Here a copy of S; its result is not used by this
+;            variant (see the differences)
+;   The two input buffers (VIF double buffer) are 0x13.. and 0x13 + 0x1F6 = 0x209.. .
+;
+; INPUT BATCH at TOP (xtop). The chains are the fighter models' ones, made for program 0, which uses all of it.
+; What this program does with it is verified; the meaning of the header quadwords is from the port's notes on
+; program 0 ("verified on dumps" there), not re-checked here.
+;   +0   copied to the output          (GIF tag "one A+D register")
+;   +1   copied to the output          (that register's data: TEX0_1 of the texture layer)
+;   +2   not read                      (TEX0_2 of the toon layer)
+;   +3   not read                      (primitive GIF tag of the texture layer)
+;   +4   copied to the output; the low 15 bits of its first word are the vertex count (= the NLOOP field of a
+;        GIF tag)                      (primitive GIF tag of the toon layer: ST, RGBAQ, XYZ)
+;   +5   vertices, 3 quadwords each:
+;          +0  position x y z, w = blend weight (1 = all matrix A, 0 = all matrix B)
+;          +1  loaded into vf21 and never used (program 0: the normal)
+;          +2  s, t, 1 (z is whatever the model has there; it is multiplied by 1/w like s and t)
+;   The count must be at least 1 (the loop tests at the bottom).
+;
+; OUTPUT GIF packet at TOP + 257 (vi2 = TOP + 5 + 0xFC), sent with xgkick
+;   +0, +1, +2   input +0, +1, +4 unchanged
+;   +3 + 3n      vertex n:  +0  s/w, t/w, 1/w, (input w)        -> ST / Q
+;                           +1  the flat colour as integers     -> RGBAQ
+;                           +2  ftoi4 of S p / w: x, y in 12.4 fixed point, z through the same conversion;
+;                               4th word = ftoi4 of w / w (16, or 15 after rounding). The ADC
+;                               bit is never set by this variant
+;   Size limit (inferred from the addresses): the output starts 257 into a 502-quadword buffer, so at most 80
+;   vertices per batch fit without running into the other buffer.
+;
+; REGISTERS in the vertex loop
+;   vf1-4    A (0..3) while the next position is transformed, S (11..14) while the current one is projected;
+;            reloaded from memory twice per vertex
+;   vf5-8    B (4..7), then C (15..18); same scheme
+;   vf9      flat colour, integers            vf30 / vf31  the two offsets (8 / 9)
+;   vf19     position being skinned (w = weight)          vf28 / vf29  A (pos - ofsA) / B (pos - ofsB)
+;   vf20     skinned position                 vf24  S p, then divided by w      vf25  C p (clip test only)
+;   vf22     texture coordinates              vf21  second vertex quadword, unused
+;   vf26, vf27, vf25  batch header quadwords +0, +1, +4 (before the loop)
+;   vi2  output packet    vi3  input vertex pointer    vi7  output vertex pointer    vi10  vertices left
+;   vi1  clip result (fcand)    vi11 = 0x7FFF (count mask)    vi13 = 0x8000 (ADC bit)
+;   The loop is software-pipelined: the A half of vertex n + 1 runs at the bottom of vertex n's iteration.
+;
+; DIFFERENCES 2a / 2b (verified: instruction-by-instruction comparison of the two listings)
+;   Everything up to address 78 is identical. After that this program has three extra `nop | nop` lines
+;   (addresses 79, 87, 88) and does NOT have 2a's `isw.w vi13, -1(vi7)` (the write of the ADC "no kick" bit,
+;   2a address 91); the `ibeq vi1, vi0` that skipped it in 2a is still here (92) but now targets the very next
+;   instruction after its delay slot, so it changes nothing. 99 + 3 - 1 = 101.
+;   So 2a drops every triangle that has a vertex outside the clip volume, and 2b draws everything (the clip,
+;   the fcand into vi1 and the constant vi13 = 0x8000 are still computed, but nothing uses them).
+;   The three extra nops change no data flow. (inferred) The program looks like 2a's source with the ADC store
+;   removed and padding left in; why the padding is there is not known.
+;
+; Labels: `*_batch`, `*_vertex` and `*_next` are the branch targets; `*_setup` and `*_resume` are added names for
+; the addresses the VIF enters at (no instruction refers to them). The generated listing also had an `Lnnn:` in
+; front of many other instructions; those came from the disassembler taking a "branch target" from the low bits
+; of every lower word, not only of branches, and were targets of nothing, so they are removed.
+; ============================================================================================================
+
+.vif 0x00000000
+.mpg 0
+
+; ---- 0: per-part setup (MSCALF 0) --------------------------------------------------------------------------
+; Preloads A, B, the offsets and the colour. Nothing is computed except the colour's conversion to integers.
+p2b_setup:
+    nop                                | lq.xyzw vf1, 0(vi0)            ; vf1-4 = matrix A (mem 0..3)
+    nop                                | lq.xyzw vf2, 1(vi0)
+    nop                                | lq.xyzw vf3, 2(vi0)
+    nop                                | lq.xyzw vf4, 3(vi0)
+    nop                                | lq.xyzw vf5, 4(vi0)            ; vf5-8 = matrix B (mem 4..7)
+    nop                                | lq.xyzw vf6, 5(vi0)
+    nop                                | lq.xyzw vf7, 6(vi0)
+    nop                                | lq.xyzw vf8, 7(vi0)
+    nop                                | lq.xyzw vf9, 10(vi0)           ; flat colour, floats
+    nop                                | iaddiu vi11, vi0, 0x7fff       ; vi11 = 0x7FFF
+    nop                                | iaddi vi13, vi11, 1            ; vi13 = 0x8000, the ADC bit
+    ftoi0.xyzw vf9, vf9                | lq.xyzw vf30, 8(vi0)           ; vf9 = colour as integers; vf30 = ofsA
+    nop                                | lq.xyzw vf31, 9(vi0)           ; vf31 = ofsB
+    nop                                | nop
+    nop                                | nop [E]                        ; end of the MSCALF run (the next line still runs)
+    nop                                | nop
+
+; ---- 16: one batch (first MSCNT lands here, later ones through the `b` at the end) ----------------------------
+p2b_batch:
+    nop                                | xtop vi3                       ; vi3 = TOP
+    nop                                | lqi.xyzw vf26, (vi3++)         ; header +0
+    nop                                | lqi.xyzw vf27, (vi3++)         ; header +1; vi3 = TOP + 2
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | iaddiu vi3, vi3, 0x2           ; skip header +2, +3: vi3 = TOP + 4
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | ilwr.x vi10, (vi3)             ; vi10 = first word of header +4 (NLOOP, EOP)
+    nop                                | lqi.xyzw vf25, (vi3++)         ; header +4; vi3 = TOP + 5 = first vertex
+    nop                                | lq.xyzw vf19, 0(vi3)           ; position of vertex 0
+    nop                                | iaddiu vi11, vi0, 0x7fff
+    nop                                | iand vi10, vi10, vi11          ; vi10 = vertex count (drops the EOP bit)
+    nop                                | iaddiu vi2, vi3, 0xfc          ; vi2 = output packet = TOP + 257
+    sub.xyzw vf28, vf19, vf30          | sq.xyzw vf26, 0(vi2)           ; vf28 = pos - ofsA; out +0 = header +0
+    sub.xyzw vf29, vf19, vf31          | sq.xyzw vf27, 1(vi2)           ; vf29 = pos - ofsB; out +1 = header +1
+    nop                                | sq.xyzw vf25, 2(vi2)           ; out +2 = header +4 (the primitive tag)
+    nop                                | iaddiu vi7, vi2, 0x3           ; vi7 = first output vertex
+    ; vertex 0: vf28 = A (pos - ofsA), w taken as 1. vf5-8 = B again (they hold C after a previous batch).
+    mulax.xyzw acc, vf1, vf28x         | lq.xyzw vf5, 4(vi0)
+    madday.xyzw acc, vf2, vf28y        | lq.xyzw vf6, 5(vi0)
+    maddaz.xyzw acc, vf3, vf28z        | lq.xyzw vf7, 6(vi0)
+    maddw.xyzw vf28, vf4, vf0w         | lq.xyzw vf8, 7(vi0)            ; vf28 = A (pos - ofsA)
+
+; ---- 40: vertex loop ------------------------------------------------------------------------------------------
+; On entry: vf19 = this vertex's position, vf28 = its A half, vf29 = pos - ofsB, vf1-4 = A, vf5-8 = B.
+p2b_vertex:
+    mulax.xyzw acc, vf5, vf29x         | lq.xyzw vf21, 1(vi3)           ; vf21 = vertex quadword +1, never used
+    madday.xyzw acc, vf6, vf29y        | nop
+    maddaz.xyzw acc, vf7, vf29z        | nop
+    maddw.xyzw vf29, vf8, vf0w         | nop                            ; vf29 = B (pos - ofsB)
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    sub.xyzw vf20, vf28, vf29          | nop                            ; A half - B half
+    nop                                | nop
+    nop                                | lq.xyzw vf1, 11(vi0)           ; vf1-4 = matrix S (mem 11..14)
+    nop                                | lq.xyzw vf2, 12(vi0)
+    mulw.xyzw vf20, vf20, vf19w        | lq.xyzw vf3, 13(vi0)           ; (A - B) * weight
+    nop                                | lq.xyzw vf4, 14(vi0)
+    nop                                | lq.xyzw vf5, 15(vi0)           ; vf5-8 = matrix C (mem 15..18)
+    nop                                | lq.xyzw vf6, 16(vi0)
+    add.xyzw vf20, vf29, vf20          | lq.xyzw vf7, 17(vi0)           ; vf20 = B + (A - B) * weight: skinned position
+    nop                                | lq.xyzw vf8, 18(vi0)
+    nop                                | nop
+    nop                                | nop
+    mulax.xyzw acc, vf1, vf20x         | nop
+    madday.xyzw acc, vf2, vf20y        | nop
+    maddaz.xyzw acc, vf3, vf20z        | nop
+    maddw.xyzw vf24, vf4, vf0w         | nop                            ; vf24 = S p (p.w taken as 1)
+    nop                                | nop
+    mulax.xyzw acc, vf5, vf20x         | nop
+    madday.xyzw acc, vf6, vf20y        | nop
+    maddaz.xyzw acc, vf7, vf20z        | div q, vf0w, vf24w             ; q = 1 / (S p).w
+    maddw.xyzw vf25, vf8, vf0w         | lq.xyzw vf22, 2(vi3)           ; vf25 = C p; vf22 = s, t, 1
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    clip.xyz vf25, vf25                | nop                            ; clip flags of C p: x, y, z against +-w
+    nop                                | nop
+    mulq.xyzw vf24, vf24               | lq.xyzw vf1, 0(vi0)            ; vf24 = S p / w; vf1-4 = matrix A again
+    mulq.xyz vf22, vf22                | lq.xyzw vf2, 1(vi0)            ; vf22 = s/w, t/w, 1/w
+    nop                                | lq.xyzw vf3, 2(vi0)
+    nop                                | lq.xyzw vf4, 3(vi0)
+    nop                                | fcand vi1, 0x3ffff             ; vi1 = 1 if one of the last 3 vertices was outside (unused)
+    nop                                | sq.xyzw vf22, 0(vi7)           ; out vertex +0 = texture coordinates
+    nop                                | nop                            ; (2b only: extra nop)
+    nop                                | iaddiu vi3, vi3, 0x3           ; next input vertex
+    ftoi4.xyzw vf29, vf24              | lq.xyzw vf19, 0(vi3)           ; vf29 = ftoi4 (S p / w); vf19 = next position
+    nop                                | lq.xyzw vf5, 4(vi0)            ; vf5-8 = matrix B again
+    nop                                | lq.xyzw vf6, 5(vi0)
+    nop                                | lq.xyzw vf7, 6(vi0)
+    sub.xyzw vf28, vf19, vf30          | sq.xyzw vf29, 2(vi7)           ; next: pos - ofsA; out vertex +2 = XYZ of this one
+    sub.xyzw vf29, vf19, vf31          | lq.xyzw vf8, 7(vi0)            ; next: pos - ofsB (vf29 was stored one line up)
+    nop                                | nop                            ; (2b only: extra nop)
+    nop                                | nop                            ; (2b only: extra nop)
+    mulax.xyzw acc, vf1, vf28x         | iaddi vi10, vi10, -1           ; vertices left
+    madday.xyzw acc, vf2, vf28y        | iaddiu vi7, vi7, 0x3           ; next output vertex
+    maddaz.xyzw acc, vf3, vf28z        | sq.xyzw vf9, -2(vi7)           ; out vertex +1 (of the one just done) = flat colour
+    maddw.xyzw vf28, vf4, vf0w         | ibeq vi1, vi0, p2b_next        ; next: vf28 = A (pos - ofsA); dead branch (see header)
+    nop                                | nop                            ; delay slot; 2a has the ADC store after this line
+p2b_next:
+    nop                                | ibne vi10, vi0, p2b_vertex     ; more vertices: loop
+    nop                                | nop
+
+; ---- batch done: send the packet and stop until the next MSCNT ---------------------------------------------
+    nop                                | xgkick vi2                     ; GIF packet at vi2 -> GS
+    nop                                | nop [E]                        ; end of this run
+    nop                                | nop
+p2b_resume:
+    nop                                | b p2b_batch                    ; the next MSCNT resumes here
+    nop                                | nop

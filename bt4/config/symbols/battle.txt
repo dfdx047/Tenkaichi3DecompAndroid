@@ -1,0 +1,66 @@
+// Battle scene top level, src/battle/battle.c = 0x12B570..0x12BD58.
+// The eight functions of the file (Battle_Restart, Battle_Init, Battle_Term, Battle_Update, Battle_Draw, Battle_DrawSplit,
+// Battle_Loop, Battle_Main), Battle_GetWork, Battle_GetSetup, Battle_IsSplitScreen, Battle_GetMode and gBattleWork are
+// named in game.txt and not repeated here. Everything below is a callee of battle.c that was read but not decompiled.
+
+// --- Battle work accessors (the file before battle.c, 0x126EC8..0x12B570) -------------------
+// 0x126F18(): Adx_StopAll; work->flags (+0x19F0) = 0; clears the result block (+0x1938, 0x48 bytes) and the +0x1980
+// block; Bgm_Play(0x10B16 + work->0xC). First call of Battle_Restart.
+Battle_ResetWork = 0x00126F18; // type:func // guess
+// 0x126FB0(): returns at once when flag 0x100 (pause) is set; else 0x129170 (result->0x18 += 1, the play-time
+// counter) and 0x1297B8 (rotates the two event bit sets of the +0x1980 block). Called once per frame by Battle_Loop.
+Battle_UpdateWork = 0x00126FB0; // type:func // guess
+// 0x127008(): Battle_GetWork() + 0x1938. Its callers test win/abort/rematch bits in +0 and +4.
+Battle_GetResult = 0x00127008; // type:func // guess
+// 0x127068(): 0x249CF0(1), 0x2579C0(table 0x2C6EC0), pushes the battle loader job (step 0x127C40) and spins
+// Load_RunBlocking until it is done, then stores BtlObj ids in both sides' +0x268. First call of Battle_Init.
+Battle_Load = 0x00127068; // type:func // guess
+// 0x1270E8(): the inverse (0x249D80, 0x128790, 0x259288, 0x2579E0). Called near the end of Battle_Term.
+Battle_Unload = 0x001270E8; // type:func // guess
+// 0x128988(): (Battle_GetResult()->0x4 & 0x18000) != 0. BtlSeq_Update raises battle flag 0x8000 (restart) when it is true.
+Battle_IsRematchRequested = 0x00128988; // type:func // guess
+
+// --- Fighter manager (gBtlChars) ---------------------------------------------------------------
+// 0x1C2640(n): Heap_Alloc + memset of gBtlChars (0x280 bytes) and of its three arrays (+4: n * 0x1600 fighters,
+// +8, +0xC). Battle_Init passes 2. 0x1C2810(): frees the three arrays and gBtlChars, gBtlChars = NULL.
+// 0x1C2858(): calls 0x1D3568 on every BtlChar_Get(i), then zeroes the manager's counters (+0x10..+0x1C) and tables.
+BtlChar_AllocAll = 0x001C2640; // type:func // guess
+BtlChar_FreeAll = 0x001C2810; // type:func // guess
+BtlChar_ResetAll = 0x001C2858; // type:func // guess
+
+// --- Battle cameras / views ----------------------------------------------------------------------
+// gBtlCam (gp 0x2FEBD4) -> 0xC50-byte block: two 0x290-byte views at +0x720, +0xC40 pointer to the selected view.
+// gBtlCamView (gp 0x2FEBD0): the view being updated/drawn; the stage draw 0x115950/0x115DE0 takes it as argument.
+// 0x23EB80(): Heap_Alloc(0xC50) into gBtlCam, 0x23D450, 0x23EB48. 0x23EBB0(): Heap_Free(gBtlCam), 0x23D498.
+// 0x23EF98(i): cam->0xC40 = &cam->views[i]; gBtlCamView = that.
+// 0x23EFD0(f): 0x23E6A0(selected view, f): loads the view's two matrices (+0x140, +0x180) through 0x121370 /
+// 0x1212D8, calls View_ApplyScissor(view) when f != 0, sets gBtlCamView.
+// 0x23EBD8(i): for the selected view: reads side i's fighter object (setup +0x328 + i*0x270) position/target into
+// view+0x260 / +0x270 (0x207DD0), then 0x23EAD0(view, 1). Called for view 0 and 1 every frame.
+// 0x23EFF0(): returns 1 when one full-screen view replaces the per-player views this frame (0x23EF08 >= 0, or
+// 0x23DBC0 != 0); Battle_Update returns !that and forwards it to 0x12D088.
+BtlCam_Init = 0x0023EB80; // type:func // guess
+BtlCam_Term = 0x0023EBB0; // type:func // guess
+BtlCam_UpdateView = 0x0023EBD8; // type:func // guess
+BtlCam_SelectView = 0x0023EF98; // type:func // guess
+BtlCam_ApplyView = 0x0023EFD0; // type:func // guess
+BtlCam_UpdateOverride = 0x0023EFF0; // type:func // guess
+gBtlCamView = 0x002FEBD0; // size:0x4 // guess
+gBtlCam = 0x002FEBD4; // size:0x4 // guess
+
+// --- Battle game layer: HUD + sequence wrappers (0x2128C0..0x2129F0) ----------------------------
+// 0x2128C0(): 0x212F90, 0x22F9A8, 0x219648, BtlSeq_Reset. 0x212910(): 0x218BA8, 0x212FC8, 0x22F9C8(split ? 2 : 1),
+// BtlSeq_Init. 0x212960(): 0x218D38, 0x212FE0, 0x22F9F0, BtlSeq_Term. 0x212990(): 0x218D88, BtlSeq_PreUpdate.
+// 0x2129B0(): tail call of BtlSeq_Update (its result ends Battle_Loop). 0x2129C8(): 0x219710, 0x259070, 0x213220 (HUD draw pass).
+BtlGame_Reset = 0x002128C0; // type:func // guess
+BtlGame_Init = 0x00212910; // type:func // guess
+BtlGame_Term = 0x00212960; // type:func // guess
+BtlGame_PreUpdate = 0x00212990; // type:func // guess
+BtlGame_Update = 0x002129B0; // type:func // guess
+BtlGame_Draw = 0x002129C8; // type:func // guess
+
+// --- Misc ---------------------------------------------------------------------------------------
+// 0x252C18(): for each of the 3 gFade entries: entry->0x58 = 0 and 0x267AB8(entry + 0x40). Called by Battle_Restart and Battle_Term.
+Fade_ResetAll = 0x00252C18; // type:func // guess
+// 0x3347A0: only use is as the first argument of Dbg_ProfMark / Dbg_ProfColor in Battle_Draw / Battle_DrawSplit.
+gBattleProf = 0x003347A0; // guess

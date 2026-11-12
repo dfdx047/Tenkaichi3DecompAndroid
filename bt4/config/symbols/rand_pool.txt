@@ -1,0 +1,18 @@
+// --- Random (src/sys/rand.c) ---------------------------------------------------------------
+// 0x254A20(seed): MT19937 init_genrand (multiplier 1812433253).
+Rand_Seed = 0x00254A20; // type:func
+// 0x254AA0(key, len): MT19937 init_by_array (19650218, 1664525, 1566083941).
+Rand_SeedByArray = 0x00254AA0; // type:func
+// mag01[2] = {0, 0x9908B0DF} (MATRIX_A), indexed by y & 1 in Rand_Next.
+gRandMag01 = 0x002FF068; // size:0x8
+
+// --- Battle memory pool (src/battle/btl_pool.c) --------------------------------------------
+// 0x1A7250(v): stores v in the same never-read global that BtlPool_Init stores its argument in.
+BtlPool_SetInitArg = 0x001A7250; // type:func // guess
+// 0x1A7258(): sum of AlignUp32(arena size) over every slot whose bit is set in the mask.
+BtlPool_CalcArenaSize = 0x001A7258; // type:func
+// 0x1A73B0(): gives each arena slot its slice of the +0x90 block via BtlPool_InitSlot.
+BtlPool_CarveArenas = 0x001A73B0; // type:func
+// 0x1A75C8(slot, size, mem): slot->base = slot->cur = mem, slot->size = size; returns mem + size.
+BtlPool_InitSlot = 0x001A75C8; // type:func
+gBtlPoolInitArg = 0x002FEAE4; // size:0x4 // guess

@@ -1,0 +1,23 @@
+name: Feature request
+description: Propose a change to gameplay, the interface, documentation or development tools.
+title: '[Enhancement] '
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Use case
+      description: Describe the current limitation, the affected mode or tool, and who encounters it.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the expected interaction and the criteria for evaluating the change.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and references
+      description: Include relevant examples, workarounds or approaches already tested.

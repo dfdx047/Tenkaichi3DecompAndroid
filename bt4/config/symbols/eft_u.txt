@@ -1,0 +1,57 @@
+// Effect modules 0x180BF8..0x1853C8: src/battle/eft_u.c + eft_u_b.c, include/battle/eft_u.h.
+//
+// 1. Vanish lines, 0x180BF8..0x182CE8: the rest of the module eft_t names EftShotFx (0x1809C0 FindFree, 0x180A00 Start,
+// 0x180AD0 EftShotFxMgr_Init; global gEftShotFx = 0x2FF1B0 is in eft_t.txt). The prefix is kept so the module has one
+// name; what it draws is the teleport effect (fighter effect requests 0xC..0xF, object animation event bit 42): black
+// vertical streaks on the body and in a column around it. A better module name would be EftVanish.
+// Callbacks of the task class D_002C3EC0 = {update 0x180CC0, init 0x180AD0, term, post-update, 0, draw}.
+EftShotFx_Term = 0x00180BF8; // type:func
+EftShotFx_Update = 0x00180CC0; // type:func
+EftShotFx_PostUpdate = 0x00180CE0; // type:func
+EftShotFx_Draw = 0x00180D00; // type:func
+// The line pool (200 of 0x60 bytes) and list: Alloc finds a free line, Add fills one and links it at the tail,
+// UpdateLines steps all and unlinks the finished ones, Step is one frame of one line, DrawLines draws the active ones.
+EftShotFx_Alloc = 0x00180D58; // type:func
+EftShotFx_Add = 0x00180DB8; // type:func
+EftShotFx_UpdateLines = 0x00180FA8; // type:func
+EftShotFx_Step = 0x00181068; // type:func
+EftShotFx_DrawLines = 0x00181198; // type:func
+// UpdateReqs: steps the two request slots and calls the spawners on their frames. UpdateTexture: keeps the texture
+// set referenced while lines exist (func_001ADF20).
+EftShotFx_UpdateReqs = 0x00181278; // type:func
+EftShotFx_UpdateTexture = 0x001814B0; // type:func
+// BuildQuad: the four corners of a line (vertical, widened across the line of sight). DrawQuad: one 0x90-byte GS
+// packet (triangle strip of four vertices) linked into the ordering table at the average depth.
+EftShotFx_BuildQuad = 0x001814F0; // type:func
+EftShotFx_DrawQuad = 0x00181750; // type:func
+// Spawners. BodyLines: rings of lines on the body segments of table 0x2ECEC0. VanishColumn / AppearColumn: rings on
+// a column through node 3 (table 0x2ED0E8), growing and fading out / shrinking and fading in; which request uses
+// which is verified, "vanish" / "appear" follow from the fighter code that raises requests 0xC / 0xD. // guess
+EftShotFx_SpawnBodyLines = 0x00181B58; // type:func
+EftShotFx_SpawnVanishColumn = 0x00182010; // type:func // guess
+EftShotFx_SpawnAppearColumn = 0x001825B0; // type:func // guess
+// Screen box test of a projected vertex (the code of EftWater_IsOnScreen, taking a pointer).
+EftShotFx_IsOnScreen = 0x00182B58; // type:func
+// The module's two tables in .rodata (file-scope tables of the object: they sit in front of the jump table of
+// EftShotFx_Start, 0x2ED180, and are read only by the spawners above). Segs: 23 rows {node, end node, spacing,
+// length base, radius base, lines per ring}; Rows: 6 rows {from, to, spacing, length base, radius base, lines}.
+gEftShotFxSegs = 0x002ECEC0; // size:0x228
+gEftShotFxRows = 0x002ED0E8; // size:0x90
+//
+// 2. Particle emitter, effect pack part kind 5: head of the EftPtcl module of eft_v (0x182CE8..0x1853C8; gEftPtcl =
+// 0x2FEA74 is in eft_v.txt).
+// PickTexture: copies two entries (image, palette) of a texture set into the emitter. UploadTexture: uploads them
+// once per frame per set entry and caches the TEX0 in the set.
+EftPtcl_PickTexture = 0x00182CE8; // type:func
+EftPtcl_UploadTexture = 0x00182D20; // type:func // guess
+// SetKey: the emitter's current values = one key of the definition. BlendKeys: = two keys blended by the key time.
+EftPtcl_SetKey = 0x00182DE0; // type:func
+EftPtcl_BlendKeys = 0x00183230; // type:func
+// The particle pool (500 of 0x130 bytes, round-robin search) and the emitter's list.
+EftPtcl_AllocPtcl = 0x00183F10; // type:func
+EftPtcl_UnlinkPtcl = 0x00184018; // type:func
+EftPtcl_FreePtcls = 0x00184060; // type:func
+// Spawn: creates `count` particles with random values around the current key (libc rand). StepPtcls: one frame of
+// every particle of an emitter; frees the ones whose life is over.
+EftPtcl_Spawn = 0x001840A0; // type:func
+EftPtcl_StepPtcls = 0x00184BD8; // type:func

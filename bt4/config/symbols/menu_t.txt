@@ -1,0 +1,46 @@
+// Menu overlay DBZP.BIN, 0x38CB38..0x3911A8: day-event handlers of the "sim" day screen (mode 22), entries 3..30 of
+// gSimEvent (0x3B7388; SimEv00..02 are in menu_s.txt, SimEv31..36 in menu_u.txt). All names are guesses.
+// menu_t.c (0x38CB38..0x3900D0): SimEv03 = board row 2 (rest), SimEv04 = board row 3 (full health), SimEv05..27 =
+// random events 0..22 of board row 1. Numbered like the table because the scripts have no names of their own.
+SimEv03 = 0x0038CB38; // type:func // guess
+SimEv04 = 0x0038CC80; // type:func // guess
+SimEv05 = 0x0038CD68; // type:func // guess
+SimEv06 = 0x0038CEA8; // type:func // guess
+SimEv07 = 0x0038D090; // type:func // guess
+SimEv08 = 0x0038D290; // type:func // guess
+SimEv09 = 0x0038D4A0; // type:func // guess
+SimEv10 = 0x0038D670; // type:func // guess
+SimEv11 = 0x0038D840; // type:func // guess
+SimEv12 = 0x0038DA20; // type:func // guess
+SimEv13 = 0x0038DC60; // type:func // guess
+SimEv14 = 0x0038DF10; // type:func // guess
+SimEv15 = 0x0038E1D8; // type:func // guess
+SimEv16 = 0x0038E4A8; // type:func // guess
+SimEv17 = 0x0038E7B8; // type:func // guess
+SimEv18 = 0x0038EA88; // type:func // guess
+SimEv19 = 0x0038EC30; // type:func // guess
+SimEv20 = 0x0038EE10; // type:func // guess
+SimEv21 = 0x0038EFF0; // type:func // guess
+SimEv22 = 0x0038F1D0; // type:func // guess
+SimEv23 = 0x0038F3B0; // type:func // guess
+SimEv24 = 0x0038F668; // type:func // guess
+SimEv25 = 0x0038F920; // type:func // guess
+SimEv26 = 0x0038FB98; // type:func // guess
+SimEv27 = 0x0038FE28; // type:func // guess
+// menu_t_b.c (0x3900D0..0x3911A8): the card game of SimEv28 (movie labels "mc_card_anime%02d", "mc_card_num",
+// "mc_maru_batsu"): SelectCard / UnselectCard play "fl_select_in" / "fl_off" on the cursor's card, MoveCursor skips
+// picked cards, Deal shuffles with libc rand(). Then SimEv29 and SimEv30 (random events 24, 25).
+SimEv28_SelectCard = 0x003900D0; // type:func // guess
+SimEv28_UnselectCard = 0x00390140; // type:func // guess
+SimEv28_MoveCursor = 0x003901B0; // type:func // guess
+SimEv28_Deal = 0x00390250; // type:func // guess
+SimEv28 = 0x003903D8; // type:func // guess
+SimEv29 = 0x00390C60; // type:func // guess
+SimEv30 = 0x00390F30; // type:func // guess
+// The card game's state: overlay globals placed in the main executable's .bss (common symbols).
+gSimCardShown = 0x0031EAA0; // size:0x28 // guess
+gSimCardOrder = 0x0031EAC8; // size:0x28 // guess
+gSimCardNext = 0x0031EAF0; // size:0x4 // guess
+gSimCardRank = 0x0031EAF4; // size:0x4 // guess
+gSimCardPicked = 0x0031EAF8; // size:0x1 // guess
+gSimCardWrong = 0x0031EAF9; // size:0x1 // guess

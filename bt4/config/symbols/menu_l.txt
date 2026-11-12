@@ -1,0 +1,54 @@
+// Menu overlay DBZP.BIN, 0x368C18..0x36DBE8.
+// Bracket (menu_l.c, 0x368C18..0x36B3E0): the tournament logic of Dragon World Tour (progress mode 35); tail of the
+// object that starts at 0x3673F8 (menu_k_d.c). All take the bracket work area (gBracket) as their first argument.
+// Decides one match between two CPU entrants with Rand_Range(2) and moves the winner on in the tree.
+Bracket_PlayCpuMatch = 0x00368C18; // type:func // guess
+// Horizontal scroll of the tree for a match's view number (0..11), in pixels.
+Bracket_GetViewX = 0x00368DC8; // type:func // guess
+// Screen x / y of tree position 0..32 (16 leaves, 8 + 4 + 2 + 2 + 1 match nodes).
+Bracket_GetPosX = 0x00368E58; // type:func // guess
+Bracket_GetPosY = 0x00368F90; // type:func // guess
+// Builds the fixed table of 16 matches (entrant slots, next match, tree position, animation numbers).
+Bracket_InitMatches = 0x00368FF0; // type:func // guess
+// 1 when no entrant chosen by a player is still in the tournament.
+Bracket_IsPlayerOut = 0x003692A8; // type:func // guess
+// Copies the players' entrants from gProgress and draws the CPU entrants at random; seeds the boss as entrant 16.
+Bracket_FillEntrants = 0x00369318; // type:func // guess
+// Shuffles the 16 first-round entrants (16 swaps with Rand_Range(16)) and numbers their tree positions.
+Bracket_ShuffleEntrants = 0x00369610; // type:func // guess
+// Gives the seventeen chips of the tree movie the entrants' small pictures.
+Bracket_SetChipTex = 0x003698B0; // type:func // guess
+// Plays every CPU-only match up to the end of the current round.
+Bracket_PlayCpuMatches = 0x003699D0; // type:func // guess
+// Steps to the next match that has a player in it; counts the rounds on the way.
+Bracket_NextMatch = 0x00369AE0; // type:func // guess
+// Takes over the result of the battle just fought: winner side, remaining health, "no player left".
+Bracket_ApplyResult = 0x00369BB0; // type:func // guess
+// Starts the movie of the two chips meeting ("fr_vs_action_%d") / of the winner moving up ("fr_win_action_%d").
+Bracket_StartVs = 0x00369EE8; // type:func // guess
+Bracket_StartWin = 0x0036A090; // type:func // guess
+// Background loader of the two fighters' large pictures (files 0x2F9 + character); the blocking version.
+Bracket_UpdateImages = 0x0036A240; // type:func // guess
+Bracket_LoadImages = 0x0036A3E8; // type:func // guess
+// Picks a random unlocked stage from one of two lists (8 stages for the Yamcha Game, 23 otherwise).
+Bracket_PickStage = 0x0036A508; // type:func // guess
+// The battle hand-off of the tournament: BattleSetup_SetSide / SetRule / SetMember for the current match.
+Bracket_SetupBattle = 0x0036A720; // type:func
+// Pays out the prizes of the finished tournament into the save and lists them for the reward window.
+Bracket_GivePrizes = 0x0036AEB0; // type:func // guess
+// Draws whether a dragon ball is found (chance table by tournament, place and level) and which one.
+Bracket_DrawDragonBall = 0x0036B1F0; // type:func // guess
+// SoloSel (menu_l_b.c, 0x36B3E0..0x36DBE8; the object goes on to 0x36E028): the one-character select of the modes
+// 13..30 group, a variant of EntrySel (menu_i_d.c / menu_j.c) with one entrant and the guides "17go" / "18go".
+// Evidence: the screen pattern, the same clip names and helper order as EntrySel.
+SoloSel_SwapRowTex = 0x0036B3E0; // type:func // guess
+SoloSel_SetRowTex = 0x0036B4F8; // type:func // guess
+SoloSel_UpdateImage = 0x0036B638; // type:func // guess
+SoloSel_ChangeImage = 0x0036B7B0; // type:func // guess
+SoloSel_ClipGoto = 0x0036B7F8; // type:func // guess
+SoloSel_Init = 0x0036B948; // type:func
+SoloSel_Term = 0x0036C478; // type:func
+SoloSel_Draw = 0x0036C560; // type:func
+SoloSel_Update = 0x0036CD30; // type:func
+SoloSel_Input = 0x0036CDB8; // type:func
+gSoloSel = 0x003B7348; // size:0x4

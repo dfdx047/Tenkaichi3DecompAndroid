@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "enabled": true,
+  "minimum": "0.1.39.5-R5.3",
+  "release_tag": "v0.1.39.5-R5.3",
+  "require_update": true,
+  "capability": 1,
+  "policy_seconds": 86399,
+  "admission_seconds": 86400,
+  "automatic_return": false
+}

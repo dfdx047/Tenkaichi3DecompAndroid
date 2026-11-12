@@ -1,0 +1,45 @@
+// Menu overlay DBZP.BIN, 0x388618..0x38CB38: mode group 13..30 (handler Ub_Main 0x379A58, archive gMenuArc3,
+// main-menu item 1). All names are guesses from what the code does.
+// SimTop tail (menu_s.c): the last functions of the entry screen of the sim sub family (mode 20; the object
+// starts in menu_r_d.c, work pointer gSimTop). The two tables are in the object's read-only data.
+SimTop_Update = 0x00388618; // type:func // guess
+SimTop_UpdateVoice = 0x00388670; // type:func // guess
+SimTop_Input = 0x003887E0; // type:func // guess
+SimTop_ClipGoto = 0x00388CD0; // type:func // guess
+SimTop_Run = 0x00388D70; // type:func // guess
+gSimTopPlateVoice = 0x003B9ED8; // size:0xC // guess
+gSimTopIdleVoice = 0x003B9EE8; // size:0x8 // guess
+// SurvSel (menu_s_b.c): the course select of the survival sub family (mode 17; labels "fl_survival_%02d_in",
+// "mc_gekiha_suji" = defeated count). SetupBattle calls Battle_ClearWork / BattleSetup_SetRule / SetSide /
+// SetMember / SetPoolMember. Work area gSurvSel, 0x32C bytes.
+SurvSel_SetupBattle = 0x00388EE0; // type:func // guess
+SurvSel_Init = 0x00389170; // type:func // guess
+SurvSel_Term = 0x00389668; // type:func // guess
+SurvSel_Draw = 0x003896D8; // type:func // guess
+SurvSel_Update = 0x00389BF0; // type:func // guess
+SurvSel_UpdateVoice = 0x00389C48; // type:func // guess
+SurvSel_Input = 0x00389D60; // type:func // guess
+SurvSel_ClipGoto = 0x0038A0E8; // type:func // guess
+SurvSel_Run = 0x0038A188; // type:func // guess
+gSurvSel = 0x003B743C; // size:0x4 // guess
+// SurvResult (menu_s_c.c): the survival result screen (mode 19): the score sheet of UbScore counted into a total,
+// the total paid out as Z points, rank, record and the reward item. Work area gSurvResult, 0x7F8 bytes.
+SurvResult_Init = 0x0038A308; // type:func // guess
+SurvResult_Term = 0x0038AA40; // type:func // guess
+SurvResult_Draw = 0x0038AAB0; // type:func // guess
+SurvResult_Update = 0x0038B418; // type:func // guess
+SurvResult_UpdateVoice = 0x0038B6F8; // type:func // guess
+SurvResult_Input = 0x0038B8D8; // type:func // guess
+SurvResult_Run = 0x0038C1F0; // type:func // guess
+gSurvResult = 0x003B7440; // size:0x4 // guess
+// SimEvent handlers (menu_s_d.c): gSimEvent[0..2], the three trainings of the sim day screen, each with the roll
+// of its outcome (0..5) from the weights of section 29. The outcome words are in the main executable's .bss.
+SimEv00_Roll = 0x0038C360; // type:func // guess
+SimEv00 = 0x0038C408; // type:func // guess
+SimEv01_Roll = 0x0038C5F8; // type:func // guess
+SimEv01 = 0x0038C6A0; // type:func // guess
+SimEv02_Roll = 0x0038C898; // type:func // guess
+SimEv02 = 0x0038C940; // type:func // guess
+gSimTrainOutcome0 = 0x0031EA94; // size:0x4 // guess
+gSimTrainOutcome1 = 0x0031EA98; // size:0x4 // guess
+gSimTrainOutcome2 = 0x0031EA9C; // size:0x4 // guess

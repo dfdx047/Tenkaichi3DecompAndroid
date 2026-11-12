@@ -1,0 +1,82 @@
+// Effect tasks 0x1637A0..0x167E68 (src/battle/eft_n.c, include/battle/eft_n.h).
+
+// --- Aura, second half (the particles are in eft_m.txt) ---------------------------------------------------
+// Evidence for the module: the task class tables D_002C3A30 (manager) and D_002C3A48 (one task per fighter) list
+// the callbacks; BtlFx_UpdateAura / BtlFx_UpdatePowerUpLook (btl_char_fx.c) call 0x165418(objId, cmd) and
+// 0x165180(objId, level); the work is the `EftAura` of eft_m.c.
+// 0x1637A0(objId, pos, nodes, scale): alpha factor 0.5..1 of a flame corner by its distance to the two nearest of
+// seven body nodes.
+EftAura_GetNodeFade = 0x001637A0; // type:func // guess
+// 0x163980(aura, objId, alpha): one textured quad per flame of this fighter, written into the order table.
+EftAura_DrawFlames = 0x00163980; // type:func // guess
+// 0x164268(aura): GS TEX0 values of the flame sheet(s) for this frame, and once per frame those of the spark set.
+EftAura_UpdateTextures = 0x00164268; // type:func // guess
+// 0x1643D0(objId): character parameter bits 4 | 8 start the body lightning (EftBolt_Enable), otherwise stop it (EftBolt_Disable).
+EftAura_UpdateLightning = 0x001643D0; // type:func // guess
+// 0x164410(aura, objId, type, paramFlags): texture pair and colours of an aura type.
+EftAura_SetType = 0x00164410; // type:func // guess
+// 0x164700(aura, objId): type from BtlCharApi_GetAuraType, scale from the fighter's height.
+EftAura_Setup = 0x00164700; // type:func // guess
+// Task class D_002C3A48 = {update, init, term, post-update, reset, draw}.
+EftAuraTask_Init = 0x00164788; // type:func // guess
+EftAuraTask_Term = 0x00164810; // type:func // guess
+EftAuraTask_Update = 0x00164860; // type:func // guess
+EftAuraTask_PostUpdate = 0x00164B08; // type:func // guess
+EftAuraTask_Reset = 0x00164B28; // type:func // guess
+EftAuraTask_Draw = 0x00164B40; // type:func // guess
+// Task class D_002C3A30 = {update, init, term, 0, stub, 0}: allocates the particle pools and the per-fighter list.
+EftAuraMgr_Init = 0x00164C40; // type:func // guess
+EftAuraMgr_Term = 0x00164EB8; // type:func // guess
+EftAuraMgr_Update = 0x00164F30; // type:func // guess
+EftAuraMgr_Stub = 0x00165018; // type:func // guess
+// Entry points by fighter object id. 0x165418(objId, cmd) dispatches cmd 0..7 to
+// Request(0) / Stop(0) / StartBurst / EndBurst / PeakBurst / FadeIn / FadeOut / Kill.
+EftAura_Request = 0x00165020; // type:func // guess
+EftAura_Stop = 0x001650B8; // type:func // guess
+EftAura_Kill = 0x00165138; // type:func // guess
+EftAura_SetLevel = 0x00165180; // type:func // guess
+EftAura_IsVisible = 0x001651B0; // type:func // guess
+EftAura_IsBurstRising = 0x00165210; // type:func // guess
+EftAura_StartBurst = 0x00165278; // type:func // guess
+EftAura_EndBurst = 0x001652C0; // type:func // guess
+EftAura_PeakBurst = 0x00165308; // type:func // guess
+EftAura_FadeIn = 0x00165368; // type:func // guess
+EftAura_FadeOut = 0x001653C0; // type:func // guess
+EftAura_Command = 0x00165418; // type:func // guess
+// No callers found for the next seven: clear / set the hidden flag 4, set the "model changed" flag 0x40, change the
+// type, colour table entry of a type, set the finished flag, and a second dispatcher (0 request variant 1, 1 stop
+// variant 1, 2 finish).
+EftAura_Show = 0x001654D8; // type:func // guess
+EftAura_Hide = 0x00165528; // type:func // guess
+EftAura_MarkModelNew = 0x00165578; // type:func // guess
+EftAura_ChangeType = 0x001655C8; // type:func // guess
+EftAura_GetColors = 0x00165628; // type:func // guess
+EftAura_Finish = 0x001656A8; // type:func // guess
+EftAura_CommandAlt = 0x001656E0; // type:func // guess
+gEftAuraTaskClass = 0x002C3A48; // guess
+gEftAuraMgrClass = 0x002C3A30; // guess
+gEftAuraTaskList = 0x002FEA0C; // size:0x4 // guess
+
+// --- Body lightning, first half (the task and its manager start at 0x167E68) ---------------------------------
+// Evidence: called from the task at 0x167FD8.. (class table D_002C3A78) with its 0xEB0-byte work; 0x1675D8 asks
+// EftAura_IsVisible / EftAura_IsBurstRising to decide how often a bolt appears.
+// Joints (0x40 bytes) come from a ring-searched pool; a bolt owns a chain of them.
+EftBolt_AllocSegs = 0x00165758; // type:func // guess
+EftBolt_FreeSegs = 0x00165820; // type:func // guess
+// 0x165858(bolt, start, end, scale): random zigzag of the chain between two points.
+EftBolt_Shape = 0x00165858; // type:func // guess
+// 0x165F98(bolt, scale): reveals, flashes, jitters and fades the joints; returns 1 when the last one has faded.
+EftBolt_Step = 0x00165F98; // type:func // guess
+// 0x166340(work, bolt, alpha): one quad per pair of consecutive shown joints.
+EftBolt_Draw = 0x00166340; // type:func // guess
+// 0x166AC8(work, bolt, objId, kind, nodeA, nodeB, dirA, dirB, length, follow): sets a bolt up and shapes it.
+EftBolt_Start = 0x00166AC8; // type:func // guess
+EftBolt_UpdateAll = 0x00166E28; // type:func // guess
+EftBolt_DrawAll = 0x00167010; // type:func // guess
+// Flash sprites (0x70 bytes, 20 per fighter): add, update, draw.
+EftBolt_AddFlash = 0x00167090; // type:func // guess
+EftBolt_UpdateFlashes = 0x00167258; // type:func // guess
+EftBolt_DrawFlashes = 0x001673F0; // type:func // guess
+// 0x1675D8(work, objId): decides whether bolts appear this frame and starts up to three with a flash each.
+EftBolt_Spawn = 0x001675D8; // type:func // guess
+gEftBoltPool = 0x002FEA18; // size:0x4 // guess

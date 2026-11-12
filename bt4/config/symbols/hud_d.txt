@@ -1,0 +1,50 @@
+// Battle HUD, 0x226488-0x22A750.
+// --- src/battle/hud_d.c (0x226488-0x226500): tail of the HUD sprite / node library that starts at 0x224B50.
+// Draws one sprite: HudSprite_DrawAt(spr, res, additive, 0x2A00, 0x2C80). Called by every part's draw callback.
+HudSprite_Draw = 0x00226488; // type:func
+// node->flags bit 0 (hidden) = !show.
+HudNode_Show = 0x002264A8; // type:func
+// node->x, node->y.
+HudNode_SetPos = 0x002264C8; // type:func
+// node->ofsX, node->ofsY (called by the combo part, hud_c_b.c).
+HudNode_SetOfs = 0x002264D8; // type:func
+// node->rot.
+HudNode_SetRot = 0x002264E8; // type:func
+// The two floats at node + 8 / + 0xC (no caller found; HudNode_Draw does not read them).
+HudNode_SetUnk8 = 0x002264F0; // type:func // guess
+
+// --- src/battle/hud_d_b.c (0x226500-0x22A750): notice part, animations of the announcements.
+// Work of the notice part (0x74 bytes, allocated by HudNotice_Init at 0x22AF88; src/battle/hud_e.c uses the same name).
+gHudNotice = 0x002FEB5C; // size:0x4
+// GS state packets (Dma_AddData), passed to 0x224B50 / 0x224B70.
+HudNotice_GsBeginAdd = 0x00226500; // type:func // guess
+HudNotice_GsEndAdd = 0x00226628; // type:func // guess
+HudNotice_GsBeginAddAlpha = 0x00226748; // type:func // guess
+HudNotice_GsEndAddAlpha = 0x00226868; // type:func // guess
+HudNotice_GsBeginMask = 0x00226978; // type:func
+HudNotice_GsEndMask = 0x00226A98; // type:func
+// Draw callback: every sprite of the node, plain.
+HudNotice_DrawNode = 0x00226BA8; // type:func
+// Draw callback of announcements 4 and 5: sprites 0..13 under the additive state.
+HudNotice_DrawSpin = 0x00226C18; // type:func // guess
+// Announcement 0 (0x22AB50(0), "READY" from BtlSeqReady_Update): draw and update.
+HudNotice_DrawReady = 0x00226CB0; // type:func // guess
+HudNotice_UpdateReady = 0x00226D98; // type:func // guess
+// Announcement 1 ("FIGHT", BtlSeqReady_Exit).
+HudNotice_DrawFight = 0x00227380; // type:func // guess
+HudNotice_UpdateFight = 0x00227468; // type:func // guess
+// Announcement 2 (K.O.).
+HudNotice_DrawKo = 0x00227DC0; // type:func // guess
+HudNotice_UpdateKo = 0x00227EA8; // type:func // guess
+// Announcement 3 (K.O. while BattleResult_IsWinnerEvent59Clear) and announcement 8 (Hud_PreUpdate, when
+// BtlCtrl_TestProgressFrameBit): the same animation on rows 64..128 / 0..64 of texture 3.
+HudNotice_DrawBandA = 0x00228A00; // type:func // guess
+HudNotice_UpdateBandA = 0x00228A78; // type:func // guess
+HudNotice_DrawBandB = 0x00228FB0; // type:func // guess
+HudNotice_UpdateBandB = 0x00229028; // type:func // guess
+// Announcements 4 and 5 (5 = time up): the same animation on rows 0..64 / 64..128 of texture 4.
+HudNotice_UpdateSpinA = 0x00229560; // type:func // guess
+HudNotice_UpdateSpinB = 0x00229940; // type:func // guess
+// Announcement 6 (battle sequence, the winner / result step): eight after-images zooming in.
+HudNotice_DrawTrail = 0x00229D20; // type:func // guess
+HudNotice_UpdateTrail = 0x00229DD8; // type:func // guess

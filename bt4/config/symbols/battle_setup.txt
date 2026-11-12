@@ -1,0 +1,160 @@
+// Battle result finish, battle events, battle setup and replay block: src/battle/battle_load.c = 0x129170..0x12B570.
+// Battle_IsSplitScreen (0x12AB10) and Battle_GetMode (0x12AB38) are in this file's range and stay named in game.txt.
+
+// Battle result, end of the file's result part. 0x129170(): result->frames (+0x18) += 1 when event 0x48 of side 0 is
+// newly raised (called by Battle_UpdateWork). 0x1291B8: empty. 0x1291C0(): BattleResult_CollectEvents, copies the
+// 16-byte battle clock (BtlSeq_GetClock) to result+0x34, result->unk8 = 1 when flags has bit 3, flags |= 2 / 1 for
+// reason bits 5 / 6; called by Battle_Term. 0x129258 / 0x129278 / 0x129298: return result->flags / ->reason / the u64
+// at +0x10 (menu callers 0x336A90, 0x340D40...). 0x1292B8: tail call of Battle_GetResult.
+BattleResult_CountFrame = 0x00129170; // type:func
+BattleResult_Stub1291B8 = 0x001291B8; // type:func // guess
+BattleResult_Finish = 0x001291C0; // type:func // guess
+BattleResult_GetFlags = 0x00129258; // type:func
+BattleResult_GetReason = 0x00129278; // type:func
+BattleResult_GetEventSummary = 0x00129298; // type:func
+BattleResult_GetPtr = 0x001292B8; // type:func
+
+// 0x1292D0(clock): hours * 3600 + minutes * 60 + seconds of a BtlClock.
+BtlClock_ToSeconds = 0x001292D0; // type:func
+
+// Battle events: two 0x30-byte sets {now[2], prev[2], held[2]} of u64 at event work + 8, one per side. 0x1296B8(side,
+// ev): sets the bit in now (101 call sites, mostly the fighter code); ev 0x5A / 0x5B also call 0x259910. 0x129728 /
+// 0x129770(side, ev): now & ~prev / held. 0x129588, 0x1295C8, 0x129618: the bit helpers they call. 0x129550(set): prev
+// = now, held |= now, now = 0. 0x1297B8(): UpdateRequests, Rotate both sets, RaiseTimeEvents; called by
+// Battle_UpdateWork. 0x129308(): raises event i (0..18) on both sides while BtlSeq_GetSubClock() >=
+// {10,15,...,60,70,...,100,120,...,180}[i] seconds. 0x129658: memset of the 0x70-byte event work; 0x129680: the same
+// but keeps word 0.
+BtlEvent_RaiseTimeEvents = 0x00129308; // type:func
+BtlEvent_UpdateRequests = 0x00129450; // type:func // guess
+BtlEventSet_Rotate = 0x00129550; // type:func
+BtlEvent_SetBit = 0x00129588; // type:func
+BtlEventSet_IsNew = 0x001295C8; // type:func
+BtlEventSet_WasRaised = 0x00129618; // type:func
+BtlEvent_ClearAll = 0x00129658; // type:func
+BtlEvent_Reset = 0x00129680; // type:func
+BtlEvent_Raise = 0x001296B8; // type:func
+BtlEvent_IsNew = 0x00129728; // type:func
+BtlEvent_WasRaised = 0x00129770; // type:func
+BtlEvent_Update = 0x001297B8; // type:func
+
+// 0x129808(): events+0x68 = 1, battle flag 0x200 set (0x12C880), 0x219690(1.0f); 0x129450 then raises event 0x4C on
+// both sides, clears the flag and the word once 0x12C5D8() is true. 0x129838(): 0x2196D0(1.0f). 0x129858(x):
+// events+0x6C = (x == 0); 0x129888(): events+0x6C == 0; 0x129450 clears +0x6C when event 0x4D or 0x4E is new. Names
+// are guesses.
+BtlEvent_BeginInterrupt = 0x00129808; // type:func // guess
+BtlEvent_EndInterrupt = 0x00129838; // type:func // guess
+BtlEvent_SetWaitOff = 0x00129858; // type:func // guess
+BtlEvent_IsWaitOff = 0x00129888; // type:func // guess
+
+// Team member (0x64 bytes). 0x1298B0(m, wide): clamps the 8 words at +0x24 to -20..20 (wide: -20..60). 0x1299D0(m):
+// 0x261130(items at +0x14, stats, abilities, chara) and stores the results at +0x24..+0x54. 0x129A68(m, chara,
+// costume, variant, cpuLevel, health, items): memset, optional 16-byte item copy, ApplyItems, then the five fields.
+BtlMember_ClampBonus = 0x001298B0; // type:func // guess
+BtlMember_ApplyItems = 0x001299D0; // type:func
+BtlMember_Init = 0x00129A68; // type:func
+
+// Battle setup builders. 0x129E78(): memset of the 0x5A8-byte setup, then 'b','t','l','s' and version 7; called by
+// Battle_ClearWork. 0x12A058(screenMode, mode, bgm, timeLimit, announcer, stage, unk10): writes setup+8..+0x28.
+// 0x12A120(side, control, pad, memberCount, unk1FC, unk200, lead, bits): writes the side header and
+// 0x129D60(&side->charaBits, bits) (copy of 0x40 bytes, or zero + the save's three charaBits words). 0x12A2D8 /
+// 0x12A1D8(side, idx, ...): BtlMember_Init on a team member; 0x12A1D8 (script command 0x25BA08) first converts eight
+// 0-based ids to 1-based u16. 0x12A3A0(count, idx, ...): the same on entry idx of the 50-member block at work+0x5A8
+// (menu 0x372560, 0x388EE0). 0x12A458(): 0x12A470(0). 0x12A470(wide): FixForMode, clamps, startForm / form from the
+// lead member, all character bits for CPU sides (any side in mode 1), setup+0x20, DefaultOptions, setup+0x5A0 = 1,
+// copies the setup into the replay block. 0x129B20(): per-mode corrections. 0x129E00(): fills setup+0x30..+0x3C from
+// save 0x1694 / 0x1698 unless setup+0x2C is set. 0x129F58 / 0x129FD8: set that block explicitly (no callers found).
+// 0x129F28(n): setup+0xBC = n + 1 (menu 0x33A018).
+BattleSetup_FixForMode = 0x00129B20; // type:func
+BattleSetup_InitCharaBits = 0x00129D60; // type:func
+BattleSetup_DefaultOptions = 0x00129E00; // type:func // guess
+BattleSetup_Clear = 0x00129E78; // type:func
+BattleSetup_SetScript = 0x00129F28; // type:func // guess
+BattleSetup_SetOptions = 0x00129F58; // type:func // guess
+BattleSetup_SetOption14 = 0x00129FD8; // type:func // guess
+BattleSetup_SetRule = 0x0012A058; // type:func
+BattleSetup_SetSide = 0x0012A120; // type:func
+BattleSetup_SetMemberByItemIds = 0x0012A1D8; // type:func
+BattleSetup_SetMember = 0x0012A2D8; // type:func
+BattleSetup_SetPoolMember = 0x0012A3A0; // type:func // guess
+BattleSetup_Finish = 0x0012A458; // type:func
+BattleSetup_FinishEx = 0x0012A470; // type:func
+
+// Replay block gBattleReplay (0x1ABA8 bytes: setup copy 0x5A8, data 0x1A5F0, flags, active, loaded, one more word).
+// 0x12A810(&size): returns the block and its size (memory card code 0x11E608). 0x12A848(buf, size): checks size and
+// the 'btls'/7 header, copies the setup into the battle work and the block into gBattleReplay, active = loaded = 1
+// (memory card code 0x11DA38). 0x12A9E8 / 0x12A9F8: return active / loaded (14 / 4 call sites: input 0x1D4370, camera,
+// HUD). 0x12AA08: &block.data. 0x12AA18: !active || (data flags & 1). 0x129EE8: data flags &= ~1 (Battle_ResetWork).
+// 0x12AA60(v): active = v (BattleResult_Set, for reason bits 15 / 16). 'Replay' is the reading of all of this
+// together; guess.
+BattleReplay_ClearDataFlag = 0x00129EE8; // type:func // guess
+BattleReplay_GetBuffer = 0x0012A810; // type:func // guess
+BattleReplay_Load = 0x0012A848; // type:func // guess
+BattleReplay_IsActive = 0x0012A9E8; // type:func // guess
+BattleReplay_IsLoaded = 0x0012A9F8; // type:func // guess
+BattleReplay_GetData = 0x0012AA08; // type:func // guess
+BattleReplay_TestDataFlag = 0x0012AA18; // type:func // guess
+BattleReplay_SetActive = 0x0012AA60; // type:func // guess
+
+// Setup getters (each is Battle_GetSetup() plus one field). 0x12AB58: gBattleTimeLimitTbl[setup+0x10]
+// (BtlSeq_ResetClocks compares it with the clock); 0x12AB90: setup+0x10 == 0. 0x12ABB8: setup+0x14, multiplied by 7 to
+// pick the announcement stream in 0x22AB50. 0x12ABD8: setup+0xC (Battle_ResetWork plays 0x10B16 + it). 0x12ABF8:
+// setup+0x1C, the stage whose files the loader requests; 0x12AC18 / 0x12AC38: get / set setup+0x28, the stage after an
+// in-battle change; 0x12AC60: they differ; 0x12AC98: +0x28 = +0x1C. 0x12ACD0: setup+0x18. 0x12AAC8: setup+0x40.
+// 0x12AAE8: setup+0xBC - 1 (loader: script file 0x1FF + n). 0x12AA70: index of the first side with control 0, or -1.
+Battle_GetHumanSide = 0x0012AA70; // type:func // guess
+Battle_GetOption14 = 0x0012AAC8; // type:func
+Battle_GetScript = 0x0012AAE8; // type:func // guess
+Battle_GetTimeLimit = 0x0012AB58; // type:func
+Battle_IsTimeLimitOff = 0x0012AB90; // type:func
+Battle_GetAnnouncer = 0x0012ABB8; // type:func // guess
+Battle_GetBgm = 0x0012ABD8; // type:func
+Battle_GetStartStage = 0x0012ABF8; // type:func
+Battle_GetStage = 0x0012AC18; // type:func
+Battle_SetStage = 0x0012AC38; // type:func
+Battle_IsStageChanged = 0x0012AC60; // type:func
+Battle_ResetStage = 0x0012AC98; // type:func
+Battle_GetRuleUnk10 = 0x0012ACD0; // type:func // guess
+
+// Per-side getters / setters (side * 0x270 + 0xC0). Read together by the fighter init 0x1C02C8: 0x12ACF0 ->
+// fighter+0x49C, 0x12AD20 == 0 -> +0x4B8, 0x12ADD0 (control == 2) -> +0x1278, 0x12B190 -> +0x998 (team size), 0x12AE58
+// -> +0x1300, 0x12AE18 -> +0xCF4, and per member 0x12B058 / 0x12B0C0 / 0x12B128 (character, costume, variant).
+// 0x12AD50 -> fighter+4, which indexes the per-controller save flags. 0x12AE98 / 0x12AED8 / 0x12AF18:
+// side+0x250..0x258, the lead member's character / costume / variant; 0x12AF58 / 0x12AF98 / 0x12B2F0:
+// side+0x25C..0x264, what the loader has loaded; 0x12B378 / 0x12AFE8: they differ; 0x12B028: current character =
+// starting one. 0x12B1D0 / 0x12B250: side+0x268 (BtlObj id). 0x12B210 / 0x12B2A0: side+0x26C. 0x12B428(side, idx):
+// &side->members[idx]. 0x12B490(side, idx, items): copies 16 bytes to member+0x14 and BtlMember_ApplyItems (caller
+// 0x12C080). 0x12B4F0(side, id): bit id of the u64 array at side+0x210 (0x2033C8, 0x203788: is the target character of
+// a transformation allowed).
+BattleSide_GetOptionA = 0x0012ACF0; // type:func // guess
+BattleSide_GetOptionB = 0x0012AD20; // type:func // guess
+BattleSide_GetPad = 0x0012AD50; // type:func // guess
+BattleSide_GetControl = 0x0012AD90; // type:func
+BattleSide_IsCpu = 0x0012ADD0; // type:func
+BattleSide_GetUnk200 = 0x0012AE18; // type:func // guess
+BattleSide_GetUnk1FC = 0x0012AE58; // type:func // guess
+BattleSide_GetStartChara = 0x0012AE98; // type:func
+BattleSide_GetStartCostume = 0x0012AED8; // type:func
+BattleSide_GetStartVariant = 0x0012AF18; // type:func // guess
+BattleSide_GetChara = 0x0012AF58; // type:func
+BattleSide_SetChara = 0x0012AF98; // type:func
+BattleSide_IsCharaChanged = 0x0012AFE8; // type:func
+BattleSide_ResetChara = 0x0012B028; // type:func
+BattleSide_GetMemberChara = 0x0012B058; // type:func
+BattleSide_GetMemberCostume = 0x0012B0C0; // type:func
+BattleSide_GetMemberVariant = 0x0012B128; // type:func // guess
+BattleSide_GetMemberCount = 0x0012B190; // type:func
+BattleSide_GetObjId = 0x0012B1D0; // type:func
+BattleSide_GetModelSlot = 0x0012B210; // type:func // guess
+BattleSide_SetObjId = 0x0012B250; // type:func
+BattleSide_SetModelSlot = 0x0012B2A0; // type:func // guess
+BattleSide_SetForm = 0x0012B2F0; // type:func
+BattleSide_IsFormChanged = 0x0012B378; // type:func
+BattleSide_GetMember = 0x0012B428; // type:func
+BattleSide_SetMemberItems = 0x0012B490; // type:func
+BattleSide_IsCharaUsable = 0x0012B4F0; // type:func // guess
+
+// 0x301268: the 0x1ABA8-byte static block behind the BattleReplay_* functions. D_00301810 (data, +0x5A8), D_0031BE04
+// (active, +0x1AB9C) and D_0031BE08 (loaded, +0x1ABA0) are addresses inside it.
+gBattleReplay = 0x00301268; // size:0x1ABA8 // guess
+// 0x2C3480: s16[8] = {-1, 60, 90, 180, 240, 45, 0, 0}, indexed by setup+0x10 in Battle_GetTimeLimit.
+gBattleTimeLimitTbl = 0x002C3480; // size:0x10

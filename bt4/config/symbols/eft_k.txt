@@ -1,0 +1,88 @@
+// --- src/battle/eft_k.c, 0x157398..0x15B550: technique effect modules of scene layer 1 -----------------------------
+// Tail of the "shots" technique module (effect type 2: classes 0x2C38F8 manager / 0x2C3910 item; it starts at 0x156450
+// in eft_j.c). The item fires up to 14 blast objects (0x16A7D0) at a target point; these move the target point and
+// run the effects around it. Names describe what the code does; the visuals are not known.
+EftShotTech_UpdateAuraBall = 0x00157398; // type:func // guess
+EftShotTech_UpdateTargetBurst = 0x001574B8; // type:func // guess
+EftShotTech_UpdateMuzzle = 0x00157568; // type:func // guess
+EftShotTech_StartCam = 0x00157648; // type:func // guess
+EftShotTech_MoveStraight = 0x001576C0; // type:func // guess
+EftShotTech_MoveFromTarget = 0x00157788; // type:func // guess
+EftShotTech_MoveAimed = 0x001579C0; // type:func // guess
+EftShotTech_UpdateConnected = 0x00157B60; // type:func // guess
+// Callbacks of the item class 0x2C3910 in table order: update, init, term, post-update, reset, draw.
+EftShotTech_Init = 0x00157CB8; // type:func // guess
+EftShotTech_Term = 0x00157DF0; // type:func // guess
+EftShotTech_Update = 0x00157EA8; // type:func // guess
+EftShotTech_PostUpdate = 0x00158270; // type:func // guess
+EftShotTech_Reset = 0x001582D8; // type:func // guess
+EftShotTech_Draw = 0x001582F0; // type:func // guess
+// Callbacks of the manager class 0x2C38F8: loads the emitter set, creates the child list of two 0x900-byte items.
+EftShotTechMgr_Init = 0x001582F8; // type:func // guess
+EftShotTechMgr_Term = 0x00158400; // type:func // guess
+EftShotTechMgr_Update = 0x00158418; // type:func // guess
+EftShotTechMgr_Reset = 0x00158430; // type:func // guess
+// Technique events: one word of event bits per fighter per frame (func_0014A8C0 tests it), produced by a timeline
+// task per technique in progress from animation attributes 0x200..0x4000 / 0x200000..0x800000 or a frame table.
+EftTechEvt_GetEvents = 0x00158438; // type:func
+EftTechEvt_Start = 0x00158460; // type:func
+EftTechEvt_RequestStop = 0x001584E8; // type:func // guess
+EftTechEvt_RequestRestart = 0x00158528; // type:func // guess
+EftTechEvt_RequestExpire = 0x00158560; // type:func // guess
+// Callbacks of the layer class 0x2C3928 (created by the layer-1 init at 0x14AD70): update, init, term.
+EftTechEvt_Init = 0x00158598; // type:func
+EftTechEvt_Term = 0x00158648; // type:func
+EftTechEvt_Update = 0x00158690; // type:func
+// Callbacks of the timeline class 0x2C3940: update, init, term, -, reset, draw.
+EftTechEvtTask_Init = 0x001586D8; // type:func
+EftTechEvtTask_Term = 0x001587B0; // type:func
+EftTechEvtTask_Update = 0x001587B8; // type:func
+EftTechEvtTask_Reset = 0x00158838; // type:func
+EftTechEvtTask_Draw = 0x00158850; // type:func
+EftTechEvtTask_UpdateNormal = 0x00158980; // type:func // guess
+EftTechEvtTask_UpdateRush = 0x00158C70; // type:func // guess
+EftTechEvt_IsRushTech = 0x00158F00; // type:func // guess
+EftTechEvtTask_CollectEvents = 0x00158F58; // type:func
+EftTechEvt_IsInterrupted = 0x001590E8; // type:func // guess
+EftTechEvt_IsInSkill = 0x00159100; // type:func
+EftTechEvt_IsInTechnique = 0x00159118; // type:func
+// "Thrown object" technique module (effect type 8: classes 0x2C3958 manager / 0x2C3970 item): one projectile with
+// an optional model object and up to three ring models; it adds a hit record every frame while flying.
+EftObjTech_AddHitRecord = 0x00159130; // type:func
+EftObjTech_CreateModel = 0x00159300; // type:func
+EftObjTech_SetModelPose = 0x00159368; // type:func
+EftObjTech_DestroyModel = 0x001593E8; // type:func
+EftObjTech_InitRings = 0x00159408; // type:func // guess
+EftObjTech_SetRingParams = 0x00159560; // type:func // guess
+EftObjTech_PlaceRings = 0x001595D0; // type:func // guess
+EftObjTech_DrawRings = 0x00159748; // type:func // guess
+EftObjTech_TermRings = 0x001597B0; // type:func // guess
+EftObjTech_UpdateEmitters = 0x001597B8; // type:func // guess
+EftObjTech_UpdateMotion = 0x00159988; // type:func // guess
+EftObjTech_UpdateModelVisible = 0x0015A068; // type:func // guess
+// Callbacks of the item class 0x2C3970 in table order: update, init, term, post-update, reset, draw.
+EftObjTech_Init = 0x0015A158; // type:func // guess
+EftObjTech_Term = 0x0015A328; // type:func // guess
+EftObjTech_Update = 0x0015A3D0; // type:func // guess
+EftObjTech_PostUpdate = 0x0015A7B0; // type:func // guess
+EftObjTech_Reset = 0x0015A908; // type:func // guess
+EftObjTech_Draw = 0x0015A950; // type:func // guess
+// Callbacks of the manager class 0x2C3958.
+EftObjTechMgr_Init = 0x0015A998; // type:func // guess
+EftObjTechMgr_Term = 0x0015AAB0; // type:func // guess
+EftObjTechMgr_Update = 0x0015AAC8; // type:func // guess
+EftObjTechMgr_Reset = 0x0015AB30; // type:func // guess
+// First helpers of the "rush shot" module (class 0x2C39A0, the rest is eft_l.c; prefix taken from eft_l.txt).
+EftRushShot_AddHitRecord = 0x0015AB38; // type:func
+EftRushShot_CreateModels = 0x0015ACC8; // type:func
+EftRushShot_UpdateModels = 0x0015AD78; // type:func // guess
+// State of the technique events (0xC bytes from the pool).
+gEftTechEvt = 0x002FE9FC; // size:0x4
+// Task classes (six callbacks each: update, init, term, post-update, reset, draw). The two manager / item pairs are
+// rows 3 and 9 of the class table at 0x2C3700 (indexed by the definition's effect type + 1).
+gEftShotTechMgrClass = 0x002C38F8; // size:0x18
+gEftShotTechClass = 0x002C3910; // size:0x18
+gEftTechEvtClass = 0x002C3928; // size:0x18
+gEftTechEvtTaskClass = 0x002C3940; // size:0x18
+gEftObjTechMgrClass = 0x002C3958; // size:0x18
+gEftObjTechClass = 0x002C3970; // size:0x18

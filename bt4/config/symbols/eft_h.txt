@@ -1,0 +1,107 @@
+// Technique effects, second part: src/battle/eft_h.c = 0x14B108..0x14F230. See include/battle/eft_h.h.
+
+// --- technique effect manager (state gp 0x2FE9F8, layer 1 of the effect scene), tail ---------------------------
+// Fills the 0x8C-byte parameter block of one technique slot from BtlSkillData (slots 0, 1) or BtlSuperData
+// (slots 2..4); with the last argument set it writes defaults instead. Called by 0x14B018 for slots 0..4.
+EftShot_BuildParam = 0x0014B108; // type:func
+// &state->chars[chr].slot[slot] (0x540 bytes per character, 0x50 per slot).
+EftShot_GetSlot = 0x0014B8E0; // type:func
+// Adds the slot's group task (class gEftShotClass[type + 1].group) to the character's list.
+EftShot_CreateSlotTask = 0x0014B918; // type:func
+// Copies the 0x1C-byte request into the slot and adds an instance task (class .inst) under the group task.
+EftShot_Start = 0x0014B9B0; // type:func
+// Kill / create the character task (class 0x2C36E8) of the layer; the kill first resets the scene tasks of
+// that character (BtlScene_Reset(2 + chr)).
+EftShot_DestroyChar = 0x0014BB20; // type:func
+EftShot_CreateChar = 0x0014BB98; // type:func
+// 25.5 / 24 / 39 / 21 / 0 frames by technique kind, EftShotParam.unk5 and id; EftShot_Start hands it to 0x158460.
+EftShot_GetLeadTime = 0x0014BC00; // type:func // guess
+// Tail call of BtlCharApi_GetPlayerObjUnk9C(chr, slot): the effect pack of the slot's technique.
+EftShot_GetCharPack = 0x0014BC98; // type:func
+
+// --- effect type -1: nothing (classes 0x2C3788 group, 0x2C37A0 instance) ---------------------------------------
+// Names by the slot of the class table each function sits in.
+EftShotNullGroup_Init = 0x0014BCB0; // type:func
+EftShotNullGroup_Term = 0x0014BCD0; // type:func
+EftShotNullGroup_Update = 0x0014BCD8; // type:func
+EftShotNull_Init = 0x0014BCE0; // type:func
+EftShotNull_Term = 0x0014BD20; // type:func
+EftShotNull_Reset = 0x0014BD28; // type:func
+EftShotNull_Update = 0x0014BD40; // type:func
+EftShotNull_PostUpdate = 0x0014BD80; // type:func
+EftShotNull_Draw = 0x0014BD88; // type:func
+
+// --- effect type 1: volley of shots (classes 0x2C37B8 group, 0x2C37D0 instance) --------------------------------
+// "Shots" is a reading: up to 30 entries, each holding a task of the 0x16A400 module created at a hand node.
+// Last free entry of the 30, zeroed.
+EftVolley_AllocShot = 0x0014BD90; // type:func // guess
+// Creates one shot (EftShotParam.volley of them in phase 1) at the fighter's node and counts it.
+EftVolley_Fire = 0x0014BDF8; // type:func // guess
+// Forgets the shots whose task is gone; returns whether any is left.
+EftVolley_PruneShots = 0x0014C250; // type:func // guess
+// Turns this frame's fighter events into a fire phase, then updates the live shots.
+EftVolley_UpdateShots = 0x0014C2B8; // type:func // guess
+// Aim direction from the fighter to a point, with the pack's two special aim kinds.
+EftVolley_Aim = 0x0014C478; // type:func // guess
+// Sends every part of the pack its command of the frame (0x14FF50).
+EftVolley_UpdateParts = 0x0014C658; // type:func // guess
+EftVolley_Init = 0x0014C800; // type:func
+EftVolley_Term = 0x0014C920; // type:func
+EftVolley_Update = 0x0014C970; // type:func
+EftVolley_PostUpdate = 0x0014CCD0; // type:func
+EftVolley_Reset = 0x0014CD40; // type:func
+EftVolley_Draw = 0x0014CD88; // type:func
+EftVolleyGroup_Init = 0x0014CD90; // type:func
+EftVolleyGroup_Term = 0x0014CE30; // type:func
+EftVolleyGroup_Update = 0x0014CE48; // type:func
+EftVolleyGroup_Reset = 0x0014CE60; // type:func
+
+// --- effect pack library ------------------------------------------------------------------------------------
+// Group kind 2..18 -> resource category 0..3 (size of the resource object: 0x208, 0x108, 0x88, 0x48).
+EftEmit_TypeToResKind = 0x0014CE68; // type:func
+// Parses a pack (header, 0x20-byte group entries, 0x40-byte parts), allocates and loads its resources.
+EftEmit_LoadSet = 0x0014CEB0; // type:func
+EftEmit_FreeSet = 0x0014D3A8; // type:func
+// Zeroes the last word of every resource object; the group tasks call it as their update.
+EftEmit_BeginFrame = 0x0014D460; // type:func // guess
+// Readers of header bytes; names carry the offset where the meaning is not known.
+EftEmit_GetHead21 = 0x0014D550; // type:func
+EftEmit_GetHead26 = 0x0014D560; // type:func
+EftEmit_GetAimKind = 0x0014D570; // type:func // guess
+EftEmit_GetHead22 = 0x0014D580; // type:func
+EftEmit_GetHead25 = 0x0014D590; // type:func
+EftEmit_GetHead28 = 0x0014D5A0; // type:func
+EftEmit_GetEndFrames = 0x0014D5B0; // type:func // guess
+EftEmit_GetPhaseMask = 0x0014D5C0; // type:func // guess
+EftEmit_GetPartFlags = 0x0014D5D0; // type:func
+// Whether part (kind, i) belongs to a later phase than the one its sub-kind names.
+EftEmit_IsPartDeferred = 0x0014D5F8; // type:func // guess
+EftEmit_InitState = 0x0014D6B0; // type:func
+EftEmit_TermState = 0x0014D798; // type:func
+// Command bits for one part this frame: from the fighter's effect events (0x14A8C0), from an event mask given by
+// the caller, and the common worker.
+EftEmit_GetFlagsFromReq = 0x0014D7A0; // type:func
+EftEmit_GetFlagsFromMask = 0x0014D8A8; // type:func
+EftEmit_GetFlags = 0x0014D908; // type:func
+// Command for a reset: 0x30 for a started part that is not stopped.
+EftEmit_GetResetFlags = 0x0014DB48; // type:func // guess
+// Marks a part's task as belonging to character 0 / 1 (task flag 0x800 / 0x1000) unless the kind is 2 or 5.
+EftEmit_TagTask = 0x0014DBB8; // type:func
+// Per-kind part drivers called by the dispatcher 0x14FF90: create the part's object on EFT_CMD_START, then
+// forward move / scale / direction / stop / kill to it. The number is the group kind (hex).
+EftEmit_SpawnType0 = 0x0014DBF8; // type:func
+EftEmit_SpawnType2 = 0x0014DF60; // type:func
+EftEmit_SpawnType16 = 0x0014E1E8; // type:func
+EftEmit_SpawnType17 = 0x0014E4F8; // type:func
+EftEmit_SpawnType18 = 0x0014E8A0; // type:func
+EftEmit_SpawnType14 = 0x0014EBD8; // type:func
+EftEmit_SpawnType5 = 0x0014EED8; // type:func
+
+// Data. gEftShot (0x2FE9F8) and gEftShotCharClass (0x2C36E8) are named in eft_g.txt.
+// 11 rows {group class, instance class, 0}, indexed by EftShotParam.type + 1.
+gEftShotClass = 0x002C3700; // size:0x84
+// Class tables of the two effect types of this file ({update, init, term, postUpdate, reset, draw}).
+gEftShotNullGroupClass = 0x002C3788; // size:0x18
+gEftShotNullClass = 0x002C37A0; // size:0x18
+gEftVolleyGroupClass = 0x002C37B8; // size:0x18
+gEftVolleyClass = 0x002C37D0; // size:0x18

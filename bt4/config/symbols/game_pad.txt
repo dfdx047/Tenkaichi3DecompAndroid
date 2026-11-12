@@ -1,0 +1,7 @@
+// Game-level input layer, src/sys/game_pad.c = 0x2574F0..0x257870.
+// Pad_UpdateGameButtons (0x2574F0) and Pad_CalcRepeat (0x2577B0) are named in sys_pad.txt, Pad_SetRepeat (0x2577F8) in game.txt.
+
+// 0x257830(pad): returns gPad[pad].status (+0x180; 0 = usable pad, 0xFF = none). No jal callers; the game reads the field directly.
+Pad_GetStatus = 0x00257830; // type:func
+// 0x257850(pad): returns gPad[pad].lastStatus (+0x184; the last status < 4 seen by Pad_UpdateGameButtons). One caller, func_002145D8.
+Pad_GetLastStatus = 0x00257850; // type:func // guess

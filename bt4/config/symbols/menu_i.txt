@@ -1,0 +1,59 @@
+// Menu overlay DBZP.BIN, 0x35A558..0x35F650 (placeholder stem "menu_i"). Four pieces:
+//   menu_i.c 0x35A558 Train (rest), menu_i_b.c 0x35D660 BootCard, menu_i_c.c 0x35D948 Logo / FirstRun,
+//   menu_i_d.c 0x35E0F8 EntrySel (head).
+// Train (menu_i.c): rest of the training menu "Ultimate Training" (mode 44); one object with menu_h_d.c (work
+// area gTrain, shared strings; four functions here only match when compiled in one file with it).
+// List position of a class restored from / saved to Train.saved[class].
+Train_RestoreScroll = 0x0035A558; // type:func // guess
+Train_SaveCursor = 0x0035A5E8; // type:func // guess
+// Builds the per-class lesson lists from the lesson table, leaving out the pages of the skip list. Not matching.
+Train_BuildLists = 0x0035A610; // type:func // guess
+// Draw helpers called by Train_Draw: "mc_title_class", the icon window, "mc_bg_cloud" + background picture,
+// the two guides ("mc_guide_saiyaman", "mc_guide_bidel").
+Train_DrawTitle = 0x0035A7E8; // type:func // guess
+Train_DrawIconWin = 0x0035A858; // type:func // guess
+Train_DrawBg = 0x0035A8A0; // type:func // guess
+Train_DrawGuides = 0x0035A940; // type:func // guess
+// The screen pattern: Init / Term / Update / Draw / Run (Run is called by TrainMode_Main for mode 44).
+Train_Init = 0x0035ADB0; // type:func
+Train_Term = 0x0035B518; // type:func
+Train_Update = 0x0035B5F0; // type:func
+Train_Draw = 0x0035B938; // type:func
+// Starts the fade out once the menu is being left and reports when it is over.
+Train_CheckLeave = 0x0035BA30; // type:func // guess
+Train_Input = 0x0035BB88; // type:func
+// Background loader of the explanation picture (file 0x402 + page id).
+Train_UpdateImage = 0x0035CE88; // type:func // guess
+// Sets up the lesson's practice battle (BattleSetup_*, mode 5) and / or its tutorial number when the menu is
+// left with result 1.
+Train_Leave = 0x0035CFD0; // type:func // guess
+Train_Run = 0x0035D590; // type:func
+// BootCard (menu_i_b.c): the boot-time memory card check of the first run: McFlow_Start(2) over a black screen.
+// OnFlowDone is registered with McFlow_SetDoneCb for both outcomes.
+BootCard_OnFlowDone = 0x0035D660; // type:func // guess
+BootCard_Init = 0x0035D698; // type:func // guess
+BootCard_Term = 0x0035D788; // type:func // guess
+BootCard_Run = 0x0035D7F8; // type:func // guess
+gBootCard = 0x003B5908; // size:0x4
+// Logo (menu_i_c.c): one full-screen boot picture with fades (Init / Term / Show), the six of them (ShowAll).
+Logo_Init = 0x0035D948; // type:func // guess
+Logo_Term = 0x0035DA00; // type:func // guess
+Logo_Show = 0x0035DA40; // type:func // guess
+Logo_ShowAll = 0x0035DD68; // type:func // guess
+gLogo = 0x003B590C; // size:0x4
+// FirstRun (menu_i_c.c): FirstRun_Main is what Progress_Main calls when gProgress->flags has 0x40: partition 2
+// load, controller wait, card check, logos, loading screen until the partition is in, opening movie.
+FirstRun_WaitPartition = 0x0035DE58; // type:func // guess
+FirstRun_Main = 0x0035DF70; // type:func // guess
+FirstRun_WaitPad = 0x0035E058; // type:func // guess
+// EntrySel (menu_i_d.c): head of the tournament's entrant select (mode 34; the object goes on in menu_j.c, which
+// uses these names). Chip textures of the seven-chip row and of the chosen entrants, the large-picture loader,
+// a clip helper and Init.
+EntrySel_SwapRowTex = 0x0035E0F8; // type:func // guess
+EntrySel_SetRowTex = 0x0035E220; // type:func // guess
+EntrySel_SetMemberTex = 0x0035E370; // type:func // guess
+EntrySel_UpdateImage = 0x0035E420; // type:func // guess
+EntrySel_ChangeImage = 0x0035E598; // type:func // guess
+EntrySel_ClipGoto = 0x0035E5E0; // type:func // guess
+EntrySel_Init = 0x0035E7A0; // type:func
+gEntrySel = 0x003B5910; // size:0x4

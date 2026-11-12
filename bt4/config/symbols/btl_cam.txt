@@ -1,0 +1,159 @@
+// --- Battle camera (src/battle/btl_cam.c, 0x23E040..0x23F620) ----------------------------------
+// Three consecutive files: btl_demo_cam.c 0x23D1E8..0x23E040, btl_cam.c 0x23E040..0x23F620, orbit_cam.c 0x23F620..0x23FB20.
+// BtlCam_Init / BtlCam_Term / BtlCam_UpdateView / BtlCam_SelectView / BtlCam_ApplyView / BtlCam_UpdateOverride,
+// gBtlCam and gBtlCamView are in battle.txt and keep their names.
+
+// -- View object (0x260 bytes: matrices, scissor, projection parameters) --
+// 0x23E040(view): fills view+0x80 (to screen), +0xC0 (to clip), +0x100 and +0x1C0 from the parameters at +0x210..+0x258.
+View_BuildProjection = 0x0023E040; // type:func // guess
+// 0x23E480(view, vec, 10 floats): stores vec at +0x210 and the floats at +0x234..+0x258, normalises the aspect pair
+// (+0x238/+0x23C) so the larger is 1, tail-calls 0x23E040.
+View_SetProjection = 0x0023E480; // type:func // guess
+// 0x23E598(view, pos): +0x140 = +0x80 * +0x40, +0x180 = +0xC0 * +0x40 (VU0 helpers), +0x220 = pos, gBtlCamView = view.
+View_UpdateMatrices = 0x0023E598; // type:func // guess
+// 0x23E608(m0, m1, pos, rot): builds one matrix from rot and -pos (0x1214A0 / 0x121420) and copies it to m0 and m1.
+View_SetTransform = 0x0023E608; // type:func // guess
+// 0x23E6A0(view, scissor): loads +0x140 and +0x180 (0x121370 / 0x1212D8), View_ApplyScissor(view) when scissor != 0,
+// gBtlCamView = view.
+View_Apply = 0x0023E6A0; // type:func // guess
+// 0x23E6F0(pos): 0x122230((pos.x, 0, pos.z, 1), (gBtlCamView->pos.x, 0, .z, 1)): horizontal distance to the current camera.
+View_GetDistXZ = 0x0023E6F0; // type:func // guess
+// 0x23E770(view, layout): layout 0 = full screen (scissor 0..511, centre 2048), 1 = left half (0..254, centre 1920),
+// 2 = right half (257..511, centre 2176); calls View_SetProjection with constants.
+View_InitLayout = 0x0023E770; // type:func // guess
+
+// -- The two battle views --
+// 0x23E950(view, layout): view->split = (layout != 0), copies gBtlCam->layouts[layout] (0x260 bytes) over the view.
+BtlCam_SetViewLayout = 0x0023E950; // type:func // guess
+// 0x23E9D0(): builds the three layout templates; views[i].index = i; layout 1 / 2 for views 0 / 1 in split-screen, else 0.
+BtlCam_InitViews = 0x0023E9D0; // type:func // guess
+// 0x23EAD0(view, apply): View_SetTransform from view+0x260 / +0x270, View_UpdateMatrices, View_Apply(view, 1) when apply.
+BtlCam_BuildView = 0x0023EAD0; // type:func // guess
+// 0x23EB48(): memset(gBtlCam, 0, 0xC50), BtlCam_InitViews, selects view 0, tail-calls DemoCam_Reset.
+BtlCam_Reset = 0x0023EB48; // type:func // guess
+// 0x23EC48(out, from, to, &frac, &obj): segment test to..from (radius 2.0) against the collision object(s) 0x23FF78(-1, p)
+// returns for both ends, through 0x1B1A38; on a hit out = hit point, frac = hit fraction, returns 1. Skipped while
+// BATTLE_FLAG_LOADING. Callers: 0x1C69C8 (fighter camera) and DemoCam_Update.
+BtlCam_TraceStage = 0x0023EC48; // type:func // guess
+// 0x23EE08(): the view shown when neither or both cameras ask for the screen: mode 8: BattleSide_GetControl(0) == 0 ? 0 :
+// (BattleSide_GetControl(1) == 0 ? 1 : word at 0x2FF280); other modes: BattleReplay_IsActive() ? 0x2080C8() : 0.
+// Also called by 0x207FB0 (is this fighter's camera the one on screen).
+BtlCam_GetDefaultView = 0x0023EE08; // type:func // guess
+// 0x23EE78(split, apply): split-screen only: when the selected view's split flag differs, switches it between its half
+// layout and the full-screen layout and rebuilds it.
+BtlCam_SetLayout = 0x0023EE78; // type:func // guess
+// 0x23EF08(): index of the view with the higher +0x288 value (fighter flag 0xD3, 0/1); on a tie: BtlCam_GetDefaultView()
+// if the value is > 0, else -1.
+BtlCam_GetPriorityView = 0x0023EF08; // type:func // guess
+
+// -- Debug free camera (no callers, no data references) --
+// 0x23F0B0(): clears the static view D_0031C220 and gives it the full-screen layout.
+DbgCam_Init = 0x0023F0B0; // type:func // guess
+// 0x23F0F0(view, pos, rot, pad, speed): gPad[pad] sticks move pos along the view axes (L1 held: pan) or turn rot.
+DbgCam_Update = 0x0023F0F0; // type:func // guess
+// 0x23F3C0(v): stores v in the flag that makes DbgCam_Update ignore the pad.
+DbgCam_SetLocked = 0x0023F3C0; // type:func // guess
+gDbgCamView = 0x0031C220; // size:0x260 // guess
+gDbgCamLocked = 0x002FEBD8; // size:0x4 // guess
+
+// -- Camera shake (struct of f32 time[4], strength[4]; users: the fighter camera 0x1C69C8 / 0x1C6DB0 and DemoCam) --
+// 0x23F3C8(s, strength, time): overwrites the first slot that is weaker and shorter; does nothing if a slot already covers it.
+CamShake_Add = 0x0023F3C8; // type:func // guess
+// 0x23F438(s): every slot's time -= 1/30; an expired slot is zeroed.
+CamShake_Tick = 0x0023F438; // type:func // guess
+// 0x23F478(s, posOfs, rotOfs): zeroes both; if a slot is active, fills them with rand()-based jitter scaled by
+// min(time * 0.05 * strength, 0.1) of the strongest slot.
+CamShake_Calc = 0x0023F478; // type:func // guess
+// 0x23F5E0(s): the time left of the strongest slot (0 when none). No callers.
+CamShake_GetTime = 0x0023F5E0; // type:func // guess
+
+// --- Orbit camera (src/battle/orbit_cam.c, 0x23F620..0x23FB20) ----------------------------------
+// 0x2B0-byte block at gOrbitCam, view at +0x50; used by the viewer code at 0x25D578..0x25DDB0, not by the battle.
+// 0x23F620(): clears the block, full-screen layout, distance 21 (5..500), pitch limit pi/2, target (0,-8.29,0), yaw pi.
+OrbitCam_Reset = 0x0023F620; // type:func // guess
+// 0x23F6B0(): Heap_Alloc(0x2B0) + OrbitCam_Reset. 0x23F6E0(): Heap_Free.
+OrbitCam_Init = 0x0023F6B0; // type:func // guess
+OrbitCam_Term = 0x0023F6E0; // type:func // guess
+// 0x23F708(usePad): gPad[0] left stick turns (yaw/pitch), right stick Y zooms; eye = target - dir * dist; builds and applies the view.
+OrbitCam_Update = 0x0023F708; // type:func // guess
+// Setters / getters of the block's fields: +0x20 target, +0x10 angles, +0x30 distance, +0x34/+0x38 distance range,
+// +0x3C pitch limit, +0x40 pad lock, +0x44 clamp pitch to <= 0.
+OrbitCam_SetTarget = 0x0023F9D0; // type:func // guess
+OrbitCam_SetAngles = 0x0023FA00; // type:func // guess
+OrbitCam_SetDist = 0x0023FA30; // type:func // guess
+OrbitCam_SetDistRange = 0x0023FA40; // type:func // guess
+OrbitCam_SetPitchLimit = 0x0023FA58; // type:func // guess
+OrbitCam_GetTarget = 0x0023FA68; // type:func // guess
+OrbitCam_GetAngles = 0x0023FA88; // type:func // guess
+OrbitCam_GetDist = 0x0023FAA8; // type:func // guess
+OrbitCam_GetDistRange = 0x0023FAB8; // type:func // guess
+OrbitCam_GetPitchLimit = 0x0023FAD8; // type:func // guess
+OrbitCam_ClearAngles = 0x0023FAE8; // type:func // guess
+OrbitCam_SetPadLocked = 0x0023FB00; // type:func // guess
+OrbitCam_SetFloorClamp = 0x0023FB10; // type:func // guess
+gOrbitCam = 0x002FEBDC; // size:0x4 // guess
+
+// --- Scripted (demo) camera (src/battle/btl_demo_cam.c, 0x23D1E8..0x23E040) ----------------------
+// State: gDemoCam (gp 0x2FEBCC) -> 0x340-byte block: View at +0, base matrix +0x260, animation output +0x2A0,
+// animation pointer +0x2C0, fixed pose +0x2D0/+0x2E0, time +0x2F0, attached object +0x300 / fighter +0x304,
+// flags +0x308, shake slots +0x30C, fixed-pose switch +0x32C.
+gDemoCam = 0x002FEBCC; // size:0x4 // guess
+// 0x23D1E8(anim): if anim+4 is set, adds the file's address to the offsets at +8, +0x18, +0x1C and to each channel's
+// key pointer, then clears +4.
+DemoCam_FixupAnim = 0x0023D1E8; // type:func // guess
+// 0x23D270(out, t): out = *anim->defaults (0x20 bytes); per channel finds the keys around t and writes the
+// interpolated (or stepped, key flag 0x10) value to out[channel index].
+DemoCam_EvalAnim = 0x0023D270; // type:func // guess
+// 0x23D3F0(): returns gDemoCam. No callers.
+DemoCam_Get = 0x0023D3F0; // type:func // guess
+// 0x23D3F8(): clears +0x260..+0x340, View_InitLayout(view, 0), identity base, zero fixed pose. Called by BtlCam_Reset
+// and by DemoCam_IsActive when a stop was requested.
+DemoCam_Reset = 0x0023D3F8; // type:func // guess
+// 0x23D450(): Heap_Alloc(0x340), memset, View_InitLayout, DemoCam_Reset. 0x23D498(): Heap_Free. Called by BtlCam_Init / BtlCam_Term.
+DemoCam_Init = 0x0023D450; // type:func // guess
+DemoCam_Term = 0x0023D498; // type:func // guess
+// 0x23D4C0(anim): +0x2C0 = anim, fixup, clears +0x2F8..+0x304, identity base.
+DemoCam_SetAnim = 0x0023D4C0; // type:func // guess
+// 0x23D510(): the per-frame update, called by BtlCam_UpdateOverride while DemoCam_IsActive(): fixed pose or animation
+// (+2.0 time per frame with flag 4 unless BATTLE_FLAG_PAUSE), shake, stage collision, View_UpdateMatrices + View_Apply.
+DemoCam_Update = 0x0023D510; // type:func // guess
+// 0x23DB10(mtx): copies mtx to +0x260 when an animation is selected.
+DemoCam_SetBase = 0x0023DB10; // type:func // guess
+// 0x23DB48(): anim->0x14 (length) or 0. 0x23DB68(): +0x2F0 (time) or 0. 0x23DB88(t): +0x2F4 = min(time, t), time = t.
+DemoCam_GetLength = 0x0023DB48; // type:func // guess
+DemoCam_GetTime = 0x0023DB68; // type:func // guess
+DemoCam_SetTime = 0x0023DB88; // type:func // guess
+// 0x23DBC0(): 1 with the fixed pose on; 0 without animation; with flag 2: DemoCam_Reset and 0; else flag 1.
+// BtlCam_UpdateOverride and the battle sequence ("camera cut still playing") test it.
+DemoCam_IsActive = 0x0023DBC0; // type:func // guess
+// 0x23DC20(): anim != NULL ? 1 : (fixed != 0). Declared by btl_seq.c, no caller found in the asm.
+DemoCam_IsInUse = 0x0023DC20; // type:func // guess
+// 0x23DC40 / 0x23DC68 / 0x23DC90: fixed = 0 and flags = 1 / 5 / 0xD (playing; + auto-advance; + stop at end).
+DemoCam_Start = 0x0023DC40; // type:func // guess
+DemoCam_StartAuto = 0x0023DC68; // type:func // guess
+DemoCam_StartAutoOnce = 0x0023DC90; // type:func // guess
+// 0x23DCB8(): flags |= 2 (stop request).
+DemoCam_Stop = 0x0023DCB8; // type:func // guess
+// 0x23DCE0(p): +0x300 = p, +0x304 = 0. 0x23DD08(p): +0x304 = p, +0x300 = 0. DemoCam_Update takes the base matrix
+// from 0x2505A8(+0x300 object, 0) + 0x10 or from (+0x304 fighter) + 0x9A0.
+DemoCam_SetObj = 0x0023DCE0; // type:func // guess
+DemoCam_SetChr = 0x0023DD08; // type:func // guess
+// 0x23DD30(t): CamShake_Add(+0x30C, 1.0, t). 0x23DD58(): CamShake_GetTime(+0x30C).
+DemoCam_AddShake = 0x0023DD30; // type:func // guess
+DemoCam_GetShakeTime = 0x0023DD58; // type:func // guess
+// 0x23DD78(pos, rot): stop request, fixed = 1, copies the pose to +0x2D0 / +0x2E0 (w = 1). 0x23DDF8(pos, rot): reads it back.
+DemoCam_SetFixedPose = 0x0023DD78; // type:func // guess
+DemoCam_GetFixedPose = 0x0023DDF8; // type:func // guess
+// 0x23DE30(v): +0x330 = v. 0x23DE40(): fixed = 0. 0x23DE50(): returns fixed.
+DemoCam_SetScaleHeight = 0x0023DE30; // type:func // guess
+DemoCam_ClearFixed = 0x0023DE40; // type:func // guess
+DemoCam_IsFixed = 0x0023DE50; // type:func // guess
+// 0x23DE60(objId, n): animation BtlObj_Get(objId)->0xB0[n], attached as object, time 0, auto. btl_seq.c: fighter entrance cuts.
+DemoCam_PlayObjAnim = 0x0023DE60; // type:func // guess
+// 0x23DED8 / 0x23DF38 / 0x23DF98(objId): the same with the animation at obj+0x908 / +0x90C (attached as fighter) /
+// +0x910 (attached as object). Caller 0x1C6DE0.
+DemoCam_PlayCharAnim0 = 0x0023DED8; // type:func // guess
+DemoCam_PlayCharAnim1 = 0x0023DF38; // type:func // guess
+DemoCam_PlayCharAnim2 = 0x0023DF98; // type:func // guess
+// 0x23DFF8(i): animation 0x242F18(i) of the stage, world space, time 0, flags 0xD; returns 1 if it exists. btl_seq.c: intro cuts 0..2.
+DemoCam_PlayStageAnim = 0x0023DFF8; // type:func // guess

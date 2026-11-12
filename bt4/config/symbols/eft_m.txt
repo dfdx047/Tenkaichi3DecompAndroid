@@ -1,0 +1,92 @@
+// Effect tasks, 0x15F728..0x1637A0 (src/battle/eft_m.c).
+//
+// --- Speed lines (the module itself; its two spawners called by the fighter are in eft_l, 0x15EF18 / 0x15F3D8) ---
+// The module's task table is D_002C3A18 = { Update 0x15FB28, Init 0x15FA88, Term 0x15FAF0, stub 0x15FB58, 0,
+// Draw 0x15FB60 }, listed in the layer table D_002C3FB0. Its work (gEftSpdLine, 0x18D0 bytes from the BtlPool)
+// holds 30 "trail" segments of 0x50 bytes and 40 "streak" segments of 0x60 bytes, each kind on its own doubly
+// linked list, drawn as camera-facing textured quads between two points. The fighter effect layer feeds it
+// through EftSpdLine_SpawnBodyTrails (request 0xB, moving faster than half the reference speed) and
+// EftSpdLine_SpawnPartStreaks (animation event 8, per model part), both in eft_l.
+// 0x15F728(objId, dir, node, count, unused, lifeMin, lifeRange): spawns `count` streaks in a ring around a model
+// node, pointing against `dir`; no caller in the main executable.
+EftSpdLine_SpawnStreakRing = 0x0015F728; // type:func // guess
+EftSpdLine_Init = 0x0015FA88; // type:func // guess
+EftSpdLine_Term = 0x0015FAF0; // type:func // guess
+EftSpdLine_Update = 0x0015FB28; // type:func // guess
+EftSpdLine_Stub = 0x0015FB58; // type:func // guess
+EftSpdLine_Draw = 0x0015FB60; // type:func // guess
+// Trails (0x50 bytes, 30 slots): AllocTrail returns a zeroed free slot (flags == 0); AddTrail(objId, pos, dir)
+// links it at the list tail (width random, alpha 64, life 2 frames); UpdateTrails steps every trail unless the
+// battle is paused and unlinks the finished ones; StepTrail moves the head by the owner's frame move and puts the
+// tail behind it; DrawTrails / BuildTrailQuad build the quad facing the camera.
+EftSpdLine_AllocTrail = 0x0015FB98; // type:func // guess
+EftSpdLine_AddTrail = 0x0015FBF8; // type:func // guess
+EftSpdLine_UpdateTrails = 0x0015FD58; // type:func // guess
+EftSpdLine_StepTrail = 0x0015FE20; // type:func // guess
+EftSpdLine_DrawTrails = 0x0015FF38; // type:func // guess
+// Streaks (0x60 bytes, 40 slots): the same five functions; a streak moves both ends along its own direction and
+// fades from alpha 160 to 0 over `life` seconds.
+EftSpdLine_AllocStreak = 0x00160008; // type:func // guess
+EftSpdLine_AddStreak = 0x00160068; // type:func // guess
+EftSpdLine_UpdateStreaks = 0x001601E0; // type:func // guess
+EftSpdLine_StepStreak = 0x001602A8; // type:func // guess
+EftSpdLine_DrawStreaks = 0x00160330; // type:func // guess
+EftSpdLine_BuildTrailQuad = 0x00160408; // type:func // guess
+EftSpdLine_BuildStreakQuad = 0x00160588; // type:func // guess
+// 0x160720(quad, mtx, tex, blend, inView, r, g, b, a): two triangles (strip of the four corners) to 0x131640.
+EftSpdLine_DrawQuad = 0x00160720; // type:func // guess
+// 0x160978(a, b): when any segment is alive, func_001ADF20(textures, a, b) and sets the "ready" word, else clears it.
+EftSpdLine_UpdateTexture = 0x00160978; // type:func // guess
+gEftSpdLine = 0x002FF1AC; // size:0x4 // guess
+
+// --- Aura particles (first half of the aura module, which continues at 0x1637A0) --------------------------
+// The fighter effect layer drives the aura through 0x165418(objId, cmd) and 0x165180(objId, level)
+// (BtlFx_UpdateAura in btl_char_fx.c); the aura task at 0x164860 calls EftAura_UpdateState and EftAura_UpdateSparks
+// from here. Three globals: the particle pool (flames of 0xD0 bytes, sparks of 0xB0 bytes, each with a free list
+// and a used list) and two parameter blocks.
+// 0x1609C8(out, objId) / 0x160A60(out, objId): unit direction a spark drifts in: against the fighter's velocity
+// with a random vertical part; the second form goes straight up / down for action effect kinds 3 / 4.
+EftAura_GetSparkDir = 0x001609C8; // type:func // guess
+EftAura_GetSparkDirAlt = 0x00160A60; // type:func // guess
+// Direction terms of a new flame: sideways across the fighter's facing plus away from the aura centre (0x160B78),
+// against the motion of the body part relative to the root (0x160CA0), outward from the aura axis (0x160DA8).
+EftAura_GetFlameSideDir = 0x00160B78; // type:func // guess
+EftAura_GetFlameDragDir = 0x00160CA0; // type:func // guess
+EftAura_GetFlameOutDir = 0x00160DA8; // type:func // guess
+// Per-frame steering of a flame's direction (0x160F18) and speed (0x161058) by its age ratio.
+EftAura_TurnFlame = 0x00160F18; // type:func // guess
+EftAura_AccelFlame = 0x00161058; // type:func // guess
+// 0x1610A8(aura, out, objId, part, radial, vertical): offset from the aura axis towards a body part.
+EftAura_GetPartOffset = 0x001610A8; // type:func // guess
+// Sparks: pool alloc / free by owner, spawn one, spawn along a part, update, first-frame spawn + update, draw.
+EftAura_AllocSpark = 0x00161170; // type:func // guess
+EftAura_FreeSparks = 0x001611F8; // type:func // guess
+EftAura_SpawnSpark = 0x00161258; // type:func // guess
+EftAura_SpawnSparks = 0x001615D8; // type:func // guess
+EftAura_StepSparks = 0x001617D0; // type:func // guess
+EftAura_UpdateSparks = 0x00161A98; // type:func // guess
+EftAura_DrawSparks = 0x00161B20; // type:func // guess
+// Flames: pool alloc, flag word of a new flame, its life / speed / colour alpha / size / stretch / end-of-life
+// ratio, spawn one, spawn along a part, free by owner, update.
+EftAura_AllocFlame = 0x00161D20; // type:func // guess
+EftAura_GetFlameFlags = 0x00161DA8; // type:func // guess
+EftAura_GetFlameLife = 0x00161E18; // type:func // guess
+EftAura_GetFlameSpeed = 0x00161EF8; // type:func // guess
+EftAura_GetFlameAlpha = 0x00162000; // type:func // guess
+EftAura_GetFlameStretch = 0x00162068; // type:func // guess
+EftAura_GetFlameSize = 0x001621A0; // type:func // guess
+EftAura_GetFlameEnd = 0x00162230; // type:func // guess
+EftAura_SpawnFlame = 0x00162308; // type:func // guess
+EftAura_SpawnFlames = 0x00162908; // type:func // guess
+// 0x162C98(aura, arg, reset): marks the aura active (flag 1, plus 0x20 or 0x10 by arg word 1) and, with reset,
+// restarts its fade-in.
+EftAura_Start = 0x00162C98; // type:func // guess
+EftAura_FreeFlames = 0x00162D08; // type:func // guess
+EftAura_StepFlames = 0x00162D68; // type:func // guess
+// 0x163220(aura, objId): first spawns for the ten body parts, the burst / fade state machines, then the flames.
+EftAura_UpdateState = 0x00163220; // type:func // guess
+// 0x1635A0(mtx, dir, pos): rotation whose third axis is `dir` leaned towards / away from the camera, at `pos`.
+EftAura_BuildFlameMtx = 0x001635A0; // type:func // guess
+gEftAuraPool = 0x002FEA00; // size:0x4 // guess
+gEftAuraCfg = 0x002FEA04; // size:0x4 // guess
+gEftAuraPrm = 0x002FEA08; // size:0x4 // guess

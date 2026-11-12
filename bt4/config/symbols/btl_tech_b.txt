@@ -1,0 +1,362 @@
+// src/battle/btl_tech_b.c = 0x20F0E8..0x2129C8: the rest of the character data accessors that btl_tech_a.c starts:
+// the tail of the general parameter block (BtlParam_*), the 13 ki blast records (BtlKiBlast_*), the movement table
+// (BtlMoveParam_*), the techniques of slots 2..4 = Blast 2 x2 + Ultimate (BtlSuper_*) and the skills of slots 0..1 =
+// Blast 1 (BtlSkill_*). The comment above each name is the one-line description from the C. Names marked guess are
+// named for what they read or for their one caller, not for a verified meaning. The five BtlGame_* wrappers at
+// 0x2128C0..0x2129C8 are in this file's range and stay named in battle.txt.
+// Parameter +0x5C (float; no caller found).
+BtlParam_GetUnk5C = 0x0020F0E8; // type:func // guess
+// Parameter +0x68 (float; BtlAct_StepHandler).
+BtlParam_GetUnk68 = 0x0020F110; // type:func // guess
+// Parameter +0x6C (float; BtlAct_StepHandler).
+BtlParam_GetUnk6C = 0x0020F138; // type:func // guess
+// Parameter +0x60: multiplies the reaction scale of a hit this character takes (BtlHit_ApplyHit).
+BtlParam_GetHitReactScale = 0x0020F160; // type:func // guess
+// Parameter +0x70 (s16): copied to fighter +0xD6C every frame.
+BtlParam_GetUnk70 = 0x0020F188; // type:func // guess
+// Parameter +0x72 (s16): copied to fighter +0xD74 every frame.
+BtlParam_GetUnk72 = 0x0020F1B0; // type:func // guess
+// Parameter +0x74: attack charge rate at gauge 0 (BtlAct_GetChargeRate); x1.2 with ability 0x4A.
+BtlParam_GetChargeRateA = 0x0020F1D8; // type:func // guess
+// Parameter +0x78: attack charge rate at a full gauge.
+BtlParam_GetChargeRateB = 0x0020F230; // type:func // guess
+// Parameter +0x7C: multiplier of the damage this character takes (BtlMember_Damage).
+BtlParam_GetDamageTakenScale = 0x0020F258; // type:func
+// Seconds the fighter +0x99C gauge takes to fill: parameter +0x64, / 1.2 (ability 0x34), then x2 (0x1B) or / 0.8 (0x35).
+BtlParam_GetGauge99CTime = 0x0020F280; // type:func // guess
+// Parameter +0xC7 as a fraction (percent * 0.01); x0.5 with ability 0x48, x1.5 with ability 0x49.
+BtlParam_GetUnkC7Scale = 0x0020F318; // type:func // guess
+// Parameter +0xC8 (float; no caller found).
+BtlParam_GetUnkC8 = 0x0020F3A0; // type:func // guess
+// Parameter byte +0x8F + n.
+BtlParam_GetUnk8F = 0x0020F3C8; // type:func // guess
+// Common sound of a dash / burst start: 0x1D with parameter flag 0x10, else 0x1C.
+BtlParam_GetDashSound = 0x0020F3F8; // type:func // guess
+// Common sound 0x15 (charge start); characters with parameter word 0 bit 0x100 also play 0x3E.
+BtlParam_GetChargeStartSound = 0x0020F428; // type:func // guess
+// Common sound 0x16 (charge loop); with word 0 bit 0x100 also plays 0x3F.
+BtlParam_GetChargeLoopSound = 0x0020F468; // type:func // guess
+// Common sound 0x17 (entering the powered-up state); with word 0 bit 0x100 also plays 0x40.
+BtlParam_GetMaxPowerSound = 0x0020F4A8; // type:func // guess
+// 1 unless the character has parameter flag 0x1000 and lacks ability 0x36.
+BtlParam_CanFly = 0x0020F4E8; // type:func // guess
+// Ki blast damage after abilities: +50 % (0xA), then halved (0xB). The kind argument is unused.
+BtlKiBlast_ScaleDamageByAbility = 0x0020F530; // type:func
+// Ki blast speed after abilities, uncharged kinds 0, 4, 8 only: x1.6 (0xE), else x1.4 (0xD), else x1.2 (0xC).
+BtlKiBlast_ScaleSpeedByAbility = 0x0020F5A0; // type:func
+// Ki blast ki cost after abilities: doubled (0x2A), then halved (0x29). The kind argument is unused.
+BtlKiBlast_ScaleKiByAbility = 0x0020F658; // type:func
+// With ability 0x4B and record type 0 or 1, the charged kinds give reaction 0x17 / 0x18 / 0x19 by charge level.
+BtlKiBlast_MapReact = 0x0020F6B8; // type:func
+// The same for the second reaction: 0x1A / 0x1B / 0x1C.
+BtlKiBlast_MapReactS800 = 0x0020F760; // type:func
+// Kind 0..12 of the ki blast the fighter is firing, from its action (0x95), animation and charge; -1 if none.
+BtlKiBlast_GetCurrentKind = 0x0020F808; // type:func
+// Record of the ki blast being fired (kind 0 when none); optionally returns the kind.
+BtlKiBlast_GetCurrent = 0x0020F930; // type:func
+// Record of the ki blast behind a hit record, with its owner and kind; NULL when the hit has no shot.
+BtlKiBlast_GetOfHit = 0x0020F9A8; // type:func
+// Record of kind `kind` (kind 0 when out of range).
+BtlKiBlast_Get = 0x0020FA38; // type:func
+// Record flags; bits 0 and 1 are dropped while BtlChar_TestMemberUnk70.
+BtlKiBlast_GetFlags = 0x0020FA80; // type:func
+// The same for a hit record.
+BtlKiBlast_GetFlagsOfHit = 0x0020FAD0; // type:func
+// The same for a kind.
+BtlKiBlast_GetFlagsOf = 0x0020FB30; // type:func
+// Damage of one hit: record damage * curve row 6, abilities, divided by the hit count when it is 2 or more.
+BtlKiBlast_GetDamage = 0x0020FB78; // type:func
+// The same for a hit record.
+BtlKiBlast_GetDamageOfHit = 0x0020FC08; // type:func
+// The same for a kind.
+BtlKiBlast_GetDamageOf = 0x0020FC90; // type:func
+// Damage of one guarded hit: the same chain on record +0x08.
+BtlKiBlast_GetGuardDamage = 0x0020FD28; // type:func
+// The same for a hit record.
+BtlKiBlast_GetGuardDamageOfHit = 0x0020FDB0; // type:func
+// The same for a kind.
+BtlKiBlast_GetGuardDamageOf = 0x0020FE30; // type:func
+// Ki the shot costs (record +0x0C, abilities).
+BtlKiBlast_GetKiCost = 0x0020FEC0; // type:func
+// The same for a hit record (an absorber gains three times this).
+BtlKiBlast_GetKiCostOfHit = 0x0020FEF8; // type:func
+// The same for a kind.
+BtlKiBlast_GetKiCostOf = 0x0020FF28; // type:func
+// Flight speed per frame (record +0x10 in 10 km/h, abilities).
+BtlKiBlast_GetSpeed = 0x0020FF68; // type:func
+// The same for a hit record.
+BtlKiBlast_GetSpeedOfHit = 0x0020FFB8; // type:func
+// The same for a kind.
+BtlKiBlast_GetSpeedOf = 0x00210000; // type:func
+// Homing turn rate in radians per frame (record +0x14 in degrees per second).
+BtlKiBlast_GetTurnRate = 0x00210050; // type:func // guess
+// The same for a hit record.
+BtlKiBlast_GetTurnRateOfHit = 0x002100A0; // type:func // guess
+// The same for a kind.
+BtlKiBlast_GetTurnRateOf = 0x002100F8; // type:func // guess
+// Record +0x18 (seconds) in frames.
+BtlKiBlast_GetFrames = 0x00210148; // type:func // guess
+// The same for a hit record.
+BtlKiBlast_GetFramesOfHit = 0x00210180; // type:func // guess
+// The same for a kind.
+BtlKiBlast_GetFramesOf = 0x002101B8; // type:func // guess
+// Record +0x31.
+BtlKiBlast_GetUnk31 = 0x002101F0; // type:func // guess
+// The same for a hit record.
+BtlKiBlast_GetUnk31OfHit = 0x00210210; // type:func // guess
+// The same for a kind.
+BtlKiBlast_GetUnk31Of = 0x00210238; // type:func // guess
+// Reaction id of a hit (record +0x24, BtlKiBlast_MapReact).
+BtlKiBlast_GetReact = 0x00210258; // type:func
+// The same for a hit record.
+BtlKiBlast_GetReactOfHit = 0x00210290; // type:func
+// The same for a kind.
+BtlKiBlast_GetReactOf = 0x002102C0; // type:func
+// Reaction against a victim whose state has bit 0x800: record +0x25, or +0x24 when 0 (BtlKiBlast_MapReactS800).
+BtlKiBlast_GetReactS800 = 0x00210300; // type:func
+// The same for a hit record.
+BtlKiBlast_GetReactS800OfHit = 0x00210348; // type:func
+// The same for a kind.
+BtlKiBlast_GetReactS800Of = 0x00210388; // type:func
+// Reaction against a victim whose state has bit 0x4000 or in action 0xDF: record +0x26, or +0x24 when 0.
+BtlKiBlast_GetReactS4000 = 0x002103D8; // type:func
+// The same for a hit record.
+BtlKiBlast_GetReactS4000OfHit = 0x00210410; // type:func
+// The same for a kind.
+BtlKiBlast_GetReactS4000Of = 0x00210448; // type:func
+// Reaction against a victim whose state has bit 0x200: record +0x27, or +0x24 when 0.
+BtlKiBlast_GetReactS200 = 0x00210480; // type:func
+// The same for a hit record.
+BtlKiBlast_GetReactS200OfHit = 0x002104B8; // type:func
+// The same for a kind.
+BtlKiBlast_GetReactS200Of = 0x002104F0; // type:func
+// Record +0x02: type (spark module, sound class, deflect rules).
+BtlKiBlast_GetType = 0x00210528; // type:func // guess
+// The same for a hit record.
+BtlKiBlast_GetTypeOfHit = 0x00210548; // type:func // guess
+// The same for a kind.
+BtlKiBlast_GetTypeOf = 0x00210570; // type:func // guess
+// Record +0x03.
+BtlKiBlast_GetUnk3 = 0x00210590; // type:func // guess
+// The same for a hit record.
+BtlKiBlast_GetUnk3OfHit = 0x002105B0; // type:func // guess
+// The same for a kind.
+BtlKiBlast_GetUnk3Of = 0x002105D8; // type:func // guess
+// Record +0x30: number of hits.
+BtlKiBlast_GetHits = 0x002105F8; // type:func
+// The same for a hit record.
+BtlKiBlast_GetHitsOfHit = 0x00210618; // type:func
+// The same for a kind.
+BtlKiBlast_GetHitsOf = 0x00210640; // type:func
+// Record +0x28 (float).
+BtlKiBlast_GetUnk28 = 0x00210660; // type:func // guess
+// The same for a hit record.
+BtlKiBlast_GetUnk28OfHit = 0x00210680; // type:func // guess
+// The same for a kind.
+BtlKiBlast_GetUnk28Of = 0x002106A8; // type:func // guess
+// Record +0x2C (float).
+BtlKiBlast_GetUnk2C = 0x002106C8; // type:func // guess
+// The same for a hit record.
+BtlKiBlast_GetUnk2COfHit = 0x002106E8; // type:func // guess
+// The same for a kind.
+BtlKiBlast_GetUnk2COf = 0x00210710; // type:func // guess
+// Knock-back speed of one hit: record +0x1C in 10 km/h, per frame, divided by the hit count.
+BtlKiBlast_GetPush = 0x00210730; // type:func
+// The same for a hit record.
+BtlKiBlast_GetPushOfHit = 0x00210788; // type:func
+// The same for a kind.
+BtlKiBlast_GetPushOf = 0x002107E0; // type:func
+// Knock-back speed of one guarded hit: the same from record +0x20.
+BtlKiBlast_GetGuardPush = 0x00210838; // type:func
+// The same for a hit record.
+BtlKiBlast_GetGuardPushOfHit = 0x00210890; // type:func
+// The same for a kind.
+BtlKiBlast_GetGuardPushOf = 0x002108E8; // type:func
+// Movement speed n per frame: table value in 10 km/h, x pose +0xAC for n 4 and 5, x curve row 8 except n 15 and 19, at most 4000 km/h.
+BtlMoveParam_GetSpeed = 0x00210940; // type:func
+// Acceleration n per frame per frame (table +0x50 in 10 km/h per second).
+BtlMoveParam_GetAccel = 0x00210A08; // type:func // guess
+// Table +0x58 (degrees) in radians.
+BtlMoveParam_GetAngle58 = 0x00210A58; // type:func // guess
+// Table +0x5C + n * 4, times 10.
+BtlMoveParam_GetHeight = 0x00210A98; // type:func // guess
+// Ki per frame of movement kind n (table +0x64 per second): kinds 0..2 free with ability 0x26, else halved with 0x25; kind 3 halved with 0x27.
+BtlMoveParam_GetKiCost = 0x00210AD8; // type:func
+// Turn rate n in radians per frame (table +0x74 in degrees per second); x pose +0xAC for n 0.
+BtlMoveParam_GetTurnRate = 0x00210BA8; // type:func
+// Table +0x80 + n * 4 (degrees per second) in radians per frame.
+BtlMoveParam_GetTurnAccel = 0x00210C30; // type:func // guess
+// Table +0x90 + n * 4 (degrees) in radians.
+BtlMoveParam_GetTurnMax = 0x00210C88; // type:func // guess
+// Number of hits of technique slot 2..4: the product of its three factors, at least 1.
+BtlSuper_GetHitCount = 0x00210CD8; // type:func
+// First flag word of the technique.
+BtlSuper_GetFlagsA = 0x00210D48; // type:func
+// Second flag word of the technique.
+BtlSuper_GetFlags = 0x00210D80; // type:func
+// Technique id.
+BtlSuper_GetId = 0x00210DB8; // type:func
+// Table +0x1E (s16): compared with hit +0x8 by BtlColl_TryDodge.
+BtlSuper_GetUnk1E = 0x00210DF0; // type:func // guess
+// Table +0x24 (seconds).
+BtlSuper_GetShotTime = 0x00210E28; // type:func // guess
+// Speed per frame of the technique's projectile (table +0x54 in 10 km/h).
+BtlSuper_GetShotSpeed = 0x00210E60; // type:func // guess
+// Turn rate in radians per frame (table +0x60 in degrees per second).
+BtlSuper_GetShotTurnRate = 0x00210EA8; // type:func // guess
+// Table +0x6C (float).
+BtlSuper_GetShotUnk6C = 0x00210F00; // type:func // guess
+// Table +0x90 (s8; no caller found).
+BtlSuper_GetUnk90 = 0x00210F38; // type:func // guess
+// First hit factor (number of shots), at least 1.
+BtlSuper_GetShots = 0x00210F68; // type:func // guess
+// Second hit factor, at least 1.
+BtlSuper_GetHitsB = 0x00210FA8; // type:func // guess
+// Third hit factor: table byte + 1.
+BtlSuper_GetHitsC = 0x00210FE8; // type:func // guess
+// Table +0x13B: how the hit direction and the recoil are derived.
+BtlSuper_GetHitDirKind = 0x00211020; // type:func // guess
+// Table +0x13E: type of the technique; picks its action block (BtlAct_GetTechniqueAction).
+BtlSuper_GetType = 0x00211050; // type:func // guess
+// Reaction id of a hit.
+BtlSuper_GetReact = 0x00211080; // type:func
+// Reaction of the second hit variant (hit flag 0x10); the first when not positive.
+BtlSuper_GetReactAlt = 0x002110B0; // type:func
+// Reaction against a victim whose state has bit 0x800.
+BtlSuper_GetReactS800 = 0x002110F8; // type:func
+// The same for the second hit variant; BtlSuper_GetReactS800 when not positive.
+BtlSuper_GetReactAltS800 = 0x00211128; // type:func
+// Table +0x14D (copied into the throw description).
+BtlSuper_GetUnk14D = 0x00211170; // type:func // guess
+// Table +0x150: what a guard does against the technique.
+BtlSuper_GetGuardKind = 0x002111A0; // type:func // guess
+// Hit sound kind of the first / second hit variant.
+BtlSuper_GetHitSound = 0x002111D0; // type:func
+// Number of steps of a rush, at least 1.
+BtlSuper_GetStepCount = 0x00211218; // type:func // guess
+// Knock-back speed per frame (table +0x16C in 10 km/h).
+BtlSuper_GetPush = 0x00211258; // type:func
+// Knock-back speed through a guard (table +0x178).
+BtlSuper_GetGuardPush = 0x002112A0; // type:func
+// Table damage * curve row 9 (slots 2, 3) or row 10 (slot 4); per hit unless `total`.
+BtlSuper_GetBaseDamage = 0x002112E8; // type:func
+// The same from the guard damage column.
+BtlSuper_GetBaseGuardDamage = 0x002113C0; // type:func
+// Ki the technique costs; halved with ability 0x2B.
+BtlSuper_GetKiCost = 0x00211498; // type:func
+// Damage the technique does to its user.
+BtlSuper_GetRecoilDamage = 0x002114F8; // type:func
+// Table +0x1B4 (s32): amount drained during a rush.
+BtlSuper_GetDrain = 0x00211530; // type:func // guess
+// Cooldown after the technique in frames (table +0x1C0 in seconds); stored in fighter +0xE40 on leaving.
+BtlSuper_GetCooldownFrames = 0x00211568; // type:func // guess
+// Table +0x1CC (seconds) in frames: how long the charge type can be held.
+BtlSuper_GetChargeLimitFrames = 0x002115B0; // type:func // guess
+// Damage multiplier of a fully charged technique.
+BtlSuper_GetChargeScale = 0x002115F8; // type:func
+// Table +0x1E4 (degrees) in radians; throw description +0x60.
+BtlSuper_GetThrowAngleA = 0x00211630; // type:func // guess
+// Table +0x1F0 (degrees) in radians; throw description +0x64.
+BtlSuper_GetThrowAngleB = 0x00211680; // type:func // guess
+// Speed per frame of the rush dash (table +0x1FC in 10 km/h).
+BtlSuper_GetRushSpeed = 0x002116D0; // type:func // guess
+// Character the technique's throw brings in: the table entry, or the alternate when the user is that character or (ids of 0x100 and above, flag 0x40000000) the user wears costume 1.
+BtlSuper_GetThrowChara = 0x00211718; // type:func // guess
+// Costume for that character: the user's with flag 0x40000000, else 1 for technique 0x27F, else 0; 0 for ids of 0x100 and above.
+BtlSuper_GetThrowCostume = 0x002117C0; // type:func // guess
+// The user's gauge +0x20 when the entry is below 0x100 and the technique has flag 0x40000000, else 0.
+BtlSuper_GetThrowGauge20 = 0x00211858; // type:func // guess
+// Table +0x220 (s8; throw description +0x18).
+BtlSuper_GetUnk220 = 0x002118D0; // type:func // guess
+// Table +0x223 (s8); 999 when negative.
+BtlSuper_GetUnk223 = 0x00211900; // type:func // guess
+// Table +0x226 (s8; throw description +0x2C).
+BtlSuper_GetUnk226 = 0x00211940; // type:func // guess
+// Table +0x229: row of the roster's prompt table.
+BtlSuper_GetPromptRowIndex = 0x00211970; // type:func // guess
+// That row (roster +0x34, 0x14 bytes each).
+BtlSuper_GetPromptRow = 0x002119A0; // type:func // guess
+// Table +0x165 (s8).
+BtlSuper_GetUnk165 = 0x002119D8; // type:func // guess
+// Table +0x168, or the step count - 1 when negative.
+BtlSuper_GetLastStep = 0x00211A08; // type:func // guess
+// Table +0x22C (seconds) in frames.
+BtlSuper_GetFrames22C = 0x00211A60; // type:func // guess
+// Table +0x238 (seconds) in frames.
+BtlSuper_GetFrames238 = 0x00211AA8; // type:func // guess
+// Damage of technique slot 2..4 (per hit unless `total`; the guard column when `guard`), with every modifier.
+BtlSuper_GetDamage = 0x00211AF0; // type:func
+// Position and yaw of the technique's cutscene on the current stage, entry n of 5.
+BtlSuper_GetStagePlacement = 0x00211E78; // type:func // guess
+// 1 when any of the technique's four reactions is 0x22 (caught by a throw).
+BtlSuper_IsThrow = 0x00211F60; // type:func
+// Number of hits of skill slot 0..1: the product of its three factors.
+BtlSkill_GetHitCount = 0x00211FE8; // type:func
+// First flag word of the skill (no caller found).
+BtlSkill_GetFlagsA = 0x00212048; // type:func
+// Second flag word of the skill.
+BtlSkill_GetFlags = 0x00212080; // type:func
+// Skill id.
+BtlSkill_GetId = 0x002120B8; // type:func
+// Table +0x14 (s16; no caller found).
+BtlSkill_GetUnk14 = 0x002120F0; // type:func // guess
+// Table +0x18 (float).
+BtlSkill_GetShotTime = 0x00212128; // type:func // guess
+// Speed per frame of the skill's projectile (table +0x20 in 10 km/h).
+BtlSkill_GetShotSpeed = 0x00212160; // type:func // guess
+// Turn rate in radians per frame (table +0x28 in degrees per second).
+BtlSkill_GetShotTurnRate = 0x002121A8; // type:func // guess
+// Table +0x30 (float).
+BtlSkill_GetShotUnk30 = 0x00212200; // type:func // guess
+// Table +0x38 (s8; no caller found).
+BtlSkill_GetUnk38 = 0x00212238; // type:func // guess
+// First hit factor, at least 1.
+BtlSkill_GetShots = 0x00212268; // type:func // guess
+// Second hit factor, at least 1.
+BtlSkill_GetHitsB = 0x002122A8; // type:func // guess
+// Third hit factor: table byte + 1.
+BtlSkill_GetHitsC = 0x002122E8; // type:func // guess
+// Table +0x62: 4 = the hit direction is not taken from the attacker (BtlColl_HitByStrike).
+BtlSkill_GetHitDirKind = 0x00212320; // type:func // guess
+// Table +0x64: which action block runs the skill (BtlAct_GetSkillAction).
+BtlSkill_GetSequence = 0x00212350; // type:func // guess
+// Table +0x9E (s8).
+BtlSkill_GetUnk9E = 0x00212380; // type:func // guess
+// Table +0x66: how long the skill's stat modifiers last (BTL_STAT_KIND_*).
+BtlSkill_GetStatKind = 0x002123B0; // type:func
+// Reaction id of a hit.
+BtlSkill_GetReact = 0x002123E0; // type:func
+// Reaction against a victim whose state has bit 0x800; the first when not positive.
+BtlSkill_GetReactS800 = 0x00212410; // type:func
+// Hit sound kind.
+BtlSkill_GetHitSound = 0x00212458; // type:func
+// Knock-back of one hit: table +0x74 divided by the hit count.
+BtlSkill_GetPush = 0x00212488; // type:func
+// Knock-back of one guarded hit: table +0x7C divided by the hit count.
+BtlSkill_GetGuardPush = 0x002124E8; // type:func
+// Damage (table +0x84); per hit unless `total`.
+BtlSkill_GetDamage = 0x00212548; // type:func
+// Damage through a guard (table +0x8C); per hit unless `total`.
+BtlSkill_GetGuardDamage = 0x002125C0; // type:func
+// Blast gauge the skill costs: stocks (one less with ability 0x15, at least 1) * 100000.
+BtlSkill_GetBlastCost = 0x00212638; // type:func
+// Level the skill adds to stat 0 (table +0x96).
+BtlSkill_GetStatLevel0 = 0x002126A0; // type:func
+// Level the skill adds to stat 2 (table +0x98).
+BtlSkill_GetStatLevel2 = 0x002126D0; // type:func
+// Level the skill adds to stat 1 (table +0x9A).
+BtlSkill_GetStatLevel1 = 0x00212700; // type:func
+// Level the skill adds to stat 3 (table +0x9C).
+BtlSkill_GetStatLevel3 = 0x00212730; // type:func
+// Duration of the skill's effect (table +0xA0 in seconds) in frames.
+BtlSkill_GetFrames = 0x00212760; // type:func
+// Health the skill gives (negative: takes): table percent of the maximum health.
+BtlSkill_GetHealthChange = 0x002127A8; // type:func
+// Ki the skill gives (negative: takes).
+BtlSkill_GetKiChange = 0x00212818; // type:func
+// Table +0xB8: second timed value (BtlSkill_Apply).
+BtlSkill_GetValF = 0x00212850; // type:func // guess
+// Table +0xC0: first timed value (BtlSkill_Apply).
+BtlSkill_GetValE = 0x00212888; // type:func // guess
+// 1 while a replay is being played: written by BtlGame_Reset.
+gBtlGameReplayActive = 0x002FEB28; // size:0x4 // guess

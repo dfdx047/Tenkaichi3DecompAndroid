@@ -1,0 +1,749 @@
+name: Dragon Ball Z - Budokai Tenkaichi 3 (USA) (SLUS-21678)
+sha1: caee6c2269bba89fc51eea9e7beac3adbec9dc52
+options:
+  basename: SLUS_216.78
+  target_path: disc/SLUS_216.78.rom
+  elf_path: build/SLUS_216.78.elf
+  base_path: ..
+  platform: ps2
+  compiler: EEGCC
+
+  gp_value: 0x00304270
+  ld_gp_expression: cod_LIT4_START + 0x7FF0
+
+  # asm_path: asm
+  # src_path: src
+  # build_path: build
+
+  ld_script_path: build/SLUS_216.78.ld
+  ld_dependencies: True
+  ld_wildcard_sections: True
+  ld_bss_contains_common: True
+
+  create_asm_dependencies: False
+  generate_asm_macros_files: False
+
+  find_file_boundaries: False
+
+  o_as_suffix: True
+
+  symbol_addrs_path:
+    - config/symbol_addrs.txt
+    - config/symbols/lib.txt
+    - config/symbols/game.txt
+    - config/symbols/sys_util.txt
+    - config/symbols/sys_file.txt
+    - config/symbols/rand_pool.txt
+    - config/symbols/boot.txt
+    - config/symbols/sys_pad.txt
+    - config/symbols/sys_adx.txt
+    - config/symbols/sys_common.txt
+    - config/symbols/battle.txt
+    - config/symbols/btl_seq.txt
+    - config/symbols/game_pad.txt
+    - config/symbols/save.txt
+    - config/symbols/battle_work.txt
+    - config/symbols/battle_setup.txt
+    - config/symbols/btl_cam.txt
+    - config/symbols/btl_input.txt
+    - config/symbols/btl_scene.txt
+    - config/symbols/btl_text.txt
+    - config/symbols/fade.txt
+    - config/symbols/gfx.txt
+    - config/symbols/math3d.txt
+    - config/symbols/snd.txt
+    - config/symbols/btl_1bb.txt
+    - config/symbols/btl_ai.txt
+    - config/symbols/btl_char_api.txt
+    - config/symbols/btl_char_cam.txt
+    - config/symbols/btl_char_mgr.txt
+    - config/symbols/btl_obj.txt
+    - config/symbols/btl_replay.txt
+    - config/symbols/btl_script.txt
+    - config/symbols/movie.txt
+    - config/symbols/sys_helpers.txt
+    - config/symbols/sys_rigid.txt
+    - config/symbols/btl_script_cmd.txt
+    - config/symbols/btl_char_status.txt
+    - config/symbols/btl_char_hit.txt
+    - config/symbols/btl_char_coll.txt
+    - config/symbols/btl_char_member.txt
+    - config/symbols/btl_char_ctl.txt
+    - config/symbols/btl_char_flag.txt
+    - config/symbols/btl_char_move.txt
+    - config/symbols/btl_char_action.txt
+    - config/symbols/btl_ai_act.txt
+    - config/symbols/btl_ai_think.txt
+    - config/symbols/btl_char_fx.txt
+    - config/symbols/btl_act_a.txt
+    - config/symbols/btl_act_b.txt
+    - config/symbols/btl_act_c.txt
+    - config/symbols/btl_act_d.txt
+    - config/symbols/btl_act_e.txt
+    - config/symbols/btl_act_f.txt
+    - config/symbols/btl_act_g.txt
+    - config/symbols/btl_act_h.txt
+    - config/symbols/btl_act_i.txt
+    - config/symbols/btl_act_j.txt
+    - config/symbols/btl_capi_a.txt
+    - config/symbols/btl_capi_b.txt
+    - config/symbols/btl_tech_a.txt
+    - config/symbols/btl_tech_b.txt
+    - config/symbols/eft_a.txt
+    - config/symbols/eft_b.txt
+    - config/symbols/eft_c.txt
+    - config/symbols/eft_d.txt
+    - config/symbols/eft_e.txt
+    - config/symbols/eft_f.txt
+    - config/symbols/eft_g.txt
+    - config/symbols/eft_h.txt
+    - config/symbols/eft_i.txt
+    - config/symbols/eft_j.txt
+    - config/symbols/eft_k.txt
+    - config/symbols/eft_l.txt
+    - config/symbols/eft_m.txt
+    - config/symbols/stg_a.txt
+    - config/symbols/stg_b.txt
+    - config/symbols/stg_c.txt
+    - config/symbols/eft_n.txt
+    - config/symbols/eft_o.txt
+    - config/symbols/eft_p.txt
+    - config/symbols/eft_q.txt
+    - config/symbols/eft_r.txt
+    - config/symbols/eft_s.txt
+    - config/symbols/eft_t.txt
+    - config/symbols/eft_u.txt
+    - config/symbols/eft_v.txt
+    - config/symbols/eft_w.txt
+    - config/symbols/eft_x.txt
+    - config/symbols/eft_y.txt
+    - config/symbols/eft_z.txt
+    - config/symbols/eft_aa.txt
+    - config/symbols/eft_ab.txt
+    - config/symbols/eft_ac.txt
+    - config/symbols/eft_ad.txt
+    - config/symbols/eft_det_a.txt
+    - config/symbols/eft_det_b.txt
+    - config/symbols/stg_d.txt
+    - config/symbols/col_a.txt
+    - config/symbols/eft_ae.txt
+    - config/symbols/col_b.txt
+    - config/symbols/col_c.txt
+    - config/symbols/bobj_a.txt
+    - config/symbols/bobj_b.txt
+    - config/symbols/btl_ai_seq_a.txt
+    - config/symbols/vu0_a.txt
+    - config/symbols/vu0_b.txt
+    - config/symbols/dialog.txt
+    - config/symbols/cri_adxf.txt
+    - config/symbols/hud_a.txt
+    - config/symbols/hud_b.txt
+    - config/symbols/gfxm_a.txt
+    - config/symbols/gfxm_b.txt
+    - config/symbols/view_a.txt
+    - config/symbols/gfxm_c.txt
+    - config/symbols/gfxm_d.txt
+    - config/symbols/gfxm_e.txt
+    - config/symbols/stgm_a.txt
+    - config/symbols/mcflow_a.txt
+    - config/symbols/hud_0.txt
+    - config/symbols/hud_c.txt
+    - config/symbols/hud_d.txt
+    - config/symbols/hud_e.txt
+    - config/symbols/misc_a.txt
+    - config/symbols/view_b.txt
+    - config/symbols/late_a.txt
+    - config/symbols/menu_a.txt
+    - config/symbols/menu_b.txt
+    - config/symbols/menu_c.txt
+    - config/symbols/menu_d.txt
+    - config/symbols/menu_e.txt
+    - config/symbols/menu_f.txt
+    - config/symbols/menu_g.txt
+    - config/symbols/menu_h.txt
+    - config/symbols/menu_i.txt
+    - config/symbols/menu_j.txt
+    - config/symbols/menu_k.txt
+    - config/symbols/menu_l.txt
+    - config/symbols/menu_m.txt
+    - config/symbols/menu_n.txt
+    - config/symbols/menu_o.txt
+    - config/symbols/menu_p.txt
+    - config/symbols/menu_q.txt
+    - config/symbols/menu_r.txt
+    - config/symbols/menu_s.txt
+    - config/symbols/menu_t.txt
+    - config/symbols/menu_u.txt
+    - config/symbols/menu_v.txt
+    - config/symbols/menu_w.txt
+    - config/symbols/menu_x.txt
+    - config/symbols/menu_y.txt
+    - config/symbols/menu_z.txt
+    - config/symbols/menu_za.txt
+  reloc_addrs_path:
+    - config/reloc_addrs.txt
+
+  undefined_funcs_auto_path: build/undefined_funcs_auto.txt
+  undefined_syms_auto_path: build/undefined_syms_auto.txt
+
+  extensions_path: tools/splat_ext
+
+  string_encoding: ASCII
+  data_string_encoding: ASCII
+  rodata_string_guesser_level: 2
+  data_string_guesser_level: 2
+
+  named_regs_for_c_funcs: False
+
+  section_order:
+    - .text
+    # - .vutext
+    # - .text_nop
+    # - .ctors
+    # - .dtors
+    - .data
+    # - .eh_frame
+    - .rodata
+    - .lit4
+    - .sdata
+    - .sbss
+    # - .scommon
+    - .bss
+
+  auto_link_sections:
+    # - .text_nop
+    # - .ctors
+    # - .dtors
+    - .data
+    # - .eh_frame
+    - .rodata
+    - .lit4
+    - .sdata
+    - .sbss
+    # - .scommon
+    - .bss
+
+segments:
+  - name: cod
+    type: code
+    start: 0x000000
+    vram: 0x00100000
+    bss_size: 0x359A8
+    subalign: null
+    align: 128
+    subsegments:
+      # Generated layout: C files where the code is decompiled, assembly in between.
+      # - battle_load.c holds loader jobs and setup accessors: one object in the original.
+      # - The original padded each object's .rodata to 16 bytes and ours pads to 8, so where a
+      #   C file's rodata is not a multiple of 16 the following assembly chunk starts 8 bytes
+      #   early and carries the padding.
+      - [0x000000, asm, cod/000000] # .text
+      - [0x000258, c, main]
+      - [0x000670, c, sys/dma]
+      - [0x001D40, c, sys/gfx]
+      - [0x002458, c, sys/gfx_ot]
+      - [0x002F28, c, sys/gfxm_a]
+      - [0x006D60, c, sys/gfxm_b]
+      - [0x009938, c, sys/gfxm_b_b]
+      - [0x00A6E0, c, sys/gfxm_b_c]
+      - [0x00AD58, c, sys/gfxm_c]
+      - [0x00EC18, c, sys/gfxm_d]
+      - [0x00FB40, c, sys/gfxm_d_b]
+      - [0x00FFD0, asm, cod/00FFD0]
+      - [0x0101D0, c, sys/gfxm_d_c]
+      - [0x012A30, c, sys/gfxm_e]
+      - [0x0131D8, c, sys/gfxm_e_b]
+      - [0x014860, c, sys/gfxm_e_c]
+      - [0x014B18, c, sys/gfxm_e_d]
+      - [0x015170, c, battle/stg_d_b]
+      - [0x015478, c, battle/stgm_a]
+      - [0x016B98, c, battle/stgm_a_b]
+      - [0x0198D8, c, sys/mcflow_a]
+      - [0x01EC10, c, sys/iop_heap]
+      - [0x01ECB8, c, sys/spu_heap]
+      - [0x01F190, c, sys/timer]
+      - [0x01F548, c, sys/mathf]
+      - [0x01F7D8, c, sys/randf]
+      - [0x01F968, c, sys/mem_read]
+      - [0x01FA10, c, sys/vu0_a_c]
+      - [0x01FE80, c, sys/vu0_a_c_b]
+      - [0x0204B8, c, sys/vu0_a_c_c]
+      - [0x021008, c, sys/vu0_b_c]
+      - [0x022940, c, sys/pad]
+      - [0x023130, c, sys/vu1_packet]
+      - [0x023F48, c, sys/snd]
+      - [0x025568, c, sys/movie]
+      - [0x026608, c, sys/sprite]
+      - [0x026B88, c, sys/color_fade]
+      - [0x026EC8, c, battle/battle_work]
+      - [0x027120, c, battle/battle_load]
+      - [0x02B570, c, battle/battle]
+      - [0x02BD58, c, battle/btl_facade]
+      - [0x02C9F0, c, battle/btl_scene]
+      - [0x02DD80, c, battle/eft_a]
+      - [0x032290, c, battle/eft_b]
+      - [0x036760, c, battle/eft_c]
+      - [0x03A9D0, c, battle/eft_d]
+      - [0x03C300, c, battle/eft_d_b]
+      - [0x03F430, c, battle/eft_e]
+      - [0x047050, c, battle/eft_g]
+      - [0x04B108, c, battle/eft_h]
+      - [0x04F230, c, battle/eft_i]
+      - [0x0532A0, c, battle/eft_j]
+      - [0x057398, c, battle/eft_k]
+      - [0x05C728, c, battle/eft_l_b]
+      - [0x05E5D0, c, battle/eft_l_c]
+      - [0x05EF18, c, battle/eft_l_d]
+      - [0x05F728, c, battle/eft_m]
+      - [0x0637A0, c, battle/eft_n]
+      - [0x067E68, c, battle/eft_o]
+      - [0x0699D0, c, battle/eft_o_b]
+      - [0x06AE78, c, battle/eft_o_c]
+      - [0x06C2E0, c, battle/eft_p]
+      - [0x06DCA0, c, battle/eft_p_b]
+      - [0x070A50, c, battle/eft_q]
+      - [0x074A70, c, battle/eft_r]
+      - [0x078AB0, c, battle/eft_s]
+      - [0x07EE68, c, battle/eft_t_b]
+      - [0x0809C0, c, battle/eft_t_c]
+      - [0x082CE8, c, battle/eft_u_b]
+      - [0x0871A8, c, battle/eft_v_b]
+      - [0x087C50, c, battle/eft_v_c]
+      - [0x0895E8, c, battle/eft_w]
+      - [0x08D618, c, battle/eft_x]
+      - [0x090CC8, c, battle/eft_x_b]
+      - [0x090DA8, c, battle/eft_x_c]
+      - [0x091D28, c, battle/eft_y]
+      - [0x095038, c, battle/eft_z]
+      - [0x098BC0, c, battle/eft_z_b]
+      - [0x099500, c, battle/eft_z_c]
+      - [0x099F28, c, battle/eft_aa]
+      - [0x09E0C0, c, battle/eft_ab]
+      - [0x0A0020, c, battle/eft_ab_b]
+      - [0x0A0E58, c, battle/eft_ab_c]
+      - [0x0A62C8, c, battle/eft_ad]
+      - [0x0A7018, c, battle/btl_pool]
+      - [0x0A7608, c, battle/eft_ad_b]
+      - [0x0A9D90, c, battle/eft_ad_c]
+      - [0x0AA7E8, c, battle/eft_ae]
+      - [0x0AE2A8, c, battle/eft_det_a]
+      - [0x0B16F0, c, battle/eft_det_b]
+      - [0x0B3510, c, battle/eft_det_b_b]
+      - [0x0B3F78, c, battle/eft_det_b_c]
+      - [0x0B4140, c, battle/btl_ai_seq]
+      - [0x0B6D50, c, battle/btl_ai_cond]
+      - [0x0BB128, c, battle/btl_ai_mgr]
+      - [0x0BC8A8, c, battle/btl_ai_act]
+      - [0x0C0058, c, battle/btl_char_mgr]
+      - [0x0C2FF0, c, battle/btl_char_status]
+      - [0x0C3CA8, c, battle/btl_char_status_anim]
+      - [0x0C4BF8, c, battle/btl_char_cam]
+      - [0x0C4F68, c, battle/btl_char_cam_cut]
+      - [0x0C5840, c, battle/btl_char_cam_modes]
+      - [0x0C7B30, c, battle/btl_char_hit]
+      - [0x0CA6D0, c, battle/btl_char_coll_b]
+      - [0x0CDCA8, c, battle/btl_char_member]
+      - [0x0CF578, c, battle/btl_char_fx]
+      - [0x0D1EC8, c, battle/btl_char_fx_c]
+      - [0x0D3B40, c, battle/btl_input]
+      - [0x0D60A0, c, battle/btl_char_ctl_b]
+      - [0x0D6438, c, battle/btl_char_ctl_c]
+      - [0x0D70E8, c, battle/btl_char_ctl_d]
+      - [0x0D8330, c, battle/btl_replay]
+      - [0x0D8750, c, battle/btl_char_flag_clash]
+      - [0x0D9A20, c, battle/btl_char_flag_snd]
+      - [0x0DA8B8, c, battle/btl_char_flag]
+      - [0x0DB048, c, battle/btl_char_flag_opp]
+      - [0x0DBF20, c, battle/btl_char_get]
+      - [0x0DC9A0, c, battle/btl_char_move]
+      - [0x0E0290, c, battle/btl_char_action]
+      - [0x0E3158, c, battle/btl_act_a]
+      - [0x0EA5F8, c, battle/btl_act_c]
+      - [0x0EE058, c, battle/btl_act_d]
+      - [0x0F1930, c, battle/btl_act_e]
+      - [0x0F5460, c, battle/btl_act_f]
+      - [0x0FC2B0, c, battle/btl_act_h]
+      - [0x0FC598, c, battle/btl_act_h_b]
+      - [0x103168, c, battle/btl_act_j]
+      - [0x104E78, c, battle/btl_capi_a]
+      - [0x107020, c, battle/btl_char_api]
+      - [0x108430, c, battle/btl_capi_b]
+      - [0x10BA80, c, battle/btl_tech_a]
+      - [0x10F0E8, c, battle/btl_tech_b]
+      - [0x1129C8, c, battle/hud_0]
+      - [0x113238, c, battle/hud_0_b]
+      - [0x115010, c, battle/hud_0_c]
+      - [0x115420, c, battle/btl_seq]
+      - [0x1187E0, c, battle/hud_a]
+      - [0x119EB0, c, battle/hud_a_b]
+      - [0x11BCA0, c, battle/hud_a_c]
+      - [0x11C0E0, c, battle/hud_a_d]
+      - [0x11CA60, c, battle/hud_b]
+      - [0x122400, c, battle/hud_c]
+      - [0x122730, c, battle/hud_c_b]
+      - [0x124B50, c, battle/hud_c_c]
+      - [0x126488, c, battle/hud_d]
+      - [0x126500, c, battle/hud_d_b]
+      - [0x12A750, c, battle/hud_e]
+      - [0x12B4F8, c, battle/hud_e_b]
+      - [0x12EC08, c, battle/hud_e_c]
+      - [0x12F998, c, battle/hud_e_d]
+      - [0x12FC40, c, battle/hud_e_e]
+      - [0x12FD10, c, battle/stg_d]
+      - [0x130B38, c, battle/col_a]
+      - [0x136190, c, battle/col_b]
+      - [0x139BB0, c, battle/col_c]
+      - [0x13C310, c, battle/col_c_b]
+      - [0x13D1E8, c, battle/btl_demo_cam]
+      - [0x13E040, c, battle/btl_cam]
+      - [0x13F620, c, battle/orbit_cam]
+      - [0x13FB20, c, battle/stg_a]
+      - [0x140C68, asm, cod/140C68]
+      - [0x140DB8, c, battle/stg_a_b]
+      - [0x142D28, c, battle/stg_b]
+      - [0x145F58, c, battle/stg_c]
+      - [0x148F28, c, battle/btl_obj]
+      - [0x14BBE8, c, battle/bobj_a]
+      - [0x150B28, c, battle/bobj_b_b]
+      - [0x1527B0, c, sys/fade]
+      - [0x152F68, c, sys/misc_a]
+      - [0x153ED8, c, sys/misc_a_b]
+      - [0x154A20, c, sys/rand]
+      - [0x154E28, c, sys/heap]
+      - [0x1557A8, c, sys/heap_info]
+      - [0x155898, c, sys/list]
+      - [0x155EE8, c, sys/queue]
+      - [0x156128, c, sys/align]
+      - [0x1562A8, c, sys/math3d]
+      - [0x1574F0, c, sys/game_pad]
+      - [0x157870, c, sys/gsc]
+      - [0x158D20, c, battle/btl_script]
+      - [0x159EC8, c, battle/btl_script_cmd]
+      - [0x15C2A8, c, battle/view_a]
+      - [0x15CFC0, c, battle/view_a_b]
+      - [0x15D290, c, battle/view_a_c]
+      - [0x15D468, c, battle/view_a_d]
+      - [0x15DE68, c, battle/view_a_e]
+      - [0x1600B0, c, battle/view_b]
+      - [0x160D20, c, battle/view_b_b]
+      - [0x1614B0, c, battle/view_b_c]
+      - [0x161ED8, c, battle/view_b_d]
+      - [0x162FF0, c, battle/view_b_e]
+      - [0x163098, c, sys/debug]
+      - [0x1630E8, c, sys/common]
+      - [0x163278, c, sys/bpe]
+      - [0x163478, c, sys/job]
+      - [0x1635C8, c, sys/loading]
+      - [0x164A50, c, sys/file]
+      - [0x165578, c, sys/adx]
+      - [0x166088, c, sys/save]
+      - [0x166728, c, sys/rigid]
+      - [0x167AB8, c, sys/ramp]
+      - [0x167B90, c, sys/pad_watch]
+      - [0x168248, c, sys/dialog]
+      - [0x169228, asm, cod/169228]
+      - [0x173CA0, c, cri/adxt]
+      - [0x173CF0, asm, cod/173CF0]
+      - [0x1BD230, c, sys/late_a]
+      - [0x1BEB20, c, sys/late_a_b]
+      - [0x1BF370, c, sys/late_a_c]
+      - [0x1BF6B0, textbin, cod/1BF6B0] # .vutext
+      - [0x1C3380, data, cod/1C3380] # .text_nop
+      - [0x1C3388, data, cod/1C3388] # .ctors
+      - [0x1C3398, data, cod/1C3398] # .dtors
+      - [0x1C3400, data, cod/1C3400] # .data
+      - [0x1EB34C, .data, sys/late_a_b]
+      - [0x1EB350, .data, sys/late_a_c]
+      - [0x1EB354, data, cod/1EB354] # 4 bytes of padding, then .eh_frame (0x1EB358)
+      - [0x1EB380, rodata, cod/1EB380] # .rodata
+      - [0x1EB3A8, .rodata, main]
+      - [0x1EB550, .rodata, sys/dma]
+      - [0x1EB5B0, .rodata, sys/gfx]
+      - [0x1EB610, .rodata, sys/gfx_ot]
+      - [0x1EB6A0, .rodata, sys/gfxm_b]
+      - [0x1EB740, .rodata, sys/gfxm_c]
+      - [0x1EB7E0, .rodata, sys/gfxm_d_c]
+      - [0x1EB8F0, .rodata, sys/gfxm_e]
+      - [0x1EB970, .rodata, sys/gfxm_e_b]
+      - [0x1EB9A0, .rodata, battle/stgm_a]
+      - [0x1EBA80, .rodata, battle/stgm_a_b]
+      - [0x1EBD30, .rodata, sys/mcflow_a]
+      - [0x1EC248, rodata, cod/1EC248]
+      - [0x1EC300, .rodata, sys/movie]
+      - [0x1EC350, .rodata, battle/battle_load]
+      - [0x1EC420, .rodata, battle/btl_scene]
+      - [0x1EC4E0, .rodata, battle/eft_a]
+      - [0x1EC620, .rodata, battle/eft_b]
+      - [0x1EC720, .rodata, battle/eft_c]
+      - [0x1EC7C0, .rodata, battle/eft_d_b]
+      - [0x1EC8E0, .rodata, battle/eft_e]
+      - [0x1EC910, .rodata, battle/eft_h]
+      - [0x1EC990, .rodata, battle/eft_i]
+      - [0x1ECAD0, .rodata, battle/eft_j]
+      - [0x1ECB60, rodata, cod/1ECB60]
+      - [0x1ECBA0, .rodata, battle/eft_l_d]
+      - [0x1ECC20, .rodata, battle/eft_m]
+      - [0x1ECC30, .rodata, battle/eft_n]
+      - [0x1ECC50, .rodata, battle/eft_o_b]
+      - [0x1ECCA0, .rodata, battle/eft_o_c]
+      - [0x1ECCC0, .rodata, battle/eft_q]
+      - [0x1ECD40, .rodata, battle/eft_r]
+      - [0x1ECD60, .rodata, battle/eft_s]
+      - [0x1ECE60, .rodata, battle/eft_t_b]
+      - [0x1ECEC0, .rodata, battle/eft_t_c]
+      - [0x1ED1D0, .rodata, battle/eft_v_b]
+      - [0x1ED2B8, .rodata, battle/eft_w]
+      - [0x1ED2D8, .rodata, battle/eft_y]
+      - [0x1ED310, .rodata, battle/eft_z]
+      - [0x1ED360, .rodata, battle/eft_aa]
+      - [0x1ED4C0, .rodata, battle/eft_ab_b]
+      - [0x1ED510, .rodata, battle/eft_ab_c]
+      - [0x1ED6E0, .rodata, battle/eft_det_a]
+      - [0x1ED880, .rodata, battle/eft_det_b]
+      - [0x1ED8A0, .rodata, battle/eft_det_b_c]
+      - [0x1ED8C0, .rodata, battle/btl_ai_seq]
+      - [0x1EDA70, .rodata, battle/btl_ai_cond]
+      - [0x1EE250, .rodata, battle/btl_ai_mgr]
+      - [0x1EE270, .rodata, battle/btl_ai_act]
+      - [0x1EE2D0, .rodata, battle/btl_char_mgr]
+      - [0x1EE7BC, rodata, cod/1EE7BC]
+      - [0x1EE860, .rodata, battle/btl_char_status]
+      - [0x1EE8F0, .rodata, battle/btl_char_hit]
+      - [0x1EEB10, .rodata, battle/btl_char_coll_b]
+      - [0x1EEEE0, .rodata, battle/btl_char_member]
+      - [0x1EEF10, .rodata, battle/btl_char_fx]
+      - [0x1EF050, .rodata, battle/btl_input]
+      - [0x1EF240, .rodata, battle/btl_char_flag_clash]
+      - [0x1EF290, .rodata, battle/btl_char_flag_snd]
+      - [0x1EF2D0, .rodata, battle/btl_char_move]
+      - [0x1EF340, .rodata, battle/btl_char_action]
+      - [0x1EF370, .rodata, battle/btl_act_a]
+      - [0x1EF920, .rodata, battle/btl_act_c]
+      - [0x1EFA40, .rodata, battle/btl_act_d]
+      - [0x1EFB20, .rodata, battle/btl_act_e]
+      - [0x1EFC80, .rodata, battle/btl_act_f]
+      - [0x1F0FD0, .rodata, battle/btl_act_h_b]
+      - [0x1F11D0, .rodata, battle/btl_act_j]
+      - [0x1F1600, .rodata, battle/btl_capi_b]
+      - [0x1F1620, .rodata, battle/btl_tech_a]
+      - [0x1F18F0, .rodata, battle/btl_tech_b]
+      - [0x1F19D0, .rodata, battle/hud_0]
+      - [0x1F1A30, .rodata, battle/hud_0_b]
+      - [0x1F1A50, .rodata, battle/btl_seq]
+      - [0x1F1B30, .rodata, battle/hud_a]
+      - [0x1F1B90, .rodata, battle/hud_b]
+      - [0x1F1C40, .rodata, battle/hud_c_b]
+      - [0x1F1DD0, .rodata, battle/hud_c_c]
+      - [0x1F1E00, .rodata, battle/hud_d_b]
+      - [0x1F1F80, .rodata, battle/hud_e]
+      - [0x1F1FD0, .rodata, battle/hud_e_b]
+      - [0x1F2168, rodata, cod/1F2168]
+      - [0x1F2170, .rodata, battle/col_a]
+      - [0x1F2198, rodata, cod/1F2198]
+      - [0x1F21A0, .rodata, battle/col_c]
+      - [0x1F2220, .rodata, battle/stg_a_b]
+      - [0x1F2230, .rodata, battle/stg_b]
+      - [0x1F2370, .rodata, battle/stg_c]
+      - [0x1F23F0, .rodata, battle/btl_obj]
+      - [0x1F2420, .rodata, battle/bobj_a]
+      - [0x1F2AA0, .rodata, sys/misc_a]
+      - [0x1F2CB0, .rodata, sys/misc_a_b]
+      - [0x1F2EC0, .rodata, sys/gsc]
+      - [0x1F2EE0, .rodata, battle/btl_script]
+      - [0x1F2F20, .rodata, battle/btl_script_cmd]
+      - [0x1F30E0, .rodata, battle/view_a]
+      - [0x1F3218, .rodata, battle/view_a_b]
+      - [0x1F3250, .rodata, battle/view_a_e]
+      - [0x1F3290, .rodata, battle/view_b]
+      - [0x1F32D0, .rodata, battle/view_b_c]
+      - [0x1F33D0, .rodata, battle/view_b_d]
+      - [0x1F3488, rodata, cod/1F3488]
+      - [0x1F3500, .rodata, sys/file]
+      - [0x1F35B0, .rodata, sys/dialog]
+      - [0x1F36F8, rodata, cod/1F36F8]
+      - [0x1F4490, .rodata, cri/adxt]
+      - [0x1F44C0, rodata, cod/1F44C0]
+      - [0x1FBDA8, .rodata, sys/late_a]
+      - [0x1FC0F0, .rodata, sys/late_a_b]
+      - [0x1FC280, .lit4, sys/gfxm_a] # .lit4
+      - [0x1FC290, .lit4, sys/gfxm_b]
+      - [0x1FC2A0, lit4, cod/1FC2A0]
+      - [0x1FC2B8, .lit4, sys/gfxm_b_c]
+      - [0x1FC2C0, .lit4, sys/gfxm_d_c]
+      - [0x1FC2CC, lit4, cod/1FC2CC]
+      - [0x1FC2D0, .lit4, sys/gfxm_e_b]
+      - [0x1FC2FC, .lit4, battle/stgm_a]
+      - [0x1FC300, .lit4, sys/timer]
+      - [0x1FC304, .lit4, sys/mathf]
+      - [0x1FC324, .lit4, sys/randf]
+      - [0x1FC328, lit4, cod/1FC328]
+      - [0x1FC330, .lit4, sys/movie]
+      - [0x1FC334, .lit4, battle/btl_scene]
+      - [0x1FC340, .lit4, battle/eft_a]
+      - [0x1FC368, .lit4, battle/eft_b]
+      - [0x1FC3FC, lit4, cod/1FC3FC]
+      - [0x1FC414, .lit4, battle/eft_c]
+      - [0x1FC464, .lit4, battle/eft_d]
+      - [0x1FC474, .lit4, battle/eft_d_b]
+      - [0x1FC4F8, .lit4, battle/eft_e]
+      - [0x1FC708, .lit4, battle/eft_g]
+      - [0x1FC728, lit4, cod/1FC728]
+      - [0x1FC72C, .lit4, battle/eft_h]
+      - [0x1FC744, lit4, cod/1FC744]
+      - [0x1FC750, .lit4, battle/eft_i]
+      - [0x1FC764, .lit4, battle/eft_j]
+      - [0x1FC7D4, .lit4, battle/eft_k]
+      - [0x1FC838, .lit4, battle/eft_l_b]
+      - [0x1FC870, .lit4, battle/eft_l_d]
+      - [0x1FC8B0, .lit4, battle/eft_m]
+      - [0x1FC97C, .lit4, battle/eft_n]
+      - [0x1FCAAC, .lit4, battle/eft_o]
+      - [0x1FCAC8, .lit4, battle/eft_o_b]
+      - [0x1FCAD0, .lit4, battle/eft_o_c]
+      - [0x1FCB18, .lit4, battle/eft_p]
+      - [0x1FCB30, .lit4, battle/eft_p_b]
+      - [0x1FCBBC, .lit4, battle/eft_q]
+      - [0x1FCC0C, .lit4, battle/eft_r]
+      - [0x1FCC40, .lit4, battle/eft_s]
+      - [0x1FCCAC, .lit4, battle/eft_t_b]
+      - [0x1FCCB0, .lit4, battle/eft_t_c]
+      - [0x1FCD04, .lit4, battle/eft_u_b]
+      - [0x1FCD2C, .lit4, battle/eft_v_b]
+      - [0x1FCD34, .lit4, battle/eft_v_c]
+      - [0x1FCD38, .lit4, battle/eft_w]
+      - [0x1FCD58, .lit4, battle/eft_x]
+      - [0x1FCD6C, .lit4, battle/eft_x_c]
+      - [0x1FCD78, .lit4, battle/eft_z]
+      - [0x1FCDCC, .lit4, battle/eft_z_b]
+      - [0x1FCE28, .lit4, battle/eft_z_c]
+      - [0x1FCE54, .lit4, battle/eft_aa]
+      - [0x1FCEA4, .lit4, battle/eft_ab]
+      - [0x1FCEB0, .lit4, battle/eft_ab_b]
+      - [0x1FCEC4, .lit4, battle/eft_ab_c]
+      - [0x1FCEE0, .lit4, battle/eft_ad]
+      - [0x1FCEEC, .lit4, battle/eft_ad_b]
+      - [0x1FCEF4, .lit4, battle/eft_ad_c]
+      - [0x1FCF04, .lit4, battle/eft_ae]
+      - [0x1FCF14, .lit4, battle/eft_det_a]
+      - [0x1FCFC4, .lit4, battle/eft_det_b]
+      - [0x1FCFD8, .lit4, battle/eft_det_b_b]
+      - [0x1FCFDC, .lit4, battle/btl_ai_seq]
+      - [0x1FCFF8, .lit4, battle/btl_ai_cond]
+      - [0x1FD008, .lit4, battle/btl_ai_mgr]
+      - [0x1FD010, .lit4, battle/btl_ai_act]
+      - [0x1FD030, .lit4, battle/btl_char_status_anim]
+      - [0x1FD03C, .lit4, battle/btl_char_cam]
+      - [0x1FD08C, .lit4, battle/btl_char_cam_cut]
+      - [0x1FD094, .lit4, battle/btl_char_cam_modes]
+      - [0x1FD120, .lit4, battle/btl_char_hit]
+      - [0x1FD140, .lit4, battle/btl_char_coll_b]
+      - [0x1FD1C8, .lit4, battle/btl_char_member]
+      - [0x1FD1D8, .lit4, battle/btl_char_fx]
+      - [0x1FD214, .lit4, battle/btl_char_fx_c]
+      - [0x1FD290, .lit4, battle/btl_input]
+      - [0x1FD2A8, .lit4, battle/btl_char_ctl_c]
+      - [0x1FD304, .lit4, battle/btl_char_ctl_d]
+      - [0x1FD310, .lit4, battle/btl_char_flag_clash]
+      - [0x1FD344, .lit4, battle/btl_char_flag_snd]
+      - [0x1FD364, .lit4, battle/btl_char_flag_opp]
+      - [0x1FD37C, .lit4, battle/btl_char_get]
+      - [0x1FD3A4, .lit4, battle/btl_char_move]
+      - [0x1FD48C, .lit4, battle/btl_char_action]
+      - [0x1FD4DC, .lit4, battle/btl_act_a]
+      - [0x1FD7C8, .lit4, battle/btl_act_c]
+      - [0x1FD988, .lit4, battle/btl_act_d]
+      - [0x1FDB44, .lit4, battle/btl_act_e]
+      - [0x1FDD08, .lit4, battle/btl_act_f]
+      - [0x1FDEB0, .lit4, battle/btl_act_h]
+      - [0x1FDEBC, .lit4, battle/btl_act_h_b]
+      - [0x1FE070, .lit4, battle/btl_act_j]
+      - [0x1FE07C, .lit4, battle/btl_capi_a]
+      - [0x1FE0CC, .lit4, battle/btl_capi_b]
+      - [0x1FE0E4, .lit4, battle/btl_tech_a]
+      - [0x1FE114, .lit4, battle/btl_tech_b]
+      - [0x1FE1C0, .lit4, battle/btl_seq]
+      - [0x1FE1D8, .lit4, battle/hud_a]
+      - [0x1FE1DC, .lit4, battle/hud_a_b]
+      - [0x1FE1E4, .lit4, battle/hud_a_c]
+      - [0x1FE1E8, .lit4, battle/hud_b]
+      - [0x1FE20C, .lit4, battle/hud_c_b]
+      - [0x1FE250, .lit4, battle/hud_d_b]
+      - [0x1FE314, .lit4, battle/hud_e]
+      - [0x1FE330, .lit4, battle/hud_e_b]
+      - [0x1FE3CC, .lit4, battle/stg_d]
+      - [0x1FE3F4, .lit4, battle/col_a]
+      - [0x1FE408, lit4, cod/1FE408]
+      - [0x1FE48C, .lit4, battle/col_b]
+      - [0x1FE4B8, .lit4, battle/col_c]
+      - [0x1FE4BC, lit4, cod/1FE4BC]
+      - [0x1FE4CC, .lit4, battle/btl_cam]
+      - [0x1FE550, .lit4, battle/orbit_cam]
+      - [0x1FE588, .lit4, battle/stg_a]
+      - [0x1FE5A4, .lit4, battle/stg_a_b]
+      - [0x1FE5FC, .lit4, battle/stg_b]
+      - [0x1FE628, .lit4, battle/stg_c]
+      - [0x1FE630, .lit4, battle/btl_obj]
+      - [0x1FE640, .lit4, battle/bobj_a]
+      - [0x1FE67C, .lit4, battle/bobj_b_b]
+      - [0x1FE764, .lit4, sys/math3d]
+      - [0x1FE794, .lit4, battle/btl_script_cmd]
+      - [0x1FE7A4, .lit4, battle/view_a_d]
+      - [0x1FE7AC, lit4, cod/1FE7AC]
+      - [0x1FE7B4, .lit4, sys/loading]
+      - [0x1FE7C0, .lit4, sys/adx]
+      - [0x1FE7C4, .lit4, sys/rigid]
+      - [0x1FE81C, .lit4, sys/ramp]
+      - [0x1FE820, lit4, cod/1FE820]
+      - [0x1FE880, sdata, cod/1FE880] # .sdata
+      - [0x1FE8D8, .sdata, sys/gfxm_b_c]
+      - [0x1FE8E0, .sdata, sys/gfxm_c]
+      - [0x1FE914, .sdata, battle/stg_d_b]
+      - [0x1FE918, .sdata, battle/stgm_a_b]
+      - [0x1FE940, .sdata, sys/mcflow_a]
+      - [0x1FE958, sdata, cod/1FE958]
+      - [0x1FE9D0, .sdata, battle/eft_d_b]
+      - [0x1FE9DC, sdata, cod/1FE9DC]
+      - [0x1FE9EC, .sdata, battle/eft_g]
+      - [0x1FE9F0, sdata, cod/1FE9F0]
+      - [0x1FEA10, .sdata, battle/eft_n]
+      - [0x1FEA18, sdata, cod/1FEA18]
+      - [0x1FEA54, .sdata, battle/eft_q]
+      - [0x1FEA58, sdata, cod/1FEA58]
+      - [0x1FEAD8, .sdata, battle/eft_ab_c]
+      - [0x1FEAE0, sdata, cod/1FEAE0]
+      - [0x1FEB20, .sdata, battle/btl_act_a]
+      - [0x1FEB28, sdata, cod/1FEB28]
+      - [0x1FEB3C, .sdata, battle/hud_a]
+      - [0x1FEB40, .sdata, battle/hud_a_b]
+      - [0x1FEB44, .sdata, battle/hud_a_c]
+      - [0x1FEB48, .sdata, battle/hud_a_d]
+      - [0x1FEB50, .sdata, battle/hud_b]
+      - [0x1FEB58, .sdata, battle/hud_c_b]
+      - [0x1FEB5C, .sdata, battle/hud_e]
+      - [0x1FEB60, .sdata, battle/hud_e_b]
+      - [0x1FEB68, .sdata, battle/hud_e_c]
+      - [0x1FEB78, sdata, cod/1FEB78]
+      - [0x1FEBAC, .sdata, battle/col_b]
+      - [0x1FEBB0, sdata, cod/1FEBB0]
+      - [0x1FEC10, .sdata, battle/stg_b]
+      - [0x1FEC20, sdata, cod/1FEC20]
+      - [0x1FEC30, .sdata, battle/stg_c]
+      - [0x1FEC44, sdata, cod/1FEC44]
+      - [0x1FEC50, .sdata, sys/misc_a]
+      - [0x1FEE58, .sdata, sys/misc_a_b]
+      - [0x1FF05C, sdata, cod/1FF05C]
+      - [0x1FF0B8, .sdata, sys/gsc]
+      - [0x1FF0D0, .sdata, battle/view_a]
+      - [0x1FF0D8, .sdata, battle/view_a_b]
+      - [0x1FF0F0, .sdata, battle/view_a_c]
+      - [0x1FF108, .sdata, battle/view_a_d]
+      - [0x1FF10C, .sdata, battle/view_a_e]
+      - [0x1FF110, .sdata, battle/view_b_c]
+      - [0x1FF118, .sdata, battle/view_b_d]
+      - [0x1FF11C, sdata, cod/1FF11C]
+      - [0x1FF160, .sdata, sys/dialog]
+      - [0x1FF170, sdata, cod/1FF170]
+      - { type: sbss, vram: 0x002FF180, name: cod/002FF180 } # .sbss
+      - { type: bss, vram: 0x002FF280, name: cod/002FF280 } # .scommon
+      - { type: bss, vram: 0x002FF300, name: cod/002FF300 } # .bss
+  - [0x1FF180]

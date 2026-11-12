@@ -1,0 +1,251 @@
+// src/battle/btl_tech_a.c = 0x20BA80..0x20F0E8: fighter queries by side (BtlCtrl_*), the current attack id and the
+// attack record accessors (BtlAtk_*), the character parameter block accessors (BtlParam_*). The comment above each
+// name is the one-line description from the C; names marked guess are named for what they read, not what it means.
+// The opponent's +0xD50, 0 while the opponent is frozen or the battle flag 0x2000 is set.
+BtlCtrl_GetOppUnkD50 = 0x0020BA80; // type:func // guess
+// The battle object of the side's fighter.
+BtlCtrl_GetObj = 0x0020BAF0; // type:func
+// Which of flags 0xDE..0xE2 the fighter has, as 0..4; -1 for none or while frozen.
+BtlCtrl_GetFlagDEtoE2 = 0x0020BB20; // type:func // guess
+// The fighter's clash counter (+0xE50: compared to pick the winner of clashes B and C).
+BtlCtrl_GetClashCount = 0x0020BBD8; // type:func // guess
+// Flag 6 (powered-up mode) was raised this frame.
+BtlCtrl_IsFlag6Raised = 0x0020BC00; // type:func // guess
+// Flag 0x71, 0 while frozen.
+BtlCtrl_TestFlag71 = 0x0020BC60; // type:func
+// Flag 5 (lock-on) was raised this frame, only in sequence state 3.
+BtlCtrl_IsFlag5RaisedInFight = 0x0020BCC0; // type:func // guess
+// Flag 0xE3, 0 while frozen.
+BtlCtrl_TestFlagE3 = 0x0020BD30; // type:func
+// Flag 0x9C was raised this frame.
+BtlCtrl_IsFlag9CRaised = 0x0020BD90; // type:func // guess
+// Flag 0x9E was raised this frame.
+BtlCtrl_IsFlag9ERaised = 0x0020BDF0; // type:func // guess
+// The active member has no health left.
+BtlCtrl_IsDead = 0x0020BE50; // type:func
+// Flag 0x12B.
+BtlCtrl_TestFlag12B = 0x0020BE88; // type:func
+// The fighter is in one of the member-switch actions 0xF3..0xF8.
+BtlCtrl_IsSwitching = 0x0020BEC8; // type:func // guess
+// Flag 0xE4.
+BtlCtrl_TestFlagE4 = 0x0020BF18; // type:func
+// Flag 0xE5.
+BtlCtrl_TestFlagE5 = 0x0020BF58; // type:func
+// In battle mode 5: bit gProgress->unk7F4 of fighter 0's per-frame bit set.
+BtlCtrl_TestProgressFrameBit = 0x0020BF98; // type:func // guess
+// Flag 0xE6 when the fighter's pad status is not 1; the status is written to *padStatus.
+BtlCtrl_TestFlagE6Pad = 0x0020BFF8; // type:func // guess
+// Flag 0xE6 when the fighter's pad status is 1.
+BtlCtrl_TestFlagE6Pad1 = 0x0020C080; // type:func // guess
+// Pad status 1 only: the technique prompt for the class picked by the held direction (it must be usable and the technique delay over) or else the watched class: the technique type row, its prompt kind 0..3 and the class.
+BtlCtrl_GetTechPromptPad1 = 0x0020C0E0; // type:func // guess
+// Other pad statuses, no direction class held: the button icons (1 or 2) to show for the watched technique class, a kind (2 with flag 0xA2, 1 with 0xA3, else 0), the pad status and the class. Fails if an icon is missing.
+BtlCtrl_GetSwitchPrompt = 0x0020C310; // type:func // guess
+// The button icon to show while one of flags 0xE7..0xEC is set (0xE7 is the ki-exhausted mash prompt), with kind 1 (0xE7, 0xE8: buttons 0 / 2) or 2 (0xE9..0xEC: buttons 0x1B..0x1E). The last flag set wins.
+BtlCtrl_GetChangePrompt = 0x0020C5C8; // type:func // guess
+// Sum of the modifiers of stat 0.
+BtlCtrl_GetStatMod0 = 0x0020C750; // type:func
+// Sum of the modifiers of stat 2.
+BtlCtrl_GetStatMod2 = 0x0020C790; // type:func
+// Sum of the modifiers of stat 1.
+BtlCtrl_GetStatMod1 = 0x0020C7D0; // type:func
+// Sum of the modifiers of stat 3.
+BtlCtrl_GetStatMod3 = 0x0020C810; // type:func
+// Whether skill slot 0..1 (BtlAct_CanUseSkill) or technique class 2..4 (BtlAct_CanUseTechnique) can be used now.
+BtlCtrl_CanUseTechnique = 0x0020C850; // type:func // guess
+// Battle mode 3: work5A8.unk0, plus 1 once fighter 1 has nobody left, capped at work5A8.unk4.
+BtlCtrl_GetWork5A8Count = 0x0020C8C8; // type:func // guess
+// Sets the CPU level of every member of a fighter.
+BtlCtrl_SetCpuLevel = 0x0020C940; // type:func
+// The active member's gauge word +0x30 is set.
+BtlCtrl_TestMemberUnk70 = 0x0020C9B8; // type:func // guess
+// The id of the attack record the fighter's current action / animation uses, -1 when it is not attacking.
+BtlAtk_GetId = 0x0020C9F0; // type:func
+// The fighter's current attack record; ids outside 0..0xA2 (and -1) give record 0. The id used goes to *id.
+BtlAtk_GetRecord = 0x0020D210; // type:func
+// Record `id` of the fighter's character.
+BtlAtk_GetRecordOf = 0x0020D280; // type:func
+// Damage changes by ability: ids 0..9 +10% (4) / -10% (5); ids 0x13..0x21 +10% (6) / -10% (7); ids 0x55, 0x56 x2 (8) / halved (9).
+BtlAtk_ApplyAbilities = 0x0020D2C0; // type:func // guess
+// Record +0x26: which attack wins when two connect on the same frame.
+BtlAtk_GetPriority = 0x0020D3F8; // type:func // guess
+// Damage of one hit: record damage * curve row 4, ability changes, divided by the animation's hit count.
+BtlAtk_GetDamage = 0x0020D418; // type:func
+// Damage of one guarded hit: the same chain on record +0x06, with -30% for ids 0..10 under skill effect 0x10.
+BtlAtk_GetGuardDamage = 0x0020D4C8; // type:func // guess
+// Record +0x0C: first of two values the throw setup (0x1FC008) reads.
+BtlAtk_GetThrowParamC = 0x0020D5C0; // type:func // guess
+// Record +0x0E: the second.
+BtlAtk_GetThrowParamE = 0x0020D5E0; // type:func // guess
+// Ki the attacker gains per hit: record +0x0A, +50% (ability 0x6E) or +25% (0x20), divided by the hit count.
+BtlAtk_GetKiGain = 0x0020D600; // type:func // guess
+// Ki the defender pays when it guards: record +0x08 * curve row 5, x2 (ability 0x44) or x1.5 (0x6D).
+BtlAtk_GetGuardKiCost = 0x0020D6D0; // type:func // guess
+// Record +0x10 divided by the hit count: what a hit adds to the fighter's +0xD80 gauge (decays 400 per frame).
+BtlAtk_GetUnk10 = 0x0020D768; // type:func // guess
+// Reaction id, record +0x1B.
+BtlAtk_GetReaction = 0x0020D7E0; // type:func
+// Reaction id +0x1C (defender animation flag 0x800), or +0x1B when it is 0.
+BtlAtk_GetReactionB = 0x0020D800; // type:func // guess
+// Reaction id +0x1F (defender animation flag 0x4000 or action 0xDF), or +0x1B when it is 0.
+BtlAtk_GetReactionC = 0x0020D838; // type:func // guess
+// Reaction id +0x1D (defender animation flag 0x1000), or +0x1B when it is 0.
+BtlAtk_GetReactionD = 0x0020D870; // type:func // guess
+// Reaction id +0x1E (defender animation flag 0x2000), or +0x1B when it is 0.
+BtlAtk_GetReactionE = 0x0020D8A8; // type:func // guess
+// Record +0x20: stored in the defender's reaction block (+0xFB4).
+BtlAtk_GetReactionSub = 0x0020D8E0; // type:func // guess
+// Reaction id +0x21 (defender animation flag 0x100, hit from the front), or +0x1B when it is 0.
+BtlAtk_GetReactionF = 0x0020D900; // type:func // guess
+// Reaction id +0x22 (defender animation 0xAE / 0xAF or flag 0x200), or +0x1B when it is 0.
+BtlAtk_GetReactionG = 0x0020D938; // type:func // guess
+// Record +0x00: the attack's flag word.
+BtlAtk_GetFlags = 0x0020D970; // type:func
+// Push speed on hit: record +0x12 in units of 10 km/h, per frame.
+BtlAtk_GetPushOnHit = 0x0020D990; // type:func // guess
+// Push speed on guard: record +0x13 in units of 10 km/h, per frame.
+BtlAtk_GetPushOnGuard = 0x0020D9D0; // type:func // guess
+// Record +0x14 in units of 10 km/h, per frame, times curve row 8: the speed the attack handlers give the attacker.
+BtlAtk_GetLaunchSpeed = 0x0020DA10; // type:func // guess
+// Record +0x15 (degrees) in radians: yaw offset of the launch direction.
+BtlAtk_GetLaunchAngleA = 0x0020DA70; // type:func // guess
+// The same of record `id`.
+BtlAtk_GetLaunchAngleAOf = 0x0020DAB8; // type:func // guess
+// Record +0x16 (degrees) in radians: pitch of the launch direction.
+BtlAtk_GetLaunchAngleB = 0x0020DB00; // type:func // guess
+// The same of record `id`.
+BtlAtk_GetLaunchAngleBOf = 0x0020DB48; // type:func // guess
+// Record +0x17 as a float: camera shake power on a hit.
+BtlAtk_GetShakePower = 0x0020DB90; // type:func // guess
+// Record +0x18 (tenths of a second) in seconds: camera shake time on a hit.
+BtlAtk_GetShakeTime = 0x0020DBB8; // type:func // guess
+// Record +0x19 as a float: camera shake power on a guard.
+BtlAtk_GetShakePowerB = 0x0020DBE8; // type:func // guess
+// Record +0x1A (tenths of a second) in seconds: camera shake time on a guard.
+BtlAtk_GetShakeTimeB = 0x0020DC10; // type:func // guess
+// Record +0x23: hit effect kind (1, 2 | 3, 4 | 10 pick the effect; non-zero sets effect bit 0x1D on the defender).
+BtlAtk_GetHitFxKind = 0x0020DC40; // type:func // guess
+// Record +0x24: level that picks the hit sound line.
+BtlAtk_GetHitSoundLevel = 0x0020DC60; // type:func // guess
+// Voice kind of the attack: record +0x25 mapped 1, 2, 3 -> 5, 6, 7; -1 (none) otherwise.
+BtlAtk_GetVoiceKind = 0x0020DC80; // type:func // guess
+// Guard result against guard kind 1 (record +0x29); result 1 becomes 0 when the opponent has ability 0x40.
+BtlAtk_GetGuardKindA = 0x0020DCE8; // type:func // guess
+// Guard result against guard kind 2 (record +0x27); result 1 becomes 0 for ids 0x13..0x21 when the opponent has ability 0x40.
+BtlAtk_GetGuardKindB = 0x0020DD38; // type:func // guess
+// The same against guard kind 3 (record +0x28).
+BtlAtk_GetGuardKindC = 0x0020DD98; // type:func // guess
+// Rank of a guard result: 4 > 0 > 1 > 2 > 3.
+BtlAtk_RankGuardKind = 0x0020DDF8; // type:func
+// Against guard kind 4: the highest-ranked of the record's three raw guard results (+0x29, +0x27, +0x28).
+BtlAtk_GetBestGuardKind = 0x0020DE50; // type:func // guess
+// Record +0x2A: guard result against guard kind 5.
+BtlAtk_GetGuardKindE = 0x0020DF20; // type:func // guess
+// Record +0x2B: 0 / 1 selects defender flag 0x66 / 0x67 on a guard.
+BtlAtk_GetGuardFlagSel = 0x0020DF40; // type:func // guess
+// Record +0x2C: armour levels the attack ignores.
+BtlAtk_GetUnk2C = 0x0020DF60; // type:func // guess
+// +0x2C of record `id`.
+BtlAtk_GetUnk2COf = 0x0020DF80; // type:func // guess
+// The ki charge rate scaled by ability: x0.4 (0x31), x0.6 (0x30) or x0.8 (0x2F), then x1.25 (0x75).
+BtlParam_ScaleKiCharge = 0x0020DFA0; // type:func // guess
+// Parameter +0x10: flag word.
+BtlParam_GetFlags = 0x0020E090; // type:func
+// Parameter +0x14: skill bits.
+BtlParam_GetFlags2 = 0x0020E0B8; // type:func
+// Parameter +0x18: skill bits that also need the powered-up mode.
+BtlParam_GetFlags3 = 0x0020E0E0; // type:func
+// Parameter +0x00 (u16).
+BtlParam_GetUnk0 = 0x0020E108; // type:func // guess
+// Parameter +0x02: 4 is tested by the hit code (not thrown, not rushed).
+BtlParam_GetUnk2 = 0x0020E130; // type:func // guess
+// Parameter +0xAC: the transformation slot a neutral input picks.
+BtlParam_GetUnkAC = 0x0020E158; // type:func // guess
+// Parameter +0x98 + slot: transformation target, 0xFF = none.
+BtlParam_GetSlotId = 0x0020E180; // type:func // guess
+// Parameter +0x9C + slot, times 100000: blast gauge a transformation costs.
+BtlParam_GetSlotCost = 0x0020E1B0; // type:func // guess
+// Parameter +0xA0 + slot.
+BtlParam_GetSlotA0 = 0x0020E1F0; // type:func // guess
+// Parameter +0xA4 + slot.
+BtlParam_GetSlotA4 = 0x0020E220; // type:func // guess
+// Parameter +0xA8 + slot.
+BtlParam_GetSlotA8 = 0x0020E250; // type:func // guess
+// Parameter +0xAD.
+BtlParam_GetUnkAD = 0x0020E280; // type:func // guess
+// How many of the four transformation targets at +0x98 are not 0xFF.
+BtlParam_CountSlots = 0x0020E2A8; // type:func
+// Bit 4 + n of parameter +0xAD.
+BtlParam_TestUnkADBit = 0x0020E300; // type:func // guess
+// Parameter +0xB4 + n: fusion n.
+BtlParam_GetUnkB4 = 0x0020E340; // type:func // guess
+// Parameter +0xB7 + n: fusion n.
+BtlParam_GetUnkB7 = 0x0020E370; // type:func // guess
+// Parameter +0xBA + n * 4 + m: partner m of fusion n.
+BtlParam_GetUnkBA = 0x0020E3A0; // type:func // guess
+// Parameter +0xAE + n, times 100000: blast gauge fusion n costs.
+BtlParam_GetCostAE = 0x0020E3E8; // type:func // guess
+// Parameter +0xC6.
+BtlParam_GetUnkC6 = 0x0020E428; // type:func // guess
+// Parameter +0xB1 + n: fusion n.
+BtlParam_GetUnkB1 = 0x0020E450; // type:func // guess
+// Aura kind (passed to func_0024FE78 on the object): parameter +0x03, replaced by 0..10 when the member has one of abilities 0x4D..0x53, 0x74, 0x54..0x56 (first match in that order).
+BtlParam_GetAuraKind = 0x0020E480; // type:func // guess
+// Search type 0..9 of the active member's costume (parameter +0x58 + costume, costume above 3 reads 0); types 2..4 become 7 (8 for type 4) while the member's gauge word +0x20 is set.
+BtlParam_GetType = 0x0020E5C0; // type:func // guess
+// Radians per frame the search window widens, by search type; doubled by ability 0x6B (BtlAct_GrowWindow). The ten constants are written as literals: no expression was found for them (1.29, 1.58, 3.60, 6.31, 16.8, 1.26, 1.74, 0.97, 1.12, 1.44 degrees per frame). The bits were compared with 0x2F1878.
+BtlParam_GetTypeValueA = 0x0020E648; // type:func // guess
+// Distance per frame the search window grows, by search type (3000..40000 km/h); doubled by ability 0x6B.
+BtlParam_GetTypeValueB = 0x0020E6F0; // type:func // guess
+// A third value by search type (0.1..0.5); no caller found.
+BtlParam_GetTypeValueC = 0x0020E798; // type:func // guess
+// The search type is 2..4 (the search action then plays animation 0x17F instead of 0x17E).
+BtlParam_IsType2to4 = 0x0020E818; // type:func // guess
+// The search type is 2, 3, 4, 6 or 9 (no caller found).
+BtlParam_IsTypeSetA = 0x0020E858; // type:func // guess
+// The search type is 0..4, 6 or 9 (no caller found).
+BtlParam_IsTypeSetB = 0x0020E8C0; // type:func // guess
+// How many class-0 ki blasts may be alive at once: parameter +0x80 less 3 / 2 / 1 by ability 0x11 / 0x10 / 0xF, but at least 1 when the raw value is positive.
+BtlParam_GetCount80 = 0x0020E920; // type:func // guess
+// Parameter +0x82: the same limit for class-1 blasts.
+BtlParam_GetUnk82 = 0x0020E9C8; // type:func // guess
+// Parameter +0x84 + n (n above 3 reads entry 0).
+BtlParam_GetUnk84 = 0x0020E9F0; // type:func // guess
+// Parameter +0x88 + n (n above 1 reads entry 0).
+BtlParam_GetUnk88 = 0x0020EA28; // type:func // guess
+// Parameter +0x8A + n (n above 4 reads entry 0).
+BtlParam_GetUnk8A = 0x0020EA60; // type:func // guess
+// Parameter +0x1C.
+BtlParam_GetUnk1C = 0x0020EA98; // type:func // guess
+// Parameter +0x20.
+BtlParam_GetUnk20 = 0x0020EAC0; // type:func // guess
+// Parameter +0x24.
+BtlParam_GetUnk24 = 0x0020EAE8; // type:func // guess
+// Ki level below which ki regenerates by itself: parameter +0x28 plus 60000 / 40000 / 20000 by ability 0x2E / 0x2D / 0x2C, at most 100000.
+BtlParam_GetKiRegenLimit = 0x0020EB10; // type:func // guess
+// Parameter +0x2C: ki level that ends the ki-exhausted state (flag 0xBE).
+BtlParam_GetGaugeB = 0x0020EBB0; // type:func // guess
+// Parameter +0x40.
+BtlParam_GetUnk40 = 0x0020EBD8; // type:func // guess
+// Ki gained per frame of charging: ((parameter +0x30) / 30 + curve row 0 + (fighter +0xE28) / 30) scaled by BtlParam_ScaleKiCharge, at least 200.
+BtlParam_GetRateA = 0x0020EC00; // type:func // guess
+// The same from parameter +0x34: used while the fighter has flag 0x11.
+BtlParam_GetRateB = 0x0020EC88; // type:func // guess
+// Ki regenerated per frame below BtlParam_GetKiRegenLimit: (parameter +0x38) / 30 + curve row 1, at least 0.
+BtlParam_GetKiRegenRate = 0x0020ED10; // type:func // guess
+// Ki recovered per frame in the ki-exhausted state (x4 by the caller on a button press): (parameter +0x3C) / 30 + curve row 2, doubled by ability 0x3C, at least 10.
+BtlParam_GetKiRecoverRate = 0x0020ED60; // type:func // guess
+// Ki actions 0x67..0x69 spend per frame: (parameter +0x4C) / 30, halved by ability 0x28.
+BtlParam_GetKiDrain67 = 0x0020EDD0; // type:func // guess
+// Parameter +0x48: ki an air recovery (actions 0x25..0x2A) costs; also tested by action 0xD5 / 0xD6 / 0xDF.
+BtlParam_GetRecoverKiCost = 0x0020EE38; // type:func // guess
+// Ki a vanishing step costs: 10000; 5000 with ability 0x23; 0 with ability 0x24.
+BtlParam_GetAmountA = 0x0020EE60; // type:func // guess
+// Ki vanishing behind the opponent costs: 20000; 10000 with ability 0x23; 0 with ability 0x24.
+BtlParam_GetAmountB = 0x0020EEC0; // type:func // guess
+// Blast gauge gained per frame: (parameter +0x44) / 30 + curve row 3; x1.2 (ability 0x32), halved (0x1A), x0.8 (0x33); at least 20.
+BtlParam_GetBlastGainRate = 0x0020EF20; // type:func // guess
+// Max power gained per frame of charging at full ki: 30000 (the whole gauge) divided by the frames in (parameter +0x50 seconds / curve row 11).
+BtlParam_GetStepA = 0x0020F000; // type:func // guess
+// Max power lost per frame: 30000 divided by the frames in (parameter +0x54 + curve row 12) seconds, the time being at least one frame.
+BtlParam_GetMaxPowerDrain = 0x0020F070; // type:func // guess

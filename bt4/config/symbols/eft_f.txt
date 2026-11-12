@@ -1,0 +1,64 @@
+// src/battle/eft_f.c = 0x142CA0..0x147050: second half of the water-surface effect module that starts in
+// eft_e.c (0x140338): particle pools, their update and draw. All names are guesses from structure (no strings).
+// Evidence that it is one source file with eft_e.c: EftWaterRing_Update matches only with EftWater_GetSurfaceY
+// defined earlier in the same file. Vocabulary follows eft_e.h: drop = billboard particle, spray = streak quad,
+// ring = quad on the surface, mist = swirl, trail = one puff of a technique's trail, splash = one impact.
+// The module's state pointer (gp 0x2FF1A8) keeps the name gEftDust because eft_e.c / eft_e.h already use it;
+// gEftWater would be the better name.
+
+// Splashes (allocated in eft_e.c; list links at +0x2C/+0x30): update + unlink, one splash, draw, fade out.
+EftWaterSplash_UpdateList = 0x00142CA0; // type:func // guess
+EftWaterSplash_Update = 0x00142D80; // type:func // guess
+EftWaterSplash_DrawList = 0x00142DD0; // type:func // guess
+EftWaterSplash_FadeOut = 0x00142E58; // type:func // guess
+
+// Technique trail puffs (0x24 bytes, pool of 15, links at +0x1C/+0x20). Spawn reads a hit record's +0x20 / +0x30.
+EftWaterTrail_Alloc = 0x00142EB0; // type:func // guess
+EftWaterTrail_IsEmpty = 0x00142F10; // type:func // guess
+EftWaterTrail_Spawn = 0x00142F38; // type:func // guess
+EftWaterTrail_UpdateList = 0x001436A0; // type:func // guess
+EftWaterTrail_Update = 0x001437B8; // type:func // guess
+EftWaterTrail_DrawList = 0x00143808; // type:func // guess
+EftWaterTrail_FadeOut = 0x00143870; // type:func // guess
+
+// Drops: camera-facing billboards (0x70 bytes, pool of 60, links at +0x68/+0x6C).
+EftWaterDrop_Alloc = 0x001438C8; // type:func // guess
+EftWaterDrop_Spawn = 0x00143928; // type:func // guess
+EftWaterDrop_UpdateList = 0x00143C10; // type:func // guess
+EftWaterDrop_Update = 0x00143CE0; // type:func // guess
+EftWaterDrop_DrawList = 0x00143EB0; // type:func // guess
+EftWaterDrop_FadeOutList = 0x00144058; // type:func // guess
+
+// Rings: a quad in the XZ plane on the surface (0x50 bytes, pool of 30, links at +0x40/+0x44).
+EftWaterRing_Alloc = 0x001440B8; // type:func // guess
+EftWaterRing_Spawn = 0x00144118; // type:func // guess
+EftWaterRing_UpdateList = 0x00144320; // type:func // guess
+EftWaterRing_Update = 0x00144400; // type:func // guess
+EftWaterRing_DrawList = 0x001445B0; // type:func // guess
+EftWaterRing_FadeOutList = 0x00144680; // type:func // guess
+
+// Spray: a quad oriented along its flight direction (0x90 bytes, pool of 30, links at +0x88/+0x8C).
+EftWaterSpray_Alloc = 0x001446D0; // type:func // guess
+EftWaterSpray_Spawn = 0x00144730; // type:func // guess
+EftWaterSpray_UpdateList = 0x00144AA8; // type:func // guess
+EftWaterSpray_Update = 0x00144B88; // type:func // guess
+EftWaterSpray_DrawList = 0x00144CF8; // type:func // guess
+EftWaterSpray_FadeOutList = 0x00144E90; // type:func // guess
+
+// Mist: spray quads whose direction turns each frame (0xB0 bytes, pool of 30, links at +0x9C/+0xA0).
+EftWaterMist_Alloc = 0x00144EE8; // type:func // guess
+EftWaterMist_Spawn = 0x00144F48; // type:func // guess
+EftWaterMist_UpdateList = 0x001452E0; // type:func // guess
+EftWaterMist_Update = 0x001453C8; // type:func // guess
+EftWaterMist_DrawList = 0x00145608; // type:func // guess
+
+// Draw helpers: screen-bounds test of a projected vertex with a margin class, the three quad builders
+// (order-table packets through gOtCur / gOtZ), the texture lookup (5 entries at state +0xB0) and the clipped fan.
+EftWater_IsOnScreen = 0x00145740; // type:func // guess
+EftWater_DrawBillboard = 0x001458E8; // type:func // guess
+EftWater_DrawGroundQuad = 0x00145ED0; // type:func // guess
+EftWater_DrawSprayQuad = 0x001461E8; // type:func // guess
+EftWater_UpdateTextures = 0x00146908; // type:func // guess
+EftWater_DrawClippedFan = 0x001469A8; // type:func // guess
+
+gEftDust = 0x002FF1A8; // size:0x4 // guess

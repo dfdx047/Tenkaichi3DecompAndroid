@@ -1,0 +1,26 @@
+// Menu overlay DBZP.BIN, 0x348710..0x34D368. All names are guesses from what the code does.
+// The frame loop of the one-on-one character select (screen of 0x342190..0x348710, work pointer 0x3B38D4);
+// when the screen is left with a choice it writes the battle setup (BattleSetup_SetRule / SetSide / SetMember).
+CharSel_Run = 0x00348710; // type:func // guess
+// TeamSel: the team character / stage / music select (teams of up to five, optional DP limit). Work area
+// gTeamSel (0x3EA4 bytes). Labels it uses: "mc_team_%d", "mc_dp_total_l_%d", "mc_dp_num_%03d", "mc_chara_chip_%03d".
+TeamSel_SumCost = 0x00348D78; // type:func // guess
+TeamSel_IsCharaFree = 0x00348E88; // type:func // guess
+TeamSel_FitsDp = 0x00348F58; // type:func // guess
+TeamSel_RemoveMember = 0x00348FE8; // type:func // guess
+TeamSel_SetStageChips = 0x003491B8; // type:func // guess
+TeamSel_SetChips = 0x003492C0; // type:func // guess
+TeamSel_SetGridFormChips = 0x00349438; // type:func // guess
+TeamSel_SetCustomChips = 0x003495D8; // type:func // guess
+TeamSel_SetFormChips = 0x00349750; // type:func // guess
+TeamSel_SetTeamTex = 0x00349908; // type:func // guess
+TeamSel_UpdateFaceLoad = 0x00349A88; // type:func // guess
+TeamSel_RequestFace = 0x00349D48; // type:func // guess
+TeamSel_UpdateStageLoad = 0x00349DD0; // type:func // guess
+TeamSel_RequestStage = 0x00349F68; // type:func // guess
+TeamSel_ClipGoto = 0x00349FE0; // type:func // guess
+TeamSel_Init = 0x0034A270; // type:func // guess
+TeamSel_Term = 0x0034BDD0; // type:func // guess
+TeamSel_Draw = 0x0034BF60; // type:func // guess
+// Second word of the object's .data (0x3B38D4 is the CharSel pointer of the same object).
+gTeamSel = 0x003B38D8; // size:0x4 // guess

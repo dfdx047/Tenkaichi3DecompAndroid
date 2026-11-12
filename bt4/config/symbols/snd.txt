@@ -1,0 +1,136 @@
+// Sound effects (SOUNDS.IRX over SIF RPC), src/sys/snd.c = 0x123F48..0x125568, and the VU1 packet builders in front of
+// it, src/sys/vu1_packet.c = 0x123130..0x123F48. Snd_RpcInit / Snd_BankIndex / Snd_Init / Snd_Update / Snd_LoadBank /
+// Snd_LoadBankFile / Snd_UnloadBank / Snd_PlaySe / Snd_PlaySeEx / Snd_IsBankLoaded / gSndMgr / gSndRpc keep their
+// entries in game.txt.
+
+// --- src/sys/vu1_packet.c -------------------------------------------------------------------------------------------
+// VIF1 packets for nine VU1 microprograms (numbered by the address of their code, 0x2BF6B0..0x2C3380); callers are all
+// in the renderer at 0x111358..0x115DE0. "Load" = Dma_AddRef(program) + a cnt packet unpacking the constant block and
+// setting BASE/OFFSET; "Call" = a call packet (FLUSHE, UNPACK, MSCALF 0, BASE, OFFSET) in front of a vertex chain.
+// The program numbers carry no meaning beyond address order, hence guess.
+Vu1Pkt_CallProg7 = 0x00123130; // type:func // guess
+Vu1Pkt_LoadProg7 = 0x001231E0; // type:func // guess
+Vu1Pkt_CallProg0 = 0x00123278; // type:func // guess
+Vu1Pkt_LoadProg0 = 0x001232F8; // type:func // guess
+Vu1Pkt_CallProg1 = 0x00123370; // type:func // guess
+Vu1Pkt_LoadProg1 = 0x001233F0; // type:func // guess
+Vu1Pkt_CallProg2 = 0x00123468; // type:func // guess
+// 0x1234E8(alt): alt selects program 3 (0x2C01C0) instead of program 2 (0x2BFEA0).
+Vu1Pkt_LoadProg2 = 0x001234E8; // type:func // guess
+Vu1Pkt_CallProg4 = 0x00123588; // type:func // guess
+Vu1Pkt_LoadProg4 = 0x00123600; // type:func // guess
+// 0x1236B0 / 0x123750: no callers.
+Vu1Pkt_CallProg5 = 0x001236B0; // type:func // guess
+Vu1Pkt_LoadProg5 = 0x00123750; // type:func // guess
+Vu1Pkt_CallProg8 = 0x00123CD0; // type:func // guess
+Vu1Pkt_LoadProg8 = 0x00123D50; // type:func // guess
+Vu1Pkt_CallProg6 = 0x00123DC8; // type:func // guess
+Vu1Pkt_LoadProg6 = 0x00123E40; // type:func // guess
+// Node list walkers (node: +0 size, +4 matrix pops, +8 last, +0xC has mesh, +0xF0 VIF stream ending in 0x70000000).
+// 0x123808(node, a, b): in each stream, ORs a / b << 5 into words 4 / 5 after every 0x6C038000 unpack code.
+Vu1Node_OrFlags = 0x00123808; // type:func // guess
+// 0x123890(node, track, mtx, frame): per node, pos/rot from 0x20-byte keys (frame number at +0xC) interpolated at frame,
+// then the node matrices through the VU0 matrix stack (0x120AB0 push, 0x120AE0 pop).
+Vu1Node_Animate = 0x00123890; // type:func // guess
+// 0x123C48(node): Vu1Pkt_CallProg8 for every node with a mesh, then copies the node's two matrices and two vectors in.
+Vu1Node_Draw = 0x00123C48; // type:func // guess
+
+// --- src/sys/snd.c: RPC stubs ---------------------------------------------------------------------------------------
+// 0x123F48(fno, data, size): FlushCache(0), sceSifCallRpc(&gSndRpc->client, fno, 0, data, size, gSndRpc, 0x40, 0, 0),
+// returns gSndRpc->reply[0]. Every stub below ends in it.
+Snd_RpcCall = 0x00123F48; // type:func
+// 0x123FC0: func_002B4AF0(&gSndRpc->client), which is sceSifCheckStatRpc by its body. No callers.
+Snd_RpcIsBusy = 0x00123FC0; // type:func
+// One stub per function number; the number is the evidence, the meaning comes from the arguments and callers.
+// 1: only from Snd_Term. 2: only from Snd_Reset, after clearing the queue.
+Snd_RpcTerm = 0x00124090; // type:func // guess
+Snd_RpcReset = 0x001240B8; // type:func // guess
+// 3 (mask, spuAddr, hdIop, seqIop): last step of Snd_LoadBank / Snd_ReloadBank. 4 (mask): last step of Snd_UnloadBank.
+Snd_RpcSetBank = 0x001240F0; // type:func
+Snd_RpcFreeBank = 0x00124128; // type:func
+// 5 (flag): sent with the same value as Adx_SetMono. 6 (mask, on): the battle pause sends (4, 1) / (4, 0).
+Snd_RpcSetMono = 0x00124418; // type:func
+Snd_RpcSetPause = 0x00124440; // type:func // guess
+// 0xA (mask): sent before a bank's contents are replaced and at battle restart. 7 (mask, value): only (0xFF, 0x7F) from Snd_Init.
+Snd_RpcStopBank = 0x00124470; // type:func // guess
+Snd_RpcSetVolume = 0x00124498; // type:func // guess
+// 8 (a), 0xB (a, b), 0xC (a), 0xE (): never reached by any caller, purpose unknown.
+Snd_RpcCmd8 = 0x001244C8; // type:func
+Snd_RpcCmdB = 0x00124298; // type:func
+Snd_RpcCmdC = 0x001242C8; // type:func
+Snd_RpcCmdE = 0x00124570; // type:func
+// 0xF (count, ids): s16 count + s16 ids, 0x18 bytes; fed by Snd_SendFighters.
+Snd_RpcSetFighters = 0x00124598; // type:func // guess
+// The per-frame queue at gSndRpc+0x68 (count + 32 entries of 0xC). 0x124150 appends type 0 (bank, id, volume, pan, pitch,
+// loop, serial) and returns the serial; 0x1241F0 type 1 (bank, id); 0x124248 type 2 (serial).
+Snd_QueuePlay = 0x00124150; // type:func
+Snd_QueueStopId = 0x001241F0; // type:func // guess
+Snd_QueueStopHandle = 0x00124248; // type:func // guess
+// 0x1242F0: RPC 9, then (queue not empty) copies the 0x184-byte queue to the send buffer and sends RPC 0xD, then clears it.
+Snd_RpcFlush = 0x001242F0; // type:func
+// func_002967C0(1, cmd, ...) is libsdr's sceSdRemote: 0x80D0 = rSdVoiceTrans(1, 0, iopAddr, spuAddr, size),
+// 0x80F0 = rSdVoiceTransStatus(1, 1 wait / 0 check).
+Snd_SpuTransfer = 0x001244F0; // type:func
+Snd_SpuTransferWait = 0x00124520; // type:func
+Snd_SpuTransferCheck = 0x00124548; // type:func
+
+// --- src/sys/snd.c: bank manager and public calls -------------------------------------------------------------------
+// Argument scaling used by Snd_PlaySeEx: volume * gSndBankVolume[slot] * save->seVolume / 0x480, pan + 0x40,
+// (s32)(pitch * 18.75f); each clamped (0..0x7F, 0..0x7F, +-1200).
+Snd_ScaleVolume = 0x00124638; // type:func
+Snd_ScalePan = 0x00124688; // type:func
+Snd_ScalePitch = 0x001246A8; // type:func
+// 0x1246E0(bank, mask, file, alloc): section pointers/sizes from the file's offset words, SPU/IOP allocation, loop bits.
+Snd_SetupBank = 0x001246E0; // type:func
+// 0x1248A0(bank, sync): Dma_SendToIop of header and third section; body uploaded now (sync) or flagged pending.
+Snd_SendBank = 0x001248A0; // type:func
+// 0x1249A8: RPC 1, frees the staging buffer and gSndMgr. No callers.
+Snd_Term = 0x001249A8; // type:func
+// 0x124A28: Snd_RpcReset, waits for the SPU transfer, clears every bank's pending/uploading. Called from 0x128790.
+Snd_Reset = 0x00124A28; // type:func
+// 0x124C38(mask, file, sync): only for masks 8/0x10/0x20 and a loaded slot: stop the bank, refill it without reallocating.
+Snd_ReloadBank = 0x00124C38; // type:func
+// 0x124E60: 1 when no bank has its pending flag set. Called from 0x127C40.
+Snd_IsUploadDone = 0x00124E60; // type:func
+// 0x124EA0 / 0x124EE0: push / pop the SPU heap usage (func_0011F0C0) on gSndMgr+0x264/+0x268. No callers.
+Snd_PushSpuMark = 0x00124EA0; // type:func // guess
+Snd_PopSpuMark = 0x00124EE0; // type:func // guess
+// 0x124F08(stereo): RPC 5 and Adx_SetMono with !stereo; the options code passes soundMode ^ 1.
+Snd_SetStereo = 0x00124F08; // type:func
+// 0x124F48(v): RPC 7 with mask 0xFF.
+Snd_SetMasterVolume = 0x00124F48; // type:func // guess
+// 0x1250D0(mask, id): Snd_QueueStopId when the bank is loaded (no callers). 0x125128(handle): Snd_QueueStopHandle
+// (callers 0x1D9D28, 0x1DA7A8).
+Snd_StopSe = 0x001250D0; // type:func // guess
+Snd_StopHandle = 0x00125128; // type:func // guess
+// Plain wrappers of the RPC stubs: 0x125140 -> 0xB, 0x125158 -> 0xC, 0x1251D0 -> 8, 0x125318 -> 0xE (none has callers),
+// 0x125170 -> 6 (pause path, btl_seq.c), 0x125188 -> 0xA.
+Snd_CmdB = 0x00125140; // type:func
+Snd_CmdC = 0x00125158; // type:func
+Snd_Cmd8 = 0x001251D0; // type:func
+Snd_CmdE = 0x00125318; // type:func
+Snd_SetPause = 0x00125170; // type:func // guess
+Snd_StopBank = 0x00125188; // type:func // guess
+// 0x1251A0(mask): Snd_StopBank(mask) then Snd_SetPause(mask, 0); battle.c calls it with 0x3C at restart.
+Snd_StopBankAndResume = 0x001251A0; // type:func // guess
+// 0x1251E8(mask, id): bit id of the bank's loop bitmap (+0x39). 0x125278(mask): the bank's +0x38 byte.
+Snd_IsLoopSe = 0x001251E8; // type:func
+Snd_GetVagMax = 0x00125278; // type:func
+// 0x125330: collects func_002074B8(side, i) for both sides (func_00207460 = count) and sends them with RPC 0xF.
+Snd_SendFighters = 0x00125330; // type:func // guess
+
+// --- src/sys/snd.c: bank header readers -----------------------------------------------------------------------------
+// The header section is read as a Sony HD file: word +0x30 is the vag-info chunk offset, chunk +0xC the highest index,
+// 8-byte entries after the offset table with the loop flag at +6.
+SndHd_GetVagInfo = 0x001253F8; // type:func
+SndHd_GetVagMax = 0x00125410; // type:func
+SndHd_GetLoopFlags = 0x00125440; // type:func
+SndHd_GetLoopBits = 0x001254C8; // type:func
+
+// --- data -----------------------------------------------------------------------------------------------------------
+// The send buffer of every sound RPC call.
+gSndRpcBuf = 0x00300EC0; // size:0x188
+// 16-bit serial handed out as the voice handle by Snd_QueuePlay.
+gSndSerial = 0x002FE96E; // size:0x2
+// Per-slot volume factor (128 = 1.0): D8 E0 80 80 80 80 80 00.
+gSndBankVolume = 0x002C3460; // size:0x20

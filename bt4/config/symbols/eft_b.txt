@@ -1,0 +1,76 @@
+// Effect code 0x132290..0x136760 (src/battle/eft_b.c). See include/battle/eft_b.h.
+
+// Tail of the shared primitive helpers (previous file): each queues one packet in the ordering table.
+// DrawBillboard: a camera-facing textured quad at a world position, sized in world units (no caller left).
+// DrawQuadDepth / DrawQuadDepthScaled: a rotated world quad cut into two triangles through 0x121950 and 0x131478.
+// DrawTriangle: three projected vertices, colours, UVs and a TEX0 as one gouraud textured triangle.
+// IsOffScreen: 1 when a projected point is behind the camera or outside the GS drawing area.
+EftPrim_DrawBillboard = 0x00132290; // type:func // guess
+EftPrim_DrawQuadDepth = 0x00132858; // type:func // guess
+EftPrim_DrawQuadDepthScaled = 0x00132B60; // type:func // guess
+EftPrim_DrawTriangle = 0x00132E80; // type:func // guess
+EftPrim_IsOffScreen = 0x00133398; // type:func // guess
+
+// Underwater bubbles: task class gEftBubbleClass = {Update, Init, Term, PostUpdate, 0, Draw}, state gEftBubble.
+// StartBurst is called by the fighter effect layer (BtlFx_UpdateWaterFx) when a fighter enters water.
+// OnBlastRecord is the empty per-record hook BtlScene_UpdateRecords calls.
+EftBubble_StartBurst = 0x001333C8; // type:func
+EftBubble_OnBlastRecord = 0x00133478; // type:func // guess
+EftBubble_Init = 0x00133480; // type:func
+EftBubble_Term = 0x001335D8; // type:func
+EftBubble_Update = 0x00133670; // type:func
+EftBubble_PostUpdate = 0x001336A0; // type:func
+EftBubble_Draw = 0x001336C0; // type:func
+EftBubble_EmitBody = 0x00133730; // type:func
+EftBubble_EmitBurst = 0x00133C40; // type:func
+EftBubble_EmitCamera = 0x00133F10; // type:func
+EftBubble_UpdateChrs = 0x00134150; // type:func
+EftBubble_UpdateTrail = 0x001341E0; // type:func // guess
+EftBubble_UpdateBurst = 0x00134200; // type:func
+EftBubble_UpdateAmbient = 0x00134270; // type:func
+EftBubble_AllocSlot = 0x001343F8; // type:func
+EftBubble_Add = 0x00134458; // type:func
+EftBubble_UpdateList = 0x001346B8; // type:func
+EftBubble_Step = 0x00134798; // type:func
+EftBubble_DrawList = 0x00134938; // type:func
+EftBubble_IsOnScreen = 0x00134A38; // type:func
+EftBubble_RandDir = 0x00134A90; // type:func
+EftBubble_DrawOne = 0x00134B70; // type:func
+EftBubble_SetTexMode = 0x00134FE0; // type:func // guess
+gEftBubble = 0x002FF1A4; // size:0x4
+gEftBubbleZeroVel = 0x002C34B0; // size:0x10
+gEftBubbleClass = 0x002C34C0; // size:0x18
+
+// Scrolling sheet of the stage file (texture pack at header +0x18, parameters and model at +0x1C): task class
+// gEftStageScrollClass = {Update, Init, Term, 0, Reset, DrawStub}. Draw is called by the stage draw 0x115DE0.
+// What the sheet shows (clouds, their shadow, water) is not known, hence the structural name.
+EftStageScroll_Init = 0x00135070; // type:func // guess
+EftStageScroll_Term = 0x001350B0; // type:func // guess
+EftStageScroll_Update = 0x001350E0; // type:func // guess
+EftStageScroll_Reset = 0x001351C8; // type:func // guess
+EftStageScroll_DrawStub = 0x001351E0; // type:func // guess
+EftStageScroll_Draw = 0x00135200; // type:func // guess
+EftStageScroll_PlaceTextures = 0x00135328; // type:func // guess
+EftStageScroll_Load = 0x00135420; // type:func // guess
+gEftStageScroll = 0x002FE9B4; // size:0x4 // guess
+gEftStageScrollClass = 0x002C34D8; // size:0x18 // guess
+
+// Columns rising at the positions of stage section "FxResA" (BtlStage_GetFxResA / A2): manager class
+// gEftGeyserMgrClass = {MgrUpdate, MgrInit, MgrTerm}, column class gEftGeyserClass = {Update, Init, Term, 0,
+// ResetStub, Draw}. "Geyser" is a guess from the behaviour (periodic column with two particle emitters).
+EftGeyser_Create = 0x00135610; // type:func // guess
+EftGeyser_GetWork = 0x00135650; // type:func // guess
+EftGeyser_Kill = 0x00135690; // type:func // guess
+EftGeyser_MgrInit = 0x001356E8; // type:func // guess
+EftGeyser_MgrTerm = 0x001358C0; // type:func // guess
+EftGeyser_MgrUpdate = 0x001358F0; // type:func // guess
+EftGeyser_Init = 0x00135930; // type:func // guess
+EftGeyser_Term = 0x00135A58; // type:func // guess
+EftGeyser_ResetStub = 0x00135AA8; // type:func // guess
+EftGeyser_Update = 0x00135AB0; // type:func // guess
+EftGeyser_Draw = 0x00135C50; // type:func // guess
+EftGeyser_Restart = 0x00135CC0; // type:func // guess
+EftGeyser_DrawColumn = 0x00135D80; // type:func // guess
+gEftGeyserMgr = 0x002FE9B8; // size:0x4 // guess
+gEftGeyserMgrClass = 0x002C34F0; // size:0x18 // guess
+gEftGeyserClass = 0x002C3508; // size:0x18 // guess

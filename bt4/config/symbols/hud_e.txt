@@ -1,0 +1,106 @@
+// Battle HUD continued and two small neighbours, 0x22A750-0x22FD10 (src/battle/hud_e.c .. hud_e_e.c).
+
+// --- Notice part, tail (src/battle/hud_e.c, 0x22A750-0x22B4F8). The module starts in the neighbouring range
+// (the update / draw callbacks of announcements 0..6 and 8 are at 0x226BA8..0x22A750; gHudNotice is in hud_d.txt).
+// Draw / update callbacks of announcement 7 (installed by HudNotice_Show): a banner (texture 6) that drops in,
+// bounces, holds about 2 s and fades out while shrinking. "Banner" is a guess at what the picture is.
+HudNotice_DrawBanner = 0x0022A750; // type:func // guess
+HudNotice_UpdateBanner = 0x0022A780; // type:func // guess
+// Base id of the announcer's voice lines: 0x10B6C when SAVE_FLAG_VOICE is set, else 0x10B34.
+HudNotice_GetVoiceBase = 0x0022AB28; // type:func
+// (id 0..8) hides the notice sprites, installs the callbacks of the announcement on node 1 and plays the
+// announcer's line (base + announcer * 7 + line). Called by the battle sequence (0..7) and Hud_PreUpdate (8).
+HudNotice_Show = 0x0022AB50; // type:func
+// Shows / hides sprite 15 (texture 8, top centre), which Hud_PreUpdate switches on only while a replay is drawn
+// with the HUD (replay mode 1). That it is a replay mark is a guess.
+HudNotice_ShowReplayMark = 0x0022AF60; // type:func // guess
+HudNotice_Init = 0x0022AF88; // type:func
+HudNotice_Term = 0x0022B368; // type:func
+HudNotice_Reset = 0x0022B430; // type:func
+
+// --- Prompt part (src/battle/hud_e_b.c, 0x22B4F8-0x22EC08): the button prompt, the pad cue and the command row.
+// Root node update: steps the slide ramp (side 0 only) and offsets the node by (-256, 224) * ramp.
+HudPrompt_UpdateRoot = 0x0022B4F8; // type:func
+// Clears the mark of one / every texture entry of the button icon sheet (FontIcon_GetRes).
+HudPrompt_ClearIconMark = 0x0022B578; // type:func
+HudPrompt_ClearIconMarks = 0x0022B598; // type:func
+// (sprite, icon definition, icon state): advances the icon's frame animation and sets the sprite's texture and
+// rectangles. (sprite, icon state): the same, picking the definition by the icon number.
+HudPrompt_ApplyIconDef = 0x0022B5E8; // type:func
+HudPrompt_ApplyIcon = 0x0022B8C0; // type:func
+// Node callbacks installed by HudPrompt_Init: the single button prompt (node 24), the cue (node 25, side 0 only:
+// a base with the icon of pad 0's controller type), the command row (node 26). "Cue" is a guess at the meaning:
+// the battle script shows it while an event action is pending.
+HudPrompt_UpdateButton = 0x0022B968; // type:func
+HudPrompt_UpdateCue = 0x0022C838; // type:func // guess
+HudPrompt_DrawButton = 0x0022CC58; // type:func
+HudPrompt_DrawCue = 0x0022CD00; // type:func // guess
+HudPrompt_UpdateCommand = 0x0022CD68; // type:func
+HudPrompt_DrawCommand = 0x0022D870; // type:func
+// Interface used by the HUD manager (Hud_PreUpdate / Hud_Draw) and the battle script (BtlScript_UpdateHud).
+HudPrompt_SelectSide = 0x0022D958; // type:func
+HudPrompt_ShowCue = 0x0022D990; // type:func // guess
+HudPrompt_HideCue = 0x0022D9B0; // type:func // guess
+// (canAct): the cue is drawn dim (half alpha, no pulse) while the argument is 0.
+HudPrompt_SetCueDim = 0x0022DA00; // type:func // guess
+// (side, button, group): button = column + 4 * style, or 12 for the animated picture; group = row of the icon table.
+HudPrompt_SetButton = 0x0022DA10; // type:func
+// (side, count, icons, modes, nameIdx): the row of up to four icons and the entry of the name list drawn above it.
+HudPrompt_SetCommand = 0x0022DCB8; // type:func
+// Fades the row out (0.3 s; at once while paused).
+HudPrompt_ClearCommand = 0x0022DF30; // type:func
+// Called when BtlCtrl_IsFlag9ERaised: the row plays its "accepted" animation (enlarged copies fading out) and
+// goes. That flag 0x9E means "command accepted" is a guess.
+HudPrompt_AcceptCommand = 0x0022E018; // type:func // guess
+HudPrompt_SlideOut = 0x0022E0B0; // type:func
+HudPrompt_SlideIn = 0x0022E0D8; // type:func
+HudPrompt_ClearButton = 0x0022E100; // type:func
+// Draws the name above each side's command row as text (func_00214FD0(obj->unkBC), BtlText_DrawEntryName).
+HudPrompt_DrawNames = 0x0022E130; // type:func
+HudPrompt_Init = 0x0022E218; // type:func
+HudPrompt_Term = 0x0022E9A8; // type:func
+HudPrompt_Reset = 0x0022EA70; // type:func
+gHudPrompt = 0x002FEB60; // size:0x4
+// Icon definitions in .data (12 bytes each): icons 0..15, icons 16..32, and the four controller-type icons of the
+// cue (indexed by Pad.status / lastStatus).
+gHudPromptIconDefs = 0x002C6268; // size:0xC0
+gHudPromptIconDefs16 = 0x002C6328; // size:0xCC
+gHudPromptCueDefs = 0x002C63F8; // size:0x30
+
+// --- Timer part (src/battle/hud_e_c.c, 0x22EC08-0x22F998).
+HudTimer_UpdateRoot = 0x0022EC08; // type:func
+HudTimer_UpdateDigits = 0x0022EC78; // type:func
+HudTimer_Draw = 0x0022F280; // type:func
+HudTimer_SlideOut = 0x0022F2F0; // type:func
+HudTimer_SlideIn = 0x0022F318; // type:func
+HudTimer_Init = 0x0022F340; // type:func
+HudTimer_Term = 0x0022F728; // type:func
+// (seconds left) for the clock, (count) for mode 3's counter in place of the clock.
+HudTimer_SetTime = 0x0022F7F0; // type:func
+HudTimer_SetCount = 0x0022F890; // type:func
+// Both set the same word (+0x48 = 1): sprite 5 (texture 5) is shown from then on. The first is called by the
+// stage (stg_a_b.c); the second has no caller.
+HudTimer_ShowMark = 0x0022F928; // type:func // guess
+HudTimer_ShowMark2 = 0x0022F938; // type:func // guess
+HudTimer_Reset = 0x0022F948; // type:func
+gHudTimer = 0x002FEB68; // size:0x4
+// Offset of the pulsing clock digits' scale centre: { 0, 16 }.
+gHudTimerPulseOfs = 0x002FEB70; // size:0x8
+
+// --- Pause request (src/battle/hud_e_d.c, 0x22F998-0x22FC40): which pad may pause and which pad did.
+BtlPause_GetWork = 0x0022F998; // type:func
+BtlPause_Reset = 0x0022F9A8; // type:func
+BtlPause_Init = 0x0022F9C8; // type:func
+BtlPause_Term = 0x0022F9F0; // type:func
+// Battle sequence conditions (gBtlSeqTbl*): START pressed (or a pad pulled out) -> pause; START pressed -> resume.
+BtlPause_CheckOpen = 0x0022F9F8; // type:func
+BtlPause_CheckStart = 0x0022FAE8; // type:func
+BtlPause_GetPadCount = 0x0022FB90; // type:func
+BtlPause_SetPad = 0x0022FBB0; // type:func
+BtlPause_GetMenuPad = 0x0022FBD8; // type:func
+BtlPause_GetPad = 0x0022FC20; // type:func
+gBtlPause = 0x002FF1C8; // size:0x8
+
+// --- Head of the stage rigid-body module (src/battle/hud_e_e.c, 0x22FC40-0x22FD10; belongs to stg_d.c).
+StgRigidList_Count = 0x0022FC40; // type:func
+StgRigid_AllocNode = 0x0022FC80; // type:func

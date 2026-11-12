@@ -1,0 +1,90 @@
+// --- src/battle/eft_j.c, 0x1532A0..0x157398: technique effect modules of scene layer 1 -----------------------------
+// Evidence for the grouping: gEftShotClass (0x2C3700) rows {manager class, item class, 0}; a class is the six
+// callbacks update, init, term, post-update, reset, draw (BtlTaskClass). Row = effect type + 1.
+// All names are guesses: they describe what the matching code does, the visuals are not known.
+
+// Effect type 7 "follow" (row 8: manager 0x2C3838, item 0x2C3850). The module is in eft_i.c (EftFollow_*); these
+// are the item's reset / draw (0x2C3860 / 0x2C3864) and the manager's init / term / update / reset.
+EftFollow_Reset = 0x001532A0; // type:func // guess
+EftFollow_Draw = 0x001532E8; // type:func // guess
+EftFollowGroup_Init = 0x001532F0; // type:func // guess
+EftFollowGroup_Term = 0x00153368; // type:func // guess
+EftFollowGroup_Update = 0x00153388; // type:func // guess
+EftFollowGroup_Reset = 0x001533A8; // type:func // guess
+
+// Effect type 5 "multi" (row 6: manager 0x2C3868, item 0x2C3880). The item keeps ten {flags, handle} slots and
+// creates one "piece" (func_0016D858, a task of class 0x2C3B38 that carries the hit) per START / FIRE event until
+// the definition's count is reached; effect ids 0x157, 0x188, 0x193, 0x194, 0x1A3, 0x158, 0x202 are special-cased.
+EftMulti_AllocPiece = 0x001533B0; // type:func // guess
+EftMulti_FirePiece = 0x001533E8; // type:func // guess
+EftMulti_UpdatePieces = 0x00153860; // type:func // guess
+EftMulti_IsPartKind5 = 0x00153A90; // type:func // guess
+EftMulti_UpdateParts = 0x00153AC0; // type:func // guess
+EftMulti_Init = 0x00153C30; // type:func // guess
+EftMulti_Term = 0x00153D18; // type:func // guess
+EftMulti_Update = 0x00153D68; // type:func // guess
+EftMulti_PostUpdate = 0x00154068; // type:func // guess
+EftMulti_Reset = 0x00154150; // type:func // guess
+EftMulti_Draw = 0x00154198; // type:func // guess
+EftMultiMgr_Init = 0x001541A0; // type:func // guess
+EftMultiMgr_Term = 0x00154250; // type:func // guess
+EftMultiMgr_Update = 0x00154270; // type:func // guess
+EftMultiMgr_Reset = 0x001542A0; // type:func // guess
+
+// Effect type 6 "prop shot" (row 7: manager 0x2C3898, item 0x2C38B0): one shot (head, tail, velocity, homing, a hit
+// record per frame) that carries a battle-object model, the "prop" (func_001A8C40 = BtlObj_Create wrapper), held
+// in the hand while charging and on the head once fired. Effect ids 0x165, 0x166, 0x19A, 0x1F7..0x1F9, 0x2C1; for
+// 0x19A the model is picked by the fighter's costume (BtlCharApi_GetCostume). UpdateBlur drives StgBlur_*.
+EftPropShot_InitProp = 0x001542A8; // type:func // guess
+EftPropShot_UpdateProp = 0x00154490; // type:func // guess
+EftPropShot_ShowProp = 0x001546C8; // type:func // guess
+EftPropShot_FreeProp = 0x00154748; // type:func // guess
+EftPropShot_AddHit = 0x00154768; // type:func // guess
+EftPropShot_UpdateBlur = 0x001548F8; // type:func // guess
+EftPropShot_UpdateParts = 0x00154AF8; // type:func // guess
+EftPropShot_Init = 0x00154C50; // type:func // guess
+EftPropShot_Term = 0x00154D68; // type:func // guess
+EftPropShot_Update = 0x00154DE8; // type:func // guess
+EftPropShot_PostUpdate = 0x00155318; // type:func // guess
+EftPropShot_Reset = 0x00155420; // type:func // guess
+EftPropShot_Draw = 0x00155468; // type:func // guess
+EftPropShotMgr_Init = 0x00155470; // type:func // guess
+EftPropShotMgr_Term = 0x00155540; // type:func // guess
+EftPropShotMgr_Update = 0x00155560; // type:func // guess
+EftPropShotMgr_Reset = 0x00155580; // type:func // guess
+
+// Effect type 0 "blast" (row 1: manager 0x2C38C8, item 0x2C38E0): the plain blast / beam. Same shot logic as type 6
+// without the prop; its size follows the fighter's charge (BtlCharApi_GetUnkE44 / E5CRatio / E60Ratio). Effect ids
+// 0x268, 0x2CD, 0x14B are special-cased in Init.
+EftBlast_AddHit = 0x00155588; // type:func // guess
+EftBlast_UpdateBlur = 0x00155718; // type:func // guess
+EftBlast_UpdateParts = 0x00155918; // type:func // guess
+EftBlast_Init = 0x00155A70; // type:func // guess
+EftBlast_Term = 0x00155C10; // type:func // guess
+EftBlast_Update = 0x00155C60; // type:func // guess
+EftBlast_PostUpdate = 0x001561F8; // type:func // guess
+EftBlast_Reset = 0x00156340; // type:func // guess
+EftBlast_Draw = 0x00156388; // type:func // guess
+EftBlastMgr_Init = 0x00156390; // type:func // guess
+EftBlastMgr_Term = 0x00156408; // type:func // guess
+EftBlastMgr_Update = 0x00156428; // type:func // guess
+EftBlastMgr_Reset = 0x00156448; // type:func // guess
+
+// Effect type 2 "shots" (row 3: manager 0x2C38F8, item 0x2C3910): helpers of the item whose callbacks are in
+// eft_k.c (EftShotTech_*; callers 0x157B8C..0x1581C4). Model object, firing direction by aim mode, the 14 blast
+// objects (func_0016A7D0), emitters, launch point, and effects keyed on the OPPONENT's events (flash, node
+// effects, stage blur, sub-effects).
+EftShotTech_InitModel = 0x00156450; // type:func // guess
+EftShotTech_SetModelPose = 0x001564B8; // type:func // guess
+EftShotTech_FreeModel = 0x00156548; // type:func // guess
+EftShotTech_CalcDir = 0x00156568; // type:func // guess
+EftShotTech_AllocShot = 0x00156708; // type:func // guess
+EftShotTech_FireShots = 0x00156768; // type:func // guess
+EftShotTech_ReapShots = 0x00156980; // type:func // guess
+EftShotTech_UpdateShots = 0x001569E8; // type:func // guess
+EftShotTech_UpdateParts = 0x00156C60; // type:func // guess
+EftShotTech_Start = 0x00156E28; // type:func // guess
+EftShotTech_UpdateFlash = 0x00156F08; // type:func // guess
+EftShotTech_UpdateNodeFx = 0x00156FF0; // type:func // guess
+EftShotTech_UpdateBlur = 0x00157098; // type:func // guess
+EftShotTech_UpdateSubs = 0x00157250; // type:func // guess

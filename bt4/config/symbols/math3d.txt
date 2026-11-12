@@ -1,0 +1,47 @@
+// Scalar (FPU, compiled C) 3D maths, src/sys/math3d.c = 0x2562A8..0x2574F0. All 22 functions match; names follow the arithmetic.
+// Quaternions are (x, y, z, w) and are copied with Vec4_Copy; matrices are 4x4, row-vector convention.
+
+// 0x2562A8(out, p0, p1, t0, t1, t): cubic Hermite basis ((t-1)^2(2t+1), t^2(3-2t), (1-t)^2 t, (t-1)t^2) applied to xyz. 1 caller (0x245FB8).
+Vec3_Hermite = 0x002562A8; // type:func
+
+// 0x256380(q): stores (0, 0, 0, 1). 8 callers.
+Quat_SetIdentity = 0x00256380; // type:func
+// 0x2563A0(out, x, y, z, angle): axis / |axis| * sin(angle/2), cos(angle/2); identity when |axis| <= 1e-6. 8 callers.
+Quat_FromAxisAngle = 0x002563A0; // type:func
+// 0x2564B8(out, from, to, t): normalises both, xyz = cross / s, w = s / 2 with s = sqrt(2 (1 + dot)); then Quat_SlerpIdentity by t unless t == 1. 5 callers.
+Quat_FromVectors = 0x002564B8; // type:func
+// 0x2565C0(q): x^2 + y^2 + z^2 + w^2; 0x2565F0(q): its sqrtf. Only used inside this file.
+Quat_LengthSq = 0x002565C0; // type:func
+Quat_Length = 0x002565F0; // type:func
+// 0x256638(out, q, t): slerp between the identity and q (angle = acos(min(|w|, 1)), weights sin((1-t)a)/sin a and sin(ta)/sin a). 2 callers.
+Quat_SlerpIdentity = 0x00256638; // type:func // guess
+// 0x256740(q): 2 * acos(clamp(w, -1, 1)). 1 caller (0x251A48).
+Quat_GetAngle = 0x00256740; // type:func
+// 0x256790(out, q): (-x, -y, -z, w). No jal callers.
+Quat_Conjugate = 0x00256790; // type:func
+// 0x2567C0(out, q): conjugate / Quat_LengthSq. 2 callers.
+Quat_Inverse = 0x002567C0; // type:func
+// 0x256848(out, a, b): Hamilton product a * b. 8 callers.
+Quat_Mul = 0x00256848; // type:func
+// 0x2568F8(out, a, b, t): slerp, negating b when dot < 0; returns a when sin(angle) < 1e-6. 7 callers (animation blending at 0x24Bxxx-0x24Exxx).
+Quat_Slerp = 0x002568F8; // type:func
+// 0x256AC8(out, q, r): r * (q * r^-1). 4 callers.
+Quat_ConjugateBy = 0x00256AC8; // type:func // guess
+// 0x256B58(out, q, maxAngle): copies q unless cos(maxAngle/2) >= q.w (q turns further than maxAngle), then Quat_FromAxisAngle(q.xyz, maxAngle). 1 caller (0x251A48).
+Quat_LimitAngle = 0x00256B58; // type:func // guess
+// 0x256C38(out, q): q / Quat_Length(out) -- the length is taken from the first argument. No jal callers.
+Quat_Normalize = 0x00256C38; // type:func // guess
+// 0x256CB8(q) -> u64, 0x256E00(out, u64): "smallest three" packing, 3 x 20 bits + index of the dropped (largest) component in bits 60..63.
+// Unpack has 10 callers (animation key decoding at 0x24BF58 / 0x24C1A8, 0x1FC1E8, 0x1FCEF0); Pack has none.
+Quat_Pack = 0x00256CB8; // type:func
+Quat_Unpack = 0x00256E00; // type:func
+// 0x256F60(mtx, q): Mtx_StoreIdentity then the 3x3 rotation. 5 callers.
+Quat_ToMtx = 0x00256F60; // type:func
+// 0x257058(out, angles): qy * (qx * qz) from three Quat_FromAxisAngle about the unit axes. 2 callers.
+Quat_FromEuler = 0x00257058; // type:func
+// 0x257120(out, mtx): x = asin(-m[2][1]), y = atan2(m[2][0], m[2][2]), z = atan2(m[0][1], m[1][1]), w = 0; gimbal cases at |m[2][1]| >= 0.9999. 1 caller.
+Mtx_ToEuler = 0x00257120; // type:func
+// 0x257200(out, q): Quat_ToMtx into a stack matrix, then Mtx_ToEuler. 4 callers.
+Quat_ToEuler = 0x00257200; // type:func
+// 0x257238(out, mtx): trace / largest-diagonal method with sqrtf. 1 caller (0x250DE8).
+Quat_FromMtx = 0x00257238; // type:func

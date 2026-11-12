@@ -1,0 +1,84 @@
+// Team members, parameters and gauges of a fighter (src/battle/btl_char_member.c, 0x1CDCA8..0x1D00D8; its first
+// function, BtlColl_NextPoolMember, is named in btl_char_coll.txt).
+// Member entry = fighter + 0x9A4 + n * 0xA4; gauge block = entry + 0x40. Every body matches (fdiff OK);
+// BtlMember_Damage is byte-exact only with BtlColl_NextPoolMember (0x1CDCA8) defined earlier in the same file.
+
+// 0x1CDD40(chr, member, init, variant, healthPct): fills the member's gauge maxima from the character parameter table
+// (roster + 0x30, 16 bytes per chara) plus ability adjustments; with init also the starting health / ki / blast stock.
+BtlMember_LoadParams = 0x001CDD40; // type:func
+// Entry n; the active entry; the present entry with a given chara (pointer / index); gauge block of n / of the active one.
+BtlMember_Get = 0x001CE030; // type:func
+BtlMember_GetActive = 0x001CE050; // type:func
+BtlMember_FindPresent = 0x001CE068; // type:func
+BtlMember_FindPresentIndex = 0x001CE108; // type:func
+BtlMember_GetGauge = 0x001CE198; // type:func
+BtlMember_GetActiveGauge = 0x001CE1B8; // type:func
+// 0x1CE1D8(chr, setupMember): rebuilds the first non-active slot whose health is <= 0 from a BattleMember; returns the
+// slot or -1. Only caller: 0x1CDCA8, which feeds it the next member of the mode 3 opponent pool (read from disassembly).
+BtlMember_Replace = 0x001CE1D8; // type:func
+// Index of the entry with a given chara, present or not.
+BtlMember_FindIndex = 0x001CE358; // type:func
+// Active member index (+0x994) write / read; number of present members with health > 0.
+BtlMember_SetActiveIndex = 0x001CE3D0; // type:func
+BtlMember_CountAlive = 0x001CE3D8; // type:func
+BtlMember_GetActiveIndex = 0x001CE468; // type:func
+// The switch candidate (+0x9A0): validate (must be alive and not the active one), set, step forward / backward.
+BtlMember_GetSwitchTarget = 0x001CE470; // type:func // guess
+BtlMember_SetSwitchTarget = 0x001CE4D0; // type:func // guess
+BtlMember_NextSwitchTarget = 0x001CE500; // type:func // guess
+BtlMember_PrevSwitchTarget = 0x001CE5A0; // type:func // guess
+// 0x1CE630(chr, amount, flags): the one place health is taken away. Returns the health actually lost.
+BtlMember_Damage = 0x001CE630; // type:func
+// Health: add (clamped to max), "has at least n".
+BtlMember_AddHealth = 0x001CEB40; // type:func
+BtlMember_HasHealth = 0x001CEB88; // type:func
+// Ki (+0xC, max 100000): add (returns the overflow), has at least n, spend (not in flag 6 mode unless forced; returns 1
+// when it ran out), drain (returns what was removed).
+BtlMember_AddKi = 0x001CEBB8; // type:func
+BtlMember_HasKi = 0x001CEC10; // type:func
+BtlMember_SpendKi = 0x001CEC40; // type:func
+BtlMember_DrainKi = 0x001CECC8; // type:func
+// Blast stock (+0x14, 100000 per stock): add, has at least n, spend.
+BtlMember_AddBlast = 0x001CED18; // type:func // guess
+BtlMember_HasBlast = 0x001CED60; // type:func // guess
+BtlMember_SubBlast = 0x001CED90; // type:func // guess
+// The +0x1C gauge (0..30000; "max power" is a guess: it is full when fighter flag 6 starts, see btl_char_mgr): add,
+// subtract, set.
+BtlMember_AddMaxPower = 0x001CEDC8; // type:func // guess
+BtlMember_SubMaxPower = 0x001CEE10; // type:func // guess
+BtlMember_SetMaxPower = 0x001CEE48; // type:func // guess
+// Ratios 0..1 and full / empty tests of the active member.
+BtlMember_GetHealthRatio = 0x001CEE90; // type:func
+BtlMember_GetTeamHealthRatio = 0x001CEED8; // type:func
+BtlMember_GetKiRatio = 0x001CEF80; // type:func
+BtlMember_IsHealthFull = 0x001CEFC8; // type:func
+BtlMember_IsKiFull = 0x001CEFF8; // type:func
+BtlMember_IsMaxPowerFull = 0x001CF028; // type:func // guess
+BtlMember_IsHealthEmpty = 0x001CF050; // type:func
+BtlMember_IsKiEmpty = 0x001CF078; // type:func
+BtlMember_IsMaxPowerEmpty = 0x001CF0A0; // type:func // guess
+// Ability bit n of the active member / of member m (ability[n >> 5] & (1 << (n & 31))); any of the 11 abilities
+// 0x4D..0x56 and 0x74 (a list the C initialises on the stack from .rodata 0x2EEEE0).
+BtlMember_HasAbility = 0x001CF0C8; // type:func
+BtlMember_HasAbilityOf = 0x001CF108; // type:func
+BtlMember_HasAnyListedAbility = 0x001CF150; // type:func // guess
+// Per frame, every fighter: applies the damage a fighter has queued against its opponent (fields 0xD94..0xDC0):
+// timed hits, and health / ki drain that is given back to the attacker.
+BtlMembers_UpdateQueuedDamage = 0x001CF220; // type:func // guess
+// One-frame request bits at fighter + 0x1262 (72 bits; last frame's copy at + 0x126B): set, clear, test, test last
+// frame, rising edge, falling edge. "Fx" because every reader below spawns an effect or a sound.
+BtlChar_SetFxBit = 0x001CF578; // type:func // guess
+BtlChar_ClearFxBit = 0x001CF5A0; // type:func // guess
+BtlChar_TestFxBit = 0x001CF5D0; // type:func // guess
+BtlChar_TestPrevFxBit = 0x001CF5F8; // type:func // guess
+BtlChar_IsFxBitNew = 0x001CF620; // type:func // guess
+BtlChar_IsFxBitEnded = 0x001CF678; // type:func // guess
+// 0x1CF6D0(kind 0..12): sound line for a hit kind (two picks by frame counter). 0x1CF740: fx bits 0x3C..0x40 spawn an
+// effect through 0x14AB90. 0x1CF890: fx bits 0..2 with fighter + 0x12DC through 0x1A0D78 / 0x1A0DD8 / 0x1A0E10.
+// 0x1CF9B8: fx bits 0x1B..0x27 spawn the hit effect (0x187B00) and play the hit sound (0x1DA370).
+BtlChar_GetHitSoundLine = 0x001CF6D0; // type:func // guess
+BtlChar_SpawnFxBits3C = 0x001CF740; // type:func // guess
+BtlChar_SpawnFxBits0 = 0x001CF890; // type:func // guess
+BtlChar_SpawnHitFx = 0x001CF9B8; // type:func // guess
+// Read-only data emitted by the C (no symbols needed): 0x2EEEE0 ability list, 0x2EEF10 / 0x2EEF50 / 0x2EEFB0 /
+// 0x2EEFE0 jump tables, 0x2EEF80 the 9 masks BtlChar_SpawnHitFx tests in order; .lit4 0x2FD1C8..0x2FD1D8.

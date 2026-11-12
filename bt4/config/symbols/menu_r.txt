@@ -1,0 +1,32 @@
+// Menu overlay DBZP.BIN, 0x3840E0..0x388618. All names are guesses from what the code does.
+// SimDay tail (menu_r.c): the last functions of the board screen of the "sim" ladder (mode 22; the object starts in
+// menu_q_b.c; work pointer gSimDay): the guide's closing line, the pad handler, the plate helper, the portrait
+// loader (file 0x2F9 + character) and the frame loop.
+SimDay_UpdateTalk = 0x003840E0; // type:func // guess
+SimDay_Input = 0x00384260; // type:func // guess
+SimDay_ClipGoto = 0x00384D48; // type:func // guess
+SimDay_UpdateFaceLoad = 0x00384E80; // type:func // guess
+SimDay_Run = 0x00385020; // type:func // guess
+gSimDay = 0x003B7384; // size:0x4 // guess
+// SimEvent (menu_r_b.c): runs entry `event` of the table of the 37 event scripts of a turn (0x38C408..0x392D20).
+SimEvent_Run = 0x003851B0; // type:func // guess
+gSimEvent = 0x003B7388; // size:0x94 // guess
+// SimResult (menu_r_c.c): the result screen after a round's fight (mode 23); a whole object. Labels "fl_hyouka_*"
+// (evaluation), "fl_zokkou_*" (continue), "fl_zpoint_*" (money), "fl_gameover_*", "fl_gameclear_*", "fl_itemget_*".
+SimResult_YesNoGoto = 0x003851E8; // type:func // guess
+SimResult_Init = 0x00385268; // type:func // guess
+SimResult_Term = 0x00385A58; // type:func // guess
+SimResult_Draw = 0x00385AC8; // type:func // guess
+SimResult_Update = 0x00386588; // type:func // guess
+SimResult_UpdateTalk = 0x003868D8; // type:func // guess
+SimResult_Input = 0x00386B78; // type:func // guess
+SimResult_Run = 0x00387710; // type:func // guess
+gSimResult = 0x003B741C; // size:0x4 // guess
+// SimTop head (menu_r_d.c): the ladder's entry screen with the ranking list (mode 20; labels "mc_senreki_plate",
+// "mc_jyuni_suji"); the object goes on in menu_s.c. gSimTopFaceTex: texture slot of the portrait of each ranking row.
+SimTop_ShowStar = 0x00387880; // type:func // guess
+SimTop_Init = 0x00387900; // type:func // guess
+SimTop_Term = 0x00387F20; // type:func // guess
+SimTop_Draw = 0x00387F90; // type:func // guess
+gSimTop = 0x003B7420; // size:0x4 // guess
+gSimTopFaceTex = 0x003B7428; // size:0x14 // guess

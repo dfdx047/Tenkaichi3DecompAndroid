@@ -1,0 +1,56 @@
+// src/sys/gfxm_e.c (0x112A30..0x1131D8), gfxm_e_b.c (0x1131D8..0x114860), gfxm_e_c.c (0x114860..0x114B18),
+// gfxm_e_d.c (0x114B18..0x115170).
+
+// GS environment packets of the battle object renderer (each one Dma_AddData of a packet built on the stack).
+// 0x112A30 / 0x112B88 are called by the object draw at 0x111358, 0x112CD0 by the pass function 0x10FD98; the
+// other two by the shadow code below. Names say which registers the packet holds.
+ObjGs_AddFrameMaskOpaque = 0x00112A30; // type:func
+ObjGs_AddFrameMaskBlend = 0x00112B88; // type:func
+ObjGs_AddFlatShadowEnv = 0x00112CD0; // type:func // guess
+ObjGs_AddShadowTexEnv = 0x00112DA0; // type:func
+ObjGs_AddDefaultEnv = 0x00112FB0; // type:func
+
+// Model side of a battle object: BtlObj_Setup (btl_obj.c) calls 0x113598 with (type, obj, res), BtlObj_Destroy
+// calls 0x1135F0. The others are their steps, in call order.
+BtlObjMdl_InitAlphaSlots = 0x001131D8; // type:func
+BtlObjMdl_BindFiles = 0x001132F8; // type:func
+BtlObjMdl_AllocParts = 0x00113478; // type:func
+BtlObjMdl_FreeParts = 0x00113510; // type:func
+BtlObjMdl_Init = 0x00113528; // type:func
+BtlObjMdl_Create = 0x00113598; // type:func
+BtlObjMdl_Destroy = 0x001135F0; // type:func
+
+// Ground shadow of a battle object: a 256x256 render of the model seen from above (work page 0x150), projected
+// on the stage triangles under it (StgShadow_Collect) with VU1 program 6. 0x1143A0 is called by BtlObj_UpdateAll,
+// 0x1146E0 / 0x1147F8 by BtlObj_Init / BtlObj_Term, 0x114480 / 0x114508 / 0x114600 / 0x114378 by the object pass
+// function 0x10FD98. "Flat" = the second kind of shadow (object flag bit 29): the meshes squashed on y = 0.
+ObjShadow_CalcPacketWords = 0x00113660; // type:func
+ObjShadow_BuildPacket = 0x00113700; // type:func
+ObjShadow_MakePlaneMtx = 0x001139D8; // type:func
+ObjShadow_CalcScreenDist = 0x00113AD8; // type:func // guess
+ObjShadow_IsEnabled = 0x00113BA8; // type:func
+ObjShadow_IsFlat = 0x00113BF0; // type:func // guess
+ObjShadow_AddTargetEnv = 0x00113C08; // type:func
+ObjShadow_GetBox = 0x00113E48; // type:func
+ObjShadow_SetTarget = 0x00113F58; // type:func
+ObjShadow_MakeLightMtx = 0x00114010; // type:func
+ObjShadow_MakeProjMtx = 0x001140C8; // type:func
+ObjShadow_LoadProg = 0x001141F0; // type:func
+ObjShadow_Alloc = 0x00114308; // type:func
+ObjShadow_Free = 0x00114348; // type:func
+ObjShadow_ResetEnv = 0x00114378; // type:func
+ObjShadow_Update = 0x001143A0; // type:func
+ObjShadow_BeginRender = 0x00114480; // type:func
+ObjShadow_Draw = 0x00114508; // type:func
+ObjShadow_BeginFlat = 0x00114600; // type:func // guess
+ObjShadow_InitPool = 0x001146E0; // type:func
+ObjShadow_TermPool = 0x001147F8; // type:func
+
+// Rewrites the texture block pointers inside a model's VIF streams (the two TEX0 values of every
+// "unpack 5 quadwords at TOPS" block). Called twice by BtlObjMdl_BindFiles.
+MdlTex_RebaseChain = 0x00114860; // type:func
+
+// Stage file relocation: BtlStage_Init (stg_a.c) calls 0x114C60 with the file's base; 0x114B18 is the
+// recursive walk of its octree (eight children per node).
+StgOctree_Relocate = 0x00114B18; // type:func
+BtlStage_Relocate = 0x00114C60; // type:func

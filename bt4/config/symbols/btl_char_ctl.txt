@@ -1,0 +1,93 @@
+// Fighter control helpers, 0x1D4F30..0x1D8330 (tail of src/battle/btl_input.c, then src/battle/btl_char_ctl_b.c, _c.c, _d.c). Evidence for every
+// name is the matching C unless the line says guess (meaning rests on callers that are not decompiled).
+
+// (chr, id, want): sets per-frame bit `id`, then tests action input id 1..114 (jump table jtbl_002EF070).
+// The id table is in include/battle/btl_char_ctl.h. Belongs to btl_input.c's original file (see the C file).
+BtlInput_TestAction = 0x001D4F30; // type:func
+// Smoothed stick x / y (chr+0x75C / +0x760), its length, the raw stick's angle atan2(x, -y), and that angle
+// minus func_001E06A0(chr) = wrap(heading - camera yaw).
+BtlInput_GetStickX = 0x001D5FB8; // type:func
+BtlInput_GetStickY = 0x001D5FC0; // type:func
+BtlInput_GetStickLength = 0x001D5FC8; // type:func
+BtlInput_GetStickAngle = 0x001D6010; // type:func
+BtlInput_GetStickTurnFromFacing = 0x001D6060; // type:func
+
+// Ring of 8 x 0x24-byte requests at roster+0x138 (write +0x25C, read +0x260).
+BtlChange_Alloc = 0x001D60A0; // type:func
+BtlChange_Pop = 0x001D60F8; // type:func
+// memset of roster+0x138, 0x140 bytes (called by the fighter reset).
+BtlChange_Reset = 0x001D6150; // type:func
+// End of every frame: state 5 -> clear; no active request -> pop one; writes roster+0x274 (time stopped).
+BtlChange_Update = 0x001D6178; // type:func
+// (player, chara, costume, variant, animChara, unk18, voiceChara): kind 0. The loader reads these words through
+// func_0020B290; the field names follow battle_load.c. 14 call sites in the fighter state machine.
+BtlChange_RequestChara = 0x001D61F8; // type:func
+// (player, id, costume, variant, slot): kind 1, the other words -1. 3 call sites.
+BtlChange_RequestObject = 0x001D6290; // type:func
+// state = 2 / state = 3 and loaded = 1; reached from the loader through func_0020B338 / func_0020B350.
+BtlChange_SetTaken = 0x001D6318; // type:func // guess
+BtlChange_SetLoaded = 0x001D6338; // type:func // guess
+// `loaded` when the active request is this player's / at all.
+BtlChange_IsLoadedFor = 0x001D6360; // type:func
+BtlChange_IsLoaded = 0x001D6388; // type:func
+// roster+0x274.
+BtlChars_IsTimeStopped = 0x001D63A8; // type:func
+// Player of the active request or -1.
+BtlChange_GetPlayer = 0x001D63B8; // type:func
+// (player): state = 4 / state = 5 when the active request is this player's. 17 call sites each.
+BtlChange_SetReady = 0x001D63D8; // type:func // guess
+BtlChange_SetDone = 0x001D6408; // type:func // guess
+
+// Head tracking state at chr+0x15A0 and the object's two extra quaternions (+0xD30 node 0x2E, +0xD40 node 0x2F)
+// with their weights (+0xD50, +0xD54). "Head" / "neck" for the two nodes is a guess.
+BtlChar_ResetLook = 0x001D6438; // type:func // guess
+BtlChar_UpdateLookOffset = 0x001D64A0; // type:func // guess
+// chr+0x15C4 = arg.
+BtlChar_SetLookEnabled = 0x001D6578; // type:func // guess
+BtlChar_UpdateLook = 0x001D6580; // type:func // guess
+// The variant used while the action id is 0x99.
+BtlChar_UpdateLookAlt = 0x001D6C08; // type:func // guess
+// Chooses between the two unless func_0020E090(chr) & 0x20.
+BtlChar_UpdateHead = 0x001D7088; // type:func // guess
+
+// Object -> pose block (chr+0x10) and pose -> object.
+BtlChar_ObjToPose = 0x001D70E8; // type:func
+BtlChar_PoseToObj = 0x001D7198; // type:func
+// Flags 0x33 and not 0x94: heading and rot.y += root node yaw, speed *= cos of it.
+BtlChar_ApplyRootYaw = 0x001D7320; // type:func // guess
+// obj+0xD20 = Quat_FromEuler(-pose+0xA0, 0, pose+0xA4).
+BtlChar_UpdateLean = 0x001D73B0; // type:func // guess
+// (chr, pos, rot, area): teleport; pose, object, camera eye (+0x420) and yaw (+0x4A0); flags 0xCD, 0x24, 0x3F.
+BtlChar_Place = 0x001D7418; // type:func
+// Placement from func_002427A0(player, &pos, &rot, 0).
+BtlChar_PlaceAtStart = 0x001D7570; // type:func
+// The seven flag-triggered placements (flags 0xF3, 0xF4, 0xF6, 0xF8, 0xF7, 0xF5, 0xFC/0xFD). The names say
+// where the position comes from; what raises each flag is not known from this file.
+BtlChar_PlaceRestart = 0x001D75C8; // type:func // guess
+BtlChar_PlaceCenter = 0x001D7628; // type:func // guess
+BtlChar_PlaceRelative = 0x001D7688; // type:func // guess
+BtlChar_PlaceOnPath = 0x001D7720; // type:func // guess
+BtlChar_PlaceCenterHigh = 0x001D7908; // type:func // guess
+BtlChar_PlaceSaved = 0x001D79A0; // type:func
+BtlChar_PlaceWarp = 0x001D7A48; // type:func // guess
+// (chr, mode): own size + other fighter's size + 30 (40 in mode 0 under flag 0x13). One caller.
+BtlChar_GetSpacing = 0x001D7B70; // type:func // guess
+// Roster step: holder (flag 0x8B) and held fighter (flag 0x97) are kept attached at their hold nodes.
+BtlChars_UpdateHold = 0x001D7C30; // type:func // guess
+// chr+0x12A0.. = current pos / rot / area / flags 0xF, 0xE; the second sets them from arguments.
+BtlChar_SavePlacement = 0x001D7E68; // type:func
+BtlChar_SetSavedPlacement = 0x001D7F00; // type:func
+// chr+0x1310 = *v and flag 0x55; chr+0x1310 = *obj->unkFA0.
+BtlChar_SetUnk1310 = 0x001D7F98; // type:func
+BtlChar_ResetUnk1310 = 0x001D7FC8; // type:func
+// Fills chr+0xE70 / +0xE80 through func_00211E78 and raises flag 0xF6; raises flag 0xF8.
+BtlChar_RequestPlaceRelative = 0x001D7FF8; // type:func // guess
+BtlChar_RequestPlaceOnPath = 0x001D8068; // type:func // guess
+// Per-frame pose snapshots: chr+0x2E0 (7 positions), +0x350 (7 rotations), +0x3C0 (mask).
+BtlChar_ClearSnapshots = 0x001D8080; // type:func
+BtlChar_Snapshot = 0x001D8088; // type:func
+BtlChars_Snapshot = 0x001D8128; // type:func
+BtlChar_GetSnapPos = 0x001D81A0; // type:func
+BtlChar_GetSnapRot = 0x001D8208; // type:func
+BtlChar_GetSnapDelta = 0x001D8270; // type:func
+BtlChar_GetMoveSince = 0x001D82E0; // type:func

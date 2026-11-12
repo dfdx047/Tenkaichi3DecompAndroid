@@ -1,0 +1,105 @@
+// Effect tasks, 0x195EE8..0x199F28 (src/battle/eft_z.c, include/battle/eft_z.h).
+//
+// --- Effect pack part kind 16: a camera-facing sprite (second half of the module; it starts before 0x195EE8) ---
+// Item class D_002C40F0 = { Update 0x1961A0, Init 0x195EE8, Term 0x196190, PostUpdate stub 0x1967C0,
+// Reset 0x1967C8, Draw 0x1967E0 }; manager class D_002C40D8 = { stub 0x1969F0, Init 0x196970, Term 0x1969C0, 0,
+// stub 0x1969F8, 0 }. The item work is 0x140 bytes (the 0x40-byte create argument at its head); the manager
+// makes a child list of 40. Draw calls EftGfx_DrawSprite / EftPrim_DrawQuadDepth, hence "bill(board)".
+EftBill_Init = 0x00195EE8; // type:func // guess
+EftBill_Term = 0x00196190; // type:func // guess
+EftBill_Update = 0x001961A0; // type:func // guess
+EftBill_PostUpdate = 0x001967C0; // type:func // guess
+EftBill_Reset = 0x001967C8; // type:func // guess
+EftBill_Draw = 0x001967E0; // type:func // guess
+EftBillMgr_Init = 0x00196970; // type:func // guess
+EftBillMgr_Term = 0x001969C0; // type:func // guess
+EftBillMgr_Update = 0x001969F0; // type:func // guess
+EftBillMgr_Reset = 0x001969F8; // type:func // guess
+// The entries EftEmit_SpawnType16 (eft_h.c) calls: each checks that the task's class update is EftBill_Update
+// and that the work is alive, and returns 1 when it acted. Create adds an item to the manager's list; Stop
+// starts the fade-out (EFT_CMD_STOP); Kill makes the task end at its next update; IsAlive; SetPos copies x, y,
+// z; SetDir normalises; SetSize / SetDelay / SetEndDelay / SetUnkD8 store one float; SetTexture forwards to
+// 0x195038; SetFront sets flag 0x20; SetType stores the effect type byte used for the stop / hide tests.
+EftBill_Create = 0x00196A00; // type:func // guess
+EftBill_Stop = 0x00196A70; // type:func // guess
+EftBill_Kill = 0x00196AD0; // type:func // guess
+EftBill_IsAlive = 0x00196B20; // type:func // guess
+EftBill_SetPos = 0x00196B60; // type:func // guess
+EftBill_SetDir = 0x00196BB8; // type:func // guess
+EftBill_SetSize = 0x00196C28; // type:func // guess
+EftBill_SetDelay = 0x00196C70; // type:func // guess
+EftBill_SetEndDelay = 0x00196CB8; // type:func // guess
+EftBill_SetUnkD8 = 0x00196D00; // type:func // guess
+EftBill_SetTexture = 0x00196D48; // type:func // guess
+EftBill_SetFront = 0x00196DA0; // type:func // guess
+EftBill_SetType = 0x00196DF0; // type:func // guess
+gEftBillUnused = 0x002FEA94; // size:0x4 // guess
+gEftBillList = 0x002FEA98; // size:0x4 // guess
+//
+// --- Ground dust ---
+// Manager class D_002C4108 = { Update 0x197958, Init 0x197810, Term 0x197928, 0, 0, 0 }: work gEftGndDust (0x6340
+// bytes: two pools of 0xC0-byte particles, an animated texture from common entry 0xB, the stage's dust
+// template, one task slot per fighter for the two continuous emitters) and a child list of 16 tasks with 0xE0
+// bytes of work each. EftGndDust_Create(arg, kind) adds a task of one of six classes (jump table 0x2ED310):
+//   0 Puff    D_002C4120  four particles around a point (stage debris)
+//   1 Slide   D_002C4138  emitter following a fighter, every 5th frame (request 0x30)
+//   2 Dash    D_002C4150  emitter following a fighter, every 6th frame (request 0x33)
+//   3 Burst   D_002C4168  one burst at a fighter (request 0x34, and 0x35 under water)
+//   4 Land    D_002C4180  ring of 3 + 8 + 1 particles at a ground point (request 0x35; EftShotTech_UpdateTargetBurst)
+//   5 Impact  D_002C4198  two particles at a ground point (a projectile hitting the ground; request 0x32, per foot)
+// Evidence for the names: the callers (BtlFx_UpdateGroundFx in btl_char_fx.c, BtlStage_UpdateObjs,
+// EftHit_SpawnBlastImpact) and the particle counts; the words slide / dash / land are guesses.
+EftGndDust_Create = 0x00196E40; // type:func
+EftGndDust_SpawnDebris = 0x00196EF8; // type:func
+EftGndDust_SetSlide = 0x00196F88; // type:func // guess
+EftGndDust_SetDash = 0x00197148; // type:func // guess
+EftGndDust_SpawnBurst = 0x00197318; // type:func // guess
+EftGndDust_SpawnLanding = 0x00197458; // type:func // guess
+EftGndDust_SpawnLandingScaled = 0x001974F8; // type:func // guess
+EftGndDust_Stub = 0x001975A0; // type:func
+EftGndDust_SpawnImpact = 0x001975A8; // type:func
+EftGndDust_GetTemplate = 0x00197640; // type:func
+EftGndDust_InitTemplate = 0x00197658; // type:func
+EftGndDustMgr_Init = 0x00197810; // type:func
+EftGndDustMgr_Term = 0x00197928; // type:func
+EftGndDustMgr_Update = 0x00197958; // type:func
+// Per kind: Init, Term (frees the particles), Reset (kills the task), Update, Draw.
+EftGndDustPuff_Init = 0x00197978; // type:func // guess
+EftGndDustPuff_Term = 0x00197D00; // type:func // guess
+EftGndDustPuff_Reset = 0x00197D80; // type:func // guess
+EftGndDustPuff_Update = 0x00197D98; // type:func // guess
+EftGndDustPuff_Draw = 0x00197E18; // type:func // guess
+EftGndDustSlide_Init = 0x00197F38; // type:func // guess
+EftGndDustSlide_Term = 0x00198038; // type:func // guess
+EftGndDustSlide_Reset = 0x001980C8; // type:func // guess
+EftGndDustSlide_Update = 0x001980E0; // type:func // guess
+EftGndDustSlide_Draw = 0x001982B8; // type:func // guess
+EftGndDustDash_Init = 0x001983E0; // type:func // guess
+EftGndDustDash_Term = 0x00198510; // type:func // guess
+EftGndDustDash_Reset = 0x001985A0; // type:func // guess
+EftGndDustDash_Update = 0x001985B8; // type:func // guess
+EftGndDustDash_Draw = 0x00198768; // type:func // guess
+EftGndDustBurst_Init = 0x00198888; // type:func // guess
+EftGndDustBurst_Term = 0x00198940; // type:func // guess
+EftGndDustBurst_Reset = 0x001989C0; // type:func // guess
+EftGndDustBurst_Update = 0x001989D8; // type:func // guess
+EftGndDustBurst_Draw = 0x00198A98; // type:func // guess
+EftGndDustLand_Init = 0x00198BC0; // type:func // guess
+EftGndDustLand_Term = 0x001991E8; // type:func // guess
+EftGndDustLand_Reset = 0x00199268; // type:func // guess
+EftGndDustLand_Update = 0x00199280; // type:func // guess
+EftGndDustLand_Draw = 0x00199350; // type:func // guess
+EftGndDustImpact_Init = 0x00199500; // type:func // guess
+EftGndDustImpact_Term = 0x001998E8; // type:func // guess
+EftGndDustImpact_Reset = 0x00199968; // type:func // guess
+EftGndDustImpact_Update = 0x00199980; // type:func // guess
+EftGndDustImpact_Draw = 0x00199A40; // type:func // guess
+// Shared: UpdateParts steps every particle of a task (life, colour, size, spin, velocity, detaching from the
+// owner, fade, free); LerpColor blends two byte colours into a float vector; GetFreeList returns the free list
+// of pool 0 / 1; AllocPart moves a particle from a free list to a task's list and clears it.
+EftGndDust_UpdateParts = 0x00199B20; // type:func
+EftGndDust_LerpColor = 0x00199DE0; // type:func
+EftGndDust_GetFreeList = 0x00199E90; // type:func
+EftGndDust_AllocPart = 0x00199EB0; // type:func
+gEftGndDustList = 0x002FEA9C; // size:0x4
+gEftGndDust = 0x002FEAA0; // size:0x4

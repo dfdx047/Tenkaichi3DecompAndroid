@@ -1,0 +1,152 @@
+// src/battle/eft_o.c, eft_o_b.c, eft_o_c.c: 0x167E68..0x16C2E0.
+
+// --- EftBolt, second half: the body lightning task and its manager (the bolts themselves are EftBolt_* in eft_n.txt,
+// as is gEftBoltPool = 0x2FEA18). Per-fighter task of class 0x2C3A78 with a 0xEB0-byte work block (10 records of 0x90 and
+// 20 of 0x70), manager class 0x2C3A60, two animated textures (common effect pack entries 5 and 6). Started by
+// 0x1643D0 for fighters whose parameter flags have bit 4 or 8 and stopped for the others. 
+// 0x167E68(work): advances the shared textures once per frame and stores the TEX0 value in the work block.
+EftBolt_UpdateTex = 0x00167E68; // type:func // guess
+// 0x167F80(work, objId): reads the fighter's parameter flags and height (scale = height / 19.35).
+EftBolt_ReadChar = 0x00167F80; // type:func // guess
+// Class 0x2C3A78 = {0x168088 update, 0x167FD8 init, 0x168030 term, 0x168220 post-update (empty), 0x168228 reset,
+// 0x168258 draw}.
+EftBoltTask_Init = 0x00167FD8; // type:func // guess
+EftBoltTask_Term = 0x00168030; // type:func // guess
+EftBoltTask_Update = 0x00168088; // type:func // guess
+EftBoltTask_PostUpdate = 0x00168220; // type:func // guess
+EftBoltTask_Reset = 0x00168228; // type:func // guess
+EftBoltTask_Draw = 0x00168258; // type:func // guess
+// Class 0x2C3A60 = {0x168510 update, 0x1682F0 init, 0x1684B0 term, 0, 0x168540 reset (empty), 0}.
+EftBoltMgr_Init = 0x001682F0; // type:func // guess
+EftBoltMgr_Term = 0x001684B0; // type:func // guess
+EftBoltMgr_Update = 0x00168510; // type:func // guess
+EftBoltMgr_Reset = 0x00168540; // type:func // guess
+// 0x168548(objId) / 0x1685B8(objId): create the fighter's task / ask it to stop (tail-called from 0x1643D0).
+EftBolt_Enable = 0x00168548; // type:func // guess
+EftBolt_Disable = 0x001685B8; // type:func // guess
+gEftBoltList = 0x002FEA1C; // size:0x4 // guess
+gEftBoltTaskClass = 0x002C3A78; // guess
+
+// --- EftRays: effect pack part kind 2 (spawner EftEmit_SpawnType2 in eft_h.c calls all nine entry points).
+// A part is a task (class 0x2C3AA8) holding up to 10 "rays": camera-facing textured quads fanned around one
+// point, each with a rotation, a random length flicker, a colour pulse and a three-key size animation. The
+// name describes what the draw builds; the part's use in the game's packs was not checked.
+// 0x168600(arg): creates a part task.
+EftRays_Create = 0x00168600; // type:func // guess
+// 0x168628 / 0x168668: start the end (hold, then fade) / die on the next update.
+EftRays_Stop = 0x00168628; // type:func // guess
+EftRays_Kill = 0x00168668; // type:func // guess
+EftRays_SetPos = 0x001686A8; // type:func // guess
+EftRays_SetDelay = 0x00168700; // type:func // guess
+EftRays_SetHold = 0x00168740; // type:func // guess
+EftRays_SetFade = 0x00168780; // type:func // guess
+EftRays_IsAlive = 0x001687C8; // type:func // guess
+EftRays_SetSize = 0x00168808; // type:func // guess
+// Class 0x2C3A90 = {0x168920 update (empty), 0x168848 init, 0x1688E8 term, 0, 0, 0}: pool of 20 rays, 3 tasks.
+EftRaysMgr_Init = 0x00168848; // type:func // guess
+EftRaysMgr_Term = 0x001688E8; // type:func // guess
+EftRaysMgr_Update = 0x00168920; // type:func // guess
+// Class 0x2C3AA8 = {0x168C00 update, 0x168928 init, 0x168BB8 term, 0, 0x168D88 reset, 0x168DA0 draw}.
+EftRays_Init = 0x00168928; // type:func // guess
+EftRays_Term = 0x00168BB8; // type:func // guess
+EftRays_Update = 0x00168C00; // type:func // guess
+EftRays_Reset = 0x00168D88; // type:func // guess
+EftRays_Draw = 0x00168DA0; // type:func // guess
+// 0x168E48(work, ray): draws one ray as two triangles through EftGfx_DrawPolyAvgZFront.
+EftRays_DrawRay = 0x00168E48; // type:func // guess
+// 0x1692F0(work): steps every ray (delay, key animation, flicker, pulse, spin).
+EftRays_Step = 0x001692F0; // type:func // guess
+// 0x1695D8(list) / 0x169628(list, ray): take a ray from the pool / give it back (returns the next one).
+EftRays_AllocRay = 0x001695D8; // type:func // guess
+EftRays_FreeRay = 0x00169628; // type:func // guess
+// 0x169698(res, n): advances texture n of the part's resource once per frame and returns its TEX0.
+EftRays_GetTex = 0x00169698; // type:func // guess
+// 0x169718(ray, def, key) / 0x1697C8(ray, def): set a ray's colour and size from one key / interpolate the keys.
+EftRays_SetKey = 0x00169718; // type:func // guess
+EftRays_LerpKey = 0x001697C8; // type:func // guess
+// 0x169998(task): the handle is a live task of this class.
+EftRays_IsTask = 0x00169998; // type:func // guess
+gEftRays = 0x002FEA20; // size:0x4 // guess
+gEftRaysClass = 0x002C3AA8; // guess
+
+// --- EftBlastObj: the blast object, one flying shot of a multi-shot technique (created by EftShotTech, EftVolley
+// and EftRingShot). Task class 0x2C3AD8 = {0x16A400 update, 0x16A108 init, 0x16A3B8 term, 0x16A658 post-update,
+// 0x16A6F0 reset, 0x16A738 draw (empty)}; manager class 0x2C3AC0 = {0x16A7C0, 0x16A740 init, 0x16A790 term, 0,
+// 0x16A7C8, 0}: 60 tasks of 0x620 bytes.
+// 0x1699D0(task): publishes this frame's hit record (two spheres or two boxes at the position and the previous one).
+EftBlastObj_AddHit = 0x001699D0; // type:func
+// 0x169B90 / 0x169BE8 / 0x169F28: optional model (a battle object): create, place and animate, destroy.
+EftBlastObj_InitModel = 0x00169B90; // type:func
+EftBlastObj_UpdateModel = 0x00169BE8; // type:func
+EftBlastObj_TermModel = 0x00169F28; // type:func
+// 0x169F48(objId, task, set, reset): drives the parts of the effect pack that match the object's (kind, node) pairs.
+EftBlastObj_UpdateParts = 0x00169F48; // type:func
+EftBlastObj_Init = 0x0016A108; // type:func
+EftBlastObj_Term = 0x0016A3B8; // type:func
+EftBlastObj_Update = 0x0016A400; // type:func
+EftBlastObj_PostUpdate = 0x0016A658; // type:func
+EftBlastObj_Reset = 0x0016A6F0; // type:func
+EftBlastObj_Draw = 0x0016A738; // type:func
+EftBlastObjMgr_Init = 0x0016A740; // type:func
+EftBlastObjMgr_Term = 0x0016A790; // type:func
+EftBlastObjMgr_Update = 0x0016A7C0; // type:func
+EftBlastObjMgr_Reset = 0x0016A7C8; // type:func
+// 0x16A7D0(arg) / 0x16A868(arg, model): create one, without / with a model pack.
+EftBlastObj_Create = 0x0016A7D0; // type:func
+EftBlastObj_CreateWithModel = 0x0016A868; // type:func
+// The entry points below take the task and do nothing unless it is a live task of this class.
+// 0x16A900: ask it to end (flag 2). 0x16A950: end it and kill its pack parts now (no caller). 0x16A9C0: flag 1.
+// 0x16AA00: flag 4 (no caller).
+EftBlastObj_Stop = 0x0016A900; // type:func
+EftBlastObj_Kill = 0x0016A950; // type:func
+EftBlastObj_IsAlive = 0x0016A9C0; // type:func
+EftBlastObj_IsDying = 0x0016AA00; // type:func
+// 0x16AA48(task, n, kind, node): sets the n-th (part kind, node slot) pair that selects the pack parts it drives.
+EftBlastObj_SetSel = 0x0016AA48; // type:func
+// 0x16AAC0: address of its four hit record vectors (no caller).
+EftBlastObj_GetPose = 0x0016AAC0; // type:func
+// 0x16AB08(task, on, pos): on = the object is put at pos every frame instead of moving; off = it flies again.
+EftBlastObj_SetTarget = 0x0016AB08; // type:func
+// 0x16AB90(task, pos): writes the previous position (the tail of the hit shape).
+EftBlastObj_SetPrevPos = 0x0016AB90; // type:func
+EftBlastObj_SetDir = 0x0016ABE8; // type:func
+// 0x16AC40 flag 0x40 (no movement), 0x16ACA8 flag 0x80 (no hit record), 0x16AD10 flag 0x100 (record flag 0x80),
+// 0x16AD78 flag 0x2000 (model animation), 0x16ADE0 flag 0x800 (record flag 0x10, last hit), 0x16AE30 delay.
+EftBlastObj_SetFrozen = 0x0016AC40; // type:func
+EftBlastObj_SetNoHit = 0x0016ACA8; // type:func
+EftBlastObj_SetHeld = 0x0016AD10; // type:func
+EftBlastObj_SetModelAnim = 0x0016AD78; // type:func
+EftBlastObj_MarkLast = 0x0016ADE0; // type:func
+EftBlastObj_SetDelay = 0x0016AE30; // type:func
+gEftBlastObjMgr = 0x002FEA24; // size:0x4
+gEftBlastObjList = 0x002FEA28; // size:0x4
+gEftBlastObjClass = 0x002C3AD8;
+
+// --- EftBodyFx: fighter effect request 0x1A (BtlFx_UpdateReq1A): effect pack 0x23F on the fighter's body, between
+// nodes 3 and 0x2E. Task class 0x2C3B08 = {0x16B168 update, 0x16AFA0 init, 0x16B118 term, 0x16B2D0, 0x16B288,
+// 0x16B338 (empty)}; manager class 0x2C3AF0 = {0x16B3F8 update, 0x16B340 init, 0x16B3C0 term, 0, 0, 0}.
+EftBodyFx_UpdateParts = 0x0016AE78; // type:func // guess
+EftBodyFx_Init = 0x0016AFA0; // type:func // guess
+EftBodyFx_Term = 0x0016B118; // type:func // guess
+EftBodyFx_Update = 0x0016B168; // type:func // guess
+EftBodyFx_Reset = 0x0016B288; // type:func // guess
+EftBodyFx_PostUpdate = 0x0016B2D0; // type:func // guess
+EftBodyFx_Draw = 0x0016B338; // type:func // guess
+EftBodyFxMgr_Init = 0x0016B340; // type:func // guess
+EftBodyFxMgr_Term = 0x0016B3C0; // type:func // guess
+EftBodyFxMgr_Update = 0x0016B3F8; // type:func // guess
+EftBodyFx_Start = 0x0016B418; // type:func // guess
+EftBodyFx_Stop = 0x0016B4A0; // type:func // guess
+gEftBodyFx = 0x002FEA2C; // size:0x4 // guess
+gEftBodyFxList = 0x002FEA30; // size:0x4 // guess
+gEftBodyFxClass = 0x002C3B08; // guess
+
+// --- EftDisc, first part (the rest and gEftDisc = 0x2FEA34 are in eft_p.txt): the module of class 0x2C3B38 (item; its term / post-update / reset / draw and its
+// creators are after this range) and 0x2C3B20 (manager): a spinning model (two prototypes, common effect pack
+// entries 0x238..0x23B) that grows in a fighter's hand, is released and flies with homing; types 0..4.
+EftDiscMgr_Init = 0x0016B4E0; // type:func // guess
+EftDiscMgr_Update = 0x0016B648; // type:func // guess
+EftDiscMgr_Reset = 0x0016B668; // type:func // guess
+EftDiscMgr_Term = 0x0016B670; // type:func // guess
+EftDisc_Init = 0x0016B6B8; // type:func // guess
+EftDisc_Update = 0x0016BAC8; // type:func // guess

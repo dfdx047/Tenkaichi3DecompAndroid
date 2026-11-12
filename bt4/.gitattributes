@@ -1,0 +1,7 @@
+port/release/rtc-sources.lock.json text eol=lf
+port/voice-runtime/licenses/voice/WINDOWS-BUILD.json text eol=lf
+
+# Generated shader hashes use canonical LF bytes on every build host.
+port/src/gs/shaders/* text eol=lf
+port/src/gs/generated/shaders_*.h text eol=lf
+port/src/gs/generated/*.json text eol=lf

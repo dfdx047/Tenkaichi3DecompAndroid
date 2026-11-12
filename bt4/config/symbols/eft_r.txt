@@ -1,0 +1,145 @@
+// Effect modules 0x174A70..0x178AB0: src/battle/eft_r.c, include/battle/eft_r.h.
+//
+// Last function of the module before this file (started by 0x1749F0, both called by BtlFx_UpdateCharaFx): asks the
+// fighter's task (slot read with 0x19BBF8) to end.
+EftCharaFx_Stop = 0x00174A70; // type:func // guess
+// Beam struggle (fighter clash A). Started by the hit pass (0x1B0910) when two technique records meet head-on;
+// BtlClash_UpdateA ends it; the two BtlClash_Set*Cut functions read its camera distances. Manager class 0x2C3CE0
+// (an entry of the sub-task table gEftLayer3Classes, 0x2C3FB0), task class 0x2C3CF8.
+EftStruggle_Start = 0x00174AB8; // type:func
+EftStruggle_IsActive = 0x00174CC0; // type:func
+EftStruggle_End = 0x00174CE0; // type:func
+EftStruggle_SetBias = 0x00174DC0; // type:func
+EftStruggle_GetBias = 0x00174E40; // type:func
+EftStruggle_GetPos = 0x00174E98; // type:func
+EftStruggle_SetPos = 0x00174F00; // type:func
+EftStruggle_GetCamDist = 0x00174F68; // type:func // guess
+EftStruggle_GetMidDist = 0x00175048; // type:func // guess
+EftStruggle_SetPower = 0x00175078; // type:func
+EftStruggle_GetPower = 0x001750C0; // type:func
+EftStruggleMgr_Init = 0x001750E0; // type:func
+EftStruggleMgr_Term = 0x00175190; // type:func
+EftStruggleMgr_Update = 0x001751C8; // type:func
+EftStruggle_Init = 0x001751D0; // type:func
+EftStruggle_Term = 0x00175370; // type:func
+EftStruggle_Update = 0x00175390; // type:func
+EftStruggle_Reset = 0x001753D8; // type:func
+EftStruggle_Draw = 0x001753F0; // type:func
+EftStruggle_GetRecRadius = 0x001753F8; // type:func
+EftStruggle_Step = 0x00175440; // type:func
+gEftStruggle = 0x002FEA58; // size:0x4
+gEftStruggleMgrClass = 0x002C3CE0; // size:0x18
+gEftStruggleClass = 0x002C3CF8; // size:0x18
+// Spark at the struggle point: one emitter set (common effect entry 0x268) shared by all tasks. Manager class
+// 0x2C3D10 (in gEftLayer3Classes), task class 0x2C3D28.
+EftClashSpark_SpawnParts = 0x00175660; // type:func
+EftClashSpark_GetSet = 0x00175798; // type:func
+EftClashSpark_GetNodeMask = 0x001757A0; // type:func // guess
+EftClashSpark_Init = 0x001757C0; // type:func
+EftClashSpark_Term = 0x001758D8; // type:func
+EftClashSpark_Update = 0x001758F8; // type:func
+EftClashSpark_PostUpdate = 0x001759C0; // type:func
+EftClashSpark_Reset = 0x00175A20; // type:func
+EftClashSpark_Draw = 0x00175A68; // type:func
+EftClashSparkMgr_Init = 0x00175A70; // type:func
+EftClashSparkMgr_Term = 0x00175AF0; // type:func
+EftClashSparkMgr_Update = 0x00175B28; // type:func
+EftClashSparkMgr_Reset = 0x00175B48; // type:func
+EftClashSpark_Create = 0x00175B50; // type:func
+EftClashSpark_Stop = 0x00175BB0; // type:func
+EftClashSpark_SetPos = 0x00175C00; // type:func
+EftClashSpark_SetScale = 0x00175C58; // type:func
+gEftClashSparkSet = 0x002FEA5C; // size:0x4
+gEftClashSparkList = 0x002FEA60; // size:0x4
+gEftClashSparkMgrClass = 0x002C3D10; // size:0x18
+gEftClashSparkClass = 0x002C3D28; // size:0x18
+// Charge aura of fighter effect requests 7 (keep alive) and 8 (burst with a screen shock wave), called by
+// BtlFx_UpdateChargeFx. Per-character sub-manager kind 0 (table gEftCharKindClass, 0x2C3BE0): manager class
+// 0x2C3D40, task class 0x2C3D58, emitter set from entry 2 of the character's effect pack.
+EftCharge_SpawnParts = 0x00175CA0; // type:func
+EftCharge_Init = 0x00175DE8; // type:func
+EftCharge_Term = 0x00175F00; // type:func
+EftCharge_Update = 0x00175F40; // type:func
+EftCharge_Reset = 0x001760A0; // type:func
+EftCharge_PostUpdate = 0x001760E8; // type:func
+EftCharge_Draw = 0x00176150; // type:func
+EftChargeMgr_Init = 0x00176158; // type:func
+EftChargeMgr_Term = 0x00176210; // type:func
+EftChargeMgr_Update = 0x00176278; // type:func
+EftCharge_Start = 0x001762A8; // type:func
+EftCharge_Burst = 0x00176320; // type:func
+EftCharge_Stop = 0x00176368; // type:func
+EftCharge_IsActive = 0x001763B0; // type:func
+gEftChargeMgrClass = 0x002C3D40; // size:0x18
+gEftChargeClass = 0x002C3D58; // size:0x18
+// The ki blast. Per-character sub-manager kinds 1 (20 tasks, pack entry 3: ki blast type 0) and 2 (10 tasks, pack
+// entry 4: the other types), manager class 0x2C3D70, task class 0x2C3D88. EftKiBlast_Fire is called by
+// BtlFx_FireKiBlast (the launcher, once per shot) for every ki blast type other than 2..5.
+// _Turn: deflection / reflection (BtlCharApi_GetDeflectDir). _EndTrail: sets state flag 0x80 on the emitters of
+// group 17. _Ret1A / _Ret1B: two functions that return 1, no caller.
+EftKiBlast_AddHitRecord = 0x001763E8; // type:func
+EftKiBlast_Turn = 0x001764E8; // type:func
+EftKiBlast_SpawnParts = 0x001765C8; // type:func
+EftKiBlast_EndTrail = 0x00176718; // type:func // guess
+EftKiBlast_Init = 0x00176788; // type:func
+EftKiBlast_Term = 0x00176960; // type:func
+EftKiBlast_Update = 0x00176980; // type:func
+EftKiBlast_Reset = 0x00176B50; // type:func
+EftKiBlast_PostUpdate = 0x00176B98; // type:func
+EftKiBlast_Draw = 0x00176CD8; // type:func
+EftKiBlastMgr_Init = 0x00176D00; // type:func
+EftKiBlastMgr_Term = 0x00176DD8; // type:func
+EftKiBlastMgr_Update = 0x00176E40; // type:func
+EftKiBlast_Fire = 0x00176E70; // type:func
+EftKiBlast_Ret1A = 0x00176F00; // type:func // guess
+EftKiBlast_Ret1B = 0x00176F08; // type:func // guess
+gEftKiBlastMgrClass = 0x002C3D70; // size:0x18
+gEftKiBlastClass = 0x002C3D88; // size:0x18
+// Glow at a model node while the fighter charges a ki blast (BtlCharApi_IsChargingKiBlast), started by
+// BtlFx_SpawnHitSparkReq17. Sub-manager kind 3: manager class 0x2C3DA0, task class 0x2C3DB8, pack entry 4.
+EftBlastCharge_SpawnParts = 0x00176F10; // type:func
+EftBlastCharge_Init = 0x00177038; // type:func
+EftBlastCharge_Term = 0x00177198; // type:func
+EftBlastCharge_Update = 0x001771D8; // type:func
+EftBlastCharge_Reset = 0x001772C8; // type:func
+EftBlastCharge_PostUpdate = 0x001772E0; // type:func
+EftBlastCharge_Draw = 0x00177328; // type:func
+EftBlastChargeMgr_Init = 0x00177330; // type:func
+EftBlastChargeMgr_Term = 0x001773E8; // type:func
+EftBlastChargeMgr_Update = 0x00177450; // type:func
+EftBlastCharge_Start = 0x00177480; // type:func
+EftBlastCharge_Stop = 0x00177500; // type:func
+gEftBlastChargeMgrClass = 0x002C3DA0; // size:0x18
+gEftBlastChargeClass = 0x002C3DB8; // size:0x18
+// Ki blast type 3 (characters with BtlCharApi_HasKiBlastType3): a model thrown in an arc that bounces off the stage
+// up to three times and explodes. Replaces sub-manager kind 2: manager class 0x2C3DD0, task class 0x2C3DE8.
+// "Bomb" is a reading of the behaviour (gravity, bounces, a 15-frame blast of radius 28).
+EftKiBomb_AddHitRecord = 0x00177548; // type:func
+EftKiBomb_Launch = 0x00177658; // type:func
+EftKiBomb_Init = 0x00177868; // type:func
+EftKiBomb_Term = 0x00177930; // type:func
+EftKiBomb_Update = 0x00177968; // type:func
+EftKiBomb_Reset = 0x001779D8; // type:func
+EftKiBomb_PostUpdate = 0x001779F0; // type:func
+EftKiBomb_Draw = 0x00177A08; // type:func
+EftKiBombMgr_Init = 0x00177A20; // type:func
+EftKiBombMgr_Term = 0x00177AC8; // type:func
+EftKiBombMgr_Update = 0x00177B10; // type:func
+EftKiBomb_Fire = 0x00177B18; // type:func
+EftKiBomb_SetContact = 0x00177BC8; // type:func
+EftKiBomb_Reflect = 0x00177C48; // type:func
+EftKiBomb_Move = 0x00177CF8; // type:func
+EftKiBomb_HandleHits = 0x00178078; // type:func
+EftKiBomb_UpdateModel = 0x00178448; // type:func
+gEftKiBombMgrClass = 0x002C3DD0; // size:0x18
+gEftKiBombClass = 0x002C3DE8; // size:0x18
+// Ki blast type 2 (BtlCharApi_HasKiBlastType2): a thrown model; first half of its module (task class 0x2C3E18,
+// manager class 0x2C3E00; the rest, 0x178AB0.., is in eft_s, which uses the same prefix). _Turn is called by
+// EftKiObj_PostUpdate (eft_s); _StepTex builds the fragment texture's GS TEX0 once.
+EftKiObj_AddHitRecord = 0x00178530; // type:func // guess
+EftKiObj_Turn = 0x00178630; // type:func // guess
+EftKiObj_Launch = 0x00178708; // type:func // guess
+EftKiObj_StepTex = 0x001788B8; // type:func // guess
+EftKiObj_Init = 0x00178928; // type:func // guess
+EftKiObj_Term = 0x001789F0; // type:func // guess
+EftKiObj_Update = 0x00178A28; // type:func // guess

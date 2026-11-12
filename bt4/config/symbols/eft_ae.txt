@@ -1,0 +1,115 @@
+// src/battle/eft_ae.c, 0x1AA7E8..0x1AE2A8: the end of the effect code.
+// (BtlTaskList_Update / PostUpdate / Reset / Draw / Create / Destroy / AddFirst / AddHead / AddTail,
+// BtlTask_CreateChildList and BtlTask_Kill are in this range too; their names are in btl_scene.txt.)
+
+// Screen test called 8 times by the two sprite writers in front of it (EftSpr_DrawFlat, EftSpr_DrawRot): 1 when
+// z <= 0 or x / y are outside 1..0xFFEF. Last function of their object.
+EftSpr_IsOffScreen = 0x001AA7E8; // type:func
+
+// Keyframed sprite animation object (0x50 bytes, embedded by eft_aa.c's animated parts): plays a "V000" pack of
+// up to 16 layers, each a textured quad animated by keys, from a pool of 32 slots of 0x610 bytes.
+// InitPool / TermPool are called by BtlScene_Init / Term. Step draws libc rand() twice per layer.
+EftSprAnim_InitPool = 0x001AA818; // type:func
+EftSprAnim_TermPool = 0x001AA850; // type:func
+EftSprAnim_AllocSlot = 0x001AA878; // type:func
+EftSprAnim_FreeSlot = 0x001AA8C8; // type:func
+EftSprAnim_Create = 0x001AA8D0; // type:func
+EftSprAnim_Destroy = 0x001AA9B8; // type:func
+EftSprAnim_Start = 0x001AA9D0; // type:func
+EftSprAnim_Step = 0x001AAB40; // type:func
+EftSprAnim_Draw = 0x001AAD00; // type:func
+EftSprAnim_IsPlaying = 0x001AAEB8; // type:func
+EftSprAnim_SetPos = 0x001AAF20; // type:func
+EftSprAnim_SetDir = 0x001AAF50; // type:func
+EftSprAnim_SetScale = 0x001AAF80; // type:func
+EftSprAnim_SetColor = 0x001AAFB0; // type:func
+EftSprAnim_SetSlotFlag = 0x001AAFD8; // type:func // guess
+EftSprAnim_SetDrawFlags = 0x001AAFE8; // type:func
+EftSprAnim_KeepTextures = 0x001AAFF0; // type:func
+EftSprAnim_Restart = 0x001AB0C8; // type:func
+EftSprAnim_WrapDegrees = 0x001AB1D8; // type:func
+EftSprAnim_BuildDirMtx = 0x001AB270; // type:func
+EftSprAnim_BuildMatrices = 0x001AB440; // type:func
+EftSprAnim_DrawLayer = 0x001AB568; // type:func
+EftSprAnim_DrawLayerAt = 0x001AB5A0; // type:func
+EftSprAnim_Jitter = 0x001ABCE8; // type:func // guess
+EftSprAnim_GetGridCells = 0x001ABE10; // type:func
+EftSprAnim_SetGridUv = 0x001ABE68; // type:func
+EftSprAnim_DrawQuad = 0x001ABF48; // type:func
+EftSprAnim_DrawQuadSubdiv = 0x001AC650; // type:func
+gEftSprAnimPool = 0x002FEAE8; // size:0x4
+
+// Texture grid cell rectangles {u0, v0, u1, v1} read by EftSprAnim_SetGridUv, by grid kind: 2x2 (4 cells),
+// 4x2 (8), 3x3 (9, cells of 0.33), 4x4 (16). Corner orders of the four quarters of a subdivided quad.
+gEftSprGridUv2x2 = 0x002C4390; // size:0x40
+gEftSprGridUv4x2 = 0x002C43D0; // size:0x80
+gEftSprGridUv3x3 = 0x002C4450; // size:0x90
+gEftSprGridUv4x4 = 0x002C44E0; // size:0x100
+gEftSprSubdivCorner = 0x002C45E0; // size:0x40
+
+// Readers of the "V000" sprite animation pack (magic 0x30303056): header, layer definitions at +0x20, keys.
+EftSprPack_Get = 0x001ACF00; // type:func
+EftSprPack_Bind = 0x001ACF28; // type:func
+EftSprPack_GetLayerCount = 0x001ACF90; // type:func
+EftSprPack_GetLayers = 0x001ACFB8; // type:func
+EftSprPack_GetLoopEndFrame = 0x001ACFE0; // type:func
+EftSprPack_GetLoopStartFrame = 0x001ACFF8; // type:func
+EftSprPack_GetKeyCount = 0x001AD010; // type:func
+EftSprPack_FindKey = 0x001AD018; // type:func
+EftSprPack_GetKeyT = 0x001AD098; // type:func
+EftSprPack_GetFirstFrame = 0x001AD0F8; // type:func
+EftSprPack_GetLastFrame = 0x001AD108; // type:func
+EftSprPack_IsValid = 0x001AD120; // type:func
+
+// The task tree. gBtlTaskCur is the task whose update callback is running (set by BtlTaskList_Update);
+// gBtlTaskRoot is a root list no linked code creates (the scene keeps its own, BtlScene.root). The "Cur" and
+// "Root" variants have no caller.
+BtlTaskList_UpdateRoot = 0x001AD138; // type:func
+BtlTaskList_CreateRoot = 0x001AD438; // type:func
+BtlTask_CreateChildListCur = 0x001AD490; // type:func
+BtlTaskList_DestroyRoot = 0x001AD650; // type:func
+BtlTask_DestroyChildList = 0x001AD678; // type:func
+BtlTask_AddAfterCur = 0x001AD7F8; // type:func
+BtlTask_AddAfter = 0x001AD820; // type:func
+BtlTask_AddBeforeCur = 0x001AD8C0; // type:func
+BtlTask_AddBefore = 0x001AD8E8; // type:func
+BtlTask_Init = 0x001AD988; // type:func
+BtlTaskList_KillAll = 0x001AD9F8; // type:func
+BtlTask_SetDeadCur = 0x001ADA40; // type:func
+BtlTask_SetDead = 0x001ADA58; // type:func
+BtlTask_KillCur = 0x001ADA68; // type:func
+gBtlTaskRoot = 0x002FEAEC; // size:0x4
+gBtlTaskCur = 0x002FEAF0; // size:0x4
+
+// task->tag |= bits (two identical functions). 0x1ADB30 is called by the hit pass (EftHit_SetTaskFlag) with a
+// result bit; 0x1ADB78 by the effect modules' init callbacks with 0x800 for object id 0, else 0x1000: the bits
+// BtlTaskList_Reset selects by. SetPos stores a by-value vector at task +0x10 (the hit pass's contact point).
+BtlTask_SetTagBits = 0x001ADB30; // type:func
+BtlTask_SetPos = 0x001ADB40; // type:func
+BtlTask_SetOwnerTag = 0x001ADB78; // type:func
+BtlTaskList_GetRoot = 0x001ADB88; // type:func
+BtlTask_GetCurrent = 0x001ADB90; // type:func
+BtlTask_GetParent = 0x001ADB98; // type:func
+
+// Effect texture VRAM: a list of at most 128 textures rebuilt every frame (gEftVram, named in eft_det_a.txt).
+// Add* hands out GS blocks from two cursors (images from 0x2B00, CLUTs from 0x2A00) and returns the TEX0 value;
+// UploadAll (BtlScene_Draw) sends them with EftVram_Upload, Reset rewinds. EftTexSet_Keep* add every texture of
+// a set (4 / 8 / 16 / 32 entries); EftTexSet_Load* build a set from a texture pack (Load8 / 16 / 34 follow in
+// eft_det_a.c). EftTexSet_CheckCount is empty (a stripped assert).
+EftVram_Init = 0x001ADBA8; // type:func
+EftVram_Term = 0x001ADC00; // type:func
+EftVram_SetCursor = 0x001ADC30; // type:func
+EftVram_GetCursor = 0x001ADC48; // type:func
+EftVram_AddTex = 0x001ADC68; // type:func
+EftVram_AddImage = 0x001ADD28; // type:func
+EftVram_AddClut = 0x001ADDC0; // type:func
+EftVram_AddTexAt = 0x001ADE20; // type:func
+EftTexSet_Keep32 = 0x001ADEA0; // type:func
+EftTexSet_Keep4 = 0x001ADF20; // type:func
+EftTexSet_Keep8 = 0x001ADFA0; // type:func
+EftTexSet_Keep16 = 0x001AE020; // type:func
+EftVram_UploadAll = 0x001AE0A0; // type:func
+EftVram_Reset = 0x001AE118; // type:func
+EftTexSet_CheckCount = 0x001AE140; // type:func
+EftTexSet_Load32 = 0x001AE148; // type:func
+EftTexSet_Load4 = 0x001AE1F8; // type:func

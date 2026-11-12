@@ -1,0 +1,147 @@
+// Vector / matrix library, first half: 0x11FA10..0x121008 (src/port/vu0_a.c has an exact C reference of every routine;
+// src/sys/vu0_a_c*.c have the ones that are compiled C). The library is Sony's libvu0 with other names plus a matrix
+// stack. Register conventions: vf0 = (0,0,0,1); vf1 = (0,0,1,0), vf2 = (0,1,0,0), vf3 = (1,0,0,0) set at boot by 0x120088;
+// vf16-19 = the "current" matrix; vi15 = stack pointer into VU0 data memory (one quadword per row).
+// Mtx_StoreIdentity (0x120098) is in game.txt and is not repeated here; its address was checked (stores vf3, vf2, vf1, vf0).
+
+// Integer vectors (four s32). No VU0 except the conversions; compiled C. Evidence: the instructions themselves.
+// Only IVec4_Set (4 callers: packed 16-bit values to a vector), IVec4_ToFloat12 (2) and IVec4_ToFloat (2) are called.
+// 0x11FA10(v): (0, 0, 0, 1). 0x11FA28(v): zero. 0x11FA40(v, x, y, z, w). 0x11FA58(v, x, y, z): w untouched.
+// 0x11FA68(a, b): swap (128-bit moves).
+IVec4_SetZeroW1 = 0x0011FA10; // type:func
+IVec4_SetZero = 0x0011FA28; // type:func
+IVec4_Set = 0x0011FA40; // type:func
+IVec3_Set = 0x0011FA58; // type:func
+IVec4_Swap = 0x0011FA68; // type:func
+// (out, a, b): per-component 32-bit add / subtract / multiply (low 32 bits); the IVec3 forms leave out.w untouched.
+IVec4_Add = 0x0011FA80; // type:func
+IVec3_Add = 0x0011FAC8; // type:func
+IVec4_Sub = 0x0011FB00; // type:func
+IVec3_Sub = 0x0011FB48; // type:func
+IVec4_Mul = 0x0011FB80; // type:func
+IVec3_Mul = 0x0011FBC8; // type:func
+// (out, a, s): multiply / signed divide by a scalar (break 7 on s == 0); the IVec3 forms leave out.w untouched.
+IVec4_Scale = 0x0011FC00; // type:func
+IVec3_Scale = 0x0011FC38; // type:func
+IVec4_Div = 0x0011FC60; // type:func
+IVec3_Div = 0x0011FCB0; // type:func
+// (out, in): copy four words (one 128-bit move) / three words.
+IVec4_Copy = 0x0011FCF0; // type:func
+IVec3_Copy = 0x0011FD00; // type:func
+// (out, in): integer to float on VU0, divided by 4096 (vitof12) / 16 (vitof4) / 1 (vitof0); all four components.
+IVec4_ToFloat12 = 0x0011FD20; // type:func
+IVec4_ToFloat4 = 0x0011FD30; // type:func
+IVec4_ToFloat = 0x0011FD40; // type:func
+// (out, in, lo, hi): signed clamp; the test order is "in < lo ? lo : (hi < in ? hi : in)". IVec3 copies in.w to out.w.
+IVec4_Clamp = 0x0011FD50; // type:func
+IVec3_Clamp = 0x0011FDF0; // type:func
+// Empty function, no callers.
+IVec_Stub = 0x0011FE78; // type:func // guess
+
+// Screen-range test of projected integer points (x, y in 12.4 fixed point, z, w integers), libvu0's sceVu0ClipScreen
+// with the result inverted: returns 1 when every tested point has 0 < x < 4096, 0 < y < 4096 and w > 0 (VU0 sticky
+// zero / sign flags), else 0. 0x11FE80(p), 0x11FED8(a, b, c), 0x11FF58(a, b, c, d): the last one loads c twice and
+// never reads d (original bug). Only 0x11FF58 is called (EftTrail_DrawSprite).
+IVec4_InGsRange = 0x0011FE80; // type:func // guess
+IVec4_InGsRange3 = 0x0011FED8; // type:func // guess
+IVec4_InGsRange4 = 0x0011FF58; // type:func // guess
+
+// 0x11FFE8: internal, non-standard call (angle in $f12, result in vf12: x = sin, y = cos; clobbers vf4-vf7, $t0, $t1,
+// $v0, Q; callers keep $ra in $a2). libvu0's _sceVu0ecossin: degree-9 sine polynomial of (pi/2 - |angle|) for the
+// cosine, sin = +/- sqrt(1 - cos^2) with the sign of the angle. Valid for |angle| <= pi only. 9 callers.
+Vu0_SinCos = 0x0011FFE8; // splat emits this VU0 routine as raw words, so no type:func
+// Coefficients of the polynomial, x^9, x^7, x^5, x^3 (one quadword), and pi/2 in the small-data constants.
+gVu0SinCoef = 0x002EC250; // size:0x10
+gVu0HalfPi = 0x002FC328; // size:0x4
+// (0, 0, 1, 1): the vector Mtx_AxisZToEuler / Vu0Cur_AxisZToEuler multiply by.
+gVu0AxisZW = 0x002EC2F0; // size:0x10
+
+// 0x120088(): vf1 = (0,0,1,0), vf2 = (0,1,0,0), vf3 = (1,0,0,0) (three vmr32 from vf0). Called by Vu0_Init and once more.
+Vu0_InitAxisRegs = 0x00120088; // type:func
+
+// Matrices in memory (0x40 bytes, four rows). Names after what the instructions do; libvu0 equivalents in vu0_a.c.
+// 0x1200B0(m): rows 0-2 = identity, row 3 untouched. 0x1200C0(m): row 3 = (0,0,0,1). 0x1200C8(v, m): v = row 3.
+// 0x1200D8(angles, m): Vec3_DirToEuler of (row 2 + (0,0,0,1)). 0x120140(m, v): row 3 = v (all four words).
+// 0x120150(dst, src, v): copy with row 3 x, y, z += v. 0x120180(dst, src, v): copy with row 3 = src * v (uses v.w).
+Mtx_StoreIdentityRot = 0x001200B0; // type:func
+Mtx_ClearTrans = 0x001200C0; // type:func
+Mtx_GetTrans = 0x001200C8; // type:func
+Mtx_AxisZToEuler = 0x001200D8; // type:func
+Mtx_SetTrans = 0x00120140; // type:func
+Mtx_Translate = 0x00120150; // type:func
+Mtx_TranslateLocal = 0x00120180; // type:func // guess
+// 0x1201B8(dst, a, b): dst.row[i] = a.row0 * b[i][0] + a.row1 * b[i][1] + a.row2 * b[i][2] + a.row3 * b[i][3]
+// (sceVu0MulMatrix). 0x120230: copy. 0x120258: transpose. 0x1202A0: inverse of a rotation + translation matrix
+// (transposed 3x3 with the w column forced to 0, row 3 = -(R^T * t), w kept; sceVu0InversMatrix).
+Mtx_Mul = 0x001201B8; // type:func
+Mtx_Copy = 0x00120230; // type:func
+Mtx_Transpose = 0x00120258; // type:func
+Mtx_InverseRT = 0x001202A0; // type:func
+// (dst, src, angle in $f12): dst = src * R (every row of src through the rotation); sine / cosine from Vu0_SinCos.
+// 0x1204B8(dst, src, angles): Z(angles.z), X(angles.x), Y(angles.y) (sceVu0RotMatrix). 0x120508: X, Y, Z.
+Mtx_RotateZ = 0x00120308; // type:func
+Mtx_RotateX = 0x00120398; // type:func
+Mtx_RotateY = 0x00120428; // type:func
+Mtx_RotateZXY = 0x001204B8; // type:func
+Mtx_RotateXYZ = 0x00120508; // type:func
+// (dst, src, v) / (dst, src, s in $f12): copy with ONLY the three diagonal elements multiplied (m00 * x, m11 * y,
+// m22 * z): a scale only when the 3x3 part of src is diagonal. The port must reproduce that.
+Mtx_ScaleDiag = 0x00120558; // type:func
+Mtx_ScaleDiagUniform = 0x00120590; // type:func
+// 0x1205C8(dst, src, angles, pos): Mtx_RotateZXY(dst, src, angles) and then Mtx_Translate(dst, src, pos), which
+// overwrites the rotation with src again (original bug unless dst == src). No callers.
+Mtx_RotateZXYTranslate = 0x001205C8; // type:func // guess
+// libvu0 builders, recognised by their call sequences: sceVu0CameraMatrix(m, pos, zdir, ydir),
+// sceVu0LightColorMatrix(m, c0, c1, c2, ambient) (four row copies), sceVu0NormalLightMatrix(m, l0, l1, l2),
+// sceVu0ViewScreenMatrix(m, scrz, ax, ay, cx, cy, zmin, zmax, nearz, farz), sceVu0DropShadowMatrix(m, lp, a, b, c, mode).
+Mtx_MakeCamera = 0x00120610; // type:func
+Mtx_SetRows = 0x001206C0; // type:func
+Mtx_MakeNormalLight = 0x00120728; // type:func
+Mtx_MakeViewScreen = 0x001207E0; // type:func
+Mtx_MakeDropShadow = 0x001208F0; // type:func
+
+// The current matrix (vf16-19) and its stack. Prefix as in vu0_b.txt. Callers' comments across src/ agree
+// ("VU0 matrix stack push / pop", "current matrix = identity", "translate", "rotate about Z", ...).
+// 0x120A80(): identity built from vf0 by vmr32 and stack pointer = 0 (boot). 0x120A98(): identity from vf3, vf2, vf1, vf0.
+// 0x120AB0(): push (four vsqi through vi15). 0x120AC8(): pop (four vlqd, rows 3..0). 0x120AE0(n): pop n times.
+// 0x120B18(): stack pointer = 0. 0x120B20() -> (s16)vi15 / 4. 0x120B48() -> depth != 0.
+Vu0Cur_Init = 0x00120A80; // type:func
+Vu0Cur_LoadIdentity = 0x00120A98; // type:func
+Vu0Cur_Push = 0x00120AB0; // type:func
+Vu0Cur_Pop = 0x00120AC8; // type:func
+Vu0Cur_PopN = 0x00120AE0; // type:func
+Vu0Cur_ResetStack = 0x00120B18; // type:func
+Vu0Cur_GetStackDepth = 0x00120B20; // type:func
+Vu0Cur_IsStackUsed = 0x00120B48; // type:func
+// The Mtx_ routines above on the current matrix (same arithmetic, same order): 0x120B68 rows 0-2 = identity,
+// 0x120B78 row 3 = (0,0,0,1), 0x120B80(m) load, 0x120B98(m) store, 0x120BB0(v) v = row 3,
+// 0x120BB8(angles): Vec3_DirToEuler of (row 2 + row 3): unlike Mtx_AxisZToEuler the translation is not removed
+// (original bug, no callers). 0x120C10(v) row 3 = v. 0x120C18(v) row 3 x, y, z += v. 0x120C28(v) row 3 = cur * v.
+Vu0Cur_LoadIdentityRot = 0x00120B68; // type:func
+Vu0Cur_ClearTrans = 0x00120B78; // type:func
+Vu0Cur_LoadMtx = 0x00120B80; // type:func
+Vu0Cur_StoreMtx = 0x00120B98; // type:func
+Vu0Cur_GetTrans = 0x00120BB0; // type:func
+Vu0Cur_AxisZToEuler = 0x00120BB8; // type:func
+Vu0Cur_SetTrans = 0x00120C10; // type:func
+Vu0Cur_Translate = 0x00120C18; // type:func
+Vu0Cur_TranslateLocal = 0x00120C28; // type:func // guess
+// 0x120C40(m): cur = Mtx_Mul(cur, m) (rows of m through the old current matrix: m is applied first).
+// 0x120CA8(m): cur = Mtx_Mul(m, cur) (rows of cur through m: m is applied last).
+Vu0Cur_MulMtx = 0x00120C40; // type:func // guess
+Vu0Cur_MulMtxRev = 0x00120CA8; // type:func // guess
+Vu0Cur_Transpose = 0x00120D00; // type:func
+Vu0Cur_InverseRT = 0x00120D48; // type:func
+Vu0Cur_RotateZ = 0x00120DB0; // type:func
+Vu0Cur_RotateX = 0x00120E20; // type:func
+Vu0Cur_RotateY = 0x00120E90; // type:func
+Vu0Cur_RotateZXY = 0x00120F00; // type:func
+Vu0Cur_RotateXYZ = 0x00120F38; // type:func
+Vu0Cur_ScaleDiag = 0x00120F70; // type:func
+Vu0Cur_ScaleDiagUniform = 0x00120F88; // type:func
+// 0x120FA0(angles, pos): Vu0Cur_RotateZXY then Vu0Cur_Translate. No callers.
+Vu0Cur_RotateZXYTranslate = 0x00120FA0; // type:func
+// (out, v): out = row0 * v.x + row1 * v.y + row2 * v.z + row3 * v.w. 0x120FC8 writes four components; 0x120FE8
+// writes x, y, z and out.w = v.w.
+Vu0Cur_MulVec4 = 0x00120FC8; // type:func
+Vu0Cur_MulVec3 = 0x00120FE8; // type:func

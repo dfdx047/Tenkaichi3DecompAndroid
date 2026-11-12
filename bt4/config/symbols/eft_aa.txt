@@ -1,0 +1,134 @@
+// Effect modules 0x199F28..0x19E0C0: src/battle/eft_aa.c, include/battle/eft_aa.h.
+//
+// 0x199F28..0x19B7F8: tail of the ground effect module (dust / rock pieces; gEftGndDust at gp 0x2FEAA0; the module
+// starts in eft_z at 0x196EF8). Shared helpers of its eight piece classes (0x2C40F0..0x2C4198).
+// MoveNode: List_GetNext, List_Remove from one list, List_PushBack on the other; returns the next node.
+// GetTex: func_001ADC68 on texture slot idx the first time it is asked for in a frame (mask at +0x84).
+// GetLightColors: copies BtlStage_GetLightColors' two RGBA colours (grey 0x80 / alpha 0 without a stage block), alpha + 8.
+// SpawnPiece: takes a 0xC0-byte piece from the free list and fills it from a definition block (two Rand_Float01).
+// SpawnPieceEx: the same with every value passed as an argument (one Rand_Float01 for the spin direction).
+// SpawnBodyDust: pieces along ten body segments of a fighter (node pairs from a table), count by segment length.
+// SpawnChip: one piece 4..9 units along a direction from a point, 7 below it, tilted by 0x122190.
+// MakeFacingMtx: matrix whose Z axis is a direction and whose X axis is perpendicular to the camera's view axis.
+// IsOnScreen: screen position test (z > 0, 0 < x, y <= 0xFFEF). DrawQuad: one 4-vertex textured strip (0x90-byte
+// packet at gOtCur). DrawPiece: DrawQuad along a direction, or the camera-facing EftGfx_DrawSprite.
+EftGndDust_MoveNode = 0x00199F28; // type:func // guess
+EftGndDust_GetTex = 0x00199FA0; // type:func // guess
+EftGndDust_GetLightColors = 0x0019A020; // type:func
+EftGndDust_SpawnPiece = 0x0019A0E8; // type:func // guess
+EftGndDust_SpawnPieceEx = 0x0019A300; // type:func // guess
+EftGndDust_SpawnBodyDust = 0x0019A548; // type:func // guess
+EftGndDust_SpawnChip = 0x0019AAB8; // type:func // guess
+EftGndDust_MakeFacingMtx = 0x0019AC88; // type:func
+EftGndDust_IsOnScreen = 0x0019AEA8; // type:func
+EftGndDust_DrawQuad = 0x0019AEE8; // type:func
+EftGndDust_DrawPiece = 0x0019B710; // type:func // guess
+// Delayed sound effects (manager class 0x2C41B0 = entry 30 of the sub-task table 0x2C3FB0; task class 0x2C41C8;
+// gEftDelaySe at gp 0x2FEAA4). Start(objId, {sound id, frames}[], count): one task per entry; the task counts its
+// frames down while its fighter is not stopped (BtlScene_IsCharStopped) and then calls Snd_PlaySeEx(4, id, 0x7F, 0x40, 0).
+// Callers: EftShotTech_UpdateNodeFx, EftRushShot_UpdateSparks.
+EftDelaySe_Start = 0x0019B7F8; // type:func
+EftDelaySeMgr_Init = 0x0019B898; // type:func
+EftDelaySeMgr_Term = 0x0019B8E8; // type:func
+EftDelaySeMgr_Update = 0x0019B920; // type:func
+EftDelaySe_Init = 0x0019B928; // type:func
+EftDelaySe_Term = 0x0019B980; // type:func
+EftDelaySe_Update = 0x0019B988; // type:func
+EftDelaySe_Reset = 0x0019BA08; // type:func
+gEftDelaySe = 0x002FEAA4; // size:0x4
+gEftDelaySeMgrClass = 0x002C41B0; // size:0x18
+gEftDelaySeClass = 0x002C41C8; // size:0x18
+// Per-fighter effect slots (manager class 0x2C41E0 = entry 11 of 0x2C3FB0; gEftCharSlot at gp 0x2FEAA8: 0x50 bytes,
+// five kinds x two fighters x {task, on}). Set stores a task pointer (ignored when NULL), Clear empties the slot,
+// Get returns the task. Users: kind 0 0x175F00 / 0x1762A8.., kind 1 0x177198 / 0x177480 / 0x177500,
+// kind 2 0x171900 / 0x171C78.., kind 3 0x174540 / 0x1749F0.., kind 4 EftAbsorb (the drain glow).
+EftCharSlotMgr_Init = 0x0019BA20; // type:func
+EftCharSlotMgr_Term = 0x0019BA58; // type:func
+EftCharSlotMgr_Update = 0x0019BA88; // type:func
+EftCharSlotMgr_Reset = 0x0019BA90; // type:func
+EftCharSlot_Set0 = 0x0019BA98; // type:func
+EftCharSlot_Clear0 = 0x0019BAC0; // type:func
+EftCharSlot_Get0 = 0x0019BAD8; // type:func
+EftCharSlot_Set1 = 0x0019BAF0; // type:func
+EftCharSlot_Clear1 = 0x0019BB18; // type:func
+EftCharSlot_Get1 = 0x0019BB38; // type:func
+EftCharSlot_Set2 = 0x0019BB50; // type:func
+EftCharSlot_Clear2 = 0x0019BB78; // type:func
+EftCharSlot_Get2 = 0x0019BB98; // type:func
+EftCharSlot_Set3 = 0x0019BBB0; // type:func
+EftCharSlot_Clear3 = 0x0019BBD8; // type:func
+EftCharSlot_Get3 = 0x0019BBF8; // type:func
+EftCharSlot_SetAbsorb = 0x0019BC10; // type:func
+EftCharSlot_ClearAbsorb = 0x0019BC38; // type:func
+EftCharSlot_GetAbsorb = 0x0019BC58; // type:func
+gEftCharSlot = 0x002FEAA8; // size:0x4
+gEftCharSlotMgrClass = 0x002C41E0; // size:0x18
+// Blade trail: the ribbon behind a drawn weapon (manager class 0x2C4218 = entry 6 of 0x2C3FB0; task class 0x2C4230;
+// gEftBlade at gp 0x2FEAAC). One task per fighter, created by the manager's init. A fighter has a trail when
+// BtlCharApi_HasWeaponOut and its character id is one of the eight entries of gEftBladeDef (0x31BE80, filled by the
+// manager's init: blade base and tip in the space of node 0x40, colour, layer).
+// AddPoint: appends the blade's two ends to a 128-entry ring, with nine Catmull-Rom points in between when the base
+// moved more than 1 unit. Spline: Catmull-Rom point of four positions. Update: fades the ring by 20 per frame
+// (not while paused) and adds this frame's point. Draw: two gouraud triangles per ring step.
+EftBlade_Create = 0x0019BC70; // type:func
+EftBladeMgr_Init = 0x0019BCE0; // type:func
+EftBladeMgr_Term = 0x0019C108; // type:func
+EftBladeMgr_Update = 0x0019C140; // type:func
+EftBlade_Init = 0x0019C148; // type:func
+EftBlade_Term = 0x0019C238; // type:func
+EftBlade_Reset = 0x0019C240; // type:func
+EftBlade_AddPoint = 0x0019C248; // type:func
+EftBlade_Update = 0x0019C800; // type:func
+EftBlade_Draw = 0x0019C9A0; // type:func
+EftBlade_Spline = 0x0019CFB8; // type:func
+EftBlade_GetColorPtr = 0x0019D168; // type:func
+EftBlade_GetColor = 0x0019D180; // type:func
+EftBlade_FindDef = 0x0019D200; // type:func
+EftBlade_IsClipped = 0x0019D280; // type:func
+gEftBlade = 0x002FEAAC; // size:0x4
+gEftBladeDef = 0x0031BE80; // size:0x200
+gEftBladeColor = 0x002C41F8; // size:0x20
+gEftBladeMgrClass = 0x002C4218; // size:0x18
+gEftBladeClass = 0x002C4230; // size:0x18
+// Blinding overlay (class 0x2C4248 = entry 28 of 0x2C3FB0; gEftBlind at gp 0x2FEAB0: {f32 alpha[2]; s32 flags}).
+// Update: alpha[i] = BtlCharApi_GetBlindRatio(i) * 255 clamped to 0..255 (i = 1 only in split screen); flag 8 / 0x10
+// = that alpha is above 0. Draw: a grey (128, 128, 128, alpha) sprite over the whole screen for object 0, or over each
+// half in split screen; nothing during a replay or when split screen shows a single view.
+EftBlind_Init = 0x0019D2C8; // type:func
+EftBlind_Update = 0x0019D318; // type:func
+EftBlind_Draw = 0x0019D450; // type:func
+EftBlind_Term = 0x0019D4F8; // type:func
+EftBlind_DrawOverlay = 0x0019D528; // type:func
+gEftBlind = 0x002FEAB0; // size:0x4
+gEftBlindClass = 0x002C4248; // size:0x18
+// Effect pack part kind 14 (manager class 0x2C4260 = entry 18 of 0x2C3FB0; task class 0x2C4278; list at gp
+// 0x2FEAB4): an animated object of the 0x1AA8D0 library (texture + resource) with a start delay, an optional life,
+// a hold time and a fade out. Create / Stop / Kill / the setters / IsAlive are the entries EftEmit_SpawnType14 uses;
+// each checks the handle with IsValid (task alive, of this class, same task id, flag 1).
+EftAnimPart_Create = 0x0019D730; // type:func // guess
+EftAnimPart_Stop = 0x0019D758; // type:func // guess
+EftAnimPart_Kill = 0x0019D798; // type:func // guess
+EftAnimPart_SetType = 0x0019D7D8; // type:func // guess
+EftAnimPart_SetPos = 0x0019D820; // type:func // guess
+EftAnimPart_SetSize = 0x0019D868; // type:func // guess
+EftAnimPart_SetDir = 0x0019D8D0; // type:func // guess
+EftAnimPart_SetDelay = 0x0019D918; // type:func // guess
+EftAnimPart_SetHold = 0x0019D960; // type:func // guess
+EftAnimPart_SetFade = 0x0019D9A8; // type:func // guess
+EftAnimPart_IsAlive = 0x0019D9F0; // type:func // guess
+EftAnimPartMgr_Init = 0x0019DA10; // type:func // guess
+EftAnimPartMgr_Term = 0x0019DA38; // type:func // guess
+EftAnimPartMgr_Update = 0x0019DA40; // type:func // guess
+EftAnimPart_Init = 0x0019DA48; // type:func // guess
+EftAnimPart_Term = 0x0019DB60; // type:func // guess
+EftAnimPart_Reset = 0x0019DB78; // type:func // guess
+EftAnimPart_Update = 0x0019DB90; // type:func // guess
+EftAnimPart_Draw = 0x0019DD38; // type:func // guess
+EftAnimPart_IsValid = 0x0019DE48; // type:func // guess
+gEftAnimPartList = 0x002FEAB4; // size:0x4 // guess
+gEftAnimPartMgrClass = 0x002C4260; // size:0x18 // guess
+gEftAnimPartClass = 0x002C4278; // size:0x18 // guess
+// Init callback of the next module's manager (gEftOrbTailMgrClass 0x2C4290 = entry 9 of 0x2C3FB0; gEftOrbTail, eft_ab.txt): allocates its
+// 0xB960-byte work, binds common entries 0x259..0x267 and creates a list of two 0x1E0-byte tasks. The rest of the
+// module (0x19E0C0..) is the next file's.
+EftOrbTailMgr_Init = 0x0019DEA8; // type:func // guess

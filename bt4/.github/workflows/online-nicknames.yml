@@ -1,0 +1,32 @@
+name: Online nickname rollout
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Stage schema, activate enforcement, check state, or disable enforcement
+        type: choice
+        options: [stage, activate, verify, disable]
+        required: true
+        default: verify
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bt4-online-routing-authority
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Apply the selected rollout phase
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SUPABASE_PRIMARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_PRIMARY_MANAGEMENT_TOKEN }}
+          SUPABASE_SECONDARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_SECONDARY_MANAGEMENT_TOKEN }}
+          ROLLOUT_ACTION: ${{ inputs.action }}
+        run: python3 port/tools/rollout_online_nicknames.py "$ROLLOUT_ACTION"

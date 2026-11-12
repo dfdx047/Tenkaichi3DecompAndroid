@@ -1,0 +1,381 @@
+name: Dragon Ball Z - Budokai Tenkaichi 3 (USA) - BIN/DBZP.BIN overlay
+sha1: 4f910969e05d9b25c83af7642b60da9949a4348b
+options:
+  basename: DBZP
+  target_path: disc/BIN/DBZP.BIN
+  elf_path: build/DBZP.elf
+  base_path: ..
+  platform: ps2
+  compiler: EEGCC
+
+  # The overlay shares the main executable's $gp.
+  gp_value: 0x00304270
+
+  asm_path: asm/dbzp
+  # C sources are in src/menu (subsegments are named menu/<file>); per-function assembly goes next to the
+  # main executable's (asm/nonmatchings/menu/<file>/).
+  src_path: src
+  build_path: build
+  data_path: data
+  nonmatchings_path: ../nonmatchings
+
+  ld_script_path: build/DBZP.ld
+  ld_dependencies: True
+  ld_wildcard_sections: True
+
+  create_asm_dependencies: False
+  generate_asm_macros_files: False
+
+  find_file_boundaries: False
+
+  o_as_suffix: True
+
+  symbol_addrs_path:
+    - config/symbol_addrs.txt
+    - config/symbols/lib.txt
+    - config/symbols/game.txt
+    - config/symbols/sys_util.txt
+    - config/symbols/sys_file.txt
+    - config/symbols/rand_pool.txt
+    - config/symbols/boot.txt
+    - config/symbols/sys_pad.txt
+    - config/symbols/sys_adx.txt
+    - config/symbols/sys_common.txt
+    - config/symbols/battle.txt
+    - config/symbols/btl_seq.txt
+    - config/symbols/game_pad.txt
+    - config/symbols/save.txt
+    - config/symbols/battle_work.txt
+    - config/symbols/battle_setup.txt
+    - config/symbols/btl_cam.txt
+    - config/symbols/btl_input.txt
+    - config/symbols/btl_scene.txt
+    - config/symbols/btl_text.txt
+    - config/symbols/fade.txt
+    - config/symbols/gfx.txt
+    - config/symbols/math3d.txt
+    - config/symbols/snd.txt
+    - config/symbols/btl_1bb.txt
+    - config/symbols/btl_ai.txt
+    - config/symbols/btl_char_api.txt
+    - config/symbols/btl_char_cam.txt
+    - config/symbols/btl_char_mgr.txt
+    - config/symbols/btl_obj.txt
+    - config/symbols/btl_replay.txt
+    - config/symbols/btl_script.txt
+    - config/symbols/movie.txt
+    - config/symbols/sys_helpers.txt
+    - config/symbols/sys_rigid.txt
+    - config/symbols/btl_script_cmd.txt
+    - config/symbols/btl_char_status.txt
+    - config/symbols/btl_char_hit.txt
+    - config/symbols/btl_char_coll.txt
+    - config/symbols/btl_char_member.txt
+    - config/symbols/btl_char_ctl.txt
+    - config/symbols/btl_char_flag.txt
+    - config/symbols/btl_char_move.txt
+    - config/symbols/btl_char_action.txt
+    - config/symbols/btl_ai_act.txt
+    - config/symbols/btl_ai_think.txt
+    - config/symbols/btl_char_fx.txt
+    - config/symbols/btl_act_a.txt
+    - config/symbols/btl_act_b.txt
+    - config/symbols/btl_act_c.txt
+    - config/symbols/btl_act_d.txt
+    - config/symbols/btl_act_e.txt
+    - config/symbols/btl_act_f.txt
+    - config/symbols/btl_act_g.txt
+    - config/symbols/btl_act_h.txt
+    - config/symbols/btl_act_i.txt
+    - config/symbols/btl_act_j.txt
+    - config/symbols/btl_capi_a.txt
+    - config/symbols/btl_capi_b.txt
+    - config/symbols/btl_tech_a.txt
+    - config/symbols/btl_tech_b.txt
+    - config/symbols/eft_a.txt
+    - config/symbols/eft_b.txt
+    - config/symbols/eft_c.txt
+    - config/symbols/eft_d.txt
+    - config/symbols/eft_e.txt
+    - config/symbols/eft_f.txt
+    - config/symbols/eft_g.txt
+    - config/symbols/eft_h.txt
+    - config/symbols/eft_i.txt
+    - config/symbols/eft_j.txt
+    - config/symbols/eft_k.txt
+    - config/symbols/eft_l.txt
+    - config/symbols/eft_m.txt
+    - config/symbols/stg_a.txt
+    - config/symbols/stg_b.txt
+    - config/symbols/stg_c.txt
+    - config/symbols/eft_n.txt
+    - config/symbols/eft_o.txt
+    - config/symbols/eft_p.txt
+    - config/symbols/eft_q.txt
+    - config/symbols/eft_r.txt
+    - config/symbols/eft_s.txt
+    - config/symbols/eft_t.txt
+    - config/symbols/eft_u.txt
+    - config/symbols/eft_v.txt
+    - config/symbols/eft_w.txt
+    - config/symbols/eft_x.txt
+    - config/symbols/eft_y.txt
+    - config/symbols/eft_z.txt
+    - config/symbols/eft_aa.txt
+    - config/symbols/eft_ab.txt
+    - config/symbols/eft_ac.txt
+    - config/symbols/eft_ad.txt
+    - config/symbols/eft_det_a.txt
+    - config/symbols/eft_det_b.txt
+    - config/symbols/stg_d.txt
+    - config/symbols/col_a.txt
+    - config/symbols/eft_ae.txt
+    - config/symbols/col_b.txt
+    - config/symbols/col_c.txt
+    - config/symbols/bobj_a.txt
+    - config/symbols/bobj_b.txt
+    - config/symbols/btl_ai_seq_a.txt
+    - config/symbols/vu0_a.txt
+    - config/symbols/vu0_b.txt
+    - config/symbols/dialog.txt
+    - config/symbols/cri_adxf.txt
+    - config/symbols/hud_a.txt
+    - config/symbols/hud_b.txt
+    - config/symbols/gfxm_a.txt
+    - config/symbols/gfxm_b.txt
+    - config/symbols/view_a.txt
+    - config/symbols/gfxm_c.txt
+    - config/symbols/gfxm_d.txt
+    - config/symbols/gfxm_e.txt
+    - config/symbols/stgm_a.txt
+    - config/symbols/mcflow_a.txt
+    - config/symbols/hud_0.txt
+    - config/symbols/hud_c.txt
+    - config/symbols/hud_d.txt
+    - config/symbols/hud_e.txt
+    - config/symbols/misc_a.txt
+    - config/symbols/view_b.txt
+    - config/symbols/late_a.txt
+    - config/symbols/menu_a.txt
+    - config/symbols/menu_b.txt
+    - config/symbols/menu_c.txt
+    - config/symbols/menu_d.txt
+    - config/symbols/menu_e.txt
+    - config/symbols/menu_f.txt
+    - config/symbols/menu_g.txt
+    - config/symbols/menu_h.txt
+    - config/symbols/menu_i.txt
+    - config/symbols/menu_j.txt
+    - config/symbols/menu_k.txt
+    - config/symbols/menu_l.txt
+    - config/symbols/menu_m.txt
+    - config/symbols/menu_n.txt
+    - config/symbols/menu_o.txt
+    - config/symbols/menu_p.txt
+    - config/symbols/menu_q.txt
+    - config/symbols/menu_r.txt
+    - config/symbols/menu_s.txt
+    - config/symbols/menu_t.txt
+    - config/symbols/menu_u.txt
+    - config/symbols/menu_v.txt
+    - config/symbols/menu_w.txt
+    - config/symbols/menu_x.txt
+    - config/symbols/menu_y.txt
+    - config/symbols/menu_z.txt
+    - config/symbols/menu_za.txt
+    - config/symbol_addrs_dbzp.txt
+  reloc_addrs_path:
+    - config/reloc_addrs_dbzp.txt
+
+  undefined_funcs_auto_path: build/dbzp_undefined_funcs_auto.txt
+  undefined_syms_auto_path: build/dbzp_undefined_syms_auto.txt
+
+  string_encoding: ASCII
+  data_string_encoding: ASCII
+  rodata_string_guesser_level: 2
+  data_string_guesser_level: 2
+
+  named_regs_for_c_funcs: False
+
+segments:
+  - name: dbzp
+    type: code
+    start: 0x000000
+    vram: 0x00334C00
+    subalign: null
+    align: 4
+    subsegments:
+      - [0x000000, c, menu/menu_a]
+      - [0x001E90, c, menu/menu_a_b]
+      - [0x0023C0, c, menu/menu_a_c]
+      - [0x003420, c, menu/menu_a_d]
+      - [0x005760, c, menu/menu_b_b]
+      - [0x005FA0, c, menu/menu_b_c]
+      - [0x0083C8, c, menu/menu_b_d]
+      - [0x00AB00, c, menu/menu_c_b]
+      - [0x00B9A0, c, menu/menu_c_c]
+      - [0x00D208, c, menu/menu_c_d]
+      - [0x00D590, c, menu/menu_c_e]
+      - [0x014178, c, menu/menu_e_b]
+      - [0x01D038, c, menu/menu_g]
+      - [0x01E0B8, c, menu/menu_g_b]
+      - [0x01E2C0, c, menu/menu_g_c]
+      - [0x0216B8, c, menu/menu_h_b]
+      - [0x0244A8, c, menu/menu_h_c]
+      - [0x024758, c, menu/menu_h_d]
+      - [0x028A60, c, menu/menu_i_b]
+      - [0x028D48, c, menu/menu_i_c]
+      - [0x0294F8, c, menu/menu_i_d]
+      - [0x02D7A8, c, menu/menu_j_b]
+      - [0x0301A8, c, menu/menu_k_b]
+      - [0x0314A0, c, menu/menu_k_c]
+      - [0x032358, c, menu/menu_k_d]
+      - [0x0327F8, c, menu/menu_k_e]
+      - [0x033468, c, menu/menu_k_f]
+      - [0x0367E0, c, menu/menu_l_b]
+      - [0x039428, c, menu/menu_m_b]
+      - [0x03D960, c, menu/menu_n_b]
+      - [0x03EE68, c, menu/menu_n_c]
+      - [0x0414C8, c, menu/menu_n_d]
+      - [0x0436A8, c, menu/menu_o_b]
+      - [0x044D08, c, menu/menu_o_c]
+      - [0x045358, c, menu/menu_o_d]
+      - [0x046BC0, c, menu/menu_p_b]
+      - [0x049038, c, menu/menu_p_c]
+      - [0x04A218, c, menu/menu_p_d]
+      - [0x04AC50, c, menu/menu_q_b]
+      - [0x0505B0, c, menu/menu_r_b]
+      - [0x0505E8, c, menu/menu_r_c]
+      - [0x052C80, c, menu/menu_r_d]
+      - [0x0542E0, c, menu/menu_s_b]
+      - [0x055708, c, menu/menu_s_c]
+      - [0x057760, c, menu/menu_s_d]
+      - [0x05B4D0, c, menu/menu_t_b]
+      - [0x05C5A8, c, menu/menu_u]
+      - [0x05C830, c, menu/menu_u_b]
+      - [0x05CF70, c, menu/menu_u_c]
+      - [0x05D228, c, menu/menu_u_d]
+      - [0x05DE30, c, menu/menu_u_e]
+      - [0x05E120, c, menu/menu_u_f]
+      - [0x05E310, c, menu/menu_u_g]
+      - [0x05F058, c, menu/menu_u_h]
+      - [0x061C38, c, menu/menu_v_b]
+      - [0x064640, c, menu/menu_v_c]
+      - [0x064B90, c, menu/menu_v_d]
+      - [0x069D40, c, menu/menu_w_b]
+      - [0x069F08, c, menu/menu_w_c]
+      - [0x06AEA8, c, menu/menu_x_b]
+      - [0x06AFB8, c, menu/menu_x_c]
+      - [0x0719E8, c, menu/menu_y_b]
+      - [0x074C50, c, menu/menu_z_b]
+      - [0x074E70, c, menu/menu_z_c]
+      - [0x076330, c, menu/menu_z_d]
+      - [0x079A48, c, menu/menu_za_b]
+      - [0x079EB0, c, menu/menu_za_c]
+      - [0x07A690, c, menu/menu_za_d]
+      - [0x07C008, c, menu/menu_za_e]
+      - [0x07C204, data, "07C204"]
+      - [0x07C280, .data, menu/menu_a]
+      - [0x07C284, .data, menu/menu_a_b]
+      - [0x07C2B8, .data, menu/menu_a_c]
+      - {start: 0x07C2C0, type: .rodata, name: menu/menu_a, linker_section_order: .data}
+      - {start: 0x07C530, type: .rodata, name: menu/menu_a_b, linker_section_order: .data}
+      - {start: 0x07C648, type: .rodata, name: menu/menu_a_c, linker_section_order: .data}
+      - [0x07C6F0, .data, menu/menu_a_d]
+      - [0x07C6F4, .data, menu/menu_b_b]
+      - [0x07C6F8, .data, menu/menu_b_c]
+      - [0x07C6FC, .data, menu/menu_b_d]
+      - [0x07C700, .data, menu/menu_c_c]
+      - [0x07C704, .data, menu/menu_c_d]
+      - {start: 0x07C710, type: .rodata, name: menu/menu_a_d, linker_section_order: .data}
+      - {start: 0x07CB10, type: .rodata, name: menu/menu_b_b, linker_section_order: .data}
+      - {start: 0x07CB90, type: .rodata, name: menu/menu_b_c, linker_section_order: .data}
+      - {start: 0x07D580, type: .rodata, name: menu/menu_b_d, linker_section_order: .data}
+      - {start: 0x07D8C0, type: .rodata, name: menu/menu_c_b, linker_section_order: .data}
+      - {start: 0x07EB20, type: .rodata, name: menu/menu_c_c, linker_section_order: .data}
+      - [0x07ECD4, .data, menu/menu_c_e]
+      - [0x07ECD8, .data, menu/menu_e_b]
+      - [0x07ECE0, .data, menu/menu_g]
+      - [0x07ECE8, .data, menu/menu_g_c]
+      - {start: 0x07ECF0, type: .rodata, name: menu/menu_c_e, linker_section_order: .data}
+      - {start: 0x07F170, type: .rodata, name: menu/menu_e_b, linker_section_order: .data}
+      - {start: 0x07F6D8, type: .rodata, name: menu/menu_g, linker_section_order: .data}
+      - {start: 0x07F880, type: .rodata, name: menu/menu_g_c, linker_section_order: .data}
+      - [0x07FC54, .data, menu/menu_h_b]
+      - {start: 0x07FC60, type: .rodata, name: menu/menu_h_b, linker_section_order: .data}
+      - [0x07FFA8, .data, menu/menu_h_d]
+      - {start: 0x07FFB0, type: .rodata, name: menu/menu_h_d, linker_section_order: .data}
+      - [0x080D08, .data, menu/menu_i_b]
+      - [0x080D0C, .data, menu/menu_i_c]
+      - [0x080D10, .data, menu/menu_i_d]
+      - [0x080D14, .data, menu/menu_j_b]
+      - [0x080D18, .data, menu/menu_k_b]
+      - [0x080D1C, .data, menu/menu_k_d]
+      - {start: 0x080D20, type: .rodata, name: menu/menu_i_d, linker_section_order: .data}
+      - {start: 0x0811B0, type: .rodata, name: menu/menu_j_b, linker_section_order: .data}
+      - {start: 0x081550, type: .rodata, name: menu/menu_k_b, linker_section_order: .data}
+      - {start: 0x0815A0, type: .rodata, name: menu/menu_k_c, linker_section_order: .data}
+      - {start: 0x081F70, type: .rodata, name: menu/menu_k_d, linker_section_order: .data}
+      - {start: 0x081FC0, type: .rodata, name: menu/menu_k_e, linker_section_order: .data}
+      - {start: 0x0823D0, type: .rodata, name: menu/menu_k_f, linker_section_order: .data}
+      - [0x082748, .data, menu/menu_l_b]
+      - [0x08274C, .data, menu/menu_m_b]
+      - [0x082750, .data, menu/menu_n_b]
+      - [0x082754, .data, menu/menu_n_c]
+      - [0x082758, .data, menu/menu_n_d]
+      - [0x08275C, .data, menu/menu_o_b]
+      - [0x082760, .data, menu/menu_o_d]
+      - [0x08277C, .data, menu/menu_p_b]
+      - [0x082780, .data, menu/menu_p_c]
+      - [0x082784, .data, menu/menu_q_b]
+      - [0x082788, .data, menu/menu_r_b]
+      - [0x08281C, .data, menu/menu_r_c]
+      - [0x082820, .data, menu/menu_r_d]
+      - [0x08283C, .data, menu/menu_s_b]
+      - [0x082840, .data, menu/menu_s_c]
+      - {start: 0x082850, type: .rodata, name: menu/menu_l_b, linker_section_order: .data}
+      - {start: 0x082B40, type: .rodata, name: menu/menu_m_b, linker_section_order: .data}
+      - {start: 0x082EE0, type: .rodata, name: menu/menu_n_b, linker_section_order: .data}
+      - {start: 0x083070, type: .rodata, name: menu/menu_n_c, linker_section_order: .data}
+      - {start: 0x083250, type: .rodata, name: menu/menu_n_d, linker_section_order: .data}
+      - {start: 0x083690, type: .rodata, name: menu/menu_o_b, linker_section_order: .data}
+      - {start: 0x0837B0, type: .rodata, name: menu/menu_o_c, linker_section_order: .data}
+      - {start: 0x083800, type: .rodata, name: menu/menu_o_d, linker_section_order: .data}
+      - {start: 0x083A30, type: .rodata, name: menu/menu_p_b, linker_section_order: .data}
+      - {start: 0x083ED0, type: .rodata, name: menu/menu_p_c, linker_section_order: .data}
+      - {start: 0x0841D8, type: .rodata, name: menu/menu_p_d, linker_section_order: .data}
+      - {start: 0x084410, type: .rodata, name: menu/menu_q_b, linker_section_order: .data}
+      - {start: 0x084CF0, type: .rodata, name: menu/menu_r_c, linker_section_order: .data}
+      - {start: 0x0852D0, type: .rodata, name: menu/menu_r_d, linker_section_order: .data}
+      - {start: 0x085538, type: .rodata, name: menu/menu_s_b, linker_section_order: .data}
+      - {start: 0x085700, type: .rodata, name: menu/menu_s_c, linker_section_order: .data}
+      - {start: 0x085B40, type: .rodata, name: menu/menu_s_d, linker_section_order: .data}
+      - {start: 0x0860F0, type: .rodata, name: menu/menu_t_b, linker_section_order: .data}
+      - {start: 0x086270, type: .rodata, name: menu/menu_u, linker_section_order: .data}
+      - {start: 0x0862C0, type: .rodata, name: menu/menu_u_b, linker_section_order: .data}
+      - {start: 0x086360, type: .rodata, name: menu/menu_u_c, linker_section_order: .data}
+      - {start: 0x0863B0, type: .rodata, name: menu/menu_u_d, linker_section_order: .data}
+      - {start: 0x0864C0, type: .rodata, name: menu/menu_u_e, linker_section_order: .data}
+      - {start: 0x086510, type: .rodata, name: menu/menu_u_f, linker_section_order: .data}
+      - [0x086540, .data, menu/menu_u_g]
+      - [0x086544, .data, menu/menu_v_c]
+      - [0x086548, .data, menu/menu_v_d]
+      - {start: 0x086550, type: .rodata, name: menu/menu_u_g, linker_section_order: .data}
+      - {start: 0x086580, type: .rodata, name: menu/menu_u_h, linker_section_order: .data}
+      - {start: 0x086AB0, type: .rodata, name: menu/menu_v_b, linker_section_order: .data}
+      - {start: 0x086D78, type: .rodata, name: menu/menu_v_c, linker_section_order: .data}
+      - {start: 0x086E10, type: .rodata, name: menu/menu_v_d, linker_section_order: .data}
+      - {start: 0x087408, type: .rodata, name: menu/menu_w_c, linker_section_order: .data}
+      - [0x087764, .data, menu/menu_x_c]
+      - {start: 0x087770, type: .rodata, name: menu/menu_x_c, linker_section_order: .data}
+      - [0x087D28, .data, menu/menu_z_d]
+      - [0x087DB8, .data, menu/menu_za_b]
+      - [0x087DF8, .data, menu/menu_za_d]
+      - [0x087DFC, .data, menu/menu_za_e]
+      - {start: 0x087E00, type: .rodata, name: menu/menu_y_b, linker_section_order: .data}
+      - {start: 0x088750, type: .rodata, name: menu/menu_z_c, linker_section_order: .data}
+      - {start: 0x088B00, type: .rodata, name: menu/menu_z_d, linker_section_order: .data}
+      - {start: 0x089570, type: .rodata, name: menu/menu_za_b, linker_section_order: .data}
+      - {start: 0x089640, type: .rodata, name: menu/menu_za_c, linker_section_order: .data}
+      - {start: 0x0897A8, type: .rodata, name: menu/menu_za_d, linker_section_order: .data}
+  - [0x89B1C]

@@ -1,0 +1,19 @@
+// Menu overlay DBZP.BIN, 0x39A978..0x39EFC0: Evolution Z (progress modes 48..50).
+// Shop (tail of the object that starts at 0x399790, config/symbols/menu_v.txt): the item shop, mode 50.
+Shop_Term = 0x0039A978; // type:func
+Shop_Draw = 0x0039AA20; // type:func
+Shop_SetPlate = 0x0039C550; // type:func // guess
+Shop_Update = 0x0039C6E8; // type:func
+Shop_Input = 0x0039C7A0; // type:func
+Shop_UpdateSeq = 0x0039E2F8; // type:func // guess
+Shop_Run = 0x0039E720; // type:func
+// The handler of modes 48..50 ("evoZ" in the development path of the next object's data).
+EvoMode_Main = 0x0039E940; // type:func // guess
+// EvoTop (head of the object that continues at 0x39EFC0): the top menu of Evolution Z, mode 48. Its functions
+// take the work structure as their first argument.
+EvoTop_PlayVoice = 0x0039EB08; // type:func // guess
+EvoTop_Wrap = 0x0039EB48; // type:func // guess
+EvoTop_SetPlate = 0x0039EB68; // type:func // guess
+EvoTop_SetPlateText = 0x0039EC00; // type:func // guess
+EvoTop_Advance = 0x0039ECF0; // type:func // guess
+EvoTop_Init = 0x0039ED10; // type:func

@@ -1,0 +1,113 @@
+// Effect modules 0x19E0C0..0x1A21A8: src/battle/eft_ab.c, eft_ab_b.c, eft_ab_c.c; include/battle/eft_ab.h.
+//
+// --- eft_ab.c 0x19E0C0..0x1A0020: "orb tail" (the module name is a guess by structure) ---
+// The tail of the module whose manager init is 0x19DEA8 (in the file before this one). The only user is the "shots"
+// technique (eft_k.c EftShotTech_UpdateAuraBall): event 0x100 creates a task with the fighter's aura type, every
+// frame it is put between the fighter's hand nodes 10 and 14, event 0x200 ends it. It draws a chain of nodes
+// trailing behind the point and streak sprites flowing along the chain, plus three burst emitters.
+// Manager class 0x2C4290 = {Update, 0x19DEA8 init, Term, 0, Reset, 0}: Update clears the "TEX0 built" masks, Term
+// frees the data, Reset is empty.
+EftOrbTailMgr_Update = 0x0019E0C0; // type:func
+EftOrbTailMgr_Reset = 0x0019E100; // type:func
+EftOrbTailMgr_Term = 0x0019E108; // type:func
+// Task class 0x2C42A8 = {Update, Init, Term, PostUpdate (empty), Reset, Draw}.
+EftOrbTail_Init = 0x0019E150; // type:func
+EftOrbTail_Update = 0x0019E308; // type:func
+EftOrbTail_PostUpdate = 0x0019E5D8; // type:func
+EftOrbTail_Draw = 0x0019E5E0; // type:func
+EftOrbTail_Reset = 0x0019E618; // type:func
+EftOrbTail_Term = 0x0019E630; // type:func
+// Chain nodes (pool of 128, 0x70 bytes): AddNode appends one behind the last; SetNodePos copies a by-value vector;
+// UpdateNodes relaxes the chain and rebuilds each node's length, pitch, yaw and matrix; AllocNode takes a free node.
+EftOrbTail_AddNode = 0x0019E748; // type:func
+EftOrbTail_SetNodePos = 0x0019E870; // type:func
+EftOrbTail_UpdateNodes = 0x0019E8A0; // type:func
+EftOrbTail_AllocNode = 0x0019EB80; // type:func
+// Streaks (pool of 200, 0xA0 bytes): AddStreak links a new one at the chain's head; InitStreak rolls its life,
+// speed / size keys and fades; UpdateStreaks moves them along the chain and removes them; DrawStreaks draws
+// camera-facing quads (EftPrim_DrawQuadDepthScaled); AllocStreak takes a free one.
+EftOrbTail_AddStreak = 0x0019EC08; // type:func
+EftOrbTail_InitStreak = 0x0019EC98; // type:func
+EftOrbTail_UpdateStreaks = 0x0019EFC0; // type:func
+EftOrbTail_DrawStreaks = 0x0019F550; // type:func
+EftOrbTail_AllocStreak = 0x0019F6A8; // type:func
+// Burst: three emitters of the 0x186B50 module at the ball. StartBurst creates them, PollBurst calls 0x186C70 on
+// each (result unused), StopBurst stops the ones that still exist.
+EftOrbTail_StartBurst = 0x0019F730; // type:func // guess
+EftOrbTail_PollBurst = 0x0019F938; // type:func // guess
+EftOrbTail_StopBurst = 0x0019F980; // type:func // guess
+// InitFrames: texture rectangle of each animation frame (cols x rows grid). SetTex / UpdateTex: image + palette
+// entry of the texture table and the TEX0 built from them once per frame.
+EftOrbTail_InitFrames = 0x0019F9D8; // type:func
+EftOrbTail_SetTex = 0x0019FB40; // type:func
+EftOrbTail_UpdateTex = 0x0019FB90; // type:func
+// Entry points (callers in eft_k.c): Create(objId, aura type), Burst (flag 0x80), Kill (flag 4), SetPos(task, vector
+// by value). End (flag 2) and IsActive have no caller.
+EftOrbTail_Create = 0x0019FC38; // type:func
+EftOrbTail_Burst = 0x0019FCF0; // type:func // guess
+EftOrbTail_End = 0x0019FD60; // type:func
+EftOrbTail_Kill = 0x0019FDD0; // type:func
+EftOrbTail_SetPos = 0x0019FE40; // type:func
+EftOrbTail_IsActive = 0x0019FFA0; // type:func
+// Five empty functions without callers (three return 0).
+EftOrbTail_Stub0 = 0x0019FFF8; // type:func // guess
+EftOrbTail_Stub1 = 0x001A0000; // type:func // guess
+EftOrbTail_Stub2 = 0x001A0008; // type:func // guess
+EftOrbTail_Stub3 = 0x001A0010; // type:func // guess
+EftOrbTail_Stub4 = 0x001A0018; // type:func // guess
+// gEftOrbTail points at a 4-byte block holding the pointer to the module's 0xB960 bytes (EftOrbTailMgr).
+gEftOrbTail = 0x002FEAB8; // size:0x4
+gEftOrbTailMgrClass = 0x002C4290; // size:0x18
+gEftOrbTailClass = 0x002C42A8; // size:0x18
+//
+// --- eft_ab_b.c 0x1A0020..0x1A0E58: transformation / fusion effect ---
+// Started, flashed and ended by fighter effect requests 0 / 1 / 2 (btl_char_fx.c BtlChar_SpawnFxBits0), with the
+// fighter's change kind (fighter +0x12DC) mapped to kinds 0..10. One at a time.
+// SpawnParts: steps the 19 emitter groups (EftEmit_GetFlagsFromMask / EftEmit_Spawn). GetSet: emitter set by kind
+// (jump table 0x2ED4C0). HasStartGroup: kinds 0, 1, 7..10. UpdateNodes: per-kind node slots and spawn position.
+// OnFlash: what the flash does to the emitters (kinds 4 and 6).
+EftTransform_SpawnParts = 0x001A0020; // type:func
+EftTransform_GetSet = 0x001A0148; // type:func
+EftTransform_HasStartGroup = 0x001A01E8; // type:func // guess
+EftTransform_UpdateNodes = 0x001A0200; // type:func
+EftTransform_OnFlash = 0x001A0588; // type:func // guess
+// Task class 0x2C42D8 = {Update, Init, Term, PostUpdate, Reset, Draw}.
+EftTransform_Init = 0x001A0600; // type:func
+EftTransform_Term = 0x001A0748; // type:func
+EftTransform_Update = 0x001A0850; // type:func
+EftTransform_Reset = 0x001A0AF8; // type:func
+EftTransform_PostUpdate = 0x001A0B40; // type:func
+EftTransform_Draw = 0x001A0B90; // type:func
+// Manager class 0x2C42C0 = {Update, Init, Term, 0, 0, 0}: eight emitter sets (common packs 0x192, 0x1AA, 0x1C0,
+// 0x1C1, 0x1CB, 0x1E6, 0x1FC, 0x217; the id table at 0x2ED4F0 is a local initialiser of the init).
+EftTransformMgr_Init = 0x001A0BD0; // type:func
+EftTransformMgr_Term = 0x001A0CC0; // type:func
+EftTransformMgr_Update = 0x001A0D28; // type:func
+// The three entries the fighter effect layer calls (requests 0, 1, 2).
+EftTransform_Start = 0x001A0D78; // type:func
+EftTransform_Flash = 0x001A0DD8; // type:func
+EftTransform_End = 0x001A0E10; // type:func
+gEftTransform = 0x002FEABC; // size:0x4
+gEftTransformList = 0x002FEAC0; // size:0x4
+gEftTransformMgrClass = 0x002C42C0; // size:0x18
+gEftTransformClass = 0x002C42D8; // size:0x18
+//
+// --- eft_ab_c.c 0x1A0E58..0x1A21A8: the first functions of the ribbon module (effect pack part kind 17) ---
+// The module continues in eft_ac.c (EftRibbon_* task callbacks, manager, entry points; gEftRibbonMgr and the class
+// tables are named in eft_ac.txt). One translation unit with it in the original.
+// AllocNode / FreeNodes: node pool of 500. SetTexPair / UpdateTex: image + palette entries and the TEX0 built from
+// them. LoadKey / UpdateKeys: animated values from one key / between two keys of the pack. AddNode: appends a node.
+// InitNodes: second half of the task init. PlaceStrip / PlaceTrail1 / PlaceTrail2: node placement for kinds 0, 1,
+// 2. DrawStrip: draws kind 0.
+EftRibbon_AllocNode = 0x001A0E58; // type:func
+EftRibbon_FreeNodes = 0x001A0F40; // type:func
+EftRibbon_SetTexPair = 0x001A0F78; // type:func
+EftRibbon_UpdateTex = 0x001A0FC0; // type:func
+EftRibbon_LoadKey = 0x001A1108; // type:func
+EftRibbon_UpdateKeys = 0x001A1288; // type:func
+EftRibbon_AddNode = 0x001A1630; // type:func
+EftRibbon_InitNodes = 0x001A16A8; // type:func
+EftRibbon_PlaceStrip = 0x001A1858; // type:func
+EftRibbon_PlaceTrail1 = 0x001A19C0; // type:func
+EftRibbon_PlaceTrail2 = 0x001A1A40; // type:func
+EftRibbon_DrawStrip = 0x001A1B30; // type:func

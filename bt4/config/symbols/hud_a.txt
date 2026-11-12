@@ -1,0 +1,84 @@
+// Battle HUD, 0x2187E0-0x21CA60 (src/battle/hud_a.c, hud_a_b.c, hud_a_c.c, hud_a_d.c).
+
+// --- HUD manager (hud_a.c, 0x2187E0-0x219EB0). gHud is the 0x38-byte work allocated by Hud_Init.
+gHud = 0x002FEB3C; // size:0x4
+// Clears the word at +0x28 of every texture entry of the five HUD sprite sheets (last call of Hud_Draw).
+Hud_ClearTexMarks = 0x002187E0; // type:func // guess
+// Recursive walk of a HUD node tree: calls node->update, then the children.
+HudNode_Update = 0x00218848; // type:func
+// Recursive draw of a HUD node tree: pushes translate / rotate on the VU0 matrix stack, calls node->draw, children.
+HudNode_Draw = 0x002188B8; // type:func
+// Stores the replay HUD mode (hud + 0x34); the caller passes gBtlReplayHudMode.
+Hud_SetReplayMode = 0x00218A48; // type:func
+// Visibility bits of the HUD parts (hud + 0x30, bits 0..4); ShowAll sets the five to the same value.
+Hud_ShowAll = 0x00218A58; // type:func
+Hud_ShowGauges = 0x00218AE8; // type:func
+Hud_ShowTimer = 0x00218B08; // type:func
+Hud_ShowNotice = 0x00218B30; // type:func // guess
+Hud_ShowCombo = 0x00218B58; // type:func
+Hud_ShowPrompt = 0x00218B80; // type:func
+// Battle start / end / per-frame gather of the fighter state / round reset (called by BtlGame_*).
+Hud_Init = 0x00218BA8; // type:func
+Hud_Term = 0x00218D38; // type:func
+Hud_PreUpdate = 0x00218D88; // type:func
+Hud_Reset = 0x00219648; // type:func
+// Start the "slide away" ramp (0 -> 1) / the "slide back" ramp (1 -> 0) of the five parts, duration in seconds.
+Hud_SlideOut = 0x00219690; // type:func
+Hud_SlideIn = 0x002196D0; // type:func
+// Updates and draws the node trees (called by BtlGame_Draw).
+Hud_Draw = 0x00219710; // type:func
+
+// --- Team panel: the stand-by member's face, health bar and switch gauge (hud_a_b.c, 0x219EB0-0x21BCA0).
+gHudTeam = 0x002FEB40; // size:0x4
+// GS state for drawing a mask into the frame buffer's alpha (FRAME_2 mask 0x00FFFFFF, FBA_2 on), and back.
+// Passed to 0x224B50 / 0x224B70 by the draw callbacks.
+HudTeam_GsBeginMask = 0x00219EB0; // type:func
+HudTeam_GsEndMask = 0x00219FD8; // type:func
+// Node callbacks (update / draw) registered by HudTeam_Init.
+HudTeam_UpdateRoot = 0x0021A0E8; // type:func
+HudTeam_UpdateFaceA = 0x0021A370; // type:func
+HudTeam_UpdateFaceB = 0x0021A410; // type:func
+HudTeam_UpdateHpA = 0x0021A4B0; // type:func
+HudTeam_UpdateHpB = 0x0021A548; // type:func
+HudTeam_DrawHpA = 0x0021A5E0; // type:func
+HudTeam_DrawHpB = 0x0021A648; // type:func
+HudTeam_UpdateGauge = 0x0021A6B0; // type:func
+HudTeam_DrawGauge = 0x0021A898; // type:func
+HudTeam_DrawSprites = 0x0021A918; // type:func
+HudTeam_ClearFaceTexMark = 0x0021A988; // type:func // guess
+HudTeam_DrawFaceA = 0x0021A9B8; // type:func
+HudTeam_DrawFaceB = 0x0021AAB8; // type:func
+// Selects the side that the next HudNode_Update / HudNode_Draw of the panel shows.
+HudTeam_SelectSide = 0x0021ABB8; // type:func
+// Setters fed by Hud_PreUpdate.
+HudTeam_SetTargetHp = 0x0021AC48; // type:func
+HudTeam_SetTargetHpMax = 0x0021AC60; // type:func
+HudTeam_SetSwitchGauge = 0x0021AC78; // type:func
+HudTeam_SetTarget = 0x0021AD00; // type:func
+HudTeam_SetReserveCount = 0x0021AD18; // type:func
+HudTeam_SlideOut = 0x0021AD40; // type:func
+HudTeam_SlideIn = 0x0021AD68; // type:func
+HudTeam_SetSwitching = 0x0021AD90; // type:func
+HudTeam_StartFlipNext = 0x0021AE30; // type:func // guess
+HudTeam_StartFlipPrev = 0x0021AF18; // type:func // guess
+HudTeam_Init = 0x0021B000; // type:func
+HudTeam_Term = 0x0021BA88; // type:func
+HudTeam_Reset = 0x0021BB50; // type:func
+
+// --- Caption part: a top sprite and a pulsing bottom one, drawn in the attract demo and (top one only) in a
+// replay with HUD mode 0 (hud_a_c.c, 0x21BCA0-0x21C0E0). What the two textures say is not known: names are guesses.
+// HudCaption_Reset has no caller.
+gHudCaption = 0x002FEB44; // size:0x4
+HudCaption_Draw = 0x0021BCA0; // type:func // guess
+HudCaption_Update = 0x0021BCF0; // type:func // guess
+HudCaption_Init = 0x0021BDC0; // type:func // guess
+HudCaption_Term = 0x0021BFF0; // type:func // guess
+HudCaption_Reset = 0x0021C0B8; // type:func // guess
+
+// --- Head of the health gauge module (hud_a_d.c, 0x21C0E0-0x21CA60; the module goes on after 0x21CA60).
+gHudGauge = 0x002FEB48; // size:0x4
+HudGauge_GsBeginMask = 0x0021C0E0; // type:func
+HudGauge_GsEndMask = 0x0021C208; // type:func
+HudGauge_GsBeginMask2 = 0x0021C318; // type:func // guess
+HudGauge_GsEndMask2 = 0x0021C478; // type:func // guess
+HudGauge_UpdateHp = 0x0021C5B0; // type:func

@@ -1,0 +1,99 @@
+// src/battle/eft_e.c = 0x13EA00..0x142CA0. Three effect modules; nothing has a string, so every name is a guess
+// from structure, callers and data unless the comment gives the evidence. Names of the globals gEftBurst
+// (gp 0x2FE9C8), gEftBurstRes (0x31BE60) and gEftDust (gp 0x2FF1A8) are in eft_d.txt / eft_f.txt.
+
+// --- Stage-change transition, 0x13EA00..0x13F3D8 (the task side of the "burst" of eft_d.c) ---
+// Evidence that it is the stage-change transition: battle_load.c's stage swap calls 0x13F310 once the
+// transition file (BattleRes.transition, file 0x1BF / 0x1C0) is loaded, waits for 0x13F3A0 == 0 before the fade
+// out, and calls 0x13F3C8 when the fade is done.
+// Callbacks of the scene's layer 4 class (0x2C35D0 = {0x13EA40, 0x13EA00, 0x13EA38}): init creates a child list
+// of one task, update adds the transition task when a start was requested.
+EftBurstLayer_Init = 0x0013EA00; // type:func // guess
+EftBurstLayer_Term = 0x0013EA38; // type:func // guess
+EftBurstLayer_Update = 0x0013EA40; // type:func // guess
+// Callbacks of the transition task, class 0x2C35E8 = {Update 0x13EBC0, Init 0x13EA88, Term 0x13EB90, PostUpdate
+// 0x13F2E0, Reset 0x13F2E8, Draw 0x13F258}. Init: Heap_Alloc(0x9B70), EftCam_Start with the file's camera
+// animation. Update: particle schedule, sounds. Draw: the model, then each visible particle's draw callback.
+gEftBurstClass = 0x002C35E8; // size:0x18 // guess
+EftBurst_Init = 0x0013EA88; // type:func // guess
+EftBurst_Term = 0x0013EB90; // type:func // guess
+EftBurst_Update = 0x0013EBC0; // type:func // guess
+EftBurst_Draw = 0x0013F258; // type:func // guess
+EftBurst_PostUpdate = 0x0013F2E0; // type:func // guess
+EftBurst_Reset = 0x0013F2E8; // type:func // guess
+// The three calls of the stage swap (see above): resolve the file entries and request the task; 1 while the
+// frame counter is below 150; request the end.
+EftBurst_Start = 0x0013F310; // type:func // guess
+EftBurst_IsBusy = 0x0013F3A0; // type:func // guess
+EftBurst_End = 0x0013F3C8; // type:func // guess
+
+// --- Two tests of a projected position {x, y, z} in GS 12.4 coordinates; no caller ---
+// z > 0 and 0x6801 <= x <= 0x97FF and 0x6B01 <= y <= 0x94FF; and plain z > 0.
+Eft_IsScreenPosVisible = 0x0013F3D8; // type:func // guess
+Eft_IsScreenPosInFront = 0x0013F420; // type:func // guess
+
+// --- Particle emitters, 0x13F430..0x140338 ---
+// "Steam" is a guess for what they show: 32 camera-facing quads per emitter that start at a point, fly up with
+// a random spread and die after a set life; one emitter per record of the stage's third effect list, and the
+// second emitter of every geyser (callers 0x135A74.. in eft_b.c, 0x136C94 in eft_c.c). gp 0x2FE9DC: the shared
+// state (list, texture). Manager class 0x2C3600 = {Update 0x13F7C0, Init 0x13F5C0, Term 0x13F790}, sub-task 5
+// of layer 0 (table 0x2C3568); emitter class 0x2C3618 = {Update 0x13F898, Init 0x13F800, Term 0x13F888, 0,
+// Reset 0x13F890, Draw 0x13F928}.
+gEftSteam = 0x002FE9DC; // size:0x4 // guess
+gEftSteamClass = 0x002C3618; // size:0x18 // guess
+// API on an emitter task (each checks that the task is a live emitter): create from a 0x60-byte description,
+// let it die, pause / resume, work pointer, move.
+EftSteam_Create = 0x0013F430; // type:func // guess
+EftSteam_Stop = 0x0013F470; // type:func // guess
+EftSteam_SetPaused = 0x0013F4C0; // type:func // guess
+EftSteam_GetWork = 0x0013F528; // type:func // guess
+EftSteam_SetPos = 0x0013F568; // type:func // guess
+EftSteamMgr_Init = 0x0013F5C0; // type:func // guess
+EftSteamMgr_Term = 0x0013F790; // type:func // guess
+EftSteamMgr_Update = 0x0013F7C0; // type:func // guess
+EftSteam_Init = 0x0013F800; // type:func // guess
+EftSteam_Term = 0x0013F888; // type:func // guess
+EftSteam_Reset = 0x0013F890; // type:func // guess
+EftSteam_Update = 0x0013F898; // type:func // guess
+EftSteam_Draw = 0x0013F928; // type:func // guess
+// First particle with life 0; new particle (seven Rand_FloatRange draws); move + age all; draw all; one quad
+// (billboard strip packet into the ordering table).
+EftSteam_FindFreePart = 0x0013F9A0; // type:func // guess
+EftSteam_Emit = 0x0013F9D8; // type:func // guess
+EftSteam_MoveParts = 0x0013FBD8; // type:func // guess
+EftSteam_DrawParts = 0x0013FC78; // type:func // guess
+EftSteam_DrawQuad = 0x0013FD28; // type:func // guess
+
+// --- Water surface effects, 0x140338..0x142CA0 (first half of the module that continues in eft_f.c) ---
+// Evidence for "water": 0x140338 wraps BtlStage_GetWaterLevel; BtlFx_UpdateWaterFx (btl_char_fx.c) calls
+// 0x140478 when the fighter's "in water" flag changes and 0x140358 for request 0x19 (moving fast in water).
+// Class 0x2C3640 = {Update 0x1416E0, Init 0x1412E8, Term 0x141558, PostUpdate 0x141788, Reset 0x1417A8, Draw
+// 0x1417E8}, sub-task 7 of layer 0.
+// (y): BtlStage_GetWaterLevel(y), always returns 1.
+EftWater_GetSurfaceY = 0x00140338; // type:func
+// (objId, off): wake of a fighter on (0) / off (1).
+EftWater_SetWake = 0x00140358; // type:func
+// (objId, rec): EftWaterTrail_Spawn for a technique record close to the surface.
+EftWater_AddBlastTrail = 0x00140408; // type:func // guess
+// (objId, pos, kind, speed): splash of a fighter (0), ki blast (1) or technique (2). (pos, scale): the same
+// with a given size, called by the stage code (0x241DB4).
+EftWater_AddSplashFor = 0x00140478; // type:func // guess
+EftWater_AddSplashAt = 0x00140630; // type:func // guess
+// (objId, count, delay): swirls, a ring and billboards around a fighter standing in water. No caller.
+EftWater_AddBurst = 0x001406E8; // type:func // guess
+// (rec): called by BtlScene_UpdateRecords for every hit record: splash where the record's segment crosses the
+// water level, trail when a technique skims it.
+EftWater_UpdateBlast = 0x00140ED0; // type:func // guess
+EftWater_Init = 0x001412E8; // type:func // guess
+EftWater_Term = 0x00141558; // type:func // guess
+EftWater_Update = 0x001416E0; // type:func // guess
+EftWater_PostUpdate = 0x00141788; // type:func // guess
+EftWater_Reset = 0x001417A8; // type:func // guess
+EftWater_Draw = 0x001417E8; // type:func // guess
+// Spawns the wake particles of the fighters whose wake is on (called by EftWater_Update).
+EftWater_UpdateWakes = 0x001418D8; // type:func // guess
+// Splash records (10 of 0x40 bytes): first free one; 1 when its three particle lists are empty (caller
+// 0x142DB4 in eft_f.c); create one with its streaks, billboards and rings.
+EftWater_AllocSplash = 0x00142278; // type:func // guess
+EftWaterSplash_IsEmpty = 0x001422D8; // type:func // guess
+EftWater_AddSplash = 0x00142300; // type:func // guess

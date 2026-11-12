@@ -1,0 +1,96 @@
+// src/battle/eft_ad.c, 0x1A62C8..0x1A7018 (src/battle/btl_pool.c follows, 0x1A7018..0x1A7608).
+
+// Tail of the effect pack part kind 12 module (it starts at 0x1A3B00, config/symbols/eft_ac.txt, which also has
+// gEftZapMgr; task class 0x2C4338 = {EftZap_Update, init, term, stub, reset, draw}). Create / Kill / Stop / the setters / IsAlive are the entries
+// EftEmit_SpawnType12 (eft_i.c) calls; each checks manager, handle, task class and work flag 1.
+// "Zap" is a guess from the structure: a line of pooled points (35 in the manager) grown along a direction.
+EftZap_LoadKey = 0x001A62C8; // type:func // guess
+EftZap_AddNode = 0x001A63B8; // type:func // guess
+EftZap_SetTexPair = 0x001A64A0; // type:func // guess
+EftZap_LoadTex = 0x001A64F0; // type:func // guess
+EftZap_Create = 0x001A6598; // type:func // guess
+EftZap_Kill = 0x001A65E8; // type:func // guess
+EftZap_Stop = 0x001A6640; // type:func // guess
+EftZap_SetPos = 0x001A6700; // type:func // guess
+EftZap_WarpPos = 0x001A6770; // type:func // guess
+EftZap_SetDir = 0x001A67E0; // type:func // guess
+EftZap_SetSize = 0x001A6850; // type:func // guess
+EftZap_SetRate = 0x001A68A0; // type:func // guess
+EftZap_SetTex = 0x001A6900; // type:func // guess
+EftZap_SetDelay = 0x001A6968; // type:func // guess
+EftZap_SetFadeDelay = 0x001A69C0; // type:func // guess
+EftZap_SetFadeTime = 0x001A6A18; // type:func // guess
+EftZap_SetFlag20000 = 0x001A6A78; // type:func // guess
+EftZap_SetUnk40 = 0x001A6AE0; // type:func // guess
+EftZap_IsAlive = 0x001A6B40; // type:func // guess
+gEftZapClass = 0x002C4338; // size:0x18 // guess
+
+// Fighter effect request 6 (BtlFx_SpawnReq6 in btl_char_fx.c calls EftShock_Start): one screen shock wave
+// (ScrWarp_Spawn) at fighter node 3 and two animated parts (EftAnimPart) from the fighter's effect pack entry 6.
+// Task class 0x2C4368 = {Update, Init, Term, PostUpdate, Reset, Draw}; manager class 0x2C4350 = {Update, Init,
+// Term, 0, 0, 0}, entry 0 of the per-fighter manager table 0x2C3BE0 (list kind 4 of EftChar_GetList).
+EftShock_Init = 0x001A6B90; // type:func // guess
+EftShock_Term = 0x001A6C00; // type:func // guess
+EftShock_Update = 0x001A6C58; // type:func // guess
+EftShock_Reset = 0x001A6E88; // type:func // guess
+EftShock_PostUpdate = 0x001A6EA0; // type:func // guess
+EftShock_Draw = 0x001A6EA8; // type:func // guess
+EftShockMgr_Init = 0x001A6EB0; // type:func // guess
+EftShockMgr_Term = 0x001A6F70; // type:func // guess
+EftShockMgr_Update = 0x001A6FC0; // type:func // guess
+EftShock_Start = 0x001A6FD0; // type:func // guess
+gEftShockMgrClass = 0x002C4350; // size:0x18 // guess
+gEftShockClass = 0x002C4368; // size:0x18 // guess
+
+// src/battle/eft_ad_b.c, 0x1A7608..0x1A9D90.
+
+// Effect mesh: a 0x90-byte instance (matrix, colour, texture table, uv offset / scale, flags, owner) of mesh
+// data {groups, triangles, vertices of position / colour / uv}. Users: the stage sheet (eft_b.c), the
+// technique rings (eft_k.c, eft_p.c). Draw queues GS triangles in the order table; DrawNow sends them at once.
+EftMesh_Init = 0x001A7608; // type:func
+EftMesh_SetTex = 0x001A7698; // type:func
+EftMesh_SetMtx = 0x001A76A0; // type:func
+EftMesh_Copy = 0x001A76B8; // type:func
+EftMesh_SetLayer = 0x001A7708; // type:func
+EftMesh_SetTexBase = 0x001A7710; // type:func
+EftMesh_SetClip = 0x001A7718; // type:func
+EftMesh_SetRepeat = 0x001A7740; // type:func
+EftMesh_SetFlag2 = 0x001A7768; // type:func
+EftMesh_SetZFlip = 0x001A7790; // type:func
+EftMesh_SetZOfs = 0x001A77B8; // type:func
+EftMesh_SetUvOfs = 0x001A77C0; // type:func
+EftMesh_SetUvScale = 0x001A77E0; // type:func
+EftMesh_SetColor = 0x001A77E8; // type:func
+EftMesh_SetOwner = 0x001A7800; // type:func
+EftMesh_Draw = 0x001A7810; // type:func
+EftMesh_DrawNow = 0x001A7878; // type:func
+EftMesh_DrawClip = 0x001A78F0; // type:func
+EftMesh_DrawNowClip = 0x001A7C58; // type:func
+EftMesh_DrawPlain = 0x001A7F58; // type:func
+EftMesh_DrawNowPlain = 0x001A8388; // type:func
+EftMesh_DrawTriClip = 0x001A8720; // type:func
+EftMesh_DrawNowTriClip = 0x001A89F0; // type:func
+
+// Effect model objects: wrappers around the battle object module (btl_obj.c) for a model that lives inside an
+// effect pack. Callers: prop shots and object techniques (eft_j.c, eft_k.c), rush shot models, eft_o / eft_r / eft_s.
+EftObj_Create = 0x001A8C40; // type:func
+EftObj_Destroy = 0x001A8CA0; // type:func
+EftObj_SetPos = 0x001A8CB8; // type:func
+EftObj_UpdateMtx = 0x001A8CE8; // type:func
+EftObj_PlayAnim = 0x001A8D08; // type:func
+EftObj_IsAnimPlaying = 0x001A8D48; // type:func
+EftObj_SetRot = 0x001A8D70; // type:func
+EftObj_SetMtx = 0x001A8DA0; // type:func
+EftObj_SetVisible = 0x001A8DD0; // type:func
+EftObj_Nop = 0x001A8E18; // type:func
+
+// The mesh's triangle writers (GS packets: gouraud triangle, textured or not) and its screen test.
+EftMesh_QueueTri = 0x001A8E20; // type:func
+EftMesh_SendTri = 0x001A9858; // type:func
+EftMesh_IsOffScreen = 0x001A9D38; // type:func
+
+// src/battle/eft_ad_c.c, 0x1A9D90..0x1AA7E8 (the head of the next source file, which goes on at 0x1AA7E8).
+// Camera-facing textured quads written into the order table: an upright one and one rotated in the screen plane.
+EftSpr_DrawFlat = 0x001A9D90; // type:func // guess
+EftSpr_DrawRot = 0x001AA188; // type:func // guess
+gEftSprUvScale = 0x002C4380; // size:0x10 // guess

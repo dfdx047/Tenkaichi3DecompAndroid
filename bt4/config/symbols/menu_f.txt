@@ -1,0 +1,9 @@
+// Menu overlay DBZP.BIN, 0x34D368..0x351C38: the tail of the TeamSel object (team character / stage / music
+// select of the versus modes; head in menu_e.txt). All names are guesses from what the code does.
+// Update: advances the seven movies and the two item panels. Input: the pad handler (stage / music choice,
+// and one state machine per side, jump table 0x3B4290). Run: the screen's frame loop, then Battle_ClearWork +
+// BattleSetup_SetRule / SetSide / SetMember / Finish (battle mode 0). Only caller: Duel_Main (0x352CB8),
+// progress mode 40, with section 2.
+TeamSel_Update = 0x0034D368; // type:func // guess
+TeamSel_Input = 0x0034D468; // type:func // guess
+TeamSel_Run = 0x00351508; // type:func // guess

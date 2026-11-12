@@ -1,0 +1,101 @@
+// --- Fighter interface (src/battle/btl_char_api.c), 0x207020..0x208430 --------------------------------------
+// Part of one larger original object (see the header of btl_char_api.c): small accessors that take a battle object id
+// (BtlChar_FindByObjId / BtlObj_Get) or nothing, and read or write one fighter. Every name here is a guess made from
+// the function's own code; the comment above each group says what the code does.
+
+// 0x207020 / 0x207058 / 0x207758(id): (BtlObj_Get(id)->flags (+0xA40, read as 64 bits) & M) == M for M = 0x22, 0x42, 0x102.
+// 0x2075F0(id): bit 21 of the same word. 0x207708(id, on): sets / clears bit 0x100 of it.
+BtlCharApi_ObjHasFlags22 = 0x00207020; // type:func // guess
+BtlCharApi_ObjHasFlags42 = 0x00207058; // type:func // guess
+BtlCharApi_ObjTestFlagBit21 = 0x002075F0; // type:func // guess
+BtlCharApi_ObjSetFlag100 = 0x00207708; // type:func // guess
+BtlCharApi_ObjHasFlags102 = 0x00207758; // type:func // guess
+// 0x207090(): 1 when any fighter has flag 0x128 (btl_seq.c: BtlSeq_CheckBattleEnd holds the end check while it is set).
+BtlCharApi_AnyHasFlag128 = 0x00207090; // type:func // guess
+// 0x2070F8(id): func_001DC320(chr) = active member's hp (+0x40 of the member block) < 1.
+BtlCharApi_IsHpEmpty = 0x002070F8; // type:func // guess
+// Plain BtlChar_TestFlag(chr, N) by object id: N = 0xA4, 0x2B, 0xF, 5, 0x60; 0x207E78 returns flag 0xD3 as 0 / 1.
+BtlCharApi_TestFlagA4 = 0x00207130; // type:func // guess
+BtlCharApi_TestFlag2B = 0x00207D90; // type:func // guess
+BtlCharApi_HasCamPriority = 0x00207E78; // type:func // guess
+BtlCharApi_TestFlag0F = 0x002081E8; // type:func // guess
+BtlCharApi_TestFlag05 = 0x00208228; // type:func // guess
+BtlCharApi_TestFlag60 = 0x002083F0; // type:func // guess
+// 0x207170(id): word +0x60 of the active member block; 0x207270(id): word +0x70 of it != 0.
+BtlCharApi_GetMemberUnk60 = 0x00207170; // type:func // guess
+BtlCharApi_HasMemberUnk70 = 0x00207270; // type:func // guess
+// 0x2071A8(id): flag 8 and action id (+0x948) == 0x104. 0x207210(id): action id == 0x103, or flag 0xA6.
+BtlCharApi_IsFlag8Action104 = 0x002071A8; // type:func // guess
+BtlCharApi_IsAction103OrFlagA6 = 0x00207210; // type:func // guess
+// 0x2072A8..0x207388(id): BtlChar_SetHeldFlag(chr, 0xA7 .. 0xAB).
+BtlCharApi_SetHeldFlagA7 = 0x002072A8; // type:func // guess
+BtlCharApi_SetHeldFlagA8 = 0x002072E0; // type:func // guess
+BtlCharApi_SetHeldFlagA9 = 0x00207318; // type:func // guess
+BtlCharApi_SetHeldFlagAA = 0x00207350; // type:func // guess
+BtlCharApi_SetHeldFlagAB = 0x00207388; // type:func // guess
+// 0x2073C0(pos, kind, id, near, far): tail call of func_001DA348, which queues {pos, near, far, id, owner -1, kind} in the
+// manager's 4-entry request list at +0xA0; func_001DA098 plays that list (StreamSe_Play / Voice_Play / Snd_PlaySeEx).
+// 0x2073D8(id, n): queues sound 0x25 + n or 0x29 + n (by technique class 0 / 1) at the fighter (func_001DA488).
+BtlCharApi_PlaySoundAt = 0x002073C0; // type:func // guess
+BtlCharApi_PlayTechniqueSound = 0x002073D8; // type:func // guess
+// 0x207460(side): how many of the side's 4 sound slots (manager +0xC, 0x34 bytes per side) hold a handle >= 0; the slots
+// are filled by func_001D9C28 and stopped with Snd_StopHandle by func_001D9D28. 0x2074B8(side, n, &handle, &a, &b): the
+// n-th such slot: its handle, func_001DA8A0(slot byte +8), its word +4. snd.c: Snd_SendFighters sends the handles.
+BtlCharApi_GetSoundCount = 0x00207460; // type:func // guess
+BtlCharApi_GetSound = 0x002074B8; // type:func // guess
+// 0x207570 / 0x2075B0(id): func_002500E8(obj, 3, 0 / 1): clears / sets bit 3 of the object's mask at +0xB34.
+BtlCharApi_ObjClearMaskBit3 = 0x00207570; // type:func // guess
+BtlCharApi_ObjSetMaskBit3 = 0x002075B0; // type:func // guess
+// 0x207620(id): float at fighter +0xE44. 0x207648 / 0x2076A8(id): the ints at +0xE5C / +0xE60 divided by 3.0 / 5.0, clamped to 0..1.
+BtlCharApi_GetUnkE44 = 0x00207620; // type:func // guess
+BtlCharApi_GetUnkE5CRatio = 0x00207648; // type:func // guess
+BtlCharApi_GetUnkE60Ratio = 0x002076A8; // type:func // guess
+// 0x207790(a, b): both have hp and b's hp < b's maximum / 2 (btl_scene.c: stage-change test).
+// 0x207830(a, b): a is in an action func_001E03A8 accepts, its technique's attribute word has 0x80000, func_00211F60 is 0,
+// and b's member word +0x60 is 0.
+BtlCharApi_IsTargetBelowHalfHp = 0x00207790; // type:func // guess
+BtlCharApi_CanTechniqueFinish = 0x00207830; // type:func // guess
+// 0x2078F0(): manager word +0x1C / 90.0 clamped to 0..1.
+BtlCharApi_GetMgrTimerRatio = 0x002078F0; // type:func // guess
+// 0x207948(pos, near, far, power, time): for every fighter within `far` of pos, func_001DC520 / func_001DC578 (the block
+// at fighter +0x15D0: a strength and frame counts = time * 30) scaled by closeness. 0x207EB0: the same for
+// CamShake_Add on the fighter camera (+0x470), measured from +0x420, skipping fighters with +0x1320 > 0.
+BtlCharApi_RumbleNear = 0x00207948; // type:func // guess
+BtlCharApi_ShakeCamsNear = 0x00207EB0; // type:func // guess
+// 0x207A90(id, mask): for a fighter func_001C4740 (0 while +0x990 > 0), else for any object func_0024D498: whether any of
+// the object's 64-bit attribute words (+0xCC0, count at +0xCAE) has a bit of mask. 0x207B18: OR of the matching words'
+// values at +0xD00. 0x207B60: that value mapped by func_0024D518. 0x207CB0(id, a, b): func_0024D610(obj, a, 0, b).
+BtlCharApi_ObjTestAttr = 0x00207A90; // type:func // guess
+BtlCharApi_ObjGetAttrValue = 0x00207B18; // type:func // guess
+BtlCharApi_ObjGetAttrKind = 0x00207B60; // type:func // guess
+BtlCharApi_ObjQuery24D610 = 0x00207CB0; // type:func // guess
+// 0x207BB8(id): object float +0xC78, plus (fighter +0xEFC[i] + 1.0) for i < func_001E0490(action) while the action id is
+// in 0x12D..0x12F / 0x139..0x13B. 0x207C60 / 0x207C88(id): object floats +0xC78 / +0xC80.
+BtlCharApi_GetChargedUnkC78 = 0x00207BB8; // type:func // guess
+BtlCharApi_ObjGetUnkC78 = 0x00207C60; // type:func // guess
+BtlCharApi_ObjGetUnkC80 = 0x00207C88; // type:func // guess
+// 0x207D10(id): fighter word +0x974 (53 callers, all in the AI). 0x207D48(id): manager table +0x20 [that word] (0x19E entries).
+BtlCharApi_GetUnk974 = 0x00207D10; // type:func // guess
+BtlCharApi_GetUnk974Data = 0x00207D48; // type:func // guess
+// 0x207DD0(id, pos, rot): copies fighter +0x430 / +0x440, returns +0x494 (btl_cam.c: BtlCam_UpdateView). 0x207E50: float +0x4A0.
+// 0x208088(id, out): copies +0x460 (btl_demo_cam.c: end of the stage trace).
+BtlCharApi_GetCamPose = 0x00207DD0; // type:func // guess
+BtlCharApi_GetCamUnk4A0 = 0x00207E50; // type:func // guess
+BtlCharApi_GetCamUnk460 = 0x00208088; // type:func // guess
+// 0x207FB0(id): whether this fighter's camera is the one shown (btl_scene.c). 0x2080E0(): any fighter with
+// func_001C7AF0 and flag 0xD3. 0x2080C8(): func_001D8728 (manager +0x134 while +0x130 == 0; btl_cam.c: replay default view).
+BtlCharApi_IsCamShown = 0x00207FB0; // type:func // guess
+BtlCharApi_GetMgrUnk134 = 0x002080C8; // type:func // guess
+BtlCharApi_AnyCamPriority = 0x002080E0; // type:func // guess
+// 0x208170(id): fighter +0x1278 (btl_input.h: injectOn). 0x208198(id, buttons, x, y): writes +0x127C / +0x1280 / +0x1284
+// (only caller: the AI, 0x1B6CD8). 0x208330(id): the 64-bit word at +0x1288.
+BtlCharApi_IsInputInjected = 0x00208170; // type:func // guess
+BtlCharApi_SetInjectedInput = 0x00208198; // type:func // guess
+BtlCharApi_GetUnk1288 = 0x00208330; // type:func // guess
+// 0x208268(id, n): byte 0x84 + n (n < 4, else 0) of the object's parameter block (+0x91C). 0x2082B0 / 0x2082F0(id): bytes
+// 0x8A / 0x8D of it (func_0020EA60(chr, 0 / 3)).
+BtlCharApi_GetParamByte84 = 0x00208268; // type:func // guess
+BtlCharApi_GetParamByte8A = 0x002082B0; // type:func // guess
+BtlCharApi_GetParamByte8D = 0x002082F0; // type:func // guess
+// 0x208360(id): object bytes +0xCAC / +0xCAD: 1 if CAD != ~CAC; else 0 with flag 0x60; else CAD >= 0.
+BtlCharApi_CheckUnkCAC = 0x00208360; // type:func // guess

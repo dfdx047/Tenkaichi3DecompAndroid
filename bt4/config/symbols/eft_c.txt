@@ -1,0 +1,114 @@
+// src/battle/eft_c.c = 0x136760..0x13A9D0. All names are guesses from structure and callers.
+// --- Tail of the geyser of eft_b.c (task class gEftGeyserClass 0x2C3508, update EftGeyser_Update) ---
+// 0x136760 / 0x1367D0(task): when the task is a live geyser with an emitter task at work + 0xEC / + 0xF0,
+// return EftSmoke_GetPos / EftSteam_GetWork of it. No caller.
+EftGeyser_GetSmokePos = 0x00136760; // type:func // guess
+EftGeyser_GetSteamWork = 0x001367D0; // type:func // guess
+// 0x136840 / 0x136AC8(task): fill an emitter description from the stage record (BtlStage_GetFxResB2 / C2) and
+// start it (EftSmoke_Create / EftSteam_Create), task into work + 0xEC / + 0xF0. Called by EftGeyser_Init.
+EftGeyser_StartSmoke = 0x00136840; // type:func // guess
+EftGeyser_StartSteam = 0x00136AC8; // type:func // guess
+// --- Weather particles: state gp 0x2FE9BC (0x2C0 bytes), task class 0x2C3520, particle task class 0x2C3538 ---
+// 0x136CC0(v): outcode of a clip-space point against +-w on x, y, z (bits 1, 2, 4, 8, 0x10, 0x20).
+EftWeather_ClipCode = 0x00136CC0; // type:func // guess
+// class 0x2C3520 = {update 0x136EC0, init 0x136D28, term 0x136E88}
+EftWeather_Init = 0x00136D28; // type:func // guess
+EftWeather_Term = 0x00136E88; // type:func // guess
+EftWeather_Update = 0x00136EC0; // type:func // guess
+// class 0x2C3538 = {update 0x1376A0, init 0x136F98, term 0x136FB0, postUpdate 0x1376C8, reset 0x1376D0, draw 0x1378C8}
+EftWeatherPtcl_Init = 0x00136F98; // type:func // guess
+EftWeatherPtcl_Term = 0x00136FB0; // type:func // guess
+// 0x136FB8(ptcls, view state, count): moves the particles of one view (random walk, wind, wrap around the camera).
+EftWeather_Move = 0x00136FB8; // type:func // guess
+EftWeatherPtcl_Update = 0x001376A0; // type:func // guess
+EftWeatherPtcl_PostUpdate = 0x001376C8; // type:func // guess
+EftWeatherPtcl_Reset = 0x001376D0; // type:func // guess
+// 0x1377F0(ptcls, count): one sprite per particle.
+EftWeather_DrawPtcls = 0x001377F0; // type:func // guess
+EftWeatherPtcl_Draw = 0x001378C8; // type:func // guess
+// Accessors of the weather state, every one a no-op without it. None has a caller (debug menu, inferred).
+EftWeather_SetCount = 0x001379D8; // type:func // guess
+EftWeather_GetCount = 0x001379F0; // type:func // guess
+EftWeather_SetFlags = 0x00137A08; // type:func // guess
+EftWeather_GetFlags = 0x00137A20; // type:func // guess
+EftWeather_GetWindPtr = 0x00137A38; // type:func // guess
+EftWeather_SetSize = 0x00137A50; // type:func // guess
+EftWeather_GetSize = 0x00137A68; // type:func // guess
+EftWeather_SetColor = 0x00137A80; // type:func // guess
+EftWeather_GetColor = 0x00137AB0; // type:func // guess
+EftWeather_SetWind = 0x00137AF0; // type:func // guess
+EftWeather_GetWind = 0x00137B18; // type:func // guess
+// byte-for-byte duplicates of SetCount / GetCount / SetFlags / GetFlags
+EftWeather_SetCount2 = 0x00137B58; // type:func // guess
+EftWeather_GetCount2 = 0x00137B70; // type:func // guess
+EftWeather_SetFlags2 = 0x00137B88; // type:func // guess
+EftWeather_GetFlags2 = 0x00137BA0; // type:func // guess
+EftWeather_SetEnabled = 0x00137BB8; // type:func // guess
+// --- Stage effect manager: layer 0 of the effect scene, state gp 0x2FE9C0 (0x58 bytes), class 0x2C3550 ---
+// 0x137BD0: BtlScene_FreeLayer0, BtlScene_CreateLayer0, func_00197658. No caller.
+EftStage_Recreate = 0x00137BD0; // type:func // guess
+// 0x137BF8: BtlScene_Reset(0) then frees the kind tasks. No caller.
+EftStage_ResetAll = 0x00137BF8; // type:func // guess
+// 0x137C18 / 0x137C38: bit 2 of the flags: "draw the stage effects" (9 readers, set by init and 0x1A0748 / 0x1A0850).
+EftStage_IsDrawOn = 0x00137C18; // type:func // guess
+EftStage_SetDrawOn = 0x00137C38; // type:func // guess
+// class 0x2C3550 = {update 0x137D08 (empty), init 0x137C70, term 0x137CD0}
+EftStage_Init = 0x00137C70; // type:func // guess
+EftStage_Term = 0x00137CD0; // type:func // guess
+EftStage_Update = 0x00137D08; // type:func // guess
+// 0x137D10 / 0x137D50: destroy / create the child list with one task per entry of the kind table 0x2C3568.
+EftStage_FreeKinds = 0x00137D10; // type:func // guess
+EftStage_CreateKinds = 0x00137D50; // type:func // guess
+// 0x137DF8(kind): 1 when the loaded stage has the data that effect kind needs (switch over 9 kinds).
+EftStage_HasKind = 0x00137DF8; // type:func // guess
+EftStage_Nop = 0x00137F58; // type:func // guess
+// 0x137F60: 1 - StgTint_GetColor0().a / 100, clamped to 0.5..1. 5 callers, all drawing.
+EftStage_GetTintScale = 0x00137F60; // type:func // guess
+// 0x137FD8 / 0x138070 / 0x1380C0(pos): the single sprite of stage pack entry 0x14: load, refresh, draw at pos.
+EftStage_LoadSprite = 0x00137FD8; // type:func // guess
+EftStage_UpdateSprite = 0x00138070; // type:func // guess
+EftStage_DrawSprite = 0x001380C0; // type:func // guess
+// --- Surfaces (water and other animated stage surfaces): state gEftSurf (eft_d.txt), class 0x2C35B8 ---
+// class 0x2C35B8 = {update 0x138488, init 0x138178, term 0x138450, postUpdate 0x138530, reset 0x138538, draw 0x1384E0}
+EftSurf_Init = 0x00138178; // type:func // guess
+EftSurf_Term = 0x00138450; // type:func // guess
+EftSurf_Update = 0x00138488; // type:func // guess
+EftSurf_Draw = 0x001384E0; // type:func // guess
+EftSurf_PostUpdate = 0x00138530; // type:func // guess
+EftSurf_Reset = 0x00138538; // type:func // guess
+// 0x138540 / 0x1385F8(file): file offsets to pointers and back.
+EftSurf_Relocate = 0x00138540; // type:func // guess
+EftSurf_Unrelocate = 0x001385F8; // type:func // guess
+// 0x1386B0(file): refreshes the TEX0 of every texture of the file.
+EftSurf_UpdateTextures = 0x001386B0; // type:func // guess
+// 0x138778(file): advances the scroll of every mesh.
+EftSurf_Animate = 0x00138778; // type:func // guess
+// 0x138978(min, max): projects the 8 corners of a box, 0 when it is certainly off screen.
+EftSurf_IsBoxVisible = 0x00138978; // type:func // guess
+// 0x138BE0: draws every mesh of the file.
+EftSurf_DrawMeshes = 0x00138BE0; // type:func // guess
+// 0x139188: one textured, fogged triangle as a direct GS packet.
+EftSurf_PutTri = 0x00139188; // type:func // guess
+// 0x139408 / 0x1395E8: GS register packets before / after the meshes.
+EftSurf_BeginDraw = 0x00139408; // type:func // guess
+EftSurf_EndDraw = 0x001395E8; // type:func // guess
+// 0x1396F8 / 0x1398D8(tri, tex0): a triangle that needs no clipping / clipped against the five planes.
+EftSurf_DrawTri = 0x001396F8; // type:func // guess
+EftSurf_DrawTriClipped = 0x001398D8; // type:func // guess
+// 0x139A40 / 0x139C40(tri, tex pair, fog): the same for the reflecting surface (EftSurf_DrawTriDirect).
+EftSurf_DrawReflectTri = 0x00139A40; // type:func // guess
+EftSurf_DrawReflectTriClipped = 0x00139C40; // type:func // guess
+// 0x139D78: clipped triangle fan into the ordering table.
+EftSurf_DrawTriOtClipped = 0x00139D78; // type:func // guess
+// 0x13A388: once per frame, builds the reflection textures (called by BtlScene_Draw's caller, btl_scene.c).
+EftSurf_BuildPalettes = 0x0013A388; // type:func // guess
+// 0x13A3F0: light direction into the surface frame, advances the normal map animation.
+EftSurf_StepAnim = 0x0013A3F0; // type:func // guess
+// 0x13A590: lights the 256 palette entries (normals) of the current frame into the two result palettes.
+EftSurf_RenderPalettes = 0x0013A590; // type:func // guess
+// gp 0x2FE9BC / 0x2FE9C0: work blocks.
+gEftWeather = 0x002FE9BC; // size:0x4 // guess
+gEftStage = 0x002FE9C0; // size:0x4 // guess
+// 0x2C3538: particle task class; 0x2C3568: {class, kind} x 10, the stage effect kinds.
+gEftWeatherPtclClass = 0x002C3538; // size:0x18 // guess
+gEftStageKinds = 0x002C3568; // size:0x50 // guess

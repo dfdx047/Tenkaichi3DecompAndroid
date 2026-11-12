@@ -1,0 +1,48 @@
+// Menu overlay DBZP.BIN, 0x3A3848..0x3A7D98.
+// DcList: head of the Data Center's custom character list (modes 53..56). Names from what the code does and
+// from the object's debug paths ("host:data/ps2/test/main/DC/LIST/chara_list_top_PS2_.fod").
+DcView_InitBlink = 0x003A65E8; // type:func // guess
+DcChars_Load = 0x003A6618; // type:func // guess
+DcStatus_Calc = 0x003A6698; // type:func // guess
+DcList_Reset = 0x003A66B8; // type:func // guess
+DcList_UpdateGuide = 0x003A66F0; // type:func // guess
+DcList_ScrollCloud = 0x003A67A0; // type:func // guess
+DcList_SetListScissor = 0x003A6820; // type:func // guess
+DcList_ResetScissor = 0x003A6848; // type:func // guess
+DcView_SetRowCallbacks = 0x003A6870; // type:func // guess
+DcView_HideArrow = 0x003A6930; // type:func // guess
+DcView_SetArrows = 0x003A6A10; // type:func // guess
+DcView_SetScrollBar = 0x003A6B00; // type:func // guess
+DcView_LightRow = 0x003A6B90; // type:func // guess
+DcChars_ClampTop = 0x003A6C30; // type:func // guess
+DcChars_ClampRow = 0x003A6C68; // type:func // guess
+DcView_SetRows = 0x003A6CA0; // type:func // guess
+DcChars_GetCursor = 0x003A6E88; // type:func // guess
+DcChars_GetRec = 0x003A6E98; // type:func // guess
+DcList_PickRec = 0x003A6F18; // type:func // guess
+DcList_RowOk = 0x003A6FD8; // type:func // guess
+DcList_DrawList = 0x003A7048; // type:func // guess
+DcList_InputList = 0x003A70A0; // type:func // guess
+DcView_SetMenuText = 0x003A73D8; // type:func // guess
+DcView_SetStatus = 0x003A74C8; // type:func // guess
+DcView_LightMenu = 0x003A7820; // type:func // guess
+DcList_WrapMenu = 0x003A78C0; // type:func // guess
+DcView_HideNamePlates = 0x003A78E8; // type:func // guess
+DcView_SetNameText = 0x003A7968; // type:func // guess
+DcView_MenuOk = 0x003A79F8; // type:func // guess
+DcRec_IsSlotEmpty = 0x003A7A60; // type:func // guess
+DcView_LightItem = 0x003A7A98; // type:func // guess
+DcList_InputMenu = 0x003A7B40; // type:func // guess
+// Option: tail of the option screen object of mode 62 (head: menu_x). Names from what the code does.
+Option_Draw = 0x003A3848; // type:func // guess
+Option_PlateGoto = 0x003A59F0; // type:func // guess
+Option_SetKeyMark = 0x003A5C98; // type:func // guess
+Option_UpdateReset = 0x003A5E48; // type:func // guess
+Option_SetBottomText = 0x003A6228; // type:func // guess
+Option_SetMenuText = 0x003A62F8; // type:func // guess
+Option_DimPickers = 0x003A63C8; // type:func // guess
+Option_SetBgmScissor = 0x003A64F0; // type:func // guess
+Option_ResetScissor = 0x003A6518; // type:func // guess
+Option_OnSaved = 0x003A6540; // type:func // guess
+Option_Term = 0x003A6560; // type:func // guess
+// Read-only objects of menu_x_c.c shared between Option_Draw (INCLUDE_ASM) and the C functions.

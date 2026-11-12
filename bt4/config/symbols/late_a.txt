@@ -1,0 +1,83 @@
+// The dragon-summoning ("Shenron") screen, 0x2BD230..0x2BF6B0: game code linked after the SDK libraries,
+// built with -G0. Evidence for the names: the debug file names in its read-only data
+// ("host:data/test/shenron/...", "sr_reconfir_...") and the matching C in src/sys/late_a*.c.
+
+// late_a.c: handler of gProgress->mode 70 / 71 (wish screen, then save screen)
+Shen_Main = 0x002BD230; // type:func
+// circular list of wishes: free, build n nodes, find by number, step n nodes (returning the wish / the node)
+ShenList_Free = 0x002BD380; // type:func
+ShenList_Build = 0x002BD3C8; // type:func
+ShenList_Find = 0x002BD4A8; // type:func
+ShenList_StepWish = 0x002BD500; // type:func
+ShenList_Step = 0x002BD558; // type:func
+// Voice_PlayWithSubtitle(NULL, 0x85B7, line) and remembers the line for the message window
+Shen_Say = 0x002BD5B0; // type:func
+// clamps the cursor row to 0..3, returns 1 when it had to (the list scrolls)
+Shen_ClampCursor = 0x002BD5F0; // type:func
+// "mc_menu_plate_%d" clips: fl_ok / fl_on_start / fl_off_start
+Shen_PlayPlateOk = 0x002BD630; // type:func
+Shen_SetPlate = 0x002BD6A0; // type:func
+Shen_MoveCursor = 0x002BD740; // type:func
+// texture rectangles of the two scroll arrows ("mc_yajirusi_up / down")
+Shen_SetArrowUvs = 0x002BD850; // type:func
+// clip callbacks: Sprite_SetScissor to the list area / to the full screen
+Shen_ScissorList = 0x002BD900; // type:func
+Shen_ScissorFull = 0x002BD928; // type:func
+// per frame: icon, scissor, colour and text of the five list rows
+Shen_DrawList = 0x002BD950; // type:func
+// GetWin_Setup for the wish under the cursor
+Shen_SetupGetWin = 0x002BDCE8; // type:func
+// draws which dragon comes (Rand_Range(100)) and copies its wish list from the wish file
+Shen_BuildList = 0x002BDD90; // type:func
+Shen_Init = 0x002BDF78; // type:func
+Shen_Advance = 0x002BE1F0; // type:func
+Shen_Draw = 0x002BE210; // type:func
+Shen_Term = 0x002BE2D0; // type:func
+// greeting and farewell lines; returns 1 while the list may not be used
+Shen_UpdateTalk = 0x002BE348; // type:func // guess
+Shen_Update = 0x002BE5A0; // type:func
+// fade-out and the end test of the frame loop
+Shen_UpdateExit = 0x002BE990; // type:func
+// the screen's blocking frame loop
+Shen_Run = 0x002BEA48; // type:func
+
+// read-only strings that Shen_DrawList (still INCLUDE_ASM) refers to by address; defined as named objects in
+// late_a.c. gShenPlateFmt = "mc_menu_plate_%d", gShenIconClip = "mc_icon_play", gShenTextClip = "mc_menu_text_off"
+gShenPlateFmt = 0x002FBDA8; // size:0x11
+gShenIconClip = 0x002FBE60; // size:0xD force_not_migration:True
+gShenTextClip = 0x002FBE70; // size:0x11 force_not_migration:True
+
+// late_a_b.c: the confirmation window ("reconfir": yes / details / no)
+ShenCfm_Init = 0x002BEB20; // type:func
+ShenCfm_Term = 0x002BEC70; // type:func
+// 1 when the wish asked about is already owned (item bit 0, stage bit, character bit)
+ShenCfm_IsOwned = 0x002BECC0; // type:func
+ShenCfm_Draw = 0x002BED88; // type:func
+ShenCfm_Open = 0x002BEF58; // type:func
+ShenCfm_MoveCursor = 0x002BF060; // type:func
+ShenCfm_PlayPlateOk = 0x002BF150; // type:func
+ShenCfm_Update = 0x002BF1C0; // type:func
+ShenCfm_Close = 0x002BF348; // type:func
+gShenCfm = 0x002EB34C; // size:0x4
+
+// late_a_c.c: the save screen after the wishes (McFlow mode 0)
+// McFlow "done" callback: sets flag 1 and a 15-frame countdown
+ShenSave_OnFlowDone = 0x002BF370; // type:func
+ShenSave_Init = 0x002BF398; // type:func
+ShenSave_Term = 0x002BF488; // type:func
+// three empty functions; the names follow their place in the frame loop
+ShenSave_Draw = 0x002BF4F8; // type:func // guess
+ShenSave_Advance = 0x002BF500; // type:func // guess
+ShenSave_Update = 0x002BF508; // type:func // guess
+ShenSave_UpdateExit = 0x002BF510; // type:func
+// the save screen's blocking frame loop
+ShenSave_Run = 0x002BF588; // type:func
+gShenSave = 0x002EB350; // size:0x4
+
+// Not defined here (for the integrator; the C uses the placeholders):
+//   D_003B0EB4      menu overlay data: pointer to the menu archive (file gProgress->unk4 + 0x18), also loaded
+//                   and freed by Shen_Main. Suggested name gMenuArchive.
+//   func_00399240 / 00399430 / 00399478 / 00399730 / 00399760   menu overlay: the item details page
+//                   (init from a pack, term, draw(item), open, close). Suggested ItemDetail_*.
+//   func_00262BC8 / 00262BD8 / 00262C30 / 00262E70 / 00262F70   main executable, not decompiled: the screen's
+//                   backdrop (state, request state, draw, init(dragon), term).

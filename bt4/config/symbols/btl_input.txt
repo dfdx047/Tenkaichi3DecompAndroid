@@ -1,0 +1,65 @@
+// Per-fighter battle input, src/battle/btl_input.c = 0x1D3B40..0x1D4F30. Evidence for every name is the matching C
+// (see the block comment at the top of the file); "guess" marks names whose meaning rests on callers not decompiled.
+
+// Stick f32 (-1..1) <-> byte (0..0xFE, 0x7F neutral).
+BtlInput_StickToByte = 0x001D3B40; // type:func
+BtlInput_ByteToStick = 0x001D3B80; // type:func
+// Returns &chr->input (chr + 0x570).
+BtlInput_Get = 0x001D3BA8; // type:func
+// (rawHeld, mask[31]): raw PAD_* word -> battle button word through the per-fighter mask table.
+BtlInput_RemapButtons = 0x001D3BB0; // type:func
+// (cond, s8 *n): n = 0 when cond is 0, else n++ up to 100. BtlInput_TickCounters runs it over 4 rows of 32 counters.
+BtlInput_TickCounter = 0x001D3C10; // type:func
+BtlInput_TickCounters = 0x001D3C40; // type:func
+// 8-entry ring of {buttons, commands, stick} at chr+0x8C0.
+BtlInput_RingPush = 0x001D3D48; // type:func
+BtlInput_RingPop = 0x001D3DF8; // type:func
+// Sets button bits 21 / 22 when bit 11 / 12 is pressed twice within 7 frames.
+BtlInput_AddDoubleTaps = 0x001D3EA8; // type:func
+// Decides command bit 0x1000 from fighter flags 0xA2 / 0xA3 and the direction stored in func_002119A0's entry.
+// What the command does (character switch / transformation) was not verified.
+BtlInput_TestSwitch = 0x001D3F18; // type:func // guess
+// D-pad bits force the stick byte to an end; without d-pad the stick's dominant axis sets a direction bit.
+BtlInput_MergeStick = 0x001D4020; // type:func
+// (chr, held, prev) -> command word.
+BtlInput_BuildCommands = 0x001D40D8; // type:func
+// Builds the 16-byte 'OPRT' record at chr+0x938 from the pad sample or the injected input, runs the replay hooks.
+BtlInput_BuildRecord = 0x001D4370; // type:func
+// Pushes the record through the ring and applies the battle-flag gating; gives the frame's buttons/commands/stick.
+BtlInput_Fetch = 0x001D4658; // type:func
+// (chr, action): PAD_* bit of the physical button assigned to an action in gSaveData->key[chr->player].
+BtlInput_GetKeyMask = 0x001D47C8; // type:func
+BtlInput_BuildMaskTable = 0x001D4870; // type:func
+// Only calls BtlInput_BuildMaskTable. "Init" from its one job; its callers were not decompiled.
+BtlInput_Init = 0x001D49E8; // type:func // guess
+// Copies gPad[chr->pad] into chr->input and calls BtlInput_BuildRecord.
+BtlInput_Sample = 0x001D4A00; // type:func
+// Fetches the frame's input and derives held/prev/pressed/released, the smoothed stick and the frame counters.
+// INCLUDE_ASM in the C (6 instructions out of order); the name rests on the non-matching C and its one caller.
+BtlInput_Update = 0x001D4A70; // type:func
+// Empty function.
+BtlInput_Stub = 0x001D4CC8; // type:func
+// Public wrappers of the ring and its fill count.
+BtlInput_Push = 0x001D4CD0; // type:func
+BtlInput_Pop = 0x001D4CE8; // type:func
+BtlInput_GetQueued = 0x001D4D60; // type:func
+// Readers of chr+0x73C.. (mask argument) and of the counter rows (bit index argument).
+BtlInput_IsPressed = 0x001D4D98; // type:func
+BtlInput_IsHeldNotPrev = 0x001D4DA8; // type:func
+BtlInput_IsHeld = 0x001D4DD0; // type:func
+BtlInput_IsReleased = 0x001D4DE0; // type:func
+BtlInput_GetHeldFrames = 0x001D4DF0; // type:func
+BtlInput_GetNotHeldFrames = 0x001D4E00; // type:func
+BtlInput_GetFramesSincePress = 0x001D4E10; // type:func
+BtlInput_GetFramesSinceRelease = 0x001D4E20; // type:func
+BtlInput_GetPrevFramesSincePress = 0x001D4E30; // type:func
+BtlInput_IsCmdPressed = 0x001D4E40; // type:func
+BtlInput_IsCmdHeld = 0x001D4E50; // type:func
+BtlInput_IsCmdReleased = 0x001D4E60; // type:func
+BtlInput_GetCmdHeldFrames = 0x001D4E70; // type:func
+BtlInput_GetCmdNotHeldFrames = 0x001D4E80; // type:func
+BtlInput_GetCmdPrevFramesSincePress = 0x001D4E90; // type:func
+// Two 120-bit sets at chr+0x918, cleared at the end of BtlInput_Update. What the bits mean is not known.
+BtlInput_SetFrameBit = 0x001D4EA0; // type:func // guess
+BtlInput_TestFrameBit = 0x001D4ED8; // type:func // guess
+BtlInput_ClearFrameBits = 0x001D4F10; // type:func // guess

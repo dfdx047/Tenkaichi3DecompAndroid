@@ -1,0 +1,125 @@
+// Battle pause menu, 0x2129C8-0x215420 (src/battle/hud_0.c, hud_0_b.c, hud_0_c.c).
+
+// --- Tail of the battle-level wrappers (BtlGame_Draw, 0x2129C8, is already in battle.txt).
+// Tail call of BtlSeq_IsFighting; called by BtlScene_CheckStageChange.
+BtlGame_IsFighting = 0x002129F0; // type:func
+// Returns gBtlGameReplayActive (latched by BtlGame_Reset).
+BtlGame_IsReplay = 0x00212A08; // type:func
+
+// --- The pause menu (which tree, item callbacks, result).
+// (which): 0 = pause menu of the battle mode (mode 0: three variants by replay state), 1 = the result menu.
+PauseMenu_GetMenu = 0x00212A10; // type:func
+// Callback of every item that opens the yes / no box: on the confirm frame clears two values and puts the box's cursor on entry 2.
+PauseMenu_ConfirmFunc = 0x00212BA0; // type:func // guess
+// Callback of the skill-list item: page left / right, entry up / down with the owner's pad (repeat word).
+PauseMenu_SkillListFunc = 0x00212C08; // type:func
+// Callback of the CPU level item (mode 6): loads the cursor from BtlAiMgr_GetLevel(1), writes it back every frame.
+PauseMenu_CpuLevelFunc = 0x00212DC0; // type:func
+// BtlMenu_Reset of both trees; called by BtlGame_Reset.
+PauseMenu_Reset = 0x00212F90; // type:func
+// Wrappers of BtlMenu_Init / BtlMenu_Term / BtlMenu_DrawAll; called by BtlGame_Init / BtlGame_Term / BtlGame_Draw.
+PauseMenu_Init = 0x00212FC8; // type:func
+PauseMenu_Term = 0x00212FE0; // type:func
+// (pad, which): one frame of the menu; 0 when it closed. A picked result item becomes BattleResult_Set(8, reason).
+PauseMenu_Update = 0x00212FF8; // type:func
+PauseMenu_Draw = 0x00213220; // type:func
+// Which tree PauseMenu_Update was last called for (0 pause, 1 result).
+gPauseMenuWhich = 0x002FEB2C; // size:0x4
+// Cursor words of two menus in the data (BtlMenu + 0x18), written directly.
+gPauseMenuConfirmCursor = 0x002C4F18; // guess
+gPauseMenuCpuLevelCursor = 0x002C5170; // guess
+// The menus (BtlMenu, 0x34 bytes each) PauseMenu_GetMenu returns.
+gPauseMenuVersus = 0x002C5280;
+gPauseMenuResultVersus = 0x002C5408;
+gPauseMenuReplayRec = 0x002C5560; // guess
+gPauseMenuResultReplayRec = 0x002C56E8; // guess
+gPauseMenuReplayPlay = 0x002C57B0; // guess
+gPauseMenuResultReplayPlay = 0x002C5878; // guess
+gPauseMenuMode1 = 0x002C5970;
+gPauseMenuResultMode1 = 0x002C5A08;
+gPauseMenuMode2 = 0x002C5B00;
+gPauseMenuMode3 = 0x002C5BF8;
+gPauseMenuMode4 = 0x002C5D20;
+gPauseMenuMode5 = 0x002C5E48;
+gPauseMenuMode6 = 0x002C5FD0;
+gPauseMenuMode7 = 0x002C6038;
+
+// --- Menu engine.
+// Dma_BeginDirect, the default 2D state, TEST_1 = 0, ZBUF_1 (mask on).
+BtlMenu_BeginDraw = 0x00213238; // type:func
+BtlMenu_EndDraw = 0x002132E0; // type:func
+// One textured sprite (pixels of sheet entry `tex`, CLUT of entry `clut`).
+BtlMenu_PutSprite = 0x002132F8; // type:func
+// A box drawn as 2 or 4 mirrored copies of one texture around its centre.
+BtlMenu_PutMirrored = 0x00213480; // type:func // guess
+BtlMenu_GetTex0 = 0x002137E8; // type:func
+// TexFile_UploadAll(sheet, 0x2A40, 0x2A00).
+BtlMenu_UploadTex = 0x00213838; // type:func
+// Returns 0; used as the pad type in battle mode 5.
+BtlMenu_GetDefaultPadType = 0x00213860; // type:func // guess
+// First item's type is 3 / 4.
+BtlMenu_IsSkillList = 0x00213868; // type:func
+BtlMenu_IsControls = 0x00213880; // type:func // guess
+// String n of the offset table at the start of the common file (gCommonRes + 0x28); items use 8 + n,
+// the controls page 0x26 / 0x4E / 0x76 / 0x9E + n by pad type.
+BtlMenu_GetText = 0x00213898; // type:func
+BtlMenu_GetItemText = 0x002138C0; // type:func
+BtlMenu_GetControlsText = 0x002138D8; // type:func // guess
+// Depth-first search of an item id: the item / the menu that holds it.
+BtlMenu_FindItem = 0x00213918; // type:func
+BtlMenu_FindOwner = 0x002139E8; // type:func
+BtlMenu_GetWidth = 0x00213AA8; // type:func
+BtlMenu_GetHeight = 0x00213BD0; // type:func
+BtlMenu_HasOpenSub = 0x00213C78; // type:func
+// One h-pixel row `part` of a sheet texture, top-left or centred.
+BtlMenu_DrawPart = 0x00213CE8; // type:func
+// Box of sheet entry kind + 1; the page bar and one page tab of the skill list.
+BtlMenu_DrawFrame = 0x00213D80; // type:func
+BtlMenu_DrawPageBar = 0x00213DB0; // type:func // guess
+BtlMenu_DrawPageTab = 0x00213DE8; // type:func // guess
+BtlMenu_Draw = 0x00213E38; // type:func
+// Calls an active item's callback.
+BtlMenu_CallItem = 0x00214338; // type:func
+// Moves the cursor forward to the first item that is not disabled.
+BtlMenu_FixCursor = 0x002143E8; // type:func
+BtlMenu_SetActive = 0x00214490; // type:func
+BtlMenu_ClearActive = 0x002144A0; // type:func
+BtlMenu_Init = 0x002144B0; // type:func
+BtlMenu_Term = 0x00214520; // type:func
+BtlMenu_DrawAll = 0x00214548; // type:func
+BtlMenu_GetWork = 0x002145C0; // type:func
+BtlMenu_SetTop = 0x002145C8; // type:func
+// (which, parent, menu, pad): input, animation and callbacks of one menu and its open sub menu; 1 = closed.
+BtlMenu_Update = 0x002145D8; // type:func
+// Item accessors by id: value (+0x18), picked (+0x2C), disabled (+0x1C).
+BtlMenu_GetValue = 0x00214CB0; // type:func
+BtlMenu_SetValue = 0x00214CD8; // type:func
+BtlMenu_GetPicked = 0x00214D08; // type:func
+BtlMenu_SetPicked = 0x00214D30; // type:func
+BtlMenu_SetDisabled = 0x00214D60; // type:func
+BtlMenu_Reset = 0x00214D90; // type:func
+// The picked result item (type 1), reported as its ancestor in the top menu.
+BtlMenu_FindResult = 0x00214E48; // type:func
+BtlMenu_IsSubOpen = 0x00214F38; // type:func
+// Skill-list scripts (work + 0x18 / + 0x1C).
+BtlMenu_SetScript = 0x00214FC0; // type:func
+BtlMenu_SetScript2 = 0x00214FD0; // type:func
+BtlMenu_GetScript = 0x00214FE0; // type:func
+BtlMenu_GetScript2 = 0x00214FF0; // type:func
+BtlMenu_IsActive = 0x00215000; // type:func
+// The menu work (BtlMenuWork, 0x120 bytes, heap 2).
+gBtlMenu = 0x002FEB30; // size:0x4
+
+// --- Head of the skill-list text module (continues in btl_seq.c at 0x215420).
+// The controls page: a title sprite and one string chosen by pad type and gProgress + 0x7F4.
+BtlText_DrawControls = 0x00215010; // type:func // guess
+BtlText_IsOnScreen = 0x00215118; // type:func
+// One sprite of sheet entry `part` (corners in screen pixels, UV in texels); skipped when off screen.
+BtlText_PutSprite = 0x00215140; // type:func
+BtlText_GetTex0 = 0x002152F0; // type:func
+// SCISSOR_1.
+BtlText_PutScissor = 0x00215350; // type:func
+// Character is 10 or 13.
+BtlText_IsNewline = 0x002153B8; // type:func
+// Pointer behind the next newline character, or at the terminator.
+BtlText_NextLine = 0x002153E0; // type:func

@@ -1,0 +1,74 @@
+// --- Heap block statistics (tail of the heap allocator; walks gHeapStart[heap] with Heap_NextBlock) ---
+// 0x2557A8(heap): free count + used count.
+Heap_CountBlocks = 0x002557A8; // type:func
+// 0x2557E8(heap): counts blocks with used == 0.
+Heap_CountFreeBlocks = 0x002557E8; // type:func
+// 0x255840(heap): counts blocks with used == 1.
+Heap_CountUsedBlocks = 0x00255840; // type:func
+
+// --- Intrusive doubly linked list: list = {head, tail, count}; node = {prev, next} ---
+// 0x255898(dst, src): copies the three list words; called by List_PrependList/AppendList when dst is empty.
+List_Copy = 0x00255898; // type:func
+// 0x2558B8(dst, src): identical copy, called by the singly linked SList_PrependList/AppendList.
+SList_Copy = 0x002558B8; // type:func
+// 0x255900 / 0x255918: NULL-safe read of list->tail / list->count.
+List_GetTail = 0x00255900; // type:func
+List_GetCount = 0x00255918; // type:func
+// 0x255930(list, node): links node before the head (mirror of List_PushBack).
+List_PushFront = 0x00255930; // type:func
+// 0x2559C0 / 0x255A40(list, other): splices all of other in front of / behind list, then List_Init(other).
+List_PrependList = 0x002559C0; // type:func // guess
+List_AppendList = 0x00255A40; // type:func // guess
+// 0x255AC8 / 0x255B28(list, pos, node): links node before / after pos (falls back to PushFront / PushBack at the ends).
+List_InsertBefore = 0x00255AC8; // type:func
+List_InsertAfter = 0x00255B28; // type:func
+// 0x255B88(list, node): unlinks node, clears its links, count--, returns node.
+List_Remove = 0x00255B88; // type:func
+// 0x255BD8 / 0x255BF0(list): List_Remove(list, list->head / list->tail).
+List_PopFront = 0x00255BD8; // type:func
+List_PopBack = 0x00255BF0; // type:func
+// 0x255C08(node): NULL-safe node->prev (counterpart of List_GetNext).
+List_GetPrev = 0x00255C08; // type:func
+// 0x255C38(list, node): walks the list, returns 1 when node is found.
+List_Contains = 0x00255C38; // type:func
+
+// --- Intrusive singly linked list: list = {head, tail, count}; node = {next} ---
+SList_Init = 0x00255C98; // type:func
+SList_GetHead = 0x00255CA8; // type:func
+SList_GetTail = 0x00255CC0; // type:func
+SList_GetCount = 0x00255CD8; // type:func
+SList_PushFront = 0x00255CF0; // type:func
+SList_PushBack = 0x00255D20; // type:func
+// 0x255D48 / 0x255DC0(list, other): splices all of other in front of / behind list, then SList_Init(other).
+SList_PrependList = 0x00255D48; // type:func // guess
+SList_AppendList = 0x00255DC0; // type:func // guess
+// 0x255E38(list): unlinks and returns the head.
+SList_PopFront = 0x00255E38; // type:func
+SList_GetNext = 0x00255E70; // type:func
+SList_Contains = 0x00255E88; // type:func
+
+// --- Queue internals ---
+// 0x255EE8(queue): node from queue->freeList, else nodes[used++] while used < capacity - 1, else NULL. Called by Queue_Push.
+Queue_AllocNode = 0x00255EE8; // type:func
+// 0x255F50(queue): follows next from queue->head to the last node. Called by Queue_Push.
+Queue_GetTail = 0x00255F50; // type:func
+// 0x255FF0(queue): Heap_Free(queue->nodes) and clears the pointer.
+Queue_Destroy = 0x00255FF0; // type:func
+
+// --- Alignment helpers: Rem = v & (N-1), Pad = -(v & (N-1)) & (N-1), Up = v + Pad(v) ---
+Mem_Align8Rem = 0x00256130; // type:func
+Mem_Align16Rem = 0x00256138; // type:func
+Mem_Align32Rem = 0x00256140; // type:func
+Mem_Align64Rem = 0x00256148; // type:func
+Mem_Align128Rem = 0x00256150; // type:func
+Mem_Align8Pad = 0x00256168; // type:func
+Mem_Align16Pad = 0x00256178; // type:func
+Mem_Align32Pad = 0x00256188; // type:func
+Mem_Align64Pad = 0x00256198; // type:func
+Mem_Align128Pad = 0x002561A8; // type:func
+Mem_Align4Up = 0x002561B8; // type:func
+Mem_Align8Up = 0x002561E0; // type:func
+Mem_Align16Up = 0x00256208; // type:func
+Mem_Align32Up = 0x00256230; // type:func
+Mem_Align64Up = 0x00256258; // type:func
+Mem_Align128Up = 0x00256280; // type:func

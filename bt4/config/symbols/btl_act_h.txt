@@ -1,0 +1,39 @@
+// Fighter action handlers: src/battle/btl_act_h.c (0x1FC2B0..0x1FC598) and src/battle/btl_act_h_b.c (0x1FC598..0x1FFAC0).
+// Handler ids come from gBtlActHandlers (0x2C4980). Game-term names are guesses from the animations, flags and callers.
+
+// Thrown fighter: heading of the release from the hit reaction (launch yaw / pitch, mirrored when hit from behind).
+BtlActThrow_SetReleaseHeading = 0x001FC2B0; // type:func // guess
+// Actions 0xB4..0xB6: dash at the opponent to grab; flag 0x5B (grab connected) leads to 0xB7 / 0xBB / 0xB9.
+BtlAct_GrabDash = 0x001FC350; // type:func // guess
+// Actions 0xB7, 0xB9: the thrower. Actions 0xB8, 0xBA: the thrown fighter.
+BtlAct_Throw = 0x001FC598; // type:func // guess
+BtlAct_Thrown = 0x001FC918; // type:func // guess
+// Action 0xBB: throw that dives with the victim (looping animation 0x99, 1500 km/h down, up to 91 frames) until the
+// ground. Action 0xBC: its victim.
+BtlAct_SlamThrow = 0x001FCB60; // type:func // guess
+BtlAct_SlamThrown = 0x001FCEF0; // type:func // guess
+// Action 0xBE: drags the opponent down at 2000 km/h (animation 0x197, camera cut by camera side). Action 0xBF: the
+// dragged fighter.
+BtlAct_DragDown = 0x001FD2F8; // type:func // guess
+BtlAct_DraggedDown = 0x001FD568; // type:func // guess
+// Shared by every character-change action (0xEC..0xF8): raises the 13 flags of a change (hit-stop level 2 flag 0x125,
+// 0x128 no end-of-battle check, ...) and holds the action.
+BtlActChange_SetFlags = 0x001FD958; // type:func
+// Transformations 0xEC and 0xF0: BtlAct_PushAngle straight behind the fighter.
+BtlActChange_PushBack = 0x001FDA18; // type:func // guess
+// Member switch (called from btl_act_i.c): entry point of the arriving member saved as the placement; the two camera cuts.
+BtlActSwitch_SaveEntryPlacement = 0x001FDA60; // type:func // guess
+BtlActSwitch_SetLeaveCut = 0x001FDC90; // type:func // guess
+BtlActSwitch_SetEnterCut = 0x001FDE28; // type:func // guess
+// End of a change action: request action 0xB, or the queued action when func_00204918 fills the queue.
+BtlActChange_Finish = 0x001FDF50; // type:func
+// Actions 0xEC..0xF0: transformation, five presentations (BtlChange_RequestChara, voice 0x22 when the model is in).
+BtlAct_TransformA = 0x001FDFA8; // type:func // guess
+BtlAct_TransformB = 0x001FE358; // type:func // guess
+BtlAct_TransformC = 0x001FE620; // type:func // guess
+BtlAct_TransformD = 0x001FE960; // type:func // guess
+BtlAct_TransformE = 0x001FEE08; // type:func // guess
+// Actions 0xF1, 0xF2: fusion (partner object + character change).
+BtlAct_Fusion = 0x001FF2A8; // type:func
+// Action 0xF3: member switch, the leaving member rises and waits for the next member's files; then 0xF4.
+BtlAct_SwitchLeave = 0x001FF818; // type:func // guess

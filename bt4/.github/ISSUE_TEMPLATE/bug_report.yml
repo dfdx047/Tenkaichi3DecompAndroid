@@ -1,0 +1,50 @@
+name: Bug report
+description: Report a gameplay, installation, audio or online issue.
+title: '[Bug] '
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Build
+      description: Paste BT4_VERSION.txt and identify any changes to the distributed package.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: System and game configuration
+      description: Include Windows version, CPU, GPU, driver, renderer, resolution scale and game language. For audio issues, name the input and output devices.
+    validations:
+      required: true
+  - type: textarea
+    id: mode
+    attributes:
+      label: Game mode and players
+      description: Specify offline or online, Duel or Tag Team, human and CPU player counts, and whether you hosted or joined. For online issues, include each player's build and language.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Describe the sequence that triggers the issue. Include characters, forms, costumes, stage and move when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Observed behavior
+      description: State how often it occurs and whether it also occurs after restarting the game.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs and evidence
+      description: Attach the relevant bt3_log.txt or bt3_crash.txt, screenshots or a short recording. For a disconnection, collect both players' logs before reopening the game. Remove personal information, credentials and active room codes. Do not upload ISOs, game data or saves.

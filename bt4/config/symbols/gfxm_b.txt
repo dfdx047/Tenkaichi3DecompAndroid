@@ -1,0 +1,111 @@
+// ---- gfxm_b.c (0x106D60..0x109938): screen-space passes of the battle ----
+// Evidence throughout: the GS packets the functions build (register numbers and values), and the callers.
+
+// Full-screen strips. 0x106D60(mode, tbp, cbp, alpha): block `tbp` read as PSMT8H (the top byte of each 32-bit
+// pixel) through the CLUT at `cbp`, 16 sprites of 32x448; mode 1 adds the destination-alpha test and Z 0xFFA8.
+// Callers: stage haze / tone (stg_b.c, stg_c.c), 0x245A50, 0x2463B0, gfxm_a.
+GfxPost_DrawDepthClut = 0x00106D60; // type:func
+// 0x106FE8(): draws the colour buffer into page 0xE0 with FBMSK 0x00FFFFFF, so only its alpha is written, into the
+// spare top byte of the 24-bit depth buffer. Called by BtlObj_BeginDraw.
+GfxPost_CopyAlphaToDepth = 0x00106FE8; // type:func
+// 0x1072C8(tex0, x, y, w, h, fullHeight): one textured sprite. No caller found.
+GfxPost_DrawTexRect = 0x001072C8; // type:func
+// 0x107508(alpha, color): untextured blended rectangle over the screen, colour from four floats (stage tints).
+GfxPost_DrawTintRect = 0x00107508; // type:func
+
+// Lenses: eight 0x30-byte slots at 0x300380 (world position, life, colour, size, blend, hold) + a texture file
+// pointer at +0x180. Each live lens is a camera-facing disc that shrinks over its life and shows the captured
+// screen (256x256 copy at page 0x150) through a round texture. What the effect is used for is not known: nothing
+// in or outside the range calls Start / Stop / SetHold / SetPos, and nothing sets the texture pointer.
+gGfxLens = 0x00300380; // size:0x190 // guess
+GfxLens_Init = 0x00107730; // type:func // guess
+GfxLens_Stub107758 = 0x00107758; // type:func
+GfxLens_Clear = 0x00107760; // type:func // guess
+GfxLens_Start = 0x00107788; // type:func // guess
+GfxLens_Stop = 0x00107800; // type:func // guess
+GfxLens_SetHold = 0x00107828; // type:func // guess
+GfxLens_SetPos = 0x00107850; // type:func // guess
+GfxLens_DrawOne = 0x00107898; // type:func // guess
+GfxLens_DrawAll = 0x00107BB8; // type:func // guess
+GfxLens_PutCapture = 0x00107EE0; // type:func // guess
+GfxLens_Draw = 0x001083A8; // type:func // guess
+GfxLens_DrawFull = 0x001085C0; // type:func // guess
+
+// Alpha key: a run-time CLUT (transparent except entries 0xF4..0xFE = eleven fixed colours with alpha 0x30) drawn
+// over the alpha that GfxPost_CopyAlphaToDepth saved. Init / Term / Draw are called by BtlObj_InitDraw /
+// BtlObj_TermDraw / BtlObj_BeginDraw. The work (0x4C0 bytes, heap) pointer is at gp 0x2FE8C8.
+gGfxAlphaKey = 0x002FE8C8; // size:0x4 // guess
+GfxAlphaKey_BuildClut = 0x001085E0; // type:func // guess
+GfxAlphaKey_Init = 0x001086D8; // type:func // guess
+GfxAlphaKey_Term = 0x00108728; // type:func // guess
+GfxAlphaKey_Draw = 0x00108750; // type:func // guess
+
+// Underwater wobble: per-view state (two phases, two speeds, a tint; 2 x 0x14 bytes, heap, pointer at gp 0x2FE8CC).
+// 0x109320 draws it for every view whose camera Y is past BtlStage_GetWaterLevel; 0x108920 does one view.
+// Init / Term / LoadStageColor / Draw are called from the effect passes 0x247468 / 0x247500 / 0x2473D8 / 0x247688.
+gGfxWater = 0x002FE8CC; // size:0x4
+GfxWater_Reset = 0x001087A8; // type:func
+GfxWater_Init = 0x00108838; // type:func
+GfxWater_Term = 0x00108878; // type:func
+GfxWater_LoadStageColor = 0x001088A8; // type:func
+GfxWater_DrawView = 0x00108920; // type:func
+GfxWater_Draw = 0x00109320; // type:func
+GfxWater_SetColor = 0x00109468; // type:func
+
+// Depth fog: a static CLUT work at 0x300540 (black, alpha 255 - index) and the pass that draws the depth buffer
+// through it. 0x109508 moves the high 16 bits of the depth page into the frame seen as a 16-bit buffer.
+// Init is called from 0x247468 and stg_c.c (cbp 0x3E80), Draw from 0x247578 / 0x247720.
+gGfxDepthFog = 0x00300540; // size:0x4C0 // guess
+GfxDepthFog_BuildClut = 0x001094A8; // type:func // guess
+GfxPost_ShiftHighWord = 0x00109508; // type:func // guess
+GfxDepthFog_Init = 0x001097F8; // type:func // guess
+GfxDepthFog_Draw = 0x00109848; // type:func // guess
+GfxDepthFog_Stub109928 = 0x00109928; // type:func
+GfxDepthFog_Stub109930 = 0x00109930; // type:func
+
+// ---- gfxm_b_b.c (0x109938..0x10A6E0): chunked upload files and texture files ----
+// A chunked file (0x10-byte chunk headers) turned into a DMA chain: the chunk list and the REF / END tags are
+// written into the file's own tail. No caller outside the range was found for the TexChain functions.
+TexChain_WriteTags = 0x00109938; // type:func // guess
+TexChain_Build = 0x00109A60; // type:func // guess
+TexChain_BuildAt = 0x00109BE0; // type:func // guess
+TexChain_BuildPair = 0x00109C48; // type:func // guess
+TexChain_BuildPairs = 0x00109E38; // type:func // guess
+TexChain_AddCbp = 0x00109EE0; // type:func // guess
+// Texture dimension -> GS TW / TH exponent (a switch; 112 / 224 / 448 / 640 round up).
+Tex_Log2Size = 0x00109F50; // type:func
+// (Res_RelocateOffsets, 0x10A028, is in game.txt: it is the pointer fix-up of a texture file.)
+// Texture files: 0x40-byte entries. The 0x30-byte BITBLTBUF packet at 0x2C3410 is patched and queued in front of
+// a REF to each entry's pixel / CLUT packet.
+gTexBltPacket = 0x002C3410; // size:0x30
+Tex_UploadPixels = 0x0010A0A8; // type:func
+Tex_UploadClut = 0x0010A110; // type:func
+TexFile_UploadPacked = 0x0010A178; // type:func
+TexFile_UploadOne = 0x0010A218; // type:func
+Tex_Upload = 0x0010A288; // type:func
+TexFile_UploadRangePacked = 0x0010A2E8; // type:func
+TexFile_UploadRange = 0x0010A3B0; // type:func
+TexFile_UploadAll = 0x0010A480; // type:func
+TexFile_UploadAt = 0x0010A528; // type:func
+// 0x10A5A0(work, cbp): writes the constant parts of a 256-colour CLUT upload packet (0x4C0-byte work).
+GfxClut_InitPacket = 0x0010A5A0; // type:func
+
+// ---- gfxm_b_c.c (0x10A6E0..0x10AD58): low-level readers of the Flash-like movie data (magic 'F' 'O' 'D' 0x11
+// "LIT") that Flash_Create (game.txt) and its neighbours at 0x10AD58.. parse: tags, named blocks, a
+// most-significant-first bit reader and a bit-packed 2D matrix. Prefix taken from Flash_Create; names are guesses.
+Flash_CheckHeader = 0x0010A6E0; // type:func // guess
+Flash_FindTag = 0x0010A760; // type:func // guess
+Flash_SkipRecords = 0x0010A7B8; // type:func // guess
+Flash_GetRecord = 0x0010A818; // type:func // guess
+Flash_GetRecordCount = 0x0010A848; // type:func // guess
+Flash_SkipNamed = 0x0010A880; // type:func // guess
+Flash_FindName = 0x0010A8F8; // type:func // guess
+Flash_ReadString = 0x0010A9B8; // type:func // guess
+Flash_ReadBits = 0x0010AA28; // type:func // guess
+Flash_ReadSBits = 0x0010AAB0; // type:func // guess
+Flash_MtxIdentity = 0x0010AB08; // type:func // guess
+Flash_ReadMtx = 0x0010AB38; // type:func // guess
+
+// GfxLens_DrawAll's `offs` initialiser: seven corner offsets, 0x10 bytes each (INCLUDE_RODATA in gfxm_b.c while the
+// function is assembly).
+gGfxLensCornerOfs = 0x002EB6A0; // size:0x70

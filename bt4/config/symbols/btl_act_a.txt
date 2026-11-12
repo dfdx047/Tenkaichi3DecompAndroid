@@ -1,0 +1,44 @@
+// Fighter action handlers, first group (src/battle/btl_act_a.c, 0x1E3158..0x1E6CC0).
+// Game terms are inferred from animations, inputs and flags; action ids are from gBtlActHandlers.
+
+// Actions 7..0xA: stand (animations 0/0x26, 1/0x27, 0x196, 0x17B) facing the opponent; ends in action 0xB when flag 0xAF or 0xB0 drops.
+BtlAct_WaitHandler = 0x001E3158; // type:func // guess
+
+// Attack charge: level chr+0xD78 (0..1), timer +0xD7C, rate blended from BtlParam_GetChargeRateA/B by the gauge at +0xD80.
+BtlAct_GetChargeRate = 0x001E3368; // type:func
+BtlAct_StepCharge = 0x001E33E0; // type:func
+BtlAct_SetChargeFromAnim = 0x001E3480; // type:func
+BtlAct_SetChargeAnimDuration = 0x001E34A8; // type:func
+BtlAct_SetChargeAnimStep = 0x001E34F8; // type:func
+
+// (chr, progress): under flag 0x5D while the opponent is seen in action 0xC9, queue through BtlDecide_Attack(chr, 1) and start the queued action past the progress.
+BtlAct_CancelOnOppC9 = 0x001E3578; // type:func // guess
+// Plays the voice kind BtlAtk_GetVoiceKind returns, if any.
+BtlAct_PlayPickedVoice = 0x001E3620; // type:func
+// Plays sub animation 0x19B; returns model node 0x2D / 0x1F / 0x15 by the group of the node its event names (stored at chr+0x1354 by action 0x66).
+BtlAct_StartSub19B = 0x001E3660; // type:func // guess
+// (chr, attack block): decide step of an attack: under flag 0x5B read the follow-ups its flags allow, then start the queued action past its cancel point.
+BtlAct_DecideAttackFollow = 0x001E3710; // type:func
+// (chr, attack block): requests action 0xB, or 0xC under flag 0x5C when the attack has flag 0x400.
+BtlAct_RequestAttackEnd = 0x001E38F0; // type:func
+
+// Action 0x44: one step of the rush chain (animation 0x37 + step, step counter chr+0xD60 mod 10).
+BtlAct_RushHandler = 0x001E3950; // type:func // guess
+// Action 0x45 (forced by flag 0x7E): the whole chain 0x37..0x40 at triple speed with camera cut 0x11 / 0x12.
+BtlAct_RushAutoHandler = 0x001E3D88; // type:func // guess
+// Action 0x46: rapid rush (animations 0x3C..0x40 at triple speed), re-queued by input condition 52.
+BtlAct_RushRapidHandler = 0x001E3F48; // type:func // guess
+// Actions 0x47..0x4C: charged smash attack (wind-up / hold / release animation triples 0x4A..0x5B), released by input condition 63.
+BtlAct_SmashChargeHandler = 0x001E4330; // type:func // guess
+// Actions 0x4D..0x52: the same attacks at full charge with a camera cut (0x1C..0x1F) and hit-stop flag 0x125 during the wind-up.
+BtlAct_SmashFullHandler = 0x001E4A48; // type:func // guess
+// Actions 0x53..0x57: charged attack in flight (animation triples 0x5C..0x6A) that steers at the opponent and spends ki while charging.
+BtlAct_DashSmashHandler = 0x001E4D80; // type:func // guess
+// Action 0x58: attack in flight with animations 0x6B..0x6D, held until input condition 65.
+BtlAct_FlyingKickHandler = 0x001E53D0; // type:func // guess
+// Action 0x59: the same with animations 0x6E..0x70; clears the flight flag and heads upward (36 degrees, or at the opponent).
+BtlAct_LiftStrikeHandler = 0x001E5890; // type:func // guess
+// Actions 0x5A..0x5D: vanish, warp ahead of the opponent, strike (animations 0x5F..0x6A); voice 0x1D when it follows a smash.
+BtlAct_SmashVanishHandler = 0x001E5CE8; // type:func // guess
+// Actions 0x5E..0x66 except 0x63: chargeable attacks (animation triples from 0x41, 0x44, 0x47, 0x56, 0x59, 0x90, 0x199), released by input condition 67.
+BtlAct_RushFinishHandler = 0x001E62B8; // type:func // guess

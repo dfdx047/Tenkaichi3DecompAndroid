@@ -1,0 +1,89 @@
+// TextBox, second half (0x2600B0..0x260D20): setters named after the Font_ call or the test their field feeds.
+TextBox_SetMaxWidth = 0x002600B0; // type:func
+TextBox_SetMaxHeight = 0x002600C8; // type:func
+TextBox_SetMaxSize = 0x002600E0; // type:func
+TextBox_SetLineOffsets = 0x00260118; // type:func
+TextBox_SetSpacing = 0x00260140; // type:func
+TextBox_DrawClip = 0x00260158; // type:func
+TextBox_AttachLine = 0x002604C0; // type:func
+TextBox_AttachString = 0x00260900; // type:func
+
+// ChrTbl / ItemSet (0x260D20..0x2614B0): readers of the character and item tables of common file 4.
+// What the character fields mean is inferred from the menu's use (see the header).
+ChrTbl_WrapCostume = 0x00260D20; // type:func // guess
+ChrTbl_GetCost = 0x00260D88; // type:func // guess
+ChrTbl_GetLevel = 0x00260DB8; // type:func // guess
+ChrTbl_GetExp = 0x00260E28; // type:func // guess
+ChrTbl_GetMaxExp = 0x00260E78; // type:func // guess
+ItemSet_Fit = 0x00260EE8; // type:func // guess
+ItemSet_GetBonus = 0x00260FB0; // type:func // guess
+ItemSet_GetStats = 0x00261130; // type:func
+ItemSet_GetStatsList = 0x002612B0; // type:func
+ItemTbl_CanEquip = 0x00261400; // type:func // guess
+ItemTbl_GetClass = 0x00261478; // type:func // guess
+
+// MenuUtil (0x2614B0..0x261ED8). Voice_PlayWithSubtitle is already in game.txt; what it starts is mouth
+// movement (LipSync), not a subtitle.
+// 0x261578: Voice_Stop(0) + LipSync_Clear. 0x261598: Bgm_SetVolume(0x40) + Snd_SetStereo(soundMode ^ 1).
+Voice_StopWithLip = 0x00261578; // type:func
+SndOpt_Apply = 0x00261598; // type:func
+// 0x2615C0: clears gProgress + 0x69C (7 * 0x2C) and writes 0xA4 into 7 * 2 * 5 ids.
+Progress_ClearTeams = 0x002615C0; // type:func // guess
+// 0x261650: 1 when a == b or one lists the other in its four link bytes (character table +0x2C).
+ChrTbl_IsRelated = 0x00261650; // type:func // guess
+// difficulty setting 0..4 <-> CPU level 0, 6, 13, 21, 29
+CpuLevel_FromSetting = 0x00261738; // type:func
+CpuLevel_ToSetting = 0x00261790; // type:func
+// 0x2617F0: random pairing + BattleSetup_* for a CPU vs CPU battle (mode 7); called once by the overlay.
+Demo_SetupBattle = 0x002617F0; // type:func // guess
+// no callers
+MenuUtil_ClassifyId = 0x00261A58; // type:func // guess
+Text_FindBullet = 0x00261B10; // type:func // guess
+Text_PutNumber = 0x00261B90; // type:func // guess
+// mouth movement of the speaking portrait
+LipSync_Start = 0x00261C78; // type:func
+LipSync_Update = 0x00261D10; // type:func
+LipSync_IsOpen = 0x00261EA8; // type:func
+LipSync_Clear = 0x00261EB0; // type:func
+gLipSyncOpen = 0x002FF110; // size:0x4
+gLipSyncWaiting = 0x002FF114; // size:0x4
+gLipSync = 0x0031E570; // size:0x14
+
+// ShenScene (0x261ED8..0x262FF0): the 3D backdrop of the dragon (wish) screen (sys/late_a.c calls Init,
+// Update, Term, GetState, SetState). Names follow that screen's "Shen" prefix.
+ShenScene_StepSeq = 0x00261ED8; // type:func
+ShenScene_StepLoad = 0x00262890; // type:func
+ShenScene_InitCams = 0x00262A18; // type:func
+ShenScene_NextCam = 0x00262A68; // type:func
+ShenScene_IsCamEnd = 0x00262AF0; // type:func
+ShenScene_RunSeq = 0x00262B30; // type:func
+ShenScene_StartSeq = 0x00262B78; // type:func
+ShenScene_Nop = 0x00262BC0; // type:func
+ShenScene_GetState = 0x00262BC8; // type:func
+ShenScene_SetState = 0x00262BD8; // type:func
+ShenScene_Nop2 = 0x00262C28; // type:func
+ShenScene_Update = 0x00262C30; // type:func
+ShenScene_Init = 0x00262E70; // type:func
+ShenScene_Term = 0x00262F70; // type:func
+gShenScene = 0x002FF118; // size:0x4
+
+// Debug stubs (0x262FF0..0x263098), the head of sys/debug.c: empty, no callers, except the two profiler hooks
+// (Dbg_ProfMark / Dbg_ProfColor, named in game.txt).
+Dbg_Stub262FF0 = 0x00262FF0; // type:func // guess
+Dbg_Stub262FF8 = 0x00262FF8; // type:func // guess
+Dbg_Stub263000 = 0x00263000; // type:func // guess
+Dbg_Stub263008 = 0x00263008; // type:func // guess
+Dbg_Stub263010 = 0x00263010; // type:func // guess
+Dbg_Stub263018 = 0x00263018; // type:func // guess
+Dbg_Stub263020 = 0x00263020; // type:func // guess
+Dbg_Stub263040 = 0x00263040; // type:func // guess
+Dbg_Stub263048 = 0x00263048; // type:func // guess
+Dbg_Stub263050 = 0x00263050; // type:func // guess
+Dbg_Stub263058 = 0x00263058; // type:func // guess
+Dbg_Stub263060 = 0x00263060; // type:func // guess
+Dbg_Stub263068 = 0x00263068; // type:func // guess
+Dbg_Stub263070 = 0x00263070; // type:func // guess
+Dbg_Stub263078 = 0x00263078; // type:func // guess
+Dbg_Stub263080 = 0x00263080; // type:func // guess
+Dbg_Stub263088 = 0x00263088; // type:func // guess
+Dbg_Stub263090 = 0x00263090; // type:func // guess

@@ -1,0 +1,71 @@
+// Battle script command handlers, src/battle/btl_script_cmd.c = 0x259EC8..0x25C2A8: the 46 handlers of
+// gBtlScriptCommands (0x2C6EC0), `s32 handler(u32 phase, void *taskWork)`. Every name is a guess from what the
+// matching C does and from how three real scripts (files 0x1FE..0x200, 0x210) use the command; the command id is
+// given with each. The reference table is in include/battle/btl_script_cmd.h.
+
+// Camera. 1201: six floats -> BtlFacade_SetFixedCamera. 1203: BtlFacade_ClearFixedCamera. 1204: BtlFacade_ShakeCamera,
+// -l stores the time in work->shakeTime. 1205: shakeTime = 0. 1202: fills work->cam.key[] from the -l options.
+BtlScriptCmd_SetCamera = 0x00259EC8; // type:func // guess
+BtlScriptCmd_ClearCamera = 0x00259FB0; // type:func // guess
+BtlScriptCmd_ShakeCamera = 0x00259FE0; // type:func // guess
+BtlScriptCmd_StopShake = 0x0025A068; // type:func // guess
+BtlScriptCmd_MoveCamera = 0x0025A0A8; // type:func // guess
+// Fighter. 801 / 802 / 803: BtlFacade_SetCharPos and / or SetCharDir. 804..810: one control-flag wrapper each,
+// named after the facade function it calls. 901: BtlFacade_PlayCharMotion and wait. 902: StopCharMove on both sides.
+BtlScriptCmd_PlaceChar = 0x0025A2D8; // type:func // guess
+BtlScriptCmd_SetCharPos = 0x0025A3C8; // type:func // guess
+BtlScriptCmd_SetCharDir = 0x0025A438; // type:func // guess
+BtlScriptCmd_ClearCtrl100 = 0x0025A4F8; // type:func // guess
+BtlScriptCmd_SetCtrl100 = 0x0025A538; // type:func // guess
+BtlScriptCmd_SetCtrlFE = 0x0025A578; // type:func // guess
+BtlScriptCmd_SetCtrlFF = 0x0025A5B8; // type:func // guess
+BtlScriptCmd_SetCtrl101 = 0x0025A5F8; // type:func // guess
+BtlScriptCmd_ClearCtrl101 = 0x0025A628; // type:func // guess
+BtlScriptCmd_SetCtrl102 = 0x0025A668; // type:func // guess
+BtlScriptCmd_MoveChar = 0x0025A6A8; // type:func // guess
+BtlScriptCmd_StopCharMoves = 0x0025A7D0; // type:func // guess
+// Fades. 1001 / 1002: Fade_Start(slot, FADE_IN / FADE_OUT, seconds), Fade_IsDone, Fade_Reset. 1003: Fade_Reset(0), (1).
+BtlScriptCmd_FadeIn = 0x0025A810; // type:func // guess
+BtlScriptCmd_FadeOut = 0x0025A900; // type:func // guess
+BtlScriptCmd_ResetFades = 0x0025A9F0; // type:func // guess
+// 1301: returns 1.
+BtlScriptCmd_Nop1301 = 0x0025AA30; // type:func // guess
+// 701: BtlScript_RequestTextFile(story + 0x231 / 0x263). 702: BtlScript_RequestFile8(story + 0x295 / 0x2C7).
+BtlScriptCmd_LoadText = 0x0025AA38; // type:func // guess
+BtlScriptCmd_LoadFile8 = 0x0025AAA0; // type:func // guess
+// 1302: copies the default window (0x23AC50) into BtlScript_GetWindow(n) and overrides fields from the options.
+BtlScriptCmd_SetWindow = 0x0025AAF8; // type:func // guess
+// Sound. 1501: Bgm_Play(0x10B16 + n). 1502: Bgm_FadeOutStep / Bgm_IsStopped. 1601: Snd_PlaySe(4, n).
+// 1602: Voice_PlayDefault(0, BtlScript_GetVoiceFile(line)). 1603: the same plus BtlScript_SetText and the mouth data.
+BtlScriptCmd_PlayBgm = 0x0025ADB8; // type:func // guess
+BtlScriptCmd_StopBgm = 0x0025ADF8; // type:func // guess
+BtlScriptCmd_PlaySe = 0x0025AE68; // type:func // guess
+BtlScriptCmd_PlayVoice = 0x0025AE98; // type:func // guess
+BtlScriptCmd_Talk = 0x0025AF78; // type:func // guess
+// 1: Gsc_GetCurrentTime() >= seconds * 300. 1701: gPad[0].gamePressed & (1 << bit).
+BtlScriptCmd_Wait = 0x0025B158; // type:func // guess
+BtlScriptCmd_WaitButton = 0x0025B1E0; // type:func // guess
+// 2: BtlScript_SetStory. 3: returns 1.
+BtlScriptCmd_SetStory = 0x0025B288; // type:func // guess
+BtlScriptCmd_Nop3 = 0x0025B2C0; // type:func // guess
+// 4 / 5 / 6: last command, third command and the command after the cut scene part of every event action in the
+// scripts read; they test the BtlScriptEvent record of the running event (work->cur.event).
+BtlScriptCmd_EndEvent = 0x0025B2C8; // type:func // guess
+BtlScriptCmd_BeginScene = 0x0025B340; // type:func // guess
+BtlScriptCmd_EndScene = 0x0025B4F8; // type:func // guess
+// 8: the 30-way switch (jump table 0x2F3040) between BtlFacade_BeginWait and BtlFacade_ResetSubClock.
+BtlScriptCmd_Battle = 0x0025B5B8; // type:func // guess
+// 9: BtlFacade_SetResult(n), then waits on BtlFacade_IsNotFinished.
+BtlScriptCmd_SetResult = 0x0025B7B0; // type:func // guess
+// 7: BtlScript_ResetView, BtlScript_AddEvent per -a, BtlScript_AddLine per -v.
+BtlScriptCmd_SetTriggers = 0x0025B840; // type:func // guess
+// 10 / 11 / 12: Battle_ClearWork + BattleSetup_SetRule, BattleSetup_SetSide, BattleSetup_SetMemberByItemIds.
+BtlScriptCmd_SetRule = 0x0025B900; // type:func // guess
+BtlScriptCmd_SetSide = 0x0025B9A0; // type:func // guess
+BtlScriptCmd_SetMember = 0x0025BA08; // type:func // guess
+// 13 / 14: health, gauges and items of a member of side 0 / side 1 (and the CPU level for side 1).
+BtlScriptCmd_SetStatus0 = 0x0025BBB0; // type:func // guess
+BtlScriptCmd_SetStatus1 = 0x0025BE58; // type:func // guess
+// 15: BtlScript_SetSpeaker per -v. 16: 15 integers into gProgress + 0x40 ("rewards" is the weakest guess here).
+BtlScriptCmd_SetSpeakers = 0x0025C180; // type:func // guess
+BtlScriptCmd_SetRewards = 0x0025C1F0; // type:func // guess

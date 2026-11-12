@@ -1,0 +1,26 @@
+[
+  {
+    "package": "mingw-w64-ucrt-x86_64-cmake-4.4.4-3-any.pkg.tar.zst",
+    "sha256": "e84945777f82fdaf231d9c520f53b4518d26730425306e4d4207bdf2d9493faa"
+  },
+  {
+    "package": "mingw-w64-ucrt-x86_64-openssl-3.6.5-1-any.pkg.tar.zst",
+    "sha256": "773e021ebad83f14b5c103db467411e8ff064663e1c7e7f730e2be72f4117064"
+  },
+  {
+    "package": "mingw-w64-ucrt-x86_64-opus-1.6.1-2-any.pkg.tar.zst",
+    "sha256": "bb114bcf26225f50f874497ebfd6b8224fff2a20bda3f8ee45cd07ce5f02657b"
+  },
+  {
+    "library": "libdatachannel",
+    "commit": "6b1e2e620f1e37f0eafeee702eaea0043cb305fd"
+  },
+  {
+    "compiler_runtime": "libwinpthread-1.dll",
+    "source": "https://github.com/mingw-w64/mingw-w64",
+    "local_package_licenses": [
+      "compiler-libwinpthread-COPYING.txt",
+      "compiler-winpthreads-COPYING.txt"
+    ]
+  }
+]

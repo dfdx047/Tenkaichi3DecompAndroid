@@ -1,0 +1,98 @@
+// Battle screen effects, 0x245F58-0x248F28 (src/battle/stg_c.c, include/battle/stg_c.h).
+// All names come from what the matching C does; "guess" marks names whose meaning rests on one caller or on
+// code outside the range.
+
+// Accessors of the depth fog object at 0x2FEC08, whose module is the previous range (0x245370..): colour word
+// +0x5D0, curve +0x500, rebuild through 0x2458A8. "Fog" is inferred from that module (depth look-up + colour).
+StgFog_SetColor = 0x00245F58; // type:func // guess
+StgFog_GetCurve = 0x00245F80; // type:func // guess
+StgFog_RebuildClut = 0x00245F90; // type:func // guess
+
+// 3-key Hermite curve -> 256-entry table (Vec3_Hermite, clamp 0..255, /255). Called by the fog (0x2458A8,
+// 0x106350) and by StgHaze_BuildClut.
+StgCurve_AddSegment = 0x00245FB8; // type:func
+StgCurve_Build = 0x00246188; // type:func
+
+// Depth haze. gStgHaze = two views of 0x1580 bytes. The draw uploads a 256-entry CLUT whose alpha comes from
+// the curve, draws the depth buffer through it into the frame's alpha (0x106D60), copies the frame to a work
+// buffer and redraws it as triangle strips with jittered vertices, blended by destination alpha (ALPHA 0x54).
+// Drawn only when BtlStage_HasFeature(9). "Haze" (heat shimmer) is the reading of that technique.
+StgHaze_BeginDraw = 0x002463B0; // type:func
+StgHaze_EndDraw = 0x00246780; // type:func
+StgHaze_PutStripTag = 0x00246798; // type:func
+StgHaze_EndStrip = 0x00246820; // type:func
+StgHaze_PutVertex = 0x00246828; // type:func
+StgHaze_Create = 0x00246870; // type:func
+StgHaze_BuildClut = 0x00246888; // type:func
+StgHaze_Init = 0x00246970; // type:func
+StgHaze_Term = 0x002469F8; // type:func
+StgHaze_Reset = 0x00246A28; // type:func
+StgHaze_UpdateClut = 0x00246A88; // type:func
+StgHaze_Step = 0x00246B20; // type:func
+StgHaze_Draw = 0x00246CD0; // type:func
+StgHaze_DrawView = 0x00246FB8; // type:func
+StgHaze_DrawAll = 0x00247040; // type:func
+StgHaze_SetParams = 0x00247108; // type:func
+StgHaze_SetGrid = 0x002472D8; // type:func
+StgHaze_SetAmplitude = 0x00247300; // type:func
+StgHaze_SetColor = 0x00247328; // type:func
+StgHaze_SetSpeed = 0x00247358; // type:func
+StgHaze_GetCurve = 0x00247380; // type:func
+StgHaze_RebuildClut = 0x00247398; // type:func
+
+// Group manager: called by battle.c (Battle_Init/Term/Reset and the two draw functions) and battle_load.c.
+// The pass names say where each call sits in Battle_Draw.
+StgFx_SetDisabled = 0x002473C8; // type:func
+StgFx_Reset = 0x002473D8; // type:func
+StgFx_Init = 0x00247468; // type:func
+StgFx_Term = 0x00247500; // type:func
+StgFx_DrawPre = 0x00247578; // type:func
+StgFx_DrawNop = 0x00247660; // type:func
+StgFx_DrawPost = 0x00247688; // type:func
+StgFx_DrawOverlay = 0x002476D8; // type:func
+StgFx_DrawPreNoCheck = 0x00247720; // type:func // guess
+
+// Four colour layers of 0x60 bytes (same layout as sys/fade.h's Fade) drawn with the blended full-screen
+// rectangle 0x107508. StgTint_Start(0, 0 / 1, 0.2) is what BtlFx_UpdateStageFx calls for fighter request 0x12.
+StgTint_CalcColor = 0x00247778; // type:func
+StgTint_Reset = 0x002477D0; // type:func
+StgTint_Init = 0x00247828; // type:func
+StgTint_Update = 0x00247850; // type:func
+StgTint_Release = 0x00247910; // type:func
+StgTint_DrawBack = 0x00247978; // type:func
+StgTint_Nop = 0x00247A60; // type:func
+StgTint_DrawFront = 0x00247A68; // type:func
+StgTint_Start = 0x00247AF8; // type:func
+StgTint_GetColor0 = 0x00247D30; // type:func
+StgTint_GetWork = 0x00247D60; // type:func
+StgTint_IsOn = 0x00247D70; // type:func
+
+// Radial blur. gStgBlur = two views of 0x50 bytes. The setters are called by effect modules and by
+// BtlFx_UpdateScreenFilter; StgBlur_Draw (INCLUDE_ASM) is described in the C file.
+StgBlur_BeginDraw = 0x00247D98; // type:func
+StgBlur_EndDraw = 0x00247F50; // type:func
+StgBlur_PutStripTag = 0x00247F68; // type:func
+StgBlur_Nop = 0x00247FE0; // type:func
+StgBlur_Init = 0x00247FE8; // type:func
+StgBlur_Term = 0x00248028; // type:func
+StgBlur_Reset = 0x00248058; // type:func
+StgBlur_Draw = 0x00248160; // type:func
+StgBlur_DrawAll = 0x00248BE8; // type:func
+StgBlur_SetPasses = 0x00248D20; // type:func
+StgBlur_SetScale = 0x00248D40; // type:func
+StgBlur_SetCenter = 0x00248D78; // type:func
+StgBlur_SetColor0Rgba = 0x00248DC8; // type:func
+StgBlur_SetColor0 = 0x00248E00; // type:func
+StgBlur_SetColor1Rgba = 0x00248E20; // type:func
+StgBlur_SetColor1 = 0x00248E58; // type:func
+StgBlur_SetColor2Rgba = 0x00248E78; // type:func
+StgBlur_SetColor2 = 0x00248EB0; // type:func
+StgBlur_SetColor3Rgba = 0x00248ED0; // type:func
+StgBlur_SetColor3 = 0x00248F08; // type:func
+
+// Data. Pointers set by the Init functions; gStgTint / gStgTintColor0 are static blocks in .bss.
+gStgHaze = 0x002FEC20; // size:0x4
+gStgBlur = 0x002FEC28; // size:0x4
+gStgFx = 0x002FF208; // size:0x4
+gStgTint = 0x0031C4A0; // size:0x190
+gStgTintColor0 = 0x0031C630; // size:0x10

@@ -1,0 +1,1 @@
+#define __IEEE_LITTLE_ENDIAN

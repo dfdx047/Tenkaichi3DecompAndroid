@@ -1,0 +1,31 @@
+// Menu overlay DBZP.BIN, 0x351C38..0x356090.
+// ItemPanel: the equipped-item panel of one side of a character select (work area gItemPanel[side], 0x6C8 bytes).
+// Names from what the code does; the movie calls it "evo" (fl_evo_in / fl_evo_cansel).
+ItemPanel_ClipGoto = 0x00351C38; // type:func // guess
+ItemPanel_Init = 0x00351CF8; // type:func // guess
+ItemPanel_Term = 0x00352158; // type:func // guess
+ItemPanel_Draw = 0x003521A8; // type:func // guess
+ItemPanel_Update = 0x003527F8; // type:func // guess
+ItemPanel_Input = 0x003528C8; // type:func // guess
+ItemPanel_SetChara = 0x00352A98; // type:func // guess
+ItemPanel_Show = 0x00352BB8; // type:func // guess
+ItemPanel_Hide = 0x00352C60; // type:func // guess
+gItemPanel = 0x003B38E0; // size:0x8
+// Duel_Main: the handler of progress modes 38..41 in Progress_Main's table (main-menu item 3). "Duel" from
+// the screen's content (1P / 2P / COM choice, battle type, DP limit, battle settings): guess.
+Duel_Main = 0x00352CB8; // type:func // guess
+// Mode 41's screen: an empty function returning 1.
+Duel_Mode41 = 0x00352EB8; // type:func // guess
+// DuelMenu: the screen of mode 38 (work area gDuelMenu, 0x194 bytes). Its Run (0x356090) is in the next chunk.
+DuelMenu_Idle = 0x00352EC0; // type:func // guess
+DuelMenu_ShowValues = 0x00352F38; // type:func // guess
+DuelMenu_SetupValue = 0x00353518; // type:func // guess
+DuelMenu_Init = 0x003536D0; // type:func // guess
+DuelMenu_Term = 0x00353FA8; // type:func // guess
+DuelMenu_Draw = 0x00354028; // type:func // guess
+DuelMenu_ClipGoto = 0x003549F8; // type:func // guess
+DuelMenu_Update = 0x00354CD8; // type:func // guess
+DuelMenu_Input = 0x00354DB8; // type:func // guess
+DuelMenu_UpdateStart = 0x00355D70; // type:func // guess
+DuelMenu_UpdateReset = 0x00355F00; // type:func // guess
+// gDuelMenu (0x003B38E8, size 4) is this screen's work pointer; the name is defined in menu_h.txt (DuelMenu_Run's chunk).

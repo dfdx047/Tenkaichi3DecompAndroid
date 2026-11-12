@@ -1,0 +1,175 @@
+// Fighter interface, second part: src/battle/btl_capi_b.c = 0x208430..0x20BA80 (136 functions, all matching). It
+// continues btl_char_api.c. The 19 BtlCtrl_* names at 0x20A050..0x20B110 are in this range but are defined in
+// btl_scene.txt (not repeated here); better names for them are proposed in the agent's report.
+//
+// --- keyed by battle object id (BtlChar_FindByObjId); callers are the AI (0x1B8xxx..0x1BFxxx) unless noted ---
+// 0x208430: object byte +0xCAD == ~(+0xCAC). 0x208480: action id. 0x2084B8: fighter +0xDE0, compared below with the
+// character's blast limit. 0x2084E0 / 0x208588: min(limit - +0xDE0, class limit - live blasts of class 0 / 1), from
+// BtlMove_CanFireBlast and BtlParam_GetCount80 / GetUnk82. 0x208550: limit > 0. 0x2085F8: fighter flag 0x66.
+BtlCharApi_IsUnkCACPaired = 0x00208430; // type:func // guess
+BtlCharApi_GetAction = 0x00208480; // type:func
+BtlCharApi_GetBlastShots = 0x002084B8; // type:func // guess
+BtlCharApi_GetBlastRoom = 0x002084E0; // type:func // guess
+BtlCharApi_HasBlastLimit = 0x00208550; // type:func // guess
+BtlCharApi_GetBlastRoomB = 0x00208588; // type:func // guess
+BtlCharApi_TestFlag66 = 0x002085F8; // type:func
+// Blast list (func_0012E0A0). 0x208638(objId, rec, mode): 1 = the record is no threat (own, wrong type, ignored or
+// already marked). 0x2086C0(objId, mode): index of the first blast flying at the fighter within reach (mode 1: a
+// class 0..2 instead), -1 none. 0x2088D8: any foreign blast not moving away (no caller). 0x208A28: marks the blast
+// 0x2086C0 finds (record +0x180 = 1).
+BtlCharApi_SkipBlastRec = 0x00208638; // type:func
+BtlCharApi_FindIncomingBlast = 0x002086C0; // type:func
+BtlCharApi_IsBlastPassing = 0x002088D8; // type:func // guess
+BtlCharApi_MarkIncomingBlast = 0x00208A28; // type:func
+// 0x208A90: progress of the technique in use (fighter +0x1294 if >= 0, else (frame - object +0xC78) / +0xC80), -1.
+// 0x208B58 / 0x208B98: battle object +0x92C / +0x930 = the technique table and the move table (field tables in
+// include/battle/btl_capi_b.h). 0x208BD8: BtlAtk_GetFlags while BtlAtk_GetId < 0xA3.
+BtlCharApi_GetTechniqueProgress = 0x00208A90; // type:func // guess
+BtlCharApi_GetSkillTable = 0x00208B58; // type:func
+BtlCharApi_GetMoveTable = 0x00208B98; // type:func
+BtlCharApi_GetAttackAttr = 0x00208BD8; // type:func // guess
+// Gauge block of the active member: +0 health, +4 its maximum, +0xC ki, +0x14 blast stock, +0x18 its maximum, +0x1C
+// the powered-up mode's timer. 0x208D80: fighter +0x99C, the switch gauge (BtlCtrl_ChangeMember fills it with 100000).
+// 0x208DA8: BtlMove_IsBlockedByOpponent. 0x208DE0: bit 0x80 of parameter word +0.
+BtlCharApi_GetHp = 0x00208C30; // type:func
+BtlCharApi_GetHpMax = 0x00208C68; // type:func
+BtlCharApi_GetKi = 0x00208CA0; // type:func
+BtlCharApi_GetBlast = 0x00208CD8; // type:func
+BtlCharApi_GetBlastMax = 0x00208D10; // type:func
+BtlCharApi_GetMaxPower = 0x00208D48; // type:func // guess
+BtlCharApi_GetSwitchGauge = 0x00208D80; // type:func // guess
+BtlCharApi_IsBlockedByOpponent = 0x00208DA8; // type:func // guess
+BtlCharApi_HasParamBit80 = 0x00208DE0; // type:func
+// Form changes. 0x208E18: BtlAct_CanTransform(parameter byte +0xAC, 1, 1). 0x208E78: BtlAct_CanFuse for any of the
+// three slots. 0x208EF0: BtlAct_CanSwitch(1, 1). 0x208F30 / 0x208F68: active member +0x38 / +0x3C (cpuLevel / aiType,
+// names from btl_char_mgr). 0x208FA0: fighter +0x1070 != -30. 0x208FD8: cost of the +0xAC transformation.
+// 0x209048 / 0x209170: random pick of an affordable fusion / transformation slot (Rand_Range; no caller).
+// 0x209328: action 0xEC..0xF2.
+BtlCharApi_CanTransform = 0x00208E18; // type:func // guess
+BtlCharApi_CanFuse = 0x00208E78; // type:func // guess
+BtlCharApi_CanSwitch = 0x00208EF0; // type:func // guess
+BtlCharApi_GetCpuLevel = 0x00208F30; // type:func
+BtlCharApi_GetAiType = 0x00208F68; // type:func
+BtlCharApi_IsUnk1070Set = 0x00208FA0; // type:func
+BtlCharApi_GetTransformCost = 0x00208FD8; // type:func // guess
+BtlCharApi_PickFusionSlot = 0x00209048; // type:func // guess
+BtlCharApi_PickTransformSlot = 0x00209170; // type:func // guess
+BtlCharApi_IsChangingForm = 0x00209328; // type:func
+// Parameter block words +0x14, +0x10, +0x18; member count, active member, switch target; a member's health / ki as
+// a percentage (at least 1 while not empty; no caller).
+BtlCharApi_GetParamUnk14 = 0x00209378; // type:func
+BtlCharApi_GetParamFlags = 0x002093B0; // type:func
+BtlCharApi_GetParamUnk18 = 0x002093E8; // type:func
+BtlCharApi_GetMemberCount = 0x00209420; // type:func
+BtlCharApi_GetActiveMember = 0x00209448; // type:func
+BtlCharApi_GetSwitchTarget = 0x00209480; // type:func // guess
+BtlCharApi_GetMemberHpPercent = 0x002094B8; // type:func
+BtlCharApi_GetMemberKiPercent = 0x00209550; // type:func
+// The opponent's technique (opponent in an action BtlAct_IsTechniqueId accepts, class = BtlAct_GetCurrentClass):
+// 0x2095E8 kind byte (technique table +0x163 + class), 0x209670 bit 4 of its flag word, 0x2096E8 flag bit 1, or bit 2
+// with own +0xE44 > 0.9, or byte +0x13C == 1; 0x2097C0 the class. 0x209838: move table kind byte (+0x9E + class)
+// while the opponent is in action 0xFD..0x102.
+BtlCharApi_GetOppSkillKind = 0x002095E8; // type:func
+BtlCharApi_IsOppSkillFlag4 = 0x00209670; // type:func
+BtlCharApi_TestOppSkillFlags = 0x002096E8; // type:func // guess
+BtlCharApi_GetOppSkillClass = 0x002097C0; // type:func
+BtlCharApi_GetOppMoveKind = 0x00209838; // type:func
+// 0x2098C0 / 0x2098E8: fighter +0xE50 / +0xE4C (clash counters, names from btl_char_flag). 0x209910(objId, slot):
+// move slot's effect is running (+0xE0C == slot with +0xE00 or +0xE04 > 0, or +0xE38[slot != 0]). 0x209978: bit 0x100
+// of the move's flag word. 0x2099C0: fighter +0xFE0 (stun countdown). 0x2099E8: button bits the open prompt (+0x1594
+// >= 2) wants. 0x209AC0: +0x1290 in story mode. 0x209B08: +0x106C < -29. 0x209B38: see the source. 0x209CA8:
+// parameter byte +2. 0x209CE0: +0xE44. 0x209D08: +0xD74 - +0xD70 or -1. 0x209D48: animation flags 0x2800 without
+// 0x8000. 0x209D98: top bit of fighter byte +0xE0. 0x209DF8 / 0x209E38: flags 0x98 / 0xBE. 0x209E78: +0xE40.
+// 0x209EA0: parameter byte +0x8F + n.
+BtlCharApi_GetClashCountB = 0x002098C0; // type:func
+BtlCharApi_GetClashCountA = 0x002098E8; // type:func
+BtlCharApi_IsMoveSlotActive = 0x00209910; // type:func // guess
+BtlCharApi_IsMoveFlag100 = 0x00209978; // type:func
+BtlCharApi_GetStunTimer = 0x002099C0; // type:func // guess
+BtlCharApi_GetPromptButtons = 0x002099E8; // type:func // guess
+BtlCharApi_GetUnk1290 = 0x00209AC0; // type:func
+BtlCharApi_IsUnk106CLow = 0x00209B08; // type:func
+BtlCharApi_GetArmorBreakLevel = 0x00209B38; // type:func // guess
+BtlCharApi_GetParamByte2 = 0x00209CA8; // type:func
+BtlCharApi_GetUnkE44B = 0x00209CE0; // type:func
+BtlCharApi_GetUnkD74Diff = 0x00209D08; // type:func
+BtlCharApi_IsAnimFlag2800 = 0x00209D48; // type:func
+BtlCharApi_TestPoseBit80 = 0x00209D98; // type:func
+BtlCharApi_TestFlag98 = 0x00209DF8; // type:func
+BtlCharApi_TestFlagBE = 0x00209E38; // type:func
+BtlCharApi_GetUnkE40 = 0x00209E78; // type:func
+BtlCharApi_GetParamByte8F = 0x00209EA0; // type:func
+// --- keyed by player index (BtlChar_Get) ---
+// Sequence poses (callers: btl_seq.c): one-frame flags 0xEF / 0xF0 / 0xF1 / 0xF2 force actions 1 (entrance), its end,
+// 2 (win) and 3 (lose); 0x209FC8: animation 0x181 / 0x183, or 0x184 with flag 0x31.
+BtlCtrl_StartEntrance = 0x00209EE8; // type:func
+BtlCtrl_EndEntrance = 0x00209F20; // type:func
+BtlCtrl_StartWinPose = 0x00209F58; // type:func
+BtlCtrl_StartLosePose = 0x00209F90; // type:func
+BtlCtrl_IsPoseReached = 0x00209FC8; // type:func
+// Battle event script (callers: btl_facade.c). 0x20A128 / 0x20A1E0: copy the pose's position / rotation (no caller).
+// 0x20A338 / 0x20A390: held flags 0xFE / 0xFF, which make action 4 set effect request 0x13 / 0x14 (aura full / off).
+// 0x20A3E8 / 0x20A438: flags 0x101 / 0x102 (effect requests 7 / 7+8: charge effect and its burst). 0x20A470 /
+// 0x20A4A8: flag 0x100 (action 4 raises flag 0x30: object flag bit 2 cleared). 0x20A4E0 / 0x20A530: flags 0x103 + n /
+// 0x108 + n, on which btl_char_mgr re-reads member n's bonus levels / ability words. 0x20A580 / 0x20A5B8: flag 0x10D
+// (no reader found).
+BtlCtrl_GetPos = 0x0020A128; // type:func
+BtlCtrl_GetRot = 0x0020A1E0; // type:func
+BtlCtrl_SetAuraOn = 0x0020A338; // type:func // guess
+BtlCtrl_SetAuraOff = 0x0020A390; // type:func // guess
+BtlCtrl_SetChargeFx = 0x0020A3E8; // type:func // guess
+BtlCtrl_BurstChargeFx = 0x0020A438; // type:func // guess
+BtlCtrl_ClearHidden = 0x0020A470; // type:func // guess
+BtlCtrl_SetHidden = 0x0020A4A8; // type:func // guess
+BtlCtrl_ReloadMemberBonus = 0x0020A4E0; // type:func // guess
+BtlCtrl_ReloadMemberAbilities = 0x0020A530; // type:func // guess
+BtlCtrl_SetFlag10D = 0x0020A580; // type:func
+BtlCtrl_ClearFlag10D = 0x0020A5B8; // type:func
+// Gauges of a member: add / raise to at least / lower to at most, ki in units of 20000 and blast stock in units of
+// 100000 (BtlMember_AddKi / DrainKi / AddBlast / SubBlast for the active member).
+BtlCtrl_AddKi = 0x0020A7E0; // type:func
+BtlCtrl_RaiseKi = 0x0020A890; // type:func
+BtlCtrl_LowerKi = 0x0020A8F8; // type:func
+BtlCtrl_AddBlast = 0x0020A960; // type:func
+BtlCtrl_RaiseBlast = 0x0020AA18; // type:func
+BtlCtrl_LowerBlast = 0x0020AA80; // type:func
+// The character-change request being served (roster +0x258, state +0x264), for the loader (battle_load.c):
+// pending of type 0 / 1 for a player with state 1; its seven words; BtlChange_SetTaken / SetLoaded; state 4 and not
+// paused. 0x20B3C0: BtlPartner_Attach on the player's fighter.
+BtlChange_IsPendingType0 = 0x0020B200; // type:func
+BtlChange_IsPendingType1 = 0x0020B248; // type:func
+BtlChange_GetArgs = 0x0020B290; // type:func
+BtlChange_NotifyTaken = 0x0020B338; // type:func
+BtlChange_NotifyLoaded = 0x0020B350; // type:func
+BtlChange_IsReady = 0x0020B368; // type:func
+BtlCtrl_AttachPartner = 0x0020B3C0; // type:func
+// 0x20B418(chr, bit): icon number of a bit of the button word (4..7 -> 0x10..0x13, else from the key table at
+// fighter +0x578); callers BtlCtrl_GetSwitchPrompt / BtlCtrl_GetChangePrompt.
+BtlCharApi_GetButtonIcon = 0x0020B418; // type:func // guess
+// --- keyed by side (BtlChar_FindBySide); callers: the HUD update 0x218D88, 0x21D000, 0x21E0E0, and the AI ---
+// Active member's health, ki, blast stock and maximum, powered-up timer; switch gauge; active member; switch target
+// (and its health / maximum) with two or more alive; living members; parameter word +0x2C; flags 6 and 0xBE.
+BtlSide_GetHp = 0x0020B4A8; // type:func
+BtlSide_GetKi = 0x0020B4E0; // type:func
+BtlSide_GetBlast = 0x0020B518; // type:func
+BtlSide_GetBlastMax = 0x0020B550; // type:func
+BtlSide_GetMaxPower = 0x0020B588; // type:func // guess
+BtlSide_GetSwitchGauge = 0x0020B5C0; // type:func // guess
+BtlSide_GetActiveMember = 0x0020B5E8; // type:func
+BtlSide_GetSwitchTarget = 0x0020B628; // type:func // guess
+BtlSide_CountAlive = 0x0020B688; // type:func
+BtlSide_GetSwitchTargetHp = 0x0020B6C8; // type:func // guess
+BtlSide_GetSwitchTargetHpMax = 0x0020B728; // type:func // guess
+BtlSide_GetParamUnk2C = 0x0020B788; // type:func
+BtlSide_IsPoweredUp = 0x0020B7C0; // type:func // guess
+BtlSide_TestFlagBE = 0x0020B800; // type:func
+// By player index again (callers btl_script.c, btl_seq.c): active member down; whole team down; flag 7.
+BtlCtrl_IsActiveDead = 0x0020B840; // type:func
+BtlCtrl_IsTeamDead = 0x0020B878; // type:func
+BtlCtrl_TestFlag7 = 0x0020B8F0; // type:func
+// Combo counters of the side's opponent (fighter +0xD40 BtlMemberCombo): hits, damage (-1 with flag 0xED), display
+// timer running, new hit this frame (0 while frozen or loading). Caller: the HUD update 0x218D88.
+BtlSide_GetComboHits = 0x0020B930; // type:func // guess
+BtlSide_GetComboDamage = 0x0020B970; // type:func // guess
+BtlSide_IsComboShown = 0x0020B9D0; // type:func // guess
+BtlSide_IsComboHitNew = 0x0020BA10; // type:func // guess

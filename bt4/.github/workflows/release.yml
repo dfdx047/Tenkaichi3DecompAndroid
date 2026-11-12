@@ -1,0 +1,135 @@
+name: BT4 release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bt4-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    outputs:
+      title: ${{ steps.version.outputs.title }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the release identity
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+          source = pathlib.Path('port/include/bt4_version.h').read_text()
+          def value(name):
+              return re.search(r'^#define ' + name + r' "([^"]+)"$', source, re.M)[1]
+          canonical = value('BT4_CANONICAL_VERSION')
+          release_title = value('BT4_RELEASE_TITLE')
+          bridge = value('BT4_LEGACY_BRIDGE_VERSION')
+          revision = int(re.search(r'^#define BT4_REVISION (\d+)$', source, re.M)[1])
+          patch_match = re.search(r'^#define BT4_REVISION_PATCH (\d+)$', source, re.M)
+          revision_patch = int(patch_match[1]) if patch_match else 0
+          upstream = value('BT4_UPSTREAM_VERSION')
+          suffix = str(revision) + ('.' + str(revision_patch) if revision_patch else '')
+          assert canonical == upstream + '-R' + suffix, 'Canonical revision is inconsistent'
+          assert value('BT4_DISPLAY_VERSION') == release_title, 'Display version and release title disagree'
+          tag = os.environ['RELEASE_TAG'].removeprefix('v')
+          assert tag == canonical or (revision == 2 and revision_patch == 0 and tag == bridge), 'Tag and BT4 revision disagree'
+          title = release_title
+          marker = pathlib.Path('port/release/BT4_VERSION.txt').read_text().splitlines()[0]
+          assert marker.endswith(title), 'Package marker and BT4 version disagree'
+          notes = pathlib.Path('CHANGELOG.md').read_text().split('\n# ', 1)[0]
+          for locale in ('en', 'es', 'pt'):
+              assert '<!-- bt4-update:' + locale + '\n' in notes, 'Missing localized updater notes: ' + locale
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('title=BT4decomp ' + title + '\n')
+          PY
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: port/release
+          tags: bt4-port-release:jammy
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build the Windows package
+        env:
+          BT3_BUILD_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.BT3_BUILD_KEY || '' }}
+          BT3_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
+        run: |
+          mkdir -p port/build
+          docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e BT3_BUILD_KEY -e BT3_VERSION -v "$PWD":/src -w /src \
+            bt4-port-release:jammy sh port/release/inside.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DBZ-BT4-Tag-Team-Decomp-windows-x64
+          path: port/build/BT4decomp-windows-x64.zip
+          if-no-files-found: error
+
+  native:
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/native-platforms.yml
+    with:
+      version: ${{ github.ref_name }}
+      platform: all
+    secrets: inherit
+
+  prepare-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, native]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: DBZ-BT4-Tag-Team-Decomp-windows-x64
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: BT4decomp-linux-x64
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        with:
+          name: BT4decomp-macos-arm64
+          path: release-assets
+      - name: Sign and verify every automatic update package
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          if [ -z "$UPDATE_SIGNING_KEY" ]; then
+            echo "UPDATE_SIGNING_KEY is required before publishing an automatic update." >&2
+            exit 1
+          fi
+          for platform in windows-x64 linux-x64 macos-arm64; do
+            archive="release-assets/BT4decomp-${platform}.zip"
+            test -s "$archive"
+            python3 port/tools/update_key.py sign "$archive"
+            python3 port/tools/update_key.py verify "$archive"
+          done
+      - name: Prepare the complete signed draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TITLE: ${{ needs.build.outputs.title }}
+        run: |
+          python3 - <<'PY'
+          import os, pathlib
+          section = pathlib.Path('CHANGELOG.md').read_text().split('\n# ', 1)[0]
+          heading, body = section.split('\n', 1)
+          assert 'BT4decomp ' + heading.removeprefix('# ') == os.environ['RELEASE_TITLE'], 'Changelog and release title disagree'
+          pathlib.Path('release-assets/notes.md').write_text(body.strip() + '\n')
+          PY
+          python3 port/tools/release_draft.py --assets release-assets             --notes release-assets/notes.md --title "$RELEASE_TITLE"             --tag "$GITHUB_REF_NAME" --commit "$GITHUB_SHA"
+          echo "Signed packages are ready in a draft. Publish explicitly after gameplay validation." >> "$GITHUB_STEP_SUMMARY"

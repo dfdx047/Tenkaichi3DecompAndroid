@@ -1,0 +1,126 @@
+// --- CRI ADX file system, adx_fs.c of "ADXT/PS2EE Ver.9.71 Build:Dec 13 2005" (0x269228-0x26C050) -----------
+// THIRD-PARTY LIBRARY CODE (CRI Middleware), not decompiled. Evidence: the error strings at 0x2F36F8-0x2F3E58
+// carry the function names in brackets ("(adxf_ChkPrmPt)", "(load partition)", "(adxf_CreateAdxFs)" ...), the
+// version string follows at 0x2F3E58, and every public entry is the CRI pattern
+// `ADXCRS_Lock(); r = adxf_Xxx(args); ADXCRS_Unlock(); return r;`.
+// Upper-case names are the locked public entries, lower-case the workers. Names without `guess` are fixed by
+// an error string or by an existing name of the other half of the pair; `guess` names follow the CRI headers.
+// Already named elsewhere (config/symbol_addrs.txt, config/symbols/sys_file.txt), listed here for the map only:
+//   0x269308 adxf_ChkPrmPt        0x2694C0 ADXF_LoadPartitionNw  0x269EE0 ADXF_GetPtStat   0x269F68 adxf_GetPtStatEx
+//   0x26A438 adxf_CreateAdxFs     0x26A4D0 adxf_SetFileInfoEx    0x26A580 ADXF_Open        0x26A8E8 ADXF_OpenAfs
+//   0x26AA40 ADXF_Close           0x26AD08 adxf_ReadSj32         0x26AE60 adxf_ReadNw32    0x26B000 ADXF_ReadNw
+//   0x26B058 adxf_ReadNw          0x26B098 ADXF_Stop             0x26B0D0 adxf_Stop        0x26B1F8 adxf_StopNw
+//   0x26B468 adxf_Seek            0x26B5B8 adxf_Tell (the worker) 0x26B5E8 ADXF_GetFsizeSct 0x26B620 adxf_GetFsizeSct
+//   0x26B6D0 adxf_GetFsizeByte    0x26B790 adxf_GetFsizeByte64   0x26B810 adxf_GetNumReqSct 0x26B898 adxf_GetNumReadSct
+//   0x26B8C8 ADXF_GetStat         0x26B900 adxf_GetStat          0x26BE70 adxf_SetReqRdSct (the worker)
+// 0x269228(cmd, phase, p1, p2, p3): ring of 16 command records at 0x2E6248 + per-command call counters at 0x2E6348.
+adxf_SetCmdHstry = 0x00269228; // type:func
+// 0x2692D8: busy loop of 50000 iterations, used while polling a blocking partition load.
+adxf_wait_1ms = 0x002692D8; // type:func
+// blocking load: starts adxf_LoadPartitionNw, then ADXM_ExecMain + adxf_wait_1ms until the status is 3 (ok) or 4 (error).
+ADXF_LoadPartition = 0x00269350; // type:func // guess
+adxf_LoadPartition = 0x002693B8; // type:func // guess
+ADXF_LoadPartitionEx = 0x002693D8; // type:func // guess
+adxf_LoadPartitionEx = 0x00269440; // type:func // guess
+// workers of the Nw loaders: each adds the library's own 0x800-byte, 64-byte-aligned scratch buffer and calls
+// the matching ...NwEx worker; every ...NwEx worker ends in adxf_LoadPtBothNw.
+adxf_LoadPartitionNw = 0x00269528; // type:func
+ADXF_LoadPartitionRangeNw = 0x00269550; // type:func // guess
+adxf_LoadPartitionRangeNw = 0x002695D8; // type:func // guess
+adxf_LoadPtRangeNwEx = 0x00269600; // type:func // guess
+ADXF_LoadPartitionFromAfsNw = 0x00269658; // type:func // guess
+adxf_LoadPartitionFromAfsNw = 0x002696C0; // type:func // guess
+ADXF_LoadPartitionFmgLongNw = 0x002696E8; // type:func // guess
+adxf_LoadPartitionFmgLongNw = 0x00269750; // type:func // guess
+ADXF_LoadPartitionFromAfsFmgLongNw = 0x00269778; // type:func // guess
+adxf_LoadPartitionFromAfsFmgLongNw = 0x002697E0; // type:func // guess
+ADXF_LoadPtNwEx = 0x00269808; // type:func // guess
+adxf_LoadPtNwEx = 0x00269890; // type:func // guess
+ADXF_LoadPtFromAfsNwEx = 0x002698E0; // type:func // guess
+adxf_LoadPtFromAfsNwEx = 0x00269968; // type:func // guess
+ADXF_LoadPtFmgLongNwEx = 0x002699A8; // type:func // guess
+adxf_LoadPtFmgLongNwEx = 0x00269A30; // type:func // guess
+ADXF_LoadPtFromAfsFmgLongNwEx = 0x00269A80; // type:func // guess
+adxf_LoadPtFromAfsFmgLongNwEx = 0x00269B08; // type:func // guess
+// 0x269B48: the one real loader, 11 arguments; strings "(load partition)", opens the AFS and starts adxf_ReadNw.
+adxf_LoadPtBothNw = 0x00269B48; // type:func // guess
+// 0x269DF8: closes the loader's ADXF handle and clears its state words.
+adxf_CloseLdptnwHn = 0x00269DF8; // type:func // guess
+ADXF_StopPtLd = 0x00269E38; // type:func // guess
+adxf_StopPtLd = 0x00269E60; // type:func // guess
+// 0x269F18 is the worker of ADXF_GetPtStat (0x269EE0): a bare tail call to 0x269F68. 0x269F30 is a second locked
+// entry that calls 0x269F68 directly, so 0x269F68 is the worker of that pair (adxf_GetPtStatEx in config/symbol_addrs.txt;
+// its error strings say "(adxf_GetPtStat)", which is the name it had before the pairs were sorted out).
+adxf_GetPtStat = 0x00269F18; // type:func // guess
+ADXF_GetPtStatEx = 0x00269F30; // type:func // guess
+// partition info word +4 (size of the info block).
+ADXF_GetPtinfoSize = 0x0026A390; // type:func // guess
+adxf_GetPtinfoSize = 0x0026A3C8; // type:func // guess
+// first of the 16 handles (0x48 bytes each, at 0x2E59C0) whose `used` byte is 0.
+adxf_AllocAdxFs = 0x0026A3E0; // type:func // guess
+adxf_Open = 0x0026A5C8; // type:func
+// open by name + sector offset + sector count (used by the partition loader for a range of a file).
+adxf_SetFileInfoRange = 0x0026A668; // type:func // guess
+ADXF_OpenRange = 0x0026A6E8; // type:func // guess
+adxf_OpenRange = 0x0026A750; // type:func // guess
+adxf_SetAfsFileInfo = 0x0026A810; // type:func // guess
+adxf_OpenAfs = 0x0026A930; // type:func
+// destroys the handle's stream joint (and its ring buffer when the "ocbi" switch is 1).
+adxf_CloseSjStm = 0x0026A9D0; // type:func // guess
+adxf_Close = 0x0026AA70; // type:func
+ADXF_CloseAll = 0x0026AB28; // type:func // guess
+adxf_CloseAll = 0x0026AB50; // type:func // guess
+// common start of a read: seeks the stream, creates / attaches the stream joint, starts ADXSTM.
+adxf_read_sj32 = 0x0026ABB0; // type:func // guess
+ADXF_ReadSj32 = 0x0026ACB0; // type:func
+ADXF_ReadSj = 0x0026AD98; // type:func // guess
+adxf_ReadSj = 0x0026ADF0; // type:func // guess
+ADXF_ReadNw32 = 0x0026AE08; // type:func
+ADXF_StopNw = 0x0026B1C0; // type:func
+// per-handle server step: refreshes the status from the stream, counts sectors read, closes the joint when done.
+adxf_ExecOne = 0x0026B2C0; // type:func // guess
+ADXF_ExecServer = 0x0026B388; // type:func // guess
+adxf_ExecServer = 0x0026B3B0; // type:func // guess
+ADXF_Seek = 0x0026B410; // type:func
+// 0x26B580 is the locked public entry; its worker 0x26B5B8 is adxf_Tell in config/symbol_addrs.txt (it carried the
+// upper-case name until the dialog / ADXF naming pass).
+ADXF_Tell = 0x0026B580; // type:func
+ADXF_GetFsizeByte = 0x0026B698; // type:func
+ADXF_GetFsizeByte64 = 0x0026B758; // type:func
+ADXF_GetNumReqSct = 0x0026B7C8; // type:func
+ADXF_GetNumReadSct = 0x0026B860; // type:func
+// range checks of ptid / flid: "'ptid' is range outside." / "'flid' is range outside."
+adxf_ChkPrmGfr = 0x0026B930; // type:func // guess
+ADXF_GetFnameRange = 0x0026B9A8; // type:func // guess
+adxf_GetFnameRange = 0x0026BA20; // type:func // guess
+ADXF_GetFnameRangeEx = 0x0026BA50; // type:func // guess
+adxf_GetFnameRangeEx = 0x0026BAE0; // type:func // guess
+// partition info + 0x10: the AFS file name.
+ADXF_GetFnameFromPt = 0x0026BC70; // type:func // guess
+adxf_GetFnameFromPt = 0x0026BCA8; // type:func // guess
+// partition info word +8: number of files.
+ADXF_GetNumFiles = 0x0026BCC0; // type:func // guess
+adxf_GetNumFiles = 0x0026BCF8; // type:func // guess
+// (ptid, flid): calls adxf_GetFnameRangeEx and returns its last output word.
+ADXF_GetFileSize = 0x0026BD10; // type:func // guess
+adxf_GetFileSize = 0x0026BD58; // type:func // guess
+// (header): -4 unless it starts with "AFS", else the little-endian file count at +4.
+ADXF_GetNumFilesFromAfs = 0x0026BD88; // type:func // guess
+adxf_GetNumFilesFromAfs = 0x0026BDC0; // type:func // guess
+// stores the switch at 0x2E6240 that adxf_CloseSjStm / adxf_ReadNw32 test.
+ADXF_SetOcbiSw = 0x0026BE20; // type:func // guess
+// 0x26BE30 is the locked public entry; its worker 0x26BE70 is adxf_SetReqRdSct in config/symbol_addrs.txt (it carried
+// the upper-case name until the dialog / ADXF naming pass).
+ADXF_SetReqRdSct = 0x0026BE30; // type:func
+// forwards adxf->stm to the ADXSTM getter at 0x272180 (0 for a NULL handle or stream).
+ADXF_GetStatRead = 0x0026BEA8; // type:func // guess
+adxf_GetStatRead = 0x0026BEE0; // type:func // guess
+// three more forwards to ADXSTM getters (0x271C70, 0x271CC0, 0x271D10); what they return is not known.
+ADXF_StmGetA = 0x0026BF18; // type:func // guess
+adxf_StmGetA = 0x0026BF50; // type:func // guess
+ADXF_StmGetB = 0x0026BF88; // type:func // guess
+adxf_StmGetB = 0x0026BFC0; // type:func // guess
+ADXF_StmGetC = 0x0026BFD8; // type:func // guess
+adxf_StmGetC = 0x0026C010; // type:func // guess
+// (bytes): bytes / 2048 rounded up.
+adxf_ByteToSct = 0x0026C028; // type:func // guess

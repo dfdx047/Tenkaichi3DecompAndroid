@@ -1,0 +1,74 @@
+// Battle HUD, 0x222400-0x226488 (src/battle/hud_c.c, hud_c_b.c, hud_c_c.c).
+
+// --- Tail of the gauge part (hud_c.c; continues hud_b.c). Called by Hud_Term / Hud_Reset.
+// Frees the gauge sprites, each node's sprite and child lists, the nodes and the work.
+HudGauge_Term = 0x00222400; // type:func
+// Round reset: zeroes the values, ramps and shakes of both sides.
+HudGauge_Reset = 0x002224C8; // type:func
+
+// --- Combo part (hud_c_b.c): the hit counter, the combo damage, an event message and a text line, per side.
+// Work, 0x18C bytes, allocated by HudCombo_Init.
+gHudCombo = 0x002FEB58; // size:0x4
+// Node update callbacks (registered by HudCombo_Init).
+HudCombo_UpdateRoot = 0x00222730; // type:func
+HudCombo_UpdateMessage = 0x002227F0; // type:func
+HudCombo_UpdateText = 0x00222B48; // type:func
+// Digits of the hit count (3) and of the damage (5, with the rolling last digit).
+HudCombo_SetHitDigits = 0x00222E58; // type:func
+HudCombo_SetDamageDigits = 0x002230F8; // type:func
+HudCombo_UpdateDamage = 0x00223510; // type:func
+HudCombo_UpdateHits = 0x00223888; // type:func
+// Node draw callbacks: all sprites of the node; the text line's screen position and alpha for HudCombo_DrawText.
+HudCombo_DrawSprites = 0x00223C40; // type:func
+HudCombo_StoreTextPos = 0x00223CB0; // type:func
+// Interface used by the HUD manager.
+HudCombo_SelectSide = 0x00223D88; // type:func
+// (side, 0..4): starts one of five event messages (Hud_PreUpdate: flags 0x71, 6, 5, 0xE3, 0x9C).
+HudCombo_SetMessage = 0x00223D98; // type:func // guess
+// (side, text): starts the text line; the value is BtlCtrl_GetFlagDEtoE2 and goes to BtlText_DrawEntryName.
+HudCombo_SetText = 0x00223DB8; // type:func // guess
+HudCombo_SetDamage = 0x00223DD8; // type:func
+HudCombo_SetHits = 0x00223FB8; // type:func
+HudCombo_SlideOut = 0x002240A0; // type:func
+HudCombo_SlideIn = 0x002240C8; // type:func
+// Draws both sides' text lines with the text module, after the node trees (Hud_Draw).
+HudCombo_DrawText = 0x002240F0; // type:func
+HudCombo_Init = 0x00224198; // type:func
+HudCombo_Term = 0x00224908; // type:func
+HudCombo_Reset = 0x002249D0; // type:func
+
+// --- Sprite library of the HUD (hud_c_c.c).
+// Call fn(0): the callers pass the GS mask state functions (HudGauge_GsBeginMask / HudGauge_GsEndMask).
+HudGfx_CallBegin = 0x00224B50; // type:func // guess
+HudGfx_CallEnd = 0x00224B70; // type:func // guess
+// Sprite setters.
+HudSprite_Show = 0x00224B90; // type:func
+HudSprite_SetMirror = 0x00224BB0; // type:func
+HudSprite_SetRect = 0x00224BD0; // type:func
+HudSprite_SetUv = 0x00224BE8; // type:func
+HudSprite_SetTex = 0x00224C00; // type:func
+HudSprite_SetColor = 0x00224C10; // type:func
+// Makes the sprite an untextured rectangle of one colour.
+HudSprite_InitPlain = 0x00224C28; // type:func
+HudSprite_Move = 0x00224CA0; // type:func
+HudSprite_MoveUv = 0x00224CD8; // type:func
+HudSprite_FlipU = 0x00224D10; // type:func
+HudSprite_FlipV = 0x00224D28; // type:func
+HudSprite_Scale = 0x00224D40; // type:func
+// Moves the rectangle so that its centre is the node's origin.
+HudSprite_Center = 0x00224DB8; // type:func
+// Makes the sprite show a whole texture of a sheet at its own size, neutral colour.
+HudSprite_InitTex = 0x00224E20; // type:func
+// Queues the upload of a texture's image and palette (once per frame, HudCTex.mark).
+HudRes_UploadTex = 0x00224F00; // type:func
+// Draw the sprite's rectangle with colour 0 and alpha 0 / 0xFF (the destination-alpha mask of the gauges).
+HudSprite_DrawAlphaClear = 0x002250C8; // type:func // guess
+HudSprite_DrawAlphaSet = 0x00225388; // type:func // guess
+// Full-screen rectangle of colour 0, alpha 0 with depth writes on, then depth writes off.
+HudGfx_ClearAlpha = 0x00225650; // type:func // guess
+// Queues the HUD's drawing state for both GS contexts.
+HudGfx_SetEnv = 0x00225790; // type:func
+// Draws a sprite with its textures uploaded to the given VRAM blocks.
+HudSprite_DrawAt = 0x00225A50; // type:func
+// Draws a sprite with one colour on the left corners and another on the right (no caller in the main executable?).
+HudSprite_DrawGradient = 0x00225F28; // type:func

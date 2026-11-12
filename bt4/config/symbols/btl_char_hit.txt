@@ -1,0 +1,54 @@
+// Fighter hit resolution: src/battle/btl_char_hit.c = 0x1C7B30..0x1CA520 (21 functions, all matching).
+// Evidence for what each function does is the matching C; the game-term names ("guard", "dodge", "throw", "rush",
+// "armor", "clash") are guesses from the flags and gauges involved, so every name carrying one is marked.
+// Call order per frame (from the collision step at 0x1CA520): BeginFrame per fighter, CheckClash, CheckRush,
+// CheckProximityAll, TestHit per fighter, ResolveTrades, ApplyHit per fighter.
+
+// (atk, def) -> 1 when |wrap(def model yaw + pose+0x64 - atk facing yaw)| < pi/2: both face the same way. Its users
+// (guard fails, throw cannot be broken, +20% damage) all fit "hit from behind".
+BtlHit_IsFromBehind = 0x001C7B30; // type:func // guess
+// (reaction 1..49) -> 0..4 through a 49-entry switch. Only caller passes the result to BtlChar_PlayVoice(defender).
+BtlHit_GetVoiceKind = 0x001C7BC0; // type:func // guess
+// (chr) -> obj+0xCAD while obj work+0x18020 & 0xF000000, else fighter+0xF48 with flag 0x65, else -1. Only caller
+// tests == 0 ("first hit").
+BtlHit_GetHitNo = 0x001C7C18; // type:func // guess
+// (atk, def, result 0..8): flags, effect bits, ki / blast changes, hit-stop, push, camera shake and vibration of a
+// guarded hit. Called 9 times, only by BtlHit_CheckGuard.
+BtlHit_ApplyGuard = 0x001C7C88; // type:func // guess
+// (a, b): a's flags 0x4A / 0x4B, node-3 distance below 5 / 2 body sizes (20..150) -> flag 0x65. Returns 0.
+BtlHit_CheckNear = 0x001C8050; // type:func // guess
+// (a, b): a's flags 0x4C / 0x4D, within 100 units, not from behind -> b's reaction block gets reaction 9 / 0xE.
+BtlHit_CheckGrab = 0x001C8188; // type:func // guess
+// Returns 1. No caller in the main executable or the overlay.
+BtlHit_Stub = 0x001C8358; // type:func
+// (a, b): a's flag 0x4F, bodies overlapping -> flag 0x65.
+BtlHit_CheckTouch = 0x001C8360; // type:func // guess
+// (atk, def) -> 1 when the attack cannot touch (atk flag 0xBA, def flag 0x42 / 0x43, attack 0x56 from behind).
+BtlHit_IsVoid = 0x001C84A8; // type:func // guess
+// (atk, def) -> 1 when the defender evades by itself (level +0x1068, counters +0xE00 / +0xE04, flags 0x56 / 0x57;
+// side step flags 0x74..0x77), or answers with flags 0x7D / 0x7E.
+BtlHit_CheckDodge = 0x001C8580; // type:func // guess
+// (atk, def) -> defender animation flag 0x200 and attack flag 2.
+BtlHit_CheckArmor = 0x001C89C0; // type:func // guess
+// (atk, def) -> defender flag 0x59 or 0x53: attacker gets flag 0x6F.
+BtlHit_CheckRepel = 0x001C8A10; // type:func // guess
+// (atk, def, &full) -> 1 when the hit is guarded: level counter, flag-0x40 guard, the timed guards of flag 0x41, or
+// the attack record's result for the defender's guard kind (BtlColl_GetGuardKind).
+BtlHit_CheckGuard = 0x001C8A78; // type:func // guess
+// (atk, def): attack 0x55 only -> 1 when it is refused or broken (flags 0x7A, 0x79).
+BtlHit_CheckThrowBreak = 0x001C8DB8; // type:func // guess
+// (chr): reaction id = 1; clears held flag 0x60 when obj+0xCAD changed; stores it at fighter+0xF44.
+BtlHit_BeginFrame = 0x001C8F18; // type:func
+// () -> 1 when two fighters with flags 0x47 / 0x48 touch (flags 0x61 / 0x62, hit-stop 6 / 2).
+BtlHit_CheckClash = 0x001C9010; // type:func // guess
+// () -> 1 when a fighter with flag 0x49 touches its opponent and BtlColl_StartThrow accepts; else sets the miss,
+// bounce, break, evade or guard flags.
+BtlHit_CheckRush = 0x001C9258; // type:func // guess
+// (): CheckNear, CheckGrab, CheckTouch for every ordered pair.
+BtlHit_CheckProximityAll = 0x001C9710; // type:func
+// (chr): the per-attacker test; sets held flag 0x60, and fighter+0xF40 = opponent when the hit goes through.
+BtlHit_TestHit = 0x001C97C0; // type:func
+// (): mutual hits; attack record byte +0x26 decides, equal values cancel both.
+BtlHit_ResolveTrades = 0x001C9988; // type:func // guess
+// (atk): applies the hit stored at fighter+0xF40: defender reaction block, BtlMember_Damage, gains.
+BtlHit_ApplyHit = 0x001C9B50; // type:func

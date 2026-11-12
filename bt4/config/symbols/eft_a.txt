@@ -1,0 +1,152 @@
+// Effect core, src/battle/eft_a.c = 0x12DD80..0x132290 (see include/battle/eft_a.h for the object model).
+
+// --- hit record list (gp 0x2FE9A8: 64 records of 0x190 bytes + count at 0x6400) ------------------
+// Init / Term: BtlPool_Alloc(0x6410) + memset, then the arena; called by BtlScene_Init / BtlScene_Term.
+EftHit_Init = 0x0012DD80; // type:func
+EftHit_Term = 0x0012DDC0; // type:func
+// GetNew: zeroes the free slot rec[count] (count wraps to 0 at 64), sets shape.scale = 1.0 and returns it without
+// counting it. Add(rec): fills objId / unk4 / level / type / unk54 / scale from rec->src (technique) or rec->atk
+// (blast), copies rec to rec[count] and counts it. The 12 projectile tasks call the two as a pair.
+EftHit_GetNew = 0x0012DE00; // type:func
+EftHit_Add = 0x0012DEA8; // type:func
+// BeginFrame: unless BtlScene_IsTimeStopped(), rewinds the arena and sets count = 0 (start of BtlScene_Update).
+// Clear: the same without the test (BtlScene_Reset(0)).
+EftHit_BeginFrame = 0x0012E040; // type:func
+EftHit_Clear = 0x0012E078; // type:func
+EftHit_GetList = 0x0012E0A0; // type:func
+// GetTaskFlags(i): rec[i].task->flags, 0 when out of range or no task. SetTaskFlag(i, bits, pos): ors bits into the
+// task's flags (0x1ADB30) and stores pos in the task (0x1ADB40); 16 calls, all from the hit detection 0x1AFDB0..0x1B10F0.
+EftHit_GetTaskFlags = 0x0012E0A8; // type:func
+EftHit_SetTaskFlag = 0x0012E0E8; // type:func
+// End of BtlScene_PostUpdate: for every record whose task was hit this frame (flags & 0x3F, not 0x20, not yet 0x200)
+// spawns the impact effect (SpawnBlastImpact / SpawnTechImpact) and sets task flag 0x200.
+EftHit_SpawnImpacts = 0x0012E160; // type:func
+// CanHit(rec, mode): whether the hit detection may still use the record; mode 0 / 1 / 2 are the three passes of
+// 0x1B0030 / 0x1B0910 / 0x1B10F0 (what each pass tests against is not in this file).
+EftHit_CanHit = 0x0012E258; // type:func // guess
+// 0 for a technique whose definition is class 0 kind 4, or class != 0 and kind 9 or 7; else 1. One caller (0x1B10F0).
+EftHit_IsStoppedByHit = 0x0012E3C0; // type:func // guess
+// Technique with task flag 0x4000 (multi-hit): clears task flag 0x200 so the next hit spawns an impact again. Returns 1.
+EftHit_RearmImpact = 0x0012E420; // type:func // guess
+// Clash of two records (0x1B0910): Clash returns 1 (b wins) / 2 (a wins) / 3 (draw) by level, a blast loses to a
+// technique; two techniques go through ClashTech, which returns 4 for a head-on beam struggle (and raises
+// 0x1584E8(0), (1)), 1 / 2 by geometry, or 3 when the definitions cannot clash.
+EftHit_ClashTech = 0x0012E458; // type:func // guess
+EftHit_Clash = 0x0012E648; // type:func // guess
+// Accessors of the owning task's flag 0x4000 and its two byte counters (+0xA, +0xB), and of the technique
+// definition's bytes +0xA (max hits), +0xB and flag 0x20.
+EftHit_IsMultiHit = 0x0012E718; // type:func // guess
+EftHit_IncHitCount = 0x0012E738; // type:func // guess
+EftHit_GetHitCount = 0x0012E750; // type:func // guess
+EftHit_GetMaxHits = 0x0012E768; // type:func // guess
+EftHit_GetDefUnkB = 0x0012E798; // type:func // guess
+EftHit_IncCountA = 0x0012E7C8; // type:func // guess
+EftHit_SetCountA = 0x0012E7E8; // type:func // guess
+EftHit_GetCountA = 0x0012E800; // type:func // guess
+EftHit_HasDefFlag20 = 0x0012E818; // type:func // guess
+// Sets record flag 0x10 when this is the technique's last hit (multi-hit: count reached max hits, or definition
+// flag 0x20 with at least one hit; single hit: any kind but 4). One caller, 0x1B0030.
+EftHit_MarkLastHit = 0x0012E850; // type:func // guess
+// 1 when the record is a technique whose definition has flag 0x200000 (BtlScene_CheckStageChange).
+EftHit_HasDefFlag200000 = 0x0012E910; // type:func // guess
+// NotifyBlastTask(i): for a blast record with a task, calls 0x177BC8(task).
+EftHit_NotifyBlastTask = 0x0012E948; // type:func // guess
+// 1 for a technique of class 0 kind 4, or class != 0 kind 9.
+EftHit_IsRushHit = 0x0012E9B0; // type:func // guess
+// Radius of the shape's first (A, +0x7C) / second (B, +0x80) volume: +0x10 for type 0, +0x20 for type 1.
+EftHit_GetRadiusA = 0x0012EA10; // type:func // guess
+EftHit_GetRadiusB = 0x0012EA58; // type:func // guess
+EftHit_SetRadiusA = 0x0012EAA0; // type:func // guess
+EftHit_SetRadiusB = 0x0012EAD8; // type:func // guess
+// End of BtlScene_Update: a record whose pos is outside the stage radius (0x23FEB0) gets task flag 0x10, with the
+// task's pos and the shape's first volume pulled back onto the radius.
+EftHit_ClampToStage = 0x0012EB10; // type:func
+// Start of BtlScene_PostUpdate: task->result = CalcResult(rec) for every record with a task.
+EftHit_UpdateResults = 0x0012ECC8; // type:func
+EftHit_CalcResult = 0x0012ED40; // type:func
+
+// --- shape arena (gp 0x2FE9AC: {cur, base, size 0x1800}) ---------------------------------------------
+EftHitArena_Init = 0x0012EEA0; // type:func
+EftHitArena_Term = 0x0012EF28; // type:func
+EftHitArena_Reset = 0x0012EF90; // type:func
+// Bump allocations, named by size; AllocSphere (0x20) and AllocBox (0x30) by what their callers build in them
+// (0x2399A0 and 0x239588). The others have no caller.
+EftHitArena_Alloc20A = 0x0012EFA0; // type:func // guess
+EftHitArena_Alloc20B = 0x0012EFB8; // type:func // guess
+EftHitArena_Alloc40 = 0x0012EFD0; // type:func // guess
+EftHitArena_AllocSphere = 0x0012EFE8; // type:func // guess
+EftHitArena_Alloc20C = 0x0012F000; // type:func // guess
+EftHitArena_AllocRec = 0x0012F018; // type:func // guess
+EftHitArena_AllocBox = 0x0012F030; // type:func // guess
+// SetShapeN(rec, a, b): rec->shape = {type N, a, b}. Only types 0 (spheres) and 1 (boxes) have callers.
+EftHit_SetShape3 = 0x0012F048; // type:func // guess
+EftHit_SetShape4 = 0x0012F060; // type:func // guess
+EftHit_SetShape5 = 0x0012F078; // type:func // guess
+EftHit_SetShapeSpheres = 0x0012F090; // type:func // guess
+EftHit_SetShape6 = 0x0012F0A8; // type:func // guess
+EftHit_SetShape2 = 0x0012F0C0; // type:func // guess
+EftHit_SetShapeBoxes = 0x0012F0D8; // type:func // guess
+// IsTechClass(rec, c): technique whose definition byte +4 == c. GetScale: 1.0, def +0x84 for a technique, 0.1 for a
+// blast. InitMultiHit: definition max hits > 0 -> task flag 0x4000, and clears task flag 1.
+EftHit_IsTechClass = 0x0012F0F0; // type:func // guess
+EftHit_GetScale = 0x0012F120; // type:func // guess
+EftHit_InitMultiHit = 0x0012F158; // type:func // guess
+// Impact effects: 0x187BE0(arg block, scale, f) and the ground effect 0x1975A8.
+EftHit_SpawnBlastImpact = 0x0012F1A8; // type:func // guess
+EftHit_SpawnTechImpact = 0x0012F328; // type:func // guess
+
+// --- camera cut of an effect (gp 0x2FE9B0, 0x1C bytes) -------------------------------------------------
+EftCam_Init = 0x0012F550; // type:func
+EftCam_Term = 0x0012F588; // type:func
+EftCam_Clear = 0x0012F5B8; // type:func
+// Start(arg {anim, objId, unk8}): DemoCam_SetAnim / SetChr / SetTime / Start; Update follows the fighter's technique
+// timer (BtlCharApi_GetChargedUnkC78) or advances 2.0 per frame; Stop: DemoCam_Stop.
+EftCam_Start = 0x0012F5F0; // type:func // guess
+EftCam_SetHold = 0x0012F6A0; // type:func // guess
+EftCam_SetPaused = 0x0012F6B0; // type:func // guess
+EftCam_IsPaused = 0x0012F6C8; // type:func // guess
+EftCam_IsActive = 0x0012F6D8; // type:func // guess
+EftCam_Stop = 0x0012F6E8; // type:func // guess
+EftCam_Update = 0x0012F720; // type:func // guess
+
+gEftHitList = 0x002FE9A8; // size:0x4
+gEftHitArena = 0x002FE9AC; // size:0x4
+gEftCam = 0x002FE9B0; // size:0x4
+
+// --- shared helpers of the effect modules ------------------------------------------------------------
+// Palette lighting (256 RGBA entries, table of byte normals): callers 0x13A590 (per-frame palette pass of 0x13A388).
+EftGfx_LightClutDiffuse = 0x0012F810; // type:func // guess
+EftGfx_LightClutSpecular = 0x0012F990; // type:func // guess
+EftGfx_LerpClut = 0x0012FCB0; // type:func // guess
+// Tangent frame of a triangle (positions + uv), caller 0x13A3F0. Rotation matrix looking along a direction.
+EftMath_CalcTangentFrame = 0x0012FEE8; // type:func // guess
+EftMath_MtxFromDir = 0x001301B0; // type:func // guess
+// Wraps an angle into -pi..pi (143 callers).
+EftMath_WrapAngle = 0x00130318; // type:func
+// Spline evaluation with a constant basis matrix (0x2EC4E0 Catmull-Rom, 0x2EC520 / 0x2EC560 three-point,
+// 0x2EC5A0 Bezier, 0x2EC5E0 Hermite with tension / bias / continuity tangents). Only Spline3 has callers.
+EftMath_CatmullRom = 0x001303B8; // type:func // guess
+EftMath_Spline3 = 0x00130500; // type:func // guess
+EftMath_Spline3B = 0x00130658; // type:func // guess
+EftMath_Bezier = 0x001307A0; // type:func // guess
+EftMath_Lerp = 0x001308E0; // type:func // guess
+EftMath_TcbSpline = 0x00130948; // type:func // guess
+// The five frustum planes at 0x31BE10, rebuilt from gBtlCamView (once per view, from BtlScene_Draw).
+EftGfx_GetClipPlanes = 0x00130B98; // type:func // guess
+EftGfx_UpdateClipPlanes = 0x00130BA8; // type:func // guess
+// Aim of a projectile: BtlCharApi_CalcAimDir45 when locked on, else the fighter's yaw. GetDirKeep keeps the first
+// aim in the source block. Home turns a direction towards the opponent (node 0x11, led by its frame movement).
+EftAim_GetDir = 0x00130D38; // type:func // guess
+EftAim_GetDirKeep = 0x00130DD8; // type:func // guess
+EftMath_RotateAboutAxis = 0x00130F38; // type:func
+EftAim_Home = 0x00131030; // type:func // guess
+// Clip a polygon against the five planes (0x121A10), project it (0x121D48) and draw it as a triangle fan (0x132E80).
+// The four differ in how the sort depth is derived (see the functions).
+EftGfx_DrawPolyAvgZ = 0x001312A8; // type:func // guess
+EftGfx_DrawPolyFixedZ = 0x00131478; // type:func // guess
+EftGfx_DrawPolyAvgZFront = 0x00131640; // type:func // guess
+EftGfx_DrawPolyScaledZ = 0x00131828; // type:func // guess
+// Camera-facing textured quad written straight into the display list (0x90-byte GS packet at gOtCur, linked at gOtZ).
+EftGfx_DrawSprite = 0x00131A20; // type:func // guess
+
+gEftClipPlanes = 0x0031BE10; // size:0x50

@@ -1,0 +1,43 @@
+// Menu overlay DBZP.BIN, 0x3911A8..0x395E30.
+// SimEvent 31..36: the last six entries of the day screen's event table (gSimEvent, 0x3B7388); numbered by
+// their index in that table. SimPopo_*: helpers of event 34 (clips "mc_popo%02d").
+SimEv31 = 0x003911A8; // type:func // guess
+SimEv32 = 0x00391430; // type:func // guess
+SimEv33 = 0x00391B70; // type:func // guess
+SimPopo_Swap = 0x00391E28; // type:func // guess
+SimPopo_CursorOn = 0x003920B0; // type:func // guess
+SimPopo_CursorOff = 0x00392120; // type:func // guess
+SimEv34 = 0x00392190; // type:func // guess
+SimEv35 = 0x00392A30; // type:func // guess
+SimEv36 = 0x00392D20; // type:func // guess
+// EvoZ: the character customising screen (gProgress->mode 49), prefix as in menu_v.txt. Names from what the
+// code does; EvoZ_Run is called by the handler of modes 48..50 (0x39E940).
+EvoZ_Init = 0x00392F10; // type:func // guess
+EvoZ_Term = 0x00393490; // type:func // guess
+EvoZ_Draw = 0x003935B8; // type:func // guess
+EvoZ_Update = 0x00393680; // type:func // guess
+EvoZ_Run = 0x00393AB0; // type:func // guess
+EvoZ_SetListScissor = 0x00393C58; // type:func // guess
+EvoZ_ResetScissor = 0x00393C80; // type:func // guess
+EvoZ_Refresh = 0x00393CA8; // type:func // guess
+gEvoZ = 0x003BB140; // size:0x4 // guess
+// Work of the two mini games: uninitialised globals of overlay source, placed in the MAIN executable's .bss.
+gSimRockX = 0x0031EAFC; // size:0x4 // guess
+gSimRockSpeed = 0x0031EB00; // size:0x4 // guess
+gSimRockLeft = 0x0031EB04; // size:0x4 // guess
+gSimRockHits = 0x0031EB08; // size:0x4 // guess
+gSimRockFlags = 0x0031EB0C; // size:0x1 // guess
+gSimRockRank = 0x0031EB10; // size:0x4 // guess
+gSimPopoTarget = 0x0031EB14; // size:0x4 // guess
+gSimPopoState = 0x0031EB18; // size:0x4 // guess
+gSimPopoDx = 0x0031EB1C; // size:0x4 // guess
+gSimPopoDy = 0x0031EB20; // size:0x4 // guess
+gSimPopoSpeed = 0x0031EB24; // size:0x4 // guess
+gSimPopoA = 0x0031EB28; // size:0x4 // guess
+gSimPopoB = 0x0031EB2C; // size:0x4 // guess
+gSimPopoCount = 0x0031EB30; // size:0x4 // guess
+gSimPopoWon = 0x0031EB34; // size:0x4 // guess
+gSimPopoRank = 0x0031EB38; // size:0x4 // guess
+// Read-only objects of menu_u_d.c that SimEv34 (INCLUDE_ASM) shares with the C functions.
+sSimPopoX = 0x003BAFB0; // size:0x14 force_not_migration:True
+sSimPopoClip = 0x003BAFD8; // size:0xC force_not_migration:True

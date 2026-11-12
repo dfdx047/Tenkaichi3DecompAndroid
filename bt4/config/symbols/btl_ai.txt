@@ -1,0 +1,90 @@
+// CPU player: step handlers, sequence runner, input hand-over, rule conditions, rate helpers.
+// src/battle/btl_ai.c = 0x1B6008..0x1B80F8 (two original objects, see the header comment of the C file).
+
+// The AI manager block (0xA60 bytes, heap): sbss pointer read by ~80 functions in 0x1B4140..0x1BFF70; allocated at
+// 0x1BB208. Also described in btl_ai_mgr.h (BtlAiMgr).
+gBtlAi = 0x002FEB10; // size:0x4
+// Four phase functions of a generic sequence (0x1B44A8, 0x1B4608, 0x1B4830, 0x1B4AF0), indexed by work+0x30 in
+// BtlAi_RunSeq.
+gBtlAiStateFuncs = 0x002C46B8; // size:0x10
+
+// Step handlers: entries 14..23 of the handler table at 0x2C4708 (called by the run phase 0x1B4830 with the AI work;
+// non-zero = step finished). Numbered names: what the fighter queries they wait on mean is not known.
+BtlAiStep_Unk14 = 0x001B6008; // type:func
+BtlAiStep_Unk15 = 0x001B61E8; // type:func
+// Waits (60 frames at most) until range.unk4 * 2 / * 3 reaches the distance between the fighters.
+BtlAiStep_WaitNear2 = 0x001B62C8; // type:func // guess
+BtlAiStep_FireSkill = 0x001B6310; // type:func // guess
+BtlAiStep_Unk18 = 0x001B6580; // type:func
+BtlAiStep_Unk19 = 0x001B66B8; // type:func
+BtlAiStep_Unk20 = 0x001B67F0; // type:func
+BtlAiStep_Unk21 = 0x001B6810; // type:func
+BtlAiStep_WaitNear3 = 0x001B6948; // type:func // guess
+BtlAiStep_Unk23 = 0x001B69B8; // type:func
+
+// Sequence 3 (one-shot by the entry's kind byte); only caller is BtlAi_RunSeq.
+BtlAi_RunInstant = 0x001B6B08; // type:func // guess
+// Called once per frame per CPU fighter from 0x1BB620: clears the output, runs the top of the sequence stack,
+// finishes the output.
+BtlAi_RunSeq = 0x001B6BA0; // type:func
+// Called right after: passes work+0x268/+0x26C/+0x270 to 0x208198 (the fighter's injected buttons and stick).
+BtlAi_SendInput = 0x001B6CD8; // type:func
+// (level, lo, hi): lo + (int)((hi - lo) / 29.0f * max(level, 0) + 0.01f). 35 callers, all in the AI.
+BtlAi_ScaleByLevel = 0x001B6D00; // type:func
+// (work, bits): stores the opponent's action id and its class, ORs bits into work+0x2D4.
+BtlAi_NoteOpponent = 0x001B6D50; // type:func // guess
+
+// Rule conditions: entries 0..34 of the table at 0x2C4768, in table order; (work, u8 arg) -> bool. Every one that
+// tests a value compares it with arg. "Rate n" = byte n of the character's own rate table scaled by level.
+BtlAiCond_False = 0x001B6DC0; // type:func
+BtlAiCond_True = 0x001B6DC8; // type:func
+BtlAiCond_Percent = 0x001B6DD0; // type:func
+BtlAiCond_Idle = 0x001B6E18; // type:func
+BtlAiCond_LevelAtLeast = 0x001B6E28; // type:func
+BtlAiCond_LevelBelow = 0x001B6E40; // type:func
+BtlAiCond_Status4 = 0x001B6E50; // type:func
+// Member entry word +0xC as a percentage of 100000 / word +0x14 in units of 100000: which gauges is not known.
+BtlAiCond_GaugeAPercent = 0x001B6E70; // type:func // guess
+BtlAiCond_GaugeBStock = 0x001B6ED8; // type:func // guess
+// Fighter flag 6 (0x20B7C0).
+BtlAiCond_Flag6 = 0x001B6F20; // type:func
+BtlAiCond_Status6 = 0x001B6F50; // type:func
+BtlAiCond_Unk11 = 0x001B6F70; // type:func
+BtlAiCond_Unk12 = 0x001B6FC0; // type:func
+BtlAiCond_Plan8Is2 = 0x001B6FF0; // type:func
+BtlAiCond_WorkBit0 = 0x001B7010; // type:func
+BtlAiCond_WorkBit1 = 0x001B7028; // type:func
+BtlAiCond_WorkBit2 = 0x001B7048; // type:func
+BtlAiCond_SetPlan54 = 0x001B7068; // type:func
+BtlAiCond_SeqFlag2 = 0x001B7078; // type:func
+BtlAiCond_LevelBelowDummy = 0x001B70C8; // type:func
+// Not in the table: called by condition 20. 75% chance, opponent action class 1..7, 22 or 23.
+BtlAiCond_GuardRoll = 0x001B70E0; // type:func // guess
+// Reaction chance by level step against the opponent's action; arg 0..3 picks the table.
+BtlAiCond_React = 0x001B7188; // type:func // guess
+// BtlSeq_GetState() == 2.
+BtlAiCond_SeqReady = 0x001B74D8; // type:func
+// BtlChar_IsStage4Or27().
+BtlAiCond_Stage4Or27 = 0x001B7510; // type:func
+BtlAiCond_React40000 = 0x001B7540; // type:func // guess
+BtlAiCond_Unk24 = 0x001B7608; // type:func
+BtlAiCond_Rate0 = 0x001B7638; // type:func
+BtlAiCond_Rate5 = 0x001B76C8; // type:func
+BtlAiCond_Unk27 = 0x001B7760; // type:func
+BtlAiCond_Rate6 = 0x001B77A8; // type:func
+BtlAiCond_Rate1 = 0x001B7820; // type:func
+BtlAiCond_Rate4 = 0x001B78C0; // type:func
+BtlAiCond_TypeRateByOppAction = 0x001B7938; // type:func
+BtlAiCond_Rate2 = 0x001B7A00; // type:func
+BtlAiCond_Rate8 = 0x001B7A80; // type:func
+BtlAiCond_TenPercent = 0x001B7B60; // type:func
+
+// (work, &lo, &hi): scales both down when member entry word +0x1C (of 30000, as a percentage) is above a
+// level-dependent limit. Which gauge that is is not known.
+BtlAi_ScaleByGauge = 0x001B7BB8; // type:func // guess
+// 1.0, or an AI-type rate * 0.1 when member entry word +0xC is under 20% / 40% of 100000.
+BtlAi_GetLowGaugeFactor = 0x001B7CB0; // type:func // guess
+// (work, kind 0..13, offset, lo table, hi table, flag): picks a lo/hi byte pair, applies the two scalings above,
+// returns BtlAi_ScaleByLevel. Pair = two columns per 16-byte row, Quad = four.
+BtlAi_GetPairRate = 0x001B7D70; // type:func // guess
+BtlAi_GetQuadRate = 0x001B7F48; // type:func // guess

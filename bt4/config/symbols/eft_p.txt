@@ -1,0 +1,81 @@
+// Effect tasks, 0x16C2E0..0x170A50 (src/battle/eft_p.c, src/battle/eft_p_b.c).
+//
+// --- Disc projectile, tail of the module (its init 0x16B6B8 and update 0x16BAC8 are in the file before) ---
+// Task class D_002C3B38 = { Update 0x16BAC8, Init 0x16B6B8, Term 0x16C548, PostUpdate 0x16C2E0, Reset 0x16C4F0,
+// Draw 0x16C3B0 }, work 0x4C0 bytes: a spinning model projectile ("disc" is a guess from the spin and the two
+// animated textures). Kinds 0 / 1 are a fighter's ki blast (held in the hand, then thrown), 3 a ki blast thrown
+// from a model node, 2 / 4 the pieces of the multi-piece technique EftMulti (eft_j.c). The manager's work is
+// reached through gEftDisc (gp 0x2FEA34): task list at +0x550, per-fighter list of held discs at +0x554 / +0x55C.
+EftDisc_PostUpdate = 0x0016C2E0; // type:func // guess
+EftDisc_Draw = 0x0016C3B0; // type:func // guess
+EftDisc_Reset = 0x0016C4F0; // type:func // guess
+EftDisc_Term = 0x0016C548; // type:func // guess
+// Spawns the emitter parts of a technique piece (same shape as EftBlast_UpdateParts).
+EftDisc_SpawnParts = 0x0016C5B8; // type:func // guess
+// Builds this frame's hit record: EftHit_GetNew, two spheres at the position and the previous position, EftHit_Add.
+EftDisc_AddHit = 0x0016C788; // type:func
+// Copies a fighter's ki blast parameters (0x50 bytes) into the disc it holds.
+EftDisc_SetHeldAtk = 0x0016C988; // type:func // guess
+EftDisc_SetTex = 0x0016CA28; // type:func // guess
+// Homing turn of a disc toward the opponent's node 0x11 (the same lead as EftAim_Home, plus a banking term).
+EftDisc_Home = 0x0016CA68; // type:func
+// Rodrigues rotation of a vector about a unit axis.
+EftDisc_RotateAboutAxis = 0x0016CD40; // type:func
+// Advances the disc's two texture entries once per frame (or the whole set for kinds 3 and 4).
+EftDisc_StepTex = 0x0016CE38; // type:func // guess
+// Per-fighter list of held discs (20 nodes of 12 bytes in the manager).
+EftDiscMgr_PushHeld = 0x0016CF20; // type:func // guess
+EftDiscMgr_PopHeld = 0x0016CFF8; // type:func // guess
+EftDiscMgr_AllocNode = 0x0016D050; // type:func // guess
+// Called by the fighter effect layer (btl_char_fx.c): request 0x17 with ki blast type 4 creates a disc in the hand;
+// the ki blast fire event with type 4 throws it (or creates a flying one), with type 5 creates one at a node.
+EftDisc_SpawnHeld = 0x0016D0B8; // type:func // guess
+EftDisc_Throw = 0x0016D270; // type:func // guess
+EftDisc_SpawnThrown = 0x0016D448; // type:func // guess
+// Kills the first held disc of a fighter and unlinks it; no caller in the main executable.
+EftDisc_DropHeld = 0x0016D628; // type:func // guess
+EftDisc_SpawnFromNode = 0x0016D6A8; // type:func // guess
+// The interface EftMulti uses for its pieces: every one checks that the task's class update is 0x16BAC8.
+EftDisc_Create = 0x0016D858; // type:func
+EftDisc_Release = 0x0016D8B8; // type:func
+EftDisc_RequestEnd = 0x0016D9B0; // type:func // guess
+EftDisc_Kill = 0x0016DA08; // type:func
+EftDisc_SetSpin = 0x0016DA60; // type:func
+EftDisc_SetScale = 0x0016DAB0; // type:func
+EftDisc_SetModelTex = 0x0016DB00; // type:func // guess
+EftDisc_SetLastHit = 0x0016DBA8; // type:func // guess
+EftDisc_SetFlag200 = 0x0016DBF8; // type:func // guess
+EftDisc_IsAlive = 0x0016DC50; // type:func
+gEftDisc = 0x002FEA34; // size:0x4 // guess
+//
+// --- Power-up glow, first part of the module (src/battle/eft_p_b.c, 0x16DCA0..0x170A50) ---
+// The module's tasks, manager and globals (gEftGlow 0x2FEA38, gEftGlowCfg 0x2FEA3C, gEftGlowCfg2 0x2FEA40) are in
+// eft_q.txt. This part is its particles: a pool of 70 quads of 0xC0 bytes per character (free and active lists in
+// gEftGlow), spawned around ten fighter nodes, each a textured quad whose shape runs along a spline profile
+// (20 sample points and 20 directions built once by EftGlow_BuildTables) and which is oriented by the fighter's
+// direction (EftGlow_CalcFrame). Appearance only.
+EftGlow_Spline3 = 0x0016DCA0; // type:func
+EftGlow_BuildTables = 0x0016DE30; // type:func
+EftGlow_GetShapePoint = 0x0016E168; // type:func // guess
+EftGlow_GetShapeDir = 0x0016E1C0; // type:func // guess
+// Orientation of the glow: the fighter's direction (bent by the fall speed for action effect kinds 3 / 4), or the
+// line between nodes 0x2E and 3 for kind 5.
+EftGlow_CalcFrame = 0x0016E210; // type:func
+EftGlow_CalcDrift = 0x0016E3A8; // type:func // guess
+EftGlow_CalcPartFlags = 0x0016E4C8; // type:func // guess
+EftGlow_GetAlpha = 0x0016E520; // type:func // guess
+EftGlow_CalcLength = 0x0016E580; // type:func // guess
+EftGlow_CalcWidth = 0x0016E6A0; // type:func // guess
+EftGlow_AllocPart = 0x0016E7C8; // type:func
+EftGlow_SpawnPart = 0x0016E848; // type:func
+EftGlow_PairPart = 0x0016F0D0; // type:func // guess
+EftGlow_SpawnNext = 0x0016F2B8; // type:func // guess
+// Called by the glow task (eft_q.c): init, update, term, post-update, draw.
+EftGlow_Begin = 0x0016F7A0; // type:func
+EftGlow_UpdateFrames = 0x0016F970; // type:func // guess
+EftGlow_Emit = 0x0016F9F8; // type:func
+EftGlow_Step = 0x0016FA78; // type:func
+EftGlow_FreeParts = 0x0016FBB8; // type:func
+EftGlow_StepParts = 0x0016FC18; // type:func
+EftGlow_MakeFacingMtx = 0x001700D8; // type:func
+EftGlow_DrawParts = 0x001702B0; // type:func

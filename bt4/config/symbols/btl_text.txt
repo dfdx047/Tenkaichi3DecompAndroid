@@ -1,0 +1,32 @@
+// Skill-list text of the pause menu, first part of src/battle/btl_seq.c, 0x215420-0x216AC0.
+// The text is a UTF-16 script: every line starts with two characters whose 2nd one is a hex digit (a mask
+// tested against bit work->unk10), optionally "&ddd" (unlock condition), then '$n' (page title), '*abc'
+// (entry with three digits), '%0'/'%1' (detail lines), '#' (note) or '@' (end). All names are guesses made
+// from what the matching C does; the callers (0x2140B4.., 0x21465C, 0x224164, 0x22E1D0) are not decompiled.
+
+// (pkt, x, y, w, h, part): func_00215140(pkt, x, y, x + w, y + h, 0, 0, w, |h|, 0x80808080, part): one
+// rectangle of the list's sprite sheet.
+BtlText_DrawPart = 0x00215420; // type:func // guess
+// (pkt, x, y, digit): BtlText_DrawPart(pkt, x, y, func_0023A488() * 20, 0x20, 7 + n), n = digit - '0' (8 -> 7).
+// Called by BtlText_DrawList for a '$' line.
+BtlText_DrawPageIcon = 0x00215470; // type:func // guess
+// Reads the hex digit at cursor[1], advances the cursor by two characters, returns (digit >> work->unk10) & 1.
+BtlText_CheckLineMask = 0x00215540; // type:func // guess
+// "&ddd" prefix: returns bit ddd of the save's charaBits (id 0x56: !func_0020C9B8(work->side)); 1 without a prefix.
+BtlText_CheckUnlock = 0x002155F0; // type:func // guess
+// Stub returning 0; a non-zero result would dim the line (alpha 0.5) in BtlText_DrawList. Static in the C.
+BtlText_IsLineDimmed = 0x002156E8; // type:func // guess
+// Draws the list into a clip rectangle: mode 0 the page title and its entries with the cursor highlight,
+// other modes the detail lines and the note of the selected entry.
+BtlText_DrawList = 0x002156F0; // type:func // guess
+// Draws the scroll bar frame and, when the page has more than 7 entries, its thumb. Still INCLUDE_ASM.
+BtlText_DrawScrollBar = 0x00216508; // type:func // guess
+// Counts the pages ('$') and the entries per page ('*') of the current side's list.
+BtlText_CountEntries = 0x002166A0; // type:func // guess
+// Returns the name (line + 8 characters) of the n-th '*' entry of the second script, NULL when absent.
+BtlText_FindEntry = 0x00216818; // type:func // guess
+// Draws the name of entry n at (x, y) with an alignment and an alpha.
+BtlText_DrawEntryName = 0x002168F8; // type:func // guess
+
+// The f32 after the work pointer D_002FEB30: alpha of the line being drawn (1.0, 0.5 when locked or dimmed).
+gBtlTextAlpha = 0x002FEB34; // size:0x4 // guess

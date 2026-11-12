@@ -1,0 +1,96 @@
+// Battle sequence module, src/battle/btl_seq.c, 0x216AC0-0x2187E0.
+// Already named in game.txt (kept there): BtlSeq_FirstState, BtlSeq_Call, BtlSeq_Reset, BtlSeq_Init, BtlSeq_Term,
+// BtlSeq_PreUpdate, BtlSeq_Update, BtlSeq_GetState, BtlSeq_CallExtra, gBtlSeq, gBtlSeqTblDefault, gBtlSeqTblMode1,
+// gBtlSeqTblMode5to7.
+
+// Return &gBtlSeq->clock (+0x108) / &gBtlSeq->subClock (+0x118): two 0x10-byte running clocks.
+BtlSeq_GetClock = 0x00216E00; // type:func
+BtlSeq_GetSubClock = 0x00216E10; // type:func // guess
+// BtlSeq_GetState() == 3 / == 4. State 3 is the fight itself, state 4 the finish announcement (see the handlers below).
+BtlSeq_IsFighting = 0x00216E30; // type:func
+BtlSeq_IsFinish = 0x00216E58; // type:func
+// Set / get gBtlSeq+0x128. When non-zero BtlSeq_CheckBattleEnd returns 0 at once (no clock tick, no win check).
+BtlSeq_SetEndCheckOff = 0x00216EB8; // type:func // guess
+BtlSeq_GetEndCheckOff = 0x00216EC8; // type:func // guess
+// memset(clock, 0, 0x10).
+BtlClock_Clear = 0x00216ED8; // type:func
+// Adds {34, 32, 34}[ticks++ % 3] ms and carries into seconds / minutes / hours, stopping at 9:59:59.999.
+BtlClock_Tick = 0x00216EF8; // type:func
+// Clears both clocks and sets clock.timeLeft to the time limit in seconds (func_0012AB58).
+BtlSeq_ResetClocks = 0x00217048; // type:func
+// Ticks both clocks; returns 1 when minutes*60+seconds reaches the time limit, else updates clock.timeLeft.
+BtlSeq_TickClocks = 0x00217090; // type:func
+BtlSeq_ResetSubClock = 0x00217150; // type:func // guess
+// clock.timeLeft, or -1 when the time limit is off (func_0012AB90).
+BtlSeq_GetTimeLeft = 0x00217170; // type:func
+// func_0024F5D8(obj, 0, -1) on both sides' objects, then Voice_Stop(0) and Voice_Stop(1).
+BtlSeq_StopTalk = 0x002171A0; // type:func // guess
+
+// State 1 (tables: default, mode 1): the fighters' entrance lines. Setup picks who speaks first and which line
+// from the per-character table at obj+0x93C (4 bytes per opponent id), or rand()%2 each; preUpdate starts each
+// line with Voice_PlayChara, update waits for Voice_IsStopped or a 10 s time-out and returns 2.
+BtlSeqIntroTalk_Setup = 0x00217200; // type:func // guess
+BtlSeqIntroTalk_Enter = 0x00217398; // type:func // guess
+BtlSeqIntroTalk_PreUpdate = 0x00217410; // type:func // guess
+BtlSeqIntroTalk_Update = 0x00217520; // type:func // guess
+BtlSeqIntroTalk_Exit = 0x002176A8; // type:func // guess
+// `extra` slot of state 1, mode 1 table only: sets ctx.skip when the mode is 1.
+BtlSeqIntroTalk_Skip = 0x002176F8; // type:func // guess
+
+// State 5 (tables: default, mode 1): the winner's line. Setup takes the winning side from the result block;
+// update returns 6.
+BtlSeqWinTalk_Setup = 0x00217730; // type:func // guess
+BtlSeqWinTalk_Enter = 0x002178E8; // type:func // guess
+BtlSeqWinTalk_PreUpdate = 0x002179D0; // type:func // guess
+BtlSeqWinTalk_Update = 0x00217AE0; // type:func // guess
+BtlSeqWinTalk_Exit = 0x00217BD0; // type:func // guess
+BtlSeqWinTalk_Skip = 0x00217C08; // type:func // guess
+
+// State 0 (default table only): three scripted camera cuts (func_0023DFF8(0..2)) before the fighters appear;
+// update returns 1 after the third or when the poll callback fires.
+BtlSeqStageIntro_Enter = 0x00217C40; // type:func // guess
+BtlSeqStageIntro_PreUpdate = 0x00217C78; // type:func // guess
+BtlSeqStageIntro_Update = 0x00217CF0; // type:func // guess
+BtlSeqStageIntro_Exit = 0x00217DB8; // type:func // guess
+
+// Win judgement, called from the state 3 update.
+// 1 when the result reason has the time-up bit and the battle mode is 0: only then can equal health be a draw.
+BtlSeq_CanDraw = 0x00217E00; // type:func // guess
+// Sets result.winner from result.health[0] / [1]; on equal health: rule flag 0x3C of a side, draw, side 2 in mode 8, or rand() & 1.
+BtlSeq_JudgeByHealth = 0x00217E38; // type:func
+// Ticks the clocks and fills the result block (winner at +0, reason at +4) when the battle is decided; returns 1 then.
+BtlSeq_CheckBattleEnd = 0x00217EF0; // type:func
+
+// State 3 (all tables): the fight. Update handles the pause request (poll = func_0022F9F8), calls
+// BtlSeq_CheckBattleEnd and returns 4 (or 6 for mode 7 / an aborted battle).
+BtlSeqFight_Enter = 0x002180E0; // type:func
+BtlSeqFight_PreUpdate = 0x00218140; // type:func
+BtlSeqFight_Update = 0x00218148; // type:func
+BtlSeqFight_Exit = 0x00218300; // type:func
+
+// State 2 (all tables): 0.8 s wait, announcement 0 (func_0022AB50), 2.0 s wait, returns 3. Sits between the talk
+// and the fight, so "ready / fight" call-out.
+BtlSeqReady_Enter = 0x00218308; // type:func // guess
+BtlSeqReady_PreUpdate = 0x00218368; // type:func // guess
+BtlSeqReady_Update = 0x00218370; // type:func // guess
+BtlSeqReady_Exit = 0x00218440; // type:func // guess
+
+// Helpers of state 6. 0x218460: func_0022FBB0(pad count == 1 ? 0 : winning side). 0x2184A0: Battle_GetMode() == 0.
+BtlSeq_SetResultPad = 0x00218460; // type:func // guess
+BtlSeq_IsModeZero = 0x002184A0; // type:func
+
+// State 6 (all tables, and the fallback for an empty slot): end of the battle; update fades out for 1.2 s and returns 99.
+BtlSeqEnd_Enter = 0x002184C0; // type:func // guess
+BtlSeqEnd_PreUpdate = 0x00218570; // type:func // guess
+BtlSeqEnd_Update = 0x00218578; // type:func // guess
+BtlSeqEnd_Exit = 0x00218630; // type:func // guess
+
+// State 4 (all tables): picks the finish announcement (func_0022AB50(2..5)) from the result reason and waits 3.5 s;
+// update returns 5 when a side won, else 6.
+BtlSeqFinish_Enter = 0x00218668; // type:func // guess
+BtlSeqFinish_PreUpdate = 0x00218780; // type:func // guess
+BtlSeqFinish_Update = 0x00218788; // type:func // guess
+BtlSeqFinish_Exit = 0x002187D8; // type:func // guess
+
+// Local s32[3] initialiser of BtlClock_Tick: {34, 32, 34} ms.
+gBtlClockTickMs = 0x002F1AD8; // size:0xC

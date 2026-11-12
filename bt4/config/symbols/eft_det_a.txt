@@ -1,0 +1,85 @@
+// src/battle/eft_det_a.c, 0x1AE2A8..0x1B16F0; include/battle/eft_det_a.h.
+// (The brief's range starts at 0x1AE200, inside the function 0x1AE1F8..0x1AE2A8, which belongs to stem eft_ae.)
+
+// Tail of the effect texture code. 0x1AE2A8 / 0x1AE358 / 0x1AE408: the same loader as 0x1AE148 / 0x1AE1F8 (clear
+// the set, relocate the pack, copy count, then TEX0 and image pointer of every image) for sets of 8, 16 and 34
+// entries (memset sizes 0x88, 0x108, 0x228; the second argument of the empty 0x1AE140 is the capacity).
+EftTexSet_Load8 = 0x001AE2A8; // type:func
+EftTexSet_Load16 = 0x001AE358; // type:func
+EftTexSet_Load34 = 0x001AE408; // type:func
+// The VRAM allocator at gp 0x2FEAF4 hands out blocks from 0x2B00 (0x1AE118 resets `next` to 0x2B00).
+// 0x1AE4B8 returns next - 0x2B00, 0x1AE4D8 the constant 0x14FF (0x2B00 + 0x14FF = 0x3FFF, the last block); neither
+// has a caller. 0x1AE4E0(tex, imageBlock, clutBlock) queues a BITBLTBUF packet and the image, then the same for
+// the CLUT (only caller 0x1AE0A0, which walks the allocator's entries).
+EftVram_GetUsed = 0x001AE4B8; // type:func // guess
+EftVram_GetCapacity = 0x001AE4D8; // type:func // guess
+EftVram_Upload = 0x001AE4E0; // type:func
+gEftVram = 0x002FEAF4; // size:0x4
+
+// Aim of the shots of a volley (technique effect type 1, EftVolley* in eft_h.c: the only callers).
+// 0x1AE5F8: a + (b - a) * t. 0x1AE608: squared distance between fighters 0 and 1. 0x1AE668: vector from a fighter
+// to its opponent. 0x1AE6D0: 0 for model nodes 0x12..0x1F and 0x36, 1 for 0x20..0x2D (which hand fires).
+// 0x1AE7B8: turns the aim direction by a yaw / pitch offset chosen by the aim kind (13 patterns), drawing
+// BtlScene_RandRangeF; returns the steering script (-1, 0, 1). 0x1AE710: calls it and stores script, speed, turn.
+// 0x1AEE98: one homing step of a shot (lead the target, turn at most maxTurn, advance by speed).
+// 0x1AF0C8: runs the shot's steering script for this frame, then the homing step.
+EftVolleyAim_Lerp = 0x001AE5F8; // type:func
+EftVolleyAim_GetFighterDistSq = 0x001AE608; // type:func
+EftVolleyAim_GetToOpponent = 0x001AE668; // type:func
+EftVolleyAim_GetNodeSide = 0x001AE6D0; // type:func // guess
+EftVolleyAim_InitShot = 0x001AE710; // type:func
+EftVolleyAim_Spread = 0x001AE7B8; // type:func
+EftVolleyAim_Steer = 0x001AEE98; // type:func
+EftVolleyAim_Update = 0x001AF0C8; // type:func
+gEftVolleyAimScripts = 0x002C46B0; // size:0x8
+
+// Fighter against fighter (called from BtlChars_UpdateCollision before BtlColl_Update).
+// 0x1AF508: the attacker's active volumes (work + 0x180A0 spheres, + 0x18300) against every body part of the other
+// object. 0x1AF650(atk, def): bounds test, then that; sets bit 0x18 + def id in the attacker's contact word and
+// bit 0x1C + atk id in the defender's. 0x1AF740: object of side 0 against side 1, then 1 against 0.
+BtlBodyHit_TestVolumes = 0x001AF508; // type:func
+BtlBodyHit_Test = 0x001AF650; // type:func
+BtlBodyHit_Update = 0x001AF740; // type:func
+
+// Hit detection over the record list (called by Battle_Update between BtlScene_Update and BtlScene_PostUpdate).
+// 0x1AF7B8 / 0x1AF850 / 0x1AF8D0: per-shape preparation, table 0x2ED818 indexed by shape type (bounds, movement,
+// direction, zone). 0x1AF8D8: resets the detection fields of every record and prepares it.
+// 0x1AF9C0: the four passes, skipped while the battle is paused.
+EftDet_PrepareSpheres = 0x001AF7B8; // type:func
+EftDet_PrepareCapsule = 0x001AF850; // type:func
+EftDet_PrepareNone = 0x001AF8D0; // type:func
+EftDet_PrepareAll = 0x001AF8D8; // type:func
+EftDet_Update = 0x001AF9C0; // type:func
+// Record against fighter: table 0x2ED838 indexed by shape type (swept sphere against every body part, nearest
+// contact wins). 0x1AFDB0: guard or hit of a single-hit record. 0x1AFE70: the same with the multi-hit counters.
+// 0x1B0030: the pass (dodge, deflect, reflect, absorb, guard, hit, in that order).
+EftDet_SpheresVsFighter = 0x001AFA10; // type:func
+EftDet_CapsuleVsFighter = 0x001AFBD8; // type:func
+EftDet_NoneVsFighter = 0x001AFDA8; // type:func
+EftDet_HitFighter = 0x001AFDB0; // type:func
+EftDet_HitFighterMulti = 0x001AFE70; // type:func
+EftDet_FighterPass = 0x001B0030; // type:func
+// Record against record: the three shape pairs, then the pass (EftHit_Clash decides the loser; result 4 starts
+// the beam struggle).
+EftDet_SpheresVsSpheres = 0x001B0238; // type:func
+EftDet_CapsuleVsCapsule = 0x001B0480; // type:func
+EftDet_CapsuleVsSpheres = 0x001B06D0; // type:func
+EftDet_ClashPass = 0x001B0910; // type:func
+// Record against stage: 0x1B0CC0 is the mesh callback (swept volume against a triangle, nearest wins),
+// 0x1B0E88 the test of one record (damages / destroys a touched stage object), 0x1B10F0 the pass.
+EftDet_StageCb = 0x001B0CC0; // type:func
+EftDet_TestStage = 0x001B0E88; // type:func
+EftDet_StagePass = 0x001B10F0; // type:func
+
+// Ground probe. 0x1B1260: stretches a box 8000 downwards. 0x1B12E0: point-in-triangle on the ground plane and
+// height of the plane there; keeps the highest ground below minY. 0x1B1400: mesh callback (solid, upward-facing
+// polygons only). 0x1B14C0(zone, box, out, minY): the query BtlStage_ProbeGround calls.
+// 0x1B15B8(obj): per-frame ground query of a fighter (BtlChar_UpdateStage8), which also breaks a stage object
+// the fighter is under.
+StgGround_ExtendBoxDown = 0x001B1260; // type:func
+StgGround_TestTri = 0x001B12E0; // type:func
+StgGround_Cb = 0x001B1400; // type:func
+StgGround_Probe = 0x001B14C0; // type:func
+StgGround_UpdateFighter = 0x001B15B8; // type:func
+// Result block of the last ground probe (0x20 bytes, StgColResult).
+gStgGroundResult = 0x0031C080; // size:0x20

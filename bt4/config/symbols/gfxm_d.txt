@@ -1,0 +1,69 @@
+// src/sys/gfxm_d.c (0x10EC18..0x10FB40), gfxm_d_b.c (0x10FB40..0x10FFD0), assembly (0x10FFD0..0x1101D0),
+// gfxm_d_c.c (0x1101D0..0x112A30).
+
+// ---- gfxm_d.c: clip-list setters of the Flash-like movie player (continues gfxm_c.c) ----
+// Each is the body behind one Flash_Clip* wrapper of gfxm_c (0x10D918..0x10DD00: test ref->index >= 0, tail-call
+// with flash->clips). All apply to clip ref->index and to the next ref->more clips with the same name.
+// Evidence: the fields written (FlashProp overrides and their FLASH_OV_ bits in gfxm_c.h) and the wrappers' names.
+FlashClipList_GotoLabel = 0x0010EC18; // type:func
+FlashClipList_SetPreDraw = 0x0010EDC8; // type:func // guess
+FlashClipList_SetPostDraw = 0x0010EEC0; // type:func // guess
+FlashClipList_SetDrawOver = 0x0010EFB8; // type:func // guess
+FlashClipList_SetFlags = 0x0010F0B0; // type:func
+FlashClipList_SetOverride = 0x0010F1E8; // type:func
+FlashClipList_SetOffset = 0x0010F320; // type:func
+FlashClipList_SetScale = 0x0010F438; // type:func
+FlashClipList_SetAlpha = 0x0010F548; // type:func
+FlashClipList_SetColor = 0x0010F698; // type:func // guess
+FlashClipList_SetTex = 0x0010F7E8; // type:func
+FlashClipList_SetUv = 0x0010F8E0; // type:func
+FlashClipList_GetPos = 0x0010FA18; // type:func
+FlashClipList_GetAlpha = 0x0010FA98; // type:func
+
+// ---- gfxm_d_b.c (0x10FB40..0x10FFD0): draw pass of the battle objects, the per-view loops ----
+// 0x10FF40 is called by Battle_Draw and ChrView_Update; it tests BtlObjVis flags, clears the frame's alpha, and runs
+// 0x10FB80 (all models), BtlObj_BeginDraw, 0x10FC50 (objects with BTL_OBJ_FLAG_FADE), 0x10FD98 (shadows), 0x111E50.
+// 0x10FB40(view, count): View_Apply(BtlObjVis_GetView(view), 1) when count >= 2. 0x10FD30(view, obj): list search.
+BtlObjDraw_ApplyView = 0x0010FB40; // type:func
+BtlObjDraw_DrawLists = 0x0010FB80; // type:func
+BtlObjDraw_DrawFadeLists = 0x0010FC50; // type:func
+BtlObjDraw_IsInList = 0x0010FD30; // type:func
+BtlObjDraw_DrawShadows = 0x0010FD98; // type:func
+BtlObjDraw_Draw = 0x0010FF40; // type:func
+
+// ---- assembly (VU0 macro code), 0x10FFD0..0x1101D0 ----
+// (vtx, work, mtx[2], ofs[2]): skins one seam vertex between two node matrices, projects it, writes GS XYZ / STQ.
+ObjSeam_TransformVtx = 0x0010FFD0; // type:func
+
+// ---- gfxm_d_c.c (0x1101D0..0x112A30): one battle object in one view ----
+// Seams: the model section at model + *(model + 0x70): 0x70-byte vertices skinned on the CPU and 0x20-byte
+// triangles, drawn as plain GS triangles (base texture, then the shading ramp at block 0x3D40 through context 2).
+ObjSeam_Transform = 0x001101D0; // type:func
+ObjSeam_Draw = 0x001102B0; // type:func
+// 0x1107C8(m, dir): identity with rows side = normalize(dir x (0,-1,0)), up = normalize(side x dir), dir in the
+// first three columns (m[0][i] = side[i], m[1][i] = up[i], m[2][i] = dir[i]).
+ObjDraw_MakeFacingMtx = 0x001107C8; // type:func
+// 0x1108A0(obj): BITBLTBUF + REF packets for textures [texFirst, texFirst + texCount) (BtlObj_GetFaceTexture
+// replaces index faceTex), then TexFile_UploadRange / BtlObjLight_FindRes1 by colour flag.
+ObjDraw_UploadTextures = 0x001108A0; // type:func
+// 0x110C40(obj, state, view, dim): FRAME_1 = model->cbp >> 5 with width 64, then 64x64 sprites over the CLUT.
+ObjDraw_AddClutPass = 0x00110C40; // type:func // guess
+// 0x111358(obj, view, mode, tex0, fbmsk, noMask): the part walk; mode 0 / 1 / 2 = VU1 program 0 / 1 / 2.
+ObjDraw_DrawParts = 0x00111358; // type:func
+// 0x111788(obj, view): writes view + 0x10 (light direction), queues frame / alpha / depth registers, returns the
+// frame mask given to ObjDraw_DrawParts.
+ObjDraw_SetLight = 0x00111788; // type:func
+BtlObjDraw_DrawModel = 0x00111C20; // type:func
+BtlObjDraw_DrawModelFade = 0x00111CF0; // type:func
+// 0x111E28(obj): ObjDraw_DrawParts(obj, obj->state.view, 2, 0, 0, 0); called by the shadow code in gfxm_e.
+ObjDraw_DrawPartsFlat = 0x00111E28; // type:func // guess
+// 0x111E50(): tail-calls 0x111E68. 0x111E68(): the 20-register default environment for both GS contexts.
+BtlObjDraw_End = 0x00111E50; // type:func // guess
+BtlObjDraw_SetEnv = 0x00111E68; // type:func
+// Register packets (Dma_AddData of a packet built on the stack); the name says which registers.
+ObjGs_AddTexEnv = 0x001121D8; // type:func
+ObjGs_AddFrame1 = 0x001122A8; // type:func
+ObjGs_AddFrame2Alpha = 0x001123E8; // type:func
+ObjGs_AddFadeEnv = 0x00112548; // type:func // guess
+ObjGs_AddFadeTex = 0x001128D0; // type:func // guess
+ObjGs_AddZbufBoth = 0x00112998; // type:func

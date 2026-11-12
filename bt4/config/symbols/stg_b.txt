@@ -1,0 +1,106 @@
+// Stage module, second part (src/battle/stg_b.c = 0x242D28..0x245F58). See include/battle/stg_b.h.
+// gBtlStage (gp 0x2FEBE0) is the stage manager; its +4 is the loaded stage data, a table of (count, pointer)
+// sections. Names say which section a function reads.
+gBtlStage = 0x002FEBE0; // size:0x4
+gBtlStageFxRes = 0x002FEBF4; // size:0x4 // guess
+BtlStage_HasFeature = 0x00242D28; // type:func
+BtlStage_GetFileMember = 0x00242F18; // type:func
+BtlStage_GetFxResA = 0x00242F50; // type:func // guess
+BtlStage_GetFxResB = 0x00242F98; // type:func // guess
+BtlStage_GetFxResC = 0x00242FE0; // type:func // guess
+BtlStage_GetFxResA2 = 0x00243028; // type:func // guess
+BtlStage_GetFxResB2 = 0x00243080; // type:func // guess
+BtlStage_GetFxResC2 = 0x002430D8; // type:func // guess
+BtlStage_HasFlag8 = 0x00243130; // type:func // guess
+BtlStage_HasMoon = 0x00243160; // type:func // guess
+BtlStage_GetAmbient = 0x00243190; // type:func // guess
+BtlStage_SetAmbient = 0x00243248; // type:func // guess
+BtlStage_GetId = 0x002432C0; // type:func
+BtlStage_GetLightDir = 0x00243310; // type:func // guess
+BtlStage_GetPlace2C = 0x002433B8; // type:func // guess (no caller found)
+BtlStage_GetChangeTarget = 0x00243470; // type:func // guess
+BtlStage_UpdateTimers = 0x002434C8; // type:func // guess
+BtlStage_Update = 0x00243568; // type:func
+StgAmb_Update = 0x002440C8; // type:func
+// Stage ambience (gStgAmb, 0x31C480, 0x1C bytes): the stage's looping sound through MapBgm_* and one volume
+// handler per stage number (StgAmb_UpdateNN = stage NN; stages 23..30 reuse 0, 0, 1, 1, 4, 6, 9, 9).
+gStgAmb = 0x0031C480; // size:0x1C
+StgAmb_SetBgmVolume = 0x002435C0; // type:func
+StgAmb_PlaySe = 0x002435F8; // type:func
+StgAmb_Falloff = 0x00243628; // type:func
+StgAmb_Update00 = 0x00243678; // type:func
+StgAmb_Update01 = 0x00243690; // type:func
+StgAmb_Update02 = 0x002436A8; // type:func
+StgAmb_Update03 = 0x00243740; // type:func
+StgAmb_Update04 = 0x00243868; // type:func
+StgAmb_Update05 = 0x00243930; // type:func
+StgAmb_Update06 = 0x00243948; // type:func
+StgAmb_Update07 = 0x00243960; // type:func
+StgAmb_Update08 = 0x00243978; // type:func
+StgAmb_Update09 = 0x00243990; // type:func
+StgAmb_Update10 = 0x002439A8; // type:func
+StgAmb_Update11 = 0x00243BC8; // type:func
+StgAmb_Update12 = 0x00243C48; // type:func
+StgAmb_Update13 = 0x00243CC8; // type:func
+StgAmb_Update14 = 0x00243CE0; // type:func
+StgAmb_Update15 = 0x00243D60; // type:func
+StgAmb_Update16 = 0x00243E28; // type:func
+StgAmb_Update17 = 0x00243E40; // type:func
+StgAmb_Update18 = 0x00243E58; // type:func
+StgAmb_Update19 = 0x00243E70; // type:func
+StgAmb_Update20 = 0x00243E88; // type:func
+StgAmb_Update21 = 0x00243EA0; // type:func
+StgAmb_Update22 = 0x00243EB8; // type:func
+StgAmb_Start = 0x00243ED0; // type:func
+StgAmb_Stop = 0x002440F0; // type:func
+StgAmb_Term = 0x00244110; // type:func
+StgAmb_Init = 0x00244138; // type:func
+StgAmb_SetBgmScale = 0x00244150; // type:func
+StgAmb_SetSeScale = 0x00244160; // type:func
+// Screen cross-fade (gScrXfade, gp 0x2FEC00): sceGsExecStoreImage of the frame in two 512 x 224 halves, uploaded
+// again as a texture at 0x1C00 and drawn over the next frames with alpha 128 * (1 - ramp).
+gScrXfade = 0x002FEC00; // size:0x4
+sceGsSetDefStoreImage = 0x00293A50; // type:func // guess
+ScrXfade_AllocBuffers = 0x00244170; // type:func
+ScrXfade_FreeBuffers = 0x002441D8; // type:func
+ScrXfade_Capture = 0x00244220; // type:func
+ScrXfade_StoreHalf = 0x00244280; // type:func
+ScrXfade_Draw = 0x00244468; // type:func
+ScrXfade_Init = 0x002446B0; // type:func
+ScrXfade_Term = 0x002446F0; // type:func
+ScrXfade_Reset = 0x00244720; // type:func
+ScrXfade_Update = 0x00244750; // type:func
+ScrXfade_PostDraw = 0x002447F0; // type:func
+ScrXfade_Start = 0x00244830; // type:func
+ScrXfade_RequestCapture = 0x00244870; // type:func
+ScrXfade_IsActive = 0x00244880; // type:func
+// Screen shock wave (gScrWarp, gp 0x2FEC04): up to 10 expanding rings that redraw the frame through a half-size
+// copy with displaced texture coordinates. Spawned by effect code (0x175F40, 0x1A0748, 0x1A0850, 0x1A6C58) and 0x261ED8.
+gScrWarp = 0x002FEC04; // size:0x4
+ScrWarp_BeginPacket = 0x00244890; // type:func
+ScrWarp_EndPacket = 0x00244BF8; // type:func
+ScrWarp_BeginStrip = 0x00244C10; // type:func
+ScrWarp_EndStrip = 0x00244C88; // type:func
+ScrWarp_PutVertex = 0x00244C90; // type:func
+ScrWarp_Alloc = 0x00244D00; // type:func
+ScrWarp_Free = 0x00244D70; // type:func
+ScrWarp_IsOnScreen = 0x00244DA8; // type:func
+ScrWarp_Step = 0x00244E20; // type:func
+ScrWarp_Draw = 0x00245108; // type:func
+ScrWarp_Init = 0x00245370; // type:func
+ScrWarp_Term = 0x00245470; // type:func
+ScrWarp_Reset = 0x002454A0; // type:func
+ScrWarp_UpdateAll = 0x002454E0; // type:func
+ScrWarp_DrawAll = 0x00245668; // type:func
+ScrWarp_Update = 0x002456E8; // type:func
+ScrWarp_Spawn = 0x00245740; // type:func
+// Depth tone (gStgFog, gp 0x2FEC08): a 256-entry alpha table built from three control points (0x246188 makes the
+// curve) and used with the Z buffer as an indexed texture. The module continues past 0x245F58.
+gStgFog = 0x002FEC08; // size:0x4
+StgFog_SetupTex = 0x00245878; // type:func // guess
+StgFog_BuildClut = 0x002458A8; // type:func // guess
+StgFog_Init = 0x002459B0; // type:func // guess
+StgFog_Term = 0x00245A08; // type:func // guess
+StgFog_ResetColor = 0x00245A38; // type:func // guess
+StgFog_Draw = 0x00245A50; // type:func // guess
+StgFog_SetParams = 0x00245DE8; // type:func // guess

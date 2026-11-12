@@ -1,0 +1,62 @@
+// Battle HUD, health / ki gauge module, 0x21CA60-0x222400 (src/battle/hud_b.c). Continues hud_a_d.c
+// (HudGauge_GsBeginMask .. HudGauge_UpdateHp); the work is gHudGauge (hud_a.txt). Names follow the callers:
+// Hud_PreUpdate feeds the setters with the BtlSide_* / BtlCtrl_* queries, HudGauge_Init registers the
+// update / draw callbacks in the node tree.
+
+// --- Node update callbacks (registered by HudGauge_Init, run by HudNode_Update).
+// Shows the small "extra health bar" markers: one per full 10000 health above the bar on show.
+HudGauge_UpdateHpBarCount = 0x0021CA60; // type:func
+// Root node: steps the whole-HUD slide ramp (side 0 only) and offsets the node by (-256, -224) * ramp.
+HudGauge_UpdateRoot = 0x0021CC08; // type:func
+// Panel node: steps the side's slide ramp and offsets the node.
+HudGauge_UpdatePanel = 0x0021CC88; // type:func
+// Health node: shakes of the three shaking nodes, and the trailing (damage) health value catching up.
+HudGauge_UpdateHpTrail = 0x0021CD20; // type:func
+// Aura node: ten randomly flickering sparks while the fighter is powered up, the blue / red panel flashes.
+HudGauge_UpdateAura = 0x0021D000; // type:func // guess
+// Ki node: the five ki bars (20000 each), their trailing copy and the "reserve" overlay.
+HudGauge_UpdateKi = 0x0021D578; // type:func
+// The five bars of the powered-up timer (6000 each).
+HudGauge_UpdateMaxPower = 0x0021DB78; // type:func
+// Lamp above the ki bar just filled; all five pulse at full ki.
+HudGauge_UpdateKiLamps = 0x0021DCF0; // type:func // guess
+HudGauge_UpdateMaxPowerLamps = 0x0021DF80; // type:func // guess
+// Blast stock: the digit, its flash when a stock is gained or the stock is full, the fill bar of the next stock.
+HudGauge_UpdateBlast = 0x0021E0E0; // type:func
+// The four status icons (BtlCtrl_GetStatMod0..3): fade out, slide to the new places, fade in.
+HudGauge_UpdateStatIcons = 0x0021E518; // type:func
+
+// --- Node draw callbacks.
+HudGauge_DrawHp = 0x0021F080; // type:func
+HudGauge_DrawAura = 0x0021F1D8; // type:func // guess
+HudGauge_DrawHpBarCount = 0x0021F328; // type:func
+HudGauge_DrawBlast = 0x0021F3A0; // type:func
+// Clears the mark (+0x28) of each side's face texture entry (same job as HudTeam_ClearFaceTexMark).
+HudGauge_ClearFaceTexMark = 0x0021F438; // type:func // guess
+HudGauge_DrawFace = 0x0021F480; // type:func
+// Draws every sprite of the node.
+HudGauge_DrawSprites = 0x0021F5D8; // type:func
+
+// --- Interface used by the HUD manager (Hud_Draw, Hud_PreUpdate, Hud_SlideOut / In, Hud_Init).
+// Selects the side that the next HudNode_Update / HudNode_Draw of the tree shows (mirrors side 1).
+HudGauge_SelectSide = 0x0021F648; // type:func
+HudGauge_SetHp = 0x0021F700; // type:func
+HudGauge_SetKi = 0x0021F718; // type:func
+HudGauge_SetMaxPower = 0x0021F7F8; // type:func
+HudGauge_SetBlast = 0x0021F810; // type:func
+// (side, mask of shown icons, mask of the "positive" ones): restarts the icon animation on a change.
+HudGauge_SetStatIcons = 0x0021F8B0; // type:func
+// Receives BtlSide_GetParamUnk2C while BtlSide_TestFlagBE, else 0; drawn as a pulsing red layer on the ki bars.
+HudGauge_SetKiReserve = 0x0021FA20; // type:func // guess
+// (side, frames, amplitude): shake the panel and the health node / the panel and the ki node.
+HudGauge_ShakeHp = 0x0021FA38; // type:func
+HudGauge_ShakeKi = 0x0021FA88; // type:func
+// Stores the side's fighter object (BtlCtrl_GetObj); its face sheet is read at +0x50 when drawing.
+HudGauge_SetFighter = 0x0021FAD8; // type:func
+HudGauge_SlideOut = 0x0021FAF0; // type:func
+HudGauge_SlideIn = 0x0021FB18; // type:func
+// (side, BtlCtrl_IsSwitching): slides the side's panel away during a member switch and back after it; coming
+// back restarts the trailing bars from empty.
+HudGauge_SetSwitching = 0x0021FB40; // type:func
+// Allocates the work, 76 sprites and 12 nodes, and builds the node tree; returns the root through arg 0.
+HudGauge_Init = 0x0021FC10; // type:func

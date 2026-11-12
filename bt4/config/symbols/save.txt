@@ -1,0 +1,13 @@
+// src/sys/save.c: 0x266088..0x266728. The save block behind gSaveData (Save_Init and gSaveData are named in game.txt).
+// 0x266088(block): no callers. Sets all 161 character bits, 35 stage bits, 20 bits at +0xC30, 7 bits at +8, every item byte |= 1 (and |= 2 at random), money = 4850000.
+Save_UnlockAll = 0x00266088; // type:func
+// 0x2662A8(block): memset 0x4000 then the starting unlocks, key assignment 2,1,0,3,4,5,6,7, volumes 9, flags |= 7. Called by Save_Init and by the memory card code when no save is loaded (0x11BBA4, 0x11C0D8).
+Save_SetDefaults = 0x002662A8; // type:func
+// 0x266600: empty, tail-called by Save_Init with the block.
+Save_Stub266600 = 0x00266600; // type:func
+// 0x266650(idx): if !(block->item[idx] & 1) sets bits 0 and 1. Called for every item whose table entry has flag 2, and by the menu/shop code when an item is obtained.
+Save_AddItem = 0x00266650; // type:func // guess
+// 0x2666A0(amount): block->money (+0x3028) += amount, clamped to 0..9999999.
+Save_AddMoney = 0x002666A0; // type:func // guess
+// 0x2666E8: writes 3, 2, 2, 0, 0, 0 to the six ints at +0xC34. Called by the defaults and by menu 0x355FB4.
+Save_ResetRules = 0x002666E8; // type:func // guess

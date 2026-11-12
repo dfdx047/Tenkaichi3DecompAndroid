@@ -1,0 +1,103 @@
+
+name: Discord Release Announcements
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send Discord announcement
+        env:
+          WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+          import urllib.error
+
+          webhook = os.environ.get("WEBHOOK_URL", "").strip()
+
+          if not webhook:
+              raise SystemExit("ERROR: DISCORD_WEBHOOK_URL is missing")
+
+          if webhook.endswith("/github"):
+              webhook = webhook[:-7]
+
+          event = os.environ.get("EVENT_NAME", "")
+
+          if event == "workflow_dispatch":
+              name = "Test Announcement"
+              tag = "TEST"
+              url = "https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp"
+              description = "Discord integration test. The notification system is working."
+          else:
+              name = os.environ.get("RELEASE_NAME") or os.environ.get("RELEASE_TAG") or "New Release"
+              tag = os.environ.get("RELEASE_TAG") or "Latest"
+              url = os.environ.get("RELEASE_URL") or "https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp/releases"
+              description = os.environ.get("RELEASE_BODY", "").strip() or "A new version is available!"
+
+          payload = {
+              "username": "DBZ BT4 | DECOMP",
+              "allowed_mentions": {"parse": []},
+              "embeds": [
+                  {
+                      "title": "DBZ BT4 | " + name,
+                      "url": url,
+                      "description": description[:3500],
+                      "color": 3447003,
+                      "fields": [
+                          {
+                              "name": "Version",
+                              "value": tag[:1024],
+                              "inline": True
+                          },
+                          {
+                              "name": "Download / Details",
+                              "value": "[View on GitHub](" + url + ")"
+                          }
+                      ],
+                      "footer": {
+                          "text": "DBZ BT4 DECOMP | Official Updates"
+                      }
+                  }
+              ]
+          }
+
+          data = json.dumps(payload).encode("utf-8")
+
+          request = urllib.request.Request(
+              webhook,
+              data=data,
+              headers={
+                  "Content-Type": "application/json",
+                  "User-Agent": "DBZ-BT4-Decomp/1.0"
+              },
+              method="POST"
+          )
+
+          try:
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  print("SUCCESS: Discord announcement sent")
+                  print("HTTP status:", response.status)
+
+          except urllib.error.HTTPError as error:
+              print("DISCORD ERROR:", error.code)
+              print("RESPONSE:", error.read().decode("utf-8", errors="replace")[:500])
+              raise SystemExit(1)
+
+          except urllib.error.URLError as error:
+              print("CONNECTION ERROR:", error.reason)
+              raise SystemExit(1)
+          PY

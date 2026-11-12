@@ -1,0 +1,80 @@
+// File layer (src/sys/file.c, 0x264A50..0x265578). Names already in game.txt are not repeated here.
+
+// 0x264A50 / 0x264F70: `return 0;`, no callers. 0x264D90: empty, called once per frame by the loops at 0x2649A8, 0x2BEA48, 0x2BF588.
+File_Stub264A50 = 0x00264A50; // type:func // guess
+File_Stub264D90 = 0x00264D90; // type:func // guess
+File_Stub264F70 = 0x00264F70; // type:func // guess
+// 0x264AB0: empty function registered by File_InitAdx through 0x26D7F8 (stores {func, obj} in the CRI error-callback slot).
+File_AdxErrorCallback = 0x00264AB0; // type:func // guess
+// 0x264AF0(pt): ADXF_GetPtStat(pt) == 3. No callers.
+File_IsPartitionLoaded = 0x00264AF0; // type:func
+// 0x264B68(pt): File_WaitPartition with a 2400-iteration limit. No callers.
+File_WaitPartitionTimeout = 0x00264B68; // type:func
+// 0x264E18: disc type (1 -> -2, 0x14 PS2 DVD -> search the three boot files below, else -3); returns the index found. No callers.
+Disc_Identify = 0x00264E18; // type:func // guess
+// 0x264EC0: switch on sceCdStatus (0,1,2,6,10,18 -> 0..5, else 6); 7 when the disc type reads 0. No callers.
+Disc_GetDriveState = 0x00264EC0; // type:func // guess
+// 0x2650D8: gFileReq.state != 0. 0x2650E8: List_GetCount(&gFileReq.pending).
+File_IsBusy = 0x002650D8; // type:func
+File_GetPendingCount = 0x002650E8; // type:func
+// 0x265470(name, buf, x) -> File_LoadSyncEx(-1, name, buf, x). No callers.
+File_LoadSyncByName = 0x00265470; // type:func
+// 0x2654C8: returns &gFileReq. No callers.
+File_GetRequestQueue = 0x002654C8; // type:func
+// 0x265528(adxt, id): same id -> (partition, index) mapping as File_OpenById, then ADXT_StartAfs.
+File_StartAdxById = 0x00265528; // type:func
+
+// {"\SLUS_212.27;1", "\SLUS_214.41;1", "\SLUS_216.78;1"}: boot files of Budokai Tenkaichi 1, 2 and 3 (USA).
+gDiscExeNameTbl = 0x002C70D8; // size:0xC
+// "data/" (root directory given to the CRI DVD file system) and "pzs3us.dir" (directory listing for its name cache).
+gFileRootDir = 0x002FF150; // size:0x6
+gFileDirName = 0x002F34C0; // size:0xB
+// Parameter blocks File_InitAdx fills for ADXPS2_SetupDvdFs / ADXPS2_LoadFcacheDvd.
+gAdxDvdFsParam = 0x0031E738; // size:0x14
+gAdxFcacheParam = 0x0031E750; // size:0x10
+
+// --- Library functions called from this module ---
+// CRI ADXF/ADXT public entry points: each is `enter critical section; call the lower-case worker already named in symbol_addrs.txt; leave`.
+// 0x26B5E8 -> adxf_GetFsizeSct, 0x26B000 -> adxf_ReadNw, 0x26B8C8 -> adxf_GetStat, 0x26B098 -> adxf_Stop.
+ADXF_GetFsizeSct = 0x0026B5E8; // type:func
+ADXF_ReadNw = 0x0026B000; // type:func
+ADXF_GetStat = 0x0026B8C8; // type:func
+ADXF_Stop = 0x0026B098; // type:func
+// 0x269EE0 -> 0x269F18 -> adxf_GetPtStat.
+ADXF_GetPtStat = 0x00269EE0; // type:func
+// 0x2728D8 -> adxt_Create, 0x274758 -> adxt_SetReloadSct, 0x274520 -> adxt_SetSvrFreq, 0x275F40 -> adxt_StartAfs.
+ADXT_Create = 0x002728D8; // type:func
+ADXT_SetReloadSct = 0x00274758; // type:func
+ADXT_SetSvrFreq = 0x00274520; // type:func
+ADXT_StartAfs = 0x00275F40; // type:func
+// 0x26A8E8(ptid, flid) / 0x26A580(fname, atr): workers call adxf_CreateAdxFs (+ adxf_SetFileInfoEx for the by-name one).
+ADXF_OpenAfs = 0x0026A8E8; // type:func
+ADXF_Open = 0x0026A580; // type:func
+// 0x26AA40(adxf): worker 0x26AA70 does adxf_Stop, closes the stream and memsets the handle.
+ADXF_Close = 0x0026AA40; // type:func
+// 0x2694C0(ptid, fname, dir, ptinfo): four arguments, polled with ADXF_GetPtStat until 3.
+ADXF_LoadPartitionNw = 0x002694C0; // type:func
+// 0x26C158: memsets the ADXT globals and creates "adxt_exec_tsvr" / "adxt_exec_fssvr" / "adxt_exec_main_thrd".
+ADXT_Init = 0x0026C158; // type:func
+// 0x272308(param): prints the CRI build string, cvFsAddDev "CDV"/"MFS", cvFsSetDefDev; param->0 is the root directory.
+ADXPS2_SetupDvdFs = 0x00272308; // type:func // guess
+// 0x272408(param {fname, n, buf, size}): calls dvCiLoadDirInfo.
+ADXPS2_LoadFcacheDvd = 0x00272408; // type:func // guess
+// 0x26E7C8(0, 0): thread setup worker 0x26D810 (uses default priorities when the argument is NULL), called just before ADXT_Init.
+ADXPS2_SetupThrd = 0x0026E7C8; // type:func // guess
+// 0x26E130(0): called from the vblank handler.
+ADXPS2_ExecVint = 0x0026E130; // type:func // guess
+// 0x26E148: called in every "wait for the read to end" loop. 0x26E290: called by Vsync_Wait to sleep until the next vblank.
+ADXM_ExecMain = 0x0026E148; // type:func // guess
+ADXM_WaitVsync = 0x0026E290; // type:func // guess
+// 0x26D7F8(func, obj) -> 0x285FE0 stores both in a callback slot under a lock.
+ADXERR_EntryErrFunc = 0x0026D7F8; // type:func // guess
+// Sony libgraph: 0x294220(func) Disable/Remove/AddIntcHandler(2 = VBlank start)/EnableIntc, returns the previous handler.
+sceGsSyncVCallback = 0x00294220; // type:func
+// Sony libcdvd S-commands (sceSifCallRpc on the S-command client): 0x2A4BD8 sends 0x0C (status); 0x2A4A80 sends 0x03 (disc type).
+sceCdStatus = 0x002A4BD8; // type:func
+sceCdGetDiskType = 0x002A4A80; // type:func
+// 0x2A4B18: sceCdGetDiskType() with -1 (RPC failure) turned into 0.
+sceCdGetDiskTypeSafe = 0x002A4B18; // type:func // guess
+// 0x2A3B88(file, name) == 1 on success; its worker 0x2A3888 does the directory search.
+sceCdSearchFile = 0x002A3B88; // type:func // guess

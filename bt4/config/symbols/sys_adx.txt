@@ -1,0 +1,84 @@
+// Streamed-audio (CRI ADXT) player wrappers (src/sys/adx.c, 0x265578..0x266088). Names already in game.txt are not repeated here.
+
+// 0x265578(ch, vol): vol * gain[ch] * option volume / 0x480 clamped to 0..0x80, then turned into an ADXT level: -960 when 0, else sin((0x80-v)/128)^2 * 0.28 * -960. Only caller: Adx_SetVolume.
+Adx_CalcOutVol = 0x00265578; // type:func
+// 0x265658(pan): clamps to -0x40..0x40 and returns (pan - 1) / 4. Called twice by Adx_SetPan, result goes to ADXT_SetOutPan.
+Adx_ConvPan = 0x00265658; // type:func
+// 0x265698(ch, vol): the linear part of Adx_CalcOutVol only. No callers.
+Adx_CalcVolume = 0x00265698; // type:func
+// 0x265720: `return 0;`, no callers.
+Adx_Stub265720 = 0x00265720; // type:func // guess
+// 0x2657B0 / 0x265800: ADXT_Pause(handle, 1 / 0) on players 2..5 (the "SE " and "VIC" ones). Adx_StopAll calls the second before stopping.
+Adx_PauseSeVoice = 0x002657B0; // type:func
+Adx_ResumeSeVoice = 0x00265800; // type:func
+// 0x2659A0(ch, id, vol, pan): Adx_Play without the reserved-voice check and with ADXT_Pause(handle, 1) before the start.
+Adx_PlayPaused = 0x002659A0; // type:func
+// 0x265A20(ch, fname, vol, pan): same, started with ADXT_StartFname. Only caller 0x125A20 (movie playback, "zs3us??.adx").
+Adx_PlayFilePaused = 0x00265A20; // type:func
+// 0x265AA0(ch): ADXT_Pause(handle, 0). Called by Movie_Run.
+Adx_Resume = 0x00265AA0; // type:func
+// 0x265AD0(ch, vol): ADXT_SetOutVol(handle, Adx_CalcOutVol(ch, vol)).
+Adx_SetVolume = 0x00265AD0; // type:func
+// 0x265B48(ch): Adx_GetStat(ch) is 0 (ADXT_STAT_STOP) or 5 (ADXT_STAT_PLAYEND).
+Adx_IsStopped = 0x00265B48; // type:func
+// 0x265B80(ch, pan0, pan1): ADXT_SetOutPan(handle, 0, conv(pan0)); ADXT_SetOutPan(handle, 1, conv(pan1)).
+Adx_SetPan = 0x00265B80; // type:func
+// 0x265C00(ch): if ADXT_GetOutVol(handle) > -960, lowers it by 120 (not below -960) and sets it. Called once per frame by fade loops.
+Adx_FadeOutStep = 0x00265C00; // type:func // guess
+// 0x265C80(flag): ADXT_SetOutputMono(flag != 0). Called by 0x124F08.
+Adx_SetMono = 0x00265C80; // type:func
+
+// Player 0 ("BGM") wrappers: each loads ch = 0 and tail-calls the Adx_ function of the same name.
+Bgm_Stop = 0x00265CE8; // type:func
+Bgm_SetVolume = 0x00265D00; // type:func
+Bgm_GetStat = 0x00265D20; // type:func
+Bgm_IsStopped = 0x00265D38; // type:func
+Bgm_FadeOutStep = 0x00265D50; // type:func // guess
+// Player 1 ("MAP") wrappers, same set as Bgm_*: 0x265D68(id, vol, pan) -> Adx_Play(1, ...); 0x265D98(id) = volume 0x40, pan 0.
+MapBgm_PlayEx = 0x00265D68; // type:func // guess
+MapBgm_Play = 0x00265D98; // type:func // guess
+MapBgm_Stop = 0x00265DB8; // type:func // guess
+MapBgm_SetVolume = 0x00265DD0; // type:func // guess
+MapBgm_GetStat = 0x00265DF0; // type:func // guess
+MapBgm_IsStopped = 0x00265E08; // type:func // guess
+MapBgm_FadeOutStep = 0x00265E20; // type:func // guess
+// 0x265E38(voice, chara, line, vol, pan): Adx_Play(voice + 4, chara * 100 + line + (gSaveData+0x1608 bit0 ? 0xCC32 : 0x8D4E), vol, pan).
+Voice_PlayCharaEx = 0x00265E38; // type:func // guess
+// 0x265E98(voice, chara, line): the above with vol 0x80, pan 0.
+Voice_PlayChara = 0x00265E98; // type:func // guess
+// Player (n + 4) ("VIC") wrappers. 0x265ED0(voice, id): Voice_Play with vol 0x80, pan 0.
+Voice_PlayDefault = 0x00265ED0; // type:func // guess
+// 0x265EF0 -> Adx_PlayPaused; 0x265F08 = the same with vol 0x80, pan 0; 0x265F28 -> Adx_Resume.
+Voice_PlayPaused = 0x00265EF0; // type:func
+Voice_PlayPausedDefault = 0x00265F08; // type:func // guess
+Voice_Resume = 0x00265F28; // type:func
+Voice_IsStopped = 0x00265F70; // type:func
+Voice_FadeOutStep = 0x00265F88; // type:func // guess
+// Player (n + 2) ("SE ") wrappers, same set as Voice_*; the default volume is 0x40.
+StreamSe_Play = 0x00265FA0; // type:func // guess
+StreamSe_PlayDefault = 0x00265FB8; // type:func // guess
+StreamSe_PlayPaused = 0x00265FD8; // type:func // guess
+StreamSe_PlayPausedDefault = 0x00265FF0; // type:func // guess
+StreamSe_Resume = 0x00266010; // type:func // guess
+StreamSe_Stop = 0x00266028; // type:func // guess
+StreamSe_GetStat = 0x00266040; // type:func // guess
+StreamSe_IsStopped = 0x00266058; // type:func // guess
+StreamSe_FadeOutStep = 0x00266070; // type:func // guess
+
+// Per-player gain {0x3C, 0x58, 0x60, 0x80, 0x46, 0x46} (0x80 = unity), indexed like gAdxPlayerTbl.
+gAdxChannelGainTbl = 0x002C70E8; // size:0x18
+
+// --- Library functions called from this module ---
+// CRI ADXT public entry points: each is `enter critical section (0x2892F0); call the lower-case worker already named in symbol_addrs.txt; leave (0x2892F8)`.
+// 0x2733A0 -> adxt_Stop, 0x273490 -> adxt_GetStat, 0x275130 -> adxt_Pause, 0x2741A8 -> adxt_SetOutVol, 0x274258 -> adxt_GetOutVol, 0x273E88 -> adxt_SetOutPan.
+ADXT_Stop = 0x002733A0; // type:func
+ADXT_GetStat = 0x00273490; // type:func
+ADXT_Pause = 0x00275130; // type:func
+ADXT_SetOutVol = 0x002741A8; // type:func
+ADXT_GetOutVol = 0x00274258; // type:func
+ADXT_SetOutPan = 0x00273E88; // type:func
+// 0x2761A0(adxt, fname): critical section around 0x2761E0, which is adxt_StartFnameRange(adxt, fname, 0, 0xFFFFF).
+ADXT_StartFname = 0x002761A0; // type:func
+adxt_StartFname = 0x002761E0; // type:func
+// 0x275C90(flag): stores the flag in a global, then for each of the 16 ADXT objects in use re-applies its pans (adxt_GetOutPan/adxt_SetOutPan) and balance.
+ADXT_SetOutputMono = 0x00275C90; // type:func // guess

@@ -1,0 +1,216 @@
+// Battle facade (src/battle/btl_facade.c = 0x12BD58..0x12C9F0) and battle effect scene (src/battle/btl_scene.c =
+// 0x12C9F0..0x12DD80). Names of other modules that these two files use are not repeated here: BattleSide_*,
+// BattleResult_Set, BtlEvent_*, Battle_GetStage / Battle_IsTimeLimitOff / Battle_GetTimeLimit / Battle_GetRuleUnk10
+// (battle_setup.txt, battle_work.txt), BtlSeq_* (btl_seq.txt, game.txt), BtlPool_* (rand_pool.txt), BtlObj_Get,
+// BtlChar_Get (game.txt), DemoCam_* (btl_cam.txt).
+
+// --- btl_facade.c -------------------------------------------------------------------------------
+// Wrappers through which the battle event script (command handlers 0x259070..0x25BE58) drives the battle. Each
+// name says what is forwarded to; the evidence is the target's code, summarised in include/battle/btl_facade.h and
+// in the target groups below. A name is a guess where the target's purpose is only known as a flag number or a
+// struct offset.
+// Scripted camera: forwards to DemoCam_AddShake / SetFixedPose / GetFixedPose / ClearFixed (btl_cam.txt).
+BtlFacade_ShakeCamera = 0x0012BD58; // type:func
+BtlFacade_SetFixedCamera = 0x0012BD78; // type:func
+BtlFacade_GetFixedCamera = 0x0012BD90; // type:func
+BtlFacade_ClearFixedCamera = 0x0012BDA8; // type:func
+// Fighter object sub-state (0x24F5D8(obj, 14, arg); 0x24F860(obj) == 3 -> 0x24F5D8(obj, 0, -1)) and the two words
+// of the per-side controller entries at gp 0x2FEB10 (0x1BB478 stores +8, 0x1BB3E0 stores +4, both restart the entry).
+BtlFacade_SetObjSubState14 = 0x0012BDC0; // type:func // guess
+BtlFacade_EndObjSubState3 = 0x0012BDF8; // type:func // guess
+BtlFacade_SetCpuParam8 = 0x0012BE58; // type:func // guess
+BtlFacade_SetCpuParam4 = 0x0012BE90; // type:func // guess
+// Scripted movement of a fighter and its control flags: forwards to 0x20A050..0x20A5B8 (see BtlCtrl_* below).
+// The SetCtrl / ClearCtrl names carry the flag number that the target sets or clears.
+BtlFacade_SetCharPos = 0x0012BEC8; // type:func
+BtlFacade_SetCharRot = 0x0012BEE0; // type:func // guess
+BtlFacade_PlayCharMotion = 0x0012BEF8; // type:func // guess
+BtlFacade_IsCharMotionPlaying = 0x0012BF10; // type:func // guess
+BtlFacade_IsCharAction4 = 0x0012BF28; // type:func // guess
+BtlFacade_StopCharMotion = 0x0012BF40; // type:func // guess
+BtlFacade_SetCtrlFE = 0x0012BF58; // type:func // guess
+BtlFacade_SetCtrlFF = 0x0012BF70; // type:func // guess
+BtlFacade_SetCtrl101 = 0x0012BF88; // type:func // guess
+BtlFacade_ClearCtrl101 = 0x0012BFA0; // type:func // guess
+BtlFacade_SetCtrl102 = 0x0012BFB8; // type:func // guess
+BtlFacade_ClearCtrl100 = 0x0012BFD0; // type:func // guess
+BtlFacade_SetCtrl100 = 0x0012BFE8; // type:func // guess
+BtlFacade_SetCtrl10D = 0x0012C000; // type:func // guess
+BtlFacade_ClearCtrl10D = 0x0012C018; // type:func // guess
+// Team member status. member == -1 is replaced by BtlCtrl_GetActiveMember(side). SetMemberItems copies eight u16
+// ids (+1) to BattleSide_SetMemberItems. Hp: targets scale the member's {current, max} pair at stats+0 / +4 by a
+// float ratio; LowerHp raises BtlEvent 0x4A on the side and 0x48 on the other when ratio <= 0. GaugeC / Gauge14:
+// the {current, max} pairs at stats+0xC and +0x14, in units of 20000 and 100000. SetPowerUp: 0x20AAE8.
+BtlFacade_GetActiveMember = 0x0012C030; // type:func
+BtlFacade_NotifyMemberItems = 0x0012C048; // type:func // guess
+BtlFacade_SetMemberItems = 0x0012C080; // type:func // guess
+BtlFacade_AddHp = 0x0012C130; // type:func
+BtlFacade_RaiseHp = 0x0012C190; // type:func
+BtlFacade_LowerHp = 0x0012C1F0; // type:func
+BtlFacade_AddGaugeC = 0x0012C2B0; // type:func // guess
+BtlFacade_RaiseGaugeC = 0x0012C310; // type:func // guess
+BtlFacade_LowerGaugeC = 0x0012C370; // type:func // guess
+BtlFacade_AddGauge14 = 0x0012C3D0; // type:func // guess
+BtlFacade_RaiseGauge14 = 0x0012C430; // type:func // guess
+BtlFacade_LowerGauge14 = 0x0012C490; // type:func // guess
+BtlFacade_SetMaxPower = 0x0012C4F0; // type:func // guess
+// Forced actions (targets 0x20AB60..0x20B110 raise the fighter's held flags 0x110..0x124).
+BtlFacade_Transform = 0x0012C508; // type:func // guess
+BtlFacade_Fuse = 0x0012C540; // type:func // guess
+BtlFacade_ChangeMember = 0x0012C578; // type:func // guess
+BtlFacade_PulseCtrl10D = 0x0012C5B0; // type:func // guess
+BtlFacade_AreBothInterruptible = 0x0012C5D8; // type:func // guess
+BtlFacade_CanCharAct = 0x0012C610; // type:func // guess
+BtlFacade_ForceAction01 = 0x0012C630; // type:func // guess
+BtlFacade_ForceAction23 = 0x0012C670; // type:func // guess
+BtlFacade_ForceAction4 = 0x0012C6B8; // type:func // guess
+BtlFacade_Nop = 0x0012C6F0; // type:func
+BtlFacade_ForceBoth111 = 0x0012C6F8; // type:func // guess
+BtlFacade_ForceBoth110 = 0x0012C738; // type:func // guess
+BtlFacade_ForceActions = 0x0012C778; // type:func // guess
+// Sequence, battle flag 0x200, result block and the script wait word (BtlSeq_*, BattleResult_Set, BtlEvent_*).
+// RequestStageChange forwards to 0x241E38 = BtlLoad_RequestStageChange(0x243470()).
+BtlFacade_CallSeqExtra = 0x0012C7D8; // type:func
+BtlFacade_CallSeqExtra2 = 0x0012C7F8; // type:func
+BtlFacade_ResetSubClock = 0x0012C818; // type:func
+BtlFacade_SetEndCheckOff = 0x0012C838; // type:func
+BtlFacade_GetEndCheckOff = 0x0012C850; // type:func
+BtlFacade_RequestStageChange = 0x0012C868; // type:func
+BtlFacade_SetFlag200 = 0x0012C880; // type:func
+BtlFacade_ClearFlag200 = 0x0012C8B0; // type:func
+BtlFacade_SetResult = 0x0012C8E0; // type:func
+BtlFacade_IsNotFinished = 0x0012C970; // type:func
+BtlFacade_BeginInterrupt = 0x0012C990; // type:func
+BtlFacade_EndInterrupt = 0x0012C9A8; // type:func
+BtlFacade_BeginWait = 0x0012C9C0; // type:func // guess
+BtlFacade_IsWaitOff = 0x0012C9D8; // type:func
+
+// --- btl_scene.c --------------------------------------------------------------------------------
+// gp 0x2FE9A0: pointer to the 0x34-byte scene state (Heap_Alloc in BtlScene_Init). gp 0x2FE9A4: initialised 2, written
+// by BtlScene_SetCharCount(2), sizes every per-character table of the effect modules. 0x2C3490: the root task's class
+// table {0x12D9A0, 0x12D968, 0x12D998, 0, 0, 0}.
+gBtlScene = 0x002FE9A0; // size:0x4
+gBtlSceneCharCount = 0x002FE9A4; // size:0x4
+gBtlSceneRootClass = 0x002C3490; // size:0x18
+// Entry points called by battle.c (Battle_Init / Term / Update / Restart / Draw*); what each does is listed in
+// include/battle/btl_scene.h.
+BtlScene_Init = 0x0012C9F0; // type:func
+BtlScene_Term = 0x0012CAE8; // type:func
+BtlScene_Update = 0x0012CB60; // type:func
+BtlScene_PostUpdate = 0x0012CB98; // type:func
+BtlScene_Reset = 0x0012CBC8; // type:func
+BtlScene_Draw = 0x0012CCD0; // type:func
+// Offset-table ("pack") helpers used by the effect modules: entry = base + (base[idx] & ~3).
+BtlScene_GetCommonEntry = 0x0012CD30; // type:func // guess
+BtlScene_GetPackEntry = 0x0012CD58; // type:func
+BtlScene_GetPackEntrySize = 0x0012CD78; // type:func
+BtlScene_TestCharPackBit = 0x0012CD90; // type:func // guess
+BtlScene_GetCharPackEntry = 0x0012CDE8; // type:func // guess
+BtlScene_GetStageData = 0x0012CE30; // type:func // guess
+// Predicates the effect tasks ask before animating or drawing. IsTimeStopped: 1 unless the stage is ready and battle flag
+// 0x100 is clear. IsCharStopped / IsAnyCharStopped add the fighters' hit-stop counter (+0x1320). IsCharInView compares
+// the view being drawn with the fighter in split-screen. IsStageFlagOn: stage list or byte 0x58 of 0x31C4A0.
+BtlScene_IsTimeStopped = 0x0012CE40; // type:func // guess
+BtlScene_IsCharStopped = 0x0012CE88; // type:func // guess
+BtlScene_IsAnyCharStopped = 0x0012CED0; // type:func // guess
+BtlScene_SetCharCount = 0x0012CF40; // type:func // guess
+BtlScene_GetCharCount = 0x0012CF48; // type:func // guess
+BtlScene_IsSecondView = 0x0012CF50; // type:func // guess
+BtlScene_IsCharInView = 0x0012CF60; // type:func // guess
+BtlScene_IsStageFlagOn = 0x0012CFF0; // type:func // guess
+BtlScene_GetStageFlag = 0x0012D058; // type:func // guess
+BtlScene_SetSingleView = 0x0012D088; // type:func
+BtlScene_IsSingleView = 0x0012D098; // type:func
+// Layer and per-character task management (callers: 0x137BD0, the loader jobs 0x1278B0 / 0x1283F0 / 0x128530).
+BtlScene_FreeLayer0 = 0x0012D0C8; // type:func // guess
+BtlScene_CreateLayer0 = 0x0012D100; // type:func // guess
+BtlScene_GetGroup = 0x0012D140; // type:func
+BtlScene_FreeCharLayer2 = 0x0012D150; // type:func // guess
+BtlScene_CreateCharLayer2 = 0x0012D168; // type:func // guess
+BtlScene_FreeChar = 0x0012D180; // type:func // guess
+BtlScene_CreateChar = 0x0012D1A8; // type:func // guess
+// Per-kind (0..6) tests called by 28 and 17 effect functions with (object id, kind).
+BtlScene_IsEffectStopped = 0x0012D1D0; // type:func // guess
+BtlScene_IsEffectHidden = 0x0012D298; // type:func // guess
+// Stage change: flag bit 0 of the scene and the once-per-frame check that calls 0x241E38 (stage change request) or
+// 0x207388 (held flag 0xAB on the target).
+BtlScene_RequestStageChange = 0x0012D408; // type:func // guess
+BtlScene_IsStageChangeRequested = 0x0012D420; // type:func // guess
+BtlScene_ClearStageChangeRequest = 0x0012D438; // type:func // guess
+BtlScene_CheckStageChange = 0x0012D450; // type:func // guess
+// Per-character table of 7 floats (six rates = 1.0, +0x18 = object +0xFF4 / 19.35).
+BtlScene_InitRates = 0x0012D650; // type:func
+BtlScene_TermRates = 0x0012D6F8; // type:func
+BtlScene_SetCharRate = 0x0012D740; // type:func
+BtlScene_GetCharRate = 0x0012D788; // type:func
+BtlScene_UpdateAllCharScales = 0x0012D7E0; // type:func
+BtlScene_UpdateCharScales = 0x0012D868; // type:func
+BtlScene_GetCharScale = 0x0012D918; // type:func
+// Root task callbacks (pointed to by gBtlSceneRootClass) and the creation / destruction of the five layer tasks.
+BtlSceneRoot_Init = 0x0012D968; // type:func
+BtlSceneRoot_Term = 0x0012D998; // type:func
+BtlSceneRoot_Update = 0x0012D9A0; // type:func
+BtlScene_CreateLayers = 0x0012D9A8; // type:func
+BtlScene_FreeLayers = 0x0012DA98; // type:func
+// state = (state * 714025 + 4096) % 150889, then float and range forms; BtlScene_UpdateRecords walks the blast records.
+BtlScene_Rand = 0x0012DB60; // type:func
+BtlScene_RandF = 0x0012DBE0; // type:func
+BtlScene_RandRangeF = 0x0012DC38; // type:func
+BtlScene_RandRange = 0x0012DC98; // type:func
+BtlScene_UpdateRecords = 0x0012DD08; // type:func
+
+// --- Targets named from their code (not decompiled) ---------------------------------------------------
+// 0x24F5D8(obj, state, arg): switch over 15 states stored at (obj+0x1664)+0x18. 0x24F860(obj): (obj+0x1664)+0x1C - 1, or -1.
+BtlObj_SetSubState = 0x0024F5D8; // type:func // guess
+BtlObj_GetSubState = 0x0024F860; // type:func // guess
+// Fighter flags. 0x1DA9D0(chr, bit) sets and 0x1DAA50(chr, bit) clears a bit in the held array at +0x1085 (BtlChar_SetFlag
+// sets the one-frame array at +0x10AD; BtlChar_TestFlag reads both). 0x1DC1A0(id): the fighter whose +0xC == id, or NULL.
+BtlChar_SetHeldFlag = 0x001DA9D0; // type:func // guess
+BtlChar_ClearFlag = 0x001DAA50; // type:func // guess
+BtlChar_FindByObjId = 0x001DC1A0; // type:func // guess
+// Script control of fighter BtlChar_Get(side), 0x20A050..0x20B200. StartMove: stores +0x1550 / +0x1554 (float) / +0x1558,
+// held flag 0xFA. SetPos / SetDir: Vec4 to +0x1560 / +0x1570, flags 0xFC / 0xFD. GetActiveMember: +0x994. IsAction4:
+// action id (+0x948) == 4. IsMoveDone: +0x1558 == 1 or flag 0x31 clear. StopMove: clears 0xFA, sets 0xFB. AddHp /
+// RaiseHp / LowerHp: see BtlFacade_*Hp. SetPowerUp: fills gauge +0xC, timer 30000, flag 6. UseSkillA / UseSkillB: finds
+// the id in the fighter's 4 / 3 slot list, flag 0x116 / 0x11A + slot. ChangeMember: flag 0x11D or 0x10E. ForceFlag11x:
+// flag 0x110 / 0x111. ForceAction(side, 0..4): flag 0x120 + kind and 0x11E. ForceReaction: flag 0x112 + kind.
+// IsInterruptible / CanAct: tests on the action id and flags.
+BtlCtrl_PlayMotion = 0x0020A050; // type:func // guess
+BtlCtrl_SetPos = 0x0020A0C0; // type:func // guess
+BtlCtrl_SetRot = 0x0020A178; // type:func // guess
+BtlCtrl_GetActiveMember = 0x0020A230; // type:func // guess
+BtlCtrl_IsAction4 = 0x0020A268; // type:func // guess
+BtlCtrl_IsMotionPlaying = 0x0020A2A0; // type:func // guess
+BtlCtrl_StopMotion = 0x0020A2E0; // type:func // guess
+BtlCtrl_AddHp = 0x0020A5F0; // type:func // guess
+BtlCtrl_RaiseHp = 0x0020A6C8; // type:func // guess
+BtlCtrl_LowerHp = 0x0020A758; // type:func // guess
+BtlCtrl_SetMaxPower = 0x0020AAE8; // type:func // guess
+BtlCtrl_Transform = 0x0020AB60; // type:func // guess
+BtlCtrl_Fuse = 0x0020AC40; // type:func // guess
+BtlCtrl_ChangeMember = 0x0020AD50; // type:func // guess
+BtlCtrl_ForceFlag11x = 0x0020AE18; // type:func // guess
+BtlCtrl_UseTechnique = 0x0020AE88; // type:func // guess
+BtlCtrl_ForceReaction = 0x0020AFD0; // type:func // guess
+BtlCtrl_IsInterruptible = 0x0020B030; // type:func // guess
+BtlCtrl_CanAct = 0x0020B110; // type:func // guess
+// Task system used by the effect modules. A list (0x18 bytes: parent, head, tail, free, ...) holds 0x40-byte tasks; a task
+// has flags (+0), class (+0x28), child list (+0x24), prev / next (+0x2C / +0x30). 0x1AD4C8(parent, capacity, workSize)
+// allocates a list from the pool; 0x1AD468 does it for a task and stores it at +0x24; 0x1AD6A8 frees a list. 0x1AD728 /
+// 0x1AD778 / 0x1AD7B8(list, class, arg): take a free task, link it (first / before head / after tail), call class->init.
+// 0x1ADA80(task): class->term, destroys its child list, unlinks. 0x1AD150 / 0x1AD200 / 0x1AD3B0(list): call class +0 /
+// +0xC / +0x14 on every task, depth first. 0x1AD280(list, flag): class +0x10 on every task (flag 0) or on those with the
+// flag (0x800, 0x1000, 0x2000) in task +4.
+BtlTaskList_Update = 0x001AD150; // type:func // guess
+BtlTaskList_PostUpdate = 0x001AD200; // type:func // guess
+BtlTaskList_Reset = 0x001AD280; // type:func // guess
+BtlTaskList_Draw = 0x001AD3B0; // type:func // guess
+BtlTask_CreateChildList = 0x001AD468; // type:func // guess
+BtlTaskList_Create = 0x001AD4C8; // type:func // guess
+BtlTaskList_Destroy = 0x001AD6A8; // type:func // guess
+BtlTaskList_AddFirst = 0x001AD728; // type:func // guess
+BtlTaskList_AddHead = 0x001AD778; // type:func // guess
+BtlTaskList_AddTail = 0x001AD7B8; // type:func // guess
+BtlTask_Kill = 0x001ADA80; // type:func // guess
+// 0x23FBF8(): the stage state (gp 0x2FEBE0) exists, battle flag 0x2000 (loading) is clear and bit 0 of its +8 is clear.
+BtlStage_IsReady = 0x0023FBF8; // type:func // guess

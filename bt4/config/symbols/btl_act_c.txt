@@ -1,0 +1,63 @@
+// Fighter action handlers, third slice: src/battle/btl_act_c.c = 0x1EA5F8..0x1EE058.
+// Evidence: the matching C (BtlAct_GuardHandler: near-matching C, 2 instructions swapped) and the handler
+// table gBtlActHandlers at 0x2C4980. Every name is a guess about what the action is in the game.
+
+// Actions 0xDA..0xDE: lying on / hitting the ground after a knock-down; ends in BtlAct_GetDownAction or, after
+// the recovery input check, the queued action.
+BtlAct_DownHandler = 0x001EA5F8; // type:func // guess
+// Actions 0xE1..0xE5: getting up (animations 0xE2..0xE7, 0xFE), ends in BtlAct_GetIdleFollowUp.
+BtlAct_GetUpHandler = 0x001EA920; // type:func // guess
+// Action 0xE6: animation 0xEA / 0xEB facing the opponent; leaves with flag 0x33.
+BtlAct_ActionE6 = 0x001EAB30; // type:func // guess
+// Action 0xE7: animation 0xC8 / 0xC9, then 0xDB / the down action / 0xD9.
+BtlAct_ActionE7 = 0x001EAD30; // type:func // guess
+// Actions 0xE8, 0xE9: animation 0xD0 / 0xD1, then action 0xB; 0xE8 starts a 700 km/h move.
+BtlAct_ActionE8E9 = 0x001EAE68; // type:func // guess
+// Action 0xEA: loops animation 0xD4 while flag 0xBE.
+BtlAct_ActionEA = 0x001EAFC0; // type:func // guess
+// Action 0xEB: waits for BtlActB_TickMemberChange, then action 0xF6.
+BtlAct_ActionEB = 0x001EB070; // type:func // guess
+// Action 0xD3: loops animation 0xB7 until the countdown at chr +0xFE0 (shortened by mashing) runs out.
+BtlAct_StunHandler = 0x001EB120; // type:func // guess
+// Action 0xE0: the same in the air (animation 0xD2 / 0xD3).
+BtlAct_AirStunHandler = 0x001EB1D0; // type:func // guess
+
+// Search for a lost opponent. (chr, limit): widens the window at chr +0xD58 (angle) / +0xD5C (range);
+// true when the angle passes limit. (chr): the opponent is inside the window.
+BtlAct_GrowSearchWindow = 0x001EB2D0; // type:func // guess
+BtlAct_IsOppInSearchWindow = 0x001EB3A0; // type:func // guess
+// Action 0x36: the search itself (animations 0x17F -> 0x17E, voices 0x26 / 0x27, restores lock-on flag 5).
+BtlAct_SearchHandler = 0x001EB4A8; // type:func // guess
+// Action 0x37: ki charge (animations 0x34 -> 0x35 -> 0x36, BtlMember_AddKi, powered-up mode flag 6).
+BtlAct_ChargeHandler = 0x001EB718; // type:func // guess
+// Action 0x38: guard (poses 0xEF / 0xF1 / 0xF3, recoils at +1, forced by flags 0x68..0x6A). INCLUDE_ASM.
+BtlAct_GuardHandler = 0x001EBBB0; // type:func // guess
+// Action 0x39 (flag 0x7B): animation 0xEC, then the attack BtlAct_GetEvasionAttack picks.
+BtlAct_Action39 = 0x001EC058; // type:func // guess
+// Action 0x3A: animation 0xEE, leaves with flag 0x33.
+BtlAct_Action3A = 0x001EC170; // type:func // guess
+// Action 0x3B (flag 0x6B): animations 0xF9 / 0xFA alternating on flag 0x31, four times.
+BtlAct_Action3B = 0x001EC288; // type:func // guess
+// Action 0x3C: animation 0xFD, flag 0x52.
+BtlAct_Action3C = 0x001EC430; // type:func // guess
+// Action 0x3D (flag 0x6B): animations 0xF9 -> 0xFA loop with flag 0x54 while the guard is held.
+BtlAct_Action3D = 0x001EC548; // type:func // guess
+// Actions 0x3E / 0x3F: a step in the air (animation 0xFB) / on the ground (0xFC), repeatable.
+BtlAct_Action3E = 0x001EC6B0; // type:func // guess
+BtlAct_Action3F = 0x001EC968; // type:func // guess
+// Action 0x40: animation 0xDE, flag 0x42.
+BtlAct_Action40 = 0x001ECB20; // type:func // guess
+// Action 0x41 (flag 0x7D): animations 0x193..0x195 in turn with camera cut 0x11 / 0x12, then requests 0x6A.
+BtlAct_Action41 = 0x001ECC38; // type:func // guess
+// Action 0x42: animation 0x192, 5000 damage to itself, flag 0x4B.
+BtlAct_Action42 = 0x001ECE38; // type:func // guess
+// Action 0x43: animation 0x185, voice 0x23, counts in member +0xA0.
+BtlAct_Action43 = 0x001ECFC0; // type:func // guess
+// (chr, anim): BtlAnim_PlaySub, then returns func_0024D518(func_0024D610(obj, 4, 1, 6)): a model node.
+BtlAct_PlaySubAnim = 0x001ED090; // type:func // guess
+// Actions 0xAE..0xB1: ki blast, charged ki blast, and the two while dashing (voices 0xC / 0x25,
+// BtlKiBlast_GetKiCost, aim direction at chr +0xDD0).
+BtlAct_KiBlastHandler = 0x001ED0F0; // type:func // guess
+BtlAct_ChargedKiBlastHandler = 0x001ED428; // type:func // guess
+BtlAct_DashKiBlastHandler = 0x001ED728; // type:func // guess
+BtlAct_DashChargedKiBlastHandler = 0x001EDB50; // type:func // guess

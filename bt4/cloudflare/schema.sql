@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS rooms (code TEXT PRIMARY KEY, made INTEGER NOT NULL, version INTEGER NOT NULL, ip TEXT NOT NULL, host_key TEXT NOT NULL, join_key TEXT, host_name TEXT NOT NULL, join_name TEXT, host_addrs TEXT NOT NULL, join_addrs TEXT, queue TEXT, who TEXT);
+CREATE TABLE IF NOT EXISTS used (what TEXT NOT NULL, slot INTEGER NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (what, slot));
+
+CREATE TABLE IF NOT EXISTS tag_rooms (code TEXT PRIMARY KEY, made INTEGER NOT NULL, ip TEXT NOT NULL, version INTEGER NOT NULL, revision INTEGER NOT NULL, state TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS tag_rooms_ip ON tag_rooms(ip);
+CREATE INDEX IF NOT EXISTS tag_rooms_made ON tag_rooms(made);

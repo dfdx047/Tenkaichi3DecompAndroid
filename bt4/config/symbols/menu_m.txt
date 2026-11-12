@@ -1,0 +1,26 @@
+// Menu overlay DBZP.BIN, 0x36DBE8..0x372148: the character selects of the mode group 13..30 (handler 0x379A58,
+// archive gMenuArc3, main-menu item 1). All names are guesses from what the code does.
+// SoloSel (menu_m.c): tail of the one-character select whose object starts in menu_l (work pointer gSoloSel,
+// 0x3B7348, named in menu_l.txt). UpdateEnd: the guide's closing line, then the leave timer (same shape as
+// EntrySel_UpdateEnd). Run: the frame loop (modes 15, 18, 21, 25, 29).
+SoloSel_UpdateEnd = 0x0036DBE8; // type:func // guess
+SoloSel_Run = 0x0036DD58; // type:func
+// UbTeamSel (menu_m_b.c): the team select of mode 15, the team version of SoloSel (up to five fighters, optional DP limit); work area
+// gUbTeamSel, 0x1C08 bytes. Labels: "mc_team_%d", "mc_dp_total_l_%d", "mc_dp_num_%03d", "mc_guide_%02dgo".
+// Evidence: the screen pattern (Init allocates, Term frees, Draw draws the four movies; the frame loop is 0x372260).
+UbTeamSel_SumCost = 0x0036E028; // type:func // guess
+UbTeamSel_IsCharaFree = 0x0036E100; // type:func // guess
+UbTeamSel_FitsDp = 0x0036E1B8; // type:func // guess
+UbTeamSel_RemoveMember = 0x0036E238; // type:func // guess
+UbTeamSel_SetChips = 0x0036E3D0; // type:func // guess
+UbTeamSel_SetFormChips = 0x0036E4F8; // type:func // guess
+UbTeamSel_SetTeamTex = 0x0036E650; // type:func // guess
+UbTeamSel_UpdateFaceLoad = 0x0036E7C0; // type:func // guess
+UbTeamSel_RequestFace = 0x0036E950; // type:func // guess
+UbTeamSel_ClipGoto = 0x0036E9C0; // type:func // guess
+UbTeamSel_Init = 0x0036EBA0; // type:func // guess
+UbTeamSel_Term = 0x0036FA60; // type:func // guess
+UbTeamSel_Draw = 0x0036FB48; // type:func // guess
+UbTeamSel_Update = 0x003707E0; // type:func // guess
+UbTeamSel_Input = 0x00370868; // type:func // guess
+gUbTeamSel = 0x003B734C; // size:0x4 // guess

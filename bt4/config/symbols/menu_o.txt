@@ -1,0 +1,46 @@
+// Menu overlay DBZP.BIN, 0x376920..0x37AFF8: the mode group 13..30 (main-menu item 1, archive gMenuArc3).
+// UbResult tail (menu_o.c): the result screen of the two disc modes (modes 27 / 30); the object starts in menu_n
+// (UbResult_MarkCourseCleared 0x3760C8, UbResult_Init 0x376150). Evidence: the screen pattern (Term frees, Draw
+// draws the one movie, Run is the frame loop the mode handler calls); labels "fl_hyouka_rank_in", "fl_zpoint_in",
+// "fl_itemget_in", "mc_newrecord_text". UpdateTalk is the guide's line queue (voice lines 0x38..0x3D, 0x51).
+UbResult_Term = 0x00376920; // type:func
+UbResult_Draw = 0x00376990; // type:func
+UbResult_Update = 0x003773A8; // type:func
+UbResult_UpdateTalk = 0x003776A8; // type:func // guess
+UbResult_Input = 0x00377888; // type:func
+UbResult_Run = 0x00378138; // type:func
+gUbResult = 0x003B7358; // size:0x4
+// DiscFusion (menu_o_b.c): the disc-swap screen of mode 24 (labels "mc_disk_plate%02d"; calls Disc_Identify and
+// Disc_GetDriveState, their only callers). UpdateHave copies gProgress + 0x684 bits 1 / 2 into the work area;
+// Identify maps Disc_Identify's result (0 / 1 / 2 kept, -2 -> 0x63, else -1); UpdateDisc is the swap dialog's state
+// machine (14 steps); UpdateTalk the guide's line queue; PlateGoto sends the cursor's plate to a label.
+DiscFusion_UpdateHave = 0x003782A8; // type:func // guess
+DiscFusion_Identify = 0x00378308; // type:func // guess
+DiscFusion_Init = 0x00378360; // type:func
+DiscFusion_Term = 0x00378858; // type:func
+DiscFusion_Draw = 0x00378900; // type:func
+DiscFusion_Update = 0x00378BA0; // type:func
+DiscFusion_UpdateDisc = 0x00378C90; // type:func // guess
+DiscFusion_UpdateTalk = 0x00379220; // type:func // guess
+DiscFusion_Input = 0x003793E0; // type:func
+DiscFusion_PlateGoto = 0x003796C0; // type:func // guess
+DiscFusion_Run = 0x00379758; // type:func
+gDiscFusion = 0x003B735C; // size:0x4
+// Ub_Main (menu_o_c.c): the handler of gProgress->mode 13..30 (entry 13..30 of Progress_Main's table) and the three
+// functions it calls when a character select was confirmed: BattleSetup_SetSide(0, ...) + one SetMember per chosen
+// fighter + Finish (mode 15), or SetMember(0, 0, ...) + Finish (modes 18 and 29; two identical functions).
+Ub_SetupTeam = 0x00379908; // type:func // guess
+Ub_SetupSolo = 0x003799C8; // type:func // guess
+Ub_SetupSolo2 = 0x00379A10; // type:func // guess
+Ub_Main = 0x00379A58; // type:func
+// MisSel head (menu_o_d.c): the mission list of mode 14 (the object goes on in menu_p: MisSel_Update .. MisSel_Run).
+// SetRank puts a rank letter on a row ("mc_rankmoji"); SetupBattle is Battle_ClearWork + BattleSetup_SetRule (mode 2)
+// + SetSide(1) + SetMember(1, ...) from the mission tables. gMisSelFaceTex is the object's one initialised table
+// ({19, 22, 23, 24, 25}: the movie's texture slots of the five opponent chips).
+MisSel_SetRank = 0x00379F58; // type:func // guess
+MisSel_SetupBattle = 0x0037A060; // type:func
+MisSel_Init = 0x0037A358; // type:func
+MisSel_Term = 0x0037A998; // type:func
+MisSel_Draw = 0x0037AA08; // type:func
+gMisSel = 0x003B7360; // size:0x4
+gMisSelFaceTex = 0x003B7368; // size:0x14 // guess

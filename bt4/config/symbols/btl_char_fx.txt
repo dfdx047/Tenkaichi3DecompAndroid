@@ -1,0 +1,115 @@
+// Fighter effect requests, animation events and the partner object: src/battle/btl_char_fx.c (0x1D00D8..0x1D0B60),
+// btl_char_fx_b.c (0x1D0B60..0x1D1EC8), btl_char_fx_c.c (0x1D1EC8..0x1D3B40). Evidence for every name is the C: all
+// bodies match (fdiff OK) except BtlFx_SpawnSpeedLines, BtlFx_UpdateGroundFx and BtlFx_FireKiBlast (INCLUDE_ASM,
+// attempts in the files). "Req N" = one-frame request bit N (BtlChar_TestFxBit); "event" = animation event bit
+// (BtlAnim_TestAttr). Names with a request number say that what the effect looks like is not known.
+// Request 0x20 / 0x2B: func_00187B00 effect kind 0xE at model part 0x2E with sound 0x46 / kind 0xD at part 0x10.
+BtlFx_SpawnFlashReq20 = 0x001D00D8; // type:func // guess
+BtlFx_SpawnFlashReq2B = 0x001D0150; // type:func // guess
+// Request 0x17: hit spark at fighter +0xDD0, module chosen by func_00210528 (4 -> 0x16D0B8, 2/3/5 -> none, else 0x177480).
+BtlFx_SpawnHitSparkReq17 = 0x001D01C0; // type:func // guess
+// Aura module 0x165180/0x165418: level = ki / kiMax when >= 0.5 (1 with object flag 0x40000 or request 0x13, 0 with
+// request 0x14); requests 7 / 8 send commands 2, 3, 4. 0x1D0478: requests 7 / 8 keep / burst effect 0x1762A8.
+// 0x1D0508: requests 4 / 5 switch the aura variant and object mask bit 6 (the powered-up look: inferred).
+BtlFx_UpdateAura = 0x001D02B8; // type:func // guess
+BtlFx_UpdateChargeFx = 0x001D0478; // type:func // guess
+BtlFx_UpdatePowerUpLook = 0x001D0508; // type:func // guess
+// Request 6 -> effect 0x1A6FD0. Requests 9 / 0xA: fighter +0x1340 ramps 0..1 (+1/6, -1/3 per frame) and drives the
+// screen filter of view fighter->side (0x248D20..). Requests 0xC..0xF -> effect 0x180A00 kinds 0..3. Request 0xB with
+// |velocity| / pose+0x98 > 0.5 -> effect 0x15EF18.
+BtlFx_SpawnReq6 = 0x001D0610; // type:func // guess
+BtlFx_UpdateScreenFilter = 0x001D0650; // type:func // guess
+BtlFx_SpawnBurstReqC = 0x001D0868; // type:func // guess
+BtlFx_SpawnFastMoveFx = 0x001D0900; // type:func // guess
+// Request 0x15: effect 0x17D710 with parameters from the angle to the opponent relative to the camera yaw and from the
+// distance ("speed lines" is a guess).
+BtlFx_SpawnSpeedLines = 0x001D09A0; // type:func // guess
+// Request 0x18 -> effect 0x17D500 at part 0x11. 0x1D0BC0: requests 0x2F..0x36, the ground effects 0x196F88..0x1975A8
+// (cancelled by pose bits 0x30000065; a splash instead of dust when the ground point is under the stage water level).
+// 0x1D0E60: flag 0x11 changing -> splash 0x140478 and sound 0x3A / 0x3B; flag 0x12 above speed 6.48 raises request
+// 0x19 -> wake effect 0x140358 (flag 0x11 = in water: inferred).
+BtlFx_SpawnReq18 = 0x001D0B60; // type:func // guess
+BtlFx_UpdateGroundFx = 0x001D0BC0; // type:func // guess
+BtlFx_UpdateWaterFx = 0x001D0E60; // type:func // guess
+// Requests 0x28..0x2A -> effect 0x171C78 along a direction from action parameter 0x86, then 0x171CE8 / 0x171D30.
+// Request 0x1A keeps effect 0x16B418; 0x38 keeps 0x15EDF0; 0x37 -> 0x15EEC0; 0x2E -> func_00187B00 kind 0xB.
+BtlFx_UpdateAimedFxReq28 = 0x001D0FD8; // type:func // guess
+BtlFx_UpdateReq1A = 0x001D1118; // type:func // guess
+BtlFx_UpdateReq38 = 0x001D1180; // type:func // guess
+BtlFx_SpawnReq37 = 0x001D11E8; // type:func // guess
+BtlFx_SpawnFlashReq2E = 0x001D1230; // type:func // guess
+// Characters 0x37, 0x98, 0x99 only: effect 0x1749F0 while request 0x3A is set, or flag 0xE without flag 0x11 and
+// without request 0x3B.
+BtlFx_UpdateCharaFx = 0x001D1298; // type:func // guess
+// Requests 0x2C / 0x2D: func_00187B70 kinds 6 and 0xD halfway to the opponent, size 3 or 6; the big one calls
+// BtlCharApi_ShakeCamsNear ("clash" is a guess).
+BtlFx_SpawnClashFlash = 0x001D13B0; // type:func // guess
+// Requests 0x1D / 0x1E / 0x1F -> func_0024E5B8(obj, 0 / 1 / 2); the last two repeat every 4 frames while set.
+// Request 3 -> object flag byte 2 = 8 on start, 1 on end.
+BtlFx_TriggerObjReq1D = 0x001D14F8; // type:func // guess
+BtlFx_TriggerObjReq1E = 0x001D1558; // type:func // guess
+BtlFx_TriggerObjReq1F = 0x001D15E0; // type:func // guess
+BtlFx_UpdateObjFlagReq3 = 0x001D1668; // type:func // guess
+// Object flag 0x2000000 = fighter camera trace result (+0x494) and not flag 0x12D. 0x1D1778: flag 0x137 ->
+// func_0024F568(obj, 1), else (obj, 9) once func_0024FA08 == 1. 0x1D1808: flag 0x96 holds object sub-state 5.
+// 0x1D18B0: object flag 0x80 = ability 0x79 while the action has attribute 0x200000 (needs object flag 2).
+BtlFx_UpdateOccludedFlag = 0x001D16F8; // type:func // guess
+BtlFx_UpdateObjCmdFlag137 = 0x001D1778; // type:func // guess
+BtlFx_UpdateSubStateFlag96 = 0x001D1808; // type:func // guess
+BtlFx_UpdateObjFlag80 = 0x001D18B0; // type:func // guess
+// Event 4 (this fighter was hit): 1..n sparks (0x176E70 / 0x16D6A8 / 0x16D270 / 0x178C10 / 0x177B18) at fighter
+// +0xDD0, offset by reaction kind (three BtlChar_RandF draws per spark for kind 0), hit sound, 0.1 s small-motor buzz.
+BtlFx_FireKiBlast = 0x001D1958; // type:func // guess
+// Events 0x100 / 0x80: flash at the event's model part, ChrCam_AddShake (5, 0.1 s / 10, 0.2 s), sound, voice kind 1.
+// Event 1 -> request 0x1B. Events 0x2000000 / 0x4000000 set / clear flag 0x30. Event 2 -> BtlChar_GetHitSoundLine.
+BtlFx_HandleImpactEvents = 0x001D1EC8; // type:func // guess
+BtlFx_HandleEvent1 = 0x001D2148; // type:func // guess
+BtlFx_HandleFlag30Events = 0x001D21F8; // type:func
+BtlFx_PlaySwingSound = 0x001D2260; // type:func // guess
+// Event 8 -> effect 0x15F3D8 at each of up to 19 model parts; event 0x1000000 -> func_00187B00 kind 0xC at up to 32
+// parts with sound 0x4B. Event 0x400: in a damage action sets flag 0x9F and pushes the fighter (and partner) backwards;
+// in a class 0x18 technique sets object mask bit 2. Event bit 46 -> ChrCam_AddShake(3, 0.3); bit 45 ->
+// BtlChar_Vibrate(1, 0.2).
+BtlFx_SpawnPartFxEvent8 = 0x001D22F8; // type:func // guess
+BtlFx_SpawnPartFlashes = 0x001D23D0; // type:func // guess
+BtlFx_PushBackOnEvent400 = 0x001D24E8; // type:func // guess
+BtlFx_SetObjMaskOnEvent400 = 0x001D2610; // type:func // guess
+BtlFx_ShakeCamOnEvent = 0x001D2690; // type:func
+BtlFx_VibrateOnEvent = 0x001D26E0; // type:func
+// Per object (fighter model or partner): flag events; the 19 event sounds (BtlCharSnd_RequestAt at part 3, 200..1500);
+// sub-state events bits 56..60.
+BtlFxObj_HandleFlagEvents = 0x001D2730; // type:func
+BtlFxObj_PlayEventSounds = 0x001D27F8; // type:func
+BtlFxObj_HandleSubStateEvents = 0x001D2C00; // type:func
+// The passes the fighter manager calls (order in docs): action stage, camera stage (37 steps), stage 10, post-scene,
+// late; then the roster's stage effect 0x247AF8 driven by request 0x12 (raised from requests 0x10 / 0x11).
+BtlFx_UpdateObjEvents = 0x001D2D10; // type:func
+BtlFx_UpdateAll = 0x001D2D30; // type:func
+BtlFx_UpdateAfterHits = 0x001D2E88; // type:func // guess
+BtlFx_UpdatePostScene = 0x001D2EC8; // type:func
+BtlFx_UpdateLate = 0x001D2EF0; // type:func
+BtlFx_UpdateStageFxRequest = 0x001D2F08; // type:func // guess
+BtlFx_UpdateStageFx = 0x001D2FF8; // type:func // guess
+BtlFx_UpdateRoster = 0x001D3110; // type:func
+// Copies a position and rotation into an object (+0x950 / +0x960) and calls func_0024E2B0.
+BtlFxObj_Place = 0x001D3128; // type:func
+// Partner object = {active, resource slot, object id} at fighter +0x1330, attached by the object load job (0x20B3C0),
+// released on reset. Events / voice lines, per-frame update on the owner's position, animation start (owner animation
+// ids from 0x19E) and stepping, flags, link, velocity.
+BtlPartner_HandleEvents = 0x001D3170; // type:func // guess
+BtlPartner_IsActive = 0x001D3538; // type:func // guess
+BtlPartner_Attach = 0x001D3540; // type:func // guess
+BtlPartner_Release = 0x001D3568; // type:func // guess
+BtlPartner_Update = 0x001D35B0; // type:func // guess
+BtlPartner_UpdateEvents = 0x001D3668; // type:func // guess
+BtlPartner_PlayAnim = 0x001D36B8; // type:func // guess
+BtlPartner_StepAnim = 0x001D3790; // type:func // guess
+BtlPartner_SetFlag10 = 0x001D37F8; // type:func // guess
+BtlPartner_LinkToOwner = 0x001D3850; // type:func // guess
+BtlPartner_GetObj = 0x001D38B8; // type:func // guess
+BtlPartner_PushAngle = 0x001D38E8; // type:func // guess
+BtlPartner_PushDir = 0x001D3978; // type:func // guess
+BtlPartner_SetObjFloats = 0x001D3A30; // type:func // guess
+BtlPartner_SetFlag80 = 0x001D3A98; // type:func // guess
+// Read-only data: .lit4 0x2FD1D8..0x2FD290 (see the report for which file emits which) and the jump table 0x2EF020
+// (BtlFx_FireKiBlast, left in assembly).

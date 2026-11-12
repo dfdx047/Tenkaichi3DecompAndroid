@@ -1,0 +1,675 @@
+; VU1 program 6: the ground shadow of a battle object.
+;
+; Draws the stage triangles under an object, textured with the object's shadow picture (the 256x256 work
+; page the object was drawn into from above by program 2). It is program 4 (stage geometry: per-vertex loop
+; plus a triangle clipper) with three changes: the texture coordinates are not read from the batch but
+; computed from the vertex position (a second matrix and a scale), the input is a list of separate triangles
+; sent as one strip (a per-vertex "no draw" flag in the position's w), and the two-quadword header of a
+; batch is not sent to the GS. See docs/systems/vu1/prog6.md for the full comparison.
+;
+; Loaded by   Vu1Pkt_LoadProg6(view, mtx, vec)   src/sys/vu1_packet.c (microprogram D_002C1F00..D_002C2D30,
+;                                                17 quadwords of constants, BASE 0x92, OFFSET 0x1B2)
+; Run by      Vu1Pkt_CallProg6(chain)            MSCALF 0, then the caller's chain
+; Only user   ObjShadow_Draw                     src/sys/gfxm_e_b.c; the chain is built by ObjShadow_BuildPacket
+;
+; Entry points (the VIF codes that reach them)
+;     0  MSCALF 0 (Vu1Pkt_CallProg6)   entry_init: matrices to registers, vi14 = 0x400 (top of the clipper's stack)
+;    15  1st MSCNT of the chain        entry_fan_tag: the quadword at TOP (the fan GIF tag) to 0x1E, vf31 = 0
+;    21  2nd MSCNT                     batch_start: one batch
+;   104  every later MSCNT             entry_next_batch: branch to batch_start
+; The registers set by entries 0 and 15 (vf1..vf8, vf13..vf16, vf31, vi14) are expected to survive from one
+; run to the next.
+;
+; VU memory (quadword addresses)
+;   0x000..0x003  world -> screen matrix            Mtx_Mul(view + 0x80, view + 0x40)     vf1..vf4
+;   0x004..0x007  world -> clip matrix              Mtx_Mul(view + 0xC0, view + 0x40)     vf5..vf8
+;   0x008..0x00B  clip -> screen matrix             view + 0x100                          vf9..vf12 (emit_fan only)
+;   0x00C..0x00F  world -> shadow camera matrix     ObjShadowWork.view                    vf13..vf16
+;   0x010         x = texture scale                 ObjShadowWork.scale (only x is read)
+;   0x011..0x01D  not used
+;   0x01E         GIF tag of a clipped triangle's fan (written by entry 15), then its vertices, 3 quadwords
+;                 each, up to 0x03C (room for 10)
+;   0x03D..0x064  clipper polygon buffer A, 3 quadwords per vertex: clip-space position, colour (floats), s t 1
+;   0x065..0x08C  clipper polygon buffer B
+;   0x08D..0x091  not used
+;   TOP           the input batch (0x092 or 0x244, alternating: VIF double buffering)
+;   TOP + 0xDD    the output packet
+;   ..0x3FF       the clipper's save area, 9 quadwords pushed downwards from 0x400 (vi14)
+; (The matrix roles are what the program does with them; the names of the view's fields are inferred.)
+;
+; Input batch at TOP (ObjShadow_BuildPacket: up to 18 triangles = 54 vertices)
+;   +0        GIF tag: 1 loop, EOP, one register (6 = TEX0_1)     copied to the output, never sent (see below)
+;   +1        its data, all zero                                   "
+;   +2        GIF tag: NLOOP = vertex count, EOP, PRE, PRIM 0x5C (triangle strip, gouraud, textured, STQ,
+;             alpha blend), 3 registers: ST, RGBAQ, XYZF2
+;   +3 + 4i   vertex i: x, y, z (floats); w = an integer, non-zero: do not draw the strip triangle that ends
+;             at this vertex (1 on the first two vertices of every triangle but the batch's first)
+;   +4 + 4i   the triangle's normal, w = 1.0                       not read by the program
+;   +5 + 4i   colour r, g, b, a (floats)
+;   +6 + 4i   0, 0, 1, 0 on entry; the program overwrites it with s, t, 1, 0 (the clipper reads it back)
+;
+; Output packet at TOP + 0xDD
+;   +0, +1    copies of batch +0 and +1. Program 4 kicks them; here the kick is gone and they stay unsent.
+;   +2        copy of batch +2; the one xgkick of a batch starts here
+;   +3 + 3i   s/w, t/w, 1/w            (ST; the third field is Q)
+;   +4 + 3i   r, g, b, a as integers   (RGBAQ)
+;   +5 + 3i   x, y, z in 12.4 fixed point; bit 15 of the w word (ADC) set = this vertex draws no triangle
+; A triangle that crosses the clip volume is not drawn by the strip (ADC set): the clipper sends it as a
+; separate packet from 0x01E, a triangle fan (tag from the chain's first quadword: PRIM 0x5D) with the same
+; three quadwords per vertex.
+;
+; Registers, vertex loop
+;   vf1..vf4    world -> screen             vf5..vf8   world -> clip           vf13..vf16  world -> shadow camera
+;   vf9         position in the shadow camera's space (scratch)
+;   vf17, vf18  batch +0, +1                vf19       batch +2, then s t 1 of the vertex
+;   vf20        position being transformed (the next vertex's from instruction 79 on)
+;   vf21        colour                      vf26       colour as integers
+;   vf22..vf24  clip-space positions of the last three vertices, oldest first
+;   vf25        screen position (before, then after the divide)            vf27  the same in fixed point
+;   vf28        0x010 (scale), then s/w t/w 1/w                            vf31  zero
+;   vi2   output packet (kick address)      vi3   input vertex pointer     vi7   output write pointer
+;   vi4   sum of the "outside" bits of the last three vertices (vi5, vi6: the two older ones; they start at
+;         -2 so that the sum cannot be positive before the third vertex)
+;   vi10  vertices left                     vi11  0x7FFF / 0x8000          vi13  no-draw flag of the vertex
+;   vi14  save-area pointer                 vi15  return address of clip_tri
+;
+; Registers, clipper
+;   vf17..vf19  polygon vertex "current" (position, colour, s t 1)         vf21..vf23  vertex "next"
+;   vf25..vf27  the point where the edge crosses the plane                 vf28        the triangle's centroid
+;   vf29.x      interpolation factor        vf30.x     sign of the plane (-1 or +1)
+;   vi5, vi6    clip-flag masks of the plane for current / next            vi7   0, 1, 2 = x, y, z
+;   vi8   read pointer                      vi9   write pointer            vi10  edges left
+;   vi11  vertices written                  vi12  rotation counter         vi2, vi1  return addresses
+;   emit_fan: vi2 = 0x1E, vi3 read pointer, vi7 write pointer, vi10 vertices left, vi11 = 0x8000 (+ count),
+;             vi4 = vi13 (the no-draw flag), vf9..vf12 clip -> screen
+;
+; Numbers in the comments (and in the notes) are instruction addresses in decimal. Addresses of the labels:
+;   entry_init 0, entry_fan_tag 15, batch_start 21, vtx_loop 45, check_nodraw 94, vtx_next 98,
+;   entry_next_batch 104, tri_reject_test 106, set_adc 159, clip_tri 164, clip_tri_ret 318, poly_close 320,
+;   clip_edge 328, edge_out_in 348, edge_cur_in 356, edge_in_in 371, clip_edge_ret 375, intersect 377,
+;   isect_rot_loop 383, isect_div 390, emit_fan 409, fan_loop 426, fan_next 445.
+
+.vif 0x00000000
+.mpg 0
+; ---- entry 0 (MSCALF 0): constants to registers ------------------------------------------------------------
+; Program 4 loads 0x008..0x00B into vf9..vf12 here; this program loads them in emit_fan and uses vf9 as
+; scratch in the vertex loop.
+entry_init:
+    nop                                | lq.xyzw vf1, 0(vi0)            ; vf1..vf4 = world -> screen
+    nop                                | lq.xyzw vf2, 1(vi0)
+    nop                                | lq.xyzw vf3, 2(vi0)
+    nop                                | lq.xyzw vf4, 3(vi0)
+    nop                                | lq.xyzw vf5, 4(vi0)            ; vf5..vf8 = world -> clip
+    nop                                | lq.xyzw vf6, 5(vi0)
+    nop                                | lq.xyzw vf7, 6(vi0)
+    nop                                | lq.xyzw vf8, 7(vi0)
+    nop                                | lq.xyzw vf13, 12(vi0)          ; vf13..vf16 = world -> shadow camera
+    nop                                | lq.xyzw vf14, 13(vi0)
+    nop                                | lq.xyzw vf15, 14(vi0)
+    nop                                | lq.xyzw vf16, 15(vi0)
+    nop                                | iaddiu vi14, vi0, 0x400        ; save-area pointer
+    nop                                | nop [E]                        ; end of entry 0
+    nop                                | nop
+
+; ---- entry 15 (first MSCNT): the chain's first quadword is the GIF tag for clipped fans ----------------------
+entry_fan_tag:
+    nop                                | xtop vi1
+    mulx.xyzw vf31, vf31, vf0x         | lq.xyzw vf30, 0(vi1)           ; vf31 = 0 (vf0.x is 0); vf30 = the fan GIF tag at TOP
+    nop                                | sq.xyzw vf30, 30(vi0)          ; to 0x1E
+    nop                                | nop
+    nop                                | nop [E]                        ; end of entry 15
+    nop                                | nop
+
+; ---- entry 21 (MSCNT): one batch -------------------------------------------------------------------------
+; Set-up, with the screen transform of vertex 0 mixed in. The batch's w is the no-draw flag, so the transforms
+; of this program take w = 1 from vf0 (program 4 multiplies by the batch's w).
+batch_start:
+    nop                                | xtop vi1                       ; vi1 = TOP
+    nop                                | lq.xyzw vf17, 0(vi1)           ; batch +0
+    nop                                | lq.xyzw vf18, 1(vi1)           ; batch +1
+    nop                                | iaddiu vi1, vi1, 0x2           ; vi1 = TOP + 2: the strip's GIF tag
+    nop                                | iaddiu vi3, vi1, 0x1           ; vi3 = TOP + 3: vertex 0
+    nop                                | lq.xyzw vf20, 0(vi3)           ; position of vertex 0
+    nop                                | iaddiu vi11, vi0, 0x7fff
+    nop                                | ilwr.x vi10, (vi1)             ; NLOOP | 0x8000
+    nop                                | iand vi10, vi10, vi11          ; vi10 = vertex count
+    mulax.xyzw acc, vf1, vf20x         | lq.xyzw vf19, 0(vi1)           ; vf19 = the strip's GIF tag
+    madday.xyzw acc, vf2, vf20y        | iaddiu vi2, vi3, 0xda          ; vi2 = TOP + 0xDD: output packet
+    maddaz.xyzw acc, vf3, vf20z        | iaddi vi4, vi0, -2
+    maddw.xyzw vf25, vf4, vf0w         | iaddi vi5, vi0, -2             ; vf25 = world -> screen, w taken as 1 (vf0.w)
+    nop                                | iaddi vi6, vi0, -2
+    nop                                | sq.xyzw vf17, 0(vi2)           ; output +0
+    nop                                | sq.xyzw vf18, 1(vi2)           ; output +1
+    nop                                | div q, vf0w, vf25w
+    nop                                | sq.xyzw vf19, 2(vi2)           ; output +2
+    nop                                | iaddiu vi7, vi2, 0x4           ; vi7 = output +4
+    nop                                | move.xyzw vf22, vf0            ; vf22..vf24: no previous vertices yet
+    nop                                | move.xyzw vf23, vf0
+    nop                                | move.xyzw vf24, vf0
+    nop                                | iaddiu vi2, vi2, 0x2           ; vi2 = output +2: where the kick will start
+    nop                                | ilwr.w vi13, (vi3)             ; vi13 = no-draw flag of vertex 0
+
+; Per vertex. On entry: vf20 = its position, vf25 = that position times the world -> screen matrix,
+; q = 1 / vf25.w (the div was started 7 instructions ago), vi13 = its no-draw flag.
+vtx_loop:
+    mulax.xyzw acc, vf5, vf20x         | move.xyzw vf22, vf23           ; shift the history of clip-space positions
+    madday.xyzw acc, vf6, vf20y        | move.xyzw vf23, vf24
+    maddaz.xyzw acc, vf7, vf20z        | lq.xyzw vf19, 3(vi3)           ; (vf19 is loaded again at 51)
+    maddw.xyzw vf24, vf8, vf0w         | lq.xyzw vf21, 2(vi3)           ; vf24 = world -> clip (w = 1); vf21 = colour
+    clip.xyz vf22, vf22                | iadd vi4, vi0, vi5             ; vi4 = outside bit of vertex i-2
+    mulq.xyzw vf25, vf25               | iadd vi5, vi0, vi6             ; vf25 = screen position / w; vi5 = outside bit of i-1
+
+; Texture coordinates (not in program 4): s = (xc * scale + 1) / 2, t = (yc * scale + 1) / 2, with xc, yc the
+; position in the shadow camera's space. Why the block is padded with nops is not known.
+    mulax.xyzw acc, vf13, vf20x        | lq.xyzw vf19, 3(vi3)           ; vf19 = batch quadword 3 of the vertex: 0, 0, 1, 0
+    madday.xyzw acc, vf14, vf20y       | lq.xyzw vf28, 16(vi0)          ; vf28.x = texture scale
+    maddaz.xyzw acc, vf15, vf20z       | nop
+    maddw.xyzw vf9, vf16, vf0w         | nop                            ; vf9 = world -> shadow camera (w = 1)
+    mulx.xyzw vf19, vf19, vf0x         | nop                            ; vf19 = 0, whatever was loaded
+    nop                                | nop
+    nop                                | nop
+    mulx.xy vf9, vf9, vf28x            | nop                            ; vf9.xy *= scale
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    addx.x vf19, vf9, vf0x             | nop                            ; vf19.x = vf9.x
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    addy.y vf19, vf19, vf9y            | nop                            ; vf19.y = vf9.y
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    addw.xyz vf19, vf19, vf0w          | nop                            ; vf19.xyz += 1: (x + 1, y + 1, 1)
+    nop                                | nop
+    nop                                | nop
+    nop                                | loi 0x3F000000 [I]             ; 0.5
+    muli.xy vf19, vf19                 | nop                            ; vf19 = (s, t, 1, 0)
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | sq.xyzw vf19, 3(vi3)           ; back into the batch, for the clipper
+
+; Output, and the screen transform of the next vertex. The three clips leave the flags of the last three
+; vertices in the 24-bit clip flag: oldest in bits 12..17, newest in bits 0..5.
+    mulq.xyz vf28, vf19                | lq.xyzw vf20, 4(vi3)           ; vf28 = (s, t, 1) / w; vf20 = position of the next vertex
+    clip.xyz vf23, vf23                | iaddiu vi3, vi3, 0x4           ; vi3 -> next vertex
+    clip.xyz vf24, vf24                | iaddiu vi7, vi7, 0x3           ; vi7 -> past this vertex's three output quadwords
+    ftoi4.xyzw vf27, vf25              | iaddi vi10, vi10, -1           ; vf27 = screen position, 12.4 fixed point
+    mulax.xyzw acc, vf1, vf20x         | sq.xyzw vf28, -4(vi7)          ; next vertex: world -> screen (83, 84, 86, 87); store ST
+    madday.xyzw acc, vf2, vf20y        | nop
+    ftoi0.xyzw vf26, vf21              | fcand vi1, 0x3f                ; vf26 = colour as integers; vi1 = 1 if vf24 is outside
+    maddaz.xyzw acc, vf3, vf20z        | sq.xyzw vf27, -2(vi7)          ; store XYZF2
+    maddw.xyzw vf25, vf4, vf0w         | iadd vi6, vi0, vi1             ; vi6 = outside bit of this vertex
+    nop                                | iadd vi4, vi4, vi5
+    nop                                | sq.xyzw vf26, -3(vi7)          ; store RGBAQ
+    nop                                | iadd vi4, vi4, vi6             ; vi4 = outside bits of the last three vertices
+    nop                                | nop
+    nop                                | ibgtz vi4, tri_reject_test     ; any outside:
+    nop                                | nop
+
+; No triangle crossed the volume. vi4 is 0 here for a triangle that is inside (negative on the first two
+; vertices of the batch) and positive for one that tri_reject_test threw out.
+check_nodraw:
+    nop                                | iadd vi4, vi4, vi13            ; + this vertex's no-draw flag
+    nop                                | ilwr.w vi13, (vi3)             ; vi13 = no-draw flag of the next vertex
+    nop                                | ibgtz vi4, set_adc             ; flagged or rejected: set ADC
+    nop                                | nop
+vtx_next:
+    nop                                | div q, vf0w, vf25w             ; q = 1 / w of the next vertex
+    nop                                | ibne vi10, vi0, vtx_loop
+    nop                                | nop
+
+; The batch is done: send the strip. Execution stops after 103; the next MSCNT resumes at 104.
+    nop                                | xgkick vi2                     ; send output +2..: the strip
+    nop                                | nop [E]
+    nop                                | nop
+entry_next_batch:
+    nop                                | b batch_start                  ; later MSCNTs come in here
+    nop                                | nop
+
+; ---- at least one of the last three vertices is outside ---------------------------------------------------
+; fcor gives 1 when (clip flag | mask) is all ones, that is when the three vertices are all outside the same
+; plane: such a triangle is only marked not drawn (check_nodraw sees vi4 > 0).
+tri_reject_test:
+    nop                                | fcor vi1, 0xff7df7             ; all three outside y < -w (bit 3)
+    nop                                | ibne vi1, vi0, check_nodraw
+    nop                                | nop
+    nop                                | fcor vi1, 0xffbefb             ; y > +w (bit 2)
+    nop                                | ibne vi1, vi0, check_nodraw
+    nop                                | nop
+    nop                                | fcor vi1, 0xffdf7d             ; x < -w (bit 1)
+    nop                                | ibne vi1, vi0, check_nodraw
+    nop                                | nop
+    nop                                | fcor vi1, 0xffefbe             ; x > +w (bit 0)
+    nop                                | ibne vi1, vi0, check_nodraw
+    nop                                | nop
+    nop                                | fcor vi1, 0xfdf7df             ; z < -w (bit 5)
+    nop                                | ibne vi1, vi0, check_nodraw
+    nop                                | nop
+    nop                                | fcor vi1, 0xfefbef             ; z > +w (bit 4)
+    nop                                | ibne vi1, vi0, check_nodraw
+    nop                                | nop
+
+; The triangle crosses the volume: clip it. This also runs for the two strip triangles that join two input
+; triangles (flagged no-draw); their fans are sent with ADC set on every vertex (see fan_loop), so they draw
+; nothing.
+; vf28 = centroid of the three clip-space positions; vf25..vf27 = the positions relative to it. The frame
+; pushed at vi14: vf20, vf21, vf22, vf23, vf24, vf25, vf31, then (vi2, vi3, vi5) and (vi6, vi7, vi10).
+; Program 4 saves only vf20, vf23, vf24, vf25 and clears vf31 afterwards. The three extra saves look
+; unnecessary: vf21 and vf22 are rewritten before their next use and the clipper does not write vf31.
+    adda.xyzw acc, vf22, vf23          | loi 0x3F800000 [I]             ; 1
+    maddi.xyzw vf28, vf24              | loi 0x3EAAAAAA [I]             ; 0.333333313; vf28 = vf22 + vf23 + vf24
+    nop                                | sqd.xyzw vf20, (--vi14)
+    nop                                | sqd.xyzw vf21, (--vi14)
+    nop                                | sqd.xyzw vf22, (--vi14)
+    muli.xyzw vf28, vf28               | sqd.xyzw vf23, (--vi14)        ; vf28 = centroid
+    nop                                | sqd.xyzw vf24, (--vi14)
+    nop                                | sqd.xyzw vf25, (--vi14)
+    nop                                | sqd.xyzw vf31, (--vi14)        ; vf21, vf22, vf31: not saved by program 4
+    nop                                | isubiu vi14, vi14, 0x1
+    nop                                | iswr.x vi2, (vi14)
+    sub.xyzw vf25, vf22, vf28          | iswr.y vi3, (vi14)
+    sub.xyzw vf26, vf23, vf28          | iswr.z vi5, (vi14)
+    sub.xyzw vf27, vf24, vf28          | isubiu vi14, vi14, 0x1
+    nop                                | iswr.x vi6, (vi14)
+    nop                                | iswr.y vi7, (vi14)
+    nop                                | iswr.z vi10, (vi14)
+    nop                                | bal vi15, clip_tri
+    nop                                | nop
+
+; Back from the clipper: restore, re-read the flag of the next vertex (vi3 already points at it).
+    nop                                | ilwr.x vi6, (vi14)
+    nop                                | ilwr.y vi7, (vi14)
+    nop                                | ilwr.z vi10, (vi14)
+    nop                                | iaddiu vi14, vi14, 0x1
+    nop                                | ilwr.x vi2, (vi14)
+    nop                                | ilwr.y vi3, (vi14)
+    nop                                | ilwr.z vi5, (vi14)
+    nop                                | iaddiu vi14, vi14, 0x1
+    nop                                | lqi.xyzw vf31, (vi14++)
+    nop                                | lqi.xyzw vf25, (vi14++)
+    nop                                | lqi.xyzw vf24, (vi14++)
+    nop                                | lqi.xyzw vf23, (vi14++)
+    nop                                | lqi.xyzw vf22, (vi14++)
+    nop                                | lqi.xyzw vf21, (vi14++)
+    nop                                | lqi.xyzw vf20, (vi14++)
+    nop                                | ilwr.w vi13, (vi3)             ; vi13 = no-draw flag of the next vertex, as at 95
+
+; Set ADC on the vertex just written (the XYZF2 quadword at vi7 - 2): no triangle ends here.
+set_adc:
+    nop                                | iaddiu vi11, vi0, 0x7fff
+    nop                                | iaddi vi11, vi11, 1            ; vi11 = 0x8000
+    nop                                | isw.w vi11, -2(vi7)            ; ADC
+    nop                                | b vtx_next
+    nop                                | nop
+
+; ---- clip_tri: clip one triangle against the six planes and send the result as a fan -----------------------
+; In: vf28 = centroid, vf25..vf27 = positions minus centroid, vi3 = input pointer (one vertex past the
+; triangle's last), vi7 = output pointer (likewise), vi13 = no-draw flag. Return address vi15.
+; The triangle is first grown by 0.5 % about its centroid (inferred: so that neighbouring fans overlap
+; instead of leaving cracks), then written to buffer A as v0 v1 v2 v0.
+clip_tri:
+    mulaw.xyzw acc, vf28, vf0w         | loi 0x3F80A3D7 [I]             ; 1.005; (the I register, for the maddi below)
+    maddi.xyzw vf22, vf25              | iaddiu vi8, vi0, 0x3d          ; vf22 = centroid + 1.005 * (v0 - centroid); vi8 = A
+    mulaw.xyzw acc, vf28, vf0w         | iaddiu vi9, vi0, 0x65          ; vi9 = B
+    maddi.xyzw vf23, vf26              | nop                            ; vf23, likewise v1
+    mulaw.xyzw acc, vf28, vf0w         | nop
+    maddi.xyzw vf24, vf27              | nop                            ; vf24, likewise v2
+    nop                                | nop
+    nop                                | sq.xyzw vf22, 0(vi8)           ; positions: A[0], A[1], A[2], and v0 again as A[3]
+    nop                                | sq.xyzw vf23, 3(vi8)
+    nop                                | sq.xyzw vf24, 6(vi8)
+    nop                                | sq.xyzw vf22, 9(vi8)
+
+; s t 1 from the input batch (the fourth quadword of each vertex, written back at 78).
+    nop                                | lq.xyzw vf22, -9(vi3)          ; s t 1 of v0 (vertex i-2)
+    nop                                | lq.xyzw vf23, -5(vi3)          ; v1
+    nop                                | lq.xyzw vf24, -1(vi3)          ; v2 (the vertex just processed)
+    nop                                | sq.xyzw vf22, 2(vi8)
+    nop                                | sq.xyzw vf23, 5(vi8)
+    nop                                | sq.xyzw vf24, 8(vi8)
+    nop                                | sq.xyzw vf22, 11(vi8)
+
+; Colours from the output packet (already integers), back to floats.
+    nop                                | lq.xyzw vf22, -9(vi7)          ; RGBAQ of v0
+    nop                                | lq.xyzw vf23, -6(vi7)
+    nop                                | lq.xyzw vf24, -3(vi7)
+    itof0.xyzw vf22, vf22              | nop
+    itof0.xyzw vf23, vf23              | nop
+    itof0.xyzw vf24, vf24              | nop
+    nop                                | sq.xyzw vf22, 1(vi8)
+    nop                                | sq.xyzw vf23, 4(vi8)
+    nop                                | sq.xyzw vf24, 7(vi8)
+    nop                                | sq.xyzw vf22, 10(vi8)
+
+; Six passes of the same shape: for every edge (current, next) of the closed polygon in one buffer, write
+; the part inside the plane to the other buffer (clip_edge), close the new polygon (poly_close), and stop
+; if nothing is left. vi5 / vi6 = the plane's bit in the clip flag for current / next, vi7 = which component,
+; vf30.x = the plane's sign.
+; Pass 1: z > -w (bit 5), A -> B.
+    nop                                | iaddiu vi5, vi0, 0x800         ; current: bit 11
+    nop                                | iaddiu vi6, vi0, 0x20          ; next: bit 5
+    nop                                | iaddiu vi7, vi0, 0x2           ; component z
+    nop                                | iaddiu vi8, vi0, 0x3d
+    nop                                | iaddiu vi9, vi0, 0x65
+    nop                                | iaddiu vi10, vi0, 0x3          ; 3 edges
+    subw.x vf30, vf0, vf0w             | iaddiu vi11, vi0, 0x0          ; sign -1; vi11 = vertices written
+    nop                                | lqi.xyzw vf21, (vi8++)         ; the first vertex is the first "next"
+    nop                                | lqi.xyzw vf22, (vi8++)
+    nop                                | lqi.xyzw vf23, (vi8++)
+pass_nz_loop:
+    nop                                | isubiu vi10, vi10, 0x1
+    nop                                | bal vi2, clip_edge
+    nop                                | nop
+    nop                                | ibne vi10, vi0, pass_nz_loop
+    nop                                | nop
+    nop                                | iaddiu vi8, vi0, 0x65          ; close the polygon in B
+    nop                                | bal vi2, poly_close
+    nop                                | nop
+    nop                                | ibeq vi11, vi0, clip_tri_ret   ; nothing left: return
+    nop                                | nop
+
+; Pass 2: z < +w (bit 4), B -> A.
+    nop                                | iaddiu vi5, vi0, 0x400
+    nop                                | iaddiu vi6, vi0, 0x10
+    nop                                | iaddiu vi7, vi0, 0x2
+    nop                                | iaddiu vi8, vi0, 0x65
+    nop                                | iaddiu vi9, vi0, 0x3d
+    nop                                | iadd vi10, vi0, vi11           ; edges = vertices of the previous pass
+    addw.x vf30, vf0, vf0w             | iaddiu vi11, vi0, 0x0          ; sign +1
+    nop                                | lqi.xyzw vf21, (vi8++)
+    nop                                | lqi.xyzw vf22, (vi8++)
+    nop                                | lqi.xyzw vf23, (vi8++)
+pass_pz_loop:
+    nop                                | isubiu vi10, vi10, 0x1
+    nop                                | bal vi2, clip_edge
+    nop                                | nop
+    nop                                | ibne vi10, vi0, pass_pz_loop
+    nop                                | nop
+    nop                                | iaddiu vi8, vi0, 0x3d
+    nop                                | bal vi2, poly_close
+    nop                                | nop
+    nop                                | ibeq vi11, vi0, clip_tri_ret
+    nop                                | nop
+
+; Pass 3: x > -w (bit 1), A -> B.
+    nop                                | iaddiu vi5, vi0, 0x80
+    nop                                | iaddiu vi6, vi0, 0x2
+    nop                                | iaddiu vi7, vi0, 0x0
+    nop                                | iaddiu vi8, vi0, 0x3d
+    nop                                | iaddiu vi9, vi0, 0x65
+    nop                                | iadd vi10, vi0, vi11
+    subw.x vf30, vf0, vf0w             | iaddiu vi11, vi0, 0x0
+    nop                                | lqi.xyzw vf21, (vi8++)
+    nop                                | lqi.xyzw vf22, (vi8++)
+    nop                                | lqi.xyzw vf23, (vi8++)
+pass_nx_loop:
+    nop                                | isubiu vi10, vi10, 0x1
+    nop                                | bal vi2, clip_edge
+    nop                                | nop
+    nop                                | ibne vi10, vi0, pass_nx_loop
+    nop                                | nop
+    nop                                | iaddiu vi8, vi0, 0x65
+    nop                                | bal vi2, poly_close
+    nop                                | nop
+    nop                                | ibeq vi11, vi0, clip_tri_ret
+    nop                                | nop
+
+; Pass 4: x < +w (bit 0), B -> A.
+    nop                                | iaddiu vi5, vi0, 0x40
+    nop                                | iaddiu vi6, vi0, 0x1
+    nop                                | iaddiu vi7, vi0, 0x0
+    nop                                | iaddiu vi8, vi0, 0x65
+.vif 0x00000000
+.mpg 256
+    nop                                | iaddiu vi9, vi0, 0x3d
+    nop                                | iadd vi10, vi0, vi11
+    addw.x vf30, vf0, vf0w             | iaddiu vi11, vi0, 0x0
+    nop                                | lqi.xyzw vf21, (vi8++)
+    nop                                | lqi.xyzw vf22, (vi8++)
+    nop                                | lqi.xyzw vf23, (vi8++)
+pass_px_loop:
+    nop                                | isubiu vi10, vi10, 0x1
+    nop                                | bal vi2, clip_edge
+    nop                                | nop
+    nop                                | ibne vi10, vi0, pass_px_loop
+    nop                                | nop
+    nop                                | iaddiu vi8, vi0, 0x3d
+    nop                                | bal vi2, poly_close
+    nop                                | nop
+    nop                                | ibeq vi11, vi0, clip_tri_ret
+    nop                                | nop
+
+; Pass 5: y > -w (bit 3), A -> B.
+    nop                                | iaddiu vi5, vi0, 0x200
+    nop                                | iaddiu vi6, vi0, 0x8
+    nop                                | iaddiu vi7, vi0, 0x1
+    nop                                | iaddiu vi8, vi0, 0x3d
+    nop                                | iaddiu vi9, vi0, 0x65
+    nop                                | iadd vi10, vi0, vi11
+    subw.x vf30, vf0, vf0w             | iaddiu vi11, vi0, 0x0
+    nop                                | lqi.xyzw vf21, (vi8++)
+    nop                                | lqi.xyzw vf22, (vi8++)
+    nop                                | lqi.xyzw vf23, (vi8++)
+pass_ny_loop:
+    nop                                | isubiu vi10, vi10, 0x1
+    nop                                | bal vi2, clip_edge
+    nop                                | nop
+    nop                                | ibne vi10, vi0, pass_ny_loop
+    nop                                | nop
+    nop                                | iaddiu vi8, vi0, 0x65
+    nop                                | bal vi2, poly_close
+    nop                                | nop
+    nop                                | ibeq vi11, vi0, clip_tri_ret
+    nop                                | nop
+
+; Pass 6: y < +w (bit 2), B -> A.
+    nop                                | iaddiu vi5, vi0, 0x100
+    nop                                | iaddiu vi6, vi0, 0x4
+    nop                                | iaddiu vi7, vi0, 0x1
+    nop                                | iaddiu vi8, vi0, 0x65
+    nop                                | iaddiu vi9, vi0, 0x3d
+    nop                                | iadd vi10, vi0, vi11
+    addw.x vf30, vf0, vf0w             | iaddiu vi11, vi0, 0x0
+    nop                                | lqi.xyzw vf21, (vi8++)
+    nop                                | lqi.xyzw vf22, (vi8++)
+    nop                                | lqi.xyzw vf23, (vi8++)
+pass_py_loop:
+    nop                                | isubiu vi10, vi10, 0x1
+    nop                                | bal vi2, clip_edge
+    nop                                | nop
+    nop                                | ibne vi10, vi0, pass_py_loop
+    nop                                | nop
+    nop                                | iaddiu vi8, vi0, 0x3d
+    nop                                | bal vi2, poly_close
+    nop                                | nop
+    nop                                | ibeq vi11, vi0, clip_tri_ret
+    nop                                | nop
+
+; Send the polygon left in buffer A (vi11 vertices).
+    nop                                | iaddiu vi8, vi0, 0x3d
+    nop                                | iaddiu vi9, vi0, 0x65
+    nop                                | iadd vi10, vi0, vi11
+    nop                                | iaddiu vi11, vi0, 0x0
+    nop                                | bal vi1, emit_fan
+    nop                                | nop
+clip_tri_ret:
+    nop                                | jr vi15
+    nop                                | nop
+
+; ---- poly_close: copy the first vertex at vi8 to the end of the polygon being written (vi9) ----------------
+poly_close:
+    nop                                | lq.xyzw vf21, 0(vi8)
+    nop                                | lq.xyzw vf22, 1(vi8)
+    nop                                | lq.xyzw vf23, 2(vi8)
+    nop                                | sqi.xyzw vf21, (vi9++)
+    nop                                | sqi.xyzw vf22, (vi9++)
+    nop                                | sqi.xyzw vf23, (vi9++)
+    nop                                | jr vi2
+    nop                                | nop
+
+; ---- clip_edge: one edge of the polygon against the current plane -----------------------------------------
+; The previous "next" becomes "current" (vf31 is zero, so the adds are moves) and a new "next" is read.
+; Writes 0, 1 or 2 vertices at vi9 and adds as many to vi11. Return address vi2.
+clip_edge:
+    add.xyzw vf17, vf31, vf21          | lqi.xyzw vf21, (vi8++)
+    add.xyzw vf18, vf31, vf22          | lqi.xyzw vf22, (vi8++)
+    add.xyzw vf19, vf31, vf23          | lqi.xyzw vf23, (vi8++)
+    nop                                | nop
+    clip.xyz vf17, vf17                | nop
+    clip.xyz vf21, vf21                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | fcget vi1
+
+; current outside?
+    nop                                | iand vi4, vi1, vi5
+    nop                                | nop
+    nop                                | ibeq vi4, vi0, edge_cur_in     ; no -> edge_cur_in
+    nop                                | nop
+
+; current outside:
+    nop                                | iand vi4, vi1, vi6
+    nop                                | nop
+    nop                                | ibeq vi4, vi0, edge_out_in     ; next inside -> edge_out_in
+    nop                                | nop
+    nop                                | b clip_edge_ret                ; both outside: nothing
+    nop                                | nop
+
+; out -> in: the crossing point
+edge_out_in:
+    nop                                | bal vi1, intersect
+    nop                                | nop
+    nop                                | sqi.xyzw vf25, (vi9++)
+    nop                                | sqi.xyzw vf26, (vi9++)
+    nop                                | sqi.xyzw vf27, (vi9++)
+    nop                                | iaddiu vi11, vi11, 0x1
+    nop                                | b clip_edge_ret
+    nop                                | nop
+
+; current inside:
+edge_cur_in:
+    nop                                | iand vi4, vi1, vi6
+    nop                                | nop
+    nop                                | ibeq vi4, vi0, edge_in_in
+    nop                                | nop
+
+; in -> out: current, then the crossing point
+    nop                                | bal vi1, intersect
+    nop                                | nop
+    nop                                | sqi.xyzw vf17, (vi9++)
+    nop                                | sqi.xyzw vf18, (vi9++)
+    nop                                | sqi.xyzw vf19, (vi9++)
+    nop                                | sqi.xyzw vf25, (vi9++)
+    nop                                | sqi.xyzw vf26, (vi9++)
+    nop                                | sqi.xyzw vf27, (vi9++)
+    nop                                | iaddiu vi11, vi11, 0x2
+    nop                                | b clip_edge_ret
+    nop                                | nop
+
+; in -> in: current
+edge_in_in:
+    nop                                | sqi.xyzw vf17, (vi9++)
+    nop                                | sqi.xyzw vf18, (vi9++)
+    nop                                | sqi.xyzw vf19, (vi9++)
+    nop                                | iaddiu vi11, vi11, 0x1
+clip_edge_ret:
+    nop                                | jr vi2
+    nop                                | nop
+
+; ---- intersect: the point where the edge current -> next crosses the plane, in vf25 (position),
+; vf26 (colour), vf27 (s t 1). d = component - sign * w for both ends, t = |d_cur / (d_next - d_cur)|,
+; result = current + t * (next - current). Return address vi1.
+intersect:
+    mulx.w vf25, vf17, vf30x           | nop                            ; vf25.w = sign * w_cur
+    mulx.w vf26, vf21, vf30x           | nop                            ; vf26.w = sign * w_next
+    nop                                | iadd vi12, vi0, vi7
+    subw.xyzw vf25, vf17, vf25w        | nop                            ; vf25 = current - sign * w_cur (every component)
+    subw.xyzw vf26, vf21, vf26w        | nop                            ; vf26 = next - sign * w_next
+    nop                                | nop
+
+; rotate the wanted component into x (vi7 times)
+isect_rot_loop:
+    nop                                | ibeq vi12, vi0, isect_div
+    nop                                | nop
+    nop                                | mr32.xyzw vf25, vf25
+    nop                                | mr32.xyzw vf26, vf26
+    nop                                | isubiu vi12, vi12, 0x1
+    nop                                | b isect_rot_loop
+    nop                                | nop
+isect_div:
+    sub.xyz vf27, vf26, vf25           | nop                            ; vf27.x = d_next - d_cur
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | div q, vf25x, vf27x            ; q = d_cur / (d_next - d_cur)
+    nop                                | waitq
+    addq.x vf29, vf0                   | nop
+    abs.x vf29, vf29                   | nop                            ; vf29.x = t
+    sub.xyzw vf25, vf21, vf17          | nop
+    sub.xyzw vf26, vf22, vf18          | nop
+    sub.xyzw vf27, vf23, vf19          | nop
+    mulx.xyzw vf25, vf25, vf29x        | nop
+    mulx.xyzw vf26, vf26, vf29x        | nop
+    mulx.xyzw vf27, vf27, vf29x        | nop
+    add.xyzw vf25, vf25, vf17          | nop
+    add.xyzw vf26, vf26, vf18          | nop
+    add.xyzw vf27, vf27, vf19          | nop
+    nop                                | jr vi1
+    nop                                | nop
+
+; ---- emit_fan: send the polygon at vi8 (vi10 vertices) as a triangle fan from 0x1E ------------------------
+; Same per-vertex work as the main loop, but from clip space (matrix 0x008) and with s t 1 and the colour
+; taken from the polygon buffer. Return address vi1.
+; The tag is first kicked with NLOOP = 0 (inferred: xgkick waits for the previous transfer, so this makes sure
+; the GS has taken the previous fan before the buffer at 0x1E is written again). Program 4 has the 0x8000 for
+; it in vi13; here vi13 is the no-draw flag and the constant is rebuilt in vi11 each time.
+emit_fan:
+    nop                                | lq.xyzw vf9, 8(vi0)            ; vf9..vf12 = clip -> screen
+    nop                                | lq.xyzw vf10, 9(vi0)
+    nop                                | lq.xyzw vf11, 10(vi0)
+    nop                                | lq.xyzw vf12, 11(vi0)
+    nop                                | lq.xyzw vf20, 0(vi8)           ; position of fan vertex 0
+    nop                                | iadd vi3, vi0, vi8
+    nop                                | nop
+    nop                                | iaddiu vi2, vi0, 0x1e          ; vi2 = 0x1E: the fan's GIF tag
+    mulax.xyzw acc, vf9, vf20x         | iaddiu vi11, vi0, 0x7fff
+    madday.xyzw acc, vf10, vf20y       | iaddiu vi11, vi11, 0x1         ; vi11 = 0x8000
+    maddaz.xyzw acc, vf11, vf20z       | isw.x vi11, 0(vi2)             ; tag: NLOOP 0, EOP
+    maddw.xyzw vf25, vf12, vf20w       | iaddiu vi7, vi2, 0x2           ; vf25 = clip -> screen; vi7 = 0x20
+    nop                                | iaddiu vi11, vi10, 0x7fff
+    nop                                | iaddiu vi11, vi11, 0x1         ; vi11 = vertex count | 0x8000
+    nop                                | xgkick vi2                     ; kick the empty tag (see above)
+    nop                                | div q, vf0w, vf25w
+    nop                                | isw.x vi11, 0(vi2)             ; tag: NLOOP = count, EOP
+fan_loop:
+    nop                                | lq.xyzw vf20, 1(vi3)           ; colour
+    nop                                | lq.xyzw vf21, 2(vi3)           ; s t 1
+    nop                                | iaddiu vi11, vi0, 0x7fff
+    nop                                | nop
+    ftoi0.xyzw vf29, vf20              | iaddi vi11, vi11, 1            ; vf29 = colour as integers; vi11 = 0x8000
+    mulq.xyz vf28, vf21                | lq.xyzw vf20, 3(vi3)           ; vf28 = (s, t, 1) / w; vf20 = next position
+    mulq.xyzw vf25, vf25               | iaddi vi10, vi10, -1           ; vf25 = screen position / w
+    mulax.xyzw acc, vf9, vf20x         | nop                            ; next vertex: clip -> screen (433..435, 437)
+    madday.xyzw acc, vf10, vf20y       | iadd vi4, vi0, vi13            ; vi4 = no-draw flag of the triangle being clipped
+    maddaz.xyzw acc, vf11, vf20z       | sq.xyzw vf29, 0(vi7)           ; store RGBAQ
+    ftoi4.xyzw vf26, vf25              | nop                            ; vf26 = 12.4 fixed point
+    maddw.xyzw vf25, vf12, vf20w       | sq.xyzw vf28, -1(vi7)          ; store ST
+    nop                                | iaddiu vi7, vi7, 0x3
+    nop                                | iaddiu vi3, vi3, 0x3
+    nop                                | sq.xyzw vf26, -2(vi7)          ; store XYZF2
+    nop                                | div q, vf0w, vf25w
+    nop                                | ibeq vi4, vi0, fan_next        ; flag clear: leave ADC clear
+    nop                                | nop
+    nop                                | isw.w vi11, -2(vi7)            ; flagged: ADC on every fan vertex
+fan_next:
+    nop                                | ibne vi10, vi0, fan_loop
+    nop                                | nop
+    nop                                | xgkick vi2                     ; send the fan
+    nop                                | nop
+    nop                                | jr vi1
+    nop                                | nop
+.vif 0x00000000
+.vif 0x00000000

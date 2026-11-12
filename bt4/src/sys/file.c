@@ -1,0 +1,553 @@
+extern int TagBattle_Active(void);
+#include "common.h"
+#include "sys/file.h"
+#include "sys/heap.h"
+
+/* libc */
+extern void *memset(void *dst, s32 value, u32 size);
+
+/* Sony libgraph / libcdvd */
+extern void *sceGsSyncVCallback(s32 (*handler)(s32));
+extern s32 sceCdGetDiskTypeSafe(void);
+extern s32 sceCdStatus(void);
+extern s32 sceCdSearchFile(void *file, char *name);
+
+/* CRI ADX */
+extern void ADXPS2_ExecVint(s32 mode);
+extern void ADXPS2_SetupDvdFs(AdxDvdFsParam *param);
+extern void ADXPS2_LoadFcacheDvd(AdxFcacheParam *param);
+extern void ADXPS2_SetupThrd(void *param, s32 unk);
+extern void ADXM_ExecMain(void);
+extern void ADXM_WaitVsync(void);
+extern void ADXERR_EntryErrFunc(void (*func)(void *obj, char *msg), void *obj);
+extern s32 ADXF_LoadPartitionNw(s32 ptid, char *fname, void *dir, void *ptinfo);
+extern s32 ADXF_GetPtStat(s32 ptid);
+extern ADXF ADXF_Open(char *fname, void *atr);
+extern ADXF ADXF_OpenAfs(s32 ptid, s32 flid);
+extern void ADXF_Close(ADXF adxf);
+extern s32 ADXF_ReadNw(ADXF adxf, s32 nsct, void *buf);
+extern s32 ADXF_Stop(ADXF adxf);
+extern s32 ADXF_GetFsizeSct(ADXF adxf);
+extern s32 ADXF_GetStat(ADXF adxf);
+extern void ADXT_Init(void);
+extern ADXT_HN ADXT_Create(s32 maxnch, void *work, s32 worksize);
+extern void ADXT_SetReloadSct(ADXT_HN adxt, s32 nsct);
+extern void ADXT_SetSvrFreq(ADXT_HN adxt, s32 freq);
+extern void ADXT_StartAfs(ADXT_HN adxt, s32 patid, s32 fid);
+
+extern u32 gVsyncCount;
+static AfsPartition sBt4Partitions[4] = {
+    {"pzs4us0.afs", 0x800, NULL}, {"pzs4us1.afs", 0x800, NULL},
+    {"pzs4us2.afs", 0x800, NULL}, {"pzs4us3.afs", 0x800, NULL}
+};
+#define gAfsPartitionTbl sBt4Partitions
+extern AdxPlayer gAdxPlayerTbl[];
+extern char *gDiscExeNameTbl[];
+extern AdxDvdFsParam gAdxDvdFsParam;
+extern AdxFcacheParam gAdxFcacheParam;
+extern FileReqQueue gFileReq;
+extern char gFileRootDir[];
+extern char gFileDirName[];
+
+#ifdef PORT
+/* Android / PC build: a read whose buffer the game heap had no room for. The PS2 went on with a null buffer (the
+   read landed at address 0 and the battle crashed when it bound the model: BtlObjMdl_BindFiles+0x30, address
+   0x6c, seen in team battles on phones). The block comes from the port's memory instead, which Heap_Free knows
+   (Port_GameBigFree), and the log says so with the heap's state. */
+extern unsigned Port_GameBigAlloc(int size);
+extern s32 Heap_GetFreeSize(void);
+#include <stdio.h>
+static void *File_PortNoRoom(s32 id, s32 size) {
+    static int told;
+    void *dst = (void *)Port_GameBigAlloc(size);
+
+    if (told < 16) {
+        told++;
+        fprintf(stderr, "bt3: game heap: no room for file %d (%d bytes, %d free in all); %s\n", (int)id, (int)size,
+                (int)Heap_GetFreeSize(), dst != NULL ? "read into the port's memory" : "the port's memory is full too");
+    }
+    return dst;
+}
+#endif
+
+/* Unused stub that returns 0. */
+s32 File_Stub264A50(void) {
+    return 0;
+}
+
+/* VBlank interrupt handler: counts the frame and runs the CRI vsync work. */
+s32 Vsync_Handler(s32 cause) {
+    gVsyncCount++;
+    ADXPS2_ExecVint(0);
+#ifndef PORT
+    __asm__ volatile("sync.l\nei");
+#endif
+    return 0;
+}
+
+/* Registers Vsync_Handler as the VBlank callback. */
+void Vsync_InstallHandler(void) {
+    sceGsSyncVCallback(Vsync_Handler);
+}
+
+/* CRI error callback: does nothing (the message printing was stripped). */
+void File_AdxErrorCallback(void *obj, char *msg) {
+}
+
+/* Starts loading the directory of AFS partition `pt` without blocking. */
+s32 File_LoadPartitionNw(s32 pt) {
+    AfsPartition *part = &gAfsPartitionTbl[pt];
+
+    return ADXF_LoadPartitionNw(pt, part->name, NULL, part->info);
+}
+
+/* Returns 1 once the partition directory has been read. */
+s32 File_IsPartitionLoaded(s32 pt) {
+    return ADXF_GetPtStat(pt) == ADXF_STAT_READEND;
+}
+
+/* Blocks until the partition directory has been read. */
+s32 File_WaitPartition(s32 pt) {
+    while (ADXF_GetPtStat(pt) != ADXF_STAT_READEND) {
+        ADXM_ExecMain();
+    }
+    return 1;
+}
+
+/* Like File_WaitPartition, but gives up after 2400 polls. */
+void File_WaitPartitionTimeout(s32 pt) {
+    s32 i;
+
+    for (i = 0; i < 2400; i++) {
+        if (ADXF_GetPtStat(pt) == ADXF_STAT_READEND) {
+            break;
+        }
+        ADXM_ExecMain();
+    }
+}
+
+/* Brings up the whole file layer: CRI, partitions 0 and 1, the request queue. */
+void File_Init(void) {
+    File_InitAdx();
+    File_LoadPartition1();
+}
+
+/* Sets up the CRI file system and players, loads partition 0 and resets the request queue. */
+void File_InitAdx(void) {
+    AdxDvdFsParam *dvd = &gAdxDvdFsParam;
+    AdxFcacheParam *fc;
+    AfsPartition *part;
+    AdxPlayer *player;
+    s32 i;
+
+    memset(dvd, 0, sizeof(AdxDvdFsParam));
+    dvd->rootDir = gFileRootDir;
+    ADXPS2_SetupDvdFs(dvd);
+
+    fc = &gAdxFcacheParam;
+    memset(fc, 0, sizeof(AdxFcacheParam));
+    fc->dirFile = gFileDirName;
+    fc->maxFiles = 0x10;
+    fc->bufSize = 0x190;
+    fc->buf = Heap_Alloc(0x190, 0x20, 0, HEAP_ANY);
+    ADXPS2_LoadFcacheDvd(fc);
+
+    ADXPS2_SetupThrd(NULL, 0);
+    ADXT_Init();
+    Vsync_InstallHandler();
+    ADXERR_EntryErrFunc(File_AdxErrorCallback, NULL);
+
+    part = gAfsPartitionTbl;
+    for (i = 0; i < FILE_PT_COUNT; i++, part++) {
+        part->info = Heap_Alloc(part->infoSize, 0x20, 0, HEAP_ANY);
+    }
+    player = gAdxPlayerTbl;
+    for (i = 0; i < ADX_PLAYER_COUNT; i++, player++) {
+        player->work = Heap_Alloc(player->workSize, 0x20, 0, HEAP_ANY);
+        player->adxt = ADXT_Create(2, player->work, player->workSize);
+        ADXT_SetReloadSct(player->adxt, player->reloadSct);
+        ADXT_SetSvrFreq(player->adxt, 30);
+    }
+
+    File_LoadPartitionNw(0);
+    File_WaitPartition(0);
+    File_InitRequests();
+}
+
+/* Loads the directory of partition 1 and waits for it. */
+void File_LoadPartition1(void) {
+    s32 part;
+    for (part = 1; part < 4; part++) {
+        File_LoadPartitionNw(part);
+        File_WaitPartition(part);
+    }
+}
+
+/* Empty stub called once per frame by three frame loops. */
+void File_Stub264D90(void) {
+}
+
+/* Waits until `count` vblanks have passed since the last call (always at least one), then restarts the count. */
+void Vsync_Wait(u32 count) {
+    s32 waited = 0;
+
+    while (gVsyncCount < count - 1) {
+        ADXM_WaitVsync();
+        waited = 1;
+    }
+    if (gVsyncCount < count || !waited) {
+        ADXM_WaitVsync();
+    }
+    gVsyncCount = 0;
+}
+
+/* Identifies the inserted disc by its boot file: 0..2 = Tenkaichi 1/2/3, -1 other PS2 DVD, -2 still detecting, -3 not a PS2 DVD. */
+s32 Disc_Identify(void) {
+    u8 file[0x24];
+    s32 result;
+    u32 i;
+
+    switch (sceCdGetDiskTypeSafe()) {
+    case 1:
+        result = -2;
+        break;
+    case 0x14:
+        result = -1;
+        break;
+    default:
+        result = -3;
+        break;
+    }
+    if (result == -1) {
+        for (i = 0; i < 3; i++) {
+            if (sceCdSearchFile(file, gDiscExeNameTbl[i]) == 1) {
+                result = i;
+                break;
+            }
+        }
+    }
+    return result;
+}
+
+/* Maps the drive status to 0..6 (stop, tray open, spin, read, pause, seek, other) and returns 7 when there is no disc. */
+s32 Disc_GetDriveState(void) {
+    s32 state;
+
+    switch (sceCdStatus()) {
+    case 0:
+        state = 0;
+        break;
+    case 1:
+        state = 1;
+        break;
+    case 2:
+        state = 2;
+        break;
+    case 6:
+        state = 3;
+        break;
+    case 10:
+        state = 4;
+        break;
+    case 18:
+        state = 5;
+        break;
+    case 0x20:
+    default:
+        state = 6;
+        break;
+    }
+    if (state != 1 && state != 6) {
+        if (sceCdGetDiskTypeSafe() == 0) {
+            state = 7;
+        }
+    }
+    return state;
+}
+
+/* Unused stub that returns 0. */
+s32 File_Stub264F70(void) {
+    return 0;
+}
+
+/* Empties the request queue: every entry goes to the free list. */
+void File_InitRequests(void) {
+    FileReqQueue *queue = &gFileReq;
+    List *free = &queue->free;
+    FileReq *req;
+    s32 i;
+
+    List_Init(free);
+    List_Init(&queue->pending);
+    req = queue->entries;
+    for (i = 0; i < FILE_REQ_MAX; i++, req++) {
+        req->flags = 0;
+        List_PushBack(free, &req->node);
+    }
+    queue->state = FILE_QUEUE_IDLE;
+    queue->adxf = NULL;
+}
+
+/* Reads a whole file and waits for it; opens by name when id < 0, allocates the buffer when buf is NULL. */
+void *File_LoadSyncEx(s32 id, char *name, void *buf, s32 unused) {
+    ADXF adxf;
+    s32 sectors;
+    void *dst;
+
+    do {
+        if (id >= 0) {
+            adxf = File_OpenById(id);
+        } else {
+            adxf = ADXF_Open(name, NULL);
+        }
+    } while (adxf == NULL);
+
+    sectors = ADXF_GetFsizeSct(adxf);
+    dst = buf;
+    if (buf == NULL) {
+        dst = Heap_Alloc(sectors * FILE_SECTOR_SIZE, 0x40, 0, HEAP_ANY);
+#ifdef PORT
+        if (dst == NULL) {
+            dst = File_PortNoRoom(id, sectors * FILE_SECTOR_SIZE);
+        }
+#endif
+    }
+    while (ADXF_ReadNw(adxf, sectors, dst) != sectors) {
+    }
+    do {
+        ADXM_ExecMain();
+    } while (ADXF_GetStat(adxf) != ADXF_STAT_READEND);
+    ADXF_Close(adxf);
+    buf = dst;
+    return buf;
+}
+
+/* Returns 1 while the request queue is working on a batch. */
+s32 File_IsBusy(void) {
+    return gFileReq.state != FILE_QUEUE_IDLE;
+}
+
+/* Number of requests not finished yet. */
+s32 File_GetPendingCount(void) {
+    return List_GetCount(&gFileReq.pending);
+}
+
+/* Aborts the batch in progress: stops the read, frees the buffers the queue allocated, drops every pending request. */
+void File_CancelRequests(void) {
+    FileReqQueue *queue = &gFileReq;
+    FileReq *req;
+
+    if (File_IsBusy()) {
+        if (queue->adxf != NULL) {
+            ADXF_Stop(queue->adxf);
+            ADXF_Close(queue->adxf);
+        }
+        for (req = (FileReq *)List_GetHead(&queue->pending); req != NULL; req = (FileReq *)List_GetNext(&req->node)) {
+            if (req->flags & FILE_REQ_OWNS_BUF) {
+                Heap_Free(req->buf);
+            }
+            req->flags = 0;
+        }
+    }
+    queue->state = FILE_QUEUE_IDLE;
+    queue->adxf = NULL;
+    List_AppendList(&queue->free, &queue->pending);
+}
+
+/* Queues an asynchronous read of file `id`; allocates the buffer when buf is NULL. Returns the buffer. */
+void *File_Request(s32 id, void *buf) {
+    FileReqQueue *queue = &gFileReq;
+    s32 flags = 0;
+    ADXF adxf;
+    s32 sectors;
+    void *dst;
+    FileReq *req;
+
+    do {
+        adxf = File_OpenById(id);
+    } while (adxf == NULL);
+
+    sectors = ADXF_GetFsizeSct(adxf);
+    dst = buf;
+    if (buf == NULL) {
+        dst = Heap_Alloc(sectors * FILE_SECTOR_SIZE, 0x40, 0, HEAP_ANY);
+#ifdef PORT
+        if (dst == NULL) {
+            dst = File_PortNoRoom(id, sectors * FILE_SECTOR_SIZE);
+        }
+#endif
+        flags = FILE_REQ_OWNS_BUF;
+    }
+    ADXF_Close(adxf);
+
+    req = (FileReq *)List_PopFront(&queue->free);
+    if(req==NULL){
+        extern s32 TagBattle_Count(void);
+        /* More than two models can exhaust the original request descriptors.
+           Complete the queued batch before reusing a descriptor. */
+        if(TagBattle_Active()){
+            while(!File_UpdateRequests()){}
+            req=(FileReq *)List_PopFront(&queue->free);
+        }
+    }
+    if(req==NULL){extern int printf(const char *,...);extern void exit(int);printf("file request descriptors exhausted\n");exit(4);}
+    req->flags = flags;
+    req->id = id;
+    req->sectors = sectors;
+    req->buf = dst;
+    List_PushBack(&queue->pending, &req->node);
+    buf = dst;
+    return buf;
+}
+
+/* Advances the request queue by one step; returns 1 when every request has been read. */
+s32 File_UpdateRequests(void) {
+    FileReqQueue *queue = &gFileReq;
+    s32 done = 0;
+    List *pending;
+    FileReq *req;
+    FileReq *entry;
+    s32 i;
+
+    if (File_GetPendingCount() == 0) {
+        return 1;
+    }
+    pending = &queue->pending;
+    req = (FileReq *)List_GetHead(pending);
+    switch (queue->state) {
+    case FILE_QUEUE_IDLE:
+        queue->state = FILE_QUEUE_OPEN;
+        entry = queue->entries;
+        for (i = 0; i < FILE_REQ_MAX; i++, entry++) {
+            entry->flags &= ~FILE_REQ_DONE;
+        }
+        /* fallthrough */
+    case FILE_QUEUE_OPEN:
+        queue->adxf = File_OpenById(req->id);
+        if (queue->adxf != NULL) {
+            queue->state = FILE_QUEUE_READ;
+        }
+        break;
+    case FILE_QUEUE_READ:
+        if (ADXF_ReadNw(queue->adxf, req->sectors, req->buf) == req->sectors) {
+            queue->state = FILE_QUEUE_WAIT;
+        }
+        break;
+    case FILE_QUEUE_WAIT:
+        if (ADXF_GetStat(queue->adxf) == ADXF_STAT_READEND) {
+            ADXF_Close(queue->adxf);
+            queue->adxf = NULL;
+            queue->state = FILE_QUEUE_NEXT;
+        }
+        break;
+    case FILE_QUEUE_NEXT:
+        req->flags |= FILE_REQ_DONE;
+        List_Remove(pending, &req->node);
+        List_PushBack(&queue->free, &req->node);
+        if (File_GetPendingCount() > 0) {
+            queue->state = FILE_QUEUE_OPEN;
+        } else {
+            queue->state = FILE_QUEUE_IDLE;
+            done = 1;
+        }
+        break;
+    }
+    return done;
+}
+
+/* Size of file `id` in bytes, rounded up to whole sectors. */
+s32 File_GetSize(s32 id) {
+    ADXF adxf;
+    s32 sectors;
+
+    do {
+        adxf = File_OpenById(id);
+    } while (adxf == NULL);
+    sectors = ADXF_GetFsizeSct(adxf);
+    ADXF_Close(adxf);
+    return sectors * FILE_SECTOR_SIZE;
+}
+
+/* Blocking read of a file given by path instead of id. */
+void *File_LoadSyncByName(char *name, void *buf, s32 unused) {
+    return File_LoadSyncEx(-1, name, buf, unused);
+}
+
+/* Blocking read of file `id`; allocates the buffer when buf is NULL. */
+void *File_LoadSync(s32 id, void *buf, s32 unused) {
+    return File_LoadSyncEx(id, NULL, buf, unused);
+}
+
+/* Returns the request queue. */
+FileReqQueue *File_GetRequestQueue(void) {
+    return &gFileReq;
+}
+
+#ifdef PORT
+extern int gPortVariant; /* plat_mem.c: 1 = the Budokai Tenkaichi 4 mod (SLUS_219.78) */
+
+/* The mod's translation of a global id, read from its program (SLUS_219.78): 0x100954 (the archive) calls 0x19BDC4
+   below 0x20000, and 0x100974 (the index) calls 0x19BE04 outside the fourth archive. File_OpenById (0x2654D8) and
+   the copy of File_StartAdxById the mod moved to 0x19BE34 both use them.
+     id >= 0x20000        archive 3, index id - 0x20000       (pzs4us3.afs, 30000 files)
+     id <= 0              archive 0, index id - 0x10CC0       (negative: no such file)
+     1 .. 0xD47           archive 1, index id - 1
+     0xD48 .. 0x10CBF     archive 2, index id - 0xD48
+     0x10CC0 .. 0x1FFFF   archive 0, index id - 0x10CC0      (pzs4us0.afs, 50503 files) */
+#define BT4_PT0_FIRST_ID 0x10CC0
+#define BT4_PT3_FIRST_ID 0x20000
+
+static s32 Bt4_PartitionOf(s32 id) {
+    if (id >= BT4_PT3_FIRST_ID) {
+        return 3;
+    }
+    if (id <= 0) {
+        return 0;
+    }
+    if (id < FILE_PT2_FIRST_ID) {
+        return 1;
+    }
+    if (id < BT4_PT0_FIRST_ID) {
+        return 2;
+    }
+    return 0;
+}
+
+static s32 Bt4_IndexOf(s32 pt, s32 id) {
+    if (pt == 3) {
+        return id - BT4_PT3_FIRST_ID;
+    }
+    if (pt == 0) {
+        return id - BT4_PT0_FIRST_ID;
+    }
+    if (pt == 2) {
+        return id - FILE_PT2_FIRST_ID;
+    }
+    return id - FILE_PT1_FIRST_ID;
+}
+#endif
+
+/* Opens file `id`, translating the global id into (partition, index). */
+ADXF File_OpenById(s32 id) {
+#ifdef PORT
+    if (gPortVariant != 0) {
+        s32 pt = Bt4_PartitionOf(id);
+        return ADXF_OpenAfs(pt, Bt4_IndexOf(pt, id));
+    }
+#endif
+    return ADXF_OpenAfs(id <= 0 ? 0 : id < FILE_PT2_FIRST_ID ? 1 : 2,
+                        id <= 0 ? id : id < FILE_PT2_FIRST_ID ? id - FILE_PT1_FIRST_ID : id - FILE_PT2_FIRST_ID);
+}
+
+/* Starts streaming file `id` on an ADXT player, with the same id translation as File_OpenById. */
+void File_StartAdxById(ADXT_HN adxt, s32 id) {
+#ifdef PORT
+    if (gPortVariant != 0) {
+        s32 pt = Bt4_PartitionOf(id);
+        ADXT_StartAfs(adxt, pt, Bt4_IndexOf(pt, id));
+        return;
+    }
+#endif
+    ADXT_StartAfs(adxt, id <= 0 ? 0 : id < FILE_PT2_FIRST_ID ? 1 : 2,
+                  id <= 0 ? id : id < FILE_PT2_FIRST_ID ? id - FILE_PT1_FIRST_ID : id - FILE_PT2_FIRST_ID);
+}

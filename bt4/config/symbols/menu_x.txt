@@ -1,0 +1,20 @@
+// Menu overlay DBZP.BIN, 0x39EFC0..0x3A3848.
+// EvoTop: tail of the top menu of modes 48..50 (object 0x39EB08..0x39FAA8; guide "cririn", three plates
+// "mc_menu_plate_%d", explanation clip "fl_evo_z_ets_in"). The work area is a local of EvoTop_Run (0xD0 bytes).
+EvoTop_Term = 0x0039EFC0; // type:func // guess
+EvoTop_ScissorCloud1 = 0x0039F010; // type:func // guess
+EvoTop_ScissorCloud2 = 0x0039F038; // type:func // guess
+EvoTop_ScissorOff = 0x0039F060; // type:func // guess
+EvoTop_SetCloudClips = 0x0039F088; // type:func // guess
+EvoTop_UpdateFace = 0x0039F140; // type:func // guess
+EvoTop_Draw = 0x0039F1F8; // type:func // guess
+EvoTop_Input = 0x0039F410; // type:func // guess
+EvoTop_Leave = 0x0039F888; // type:func // guess
+EvoTop_Run = 0x0039F9D0; // type:func // guess
+// Handler of gProgress->mode 62 (main-menu item 9): loads archive 10 and runs the options screen.
+OptMode_Main = 0x0039FAA8; // type:func
+// Option: the options screen (mode 62). Work area gOption (0x22C bytes).
+Option_Init = 0x0039FBB8; // type:func
+Option_Run = 0x003A0750; // type:func
+Option_Input = 0x003A0808; // type:func
+gOption = 0x003BC364; // size:0x4

@@ -1,0 +1,74 @@
+// Effect tasks 0x1895E8..0x18D618: src/battle/eft_w.c, include/battle/eft_w.h.
+//
+// 0x1895E8..0x18C190: second half of effect pack part kind 15 (the "link" emitter: sprites laid out between two
+// points). The first half is eft_v.c / eft_v.txt, which owns gEftLink (0x2FEA84), gEftLinkClass (0x2C3F50) and
+// the callbacks; the prefix EftLink_ is taken from there.
+// Sprite draw routines called by EftLink_Draw (0x188258). DrawQuad: one gouraud strip through the four corners.
+// DrawQuadClipped: the same as two triangles through EftGfx_DrawPolyScaledZ. DrawBillboardClipped: camera-facing
+// rectangle as two triangles through EftGfx_DrawPolyFixedZ. DrawBillboard: screen-aligned flat quad packet.
+EftLink_DrawQuad = 0x001895E8; // type:func
+EftLink_DrawQuadClipped = 0x00189A28; // type:func
+EftLink_DrawBillboardClipped = 0x0018B0F0; // type:func
+EftLink_DrawBillboard = 0x0018B428; // type:func
+// SetKey: current values = key i of the definition (called by EftLink_Init and the key animation).
+// SelectTex / BuildTex: texture + palette pair of the pack's texture table and its cached TEX0.
+EftLink_SetKey = 0x00189C98; // type:func
+EftLink_SelectTex = 0x00189F80; // type:func
+EftLink_BuildTex = 0x00189FD0; // type:func
+// Sprite pool (200 nodes of 0x150 bytes in gEftLink) and the per-emitter list.
+// NewNode: called by EftLink_Place (0x1885E0). InitNode: random start values. StepNodes: one frame for every
+// sprite of an emitter (called by EftLink_Update). BuildCorners: world corners through the matrix stack.
+EftLink_NewNode = 0x0018A080; // type:func
+EftLink_InitNode = 0x0018A1D8; // type:func
+EftLink_StepNodes = 0x0018A7A0; // type:func
+EftLink_BuildCorners = 0x0018AE98; // type:func
+EftLink_LinkNode = 0x0018B058; // type:func
+EftLink_UnlinkNode = 0x0018B088; // type:func
+// Handle API of part kind 15, called by EftEmit_SpawnType15 (0x14F880), EftEmit_KillAll (0x150D80, Kill) and
+// EftEmit_UpdateAlive (0x151050, IsAlive). Every entry checks that the handle is a task of gEftLinkClass.
+// Create: BtlTaskList_AddTail(gEftLink->list, gEftLinkClass, arg). Stop: honours stop delay and fade.
+// Warp / SetDir: empty. SetEnds, SetRate, SetTex, SetFlag200 have no caller.
+EftLink_Create = 0x0018BB08; // type:func
+EftLink_Stop = 0x0018BB50; // type:func
+EftLink_Kill = 0x0018BC00; // type:func
+EftLink_SetFade = 0x0018BC58; // type:func
+EftLink_SetEnds = 0x0018BCB8; // type:func
+EftLink_SetPos = 0x0018BD60; // type:func
+EftLink_SetPos2 = 0x0018BDD0; // type:func
+EftLink_Warp = 0x0018BE40; // type:func
+EftLink_SetDir = 0x0018BE60; // type:func
+EftLink_SetSize = 0x0018BE80; // type:func
+EftLink_SetRate = 0x0018BED0; // type:func // guess
+EftLink_SetTex = 0x0018BF20; // type:func
+EftLink_SetDelay = 0x0018BF88; // type:func
+EftLink_SetStopDelay = 0x0018BFF8; // type:func
+EftLink_SetFlag200 = 0x0018C050; // type:func // guess
+EftLink_SetType = 0x0018C0B0; // type:func // guess
+EftLink_IsAlive = 0x0018C110; // type:func
+// GS drawing-area test of one corner, used by EftLink_DrawBillboard (eft_x.txt has the kind 10 copy at 0x190C98).
+EftLink_IsCornerOffScreen = 0x0018C160; // type:func
+//
+// 0x18C190..0x18D618: first half of effect pack part kind 10 (rings of sprite particles around a point); the
+// second half is eft_x.c / eft_x.txt, whose prefix EftPart10_ is used here.
+// Manager class 0x2C3F68 (update, init, term, 0, reset, 0), an entry of the layer table at 0x2C4068.
+EftPart10Mgr_Init = 0x0018C190; // type:func
+EftPart10Mgr_Update = 0x0018C1F8; // type:func
+EftPart10Mgr_Reset = 0x0018C200; // type:func
+EftPart10Mgr_Term = 0x0018C208; // type:func
+// Emitter class 0x2C3F80 (update, init, term, post-update, reset, draw). The kind 10 handle API (0x190610..) tests
+// a handle by comparing its update callback with EftPart10_Update.
+EftPart10_Init = 0x0018C238; // type:func
+EftPart10_Update = 0x0018C4E8; // type:func
+EftPart10_PostUpdate = 0x0018C7C0; // type:func
+EftPart10_Draw = 0x0018C7C8; // type:func
+EftPart10_Reset = 0x0018CA20; // type:func
+EftPart10_Term = 0x0018CA38; // type:func
+// EmitRings: fills the emitter's ring slots (calls EftPart10_Emit per empty ring). Step: one frame for every
+// particle. NewGroup: ring pool (150 entries of 0x14 bytes in the manager block).
+EftPart10_EmitRings = 0x0018CAF0; // type:func
+EftPart10_Step = 0x0018CCC8; // type:func
+EftPart10_NewGroup = 0x0018D530; // type:func
+// The manager block (0xD0F0 bytes from the battle pool): child list, ring pool, particle pool, identity matrix.
+gEftPart10Mgr = 0x002FEA88; // size:0x4
+gEftPart10MgrClass = 0x002C3F68; // size:0x18
+// (gEftPart10Class = 0x2C3F80 is named in eft_x.txt.)

@@ -1,0 +1,85 @@
+// Technique effects, third part: src/battle/eft_i.c = 0x14F230..0x1532A0. See include/battle/eft_i.h.
+// It continues eft_h.c: the rest of the effect pack library (EftEmit_*) and two technique effect types.
+// An effect pack (EftEmitSet here, EftSet in eft_h.h) has 19 kinds of parts, one module per kind. "TypeN" is the
+// kind (the index of the jump table in EftEmit_Spawn), as in EftEmit_SpawnType0.. of eft_h.txt.
+
+// Per-module spawners, called only from EftEmit_Spawn's jump table (types 9, 10, 15, 12). Each: create the
+// particle object if asked and the slot is empty, then position / size / direction / stop / kill by flag bits.
+// Modules: 0x194970.. (type 9), 0x190610.. (type 10), 0x18BB08.. (type 15), 0x1A6598.. (type 12).
+EftEmit_SpawnType9 = 0x0014F230; // type:func // guess
+EftEmit_SpawnType10 = 0x0014F540; // type:func // guess
+EftEmit_SpawnType15 = 0x0014F880; // type:func // guess
+EftEmit_SpawnType12 = 0x0014FC18; // type:func // guess
+// Wrapper: EftEmit_Spawn for the pack's own technique slot (object id and node from set->owner), arg7 = 1.
+EftEmit_SpawnOwn = 0x0014FF50; // type:func
+// The dispatcher: picks the part, tests the opponent's parameter flag 0x80, resolves node position,
+// direction mode, random spread (two rand()), dispatches to the module spawner, then animates the emitter scale.
+EftEmit_Spawn = 0x0014FF90; // type:func
+// Sets flag 0x20 (use the alternative node) on emitters whose condition bit is among the fighter's active
+// requests (0x14A8C0 bits 2, 4, 0x10, 0x20, 0x40 and the extra argument). No callers found.
+EftEmit_MarkCond = 0x00150B58; // type:func // guess
+// Sets flag 0x40 on emitters of kind 6 that are neither started nor stopped.
+EftEmit_MarkKind6 = 0x00150CC8; // type:func // guess
+// Destroys every particle object of a set (both halves) through the module's kill entry and clears the slots.
+EftEmit_KillAll = 0x00150D80; // type:func
+// Asks each module whether its object is still alive, clears dead slots, returns the mask of groups with a
+// live object whose emitter kind is not 2.
+EftEmit_UpdateAlive = 0x00151050; // type:func
+// Builds the request mask from 0x14A8C0(objId, 2 / 4 / 8 / 0x10 / 0x20 / 0x40 / 0x400) and tail-calls
+// EftEmit_UpdateNodes, which resolves and samples the six node slots (BtlCharApi_GetNodePos).
+EftEmit_UpdateNodesReq = 0x001512C8; // type:func
+EftEmit_UpdateNodes = 0x001513A0; // type:func
+// Node slot writers: fix a slot to a fighter node (or to a position when node < 0); overwrite a slot position;
+// re-sample the fixed slots.
+EftEmit_SetNode = 0x001517A0; // type:func
+EftEmit_SetNodePos = 0x00151810; // type:func
+EftEmit_RefreshFixedNodes = 0x00151838; // type:func
+// Two key-framed values of the pack header (keys at header +8/+0xC/+0x10 and +0x2C/+0x30/+0x34), with getters
+// and the "header flag 4" test. The first scales the hit radius of types 3 and 7 (hence "TrailWidth"); what the
+// second is used for by other types was not traced here (types 3 and 7 store it as a speed / unk4).
+EftEmit_UpdateTrailWidth = 0x001518D8; // type:func // guess
+EftEmit_GetTrailWidth = 0x001519D8; // type:func // guess
+EftEmit_HasWidth2 = 0x001519E0; // type:func // guess
+EftEmit_UpdateWidth2 = 0x001519F8; // type:func // guess
+EftEmit_GetWidth2 = 0x00151AD0; // type:func // guess
+
+// Technique effect type 3 (gEftShotClass row 4: group class 0x2C3808, instance class 0x2C3820): a beam from a
+// fighter node whose far end sweeps a circle (0.003 turn a frame) at the opponent's distance. Simulation: it adds
+// a hit record every frame (AddHit), tests the beam against the stage, leaves marks that start an impact effect
+// 10 frames later and destroys the stage object it touches (BtlStage_DestroyObj). Callback order in a class:
+// update, init, term, postUpdate, reset, draw (BtlTaskClass). "Sweep" is this file's word for it.
+EftSweep_AddMark = 0x00151AD8; // type:func // guess
+EftSweep_UpdateMarks = 0x00151C30; // type:func // guess
+EftSweep_InitPath = 0x00151D98; // type:func // guess
+EftSweep_Move = 0x00151E78; // type:func // guess
+EftSweep_AddHit = 0x00152068; // type:func // guess
+EftSweep_Emit = 0x00152200; // type:func // guess
+EftSweep_Init = 0x00152358; // type:func // guess
+EftSweep_Term = 0x00152450; // type:func // guess
+EftSweep_Update = 0x001524A0; // type:func // guess
+EftSweep_PostUpdate = 0x001527F0; // type:func // guess
+EftSweep_Reset = 0x00152868; // type:func // guess
+EftSweep_Draw = 0x001528B0; // type:func // guess
+EftSweepGroup_Init = 0x001528B8; // type:func // guess
+EftSweepGroup_Term = 0x00152930; // type:func // guess
+EftSweepGroup_Update = 0x00152950; // type:func // guess
+EftSweepGroup_Reset = 0x00152970; // type:func // guess
+
+// Technique effect type 7 (gEftShotClass row 8: group class 0x2C3838 in the next file, instance class 0x2C3850):
+// an effect that stays on fighter node 3 and adds a two-sphere hit record there every frame (a body / rush
+// technique); UpdateLight drives the stage blur light. Its reset / draw callbacks are 0x1532A0 / 0x1532E8.
+EftFollow_AddHit = 0x00152978; // type:func // guess
+EftFollow_UpdateLight = 0x00152A70; // type:func // guess
+EftFollow_Emit = 0x00152C70; // type:func // guess
+EftFollow_Init = 0x00152DC8; // type:func // guess
+EftFollow_Term = 0x00152EB0; // type:func // guess
+EftFollow_Update = 0x00152EE8; // type:func // guess
+EftFollow_PostUpdate = 0x00153210; // type:func // guess
+
+// Data
+// EftEmitDef.node -> node slot: {0, 1, 3, 4, 5, -1, -1, 0}. Read by EftEmit_Spawn (still INCLUDE_ASM).
+gEftEmitNodeSlot = 0x002C37E8; // size:0x20
+// Task classes of the two effect types (six callbacks each, see BtlTaskClass).
+gEftSweepGroupClass = 0x002C3808; // size:0x18
+gEftSweepClass = 0x002C3820; // size:0x18
+gEftFollowClass = 0x002C3850; // size:0x18

@@ -1,0 +1,18 @@
+// Menu overlay DBZP.BIN, 0x342588..0x348710: the character / stage / music select of the versus modes
+// (progress modes 38..41 and 44..45). All names are guesses from what the code does; the labels it uses are
+// "mc_chara_chip_%03d", "mc_custom_plate_%d", "mc_color_plate_%d", "mc_map_chip_%02d", "mc_bgm_now".
+CharSel_SetCustomChips = 0x00342588; // type:func // guess
+CharSel_SetFormChips = 0x003426E8; // type:func // guess
+CharSel_UpdateFaceLoad = 0x00342888; // type:func // guess
+CharSel_RequestFace = 0x00342B30; // type:func // guess
+CharSel_UpdateStageLoad = 0x00342B90; // type:func // guess
+CharSel_RequestStage = 0x00342D28; // type:func // guess
+CharSel_ClipGoto = 0x00342DA0; // type:func // guess
+CharSel_Init = 0x00342F78; // type:func // guess
+CharSel_Term = 0x003445C0; // type:func // guess
+CharSel_Draw = 0x00344750; // type:func // guess
+CharSel_Update = 0x003455A8; // type:func // guess
+CharSel_Input = 0x003456A8; // type:func // guess
+// Work pointer of the screen (0x3A4C bytes from the heap), first word of the object's .data; the functions
+// at 0x342190..0x342588 (menu_c.txt) and CharSel_Run (menu_e.txt) use it too.
+gCharSel = 0x003B38D4; // size:0x4

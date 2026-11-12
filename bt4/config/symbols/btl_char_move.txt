@@ -1,0 +1,100 @@
+// Fighter movement, src/battle/btl_char_move.c = 0x1DC9A0..0x1E0290. Evidence for every name is the matching C (all 47
+// functions match); the names describe what the code does, and the gameplay reading ("homing dash", "take-off",
+// "defence windows") is a guess. Callers named below are in btl_char_mgr.c / btl_char_action.c.
+
+// --- frame entry points ---
+// 0x1DC9A0(chr): BtlChar_UpdateLate: flags 0x12F..0x133 x animation attribute bits -> BtlChar_PlayVoice kind / stream.
+// 0x1DCB20(chr): obj+0xC8C = 0, obj+0xC80 = 2.0. 0x1DCB58(chr): that, BtlAct_Update, BtlAnim_ApplyBlend; first call of
+// BtlChar_UpdateMotion.
+BtlMove_UpdateAnimVoice = 0x001DC9A0; // type:func // guess
+BtlMove_ResetAnimStep = 0x001DCB20; // type:func // guess
+BtlMove_UpdateAction = 0x001DCB58; // type:func
+
+// --- stage contact and blast queries ---
+// 0x1DCB88(chr, floor, angle): is the direction of travel pointing into this frame's ground / second contact normal;
+// 0x1DCD18 / 0x1DCD30 call it with floor = 1 / 0.
+BtlMove_TestContact = 0x001DCB88; // type:func
+BtlMove_IsHeadingIntoFloor = 0x001DCD18; // type:func
+BtlMove_IsHeadingIntoWall = 0x001DCD30; // type:func
+
+// 0x1DCD48(chr, class, out): own live blasts of a class < the character's limit. 0x1DCE90(chr, a, b, c, frames): a blast
+// is closing and within `frames` of the fighter. 0x1DD068(chr): type-1 blast records owned ("beams" is a guess).
+BtlMove_CanFireBlast = 0x001DCD48; // type:func // guess
+BtlMove_IsBlastIncoming = 0x001DCE90; // type:func
+BtlMove_CountOwnBeams = 0x001DD068; // type:func // guess
+
+// 0x1DD0E0(out, from, to, r): where a segment crosses the circle of radius r around the stage centre.
+BtlMove_ClipToRadius = 0x001DD0E0; // type:func
+
+// --- heading ---
+// 0x1DD258 / 0x1DD418(chr, mode, maxStep): turn the heading yaw (pose+0x94) / pitch (pose+0x90) towards a target
+// chosen by mode (stick + camera yaw, opponent, stage centre, ...). 0x1DD768: heading at the opponent with a stick
+// offset (7 callers, dash-like actions). 0x1DDAF0(chr, maxStep, rate): model yaw follows the heading.
+// 0x1DDBB0(chr, yaw, pitch): set both. 0x1DDBF0(chr, point, yawStep, pitchStep): turn towards a point.
+BtlMove_TurnYaw = 0x001DD258; // type:func
+BtlMove_TurnPitch = 0x001DD418; // type:func
+BtlMove_SteerAtOpponent = 0x001DD768; // type:func // guess
+BtlMove_TurnModelYaw = 0x001DDAF0; // type:func
+BtlMove_SetHeading = 0x001DDBB0; // type:func
+BtlMove_TurnToPoint = 0x001DDBF0; // type:func
+
+// --- direction, speed, integration ---
+// 0x1DDD50(chr, mode): pose+0x80 = unit direction from the stick (rotated by -camYaw) or from the heading.
+// 0x1DE000(chr, speed, accel): speed (pose+0x98) approaches `speed`; pos += dir * speed.
+// 0x1DE080(chr, yawMode, pitchMode, dirMode, speed, accel): TurnYaw, TurnPitch, TurnModelYaw, SetDirection, Advance:
+// 142 calls from 123 action handlers.
+BtlMove_SetDirection = 0x001DDD50; // type:func
+BtlMove_Advance = 0x001DE000; // type:func
+BtlMove_Step = 0x001DE080; // type:func
+
+// --- placement relative to the opponent (all need flag 5, lock-on) ---
+BtlMove_WarpAheadOfOpponent = 0x001DE120; // type:func // guess
+BtlMove_WarpBehindOpponent = 0x001DE2F8; // type:func
+BtlMove_WarpInFrontOfOpponent = 0x001DE3E0; // type:func
+BtlMove_SnapToOpponent = 0x001DE4C0; // type:func // guess
+BtlMove_CircleOpponent = 0x001DE578; // type:func // guess
+BtlMove_CalcApproachPoint = 0x001DE8A8; // type:func // guess
+
+// --- vertical speed (pose+0x9C, positive = down) ---
+// 0x1DED28: += 50 km/h per frame up to 3000, y += it. 0x1DED78(chr, target, accel): approach, y += it.
+// 0x1DEDD8: approach 0 by 100 km/h. 0x1DEDF8: flag 0xE ? brake : fall (115 calls from 98 handlers).
+BtlMove_Fall = 0x001DED28; // type:func
+BtlMove_MoveVertical = 0x001DED78; // type:func
+BtlMove_BrakeVertical = 0x001DEDD8; // type:func
+BtlMove_ApplyGravity = 0x001DEDF8; // type:func
+
+// 0x1DEE38 / 0x1DEE80(chr, v): pose+0xA0 (clamped) / pose+0xA4; "lean" from btl_char_ctl.h.
+BtlMove_SetLeanX = 0x001DEE38; // type:func // guess
+BtlMove_SetLeanZ = 0x001DEE80; // type:func // guess
+
+// 0x1DEEA8(chr): flag 0x5E and (flag 0x5F or the two overlap in height).
+BtlMove_IsBlockedByOpponent = 0x001DEEA8; // type:func // guess
+
+// --- per-frame corrections ---
+// 0x1DEF70(chr): stage 8: clamp to the stage limit block (radius - 100 - body radius, top, bottom), flags 0x14..0x17.
+// 0x1DF1A0(chr, near, far) raises flag 0x19; 0x1DF210(chr): stage 7: keeps the distance to the opponent, turns the
+// heading by the angle travelled. 0x1DF4A8(chr): stage 7: push-out from the opponent, flags 0x5E / 0x5F.
+BtlMove_ClampToStage = 0x001DEF70; // type:func
+BtlMove_RequestOrbit = 0x001DF1A0; // type:func // guess
+BtlMove_ApplyOrbit = 0x001DF210; // type:func // guess
+BtlMove_PushOut = 0x001DF4A8; // type:func
+
+// --- vertical launch speeds ---
+BtlMove_CalcVerticalSpeed = 0x001DF860; // type:func // guess
+BtlMove_AimVerticalAtOpponent = 0x001DF978; // type:func // guess
+BtlMove_BeginRiseToOpponent = 0x001DFA20; // type:func // guess
+BtlMove_CalcJumpSpeed = 0x001DFAD0; // type:func
+
+// --- impulse (pose+0x70) ---
+BtlMove_SetImpulse = 0x001DFB30; // type:func
+BtlMove_SetImpulseDir = 0x001DFBA8; // type:func
+BtlMove_SetImpulseYaw = 0x001DFBE0; // type:func
+
+// 0x1DFC48(chr, back): reacts to flags 0x14 / 0x15 / 0x16 by turning the heading along the limit.
+BtlMove_DeflectAtStageLimit = 0x001DFC48; // type:func // guess
+
+// --- called every frame from BtlAct_UpdateTimers ---
+// 0x1DFD88: pos += impulse, impulse shrinks. 0x1DFE30: display offset pose+0x20. 0x1DFFE0: counters chr+0x1068..0x1080.
+BtlMove_ApplyImpulse = 0x001DFD88; // type:func
+BtlMove_UpdateHoverOffset = 0x001DFE30; // type:func // guess
+BtlMove_UpdateDefenseTimers = 0x001DFFE0; // type:func // guess

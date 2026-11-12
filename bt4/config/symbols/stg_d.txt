@@ -1,0 +1,67 @@
+// Stage rigid bodies: the debris of broken stage objects (src/battle/stg_d.c = 0x22FD10..0x230B38,
+// include/battle/stg_d.h). The pool pointer is at gp 0x2FEB78: 128 nodes of 0x240 bytes (links, drag, id, a
+// RigidBody of sys/rigid.h at +0x10, a "resting" word at +0x230), then free list, active list, used count, count.
+
+// List walkers; a list is passed as its head node. 0x22FD10(head): last node or NULL (only caller
+// StgRigid_Create). 0x22FD50(id): the active node whose id (+0xC) matches, NULL otherwise.
+StgRigidList_Last = 0x0022FD10; // type:func
+StgRigid_Find = 0x0022FD50; // type:func
+// 0x22FDA0(body): sqrt(x^2 + z^2) + radius against BtlStage_GetInnerRadius; beyond it x, z are scaled back and
+// both angular velocities halved. Only caller: StgRigidList_EndFrame.
+StgRigid_ClampToStage = 0x0022FDA0; // type:func
+// The passes of one frame, each over the whole active list, all called only by StgRigid_Update.
+// 0x22FE98: Rigid_BeginFrame + Rigid_SyncSpheres, triangle collection (func_001B2F50) for bodies with a hit
+// buffer, drag 0.0015 or 0.1115 (under water). 0x22FFA8: Rigid_UpdateCenter + Rigid_SyncSpheres.
+// 0x230008: Rigid_AddContact per touched triangle. 0x2301B0: Rigid_AddGravity + Rigid_Damp.
+// 0x230218: Rigid_Step(0.016677). 0x230270: StgRigid_ClampToStage, Rigid_CheckRest into the resting word.
+StgRigidList_BeginFrame = 0x0022FE98; // type:func
+StgRigidList_UpdateCenters = 0x0022FFA8; // type:func
+StgRigidList_Collide = 0x00230008; // type:func
+StgRigidList_AddForces = 0x002301B0; // type:func
+StgRigidList_Step = 0x00230218; // type:func
+StgRigidList_EndFrame = 0x00230270; // type:func
+// Life cycle, called by BtlStage_Reset / BtlStage_Init / BtlStage_Term (stg_a.c): 0x2302F0 empties both lists and
+// the used count; 0x230328 Heap_Alloc(0x12010) + memset + ids 1..128, then Reset; 0x230398 Heap_Free.
+StgRigid_Reset = 0x002302F0; // type:func
+StgRigid_Init = 0x00230328; // type:func
+StgRigid_Term = 0x00230398; // type:func
+// Bodies, called by BtlStage_UpdateObjs (stg_a.c). 0x2303C8(pos, user, radius): node from func_0022FC80, appended
+// to the active list, Rigid_Init(density 200) + Rigid_SetTransform(identity); returns the id or -1.
+// 0x2304C0(id, push, material): initial velocity and spin (4 VU0 draws, 6 libc rand() bits, up to 3 more VU0
+// draws), Rigid_SetVelocity. 0x230908(id): unlink and push on the free list.
+StgRigid_Create = 0x002303C8; // type:func
+StgRigid_Launch = 0x002304C0; // type:func
+StgRigid_Release = 0x00230908; // type:func
+// 0x230778(id, push, angVel): a variant of Launch that takes the spin as an argument; no caller.
+StgRigid_LaunchSpin = 0x00230778; // type:func // guess
+// 0x2309A8(): the per-frame update, called by BtlStage_Update (stg_b.c) last; returns at once while paused.
+StgRigid_Update = 0x002309A8; // type:func
+// 0x230AA0(out, id): Rigid_GetMatrix of the body, returns 1 / 0 (caller BtlStage_UpdateObjs, which passes the
+// model node of the debris piece). 0x230AE0(id): pointer to the body's sphere (+0x1D0) or NULL; no caller.
+StgRigid_GetMatrix = 0x00230AA0; // type:func
+StgRigid_GetSphere = 0x00230AE0; // type:func
+// 0x230B10(box): min = 1e10, max = -1e10 on three axes. First of the box helpers that continue at 0x230B38
+// (callers in the collision and camera code); it is not part of the rigid-body list.
+StgAabb_SetEmpty = 0x00230B10; // type:func // guess
+
+// The pool pointer and the three tunables next to it in .sdata (initialised data, never written).
+gStgRigid = 0x002FEB78; // size:0x4
+gStgRigidRestitution = 0x002FEB7C; // size:0x4
+gStgRigidFriction = 0x002FEB80; // size:0x4
+gStgRigidDensity = 0x002FEB84; // size:0x4
+
+// Stage object animations (src/battle/stg_d_b.c = 0x115170..0x115478), part of the stage model code.
+// 0x115170(): BtlStage_Init(block at header word 1 of the stage file, passed as both arguments); callers: the
+// battle loader (two sites) and one in the stage core.
+// 0x1151A0(): gives every animated object a random start frame (Rand_FloatRange * length); callers BtlStage_Reset
+// and StgModel_BindAnims. 0x115290(): binds member 6 of the stage file (header word +0x24) (the animation table, triples of
+// entries per animation) or clears the pointer when the member is empty. 0x115368(): clears the pointer.
+// 0x115370(): per frame (BtlStage_Update), frame += 2 for every animated object that is not broken, wrapping to 0
+// past the animation length; nothing while paused.
+StgModel_InitStage = 0x00115170; // type:func // guess
+StgModel_ResetAnims = 0x001151A0; // type:func
+StgModel_BindAnims = 0x00115290; // type:func
+StgModel_ClearAnims = 0x00115368; // type:func
+StgModel_UpdateAnims = 0x00115370; // type:func
+// The stage animation table (StgOfsTable), NULL when the stage has none.
+gStgAnimTable = 0x002FE914; // size:0x4

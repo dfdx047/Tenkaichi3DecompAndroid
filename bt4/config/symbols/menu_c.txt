@@ -1,0 +1,43 @@
+// Menu overlay DBZP.BIN, 0x33E108..0x342588: the history (story) mode screens of progress modes 6, 8 and 10,
+// called from Hist_Main (0x33CBF8, menu_b.txt). Module names are guesses from what the screens do; the function
+// roles (Init / Term / Draw / Update / Input / Run) follow the pattern of every screen of the overlay.
+// HistSel, tail (menu_c.c): the saga select (mode 6). Head and work-area pointer gHistSel: menu_b.txt.
+HistSel_Term = 0x0033E108; // type:func
+HistSel_Draw = 0x0033E180; // type:func
+HistSel_PlateGoto = 0x0033E9A0; // type:func
+HistSel_Update = 0x0033EA78; // type:func
+HistSel_Input = 0x0033EB88; // type:func
+HistSel_Run = 0x0033F440; // type:func
+// HistGuide (menu_c_b.c): the scripted dialogues of the saga select; one state machine over HistSel.script.
+HistGuide_ClipGoto = 0x0033F700; // type:func // guess
+HistGuide_Update = 0x0033F778; // type:func // guess
+// HistResult (menu_c_c.c): the result screen after a story battle (mode 8): points, rewards, unlocks.
+// Work area gHistResult (0x140 bytes).
+HistResult_SplitEpisode = 0x003405A0; // type:func // guess
+HistResult_BuildRewards = 0x003406B0; // type:func // guess
+HistResult_IsMenuCleared = 0x00340C78; // type:func // guess
+HistResult_Init = 0x00340D40; // type:func
+HistResult_Term = 0x003411F8; // type:func
+HistResult_Draw = 0x003412E8; // type:func
+HistResult_Update = 0x003416C8; // type:func
+HistResult_Input = 0x00341750; // type:func
+HistResult_UpdateState = 0x00341868; // type:func // guess
+HistResult_UpdateSe = 0x00341B90; // type:func // guess
+HistResult_Run = 0x00341C38; // type:func
+gHistResult = 0x003B1300; // size:0x4
+// HistSave (menu_c_d.c): the save screen of the story mode (mode 10): only the memory-card flow McFlow_Start(0).
+// Work area gHistSave (0x14 bytes). Draw / Update / Input are empty functions, named by their call order.
+HistSave_OnCardDone = 0x00341E08; // type:func
+HistSave_Init = 0x00341E40; // type:func
+HistSave_Term = 0x00341F30; // type:func
+HistSave_Draw = 0x00341FA0; // type:func // guess
+HistSave_Update = 0x00341FA8; // type:func // guess
+HistSave_Input = 0x00341FB0; // type:func // guess
+HistSave_Run = 0x00341FB8; // type:func
+gHistSave = 0x003B1304; // size:0x4
+// Head of the CharSel object (menu_c_e.c; body in menu_d.txt): they fill the chips of a reel, like
+// CharSel_SetCustomChips / CharSel_SetFormChips next to them. gCharSel is 0x3B38D4 (first word of that
+// object's .data); it is left for menu_d.txt to list.
+CharSel_SetStageChips = 0x00342190; // type:func // guess
+CharSel_SetRowChips = 0x00342298; // type:func // guess
+CharSel_SetCellFormChips = 0x00342400; // type:func // guess

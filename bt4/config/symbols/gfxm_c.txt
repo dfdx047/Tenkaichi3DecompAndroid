@@ -1,0 +1,94 @@
+// Flash-like movie player (0x10AD58..0x10EC18, src/sys/gfxm_c.c). The data is a converted SWF: the frame tags
+// keep the SWF codes (1 ShowFrame, 4 PlaceObject, 5 RemoveObject, 12 DoAction, 26 PlaceObject2, 28 RemoveObject2)
+// and the actions the SWF action codes, which is what names the handlers. Flash_Create (0x10D4F0) and
+// Flash_FindLabel (0x10D8B0) are in game.txt.
+
+// colour transform: identity (mul 1, add 0) and the bit-packed reader (flag byte, 4-bit width, 8.8 mul, add)
+Flash_CxformIdentity = 0x0010AD58; // type:func
+Flash_ReadCxform = 0x0010AD98; // type:func
+
+// timeline: runs one frame's tag list (jump table on tag code - 1), and the tag handlers
+FlashTl_RunFrame = 0x0010AF08; // type:func
+FlashTl_TagPlace = 0x0010B088; // type:func
+FlashTl_TagPlace2 = 0x0010B1C0; // type:func
+FlashTl_TagRemove = 0x0010B3D0; // type:func
+FlashTl_TagRemove2 = 0x0010B4A0; // type:func
+// action list while seeking: only GetURL "pad" is obeyed; and the full interpreter
+FlashTl_SkipActions = 0x0010B4F0; // type:func
+FlashTl_TagActions = 0x0010B6F8; // type:func
+// timeline life: allocates the depth slots, frees them, back to frame 0, tick, draw, label jump, relative jump
+FlashTl_Init = 0x0010BAC8; // type:func
+FlashTl_Term = 0x0010BB70; // type:func
+FlashTl_Rewind = 0x0010BBB8; // type:func
+FlashTl_Advance = 0x0010BC28; // type:func
+FlashTl_Draw = 0x0010BE48; // type:func
+FlashTl_GotoLabel = 0x0010BEB8; // type:func
+FlashTl_StepFrames = 0x0010BF20; // type:func
+
+// one depth of a timeline: put a shape / a sprite there, empty it, move what is there, tick and draw it
+FlashSlot_SetShape = 0x0010BF90; // type:func
+FlashSlot_SetClip = 0x0010C010; // type:func
+FlashSlot_Clear = 0x0010C0A8; // type:func
+FlashSlot_Move = 0x0010C100; // type:func
+FlashSlot_Advance = 0x0010C178; // type:func
+FlashSlot_Draw = 0x0010C1C8; // type:func
+
+// GS output: returns its argument (a stripped coordinate hook), texture upload returning TEX0, the sprite
+// vertices, flat quad, masked quad (alpha-plane write / test), the dispatcher, and the quad transform
+FlashDraw_AdjustY = 0x0010C518; // type:func // guess
+FlashDraw_UploadTex = 0x0010C520; // type:func
+FlashDraw_PutSprite = 0x0010C630; // type:func
+FlashDraw_FlatQuad = 0x0010C8B0; // type:func
+FlashDraw_MaskQuad = 0x0010CAF0; // type:func // guess
+FlashDraw_Quad = 0x0010CC88; // type:func
+FlashDraw_TransformQuad = 0x0010CE78; // type:func
+
+// the movie object (callers: Dialog_*, MsgWin_*, IconWin_*, the HUD)
+Flash_Destroy = 0x0010D648; // type:func
+Flash_Advance = 0x0010D6F0; // type:func
+Flash_Draw = 0x0010D750; // type:func
+Flash_Reset = 0x0010D798; // type:func
+Flash_Play = 0x0010D810; // type:func
+Flash_Stop = 0x0010D828; // type:func
+Flash_SetOffset = 0x0010D840; // type:func
+Flash_SetFlag = 0x0010D850; // type:func
+Flash_GotoLabel = 0x0010D878; // type:func
+Flash_StepFrames = 0x0010D898; // type:func
+// wrappers: do nothing when the clip reference is not found (index < 0), else tail-call the clip-list function
+Flash_ClipGotoLabel = 0x0010D918; // type:func
+Flash_ClipSetCallbackA = 0x0010D948; // type:func // guess
+Flash_ClipSetCallbackB = 0x0010D978; // type:func // guess
+Flash_ClipSetCallbackC = 0x0010D9A8; // type:func // guess
+Flash_ClipSetFlags = 0x0010D9D8; // type:func
+Flash_ClipSetOffset = 0x0010DB70; // type:func // guess
+Flash_ClipSetScale = 0x0010DBA0; // type:func // guess
+Flash_ClipSetAlpha = 0x0010DBF0; // type:func // guess
+Flash_ClipSetColor = 0x0010DC30; // type:func // guess
+Flash_ClipSetTex = 0x0010DC70; // type:func // guess
+Flash_ClipSetUv = 0x0010DCA0; // type:func
+Flash_ClipGetPos = 0x0010DCD0; // type:func
+Flash_ClipGetAlpha = 0x0010DD00; // type:func
+
+// shape pool: 0x40-byte placed shapes
+FlashShapePool_Init = 0x0010DD38; // type:func
+FlashShapePool_Term = 0x0010DDA0; // type:func
+FlashShapePool_Clear = 0x0010DDD8; // type:func
+FlashShapePool_Alloc = 0x0010DE18; // type:func
+FlashShape_Create = 0x0010DE80; // type:func
+FlashShape_Free = 0x0010DF80; // type:func
+FlashShape_Set = 0x0010DFA0; // type:func
+FlashShape_Draw = 0x0010E030; // type:func
+
+// sprite instances: 0xE4-byte clips, one per sprite definition
+FlashClipList_Init = 0x0010E240; // type:func
+FlashClipList_Term = 0x0010E3D8; // type:func
+FlashClipList_Advance = 0x0010E460; // type:func
+FlashClipList_Reset = 0x0010E508; // type:func
+FlashClipList_FindFree = 0x0010E578; // type:func
+FlashClip_Start = 0x0010E5C8; // type:func
+FlashClip_Set = 0x0010E748; // type:func
+FlashClip_Reset = 0x0010E7D8; // type:func
+FlashClipList_FindByName = 0x0010E858; // type:func
+FlashClipList_FindRef = 0x0010E8D8; // type:func
+FlashClipList_Play = 0x0010EA48; // type:func
+FlashClipList_Stop = 0x0010EB30; // type:func

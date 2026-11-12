@@ -1,0 +1,33 @@
+// Menu overlay DBZP.BIN, 0x339610..0x33E108.
+// ModeMenu, tail of the object that starts at 0x338020 (menu_a_d.c).
+ModeMenu_Update = 0x00339610; // type:func
+ModeMenu_PlateGoto = 0x00339760; // type:func
+ModeMenu_Input = 0x00339800; // type:func
+ModeMenu_UpdateStep = 0x00339C70; // type:func
+ModeMenu_Run = 0x0033A018; // type:func
+// ModeBg: the background (picture + cloud movie) shared by ModeMenu and ModeInfo. Work area gModeBg (0x78 bytes).
+ModeBg_Init = 0x0033A360; // type:func
+ModeBg_Term = 0x0033A798; // type:func
+ModeBg_Draw = 0x0033A800; // type:func
+gModeBg = 0x003B12F4; // size:0x4
+// HistOutro: the dialogue scene after a completed saga (progress mode 9). Work area gHistOutro (0x2C0 bytes).
+// The name is a guess from what the screen does (two guides talk, the saga's closing text is read out).
+HistOutro_GuideGoto = 0x0033ABA0; // type:func // guess
+HistOutro_Init = 0x0033ACB0; // type:func // guess
+HistOutro_Term = 0x0033B7F0; // type:func // guess
+HistOutro_Draw = 0x0033B8A8; // type:func // guess
+HistOutro_Update = 0x0033BB28; // type:func // guess
+HistOutro_Input = 0x0033BC38; // type:func // guess
+HistOutro_UpdateStep = 0x0033BD58; // type:func // guess
+HistOutro_Run = 0x0033C9F0; // type:func // guess
+gHistOutro = 0x003B12F8; // size:0x4
+// Handler of progress modes 6..10 (story mode: saga select, episode list, result, outro, save) and 3 (ending movie).
+Hist_Main = 0x0033CBF8; // type:func // guess
+// HistSel: the saga select of the story mode (progress mode 6); head of an object that goes on after 0x33E108
+// (its frame loop is func_0033F440). Work area gHistSel (0x254 bytes). Names are guesses: only the head was read.
+HistSel_PlayVoice = 0x0033CFC8; // type:func // guess
+HistSel_Idle = 0x0033D170; // type:func // guess
+HistSel_SayItem = 0x0033D1E8; // type:func // guess
+HistSel_RollEvent = 0x0033D3A8; // type:func // guess
+HistSel_Init = 0x0033D440; // type:func // guess
+gHistSel = 0x003B12FC; // size:0x4

@@ -1,0 +1,84 @@
+// --- 3x3 matrix helpers and sphere rigid body (src/sys/rigid.c, 0x266728-0x267AB8) -----------------
+// All match except Rigid_Init (2 instructions, INCLUDE_ASM). Callers are 0x22FDA0-0x230AA0 (battle stage objects).
+// 0x266728(out, v, s): out = v * -s. Only caller: Rigid_AddContact (friction force opposite to the sliding direction).
+Vec3_ScaleNeg = 0x00266728; // type:func
+// 0x266758(out, w, torque, I): out.x = (torque.x + (I.y - I.z) * w.y * w.z) / I.x and cyclic: Euler's rigid-body equations.
+Rigid_EulerAccel = 0x00266758; // type:func
+// 0x266808(m, v): 3x3 skew-symmetric matrix of v (0, z, -y / -z, 0, x / y, -x, 0).
+Mat3_SetSkew = 0x00266808; // type:func
+// 0x266858 / 0x266A10: 3x3 product and sum on the upper-left of two Mtx44.
+Mat3_Mul = 0x00266858; // type:func
+Mat3_Add = 0x00266A10; // type:func
+// 0x266AA8: out[i] = row i of m . v (world -> body). 0x266B40: out[j] = v . column j of m (body -> world).
+Mat3_MulVecCols = 0x00266AA8; // type:func
+Mat3_MulVecRows = 0x00266B40; // type:func
+// 0x266BD8(m): normalise row 2, row 0 = normalise(row1 x row2), row 1 = row2 x row0.
+Mat3_Orthonormalize = 0x00266BD8; // type:func
+// 0x266CC0 / 0x267390: empty. The first is called at the top of Rigid_Integrate, the second has no caller.
+Rigid_Stub266CC0 = 0x00266CC0; // type:func
+Rigid_Stub267390 = 0x00267390; // type:func
+// 0x266CC8(body, point, force): force += f; torque += (point - center) x f. Only caller: Rigid_AddGravity.
+Rigid_AddForceAt = 0x00266CC8; // type:func
+// 0x266D80(body, dt): vel += force * dt / mass; body-space angular velocity += dt * Euler accel * 0.999; clears force and torque.
+Rigid_Integrate = 0x00266D80; // type:func
+// 0x266F10(mtx, body): identity, rotation rows from +0x50, row 3 from +0x40. Caller 0x230AA0 (matrix for drawing).
+Rigid_GetMatrix = 0x00266F10; // type:func
+// 0x266FA0(body): Rigid_AddForceAt(body, center, (0, mass * 9.8, 0)).
+Rigid_AddGravity = 0x00266FA0; // type:func
+// 0x266FE0(body, k): vel -= vel * k; angVelBody -= angVelBody * k.
+Rigid_Damp = 0x00266FE0; // type:func
+// 0x267048(body): center = localCenter * rot + pos.
+Rigid_UpdateCenter = 0x00267048; // type:func
+// 0x2670B8(body, point, normal, f12, f13, f14): penalty contact force, see sys/rigid.h. The parameter names
+// restitution / friction / depth are guesses from how they are used.
+Rigid_AddContact = 0x002670B8; // type:func
+// 0x267398(body, dt): Rigid_Integrate, then pos += dt * vel, rot = orthonormalise(rot + rot * skew(dt * angVel)).
+Rigid_Step = 0x00267398; // type:func
+// 0x2674A0(body, pos, mtx): sets pos / rot and their "previous" copies, zeroes velocities, force, torque.
+Rigid_SetTransform = 0x002674A0; // type:func
+// 0x267570: tail call to 0x2674A0 with the same arguments; no caller.
+Rigid_SetTransform2 = 0x00267570; // type:func // guess
+// 0x267588(body): prevFlags = flags, previous transform = current, flags &= 0xFF, +0x210 (64 bits) = 0. Caller 0x22FE98,
+// the first call of the per-frame stepping loop, hence "BeginFrame".
+Rigid_BeginFrame = 0x00267588; // type:func // guess
+// 0x2675D8(body, vel, angVel): vel = *vel; angular velocity changed as described in the C. Callers 0x2304C0, 0x230778.
+Rigid_SetVelocity = 0x002675D8; // type:func // guess
+// 0x2676F8(body): damps small angular velocities; returns 1 and restores the previous transform when the body moved
+// <= 0.015 this frame and |w.x| + |w.y| + |w.z| < 0.2.
+Rigid_CheckRest = 0x002676F8; // type:func
+// 0x267958(body): copies pos into the centres of the two spheres at +0x1D0 and +0x1F0.
+Rigid_SyncSpheres = 0x00267958; // type:func // guess
+// 0x267998(body, user, radius, density): memset 0x220, sphere mass / inertia, sphere at +0x1F0 copied to +0x1D0.
+Rigid_Init = 0x00267998; // type:func
+
+// --- Linear ramp / frame timer (src/sys/ramp.c, 0x267AB8-0x267B90; all match) ------------------------
+// Callers: Fade_* (sys/fade.c), BtlSeq_* (battle/btl_seq.c) and about 50 battle HUD functions at 0x21A0E8-0x22F318.
+// 0x267AB8(ramp): state = -1.
+Ramp_Stop = 0x00267AB8; // type:func
+// 0x267AC8(ramp, seconds, from, to): state 0, frames = seconds * 30, value = from, target = to, step = (to - from) / frames.
+Ramp_Start = 0x00267AC8; // type:func
+// 0x267B00(ramp): one step; 1 when stopped or ended (value = target), else 0.
+Ramp_Step = 0x00267B00; // type:func
+
+// --- Controller-removed watcher (src/sys/pad_watch.c, 0x267B90-0x268248) -----------------------------
+// All match except PadWatch_GetMissing (2 instructions, INCLUDE_ASM).
+// 0x267B90(port): gPad[port].status != 0xFF. Only caller: PadWatch_Update.
+PadWatch_IsConnected = 0x00267B90; // type:func
+// 0x267BB8(enable): gPadWatch->disabled = (enable == 0). Callers: the loading screens (sys/loading.c) turn it off and on again.
+PadWatch_SetEnabled = 0x00267BB8; // type:func
+// 0x267BC8(s32 *port): 1 when a needed controller is missing, *port = which. Only caller 0x22F9F8, the battle pause poll.
+PadWatch_GetMissing = 0x00267BC8; // type:func
+// 0x267CE0(port): 1 when that port's accepted state is "not connected" and a warning is up. No caller.
+PadWatch_IsPortMissing = 0x00267CE0; // type:func // guess
+// 0x267DC0(): per frame from Gfx_EndFrame: debounce both ports, choose message -1 / 0 / 1 / 2.
+PadWatch_Update = 0x00267DC0; // type:func
+// 0x267F98(): dark full-screen sprite + centred text `message` of the boot file's table at +0x24. Only caller 0x268208.
+PadWatch_DrawMessage = 0x00267F98; // type:func
+// 0x268188(): Heap_Alloc(0x28, 0x20, 0, 2), zeroed, state and raw bits 0 set. Last init call of Game_Main.
+PadWatch_Init = 0x00268188; // type:func
+// 0x268208(): tail call to 0x267F98; per frame from Gfx_EndFrame.
+PadWatch_Draw = 0x00268208; // type:func
+// 0x268220(): Heap_Free(gPadWatch), pointer cleared. No caller.
+PadWatch_Term = 0x00268220; // type:func
+// Pointer to the 0x28-byte PadWatch (sys/pad_watch.h). Replaces D_002FF158.
+gPadWatch = 0x002FF158; // size:0x4

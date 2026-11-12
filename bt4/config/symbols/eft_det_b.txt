@@ -1,0 +1,114 @@
+// Stage collision queries, stage navigation graph, head of the AI sequence object
+// (src/battle/eft_det_b.c = 0x1B16F0..0x1B3510, eft_det_b_b.c = 0x1B3510..0x1B3F78,
+// eft_det_b_c.c = 0x1B3F78..0x1B4140; include/battle/eft_det_b.h).
+
+// Query mode word (gp 0x2FF1B8): 0x1B16F0 sets 0 (test the zone's static mesh, whole objects and broken
+// objects), 0x1B16F8 sets 1 (skip the static mesh and the broken objects: unbroken objects only; its one caller
+// is the projectile-against-stage test EftDet_TestStage 0x1B0E88).
+StgCol_SetModeAll = 0x001B16F0; // type:func
+StgCol_SetModeObjects = 0x001B16F8; // type:func
+// 0x1B1708(result, zone, box, ctx, callback): walks the zone's static mesh and the mesh of each collision record
+// whose object is in the matching state (func_00231768), and reports what was touched as flags and two 64-bit
+// masks (records, unbroken objects). Seven callers: every query below and the two of the neighbouring file.
+StgCol_QueryZone = 0x001B1708; // type:func
+// 0x1B18B8(mask): index of the lowest set bit of a 64-bit mask, -1 for 0. Callers take the first object of
+// StgColResult.objMask with it.
+StgCol_FirstBit = 0x001B18B8; // type:func
+
+// The camera's swept sphere. 0x1B1A38(zone, sweep, hitPos, frac, tri): only caller BtlCam (btl_cam.c, three
+// calls). 0x1B1900 is its mesh callback (func_00236228 = swept sphere against a triangle).
+StgCol_SweepCb = 0x001B1900; // type:func
+StgCol_TraceSphere = 0x001B1A38; // type:func
+
+// A fighter's body sphere against the stage, called once per fighter per frame from BtlChar_UpdateStage8
+// (btl_char_mgr.c). 0x1B21A8(obj, keepSphere, grow) is the entry; 0x1B1F58 moves the sphere in sub-steps and
+// writes the result; 0x1B1CA0 splits the frame's movement into steps of at most half a radius; 0x1B1D20 advances
+// the sphere one step; 0x1B1D80 pushes it out of a contact point; 0x1B1E50 is the mesh callback.
+StgCol_SplitStep = 0x001B1CA0; // type:func
+StgCol_StepSphere = 0x001B1D20; // type:func
+StgCol_PushSphere = 0x001B1D80; // type:func
+StgCol_PushCb = 0x001B1E50; // type:func
+StgCol_MoveFighter = 0x001B1F58; // type:func
+StgCol_UpdateFighter = 0x001B21A8; // type:func
+// 0x1B24B8(obj, idx, hitPos): a fighter touched unbroken stage object idx. Breaks it (BtlStage_DestroyObj) when the
+// fighter passes its stage-break test, sets contact bit 0x40, then the damage bits 0x80 / 0x100 / 0x200 from the
+// object's type bits 0x800 / 0x2000 / 0x1000. Callers: StgCol_MoveFighter and StgGround_UpdateFighter (0x1B15B8).
+StgCol_FighterBreakObj = 0x001B24B8; // type:func
+
+// Segment trace (lock-on sight, AI, sweeping beam, approach point) and triangle collection (stage rigid bodies).
+// Both use the static context 0x31C0F0 and leave their result in 0x31C0A0.
+// 0x1B25E0 / 0x1B26E0: mesh callbacks (segment against triangle func_002368C8; sphere against triangle
+// func_00238310, appending the triangle to the caller's list). 0x1B27E8 / 0x1B2880: context setup.
+// 0x1B2908(box, zone): the zone's rectangle as a box from y = -10000 to 10000. 0x1B29D8: bounds of the part of the
+// segment inside one zone. 0x1B2BA0(cur, from, to, ctx): recursive walk over the zones the segment crosses,
+// stopping in the first zone that has a hit. 0x1B2D60(zone, ctx): the collection query of one zone.
+StgCol_SegCb = 0x001B25E0; // type:func
+StgCol_CollectCb = 0x001B26E0; // type:func
+StgCol_InitSegCtx = 0x001B27E8; // type:func
+StgCol_InitSphereCtx = 0x001B2880; // type:func
+StgCol_GetZoneBox = 0x001B2908; // type:func
+StgCol_ClipSegToZone = 0x001B29D8; // type:func
+StgCol_TraceZone = 0x001B2BA0; // type:func
+StgCol_CollectZone = 0x001B2D60; // type:func
+// 0x1B2DF0(seg): 1 when the stage blocks the segment. Callers: BtlChars_UpdateSightFlag (lock-on sight),
+// BtlMove_CalcApproachPoint, the AI (btl_ai_mgr.c, five calls), the sweeping beam (eft_i.c).
+// 0x1B2F00(out): hit position of the last trace. 0x1B2F40(): the result block. 0x1B2F50(sphere, list): triangles
+// touching a sphere, only caller StgRigidList_BeginFrame.
+StgCol_TraceSegment = 0x001B2DF0; // type:func
+StgCol_GetHitPos = 0x001B2F00; // type:func
+StgCol_GetHit = 0x001B2F40; // type:func
+StgCol_CollectSphere = 0x001B2F50; // type:func
+
+// Triangles under a box, for the blob shadow of a fighter: 0x1B3440(zone, box, max, buf) and 0x1B3500() are
+// called only by the stage model code 0x1143A0. 0x1B2FE8 context setup; 0x1B30F0 height of a triangle under a
+// point; 0x1B31D8 append; 0x1B3280 mesh callback; 0x1B3368 fade by height above the ground (1 up to 20, 0 at 50);
+// 0x1B33D0 writes the output block.
+StgShadow_InitCtx = 0x001B2FE8; // type:func
+StgShadow_ProbeTri = 0x001B30F0; // type:func
+StgShadow_AddTri = 0x001B31D8; // type:func
+StgShadow_Cb = 0x001B3280; // type:func
+StgShadow_CalcAlpha = 0x001B3368; // type:func
+StgShadow_Finish = 0x001B33D0; // type:func
+StgShadow_Collect = 0x001B3440; // type:func
+StgShadow_GetOut = 0x001B3500; // type:func
+
+// Stage navigation graph: way points stored in the stage file, used by the AI's move action.
+// 0x1B3670 init (Battle init; compiled as a non-void function that returns nothing) / 0x1B35B8 term (Battle
+// term): the 0x14-byte manager and two 0xC00-byte lists.
+// 0x1B3548 binds the graph of the loaded stage file; 0x1B3628 rebinds after a stage change (battle_load.c) and
+// marks every node that carries an object; 0x1B3510: bound and the stage is ready.
+// 0x1B3748(pos): nearest usable node. 0x1B3A50(from, to, path): breadth-first search from the node nearest to
+// `from` to the one nearest to `to`, writing up to 16 points; only caller the AI move action (btl_ai_mgr.c).
+// 0x1B38A8 / 0x1B3900: swap and quicksort (descending step count) of search entries.
+// 0x1B3E10(idx) / 0x1B3EC8(idx): clear / set node flag 2 for the nodes of object idx (-1: all); the first is
+// called by BtlStage_DestroyObj. 0x1B3818(node): clears a node; no caller.
+StgNav_IsReady = 0x001B3510; // type:func
+StgNav_Bind = 0x001B3548; // type:func
+StgNav_Term = 0x001B35B8; // type:func
+StgNav_Rebind = 0x001B3628; // type:func
+StgNav_Init = 0x001B3670; // type:func
+StgNav_FindNearest = 0x001B3748; // type:func
+StgNavNode_Clear = 0x001B3818; // type:func // guess
+StgNav_SwapEntries = 0x001B38A8; // type:func
+StgNav_SortEntries = 0x001B3900; // type:func
+StgNav_FindPath = 0x001B3A50; // type:func
+StgNav_UnblockObj = 0x001B3E10; // type:func // guess
+StgNav_BlockObj = 0x001B3EC8; // type:func // guess
+
+// Head of the AI sequence object (btl_ai_seq.c continues at 0x1B4140). 0x1B3F78(seq): clears the sequence runner
+// state (callers BtlAiMgr reset, AiThink). 0x1B3FC8(ai, rule): replaces the sequence stack with the up to four
+// actions of a rule; only caller the rule evaluator 0x1BA760.
+BtlAiSeq_Reset = 0x001B3F78; // type:func
+BtlAiSeq_PushRule = 0x001B3FC8; // type:func
+
+// Data. gStgColMode: see StgCol_SetModeAll. gStgColMesh: the mesh being walked, for the callbacks.
+// gStgColZoneMisses / gStgColZoneVisits: debug counters of the segment trace, never read. gStgColFar: FLT_MAX.
+gStgColMode = 0x002FF1B8; // size:0x8
+gStgColMesh = 0x002FF288; // size:0x4
+gStgColZoneMisses = 0x002FEB00; // size:0x4
+gStgColZoneVisits = 0x002FEB04; // size:0x4
+gStgColFar = 0x002FEB08; // size:0x4
+gStgNav = 0x002FEB0C; // size:0x4
+gStgShadow = 0x002FF1C0; // size:0x8
+gStgColHit = 0x0031C0A0; // size:0x50
+gStgColCtx = 0x0031C0F0; // size:0xD0

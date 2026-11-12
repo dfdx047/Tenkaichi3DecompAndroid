@@ -1,0 +1,53 @@
+// src/battle/btl_act_f.c: 0x1F5460..0x1F8C00. Blast 2 / Ultimate Blast actions (class 2..4 techniques), first part:
+// shared helpers, then the handlers of actions 0x106..0x11A. All 25 functions match.
+
+// Class-dependent requests at the start of a technique: camera cut 0/1/2 (ChrCam_RequestCut), effect bit
+// 0x3E/0x3F/0x40 (BtlChar_SetFxBit), fighter flag 0xE0/0xE1/0xE2.
+BtlSuper_RequestCut = 0x001F5460; // type:func
+BtlSuper_SetStartFx = 0x001F54B0; // type:func
+BtlSuper_SetClassFlag = 0x001F5520; // type:func
+// Raises the hit-stop request flags: 0x125 (level 2) with 0x42..0x46 and 0x12A, or 0x126 (level 1) with 0x44,
+// 0x45; always 0x128.
+BtlSuper_RequestHitStop = 0x001F55A8; // type:func
+// Flags 0xD5, 0xBB, 0x127 and held flag 0xE: called every run frame by the five full handlers.
+BtlSuper_SetFiringFlags = 0x001F5650; // type:func // guess
+// fighter + 0x1594 = class: BtlInput_BuildCommands then tests the technique's button (command bit 0x1000).
+BtlSuper_SetClass = 0x001F56D0; // type:func // guess
+// Flags 0xD5, 0x1A, 0x3F, 0xBB, 0x128, 0x18, 0x12D; callers are the rush cinematic handlers at 0x1F97F8,
+// 0x1FAE48, 0x1FB0F8 (outside this file).
+BtlSuper_SetRushFlags = 0x001F56D8; // type:func // guess
+// Camera shake + vibration at the animation's 0x400 event (kind 0) or every frame (kind 1), gated by technique
+// flag A bits 0x4000000 / 0x8000000; bit 0x10000000 shakes every camera near the fighter instead of its own.
+BtlSuper_ShakeOnEvent = 0x001F5748; // type:func
+// Sets the animation step so that the 0x400 event is reached in the given time.
+BtlSuper_FitAnimToEvent = 0x001F5AF0; // type:func // guess
+// BtlAct_SetObjUnk(chr, 0.2, 2.0) and BtlChar_SetVibration(chr, 0.8, 0.1): called together in every charge loop.
+BtlSuper_SetObjUnk = 0x001F5BF0; // type:func // guess
+BtlSuper_VibrateCharge = 0x001F5C10; // type:func // guess
+// BtlAct_PushAngle backwards (yaw + pi, speed 1, 5) by the technique's kind byte.
+BtlSuper_Recoil = 0x001F5C30; // type:func // guess
+// Plays one step of the rush animation chain on the sub layer and accumulates hits / frames at fighter + 0xEF8.
+BtlSuper_MeasureRushStep = 0x001F5CE0; // type:func // guess
+// Common enter code of a technique action, its start sound (common sound 0x2B), its leave code and its end
+// (request action 0xB, or 0xD9 with technique flag B 0x4000).
+BtlSuper_Begin = 0x001F5EE8; // type:func
+BtlSuper_PlayStartSound = 0x001F5FF8; // type:func
+BtlSuper_Leave = 0x001F6030; // type:func
+BtlSuper_Finish = 0x001F64A0; // type:func
+// Fills the damage queue at fighter + 0xD94 (BtlMemberQueue) for a rush technique; callers at 0x1F97F8, 0x1FAE48.
+BtlSuper_SetupRushDamage = 0x001F6120; // type:func
+
+// Action handlers (gBtlActHandlers). Names describe the animation sequence each one runs; the game terms are guesses.
+// 0x106..0x108: start -> charge loop -> fire -> firing loop -> end.
+BtlAct_SuperBeamHandler = 0x001F6518; // type:func // guess
+// 0x109..0x10B: the same with a vanish / warp in front of the opponent between charge and fire.
+BtlAct_SuperWarpBeamHandler = 0x001F6BC0; // type:func // guess
+// 0x10C..0x10E: fire, loop, second stage, second loop.
+BtlAct_SuperLongBeamHandler = 0x001F7310; // type:func // guess
+// 0x10F..0x111: charge level at fighter + 0xE44, flag 0xA2 (release of the button fires).
+BtlAct_SuperChargeHandler = 0x001F7860; // type:func // guess
+// 0x112..0x114: repeated shots paid with health, flag 0xA3 (press fires the next).
+BtlAct_SuperRepeatHandler = 0x001F7DE8; // type:func // guess
+// 0x115..0x117 and 0x118..0x11A: flag 0xA4 (30% damage), no charge, no ki cost, no hit-stop.
+BtlAct_SuperQuickBeamHandler = 0x001F84F0; // type:func // guess
+BtlAct_SuperQuickLongBeamHandler = 0x001F8888; // type:func // guess

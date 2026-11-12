@@ -1,0 +1,35 @@
+// Memory-card dialog flows (0x1198D8..0x11EC10), src/sys/mcflow_a.c. All match.
+// The work area pointer: first word of this object's .sdata, used only by this range.
+gMcFlow = 0x002FE940; // size:0x4
+// Replay slot list in the progress block (gProgress + 0x69C, 0x2C per slot): mark a slot filled with
+// empty teams / copy the teams of a replay header into it. Called with kind 1 by the scan, kind 0 after a save.
+McFlow_ClearSlotInfo = 0x001198D8; // type:func // guess
+McFlow_CopySlotInfo = 0x00119A00; // type:func // guess
+// Fills the card request: icon, icon size, Shift-JIS title, directory "DBZT3" / "DBZT3R" + slot.
+McFlow_SetupRequest = 0x00119B58; // type:func
+// Callback dispatch when a flow ends: by flag 8 (done) / 0x100 (refused) / neither. The first uses the
+// table set by McFlow_SetDoneCb, the second the per-mode table of McFlow_SetModeCb; the third runs
+// per-mode callback 3, which the flows call when the card is found removed.
+McFlow_CallDone = 0x00119DA8; // type:func
+McFlow_CallModeDone = 0x00119E68; // type:func
+McFlow_CallModeRemoved = 0x00119F60; // type:func // guess
+// The state machines McFlow_Start installs (mode in brackets). The verbs are readings of the card calls
+// each one makes (write / read of gSaveData, Save_SetDefaults, BattleReplay_Load ...).
+McFlow_UpdateSave = 0x00119FB8; // type:func
+McFlow_UpdateLoad = 0x0011ABD0; // type:func
+McFlow_UpdateBootLoad = 0x0011B1E0; // type:func // guess
+McFlow_UpdateNewSave = 0x0011BA08; // type:func // guess
+McFlow_UpdateReplayScan = 0x0011C610; // type:func // guess
+McFlow_UpdateReplaySave = 0x0011CDD8; // type:func
+McFlow_UpdateReplayLoad = 0x0011DA38; // type:func
+McFlow_UpdateReplayAsk = 0x0011E1E8; // type:func // guess
+// Public interface (callers: 0x2BF398..0x2BF588 and the menu overlay).
+McFlow_Init = 0x0011E608; // type:func
+McFlow_Term = 0x0011E788; // type:func
+McFlow_Start = 0x0011E7F8; // type:func
+McFlow_SetDoneCb = 0x0011EAD8; // type:func
+McFlow_SetModeCb = 0x0011EB08; // type:func
+McFlow_SetSlot = 0x0011EB40; // type:func
+// Polls port 0 without a window: 0 busy, 1 PS2 card present, 2 none / error (caller: overlay 0x3B0680).
+McFlow_PollCard = 0x0011EB58; // type:func // guess
+McFlow_Update = 0x0011EBC0; // type:func

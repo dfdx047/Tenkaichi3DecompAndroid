@@ -1,0 +1,74 @@
+// --- sys/gfx.c (0x101D40..0x102458) ---
+// 0x101E30: gGfx.field = (sceGsSyncV(0) == 0); only called by Gfx_Init.
+Gfx_SyncField = 0x00101E30; // type:func // guess
+// 0x102118: returns 1; no callers.
+Gfx_Stub102118 = 0x00102118; // type:func
+// 0x102120(fbmsk, rgba): FRAME with write mask, full scissor, depth writes off, Dma_AddFillRect over 512x448, depth writes on, FRAME mask 0.
+Gfx_ClearScreen = 0x00102120; // type:func // guess
+// 0x1021D8: Dma_BeginDirect / Gfx_PutDefaultEnv / Dma_EndDirect; called before the HUD/2D layers of the battle draw.
+Gfx_AddDefaultEnv = 0x001021D8; // type:func // guess
+// 0x102208(pp): writes a 12-register A+D packet (TEXA, XYOFFSET, SCISSOR, FRAME, TEST, FBA, ZBUF, ALPHA, CLAMP, PRMODECONT, COLCLAMP, TEX1).
+Gfx_PutDefaultEnv = 0x00102208; // type:func // guess
+// 0x102438 / 0x102440 / 0x102450: empty, no callers. 0x102448(pass): empty, called by Battle_Draw between Dbg_ProfMark calls with pass 0..4.
+Gfx_Stub102438 = 0x00102438; // type:func
+Gfx_Stub102440 = 0x00102440; // type:func
+Gfx_MarkPass = 0x00102448; // type:func // guess
+Gfx_Stub102450 = 0x00102450; // type:func
+// Sony libgraph, identified by behaviour: 0x2930B8 takes 4 shorts and resets GS CSR / calls SetGsCrt; 0x293258 resets VIF1/VU1/GIF;
+// 0x2933A8 fills a sceGsDBuff (0x230 bytes); 0x293640 puts disp[id & 1] and the draw env at +0x50 or +0x140; 0x2936A0 waits a vblank and returns CSR bit 13.
+sceGsResetGraph = 0x002930B8; // type:func
+sceGsResetPath = 0x00293258; // type:func
+sceGsSetDefDBuff = 0x002933A8; // type:func
+sceGsSwapDBuff = 0x00293640; // type:func
+sceGsSyncV = 0x002936A0; // type:func
+
+// --- sys/gfx_ot.c (0x102458..0x102F28): ordering table for depth-sorted primitives ---
+// 0x102458 / 0x102530: allocate / free gOt (0x48), the packet memory + table and two head buffers; called by Battle_Init / Battle_Term-like code at 0x25DD58 / 0x25DE2C.
+Ot_Init = 0x00102458; // type:func
+Ot_Term = 0x00102530; // type:func
+// 0x102568: gOt->alpha1 = {0x44, 0x48}, alpha2 = {0x42, 0x49}.
+Ot_SetDefaultAlpha = 0x00102568; // type:func
+// 0x1025A0: gOtCur = gOt->buf.
+Ot_ResetCursor = 0x001025A0; // type:func
+// 0x1025B0: reloads gOtFirst/gOtZ/gOtLast from gOt, empties all 0x2004 chains, rewinds the cursor.
+Ot_Reset = 0x001025B0; // type:func
+// 0x102610(entry, n): entry[i].tail = entry[i].head.
+Ot_ResetEntries = 0x00102610; // type:func
+// 0x102640(layer, &alpha): stores gOt->alpha1[layer] and rebuilds that layer's heads; no callers.
+Ot_SetLayerAlpha = 0x00102640; // type:func
+// 0x102668(prim, entry) / 0x102678(first, last, entry): entry->tail->next = ...; entry->tail = ...; no callers (inlined by users).
+Ot_Add = 0x00102668; // type:func
+Ot_AddChain = 0x00102678; // type:func
+// 0x102688(entry, n): links the non-empty chains into gOtHead..gOtTail.
+Ot_Link = 0x00102688; // type:func
+// 0x102708: Ot_Link, Ot_Send when 0x23FBF8() says so, Ot_Reset; called by Battle_Draw after its last pass.
+Ot_Draw = 0x00102708; // type:func
+// 0x102740: env packet, memcpy of every packet's GIF data into one DIRECT packet, restore packet.
+Ot_Send = 0x00102740; // type:func
+// 0x1027C8(test) / 0x102B70: 21-register and 7-register A+D packets around the sorted primitives.
+Ot_AddEnv = 0x001027C8; // type:func // guess
+Ot_AddRestoreEnv = 0x00102B70; // type:func // guess
+// 0x102C60 / 0x102C68: return 0; no callers.
+Ot_Stub102C60 = 0x00102C60; // type:func
+Ot_Stub102C68 = 0x00102C68; // type:func
+// 0x102C70: gOt->bufSize - 0x10 when initialised, else 0; no callers.
+Ot_GetCapacity = 0x00102C70; // type:func // guess
+// 0x102CA8(buf, size): gOt->buf, the three slot pointers (buf + size, +0x10, +0x10010) and their gp copies.
+Ot_SetBuffer = 0x00102CA8; // type:func
+// 0x102D00 / 0x102D90: Heap_Alloc(0x40080) x2 + build heads / free them.
+Ot_InitLayers = 0x00102D00; // type:func
+Ot_FreeLayers = 0x00102D90; // type:func
+// 0x102DF0(layer): takes 0x40 bytes at gOtCur and writes NEXT tag + GIF tag + ALPHA_1/ALPHA_2.
+Ot_NewHead = 0x00102DF0; // type:func
+// 0x102E78(layer): 0x1002 x Ot_NewHead into gOt->headBuf[layer], stored in the table's head pointers.
+Ot_BuildHeads = 0x00102E78; // type:func
+// 0x102F00(n): n rounded up to a multiple of 64.
+Ot_Align64 = 0x00102F00; // type:func
+// gp-relative state of the ordering table (0x2FE8A0..0x2FE8B8). The effect code (asm 0A7608, 02BD58) uses the last four directly.
+gOt = 0x002FE8A0; // size:0x4
+gOtHead = 0x002FE8A4; // size:0x4
+gOtTail = 0x002FE8A8; // size:0x4
+gOtCur = 0x002FE8AC; // size:0x4
+gOtFirst = 0x002FE8B0; // size:0x4
+gOtZ = 0x002FE8B4; // size:0x4
+gOtLast = 0x002FE8B8; // size:0x4

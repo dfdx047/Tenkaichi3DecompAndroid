@@ -1,0 +1,337 @@
+{
+  "revision": "0.1.39.2 R7 Hotfix",
+  "roster": {
+    "grid_capacity_unchanged": 165,
+    "chip_sheets_before": 165,
+    "chip_sheets_after": 250,
+    "runtime_archive_header": 250,
+    "screens_tested": [
+      34,
+      15,
+      18,
+      21,
+      25,
+      29
+    ],
+    "checks": "Each of the 250 chip texture lists is relocated, including forms above ID 164; original save layout and unlock fields unchanged."
+  },
+  "panoramic": {
+    "screenshots_reviewed": [
+      {
+        "width": 1920,
+        "height": 1080,
+        "screens": [
+          "characters",
+          "stage",
+          "costume",
+          "screen options",
+          "Hero",
+          "tournament"
+        ]
+      },
+      {
+        "width": 2520,
+        "height": 1080,
+        "screens": [
+          "characters",
+          "costume",
+          "screen options",
+          "Dragon Wisdom",
+          "main menu",
+          "Hero",
+          "tournament"
+        ]
+      }
+    ],
+    "math_checks": [
+      "4:3",
+      "16:10",
+      "16:9",
+      "21:9",
+      "8:3"
+    ],
+    "scenery": "uniform cover, with vertical crop",
+    "interface": "proportional left/right/centre clip anchors; costume caption shares its plate anchor"
+  },
+  "audio": {
+    "output": "SDL dummy postmix float PCM, no physical playback",
+    "game_speed_percent": 114,
+    "music_follows_speed": false,
+    "menus": [
+      {
+        "mode": 4,
+        "pcm_samples": 671744,
+        "peak": 0.11389540880918503,
+        "nonzero": 568992
+      },
+      {
+        "mode": 6,
+        "pcm_samples": 681984,
+        "peak": 0.41639959812164307,
+        "nonzero": 591810
+      },
+      {
+        "mode": 13,
+        "pcm_samples": 681984,
+        "peak": 0.08848504722118378,
+        "nonzero": 585751
+      },
+      {
+        "mode": 15,
+        "pcm_samples": 681984,
+        "peak": 0.08467838168144226,
+        "nonzero": 591312
+      },
+      {
+        "mode": 33,
+        "pcm_samples": 679936,
+        "peak": 0.346064031124115,
+        "nonzero": 587737
+      },
+      {
+        "mode": 34,
+        "pcm_samples": 681984,
+        "peak": 0.36367979645729065,
+        "nonzero": 589460
+      },
+      {
+        "mode": 38,
+        "pcm_samples": 684032,
+        "peak": 0.1163131594657898,
+        "nonzero": 593319
+      },
+      {
+        "mode": 39,
+        "pcm_samples": 684032,
+        "peak": 0.11389540880918503,
+        "nonzero": 579232
+      },
+      {
+        "mode": 44,
+        "pcm_samples": 671744,
+        "peak": 0.10153912007808685,
+        "nonzero": 581486
+      },
+      {
+        "mode": 45,
+        "pcm_samples": 684032,
+        "peak": 0.11389540880918503,
+        "nonzero": 579232
+      },
+      {
+        "mode": 48,
+        "pcm_samples": 681984,
+        "peak": 0.15599007904529572,
+        "nonzero": 591822
+      },
+      {
+        "mode": 53,
+        "pcm_samples": 671744,
+        "peak": 0.10321219265460968,
+        "nonzero": 580904
+      },
+      {
+        "mode": 60,
+        "pcm_samples": 681984,
+        "peak": 0.0815289318561554,
+        "nonzero": 591828
+      },
+      {
+        "mode": 62,
+        "pcm_samples": 684032,
+        "peak": 0.10320170968770981,
+        "nonzero": 593885
+      },
+      {
+        "mode": 80,
+        "pcm_samples": 681984,
+        "peak": 0.10321219265460968,
+        "nonzero": 591144
+      }
+    ],
+    "english_package": {
+      "passed": true,
+      "language": "en",
+      "source": "published English language package, range-read records with source verification CRCs",
+      "tracks": [
+        {
+          "track": "0x818",
+          "archive_file": 2071,
+          "bytes": 8546304,
+          "samples": 7593750,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x81a",
+          "archive_file": 2073,
+          "bytes": 7792640,
+          "samples": 6923710,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x81b",
+          "archive_file": 2074,
+          "bytes": 7198720,
+          "samples": 6396727,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x824",
+          "archive_file": 2083,
+          "bytes": 3844096,
+          "samples": 3414400,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x829",
+          "archive_file": 2088,
+          "bytes": 3821568,
+          "samples": 3393953,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x839",
+          "archive_file": 2104,
+          "bytes": 6768640,
+          "samples": 6013617,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x83c",
+          "archive_file": 2107,
+          "bytes": 18059264,
+          "samples": 16049538,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x83d",
+          "archive_file": 2108,
+          "bytes": 4489216,
+          "samples": 3987971,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x83e",
+          "archive_file": 2109,
+          "bytes": 6320128,
+          "samples": 5615510,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x83f",
+          "archive_file": 2110,
+          "bytes": 2652160,
+          "samples": 2355568,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x840",
+          "archive_file": 2111,
+          "bytes": 3002368,
+          "samples": 2665813,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x841",
+          "archive_file": 2112,
+          "bytes": 2523136,
+          "samples": 2240662,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x842",
+          "archive_file": 2113,
+          "bytes": 3512320,
+          "samples": 3119691,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x84a",
+          "archive_file": 2121,
+          "bytes": 3028992,
+          "samples": 2688795,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x84b",
+          "archive_file": 2122,
+          "bytes": 3448832,
+          "samples": 3062238,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x86a",
+          "archive_file": 2153,
+          "bytes": 3633152,
+          "samples": 3226945,
+          "crc_verified": true,
+          "adx": true
+        },
+        {
+          "track": "0x8cf",
+          "archive_file": 2254,
+          "bytes": 3547136,
+          "samples": 3150468,
+          "crc_verified": true,
+          "adx": true
+        }
+      ]
+    },
+    "mapping_reference": "BT4 DBZP.BIN original BGM call immediates, including 0x359140, 0x35926C, 0x379AE8..0x379EE8, 0x39EA1C, 0x39FB38, 0x3A9924..0x3A99B4",
+    "limitations": [
+      "The standalone mode-49 boot bypasses Evolution Z menu music initialization; it is excluded from the audio-pass count.",
+      "Some guide-voice files in the installed BT4 data have zero-duration streams. No replacement speech assets were added.",
+      "English track records were checked against source CRCs and ADX headers; full English gameplay was not run."
+    ]
+  },
+  "battle_regressions": [
+    {
+      "case": "duel-pause",
+      "passed": true,
+      "events": [
+        "free camera audit: PASS mode=0 tag=0 moved=1 native-pose-unchanged=1 camera-mode=1",
+        "HUD fixture: hidden=1 expected=1 menu=0",
+        "HUD fixture: hidden=0 expected=0 menu=0",
+        "HUD fixture: complete"
+      ]
+    },
+    {
+      "case": "tag-pause",
+      "passed": true,
+      "events": [
+        "free camera audit: PASS mode=0 tag=1 moved=1 native-pose-unchanged=1 camera-mode=2",
+        "HUD fixture: hidden=1 expected=1 menu=0",
+        "HUD fixture: hidden=0 expected=0 menu=0",
+        "HUD fixture: complete"
+      ]
+    },
+    {
+      "case": "training-camera",
+      "passed": true,
+      "events": [
+        "free camera audit: PASS mode=6 tag=0 moved=1 native-pose-unchanged=1 camera-mode=3",
+        "HUD fixture: hidden=1 expected=1 menu=0",
+        "HUD fixture: hidden=0 expected=0 menu=0",
+        "HUD fixture: complete"
+      ]
+    }
+  ],
+  "limitations": [
+    "Local runtime checks use Windows Direct3D 12. Linux and macOS builds must pass CI before release; native physical gameplay on those systems was not run."
+  ]
+}

@@ -1,0 +1,78 @@
+// --- The fighter's own camera (src/battle/btl_char_cam.c, 0x1C4BF8..0x1C7B30) -------------------
+// State: ChrCam at fighter +0x420 (eye, pos +0x430, rot +0x440, target, shake slots, stage hit, yaw +0x4A0,
+// side +0x4A8) and ChrCamCut at fighter +0x4C0. All names are guesses; the evidence is the matching C
+// (every function except ChrCam_CalcCut, which is read from the disassembly) and the callers named below.
+
+// -- Follow camera building blocks --
+// 0x1C4BF8(chr, out, mode): out = (0, -d * {1.2, 1.5, 2}, -d * {2.4, 2.8, 3.3}, 1) for mode 0 / 1 / 2 with
+// d = max(scale * 0.5 + 1, 10), scale = body scale (obj +0xFF4); returns scale * -0.001 + {-0.05, -0.06, -0.1} (pitch).
+ChrCam_GetOffset = 0x001C4BF8; // type:func // guess
+// 0x1C4D38(chr, a, b): min(|b - a| / scale * 0.2 + 0.2, 1). 0x1C4DB8(chr, a, b): moves +0x4B4 towards that by
+// 0.4/30 per call, then flags 0xCF / 0xD0 / 0xD1 force 0.3 / 0.25 / 0.2 and gBtlChars +0x274 forces 1; returns +0x4B4.
+ChrCam_CalcRate = 0x001C4D38; // type:func // guess
+ChrCam_GetRate = 0x001C4DB8; // type:func // guess
+// 0x1C4E88(chr): phase +0x4B0 advances pi/75 per call with flag 0xE, else returns to 0 by pi/30; result sin(phase) * 1.5,
+// added to the eye height by the three follow cameras. 0 when +0x4B8 is 0 or gBtlChars +0x274 is set.
+ChrCam_GetBob = 0x001C4E88; // type:func // guess
+
+// -- The four pose calculators: (chr, eye, rot, target), called only by ChrCam_Update --
+// 0x1C4F68: cut camera: re-reads the tracked model nodes, blends the cut's three vectors and three scalars by
+// 1 - timer / total, eye = orbit point - dir(yaw, pitch) * dist, rot looks at the look point; raises flags 0xCD / 0xD1 /
+// 0xD3 / 0xCE per cut flags, counts the timer down and ends the cut, raises 0xD4. NOT MATCHING (INCLUDE_ASM).
+ChrCam_CalcCut = 0x001C4F68; // type:func // guess
+// 0x1C5840: used with flag 0xDC or 0xB8: fixed offset (0, -scale * 0.4 - 10, -35) pitched by the opponent's elevation and
+// swung 72 degrees to the side given by the sign of +0x4A8.
+ChrCam_CalcFixed = 0x001C5840; // type:func // guess
+// 0x1C5C80: used with flag 5 (lock-on): ChrCam_GetOffset scaled by the distance to the opponent, pitched by its
+// elevation (limit 63 degrees, 178.2 with flag 0xD6), swung sideways by +0x4A8 using the view's horizontal field of
+// view (Battle_IsSplitScreen() ? 256 : 512 over the screen distance 433).
+ChrCam_CalcLockOn = 0x001C5C80; // type:func // guess
+// 0x1C6268: no lock-on: ChrCam_GetOffset behind the fighter at yaw +0x4A0, rot = (preset pitch, yaw, 0).
+ChrCam_CalcFree = 0x001C6268; // type:func // guess
+// 0x1C63F8(chr, eye, rot): plane through model node 0x30 facing along rot.y, pushed back by scale * 0.15 * (cos(rot.x) + 1)
+// + 10; an eye in front of it is projected back onto it. Called by ChrCam_Update for the lock-on and free cameras.
+ChrCam_KeepBehindHead = 0x001C63F8; // type:func // guess
+
+// -- Control phase --
+// 0x1C6530(chr): yaw += wrap(angle to opponent - yaw) * (flag 0xCD ? 1 : 0.25); unless flag 0xD2: +0x4A8 = -limit / +limit
+// on BTLB_RS_LEFT / BTLB_RS_RIGHT held, keeps its sign at full size when flag 5 is new or flag 0xD5 is up, else adds the
+// yaw step (folded into -pi/2..pi/2) and clamps to +-limit (ChrCam_GetSideLimit).
+ChrCam_UpdateLockOnYaw = 0x001C6530; // type:func // guess
+// 0x1C6698(chr): flag 0xC9: yaw += stick x / 30, -/+ pi/60 while action input 0x61 / 0x62 (func_001D4F30) is on;
+// flag 0xCA: yaw approaches the fighter's facing (body +0x94) by at most min(sin|d| * 0.05, 1/30).
+ChrCam_UpdateFreeYaw = 0x001C6698; // type:func // guess
+// 0x1C67B0(chr, rot): rot.y turns towards the opponent as seen from the camera position, weighted by distance
+// (full below 50, none above 1000) and by 1 - hit fraction. Called by ChrCam_Update when the stage trace hit.
+ChrCam_TurnToOpponent = 0x001C67B0; // type:func // guess
+// 0x1C6920(chr): BTLB_SELECT pressed: +0x49C = (+0x49C + 1) % 3; flag 5 ? ChrCam_UpdateLockOnYaw : ChrCam_UpdateFreeYaw;
+// +0x460 = *(Vec4 *)(obj +0xFA0). Caller: BtlChar_UpdateCamera (0x1C2218).
+ChrCam_UpdateInput = 0x001C6920; // type:func // guess
+// 0x1C69C8(chr): the per-frame pose update (see btl_char_cam.h). Caller: BtlChar_PostScene (0x1C2318). One of the two
+// callers of BtlCam_TraceStage and of CamShake_Calc / CamShake_Tick.
+ChrCam_Update = 0x001C69C8; // type:func // guess
+// 0x1C6D78(chr): max(atan(obj +0x1000), pi/4).
+ChrCam_GetSideLimit = 0x001C6D78; // type:func // guess
+// 0x1C6DB0(chr, strength, time): CamShake_Add(fighter +0x470, ...) when +0x4B8 != 0. 23 call sites: the fighter code and
+// BtlCharApi_ShakeCamsNear.
+ChrCam_AddShake = 0x001C6DB0; // type:func // guess
+// 0x1C6DE0(chr): flag 0xDA: DemoCam_Stop(); flags 0xD7 / 0xD8 / 0xD9: DemoCam_PlayCharAnim0 / 1 / 2(fighter +0).
+// Caller: BtlChar_UpdateCamera.
+ChrCam_UpdateDemo = 0x001C6DE0; // type:func // guess
+
+// -- Cuts (fighter +0x4C0) --
+// 0x1C6E78(chr, 6 vectors, 6 floats, 4 ids, time, flags): fills the cut block, timer = total = time; flags & 1 raises
+// flag 0xCD, flags & 8 raises 0xD1. Callers: ChrCam_BlendToCut, ChrCam_StartCut, 0x1D8B54.., 0x1FDD78...
+ChrCam_SetCut = 0x001C6E78; // type:func // guess
+// 0x1C7050(chr, 3 delta vectors, 2 ids, 3 delta floats, time, flags): start values = the running cut at its current
+// blend, or (no cut) the live camera's target, yaw / pitch and eye-target distance; then ChrCam_SetCut with flags & ~9.
+ChrCam_BlendToCut = 0x001C7050; // type:func // guess
+// 0x1C7330(chr, table, index): stores the two words at +0x4C0 / +0x4C4 and raises flag 0xDB. 31 call sites in the fighter code.
+ChrCam_RequestCut = 0x001C7330; // type:func // guess
+// 0x1C7358(chr): with flag 0xDB: entry `index` (0x24 bytes) of the character's table (obj +0x938) or the common table
+// (gBtlChars +0x24); node positions, degrees to radians, distances times body scale, seconds * 30 frames; ends in
+// ChrCam_BlendToCut (entry flag 0x40) or ChrCam_SetCut. Caller: BtlChar_UpdateCamera.
+ChrCam_StartCut = 0x001C7358; // type:func // guess
+// 0x1C7A88(chr): cut flags & 4 raises flag 0xCD, & 0x20 raises 0xD1; flags = 0, timer = 0. 22 call sites.
+ChrCam_EndCut = 0x001C7A88; // type:func // guess
+// 0x1C7AF0(chr): timer > 0, or cut flag 0x80, or fighter flag 0xDB.
+ChrCam_IsCutActive = 0x001C7AF0; // type:func // guess

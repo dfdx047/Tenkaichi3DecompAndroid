@@ -1,0 +1,46 @@
+// Debug stubs, common data, BPE decoder, job queue and loading screen (0x263098..0x264A50).
+// Names already in game.txt (Common_*, Job_Init/Clear/Run/Push, Load_RunBlocking, gCommonRes, gJobQueue) are not repeated here.
+
+// --- src/sys/debug.c (0x263098..0x2630E8): ten `jr ra` stubs, a stripped debug module ---
+// 0x263098: empty; called once from the boot sequence at 0x1005EC, right after Dma_InitBuffers.
+Dbg_Init = 0x00263098; // type:func // guess
+// 0x2630A0 / 0x2630B0: empty; called by Gfx_EndFrame (0x1020A0) and Gfx_BeginFrame (0x102040).
+Dbg_EndFrame = 0x002630A0; // type:func // guess
+Dbg_BeginFrame = 0x002630B0; // type:func // guess
+// 0x2630D8: empty; called at 0x244314 after sceGsExecStoreImage + sceGsSyncPath.
+Dbg_AfterStoreImage = 0x002630D8; // type:func // guess
+// Empty (0x2630C8 returns 2, 0x2630D0 returns 0), no callers.
+Dbg_Stub2630A8 = 0x002630A8; // type:func // guess
+Dbg_Stub2630B8 = 0x002630B8; // type:func // guess
+Dbg_Stub2630C0 = 0x002630C0; // type:func // guess
+Dbg_Stub2630C8 = 0x002630C8; // type:func // guess
+Dbg_Stub2630D0 = 0x002630D0; // type:func // guess
+Dbg_Stub2630E0 = 0x002630E0; // type:func // guess
+
+// --- src/sys/job.c (0x263478..0x2635C8) ---
+// 0x2634D8: Queue_Destroy(gJobQueue), Heap_Free, gJobQueue = NULL. No callers.
+Job_Destroy = 0x002634D8; // type:func
+// 0x2635B0: Queue_Count(gJobQueue). No callers.
+Job_GetCount = 0x002635B0; // type:func
+
+// --- src/sys/bpe.c (0x263278..0x263478) ---
+// 0x263278(src, dst, outSize): src = {rawSize, packSize, data}. Per block: pair table (run-length coded "left"/"right" bytes),
+// 16-bit big-endian count, then bytes expanded through a 256-byte stack: Philip Gage's byte pair encoding "expand" routine.
+// Allocates dst when NULL. Callers: the wrapper 0x126608 and 0x24C5DC.
+Bpe_Decode = 0x00263278; // type:func
+
+// --- src/sys/loading.c (0x2635C8..0x264A50): the button-mashing loading screen ---
+// 0x2636F8: fills the 16-entry sprite list (0x38-byte records at gProgress+0x10) for the chosen screen type; type 2 also scatters 30 items.
+Load_BuildSprites = 0x002636F8; // type:func
+// 0x263F58: clears the state, picks a type different from the last one, File_LoadSync(0x3C1 + type), unpacks it, sets the timing, builds the sprites.
+Load_InitScreen = 0x00263F58; // type:func
+// 0x264098: per-frame logic: steps the two-frame animation on a timer or when enough presses came in, counts cycles into the score.
+Load_UpdateScreen = 0x00264098; // type:func
+// 0x2642F8: for each pad, if bit 0x200 of the pressed word is set: one press less to go, sets flag 2.
+Load_ReadInput = 0x002642F8; // type:func
+// 0x264398: draws the sprite runs for the current type through 0x126880.
+Load_DrawScreen = 0x00264398; // type:func
+// 0x2649A8: same frame loop as Load_RunBlocking but ends when File_UpdateRequests() returns 1; no fade, no jobs. No callers.
+Load_RunFileQueue = 0x002649A8; // type:func // guess
+// 0x1AC bytes cleared by Load_InitScreen; D_0031E714 is its +0x18C member (LoadPulse).
+gLoadScreen = 0x0031E588; // size:0x1AC

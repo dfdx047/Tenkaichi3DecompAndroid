@@ -1,0 +1,155 @@
+// Battle objects (src/battle/btl_obj.c = 0x248F28..0x24BBE8). Layouts: include/battle/btl_obj.h.
+// BtlObj_Get and gBtlObjTbl are in game.txt.
+
+// The module's heap block (0x6B740 bytes, Heap_Alloc in 0x249CF0, freed and zeroed in 0x249D80).
+gBtlObjWork = 0x002FEC44; // size:0x4
+// 0x24A140 starts its minimum search from this float (0x7F7FFFFE, just under FLT_MAX); reached with lui/lo, not $gp.
+gBtlObjFarDist = 0x002FEC48; // size:0x8 // guess
+
+// 0x248F28 / 0x248F30: empty; called from 0x249CF0 (init) and 0x249D80 (term) between the other sub-inits.
+BtlObj_InitNop = 0x00248F28; // type:func // guess
+BtlObj_TermNop = 0x00248F30; // type:func // guess
+// 0x248F38: clears gBtlObjTbl and stores node+0x10 at [node id] for every node of the used list. Callers: Gfx_BeginFrame, 0x2498A0.
+BtlObj_RebuildTable = 0x00248F38; // type:func
+
+// work + 0x6B370 (0x7C bytes): {flags, allocBits, viewCount, views[2], lists[2] of {objs[12], count}}.
+// 0x248FC0 returns it, 0x248FD8 zeroes it. 0x249000(bit): sets bit in +4 and returns 1 if it was clear, else 0.
+// 0x249058(bit) clears it. 0x249098: first bit 0..15 that 0x249000 accepts. 0x2490E0: +8. 0x2490F8(mask): (+0 & mask) != 0.
+// 0x249118(view): &lists[view]. 0x249148(view): views[view].
+BtlObjVis_Get = 0x00248FC0; // type:func
+BtlObjVis_Clear = 0x00248FD8; // type:func
+BtlObjVis_AllocBit = 0x00249000; // type:func // guess
+BtlObjVis_FreeBit = 0x00249058; // type:func // guess
+BtlObjVis_AllocFreeBit = 0x00249098; // type:func // guess
+BtlObjVis_GetViewCount = 0x002490E0; // type:func
+BtlObjVis_TestFlags = 0x002490F8; // type:func
+BtlObjVis_GetList = 0x00249118; // type:func
+BtlObjVis_GetView = 0x00249148; // type:func
+
+// work + 0x6B330 (0x40 bytes): {dir, half, color, res}. 0x249168 returns it. 0x249180: zeroes it, res = a table in
+// common file 2 (relocated), dir = (0.34, -0.006, 0.941), color = (10, 10, 10, 32). 0x249240(dir): dir normalised,
+// half = normalize((dir + {0,-1.6,0,1}) * 0.5). 0x2492E0 / 0x249310 / 0x249370 copy dir / half / color out;
+// 0x249340 copies color in. 0x2493A0 / 0x2493D0(key): func_0010A218(res, 0, 0x3D40, -1) / (res, 1, key, -1).
+BtlObjLight_Get = 0x00249168; // type:func // guess
+BtlObjLight_Init = 0x00249180; // type:func // guess
+BtlObjLight_SetDir = 0x00249240; // type:func // guess
+BtlObjLight_GetDir = 0x002492E0; // type:func // guess
+BtlObjLight_GetHalf = 0x00249310; // type:func // guess
+BtlObjLight_SetColor = 0x00249340; // type:func // guess
+BtlObjLight_GetColor = 0x00249370; // type:func // guess
+BtlObjLight_FindRes0 = 0x002493A0; // type:func // guess
+BtlObjLight_FindRes1 = 0x002493D0; // type:func // guess
+
+// work + 0x45000: 512 nodes of 0xE0 bytes and a singly linked free list at +0x1C000. 0x249420 builds it,
+// 0x249498 pops and clears a node (two vectors set to 0,0,0,1), 0x249538(list) returns a whole list, 0x249578 counts.
+BtlObjPoolE0_Get = 0x00249408; // type:func // guess
+BtlObjPoolE0_Init = 0x00249420; // type:func // guess
+BtlObjPoolE0_Alloc = 0x00249498; // type:func // guess
+BtlObjPoolE0_FreeList = 0x00249538; // type:func // guess
+BtlObjPoolE0_GetFreeCount = 0x00249578; // type:func // guess
+// work + 0x61010: 4 nodes of 0x70 bytes, free list at +0x1C0. Same four operations.
+BtlObjPool70_Get = 0x002495A0; // type:func // guess
+BtlObjPool70_Init = 0x002495B8; // type:func // guess
+BtlObjPool70_Alloc = 0x00249628; // type:func // guess
+BtlObjPool70_Free = 0x00249650; // type:func // guess
+BtlObjPool70_GetFreeCount = 0x00249688; // type:func // guess
+// work + 0x611E0: free list at +0xA140; no init here (0x249CF0 calls func_001146E0 at that point of the sequence).
+BtlObjPool3_Get = 0x002496A8; // type:func // guess
+BtlObjPool3_Alloc = 0x002496C0; // type:func // guess
+BtlObjPool3_Free = 0x002496E8; // type:func // guess
+BtlObjPool3_GetFreeCount = 0x00249720; // type:func // guess
+
+// The object table at work + 0: 12 nodes of 0x1680, free list +0x10E00, used list +0x10E0C.
+// 0x249748 returns work, 0x249750 the used list. 0x249778: zeroes 0x45000 bytes, +0x44FC4 = 2.0, node[i].id = i,
+// all nodes on the free list. 0x249828 / 0x249850: read / write the float at +0x44FC4. 0x249880: used count.
+// 0x2498A0: free -> used, rebuilds the table, returns the id or -1. 0x249910(id): used -> free, returns 1 if found.
+// 0x2499C8(id): work + 0x10E40 + id * 0x1A0C0 for id < 3, else NULL.
+BtlObj_GetTable = 0x00249748; // type:func
+BtlObj_GetUsedList = 0x00249750; // type:func
+BtlObj_InitTable = 0x00249778; // type:func
+BtlObj_GetUnk44FC4 = 0x00249828; // type:func // guess
+BtlObj_SetUnk44FC4 = 0x00249850; // type:func // guess
+BtlObj_GetCount = 0x00249880; // type:func
+BtlObj_AllocId = 0x002498A0; // type:func
+BtlObj_FreeId = 0x00249910; // type:func
+BtlObj_GetCharaWork = 0x002499C8; // type:func // guess
+// 0x249A28(obj, type, res, id, active): func_001135F0(obj); func_00113598(type, obj, res); obj+8 = active,
+// +0x10 = id, +0xC = (res file id - 0x590) / 10; tail func_00250CD0(obj).
+// 0x249AB8(type, res, active): AllocId + Setup; type 0 also gets +0x1660 = GetCharaWork(id) and func_0024E5A0. Returns the id.
+// 0x249B58(id): FreeId, then func_001135F0(obj). 0x249BB0(slot): Create(0, func_0024B910(slot), 1) (battle_work.c: both sides).
+// 0x249BD8(id, slot): Setup of an existing object from another resource slot (battle_load.c: character change).
+BtlObj_Setup = 0x00249A28; // type:func
+BtlObj_Create = 0x00249AB8; // type:func
+BtlObj_Destroy = 0x00249B58; // type:func
+BtlObj_CreateChara = 0x00249BB0; // type:func
+BtlObj_Rebind = 0x00249BD8; // type:func // guess
+// 0x249C48: work + 0x6B3EC, the resource slot block used by 0x24B1E0..0x24BAC0.
+BtlRes_GetWork = 0x00249C48; // type:func
+// 0x249C60(side, chara, costume, variant): func_0024B7A8(1, 0x590 + chara*10 + costume (+4 if variant),
+// 0x598 + chara*10, 0x599 + chara*10); side is not used. Returns the resource slot number.
+BtlObj_RequestCharaModel = 0x00249C60; // type:func
+BtlObj_GetWork = 0x00249CC0; // type:func
+BtlObj_IsInit = 0x00249CC8; // type:func
+// 0x249CD8: tail call of func_0024B4C0 (commits a pending resource slot swap).
+BtlRes_CommitReloadEx = 0x00249CD8; // type:func // guess
+// 0x249CF0(prealloc): allocates and zeroes the work block, then every sub-init. 0x249D80: sub-terms, Heap_Free.
+BtlObj_Init = 0x00249CF0; // type:func
+BtlObj_Term = 0x00249D80; // type:func
+
+// 0x249DC0(obj, state): resets the box at state+0xB4 and adds the 8 corners of every enabled bounds record,
+// transformed by its node matrix. 0x24A140(state, view): view+0x44 = distance (View_GetDistXZ, minimum over four
+// box corners, then sqrtf). 0x24A2C0(view, near, far): fade 0 beyond far, 128 before near, linear between; sets
+// or clears flag 8. 0x24A360(obj): obj+0xB20[i] = min(model alpha[i] + obj+0xB30, 0x7F). 0x24A3B0(obj, view): view
+// colour from the flags. 0x24A4B8(obj): 1 when all 8 box corners are off the same side of the screen.
+// 0x24A7B0(obj): fills obj's record for the current view. 0x24A9D0(list, view): three passes over the used list.
+BtlObj_UpdateBounds = 0x00249DC0; // type:func
+BtlObj_CalcViewDist = 0x0024A140; // type:func
+BtlObjView_SetFade = 0x0024A2C0; // type:func
+BtlObj_UpdateAlpha = 0x0024A360; // type:func // guess
+BtlObj_CalcViewColor = 0x0024A3B0; // type:func
+BtlObj_IsOffscreen = 0x0024A4B8; // type:func
+BtlObj_UpdateView = 0x0024A7B0; // type:func
+BtlObj_BuildDrawList = 0x0024A9D0; // type:func
+// 0x24AB70: per-frame update (Battle_Update). 0x24AD08(view) / 0x24ADF8(split): per-view visibility (Battle_Update).
+BtlObj_UpdateAll = 0x0024AB70; // type:func
+BtlObj_UpdateVisibility = 0x0024AD08; // type:func
+BtlObj_FinishVisibility = 0x0024ADF8; // type:func
+// 0x24AF18(table, obj): writes the 15 bytes of row model+0x28 of a 0x100-byte table. 0x24B158 builds the table on
+// the stack from every active object and hands it to func_00106AF0.
+BtlObj_FillAlphaRow = 0x0024AF18; // type:func // guess
+BtlObj_UploadAlphaTable = 0x0024B158; // type:func // guess
+// 0x24B0C8 / 0x24B0F0: init / term of three drawing modules (0x105C58, 0x106A08, 0x1086D8 / 0x105CB0, 0x106AC8,
+// 0x108728). 0x24B118: full-screen scissor (0..511, 0..447), then four begin calls of the same modules.
+BtlObj_InitDraw = 0x0024B0C8; // type:func // guess
+BtlObj_TermDraw = 0x0024B0F0; // type:func // guess
+BtlObj_BeginDraw = 0x0024B118; // type:func // guess
+
+// Model resource slots (work + 0x6B3EC, 0x34C bytes): 12 heap slots, 2 fixed slots, 3 spare model buffers.
+// 0x24B1E0 / 0x24B238: first fixed / heap slot without flag 1, flag set. 0x24B290(n): heap slot with number n.
+// 0x24B2E8(dst, src): copies {buf, size, id}. 0x24B308(a, b): swaps them. 0x24B360(file, id): id and
+// File_GetSize, or none for a negative id, or untouched for -99. 0x24B3B0(slot, a, b, c): the three ids.
+// 0x24B400(file): Heap_Free and clear, returns 1 if it had a buffer. 0x24B450(file, heap): File_Request into a new
+// buffer (heap == 1) or into file->buf. 0x24B4C0 / 0x24BAC0 (same code): pending >= 0 -> swap slot file 0 with the
+// spare record, pending = -1. 0x24B510(prealloc) / 0x24B6E8: init / term. 0x24B7A8(fixed, model, a, b): take a slot,
+// set ids, queue the reads, return the slot number or -1. 0x24B8A0(n): free heap slot n. 0x24B910(n): slot by number.
+// 0x24B9A8(n, model, a, b): reload of a fixed slot (battle_load.c: character change). 0x24BB10(heap, slot, model) /
+// 0x24BBA8(slot): the same load / free on a slot record that the caller owns (caller 0x25D70C).
+BtlRes_AllocFixed = 0x0024B1E0; // type:func
+BtlRes_AllocSlot = 0x0024B238; // type:func
+BtlRes_FindSlot = 0x0024B290; // type:func
+BtlRes_CopyFile = 0x0024B2E8; // type:func
+BtlRes_SwapFile = 0x0024B308; // type:func
+BtlRes_SetFileId = 0x0024B360; // type:func
+BtlRes_SetIds = 0x0024B3B0; // type:func
+BtlRes_FreeFile = 0x0024B400; // type:func
+BtlRes_LoadFile = 0x0024B450; // type:func
+BtlRes_CommitReload = 0x0024B4C0; // type:func // guess
+BtlRes_Init = 0x0024B510; // type:func
+BtlRes_Term = 0x0024B6E8; // type:func
+BtlRes_Request = 0x0024B7A8; // type:func
+BtlRes_Free = 0x0024B8A0; // type:func
+BtlRes_GetSlot = 0x0024B910; // type:func
+BtlRes_Reload = 0x0024B9A8; // type:func // guess
+BtlRes_CommitReload2 = 0x0024BAC0; // type:func // guess
+BtlRes_LoadSingle = 0x0024BB10; // type:func // guess
+BtlRes_FreeSingle = 0x0024BBA8; // type:func // guess

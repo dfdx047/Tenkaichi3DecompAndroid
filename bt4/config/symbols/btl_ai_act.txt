@@ -1,0 +1,107 @@
+// CPU opponent: virtual pad, attack actions, sense. src/battle/btl_ai_act.c = 0x1BC8A8..0x1C0058.
+// Evidence for the names is the C in that file (see its header comment). Gameplay words (combo, follow-up) are
+// guesses and marked so; the mechanics are not.
+
+// Dispatcher of the move action (action id 7): ends the action when func_001B4140 says so, else calls
+// gBtlAiMovePhases[phase]. Called by BtlAi_RunSeq.
+BtlAiMove_Dispatch = 0x001BC8A8; // type:func
+
+// The virtual pad (side + 0x268).
+// (pad, keep): clears buttons, stick and the stick accumulator; with keep == 0 also the per-button marks.
+BtlAiPad_Clear = 0x001BC918; // type:func
+// (pad, AI button bits): ORs the matching battle button bits into pad->buttons.
+BtlAiPad_AddButtons = 0x001BC968; // type:func
+// (side *): counts frames on which a movement button is sent but the fighter moved less than its radius.
+BtlAiPad_TrackStill = 0x001BCAA8; // type:func
+// (side *, hold, press, once, s16 special, x, y): the one writer of the pad.
+BtlAiPad_Set = 0x001BCB78; // type:func
+// (pad): flips the per-button marks and counts the timer down. Tail-called by BtlAi_RunSeq every frame.
+BtlAiPad_EndFrame = 0x001BCD70; // type:func
+
+// Attack work (side + 0x240) shared by actions 0x19, 0x1A and 0x36.
+// (objId, atk *): clears the chosen input, stores the fighter's state id, sets both timers to 15.
+BtlAiAtk_Reset = 0x001BCDB8; // type:func
+// (side *, s8 base, s8 range) -> f32 hold time: three Rand_Range draws at most.
+BtlAiAtk_RollCharge = 0x001BCE08; // type:func // guess
+// (side *, kind 0..8): writes atk->hold / press / charge for one of nine inputs (jump table jtbl_002EE2A0).
+BtlAiAtk_SetInput = 0x001BCFA8; // type:func
+// (side *, lo row table, hi row table) -> 1 when one of 11 weighted options was picked.
+BtlAiAtk_PickOption = 0x001BD258; // type:func
+// (side *, lo, hi) -> 1: two weighted options used on rush step 4.
+BtlAiAtk_PickLastStep = 0x001BD558; // type:func // guess
+// Phase 2 of all three attack actions: sends atk->hold / press until the fighter's state changes.
+BtlAiAtk_Run = 0x001BD8E8; // type:func
+// Phase 3 of actions 0x19 and 0x36: empties the action stack.
+BtlAiAtk_End = 0x001BDAA0; // type:func
+
+// Action 0x19: phase table and its functions. "Combo": it runs while the fighter's state class is 13 / 14 and its
+// state id is 0x37..0x3A or 0x3C..0x40 (five consecutive steps), which reads as the rush attack chain.
+gBtlAiComboPhases = 0x002C4950; // size:0x10 // guess
+BtlAiCombo_Init = 0x001BD640; // type:func // guess
+BtlAiCombo_Start = 0x001BD6E0; // type:func // guess
+BtlAiCombo_Dispatch = 0x001BDAB0; // type:func // guess
+
+// Action 0x1A: started from fighter action 0x1F or another one; picks one input from a 5-entry weighted row.
+gBtlAiFollowPhases = 0x002C4960; // size:0x10 // guess
+BtlAiFollow_Init = 0x001BDB30; // type:func // guess
+BtlAiFollow_Start = 0x001BDB50; // type:func // guess
+BtlAiFollow_End = 0x001BDDD8; // type:func // guess
+BtlAiFollow_Dispatch = 0x001BDE68; // type:func // guess
+
+// Action 0x36: presses BLAST until state class 0x12, then picks a held or pressed BLAST. Meaning unknown.
+gBtlAiAct36Phases = 0x002C4970; // size:0x10
+BtlAiAct36_Init = 0x001BDED8; // type:func
+BtlAiAct36_Start = 0x001BDFA8; // type:func
+BtlAiAct36_Dispatch = 0x001BE140; // type:func
+
+// Sense: rebuilds the situation word (side + 0x2C0) from both fighters once per frame.
+// 0 close / 1 middle / 2 far / -1 from situation bits 0x10 / 0x20 / 0x40.
+BtlAiSense_GetRange = 0x001BE1B0; // type:func
+// Three "can use it now" tests with a level-scaled health threshold and a 600-frame timer each. Which techniques
+// they are (parameter bytes +0x98.. / +0xB4.. / member word +0x99C) is not known: numbered by situation bit.
+BtlAiSense_CheckBit56 = 0x001BE1E8; // type:func
+BtlAiSense_CheckBit57 = 0x001BE318; // type:func
+BtlAiSense_CheckBit58 = 0x001BE408; // type:func
+// func_00209B38(side) >= 4.
+BtlAiSense_CheckBit60 = 0x001BE550; // type:func
+// Opponent's parameter byte +2 is 4.
+BtlAiSense_CheckBit61 = 0x001BE578; // type:func
+// (side *) -> 1 when the opponent's facing points away from this fighter (dot of facing and self->opponent > 0).
+BtlAiSense_IsBehindOpponent = 0x001BE5A0; // type:func
+// The opponent's technique can be answered (by its kind byte, a projectile query or its progress).
+BtlAiSense_CheckBit32 = 0x001BE680; // type:func
+// func_002099E8(side) != 0 (a switch prompt is open) and react bit 0x10000 clear.
+BtlAiSense_CheckSwitch = 0x001BE810; // type:func // guess
+// 0 / 1 / 2 while action 10 is on the stack, from the fighter distance.
+BtlAiSense_CheckAct10 = 0x001BE850; // type:func
+// First pass: sequence state, lock-on, range, facing, a gauge band, the bit 56..61 tests.
+BtlAiSense_Basic = 0x001BE8C0; // type:func
+// Sets react bit 4 when the opponent's state id is 0x97 or 0x189.
+BtlAiSense_NoteOppState = 0x001BEC68; // type:func
+// 1 = stop sensing this frame (state flag bit 0, or state class 15..17 with a 4-frame timer).
+BtlAiSense_IsBusy = 0x001BED08; // type:func // guess
+// One function per situation bit of the third pass, numbered by the bit it feeds.
+BtlAiSense_CheckBit49 = 0x001BEDC8; // type:func
+BtlAiSense_CheckBit50 = 0x001BEE38; // type:func
+BtlAiSense_CheckBit51 = 0x001BEE80; // type:func
+BtlAiSense_CheckBit43 = 0x001BEEC8; // type:func
+BtlAiSense_CheckBit40 = 0x001BEF30; // type:func
+BtlAiSense_CheckBit41 = 0x001BF0A8; // type:func
+BtlAiSense_CheckBit28 = 0x001BF160; // type:func
+BtlAiSense_CheckBit29 = 0x001BF270; // type:func
+BtlAiSense_CheckBit35 = 0x001BF2E8; // type:func
+BtlAiSense_CheckBit31 = 0x001BF390; // type:func
+BtlAiSense_CheckBit33 = 0x001BF480; // type:func
+BtlAiSense_CheckBit34 = 0x001BF4D0; // type:func
+BtlAiSense_CheckBit36 = 0x001BF5A8; // type:func
+BtlAiSense_CheckBit37 = 0x001BF600; // type:func
+BtlAiSense_CheckBit38 = 0x001BF658; // type:func
+BtlAiSense_CheckBit39 = 0x001BF6A8; // type:func
+// Third pass: the reaction bits 28..51 and 62.
+BtlAiSense_Reactions = 0x001BF6F8; // type:func
+// 1 when the fighters are 30 or more apart and the line between them is steeper than 0.7 rad.
+BtlAiSense_IsSteep = 0x001BFBC0; // type:func
+// Fourth pass: facing, range combined with flag 6, sight, the opponent's state class.
+BtlAiSense_Derived = 0x001BFC90; // type:func
+// Per-frame entry, called by BtlAiMgr_Update.
+BtlAiSense_Update = 0x001BFF70; // type:func

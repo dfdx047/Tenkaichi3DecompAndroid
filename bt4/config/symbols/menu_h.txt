@@ -1,0 +1,57 @@
+// Menu overlay DBZP.BIN, 0x356090..0x35A558.
+// The frame loop of the previous chunk's screen (work area 0x3B38E8; guide characters Nappa and Vegeta, "fl_mode",
+// "fl_dp": the duel menu of modes 38..41). Called by the handler of modes 38..41 (0x352CB8).
+DuelMenu_Run = 0x00356090; // type:func // guess
+gDuelMenu = 0x003B38E8; // size:0x4 // guess
+// CharRef: the character reference screen (mode 60; main-menu item 8). Guide "chichi", list of unlocked
+// characters, profile text, voice, comment and model viewer. Work area gCharRef (0x1638 bytes).
+CharRef_Init = 0x003562B8; // type:func
+CharRef_Run = 0x00356D60; // type:func
+CharRef_Draw = 0x00356EF0; // type:func
+// The nine state handlers stored in gCharRefState by CharRef_Init, in state order.
+CharRef_StateIntro = 0x00357B78; // type:func
+CharRef_StateList = 0x00357BF8; // type:func
+CharRef_StateDetails = 0x00357F60; // type:func
+CharRef_StateProfile = 0x003583A8; // type:func
+CharRef_StateVoice = 0x00358480; // type:func
+CharRef_StateComment = 0x00358578; // type:func
+CharRef_StateCostume = 0x00358810; // type:func
+CharRef_StateView = 0x003589D8; // type:func
+CharRef_StateViewWait = 0x00358A58; // type:func
+CharRef_ClipGoto = 0x00358AA8; // type:func
+CharRef_BuildList = 0x00358B88; // type:func
+CharRef_MeasureText = 0x00358D28; // type:func
+CharRef_UpdateImage = 0x00358DB8; // type:func
+CharRef_ChangeImage = 0x00358F58; // type:func
+// Clip callbacks: scissor to the list area before the clip is drawn, back to the full screen after it.
+CharRef_ScissorOn = 0x00358F98; // type:func
+CharRef_ScissorOff = 0x00358FC0; // type:func
+CharRef_Term = 0x00358FE8; // type:func
+gCharRef = 0x003B4854; // size:0x4
+// Nine function pointers in the main executable's .bss, written by the overlay (CharRef_Init) and called by
+// CharRef_Run: an uninitialised global of the overlay's source that the linker placed as a common symbol.
+gCharRefState = 0x0031EA80; // size:0x24
+// Handlers called by Progress_Main: mode 60 (character reference) and modes 44..45 (training).
+CharRefMode_Main = 0x003590A8; // type:func // guess
+TrainMode_Main = 0x003591C8; // type:func // guess
+// Train: the training menu (mode 44; main-menu item 6, "mc_icon_training_clear"). Work area gTrain. Only the
+// head of the module is in this range, so the names are guesses.
+Train_IsCleared = 0x00359358; // type:func // guess
+Train_IsClassCleared = 0x00359380; // type:func // guess
+Train_IsAllCleared = 0x00359428; // type:func // guess
+Train_CopyCursor = 0x00359470; // type:func // guess
+Train_PlateGoto = 0x003594A8; // type:func // guess
+Train_Plate2Goto = 0x00359540; // type:func // guess
+Train_CursorGoto = 0x003595D8; // type:func // guess
+Train_DrawClearIcon = 0x00359670; // type:func // guess
+Train_DrawPlates = 0x003597F8; // type:func // guess
+Train_DrawList = 0x00359998; // type:func // guess
+Train_ScissorOn = 0x00359B38; // type:func // guess
+Train_ScissorOff = 0x00359B60; // type:func // guess
+Train_SetClip = 0x00359B88; // type:func // guess
+Train_HideArrow = 0x00359C98; // type:func // guess
+Train_DrawArrows = 0x00359D88; // type:func // guess
+Train_MoveRow = 0x00359F80; // type:func // guess
+Train_NextRow = 0x0035A1C8; // type:func // guess
+Train_MoveCursor = 0x0035A358; // type:func // guess
+gTrain = 0x003B4BA8; // size:0x4

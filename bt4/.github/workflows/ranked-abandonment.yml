@@ -1,0 +1,23 @@
+name: Ranked abandonment rollout
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bt4-online-routing-authority
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Apply the Ranked settlement migration
+        env:
+          SUPABASE_PRIMARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_PRIMARY_MANAGEMENT_TOKEN }}
+          SUPABASE_SECONDARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_SECONDARY_MANAGEMENT_TOKEN }}
+        run: python3 port/tools/rollout_ranked_abandonment.py

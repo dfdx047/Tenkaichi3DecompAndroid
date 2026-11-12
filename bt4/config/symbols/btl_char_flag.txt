@@ -1,0 +1,136 @@
+// --- Clash sequences (src/battle/btl_char_flag_clash.c), 0x1D8750..0x1D9A20 --------------------------------
+// One state machine at gBtlChars +0x40 run once per frame by BtlClash_Update. "Clash" is the reading of the code:
+// both fighters in the same special action at once, a camera sequence, counters compared, a winner flagged.
+// A / B / C are placeholders: what the three are called in the game is not known from this code.
+// Both fighters in actions 0x130..0x132 (func_00206D68 on objects 0 and 1) / held flag 0xC3 on one that is.
+BtlClash_BothInClashA = 0x001D8750; // type:func // guess
+BtlClash_HoldClashA = 0x001D8788; // type:func // guess
+// Both fighters' BtlAct_GetCurrent() == 0xFA / 0xFB / 0xFC; plain flag 0xBF (0xC6) on a fighter still in 0xFA (0xFC).
+BtlClash_BothInActionFA = 0x001D87D8; // type:func // guess
+BtlClash_EndActionFA = 0x001D8830; // type:func // guess
+BtlClash_BothInActionFB = 0x001D8880; // type:func // guess
+BtlClash_BothInActionFC = 0x001D88D8; // type:func // guess
+BtlClash_EndActionFC = 0x001D8930; // type:func // guess
+// One-frame fighter camera cuts (ChrCam_SetCut, time 1, flags 0x45): around one fighter, around the midpoint, at a stage path.
+BtlClash_SetOrbitCut = 0x001D8980; // type:func // guess
+BtlClash_SetMidCut = 0x001D8B88; // type:func // guess
+BtlClash_SetPathCut = 0x001D8D08; // type:func // guess
+// clamp(x / (|x| + 1), -0.8, 0.8) with x = lead * 0.05.
+BtlClash_CalcBias = 0x001D8E08; // type:func // guess
+// The three sequences (states 1..5, 6..8, 9..11; each returns the next state) and the dispatcher. UpdateC holds all nine BtlChar_Rand calls.
+BtlClash_UpdateA = 0x001D8E50; // type:func // guess
+BtlClash_UpdateB = 0x001D9330; // type:func // guess
+BtlClash_UpdateC = 0x001D9518; // type:func // guess
+BtlClash_Update = 0x001D9900; // type:func // guess
+
+// --- Fighter sound (src/battle/btl_char_flag_snd.c), 0x1D9A20..0x1DA8B8 -------------------------------------
+// &gBtlChars->sounds[chr->player] (+0x8, one-shot slots) / ->loopSounds (+0xC, looping slots); NULL without roster.
+BtlCharSnd_GetSet = 0x001D9A20; // type:func
+BtlCharSnd_GetLoopSet = 0x001D9A58; // type:func
+// Search of the loop slots / of the request list for (owner, kind, id).
+BtlCharSnd_IsLoopPlaying = 0x001D9A90; // type:func
+BtlCharSnd_IsRequested = 0x001D9B20; // type:func
+// Appends a request {pos, near, far, id, owner, kind} to gBtlChars +0xA0 (max 4). Argument order (.., near, far, id) is what matched.
+BtlCharSnd_Request = 0x001D9B78; // type:func
+// Stores a Snd_PlaySeEx handle in a slot ring; stops (Snd_StopHandle) loop slots whose sound is not in this frame's list.
+BtlCharSnd_StoreHandle = 0x001D9C28; // type:func
+BtlCharSnd_StopUnrequestedLoops = 0x001D9D28; // type:func
+// Volume 0..0x80 from the camera distance between near and far, pan -0x40..0x40 from the bearing; 0x40 / 0 in split screen.
+BtlCharSnd_CalcVolPan = 0x001D9DB0; // type:func
+// Slot reset at roster creation; request list reset each frame; the per-frame player (StreamSe_Play / Voice_PlayCharaEx / Voice_Play / Snd_PlaySeEx).
+BtlCharSnd_Init = 0x001D9F90; // type:func
+BtlCharSnd_ClearRequests = 0x001DA058; // type:func
+BtlCharSnd_PlayRequests = 0x001DA098; // type:func
+// Request wrappers: owner -1; then at the fighter's node 3 or 0x30 with kind 0, 0 (near = far = 100000), 1, player + 2, 4, player + 5.
+BtlCharSnd_RequestAt = 0x001DA348; // type:func
+BtlCharSnd_PlayCommon = 0x001DA370; // type:func // guess
+BtlCharSnd_PlayCommonFar = 0x001DA3D0; // type:func // guess
+BtlCharSnd_PlayBank8 = 0x001DA428; // type:func // guess
+BtlCharSnd_PlayOwn = 0x001DA488; // type:func // guess
+BtlCharSnd_PlayStream = 0x001DA4E8; // type:func // guess
+BtlCharSnd_PlayVoice = 0x001DA548; // type:func // guess
+// By class of the technique in use (BtlAct_GetCurrentClass 0..4): sounds / voice lines on animation attribute bits 0x8000, 0x10000..0x80000, 0x8000000000.
+BtlCharSnd_PlayTechSounds = 0x001DA5A8; // type:func // guess
+// Stops a one-shot slot matching (kind, id) unless requested again this frame; kind 0 and kind player + 2 wrappers; gBtlSndBankMask[kind].
+BtlCharSnd_Stop = 0x001DA7A8; // type:func
+BtlCharSnd_StopCommon = 0x001DA860; // type:func // guess
+BtlCharSnd_StopOwn = 0x001DA880; // type:func // guess
+BtlCharSnd_GetBankMask = 0x001DA8A0; // type:func
+// Sample bank mask per request kind: 4, 8, 0x10, 0x20, then -1 x 4 (read-only data of this file, between its neighbours' jump tables).
+gBtlSndBankMask = 0x002EF290; // size:0x20
+
+// --- Fighter flags (src/battle/btl_char_flag.c), 0x1DA8B8..0x1DB048 -----------------------------------------
+// The four primitives BtlChar_SetHeldFlag (0x1DA9D0), BtlChar_ClearFlag (0x1DAA50), BtlChar_SetFlag (0x1DABE8) and
+// BtlChar_TestFlag (0x1DAC78) are in this file too; their names live in btl_scene.txt / game.txt (marked guess there,
+// now confirmed by matching C).
+// For every flag stamped with `stage`: previous := current, plain bit cleared. / Stores the stage at +0x1084 after promoting it. / Reads it.
+BtlChar_PromoteFlags = 0x001DA8B8; // type:func
+BtlChar_SetStage = 0x001DA970; // type:func
+BtlChar_GetStage = 0x001DA9C8; // type:func
+// ClearFlag over an inclusive range; xor of a held flag.
+BtlChar_ClearFlagRange = 0x001DAAF0; // type:func
+BtlChar_ToggleHeldFlag = 0x001DAB68; // type:func
+// (prevHeld | prevPlain) & bit; current & ~previous; previous & ~current.
+BtlChar_TestPrevFlag = 0x001DACB0; // type:func
+BtlChar_IsFlagRaised = 0x001DACE8; // type:func
+BtlChar_IsFlagDropped = 0x001DAD40; // type:func
+// Flags 5 / 0x13 from BtlOpp_GetDistance < BtlChar_GetSpacing(chr, 0), blocked by flags 0x1B, 0x93, 0xB2 and +0xFB0 >= 3 (flag 5 is called lock-on in fighter.md).
+BtlChar_UpdateLockOn = 0x001DAD98; // type:func // guess
+// Held flag 0xBA on both fighters when func_001B2DF0 answers non-zero for the segment between their nodes 0x2F.
+BtlChars_UpdateSightFlag = 0x001DAE98; // type:func // guess
+// Bit set at +0x1540 (set / test), u64 at +0x1538 (or); first clash of the battle: bit 0, flag 0xE3, battle event 0x3C.
+BtlChar_SetOnceBit = 0x001DAF60; // type:func // guess
+BtlChar_TestOnceBit = 0x001DAF88; // type:func // guess
+BtlChar_SetFrameBits = 0x001DAFB0; // type:func
+BtlChar_RaiseFirstClash = 0x001DAFC0; // type:func // guess
+
+// --- Opponent helpers (src/battle/btl_char_flag_opp.c), 0x1DB048..0x1DBF20 ----------------------------------
+// Each resolves the other fighter (BtlChar_Get(1) for player 0, else BtlChar_Get(0)) and forwards.
+// BtlChar_GetSnapPos / GetSnapRot of the opponent, snapshot 6 or a given one; the y of the rotation.
+BtlOpp_GetTargetPos = 0x001DB048; // type:func
+BtlOpp_GetSnapPos = 0x001DB0A0; // type:func
+BtlOpp_GetTargetRot = 0x001DB100; // type:func
+BtlOpp_GetSnapRot = 0x001DB158; // type:func
+BtlOpp_GetTargetYaw = 0x001DB1B8; // type:func
+// Target position minus own position; copies of the opponent's pose +0x30 and +0x40 (velocity: inferred).
+BtlOpp_GetDelta = 0x001DB208; // type:func
+BtlOpp_GetPoseVec30 = 0x001DB258; // type:func // guess
+BtlOpp_GetVelocity = 0x001DB2B0; // type:func // guess
+// Length, horizontal length, horizontal length minus both radii (func_002062F0), floored at 0.
+BtlOpp_GetDistance = 0x001DB308; // type:func
+BtlOpp_GetDistanceXZ = 0x001DB330; // type:func
+BtlOpp_GetGapXZ = 0x001DB358; // type:func
+// atan2(dx, dz); that minus own rot.y + pose +0x64; that minus the opponent's rot.y; -asin(dy / len), plain and with the height correction.
+BtlOpp_GetYaw = 0x001DB3A8; // type:func
+BtlOpp_GetYawFromFacing = 0x001DB408; // type:func
+BtlOpp_GetYawFromItsFacing = 0x001DB468; // type:func
+BtlOpp_GetPitch = 0x001DB4A8; // type:func
+BtlOpp_GetPitchAdjusted = 0x001DB518; // type:func
+// (own func_00204EA0 - opponent's) / 2; plain forwards of object / parameter getters to the opponent.
+BtlOpp_GetHalfHeightDiff = 0x001DB5A8; // type:func // guess
+BtlOpp_GetRadius = 0x001DB630; // type:func // guess
+BtlOpp_GetParamByte2 = 0x001DB670; // type:func // guess
+BtlOpp_GetHeight = 0x001DB6B0; // type:func // guess
+BtlOpp_GetObjUnkFFC = 0x001DB6F0; // type:func // guess
+BtlOpp_GetParamWord0 = 0x001DB730; // type:func // guess
+// opp->player, opp->objId, BtlChar_GetObj(opp).
+BtlOpp_GetPlayer = 0x001DB770; // type:func
+BtlOpp_GetObjId = 0x001DB7B0; // type:func
+BtlOpp_GetObj = 0x001DB7F0; // type:func
+// The opponent's action (or +0x964): the previous-frame copy (+0x950, +0x968) while either fighter's stage is below 6.
+BtlOpp_GetSeenAction = 0x001DB830; // type:func // guess
+BtlOpp_GetSeenUnk964 = 0x001DB8C8; // type:func // guess
+// More forwards: object +0xFF8, fighter +0x15A0, a model node position, the vector at object +0xFA0, fighter +0xD88.
+BtlOpp_GetObjUnkFF8 = 0x001DB948; // type:func // guess
+BtlOpp_GetUnk15A0 = 0x001DB988; // type:func // guess
+BtlOpp_GetNodePos = 0x001DB9D8; // type:func
+BtlOpp_GetObjVecFA0 = 0x001DBA38; // type:func // guess
+BtlOpp_GetUnkD88 = 0x001DBA90; // type:func // guess
+// distance / (own velocity . dir - opponent velocity . dir); 0 when on top of each other, 10000000 when not closing.
+BtlOpp_GetClosingTime = 0x001DBAD0; // type:func // guess
+// BtlMember_HasAbility(opp, n); func_0020F318(opp); opp +0xE50.
+BtlOpp_HasAbility = 0x001DBC10; // type:func
+BtlOpp_GetUnk20F318 = 0x001DBC60; // type:func // guess
+BtlOpp_GetClashCountB = 0x001DBCA0; // type:func // guess
+// Stage 6: clears own flags 0xAC..0xB9, then raises them (and 0xD6) from the opponent's flags, action and death.
+BtlOpp_MirrorFlags = 0x001DBCE0; // type:func // guess

@@ -1,0 +1,62 @@
+// src/battle/eft_ac.c, 0x1A21A8..0x1A62C8.
+
+// Tail of the effect pack part kind 17 module (it starts in the file before, 0x1A0E58 or earlier). Task class
+// D_002C4308 = {update, init, term, stub, reset, draw}; manager class D_002C42F0 = {update, init, term, 0, reset, 0}.
+// The entries 0x1A3640.. are called by EftEmit_SpawnType17 (eft_h.c); each checks the handle, the task class
+// (cls[0] == EftRibbon_Update) and work flag 1. "Ribbon" is a guess from the structure: a list of nodes between
+// two points drawn as a strip of camera-facing quads. Roles of the setters follow the fields the update reads.
+EftRibbon_DrawKind1 = 0x001A21A8; // type:func // guess
+EftRibbon_DrawKind2 = 0x001A2660; // type:func // guess
+EftRibbon_Init = 0x001A2C80; // type:func
+EftRibbon_Term = 0x001A2DB0; // type:func
+EftRibbon_Update = 0x001A2DD0; // type:func
+EftRibbon_PostUpdate = 0x001A3468; // type:func
+EftRibbon_Reset = 0x001A3470; // type:func
+EftRibbon_Draw = 0x001A3488; // type:func
+EftRibbonMgr_Init = 0x001A3560; // type:func
+EftRibbonMgr_Term = 0x001A35E8; // type:func
+EftRibbonMgr_Update = 0x001A3630; // type:func
+EftRibbonMgr_Reset = 0x001A3638; // type:func
+EftRibbon_Create = 0x001A3640; // type:func
+EftRibbon_Stop = 0x001A36B0; // type:func
+EftRibbon_Kill = 0x001A36E0; // type:func
+EftRibbon_StopAndKill = 0x001A3710; // type:func
+EftRibbon_IsAlive = 0x001A3740; // type:func
+EftRibbon_SetPos = 0x001A3780; // type:func
+EftRibbon_SetEnd = 0x001A37D8; // type:func
+EftRibbon_SetSize = 0x001A3868; // type:func
+EftRibbon_SetMaxNodes = 0x001A38B0; // type:func
+EftRibbon_SetDelay = 0x001A3908; // type:func
+EftRibbon_SetFadeDelay = 0x001A3950; // type:func
+EftRibbon_SetFadeTime = 0x001A3998; // type:func
+EftRibbon_SetTexFrame = 0x001A3A08; // type:func // guess
+EftRibbon_SetUnkD8 = 0x001A3A60; // type:func // guess
+EftRibbon_SetType = 0x001A3AB0; // type:func
+gEftRibbonMgr = 0x002FEAC4; // size:0x4
+gEftRibbonTasks = 0x002FEAC8; // size:0x4
+gEftRibbonClass = 0x002C4308; // size:0x18
+gEftRibbonMgrClass = 0x002C42F0; // size:0x18
+
+// Head of the "zap" module (effect pack part kind 12; the name and the globals gEftZapMgr / gEftZapClass are
+// from config/symbols/eft_ad.txt, which has its create / control entries, 0x1A6598..).
+// Task class D_002C4338 = {update, init, term, stub, reset, draw}; manager class D_002C4320
+// = {update, init, term, 0, reset, draw}.
+EftZapMgr_Init = 0x001A3B00; // type:func // guess
+EftZapMgr_Update = 0x001A3B68; // type:func // guess
+EftZapMgr_Draw = 0x001A3B70; // type:func // guess
+EftZapMgr_Reset = 0x001A3B78; // type:func // guess
+EftZapMgr_Term = 0x001A3B80; // type:func // guess
+EftZap_Init = 0x001A3BB0; // type:func // guess
+EftZap_Update = 0x001A3CC8; // type:func // guess
+EftZap_PostUpdate = 0x001A4000; // type:func // guess
+EftZap_Draw = 0x001A4008; // type:func // guess
+EftZap_Reset = 0x001A4698; // type:func // guess
+EftZap_Term = 0x001A46B0; // type:func // guess
+EftZap_InitKeys = 0x001A47B8; // type:func // guess
+EftZap_StepKeys = 0x001A4990; // type:func // guess
+EftZap_SpawnLine = 0x001A4BB0; // type:func // guess
+EftZap_InitLine = 0x001A4C98; // type:func // guess
+EftZap_UpdateLines = 0x001A5578; // type:func // guess
+EftZap_DrawQuad = 0x001A5E80; // type:func // guess
+gEftZapMgrClass = 0x002C4320; // size:0x18
+gEftZapMgr = 0x002FEAD0; // size:0x4

@@ -1,0 +1,89 @@
+// Boot and DMA display-list module (src/main.c 0x100258..0x100670, src/sys/dma.c from 0x100670).
+// Names already in game.txt (main, Overlay_Load, Sys_RebootIop, Sys_LoadIopModules, Game_Main, Dma_InitBuffers, Dma_Flush,
+// Dma_ResetBuffers, Dma_SendVif1, Dma_SendGif, gDma*) are not repeated here.
+
+// 0x100648(view): tail-calls the SCISSOR packet builder with the four words at view+0x200. Its one caller (0x23E6A0) first
+// loads the matrices at view+0x140 / view+0x180 and then stores view in a "current" pointer, so the object is a view/camera.
+View_ApplyScissor = 0x00100648; // type:func // guess
+// 0x11EC10: wrapper that only tail-calls sceSifInitIopHeap; last call of Sys_LoadIopModules.
+Sys_InitIopHeap = 0x0011EC10; // type:func // guess
+
+// --- DMA display list (src/sys/dma.c) ---
+// 0x1006E8(src, size): memcpy to gDmaCur, advance by size rounded down to 16. 69 callers, all pass stack/rodata packets.
+Dma_AddData = 0x001006E8; // type:func
+// 0x100738(addr, size): writes {0x30000000 + size/16, addr, 0, 0} (DMA REF tag) at gDmaCur.
+Dma_AddRef = 0x00100738; // type:func
+// 0x100770(addr, tag): writes {0x20000000, addr, 0, 0} (DMA NEXT tag), stores the following address in tag[1]. No callers.
+Dma_AddNext = 0x00100770; // type:func // guess
+// 0x100850(size): returns gDmaCur and advances it.
+Dma_Alloc = 0x00100850; // type:func
+// 0x100878: zeroes the quadword at gDmaCur and returns gDmaCur+0x10; 0x100890(end): fills that quadword with a CNT tag +
+// VIF FLUSHE/DIRECT for the quadwords up to `end`, FlushCache(0), gDmaCur = end. Always used as a pair (58 / 36 callers).
+Dma_BeginDirect = 0x00100878; // type:func // guess
+Dma_EndDirect = 0x00100890; // type:func // guess
+// 0x100958: gDmaBufSize. 0x100960: gDmaCur - gDmaBuf[gDmaBufIdx]. 0x100980: the difference of the two.
+Dma_GetBufSize = 0x00100958; // type:func
+Dma_GetUsedSize = 0x00100960; // type:func
+Dma_GetFreeSize = 0x00100980; // type:func
+// 0x1009B0(p0, p1, psize): sets the buffer size to 0x51000 and returns buf[i]+0x51000 and 0xAF000; 0x100A00 undoes it. No callers.
+Dma_LendBufferTails = 0x001009B0; // type:func // guess
+Dma_ReclaimBufferTails = 0x00100A00; // type:func // guess
+// 0x100A30: D_CTRL (0x1000E000) = 1, D_PCR (0x1000E020) = 0x83FF0002, D_STAT (0x1000E010) = 0. No callers.
+Dma_InitController = 0x00100A30; // type:func // guess
+// 0x100A68: hand-written `bc0f` loop (wait for CPCOND0 = DMA channels in D_PCR done). 0x100A90: same with `bc2t` (COP2 condition = VU1 busy).
+Dma_WaitCond = 0x00100A68; // type:func
+Dma_WaitVu1 = 0x00100A90; // type:func
+// Variants of Dma_SendVif1: 0x100B98 also waits afterwards; 0x100CC0 / 0x100D88 set bit 31 of TADR (scratchpad). No callers.
+Dma_SendVif1Sync = 0x00100B98; // type:func
+Dma_SendVif1Spr = 0x00100CC0; // type:func // guess
+Dma_SendVif1SprSync = 0x00100D88; // type:func // guess
+// GIF channel (0x1000A000): 0x100EB0 chain mode (CHCR 0x145), 0x100F48 same + wait, 0x101018 normal mode (CHCR 0x101)
+// without the final wait that Dma_SendGif has, 0x101170 only the wait. No callers.
+Dma_SendGifChain = 0x00100EB0; // type:func
+Dma_SendGifChainSync = 0x00100F48; // type:func
+Dma_SendGifNoWait = 0x00101018; // type:func
+Dma_WaitGif = 0x00101170; // type:func
+// 0x1011B8(iopAddr, data, size): FlushCache, sceSifSetDma({data, iopAddr, size, 0}, 1), loops on sceSifDmaStat.
+Dma_SendToIop = 0x001011B8; // type:func
+// Flag tested by Dma_SendVif1: when non-zero it waits for the DMA condition first (and sets the flag to 1 again). Nothing writes
+// another value, so in practice it stays 0.
+gDmaVif1Started = 0x002FE89C; // size:0x4 // guess
+
+// GS register packets: each builds {CNT tag + VIF DIRECT, GIF tag (A+D), value/register pairs} on the stack and passes it to
+// Dma_AddData. The register number in the packet gives the name (0x3F TEXFLUSH, 0x4C/0x4D FRAME_1/2, ...).
+Dma_AddTexFlush = 0x00101210; // type:func
+Dma_AddFrame = 0x00101298; // type:func
+Dma_AddClamp = 0x00101340; // type:func
+Dma_AddScissor = 0x00101400; // type:func
+Dma_AddXyOffset = 0x001014B0; // type:func
+Dma_AddZbuf = 0x00101548; // type:func
+Dma_AddTex0 = 0x001015D0; // type:func
+Dma_AddTex1 = 0x00101650; // type:func
+Dma_AddFba = 0x001016D0; // type:func
+Dma_AddColClamp = 0x00101750; // type:func
+Dma_AddAlpha = 0x001017D0; // type:func
+// 0x101870: `return 0;`, no callers.
+Dma_Stub101870 = 0x00101870; // type:func // guess
+// 0x101878(x, y, w, h, rgba): Dma_BeginDirect; ALPHA_1/TEST_1/FBA_1/PRIM(sprite, blend)/RGBAQ, then w/32 sprites of
+// 32 x h in REGLIST mode; Dma_EndDirect. Coordinates are used as given (no XYOFFSET added).
+Dma_AddFillRect = 0x00101878; // type:func // guess
+// 0x1019E0(pp, x0, y0, x1, y1, xFrac, yFrac, u0, v0, u1, v1, uFrac, vFrac, rgba, blend): writes PRIM (textured sprite,
+// optionally blended), RGBAQ and (u1-u0)/32 UV/XYZ2 sprite pairs through the caller's packet cursor *pp. 2 callers (0x244670, 0x244AD8).
+Dma_PutTexStrips = 0x001019E0; // type:func // guess
+
+// --- Library functions called from src/main.c ---
+// 0x2A40B0(mode): first call after sceSifInitRpc in Sys_RebootIop, arg 0 (SCECdINIT); itself calls sceSifInitRpc and resets the
+// libcdvd globals around 0x2E7964..0x2E799C that sceCdStatus / sceCdGetDiskType (sys_file.txt) use.
+sceCdInit = 0x002A40B0; // type:func
+// 0x2A4D48(media): libcdvd S-command 0x22 (media mode) through sceSifCallRpc; called with 2 (SCECdDVD).
+sceCdMmode = 0x002A4D48; // type:func
+// 0x2BA0D8(path): rejects paths over 0x50 chars ("too long parameter '%s'"), builds a command from "rom0:UDNL " + path.
+sceSifRebootIop = 0x002BA0D8; // type:func
+// 0x2BA088: returns (sceSifGetReg(4) & 0x40000) != 0, i.e. "IOP is back up".
+sceSifSyncIop = 0x002BA088; // type:func
+// 0x2B5AC8: clears the file I/O "initialised" flag and its 4-byte state, returns 0; sits just before sceOpen (0x2B5D30).
+sceFsReset = 0x002B5AC8; // type:func // guess
+// 0x2B9BA8(name, argLen, args): calls the worker at 0x2B9980 with a result pointer and 0; all 13 callers pass "cdrom0:\IRX\*.IRX;1".
+sceSifLoadModule = 0x002B9BA8; // type:func
+// 0x2B8C58: loops on sceSifBindRpc(client, 0x80000003, 0) (the IOP heap service id) until the server answers.
+sceSifInitIopHeap = 0x002B8C58; // type:func

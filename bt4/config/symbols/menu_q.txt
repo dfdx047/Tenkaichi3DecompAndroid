@@ -1,0 +1,50 @@
+// Menu overlay DBZP.BIN, 0x37F430..0x3840E0: mode group 13..30 (handler 0x379A58, archive gMenuArc3, main-menu
+// item 1). All names are guesses from what the code does.
+// UbScore tail (menu_q.c): the object starts in the previous chunk (menu_p_d.c, 0x37EE18). ConvertStep moves
+// points from the total into money at a tenth; SetPage picks the three bonus lines of a page; PlateGoto plays
+// "fl_on_start" / "fl_off_start" on "mc_pt_convert_plate%d"; AddRanking inserts into the ten-entry ranking at
+// gSaveData + 0x210; the three SaveBest functions keep the best total of a mission / course; GetRewardItem
+// reads the item id table at 0x3B8DD8.
+UbScore_ConvertStep = 0x0037F430; // type:func // guess
+UbScore_SetPage = 0x0037F458; // type:func // guess
+UbScore_PlateGoto = 0x0037F4B8; // type:func // guess
+UbScore_AddRanking = 0x0037F5F8; // type:func // guess
+UbScore_SaveMissionBest = 0x0037F690; // type:func // guess
+UbScore_SaveBestB = 0x0037F718; // type:func // guess
+UbScore_SaveBestC = 0x0037F7B0; // type:func // guess
+UbScore_GetRewardItem = 0x0037F838; // type:func // guess
+gUbRewardItems = 0x003B8DD8; // size:0x18 // guess
+// SimDay (menu_q_b.c): head of the day screen of mode 22 (tail and names of the object: menu_r.txt), work area gSimDay, 0xBBC
+// bytes; movie labels "mc_sim_botan%02d", "mc_sim_monita", "fl_syugyo_botan_in", "mc_turn_lamp%02d".
+// SetupBattle is the battle hand-off (Battle_ClearWork .. BattleSetup_FinishEx); Cmd is the 63-case switch the
+// event scripts of 0x38C408.. drive the movies with.
+SimDay_GetTrainRank = 0x0037F850; // type:func // guess
+SimDay_SetFaceA = 0x0037F918; // type:func // guess
+SimDay_SetFaceB = 0x0037F958; // type:func // guess
+SimDay_SetupBattle = 0x0037F978; // type:func // guess
+SimDay_IsEventItem = 0x0037FD60; // type:func // guess
+SimDay_ListItems = 0x0037FDA0; // type:func // guess
+SimDay_AddChange = 0x0037FEA8; // type:func // guess
+SimDay_GetStat = 0x0037FF08; // type:func // guess
+SimDay_GiveItem = 0x0037FF70; // type:func // guess
+SimDay_TakeItem = 0x0037FFF8; // type:func // guess
+SimDay_CountItems = 0x00380078; // type:func // guess
+SimDay_CountItems2 = 0x003800B8; // type:func // guess
+SimDay_SetButton = 0x003800F8; // type:func // guess
+SimDay_PassWait = 0x00380210; // type:func // guess
+SimDay_NextChange = 0x00380248; // type:func // guess
+SimDay_ShowChange = 0x00380290; // type:func // guess
+SimDay_SetMenuAlpha = 0x00380430; // type:func // guess
+SimDay_PlayBgm = 0x00380550; // type:func // guess
+SimDay_Cmd = 0x00380580; // type:func // guess
+SimDay_PickEvent = 0x00381450; // type:func // guess
+SimDay_RefreshBoard = 0x003815E0; // type:func // guess
+SimDay_Init = 0x003816E0; // type:func // guess
+SimDay_Term = 0x00382A10; // type:func // guess
+SimDay_Draw = 0x00382B50; // type:func // guess
+SimDay_Update = 0x00383698; // type:func // guess
+gSimTrain0 = 0x003B9010; // size:0x78 // guess
+gSimTrain1 = 0x003B9088; // size:0x78 // guess
+gSimTrain2 = 0x003B9100; // size:0x78 // guess
+gSimBgm = 0x003B9178; // size:0x20 // guess
+gSimEventItems = 0x003B9198; // size:0xA8 // guess

@@ -1,0 +1,97 @@
+name: Online routing authority
+
+on:
+  workflow_dispatch:
+    inputs:
+      activate_ranked:
+        description: Validate both Ranked formats and enable the secondary rating authority
+        type: boolean
+        default: false
+      prepare_ranked:
+        description: Prepare R5 Ranked schema on both projects without enabling admission
+        type: boolean
+        default: false
+      route:
+        description: Route preference (auto keeps a healthy active route)
+        type: choice
+        options: [auto, primary, secondary]
+        default: auto
+      apply:
+        description: Publish and apply the signed admission lease
+        type: boolean
+        default: false
+  schedule:
+    - cron: '2-59/5 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bt4-online-routing-authority
+  cancel-in-progress: false
+
+jobs:
+  prepare_ranked:
+    if: github.event_name == 'workflow_dispatch' && (inputs.prepare_ranked || inputs.activate_ranked)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Prepare and verify both Ranked backends
+        env:
+          SUPABASE_PRIMARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_PRIMARY_MANAGEMENT_TOKEN }}
+          SUPABASE_SECONDARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_SECONDARY_MANAGEMENT_TOKEN }}
+          ACTIVATE_RANKED: ${{ inputs.activate_ranked }}
+        run: python3 port/tools/prepare_ranked.py
+  coordinate:
+    if: github.event_name != 'workflow_dispatch' || (!inputs.prepare_ranked && !inputs.activate_ranked)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Load previously signed policy and lease bounds
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 port/tools/online_authority.py --state-dir "$RUNNER_TEMP/online-routing" --download-state
+      - name: Read-only plan
+        if: github.event_name == 'workflow_dispatch' && !inputs.apply
+        env:
+          REQUESTED_ROUTE: ${{ inputs.route }}
+        run: python3 port/tools/online_authority.py --state-dir "$RUNNER_TEMP/online-routing" --route "$REQUESTED_ROUTE"
+      - name: Verify public packages and prepare a signed policy
+        if: github.event_name == 'schedule' || inputs.apply
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          SUPABASE_PRIMARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_PRIMARY_MANAGEMENT_TOKEN }}
+          SUPABASE_SECONDARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_SECONDARY_MANAGEMENT_TOKEN }}
+          REQUESTED_ROUTE: ${{ inputs.route || 'auto' }}
+        run: python3 port/tools/online_authority.py --state-dir "$RUNNER_TEMP/online-routing" --route "$REQUESTED_ROUTE" --prepare
+      - name: Check both administrative credentials before publishing
+        if: github.event_name == 'schedule' || inputs.apply
+        env:
+          PRIMARY: ${{ secrets.SUPABASE_PRIMARY_MANAGEMENT_TOKEN }}
+          SECONDARY: ${{ secrets.SUPABASE_SECONDARY_MANAGEMENT_TOKEN }}
+        run: |
+          test -n "$PRIMARY" && test -n "$SECONDARY" || {
+            echo 'Both project management secrets must be configured before routing activation.' >&2
+            exit 1
+          }
+      - name: Publish policy and write-ahead lease bounds
+        if: github.event_name == 'schedule' || inputs.apply
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 port/tools/online_authority.py --state-dir "$RUNNER_TEMP/online-routing" --publish-prepared
+      - name: Fence the previous route and admit the selected route
+        if: github.event_name == 'schedule' || inputs.apply
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SUPABASE_PRIMARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_PRIMARY_MANAGEMENT_TOKEN }}
+          SUPABASE_SECONDARY_MANAGEMENT_TOKEN: ${{ secrets.SUPABASE_SECONDARY_MANAGEMENT_TOKEN }}
+        run: python3 port/tools/online_authority.py --state-dir "$RUNNER_TEMP/online-routing" --activate-published

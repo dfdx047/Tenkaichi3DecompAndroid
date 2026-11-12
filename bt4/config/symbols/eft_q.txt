@@ -1,0 +1,153 @@
+// Effect tasks, 0x170A50..0x174A70 (src/battle/eft_q.c, include/battle/eft_q.h). Seven pieces, all appearance only.
+// Task classes are {update, init, term, post-update, reset, draw}.
+//
+// 1. Power-up glow: the tasks, manager and entry points of the module whose particles are in eft_p_b.c
+// (0x16DCA0..0x170A50). Manager class 0x2C3B50 (an entry of the layer's sub-task table 0x2C3FB0), task class
+// 0x2C3B68, one task per character. The fighter effect layer calls 0x1714E8 for requests 4 / 5
+// (BtlFx_UpdatePowerUpLook): 0 start, 1 fade out, 2 remove. 0x171570 has two callers in the aura module.
+// 0x1715D0 and 0x171630 have no caller.
+EftGlow_UpdateTextures = 0x00170A50; // type:func
+EftGlow_SetType = 0x00170BB8; // type:func
+EftGlow_Setup = 0x00170E00; // type:func
+EftGlowTask_Init = 0x00170E78; // type:func
+EftGlowTask_Term = 0x00170EE0; // type:func
+EftGlowTask_Update = 0x00170F40; // type:func
+EftGlowTask_PostUpdate = 0x00171040; // type:func
+EftGlowTask_Reset = 0x00171060; // type:func
+EftGlowTask_Draw = 0x00171078; // type:func
+EftGlowMgr_Init = 0x00171128; // type:func
+EftGlowMgr_Term = 0x00171318; // type:func
+EftGlowMgr_Update = 0x00171378; // type:func
+EftGlow_Start = 0x001713A8; // type:func
+EftGlow_FadeOut = 0x00171428; // type:func
+EftGlow_Kill = 0x001714A0; // type:func
+EftGlow_Request = 0x001714E8; // type:func
+EftGlow_IsActive = 0x00171570; // type:func
+EftGlow_ChangeType = 0x001715D0; // type:func
+EftGlow_GetColors = 0x00171630; // type:func
+gEftGlow = 0x002FEA38; // size:0x4
+gEftGlowCfg = 0x002FEA3C; // size:0x4
+gEftGlowCfg2 = 0x002FEA40; // size:0x4
+gEftGlowList = 0x002FEA44; // size:0x4
+gEftGlowMgrClass = 0x002C3B50; // size:0x18
+gEftGlowClass = 0x002C3B68; // size:0x18
+// 2. Rush-finish burst (manager class 0x2C3B80 = per-character kind 5, task class 0x2C3B98): one emitter set from
+// character pack entry 7, placed at a fighter node and aimed along a direction. Started by fighter effect request 0x28
+// (BtlFx_UpdateAimedFxReq28: the rush finish, action 0x66), second stage at request 0x29, ended by 0x2A. The name says
+// who starts it; what it looks like is not known.
+EftRushBurst_Emit = 0x001716A0; // type:func // guess
+EftRushBurst_Init = 0x001717C8; // type:func // guess
+EftRushBurst_Term = 0x00171900; // type:func // guess
+EftRushBurst_Update = 0x00171940; // type:func // guess
+EftRushBurst_Reset = 0x00171A70; // type:func // guess
+EftRushBurst_PostUpdate = 0x00171AB8; // type:func // guess
+EftRushBurst_Draw = 0x00171B20; // type:func // guess
+EftRushBurstMgr_Init = 0x00171B28; // type:func // guess
+EftRushBurstMgr_Term = 0x00171BE0; // type:func // guess
+EftRushBurstMgr_Update = 0x00171C48; // type:func // guess
+EftRushBurst_Start = 0x00171C78; // type:func // guess
+EftRushBurst_Stage2 = 0x00171CE8; // type:func // guess
+EftRushBurst_Stop = 0x00171D30; // type:func // guess
+EftRushBurst_Nop = 0x00171D78; // type:func // guess
+gEftRushBurstMgrClass = 0x002C3B80; // size:0x18 // guess
+gEftRushBurstClass = 0x002C3B98; // size:0x18 // guess
+// 3. Per-character effect root = effect scene layer 2 (root class 0x2C3BB0, created by BtlScene_CreateLayers;
+// character class 0x2C3BC8). The root makes one task per character; each makes the manager task of every effect kind (table 0x2C3BE0)
+// whose bit is set in its character pack (BtlScene_TestCharPackBit). Pools: 6 root, 7 character 0, 8 the others.
+// EftChar_SetList / EftChar_GetList (ten and eleven callers across the effect code) are how a kind's manager
+// registers its task list and how the spawners find it. 0x1721D0 / 0x172240 are what BtlScene_FreeCharLayer2 /
+// BtlScene_CreateCharLayer2 call when a character is streamed out / in.
+EftCharRoot_Init = 0x00171D80; // type:func
+EftCharRoot_Term = 0x00171EA8; // type:func
+EftCharRoot_Update = 0x00171F08; // type:func
+EftChar_Init = 0x00171F10; // type:func
+EftChar_Term = 0x00172078; // type:func
+EftChar_Update = 0x001720D0; // type:func
+EftChar_SetPool = 0x001720D8; // type:func
+EftChar_ResetPool = 0x00172100; // type:func
+EftChar_CreateKind = 0x00172128; // type:func
+EftChar_Kill = 0x001721D0; // type:func
+EftChar_Create = 0x00172240; // type:func
+EftChar_SetList = 0x00172298; // type:func
+EftChar_GetList = 0x001722C0; // type:func
+gEftChar = 0x002FEA48; // size:0x4
+gEftCharRootClass = 0x002C3BB0; // size:0x18
+gEftCharClass = 0x002C3BC8; // size:0x18
+gEftCharKindClass = 0x002C3BE0; // size:0x30
+// 4. Placeholder kind: the manager class 0x2C3C10 that table entries 6, 8 and 10 point at, and a task class (0x2C3C28)
+// whose update kills the task. 0x1722E8 has no caller.
+EftCharNull_Start = 0x001722E8; // type:func // guess
+EftCharNullMgr_Init = 0x00172338; // type:func // guess
+EftCharNullMgr_Term = 0x001723B8; // type:func // guess
+EftCharNullMgr_Update = 0x00172400; // type:func // guess
+EftCharNull_Init = 0x00172408; // type:func // guess
+EftCharNull_Term = 0x00172438; // type:func // guess
+EftCharNull_Reset = 0x00172440; // type:func // guess
+EftCharNull_Update = 0x00172458; // type:func // guess
+EftCharNull_PostUpdate = 0x00172470; // type:func // guess
+EftCharNull_Draw = 0x00172478; // type:func // guess
+gEftCharNullMgrClass = 0x002C3C10; // size:0x18 // guess
+gEftCharNullClass = 0x002C3C28; // size:0x18 // guess
+// 5. Full-screen flash (manager class 0x2C3C40, an entry of the sub-task table 0x2C3FB0; task class 0x2C3C58): a colour
+// sprite over the whole screen that fades in, holds and fades out. Callers of 0x172480: the technique modules (eft_j,
+// eft_l) and the manager itself (a fighter in action 0x104 with object flag 8). 0x1724B0, 0x1724D8 and 0x172520 have
+// no caller. 0x172BC0 reads the rush-finish phase of every fighter for the flash that waits on it.
+EftFlash_Start = 0x00172480; // type:func
+EftFlash_StartOwned = 0x001724B0; // type:func // guess
+EftFlash_GetPhase = 0x001724D8; // type:func
+EftFlash_SetPause = 0x00172520; // type:func
+EftFlashMgr_Init = 0x00172568; // type:func
+EftFlashMgr_Term = 0x001725C8; // type:func
+EftFlashMgr_Update = 0x001725F8; // type:func
+EftFlashMgr_Reset = 0x00172700; // type:func
+EftFlash_Init = 0x00172718; // type:func
+EftFlash_Term = 0x001727E8; // type:func
+EftFlash_Reset = 0x001727F8; // type:func
+EftFlash_Update = 0x00172810; // type:func
+EftFlash_Draw = 0x001729F0; // type:func
+EftFlash_GetRushState = 0x00172BC0; // type:func
+gEftFlash = 0x002FEA4C; // size:0x4
+gEftFlashMgrClass = 0x002C3C40; // size:0x18
+gEftFlashClass = 0x002C3C58; // size:0x18
+// 6. Trails (manager class 0x2C3C70, task class 0x2C3C88): a history of up to 20 points drawn as a camera-facing
+// strip, with glow sprites where it bends. Nothing in the main executable or the overlay calls the two spawners or
+// the five setters, so no trail ever exists. EftTrail_Draw is NOT MATCHING (INCLUDE_ASM).
+EftTrail_Start = 0x00172D80; // type:func // guess
+EftTrail_StartOwned = 0x00172ED0; // type:func // guess
+EftTrail_End = 0x00173060; // type:func // guess
+EftTrail_SetColor = 0x001730A0; // type:func // guess
+EftTrail_GetPos = 0x001730E8; // type:func // guess
+EftTrail_SetPos = 0x00173138; // type:func // guess
+EftTrail_SetWidth = 0x00173180; // type:func // guess
+EftTrailMgr_Init = 0x001731B8; // type:func // guess
+EftTrailMgr_Term = 0x00173218; // type:func // guess
+EftTrailMgr_Update = 0x00173248; // type:func // guess
+EftTrail_Init = 0x00173258; // type:func // guess
+EftTrail_Term = 0x001732A0; // type:func // guess
+EftTrail_Reset = 0x001732A8; // type:func // guess
+EftTrail_Update = 0x001732C0; // type:func // guess
+EftTrail_Draw = 0x00173460; // type:func // guess
+EftTrail_UpdateTextures = 0x00173C50; // type:func // guess
+EftTrail_SetTextures = 0x00173D68; // type:func // guess
+EftTrail_DrawSprite = 0x00173DA0; // type:func // guess
+gEftTrail = 0x002FEA50; // size:0x4 // guess
+gEftTrailMgrClass = 0x002C3C70; // size:0x18 // guess
+gEftTrailClass = 0x002C3C88; // size:0x18 // guess
+gEftTrailOrigin = 0x002C3CA0; // size:0x10 // guess
+// 7. Character body effect (manager class 0x2C3CB0 = per-character kind 7, task class 0x2C3CC8): an emitter set from
+// character pack entry 9 on the body of characters 0x37 (two emitters beside node 0x38), 0x98 (node 0x74) and 0x99
+// (node 0x3D, double scale). The fighter layer starts it when request 0x3A is set (BtlFx_UpdateCharaFx in
+// btl_char_fx.c) and stops it with EftCharaFx_Stop (0x174A70, in eft_r).
+EftCharaFx_Emit = 0x00174220; // type:func
+EftCharaFx_Init = 0x00174348; // type:func
+EftCharaFx_Term = 0x00174540; // type:func
+EftCharaFx_Update = 0x00174590; // type:func
+EftCharaFx_Reset = 0x001747C0; // type:func
+EftCharaFx_PostUpdate = 0x00174820; // type:func
+EftCharaFx_Draw = 0x00174898; // type:func
+EftCharaFxMgr_Init = 0x001748A0; // type:func
+EftCharaFxMgr_Term = 0x00174958; // type:func
+EftCharaFxMgr_Update = 0x001749C0; // type:func
+EftCharaFx_Start = 0x001749F0; // type:func
+gEftCharaFxMgrClass = 0x002C3CB0; // size:0x18
+gEftCharaFxClass = 0x002C3CC8; // size:0x18

@@ -1,0 +1,93 @@
+// Full-screen post effects, 0x102F28-0x106D60 (src/sys/gfxm_a.c, include/sys/gfxm_a.h).
+// Names come from the GS packets the matching C builds and from the callers (StgFx_* in stg_c.c, BtlObj_*Draw in
+// btl_obj.c). "guess" marks names whose meaning (what the pass looks like on screen) is a reading of the technique.
+
+// Camera pan blur (stage feature 0xD, drawn by StgFx_DrawPre). gStgPanBlur -> 0x700 bytes: a CLUT texture block and
+// two 0x110-byte views. Each frame a view takes the camera's world matrix, measures how far the camera moved
+// horizontally and builds up a strength; the draw copies the screen to the 256x256 work page 0x150, masks it by a
+// depth CLUT and draws it back twice, shifted sideways.
+StgPanBlur_Init = 0x00102F28; // type:func // guess
+StgPanBlur_Draw = 0x00103070; // type:func // guess
+StgPanBlur_Term = 0x00103258; // type:func // guess
+StgPanBlur_BuildClut = 0x00103270; // type:func // guess
+StgPanBlur_UpdateView = 0x001032E8; // type:func // guess
+StgPanBlur_CopyScreen = 0x00103600; // type:func // guess
+StgPanBlur_DrawView = 0x00103868; // type:func // guess
+StgPanBlur_RestoreEnv = 0x00103F80; // type:func // guess
+gStgPanBlur = 0x002FE8BC; // size:0x4 // guess
+
+// Glow pass shared by the sky glare and the object glow: (passes, colour, glow colour). Works on the frame's
+// destination alpha, through the work pages 0x150 / 0x170.
+GfxPost_DrawGlow = 0x00104060; // type:func // guess
+
+// Packet helpers of the passes. The work page is GS page 0x150 (texture block 0x2A00), 16-bit.
+// 0x104F78(tbp, alpha): 16-bit texture over the screen, y - 1. 0x1051C8(fbp, fbmsk): FRAME_1, 16-bit, width 8.
+// 0x105250(): FRAME_1 = the frame's colour buffer, XYOFFSET_1 = default. 0x105408(half, tbp, cbp, alpha, dx, dy):
+// the depth page through a CLUT with an offset. 0x1056B8(tbp, alpha, ta0): 16-bit texture with TEXA and an alpha
+// test. 0x105910(alpha, rgbaq): blended untextured rectangle. 0x105A28(fbp, fbmsk): FRAME_1 to a 16-bit page,
+// clears it, then sets the write mask. 0x105BD8(x, y): XYOFFSET_1.
+GfxPost_DrawTex16 = 0x00104F78; // type:func
+GfxPost_AddFrame16 = 0x001051C8; // type:func
+GfxPost_AddScreenFrame = 0x00105250; // type:func
+GfxPost_DrawDepthClutAt = 0x00105408; // type:func
+GfxPost_DrawTex16Texa = 0x001056B8; // type:func
+GfxPost_FillBlend = 0x00105910; // type:func
+GfxPost_ClearWork = 0x00105A28; // type:func
+GfxPost_AddXyOffset = 0x00105BD8; // type:func
+
+// Object outline pass (BtlObj_InitDraw / TermDraw / BeginDraw). gObjOutline -> 0x500 bytes with a CLUT texture
+// block at +0x40. The CLUT turns the id byte kept in the depth buffer's spare byte into a colour; the id image is
+// drawn three times with half-pixel offsets into separate channels of the work page (the differences are the
+// edges), then the work page is drawn into the frame's alpha and a dark rectangle is blended by it.
+ObjOutline_BuildClut = 0x00105378; // type:func // guess
+ObjOutline_Init = 0x00105C58; // type:func // guess
+ObjOutline_Term = 0x00105CB0; // type:func // guess
+ObjOutline_Draw = 0x00105CD8; // type:func // guess
+gObjOutline = 0x002FE8C0; // size:0x4 // guess
+
+// Sky glare (StgFx_Init / Reset / DrawPre). gStgGlare is a static 0x500-byte block: CLUT texture block and the
+// parameters of stage section +0x48. The update projects the stage's light vector to the screen: while it is
+// inside the view's scissor the level rises to `max` and settles at `hold`, otherwise it falls to `min`. The draw
+// writes the CLUT alpha to the frame by depth and runs the glow pass with the level as glow colour.
+StgGlare_BuildClut = 0x00105EA0; // type:func // guess
+StgGlare_Nop = 0x00105F28; // type:func
+StgGlare_Update = 0x00105F30; // type:func // guess
+StgGlare_Reset = 0x00106100; // type:func // guess
+StgGlare_Init = 0x00106130; // type:func // guess
+StgGlare_Term = 0x00106180; // type:func // guess
+StgGlare_Draw = 0x00106188; // type:func // guess
+StgGlare_LoadParams = 0x001062A0; // type:func // guess
+gStgGlare = 0x002FF300; // size:0x500 // guess
+
+// Depth tint (StgFx_Init / Reset / DrawPre). gStgDepthTint[2], 0x5C0 bytes each: [0] above water, [1] when the
+// camera is below the stage's water level (never in split screen). Parameters come from stage section +0x40
+// (0x10-byte entries): flags, a colour and three curve keys. The CLUT is colour * curve(depth); the draw is one
+// GfxPost_DrawDepthClut, additive (ALPHA 0x48) or blended (0x44).
+StgDepthTint_BuildClut = 0x00106350; // type:func // guess
+StgDepthTint_Rebuild = 0x001065A8; // type:func // guess
+StgDepthTint_Init = 0x001065F8; // type:func // guess
+StgDepthTint_Term = 0x00106668; // type:func // guess
+StgDepthTint_Draw = 0x00106670; // type:func // guess
+StgDepthTint_LoadParams = 0x00106778; // type:func // guess
+gStgDepthTint = 0x002FF800; // size:0xB80 // guess
+
+// Object glow (BtlObj_InitDraw / TermDraw / BeginDraw / UploadAlphaTable). gObjGlow -> 0xB00 bytes: two CLUT
+// texture blocks, the current one, and the 0x100-byte table BtlObj_UploadAlphaTable builds (id byte -> alpha).
+// The draw writes that alpha to the frame by id and runs the glow pass.
+ObjGlow_BuildClut = 0x001069A0; // type:func // guess
+ObjGlow_Init = 0x00106A08; // type:func // guess
+ObjGlow_Term = 0x00106AC8; // type:func // guess
+ObjGlow_SetAlphaTable = 0x00106AF0; // type:func // guess
+ObjGlow_Draw = 0x00106BA8; // type:func // guess
+gObjGlow = 0x002FE8C4; // size:0x4 // guess
+
+// Empty functions: 0x106C60 / 0x106C68 are the first and last calls of StgFx_Init / StgFx_Term; the other two
+// have no caller in the range.
+GfxPost_InitNop = 0x00106C60; // type:func
+GfxPost_TermNop = 0x00106C68; // type:func
+GfxPost_Nop106C70 = 0x00106C70; // type:func
+GfxPost_Stub106C78 = 0x00106C78; // type:func
+
+// Screen quad helpers: colour, and corners / texels in 12.4 fixed point.
+GfxPostQuad_SetColor = 0x00106C80; // type:func
+GfxPostQuad_Set = 0x00106C98; // type:func

@@ -1,0 +1,22 @@
+// Menu overlay DBZP.BIN, 0x35F650..0x364358: Dragon World Tour (the tournament mode, progress modes 33..35).
+// EntrySel (menu_j.c): rest of the entrant select of mode 34; the object starts at 0x35E0F8 (menu_i_d.c).
+// Evidence: the screen pattern (Term frees the work area, Draw draws the four movies, Run has the frame loop).
+EntrySel_Term = 0x0035F650; // type:func
+EntrySel_Draw = 0x0035F760; // type:func
+EntrySel_Update = 0x00360338; // type:func
+EntrySel_Input = 0x003603C0; // type:func
+// Plays the guide's closing line once all entrants are chosen, then starts the leave timer.
+EntrySel_UpdateEnd = 0x00361B80; // type:func // guess
+EntrySel_Run = 0x00361D80; // type:func
+// Handler of progress modes 33..35 (jump table of Progress_Main): 33 TourMenu_Run, 34 EntrySel_Run, 35 Bracket_Run.
+Tour_Main = 0x00362160; // type:func // guess
+// TourMenu (menu_j_b.c): head of the tournament menu of mode 33 ("taikai" clips); work area gTourMenu, 0x148 bytes.
+// Opens the tournament held at the current hour of the mode's clock (gSaveData->unkA0C) and draws its level (unkA10).
+TourMenu_CheckInvite = 0x003623A8; // type:func // guess
+TourMenu_Init = 0x003625F0; // type:func
+TourMenu_Term = 0x00362E00; // type:func
+TourMenu_Draw = 0x00362EE0; // type:func
+TourMenu_ClipGoto = 0x00363750; // type:func // guess
+TourMenu_Update = 0x003638A0; // type:func
+TourMenu_Input = 0x00363958; // type:func
+gTourMenu = 0x003B5914; // size:0x4

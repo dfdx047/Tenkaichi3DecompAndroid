@@ -1,0 +1,82 @@
+// Fighter action state machine core, src/battle/btl_char_action.c = 0x1E0290..0x1E3158.
+// Evidence: the matching C unless a line says otherwise. All names in this file are guesses about
+// intent; the behaviour described is what the code does.
+
+// Action bookkeeping at fighter +0x948 {current, requested, prev, queue[4]}.
+// (chr, id): requested = id unless id == -1.
+BtlAct_Request = 0x001E0290; // type:func // guess
+// (chr, slot, id): queue[slot] = id and every later slot = -1 (nothing when slot > 3 or id == -1).
+BtlAct_SetQueue = 0x001E02A8; // type:func // guess
+// queue[0..3] = -1. No caller found in the main executable.
+BtlAct_ClearQueue = 0x001E0310; // type:func // guess
+// queue[0] != -1.
+BtlAct_HasQueued = 0x001E0348; // type:func // guess
+BtlAct_GetCurrent = 0x001E0358; // type:func // guess
+BtlAct_GetRequested = 0x001E0360; // type:func // guess
+// Returns fighter +0x950. No store to that field exists in either binary, so it reads 0.
+BtlAct_GetPrev = 0x001E0368; // type:func // guess
+BtlAct_GetQueued = 0x001E0370; // type:func // guess
+// Shifts the queue down one slot, last slot = -1.
+BtlAct_PopQueue = 0x001E0378; // type:func // guess
+
+// (id): id == 0x105 or 0x106..0x132: the hit-reaction actions.
+BtlAct_IsTechniqueId = 0x001E03A8; // type:func // guess
+// (chr, id): 0x105 -> 4; 0xFD..0x102 -> (id - 0xFD) % 2; 0x106..0x13B -> (id - 0x106) % 3 + 2; else -1.
+BtlAct_GetIdClass = 0x001E03C8; // type:func // guess
+BtlAct_GetCurrentClass = 0x001E0430; // type:func // guess
+BtlAct_GetPrevClass = 0x001E0460; // type:func // guess
+// (chr, motion): motion 0x11C.. / 0x13E.. / 0x160.. (two runs of five each) -> 0..4, else 0.
+BtlAct_GetMotionLevel = 0x001E0490; // type:func // guess
+
+// Height helpers: pose +0xB4 is read as the ground height under the fighter (meaning inferred).
+BtlAct_GetGroundY = 0x001E04F0; // type:func // guess
+BtlAct_GetHeight = 0x001E0510; // type:func // guess
+BtlAct_GetHeightRatio = 0x001E0550; // type:func // guess
+BtlAct_GetFramesToGround = 0x001E05E8; // type:func // guess
+
+// Angles relative to the fighter camera yaw (chr +0x4A0): rotation y, facing, velocity direction.
+BtlAct_GetRotYRelCam = 0x001E0670; // type:func // guess
+BtlAct_GetFacingRelCam = 0x001E06A0; // type:func // guess
+BtlAct_GetVelDirRelCam = 0x001E06D0; // type:func // guess
+
+// Movement helpers used by the action handlers.
+BtlAct_ScaleSpeedByApproach = 0x001E0708; // type:func // guess
+BtlAct_ScaleSpeedByDist = 0x001E0800; // type:func // guess
+BtlAct_SetPitchMotion = 0x001E08A0; // type:func // guess
+BtlAct_IsAirMotion = 0x001E0A20; // type:func // guess
+BtlAct_PrepareSwitch = 0x001E0AB8; // type:func // guess
+BtlAct_PushAngle = 0x001E0B58; // type:func // guess
+BtlAct_PushDir = 0x001E0BD8; // type:func // guess
+BtlAct_SetObjUnk = 0x001E0C80; // type:func // guess
+
+// Attack actions 0x70..0xAD and their parameter block (pending at chr +0xD1C, latched at +0xCF8).
+BtlAct_IsAttackId = 0x001E0CC0; // type:func // guess
+BtlAct_TestAttackSkill = 0x001E0CD0; // type:func // guess
+BtlAct_PrepareAttack = 0x001E0D68; // type:func // guess
+BtlAct_ResetAttack = 0x001E0F90; // type:func // guess
+BtlAct_LatchAttack = 0x001E0FE0; // type:func // guess
+BtlAct_TestPoweredSkill = 0x001E1030; // type:func // guess
+
+// Form-change request block at chr +0x12CC.
+BtlAct_SetFormCurrent = 0x001E1080; // type:func // guess
+BtlAct_SetFormRandom = 0x001E10F8; // type:func // guess
+
+BtlAct_CountAndMarkOpponent = 0x001E11D0; // type:func // guess
+BtlAct_EndFlag98 = 0x001E1208; // type:func // guess
+BtlAct_ApplyFlag94 = 0x001E1288; // type:func // guess
+
+// Per-frame parts of the dispatcher.
+BtlAct_CheckForced = 0x001E12D0; // type:func // guess
+BtlAct_UpdateGauges = 0x001E16C0; // type:func // guess
+BtlAct_UpdateTimers = 0x001E1D20; // type:func // guess
+// The dispatcher: one call per fighter per frame from the fighter manager.
+BtlAct_Update = 0x001E23D0; // type:func // guess
+// Handler table, 0x13C entries of void (*)(chr, phase), indexed by action id.
+gBtlActHandlers = 0x002C4980; // size:0x4F0 // guess
+
+// The first action handlers (table entries 1..6).
+BtlAct_Action01 = 0x001E25B0; // type:func // guess
+BtlAct_Action02 = 0x001E27A8; // type:func // guess
+BtlAct_Action03 = 0x001E2950; // type:func // guess
+BtlAct_Action04 = 0x001E2A88; // type:func // guess
+BtlAct_Action05 = 0x001E2E68; // type:func // guess

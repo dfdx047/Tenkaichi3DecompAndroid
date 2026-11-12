@@ -1,0 +1,82 @@
+// src/battle/battle_work.c = 0x126EC8..0x127120 (battle work accessors, reset, load/unload entry points) and
+// src/battle/battle_load.c = 0x127120..0x129170 (loader job pool, job step functions, requests, result accessors).
+// Battle_GetWork, Battle_GetSetup (game.txt) and Battle_ResetWork, Battle_UpdateWork, Battle_GetResult, Battle_Load,
+// Battle_Unload, Battle_IsRematchRequested (battle.txt) are in this file too and are not repeated here.
+
+// 0x126ED8(): memset(work, 0, 0x1A00), then the setup (0x129E78), result and event-block clears. Callers: 0x11DE30, 0x15B954,
+// 0x161970, 0x162F14 (main executable, before a battle is set up).
+Battle_ClearWork = 0x00126ED8; // type:func // guess
+// 0x127028(): work + 0x1980 (script handle + the two event bit sets). 0x127048(): work + 0x5A8 (only used by 0x12A3xx/0x12A4xx).
+Battle_GetEventWork = 0x00127028; // type:func // guess
+Battle_GetWork5A8 = 0x00127048; // type:func // guess
+
+// Loader job pool: a static 0x20C block = 8 jobs of 0x40 + an SList of the free ones at +0x200.
+// 0x127120 returns it, 0x127130 clears it and pushes all 8 on the free list, 0x1271A0 pops one and zeroes it,
+// 0x1271E8 pushes one back (returns 0 for NULL), 0x127230 = SList_GetCount(free list).
+BtlJob_GetPool = 0x00127120; // type:func
+BtlJob_InitPool = 0x00127130; // type:func
+BtlJob_Alloc = 0x001271A0; // type:func
+BtlJob_Free = 0x001271E8; // type:func
+BtlJob_GetFreeCount = 0x00127230; // type:func
+gBtlJobPool = 0x00301058; // size:0x20C
+
+// 0x127250 / 0x127278: called by the two stage jobs right before the new stage file is requested / once it is in
+// place: three tear-down calls (0x137BF8, 0x23FCD8, 0x2473C8(1)) and five re-init calls (0x115170 ... 0x2473D8).
+BtlLoad_BeginStageSwap = 0x00127250; // type:func // guess
+BtlLoad_EndStageSwap = 0x00127278; // type:func // guess
+
+// Job step functions (stored in job+4, switch on job+8). What each loads is in include/battle/battle_work.h.
+// 0x1272B0: stage 0x171/0x198 + n and its sound bank, under flag 0x2000; pushed by 0x128170.
+BtlLoad_StepStageReload = 0x001272B0; // type:func // guess
+// 0x127430: the same with a transition file (0x1BF/0x1C0), 0x13F310/0x13F3A0/0x13F3C8 and fade 2; pushed by 0x128230.
+BtlLoad_StepStageChange = 0x00127430; // type:func // guess
+// 0x127680: one extra model (file 0xC1C + id, or a character model) under flag 0x1000; pushed by 0x128318.
+BtlLoad_StepObject = 0x00127680; // type:func // guess
+// 0x1278B0: a side's character model, voice bank and data block under flag 0x800; pushed by 0x1283F0 and 0x128530.
+BtlLoad_StepChara = 0x001278B0; // type:func // guess
+// 0x127C40: the first load of a battle (sound banks, buffers, stage, member data); pushed by 0x128728.
+BtlLoad_StepInitial = 0x00127C40; // type:func // guess
+
+// 0x128170(stage) / 0x128230(stage): refuse while any of the flags 0x800/0x1000/0x2000 is set or when the stage
+// is already the loaded one (work+0x28); else push the job and store the stage in work+0x28. Return 1 when pushed.
+BtlLoad_RequestStageReload = 0x00128170; // type:func // guess
+BtlLoad_RequestStageChange = 0x00128230; // type:func // guess
+// 0x128318 / 0x1283F0: called every frame by Battle_Update; for each side, when the fighter manager has a pending
+// request of type 1 / type 0 for it (0x20B248 / 0x20B200), read its parameters (0x20B290), push the job, and
+// acknowledge the request (0x20B338).
+BtlLoad_PollObjectRequest = 0x00128318; // type:func // guess
+BtlLoad_PollCharaRequest = 0x001283F0; // type:func // guess
+// 0x128530(): called by Battle_ResetWork: drops every job, re-requests the initial stage and the initial
+// character of each side that changed, runs them with Load_RunBlocking, points every member at its first buffer.
+BtlLoad_Reload = 0x00128530; // type:func // guess
+// 0x128728(): BtlJob_InitPool + push of BtlLoad_StepInitial (state 0x5A when work+0xBC != 0). Called by Battle_Load.
+BtlLoad_PushInitialJob = 0x00128728; // type:func // guess
+// 0x128790(): Heap_Free of every buffer the initial load made, then Snd_UnloadBank(4/8/0x10/0x20). Called by Battle_Unload.
+BtlLoad_FreeAll = 0x00128790; // type:func // guess
+// gp words written by BtlLoad_StepObject: the handle returned by 0x24B7A8 and the object id returned by 0x249AB8.
+gBtlLoadHandle = 0x002FE998; // size:0x4 // guess
+gBtlLoadObj = 0x002FE99C; // size:0x4 // guess
+
+// Result block accessors (all go through Battle_GetResult()).
+// 0x1288C8: memset(result, 0, 0x48). 0x1288F0(flags, reason): stores both words; reason bit 15 -> 0x12AA60(0), bit 16 -> 0x12AA60(1).
+BattleResult_Clear = 0x001288C8; // type:func
+BattleResult_Set = 0x001288F0; // type:func
+// 0x128960: (flags & 8) != 0. 0x1289B8: (flags & 3) != 0.
+BattleResult_IsAborted = 0x00128960; // type:func // guess
+BattleResult_HasWinner = 0x001289B8; // type:func // guess
+// 0x1289E0: 1 in split-screen, in mode 8 and in mode 1; else (flags & 1) != 0 (side 0 won).
+BattleResult_IsPlayerWin = 0x001289E0; // type:func // guess
+// 0x128A78: 0 when flags bit 0 is set, else (flags & 2) != 0: index of the winning side.
+BattleResult_GetWinnerSide = 0x00128A78; // type:func // guess
+// Single reason bits: 0x128A50 bit 20, 0x128AB0 bit 0, 0x128AD8 bit 1, 0x128B00 bit 2, 0x128B28 bit 18, 0x128B50 bits 5|6.
+BattleResult_IsReasonBit20 = 0x00128A50; // type:func // guess
+BattleResult_IsKo = 0x00128AB0; // type:func // guess
+BattleResult_IsTimeUp = 0x00128AD8; // type:func // guess
+BattleResult_IsReasonBit2 = 0x00128B00; // type:func // guess
+BattleResult_IsReasonBit18 = 0x00128B28; // type:func // guess
+BattleResult_IsReasonBit5or6 = 0x00128B50; // type:func // guess
+// 0x128B78: 0x129770(winner side, 0x59) == 0. 0x128BA8(side): 0x129770(side, 0x3C) != 0.
+BattleResult_IsWinnerEvent59Clear = 0x00128B78; // type:func // guess
+BattleResult_IsEvent3CSet = 0x00128BA8; // type:func // guess
+// 0x128BC8(result): rebuilds result+0x10 (u64) from ~40 tests of event set 0 (0x129770(0, n)). Called by 0x1291C0.
+BattleResult_CollectEvents = 0x00128BC8; // type:func // guess

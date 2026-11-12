@@ -1,0 +1,116 @@
+// Effect modules 0x17CB40..0x180BF8: src/battle/eft_t.c, eft_t_b.c, eft_t_c.c; include/battle/eft_t.h.
+// All drawing only. Names of the three modules are by structure / appearance (guess); roles of the functions are
+// from the class tables and the callers.
+//
+// eft_t.c 0x17CB40..0x17D290: tail of the "chain" module = effect pack part kind 18 (EftEmit_SpawnType18 in
+// eft_h.c, kill / is-alive entries in eft_i.c). Its task callbacks update 0x17C8F8, init 0x17C698, term 0x17C8A8
+// and the drawing at 0x17C358 are in the file before this one; "chain" = 16 strands of linked links (guess).
+// Task class 0x2C3E48 = {0x17C8F8, 0x17C698, 0x17C8A8, PostUpdate, Reset, Draw}.
+EftChain_PostUpdate = 0x0017CB40; // type:func
+EftChain_Reset = 0x0017CB48; // type:func
+EftChain_Draw = 0x0017CB60; // type:func
+// Manager class 0x2C3E30 = {Update, Init, Term, 0, Reset, 0}: an 0xBB80-byte buffer and a list of 10 tasks of 0xF10.
+EftChainMgr_Init = 0x0017CBF0; // type:func
+EftChainMgr_Term = 0x0017CC78; // type:func
+EftChainMgr_Update = 0x0017CCC0; // type:func
+EftChainMgr_Reset = 0x0017CCC8; // type:func
+// By-handle interface (the handle is the task; each entry checks task->cls[0] == 0x17C8F8). Callers: eft_h.c
+// EftEmit_SpawnType18 (Create, SetParam3 / 5 / 6, SetViewOnly, SetType, Warp / SetPos, SetSize, SetDir, Kill, Stop),
+// eft_i.c EftEmit_KillAll (Kill) and EftEmit_UpdateAlive (IsAlive). SetRes has no caller.
+EftChain_Create = 0x0017CCD0; // type:func
+EftChain_Stop = 0x0017CD40; // type:func
+EftChain_Kill = 0x0017CD98; // type:func
+EftChain_IsAlive = 0x0017CDF0; // type:func
+EftChain_SetPos = 0x0017CE38; // type:func
+EftChain_Warp = 0x0017CE90; // type:func // guess
+EftChain_SetDir = 0x0017CF80; // type:func
+EftChain_SetSize = 0x0017D040; // type:func
+EftChain_SetParam3 = 0x0017D088; // type:func // guess
+EftChain_SetParam5 = 0x0017D0F8; // type:func // guess
+EftChain_SetParam6 = 0x0017D140; // type:func // guess
+EftChain_SetRes = 0x0017D188; // type:func // guess
+EftChain_SetViewOnly = 0x0017D1E0; // type:func // guess
+EftChain_SetType = 0x0017D238; // type:func
+gEftChain = 0x002FEA64; // size:0x4
+gEftChainList = 0x002FEA68; // size:0x4
+//
+// eft_t.c 0x17D290..0x17EE68: ray burst = effect pack part kind 0 ("light" in eft_h.h): up to 48 thin quads
+// radiating from a point. By-handle interface first (handle check: task not dead and cls[0] == EftRay_Update).
+// Callers: eft_h.c part kind 0 spawner (Create, CreateByValue, SetPos, Kill, SetType), eft_i.c (Kill, IsAlive),
+// btl_char_fx.c request 0x15 (CreateByValue) and request 0x18 (StartHit). StartHitDefault and StartScreen have
+// no caller.
+EftRay_Create = 0x0017D290; // type:func
+EftRay_SetPos = 0x0017D300; // type:func
+EftRay_Kill = 0x0017D390; // type:func
+EftRay_SetType = 0x0017D3F0; // type:func
+EftRay_IsAlive = 0x0017D448; // type:func
+EftRay_StartHitDefault = 0x0017D4B8; // type:func // guess
+EftRay_StartHit = 0x0017D500; // type:func // guess
+EftRay_StartScreen = 0x0017D618; // type:func // guess
+EftRay_CreateByValue = 0x0017D710; // type:func
+// Manager class 0x2C3E60 = {Update, Init, Term, 0, 0, 0}: texture set of common entry 10, list of 4 tasks of 0x520.
+EftRayMgr_Init = 0x0017D768; // type:func
+EftRayMgr_Term = 0x0017D7D8; // type:func
+EftRayMgr_Update = 0x0017D808; // type:func
+// Task class 0x2C3E78 = {Update, Init, Term, 0, Reset, Draw}.
+EftRay_Init = 0x0017D830; // type:func
+EftRay_Term = 0x0017D8C0; // type:func
+EftRay_Update = 0x0017D8E0; // type:func
+EftRay_Reset = 0x0017DCA0; // type:func
+EftRay_Draw = 0x0017DCB8; // type:func
+// Helpers: texture animation step; work setup and the random roll of the rays; the drawing (all rays; one quad in
+// the world; one quad on the screen; one clipped triangle fan).
+EftRay_StepTexture = 0x0017DD00; // type:func
+EftRay_Setup = 0x0017DD20; // type:func
+EftRay_DrawRays = 0x0017E088; // type:func
+EftRay_DrawQuad3D = 0x0017E550; // type:func
+EftRay_DrawQuad2D = 0x0017E790; // type:func
+EftRay_DrawClipped = 0x0017ECE8; // type:func
+gEftRayMgrClass = 0x002C3E60; // size:0x18
+gEftRayClass = 0x002C3E78; // size:0x18
+gEftRay = 0x002FEA6C; // size:0x4
+//
+// eft_t_b.c 0x17EE68..0x1809C0: streak field, the numbered effect (kinds 0..9) the technique modules start with
+// EftStreak_Start and stop with EftStreak_Stop (eft_j.c, eft_k.c, eft_l.c). Manager class 0x2C3E90 = {Update,
+// Init, Term, 0, Reset, 0}: ten parameter files (common entries 0x24F..0x258), colours (0x24E), textures (0x24D),
+// a pool of 360 streaks, a list of 3 tasks of 0x80.
+EftStreakMgr_Init = 0x0017EE68; // type:func
+EftStreakMgr_Update = 0x0017EFB0; // type:func
+EftStreakMgr_Reset = 0x0017EFC0; // type:func
+EftStreakMgr_Term = 0x0017EFC8; // type:func
+// Task class 0x2C3EA8 = {Update, Init, Term, PostUpdate, Reset, Draw}.
+EftStreak_Init = 0x0017F010; // type:func
+EftStreak_Update = 0x0017F160; // type:func
+EftStreak_PostUpdate = 0x0017F388; // type:func
+EftStreak_Draw = 0x0017F390; // type:func
+EftStreak_Reset = 0x0017F9A0; // type:func
+EftStreak_Term = 0x0017F9C8; // type:func
+// Helpers: create the kind's streaks; pool search; random roll of one streak (Rand_FloatRange x6); per-frame step;
+// drawing of one streak in the world / on the screen; texture step.
+EftStreak_SpawnAll = 0x0017FA18; // type:func
+EftStreak_Alloc = 0x0017FB20; // type:func
+EftStreak_Roll = 0x0017FB98; // type:func
+EftStreak_Step = 0x0017FC70; // type:func
+EftStreak_DrawWorld = 0x0017FE98; // type:func
+EftStreak_DrawScreen = 0x00180108; // type:func
+EftStreak_StepTexture = 0x001806E8; // type:func
+// By-handle interface. Start / Stop are called by the technique modules; SetPos, SetCover and IsAlive have no caller.
+EftStreak_Start = 0x00180760; // type:func
+EftStreak_Stop = 0x00180810; // type:func
+EftStreak_SetPos = 0x00180870; // type:func
+EftStreak_SetCover = 0x00180900; // type:func // guess
+EftStreak_IsAlive = 0x00180958; // type:func
+// Two empty functions with no reference anywhere, between the two modules.
+EftStreak_NopA = 0x001809B0; // type:func // guess
+EftStreak_NopB = 0x001809B8; // type:func // guess
+gEftStreakMgrClass = 0x002C3E90; // size:0x18
+gEftStreakClass = 0x002C3EA8; // size:0x18
+gEftStreak = 0x002FEA70; // size:0x4
+//
+// eft_t_c.c 0x1809C0..0x180BF8: head of the module of class 0x2C3EC0 (config/symbols/eft_u.txt has the rest under the
+// same prefix; per eft_u it draws the teleport "vanish" lines): free request slot; the request entry of fighter
+// effect requests 0xC..0xF and animation event bit 42 (btl_char_fx.c, btl_char_fx_c.c); init callback of the class.
+EftShotFx_FindFree = 0x001809C0; // type:func
+EftShotFx_Start = 0x00180A00; // type:func
+EftShotFxMgr_Init = 0x00180AD0; // type:func
+gEftShotFx = 0x002FF1B0; // size:0x4

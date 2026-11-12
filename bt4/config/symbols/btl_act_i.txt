@@ -1,0 +1,46 @@
+// Fighter action handlers and input decision functions, src/battle/btl_act_i.c = 0x1FFAC0..0x203168.
+// Handler ids come from gBtlActHandlers (0x2C4980). Evidence: the matching C (two handlers match only with their
+// btl_act_h.c callees defined in the same translation unit, see the C). Game-term names are guesses.
+
+// Member switch by input, after 0xF3. Action 0xF4: first action on the new model, one hidden frame. Action 0xF5: the
+// new member lands (animation 0x2D), events 0x5B / 0x4E, +2 s on the stage timer.
+BtlAct_SwitchArriveWait = 0x001FFAC0; // type:func // guess
+BtlAct_SwitchArriveLand = 0x001FFB80; // type:func // guess
+// Member switch after a defeat, after 0xEB. Action 0xF6: the defeated member waits while BtlChange_RequestChara loads
+// the next one. Action 0xF7: first action on the new model, entry placement. Action 0xF8: flies in (animation 0x19,
+// 2500 km/h), lands, stands 30 frames, then sets fighter flag 0xF9 (round reset request).
+BtlAct_KoSwitchLoad = 0x001FFDD8; // type:func // guess
+BtlAct_KoSwitchEnterWait = 0x001FFF78; // type:func // guess
+BtlAct_KoSwitchFlyIn = 0x00200058; // type:func // guess
+// Action 0xF9: leaves through BtlActChange_Finish; on leaving effect bit 5, flags 0xD5, 0xCD, 0x37, +2 s stage timer.
+BtlAct_RoundReset = 0x00200378; // type:func // guess
+
+// Skill helpers of actions 0xFD..0x102. (chr, class): class 0 / 1 = skill slot. Animation 0x103 / 0x104, effect bit
+// 0x3C / 0x3D, fighter flag 0xDE / 0xDF.
+BtlSkill_PlayAnim = 0x00200408; // type:func
+BtlSkill_SetFxBit = 0x00200448; // type:func
+BtlSkill_SetFlag = 0x00200488; // type:func
+// (chr, slot): applies a skill: special cases by skill id, health / ki changes, the four stat modifiers by the skill's
+// kind (the only caller of BtlStat_SetBase / SetTimed / SetKind2..4 with a slot), timed values, use counter, blast cost.
+BtlSkill_Apply = 0x002004C8; // type:func
+// (chr): per-frame countdown of the timers BtlSkill_Apply starts (chr +0xE08, +0xE14..+0xE28); flag 0x56 while +0xE08 runs.
+BtlSkill_UpdateTimers = 0x00200AA0; // type:func
+
+// Actions 0xFD / 0xFE: skill with its animation (applied on entry, or at the end with attribute 0x80; attribute 0x40000
+// makes it a cinematic with hit-stop flag 0x125 and flag 0x128). Actions 0xFF / 0x100: the teleport kind (vanish, with
+// lock-on reappear behind the opponent). Actions 0x101 / 0x102: applied at once, no animation.
+BtlAct_SkillBasic = 0x00200B60; // type:func // guess
+BtlAct_SkillTeleport = 0x00200F20; // type:func // guess
+BtlAct_SkillInstant = 0x00201218; // type:func // guess
+
+// Decision functions: test input with BtlInput_TestAction and fill the action queue with BtlAct_SetQueue; return the
+// number of actions queued. The full "input -> action" tables are in include/battle/btl_act_i.h.
+// (chr, mask): forced transitions: stun countdown -> 0xD3, flag 0xBE -> 0xEA, lost footing -> 0x11, dead -> 0xD2.
+BtlDecide_Common = 0x002012D8; // type:func
+// (chr, mask): movement, dashes, steps, guard, ki charge, deflects, techniques / skills / changes; mask enables groups.
+BtlDecide_Main = 0x002013E0; // type:func
+// (chr, mask): rush, smash, ki blast, finisher and grab inputs; mask enables groups.
+BtlDecide_Attack = 0x00201E18; // type:func
+// (chr, attackId): queues an attack table record (0x70..) with its lead-in action(s) when its skill bit, opponent
+// state and input allow; the only caller of BtlAct_PrepareAttack. One BtlChar_FrameMod(2) draw (lead-in kind 4).
+BtlDecide_QueueAttack = 0x00202DB8; // type:func

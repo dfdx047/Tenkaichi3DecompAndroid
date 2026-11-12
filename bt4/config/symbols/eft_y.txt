@@ -1,0 +1,79 @@
+// Effect pack part modules, 0x191D28..0x195EE8 (src/battle/eft_y.c). Visual only: no hit records, no fighter writes.
+//
+// --- Quad emitter (effect pack part kind 9), second half ---
+// The emitter task class is D_002C40C0 = { update 0x190FE8, init 0x190E78, term 0x191428, stub 0x191340, reset
+// 0x191410, draw 0x191348 }; those callbacks and the quad initialiser 0x191498 are in the file before this one.
+// The names below come from what the matching C does and from who calls each function.
+// 0x191D28(work): called by the update; steps every quad of the emitter (speed, size, colour, alpha, sheet frame,
+// age), builds its corners and unlinks the dead ones.
+EftQuad_StepAll = 0x00191D28; // type:func // guess
+// 0x192668(quad, work, pos, pitch, yaw): the four view-space corners of a quad through the VU0 matrix stack.
+EftQuad_BuildCorners = 0x00192668; // type:func // guess
+// 0x192800 / 0x192A98(work, layer): called by the draw (def flag 0x20 picks the first); walk the emitter's quads and
+// draw the visible ones, as one quad or (def flag 0x40) as four quarter quads with mirrored texture.
+EftQuad_DrawAllFacing = 0x00192800; // type:func // guess
+EftQuad_DrawAllSprite = 0x00192A98; // type:func // guess
+// 0x192D18(work): called by the update per emitted quad; takes the next free quad of the 200-quad pool, has
+// 0x191498 fill it and links it at the emitter's tail. Returns 0 when the pool is full or the fill refused.
+EftQuad_Emit = 0x00192D18; // type:func // guess
+EftQuad_ListAppend = 0x00192E08; // type:func // guess
+EftQuad_ListRemove = 0x00192E38; // type:func // guess
+// 0x192EA0(task): per-leg differences of every key-framed emitter parameter; also starts the animation (leg
+// lengths from def time / split) and switches to the second leg. 0x1936B0(task): current = key + difference * t.
+EftQuad_CalcKeyDeltas = 0x00192EA0; // type:func // guess
+EftQuad_Animate = 0x001936B0; // type:func // guess
+// 0x193DD8: one textured strip packet written straight into the order table (projection 0x121240).
+// 0x194218: the same quad as two triangles through the clipping polygon drawer EftGfx_DrawPolyScaledZ.
+EftQuad_DrawSprite = 0x00193DD8; // type:func // guess
+EftQuad_DrawFacing = 0x00194218; // type:func // guess
+// 0x194488(work, cols, rows): the UV rectangles of a texture sheet of up to 4 x 4 frames.
+EftQuad_SetSheet = 0x00194488; // type:func // guess
+// 0x194590(work, table, a, b): copies two entries of the texture table; 0x1945D0(work, table): builds the GS TEX0
+// of the pair once per table entry (bit mask at table +0x84).
+EftQuad_SetTex = 0x00194590; // type:func // guess
+EftQuad_LoadTex = 0x001945D0; // type:func // guess
+// 0x194678(work): current values = the last key (emitters without key animation, and at the animation's end).
+EftQuad_SetLastKey = 0x00194678; // type:func // guess
+// Interface used by the effect pack library (EftEmit_SpawnType9, EftEmit_KillAll, EftEmit_UpdateAlive in eft_i.c).
+// Every entry tests the pool pointer, the task, its work and the work's "alive" flag first.
+// 0x194868(def, def2, tex, pos, dir, size, life): create from separate arguments; no caller.
+EftQuad_CreateEx = 0x00194868; // type:func // guess
+// 0x194970(arg): create from the 0x40-byte argument block.
+EftQuad_Create = 0x00194970; // type:func // guess
+// 0x1949C0: calls 0x1949D8; no caller.
+EftQuad_StopAlias = 0x001949C0; // type:func // guess
+// 0x1949D8: stop emitting (after the stop delay / with the fade when those are set).
+EftQuad_Stop = 0x001949D8; // type:func // guess
+EftQuad_SetFade = 0x00194A68; // type:func // guess
+// 0x194AB0(task, pos, dir): no caller.
+EftQuad_SetPosDir = 0x00194AB0; // type:func // guess
+EftQuad_Kill = 0x00194B50; // type:func // guess
+EftQuad_SetPos = 0x00194B90; // type:func // guess
+// 0x194BE8(task, pos): set the position and rebuild every quad's corners at once.
+EftQuad_Warp = 0x00194BE8; // type:func // guess
+EftQuad_SetDir = 0x00194D10; // type:func // guess
+EftQuad_SetSize = 0x00194D80; // type:func // guess
+// 0x194DB8(task, seconds), 0x194E00(task, table): no callers.
+EftQuad_SetLife = 0x00194DB8; // type:func // guess
+EftQuad_SetTexTable = 0x00194E00; // type:func // guess
+EftQuad_SetTexPair = 0x00194E40; // type:func // guess
+EftQuad_SetDelay = 0x00194E98; // type:func // guess
+EftQuad_SetStopDelay = 0x00194EE0; // type:func // guess
+EftQuad_SetViewOnly = 0x00194F28; // type:func // guess
+EftQuad_IsAlive = 0x00194F70; // type:func // guess
+EftQuad_SetOwnOrigin = 0x00194FA8; // type:func // guess
+EftQuad_SetCut = 0x00195000; // type:func // guess
+//
+// --- Line (effect pack part kind 16), helpers ---
+// Task class D_002C40F0 = { update 0x1961A0, init 0x195EE8, term 0x196190, stub 0x1967C0, reset 0x1967C8, draw
+// 0x1967E0 }, in the file after this one. Callers: the init (SetKey, SetTex), the update (Animate, SetKey, LoadTex),
+// the draw (DrawSprite / DrawClipped) and 0x196D48 (SetTex).
+EftLine_SetTex = 0x00195038; // type:func // guess
+EftLine_LoadTex = 0x00195070; // type:func // guess
+// 0x195130(out, work, key): the line's animated values at one key. 0x1952E8(work): the values between two keys.
+EftLine_SetKey = 0x00195130; // type:func // guess
+EftLine_Animate = 0x001952E8; // type:func // guess
+// 0x195718 / 0x195C68(task): the camera-facing strip as one order table packet, or clipped through
+// EftGfx_DrawPolyFixedZ.
+EftLine_DrawSprite = 0x00195718; // type:func // guess
+EftLine_DrawClipped = 0x00195C68; // type:func // guess

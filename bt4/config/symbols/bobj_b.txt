@@ -1,0 +1,83 @@
+// Second part of src/battle/bobj_a.c: 0x24F1F0..0x250B28 (face, file tables, colour mode and part visibility, model nodes) and
+// src/battle/bobj_b_b.c: 0x250B28..0x2527B0 (secondary motion chains). Battle object, third and fourth part.
+// BtlObj_SetSubState (0x24F5D8) and BtlObj_GetSubState (0x24F860) are in this range and are named in btl_scene.txt.
+
+// Face (object + 0x1664, an element of the 4-entry pool). InitMouth: resets the mouth and patches the alpha bytes
+// of the mouth texture sets. StepLipData: walks a lip track {frame, code} and switches the mouth between closed and
+// talking. UpdateMouth = StepLipData + the neighbour's mouth animation. UpdateFace: the per-frame pass called by
+// BtlObj_UpdateAll (blink when flag 1, mouth when flag 2). CreateFace / FreeFace: pool alloc / free.
+BObjFace_InitMouth = 0x0024F1F0; // type:func
+BObjFace_StepLipData = 0x0024F268; // type:func
+BObjFace_UpdateMouth = 0x0024F3F0; // type:func
+BtlObj_UpdateFace = 0x0024F428; // type:func
+BtlObj_CreateFace = 0x0024F490; // type:func
+BtlObj_FreeFace = 0x0024F538; // type:func
+// SetEyeFrame(obj, n): n == 9 clears object flag 0x4000000 (blink again), else sets it and stores n.
+BtlObj_SetEyeFrame = 0x0024F568; // type:func
+// GetFaceTexture: the texture entry of the current mouth shape (shape >= 5) or eye frame. No caller found in the
+// decompiled sources: the reading is from the code alone.
+BtlObj_GetFaceTexture = 0x0024F8A8; // type:func // guess
+BtlObj_HasEyes = 0x0024F930; // type:func
+BtlObj_HasMouth = 0x0024F950; // type:func
+// IsJawActive: mouth mode != 0 and the model has a jaw bone. GetJawRot: Quat_FromEuler of face + 0x50.
+BtlObj_IsJawActive = 0x0024F970; // type:func // guess
+BtlObj_GetJawRot = 0x0024F9B0; // type:func // guess
+BtlObj_GetMouthMode = 0x0024F9F0; // type:func
+BtlObj_GetEyeFrame = 0x0024FA08; // type:func
+
+// File tables. GetEntry(file, n): pointer to entry n of a file's offset table, NULL when empty.
+// BindTables: fills object + 0x18.. from the three files of the resource slot (object + 0x14).
+// InitFlags: initial object flags from the type and the model header, then the colour preset.
+// SetColorPreset(obj, row, set): copies one row of five floats of a 2 x 11 table to object + 0xB0C.
+// BindCommonTables: the 100 lip tracks and two more tables from common file 3 (voice language from the save).
+// CopyLipTables(obj, src): copies the 100 lip track pointers of another object (partner object).
+BObjFile_GetEntry = 0x0024FA20; // type:func
+BtlObj_BindTables = 0x0024FA50; // type:func
+BtlObj_InitFlags = 0x0024FDA8; // type:func
+BtlObj_SetColorPreset = 0x0024FE78; // type:func // guess
+BtlObj_BindCommonTables = 0x0024FFE8; // type:func
+BtlObj_CopyLipTables = 0x002500B0; // type:func
+
+// Colour mode: SetColorMode(obj, bit, on) keeps one request bit per requester at object + 0xB34 and rewrites flag
+// bits 16..23 by priority; GetColorMode returns 0..6 for the flag in force.
+// Part visibility: SetPartVisible(obj, part, on) / IsPartVisible(obj, part) for parts 0..4 (flags 2, 0x10, 0x20,
+// 0x40, 0x80); part 5 = reset to all visible.
+BtlObj_SetColorMode = 0x002500E8; // type:func
+BtlObj_GetColorMode = 0x00250288; // type:func
+BtlObj_SetPartVisible = 0x00250308; // type:func
+BtlObj_IsPartVisible = 0x002504D0; // type:func
+
+// Nodes. FindBound: bounds record of a node id. GetNode: object + 0xD6C[id]. IsNodeShown: whether a node's
+// geometry is drawn given the part bits and the model's layout class. GetNodeSide: node id -> 0 / 1 (the two body
+// sides), 2 (centre), 3 (ids from 0x35). SaveNodePositions: stores every node's position in the object's frame
+// (node + 0xD0). GetNodeVelocity: movement of a node since that snapshot. GetNodeByCode: code 0..18 -> node.
+BtlObj_FindBound = 0x00250570; // type:func
+BtlObj_GetNode = 0x002505A8; // type:func
+BtlObj_HasNode = 0x002505B8; // type:func
+BtlObj_IsNodeShown = 0x002505D0; // type:func // guess
+BtlObj_GetNodeSide = 0x00250828; // type:func // guess
+BtlObj_SaveNodePositions = 0x00250888; // type:func
+BtlObj_GetNodeVelocity = 0x00250940; // type:func
+BtlObj_GetNodeByCode = 0x002509C0; // type:func
+
+// Secondary motion (hair, tails, cloth). DecayPush: push *= 0.85 unless one was added this frame. AddPush: add a
+// vector, clamped to a maximum length. AddSway: add to the scalar at +0x1650, clamped. SetMoveVec: the owner's
+// movement. InitChains: clear and build both chain tables. UpdateChains: step both, then decay.
+// ChaosRand: logistic map x = 3.9999 x (1 - x) at object + 0x1654.
+BtlObj_DecayPush = 0x00250B28; // type:func
+BtlObj_AddPush = 0x00250B88; // type:func
+BtlObj_AddSway = 0x00250C38; // type:func // guess
+BtlObj_SetMoveVec = 0x00250CB8; // type:func // guess
+BtlObj_InitChains = 0x00250CD0; // type:func
+BtlObj_UpdateChains = 0x00250D38; // type:func
+BtlObj_ChaosRand = 0x00250D68; // type:func
+// Type B chains (8 links at object + 0x1420) and type A chains (16 links at object + 0x1010): wrap an angle to
+// -pi..pi, step one link, build the link table from the bounds list, step every link.
+BObjChainB_WrapAngle = 0x00250DB0; // type:func
+BObjChainB_Step = 0x00250DE8; // type:func
+BObjChainB_Build = 0x00251758; // type:func
+BObjChainB_StepAll = 0x00251940; // type:func
+BObjChainA_WrapAngle = 0x00251A10; // type:func
+BObjChainA_Step = 0x00251A48; // type:func
+BObjChainA_Build = 0x00252568; // type:func
+BObjChainA_StepAll = 0x002526E0; // type:func

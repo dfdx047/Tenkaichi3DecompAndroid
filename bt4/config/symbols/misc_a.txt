@@ -1,0 +1,72 @@
+// --- Character passwords, older format (src/sys/misc_a.c, 0x252F68-0x253ED8; all functions match) ---
+// Evidence for the module: the only caller from outside is the menu overlay's password entry (0x3ABD28), which calls
+// 0x253608 for a 32-character text and 0x254578 for a 34-character one, then validates character and item ids.
+// "Old" = the 32 / 20 character formats: 129 characters and 7 item slots in the random filler; the overlay converts
+// the result to the current structure (0x3AEBC0). That it is the previous game's format is a guess.
+// 0x252F68(seed): MT19937 init_genrand on gOldPassMtState, then index = 1 (not 624).
+OldPass_MtSeed = 0x00252F68; // type:func
+// 0x252FC0(key, len): MT19937 init_by_array without the final state[0] = 0x80000000.
+OldPass_MtSeedByArray = 0x00252FC0; // type:func
+// 0x253138: state[index++] with MT19937 tempering; no refill.
+OldPass_MtNext = 0x00253138; // type:func
+// 0x253190: zeroes the 32-byte bit buffer. 0x2531C8(value, pos, count) / 0x253270(pos) / 0x2532A8(pos, count): bit access, LSB first.
+OldPass_ClearBits = 0x00253190; // type:func
+OldPass_PutBits = 0x002531C8; // type:func
+OldPass_GetBit = 0x00253270; // type:func
+OldPass_GetBits = 0x002532A8; // type:func
+// 0x253318(bitCount): bitCount / 6 characters from a 64-entry table into gOldPassText. 0x2534B8(text): the reverse.
+OldPass_BitsToText = 0x00253318; // type:func
+OldPass_TextToBits = 0x002534B8; // type:func
+// 0x253600: empty; no caller.
+OldPass_Nop = 0x00253600; // type:func // guess
+// 0x253608(out, text): 32 characters -> OldPassChar; 1 if valid. Called from the overlay (0x3ABD8C).
+OldPass_DecodeChar = 0x00253608; // type:func
+// 0x2537C8(out, text): 20 characters -> OldPassShort. No caller; what the short password carried is unknown.
+OldPass_DecodeShort = 0x002537C8; // type:func // guess
+// 0x253970(in) / 0x253B28(in): the encoders; no caller.
+OldPass_EncodeChar = 0x00253970; // type:func
+OldPass_EncodeShort = 0x00253B28; // type:func // guess
+// 0x253CD8: returns gOldPassText; no caller.
+OldPass_GetText = 0x00253CD8; // type:func
+// 0x253CE8(out) / 0x253DD0(out): fill the structure from libc rand(); no caller (test code).
+OldPass_RandomChar = 0x00253CE8; // type:func // guess
+OldPass_RandomShort = 0x00253DD0; // type:func // guess
+// 0x253EB8 / 0x253EC8: both return the string "No Debug\n" (0x2F2CA0); no caller.
+OldPass_GetDebugTextA = 0x00253EB8; // type:func // guess
+OldPass_GetDebugTextB = 0x00253EC8; // type:func // guess
+// .sdata, initial value 0; followed by the 64 one-character strings of the table (0x2FEC58-0x2FEE58).
+gOldPassMtIndex = 0x002FEC50; // size:0x4
+// .bss
+gOldPassText = 0x0031C790; // size:0x30
+gOldPassBits = 0x0031C7C0; // size:0x20
+gOldPassMtState = 0x0031C7E0; // size:0x9C0
+// --- Character passwords, current format (src/sys/misc_a_b.c, 0x253ED8-0x254A20; all functions match) ---
+// The same source with its own state and another character table (digits in place of the vowels).
+ChrPass_MtSeed = 0x00253ED8; // type:func
+ChrPass_MtSeedByArray = 0x00253F30; // type:func
+ChrPass_MtNext = 0x002540A8; // type:func
+ChrPass_ClearBits = 0x00254100; // type:func
+ChrPass_PutBits = 0x00254138; // type:func
+ChrPass_GetBit = 0x002541E0; // type:func
+ChrPass_GetBits = 0x00254218; // type:func
+ChrPass_BitsToText = 0x00254288; // type:func
+ChrPass_TextToBits = 0x00254428; // type:func
+// 0x254570, 0x254950: empty; no caller.
+ChrPass_Nop = 0x00254570; // type:func // guess
+// 0x254578(out, text): 34 characters -> ChrPassData; 1 if valid. Called from the overlay (0x3ABDCC).
+ChrPass_Decode = 0x00254578; // type:func
+// 0x254768(in): ChrPassData -> 34 characters in gChrPassText; draws libc rand() twice. Overlay 0x3AE9F8, 0x3AEA5C.
+ChrPass_Encode = 0x00254768; // type:func
+// 0x254940: returns gChrPassText. Overlay 0x3AE868 (draws the password).
+ChrPass_GetText = 0x00254940; // type:func
+ChrPass_Nop2 = 0x00254950; // type:func // guess
+// 0x254958(out): fills the structure from libc rand(); no caller.
+ChrPass_Random = 0x00254958; // type:func // guess
+// 0x254A10: returns "No Debug\n" (0x2F2EB0); no caller.
+ChrPass_GetDebugText = 0x00254A10; // type:func // guess
+// .sdata, initial value 0; followed by the 64 one-character strings (0x2FEE60-0x2FF060).
+gChrPassMtIndex = 0x002FEE58; // size:0x4
+// .bss
+gChrPassText = 0x0031D1A0; // size:0x30
+gChrPassBits = 0x0031D1D0; // size:0x20
+gChrPassMtState = 0x0031D1F0; // size:0x9C0

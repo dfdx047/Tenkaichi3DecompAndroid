@@ -1,0 +1,92 @@
+// CPU player: the generic scripted-action ("sequence") runner. First part of src/battle/btl_ai_seq.c = 0x1B4140..0x1B6008
+// (to be merged into btl_ai_seq.c, where these 38 functions are INCLUDE_ASM); include/battle/btl_ai_seq_a.h.
+// Evidence for the numbering: the three function tables at 0x2C46B8 (4 phases), 0x2C46C8 (16 pick functions) and
+// 0x2C4708 (24 step handlers) list exactly these functions in address order.
+
+// Helpers of the phases. 0x1B4140(work, action id): 1 when the action's flag word (action table +0x288 + id * 2)
+// says it must end now: bit 0 own state class 1..7, bit 3 class 0x20 or a clash, bit 4 the opponent's technique has
+// a kind. Callers: the phases below and the dispatchers of actions 7, 0x19, 0x1A, 0x36 in btl_ai_act.c (0x1BC8D0, 0x1BDAD4, 0x1BDE8C, 0x1BE164).
+BtlAiSeq_IsInterrupted = 0x001B4140; // type:func // guess
+// (work, mode): mode 0 = the fighter is within height + 10 of the stage top, mode 1 = it is less than 10 above the
+// ground (on stages 4 / 27: or pose bit 0x80 is clear).
+BtlAiSeq_CheckHeight = 0x001B4220; // type:func // guess
+// (work, action id): end test of the run phase by action id (switch over 9..29; uses the stage 4 / 27 test).
+BtlAiSeq_CheckStageAbort = 0x001B4300; // type:func // guess
+
+// gBtlAiStateFuncs[0..3], called by BtlAi_RunSeq through seq.phase: init (waits for state class 0 when the action
+// asks for it), start (picks the step of the current group), run (step handler, end tests, BtlAiPad_Set), end (pop).
+BtlAiSeq_PhaseInit = 0x001B44A8; // type:func
+BtlAiSeq_PhaseStart = 0x001B4608; // type:func
+BtlAiSeq_PhaseRun = 0x001B4830; // type:func
+// Called by the end phase when the stack empties: powered up (fighter flag 6), the first stack entry is one of ten
+// actions 0x22..0x35, and AiThink_RollActRate(work, 0x4C) succeeds -> the end phase starts action 0x43.
+BtlAiSeq_RollPowerUpChain = 0x001B4A50; // type:func // guess
+BtlAiSeq_PhaseEnd = 0x001B4AF0; // type:func
+
+// Pick functions: the 16 entries of the table at 0x2C46C8, indexed by the action's byte at action table +0x188 + id,
+// called by the start phase as (work, number of alternative steps, stack entry argument) -> alternative, or negative
+// to end the action. Most also set the step parameter seq.timer. Names say what the parameter / choice is.
+gBtlAiPickFuncs = 0x002C46C8; // size:0x40
+// 0: Rand_Range(n). 1: the argument. 15: seq.timer = argument.
+BtlAiPick_Random = 0x001B4C00; // type:func
+BtlAiPick_ByArg = 0x001B4C18; // type:func
+// 2: argument = seconds * 10 + alternative (9 = random), timer = seconds * 30.
+BtlAiPick_ArgSeconds = 0x001B4C28; // type:func // guess
+// 3: argument = value * 10 + alternative, timer = value (negative: random 1..value); extra rolls for groups of five.
+BtlAiPick_ArgFrames = 0x001B4CE8; // type:func // guess
+// 4: timer = ki percentage to charge to (100, 101 = until powered up, or one of the two skill costs).
+BtlAiPick_KiTarget = 0x001B4E38; // type:func // guess
+// 5: alternative = plan.unk8 (the planned skill slot), timer = 100 / 0 / random percent.
+BtlAiPick_SkillCharge = 0x001B4E90; // type:func // guess
+// 6: timer = a delay in frames that shrinks with the cpu level.
+BtlAiPick_LevelDelay = 0x001B4F20; // type:func // guess
+// 7: one of three alternatives by profile weights that depend on AiThink_GetBlastStep (place in the rush chain).
+BtlAiPick_ComboBranch = 0x001B5040; // type:func // guess
+// 8 / 9: BtlCharApi_PickFusionSlot / BtlCharApi_PickTransformSlot (these two calls are their only callers).
+BtlAiPick_FusionSlot = 0x001B51D0; // type:func
+BtlAiPick_TransformSlot = 0x001B51F8; // type:func
+// 10: timer = team member to switch to (scored by health and ki), random alternative.
+BtlAiPick_SwitchMember = 0x001B5220; // type:func
+// 11: alternative = -level - 2 for levels below -1 (the training dummy's modes), else 0.
+BtlAiPick_DummyMode = 0x001B5490; // type:func // guess
+// 12: alternative 0..4 = the button BtlCharApi_GetPromptButtons asks for (UP, DOWN, LEFT, RIGHT, BLAST).
+BtlAiPick_PromptButton = 0x001B54B0; // type:func
+// 13: timer = 0 / 15 / -1 for argument 1 / 2 / 3: the mode of step handler 8.
+BtlAiPick_GuardMode = 0x001B5510; // type:func // guess
+// 14: one of 4 or 8 alternatives at random, the ones that lead away from the stage centre made less likely.
+BtlAiPick_Direction = 0x001B5568; // type:func // guess
+BtlAiPick_SetTimer = 0x001B5828; // type:func
+// BtlAiPick_LevelDelay's local table: five floats by level / 6 (45, 33.75, 22.5, 11.25, 0), copied to the stack.
+gBtlAiLevelDelay = 0x002ED970; // size:0x14
+
+// Step handlers 0..13 of the table at 0x2C4708 (24 entries; 14..23 are in btl_ai.txt), indexed by the step's first
+// byte, called by the run phase as (work) -> non-zero when the step is finished.
+gBtlAiStepFuncs = 0x002C4708; // size:0x60
+// 0: the fighter is in the step's state class (and has left the state it started in).
+BtlAiStep_ReachClass = 0x001B5838; // type:func // guess
+// 1: ki >= seq.timer percent (101: powered up), or the fighter is turned away from the opponent.
+BtlAiStep_ChargeKi = 0x001B5940; // type:func // guess
+// 2: state class 0, BtlCharApi_IsBlockedByOpponent, or bit 29 of fighter word +0x1288.
+BtlAiStep_UntilBlocked = 0x001B5A18; // type:func // guess
+// 3: seq.timer frames have passed.
+BtlAiStep_Countdown = 0x001B5AA8; // type:func
+// 4 / 5: handler 2 OR / AND handler 7 (both are always called).
+BtlAiStep_BlockedOrCharged = 0x001B5AE8; // type:func // guess
+BtlAiStep_BlockedAndCharged = 0x001B5B38; // type:func // guess
+// 6: own state class is not 1..7.
+BtlAiStep_NotHit = 0x001B5B78; // type:func // guess
+// 7: BtlCharApi_GetChargeRate * 10 >= seq.timer (-1: full), or the charge dropped.
+BtlAiStep_Charged = 0x001B5BC0; // type:func // guess
+// 8: by seq.timer: -1 the opponent's technique kind is not 1 / 2, 0 the opponent stopped attacking, else no blast is
+// passing. Sets the step for action 0x45 from the opponent's class. INCLUDE_ASM (2 instructions).
+BtlAiStep_GuardUntilSafe = 0x001B5C80; // type:func // guess
+// 9: 30 frames after the opponent stopped attacking.
+BtlAiStep_GuardCountdown = 0x001B5DA8; // type:func // guess
+// 10: handler 0 and BtlCharApi_GetBlastShots == 0.
+BtlAiStep_ReachClassNoShots = 0x001B5E48; // type:func // guess
+// 11: the second call (one frame of input).
+BtlAiStep_OneFrame = 0x001B5E88; // type:func
+// 12: the fighter's facing points at the opponent.
+BtlAiStep_FacingOpponent = 0x001B5EB0; // type:func // guess
+// 13: BtlCharApi_GetSwitchTarget == seq.timer.
+BtlAiStep_SwitchQueued = 0x001B5FD0; // type:func // guess

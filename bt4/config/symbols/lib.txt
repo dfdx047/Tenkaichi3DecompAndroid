@@ -1,0 +1,398 @@
+// Library function names for SLUS_216.78 (third-party code only). Generated from static evidence; see docs/text_map.md.
+// Addresses already present in config/symbol_addrs.txt (106 CRI names, _start, _vfprintf_r) are intentionally not repeated.
+
+// EE kernel syscall stubs in Sony libkernl (each is `addiu $v1,$zero,N; syscall; jr $ra; nop`); name = standard EE kernel syscall N.
+// Negative N = interrupt-context (i-prefixed) variant. Two stubs share N=0x10 and N=0x12: the second of each pair is the *2 variant
+// (cross-checked: libmpeg/libipu call the second 0x12 stub, libkernl timer init calls the second 0x10 stub).
+ResetEE = 0x002B07D0; // type:func
+SetGsCrt = 0x002B07E0; // type:func
+Exit = 0x002B0800; // type:func
+LoadExecPS2 = 0x002B0820; // type:func
+ExecPS2 = 0x002B0830; // type:func
+AddSbusIntcHandler = 0x002B0860; // type:func
+RemoveSbusIntcHandler = 0x002B0870; // type:func
+Interrupt2Iop = 0x002B0880; // type:func
+SetVTLBRefillHandler = 0x002B0890; // type:func
+SetVCommonHandler = 0x002B08A0; // type:func
+SetVInterruptHandler = 0x002B08B0; // type:func
+AddIntcHandler = 0x002B08C0; // type:func
+AddIntcHandler2 = 0x002B08D0; // type:func
+RemoveIntcHandler = 0x002B08E0; // type:func
+AddDmacHandler = 0x002B08F0; // type:func
+AddDmacHandler2 = 0x002B0900; // type:func
+RemoveDmacHandler = 0x002B0910; // type:func
+_EnableIntc = 0x002B0920; // type:func
+_DisableIntc = 0x002B0930; // type:func
+_EnableDmac = 0x002B0940; // type:func
+_DisableDmac = 0x002B0950; // type:func
+_iEnableIntc = 0x002B0980; // type:func
+_iDisableIntc = 0x002B0990; // type:func
+_iEnableDmac = 0x002B09A0; // type:func
+_iDisableDmac = 0x002B09B0; // type:func
+CreateThread = 0x002B09E0; // type:func
+DeleteThread = 0x002B09F0; // type:func
+ExitThread = 0x002B0A10; // type:func
+ExitDeleteThread = 0x002B0A20; // type:func
+TerminateThread = 0x002B0A30; // type:func
+iTerminateThread = 0x002B0A40; // type:func
+DisableDispatchThread = 0x002B0A50; // type:func
+EnableDispatchThread = 0x002B0A60; // type:func
+ChangeThreadPriority = 0x002B0A70; // type:func
+iChangeThreadPriority = 0x002B0A80; // type:func
+RotateThreadReadyQueue = 0x002B0A90; // type:func
+_iRotateThreadReadyQueue = 0x002B0AA0; // type:func
+ReleaseWaitThread = 0x002B0AB0; // type:func
+iReleaseWaitThread = 0x002B0AC0; // type:func
+GetThreadId = 0x002B0AD0; // type:func
+ReferThreadStatus = 0x002B0AE0; // type:func
+iReferThreadStatus = 0x002B0AF0; // type:func
+SleepThread = 0x002B0B00; // type:func
+WakeupThread = 0x002B0B10; // type:func
+_iWakeupThread = 0x002B0B20; // type:func
+CancelWakeupThread = 0x002B0B30; // type:func
+iCancelWakeupThread = 0x002B0B40; // type:func
+SuspendThread = 0x002B0B50; // type:func
+_iSuspendThread = 0x002B0B60; // type:func
+ResumeThread = 0x002B0B70; // type:func
+iResumeThread = 0x002B0B80; // type:func
+JoinThread = 0x002B0B90; // type:func
+EndOfHeap = 0x002B0BC0; // type:func
+CreateSema = 0x002B0BE0; // type:func
+DeleteSema = 0x002B0BF0; // type:func
+SignalSema = 0x002B0C00; // type:func
+iSignalSema = 0x002B0C10; // type:func
+WaitSema = 0x002B0C20; // type:func
+PollSema = 0x002B0C30; // type:func
+iPollSema = 0x002B0C40; // type:func
+ReferSemaStatus = 0x002B0C50; // type:func
+iReferSemaStatus = 0x002B0C60; // type:func
+SetOsdConfigParam = 0x002B0C80; // type:func
+GetOsdConfigParam = 0x002B0C90; // type:func
+GetGsHParam = 0x002B0CA0; // type:func
+GetGsVParam = 0x002B0CB0; // type:func
+SetGsHParam = 0x002B0CC0; // type:func
+SetGsVParam = 0x002B0CD0; // type:func
+KSeg0 = 0x002B0E20; // type:func
+EnableCache = 0x002B0E30; // type:func
+DisableCache = 0x002B0E40; // type:func
+GetCop0 = 0x002B0E50; // type:func
+FlushCache = 0x002B0E60; // type:func
+CpuConfig = 0x002B0E70; // type:func
+iGetCop0 = 0x002B0E80; // type:func
+iFlushCache = 0x002B0E90; // type:func
+iCpuConfig = 0x002B0EA0; // type:func
+sceSifStopDma = 0x002B0EB0; // type:func
+SetCPUTimerHandler = 0x002B0EC0; // type:func
+SetCPUTimer = 0x002B0ED0; // type:func
+SetOsdConfigParam2 = 0x002B0EE0; // type:func
+GetOsdConfigParam2 = 0x002B0EF0; // type:func
+GsGetIMR = 0x002B0F00; // type:func
+iGsGetIMR = 0x002B0F10; // type:func
+GsPutIMR = 0x002B0F20; // type:func
+iGsPutIMR = 0x002B0F30; // type:func
+SetPgifHandler = 0x002B0F40; // type:func
+SetVSyncFlag = 0x002B0F50; // type:func
+SetSyscall = 0x002B0F60; // type:func
+sceSifDmaStat = 0x002B0F80; // type:func
+isceSifDmaStat = 0x002B0F90; // type:func
+sceSifSetDma = 0x002B0FA0; // type:func
+isceSifSetDma = 0x002B0FB0; // type:func
+sceSifSetDChain = 0x002B0FC0; // type:func
+isceSifSetDChain = 0x002B0FD0; // type:func
+sceSifSetReg = 0x002B0FE0; // type:func
+sceSifGetReg = 0x002B0FF0; // type:func
+ExecOSD = 0x002B1000; // type:func
+Deci2Call = 0x002B1010; // type:func
+PSMode = 0x002B1020; // type:func
+MachineType = 0x002B1030; // type:func
+GetMemorySize = 0x002B1040; // type:func
+
+// libkernl C wrappers identified by the syscall stub they wrap / by privileged instructions.
+// DI/EI: contain the `di` / `ei` opcodes with the Status.EIE (0x10000) test loop, ~70 callers each, always paired.
+// Enable*/Disable* wrap the _Enable*/_Disable* stubs between DI()/EI(); i* wrap the _i* stubs; StartThread is the only caller of the 0x22 stub.
+// _InitSys: first function _start calls after the two inline thread/heap setup syscalls.
+DisableIntc = 0x002B16C0; // type:func
+EnableIntc = 0x002B1728; // type:func
+DisableDmac = 0x002B1790; // type:func
+EnableDmac = 0x002B17F8; // type:func
+iEnableIntc = 0x002B1860; // type:func
+iDisableIntc = 0x002B1880; // type:func
+iEnableDmac = 0x002B18A0; // type:func
+iDisableDmac = 0x002B18C0; // type:func
+iWakeupThread = 0x002B1AA8; // type:func
+iSuspendThread = 0x002B1BC0; // type:func
+StartThread = 0x002B1D20; // type:func
+DI = 0x002BA1E8; // type:func
+EI = 0x002BA238; // type:func
+_InitSys = 0x002BA4A0; // type:func
+
+// libkernl: named from the semaphore-name string each function passes to CreateSema ("SceStdio<Op>Sema", "SceSifrpc<Op>", "SceKernelDelayThread").
+// Cross-checked: CRI SRD functions whose error text says "SRD: sceOpen/sceClose/sceRead/sceIoctl/sceLseek/sceLseek64 error" call exactly these addresses.
+DelayThread = 0x002B1C58; // type:func
+sceSifGetOtherData = 0x002B4448; // type:func
+sceSifBindRpc = 0x002B4710; // type:func
+sceSifCallRpc = 0x002B48F0; // type:func
+sceOpen = 0x002B5D30; // type:func
+sceClose = 0x002B5FC0; // type:func
+sceLseek = 0x002B6138; // type:func
+sceRead = 0x002B6378; // type:func
+sceWrite = 0x002B65E8; // type:func
+sceIoctl = 0x002B68A8; // type:func
+sceIoctl2 = 0x002B6C30; // type:func
+sceMkdir = 0x002B6FE8; // type:func
+sceFormat = 0x002B71C0; // type:func
+sceDclose = 0x002B7658; // type:func
+sceDread = 0x002B77C0; // type:func
+sceGetstat = 0x002B7918; // type:func
+sceChstat = 0x002B7AD0; // type:func
+sceRename = 0x002B7D20; // type:func
+sceSync = 0x002B7F48; // type:func
+sceMount = 0x002B80F8; // type:func
+sceLseek64 = 0x002B8398; // type:func
+sceDevctl = 0x002B85D8; // type:func
+sceSymlink = 0x002B8880; // type:func
+sceReadlink = 0x002B8A78; // type:func
+
+// libkernl SIF: identified by call pattern (medium-high confidence).
+// sceSifInitCmd: AddDmacHandler + sceSifSetDChain + sceSifSetReg/GetReg + FlushCache. sceSifInitRpc: calls sceSifInitCmd, called by every library init right before sceSifBindRpc.
+sceSifInitCmd = 0x002B3808; // type:func
+sceSifInitRpc = 0x002B3F68; // type:func
+
+// CRI CVFS: each function references error strings of the form "<ownName> #n:..." (same method as the other CRI names).
+cvFsAddDev = 0x00277CB0; // type:func
+cvFsDelDev = 0x00277F08; // type:func
+cvFsSetDefDev = 0x00277FE0; // type:func
+cvFsOpen = 0x002781E0; // type:func
+cvFsClose = 0x00278530; // type:func
+cvFsTell = 0x002785A8; // type:func
+cvFsSeek = 0x00278610; // type:func
+cvFsReqRd = 0x00278678; // type:func
+cvFsReqWr = 0x002786E0; // type:func
+cvFsStopTr = 0x00278748; // type:func
+cvFsGetStat = 0x00278868; // type:func
+cvFsGetFileSize = 0x002788D0; // type:func
+cvFsGetFileSizeEx = 0x00278990; // type:func
+cvFsGetFileSizeByHndl = 0x00278A60; // type:func
+cvFsIsFileOpened = 0x00278AC0; // type:func
+cvFsGetFreeSize = 0x00278B60; // type:func
+cvFsGetSctLen = 0x00278CA0; // type:func
+cvFsSetSctLen = 0x00278D08; // type:func
+cvFsGetNumTr = 0x00278D60; // type:func
+cvFsChangeDir = 0x00278DC8; // type:func
+cvFsGetMaxByteRate = 0x00279118; // type:func
+cvFsMakeDir = 0x00279170; // type:func
+cvFsRemoveDir = 0x00279230; // type:func
+cvFsDeleteFile = 0x002792F0; // type:func
+cvFsGetDevName = 0x002793B0; // type:func
+cvFsOptFn1 = 0x00279460; // type:func
+cvFsOptFn2 = 0x002794C8; // type:func
+cvFsSetCurVolume = 0x00279530; // type:func
+cvFsAddVolumeEx = 0x002795F8; // type:func
+cvFsDelVolume = 0x00279700; // type:func
+cvFsGetVolumeInfo = 0x002797C0; // type:func
+cvFsSetDefVol = 0x00279890; // type:func
+cvFsGetNumTr64 = 0x00279A58; // type:func
+cvFsGetFileSizeByHndl64 = 0x00279BA8; // type:func
+cvFsGetFsys64Info = 0x00279D08; // type:func
+
+// Sony libgraph / libdbc: each function references an error string prefixed with its own name ("sceGsSyncPath: DMA Ch.1 does not terminate", "sceDbcCreateSocket: rpc error").
+sceGsPutDrawEnv = 0x002932C0; // type:func
+sceGsSyncPath = 0x00293738; // type:func
+sceGsExecStoreImage = 0x00293B90; // type:func
+sceDbcSetWorkAddr = 0x00294F00; // type:func
+sceDbcCreateSocket = 0x00294F70; // type:func
+sceDbcDeleteSocket = 0x002950A0; // type:func
+sceDbcGetDepNumber = 0x00295160; // type:func
+sceDbcInitSocket = 0x002953C8; // type:func
+sceDbcResetSocket = 0x00295478; // type:func
+sceDbcSRData = 0x00295698; // type:func
+sceDbcSendData = 0x00295828; // type:func
+sceDbcSendData2 = 0x00295958; // type:func
+sceDbcReceiveData = 0x00295C60; // type:func
+
+// Sony libsdr / libcdvd / libmc: error string contains the function's own name ("sceSdRemoteInit() RPC bind error!", "sceCdChgSys: Illegal_function_call", "sceMcUdCheckNewCard RPC faild").
+sceSdRemoteInit = 0x00296668; // type:func
+sceMcUdCheckNewCard = 0x002A2738; // type:func
+sceCdChgSys = 0x002A4E18; // type:func
+
+// crt0 / program entry. _exit: 2-instruction `j` thunk in crt0, called by abort() with a0=1. _root: crt0 thread-exit stub (ExitThread syscall 0x23).
+// (main = 0x00100258 is already in config/symbols/game.txt and is not repeated here.)
+_exit = 0x00100248; // type:func
+_root = 0x00100250; // type:func
+
+// libgcc 64-bit integer helpers. __muldi3: 64x64 multiply built from 32-bit multu/mult1 halves; called by rand() and __muldf3.
+// __divdi3/__moddi3/__udivdi3/__umoddi3: the four large loop-free divide routines that follow it in libgcc2 link order; the u* pair is what _vfprintf_r/_strtol_r call.
+__muldi3 = 0x002A4FB0; // type:func
+__divdi3 = 0x002A5028; // type:func
+__moddi3 = 0x002A56C0; // type:func
+__udivdi3 = 0x002A5D50; // type:func
+__umoddi3 = 0x002A62D0; // type:func
+
+// libgcc startup: __main (0x002A6AB0, already in config/symbols/game.txt) is a one-shot guard flag followed by a tail-call to this function.
+__do_global_ctors = 0x002A69F0; // type:func
+
+// libgcc soft-float double (fp-bit.c), identified by structure and call graph: every op unpacks args with __unpack_d and repacks with __pack_d.
+// _fpadd_parts is shared by __adddf3/__subdf3 (sub is the one that flips the sign); __muldf3 calls __muldi3; __cmpdf2 = unpack,unpack,__fpcmp_parts_d;
+// __floatsidf only packs; __fixdfsi only unpacks; __make_dp stores class/sign/exp/fraction then packs.
+_fpadd_parts = 0x002A6B28; // type:func
+__adddf3 = 0x002A6D88; // type:func
+__subdf3 = 0x002A6DE0; // type:func
+__muldf3 = 0x002A6E48; // type:func
+__divdf3 = 0x002A70D0; // type:func
+__cmpdf2 = 0x002A7210; // type:func
+__floatsidf = 0x002A7260; // type:func
+__fixdfsi = 0x002A7318; // type:func
+__make_dp = 0x002A73B8; // type:func
+__pack_d = 0x002A8B20; // type:func
+__unpack_d = 0x002A8BF8; // type:func
+__fpcmp_parts_d = 0x002A8CB8; // type:func
+
+// newlib libc, identified by instruction pattern (all use _impure_ptr = D_002E9808 where applicable):
+// abort: raise(6) then _exit(1). atexit: _impure_ptr->_atexit, `_ind < 32` test, malloc(0x88). atoi: (int)strtol(s,0,10). exit: target of _start's final jump.
+// malloc/free: __malloc_lock; _malloc_r/_free_r; __malloc_unlock. memcmp/memcpy/memset: R5900 128-bit (lq/sq, pcpyh/pcpyld) variants, memset has 775 callers.
+// srand/rand: seed at reent+0xA8, multiplier 0x5851F42D4C957F2D (6364136223846793005) via __muldi3, +1, >>32 & 0x7FFFFFFF.
+// signal.c family: table at reent+0x1D4 of 32 handlers, malloc(0x80), SIG_DFL/SIG_IGN/SIG_ERR tests in _raise_r/__sigtramp_r.
+// sprintf family: build a fake FILE on the stack (flags 0x208, size 0x7FFFFFFF), call vfprintf, store NUL. vfprintf: __sinit check then tail-jump to _vfprintf_r.
+// str*: 0x0101.../0x8080... NUL-detection constants; strcat tail-calls strcpy; strcasecmp indexes the ctype table (_ctype_+1, bit _U) and adds 0x20;
+// strncmp returns 0 when n==0; strtol/strtoul are _impure_ptr wrappers around _strtol_r/_strtoul_r (which use __udivdi3/__umoddi3/__muldi3).
+abort = 0x002A8DD8; // type:func
+atexit = 0x002A8DF0; // type:func
+atoi = 0x002A8E90; // type:func
+exit = 0x002A8EB8; // type:func
+malloc = 0x002A8F68; // type:func
+free = 0x002A8FC0; // type:func
+malloc_extend_top = 0x002A9008; // type:func
+_malloc_r = 0x002A9260; // type:func
+memcmp = 0x002A9988; // type:func
+memcpy = 0x002A9A1C; // type:func
+memset = 0x002A9ACC; // type:func
+__malloc_lock = 0x002A9B90; // type:func
+__malloc_unlock = 0x002A9C10; // type:func
+srand = 0x002A9C60; // type:func
+rand = 0x002A9C78; // type:func
+_sbrk_r = 0x002A9CE0; // type:func
+_init_signal_r = 0x002A9D38; // type:func
+_signal_r = 0x002A9DA8; // type:func
+_raise_r = 0x002A9E28; // type:func
+__sigtramp_r = 0x002A9F00; // type:func
+raise = 0x002A9F98; // type:func
+signal = 0x002A9FB8; // type:func
+_init_signal = 0x002A9FE0; // type:func
+__sigtramp = 0x002AA000; // type:func
+_kill_r = 0x002AA020; // type:func
+_getpid_r = 0x002AA080; // type:func
+_sprintf_r = 0x002AA098; // type:func
+sprintf = 0x002AA120; // type:func
+strcasecmp = 0x002AA1B0; // type:func
+strcat = 0x002AA288; // type:func
+strcmp = 0x002AA3B4; // type:func
+strcpy = 0x002AA4F8; // type:func
+strlen = 0x002AA60C; // type:func
+strncat = 0x002AA748; // type:func
+strncmp = 0x002AA8F8; // type:func
+strncpy = 0x002AAAB0; // type:func
+_strtol_r = 0x002AAC70; // type:func
+strtol = 0x002AAEA8; // type:func
+_strtoul_r = 0x002AAED8; // type:func
+strtoul = 0x002AB108; // type:func
+vfprintf = 0x002AB238; // type:func
+vsprintf = 0x002ACBC0; // type:func
+_vsprintf_r = 0x002ACC18; // type:func
+
+// newlib stdio/dtoa internals, identified by call graph around the already-named _vfprintf_r plus newlib source order.
+// __sprint->__sfvwrite; __sbprintf->vfprintf+fflush; cvt->_dtoa_r ("Infinity"/"NaN" strings); __swsetup->__sinit+__smakebuf(_malloc_r,_fstat_r,isatty);
+// findfp.c order std,__sfmoreglue,__sfp,_cleanup_r,_cleanup,__sinit; locale.c order; stdio.c __sread/__swrite/__sseek/__sclose over _read_r/_write_r/_lseek_r/_close_r;
+// isinf/isnan and memchr/memmove are the remaining leaf callees of _vfprintf_r/__sfvwrite in newlib.
+__sprint = 0x002AB138; // type:func
+__sbprintf = 0x002AB180; // type:func
+cvt = 0x002AC920; // type:func
+exponent = 0x002ACAE0; // type:func
+__swsetup = 0x002ACC70; // type:func
+quorem = 0x002ACD80; // type:func
+_dtoa_r = 0x002ACFB0; // type:func
+fflush = 0x002AE218; // type:func
+std = 0x002AE330; // type:func
+__sfmoreglue = 0x002AE390; // type:func
+__sfp = 0x002AE408; // type:func
+_cleanup_r = 0x002AE500; // type:func
+_cleanup = 0x002AE520; // type:func
+__sinit = 0x002AE540; // type:func
+_free_r = 0x002AE5D0; // type:func
+_malloc_trim_r = 0x002AE8C8; // type:func
+__sfvwrite = 0x002AEA38; // type:func
+_fwalk = 0x002AEE18; // type:func
+_setlocale_r = 0x002AEEB0; // type:func
+_localeconv_r = 0x002AEF40; // type:func
+setlocale = 0x002AEF50; // type:func
+localeconv = 0x002AEF78; // type:func
+__smakebuf = 0x002AEF98; // type:func
+_mbtowc_r = 0x002AF0F0; // type:func
+memchr = 0x002AF124; // type:func
+memmove = 0x002AF204; // type:func
+isinf = 0x002B0320; // type:func
+isnan = 0x002B0368; // type:func
+__sread = 0x002B03A8; // type:func
+__swrite = 0x002B0410; // type:func
+__sseek = 0x002B0490; // type:func
+__sclose = 0x002B04F8; // type:func
+_write_r = 0x002B0518; // type:func
+_calloc_r = 0x002B0578; // type:func
+_close_r = 0x002B0630; // type:func
+_fstat_r = 0x002B0688; // type:func
+_lseek_r = 0x002B06E8; // type:func
+_read_r = 0x002B0748; // type:func
+
+// newlib mprec.c (bignum helpers for _dtoa_r): 17 consecutive functions whose order AND call graph match mprec.c exactly
+// (_Balloc->_calloc_r; __s2b->_Balloc,__multadd; __pow5mult->_Bfree,__multadd,__i2b,__multiply; __d2b->_Balloc,__hi0bits,__lo0bits; __b2d->__hi0bits; __ratio->__b2d; __mdiff->_Balloc,__mcmp).
+_Balloc = 0x002AF308; // type:func
+_Bfree = 0x002AF3B0; // type:func
+__multadd = 0x002AF3E0; // type:func
+__s2b = 0x002AF4E8; // type:func
+__hi0bits = 0x002AF618; // type:func
+__lo0bits = 0x002AF698; // type:func
+__i2b = 0x002AF758; // type:func
+__multiply = 0x002AF790; // type:func
+__pow5mult = 0x002AF9A0; // type:func
+__lshift = 0x002AFAA0; // type:func
+__mcmp = 0x002AFBF8; // type:func
+__mdiff = 0x002AFC60; // type:func
+__ulp = 0x002AFDF0; // type:func
+__b2d = 0x002AFEC0; // type:func
+__d2b = 0x002B0058; // type:func
+__ratio = 0x002B01E0; // type:func
+_mprec_log10 = 0x002B02B0; // type:func
+
+// newlib libm (single-float fdlibm), identified by call graph + archive order (sf_*, w*_ wrappers, e*_ cores, k*_ kernels, s*_):
+// fabsf: clears the sign bit (0x7FFFFFFF). cosf/sinf: 0x3F490FD8 (pi/4) threshold then __ieee754_rem_pio2f; cosf calls __kernel_cosf first, sinf calls __kernel_sinf first.
+// tanf: rem_pio2f + __kernel_tanf. atanf calls fabsf; __ieee754_atan2f calls atanf+fabsf; acosf/asinf call __ieee754_sqrtf; __kernel_rem_pio2f calls floorf+scalbnf;
+// scalbnf->copysignf, scalbn->copysign. The six 0x18-byte w*_ wrappers each just tail-jump to their __ieee754_ core. pow (double) uses the soft-float helpers.
+atanf = 0x0028F130; // type:func
+cosf = 0x0028F3C0; // type:func
+fabsf = 0x0028F498; // type:func
+floorf = 0x0028F4C0; // type:func
+sinf = 0x0028F598; // type:func
+tanf = 0x0028F680; // type:func
+pow = 0x0028F6F8; // type:func
+acosf = 0x0028F710; // type:func
+asinf = 0x0028F728; // type:func
+atan2f = 0x0028F740; // type:func
+powf = 0x0028F758; // type:func
+sqrtf = 0x0028F770; // type:func
+__ieee754_pow = 0x0028F788; // type:func
+__ieee754_sqrt = 0x002906D8; // type:func
+__ieee754_acosf = 0x002909F8; // type:func
+__ieee754_asinf = 0x00290E20; // type:func
+__ieee754_atan2f = 0x002911C0; // type:func
+__ieee754_powf = 0x002913A0; // type:func
+__ieee754_rem_pio2f = 0x00291B80; // type:func
+__ieee754_sqrtf = 0x00291F30; // type:func
+__kernel_cosf = 0x00292000; // type:func
+__kernel_rem_pio2f = 0x00292150; // type:func
+__kernel_sinf = 0x002929B8; // type:func
+__kernel_tanf = 0x00292AC0; // type:func
+fabs = 0x00292D48; // type:func
+scalbn = 0x00292D80; // type:func
+scalbnf = 0x00292F68; // type:func
+copysign = 0x00293030; // type:func
+copysignf = 0x00293078; // type:func
+__fixunssfdi = 0x002A6838; // type:func

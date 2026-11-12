@@ -1,0 +1,28 @@
+{
+  "revision": "0.1.39.2 R6",
+  "hosted_contract_checks": 18,
+  "tag_transport_rounds": 3,
+  "tag_transport_frames_per_round": 900,
+  "tag_transport_disconnect_signaling_midfight": true,
+  "native_game_tag": {
+    "same_room": true,
+    "actors": 4,
+    "processes": 2,
+    "last_frame": 900,
+    "state_digest_interval_frames": 30,
+    "digest_mismatches": 0,
+    "shared_start_frame": 308
+  },
+  "cpu_game_last_frame": 900,
+  "native_lobby_duel_started": true,
+  "native_tournament_processes": 4,
+  "organizer_spectated_other_fighters": true,
+  "voice_synthetic_direct": true,
+  "manual_address_voice_synthetic_direct": true,
+  "voice_relay_packets": 0,
+  "voice_reenable_recovered": true,
+  "voice_continued_without_signaling": true,
+  "kernel_parity_scenarios": 7,
+  "kernel_parity_frames_each": 2000,
+  "scope": "Windows native local multi-process tests with hosted Supabase signaling. No cross-ISP, load-capacity, or physical Mac/Linux gameplay validation."
+}

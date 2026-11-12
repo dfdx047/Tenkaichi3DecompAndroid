@@ -1,0 +1,40 @@
+// Menu overlay DBZP.BIN, 0x372148..0x376920. All names are guesses from what the code does.
+// UbTeamSel tail (menu_n.c): the last two functions of the team select of menu_m_b.c (work pointer gUbTeamSel).
+UbTeamSel_UpdateEnd = 0x00372148; // type:func // guess
+UbTeamSel_Run = 0x00372260; // type:func // guess
+// UbzSel (menu_n_b.c): the course select of mode 28 (five courses of up to eight opponents; work area gUbzSel, 0x470
+// bytes). Evidence: the screen pattern (Init allocates, Term frees, Run is the frame loop called by the mode
+// handler 0x379A58 for mode 28); SetupBattle calls BattleSetup_SetRule / SetSide / SetMember / SetPoolMember.
+UbzSel_SetupBattle = 0x00372560; // type:func
+UbzSel_Init = 0x00372888; // type:func
+UbzSel_Term = 0x00372E08; // type:func
+UbzSel_Draw = 0x00372E98; // type:func
+UbzSel_Update = 0x00373358; // type:func
+UbzSel_UpdateVoice = 0x003733B0; // type:func // guess
+UbzSel_Input = 0x003734C8; // type:func
+UbzSel_ClipGoto = 0x00373848; // type:func // guess
+UbzSel_Run = 0x003738E8; // type:func
+gUbzSel = 0x003B7350; // size:0x4
+// UbRank (menu_n_c.c): the ranking ladder of mode 26 (100 places, five plates visible; work area gUbRank, 0x584
+// bytes). Evidence: the screen pattern (Run is called by the mode handler 0x379A58 for mode 26); SetupBattle calls
+// BattleSetup_SetRule / SetSide / SetMember / Finish; labels "mc_ranking_plate%02d", "fl_intrude_in", "fl_vs_action".
+UbRank_SetupBattle = 0x00373A68; // type:func
+UbRank_PlaceToRule = 0x00373CB0; // type:func // guess
+UbRank_SetFoe = 0x00373CD0; // type:func // guess
+UbRank_PickFoe = 0x00373D90; // type:func // guess
+UbRank_ScrollUp = 0x00373E50; // type:func // guess
+UbRank_Init = 0x00373ED0; // type:func
+UbRank_Term = 0x00374848; // type:func
+UbRank_Draw = 0x00374980; // type:func
+UbRank_Update = 0x00375238; // type:func
+UbRank_UpdateVoice = 0x003753F0; // type:func // guess
+UbRank_Input = 0x00375570; // type:func
+UbRank_ClipGoto = 0x00375D08; // type:func // guess
+UbRank_UpdateFaceLoad = 0x00375DA0; // type:func // guess
+UbRank_Run = 0x00375F40; // type:func
+gUbRank = 0x003B7354; // size:0x4
+// UbResult head (menu_n_d.c): the first two functions of the result screen of modes 27 / 30 (the object, its work
+// pointer gUbResult and the rest of its names are in menu_o.txt). MarkCourseCleared sets the course's cleared byte
+// in the save and reports the first time all five are set; Init is called by UbResult_Run.
+UbResult_MarkCourseCleared = 0x003760C8; // type:func // guess
+UbResult_Init = 0x00376150; // type:func

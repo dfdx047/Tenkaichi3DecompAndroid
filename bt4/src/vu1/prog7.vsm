@@ -1,0 +1,201 @@
+; ============================================================================================================
+; VU1 program 7 (packet at 0x2C2D30..0x2C3080, 104 instructions): stage DEBRIS meshes. Rigid (one matrix per
+; mesh), vertex colours from the mesh with the alpha replaced by one per-mesh value, clip test plus a per-vertex
+; "do not draw" flag. Used only by StgModel_DrawDebris (src/battle/stgm_a.c): draw group 6, the pieces of broken
+; stage objects, which fade out through that alpha.
+;
+; BUILDERS (src/sys/vu1_packet.c)
+;   Vu1Pkt_LoadProg7()            MPG upload, FLUSHE, UNPACK V4-32 of 0xD quadwords to address 0 (it fills 4..11
+;                                 only), BASE 0xD, OFFSET 0x1F9. No MSCAL.
+;   Vu1Pkt_CallProg7(chain, w)    one per visible mesh: FLUSHE, UNPACK V4-32 of 0xD quadwords to address 0 (it
+;                                 fills 0..11 and the w of 12), MSCALF 0, BASE, OFFSET, then DMA "call" of the
+;                                 mesh's chain.
+;
+; ENTRY POINTS (instruction addresses)
+;     0   MSCALF 0 from Vu1Pkt_CallProg7: per-mesh setup (two matrix products), stops at the E bit at 50 (51
+;         still runs).
+;    52   where the first MSCNT of the mesh's chain resumes: one batch, ends at the E bit after the xgkick.
+;   102   where every later MSCNT resumes: `b` back to 52.
+;   (inferred) that the chains use MSCNT, one per batch: the stage file's chains are data, not looked at here; the
+;   port's notes on program 4 (the stage proper, same vertex layout) describe them that way.
+;
+; VU MEMORY, constants (quadword addresses)
+;    0.. 3   matrix L (columns): the mesh's local-to-world matrix (the current VU0 matrix vf16-19, loaded by the
+;            caller from mesh.mtx)
+;    4.. 7   matrix S (columns): world -> GS screen coordinates (VU0 vf24-27, Vu0Screen_StoreMtx)
+;    8..11   matrix C (columns): world -> clip-test space (VU0 vf20-23, Vu0Clip_StoreMtx)
+;   12       only w is read: the mesh's alpha as a float (mesh.alpha, 0..128). x, y, z are never written by the
+;            builders and never read here.
+;   The two input buffers (VIF double buffer) are 0xD.. and 0xD + 0x1F9 = 0x206.. .
+;
+; INPUT BATCH at TOP (xtop). What the program does with each quadword is verified; the meaning of the three
+; header quadwords is inferred from the stage layout in the port's notes (program 4) and from Vu1Node_OrFlags
+; for program 8, which has the same header.
+;   +0   copied to the output    (GIF tag "one A+D register")
+;   +1   copied to the output    (that register's data: the texture, TEX0)
+;   +2   copied to the output; the low 15 bits of its first word are the vertex count (the NLOOP field of the
+;        primitive GIF tag: ST, RGBAQ, XYZ)
+;   +3   vertices, 3 quadwords each:
+;          +0  position x y z; the low 16 bits of the w WORD are read as an integer flag: non-zero = the triangle
+;              this vertex completes is not drawn. (inferred) strip restarts. w is not used as a number.
+;          +1  colour r g b a as floats (a is replaced)
+;          +2  s, t, 1 (z is whatever the mesh has there; it is multiplied by 1/w like s and t)
+;   The count must be at least 1 (the loop tests at the bottom).
+;
+; OUTPUT GIF packet at TOP + 255 (vi2 = TOP + 3 + 0xFC), sent with xgkick
+;   +0, +1, +2   input +0, +1, +2 unchanged
+;   +3 + 3n      vertex n:  +0  s/w, t/w, 1/w, (stale: 4th word of vf26, not part of ST)   -> ST / Q
+;                           +1  r, g, b from the vertex, a = mem 12.w, as integers (ftoi0)   -> RGBAQ
+;                           +2  ftoi4 of S L p / w: x, y in 12.4 fixed point, z through the same conversion;
+;                               4th word = ftoi4 of w / w (16, or 15 after rounding), or 0x8000 (ADC: do not
+;                               draw) when the clip test failed or the vertex flag is set
+;   Size limit (inferred from the addresses): the output starts 255 into a 505-quadword buffer, so at most 82
+;   vertices per batch fit without running into the other buffer.
+;
+; REGISTERS
+;   vf1-4    S L (screen matrix times local matrix), computed at setup and kept
+;   vf13-16  C L (clip matrix times local matrix), computed at setup and kept
+;   vf5      mem 12 (w = alpha)
+;   setup only: vf17-20 = L, vf9-12 = S, vf25-28 = C (all reused as scratch by the batch code)
+;   vf20     position being transformed       vf24  S L p, then divided by w       vf25  C L p (clip test only)
+;   vf22     texture coordinates in, vf26 out            vf27  screen position in 12.4
+;   vf23     colour (floats, w replaced)      vf29  colour as integers
+;   vf17, vf18, vf19  batch header quadwords +0, +1, +2 (before the loop)
+;   vi1  TOP pointer before the loop, then the clip result plus the vertex flag
+;   vi2  output packet    vi3  input vertex pointer    vi7  output vertex pointer    vi9  vertex flag
+;   vi10  vertices left   vi11 = 0x7FFF (count mask)   vi13 = 0x8000 (ADC bit)
+;   The loop is software-pipelined: the transform of vertex n + 1 runs inside vertex n's iteration, and its
+;   divide is started there (q is consumed at 73 / 76 of the next pass).
+;
+; Labels: `*_batch`, `*_vertex` and `*_next` are the branch targets; `*_setup` and `*_resume` are added names for
+; the addresses the VIF enters at (no instruction refers to them). The generated listing also had an `Lnnn:` in
+; front of many other instructions; those came from the disassembler taking a "branch target" from the low bits
+; of every lower word, not only of branches, and were targets of nothing, so they are removed.
+; ============================================================================================================
+
+.vif 0x00000000
+.mpg 0
+
+; ---- 0: per-mesh setup (MSCALF 0) --------------------------------------------------------------------------
+; vf1-4 = S L and vf13-16 = C L, one column per four lines: column j = M (column j of L).
+p7_setup:
+    nop                                | lq.xyzw vf17, 0(vi0)           ; vf17 = L column 0
+    nop                                | lq.xyzw vf9, 4(vi0)            ; vf9-12 = matrix S (mem 4..7)
+    nop                                | lq.xyzw vf10, 5(vi0)
+    nop                                | lq.xyzw vf11, 6(vi0)
+    nop                                | lq.xyzw vf12, 7(vi0)
+    mulax.xyzw acc, vf9, vf17x         | lq.xyzw vf18, 1(vi0)           ; vf18 = L column 1
+    madday.xyzw acc, vf10, vf17y       | lq.xyzw vf19, 2(vi0)           ; vf19 = L column 2
+    maddaz.xyzw acc, vf11, vf17z       | lq.xyzw vf20, 3(vi0)           ; vf20 = L column 3
+    maddw.xyzw vf1, vf12, vf17w        | lq.xyzw vf5, 12(vi0)           ; vf1 = S L column 0; vf5 = mem 12 (w = alpha)
+    mulax.xyzw acc, vf9, vf18x         | nop
+    madday.xyzw acc, vf10, vf18y       | nop
+    maddaz.xyzw acc, vf11, vf18z       | nop
+    maddw.xyzw vf2, vf12, vf18w        | lq.xyzw vf25, 8(vi0)           ; vf2 = S L column 1; vf25-28 = matrix C (mem 8..11)
+    mulax.xyzw acc, vf9, vf19x         | lq.xyzw vf26, 9(vi0)
+    madday.xyzw acc, vf10, vf19y       | lq.xyzw vf27, 10(vi0)
+    maddaz.xyzw acc, vf11, vf19z       | lq.xyzw vf28, 11(vi0)
+    maddw.xyzw vf3, vf12, vf19w        | nop                            ; vf3 = S L column 2
+    mulax.xyzw acc, vf9, vf20x         | nop
+    madday.xyzw acc, vf10, vf20y       | nop
+    maddaz.xyzw acc, vf11, vf20z       | nop
+    maddw.xyzw vf4, vf12, vf20w        | nop                            ; vf4 = S L column 3
+    ; twelve empty lines (as in the original)
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    mulax.xyzw acc, vf25, vf17x        | nop
+    madday.xyzw acc, vf26, vf17y       | nop
+    maddaz.xyzw acc, vf27, vf17z       | nop
+    maddw.xyzw vf13, vf28, vf17w       | nop                            ; vf13 = C L column 0
+    mulax.xyzw acc, vf25, vf18x        | iaddiu vi11, vi0, 0x7fff       ; vi11 = 0x7FFF
+    madday.xyzw acc, vf26, vf18y       | iaddi vi13, vi11, 1            ; vi13 = 0x8000, the ADC bit
+    maddaz.xyzw acc, vf27, vf18z       | nop
+    maddw.xyzw vf14, vf28, vf18w       | nop                            ; vf14 = C L column 1
+    mulax.xyzw acc, vf25, vf19x        | nop
+    madday.xyzw acc, vf26, vf19y       | nop
+    maddaz.xyzw acc, vf27, vf19z       | nop
+    maddw.xyzw vf15, vf28, vf19w       | nop                            ; vf15 = C L column 2
+    mulax.xyzw acc, vf25, vf20x        | nop
+    madday.xyzw acc, vf26, vf20y       | nop
+    maddaz.xyzw acc, vf27, vf20z       | nop
+    maddw.xyzw vf16, vf28, vf20w       | nop                            ; vf16 = C L column 3
+    nop                                | nop
+    nop                                | nop [E]                        ; end of the MSCALF run (the next line still runs)
+    nop                                | nop
+
+; ---- 52: one batch (first MSCNT lands here, later ones through the `b` at the end) ----------------------------
+p7_batch:
+    nop                                | xtop vi1                       ; vi1 = TOP
+    nop                                | lq.xyzw vf20, 3(vi1)           ; position of vertex 0 (TOP + 3)
+    nop                                | lqi.xyzw vf17, (vi1++)         ; header +0
+    nop                                | lqi.xyzw vf18, (vi1++)         ; header +1; vi1 = TOP + 2
+    nop                                | ilwr.x vi10, (vi1)             ; vi10 = first word of header +2 (NLOOP, EOP)
+    mulax.xyzw acc, vf1, vf20x         | iaddiu vi3, vi1, 0x1           ; vi3 = TOP + 3 = first vertex
+    madday.xyzw acc, vf2, vf20y        | iaddiu vi11, vi0, 0x7fff
+    maddaz.xyzw acc, vf3, vf20z        | lq.xyzw vf19, 0(vi1)           ; header +2 (the primitive tag)
+    maddw.xyzw vf24, vf4, vf0w         | iand vi10, vi10, vi11          ; vf24 = S L p (p.w taken as 1); vi10 = vertex count
+    mulax.xyzw acc, vf13, vf20x        | nop
+    madday.xyzw acc, vf14, vf20y       | iaddiu vi2, vi3, 0xfc          ; vi2 = output packet = TOP + 255
+    maddaz.xyzw acc, vf15, vf20z       | sq.xyzw vf19, 2(vi2)           ; out +2 = header +2
+    maddw.xyzw vf25, vf16, vf0w        | div q, vf0w, vf24w             ; vf25 = C L p; q = 1 / (S L p).w
+    nop                                | iaddiu vi7, vi2, 0x3           ; vi7 = first output vertex
+    nop                                | sq.xyzw vf17, 0(vi2)           ; out +0 = header +0
+    nop                                | sq.xyzw vf18, 1(vi2)           ; out +1 = header +1
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+
+; ---- 72: vertex loop ------------------------------------------------------------------------------------------
+; On entry: vf24 = S L p and vf25 = C L p of this vertex, its divide under way, vi3 = this vertex.
+p7_vertex:
+    clip.xyz vf25, vf25                | lq.xyzw vf22, 2(vi3)           ; clip flags of C L p; vf22 = s, t, 1
+    mulq.xyzw vf24, vf24               | ilwr.w vi9, (vi3)              ; vf24 = S L p / w; vi9 = vertex flag (w word)
+    nop                                | nop
+    nop                                | nop
+    mulq.xyz vf26, vf22                | nop                            ; vf26 = s/w, t/w, 1/w
+    nop                                | nop
+    ftoi4.xyzw vf27, vf24              | lq.xyzw vf20, 3(vi3)           ; vf27 = ftoi4 (S L p / w); vf20 = next position
+    nop                                | fcand vi1, 0x3ffff             ; vi1 = 1 if one of the last 3 vertices was outside
+    nop                                | sq.xyzw vf26, 0(vi7)           ; out vertex +0 = texture coordinates
+    nop                                | nop
+    nop                                | sq.xyzw vf27, 2(vi7)           ; out vertex +2 = XYZ
+    mulax.xyzw acc, vf1, vf20x         | lq.xyzw vf23, 1(vi3)           ; next: S L p ...; vf23 = this vertex's colour
+    madday.xyzw acc, vf2, vf20y        | nop
+    maddaz.xyzw acc, vf3, vf20z        | nop
+    nop                                | iaddiu vi3, vi3, 0x3           ; next input vertex
+    maddw.xyzw vf24, vf4, vf0w         | move.w vf23, vf5               ; ... vf24 = S L p (next); colour a = mesh alpha
+    mulax.xyzw acc, vf13, vf20x        | iadd vi1, vi1, vi9             ; next: C L p ...; vi1 = clip result + vertex flag
+    madday.xyzw acc, vf14, vf20y       | nop
+    ftoi0.xyzw vf29, vf23              | iaddi vi10, vi10, -1           ; vf29 = colour as integers; vertices left
+    maddaz.xyzw acc, vf15, vf20z       | div q, vf0w, vf24w             ; q = 1 / (S L p).w of the next vertex
+    maddw.xyzw vf25, vf16, vf0w        | iaddiu vi7, vi7, 0x3           ; ... vf25 = C L p (next); next output vertex
+    nop                                | ibeq vi1, vi0, p7_next         ; all inside and not flagged: skip the store
+    nop                                | sq.xyzw vf29, -2(vi7)          ; (delay slot, always runs) out vertex +1 = colour
+    nop                                | isw.w vi13, -1(vi7)            ; else: XYZ 4th word = 0x8000 (ADC)
+p7_next:
+    nop                                | ibne vi10, vi0, p7_vertex      ; more vertices: loop
+    nop                                | nop
+
+; ---- batch done: send the packet and stop until the next MSCNT ---------------------------------------------
+    nop                                | nop
+    nop                                | xgkick vi2                     ; GIF packet at vi2 -> GS
+    nop                                | nop [E]                        ; end of this run
+    nop                                | nop
+p7_resume:
+    nop                                | b p7_batch                     ; the next MSCNT resumes here
+    nop                                | nop
+
+; padding of the packet (VIF NOPs)
+.vif 0x00000000
+.vif 0x00000000

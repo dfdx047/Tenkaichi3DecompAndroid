@@ -1,0 +1,210 @@
+; prog1 -- fighter model parts, "fade" pass: two-bone skinning, two GS layers (model texture + a texture looked
+;          up with the normal)
+;
+; Notes: docs/systems/vu1/prog0_prog1.md. Numbers in [..] are instruction addresses (VU1 micro memory).
+; "(inferred)" = not confirmed from code in this repository. Read prog0.vsm first: this is the same program with
+; another second layer, and only the differences are commented in detail here.
+;
+; WHO USES IT
+;   Vu1Pkt_LoadProg1 (src/sys/vu1_packet.c) uploads these 124 instructions; BtlObjDraw_DrawModelFade calls it once
+;   per object. Vu1Pkt_CallProg1 builds one call packet per model part that has flag bit 0 (ObjDraw_DrawParts,
+;   mode 1, src/sys/gfxm_d_c.c): FLUSHE, UNPACK V4-32 of 0x22 quadwords to VU address 0, MSCALF 0, BASE 0x22,
+;   OFFSET 0x1EF, then a DMA "call" into the part's VIF chain (part record + 0x60) -- the same chain, so the same
+;   batches, that prog0 draws.
+;
+; ENTRY POINTS
+;   [0]    MSCALF 0, once per part: only loads the persistent registers; ends at [13] (E), [14] still runs.
+;   [15]   where the first MSCNT after that continues: one batch; ends at [109] (E), [110], or at [120], [121]
+;          when the batch is skipped.
+;   [111]  where the next MSCNT continues after a drawn batch: branches back to [15].
+;   [122]  the same after a skipped batch.
+;   The MSCNT codes are in the model's VIF chain, not in the C code (inferred from prog0, which shares the chain).
+;
+; VU MEMORY, CONSTANTS (quadword addresses; ObjDrawPkt field = what ObjDraw_DrawParts stores there)
+;    0..3   mtxA    bone matrix A (node->mtxA)
+;    4..7   mtxB    bone matrix B (node->mtxB)
+;    8, 9   ofsA, ofsB   the pivots
+;   10..13  light   here not a light: inverse(facing) * rotation of mtxA, where "facing" is the frame built by
+;                   ObjDraw_MakeFacingMtx around the camera's view direction; translation zeroed. It turns a model
+;                   normal into that camera-aligned frame. Only x and y of the product are used [59], [60].
+;   14..17  screen, 18..21 clip   as prog0
+;   22      color   layer 0 vertex colour, floats: (128, 128, 128, view->fade)
+;   23      k       layer 1 vertex colour, floats: (128, 128, 128, 128)
+;   24, 25          not read
+;   26      A+D data of layer 1, built in C: TEX0_2 (register 7) = the model's fade texture
+;   27..33          not read (nothing is precomputed, unlike prog0)
+;
+; VU MEMORY, ONE INPUT BATCH (at TOP): as prog0, with two differences
+;   +2      (layer 1 A+D data of the lit draw) is loaded [18] and thrown away [30]; constant 26 replaces it
+;   +6      the w field of the first vertex's normal, low 16 bits: when 0 the whole batch is skipped [22].
+;           What the model data puts there is not known (inferred: a per-batch "has the fade layer" mark; prog0
+;           never reads it).
+;
+; OUTPUT, ONE GIF PACKET AT TOP + 257 (vi2), sent by one xgkick: same shape as prog0
+;   layer 0: tag (+0), A+D (+1), tag (+3), n * (STQ, RGBA, XYZF)   STQ = (s, t, 1) / w', RGBA = int(color)
+;   layer 1: tag (+0), A+D (constant 26), tag (+4), n * (...)      STQ = (u, v, 1) / w', RGBA = int(k)
+;            with (u, v) = 0.5 + 0.5 * (light * n).xy, n = the vertex normal (bone A's frame only, no blend)
+;   XYZF and the reject bit exactly as prog0.
+;   A skipped batch still kicks: one quadword at TOP + 255 whose first word is 0x8000 (NLOOP 0, EOP).
+;   What the GS does with the layers is set up in C (ObjGs_AddFadeEnv, ObjGs_AddFadeTex): context 1 writes only
+;   alpha, with an alpha test against view->fade; context 2 has ALPHA 0x58 and clamped texture coordinates.
+;
+; REGISTERS IN THE VERTEX LOOP (differences from prog0)
+;   vf9..vf12  light (constants 10..13), then vf9 = int(color), vf10 = int(k)
+;   vf13       (1, 1, 1, 0), then layer 1's (u, v, 1)                  vf18 (1, 1, 1, 0), rebuilt per batch
+;   vf21       normal, then k                                           vf22 STQ of layer 1
+;   vf26       light * normal        vf27, vf14..vf16, vf23: not used in the loop
+;   everything else (vi registers, vf1..8, vf17, vf19, vf20, vf24, vf25, vf28..31, I, q) as prog0
+;
+; Labels: only the real branch targets are kept (see the note at the end of prog0.vsm's header).
+
+.vif 0x00000000
+.mpg 0
+
+; ---------------------------------------------------------------------------------------------- [0] setup (MSCALF 0)
+setup:
+    nop                                | lq.xyzw vf1, 0(vi0)                ; vf1..4 = A (kept for the first batch)
+    nop                                | lq.xyzw vf2, 1(vi0)
+    nop                                | lq.xyzw vf3, 2(vi0)
+    nop                                | lq.xyzw vf4, 3(vi0)
+    nop                                | lq.xyzw vf5, 4(vi0)                ; vf5..8 = B (reloaded at [42] anyway)
+    nop                                | lq.xyzw vf6, 5(vi0)
+    nop                                | lq.xyzw vf7, 6(vi0)
+    nop                                | lq.xyzw vf8, 7(vi0)
+    nop                                | iaddiu vi11, vi0, 0x7fff
+    nop                                | iaddi vi13, vi11, 1                ; vi13 = 0x8000
+    nop                                | lq.xyzw vf30, 8(vi0)               ; ofsA
+    nop                                | lq.xyzw vf31, 9(vi0)               ; ofsB
+    nop                                | nop
+    nop                                | nop [E]
+    nop                                | nop
+
+; ------------------------------------------------------------------------------------------- [15] one batch (MSCNT)
+batch_entry:
+    mulx.xyzw vf18, vf18, vf0x         | xtop vi3                           ; vf18 = vf18 * 0 = 0
+    nop                                | lqi.xyzw vf17, (vi3++)             ; +0 A+D tag
+    nop                                | lqi.xyzw vf27, (vi3++)             ; +1 layer 0 A+D data
+    nop                                | lqi.xyzw vf20, (vi3++)             ; +2, not used (replaced at [30])
+    nop                                | iaddiu vi4, vi3, 0x3               ; TOP + 6: first vertex's normal
+    nop                                | ilwr.w vi5, (vi4)                  ; low 16 bits of its w
+    nop                                | nop
+    nop                                | ibeq vi5, vi0, batch_skip
+    nop                                | ilwr.x vi10, (vi3)                 ; (delay slot) low 16 bits of the strip tag
+    nop                                | lqi.xyzw vf25, (vi3++)             ; +3 layer 0 strip tag
+    nop                                | lqi.xyzw vf26, (vi3++)             ; +4 layer 1 strip tag; vi3 = first vertex
+    nop                                | lq.xyzw vf19, 0(vi3)               ; first position
+    nop                                | iaddiu vi11, vi0, 0x7fff
+    nop                                | iand vi10, vi10, vi11              ; vi10 = n
+    addw.xyz vf18, vf18, vf0w          | iaddiu vi2, vi3, 0xfc              ; vf18 = (1, 1, 1, 0); vi2 = TOP + 257
+    nop                                | lq.xyzw vf20, 26(vi0)              ; layer 1 A+D data from the constants
+    sub.xyzw vf28, vf19, vf30          | sq.xyzw vf17, 0(vi2)               ; pos - ofsA
+    sub.xyzw vf29, vf19, vf31          | sq.xyzw vf27, 1(vi2)               ; pos - ofsB
+    nop                                | sq.xyzw vf25, 2(vi2)
+    nop                                | iaddiu vi7, vi2, 0x3               ; vi7 = layer 0 vertices
+    nop                                | iadd vi4, vi7, vi10
+    nop                                | iadd vi4, vi4, vi10
+    nop                                | iadd vi4, vi4, vi10                ; vi4 = vi7 + 3n: layer 1 header
+    nop                                | sq.xyzw vf17, 0(vi4)
+    nop                                | sq.xyzw vf20, 1(vi4)
+    nop                                | sq.xyzw vf26, 2(vi4)
+    nop                                | iaddiu vi4, vi4, 0x3               ; vi4 = layer 1 vertices
+    mulax.xyzw acc, vf1, vf28x         | lq.xyzw vf5, 4(vi0)
+    madday.xyzw acc, vf2, vf28y        | lq.xyzw vf6, 5(vi0)
+    maddaz.xyzw acc, vf3, vf28z        | lq.xyzw vf7, 6(vi0)
+    maddw.xyzw vf28, vf4, vf0w         | lq.xyzw vf8, 7(vi0)                ; vf28 = A * (pos - ofsA, 1)
+
+; ------------------------------------------------------------------------------------------------ [46] vertex loop
+; On entry: vf28 = position by A, vf29 = pos - ofsB, vf19 = position (w = weight), vf5..8 = B.
+vertex_loop:
+    mulax.xyzw acc, vf5, vf29x         | lq.xyzw vf21, 1(vi3)               ; normal
+    madday.xyzw acc, vf6, vf29y        | lq.xyzw vf9, 10(vi0)               ; vf9..12 = light
+    maddaz.xyzw acc, vf7, vf29z        | lq.xyzw vf10, 11(vi0)
+    maddw.xyzw vf29, vf8, vf0w         | lq.xyzw vf11, 12(vi0)              ; vf29 = B * (pos - ofsB, 1)
+    nop                                | lq.xyzw vf12, 13(vi0)
+    mulax.xyzw acc, vf9, vf21x         | move.xyzw vf13, vf18               ; vf13 = (1, 1, 1, 0)
+    madday.xyzw acc, vf10, vf21y       | loi 0x3F000000 [I]   ; 0.5
+    sub.xyzw vf20, vf28, vf29          | nop                                ; pA - pB (acc untouched)
+    maddaz.xyzw acc, vf11, vf21z       | nop
+    maddw.xyzw vf26, vf12, vf0w        | lq.xyzw vf1, 14(vi0)               ; vf26 = light * (n, 1); vf1..4 = screen
+    nop                                | lq.xyzw vf2, 15(vi0)
+    mulw.xyzw vf20, vf20, vf19w        | lq.xyzw vf3, 16(vi0)               ; (pA - pB) * weight
+    nop                                | lq.xyzw vf4, 17(vi0)
+    addx.x vf13, vf13, vf26x           | lq.xyzw vf5, 18(vi0)               ; 1 + n'.x; vf5..8 = clip
+    addy.y vf13, vf13, vf26y           | lq.xyzw vf6, 19(vi0)               ; 1 + n'.y
+    add.xyzw vf20, vf29, vf20          | lq.xyzw vf7, 20(vi0)               ; vf20 = p = pB + (pA - pB) * weight
+    nop                                | lq.xyzw vf8, 21(vi0)
+    nop                                | nop
+    muli.xy vf13, vf13                 | nop                                ; (u, v) = 0.5 + 0.5 * n'.xy; z stays 1
+    mulax.xyzw acc, vf1, vf20x         | nop
+    madday.xyzw acc, vf2, vf20y        | nop
+    maddaz.xyzw acc, vf3, vf20z        | nop
+    maddw.xyzw vf24, vf4, vf0w         | nop                                ; vf24 = screen * (p, 1)
+    nop                                | nop
+    mulax.xyzw acc, vf5, vf20x         | nop
+    madday.xyzw acc, vf6, vf20y        | nop
+    maddaz.xyzw acc, vf7, vf20z        | div q, vf0w, vf24w                 ; q = 1 / w', ready at [79]
+    maddw.xyzw vf25, vf8, vf0w         | lq.xyzw vf17, 2(vi3)               ; vf25 = clip * (p, 1); vf17 = (s, t, 1)
+    nop                                | nop
+    nop                                | nop
+    nop                                | nop
+    clip.xyz vf25, vf25                | nop                                ; x, y, z against |w|: 6 new clip flag bits
+    nop                                | lq.xyzw vf21, 23(vi0)              ; k
+    mulq.xyzw vf24, vf24               | lq.xyzw vf1, 0(vi0)                ; screen / w' (w becomes 1); vf1..4 = A
+    mulq.xyz vf17, vf17                | lq.xyzw vf20, 22(vi0)              ; (s, t, 1) * q; vf20 = color
+    mulq.xyz vf22, vf13                | lq.xyzw vf2, 1(vi0)                ; (u, v, 1) * q
+    nop                                | lq.xyzw vf3, 2(vi0)
+    ftoi4.xyzw vf29, vf24              | lq.xyzw vf4, 3(vi0)                ; XYZF, 12.4 fixed point
+    ftoi0.xyzw vf9, vf20               | fcand vi1, 0x3ffff                 ; int(color); any flag of the last 3 vertices
+    ftoi0.xyzw vf10, vf21              | sq.xyzw vf17, 0(vi7)               ; int(k); layer 0 STQ
+    nop                                | iaddiu vi3, vi3, 0x3
+    nop                                | lq.xyzw vf19, 0(vi3)               ; next position
+    nop                                | lq.xyzw vf5, 4(vi0)                ; vf5..8 = B
+    nop                                | lq.xyzw vf6, 5(vi0)
+    nop                                | lq.xyzw vf7, 6(vi0)
+    sub.xyzw vf28, vf19, vf30          | sq.xyzw vf29, 2(vi7)               ; next - ofsA; layer 0 XYZF
+    nop                                | sq.xyzw vf29, 2(vi4)               ; layer 1 XYZF
+    sub.xyzw vf29, vf19, vf31          | lq.xyzw vf8, 7(vi0)                ; next - ofsB
+    nop                                | nop
+    nop                                | nop
+    nop                                | sq.xyzw vf22, 0(vi4)               ; layer 1 STQ
+    mulax.xyzw acc, vf1, vf28x         | iaddi vi10, vi10, -1
+    madday.xyzw acc, vf2, vf28y        | iaddiu vi7, vi7, 0x3
+    nop                                | iaddiu vi4, vi4, 0x3
+    maddaz.xyzw acc, vf3, vf28z        | sq.xyzw vf9, -2(vi7)               ; layer 0 RGBA = int(color)
+    nop                                | sq.xyzw vf10, -2(vi4)              ; layer 1 RGBA = int(k)
+    maddw.xyzw vf28, vf4, vf0w         | ibeq vi1, vi0, vertex_next         ; vf28 = A * (next - ofsA, 1)
+    nop                                | nop
+    ; clip_reject: the triangle this vertex completes is not drawn (ADC bit in both layers)
+    nop                                | isw.w vi13, -1(vi7)                ; word 3 of layer 0 XYZF = 0x8000
+    nop                                | isw.w vi13, -1(vi4)                ; same, layer 1
+vertex_next:
+    nop                                | ibne vi10, vi0, vertex_loop
+    nop                                | nop
+
+; ------------------------------------------------------------------------------------------------------ [108] kick
+    nop                                | xgkick vi2
+    nop                                | nop [E]
+    nop                                | nop
+batch_resume:                                                               ; [111] the next MSCNT lands here
+    nop                                | b batch_entry
+    nop                                | nop
+
+; ---------------------------------------------------------------------------------- [113] batch without a fade layer
+; vi3 is still TOP + 3 here, so the packet is at TOP + 255 (the drawn path uses TOP + 257). Only the first word is
+; written: NLOOP 0 with EOP, a packet that draws nothing. The rest of that quadword is whatever was there.
+; Why it kicks at all instead of just ending is not known.
+batch_skip:
+    nop                                | nop
+    nop                                | iaddiu vi2, vi3, 0xfc
+    nop                                | nop
+    nop                                | nop
+    nop                                | isw.x vi13, 0(vi2)                 ; word 0 = 0x8000
+    nop                                | nop
+    nop                                | xgkick vi2
+    nop                                | nop [E]
+    nop                                | nop
+skip_resume:                                                                ; [122] the next MSCNT lands here
+    nop                                | b batch_entry
+    nop                                | nop
+.vif 0x00000000
+.vif 0x00000000
