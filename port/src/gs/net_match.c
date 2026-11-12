@@ -1230,7 +1230,7 @@ again:
                           KEY_REFUSED(answer) ? key_refused(answer, "Room codes need an official release of the game. Playing by address still works.") :
                           SDL_strstr(answer, "version") != NULL ? "The host's game is a different version: both players need the same release." :
                           SDL_strstr(answer, "full") != NULL ? "Someone has already joined that room." :
-                          SDL_strstr(answer, "no room") != NULL ? "No room with that code (codes last ten minutes)." :
+                          SDL_strstr(answer, "no room") != NULL ? (DrNet_Mode() == 0 ? MATCH_NOROOM_DN : MATCH_NOROOM_PC) :
                           SDL_strstr(answer, "busy") != NULL ? "Too many wrong codes from this address, or too many joining that lobby at once; try again soon." : "The matchmaking service gave no answer.");
             return 0;
         }

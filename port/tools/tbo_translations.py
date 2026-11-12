@@ -529,6 +529,9 @@ LINES = {
     "Continue": ("Continuar", "Continuar"),
     "View: ": ("Câmera: ", "Cámara: "),
     "Back to the Lobby": ("Voltar ao Lobby", "Volver al Lobby"),
+    # a room code the service does not know (net_match.c: rooms of Dragon Net and of the PC service are apart)
+    'No room with that code on Dragon Net (codes last ten minutes). A room made in PC mode is not on Dragon Net: both players need the same service.': ('Nenhuma sala com esse código no Dragon Net (os códigos duram dez minutos). Sala criada no modo PC não existe no Dragon Net: os dois jogadores precisam usar o mesmo serviço.', 'No hay sala con ese código en Dragon Net (los códigos duran diez minutos). Una sala creada en modo PC no está en Dragon Net: los dos jugadores necesitan el mismo servicio.'),
+    'No room with that code on the PC service (codes last ten minutes). A room made on Dragon Net is not there: both players need the same service.': ('Nenhuma sala com esse código no serviço do PC (os códigos duram dez minutos). Sala criada no Dragon Net não existe nele: os dois jogadores precisam usar o mesmo serviço.', 'No hay sala con ese código en el servicio de PC (los códigos duran diez minutos). Una sala creada en Dragon Net no está ahí: los dos jugadores necesitan el mismo servicio.'),
 }
 
 # Lines that are not words to translate: keys of the settings, the keypads' rows, names and codes.
