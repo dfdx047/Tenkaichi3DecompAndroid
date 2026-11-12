@@ -780,8 +780,22 @@ static uint32_t sArenaPages;       /* pages of the block region in use at the la
    page nobody wrote). A hot page unchanged at HOT_CALM saves in a row is watched again. Counting a page as written
    when it was not only ever costs a comparison or a copy: what a save holds and what a roll back puts back are the
    same as before. BT3_ROLL_HOT=0: no hot pages (as before, to compare). */
-#define HOT_AFTER 4
+/* Saves in a row a page must be written at to become hot. 2 (it was 4): with the rule below (written at the save before
+   or the one before that) that is two frames of a fight. Measured 2026-11-12, a 5 vs 5 Tag fight's sync test (1200
+   blanks, rolled back 6 at a time): a re-run blank 8.3 -> 7.5 ms, a restore 4.1 -> 2.6-3.0 ms, a save as before
+   (1.6-1.8 ms), the same state at every blank. BT3_ROLL_HOT_AFTER=<n>: n (4 as before). */
+#define HOT_AFTER_DEFAULT 2
 #define HOT_CALM 30
+static int sHotAfter = -1;
+static int hot_after(void) {
+    if (sHotAfter < 0) {
+        const char *e = getenv("BT3_ROLL_HOT_AFTER");
+        sHotAfter = e != NULL && atoi(e) > 0 ? atoi(e) : HOT_AFTER_DEFAULT;
+        fprintf(stderr, "bt3: rollback: a page becomes hot after %d saves in a row\n", sHotAfter);
+    }
+    return sHotAfter;
+}
+#define HOT_AFTER hot_after()
 #define HOT_MAX 4096u
 static int sHotOn = -1;
 static uint32_t *sHot;             /* the hot pages */
