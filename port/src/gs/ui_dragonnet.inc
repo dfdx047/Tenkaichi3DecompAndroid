@@ -339,13 +339,13 @@ static const char *rank_tier(const char *server) {
 static const char *lobby_error(int last) {
     if (last == -3 && strcmp(Port_LobbyError(), MATCH_NOROOM_DN) == 0) {
         return T(MATCH_NOROOM_DN,
-                 "Nenhuma sala com esse código no Dragon Net (os códigos duram dez minutos). Sala criada no modo PC não existe no Dragon Net: os dois jogadores precisam usar o mesmo serviço.",
-                 "No hay sala con ese código en Dragon Net (los códigos duran diez minutos). Una sala creada en modo PC no está en Dragon Net: los dos jugadores necesitan el mismo servicio.");
+                 "Não existe sala com esse código no Dragon Net. Confira o código (ele dura dez minutos). Se a sala foi criada no modo PC, ela não aparece aqui: os dois jogadores precisam usar o mesmo serviço.",
+                 "No existe una sala con ese código en Dragon Net. Revisa el código (dura diez minutos). Si la sala se creó en modo PC, no aparece aquí: los dos jugadores necesitan el mismo servicio.");
     }
     if (last == -3 && strcmp(Port_LobbyError(), MATCH_NOROOM_PC) == 0) {
         return T(MATCH_NOROOM_PC,
-                 "Nenhuma sala com esse código no serviço do PC (os códigos duram dez minutos). Sala criada no Dragon Net não existe nele: os dois jogadores precisam usar o mesmo serviço.",
-                 "No hay sala con ese código en el servicio de PC (los códigos duran diez minutos). Una sala creada en Dragon Net no está ahí: los dos jugadores necesitan el mismo servicio.");
+                 "Não existe sala com esse código no serviço do PC. Confira o código (ele dura dez minutos). Se a sala foi criada no Dragon Net, ela não aparece aqui: os dois jogadores precisam usar o mesmo serviço.",
+                 "No existe una sala con ese código en el servicio de PC. Revisa el código (dura diez minutos). Si la sala se creó en Dragon Net, no aparece aquí: los dos jugadores necesitan el mismo servicio.");
     }
     if (last == -3) { return strcmp(Port_LobbyError(), MATCH_LIMIT_TEXT) == 0 ? limit_text() : Port_LobbyError(); }
     if (last == -4) { return T("The two games could not reach each other. Try again.", "Os dois jogos não se alcançaram. Tente de novo.",

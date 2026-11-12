@@ -17,8 +17,8 @@ extern "C" {
 #define MATCH_LIMIT_TEXT "Server busy (daily limit), try again later." /* the lobby's error then (ui_dragonnet.inc words it) */
 /* A room code the service does not know: rooms of Dragon Net and of the PC port's service are apart, so a code made in
    the other mode is never found (net_match.c says it; ui_dragonnet.inc and menu/port_tbo.c translate it). */
-#define MATCH_NOROOM_DN "No room with that code on Dragon Net (codes last ten minutes). A room made in PC mode is not on Dragon Net: both players need the same service."
-#define MATCH_NOROOM_PC "No room with that code on the PC service (codes last ten minutes). A room made on Dragon Net is not there: both players need the same service."
+#define MATCH_NOROOM_DN "There is no room with that code on Dragon Net. Check the code (it lasts ten minutes). A room made in PC mode does not show here: both players need the same service."
+#define MATCH_NOROOM_PC "There is no room with that code on the PC service. Check the code (it lasts ten minutes). A room made on Dragon Net does not show here: both players need the same service."
 int Match_ServiceLimited(void); /* a service answered HTTP 429 a moment ago: nothing is asked for now (net_match.c) */
 #define DRNET_URL_DEFAULT "https://mitigo-rooms.minetivacraft.workers.dev"
 

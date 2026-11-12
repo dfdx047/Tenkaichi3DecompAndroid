@@ -1772,12 +1772,12 @@
       "text": "Voltar ao Lobby"
     },
     "tbo/442": {
-      "original": "No room with that code on Dragon Net (codes last ten minutes). A room made in PC mode is not on Dragon Net: both players need the same service.",
-      "text": "Nenhuma sala com esse código no Dragon Net (os códigos duram dez minutos). Sala criada no modo PC não existe no Dragon Net: os dois jogadores precisam usar o mesmo serviço."
+      "original": "There is no room with that code on Dragon Net. Check the code (it lasts ten minutes). A room made in PC mode does not show here: both players need the same service.",
+      "text": "Não existe sala com esse código no Dragon Net. Confira o código (ele dura dez minutos). Se a sala foi criada no modo PC, ela não aparece aqui: os dois jogadores precisam usar o mesmo serviço."
     },
     "tbo/443": {
-      "original": "No room with that code on the PC service (codes last ten minutes). A room made on Dragon Net is not there: both players need the same service.",
-      "text": "Nenhuma sala com esse código no serviço do PC (os códigos duram dez minutos). Sala criada no Dragon Net não existe nele: os dois jogadores precisam usar o mesmo serviço."
+      "original": "There is no room with that code on the PC service. Check the code (it lasts ten minutes). A room made on Dragon Net does not show here: both players need the same service.",
+      "text": "Não existe sala com esse código no serviço do PC. Confira o código (ele dura dez minutos). Se a sala foi criada no Dragon Net, ela não aparece aqui: os dois jogadores precisam usar o mesmo serviço."
     }
   }
 }

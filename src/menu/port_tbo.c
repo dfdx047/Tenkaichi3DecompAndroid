@@ -2379,8 +2379,8 @@ static char *sTbNetLines[] = {
     "No room with that code, or the matchmaking service does not take spectators yet. (Codes last ten minutes; a host on 0.1.38.7 or older gives its room up when the match begins.)",
     "The matchmaking service could not be reached (is the network up?).",
     "Too many wrong codes from this address; try again in an hour.",
-    "No room with that code on Dragon Net (codes last ten minutes). A room made in PC mode is not on Dragon Net: both players need the same service.",
-    "No room with that code on the PC service (codes last ten minutes). A room made on Dragon Net is not there: both players need the same service.",
+    "There is no room with that code on Dragon Net. Check the code (it lasts ten minutes). A room made in PC mode does not show here: both players need the same service.",
+    "There is no room with that code on the PC service. Check the code (it lasts ten minutes). A room made on Dragon Net does not show here: both players need the same service.",
 };
 #define TB_LOBBY_NAMED 11
 static char *sTbLobbyNamed[TB_LOBBY_NAMED] = {"%s joined the lobby", "%s left the lobby", "%s was removed from the lobby", "%s lost the connection to the lobby",
