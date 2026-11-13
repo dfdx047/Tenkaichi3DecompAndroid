@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -202,6 +203,30 @@ static uint32_t sWorldMemCount;
 static uint8_t *sWorldScanCopy[2], *sWorldScanAt[2];
 static size_t sWorldScanSize[2];
 #define WORLD_MEM_MAX 65536u
+#ifdef __ANDROID__
+/* Android: the start-up's writes are found by the pages it writes (world_cap_begin, below with the write-fault handler),
+   not by copying all of the heap and the block region first (94 MB on a phone: 60 to 100 ms, and 94 MB more memory, at
+   every opening of the character select). BT3_WORLD_SCAN=1: the whole copy, as before. */
+static int world_cap_begin(void);
+static int world_cap_end(void);
+static int sWorldCapOn;
+#endif
+#ifdef __ANDROID__
+static void world_mem_note(uint8_t *at, uint8_t game) {
+    if (sWorldMem != NULL && sWorldMemCount < WORLD_MEM_MAX) {
+        sWorldMem[sWorldMemCount].at = at;
+        sWorldMem[sWorldMemCount].game = game;
+        sWorldMem[sWorldMemCount].world = *at;
+        sWorldMemCount++;
+    }
+}
+/* A chunk of a scanned region that holds part of the two DMA buffers: left out (the frame being built writes them). */
+static int world_dma_chunk(const uint8_t *p) {
+    uint32_t ga = Port_Addr((void *)p);
+    return sWorldDmaSize > 0 && ((ga + WORLD_CHUNK > sWorldDma[0] && ga < sWorldDma[0] + (uint32_t)sWorldDmaSize) ||
+                                 (ga + WORLD_CHUNK > sWorldDma[1] && ga < sWorldDma[1] + (uint32_t)sWorldDmaSize));
+}
+#endif
 
 void Port_WorldCaptureBegin(void) {
     void *xp[8];
@@ -215,6 +240,11 @@ void Port_WorldCaptureBegin(void) {
     sWorldScanSize[0] = heapSize;
     sWorldScanAt[1] = extra >= 4 ? xp[3] : NULL;
     sWorldScanSize[1] = extra >= 4 ? xn[3] : 0;
+#ifdef __ANDROID__
+    if ((getenv("BT3_WORLD_SCAN") == NULL || atoi(getenv("BT3_WORLD_SCAN")) == 0) && world_cap_begin()) {
+        return;
+    }
+#endif
     for (i = 0; i < 2; i++) {
         sWorldScanCopy[i] = sWorldScanAt[i] != NULL ? malloc(sWorldScanSize[i]) : NULL;
         if (sWorldScanCopy[i] != NULL) {
@@ -230,6 +260,13 @@ void Port_WorldCaptureEnd(void) {
     if (sWorldMem == NULL) {
         sWorldMem = malloc(WORLD_MEM_MAX * sizeof(WorldByte));
     }
+#ifdef __ANDROID__
+    if (sWorldCapOn) {
+        world_cap_end();
+        fprintf(stderr, "bt3: select: the viewer's start-up wrote %u bytes of blocks the game has\n", sWorldMemCount);
+        return;
+    }
+#endif
     for (i = 0; i < 2; i++) {
         size_t o;
 
@@ -874,9 +911,223 @@ static struct sigaction sOldSegv;
 static struct sigaction sOldBus; /* macOS reports a write to a read-only page as SIGBUS */
 #endif
 
+#ifdef __ANDROID__
+/* ---- The character select's start-up, by the pages it writes (Port_WorldCaptureBegin / Port_WorldCaptureEnd) ----
+   The heap and the block region are made read-only while the viewer starts up. A write into one of their pages (by the
+   start-up, or by any other thread meanwhile) faults once: the page is copied as it was, made writable again and the
+   write goes on. At the end only the copied pages are compared with what they hold now: the same bytes the whole copy
+   found, without copying and comparing 94 MB. With the rollback's tracking on (an online session) the same pages are
+   its: a page written during the start-up is noted as written for it as its own handler would, and at the end every
+   page gets back the protection the tracking expects (writable: written since the last save, hot, or beyond the block
+   region's part in use at the last collect; read-only otherwise). */
+static struct {
+    uint8_t *base[2];
+    uint32_t pages[2], total;
+    size_t limit1;            /* the bytes of region 1 compared (its part in use when the start-up began) */
+    uint8_t *mirror;          /* the pages as they were before their first write, each at its place */
+    uint8_t *state;           /* per page: 0 not written, 1 being copied, 2 copied */
+    int ownHandler;           /* the write-fault handler was put in for this (no tracking) */
+    int busy;                 /* handlers working on a page now */
+} sCap;
+
+static int cap_index(uintptr_t a, uint32_t *p) {
+    uintptr_t b0 = (uintptr_t)sCap.base[0], b1 = (uintptr_t)sCap.base[1];
+    if (b0 != 0 && a >= b0 && a < b0 + (uintptr_t)sCap.pages[0] * PG) {
+        *p = (uint32_t)((a - b0) / PG);
+        return 1;
+    }
+    if (b1 != 0 && a >= b1 && a < b1 + (uintptr_t)sCap.pages[1] * PG) {
+        *p = sCap.pages[0] + (uint32_t)((a - b1) / PG);
+        return 1;
+    }
+    return 0;
+}
+static uint8_t *cap_page_at(uint32_t p) {
+    return p < sCap.pages[0] ? sCap.base[0] + (size_t)p * PG : sCap.base[1] + (size_t)(p - sCap.pages[0]) * PG;
+}
+/* the rollback's global page number of a page, or -1 */
+static int64_t cap_tracked(const uint8_t *page) {
+    int t;
+    for (t = 0; t < sTracks; t++) {
+        if (page >= sTrack[t].base && page < sTrack[t].base + (size_t)sTrack[t].pages * PG) {
+            return (int64_t)sTrack[t].first + (int64_t)((size_t)(page - sTrack[t].base) / PG);
+        }
+    }
+    return -1;
+}
+/* A write is coming into page p (any thread, the signal handler too): its content kept once, then writable again. */
+static void cap_page(uint32_t p) {
+    uint8_t *page = cap_page_at(p), expect = 0;
+    if (__atomic_compare_exchange_n(&sCap.state[p], &expect, 1, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
+        memcpy(sCap.mirror + (size_t)p * PG, page, PG);
+        if (sTracking) {
+            int64_t g = cap_tracked(page);
+            if (g >= 0) {
+                dirty_note((uint32_t)g);
+            }
+        }
+        mprotect(page, PG, PROT_READ | PROT_WRITE);
+        __atomic_store_n(&sCap.state[p], 2, __ATOMIC_SEQ_CST);
+    } else {
+        while (__atomic_load_n(&sCap.state[p], __ATOMIC_SEQ_CST) == 1) {
+        }
+    }
+}
+/* From the write-fault handler: 1 if the fault was the capture's (the write is then tried again). */
+static int cap_fault(uintptr_t a) {
+    uint32_t p;
+    int handled = 0;
+    if (!cap_index(a, &p)) {
+        return 0;
+    }
+    __atomic_add_fetch(&sCap.busy, 1, __ATOMIC_SEQ_CST);
+    if (__atomic_load_n(&sWorldCapOn, __ATOMIC_SEQ_CST)) {
+        cap_page(p);
+        handled = 1;
+    } else if (!sTracking) {
+        handled = 1; /* (it faulted just before the end made every page writable again: tried again, it goes through) */
+    }
+    __atomic_sub_fetch(&sCap.busy, 1, __ATOMIC_SEQ_CST);
+    return handled;
+}
+static void on_write_fault(int sig, siginfo_t *si, void *uc);
+/* Every page of the capture as the rollback's tracking wants it, or all writable without it. */
+static void cap_protect_back(void) {
+    uint32_t p = 0;
+    if (!sTracking) {
+        mprotect(sCap.base[0], (size_t)sCap.pages[0] * PG, PROT_READ | PROT_WRITE);
+        if (sCap.pages[1] != 0) {
+            mprotect(sCap.base[1], (size_t)sCap.pages[1] * PG, PROT_READ | PROT_WRITE);
+        }
+        return;
+    }
+    while (p < sCap.total) {
+        uint32_t q = p;
+        int want;
+        {
+            uint8_t *page = cap_page_at(p);
+            int64_t g = cap_tracked(page);
+            want = g < 0 || sDirtyMark[g] || (sHotMark != NULL && sHotMark[g]) ||
+                   (sTracks > 1 && g >= (int64_t)sTrack[1].first && (uint32_t)(g - sTrack[1].first) >= sArenaPages);
+        }
+        /* a run of pages that want the same, within one region */
+        for (q = p + 1; q < sCap.total && (q < sCap.pages[0]) == (p < sCap.pages[0]); q++) {
+            uint8_t *page = cap_page_at(q);
+            int64_t g = cap_tracked(page);
+            int w = g < 0 || sDirtyMark[g] || (sHotMark != NULL && sHotMark[g]) ||
+                    (sTracks > 1 && g >= (int64_t)sTrack[1].first && (uint32_t)(g - sTrack[1].first) >= sArenaPages);
+            if (w != want) {
+                break;
+            }
+        }
+        mprotect(cap_page_at(p), (size_t)(q - p) * PG, want ? PROT_READ | PROT_WRITE : PROT_READ);
+        p = q;
+    }
+}
+static int world_cap_begin(void) {
+    size_t n0 = sWorldScanSize[0], n1 = sWorldScanSize[1];
+    int ok;
+    if (sysconf(_SC_PAGESIZE) != (long)PG) { /* (a system of 16 KB pages: a 4 KB page cannot be watched alone) */
+        return 0;
+    }
+    if (sWorldScanAt[0] == NULL || ((uintptr_t)sWorldScanAt[0] & (PG - 1)) != 0 || (n0 & (PG - 1)) != 0 ||
+        (sWorldScanAt[1] != NULL && ((uintptr_t)sWorldScanAt[1] & (PG - 1)) != 0)) {
+        return 0;
+    }
+    /* with the tracking on, its regions must be these very ones (the page numbers are shared) */
+    if (sTracking && (sTrack[0].base != sWorldScanAt[0] || (sWorldScanAt[1] != NULL && (sTracks < 2 || sTrack[1].base != sWorldScanAt[1])))) {
+        return 0;
+    }
+    memset(&sCap, 0, sizeof(sCap));
+    sCap.base[0] = sWorldScanAt[0];
+    sCap.pages[0] = (uint32_t)(n0 / PG);
+    sCap.base[1] = sWorldScanAt[1] != NULL && n1 != 0 ? sWorldScanAt[1] : NULL;
+    sCap.pages[1] = sCap.base[1] != NULL ? (uint32_t)((n1 + PG - 1) / PG) : 0;
+    sCap.limit1 = n1;
+    sCap.total = sCap.pages[0] + sCap.pages[1];
+    sCap.mirror = mmap(NULL, (size_t)sCap.total * PG, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    sCap.state = calloc(sCap.total, 1);
+    if (sCap.mirror == MAP_FAILED || sCap.state == NULL) {
+        if (sCap.mirror != MAP_FAILED) {
+            munmap(sCap.mirror, (size_t)sCap.total * PG);
+        }
+        free(sCap.state);
+        memset(&sCap, 0, sizeof(sCap));
+        return 0;
+    }
+    if (!sTracking) { /* (the tracking's handler takes these faults when it is on) */
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_sigaction = on_write_fault;
+        sa.sa_flags = SA_SIGINFO | SA_NODEFER;
+        sigemptyset(&sa.sa_mask);
+        sigaction(SIGSEGV, &sa, &sOldSegv);
+        sCap.ownHandler = 1;
+    }
+    __atomic_store_n(&sWorldCapOn, 1, __ATOMIC_SEQ_CST);
+    ok = mprotect(sCap.base[0], (size_t)sCap.pages[0] * PG, PROT_READ) == 0;
+    if (ok && sCap.pages[1] != 0) {
+        ok = mprotect(sCap.base[1], (size_t)sCap.pages[1] * PG, PROT_READ) == 0;
+    }
+    if (!ok) { /* (as it was, and the whole copy instead) */
+        fprintf(stderr, "bt3: select: pages could not be watched (%s): the memory is compared whole\n", strerror(errno));
+        world_cap_end();
+        sWorldMemCount = 0;
+        return 0;
+    }
+    return 1;
+}
+static int world_cap_end(void) {
+    uint32_t p;
+    /* the pages written since the start-up began, against what they held */
+    for (p = 0; p < sCap.total; p++) {
+        uint8_t *page, *was;
+        size_t o, room = PG;
+        if (__atomic_load_n(&sCap.state[p], __ATOMIC_SEQ_CST) != 2) {
+            continue;
+        }
+        page = cap_page_at(p);
+        was = sCap.mirror + (size_t)p * PG;
+        if (p >= sCap.pages[0]) { /* (region 1: only its part in use when the start-up began, as the whole copy) */
+            size_t at = (size_t)(p - sCap.pages[0]) * PG;
+            room = at >= sCap.limit1 ? 0 : sCap.limit1 - at < PG ? sCap.limit1 - at : PG;
+        }
+        for (o = 0; o < room; o += WORLD_CHUNK) {
+            size_t len = room - o < WORLD_CHUNK ? room - o : WORLD_CHUNK, k;
+            if (world_dma_chunk(page + o) || memcmp(page + o, was + o, len) == 0) {
+                continue;
+            }
+            for (k = 0; k < len; k++) {
+                if (page[o + k] != was[o + k]) {
+                    world_mem_note(page + o + k, was[o + k]);
+                }
+            }
+        }
+    }
+    cap_protect_back();
+    __atomic_store_n(&sWorldCapOn, 0, __ATOMIC_SEQ_CST);
+    while (__atomic_load_n(&sCap.busy, __ATOMIC_SEQ_CST) != 0) { /* (a handler of another thread still on a page) */
+    }
+    if (sCap.ownHandler) {
+        sigaction(SIGSEGV, &sOldSegv, NULL);
+        sCap.ownHandler = 0;
+    }
+    munmap(sCap.mirror, (size_t)sCap.total * PG);
+    sCap.mirror = NULL;
+    free(sCap.state);
+    sCap.state = NULL;
+    return 1;
+}
+#endif
+
 static void on_write_fault(int sig, siginfo_t *si, void *uc) {
     uintptr_t a = (uintptr_t)si->si_addr;
     int t;
+#ifdef __ANDROID__
+    if (cap_fault(a)) {
+        return;
+    }
+#endif
     for (t = 0; t < sTracks; t++) {
         uintptr_t b = (uintptr_t)sTrack[t].base;
         if (a >= b && a < b + (uintptr_t)sTrack[t].pages * PG) {
@@ -931,6 +1182,14 @@ static void touch_page(uint32_t g) {
 void Port_StateTouch(void *p, unsigned long n) {
     uintptr_t a = (uintptr_t)p;
     int t;
+#ifdef __ANDROID__
+    if (__atomic_load_n(&sWorldCapOn, __ATOMIC_SEQ_CST) && n != 0) { /* (the character select's start-up: such pages copied first) */
+        uintptr_t q;
+        for (q = a & ~(uintptr_t)(PG - 1); q < a + n; q += PG) {
+            cap_fault(q);
+        }
+    }
+#endif
     if (!sTracking || n == 0) {
         return;
     }
