@@ -1,0 +1,156 @@
+# A test build of Dragon Rage for the team, as a DRAFT release (only the repository's collaborators see it; the
+# app's update check skips drafts, pre-releases and every tag that is not android-v*, so no player is offered it).
+#
+#   "Run workflow" button (Actions > android-beta)   version name and code to give the build
+#
+# The APK is the release app (com.dfdx047.dragonrage) signed like the official releases, with a version code above
+# the latest release's, so it installs OVER the player's Dragon Rage and keeps the saves, the settings and the
+# imported games. Keep the name BELOW the next release (1.0.2-beta.N before 1.1.0): the update check compares names,
+# so the testers are offered the real release when it comes out.
+#
+# What it holds: Budokai Tenkaichi 3's engine built here (as android.yml does), Budokai Tenkaichi 4's BT4decomp from
+# the release "bt4dec-engine" (.github/bt4dec-engine.sh: built locally from the branch bt4dec-proto), no BT2 engine
+# (the players import it, as for every release).
+name: android-beta
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version name (keep it below the next release, e.g. 1.0.2-beta.1 before 1.1.0)"
+        required: true
+        default: "1.0.2-beta.1"
+      code:
+        description: "Version code (above the latest release's: 1.0.1 is 10001)"
+        required: true
+        default: "10002"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-beta
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      DR_VERSION_NAME: ${{ inputs.version }}
+      DR_VERSION_CODE: ${{ inputs.code }}
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Version
+        working-directory: .
+        run: |
+          echo "$DR_VERSION_NAME" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$' || { echo "::error::version '$DR_VERSION_NAME' is not like 1.0.2-beta.1"; exit 1; }
+          [ "$DR_VERSION_CODE" -gt 10001 ] 2>/dev/null || { echo "::error::code $DR_VERSION_CODE must be above 10001 (1.0.1) to install over it"; exit 1; }
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: port/build/android-toolchain/llvm
+          key: llvm-21.1.0-linux-x64-v2
+      - name: Engine toolchain
+        working-directory: .
+        run: |
+          ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" sh port/tools/android_toolchain.sh > toolchain.txt 2>&1 || { sh .github/annotate.sh toolchain.txt; exit 1; }
+          tail -3 toolchain.txt
+      - name: Engine BT3
+        working-directory: .
+        env:
+          BT3_SKELETON: "1"
+        run: |
+          python3 port/tools/android.py > engine_build.txt 2>&1 || true
+          tail -5 engine_build.txt
+          grep -q "^installed into" engine_build.txt || { grep -E "^FAILED|error|stubs|link|loader" engine_build.txt > engine_errors.txt || true; tail -30 engine_build.txt >> engine_errors.txt; sh .github/annotate.sh engine_errors.txt; exit 1; }
+
+      - name: BT2 plugin (libbt2online.so)
+        continue-on-error: true
+        working-directory: .
+        run: |
+          ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" python3 bt2/android/build.py plugin > bt2_plugin.txt 2>&1 || { tail -40 bt2_plugin.txt > bt2_plugin_errors.txt; sh .github/annotate.sh bt2_plugin_errors.txt; exit 1; }
+          tail -2 bt2_plugin.txt
+
+      - name: Engine BT4 (BT4decomp)
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sh .github/bt4dec-engine.sh
+          ls -la android/app/src/main/jniLibs/arm64-v8a
+
+      - name: Signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.DR_KEYSTORE_BASE64 }}
+          DR_KEYSTORE_PASSWORD: ${{ secrets.DR_KEYSTORE_PASSWORD }}
+          DR_KEY_ALIAS: ${{ secrets.DR_KEY_ALIAS }}
+          DR_KEY_PASSWORD: ${{ secrets.DR_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            {
+              echo "DR_KEYSTORE=$RUNNER_TEMP/release.jks"
+              echo "DR_KEYSTORE_PASSWORD=$DR_KEYSTORE_PASSWORD"
+              echo "DR_KEY_ALIAS=$DR_KEY_ALIAS"
+              echo "DR_KEY_PASSWORD=$DR_KEY_PASSWORD"
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Build
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease > ../gradle.txt 2>&1 || { grep -E "^e: |error:|FAILURE|What went wrong" -A3 ../gradle.txt > ../gradle_errors.txt || true; tail -20 ../gradle.txt >> ../gradle_errors.txt; sh ../.github/annotate.sh ../gradle_errors.txt; exit 1; }
+
+      # The APK must be the one that installs over the players' Dragon Rage: its package, its version and the
+      # certificate of the official releases (1.0.1's).
+      - name: Check the APK
+        run: |
+          APK=app/build/outputs/apk/release/app-release.apk
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          "$BT/aapt2" dump badging "$APK" | head -1 | tee ../badging.txt
+          grep -q "name='com.dfdx047.dragonrage' versionCode='$DR_VERSION_CODE' versionName='$DR_VERSION_NAME'" ../badging.txt || { echo "::error::not com.dfdx047.dragonrage $DR_VERSION_NAME ($DR_VERSION_CODE)"; exit 1; }
+          "$BT/apksigner" verify --print-certs "$APK" | grep "SHA-256" | tee ../cert.txt
+          grep -q "10db404f3450f5ff3e073e7926857381b372bd2efd380dc9e75bc9a9232f2757" ../cert.txt || { echo "::error::not signed with the official releases' certificate: it would not install over Dragon Rage"; exit 1; }
+          for lib in libbt3.so libbt4dec.so libdatachannel.so libmain.so libSDL3.so; do unzip -l "$APK" "lib/arm64-v8a/$lib" > /dev/null || { echo "::error::$lib is missing"; exit 1; }; done
+          mkdir -p ../out && cp "$APK" "../out/DragonRage-${DR_VERSION_NAME}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DragonRage-${{ inputs.version }}
+          path: out/*.apk
+
+      - name: Draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-beta-${{ inputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: Dragon Rage ${{ inputs.version }} (teste)
+          draft: true
+          prerelease: true
+          make_latest: false
+          files: out/*.apk
+          body: |
+            Versão de teste do Dragon Rage ${{ inputs.version }} (${{ github.sha }}), só para a equipe.
+
+            Instala POR CIMA do Dragon Rage 1.0.1, sem desinstalar: saves, ajustes, controles e jogos importados continuam.
+            Para voltar ao 1.0.1 é preciso desinstalar (o Android não instala uma versão mais antiga por cima).
+
+            Novo: Budokai Tenkaichi 4 com o BT4decomp (a decompilação do NauTaro), com Tag Team.
+            - Importe a ISO da Beta 14 Rev2 em inglês ou espanhol no card do BT4 (precisa de ~5,5 GB livres além da ISO; depois a ISO pode ser apagada).
+            - Quem já tinha o BT4 importado no 1.0.1 importa a ISO de novo: o formato dos dados mudou.
+            - Tag Team online precisa do Dragon Net liberado para esta versão; o Local Room funciona sem rede.
+            - BT2: o motor continua sendo importado à parte, como no 1.0.1.
+
+            Logs: Ajustes > Salvar log em Downloads.

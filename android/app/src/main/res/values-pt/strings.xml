@@ -427,13 +427,13 @@
     <string name="msg_no_engine_bt2">Esta compilação do app não tem o motor do BT2 (as compilações automáticas ficam sem ele): instale o APK do lançamento.</string>
     <string name="welcome_pick">Escolha o jogo</string>
     <string name="welcome_bt3">O jogo original (disco americano). Online no Dragon Net, mods, cenários, músicas, cheats e drivers personalizados.</string>
-    <string name="welcome_bt4">O mod da Team BT4: personagens, formas e cenários novos. Experimental: motor próprio (o mod recompilado), desenhado pelo renderizador do ARMSX2 (o do Dragon Rage fica como opção experimental).</string>
+    <string name="welcome_bt4">O mod da Team BT4: personagens, formas e cenários novos. Versão de teste: BT4decomp (a decompilação do NauTaro), em inglês ou espanhol.</string>
     <string name="welcome_bt2">O clássico: Budokai Tenkaichi 2 (disco americano), com motor próprio. Modo Online com 1P VS 2P. O que você ajusta aqui fica separado do BT3 e do BT4.</string>
     <string name="welcome_note">Cada jogo tem sua própria imagem de disco, saves, texturas e ajustes. Dá para trocar pelo menu (Jogo) a qualquer momento.</string>
     <string name="welcome_last">Jogado por último</string>
     <string name="nav_switch_game">Jogo</string>
     <string name="bt4_tagline">Budokai Tenkaichi 4 · Team BT4</string>
-    <string name="bt4_game_data_intro">Escolha sua imagem do mod da Team BT4: SLUS-219.78, Beta 14 Rev2 (outra versão não funciona: o jogo foi recompilado para essa). Só os arquivos de inicialização são copiados; o resto é lido da imagem onde ela está, então deixe ela na pasta.</string>
+    <string name="bt4_game_data_intro">Escolha sua imagem do mod da Team BT4, Beta 14 Rev2, em inglês ou em espanhol. Os arquivos do jogo são copiados dela (uns 5,7 GB, alguns minutos) e cada um é conferido; depois a imagem não é mais necessária.</string>
     <string name="bt4_engine_included">O motor do Budokai Tenkaichi 4 está nesta versão.</string>
     <string name="bt4_engine_missing">Esta versão ainda não tem o motor do Budokai Tenkaichi 4 (libbt4.so). A imagem já pode ser configurada.</string>
     <string name="tag_lite">Gráficos leves no Tag Team</string>
@@ -540,4 +540,8 @@
     <string name="tpg_profiles">Perfis e canhoto</string>
     <string name="tpg_profiles_text">Comece de um perfil pronto (o Online competitivo é ajustado para o Dragon Net), salve os seus com um nome e espelhe o layout inteiro para a mão esquerda.</string>
     <string name="tpg_online">No online, cada toque perdido ou atrasado custa um round. Com estes ajustes, quem joga no toque perde menos comandos no Dragon Net e nas salas online do Tag Team: o jogo recebe os mesmos botões que um controle mandaria.</string>
+    <string name="bt4dec_err_version">Esta imagem não é a Beta 14 Rev2 da Team BT4 em inglês nem em espanhol (o BIN/DBZ4.BIN dela é outro: SHA-1 %1$s…).</string>
+    <string name="bt4dec_err_file">Um arquivo da imagem não é o da Beta 14 Rev2 (%1$s): a imagem pode estar danificada. Nada foi instalado.</string>
+    <string name="bt4dec_err_space">Falta espaço: o jogo precisa de %1$d MB livres e há %2$d MB.</string>
+    <string name="bt4dec_data_ok">Beta 14 Rev2 verificada · %1$d arquivos · %2$s</string>
 </resources>

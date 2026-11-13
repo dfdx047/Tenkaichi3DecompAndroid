@@ -23,16 +23,17 @@
 ---
 
 > [!IMPORTANT]
-> **Estado (1.0.0): tres juegos en la misma app, nativos en Android arm64.** El **Toque Pro** rehace el control en pantalla
+> **Estado (1.0.2): tres juegos en la misma app, nativos en Android arm64.** El **Toque Pro** rehace el control en pantalla
 > para jugar sin control físico, y una **selección de personajes nueva** viene como opción. **Budokai Tenkaichi 2** ahora
 > solo pide la ISO, con juego en línea entre dos aparatos. **Budokai Tenkaichi 3** gana **Dragon Net Online**, con lobbies,
-> espectadores y Clasificatoria, y el **Tag Team Mod** como opción, también en línea. **Budokai Tenkaichi 4** tiene el
-> escenario lejano corregido en el renderizador Dragon Rage y elige el renderizador por aparato. Se instala encima de la
-> 0.9.0 y de la 0.8.x, sin desinstalar. En inglés, portugués y español. Mira las [novedades](#novedades-de-la-10) y los
+> espectadores y Clasificatoria, y el **Tag Team Mod** como opción, también en línea. **Budokai Tenkaichi 4** ahora corre
+> el **BT4decomp**, la decompilación de NauTaro, con la Beta 14 Rev2 en inglés o español. Se instala encima de la 1.0.x,
+> de la 0.9.0 y de la 0.8.x, sin desinstalar. En inglés, portugués y español. Mira las [novedades de la
+> 1.0.2](#novedades-de-la-102), las [de la 1.0](#novedades-de-la-10) y los
 > [números](#números-09-y-10).
 
 Este repositorio **no contiene ningún dato del juego**. Necesitas tu propia copia de cada juego en `.iso`: **BT3 de EE. UU.
-(SLUS-21678)**, **BT2 de EE. UU. (SLUS-21441)** y **el mod BT4 de Team BT4, Beta 14 Rev2 (SLUS-219.78)**. La app lee el
+(SLUS-21678)**, **BT2 de EE. UU. (SLUS-21441)** y **el mod BT4 de Team BT4, Beta 14 Rev2 (SLUS-219.78), en inglés o español**. La app lee el
 archivo en tu dispositivo; no se descarga ni se sube nada.
 
 ## Qué es
@@ -44,8 +45,23 @@ renderizado, sonido y controles por debajo. Dragon Rage lleva eso a Android, jun
 |---|---|---|
 | **App launcher** (Kotlin, Jetpack Compose, Material 3; inglés, portugués y español) | [`android/`](android) | ✅ Listo |
 | **Budokai Tenkaichi 3** (el código C del port, compilado para arm64 como `libbt3.so`) | `src/`, `include/`, `port/` | ✅ Corre en Snapdragon, Mali, Xclipse y PowerVR; ajustado por nivel de GPU |
-| **Budokai Tenkaichi 4** (mod de Team BT4, recompilado como `libbt4.so`; renderizador de ARMSX2 en `libbt4gsx.so`, o el de Dragon Rage) | `port/bt4/` | 🧪 Experimental |
+| **Budokai Tenkaichi 4** (el BT4decomp, [decompilación de NauTaro](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp) del mod de Team BT4, como `libbt4dec.so`) | rama `bt4dec-proto` | 🧪 Experimental |
 | **Budokai Tenkaichi 2** (recompilado como `libbt2.so`) | `bt2/` | ✅ Peleas, partidas guardadas y en línea |
+
+## Novedades de la 1.0.2
+
+- **Budokai Tenkaichi 4 con el BT4decomp**: la tarjeta del BT4 abre el [BT4decomp](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp), la decompilación del mod de
+  Team BT4 hecha por **NauTaro** sobre Tenkaichi3Decomp, con el port Android de Dragon Rage. Reemplaza el motor anterior
+  (el mod recompilado con el renderizador de ARMSX2).
+- **Beta 14 Rev2 en inglés o español**. La importación copia los archivos del juego (unos 5,7 GB) y comprueba cada uno;
+  después se puede borrar la ISO. Si ya tenías el BT4 en la 1.0.0 o la 1.0.1, importa la ISO otra vez (el formato cambió;
+  las partidas guardadas se mantienen).
+- **Ajustes del BT4** iguales a los del BT3, con el movimiento suave; se quitaron la relación de aspecto y los 60 fps del motor anterior.
+- **Tag Team en el BT4**: la Local Room (contra la CPU) funciona sin red; el online depende de que Dragon Net se habilite para esta versión.
+- BT3 y BT2 iguales a los de la 1.0.1. Todos los cambios: [`CHANGELOG.es.md`](CHANGELOG.es.md).
+
+La **1.0.1** trajo el Tag Team en línea estable (sala sin caídas, revancha solo del anfitrión, menú tras la partida, lobby
+nuevo), rendimiento en BT3, Tag y BT2, y la tormenta del Full Power.
 
 ## Novedades de la 1.0
 
@@ -184,6 +200,7 @@ Solo en la 1.0: OpenGL ES en el renderizador Dragon Rage, RG Cube 29,6 y Retroid
 - **Clasificatoria**: a veces se queda en "Cargando perfil..." cuando el servidor no responde.
 - **Quien solo juega BT2** no recibe el aviso de actualización de la app.
 - La tarjeta del online en el launcher todavía dice "Dragon Net Battle".
+- **BT4 (BT4decomp)**: el Tag Team en línea depende de que Dragon Net se habilite para la 1.0.2; la Local Room funciona.
 - **Aún sin probar**: importación limpia de BT3 y BT4 en esta versión, Clasificatoria hasta el final, espectadores, Tag Team Online en todos los modos, el modo contra PC.
 
 ## La app
@@ -195,7 +212,7 @@ Solo en la 1.0: OpenGL ES en el renderizador Dragon Rage, RG Cube 29,6 y Retroid
 <tr><td><b>Controles</b></td><td>El control en pantalla: el estilo <b>Dragón</b> (nuevo por defecto: botones redondos oscuros con iconos dorados, letras con los colores de Xbox, una Esfera del Dragón de tres estrellas como stick), el estilo <b>Cristal</b> de la 0.5 o el mando <b>clásico</b> de consola; una distribución hecha para este juego que cambia <b>sola</b> entre menús y peleas (modo historia incluido), letras de PlayStation, Xbox o Nintendo, editor de distribución, macros, opacidad, tamaño, vibración, un solo botón en los choques; <b>Toque Pro</b>: stick dinámico, zona muerta, área táctil, deslizar, toque alterna, perfiles y una guía.</td></tr>
 <tr><td><b>Trucos</b></td><td><i>Desbloquear todo</i>: todos los personajes, escenarios, canciones y objetos, y Zeni al máximo (la función de depuración que los desarrolladores dejaron en el juego).</td></tr>
 <tr><td><b>Drivers</b></td><td>Drivers Vulkan personalizados para GPUs Adreno (Snapdragon) mediante AdrenoTools: las últimas versiones de <b>Mr. Purple</b>, <b>StevenMXZ</b> y <b>K11MCH1</b> descargadas e instaladas con un toque, un <code>.zip</code> desde tus archivos, elegir, eliminar.</td></tr>
-<tr><td><b>Depuración</b></td><td>Tu dispositivo y tu GPU con su <b>nivel</b>, los ajustes recomendados para ella, el <b>log de rendimiento</b> de la última sesión (velocidad en peleas y menús, cuadros por segundo; activado por defecto, sin un costo que se note) y <i>Exportar log</i> para reportar bugs.</td></tr>
+<tr><td><b>Depuración</b></td><td>Tu dispositivo y tu GPU con su <b>nivel</b>, los ajustes recomendados para ella, el <b>log de rendimiento</b> de la última sesión (velocidad en peleas y menús, cuadros por segundo; activado por defecto, sin un costo que se note) y <i>Guardar log en Descargas</i> para reportar bugs.</td></tr>
 <tr><td><b>Ajustes</b></td><td>Renderizador (<b>Vulkan</b>, u <b>OpenGL ES</b> para drivers en los que Vulkan falla), resolución interna de 1x a 8x en pasos finos, filtro de pantalla (bilineal, nítido, FXAA, AMD FSR 1, Snapdragon GSR), formato de imagen, <b>orientación de pantalla</b> (horizontal, vertical, automática), <b>profundidad precisa</b>, <b>saltar cuadros</b> en vez de ir lento, movimiento suave (60 / 120), modo de presentación, los efectos de PS2, volúmenes, idioma, tema, Material You, la <b>selección de personajes</b> (Nueva o Clásica), el <b>Mod Tag Team</b>.</td></tr>
 <tr><td><b>En el juego</b></td><td>Un nuevo menú hecho para dedos y mandos, con el estilo del launcher y en tu idioma: Video, Rendimiento, Efectos, Audio, Interfaz (fuentes, HUD, barras laterales), Controles, <b>Online</b> (cómo funciona, qué hacer cuando falla), Trucos, <b>Salir a la app</b>. Botón Atrás, START + SELECT o el botón MENU en pantalla.</td></tr>
 </table>
@@ -218,23 +235,25 @@ La primera vez que se abre con una GPU conocida, la app te dice cuál encontró 
 ### Instalación
 
 Descarga `DragonRage-<version>.apk` desde la [última versión](../../releases/latest) e instálalo. Una versión nueva
-se instala encima de la anterior y conserva tus datos del juego, ajustes y partidas guardadas; la 1.0 se instala encima
-de la 0.9.0 y de la 0.8.x, sin desinstalar. La app revisa GitHub al abrirse y te ofrece las versiones nuevas con su
+se instala encima de la anterior y conserva tus datos del juego, ajustes y partidas guardadas; la 1.0.2 se instala
+encima de la 1.0.x, de la 0.9.0 y de la 0.8.x, sin desinstalar. La app revisa GitHub al abrirse y te ofrece las versiones nuevas con su
 changelog.
 
-Para reportar un problema: *Depuración → Exportar log*, y luego envía el archivo `DragonRage-log-….txt` (en [Discord](https://discord.gg/6XXxT547Qx), por ejemplo).
+Para reportar un problema: *Depuración → Guardar log en Descargas*, y luego envía el archivo `DragonRage-log-….txt` (en [Discord](https://discord.gg/6XXxT547Qx), por ejemplo).
 
 Para compilarlo tú mismo:
 
 ```sh
 sh port/tools/android_toolchain.sh   # LLVM 21, the NDK's sysroot, SDL3 (once)
 python3 port/tools/android.py        # the engine -> android/app/src/main/jniLibs (and its fonts and pictures -> assets)
-python3 port/bt4/build_bt4.py --armsx2   # BT4, from your own disc (only with its files on this PC; nothing goes to git)
-python3 bt2/android/build.py         # BT2, from your own disc (same)
+sh .github/bt4dec-engine.sh            # BT4 (BT4decomp): libbt4dec.so and libdatachannel.so from the draft release bt4dec-engine
+                                       # (built from the branch bt4dec-proto with blank data tables: no game data)
+python3 bt2/android/build.py         # BT2, from your own disc (only with its files on this PC; nothing goes to git)
 cd android && ./gradlew assembleRelease   # needs JDK 17+ and the Android SDK (compileSdk 35)
 ```
 
-Las bibliotecas de BT4 y BT2 se hacen a partir del programa del juego: solo van dentro del APK compilado en tu PC, nunca al git.
+La biblioteca de BT2 se hace a partir del programa del juego: solo va dentro del APK compilado en tu PC, nunca al git. El
+BT4decomp no lleva datos del juego: sus tablas van en blanco y se leen de tu ISO al importar.
 
 ### Dónde van los archivos
 
@@ -298,6 +317,10 @@ opcional `match_url.txt` (una línea, `https://...`) indica otro servicio de mat
       instala encima de la 0.9.0 y de la 0.8.x; escenario lejano de BT4 corregido y renderizador por aparato; correcciones a partir de 208 registros
       de jugadores; menos peticiones a los servidores; equipo y licencias en la app; mapa de cambios en `docs/changes/`
       (`docs/release-1.0.md`, en portugués)
+- [x] **1.0.1**: Tag Team en línea estable (sala sin caídas, revancha solo del anfitrión, menú tras la partida, lobby
+      nuevo); rendimiento en BT3, Tag y BT2; tormenta del Full Power; menos peticiones a Dragon Net
+- [x] **1.0.2**: Budokai Tenkaichi 4 con el BT4decomp (NauTaro), Beta 14 Rev2 en inglés o español, importación comprobada
+      archivo por archivo, ajustes del BT3 en el BT4
 
 ### Lo que viene
 - [ ] Más GPUs medidas para los niveles (¡envía tu log!)
@@ -312,7 +335,7 @@ opcional `match_url.txt` (una línea, `https://...`) indica otro servicio de mat
 | `src/`, `include/` | El código del juego, sacado de la decompilación; los cambios de PC están dentro de `#ifdef PORT` |
 | `port/` | El port para PC: capa de plataforma, renderizador, sonido, controles, herramientas de compilación |
 | `bt2/` | Budokai Tenkaichi 2 recompilado: runtime, plugin en línea, compilación para Android |
-| `port/bt4/` | Budokai Tenkaichi 4 recompilado: ganchos, shim y compilación |
+| `port/bt4/` | El motor anterior de Budokai Tenkaichi 4 (hasta la 1.0.1): ganchos, shim y compilación. El BT4decomp está en la rama `bt4dec-proto` |
 | `docs/` | Notas sobre el juego y sobre el port para PC; [`docs/changes/`](docs/changes) es el mapa de lo que cambió, por área y por archivo |
 
 ## Equipo y créditos
@@ -326,6 +349,7 @@ opcional `match_url.txt` (una línea, `https://...`) indica otro servicio de mat
 - **Androidxxt01**, **jllacchua**, **victorgonl**: contribuciones al port de PC y a la app.
 - **tehmufti y los colaboradores de Tag Team Mod**: el Tag Team Mod.
 - **Team BT4**: el mod Budokai Tenkaichi 4.
+- **[NauTaro](https://github.com/NauTaro/DBZ-BT4-Tag-Team-Decomp)**: el BT4decomp, la decompilación del mod BT4 que corre en la tarjeta del BT4.
 - Arte: **MarshallPunk** (el locutor), **pluantoine** (los botones, CC BY 4.0).
 - Drivers de GPU de [Mr. Purple](https://github.com/MrPurple666/purple-turnip), [StevenMXZ](https://github.com/StevenMXZ/Adreno-Tools-Drivers)
   y [K11MCH1](https://github.com/K11MCH1/AdrenoToolsDrivers), cargados con [libadrenotools](https://github.com/bylaws/libadrenotools) (BSD-2-Clause).

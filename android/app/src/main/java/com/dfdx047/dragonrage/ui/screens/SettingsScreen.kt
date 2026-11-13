@@ -104,7 +104,7 @@ fun SettingsScreen(vm: AppViewModel) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(stringResource(R.string.aspect), style = MaterialTheme.typography.titleSmall)
-            if (vm.game == com.dfdx047.dragonrage.data.Game.BT4) {
+            if (false) { // (test build: BT4decomp takes BT3's settings; the old BT4 engine's aspect and 60 fps rows are not its)
                 ChipRow(
                     options = listOf("16:9" to 0, "4:3" to 1, stringResource(R.string.aspect_screen) to 2),
                     selected = get(EngineSettings.BT4_ASPECT, 0),
@@ -264,7 +264,7 @@ fun SettingsScreen(vm: AppViewModel) {
                     vm.setting(EngineSettings.TAG_TEAM, if (it) 1 else 0)
                 }
             }
-            if (vm.game != com.dfdx047.dragonrage.data.Game.BT4) { // (smooth motion is the BT3 engine's)
+            run { // (smooth motion: BT3's engine, and BT4decomp's)
                 Text(stringResource(R.string.fps60), style = MaterialTheme.typography.titleSmall)
                 ChipRow(
                     options = listOf(stringResource(R.string.off) to 0, "60" to 1, "120" to 2),

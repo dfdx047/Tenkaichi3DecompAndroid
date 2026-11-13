@@ -238,10 +238,7 @@ private fun MenuScreen(
     val l = remember { L(context.resources.configuration.locales[0].language) }
     val values = remember { MenuValues(settings) }
     LaunchedEffect(Unit) { values.load() }
-    val pages = remember(game) {
-        if (game == Game.BT4) listOf(Page.VIDEO, Page.PERFORMANCE, Page.EFFECTS, Page.CONTROLS)
-        else Page.entries.toList()
-    }
+    val pages = remember(game) { Page.entries.toList() }
     var page by remember { mutableStateOf(Page.VIDEO) }
     var askQuit by remember { mutableStateOf(false) }
     val scheme = MaterialTheme.colorScheme
@@ -270,7 +267,7 @@ private fun MenuScreen(
                             pages.forEach { p -> PageButton(pageIcon(p), pageName(l, p), p == page) { page = p } }
                         }
                         Spacer(Modifier.width(12.dp))
-                        PageContent(Modifier.weight(1f).fillMaxHeight(), l, game, page, values, actions, closeMenu)
+                        PageContent(Modifier.weight(1f).fillMaxHeight(), l, if (game == Game.BT4) Game.BT3 else game, page, values, actions, closeMenu)
                     }
                 } else {
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -280,7 +277,7 @@ private fun MenuScreen(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    PageContent(Modifier.fillMaxSize(), l, game, page, values, actions, closeMenu)
+                    PageContent(Modifier.fillMaxSize(), l, if (game == Game.BT4) Game.BT3 else game, page, values, actions, closeMenu)
                 }
             }
         }

@@ -452,6 +452,9 @@ open class GameActivity : SDLActivity() {
     /** The game's folder: Budokai Tenkaichi 3's (Bt4Activity: Budokai Tenkaichi 4's). */
     protected open fun gamePaths(): GamePaths = GamePaths(this)
 
+    /** Where this engine's files are among the APK's assets: "" Budokai Tenkaichi 3's; "bt4dec/" BT4decomp's (Bt4Activity). */
+    protected open val engineAssets: String get() = ""
+
     protected open fun installDataList() {
         // the list of the game's data tables (libbt3.so.dat) and of the engine's own addresses (libbt3.so.rel, for
         // loading it elsewhere than its usual place), both made with the engine (android.py), next to the game's files
@@ -459,7 +462,7 @@ open class GameActivity : SDLActivity() {
         for (name in listOf("libbt3.so.dat", "libbt3.so.rel", "libbt3.so.mem")) {
             val out = File(paths.root, name)
             runCatching {
-                assets.open(name).use { input ->
+                assets.open(engineAssets + name).use { input ->
                     val bytes = input.readBytes()
                     if (!out.exists() || out.length() != bytes.size.toLong() || !out.readBytes().contentEquals(bytes)) {
                         out.writeBytes(bytes)
@@ -473,23 +476,23 @@ open class GameActivity : SDLActivity() {
         val version = runCatching { packageManager.getPackageInfo(packageName, 0).lastUpdateTime.toString() }.getOrDefault("0")
         if (!stamp.exists() || stamp.readText() != version) {
             runCatching {
-                copyAssetTree("engine", paths.root)
+                copyAssetTree(engineAssets + "engine", paths.root, engineAssets + "engine")
                 stamp.writeText(version)
             }.onFailure { android.util.Log.w("bt3", "engine files: $it") }
         }
     }
 
-    private fun copyAssetTree(path: String, into: File) {
+    private fun copyAssetTree(path: String, into: File, base: String) {
         val names = assets.list(path).orEmpty()
         if (names.isEmpty()) { // a file
-            val rel = path.substringAfter('/', "")
-            if (rel.isEmpty()) return
+            if (path == base) return
+            val rel = path.removePrefix("$base/")
             val out = File(into, rel)
             out.parentFile?.mkdirs()
             assets.open(path).use { input -> out.outputStream().use { input.copyTo(it) } }
             return
         }
-        names.forEach { copyAssetTree("$path/$it", into) }
+        names.forEach { copyAssetTree("$path/$it", into, base) }
     }
 
     /**
