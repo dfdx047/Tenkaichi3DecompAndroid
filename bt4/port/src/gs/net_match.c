@@ -366,7 +366,23 @@ static void clock_learn(const char *answer) {
 
 /* POSTs `json` to <url>/v1/<what>; the answer's text in out. 0 = no answer. The system's own HTTPS first (above); if
    that is not to be had, the `curl` program. */
+/* Android: BT4's Ranked has a service of its own (port/bt4online-worker, gs/bt4_profile.c Bt4Online_Url): every request of
+   a search in the Ranked queue ("D20", kMatchQueues[4]) goes there; Quick Match and the rooms stay on Dragon Net. */
+#ifdef __ANDROID__
+extern const char *Bt4Online_Url(void);
+static int ranked_search(void) { return sM.role == 3 && SDL_strcmp(sM.queue, "D20") == 0; }
+#endif
+static const char *search_url(void) {
+#ifdef __ANDROID__
+    if (ranked_search()) return Bt4Online_Url();
+#endif
+    return match_url();
+}
+static int http_post_at(const char *base, const char *what, const char *json, char *out, size_t size);
 static int http_post_once(const char *what, const char *json, char *out, size_t size) {
+    return http_post_at(search_url(), what, json, out, size);
+}
+static int http_post_at(const char *base, const char *what, const char *json, char *out, size_t size) {
     char url[256], path[64], sig[65], head[3][96];
     const char *args[20], *headers[4] = {NULL, NULL, NULL, NULL};
     SDL_Process *p;
@@ -375,7 +391,7 @@ static int http_post_once(const char *what, const char *json, char *out, size_t 
     void *data;
     long long when = (long long)time(NULL) + SDL_GetAtomicInt(&sClockAhead);
 
-    SDL_snprintf(url, sizeof(url), "%s/v1/%s", match_url(), what);
+    SDL_snprintf(url, sizeof(url), "%s/v1/%s", base, what);
     SDL_snprintf(path, sizeof(path), "/v1/%s", what);
     if (Sign_Request("POST", path, PORT_RELEASE, when, json, sig)) { /* (a program without a key: no headers) */
         SDL_snprintf(head[0], sizeof(head[0]), "X-BT3-Release: %d", PORT_RELEASE);
@@ -1106,7 +1122,9 @@ void Match_Begin(int role, int sock, int localPort, const char *code, const char
         SDL_DetachThread(sM.thread); /* (it stops by itself: its search number is no longer the current one) */
         sM.thread = NULL;
     }
+    SDL_LockMutex(sM.lock); /* (BT4decomp R5.6: a thread of the earlier search reads these under the lock) */
     SDL_AddAtomicInt(&sM.gen, 1);
+    SDL_SetAtomicInt(&sM.sockBusy, 0);
     SDL_SetAtomicInt(&sM.cancel, 0);
     SDL_memset(&sM.st, 0, sizeof(sM.st));
     sM.st.state = 1;
@@ -1135,6 +1153,7 @@ void Match_Begin(int role, int sock, int localPort, const char *code, const char
     sM.watchCount = 0;
     sM.watchGen++;
     SDL_SetAtomicInt(&sM.relayAsk, 0);
+    SDL_UnlockMutex(sM.lock);
     sM.thread = SDL_CreateThread(match_thread, "bt3-match", (void *)(intptr_t)SDL_GetAtomicInt(&sM.gen));
     if (sM.thread == NULL) {
         set_state(-1, "The matchmaking could not be started.");
@@ -1158,7 +1177,7 @@ static int SDLCALL queues_thread(void *arg) {
         SDL_SetAtomicInt(&sQueueBusy,0);return 0;
     }
     SDL_snprintf(body, sizeof(body), "{\"v\":%d}", sQueueVersion);
-    if (http_post("queues", body, answer, sizeof(answer)) && SDL_strstr(answer, "\"waiting\"") != NULL) {
+    if (http_post_at(match_url(), "queues", body, answer, sizeof(answer)) && SDL_strstr(answer, "\"waiting\"") != NULL) {
         for (i = 0; i < MATCH_QUEUES; i++) {
             char key[16];
             const char *p;
@@ -1167,6 +1186,13 @@ static int SDLCALL queues_thread(void *arg) {
             SDL_SetAtomicInt(&sQueueCount[i], p != NULL ? SDL_atoi(p + SDL_strlen(key)) + 1 : 0);
         }
     }
+#ifdef __ANDROID__
+    /* (the Ranked queue's: its own service's count) */
+    if (http_post_at(Bt4Online_Url(), "queues", body, answer, sizeof(answer)) && SDL_strstr(answer, "\"waiting\"") != NULL) {
+        const char *p = SDL_strstr(answer, "\"D20\":");
+        SDL_SetAtomicInt(&sQueueCount[4], p != NULL ? SDL_atoi(p + 6) + 1 : 0);
+    }
+#endif
     SDL_SetAtomicInt(&sQueueBusy, 0);
     return 0;
 }

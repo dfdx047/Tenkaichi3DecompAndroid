@@ -274,6 +274,18 @@ extern int Port_RollCan(void);
 extern void Port_LobbyHelloAsk(void);              /* asks the matchmaking service whether this release is new enough */
 extern int Port_LobbyRelease(int *min, int *latest); /* this release's number; the oldest let in (0: not known) */
 extern int Port_LobbyStartQuick(int queue);   /* a quick match: 0 one on one, 1 teams (the service's queues S, T) */
+#ifdef __ANDROID__
+#include "../../port/src/gs/bt4_profile.h"
+#define TB_RANKED_QUEUE 4 /* Dragon Net's "D20": Ranked's own queue on Android (gs/net.c, gs/bt4_profile.c) */
+#define TB_RANKED_WAITING Port_LobbyQueueWaiting(TB_RANKED_QUEUE)
+#else
+#define TB_RANKED_WAITING 0
+#endif
+#ifdef __ANDROID__
+#define TB_NAME_MAX 16 /* (Android: the profile service's nicknames are 16 letters at most: port/bt4online-worker/profile.js) */
+#else
+#define TB_NAME_MAX 19
+#endif
 extern void Port_LobbyQueuesAsk(void);        /* asks how many wait in each queue */
 extern void Port_LobbyQuickArea(const char *area); /* what the next quick match looks for: "auto", "any" or a region */
 extern int Port_LobbyWiden(void);             /* a quick match that waits (Auto): seconds after which it looks everywhere, 0 not said */
@@ -1299,6 +1311,10 @@ static void Tb_OpenName(s32 required) {
     const char *current = Port_NetNameGet();
     Ps_Copy(sTb->typed, required && !strcmp(current,"Player") ? "" : current, 20);
     sTb->typedLen = Ps_Len(sTb->typed);
+    if (sTb->typedLen > TB_NAME_MAX) { /* (a longer name kept from before: cut to what can be saved) */
+        sTb->typedLen = TB_NAME_MAX;
+        sTb->typed[TB_NAME_MAX] = 0;
+    }
     sTb->nicknameRequired = required;
     sTb->nicknameSaving = 0;
     sTb->keyRow = sTb->keyCol = 0;
@@ -1423,6 +1439,11 @@ static void Tb_RankedStart(void){
     Bt4RankedView view={0};s32 state;
     Port_RankedView(&view);
     if(!Tb_NicknameCanPlay())return;
+#ifdef __ANDROID__
+    /* (Android: Ranked's points and medals are the profile service's (gs/bt4_profile.c): a nickname of its first) */
+    if(!Bt4Profile_HasAccount()){Tb_Note("Choose a nickname to play Ranked.");Tb_OpenName(0);return;}
+    if(view.state<0)Port_RankedRefresh(1);
+#endif
     if(!view.state){Tb_Say("Loading Ranked status...");return;}
     if(view.state!=1){Tb_Say("Ranked is temporarily unavailable. Please try again later.");return;}
     if(!Tb_Vanilla(1))return;
@@ -1430,7 +1451,11 @@ static void Tb_RankedStart(void){
     Port_NetRulesSet(0,0,3); // 240-second individual matches
     Port_NetOptions(Port_RollCan()?4:0,-2);
     Port_LobbyQuickArea("any");Port_RankedSearch(1);
+#ifdef __ANDROID__
+    state=Port_LobbyStartQuick(TB_RANKED_QUEUE); /* (Ranked's own queue: only Ranked players meet there) */
+#else
     state=Port_LobbyStartQuick(0);
+#endif
     if(state<0){Port_RankedSearch(0);Tb_Note("THE NETWORK COULD NOT BE OPENED ON THIS PC");return;}
     sTb->host=2;sTb->waitFrom=sTb->frames;sTb->found=0;sTb->waitBack=TB_RANKED;
     Tb_SetMode(TB_WAIT);
@@ -1792,7 +1817,7 @@ static s32 Tb_NameKey(s32 c) {
 }
 
 static void Tb_NameAdd(s32 c) {
-    if (Tb_NameKey(c) && sTb->typedLen < 19) {
+    if (Tb_NameKey(c) && sTb->typedLen < TB_NAME_MAX) {
         sTb->typed[sTb->typedLen++] = (char)c;
         sTb->typed[sTb->typedLen] = 0;
         Snd_PlaySe(1, 0);
@@ -2619,7 +2644,7 @@ static void Tb_DrawWaitText(void) {
     const char *code = getenv("BT4_RENDER_TBO") != NULL ? "YUH9JP" : Port_LobbyCode();
 
     if (sTb->host == 2) {
-        s32 n = sTb->waitBack==TB_RANKED?0:Port_LobbyQueueWaiting(sTb->queue);
+        s32 n = sTb->waitBack==TB_RANKED?TB_RANKED_WAITING:Port_LobbyQueueWaiting(sTb->queue);
 
         Ps_Text(22.0f, 94.0f, sTb->waitBack==TB_RANKED?"Ranked":"QUICK MATCH", 0.56f, 0.0f, 0);
         Ps_Align(1);

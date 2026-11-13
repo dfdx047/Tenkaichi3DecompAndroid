@@ -216,7 +216,7 @@ static struct {
     struct sockaddr_in owner;
     struct sockaddr_in cand[MATCH_ADDRS + 1];
     int candCount, candRelay, candGen;
-    uint64_t candSince, helloNs, heardNs, aliveNs;
+    uint64_t candSince, helloNs, heardNs, aliveNs, hostPunchReply;
     int probe;                 /* a member joining a typed address: it also asks as a spectator would (probe_send) */
     uint64_t probeNs;
     uint64_t otherNs;          /* the owner: when someone of another version last tried to join (said once a minute) */
@@ -2232,6 +2232,7 @@ static void timers(void) {
                     if (i == sL.candRelay ? now - sL.candSince < 3 * SEC && getenv("BT3_RELAY_ONLY") == NULL : getenv("BT3_RELAY_ONLY") != NULL) {
                         continue; /* (three seconds for the direct ways first) */
                     }
+                    if (i == sL.candRelay) Relay_RoomPeer(NetIo_Sock(), &sL.cand[i]);
                     hello_send(&sL.cand[i]);
                 }
             }
@@ -2250,7 +2251,9 @@ static void timers(void) {
                 if (sTok.has && strcmp(sTok.code, sJoinCode) == 0) {
                     tok_forget("its lobby does not answer");
                 }
-                member_closed("Could not reach the lobby. Check that its owner is still connected, then try joining again.");
+                fprintf(stderr, "bt4: lobby: peer connection timed out; candidates=%d relay-active=%d relay-candidate=%d\n",
+                        sL.candCount, Relay_Active(), sL.candRelay >= 0);
+                member_closed("The room was found, but the connection to its host timed out.");
                 return;
             }
         } else {
@@ -2437,6 +2440,7 @@ static void join_found(const char addrs[][64], int count, const char *code, cons
             *colon = '\0';
             c->sin_port = htons((uint16_t)atoi(colon + 1));
             if (inet_pton(AF_INET, text, &c->sin_addr) == 1 && c->sin_port != 0) {
+                Relay_Permit(NetIo_Sock(), c);
                 n++;
                 continue;
             }
@@ -2786,6 +2790,13 @@ void Lobby_Pump(void) {
             }
             if (type >= T_LOBBY_FIRST && type <= T_LOBBY_LAST) {
                 Lobby_Packet(pkt, n, &from, type);
+            } else if (type == T_PUNCH && n == 8 && sL.on == 2 && sL.state == 1 && !sL.probe) {
+                uint64_t now = now_ns();
+                if ((!sL.hostPunchReply || now - sL.hostPunchReply >= 200000000ull) &&
+                    NetIo_HostPunch(&from, sL.cand, sL.candCount, sL.candRelay)) {
+                    sL.hostPunchReply = now;
+                    hello_send(&from);
+                }
             } else if (type == T_HELLO || type == T_SPEC_HELLO) {
                 Lobby_Stranger(pkt, n, &from, type);
             } else if (type == T_SPEC_NO && n >= 12 && sL.on == 2 && sL.state == 1 && sL.probe && same(&from, &sL.cand[0])

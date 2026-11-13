@@ -1,0 +1,10 @@
+{
+    // wrangler deploy --config wrangler.example.jsonc   (after: wrangler d1 create bt4-online, and its id below)
+    "name": "bt4-online",
+    "main": "worker.js",
+    "compatibility_date": "2026-10-01",
+    "workers_dev": true,
+    "d1_databases": [{ "binding": "DB", "database_name": "bt4-online", "database_id": "<the id wrangler d1 create printed>" }],
+    // only BT4 Android's games (net_match.c DRNET_BT4_VERSION) meet in its rooms
+    "vars": { "ALLOWED_VERSIONS": "140001" }
+}

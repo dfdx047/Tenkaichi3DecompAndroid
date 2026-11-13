@@ -666,6 +666,8 @@ static void Td_Page(char *title, s32 gohan, s32 dim) {
     Td_TopBar(title, "TENKAICHI BUDOKAI ONLINE");
 }
 
+static void Td_Trophy(f32 cx, f32 cy, f32 s, s32 kind);
+static void Td_Medal(f32 cx, f32 cy, f32 s, s32 kind);
 static void Td_Ranked(void) {
     static char line[96];
     Bt4RankedView rv = {0};
@@ -676,7 +678,11 @@ static void Td_Ranked(void) {
     }
     Td_Page(sTbTitle[TB_RANKED], 1, 0);
     if (sTb->rankedPage == 0) {
+#ifdef __ANDROID__
+        static char *hint[3] = {"ONE ON ONE, 240 SECONDS", "THE BEST OF THE WEEK", "POINTS, MEDALS, TROPHIES"};
+#else
         static char *hint[3] = {"ONE ON ONE OR NATIVE TEAMS", "THE BEST OF THE WEEK", "POINTS, SEASONS, RESETS"};
+#endif
         f32 cx = 1570.0f, cy = 520.0f, r = 190.0f, k;
         Td_Window(40.0f, 230.0f, 1100.0f, 920.0f, "SEASON MENU");
         for (i = 0; i < 3; i++) {
@@ -704,14 +710,63 @@ static void Td_Ranked(void) {
         sprintf(line, Tb_Fmt("W %d  L %d"), rv.wins, rv.losses);
         Td_Words(cx, cy + 112.0f, rv.state == 1 ? line : rv.state < 0 ? "Ranked service unavailable" : "Loading Ranked status...", TD_C, 32.0f,
                  TD_TEXT(200, 200, 230), 1, 330.0f, rv.state == 1);
+#ifdef __ANDROID__
+        {   /* the trophy race: battles that moved points this week, and the rivals in them (profile service rules) */
+            static char race[96];
+            Bt4ProfileStats rs;
+            memset(&rs, 0, sizeof(rs));
+            if (!getenv("BT4_RENDER_TEST")) Bt4Profile_Stats(&rs);
+            Td_Words(1220.0f, 760.0f, "Trophy race", TD_C, 38.0f, TD_SKY(255), 0, 300.0f, 0);
+            if (rs.state == 1 && rs.eligible) {
+                Td_Words(1930.0f, 760.0f, "QUALIFIED", TD_C, 38.0f, TD_TEXT(140, 255, 160), 2, 380.0f, 0);
+            } else if (rs.state == 1) {
+                sprintf(race, Tb_Fmt("%d/5 battles, %d/3 rivals"), rs.rated < 5 ? rs.rated : 5, rs.opponents < 3 ? rs.opponents : 3);
+                Td_Words(1930.0f, 760.0f, race, TD_C, 34.0f, TD_TEXT(255, 230, 170), 2, 420.0f, 1);
+            } else {
+                Td_Words(1930.0f, 760.0f, "One on One", TD_C, 38.0f, TD_TEXT(255, 230, 170), 2, 380.0f, 0);
+            }
+        }
+#else
         Td_Words(1220.0f, 760.0f, "Battle", TD_C, 38.0f, TD_SKY(255), 0, 300.0f, 0);
         Td_Words(1930.0f, 760.0f, "One on One", TD_C, 38.0f, TD_TEXT(255, 230, 170), 2, 380.0f, 0);
+#endif
+#ifdef __ANDROID__
+        {   /* the weekly season of the profile service (gs/bt4_profile.c): when it ends, and last week's champion */
+            static char ends[96], champ[96];
+            Bt4ProfileStats st;
+            memset(&st, 0, sizeof(st));
+            if (!getenv("BT4_RENDER_TEST")) Bt4Profile_Stats(&st);
+            if (st.state == 1 && st.rank > 0) {
+                sprintf(line, "#%d", st.rank);
+                Td_Words(cx, cy - 128.0f, line, TD_B, 50.0f, TD_WHITE, 1, 200.0f, 1);
+            }
+            if (st.state == 1) sprintf(ends, Tb_Fmt("Week ends Monday 00:00 (UTC-3): %dh left"), st.hoursLeft);
+            else Ps_Copy(ends, Tb_Fmt("Week ends Monday 00:00 (UTC-3)"), sizeof(ends));
+            Td_Words(1220.0f, 812.0f, ends, TD_C, 32.0f, TD_SKY(255), 0, 720.0f, 1);
+            if (st.last[0][0]) {
+                sprintf(champ, Tb_Fmt("Last week's champion: %s"), st.last[0]);
+                Td_Trophy(1240.0f, 862.0f, 0.42f, 0);
+                Td_Words(1280.0f, 860.0f, champ, TD_C, 32.0f, TD_TEXT(255, 230, 170), 0, 680.0f, 1);
+            } else {
+                Td_Words(1220.0f, 860.0f, "Top 3 of the week win trophies", TD_C, 32.0f, TD_TEXT(255, 230, 170), 0, 720.0f, 0);
+            }
+        }
+#else
         Td_Words(1220.0f, 812.0f, "Weekly reset: Sunday 23:59", TD_C, 34.0f, TD_SKY(255), 0, 700.0f, 0);
         Td_Words(1220.0f, 860.0f, "Argentina time (UTC-3)", TD_C, 34.0f, TD_TEXT(255, 230, 170), 0, 700.0f, 0);
+#endif
     } else if (sTb->rankedPage == 1) {
         static const u32 medal[3] = {0, 0, 0};
         (void)medal;
+#ifdef __ANDROID__
+        static const f32 col[5] = {1010.0f, 1150.0f, 1310.0f, 1430.0f, 1550.0f}; /* medals gold, silver; trophies */
+        Td_Window(40.0f, 230.0f, 1990.0f, 920.0f, "This Week's Ranking");
+        Td_Medal(col[0], 300.0f, 0.42f, 0);
+        Td_Medal(col[1], 300.0f, 0.42f, 1);
+        for (i = 0; i < 3; i++) Td_Trophy(col[2 + i], 304.0f, 0.42f, i);
+#else
         Td_Window(40.0f, 230.0f, 1990.0f, 920.0f, "Global Top");
+#endif
         Td_Words(110.0f, 300.0f, "#", TD_C, 36.0f, TD_SKY(255), 0, 0.0f, 1);
         Td_Words(260.0f, 300.0f, "FIGHTER", TD_C, 36.0f, TD_SKY(255), 0, 0.0f, 0);
         Td_Words(1900.0f, 300.0f, "POINTS", TD_C, 36.0f, TD_SKY(255), 2, 0.0f, 0);
@@ -722,6 +777,11 @@ static void Td_Ranked(void) {
                 Td_Skew(p, 90.0f, y, 1940.0f, y + 86.0f, 16.0f);
                 Td_Poly(p, 4, i % 2 == 0 ? Td_Rgba(34, 30, 80, 230) : Td_Rgba(24, 20, 60, 230), Td_Rgba(14, 12, 40, 235));
                 sprintf(line, "%d", place);
+#ifdef __ANDROID__
+                if (place <= 3) { /* (the week's trophies go to these three) */
+                    Td_Trophy(153.0f, y + 46.0f, 0.62f, place - 1);
+                } else
+#endif
                 if (place <= 3) {
                     u32 mc = place == 1 ? TD_RGB(255, 210, 60) : place == 2 ? TD_RGB(210, 220, 235) : TD_RGB(220, 140, 70);
                     Td_Disc(153.0f, y + 43.0f, 36.0f, TD_RGB(90, 60, 10), TD_RGB(90, 60, 10));
@@ -730,28 +790,55 @@ static void Td_Ranked(void) {
                 } else {
                     Td_Words(153.0f, y + 44.0f, line, TD_B, 50.0f, Td_Ink(TD_RGB(220, 230, 255), TD_RGB(160, 180, 230), TD_RGB(10, 10, 30)), 1, 0.0f, 1);
                 }
+#ifdef __ANDROID__
+                {   /* each one's medals and trophies, under the header's icons */
+                    static char cnt[5][5][12];
+                    s32 x[5], k;
+                    Bt4Profile_TopRow(i, x);
+                    for (k = 0; k < 5; k++) {
+                        sprintf(cnt[i][k], "%d", x[k]);
+                        Td_Words(col[k], y + 44.0f, cnt[i][k], TD_C, 44.0f, x[k] ? TD_TEXT(255, 236, 160) : TD_TEXT(120, 130, 170), 1, 120.0f, 1);
+                    }
+                }
+                Td_Words(260.0f, y + 44.0f, rv.top[i].name, TD_B, 60.0f, TD_WHITE, 0, 700.0f, 1);
+#else
                 Td_Words(260.0f, y + 44.0f, rv.top[i].name, TD_B, 60.0f, TD_WHITE, 0, 1300.0f, 1);
+#endif
                 sprintf(line, "%d", rv.top[i].rating);
                 Td_Words(1900.0f, y + 44.0f, line, TD_B, 62.0f, TD_GOLD_FLAT, 2, 0.0f, 1);
             }
             sprintf(line, Tb_Fmt("Page %d/%d"), rv.page + 1, rv.pages);
             Td_Words(110.0f, 892.0f, line, TD_C, 32.0f, TD_TEXT(180, 200, 240), 0, 0.0f, 1);
+#ifdef __ANDROID__
+            Td_Words(1900.0f, 892.0f, "This week's table: the top 3 win trophies.", TD_C, 32.0f, TD_TEXT(180, 200, 240), 2, 1200.0f, 0);
+#else
             Td_Words(1900.0f, 892.0f, "Updates every 10 minutes.", TD_C, 32.0f, TD_TEXT(180, 200, 240), 2, 900.0f, 0);
+#endif
         } else {
             Td_Words(1015.0f, 560.0f, rv.topState == 0 ? "Loading Global Top..." : rv.topState < 0 ? "Global Top unavailable" : "No ranking published yet.",
                      TD_B, 70.0f, TD_GREEN, 1, 1700.0f, 0);
+#ifdef __ANDROID__
+            Td_Words(1015.0f, 660.0f, "This week's table: the top 3 win trophies.", TD_C, 40.0f, TD_SKY(255), 1, 1700.0f, 0);
+#else
             Td_Words(1015.0f, 660.0f, "Updates every 10 minutes.", TD_C, 40.0f, TD_SKY(255), 1, 1700.0f, 0);
+#endif
         }
     } else {
+#ifdef __ANDROID__
+        static char *big[4] = {"1000", "+ / -", "MEDALS", "TOP 3"};
+        static char *a[4] = {"Every week starts at 1000 points.", "Win to gain points; lose to drop.", "A win gives a gold medal.", "Monday 00:00 (UTC-3): the week ends."};
+        static char *b[4] = {"The table resets each Monday.", "Up to 3 battles a day per rival count.", "A loss gives a silver medal.", "Top 3 with 5+ battles vs 3+ rivals."};
+#else
         static char *big[4] = {"1000", "+ / -", "10 MIN", "SUN"};
         static char *a[4] = {"Start at 1000 points.", "Win to gain points; lose to drop.", "Updates every 10 minutes.", "Weekly reset: Sunday 23:59"};
         static char *b[4] = {"Your points carry over each week.", "Points depend on your rival's rating.", "Global Top", "Argentina time (UTC-3)"};
+#endif
         Td_Window(40.0f, 230.0f, 1990.0f, 920.0f, "How Ranked Works");
         for (i = 0; i < 4; i++) {
             f32 x0 = 100.0f + 465.0f * (f32)i;
             Td_Window(x0, 330.0f, x0 + 420.0f, 880.0f, NULL);
             Td_Capsule(x0 + 210.0f, 430.0f, 62.0f, i + 1);
-            Td_Words(x0 + 210.0f, 600.0f, big[i], TD_B, i < 1 || i == 3 ? 110.0f : 92.0f, TD_GOLD, 1, 380.0f, 1);
+            Td_Words(x0 + 210.0f, 600.0f, big[i], TD_B, i < 1 || i == 3 ? 110.0f : 92.0f, TD_GOLD, 1, 380.0f, i != 2);
             Td_Words(x0 + 210.0f, 730.0f, a[i], TD_C, 30.0f, TD_SKY(255), 1, 390.0f, 0);
             Td_Words(x0 + 210.0f, 782.0f, b[i], TD_C, 30.0f, TD_TEXT(255, 236, 190), 1, 390.0f, 0);
         }
@@ -823,6 +910,82 @@ static void Td_Addr(void) {
     Td_Keypad(120.0f, 425.0f, ADDR_ROWS, sTbAddrKeys, sTbAddrBtn, 3, 165.0f, 62.0f, 16.0f, 54.0f, -1);
 }
 
+/* The profile's medals and trophies (Android: gs/bt4_profile.c), drawn from shapes. kind 0 gold, 1 silver, 2 bronze;
+   (cx, cy) the middle, s the size (1: about 110 pixels high). */
+static void Td_Medal(f32 cx, f32 cy, f32 s, s32 kind) {
+    static const u8 face[3][6] = {{255, 236, 120, 214, 150, 20}, {244, 248, 255, 160, 170, 190}, {240, 170, 110, 170, 90, 40}};
+    const u8 *f = face[kind < 0 ? 0 : kind > 2 ? 2 : kind];
+    f32 l[8] = {cx - 34.0f * s, cy - 60.0f * s, cx - 12.0f * s, cy - 60.0f * s, cx + 8.0f * s, cy - 8.0f * s, cx - 14.0f * s, cy - 8.0f * s};
+    f32 r[8] = {cx + 12.0f * s, cy - 60.0f * s, cx + 34.0f * s, cy - 60.0f * s, cx + 14.0f * s, cy - 8.0f * s, cx - 8.0f * s, cy - 8.0f * s};
+    Td_Poly(l, 4, TD_RGB(70, 120, 255), TD_RGB(30, 60, 170));
+    Td_Poly(r, 4, TD_RGB(255, 80, 80), TD_RGB(170, 30, 30));
+    Td_Disc(cx, cy + 14.0f * s, 38.0f * s, TD_RGB(f[3] / 2, f[4] / 2, f[5] / 2), TD_RGB(f[3] / 2, f[4] / 2, f[5] / 2));
+    Td_Disc(cx, cy + 14.0f * s, 33.0f * s, TD_RGB(f[3], f[4], f[5]), TD_RGB(f[3], f[4], f[5]));
+    Td_Disc(cx, cy + 14.0f * s, 25.0f * s, TD_RGB(f[0], f[1], f[2]), TD_RGB(f[3], f[4], f[5]));
+    Td_Tri(cx, cy - 2.0f * s, cx + 9.0f * s, cy + 24.0f * s, cx - 9.0f * s, cy + 24.0f * s, TD_RGB(f[3], f[4], f[5]));
+    Td_Tri(cx - 14.0f * s, cy + 8.0f * s, cx + 14.0f * s, cy + 8.0f * s, cx, cy + 20.0f * s, TD_RGB(f[3], f[4], f[5]));
+}
+static void Td_Trophy(f32 cx, f32 cy, f32 s, s32 kind) {
+    static const u8 metal[3][6] = {{255, 236, 120, 214, 140, 10}, {250, 252, 255, 150, 160, 180}, {244, 176, 112, 160, 84, 34}};
+    const u8 *m = metal[kind < 0 ? 0 : kind > 2 ? 2 : kind];
+    u32 light = TD_RGB(m[0], m[1], m[2]), dark = TD_RGB(m[3], m[4], m[5]);
+    f32 cup[8] = {cx - 38.0f * s, cy - 50.0f * s, cx + 38.0f * s, cy - 50.0f * s, cx + 16.0f * s, cy + 8.0f * s, cx - 16.0f * s, cy + 8.0f * s};
+    f32 hw = 7.0f * s;
+    Td_Line(cx - 34.0f * s, cy - 40.0f * s, cx - 54.0f * s, cy - 40.0f * s, hw, dark); /* the handles */
+    Td_Line(cx - 54.0f * s, cy - 43.0f * s, cx - 54.0f * s, cy - 18.0f * s, hw, dark);
+    Td_Line(cx - 56.0f * s, cy - 20.0f * s, cx - 24.0f * s, cy - 2.0f * s, hw, dark);
+    Td_Line(cx + 34.0f * s, cy - 40.0f * s, cx + 54.0f * s, cy - 40.0f * s, hw, dark);
+    Td_Line(cx + 54.0f * s, cy - 43.0f * s, cx + 54.0f * s, cy - 18.0f * s, hw, dark);
+    Td_Line(cx + 56.0f * s, cy - 20.0f * s, cx + 24.0f * s, cy - 2.0f * s, hw, dark);
+    Td_Poly(cup, 4, light, dark);
+    Td_Rect(cx - 41.0f * s, cy - 54.0f * s, cx + 41.0f * s, cy - 46.0f * s, light, light);
+    Td_Rect(cx - 6.0f * s, cy + 8.0f * s, cx + 6.0f * s, cy + 26.0f * s, light, dark);
+    Td_Rect(cx - 24.0f * s, cy + 26.0f * s, cx + 24.0f * s, cy + 34.0f * s, light, dark);
+    Td_Rect(cx - 32.0f * s, cy + 34.0f * s, cx + 32.0f * s, cy + 46.0f * s, TD_RGB(90, 50, 20), TD_RGB(50, 26, 8));
+    Td_Rect(cx - 10.0f * s, cy - 40.0f * s, cx - 4.0f * s, cy - 8.0f * s, Td_Rgba(255, 255, 255, 150), Td_Rgba(255, 255, 255, 40)); /* shine */
+}
+
+#ifdef __ANDROID__
+/* the card's row of medals and trophies, and the line under the name */
+static void Td_ProfileStats(void) {
+    static char line[96], wl[64], num[5][16];
+    static char *label[5] = {"GOLD MEDALS", "SILVER MEDALS", "GOLD TROPHIES", "SILVER TROPHIES", "BRONZE TROPHIES"};
+    Bt4ProfileStats st;
+    s32 i, n[5];
+
+    memset(&st, 0, sizeof(st));
+    if (!getenv("BT4_RENDER_TEST")) {
+        Bt4Profile_Stats(&st);
+    } else {
+        st.state = 1; st.gold = 12; st.silver = 7; st.wins = 12; st.losses = 7; st.rating = 1064; st.rank = 2; st.players = 14;
+        st.trophies[0] = 1; st.trophies[2] = 2;
+    }
+    if (st.state == 1) {
+        if (st.rank > 0) sprintf(line, Tb_Fmt("RATING %d  -  RANK #%d OF %d THIS WEEK"), st.rating, st.rank, st.players);
+        else sprintf(line, Tb_Fmt("RATING %d  -  NOT RANKED THIS WEEK"), st.rating);
+        Td_Words(376.0f, 470.0f, line, TD_C, 36.0f, TD_SKY(255), 0, 1100.0f, 1);
+        sprintf(wl, Tb_Fmt("%d WINS  %d LOSSES"), st.wins, st.losses);
+        Td_Words(1910.0f, 470.0f, wl, TD_C, 36.0f, TD_TEXT(255, 230, 170), 2, 420.0f, 1);
+    } else {
+        Td_Words(376.0f, 470.0f, st.state == -2 ? "Choose a nickname to win medals and play Ranked." : st.state < 0 ? "Profile service unavailable" : "Loading your profile...",
+                 TD_C, 36.0f, st.state == -2 ? TD_TEXT(255, 230, 170) : TD_SKY(255), 0, 1500.0f, 0);
+    }
+    n[0] = st.gold; n[1] = st.silver; n[2] = st.trophies[0]; n[3] = st.trophies[1]; n[4] = st.trophies[2];
+    for (i = 0; i < 5; i++) {
+        f32 x = 120.0f + 362.0f * (f32)i, p[8];
+        Td_Skew(p, x, 520.0f, x + 340.0f, 640.0f, 10.0f);
+        Td_Poly(p, 4, Td_Rgba(30, 26, 76, 220), Td_Rgba(12, 10, 36, 230));
+        Td_Outline(p, 4, 2.0f, Td_Rgba(200, 165, 85, 160));
+        if (i < 2) Td_Medal(x + 72.0f, 572.0f, 0.82f, i);
+        else Td_Trophy(x + 72.0f, 580.0f, 0.85f, i - 2);
+        if (st.state == 1 || getenv("BT4_RENDER_TEST")) sprintf(num[i], "%d", n[i]);
+        else Ps_Copy(num[i], "-", sizeof(num[i]));
+        Td_Words(x + 145.0f, 568.0f, num[i], TD_B, 74.0f, n[i] > 0 ? TD_GOLD : TD_WHITE, 0, 180.0f, 1);
+        Td_Words(x + 180.0f, 622.0f, label[i], TD_C, 22.0f, TD_TEXT(190, 210, 240), 1, 310.0f, 0);
+    }
+}
+#endif
+
 static void Td_Profile(void) {
     extern int MenuTranslation_TboLanguage(void);
     static char *languages[4] = {"Automatic", "English", "Portugu\xC3\xAAs", "Espa\xC3\xB1ol"};
@@ -830,12 +993,20 @@ static void Td_Profile(void) {
     s32 language = MenuTranslation_TboLanguage();
 
     Td_Page(sTbTitle[TB_PROFILE], 1, 0);
+#ifdef __ANDROID__
+    Td_Window(40.0f, 230.0f, 1990.0f, 950.0f, "PLAYER CARD");
+#else
     Td_Window(40.0f, 230.0f, 1990.0f, 920.0f, "PLAYER CARD");
+#endif
     Td_Disc(220.0f, 420.0f, 110.0f, TD_RGB(255, 220, 120), TD_RGB(255, 220, 120));
     Td_Disc(220.0f, 420.0f, 98.0f, TD_RGB(40, 100, 220), TD_RGB(40, 100, 220));
     Td_Words(220.0f, 422.0f, "1P", TD_B, 110.0f, Td_Ink(TD_RGB(255, 255, 255), TD_RGB(210, 230, 255), TD_RGB(10, 30, 90)), 1, 0.0f, 1);
     Td_Words(370.0f, 380.0f, (char *)Port_NetNameGet(), TD_B, 110.0f, Td_InkOuter(TD_RGB(240, 255, 242), TD_RGB(156, 244, 180), TD_RGB(0, 30, 10), TD_RGB(14, 4, 36), 3.0f), 0,
              1500.0f, 1);
+#ifdef __ANDROID__
+    Td_ProfileStats();
+    if (0)
+#endif
     {   /* under the name: the rating, as the mock-up (when the ranked service has said it) */
         static char line[64];
         Bt4RankedView rv = {0};
@@ -854,8 +1025,13 @@ static void Td_Profile(void) {
     } else {
         Ps_Copy(value, languages[language], sizeof(value));
     }
+#ifdef __ANDROID__
+    Td_Option(110.0f, 670.0f, 1910.0f, 780.0f, "Name", (char *)Port_NetNameGet(), 0, 1, sTb->prCur == PR_NAME, 1, "Type Name", 1);
+    Td_Option(110.0f, 805.0f, 1910.0f, 915.0f, "Language", value, language, 4, sTb->prCur == PR_LANG, 2, "AUTOMATIC, ENGLISH, PORTUGU\xC3\x8AS, ESPA\xC3\x91OL", 1);
+#else
     Td_Option(110.0f, 580.0f, 1910.0f, 710.0f, "Name", (char *)Port_NetNameGet(), 0, 1, sTb->prCur == PR_NAME, 1, "Type Name", 1);
     Td_Option(110.0f, 750.0f, 1910.0f, 880.0f, "Language", value, language, 4, sTb->prCur == PR_LANG, 2, "AUTOMATIC, ENGLISH, PORTUGU\xC3\x8AS, ESPA\xC3\x91OL", 1);
+#endif
 }
 
 static void Td_Name(void) {
@@ -873,7 +1049,7 @@ static void Td_Name(void) {
     Ps_Copy(line, sTb->typed, 40);
     Ps_Cat(line, (sTb->frames / 16) & 1 ? "_" : " ", 40);
     Td_Words(420.0f, 332.0f, line, TD_B, 76.0f, TD_GOLD_FLAT, 0, 1700.0f, 1);
-    sprintf(count, "%d / %d", (int)sTb->typedLen, 19);
+    sprintf(count, "%d / %d", (int)sTb->typedLen, TB_NAME_MAX);
     Td_Words(2300.0f, 332.0f, count, TD_C, 32.0f, TD_TEXT(150, 200, 180), 2, 0.0f, 1);
     Td_Keypad(400.0f, 405.0f, NAME_ROWS, sTbNameKeys[sTb->lower], sTbNameBtn, 4, 200.0f, 64.0f, 16.0f, 56.0f, -1);
 }
@@ -948,7 +1124,7 @@ static void Td_Wait(void) {
     }
     Td_Page(title, 1, 0);
     if (sTb->host == 2) {
-        s32 n = sTb->waitBack == TB_RANKED ? 0 : Port_LobbyQueueWaiting(sTb->queue), widen = Port_LobbyWiden();
+        s32 n = sTb->waitBack == TB_RANKED ? TB_RANKED_WAITING : Port_LobbyQueueWaiting(sTb->queue), widen = Port_LobbyWiden();
         char *l1 = "THE SERVICE PAIRS YOU", *l2 = "WITH THE NEXT RIVAL";
         Td_Window(40.0f, 230.0f, 900.0f, 920.0f, "SEARCHING");
         Td_Words(470.0f, 360.0f, sTb->waitBack != TB_RANKED && sTb->queue ? "TEAMS" : "ONE ON ONE", TD_B, 100.0f, TD_GOLD, 1, 780.0f, 0);

@@ -47,7 +47,6 @@ void Port_NetLeave(void);
 
 enum { PAD = 18, RING = 4096, REDUNDANT = 16, MAGIC = 0x4E335442 /* "BT3N" */ };
 enum { T_HELLO = 1, T_HELLO_ACK = 2, T_INPUT = 3, T_BYE = 4, T_PING = 5, T_PONG = 6, T_CONFIG = 7, T_CONFIG_ACK = 8,
-       T_PUNCH = 9 /* nothing to read: sent so that the sender's router lets the other side's packets in (room codes) */,
        T_CHAT = 10 /* a line of text between the players (net_chat.c): its number, its length, its bytes. Not part of
                       the game: a copy without the chat ignores it, so NET_VERSION stays */,
        T_FPRINT = 12 /* the sender's gameplay fingerprint (fprint_send, below); a copy without it ignores it */ };
@@ -69,6 +68,9 @@ static const uint32_t kVersion = NET_VERSION;
 #include "net_match.h"
 #include "match_supabase.h"
 #include "net_relay.h"
+#ifdef __ANDROID__
+#include "bt4_profile.h"
+#endif
 #include "net_chat.h"
 #include "voice.h"
 #include "net_lobby.h"
@@ -302,6 +304,15 @@ static int auto_delay(int rttMs) {
     }
     delay = ticks - 4;
     return delay < 1 ? 1 : delay > 6 ? 6 : delay;
+}
+
+/* Budget one blank for polling and two for relay jitter before using the
+   agreed rollback window. The host sends the same delay to both players. */
+static int relay_delay_floor(int rttMs, int speed, int rollback) {
+    const int blankUs = 1668300 / speed;
+    const int halfTripUs = (rttMs < 0 ? 300 : rttMs) * 500;
+    const int delay = (halfTripUs + blankUs - 1) / blankUs + 3 - rollback;
+    return delay < 1 ? 1 : delay > 30 ? 30 : delay;
 }
 
 static int sMode = -1; /* 0 off, 1 host, 2 join */
@@ -991,6 +1002,18 @@ static int same_addr(const struct sockaddr_in *a, const struct sockaddr_in *b) {
     return a->sin_addr.s_addr == b->sin_addr.s_addr && a->sin_port == b->sin_port;
 }
 
+int NetIo_HostPunch(const struct sockaddr_in *from, const struct sockaddr_in *candidates, int count, int relay) {
+    int i, known = 0;
+    int relayed = 0;
+    relayed = Relay_IsPeer(from);
+    if (!from->sin_port || (!relayed && getenv("BT3_RELAY_ONLY") != NULL)) return 0;
+    for (i = 0; i < count; ++i) {
+        if (same_addr(from, &candidates[i])) return relayed;
+        if (i != relay && from->sin_addr.s_addr == candidates[i].sin_addr.s_addr) known = 1;
+    }
+    return known;
+}
+
 /* For the players' screens (ui.cpp): how many watch this match, and their names. */
 int Port_NetWatchers(void) {
     return Port_NetActive() && sMode != 3 ? sWatchCount : 0;
@@ -1229,8 +1252,16 @@ static void spec_data(Watcher *w, uint64_t now) {
    router lets its greeting in (as the host does for the other player). Called by the lobby and by spec_pump. */
 enum { WATCH_KNOCK = 16 };
 static struct sockaddr_in sKnock[WATCH_KNOCK];
-static uint64_t sKnockUntil[WATCH_KNOCK], sKnockLast;
+static uint64_t sKnockUntil[WATCH_KNOCK], sKnockAfter[WATCH_KNOCK], sKnockLast;
 static int sKnockGen;
+
+static int advertised_relay(const struct sockaddr_in *peer) {
+    int i;
+    for (i = 0; i < WATCH_KNOCK; i++) {
+        if (sKnockAfter[i] && sKnockUntil[i] && same_addr(peer, &sKnock[i])) return 1;
+    }
+    return 0;
+}
 
 static void watch_service(void) {
     char addr[MATCH_WATCH_ADDRS][64];
@@ -1246,6 +1277,7 @@ static void watch_service(void) {
             struct sockaddr_in a;
             char text[64], *colon;
             int seen = strncmp(addr[i], "seen=", 5) == 0;
+            int relay = 0;
             memset(&a, 0, sizeof(a));
             a.sin_family = AF_INET;
             snprintf(text, sizeof(text), "%s", seen ? addr[i] + 5 : addr[i]);
@@ -1254,7 +1286,11 @@ static void watch_service(void) {
                 *colon = '\0';
                 a.sin_port = htons((uint16_t)atoi(colon + 1));
             }
-            if (strncmp(text, "relay=", 6) == 0 || inet_pton(AF_INET, text, &a.sin_addr) != 1) {
+            if (strncmp(text, "relay=", 6) == 0) {
+                if (inet_pton(AF_INET, text + 6, &a.sin_addr) != 1 || a.sin_port == 0) continue;
+                Relay_RoomPeer(sSock, &a);
+                relay = 1;
+            } else if (inet_pton(AF_INET, text, &a.sin_addr) != 1) {
                 continue;
             }
             Relay_Permit(sSock, &a);
@@ -1272,6 +1308,7 @@ static void watch_service(void) {
                 }
                 k = pick;
                 sKnock[k] = a;
+                sKnockAfter[k] = relay ? now + 3000000000ull : 0;
             }
             sKnockUntil[k] = now + 10000000000ull;
         }
@@ -1280,7 +1317,7 @@ static void watch_service(void) {
         uint32_t punch[2] = {MAGIC, T_PUNCH};
         sKnockLast = now;
         for (k = 0; k < WATCH_KNOCK; k++) {
-            if (sKnockUntil[k] > now) {
+            if (sKnockAfter[k] <= now && sKnockUntil[k] > now) {
                 net_send(punch, sizeof(punch), &sKnock[k]);
             }
         }
@@ -2159,8 +2196,11 @@ static void net_start(int role, const char *host, const char *join) {
     } else if (sMode == 1) {
         uint64_t start = SDL_GetTicksNS(), lastPing = 0, lastCfg = 0;
         int pings = 0;
-        while (SDL_GetTicksNS() - start < 400000000ull) {
+        uint64_t measureNs = 400000000ull;
+        if (sFromLobby && Port_LobbyRelayed()) measureNs = 1600000000ull;
+        while (SDL_GetTicksNS() - start < measureNs) {
             uint64_t now = SDL_GetTicksNS();
+            if (now - start >= 400000000ull && sSetupRtt >= 0) break;
             if (pings < 12 && now - lastPing >= 25000000ull) {
                 uint32_t ping[3] = {MAGIC, T_PING, now_ms()};
                 send_to_peer(ping, (int)sizeof(ping));
@@ -2177,6 +2217,12 @@ static void net_start(int role, const char *host, const char *join) {
         }
         if (sAutoDelay) {
             sDelay = auto_delay(sSetupRtt);
+        }
+        if (sFromLobby && Port_LobbyRelayed() && getenv("BT3_NET_DELAY") == NULL) {
+            const int floor = relay_delay_floor(sSetupRtt, rules_speed(), sRollMax);
+            if (sDelay < floor) sDelay = floor;
+            fprintf(stderr, "bt4: relay timing: rtt_ms=%d speed=%d delay=%d rollback=%d\n",
+                    sSetupRtt, rules_speed(), sDelay, sRollMax);
         }
         fprintf(stderr, "bt3: net: round trip %d ms%s\n", sSetupRtt, sAutoDelay ? " (the input delay is chosen from it)" : "");
         start = SDL_GetTicksNS();
@@ -2897,6 +2943,16 @@ static void ranked_outcome(unsigned tick){
     extern int Port_BattleOutcome(int *);
     extern int Port_RankedPauseAbortPad(void);
     static int notified;
+#ifdef __ANDROID__
+    /* (Android: every online battle of a session, Ranked or not, goes to the profile: medals, Ranked's rating) */
+    if(sMode!=3&&sSession){
+        int bits=0,state=Port_BattleOutcome(&bits);
+        int abortPad=bits&8?Port_RankedPauseAbortPad():-1;
+        Bt4Profile_Observe(state,bits,tick,sRollMax>0?sChecked:tick,sResim||gPortResim,abortPad<0?-1:abortPad==sMe,sMe,sNames[0],sNames[1]);
+        if(!sResim&&!gPortResim)Bt4Profile_Pump();
+    }
+    return;
+#endif
     if(sMode!=3&&sSession&&Port_RankedActive()){
         int bits=0,state=Port_BattleOutcome(&bits);
         int abortPad=bits&8?Port_RankedPauseAbortPad():-1;
@@ -3234,9 +3290,19 @@ static void put_env(const char *name, const char *value) {
 #endif
 }
 
+/* Android: Ranked is a quick match in a queue of its own (Dragon Net's "D20", kMatchQueues[4], which BT4's one on one
+   never uses), so the two players of a Ranked session are both Ranked: the quick match's queue that led to the
+   session (Port_LobbyStartCode), consumed when the session begins (gs/bt4_profile.c). */
+static int sLastQuickQueue = -1;
+extern const char *Port_LobbyCode(void);
+
 void Port_NetSessionBegin(int role, const char *address, int port) {
     char host[16], join[160];
     static int known;
+#ifdef __ANDROID__
+    Bt4Profile_SessionBegin(sLastQuickQueue == 4, Port_LobbyCode());
+    sLastQuickQueue = -1;
+#endif
 
     if (!known) { /* the player's own save folder, as the program was started */
         const char *saves = getenv("BT3_SAVES");
@@ -3273,6 +3339,9 @@ int Port_NetSessionsEnded(void) {
 
 void Port_NetSessionEnd(void) {
     sSessionsEnded++;
+#ifdef __ANDROID__
+    Bt4Profile_SessionEnd();
+#endif
     sRivalRegion[0] = '\0';
     if (Lobby_SessionEnded()) { /* a lobby's match: the lobby goes on, with its socket, its relay and its room code */
         sMode = 0;
@@ -3370,10 +3439,14 @@ static struct sockaddr_in sCodeSeen; /* the address the service saw the other pl
 static char sCodeAsked[16]; /* the code this game asked the service for (a lobby's: its member keeps it, net_lobby.c) */
 static int sCodeSeenSet, sCodeGen, sCodeRelayGen; /* ... and which of the search's later news the lobby has taken in */
 
-int Port_LobbyRelayed(void) { return sCodeVia; }
+int Port_LobbyRelayed(void) {
+    if (sFromLobby && sConnected && sMode != 3 &&
+        (Relay_IsPeer(&sPeer) || advertised_relay(&sPeer))) return 1;
+    return sCodeVia;
+}
 static struct sockaddr_in sCodeAddr[MATCH_ADDRS];
 static char sCodeText[8], sCodeError[256];
-static uint64_t sCodeSince;
+static uint64_t sCodeSince, sHostPunchReply;
 
 const char *Port_LobbyCode(void) { return sCodeText; }
 const char *Port_LobbyError(void) { return sCodeError; }
@@ -3429,6 +3502,8 @@ const char *Port_OnlineBlocked(void) {
 
 int Port_LobbyStart(int host, const char *address, int port) {
     struct sockaddr_in local;
+
+    sLastQuickQueue = -1; /* (Port_LobbyStartCode sets it again for a quick match) */
 
     if (Port_OnlineBlocked() != NULL) { /* (said by the screens through Port_LobbyError) */
         snprintf(sCodeError, sizeof(sCodeError), "%s", Port_OnlineBlocked());
@@ -3597,10 +3672,12 @@ int Port_LobbyStartCode(int host, const char *code) {
         return sLobby;
     }
     sLobbyRole = host ? 1 : 2;
+    sLastQuickQueue = sQuickQueue;
     sCodeMode = 1;
     sCodeAddrs = 0;
     sCodeSeenSet = 0;
     sCodeGen = sCodeRelayGen = 0;
+    sHostPunchReply = 0;
     sCodeText[0] = sCodeError[0] = '\0';
     sCodeLocalPort = ntohs(local.sin_port);
     sLobbyPort = sCodeLocalPort;
@@ -3657,6 +3734,7 @@ int Port_LobbyRelease(int *min, int *latest) { return Match_Release(min, latest)
 int Port_LobbyQueueWaiting(int queue) { return Match_QueueWaiting(queue); }
 
 void Port_LobbyCancel(void) {
+    sLastQuickQueue = -1;
     if (sLobby == 6) { /* (a start that waited for the fingerprint: not made) */
         sPend.kind = 0;
         sLobby = 0;
@@ -3710,7 +3788,8 @@ static void lobby_take_addrs(const MatchStatus *st) {
             *colon = '\0';
             a->sin_port = htons((uint16_t)atoi(colon + 1));
             if (inet_pton(AF_INET, text, &a->sin_addr) == 1 && a->sin_port != 0) {
-                Relay_Permit(sSock, a); /* (the host, if it holds a relay address: this player may come in through it) */
+                Relay_Permit(sSock, a);
+                if (sCodeRelay == sCodeAddrs) Relay_RoomPeer(sSock, a);
                 sCodeAddrs++;
             } else if (sCodeRelay == sCodeAddrs) {
                 sCodeRelay = -1;
@@ -3886,6 +3965,17 @@ int Port_LobbyPoll(void) {
         memcpy(&magic, pkt, 4);
         memcpy(&type, pkt + 4, 4);
         if (magic != MAGIC) {
+            continue;
+        }
+        if (sCodeMode && sLobbyRole == 2 && type == T_PUNCH && n == 8 &&
+            (!sHostPunchReply || now - sHostPunchReply >= 200000000ull) &&
+            NetIo_HostPunch(&from, sCodeAddr, sCodeAddrs, sCodeRelay)) {
+            uint32_t hello[4] = {MAGIC, T_HELLO, NET_VERSION, LOBBY_CAP};
+            /* The host's router may assign a different port for this peer
+               than it did for STUN. Greet the endpoint that actually reached us. */
+            sHostPunchReply = now;
+            fprint_send(&from);
+            net_send(hello, sizeof(hello), &from);
             continue;
         }
         if (type == T_LOBBY_INVITE && sLobbyRole != 1 && !sCodeMode && same_addr(&from, &sPeer)) {

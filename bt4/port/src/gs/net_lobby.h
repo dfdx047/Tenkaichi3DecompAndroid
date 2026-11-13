@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
 enum { T_LOBBY_FIRST = 30, T_LOBBY_LAST = 42 }; /* the lobby's packet types (net_lobby.c); a release without lobbies ignores them */
+enum { T_PUNCH = 9 }; /* An empty UDP probe that opens the sender's NAT mapping. */
 
 #ifndef __cplusplus
 struct sockaddr_in;
@@ -25,6 +26,7 @@ int NetIo_FingerprintKnown(void);         /* 1 known; else being computed (start
 int NetIo_FingerprintRequired(void);      /* a member who sends none is refused (net.c: FP_PEER_REQUIRED) */
 const char *NetIo_MyName(void);
 void NetIo_WatchService(void);            /* knocks at the addresses the matchmaking service has told of (room codes) */
+int NetIo_HostPunch(const struct sockaddr_in *from, const struct sockaddr_in *candidates, int count, int relay);
 uint32_t NetIo_Rules(int type, int dp, int time, int speed); /* the rules word a host sends (net.c: sRules) */
 /* A session for the lobby's match: `role` 1 hosts, 2 joins `target` (or `alt`), 3 watches `target`. The host knocks
    at `knock` and `knock2` while it waits (the one who joins, when it is not the lobby's owner). Addresses with port

@@ -189,7 +189,7 @@ typedef struct {
     uint8_t txn[12];                 /* the transaction of its last ChannelBind (the answer names no channel) */
 } RelayPeer;
 
-static struct {
+typedef struct {
     int active;
     struct sockaddr_in server;
     char username[160], password[160], realm[128], nonce[256];
@@ -200,7 +200,9 @@ static struct {
     RelayPeer peer[RELAY_PEERS];
     int nextChan;                    /* the next channel number to give (a number stays with its address) */
     uint64_t lastRefresh, lastPermit;
-} sR;
+} RelayState;
+
+static RelayState sR;
 
 static void put16(uint8_t *p, unsigned v) { p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)v; }
 
@@ -237,22 +239,22 @@ static int msg_addr(uint8_t *m, int at, unsigned type, const struct sockaddr_in 
 }
 
 /* The login's three attributes and the integrity, and the message's length field. */
-static int msg_sign(uint8_t *m, int at) {
+static int msg_sign(RelayState *state, uint8_t *m, int at) {
     uint8_t mac[20];
-    if (sR.haveLogin) {
-        at = msg_attr(m, at, 0x0006, sR.username, (int)strlen(sR.username));
-        at = msg_attr(m, at, 0x0014, sR.realm, (int)strlen(sR.realm));
-        at = msg_attr(m, at, 0x0015, sR.nonce, (int)strlen(sR.nonce));
+    if (state->haveLogin) {
+        at = msg_attr(m, at, 0x0006, state->username, (int)strlen(state->username));
+        at = msg_attr(m, at, 0x0014, state->realm, (int)strlen(state->realm));
+        at = msg_attr(m, at, 0x0015, state->nonce, (int)strlen(state->nonce));
         put16(m + 2, (unsigned)(at - 20 + 24)); /* (the length as it will be with the integrity attribute) */
-        hmac_sha1(sR.key, 16, m, (size_t)at, mac);
+        hmac_sha1(state->key, 16, m, (size_t)at, mac);
         at = msg_attr(m, at, 0x0008, mac, 20);
     }
     put16(m + 2, (unsigned)(at - 20));
     return at;
 }
 
-static void to_server(int sock, const uint8_t *m, int len) {
-    sendto(sock, (const char *)m, len, 0, (const struct sockaddr *)&sR.server, sizeof(sR.server));
+static void to_server(RelayState *state, int sock, const uint8_t *m, int len) {
+    sendto(sock, (const char *)m, len, 0, (const struct sockaddr *)&state->server, sizeof(state->server));
 }
 
 /* An attribute of a received message: its value and length, or NULL. */
@@ -289,22 +291,22 @@ static int xor_addr(const uint8_t *v, int len, struct sockaddr_in *out) {
 }
 
 /* Takes the realm and the nonce out of an error answer and works the key out. */
-static void take_login(const uint8_t *m, int n) {
+static void take_login(RelayState *state, const uint8_t *m, int n) {
     int rl = 0, nl = 0;
     const uint8_t *realm = attr_find(m, n, 0x0014, &rl), *nonce = attr_find(m, n, 0x0015, &nl);
     char text[512];
-    if (nonce != NULL && nl < (int)sizeof(sR.nonce)) {
-        memcpy(sR.nonce, nonce, (size_t)nl);
-        sR.nonce[nl] = '\0';
+    if (nonce != NULL && nl < (int)sizeof(state->nonce)) {
+        memcpy(state->nonce, nonce, (size_t)nl);
+        state->nonce[nl] = '\0';
     }
-    if (realm != NULL && rl < (int)sizeof(sR.realm)) {
-        memcpy(sR.realm, realm, (size_t)rl);
-        sR.realm[rl] = '\0';
+    if (realm != NULL && rl < (int)sizeof(state->realm)) {
+        memcpy(state->realm, realm, (size_t)rl);
+        state->realm[rl] = '\0';
     }
-    if (sR.realm[0] != '\0' && sR.nonce[0] != '\0') {
-        SDL_snprintf(text, sizeof(text), "%s:%s:%s", sR.username, sR.realm, sR.password);
-        md5((const uint8_t *)text, strlen(text), sR.key);
-        sR.haveLogin = 1;
+    if (state->realm[0] != '\0' && state->nonce[0] != '\0') {
+        SDL_snprintf(text, sizeof(text), "%s:%s:%s", state->username, state->realm, state->password);
+        md5((const uint8_t *)text, strlen(text), state->key);
+        state->haveLogin = 1;
     }
 }
 
@@ -312,13 +314,13 @@ static int same_addr(const struct sockaddr_in *a, const struct sockaddr_in *b) {
     return a->sin_addr.s_addr == b->sin_addr.s_addr && a->sin_port == b->sin_port;
 }
 
-int Relay_Allocate(int sock, const char *server, const char *username, const char *password, char *out, int size) {
+static int relay_allocate(RelayState *state, int sock, const char *server, const char *username, const char *password, char *out, int size, int rounds, int (*cancelled)(void)) {
     struct addrinfo hints, *res = NULL;
-    char host[128], *colon;
+    char host[272], *colon;
     uint8_t m[768], pkt[768];
     int round, silent = 0, fresh = 1, at = 0;
 
-    memset(&sR, 0, sizeof(sR));
+    memset(state, 0, sizeof(*state));
     SDL_strlcpy(host, server, sizeof(host));
     colon = strrchr(host, ':');
     if (colon == NULL) {
@@ -331,17 +333,17 @@ int Relay_Allocate(int sock, const char *server, const char *username, const cha
     if (getaddrinfo(host, colon + 1, &hints, &res) != 0 || res == NULL) {
         return 0;
     }
-    memcpy(&sR.server, res->ai_addr, sizeof(sR.server));
+    memcpy(&state->server, res->ai_addr, sizeof(state->server));
     freeaddrinfo(res);
-    SDL_strlcpy(sR.username, username, sizeof(sR.username));
-    SDL_strlcpy(sR.password, password, sizeof(sR.password));
-    for (round = 0; round < 10; round++) { /* without the login, with it, and again after a stale nonce or a lost packet */
+    SDL_strlcpy(state->username, username, sizeof(state->username));
+    SDL_strlcpy(state->password, password, sizeof(state->password));
+    for (round = 0; round < rounds && (!cancelled || !cancelled()); round++) { /* without the login, with it, and again after a stale nonce or a lost packet */
         static const uint8_t udp[4] = {17, 0, 0, 0};
         int waited;
-        if (silent == 2 && !sR.haveLogin) {
+        if (!cancelled && silent == 2 && !state->haveLogin) {
             /* no answer at all: seen now and then with Cloudflare's service, for a whole conversation (every
                request from one port) while another gets through. Its other port is another conversation. */
-            sR.server.sin_port = htons(ntohs(sR.server.sin_port) == 53 ? 3478 : 53);
+            state->server.sin_port = htons(ntohs(state->server.sin_port) == 53 ? 3478 : 53);
             silent = 0;
         }
         silent++;
@@ -351,19 +353,19 @@ int Relay_Allocate(int sock, const char *server, const char *username, const cha
                the conversation already has, and refused (437). */
             at = msg_begin(m, 0x0003);
             at = msg_attr(m, at, 0x0019, udp, 4);
-            at = msg_sign(m, at);
+            at = msg_sign(state, m, at);
             fresh = 0;
         }
-        to_server(sock, m, at);
+        to_server(state, sock, m, at);
         if (SDL_getenv("BT3_RELAY_LOG") != NULL) {
             fprintf(stderr, "relay: round %d asked (%d bytes)\n", round, at);
         }
-        for (waited = 0; waited < 700; waited += 10) {
+        for (waited = 0; waited < 700 && (!cancelled || !cancelled()); waited += 10) {
             struct sockaddr_in from;
             socklen_t fromLen = sizeof(from);
             int n = (int)recvfrom(sock, (char *)pkt, sizeof(pkt), 0, (struct sockaddr *)&from, &fromLen), len = 0;
             unsigned type;
-            if (n < 20 || !same_addr(&from, &sR.server) || memcmp(pkt + 8, m + 8, 12) != 0) {
+            if (n < 20 || !same_addr(&from, &state->server) || memcmp(pkt + 8, m + 8, 12) != 0) {
                 SDL_Delay(10);
                 continue;
             }
@@ -375,7 +377,7 @@ int Relay_Allocate(int sock, const char *server, const char *username, const cha
                 for (q = 20; q + 4 <= n; q += 4 + (((pkt[q + 2] << 8 | pkt[q + 3]) + 3) & ~3)) {
                     fprintf(stderr, " %04x(%d)", pkt[q] << 8 | pkt[q + 1], pkt[q + 2] << 8 | pkt[q + 3]);
                 }
-                fprintf(stderr, "; login known %d\n", sR.haveLogin);
+                fprintf(stderr, "; login known %d\n", state->haveLogin);
             }
             if (type == 0x0103) { /* success */
                 struct sockaddr_in relayed;
@@ -385,8 +387,8 @@ int Relay_Allocate(int sock, const char *server, const char *username, const cha
                     return 0;
                 }
                 SDL_snprintf(out, (size_t)size, "%s:%d", text, ntohs(relayed.sin_port));
-                sR.active = 1;
-                sR.lastRefresh = sR.lastPermit = SDL_GetTicks();
+                state->active = 1;
+                state->lastRefresh = state->lastPermit = SDL_GetTicks();
                 return 1;
             }
             if (type == 0x0113) { /* error: 401 the first time (the login is wanted), 438 a stale nonce */
@@ -395,18 +397,18 @@ int Relay_Allocate(int sock, const char *server, const char *username, const cha
                 if (SDL_getenv("BT3_RELAY_LOG") != NULL) {
                     fprintf(stderr, "relay: allocate answered %d %.*s\n", code, e != NULL && len > 4 ? len - 4 : 0, e != NULL ? (const char *)e + 4 : "");
                 }
-                if (code == 437 && sR.haveLogin) { /* an address is held already (an earlier run of this port): given up, asked anew */
+                if (code == 437 && state->haveLogin) { /* an address is held already (an earlier run of this port): given up, asked anew */
                     static const uint8_t life[4] = {0, 0, 0, 0};
                     uint8_t r[768];
                     int rt = msg_begin(r, 0x0004);
                     rt = msg_attr(r, rt, 0x000D, life, 4);
-                    rt = msg_sign(r, rt);
-                    to_server(sock, r, rt);
+                    rt = msg_sign(state, r, rt);
+                    to_server(state, sock, r, rt);
                     SDL_Delay(150);
                 } else if (code != 401 && code != 438) {
                     return 0;
                 } else {
-                    take_login(pkt, n);
+                    take_login(state, pkt, n);
                 }
                 fresh = 1;
                 break;
@@ -416,12 +418,34 @@ int Relay_Allocate(int sock, const char *server, const char *username, const cha
     return 0;
 }
 
+int Relay_Allocate(int sock, const char *server, const char *username, const char *password, char *out, int size) {
+    return relay_allocate(&sR, sock, server, username, password, out, size, 10, NULL);
+}
+
+void *Relay_PrepareRoom(int sock, const char *server, const char *username, const char *password,
+                         char *out, int size, int (*cancelled)(void)) {
+    RelayState *state = SDL_malloc(sizeof(*state));
+    if (state && !relay_allocate(state, sock, server, username, password, out, size, 4, cancelled)) {
+        SDL_free(state);
+        return NULL;
+    }
+    return state;
+}
+
+void Relay_FinishRoom(void *prepared, int install) {
+    RelayState *state = prepared;
+    if (!state) return;
+    if (install) sR = *state;
+    SDL_free(state);
+}
+
+
 static void send_permit(int sock, const struct sockaddr_in *peer) {
     uint8_t m[768];
     int at = msg_begin(m, 0x0008);
     at = msg_addr(m, at, 0x0012, peer);
-    at = msg_sign(m, at);
-    to_server(sock, m, at);
+    at = msg_sign(&sR, m, at);
+    to_server(&sR, sock, m, at);
 }
 
 /* Asks for a channel to `peer` (or asks again: a binding lasts ten minutes). With a channel the match's packets
@@ -436,8 +460,8 @@ static void send_bind(int sock, RelayPeer *p) {
     memcpy(p->txn, m + 8, 12);
     at = msg_attr(m, at, 0x000C, num, 4);
     at = msg_addr(m, at, 0x0012, &p->addr);
-    at = msg_sign(m, at);
-    to_server(sock, m, at);
+    at = msg_sign(&sR, m, at);
+    to_server(&sR, sock, m, at);
     p->lastBind = SDL_GetTicks();
 }
 
@@ -465,6 +489,23 @@ void Relay_Permit(int sock, const struct sockaddr_in *peer) {
         sR.permit[sR.permits++] = *peer;
     }
     send_permit(sock, peer);
+}
+
+void Relay_RoomPeer(int sock, const struct sockaddr_in *peer) {
+    int i;
+    RelayPeer *entry;
+    if (!sR.active) return;
+    Relay_Permit(sock, peer);
+    entry = peer_find(peer);
+    if (!entry) {
+        for (i = 0; i < RELAY_PEERS && sR.peer[i].chan; ++i) {}
+        if (i == RELAY_PEERS) return;
+        entry = &sR.peer[i];
+        entry->addr = *peer;
+        entry->chan = 0x4000 + (sR.nextChan++ & 0xFFF);
+    }
+    entry->via = 1;
+    entry->lastHeard = SDL_GetTicks();
 }
 
 int Relay_Active(void) {
@@ -497,8 +538,8 @@ void Relay_Tick(int sock) {
         int at = msg_begin(m, 0x0004);
         sR.lastRefresh = now;
         at = msg_attr(m, at, 0x000D, life, 4);
-        at = msg_sign(m, at);
-        to_server(sock, m, at);
+        at = msg_sign(&sR, m, at);
+        to_server(&sR, sock, m, at);
     }
 }
 
@@ -587,7 +628,7 @@ int Relay_Unwrap(uint8_t *pkt, int n, struct sockaddr_in *from, uint8_t **data, 
             fprintf(stderr, "relay: answer %04x: error %d %.*s\n", type, code, e != NULL && l > 4 ? l - 4 : 0, e != NULL ? (const char *)e + 4 : "");
         }
         if (code == 438 || code == 401) {
-            take_login(pkt, n);
+            take_login(&sR, pkt, n);
             sR.lastPermit = sR.lastRefresh = 0; /* (again at the next tick) */
         }
     }
@@ -620,7 +661,7 @@ void Relay_Send(int sock, const void *data, int len, const struct sockaddr_in *t
             m[1] = (uint8_t)p->chan;
         put16(m + 2, (unsigned)len);
             memcpy(m + 4, data, (size_t)len);
-            to_server(sock, m, 4 + len);
+            to_server(&sR, sock, m, 4 + len);
             return;
         }
     }
@@ -628,7 +669,7 @@ void Relay_Send(int sock, const void *data, int len, const struct sockaddr_in *t
     at = msg_addr(m, at, 0x0012, to);
     at = msg_attr(m, at, 0x0013, data, len);
     put16(m + 2, (unsigned)(at - 20));
-    to_server(sock, m, at);
+    to_server(&sR, sock, m, at);
 }
 
 void Relay_SawDirect(const struct sockaddr_in *from) {
@@ -644,8 +685,8 @@ void Relay_Close(int sock) {
         uint8_t m[768];
         int at = msg_begin(m, 0x0004);
         at = msg_attr(m, at, 0x000D, life, 4);
-        at = msg_sign(m, at);
-        to_server(sock, m, at);
+        at = msg_sign(&sR, m, at);
+        to_server(&sR, sock, m, at);
     }
     sR.active = 0;
     sR.permits = 0;

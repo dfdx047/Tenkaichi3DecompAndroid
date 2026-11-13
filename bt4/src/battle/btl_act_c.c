@@ -674,6 +674,19 @@ s32 BtlAct_ChargeHandler(Chr *chr, s32 phase) {
                 if (BtlAnim_AdvanceThen(chr, 0x35, 0.15f, 1)) {
                     BtlCharSnd_PlayCommon(chr, BtlParam_GetChargeStartSound(chr));
                     BtlChar_PlayVoice(chr, 0xD);
+#ifdef PORT
+                    /* the port (BT3's full power storm, Dragon Rage), offline one-on-one fights only (not online, not Tag
+                       Team, not a replay): the fighter's camera shakes as the charge starts. Not online: the shake draws
+                       on the game's random numbers, and a rival's game of another build would go another way. */
+                    {
+                        extern s32 TagBattle_Active(void);
+                        extern int Port_NetActive(void);
+                        extern s32 BtlGame_IsReplay(void);
+                        if (!TagBattle_Active() && !Port_NetActive() && !BtlGame_IsReplay()) {
+                            ChrCam_AddShake(chr, 4.0f, 0.35f);
+                        }
+                    }
+#endif
                 }
                 break;
             case 0x35:

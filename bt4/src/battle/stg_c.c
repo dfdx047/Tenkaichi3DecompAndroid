@@ -8,6 +8,9 @@
 #include "sys/gfx.h"
 #include "sys/heap.h"
 #include "sys/math3d.h"
+#ifdef PORT
+#include "menu/tbo_art.h"
+#endif
 #include "sys/ramp.h"
 #include "sys/randf.h"
 
@@ -637,6 +640,9 @@ void StgFx_Term(void) {
     GfxLens_Stub107758();
     StgPanBlur_Term();
     GfxPost_TermNop();
+#ifdef PORT
+    { extern void PortThunder_Stop(void); PortThunder_Stop(); } /* (the fight is over: its storm's thunder too) */
+#endif
     Heap_Free(gStgFx);
     gStgFx = NULL;
 }
@@ -714,6 +720,210 @@ void StgTint_CalcColor(StgTint *tint) {
     tint->color.w = tint->from.w + t * tint->delta.w;
 }
 
+#ifdef PORT
+/*
+ * The port's storm (BT3's, Dragon Rage), in BT4's one-on-one fights: offline, Quick Match and Ranked (not in Tag Team): while any fighter is in the
+ * full power mode (fighter flag 6, the MAX POWER of a full ki charge) the sky clouds over, dark and blue, and now and then lightning strikes far away, with thunder a moment later
+ * (port/src/gs/storm_snd.c). One storm for the whole fight however many fighters are powered up. It clears when
+ * nobody is. The flash lights the whole picture.
+ *
+ * Far away: the bolts are drawn with the depth test against Z = 0, the value the frame starts with. The sky (stage group 0) is drawn without depth writes and everything else writes depth, so they show only
+ * where the sky shows, behind the far hills, never over the arena, the fighters or what flies.
+ *
+ * Only drawing and sound: nothing here is read by the fight, its timing is the wall clock (not the game's frames,
+ * which a rollback runs again) and its random numbers are its own (the game's rand() is left alone), so an online
+ * match is not touched. Port_Setting("storm", 1): 0 turns it off. Its state is kept outside the game's variables (include/port_storm.h).
+ */
+extern s32 BtlCharApi_PortFlag(s32 objId, s32 flag);
+extern s32 TagBattle_Active(void); /* tag_battle.c: a Tag Team battle (local or online) */
+extern void Ps_SpriteScreen(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 v0, f32 u1, f32 v1, u32 tint, s32 alpha);
+extern u32 Ps_Uv(f32 t);
+extern int Port_TboArtState(int id);
+extern int Port_Setting(const char *name, int def);
+extern int Port_PageAspectMilli(void);
+extern u64 SDL_GetTicks(void);
+extern void PortThunder_Load(void);
+extern void PortThunder_Play(int which, float volume, float pan);
+extern void PortThunder_Hold(int held);
+extern void PortThunder_Stop(void);
+
+#include "port_storm.h"
+#define STORM (*PortStorm_State())
+
+static u32 PortStorm_Rand(u32 n) {
+    STORM.seed = STORM.seed * 1664525u + 1013904223u;
+    return (STORM.seed >> 8) % n;
+}
+
+/* Ps_SpriteScreen with the same depth test: a part of a picture over a box of the screen, only over the sky. */
+static void PortStorm_SkySprite(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 u0, f32 u1, s32 alpha) {
+    u64 *p;
+
+    if (alpha <= 0 || x1 <= x0 || y1 <= y0) {
+        return;
+    }
+    if (alpha > 0x80) {
+        alpha = 0x80;
+    }
+    p = Dma_BeginDirect();
+    p[0] = 4 | (1ULL << 15) | (1ULL << 60); /* A+D x 4 */
+    p[1] = 0xE;
+    p += 2;
+    p[0] = 0x44;
+    p[1] = 0x42; /* ALPHA_1 */
+    p += 2;
+    p[0] = 0x60;
+    p[1] = 0x14; /* TEX1_1: bilinear */
+    p += 2;
+    p[0] = 0x50000;
+    p[1] = 0x47; /* TEST_1: depth GEQUAL against Z = 0 */
+    p += 2;
+    p[0] = 5;
+    p[1] = 0x08; /* CLAMP_1 */
+    p += 2;
+    p[0] = 1 | (1ULL << 15) | (1ULL << 58) | (8ULL << 60);
+    p[1] = 0x535306E1; /* RGBAQ, (A+D: nothing), TEX0_1, PRIM, UV, XYZ2, UV, XYZ2 */
+    p += 2;
+    p[0] = 0x808080 | ((u64)alpha << 24);
+    p[1] = 0;
+    p += 2;
+    p[0] = 1ULL | (1ULL << 14) | ((u64)TBO_PSM << 20) | (10ULL << 26) | (10ULL << 30) | (1ULL << 34) | ((u64)(id & 0x3FFF) << 37);
+    p[1] = 0x156; /* PRIM: sprite, textured, blended, UV */
+    p += 2;
+    p[0] = (u64)Ps_Uv(u0) | ((u64)Ps_Uv(0.0f) << 16);
+    p[1] = (u64)((s32)(x0 * 16.0f) + 0x7000) | ((u64)((s32)(y0 * 16.0f) + 0x7200) << 16);
+    p += 2;
+    p[0] = (u64)Ps_Uv(u1) | ((u64)Ps_Uv(1.0f) << 16);
+    p[1] = (u64)((s32)(x1 * 16.0f) + 0x7000) | ((u64)((s32)(y1 * 16.0f) + 0x7200) << 16);
+    p += 2;
+    Dma_EndDirect(p);
+}
+
+static void PortStorm_Draw(void) {
+    /* the flash, a step every 17 ms: on, nearly out, on again, then fading */
+    static const f32 flash[16] = {1.0f, 0.85f, 0.15f, 0.05f, 0.7f, 0.55f, 0.4f, 0.3f, 0.22f, 0.16f, 0.11f, 0.07f, 0.04f, 0.02f, 0.01f, 0.0f};
+    Vec4 c;
+    s32 on = 0;
+    s32 dt;
+    s32 i;
+    f32 f;
+    u64 now;
+
+    if (STORM.on < 0) {
+        STORM.on = Port_Setting("storm", 1) != 0;
+    }
+    if (!STORM.on || TagBattle_Active()) {
+        return;
+    }
+    now = SDL_GetTicks();
+    dt = STORM.last == 0 || now < STORM.last ? 0 : now - STORM.last > 100 ? 100 : (s32)(now - STORM.last);
+    STORM.last = now;
+    if (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE) {
+        dt = 0;
+    }
+    PortThunder_Hold(dt == 0 && (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE)); /* (a thunder under way waits in the pause) */
+    if (Port_TboArtState(TBO_STORM_BOLT) == 0) {
+        /* the bolts' picture asked for from the fight's first frames (a dot, alpha 1): read then, not in the middle
+           of the fight when the first fighter powers up */
+        Ps_SpriteScreen(TBO_STORM_BOLT, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 0.01f, 0.01f, 0x808080, 1);
+    }
+    if (dt > 0) {
+        for (i = 0; i < 16 && !on; i++) {
+            if (BtlCharApi_PortFlag(i, 6)) {
+                on = 1;
+            }
+        }
+        if (on && STORM.level <= 0.0f) {
+            PortThunder_Load(); /* (read on a thread of its own, long before the first strike) */
+            STORM.next = 1200;
+        }
+        STORM.level += (f32)dt * (on ? 1.0f / 1250.0f : -1.0f / 2000.0f);
+        if (STORM.level > 1.0f) {
+            STORM.level = 1.0f;
+        }
+        if (STORM.level < 0.0f) {
+            STORM.level = 0.0f;
+        }
+        if (STORM.flash >= 0) {
+            STORM.flash = STORM.flash + dt >= 16 * 17 ? -1 : STORM.flash + dt;
+        }
+        if (on && STORM.level > 0.7f) {
+            STORM.next -= dt;
+            if (STORM.next <= 0) {
+                STORM.next = 1500 + (s32)PortStorm_Rand(3500); /* 1.5 to 5 seconds */
+                STORM.flash = 0;
+                STORM.bolts = PortStorm_Rand(4) == 0 ? 2 : 1;
+                for (i = 0; i < STORM.bolts; i++) {
+                    STORM.kind[i] = (s32)PortStorm_Rand(8); /* which of the four drawings, mirrored or not */
+                    STORM.h[i] = 120.0f + (f32)PortStorm_Rand(110);
+                    STORM.x[i] = 30.0f + (f32)PortStorm_Rand(452);
+                    STORM.y[i] = -10.0f + (f32)PortStorm_Rand(40);
+                }
+                /* far away: the thunder comes a second or two later, softer the later it comes */
+                STORM.thunderIn = 700 + (s32)PortStorm_Rand(1600);
+                STORM.thunderVol = 1.0f - (f32)(STORM.thunderIn - 700) / 1600.0f * 0.4f;
+                STORM.thunderPan = (STORM.x[0] - 256.0f) / 256.0f * 0.6f;
+            }
+        }
+        if (STORM.thunderIn >= 0) {
+            STORM.thunderIn -= dt;
+            if (STORM.thunderIn < 0) {
+                s32 which = (s32)PortStorm_Rand(4);
+
+                if (which == STORM.thunderLast) {
+                    which = (which + 1 + (s32)PortStorm_Rand(3)) & 3;
+                }
+                STORM.thunderLast = which;
+                PortThunder_Play(which, STORM.thunderVol, STORM.thunderPan);
+            }
+        }
+    }
+    if (STORM.level <= 0.0f) {
+        return;
+    }
+    /* the sky clouds over: the whole picture a little darker and bluer (the stage's own tints do the same) */
+    c.x = 34.0f;
+    c.y = 40.0f;
+    c.z = 58.0f;
+    c.w = 80.0f * STORM.level;
+    GfxPost_DrawTintRect(0x44, &c);
+    if (STORM.flash < 0) {
+        return;
+    }
+    f = flash[STORM.flash / 17 > 15 ? 15 : STORM.flash / 17] * STORM.level;
+    if (f <= 0.0f) {
+        return;
+    }
+    /* the flash lights the whole picture */
+    c.x = 215.0f;
+    c.y = 225.0f;
+    c.z = 255.0f;
+    c.w = 60.0f * f;
+    GfxPost_DrawTintRect(0x44, &c);
+    Gfx_AddDefaultEnv();
+    Dma_AddZbuf(GFX_ZBP, 1); /* (no depth writes) */
+    if (Port_TboArtState(TBO_STORM_BOLT) > 0 && f > 0.1f) {
+        /* each drawing is a quarter of the picture, 256 x 1024 texels; the page is 512 x 448 stretched over the screen */
+        s32 aspect = Port_PageAspectMilli() > 0 ? Port_PageAspectMilli() : 1333;
+
+        for (i = 0; i < STORM.bolts; i++) {
+            f32 u0 = (f32)(STORM.kind[i] & 3) * 0.25f;
+            f32 u1 = u0 + 0.25f;
+            f32 w = STORM.h[i] * 0.25f * (512.0f / 448.0f) * (1000.0f / (f32)aspect);
+
+            if (STORM.kind[i] & 4) { /* mirrored */
+                f32 t = u0;
+                u0 = u1;
+                u1 = t;
+            }
+            PortStorm_SkySprite(TBO_STORM_BOLT, STORM.x[i] - w * 0.5f, STORM.y[i], STORM.x[i] + w * 0.5f, STORM.y[i] + STORM.h[i], u0,
+                                u1, (s32)(f * 128.0f));
+        }
+    }
+    Dma_AddZbuf(GFX_ZBP, 0);
+}
+#endif
+
 /* Turns every slot off. */
 void StgTint_Reset(void) {
     StgTintWork *work = &gStgTint;
@@ -726,6 +936,12 @@ void StgTint_Reset(void) {
         tint->flags = 0;
         Ramp_Stop(&tint->ramp);
     }
+#ifdef PORT
+    STORM.level = 0.0f;
+    STORM.flash = -1;
+    STORM.thunderIn = -1;
+    PortThunder_Stop();
+#endif
 }
 
 /* Clears the work block. */
@@ -789,6 +1005,9 @@ void StgTint_DrawBack(void) {
         StgTint_CalcColor(tint);
         GfxPost_DrawTintRect(0x44, &tint->color);
     }
+#ifdef PORT
+    PortStorm_Draw();
+#endif
 }
 
 /* Does nothing. */

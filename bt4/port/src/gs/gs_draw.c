@@ -1090,6 +1090,12 @@ static GsTex tbo_film_texture(TboFilm *film) {
     return film->tex;
 }
 
+/* 1: the picture is on the card; 0: not yet (the first draw asks for it); -1: no such file (src/battle/stg_c.c, the storm). */
+int Port_TboArtState(int id) {
+    if (id < 0 || id >= TBO_ART_COUNT || sTboMissing[id]) return -1;
+    return sTboTex[id] != 0;
+}
+
 static GsTex tbo_texture(uint32_t id) {
     char path[1024] = {0};
     SDL_Surface *png = NULL, *rgba = NULL;

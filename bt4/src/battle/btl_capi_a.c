@@ -1277,3 +1277,14 @@ s32 BtlCharApi_HasWeaponOut(s32 objId) {
     return 0;
 }
 
+#ifdef PORT
+/* A fighter flag by object, 0 for no fighter (src/battle/stg_c.c: the full power storm reads flag 6). */
+s32 BtlCharApi_PortFlag(s32 objId, s32 flag) {
+    BtlCapiChr *chr = BtlChar_FindByObjId(objId);
+
+    if (chr != NULL) {
+        return BtlChar_TestFlag(chr, flag);
+    }
+    return 0;
+}
+#endif
