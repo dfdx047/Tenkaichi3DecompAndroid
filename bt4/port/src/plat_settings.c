@@ -14,7 +14,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_SETTINGS 200
+/* (the four players' keys and pad buttons alone take 168; with 200 the file of a phone was full, and every setting
+   not in it yet (frame_skip, frag_depth, interp, present...) was neither kept nor read from what the app wrote) */
+#define MAX_SETTINGS 512
 static struct { char name[24]; int value; } sSet[MAX_SETTINGS];
 /* The few settings that are text (online name, menu language): `name="text"` in the file, after the numbers. A
    release from before these reads past such a line. */
@@ -91,6 +93,12 @@ void Port_SettingSave(const char *name, int value) {
         if (sSet[i].value != value) {
             sSet[i].value = value;
             sDirty = 1;
+        }
+    } else {
+        static int told;
+        if (!told) {
+            told = 1;
+            fprintf(stderr, "bt3: settings: the table is full (%d): \"%s\" is not kept\n", MAX_SETTINGS, name);
         }
     }
     pthread_mutex_unlock(&sLock);
