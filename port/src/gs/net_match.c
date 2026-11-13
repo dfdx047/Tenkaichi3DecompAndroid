@@ -185,8 +185,63 @@ const char *DrNet_RankedUrl(void) {
 #define DRNET_FAILS 3
 static SDL_AtomicInt sUseB, sUseBDay, sFails;
 
+#define MATCH_VPS_URL "https://dragonnetandroid.duckdns.org"
+static SDL_Mutex *sMatchServerLock;
+static int sMatchServerIndex, sMatchServerFails, sMatchServerDay;
+
 static int utc_day(void) {
     return (int)(time(NULL) / 86400);
+}
+
+static int match_role_uses_matchmaking(int role) {
+    return role >= 1 && role <= 5;
+}
+
+static int match_server_selector_active(void) {
+    return DrNet_Mode() == 0 && !DrRanked_Active() && SDL_getenv("BT3_MATCH_URL") == NULL &&
+           match_role_uses_matchmaking(sM.role);
+}
+
+static void match_server_urls(const char *urls[3]) {
+    urls[0] = MATCH_VPS_URL;
+    urls[1] = DrNet_Url();
+    urls[2] = DrNet_UrlB();
+}
+
+static const char *match_server_active_url(void) {
+    const char *urls[3], *url;
+    int day = utc_day();
+    match_server_urls(urls);
+    SDL_LockMutex(sMatchServerLock);
+    if (sMatchServerDay != day) {
+        sMatchServerIndex = 0;
+        sMatchServerFails = 0;
+        sMatchServerDay = day;
+    }
+    url = urls[sMatchServerIndex];
+    SDL_UnlockMutex(sMatchServerLock);
+    return url;
+}
+
+static void match_server_result(const char *base, int failed) {
+    const char *urls[3];
+    int i, day = utc_day();
+    match_server_urls(urls);
+    for (i = 0; i < 3 && SDL_strcmp(base, urls[i]) != 0; i++) {}
+    if (i == 3) return;
+    SDL_LockMutex(sMatchServerLock);
+    if (sMatchServerDay != day) {
+        sMatchServerIndex = 0;
+        sMatchServerFails = 0;
+        sMatchServerDay = day;
+    }
+    if (!failed) {
+        sMatchServerFails = 0;
+    } else if (i == sMatchServerIndex && ++sMatchServerFails >= DRNET_FAILS) {
+        if (sMatchServerIndex < 2) sMatchServerIndex++;
+        sMatchServerFails = 0;
+    }
+    SDL_UnlockMutex(sMatchServerLock);
 }
 
 const char *DrNet_ActiveUrl(void) {
@@ -563,6 +618,15 @@ static Limit *limit_of(const char *base, int make) {
     return &sLimits[i];
 }
 
+static int match_server_daily_limit(const char *base, const char *answer) {
+    Limit *l;
+    if (SDL_strstr(answer, "error code: 1027") != NULL ||
+        (SDL_strstr(answer, "\"http\":429") != NULL && SDL_strstr(answer, "\"busy\"") == NULL)) return 1;
+    if (SDL_strstr(answer, "\"error\":\"limit\"") != NULL) return 1;
+    l = limit_of(base, 0);
+    return l != NULL && SDL_strstr(answer, "\"held\":1") != NULL && SDL_GetAtomicInt(&l->daily);
+}
+
 /* a service is in a daily-limit pause now (the lobby's words for its error) */
 int Match_ServiceLimited(void) {
     int now = (int)(SDL_GetTicks() / 1000), i;
@@ -612,7 +676,7 @@ static int limit_after(const char *base, const char *what, int ok, const char *o
         SDL_SetAtomicInt(&l->until, (int)(SDL_GetTicks() / 1000) + wait);
         fprintf(stderr, "net: %s: the service is over its limit (HTTP 429, %s): nothing asked of it for %d s\n", what,
                 SDL_strstr(out, "\"busy\"") != NULL ? "the Worker's own" : "its daily requests: Cloudflare 1027", wait);
-        if (SDL_GetAtomicInt(&l->daily)) { /* Dragon Net's server A out of its day: server B at once, not after three tries */
+        if (SDL_GetAtomicInt(&l->daily) && !match_server_selector_active()) { /* Dragon Net's server A out of its day: server B at once, not after three tries */
             int k;
             for (k = 0; k < DRNET_FAILS; k++) {
                 DrNet_NoteResult(base, 0);
@@ -668,12 +732,15 @@ int Match_BackgroundWait(Uint32 activeMs, int cancelAfterThreeMinutes) {
     return 1;
 }
 
-static int http_post_to(const char *base, const char *what, const char *json, char *out, size_t size) {
+static int http_post_to_ex(const char *base, const char *what, const char *json, char *out, size_t size, int countResult) {
     int ok, limited;
     if (base == NULL) {
         base = match_url();
     }
     if (limit_before(base, out, size)) {
+        if (countResult && match_server_selector_active() && match_server_daily_limit(base, out)) {
+            match_server_result(base, 1);
+        }
         return 1;
     }
     ok = limit_test(out, size) || http_post_once(base, what, json, out, size);
@@ -683,8 +750,16 @@ static int http_post_to(const char *base, const char *what, const char *json, ch
         clock_learn(out);
         ok = http_post_once(base, what, json, out, size);
     }
-    DrNet_NoteResult(base, ok && out[0] == '{' && !limited);
+    if (countResult && match_server_selector_active()) {
+        match_server_result(base, !ok || out[0] != '{' || match_server_daily_limit(base, out));
+    } else if (countResult && !match_server_selector_active()) {
+        DrNet_NoteResult(base, ok && out[0] == '{' && !limited);
+    }
     return ok;
+}
+
+static int http_post_to(const char *base, const char *what, const char *json, char *out, size_t size) {
+    return http_post_to_ex(base, what, json, out, size, 1);
 }
 
 static int http_post(const char *what, const char *json, char *out, size_t size) {
@@ -695,38 +770,40 @@ static int http_post(const char *what, const char *json, char *out, size_t size)
 /* A code entered on Dragon Net may belong to the other region-independent Worker. Retry only code joins and
    spectator requests; keep the selected service in sM.url once the room is found so its later polls follow it. */
 static int retry_code_on_other_dragon_server(char *base, const char *what, const char *body, char *answer, size_t size) {
-    const char *other = NULL;
-    int dailyLimit;
-    if (DrNet_Mode() != 0 || DrRanked_Active() || SDL_getenv("BT3_MATCH_URL") != NULL ||
+    const char *urls[3];
+    char originalStack[2048], *original;
+    int i;
+    if (DrNet_Mode() != 0 || DrRanked_Active() ||
         (sM.role != 2 && sM.role != 4)) {
         return 0;
     }
-    if (SDL_strcmp(base, DrNet_Url()) == 0) {
-        other = DrNet_UrlB();
-    } else if (SDL_strcmp(base, DrNet_UrlB()) == 0) {
-        other = DrNet_Url();
-    }
-    if (other == NULL || other[0] == '\0' || SDL_strcmp(base, other) == 0) {
+    if (SDL_strstr(answer, "no room") == NULL) {
         return 0;
     }
-    dailyLimit = SDL_strstr(answer, "\"error\":\"limit\"") != NULL ||
-                 SDL_strstr(answer, "error code: 1027") != NULL ||
-                 (SDL_strstr(answer, "\"http\":429") != NULL && SDL_strstr(answer, "\"busy\"") == NULL);
-    if (SDL_strstr(answer, "no room") == NULL && !dailyLimit) {
-        return 0;
+    original = size > sizeof(originalStack) ? (char *)SDL_malloc(size) : originalStack;
+    if (original == NULL) return 0;
+    SDL_memcpy(original, answer, size);
+    match_server_urls(urls);
+    for (i = 0; i < 3; i++) {
+        if (SDL_strcmp(base, urls[i]) == 0 || urls[i][0] == '\0') continue;
+        if (!http_post_to_ex(urls[i], what, body, answer, size, 0)) continue;
+        if (SDL_strstr(answer, "\"peer\":") != NULL && SDL_strstr(answer, "\"error\"") == NULL) {
+            SDL_strlcpy(base, urls[i], 256);
+            SDL_LockMutex(sM.lock);
+            SDL_strlcpy(sM.url, urls[i], sizeof(sM.url));
+            SDL_UnlockMutex(sM.lock);
+            fprintf(stderr, "dragonnet: room code found on another matchmaking server\n");
+            if (original != originalStack) SDL_free(original);
+            return 1;
+        }
+        if (SDL_strstr(answer, "no room") == NULL) {
+            if (original != originalStack) SDL_free(original);
+            return 1;
+        }
     }
-    if (!http_post_to(other, what, body, answer, size)) {
-        return 0;
-    }
-    if (SDL_strstr(answer, "\"peer\":") == NULL || SDL_strstr(answer, "\"error\"") != NULL) {
-        return 1; /* use the second service's more relevant error, but don't claim the code lives there */
-    }
-    SDL_strlcpy(base, other, 256);
-    SDL_LockMutex(sM.lock);
-    SDL_strlcpy(sM.url, other, sizeof(sM.url));
-    SDL_UnlockMutex(sM.lock);
-    fprintf(stderr, "dragonnet: room code found on the other matchmaking server\n");
-    return 1;
+    SDL_memcpy(answer, original, size);
+    if (original != originalStack) SDL_free(original);
+    return 0;
 }
 
 const char *Match_ServerLabel(void) {
@@ -735,6 +812,7 @@ const char *Match_ServerLabel(void) {
     SDL_strlcpy(url, sM.url[0] != '\0' ? sM.url : match_url(), sizeof(url));
     SDL_UnlockMutex(sM.lock);
     if (DrNet_Mode() == 0) {
+        if (SDL_strcmp(url, MATCH_VPS_URL) == 0) return "VPS";
         if (SDL_strcmp(url, DrNet_Url()) == 0) return "A";
         if (SDL_strcmp(url, DrNet_UrlB()) == 0) return "B";
         return "Custom";
@@ -1375,6 +1453,9 @@ void Match_Begin(int role, int sock, int localPort, const char *code, const char
     if (sM.lock == NULL) {
         sM.lock = SDL_CreateMutex();
     }
+    if (sMatchServerLock == NULL) {
+        sMatchServerLock = SDL_CreateMutex();
+    }
     if (sM.thread != NULL) {
         SDL_DetachThread(sM.thread); /* (it stops by itself: its search number is no longer the current one) */
         sM.thread = NULL;
@@ -1401,7 +1482,9 @@ void Match_Begin(int role, int sock, int localPort, const char *code, const char
     SDL_strlcpy(sM.queue, role == 3 ? sM.code : "", sizeof(sM.queue));
     SDL_strlcpy(sM.name, name != NULL ? name : "Player", sizeof(sM.name));
     sM.url[0] = '\0';
-    if (DrNet_Mode() == 0 && SDL_getenv("BT3_MATCH_URL") == NULL) {
+    if (match_server_selector_active()) {
+        SDL_strlcpy(sM.url, match_server_active_url(), sizeof(sM.url));
+    } else if (DrNet_Mode() == 0 && SDL_getenv("BT3_MATCH_URL") == NULL) {
         if (DrRanked_Active()) {
             if (DrNet_RankedUrl()[0] == '\0') {
                 SDL_LockMutex(sM.lock);
