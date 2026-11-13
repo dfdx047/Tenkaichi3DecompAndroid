@@ -1,0 +1,16 @@
+{
+  "name": "tenkaichi3-matchmaking-node",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Node and SQLite adapter for port/matchmaking/worker.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.4.1"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true
+  }
+}

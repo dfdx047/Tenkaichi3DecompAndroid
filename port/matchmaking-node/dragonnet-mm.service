@@ -1,0 +1,16 @@
+[Unit]
+Description=Dragon Net matchmaking service
+After=network.target
+
+[Service]
+Type=simple
+User=dragon
+Group=dragon
+WorkingDirectory=/opt/dragonnet-matchmaking
+EnvironmentFile=/etc/dragonnet-matchmaking.env
+ExecStart=/usr/bin/node /opt/dragonnet-matchmaking/server.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
