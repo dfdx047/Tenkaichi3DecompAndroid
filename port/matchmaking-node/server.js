@@ -2,6 +2,8 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createDatabase } from "./db.js";
+import { createRequire } from "node:module";
+const maxmind = createRequire(import.meta.url)("maxmind");
 
 const here = new URL(".", import.meta.url);
 const workerPath = new URL("../matchmaking/worker.js", here);
@@ -9,6 +11,8 @@ const workerSource = await readFile(workerPath, "utf8");
 // Import from source text so the parent repository does not need a package.json or module-mode change.
 const workerUrl = `data:text/javascript;base64,${Buffer.from(workerSource).toString("base64")}`;
 const worker = (await import(workerUrl)).default;
+let geo = null;
+try { geo = await maxmind.open(process.env.GEO_DB || "/var/lib/dragonnet/dbip-city.mmdb"); } catch (e) { console.error("geo off:", e.message); }
 const DB = createDatabase(process.env.DB_PATH || "./matchmaking.sqlite");
 const env = {
     DB,
@@ -47,7 +51,12 @@ const server = createServer(async (req, res) => {
             init.duplex = "half";
         }
         const request = new Request(new URL(req.url || "/", `http://${req.headers.host || "127.0.0.1:8787"}`), init);
-        // Node Request has no Cloudflare-specific `cf` property.
+        let cf = {};
+        try {
+            const g = geo ? geo.get(headers.get("cf-connecting-ip")) : null;
+            if (g) cf = { latitude: g.location?.latitude, longitude: g.location?.longitude, country: g.country?.iso_code, continent: g.continent?.code };
+        } catch {}
+        Object.defineProperty(request, "cf", { value: cf });
         const ctx = { waitUntil(p) { Promise.resolve(p).catch(console.error); } };
         const response = await worker.fetch(request, env, ctx);
         res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
