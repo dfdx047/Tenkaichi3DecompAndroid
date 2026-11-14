@@ -69,7 +69,12 @@ static void MsText(f32 x, f32 y, const char *text, f32 scale, f32 width, s32 ali
 }
 
 void PortMapSel_Begin(s32 allow) {
-    sOn = allow != 0;
+    extern char *getenv(const char *name);
+    extern int atoi(const char *text);
+    extern int Port_Setting(const char *name, int def);
+    const char *env = getenv("BT3_SELECT_CLASSIC");
+
+    sOn = allow && !(env != NULL ? atoi(env) : Port_Setting("select_classic", 0));
     sMapPhase = 0;
 }
 
