@@ -25,6 +25,7 @@
 static s32 sPortStagesAdded; /* this stage select shows stages from outside the disc */
 static s32 sPortSongsAdded;  /* ... and its music list songs from outside the disc */
 static s32 sPortSongNameHidden, sPortStageNameHidden;
+static MTexRes *sPortStageNameRes, *sPortSongNameRes;
 /* The port's stage-name overlay (port/src/gs/ui.cpp / gs_draw.c): the names of added stages are drawn by the
    port, over the picture, from its own stylized art. The menu only fills the name's rectangle and which image. */
 extern volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;
@@ -414,6 +415,7 @@ void CharSel_Init(s32 section) {
     gCharSel->tex[20] = MTEX(res, 0);
     CS_RES(gCharSel->res, 4);
     gCharSel->tex[19] = MTEX(res, 0);
+    sPortSongNameRes = res;
     CS_RES(gCharSel->res, 5);
     gCharSel->tex[9] = MTEX(res, 0);
     gCharSel->tex[40] = MTEX(res, 1);
@@ -423,6 +425,7 @@ void CharSel_Init(s32 section) {
     }
     CS_RES(gCharSel->res, 6);
     gCharSel->tex[39] = MTEX(res, 0);
+    sPortStageNameRes = res;
     CS_RES(gCharSel->res, 7);
     gCharSel->tex[38] = MTEX(res, 0);
     CS_RES(gCharSel->res, 8);
@@ -819,13 +822,16 @@ void CharSel_Term(void) {
         Heap_Free(gCharSel);
         gCharSel = NULL;
     }
+    sPortStageNameRes = sPortSongNameRes = NULL;
 }
 
 /* Draws the screen: the stage picture cross fade, then the labels, texture rectangles and visibility of every
    clip of the five movies are set from the state, the movies are drawn, then the windows and the side panels. */
 #ifdef PORT
 #include "menu/port_charsel.h"
+#include "menu/port_mapsel.h"
 #define CHARSEL_PORT_STAGE() ((gCharSel->flags & (CHARSEL_STAGE_PHASE | CHARSEL_LEAVING)) != 0)
+#define CHARSEL_MAP_PHASE() ((gCharSel->flags & CHARSEL_STAGE_PHASE) != 0)
 
 /* What the new screen shows of one side (src/menu/port_charsel.c). */
 static void CharSel_PortFill(CsView *v, s32 side) {
@@ -898,6 +904,36 @@ static void CharSel_PortFrame(void) {
         PortCharSel_Frame(v, 0, CHARSEL_PORT_STAGE());
     }
 }
+
+static void CharSel_MapPortFrame(void) {
+    MsView v;
+    s32 i;
+
+    memset(&v, 0, sizeof(v));
+    v.row = gCharSel->stage->row;
+    v.col = gCharSel->stage->col;
+    v.stage = gCharSel->stage->stage;
+    memcpy(v.chip, gCharSel->stage->chip, sizeof(v.chip));
+    v.stageIds = (u32 *)gCharSel->stageIds;
+    v.stagePack = gCharSel->stagePack;
+    v.stageCount = gCharSel->stageCount;
+    v.rowCount = gCharSel->stageRows;
+    v.bgm = gCharSel->stage->bgm;
+    v.bgmPlaying = gCharSel->stage->bgmPlaying;
+    v.bgmId = gCharSel->bgmIds[gCharSel->stage->state == CHARSEL_ST_BGM ? v.bgm : v.bgmPlaying];
+    v.bgmCount = gCharSel->bgmCount;
+    v.preview = gCharSel->bg[0];
+    v.windowRow = v.row > 1 ? v.row - 1 : 0;
+    if (v.windowRow > v.rowCount - 3) v.windowRow = v.rowCount - 3;
+    if (v.windowRow < 0) v.windowRow = 0;
+    for (i = 0; i < 18; i++) {
+        s32 idx = v.windowRow * 6 + i;
+        v.windowIds[i] = idx < v.stageCount ? gCharSel->stageIds[idx] : STGGRID_ID_EMPTY;
+    }
+    v.stageNames = sPortStageNameRes;
+    v.songNames = sPortSongNameRes;
+    PortMapSel_Frame(&v, CHARSEL_MAP_PHASE());
+}
 #endif
 void CharSel_Draw(void) {
     MFlashRef ref;
@@ -911,6 +947,7 @@ void CharSel_Draw(void) {
     if (PortCharSel_Shown(CHARSEL_PORT_STAGE())) {
         PortCharSel_MuteOn(); /* all of this still runs (the movies' state is the game's); none of it is shown */
     }
+    if (PortMapSel_Shown(CHARSEL_MAP_PHASE())) PortMapSel_MuteOn();
     gUiNameIdx = -1; /* set again below only for a stage added from outside the disc */
     gUiSongIdx = -1; /* and only for a song added from outside the disc (set in the music-name block) */
 #endif
@@ -1298,6 +1335,12 @@ void CharSel_Draw(void) {
         ItemHelp_Draw(gCharSel->itemInfo);
         Font_FlushAll();
         PortCharSel_DrawEnd();
+        return;
+    }
+    if (PortMapSel_Shown(CHARSEL_MAP_PHASE())) {
+        gUiNameIdx = -1;
+        gUiSongIdx = -1;
+        PortMapSel_Draw();
         return;
     }
 #endif
@@ -2041,6 +2084,7 @@ s32 CharSel_Run(s32 section) {
     CharSel_Init(section);
 #ifdef PORT
     PortCharSel_Begin(!PortGame_IsBT4());
+    PortMapSel_Begin(!PortGame_IsBT4());
 #endif
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {
@@ -2055,6 +2099,7 @@ s32 CharSel_Run(s32 section) {
         }
 #ifdef PORT
         CharSel_PortFrame();
+        CharSel_MapPortFrame();
 #endif
         CharSel_Draw();
         Font_FlushAll();
@@ -2089,6 +2134,7 @@ s32 CharSel_Run(s32 section) {
     }
 #ifdef PORT
     PortCharSel_End();
+    PortMapSel_End();
 #endif
     if (result != 0) {
         s32 flag[2] = { 1, 1 };
