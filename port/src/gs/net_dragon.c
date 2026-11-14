@@ -65,7 +65,8 @@ static int wire(void) {
 /* ---- small things ---- */
 
 static void path_of(const char *name, char *out, size_t size) {
-    SDL_snprintf(out, size, "%s/%s", Port_FileRoot(), name);
+    SDL_snprintf(out, size, "%s/%s%s", Port_FileRoot(), name,
+                 DrNet_RankedDebugUrl()[0] != '\0' && SDL_strncmp(name, "dragonnet-", 10) == 0 ? ".debug" : "");
 }
 
 static int read_text(const char *name, char *out, size_t size) {

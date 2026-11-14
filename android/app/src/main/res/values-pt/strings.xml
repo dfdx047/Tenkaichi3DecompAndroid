@@ -295,6 +295,12 @@
     <string name="debug_gpu_opt_text">Configurações recomendadas para o nível da sua GPU, feitas para manter as lutas em 30 quadros por segundo estáveis. Você vê tudo antes de mudar.</string>
     <string name="debug_gpu_opt_button">Ver as configurações recomendadas</string>
     <string name="debug_perf">Log de desempenho</string>
+    <string name="ranked_debug_title">Servidor ranqueado local (APK de debug)</string>
+    <string name="ranked_debug_help">Endereço HTTP opcional para teste local. Só aceita localhost ou IP privado da rede. Apague o campo para voltar aos servidores oficiais.</string>
+    <string name="ranked_debug_url">Endereço do servidor</string>
+    <string name="ranked_debug_apply">Aplicar</string>
+    <string name="ranked_debug_disable">Usar servidor oficial</string>
+    <string name="ranked_debug_invalid">Use http://localhost:PORTA ou um IP IPv4 privado com porta.</string>
     <string name="debug_perf_log">Registrar desempenho</string>
     <string name="debug_perf_log_text">A cada poucos segundos o jogo anota a velocidade no log (sem custo perceptível). Ligado por padrão; é o que um relato de lentidão precisa.</string>
     <string name="debug_perf_none">Ainda sem números: jogue uma luta e volte aqui.</string>

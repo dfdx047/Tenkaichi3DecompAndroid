@@ -21,11 +21,14 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -33,9 +36,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dfdx047.dragonrage.AppViewModel
+import com.dfdx047.dragonrage.BuildConfig
 import com.dfdx047.dragonrage.R
 import com.dfdx047.dragonrage.data.EngineSettings
 import com.dfdx047.dragonrage.data.GpuProfiles
+import com.dfdx047.dragonrage.data.Game
 import com.dfdx047.dragonrage.ui.components.ScreenTitle
 import com.dfdx047.dragonrage.ui.components.SectionCard
 import com.dfdx047.dragonrage.ui.theme.Dbz
@@ -46,6 +51,9 @@ fun DebugScreen(vm: AppViewModel) {
     val gpu by vm.gpuName.collectAsStateWithLifecycle()
     val s by vm.engineSettings.collectAsStateWithLifecycle()
     val perf by vm.perf.collectAsStateWithLifecycle()
+    val rankedDebugUrl by vm.rankedDebugUrl.collectAsStateWithLifecycle()
+    var rankedDebugDraft by remember(rankedDebugUrl) { mutableStateOf(rankedDebugUrl) }
+    var rankedDebugError by remember { mutableStateOf(false) }
     val context = LocalContext.current
     LaunchedEffect(Unit) { vm.refreshPerf() }
 
@@ -69,6 +77,30 @@ fun DebugScreen(vm: AppViewModel) {
             InfoLine("GPU", gpu.ifEmpty { "?" })
             InfoLine(stringResource(R.string.debug_tier), tierName(tier))
             InfoLine(stringResource(R.string.renderer), if (s[EngineSettings.GPU_API] == 1) "OpenGL ES" else "Vulkan")
+        }
+
+        if (BuildConfig.DEBUG && vm.game == Game.BT3) {
+            SectionCard(stringResource(R.string.ranked_debug_title), Icons.Rounded.Insights, accent = Dbz.SaiyanGold) {
+                Text(stringResource(R.string.ranked_debug_help), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedTextField(
+                    value = rankedDebugDraft,
+                    onValueChange = { rankedDebugDraft = it; rankedDebugError = false },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.ranked_debug_url)) },
+                    placeholder = { Text("http://127.0.0.1:8787") },
+                )
+                if (rankedDebugError) Text(stringResource(R.string.ranked_debug_invalid), color = MaterialTheme.colorScheme.error)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { rankedDebugError = !vm.setRankedDebugUrl(rankedDebugDraft) }) {
+                        Text(stringResource(R.string.ranked_debug_apply))
+                    }
+                    OutlinedButton(onClick = {
+                        rankedDebugDraft = ""
+                        rankedDebugError = !vm.setRankedDebugUrl("")
+                    }) { Text(stringResource(R.string.ranked_debug_disable)) }
+                }
+            }
         }
 
         SectionCard(stringResource(R.string.debug_gpu_opt), Icons.Rounded.AutoFixHigh, accent = Dbz.SaiyanGold) {

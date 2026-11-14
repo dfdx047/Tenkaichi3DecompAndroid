@@ -32,6 +32,7 @@ android {
 
         // The game engine will be arm64 only (see docs: 32-bit pointers lowered for AArch64).
         ndk { abiFilters += listOf("arm64-v8a") }
+        manifestPlaceholders["allowLocalCleartext"] = "false"
     }
 
     // Release signing: a keystore given by the environment (CI secrets), else the debug key.
@@ -56,7 +57,12 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            // Needed only for the loopback/private-LAN Ranked debug endpoint.
+            manifestPlaceholders["allowLocalCleartext"] = "true"
+        }
         release {
+            manifestPlaceholders["allowLocalCleartext"] = "false"
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

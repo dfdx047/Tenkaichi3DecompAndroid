@@ -106,6 +106,29 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
     private val _netplayOptions = MutableStateFlow(NetplayOptions.read(paths.gameData))
     val netplayOptions: StateFlow<NetplayOptions> = _netplayOptions.asStateFlow()
 
+    private val rankedDebugFile = File(paths.gameData, "dragonnet_ranked_debug_url.txt")
+    private val _rankedDebugUrl = MutableStateFlow(runCatching { rankedDebugFile.readText().trim() }.getOrDefault(""))
+    val rankedDebugUrl: StateFlow<String> = _rankedDebugUrl.asStateFlow()
+
+    /** Empty disables the local endpoint; native code independently restricts it to localhost/private IPv4. */
+    fun setRankedDebugUrl(value: String): Boolean {
+        val url = value.trim().trimEnd('/')
+        if (url.isNotEmpty()) {
+            if (!Regex("^http://(localhost|127(?:\\.[0-9]{1,3}){3}|10(?:\\.[0-9]{1,3}){3}|192\\.168(?:\\.[0-9]{1,3}){2}|172\\.(?:1[6-9]|2[0-9]|3[01])(?:\\.[0-9]{1,3}){2}):[0-9]{1,5}$").matches(url)) return false
+            val endpoint = url.removePrefix("http://")
+            val port = endpoint.substringAfterLast(':').toIntOrNull() ?: return false
+            if (port !in 1..65535) return false
+            val ip = endpoint.substringBeforeLast(':')
+            if (ip != "localhost" && ip.split('.').any { part -> val octet = part.toIntOrNull(); octet == null || octet !in 0..255 }) return false
+        }
+        return runCatching {
+            if (url.isEmpty()) {
+                if (rankedDebugFile.exists() && !rankedDebugFile.delete()) error("Could not disable local Ranked endpoint")
+            } else rankedDebugFile.writeText("$url\n")
+            _rankedDebugUrl.value = url
+        }.isSuccess
+    }
+
     fun setNetplayOptions(options: NetplayOptions) {
         val safe = if (options.delay == NetplayOptions.AUTO || options.delay == NetplayOptions.OFF || options.delay in 0..8) options else NetplayOptions.DEFAULT
         val checked = if (safe.rollback == 0 || safe.rollback in 2..8 && safe.rollback % 2 == 0) safe else NetplayOptions.DEFAULT

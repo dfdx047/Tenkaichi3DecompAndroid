@@ -295,6 +295,12 @@
     <string name="debug_gpu_opt_text">Ajustes recomendados para el nivel de tu GPU, hechos para mantener las peleas a 30 cuadros por segundo estables. Lo ves todo antes de cambiar.</string>
     <string name="debug_gpu_opt_button">Ver los ajustes recomendados</string>
     <string name="debug_perf">Log de rendimiento</string>
+    <string name="ranked_debug_title">Servidor local de Ranked (APK de depuración)</string>
+    <string name="ranked_debug_help">Dirección HTTP opcional para pruebas locales. Solo acepta localhost o una IP privada de la red. Borra el campo para volver a los servidores oficiales.</string>
+    <string name="ranked_debug_url">URL del servidor</string>
+    <string name="ranked_debug_apply">Aplicar</string>
+    <string name="ranked_debug_disable">Usar servidor oficial</string>
+    <string name="ranked_debug_invalid">Usa http://localhost:PUERTO o una dirección IPv4 privada con puerto.</string>
     <string name="debug_perf_log">Registrar rendimiento</string>
     <string name="debug_perf_log_text">Cada pocos segundos el juego anota su velocidad en el log (sin costo perceptible). Activado por defecto; es lo que necesita un reporte de lentitud.</string>
     <string name="debug_perf_none">Todavía no hay números: juega una pelea y vuelve aquí.</string>

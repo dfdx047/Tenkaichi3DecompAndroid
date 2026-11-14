@@ -35,6 +35,7 @@ port/tests/ps2float/*.o
 !/Play.sh
 install.log
 port/build_release/
+/port/dragonnet/ranked-local.sqlite*
 
 # stages and songs from outside the disc that a player drops in next to the game (never committed)
 /stages/
@@ -53,3 +54,4 @@ port/build_release/
 android/.kotlin/
 apply_dragonrage_patch*.py
 /lab-apk/
+port/matchmaking-node/node_modules/

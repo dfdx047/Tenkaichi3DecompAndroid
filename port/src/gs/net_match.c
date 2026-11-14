@@ -182,6 +182,50 @@ const char *DrNet_RankedUrl(void) {
     return f;
 }
 
+static int ranked_debug_url_ok(const char *url) {
+    unsigned a, b, c, d;
+    char tail;
+    const char *host, *port;
+    char name[64], *end;
+    long n;
+    if (SDL_strncmp(url, "http://", 7) != 0) return 0;
+    host = url + 7;
+    port = SDL_strchr(host, ':');
+    if (port == NULL || port == host || SDL_strchr(port + 1, '/') != NULL || SDL_strchr(port + 1, ':') != NULL) return 0;
+    if ((size_t)(port - host) >= sizeof(name)) return 0;
+    SDL_memcpy(name, host, (size_t)(port - host)); name[port - host] = '\0';
+    n = strtol(port + 1, &end, 10);
+    if (*end != '\0' || n < 1 || n > 65535) return 0;
+    if (SDL_strcmp(name, "localhost") == 0) return 1;
+    if (sscanf(name, "%u.%u.%u.%u%c", &a, &b, &c, &d, &tail) != 4 || a > 255 || b > 255 || c > 255 || d > 255) return 0;
+    return a == 10 || (a == 127) || (a == 192 && b == 168) || (a == 172 && b >= 16 && b <= 31);
+}
+
+/* Debug APK only: loopback or private-LAN HTTP, no path/userinfo/public hosts. */
+const char *DrNet_RankedDebugUrl(void) {
+    static char f[256];
+    static int read;
+    if (!read) {
+        read = 1;
+#ifdef __ANDROID__
+        extern const char *Port_FileRoot(void);
+        char path[600]; FILE *in;
+        SDL_snprintf(path, sizeof(path), "%s/dragonnet_ranked_debug_url.txt", Port_FileRoot());
+        if ((in = fopen(path, "r")) != NULL) {
+            if (fgets(f, sizeof(f), in) != NULL) f[strcspn(f, " \r\n")] = '\0';
+            fclose(in);
+        }
+#else
+        const char *env = SDL_getenv("BT3_RANKED_DEBUG_URL");
+        if (env != NULL) SDL_strlcpy(f, env, sizeof(f));
+#endif
+        while (f[0] != '\0' && f[strlen(f) - 1] == '/') f[strlen(f) - 1] = '\0';
+        if (!ranked_debug_url_ok(f)) f[0] = '\0';
+        else fprintf(stderr, "dragonnet: LOCAL RANKED DEBUG endpoint %s (C/D verification bypassed)\n", f);
+    }
+    return f;
+}
+
 #define DRNET_FAILS 3
 static SDL_AtomicInt sUseB, sUseBDay, sFails;
 
@@ -1838,10 +1882,16 @@ static void rk_pin_set(const char *match, char back) {
 
 static int rk_post(const char *what, const char *json, char *out, size_t size) {
     char url[320], a[72], match[33], back[8];
-    const char *base;
+    const char *base, *debug = DrNet_RankedDebugUrl();
     char pin = 0;
     int ok, bad, shared;
     out[0] = '\0';
+    if (debug[0] != '\0') {
+        SDL_snprintf(url, sizeof(url), "%s/v1/%s", debug, what);
+        ok = http_post_native(url, json, NULL, out, size);
+        if (!ok) fprintf(stderr, "dragonnet: local ranked request failed: %s\n", what);
+        return ok;
+    }
     if (DrNet_RankedUrl()[0] == '\0') {
         return 0; /* sem C: Ranked indisponivel */
     }

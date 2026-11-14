@@ -296,6 +296,12 @@
     <string name="debug_gpu_opt_text">Recommended settings for your GPU\'s tier, made to keep fights at a steady 30 pictures a second. Shown before anything changes.</string>
     <string name="debug_gpu_opt_button">See the recommended settings</string>
     <string name="debug_perf">Performance log</string>
+    <string name="ranked_debug_title">Local Ranked server (debug APK)</string>
+    <string name="ranked_debug_help">Optional HTTP endpoint for local testing. Only localhost or a private LAN address is accepted; clear this field to restore the official Ranked servers.</string>
+    <string name="ranked_debug_url">Server URL</string>
+    <string name="ranked_debug_apply">Apply</string>
+    <string name="ranked_debug_disable">Use official server</string>
+    <string name="ranked_debug_invalid">Use http://localhost:PORT or a private IPv4 address and port.</string>
     <string name="debug_perf_log">Record performance</string>
     <string name="debug_perf_log_text">Every few seconds the game notes its speed in its log (no cost you can feel). On by default; it is what a report about slowness needs.</string>
     <string name="debug_perf_none">No numbers yet: play a fight, then come back here.</string>
