@@ -2,13 +2,16 @@
 #include "menu/menu_a.h"
 #include "menu/port_mapsel.h"
 #include "menu/port_screen.h"
-#include "sys/loading.h"
 #include "plat_stages.h"
 #include "plat_songs.h"
 
 #ifdef PORT
 #include <stdio.h>
 #include <string.h>
+
+/* Sprite_DrawList flags from sys/loading.h; keep that header out because it declares another gProgress view. */
+#define LOAD_SPR_DRAW 1
+#define LOAD_SPR_END 2
 
 typedef struct MsSprite {
     s32 flags, x0, y0, x1, y1, u0, v0, u1, v1, tex;
