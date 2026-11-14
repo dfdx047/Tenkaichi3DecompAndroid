@@ -6,9 +6,6 @@
 #include "plat_songs.h"
 
 #ifdef PORT
-#include <stdio.h>
-#include <string.h>
-
 /* Sprite_DrawList flags from sys/loading.h; keep that header out because it declares another gProgress view. */
 #define LOAD_SPR_DRAW 1
 #define LOAD_SPR_END 2
@@ -104,23 +101,27 @@ static MTexRes *MsStageIcon(s32 id, s32 *index) {
     return (MTexRes *)MPACK_AT(sView.stagePack, icon);
 }
 
-static const char *MsMapName(char *buf, size_t cap) {
+static const char *MsMapName(char *buf) {
     s32 id = sView.stage;
     if (id >= 0x24 && id - 0x24 < gPortExtraStageCount) {
         return gPortStageNames[id - 0x24];
     }
-    snprintf(buf, cap, "%s", id == MS_RANDOM ? "Random stage" : "Stage");
-    if (id != MS_RANDOM) snprintf(buf + strlen(buf), cap - strlen(buf), " %02d", (int)id + 1);
+    sprintf(buf, "%s", id == MS_RANDOM ? "Random stage" : "Stage");
+    if (id != MS_RANDOM) {
+        u32 n;
+        for (n = 0; buf[n] != '\0'; n++) {}
+        sprintf(buf + n, " %02d", (int)id + 1);
+    }
     return buf;
 }
 
-static const char *MsSongName(char *buf, size_t cap) {
+static const char *MsSongName(char *buf) {
     s32 id = sView.bgmId;
     if (id >= PORT_SONG_FIRST_OFFSET && id < PORT_SONG_FIRST_OFFSET + gPortSongCount) {
         return gPortSongNames[id - PORT_SONG_FIRST_OFFSET];
     }
     if (id == 0x18) return "Random music";
-    snprintf(buf, cap, "Battle music %02d", (int)id + 1);
+    sprintf(buf, "Battle music %02d", (int)id + 1);
     return buf;
 }
 
@@ -128,8 +129,8 @@ void PortMapSel_Draw(void) {
     s32 r, c, id, icon, selected;
     s32 top = sView.windowRow;
     char mapBuf[40], songBuf[64];
-    const char *mapName = MsMapName(mapBuf, sizeof(mapBuf));
-    const char *songName = MsSongName(songBuf, sizeof(songBuf));
+    const char *mapName = MsMapName(mapBuf);
+    const char *songName = MsSongName(songBuf);
     s32 musicId = sView.bgmId;
 
     Ps_PageSet();
