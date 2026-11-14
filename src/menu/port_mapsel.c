@@ -1,6 +1,6 @@
 #include "common.h"
-#include "menu/port_mapsel.h"
 #include "menu/menu_a.h"
+#include "menu/port_mapsel.h"
 #include "menu/port_screen.h"
 #include "sys/loading.h"
 #include "plat_stages.h"
