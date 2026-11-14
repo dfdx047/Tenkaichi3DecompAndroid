@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS ranked_matches (
  host_score INTEGER, guest_score INTEGER, host_digest TEXT, guest_digest TEXT,
  host_rating INTEGER, guest_rating INTEGER, delta INTEGER, settlement TEXT,
  rule_set TEXT NOT NULL DEFAULT 'legacy', rematch_caps INTEGER NOT NULL DEFAULT 0,
- version INTEGER NOT NULL DEFAULT 40001
+ version INTEGER NOT NULL DEFAULT 40001, series_id TEXT
 );
 CREATE INDEX IF NOT EXISTS ranked_waiting ON ranked_matches(state,made);
 CREATE INDEX IF NOT EXISTS ranked_rating ON ranked_players(rating DESC,id);
@@ -23,3 +23,8 @@ CREATE TABLE IF NOT EXISTS ranked_rounds (
  PRIMARY KEY(match_id,round_no)
 );
 CREATE INDEX IF NOT EXISTS ranked_version_waiting ON ranked_matches(state,rule_set,version,made);
+CREATE TABLE IF NOT EXISTS ranked_series_results (
+ match_id TEXT PRIMARY KEY, series_id TEXT NOT NULL, host_wins INTEGER NOT NULL, guest_wins INTEGER NOT NULL,
+ made INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ranked_series_lookup ON ranked_series_results(series_id,made);

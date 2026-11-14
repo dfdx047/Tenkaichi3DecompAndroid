@@ -852,6 +852,7 @@ static bool sRematchBooted;
 static void rematch_open(void) {
     sRematchSince = SDL_GetTicks();
     sRematchAccept = sRematchLeave = 0;
+    fprintf(stderr, "dragonnet: rematch UI state=confirming\n");
     DrRanked_FlowAct(1);
     goto_screen(REMATCH, 0);
 }
@@ -882,12 +883,22 @@ static void screen_rematch(void) {
     const Uint64 now = SDL_GetTicks();
     const int st = DrRanked_FlowState();
     const bool back = header(T("Rematch", "Revanche", "Revancha"), true) || padB();
+    if (st == 3 && !sRematchAccept) {
+        sRematchAccept = now; // restored after reconnect: our vote is already on the server
+        fprintf(stderr, "dragonnet: rematch UI state=waiting-after-reconnect\n");
+    }
     if (!sRematchLeave && back) { // B / back: the rival is told, then the game goes on to the online menu
         DrRanked_FlowAct(3);
         sRematchLeave = now;
     }
     if (st == 5) { // both accepted: the new match is saved
+        fprintf(stderr, "dragonnet: rematch UI state=new-match-created\n");
         rematch_done(2);
+        return;
+    }
+    if (st == 6) { // the server has closed the series after a second win
+        fprintf(stderr, "dragonnet: rematch UI state=series-decided\n");
+        rematch_done(1);
         return;
     }
     if (sRematchLeave) {
@@ -901,12 +912,16 @@ static void screen_rematch(void) {
     } else if (!sRematchAccept && st < 2 && now - sRematchSince > 20000) { // the service does not answer
         rematch_done(1);
         return;
-    } else if (sRematchAccept && now - sRematchAccept > 15000) { // the rival did not accept in time
+    } else if (sRematchAccept && now - sRematchAccept > 20000) { // the rival did not accept in time
+        fprintf(stderr, "dragonnet: rematch UI state=timeout-vote\n");
         DrRanked_FlowAct(3);
         sRematchLeave = now;
     }
     const char *big;
     const char *note;
+    char score_note[180];
+    int host_wins = 0, guest_wins = 0;
+    DrRanked_FlowScore(&host_wins, &guest_wins);
     if (sRematchLeave) {
         big = T("LEAVING", "SAINDO", "SALIENDO");
         note = T("Telling the rival...", "Avisando o rival...", "Avisando al rival...");
@@ -921,6 +936,9 @@ static void screen_rematch(void) {
         big = T("CONFIRMING", "CONFIRMANDO", "CONFIRMANDO");
         note = T("Confirming the result...", "Confirmando o resultado...", "Confirmando el resultado...");
     }
+    SDL_snprintf(score_note, sizeof(score_note), "%s   %s %d-%d", note,
+                 T("Series", "Série", "Serie"), host_wins, guest_wins);
+    note = score_note;
     wait_card(u * 3.3f, T("Online match", "Partida online", "Partida en linea"), big, note, col(1.0f, 0.86f, 0.30f));
     if (st == 2 && !sRematchAccept && !sRematchLeave) {
         card_start(u * 9.2f, u * 3.3f, NULL);
@@ -929,7 +947,7 @@ static void screen_rematch(void) {
             sRow = (sRow + m + 2) % 2;
         }
         bool again = card_row(0, u * 0.35f, T("Rematch", "Revanche", "Revancha"), "") || (sRow == 0 && padA());
-        bool menu = card_row(1, u * 1.9f, T("Online menu", "Menu online", "Menu en linea"), "") || (sRow == 1 && padA());
+        bool menu = card_row(1, u * 1.9f, T("Ranked start", "Voltar ao início do ranqueado", "Volver al inicio de clasificatoria"), "") || (sRow == 1 && padA());
         if (again) {
             DrRanked_FlowAct(2);
             sRematchAccept = now;

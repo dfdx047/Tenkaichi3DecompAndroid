@@ -35,7 +35,7 @@ await api('lifecycle',a,{match:m.match,action:'ready'});
 assert.equal((await api('lifecycle',b,{match:m.match,action:'ready'})).state,'connected');
 now+=15;assert.equal((await api('match',a,{match:m.match})).state,'paired');
 const ids=new Set([m.match]);
-for(let fight=0;fight<4;fight++){
+for(let fight=0;fight<3;fight++){
  await api('lifecycle',a,{match:m.match,action:'started'});
  assert.equal((await api('cancel',b,{match:m.match})).state,'paired');
  const score=fight%2?0:2,digest='1234abcd';
@@ -47,7 +47,7 @@ for(let fight=0;fight<4;fight++){
  const rating=row(a.id).rating;
  await Promise.all([api('result',a,{match:m.match,score,digest}),api('result',b,{match:m.match,score,digest})]);
  assert.equal(row(a.id).rating,rating);assert.equal(row(a.id).wins+row(a.id).losses,fight+1);
- if(fight<3){
+ if(fight<2){
   assert.equal((await api('lifecycle',a,{match:m.match,action:'accept'})).state,'waiting');
   const [x,y]=await Promise.all([api('lifecycle',b,{match:m.match,action:'accept'}),api('lifecycle',a,{match:m.match,action:'accept'})]);
   assert.equal(x.state,'paired');assert.equal(x.match,y.match);assert(!ids.has(x.match));ids.add(x.match);
@@ -55,16 +55,20 @@ for(let fight=0;fight<4;fight++){
   m=x;now++;
  }
 }
-assert.equal(row(a.id).wins,2);assert.equal(row(a.id).losses,2);assert.equal(row(b.id).wins,2);assert.equal(row(b.id).losses,2);
+assert.equal(row(a.id).wins,2);assert.equal(row(a.id).losses,1);assert.equal(row(b.id).wins,1);assert.equal(row(b.id).losses,2);
+assert.equal((await api('lifecycle',a,{match:m.match,action:'status'})).state,'series_decided');
+assert.equal(row(a.id).active_match,null);assert.equal(row(b.id).active_match,null);
+m=await pair();await api('result',a,{match:m.match,score:2,digest:'fedcba98'});await api('result',b,{match:m.match,score:2,digest:'fedcba98'});
+const settledWins=row(a.id).wins;
 await api('lifecycle',a,{match:m.match,action:'accept'});
 assert.equal((await api('lifecycle',b,{match:m.match,action:'leave'})).state,'declined');
 assert.equal((await api('lifecycle',a,{match:m.match,action:'status'})).state,'declined');
-assert.equal(row(a.id).active_match,null);assert.equal(row(b.id).active_match,null);
+assert.equal(row(a.id).wins,settledWins); // refusal cannot roll back the completed match
 m=await pair();await api('result',a,{match:m.match,score:2,digest:'abcdef12'});await api('result',b,{match:m.match,score:2,digest:'abcdef12'});
-await api('lifecycle',a,{match:m.match,action:'accept'});now+=15;
+await api('lifecycle',a,{match:m.match,action:'accept'});now+=20;
 assert.equal((await api('lifecycle',b,{match:m.match,action:'accept'})).state,'declined');
 m=await pair(2,0);assert.equal(m.flow,0);
 assert.equal((await api('queue',b,{rules:'solo-inf-v1',flow:2})).flow,0); // frozen at pairing
 assert.equal((await api('lifecycle',a,{match:m.match,action:'accept'})).status,409);
 await api('cancel',a,{match:m.match});
-console.log('PASS Ranked lifecycle: bilateral 7s connection release, no pre-fight penalty, pending result protection, 4 separate same-peer scored fights, idempotent retry/concurrent rematch IDs, reject/15s timeout and legacy capability isolation.');
+console.log('PASS Ranked lifecycle: bilateral connection release, result idempotency, 1-1 decider, 2-win series close, reject/20s timeout and legacy capability isolation.');

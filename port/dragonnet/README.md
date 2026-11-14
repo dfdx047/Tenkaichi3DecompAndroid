@@ -27,8 +27,9 @@ code (below) for Ranked, the chat and the players online, and `ALLOWED_VERSIONS`
 
 ## Updating a Worker to this one (Cloudflare dashboard)
 
-1. D1 console of the Worker's database: run `ranked-migrate-version.sql` once (adds `ranked_matches.version`; keeps
-   every profile, rating and result; earlier searches count as 40001).
+1. D1 console of the Worker's database: run the applicable additive migrations once, including
+   `ranked-migrate-version.sql` and `ranked-migrate-series.sql` (the latter adds server-owned series IDs and
+   idempotent per-match series results; existing profile/rating/match history is retained).
 2. Replace the Worker's code with `worker.js`, `ranked.js`, `chat.js`, `presence.js` and the new `versions.js`
    (with wrangler: `wrangler deploy` with `wrangler-ranked.example.jsonc` as a model).
 3. Variable `ALLOWED_VERSIONS` = `40001,5001` (the old `ALLOWED_VERSION` is read only when this one is missing).
@@ -38,7 +39,7 @@ A new database: `schema.sql`, `ranked-schema.sql`, `chat-schema.sql`, `presence-
 
 ## Tests
 
-`node test.mjs`, `node ranked-test.mjs`, `node ranked-rematch-test.mjs`, `node chat-test.mjs`,
+`node test.mjs`, `node ranked-test.mjs`, `node ranked-rematch-test.mjs`, `node ranked-series-local-test.mjs`, `node chat-test.mjs`,
 `node presence-test.mjs`, `node dragonnet-test.mjs` (Node 22: `node:sqlite`, no other package).
 
 ---
@@ -46,6 +47,6 @@ A new database: `schema.sql`, `ranked-schema.sql`, `chat-schema.sql`, `presence-
 **Resumen (ES):** servidor oficial: `https://mitigo-rooms.minetivacraft.workers.dev` (el Worker del fork Tenkaichi3DecompAndroidOnline); Dragon
 Rage y DBT-NX apuntan ahí. Es el servicio de DBT-NX con un cambio: acepta varias versiones de netcode (`ALLOWED_VERSIONS`, p. ej.
 `40001,5001`) y nunca empareja versiones distintas (salas, partida rápida y Clasificatoria). Perfiles, Elo, chat y
-contador se comparten. Para actualizar: ejecutar `ranked-migrate-version.sql` en D1, subir los cinco `.js` y poner
+contador se comparten. Para actualizar: ejecutar `ranked-migrate-version.sql` y `ranked-migrate-series.sql` en D1, subir los cinco `.js` y poner
 `ALLOWED_VERSIONS`. La versión `5001` = netcode 5 del PC 0.1.37 + simulación 1; solo cambia cuando cambia algo que
 decide la pelea, no con cada versión del PC.

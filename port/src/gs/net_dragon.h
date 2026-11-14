@@ -60,8 +60,9 @@ typedef struct DrRanked {
 
 /* flow:2 rematch, after the result (the Revanche screen): 1 asks the state, 2 accepts, 3 leaves. */
 void DrRanked_FlowAct(int act);
-/* 0 none, 1 confirming, 2 choice, 3 waiting, 4 declined or gave up, 5 a new match was saved. */
+/* 0 none, 1 confirming, 2 choice, 3 waiting, 4 declined, 5 new match saved, 6 series decided. */
 int DrRanked_FlowState(void);
+void DrRanked_FlowScore(int *host, int *guest);
 /* The saved new match (match needs 33 bytes): 1 if there is one. */
 int DrRanked_FlowNext(char *match, int *role, int *mode);
 void DrRanked_FlowClear(void);

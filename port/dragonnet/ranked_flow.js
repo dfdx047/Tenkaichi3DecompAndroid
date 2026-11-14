@@ -51,6 +51,9 @@ export async function flowRequest(db,m,p,body,now,matchView){
   return {body:{state:'declined'}};
  }
  if(!['accept','status'].includes(action))return {status:400,body:{error:'action'}};
+ const series=m.series_id??m.id;
+ const total=await one(db,"SELECT COALESCE(SUM(host_wins),0) host,COALESCE(SUM(guest_wins),0) guest FROM ranked_series_results WHERE series_id=?",series);
+ if(total.host>=2||total.guest>=2){await stmt(db,'UPDATE ranked_flow SET closed=1 WHERE match_id=? AND next_match IS NULL',m.id).run();return {body:{state:'series_decided',host_wins:total.host,guest_wins:total.guest}};}
  if(f.next_match){
   const next=await one(db,'SELECT * FROM ranked_matches WHERE id=?',f.next_match);
   if(!next||next.state!=='paired')return {body:{state:'declined'}};
@@ -60,9 +63,9 @@ export async function flowRequest(db,m,p,body,now,matchView){
   await stmt(db,'UPDATE ranked_flow SET closed=1 WHERE match_id=? AND next_match IS NULL',m.id).run();
   return {body:{state:'declined'}};
  }
- if(m.state!=='final')return {body:{state:m.state==='paired'?'confirming':'declined'}};
+ if(m.state!=='final')return {body:{state:m.state==='paired'?'confirming':'declined',host_wins:total.host,guest_wins:total.guest}};
  if(action==='accept'){
-  await stmt(db,`UPDATE ranked_flow SET ${side}_choice=1,choice_until=CASE WHEN choice_until=0 THEN ? ELSE choice_until END WHERE match_id=? AND closed=0 AND ${side}_choice=0`,now+15,m.id).run();
+  await stmt(db,`UPDATE ranked_flow SET ${side}_choice=1,choice_until=CASE WHEN choice_until=0 THEN ? ELSE choice_until END WHERE match_id=? AND closed=0 AND ${side}_choice=0`,now+20,m.id).run();
   f=await flowRow(db,m.id);
  }
  if(f.closed)return {body:{state:'declined'}};
@@ -74,9 +77,9 @@ export async function flowRequest(db,m,p,body,now,matchView){
    stmt(db,`UPDATE ranked_flow SET next_match=? WHERE match_id=? AND next_match IS NULL AND closed=0 AND host_choice=1 AND guest_choice=1 AND choice_until>?
     AND EXISTS(SELECT 1 FROM ranked_players WHERE id=? AND active_match IS NULL)
     AND EXISTS(SELECT 1 FROM ranked_players WHERE id=? AND active_match IS NULL)`,next,m.id,now,m.host_id,m.guest_id),
-   stmt(db,`INSERT INTO ranked_matches(id,host_id,guest_id,made,state,host_rating,guest_rating,rule_set,rematch_caps,version)
-    SELECT ?,h.id,g.id,?,'paired',h.rating,g.rating,?,0,? FROM ranked_players h,ranked_players g
-    WHERE h.id=? AND g.id=? AND EXISTS(SELECT 1 FROM ranked_flow WHERE match_id=? AND next_match=?)`,next,now,m.rule_set,m.version,m.host_id,m.guest_id,m.id,next),
+   stmt(db,`INSERT INTO ranked_matches(id,host_id,guest_id,made,state,host_rating,guest_rating,rule_set,rematch_caps,version,series_id)
+    SELECT ?,h.id,g.id,?,'paired',h.rating,g.rating,?,0,?,COALESCE(?,?) FROM ranked_players h,ranked_players g
+    WHERE h.id=? AND g.id=? AND EXISTS(SELECT 1 FROM ranked_flow WHERE match_id=? AND next_match=?)`,next,now,m.rule_set,m.version,m.series_id,m.id,m.host_id,m.guest_id,m.id,next),
    stmt(db,"INSERT INTO ranked_flow(match_id,host_cap,guest_cap,paired_at) SELECT ?,2,2,? WHERE EXISTS(SELECT 1 FROM ranked_matches WHERE id=?)",next,now,next),
    stmt(db,"UPDATE ranked_players SET active_match=? WHERE id IN (?,?) AND active_match IS NULL AND EXISTS(SELECT 1 FROM ranked_matches WHERE id=?)",next,m.host_id,m.guest_id,next)
   ]);
@@ -84,5 +87,5 @@ export async function flowRequest(db,m,p,body,now,matchView){
   if(f.next_match){const row=await one(db,'SELECT * FROM ranked_matches WHERE id=?',f.next_match);if(row)return {body:{...await matchView(db,row,p.id),flow:2,previous:m.id}};}
   return {body:{state:'declined'}};
  }
- return {body:{state:action==='accept'||f.host_choice||f.guest_choice?'waiting':'choice',remaining:f.choice_until?Math.max(0,f.choice_until-now):15}};
+ return {body:{state:action==='accept'||f.host_choice||f.guest_choice?'waiting':'choice',remaining:f.choice_until?Math.max(0,f.choice_until-now):20,host_wins:total.host,guest_wins:total.guest}};
 }

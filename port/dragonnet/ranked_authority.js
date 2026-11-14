@@ -36,7 +36,7 @@ export default {
    if(call.gateway==='D'&&route.backend==='C'&&await cUnavailable(env))route=await promoteD(env.DB,now);
    await retireUnstartedC(env.DB,now,route);
    const metadata={cd:1,migration_complete:1,authority:env.AUTHORITY_ID,url_c:env.URL_C,url_d:env.URL_D,backend:route.backend,route_epoch:route.epoch};
-   if(call.path==='ranked/capabilities')return versionAllowed(env,call.body.v)?json({...metadata,lifecycle:2,connect_timeout_ms:7000,rematch_timeout_ms:15000}):json({error:'version',...metadata},409);
+   if(call.path==='ranked/capabilities')return versionAllowed(env,call.body.v)?json({...metadata,lifecycle:2,connect_timeout_ms:7000,rematch_timeout_ms:20000}):json({error:'version',...metadata},409);
    const inner=new Request('https://authority.internal/v1/'+call.path,{method:'POST',headers:{'content-type':'application/json','cf-connecting-ip':call.ip},body:JSON.stringify(call.body)});
    const response=await service.fetch(inner,{...env,RANKED_ENABLED:'1',CHAT_ENABLED:'0'});
    let result;try{result=await response.json();}catch{return json({error:'ranked unavailable'},503);}

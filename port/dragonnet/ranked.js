@@ -25,7 +25,8 @@ async function view(db,p){
 async function matchView(db,m,player){
  const host=m.host_id===player;
  const peer=await one(db,"SELECT name FROM ranked_players WHERE id=?",host?m.guest_id:m.host_id);
- return {match:m.id,state:m.state,role:host?1:2,code:m.room_code??"",peer:peer?.name??"",rules:m.rule_set,rematches:m.rematch_caps===3?1:0,flow:await flowView(db,m),delta:m.delta===null?0:host?m.delta:-m.delta};
+ const series=m.series_id??m.id, totals=await one(db,"SELECT COALESCE(SUM(host_wins),0) host,COALESCE(SUM(guest_wins),0) guest FROM ranked_series_results WHERE series_id=?",series);
+ return {match:m.id,state:m.state,role:host?1:2,code:m.room_code??"",peer:peer?.name??"",rules:m.rule_set,rematches:m.rematch_caps===3?1:0,flow:await flowView(db,m),delta:m.delta===null?0:host?m.delta:-m.delta,host_wins:totals.host,guest_wins:totals.guest,series:{host:totals.host,guest:totals.guest,rematch:totals.host<2&&totals.guest<2}};
 }
 async function rematchResult(db,m,p,body,now,forfeit=false){
  if(forfeit)body={...body,score:m.host_id===p.id?0:2,digest:'f0fe1700'};
@@ -97,14 +98,15 @@ async function settle(db,m){
  await db.batch([
   stmt(db,"UPDATE ranked_matches SET state='final',delta=?,settlement=? WHERE id=? AND state='paired' AND host_score=? AND guest_score=? AND host_digest=? AND guest_digest=?",delta,nonce,m.id,m.host_score,m.guest_score,m.host_digest,m.guest_digest),
   stmt(db,"UPDATE ranked_players SET rating=rating+?,wins=wins+?,losses=losses+?,draws=draws+?,active_match=NULL WHERE id=? AND EXISTS(SELECT 1 FROM ranked_matches WHERE id=? AND settlement=?)",delta,hwin,gwin,draw,m.host_id,m.id,nonce),
-  stmt(db,"UPDATE ranked_players SET rating=rating-?,wins=wins+?,losses=losses+?,draws=draws+?,active_match=NULL WHERE id=? AND EXISTS(SELECT 1 FROM ranked_matches WHERE id=? AND settlement=?)",delta,gwin,hwin,draw,m.guest_id,m.id,nonce)
+  stmt(db,"UPDATE ranked_players SET rating=rating-?,wins=wins+?,losses=losses+?,draws=draws+?,active_match=NULL WHERE id=? AND EXISTS(SELECT 1 FROM ranked_matches WHERE id=? AND settlement=?)",delta,gwin,hwin,draw,m.guest_id,m.id,nonce),
+  stmt(db,"INSERT OR IGNORE INTO ranked_series_results(match_id,series_id,host_wins,guest_wins,made) SELECT id,COALESCE(series_id,id),CASE WHEN host_score=2 THEN 1 ELSE 0 END,CASE WHEN host_score=0 THEN 1 ELSE 0 END,made FROM ranked_matches WHERE id=? AND state='final' AND settlement=?",m.id,nonce)
  ]);
 }
 export async function rankedFetch(request,env,path,body,now,ip){
  if(String(env.RANKED_ENABLED)!=="1")return json({error:"ranked unavailable"},503);
  if(!versionAllowed(env,body.v))return json({error:"version"},409);
  const db=env.DB;
- if(path==='capabilities')return json({lifecycle:2,connect_timeout_ms:7000,rematch_timeout_ms:15000});
+ if(path==='capabilities')return json({lifecycle:2,connect_timeout_ms:7000,rematch_timeout_ms:20000});
  if(path==="register"){
   if(!await limit(db,"ranked-register:"+ip,now-now%3600,10))return json({error:"busy"},429);
   const player=id(),token=id()+id();

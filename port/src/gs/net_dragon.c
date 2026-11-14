@@ -249,6 +249,7 @@ static int sFlowAct, sFlowNow, sFlowTries, sFlowState;
 static char sFlowMatch[33];
 static Uint64 sFlowAt;
 static int sFlowMode;
+static int sFlowHostWins, sFlowGuestWins;
 
 static int sChatOpen, sChatState;
 static unsigned sChatAfter;
@@ -645,6 +646,8 @@ static void do_flow(void) {
     text_value(answer, "match", next, sizeof(next));
     role = number_value(answer, "role");
     SDL_LockMutex(sLock);
+    sFlowHostWins = number_value(answer, "host_wins");
+    sFlowGuestWins = number_value(answer, "guest_wins");
     if (act != sFlowAct || strcmp(match, sFlowMatch) != 0) { /* the game asked for something else meanwhile */
         SDL_UnlockMutex(sLock);
         return;
@@ -654,16 +657,24 @@ static void do_flow(void) {
         write_text("dragonnet-next.txt", text);
         sFlowState = 5;
         sFlowAct = 0;
+        fprintf(stderr, "dragonnet: rematch state=new-match match=%.8s\n", next);
     } else if (strcmp(st, "declined") == 0) {
         sFlowState = 4;
         sFlowAct = 0;
+        fprintf(stderr, "dragonnet: rematch state=declined match=%.8s\n", match);
+    } else if (strcmp(st, "series_decided") == 0) {
+        sFlowState = 6;
+        sFlowAct = 0;
+        fprintf(stderr, "dragonnet: rematch state=series-decided host=%d guest=%d\n", number_value(answer, "host_wins"), number_value(answer, "guest_wins"));
     } else if (strcmp(st, "waiting") == 0) {
         sFlowState = 3;
+        fprintf(stderr, "dragonnet: rematch state=waiting match=%.8s\n", match);
         if (act == 2) {
             sFlowAct = 1; /* the vote is in: from now on only ask */
         }
     } else if (strcmp(st, "choice") == 0) {
         sFlowState = 2;
+        fprintf(stderr, "dragonnet: rematch state=choice match=%.8s\n", match);
         if (act == 2) {
             sFlowAct = 1;
         }
@@ -788,7 +799,7 @@ static int SDLCALL worker(void *unused) {
                     }
                 } else {
                     /* (one fight per match: rematches 0. DBT-NX's rounds can come later, when both games score them) */
-                    SDL_snprintf(extra, sizeof(extra), ",\"rematches\":0,\"flow\":2,\"rules\":\"%s\"", mode ? "team3-inf-v1" : "solo-inf-v1");
+                    SDL_snprintf(extra, sizeof(extra), ",\"rematches\":1,\"flow\":2,\"rules\":\"%s\"", mode ? "team3-inf-v1" : "solo-inf-v1");
                     if (post_ranked("queue", extra, answer, sizeof(answer))) {
                         update_match(answer, gen);
                     } else if (sView.msg != DRMSG_VERSION && sView.msg != DRMSG_LIMIT) {
@@ -987,11 +998,12 @@ void DrRanked_FlowAct(int act) {
         }
     }
     SDL_LockMutex(sLock);
-    if (after || flow_file(match) || (sView.flow && strcmp(sView.match, match) == 0)) {
+    if (after || (sent && act == 1) || flow_file(match) || (sView.flow && strcmp(sView.match, match) == 0)) {
         sFlowMode = mode;
         if (strcmp(sFlowMatch, match) != 0) {
             SDL_strlcpy(sFlowMatch, match, sizeof(sFlowMatch));
             sFlowState = 0;
+            sFlowHostWins = sFlowGuestWins = 0;
         }
         if (sFlowState == 0) {
             sFlowState = 1;
@@ -1009,6 +1021,13 @@ int DrRanked_FlowState(void) {
     s = sFlowState;
     SDL_UnlockMutex(sLock);
     return s;
+}
+
+void DrRanked_FlowScore(int *host, int *guest) {
+    SDL_LockMutex(sLock);
+    if (host != NULL) *host = sFlowHostWins;
+    if (guest != NULL) *guest = sFlowGuestWins;
+    SDL_UnlockMutex(sLock);
 }
 
 int DrRanked_FlowNext(char *match, int *role, int *mode) {
@@ -1030,6 +1049,7 @@ void DrRanked_FlowClear(void) {
     SDL_LockMutex(sLock);
     sFlowAct = sFlowNow = sFlowState = 0;
     sFlowMatch[0] = '\0';
+    sFlowHostWins = sFlowGuestWins = 0;
     SDL_UnlockMutex(sLock);
 }
 
@@ -1165,7 +1185,12 @@ int DrRanked_RematchOffer(void) {
     if (!gPortRematchUi || !session_read(match, &role, &mode, &sent) || !sent) {
         return 0;
     }
-    return flow_file(match);
+    /* Do not gate on dragonnet-flow.txt or process-local sView: the battle may
+       have restarted. Ask the service first; MainMenu_Run waits for its final
+       `choice` state, which is only returned after settlement. */
+    fprintf(stderr, "dragonnet: rematch status requested from server (match %.8s)\n", match);
+    DrRanked_FlowAct(1);
+    return 1;
 }
 
 int DrRanked_InSession(void) {

@@ -1,4 +1,5 @@
 #include "common.h"
+#include <stdio.h>
 #include "menu/menu_a.h"
 #ifdef PORT
 #include "battle/tag_session.h"
@@ -1412,17 +1413,44 @@ s32 MainMenu_Run(s32 section) {
     if (Port_NetSession()) {
         { /* Dragon Net (flow:2): the Revanche screen (port/src/gs/ui.cpp) comes before the session ends */
             extern volatile int gPortRematchRequest, gPortRematchDone;
-            extern int DrRanked_RematchOffer(void);
+            extern int DrRanked_RematchOffer(void), DrRanked_FlowState(void);
             if (DrRanked_RematchOffer()) {
                 int frames;
-                gPortRematchDone = 0;
-                gPortRematchRequest = 1;
-                for (frames = 0; frames < 3000 && !gPortRematchDone; frames++) {
+                int state;
+                /* Wait for the service to finish settlement and answer `choice`.
+                   The result screen must never wait for a rematch to score. */
+                for (frames = 0; frames < 1200; frames++) {
+                    state = DrRanked_FlowState();
+                    if (state == 2 || state == 3 || state == 4 || state == 5 || state == 6) break;
                     Gfx_BeginFrame();
                     Pad_Update();
                     Snd_Update();
                     Gfx_EndFrame(1);
                     Dma_Flush();
+                }
+                state = DrRanked_FlowState();
+                if (state == 2 || state == 3) {
+                    fprintf(stderr, "dragonnet: MainMenu_Run opening server-confirmed rematch choice\n");
+                } else if (state == 5) {
+                    fprintf(stderr, "dragonnet: MainMenu_Run resuming server-created match\n");
+                    gPortRematchDone = 2;
+                } else {
+                    fprintf(stderr, "dragonnet: MainMenu_Run rematch unavailable/expired (state %d)\n", state);
+                    gPortRematchDone = 1;
+                }
+                if (state == 2 || state == 3) {
+                    gPortRematchDone = 0;
+                    gPortRematchRequest = 1;
+                    for (frames = 0; frames < 3000 && !gPortRematchDone; frames++) {
+                        Gfx_BeginFrame();
+                        Pad_Update();
+                        Snd_Update();
+                        Gfx_EndFrame(1);
+                        Dma_Flush();
+                    }
+                    if (!gPortRematchDone) {
+                        fprintf(stderr, "dragonnet: MainMenu_Run rematch UI did not complete before frame guard\n");
+                    }
                 }
             }
         }
