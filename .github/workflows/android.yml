@@ -1,8 +1,8 @@
 # Builds the Dragon Rage Android app (android/).
 #
-#   push / pull request                      the release APK as an artifact of the run (a build check)
-#   push to main                             the same, and the "android-nightly" pre-release (its APK replaced)
-#   a tag  android-vX.Y.Z                    the same, and the release "Dragon Rage X.Y.Z" with its APK
+#   push / pull request                      release and side-by-side debug APK artifacts (build check)
+#   push to main                             the same, and the "android-nightly" pre-release (release APK replaced)
+#   a tag  android-vX.Y.Z                    the same, and the release "Dragon Rage X.Y.Z" with release APK
 #   "Run workflow" button                    the same as a push
 #
 # Versions: the tag gives the version name (android-v0.2.0 -> 0.2.0), the run number the version code; other
@@ -164,17 +164,24 @@ jobs:
       - name: Build
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleRelease > ../gradle.txt 2>&1 || { grep -E "^e: |error:|FAILURE|What went wrong" -A3 ../gradle.txt > ../gradle_errors.txt || true; tail -20 ../gradle.txt >> ../gradle_errors.txt; sh ../.github/annotate.sh ../gradle_errors.txt; exit 1; }
+          ./gradlew --no-daemon assembleRelease assembleDebug -PsideBySide > ../gradle.txt 2>&1 || { grep -E "^e: |error:|FAILURE|What went wrong" -A3 ../gradle.txt > ../gradle_errors.txt || true; tail -20 ../gradle.txt >> ../gradle_errors.txt; sh ../.github/annotate.sh ../gradle_errors.txt; exit 1; }
 
       - name: Collect APKs
         run: |
-          mkdir -p ../out
+          mkdir -p ../out ../out/debug
           cp app/build/outputs/apk/release/app-release.apk "../out/DragonRage-${DR_VERSION_NAME}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "../out/debug/DragonRage-debug-${DR_VERSION_NAME}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
           name: DragonRage-${{ env.DR_VERSION_NAME }}
           path: out/*.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DragonRage-debug-${{ env.DR_VERSION_NAME }}
+          path: out/debug/*.apk
+          retention-days: 30
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/android-v')
