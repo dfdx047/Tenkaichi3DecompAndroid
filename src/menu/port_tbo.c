@@ -275,6 +275,7 @@ extern void BattleSetup_Finish(void);
 extern int Port_DataFingerprint(unsigned long long *out); /* plat_fprint.c: 1 known, 0 being worked out, -1 not done */
 extern int Port_DataFingerprintNeed(void);               /* the same, and started if this run had not */
 extern void GsDraw_ScreenScaleCap(int cap4);             /* port/src/gs/gs_draw.c: the online screens' resolution cap */
+extern void GsDraw_ScreenScaleFloor(int floor4);         /* and their floor */
 extern int Port_DataFingerprintOriginal(void);           /* 1 the data the game computes with is the original disc's */
 extern const char *Port_DataFingerprintText(void);
 extern int Port_Setting(const char *name, int def);
@@ -4580,7 +4581,8 @@ s32 PortTbo_Run(void) {
         Tb_SetMode(TB_WAIT);
     }
     DrNet_PresenceActive(DrNet_Mode() == 0); /* the players online: counted while these screens are up (Dragon Net) */
-    GsDraw_ScreenScaleCap(12); /* (at most 3x here: gs_draw.c; the player's own after) */
+    GsDraw_ScreenScaleCap(12);   /* (at most 3x here: gs_draw.c; the player's own after) */
+    GsDraw_ScreenScaleFloor(12); /* (and at least 3x: Raditz and the letters stay sharp at a lower resolution, as BT4's) */
     Port_EscQuit(0);
     Tb_WinInit();
     ColorFade_StartIn(0, 0, 0, 0x14);
@@ -4682,6 +4684,7 @@ s32 PortTbo_Run(void) {
         DrRanked_Cancel();
     }
     DrNet_PresenceActive(0);
+    GsDraw_ScreenScaleFloor(0);
     GsDraw_ScreenScaleCap(0);
     train = sTb->train;
     if (train) {

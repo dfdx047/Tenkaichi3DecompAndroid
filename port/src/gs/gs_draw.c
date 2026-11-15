@@ -116,6 +116,19 @@ int gsPendingScale4;
    the menus slow. The player's own choice (sUserScale4) is what the settings show and keep, and comes back after. */
 static int sScreenCap4;
 static int sUserScale4;
+/* ... and at least at this one (in quarters; 0: none): the redesigned online screens (Raditz, the backdrop's film, their
+   letters) are made for the phone's own pixels, and the player's lower resolution stretched to the screen blurred
+   them (BT4's screens had the floor already: bt4/port/src/gs/gs_draw.c). Kept as the cap is. */
+static int sScreenFloor4;
+static int screen_scale_bound(int q) {
+    if (sScreenFloor4 && q < sScreenFloor4) {
+        q = sScreenFloor4;
+    }
+    if (sScreenCap4 && q > sScreenCap4) {
+        q = sScreenCap4; /* (the cap wins: a Tag Team fight's light graphics) */
+    }
+    return q;
+}
 GsTex gsWhite;
 GsDraw *gsDraws;
 uint32_t gsDrawCount;
@@ -2851,7 +2864,7 @@ void GsGpu_GetSettings(PortVideo *v) {
     if (sTagLite < 0) { /* (not read yet, before the first fight: any setting changed then wrote "off" over the launcher's choice) */
         sTagLite = Port_Setting("tag_lite", 0) != 0;
     }
-    v->scale4 = sScreenCap4 ? sUserScale4 : gsPendingScale4 ? gsPendingScale4 : gsScale4;
+    v->scale4 = sScreenCap4 || sScreenFloor4 ? sUserScale4 : gsPendingScale4 ? gsPendingScale4 : gsScale4;
     v->aspectMilli = sAspectAuto ? 0 : Port_AspectMilli(); /* (0: the screen's own shape, Android) */
     v->fullscreen = sFullscreen;
     v->fxOff = (int)gsFxOff;
@@ -2882,9 +2895,9 @@ void GsGpu_SetSettings(const PortVideo *v) {
     GsGpu_GetSettings(&now);
     if (v->scale4 != now.scale4) {
         int q = v->scale4 < 4 ? 4 : v->scale4 > 32 ? 32 : v->scale4;
-        if (sScreenCap4) { /* (on the online screens: kept for after them, and drawn there at most at the cap) */
+        if (sScreenCap4 || sScreenFloor4) { /* (on the online screens: kept for after them, drawn there within cap and floor) */
             sUserScale4 = q;
-            q = q > sScreenCap4 ? sScreenCap4 : q;
+            q = screen_scale_bound(q);
         }
         gsPendingScale4 = q; /* applied between two frames */
     }
@@ -2937,7 +2950,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
     Port_SettingSave("smooth_2d", sSmooth2d);
     Port_SettingSave("texture_pack", sTexPackOn);
     {   /* "scale4" in quarters; "scale" the whole multiplier, for the launcher of an earlier version */
-        int q = sScreenCap4 ? sUserScale4 : gsPendingScale4 ? gsPendingScale4 : gsScale4;
+        int q = sScreenCap4 || sScreenFloor4 ? sUserScale4 : gsPendingScale4 ? gsPendingScale4 : gsScale4; /* (the player's own) */
         Port_SettingSave("scale4", q);
         Port_SettingSave("scale", (q + 2) / 4);
     }
@@ -2974,16 +2987,38 @@ void Port_TagLiteUpdate(int fight) {
         fprintf(stderr, "bt3: Tag Team light graphics %s\n", on ? "on" : "off");
     }
 }
-void GsDraw_ScreenScaleCap(int cap4) {
-    if (cap4 > 0 && !sScreenCap4) {
+/* The cap or the floor changed: the resolution drawn at from the next frame. The player's own (sUserScale4) is kept
+   from when the first of the two came, and is what comes back when neither is left. */
+static void screen_scale_limits(int hadLimit) {
+    int limit = sScreenCap4 || sScreenFloor4;
+    int q;
+    if (limit && !hadLimit) {
         sUserScale4 = gsPendingScale4 ? gsPendingScale4 : gsScale4;
+    }
+    q = limit ? screen_scale_bound(sUserScale4) : sUserScale4;
+    if (limit || hadLimit) {
+        gsPendingScale4 = q != gsScale4 ? q : 0;
+    }
+}
+void GsDraw_ScreenScaleCap(int cap4) {
+    int had = sScreenCap4 || sScreenFloor4;
+    if (cap4 > 0 && !sScreenCap4) {
         sScreenCap4 = cap4;
-        if (sUserScale4 > cap4) {
-            gsPendingScale4 = cap4;
-        }
+        screen_scale_limits(had);
     } else if (cap4 <= 0 && sScreenCap4) {
         sScreenCap4 = 0;
-        gsPendingScale4 = sUserScale4 != gsScale4 ? sUserScale4 : 0;
+        screen_scale_limits(had);
+    }
+}
+/* The redesigned online screens open (floor4 > 0, in quarters) or close (0): see sScreenFloor4. menu/port_tbo.c. */
+void GsDraw_ScreenScaleFloor(int floor4) {
+    int had = sScreenCap4 || sScreenFloor4;
+    if (floor4 > 0 && !sScreenFloor4) {
+        sScreenFloor4 = floor4;
+        screen_scale_limits(had);
+    } else if (floor4 <= 0 && sScreenFloor4) {
+        sScreenFloor4 = 0;
+        screen_scale_limits(had);
     }
 }
 
