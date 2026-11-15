@@ -422,13 +422,14 @@ open class GameActivity : SDLActivity() {
             if (code !in 200..299) android.util.Log.w("bt3", "ranked/net HTTP $code $url: ${text.take(200)}")
             // A 429 is said in the answer, which the engine reads (net_match.c: it then asks nothing for a while). A
             // Worker's own is JSON; Cloudflare's (error 1027, the daily requests) is not.
-            if (code == 429) """{"error":"${if (text.trimStart().startsWith("{") && text.contains("busy")) "busy" else "limit"}","http":429}""" else text
+            val response = if (code == 429) """{"error":"${if (text.trimStart().startsWith("{") && text.contains("busy")) "busy" else "limit"}","http":429}""" else text
+            if (body != null && url.contains("/v1/ranked/")) "@HTTP $code\n$response" else response
         } finally {
             c.disconnect()
         }
     }.getOrElse {
         android.util.Log.e("bt3", "ranked/net failed $url", it)
-        ""
+        if (body != null && url.contains("/v1/ranked/")) "@ERROR ${it.javaClass.simpleName}: ${it.message.orEmpty().take(96)}" else ""
     }
 
     /**

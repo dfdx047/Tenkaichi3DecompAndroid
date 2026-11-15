@@ -201,6 +201,40 @@ static int ranked_debug_url_ok(const char *url) {
     return a == 10 || (a == 127) || (a == 192 && b == 168) || (a == 172 && b >= 16 && b <= 31);
 }
 
+static const char *ranked_debug_url_reason(const char *url) {
+    const char *host, *colon, *p;
+    char copy[64], *end;
+    unsigned a, b, c, d; char tail;
+    long port;
+    if (SDL_strncmp(url, "http://", 7) != 0) return "Invalid URL: only http:// is allowed";
+    host = url + 7; colon = SDL_strchr(host, ':');
+    if (colon == NULL) return "Invalid URL: missing :port";
+    if (colon == host) return "Invalid URL: hostname is empty";
+    if (SDL_strchr(colon + 1, '/') != NULL) return "Invalid URL: path/query is not allowed";
+    if (SDL_strchr(colon + 1, ':') != NULL) return "Invalid URL: use one port separator";
+    if ((size_t)(colon - host) >= sizeof(copy)) return "Invalid URL: hostname is too long";
+    SDL_memcpy(copy, host, (size_t)(colon - host)); copy[colon - host] = '\0';
+    if (SDL_strcmp(copy, "localhost") == 0) { /* allowed */ }
+    else {
+        if (sscanf(copy, "%u.%u.%u.%u%c", &a, &b, &c, &d, &tail) != 4 || a > 255 || b > 255 || c > 255 || d > 255)
+            return "Invalid host: expected localhost or private IPv4";
+        if (!(a == 10 || a == 127 || (a == 192 && b == 168) || (a == 172 && b >= 16 && b <= 31)))
+            return "Rejected host: IPv4 is not loopback/private (RFC1918)";
+    }
+    if (colon[1] == '\0') return "Invalid port: missing digits";
+    for (p = colon + 1; *p; p++) if (*p < '0' || *p > '9') return "Invalid port: digits only";
+    port = strtol(colon + 1, &end, 10);
+    if (*end != '\0' || port < 1 || port > 65535) return "Invalid port: expected 1 to 65535";
+    return "Invalid local URL";
+}
+
+static char sRankedDebugEndpoint[320] = "official";
+static char sRankedDebugError[160];
+static int sRankedDebugFile;
+extern void DrRanked_DebugResultCode(int code);
+const char *DrRanked_DebugEndpoint(void) { (void)DrNet_RankedDebugUrl(); return sRankedDebugError[0] ? "invalid local URL" : sRankedDebugEndpoint; }
+void DrRanked_DebugValidation(const char *reason) { SDL_strlcpy(sRankedDebugError, reason, sizeof(sRankedDebugError)); }
+
 /* Debug APK only: loopback or private-LAN HTTP, no path/userinfo/public hosts. */
 const char *DrNet_RankedDebugUrl(void) {
     static char f[256];
@@ -212,6 +246,7 @@ const char *DrNet_RankedDebugUrl(void) {
         char path[600]; FILE *in;
         SDL_snprintf(path, sizeof(path), "%s/dragonnet_ranked_debug_url.txt", Port_FileRoot());
         if ((in = fopen(path, "r")) != NULL) {
+            sRankedDebugFile = 1;
             if (fgets(f, sizeof(f), in) != NULL) f[strcspn(f, " \r\n")] = '\0';
             fclose(in);
         }
@@ -220,8 +255,17 @@ const char *DrNet_RankedDebugUrl(void) {
         if (env != NULL) SDL_strlcpy(f, env, sizeof(f));
 #endif
         while (f[0] != '\0' && f[strlen(f) - 1] == '/') f[strlen(f) - 1] = '\0';
-        if (!ranked_debug_url_ok(f)) f[0] = '\0';
-        else fprintf(stderr, "dragonnet: LOCAL RANKED DEBUG endpoint %s (C/D verification bypassed)\n", f);
+        if (!ranked_debug_url_ok(f)) {
+            if (sRankedDebugFile) {
+                const char *why = ranked_debug_url_reason(f);
+                SDL_strlcpy(sRankedDebugError, why, sizeof(sRankedDebugError));
+                SDL_strlcpy(sRankedDebugEndpoint, "invalid local URL", sizeof(sRankedDebugEndpoint));
+            }
+            f[0] = '\0';
+        } else {
+            SDL_strlcpy(sRankedDebugEndpoint, f, sizeof(sRankedDebugEndpoint));
+            fprintf(stderr, "dragonnet: LOCAL RANKED DEBUG endpoint %s (C/D verification bypassed)\n", f);
+        }
     }
     return f;
 }
@@ -1890,8 +1934,17 @@ static int rk_post(const char *what, const char *json, char *out, size_t size) {
         SDL_snprintf(url, sizeof(url), "%s/v1/%s", debug, what);
         fprintf(stderr, "dragonnet: local ranked POST %s\n", url);
         ok = http_post_native(url, json, NULL, out, size);
+        if (ok && SDL_strncmp(out, "@HTTP ", 6) == 0) {
+            char *nl = SDL_strchr(out, '\n');
+            if (nl != NULL) { int code = atoi(out + 6); memmove(out, nl + 1, SDL_strlen(nl + 1) + 1); if (SDL_strcmp(what, "ranked/register") == 0 || SDL_strcmp(what, "ranked/profile") == 0) DrRanked_DebugResultCode(code); }
+        } else if (ok && SDL_strncmp(out, "@ERROR ", 7) == 0) { if (SDL_strcmp(what, "ranked/register") == 0 || SDL_strcmp(what, "ranked/profile") == 0) DrRanked_DebugResultError(out + 7); out[0] = '\0'; ok = 0; }
+        else if (!ok && (SDL_strcmp(what, "ranked/register") == 0 || SDL_strcmp(what, "ranked/profile") == 0)) DrRanked_DebugResultError("no response from Android network request");
         if (!ok) fprintf(stderr, "dragonnet: local ranked request failed: %s (%s)\n", what, url);
         return ok;
+    }
+    if (sRankedDebugError[0] != '\0') {
+        if (SDL_strcmp(what, "ranked/register") == 0 || SDL_strcmp(what, "ranked/profile") == 0) DrRanked_DebugResultError(sRankedDebugError);
+        return 0; /* a present but rejected local override must never fall through */
     }
     if (DrNet_RankedUrl()[0] == '\0') {
         return 0; /* sem C: Ranked indisponivel */
@@ -1911,6 +1964,11 @@ static int rk_post(const char *what, const char *json, char *out, size_t size) {
     }
     SDL_snprintf(url, sizeof(url), "%s/v1/%s", base, what);
     ok = http_post_native(url, json, NULL, out, size);
+    if (ok && SDL_strncmp(out, "@HTTP ", 6) == 0) {
+        char *nl = SDL_strchr(out, '\n');
+        if (nl != NULL) { int code = atoi(out + 6); memmove(out, nl + 1, SDL_strlen(nl + 1) + 1); if (SDL_strcmp(what, "ranked/register") == 0 || SDL_strcmp(what, "ranked/profile") == 0) DrRanked_DebugResultCode(code); }
+    } else if (ok && SDL_strncmp(out, "@ERROR ", 7) == 0) { if (SDL_strcmp(what, "ranked/register") == 0 || SDL_strcmp(what, "ranked/profile") == 0) DrRanked_DebugResultError(out + 7); out[0] = '\0'; ok = 0; }
+    else if (!ok && (SDL_strcmp(what, "ranked/register") == 0 || SDL_strcmp(what, "ranked/profile") == 0)) DrRanked_DebugResultError("no response from Android network request");
     bad = rk_bad(ok, out);
     rk_note(base, !bad, rk_quota(out));
     if (!bad && shared && rk_text(out, "authority", a, sizeof(a)) && SDL_strcmp(a, sRkAuth) != 0) {

@@ -25,6 +25,10 @@ int DrNet_WireVersion(int netVersion); /* what the service is told as `v` in thi
 const char *DrNet_UrlB(void);       /* dragonnet_url_b.txt ("" se nao existe) */
 const char *DrNet_RankedUrl(void);  /* dragonnet_ranked_url.txt ("" se nao existe) */
 const char *DrNet_RankedDebugUrl(void); /* local/private HTTP test endpoint (debug build) */
+const char *DrRanked_DebugEndpoint(void); /* current base, including validation diagnostics */
+const char *DrRanked_DebugResult(void);   /* last register/profile result */
+void DrRanked_DebugResultCode(int code);
+void DrRanked_DebugResultError(const char *error);
 const char *DrNet_RankedUrlD(void);      /* dragonnet_ranked_url_d.txt (https://host); padrao: D embutido */
 const char *DrNet_RankedActiveUrl(void); /* Ranked: C, ou D ate 00:00 UTC se o C falhar */
 int DrNet_CdLoad(char *out, int n);      /* id da autoridade E aprendido de um C verificado */

@@ -752,6 +752,13 @@ static void screen_ranked(void) {
         dl->AddText(ImVec2(ImGui::GetWindowPos().x + u * 1.6f, ImGui::GetWindowPos().y + u * 5.75f), ImGui::GetColorU32(kGoldT), rules_line());
         ImGui::PopFont();
     }
+    {
+        char diagnostic[512];
+        font_px(u * 0.46f);
+        SDL_snprintf(diagnostic, sizeof(diagnostic), "Server: %.220s | Last register/profile: %.220s", DrRanked_DebugEndpoint(), DrRanked_DebugResult());
+        ImGui::GetWindowDrawList()->AddText(ImVec2(ImGui::GetWindowPos().x + u * 1.6f, ImGui::GetWindowPos().y + u * 6.08f), ImGui::GetColorU32(kText), diagnostic);
+        ImGui::PopFont();
+    }
     card_start(u * 6.5f, u * 6.6f, NULL);
     int m = padMove();
     if (m != 0) { sRow = (sRow + m + 4) % 4; }

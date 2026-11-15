@@ -257,6 +257,10 @@ static unsigned sChatAfter;
 static DrChat sChat;
 static char sChatOut[4][200]; /* messages waiting to be sent (hex comes later) */
 static int sChatOutN;
+static char sRankedDebugResult[128] = "No register/profile request yet";
+const char *DrRanked_DebugResult(void) { return sRankedDebugResult; }
+void DrRanked_DebugResultCode(int code) { SDL_snprintf(sRankedDebugResult, sizeof(sRankedDebugResult), "HTTP %d", code); }
+void DrRanked_DebugResultError(const char *error) { SDL_snprintf(sRankedDebugResult, sizeof(sRankedDebugResult), "Network error: %.96s", error); }
 
 static int sPresenceOn, sPresenceLeave, sOnline = -1;
 static Uint64 sSearchAt; /* when the search under way began (the queue is asked less often as it goes on) */
@@ -317,7 +321,14 @@ static int identity(void) {
     SDL_strlcpy(name, sName, sizeof(name));
     SDL_UnlockMutex(sLock);
     SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"name\":\"%s\"}", wire(), name);
-    if (!Match_PostDragon("ranked/register", body, answer, sizeof(answer)) || !text_value(answer, "id", sId, sizeof(sId)) ||
+    if (!Match_PostDragon("ranked/register", body, answer, sizeof(answer))) {
+        sId[0] = sToken[0] = '\0';
+        retryWait = retryWait == 0 ? 15000 : retryWait * 2 > 300000 ? 300000 : retryWait * 2;
+        retryAt = SDL_GetTicks() + retryWait;
+        message(DRMSG_REGISTER_FAILED, -1);
+        return 0;
+    }
+    if (!text_value(answer, "id", sId, sizeof(sId)) ||
         !text_value(answer, "token", sToken, sizeof(sToken)) || !is_hex(sId, 32) || !is_hex(sToken, 64)) {
         sId[0] = sToken[0] = '\0';
         retryWait = retryWait == 0 ? 15000 : retryWait * 2 > 300000 ? 300000 : retryWait * 2;
