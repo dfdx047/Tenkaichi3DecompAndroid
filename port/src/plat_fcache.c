@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <SDL3/SDL.h>
 extern void Port_StateTouch(void *p, unsigned long n); /* gs/state.c */
 
 extern const char *Port_FileRoot(void); /* plat_file.c: BT3_DATA or "gamedata" */
@@ -257,4 +258,165 @@ size_t Port_FileReadAt(const char *rel, long offset, void *buf, size_t bytes) {
     }
     __sync_lock_release(&sLock);
     return got;
+}
+
+/* ---- Whole files read on a thread of their own (plat_file.c Port_FileReadRawStart, src/sys/file.c, for
+   src/battle/view_a_d.c). Here, not in plat_file.c: these variables are the host's, never saved or put back with the game's. ----
+   The character select's fighter read its model and motions (up to 2.2 MB, more on a first read from the phone's
+   storage) on the game's thread, in the frame the cursor came to rest: that frame took tens of milliseconds more on
+   the machine showing the 3D select, and only there. Online, the other machine (the game's own select) went on and
+   then waited for it, or ran ahead on a guess and went back: frames dropped on both sides, at every fighter the cursor
+   stopped on. (Both on the 3D select, the two machines stopped at the same blank, the cursors being the same on both,
+   and neither waited for the other.) Here the file is read in pieces (the file layer's lock is held for one piece at a
+   time: the game's own reads are not kept waiting), and the frame only asks whether it is there. The buffer is the
+   caller's (the viewer's own memory, outside the game's state): it is not touched once Port_FileReadRawCancel is back. */
+enum { RAW_JOBS = 8, RAW_PIECE = 256 * 1024 };
+enum { RAW_FREE, RAW_QUEUED, RAW_READING, RAW_DONE, RAW_DROPPED }; /* (dropped: cancelled while being read) */
+typedef struct {
+    char rel[128];
+    void *buf;
+    int cap, got, state;
+    uint32_t seq;
+} RawJob;
+static RawJob sRaw[RAW_JOBS];
+static SDL_Mutex *sRawLock;
+static SDL_Condition *sRawWake, *sRawIdle;
+static SDL_Thread *sRawThread;
+static uint32_t sRawSeq;
+static int sRawBroken; /* no thread: every read in the caller's frame */
+
+static int SDLCALL raw_thread(void *arg) {
+    (void)arg;
+    SDL_LockMutex(sRawLock);
+    for (;;) {
+        RawJob *job = NULL;
+        uint32_t oldest = 0;
+        int i, got = 0;
+        long size;
+        char rel[128];
+        void *buf;
+        int cap;
+
+        for (i = 0; i < RAW_JOBS; i++) { /* the oldest asked first */
+            if (sRaw[i].state == RAW_QUEUED && (job == NULL || sRaw[i].seq - oldest > 0x80000000u)) {
+                job = &sRaw[i];
+                oldest = job->seq;
+            }
+        }
+        if (job == NULL) {
+            SDL_SignalCondition(sRawIdle);
+            SDL_WaitCondition(sRawWake, sRawLock);
+            continue;
+        }
+        job->state = RAW_READING;
+        memcpy(rel, job->rel, sizeof(rel));
+        buf = job->buf;
+        cap = job->cap;
+        SDL_UnlockMutex(sRawLock);
+        size = Port_FileSize(rel);
+        if (size >= 0) {
+            while (got < cap) {
+                size_t want = cap - got < RAW_PIECE ? (size_t)(cap - got) : RAW_PIECE;
+                size_t n = Port_FileReadAt(rel, got, (char *)buf + got, want);
+                int stop;
+
+                got += (int)n;
+                SDL_LockMutex(sRawLock);
+                stop = job->state != RAW_READING; /* (cancelled meanwhile) */
+                SDL_UnlockMutex(sRawLock);
+                if (n < want || stop) {
+                    break;
+                }
+            }
+        }
+        SDL_LockMutex(sRawLock);
+        if (job->state == RAW_READING) {
+            job->got = got;
+            job->state = RAW_DONE;
+        } else {
+            job->state = RAW_FREE; /* (dropped: nobody waits for it, its buffer is not written any more) */
+        }
+        SDL_SignalCondition(sRawIdle);
+    }
+    return 0;
+}
+
+/* A read of file `rel` into buf, begun: its number (1..), or 0 (no thread: the caller reads it in its frame). */
+int Port_FcacheReadStart(const char *rel, void *buf, int cap) {
+    int i;
+
+    if (sRawBroken || buf == NULL || cap <= 0) {
+        return 0;
+    }
+    if (sRawThread == NULL) {
+        sRawLock = SDL_CreateMutex();
+        sRawWake = SDL_CreateCondition();
+        sRawIdle = SDL_CreateCondition();
+        if (sRawLock == NULL || sRawWake == NULL || sRawIdle == NULL ||
+            (sRawThread = SDL_CreateThread(raw_thread, "file reads", NULL)) == NULL) {
+            fprintf(stderr, "bt3: select: no thread for the fighters' files: read in the game's frame\n");
+            sRawBroken = 1;
+            return 0;
+        }
+    }
+    SDL_LockMutex(sRawLock);
+    for (i = 0; i < RAW_JOBS && sRaw[i].state != RAW_FREE; i++) {
+    }
+    if (i == RAW_JOBS) {
+        SDL_UnlockMutex(sRawLock);
+        return 0;
+    }
+    snprintf(sRaw[i].rel, sizeof(sRaw[i].rel), "%s", rel);
+    sRaw[i].buf = buf;
+    sRaw[i].cap = cap;
+    sRaw[i].got = 0;
+    sRaw[i].seq = ++sRawSeq;
+    sRaw[i].state = RAW_QUEUED;
+    SDL_SignalCondition(sRawWake);
+    SDL_UnlockMutex(sRawLock);
+    return i + 1;
+}
+
+/* The bytes read by read `job` (Port_FileReadRawStart), its number then free again; -1: not yet. */
+int Port_FileReadRawPoll(int job) {
+    int got = 0;
+
+    if (job < 1 || job > RAW_JOBS || sRawLock == NULL) {
+        return 0;
+    }
+    SDL_LockMutex(sRawLock);
+    if (sRaw[job - 1].state == RAW_QUEUED || sRaw[job - 1].state == RAW_READING) {
+        got = -1;
+    } else if (sRaw[job - 1].state == RAW_DROPPED) {
+        got = 0; /* (cancelled: the thread frees it as it lets go) */
+    } else {
+        got = sRaw[job - 1].state == RAW_DONE ? sRaw[job - 1].got : 0;
+        sRaw[job - 1].state = RAW_FREE;
+    }
+    SDL_UnlockMutex(sRawLock);
+    return got;
+}
+
+/* Every read begun is dropped; back once none of them writes into its buffer any more (the viewer's memory is let go). */
+void Port_FileReadRawCancel(void) {
+    int i, busy;
+
+    if (sRawLock == NULL) {
+        return;
+    }
+    SDL_LockMutex(sRawLock);
+    for (i = 0; i < RAW_JOBS; i++) {
+        sRaw[i].state = sRaw[i].state == RAW_READING ? RAW_DROPPED : RAW_FREE;
+    }
+    for (;;) { /* (the one being read stops at its next piece) */
+        busy = 0;
+        for (i = 0; i < RAW_JOBS; i++) {
+            busy |= sRaw[i].state == RAW_DROPPED;
+        }
+        if (!busy) {
+            break;
+        }
+        SDL_WaitCondition(sRawIdle, sRawLock);
+    }
+    SDL_UnlockMutex(sRawLock);
 }

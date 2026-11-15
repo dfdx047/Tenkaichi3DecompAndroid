@@ -217,6 +217,16 @@ int Port_FileReadRaw(int ptid, int flid, void *buf, int cap) {
     return (int)Port_FileReadAt(rel, 0, buf, (size_t)cap);
 }
 
+/* The same on a thread of their own (plat_fcache.c Port_FcacheReadStart: its table is the host's, not the game's state
+   as this file's variables are). Its number (1..), or 0: read it in the frame. */
+int Port_FileReadRawStart(int ptid, int flid, void *buf, int cap) {
+    extern int Port_FcacheReadStart(const char *rel, void *buf, int cap);
+    char rel[128];
+
+    snprintf(rel, sizeof(rel), "%s/%05d.bin", sPartDir[ptid & 7], flid);
+    return Port_FcacheReadStart(rel, buf, cap);
+}
+
 void *ADXF_OpenAfs(int ptid, int flid) {
     char rel[128];
 

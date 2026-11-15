@@ -444,6 +444,10 @@ extern void Port_WorldCaptureBegin(void);
 extern void Port_WorldCaptureEnd(void);
 extern void Port_WorldNoteDma(u32 a, u32 b, s32 size);
 extern s32 File_PortReadRaw(s32 id, void *buf, s32 cap);
+extern s32 File_PortReadRawStart(s32 id, void *buf, s32 cap);
+extern s32 File_PortReadRawPoll(s32 job);
+extern void File_PortReadRawCancel(void);
+extern u32 Port_LoadTimeUs(void);
 extern s32 BtlObjAnim_PortPlay(u8 *obj, void *buf, s32 anim, s32 mode);
 extern s32 BtlObjAnim_PortStopped(u8 *obj);
 extern void BtlObjAnim_PortPlace(u8 *obj, f32 x, f32 yaw, f32 scale, const f32 *feet);
@@ -471,6 +475,16 @@ static s32 sPortCount[2];
 static f32 sPortFeet[2][3];
 static f32 sPortFeetNew[2][3];
 static s32 sPortPinned[2], sPortPinnedNew[2];
+/* A fighter whose files are being read (ChrView_PortReadStep): by a thread of the port's, while the frames go on. Read
+   in the frame, as before, they made the frame where the cursor came to rest tens of milliseconds longer on this
+   machine alone; online the other machine (on the game's own select) then waited for this one or went back over the
+   blanks it had guessed, and both dropped frames. */
+static ChrViewSlot *sPortReading[2]; /* the buffer its files go into; NULL: none being read */
+static s32 sPortReadJob[2];          /* the read under way (File_PortReadRawStart); 0: it was read in the frame */
+static s32 sPortReadGot[2];          /* (that one's bytes) */
+static s32 sPortReadStep[2];         /* 0 its costume's model, 1 the first costume's model instead, 2 its motions */
+static s32 sPortReadChara[2], sPortReadCostume[2], sPortReadModel[2];
+static u32 sPortReadSince[2];
 
 /* The fighters kept on the pedestal by their feet; every other one stands where its motion puts it. */
 #define CHRVIEW_CHARA_GARLIC_JR 118
@@ -543,40 +557,94 @@ static void ChrView_PortInit(s32 split) {
     Fade_Start(0, 1, 1.0f);
 }
 
-/* Reads a fighter into a free buffer of this side's viewer and makes its object. 0: it could not be used. */
+/* One of a fighter's files, into buf: begun on the port's thread, or (no thread) read now. */
+static void ChrView_PortRead(s32 side, s32 id, void *buf, s32 cap) {
+    sPortReadJob[side] = File_PortReadRawStart(id, buf, cap);
+    if (sPortReadJob[side] == 0) {
+        sPortReadGot[side] = File_PortReadRaw(id, buf, cap);
+    }
+}
+
+/* Begins reading a fighter into a free buffer of this side's viewer. 0: no buffer free. */
 static s32 ChrView_PortLoad(s32 side, s32 chara, s32 costume) {
     ChrViewSlot *slot = ChrView_AllocSlot();
-    s32 model = ChrView_GetModelFile(chara, costume, 0);
-    s32 at;
-    s32 got;
-    u32 *head;
-    u8 *obj;
 
     if (slot == NULL) {
         return 0;
     }
+    sPortReading[side] = slot;
+    sPortReadChara[side] = chara;
+    sPortReadCostume[side] = costume;
+    sPortReadModel[side] = ChrView_GetModelFile(chara, costume, 0);
+    sPortReadStep[side] = 0;
+    sPortReadSince[side] = Port_LoadTimeUs();
+    ChrView_PortRead(side, sPortReadModel[side], slot->file[0].buf, CHRVIEW_MODEL_SIZE);
+    return 1;
+}
+
+static void ChrView_PortDrop(ChrViewSlot *slot);
+
+/* This side shows no fighter. */
+static void ChrView_PortNone(void) {
+    if (gChrView->cur != NULL) {
+        ChrView_PortDrop(gChrView->cur);
+        gChrView->cur = NULL;
+        gChrView->visible = 0;
+    }
+}
+
+/* A frame of the reading: when its files are there, the fighter's object is made. chara and costume: the fighter wanted
+   now (one read for a fighter no longer wanted is let go: the next frame reads the one that is). */
+static void ChrView_PortReadStep(s32 side, s32 chara, s32 costume) {
+    ChrViewSlot *slot = sPortReading[side];
+    s32 got = sPortReadJob[side] != 0 ? File_PortReadRawPoll(sPortReadJob[side]) : sPortReadGot[side];
+    s32 at;
+    u32 *head;
+    u8 *obj;
+
+    if (got < 0) {
+        return; /* (still being read) */
+    }
+    sPortReadJob[side] = 0;
     head = (u32 *)slot->file[0].buf;
-    got = File_PortReadRaw(model, head, CHRVIEW_MODEL_SIZE);
-    if (got < CHRVIEW_PORT_MODEL_MIN) {
-        model = ChrView_GetModelFile(chara, 0, 0);
-        got = File_PortReadRaw(model, head, CHRVIEW_MODEL_SIZE);
-    }
-    /* (what was read has the table a model starts with, and the entries BtlObjMdl_BindFiles goes through) */
-    if (got < CHRVIEW_PORT_MODEL_MIN || head[3] == head[4] || head[2] == head[3] || head[12] == head[13]) {
-        fprintf(stderr, "bt3: select: fighter %d has no model (file %d, %d bytes)\n", (int)chara, (int)model, (int)got);
+    if (chara != sPortReadChara[side] || costume != sPortReadCostume[side]) {
         ChrView_FreeSlot(slot);
-        return 0;
+        sPortReading[side] = NULL;
+        return;
     }
-    slot->file[0].id = model;
-    slot->file[0].size = got;
+    if (sPortReadStep[side] == 0 && got < CHRVIEW_PORT_MODEL_MIN) {
+        sPortReadModel[side] = ChrView_GetModelFile(chara, 0, 0);
+        sPortReadStep[side] = 1;
+        ChrView_PortRead(side, sPortReadModel[side], head, CHRVIEW_MODEL_SIZE);
+        return;
+    }
+    if (sPortReadStep[side] < 2) {
+        /* (what was read has the table a model starts with, and the entries BtlObjMdl_BindFiles goes through) */
+        if (got < CHRVIEW_PORT_MODEL_MIN || head[3] == head[4] || head[2] == head[3] || head[12] == head[13]) {
+            fprintf(stderr, "bt3: select: fighter %d has no model (file %d, %d bytes)\n", (int)chara, (int)sPortReadModel[side], (int)got);
+            ChrView_FreeSlot(slot);
+            sPortReading[side] = NULL;
+            ChrView_PortNone();
+            return;
+        }
+        slot->file[0].id = sPortReadModel[side];
+        slot->file[0].size = got;
+        memset(slot->file[1].buf, 0, 0x1000); /* an empty motion file leaves an empty table */
+        slot->file[1].id = chara * 10 + CHRVIEW_FILE_FIRST + 8;
+        sPortReadStep[side] = 2;
+        ChrView_PortRead(side, slot->file[1].id, slot->file[1].buf, CHRVIEW_PORT_ANIM_SIZE);
+        return;
+    }
+    slot->file[1].size = got;
+    sPortReading[side] = NULL;
+    fprintf(stderr, "bt3: select: fighter %d read in %u ms, beside the frames\n", (int)chara,
+            (unsigned)((Port_LoadTimeUs() - sPortReadSince[side]) / 1000u));
     at = slot - gChrView->slot;
-    memset(slot->file[1].buf, 0, 0x1000); /* an empty motion file leaves an empty table */
-    slot->file[1].id = chara * 10 + CHRVIEW_FILE_FIRST + 8;
-    slot->file[1].size = File_PortReadRaw(slot->file[1].id, slot->file[1].buf, CHRVIEW_PORT_ANIM_SIZE);
     slot->obj = BtlObj_Create(3, &slot->file, 1);
     if (slot->obj < 0) {
         ChrView_FreeSlot(slot);
-        return 0;
+        ChrView_PortNone();
+        return;
     }
     obj = BtlObj_Get(slot->obj);
     /* (Taopaipai's entrance comes flying from far off, on his pillar: he goes straight to his hold) */
@@ -595,7 +663,6 @@ static s32 ChrView_PortLoad(s32 side, s32 chara, s32 costume) {
     memset(sPortFeetNew[side], 0, sizeof(sPortFeetNew[side]));
     sPortPinnedNew[side] = ChrView_PortPinned(chara);
     sPortShown[side] = chara;
-    return 1;
 }
 
 /* A point of the world on the screen's 512 x 448, by the frame's camera. */
@@ -651,14 +718,15 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
     }
     for (side = 0; side < sides; side++) {
         gChrView = sPortView[side];
-        /* a new fighter: read now, on screen three frames later (its first poses have to be worked out) */
-        if (sPortNew[side] == NULL && (chara[side] != sPortChara[side] || costume[side] != sPortCostume[side])) {
+        /* a new fighter: read beside the frames, on screen three frames after it is there (its first poses have to be
+           worked out) */
+        if (sPortReading[side] != NULL) {
+            ChrView_PortReadStep(side, chara[side], costume[side]);
+        } else if (sPortNew[side] == NULL && (chara[side] != sPortChara[side] || costume[side] != sPortCostume[side])) {
             s32 ok = chara[side] >= 0 && chara[side] < CHRVIEW_CHARA_COUNT && ChrView_PortLoad(side, chara[side], costume[side]);
 
-            if (!ok && gChrView->cur != NULL) {
-                ChrView_PortDrop(gChrView->cur);
-                gChrView->cur = NULL;
-                gChrView->visible = 0;
+            if (!ok) {
+                ChrView_PortNone();
             }
             sPortChara[side] = chara[side];
             sPortCostume[side] = costume[side];
@@ -787,6 +855,7 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
 
 /* The screen is left: the world is forgotten, nothing of it was ever in the game. */
 void ChrView_PortEnd(void) {
+    File_PortReadRawCancel(); /* (no fighter's file is written into the viewer's memory any more: it is let go) */
     if (sHostLive) {
         Port_WorldForget();
     }
