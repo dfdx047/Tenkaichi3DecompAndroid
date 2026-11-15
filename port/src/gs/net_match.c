@@ -1888,8 +1888,9 @@ static int rk_post(const char *what, const char *json, char *out, size_t size) {
     out[0] = '\0';
     if (debug[0] != '\0') {
         SDL_snprintf(url, sizeof(url), "%s/v1/%s", debug, what);
+        fprintf(stderr, "dragonnet: local ranked POST %s\n", url);
         ok = http_post_native(url, json, NULL, out, size);
-        if (!ok) fprintf(stderr, "dragonnet: local ranked request failed: %s\n", what);
+        if (!ok) fprintf(stderr, "dragonnet: local ranked request failed: %s (%s)\n", what, url);
         return ok;
     }
     if (DrNet_RankedUrl()[0] == '\0') {

@@ -24,6 +24,9 @@ const send=(res,status,obj)=>{const data=JSON.stringify(obj);res.writeHead(statu
 async function readBody(req){let raw='';for await(const chunk of req)raw+=chunk;if(raw.length>8192)throw Error('body too large');return raw?JSON.parse(raw):{};}
 function admin(req,res,body){if(body.key!==adminKey){send(res,403,{error:'debug key'});return false;}return true;}
 const server=createServer(async(req,res)=>{
+ const started=Date.now();let logged=false;
+ const logRequest=()=>{if(logged)return;logged=true;console.log(`${new Date().toISOString()} ${req.method} ${req.url} -> ${res.statusCode} ${Date.now()-started}ms from ${req.socket.remoteAddress||'unknown'}`);};
+ res.once('finish',logRequest);res.once('close',logRequest);
  try{
   const url=new URL(req.url,`http://${req.headers.host||'localhost'}`);
   if(req.method==='OPTIONS'){res.writeHead(204,{'access-control-allow-origin':'*','access-control-allow-methods':'GET,POST,OPTIONS','access-control-allow-headers':'content-type'});return res.end();}
