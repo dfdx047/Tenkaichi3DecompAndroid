@@ -2,6 +2,10 @@
 #ifndef NET_MATCH_H
 #define NET_MATCH_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define MATCH_ADDRS 4
 #define MATCH_WATCH_ADDRS 32 /* the spectators' addresses a host is told, all together */
 
@@ -67,5 +71,9 @@ int Match_PostDragon(const char *what, const char *json, char *out, size_t size)
 int Match_HttpRequest(const char *url, const char *json, const char *const *headers, char *out, size_t size);
 int Match_ServiceLimited(void); /* a service answered HTTP 429 a moment ago: nothing is asked for now (net_match.c) */
 int Match_BackgroundWait(unsigned int activeMs, int cancelAfterThreeMinutes); /* 0 only when this search cancels in the background */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
