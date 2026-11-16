@@ -1,5 +1,8 @@
 *.iso
 *.rvz
+/.env
+/.env.*
+!/.env.example
 /disc/
 /wii/
 /tools/

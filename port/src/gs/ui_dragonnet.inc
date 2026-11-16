@@ -9,19 +9,28 @@
 // Included by ui.cpp after ui_android.inc (its T(), fs(), the colours, ainput() and touch_scroll()).
 
 #include "net_dragon.h"
+#include "net_supabase.h"
+extern "C" {
+#include "gs_internal.h"
+}
+#undef getenv
 
 namespace dn {
 
-enum Screen { HOME, CREATE, CREATE_WAIT, JOIN, JOIN_WAIT, QUICK, QUICK_WAIT, RANKED, RANKED_WAIT, BOARD, CHAT, REMATCH, WATCH_WAIT };
+enum Screen { HOME, FRIENDLY_MENU, TAG_MENU, RANKED_MENU, PROFILE, CREATE, CREATE_WAIT, JOIN, JOIN_WAIT, QUICK, QUICK_WAIT, RANKED_WAIT, BOARD, CHAT, REMATCH, WATCH_WAIT };
 
 static Screen sScreen = HOME;
 static int sRow, sHomeRow;
 static float sEnter;        // the screen's entrance (0..1): the cards slide in as on the Switch
 static Uint64 sEnterAt;
 static char sName[17] = "Player";
-static bool sNameRead, sEditName, sEditCode, sEditChat;
+static bool sNameRead, sEditCode, sEditChat;
 static char sCode[8], sChatLine[161];
-static int sBattle, sQueue2, sRankMode;      // create: battle type 0..4; quick: queue 0..4; ranked: 0 single, 1 team
+static int sBattle, sQueue2, sRankMode = 0;  // ranked menu: solo (no mode selector)
+static int sCountryIndex, sProfileSynced;
+static bool sTagMenu;
+static bool sRankedNameError;
+static const char *const kCountries[][2] = {{"UN","Sin especificar"},{"AR","Argentina"},{"BO","Bolivia"},{"BR","Brasil"},{"CA","Canadá"},{"CL","Chile"},{"CO","Colombia"},{"CR","Costa Rica"},{"CU","Cuba"},{"DO","República Dominicana"},{"EC","Ecuador"},{"SV","El Salvador"},{"ES","España"},{"US","Estados Unidos"},{"GT","Guatemala"},{"HN","Honduras"},{"MX","México"},{"NI","Nicaragua"},{"PA","Panamá"},{"PY","Paraguay"},{"PE","Perú"},{"PT","Portugal"},{"PR","Puerto Rico"},{"UY","Uruguay"},{"VE","Venezuela"},{"JP","Japón"},{"KR","Corea del Sur"},{"FR","Francia"},{"DE","Alemania"},{"IT","Italia"},{"GB","Reino Unido"}};
 static int sLobbyLast;                       // the lobby's last state worth telling (errors)
 static Uint64 sSearchSince, sFoundAt;
 static bool sRankedLobby;                    // the lobby was started for a ranked match
@@ -105,7 +114,7 @@ static bool header(const char *title, bool back) {
     font_px(u * 0.62f);
     const float bw = u * 6.4f, bh = u * 1.05f, bx = o.x + s.x * 0.62f - bw, by = y0 + u * 0.15f;
     ImGui::SetCursorScreenPos(ImVec2(bx, by));
-    if (ImGui::InvisibleButton("##name", ImVec2(bw, bh))) { sEditName = !sEditName; }
+    ImGui::InvisibleButton("##name", ImVec2(bw, bh));
     dl->AddRectFilled(ImVec2(bx, by), ImVec2(bx + bw, by + bh), col(0.08f, 0.04f, 0.16f, 0.9f), bh * 0.25f);
     dl->AddRect(ImVec2(bx, by), ImVec2(bx + bw, by + bh), col(0.60f, 0.45f, 1.0f), bh * 0.25f, 0, 2.0f);
     ImVec2 ts = ImGui::CalcTextSize(sName);
@@ -148,7 +157,8 @@ static int home_plates(const char *const *names, const bool *enabled, int n) {
         const float x = o.x + u * (2.6f - 0.35f * (float)i) - slide, y = o.y + u * 3.4f + (float)i * (h + gap), w = u * 13.0f;
         ImGui::SetCursorScreenPos(ImVec2(x, y));
         ImGui::PushID(i);
-        if (ImGui::InvisibleButton("##plate", ImVec2(w, h)) && enabled[i]) { clicked = i; }
+        const bool active = enabled == NULL || enabled[i];
+        if (ImGui::InvisibleButton("##plate", ImVec2(w, h)) && active) { clicked = i; }
         ImGui::PopID();
         const bool on = sHomeRow == i;
         if (on) { // the chosen one: a gold band from the left edge
@@ -156,13 +166,20 @@ static int home_plates(const char *const *names, const bool *enabled, int n) {
                                         col(0.95f, 0.75f, 0.15f, 0.0f), col(1.0f, 0.88f, 0.35f));
         }
         ImVec2 q[4] = {ImVec2(x + h * 0.35f, y), ImVec2(x + w, y), ImVec2(x + w - h * 0.35f, y + h), ImVec2(x, y + h)};
-        ImU32 top = enabled[i] ? (on ? col(0.98f, 0.92f, 0.55f) : col(0.40f, 0.95f, 1.0f)) : col(0.35f, 0.40f, 0.48f);
-        ImU32 bot = enabled[i] ? (on ? col(0.92f, 0.70f, 0.12f) : col(0.05f, 0.55f, 0.75f)) : col(0.20f, 0.22f, 0.28f);
+        ImU32 top = active ? (on ? col(0.98f, 0.92f, 0.55f) : col(0.40f, 0.95f, 1.0f)) : col(0.35f, 0.40f, 0.48f);
+        ImU32 bot = active ? (on ? col(0.92f, 0.70f, 0.12f) : col(0.05f, 0.55f, 0.75f)) : col(0.20f, 0.22f, 0.28f);
         dl->AddQuadFilled(q[0], q[1], ImVec2(q[1].x - h * 0.17f, y + h * 0.5f), ImVec2(x + h * 0.17f, y + h * 0.5f), top);
         dl->AddQuadFilled(ImVec2(x + h * 0.17f, y + h * 0.5f), ImVec2(q[1].x - h * 0.17f, y + h * 0.5f), q[2], q[3], bot);
         dl->AddQuad(q[0], q[1], q[2], q[3], col(1.0f, 1.0f, 1.0f, 0.55f), 2.0f);
         ImVec2 ts = ImGui::CalcTextSize(names[i]);
-        outlined(dl, ImVec2(x + (w - ts.x) * 0.5f, y + (h - ts.y) * 0.5f), enabled[i] ? col(1, 1, 1) : col(0.7f, 0.7f, 0.75f), names[i]);
+        outlined(dl, ImVec2(x + (w - ts.x) * 0.5f, y + (h - ts.y) * 0.5f), active ? col(1, 1, 1) : col(0.7f, 0.7f, 0.75f), names[i]);
+        if (!active) {
+            const float lx = x + w - u * 1.05f, ly = y + h * 0.5f;
+            ImU32 lock = col(0.72f, 0.72f, 0.78f);
+            dl->AddCircle(ImVec2(lx, ly - u * 0.05f), u * 0.20f, lock, 12, u * 0.07f);
+            dl->AddRectFilled(ImVec2(lx - u * 0.30f, ly), ImVec2(lx + u * 0.30f, ly + u * 0.34f), lock, u * 0.05f);
+            dl->AddRectFilled(ImVec2(lx - u * 0.08f, ly + u * 0.11f), ImVec2(lx + u * 0.08f, ly + u * 0.23f), col(0.25f, 0.25f, 0.30f));
+        }
     }
     ImGui::PopFont();
     return clicked;
@@ -313,8 +330,6 @@ static const char *ranked_msg(int m) {
     case DRMSG_REGISTER_FAILED: return T("The Ranked profile could not be made.", "Não foi possível criar o perfil ranqueado.", "No se pudo registrar el perfil Ranked.");
     case DRMSG_PROFILE_FAILED: return T("The ranking could not be updated.", "Não foi possível atualizar a classificação.", "No se pudo actualizar la clasificación.");
     case DRMSG_ROOM_FAILED: return T("The ranked room could not be published.", "Não foi possível publicar a sala ranqueada.", "No se pudo publicar la sala Ranked.");
-    case DRMSG_FINISH_FIRST: return T("Your last ranked match is still being confirmed.", "Sua última partida ranqueada ainda está sendo confirmada.",
-                                      "Tu última partida Ranked aún se está confirmando.");
     case DRMSG_VERSION: return T("The Dragon Net service does not take this version yet.", "O serviço Dragon Net ainda não aceita esta versão.",
                                  "El servicio Dragon Net aún no acepta esta versión.");
     case DRMSG_UPDATED: return T("Profile updated.", "Perfil atualizado.", "Perfil actualizado.");
@@ -323,17 +338,6 @@ static const char *ranked_msg(int m) {
     case DRMSG_BACKGROUND_TIMEOUT: return T("Ranked search canceled after 3 minutes in the background.", "Busca Ranked cancelada após 3 minutos em segundo plano.", "Búsqueda Ranked cancelada tras 3 minutos en segundo plano.");
     default: return "";
     }
-}
-
-static const char *rank_tier(const char *server) {
-    // the service names the tiers in Spanish (Bronce .. Maestro): worded for the player
-    if (strcmp(server, "Bronce") == 0) { return T("Bronze", "Bronze", "Bronce"); }
-    if (strcmp(server, "Plata") == 0) { return T("Silver", "Prata", "Plata"); }
-    if (strcmp(server, "Oro") == 0) { return T("Gold", "Ouro", "Oro"); }
-    if (strcmp(server, "Platino") == 0) { return T("Platinum", "Platina", "Platino"); }
-    if (strcmp(server, "Diamante") == 0) { return T("Diamond", "Diamante", "Diamante"); }
-    if (strcmp(server, "Maestro") == 0) { return T("Master", "Mestre", "Maestro"); }
-    return server;
 }
 
 static const char *lobby_error(int last) {
@@ -390,85 +394,99 @@ static void leave_window(void) {
 // ---- the screens
 
 static void screen_home(bool &close) {
-    const bool dragon = DrNet_Mode() == 0;
-    const char *names[5] = {T("Create room", "Criar sala", "Crear sala"), T("Join room", "Entrar em sala", "Entrar a sala"),
-                            T("Quick match", "Partida rápida", "Partida rápida"), T("Ranked", "Classificatória", "Clasificatoria"),
-                            T("General chat", "Chat geral", "Chat general")};
-    const bool enabled[5] = {true, true, true, dragon, dragon && DRNET_CHAT != 0}; // (the chat: off for now, net_dragon.h)
+    const char *tagTeamSetting = Port_GetEnv("BT3_TAG_TEAM");
+    const bool tagEnabled = tagTeamSetting != NULL && strcmp(tagTeamSetting, "1") == 0;
+    const bool enabled[5] = {true, tagEnabled, true, true, true};
+    const char *labels[5] = {T("Friendly battle", "Combate amistoso", "Combate amistoso"),
+        T("Tag Team battle", "Combate Tag Team", "Combate Tag Team"),
+        T("Ranked battle", "Combate classificatorio", "Combate clasificatorio"),
+        T("Ranking", "Classificação", "Clasificación"), T("Options", "Opções", "Opciones")};
     if (header("Dragon Net Battle", true)) { close = true; }
-    int m = padMove();
-    if (m != 0) { do { sHomeRow = (sHomeRow + m + 5) % 5; } while (!enabled[sHomeRow]); }
-    int clicked = home_plates(names, enabled, 5);
-    if (clicked >= 0) { sHomeRow = clicked; }
-    if (padA() || clicked >= 0) {
-        static const Screen to[5] = {CREATE, JOIN, QUICK, RANKED, CHAT};
-        goto_screen(to[sHomeRow]);
-        if (sHomeRow == 3) { DrRanked_Open(sName); }
-        if (sHomeRow == 4) { DrChat_Open(sName); sEditChat = false; }
+    int move = padMove();
+    if (move) { do { sHomeRow = (sHomeRow + move + 5) % 5; } while (!enabled[sHomeRow]); }
+    int click = home_plates(labels, enabled, 5);
+    if (click >= 0) { sHomeRow = click; }
+    if ((padA() && enabled[sHomeRow]) || click >= 0) {
+        static const Screen dest[5] = {FRIENDLY_MENU, TAG_MENU, RANKED_MENU, BOARD, PROFILE};
+        goto_screen(dest[sHomeRow]);
+        if (sHomeRow == 1) { sTagMenu = true; }
+        if (sHomeRow == 3) { DrProfile_Board(); }
+        if (sHomeRow == 4) { sProfileSynced = 0; DrProfile_Open(); }
     }
     if (padB()) { close = true; }
-    // the opponents: Dragon Net (Android + Switch) or PC
-    {
-        ImDrawList *dl = ImGui::GetWindowDrawList();
-        const ImVec2 o = ImGui::GetWindowPos();
-        const float u = U(), y = o.y + u * 3.4f + 5.0f * u * 1.6f + u * 0.4f, x = o.x + u * 1.6f;
-        font_px(u * 0.66f);
-        const char *lab = T("Play against:", "Jogar contra:", "Jugar contra:");
-        dl->AddText(ImVec2(x, y + u * 0.18f), ImGui::GetColorU32(kSub), lab);
-        float cx = x + ImGui::CalcTextSize(lab).x + u * 0.5f;
-        const char *opt[2] = {T("Android + Switch", "Android + Switch", "Android + Switch"), "PC"};
-        for (int i = 0; i < 2; i++) {
-            ImVec2 ts = ImGui::CalcTextSize(opt[i]);
-            ImVec2 a(cx, y), b(cx + ts.x + u * 0.9f, y + u * 0.95f);
-            ImGui::SetCursorScreenPos(a);
-            ImGui::PushID(100 + i);
-            if (ImGui::InvisibleButton("##mode", ImVec2(b.x - a.x, b.y - a.y)) && DrNet_Mode() != i) {
-                DrNet_SetMode(i);
-                DrNet_PresenceActive(i == 0);
-                Port_LobbyHelloAsk();
-                if (i == 1 && sHomeRow >= 3) { sHomeRow = 0; }
-            }
-            ImGui::PopID();
-            const bool on = DrNet_Mode() == i;
-            dl->AddRectFilled(a, b, on ? col(0.80f, 0.58f, 0.10f) : col(0.10f, 0.06f, 0.20f, 0.9f), u * 0.45f);
-            dl->AddRect(a, b, on ? col(1.0f, 0.86f, 0.35f) : col(0.48f, 0.34f, 0.85f), u * 0.45f, 0, 2.0f);
-            dl->AddText(ImVec2(a.x + u * 0.45f, a.y + (u * 0.95f - ts.y) * 0.5f), on ? col(1, 1, 1) : ImGui::GetColorU32(kSub), opt[i]);
-            cx = b.x + u * 0.35f;
-        }
-        ImGui::PopFont();
-        if (pad(ImGuiKey_GamepadFaceUp)) { // Y switches the opponents
-            int i = 1 - DrNet_Mode();
-            DrNet_SetMode(i);
-            DrNet_PresenceActive(i == 0);
-            Port_LobbyHelloAsk();
-            if (i == 1 && sHomeRow >= 3) { sHomeRow = 0; }
-        }
-    }
-    // the players online, or the PC's release check
-    static char line[160];
-    if (dragon) {
-        int n = DrNet_Online();
-        if (n >= 0) { SDL_snprintf(line, sizeof(line), T("Online: %d players (approx.)", "Online: %d jogadores (aprox.)", "En línea: %d jugadores (aprox.)"), n); }
-        else if (n == -1) { SDL_strlcpy(line, T("Online: checking...", "Online: consultando...", "En línea: consultando..."), sizeof(line)); }
-        else { SDL_strlcpy(line, T("Online: not available", "Online: indisponível", "En línea: no disponible"), sizeof(line)); }
-    } else {
-        int min = 0, latest = 0, mine = Port_LobbyRelease(&min, &latest);
-        if (min > mine) {
-            SDL_snprintf(line, sizeof(line), T("Against PC: the PC service asks for release 0.%d.%d (this is 0.%d.%d). Update Dragon Rage.",
-                                               "Contra PC: o serviço do PC pede a versão 0.%d.%d (esta é 0.%d.%d). Atualize o Dragon Rage.",
-                                               "Contra PC: el servicio del PC pide la versión 0.%d.%d (esta es 0.%d.%d). Actualiza Dragon Rage."),
-                         min / 100, min % 100, mine / 100, mine % 100);
+    footer(T("Choose a mode.", "Escolha um modo.", "Elige un modo."), "", controls_hint());
+}
+
+static void screen_friendly_menu(bool tagTeam) {
+    const char *labels[3]={T("Quick match","Partida rápida","Partida rápida"),T("Create room","Crear sala","Crear sala"),T("Join with code","Unirse con código","Unirse con código")};
+    const char *title = tagTeam ? T("Tag Team battle","Combate Tag Team","Combate Tag Team") : T("Friendly battle","Combate amistoso","Combate amistoso");
+    if(header(title,true)||padB()){goto_screen(HOME,tagTeam?1:0);sTagMenu=false;return;}
+    int move=padMove();if(move)sRow=(sRow+move+3)%3; sHomeRow=sRow;
+    int click=home_plates(labels,NULL,3);if(click>=0)sRow=click;
+    if(padA()||click>=0){sTagMenu=tagTeam;DrNet_SetMode(1);DrNet_PresenceActive(0);Port_LobbyHelloAsk();static const Screen dest[3]={QUICK,CREATE,JOIN};goto_screen(dest[sRow]);}
+}
+
+static void screen_ranked_menu(void) {
+    const char *labels[1]={T("Search for a rival","Buscar rival","Buscar rival")};
+    if(header(T("Ranked battle","Combate classificatorio","Combate clasificatorio"),true)||padB()){goto_screen(HOME,2);return;}
+    sHomeRow = 0;
+    int click = home_plates(labels,NULL,1);
+    if (click >= 0) { sRow = click; }
+    if (click >= 0 || padA()) {
+        if (sName[0] == '\0') {
+            sRankedNameError = true;
         } else {
-            SDL_strlcpy(line, T("Against PC: rooms and quick match on the PC port's service.", "Contra PC: salas e partida rápida no serviço do port de PC.",
-                                "Contra PC: salas y partida rápida en el servicio del port de PC."), sizeof(line));
+            sRankedNameError = false;
+            DrRanked_Search(sName, sRankMode);
+            sFoundAt = 0;
+            sLobbyLast = 0;
+            goto_screen(RANKED_WAIT);
+            return;
         }
     }
-    footer(line, T("Use your ORIGINAL copy, legally obtained.", "Use sua cópia ORIGINAL, obtida legalmente.", "Usa tu copia ORIGINAL obtenida legalmente."),
-           controls_hint());
+    footer(sRankedNameError
+               ? T("Enter a username in Options before searching.", "Escreva um nome em Opções antes de buscar.", "Escribe un nombre en Opciones antes de buscar.")
+               : T("Ranked search.", "Busca classificatória.", "Búsqueda clasificatoria."),
+           "", controls_hint());
+}
+
+static void screen_profile(void) {
+    DrProfile p; DrProfile_Poll(&p);
+    if (header(T("Options","Opções","Opciones"),true)||padB()){goto_screen(HOME,4);return;}
+    const float u=U();
+    card_start(u*3.5f,u*6.4f,T("PLAYER PROFILE","PERFIL DEL JUGADOR","PERFIL DEL JUGADOR"));
+    ImDrawList *dl=ImGui::GetWindowDrawList(); font_px(u*.7f);
+    dl->AddText(ImVec2(sCardMin.x+u*.6f,sCardMin.y+u*.55f),ImGui::GetColorU32(kText),T("Username","Nombre de usuario","Nombre de usuario"));
+    ImGui::SetCursorScreenPos(ImVec2(sCardMin.x+u*5.8f,sCardMin.y+u*.35f)); ImGui::PushItemWidth(u*11.0f);
+    ImGui::InputText("##profile_name",sName,sizeof(sName)); ImGui::PopItemWidth();
+    dl->AddText(ImVec2(sCardMin.x+u*.6f,sCardMin.y+u*1.9f),ImGui::GetColorU32(kText),T("Country","País","País"));
+    ImGui::SetCursorScreenPos(ImVec2(sCardMin.x+u*5.8f,sCardMin.y+u*1.65f)); ImGui::PushItemWidth(u*11.0f);
+    char preview[64]; SDL_snprintf(preview,sizeof(preview),"%s — %s",kCountries[sCountryIndex][0],kCountries[sCountryIndex][1]);
+    if(ImGui::BeginCombo("##profile_country",preview)) {
+        for(int i=0;i<(int)(sizeof(kCountries)/sizeof(kCountries[0]));i++) {
+            char label[64]; SDL_snprintf(label,sizeof(label),"%s — %s",kCountries[i][0],kCountries[i][1]);
+            if(ImGui::Selectable(label,sCountryIndex==i))sCountryIndex=i;
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::PopItemWidth(); ImGui::PopFont();
+    ImGui::SetCursorScreenPos(ImVec2(sCardMin.x+u*5.8f,sCardMin.y+u*3.1f));
+    if(ImGui::Button(T("Save profile","Guardar perfil","Guardar perfil"),ImVec2(u*6.0f,u*1.0f))) {
+        if(sName[0]=='\0')SDL_strlcpy(sName,"Player",sizeof(sName));
+        DrProfile_Save(sName,kCountries[sCountryIndex][0]);
+        Port_SettingTextSave("net_name",sName); Port_SettingsWrite(); Port_NetNameSet(sName);
+    }
+    if(p.state==2 && !sProfileSynced) {
+        if(p.username[0]) SDL_strlcpy(sName,p.username,sizeof(sName));
+        for(int i=0;i<(int)(sizeof(kCountries)/sizeof(kCountries[0]));i++)if(SDL_strcmp(p.country,kCountries[i][0])==0)sCountryIndex=i;
+        Port_SettingTextSave("net_name",sName); Port_SettingsWrite(); Port_NetNameSet(sName);
+        sProfileSynced=1;
+    }
+    footer(p.state<0?T("Profile unavailable: check URL/key, Auth, profiles and RLS.","Perfil no disponible: revisa URL/clave, Auth, profiles y RLS.","Perfil no disponible: revisa URL/clave, Auth, profiles y RLS."):p.state==1?T("Loading profile…","Cargando perfil…","Cargando perfil…"):T("Your name and country are public profile information.","Tu nombre y país son información pública del perfil.","Tu nombre y país son información pública del perfil."),"",controls_hint());
 }
 
 static void screen_create(void) {
-    if (header(T("Create room", "Criar sala", "Crear sala"), true) || padB()) { goto_screen(HOME); return; }
+    if (header(T("Create room", "Criar sala", "Crear sala"), true) || padB()) { goto_screen(sTagMenu ? TAG_MENU : FRIENDLY_MENU); return; }
     const float u = U();
     card_start(u * 4.2f, u * 6.7f, T("PREPARE YOUR FIGHT", "PREPARE SEU COMBATE", "PREPARA TU COMBATE"));
     int m = padMove();
@@ -502,7 +520,7 @@ static void screen_create(void) {
             set_open(false);
             DrNet_PresenceActive(0);
             DrChat_Close();
-            goto_screen(HOME, 0);
+            goto_screen(sTagMenu ? TAG_MENU : FRIENDLY_MENU, 1);
             return;
         }
         sLobbyLast = -3;
@@ -553,17 +571,18 @@ static void code_field(float y) {
     ImGui::PushItemWidth(sCardMax.x - sCardMin.x - u * 7.0f);
     font_px(u * 0.8f);
     if (!ImGui::IsAnyItemActive()) { ImGui::SetKeyboardFocusHere(); }
-    if (ImGui::InputText("##code", sCode, 7, ImGuiInputTextFlags_CharsUppercase | ImGuiInputTextFlags_CharsNoBlank | ImGuiInputTextFlags_EnterReturnsTrue)) {
+    if (ImGui::InputText("##code", sCode, 5, ImGuiInputTextFlags_CharsDecimal | ImGuiInputTextFlags_EnterReturnsTrue)) {
         sEditCode = false;
         sRow = 1;
     }
+    { char digits[5]; int n=0; for(int i=0;sCode[i]&&n<4;i++)if(sCode[i]>='0'&&sCode[i]<='9')digits[n++]=sCode[i]; digits[n]='\0'; SDL_strlcpy(sCode,digits,sizeof(sCode)); }
     if (ImGui::IsItemDeactivated()) { sEditCode = false; }
     ImGui::PopFont();
     ImGui::PopItemWidth();
 }
 
 static void screen_join(void) {
-    if (header(T("Join room", "Entrar em sala", "Entrar a sala"), true) || (!sEditCode && padB())) { goto_screen(HOME, 1); sHomeRow = 1; return; }
+    if (header(T("Join room", "Entrar em sala", "Unirse con código"), true) || (!sEditCode && padB())) { goto_screen(sTagMenu ? TAG_MENU : FRIENDLY_MENU, 2); return; }
     const float u = U();
     card_start(u * 4.2f, u * 5.15f, T("INVITATION BY CODE", "CONVITE POR CÓDIGO", "INVITACIÓN POR CÓDIGO"));
     if (!sEditCode) {
@@ -588,8 +607,8 @@ static void screen_join(void) {
         if (ImGui::InvisibleButton("##paste", ImVec2(b.x - a.x, b.y - a.y)) || pad(ImGuiKey_GamepadFaceUp)) {
             char *clip = SDL_GetClipboardText();
             size_t n = 0;
-            for (const char *c = clip; c != NULL && *c != '\0' && n < 6; c++) {
-                if ((*c >= '0' && *c <= '9') || (*c >= 'A' && *c <= 'Z') || (*c >= 'a' && *c <= 'z')) { sCode[n++] = (char)(*c >= 'a' ? *c - 32 : *c); }
+            for (const char *c = clip; c != NULL && *c != '\0' && n < 4; c++) {
+                if (*c >= '0' && *c <= '9') { sCode[n++] = *c; }
             }
             sCode[n] = '\0';
             SDL_free(clip);
@@ -600,17 +619,17 @@ static void screen_join(void) {
         ImGui::PopFont();
     }
     const char *err = lobby_error(sLobbyLast);
-    footer(err[0] ? err : T("Enter a code of 6 letters or numbers.", "Digite um código de 6 letras ou números.", "Introduce un código de 6 letras o números."),
-           T("Use the 6 characters the host sent you.", "Use os 6 caracteres que o anfitrião te mandou.", "Usa los 6 caracteres que te envió el anfitrión."),
+    footer(err[0] ? err : T("Enter the 4-digit room code.", "Escribe el código de sala de 4 dígitos.", "Escribe el código de sala de 4 dígitos."),
+           T("Use the 4 digits shared by the host.", "Usa los 4 dígitos que te compartió quien creó la sala.", "Usa los 4 dígitos que te compartió quien creó la sala."),
            controls_hint());
-    if (go && strlen(sCode) == 6) {
+    if (go && strlen(sCode) == 4) {
         sLobbyLast = 0;
         Port_NetNameSet(sName);
         Port_NetOptions(-1, -1); // (the host's choices)
         Port_LobbyStartCode(0, sCode);
         goto_screen(JOIN_WAIT);
     }
-    if (watch && strlen(sCode) == 6) {
+    if (watch && strlen(sCode) == 4) {
         sLobbyLast = 0;
         Port_NetNameSet(sName);
         Port_SettingTextSave("net_name", sName);
@@ -653,7 +672,7 @@ static void screen_join_wait(void) {
 }
 
 static void screen_quick(void) {
-    if (header(T("Quick match", "Partida rápida", "Partida rápida"), true) || padB()) { goto_screen(HOME, 2); return; }
+    if (header(T("Quick match", "Partida rápida", "Partida rápida"), true) || padB()) { goto_screen(sTagMenu ? TAG_MENU : FRIENDLY_MENU, 0); return; }
     static Uint64 asked;
     if (asked == 0 || SDL_GetTicks() - asked > 30000) { asked = SDL_GetTicks() + 1; Port_LobbyQueuesAsk(); }
     const float u = U();
@@ -689,6 +708,7 @@ static void screen_quick(void) {
         sLobbyLast = 0;
         rules_set(sQueue2);
         Port_SettingSave("net_queue", sQueue2);
+        Port_NetNameSet(sName);
         Port_LobbyQuickArea(kRegionArea[region]);
         Port_LobbyStartQuick(sQueue2);
         sSearchSince = SDL_GetTicks();
@@ -716,66 +736,6 @@ static void screen_quick_wait(void) {
     footer(T("You can cancel and go back to the menu.", "Você pode cancelar e voltar ao menu.", "Puedes cancelar y volver al menú."), "", T("B: cancel", "B: cancelar", "B: cancelar"));
 }
 
-static void profile_card(const DrRanked &r, float y) {
-    ImDrawList *dl = ImGui::GetWindowDrawList();
-    const float u = U();
-    card_start(y, u * 2.2f, NULL);
-    dl->AddRectFilled(ImVec2(sCardMin.x + u * 0.5f, sCardMin.y + u * 0.35f), ImVec2(sCardMin.x + u * 0.58f, sCardMin.y + u * 1.85f), col(1.0f, 0.84f, 0.30f));
-    font_px(u * 0.8f);
-    if (!r.profile) {
-        dl->AddText(ImVec2(sCardMin.x + u * 0.9f, sCardMin.y + u * 0.6f), col(1, 1, 1), T("Loading profile...", "Carregando perfil...", "Cargando perfil..."));
-        ImGui::PopFont();
-        return;
-    }
-    char t[64];
-    dl->AddText(ImVec2(sCardMin.x + u * 0.9f, sCardMin.y + u * 0.3f), ImGui::GetColorU32(kGoldT), rank_tier(r.rank));
-    SDL_snprintf(t, sizeof(t), "%d Elo", r.rating);
-    dl->AddText(ImVec2(sCardMin.x + (sCardMax.x - sCardMin.x) * 0.62f, sCardMin.y + u * 0.3f), col(1, 1, 1), t);
-    ImGui::PopFont();
-    font_px(u * 0.66f);
-    SDL_snprintf(t, sizeof(t), T("%d W / %d L", "%d V / %d D", "%d V / %d D"), r.wins, r.losses);
-    dl->AddText(ImVec2(sCardMin.x + u * 0.9f, sCardMin.y + u * 1.25f), ImGui::GetColorU32(kText), t);
-    SDL_snprintf(t, sizeof(t), T("Position %d", "Posição %d", "Puesto %d"), r.position);
-    dl->AddText(ImVec2(sCardMin.x + (sCardMax.x - sCardMin.x) * 0.62f, sCardMin.y + u * 1.25f), ImGui::GetColorU32(kText), t);
-    ImGui::PopFont();
-}
-
-static void screen_ranked(void) {
-    DrRanked r;
-    DrRanked_Poll(&r);
-    if (header(T("Ranked", "Classificatória", "Clasificatoria"), true) || padB()) { goto_screen(HOME, 3); return; }
-    const float u = U();
-    profile_card(r, u * 3.3f);
-    {
-        ImDrawList *dl = ImGui::GetWindowDrawList();
-        font_px(u * 0.62f);
-        dl->AddText(ImVec2(ImGui::GetWindowPos().x + u * 1.6f, ImGui::GetWindowPos().y + u * 5.75f), ImGui::GetColorU32(kGoldT), rules_line());
-        ImGui::PopFont();
-    }
-    card_start(u * 6.5f, u * 6.6f, NULL);
-    int m = padMove();
-    if (m != 0) { sRow = (sRow + m + 4) % 4; }
-    int ch = 0;
-    card_row(0, u * 0.35f, T("Battle", "Combate", "Combate"), sRankMode ? T("Team", "Equipe", "Equipos") : T("Single", "Individual", "Individual"), &ch);
-    if (sRow == 0) { ch += padSide(); }
-    if (sRow == 0 && padA()) { ch = 1; }
-    if (ch != 0) { sRankMode = 1 - sRankMode; }
-    bool search = card_row(1, u * 1.9f, T("Search for a rival", "Buscar rival", "Buscar rival"), "") || (sRow == 1 && padA());
-    bool board = card_row(2, u * 3.45f, T("Ranking", "Classificação", "Clasificación"), "") || (sRow == 2 && padA());
-    bool update = card_row(3, u * 5.0f, T("Update profile", "Atualizar perfil", "Actualizar perfil"), "") || (sRow == 3 && padA());
-    const char *msg = ranked_msg(r.msg);
-    footer(msg[0] && r.state < 0 ? msg : T("Points change when both results agree.", "Os pontos mudam quando os dois resultados batem.",
-                                           "Los puntos cambian al confirmar ambos resultados."), "", controls_hint());
-    if (search) {
-        DrRanked_Search(sName, sRankMode);
-        sFoundAt = 0;
-        sLobbyLast = 0;
-        goto_screen(RANKED_WAIT);
-    }
-    if (board) { DrRanked_Board(); goto_screen(BOARD); }
-    if (update) { DrRanked_Open(sName); }
-}
-
 static void screen_ranked_wait(void) {
     DrRanked r;
     DrRanked_Poll(&r);
@@ -785,7 +745,7 @@ static void screen_ranked_wait(void) {
         if (sRankedLobby && st >= 0) { Port_LobbyCancel(); }
         sRankedLobby = false;
         DrRanked_Cancel();
-        goto_screen(RANKED, 1);
+        goto_screen(RANKED_MENU, 0);
         return;
     }
     // paired: the host opens the room and tells the service its code; the other joins it once the code is there
@@ -812,33 +772,32 @@ static void screen_ranked_wait(void) {
 }
 
 static void screen_board(void) {
-    DrRanked r;
-    DrRanked_Poll(&r);
-    if (header(T("Ranking", "Classificação", "Clasificación"), true) || padB()) { goto_screen(RANKED, 2); return; }
-    const float u = U();
-    card_start(u * 4.2f, u * 9.8f, T("BEST FIGHTERS", "MELHORES LUTADORES", "MEJORES LUCHADORES"));
-    ImDrawList *dl = ImGui::GetWindowDrawList();
-    font_px(u * 0.72f);
-    for (int i = 0; i < 9; i++) {
-        float y = sCardMin.y + u * 0.35f + (float)i * u * 1.03f;
-        dl->AddRectFilled(ImVec2(sCardMin.x + u * 0.4f, y), ImVec2(sCardMax.x - u * 0.4f, y + u * 0.9f), col(0.12f, 0.07f, 0.24f, i % 2 ? 0.7f : 0.95f), u * 0.1f);
-        if (r.board == 2 && i < r.boardCount) {
-            char t[48];
-            SDL_snprintf(t, sizeof(t), "%d.  %s", i + 1, r.boardName[i]);
-            dl->AddText(ImVec2(sCardMin.x + u * 0.8f, y + u * 0.08f), i == 0 ? ImGui::GetColorU32(kGoldT) : col(1, 1, 1), t);
-            SDL_snprintf(t, sizeof(t), "%d", r.boardRating[i]);
-            dl->AddText(ImVec2(sCardMin.x + (sCardMax.x - sCardMin.x) * 0.62f, y + u * 0.08f), col(1, 1, 1), t);
+    DrProfile p; DrProfile_Poll(&p);
+    if(header(T("Ranking","Clasificación","Clasificación"),true)||padB()){goto_screen(HOME,3);return;}
+    const float u=U();
+    card_start(u*3.8f,u*10.2f,T("WORLD TOP 10","TOP 10 MUNDIAL","TOP 10 MUNDIAL"));
+    ImDrawList *dl=ImGui::GetWindowDrawList(); font_px(u*.65f);
+    for(int i=0;i<10;i++) {
+        float y=sCardMin.y+u*.2f+(float)i*u*.86f;
+        dl->AddRectFilled(ImVec2(sCardMin.x+u*.25f,y),ImVec2(sCardMax.x-u*.25f,y+u*.76f),col(.12f,.07f,.24f,i%2?.72f:.95f),u*.1f);
+        if(i<p.board_count) {
+            char pos[12],elo[16]; SDL_snprintf(pos,sizeof(pos),"%d",i+1); SDL_snprintf(elo,sizeof(elo),"%d",p.board_elo[i]);
+            dl->AddText(ImVec2(sCardMin.x+u*.55f,y+u*.1f),ImGui::GetColorU32(kGoldT),pos);
+            dl->AddText(ImVec2(sCardMin.x+u*2.0f,y+u*.1f),ImGui::GetColorU32(kText),p.board_country[i]);
+            dl->AddText(ImVec2(sCardMin.x+u*4.2f,y+u*.1f),ImGui::GetColorU32(kText),p.board_name[i]);
+            dl->AddText(ImVec2(sCardMax.x-u*2.0f,y+u*.1f),ImGui::GetColorU32(kText),elo);
         }
     }
     ImGui::PopFont();
+    font_px(u*.66f);
+    const char *positionText=p.position?T("Your position: see ranking","Tu posición: ver clasificación","Tu posición: ver clasificación"):T("Your position: Unranked","Tu posición: Sin clasificar","Tu posición: Sin clasificar");
+    dl->AddText(ImVec2(sCardMin.x+u*.6f,sCardMax.y-u*.15f),ImGui::GetColorU32(kGoldT),positionText); ImGui::PopFont();
     ImGui::SetCursorScreenPos(sCardMin);
-    if (ImGui::InvisibleButton("##refresh", ImVec2(sCardMax.x - sCardMin.x, sCardMax.y - sCardMin.y)) || padA()) { DrRanked_Board(); }
-    footer(r.board == 1 ? T("Updating the ranking...", "Atualizando a classificação...", "Actualizando clasificación...")
-                        : r.board < 0 ? T("The ranking did not answer: tap to try again.", "A classificação não respondeu: toque para tentar de novo.",
-                                          "La clasificación no respondió: toca para reintentar.")
-                                      : T("The table shows the community's Elo points.", "A tabela mostra os pontos Elo da comunidade.",
-                                          "La tabla muestra los puntos Elo de la comunidad."),
-           "", T("Tap or A: update   B: back", "Toque ou A: atualizar   B: voltar", "Toca o A: actualizar   B: volver"));
+    if(ImGui::InvisibleButton("##worldrefresh",ImVec2(sCardMax.x-sCardMin.x,sCardMax.y-sCardMin.y))||padA())DrProfile_Board();
+    footer(p.board_state<0?T("Ranking unavailable: check the world_top10 view and network.","Clasificación no disponible: revisa la vista world_top10 y la red.","Clasificación no disponible: revisa la vista world_top10 y la red."):
+        p.board_state==1?T("Loading world ranking…","Cargando clasificación mundial…","Cargando clasificación mundial…"):
+        p.board_count?T("Worldwide ranking.","Clasificación mundial.","Clasificación mundial."):
+        T("No ranked players yet.","Aún no hay jugadores clasificados.","Aún no hay jugadores clasificados."),"",T("A: update   B: back","A: actualizar   B: volver","A: actualizar   B: volver"));
 }
 
 // ---- Rematch (flow:2): after the result of a ranked match. While it is open the game waits in MainMenu_Run
@@ -1023,8 +982,9 @@ static void window(void) {
         if (sBattle < 0 || sBattle > 4) { sBattle = 0; }
         if (sQueue2 < 0 || sQueue2 > 4) { sQueue2 = 0; }
         sEnterAt = SDL_GetTicks();
+        DrProfile_Open();
     }
-    DrNet_PresenceActive(DrNet_Mode() == 0); // the players online: counted while this is open, against Android + Switch
+    DrNet_PresenceActive(0); // the current menu uses VPS rooms; Supabase handles its profile and world ranking
     ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
     ImGui::SetNextWindowSize(io.DisplaySize, ImGuiCond_Always);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
@@ -1042,32 +1002,18 @@ static void window(void) {
     background(ImGui::GetWindowDrawList(), ImGui::GetWindowPos(), ImGui::GetWindowSize());
     sEnter = SDL_GetTicks() - sEnterAt > 260 ? 1.0f : (float)(SDL_GetTicks() - sEnterAt) / 260.0f;
     sEnter = 1.0f - (1.0f - sEnter) * (1.0f - sEnter);
-    if (sEditName) { // the name: an input under the badge (the phone's keyboard opens)
-        const float u = U();
-        ImGui::SetCursorScreenPos(ImVec2(io.DisplaySize.x * 0.62f - u * 6.4f, u * 2.3f));
-        ImGui::PushItemWidth(u * 6.4f);
-        font_px(u * 0.7f);
-        if (!ImGui::IsAnyItemActive()) { ImGui::SetKeyboardFocusHere(); }
-        if (ImGui::InputText("##nameedit", sName, sizeof(sName), ImGuiInputTextFlags_EnterReturnsTrue) || ImGui::IsItemDeactivated()) {
-            if (sName[0] == '\0') { SDL_strlcpy(sName, "Player", sizeof(sName)); }
-            Port_SettingTextSave("net_name", sName);
-            Port_SettingsWrite();
-            Port_NetNameSet(sName);
-            sEditName = false;
-        }
-        ImGui::PopFont();
-        ImGui::PopItemWidth();
-    }
-    if (pad(ImGuiKey_GamepadStart)) { sEditName = !sEditName; }
     switch (sScreen) {
     case HOME: screen_home(close); break;
+    case FRIENDLY_MENU: screen_friendly_menu(false); break;
+    case TAG_MENU: screen_friendly_menu(true); break;
+    case RANKED_MENU: screen_ranked_menu(); break;
+    case PROFILE: screen_profile(); break;
     case CREATE: screen_create(); break;
     case CREATE_WAIT: screen_create_wait(); break;
     case JOIN: screen_join(); break;
     case JOIN_WAIT: screen_join_wait(); break;
     case QUICK: screen_quick(); break;
     case QUICK_WAIT: screen_quick_wait(); break;
-    case RANKED: screen_ranked(); break;
     case RANKED_WAIT: screen_ranked_wait(); break;
     case BOARD: screen_board(); break;
     case CHAT: screen_chat(); break;

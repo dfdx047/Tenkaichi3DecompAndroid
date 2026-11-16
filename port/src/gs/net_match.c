@@ -39,6 +39,7 @@
 #include "net_relay.h"
 #include "net_sign.h"
 #include "net_dragon.h"
+#include "net_supabase.h"
 
 static struct {
     SDL_Mutex *lock;
@@ -47,7 +48,7 @@ static struct {
     SDL_AtomicInt sockBusy;    /* the thread is talking to the relay on the match's socket: the lobby keeps off it */
     MatchStatus st;
     int role, sock, localPort, version;
-    char code[8], name[20]; /* (role 3, a quick match: `code` is the queue's name until the service gives a room) */
+    char code[8], name[20], country[3]; /* user-supplied display metadata; VPS must not use it as identity or authority */
     char queue[8];
     char url[256]; /* o servidor desta busca */
     char area[8];           /* a quick match: what the player chose to look for ("auto", "any", a region) */
@@ -264,10 +265,11 @@ static void set_state(int state, const char *error) {
 
 #ifdef _WIN32
 /* Windows: its own HTTPS (WinHTTP), so nothing has to be installed and no other program is started. */
+#include <wchar.h>
 #include <winhttp.h>
 
 static int http_post_native(const char *url, const char *json, const char *const *headers, char *out, size_t size) {
-    wchar_t wurl[512], host[256], path[256], whead[512];
+    wchar_t wurl[512], host[256], path[256], extra[256], requestPath[512], whead[512];
     char head[512];
     URL_COMPONENTS uc;
     HINTERNET ses = NULL, con = NULL, req = NULL;
@@ -291,8 +293,16 @@ static int http_post_native(const char *url, const char *json, const char *const
     uc.dwHostNameLength = 256;
     uc.lpszUrlPath = path;
     uc.dwUrlPathLength = 256;
+    uc.lpszExtraInfo = extra;
+    uc.dwExtraInfoLength = 256;
     if (!WinHttpCrackUrl(wurl, 0, 0, &uc)) {
         return 0;
+    }
+    wcsncpy(requestPath, path, 511);
+    requestPath[511] = L'\0';
+    if (uc.dwExtraInfoLength != 0) {
+        size_t used = wcslen(requestPath);
+        wcsncat(requestPath, extra, 511 - used);
     }
     ses = WinHttpOpen(L"Tenkaichi3Decomp", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (ses != NULL) {
@@ -300,7 +310,7 @@ static int http_post_native(const char *url, const char *json, const char *const
         con = WinHttpConnect(ses, host, uc.nPort, 0);
     }
     if (con != NULL) {
-        req = WinHttpOpenRequest(con, json != NULL ? L"POST" : L"GET", path, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, uc.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0);
+        req = WinHttpOpenRequest(con, json != NULL ? L"POST" : L"GET", requestPath, NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, uc.nScheme == INTERNET_SCHEME_HTTPS ? WINHTTP_FLAG_SECURE : 0);
     }
     if (req != NULL &&
         (json != NULL ? WinHttpSendRequest(req, whead, (DWORD)-1, (LPVOID)json, (DWORD)strlen(json), (DWORD)strlen(json), 0)
@@ -453,6 +463,13 @@ static int http_post_native(const char *url, const char *json, const char *const
     return rc == 0 && n > 0;
 }
 #endif
+
+/* General HTTPS transport for the online worker (including Supabase Auth/REST). */
+int Match_HttpRequest(const char *url, const char *json, const char *const *headers, char *out, size_t size) {
+    if (out == NULL || size == 0 || url == NULL) return 0;
+    out[0] = '\0';
+    return http_post_native(url, json, headers, out, size);
+}
 
 /* The build key (net_sign.c). The service checks the time a request is signed for against its own clock (five
    minutes either way), and a player's clock can be wrong by more: so the game keeps how far the service's clock is
@@ -944,7 +961,7 @@ again:
         MatchStatus st;
         /* (`waited` and `area`: this game knows nearby matching, and searches again from its room when the service
            says `again`; see port/matchmaking/worker.js) */
-        SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"rel\":%d,\"name\":\"%s\",\"addrs\":[%s],\"queue\":\"%s\",\"who\":\"%s\",\"waited\":%d,\"area\":\"%s\"%s}", sM.version, PORT_RELEASE, name, addrs,
+        SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"rel\":%d,\"name\":\"%s\",\"country\":\"%s\",\"addrs\":[%s],\"queue\":\"%s\",\"who\":\"%s\",\"waited\":%d,\"area\":\"%s\"%s}", sM.version, PORT_RELEASE, name, sM.country, addrs,
                      sM.queue, match_who(), (int)((SDL_GetTicks() - began) / 1000), sM.area, relayAddr[0] != '\0' ? ",\"relay\":false" : "");
         if (!POSTB("quick", body, answer, sizeof(answer))) {
             set_state(-1, "The matchmaking service could not be reached (is the network up?).");
@@ -984,7 +1001,7 @@ again:
     }
     if (hosting) {
         if (sM.role == 1 || sM.role == 5) {
-            SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"rel\":%d,\"name\":\"%s\",\"addrs\":[%s]%s}", sM.version, PORT_RELEASE, name, addrs,
+            SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"rel\":%d,\"name\":\"%s\",\"country\":\"%s\",\"addrs\":[%s]%s}", sM.version, PORT_RELEASE, name, sM.country, addrs,
                          sM.role == 5 ? ",\"lobby\":true" : "");
             if (!POSTB("host", body, answer, sizeof(answer))) {
                 set_state(-1, "The matchmaking service could not be reached (is the network up?).");
@@ -1065,8 +1082,8 @@ again:
                 char ask[768];
                 MatchStatus st;
                 searched = SDL_GetTicks();
-                SDL_snprintf(ask, sizeof(ask), "{\"v\":%d,\"rel\":%d,\"name\":\"%s\",\"addrs\":[%s],\"queue\":\"%s\",\"who\":\"%s\",\"waited\":%d,\"area\":\"%s\",\"code\":\"%s\",\"key\":\"%s\"}",
-                             sM.version, PORT_RELEASE, name, addrs, sM.queue, match_who(), (int)((searched - began) / 1000), sM.area, sM.code, key);
+                SDL_snprintf(ask, sizeof(ask), "{\"v\":%d,\"rel\":%d,\"name\":\"%s\",\"country\":\"%s\",\"addrs\":[%s],\"queue\":\"%s\",\"who\":\"%s\",\"waited\":%d,\"area\":\"%s\",\"code\":\"%s\",\"key\":\"%s\"}",
+                             sM.version, PORT_RELEASE, name, sM.country, addrs, sM.queue, match_who(), (int)((searched - began) / 1000), sM.area, sM.code, key);
                 if (POSTB("quick", ask, answer, sizeof(answer)) && !STOPPED()) {
                     SDL_memset(&st, 0, sizeof(st));
                     if (SDL_strstr(answer, "\"role\":\"join\"") != NULL && json_peer(answer, &st)) { /* (its own room is gone) */
@@ -1180,7 +1197,7 @@ again:
         set_state(-1, "Nobody joined: the room code has run out. Host again for a new one.");
     } else if (sM.role == 4) { /* a spectator: the host's addresses (and the host learns this one's by its poll) */
         MatchStatus st;
-        SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"rel\":%d,\"lobby\":1,\"code\":\"%s\",\"name\":\"%s\",\"addrs\":[%s]}", sM.version, PORT_RELEASE, sM.code, name, addrs);
+        SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"rel\":%d,\"lobby\":1,\"code\":\"%s\",\"name\":\"%s\",\"country\":\"%s\",\"addrs\":[%s]}", sM.version, PORT_RELEASE, sM.code, name, sM.country, addrs);
         if (!POSTB("watch", body, answer, sizeof(answer))) {
             set_state(-1, "The matchmaking service could not be reached (is the network up?).");
             return 0;
@@ -1216,7 +1233,7 @@ again:
     } else {
         MatchStatus st;
         /* (`lobby`: this game can be a lobby's member; a code of a lobby is then answered as one) */
-        SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"rel\":%d,\"lobby\":1,\"code\":\"%s\",\"name\":\"%s\",\"addrs\":[%s]}", sM.version, PORT_RELEASE, sM.code, name, addrs);
+        SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"rel\":%d,\"lobby\":1,\"code\":\"%s\",\"name\":\"%s\",\"country\":\"%s\",\"addrs\":[%s]}", sM.version, PORT_RELEASE, sM.code, name, sM.country, addrs);
         if (!POSTB("join", body, answer, sizeof(answer))) {
             set_state(-1, "The matchmaking service could not be reached (is the network up?).");
             return 0;
@@ -1400,6 +1417,7 @@ void Match_Begin(int role, int sock, int localPort, const char *code, const char
     sM.code[n] = '\0';
     SDL_strlcpy(sM.queue, role == 3 ? sM.code : "", sizeof(sM.queue));
     SDL_strlcpy(sM.name, name != NULL ? name : "Player", sizeof(sM.name));
+    DrProfile_Country(sM.country, sizeof(sM.country));
     sM.url[0] = '\0';
     if (DrNet_Mode() == 0 && SDL_getenv("BT3_MATCH_URL") == NULL) {
         if (DrRanked_Active()) {
