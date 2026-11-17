@@ -36,6 +36,9 @@
 #include <sys/uio.h>
 #include <signal.h>
 #include <ucontext.h>
+#include <time.h>
+#define VK_NO_PROTOTYPES 1 /* (the types alone: this file finds the driver's functions itself) */
+#include <vulkan/vulkan.h>
 #include <adrenotools/driver.h>
 #include <unistd.h>
 
@@ -471,45 +474,334 @@ static void begin_pass(void *cmd, const DrPassBegin *begin, uint32_t contents) {
     sBegin(cmd, begin, contents);
 }
 
-static VkVoidFn device_proc(void *device, const char *name) {
-    VkVoidFn f = sDeviceGdpa(device, name);
-    if (f != NULL && strcmp(name, "vkCmdBeginRenderPass") == 0) {
+/* ---- The pipelines' cache on disk (VkPipelineCache).
+   SDL's GPU API creates every pipeline without a VkPipelineCache, so a driver that keeps no disk cache of its own
+   compiles each one from the start at every run: the engine's preload of the pipelines earlier runs used (gs_gpu.c,
+   bt3_pipelines2.txt) took players' phones 1.5 to 5.5 s at each start (Mali-G52 3.9 to 5.5 s, Adreno 710 1.5 to 2.8 s,
+   Adreno 642L 2.4 to 3.3 s), against 0.2 to 0.4 s with Turnip or Samsung's Xclipse, whose drivers keep one; and a
+   pipeline first met in a fight held that picture for as long. Here SDL's vkCreateGraphicsPipelines gets one cache,
+   filled from vk_pipelines.<engine>.bin in the game folder, and written back by a thread of its own a few seconds
+   after the last new pipeline (an app is killed, not ended: there is no exit to save at). The file starts with this
+   loader's own header (the GPU, the driver's version and cache identifier, the data's size and checksum): data of
+   another GPU or driver, or a file cut off while written, is never handed to the driver. Only pipelines asked for
+   without a cache of their own are given this one. BT3_VK_PIPELINE_CACHE=0 (bt3_env.txt): without it, as before. */
+#define CACHE_MOST (64u << 20) /* bytes: a bigger cache is neither read nor written */
+#define CACHE_QUIET_MS 3000    /* written once no pipeline was made for this long */
+typedef struct {
+    char magic[8]; /* "DRVKPC1" */
+    uint32_t vendor, device, driver, unused;
+    uint8_t uuid[VK_UUID_SIZE];
+    uint64_t size, sum; /* the driver's data after this header: bytes, FNV-1a */
+} DrCacheHead;
+static int sAreaOn; /* BT3_VK_AREA: the render areas above */
+static int sCacheOn, sCacheTried;
+static char sCachePath[64];
+static void *sCacheInstance;
+static VkDevice sCacheDevice;
+static VkPhysicalDeviceProperties sCacheProps;
+static int sCachePropsOk;
+static VkPipelineCache sCache;
+static unsigned sCacheMade, sCacheSaved; /* pipelines made with the cache, and how many of them the file has seen */
+static uint64_t sCacheLast;              /* when the last one was made (ms) */
+static pthread_mutex_t sCacheLock = PTHREAD_MUTEX_INITIALIZER, sCacheSaveLock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t sCacheWake = PTHREAD_COND_INITIALIZER;
+static PFN_vkCreateDevice sRealCreateDevice;
+static PFN_vkDestroyDevice sRealDestroyDevice;
+static PFN_vkCreateGraphicsPipelines sRealCreatePipes;
+static PFN_vkGetPipelineCacheData sRealCacheData;
+static PFN_vkDestroyPipelineCache sRealDestroyCache;
+
+static uint64_t now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
+}
+
+static uint64_t fnv64(const uint8_t *p, size_t n) {
+    uint64_t h = 0xcbf29ce484222325ull;
+    while (n--) {
+        h = (h ^ *p++) * 0x100000001b3ull;
+    }
+    return h;
+}
+
+static VkVoidFn device_fn(VkDevice device, const char *name) {
+    return sDeviceGdpa != NULL ? sDeviceGdpa(device, name) : sDriverGipa(sCacheInstance, name);
+}
+
+/* The data of an earlier run, if it is this GPU's and this driver's and whole. malloc'd; NULL: start empty. */
+static void *cache_read(size_t *size) {
+    DrCacheHead h;
+    void *data = NULL;
+    const char *why = NULL;
+    FILE *fp = fopen(sCachePath, "rb");
+    *size = 0;
+    if (fp == NULL) {
+        say("pipeline cache: none yet (%s)", sCachePath);
+        return NULL;
+    }
+    if (fread(&h, sizeof(h), 1, fp) != 1 || memcmp(h.magic, "DRVKPC1", 8) != 0) {
+        why = "not a file of this loader";
+    } else if (!sCachePropsOk || h.vendor != sCacheProps.vendorID || h.device != sCacheProps.deviceID ||
+               h.driver != sCacheProps.driverVersion || memcmp(h.uuid, sCacheProps.pipelineCacheUUID, VK_UUID_SIZE) != 0) {
+        why = "made with another GPU or driver";
+    } else if (h.size == 0 || h.size > CACHE_MOST) {
+        why = "of a wrong size";
+    } else if ((data = malloc((size_t)h.size)) == NULL || fread(data, 1, (size_t)h.size, fp) != (size_t)h.size) {
+        why = "cut off";
+    } else if (fnv64(data, (size_t)h.size) != h.sum) {
+        why = "damaged";
+    }
+    fclose(fp);
+    if (why != NULL) {
+        free(data);
+        say("pipeline cache: %s left out: %s", sCachePath, why);
+        return NULL;
+    }
+    *size = (size_t)h.size;
+    return data;
+}
+
+/* Writes what the driver has in the cache (from the saving thread, or as the device ends): a new file then renamed
+   over the old, so a run killed meanwhile leaves the old one whole. */
+static void cache_write(unsigned made) {
+    char tmp[80];
+    DrCacheHead h;
+    size_t size = 0;
+    void *data = NULL;
+    FILE *fp;
+    int ok = 0;
+    uint64_t t0 = now_ms();
+    pthread_mutex_lock(&sCacheSaveLock);
+    if (sCache != VK_NULL_HANDLE && sRealCacheData(sCacheDevice, sCache, &size, NULL) == VK_SUCCESS && size > 0 &&
+        size <= CACHE_MOST && (data = malloc(size)) != NULL && sRealCacheData(sCacheDevice, sCache, &size, data) == VK_SUCCESS) {
+        memset(&h, 0, sizeof(h));
+        memcpy(h.magic, "DRVKPC1", 8);
+        h.vendor = sCacheProps.vendorID;
+        h.device = sCacheProps.deviceID;
+        h.driver = sCacheProps.driverVersion;
+        memcpy(h.uuid, sCacheProps.pipelineCacheUUID, VK_UUID_SIZE);
+        h.size = size;
+        h.sum = fnv64(data, size);
+        snprintf(tmp, sizeof(tmp), "%s.new", sCachePath);
+        fp = fopen(tmp, "wb");
+        if (fp != NULL) {
+            ok = fwrite(&h, sizeof(h), 1, fp) == 1 && fwrite(data, 1, size, fp) == size;
+            ok = fflush(fp) == 0 && ok;
+            ok = fsync(fileno(fp)) == 0 && ok;
+            ok = fclose(fp) == 0 && ok;
+            ok = ok && rename(tmp, sCachePath) == 0;
+            if (!ok) {
+                unlink(tmp);
+            }
+        }
+    }
+    pthread_mutex_unlock(&sCacheSaveLock);
+    free(data);
+    if (ok) {
+        say("pipeline cache: %u pipelines, %zu KB written in %llu ms", made, size >> 10, (unsigned long long)(now_ms() - t0));
+    } else {
+        say("pipeline cache: could not be written (%zu KB): %s", size >> 10, strerror(errno));
+    }
+    pthread_mutex_lock(&sCacheLock);
+    sCacheSaved = made;
+    pthread_mutex_unlock(&sCacheLock);
+}
+
+static void *cache_saver(void *unused) {
+    (void)unused;
+    for (;;) {
+        unsigned made;
+        int quiet;
+        pthread_mutex_lock(&sCacheLock);
+        while (sCacheMade == sCacheSaved) {
+            pthread_cond_wait(&sCacheWake, &sCacheLock);
+        }
+        pthread_mutex_unlock(&sCacheLock);
+        do { /* (the whole burst of a start's preload, or of a fight's new effects, in one write) */
+            usleep(500 * 1000);
+            pthread_mutex_lock(&sCacheLock);
+            quiet = now_ms() - sCacheLast >= CACHE_QUIET_MS;
+            made = sCacheMade;
+            pthread_mutex_unlock(&sCacheLock);
+        } while (!quiet);
+        cache_write(made);
+    }
+    return NULL;
+}
+
+/* At the first pipeline: the cache, with the earlier run's data if it is good. Under sCacheLock. */
+static void cache_make(VkDevice device) {
+    PFN_vkCreatePipelineCache create = (PFN_vkCreatePipelineCache)device_fn(device, "vkCreatePipelineCache");
+    VkPipelineCacheCreateInfo ci;
+    size_t size;
+    void *data;
+    uint64_t t0 = now_ms();
+    VkResult r = VK_ERROR_INITIALIZATION_FAILED;
+    pthread_t th;
+    sRealCacheData = (PFN_vkGetPipelineCacheData)device_fn(device, "vkGetPipelineCacheData");
+    sRealDestroyCache = (PFN_vkDestroyPipelineCache)device_fn(device, "vkDestroyPipelineCache");
+    if (create == NULL || sRealCacheData == NULL || sRealDestroyCache == NULL) {
+        say("pipeline cache: the driver has no cache functions");
+        return;
+    }
+    data = cache_read(&size);
+    memset(&ci, 0, sizeof(ci));
+    ci.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    if (data != NULL) {
+        ci.initialDataSize = size;
+        ci.pInitialData = data;
+        r = create(device, &ci, NULL, &sCache);
+        if (r != VK_SUCCESS) {
+            say("pipeline cache: the driver refused the earlier run's data (%d): starting empty", (int)r);
+        }
+    }
+    if (r != VK_SUCCESS) {
+        ci.initialDataSize = 0;
+        ci.pInitialData = NULL;
+        r = create(device, &ci, NULL, &sCache);
+    }
+    free(data);
+    if (r != VK_SUCCESS) {
+        sCache = VK_NULL_HANDLE;
+        say("pipeline cache: could not be made (%d)", (int)r);
+        return;
+    }
+    say("pipeline cache: %zu KB of earlier runs given to the driver in %llu ms", size >> 10, (unsigned long long)(now_ms() - t0));
+    if (pthread_create(&th, NULL, cache_saver, NULL) == 0) {
+        pthread_detach(th);
+    }
+}
+
+static VkResult VKAPI_CALL create_pipes(VkDevice device, VkPipelineCache cache, uint32_t count,
+                                        const VkGraphicsPipelineCreateInfo *infos, const VkAllocationCallbacks *alloc,
+                                        VkPipeline *out) {
+    VkResult r;
+    int ours = 0;
+    if (cache == VK_NULL_HANDLE && device == sCacheDevice) {
+        pthread_mutex_lock(&sCacheLock);
+        if (!sCacheTried) {
+            sCacheTried = 1;
+            cache_make(device);
+        }
+        cache = sCache;
+        pthread_mutex_unlock(&sCacheLock);
+        ours = cache != VK_NULL_HANDLE;
+    }
+    r = sRealCreatePipes(device, cache, count, infos, alloc, out);
+    if (ours && r == VK_SUCCESS) {
+        pthread_mutex_lock(&sCacheLock);
+        sCacheMade += count;
+        sCacheLast = now_ms();
+        pthread_cond_signal(&sCacheWake);
+        pthread_mutex_unlock(&sCacheLock);
+    }
+    return r;
+}
+
+static VkResult VKAPI_CALL create_device(VkPhysicalDevice gpu, const VkDeviceCreateInfo *info,
+                                         const VkAllocationCallbacks *alloc, VkDevice *out) {
+    VkResult r = sRealCreateDevice(gpu, info, alloc, out);
+    if (r == VK_SUCCESS && sCacheDevice == VK_NULL_HANDLE) {
+        PFN_vkGetPhysicalDeviceProperties props =
+            (PFN_vkGetPhysicalDeviceProperties)sDriverGipa(sCacheInstance, "vkGetPhysicalDeviceProperties");
+        if (props != NULL) {
+            props(gpu, &sCacheProps);
+            sCachePropsOk = 1;
+        }
+        if (sDeviceGdpa == NULL) {
+            sDeviceGdpa = (VkVoidFn(*)(void *, const char *))sDriverGipa(sCacheInstance, "vkGetDeviceProcAddr");
+        }
+        sCacheDevice = *out;
+    }
+    return r;
+}
+
+/* (an app is rarely let end its device; when it is, what is new is written first) */
+static void VKAPI_CALL destroy_device(VkDevice device, const VkAllocationCallbacks *alloc) {
+    if (device != VK_NULL_HANDLE && device == sCacheDevice) {
+        unsigned made, saved;
+        pthread_mutex_lock(&sCacheLock);
+        made = sCacheMade, saved = sCacheSaved;
+        pthread_mutex_unlock(&sCacheLock);
+        if (sCache != VK_NULL_HANDLE) {
+            if (made != saved) {
+                cache_write(made);
+            }
+            pthread_mutex_lock(&sCacheSaveLock);
+            sRealDestroyCache(device, sCache, NULL);
+            sCache = VK_NULL_HANDLE;
+            pthread_mutex_unlock(&sCacheSaveLock);
+        }
+        sCacheDevice = VK_NULL_HANDLE;
+        sCacheTried = 0;
+    }
+    sRealDestroyDevice(device, alloc);
+}
+
+/* The functions of a device this file stands between SDL and the driver for. */
+static VkVoidFn device_hook(const char *name, VkVoidFn f) {
+    if (f == NULL) {
+        return f;
+    }
+    if (sAreaOn && strcmp(name, "vkCmdBeginRenderPass") == 0) {
         sBegin = (DrBeginFn)f;
         return (VkVoidFn)begin_pass;
+    }
+    if (sCacheOn && strcmp(name, "vkCreateGraphicsPipelines") == 0) {
+        sRealCreatePipes = (PFN_vkCreateGraphicsPipelines)f;
+        return (VkVoidFn)create_pipes;
+    }
+    if (sCacheOn && strcmp(name, "vkDestroyDevice") == 0) {
+        sRealDestroyDevice = (PFN_vkDestroyDevice)f;
+        return (VkVoidFn)destroy_device;
     }
     return f;
 }
 
-static int sAreaOn;
+static VkVoidFn device_proc(void *device, const char *name) {
+    return device_hook(name, sDeviceGdpa(device, name));
+}
 
 __attribute__((visibility("default"))) VkVoidFn vkGetInstanceProcAddr(void *instance, const char *name) {
     VkVoidFn f = sDriverGipa != NULL ? sDriverGipa(instance, name) : NULL;
-    if (sAreaOn && f != NULL) {
+    if ((sAreaOn || sCacheOn) && f != NULL) {
         if (strcmp(name, "vkGetDeviceProcAddr") == 0) {
             sDeviceGdpa = (VkVoidFn(*)(void *, const char *))f;
             return (VkVoidFn)device_proc;
         }
-        if (strcmp(name, "vkCmdBeginRenderPass") == 0) {
-            sBegin = (DrBeginFn)f;
-            return (VkVoidFn)begin_pass;
+        if (sCacheOn && instance != NULL && strcmp(name, "vkCreateDevice") == 0) {
+            sCacheInstance = instance;
+            sRealCreateDevice = (PFN_vkCreateDevice)f;
+            return (VkVoidFn)create_device;
         }
+        return device_hook(name, f);
     }
     return f;
 }
 
-/* The system's driver behind vkGetInstanceProcAddr above, for the render areas (when no custom driver is loaded). */
-static void area_driver(const char *libdir) {
+/* The system's driver behind vkGetInstanceProcAddr above, for the render areas and the pipelines' cache (when no
+   custom driver is loaded: with one, custom_driver already pointed SDL here). The cache is BT3's alone for now
+   (BT4decomp's renderer was not measured with it). */
+static void vk_layer(const char *libdir) {
     char self[1100];
     void *h;
+    const char *e = getenv("BT3_VK_PIPELINE_CACHE");
     sAreaOn = getenv("BT3_VK_AREA") != NULL && atoi(getenv("BT3_VK_AREA")) != 0;
-    if (!sAreaOn || sDriverGipa != NULL) {
+    sCacheOn = e != NULL ? atoi(e) != 0 : strcmp(engine_library(), "libbt3.so") == 0;
+    if (sCacheOn) {
+        snprintf(sCachePath, sizeof(sCachePath), "vk_pipelines.%s.bin", engine_library()); /* (in the game folder) */
+    } else {
+        say("pipeline cache: off");
+    }
+    if ((!sAreaOn && !sCacheOn) || sDriverGipa != NULL) {
         return;
     }
     h = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
     sDriverGipa = h != NULL ? (VkVoidFn(*)(void *, const char *))dlsym(h, "vkGetInstanceProcAddr") : NULL;
     if (sDriverGipa == NULL) {
-        sAreaOn = 0;
-        say("render areas: no libvulkan.so");
+        sAreaOn = sCacheOn = 0;
+        say("render areas and pipeline cache: no libvulkan.so");
         return;
     }
     snprintf(self, sizeof(self), "%s/libmain.so", libdir);
@@ -719,7 +1011,7 @@ int SDL_main(int argc, char *argv[]) {
         setenv("BT3_VK_AREA", "1", 0); /* Lite mode on a Mali (GameActivity): the render areas below and in gs_gpu.c */
         say("lite mode on a Mali");
     }
-    area_driver(libdir);
+    vk_layer(libdir);
     setenv("SDL_VIDEO_DRIVER", "android", 0);
     setenv("SDL_ANDROID_TRAP_BACK_BUTTON", "1", 0); /* the back button opens the settings (gs_gpu.c), it does not end the game */
 
