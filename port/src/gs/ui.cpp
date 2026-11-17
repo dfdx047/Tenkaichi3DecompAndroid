@@ -26,6 +26,7 @@
 #include "../quit_dialog.h"
 #include "net_chat.h"
 #include "net_lobby.h"
+#include "net_bt3.h"
 #include "net_update.h"
 #include "tag_net.h"
 #include "../../include/plat_game.h"

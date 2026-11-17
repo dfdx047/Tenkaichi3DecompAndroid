@@ -39,7 +39,6 @@
 #include "net_relay.h"
 #include "net_sign.h"
 #include "net_dragon.h"
-#include "net_supabase.h"
 
 static struct {
     SDL_Mutex *lock;
@@ -469,6 +468,46 @@ int Match_HttpRequest(const char *url, const char *json, const char *const *head
     if (out == NULL || size == 0 || url == NULL) return 0;
     out[0] = '\0';
     return http_post_native(url, json, headers, out, size);
+}
+
+/* Community BT3 profile API: called only by net_bt3.c's worker, never the game loop. */
+int Match_Bt3Post(const char *url, const char *json, const char *const *headers, char *out, size_t size, int *status) {
+#ifdef __ANDROID__
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject act = (jobject)SDL_GetAndroidActivity();
+    jclass cls = NULL;
+    jmethodID m = NULL;
+    jstring ju = NULL, jb = NULL, jh = NULL, jr = NULL;
+    char head[512], *end;
+    const char *result;
+    int i, code = 0, ok = 0;
+    if (status) *status = 0;
+    if (!env || !act) return 0;
+    head[0] = '\0';
+    for (i = 0; headers && headers[i]; i++) { SDL_strlcat(head, headers[i], sizeof(head)); SDL_strlcat(head, "\n", sizeof(head)); }
+    cls = (*env)->GetObjectClass(env, act);
+    m = cls ? (*env)->GetMethodID(env, cls, "netRequestStatus", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;") : NULL;
+    if (!m) { if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env); goto done; }
+    ju = (*env)->NewStringUTF(env, url); jb = (*env)->NewStringUTF(env, json); jh = (*env)->NewStringUTF(env, head);
+    jr = (jstring)(*env)->CallObjectMethod(env, act, m, ju, jb, jh);
+    if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); goto done; }
+    if (!jr) goto done;
+    result = (*env)->GetStringUTFChars(env, jr, NULL);
+    if (!result) goto done;
+    code = (int)SDL_strtol(result, &end, 10);
+    if (end != result && *end == '\n') { SDL_strlcpy(out, end + 1, size); ok = out[0] != '\0'; }
+    (*env)->ReleaseStringUTFChars(env, jr, result);
+    if (status) *status = code;
+done:
+    if (jr) (*env)->DeleteLocalRef(env, jr); if (ju) (*env)->DeleteLocalRef(env, ju);
+    if (jb) (*env)->DeleteLocalRef(env, jb); if (jh) (*env)->DeleteLocalRef(env, jh);
+    if (cls) (*env)->DeleteLocalRef(env, cls); (*env)->DeleteLocalRef(env, act);
+    return ok;
+#else
+    int ok = Match_HttpRequest(url, json, headers, out, size);
+    if (status) *status = ok ? 200 : 0;
+    return ok;
+#endif
 }
 
 /* The build key (net_sign.c). The service checks the time a request is signed for against its own clock (five
@@ -1417,7 +1456,7 @@ void Match_Begin(int role, int sock, int localPort, const char *code, const char
     sM.code[n] = '\0';
     SDL_strlcpy(sM.queue, role == 3 ? sM.code : "", sizeof(sM.queue));
     SDL_strlcpy(sM.name, name != NULL ? name : "Player", sizeof(sM.name));
-    DrProfile_Country(sM.country, sizeof(sM.country));
+    SDL_strlcpy(sM.country, "UN", sizeof(sM.country)); /* public matchmaking metadata has no community profile dependency */
     sM.url[0] = '\0';
     if (DrNet_Mode() == 0 && SDL_getenv("BT3_MATCH_URL") == NULL) {
         if (DrRanked_Active()) {

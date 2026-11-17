@@ -430,6 +430,35 @@ open class GameActivity : SDLActivity() {
         ""
     }
 
+    /** Status preserving transport for the community profile API; called from its native worker thread. */
+    @Suppress("unused")
+    fun netRequestStatus(url: String, body: String, headers: String?): String = runCatching {
+        val c = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = 8_000
+            readTimeout = 12_000
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("User-Agent", "DragonRage-Android")
+            headers.orEmpty().lineSequence().forEach { line ->
+                val k = line.substringBefore(':', "").trim()
+                if (k.isNotEmpty()) setRequestProperty(k, line.substringAfter(':').trim())
+            }
+        }
+        try {
+            c.outputStream.use { it.write(body.toByteArray()) }
+            val code = c.responseCode
+            val stream = if (code in 200..299) c.inputStream else c.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
+            "$code\n$text"
+        } finally {
+            c.disconnect()
+        }
+    }.getOrElse {
+        android.util.Log.w("bt3", "community profile request failed: $it")
+        "0\n"
+    }
+
     /**
      * "Quit to launcher" of the in-game window (port/src/gs/ui.cpp, through JNI on the engine's thread): the launcher
      * comes forward and the game's own process ends. A game cannot be started again in the same process (the engine
