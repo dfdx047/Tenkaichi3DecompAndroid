@@ -69,7 +69,10 @@ def apply(data, edits):
     return b"".join(out)
 
 def parse(data, args):
-    tu = ci.Index.create().parse("in.i", args=args, unsaved_files=[("in.i", data.decode("latin-1"))])
+    # libclang's source offsets are UTF-8 byte offsets. Decoding as Latin-1 and
+    # passing the resulting string makes the binding re-encode non-ASCII bytes,
+    # shifting every later edit in files with UTF-8 text.
+    tu = ci.Index.create().parse("in.i", args=args, unsaved_files=[("in.i", data.decode("utf-8"))])
     errs = [d for d in tu.diagnostics if d.severity >= 3]
     if errs:
         raise RuntimeError(f"{errs[0].spelling} (line {errs[0].location.line})")
