@@ -1431,7 +1431,9 @@ joined:
 /* Starts looking: role 1 makes a room, role 2 joins room `code`. `sock` is the match's own UDP socket (not blocking),
    bound to `localPort`. */
 void Match_Begin(int role, int sock, int localPort, const char *code, const char *name, int version) {
+    int rankedSearch = DrNet_Mode() == 0 && DrRanked_Active();
     version = DrNet_WireVersion(version); /* (Dragon Net: the netcode and the simulation, net_dragon.h) */
+    if (rankedSearch) version = 6001; /* the production BT3 service's adapted version for this ranked session */
     int i, n = 0;
 
     if (sM.lock == NULL) {
@@ -1465,18 +1467,7 @@ void Match_Begin(int role, int sock, int localPort, const char *code, const char
     SDL_strlcpy(sM.country, "UN", sizeof(sM.country)); /* public matchmaking metadata has no community profile dependency */
     sM.url[0] = '\0';
     if (DrNet_Mode() == 0 && SDL_getenv("BT3_MATCH_URL") == NULL) {
-        if (DrRanked_Active()) {
-            if (DrNet_RankedUrl()[0] == '\0') {
-                SDL_LockMutex(sM.lock);
-                sM.st.state = -1;
-                SDL_strlcpy(sM.st.error, "Ranked is unavailable right now.", sizeof(sM.st.error));
-                SDL_UnlockMutex(sM.lock);
-                return;
-            }
-            SDL_strlcpy(sM.url, DrNet_RankedActiveUrl(), sizeof(sM.url));
-        } else {
-            SDL_strlcpy(sM.url, DRNET_FRIENDLY_URL, sizeof(sM.url));
-        }
+        SDL_strlcpy(sM.url, DRNET_FRIENDLY_URL, sizeof(sM.url));
     }
     sM.watchCount = 0;
     sM.watchGen++;
@@ -1962,6 +1953,18 @@ int Match_PostDragon(const char *what, const char *json, char *out, size_t size)
         DrNet_NoteResult(base, ok && out[0] == '{');
     }
     return ok;
+}
+
+/* Ranked queue and connection lifecycle share the production service and signed headers used by Amistoso. */
+int Match_PostFriendlyRanked(const char *what, const char *json, char *out, size_t size) {
+    if (what == NULL || json == NULL || out == NULL || size == 0 || DrNet_Mode() != 0 ||
+        (SDL_strcmp(what, "ranked/queue") != 0 && SDL_strcmp(what, "ranked/room") != 0 &&
+         SDL_strcmp(what, "ranked/lifecycle") != 0 && SDL_strcmp(what, "ranked/cancel") != 0)) {
+        if (out != NULL && size > 0) out[0] = '\0';
+        return 0;
+    }
+    out[0] = '\0';
+    return http_post_once(DRNET_FRIENDLY_URL, what, json, out, size);
 }
 
 /* ---- for the Tag Team mod's rooms over the internet (tag_link.c): the same questions, on its own socket ---- */

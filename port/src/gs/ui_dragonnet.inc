@@ -331,12 +331,14 @@ static const char *ranked_msg(int m) {
     case DRMSG_REGISTER_FAILED: return T("The Ranked profile could not be made.", "Não foi possível criar o perfil ranqueado.", "No se pudo registrar el perfil Ranked.");
     case DRMSG_PROFILE_FAILED: return T("The ranking could not be updated.", "Não foi possível atualizar a classificação.", "No se pudo actualizar la clasificación.");
     case DRMSG_ROOM_FAILED: return T("The ranked room could not be published.", "Não foi possível publicar a sala ranqueada.", "No se pudo publicar la sala Ranked.");
-    case DRMSG_VERSION: return T("The Dragon Net service does not take this version yet.", "O serviço Dragon Net ainda não aceita esta versão.",
-                                 "El servicio Dragon Net aún no acepta esta versión.");
+    case DRMSG_VERSION: return T("Incompatible version (409).", "Versão incompatível (409).", "Versión incompatible (409).");
     case DRMSG_UPDATED: return T("Profile updated.", "Perfil atualizado.", "Perfil actualizado.");
     case DRMSG_BUSY: return T("Too many requests: wait a moment.", "Muitos pedidos: espere um pouco.", "Demasiadas solicitudes: espera un momento.");
     case DRMSG_LIMIT: return limit_text();
     case DRMSG_BACKGROUND_TIMEOUT: return T("Ranked search canceled after 3 minutes in the background.", "Busca Ranked cancelada após 3 minutos em segundo plano.", "Búsqueda Ranked cancelada tras 3 minutos en segundo plano.");
+    case DRMSG_NO_CONNECTION: return T("No connection to the Ranked service.", "Sem conexão com o serviço Ranked.", "Sin conexión con el servicio Ranked.");
+    case DRMSG_NO_RIVAL: return T("No rival found in 3 minutes.", "Nenhum rival encontrado em 3 minutos.", "No se encontró rival en 3 minutos.");
+    case DRMSG_CANCELLED: return T("Search canceled.", "Busca cancelada.", "Búsqueda cancelada.");
     default: return "";
     }
 }
@@ -439,6 +441,7 @@ static void screen_ranked_menu(void) {
         } else {
             sRankedNameError = false;
             DrRanked_Search(sName, sRankMode);
+            sSearchSince = SDL_GetTicks();
             sFoundAt = 0;
             sLobbyLast = 0;
             goto_screen(RANKED_WAIT);
@@ -748,18 +751,26 @@ static void screen_ranked_wait(void) {
     DrRanked_Poll(&r);
     int st = sRankedLobby ? lobby_step() : 0;
     if (!sOpen) { return; }
-    if (header(T("Searching for a rival", "Buscando rival", "Buscando rival"), true) || padB() || (r.state == 0 && !r.searching) || st < 0) {
-        if (sRankedLobby && st >= 0) { Port_LobbyCancel(); }
+    bool back = header(T("Searching for a rival", "Buscando rival", "Buscando rival"), true) || padB();
+    if (back && r.searching) {
+        if (sRankedLobby && st >= 0) Port_LobbyCancel();
         sRankedLobby = false;
         DrRanked_Cancel();
+        Port_UiNotice(T("Search canceled.", "Busca cancelada.", "Búsqueda cancelada."));
+        goto_screen(RANKED_MENU, 0);
+        return;
+    }
+    if (back || (r.state == 0 && !r.searching) || st < 0) {
+        if (sRankedLobby && st >= 0) { Port_LobbyCancel(); }
+        sRankedLobby = false;
         goto_screen(RANKED_MENU, 0);
         return;
     }
     // paired: the host opens the room and tells the service its code; the other joins it once the code is there
     if (r.state == 3 && !sRankedLobby) {
         if (sFoundAt == 0) { sFoundAt = SDL_GetTicks(); }
+        rules_set(4); // dp20-bo3-v1
         if (r.role == 1) {
-            rules_set(r.mode ? 1 : 0);
             Port_LobbyStartCode(1, "");
             sRankedLobby = true;
         } else if (r.role == 2 && strlen(r.code) == 6) {
@@ -772,9 +783,31 @@ static void screen_ranked_wait(void) {
     if (sRankedLobby && r.role == 1 && Port_LobbyCode()[0] != '\0') { DrRanked_SetRoom(Port_LobbyCode()); }
     char big[64];
     SDL_strlcpy(big, r.state == 3 && r.peer[0] ? r.peer : (r.mode ? T("Team", "Equipe", "Equipos") : T("Single", "Individual", "Individual")), sizeof(big));
-    wait_card(U() * 4.6f, r.state == 3 ? T("RIVAL FOUND", "RIVAL ENCONTRADO", "RIVAL ENCONTRADO") : T("SEARCH UNDER WAY", "BUSCA EM ANDAMENTO", "BÚSQUEDA EN CURSO"),
-              big, ranked_msg(r.msg), col(1.0f, 0.86f, 0.30f));
-    footer(T("Points change when both results agree.", "Os pontos mudam quando os dois resultados batem.", "Los puntos cambian al confirmar ambos resultados."),
+    char elapsed[48];
+    Uint64 seconds = sSearchSince != 0 ? (SDL_GetTicks() - sSearchSince) / 1000 : 0;
+    SDL_snprintf(elapsed, sizeof(elapsed), T("Elapsed: %02u:%02u", "Tempo: %02u:%02u", "Tiempo: %02u:%02u"),
+                 (unsigned)(seconds / 60), (unsigned)(seconds % 60));
+    const char *note = r.msg == DRMSG_SEARCHING || r.msg == DRMSG_NO_ANSWER
+                           ? T("Waiting for a rival...", "Aguardando um rival...", "Esperando rival...")
+                           : ranked_msg(r.msg);
+    char detail[128];
+    SDL_snprintf(detail, sizeof(detail), "%s  ·  %s", elapsed, note);
+    const char *label = r.state < 0 ? T("SEARCH ENDED", "BUSCA ENCERRADA", "BÚSQUEDA FINALIZADA")
+                                    : r.state == 3 ? T("RIVAL FOUND", "RIVAL ENCONTRADO", "RIVAL ENCONTRADO")
+                                                   : T("SEARCH UNDER WAY", "BUSCA EM ANDAMENTO", "BÚSQUEDA EN CURSO");
+    wait_card(U() * 4.6f, label,
+              big, detail, col(1.0f, 0.86f, 0.30f));
+    ImGui::SetCursorScreenPos(ImVec2(sCardMin.x + U(), sCardMax.y - U() * 1.05f));
+    if (ImGui::Button(r.searching ? T("Cancel search", "Cancelar busca", "Cancelar búsqueda") : T("Back", "Voltar", "Volver"), ImVec2(U() * 7.0f, U() * 0.8f))) {
+        if (r.searching) {
+            if (sRankedLobby) Port_LobbyCancel();
+            sRankedLobby = false;
+            DrRanked_Cancel();
+            Port_UiNotice(T("Search canceled.", "Busca cancelada.", "Búsqueda cancelada."));
+        }
+        goto_screen(RANKED_MENU, 0);
+    }
+    footer(r.msg == DRMSG_VERSION ? ranked_msg(r.msg) : T("Ranked search. You can cancel at any time.", "Busca ranqueada. Você pode cancelar quando quiser.", "Búsqueda Ranked. Puedes cancelar cuando quieras."),
            "", T("B: cancel", "B: cancelar", "B: cancelar"));
 }
 

@@ -243,6 +243,7 @@ static unsigned sSearchGen;
 static char sCancelMatch[33], sRoomPending[8], sHandedOver[33];
 static char sLifeMatch[33], sStartSent[33]; /* flow:2: the match the lifecycle calls are for */
 static int sLifeReady, sLifeStarted, sLifeTries;
+static int sLifeConnect;
 /* flow:2 rematch: what the game asked for (act: 0 none, 1 status, 2 accept, 3 leave) and what the service answered
    (state: 0 none, 1 confirming, 2 choice, 3 waiting, 4 declined, 5 a new match was saved to dragonnet-next.txt). */
 static int sFlowAct, sFlowNow, sFlowTries, sFlowState;
@@ -284,6 +285,29 @@ static int post_ranked(const char *what, const char *extra, char *answer, size_t
         return 0;
     }
     if (strstr(answer, "\"error\":\"version\"") != NULL) {
+        message(DRMSG_VERSION, -1);
+        return 0;
+    }
+    return strstr(answer, "\"error\"") == NULL;
+}
+
+/* Stage C uses the Amistoso production service. Keep result and series calls on their existing transport. */
+static int post_ranked_search(const char *what, const char *extra, char *answer, size_t size) {
+    char body[1100], path[48];
+    SDL_snprintf(path, sizeof(path), "ranked/%s", what);
+    SDL_snprintf(body, sizeof(body), "{\"v\":6001,\"id\":\"%s\",\"token\":\"%s\"%s}", sId, sToken,
+                 extra != NULL ? extra : "");
+    if (!Match_PostFriendlyRanked(path, body, answer, size)) {
+        message(DRMSG_NO_CONNECTION, 99);
+        return 0;
+    }
+    if (strstr(answer, "\"error\":\"version\"") != NULL || strstr(answer, "\"http\":409") != NULL) {
+        if (SDL_strcmp(what, "queue") == 0) {
+            SDL_LockMutex(sLock);
+            sWantSearch = sView.searching = 0;
+            sView.state = -1;
+            SDL_UnlockMutex(sLock);
+        }
         message(DRMSG_VERSION, -1);
         return 0;
     }
@@ -438,7 +462,7 @@ static void update_match(const char *answer, unsigned gen) {
         if (!keep && is_hex(assigned, 32)) {
             char extra[64], ignored[512];
             SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\"", assigned);
-            post_ranked("cancel", extra, ignored, sizeof(ignored));
+            post_ranked_search("cancel", extra, ignored, sizeof(ignored));
         }
         return;
     }
@@ -446,7 +470,7 @@ static void update_match(const char *answer, unsigned gen) {
     text_value(answer, "code", sView.code, sizeof(sView.code));
     text_value(answer, "peer", sView.peer, sizeof(sView.peer));
     sView.role = number_value(answer, "role");
-    sView.flow = number_value(answer, "flow") == 2;
+    sView.flow = 2;
     sView.state = strcmp(state, "paired") == 0 ? 3 : strcmp(state, "waiting") == 0 ? 2 : 0;
     if (sView.state == 0) {
         sView.searching = sWantSearch = 0;
@@ -581,19 +605,22 @@ static void do_presence(void) {
    Sent by this thread (the game never waits for HTTP); gives up after a few failed tries. */
 static void do_lifecycle(void) {
     char match[33], answer[512], extra[96];
-    int ready, started;
+    int ready, started, connect;
     SDL_LockMutex(sLock);
     ready = sLifeReady;
     started = sLifeStarted;
+    connect = sLifeConnect;
     SDL_strlcpy(match, sLifeMatch, sizeof(match));
     SDL_UnlockMutex(sLock);
-    if ((!ready && !started) || !is_hex(match, 32)) {
+    if ((!connect && !ready && !started) || !is_hex(match, 32)) {
         return;
     }
-    SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\",\"action\":\"%s\"", match, ready ? "ready" : "started");
-    if (post_ranked("lifecycle", extra, answer, sizeof(answer)) || ++sLifeTries >= 5) {
+    SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\",\"action\":\"%s\"", match, connect ? "connect" : ready ? "ready" : "started");
+    if (post_ranked_search("lifecycle", extra, answer, sizeof(answer)) || ++sLifeTries >= 5) {
         SDL_LockMutex(sLock);
-        if (ready) {
+        if (connect) {
+            sLifeConnect = 0;
+        } else if (ready) {
             sLifeReady = 0;
         } else {
             sLifeStarted = 0;
@@ -679,7 +706,7 @@ static int SDLCALL worker(void *unused) {
     (void)unused;
     for (;;) {
         char answer[4096], extra[256], name[20], match[33], code[8], cancelled[33];
-        int refresh, search, cancel, board, mode, chat, presence, leave, urgent, i;
+        int refresh, search, cancel, board, state, chat, presence, leave, urgent, i;
         int background = gPortInBackground;
         unsigned gen;
         Uint64 now = SDL_GetTicks();
@@ -694,7 +721,7 @@ static int SDLCALL worker(void *unused) {
         board = sWantBoard && !background;
         if (board) sWantBoard = 0;
         gen = sSearchGen;
-        mode = sView.mode;
+        state = sView.state;
         SDL_strlcpy(cancelled, sCancelMatch, sizeof(cancelled));
         sCancelMatch[0] = '\0';
         SDL_strlcpy(match, sView.match, sizeof(match));
@@ -734,7 +761,7 @@ static int SDLCALL worker(void *unused) {
             }
             if (cancel && is_hex(cancelled, 32)) {
                 SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\"", cancelled);
-                post_ranked("cancel", extra, answer, sizeof(answer));
+                post_ranked_search("cancel", extra, answer, sizeof(answer));
             }
             if (pendingRefresh) {
                 SDL_snprintf(extra, sizeof(extra), ",\"name\":\"%s\"", name);
@@ -781,18 +808,31 @@ static int SDLCALL worker(void *unused) {
             if (search) {
                 if (code[0] != '\0' && is_hex(match, 32)) {
                     SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\",\"code\":\"%s\"", match, code);
-                    if (post_ranked("room", extra, answer, sizeof(answer))) {
-                        update_match(answer, gen);
+                    if (post_ranked_search("room", extra, answer, sizeof(answer))) {
+                        SDL_LockMutex(sLock);
+                        if (gen == sSearchGen && sWantSearch) SDL_strlcpy(sView.code, code, sizeof(sView.code));
+                        SDL_UnlockMutex(sLock);
                     } else {
-                        message(DRMSG_ROOM_FAILED, -1);
+                        if (sView.msg != DRMSG_VERSION && sView.msg != DRMSG_NO_CONNECTION) message(DRMSG_ROOM_FAILED, -1);
                     }
-                } else {
-                    /* (one fight per match: rematches 0. DBT-NX's rounds can come later, when both games score them) */
-                    SDL_snprintf(extra, sizeof(extra), ",\"rematches\":0,\"flow\":2,\"rules\":\"%s\"", mode ? "team3-inf-v1" : "solo-inf-v1");
-                    if (post_ranked("queue", extra, answer, sizeof(answer))) {
-                        update_match(answer, gen);
-                    } else if (sView.msg != DRMSG_VERSION && sView.msg != DRMSG_LIMIT) {
-                        message(strstr(answer, "busy") != NULL ? DRMSG_BUSY : DRMSG_NO_ANSWER, 99);
+                } else if (state != 3) {
+                    if (SDL_GetTicks() - sSearchAt >= 180000) {
+                        SDL_LockMutex(sLock);
+                        if (gen == sSearchGen && sWantSearch) {
+                            sWantSearch = sView.searching = 0;
+                            sView.state = -1;
+                            sView.msg = DRMSG_NO_RIVAL;
+                            SDL_strlcpy(sCancelMatch, sView.match, sizeof(sCancelMatch));
+                            sWantCancel = 1;
+                        }
+                        SDL_UnlockMutex(sLock);
+                    } else {
+                        SDL_snprintf(extra, sizeof(extra), ",\"rules\":\"dp20-bo3-v1\",\"flow\":2,\"rematches\":0,\"wait\":20");
+                        if (post_ranked_search("queue", extra, answer, sizeof(answer))) {
+                            update_match(answer, gen);
+                        } else if (sView.msg != DRMSG_VERSION && sView.msg != DRMSG_LIMIT && sView.msg != DRMSG_NO_CONNECTION) {
+                            message(strstr(answer, "busy") != NULL ? DRMSG_BUSY : DRMSG_NO_ANSWER, 99);
+                        }
                     }
                 }
             }
@@ -881,6 +921,7 @@ static void connection_queue(int ready) {
     SDL_LockMutex(sLock);
     if (sView.flow && is_hex(sView.match, 32)) {
         SDL_strlcpy(sLifeMatch, sView.match, sizeof(sLifeMatch));
+        sLifeConnect = 1;
         sLifeReady = 1;
         sLifeTries = 0;
     }
@@ -1077,6 +1118,10 @@ void DrRanked_Search(const char *name, int mode) {
     char m[33], d[9];
     int s;
     start(name);
+    if (DrNet_Mode() != 0) {
+        message(DRMSG_NO_CONNECTION, -1);
+        return;
+    }
     if (outbox_first(m, &s, d)) {
         message(DRMSG_FINISH_FIRST, -1);
         return;
@@ -1088,6 +1133,7 @@ void DrRanked_Search(const char *name, int mode) {
     sWantSearch = sView.searching = 1;
     sSearchAt = SDL_GetTicks();
     sView.state = 1;
+    sView.msg = DRMSG_SEARCHING;
     sView.match[0] = sView.code[0] = sView.peer[0] = sRoomPending[0] = '\0';
     sView.msg = DRMSG_SEARCHING;
     SDL_UnlockMutex(sLock);
@@ -1103,8 +1149,8 @@ void DrRanked_Cancel(void) {
     SDL_strlcpy(sCancelMatch, sView.match, sizeof(sCancelMatch));
     sSearchGen++;
     sWantSearch = sView.searching = 0;
-    sView.state = 0;
-    sView.msg = DRMSG_NONE;
+    sView.state = -1;
+    sView.msg = DRMSG_CANCELLED;
     sView.match[0] = sView.code[0] = sRoomPending[0] = '\0';
     sWantCancel = 1;
     SDL_UnlockMutex(sLock);

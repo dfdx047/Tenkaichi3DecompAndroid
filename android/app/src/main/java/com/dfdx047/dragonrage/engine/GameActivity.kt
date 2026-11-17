@@ -404,7 +404,7 @@ open class GameActivity : SDLActivity() {
             requestMethod = if (body != null) "POST" else "GET"
             doOutput = body != null
             connectTimeout = 8_000
-            readTimeout = 12_000
+            readTimeout = if (url.contains("/v1/ranked/queue")) 40_000 else 12_000
             if (body != null) setRequestProperty("Content-Type", "application/json")
             setRequestProperty("User-Agent", "DragonRage-Android")
             headers.orEmpty().lineSequence().forEach { line ->
