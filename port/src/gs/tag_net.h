@@ -42,7 +42,7 @@ void TagNet_ChoosePreset(int mode,int preset);
 int TagNet_HostMenu(void);
 int TagNet_HostPoll(void);
 int TagNet_HostChoosing(void);
-typedef struct TagLobbyRoster {int count,role,host,waiting;int member[10],ping[10];char code[8];} TagLobbyRoster;
+typedef struct TagLobbyRoster {int count,role,host,waiting;int member[10],ping[10];char code[8];int held[10];} TagLobbyRoster; /* held: seconds this player kept the room waiting in the last match */
 void TagNet_Roster(unsigned address);
 void TagLobbyRoster_Draw(int hostMenu);
 void TagNet_ReturnPractice(void);

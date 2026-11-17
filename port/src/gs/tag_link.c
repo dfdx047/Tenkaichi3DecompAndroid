@@ -83,6 +83,7 @@ typedef struct {
     uint32_t fastSeq;    /* the piece last sent again early (the other side had later ones), and when */
     Uint64 fastAt;
     int viaRelay;        /* (for the log: the way now used) */
+    int ackOwed;         /* a DATA came in and nothing has carried its acknowledgement back yet (TagLink_FlushAcks) */
 } Conn;
 
 typedef struct {
@@ -450,6 +451,7 @@ static void send_packet(Conn *c, int type, uint32_t seq, const uint8_t *data, in
     uint8_t pkt[TL_HEAD + TL_PIECE];
     uint32_t sack = 0;
     int i;
+    c->ackOwed = 0; /* (every packet carries what came in: rcvNext and sack, below) */
     for (i = 0; i < 32; i++) {
         const Piece *r = &c->rx[(c->rcvNext + 1 + (uint32_t)i) & (TL_WINDOW - 1)];
         if (r->used) {
@@ -597,6 +599,24 @@ static void take_ack(Conn *c, uint32_t ack, uint32_t sack) {
     }
 }
 
+/* The pieces that came in order, from the window into the inbox, as far as the inbox has room. Also after the game reads
+   the inbox (TagLink_Recv): run only when a DATA arrived, as before, a piece that found the inbox full stayed in the window
+   for good once the other side had nothing more to send (it had every piece acknowledged, the sack saying this side had
+   them): the stream stood still with that piece and all after it (PC harness 2026-11-15, port/tools/taglink_test with 20%
+   loss: a 300 KB echo stopped at 289 of 307 pieces, 2 runs in 29). */
+static void deliver(Conn *c) {
+    for (;;) {
+        Piece *r = &c->rx[c->rcvNext & (TL_WINDOW - 1)];
+        if (!r->used || c->inN + r->len > TL_INBOX) {
+            break;
+        }
+        SDL_memcpy(c->inbox + c->inN, r->data, (size_t)r->len);
+        c->inN += r->len;
+        r->used = 0;
+        c->rcvNext++;
+    }
+}
+
 static void take_data(Conn *c, uint32_t seq, const uint8_t *data, int len) {
     if ((int32_t)(seq - c->rcvNext) < 0 || (int32_t)(seq - c->rcvNext) >= TL_WINDOW) {
         return; /* (old: acknowledged again below; too far ahead: sent again later) */
@@ -609,16 +629,7 @@ static void take_data(Conn *c, uint32_t seq, const uint8_t *data, int len) {
             r->used = 1;
         }
     }
-    for (;;) {
-        Piece *r = &c->rx[c->rcvNext & (TL_WINDOW - 1)];
-        if (!r->used || c->inN + r->len > TL_INBOX) {
-            break;
-        }
-        SDL_memcpy(c->inbox + c->inN, r->data, (size_t)r->len);
-        c->inN += r->len;
-        r->used = 0;
-        c->rcvNext++;
-    }
+    deliver(c);
 }
 
 /* One packet of the room (from the socket, or from the relay: tag_link_relay below), from `from`. */
@@ -696,7 +707,13 @@ static void take_packet(uint8_t *pkt, int len, TlAddr from) {
         take_ack(c, get32(pkt + 13), get32(pkt + 17));
         if (type == T_DATA && c->state == TK_LINK_OPEN) {
             take_data(c, get32(pkt + 9), pkt + TL_HEAD, dlen);
-            send_packet(c, T_ACK, 0, NULL, 0, NULL);
+            /* Acknowledged by the next packet that goes to this connection, whatever it is: every header carries rcvNext
+               and sack. A bare ACK for each DATA, as before, doubled the packets: a host of ten received ~1,650 a second,
+               half of them these ACKs, and every guest sent one per piece it got (PC harness, 2026-11-15: -48% packets
+               received by the host, -40% sent by a guest, same speed and retransmissions). The ACK still goes alone when
+               nothing else went out by the end of tag_net.c's pump (TagLink_FlushAcks), so it is never later than before
+               by more than that pump's own sending. */
+            c->ackOwed = 1;
         }
     }
 }
@@ -1370,6 +1387,7 @@ void TagLink_Pump(void) {
     if (!L.active || L.sock < 0) {
         return;
     }
+    TagLink_FlushAcks(); /* (owed since the last pump and not flushed by its caller: never left behind) */
     receive();
     if (!SDL_GetAtomicInt(&L.busy)) {
         if (Relay_Active()) {
@@ -1379,6 +1397,17 @@ void TagLink_Pump(void) {
         timers();
     } else if (SDL_GetAtomicInt(&sAllocating)) {
         timers(); /* (pieces lost meanwhile go again; the relay's own upkeep waits for the allocation) */
+    }
+}
+
+/* The acknowledgements still owed (a DATA came in, nothing went back to that connection since): a bare ACK each. Called at
+   the end of tag_net.c's pump, after its own sending, which carries most of them for nothing. */
+void TagLink_FlushAcks(void) {
+    int i;
+    for (i = 0; i < TL_SLOTS; i++) {
+        if (L.conn[i].state == TK_LINK_OPEN && L.conn[i].ackOwed && L.sock >= 0) {
+            send_packet(&L.conn[i], T_ACK, 0, NULL, 0, NULL);
+        }
     }
 }
 
@@ -1435,6 +1464,13 @@ int TagLink_Recv(int slot, void *out, int max) {
     SDL_memcpy(out, c->inbox, (size_t)n);
     SDL_memmove(c->inbox, c->inbox + n, (size_t)(c->inN - n));
     c->inN -= n;
+    {
+        uint32_t before = c->rcvNext;
+        deliver(c); /* (room again: pieces that waited in the window for it) */
+        if (c->rcvNext != before) {
+            c->ackOwed = 1; /* (the other side hears of them at the end of this pump: TagLink_FlushAcks) */
+        }
+    }
     return n;
 }
 

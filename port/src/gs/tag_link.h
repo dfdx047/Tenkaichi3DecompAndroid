@@ -20,6 +20,7 @@ void TagLink_Stop(void);
 int TagLink_Active(void);
 /* Once a frame (with the room's sockets): packets in and out, the relay, the routers opened. */
 void TagLink_Pump(void);
+void TagLink_FlushAcks(void); /* the end of a pump: the acknowledgements nothing carried back yet */
 /* The owner: a player's new connection (its slot), -1 none. */
 int TagLink_Accept(void);
 int TagLink_State(int slot);

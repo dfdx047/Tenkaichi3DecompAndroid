@@ -81,7 +81,16 @@ static int partyEnabled=-1,pendingMode=-1,chosenMode=-1,pendingPractice;
 static int hostMenu,chosenPreset,pendingPreset;
 static Uint64 coordinatorClock,coordinatorLoadStart,lastRoster;
 static unsigned coordinatorLogged;
-static int rosterMask,rosterPing[TN_PLAYERS];
+static int rosterMask,rosterPing[TN_PLAYERS],rosterHeld[TN_PLAYERS];
+/* Who held the room (the player whose inputs were furthest behind while this copy waited for them): holdMs all match long,
+   shown in the lobby's roster after it (rosterHeld, seconds; a guest gets the host's through TN_ROSTER). holdBucket counts
+   only the stalls, waits of HOLD_STALL_MS or more, with 200 ms a second taken away: a player whose game or connection keeps
+   stopping fills it (a 2026-11-15 tournament: one guest held a 4-player match for waits of 0.6 to 7.6 s, 18% speed for
+   nearly a minute, without ever being 10 s silent, drop_stalled's rule), a player who is only far never does. Counting
+   every wait, a guest 210 ms away in a room of fast phones (PC harness: 275 ms a second of short waits at the host, the
+   longest 344 ms) was let go after a minute or two, for living far away. */
+enum { HOLD_LEAK_DIV=5, HOLD_DROP_MS=6000, HOLD_STALL_MS=500 };
+static unsigned holdMs[TN_PLAYERS],holdBucket[TN_PLAYERS];static Uint64 holdLeakAt;
 static void finish_room(void);
 static void coordinator(void);
 static void send_packet(Peer *,int,const void *,unsigned);
@@ -207,7 +216,7 @@ int TagNet_HostChoosing(void) {return hostMenu && practiceEnd!=0;}
 void TagNet_Roster(unsigned address) {
     TagLobbyRoster r;int i;memset(&r,0,sizeof(r));r.role=role;r.host=host;r.waiting=practiceEnd!=0;
     for(i=0;i<TN_PLAYERS;i++)if((host?partyRoom.members[i].present:rosterMask&(1<<i))) {
-        r.member[r.count]=i;r.ping[r.count]=rosterPing[i];r.count++;
+        r.member[r.count]=i;r.ping[r.count]=rosterPing[i];r.held[r.count]=host?(int)(holdMs[i]/1000):rosterHeld[i];r.count++;
     }
     memcpy((void *)(uintptr_t)address,&r,sizeof(r));
 }
@@ -1110,7 +1119,7 @@ static void handle(Peer *p,int type,const unsigned char *data,unsigned n) {
         send_packet(p,TN_RANDCALLS_DATA,out,16+c*4);
     } else if(type==TN_RANDCALLS_DATA && n>=16) {
         unsigned f=get32(data),cnt=get32(data+4),start=get32(data+8),c=get32(data+12),i,first=~0u;RandFrame *r=rand_find(f);
-        if(n!=16+c*4)return;
+        if(c>RL_CHUNK || n!=16+c*4)return; /* (c*4 wrapped around for a c from a broken packet) */
         if(r) {
             unsigned mine=r->count<RL_CALLS?r->count:RL_CALLS;
             for(i=start;i<start+c;i++)if(i>=mine || r->addr[i]!=get32(data+16+(i-start)*4)){first=i;break;}
@@ -1146,8 +1155,8 @@ static void handle(Peer *p,int type,const unsigned char *data,unsigned n) {
         unsigned elapsed=(unsigned)(SDL_GetTicks()-p->pingSent);
         if(elapsed<15000)p->ping=p->ping<0?(int)elapsed:(p->ping*3+(int)elapsed)/4;
         p->pingSent=0;
-    } else if(type==TN_ROSTER && !host && n==4+4*TN_PLAYERS) {
-        rosterMask=get32(data)&1023;for(i=0;i<TN_PLAYERS;i++)rosterPing[i]=(int)get32(data+4+4*i);
+    } else if(type==TN_ROSTER && !host && n==4+8*TN_PLAYERS) {
+        rosterMask=get32(data)&1023;for(i=0;i<TN_PLAYERS;i++){rosterPing[i]=(int)get32(data+4+4*i);rosterHeld[i]=(int)SDL_min(get32(data+4+4*TN_PLAYERS+4*i),99999u);}
     } else if(type==TN_SCORES && host && hostMenu && n==8+12*TL_MEMBERS && get32(data)==roundId) {
         int authority=1,k;for(k=1;k<p->role;k++)if(partyRoom.members[k].present)authority=0;
         if(authority && get32(data+4)<=frame+ROLLBACK)for(k=0;k<TL_MEMBERS;k++) {
@@ -1156,6 +1165,7 @@ static void handle(Peer *p,int type,const unsigned char *data,unsigned n) {
     } else if(type==TN_PEERS && !host && n==8) {
         roomSpectators=(int)get32(data);roomMask=(int)get32(data+4);
     } else if(type==TN_LEAVE && !host && config.party && n==4 && get32(data)==1)peer_lost(p,"The host removed you from the lobby.");
+    else if(type==TN_LEAVE && !host && config.party && n==4 && get32(data)==2)peer_lost(p,"Your game kept the others waiting too long. A CPU took your fighter.");
     else if(type==TN_LEAVE && n==0)peer_lost(p,"A player left. The match has stopped.");
 }
 static void pump(void) {
@@ -1165,10 +1175,10 @@ static void pump(void) {
         for(i=0;i<PEERS;i++)if(peers[i].hello){peers[i].pingToken++;peers[i].pingSent=lastPing;put32(b,peers[i].pingToken);send_packet(&peers[i],TN_PING,b,4);}
     }
     if(host && config.party && SDL_GetTicks()-lastRoster>1000) {
-        unsigned char b[4+4*TN_PLAYERS];int mask=0;
-        lastRoster=SDL_GetTicks();for(i=0;i<TN_PLAYERS;i++){if(partyRoom.members[i].present)mask|=1<<i;rosterPing[i]=i? -1:0;}
+        unsigned char b[4+8*TN_PLAYERS];int mask=0;
+        lastRoster=SDL_GetTicks();for(i=0;i<TN_PLAYERS;i++){if(partyRoom.members[i].present)mask|=1<<i;rosterPing[i]=i? -1:0;rosterHeld[i]=(int)(holdMs[i]/1000);}
         for(i=0;i<PEERS;i++)if(peers[i].hello && peers[i].role<TN_PLAYERS)rosterPing[peers[i].role]=peers[i].ping;
-        put32(b,mask);for(i=0;i<TN_PLAYERS;i++)put32(b+4+4*i,rosterPing[i]);broadcast(TN_ROSTER,b,sizeof(b),NULL);
+        put32(b,mask);for(i=0;i<TN_PLAYERS;i++){put32(b+4+4*i,rosterPing[i]);put32(b+4+4*TN_PLAYERS+4*i,(unsigned)rosterHeld[i]);}broadcast(TN_ROSTER,b,sizeof(b),NULL);
     }
     TagLink_Pump();
     if(listener!=TN_BAD) {
@@ -1269,6 +1279,7 @@ static void pump(void) {
         if(n>0)p->off+=(unsigned)n;
         if(p->off==p->tn)p->off=p->tn=0;
     }
+    TagLink_FlushAcks(); /* (tag_link.c: what came in and went back with nothing above gets its bare ACK now) */
 }
 /* A room's code (six digits) rather than an address. */
 static int online_code(const char *a) {
@@ -1553,7 +1564,7 @@ int TagNet_Room(void) {
        an empty seat reads as the same neutral pad without its stream (TagNet_Input). */
     {int p;matchMask=1u;for(p=1;p<TN_PLAYERS;p++)if(config.lobby.members[p].present)matchMask|=1u<<p;}
     for(i=0;i<=DELAY;i++) {int p;for(p=0;p<TN_PLAYERS;p++)if(input_mask()&(1u<<p))input_take(p,i,idle);}
-    localDelay=choose_delay();clockSlowed=0;
+    localDelay=choose_delay();clockSlowed=0;memset(holdMs,0,sizeof(holdMs));memset(holdBucket,0,sizeof(holdBucket));holdLeakAt=0;
     if(localDelay>DELAY && (input_mask()&(1u<<role))) {
         /* (the blanks up to the new delay: neutral, sent with the first inputs) */
         for(i=DELAY+1;i<=localDelay;i++)input_take(role,(unsigned)i,idle);
@@ -1744,6 +1755,24 @@ static int drop_stalled(void) {
     if(n)fill_departed();
     return n;
 }
+/* A wait of this copy for `who`'s inputs, `ms` long (see holdMs). The host's party match: a guest whose bucket is full
+   is let go as drop_stalled does (their fighter becomes a CPU, the same blank on every copy: member_event), and told why. */
+static void hold_add(int who,unsigned ms) {
+    Uint64 now=SDL_GetTicks();int q;
+    if(holdLeakAt){unsigned leak=(unsigned)((now-holdLeakAt)/HOLD_LEAK_DIV);for(q=0;q<TN_PLAYERS;q++)holdBucket[q]=holdBucket[q]>leak?holdBucket[q]-leak:0;}
+    holdLeakAt=now;
+    if(who<0 || who>=TN_PLAYERS)return;
+    holdMs[who]+=ms;if(ms>=HOLD_STALL_MS)holdBucket[who]+=ms;
+    if(!host || !config.party || config.practice || phase!=4 || who<=0 || holdBucket[who]<HOLD_DROP_MS || (disconnectedMask&(1u<<who)) || getenv("BT3_TAG_KEEP_SLOW"))return;
+    for(q=0;q<PEERS;q++)if(peers[q].hello && peers[q].role==who) {
+        unsigned char reason[4];
+        fprintf(stderr,"tagnet: player %d held the match %u ms in all (%u ms lately, last wait %u ms): let go, a CPU takes their fighter\n",who+1,holdMs[who],holdBucket[who],ms);
+        put32(reason,2);send_packet(&peers[q],TN_LEAVE,reason,4);pump();
+        if(peers[q].hello && peers[q].role==who)peer_lost(&peers[q],"Input from a player stopped arriving. Match stopped.");
+        holdBucket[who]=0;fill_departed();say("A player kept the others waiting too long. A CPU took their fighter.");
+        break;
+    }
+}
 /* ---- the room's pace (roomPace) ----
    Each player's phone measures what it can run: its working time per blank over about two seconds, without the
    time it slept on the clock or waited for the others' inputs (rollbacks are work, they count), as a percent of the
@@ -1871,6 +1900,10 @@ void TagNet_Tick(unsigned blank) {
                reads "waiting for the other player", which counted only the 1v1's waits and showed Tag Team's as 0) */
             extern uint64_t gPortNetWaitNs;
             Uint64 waitFrom=SDL_GetTicksNS();
+            /* (who held the match: the one furthest behind when the wait began. Taken after it, a player let go during the
+               wait (10 s without inputs) left the whole wait to the next one, who was let go in turn: a 2026-11-16 match) */
+            int blocker=-1;unsigned blockerHad=0;
+            {unsigned m0=input_mask(),lo0=~0u;int q0;for(q0=0;q0<TN_PLAYERS;q0++)if((m0&(1u<<q0)) && have[q0]<lo0){lo0=have[q0];blocker=q0;}blockerHad=lo0;}
             while(phase!=5 && !aborted && frame>=confirmed()+((role==TN_OBSERVER || (lateJoining && !local_produces(frame)))?0:ROLLBACK)) {
                 pump();commands();fill_departed();
                 if(SDL_GetTicks()-since>10000){if(drop_stalled()){since=SDL_GetTicks();continue;}stop_match("Input from a player stopped arriving. Match stopped.");}
@@ -1881,11 +1914,10 @@ void TagNet_Tick(unsigned blank) {
                 Uint64 took=SDL_GetTicksNS()-waitFrom;
                 static unsigned told;
                 gPortNetWaitNs+=took;tagWaitNs+=took;
-                if(took>=100000000ull && told<300) { /* (who held the match: the player whose inputs are furthest behind) */
-                    unsigned mask=input_mask(),low=~0u;int who=-1,q;
-                    for(q=0;q<TN_PLAYERS;q++)if((mask&(1u<<q)) && have[q]<low){low=have[q];who=q;}
-                    told++;
-                    fprintf(stderr,"tagnet: waited %u ms at frame %u for player %d's inputs (they had %u)\n",(unsigned)(took/1000000ull),frame,who+1,low);
+                if(took>=2000000ull) { /* (charged to that player, unless they were let go during the wait: nobody then) */
+                    int still=blocker>=0 && (input_mask()&(1u<<blocker)) && !(disconnectedMask&(1u<<blocker));
+                    if(took>=100000000ull && told<300){told++;fprintf(stderr,"tagnet: waited %u ms at frame %u for player %d's inputs (they had %u)%s\n",(unsigned)(took/1000000ull),frame,blocker+1,blockerHad,still?"":" (let go during the wait: not charged)");}
+                    if(role!=TN_OBSERVER && still)hold_add(blocker,(unsigned)(took/1000000ull));
                 }
             }
         }

@@ -416,12 +416,14 @@ static void lobby(void) {
         Tk_Box(18,84,236,382,0);
         sprintf(label,Port_TagText("PLAYERS  %d/10"),r.count);text(127,92,label,.8f,200,1);
         for(k=0;k<r.count && k<10;k++) {
-            f32 y=116+k*26;s32 me=r.member[k]==r.role;
-            if(!r.member[k])sprintf(label,Port_TagText("P1  -  Host"));
-            else if(r.ping[k]<0)sprintf(label,"P%d  -  ...",r.member[k]+1);
-            else sprintf(label,"P%d  -  %d ms",r.member[k]+1,r.ping[k]);
+            f32 y=116+k*26;s32 me=r.member[k]==r.role,n;
+            if(!r.member[k])n=sprintf(label,Port_TagText("P1  -  Host"));
+            else if(r.ping[k]<0)n=sprintf(label,"P%d  -  ...",r.member[k]+1);
+            else n=sprintf(label,"P%d  -  %d ms",r.member[k]+1,r.ping[k]);
+            /* (and how long this player kept the room waiting in the last match, tag_net.c holdMs) */
+            if(r.member[k] && r.held[k]>0){n+=sprintf(label+n,"  -  ");sprintf(label+n,Port_TagText("held %d s"),r.held[k]);}
             Tk_Bar(30,y,224,y+23,me);
-            text(127,Ps_TextTop(y+11.5f,.62f),label,.62f,184,me?1:r.ping[k]>=150?2:0);
+            text(127,Ps_TextTop(y+11.5f,.62f),label,.62f,184,me?1:r.ping[k]>=150 || r.held[k]>=5?2:0);
         }
         Tk_Box(250,84,494,300,0);
         Tk_Ring(cx,cy,rad+14+Tk_Wave(64,0)*0.12f,255,200,90,48+Tk_Wave(64,0)); /* (the ring breathes) */

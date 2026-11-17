@@ -908,3 +908,6 @@ After a match the host chooses: rematch, character select or game modes.	Tras el
 The host can remove a CPU fighter with Square.	El anfitrión puede quitar un luchador de la CPU con Cuadrado.
 Connected. The host is choosing a mode.	Conectado. El anfitrión está eligiendo el modo.
 Choose a mode for the lobby.	Elige un modo para la sala.
+held %d s	frenó %d s
+Your game kept the others waiting too long. A CPU took your fighter.	Tu juego hizo esperar demasiado a los demás. La CPU tomó tu luchador.
+A player kept the others waiting too long. A CPU took their fighter.	Un jugador hizo esperar demasiado a los demás. La CPU tomó su luchador.

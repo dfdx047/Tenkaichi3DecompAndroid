@@ -31,9 +31,12 @@ void TagLobbyRoster_Draw(int hostMenu) {
     if(hostMenu)Tk_Box(340,y-14,504,y+34+(r.count<1?1:r.count)*14,0);
     Ps_Text(422,y,hostMenu?"CONNECTED":"PLAYERS / PING TO HOST",hostMenu?.60f:.49f,156,1);
     for(i=0;i<r.count;i++) {
-        if(!r.member[i])sprintf(line,Port_TagText("P1  -  Host"));
-        else if(r.ping[i]<0)sprintf(line,"P%d  -  ...",r.member[i]+1);
-        else sprintf(line,"P%d  -  %d ms",r.member[i]+1,r.ping[i]);
+        int n;
+        if(!r.member[i])n=sprintf(line,Port_TagText("P1  -  Host"));
+        else if(r.ping[i]<0)n=sprintf(line,"P%d  -  ...",r.member[i]+1);
+        else n=sprintf(line,"P%d  -  %d ms",r.member[i]+1,r.ping[i]);
+        /* (and how long this player kept the room waiting in the last match: who to remove before a tournament's next one) */
+        if(r.member[i] && r.held[i]>0){n+=sprintf(line+n,"  -  ");sprintf(line+n,Port_TagText("held %d s"),r.held[i]);}
         Ps_Text(422,y+16+i*14,line,.59f,156,r.member[i]==r.role || (hostMenu && r.member[i]==selectedGuest)?1:3);
     }
     if(hostMenu)Ps_Text(422,y+20+r.count*14,selectedGuest>=0?"SQUARE - REMOVE / TRIANGLE - BACK":"R3 - MANAGE PLAYERS",.45f,156,3);
