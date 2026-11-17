@@ -85,6 +85,7 @@ static int SDLCALL worker(void *unused) {
     (void)unused;
     for(;;) {
         int open,save,board; char name[33],flag[3];
+        status=0;
         lock_make(); SDL_LockMutex(sLock);
         while(!sOpen&&!sSave&&!sBoard)SDL_WaitCondition(sWake,sLock);
         open=sOpen; save=sSave; board=sBoard; sOpen=sSave=sBoard=0;
@@ -134,6 +135,11 @@ static int SDLCALL worker(void *unused) {
                 sView.board_count=count;sView.board_state=2;sView.error=0;SDL_UnlockMutex(sLock);
             } else fail(status,answer,1);
         } else if(board) { SDL_LockMutex(sLock);sView.board_count=0;sView.board_state=2;sView.position=0;SDL_UnlockMutex(sLock); }
+        if(board) {
+            SDL_LockMutex(sLock);
+            SDL_Log("BT3 leaderboard http=%d board_state=%d rows=%d",status,sView.board_state,sView.board_count);
+            SDL_UnlockMutex(sLock);
+        }
     }
     return 0;
 }

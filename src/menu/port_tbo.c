@@ -1162,7 +1162,7 @@ static void Tb_RankedUpdate(s32 live) {
         }
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
-        Tb_ReturnToMenu();
+        Tb_SetMode(TB_HUB);
     }
 }
 
@@ -1218,7 +1218,7 @@ static void Tb_RankedWaitUpdate(s32 live) {
         }
         sTb->rkLobby = 0;
         DrRanked_Cancel();
-        Tb_SetMode(TB_RANKED);
+        Tb_SetMode(TB_HUB);
     }
 }
 
@@ -1344,7 +1344,11 @@ static void Tb_SubmenuUpdate(s32 live) {
             Tb_SetMode(TB_JOIN);
         }
     } else if (sTb->subTab == HUB_RANKED) {
-        Tb_Note(Tb_Soon());
+        sTb->rkCur = RK_SEARCH;
+        sTb->rkLobby = 0;
+        sTb->found = 0;
+        sTb->waitFrom = sTb->frames;
+        Tb_SetMode(TB_RANKED);
     } else if (sTb->subTab == HUB_LEADERBOARD) {
         sTbCommunityBoard = 1;
         Bt3Profile_Save(Port_NetNameGet(), sTbFlags[sTbCommunityFlag]);
@@ -4312,7 +4316,9 @@ static char *Tb_Help(void) {
     case TB_WAIT:
         return sTb->found ? "Here we go! The match is starting!" : "Looking for a worthy challenger... Warm up in Training meanwhile!";
     case TB_BLOCK:
-        return "Sorry! Quick match is for the game straight off the disc. Modded? Play your friends in a lobby!";
+        if (sTb->lang == 1) return "Busca rápida exige os dados originais do disco. Com modificações, jogue com amigos numa sala.";
+        if (sTb->lang == 2) return "La búsqueda rápida exige los datos originales del disco. Con modificaciones, juega con amigos en una sala.";
+        return "Quick match requires the original disc data. With modifications, play friends in a lobby.";
     case TB_SPAR:
         return "Warm up at the tournament while we search! Pick yourself and a sparring partner.";
     case TB_QUICK:
