@@ -96,10 +96,10 @@ static int SDLCALL worker(void *unused) {
         }
         if((open||save)&&id[0]) {
             quote(name,qname,sizeof(qname)); quote(flag,qflag,sizeof(qflag));
-            SDL_snprintf(extra,sizeof(extra),",\"name\":\"%s\",\"flag\":\"%.2s\"",qname,flag);
+            SDL_snprintf(extra,sizeof(extra),",\"name\":\"%s\",\"flag\":\"%.2s\"",qname,qflag);
             if(authenticated(id,token,"ranked/profile",extra,answer,sizeof(answer),&status)) {
                 SDL_LockMutex(sLock); SDL_strlcpy(sView.username,name,sizeof(sView.username));SDL_strlcpy(sView.flag,flag,sizeof(sView.flag));
-                sView.rating=value_int(answer,"rating");sView.wins=value_int(answer,"wins");sView.losses=value_int(answer,"losses");
+                sView.rating=value_int(answer,"rating");sView.wins=value_int(answer,"wins");sView.losses=value_int(answer,"losses");sView.draws=value_int(answer,"draws");
                 sView.position=value_int(answer,"position");value_string(answer,"flag",sView.flag,sizeof(sView.flag));value_string(answer,"rank",sView.rank,sizeof(sView.rank));
                 sView.state=2;sView.error=0;SDL_UnlockMutex(sLock);
             } else fail(status,answer,0);
@@ -108,7 +108,17 @@ static int SDLCALL worker(void *unused) {
             int count=0; const char *p;
             if(authenticated(id,token,"ranked/leaderboard","",answer,sizeof(answer),&status)) {
                 int me=value_int(answer,"position");
-                const char *meobj=SDL_strstr(answer,"\"me\":{"); if(meobj)me=value_int(meobj,"position");
+                const char *meobj=SDL_strstr(answer,"\"me\":{");
+                if(meobj) {
+                    me=value_int(meobj,"position");
+                    SDL_LockMutex(sLock);
+                    value_string(meobj,"name",sView.username,sizeof(sView.username));
+                    value_string(meobj,"flag",sView.flag,sizeof(sView.flag));
+                    value_string(meobj,"rank",sView.rank,sizeof(sView.rank));
+                    sView.rating=value_int(meobj,"rating");sView.wins=value_int(meobj,"wins");
+                    sView.losses=value_int(meobj,"losses");sView.draws=value_int(meobj,"draws");
+                    SDL_UnlockMutex(sLock);
+                }
                 p=SDL_strstr(answer,"\"rows\":["); if(p)p=SDL_strchr(p,'[')+1;
                 SDL_LockMutex(sLock);sView.position=me;sView.board_count=0;
                 while(p && count<10 && (p=SDL_strchr(p,'{'))!=NULL) {
@@ -118,7 +128,8 @@ static int SDLCALL worker(void *unused) {
                     if(!sView.board_flag[count][0])value_string(row,"country",sView.board_flag[count],sizeof(sView.board_flag[count]));
                     value_string(row,"name",sView.board_name[count],sizeof(sView.board_name[count]));
                     value_string(row,"rank",sView.board_rank[count],sizeof(sView.board_rank[count]));
-                    sView.board_rating[count]=value_int(row,"rating");sView.board_position[count]=value_int(row,"position");count++;p=end+1;
+                    sView.board_rating[count]=value_int(row,"rating");sView.board_position[count]=value_int(row,"position");
+                    sView.board_wins[count]=value_int(row,"wins");sView.board_losses[count]=value_int(row,"losses");count++;p=end+1;
                 }
                 sView.board_count=count;sView.board_state=2;sView.error=0;SDL_UnlockMutex(sLock);
             } else fail(status,answer,1);

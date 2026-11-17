@@ -282,6 +282,7 @@ extern void Port_SettingSave(const char *name, int value);
 extern void Port_SettingsWrite(void);
 #include "../../port/src/gs/net_lobby.h" /* the lobby (Port_LobbyView, Port_LobbyDo ...): plain C, its view has no pointers */
 #include "../../port/src/gs/net_dragon.h" /* Dragon Net: against whom (DrNet_Mode), Ranked (DrRanked_*), players online */
+#include "../../port/src/gs/net_bt3.h" /* community profile and world leaderboard, serviced off-thread */
 
 /* the screens */
 #define TB_HUB 0
@@ -427,6 +428,11 @@ typedef struct TboScreen {
 
 static TboScreen *sTb;
 static PortLobbyView sTbLv; /* (the lobby's page: what it shows this frame) */
+static Bt3Profile sTbCommunity;
+static s32 sTbCommunityBoard;
+static s32 sTbCommunityFlag;
+static s32 sTbOptionsName;
+static const char *sTbFlags[] = {"BR", "AR", "CL", "MX", "US", "JP", "ES", "PT", "PE"};
 static s32 sTbBgKind;  /* what the search left open for "Train While Waiting" is: 0 joining a code, 2 a quick match */
 static s32 sTbBgQueue;
 static s32 sTbBgFrames; /* how long it had been searching when the sparring fight began; the sign counts on from it */
@@ -573,6 +579,8 @@ static void Tb_LoadChoices(void) {
 
     Tb_LangSet(lang >= 0 ? lang : Port_Setting("dr_lang", 0));
     sTb->battle = Port_Setting("tbo_battle", 0);
+    sTbCommunityFlag = Port_Setting("bt3_flag", 0);
+    if (sTbCommunityFlag < 0 || sTbCommunityFlag > 8) sTbCommunityFlag = 0;
     sTb->rkMode = Port_Setting("tbo_rank_mode", 0) != 0;
     sTb->time = Port_Setting("tbo_time", 3);
     sTb->delay = Port_Setting("net_delay2", -1);
@@ -1164,10 +1172,11 @@ static void Tb_BoardUpdate(s32 live) {
     }
     if (pad->gamePressed & PADG_CROSS) {
         Snd_PlaySe(1, 1);
-        DrRanked_Board();
+        if (sTbCommunityBoard) Bt3Profile_Board(); else DrRanked_Board();
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
-        Tb_SetMode(TB_RANKED);
+        if (sTbCommunityBoard) { sTbCommunityBoard = 0; Tb_SetMode(TB_HUB); }
+        else Tb_SetMode(TB_RANKED);
     }
 }
 
@@ -1277,9 +1286,24 @@ static void Tb_SubmenuUpdate(s32 live) {
     } else if (sTb->subTab == HUB_RANKED) {
         Tb_Note(Tb_Soon());
     } else if (sTb->subTab == HUB_LEADERBOARD) {
-        Tb_Note(Tb_Soon());
+        sTbCommunityBoard = 1;
+        Bt3Profile_Save(Port_NetNameGet(), sTbFlags[sTbCommunityFlag]);
+        Bt3Profile_Board();
+        Tb_SetMode(TB_BOARD);
     } else {
-        Tb_Note(Tb_Soon());
+        if (sTb->subCur == 0) {
+            sTbOptionsName = 1;
+            Ps_Copy(sTb->typed, Port_NetNameGet(), sizeof(sTb->typed));
+            sTb->typedLen = Ps_Len(sTb->typed);
+            sTb->keyRow = sTb->keyCol = 0;
+            Tb_SetMode(TB_NAME);
+        } else {
+            sTbCommunityFlag = (sTbCommunityFlag + 1) % (s32)(sizeof(sTbFlags) / sizeof(sTbFlags[0]));
+            Port_SettingSave("bt3_flag", sTbCommunityFlag);
+            Port_SettingsWrite();
+            Bt3Profile_Save(Port_NetNameGet(), sTbFlags[sTbCommunityFlag]);
+            sTb->subCur = 0;
+        }
     }
 }
 
@@ -1741,12 +1765,15 @@ static void Tb_NameUpdate(s32 live) {
         if (sTb->typedLen > 0) {
             Port_NetNameSave(sTb->typed);
             Tb_Note("SAVED: YOUR RIVALS WILL SEE THIS NAME");
+            if (sTbOptionsName) Bt3Profile_Save(sTb->typed, sTbFlags[sTbCommunityFlag]);
         }
         Snd_PlaySe(1, 1);
-        Tb_SetMode(TB_PROFILE);
+        if (sTbOptionsName) { sTbOptionsName = 0; sTb->subTab = HUB_PROFILE; sTb->subCur = 1; Tb_SetMode(TB_SUBMENU); }
+        else Tb_SetMode(TB_PROFILE);
     } else if (done == -1) {
         Snd_PlaySe(1, 2);
-        Tb_SetMode(TB_PROFILE);
+        if (sTbOptionsName) { sTbOptionsName = 0; sTb->subTab = HUB_PROFILE; sTb->subCur = 0; Tb_SetMode(TB_SUBMENU); }
+        else Tb_SetMode(TB_PROFILE);
     }
 }
 
@@ -1957,7 +1984,7 @@ static const char *Tb_SubmenuLabel(s32 tab, s32 row) {
     static const char *const labels[3][3][3] = {
         {{"Quick Match", "Partida rápida", "Partida rápida"}, {"Create Room", "Crear sala", "Crear sala"}, {"Join with Code", "Unirse con código", "Unirse con código"}},
         {{"Find Rival", "Buscar rival", "Buscar rival"}, {"", "", ""}, {"", "", ""}},
-        {{"Username", "Nome de usuário", "Nombre de usuario"}, {"Flag", "Bandeira", "Bandera"}, {"", "", ""}}
+        {{"Username", "Username", "Username"}, {"Flag", "Flag", "Flag"}, {"", "", ""}}
     };
     s32 group = tab == HUB_FRIENDLY || tab == HUB_TAG ? 0 : tab == HUB_RANKED ? 1 : 2;
     return labels[group][row][sTb->lang];
@@ -1989,6 +2016,16 @@ static void Tb_DrawSubmenuText(void) {
     for (i = 0; i < count; i++) {
         f32 y = y0 + (f32)i * TB_ROW + TB_ROW_H * 0.5f;
         Ps_Text(34.0f, Ps_TextTop(y, 0.9f), (char *)Tb_SubmenuLabel(sTb->subTab, i), 0.9f, 236.0f, i == sTb->subCur ? 1 : 0);
+        if (sTb->subTab == HUB_PROFILE && i == 1) {
+            Ps_Align(2);
+            Ps_Text(282.0f, Ps_TextTop(y, 0.72f), (char *)sTbFlags[sTbCommunityFlag], 0.72f, 70.0f, i == sTb->subCur ? 1 : 3);
+            Ps_Align(0);
+        }
+        if (sTb->subTab == HUB_PROFILE && i == 0) {
+            Ps_Align(2);
+            Ps_Text(282.0f, Ps_TextTop(y, 0.62f), (char *)Port_NetNameGet(), 0.62f, 120.0f, i == sTb->subCur ? 1 : 3);
+            Ps_Align(0);
+        }
     }
 }
 
@@ -2093,8 +2130,8 @@ static void Tb_DrawBoard(void) {
     s32 i;
 
     Tb_RaditzBust(0.0f);
-    Ps_Panel(TBO_KIT_WINDOW, 8.0f, TB_BOARD_Y - 8.0f, 306.0f, TB_BOARD_Y + TB_BOARD_ROW * 9.0f + 6.0f, 0x80);
-    for (i = 0; i < 9; i++) {
+    Ps_Panel(TBO_KIT_WINDOW, 8.0f, TB_BOARD_Y - 8.0f, 306.0f, TB_BOARD_Y + TB_BOARD_ROW * (sTbCommunityBoard ? 10.0f : 9.0f) + 6.0f, 0x80);
+    for (i = 0; i < (sTbCommunityBoard ? 10 : 9); i++) {
         f32 y = TB_BOARD_Y + TB_BOARD_ROW * (f32)i;
 
         Ps_Pill(TBO_KIT_BAR, 18.0f, y, 296.0f, y + TB_BOARD_ROW - 3.0f, i % 2 ? 0x60 : 0x80);
@@ -2105,9 +2142,27 @@ static void Tb_DrawBoardText(void) {
     static char line[48];
     s32 i;
 
-    if (sTbRk.board != 2) {
+    if (sTbCommunityBoard && sTbCommunity.board_state != 2) {
+        Ps_Text(30.0f, Ps_TextTop(TB_BOARD_Y + TB_BOARD_ROW * 0.5f - 1.5f, 0.7f), sTbCommunity.board_state == 1 ? "Updating the ranking..." : "The ranking did not answer: X tries again.", 0.7f, 260.0f, 0);
+        return;
+    }
+    if (!sTbCommunityBoard && sTbRk.board != 2) {
         Ps_Text(30.0f, Ps_TextTop(TB_BOARD_Y + TB_BOARD_ROW * 0.5f - 1.5f, 0.7f), sTbRk.board == 1 ? "Updating the ranking..." : "The ranking did not answer: X tries again.",
                 0.7f, 260.0f, 0);
+        return;
+    }
+    if (sTbCommunityBoard) {
+        for (i = 0; i < 10 && i < sTbCommunity.board_count; i++) {
+            f32 mid = TB_BOARD_Y + TB_BOARD_ROW * (f32)i + TB_BOARD_ROW * 0.5f - 1.5f;
+            sprintf(line, "%d.", sTbCommunity.board_position[i] ? sTbCommunity.board_position[i] : i + 1);
+            Ps_Text(26.0f, Ps_TextTop(mid, 0.7f), line, 0.7f, 30.0f, i == 0 ? 2 : 0);
+            Ps_Text(54.0f, Ps_TextTop(mid, 0.62f), sTbCommunity.board_flag[i], 0.62f, 34.0f, i == 0 ? 2 : 0);
+            Ps_Text(88.0f, Ps_TextTop(mid, 0.7f), sTbCommunity.board_name[i], 0.7f, 130.0f, i == 0 ? 2 : 0);
+            sprintf(line, Tb_Fmt("%d %dW/%dL"), sTbCommunity.board_rating[i], sTbCommunity.board_wins[i], sTbCommunity.board_losses[i]);
+            Ps_Align(2); Ps_Text(302.0f, Ps_TextTop(mid, 0.58f), line, 0.58f, 104.0f, 3); Ps_Align(0);
+        }
+        sprintf(line, Tb_Fmt("Your position: %d  %dW / %dL"), sTbCommunity.position, sTbCommunity.wins, sTbCommunity.losses);
+        Ps_Text(28.0f, Ps_TextTop(345.0f, 0.58f), line, 0.58f, 240.0f, 2);
         return;
     }
     for (i = 0; i < 9 && i < sTbRk.boardCount; i++) {
@@ -4108,13 +4163,10 @@ static char *Tb_Help(void) {
             return "Search for a rival.";
         }
         if (sTb->hubCur == HUB_LEADERBOARD) {
-            if (sTb->lang == 1) return "Próximamente.";
-            if (sTb->lang == 2) return "Próximamente.";
-            return "Coming soon.";
+            return "World top 10 and your position.";
         }
         if (sTb->hubCur == HUB_PROFILE) {
-            if (sTb->lang == 1) return "Nome de usuário e bandeira.";
-            if (sTb->lang == 2) return "Nombre de usuario y bandera.";
+            return "Username and flag.";
         }
         if (sTb->hubCur == HUB_VS) { /* against whom, and how many are online there */
             static char line[160];
@@ -4137,6 +4189,8 @@ static char *Tb_Help(void) {
             if (sTb->lang == 2) return "Elige una opción para jugar en línea.";
             return "Choose how to play online.";
         }
+        if (sTb->subTab == HUB_PROFILE) return "Change your username or flag.";
+        if (sTb->subTab == HUB_LEADERBOARD) return "World top 10 and your position.";
         if (sTb->lang == 1) return "Próximamente.";
         if (sTb->lang == 2) return "Próximamente.";
         return "Coming soon.";
@@ -4740,6 +4794,7 @@ s32 PortTbo_Run(void) {
         if (sTb->mode >= TB_RANKED || sTb->rkLobby) {
             DrRanked_Poll(&sTbRk);
         }
+        Bt3Profile_Poll(&sTbCommunity);
         switch (sTb->mode) {
         case TB_HUB:
             Tb_HubUpdate(live);

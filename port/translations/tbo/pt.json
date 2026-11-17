@@ -1770,6 +1770,38 @@
     "tbo/441": {
       "original": "Back to the Lobby",
       "text": "Voltar ao Lobby"
+    },
+    "tbo/442": {
+      "original": "Options",
+      "text": "Opções"
+    },
+    "tbo/443": {
+      "original": "Username",
+      "text": "Nome de usuário"
+    },
+    "tbo/444": {
+      "original": "Flag",
+      "text": "Bandeira"
+    },
+    "tbo/445": {
+      "original": "World top 10 and your position.",
+      "text": "Top 10 mundial e sua posição."
+    },
+    "tbo/446": {
+      "original": "Username and flag.",
+      "text": "Nome de usuário e bandeira."
+    },
+    "tbo/447": {
+      "original": "Change your username or flag.",
+      "text": "Mude seu nome de usuário ou bandeira."
+    },
+    "tbo/448": {
+      "original": "Your position: %d  %dW / %dL",
+      "text": "Sua posição: %d  %dV / %dD"
+    },
+    "tbo/449": {
+      "original": "%d %dW/%dL",
+      "text": "%d %dV/%dD"
     }
   }
 }

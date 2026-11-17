@@ -8,10 +8,10 @@ extern "C" {
 typedef struct Bt3Profile {
     int state;       /* 0 idle, 1 loading/saving, 2 loaded, -1 connection/server/version error */
     int board_state; /* 0 idle, 1 loading, 2 loaded, -1 failed */
-    int board_count, position, rating, wins, losses;
+    int board_count, position, rating, wins, losses, draws;
     char username[33], flag[3], rank[32];
     char board_flag[10][3], board_name[10][33], board_rank[10][32];
-    int board_rating[10], board_position[10];
+    int board_rating[10], board_position[10], board_wins[10], board_losses[10];
     int error;       /* 1 no connection, 2 server error, 3 incompatible protocol */
 } Bt3Profile;
 

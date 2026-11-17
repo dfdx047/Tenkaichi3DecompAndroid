@@ -529,6 +529,14 @@ LINES = {
     "Continue": ("Continuar", "Continuar"),
     "View: ": ("Câmera: ", "Cámara: "),
     "Back to the Lobby": ("Voltar ao Lobby", "Volver al Lobby"),
+    "Options": ("Opções", "Opciones"),
+    "Username": ("Nome de usuário", "Nombre de usuario"),
+    "Flag": ("Bandeira", "Bandera"),
+    "World top 10 and your position.": ("Top 10 mundial e sua posição.", "Top 10 mundial y tu posición."),
+    "Username and flag.": ("Nome de usuário e bandeira.", "Nombre de usuario y bandera."),
+    "Change your username or flag.": ("Mude seu nome de usuário ou bandeira.", "Cambia tu nombre de usuario o bandera."),
+    "Your position: %d  %dW / %dL": ("Sua posição: %d  %dV / %dD", "Tu posición: %d  %dV / %dD"),
+    "%d %dW/%dL": ("%d %dV/%dD", "%d %dV/%dD"),
 }
 
 # Lines that are not words to translate: keys of the settings, the keypads' rows, names and codes.
