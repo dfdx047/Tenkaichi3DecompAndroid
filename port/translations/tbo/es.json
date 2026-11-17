@@ -1796,10 +1796,142 @@
       "text": "Cambia tu nombre de usuario o bandera."
     },
     "tbo/448": {
+      "original": "Choose a flag",
+      "text": "Elige una bandera"
+    },
+    "tbo/449": {
+      "original": "No flag",
+      "text": "Sin bandera"
+    },
+    "tbo/450": {
+      "original": "Peru",
+      "text": "Perú"
+    },
+    "tbo/451": {
+      "original": "Mexico",
+      "text": "México"
+    },
+    "tbo/452": {
+      "original": "Argentina",
+      "text": "Argentina"
+    },
+    "tbo/453": {
+      "original": "Chile",
+      "text": "Chile"
+    },
+    "tbo/454": {
+      "original": "Colombia",
+      "text": "Colombia"
+    },
+    "tbo/455": {
+      "original": "Venezuela",
+      "text": "Venezuela"
+    },
+    "tbo/456": {
+      "original": "Ecuador",
+      "text": "Ecuador"
+    },
+    "tbo/457": {
+      "original": "Bolivia",
+      "text": "Bolivia"
+    },
+    "tbo/458": {
+      "original": "Paraguay",
+      "text": "Paraguay"
+    },
+    "tbo/459": {
+      "original": "Uruguay",
+      "text": "Uruguay"
+    },
+    "tbo/460": {
+      "original": "Spain",
+      "text": "España"
+    },
+    "tbo/461": {
+      "original": "United States",
+      "text": "Estados Unidos"
+    },
+    "tbo/462": {
+      "original": "Brazil",
+      "text": "Brasil"
+    },
+    "tbo/463": {
+      "original": "Costa Rica",
+      "text": "Costa Rica"
+    },
+    "tbo/464": {
+      "original": "Panama",
+      "text": "Panamá"
+    },
+    "tbo/465": {
+      "original": "Guatemala",
+      "text": "Guatemala"
+    },
+    "tbo/466": {
+      "original": "Honduras",
+      "text": "Honduras"
+    },
+    "tbo/467": {
+      "original": "El Salvador",
+      "text": "El Salvador"
+    },
+    "tbo/468": {
+      "original": "Nicaragua",
+      "text": "Nicaragua"
+    },
+    "tbo/469": {
+      "original": "Cuba",
+      "text": "Cuba"
+    },
+    "tbo/470": {
+      "original": "Dominican Republic",
+      "text": "Rep. Dominicana"
+    },
+    "tbo/471": {
+      "original": "Puerto Rico",
+      "text": "Puerto Rico"
+    },
+    "tbo/472": {
+      "original": "Canada",
+      "text": "Canadá"
+    },
+    "tbo/473": {
+      "original": "United Kingdom",
+      "text": "Reino Unido"
+    },
+    "tbo/474": {
+      "original": "France",
+      "text": "Francia"
+    },
+    "tbo/475": {
+      "original": "Germany",
+      "text": "Alemania"
+    },
+    "tbo/476": {
+      "original": "Italy",
+      "text": "Italia"
+    },
+    "tbo/477": {
+      "original": "Portugal",
+      "text": "Portugal"
+    },
+    "tbo/478": {
+      "original": "Japan",
+      "text": "Japón"
+    },
+    "tbo/479": {
+      "original": "Iraq",
+      "text": "Irak"
+    },
+    "tbo/480": {
+      "original": "Philippines",
+      "text": "Filipinas"
+    },
+    "tbo/481": {
       "original": "Your position: %d  %dW / %dL",
       "text": "Tu posición: %d  %dV / %dD"
     },
-    "tbo/449": {
+    "tbo/482": {
       "original": "%d %dW/%dL",
       "text": "%d %dV/%dD"
     }

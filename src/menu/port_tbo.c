@@ -301,7 +301,8 @@ extern void Port_SettingsWrite(void);
 #define TB_RKWAIT 13 /* Ranked: searching for a rival, then the room the service pairs the two in */
 #define TB_BOARD 14  /* Ranked: the best fighters */
 #define TB_SUBMENU 15
-#define TB_MODES 16
+#define TB_MODES 18
+#define TB_FLAGS 17
 #define TB_FIGHTERS 161
 #define TB_TOURNAMENT_STAGE 4 /* the World Tournament Stage, at noon */
 
@@ -358,6 +359,7 @@ typedef struct TboScreen {
     s32 hubAction;      /* the choice inside the selected tab */
     s32 subCur;         /* selected row in the active tab's page */
     s32 subTab;         /* tab whose page is open */
+    s32 flagTop;        /* first visible row in the flag picker */
     s32 tagAvailable;   /* re-read from the launcher switch when the hub opens */
     f32 hubY;           /* where the hub's cursor plate is drawn: it glides */
     s32 lang;           /* the screens' language: 0 English, 1 Portuguese, 2 Spanish (setting tbo_lang) */
@@ -432,7 +434,8 @@ static Bt3Profile sTbCommunity;
 static s32 sTbCommunityBoard;
 static s32 sTbCommunityFlag;
 static s32 sTbOptionsName;
-static const char sTbFlags[][3] = {"BR", "AR", "CL", "MX", "US", "JP", "ES", "PT", "PE"};
+static const char sTbFlags[][3] = {"", "PE", "MX", "AR", "CL", "CO", "VE", "EC", "BO", "PY", "UY", "ES", "US", "BR", "CR", "PA", "GT", "HN", "SV", "NI", "CU", "DO", "PR", "CA", "GB", "FR", "DE", "IT", "PT", "JP", "IQ", "PH"};
+static const char sTbLegacyFlags[][3] = {"BR", "AR", "CL", "MX", "US", "JP", "ES", "PT", "PE"};
 static s32 sTbBgKind;  /* what the search left open for "Train While Waiting" is: 0 joining a code, 2 a quick match */
 static s32 sTbBgQueue;
 static s32 sTbBgFrames; /* how long it had been searching when the sparring fight began; the sign counts on from it */
@@ -447,6 +450,51 @@ static char *Tb_Fmt(char *format) {
 
     k = (k + 1) & 3;
     return Port_TrLine(format, buf[k], 160) ? buf[k] : format;
+}
+
+static const char *Tb_FlagName(s32 flag) {
+    switch (flag) {
+    case 0: return "No flag";
+    case 1: return "Peru";
+    case 2: return "Mexico";
+    case 3: return "Argentina";
+    case 4: return "Chile";
+    case 5: return "Colombia";
+    case 6: return "Venezuela";
+    case 7: return "Ecuador";
+    case 8: return "Bolivia";
+    case 9: return "Paraguay";
+    case 10: return "Uruguay";
+    case 11: return "Spain";
+    case 12: return "United States";
+    case 13: return "Brazil";
+    case 14: return "Costa Rica";
+    case 15: return "Panama";
+    case 16: return "Guatemala";
+    case 17: return "Honduras";
+    case 18: return "El Salvador";
+    case 19: return "Nicaragua";
+    case 20: return "Cuba";
+    case 21: return "Dominican Republic";
+    case 22: return "Puerto Rico";
+    case 23: return "Canada";
+    case 24: return "United Kingdom";
+    case 25: return "France";
+    case 26: return "Germany";
+    case 27: return "Italy";
+    case 28: return "Portugal";
+    case 29: return "Japan";
+    case 30: return "Iraq";
+    default: return "Philippines";
+    }
+}
+
+static s32 Tb_FlagLegacyIndex(s32 flag) {
+    s32 i;
+    for (i = 0; i < (s32)(sizeof(sTbLegacyFlags) / sizeof(sTbLegacyFlags[0])); i++) {
+        if (sTbFlags[flag][0] == sTbLegacyFlags[i][0] && sTbFlags[flag][1] == sTbLegacyFlags[i][1]) return i;
+    }
+    return 0;
 }
 
 static char sTbHubName[HUB_ITEMS][40] = {"Combate amistoso", "Combate Tag Team", "Combate clasificatorio", "Top mundial", "Opções",
@@ -579,8 +627,20 @@ static void Tb_LoadChoices(void) {
 
     Tb_LangSet(lang >= 0 ? lang : Port_Setting("dr_lang", 0));
     sTb->battle = Port_Setting("tbo_battle", 0);
-    sTbCommunityFlag = Port_Setting("bt3_flag", 0);
-    if (sTbCommunityFlag < 0 || sTbCommunityFlag > 8) sTbCommunityFlag = 0;
+    sTbCommunityFlag = Port_Setting("tbo_flag_index", -1);
+    if (sTbCommunityFlag < 0 || sTbCommunityFlag >= 32) {
+        s32 legacy = Port_Setting("bt3_flag", -1);
+        s32 i;
+        sTbCommunityFlag = 0;
+        if (legacy >= 0 && legacy < 9) {
+            for (i = 0; i < 32; i++) {
+                if (sTbFlags[i][0] == sTbLegacyFlags[legacy][0] && sTbFlags[i][1] == sTbLegacyFlags[legacy][1]) {
+                    sTbCommunityFlag = i;
+                    break;
+                }
+            }
+        }
+    }
     sTb->rkMode = Port_Setting("tbo_rank_mode", 0) != 0;
     sTb->time = Port_Setting("tbo_time", 3);
     sTb->delay = Port_Setting("net_delay2", -1);
@@ -1298,13 +1358,35 @@ static void Tb_SubmenuUpdate(s32 live) {
             sTb->keyRow = sTb->keyCol = 0;
             Tb_SetMode(TB_NAME);
         } else {
-            sTbCommunityFlag = (sTbCommunityFlag + 1) % (s32)(sizeof(sTbFlags) / sizeof(sTbFlags[0]));
-            Port_SettingSave("bt3_flag", sTbCommunityFlag);
-            Port_SettingsWrite();
-            Bt3Profile_Save(Port_NetNameGet(), sTbFlags[sTbCommunityFlag]);
-            sTb->subCur = 0;
+            sTb->subCur = sTbCommunityFlag;
+            sTb->flagTop = sTbCommunityFlag > 6 ? sTbCommunityFlag - 6 : 0;
+            Tb_SetMode(TB_FLAGS);
         }
     }
+}
+
+static void Tb_FlagUpdate(s32 live) {
+    Pad *pad = &gPad[0];
+    Ps_Prompt(0, "Select"); Ps_Prompt(2, "Back");
+    if (!live) return;
+    if (Ps_Move(&sTb->subCur, 32)) Snd_PlaySe(1, 0);
+    if (sTb->subCur < sTb->flagTop) sTb->flagTop = sTb->subCur;
+    if (sTb->subCur >= sTb->flagTop + 7) sTb->flagTop = sTb->subCur - 6;
+    if (pad->gamePressed & PADG_TRIANGLE) {
+        Snd_PlaySe(1, 2);
+        sTb->subCur = 1;
+        Tb_SetMode(TB_SUBMENU);
+        return;
+    }
+    if (!(pad->gamePressed & PADG_CROSS)) return;
+    Snd_PlaySe(1, 1);
+    sTbCommunityFlag = sTb->subCur;
+    Port_SettingSave("tbo_flag_index", sTbCommunityFlag);
+    Port_SettingSave("bt3_flag", Tb_FlagLegacyIndex(sTbCommunityFlag));
+    Port_SettingsWrite();
+    Bt3Profile_Save(Port_NetNameGet(), sTbFlags[sTbCommunityFlag]);
+    sTb->subCur = 1;
+    Tb_SetMode(TB_SUBMENU);
 }
 
 /* ---------------------------------------------------------------------------------------------- New Lobby */
@@ -2017,8 +2099,10 @@ static void Tb_DrawSubmenuText(void) {
         f32 y = y0 + (f32)i * TB_ROW + TB_ROW_H * 0.5f;
         Ps_Text(34.0f, Ps_TextTop(y, 0.9f), (char *)Tb_SubmenuLabel(sTb->subTab, i), 0.9f, 236.0f, i == sTb->subCur ? 1 : 0);
         if (sTb->subTab == HUB_PROFILE && i == 1) {
+            char flag[64];
+            sprintf(flag, "%s  %s", sTbFlags[sTbCommunityFlag][0] ? sTbFlags[sTbCommunityFlag] : "--", Tb_Fmt((char *)Tb_FlagName(sTbCommunityFlag)));
             Ps_Align(2);
-            Ps_Text(282.0f, Ps_TextTop(y, 0.72f), (char *)sTbFlags[sTbCommunityFlag], 0.72f, 70.0f, i == sTb->subCur ? 1 : 3);
+            Ps_Text(282.0f, Ps_TextTop(y, 0.62f), flag, 0.62f, 180.0f, i == sTb->subCur ? 1 : 3);
             Ps_Align(0);
         }
         if (sTb->subTab == HUB_PROFILE && i == 0) {
@@ -2027,6 +2111,30 @@ static void Tb_DrawSubmenuText(void) {
             Ps_Align(0);
         }
     }
+}
+
+static void Tb_DrawFlags(void) {
+    s32 i;
+    Ps_Panel(TBO_KIT_WINDOW, 8.0f, 82.0f, 306.0f, 300.0f, 0x80);
+    for (i = 0; i < 7; i++) {
+        s32 flag = sTb->flagTop + i;
+        f32 y = 106.0f + (f32)i * 26.0f;
+        char line[64];
+        if (flag >= 32) break;
+        sprintf(line, "%s  %s%s", sTbFlags[flag][0] ? sTbFlags[flag] : "--", Tb_Fmt((char *)Tb_FlagName(flag)), flag == sTbCommunityFlag ? "  *" : "");
+        Ps_Text(28.0f, Ps_TextTop(y, 0.68f), line, 0.68f, 258.0f, flag == sTb->subCur ? 1 : flag == sTbCommunityFlag ? 5 : 0);
+    }
+    {
+        char pos[24];
+        sprintf(pos, "%d / 32", (int)sTb->subCur + 1);
+        Ps_Text(296.0f, Ps_TextTop(294.0f, 0.48f), pos, 0.48f, 60.0f, 3);
+    }
+}
+
+static void Tb_DrawFlagsText(void) {
+    Ps_Align(1);
+    Ps_Text(157.0f, Ps_TextTop(68.0f, 0.64f), Tb_Fmt("Choose a flag"), 0.64f, 280.0f, 2);
+    Ps_Align(0);
 }
 
 static char *sTbCreateLabel[CR_COUNT] = {"Open Lobby", "Host by Address"};
@@ -4259,7 +4367,7 @@ static char *Tb_Help(void) {
 /* Each page's title (by TB_ mode), as its heading shows it and the screen reader says it. */
 static char *sTbTitle[TB_MODES] = {"Dragon Net Online", "New Lobby", "Join", "Searching", "Profile", "Profile", "Quick Match",
                                    "Train While Waiting", "Dragon Net Online", "Lobby", "Tournament", "Join by Address", "Ranked", "Searching",
-                                   "Ranking", "Online"};
+                                   "Ranking", "Online", "Flag", "Flag"};
 
 /* ---- the screen reader (port/src/gs/a11y.c; silent unless the player has it on). The game's own screens are read
    from their state by port/src/a11y_game.c; these pages say what they show themselves: the page's title as it opens,
@@ -4574,6 +4682,9 @@ static void Tb_Draw(void) {
     case TB_SUBMENU:
         Tb_DrawSubmenu();
         break;
+    case TB_FLAGS:
+        Tb_DrawFlags();
+        break;
     case TB_CREATE:
         Tb_DrawCreate();
         break;
@@ -4646,6 +4757,9 @@ static void Tb_DrawText(void) {
         break;
     case TB_SUBMENU:
         Tb_DrawSubmenuText();
+        break;
+    case TB_FLAGS:
+        Tb_DrawFlagsText();
         break;
     case TB_CREATE:
         Tb_DrawCreateText();
@@ -4801,6 +4915,9 @@ s32 PortTbo_Run(void) {
             break;
         case TB_SUBMENU:
             Tb_SubmenuUpdate(live);
+            break;
+        case TB_FLAGS:
+            Tb_FlagUpdate(live);
             break;
         case TB_RANKED:
             Tb_RankedUpdate(live);
