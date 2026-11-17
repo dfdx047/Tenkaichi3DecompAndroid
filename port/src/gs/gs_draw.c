@@ -285,6 +285,40 @@ typedef struct Tex {
 static uint64_t sTexBytes; /* the cache's textures' sizes, together */
 static Tex sTex[MAX_TEX];
 static uint16_t sTexBucket[TEX_BUCKETS]; /* index + 1 of a cache entry, 0 = empty (open addressing) */
+
+/* TEX_LRU_BEGIN (free of the rest of this file: it was tested on its own, frame by frame against the old rule, 2026-11-16:
+   reloads halved where the textures used outgrow the cache, the same where they fit, never one of this frame dropped)
+   A full cache still full once the textures unused for two seconds are gone: which to give up. Before, every texture
+   not used in this very frame went: when what the screen uses within two seconds is more than the cache holds (a
+   texture pack's large replacements, ten fighters), nearly all of it was dropped and read back and decoded again at
+   once, frame after frame (a 2026-11-09 log: 42,550 replacements loaded from a pack of 18,710 files, about 85 a second,
+   stalls of 110-250 ms). Now the least recently used go first, until the cache is down to 7/8 of each limit (room for
+   the next ones without a sweep every frame); one this frame uses never goes. drop[i] = 1: give up t[i]. */
+static const Tex *sLruTex;
+static int tex_lru_cmp(const void *a, const void *b) {
+    unsigned x = sLruTex[*(const int *)a].last, y = sLruTex[*(const int *)b].last;
+    return x < y ? -1 : x > y ? 1 : *(const int *)a - *(const int *)b;
+}
+static void tex_lru_pick(const Tex *t, int count, unsigned now, uint64_t bytes, uint64_t capBytes, int capCount, uint8_t *drop) {
+    static int order[MAX_TEX];
+    int n = 0, i, left = count;
+    uint64_t wantBytes = capBytes - capBytes / 8;
+    int wantCount = capCount - capCount / 8;
+    for (i = 0; i < count; i++) {
+        drop[i] = 0;
+        if (t[i].last != now) {
+            order[n++] = i;
+        }
+    }
+    sLruTex = t;
+    qsort(order, (size_t)n, sizeof(order[0]), tex_lru_cmp);
+    for (i = 0; i < n && (left > wantCount || bytes > wantBytes); i++) {
+        drop[order[i]] = 1;
+        bytes -= t[order[i]].bytes;
+        left--;
+    }
+}
+/* TEX_LRU_END */
 static Tex *sLast; /* the entry the previous lookup returned */
 
 /* The 256-colour tables as textures, by their entries (64 slots): found by a hash, taken only if every entry is the
@@ -1234,12 +1268,23 @@ static GsTex texture_get(int ctx) {
     }
     if (gsTexCount >= TEX_CAP || sTexBytes > TEX_BYTES_CAP) {
         /* full (by count, or by size: a texture pack's replacements are large): drop everything not used for two
-           seconds (or, failing that, not used this frame) in one sweep */
+           seconds; failing that, the least recently used ones (tex_lru_pick), never one this frame uses */
         unsigned keep = gGsFrame > 120 ? gGsFrame - 120 : 0;
-        int pass, n;
-        for (pass = 0; pass < 2 && (gsTexCount >= TEX_CAP || sTexBytes > TEX_BYTES_CAP); pass++, keep = gGsFrame) {
+        int n;
+        for (n = 0, i = 0; i < (uint32_t)gsTexCount; i++) {
+            if (sTex[i].last >= keep) {
+                sTex[n++] = sTex[i];
+            } else {
+                sBackend->texDestroy(sTex[i].tex);
+                sTexBytes -= sTex[i].bytes;
+            }
+        }
+        gsTexCount = n;
+        if (gsTexCount >= TEX_CAP || sTexBytes > TEX_BYTES_CAP) {
+            static uint8_t drop[MAX_TEX];
+            tex_lru_pick(sTex, gsTexCount, gGsFrame, sTexBytes, TEX_BYTES_CAP, TEX_CAP, drop);
             for (n = 0, i = 0; i < (uint32_t)gsTexCount; i++) {
-                if (sTex[i].last >= keep) {
+                if (!drop[i]) {
                     sTex[n++] = sTex[i];
                 } else {
                     sBackend->texDestroy(sTex[i].tex);
