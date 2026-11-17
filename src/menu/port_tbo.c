@@ -304,19 +304,15 @@ extern void Port_SettingsWrite(void);
 #define TB_TOURNAMENT_STAGE 4 /* the World Tournament Stage, at noon */
 
 /* the hub's modes, in the order of the list */
-#define HUB_QUICK 0
-#define HUB_RANKED 1
-#define HUB_LOBBY 2
-#define HUB_JOIN 3
-#define HUB_FRIENDS 4
-#define HUB_TOURNAMENT 5
-#define HUB_REPLAYS 6
-#define HUB_LEADERBOARD 7
-#define HUB_PROFILE 8
-#define HUB_COUNT 9
-#define HUB_LANG 9  /* the language of these screens: a small row above the list */
-#define HUB_VS 10   /* against whom: Android + Switch (Dragon Net's service) or the PC (the PC port's) */
-#define HUB_ITEMS 11
+#define HUB_FRIENDLY 0
+#define HUB_TAG 1
+#define HUB_RANKED 2
+#define HUB_LEADERBOARD 3
+#define HUB_PROFILE 4
+#define HUB_COUNT 5
+#define HUB_LANG 5  /* global TBO controls stay above the tabs */
+#define HUB_VS 6
+#define HUB_ITEMS 7
 
 /* Ranked's rows */
 #define RK_BATTLE 0
@@ -357,6 +353,8 @@ typedef struct TboScreen {
     s32 oldTold;        /* the hosts said that this release is below the service's minimum */
     char sayLine[256];
     s32 hubCur;         /* the item under the cursor (HUB_*) */
+    s32 hubAction;      /* the choice inside the selected tab */
+    s32 tagAvailable;   /* re-read from the launcher switch when the hub opens */
     f32 hubY;           /* where the hub's cursor plate is drawn: it glides */
     s32 lang;           /* the screens' language: 0 English, 1 Portuguese, 2 Spanish (setting tbo_lang) */
     /* the rules a new lobby begins with: the last ones its owner set on a lobby's page (kept in the settings) */
@@ -442,12 +440,10 @@ static char *Tb_Fmt(char *format) {
     return Port_TrLine(format, buf[k], 160) ? buf[k] : format;
 }
 
-static char *sTbHubName[HUB_ITEMS] = {"Quick Match", "Ranked", "Lobby", "Join", "Friends", "Tournament", "Replays", "Leaderboard", "Profile",
+static char *sTbHubName[HUB_ITEMS] = {"Combate amistoso", "Combate Tag Team", "Combate clasificatorio", "Clasificacion", "Opciones",
                                      "Language", "Play Against"};
-static const s32 sTbHubReady[HUB_ITEMS] = {1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1};
-/* What the hub lists, top to bottom: the language and against whom, then what can be played. Friends, Tournament,
-   Replays and Leaderboard need more of the matchmaking service than it has: not listed until they do. */
-static const s32 sTbHubOrder[] = {HUB_LANG, HUB_VS, HUB_QUICK, HUB_RANKED, HUB_LOBBY, HUB_JOIN, HUB_PROFILE};
+static const s32 sTbHubReady[HUB_ITEMS] = {1, 1, 1, 1, 1, 1, 1};
+static const s32 sTbHubOrder[] = {HUB_LANG, HUB_VS, HUB_FRIENDLY, HUB_TAG, HUB_RANKED, HUB_LEADERBOARD, HUB_PROFILE};
 #define HUB_SMALL 2 /* the rows above the list (the language, against whom): small, changed with left / right */
 #define HUB_ROWS ((s32)(sizeof(sTbHubOrder) / sizeof(sTbHubOrder[0])))
 static s32 Tb_HubRow(s32 item) {
@@ -464,20 +460,24 @@ static s32 Tb_HubRow(s32 item) {
 static char *sTbLangName[3] = {"ENGLISH", "PORTUGU\xC3\x8AS", "ESPA\xC3\x91OL"}; /* (UTF-8 in escapes: the build reads the file as ASCII) */
 static char *sTbLangCode[3] = {"en", "pt", "es"};
 static char *sTbHubSay[HUB_ITEMS] = {
-    "Fight whoever is searching right now! No time limit, and you can train while you wait.",
-    "Fights for Elo points against Android and Switch players. Points change when both results agree.",
-    "A lobby for your friends: up to eight, your rules, rematches, spectators and tournaments!",
-    "Got a lobby's code? Type it in to join, to play or to watch! By Address joins by the owner's address.",
-    "Your rivals, who is online, and invites. That one is coming soon!",
-    "The Tenkaichi Budokai itself: brackets of 4 to 16 players. That one is coming soon!",
-    "Your last matches, saved to watch again. That one is coming soon!",
-    "The strongest in the world, among your friends, and with each fighter. Coming soon!",
-    "The name your rivals see.",
+    "Partida rapida, crear una sala privada o unirse con codigo.",
+    "Activa el mod Tag Team en el launcher.",
+    "Buscar rival (proximamente).",
+    "Top 10 mundial. Tu posicion aparecera aqui.",
+    "Tu nombre de usuario y bandera.",
     "Choose the language of these screens. Left and right change it.",
     "Choose who you play against: Android and Switch, or the PC.",
 };
 /* against whom, as the row writes it (not translated: names) */
 static char *sTbVsName[2] = {"ANDROID + SWITCH", "PC"};
+static const char *sTbTabAction[HUB_COUNT][3] = {
+    {"Partida rapida", "Crear sala", "Unirse con codigo"},
+    {"Partida rapida", "Crear sala", "Unirse con codigo"},
+    {"Buscar rival", "", ""},
+    {"Mundo", "", ""},
+    {"Nombre y bandera", "", ""},
+};
+static const s32 sTbTabActionCount[HUB_COUNT] = {3, 3, 1, 1, 1};
 static void Tb_LobbyOpen(void);
 static void Tb_LobbyCreate(s32 byCode);
 /* Quick Match's Region: what the player chooses, and what the matchmaking service is told (port/matchmaking/worker.js:
@@ -523,6 +523,10 @@ static void Tb_Say(const char *line) {
 }
 
 static void Tb_SetMode(s32 mode) {
+    if (mode == TB_HUB) {
+        extern s32 Port_TagAvailable(void);
+        sTb->tagAvailable = Port_TagAvailable();
+    }
     sTb->typing = mode == TB_JOIN || mode == TB_NAME || mode == TB_ADDR; /* the keyboard types on a keypad (elsewhere I is triangle ...) */
     Port_TextMode(sTb->typing);
     if (sTb->mode != mode) { /* (the page that is up again, as when the rival comes on the search: it does not come in anew) */
@@ -1166,28 +1170,33 @@ static void Tb_HubUpdate(s32 live) {
         Tb_Say("Update available. Online servers are unreachable until you update.");
     }
 
-    Ps_Prompt(0, small ? "Change" : "Enter");
+    Ps_Prompt(0, small ? "Change" : "Select");
+    Ps_Prompt(3, "Change");
     Ps_Prompt(2, "Back");
     if (!live) {
         return;
     }
     if (Ps_Move(&row, HUB_ROWS)) {
         sTb->hubCur = sTbHubOrder[row];
+        if (sTb->hubCur < HUB_COUNT) sTb->hubAction = 0;
         small = sTb->hubCur == HUB_LANG || sTb->hubCur == HUB_VS;
     }
-    side = small ? Tb_Side() : 0;
+    side = (small || sTb->hubCur < HUB_COUNT) ? Tb_Side() : 0;
     if (side != 0 && sTb->hubCur == HUB_LANG) {
         Snd_PlaySe(1, 0);
         Tb_LangSet((sTb->lang + side + 3) % 3);
         Port_SettingSave("tbo_lang", sTb->lang);
         Port_SettingsWrite();
-    } else if (side != 0) { /* against whom: the other service (its players online counted only on Dragon Net's) */
+    } else if (side != 0 && sTb->hubCur == HUB_VS) { /* against whom: the other service (its players online counted only on Dragon Net's) */
         s32 mode = 1 - DrNet_Mode();
 
         Snd_PlaySe(1, 0);
         DrNet_SetMode(mode);
         DrNet_PresenceActive(mode == 0);
         Port_LobbyHelloAsk();
+    } else if (side != 0 && sTb->hubCur < HUB_COUNT) {
+        sTb->hubAction = Ps_Wrap(sTb->hubAction + side, 0, sTbTabActionCount[sTb->hubCur] - 1);
+        Snd_PlaySe(1, 0);
     } else if (small) {
         if (pad->gamePressed & PADG_TRIANGLE) {
             Snd_PlaySe(1, 2);
@@ -1196,44 +1205,41 @@ static void Tb_HubUpdate(s32 live) {
         }
     } else if (pad->gamePressed & PADG_CROSS) {
         switch (sTb->hubCur) {
-        case HUB_RANKED:
-            if (DrNet_Mode() != 0) {
+        case HUB_FRIENDLY:
+        case HUB_TAG:
+            if (sTb->hubCur == HUB_TAG && !sTb->tagAvailable) {
                 Snd_PlaySe(1, 2);
-                Tb_Note("RANKED IS AGAINST ANDROID + SWITCH: CHOOSE IT IN PLAY AGAINST");
-                break;
+                Tb_Note("Activa el mod Tag Team en el launcher");
+            } else if (sTb->hubAction == 0) {
+                Snd_PlaySe(1, 1);
+                sTb->queue = sTb->hubCur == HUB_TAG ? 1 : 0;
+                sTb->qkCur = 2;
+                sTb->asked = sTb->frames - 100000;
+                Tb_SetMode(TB_QUICK);
+            } else if (sTb->hubAction == 1) {
+                sTb->battle = sTb->hubCur == HUB_TAG ? 1 : sTb->battle;
+                Tb_LobbyCreate(1);
+            } else {
+                Snd_PlaySe(1, 1);
+                sTb->code[0] = 0;
+                sTb->codeLen = 0;
+                sTb->keyCol = 0;
+                sTb->keyRow = 0;
+                Tb_SetMode(TB_JOIN);
             }
-            Snd_PlaySe(1, 1);
-            DrRanked_Open(Port_NetNameGet());
-            sTb->rkCur = RK_SEARCH;
-            Tb_SetMode(TB_RANKED);
             break;
-        case HUB_QUICK:
-            Snd_PlaySe(1, 1);
-            sTb->qkCur = 2;
-            sTb->asked = sTb->frames - 100000;
-            Tb_SetMode(TB_QUICK);
+        case HUB_RANKED:
+            Snd_PlaySe(1, 2);
+            Tb_Note("Buscar rival: proximamente");
             break;
-        case HUB_LOBBY:
-            Snd_PlaySe(1, 1);
-            sTb->crCur = CR_OPEN;
-            Tb_SetMode(TB_CREATE);
-            break;
-        case HUB_JOIN:
-            Snd_PlaySe(1, 1);
-            sTb->code[0] = 0;
-            sTb->codeLen = 0;
-            sTb->keyCol = 0;
-            sTb->keyRow = 0;
-            Tb_SetMode(TB_JOIN);
+        case HUB_LEADERBOARD:
+            Snd_PlaySe(1, 2);
+            Tb_Note("Clasificacion mundial: proximamente");
             break;
         case HUB_PROFILE:
             Snd_PlaySe(1, 1);
             sTb->prCur = 0;
             Tb_SetMode(TB_PROFILE);
-            break;
-        default:
-            Snd_PlaySe(1, 2);
-            Tb_Note("NOT OPEN YET: IT NEEDS MORE FROM THE MATCHMAKING SERVICE");
             break;
         }
     } else if (pad->gamePressed & PADG_TRIANGLE) {
@@ -1838,6 +1844,14 @@ static void Tb_DrawHub(void) {
             Ps_Button(3, left + 266.0f, sTb->hubY + h * 0.5f, 18.0f);
         }
     }
+    if (sTb->hubCur == HUB_TAG && !sTb->tagAvailable) {
+        /* A small closed shackle and body, drawn with the existing TBO primitives. */
+        f32 y = sTb->hubY;
+        Ps_Rect(left + 275.0f, y + 8.0f, left + 291.0f, y + 22.0f,
+                Ps_Rgba(0xB8, 0xA8, 0x80, 0x80), Ps_Rgba(0xB8, 0xA8, 0x80, 0x80));
+        Ps_Rect(left + 279.0f, y + 2.0f, left + 287.0f, y + 12.0f,
+                Ps_Rgba(0xB8, 0xA8, 0x80, 0x80), Ps_Rgba(0xB8, 0xA8, 0x80, 0x80));
+    }
 }
 
 static void Tb_DrawHubText(void) {
@@ -1861,9 +1875,21 @@ static void Tb_DrawHubText(void) {
             Ps_Text(x + 152.0f, Ps_TextTop(mid, 0.66f), value, 0.66f, 112.0f, i == cur ? 1 : 3);
             Ps_Align(0);
         } else if (i == cur) {
-            Ps_Text(x, Ps_TextTop(mid, 1.12f), sTbHubName[item], 1.12f, 230.0f, 1);
+            Ps_Text(x, Ps_TextTop(mid, 1.12f), sTbHubName[item], 1.12f, 190.0f, item == HUB_TAG && !sTb->tagAvailable ? 4 : 1);
+            if (item < HUB_COUNT) {
+                Ps_Align(2);
+                Ps_Text(x + 246.0f, Ps_TextTop(mid, 0.62f), (char *)sTbTabAction[item][sTb->hubAction], 0.62f, 122.0f,
+                        item == HUB_TAG && !sTb->tagAvailable ? 4 : 1);
+                Ps_Align(0);
+            }
         } else {
-            Ps_Text(x + 12.0f, Ps_TextTop(mid, 0.96f), sTbHubName[item], 0.96f, 200.0f, item == HUB_RANKED && DrNet_Mode() != 0 ? 4 : 0);
+            s32 dim = item == HUB_TAG && !sTb->tagAvailable;
+            Ps_Text(x + 12.0f, Ps_TextTop(mid, 0.96f), sTbHubName[item], 0.96f, 200.0f, dim ? 4 : 0);
+            if (item == HUB_TAG && !sTb->tagAvailable) {
+                Ps_Align(2);
+                Ps_Text(x + 270.0f, Ps_TextTop(mid, 0.7f), "LOCKED", 0.7f, 80.0f, 4);
+                Ps_Align(0);
+            }
         }
     }
 }
@@ -4007,6 +4033,7 @@ static char *Tb_Help(void) {
             sprintf(line, Tb_Fmt("Against Android and Switch players. Online now: about %d."), (int)n);
             return line;
         }
+        if (sTb->hubCur == HUB_TAG && !sTb->tagAvailable) return "Activa el mod Tag Team en el launcher";
         return sTbHubSay[sTb->hubCur];
     case TB_CREATE:
         return sTb->crCur == CR_ADDR ? "No code: the others type your address and this port on Join by Address. Left / right, L1 / R1 change it."
@@ -4557,9 +4584,11 @@ s32 PortTbo_Run(void) {
 
     sTb = Heap_Alloc(sizeof(TboScreen), 0x20, 0, 2);
     memset(sTb, 0, sizeof(TboScreen));
-    sTb->hubCur = HUB_LOBBY;
-    sTb->hubY = Tb_HubRowY(Tb_HubRow(HUB_LOBBY));
+    sTb->hubCur = HUB_FRIENDLY;
+    sTb->tagAvailable = 0;
+    sTb->hubY = Tb_HubRowY(Tb_HubRow(HUB_FRIENDLY));
     Tb_LoadChoices();
+    { extern s32 Port_TagAvailable(void); sTb->tagAvailable = Port_TagAvailable(); }
     Port_NetNameGet();
     Port_LobbyHelloAsk(); /* (once per opening, as Dragon Net Battle's window did: is this release still let in; the
                              service's clock for the signed requests) */

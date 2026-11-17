@@ -1381,8 +1381,7 @@ void MainMenu_Input(s32 *result) {
             break;
 #ifdef PORT
         case MAINMENU_TBO: /* "Tenkaichi Budokai Online": the port's screen mode runs its screens (menu/port_tbo.c) */
-            { extern s32 Port_TagAvailable(void);
-              gPortScreen = Port_TagAvailable()?PORT_SCREEN_TAG_TEAM:PORT_SCREEN_TBO; }
+            gPortScreen = PORT_SCREEN_TBO;
             MAINMENU_COUNT();
             MAINMENU_CHOOSE(MPROG_MODE_PORT_SCREEN);
             break;
