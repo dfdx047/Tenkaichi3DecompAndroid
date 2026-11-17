@@ -545,4 +545,9 @@
     <string name="bt4dec_err_file">A file of the image is not the one of Beta 14 Rev2 (%1$s): the image may be damaged. Nothing was installed.</string>
     <string name="bt4dec_err_space">Not enough room: the game needs %1$d MB free and there are %2$d MB.</string>
     <string name="bt4dec_data_ok">Beta 14 Rev2 verified · %1$d files · %2$s</string>
+    <string name="tab_scripts">Scripts (%1$d)</string>
+    <string name="count_scripts">%1$d script mod(s)</string>
+    <string name="scripts_how">Script mods (Lua, made for the PC port) draw a new HUD, change the fight camera or the look. Add a .zip with a mod.lua or a .lua file here; switch them on and set them in the game: F1 (or the back button) &gt; Mods. They change nothing of a fight: online play keeps working with players who have none.</string>
+    <string name="scripts_empty">No script mods</string>
+    <string name="scripts_empty_text">The examples (modern HUD, camera and look) come with the app, switched off: turn them on in the game, F1 &gt; Mods.</string>
 </resources>

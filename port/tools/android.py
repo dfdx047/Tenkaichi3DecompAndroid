@@ -593,6 +593,10 @@ def install():
         shutil.rmtree(eng)
     shutil.copytree(ROOT / "port/third_party/fonts", eng / "fonts", ignore=shutil.ignore_patterns("*.txt", "LICENSE*", "OFL*"))
     shutil.copytree(ROOT / "port/tbo/ui", eng / "tbo/ui", ignore=shutil.ignore_patterns("*.md"))
+    # the script mods' examples (gs/mods.c reads mods/<name>/mod.lua beside the game: the app copies them there, each
+    # switched off until the player switches it on in F1 > Mods; the player's own mods are never touched)
+    if (ROOT / "port/examples/mods").exists():
+        shutil.copytree(ROOT / "port/examples/mods", eng / "mods", ignore=shutil.ignore_patterns("*.md"))
     # the PC port's text catalogs (0.1.37: menu_translation.c reads translations/labels/en.json and the others there)
     if (ROOT / "port/translations").exists():
         shutil.copytree(ROOT / "port/translations", eng / "translations")

@@ -96,6 +96,8 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
 
     private val _stages = MutableStateFlow<List<ExtraItem>>(emptyList())
     val stages: StateFlow<List<ExtraItem>> = _stages.asStateFlow()
+    private val _scripts = MutableStateFlow<List<com.dfdx047.dragonrage.data.ScriptMod>>(emptyList())
+    val scriptMods: StateFlow<List<com.dfdx047.dragonrage.data.ScriptMod>> = _scripts.asStateFlow()
 
     private val _songs = MutableStateFlow<List<ExtraItem>>(emptyList())
     val songs: StateFlow<List<ExtraItem>> = _songs.asStateFlow()
@@ -435,6 +437,7 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
             _mods.value = mods.listMods()
             _stages.value = mods.listExtras(ExtraKind.STAGE)
             _songs.value = mods.listExtras(ExtraKind.SONG)
+            _scripts.value = mods.listScripts()
             settings.load()
             _settings.value = settings.snapshot()
             _touch.value = touchStore.load() // (the game's own quick menu may have changed it)
@@ -676,19 +679,22 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
         var mods0 = 0
         var stages0 = 0
         var songs0 = 0
+        var scripts0 = 0
         for (uri in uris) {
             ActivityLog.info("mods", "import: ${ActivityLog.describe(resolver, uri)}")
             when (val r = mods.import(uri) { setDetail(it) }) {
                 is ImportResult.Mod -> mods0++
                 is ImportResult.Extras -> if (r.kind == ExtraKind.STAGE) stages0 += r.count else songs0 += r.count
+                is ImportResult.Scripts -> scripts0 += r.count
             }
         }
         refreshMods()
-        ActivityLog.info("mods", "added: $mods0 mods, $stages0 stages, $songs0 songs")
+        ActivityLog.info("mods", "added: $mods0 mods, $stages0 stages, $songs0 songs, $scripts0 scripts")
         say(str(R.string.msg_added, listOfNotNull(
             mods0.takeIf { it > 0 }?.let { str(R.string.count_mods, it) },
             stages0.takeIf { it > 0 }?.let { str(R.string.count_stages, it) },
             songs0.takeIf { it > 0 }?.let { str(R.string.count_songs, it) },
+            scripts0.takeIf { it > 0 }?.let { str(R.string.count_scripts, it) },
         ).joinToString(", ")))
     }
 
@@ -720,10 +726,17 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
         refreshMods()
     }
 
+    fun deleteScript(mod: com.dfdx047.dragonrage.data.ScriptMod) = work(str(R.string.busy_remove)) {
+        ActivityLog.info("mods", "script removed: ${mod.folder}")
+        mods.deleteScript(mod)
+        refreshMods()
+    }
+
     private fun refreshMods() {
         _mods.value = mods.listMods()
         _stages.value = mods.listExtras(ExtraKind.STAGE)
         _songs.value = mods.listExtras(ExtraKind.SONG)
+        _scripts.value = mods.listScripts()
     }
 
     // ---- settings

@@ -544,4 +544,9 @@
     <string name="bt4dec_err_file">Un archivo de la imagen no es el de la Beta 14 Rev2 (%1$s): la imagen puede estar dañada. No se instaló nada.</string>
     <string name="bt4dec_err_space">Falta espacio: el juego necesita %1$d MB libres y hay %2$d MB.</string>
     <string name="bt4dec_data_ok">Beta 14 Rev2 verificada · %1$d archivos · %2$s</string>
+    <string name="tab_scripts">Scripts (%1$d)</string>
+    <string name="count_scripts">%1$d mod(s) de script</string>
+    <string name="scripts_how">Los mods de script (Lua, hechos para el port de PC) dibujan un HUD nuevo, cambian la cámara del combate o el aspecto. Agrega aquí un .zip con mod.lua o un archivo .lua; actívalos y ajústalos en el juego: F1 (o el botón atrás) &gt; Mods. No cambian nada del combate: el juego en línea sigue funcionando con quien no tiene mods.</string>
+    <string name="scripts_empty">Ningún mod de script</string>
+    <string name="scripts_empty_text">Los ejemplos (HUD, cámara y aspecto modernos) vienen con la app, desactivados: actívalos en el juego, F1 &gt; Mods.</string>
 </resources>

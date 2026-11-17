@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Extension
@@ -53,6 +54,7 @@ import com.dfdx047.dragonrage.AppViewModel
 import com.dfdx047.dragonrage.data.ExtraItem
 import com.dfdx047.dragonrage.data.ExtraKind
 import com.dfdx047.dragonrage.data.FileMod
+import com.dfdx047.dragonrage.data.ScriptMod
 import com.dfdx047.dragonrage.data.formatBytes
 import com.dfdx047.dragonrage.ui.components.EmptyState
 import com.dfdx047.dragonrage.ui.components.ScreenTitle
@@ -63,12 +65,14 @@ fun ModsScreen(vm: AppViewModel) {
     val mods by vm.fileMods.collectAsStateWithLifecycle()
     val stages by vm.stages.collectAsStateWithLifecycle()
     val songs by vm.songs.collectAsStateWithLifecycle()
+    val scripts by vm.scriptMods.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) vm.importMod(uris)
     }
     var deleteMod by remember { mutableStateOf<FileMod?>(null) }
     var deleteExtra by remember { mutableStateOf<Pair<ExtraKind, ExtraItem>?>(null) }
+    var deleteScript by remember { mutableStateOf<ScriptMod?>(null) }
     var rename by remember { mutableStateOf<Pair<ExtraKind, ExtraItem>?>(null) }
 
     Box(Modifier.fillMaxSize()) {
@@ -78,6 +82,7 @@ fun ModsScreen(vm: AppViewModel) {
                 Tab(tab == 0, { tab = 0 }, text = { Text(stringResource(R.string.tab_files, mods.size)) })
                 Tab(tab == 1, { tab = 1 }, text = { Text(stringResource(R.string.tab_stages, stages.size)) })
                 Tab(tab == 2, { tab = 2 }, text = { Text(stringResource(R.string.tab_songs, songs.size)) })
+                Tab(tab == 3, { tab = 3 }, text = { Text(stringResource(R.string.tab_scripts, scripts.size)) })
             }
             LazyColumn(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 96.dp),
@@ -98,6 +103,20 @@ fun ModsScreen(vm: AppViewModel) {
                                 onUp = { vm.moveMod(m, -1) }, onDown = { vm.moveMod(m, 1) },
                                 onDelete = { deleteMod = m },
                             )
+                        }
+                    }
+                    3 -> {
+                        item {
+                            Text(
+                                stringResource(R.string.scripts_how), style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (scripts.isEmpty()) item {
+                            EmptyState(Icons.Rounded.Code, stringResource(R.string.scripts_empty), stringResource(R.string.scripts_empty_text))
+                        }
+                        itemsIndexed(scripts, key = { _, m -> m.folder }) { _, m ->
+                            ScriptCard(m, onDelete = { deleteScript = m })
                         }
                     }
                     else -> {
@@ -137,6 +156,9 @@ fun ModsScreen(vm: AppViewModel) {
 
     deleteMod?.let { m ->
         ConfirmDelete(stringResource(R.string.delete_mod_q, m.name), onConfirm = { vm.deleteMod(m) }, onDismiss = { deleteMod = null })
+    }
+    deleteScript?.let { m ->
+        ConfirmDelete(stringResource(R.string.delete_q, m.name), onConfirm = { vm.deleteScript(m) }, onDismiss = { deleteScript = null })
     }
     deleteExtra?.let { (kind, item) ->
         ConfirmDelete(stringResource(R.string.delete_q, item.displayName), onConfirm = { vm.deleteExtra(kind, item) }, onDismiss = { deleteExtra = null })
@@ -189,6 +211,20 @@ private fun ModCard(
                 IconButton(onClick = onDown, enabled = !last) { Icon(Icons.Rounded.KeyboardArrowDown, stringResource(R.string.move_down)) }
             }
             Switch(checked = m.enabled, onCheckedChange = onToggle)
+            IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, stringResource(R.string.delete)) }
+        }
+    }
+}
+
+@Composable
+private fun ScriptCard(mod: ScriptMod, onDelete: () -> Unit) {
+    Card(shape = MaterialTheme.shapes.large, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Code, null, tint = Dbz.KiBlue)
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(mod.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("mods/${mod.folder}/mod.lua", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             IconButton(onClick = onDelete) { Icon(Icons.Rounded.Delete, stringResource(R.string.delete)) }
         }
     }

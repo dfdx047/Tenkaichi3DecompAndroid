@@ -14,11 +14,16 @@ data class FileMod(val id: String, val name: String, val enabled: Boolean, val f
 /** An extra stage (.unk) or song (.adx), with the name shown in the game's menu. */
 data class ExtraItem(val file: File, val displayName: String, val bytes: Long)
 
+/** A script mod (Lua, the PC port's docs/port/mods.md): mods/<folder>/mod.lua beside the game; switched on and set in the
+    game's F1 > Mods. [name] is the one its script gives (`name = "..."`), else the folder's. */
+data class ScriptMod(val folder: String, val name: String, val dir: File)
+
 enum class ExtraKind(val ext: String, val manifest: String) { STAGE("unk", "maps.txt"), SONG("adx", "songs.txt") }
 
 sealed interface ImportResult {
     data class Mod(val mod: FileMod) : ImportResult
     data class Extras(val kind: ExtraKind, val count: Int) : ImportResult
+    data class Scripts(val count: Int) : ImportResult
 }
 
 /**
@@ -102,6 +107,13 @@ class Mods(private val context: Context, private val paths: GamePaths, private v
                 ?: throw IllegalStateException(context.getString(R.string.err_open_file))
             return@withContext ImportResult.Extras(kind, 1)
         }
+        if (ext == "lua") { // a script mod of one file: mods/<its name>/mod.lua
+            val dest = uniqueChild(paths.scriptMods, safeName(fileName.substringBeforeLast('.')))
+            dest.mkdirs()
+            resolver.openInputStream(uri)?.use { input -> File(dest, "mod.lua").outputStream().use { input.copyTo(it) } }
+                ?: throw IllegalStateException(context.getString(R.string.err_open_file))
+            return@withContext ImportResult.Scripts(1)
+        }
         if (ext != "zip") {
             throw IllegalArgumentException(context.getString(R.string.err_mod_format))
         }
@@ -121,6 +133,15 @@ class Mods(private val context: Context, private val paths: GamePaths, private v
                 }
                 return@withContext ImportResult.Extras(kind, n)
             }
+            // Script mods: every folder with a mod.lua (the zip's own top when the script is there) goes to mods/
+            val scripts = all.filter { it.name.equals("mod.lua", true) }.mapNotNull { it.parentFile }.distinct()
+            if (scripts.isNotEmpty()) {
+                scripts.forEach { dir ->
+                    val dest = uniqueChild(paths.scriptMods, safeName(if (dir == staging) name else dir.name))
+                    dir.copyRecursively(dest, overwrite = true)
+                }
+                return@withContext ImportResult.Scripts(scripts.size)
+            }
             // A file-override mod. Zips often wrap everything in one folder: strip it when the inside looks like
             // gamedata (pzs3us0/1/2, disc/).
             var root = staging
@@ -139,6 +160,22 @@ class Mods(private val context: Context, private val paths: GamePaths, private v
         } finally {
             staging.deleteRecursively()
         }
+    }
+
+    // ---- script mods
+
+    fun listScripts(): List<ScriptMod> =
+        paths.scriptMods.listFiles { f -> f.isDirectory && File(f, "mod.lua").isFile }.orEmpty()
+            .map { d -> ScriptMod(d.name, scriptName(File(d, "mod.lua")) ?: d.name, d) }
+            .sortedBy { it.name.lowercase() }
+
+    /** The `name = "..."` of the table a script returns (its first one, in its first 200 lines). */
+    private fun scriptName(f: File): String? = runCatching {
+        f.useLines { lines -> lines.take(200).firstNotNullOfOrNull { Regex("""^\s*name\s*=\s*"([^"]{1,60})"""").find(it)?.groupValues?.get(1) } }
+    }.getOrNull()
+
+    fun deleteScript(mod: ScriptMod) {
+        mod.dir.deleteRecursively()
     }
 
     private fun looksLikeGameData(name: String) = name.lowercase().let { it.startsWith("pzs3") || it == "disc" }

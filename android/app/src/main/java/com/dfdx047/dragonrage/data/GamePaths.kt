@@ -42,6 +42,8 @@ class GamePaths(context: Context, val game: Game = Game.BT3) {
     val saves = File(root, "saves")
     val settings = File(root, "bt3_settings.txt")
     val modLibrary = File(root, "modlib")
+    /** The script mods (Lua): mods/<folder>/mod.lua beside the game, where the engine looks (gs/mods.c). */
+    val scriptMods = File(root, "mods")
     val temp = File(context.cacheDir, "import")
     /** BT4 only: the disc's boot files copied out of the image (the rest is read from the image itself), and the
      *  image the player picked (its content:// address, kept with a persisted read permission). */
