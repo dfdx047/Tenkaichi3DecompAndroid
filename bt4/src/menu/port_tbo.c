@@ -398,6 +398,8 @@ typedef struct TbKeyBtn {
 #define TB_KEY_SPACE 4
 #define TB_KEY_PASTE 5
 #define TB_KEY_ADDR 7
+#define TB_KEY_RECOVER 8 /* the name screen: type the account's recovery code (Android) */
+#define TB_KEY_NAME 9    /* ... and back to the nickname */
 #define JOIN_BTN_OK 2
 #define ADDR_BTN_OK 2
 static const TbKeyBtn sTbAddrBtn[3] = {{"DELETE", 0, 2, TB_KEY_DELETE}, {"PASTE", 3, 5, TB_KEY_PASTE}, {"JOIN", 6, 8, TB_KEY_OK}};
@@ -461,6 +463,8 @@ typedef struct TboScreen {
     s32 blockBack;      /* the screen "No Quick Match" goes back to */
     s32 typing;         /* the PC keyboard types (circle on a keypad); else its keys are the pad's, as everywhere */
     s32 lower;          /* the name pad shows small letters */
+    s32 recovering;     /* the name pad types the account's recovery code (Android: R1 on the name screen) */
+    char recoverName[20]; /* ... for this nickname */
     /* typing the name */
     char typed[20];
     s32 typedLen;
@@ -1317,6 +1321,7 @@ static void Tb_OpenName(s32 required) {
     }
     sTb->nicknameRequired = required;
     sTb->nicknameSaving = 0;
+    sTb->recovering = 0;
     sTb->keyRow = sTb->keyCol = 0;
     Tb_SetMode(TB_NAME);
 }
@@ -1551,6 +1556,18 @@ static void Tb_CreateUpdate(s32 live) {
 static const TbKeyBtn sTagJoinBtn[3]={{"DELETE",0,2,TB_KEY_DELETE},{"PASTE",3,5,TB_KEY_PASTE},{"JOIN",6,8,TB_KEY_OK}};
 static const TbKeyBtn sTbJoinBtn[4] = {{"DELETE", 0, 2, TB_KEY_DELETE, 0}, {"PASTE", 3, 5, TB_KEY_PASTE, 0}, {"JOIN", 6, 8, TB_KEY_OK, 0}, {"BY ADDRESS", 0, 8, TB_KEY_ADDR, 1}};
 static const TbKeyBtn sTbNameBtn[4] = {{"Aa", 0, 1, TB_KEY_CASE}, {"SPACE", 2, 4, TB_KEY_SPACE}, {"DELETE", 5, 6, TB_KEY_DELETE}, {"DONE", 7, 8, TB_KEY_OK}};
+/* The name screen's own (the chat keeps sTbNameBtn): on Android a RECOVER button, and the pad typing a recovery code. */
+#ifdef __ANDROID__
+static const TbKeyBtn sTbNickBtn[5] = {{"Aa", 0, 0, TB_KEY_CASE}, {"SPACE", 1, 2, TB_KEY_SPACE}, {"DELETE", 3, 4, TB_KEY_DELETE}, {"RECOVER", 5, 6, TB_KEY_RECOVER}, {"DONE", 7, 8, TB_KEY_OK}};
+#define NICK_BTNS 5
+#else
+#define sTbNickBtn sTbNameBtn
+#define NICK_BTNS 4
+#endif
+static const TbKeyBtn sTbCodeBtn[3] = {{"BACK", 0, 2, TB_KEY_NAME}, {"DELETE", 3, 5, TB_KEY_DELETE}, {"DONE", 6, 8, TB_KEY_OK}};
+#define NAME_PAD_KEYS (sTb->recovering ? sTbNameKeys[0] : sTbNameKeys[sTb->lower])
+#define NAME_PAD_BTNS (sTb->recovering ? sTbCodeBtn : sTbNickBtn)
+#define NAME_PAD_NB (sTb->recovering ? 3 : NICK_BTNS)
 #define NAME_ROWS 5
 static char sTbNameKeys[2][NAME_ROWS][KEY_COLS + 1] = {{"ABCDEFGHI", "JKLMNOPQR", "STUVWXYZ0", "123456789", "-_.!?#&*+"},
                                                      {"abcdefghi", "jklmnopqr", "stuvwxyz0", "123456789", "-_.!?#&*+"}};
@@ -1817,6 +1834,15 @@ static s32 Tb_NameKey(s32 c) {
 }
 
 static void Tb_NameAdd(s32 c) {
+    if (sTb->recovering) { /* a recovery code: its 16 letters and digits (the dashes are left out) */
+        if (c >= 'a' && c <= 'z') c -= 32;
+        if (((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) && sTb->typedLen < 16) {
+            sTb->typed[sTb->typedLen++] = (char)c;
+            sTb->typed[sTb->typedLen] = 0;
+            Snd_PlaySe(1, 0);
+        }
+        return;
+    }
     if (Tb_NameKey(c) && sTb->typedLen < TB_NAME_MAX) {
         sTb->typed[sTb->typedLen++] = (char)c;
         sTb->typed[sTb->typedLen] = 0;
@@ -1839,10 +1865,28 @@ static void Tb_NameUpdate(s32 live) {
     if(sTb->nicknameSaving)return;
     Ps_Prompt(0, "Enter");
     Ps_Prompt(1, "Delete");
-    Ps_Prompt(2, "Cancel");
+    Ps_Prompt(2, sTb->recovering ? "Back" : "Cancel");
     if (!live) {
         return;
     }
+#ifdef __ANDROID__
+    if (!sTb->recovering && (pad->gamePressed & PADG_R1) && !getenv("BT4_RENDER_TEST")) {
+        /* (R1, a controller's RECOVER) the account of the nickname typed, back with its recovery code (bt4_profile.c Port_OnlineRecover) */
+        while (sTb->typedLen > 0 && sTb->typed[sTb->typedLen - 1] == ' ') sTb->typed[--sTb->typedLen] = 0;
+        if (sTb->typedLen == 0) {
+            Tb_Note("Type the nickname of your account first, then press RECOVER.");
+        } else {
+            Ps_Copy(sTb->recoverName, sTb->typed, 20);
+            sTb->recovering = 1;
+            sTb->typed[0] = 0;
+            sTb->typedLen = 0;
+            sTb->lower = 0;
+            Tb_Note("Type the recovery code shown in the Profile of your old installation.");
+        }
+        Snd_PlaySe(1, 1);
+        return;
+    }
+#endif
     while (sTb->typing && (c = Port_TextRead()) != 0) {
         if (c == 13) {
             done = 1;
@@ -1856,8 +1900,25 @@ static void Tb_NameUpdate(s32 live) {
         }
     }
     if (!done) {
-        c = Tb_PadUpdate(NAME_ROWS, sTbNameKeys[sTb->lower], sTbNameBtn, 4);
-        if (c > 0) {
+        c = Tb_PadUpdate(NAME_ROWS, NAME_PAD_KEYS, NAME_PAD_BTNS, NAME_PAD_NB);
+        if (c == -TB_KEY_RECOVER) { /* RECOVER (or R1): the nickname typed, then its recovery code */
+            while (sTb->typedLen > 0 && sTb->typed[sTb->typedLen - 1] == ' ') sTb->typed[--sTb->typedLen] = 0;
+            if (sTb->typedLen == 0) {
+                Tb_Note("Type the nickname of your account first, then press RECOVER.");
+            } else {
+                Ps_Copy(sTb->recoverName, sTb->typed, 20);
+                sTb->recovering = 1;
+                sTb->typed[0] = 0;
+                sTb->typedLen = 0;
+                sTb->lower = 0;
+                sTb->keyRow = sTb->keyCol = 0;
+                Tb_Note("Type the recovery code shown in the Profile of your old installation.");
+            }
+            Snd_PlaySe(1, 1);
+            return;
+        } else if (c == -TB_KEY_NAME) {
+            done = -1;
+        } else if (c > 0) {
             Tb_NameAdd(c);
         } else if (c == -TB_KEY_SPACE) {
             Tb_NameAdd(' ');
@@ -1871,6 +1932,25 @@ static void Tb_NameUpdate(s32 live) {
         } else if (pad->gamePressed & PADG_TRIANGLE) {
             done = -1;
         }
+    }
+    if (sTb->recovering && done == 1) {
+        if (sTb->typedLen != 16) {
+            Tb_Note("A recovery code has 16 letters and digits.");
+        } else if (Port_OnlineRecover(sTb->recoverName, sTb->typed)) {
+            sTb->nicknameSaving = 1;
+            Tb_Note("Recovering your account...");
+        } else {
+            Tb_Note("Checking your online nickname...");
+        }
+        Snd_PlaySe(1, 1);
+        return;
+    }
+    if (sTb->recovering && done == -1) { /* back to the nickname */
+        Ps_Copy(sTb->typed, sTb->recoverName, 20);
+        sTb->typedLen = Ps_Len(sTb->typed);
+        sTb->recovering = 0;
+        Snd_PlaySe(1, 2);
+        return;
     }
     if (done == 1) {
         while (sTb->typedLen > 0 && sTb->typed[sTb->typedLen - 1] == ' ') {
@@ -1915,7 +1995,8 @@ static void Tb_NicknameUpdate(s32 live) {
         sTb->nicknameSaving=0;
         if(sTb->nicknameState==BT4_NICKNAME_READY){
             Port_NetNameSave(name);
-            Tb_Note("SAVED: YOUR RIVALS WILL SEE THIS NAME");
+            Tb_Note(sTb->recovering?"ACCOUNT RECOVERED: YOUR MEDALS ARE BACK":"SAVED: YOUR RIVALS WILL SEE THIS NAME");
+            sTb->recovering=0;
             Tb_SetMode(sTb->nicknameRequired?TB_HUB:TB_PROFILE);
             sTb->nicknameRequired=0;
         }else if(sTb->nicknameState==BT4_NICKNAME_UNAVAILABLE&&!sTb->nicknameRequired&&sTb->mode==TB_NAME){
@@ -1924,7 +2005,8 @@ static void Tb_NicknameUpdate(s32 live) {
             Tb_Note("SAVED: YOUR RIVALS WILL SEE THIS NAME");
             Tb_SetMode(TB_PROFILE);
         }else{
-            Tb_Note(sTb->nicknameState==BT4_NICKNAME_TAKEN?"That nickname is already taken.":
+            Tb_Note(sTb->nicknameState==BT4_NICKNAME_TAKEN?"That nickname is taken. If it is yours, press RECOVER and type its recovery code.":
+                    sTb->nicknameState==BT4_NICKNAME_WRONG_CODE?"Wrong nickname or recovery code.":
                     sTb->nicknameState==BT4_NICKNAME_INVALID?"Choose a valid nickname.":"Could not verify your nickname. Try again.");
         }
     }else if(sTb->nicknameState==BT4_NICKNAME_READY&&previous!=BT4_NICKNAME_READY){
@@ -2774,7 +2856,7 @@ static void Tb_DrawName(void) {
     Ps_Copy(line, sTb->typed, 40);
     Ps_Cat(line, (sTb->frames / 16) & 1 ? "_" : " ", 40);
     Ps_TextRaw(x + 16.0f, Ps_TextTop(108.0f, 0.9f), line, 0.9f, TB_KEYPAD_W - 32.0f, 1);
-    Tb_Keypad(x, 132.0f, NAME_ROWS, sTbNameKeys[sTb->lower], sTbNameBtn, 4, 34.0f);
+    Tb_Keypad(x, 132.0f, NAME_ROWS, NAME_PAD_KEYS, NAME_PAD_BTNS, NAME_PAD_NB, 34.0f);
 }
 
 static void Tb_DrawSpar(void) {
@@ -4726,7 +4808,7 @@ static void Tb_Speak(void) {
         Ps_Copy(now, sTb->code, 40);
         break;
     case TB_NAME:
-        Tb_KeyFocus(focus, NAME_ROWS, sTbNameKeys[sTb->lower], sTbNameBtn, 4);
+        Tb_KeyFocus(focus, NAME_ROWS, NAME_PAD_KEYS, NAME_PAD_BTNS, NAME_PAD_NB);
         Ps_Copy(now, sTb->typed, 40);
         break;
     case TB_WAIT:
@@ -5458,6 +5540,9 @@ s32 PortTbo_Run(void) {
         Port_MenuPage(52); /* widescreen menus: the page stretched as before, the message window's text from its left at
                               its true shape (port/src/gs_marker.c) */
         Tb_Speak();
+#ifdef __ANDROID__
+        Bt4Profile_Pump(); /* (a medal whose answer came after the session ended: shown here, not at the next match's start) */
+#endif
         Ps_PageSet();
         Tb_Backdrop();
         /* (not the game's heading window, IconWin: its clouds in the corners; the title is the screens' own, Tb_Title) */

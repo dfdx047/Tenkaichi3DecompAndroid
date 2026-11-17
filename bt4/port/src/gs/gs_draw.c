@@ -167,6 +167,9 @@ static int sUserScale4;
 /* ... and the redesigned online screens at least at this one (in quarters; 0: none): their pictures and letters are
    made for the phone's own pixels, and a lower picture stretched to the screen blurred them. Kept as the cap is. */
 static int sScreenFloor4;
+/* An online session (its character select and fights) runs under the online screens, which stay open meanwhile
+   (menu/port_tbo.c): the floor is set aside for it, the player's own resolution then, and comes back after. */
+static int sScreenAside;
 GsTex gsWhite;
 GsDraw *gsDraws;
 uint32_t gsDrawCount;
@@ -3430,7 +3433,20 @@ void GsGpu_Native(int effect) {
 /* A new resolution multiplier: every render target is dropped and made again at the new size when the game next
    draws to it. Buffers that carry something over from the previous frame start empty for one frame. */
 static void interp_scale_changed(void);
+/* Between two frames: an online session began or ended under the online screens (see sScreenAside). */
+static void screen_scale_session(void) {
+    extern int Port_NetSession(void); /* net.c */
+    int aside = sScreenFloor4 && Port_NetSession();
+    if (aside == sScreenAside) {
+        return;
+    }
+    sScreenAside = aside;
+    gsPendingScale4 = aside ? sUserScale4 : (sUserScale4 > sScreenFloor4 ? sUserScale4 : sScreenFloor4);
+    fprintf(stderr, "bt3: online session %s: the online screens' resolution %s\n", aside ? "began" : "ended", aside ? "set aside" : "again");
+}
+
 static int scale_apply(void) {
+    screen_scale_session();
     if (gsPendingScale4 == 0 || gsPendingScale4 == gsScale4) {
         gsPendingScale4 = 0;
         return 0;
@@ -3697,7 +3713,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
             q = q > sScreenCap4 ? sScreenCap4 : q;
         } else if (sScreenFloor4) { /* (on the online screens: kept for after them, drawn there at least at the floor) */
             sUserScale4 = q;
-            q = q < sScreenFloor4 ? sScreenFloor4 : q;
+            q = sScreenAside || q >= sScreenFloor4 ? q : sScreenFloor4;
         }
         gsPendingScale4 = q; /* applied between two frames */
     }
@@ -3800,6 +3816,7 @@ void GsDraw_ScreenScaleFloor(int floor4) {
         }
     } else if (floor4 <= 0 && sScreenFloor4) {
         sScreenFloor4 = 0;
+        sScreenAside = 0;
         gsPendingScale4 = sUserScale4 != gsScale4 ? sUserScale4 : 0;
     }
 }

@@ -103,6 +103,9 @@ extern void Gs_HoldFrame(void);                      /* gs_draw.c: the last pict
 extern const char *MenuTranslation_PortText(const char *id);
 extern const char *PortOnline_Text(const char *text);
 static void session_hold(void);
+#ifdef __ANDROID__
+static void rv_heard(const uint8_t *pkt); /* the Ranked rematch box's votes (below, before ranked_outcome) */
+#endif
 
 static int sAutoDelay;
 static int sOptAuto;      /* the host asked for the input delay to be chosen from the line's ping */
@@ -1711,6 +1714,10 @@ static int receive(void) {
             if(!sVoiceRoomKeyKnown||memcmp(sVoiceRoomKey,pkt+8,32)){
                 memcpy(sVoiceRoomKey,pkt+8,32);sVoiceRoomKeyKnown=1;PortVoice_DuelKey(sVoiceRoomKey,sMe,sNames[sMe]);
             }
+#ifdef __ANDROID__
+        } else if (type == 15 && sConnected && n >= 20) { /* T_RVOTE: the other player's choice in the Ranked rematch box */
+            rv_heard(pkt);
+#endif
         } else if (type == T_CHAT && sConnected && n >= 16) { /* (from the other player's address only: above) */
             uint32_t seq, len;
             memcpy(&seq, pkt + 8, 4);
@@ -2939,6 +2946,156 @@ static void spec_tick(unsigned tick) {
     }
 }
 
+#ifdef __ANDROID__
+/* ---- The Ranked rematch box (Android) ---------------------------------------------------------------------------
+ * When a Ranked battle's end is sure (Bt4Profile_Observe reported it), the game waits inside that blank, its last
+ * picture held with the overlay on it (Gs_HoldFrame, as at the start of a match): the medal first (ui.cpp
+ * Port_UiMedal, when the profile service answers), then the box (Port_UiRematch): REMATCH or BACK TO MENU. Nothing of
+ * the game's state moves meanwhile: both copies stop at the blank their own end is sure in, and go on from it as from
+ * a long wait for input, so the two stay in step.
+ *   - The choices travel in T_RVOTE packets {MAGIC, T_RVOTE, battle, mine, yours as I know it}, ten a second while the
+ *     box is up (and an answer to any that comes after it closed).
+ *   - The rematch begins when both chose it and each knows the other knows: then each copy goes on.
+ *   - BACK TO MENU, from either: the session ends for both (Port_NetLeave says goodbye; the other side's box tells
+ *     who left, then it leaves too). The battle's result was reported before the box: it counts all the same.
+ *   - After the match and RANKED_REMATCHES rematches (or when the service says none count today) the box has only
+ *     BACK TO MENU. 60 s without a choice: back to the menu; 20 s without hearing the other copy: the line is lost.
+ * ----------------------------------------------------------------------------------------------------------------- */
+enum { T_RVOTE = 15, RV_NONE = 0, RV_REMATCH = 1, RV_MENU = 2, RANKED_REMATCHES = 3 };
+enum { RB_ASK = 0, RB_ASKED = 1, RB_THEY_ASK = 2, RB_ACCEPTED = 3, RB_LAST = 4, RB_THEY_LEFT = 5, RB_LEAVING = 6 };
+extern void Port_UiRematch(int phase, const char *rival, int left, int secs); /* ui.cpp (phase -1: gone) */
+extern int Port_UiRematchTake(void); /* ui.cpp: 1 REMATCH, 2 BACK TO MENU pressed (once), else 0 */
+extern int Port_UiMedalShowing(void); /* ui.cpp */
+static struct {
+    uint32_t battle, mine, theirs, sawMine, open, closed; /* (closed: the box of `battle` is over) */
+    uint32_t pendBattle, pendVote, pendSaw;                /* a vote for a box this copy has not opened yet */
+    uint64_t heardNs;
+} sRv;
+static void rv_send(void) {
+    uint32_t p[5] = {MAGIC, T_RVOTE, sRv.battle, sRv.mine, sRv.theirs};
+    send_to_peer(p, (int)sizeof(p));
+}
+static void rv_heard(const uint8_t *pkt) {
+    uint32_t battle, vote, saw;
+    memcpy(&battle, pkt + 8, 4);
+    memcpy(&vote, pkt + 12, 4);
+    memcpy(&saw, pkt + 16, 4);
+    if (vote > RV_MENU || saw > RV_MENU) return;
+    if (battle == sRv.battle && (sRv.open || sRv.closed)) {
+        if (vote != RV_NONE && sRv.theirs == RV_NONE) sRv.theirs = vote; /* (a choice, once made, stays) */
+        sRv.sawMine = saw;
+        sRv.heardNs = SDL_GetTicksNS();
+        if (sRv.closed) rv_send(); /* (the other copy is still in the box: it hears this one's choice again) */
+    } else if (battle > sRv.battle) { /* the other copy's box opened first */
+        if (sRv.pendBattle != battle) { /* (a vote kept for an earlier battle is not this one's) */
+            sRv.pendBattle = battle;
+            sRv.pendVote = RV_NONE;
+        }
+        if (vote != RV_NONE) sRv.pendVote = vote;
+        sRv.pendSaw = saw;
+    }
+}
+static void rematch_box(unsigned tick, int battle) {
+    const char *rival = sNames[!sMe];
+    uint64_t t0 = SDL_GetTicksNS(), boxAt = 0, sentAt = 0, endAt = 0;
+    int phase = -1, left = -1, answered, last;
+    memset(&sRv.battle, 0, sizeof(uint32_t) * 6);
+    sRv.battle = (uint32_t)battle;
+    sRv.open = 1;
+    sRv.heardNs = t0;
+    if (sRv.pendBattle == (uint32_t)battle) {
+        sRv.theirs = sRv.pendVote;
+        sRv.sawMine = sRv.pendSaw;
+    }
+    (void)Port_UiRematchTake(); /* (a press from before the box is not a choice) */
+    fprintf(stderr, "bt3: net: Ranked battle %d of the session is over (blank %u): the medal, then the rematch box\n", battle, tick);
+    for (;;) {
+        uint64_t now = SDL_GetTicksNS();
+        int choice;
+        if (!receive()) {
+            net_idle_wait();
+        }
+        if (phase < 0) Bt4Profile_Pump(); /* (the medal, when the service answers; one that comes after the box opened waits
+                                             for the box to close, so the two are never drawn over each other) */
+        answered = Bt4Profile_ResultOf(battle, &left);
+        last = battle >= 1 + RANKED_REMATCHES || (answered && left == 0);
+        if (now - sentAt > 100000000ull) {
+            rv_send();
+            send_inputs(); /* (the other copy may still be a few blanks short of this end, and need this one's last input) */
+            sentAt = now;
+        }
+        if (phase < 0) { /* the medal first: the box once it is shown and gone (or the service has not answered in 10 s) */
+            if (!Port_UiMedalShowing() && !Bt4Profile_MedalsPending() && (answered || now - t0 > 10000000000ull) && now - t0 > 300000000ull) {
+                boxAt = now;
+                phase = RB_ASK;
+                fprintf(stderr, "bt3: net: the rematch box (%s)\n", last ? "the last battle: back to the menu only" : "rematch or back to the menu");
+            }
+        }
+        choice = phase >= 0 ? Port_UiRematchTake() : 0;
+        if (phase >= 0 && phase != RB_THEY_LEFT && phase != RB_LEAVING && phase != RB_ACCEPTED) {
+            if (choice == 2 || now - boxAt > 60000000000ull) { /* BACK TO MENU (or no choice in a minute) */
+                int k;
+                sRv.mine = RV_MENU;
+                for (k = 0; k < 3; k++) rv_send();
+                phase = RB_LEAVING;
+                endAt = now + 700000000ull;
+                fprintf(stderr, "bt3: net: rematch box: back to the menu (%s)\n", choice == 2 ? "chosen" : "no choice in a minute");
+            } else if (choice == 1 && !last && sRv.mine == RV_NONE) {
+                sRv.mine = RV_REMATCH;
+                rv_send();
+                fprintf(stderr, "bt3: net: rematch box: rematch asked\n");
+            }
+        }
+        if (phase != RB_LEAVING && phase != RB_THEY_LEFT && (sRv.theirs == RV_MENU || sGone)) {
+            phase = RB_THEY_LEFT; /* the other player went back to the menu (or closed the game) */
+            endAt = now + 2500000000ull;
+            fprintf(stderr, "bt3: net: rematch box: the other player went back to the menu\n");
+        }
+        if (phase >= 0 && phase < RB_THEY_LEFT && phase != RB_ACCEPTED) {
+            phase = last ? RB_LAST : sRv.mine == RV_REMATCH && sRv.theirs == RV_REMATCH ? RB_ACCEPTED :
+                    sRv.mine == RV_REMATCH ? RB_ASKED : sRv.theirs == RV_REMATCH ? RB_THEY_ASK : RB_ASK;
+            if (phase == RB_ACCEPTED) {
+                endAt = 0;
+                fprintf(stderr, "bt3: net: rematch box: both chose the rematch\n");
+            }
+        }
+        if (phase == RB_ACCEPTED) {
+            if (endAt == 0 && sRv.sawMine == RV_REMATCH) endAt = now + 900000000ull; /* (the other knows: a moment of "accepted!") */
+            if (endAt != 0 && now >= endAt) {
+                int k;
+                for (k = 0; k < 3; k++) rv_send();
+                sRv.open = 0;
+                sRv.closed = 1;
+                Port_UiRematch(-1, rival, 0, 0);
+                fprintf(stderr, "bt3: net: rematch: the session goes on (%.1f s in the box)\n", (double)(now - t0) / 1e9);
+                return;
+            }
+        }
+        if ((phase == RB_LEAVING || phase == RB_THEY_LEFT) && now >= endAt) {
+            sRv.open = 0;
+            sRv.closed = 1;
+            Port_UiRematch(-1, rival, 0, 0);
+            if (phase == RB_THEY_LEFT && sGone) {
+                gone(tick); /* (does not return) */
+            }
+            sByeWhy = BYE_LEFT;
+            Port_NetLeave(); /* back to the online screens, for both (does not return) */
+            exit(2);
+        }
+        if (phase >= 0 && phase != RB_LEAVING && phase != RB_THEY_LEFT && now - sRv.heardNs > 20000000000ull) {
+            Port_UiRematch(-1, rival, 0, 0);
+            gone_quiet(tick); /* (does not return) */
+        }
+        {
+            int rematches = answered && left >= 0 ? left : 1 + RANKED_REMATCHES - battle;
+            int secs = boxAt != 0 && phase < RB_THEY_LEFT && phase != RB_ACCEPTED ? (int)((boxAt + 60000000000ull - now) / 1000000000ull) : -1;
+            Port_UiRematch(phase, rival, rematches < 0 ? 0 : rematches, secs);
+        }
+        Gs_HoldFrame();
+    }
+}
+#endif
+
 static void ranked_outcome(unsigned tick){
     extern int Port_BattleOutcome(int *);
     extern int Port_RankedPauseAbortPad(void);
@@ -2948,8 +3105,9 @@ static void ranked_outcome(unsigned tick){
     if(sMode!=3&&sSession){
         int bits=0,state=Port_BattleOutcome(&bits);
         int abortPad=bits&8?Port_RankedPauseAbortPad():-1;
-        Bt4Profile_Observe(state,bits,tick,sRollMax>0?sChecked:tick,sResim||gPortResim,abortPad<0?-1:abortPad==sMe,sMe,sNames[0],sNames[1]);
+        int over=Bt4Profile_Observe(state,bits,tick,sRollMax>0?sChecked:tick,sResim||gPortResim,abortPad<0?-1:abortPad==sMe,sMe,sNames[0],sNames[1]);
         if(!sResim&&!gPortResim)Bt4Profile_Pump();
+        if(over>0&&!sResim&&!gPortResim&&Bt4Profile_RankedSession()&&!getenv("BT4_NO_REMATCH_BOX"))rematch_box(tick,over); /* (the medal, then REMATCH / BACK TO MENU) */
     }
     return;
 #endif

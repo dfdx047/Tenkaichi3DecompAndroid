@@ -34,7 +34,7 @@ int Port_RankedTakeSettlement(int *rating,int *delta);
 enum {
     BT4_NICKNAME_LOADING, BT4_NICKNAME_READY, BT4_NICKNAME_REQUIRED, BT4_NICKNAME_DISABLED,
     BT4_NICKNAME_SAVING, BT4_NICKNAME_TAKEN, BT4_NICKNAME_INVALID, BT4_NICKNAME_UNAVAILABLE,
-    BT4_NICKNAME_OPTIONAL
+    BT4_NICKNAME_OPTIONAL, BT4_NICKNAME_WRONG_CODE /* (Android: a recovery that the service refused, bt4_profile.c) */
 };
 void Port_OnlineNicknameBegin(void);
 int Port_OnlineNicknameView(char name[20]);

@@ -16,19 +16,34 @@ typedef struct Bt4ProfileStats {
     int hoursLeft;          /* until this week's season ends */
     char last[3][20];       /* last week's first three ("" when nobody) */
     int rated, opponents, eligible; /* this week's Ranked battles that moved points, rivals in them, in the trophy race */
+    int seasonGold, seasonSilver; /* this week's medals (the career's are gold, silver) */
+    int bestRating, rankedTotal, seasonsPlayed; /* the career: best rating ever, Ranked battles that counted, seasons played */
+    int seasonNumber;       /* "Temporada N" (0: before the first) */
 } Bt4ProfileStats;
 void Bt4Profile_Stats(Bt4ProfileStats *out);
 /* The BT4 Android online service (port/bt4online-worker): profiles and the Ranked queue's rooms. BT4_ONLINE_URL in the
    environment names another (tests). */
 const char *Bt4Online_Url(void);
 int Bt4Profile_HasAccount(void);
+/* The account's recovery code, "XXXX-XXXX-XXXX-XXXX" ("" until the service has given one): with the nickname it brings the
+   account back on another installation (Port_OnlineRecover). */
+void Bt4Profile_RecoveryCode(char out[24]);
+/* The account of `name` back on this installation with its recovery code: the nickname's state goes SAVING, then READY
+   or BT4_NICKNAME_WRONG_CODE (match_supabase.h). 0: busy. */
+int Port_OnlineRecover(const char *name, const char *code);
 /* the Global Top page's row i (0..4): the player's medals and trophies, out[5] = gold, silver, trophies 1st/2nd/3rd */
 void Bt4Profile_TopRow(int i, int out[5]);
 /* gs/net.c: a session (one or more battles with one rival) begins and ends; every battle's state as Ranked's was */
 void Bt4Profile_SessionBegin(int ranked, const char *code);
 void Bt4Profile_SessionEnd(void);
-void Bt4Profile_Observe(int battleState, int bits, unsigned tick, unsigned confirmed, int resimulating, int localConcession,
-                        int me, const char *name0, const char *name1);
+/* (returns the battle's number in the session when this blank reported its end, else 0) */
+int Bt4Profile_Observe(int battleState, int bits, unsigned tick, unsigned confirmed, int resimulating, int localConcession,
+                       int me, const char *name0, const char *name1);
+/* the Ranked rematch box (gs/net.c): a Ranked session; the service's answer for a battle (left: rematches still counting
+   today, -1 not said); medals still to be shown */
+int Bt4Profile_RankedSession(void);
+int Bt4Profile_ResultOf(int battle, int *left);
+int Bt4Profile_MedalsPending(void);
 void Bt4Profile_Pump(void); /* the game's thread: the results' lines (Port_UiBanner) */
 #ifdef __cplusplus
 }

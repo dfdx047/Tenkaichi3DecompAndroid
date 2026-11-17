@@ -723,6 +723,8 @@ again:
             SDL_memcpy(sM.st.peerAddr, st.peerAddr, sizeof(st.peerAddr));
             sM.st.peerCount = st.peerCount;
             sM.st.role = 2;
+            json_str(answer, "code", sM.code, sizeof(sM.code));
+            SDL_strlcpy(sM.st.code, sM.code, sizeof(sM.st.code)); /* (the joiner's too: the profile's reports name the room, bt4_profile.c) */
             sM.st.state = 3;
             json_str(answer, "region", sM.st.region, sizeof(sM.st.region));
             SDL_UnlockMutex(sM.lock);
@@ -825,6 +827,8 @@ again:
                         SDL_memcpy(sM.st.peerAddr, st.peerAddr, sizeof(st.peerAddr));
                         sM.st.peerCount = st.peerCount;
                         sM.st.role = 2;
+                        json_str(answer, "code", sM.code, sizeof(sM.code));
+                        SDL_strlcpy(sM.st.code, sM.code, sizeof(sM.st.code)); /* (the joiner's too: the profile's reports name the room, bt4_profile.c) */
                         sM.st.state = 3;
                         json_str(answer, "region", sM.st.region, sizeof(sM.st.region));
                         SDL_UnlockMutex(sM.lock);

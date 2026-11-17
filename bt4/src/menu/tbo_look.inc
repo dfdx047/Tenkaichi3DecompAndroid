@@ -708,6 +708,24 @@ static void Td_Ranked(void) {
         }
         Td_Words(cx, cy + 20.0f, line, TD_B, 150.0f, TD_GOLD, 1, 320.0f, 1);
         sprintf(line, Tb_Fmt("W %d  L %d"), rv.wins, rv.losses);
+#ifdef __ANDROID__
+        {   /* this week's medals, either side of the ring (the career's are in Profile) */
+            static char num[2][16];
+            Bt4ProfileStats ms;
+            s32 m;
+            memset(&ms, 0, sizeof(ms));
+            if (!getenv("BT4_RENDER_TEST")) Bt4Profile_Stats(&ms);
+            else { ms.state = 1; ms.seasonGold = 3; ms.seasonSilver = 1; }
+            for (m = 0; m < 2; m++) {
+                f32 mx = m == 0 ? 1245.0f : 1895.0f;
+                Td_Medal(mx, cy + 40.0f, 0.62f, m);
+                if (ms.state == 1) sprintf(num[m], "%d", m == 0 ? ms.seasonGold : ms.seasonSilver);
+                else Ps_Copy(num[m], "-", sizeof(num[m]));
+                Td_Words(mx, cy + 120.0f, num[m], TD_B, 60.0f, (m == 0 ? ms.seasonGold : ms.seasonSilver) > 0 ? TD_GOLD : TD_WHITE, 1, 170.0f, 1);
+                Td_Words(mx, cy + 168.0f, "THIS WEEK", TD_C, 22.0f, TD_TEXT(190, 210, 240), 1, 170.0f, 0);
+            }
+        }
+#endif
         Td_Words(cx, cy + 112.0f, rv.state == 1 ? line : rv.state < 0 ? "Ranked service unavailable" : "Loading Ranked status...", TD_C, 32.0f,
                  TD_TEXT(200, 200, 230), 1, 330.0f, rv.state == 1);
 #ifdef __ANDROID__
@@ -827,7 +845,7 @@ static void Td_Ranked(void) {
 #ifdef __ANDROID__
         static char *big[4] = {"1000", "+ / -", "MEDALS", "TOP 3"};
         static char *a[4] = {"Every week starts at 1000 points.", "Win to gain points; lose to drop.", "A win gives a gold medal.", "Monday 00:00 (UTC-3): the week ends."};
-        static char *b[4] = {"The table resets each Monday.", "Up to 3 battles a day per rival count.", "A loss gives a silver medal.", "Top 3 with 5+ battles vs 3+ rivals."};
+        static char *b[4] = {"The table resets each Monday.", "A match + 3 rematches a day per rival count.", "A loss gives a silver medal.", "Top 3 with 5+ battles vs 3+ rivals."};
 #else
         static char *big[4] = {"1000", "+ / -", "10 MIN", "SUN"};
         static char *a[4] = {"Start at 1000 points.", "Win to gain points; lose to drop.", "Updates every 10 minutes.", "Weekly reset: Sunday 23:59"};
@@ -1026,7 +1044,14 @@ static void Td_Profile(void) {
         Ps_Copy(value, languages[language], sizeof(value));
     }
 #ifdef __ANDROID__
-    Td_Option(110.0f, 670.0f, 1910.0f, 780.0f, "Name", (char *)Port_NetNameGet(), 0, 1, sTb->prCur == PR_NAME, 1, "Type Name", 1);
+    {   /* the Name row's hint: the account's recovery code, to be written down (it brings the account back) */
+        static char hint[96];
+        char code[24] = "";
+        if (!getenv("BT4_RENDER_TEST")) Bt4Profile_RecoveryCode(code);
+        if (code[0]) sprintf(hint, Tb_Fmt("Recovery code: %s"), code);
+        else Ps_Copy(hint, "Type Name", sizeof(hint));
+        Td_Option(110.0f, 670.0f, 1910.0f, 780.0f, "Name", (char *)Port_NetNameGet(), 0, 1, sTb->prCur == PR_NAME, 1, hint, 1);
+    }
     Td_Option(110.0f, 805.0f, 1910.0f, 915.0f, "Language", value, language, 4, sTb->prCur == PR_LANG, 2, "AUTOMATIC, ENGLISH, PORTUGU\xC3\x8AS, ESPA\xC3\x91OL", 1);
 #else
     Td_Option(110.0f, 580.0f, 1910.0f, 710.0f, "Name", (char *)Port_NetNameGet(), 0, 1, sTb->prCur == PR_NAME, 1, "Type Name", 1);
@@ -1039,7 +1064,7 @@ static void Td_Name(void) {
     static char count[16];
 
     Td_Back(120);
-    Td_Window(300.0f, 210.0f, 2410.0f, 940.0f, "TYPE YOUR NAME");
+    Td_Window(300.0f, 210.0f, 2410.0f, 940.0f, sTb->recovering ? "TYPE YOUR RECOVERY CODE" : "TYPE YOUR NAME");
     {
         f32 p[16];
         Td_Chamfer(p, 380.0f, 280.0f, 2330.0f, 380.0f, 16.0f);
@@ -1049,9 +1074,9 @@ static void Td_Name(void) {
     Ps_Copy(line, sTb->typed, 40);
     Ps_Cat(line, (sTb->frames / 16) & 1 ? "_" : " ", 40);
     Td_Words(420.0f, 332.0f, line, TD_B, 76.0f, TD_GOLD_FLAT, 0, 1700.0f, 1);
-    sprintf(count, "%d / %d", (int)sTb->typedLen, TB_NAME_MAX);
+    sprintf(count, "%d / %d", (int)sTb->typedLen, sTb->recovering ? 16 : TB_NAME_MAX);
     Td_Words(2300.0f, 332.0f, count, TD_C, 32.0f, TD_TEXT(150, 200, 180), 2, 0.0f, 1);
-    Td_Keypad(400.0f, 405.0f, NAME_ROWS, sTbNameKeys[sTb->lower], sTbNameBtn, 4, 200.0f, 64.0f, 16.0f, 56.0f, -1);
+    Td_Keypad(400.0f, 405.0f, NAME_ROWS, NAME_PAD_KEYS, NAME_PAD_BTNS, NAME_PAD_NB, 200.0f, 64.0f, 16.0f, 56.0f, -1);
 }
 
 static void Td_Quick(void) {

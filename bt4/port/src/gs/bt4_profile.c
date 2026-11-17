@@ -5,7 +5,10 @@
  * Android's.
  *
  * The account: a random id and secret the service gives at the first nickname, kept in bt4_profile_account.txt (the
- * app's own folder) and in the settings (bt4_profile_id / bt4_profile_key), so that losing one keeps the other.
+ * game's folder), in the settings (bt4_profile_id / bt4_profile_key) and in the app's internal storage (which removing or
+ * installing the game's disc again does not touch: before 1.0.3 the first two went with the disc's folder), so that losing
+ * one keeps the others. With it its recovery code: the nickname and the code bring the account back on any installation
+ * (Port_OnlineRecover; the Profile shows the code, the name screen's R1 asks for it).
  *
  * A battle counts when both players tell the service of it in agreement (worker.js): every copy reports its own
  * battles as they end (Bt4Profile_Observe, from gs/net.c), with the session's room code, the battle's number in the
@@ -31,6 +34,7 @@
 extern int Match_HttpPost(const char *url, const char *json, char *out, size_t size);
 extern const char *Port_NetNameGet(void);
 extern void Port_UiBanner(const char *text, int ms);
+extern void Port_UiMedal(int kind, int delta, int rating, int left, int capped, int ms); /* ui.cpp: the medal won, in the middle */
 extern int Port_TrLine(const char *original, char *out, int size);
 extern const char *PortOnline_Text(const char *text);
 extern void Port_SettingText(const char *name, const char *def, char *out, int size);
@@ -41,7 +45,7 @@ typedef struct {
     int used, tries;
     Uint64 next, until;
     char body[512];
-    int ranked;
+    int ranked, battle;     /* (battle: its number in the session) */
 } Report;
 
 static struct {
@@ -51,6 +55,11 @@ static struct {
     /* the account */
     int loaded, has, saveSettings;
     char id[33], secret[65];
+    char code[24];          /* the recovery code ("" until known) */
+    int wantCode;           /* ask the service for one (an account from before codes) */
+    int codeAsked;          /* ... asked once this run (a service without codes is not asked again every minute) */
+    int wantRecover;        /* the name screen asked for the account of recName back with recCode */
+    char recName[20], recCode[24];
     /* the nickname */
     int nick;              /* BT4_NICKNAME_* */
     char name[20], want[20];
@@ -73,6 +82,9 @@ static struct {
     Report rep[REPORTS];
     char banner[4][160];
     int banners;
+    int medal[4][5];        /* medals to show: kind (1 gold, 2 silver), delta, rating, rematches left, capped */
+    int medals;
+    int resultBattle, resultLeft; /* the last battle whose answer came (its number in the session), its rematches left */
 } sP;
 
 /* the game's thread only */
@@ -153,45 +165,81 @@ static int account_valid(const char *id, const char *secret) {
     for (i = 0; secret[i]; i++) if (!SDL_isxdigit((unsigned char)secret[i])) return 0;
     return 1;
 }
+/* the copy in the app's internal storage ("" when there is none: not Android's app process) */
+static const char *account_durable(void) {
+    static char path[512];
+    if (path[0] == '\0') {
+        const char *dir = SDL_GetAndroidInternalStoragePath();
+        if (dir == NULL || dir[0] == '\0') return "";
+        SDL_snprintf(path, sizeof(path), "%s/%s", dir, ACCOUNT_FILE);
+    }
+    return path;
+}
+/* one file: "id secret [recovery code]" */
+static int account_read(const char *path, char id[64], char secret[96], char code[24]) {
+    char line[256] = "";
+    char c[32] = "";
+    size_t n;
+    FILE *f;
+    if (path == NULL || path[0] == '\0' || (f = fopen(path, "rb")) == NULL) return 0;
+    n = fread(line, 1, sizeof(line) - 1, f);
+    fclose(f);
+    line[n] = '\0';
+    if (SDL_sscanf(line, "%63s %95s %31s", id, secret, c) < 2 || !account_valid(id, secret)) return 0;
+    SDL_strlcpy(code, SDL_strlen(c) == 19 ? c : "", 24);
+    return 1;
+}
+static void account_write(const char *path) {
+    char tmp[600];
+    FILE *f;
+    if (path == NULL || path[0] == '\0') return;
+    SDL_snprintf(tmp, sizeof(tmp), "%s.new", path);
+    f = fopen(tmp, "wb");
+    if (f != NULL) {
+        fprintf(f, "%s %s %s\n", sP.id, sP.secret, sP.code);
+        fclose(f);
+        remove(path);
+        rename(tmp, path);
+    }
+}
 /* (the menus' thread, the first time: the settings are read there) */
 static void account_load(void) {
-    char id[64] = "", secret[96] = "";
-    FILE *f;
+    char id[64] = "", secret[96] = "", code[24] = "";
+    int from = 0;
     if (sP.loaded) return;
     sP.loaded = 1;
-    f = fopen(ACCOUNT_FILE, "rb");
-    if (f != NULL) {
-        char line[200] = "";
-        size_t n = fread(line, 1, sizeof(line) - 1, f);
-        fclose(f);
-        line[n] = '\0';
-        if (SDL_sscanf(line, "%63s %95s", id, secret) != 2) id[0] = secret[0] = '\0';
-    }
-    if (!account_valid(id, secret)) {
+    if (account_read(ACCOUNT_FILE, id, secret, code)) from = 1;
+    if (!from) {
         Port_SettingText("bt4_profile_id", "", id, sizeof(id));
         Port_SettingText("bt4_profile_key", "", secret, sizeof(secret));
+        if (account_valid(id, secret)) from = 2;
     }
-    if (account_valid(id, secret)) {
+    if (!from && account_read(account_durable(), id, secret, code)) from = 3;
+    if (from) {
+        char other[64], otherSecret[96], otherCode[24];
         SDL_strlcpy(sP.id, id, sizeof(sP.id));
         SDL_strlcpy(sP.secret, secret, sizeof(sP.secret));
         sP.has = 1;
-        sP.saveSettings = 1; /* (both places hold it) */
+        sP.saveSettings = 1; /* (every place holds it) */
+        if (code[0] == '\0' && account_read(account_durable(), other, otherSecret, otherCode) && SDL_strcmp(other, id) == 0) {
+            SDL_strlcpy(code, otherCode, sizeof(code));
+        }
+        SDL_strlcpy(sP.code, code, sizeof(sP.code));
+        if (from != 1) account_write(ACCOUNT_FILE);
+        account_write(account_durable());
+        SDL_Log("bt4 profile: account %.8s... from %s%s", id, from == 1 ? "the game's folder" : from == 2 ? "the settings" : "the app's storage",
+                sP.code[0] ? ", with its recovery code" : "");
     }
 }
 /* (the service's thread, under the lock) */
-static void account_keep(const char *id, const char *secret) {
-    FILE *f;
+static void account_keep(const char *id, const char *secret, const char *code) {
     SDL_strlcpy(sP.id, id, sizeof(sP.id));
     SDL_strlcpy(sP.secret, secret, sizeof(sP.secret));
+    SDL_strlcpy(sP.code, code != NULL ? code : "", sizeof(sP.code));
     sP.has = 1;
     sP.saveSettings = 1;
-    f = fopen(ACCOUNT_FILE ".new", "wb");
-    if (f != NULL) {
-        fprintf(f, "%s %s\n", id, secret);
-        fclose(f);
-        remove(ACCOUNT_FILE);
-        rename(ACCOUNT_FILE ".new", ACCOUNT_FILE);
-    }
+    account_write(ACCOUNT_FILE);
+    account_write(account_durable());
 }
 /* (the menus' or the game's thread: the settings file is theirs) */
 static void account_settings(void) {
@@ -204,9 +252,10 @@ static void account_settings(void) {
     SDL_strlcpy(secret, sP.secret, sizeof(secret));
     SDL_UnlockMutex(sP.lock);
     if (save) {
-        char was[96];
+        char was[96], wasKey[96];
         Port_SettingText("bt4_profile_id", "", was, sizeof(was));
-        if (SDL_strcmp(was, id) != 0) {
+        Port_SettingText("bt4_profile_key", "", wasKey, sizeof(wasKey));
+        if (SDL_strcmp(was, id) != 0 || SDL_strcmp(wasKey, secret) != 0) { /* (a recovered account keeps its id, with a new secret) */
             Port_SettingTextSave("bt4_profile_id", id);
             Port_SettingTextSave("bt4_profile_key", secret);
             Port_SettingsWrite();
@@ -233,6 +282,16 @@ static void take_me(const char *a) {
     s->rated = jint(a, "rated", s->rwins + s->rlosses);
     s->opponents = jint(a, "opponents", 0);
     s->eligible = SDL_strstr(a, "\"eligible\":true") != NULL;
+    s->seasonGold = jint(a, "season_gold", 0);
+    s->seasonSilver = jint(a, "season_silver", 0);
+    s->bestRating = jint(a, "best_rating", 1000);
+    s->rankedTotal = jint(a, "ranked_total", 0);
+    s->seasonsPlayed = jint(a, "seasons_played", 0);
+    {   /* "season_name":"Temporada 3" */
+        char sn[40] = "";
+        jstr(a, "season_name", sn, sizeof(sn));
+        s->seasonNumber = SDL_strncmp(sn, "Temporada ", 10) == 0 ? SDL_atoi(sn + 10) : 0;
+    }
     if (SDL_GetCurrentTime(&real)) {
         double left = ends - (double)(real / 1000000);
         s->hoursLeft = left > 0 ? (int)(left / 3600000.0) : 0;
@@ -289,33 +348,31 @@ static void take_top(const char *a) {
     sP.topCount = n;
 }
 
-/* the lines for the game's thread (shown by Bt4Profile_Pump) */
-static void banner_add(const char *line) {
-    if (sP.banners < 4) SDL_strlcpy(sP.banner[sP.banners++], line, sizeof(sP.banner[0]));
-}
-static void take_result(const char *a, int ranked) {
-    char state[16] = "", medal[16] = "", line[160], fmt[160];
+static void take_result(const char *a, int ranked, int battle) {
+    char state[16] = "", medal[16] = "";
+    int capped = SDL_strstr(a, "\"capped\":true") != NULL;
+    int left = jint(a, "rematches_left", -1);
     jstr(a, "state", state, sizeof(state));
     jstr(a, "medal", medal, sizeof(medal));
+    sP.resultBattle = battle; /* (answered, whatever the answer: the rematch box waits for it, net.c) */
+    sP.resultLeft = SDL_strcmp(state, "settled") == 0 ? left : -1;
     if (SDL_strcmp(state, "settled") != 0) return;
-    if (SDL_strcmp(medal, "none") == 0) { /* (the day's limit of battles between these two players that give medals) */
-        banner_add("Battle counted. No more medals today against this rival.");
-        sP.wantMe = 1;
-        return;
+    if (SDL_strcmp(medal, "gold") == 0 || SDL_strcmp(medal, "silver") == 0) { /* a Ranked battle that counted: its medal on screen */
+        if (sP.medals < 4) {
+            int *m = sP.medal[sP.medals++];
+            m[0] = SDL_strcmp(medal, "gold") == 0 ? 1 : 2;
+            m[1] = jint(a, "delta", 0);
+            m[2] = jint(a, "rating", 0);
+            m[3] = left;
+            m[4] = 0;
+        }
+    } else if (ranked && capped) { /* past the match and its three rematches today with this rival */
+        if (sP.medals < 4) {
+            int *m = sP.medal[sP.medals++];
+            m[0] = 0; m[1] = 0; m[2] = 0; m[3] = 0; m[4] = 1;
+        }
     }
-    if (ranked && jfind(a, "delta") == NULL && SDL_strstr(a, "\"capped\":true") != NULL) {
-        banner_add(SDL_strcmp(medal, "gold") == 0 ? "Gold medal! No more Ranked points today against this rival." : "Silver medal. No more Ranked points today against this rival.");
-        sP.wantMe = 1;
-        return;
-    }
-    if (ranked && jfind(a, "delta") != NULL) {
-        const char *f = SDL_strcmp(medal, "gold") == 0 ? "Gold medal! Ranked: %+d points (%d total)" : "Silver medal. Ranked: %+d points (%d total)";
-        if (!Port_TrLine(f, fmt, sizeof(fmt)) || SDL_strstr(fmt, "%+d") == NULL) SDL_strlcpy(fmt, PortOnline_Text(f), sizeof(fmt));
-        SDL_snprintf(line, sizeof(line), fmt, jint(a, "delta", 0), jint(a, "rating", 0));
-    } else {
-        SDL_strlcpy(line, SDL_strcmp(medal, "gold") == 0 ? "Gold medal! Victory counted in your Profile." : "Silver medal. The battle counted in your Profile.", sizeof(line));
-    }
-    banner_add(line);
+    /* (a battle that is not Ranked gives nothing since 1.0.3: medals are Ranked's) */
     sP.wantMe = 1;
     sP.wantTop = sP.wantTop || ranked;
 }
@@ -330,6 +387,8 @@ static int SDLCALL profile_thread(void *arg) {
         for (;;) {
             now = SDL_GetTicks();
             if (sP.wantName) { job = 1; break; }
+            if (sP.wantRecover) { job = 5; break; }
+            if (sP.wantCode && sP.has) { job = 6; break; }
             if (sP.wantMe && sP.has) { job = 2; break; }
             if (sP.wantTop) { job = 3; break; }
             if (sP.wantPresence) { job = 4; break; }
@@ -357,9 +416,10 @@ static int SDLCALL profile_thread(void *arg) {
             if (!i) {
                 sP.nick = BT4_NICKNAME_UNAVAILABLE;
             } else if (SDL_strstr(a, "\"ok\":true") != NULL) {
-                char id[40], secret[80], got[40];
+                char id[40], secret[80], got[40], code[32] = "";
                 if (!had && jstr(a, "id", id, sizeof(id)) && jstr(a, "secret", secret, sizeof(secret)) && account_valid(id, secret)) {
-                    account_keep(id, secret);
+                    jstr(a, "recovery", code, sizeof(code));
+                    account_keep(id, secret, SDL_strlen(code) == 19 ? code : "");
                 }
                 if (sP.has && jstr(a, "name", got, sizeof(got))) {
                     SDL_strlcpy(sP.name, got, sizeof(sP.name));
@@ -387,6 +447,7 @@ static int SDLCALL profile_thread(void *arg) {
                 char got[40];
                 take_me(a);
                 sP.meState = 1;
+                if (sP.code[0] == '\0' && !sP.codeAsked) sP.wantCode = 1; /* (an account from before recovery codes, or a copy without it) */
                 if (jstr(a, "name", got, sizeof(got)) && sP.nick != BT4_NICKNAME_SAVING) {
                     SDL_strlcpy(sP.name, got, sizeof(sP.name));
                     sP.nick = BT4_NICKNAME_READY;
@@ -415,6 +476,55 @@ static int SDLCALL profile_thread(void *arg) {
                 sP.topState = -1;
             }
             SDL_UnlockMutex(sP.lock);
+        } else if (job == 5) { /* the account back: its nickname and recovery code */
+            char name[40], code[48], id[40], secret[80], got[40];
+            sP.wantRecover = 0;
+            jesc(name, sizeof(name), sP.recName);
+            jesc(code, sizeof(code), sP.recCode);
+            SDL_snprintf(body, sizeof(body), "{\"name\":\"%s\",\"code\":\"%s\"}", name, code);
+            SDL_UnlockMutex(sP.lock);
+            i = post("recover", body, a, sizeof(a));
+            SDL_LockMutex(sP.lock);
+            if (i && SDL_strstr(a, "\"ok\":true") != NULL && jstr(a, "id", id, sizeof(id)) && jstr(a, "secret", secret, sizeof(secret)) &&
+                account_valid(id, secret)) {
+                char typed[24];
+                const char *c = sP.recCode;
+                int n = 0;
+                for (; *c && n < 19; c++) { /* the code as the service gave it: XXXX-XXXX-XXXX-XXXX */
+                    char ch = (char)SDL_toupper((unsigned char)*c);
+                    if (!SDL_isalnum((unsigned char)ch)) continue;
+                    if (n == 4 || n == 9 || n == 14) typed[n++] = '-';
+                    typed[n++] = ch;
+                }
+                typed[n] = '\0';
+                account_keep(id, secret, n == 19 ? typed : "");
+                if (n != 19) sP.wantCode = 1;
+                if (jstr(a, "name", got, sizeof(got))) SDL_strlcpy(sP.name, got, sizeof(sP.name));
+                sP.nick = BT4_NICKNAME_READY;
+                sP.wantMe = 1;
+                sP.wantTop = 1;
+                SDL_Log("bt4 profile: account of %s recovered", sP.name);
+            } else if (i && (SDL_strstr(a, "\"wrong\"") != NULL || SDL_strstr(a, "\"invalid\"") != NULL)) {
+                sP.nick = BT4_NICKNAME_WRONG_CODE;
+            } else {
+                sP.nick = BT4_NICKNAME_UNAVAILABLE;
+            }
+            SDL_UnlockMutex(sP.lock);
+        } else if (job == 6) { /* a recovery code for an account that has none here */
+            char code[32] = "";
+            sP.wantCode = 0;
+            sP.codeAsked = 1;
+            SDL_snprintf(body, sizeof(body), "{\"id\":\"%s\",\"secret\":\"%s\"}", sP.id, sP.secret);
+            SDL_UnlockMutex(sP.lock);
+            i = post("recovery", body, a, sizeof(a));
+            SDL_LockMutex(sP.lock);
+            if (i && SDL_strstr(a, "\"ok\":true") != NULL && jstr(a, "recovery", code, sizeof(code)) && SDL_strlen(code) == 19) {
+                char id[33], secret[65];
+                SDL_strlcpy(id, sP.id, sizeof(id));
+                SDL_strlcpy(secret, sP.secret, sizeof(secret));
+                account_keep(id, secret, code);
+            }
+            SDL_UnlockMutex(sP.lock);
         } else if (job == 4) {
             int active = sP.presenceActive;
             sP.wantPresence = 0;
@@ -440,16 +550,18 @@ static int SDLCALL profile_thread(void *arg) {
             r->tries++;
             if (i) jstr(a, "state", state, sizeof(state));
             if (i && SDL_strstr(a, "\"ok\":true") != NULL && SDL_strcmp(state, "waiting") != 0) {
-                take_result(a, ranked);
+                take_result(a, ranked, r->battle);
                 r->used = 0;
             } else if (i && SDL_strstr(a, "\"error\"") != NULL && SDL_strstr(a, "\"slow\"") == NULL) {
                 SDL_Log("bt4 profile: report refused: %.120s", a);
+                sP.resultBattle = r->battle; sP.resultLeft = -1; /* (no answer will come: the rematch box goes on) */
                 r->used = 0;
             } else if (now >= r->until) {
                 SDL_Log("bt4 profile: a battle's report was not paired in time (%s)", i ? state : "no answer");
                 r->used = 0;
             } else {
-                r->next = now + (r->tries < 4 ? 3000 : r->tries < 8 ? 10000 : 30000); /* (a rival who never tells: few asks) */
+                r->next = now + (r->tries < 8 ? 1500 : r->tries < 12 ? 10000 : 30000); /* (the first to tell hears the answer at
+                                                     its next ask: soon, for its medal before the rematch box; a rival who never tells: few asks) */
             }
             SDL_UnlockMutex(sP.lock);
         }
@@ -650,6 +762,11 @@ void Bt4Profile_SessionBegin(int ranked, const char *code) {
     SDL_strlcpy(sG.code, code != NULL ? code : "", sizeof(sG.code));
     SDL_SetAtomicInt(&sRankedActive, sG.ranked);
     sRankedNext = 0;
+    if (sP.lock != NULL) { /* (medals of an earlier session not shown yet: not this match's) */
+        SDL_LockMutex(sP.lock);
+        sP.medals = 0;
+        SDL_UnlockMutex(sP.lock);
+    }
     SDL_Log("bt4 profile: session begins (%s, room %s)", sG.ranked ? "Ranked" : "normal", sG.code[0] ? sG.code : "-");
 }
 void Bt4Profile_SessionEnd(void) {
@@ -680,6 +797,7 @@ static void report(int winner, int me, const char *name0, const char *name1) {
     SDL_memset(&sP.rep[i], 0, sizeof(sP.rep[i]));
     sP.rep[i].used = 1;
     sP.rep[i].ranked = sG.ranked;
+    sP.rep[i].battle = sG.battle;
     sP.rep[i].next = SDL_GetTicks();
     sP.rep[i].until = sP.rep[i].next + 180000;
     SDL_snprintf(sP.rep[i].body, sizeof(sP.rep[i].body),
@@ -693,46 +811,58 @@ static void report(int winner, int me, const char *name0, const char *name1) {
 /* A battle's end, as Ranked's observer saw it on the PC (gs/match_supabase.cpp Port_RankedObserve): the fight seen,
    then a result that holds past the rollback window and the other's confirmed input. A surrender from the pause menu
    (bits 8) is a loss for the one who gave up (BT4decomp R5.4). */
-void Bt4Profile_Observe(int battleState, int bits, unsigned tick, unsigned confirmed, int resimulating, int localConcession,
-                        int me, const char *name0, const char *name1) {
+int Bt4Profile_Observe(int battleState, int bits, unsigned tick, unsigned confirmed, int resimulating, int localConcession,
+                       int me, const char *name0, const char *name1) {
     int winner;
-    if (!sG.session || resimulating || (me != 0 && me != 1)) return;
+    if (!sG.session || resimulating || (me != 0 && me != 1)) return 0;
     if (battleState == 3) {
         if (!sG.sawFight) {
             sG.sawFight = 1;
             sG.battle++;
         }
         sG.outcomeBits = 0;
-        return;
+        return 0;
     }
     if (!sG.sawFight || battleState < 4 || battleState > 6 || !(bits & 15)) {
         sG.outcomeBits = 0;
-        return;
+        return 0;
     }
     bits = bits & 8 ? 8 : bits & 7;
     if (sG.outcomeBits != bits) {
         sG.outcomeBits = bits;
         sG.outcomeTick = tick;
-        return;
+        return 0;
     }
     if (bits == 8) {
-        if (localConcession < 0 || confirmed < sG.outcomeTick + 2) return;
+        if (localConcession < 0 || confirmed < sG.outcomeTick + 2) return 0;
         winner = localConcession ? 1 - me : me;
     } else {
-        if (tick - sG.outcomeTick < 20 || confirmed < sG.outcomeTick + 2) return;
+        if (tick - sG.outcomeTick < 20 || confirmed < sG.outcomeTick + 2) return 0;
         winner = (bits & 3) == 1 ? 0 : (bits & 3) == 2 ? 1 : 2;
     }
     sG.sawFight = 0;
     sG.outcomeBits = 0;
     report(winner, me, name0, name1);
+    return sG.battle; /* (the battle just over: its number in the session) */
 }
 
 void Bt4Profile_Pump(void) {
-    static Uint64 shown;
+    static Uint64 shown, showFor = 3800;
     char line[160];
-    int have = 0;
-    if (sP.lock == NULL || (shown != 0 && SDL_GetTicks() - shown < 3800)) return; /* (one line at a time) */
+    int have = 0, m[5];
+    if (sP.lock == NULL || (shown != 0 && SDL_GetTicks() - shown < showFor)) return; /* (one at a time) */
     SDL_LockMutex(sP.lock);
+    if (sP.medals > 0) { /* a medal won: the picture (ui.cpp), five seconds */
+        SDL_memcpy(m, sP.medal[0], sizeof(m));
+        SDL_memmove(sP.medal[0], sP.medal[1], sizeof(sP.medal[0]) * 3);
+        sP.medals--;
+        SDL_UnlockMutex(sP.lock);
+        shown = SDL_GetTicks();
+        showFor = 5300;
+        Port_UiMedal(m[0], m[1], m[2], m[3], m[4], 5000);
+        return;
+    }
+    showFor = 3800;
     if (sP.banners > 0) {
         SDL_strlcpy(line, sP.banner[0], sizeof(line));
         SDL_memmove(sP.banner[0], sP.banner[1], sizeof(sP.banner[0]) * 3);
@@ -744,5 +874,51 @@ void Bt4Profile_Pump(void) {
         shown = SDL_GetTicks();
         Port_UiBanner(line, 3500);
     }
+}
+/* ---- the recovery code (src/menu/port_tbo.c: Profile, the name screen) ---- */
+void Bt4Profile_RecoveryCode(char out[24]) {
+    profile_start();
+    SDL_LockMutex(sP.lock);
+    SDL_strlcpy(out, sP.has ? sP.code : "", 24);
+    SDL_UnlockMutex(sP.lock);
+}
+int Port_OnlineRecover(const char *name, const char *code) {
+    profile_start();
+    if (name == NULL || name[0] == '\0' || code == NULL || code[0] == '\0') return 0;
+    SDL_LockMutex(sP.lock);
+    if (sP.nick == BT4_NICKNAME_SAVING) {
+        SDL_UnlockMutex(sP.lock);
+        return 0;
+    }
+    SDL_strlcpy(sP.recName, name, sizeof(sP.recName));
+    SDL_strlcpy(sP.recCode, code, sizeof(sP.recCode));
+    sP.wantRecover = 1;
+    sP.nick = BT4_NICKNAME_SAVING;
+    SDL_UnlockMutex(sP.lock);
+    wake();
+    return 1;
+}
+/* ---- the Ranked rematch box (gs/net.c) ---- */
+int Bt4Profile_RankedSession(void) {
+    return sG.session && sG.ranked;
+}
+/* 1 once the service has answered battle `battle` of this session (or will not): *left its rematches still counting today
+   (-1 not said); and nothing of it still to be shown (its medal). */
+int Bt4Profile_ResultOf(int battle, int *left) {
+    int got;
+    if (sP.lock == NULL) return 0;
+    SDL_LockMutex(sP.lock);
+    got = sP.resultBattle == battle;
+    if (left != NULL) *left = got ? sP.resultLeft : -1;
+    SDL_UnlockMutex(sP.lock);
+    return got;
+}
+int Bt4Profile_MedalsPending(void) {
+    int n;
+    if (sP.lock == NULL) return 0;
+    SDL_LockMutex(sP.lock);
+    n = sP.medals;
+    SDL_UnlockMutex(sP.lock);
+    return n;
 }
 #endif
