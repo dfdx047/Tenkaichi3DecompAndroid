@@ -70,9 +70,11 @@ class LogExport(private val context: Context, private val paths: GamePaths) {
         appendLine("===== bt3_log.txt (the game's last run) =====")
         val log = File(paths.root, "bt3_log.txt")
         if (log.exists()) {
-            val lines = log.readLines()
-            if (lines.size > 3000) appendLine("(${lines.size - 3000} earlier lines left out)")
-            lines.takeLast(3000).forEach { appendLine(it) }
+            /* (as every other part: a file that cannot be read is said so, and the report still goes out) */
+            runCatching { log.readLines() }.onSuccess { lines ->
+                if (lines.size > 3000) appendLine("(${lines.size - 3000} earlier lines left out)")
+                lines.takeLast(3000).forEach { appendLine(it) }
+            }.onFailure { appendLine("(could not be read: ${it.message})") }
         } else {
             appendLine("(none: the game has not been started yet)")
         }
@@ -97,17 +99,31 @@ class LogExport(private val context: Context, private val paths: GamePaths) {
         out
     }.getOrElse { "(logcat could not be read: ${it.message})\n" }
 
-    /** Writes the report to Downloads; returns its address (for sharing) and its name. */
+    /** Writes the report to Downloads; returns its address (for sharing) and its name.
+     *  The report is made first, the file after: a report that could not be made left an empty file in Downloads before.
+     *  The file is marked pending while it is written and unmarked after (MediaStore then records its real size: without
+     *  it some phones kept the size 0, and apps that go by it, Discord, refused the file as empty). A file that could
+     *  not be written is removed, never left empty. */
     fun saveToDownloads(): Pair<Uri, String> {
+        val bytes = build().toByteArray()
         val name = "DragonRage-log-" + SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(Date()) + ".txt"
+        val resolver = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, name)
             put(MediaStore.Downloads.MIME_TYPE, "text/plain")
             put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
         }
-        val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
             ?: throw IllegalStateException("Downloads is not available")
-        context.contentResolver.openOutputStream(uri)?.use { it.write(build().toByteArray()) }
+        try {
+            val out = resolver.openOutputStream(uri) ?: throw IllegalStateException("the file in Downloads could not be opened")
+            out.use { it.write(bytes) }
+            resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+        } catch (e: Exception) {
+            runCatching { resolver.delete(uri, null, null) }
+            throw e
+        }
         return uri to name
     }
 }
