@@ -4581,8 +4581,8 @@ s32 PortTbo_Run(void) {
         Tb_SetMode(TB_WAIT);
     }
     DrNet_PresenceActive(DrNet_Mode() == 0); /* the players online: counted while these screens are up (Dragon Net) */
-    GsDraw_ScreenScaleCap(12);   /* (at most 3x here: gs_draw.c; the player's own after) */
-    GsDraw_ScreenScaleFloor(12); /* (and at least 3x: Raditz and the letters stay sharp at a lower resolution, as BT4's) */
+    GsDraw_ScreenScaleCap(16);   /* (at most 4x here: gs_draw.c; the player's own after; and in a session, gs_draw.c sScreenAside) */
+    GsDraw_ScreenScaleFloor(16); /* (and at least 4x, BT4's: Raditz and the letters stay sharp at a lower resolution) */
     Port_EscQuit(0);
     Tb_WinInit();
     ColorFade_StartIn(0, 0, 0, 0x14);

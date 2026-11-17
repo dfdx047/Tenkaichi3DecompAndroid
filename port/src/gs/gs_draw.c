@@ -120,7 +120,14 @@ static int sUserScale4;
    letters) are made for the phone's own pixels, and the player's lower resolution stretched to the screen blurred
    them (BT4's screens had the floor already: bt4/port/src/gs/gs_draw.c). Kept as the cap is. */
 static int sScreenFloor4;
+/* An online session (its character select and fights) runs under the online screens, which stay open meanwhile
+   (menu/port_tbo.c): their cap and floor are set aside for it, the player's own resolution then, and come back after
+   (screen_scale_session, below). */
+static int sScreenAside;
 static int screen_scale_bound(int q) {
+    if (sScreenAside) {
+        return q;
+    }
     if (sScreenFloor4 && q < sScreenFloor4) {
         q = sScreenFloor4;
     }
@@ -2705,7 +2712,22 @@ void GsGpu_Native(int effect) {
 
 /* A new resolution multiplier: every render target is dropped and made again at the new size when the game next
    draws to it. Buffers that carry something over from the previous frame start empty for one frame. */
+/* Between two frames: an online session began or ended under the online screens (see sScreenAside). */
+static void screen_scale_session(void) {
+    extern int Port_NetSession(void); /* net.c */
+    int aside = sScreenFloor4 && Port_NetSession();
+    int q;
+    if (aside == sScreenAside) {
+        return;
+    }
+    sScreenAside = aside;
+    q = screen_scale_bound(sUserScale4);
+    gsPendingScale4 = q != gsScale4 ? q : 0;
+    fprintf(stderr, "bt3: online session %s: the online screens' resolution %s\n", aside ? "began" : "ended", aside ? "set aside" : "again");
+}
+
 static void scale_apply(void) {
+    screen_scale_session();
     if (gsPendingScale4 == 0 || gsPendingScale4 == gsScale4) {
         gsPendingScale4 = 0;
         return;
@@ -3063,6 +3085,7 @@ void GsDraw_ScreenScaleFloor(int floor4) {
         screen_scale_limits(had);
     } else if (floor4 <= 0 && sScreenFloor4) {
         sScreenFloor4 = 0;
+        sScreenAside = 0;
         screen_scale_limits(had);
     }
 }
