@@ -491,7 +491,12 @@ static void screen_profile(void) {
         for(int i=0;i<(int)(sizeof(kCountries)/sizeof(kCountries[0]));i++)if(SDL_strcmp(sFlag,kCountries[i][0])==0)sCountryIndex=i;
         Port_SettingTextSave("net_name",sName); Port_SettingTextSave("net_flag",sFlag); Port_SettingsWrite(); Port_NetNameSet(sName); sProfileSynced=1;
     }
-    const char *status=p.error==3?T("Incompatible version (409).","Versão incompatível (409).","Versión incompatible (409)."):p.error==2?T("Server error.","Erro do servidor.","Error del servidor."):p.state<0?T("No connection.","Sem conexão.","Sin conexión."):p.state==1?T("Loading profile…","Carregando perfil…","Cargando perfil…"):T("Your name and flag are shown on your public profile.","Seu nome e bandeira aparecem no perfil público.","Tu nombre y bandera aparecen en el perfil público.");
+    char diagnostic[96];
+    const char *status;
+    if (p.state < 0 && (p.http_status || p.error_field[0])) {
+        SDL_snprintf(diagnostic,sizeof(diagnostic),"http=%d error=%s",p.http_status,p.error_field);
+        status=diagnostic;
+    } else status=p.error==3?T("Incompatible version (409).","Versão incompatível (409).","Versión incompatible (409)."):p.error==2?T("Server error.","Erro do servidor.","Error del servidor."):p.state<0?T("No connection.","Sem conexão.","Sin conexión."):p.state==1?T("Loading profile…","Carregando perfil…","Cargando perfil…"):T("Your name and flag are shown on your public profile.","Seu nome e bandeira aparecem no perfil público.","Tu nombre y bandera aparecen en el perfil público.");
     footer(status,"",controls_hint());
 }
 
@@ -807,7 +812,11 @@ static void screen_ranked_wait(void) {
         }
         goto_screen(RANKED_MENU, 0);
     }
-    footer(r.msg == DRMSG_VERSION ? ranked_msg(r.msg) : T("Ranked search. You can cancel at any time.", "Busca ranqueada. Você pode cancelar quando quiser.", "Búsqueda Ranked. Puedes cancelar cuando quieras."),
+    char diagnostic[96];
+    const char *status = (r.http_status || r.error_field[0])
+                             ? (SDL_snprintf(diagnostic,sizeof(diagnostic),"http=%d error=%s",r.http_status,r.error_field), diagnostic)
+                             : r.msg == DRMSG_VERSION ? ranked_msg(r.msg) : T("Ranked search. You can cancel at any time.", "Busca ranqueada. Você pode cancelar quando quiser.", "Búsqueda Ranked. Puedes cancelar cuando quieras.");
+    footer(status,
            "", T("B: cancel", "B: cancelar", "B: cancelar"));
 }
 

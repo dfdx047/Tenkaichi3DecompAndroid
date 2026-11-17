@@ -157,10 +157,6 @@ const char *DrNet_Url(void) {
 #ifndef DRNET_URL_B
 #define DRNET_URL_B "https://dbt-nx-matchmaking.alexyt2021es.workers.dev"
 #endif
-#ifndef DRNET_URL_RANKED
-#define DRNET_URL_RANKED "https://bt-ranked.arielnndrd.workers.dev"
-#endif
-
 const char *DrNet_UrlB(void) {
     static char f[256];
     static int read;
@@ -168,17 +164,6 @@ const char *DrNet_UrlB(void) {
         read = 1;
         url_file("dragonnet_url_b.txt", f, sizeof(f));
         if (f[0] == '\0') SDL_strlcpy(f, DRNET_URL_B, sizeof(f));
-    }
-    return f;
-}
-
-const char *DrNet_RankedUrl(void) {
-    static char f[256];
-    static int read;
-    if (!read) {
-        read = 1;
-        url_file("dragonnet_ranked_url.txt", f, sizeof(f));
-        if (f[0] == '\0') SDL_strlcpy(f, DRNET_URL_RANKED, sizeof(f));
     }
     return f;
 }
@@ -268,7 +253,7 @@ static void set_state(int state, const char *error) {
 #include <wchar.h>
 #include <winhttp.h>
 
-static int http_post_native(const char *url, const char *json, const char *const *headers, char *out, size_t size) {
+static int http_post_native(const char *url, const char *json, const char *const *headers, char *out, size_t size, int *httpStatus) {
     wchar_t wurl[512], host[256], path[256], extra[256], requestPath[512], whead[512];
     char head[512];
     URL_COMPONENTS uc;
@@ -276,6 +261,7 @@ static int http_post_native(const char *url, const char *json, const char *const
     DWORD got = 0, used = 0, status = 0, len = sizeof(status);
     int ok = 0;
 
+    if (httpStatus) *httpStatus = 0;
     if (MultiByteToWideChar(CP_UTF8, 0, url, -1, wurl, 512) == 0) {
         return 0;
     }
@@ -317,6 +303,7 @@ static int http_post_native(const char *url, const char *json, const char *const
                       : WinHttpSendRequest(req, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0)) &&
         WinHttpReceiveResponse(req, NULL)) {
         WinHttpQueryHeaders(req, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX, &status, &len, WINHTTP_NO_HEADER_INDEX);
+        if (httpStatus) *httpStatus = (int)status;
         while (used + 1 < size && WinHttpReadData(req, out + used, (DWORD)(size - 1 - used), &got) && got != 0) {
             used += got;
         }
@@ -333,14 +320,15 @@ static int http_post_native(const char *url, const char *json, const char *const
    through JNI on this thread (SDL attaches it). */
 #include <jni.h>
 
-static int http_post_native(const char *url, const char *json, const char *const *headers, char *out, size_t size) {
+static int http_post_native(const char *url, const char *json, const char *const *headers, char *out, size_t size, int *httpStatus) {
     JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
     jobject act;
     jclass cls;
     jmethodID m;
     jstring ju, jb, jh, jr;
     char head[512];
-    int ok = 0, i;
+    int ok = 0, i, code = 0;
+    char *end;
 
     if (env == NULL || (act = (jobject)SDL_GetAndroidActivity()) == NULL) {
         return 0;
@@ -350,8 +338,9 @@ static int http_post_native(const char *url, const char *json, const char *const
         SDL_strlcat(head, headers[i], sizeof(head));
         SDL_strlcat(head, "\n", sizeof(head));
     }
+    if (httpStatus) *httpStatus = 0;
     cls = (*env)->GetObjectClass(env, act);
-    m = cls != NULL ? (*env)->GetMethodID(env, cls, "netRequest", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;") : NULL;
+    m = cls != NULL ? (*env)->GetMethodID(env, cls, httpStatus ? "netRequestStatus" : "netRequest", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;") : NULL;
     if (m == NULL) {
         (*env)->ExceptionClear(env);
     } else {
@@ -366,7 +355,10 @@ static int http_post_native(const char *url, const char *json, const char *const
         if (jr != NULL) {
             const char *r = (*env)->GetStringUTFChars(env, jr, NULL);
             if (r != NULL) {
-                SDL_strlcpy(out, r, size);
+                if (httpStatus) {
+                    code = (int)SDL_strtol(r, &end, 10);
+                    if (end != r && *end == '\n') { *httpStatus = code; SDL_strlcpy(out, end + 1, size); }
+                } else SDL_strlcpy(out, r, size);
                 ok = out[0] != '\0';
                 (*env)->ReleaseStringUTFChars(env, jr, r);
             }
@@ -386,18 +378,20 @@ static int http_post_native(const char *url, const char *json, const char *const
 }
 #else
 /* Linux: the system's curl library, if it is there (it nearly always is), loaded when first needed. */
-static int http_post_native(const char *url, const char *json, const char *const *headers, char *out, size_t size) {
+static int http_post_native(const char *url, const char *json, const char *const *headers, char *out, size_t size, int *httpStatus) {
     typedef void *(*init_fn)(void);
     typedef void *(*append_fn)(void *, const char *);
     typedef void (*freeall_fn)(void *);
     typedef int (*setopt_fn)(void *, int, ...);
     typedef int (*perform_fn)(void *);
+    typedef int (*getinfo_fn)(void *, int, ...);
     typedef void (*cleanup_fn)(void *);
     static SDL_SharedObject *lib;
     static int tried;
     static init_fn init;
     static setopt_fn setopt;
     static perform_fn perform;
+    static getinfo_fn getinfo;
     static cleanup_fn cleanup;
     static append_fn append;
     static freeall_fn freeall;
@@ -406,6 +400,8 @@ static int http_post_native(const char *url, const char *json, const char *const
     FILE *fp;
     int rc;
     long n;
+
+    if (httpStatus) *httpStatus = 0;
 
     if (!tried) {
         static const char *const names[] = {"libcurl.so.4", "libcurl-gnutls.so.4", "libcurl.so"};
@@ -418,6 +414,7 @@ static int http_post_native(const char *url, const char *json, const char *const
             init = (init_fn)SDL_LoadFunction(lib, "curl_easy_init");
             setopt = (setopt_fn)SDL_LoadFunction(lib, "curl_easy_setopt");
             perform = (perform_fn)SDL_LoadFunction(lib, "curl_easy_perform");
+            getinfo = (getinfo_fn)SDL_LoadFunction(lib, "curl_easy_getinfo");
             cleanup = (cleanup_fn)SDL_LoadFunction(lib, "curl_easy_cleanup");
             append = (append_fn)SDL_LoadFunction(lib, "curl_slist_append");
             freeall = (freeall_fn)SDL_LoadFunction(lib, "curl_slist_free_all");
@@ -449,6 +446,10 @@ static int http_post_native(const char *url, const char *json, const char *const
     setopt(h, 13 /* CURLOPT_TIMEOUT */, 12L);
     setopt(h, 99 /* CURLOPT_NOSIGNAL */, 1L);
     rc = perform(h);
+    if (httpStatus && getinfo != NULL && rc == 0) {
+        long response = 0;
+        if (getinfo(h, 0x200002 /* CURLINFO_RESPONSE_CODE */, &response) == 0) *httpStatus = (int)response;
+    }
     cleanup(h);
     if (list != NULL) {
         freeall(list);
@@ -468,47 +469,7 @@ static int http_post_native(const char *url, const char *json, const char *const
 int Match_HttpRequest(const char *url, const char *json, const char *const *headers, char *out, size_t size) {
     if (out == NULL || size == 0 || url == NULL) return 0;
     out[0] = '\0';
-    return http_post_native(url, json, headers, out, size);
-}
-
-/* Community BT3 profile API: called only by net_bt3.c's worker, never the game loop. */
-int Match_Bt3Post(const char *url, const char *json, const char *const *headers, char *out, size_t size, int *status) {
-#ifdef __ANDROID__
-    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
-    jobject act = (jobject)SDL_GetAndroidActivity();
-    jclass cls = NULL;
-    jmethodID m = NULL;
-    jstring ju = NULL, jb = NULL, jh = NULL, jr = NULL;
-    char head[512], *end;
-    const char *result;
-    int i, code = 0, ok = 0;
-    if (status) *status = 0;
-    if (!env || !act) return 0;
-    head[0] = '\0';
-    for (i = 0; headers && headers[i]; i++) { SDL_strlcat(head, headers[i], sizeof(head)); SDL_strlcat(head, "\n", sizeof(head)); }
-    cls = (*env)->GetObjectClass(env, act);
-    m = cls ? (*env)->GetMethodID(env, cls, "netRequestStatus", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;") : NULL;
-    if (!m) { if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env); goto done; }
-    ju = (*env)->NewStringUTF(env, url); jb = (*env)->NewStringUTF(env, json); jh = (*env)->NewStringUTF(env, head);
-    jr = (jstring)(*env)->CallObjectMethod(env, act, m, ju, jb, jh);
-    if ((*env)->ExceptionCheck(env)) { (*env)->ExceptionClear(env); goto done; }
-    if (!jr) goto done;
-    result = (*env)->GetStringUTFChars(env, jr, NULL);
-    if (!result) goto done;
-    code = (int)SDL_strtol(result, &end, 10);
-    if (end != result && *end == '\n') { SDL_strlcpy(out, end + 1, size); ok = out[0] != '\0'; }
-    (*env)->ReleaseStringUTFChars(env, jr, result);
-    if (status) *status = code;
-done:
-    if (jr) (*env)->DeleteLocalRef(env, jr); if (ju) (*env)->DeleteLocalRef(env, ju);
-    if (jb) (*env)->DeleteLocalRef(env, jb); if (jh) (*env)->DeleteLocalRef(env, jh);
-    if (cls) (*env)->DeleteLocalRef(env, cls); (*env)->DeleteLocalRef(env, act);
-    return ok;
-#else
-    int ok = Match_HttpRequest(url, json, headers, out, size);
-    if (status) *status = ok ? 200 : 0;
-    return ok;
-#endif
+    return http_post_native(url, json, headers, out, size, NULL);
 }
 
 /* The build key (net_sign.c). The service checks the time a request is signed for against its own clock (five
@@ -528,14 +489,17 @@ static void clock_learn(const char *answer) {
 
 /* POSTs `json` to <url>/v1/<what>; the answer's text in out. 0 = no answer. The system's own HTTPS first (above); if
    that is not to be had, the `curl` program. */
-static int http_post_once(const char *base, const char *what, const char *json, char *out, size_t size) {
+static int http_post_once(const char *base, const char *what, const char *json, char *out, size_t size, int *httpStatus) {
     char url[256], path[64], sig[65], head[3][96];
-    const char *args[20], *headers[4] = {NULL, NULL, NULL, NULL};
+    const char *args[24], *headers[4] = {NULL, NULL, NULL, NULL};
     SDL_Process *p;
     size_t got = 0;
+    char *statusEnd;
     int code = 0, n = 0, i;
     void *data;
     long long when = (long long)time(NULL) + SDL_GetAtomicInt(&sClockAhead);
+
+    if (httpStatus) *httpStatus = 0;
 
     SDL_snprintf(url, sizeof(url), "%s/v1/%s", base, what);
     SDL_snprintf(path, sizeof(path), "/v1/%s", what);
@@ -547,7 +511,7 @@ static int http_post_once(const char *base, const char *what, const char *json, 
             headers[i] = head[i];
         }
     }
-    if (SDL_getenv("BT3_MATCH_CURL") == NULL && http_post_native(url, json, headers[0] != NULL ? headers : NULL, out, size)) {
+    if (SDL_getenv("BT3_MATCH_CURL") == NULL && http_post_native(url, json, headers[0] != NULL ? headers : NULL, out, size, httpStatus)) {
         return 1;
     }
 #ifdef __ANDROID__
@@ -571,6 +535,8 @@ static int http_post_once(const char *base, const char *what, const char *json, 
         args[n++] = "-H";
         args[n++] = headers[i];
     }
+    args[n++] = "-w";
+    args[n++] = "\n%{http_code}";
     args[n] = NULL;
     p = SDL_CreateProcess(args, true);
     if (p == NULL) {
@@ -582,6 +548,16 @@ static int http_post_once(const char *base, const char *what, const char *json, 
         return 0;
     }
     SDL_strlcpy(out, (const char *)data, size);
+    if (httpStatus && got > 0) {
+        size_t end = SDL_strlen(out);
+        while (end > 0 && (out[end - 1] == '\n' || out[end - 1] == '\r')) end--;
+        statusEnd = out + end;
+        while (statusEnd > out && statusEnd[-1] >= '0' && statusEnd[-1] <= '9') statusEnd--;
+        if (statusEnd < out + end && statusEnd > out && statusEnd[-1] == '\n') {
+            *httpStatus = SDL_atoi(statusEnd);
+            statusEnd[-1] = '\0';
+        }
+    }
     SDL_free(data);
     return got > 0;
 }
@@ -734,12 +710,12 @@ static int http_post_to(const char *base, const char *what, const char *json, ch
     if (limit_before(base, out, size)) {
         return 1;
     }
-    ok = limit_test(out, size) || http_post_once(base, what, json, out, size);
+    ok = limit_test(out, size) || http_post_once(base, what, json, out, size, NULL);
     limited = limit_after(base, what, ok, out);
     /* refused for the time it was signed for: the answer says the service's time; once more by that */
     if (ok && Sign_HasKey() && SDL_strstr(out, "\"build key\"") != NULL && SDL_strstr(out, "\"why\":\"time\"") != NULL && SDL_strstr(out, "\"now\":") != NULL) {
         clock_learn(out);
-        ok = http_post_once(base, what, json, out, size);
+        ok = http_post_once(base, what, json, out, size, NULL);
     }
     DrNet_NoteResult(base, ok && out[0] == '{' && !limited);
     return ok;
@@ -1650,293 +1626,15 @@ int Match_SignTest(void) {
     return 0;
 }
 
-/* ---- Ranked C/D (DBT-NX v1.7): C primeiro; D so depois que o C provou a autoridade E ---- */
-#ifndef DRNET_URL_RANKED_D
-#define DRNET_URL_RANKED_D "https://bt3-net-rooms.alexsanchez01es.workers.dev"
-#endif
+/* Ranked C/D Workers disabled: all ranked routes use Match_PostFriendlyRanked. */
 
-static int rk_host_ok(const char *u) {
-    const char *p;
-    size_t n = SDL_strlen(u);
-    if (n < 12 || n > 120 || SDL_strncmp(u, "https://", 8) != 0) {
-        return 0;
-    }
-    for (p = u + 8; *p != '\0'; p++) {
-        if (!((*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9') || *p == '.' || *p == '-')) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-const char *DrNet_RankedUrlD(void) {
-    static char f[256];
-    static int read;
-    if (!read) {
-        read = 1;
-        url_file("dragonnet_ranked_url_d.txt", f, sizeof(f));
-        if (f[0] == '\0' || !rk_host_ok(f)) {
-            SDL_strlcpy(f, DRNET_URL_RANKED_D, sizeof(f));
-        }
-    }
-    return f;
-}
-
-static SDL_AtomicInt sRkUseD, sRkDay, sRkFails, sRkShared, sRkVerC, sRkVerD;
-static char sRkAuth[72];
-
-static int rk_text(const char *json, const char *key, char *out, size_t cap) {
-    char field[64];
-    const char *s;
-    size_t n = 0;
-    SDL_snprintf(field, sizeof(field), "\"%s\":", key);
-    s = SDL_strstr(json, field);
-    if (s == NULL) {
-        return 0;
-    }
-    s += SDL_strlen(field);
-    while (*s == ' ') {
-        s++;
-    }
-    if (*s++ != '"') {
-        return 0;
-    }
-    while (*s != '\0' && *s != '"' && n + 1 < cap) {
-        if (*s == '\\') {
-            return 0;
-        }
-        out[n++] = *s++;
-    }
-    out[n] = '\0';
-    return *s == '"';
-}
-
-static int rk_quota(const char *out) {
-    return out[0] != '{' && (SDL_strstr(out, "1027") != NULL || SDL_strstr(out, "1015") != NULL ||
-                             SDL_strstr(out, "Too Many Requests") != NULL);
-}
-
-static int rk_bad(int ok, const char *out) {
-    return !ok || out[0] != '{' || SDL_strstr(out, "\"ranked unavailable\"") != NULL ||
-           SDL_strstr(out, "\"migration incomplete\"") != NULL;
-}
-
-static const char *rk_pick(void) {
-    if (SDL_GetAtomicInt(&sRkUseD)) {
-        if (SDL_GetAtomicInt(&sRkDay) != utc_day()) {
-            SDL_SetAtomicInt(&sRkUseD, 0); /* novo dia UTC: volta ao C */
-            SDL_SetAtomicInt(&sRkFails, 0);
-            fprintf(stderr, "dragonnet: ranked back to C\n");
-        } else {
-            return DrNet_RankedUrlD();
-        }
-    }
-    return DrNet_RankedUrl();
-}
-
-/* so o C conta; o D falhando nao volta ao C no mesmo dia (como o B) */
-static void rk_note(const char *base, int ok, int exhausted) {
-    if (SDL_strcmp(base, DrNet_RankedUrl()) != 0 || !SDL_GetAtomicInt(&sRkShared) || SDL_GetAtomicInt(&sRkUseD)) {
-        return;
-    }
-    if (ok) {
-        SDL_SetAtomicInt(&sRkFails, 0);
-        return;
-    }
-    if (exhausted || SDL_AddAtomicInt(&sRkFails, 1) + 1 >= DRNET_FAILS) {
-        SDL_SetAtomicInt(&sRkDay, utc_day());
-        SDL_SetAtomicInt(&sRkUseD, 1);
-        SDL_SetAtomicInt(&sRkFails, 0);
-        fprintf(stderr, "dragonnet: ranked C failed, using D until 00:00 UTC\n");
-    }
-}
-
-/* 1 = C/D compartilhado, 0 = C antigo (so C), -1 = inalcancavel ou inseguro */
-static int rk_verify(const char *base) {
-    char url[320], out[2048], a[72], c[256], d[256];
-    int ok, isD = SDL_strcmp(base, DrNet_RankedUrl()) != 0;
-    if (!SDL_GetAtomicInt(&sRkShared) && DrNet_CdLoad(a, (int)sizeof(a))) {
-        SDL_strlcpy(sRkAuth, a, sizeof(sRkAuth));
-        SDL_SetAtomicInt(&sRkShared, 1);
-    }
-    if (isD) {
-        if (!SDL_GetAtomicInt(&sRkShared)) {
-            return -1;
-        }
-        if (SDL_GetAtomicInt(&sRkVerD)) {
-            return 1;
-        }
-    } else {
-        if (SDL_GetAtomicInt(&sRkVerC) == 1) {
-            return 1;
-        }
-        if (SDL_GetAtomicInt(&sRkVerC) == 2) {
-            return 0;
-        }
-    }
-    SDL_snprintf(url, sizeof(url), "%s/v1/ranked/capabilities", base);
-    out[0] = '\0';
-    ok = http_post_native(url, "{\"v\":5001,\"cd\":1}", NULL, out, sizeof(out));
-    if (rk_bad(ok, out)) {
-        rk_note(base, 0, rk_quota(out));
-        return -1;
-    }
-    if (SDL_strstr(out, "\"cd\":1") == NULL || SDL_strstr(out, "\"migration_complete\":1") == NULL) {
-        if (!isD && !SDL_GetAtomicInt(&sRkShared)) {
-            SDL_SetAtomicInt(&sRkVerC, 2); /* C antigo: segue so com o C */
-            return 0;
-        }
-        return -1;
-    }
-    if (!rk_text(out, "authority", a, sizeof(a)) || !rk_text(out, "url_c", c, sizeof(c)) ||
-        !rk_text(out, "url_d", d, sizeof(d)) || SDL_strcmp(c, DrNet_RankedUrl()) != 0 ||
-        SDL_strcmp(d, DrNet_RankedUrlD()) != 0) {
-        return -1;
-    }
-    if (SDL_GetAtomicInt(&sRkShared)) {
-        if (SDL_strcmp(a, sRkAuth) != 0) {
-            fprintf(stderr, "dragonnet: ranked authority differs: refused\n");
-            return -1;
-        }
-    } else if (!isD) {
-        if (!DrNet_CdSave(a)) {
-            return -1;
-        }
-        SDL_strlcpy(sRkAuth, a, sizeof(sRkAuth));
-        SDL_SetAtomicInt(&sRkShared, 1);
-    } else {
-        return -1;
-    }
-    SDL_SetAtomicInt(isD ? &sRkVerD : &sRkVerC, 1);
-    fprintf(stderr, "dragonnet: ranked c/d verified (%s)\n", isD ? "D" : "C");
-    return 1;
-}
-
-/* salas ranqueadas: o D so entra depois de verificado */
-const char *DrNet_RankedActiveUrl(void) {
-    const char *base = rk_pick();
-    if (SDL_strcmp(base, DrNet_RankedUrl()) != 0 && !SDL_GetAtomicInt(&sRkVerD)) {
-        return DrNet_RankedUrl();
-    }
-    return base;
-}
-
-/* a partida ranqueada fica no servidor (C ou D) em que o servico a colocou */
-#define RK_PINS 2
-static char sRkPinMatch[RK_PINS][33];
-static char sRkPinBack[RK_PINS]; /* 'C' ou 'D' */
-static int sRkPinNext;
-static SDL_AtomicInt sRkPinBusy;
-
-static void rk_pin_lock(void) {
-    while (!SDL_CompareAndSwapAtomicInt(&sRkPinBusy, 0, 1)) {
-        SDL_Delay(1);
-    }
-}
-
-static void rk_pin_unlock(void) {
-    SDL_SetAtomicInt(&sRkPinBusy, 0);
-}
-
-/* acha "match":"<32 hex>" no JSON (pedido ou resposta) */
-static int rk_match_of(const char *json, char *match) {
-    const char *s = SDL_strstr(json, "\"match\":\"");
-    int i;
-    if (s == NULL) {
-        return 0;
-    }
-    s += 9;
-    for (i = 0; i < 32; i++) {
-        char c = s[i];
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
-            return 0;
-        }
-        match[i] = c;
-    }
-    if (s[32] != '"') {
-        return 0;
-    }
-    match[32] = '\0';
-    return 1;
-}
-
-static char rk_pin_get(const char *match) {
-    char back = 0;
-    int i;
-    rk_pin_lock();
-    for (i = 0; i < RK_PINS; i++) {
-        if (sRkPinBack[i] != 0 && SDL_strcmp(sRkPinMatch[i], match) == 0) {
-            back = sRkPinBack[i];
-        }
-    }
-    rk_pin_unlock();
-    return back;
-}
-
-static void rk_pin_set(const char *match, char back) {
-    int i;
-    rk_pin_lock();
-    for (i = 0; i < RK_PINS; i++) {
-        if (sRkPinBack[i] != 0 && SDL_strcmp(sRkPinMatch[i], match) == 0) {
-            rk_pin_unlock(); /* a partida fica onde foi colocada */
-            return;
-        }
-    }
-    i = sRkPinNext;
-    sRkPinNext = (sRkPinNext + 1) % RK_PINS;
-    SDL_strlcpy(sRkPinMatch[i], match, sizeof(sRkPinMatch[i]));
-    sRkPinBack[i] = back;
-    rk_pin_unlock();
-    fprintf(stderr, "dragonnet: ranked match pinned to %c\n", back);
-}
-
-static int rk_post(const char *what, const char *json, char *out, size_t size) {
-    char url[320], a[72], match[33], back[8];
-    const char *base;
-    char pin = 0;
-    int ok, bad, shared;
-    out[0] = '\0';
-    if (DrNet_RankedUrl()[0] == '\0') {
-        return 0; /* sem C: Ranked indisponivel */
-    }
-    if (rk_match_of(json, match)) {
-        pin = rk_pin_get(match);
-    }
-    base = rk_pick();
-    if (pin == 'D') {
-        base = DrNet_RankedUrlD();
-    } else if (pin == 'C') {
-        base = DrNet_RankedUrl();
-    }
-    shared = rk_verify(base);
-    if (shared < 0) {
-        return 0;
-    }
-    SDL_snprintf(url, sizeof(url), "%s/v1/%s", base, what);
-    ok = http_post_native(url, json, NULL, out, size);
-    bad = rk_bad(ok, out);
-    rk_note(base, !bad, rk_quota(out));
-    if (!bad && shared && rk_text(out, "authority", a, sizeof(a)) && SDL_strcmp(a, sRkAuth) != 0) {
-        out[0] = '\0';
-        return 0;
-    }
-    if (!bad && shared && rk_match_of(out, match) && rk_text(out, "backend", back, sizeof(back)) &&
-        (back[0] == 'C' || back[0] == 'D') && back[1] == '\0') {
-        rk_pin_set(match, back[0]);
-    }
-    return ok;
-}
-
-/* Dragon Net (net_dragon.c): a POST to its service whatever the mode, <service>/v1/<what>; the answer's text in out
-   (also an error's: {"error":...}). 0 = no answer. Never signed (the build key is the PC port's). */
+/* Dragon Net presence only. Ranked routes must use Match_PostFriendlyRanked. */
 int Match_PostDragon(const char *what, const char *json, char *out, size_t size) {
     char url[320];
     const char *base;
     int ok, presence = SDL_strcmp(what, "presence") == 0;
     out[0] = '\0';
-    if (SDL_strncmp(what, "ranked/", 7) == 0) {
-        return rk_post(what, json, out, size);
-    } else if (presence) {
+    if (presence) {
         base = DrNet_ActiveUrl();
     } else {
         return 0; /* chat e o resto: desligado */
@@ -1945,7 +1643,7 @@ int Match_PostDragon(const char *what, const char *json, char *out, size_t size)
     if (limit_before(base, out, size)) {
         return 1;
     }
-    ok = limit_test(out, size) || http_post_native(url, json, NULL, out, size);
+    ok = limit_test(out, size) || http_post_native(url, json, NULL, out, size, NULL);
     if (limit_after(base, what, ok, out)) {
         ok = presence ? 0 : ok; /* (server A out of its requests: a failure for the switch to B) */
     }
@@ -1956,15 +1654,19 @@ int Match_PostDragon(const char *what, const char *json, char *out, size_t size)
 }
 
 /* Ranked queue and connection lifecycle share the production service and signed headers used by Amistoso. */
-int Match_PostFriendlyRanked(const char *what, const char *json, char *out, size_t size) {
-    if (what == NULL || json == NULL || out == NULL || size == 0 || DrNet_Mode() != 0 ||
-        (SDL_strcmp(what, "ranked/queue") != 0 && SDL_strcmp(what, "ranked/room") != 0 &&
-         SDL_strcmp(what, "ranked/lifecycle") != 0 && SDL_strcmp(what, "ranked/cancel") != 0)) {
+int Match_PostFriendlyRanked(const char *what, const char *json, char *out, size_t size, int *httpStatus) {
+    if (what == NULL || json == NULL || out == NULL || size == 0 ||
+        (SDL_strcmp(what, "ranked/register") != 0 && SDL_strcmp(what, "ranked/profile") != 0 &&
+         SDL_strcmp(what, "ranked/leaderboard") != 0 && SDL_strcmp(what, "ranked/queue") != 0 &&
+         SDL_strcmp(what, "ranked/room") != 0 && SDL_strcmp(what, "ranked/lifecycle") != 0 &&
+         SDL_strcmp(what, "ranked/result") != 0 && SDL_strcmp(what, "ranked/forfeit") != 0 &&
+         SDL_strcmp(what, "ranked/match") != 0 && SDL_strcmp(what, "ranked/cancel") != 0)) {
         if (out != NULL && size > 0) out[0] = '\0';
+        if (httpStatus) *httpStatus = 0;
         return 0;
     }
     out[0] = '\0';
-    return http_post_once(DRNET_FRIENDLY_URL, what, json, out, size);
+    return http_post_once(DRNET_FRIENDLY_URL, what, json, out, size, httpStatus);
 }
 
 /* ---- for the Tag Team mod's rooms over the internet (tag_link.c): the same questions, on its own socket ---- */
@@ -1983,5 +1685,5 @@ int TagLink_Lan(int port, char *out, int size) {
 }
 /* A POST of `json` to `url` (the answer in out, error answers too). 0: nothing came back. */
 int TagLink_Http(const char *url, const char *json, char *out, int size) {
-    return http_post_native(url, json, NULL, out, (size_t)size);
+    return http_post_native(url, json, NULL, out, (size_t)size, NULL);
 }

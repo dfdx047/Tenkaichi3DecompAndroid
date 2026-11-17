@@ -2251,11 +2251,13 @@ static void Tb_DrawBoard(void) {
 }
 
 static void Tb_DrawBoardText(void) {
-    static char line[48];
+    static char line[96];
     s32 i;
 
     if (sTbCommunityBoard && sTbCommunity.board_state != 2) {
-        Ps_Text(30.0f, Ps_TextTop(TB_BOARD_Y + TB_BOARD_ROW * 0.5f - 1.5f, 0.7f), sTbCommunity.board_state == 1 ? "Updating the ranking..." : "The ranking did not answer: X tries again.", 0.7f, 260.0f, 0);
+        if (sTbCommunity.http_status || sTbCommunity.error_field[0]) sprintf(line, "http=%d error=%s", sTbCommunity.http_status, sTbCommunity.error_field);
+        else Ps_Copy(line, sTbCommunity.board_state == 1 ? "Updating the ranking..." : "The ranking did not answer: X tries again.", sizeof(line));
+        Ps_Text(30.0f, Ps_TextTop(TB_BOARD_Y + TB_BOARD_ROW * 0.5f - 1.5f, 0.7f), line, 0.7f, 260.0f, 0);
         return;
     }
     if (!sTbCommunityBoard && sTbRk.board != 2) {
@@ -4250,6 +4252,15 @@ static void Tb_BracketFocus(char *focus) {
 
 /* What the hosts say in the box at the foot of the screen (two lines at most). */
 static char *Tb_Help(void) {
+    static char rankedDiagnostic[96];
+    if ((sTb->mode == TB_RANKED || sTb->mode == TB_RKWAIT) && (sTbRk.http_status || sTbRk.error_field[0])) {
+        sprintf(rankedDiagnostic, "http=%d error=%s", sTbRk.http_status, sTbRk.error_field);
+        return rankedDiagnostic;
+    }
+    if (sTb->mode == TB_BOARD && sTbCommunityBoard && (sTbCommunity.http_status || sTbCommunity.error_field[0])) {
+        sprintf(rankedDiagnostic, "http=%d error=%s", sTbCommunity.http_status, sTbCommunity.error_field);
+        return rankedDiagnostic;
+    }
     if (sTb->say > 0) { /* (why a search failed: Tb_Say) */
         return sTb->sayLine;
     }

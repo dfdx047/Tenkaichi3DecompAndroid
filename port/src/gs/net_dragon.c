@@ -4,14 +4,9 @@
  * A new release of the PC port does not stop it: games meet when their netcode AND their simulation are the same
  * (DrNet_WireVersion), not their release number. Against the PC the PC port's service goes on being used (mode 1).
  *
- * On top of rooms and quick matches (net.c and net_match.c, the same as against PC), the service has:
- *   Ranked   an Elo rating per player (a device identity: id and secret in dragonnet-device.txt in the game folder,
- *            never sent anywhere else); a search pairs players of a near rating; the two games report the fight's
- *            result and it counts only when both reports agree (the service settles it once);
- *   chat     the general chat, the last messages of everyone on the service;
- *   presence an approximate count of the players with the online screen open (an anonymous id of its own).
- * The protocol is DBT-NX's (port/switch/online/ranked.c there), so Ranked profiles, the chat and the count are the
- * same for both games. All of it runs on one thread of its own; the window reads its state (DrRanked_Poll, ...).
+ * Ranked uses the signed Amistoso service and a single identity shared with net_bt3.c; legacy Worker identities are
+ * ignored. Dragon Net still supplies presence. Ranked requests run on this worker; the window reads its state
+ * (DrRanked_Poll, ...).
  *
  * A fight's result (DrNet_BattleFinished, from BattleResult_Finish) is written to dragonnet-result.txt before it is
  * sent, and sent again until the service has settled it (the app may be closed in between). Leaving a ranked
@@ -25,6 +20,7 @@
 #include <string.h>
 #include "net_dragon.h"
 #include "net_match.h"
+#include "net_bt3.h"
 
 extern int Port_Setting(const char *name, int def);
 extern void Port_SettingSave(const char *name, int value);
@@ -261,6 +257,15 @@ static int sPresenceOn, sPresenceLeave, sOnline = -1;
 static Uint64 sSearchAt; /* when the search under way began (the queue is asked less often as it goes on) */
 static Uint64 sPresenceAt;
 
+static void ranked_diagnostic(int status, const char *json) {
+    char error[48] = "";
+    text_value(json ? json : "", "error", error, sizeof(error));
+    SDL_LockMutex(sLock);
+    sView.http_status = status;
+    SDL_strlcpy(sView.error_field, error, sizeof(sView.error_field));
+    SDL_UnlockMutex(sLock);
+}
+
 static void message(int msg, int state) {
     SDL_LockMutex(sLock);
     sView.msg = msg;
@@ -272,14 +277,17 @@ static void message(int msg, int state) {
 
 /* ---- the service ---- */
 
-/* a Ranked request with the identity: "ranked/<what>" */
+/* A Ranked request with the shared Amistoso identity: "ranked/<what>". */
 static int post_ranked(const char *what, const char *extra, char *answer, size_t size) {
     char body[1100], path[48];
+    int status = 0;
     SDL_snprintf(path, sizeof(path), "ranked/%s", what);
-    SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"id\":\"%s\",\"token\":\"%s\"%s}", wire(), sId, sToken, extra != NULL ? extra : "");
-    if (!Match_PostDragon(path, body, answer, size)) {
+    SDL_snprintf(body, sizeof(body), "{\"v\":6001,\"id\":\"%s\",\"token\":\"%s\"%s}", sId, sToken, extra != NULL ? extra : "");
+    if (!Match_PostFriendlyRanked(path, body, answer, size, &status)) {
+        if (SDL_strcmp(what, "profile") == 0) ranked_diagnostic(status, answer);
         return 0;
     }
+    if (SDL_strcmp(what, "profile") == 0 && strstr(answer, "\"error\"") != NULL) ranked_diagnostic(status, answer);
     if (strstr(answer, "\"error\":\"limit\"") != NULL) {
         message(DRMSG_LIMIT, 99); /* (a search goes on, without asking, until the pause is over: net_match.c) */
         return 0;
@@ -291,16 +299,19 @@ static int post_ranked(const char *what, const char *extra, char *answer, size_t
     return strstr(answer, "\"error\"") == NULL;
 }
 
-/* Stage C uses the Amistoso production service. Keep result and series calls on their existing transport. */
+/* Queue, room and cancel use the same signed Amistoso transport and v 6001 as the other Ranked routes. */
 static int post_ranked_search(const char *what, const char *extra, char *answer, size_t size) {
     char body[1100], path[48];
+    int status = 0;
     SDL_snprintf(path, sizeof(path), "ranked/%s", what);
     SDL_snprintf(body, sizeof(body), "{\"v\":6001,\"id\":\"%s\",\"token\":\"%s\"%s}", sId, sToken,
                  extra != NULL ? extra : "");
-    if (!Match_PostFriendlyRanked(path, body, answer, size)) {
+    if (!Match_PostFriendlyRanked(path, body, answer, size, &status)) {
+        if (SDL_strcmp(what, "queue") == 0) ranked_diagnostic(status, answer);
         message(DRMSG_NO_CONNECTION, 99);
         return 0;
     }
+    if (SDL_strcmp(what, "queue") == 0 && strstr(answer, "\"error\"") != NULL) ranked_diagnostic(status, answer);
     if (strstr(answer, "\"error\":\"version\"") != NULL || strstr(answer, "\"http\":409") != NULL) {
         if (SDL_strcmp(what, "queue") == 0) {
             SDL_LockMutex(sLock);
@@ -314,9 +325,11 @@ static int post_ranked_search(const char *what, const char *extra, char *answer,
     return strstr(answer, "\"error\"") == NULL;
 }
 
-/* the device identity: read, or made once by the service (then kept: deleting the file makes a new profile) */
+/* Resolve the single Amistoso identity. The old dragonnet-device.txt Worker credentials are intentionally ignored. */
 static int identity(void) {
-    char file[160], answer[1024], body[200], name[20];
+    char name[20], error[48], flag[3] = "UN";
+    char id[160], token[512];
+    int status = 0;
     /* after a failed registration the next try waits (15 s, doubling to 5 minutes): a service out of its daily
        requests answered 429 and the worker asked again every 70 ms while the window kept refreshing */
     static Uint64 retryAt, retryWait;
@@ -326,34 +339,22 @@ static int identity(void) {
     if (retryAt != 0 && SDL_GetTicks() < retryAt) {
         return 0;
     }
-    if (read_text("dragonnet-device.txt", file, sizeof(file)) && sscanf(file, "%32s %64s", sId, sToken) == 2 && is_hex(sId, 32) && is_hex(sToken, 64)) {
-        return 1;
-    }
-    sId[0] = sToken[0] = '\0';
-    if (file[0] != '\0') { /* a damaged identity is never replaced by a new rating by itself */
-        fprintf(stderr, "dragonnet: dragonnet-device.txt is damaged: Ranked is off until it is fixed or removed\n");
-        message(DRMSG_REGISTER_FAILED, -1);
-        return 0;
-    }
     SDL_LockMutex(sLock);
     SDL_strlcpy(name, sName, sizeof(name));
     SDL_UnlockMutex(sLock);
-    SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"name\":\"%s\"}", wire(), name);
-    if (!Match_PostDragon("ranked/register", body, answer, sizeof(answer)) || !text_value(answer, "id", sId, sizeof(sId)) ||
-        !text_value(answer, "token", sToken, sizeof(sToken)) || !is_hex(sId, 32) || !is_hex(sToken, 64)) {
+    if (!Bt3Profile_Identity(name, flag, id, sizeof(id), token, sizeof(token), &status, error, sizeof(error))) {
         sId[0] = sToken[0] = '\0';
         retryWait = retryWait == 0 ? 15000 : retryWait * 2 > 300000 ? 300000 : retryWait * 2;
         retryAt = SDL_GetTicks() + retryWait;
-        message(strstr(answer, "\"version\"") != NULL ? DRMSG_VERSION : strstr(answer, "\"limit\"") != NULL ? DRMSG_LIMIT : DRMSG_REGISTER_FAILED, -1);
+        SDL_LockMutex(sLock);
+        sView.http_status = status;
+        SDL_strlcpy(sView.error_field, error, sizeof(sView.error_field));
+        SDL_UnlockMutex(sLock);
+        message(error[0] && SDL_strcmp(error, "version") == 0 ? DRMSG_VERSION : error[0] && SDL_strcmp(error, "busy") == 0 ? DRMSG_LIMIT : DRMSG_REGISTER_FAILED, -1);
         return 0;
     }
-    SDL_snprintf(file, sizeof(file), "%s %s\n", sId, sToken);
-    if (!write_text("dragonnet-device.txt", file)) {
-        sId[0] = sToken[0] = '\0';
-        message(DRMSG_REGISTER_FAILED, -1);
-        return 0;
-    }
-    fprintf(stderr, "dragonnet: a Ranked profile was made for this device\n");
+    SDL_strlcpy(sId, id, sizeof(sId));
+    SDL_strlcpy(sToken, token, sizeof(sToken));
     return 1;
 }
 
@@ -1111,6 +1112,8 @@ void DrRanked_Open(const char *name) {
     start(name);
     SDL_LockMutex(sLock);
     sRefresh = 1;
+    sView.http_status = 0;
+    sView.error_field[0] = '\0';
     SDL_UnlockMutex(sLock);
 }
 
@@ -1134,6 +1137,8 @@ void DrRanked_Search(const char *name, int mode) {
     sSearchAt = SDL_GetTicks();
     sView.state = 1;
     sView.msg = DRMSG_SEARCHING;
+    sView.http_status = 0;
+    sView.error_field[0] = '\0';
     sView.match[0] = sView.code[0] = sView.peer[0] = sRoomPending[0] = '\0';
     sView.msg = DRMSG_SEARCHING;
     SDL_UnlockMutex(sLock);
@@ -1327,44 +1332,4 @@ int DrRanked_Active(void) {
     a = sView.searching;
     SDL_UnlockMutex(sLock);
     return a;
-}
-
-/* ---- Ranked C/D: id da autoridade E aprendido de um C verificado (DBT-NX v1.7) ---- */
-static int cd_id_ok(const char *s) {
-    size_t n = 0;
-    for (; s[n] != '\0'; n++) {
-        char c = s[n];
-        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-')) {
-            return 0;
-        }
-    }
-    return n >= 16 && n <= 64;
-}
-
-int DrNet_CdLoad(char *out, int n) {
-    char text[96];
-    int i = 0;
-    out[0] = '\0';
-    if (!read_text("dragonnet-ranked-authority.txt", text, sizeof(text))) {
-        return 0;
-    }
-    while (text[i] != '\0' && text[i] != '\n' && text[i] != '\r' && i + 1 < n) {
-        out[i] = text[i];
-        i++;
-    }
-    out[i] = '\0';
-    if (!cd_id_ok(out)) {
-        out[0] = '\0';
-        return 0;
-    }
-    return 1;
-}
-
-int DrNet_CdSave(const char *authority) {
-    char text[96];
-    if (!cd_id_ok(authority)) {
-        return 0;
-    }
-    SDL_snprintf(text, sizeof(text), "%s\n", authority);
-    return write_text("dragonnet-ranked-authority.txt", text);
 }

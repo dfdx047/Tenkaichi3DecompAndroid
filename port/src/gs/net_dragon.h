@@ -1,6 +1,6 @@
 /* Dragon Net: online play between Dragon Rage (Android) and DBT-NX (Switch) on a service of their own (port/dragonnet),
- * apart from the PC port's: Ranked (Elo), the general chat and the count of players online. Online against the PC
- * goes on through the PC port's own service (mode 1). See net_dragon.c. */
+ * apart from the PC port's. Ranked uses the signed Amistoso service; Dragon Net still provides presence. Online against
+ * the PC goes on through the PC port's own service (mode 1). See net_dragon.c. */
 #ifndef NET_DRAGON_H
 #define NET_DRAGON_H
 #ifdef __cplusplus
@@ -23,11 +23,6 @@ void DrNet_SetMode(int mode);
 int DrNet_WireVersion(int netVersion); /* what the service is told as `v` in this mode */
 #define DRNET_CHAT 0 /* chat geral desligado */
 const char *DrNet_UrlB(void);       /* dragonnet_url_b.txt ("" se nao existe) */
-const char *DrNet_RankedUrl(void);  /* dragonnet_ranked_url.txt ("" se nao existe) */
-const char *DrNet_RankedUrlD(void);      /* dragonnet_ranked_url_d.txt (https://host); padrao: D embutido */
-const char *DrNet_RankedActiveUrl(void); /* Ranked: C, ou D ate 00:00 UTC se o C falhar */
-int DrNet_CdLoad(char *out, int n);      /* id da autoridade E aprendido de um C verificado */
-int DrNet_CdSave(const char *authority);
 const char *DrNet_ActiveUrl(void);  /* A, ou B se o A falhou hoje */
 void DrNet_NoteResult(const char *base, int ok);
 int DrRanked_Active(void);
@@ -53,6 +48,8 @@ typedef struct DrRanked {
     int rating, wins, losses, draws, position;
     char rank[20], peer[20], code[8], match[33];
     int msg;            /* DRMSG_* */
+    int http_status;
+    char error_field[48];
     int board;          /* 0 not asked, 1 asking, 2 there, -1 failed */
     int boardCount;
     char boardName[9][20];

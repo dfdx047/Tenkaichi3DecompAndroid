@@ -68,9 +68,8 @@ void Match_Cancel(void);
 int Match_SignTest(void);    /* BT3_SIGN_TEST: see net_match.c */
 #include <stddef.h>
 int Match_PostDragon(const char *what, const char *json, char *out, size_t size); /* Dragon Net's service (net_dragon.c) */
-int Match_PostFriendlyRanked(const char *what, const char *json, char *out, size_t size); /* Ranked search/lifecycle on the Amistoso service */
+int Match_PostFriendlyRanked(const char *what, const char *json, char *out, size_t size, int *httpStatus); /* all Ranked routes, signed on Amistoso */
 int Match_HttpRequest(const char *url, const char *json, const char *const *headers, char *out, size_t size);
-int Match_Bt3Post(const char *url, const char *json, const char *const *headers, char *out, size_t size, int *status);
 int Match_ServiceLimited(void); /* a service answered HTTP 429 a moment ago: nothing is asked for now (net_match.c) */
 int Match_BackgroundWait(unsigned int activeMs, int cancelAfterThreeMinutes); /* 0 only when this search cancels in the background */
 

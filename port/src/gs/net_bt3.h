@@ -13,12 +13,17 @@ typedef struct Bt3Profile {
     char board_flag[10][3], board_name[10][33], board_rank[10][32];
     int board_rating[10], board_position[10], board_wins[10], board_losses[10];
     int error;       /* 1 no connection, 2 server error, 3 incompatible protocol */
+    int http_status;
+    char error_field[48];
 } Bt3Profile;
 
 void Bt3Profile_Open(void);
 void Bt3Profile_Save(const char *name, const char *flag);
 void Bt3Profile_Board(void);
 void Bt3Profile_Poll(Bt3Profile *out);
+/* One Amistoso identity shared with Ranked; registers once when the canonical file has no valid credentials. */
+int Bt3Profile_Identity(const char *name, const char *flag, char *id, size_t idSize, char *token, size_t tokenSize,
+                        int *httpStatus, char *error, size_t errorSize);
 
 #ifdef __cplusplus
 }
