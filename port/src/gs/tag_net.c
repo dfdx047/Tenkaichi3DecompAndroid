@@ -40,10 +40,20 @@ extern void Port_RollBack(int),Port_UiNotice(const char *);
 extern int Port_TagOption(int);
 extern unsigned long long Port_NetDigest(void);
 extern int gPortResim;
+/* (TEST BUILD of the input-arbitration prototype: the PC harness's measuring points, empty here) */
+static void sim_rb_cause(int a){(void)a;}
+static void sim_wait_cause(int a,unsigned long long b){(void)a;(void)b;}
+static void sim_tn_sent(int a,unsigned b){(void)a;(void)b;}
+static void sim_tn_recv(int a,unsigned b){(void)a;(void)b;}
+static void sim_local_input(int a,unsigned b){(void)a;(void)b;}
+static void sim_remote_input(int a,unsigned b,unsigned c){(void)a;(void)b;(void)c;}
+static void sim_produced(int a,unsigned b,unsigned c,const unsigned char *d){(void)a;(void)b;(void)c;(void)d;}
+int TagNet_CatchUp(void);
+static int arb_dbg(void){static int d=-1;if(d<0)d=getenv("BT3_ARB_DEBUG")!=NULL;return d;}
 
-enum { PROTOCOL=7, MAGIC=0x544e4554, PAD=18, RING=8192, MAX_PACKET=4096, QUEUE=262144,
+enum { PROTOCOL=8, MAGIC=0x544e4554, PAD=18, RING=8192, MAX_PACKET=4096, QUEUE=262144,
        TN_HELLO=1, TN_CONFIG, TN_READY, TN_START, TN_LOADED, TN_GO, TN_INPUT, TN_DIGEST, TN_LEAVE, TN_REJECT, TN_EDIT, TN_FINISHED, TN_ROOM, TN_PING, TN_PEERS, TN_ROLE, TN_NOTICE, TN_PRACTICE_END,
-       TN_HISTORY,TN_REPLAY_PROGRESS,TN_MEMBER,TN_PRACTICE_EDIT,TN_PRACTICE_LOADOUT,TN_BRACKET,TN_PONG,TN_ROSTER,TN_SCORES,TN_AUDIT,TN_AUDIT_DATA,TN_RANDSUM,TN_RANDSUM_DATA,TN_RANDCALLS,TN_RANDCALLS_DATA,TN_CLOCK,TN_ABORT,TN_CAP,TN_PACE,
+       TN_HISTORY,TN_REPLAY_PROGRESS,TN_MEMBER,TN_PRACTICE_EDIT,TN_PRACTICE_LOADOUT,TN_BRACKET,TN_PONG,TN_ROSTER,TN_SCORES,TN_AUDIT,TN_AUDIT_DATA,TN_RANDSUM,TN_RANDSUM_DATA,TN_RANDCALLS,TN_RANDCALLS_DATA,TN_CLOCK,TN_ABORT,TN_CAP,TN_PACE,TN_PROPOSE,TN_FAST,TN_INPUTS,
        PEERS=TN_PLAYERS+TN_SPECTATORS-1, DELAY=2, ROLLBACK=8 };
 typedef struct Peer {
     tn_socket fd;
@@ -54,6 +64,8 @@ typedef struct Peer {
     uint64_t hash[RING];
     unsigned hashStamp[RING];
     unsigned replayCursor,replayAck;
+    unsigned encRound,encNext[TN_PLAYERS],decRound,decNext[TN_PLAYERS],fastHi[TN_PLAYERS]; /* (TN_INPUTS on this connection: round+1, next frame+1; 0: none yet) */
+    unsigned char encLast[TN_PLAYERS][PAD],decLast[TN_PLAYERS][PAD];
     int catching,ping;
     int adv16; /* how many blanks this copy is ahead of that player, smoothed, in 1/16 blank (TN_CLOCK) */
     unsigned pingToken;Uint64 pingSent;
@@ -123,6 +135,29 @@ static unsigned player_mask(void);
 static int practice_state(TlRoom *out,unsigned at);
 static void pace_reset(void);
 static void pace_update(int me,int cap);
+/* ==== PROTOTYPE (harness only): the host decides every player's input, with a deadline ====
+   A guest's input is a proposal (TN_PROPOSE, datagrams outside the ordered stream, each one carrying every proposal the
+   host has not acknowledged). The host commits one input per player per blank, in the order the proposals were made:
+   the proposal stamped for that blank, or, when it has not come by the deadline (the host's blank - arbK), the player's
+   last input again, which is what every other copy predicted. A proposal that comes after its blank was decided is
+   committed at the next blank still open, in order; a late repeat of the last input is left out (it changes nothing).
+   Every copy, the proposing guest's too, plays the committed stream (TN_INPUT, reliable, and TN_FAST, the last ones
+   again as a datagram). The host never waits for a guest and never slows its clock for one. */
+enum { ARB_WIN=44, ARB_FAST=5 };
+static int arb_on(void);
+static int arb_guest(void);
+static void arb_recv_propose(Peer *q,const unsigned char *d,unsigned n);
+static void arb_recv_fast(const unsigned char *d,unsigned n);
+static void arb_guest_send(int force);
+static void arb_reset(void);
+static unsigned pendN;static void inputs_flush(void);
+static int arb_first_delay(void);static void arb_wait_commit(void);
+static unsigned arbRaiseAt; /* (v3) the blank the input delay last went up */
+enum { ARB_SLOW_LIMIT=20 };
+static int arbSlowMe,arbSlowOf[TN_PLAYERS];static unsigned arbSlowed,arbSlowTold;
+enum { PEND=2048, RUNMAX=160 }; /* (a run fits one message: 8+PAD+RUNMAX*23 < MAX_PACKET-8) */
+static int pad_get(const unsigned char *b,unsigned n,const unsigned char *prev,unsigned char *out);
+static int run_get(const unsigned char *b,unsigned n,unsigned char (*pads)[PAD],unsigned cnt);
 static const unsigned char idle[PAD]={255,255,128,128,128,128};
 
 static int enabled=-1,nativeMenu;
@@ -170,7 +205,7 @@ static void input_take(int who,unsigned at,const unsigned char *pad);
 static int produces(int member,unsigned at);
 static void adapt_delay(void) {
     int want;
-    if(!frame || frame%120 || config.practice || role<0 || role>=TN_PLAYERS || !produces(role,frame) || getenv("BT3_TAG_DELAY"))return;
+    if(arb_guest() || !frame || frame%120 || config.practice || role<0 || role>=TN_PLAYERS || !produces(role,frame) || getenv("BT3_TAG_DELAY"))return;
     want=choose_delay();
     if(want>localDelay) {
         unsigned char pad[PAD];
@@ -360,7 +395,7 @@ void TagNet_TestCheck(int passed,int id) {
 }
 /* A joining GPU client must replay faster than real time. Rendering/pacing
    archived practice would leave it permanently behind an active host. */
-int TagNet_Resim(void) { return resim || (lateJoining && TagNet_IsPractice() && !local_produces(frame) && frame+60<replayTarget); }
+int TagNet_Resim(void) { return resim || (lateJoining && TagNet_IsPractice() && !local_produces(frame) && frame+60<replayTarget) || TagNet_CatchUp(); }
 int TagNet_Stopped(void) { return TagNet_Enabled() && (phase==5 || aborted); }
 static void say(const char *s) { snprintf(message,sizeof(message),"%s",s);fprintf(stderr,"tagnet: %s\n",s); }
 /* A peer's socket is a TCP one (a room on the same network) or, with TN_LINK set, a connection of an online room
@@ -666,7 +701,8 @@ static void desync(unsigned at,Peer *p) {
     wait_over();
 }
 static void send_packet(Peer *p,int type,const void *data,unsigned size) {
-    if(p->fd==TN_BAD)return;
+    if(pendN && type!=TN_INPUTS)inputs_flush();
+    if(p->fd==TN_BAD)return;sim_tn_sent(type,size);
     if(size>MAX_PACKET-8 || p->tn-p->off+size+8>QUEUE) {
         /* (the queue of one guest whose connection stands still is that guest's problem: it closed the room for everyone,
            a 2026-11-04 match of three. In a party room that guest alone is let go, as peer_lost does for one who leaves) */
@@ -917,7 +953,7 @@ static void input_take(int who,unsigned at,const unsigned char *pad) {
     memcpy(inputs[who][at%RING],pad,PAD);inputStamp[who][at%RING]=at;
     while(inputStamp[who][have[who]%RING]==have[who])have[who]++;
 }
-static void handle(Peer *p,int type,const unsigned char *data,unsigned n) {
+static void handle(Peer *p,int type,const unsigned char *data,unsigned n) {sim_tn_recv(type,n);
     unsigned i;
     if(!p->hello && type!=TN_HELLO && !(!host && type==TN_REJECT))return;
     if(type==TN_HELLO) {
@@ -1053,13 +1089,47 @@ static void handle(Peer *p,int type,const unsigned char *data,unsigned n) {
     } else if(type==TN_GO && !host && phase==3 && n==4 && get32(data)==roundId) {go=1;
     } else if(type==TN_FINISHED && host && phase==4 && n==4 && get32(data)==roundId) {p->finished=1;
     } else if(type==TN_ROOM && !host && phase==4 && n==4 && get32(data)==roundId) {returned=1;if(config.party)phase=2;
+    } else if(type==TN_INPUTS && !host && phase>=3 && phase<=4 && n>=4 && get32(data)==roundId) {
+        static unsigned char seq[RUNMAX+1][PAD];unsigned char (*pads)[PAD]=seq+1;unsigned k=4;
+        if(p->decRound!=roundId+1){p->decRound=roundId+1;memset(p->decNext,0,sizeof(p->decNext));}
+        while(k<n) {
+            unsigned who,from,cnt,t;int u;
+            unsigned full;
+            if(k+2>n){stop_match("Invalid input stream. Match stopped.");return;}
+            who=data[k]&127;full=data[k]>>7;k++;
+            if(full){if(k+4>n){stop_match("Invalid input stream. Match stopped.");return;}from=get32(data+k);k+=4;}
+            else {
+                if(who>=TN_PLAYERS || !p->decNext[who]){stop_match("Input stream out of step. Match stopped.");return;}
+                from=p->decNext[who]-1;
+            }
+            if(k>=n){stop_match("Invalid input stream. Match stopped.");return;}
+            cnt=data[k];if(cnt&128){if(k+1>=n){stop_match("Invalid input stream. Match stopped.");return;}cnt=(cnt&127)|(unsigned)data[k+1]<<7;k+=2;}else k++;
+            if(who>=TN_PLAYERS || !cnt || cnt>RUNMAX){stop_match("Invalid input stream. Match stopped.");return;}
+            if(full) {
+                if(k+PAD>n){stop_match("Invalid input stream. Match stopped.");return;}
+                memcpy(pads[0],data+k,PAD);k+=PAD;
+                if((u=run_get(data+k,n-k,pads,cnt))<0){stop_match("Invalid input stream. Match stopped.");return;}
+            } else {
+                memcpy(seq[0],p->decLast[who],PAD);
+                if((u=run_get(data+k,n-k,seq,cnt+1))<0){stop_match("Invalid input stream. Match stopped.");return;}
+            }
+            k+=(unsigned)u;
+            memcpy(p->decLast[who],pads[cnt-1],PAD);p->decNext[who]=from+cnt+1;
+            for(t=0;t<cnt && phase!=5;t++) {
+                unsigned char one[12+PAD];put32(one,who);put32(one+4,from+t);put32(one+8,roundId);memcpy(one+12,pads[t],PAD);
+                handle(p,TN_INPUT,one,sizeof(one));
+            }
+        }
     } else if(type==TN_INPUT && phase>=3 && phase<=4 && n==12+PAD && get32(data+8)==roundId) {
         int who=(int)get32(data);unsigned at=get32(data+4);
         if(who<0 || who>=TN_PLAYERS || !(input_mask()&(1u<<who)))return;
-        if(host && (p->role>=TN_PLAYERS || who!=p->role || !produces(who,at)))return;
-        if(!host && who==role && produces(who,at))return;
+        if(host && (arb_on() || p->role>=TN_PLAYERS || who!=p->role || !produces(who,at)))return;
+        if(!host && who==role && produces(who,at) && !arb_on())return;
+        if(who!=role && inputStamp[who][at%RING]!=at)sim_remote_input(who,at,frame);
         input_take(who,at,data+12);
         if(host)broadcast(TN_INPUT,data,n,p);
+    } else if(type==TN_PROPOSE) {arb_recv_propose(p,data,n);
+    } else if(type==TN_FAST) {arb_recv_fast(data,n);
     } else if(type==TN_DIGEST && phase==4 && n==16 && get32(data+12)==roundId) {
         unsigned at=get32(data);uint64_t h=(uint64_t)get32(data+4)<<32|get32(data+8);
         if(host && p->role>=TN_PLAYERS)return;
@@ -1170,6 +1240,7 @@ static void handle(Peer *p,int type,const unsigned char *data,unsigned n) {
 }
 static void pump(void) {
     int i;
+    inputs_flush();arb_guest_send(0);
     if(SDL_GetTicks()-lastPing>1000){
         unsigned char b[4];lastPing=SDL_GetTicks();
         for(i=0;i<PEERS;i++)if(peers[i].hello){peers[i].pingToken++;peers[i].pingSent=lastPing;put32(b,peers[i].pingToken);send_packet(&peers[i],TN_PING,b,4);}
@@ -1212,6 +1283,9 @@ static void pump(void) {
             n=TagLink_Recv(slot,p->rx+p->rn,(int)(sizeof(p->rx)-p->rn));
             if(n<0){peer_lost(p,"Connection lost. The match has stopped.");continue;}
             if(n>0){p->rn+=(unsigned)n;p->last=SDL_GetTicks();}
+            {unsigned char d_[1200];int m_;
+             while(p->fd!=TN_BAD && (m_=TagLink_RecvDatagram(slot,d_,(int)sizeof(d_)))>=8)
+                if(get32(d_)==(unsigned)m_){p->last=SDL_GetTicks();handle(p,(int)get32(d_+4),d_+8,(unsigned)m_-8);}}
         } else {
         if(p->connecting) {
             fd_set writeSet,errorSet;struct timeval wait={0,0};int error=0;
@@ -1564,12 +1638,14 @@ int TagNet_Room(void) {
        an empty seat reads as the same neutral pad without its stream (TagNet_Input). */
     {int p;matchMask=1u;for(p=1;p<TN_PLAYERS;p++)if(config.lobby.members[p].present)matchMask|=1u<<p;}
     for(i=0;i<=DELAY;i++) {int p;for(p=0;p<TN_PLAYERS;p++)if(input_mask()&(1u<<p))input_take(p,i,idle);}
-    localDelay=choose_delay();clockSlowed=0;memset(holdMs,0,sizeof(holdMs));memset(holdBucket,0,sizeof(holdBucket));holdLeakAt=0;
+    localDelay=choose_delay();clockSlowed=0;
+    if(arb_guest()){int d0=arb_first_delay();if(d0>localDelay)localDelay=d0;} /* (v3: from the measured round trip) */memset(holdMs,0,sizeof(holdMs));memset(holdBucket,0,sizeof(holdBucket));holdLeakAt=0;
     if(localDelay>DELAY && (input_mask()&(1u<<role))) {
         /* (the blanks up to the new delay: neutral, sent with the first inputs) */
-        for(i=DELAY+1;i<=localDelay;i++)input_take(role,(unsigned)i,idle);
+        if(!arb_guest())for(i=DELAY+1;i<=localDelay;i++)input_take(role,(unsigned)i,idle); /* (a guest's: the host decides them) */
         fprintf(stderr,"tagnet: input delay %d blanks (ping %d ms)\n",localDelay,host?-1:peers[0].ping);
     } else localDelay=DELAY;
+    arb_reset();
     if(host && config.party && config.practice) {
         hostMenu=1;loaded=1;coordinatorClock=coordinatorLoadStart=SDL_GetTicks();coordinatorLogged=0;
         fprintf(stderr,"tagnet: host remains on native mode menu; no practice battle loaded\n");
@@ -1623,7 +1699,98 @@ void TagNet_Loaded(void) {
         phase=4;say("Match started.");publish();
     }
 }
+/* (compact encoding) a pad as the bytes that differ from prev: 3 bytes of mask (bit i: byte i), then those bytes */
+static unsigned pad_put(unsigned char *b,const unsigned char *prev,const unsigned char *cur) {
+    unsigned m=0,k=3,i;
+    for(i=0;i<PAD;i++)if(prev[i]!=cur[i]){m|=1u<<i;b[k++]=cur[i];}
+    b[0]=(unsigned char)m;b[1]=(unsigned char)(m>>8);b[2]=(unsigned char)(m>>16);return k;
+}
+static int pad_get(const unsigned char *b,unsigned n,const unsigned char *prev,unsigned char *out) {
+    unsigned m,k=3,i;
+    if(n<3)return -1;
+    m=b[0]|(unsigned)b[1]<<8|(unsigned)b[2]<<16;if(m>>PAD)return -1;
+    memcpy(out,prev,PAD);
+    for(i=0;i<PAD;i++)if(m&(1u<<i)){if(k>=n)return -1;out[i]=b[k++];}
+    return (int)k;
+}
+/* frames 1..cnt-1 of a run (frame 0 is written already, pads[] in order): a byte of repeats (255: 255 and go on), then
+   the next frame that differs */
+static unsigned run_put(unsigned char *b,const unsigned char (*pads)[PAD],unsigned cnt) {
+    unsigned k=0,t=1;
+    while(t<cnt) {
+        unsigned r=0;
+        while(t+r<cnt && r<255 && !memcmp(pads[t+r],pads[t+r-1],PAD))r++;
+        b[k++]=(unsigned char)r;t+=r;
+        if(r==255)continue;
+        if(t<cnt){k+=pad_put(b+k,pads[t-1],pads[t]);t++;}
+    }
+    return k;
+}
+static int run_get(const unsigned char *b,unsigned n,unsigned char (*pads)[PAD],unsigned cnt) {
+    unsigned k=0,t=1;
+    while(t<cnt) {
+        unsigned r;int u;
+        if(k>=n)return -1;
+        r=b[k++];if(t+r>cnt)return -1;
+        while(r--){memcpy(pads[t],pads[t-1],PAD);t++;}
+        if(b[k-1]==255)continue;
+        if(t<cnt){if((u=pad_get(b+k,n-k,pads[t-1],pads[t]))<0)return -1;k+=(unsigned)u;t++;}
+    }
+    return (int)k;
+}
+/* (host, the arbitrated match) the committed inputs not yet written to the streams: one TN_INPUTS per peer, written
+   before any other message to those peers (send_packet) and at the end of every pass */
+static unsigned pendMask,pendWho[PEND],pendAt[PEND];static unsigned char pendPad[PEND][PAD];
+static unsigned inputs_targets(void) {
+    unsigned m=0;int i;for(i=0;i<PEERS;i++)if(peers[i].hello && !peers[i].catching)m|=1u<<i;return m;
+}
+static void inputs_flush(void) {
+    static unsigned char b[MAX_PACKET];static unsigned char pads[RUNMAX+1][PAD];
+    unsigned n=pendN,i;int who;
+    if(!n)return;
+    pendN=0; /* (first: send_packet below must not flush again) */
+    for(i=0;i<PEERS;i++) {
+        Peer *p=&peers[i];unsigned k=4;
+        if(!(pendMask&(1u<<i)) || p->fd==TN_BAD)continue;
+        if(p->encRound!=roundId+1){p->encRound=roundId+1;memset(p->encNext,0,sizeof(p->encNext));}
+        put32(b,roundId);
+        for(who=0;who<TN_PLAYERS;who++) {
+            unsigned j=0;
+            while(j<n) {
+                unsigned from,cnt=0,need,full;
+                while(j<n && (int)pendWho[j]!=who)j++;
+                if(j>=n)break;
+                from=pendAt[j];
+                /* (a run: this player's next frames in order) */
+                while(j<n && cnt<RUNMAX) {
+                    if((int)pendWho[j]!=who){j++;continue;}
+                    if(pendAt[j]!=from+cnt)break;
+                    memcpy(pads[1+cnt++],pendPad[j],PAD);j++;
+                }
+                full=p->encNext[who]!=from+1;
+                need=7+PAD+cnt*(3+PAD+2);
+                if(k+need>MAX_PACKET-8){send_packet(p,TN_INPUTS,b,k);k=4;}
+                /* (an entry: a byte, bits 0-3 the player, 7: written whole; whole: from, 4 bytes; how many, 1 byte below 128,
+                   else 2; the frames as runs, relative to the frame before on this connection unless whole) */
+                b[k++]=(unsigned char)(who|full<<7);
+                if(full){put32(b+k,from);k+=4;}
+                if(cnt<128)b[k++]=(unsigned char)cnt;else{b[k]=(unsigned char)(128|(cnt&127));b[k+1]=(unsigned char)(cnt>>7);k+=2;}
+                if(full){memcpy(b+k,pads[1],PAD);k+=PAD;k+=run_put(b+k,(const unsigned char (*)[PAD])(pads+1),cnt);}
+                else{memcpy(pads[0],p->encLast[who],PAD);k+=run_put(b+k,(const unsigned char (*)[PAD])pads,cnt+1);}
+                memcpy(p->encLast[who],pads[cnt],PAD);p->encNext[who]=from+cnt+1;
+            }
+        }
+        if(k>4)send_packet(p,TN_INPUTS,b,k);
+    }
+}
 static void send_input(int who,unsigned at,const unsigned char *pad) {
+    if(host && arb_on()) {
+        unsigned m=inputs_targets();
+        if(pendN && (m!=pendMask || pendN==PEND))inputs_flush();
+        if(!pendN)pendMask=m;
+        pendWho[pendN]=(unsigned)who;pendAt[pendN]=at;memcpy(pendPad[pendN],pad,PAD);pendN++;
+        return;
+    }
     unsigned char p[12+PAD];put32(p,who);put32(p+4,at);put32(p+8,roundId);memcpy(p+12,pad,PAD);
     if(host)broadcast(TN_INPUT,p,sizeof(p),NULL);else send_packet(&peers[0],TN_INPUT,p,sizeof(p));
 }
@@ -1697,7 +1864,7 @@ static void coordinator(void) {
 static int inputs_match(unsigned at) {
     int p;unsigned mask=input_mask();
     if(usedStamp[at%RING]!=at)return 0;
-    for(p=0;p<TN_PLAYERS;p++)if((mask&(1u<<p)) && p!=role &&
+    for(p=0;p<TN_PLAYERS;p++)if((mask&(1u<<p)) && (p!=role || arb_guest()) &&
         memcmp(used[p][at%RING],inputs[p][at%RING],PAD))return 0;
     return 1;
 }
@@ -1830,6 +1997,305 @@ static void pace_measure(void) {
     if(host)pace_update(role,cap);
     else if(peers[0].hello){unsigned char b[8];put32(b,roundId);put32(b+4,(unsigned)cap);send_packet(&peers[0],TN_CAP,b,8);}
 }
+static int arbK=3,arbMaxDelay=30,arbEnv=-1,arbDecided=-1; /* arbDecided: the last blank the deadline has decided */
+/* guest: its proposals (by sequence number) and what it predicts for its own input (by blank) */
+static unsigned propSeq,propAcked,propLastStamp,propStampOf[RING],ownPredStamp[RING],arbLastProdFrame=~0u,arbAbsorbLocal;
+static unsigned char propPadOf[RING][PAD],ownPred[RING][PAD],propLastPad[PAD];
+static int arbSlackSeen=99999,arbHighChecks;static unsigned arbCool;static Uint64 arbLastSend;
+/* host: each guest's proposals not yet committed, and what was committed last */
+static unsigned qNext[TN_PLAYERS],qHave[TN_PLAYERS],qTag[TN_PLAYERS][RING],qStamp[TN_PLAYERS][RING];
+static unsigned char qPad[TN_PLAYERS][RING][PAD],lastC[TN_PLAYERS][PAD];
+static int slackCur[TN_PLAYERS],slackPrev[TN_PLAYERS];static unsigned slackWindow;
+static unsigned fastAck[PEERS][TN_PLAYERS];
+static Uint64 arbLastIn[TN_PLAYERS];
+static unsigned arbStat[TN_PLAYERS][8],arbMute[TN_PLAYERS]; /* on time, shifted, frames shifted, late repeats left out, gap fills, deadline fills, largest shift */
+static int arb_on(void) {
+    if(arbEnv<0) {
+        arbEnv=getenv("BT3_TAG_NOARB")==NULL;
+        if(getenv("BT3_TAG_ARB_K"))arbK=SDL_clamp(atoi(getenv("BT3_TAG_ARB_K")),0,6);
+        if(getenv("BT3_TAG_ARB_MAXDELAY"))arbMaxDelay=SDL_clamp(atoi(getenv("BT3_TAG_ARB_MAXDELAY")),DELAY,60);
+    }
+    return arbEnv && !config.practice; /* (practice keeps the stream of today: its late joining replays it) */
+}
+static int arb_guest(void) {return !host && role<TN_PLAYERS && arb_on();}
+static void dgram_send(Peer *p,int type,const unsigned char *data,unsigned n) {
+    unsigned char b[1200];
+    if(p->fd==TN_BAD || n+8>sizeof(b))return;
+    if(!IS_LINK(p->fd)){send_packet(p,type,data,n);return;} /* (a room on the same network: TCP) */
+    put32(b,n+8);put32(b+4,(unsigned)type);memcpy(b+8,data,n);sim_tn_sent(type,n);
+    TagLink_SendDatagram(LINK_SLOT(p->fd),b,(int)n+8);
+}
+static void arb_reset(void) {
+    int p;
+    arbDecided=-1;propSeq=propAcked=0;propLastStamp=DELAY;memcpy(propLastPad,idle,PAD);arbLastProdFrame=~0u;arbAbsorbLocal=0;
+    memset(ownPredStamp,255,sizeof(ownPredStamp));arbSlackSeen=99999;arbHighChecks=0;arbCool=0;arbLastSend=0;
+    memset(qNext,0,sizeof(qNext));memset(qHave,0,sizeof(qHave));memset(qTag,0,sizeof(qTag));
+    for(p=0;p<TN_PLAYERS;p++){memcpy(lastC[p],idle,PAD);slackCur[p]=slackPrev[p]=99999;arbLastIn[p]=SDL_GetTicks();}
+    slackWindow=0;arbSlowMe=0;arbRaiseAt=0;memset(arbSlowOf,0,sizeof(arbSlowOf));arbSlowed=arbSlowTold=0;{int z;for(z=0;z<PEERS;z++)memset(peers[z].fastHi,0,sizeof(peers[z].fastHi));}memset(arbMute,0,sizeof(arbMute));memset(fastAck,0,sizeof(fastAck));memset(arbStat,0,sizeof(arbStat));
+}
+/* (guest) this blank's pad, for the blank frame+localDelay. A smaller delay drops a repeat of the last pad, never a change. */
+static void arb_produce(const unsigned char *pad) {
+    unsigned stamp,s,from=frame,c=confirmed();
+    if(c>from)from=c; /* (catching up: the blanks up to c are decided already) */
+    stamp=from+(unsigned)localDelay;
+    if(propSeq-propAcked>=RING-64){stop_match("The host stopped taking this player's inputs. Match stopped.");return;}
+    if(stamp<=propLastStamp) {
+        if(!memcmp(pad,propLastPad,PAD)){arbAbsorbLocal++;return;}
+        stamp=propLastStamp+1;
+    }
+    for(s=propLastStamp+1;s<stamp;s++){memcpy(ownPred[s%RING],propLastPad,PAD);ownPredStamp[s%RING]=s;}
+    memcpy(ownPred[stamp%RING],pad,PAD);ownPredStamp[stamp%RING]=stamp;
+    memcpy(propPadOf[propSeq%RING],pad,PAD);propStampOf[propSeq%RING]=stamp;propSeq++;
+    propLastStamp=stamp;memcpy(propLastPad,pad,PAD);
+    sim_local_input(role,stamp);sim_produced(role,frame,stamp,pad);
+}
+static void arb_guest_send(int force) {
+    unsigned char b[64+ARB_WIN*(4+PAD)];unsigned first,n,i,k;Uint64 now=SDL_GetTicks();int p;
+    if(!arb_guest() || phase!=4 || !begun || peers[0].fd==TN_BAD || !peers[0].hello)return;
+    /* (v3: with nothing new, still a word every 50 ms: the host hears this guest even while it waits for the host) */
+    if(!force && (now-arbLastSend<16 || (propAcked>=propSeq && now-arbLastSend<50)))return;
+    first=propAcked;n=propSeq-first;if(n>ARB_WIN)n=ARB_WIN;
+    put32(b,roundId);k=4;
+    /* (what this copy has of the committed streams, the host's TN_FAST skips it: the least, then each one's distance from
+       it; a larger distance is written smaller, an older acknowledgement, which only makes the host send more) */
+    {unsigned lo=~0u;for(p=0;p<TN_PLAYERS;p++)if(have[p]<lo)lo=have[p];put32(b+k,lo);k+=4;
+     for(p=0;p<TN_PLAYERS;p++){unsigned dd=have[p]-lo;b[k++]=(unsigned char)(dd>255?255:dd);}}
+    b[k++]=(unsigned char)arbSlowMe; /* (0, or how far behind this phone that cannot keep up is) */
+    put32(b+k,first);b[k+4]=(unsigned char)n;b[k+5]=(unsigned char)(first>0);k+=6;
+    /* (each proposal: a byte, bit 7 the pad changed, bits 0-6 the stamp's distance from the previous one, 127: the stamp
+       follows; then what differs. The previous one of the first: proposal first-1, which the host has (first is what it
+       acknowledged); the very first proposal: its stamp and its pad whole) */
+    for(i=0;i<n;i++) {
+        unsigned st=propStampOf[(first+i)%RING];const unsigned char *pd=propPadOf[(first+i)%RING];
+        if(!i && !first){put32(b+k,st);memcpy(b+k+4,pd,PAD);k+=4+PAD;continue;}
+        {unsigned ps=propStampOf[(first+i-1)%RING],dd=st-ps;const unsigned char *pp=propPadOf[(first+i-1)%RING];int ch=memcmp(pd,pp,PAD)!=0;
+         b[k++]=(unsigned char)((ch?128:0)|(dd>=1 && dd<127?dd:127));if(!(dd>=1 && dd<127)){put32(b+k,st);k+=4;}
+         if(ch)k+=pad_put(b+k,pp,pd);}
+    }
+    dgram_send(&peers[0],TN_PROPOSE,b,k);arbLastSend=now;
+}
+/* (guest) every 30 blanks: the host's measure of how early this player's proposals come (slack, blanks before the
+   deadline; < 0: late). Late: the delay goes up at once by what was missing (4 at most); early by 2+ for 2 s: down by one. */
+static void arb_adapt(void) {
+    static unsigned last=~0u;int s=arbSlackSeen;
+    if(!arb_guest() || frame<90 || frame%30 || frame==last || frame<arbCool || s>=99999)return; /* (not the start's: the clocks are still being matched) */
+    last=frame;
+    if(s<0) {
+        localDelay=SDL_min(localDelay+SDL_min(-s,4),arbMaxDelay);arbHighChecks=0;arbCool=frame+130;arbRaiseAt=frame;
+        fprintf(stderr,"tagnet: input delay %d blanks at frame %u (slack %d)\n",localDelay,frame,s);
+    } else if(s>=2 && localDelay>DELAY && frame>=arbRaiseAt+180) {
+        if(++arbHighChecks>=2){arbHighChecks=0;localDelay--;arbCool=frame+60;fprintf(stderr,"tagnet: input delay %d blanks at frame %u (slack %d)\n",localDelay,frame,s);}
+    } else arbHighChecks=0;
+}
+/* (guest) once a second: behind by more than the limit, no less than a second before, the committed inputs having
+   come on (at least half a second's worth): this phone cannot keep up; else not */
+static void arb_slow_guest(void) {
+    static Uint64 at;static int prevB=-1;static unsigned prevC;
+    Uint64 now=SDL_GetTicks();unsigned c=confirmed();int b=(int)c-(int)frame;
+    if(!arb_guest() || phase!=4 || !begun)return;
+    if(!at){at=now;prevB=b;prevC=c;return;}
+    if(arbSlowMe && b>ARB_SLOW_LIMIT/2)arbSlowMe=b>255?255:b;
+    if(now-at<1000)return;
+    /* (once it has said so, it says so until it is back within half the limit: the host's slower blanks are what bring
+       it back, and stopping them as soon as it gains would let it fall behind again) */
+    if(arbSlowMe)arbSlowMe=b>ARB_SLOW_LIMIT/2?(b>255?255:b):0;
+    /* (the inputs came at about the room's pace, 30 to 75 blanks in the second: more is a connection that came back and
+       brought what it had missed at once, and this copy is catching up with it, not slow) */
+    else arbSlowMe=(b>ARB_SLOW_LIMIT && prevB>ARB_SLOW_LIMIT && b>=prevB-2 && c>=prevC+30 && c<=prevC+75)?(b>255?255:b):0;
+    if(arbSlowMe && arbSlowTold<20){arbSlowTold++;fprintf(stderr,"tagnet: this phone cannot keep up: %d blanks behind (a second ago %d)\n",b,prevB);}
+    at=now;prevB=b;prevC=c;
+}
+/* (host) the furthest behind of the guests that say they cannot keep up, heard in the last 200 ms */
+static void arb_slow_host(void) {
+    int r,need=0,who=-1;Uint64 now=SDL_GetTicks();
+    for(r=0;r<TN_PLAYERS;r++)if(r!=role && (input_mask()&(1u<<r)) && arbSlowOf[r] && now-arbLastIn[r]<200 && arbSlowOf[r]>need){need=arbSlowOf[r];who=r;}
+    if(!need)return;
+    need=SDL_clamp(2*(need-ARB_SLOW_LIMIT/2),2,33);
+    gPortPaceShiftNs+=(unsigned)need*1000000u;arbSlowed++;
+    if(arbSlowTold<20 && (arbSlowed==1 || frame%600==0)){arbSlowTold++;fprintf(stderr,"tagnet: player %d's phone cannot keep up: this blank %d ms later (%u blanks slowed)\n",who+1,need,arbSlowed);}
+}
+/* (v3, guest) the first input delay of a match from the round trip the connection measured: what the host's deadline
+   (arbK) needs, the round trip in blanks less 2; 3 (DELAY) to 12. -1 round trip (not measured): DELAY, as before. */
+static int arb_first_delay(void) {
+    int rtt=-1,d;
+    if(peers[0].fd!=TN_BAD && IS_LINK(peers[0].fd))rtt=TagLink_RttMs(LINK_SLOT(peers[0].fd));
+    if(rtt<0 && peers[0].ping>0)rtt=peers[0].ping;
+    if(rtt<0)return DELAY;
+    d=(rtt*60+999)/1000-2;
+    d=SDL_clamp(d,DELAY,SDL_min(arbMaxDelay,12));
+    fprintf(stderr,"tagnet: first input delay %d blanks (round trip %d ms)\n",d,rtt);
+    return d;
+}
+static void arb_commit(int r,unsigned at,const unsigned char *pad) {
+    unsigned char c[PAD];memcpy(c,pad,PAD);
+    input_take(r,at,c);memcpy(lastC[r],c,PAD);send_input(r,at,c);
+}
+/* (host) whether any guest's proposals came in the last 250 ms. All of them silent at once: the likely fault is this
+   copy's own network, and deciding everyone's input from here would hand the host's stall to all the others. */
+static int arb_heard_any(void) {
+    int i;Uint64 now=SDL_GetTicks();
+    for(i=0;i<PEERS;i++){Peer *q=&peers[i];int r=q->role;
+        if(q->hello && r>=0 && r<TN_PLAYERS && r!=role && (input_mask()&(1u<<r)) && now-arbLastIn[r]<100)return 1;}
+    return 0;
+}
+static void arb_commit_player(int r) {
+    int deadline=(int)frame-arbK;unsigned guard=0;
+    if(!host || !arb_on() || phase!=4 || !begun || r==role || r<0 || r>=TN_PLAYERS || !(input_mask()&(1u<<r)))return;
+    while(guard++<4096) {
+        unsigned F=have[r];
+        if(!produces(r,F) || (disconnectedMask&(1u<<r)))return; /* (fill_departed's) */
+        while(qNext[r]<qHave[r] && qStamp[r][qNext[r]%RING]<F && !memcmp(qPad[r][qNext[r]%RING],lastC[r],PAD)){qNext[r]++;arbStat[r][3]++;}
+        if(qNext[r]<qHave[r]) {
+            unsigned s=qStamp[r][qNext[r]%RING];
+            if(s<=F) {
+                arb_commit(r,F,qPad[r][qNext[r]%RING]);qNext[r]++;
+                if(s<F){arbStat[r][1]++;arbStat[r][2]+=F-s;if(F-s>arbStat[r][6])arbStat[r][6]=F-s;}else arbStat[r][0]++;
+                continue;
+            }
+            if(F>frame+(unsigned)arbMaxDelay+8)return; /* (never decided far ahead of this copy) */
+            arb_commit(r,F,lastC[r]);arbStat[r][4]++;continue; /* (no proposal is for F: the next one is for a later blank) */
+        }
+        if((int)F<=deadline && arb_heard_any()){arb_commit(r,F,lastC[r]);arbStat[r][5]++;continue;}
+        return;
+    }
+}
+static void arb_recv_propose(Peer *q,const unsigned char *d,unsigned n) {
+    int r=q->role,k;unsigned first,cnt,i,slot=(unsigned)(q-peers);
+    if(!host || !arb_on() || phase!=4 || r<0 || r>=TN_PLAYERS || !(input_mask()&(1u<<r)) || n<8 || get32(d)!=roundId)return;
+    unsigned at_,rel_;static unsigned st0_[ARB_WIN+1];static unsigned char pd0_[ARB_WIN+1][PAD];unsigned *st_=st0_+1;unsigned char (*pd_)[PAD]=pd0_+1;
+    if(n<4+4+TN_PLAYERS+1+6)return;
+    {unsigned lo=get32(d+4);for(k=0;k<TN_PLAYERS;k++){unsigned h=lo+d[8+k];if(h>fastAck[slot][k])fastAck[slot][k]=h;}}
+    arbSlowOf[r]=d[8+TN_PLAYERS];
+    at_=8+TN_PLAYERS+1;first=get32(d+at_);cnt=d[at_+4];rel_=d[at_+5];at_+=6;if(cnt>ARB_WIN)return;
+    if(cnt && rel_) { /* (the proposal before the first: this host has it, or the datagram is of no use) */
+        if(!first || qTag[r][(first-1)%RING]!=first)return;
+        st0_[0]=qStamp[r][(first-1)%RING];memcpy(pd0_[0],qPad[r][(first-1)%RING],PAD);
+    }
+    for(i=0;i<cnt;i++) {
+        if(!i && !rel_){if(at_+4+PAD>n)return;st_[0]=get32(d+at_);memcpy(pd_[0],d+at_+4,PAD);at_+=4+PAD;continue;}
+        {unsigned h,dd;int u;if(at_>=n)return;h=d[at_++];dd=h&127;
+         if(dd==127){if(at_+4>n)return;st_[i]=get32(d+at_);at_+=4;}else st_[i]=st_[(int)i-1]+dd;
+         if(h&128){if((u=pad_get(d+at_,n-at_,pd_[(int)i-1],pd_[i]))<0)return;at_+=(unsigned)u;}else memcpy(pd_[i],pd_[(int)i-1],PAD);}
+    }
+    if(at_!=n)return;
+    {int q2;if(!arb_heard_any())for(q2=0;q2<TN_PLAYERS;q2++)arbMute[q2]=frame+30;
+     if(SDL_GetTicks()-arbLastIn[r]>=100)arbMute[r]=frame+30;}
+    arbLastIn[r]=SDL_GetTicks();
+    for(i=0;i<cnt;i++) {
+        unsigned seq=first+i,stamp=st_[i];
+        if(seq<qHave[r] || seq>=qNext[r]+RING-64 || qTag[r][seq%RING]==seq+1)continue;
+        qTag[r][seq%RING]=seq+1;qStamp[r][seq%RING]=stamp;memcpy(qPad[r][seq%RING],pd_[i],PAD);
+        {int slack=(int)stamp-arbDecided-1;if(slack<slackCur[r] && frame>=arbMute[r])slackCur[r]=slack;
+         if(arb_dbg()){static unsigned h[TN_PLAYERS][12],c[TN_PLAYERS];h[r][SDL_clamp(slack+4,0,11)]++;if(++c[r]%600==0){int z;fprintf(stderr,"arbdbg host: player %d slack -4..7:",r+1);for(z=0;z<12;z++)fprintf(stderr," %u",h[r][z]);fprintf(stderr,"\n");memset(h[r],0,sizeof(h[r]));}}} /* (blanks to spare before the deadline; < 0: late) */
+        sim_remote_input(r,stamp,frame);
+    }
+    while(qTag[r][qHave[r]%RING]==qHave[r]+1)qHave[r]++;
+    arb_commit_player(r);
+}
+static void arb_commit_all(void);
+static void arb_send_fast(void);
+/* (v3, host) in the wait for inputs: what the blank decides (the deadline, a silent player let go after 10 s), and what
+   was decided sent on at once; the datagram at most every 16 ms (the wait turns every 1 ms) */
+static void arb_wait_commit(void) {
+    static Uint64 lastFast;unsigned before=0,after=0;int r;
+    for(r=0;r<TN_PLAYERS;r++)before+=have[r];
+    arb_commit_all();
+    if(phase!=4 || aborted)return;
+    for(r=0;r<TN_PLAYERS;r++)after+=have[r];
+    if(after!=before || SDL_GetTicks()-lastFast>=16){inputs_flush();arb_send_fast();lastFast=SDL_GetTicks();}
+}
+static void arb_commit_all(void) {
+    int i,r;
+    if(!host || !arb_on() || phase!=4 || !begun)return;
+    arbDecided=(int)frame-arbK;
+    if(frame/60!=slackWindow){slackWindow=frame/60;for(r=0;r<TN_PLAYERS;r++){slackPrev[r]=slackCur[r];slackCur[r]=99999;}}
+    for(i=0;i<PEERS;i++) {
+        Peer *q=&peers[i];r=q->role;
+        if(!q->hello || r<0 || r>=TN_PLAYERS || r==role || !(input_mask()&(1u<<r)))continue;
+        arb_commit_player(r);
+        if(SDL_GetTicks()-arbLastIn[r]>10000 && produces(r,have[r]) && !(disconnectedMask&(1u<<r))) {
+            fprintf(stderr,"tagnet: player %d sent no input for 10 s: let go\n",r+1);
+            if(config.party)peer_lost(q,"Input from a player stopped arriving. Match stopped.");
+            else stop_match("Input from a player stopped arriving. Match stopped.");
+            return;
+        }
+    }
+}
+static void arb_send_fast(void) {
+    unsigned char b[1100];int i,p;
+    if(!host || !arb_on() || phase!=4 || !begun)return;
+    for(i=0;i<PEERS;i++) {
+        Peer *q=&peers[i];int r=q->role;unsigned k,from,t,np=0;
+        if(!q->hello || r<0 || r>=TN_PLAYERS || q->catching)continue;
+        put32(b,roundId);put32(b+4,frame);put32(b+8,qHave[r]);put32(b+12,(unsigned)SDL_min(slackCur[r],slackPrev[r]));
+        k=20;
+        for(p=0;p<TN_PLAYERS;p++)if(input_mask()&(1u<<p)) {
+            from=have[p]>ARB_FAST?have[p]-ARB_FAST:0;if(fastAck[i][p]>from)from=fastAck[i][p];
+            if(from>=have[p])continue;
+            {unsigned char seq[ARB_FAST+1][PAD];unsigned cnt=have[p]-from,rel=from>0 && (fastAck[i][p]>=from || (fastAck[i][p]>0 && q->fastHi[p]>=from)); /* (sent before counts once this guest has acknowledged anything: at the start its first datagrams can come before it plays) */int dd=(int)(from-frame);
+             for(t=0;t<cnt;t++)memcpy(seq[1+t],inputs[p][(from+t)%RING],PAD);
+             b[k++]=(unsigned char)(p|cnt<<4|rel<<7);
+             if(dd>-32768 && dd<32768){b[k]=(unsigned char)(dd&255);b[k+1]=(unsigned char)((dd>>8)&255);k+=2;}
+             else{b[k]=0;b[k+1]=0x80;put32(b+k+2,from);k+=6;}
+             if(rel){memcpy(seq[0],inputs[p][(from-1)%RING],PAD);k+=run_put(b+k,(const unsigned char (*)[PAD])seq,cnt+1);}
+             else{memcpy(b+k,seq[1],PAD);k+=PAD;k+=run_put(b+k,(const unsigned char (*)[PAD])(seq+1),cnt);}
+             if(have[p]>q->fastHi[p])q->fastHi[p]=have[p];}
+            np++;
+        }
+        put32(b+16,np);
+        dgram_send(q,TN_FAST,b,k);
+    }
+}
+static void arb_recv_fast(const unsigned char *d,unsigned n) {
+    unsigned k=20,np,j;
+    if(host || !arb_on() || phase!=4 || n<20 || get32(d)!=roundId)return;
+    {unsigned a=get32(d+8);if(a>propAcked && a<=propSeq)propAcked=a;}
+    arbSlackSeen=(int)get32(d+12);
+    if(arb_dbg()){static long sum,cnt;static int mx=-999,mn=999;int df=(int)get32(d+4)-(int)frame;sum+=df;cnt++;if(df>mx)mx=df;if(df<mn)mn=df;
+        if(cnt%300==0){fprintf(stderr,"arbdbg guest: host frame - mine at TN_FAST: avg %.2f min %d max %d (adv16 %d, ping %d)\n",(double)sum/cnt,mn,mx,peers[0].adv16,peers[0].ping);sum=cnt=0;mx=-999;mn=999;}}
+    np=get32(d+16);
+    for(j=0;j<np;j++) {
+        unsigned p,from,cnt,t,rel,hf=get32(d+4),raw;int u,has=1;unsigned char seq[ARB_FAST+1][PAD];
+        if(k+3>n)return;
+        p=d[k]&15;cnt=(d[k]>>4)&7;rel=d[k]>>7;raw=d[k+1]|(unsigned)d[k+2]<<8;k+=3;
+        if(raw==0x8000){if(k+4>n)return;from=get32(d+k);k+=4;}else from=hf+(unsigned)(int)(short)raw;
+        if(p>=TN_PLAYERS || !(input_mask()&(1u<<p)) || !cnt || cnt>ARB_FAST)return;
+        if(rel) {
+            has=from>0 && inputStamp[p][(from-1)%RING]==from-1;
+            memcpy(seq[0],has?inputs[p][(from-1)%RING]:idle,PAD);
+            if((u=run_get(d+k,n-k,seq,cnt+1))<0)return; /* (decoded even when this copy lacks frame from-1: the next block starts after it) */
+        } else {
+            if(k+PAD>n)return;
+            memcpy(seq[1],d+k,PAD);k+=PAD;
+            if((u=run_get(d+k,n-k,seq+1,cnt))<0)return;
+        }
+        k+=(unsigned)u;
+        if(!has)continue; /* (this copy lacks the frame before: as if lost, the stream brings these) */
+        for(t=0;t<cnt;t++) {
+            if((int)p!=role && inputStamp[p][(from+t)%RING]!=from+t)sim_remote_input((int)p,from+t,frame);
+            input_take((int)p,from+t,seq[1+t]);
+        }
+    }
+}
+/* (guest) what this copy plays for its own input at `frame`: the committed one, else its own proposal for that blank */
+static void arb_fill_used(void) {
+    const unsigned char *p;
+    if(!arb_guest())return;
+    if(frame<have[role] && inputStamp[role][frame%RING]==frame)p=inputs[role][frame%RING];
+    else if(ownPredStamp[frame%RING]==frame)p=ownPred[frame%RING];
+    else p=inputs[role][(have[role]-1)%RING];
+    memcpy(used[role][frame%RING],p,PAD);
+}
+/* (host, the match's end) a guest whose last proposals never came: its last input, after 300 ms */
+static void arb_finish_fill(Uint64 since) {
+    int r;
+    if(!host || !arb_on())return;
+    arb_commit_all();
+    if(SDL_GetTicks()-since<300)return;
+    for(r=0;r<TN_PLAYERS;r++)if(r!=role && (input_mask()&(1u<<r)))
+        while(have[r]<frame && produces(r,have[r]) && !(disconnectedMask&(1u<<r))){arb_commit(r,have[r],lastC[r]);arbStat[r][5]++;}
+}
+static void sim_final_range(unsigned a,unsigned b) {(void)a;(void)b;}
 void TagNet_Tick(unsigned blank) {
     /* Native room pages render game frames too. They must never advance the
        previous match's input stream while the next roster is being loaded. */
@@ -1855,8 +2321,8 @@ void TagNet_Tick(unsigned blank) {
         if(host && config.party)for(p=1;p<TL_MEMBERS;p++) {
             while((input_mask()&(1u<<p)) && have[p]<=frame+DELAY && (!produces(p,have[p]) || (disconnectedMask&(1u<<p)))){unsigned at=have[p];input_take(p,at,idle);send_input(p,at,idle);}
         }
-        adapt_delay();
-        if(role<TN_PLAYERS && local_produces(frame+localDelay) && frame+localDelay>=have[role]) {
+        adapt_delay();arb_adapt();arb_slow_guest();
+        if(role<TN_PLAYERS && local_produces(frame+localDelay) && (arb_guest()?frame!=arbLastProdFrame:frame+localDelay>=have[role])) {
             memcpy(pad,idle,PAD);Port_PadRead(0,pad);
             if(config.party && !config.practice && !(player_mask()&(1u<<role)))memcpy(pad,idle,PAD);
             if(TagNet_IsPractice()) {
@@ -1885,39 +2351,42 @@ void TagNet_Tick(unsigned blank) {
             if(TagNet_TestCase()==10 && role==1 && frame>=850 && frame<1700 && frame%150<4)pad[1]&=~0x40;
             if(TagNet_TestCase()==10 && role==1 && frame>=800 && frame<804)pad[0]&=~0x20;
             if(TagNet_TestCase()==12 && role==1 && frame>=800 && frame<804)pad[1]&=~0x10;
-            input_take(role,frame+localDelay,pad);
+            if(arb_guest()){arbLastProdFrame=frame;arb_produce(pad);arb_guest_send(1);}
+            else {sim_local_input(role,frame+localDelay);sim_produced(role,frame,frame+localDelay,pad);
+            input_take(role,frame+localDelay,pad);}
         }
-        if(role<TN_PLAYERS && local_produces(frame+localDelay)) {
+        if(role<TN_PLAYERS && local_produces(frame+localDelay) && !arb_guest()) {
             unsigned lag=getenv("BT3_TAG_TEST_LAG")?6:0;
             if(config.party && config.practice && nextSend<inputStart[role])nextSend=inputStart[role];
             while(nextSend<have[role] && frame+localDelay>=nextSend+lag) {
                 send_input(role,nextSend,inputs[role][nextSend%RING]);nextSend++;
             }
         }
+        if(host && arb_on()){arb_commit_all();inputs_flush();arb_send_fast();}
         since=SDL_GetTicks();
         {
             /* (the time spent here is the other players', not this game's: counted where gs_core.c's "slow: frame" line
                reads "waiting for the other player", which counted only the 1v1's waits and showed Tag Team's as 0) */
             extern uint64_t gPortNetWaitNs;
             Uint64 waitFrom=SDL_GetTicksNS();
-            /* (who held the match: the one furthest behind when the wait began. Taken after it, a player let go during the
-               wait (10 s without inputs) left the whole wait to the next one, who was let go in turn: a 2026-11-16 match) */
-            int blocker=-1;unsigned blockerHad=0;
+            int blocker=-1;unsigned blockerHad=0; /* (v3: who held the match: the one furthest behind when the wait began) */
             {unsigned m0=input_mask(),lo0=~0u;int q0;for(q0=0;q0<TN_PLAYERS;q0++)if((m0&(1u<<q0)) && have[q0]<lo0){lo0=have[q0];blocker=q0;}blockerHad=lo0;}
             while(phase!=5 && !aborted && frame>=confirmed()+((role==TN_OBSERVER || (lateJoining && !local_produces(frame)))?0:ROLLBACK)) {
                 pump();commands();fill_departed();
+                if(host && arb_on())arb_wait_commit(); /* (v3: the deadline goes on during this wait too) */
                 if(SDL_GetTicks()-since>10000){if(drop_stalled()){since=SDL_GetTicks();continue;}stop_match("Input from a player stopped arriving. Match stopped.");}
                 wait_say(since,"Waiting for the other player...");
                 Gs_HoldFrame();SDL_Delay(1);
             }
             {
                 Uint64 took=SDL_GetTicksNS()-waitFrom;
+                {unsigned m_=input_mask(),lo_=~0u;int w_=-1,q_;for(q_=0;q_<TN_PLAYERS;q_++)if((m_&(1u<<q_)) && have[q_]<lo_){lo_=have[q_];w_=q_;}if(took>0)sim_wait_cause(w_,took);}
                 static unsigned told;
                 gPortNetWaitNs+=took;tagWaitNs+=took;
-                if(took>=2000000ull) { /* (charged to that player, unless they were let go during the wait: nobody then) */
+                if(took>=2000000ull) { /* (who held the match: the player whose inputs are furthest behind) */
                     int still=blocker>=0 && (input_mask()&(1u<<blocker)) && !(disconnectedMask&(1u<<blocker));
                     if(took>=100000000ull && told<300){told++;fprintf(stderr,"tagnet: waited %u ms at frame %u for player %d's inputs (they had %u)%s\n",(unsigned)(took/1000000ull),frame,blocker+1,blockerHad,still?"":" (let go during the wait: not charged)");}
-                    if(role!=TN_OBSERVER && still)hold_add(blocker,(unsigned)(took/1000000ull));
+                    if(role!=TN_OBSERVER && still && !(host && arb_on()))hold_add(blocker,(unsigned)(took/1000000ull));
                 }
             }
         }
@@ -1935,7 +2404,8 @@ void TagNet_Tick(unsigned blank) {
             }
             /* (ahead of the furthest-behind player by a blank and a half or more: this blank comes 1 ms later) */
             for(i2=0;i2<PEERS;i2++)if(peers[i2].hello && peers[i2].role<TN_PLAYERS && peers[i2].adv16>most)most=peers[i2].adv16;
-            if(most>=24 && !getenv("BT3_TAG_NOBALANCE")){gPortPaceShiftNs+=1000000u;clockSlowed++;}
+            if(most>=24 && !getenv("BT3_TAG_NOBALANCE") && !(host && arb_on() && frame>=600)){gPortPaceShiftNs+=1000000u;clockSlowed++;}
+            else if(host && arb_on() && frame>=600)arb_slow_host();
         }
         {static unsigned toldFrame=~0u;
          if(frame%600==0 && clockSlowed && frame && frame!=toldFrame){toldFrame=frame;fprintf(stderr,"tagnet: kept in step with the others: %u blanks slowed by 1 ms\n",clockSlowed);}}
@@ -1946,9 +2416,9 @@ void TagNet_Tick(unsigned blank) {
         }
         if(role<TN_PLAYERS) {
             for(t=checked;t<limit && inputs_match(t);t++){}
-            checked=t;
-            if(t<limit){live=frame;resim=1;gPortResim=1;SDL_LockSpinlock(&uiLock);status.rollbacks++;SDL_UnlockSpinlock(&uiLock);Port_RollBack((int)(frame-t));}
-        } else checked=limit;
+            sim_final_range(checked,t);checked=t;
+            if(t<limit){live=frame;resim=1;gPortResim=1;SDL_LockSpinlock(&uiLock);status.rollbacks++;SDL_UnlockSpinlock(&uiLock);{int q_;for(q_=0;q_<TN_PLAYERS;q_++)if((input_mask()&(1u<<q_)) && usedStamp[t%RING]==t && memcmp(used[q_][t%RING],inputs[q_][t%RING],PAD))sim_rb_cause(q_);}Port_RollBack((int)(frame-t));}
+        } else {sim_final_range(checked,limit);checked=limit;}
         for(t=sentDigest;t<checked;t++)if(t%30==0 && digestStamp[t%RING]==t && (host || role<TN_PLAYERS)) {
             unsigned char b[16];uint64_t h=digest[t%RING];
             put32(b,t);put32(b+4,(unsigned)(h>>32));put32(b+8,(unsigned)h);put32(b+12,roundId);
@@ -1965,6 +2435,7 @@ void TagNet_Tick(unsigned blank) {
             t=frame<have[p]?frame:have[p]-1;
             memcpy(used[p][frame%RING],inputs[p][t%RING],PAD);
         }
+        arb_fill_used();
         usedStamp[frame%RING]=frame;
     }
     gPortResim=TagNet_Resim();
@@ -1974,9 +2445,10 @@ void TagNet_Finished(void) {
     Uint64 since=SDL_GetTicks();unsigned t;int i;
     unsigned char packet[4];put32(packet,roundId);
     if(!TagNet_Active() || aborted)return;
-    if(role<TN_PLAYERS && local_produces(frame))while(nextSend<have[role]){send_input(role,nextSend,inputs[role][nextSend%RING]);nextSend++;}
+    if(arb_guest())arb_guest_send(1);
+    else if(role<TN_PLAYERS && local_produces(frame))while(nextSend<have[role]){send_input(role,nextSend,inputs[role][nextSend%RING]);nextSend++;}
     while(phase!=5 && !aborted && confirmed()<frame) {
-        commands();pump();wait_say(since,"Waiting for the other player...");Gs_HoldFrame();SDL_Delay(1);
+        commands();pump();arb_finish_fill(since);wait_say(since,"Waiting for the other player...");Gs_HoldFrame();SDL_Delay(1);
         if(SDL_GetTicks()-since>10000)stop_match("A player disconnected before the result was confirmed.");
     }
     wait_over();
@@ -2038,7 +2510,7 @@ static void finish_room(void) {
 void TagNet_Input(int player,unsigned char *data) {
     const unsigned char *p=idle;
     if(phase==4 && begun && player>=0 && player<TN_PLAYERS && (input_mask()&(1u<<player))) {
-        if(role<TN_PLAYERS && player!=role) { if(usedStamp[frame%RING]==frame)p=used[player][frame%RING]; }
+        if(role<TN_PLAYERS && (player!=role || arb_guest())) { if(usedStamp[frame%RING]==frame)p=used[player][frame%RING]; }
         else if(inputStamp[player][frame%RING]==frame)p=inputs[player][frame%RING];
     }
     memcpy(data,p,PAD);
@@ -2089,4 +2561,13 @@ void TagNet_OnlineInfo(unsigned codeOut,unsigned lineOut,int size) {
     { static char shown[200]; char now[200]; /* (in the log when it changes: what the screens were given) */
       snprintf(now,sizeof(now),"code \"%s\", line \"%s\"",code,line);
       if(strcmp(now,shown)){snprintf(shown,sizeof(shown),"%s",now);fprintf(stderr,"tagnet: online info for the screens: %s\n",now);} }
+}
+
+/* (guest, the arbitrated match) committed inputs for more than the rollback window beyond this copy (after a stall
+   of its own, or a phone a little slower than the host's): its blanks run without picture, sound or waiting for the
+   screen (TagNet_Resim: as a re-run) until it is back */
+int TagNet_CatchUp(void) {
+    if(!arb_guest() || phase!=4 || !begun || resim)return 0;
+    if(frame+ROLLBACK<confirmed())return 1;
+    return 0;
 }

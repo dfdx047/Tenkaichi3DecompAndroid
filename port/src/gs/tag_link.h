@@ -28,6 +28,9 @@ int TagLink_State(int slot);
 int TagLink_Send(int slot, const void *data, int len);
 int TagLink_Recv(int slot, void *out, int max);
 void TagLink_Close(int slot);
+int TagLink_SendDatagram(int slot, const void *data, int len); /* (prototype: outside the stream) */
+int TagLink_RecvDatagram(int slot, void *out, int max);
+int TagLink_RttMs(int slot); /* (prototype: the measured round trip, -1 unknown) */
 /* What the online part is doing (a line for the screen), and the room's code once it has one ("" until then). */
 void TagLink_Status(char *out, int size, char *code, int codeSize);
 

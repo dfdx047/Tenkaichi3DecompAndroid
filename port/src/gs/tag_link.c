@@ -54,7 +54,8 @@ extern const char *Port_FileRoot(void);
 #define TL_CANDS 10
 #define TL_MEMBERS 24
 
-enum { T_SYN = 1, T_SYNACK, T_DATA, T_ACK, T_FIN, T_PUNCH };
+enum { T_SYN = 1, T_SYNACK, T_DATA, T_ACK, T_FIN, T_PUNCH, T_DGRAM };
+#define TL_DGRAMS 32 /* datagrams come in and not yet read (T_DGRAM: outside the stream, no order, no resending) */
 
 typedef struct {
     uint8_t data[TL_PIECE];
@@ -84,6 +85,8 @@ typedef struct {
     Uint64 fastAt;
     int viaRelay;        /* (for the log: the way now used) */
     int ackOwed;         /* a DATA came in and nothing has carried its acknowledgement back yet (TagLink_FlushAcks) */
+    uint8_t dgram[TL_DGRAMS][TL_PIECE]; /* T_DGRAM that came in (a ring: the oldest goes when it is full) */
+    int dgramLen[TL_DGRAMS], dgramHead, dgramN;
 } Conn;
 
 typedef struct {
@@ -705,6 +708,13 @@ static void take_packet(uint8_t *pkt, int len, TlAddr from) {
             return;
         }
         take_ack(c, get32(pkt + 13), get32(pkt + 17));
+        if (type == T_DGRAM && c->state == TK_LINK_OPEN) { /* (its header's acknowledgement counts, as any packet's) */
+            int at;
+            if (c->dgramN == TL_DGRAMS) { c->dgramHead = (c->dgramHead + 1) % TL_DGRAMS; c->dgramN--; }
+            at = (c->dgramHead + c->dgramN) % TL_DGRAMS;
+            SDL_memcpy(c->dgram[at], pkt + TL_HEAD, (size_t)dlen); c->dgramLen[at] = dlen; c->dgramN++;
+            return;
+        }
         if (type == T_DATA && c->state == TK_LINK_OPEN) {
             take_data(c, get32(pkt + 9), pkt + TL_HEAD, dlen);
             /* Acknowledged by the next packet that goes to this connection, whatever it is: every header carries rcvNext
@@ -1493,4 +1503,46 @@ void TagLink_Status(char *out, int size, char *code, int codeSize) {
     SDL_strlcpy(out, L.status, (size_t)size);
     SDL_strlcpy(code, L.active && L.codeReady ? L.code : "", (size_t)codeSize);
     SDL_UnlockMutex(L.lock);
+}
+
+/* A datagram to the other side of a connection: outside the stream (never held behind a lost piece, never sent again).
+   The caller makes its own redundancy. -1: no such connection, 0: not open yet. */
+int TagLink_SendDatagram(int slot, const void *data, int len) {
+    Conn *c;
+    if (slot < 0 || slot >= TL_SLOTS || len <= 0 || len > TL_PIECE) {
+        return -1;
+    }
+    c = &L.conn[slot];
+    if (c->state != TK_LINK_OPEN) {
+        return c->state == TK_LINK_CLOSED || c->state == TK_LINK_FREE ? -1 : 0;
+    }
+    send_packet(c, T_DGRAM, 0, (const uint8_t *)data, len, NULL);
+    return len;
+}
+int TagLink_RecvDatagram(int slot, void *out, int max) {
+    Conn *c;
+    int n;
+    if (slot < 0 || slot >= TL_SLOTS) {
+        return -1;
+    }
+    c = &L.conn[slot];
+    if (c->dgramN == 0) {
+        return 0;
+    }
+    n = c->dgramLen[c->dgramHead] < max ? c->dgramLen[c->dgramHead] : max;
+    SDL_memcpy(out, c->dgram[c->dgramHead], (size_t)n);
+    c->dgramHead = (c->dgramHead + 1) % TL_DGRAMS;
+    c->dgramN--;
+    return n;
+}
+
+/* The connection's measured round trip in ms, or -1 while nothing has been measured yet (its first guess, 150 ms, is not
+   a measure). For the prototype's first input delay of a match. */
+int TagLink_RttMs(int slot) {
+    Conn *c;
+    if (slot < 0 || slot >= TL_SLOTS) {
+        return -1;
+    }
+    c = &L.conn[slot];
+    return c->state == TK_LINK_OPEN && c->lastSample != 0 ? c->srtt : -1;
 }
