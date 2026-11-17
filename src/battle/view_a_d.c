@@ -445,6 +445,7 @@ extern void Port_WorldCaptureEnd(void);
 extern void Port_WorldNoteDma(u32 a, u32 b, s32 size);
 extern s32 File_PortReadRaw(s32 id, void *buf, s32 cap);
 extern s32 File_PortReadRawStart(s32 id, void *buf, s32 cap);
+extern s32 File_PortSize(s32 id);
 extern s32 File_PortReadRawPoll(s32 job);
 extern void File_PortReadRawCancel(void);
 extern u32 Port_LoadTimeUs(void);
@@ -482,6 +483,9 @@ static s32 sPortPinned[2], sPortPinnedNew[2];
 static ChrViewSlot *sPortReading[2]; /* the buffer its files go into; NULL: none being read */
 static s32 sPortReadJob[2];          /* the read under way (File_PortReadRawStart); 0: it was read in the frame */
 static s32 sPortReadGot[2];          /* (that one's bytes) */
+static s32 sPortReadCap[2];          /* (the room it was given) */
+/* Each slot's model and motion buffers as large as they were made: the game's sizes, or a mod's larger file. */
+static s32 sPortCap[2][CHRVIEW_SLOT_COUNT][2];
 static s32 sPortReadStep[2];         /* 0 its costume's model, 1 the first costume's model instead, 2 its motions */
 static s32 sPortReadChara[2], sPortReadCostume[2], sPortReadModel[2];
 static u32 sPortReadSince[2];
@@ -518,6 +522,7 @@ static void ChrView_PortOneView(s32 side) {
 
     sPortView[side] = gChrView = ChrView_PortMem(sizeof(ChrView));
     memset(gChrView, 0, sizeof(ChrView));
+    memset(sPortCap[side], 0, sizeof(sPortCap[side])); /* (the buffers below are the game's sizes again) */
     gChrView->anim = 7;
     for (i = 0; i < CHRVIEW_SLOT_COUNT; i++) {
         gChrView->slot[i].file[0].buf = ChrView_PortMem(CHRVIEW_MODEL_SIZE);
@@ -559,10 +564,47 @@ static void ChrView_PortInit(s32 split) {
 
 /* One of a fighter's files, into buf: begun on the port's thread, or (no thread) read now. */
 static void ChrView_PortRead(s32 side, s32 id, void *buf, s32 cap) {
+    sPortReadCap[side] = cap;
     sPortReadJob[side] = File_PortReadRawStart(id, buf, cap);
     if (sPortReadJob[side] == 0) {
         sPortReadGot[side] = File_PortReadRaw(id, buf, cap);
     }
+}
+
+/* The room of a slot's model (f 0) or motion (f 1) buffer. */
+static s32 ChrView_PortCap(s32 side, ChrViewSlot *slot, s32 f) {
+    s32 at = slot - sPortView[side]->slot;
+    s32 cap = sPortCap[side][at][f];
+
+    return cap > 0 ? cap : f == 0 ? CHRVIEW_MODEL_SIZE : CHRVIEW_PORT_ANIM_SIZE;
+}
+
+/* A read that filled its buffer to the end: a mod's model or motions can be larger than the game's buffer. A fight's
+   File_Request reads a file whole whatever the buffer, so such a fighter shows there; here it was cut at the buffer's
+   size and the select showed no fighter (or a broken one). The slot's buffer is made as large as the file (the
+   viewer's own memory, never the game's) and 1 returned: the file is to be read again into it. 0: it was whole. */
+static s32 ChrView_PortGrow(s32 side, ChrViewSlot *slot, s32 f, s32 id, s32 got) {
+    s32 at = slot - sPortView[side]->slot;
+    s32 size, room;
+    void *buf;
+
+    if (got < sPortReadCap[side] || (size = File_PortSize(id)) <= got) {
+        return 0;
+    }
+    room = (size + 0xFFFF) & ~0xFFFF;
+    buf = ChrView_PortMem(room);
+    if (buf == NULL) {
+        fprintf(stderr, "bt3: select: file %d is %d bytes, more than its buffer (%d), and no room for it: cut\n", (int)id, (int)size,
+                (int)got);
+        return 0;
+    }
+    fprintf(stderr, "bt3: select: file %d is %d bytes, more than its buffer (%d, a mod's): read again whole\n", (int)id, (int)size,
+            (int)got);
+    Heap_Free(slot->file[f].buf);
+    slot->file[f].buf = buf;
+    sPortCap[side][at][f] = room;
+    ChrView_PortRead(side, id, buf, room);
+    return 1;
 }
 
 /* Begins reading a fighter into a free buffer of this side's viewer. 0: no buffer free. */
@@ -578,7 +620,7 @@ static s32 ChrView_PortLoad(s32 side, s32 chara, s32 costume) {
     sPortReadModel[side] = ChrView_GetModelFile(chara, costume, 0);
     sPortReadStep[side] = 0;
     sPortReadSince[side] = Port_LoadTimeUs();
-    ChrView_PortRead(side, sPortReadModel[side], slot->file[0].buf, CHRVIEW_MODEL_SIZE);
+    ChrView_PortRead(side, sPortReadModel[side], slot->file[0].buf, ChrView_PortCap(side, slot, 0));
     return 1;
 }
 
@@ -615,13 +657,19 @@ static void ChrView_PortReadStep(s32 side, s32 chara, s32 costume) {
     if (sPortReadStep[side] == 0 && got < CHRVIEW_PORT_MODEL_MIN) {
         sPortReadModel[side] = ChrView_GetModelFile(chara, 0, 0);
         sPortReadStep[side] = 1;
-        ChrView_PortRead(side, sPortReadModel[side], head, CHRVIEW_MODEL_SIZE);
+        ChrView_PortRead(side, sPortReadModel[side], head, ChrView_PortCap(side, slot, 0));
         return;
     }
+    if (ChrView_PortGrow(side, slot, sPortReadStep[side] < 2 ? 0 : 1, sPortReadStep[side] < 2 ? sPortReadModel[side] : slot->file[1].id, got)) {
+        return; /* (a mod's larger file: read again whole) */
+    }
+    head = (u32 *)slot->file[0].buf;
     if (sPortReadStep[side] < 2) {
         /* (what was read has the table a model starts with, and the entries BtlObjMdl_BindFiles goes through) */
         if (got < CHRVIEW_PORT_MODEL_MIN || head[3] == head[4] || head[2] == head[3] || head[12] == head[13]) {
-            fprintf(stderr, "bt3: select: fighter %d has no model (file %d, %d bytes)\n", (int)chara, (int)sPortReadModel[side], (int)got);
+            fprintf(stderr, "bt3: select: fighter %d has no model (file %d, %d bytes; entries 2..4 %x %x %x, 12..13 %x %x)\n", (int)chara,
+                    (int)sPortReadModel[side], (int)got, got >= 64 ? (unsigned)head[2] : 0u, got >= 64 ? (unsigned)head[3] : 0u,
+                    got >= 64 ? (unsigned)head[4] : 0u, got >= 64 ? (unsigned)head[12] : 0u, got >= 64 ? (unsigned)head[13] : 0u);
             ChrView_FreeSlot(slot);
             sPortReading[side] = NULL;
             ChrView_PortNone();
@@ -632,7 +680,7 @@ static void ChrView_PortReadStep(s32 side, s32 chara, s32 costume) {
         memset(slot->file[1].buf, 0, 0x1000); /* an empty motion file leaves an empty table */
         slot->file[1].id = chara * 10 + CHRVIEW_FILE_FIRST + 8;
         sPortReadStep[side] = 2;
-        ChrView_PortRead(side, slot->file[1].id, slot->file[1].buf, CHRVIEW_PORT_ANIM_SIZE);
+        ChrView_PortRead(side, slot->file[1].id, slot->file[1].buf, ChrView_PortCap(side, slot, 1));
         return;
     }
     slot->file[1].size = got;
