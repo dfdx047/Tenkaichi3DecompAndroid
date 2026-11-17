@@ -449,7 +449,7 @@ static char *Tb_Fmt(char *format) {
     return Port_TrLine(format, buf[k], 160) ? buf[k] : format;
 }
 
-static char *sTbHubName[HUB_ITEMS] = {"Combate amistoso", "Combate Tag Team", "Combate clasificatorio", "Clasificación", "Opciones",
+static char sTbHubName[HUB_ITEMS][40] = {"Combate amistoso", "Combate Tag Team", "Combate clasificatorio", "Top mundial", "Opções",
                                      "Language", "Play Against"};
 static const s32 sTbHubReady[HUB_ITEMS] = {1, 1, 1, 1, 1, 1, 1};
 static const s32 sTbHubOrder[] = {HUB_LANG, HUB_VS, HUB_FRIENDLY, HUB_TAG, HUB_RANKED, HUB_LEADERBOARD, HUB_PROFILE};
@@ -466,9 +466,9 @@ static s32 Tb_HubRow(s32 item) {
     return HUB_SMALL;
 }
 /* the languages of the language row, in their own words (not translated) */
-static char *sTbLangName[3] = {"ENGLISH", "PORTUGU\xC3\x8AS", "ESPA\xC3\x91OL"}; /* (UTF-8 in escapes: the build reads the file as ASCII) */
-static char *sTbLangCode[3] = {"en", "pt", "es"};
-static char *sTbHubSay[HUB_ITEMS] = {
+static char sTbLangName[3][16] = {"ENGLISH", "PORTUGU\xC3\x8AS", "ESPA\xC3\x91OL"}; /* (UTF-8 in escapes: the build reads the file as ASCII) */
+static char sTbLangCode[3][3] = {"en", "pt", "es"};
+static char sTbHubSay[HUB_ITEMS][80] = {
     "Partida rapida, crear una sala privada o unirse con codigo.",
     "Activa el mod Tag Team en el launcher.",
     "Buscar rival (proximamente).",
@@ -486,11 +486,11 @@ static const char *Tb_Soon(void) {
     return sTb->lang == 1 ? "Em breve" : sTb->lang == 2 ? "Próximamente" : "Coming soon";
 }
 static const char *Tb_HubLabel(s32 item) {
-    static const char *const label[HUB_COUNT][3] = {
+    static const char label[HUB_COUNT][3][40] = {
         {"Friendly Match", "Combate amistoso", "Combate amistoso"},
         {"Tag Team Match", "Combate Tag Team", "Combate Tag Team"},
         {"Ranked Match", "Combate classificatório", "Combate clasificatorio"},
-        {"Ranking", "Classificação", "Clasificación"},
+        {"World Ranking", "Top mundial", "Top mundial"},
         {"Options", "Opções", "Opciones"}
     };
     return item < HUB_COUNT ? label[item][sTb->lang] : sTbHubName[item];
@@ -502,9 +502,9 @@ static void Tb_LobbyCreate(s32 byCode);
    after 40; Anywhere whoever waits longest). */
 #define QK_REGIONS 9
 #define QK_REGION_WIDEN 40 /* a region's search takes everyone after this many seconds (the service's REGION_WIDEN_SECONDS) */
-static char *sTbRegionName[QK_REGIONS] = {"AUTO", "NORTH AMERICA", "SOUTH AMERICA", "EUROPE", "MIDDLE EAST", "AFRICA", "ASIA", "OCEANIA", "ANYWHERE"};
-static char *sTbRegionArea[QK_REGIONS] = {"auto", "NA", "SA", "EU", "ME", "AF", "AS", "OC", "any"};
-static char *sTbTime[5] = {"60 SECONDS", "90 SECONDS", "180 SECONDS", "240 SECONDS", "NO LIMIT"};
+static char sTbRegionName[QK_REGIONS][20] = {"AUTO", "NORTH AMERICA", "SOUTH AMERICA", "EUROPE", "MIDDLE EAST", "AFRICA", "ASIA", "OCEANIA", "ANYWHERE"};
+static char sTbRegionArea[QK_REGIONS][5] = {"auto", "NA", "SA", "EU", "ME", "AF", "AS", "OC", "any"};
+static char sTbTime[5][16] = {"60 SECONDS", "90 SECONDS", "180 SECONDS", "240 SECONDS", "NO LIMIT"};
 static char sTbKeys[KEY_ROWS][KEY_COLS + 1] = {"ABCDEFGHI", "JKLMNOPQR", "STUVWXYZ0", "123456789"};
 
 /* ---------------------------------------------------------------------------------------------- small things */
@@ -1981,7 +1981,7 @@ static void Tb_DrawRows(s32 count, s32 cur, f32 y0) {
 }
 
 static const char *Tb_SubmenuLabel(s32 tab, s32 row) {
-    static const char *const labels[3][3][3] = {
+    static const char labels[3][3][3][24] = {
         {{"Quick Match", "Partida rápida", "Partida rápida"}, {"Create Room", "Crear sala", "Crear sala"}, {"Join with Code", "Unirse con código", "Unirse con código"}},
         {{"Find Rival", "Buscar rival", "Buscar rival"}, {"", "", ""}, {"", "", ""}},
         {{"Username", "Username", "Username"}, {"Flag", "Flag", "Flag"}, {"", "", ""}}
@@ -2162,7 +2162,7 @@ static void Tb_DrawBoardText(void) {
             Ps_Align(2); Ps_Text(302.0f, Ps_TextTop(mid, 0.58f), line, 0.58f, 104.0f, 3); Ps_Align(0);
         }
         sprintf(line, Tb_Fmt("Your position: %d  %dW / %dL"), sTbCommunity.position, sTbCommunity.wins, sTbCommunity.losses);
-        Ps_Text(28.0f, Ps_TextTop(345.0f, 0.58f), line, 0.58f, 240.0f, 2);
+        Ps_Text(28.0f, Ps_TextTop(354.0f, 0.58f), line, 0.58f, 240.0f, 2);
         return;
     }
     for (i = 0; i < 9 && i < sTbRk.boardCount; i++) {

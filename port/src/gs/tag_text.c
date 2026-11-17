@@ -64,7 +64,9 @@ const char *Port_TagText(const char *english) {
     /* Game text pointers are 32-bit; host text pointers are ordinary user-space
        addresses. Reject null and non-user/corrupt values before strcmp can touch them. */
     if(!english || address < 4096u || address >= (uintptr_t)0x0000800000000000ULL) {
-        fprintf(stderr,"tag_text: invalid label pointer %p\n",(const void *)english);
+        /* An invalid pointer cannot be dereferenced to recover its text. Log the
+           label status, this guard's file, and the pointer for diagnosis. */
+        fprintf(stderr,"tag_text: label=<invalid> file=port/src/gs/tag_text.c pointer=%p\n",(const void *)english);
         return "?";
     }
     lang=Port_TagLang();
