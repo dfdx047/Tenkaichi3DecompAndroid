@@ -3439,6 +3439,15 @@ static bool frame_build(void) {
             }
         }
         dl->AddText(font, size, ImVec2(x, y), IM_COL32(255, 236, 120, 255), sBanner, NULL, wrap);
+        if (sBannerUntil == 0) { // still waiting (the start of a match: up to a second and a half): a ring of dots that turns,
+                                 // so that the held picture does not look hung (the held frames come 30 times a second)
+            float r = size * 0.55f, cx2 = io.DisplaySize.x * 0.5f, cy2 = y + extent.y + size * 0.6f + size * 1.4f;
+            float turn = (float)(SDL_GetTicks() % 1000) / 1000.0f;
+            for (int i = 0; i < 8; i++) {
+                float a = ((float)i / 8.0f + turn) * 6.2831853f;
+                dl->AddCircleFilled(ImVec2(cx2 + cosf(a) * r, cy2 + sinf(a) * r), size * 0.12f, IM_COL32(255, 236, 120, 50 + 205 * i / 7), 12);
+            }
+        }
     }
     if (saving) {
         save_icon_draw(now);
