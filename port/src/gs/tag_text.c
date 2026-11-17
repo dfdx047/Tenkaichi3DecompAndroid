@@ -3,6 +3,8 @@
  * state. No allocations or changing pointers when a room restores its state. */
 #include "../../include/tag_text.h"
 #include "menu_translation.h"
+#include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 typedef struct TagTextRow { const char *en,*tr; } TagTextRow;
@@ -58,7 +60,13 @@ void Port_TagLangSet(int lang) {
 
 const char *Port_TagText(const char *english) {
     int lang;
-    if(!english)return english;
+    uintptr_t address=(uintptr_t)english;
+    /* Game text pointers are 32-bit; host text pointers are ordinary user-space
+       addresses. Reject null and non-user/corrupt values before strcmp can touch them. */
+    if(!english || address < 4096u || address >= (uintptr_t)0x0000800000000000ULL) {
+        fprintf(stderr,"tag_text: invalid label pointer %p\n",(const void *)english);
+        return "?";
+    }
     lang=Port_TagLang();
     if(lang==1)return find(ptRows,(int)(sizeof(ptRows)/sizeof(*ptRows)),english);
     if(lang==2)return find(esRows,(int)(sizeof(esRows)/sizeof(*esRows)),english);

@@ -432,7 +432,7 @@ static Bt3Profile sTbCommunity;
 static s32 sTbCommunityBoard;
 static s32 sTbCommunityFlag;
 static s32 sTbOptionsName;
-static const char *sTbFlags[] = {"BR", "AR", "CL", "MX", "US", "JP", "ES", "PT", "PE"};
+static const char sTbFlags[][3] = {"BR", "AR", "CL", "MX", "US", "JP", "ES", "PT", "PE"};
 static s32 sTbBgKind;  /* what the search left open for "Train While Waiting" is: 0 joining a code, 2 a quick match */
 static s32 sTbBgQueue;
 static s32 sTbBgFrames; /* how long it had been searching when the sparring fight began; the sign counts on from it */
