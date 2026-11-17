@@ -299,7 +299,8 @@ extern void Port_SettingsWrite(void);
 #define TB_RANKED 12 /* Ranked (Dragon Net only): the profile, the battle, search, the ranking, update */
 #define TB_RKWAIT 13 /* Ranked: searching for a rival, then the room the service pairs the two in */
 #define TB_BOARD 14  /* Ranked: the best fighters */
-#define TB_MODES 15
+#define TB_SUBMENU 15
+#define TB_MODES 16
 #define TB_FIGHTERS 161
 #define TB_TOURNAMENT_STAGE 4 /* the World Tournament Stage, at noon */
 
@@ -354,6 +355,8 @@ typedef struct TboScreen {
     char sayLine[256];
     s32 hubCur;         /* the item under the cursor (HUB_*) */
     s32 hubAction;      /* the choice inside the selected tab */
+    s32 subCur;         /* selected row in the active tab's page */
+    s32 subTab;         /* tab whose page is open */
     s32 tagAvailable;   /* re-read from the launcher switch when the hub opens */
     f32 hubY;           /* where the hub's cursor plate is drawn: it glides */
     s32 lang;           /* the screens' language: 0 English, 1 Portuguese, 2 Spanish (setting tbo_lang) */
@@ -440,7 +443,7 @@ static char *Tb_Fmt(char *format) {
     return Port_TrLine(format, buf[k], 160) ? buf[k] : format;
 }
 
-static char *sTbHubName[HUB_ITEMS] = {"Combate amistoso", "Combate Tag Team", "Combate clasificatorio", "Clasificacion", "Opciones",
+static char *sTbHubName[HUB_ITEMS] = {"Combate amistoso", "Combate Tag Team", "Combate clasificatorio", "Clasificación", "Opciones",
                                      "Language", "Play Against"};
 static const s32 sTbHubReady[HUB_ITEMS] = {1, 1, 1, 1, 1, 1, 1};
 static const s32 sTbHubOrder[] = {HUB_LANG, HUB_VS, HUB_FRIENDLY, HUB_TAG, HUB_RANKED, HUB_LEADERBOARD, HUB_PROFILE};
@@ -470,14 +473,22 @@ static char *sTbHubSay[HUB_ITEMS] = {
 };
 /* against whom, as the row writes it (not translated: names) */
 static char *sTbVsName[2] = {"ANDROID + SWITCH", "PC"};
-static const char *sTbTabAction[HUB_COUNT][3] = {
-    {"Partida rapida", "Crear sala", "Unirse con codigo"},
-    {"Partida rapida", "Crear sala", "Unirse con codigo"},
-    {"Buscar rival", "", ""},
-    {"Mundo", "", ""},
-    {"Nombre y bandera", "", ""},
-};
-static const s32 sTbTabActionCount[HUB_COUNT] = {3, 3, 1, 1, 1};
+static const char *Tb_Locked(void) {
+    return sTb->lang == 1 ? "Bloqueado" : sTb->lang == 2 ? "Bloqueado" : "Locked";
+}
+static const char *Tb_Soon(void) {
+    return sTb->lang == 1 ? "Em breve" : sTb->lang == 2 ? "Próximamente" : "Coming soon";
+}
+static const char *Tb_HubLabel(s32 item) {
+    static const char *const label[HUB_COUNT][3] = {
+        {"Friendly Match", "Combate amistoso", "Combate amistoso"},
+        {"Tag Team Match", "Combate Tag Team", "Combate Tag Team"},
+        {"Ranked Match", "Combate classificatório", "Combate clasificatorio"},
+        {"Ranking", "Classificação", "Clasificación"},
+        {"Options", "Opções", "Opciones"}
+    };
+    return item < HUB_COUNT ? label[item][sTb->lang] : sTbHubName[item];
+}
 static void Tb_LobbyOpen(void);
 static void Tb_LobbyCreate(s32 byCode);
 /* Quick Match's Region: what the player chooses, and what the matchmaking service is told (port/matchmaking/worker.js:
@@ -533,6 +544,10 @@ static void Tb_SetMode(s32 mode) {
         sTb->modeT = 0;
     }
     sTb->mode = mode;
+}
+
+static void Tb_ReturnToMenu(void) {
+    Tb_SetMode(sTb->subTab >= 0 && sTb->subTab < HUB_COUNT ? TB_SUBMENU : TB_HUB);
 }
 
 static void Tb_SaveChoices(void) {
@@ -978,7 +993,7 @@ static void Tb_QuickUpdate(s32 live) {
         }
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
-        Tb_SetMode(TB_HUB);
+        Tb_ReturnToMenu();
     }
 }
 
@@ -1079,7 +1094,7 @@ static void Tb_RankedUpdate(s32 live) {
         }
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
-        Tb_SetMode(TB_HUB);
+        Tb_ReturnToMenu();
     }
 }
 
@@ -1181,7 +1196,7 @@ static void Tb_HubUpdate(s32 live) {
         if (sTb->hubCur < HUB_COUNT) sTb->hubAction = 0;
         small = sTb->hubCur == HUB_LANG || sTb->hubCur == HUB_VS;
     }
-    side = (small || sTb->hubCur < HUB_COUNT) ? Tb_Side() : 0;
+    side = small ? Tb_Side() : 0;
     if (side != 0 && sTb->hubCur == HUB_LANG) {
         Snd_PlaySe(1, 0);
         Tb_LangSet((sTb->lang + side + 3) % 3);
@@ -1194,9 +1209,6 @@ static void Tb_HubUpdate(s32 live) {
         DrNet_SetMode(mode);
         DrNet_PresenceActive(mode == 0);
         Port_LobbyHelloAsk();
-    } else if (side != 0 && sTb->hubCur < HUB_COUNT) {
-        sTb->hubAction = Ps_Wrap(sTb->hubAction + side, 0, sTbTabActionCount[sTb->hubCur] - 1);
-        Snd_PlaySe(1, 0);
     } else if (small) {
         if (pad->gamePressed & PADG_TRIANGLE) {
             Snd_PlaySe(1, 2);
@@ -1209,43 +1221,65 @@ static void Tb_HubUpdate(s32 live) {
         case HUB_TAG:
             if (sTb->hubCur == HUB_TAG && !sTb->tagAvailable) {
                 Snd_PlaySe(1, 2);
-                Tb_Note("Activa el mod Tag Team en el launcher");
-            } else if (sTb->hubAction == 0) {
-                Snd_PlaySe(1, 1);
-                sTb->queue = sTb->hubCur == HUB_TAG ? 1 : 0;
-                sTb->qkCur = 2;
-                sTb->asked = sTb->frames - 100000;
-                Tb_SetMode(TB_QUICK);
-            } else if (sTb->hubAction == 1) {
-                sTb->battle = sTb->hubCur == HUB_TAG ? 1 : sTb->battle;
-                Tb_LobbyCreate(1);
+                Tb_Note(sTb->lang == 1 ? "Ative o mod Tag Team no launcher" : sTb->lang == 2 ? "Activa el mod Tag Team en el launcher" : "Enable the Tag Team mod in the launcher");
             } else {
+                sTb->subTab = sTb->hubCur;
+                sTb->subCur = 0;
                 Snd_PlaySe(1, 1);
-                sTb->code[0] = 0;
-                sTb->codeLen = 0;
-                sTb->keyCol = 0;
-                sTb->keyRow = 0;
-                Tb_SetMode(TB_JOIN);
+                Tb_SetMode(TB_SUBMENU);
             }
             break;
         case HUB_RANKED:
-            Snd_PlaySe(1, 2);
-            Tb_Note("Buscar rival: proximamente");
+            sTb->subTab = sTb->hubCur; sTb->subCur = 0;
+            Snd_PlaySe(1, 1); Tb_SetMode(TB_SUBMENU);
             break;
         case HUB_LEADERBOARD:
-            Snd_PlaySe(1, 2);
-            Tb_Note("Clasificacion mundial: proximamente");
+            sTb->subTab = sTb->hubCur; sTb->subCur = 0;
+            Snd_PlaySe(1, 1); Tb_SetMode(TB_SUBMENU);
             break;
         case HUB_PROFILE:
-            Snd_PlaySe(1, 1);
-            sTb->prCur = 0;
-            Tb_SetMode(TB_PROFILE);
+            sTb->subTab = sTb->hubCur; sTb->subCur = 0;
+            Snd_PlaySe(1, 1); Tb_SetMode(TB_SUBMENU);
             break;
         }
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
         sTb->leaving = 1;
         ColorFade_StartOut(0, 0, 0, 0x14);
+    }
+}
+
+static void Tb_SubmenuUpdate(s32 live) {
+    Pad *pad = &gPad[0];
+    s32 count = sTb->subTab == HUB_FRIENDLY || sTb->subTab == HUB_TAG ? 3 :
+                sTb->subTab == HUB_PROFILE ? 2 : 1;
+    Ps_Prompt(0, "Select"); Ps_Prompt(2, "Back");
+    if (!live) return;
+    Ps_Move(&sTb->subCur, count);
+    if (pad->gamePressed & PADG_TRIANGLE) {
+        Snd_PlaySe(1, 2); Tb_SetMode(TB_HUB); return;
+    }
+    if (!(pad->gamePressed & PADG_CROSS)) return;
+    Snd_PlaySe(1, 1);
+    if (sTb->subTab == HUB_FRIENDLY || sTb->subTab == HUB_TAG) {
+        if (sTb->subTab == HUB_TAG) sTb->battle = 1;
+        if (sTb->subCur == 0) {
+            sTb->queue = sTb->subTab == HUB_TAG ? 1 : 0;
+            sTb->qkCur = 2; sTb->asked = sTb->frames - 100000;
+            Tb_SetMode(TB_QUICK);
+        } else if (sTb->subCur == 1) {
+            Tb_LobbyCreate(1);
+        } else {
+            sTb->code[0] = 0; sTb->codeLen = 0;
+            sTb->keyCol = 0; sTb->keyRow = 0;
+            Tb_SetMode(TB_JOIN);
+        }
+    } else if (sTb->subTab == HUB_RANKED) {
+        Tb_Note(Tb_Soon());
+    } else if (sTb->subTab == HUB_LEADERBOARD) {
+        Tb_Note(Tb_Soon());
+    } else {
+        Tb_Note(Tb_Soon());
     }
 }
 
@@ -1277,7 +1311,7 @@ static void Tb_CreateUpdate(s32 live) {
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
         Tb_SaveChoices();
-        Tb_SetMode(TB_HUB);
+        Tb_ReturnToMenu();
     }
 }
 
@@ -1499,7 +1533,7 @@ static void Tb_JoinUpdate(s32 live) {
             return;
         } else if (c == 27) { /* Esc: back, as triangle */
             Snd_PlaySe(1, 2);
-            Tb_SetMode(TB_HUB);
+            Tb_ReturnToMenu();
             return;
         } else if (c == 8) {
             Tb_CodeBack();
@@ -1533,7 +1567,7 @@ static void Tb_JoinUpdate(s32 live) {
         Tb_CodeBack();
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
-        Tb_SetMode(TB_HUB);
+        Tb_ReturnToMenu();
     }
 }
 
@@ -1875,19 +1909,19 @@ static void Tb_DrawHubText(void) {
             Ps_Text(x + 152.0f, Ps_TextTop(mid, 0.66f), value, 0.66f, 112.0f, i == cur ? 1 : 3);
             Ps_Align(0);
         } else if (i == cur) {
-            Ps_Text(x, Ps_TextTop(mid, 1.12f), sTbHubName[item], 1.12f, 190.0f, item == HUB_TAG && !sTb->tagAvailable ? 4 : 1);
-            if (item < HUB_COUNT) {
+            s32 locked = item == HUB_TAG && !sTb->tagAvailable;
+            Ps_Text(x, Ps_TextTop(mid, 1.12f), (char *)Tb_HubLabel(item), 1.12f, locked ? 218.0f : 286.0f, locked ? 4 : 1);
+            if (locked) {
                 Ps_Align(2);
-                Ps_Text(x + 246.0f, Ps_TextTop(mid, 0.62f), (char *)sTbTabAction[item][sTb->hubAction], 0.62f, 122.0f,
-                        item == HUB_TAG && !sTb->tagAvailable ? 4 : 1);
+                Ps_Text(x + 270.0f, Ps_TextTop(mid, 0.7f), (char *)Tb_Locked(), 0.7f, 80.0f, 4);
                 Ps_Align(0);
             }
         } else {
             s32 dim = item == HUB_TAG && !sTb->tagAvailable;
-            Ps_Text(x + 12.0f, Ps_TextTop(mid, 0.96f), sTbHubName[item], 0.96f, 200.0f, dim ? 4 : 0);
+            Ps_Text(x + 12.0f, Ps_TextTop(mid, 0.96f), (char *)Tb_HubLabel(item), 0.96f, 200.0f, dim ? 4 : 0);
             if (item == HUB_TAG && !sTb->tagAvailable) {
                 Ps_Align(2);
-                Ps_Text(x + 270.0f, Ps_TextTop(mid, 0.7f), "LOCKED", 0.7f, 80.0f, 4);
+                Ps_Text(x + 270.0f, Ps_TextTop(mid, 0.7f), (char *)Tb_Locked(), 0.7f, 80.0f, 4);
                 Ps_Align(0);
             }
         }
@@ -1919,9 +1953,43 @@ static void Tb_DrawRows(s32 count, s32 cur, f32 y0) {
     Tb_DrawRowsAt(count, cur, y0, TB_ROW);
 }
 
+static const char *Tb_SubmenuLabel(s32 tab, s32 row) {
+    static const char *const labels[3][3][3] = {
+        {{"Quick Match", "Partida rápida", "Partida rápida"}, {"Create Room", "Crear sala", "Crear sala"}, {"Join with Code", "Unirse con código", "Unirse con código"}},
+        {{"Find Rival", "Buscar rival", "Buscar rival"}, {"", "", ""}, {"", "", ""}},
+        {{"Username", "Nome de usuário", "Nombre de usuario"}, {"Flag", "Bandeira", "Bandera"}, {"", "", ""}}
+    };
+    s32 group = tab == HUB_FRIENDLY || tab == HUB_TAG ? 0 : tab == HUB_RANKED ? 1 : 2;
+    return labels[group][row][sTb->lang];
+}
+
+static void Tb_DrawSubmenu(void) {
+    s32 count = sTb->subTab == HUB_FRIENDLY || sTb->subTab == HUB_TAG ? 3 : sTb->subTab == HUB_PROFILE ? 2 : 1;
+    f32 y0 = count == 1 ? 156.0f : count == 2 ? 132.0f : 108.0f;
+    Tb_DrawRows(count, sTb->subCur, y0);
+    if (sTb->subTab == HUB_TAG && !sTb->tagAvailable) {
+        Ps_Align(2);
+        Ps_Text(278.0f, Ps_TextTop(y0 + TB_ROW_H * 0.5f, 0.64f), (char *)Tb_Locked(), 0.64f, 96.0f, 4);
+        Ps_Align(0);
+    }
+}
+
 static void Tb_DrawCreate(void) {
     Tb_Hosts(TBO_HOSTS_ARMS_CROSSED, 408.0f, 350.0f, 250.0f);
     Tb_DrawRowsAt(CR_COUNT, sTb->crCur, CR_Y, CR_STEP);
+}
+
+static void Tb_DrawSubmenuText(void) {
+    s32 count = sTb->subTab == HUB_FRIENDLY || sTb->subTab == HUB_TAG ? 3 : sTb->subTab == HUB_PROFILE ? 2 : 1;
+    f32 y0 = count == 1 ? 156.0f : count == 2 ? 132.0f : 108.0f;
+    s32 i;
+    Ps_Align(1);
+    Ps_Text(157.0f, Ps_TextTop(y0 - 20.0f, 0.64f), (char *)Tb_HubLabel(sTb->subTab), 0.64f, 280.0f, 2);
+    Ps_Align(0);
+    for (i = 0; i < count; i++) {
+        f32 y = y0 + (f32)i * TB_ROW + TB_ROW_H * 0.5f;
+        Ps_Text(34.0f, Ps_TextTop(y, 0.9f), (char *)Tb_SubmenuLabel(sTb->subTab, i), 0.9f, 236.0f, i == sTb->subCur ? 1 : 0);
+    }
 }
 
 static char *sTbCreateLabel[CR_COUNT] = {"Open Lobby", "Host by Address"};
@@ -4020,6 +4088,34 @@ static char *Tb_Help(void) {
     }
     switch (sTb->mode) {
     case TB_HUB:
+        if (sTb->hubCur == HUB_LANG) {
+            if (sTb->lang == 1) return "Escolha o idioma destas telas. Esquerda e direita alteram.";
+            if (sTb->lang == 2) return "Elige el idioma de estas pantallas. Izquierda y derecha lo cambian.";
+            return "Choose the language of these screens. Left and right change it.";
+        }
+        if (sTb->hubCur == HUB_VS) {
+            if (sTb->lang == 1) return "Jogue contra Android e Switch ou contra jogadores de PC.";
+            if (sTb->lang == 2) return "Juega contra Android y Switch o contra jugadores de PC.";
+            return "Choose who you play against: Android and Switch, or PC players.";
+        }
+        if (sTb->hubCur == HUB_FRIENDLY || sTb->hubCur == HUB_TAG) {
+            if (sTb->lang == 1) return "Partida rápida, criar uma sala ou entrar com código.";
+            if (sTb->lang == 2) return "Partida rápida, crear una sala o unirse con código.";
+        }
+        if (sTb->hubCur == HUB_RANKED) {
+            if (sTb->lang == 1) return "Buscar rival.";
+            if (sTb->lang == 2) return "Buscar rival.";
+            return "Search for a rival.";
+        }
+        if (sTb->hubCur == HUB_LEADERBOARD) {
+            if (sTb->lang == 1) return "Próximamente.";
+            if (sTb->lang == 2) return "Próximamente.";
+            return "Coming soon.";
+        }
+        if (sTb->hubCur == HUB_PROFILE) {
+            if (sTb->lang == 1) return "Nome de usuário e bandeira.";
+            if (sTb->lang == 2) return "Nombre de usuario y bandera.";
+        }
         if (sTb->hubCur == HUB_VS) { /* against whom, and how many are online there */
             static char line[160];
             s32 n = DrNet_Online();
@@ -4033,8 +4129,17 @@ static char *Tb_Help(void) {
             sprintf(line, Tb_Fmt("Against Android and Switch players. Online now: about %d."), (int)n);
             return line;
         }
-        if (sTb->hubCur == HUB_TAG && !sTb->tagAvailable) return "Activa el mod Tag Team en el launcher";
+        if (sTb->hubCur == HUB_TAG && !sTb->tagAvailable) return sTb->lang == 1 ? "Ative o mod Tag Team no launcher" : sTb->lang == 2 ? "Activa el mod Tag Team en el launcher" : "Enable the Tag Team mod in the launcher";
         return sTbHubSay[sTb->hubCur];
+    case TB_SUBMENU:
+        if (sTb->subTab == HUB_FRIENDLY || sTb->subTab == HUB_TAG) {
+            if (sTb->lang == 1) return "Escolha uma opção para jogar online.";
+            if (sTb->lang == 2) return "Elige una opción para jugar en línea.";
+            return "Choose how to play online.";
+        }
+        if (sTb->lang == 1) return "Próximamente.";
+        if (sTb->lang == 2) return "Próximamente.";
+        return "Coming soon.";
     case TB_CREATE:
         return sTb->crCur == CR_ADDR ? "No code: the others type your address and this port on Join by Address. Left / right, L1 / R1 change it."
                                      : "Your lobby gets a code: give it to your friends, they type it on Join. Set the rules on its page!";
@@ -4100,7 +4205,7 @@ static char *Tb_Help(void) {
 /* Each page's title (by TB_ mode), as its heading shows it and the screen reader says it. */
 static char *sTbTitle[TB_MODES] = {"Dragon Net Online", "New Lobby", "Join", "Searching", "Profile", "Profile", "Quick Match",
                                    "Train While Waiting", "Dragon Net Online", "Lobby", "Tournament", "Join by Address", "Ranked", "Searching",
-                                   "Ranking"};
+                                   "Ranking", "Online"};
 
 /* ---- the screen reader (port/src/gs/a11y.c; silent unless the player has it on). The game's own screens are read
    from their state by port/src/a11y_game.c; these pages say what they show themselves: the page's title as it opens,
@@ -4412,6 +4517,9 @@ static void Tb_Draw(void) {
     case TB_HUB:
         Tb_DrawHub();
         break;
+    case TB_SUBMENU:
+        Tb_DrawSubmenu();
+        break;
     case TB_CREATE:
         Tb_DrawCreate();
         break;
@@ -4481,6 +4589,9 @@ static void Tb_DrawText(void) {
     switch (sTb->mode) {
     case TB_HUB:
         Tb_DrawHubText();
+        break;
+    case TB_SUBMENU:
+        Tb_DrawSubmenuText();
         break;
     case TB_CREATE:
         Tb_DrawCreateText();
@@ -4585,6 +4696,7 @@ s32 PortTbo_Run(void) {
     sTb = Heap_Alloc(sizeof(TboScreen), 0x20, 0, 2);
     memset(sTb, 0, sizeof(TboScreen));
     sTb->hubCur = HUB_FRIENDLY;
+    sTb->subTab = -1;
     sTb->tagAvailable = 0;
     sTb->hubY = Tb_HubRowY(Tb_HubRow(HUB_FRIENDLY));
     Tb_LoadChoices();
@@ -4631,6 +4743,9 @@ s32 PortTbo_Run(void) {
         switch (sTb->mode) {
         case TB_HUB:
             Tb_HubUpdate(live);
+            break;
+        case TB_SUBMENU:
+            Tb_SubmenuUpdate(live);
             break;
         case TB_RANKED:
             Tb_RankedUpdate(live);
