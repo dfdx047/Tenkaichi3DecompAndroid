@@ -27,29 +27,36 @@ const polled = await post("poll", { code: qa.code, key: qa.key });
 ok(polled.peer && polled.peer.name === B.name, "the host's poll finds the other player", JSON.stringify(polled));
 const code = qa.code;
 
-// a Ranked battle of that match: points
-await rep(A, { rkey: rk(), code, n: 1, me: A.name, opp: B.name, side: 0, winner: 0, ranked: true });
-const r1 = await rep(B, { rkey: rk(), code, n: 1, me: B.name, opp: A.name, side: 1, winner: 0, ranked: true });
-ok(r1.state === "settled" && r1.medal === "silver" && r1.delta === -16 && r1.rating === 984, "Ranked battle of a served match: points", JSON.stringify(r1));
+// a Ranked battle of that match: points and medals; the joiner's report without the room code (games before 1.0.3) still pairs
+const k1 = rk();
+await rep(A, { rkey: k1, code, n: 1, me: A.name, opp: B.name, side: 0, winner: 0, ranked: true });
+const r1 = await rep(B, { rkey: rk(), code: "", n: 1, me: B.name, opp: A.name, side: 1, winner: 0, ranked: true });
+ok(r1.state === "settled" && r1.medal === "silver" && r1.delta === -16 && r1.rating === 984 && r1.rematches_left === 3, "Ranked battle of a served match (joiner sent no code): points", JSON.stringify(r1));
+const again = await rep(A, { rkey: k1, code, n: 1, me: A.name, opp: B.name, side: 0, winner: 0, ranked: true });
+ok(again.state === "settled" && again.medal === "gold" && again.delta === 16, "the same report sent again: the same answer, nothing counted twice", JSON.stringify(again));
 
 // a "Ranked" battle in a room the Ranked queue did not make: medals, no points
 await sleep(10500);
 await rep(A, { rkey: rk(), code: "FAKE99", n: 1, me: A.name, opp: C.name, side: 0, winner: 0, ranked: true });
 const r2 = await rep(C, { rkey: rk(), code: "FAKE99", n: 1, me: C.name, opp: A.name, side: 1, winner: 0, ranked: true });
-ok(r2.state === "settled" && r2.medal === "silver" && r2.delta === undefined && r2.ranked === false, "a room not made by the Ranked queue gives no points", JSON.stringify(r2));
+ok(r2.state === "casual" && r2.medal === "none" && r2.delta === undefined && r2.ranked === false, "a room not made by the Ranked queue: casual, no medal, no points", JSON.stringify(r2));
 let ma = await post("me", auth(A));
-ok(ma.gold === 2 && ma.rating === 1016 && ma.rwins === 1, "A: two golds, one rated win", JSON.stringify(ma));
+ok(ma.gold === 1 && ma.season_gold === 1 && ma.rating === 1016 && ma.rwins === 1 && ma.ranked_total === 1 && ma.best_rating === 1016, "A: one gold (season and career), one rated win", JSON.stringify(ma));
 
-// the same pair: three rated Ranked battles a day, then medals only
-for (let n = 2; n <= 4; n++) {
+// the same pair: the match and three rematches a day count, then nothing
+for (let n = 2; n <= 5; n++) {
     await sleep(10500);
     await rep(A, { rkey: rk(), code, n, me: A.name, opp: B.name, side: 0, winner: 0, ranked: true });
     const r = await rep(B, { rkey: rk(), code, n, me: B.name, opp: A.name, side: 1, winner: 0, ranked: true });
-    if (n <= 3) ok(r.delta < 0 && !r.capped, `rated Ranked battle ${n} of the pair today`, JSON.stringify(r));
-    else ok(r.delta === undefined && r.capped === true && r.medal === "silver", "the 4th Ranked battle of the same pair today: no points", JSON.stringify(r));
+    if (n <= 4) ok(r.delta < 0 && !r.capped && r.medal === "silver" && r.rematches_left === 4 - n, `Ranked battle ${n} of the pair today counts`, JSON.stringify(r));
+    else ok(r.delta === undefined && r.capped === true && r.medal === "none" && r.rematches_left === 0, "the 5th Ranked battle of the same pair today: nothing", JSON.stringify(r));
 }
 ma = await post("me", auth(A));
-ok(ma.rwins === 3 && ma.gold === 5 && ma.opponents === 1 && ma.eligible === false, "A: 3 rated wins, 5 golds, 1 opponent, not yet eligible for trophies", JSON.stringify(ma));
+ok(ma.rwins === 4 && ma.gold === 4 && ma.season_gold === 4 && ma.opponents === 1 && ma.eligible === false, "A: 4 rated wins, 4 golds, 1 opponent, not yet eligible for trophies", JSON.stringify(ma));
+const mb = await post("me", auth(B));
+ok(mb.silver === 4 && mb.season_silver === 4 && mb.gold === 0 && mb.rlosses === 4, "B: 4 silvers", JSON.stringify(mb));
+const hist = await post("matches", auth(A));
+ok(hist.ok && hist.matches.length === 6 && hist.matches.filter((m) => m[4]).length === 4, "A's battles: 6 written down, 4 rated", JSON.stringify(hist.matches.length));
 
 // disagreement and wrong names
 await sleep(10500);
@@ -69,6 +76,20 @@ ok((await post("presence", { who: "x" })).error === "invalid", "a bad word is re
 
 // the table
 const t = await post("top", {});
-ok(t.ok && t.top[0][0] === A.name && t.top[0].length === 9 && t.top[0][4] === 5, "the week's table, with medals", JSON.stringify(t.top[0]));
+ok(t.ok && t.top[0][0] === A.name && t.top[0].length === 9 && t.top[0][4] === 4 && /^Temporada/.test(t.name), "the week's table, with the season's medals", JSON.stringify(t));
+
+// recovery: the account back with its name and code, the old secret signed out
+ok(typeof A.recovery === "string" && /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/.test(A.recovery), "a new account comes with a recovery code", A.recovery);
+ok((await post("recover", { name: A.name, code: "AAAA-AAAA-AAAA-AAAA" })).error === "wrong", "a wrong code is refused");
+const back = await post("recover", { name: A.name.toLowerCase(), code: A.recovery.toLowerCase() });
+ok(back.ok && back.id === A.id && back.secret !== A.secret && back.name === A.name, "name + code: the account back (any case)", JSON.stringify(back));
+ok((await post("me", auth(A))).error === "who", "the old secret no longer works");
+const mback = await post("me", { id: back.id, secret: back.secret });
+ok(mback.gold === 4 && mback.rating === A_rating_check(mback), "the recovered account keeps its medals and rating", JSON.stringify(mback));
+const rc = await post("recovery", { id: back.id, secret: back.secret });
+ok(rc.ok && rc.recovery !== A.recovery && (await post("recover", { name: A.name, code: A.recovery })).error === "wrong", "a new recovery code replaces the old one");
+function A_rating_check(m) { return m.rating; }
+const seasons = await post("seasons", {});
+ok(seasons.ok && seasons.seasons.length >= 1 && seasons.seasons[0][5] === "active", "the seasons' list", JSON.stringify(seasons.seasons[0]));
 console.log(fails ? `${fails} FAILED` : "all passed");
 process.exit(fails ? 1 : 0);

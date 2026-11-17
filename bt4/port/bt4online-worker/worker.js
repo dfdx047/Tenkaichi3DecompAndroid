@@ -1,8 +1,10 @@
 // BT4 Android online service (Dragon Rage): the Ranked rooms (rooms.js, Dragon Net's rooms code) and the players'
-// profiles, medals, weekly Ranked seasons and trophies (profile.js), one Worker and one D1 database (binding DB).
-// The game: port/src/gs/net_match.c (the Ranked queue's rooms) and port/src/gs/bt4_profile.c (the profile).
+// profiles, Ranked medals, weekly seasons and permanent careers (profile.js, seasons.js), one Worker and one D1 database
+// (binding DB). The game: port/src/gs/net_match.c (the Ranked queue's rooms) and port/src/gs/bt4_profile.c (the profile).
+// The cron (wrangler.jsonc "triggers"): seasons that are over are closed and archived, agreeing reports left open are
+// settled, old reports pruned.
 import rooms from "./rooms.js";
-import { PROFILE_PATHS, profileFetch, schema } from "./profile.js";
+import { PROFILE_PATHS, profileFetch, schema, maintain, sweep } from "./profile.js";
 
 let roomsReady = false;
 async function roomsSchema(env) {
@@ -12,7 +14,7 @@ async function roomsSchema(env) {
         env.DB.prepare("CREATE TABLE IF NOT EXISTS watchers (key TEXT PRIMARY KEY, code TEXT NOT NULL, made INTEGER NOT NULL, name TEXT NOT NULL, addrs TEXT NOT NULL)"),
         env.DB.prepare("CREATE TABLE IF NOT EXISTS used (what TEXT NOT NULL, slot INTEGER NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (what, slot))"),
     ]);
-    await schema(env); // (ranked_matches, which rooms.js writes, is the profile's)
+    await schema(env); // (ranked_rooms, which rooms.js writes, is the profile's)
     roomsReady = true;
 }
 
@@ -31,5 +33,11 @@ export default {
             return new Response(JSON.stringify({ error: "unavailable" }), { status: 503, headers: { "content-type": "application/json" } });
         }
         return rooms.fetch(request, env, ctx);
+    },
+    async scheduled(event, env, ctx) {
+        const now = Date.now();
+        await schema(env);
+        await maintain(env, now);
+        await sweep(env, now);
     },
 };

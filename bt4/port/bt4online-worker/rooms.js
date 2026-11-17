@@ -1,7 +1,7 @@
 import {versionAllowed, versionGateOn} from "./versions.js";
 // BT4 Android's Ranked rooms (port/bt4online-worker): Dragon Net's rooms (T3-102/port/dragonnet/worker.js) as they are,
 // without its chat, presence and Ranked services (BT4's profile and Ranked results are profile.js's), and with one
-// addition: every quick match it makes in the Ranked queue ("D20") is written down (table ranked_matches, see
+// addition: every quick match it makes in the Ranked queue ("D20") is written down (table ranked_rooms, see
 // joinRoom's caller in /v1/quick), so that profile.js counts Ranked points only for matches this service made.
 const RANKED_QUEUE = "D20";
 const unavailable = () => new Response(JSON.stringify({ error: "unavailable" }), { status: 404, headers: { "Content-Type": "application/json" } });
@@ -814,7 +814,7 @@ export default {
                     const joined = await joinRoom(env, waiting, ip, addrs, body.name, regionOf(place));
                     if (joined) {
                         if (queue === RANKED_QUEUE) { // (the Ranked match this service made: its code and its two players)
-                            await env.DB.prepare("INSERT OR REPLACE INTO ranked_matches (code, made, host_name, join_name) VALUES (?, ?, ?, ?)")
+                            await env.DB.prepare("INSERT OR REPLACE INTO ranked_rooms (code, made, host_name, join_name) VALUES (?, ?, ?, ?)")
                                 .bind(waiting.code, now, waiting.host_name, cleanName(body.name)).run();
                         }
                         if (own) {

@@ -1,0 +1,12 @@
+{
+    // wrangler deploy (XDG_CONFIG_HOME=~/.config/wrangler-bt4, the 2nd Cloudflare account): the live service
+    "name": "bt4-online",
+    "main": "worker.js",
+    "compatibility_date": "2026-10-01",
+    "workers_dev": true,
+    "d1_databases": [{ "binding": "DB", "database_name": "bt4-online", "database_id": "f76a28a8-3aa9-465f-b4b8-4fe51b20c216" }],
+    // only BT4 Android's games (net_match.c DRNET_BT4_VERSION) meet in its rooms
+    "vars": { "ALLOWED_VERSIONS": "140001" },
+    // seasons that are over closed and archived, open reports settled (worker.js scheduled)
+    "triggers": { "crons": ["*/15 * * * *"] }
+}
