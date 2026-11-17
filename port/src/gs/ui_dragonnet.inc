@@ -424,7 +424,7 @@ static void screen_friendly_menu(bool tagTeam) {
     if(header(title,true)||padB()){goto_screen(HOME,tagTeam?1:0);sTagMenu=false;return;}
     int move=padMove();if(move)sRow=(sRow+move+3)%3; sHomeRow=sRow;
     int click=home_plates(labels,NULL,3);if(click>=0)sRow=click;
-    if(padA()||click>=0){sTagMenu=tagTeam;DrNet_SetMode(1);DrNet_PresenceActive(0);Port_LobbyHelloAsk();static const Screen dest[3]={QUICK,CREATE,JOIN};goto_screen(dest[sRow]);}
+    if(padA()||click>=0){sTagMenu=tagTeam;if(tagTeam)DrNet_SetMode(1);DrNet_PresenceActive(0);Port_LobbyHelloAsk();static const Screen dest[3]={QUICK,CREATE,JOIN};goto_screen(dest[sRow]);}
 }
 
 static void screen_ranked_menu(void) {

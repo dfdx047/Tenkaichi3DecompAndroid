@@ -34,6 +34,7 @@
 #endif
 
 #define MATCH_URL_DEFAULT "https://odd-surf-0af7.bt3decomp.workers.dev"
+#define DRNET_FRIENDLY_URL "https://jeowmebvwxcqfbmcjqlf.supabase.co/functions/v1/bt3"
 #include "net_match.h"
 #include "../port_release.h"
 #include "net_relay.h"
@@ -230,7 +231,7 @@ static const char *match_url(void) {
         return e;
     }
     if (DrNet_Mode() == 0) {
-        return DrNet_ActiveUrl();
+        return DRNET_FRIENDLY_URL;
     }
     if (!read) {
         read = 1;
@@ -515,6 +516,7 @@ done:
    ahead of this computer's. It learns that from the answer to "hello" (asked when the online screen opens), and
    from a request refused for its time, which is then sent once more. */
 static SDL_AtomicInt sClockAhead;
+static void log_version_conflict(const char *what, const char *answer);
 
 static void clock_learn(const char *answer) {
     const char *p = SDL_strstr(answer, "\"now\":");
@@ -790,12 +792,13 @@ const char *Match_ServerLabel(void) {
     SDL_LockMutex(sM.lock);
     SDL_strlcpy(url, sM.url[0] != '\0' ? sM.url : match_url(), sizeof(url));
     SDL_UnlockMutex(sM.lock);
-    if (DrNet_Mode() == 0) {
-        if (SDL_strcmp(url, DrNet_Url()) == 0) return "A";
-        if (SDL_strcmp(url, DrNet_UrlB()) == 0) return "B";
-        return "Custom";
+    return url;
+}
+
+static void log_version_conflict(const char *what, const char *answer) {
+    if (SDL_strstr(answer, "\"error\":\"version\"") != NULL || SDL_strstr(answer, "\"error\": \"version\"") != NULL) {
+        fprintf(stderr, "net: %s rejected by %s: HTTP 409 version (requested v=%d)\n", what, DRNET_FRIENDLY_URL, sM.version);
     }
-    return "PC";
 }
 
 /* What the window says when the service lets only official releases in (its REQUIRE_KEY) and refused this program:
@@ -1003,9 +1006,10 @@ again:
         SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"rel\":%d,\"name\":\"%s\",\"country\":\"%s\",\"addrs\":[%s],\"queue\":\"%s\",\"who\":\"%s\",\"waited\":%d,\"area\":\"%s\"%s}", sM.version, PORT_RELEASE, name, sM.country, addrs,
                      sM.queue, match_who(), (int)((SDL_GetTicks() - began) / 1000), sM.area, relayAddr[0] != '\0' ? ",\"relay\":false" : "");
         if (!POSTB("quick", body, answer, sizeof(answer))) {
-            set_state(-1, "The matchmaking service could not be reached (is the network up?).");
+            set_state(-1, "Could not reach the Android + Switch production matchmaking server. No alternate server was tried.");
             return 0;
         }
+        log_version_conflict("quick match", answer);
         if (STOPPED()) {
             return 0;
         }
@@ -1043,9 +1047,10 @@ again:
             SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"rel\":%d,\"name\":\"%s\",\"country\":\"%s\",\"addrs\":[%s]%s}", sM.version, PORT_RELEASE, name, sM.country, addrs,
                          sM.role == 5 ? ",\"lobby\":true" : "");
             if (!POSTB("host", body, answer, sizeof(answer))) {
-                set_state(-1, "The matchmaking service could not be reached (is the network up?).");
+                set_state(-1, "Could not reach the Android + Switch production matchmaking server. No alternate server was tried.");
                 return 0;
             }
+            log_version_conflict("room creation", answer);
             if (STOPPED()) {
                 return 0;
             }
@@ -1274,9 +1279,10 @@ again:
         /* (`lobby`: this game can be a lobby's member; a code of a lobby is then answered as one) */
         SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"rel\":%d,\"lobby\":1,\"code\":\"%s\",\"name\":\"%s\",\"country\":\"%s\",\"addrs\":[%s]}", sM.version, PORT_RELEASE, sM.code, name, sM.country, addrs);
         if (!POSTB("join", body, answer, sizeof(answer))) {
-            set_state(-1, "The matchmaking service could not be reached (is the network up?).");
+            set_state(-1, "Could not reach the Android + Switch production matchmaking server. No alternate server was tried.");
             return 0;
         }
+        log_version_conflict("join by code", answer);
         (void)retry_code_on_other_dragon_server(base, "join", body, answer, sizeof(answer));
         (void)you;
         SDL_memset(&st, 0, sizeof(st));
@@ -1469,7 +1475,7 @@ void Match_Begin(int role, int sock, int localPort, const char *code, const char
             }
             SDL_strlcpy(sM.url, DrNet_RankedActiveUrl(), sizeof(sM.url));
         } else {
-            SDL_strlcpy(sM.url, DrNet_ActiveUrl(), sizeof(sM.url));
+            SDL_strlcpy(sM.url, DRNET_FRIENDLY_URL, sizeof(sM.url));
         }
     }
     sM.watchCount = 0;
