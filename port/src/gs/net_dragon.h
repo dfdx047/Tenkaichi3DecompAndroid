@@ -75,6 +75,7 @@ typedef struct DrRankedSeries {
 void DrRanked_SeriesChoice(unsigned gap, int choice); /* 1 continue, 2 team, 3 forfeit */
 void DrRanked_SeriesPoll(DrRankedSeries *out);
 unsigned DrRanked_SessionRound(void);
+unsigned DrRanked_Ticks(void); /* monotonic milliseconds for source/battle UI code */
 
 /* flow:2 rematch, after the result (the Revanche screen): 1 asks the state, 2 accepts, 3 leaves. */
 void DrRanked_FlowAct(int act);

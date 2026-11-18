@@ -2,10 +2,8 @@
 #include "battle/hud_0.h"
 #include "battle/battle.h"
 #include "sys/pad.h"
-#include <stdio.h>
 #ifdef PORT
 #include "../../port/src/gs/net_dragon.h"
-#include <SDL3/SDL.h>
 extern void BtlMenu_PortDrawMenu(BtlMenu *menu);
 #endif
 #ifdef PORT
@@ -19,7 +17,7 @@ static s32 tagPauseOn;
 static BtlMenu rankedPostMenu;
 static BtlMenuItem rankedPostItems[3];
 static int rankedPostChoiceSent;
-static Uint64 rankedPostOpened;
+static unsigned rankedPostOpened;
 #endif
 
 /*
@@ -564,7 +562,7 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
     if (which == 1 && DrRanked_InSession()) {
         DrRankedSeries series;
         unsigned gap=DrRanked_SessionRound();
-        if(!rankedPostOpened) { rankedPostOpened=SDL_GetTicks(); rankedPostChoiceSent=0; DrRanked_SeriesChoice(gap,0); }
+        if(!rankedPostOpened) { rankedPostOpened=DrRanked_Ticks(); rankedPostChoiceSent=0; DrRanked_SeriesChoice(gap,0); }
         DrRanked_SeriesPoll(&series);
         if(series.decision==DR_SERIES_CONTINUE) { BattleResult_Set(BTL_RESULT_ABORT,0x8000); rankedPostOpened=0; return 1; }
         if(series.decision==DR_SERIES_TEAM) { BattleResult_Set(BTL_RESULT_ABORT,0x10); rankedPostOpened=0; return 1; }
@@ -577,7 +575,7 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
             int choice=item->id==0x13?1:item->id==0xD?2:3;
             DrRanked_SeriesChoice(gap,choice);rankedPostChoiceSent=1;return 1;
         }
-        if(SDL_GetTicks()-rankedPostOpened>=20000) { DrRanked_SeriesChoice(gap,1);rankedPostChoiceSent=1; }
+        if(DrRanked_Ticks()-rankedPostOpened>=20000u) { DrRanked_SeriesChoice(gap,1);rankedPostChoiceSent=1; }
         return 1;
     }
     rankedPostOpened=0;

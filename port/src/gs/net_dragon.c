@@ -1320,6 +1320,7 @@ void DrRanked_Poll(DrRanked *out) {
 }
 
 unsigned DrRanked_SessionRound(void) { return sRankedRound; }
+unsigned DrRanked_Ticks(void) { return (unsigned)SDL_GetTicks(); }
 
 void DrRanked_SeriesChoice(unsigned gap, int choice) {
     char match[33]; int role, mode, sent;
