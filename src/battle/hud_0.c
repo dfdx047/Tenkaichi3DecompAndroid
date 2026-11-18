@@ -2,6 +2,11 @@
 #include "battle/hud_0.h"
 #include "battle/battle.h"
 #include "sys/pad.h"
+#include <stdio.h>
+#ifdef PORT
+#include "../../port/src/gs/net_dragon.h"
+#include <SDL3/SDL.h>
+#endif
 #ifdef PORT
 #include "battle/tag_team.h"
 static BtlMenu tagResultMenu;
@@ -10,6 +15,10 @@ static BtlMenuItem tagResultItems[7];
 static BtlMenu tagPauseMenu;
 static BtlMenuItem tagPauseItems[16];
 static s32 tagPauseOn;
+static BtlMenu rankedPostMenu;
+static BtlMenuItem rankedPostItems[3];
+static int rankedPostChoiceSent;
+static Uint64 rankedPostOpened;
 #endif
 
 /*
@@ -431,6 +440,16 @@ BtlMenu *PauseMenu_PortConfirmBox(void) {
 /* Battle start: allocates the menu work. */
 void PauseMenu_Init(void) {
 #ifdef PORT
+    {
+        int i;
+        rankedPostMenu=gPauseMenuResultVersus;rankedPostMenu.items=rankedPostItems;rankedPostMenu.count=0;
+        for(i=0;i<gPauseMenuResultVersus.count;i++) {
+            s32 id=gPauseMenuResultVersus.items[i].id;
+            if(id==0x13 || id==0xD || id==0xF) rankedPostItems[rankedPostMenu.count++]=gPauseMenuResultVersus.items[i];
+        }
+        rankedPostMenu.open=-1;rankedPostMenu.cursor=0;rankedPostMenu.state=BTL_MENU_STATE_ACTIVE;
+        rankedPostChoiceSent=0;rankedPostOpened=0;
+    }
     if(TagTeam_Active()) {
         s32 i;
         tagResultMenu=gPauseMenuResultVersus;
@@ -540,6 +559,29 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
     BtlMenu *menu;
     BtlMenuItem *item;
 
+#ifdef PORT
+    if (which == 1 && DrRanked_InSession()) {
+        DrRankedSeries series;
+        unsigned gap=DrRanked_SessionRound();
+        if(!rankedPostOpened) { rankedPostOpened=SDL_GetTicks(); rankedPostChoiceSent=0; DrRanked_SeriesChoice(gap,0); }
+        DrRanked_SeriesPoll(&series);
+        if(series.decision==DR_SERIES_CONTINUE) { BattleResult_Set(BTL_RESULT_ABORT,0x8000); rankedPostOpened=0; return 1; }
+        if(series.decision==DR_SERIES_TEAM) { BattleResult_Set(BTL_RESULT_ABORT,0x10); rankedPostOpened=0; return 1; }
+        if(series.decision==DR_SERIES_OVER) { BattleResult_Set(BTL_RESULT_ABORT,8); rankedPostOpened=0; return 1; }
+        if(rankedPostChoiceSent) return 1;
+        menu=&rankedPostMenu;
+        if(BtlMenu_Update(which,NULL,menu,pad)) return 1;
+        item=BtlMenu_FindResult(NULL,menu);
+        if(item) {
+            int choice=item->id==0x13?1:item->id==0xD?2:3;
+            DrRanked_SeriesChoice(gap,choice);rankedPostChoiceSent=1;return 1;
+        }
+        if(SDL_GetTicks()-rankedPostOpened>=20000) { DrRanked_SeriesChoice(gap,1);rankedPostChoiceSent=1; }
+        return 1;
+    }
+    rankedPostOpened=0;
+#endif
+
     {extern s32 TagChallenge_ResultInput(s32);if(which==1 && TagChallenge_ResultInput(pad))return 1;}
     gPauseMenuWhich = which;
     menu = PauseMenu_GetMenu(which);
@@ -630,6 +672,7 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
 void PauseMenu_Draw(void) {
     {extern s32 TagChallenge_ResultVisible(void);if(TagChallenge_ResultVisible())return;}
 #ifdef PORT
+    if(gPauseMenuWhich==1 && DrRanked_InSession()) { BtlMenu_PortDrawMenu(&rankedPostMenu); return; }
     {
         /* Online the pause menu belongs to the one who opened it (the fight goes on under it, btl_seq.c): it is
            not drawn on the other screen. The result menu (which = 1) is drawn for both as before. */
