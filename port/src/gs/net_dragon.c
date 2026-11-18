@@ -257,12 +257,24 @@ static int sPresenceOn, sPresenceLeave, sOnline = -1;
 static Uint64 sSearchAt; /* when the search under way began (the queue is asked less often as it goes on) */
 static Uint64 sPresenceAt;
 
-static void ranked_diagnostic(int status, const char *json) {
+static int ranked_route(const char *what) {
+    if (SDL_strcmp(what, "queue") == 0) return 0;
+    if (SDL_strcmp(what, "room") == 0) return 1;
+    if (SDL_strcmp(what, "lifecycle") == 0) return 2;
+    return -1;
+}
+
+static void ranked_diagnostic(const char *what, int status, const char *json) {
     char error[48] = "";
+    int route = ranked_route(what);
     text_value(json ? json : "", "error", error, sizeof(error));
     SDL_LockMutex(sLock);
     sView.http_status = status;
     SDL_strlcpy(sView.error_field, error, sizeof(sView.error_field));
+    if (route >= 0) {
+        sView.route_http[route] = status;
+        SDL_strlcpy(sView.route_error[route], error, sizeof(sView.route_error[route]));
+    }
     SDL_UnlockMutex(sLock);
 }
 
@@ -284,10 +296,10 @@ static int post_ranked(const char *what, const char *extra, char *answer, size_t
     SDL_snprintf(path, sizeof(path), "ranked/%s", what);
     SDL_snprintf(body, sizeof(body), "{\"v\":6001,\"id\":\"%s\",\"token\":\"%s\"%s}", sId, sToken, extra != NULL ? extra : "");
     if (!Match_PostFriendlyRanked(path, body, answer, size, &status)) {
-        if (SDL_strcmp(what, "profile") == 0) ranked_diagnostic(status, answer);
+        if (SDL_strcmp(what, "profile") == 0 || ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
         return 0;
     }
-    if (SDL_strcmp(what, "profile") == 0 && strstr(answer, "\"error\"") != NULL) ranked_diagnostic(status, answer);
+    if (SDL_strcmp(what, "profile") == 0 || ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
     if (strstr(answer, "\"error\":\"limit\"") != NULL) {
         message(DRMSG_LIMIT, 99); /* (a search goes on, without asking, until the pause is over: net_match.c) */
         return 0;
@@ -307,11 +319,11 @@ static int post_ranked_search(const char *what, const char *extra, char *answer,
     SDL_snprintf(body, sizeof(body), "{\"v\":6001,\"id\":\"%s\",\"token\":\"%s\"%s}", sId, sToken,
                  extra != NULL ? extra : "");
     if (!Match_PostFriendlyRanked(path, body, answer, size, &status)) {
-        if (SDL_strcmp(what, "queue") == 0) ranked_diagnostic(status, answer);
+        if (ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
         message(DRMSG_NO_CONNECTION, 99);
         return 0;
     }
-    if (SDL_strcmp(what, "queue") == 0 && strstr(answer, "\"error\"") != NULL) ranked_diagnostic(status, answer);
+    if (ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
     if (strstr(answer, "\"error\":\"version\"") != NULL || strstr(answer, "\"http\":409") != NULL) {
         if (SDL_strcmp(what, "queue") == 0) {
             SDL_LockMutex(sLock);

@@ -785,6 +785,45 @@ static void screen_ranked_wait(void) {
             sRankedLobby = true;
         }
     }
+    if (r.state == 3) {
+        char diag[256];
+        const char *code = r.code;
+        const char *match = r.match;
+        SDL_snprintf(diag, sizeof(diag), "role=%d lobby=%d lobby_error=%s match=%.4s code=%.6s",
+                     r.role, st,
+                     sRankedLobby && Port_LobbyError()[0] ? Port_LobbyError() : "", match, code);
+        fprintf(stderr, "bt3: ranked diagnostic: %s\n", diag);
+        if (r.role == 2 && !sRankedLobby && strlen(r.code) != 6) {
+            SDL_strlcpy(diag, "join not started: code missing/not 6 chars", sizeof(diag));
+            fprintf(stderr, "bt3: ranked diagnostic: %s\n", diag);
+        }
+        SDL_strlcat(diag, "\n", sizeof(diag));
+        for (int route = 0; route < 3; ++route) {
+            char line[96];
+            static const char *names[] = {"queue", "room", "lifecycle"};
+            SDL_snprintf(line, sizeof(line), "%s http=%d error=%s\n", names[route], r.route_http[route], r.route_error[route]);
+            SDL_strlcat(diag, line, sizeof(diag));
+            fprintf(stderr, "bt3: ranked diagnostic: %s", line);
+        }
+        ImDrawList *dl = ImGui::GetWindowDrawList();
+        font_px(U() * 0.34f);
+        const float line_h = U() * 0.38f;
+        float y = sCardMin.y + U() * 3.55f;
+        SDL_snprintf(diag, sizeof(diag), "role=%d lobby=%d lobby_error=%s match=%.4s code=%.6s",
+                     r.role, st,
+                     sRankedLobby && Port_LobbyError()[0] ? Port_LobbyError() : "", match, code);
+        dl->AddText(ImVec2(sCardMin.x + U(), y), ImGui::GetColorU32(kText), diag); y += line_h;
+        if (r.role == 2 && !sRankedLobby && strlen(r.code) != 6) {
+            dl->AddText(ImVec2(sCardMin.x + U(), y), ImGui::GetColorU32(kText), "join not started: code missing/not 6 chars"); y += line_h;
+        }
+        for (int route = 0; route < 3; ++route) {
+            char line[96];
+            static const char *names[] = {"queue", "room", "lifecycle"};
+            SDL_snprintf(line, sizeof(line), "%s http=%d error=%s", names[route], r.route_http[route], r.route_error[route]);
+            dl->AddText(ImVec2(sCardMin.x + U(), y), ImGui::GetColorU32(kText), line); y += line_h;
+        }
+        ImGui::PopFont();
+    }
     if (sRankedLobby && r.role == 1 && Port_LobbyCode()[0] != '\0') { DrRanked_SetRoom(Port_LobbyCode()); }
     char big[64];
     SDL_strlcpy(big, r.state == 3 && r.peer[0] ? r.peer : (r.mode ? T("Team", "Equipe", "Equipos") : T("Single", "Individual", "Individual")), sizeof(big));
@@ -800,7 +839,7 @@ static void screen_ranked_wait(void) {
     const char *label = r.state < 0 ? T("SEARCH ENDED", "BUSCA ENCERRADA", "BÚSQUEDA FINALIZADA")
                                     : r.state == 3 ? T("RIVAL FOUND", "RIVAL ENCONTRADO", "RIVAL ENCONTRADO")
                                                    : T("SEARCH UNDER WAY", "BUSCA EM ANDAMENTO", "BÚSQUEDA EN CURSO");
-    wait_card(U() * 4.6f, label,
+    wait_card(U() * (r.state == 3 ? 7.2f : 4.6f), label,
               big, detail, col(1.0f, 0.86f, 0.30f));
     ImGui::SetCursorScreenPos(ImVec2(sCardMin.x + U(), sCardMax.y - U() * 1.05f));
     if (ImGui::Button(r.searching ? T("Cancel search", "Cancelar busca", "Cancelar búsqueda") : T("Back", "Voltar", "Volver"), ImVec2(U() * 7.0f, U() * 0.8f))) {

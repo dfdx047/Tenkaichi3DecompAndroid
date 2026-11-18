@@ -50,6 +50,8 @@ typedef struct DrRanked {
     int msg;            /* DRMSG_* */
     int http_status;
     char error_field[48];
+    int route_http[3]; /* queue, room, lifecycle */
+    char route_error[3][48];
     int board;          /* 0 not asked, 1 asking, 2 there, -1 failed */
     int boardCount;
     char boardName[9][20];
