@@ -4258,6 +4258,34 @@ static void Tb_BracketFocus(char *focus) {
 /* What the hosts say in the box at the foot of the screen (two lines at most). */
 static char *Tb_Help(void) {
     static char rankedDiagnostic[96];
+    if (sTb->mode == TB_RKWAIT) {
+        static char rankedLines[320];
+        static char logged[320];
+        static const char *const routeName[3] = {"q", "r", "l"};
+        static const char *const stateName[] = {"erro", "procurando", "procurando", "pareado"};
+        char lobbyError[32];
+        int lobby = Port_LobbyPoll();
+        int state = sTbRk.state;
+        int n;
+        if (state < 0 || state > 3) state = 0;
+        Ps_Copy(lobbyError, Port_LobbyError(), sizeof(lobbyError));
+        if (lobbyError[0] == 0) Ps_Copy(lobbyError, "-", sizeof(lobbyError));
+        n = sprintf(rankedLines, "%s role=%d match=%.4s code=%.6s%s lobby=%d err=%.12s ",
+                    state == 3 && sTb->rkLobby ? "lobby aberto" : stateName[state], sTbRk.role,
+                    sTbRk.match, sTbRk.code,
+                    sTbRk.role == 2 && !sTb->rkLobby && strlen(sTbRk.code) != 6 ? " join=sem-code(6)" : "",
+                    lobby, lobbyError);
+        for (int route = 0; route < 3; route++) {
+            n += sprintf(rankedLines + n, "%s http=%d error=%.8s%s", routeName[route],
+                         sTbRk.route_http[route], sTbRk.route_error[route][0] ? sTbRk.route_error[route] : "-",
+                         route == 2 ? "" : " ");
+        }
+        if (strcmp(logged, rankedLines) != 0) {
+            fprintf(stderr, "bt3: ranked diagnostic: %s\n", rankedLines);
+            Ps_Copy(logged, rankedLines, sizeof(logged));
+        }
+        return rankedLines;
+    }
     if ((sTb->mode == TB_RANKED || sTb->mode == TB_RKWAIT) && (sTbRk.http_status || sTbRk.error_field[0])) {
         sprintf(rankedDiagnostic, "http=%d error=%s", sTbRk.http_status, sTbRk.error_field);
         return rankedDiagnostic;
