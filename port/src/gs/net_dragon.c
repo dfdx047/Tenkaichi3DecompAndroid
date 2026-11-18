@@ -255,10 +255,12 @@ static int sChatOutN;
 
 static int sPresenceOn, sPresenceLeave, sOnline = -1;
 static Uint64 sSearchAt; /* when the search under way began (the queue is asked less often as it goes on) */
+static Uint64 sPairedAt, sCodePollAt;
+static int sCodePollCount;
 static Uint64 sPresenceAt;
 
 static int ranked_route(const char *what) {
-    if (SDL_strcmp(what, "queue") == 0) return 0;
+    if (SDL_strcmp(what, "queue") == 0 || SDL_strcmp(what, "match") == 0) return 0;
     if (SDL_strcmp(what, "room") == 0) return 1;
     if (SDL_strcmp(what, "lifecycle") == 0) return 2;
     return -1;
@@ -485,6 +487,13 @@ static void update_match(const char *answer, unsigned gen) {
     sView.role = number_value(answer, "role");
     sView.flow = 2;
     sView.state = strcmp(state, "paired") == 0 ? 3 : strcmp(state, "waiting") == 0 ? 2 : 0;
+    if (sView.state == 3 && sView.role == 2 && sView.code[0] == '\0') {
+        if (sPairedAt == 0) sPairedAt = SDL_GetTicks();
+    } else {
+        sPairedAt = sCodePollAt = 0;
+        sCodePollCount = 0;
+    }
+    sView.code_poll_count = sCodePollCount;
     if (sView.state == 0) {
         sView.searching = sWantSearch = 0;
         sView.msg = strcmp(state, "final") == 0 ? DRMSG_CONFIRMED : DRMSG_ENDED_NO_POINTS;
@@ -719,7 +728,8 @@ static int SDLCALL worker(void *unused) {
     (void)unused;
     for (;;) {
         char answer[4096], extra[256], name[20], match[33], code[8], cancelled[33];
-        int refresh, search, cancel, board, state, chat, presence, leave, urgent, i;
+        int refresh, search, cancel, board, state, role, chat, presence, leave, urgent, i;
+        char viewcode[8];
         int background = gPortInBackground;
         unsigned gen;
         Uint64 now = SDL_GetTicks();
@@ -735,6 +745,8 @@ static int SDLCALL worker(void *unused) {
         if (board) sWantBoard = 0;
         gen = sSearchGen;
         state = sView.state;
+        role = sView.role;
+        SDL_strlcpy(viewcode, sView.code, sizeof(viewcode));
         SDL_strlcpy(cancelled, sCancelMatch, sizeof(cancelled));
         sCancelMatch[0] = '\0';
         SDL_strlcpy(match, sView.match, sizeof(match));
@@ -827,6 +839,29 @@ static int SDLCALL worker(void *unused) {
                         SDL_UnlockMutex(sLock);
                     } else {
                         if (sView.msg != DRMSG_VERSION && sView.msg != DRMSG_NO_CONNECTION) message(DRMSG_ROOM_FAILED, -1);
+                    }
+                } else if (state == 3 && role == 2 && viewcode[0] == '\0') {
+                    Uint64 pairedFor = SDL_GetTicks() - sPairedAt;
+                    if (pairedFor >= 30000) {
+                        SDL_LockMutex(sLock);
+                        if (gen == sSearchGen && sWantSearch && sView.state == 3 && sView.role == 2 && sView.code[0] == '\0') {
+                            sWantSearch = sView.searching = 0;
+                            sView.state = -1;
+                            sView.msg = DRMSG_HOST_NO_ROOM;
+                            SDL_strlcpy(sCancelMatch, sView.match, sizeof(sCancelMatch));
+                            sWantCancel = 1;
+                        }
+                        SDL_UnlockMutex(sLock);
+                    } else if (sCodePollAt == 0 || SDL_GetTicks() - sCodePollAt >= 2500) {
+                        sCodePollAt = SDL_GetTicks();
+                        SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\"", match);
+                        sCodePollCount++;
+                        SDL_LockMutex(sLock);
+                        sView.code_poll_count = sCodePollCount;
+                        SDL_UnlockMutex(sLock);
+                        if (post_ranked_search("match", extra, answer, sizeof(answer))) {
+                            update_match(answer, gen);
+                        }
                     }
                 } else if (state != 3) {
                     if (SDL_GetTicks() - sSearchAt >= 180000) {

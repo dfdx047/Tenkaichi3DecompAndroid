@@ -339,6 +339,7 @@ static const char *ranked_msg(int m) {
     case DRMSG_NO_CONNECTION: return T("No connection to the Ranked service.", "Sem conexão com o serviço Ranked.", "Sin conexión con el servicio Ranked.");
     case DRMSG_NO_RIVAL: return T("No rival found in 3 minutes.", "Nenhum rival encontrado em 3 minutos.", "No se encontró rival en 3 minutos.");
     case DRMSG_CANCELLED: return T("Search canceled.", "Busca cancelada.", "Búsqueda cancelada.");
+    case DRMSG_HOST_NO_ROOM: return T("The host did not publish the room.", "O anfitrião não publicou a sala", "El anfitrión no publicó la sala.");
     default: return "";
     }
 }
@@ -794,7 +795,7 @@ static void screen_ranked_wait(void) {
                      sRankedLobby && Port_LobbyError()[0] ? Port_LobbyError() : "", match, code);
         fprintf(stderr, "bt3: ranked diagnostic: %s\n", diag);
         if (r.role == 2 && !sRankedLobby && strlen(r.code) != 6) {
-            SDL_strlcpy(diag, "join not started: code missing/not 6 chars", sizeof(diag));
+            SDL_snprintf(diag, sizeof(diag), "aguardando code · tentativas=%d", r.code_poll_count);
             fprintf(stderr, "bt3: ranked diagnostic: %s\n", diag);
         }
         SDL_strlcat(diag, "\n", sizeof(diag));
@@ -814,7 +815,8 @@ static void screen_ranked_wait(void) {
                      sRankedLobby && Port_LobbyError()[0] ? Port_LobbyError() : "", match, code);
         dl->AddText(ImVec2(sCardMin.x + U(), y), ImGui::GetColorU32(kText), diag); y += line_h;
         if (r.role == 2 && !sRankedLobby && strlen(r.code) != 6) {
-            dl->AddText(ImVec2(sCardMin.x + U(), y), ImGui::GetColorU32(kText), "join not started: code missing/not 6 chars"); y += line_h;
+            SDL_snprintf(diag, sizeof(diag), "aguardando code · tentativas=%d", r.code_poll_count);
+            dl->AddText(ImVec2(sCardMin.x + U(), y), ImGui::GetColorU32(kText), diag); y += line_h;
         }
         for (int route = 0; route < 3; ++route) {
             char line[96];

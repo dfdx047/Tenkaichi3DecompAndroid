@@ -37,13 +37,14 @@ enum {
     DRMSG_NONE, DRMSG_SEARCHING, DRMSG_SEARCHING_LEVEL, DRMSG_FOUND, DRMSG_CONFIRMED, DRMSG_ENDED_NO_POINTS, DRMSG_WAIT_RIVAL,
     DRMSG_DISPUTED, DRMSG_VOID, DRMSG_NO_ANSWER, DRMSG_REGISTER_FAILED, DRMSG_PROFILE_FAILED, DRMSG_ROOM_FAILED,
     DRMSG_FINISH_FIRST, DRMSG_VERSION, DRMSG_UPDATED, DRMSG_BUSY, DRMSG_LIMIT, DRMSG_BACKGROUND_TIMEOUT,
-    DRMSG_NO_CONNECTION, DRMSG_NO_RIVAL, DRMSG_CANCELLED
+    DRMSG_NO_CONNECTION, DRMSG_NO_RIVAL, DRMSG_CANCELLED, DRMSG_HOST_NO_ROOM
 };
 
 typedef struct DrRanked {
     int state;          /* 0 idle, 1 asking, 2 waiting for a rival, 3 rival found (paired), -1 a problem (msg) */
     int flow;            /* 2: the service negotiated the lifecycle (flow:2) with the rival */
     int searching, role, mode; /* role 1 host, 2 the one who joins; mode 0 single, 1 team */
+    int code_poll_count;
     int profile;        /* 0 not loaded, 1 loaded */
     int rating, wins, losses, draws, position;
     char rank[20], peer[20], code[8], match[33];
