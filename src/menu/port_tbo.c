@@ -2,6 +2,7 @@
 #include "menu/menu_e.h"
 #include "sys/pad.h"
 #include "sys/save.h"
+#include <stdio.h>
 
 #ifdef PORT
 /*
