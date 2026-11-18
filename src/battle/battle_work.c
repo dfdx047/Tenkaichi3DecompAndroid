@@ -40,6 +40,9 @@ BattleWork *Battle_GetWork(void) {
 
 /* Zeroes the whole work, then puts the setup, result and event blocks in their empty state. */
 void Battle_ClearWork(void) {
+#ifdef PORT
+    { extern void DrRanked_BattleStart(void); DrRanked_BattleStart(); }
+#endif
     memset(Battle_GetWork(), 0, sizeof(BattleWork));
     BattleSetup_Clear();
     BattleResult_Clear();

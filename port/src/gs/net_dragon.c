@@ -257,6 +257,7 @@ static int sRefresh, sWantSearch, sWantCancel, sWantBoard;
 static unsigned sSearchGen;
 static char sCancelMatch[33], sRoomPending[8], sHandedOver[33];
 static char sLifeMatch[33], sStartSent[33]; /* flow:2: the match the lifecycle calls are for */
+static unsigned sRankedRound = 1;
 static int sLifeReady, sLifeStarted, sLifeTries;
 static int sLifeConnect;
 /* flow:2 rematch: what the game asked for (act: 0 none, 1 status, 2 accept, 3 leave) and what the service answered
@@ -393,28 +394,26 @@ static int identity(void) {
 
 /* ---- the results waiting to be sent: dragonnet-result.txt, one line "match score digest round" ---- */
 
-static int outbox_first_nl(char *match, int *score, char *digest) {
+static int outbox_first_nl(char *match, int *score, char *digest, unsigned *round) {
     char text[1024];
-    unsigned round;
     if (!read_text("dragonnet-result.txt", text, sizeof(text)) || text[0] == '\0') {
         return 0;
     }
-    return sscanf(text, "%32s %d %8s %u", match, score, digest, &round) >= 3 && is_hex(match, 32) && is_hex(digest, 8);
+    return sscanf(text, "%32s %d %8s %u", match, score, digest, round) == 4 && is_hex(match, 32) && is_hex(digest, 8);
 }
 
 #define OUTBOX_MAX 1024
 
 /* adds one match to the end of the queue (no overwrite) */
 static int outbox_push_nl(const char *line) {
-    char all[OUTBOX_MAX], id[33];
+    char all[OUTBOX_MAX], id[33], old[33], digest[9];
+    int score; unsigned round, oldround; char *p;
     size_t n;
     int nl;
-    SDL_strlcpy(id, line, sizeof(id));
+    if (sscanf(line, "%32s %d %8s %u", id, &score, digest, &round) != 4) return 0;
     all[0] = '\0';
     read_text("dragonnet-result.txt", all, sizeof(all));
-    if (all[0] != '\0' && strstr(all, id) != NULL) {
-        return 1; /* already queued */
-    }
+    for (p = all; *p;) { oldround=0; if (sscanf(p, "%32s %d %8s %u", old, &score, digest, &oldround)==4 && strcmp(old,id)==0 && oldround==round) return 1; p=strchr(p,'\n'); if(!p) break; ++p; }
     n = strlen(all);
     nl = (n > 0 && all[n - 1] != '\n');
     if (n + nl + strlen(line) + 1 > sizeof(all)) {
@@ -445,10 +444,10 @@ static void outbox_done_nl(void) {
 
 /* the queue file is shared by the game thread (push) and the net thread
    (first/done): one lock around each read-modify-write */
-static int outbox_first(char *match, int *score, char *digest) {
+static int outbox_first(char *match, int *score, char *digest, unsigned *round) {
     int r;
     SDL_LockMutex(sOutboxLock);
-    r = outbox_first_nl(match, score, digest);
+    r = outbox_first_nl(match, score, digest, round);
     SDL_UnlockMutex(sOutboxLock);
     return r;
 }
@@ -470,16 +469,19 @@ static void outbox_done(void) {
 /* the ranked match being played: dragonnet-session.txt, "match role mode sent" */
 static int session_read(char *match, int *role, int *mode, int *sent) {
     char text[160];
+    unsigned round = 1;
     *role = *mode = *sent = 0;
     if (!read_text("dragonnet-session.txt", text, sizeof(text))) {
         return 0;
     }
-    return sscanf(text, "%32s %d %d %d", match, role, mode, sent) >= 3 && is_hex(match, 32) && (*role == 1 || *role == 2);
+    if (sscanf(text, "%32s %d %d %d %u", match, role, mode, sent, &round) < 3) return 0;
+    sRankedRound = round ? round : 1;
+    return is_hex(match, 32) && (*role == 1 || *role == 2);
 }
 
 static void session_write(const char *match, int role, int mode, int sent) {
     char text[160];
-    SDL_snprintf(text, sizeof(text), "%s %d %d %d\n", match, role, mode, sent);
+    SDL_snprintf(text, sizeof(text), "%s %d %d %d %u\n", match, role, mode, sent, sRankedRound);
     write_text("dragonnet-session.txt", text);
 }
 
@@ -525,13 +527,14 @@ static void update_match(const char *answer, unsigned gen) {
 static void do_result(int *refresh) {
     char match[33], digest[9], extra[160], answer[2048], state[24];
     int score;
-    if (!outbox_first(match, &score, digest)) {
+    unsigned round;
+    if (!outbox_first(match, &score, digest, &round)) {
         return;
     }
     if (score < 0) {
-        SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\",\"round\":1", match);
+        SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\",\"round\":%u", match, round);
     } else {
-        SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\",\"score\":%d,\"digest\":\"%s\"", match, score, digest);
+        SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\",\"score\":%d,\"digest\":\"%s\",\"round\":%u", match, score, digest, round);
     }
     if (post_ranked(score < 0 ? "forfeit" : "result", extra, answer, sizeof(answer))) {
         text_value(answer, "state", state, sizeof(state));
@@ -784,9 +787,9 @@ static int SDLCALL worker(void *unused) {
         }
         {
             char om[33], od[16];
-            int os;
-            urgent = outbox_first(om, &os, od) && now >= resultAt; /* (a result still to send) */
-            if (!urgent && resultAt != 0 && !outbox_first(om, &os, od)) {
+            int os; unsigned oround;
+            urgent = outbox_first(om, &os, od, &oround) && now >= resultAt; /* (a result still to send) */
+            if (!urgent && resultAt != 0 && !outbox_first(om, &os, od, &oround)) {
                 resultAt = resultWait = 0;
             }
         }
@@ -795,8 +798,9 @@ static int SDLCALL worker(void *unused) {
             if (urgent || refresh) {
                 char om[33], od[16];
                 int os;
+                unsigned oround;
                 do_result(&pendingRefresh);
-                if (outbox_first(om, &os, od)) {
+                if (outbox_first(om, &os, od, &oround)) {
                     resultWait = resultWait == 0 ? 5000 : resultWait * 2 > 60000 ? 60000 : resultWait * 2;
                     resultAt = SDL_GetTicks() + resultWait;
                 } else {
@@ -1185,13 +1189,13 @@ void DrRanked_Open(const char *name) {
 
 void DrRanked_Search(const char *name, int mode) {
     char m[33], d[9];
-    int s;
+    int s; unsigned round;
     start(name);
     if (DrNet_Mode() != 0) {
         message(DRMSG_NO_CONNECTION, -1);
         return;
     }
-    if (outbox_first(m, &s, d)) {
+    if (outbox_first(m, &s, d, &round)) {
         message(DRMSG_FINISH_FIRST, -1);
         return;
     }
@@ -1343,7 +1347,7 @@ void DrNet_BattleFinished(int flags, int reason, int clock) {
         hash = (hash ^ ((unsigned char *)words)[i]) * 16777619u;
     }
     SDL_snprintf(digest, sizeof(digest), "%08x", hash);
-    SDL_snprintf(line, sizeof(line), "%s %d %s 1\n", match, score, digest);
+    SDL_snprintf(line, sizeof(line), "%s %d %s %u\n", match, score, digest, sRankedRound);
     if (!outbox_push(line)) {
         fprintf(stderr, "dragonnet: the ranked result could not be saved\n");
         SDL_snprintf(diag, sizeof(diag), "finish=falha ao salvar score=%d flags=%x", score, flags);
@@ -1355,6 +1359,15 @@ void DrNet_BattleFinished(int flags, int reason, int clock) {
     SDL_snprintf(diag, sizeof(diag), "finish=enviado ok score=%d digest=%s", score, digest);
     finish_diag(diag);
     start(NULL); /* (sent by the thread, now or the next time the online screen is open) */
+}
+
+/* A cleared result starts the next fight in the same best-of-three match. */
+void DrRanked_BattleStart(void) {
+    char match[33]; int role, mode, sent;
+    if (!session_read(match, &role, &mode, &sent) || !sent) return;
+    if (sRankedRound < 3) ++sRankedRound;
+    session_write(match, role, mode, 0);
+    SDL_SetAtomicInt(&sRankedWinnerDecided, 0);
 }
 
 /* The online session ends. `mine`: this player left (the pause menu, the game closed); 0: the other side went away
@@ -1388,7 +1401,7 @@ void DrNet_SessionEnding(int mine) {
                 finish_diag(diag);
             }
         } else {
-            SDL_snprintf(line, sizeof(line), "%s -1 00000000 1\n", match);
+            SDL_snprintf(line, sizeof(line), "%s -1 00000000 %u\n", match, sRankedRound);
             if (outbox_push(line)) {
                 fprintf(stderr, "dragonnet: ranked forfeit queued sent=%d mine=%d flags=%x\n", sent, mine, flags);
                 {

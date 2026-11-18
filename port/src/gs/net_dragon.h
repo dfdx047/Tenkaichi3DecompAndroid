@@ -84,6 +84,7 @@ int DrRanked_InSession(void);
 
 /* The battle's end (battle_load.c, BattleResult_Finish) and the end of an online session (net.c, Port_NetLeave). */
 void DrNet_BattleFinished(int flags, int reason, int clock);
+void DrRanked_BattleStart(void);
 void DrNet_SessionEnding(int mine);
 void DrNet_FinishDiagCopy(char *out, size_t size);
 
