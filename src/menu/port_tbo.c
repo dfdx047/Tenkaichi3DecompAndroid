@@ -2254,6 +2254,11 @@ static void Tb_DrawBoardText(void) {
     static char line[96];
     s32 i;
 
+    if (sTbCommunityBoard) {
+        sprintf(line, "http=%d error=%s rows=%d me=%s", sTbCommunity.board_http_status,
+                sTbCommunity.board_error_field, sTbCommunity.board_count, sTbCommunity.board_me ? "sim" : "não");
+        Ps_Text(30.0f, Ps_TextTop(386.0f, 0.52f), line, 0.52f, 290.0f, 0);
+    }
     if (sTbCommunityBoard && sTbCommunity.board_state != 2) {
         if (sTbCommunity.http_status || sTbCommunity.error_field[0]) sprintf(line, "http=%d error=%s", sTbCommunity.http_status, sTbCommunity.error_field);
         else Ps_Copy(line, sTbCommunity.board_state == 1 ? "Updating the ranking..." : "The ranking did not answer: X tries again.", sizeof(line));

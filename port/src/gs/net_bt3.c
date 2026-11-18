@@ -44,6 +44,18 @@ static void fail(int status,const char *json,int board) {
     if(board)sView.board_state=-1; else sView.state=-1;
     sView.error=e; sView.http_status=status; sView.error_field[0]='\0';
     value_string(json,"error",sView.error_field,sizeof(sView.error_field));
+    if(board) {
+        sView.board_http_status=status;
+        SDL_strlcpy(sView.board_error_field,sView.error_field,sizeof(sView.board_error_field));
+    }
+    SDL_UnlockMutex(sLock);
+}
+static void log_board_diagnostic(void) {
+    char line[128];
+    SDL_LockMutex(sLock);
+    SDL_snprintf(line,sizeof(line),"http=%d error=%s rows=%d me=%s",sView.board_http_status,
+                 sView.board_error_field,sView.board_count,sView.board_me?"sim":"não");
+    SDL_Log("BT3 leaderboard %s",line);
     SDL_UnlockMutex(sLock);
 }
 static int post(const char *route,const char *body,char *out,size_t cap,int *status) {
@@ -125,7 +137,14 @@ static int SDLCALL worker(void *unused) {
             if(board)sView.board_state=-1;
             sView.error=error_kind(status,identityError);sView.http_status=status;
             SDL_strlcpy(sView.error_field,identityError,sizeof(sView.error_field));
+            if(board) {
+                sView.board_http_status=status;
+                sView.board_count=0;
+                sView.board_me=0;
+                SDL_strlcpy(sView.board_error_field,identityError,sizeof(sView.board_error_field));
+            }
             SDL_UnlockMutex(sLock);
+            if(board) log_board_diagnostic();
             continue;
         }
         if((open||save)&&id[0]) {
@@ -165,13 +184,13 @@ static int SDLCALL worker(void *unused) {
                     sView.board_rating[count]=value_int(row,"rating");sView.board_position[count]=value_int(row,"position");
                     sView.board_wins[count]=value_int(row,"wins");sView.board_losses[count]=value_int(row,"losses");count++;p=end+1;
                 }
-                sView.board_count=count;sView.board_state=2;sView.error=0;sView.http_status=0;sView.error_field[0]='\0';SDL_UnlockMutex(sLock);
+                sView.board_count=count;sView.board_state=2;sView.error=0;sView.http_status=0;sView.error_field[0]='\0';
+                sView.board_me=meobj!=NULL;sView.board_http_status=status;sView.board_error_field[0]='\0';
+                SDL_UnlockMutex(sLock);
             } else fail(status,answer,1);
         } else if(board) { SDL_LockMutex(sLock);sView.board_count=0;sView.board_state=2;sView.position=0;SDL_UnlockMutex(sLock); }
         if(board) {
-            SDL_LockMutex(sLock);
-            SDL_Log("BT3 leaderboard http=%d board_state=%d rows=%d",status,sView.board_state,sView.board_count);
-            SDL_UnlockMutex(sLock);
+            log_board_diagnostic();
         }
     }
     return 0;
@@ -181,5 +200,5 @@ static void start(void) {
 }
 void Bt3Profile_Open(void) { start();lock_make();SDL_LockMutex(sLock);sOpen=1;sView.state=1;sView.error=0;sView.http_status=0;sView.error_field[0]='\0';SDL_SignalCondition(sWake);SDL_UnlockMutex(sLock); }
 void Bt3Profile_Save(const char *name,const char *flag) { start();lock_make();SDL_LockMutex(sLock);SDL_strlcpy(sName,name&&name[0]?name:"Player",sizeof(sName));SDL_strlcpy(sFlag,flag&&flag[0]?flag:"UN",sizeof(sFlag));sSave=1;sView.state=1;sView.error=0;sView.http_status=0;sView.error_field[0]='\0';SDL_SignalCondition(sWake);SDL_UnlockMutex(sLock); }
-void Bt3Profile_Board(void) { start();lock_make();SDL_LockMutex(sLock);sBoard=1;sView.board_state=1;sView.board_count=0;sView.error=0;sView.http_status=0;sView.error_field[0]='\0';SDL_SignalCondition(sWake);SDL_UnlockMutex(sLock); }
+void Bt3Profile_Board(void) { start();lock_make();SDL_LockMutex(sLock);sBoard=1;sView.board_state=1;sView.board_count=0;sView.board_me=0;sView.board_http_status=0;sView.board_error_field[0]='\0';sView.error=0;sView.http_status=0;sView.error_field[0]='\0';SDL_SignalCondition(sWake);SDL_UnlockMutex(sLock); }
 void Bt3Profile_Poll(Bt3Profile *out) { if(!out)return;lock_make();SDL_LockMutex(sLock);*out=sView;SDL_UnlockMutex(sLock); }
