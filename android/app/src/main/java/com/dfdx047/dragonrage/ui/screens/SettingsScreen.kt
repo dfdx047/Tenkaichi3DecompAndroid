@@ -300,11 +300,12 @@ fun SettingsScreen(vm: AppViewModel) {
         }
 
 
-        if (vm.game == com.dfdx047.dragonrage.data.Game.BT3) { // (the new select is BT3's engine: BT3 and the Tag Team)
+        if (vm.game == com.dfdx047.dragonrage.data.Game.BT3 || vm.game == com.dfdx047.dragonrage.data.Game.BT4) { // (the new select: BT3 and the Tag Team; BT4's own, select_classic in its bt4/ settings)
             SectionCard(stringResource(R.string.select_style), Icons.Rounded.AutoAwesome, accent = Dbz.SaiyanGold) {
-                SelectStylePicker(get(EngineSettings.SELECT_CLASSIC, 0) != 0, { vm.setting(EngineSettings.SELECT_CLASSIC, if (it) 1 else 0) })
+                val bt4 = vm.game == com.dfdx047.dragonrage.data.Game.BT4
+                SelectStylePicker(get(EngineSettings.SELECT_CLASSIC, 0) != 0, { vm.setting(EngineSettings.SELECT_CLASSIC, if (it) 1 else 0) }, bt4 = bt4)
                 Text(
-                    stringResource(R.string.select_style_text),
+                    stringResource(if (bt4) R.string.select_style_text_bt4 else R.string.select_style_text),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

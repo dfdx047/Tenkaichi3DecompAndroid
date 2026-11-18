@@ -54,17 +54,18 @@ import kotlinx.coroutines.delay
  * The character select's look, chosen with two cards: "New" (port_charsel.c: the roster grid, the 3D fighter and the
  * split screen, in blue and red) and "Classic" (the game's own screen). Each card has a drawing of its screen, made
  * here: never a picture of the game (no game data in the app or the repository). The setting is select_classic (0 the
- * new one, 1 the game's); the engine reads it when the game opens. BT3 and its Tag Team mode; not BT4 nor BT2.
+ * new one, 1 the game's); the engine reads it when the game opens. BT3 and its Tag Team mode, and BT4 (its own new select, [bt4]: the Instinto Prateado look, read from bt4/'s settings);
+ * not BT2.
  */
 
 /** The two cards side by side; [classic] is the one marked. */
 @Composable
-fun SelectStylePicker(classic: Boolean, onPick: (classic: Boolean) -> Unit, modifier: Modifier = Modifier, focus: FocusRequester? = null) {
+fun SelectStylePicker(classic: Boolean, onPick: (classic: Boolean) -> Unit, modifier: Modifier = Modifier, focus: FocusRequester? = null, bt4: Boolean = false) {
     Row(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         SelectStyleCard(
-            title = stringResource(R.string.select_new), text = stringResource(R.string.select_new_text), chosen = !classic,
-            onClick = { onPick(false) }, modifier = Modifier.weight(1f).let { if (focus != null) it.focusRequester(focus) else it },
-        ) { drawNewSelect() }
+            title = stringResource(R.string.select_new), text = stringResource(if (bt4) R.string.select_new_text_bt4 else R.string.select_new_text),
+            chosen = !classic, onClick = { onPick(false) }, modifier = Modifier.weight(1f).let { if (focus != null) it.focusRequester(focus) else it },
+        ) { if (bt4) drawNewSelectBt4() else drawNewSelect() }
         SelectStyleCard(
             title = stringResource(R.string.select_classic), text = stringResource(R.string.select_classic_text), chosen = classic,
             onClick = { onPick(true) }, modifier = Modifier.weight(1f),
@@ -138,6 +139,46 @@ private fun DrawScope.drawNewSelect() {
 
 /** Classic: the game's own screen, in its warm colours: the two players' pictures on the sides and the list of
  *  fighters in the middle, one marked. */
+/** New, BT4: one screen, graphite and silver: the slanted roster on the left (the chosen card silver going to lilac),
+ *  the fighter standing large on the right, the buttons in pills under the roster. */
+private fun DrawScope.drawNewSelectBt4() {
+    val w = size.width
+    val h = size.height
+    val panel = Color(0xFF16161E)
+    val card = Color(0xFF3A3C4A)
+    val edge = Color(0xFFDCE1F0)
+    drawRect(Brush.verticalGradient(listOf(Color(0xFF1E1C32), Color(0xFF8282AA), Color(0xFF2A3A30))))
+    // the fighter: a silhouette with a soft light under it
+    drawOval(Color(0x55C8C8FF), Offset(w * 0.56f, h * 0.84f), Size(w * 0.2f, h * 0.06f))
+    drawOval(Color(0xFF0E0E16), Offset(w * 0.615f, h * 0.2f), Size(w * 0.09f, h * 0.15f))
+    drawRoundRect(Color(0xFF0E0E16), Offset(w * 0.585f, h * 0.34f), Size(w * 0.15f, h * 0.36f), CornerRadius(w * 0.03f))
+    drawRoundRect(Color(0xFF0E0E16), Offset(w * 0.6f, h * 0.66f), Size(w * 0.12f, h * 0.2f), CornerRadius(w * 0.02f))
+    // the name card and the roster
+    drawRoundRect(panel, Offset(w * 0.04f, h * 0.05f), Size(w * 0.4f, h * 0.13f), CornerRadius(w * 0.015f))
+    drawRoundRect(Brush.verticalGradient(listOf(Color(0xFFF0F4FF), Color(0xFF968CDC)), startY = h * 0.07f, endY = h * 0.16f),
+        Offset(w * 0.055f, h * 0.07f), Size(w * 0.05f, h * 0.09f), CornerRadius(w * 0.008f))
+    drawRoundRect(Color(0xFFF5F7FF), Offset(w * 0.12f, h * 0.085f), Size(w * 0.2f, h * 0.025f), CornerRadius(w * 0.004f))
+    drawRoundRect(panel, Offset(w * 0.04f, h * 0.21f), Size(w * 0.4f, h * 0.58f), CornerRadius(w * 0.01f))
+    val cw = w * 0.046f
+    val ch = h * 0.098f
+    for (r in 0 until 5) for (c in 0 until 7) {
+        val x = w * 0.052f + c * (cw + w * 0.007f)
+        val y = h * 0.23f + r * (ch + h * 0.012f)
+        if (r == 1 && c == 2) {
+            drawRoundRect(Brush.verticalGradient(listOf(Color(0xFFF0F4FF), Color(0xFF968CDC)), startY = y, endY = y + ch), Offset(x, y), Size(cw, ch), CornerRadius(w * 0.006f))
+        } else {
+            drawRoundRect(card, Offset(x, y), Size(cw, ch), CornerRadius(w * 0.006f))
+        }
+    }
+    // the pills under it
+    for (i in 0..2) {
+        val x = w * 0.04f + i * w * 0.135f
+        drawRoundRect(if (i == 2) Color(0xFFDCDCF8) else panel, Offset(x, h * 0.84f), Size(w * 0.125f, h * 0.08f), CornerRadius(h * 0.04f))
+        drawRoundRect(edge.copy(alpha = 0.4f), Offset(x, h * 0.84f), Size(w * 0.125f, h * 0.08f), CornerRadius(h * 0.04f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f))
+    }
+}
+
 private fun DrawScope.drawClassicSelect() {
     val w = size.width
     val h = size.height

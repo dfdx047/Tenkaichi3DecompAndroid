@@ -469,6 +469,8 @@
     <string name="select_classic">Clásica</string>
     <string name="select_classic_text">La pantalla original del juego.</string>
     <string name="select_style_text">Para BT3 y el Tag Team. Se aplica la próxima vez que abras el juego; puedes cambiarla en Ajustes.</string>
+    <string name="select_new_text_bt4">Cuadrícula, luchador 3D grande bajando del cielo, Ver equipo, en grafito y plata.</string>
+    <string name="select_style_text_bt4">Para Budokai Tenkaichi 4. Cada jugador ve la que eligió: en línea, el otro puede usar la otra y nada cambia para él. Se aplica la próxima vez que abras el juego.</string>
     <string name="select_style_ok">Usar esta</string>
     <string name="tp_title">Toque Pro</string>
     <string name="tp_intro">Ajusta el control en pantalla para jugar sin control físico, también en línea: cómo el stick sigue al pulgar, el tamaño de cada botón al tacto y qué se mantiene presionado solo.</string>

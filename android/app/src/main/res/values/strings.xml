@@ -470,6 +470,8 @@
     <string name="select_classic">Classic</string>
     <string name="select_classic_text">The game\'s original screen.</string>
     <string name="select_style_text">For BT3 and the Tag Team. Applies the next time the game opens; you can change it in Settings.</string>
+    <string name="select_new_text_bt4">Grid, large 3D fighter coming down from the sky, Team view, in graphite and silver.</string>
+    <string name="select_style_text_bt4">For Budokai Tenkaichi 4. Each player sees the one they chose: online, the other player may use the other one and nothing changes for them. Applies the next time the game opens.</string>
     <string name="select_style_ok">Use this one</string>
     <string name="tp_title">Touch Pro</string>
     <string name="tp_intro">Tune the on-screen controller for playing without a physical controller, online too: how the stick follows your thumb, how big each button is to the touch, and what holds by itself.</string>
