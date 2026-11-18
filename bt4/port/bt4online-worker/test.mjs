@@ -29,10 +29,10 @@ const code = qa.code;
 
 // a Ranked battle of that match: points and medals; the joiner's report without the room code (games before 1.0.3) still pairs
 const k1 = rk();
-await rep(A, { rkey: k1, code, n: 1, me: A.name, opp: B.name, side: 0, winner: 0, ranked: true });
+await rep(A, { rkey: k1, code, n: 1, me: A.name, opp: B.name, side: 0, winner: 0, ranked: true, chars: [[3, "Goku (End)"], [52, "Super Vegito"]] });
 const r1 = await rep(B, { rkey: rk(), code: "", n: 1, me: B.name, opp: A.name, side: 1, winner: 0, ranked: true });
 ok(r1.state === "settled" && r1.medal === "silver" && r1.delta === -16 && r1.rating === 984 && r1.rematches_left === 3, "Ranked battle of a served match (joiner sent no code): points", JSON.stringify(r1));
-const again = await rep(A, { rkey: k1, code, n: 1, me: A.name, opp: B.name, side: 0, winner: 0, ranked: true });
+const again = await rep(A, { rkey: k1, code, n: 1, me: A.name, opp: B.name, side: 0, winner: 0, ranked: true, chars: [[3, "Goku (End)"]] });
 ok(again.state === "settled" && again.medal === "gold" && again.delta === 16, "the same report sent again: the same answer, nothing counted twice", JSON.stringify(again));
 
 // a "Ranked" battle in a room the Ranked queue did not make: medals, no points
@@ -46,14 +46,20 @@ ok(ma.gold === 1 && ma.season_gold === 1 && ma.rating === 1016 && ma.rwins === 1
 // the same pair: the match and three rematches a day count, then nothing
 for (let n = 2; n <= 5; n++) {
     await sleep(10500);
-    await rep(A, { rkey: rk(), code, n, me: A.name, opp: B.name, side: 0, winner: 0, ranked: true });
+    await rep(A, { rkey: rk(), code, n, me: A.name, opp: B.name, side: 0, winner: 0, ranked: true, chars: [[3, "Goku (End)"], [3, "twice"], [-4, "bad"]] });
     const r = await rep(B, { rkey: rk(), code, n, me: B.name, opp: A.name, side: 1, winner: 0, ranked: true });
     if (n <= 4) ok(r.delta < 0 && !r.capped && r.medal === "silver" && r.rematches_left === 4 - n, `Ranked battle ${n} of the pair today counts`, JSON.stringify(r));
     else ok(r.delta === undefined && r.capped === true && r.medal === "none" && r.rematches_left === 0, "the 5th Ranked battle of the same pair today: nothing", JSON.stringify(r));
 }
 ma = await post("me", auth(A));
 ok(ma.rwins === 4 && ma.gold === 4 && ma.season_gold === 4 && ma.opponents === 1 && ma.eligible === false, "A: 4 rated wins, 4 golds, 1 opponent, not yet eligible for trophies", JSON.stringify(ma));
+ok(Array.isArray(ma.fav) && ma.fav[0] === 3 && ma.fav[1] === 5 && ma.fav[2] === "Goku (End)",
+   "A's most used character: Goku (End), 5 battles (a report sent again and a character twice in a team count once)", JSON.stringify(ma.fav));
+ok(typeof ma.country === "string" && (ma.country === "" || /^[A-Z]{2}$/.test(ma.country)), "A's country: Cloudflare's, two letters (or none)", JSON.stringify(ma.country));
+const mpt = await post("me", { ...auth(A), lang: "pt" });
+ok(mpt.country === "" ? mpt.country_name === "" : typeof mpt.country_name === "string" && mpt.country_name.length >= 2, "the country's name in the game's language", JSON.stringify([mpt.country, mpt.country_name]));
 const mb = await post("me", auth(B));
+ok(mb.fav === null, "B told no characters: no most used one", JSON.stringify(mb.fav));
 ok(mb.silver === 4 && mb.season_silver === 4 && mb.gold === 0 && mb.rlosses === 4, "B: 4 silvers", JSON.stringify(mb));
 const hist = await post("matches", auth(A));
 ok(hist.ok && hist.matches.length === 6 && hist.matches.filter((m) => m[4]).length === 4, "A's battles: 6 written down, 4 rated", JSON.stringify(hist.matches.length));
@@ -76,7 +82,7 @@ ok((await post("presence", { who: "x" })).error === "invalid", "a bad word is re
 
 // the table
 const t = await post("top", {});
-ok(t.ok && t.top[0][0] === A.name && t.top[0].length === 9 && t.top[0][4] === 4 && /^Temporada/.test(t.name), "the week's table, with the season's medals", JSON.stringify(t));
+ok(t.ok && t.top[0][0] === A.name && t.top[0].length === 10 && t.top[0][9] === ma.country && t.top[0][4] === 4 && /^Temporada/.test(t.name), "the week's table, with the season's medals", JSON.stringify(t));
 
 // recovery: the account back with its name and code, the old secret signed out
 ok(typeof A.recovery === "string" && /^[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$/.test(A.recovery), "a new account comes with a recovery code", A.recovery);

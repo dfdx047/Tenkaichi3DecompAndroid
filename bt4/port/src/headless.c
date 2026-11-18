@@ -386,6 +386,26 @@ int Port_BattleOutcome(int *winner) {
     return gBtlSeq->state;
 }
 
+/* The characters of side `side`'s team in the battle being fought (Battle_GetSetup()->sides[side].members[i].chara,
+   include/battle/battle.h: sides at 0xC0, 0x270 bytes each, the team's size first, then members of 0x64 bytes): their
+   number (0 outside a battle). For the online profile's most used character (gs/bt4_profile.c). Read only. */
+int Port_BattleTeam(int side, int out[5]) {
+    extern unsigned char GAME_PTR Battle_GetSetup(void);
+    unsigned char GAME_PTR s;
+    int n, i;
+
+    if (gBtlSeq == NULL || side < 0 || side > 1 || (s = Battle_GetSetup()) == NULL) {
+        return 0;
+    }
+    s += 0xC0 + side * 0x270;
+    n = *(int GAME_PTR)s;
+    n = n < 0 ? 0 : n > 5 ? 5 : n;
+    for (i = 0; i < n; i++) {
+        out[i] = *(int GAME_PTR)(s + 4 + i * 0x64);
+    }
+    return n;
+}
+
 /* Main-menu item 4, Dragon Net Battle, was confirmed (src/menu/menu_a.c): the settings code opens the online
    screen when it sees the request (port/src/gs/ui.cpp). Without a window nothing does. */
 volatile int gPortNetMenuRequest;

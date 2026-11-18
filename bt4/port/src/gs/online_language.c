@@ -774,6 +774,9 @@ static const char *const kText[][2]={
 {"Battle counted. No more medals today against this rival.","Combate contado. No hay m\u00e1s medallas hoy contra este rival."},
 {"Gold medal! No more Ranked points today against this rival.","\u00a1Medalla de oro! No hay m\u00e1s puntos hoy contra este rival."},
 {"Silver medal. No more Ranked points today against this rival.","Medalla de plata. No hay m\u00e1s puntos hoy contra este rival."},
+{"MOST USED","M\u00c1S USADO"},
+{"No online battles yet","A\u00fan sin combates en l\u00ednea"},
+{"Character %d","Personaje %d"},
 };
 const char *PortOnline_Text(const char *text){
     extern int MenuTranslation_TboLanguage(void); /* menu_translation.c: the online screens' own language */

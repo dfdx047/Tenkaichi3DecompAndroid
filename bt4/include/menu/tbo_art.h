@@ -57,7 +57,8 @@
     X(TBO_TD_CAPS, "td_caps")  \
     X(TBO_TD_MACHINE, "td_machine")  \
     X(TBO_TD_VIGNETTE, "td_vignette")  \
-    X(TBO_STORM_BOLT, "storm_bolt") /* four lightning bolts side by side, 256 x 1024 each (our own drawing): the full power storm (stg_c.c) */
+    X(TBO_STORM_BOLT, "storm_bolt") /* four lightning bolts side by side, 256 x 1024 each (our own drawing): the full power storm (stg_c.c) */ \
+    X(TBO_FLAGS, "flags")           /* the countries' flags, Profile and Global Top (port/tools/tbo_flags.py, include/menu/tbo_flags.h) */
 
 #define TBO_MAIN_ONLINE_OFF (TBO_ART_COUNT + 16)
 #define TBO_MAIN_ONLINE_ON (TBO_ART_COUNT + 17)

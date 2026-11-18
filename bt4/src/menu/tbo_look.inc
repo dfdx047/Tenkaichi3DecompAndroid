@@ -119,6 +119,32 @@ static void Td_Skew(f32 *p, f32 x0, f32 y0, f32 x1, f32 y1, f32 s) {
 static void Td_Rect(f32 x0, f32 y0, f32 x1, f32 y1, u32 top, u32 bottom) {
     Ps_Rect(Td_X(x0), Td_Y(y0), Td_X(x1), Td_Y(y1), top, bottom);
 }
+#ifdef __ANDROID__
+#include "menu/tbo_flags.h"
+/* A country's flag (port/tbo/ui/flags.png) over the box x0, y0 .. x0 + w, y0 + h (3:2) on a thin dark frame; nothing
+   for a code the picture has not ("": the service does not know where the player is). */
+static void Td_Flag(const char *code, f32 x0, f32 y0, f32 w, f32 h, s32 alpha) {
+    f32 u, v, k = 1.0f / (f32)TBO_FLAG_SIZE;
+    s32 i;
+
+    if (code == NULL || code[0] == 0 || code[1] == 0) {
+        return;
+    }
+    for (i = 0; i < TBO_FLAG_COUNT; i++) {
+        if (kTboFlagCodes[i][0] == code[0] && kTboFlagCodes[i][1] == code[1]) {
+            break;
+        }
+    }
+    if (i == TBO_FLAG_COUNT) {
+        return;
+    }
+    u = (f32)((i % TBO_FLAG_COLS) * TBO_FLAG_CELL_W);
+    v = (f32)((i / TBO_FLAG_COLS) * TBO_FLAG_CELL_H);
+    Td_Rect(x0 - 3.0f, y0 - 3.0f, x0 + w + 3.0f, y0 + h + 3.0f, Td_Rgba(6, 4, 20, 220), Td_Rgba(6, 4, 20, 220));
+    Td_Pic(TBO_FLAGS, x0, y0, x0 + w, y0 + h, (u + 1.0f) * k, (v + 1.0f) * k, (u + (f32)TBO_FLAG_CELL_W - 1.0f) * k,
+           (v + (f32)TBO_FLAG_CELL_H - 1.0f) * k, alpha);
+}
+#endif
 /* a line `w` pixels wide */
 static void Td_Line(f32 x0, f32 y0, f32 x1, f32 y1, f32 w, u32 c) {
     f32 dx = x1 - x0, dy = y1 - y0, n = sqrtf(dx * dx + dy * dy), ox, oy;
@@ -648,7 +674,7 @@ static void Td_Hub(s32 live) {
         f32 sh = dr * (1.6f + 0.8f * (1.0f - p)), sw = sh * Ps_PicW(TBO_TM_STAMP) / Ps_PicH(TBO_TM_STAMP);
         Td_Pic(TBO_TM_STAMP, dx - sw * 0.5f, dy - sh * 0.5f, dx + sw * 0.5f, dy + sh * 0.5f, 0.0f, 0.0f, 1.0f, 1.0f, (s32)(0x80 * p));
     }
-    Td_BottomBox(Td_Caption(), 1, live);
+    Td_BottomBox(Td_Caption(), 0, live); /* (no Discord button since 1.0.2: the prompts in the middle of the box) */
     if (warp > 0.72f) {
         u32 c = Ps_Rgba(0xFF, 0xFF, 0xFF, (s32)(0x80 * (warp - 0.72f) / 0.28f));
         Ps_Rect(Ps_Left(), 0.0f, 512.0f - Ps_Left(), 448.0f, c, c);
@@ -676,6 +702,17 @@ static void Td_Ranked(void) {
     if (!getenv("BT4_RENDER_TEST")) {
         Port_RankedView(&rv);
     }
+#ifdef __ANDROID__
+    else { /* (the picture of the table for a review: five made-up rows) */
+        static char *names[5] = {"Kakarotto", "Principe", "Namekuseijin", "TrunksBR", "Lawliet"};
+        static const s32 rating[5] = {1248, 1192, 1131, 1088, 1064};
+        rv.count = 5; rv.pages = 3; rv.topState = 1;
+        for (i = 0; i < 5; i++) {
+            Ps_Copy(rv.top[i].name, names[i], sizeof(rv.top[i].name));
+            rv.top[i].rating = rating[i];
+        }
+    }
+#endif
     Td_Page(sTbTitle[TB_RANKED], 1, 0);
     if (sTb->rankedPage == 0) {
 #ifdef __ANDROID__
@@ -818,7 +855,18 @@ static void Td_Ranked(void) {
                         Td_Words(col[k], y + 44.0f, cnt[i][k], TD_C, 44.0f, x[k] ? TD_TEXT(255, 236, 160) : TD_TEXT(120, 130, 170), 1, 120.0f, 1);
                     }
                 }
-                Td_Words(260.0f, y + 44.0f, rv.top[i].name, TD_B, 60.0f, TD_WHITE, 0, 700.0f, 1);
+                {   /* the country's flag, then the name */
+                    char cc[4];
+                    static const char *test[5] = {"BR", "AR", "MX", "PT", "BR"};
+                    if (getenv("BT4_RENDER_TEST")) Ps_Copy(cc, (char *)test[i], sizeof(cc));
+                    else Bt4Profile_TopCountry(i, cc);
+                    if (cc[0]) {
+                        Td_Flag(cc, 258.0f, y + 16.0f, 81.0f, 54.0f, 0x80);
+                        Td_Words(362.0f, y + 44.0f, rv.top[i].name, TD_B, 60.0f, TD_WHITE, 0, 600.0f, 1);
+                    } else {
+                        Td_Words(260.0f, y + 44.0f, rv.top[i].name, TD_B, 60.0f, TD_WHITE, 0, 700.0f, 1);
+                    }
+                }
 #else
                 Td_Words(260.0f, y + 44.0f, rv.top[i].name, TD_B, 60.0f, TD_WHITE, 0, 1300.0f, 1);
 #endif
@@ -977,6 +1025,25 @@ static void Td_ProfileStats(void) {
     } else {
         st.state = 1; st.gold = 12; st.silver = 7; st.wins = 12; st.losses = 7; st.rating = 1064; st.rank = 2; st.players = 14;
         st.trophies[0] = 1; st.trophies[2] = 2;
+        Ps_Copy(st.country, "BR", sizeof(st.country));
+        Ps_Copy(st.countryName, "Brasil", sizeof(st.countryName));
+        st.favChara = 4; st.favBattles = 23;
+        Ps_Copy(st.favName, "Goku (End), Super Saiyan", sizeof(st.favName));
+    }
+    if (st.state == 1) { /* top right of the card: the country (flag and name), and the most used character */
+        static char fav[96];
+        if (st.country[0]) {
+            Td_Flag(st.country, 1814.0f, 307.0f, 96.0f, 64.0f, 0x80);
+            Td_Words(1790.0f, 340.0f, st.countryName[0] ? st.countryName : st.country, TD_C, 40.0f, TD_WHITE, 2, 560.0f, 1);
+        }
+        Td_Words(1910.0f, 398.0f, "MOST USED", TD_C, 24.0f, TD_SKY(255), 2, 400.0f, 0);
+        if (st.favChara >= 0) {
+            if (st.favName[0]) Ps_Copy(fav, st.favName, sizeof(fav));
+            else sprintf(fav, Tb_Fmt("Character %d"), st.favChara);
+            Td_Words(1910.0f, 432.0f, fav, TD_C, 34.0f, TD_GOLD, 2, 640.0f, 1);
+        } else {
+            Td_Words(1910.0f, 432.0f, "No online battles yet", TD_C, 30.0f, TD_TEXT(190, 210, 240), 2, 640.0f, 0);
+        }
     }
     if (st.state == 1) {
         if (st.rank > 0) sprintf(line, Tb_Fmt("RATING %d  -  RANK #%d OF %d THIS WEEK"), st.rating, st.rank, st.players);
@@ -1020,7 +1087,11 @@ static void Td_Profile(void) {
     Td_Disc(220.0f, 420.0f, 98.0f, TD_RGB(40, 100, 220), TD_RGB(40, 100, 220));
     Td_Words(220.0f, 422.0f, "1P", TD_B, 110.0f, Td_Ink(TD_RGB(255, 255, 255), TD_RGB(210, 230, 255), TD_RGB(10, 30, 90)), 1, 0.0f, 1);
     Td_Words(370.0f, 380.0f, (char *)Port_NetNameGet(), TD_B, 110.0f, Td_InkOuter(TD_RGB(240, 255, 242), TD_RGB(156, 244, 180), TD_RGB(0, 30, 10), TD_RGB(14, 4, 36), 3.0f), 0,
+#ifdef __ANDROID__
+             880.0f, 1); /* (room on the right for the country and the most used character) */
+#else
              1500.0f, 1);
+#endif
 #ifdef __ANDROID__
     Td_ProfileStats();
     if (0)

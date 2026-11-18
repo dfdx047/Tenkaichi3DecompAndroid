@@ -5,15 +5,16 @@
 //   POST /v1/rename   {id, secret, name}      -> {ok, name}                        | {error: "taken"|"invalid"|"who"}
 //   POST /v1/recover  {name, code}            -> {ok, id, secret, name}            | {error: "wrong"|"slow"|"invalid"}
 //   POST /v1/recovery {id, secret}            -> {ok, recovery}  (a new recovery code; the old one stops working)
-//   POST /v1/me       {id, secret}            -> career: gold, silver, wins, losses, ranked_total, best_rating, best_rating_season,
+//   POST /v1/me       {id, secret, lang?}     -> country, country_name (in lang: "pt", "es" or "en"), fav: [chara, battles, name] | null;
+//                                                 career: gold, silver, wins, losses, ranked_total, best_rating, best_rating_season,
 //                                                 seasons_played, trophies: [gold, silver, bronze];
 //                                                 season: season (id), season_name, ends, rating, rwins, rlosses, rank, players,
 //                                                 season_gold, season_silver, peak, rated, opponents, eligible, last: [..]
-//   POST /v1/report   {id, secret, rkey, code, n, me, opp, side, winner, ranked}
+//   POST /v1/report   {id, secret, rkey, code, n, me, opp, side, winner, ranked, chars?: [[chara, name], ...]}
 //                                             -> {ok, state: "waiting"|"settled"|"casual"|"conflict"|"draw", medal, delta, rating, ranked,
 //                                                 capped, rematches_left}
 //   POST /v1/top      {season?}               -> {ok, season, name, ends, total, closed,
-//                                                 top: [[name, rating, wins, losses, gold, silver, trophy1, trophy2, trophy3], ...]}
+//                                                 top: [[name, rating, wins, losses, gold, silver, trophy1, trophy2, trophy3, country], ...]}
 //   POST /v1/seasons  {page}                  -> {ok, seasons: [[id, slug, name, starts, ends, status, players], ...]}
 //   POST /v1/history  {id, secret, page}      -> {ok, history: [[season, name, rank, rating, peak, gold, silver, wins, losses, trophy], ...]}
 //   POST /v1/matches  {id, secret, before}    -> {ok, matches: [[at, season, opp, won, rated, delta, rating_after], ...]}
@@ -31,6 +32,9 @@
 //    or nothing, never twice (UNIQUE claims), and the rating it read is still the rating it writes (guard).
 //  - Seasons are weeks (seasons.js): Monday 00:00 in Brasilia. Their end archives the table (season_history, trophies for
 //    the first three among those with 5 rated battles against 3 rivals) before the next season opens.
+//  - The country is Cloudflare's for the address the game last spoke from (request.cf.country; "" when it gives none):
+//    nothing is asked of the player. The most used character: every reported battle adds one to each character of the
+//    player's team (chars), with the name the game read from its disc (BT4's names are the disc's, not a table here).
 
 import { seasonOf, seasonEnds, seasonName, ensureSeasonStatement, closeSeasons, listSeasons, RANK_ORDER, TROPHY_MIN_RATED, TROPHY_MIN_OPPONENTS } from "./seasons.js";
 
@@ -121,11 +125,15 @@ export async function schema(env) {
         env.DB.prepare("CREATE INDEX IF NOT EXISTS ranked_matches_season ON ranked_matches (season_id)"),
         env.DB.prepare("CREATE TABLE IF NOT EXISTS guard (v INTEGER NOT NULL)"), // always empty: a NULL put in it aborts a transaction
         env.DB.prepare("CREATE TABLE IF NOT EXISTS recover_tries (ip_key TEXT NOT NULL, at INTEGER NOT NULL)"),
+        env.DB.prepare("CREATE TABLE IF NOT EXISTS char_usage (player_id TEXT NOT NULL, chara INTEGER NOT NULL, battles INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL DEFAULT '', PRIMARY KEY (player_id, chara))"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS recover_tries_ip ON recover_tries (ip_key, at)"),
     ]);
     const cols = await env.DB.prepare("PRAGMA table_info(players)").all();
     if (!cols.results.some((c) => c.name === "recovery_hash")) {
         await env.DB.prepare("ALTER TABLE players ADD COLUMN recovery_hash TEXT").run();
+    }
+    if (!cols.results.some((c) => c.name === "country")) {
+        await env.DB.prepare("ALTER TABLE players ADD COLUMN country TEXT NOT NULL DEFAULT ''").run();
     }
     // the career of the players from before seasons: what players kept (all 0 when seasons came; kept for the record)
     await env.DB.prepare("INSERT OR IGNORE INTO career_stats (player_id, gold, silver, wins, losses, updated) SELECT id, gold, silver, wins, losses, ? FROM players")
@@ -141,7 +149,40 @@ async function who(env, body) {
 }
 const ipKeyOf = async (ip) => (await sha256("bt4-online|" + ip)).slice(0, 24);
 
-async function register(env, body, ip, now) {
+// Cloudflare's country of the request: two capital letters ("XX" unknown and "T1" Tor are none)
+export const cleanCountry = (c) => typeof c === "string" && /^[A-Z]{2}$/.test(c) && c !== "XX" && c !== "T1" ? c : "";
+// the player's country follows where the game speaks from (a move, a trip): kept when it changes
+async function noteCountry(env, p, country) {
+    if (country && p.country !== country) {
+        await env.DB.prepare("UPDATE players SET country = ? WHERE id = ?").bind(country, p.id).run();
+        p.country = country;
+    }
+}
+// A country's name in the game's language ("pt", "es", "en"); its code where the runtime has no names
+export function countryName(code, lang) {
+    if (!code) return "";
+    try {
+        const n = new Intl.DisplayNames([lang === "pt" ? "pt-BR" : lang === "es" ? "es" : "en"], { type: "region" }).of(code);
+        return typeof n === "string" && n !== "" && !/["\\\x00-\x1f]/.test(n) ? n : code;
+    } catch {
+        return code;
+    }
+}
+// The characters of a report: up to five [id, name] (name as the game's disc writes it: no quotes, backslashes or controls)
+export function cleanChars(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = new Map();
+    for (const c of raw.slice(0, 10)) {
+        if (out.size === 5) break;
+        const id = Array.isArray(c) ? c[0] : c;
+        if (!Number.isInteger(id) || id < 0 || id > 1023 || out.has(id)) continue;
+        let name = Array.isArray(c) && typeof c[1] === "string" ? c[1].replace(/["\\\x00-\x1f\x7f]/g, "").replace(/\s+/g, " ").trim().slice(0, 40) : "";
+        out.set(id, name);
+    }
+    return [...out].map(([id, name]) => ({ id, name }));
+}
+
+async function register(env, body, ip, now, country) {
     const name = cleanName(body.name);
     if (!name) return json({ error: "invalid" });
     const ipKey = await ipKeyOf(ip);
@@ -150,8 +191,8 @@ async function register(env, body, ip, now) {
     const id = randomHex(16), secret = randomHex(32), recovery = newRecoveryCode();
     try {
         await env.DB.batch([
-            env.DB.prepare("INSERT INTO players (id, secret_hash, name, name_key, made, seen, ip_key, recovery_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-                .bind(id, await sha256(secret), name, nameKey(name), now, now, ipKey, await recoveryHash(recovery)),
+            env.DB.prepare("INSERT INTO players (id, secret_hash, name, name_key, made, seen, ip_key, recovery_hash, country) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+                .bind(id, await sha256(secret), name, nameKey(name), now, now, ipKey, await recoveryHash(recovery), country),
             env.DB.prepare("INSERT OR IGNORE INTO career_stats (player_id, updated) VALUES (?, ?)").bind(id, now),
         ]);
     } catch (e) {
@@ -202,19 +243,21 @@ async function recover(env, body, ip, now) {
     return json({ ok: true, id: p.id, secret, name: p.name });
 }
 
-async function me(env, body, now) {
+async function me(env, body, now, country) {
     const p = await who(env, body);
     if (!p) return json({ error: "who" });
+    await noteCountry(env, p, country);
     const season = seasonOf(now);
-    const [r, trophies, players, last, opps, career] = await env.DB.batch([
+    const [r, trophies, players, last, opps, career, fav] = await env.DB.batch([
         env.DB.prepare("SELECT rating, peak_rating, gold, silver, wins, losses, matches, updated FROM season_stats WHERE season_id = ? AND player_id = ?").bind(season, p.id),
         env.DB.prepare("SELECT place, COUNT(*) AS n FROM trophies WHERE player = ? GROUP BY place").bind(p.id),
         env.DB.prepare("SELECT COUNT(*) AS n FROM season_stats WHERE season_id = ? AND matches > 0").bind(season),
         env.DB.prepare("SELECT final_rank AS place, name_then AS name, final_rating AS rating FROM season_history WHERE season_id = ? AND final_rank <= 3 ORDER BY final_rank").bind(season - 1),
         env.DB.prepare("SELECT COUNT(*) AS n FROM season_opponents WHERE season = ? AND player = ?").bind(season, p.id),
         env.DB.prepare("SELECT * FROM career_stats WHERE player_id = ?").bind(p.id),
+        env.DB.prepare("SELECT chara, battles, name FROM char_usage WHERE player_id = ? ORDER BY battles DESC, chara LIMIT 1").bind(p.id),
     ]);
-    const mine = r.results[0], c = career.results[0] || {};
+    const mine = r.results[0], c = career.results[0] || {}, f = fav.results[0];
     let rank = 0;
     if (mine && mine.matches > 0) {
         const above = await env.DB.prepare("SELECT COUNT(*) AS n FROM season_stats WHERE season_id = ? AND matches > 0 AND (rating > ? OR (rating = ? AND wins > ?) OR (rating = ? AND wins = ? AND updated < ?))")
@@ -227,6 +270,8 @@ async function me(env, body, now) {
     const rated = mine ? mine.matches : 0, opponents = opps.results[0] ? opps.results[0].n : 0;
     return json({
         ok: true, name: p.name, has_recovery: !!p.recovery_hash,
+        country: p.country || "", country_name: countryName(p.country || "", body.lang),
+        fav: f ? [f.chara, f.battles, f.name] : null,
         // the career (never reset)
         gold: c.gold ?? 0, silver: c.silver ?? 0, wins: c.wins ?? 0, losses: c.losses ?? 0, ranked_total: c.ranked_matches ?? 0,
         best_rating: c.best_rating ?? START_RATING, best_rating_season: c.best_rating_season ?? null, seasons_played: c.seasons_played ?? 0,
@@ -251,18 +296,18 @@ async function top(env, body, now) {
     if (season !== current) { // a season that is over: its archived table
         const s = await env.DB.prepare("SELECT name, ends_at, status, players FROM seasons WHERE id = ?").bind(season).first();
         if (!s || s.status !== "closed") return json({ ok: true, season, name: seasonName(season), ends: seasonEnds(season), total: 0, closed: true, top: [] });
-        const rows = await env.DB.prepare("SELECT h.name_then AS name, h.final_rating AS rating, h.wins, h.losses, h.gold, h.silver, " + TROPHY_COLUMNS +
+        const rows = await env.DB.prepare("SELECT h.name_then AS name, h.final_rating AS rating, h.wins, h.losses, h.gold, h.silver, p.country, " + TROPHY_COLUMNS +
             " FROM season_history h JOIN players p ON p.id = h.player_id WHERE h.season_id = ? AND h.matches > 0 " +
             "ORDER BY h.final_rank IS NULL, h.final_rank, h.final_rating DESC LIMIT ?").bind(season, TOP).all();
         return json({ ok: true, season, name: s.name, ends: s.ends_at, total: s.players, closed: true,
-                      top: rows.results.map((r) => [r.name, r.rating, r.wins, r.losses, r.gold, r.silver, r.t1, r.t2, r.t3]) });
+                      top: rows.results.map((r) => [r.name, r.rating, r.wins, r.losses, r.gold, r.silver, r.t1, r.t2, r.t3, r.country || ""]) });
     }
-    const rows = await env.DB.prepare("SELECT p.name, s.rating, s.wins, s.losses, s.gold, s.silver, " + TROPHY_COLUMNS +
+    const rows = await env.DB.prepare("SELECT p.name, s.rating, s.wins, s.losses, s.gold, s.silver, p.country, " + TROPHY_COLUMNS +
         " FROM season_stats s JOIN players p ON p.id = s.player_id WHERE s.season_id = ? AND s.matches > 0 ORDER BY s." + RANK_ORDER.replace(/, /g, ", s.") + " LIMIT ?")
         .bind(season, TOP).all();
     const total = await env.DB.prepare("SELECT COUNT(*) AS n FROM season_stats WHERE season_id = ? AND matches > 0").bind(season).first();
     return json({ ok: true, season, name: seasonName(season), ends: seasonEnds(season), total: total ? total.n : 0, closed: false,
-                  top: rows.results.map((r) => [r.name, r.rating, r.wins, r.losses, r.gold, r.silver, r.t1, r.t2, r.t3]) });
+                  top: rows.results.map((r) => [r.name, r.rating, r.wins, r.losses, r.gold, r.silver, r.t1, r.t2, r.t3, r.country || ""]) });
 }
 
 async function history(env, body) {
@@ -394,9 +439,10 @@ const OTHER = "SELECT * FROM reports WHERE n = ? AND player <> ? AND me = ? AND 
     "AND (code = ? OR code = '' OR ? = '') ORDER BY rid LIMIT 1";
 const findOther = (env, mine) => env.DB.prepare(OTHER).bind(mine.n, mine.player, mine.opp, mine.me, mine.side, mine.at - PAIR_WINDOW, mine.at + PAIR_WINDOW, mine.code, mine.code).first();
 
-async function report(env, body, now) {
+async function report(env, body, now, country) {
     const p = await who(env, body);
     if (!p) return json({ error: "who" });
+    await noteCountry(env, p, country);
     const rkey = typeof body.rkey === "string" && /^[0-9a-f]{16,32}$/.test(body.rkey) ? body.rkey : null;
     const code = typeof body.code === "string" ? body.code.replace(/[^A-Za-z0-9]/g, "").slice(0, 12).toUpperCase() : "";
     const n = Number.isInteger(body.n) && body.n > 0 && body.n < 100000 ? body.n : 0;
@@ -413,6 +459,13 @@ async function report(env, body, now) {
             env.DB.prepare("UPDATE players SET last_report = ? WHERE id = ?").bind(now, p.id),
         ]);
         mine = await env.DB.prepare("SELECT * FROM reports WHERE player = ? AND rkey = ?").bind(p.id, rkey).first();
+        // the team's characters, once per battle (the report's first arrival; its repeats find `mine` above)
+        const chars = cleanChars(body.chars);
+        if (chars.length) {
+            await env.DB.batch(chars.map((c) => env.DB.prepare("INSERT INTO char_usage (player_id, chara, battles, name) VALUES (?, ?, 1, ?) " +
+                "ON CONFLICT (player_id, chara) DO UPDATE SET battles = battles + 1, name = CASE WHEN excluded.name <> '' THEN excluded.name ELSE name END")
+                .bind(p.id, c.id, c.name)));
+        }
     }
     if (mine.outcome) return answer(mine);
     const other = await findOther(env, mine);
@@ -479,13 +532,14 @@ export async function profileFetch(request, env) {
         if (!body || typeof body !== "object") return json({ error: "json" }, 400);
         await closeSeasons(env, now); // (the cron does it too; a request after Monday 00:00 must not wait for it)
         const ip = request.headers.get("cf-connecting-ip") || "";
+        const country = cleanCountry(request.cf && request.cf.country);
         switch (url.pathname) {
-        case "/v1/register": return await register(env, body, ip, now);
+        case "/v1/register": return await register(env, body, ip, now, country);
         case "/v1/rename": return await rename(env, body, now);
         case "/v1/recover": return await recover(env, body, ip, now);
         case "/v1/recovery": return await recovery(env, body);
-        case "/v1/me": return await me(env, body, now);
-        case "/v1/report": return await report(env, body, now);
+        case "/v1/me": return await me(env, body, now, country);
+        case "/v1/report": return await report(env, body, now, country);
         case "/v1/top": return await top(env, body, now);
         case "/v1/seasons": return json({ ok: true, seasons: await listSeasons(env, body) });
         case "/v1/history": return await history(env, body);

@@ -1354,6 +1354,45 @@ static void name_cache_fill(uint32_t GAME_PTR nameText, uint32_t GAME_PTR formTe
     }
 }
 
+/* The characters' names as the disc's select writes them (with the form when it says something else), kept from
+   every character select, the speaker on or not: the online profile shows its most used character by them
+   (gs/bt4_profile.c, through Port_CharaName). BT4's ids go past BT3's MCHR_RANDOM: up to 256. Read only. */
+static char sKeptName[256][48];
+static void names_keep(void) {
+    static uint32_t GAME_PTR seen;
+    A11yCharSel GAME_PTR cs = gCharSel;
+    char name[A11Y_TEXT], form[A11Y_TEXT];
+    int chara, lines;
+
+    if (cs == NULL || !(cs->flags & CHARSEL_STARTED) || (cs->flags & CHARSEL_LEAVING) || cs->nameText == NULL) {
+        seen = NULL;
+        return;
+    }
+    if (seen == cs->nameText) {
+        return;
+    }
+    seen = cs->nameText;
+    lines = (int)(cs->nameText[1] >> 2) - 1; /* (the offset table ends where the first line starts) */
+    for (chara = 0; chara < lines && chara < 256; chara++) {
+        if (text_line(name, sizeof(name), cs->nameText, chara) <= 0) {
+            continue;
+        }
+        if (text_line(form, sizeof(form), cs->formText, chara) > 0 && strcmp(form, name) != 0) {
+            snprintf(sKeptName[chara], sizeof(sKeptName[chara]), "%s, %s", name, form);
+        } else {
+            snprintf(sKeptName[chara], sizeof(sKeptName[chara]), "%s", name);
+        }
+    }
+}
+int Port_CharaName(int chara, char *out, int cap) {
+    out[0] = '\0';
+    if (chara < 0 || chara >= 256 || sKeptName[chara][0] == '\0') {
+        return 0;
+    }
+    snprintf(out, (size_t)cap, "%s", sKeptName[chara]);
+    return 1;
+}
+
 /* A name from sNameCache, or the character's number when no select has given it yet. */
 static void cached_name(char *out, int cap, int chara) {
     if (chara >= 0 && chara < MCHR_RANDOM && sNameCache[chara][0] != '\0') {
@@ -3572,6 +3611,9 @@ static void fight_cues(void) {
 void PortA11y_GameTick(void) {
     int v;
 
+    if (!gPortResim) {
+        names_keep(); /* (the profile's, not the speaker's: before the speaker's switch) */
+    }
     if (!PortA11y_Begin() || gPortResim) {
         return;
     }

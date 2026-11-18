@@ -1371,11 +1371,6 @@ static void Tb_HubUpdate(s32 live) {
     if (!live) {
         return;
     }
-    if (PortTbo_CommunityTake() || (pad->gamePressed & PADG_SQUARE)) {
-        Snd_PlaySe(1, 1);
-        PortTbo_OpenCommunity();
-        return;
-    }
     Ps_Move(&sTb->hubCur, HUB_COUNT);
     if (pad->gamePressed & PADG_CROSS) {
         if (sTb->hubCur != HUB_RANKED && sTb->hubCur != HUB_PROFILE &&
@@ -5309,34 +5304,6 @@ static void Tb_WinTerm(void) {
     sTbWinRes = NULL;
 }
 
-static void Tb_DrawCommunityButton(s32 live) {
-    const char *original = "Join our Discord Server!";
-    char label[96];
-    extern int Port_TrLine(const char *original, char *out, int size);
-    if (!Port_TrLine(original, label, sizeof(label)))
-        Ps_Copy(label, PortOnline_Text(original), sizeof(label));
-
-    const f32 textWidth = Ps_MsgWidthLiteral(label, 1.0f);
-    const f32 scale = textWidth * 0.90f > 140.0f ? 140.0f / textWidth : 0.90f;
-    const f32 right = 512.0f - Ps_Left() - 12.0f;
-    const f32 left = right - (textWidth * scale + 46.0f);
-    const f32 top = 413.0f, bottom = 437.0f, center = (top + bottom) * 0.5f;
-    const f32 emblemX = left + 11.0f, labelX = left + 25.0f, hintX = right - 8.0f;
-    const f32 underlineEnd = labelX + textWidth * scale;
-    const u32 gold = Ps_Rgba(0xFF, 0xC4, 0x68, 0x5A), clearGold = Ps_Rgba(0xFF, 0xC4, 0x68, 0);
-
-    Ps_Disc(emblemX, center + 1.0f, 11.0f, Ps_Rgba(0x2F, 0x21, 0x12, 0x70), Ps_Rgba(0x2F, 0x21, 0x12, 0));
-    Ps_Disc(emblemX, center, 10.0f, Ps_Rgba(0xFF, 0xDB, 0x83, 0x80), Ps_Rgba(0x9D, 0x47, 0x12, 0x80));
-    Ps_Disc(emblemX - 1.7f, center - 2.9f, 6.1f, Ps_Rgba(0xFF, 0xEB, 0xAD, 0x74), Ps_Rgba(0xFF, 0xBC, 0x41, 0));
-    Ps_Icon(TBO_DISCORD, emblemX, center, 14.5f, 0x80);
-    Ps_MsgLiteral(labelX, center - (PS_MSG_BASE - PS_MSG_CAP * 0.5f) * scale, label, scale, 0x80);
-    Ps_Quad(labelX, center + 8.5f, underlineEnd, center + 8.5f,
-            underlineEnd, center + 9.1f, labelX, center + 9.1f, gold, clearGold, clearGold, gold);
-    Ps_Icon(Ps_ButtonPic(1), hintX, center, 14.0f, 0x62);
-    Ps_PromptsDrawAt(left - 9.0f);
-    PortTbo_CommunityBounds(live && !sTb->leaving, Ps_X(left), Ps_Y(top), Ps_X(right), Ps_Y(bottom));
-}
-
 s32 PortTbo_Run(void) {
     const s32 communityTest = getenv("BT4_RENDER_TEST") && getenv("BT4_TBO_COMMUNITY_INPUT_TEST");
     s32 train;
@@ -5552,8 +5519,7 @@ s32 PortTbo_Run(void) {
         Tb_DrawText();
         Ps_SetDisplayFont(0);
         if (!sTdDrew) {
-            if (sTb->mode == TB_HUB) Tb_DrawCommunityButton(live);
-            else Ps_PromptsDraw();
+            Ps_PromptsDraw();
         }
         ColorFade_Draw();
         Port_MenuPage(0);

@@ -44,7 +44,7 @@ extern void Port_SettingsWrite(void);
 typedef struct {
     int used, tries;
     Uint64 next, until;
-    char body[512];
+    char body[1024];
     int ranked, battle;     /* (battle: its number in the session) */
 } Report;
 
@@ -73,6 +73,7 @@ static struct {
     Uint64 topAt;
     Bt4RankedEntry top[TOP_MAX];
     int topExtra[TOP_MAX][5]; /* each one's gold and silver medals, gold/silver/bronze trophies */
+    char topCountry[TOP_MAX][4]; /* each one's country ("" unknown) */
     int topCount;
     /* who is online (/v1/presence): asked every two minutes while the online screens are open */
     int wantPresence, presenceActive, online;
@@ -101,6 +102,19 @@ const char *Bt4Online_Url(void) {
     return e != NULL && e[0] != '\0' ? e : BT4_ONLINE_URL_DEFAULT;
 }
 static const char *profile_url(void) { return Bt4Online_Url(); }
+
+/* The online screens' language for the service's words (the country's name): "pt", "es" or "en" (Automatic: the menus'). */
+static const char *screens_lang(void) {
+    extern int MenuTranslation_TboLanguage(void);
+    extern const char *MenuTranslation_Locale(void);
+    int l = MenuTranslation_TboLanguage();
+    const char *loc;
+    if (l == 2) return "pt";
+    if (l == 3) return "es";
+    if (l == 1) return "en";
+    loc = MenuTranslation_Locale();
+    return loc != NULL && SDL_strncmp(loc, "pt", 2) == 0 ? "pt" : loc != NULL && SDL_strncmp(loc, "es", 2) == 0 ? "es" : "en";
+}
 
 /* ---- tiny JSON readers (the service's answers are plain: no escapes in names, see worker.js cleanName) ---- */
 static const char *jfind(const char *json, const char *key) {
@@ -296,6 +310,24 @@ static void take_me(const char *a) {
         double left = ends - (double)(real / 1000000);
         s->hoursLeft = left > 0 ? (int)(left / 3600000.0) : 0;
     }
+    jstr(a, "country", s->country, sizeof(s->country));
+    if (!jstr(a, "country_name", s->countryName, sizeof(s->countryName))) SDL_strlcpy(s->countryName, s->country, sizeof(s->countryName));
+    s->favChara = -1;
+    s->favBattles = 0;
+    s->favName[0] = '\0';
+    t = jfind(a, "fav");
+    if (t != NULL && *t == '[') { /* "fav":[chara,battles,"name"] (null: none yet) */
+        const char *q;
+        if (SDL_sscanf(t, "[%d,%d", &s->favChara, &s->favBattles) != 2) s->favChara = -1;
+        q = SDL_strchr(t, '"');
+        if (s->favChara >= 0 && q != NULL && q < SDL_strchr(t, ']')) {
+            const char *e = SDL_strchr(q + 1, '"');
+            if (e != NULL && (size_t)(e - q - 1) < sizeof(s->favName)) {
+                SDL_memcpy(s->favName, q + 1, (size_t)(e - q - 1));
+                s->favName[e - q - 1] = '\0';
+            }
+        }
+    }
     s->trophies[0] = s->trophies[1] = s->trophies[2] = 0;
     t = jfind(a, "trophies");
     if (t != NULL && *t == '[') {
@@ -338,6 +370,15 @@ static void take_top(const char *a) {
             }
             if (SDL_sscanf(qe + 1, ",%d,%d,%d", &e->rating, &e->wins, &e->losses) != 3) break;
             SDL_sscanf(qe + 1, ",%*d,%*d,%*d,%d,%d,%d,%d,%d", &x[0], &x[1], &x[2], &x[3], &x[4]); /* (an older service: zeros) */
+            sP.topCountry[n][0] = '\0';
+            {   /* the row's country, its last item: ,"BR"] (an older service: none) */
+                const char *end = SDL_strchr(qe, ']'), *c0 = SDL_strchr(qe + 1, '"');
+                if (end != NULL && c0 != NULL && c0 < end && end - c0 == 4 && c0[3] == '"') {
+                    sP.topCountry[n][0] = c0[1];
+                    sP.topCountry[n][1] = c0[2];
+                    sP.topCountry[n][2] = '\0';
+                }
+            }
             n++;
             p = SDL_strchr(qe, ']');
             if (p == NULL) break;
@@ -438,7 +479,7 @@ static int SDLCALL profile_thread(void *arg) {
             SDL_UnlockMutex(sP.lock);
         } else if (job == 2) {
             sP.wantMe = 0;
-            SDL_snprintf(body, sizeof(body), "{\"id\":\"%s\",\"secret\":\"%s\"}", sP.id, sP.secret);
+            SDL_snprintf(body, sizeof(body), "{\"id\":\"%s\",\"secret\":\"%s\",\"lang\":\"%s\"}", sP.id, sP.secret, screens_lang());
             SDL_UnlockMutex(sP.lock);
             i = post("me", body, a, sizeof(a));
             SDL_LockMutex(sP.lock);
@@ -538,7 +579,7 @@ static int SDLCALL profile_thread(void *arg) {
             SDL_UnlockMutex(sP.lock);
         } else { /* a battle's report: again until both have told of it (or three minutes) */
             Report *r = &sP.rep[job - 10];
-            char send[640];
+            char send[sizeof(r->body)];
             char state[16] = "";
             int ranked = r->ranked;
             SDL_strlcpy(send, r->body, sizeof(send));
@@ -680,6 +721,15 @@ void Bt4Profile_TopRow(int i, int out[5]) {
     else SDL_memset(out, 0, sizeof(sP.topExtra[0]));
     SDL_UnlockMutex(sP.lock);
 }
+void Bt4Profile_TopCountry(int i, char out[4]) {
+    int k;
+    profile_start();
+    SDL_LockMutex(sP.lock);
+    k = sP.page * 5 + i;
+    if (i >= 0 && i < 5 && k >= 0 && k < sP.topCount) SDL_memcpy(out, sP.topCountry[k], 4);
+    else out[0] = '\0';
+    SDL_UnlockMutex(sP.lock);
+}
 void Port_RankedPage(int direction) {
     profile_start();
     SDL_LockMutex(sP.lock);
@@ -775,8 +825,21 @@ void Bt4Profile_SessionEnd(void) {
 }
 
 static void report(int winner, int me, const char *name0, const char *name1) {
-    char rkey[17], mine[40], theirs[40], code[24];
-    int i;
+    extern int Port_BattleTeam(int side, int out[5]); /* headless.c */
+    extern int Port_CharaName(int chara, char *out, int cap); /* a11y_game.c: as the select wrote it */
+    char rkey[17], mine[40], theirs[40], code[24], chars[400];
+    int i, team[5], n = Port_BattleTeam(me, team);
+    size_t at = 0;
+    /* this player's team, [[id,"name"],...]: the profile's most used character */
+    chars[at++] = '[';
+    for (i = 0; i < n && at < sizeof(chars) - 72; i++) {
+        char name[48], safe[64];
+        Port_CharaName(team[i], name, sizeof(name));
+        jesc(safe, sizeof(safe), name);
+        at += (size_t)SDL_snprintf(chars + at, sizeof(chars) - at, "%s[%d,\"%s\"]", i ? "," : "", team[i], safe);
+    }
+    chars[at++] = ']';
+    chars[at] = '\0';
     const char *myName = me ? name1 : name0, *their = me ? name0 : name1;
     if (myName == NULL || their == NULL || myName[0] == '\0' || their[0] == '\0') return;
     random_hex(rkey, 8);
@@ -801,8 +864,8 @@ static void report(int winner, int me, const char *name0, const char *name1) {
     sP.rep[i].next = SDL_GetTicks();
     sP.rep[i].until = sP.rep[i].next + 180000;
     SDL_snprintf(sP.rep[i].body, sizeof(sP.rep[i].body),
-                 "{\"id\":\"%s\",\"secret\":\"%s\",\"rkey\":\"%s\",\"code\":\"%s\",\"n\":%d,\"me\":\"%s\",\"opp\":\"%s\",\"side\":%d,\"winner\":%d,\"ranked\":%s}",
-                 sP.id, sP.secret, rkey, code, sG.battle, mine, theirs, me, winner, sG.ranked ? "true" : "false");
+                 "{\"id\":\"%s\",\"secret\":\"%s\",\"rkey\":\"%s\",\"code\":\"%s\",\"n\":%d,\"me\":\"%s\",\"opp\":\"%s\",\"side\":%d,\"winner\":%d,\"ranked\":%s,\"chars\":%s}",
+                 sP.id, sP.secret, rkey, code, sG.battle, mine, theirs, me, winner, sG.ranked ? "true" : "false", chars);
     SDL_UnlockMutex(sP.lock);
     SDL_Log("bt4 profile: battle %d of room %s: winner side %d (this player side %d)", sG.battle, sG.code[0] ? sG.code : "-", winner, me);
     wake();

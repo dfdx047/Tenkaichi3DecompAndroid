@@ -19,6 +19,10 @@ typedef struct Bt4ProfileStats {
     int seasonGold, seasonSilver; /* this week's medals (the career's are gold, silver) */
     int bestRating, rankedTotal, seasonsPlayed; /* the career: best rating ever, Ranked battles that counted, seasons played */
     int seasonNumber;       /* "Temporada N" (0: before the first) */
+    char country[4];        /* where the service saw the game last ("BR"; "" unknown) and its name in the screens' language */
+    char countryName[48];
+    int favChara, favBattles; /* the most used character (-1 none yet): its id, battles and name as the disc writes it */
+    char favName[48];
 } Bt4ProfileStats;
 void Bt4Profile_Stats(Bt4ProfileStats *out);
 /* The BT4 Android online service (port/bt4online-worker): profiles and the Ranked queue's rooms. BT4_ONLINE_URL in the
@@ -33,6 +37,8 @@ void Bt4Profile_RecoveryCode(char out[24]);
 int Port_OnlineRecover(const char *name, const char *code);
 /* the Global Top page's row i (0..4): the player's medals and trophies, out[5] = gold, silver, trophies 1st/2nd/3rd */
 void Bt4Profile_TopRow(int i, int out[5]);
+/* the same row's country ("BR"; "" unknown) */
+void Bt4Profile_TopCountry(int i, char out[4]);
 /* gs/net.c: a session (one or more battles with one rival) begins and ends; every battle's state as Ranked's was */
 void Bt4Profile_SessionBegin(int ranked, const char *code);
 void Bt4Profile_SessionEnd(void);
