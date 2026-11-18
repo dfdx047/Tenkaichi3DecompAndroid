@@ -761,16 +761,34 @@ static void screen_ranked_wait(void) {
     if (back && r.searching) {
         if (sRankedLobby && st >= 0) Port_LobbyCancel();
         sRankedLobby = false;
-        DrRanked_Cancel();
+        sFoundAt=0;
+        DrRanked_AbortBeforeStart();
         Port_UiNotice(T("Search canceled.", "Busca cancelada.", "Búsqueda cancelada."));
         goto_screen(RANKED_MENU, 0);
         return;
     }
+    if (st < 0 && r.state == 3) {
+        Port_LobbyCancel();sRankedLobby=false;sFoundAt=0;
+        DrRanked_AbortBeforeStart();
+        const char *why=lobby_error(st);
+        Port_UiNotice(why[0]?why:T("The rival did not connect.","O adversário não conectou","El rival no se conectó."));
+        goto_screen(RANKED_MENU,0);return;
+    }
     if (back || (r.state == 0 && !r.searching) || st < 0) {
         if (sRankedLobby && st >= 0) { Port_LobbyCancel(); }
+        if (r.state == 3 || sRankedLobby) DrRanked_AbortBeforeStart();
         sRankedLobby = false;
+        sFoundAt=0;
         goto_screen(RANKED_MENU, 0);
         return;
+    }
+    if (r.state == 3 && sFoundAt == 0) sFoundAt=SDL_GetTicks();
+    if (r.state == 3 && sFoundAt != 0 && SDL_GetTicks()-sFoundAt >= 30000) {
+        if (sRankedLobby) Port_LobbyCancel();
+        sRankedLobby=false;sFoundAt=0;
+        DrRanked_AbortBeforeStart();
+        Port_UiNotice(T("The rival did not connect.","O adversário não conectou","El rival no se conectó."));
+        goto_screen(RANKED_MENU,0);return;
     }
     // paired: the host opens the room and tells the service its code; the other joins it once the code is there
     if (r.state == 3 && !sRankedLobby) {
@@ -818,6 +836,10 @@ static void screen_ranked_wait(void) {
             SDL_snprintf(diag, sizeof(diag), "aguardando code · tentativas=%d", r.code_poll_count);
             dl->AddText(ImVec2(sCardMin.x + U(), y), ImGui::GetColorU32(kText), diag); y += line_h;
         }
+        if (r.queue_match[0]) {
+            SDL_snprintf(diag,sizeof(diag),"queue id=%s; mesmo match=%s",r.queue_match,r.queue_same_previous?"sim":"não");
+            dl->AddText(ImVec2(sCardMin.x + U(), y),ImGui::GetColorU32(kText),diag); y += line_h;
+        }
         for (int route = 0; route < 3; ++route) {
             char line[96];
             static const char *names[] = {"queue", "room", "lifecycle"};
@@ -837,7 +859,8 @@ static void screen_ranked_wait(void) {
                            ? T("Waiting for a rival...", "Aguardando um rival...", "Esperando rival...")
                            : ranked_msg(r.msg);
     char detail[128];
-    SDL_snprintf(detail, sizeof(detail), "%s  ·  %s", elapsed, note);
+    if(r.queue_match[0]) SDL_snprintf(detail,sizeof(detail),"%s · id %.4s · mesmo match=%s",elapsed,r.queue_match,r.queue_same_previous?"sim":"não");
+    else SDL_snprintf(detail,sizeof(detail),"%s  ·  %s",elapsed,note);
     const char *label = r.state < 0 ? T("SEARCH ENDED", "BUSCA ENCERRADA", "BÚSQUEDA FINALIZADA")
                                     : r.state == 3 ? T("RIVAL FOUND", "RIVAL ENCONTRADO", "RIVAL ENCONTRADO")
                                                    : T("SEARCH UNDER WAY", "BUSCA EM ANDAMENTO", "BÚSQUEDA EN CURSO");
