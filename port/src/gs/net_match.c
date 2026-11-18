@@ -1660,7 +1660,8 @@ int Match_PostFriendlyRanked(const char *what, const char *json, char *out, size
          SDL_strcmp(what, "ranked/leaderboard") != 0 && SDL_strcmp(what, "ranked/queue") != 0 &&
          SDL_strcmp(what, "ranked/room") != 0 && SDL_strcmp(what, "ranked/lifecycle") != 0 &&
          SDL_strcmp(what, "ranked/result") != 0 && SDL_strcmp(what, "ranked/forfeit") != 0 &&
-         SDL_strcmp(what, "ranked/match") != 0 && SDL_strcmp(what, "ranked/cancel") != 0)) {
+         SDL_strcmp(what, "ranked/match") != 0 && SDL_strcmp(what, "ranked/cancel") != 0 &&
+         SDL_strcmp(what, "ranked/series") != 0)) {
         if (out != NULL && size > 0) out[0] = '\0';
         if (httpStatus) *httpStatus = 0;
         return 0;

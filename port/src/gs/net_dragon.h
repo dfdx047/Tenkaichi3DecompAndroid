@@ -60,6 +60,22 @@ typedef struct DrRanked {
     int boardRating[9];
 } DrRanked;
 
+enum { DR_SERIES_PENDING, DR_SERIES_CONTINUE, DR_SERIES_TEAM, DR_SERIES_OVER };
+typedef struct DrRankedPlayerResult {
+    char name[20], flag[4], rank[20];
+    int elo, wins, losses, delta, before, after;
+} DrRankedPlayerResult;
+typedef struct DrRankedFightResult { unsigned round; int score; char digest[9]; } DrRankedFightResult;
+typedef struct DrRankedSeries {
+    unsigned gap, round;
+    int my_wins, their_wins, played, my_choice, their_choice, remaining, decision, answered;
+    DrRankedPlayerResult me, rival;
+    DrRankedFightResult fights[3];
+} DrRankedSeries;
+void DrRanked_SeriesChoice(unsigned gap, int choice); /* 1 continue, 2 team, 3 forfeit */
+void DrRanked_SeriesPoll(DrRankedSeries *out);
+unsigned DrRanked_SessionRound(void);
+
 /* flow:2 rematch, after the result (the Revanche screen): 1 asks the state, 2 accepts, 3 leaves. */
 void DrRanked_FlowAct(int act);
 /* 0 none, 1 confirming, 2 choice, 3 waiting, 4 declined or gave up, 5 a new match was saved. */

@@ -258,6 +258,9 @@ static unsigned sSearchGen;
 static char sCancelMatch[33], sRoomPending[8], sHandedOver[33];
 static char sLifeMatch[33], sStartSent[33]; /* flow:2: the match the lifecycle calls are for */
 static unsigned sRankedRound = 1;
+static int sSeriesActive, sSeriesDirty, sSeriesChoice;
+static unsigned sSeriesGap;
+static DrRankedSeries sSeriesView;
 static int sLifeReady, sLifeStarted, sLifeTries;
 static int sLifeConnect;
 /* flow:2 rematch: what the game asked for (act: 0 none, 1 status, 2 accept, 3 leave) and what the service answered
@@ -560,6 +563,39 @@ static void do_result(int *refresh) {
     }
 }
 
+static void do_series(void) {
+    char match[33], extra[192], answer[2048], decision[20] = "";
+    int role, mode, sent, choice;
+    unsigned gap;
+    const char *nested;
+    DrRankedPlayerResult *cards[2];
+    if (!session_read(match, &role, &mode, &sent)) return;
+    SDL_LockMutex(sLock);
+    if (!sSeriesActive) { SDL_UnlockMutex(sLock); return; }
+    choice=sSeriesChoice; gap=sSeriesGap;
+    sSeriesDirty=0;
+    SDL_UnlockMutex(sLock);
+    SDL_snprintf(extra,sizeof(extra),",\"match\":\"%s\",\"gap\":%u,\"choice\":%d,\"wait\":20",match,gap,choice);
+    if (!post_ranked("series",extra,answer,sizeof(answer))) return;
+    text_value(answer,"decision",decision,sizeof(decision));
+    SDL_LockMutex(sLock);
+    if (sSeriesActive && sSeriesGap==gap) {
+        DrRankedSeries *v=&sSeriesView;
+        nested=strstr(answer,"\"series\":");
+        if(nested){v->my_wins=number_value(nested,"mine");v->their_wins=number_value(nested,"theirs");v->played=number_value(nested,"played");}
+        v->my_choice=number_value(answer,"my_choice");v->their_choice=number_value(answer,"their_choice");v->remaining=number_value(answer,"remaining");
+        v->answered=1;v->gap=gap;v->round=sRankedRound;
+        cards[0]=&v->me;cards[1]=&v->rival;
+        nested=strstr(answer,"\"me\":");
+        if(nested){text_value(nested,"name",cards[0]->name,sizeof(cards[0]->name));text_value(nested,"flag",cards[0]->flag,sizeof(cards[0]->flag));text_value(nested,"rank",cards[0]->rank,sizeof(cards[0]->rank));cards[0]->before=number_value(nested,"before");cards[0]->after=number_value(nested,"after");cards[0]->wins=number_value(nested,"wins");cards[0]->losses=number_value(nested,"losses");cards[0]->delta=cards[0]->after-cards[0]->before;cards[0]->elo=cards[0]->after;}
+        nested=strstr(answer,"\"rival\":");
+        if(nested){text_value(nested,"name",cards[1]->name,sizeof(cards[1]->name));text_value(nested,"flag",cards[1]->flag,sizeof(cards[1]->flag));text_value(nested,"rank",cards[1]->rank,sizeof(cards[1]->rank));cards[1]->before=number_value(nested,"before");cards[1]->after=number_value(nested,"after");cards[1]->wins=number_value(nested,"wins");cards[1]->losses=number_value(nested,"losses");cards[1]->delta=cards[1]->after-cards[1]->before;cards[1]->elo=cards[1]->after;}
+        v->decision=strcmp(decision,"continue")==0?DR_SERIES_CONTINUE:strcmp(decision,"team")==0?DR_SERIES_TEAM:strcmp(decision,"over")==0?DR_SERIES_OVER:DR_SERIES_PENDING;
+        if(v->decision) sSeriesActive=0;
+    }
+    SDL_UnlockMutex(sLock);
+}
+
 static void do_chat(void) {
     char body[900], answer[8192], hex[420], nonce[33], out[200];
     const char *row;
@@ -750,7 +786,7 @@ static int SDLCALL worker(void *unused) {
     (void)unused;
     for (;;) {
         char answer[4096], extra[256], name[20], match[33], code[8], cancelled[33];
-        int refresh, search, cancel, board, state, role, chat, presence, leave, urgent, i;
+        int refresh, search, cancel, board, state, role, chat, presence, leave, urgent, series, i;
         char viewcode[8];
         int background = gPortInBackground;
         unsigned gen;
@@ -761,6 +797,7 @@ static int SDLCALL worker(void *unused) {
         refresh = sRefresh && !background;
         if (refresh) sRefresh = 0;
         search = sWantSearch;
+        series = sSeriesActive;
         cancel = sWantCancel;
         sWantCancel = 0;
         board = sWantBoard && !background;
@@ -793,7 +830,7 @@ static int SDLCALL worker(void *unused) {
                 resultAt = resultWait = 0;
             }
         }
-        if ((refresh || search || cancel || board || chat || urgent) && identity()) {
+        if ((refresh || search || cancel || board || chat || urgent || series) && identity()) {
             int pendingRefresh = refresh;
             if (urgent || refresh) {
                 char om[33], od[16];
@@ -919,6 +956,7 @@ static int SDLCALL worker(void *unused) {
         }
         do_lifecycle();
         do_flow();
+        if (series) do_series();
         /* The next round: at once when asked for something; a search asks the queue every 4 s in its first half
            minute, every 8 s to two minutes, then every 15 s (nobody there: the service's requests are a daily
            allowance shared by every player); paired, every 3 s (the room code is coming). Nothing searched: the
@@ -1249,6 +1287,29 @@ void DrRanked_Poll(DrRanked *out) {
         sRefresh = 1;
     }
     SDL_UnlockMutex(sLock);
+}
+
+unsigned DrRanked_SessionRound(void) { return sRankedRound; }
+
+void DrRanked_SeriesChoice(unsigned gap, int choice) {
+    char match[33]; int role, mode, sent;
+    if (!gap || !session_read(match,&role,&mode,&sent)) return;
+    SDL_LockMutex(sLock);
+    if (gap != sSeriesGap) {
+        SDL_memset(&sSeriesView,0,sizeof(sSeriesView));
+        sSeriesGap=gap;sSeriesChoice=0;sSeriesActive=1;sSeriesDirty=1;
+        sSeriesView.gap=gap;sSeriesView.round=sRankedRound;
+    }
+    if (choice >= 1 && choice <= 3 && !sSeriesChoice && sSeriesActive) {
+        sSeriesChoice=choice;sSeriesDirty=1;
+    }
+    SDL_UnlockMutex(sLock);
+    start(NULL);
+}
+
+void DrRanked_SeriesPoll(DrRankedSeries *out) {
+    if (!out) return;
+    SDL_LockMutex(sLock);*out=sSeriesView;SDL_UnlockMutex(sLock);
 }
 
 void DrRanked_SetRoom(const char *code) {
