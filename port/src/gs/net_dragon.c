@@ -258,7 +258,10 @@ static int sRefresh, sWantSearch, sWantCancel, sWantBoard;
 static unsigned sSearchGen;
 static char sCancelMatch[33], sRoomPending[8], sHandedOver[33];
 static char sLifeMatch[33], sStartSent[33]; /* flow:2: the match the lifecycle calls are for */
+static char sConnectionDone[33];
 static unsigned sRankedRound = 1;
+static int sRankedStarted;
+static char sLastQueueMatch[33], sPreviousQueueMatch[33];
 static int sSeriesActive, sSeriesDirty, sSeriesChoice;
 static unsigned sSeriesGap;
 static DrRankedSeries sSeriesView;
@@ -373,6 +376,7 @@ static int post_ranked_search(const char *what, const char *extra, char *answer,
     SDL_snprintf(path, sizeof(path), "ranked/%s", what);
     SDL_snprintf(body, sizeof(body), "{\"v\":6001,\"id\":\"%s\",\"token\":\"%s\"%s}", sId, sToken,
                  extra != NULL ? extra : "");
+    answer[0]='\0';
     if (!Match_PostFriendlyRanked(path, body, answer, size, &status)) {
         if (ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
         message(DRMSG_NO_CONNECTION, 99);
@@ -503,18 +507,21 @@ static void outbox_done(void) {
 static int session_read(char *match, int *role, int *mode, int *sent) {
     char text[160];
     unsigned round = 1;
+    int started = 0;
     *role = *mode = *sent = 0;
+    sRankedStarted = 0;
     if (!read_text("dragonnet-session.txt", text, sizeof(text))) {
         return 0;
     }
-    if (sscanf(text, "%32s %d %d %d %u", match, role, mode, sent, &round) < 3) return 0;
+    if (sscanf(text, "%32s %d %d %d %u %d", match, role, mode, sent, &round, &started) < 3) return 0;
     sRankedRound = round ? round : 1;
+    sRankedStarted = started != 0;
     return is_hex(match, 32) && (*role == 1 || *role == 2);
 }
 
 static void session_write(const char *match, int role, int mode, int sent) {
     char text[160];
-    SDL_snprintf(text, sizeof(text), "%s %d %d %d %u\n", match, role, mode, sent, sRankedRound);
+    SDL_snprintf(text, sizeof(text), "%s %d %d %d %u %d\n", match, role, mode, sent, sRankedRound, sRankedStarted);
     write_text("dragonnet-session.txt", text);
 }
 
@@ -875,8 +882,25 @@ static int SDLCALL worker(void *unused) {
                 }
             }
             if (cancel && is_hex(cancelled, 32)) {
+                char cancelState[24] = "";
                 SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\"", cancelled);
-                post_ranked_search("cancel", extra, answer, sizeof(answer));
+                search = 0; /* ranked/cancel must finish before the next ranked/queue */
+                if (post_ranked_search("cancel", extra, answer, sizeof(answer))) {
+                    text_value(answer, "state", cancelState, sizeof(cancelState));
+                    if (SDL_strcmp(cancelState,"cancelled") && SDL_strcmp(cancelState,"expired") &&
+                        SDL_strcmp(cancelState,"superseded") && SDL_strcmp(cancelState,"final") && SDL_strcmp(cancelState,"disputed")) {
+                        SDL_LockMutex(sLock);
+                        sWantSearch=sView.searching=0;sView.state=-1;sView.msg=DRMSG_NO_ANSWER;
+                        sView.match[0]=sView.code[0]=sView.peer[0]=0;
+                        SDL_UnlockMutex(sLock);
+                        message(DRMSG_NO_ANSWER,-1); /* the service still considers the old match active */
+                    }
+                } else {
+                    SDL_LockMutex(sLock);
+                    SDL_strlcpy(sCancelMatch,cancelled,sizeof(sCancelMatch));sWantCancel=1;
+                    sWantSearch=sView.searching=0;sView.state=-1;sView.msg=DRMSG_NO_ANSWER;
+                    SDL_UnlockMutex(sLock); /* retry cancellation, never queue until the service releases the match */
+                }
             }
             if (pendingRefresh) {
                 SDL_snprintf(extra, sizeof(extra), ",\"name\":\"%s\"", name);
@@ -967,6 +991,15 @@ static int SDLCALL worker(void *unused) {
                     } else {
                         SDL_snprintf(extra, sizeof(extra), ",\"rules\":\"dp20-bo3-v1\",\"flow\":2,\"rematches\":0,\"wait\":20");
                         if (post_ranked_search("queue", extra, answer, sizeof(answer))) {
+                            char queued[33]="";
+                            text_value(answer,"match",queued,sizeof(queued));
+                            SDL_LockMutex(sLock);
+                            if(gen==sSearchGen && sWantSearch && is_hex(queued,32)) {
+                                SDL_strlcpy(sLastQueueMatch,queued,sizeof(sLastQueueMatch));
+                                SDL_memcpy(sView.queue_match,queued,4);sView.queue_match[4]=0;
+                                sView.queue_same_previous=sPreviousQueueMatch[0] && SDL_strcmp(sPreviousQueueMatch,queued)==0;
+                            }
+                            SDL_UnlockMutex(sLock);
                             update_match(answer, gen);
                         } else if (sView.msg != DRMSG_VERSION && sView.msg != DRMSG_LIMIT && sView.msg != DRMSG_NO_CONNECTION) {
                             message(strstr(answer, "busy") != NULL ? DRMSG_BUSY : DRMSG_NO_ANSWER, 99);
@@ -978,6 +1011,10 @@ static int SDLCALL worker(void *unused) {
                 chatAt = SDL_GetTicks();
                 do_chat();
             }
+        } else if (cancel && is_hex(cancelled,32)) {
+            SDL_LockMutex(sLock);
+            SDL_strlcpy(sCancelMatch,cancelled,sizeof(sCancelMatch));sWantCancel=1;
+            SDL_UnlockMutex(sLock);
         } else if (chat) {
             chatAt = SDL_GetTicks();
             SDL_LockMutex(sLock);
@@ -1071,7 +1108,6 @@ static void connection_queue(int ready) {
 /* The lobby is connected (flow:2). The game restarts right after (relaunch), so the worker could not be trusted to
    send `ready` in time: it is woken, and this waits (at most 2.5 s) until it has been sent. */
 void DrRanked_Connection(int ready) {
-    static char done[33];
     char match[33], line[64];
     int i, pending, flow;
     if (!ready) {
@@ -1081,10 +1117,10 @@ void DrRanked_Connection(int ready) {
     flow = sView.flow && is_hex(sView.match, 32);
     SDL_strlcpy(match, sView.match, sizeof(match));
     SDL_UnlockMutex(sLock);
-    if (!flow || strcmp(done, match) == 0) {
+    if (!flow || strcmp(sConnectionDone, match) == 0) {
         return;
     }
-    SDL_strlcpy(done, match, sizeof(done));
+    SDL_strlcpy(sConnectionDone, match, sizeof(sConnectionDone));
     SDL_snprintf(line, sizeof(line), "%s 1\n", match);
     write_text("dragonnet-flow.txt", line);
     connection_queue(1);
@@ -1105,6 +1141,8 @@ void DrRanked_FightStarted(void) {
     if (!session_read(match, &role, &mode, &sent) || sent) {
         return;
     }
+    sRankedStarted=1;
+    session_write(match,role,mode,sent);
     SDL_LockMutex(sLock);
     ok = (flow_file(match) || (sView.flow && strcmp(sView.match, match) == 0)) && strcmp(sStartSent, match) != 0;
     if (ok) {
@@ -1258,6 +1296,7 @@ void DrRanked_Open(const char *name) {
 void DrRanked_Search(const char *name, int mode) {
     char m[33], d[9];
     int s; unsigned round;
+    char oldMatch[33] = ""; int oldRole, oldMode, oldSent;
     start(name);
     if (DrNet_Mode() != 0) {
         message(DRMSG_NO_CONNECTION, -1);
@@ -1267,10 +1306,18 @@ void DrRanked_Search(const char *name, int mode) {
         message(DRMSG_FINISH_FIRST, -1);
         return;
     }
+    if (session_read(oldMatch,&oldRole,&oldMode,&oldSent) && sRankedStarted) {
+        message(DRMSG_FINISH_FIRST,-1);
+        return;
+    }
+    DrRanked_AbortBeforeStart();
     SDL_LockMutex(sLock);
+    SDL_strlcpy(sPreviousQueueMatch,sLastQueueMatch,sizeof(sPreviousQueueMatch));
+    sLastQueueMatch[0]='\0';
     sSearchGen++;
     sHandedOver[0] = '\0';
     sView.mode = mode != 0;
+    sView.role=0;sView.flow=0;sView.code_poll_count=0;sView.queue_match[0]='\0';sView.queue_same_previous=0;
     sWantSearch = sView.searching = 1;
     sSearchAt = SDL_GetTicks();
     sView.state = 1;
@@ -1278,8 +1325,42 @@ void DrRanked_Search(const char *name, int mode) {
     sView.http_status = 0;
     sView.error_field[0] = '\0';
     sView.match[0] = sView.code[0] = sView.peer[0] = sRoomPending[0] = '\0';
+    sPairedAt=sCodePollAt=0;sCodePollCount=0;
     sView.msg = DRMSG_SEARCHING;
     SDL_UnlockMutex(sLock);
+}
+
+void DrRanked_AbortBeforeStart(void) {
+    char match[33]="", sessionMatch[33]="";
+    int role=0, mode=0, sent=0, hasSession;
+    lock_make();
+    hasSession=session_read(sessionMatch,&role,&mode,&sent);
+    if(hasSession && (sRankedStarted || sent)) return;
+    SDL_LockMutex(sLock);
+    if(hasSession) SDL_strlcpy(match,sessionMatch,sizeof(match));
+    else if(is_hex(sView.match,32)) SDL_strlcpy(match,sView.match,sizeof(match));
+    else if(is_hex(sHandedOver,32)) SDL_strlcpy(match,sHandedOver,sizeof(match));
+    if(is_hex(match,32)) {
+        SDL_strlcpy(sCancelMatch,match,sizeof(sCancelMatch));
+        sWantCancel=1;
+    }
+    sSearchGen++;
+    sWantSearch=sView.searching=0;
+    sView.state=0;sView.role=0;sView.flow=0;sView.code_poll_count=0;sView.queue_match[0]=0;sView.queue_same_previous=0;
+    sView.match[0]=sView.code[0]=sView.peer[0]=0;
+    sRoomPending[0]=sHandedOver[0]=0;
+    sLifeMatch[0]=sStartSent[0]=0;
+    sConnectionDone[0]=0;
+    sLifeConnect=sLifeReady=sLifeStarted=sLifeTries=0;
+    sRankedStarted=0;sRankedRound=1;
+    sSeriesActive=sSeriesDirty=sSeriesChoice=0;sSeriesGap=0;
+    SDL_memset(&sSeriesView,0,sizeof(sSeriesView));
+    sFlowAct=sFlowNow=sFlowState=0;sFlowMatch[0]=0;
+    SDL_UnlockMutex(sLock);
+    if(hasSession) remove_file("dragonnet-session.txt");
+    remove_file("dragonnet-flow.txt");
+    { extern void Port_LobbyCancel(void); Port_LobbyCancel(); }
+    start(NULL);
 }
 
 void DrRanked_Cancel(void) {
@@ -1359,6 +1440,7 @@ int DrRanked_Handover(void) {
         return 0;
     }
     sRankedRound=1;
+    sRankedStarted=0;
     SDL_LockMutex(sLock);
     sSeriesActive=sSeriesDirty=sSeriesChoice=0;sSeriesGap=0;SDL_memset(&sSeriesView,0,sizeof(sSeriesView));
     SDL_UnlockMutex(sLock);
@@ -1471,6 +1553,11 @@ void DrNet_SessionEnding(int mine) {
     char match[33], line[128];
     int role, mode, sent;
     if (!session_read(match, &role, &mode, &sent)) {
+        return;
+    }
+    if (!sRankedStarted && !sent) {
+        /* No fight began: release the paired match without manufacturing a forfeit. */
+        DrRanked_AbortBeforeStart();
         return;
     }
     { /* flow:2: after the session the Revanche screen asks the service about this match */

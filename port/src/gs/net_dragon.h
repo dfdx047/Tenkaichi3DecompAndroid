@@ -49,6 +49,8 @@ typedef struct DrRanked {
     int profile;        /* 0 not loaded, 1 loaded */
     int rating, wins, losses, draws, position;
     char rank[20], peer[20], code[8], match[33];
+    char queue_match[5]; /* short match ID last returned by ranked/queue */
+    int queue_same_previous;
     int msg;            /* DRMSG_* */
     int http_status;
     char error_field[48];
@@ -91,6 +93,7 @@ int DrRanked_RematchOffer(void);
 void DrRanked_Open(const char *name);              /* starts the client and loads the profile */
 void DrRanked_Search(const char *name, int mode);  /* 0 single, 1 team */
 void DrRanked_Cancel(void);
+void DrRanked_AbortBeforeStart(void); /* cancel an unstarted assignment without reporting a forfeit */
 void DrRanked_Board(void);
 void DrRanked_Poll(DrRanked *out);
 void DrRanked_SetRoom(const char *code);           /* the host's room code, once the lobby has it */
