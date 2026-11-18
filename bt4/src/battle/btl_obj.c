@@ -972,6 +972,15 @@ void BtlObj_BuildDrawList(BtlObjDrawList *list, s32 view) {
     }
 }
 
+#ifdef PORT
+/* BT4's select (src/battle/view_a_d.c): a fighter kept hidden for when it is shown again (the one fighter while the
+   team is in a row, the team's after it is left) is left out of every object pass, as it stands: before, each was
+   animated and posed in full every frame, for nothing. On again as it was when it is shown. */
+void BtlObj_PortSetActive(BtlObj *obj, s32 on) {
+    obj->active = on ? 1 : 0;
+}
+#endif
+
 /* Per-frame update of every object: light from the stage, animation and pose, bounds, alpha. */
 void BtlObj_UpdateAll(void) {
     Vec4 dir;
@@ -1004,6 +1013,13 @@ void BtlObj_UpdateAll(void) {
                 BtlObj_SaveNodePositions(obj, 0);
                 BtlObjAnim_Step(obj);
                 BtlObjAnim_SamplePose(obj);
+#ifdef PORT
+                {
+                    extern void BtlObjAnim_PortSpreadApply(BtlObj *obj); /* (bobj_a.c: BT4's select only) */
+
+                    BtlObjAnim_PortSpreadApply(obj);
+                }
+#endif
                 BtlObjAnim_UpdateEvents(obj);
                 BtlObjPose_CalcMatrices(obj);
                 BtlObj_UpdateChains(obj);

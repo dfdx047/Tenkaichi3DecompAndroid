@@ -652,7 +652,8 @@ int Port_GameBigFree(unsigned addr) {
 }
 
 /* The character selects' viewer's memory (gs/state.c), below 4 GB and in no saved state. */
-#define WORLD_ARENA_SIZE 0x2800000u /* 40 MB of address space: pages are taken as they are first used */
+#define WORLD_ARENA_SIZE 0x3C00000u /* 60 MB of address space (BT4's select: a team of five in a row besides the one
+                                     fighter): pages are taken as they are first used */
 uint8_t *Port_WorldArena(size_t *size) {
     static uint8_t *arena;
 

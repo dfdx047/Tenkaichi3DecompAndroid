@@ -60,8 +60,8 @@ extern int Port_AspectMilli(void);
 extern void Port_SetAspectMilli(int milli), Port_AudioRefresh(void), Port_SettingsWrite(void);
 extern int gPortMenuMode;       /* headless.c: the menus are running */
 extern int Port_MenusWide(void); /* plat_stub.c: the menu layout "Widescreen" */
-int gsChipUp;                   /* markers 0x26, 0x27 */
-int gsWhole2D;                  /* markers 0x24, 0x25: the 2D being drawn is not narrowed in a wide picture */
+int gsChipUp;                   /* markers 0x64, 0x65 (port_charsel.c) */
+int gsWhole2D;                  /* markers 0x62, 0x63 (port_charsel.c): the 2D being drawn is not narrowed in a wide picture */
 extern int Port_PageAspectMilli(void); /* plat_stub.c: the shape of the page shown now (4:3 in the menus if asked for) */
 extern int gPortMusicPercent, gPortSePercent, gPortVoicePercent, gPortStagePercent;
 
@@ -3370,12 +3370,13 @@ void GsGpu_Native(int effect) {
         gsAnchor = effect == 0x13 ? 0 : effect == 0x14 ? 4 : effect - 0x0F; /* 1 left, 2 right, 3 centre, 4 by position */
         return;
     }
-    if (effect == 0x26 || effect == 0x27) { /* the roster's chips: enlarged when decoded (texture_get) */
-        gsChipUp = effect == 0x26;
+    if (effect == 0x64 || effect == 0x65) { /* the roster's chips: enlarged when decoded (texture_get; BT3's 0x26 / 0x27,
+                                                  in BT4 widescreen menu parts) */
+        gsChipUp = effect == 0x64;
         return;
     }
-    if (effect == 0x24 || effect == 0x25) { /* 2D laid out on the whole window over a 3D scene (port_charsel.c) */
-        gsWhole2D = effect == 0x24;
+    if (effect == 0x62 || effect == 0x63) { /* 2D laid out on the whole window over a 3D scene (port_charsel.c; BT3's 0x24 / 0x25) */
+        gsWhole2D = effect == 0x62;
         return;
     }
     if (effect == 0x20 || effect == 0x21) { /* the glow chain begins / ends (target_lowres) */
@@ -3819,6 +3820,10 @@ void GsDraw_ScreenScaleFloor(int floor4) {
         sScreenAside = 0;
         gsPendingScale4 = sUserScale4 != gsScale4 ? sUserScale4 : 0;
     }
+}
+/* The floor set now (0: none): BT4's new select takes one only when nobody else has (menu/port_charsel.c). */
+int GsDraw_ScreenScaleFloorNow(void) {
+    return sScreenFloor4;
 }
 void GsDraw_ScreenScaleCap(int cap4) {
     if (cap4 > 0 && !sScreenCap4) {

@@ -468,6 +468,47 @@ s32 File_GetSize(s32 id) {
     return sectors * FILE_SECTOR_SIZE;
 }
 
+#ifdef PORT
+/* A whole file straight from the port's file layer, in the caller's frame: no handle, no queue, nothing of the game's
+   (the character selects' viewer, in its own world). Returns the bytes read. */
+s32 File_PortReadRaw(s32 id, void *buf, s32 cap) {
+    extern int Port_FileReadRaw(int ptid, int flid, void *buf, int cap);
+
+    return Port_FileReadRaw(id <= 0 ? 0 : id < FILE_PT2_FIRST_ID ? 1 : 2,
+                            id <= 0 ? id : id < FILE_PT2_FIRST_ID ? id - FILE_PT1_FIRST_ID : id - FILE_PT2_FIRST_ID, buf, cap);
+}
+
+/* The same, read on a thread of the port's while the frames go on (port/src/plat_fcache.c): its number (1..), or 0 when
+   it cannot be (then File_PortReadRaw in the frame). File_PortReadRawPoll: the bytes read, -1 while it is being read.
+   File_PortReadRawCancel: every one dropped, none writes into its buffer any more. */
+s32 File_PortReadRawStart(s32 id, void *buf, s32 cap) {
+    extern int Port_FileReadRawStart(int ptid, int flid, void *buf, int cap);
+
+    return Port_FileReadRawStart(id <= 0 ? 0 : id < FILE_PT2_FIRST_ID ? 1 : 2,
+                                 id <= 0 ? id : id < FILE_PT2_FIRST_ID ? id - FILE_PT1_FIRST_ID : id - FILE_PT2_FIRST_ID, buf, cap);
+}
+
+/* The size of file `id` as the port's file layer has it (a mod's first): -1 if there is none. */
+s32 File_PortSize(s32 id) {
+    extern int Port_FileSizeRaw(int ptid, int flid);
+
+    return Port_FileSizeRaw(id <= 0 ? 0 : id < FILE_PT2_FIRST_ID ? 1 : 2,
+                            id <= 0 ? id : id < FILE_PT2_FIRST_ID ? id - FILE_PT1_FIRST_ID : id - FILE_PT2_FIRST_ID);
+}
+
+s32 File_PortReadRawPoll(s32 job) {
+    extern int Port_FileReadRawPoll(int job);
+
+    return Port_FileReadRawPoll(job);
+}
+
+void File_PortReadRawCancel(void) {
+    extern void Port_FileReadRawCancel(void);
+
+    Port_FileReadRawCancel();
+}
+#endif
+
 /* Blocking read of a file given by path instead of id. */
 void *File_LoadSyncByName(char *name, void *buf, s32 unused) {
     return File_LoadSyncEx(-1, name, buf, unused);

@@ -954,6 +954,69 @@ void TeamSel_Term(void) {
 }
 
 /* Draws the two stage pictures (cross fade), sets up every clip of the seven movies and draws them and the windows. */
+#ifdef PORT
+#include "menu/port_charsel.h"
+#define TEAMSEL_PORT_STAGE() ((gTeamSel->flags & (TEAMSEL_STAGE | TEAMSEL_LEAVING)) != 0)
+
+/* What the new screen shows of one side (src/menu/port_charsel.c). */
+static void TeamSel_PortFill(CsView *v, s32 side) {
+    TeamSelSide *s = gTeamSel->side[side];
+    TsMember *m = &s->member[s->cur >= 0 && s->cur < TS_MEMBER_MAX ? s->cur : 0];
+    s32 i;
+
+    memset(v, 0, sizeof(*v));
+    v->chipPack = gTeamSel->chipPack;
+    v->nameText = gTeamSel->nameText;
+    v->formText = gTeamSel->formText;
+    v->cells = (CsCell *)gTeamSel->cells[side];
+    v->custom = (CsCell *)gTeamSel->custom[side];
+    v->face = gTeamSel->faceRes[side];
+    v->cellCount = gTeamSel->cellCount[side];
+    v->customCount = gTeamSel->customCount[side];
+    v->side = side;
+    v->players = gTeamSel->players;
+    v->col = m->col;
+    v->row = m->row;
+    v->customCol = m->customCol;
+    v->customRow = m->customRow;
+    v->chara = s->chara;
+    v->color = m->color;
+    v->plate = m->plate;
+    v->colorCount = gTeamSel->colorCount[side];
+    v->plateCount = gTeamSel->plateCount[side];
+    v->showCustom = s->state == TEAMSEL_ST_CUSTOM;
+    v->tabWant = s->state == TEAMSEL_ST_PLATE || s->state == TEAMSEL_ST_PANEL || s->state == TEAMSEL_ST_PANEL_HELP || s->state == TEAMSEL_ST_COLOR;
+    v->plateActive = s->state == TEAMSEL_ST_PLATE;
+    v->colorActive = s->state == TEAMSEL_ST_COLOR;
+    v->formActive = s->state == TEAMSEL_ST_FORM;
+    v->faceReady = (s->flags & TEAMSEL_SIDE_FACE_READY) != 0;
+    v->faceAlpha = gTeamSel->faceAlpha[side];
+    v->isTeam = 1;
+    for (i = 0; i < CS_TEAM_MAX; i++) {
+        v->teamChara[i] = i < s->memberCount ? s->member[i].chara : -1;
+        v->teamColor[i] = i < s->memberCount ? s->member[i].color : 0;
+    }
+    v->cur = s->cur;
+    v->teamActive = s->state == TEAMSEL_ST_TEAM;
+    v->cost = s->cost;
+    v->dpMax = gTeamSel->battleType == 2 ? gTeamSel->dpMax : 0;
+    v->done = s->state == TEAMSEL_ST_DONE;
+}
+
+/* One pad a side: the two people choosing are both on the screen as they choose, as on the game's own. */
+static void TeamSel_PortFrame(void) {
+    CsView v[2];
+
+    if (gTeamSel->players == 1 && !sTagSelectActive) { /* (BT4's Tag Team draft has a loop of its own: TeamSel_TagRun) */
+        TeamSel_PortFill(&v[0], 0);
+        TeamSel_PortFill(&v[1], 1);
+        PortCharSel_Frame(v, 1, TEAMSEL_PORT_STAGE());
+    } else {
+        TeamSel_PortFill(&v[0], gTeamSel->base & 1);
+        PortCharSel_Frame(v, 0, TEAMSEL_PORT_STAGE());
+    }
+}
+#endif
 void TeamSel_Draw(void) {
     MFlashRef ref;
     MFlashUv uv;
@@ -965,6 +1028,11 @@ void TeamSel_Draw(void) {
     s32 chara;
     s32 cost;
 
+#ifdef PORT
+    if (PortCharSel_Shown(TEAMSEL_PORT_STAGE())) {
+        PortCharSel_MuteOn(); /* all of this still runs (the movies' state is the game's); none of it is shown */
+    }
+#endif
     for (i = 0; i < 2; i++) {
         if (gTeamSel->flags & TEAMSEL_STAGE_READY) {
             switch (i) {
@@ -1411,6 +1479,24 @@ void TeamSel_Draw(void) {
 #ifdef PORT
     Port_MenuMovie(0);
     Flash_PortPortraits(NULL,NULL);
+#endif
+#ifdef PORT
+    if (PortCharSel_Shown(TEAMSEL_PORT_STAGE())) {
+        Font_FlushAll();
+        IconWin_Draw();
+        Font_FlushAll();
+        PortCharSel_Draw();
+        PortCharSel_MuteOn(); /* the item panel's movie still runs; the screen draws its own */
+        ItemPanel_Draw(0);
+        ItemPanel_Draw(1);
+        Font_FlushAll();
+        PortCharSel_DrawItems();
+        ItemHelp_Draw(gTeamSel->help);
+        Font_FlushAll();
+        PortCharSel_DrawEnd();
+        Port_MenuPage(0);
+        return;
+    }
 #endif
     Font_FlushAll();
     IconWin_Draw();
@@ -2123,6 +2209,26 @@ f32 TeamSel_Input(s32 *result) {
                     }
                     TeamSel_RequestFace(CUR_N);
                     Snd_PlaySe(1, 0);
+#ifdef PORT
+                } else if ((gPad[i].gameRepeat & 4) && CUR_SIDE->cur != TS_CUR_MENU && CUR_SIDE->memberCount != 0 &&
+                           !Port_NetSession()) {
+                    /* down: to the End plate drawn under the team (port_charsel.c); offline only, so both
+                       machines of an online match keep reading the pad the same way */
+                    TeamSel_ClipGoto(CUR_N + 1, CUR_N, TEAMSEL_CLIP_TEAM, "fl_off_start");
+                    CUR_SIDE->cur = TS_CUR_MENU;
+                    TeamSel_ClipGoto(CUR_N + 1, CUR_N, TEAMSEL_CLIP_TEAM, "fl_on_start");
+                    CUR_SIDE->chara = CUR_SIDE->member[0].chara;
+                    TeamSel_RequestFace(CUR_N);
+                    Snd_PlaySe(1, 0);
+                } else if ((gPad[i].gameRepeat & 8) && CUR_SIDE->cur == TS_CUR_MENU && !Port_NetSession()) {
+                    /* up: back from End to the first free slot (or the last member) */
+                    TeamSel_ClipGoto(CUR_N + 1, CUR_N, TEAMSEL_CLIP_TEAM, "fl_off_start");
+                    CUR_SIDE->cur = CUR_SIDE->memberCount < TS_CUR_MENU ? CUR_SIDE->memberCount : TS_CUR_MENU - 1;
+                    TeamSel_ClipGoto(CUR_N + 1, CUR_N, TEAMSEL_CLIP_TEAM, "fl_on_start");
+                    CUR_SIDE->chara = CUR_MEMBER.chara;
+                    TeamSel_RequestFace(CUR_N);
+                    Snd_PlaySe(1, 0);
+#endif
                 } else if (gPad[i].gamePressed & 0x200) {
                     if (CUR_SIDE->cur != TS_CUR_MENU) {
                         /* choose (or change) the member under the cursor */
@@ -2311,6 +2417,9 @@ s32 TeamSel_Run(s32 section) {
     s32 cpuLevel;
 
     TeamSel_Init(section);
+#ifdef PORT
+    PortCharSel_Begin(1); /* (BT4decomp: the new screen, src/menu/port_charsel.c) */
+#endif
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {
         Gfx_BeginFrame();
@@ -2322,6 +2431,9 @@ s32 TeamSel_Run(s32 section) {
         if (!(gProgress->flags & MPROG_FREEZE)) {
             TeamSel_Update();
         }
+#ifdef PORT
+        TeamSel_PortFrame();
+#endif
         TeamSel_Draw();
         Font_FlushAll();
         ColorFade_Draw();
@@ -2355,6 +2467,9 @@ s32 TeamSel_Run(s32 section) {
         TeamSel_Input(&result);
     }
 
+#ifdef PORT
+    PortCharSel_End();
+#endif
     if (result != 0) {
         s32 handicap[2] = { 1, 1 };
 

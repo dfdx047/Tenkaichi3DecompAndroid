@@ -57,6 +57,12 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {160, 72, 0}, /* td_vignette */
     {1024, 1024, 0}, /* storm_bolt */
     {1024, 1024, 0}, /* flags */
+    {304, 304, 68}, /* cs_panel */
+    {280, 280, 66}, /* cs_lit */
+    {128, 128, 30}, /* cs_plain */
+    {144, 174, 34}, /* cs_card */
+    {404, 204, 102}, /* cs_pill */
+    {380, 180, 90}, /* cs_pill_on */
 };
 
 #endif

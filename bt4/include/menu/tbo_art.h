@@ -58,7 +58,13 @@
     X(TBO_TD_MACHINE, "td_machine")  \
     X(TBO_TD_VIGNETTE, "td_vignette")  \
     X(TBO_STORM_BOLT, "storm_bolt") /* four lightning bolts side by side, 256 x 1024 each (our own drawing): the full power storm (stg_c.c) */ \
-    X(TBO_FLAGS, "flags")           /* the countries' flags, Profile and Global Top (port/tools/tbo_flags.py, include/menu/tbo_flags.h) */
+    X(TBO_FLAGS, "flags")           /* the countries' flags, Profile and Global Top (port/tools/tbo_flags.py, include/menu/tbo_flags.h) */ \
+    X(TBO_CS_PANEL, "cs_panel")     /* BT4's new character select, its pieces (port/tools/cs_select_art.py): a panel, */ \
+    X(TBO_CS_LIT, "cs_lit")         /* the chosen one, */ \
+    X(TBO_CS_PLAIN, "cs_plain")     /* a plain row, */ \
+    X(TBO_CS_CARD, "cs_card")       /* a card, */ \
+    X(TBO_CS_PILL, "cs_pill")       /* a button's pill, */ \
+    X(TBO_CS_PILL_ON, "cs_pill_on") /* and lit */
 
 #define TBO_MAIN_ONLINE_OFF (TBO_ART_COUNT + 16)
 #define TBO_MAIN_ONLINE_ON (TBO_ART_COUNT + 17)

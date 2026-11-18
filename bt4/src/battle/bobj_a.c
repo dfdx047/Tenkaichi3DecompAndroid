@@ -871,6 +871,343 @@ void BtlObjAnim_PlayModel(BobjObj *obj, s32 anim, s32 mode) {
     }
 }
 
+#ifdef PORT
+#include <stdio.h>
+/* A motion of the character's table on an object without a fighter's buffer (the character select's model,
+   src/battle/view_a_d.c): decoded into the caller's buffer, stepped by BtlObj_UpdateAll. 0 when it has no such motion. */
+s32 BtlObjAnim_PortPlay(BobjObj *obj, void *buf, s32 anim, s32 mode) {
+    BobjAnimPlayer *ap = &obj->anim;
+    BobjAnim *data;
+    s32 size;
+
+    if (anim < 0 || anim >= BOBJ_ANIM_MAX || obj->mdl.anims[anim] == NULL) {
+        return 0;
+    }
+    Bpe_Decode(obj->mdl.anims[anim], buf, &size);
+    data = (BobjAnim *)buf;
+    ap->layer[0].data = data;
+    ap->layer[0].id = anim;
+    ap->layer[0].length = data->length;
+    ap->frame = 0.0f;
+    ap->prevFrame = 0.0f;
+    memset(ap->layer[0].cursor, 0, sizeof(ap->layer[0].cursor));
+    ap->manual = 0;
+    ap->mode = mode;
+    return 1;
+}
+
+/* Where the select's model stands and how it is turned. feet (x, height, z, BtlObjAnim_PortFeet), for the few fighters
+   whose poses stand well away from the model's origin or above it: the place it keeps under the turning point.
+   lift: how high over the floor (BT4's select: the fighter comes down from the sky; y grows downwards). */
+void BtlObjAnim_PortPlace(BobjObj *obj, f32 x, f32 yaw, f32 scale, const f32 *feet, f32 lift) {
+    Mtx44 *m = &obj->xf.mtx;
+
+    obj->xf.pos.x = x;
+    obj->xf.pos.y = -lift;
+    obj->xf.rot.y = yaw;
+    obj->xf.scale = scale;
+    BtlObjXf_Update(obj);
+    if (feet == NULL) {
+        return;
+    }
+    obj->xf.pos.x = x - (feet[0] * m->m[0][0] + feet[2] * m->m[2][0]);
+    obj->xf.pos.y = -feet[1] * m->m[1][1] - lift;
+    obj->xf.pos.z = -(feet[0] * m->m[0][2] + feet[2] * m->m[2][2]);
+    BtlObjXf_Update(obj);
+}
+
+/* In the model's own axes, from the pose worked out last: the middle of the two feet (nodes 11 and 15 on every fighter)
+   and how far the lower one is from its height at rest (y grows downwards). 0: no such thing to measure. */
+s32 BtlObjAnim_PortFeet(BobjObj *obj, f32 *feet) {
+    Mtx44 *m = &obj->xf.mtx;
+    BobjBone *bone = obj->mdl.nodes;
+    f32 size = m->m[0][0] * m->m[0][0] + m->m[0][1] * m->m[0][1] + m->m[0][2] * m->m[0][2];
+    f32 x = 0.0f;
+    f32 z = 0.0f;
+    f32 low = -1.0e6f;
+    f32 rest = -1.0e6f;
+    s32 found = 0;
+
+    if (size <= 0.0f || bone == NULL) {
+        return 0;
+    }
+    while (found < 2) {
+        if (bone->id == 11 || bone->id == 15) {
+            f32 *at = BtlObj_GetNode(obj, bone->id)->mtx.m[3];
+            f32 dx = at[0] - m->m[3][0];
+            f32 dy = at[1] - m->m[3][1];
+            f32 dz = at[2] - m->m[3][2];
+            f32 h = (dx * m->m[1][0] + dy * m->m[1][1] + dz * m->m[1][2]) / size;
+
+            x += (dx * m->m[0][0] + dy * m->m[0][1] + dz * m->m[0][2]) / size;
+            z += (dx * m->m[2][0] + dy * m->m[2][1] + dz * m->m[2][2]) / size;
+            low = h > low ? h : low;
+            rest = bone->origin.y > rest ? bone->origin.y : rest;
+            found++;
+        }
+        if (bone->last != 0) {
+            break;
+        }
+        bone = (BobjBone *)((u8 *)bone + bone->next);
+    }
+    if (found < 2) {
+        return 0;
+    }
+    feet[0] = x * 0.5f;
+    feet[1] = low - rest;
+    feet[2] = z * 0.5f;
+    return 1;
+}
+
+/* The model's highest and lowest joints, up from its origin in its own axes (BT4's select frames each fighter by its
+   own size and sees it come down to the floor). 0: nothing to measure. */
+s32 BtlObjAnim_PortSpan(BobjObj *obj, f32 *top, f32 *bottom) {
+    Mtx44 *m = &obj->xf.mtx;
+    BobjBone *bone = obj->mdl.nodes;
+    f32 size = m->m[0][0] * m->m[0][0] + m->m[0][1] * m->m[0][1] + m->m[0][2] * m->m[0][2];
+    f32 h[128];
+    s32 n = 0;
+    s32 seen = 0;
+    s32 i;
+    s32 j;
+
+    if (size <= 0.0f || bone == NULL) {
+        return 0;
+    }
+    for (;;) {
+        if (BtlObj_HasNode(obj, bone->id) && n < 128) {
+            f32 *at = BtlObj_GetNode(obj, bone->id)->mtx.m[3];
+            f32 dx = at[0] - m->m[3][0];
+            f32 dy = at[1] - m->m[3][1];
+            f32 dz = at[2] - m->m[3][2];
+            f32 up = -(dx * m->m[1][0] + dy * m->m[1][1] + dz * m->m[1][2]) / size;
+
+            for (j = n; j > 0 && h[j - 1] > up; j--) { /* (kept in order, lowest first) */
+                h[j] = h[j - 1];
+            }
+            h[j] = up;
+            n++;
+        }
+        if (bone->last != 0 || ++seen > 400) {
+            break;
+        }
+        bone = (BobjBone *)((u8 *)bone + bone->next);
+    }
+    if (n < 4) {
+        return 0;
+    }
+    /* The body's joints follow one another up from the feet with no wide gap; a node well apart over them (where an
+       effect or a camera is put) is not the body. */
+    for (i = 4; i < n; i++) {
+        f32 body = h[i - 1] - h[0];
+        f32 gap = h[i] - h[i - 1];
+
+        if (gap > body * 0.35f && gap > 1.0f) {
+            break;
+        }
+    }
+    *top = h[i - 1];
+    *bottom = h[0];
+    return 1;
+}
+
+s32 BtlObjAnim_PortStopped(BobjObj *obj) {
+    return obj->anim.mode == BOBJ_PLAY_NONE;
+}
+
+/* BT4's select, one on one: the arms a little more open than the shared entrance leaves them. Each frame the select
+   says which of its models (BtlObjAnim_PortSpreadClear, BtlObjAnim_PortSpread); BtlObj_UpdateAll then turns their
+   upper arms out by so much once the pose is sampled (BtlObjAnim_PortSpreadApply). Nothing in a fight: the list is
+   empty there (it is only filled in the select's world, whose variables are its own). Which nodes, the axis and the
+   order: Port_SelectArms (port/src/plat_bt3only.c). */
+#define BOBJ_PORT_SPREAD_MAX 8
+static BobjObj *sPortSpreadObj[BOBJ_PORT_SPREAD_MAX];
+static f32 sPortSpreadAng[BOBJ_PORT_SPREAD_MAX];
+static s32 sPortSpreadCount;
+
+void BtlObjAnim_PortSpreadClear(void) {
+    sPortSpreadCount = 0;
+}
+
+void BtlObjAnim_PortSpread(BobjObj *obj, f32 angle) {
+    if (sPortSpreadCount < BOBJ_PORT_SPREAD_MAX && angle != 0.0f) {
+        sPortSpreadObj[sPortSpreadCount] = obj;
+        sPortSpreadAng[sPortSpreadCount] = angle;
+        sPortSpreadCount++;
+    }
+}
+
+void BtlObjAnim_PortSpreadApply(BobjObj *obj) {
+    extern int Port_SelectArms(int which);
+    s32 i;
+    s32 k;
+
+    for (i = 0; i < sPortSpreadCount && sPortSpreadObj[i] != obj; i++) {
+    }
+    if (i == sPortSpreadCount) {
+        return;
+    }
+    for (k = 0; k < 2; k++) {
+        s32 node = Port_SelectArms(k);
+        s32 axis = Port_SelectArms(2);
+        f32 a = k == 0 ? sPortSpreadAng[i] : -sPortSpreadAng[i];
+        BobjPart *part;
+        Quat q;
+        Quat r;
+
+        if (node <= 0 || node >= BOBJ_NODE_MAX || !BtlObj_HasNode(obj, node)) {
+            continue;
+        }
+        part = BtlObj_GetNode(obj, node);
+        Quat_FromAxisAngle(&q, axis == 0 ? 1.0f : 0.0f, axis == 1 ? 1.0f : 0.0f, axis == 2 ? 1.0f : 0.0f, a);
+        if (Port_SelectArms(3)) {
+            Quat_Mul(&r, &q, &part->rot);
+        } else {
+            Quat_Mul(&r, &part->rot, &q);
+        }
+        part->rot = r;
+    }
+}
+
+/* BT4's select: the lower of the two feet (nodes 11 and 15 on every fighter) and the top of the body (its highest joint
+   that is not apart from the rest: hair, not where an effect or a camera is put), up from the model's origin in its
+   own axes. (BtlObjAnim_PortSpan counts the root's nodes, which stay at the origin: it never sees feet off the floor.)
+   0: no such feet. */
+s32 BtlObjAnim_PortFeetSpan(BobjObj *obj, f32 *feet, f32 *top) {
+    Mtx44 *m = &obj->xf.mtx;
+    BobjBone *bone = obj->mdl.nodes;
+    f32 size = m->m[0][0] * m->m[0][0] + m->m[0][1] * m->m[0][1] + m->m[0][2] * m->m[0][2];
+    f32 low = 1.0e9f;
+    f32 h[128];
+    s32 n = 0;
+    s32 seen = 0;
+    s32 i;
+    s32 j;
+
+    if (size <= 0.0f || bone == NULL || !BtlObj_HasNode(obj, 11) || !BtlObj_HasNode(obj, 15)) {
+        return 0;
+    }
+    for (;;) {
+        if (BtlObj_HasNode(obj, bone->id) && n < 128) {
+            f32 *at = BtlObj_GetNode(obj, bone->id)->mtx.m[3];
+            f32 dx = at[0] - m->m[3][0];
+            f32 dy = at[1] - m->m[3][1];
+            f32 dz = at[2] - m->m[3][2];
+            f32 up = -(dx * m->m[1][0] + dy * m->m[1][1] + dz * m->m[1][2]) / size;
+
+            if (bone->id == 11 || bone->id == 15) {
+                low = up < low ? up : low;
+            }
+            for (j = n; j > 0 && h[j - 1] > up; j--) {
+                h[j] = h[j - 1];
+            }
+            h[j] = up;
+            n++;
+        }
+        if (bone->last != 0 || ++seen > 400) {
+            break;
+        }
+        bone = (BobjBone *)((u8 *)bone + bone->next);
+    }
+    if (low > 1.0e8f || n < 4) {
+        return 0;
+    }
+    /* the top: high among the joints, past the few that may be put well over the head (an effect's, a camera's) */
+    i = n - 1 - n / 20;
+    (void)j;
+    *feet = low;
+    *top = h[i];
+    return 1;
+}
+
+/* Testing (BT4_SELECT_DEBUG): every node of the model, where it is from the model's origin in its own axes (across,
+   up, forward), to find a skeleton's arms. */
+void BtlObjAnim_PortDumpNodes(BobjObj *obj) {
+    Mtx44 *m = &obj->xf.mtx;
+    BobjBone *bone = obj->mdl.nodes;
+    f32 size = m->m[0][0] * m->m[0][0] + m->m[0][1] * m->m[0][1] + m->m[0][2] * m->m[0][2];
+    s32 seen = 0;
+
+    if (size <= 0.0f || bone == NULL) {
+        return;
+    }
+    for (;;) {
+        if (BtlObj_HasNode(obj, bone->id)) {
+            f32 *at = BtlObj_GetNode(obj, bone->id)->mtx.m[3];
+            f32 dx = at[0] - m->m[3][0];
+            f32 dy = at[1] - m->m[3][1];
+            f32 dz = at[2] - m->m[3][2];
+
+            fprintf(stderr, "bt3: select: node %d across %d up %d fwd %d\n", (int)bone->id,
+                    (int)(1000.0f * (dx * m->m[0][0] + dy * m->m[0][1] + dz * m->m[0][2]) / size),
+                    (int)(-1000.0f * (dx * m->m[1][0] + dy * m->m[1][1] + dz * m->m[1][2]) / size),
+                    (int)(1000.0f * (dx * m->m[2][0] + dy * m->m[2][1] + dz * m->m[2][2]) / size));
+        }
+        if (bone->last != 0 || ++seen > 400) {
+            break;
+        }
+        bone = (BobjBone *)((u8 *)bone + bone->next);
+    }
+}
+
+/* BT4's select: the motion on layer 0 put at its last frame (end: to measure how the fighter stands at the end of it,
+   before it is shown) or back at its first, played once from there. */
+void BtlObjAnim_PortSeek(BobjObj *obj, s32 end) {
+    BobjAnimPlayer *ap = &obj->anim;
+
+    ap->frame = end ? ap->layer[0].length : 0.0f;
+    ap->prevFrame = ap->frame;
+    memset(ap->layer[0].cursor, 0, sizeof(ap->layer[0].cursor));
+    ap->mode = end ? BOBJ_PLAY_NONE : BOBJ_PLAY_ONCE;
+}
+
+/* BT4's select: the object's motion table from another motion file of the same fighter (its own, after it came down
+   in another fighter's entrance), as BtlObjMdl_BindFiles takes it from the slot's: entry n + 1 is motion n. */
+void BtlObjAnim_PortRebind(BobjObj *obj, void *file) {
+    u32 *buf = (u32 *)file;
+    s32 i;
+
+    for (i = 0; i < 0x19E && i < BOBJ_ANIM_MAX; i++) {
+        obj->mdl.anims[i] = buf[i + 2] != buf[i + 1] ? (void *)((u8 *)buf + (buf[i + 1] >> 2 << 2)) : NULL;
+    }
+}
+
+/* BT4's select: from the pose it is in now into a motion of its table (decoded into buf), once, the two mixed for
+   that many seconds (BtlObjAnim_PortBlendStep takes it down). 0: no such motion. */
+s32 BtlObjAnim_PortBlendPlay(BobjObj *obj, void *buf, s32 anim, f32 seconds) {
+    if (anim < 0 || anim >= BOBJ_ANIM_MAX || obj->mdl.anims[anim] == NULL) {
+        return 0;
+    }
+    BtlObjAnim_StartBlend(obj, seconds);
+    return BtlObjAnim_PortPlay(obj, buf, anim, BOBJ_PLAY_ONCE);
+}
+
+/* BT4's select: from the pose it is in now into the model's motion 7 (the character reference's quiet stance, already
+   put in its place), in a loop, the two mixed for that many seconds (BtlObjAnim_PortBlendStep takes it down). */
+void BtlObjAnim_PortIdle(BobjObj *obj, f32 seconds) {
+    BtlObjAnim_StartBlend(obj, seconds);
+    BtlObjAnim_PlayModel(obj, 7, BOBJ_PLAY_LOOP);
+}
+
+/* Once a frame, after the pose is worked out: one step less of the pose before for the next frame, and how much of it
+   that frame will mix in (1 .. 0, smooth, as BtlObjAnim_SamplePose weighs it). (A fighter's blend is stepped by its
+   status, btl_char_status_anim.c: the select's model has none.) */
+f32 BtlObjAnim_PortBlendStep(BobjObj *obj) {
+    BobjAnimPlayer *ap = &obj->anim;
+    f32 b = ap->blend;
+
+    if (!(b > 0.0f)) {
+        return 0.0f;
+    }
+    b -= ap->blendStep;
+    if (b < 0.0f) {
+        b = 0.0f;
+    }
+    ap->blend = b;
+    return b * b * (3.0f - 2.0f * b);
+}
+#endif
+
 /* Advances the frame of a self-stepped object by anim.step: once (stops on the last frame) or looping. */
 void BtlObjAnim_Step(BobjObj *obj) {
     BobjAnimPlayer *ap = &obj->anim;

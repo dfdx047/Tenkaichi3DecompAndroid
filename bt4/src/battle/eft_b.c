@@ -887,6 +887,11 @@ void EftBubble_UpdateChrs(void) {
         return;
     }
     chr = gEftBubble->chr;
+#ifdef PORT
+    if (chr == NULL) { /* (no fighters: a stage shown behind the character select, view_a_d.c; a fight always has them) */
+        return;
+    }
+#endif
     for (i = 0; i < 2; i++, chr++) {
         if (EFT_BUBBLE_CHR_FLAGS(chr)->trail) {
             EftBubble_UpdateTrail(chr);
@@ -929,6 +934,12 @@ void EftBubble_UpdateAmbient(void) {
     EftWater_GetSurfaceY(&water);
     views = Battle_IsSplitScreen() ? 2 : 1;
     chr = gEftBubble->chr;
+#ifdef PORT
+    if (chr == NULL || gBtlCam == NULL) { /* (no fighters and no fight camera: a stage behind the character select,
+                                              view_a_d.c, which looks through its own camera; a fight always has both) */
+        return;
+    }
+#endif
     for (i = 0; i < views; i++) {
         if (!(EFTB_CAM_AT(i)->view.camPos.y < water)) {
             gEftBubble->camTimer[i] += (rand() & 3) ? 0.05f : 0.1f;
