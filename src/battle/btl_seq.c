@@ -1501,6 +1501,12 @@ s32 BtlSeqFight_Update(BtlSeqWaitCtx *ctx) {
     }
     if (BtlSeq_CheckBattleEnd()) {
 #ifdef PORT
+        /* Ranked must record the decided fight before the result menu can replace its winner
+           bits with BTL_RESULT_ABORT. BattleResult_Finish runs later, from Battle_Term. */
+        if (!BattleResult_IsAborted()) {
+            extern void DrNet_BattleFinished(int flags, int reason, int clock);
+            DrNet_BattleFinished(BattleResult_GetFlags(), BattleResult_GetReason(), (int)BtlSeq_GetClock()->ticks);
+        }
         /* Online the fight can end under an open pause menu (it does not stop for it): the menu is closed, unless
            it is what ended the battle (as in the original, where it stays up through the fade). */
         if (Port_NetActive() && (Battle_GetWork()->flags & BATTLE_FLAG_PAUSE_MENU) && !BattleResult_IsAborted()) {

@@ -4258,7 +4258,10 @@ static void Tb_BracketFocus(char *focus) {
 
 /* What the hosts say in the box at the foot of the screen (two lines at most). */
 static char *Tb_Help(void) {
-    static char rankedDiagnostic[96];
+    static char rankedDiagnostic[224];
+    char finishDiag[192];
+    extern void DrNet_FinishDiagCopy(char *out, size_t size);
+    DrNet_FinishDiagCopy(finishDiag, sizeof(finishDiag));
     if (sTb->mode == TB_RKWAIT) {
         static char rankedLines[320];
         static char logged[320];
@@ -4281,11 +4284,19 @@ static char *Tb_Help(void) {
                          sTbRk.route_http[route], sTbRk.route_error[route][0] ? sTbRk.route_error[route] : "-",
                          route == 2 ? "" : " ");
         }
+        if (finishDiag[0]) {
+            Ps_Cat(rankedLines, " | ", sizeof(rankedLines));
+            Ps_Cat(rankedLines, finishDiag, sizeof(rankedLines));
+        }
         if (strcmp(logged, rankedLines) != 0) {
             fprintf(stderr, "bt3: ranked diagnostic: %s\n", rankedLines);
             Ps_Copy(logged, rankedLines, sizeof(logged));
         }
         return rankedLines;
+    }
+    if (sTb->mode == TB_RANKED && finishDiag[0]) {
+        Ps_Copy(rankedDiagnostic, finishDiag, sizeof(rankedDiagnostic));
+        return rankedDiagnostic;
     }
     if ((sTb->mode == TB_RANKED || sTb->mode == TB_RKWAIT) && (sTbRk.http_status || sTbRk.error_field[0])) {
         sprintf(rankedDiagnostic, "http=%d error=%s", sTbRk.http_status, sTbRk.error_field);

@@ -3,6 +3,7 @@
  * the PC goes on through the PC port's own service (mode 1). See net_dragon.c. */
 #ifndef NET_DRAGON_H
 #define NET_DRAGON_H
+#include <stddef.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -84,6 +85,7 @@ int DrRanked_InSession(void);
 /* The battle's end (battle_load.c, BattleResult_Finish) and the end of an online session (net.c, Port_NetLeave). */
 void DrNet_BattleFinished(int flags, int reason, int clock);
 void DrNet_SessionEnding(int mine);
+void DrNet_FinishDiagCopy(char *out, size_t size);
 
 /* The general chat. */
 typedef struct DrChat {

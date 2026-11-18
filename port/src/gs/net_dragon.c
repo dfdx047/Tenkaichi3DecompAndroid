@@ -214,6 +214,25 @@ static SDL_Mutex *sLock;
 static SDL_Mutex *sOutboxLock; /* result queue file */
 static SDL_AtomicInt sStarted;
 static SDL_Condition *sWake;
+static char sFinishDiag[192];
+static SDL_AtomicInt sRankedWinnerDecided;
+static void lock_make(void);
+
+static void finish_diag(const char *text) {
+    lock_make();
+    SDL_LockMutex(sLock);
+    SDL_strlcpy(sFinishDiag, text, sizeof(sFinishDiag));
+    SDL_UnlockMutex(sLock);
+    fprintf(stderr, "dragonnet: ranked finish: %s\n", text);
+}
+
+void DrNet_FinishDiagCopy(char *out, size_t size) {
+    if (out == NULL || size == 0) return;
+    lock_make();
+    SDL_LockMutex(sLock);
+    SDL_strlcpy(out, sFinishDiag, size);
+    SDL_UnlockMutex(sLock);
+}
 
 static void lock_make(void) {
     static SDL_AtomicInt made;
@@ -1244,6 +1263,7 @@ int DrRanked_Handover(void) {
         return 0;
     }
     session_write(v.match, v.role, v.mode, 0);
+    SDL_SetAtomicInt(&sRankedWinnerDecided, 0);
     SDL_LockMutex(sLock);
     SDL_strlcpy(sHandedOver, v.match, sizeof(sHandedOver));
     sSearchGen++;
@@ -1279,11 +1299,41 @@ void DrNet_BattleFinished(int flags, int reason, int clock) {
     char match[33], line[128], digest[9];
     int role, mode, sent, score, i;
     uint32_t words[3], hash = 2166136261u;
-    if (gPortResim || !Port_NetActive() || !session_read(match, &role, &mode, &sent) || sent || (flags & 8)) {
+    char diag[192];
+    /* BattleResult_Finish normally applies these forced-winner reason bits before calling us. The
+       natural-end hook runs earlier, so apply the same normalization here for the same score/digest. */
+    if (reason & 0x20) flags |= 2;
+    if (reason & 0x40) flags |= 1;
+    score = (flags & 3) == 1 ? 2 : (flags & 3) == 2 ? 0 : (flags & 4) ? 1 : -1;
+    if (gPortResim) {
+        SDL_snprintf(diag, sizeof(diag), "finish=resim score=%d flags=%x", score, flags);
+        finish_diag(diag);
         return;
     }
-    score = (flags & 3) == 1 ? 2 : (flags & 3) == 2 ? 0 : (flags & 4) ? 1 : -1;
+    if (!Port_NetActive()) {
+        SDL_snprintf(diag, sizeof(diag), "finish=sem rede score=%d flags=%x", score, flags);
+        finish_diag(diag);
+        return;
+    }
+    if (!session_read(match, &role, &mode, &sent)) {
+        SDL_snprintf(diag, sizeof(diag), "finish=sem ranked score=%d flags=%x", score, flags);
+        finish_diag(diag);
+        return;
+    }
+    if (!(flags & 8) && score >= 0) SDL_SetAtomicInt(&sRankedWinnerDecided, 1);
+    if (sent) {
+        SDL_snprintf(diag, sizeof(diag), "finish=ja enviado score=%d flags=%x", score, flags);
+        finish_diag(diag);
+        return;
+    }
+    if (flags & 8) {
+        SDL_snprintf(diag, sizeof(diag), "finish=abort score=%d flags=%x", score, flags);
+        finish_diag(diag);
+        return;
+    }
     if (score < 0) {
+        SDL_snprintf(diag, sizeof(diag), "finish=sem vencedor score=%d flags=%x", score, flags);
+        finish_diag(diag);
         return;
     }
     words[0] = (uint32_t)flags;
@@ -1296,10 +1346,14 @@ void DrNet_BattleFinished(int flags, int reason, int clock) {
     SDL_snprintf(line, sizeof(line), "%s %d %s 1\n", match, score, digest);
     if (!outbox_push(line)) {
         fprintf(stderr, "dragonnet: the ranked result could not be saved\n");
+        SDL_snprintf(diag, sizeof(diag), "finish=falha ao salvar score=%d flags=%x", score, flags);
+        finish_diag(diag);
         return;
     }
     session_write(match, role, mode, 1);
     fprintf(stderr, "dragonnet: ranked result saved: score %d (host's view), digest %s\n", score, digest);
+    SDL_snprintf(diag, sizeof(diag), "finish=enviado ok score=%d digest=%s", score, digest);
+    finish_diag(diag);
     start(NULL); /* (sent by the thread, now or the next time the online screen is open) */
 }
 
@@ -1324,9 +1378,28 @@ void DrNet_SessionEnding(int mine) {
         }
     }
     if (!sent && mine) {
-        SDL_snprintf(line, sizeof(line), "%s -1 00000000 1\n", match);
-        outbox_push(line);
-        fprintf(stderr, "dragonnet: left the ranked match before its end: a loss\n");
+        extern int BattleResult_GetFlags(void);
+        int flags = BattleResult_GetFlags();
+        if (SDL_GetAtomicInt(&sRankedWinnerDecided)) {
+            fprintf(stderr, "dragonnet: ranked forfeit suppressed after winner sent=%d mine=%d flags=%x\n", sent, mine, flags);
+            {
+                char diag[192];
+                SDL_snprintf(diag, sizeof(diag), "forfeit suppressed winner sent=%d mine=%d flags=%x", sent, mine, flags);
+                finish_diag(diag);
+            }
+        } else {
+            SDL_snprintf(line, sizeof(line), "%s -1 00000000 1\n", match);
+            if (outbox_push(line)) {
+                fprintf(stderr, "dragonnet: ranked forfeit queued sent=%d mine=%d flags=%x\n", sent, mine, flags);
+                {
+                    char diag[192];
+                    SDL_snprintf(diag, sizeof(diag), "forfeit queued sent=%d mine=%d flags=%x", sent, mine, flags);
+                    finish_diag(diag);
+                }
+            } else {
+                fprintf(stderr, "dragonnet: ranked forfeit was not queued sent=%d mine=%d flags=%x\n", sent, mine, flags);
+            }
+        }
     }
     remove_file("dragonnet-session.txt");
 }
