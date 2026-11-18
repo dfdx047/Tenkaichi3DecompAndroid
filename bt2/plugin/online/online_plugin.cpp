@@ -206,9 +206,7 @@ bool readPeer(std::string& name,std::string& code,std::vector<std::string>& addr
 }
 // What the app shows of the line: online_link, "rtt=<ms>".
 void writeLinkFile() {writeOnlineFile("online_link","rtt="+std::to_string(link.roundTripMs())+"\n");}
-// The host's relay (relay.h): the app leaves the service's TURN login in online_turn (server, user, credential, a line each);
-// once the relayed address is there it is left in online_relay for the app to give the service.
-bool relayPublished=false,localWritten=true;
+bool localWritten=true;
 // A cover over the frame from the moment the screen is left until the next mode shows (so the main menu, which the game passes through, is not seen).
 std::atomic<int> cover{0};
 std::atomic<bool> cover_menu_seen{false};
@@ -245,25 +243,12 @@ void flushNotes() {
     if(!H->log)return;
     for(const auto& n:link.takeNotes())H->log(n.c_str());
 }
-void relayStep() {
-    if(!link.relayStarted()) {
-        std::ifstream in(onlinePath("online_turn"),std::ios::binary);
-        std::string server,user,credential;
-        if(in && std::getline(in,server) && std::getline(in,user) && std::getline(in,credential)) {
-            for(auto* t:{&server,&user,&credential})while(!t->empty() && (t->back()=='\r' || t->back()==' '))t->pop_back();
-            if(!server.empty() && !user.empty())link.beginRelay(server,user,credential);
-        }
-    } else if(link.relayActive() && !relayPublished) {
-        writeOnlineFile("online_relay",link.relayAddress()+"\n");
-        relayPublished=true;
-    }
-}
 // A way in is over (given up, or the opponent has been shown): the line closes and the app's files go.
 void endWait(bool keep_link=false) {
     if(!keep_link)link.close();
     screen.wait=0;screen.found=0;screen.linking=0;screen.failed=0;
     for(const char* name:{"online_peer","online_back","online_local","online_link","online_turn","online_relay","online_nat"})onlineFile(name,true);
-    relayPublished=false;localWritten=true;
+    localWritten=true;
 }
 
 // The lobby: the other player as the app gave him, kept until the line is up and the match is asked for.
@@ -319,7 +304,6 @@ void screenLoop(Guest& g) {
                 if(H->log){const std::string note="online: addresses for the app: "+flat+(link.symmetricRouter()?"(the router gives a port per destination)":"");H->log(note.c_str());}
             }
             flushNotes();
-            if(loop_frame%15==0)relayStep();
             if(screen.found) {
                 if(loop_frame%30==0)writeLinkFile();
                 if(restarting) {} // (the app is starting the engine again for the match; the line stays up so the other side does not think this one left)
@@ -355,7 +339,7 @@ void screenLoop(Guest& g) {
             else if(screen.page==1) { // create, join, quick: the app takes it; the socket first, for the addresses it will give the service
                 screen.wait=1+int(screen.choice);
                 // (online_local too: one left by a run that ended badly would give the app a port nobody listens on)
-                for(const char* name:{"online_peer","online_back","online_link","online_local","online_nat"})onlineFile(name,true);
+                for(const char* name:{"online_peer","online_back","online_link","online_local","online_nat","online_turn","online_relay"})onlineFile(name,true);
                 localWritten=!link.open(); // (the addresses are written once the STUN answers are in: the loop below)
                 if(localWritten)writeOnlineFile("online_local","error\n"); // (no socket: the app says so instead of giving a port nobody listens on)
             }

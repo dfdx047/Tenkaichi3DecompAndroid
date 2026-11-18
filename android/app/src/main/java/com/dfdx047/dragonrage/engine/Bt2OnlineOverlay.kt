@@ -86,7 +86,6 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
     /** One try at a way in (create, join or find): its thread, and the room it holds. */
     private inner class Session(val kind: Int) {
         @Volatile var cancelled = false
-        @Volatile var relayShown = false
         @Volatile var peerName = ""
         @Volatile var shown = ""
         @Volatile var room: Bt2Online.Room? = null
@@ -246,21 +245,6 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
             }
     }
 
-    /** The host's relay: its login goes to the game (online_turn), and the address the game gets goes to the service (online_relay). */
-    private fun giveRelayLogin(room: Bt2Online.Room) {
-        val login = room.turn.takeIf { it.size == 3 && it[0].isNotEmpty() }
-            ?: runCatching { File(dir, "dragonnet_turn.txt").readLines().map { it.trim() }.filter { it.isNotEmpty() } }.getOrNull()?.takeIf { it.size == 3 }
-            ?: return
-        putFile("online_turn", login.joinToString("\n") + "\n")
-    }
-
-    private fun publishRelay(s: Session, room: Bt2Online.Room, mine: List<String>) {
-        if (s.relayShown) return
-        val relay = runCatching { File(dir, "online_relay").readText().trim() }.getOrNull()?.takeIf { it.isNotEmpty() } ?: return
-        s.relayShown = true
-        Bt2Online.publish(s.base, room, mine, relay)
-    }
-
     /** The addresses the game opened for the line to the other game (online_local, a moment after the screen asked). */
     private fun localAddresses(s: Session): List<String>? {
         // (the game waits up to 3.5 s for the router's address, then writes the file: wait a little longer than that. "error": it could not open its socket.)
@@ -302,30 +286,13 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
             s.room = first
             if (s.cancelled) return
             first.peer?.let { return connected(s, it) }
-            giveRelayLogin(first)
             if (s.kind == 1) say(Bt2Online.tr("Room created!", "Sala criada!", "¡Sala creada!"), code = first.code, detail = Bt2Online.tr("Give this code to a friend (tap to copy).\nWaiting for them to join…", "Passe este código para um amigo (toque para copiar).\nAguardando ele entrar…", "Pasa este código a un amigo (toca para copiar).\nEsperando a que entre…"), spinner = true)
             var room = first
             var since = System.currentTimeMillis()
-            var lost = 0
-            var every = 2000L // (one a second was 60 a minute per open room, on a free Worker)
             while (!s.cancelled) {
-                Thread.sleep(every)
                 while (paused && !s.cancelled) Thread.sleep(100)
                 if (s.cancelled) break
-                publishRelay(s, room, mine)
-                // (a poll that fails for a moment, a signal that dips on mobile data, must not end the wait: the room is still there; ~15 in a row do)
-                val peer = try {
-                    Bt2Online.poll(s.base, room).also { lost = 0; every = 2000L }
-                } catch (e: Bt2Online.Failure) {
-                    if (e.why == "limit") { // 30 s, doubling up to 10 minutes, as BT3's (net_match.c)
-                        every = (if (every < 30_000L) 30_000L else every * 2).coerceAtMost(600_000L)
-                        say(Bt2Online.explain("limit"), spinner = true)
-                        null
-                    } else {
-                        if (e.why != "network" || ++lost > 15) throw e
-                        null
-                    }
-                }
+                val peer = Bt2Online.poll(s.base, room)
                 peer?.let { return connected(s, it) }
                 // (a room the service keeps ten minutes: a search that waits longer asks again)
                 if (s.kind == 3 && System.currentTimeMillis() - since > 9 * 60_000) {
@@ -335,11 +302,22 @@ class Bt2OnlineOverlay(private val activity: Activity, private val paths: GamePa
                     room = Bt2Online.quick(s.base, name, who, mine).also { s.room = it }
                     since = System.currentTimeMillis()
                     room.peer?.let { return connected(s, it) }
-                    giveRelayLogin(room)
+                } else if (s.kind != 3 && System.currentTimeMillis() - since >= 10 * 60_000) {
+                    if (!s.cancelled) say(
+                        Bt2Online.tr("Room expired.", "A sala expirou.", "La sala caducó."),
+                        detail = "http=0 error=timeout",
+                        error = true
+                    )
+                    return
                 }
+                Thread.sleep(1000)
             }
         } catch (e: Bt2Online.Failure) {
-            if (!s.cancelled) say(Bt2Online.explain(e.why), detail = Bt2Online.tr("Press △ to go back.", "Aperte △ para voltar.", "Pulsa △ para volver."), error = true)
+            if (!s.cancelled) say(
+                Bt2Online.explain(e.why),
+                detail = "http=${e.httpStatus} error=${e.errorField}\n" + Bt2Online.tr("Press △ to go back.", "Aperte △ para voltar.", "Pulsa △ para volver."),
+                error = true
+            )
         }
     }
 

@@ -2,7 +2,6 @@ package com.dfdx047.dragonrage.data
 
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.NetworkInterface
@@ -14,60 +13,50 @@ import java.net.URL
  * with a BT3 one. Nothing of the game passes through it: it only tells each side the other's name and addresses. The
  * connection between the two games, and the fight, are not here.
  *
- * The service is the official one, or another in <root>/bt2/user/dragonnet_url.txt (one line, https://...; for
- * developing: bt2/tools/dev_server/serve.mjs, http://127.0.0.1:8787 through `adb reverse`).
+ * The new_online routes use the Supabase function directly; a device-local URL override is intentionally ignored.
  */
 object Bt2Online {
     /** BT2's netcode version on the service (the service's ALLOWED_VERSIONS must list it). BT3's is 5001. */
     const val VERSION = 6001
-    /** BT2's own matchmaking service (bt2/tools/dragonnet_own): versions 6001 only, on its own account, so BT3's service is left alone. */
-    const val SERVICE = "https://dragonnet-bt2.regulusplay.workers.dev"
+    /** Shared Amistoso matchmaking service. */
+    const val SERVICE = "https://jeowmebvwxcqfbmcjqlf.supabase.co/functions/v1/bt3"
+    private const val REGION = "us-east-2"
     private const val QUEUE = "S" // single fights
     private const val GAME_PORT = 7000 // (the port the game will listen on, when it connects: for now only what the addresses say)
 
-    class Failure(val why: String) : Exception(why)
+    class Failure(val why: String, val httpStatus: Int = 0, val errorField: String = why) : Exception(why)
     data class Peer(val name: String, val addrs: List<String>)
     /** A room this player is in: its code, this player's key in it, and the other player when already there. */
-    data class Room(val code: String, val key: String, val peer: Peer?, val hosting: Boolean, val turn: List<String> = emptyList())
+    data class Room(val code: String, val key: String, val peer: Peer?, val hosting: Boolean)
 
-    fun url(paths: GamePaths): String =
-        runCatching { File(paths.bt2Root, "user/dragonnet_url.txt").readText().trim() }.getOrNull()?.takeIf { it.startsWith("http") }?.trimEnd('/')
-            ?: SERVICE
+    fun url(@Suppress("UNUSED_PARAMETER") paths: GamePaths): String = SERVICE
 
     /** The name as the service takes it: printable ASCII, 16 letters at most ("Player" when nothing is left). */
     fun cleanName(name: String): String = name.filter { it.code in 0x20..0x7e }.trim().take(16).ifEmpty { tr("Player", "Jogador", "Jugador") }
 
     fun host(base: String, name: String, mine: List<String>): Room {
         val r = post(base, "/v1/host", JSONObject().put("v", VERSION).put("name", cleanName(name)).put("addrs", addrs(mine)))
-        return Room(r.getString("code"), r.getString("key"), null, true, turn(base, r))
+        return Room(requiredString(r, "code"), requiredString(r, "key"), null, true)
     }
 
     fun join(base: String, code: String, name: String, mine: List<String>): Room {
         val r = post(base, "/v1/join", JSONObject().put("v", VERSION).put("code", code.trim().uppercase()).put("name", cleanName(name)).put("addrs", addrs(mine)))
-        return Room(code.trim().uppercase(), r.getString("key"), peer(r.getJSONObject("peer")), false)
+        val peerJson = r.optJSONObject("peer") ?: throw invalidResponse()
+        return Room(code.trim().uppercase(), requiredString(r, "key"), peer(peerJson), false)
     }
 
     /** Quick match: put with whoever waits longest, or given a room of its own to wait in. */
     fun quick(base: String, name: String, who: String, mine: List<String>): Room {
         val r = post(base, "/v1/quick", JSONObject().put("v", VERSION).put("name", cleanName(name)).put("addrs", addrs(mine)).put("queue", QUEUE).put("who", who))
         val join = r.optString("role") == "join"
-        return Room(r.getString("code"), r.getString("key"), if (join) peer(r.getJSONObject("peer")) else null, !join, if (join) emptyList() else turn(base, r))
+        val joinedPeer = if (join) r.optJSONObject("peer")?.let(::peer) ?: throw invalidResponse() else null
+        return Room(requiredString(r, "code"), requiredString(r, "key"), joinedPeer, !join)
     }
 
     /** The one who joined the room this player hosts, once there. */
     fun poll(base: String, room: Room): Peer? =
-        post(base, "/v1/poll", JSONObject().put("code", room.code).put("key", room.key)).optJSONObject("peer")?.let(::peer)
-
-    /** The relay login the service gives a host (server, user, credential), or the development one in dragonnet_turn.txt (a coturn on the computer). */
-    private fun turn(base: String, r: JSONObject): List<String> {
-        r.optJSONObject("turn")?.let { return listOf(it.optString("server"), it.optString("username"), it.optString("credential")) }
-        return emptyList()
-    }
-
-    /** The host's addresses again, with its relayed address among them, for the one who joins. */
-    fun publish(base: String, room: Room, mine: List<String>, relay: String) {
-        runCatching { post(base, "/v1/addrs", JSONObject().put("code", room.code).put("key", room.key).put("addrs", addrs(listOf("relay=$relay") + mine))) }
-    }
+        post(base, "/v1/poll", JSONObject().put("code", room.code).put("key", room.key).put("wait", 20), readTimeoutMs = 40_000)
+            .optJSONObject("peer")?.let(::peer)
 
     fun leave(base: String, room: Room) {
         runCatching { post(base, "/v1/leave", JSONObject().put("code", room.code).put("key", room.key)) }
@@ -96,10 +85,15 @@ object Bt2Online {
 
     private fun peer(o: JSONObject) = Peer(o.optString("name", tr("Player", "Jogador", "Jugador")), (0 until (o.optJSONArray("addrs")?.length() ?: 0)).map { o.getJSONArray("addrs").getString(it) })
 
+    private fun requiredString(o: JSONObject, field: String): String =
+        o.optString(field).takeIf { it.isNotEmpty() } ?: throw invalidResponse()
+
+    private fun invalidResponse() = Failure("invalid_response", 200, "invalid_response")
+
     /** This phone's addresses as the service wants them ("ip:port", four at most): the ones the game's socket reported (the
      *  line to the other game is that socket's: bt2/plugin/online/link.h), else the phone's own with a port of no use. */
     private fun addrs(mine: List<String>): JSONArray {
-        val good = mine.filter { Regex("""(relay=)?[0-9.]{7,15}:\d{1,5}""").matches(it) }
+        val good = mine.filter { Regex("""[0-9.]{7,15}:\d{1,5}""").matches(it) }
         if (good.isNotEmpty()) return JSONArray(good.take(4))
         val found = runCatching {
             NetworkInterface.getNetworkInterfaces().toList().filter { it.isUp && !it.isLoopback }
@@ -108,24 +102,30 @@ object Bt2Online {
         return JSONArray((found.ifEmpty { listOf("0.0.0.0") }).take(4).map { "$it:$GAME_PORT" })
     }
 
-    private fun post(base: String, path: String, body: JSONObject): JSONObject {
+    private fun post(base: String, path: String, body: JSONObject, readTimeoutMs: Int = 12_000): JSONObject {
         val c = (URL(base + path).openConnection() as HttpURLConnection)
         try {
             c.requestMethod = "POST"
             c.connectTimeout = 6000
-            c.readTimeout = 12000
+            c.readTimeout = readTimeoutMs
             c.doOutput = true
             c.setRequestProperty("Content-Type", "application/json")
+            c.setRequestProperty("x-region", REGION)
             c.outputStream.use { it.write(body.toString().toByteArray()) }
-            if (c.responseCode == 429) throw Failure("limit") // (over the free Worker's limit; Cloudflare's own page is no JSON)
-            val stream = if (c.responseCode < 400) c.inputStream else (c.errorStream ?: throw Failure("network"))
-            val json = JSONObject(stream.bufferedReader().use { it.readText() })
-            json.optString("error").takeIf { it.isNotEmpty() }?.let { throw Failure(it) }
+            val status = c.responseCode
+            val stream = if (status in 200..299) c.inputStream else c.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val json = runCatching { JSONObject(text) }.getOrElse {
+                throw Failure("invalid_response", status, "invalid_response")
+            }
+            val error = json.optString("error").takeIf { it.isNotEmpty() }
+            if (error != null) throw Failure(error, status, error)
+            if (status !in 200..299) throw Failure("http", status, "")
             return json
         } catch (e: Failure) {
             throw e
         } catch (e: Exception) {
-            throw Failure("network")
+            throw Failure("network", errorField = "network")
         } finally {
             c.disconnect()
         }
