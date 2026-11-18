@@ -890,6 +890,7 @@ static int SDLCALL worker(void *unused) {
                     if (SDL_strcmp(cancelState,"cancelled") && SDL_strcmp(cancelState,"expired") &&
                         SDL_strcmp(cancelState,"superseded") && SDL_strcmp(cancelState,"final") && SDL_strcmp(cancelState,"disputed")) {
                         SDL_LockMutex(sLock);
+                        SDL_strlcpy(sCancelMatch,cancelled,sizeof(sCancelMatch));sWantCancel=1;
                         sWantSearch=sView.searching=0;sView.state=-1;sView.msg=DRMSG_NO_ANSWER;
                         sView.match[0]=sView.code[0]=sView.peer[0]=0;
                         SDL_UnlockMutex(sLock);
