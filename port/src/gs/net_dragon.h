@@ -103,6 +103,7 @@ void DrNet_BattleFinished(int flags, int reason, int clock);
 void DrRanked_BattleStart(void);
 void DrNet_SessionEnding(int mine);
 void DrNet_FinishDiagCopy(char *out, size_t size);
+void DrRanked_DiagnosticCopy(char *out, size_t size);
 
 /* The general chat. */
 typedef struct DrChat {

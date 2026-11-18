@@ -215,6 +215,7 @@ static SDL_Mutex *sOutboxLock; /* result queue file */
 static SDL_AtomicInt sStarted;
 static SDL_Condition *sWake;
 static char sFinishDiag[192];
+static char sLastResultDiag[160], sLastSeriesDiag[128];
 static SDL_AtomicInt sRankedWinnerDecided;
 static void lock_make(void);
 
@@ -303,6 +304,32 @@ static void ranked_diagnostic(const char *what, int status, const char *json) {
     SDL_UnlockMutex(sLock);
 }
 
+static void ranked_response_diagnostic(const char *what,int status,const char *json) {
+    char safe[121]; size_t n=0; const char *p=json?json:"";
+    while(*p && n<120) {
+        if(strncmp(p,"\"token\":\"",9)==0) {
+            const char *end=strchr(p+9,'\"');
+            const char *red="\"token\":\"[redacted]\"";
+            while(*red && n<120) safe[n++]=*red++;
+            p=end?end+1:p+strlen(p); continue;
+        }
+        safe[n++]=*p++;
+    }
+    safe[n]=0;
+    SDL_LockMutex(sLock);
+    if(SDL_strcmp(what,"result")==0) SDL_snprintf(sLastResultDiag,sizeof(sLastResultDiag),"http=%d %.120s",status,safe);
+    else SDL_snprintf(sLastSeriesDiag,sizeof(sLastSeriesDiag),"http=%d %.90s",status,safe);
+    SDL_UnlockMutex(sLock);
+}
+
+void DrRanked_DiagnosticCopy(char *out,size_t size) {
+    if(!out||!size)return;
+    lock_make();
+    SDL_LockMutex(sLock);
+    SDL_snprintf(out,size,"result %s | series %s | gap=%u round=%u",sLastResultDiag[0]?sLastResultDiag:"http=0 -",sLastSeriesDiag[0]?sLastSeriesDiag:"http=0 -",sSeriesGap,sRankedRound);
+    SDL_UnlockMutex(sLock);
+}
+
 static void message(int msg, int state) {
     SDL_LockMutex(sLock);
     sView.msg = msg;
@@ -320,10 +347,13 @@ static int post_ranked(const char *what, const char *extra, char *answer, size_t
     int status = 0;
     SDL_snprintf(path, sizeof(path), "ranked/%s", what);
     SDL_snprintf(body, sizeof(body), "{\"v\":6001,\"id\":\"%s\",\"token\":\"%s\"%s}", sId, sToken, extra != NULL ? extra : "");
+    answer[0]='\0';
     if (!Match_PostFriendlyRanked(path, body, answer, size, &status)) {
+        if(SDL_strcmp(what,"result")==0 || SDL_strcmp(what,"series")==0) ranked_response_diagnostic(what,status,answer);
         if (SDL_strcmp(what, "profile") == 0 || ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
         return 0;
     }
+    if(SDL_strcmp(what,"result")==0 || SDL_strcmp(what,"series")==0) ranked_response_diagnostic(what,status,answer);
     if (SDL_strcmp(what, "profile") == 0 || ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
     if (strstr(answer, "\"error\":\"limit\"") != NULL) {
         message(DRMSG_LIMIT, 99); /* (a search goes on, without asking, until the pause is over: net_match.c) */
@@ -1327,6 +1357,10 @@ int DrRanked_Handover(void) {
     if (v.state != 3 || !is_hex(v.match, 32) || (v.role != 1 && v.role != 2)) {
         return 0;
     }
+    sRankedRound=1;
+    SDL_LockMutex(sLock);
+    sSeriesActive=sSeriesDirty=sSeriesChoice=0;sSeriesGap=0;SDL_memset(&sSeriesView,0,sizeof(sSeriesView));
+    SDL_UnlockMutex(sLock);
     session_write(v.match, v.role, v.mode, 0);
     SDL_SetAtomicInt(&sRankedWinnerDecided, 0);
     SDL_LockMutex(sLock);
@@ -1387,8 +1421,7 @@ void DrNet_BattleFinished(int flags, int reason, int clock) {
     }
     if (!(flags & 8) && score >= 0) SDL_SetAtomicInt(&sRankedWinnerDecided, 1);
     if (sent) {
-        SDL_snprintf(diag, sizeof(diag), "finish=ja enviado score=%d flags=%x", score, flags);
-        finish_diag(diag);
+        /* Repeated finish hooks must not replace the diagnostic for the first real send. */
         return;
     }
     if (flags & 8) {

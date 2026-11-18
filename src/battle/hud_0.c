@@ -6,6 +6,7 @@
 #ifdef PORT
 #include "../../port/src/gs/net_dragon.h"
 #include <SDL3/SDL.h>
+extern void BtlMenu_PortDrawMenu(BtlMenu *menu);
 #endif
 #ifdef PORT
 #include "battle/tag_team.h"

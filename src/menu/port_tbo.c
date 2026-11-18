@@ -4258,13 +4258,15 @@ static void Tb_BracketFocus(char *focus) {
 
 /* What the hosts say in the box at the foot of the screen (two lines at most). */
 static char *Tb_Help(void) {
-    static char rankedDiagnostic[224];
-    char finishDiag[192];
+    static char rankedDiagnostic[700];
+    char finishDiag[192], requestDiag[384];
     extern void DrNet_FinishDiagCopy(char *out, size_t size);
+    extern void DrRanked_DiagnosticCopy(char *out, size_t size);
     DrNet_FinishDiagCopy(finishDiag, sizeof(finishDiag));
+    DrRanked_DiagnosticCopy(requestDiag, sizeof(requestDiag));
     if (sTb->mode == TB_RKWAIT) {
-        static char rankedLines[320];
-        static char logged[320];
+        static char rankedLines[700];
+        static char logged[700];
         static const char *const routeName[3] = {"q", "r", "l"};
         static const char *const stateName[] = {"erro", "procurando", "procurando", "pareado"};
         char lobbyError[32];
@@ -4284,18 +4286,17 @@ static char *Tb_Help(void) {
                          sTbRk.route_http[route], sTbRk.route_error[route][0] ? sTbRk.route_error[route] : "-",
                          route == 2 ? "" : " ");
         }
-        if (finishDiag[0]) {
-            Ps_Cat(rankedLines, " | ", sizeof(rankedLines));
-            Ps_Cat(rankedLines, finishDiag, sizeof(rankedLines));
-        }
+        if (finishDiag[0]) { Ps_Cat(rankedLines, " | ", sizeof(rankedLines)); Ps_Cat(rankedLines, finishDiag, sizeof(rankedLines)); }
+        if (requestDiag[0]) { Ps_Cat(rankedLines, " | ", sizeof(rankedLines)); Ps_Cat(rankedLines, requestDiag, sizeof(rankedLines)); }
         if (strcmp(logged, rankedLines) != 0) {
             fprintf(stderr, "bt3: ranked diagnostic: %s\n", rankedLines);
             Ps_Copy(logged, rankedLines, sizeof(logged));
         }
         return rankedLines;
     }
-    if (sTb->mode == TB_RANKED && finishDiag[0]) {
-        Ps_Copy(rankedDiagnostic, finishDiag, sizeof(rankedDiagnostic));
+    if (sTb->mode == TB_RANKED && (finishDiag[0] || requestDiag[0])) {
+        Ps_Copy(rankedDiagnostic, requestDiag, sizeof(rankedDiagnostic));
+        if(finishDiag[0]) { Ps_Cat(rankedDiagnostic, " | ", sizeof(rankedDiagnostic)); Ps_Cat(rankedDiagnostic, finishDiag, sizeof(rankedDiagnostic)); }
         return rankedDiagnostic;
     }
     if ((sTb->mode == TB_RANKED || sTb->mode == TB_RKWAIT) && (sTbRk.http_status || sTbRk.error_field[0])) {
