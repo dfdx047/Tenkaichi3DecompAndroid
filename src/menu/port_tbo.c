@@ -861,6 +861,7 @@ static s32 Tb_SearchNews(void) {
     state = sTb->found ? 2 : Port_LobbyPoll();
     if (state == 2 && !sTb->found) {
         if (sTb->rkLobby) {
+            DrRanked_Connection(1); /* shared lobby handshake: announce connect/ready for Android and Switch */
             DrRanked_Handover(); /* (the service is told the result of this one) */
         }
         sTb->found = 1;
@@ -4464,6 +4465,11 @@ static char *Tb_Help(void) {
             Ps_Cat(rankedDiagnostic, " | ", sizeof(rankedDiagnostic));
             Ps_Cat(rankedDiagnostic, requestDiag, sizeof(rankedDiagnostic));
         }
+        return rankedDiagnostic;
+    }
+    if (sTb->mode == TB_HUB && strstr(requestDiag, "lifecycle ") != NULL &&
+        strstr(requestDiag, "lifecycle - none") == NULL) {
+        Ps_Copy(rankedDiagnostic, requestDiag, sizeof(rankedDiagnostic));
         return rankedDiagnostic;
     }
     if (sTb->mode == TB_HUB && strstr(requestDiag, "postfight phase=") != NULL) {
