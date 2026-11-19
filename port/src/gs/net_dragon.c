@@ -256,7 +256,9 @@ static char sName[20] = "Player";
 static char sId[33], sToken[65]; /* the device identity (the thread's) */
 static int sRefresh, sWantSearch, sWantCancel, sWantBoard;
 static unsigned sSearchGen;
-static char sCancelMatch[33], sRoomPending[8], sHandedOver[33];
+static char sCancelMatch[33], sCancelTarget[33], sRoomPending[8], sHandedOver[33];
+static int sCancelPending, sCancelUnconfirmed;
+static Uint64 sCancelAt, sCancelRetryAt;
 static char sLifeMatch[33], sStartSent[33]; /* flow:2: the match the lifecycle calls are for */
 static char sConnectionDone[33];
 static unsigned sRankedRound = 1;
@@ -265,8 +267,8 @@ static char sLastQueueMatch[33], sPreviousQueueMatch[33];
 static char sLastQueueCode[8], sPreviousQueueCode[8];
 static char sRoomPendingMatch[33];
 static char sBurnedCodes[16][8], sAttemptCodes[16][8];
+static Uint64 sBurnedAt[16];
 static unsigned sBurnedCount, sBurnedNext, sAttemptCodeCount;
-static int sBurnedLoaded;
 static int sSeriesActive, sSeriesDirty, sSeriesChoice;
 static unsigned sSeriesGap;
 static DrRankedSeries sSeriesView;
@@ -306,44 +308,32 @@ static int code_index(char codes[][8], unsigned count, const char *code) {
     return -1;
 }
 
-/* Port_LobbyStartCode can relaunch the executable. Keep rejected room codes in
-   the game folder so the same app run still rejects them after that relaunch. */
-static void burned_codes_load_locked(void) {
-    char contents[160], *p, *next;
-    if (sBurnedLoaded) return;
-    sBurnedLoaded = 1;
-    if (!read_text("dragonnet-ranked-burned.txt", contents, sizeof(contents))) return;
-    for (p = contents; *p && sBurnedCount < 16; p = next) {
-        next = SDL_strchr(p, '\n');
-        if (next != NULL) *next++ = '\0';
-        if (SDL_strlen(p) == 7 && p[6] == '\r') p[6] = '\0';
-        if (SDL_strlen(p) == 6 && code_index(sBurnedCodes, sBurnedCount, p) < 0)
-            SDL_strlcpy(sBurnedCodes[sBurnedCount++], p, sizeof(sBurnedCodes[0]));
-        if (next == NULL) break;
+/* Rejected codes live only in memory and expire ten minutes after being burned. */
+static void burned_codes_prune_locked(void) {
+    Uint64 now = SDL_GetTicks();
+    unsigned i = 0;
+    while (i < sBurnedCount) {
+        if (now - sBurnedAt[i] >= 600000) {
+            unsigned tail = sBurnedCount - i - 1;
+            if (tail) {
+                SDL_memmove(&sBurnedCodes[i], &sBurnedCodes[i + 1], tail * sizeof(sBurnedCodes[0]));
+                SDL_memmove(&sBurnedAt[i], &sBurnedAt[i + 1], tail * sizeof(sBurnedAt[0]));
+            }
+            sBurnedCount--;
+        } else {
+            i++;
+        }
     }
-}
-
-static void burned_codes_save_locked(void) {
-    char contents[160];
-    unsigned i;
-    size_t used = 0;
-    contents[0] = '\0';
-    for (i = 0; i < sBurnedCount; i++) {
-        int n = SDL_snprintf(contents + used, sizeof(contents) - used, "%s\n", sBurnedCodes[i]);
-        if (n < 0 || (size_t)n >= sizeof(contents) - used) break;
-        used += (size_t)n;
-    }
-    write_text("dragonnet-ranked-burned.txt", contents);
 }
 
 static int code_burned_locked(const char *code) {
-    burned_codes_load_locked();
+    burned_codes_prune_locked();
     return code_index(sBurnedCodes, sBurnedCount, code) >= 0;
 }
 
 static void burn_code_locked(const char *code) {
     unsigned at;
-    burned_codes_load_locked();
+    burned_codes_prune_locked();
     if (code == NULL || SDL_strlen(code) != 6 || code_index(sBurnedCodes, sBurnedCount, code) >= 0) return;
     if (sBurnedCount < 16) {
         at = sBurnedCount++;
@@ -351,7 +341,7 @@ static void burn_code_locked(const char *code) {
         at = sBurnedNext++ % 16;
     }
     SDL_strlcpy(sBurnedCodes[at], code, sizeof(sBurnedCodes[at]));
-    burned_codes_save_locked();
+    sBurnedAt[at] = SDL_GetTicks();
 }
 
 static void attempt_code_locked(const char *code) {
@@ -386,6 +376,59 @@ static void ranked_redact_body(const char *json, char *safe, size_t size) {
         }
     }
     safe[n] = '\0';
+}
+
+static void ranked_debug_log_line(const char *event) {
+    enum { LOG_LIMIT = 160 * 1024, LOG_KEEP = 80 * 1024 };
+    char path[600], safe[512];
+    FILE *f;
+    long end;
+    lock_make();
+    ranked_redact_body(event, safe, sizeof(safe));
+    SDL_LockMutex(sLock);
+    path_of("ranked-debug.log", path, sizeof(path));
+    f = fopen(path, "ab+");
+    if (f != NULL) {
+        fseek(f, 0, SEEK_END);
+        end = ftell(f);
+        if (end >= LOG_LIMIT) {
+            char *tail = (char *)malloc(LOG_KEEP + 1);
+            fclose(f);
+            f = NULL;
+            if (tail != NULL) {
+                FILE *old = fopen(path, "rb");
+                size_t got = 0;
+                if (old != NULL) {
+                    long from = end - LOG_KEEP;
+                    if (from < 0) from = 0;
+                    if (fseek(old, from, SEEK_SET) == 0) got = fread(tail, 1, LOG_KEEP, old);
+                    fclose(old);
+                }
+                tail[got] = '\0';
+                write_text("ranked-debug.log", tail);
+                free(tail);
+            } else {
+                write_text("ranked-debug.log", "");
+            }
+            f = fopen(path, "ab");
+        }
+        if (f != NULL) {
+            fprintf(f, "%u %s\n", (unsigned)SDL_GetTicks(), safe);
+            fclose(f);
+        }
+    }
+    SDL_UnlockMutex(sLock);
+}
+
+void DrRanked_DebugLog(const char *event) {
+    if (event != NULL && event[0] != '\0') ranked_debug_log_line(event);
+}
+
+static void ranked_log_http(const char *route, int status, const char *json) {
+    char safe[320], event[400];
+    ranked_redact_body(json, safe, sizeof(safe));
+    SDL_snprintf(event, sizeof(event), "ranked/%s http=%d response=%.280s", route, status, safe);
+    ranked_debug_log_line(event);
 }
 
 static void ranked_log_code_response(const char *what, int status, const char *json) {
@@ -475,6 +518,21 @@ static void message(int msg, int state) {
     SDL_UnlockMutex(sLock);
 }
 
+static void ranked_cancel_request_locked(const char *match) {
+    if (!is_hex(match, 32)) return;
+    if (!sCancelPending || SDL_strcmp(sCancelTarget, match) != 0) {
+        sCancelAt = SDL_GetTicks();
+        sCancelUnconfirmed = 0;
+    }
+    sCancelPending = 1;
+    sCancelRetryAt = 0;
+    SDL_strlcpy(sCancelTarget, match, sizeof(sCancelTarget));
+    SDL_strlcpy(sCancelMatch, match, sizeof(sCancelMatch));
+    sWantCancel = 1;
+    sView.cancel_pending = 1;
+    sView.cancel_unconfirmed = 0;
+}
+
 /* ---- the service ---- */
 
 /* A Ranked request with the shared Amistoso identity: "ranked/<what>". */
@@ -485,10 +543,12 @@ static int post_ranked(const char *what, const char *extra, char *answer, size_t
     SDL_snprintf(body, sizeof(body), "{\"v\":6001,\"id\":\"%s\",\"token\":\"%s\"%s}", sId, sToken, extra != NULL ? extra : "");
     answer[0]='\0';
     if (!Match_PostFriendlyRanked(path, body, answer, size, &status)) {
+        ranked_log_http(what, status, answer);
         if(SDL_strcmp(what,"result")==0 || SDL_strcmp(what,"series")==0) ranked_response_diagnostic(what,status,answer);
         if (SDL_strcmp(what, "profile") == 0 || ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
         return 0;
     }
+    ranked_log_http(what, status, answer);
     if(SDL_strcmp(what,"result")==0 || SDL_strcmp(what,"series")==0) ranked_response_diagnostic(what,status,answer);
     if (SDL_strcmp(what, "profile") == 0 || ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
     if (strstr(answer, "\"error\":\"limit\"") != NULL) {
@@ -511,11 +571,13 @@ static int post_ranked_search(const char *what, const char *extra, char *answer,
                  extra != NULL ? extra : "");
     answer[0]='\0';
     if (!Match_PostFriendlyRanked(path, body, answer, size, &status)) {
+        ranked_log_http(what, status, answer);
         if (ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
         ranked_log_code_response(what, status, answer);
         message(DRMSG_NO_CONNECTION, 99);
         return 0;
     }
+    ranked_log_http(what, status, answer);
     if (ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
     ranked_log_code_response(what, status, answer);
     if (strstr(answer, "\"error\":\"version\"") != NULL || strstr(answer, "\"http\":409") != NULL) {
@@ -729,6 +791,7 @@ static void ranked_clear_search_view_locked(void) {
     sView.role = sView.flow = 0;
     sView.mode = 0;
     sView.code_poll_count = sView.code_change_count = sView.server_code_burned = 0;
+    sView.cancel_pending = sView.cancel_unconfirmed = 0;
     sView.queue_match[0] = sView.queue_same_previous = 0;
     sView.match[0] = sView.code[0] = sView.server_code[0] = sView.peer[0] = '\0';
     sView.room_published_code[0] = sView.room_published_match[0] = sView.room_response_code[0] = '\0';
@@ -1020,28 +1083,45 @@ static int SDLCALL worker(void *unused) {
     (void)unused;
     for (;;) {
         char answer[4096], extra[256], name[20], match[33], code[8], roomMatch[33], cancelled[33];
-        int refresh, search, cancel, board, state, role, chat, presence, leave, urgent, series, i;
+        int refresh, search, cancel, board, state, role, chat, presence, leave, urgent, series, i, cancelTimedOut;
         char viewcode[8];
         int background = gPortInBackground;
         unsigned gen;
         Uint64 now = SDL_GetTicks();
 
+        cancelTimedOut = 0;
         SDL_LockMutex(sLock);
+        if (sCancelPending && now - sCancelAt >= 10000) {
+            sCancelPending = 0;
+            sCancelUnconfirmed = 1;
+            sCancelMatch[0] = '\0';
+            sCancelTarget[0] = '\0';
+            sWantCancel = 0;
+            sView.cancel_pending = 0;
+            sView.cancel_unconfirmed = 1;
+            cancelTimedOut = 1;
+        }
         SDL_strlcpy(name, sName, sizeof(name));
         refresh = sRefresh && !background;
         if (refresh) sRefresh = 0;
-        search = sWantSearch;
+        search = sWantSearch && !sCancelPending;
         series = sSeriesActive;
-        cancel = sWantCancel;
-        sWantCancel = 0;
+        cancel = sWantCancel && (sCancelRetryAt == 0 || now >= sCancelRetryAt);
+        if (cancel) {
+            sWantCancel = 0;
+            sCancelRetryAt = 0;
+        }
         board = sWantBoard && !background;
         if (board) sWantBoard = 0;
         gen = sSearchGen;
         state = sView.state;
         role = sView.role;
         SDL_strlcpy(viewcode, sView.code, sizeof(viewcode));
-        SDL_strlcpy(cancelled, sCancelMatch, sizeof(cancelled));
-        sCancelMatch[0] = '\0';
+        cancelled[0] = '\0';
+        if (cancel) {
+            SDL_strlcpy(cancelled, sCancelMatch, sizeof(cancelled));
+            sCancelMatch[0] = '\0';
+        }
         SDL_strlcpy(match, sView.match, sizeof(match));
         SDL_strlcpy(code, sRoomPending, sizeof(code));
         SDL_strlcpy(roomMatch, sRoomPendingMatch, sizeof(roomMatch));
@@ -1051,6 +1131,8 @@ static int SDLCALL worker(void *unused) {
         presence = (sPresenceOn && (sPresenceAt == 0 || now - sPresenceAt > 300000)) || sPresenceLeave;
         leave = sPresenceLeave;
         SDL_UnlockMutex(sLock);
+
+        if (cancelTimedOut) ranked_debug_log_line("ranked/cancel unconfirmed after 10s; allowing queue");
 
         if (presence) {
             do_presence();
@@ -1082,24 +1164,32 @@ static int SDLCALL worker(void *unused) {
             }
             if (cancel && is_hex(cancelled, 32)) {
                 char cancelState[24] = "";
+                int terminal = 0;
                 SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\"", cancelled);
-                search = 0; /* ranked/cancel must finish before the next ranked/queue */
                 if (post_ranked_search("cancel", extra, answer, sizeof(answer))) {
                     text_value(answer, "state", cancelState, sizeof(cancelState));
-                    if (SDL_strcmp(cancelState,"cancelled") && SDL_strcmp(cancelState,"expired") &&
-                        SDL_strcmp(cancelState,"superseded") && SDL_strcmp(cancelState,"final") && SDL_strcmp(cancelState,"disputed")) {
-                        SDL_LockMutex(sLock);
-                        SDL_strlcpy(sCancelMatch,cancelled,sizeof(sCancelMatch));sWantCancel=1;
-                        sWantSearch=sView.searching=0;sView.state=-1;sView.msg=DRMSG_NO_ANSWER;
-                        sView.match[0]=sView.code[0]=sView.peer[0]=0;
-                        SDL_UnlockMutex(sLock);
-                        message(DRMSG_NO_ANSWER,-1); /* the service still considers the old match active */
-                    }
-                } else {
-                    SDL_LockMutex(sLock);
-                    SDL_strlcpy(sCancelMatch,cancelled,sizeof(sCancelMatch));sWantCancel=1;
-                    sWantSearch=sView.searching=0;sView.state=-1;sView.msg=DRMSG_NO_ANSWER;
-                    SDL_UnlockMutex(sLock); /* retry cancellation, never queue until the service releases the match */
+                    terminal = !SDL_strcmp(cancelState,"cancelled") || !SDL_strcmp(cancelState,"expired") ||
+                               !SDL_strcmp(cancelState,"superseded") || !SDL_strcmp(cancelState,"final") ||
+                               !SDL_strcmp(cancelState,"disputed");
+                }
+                SDL_LockMutex(sLock);
+                if (terminal && SDL_strcmp(sCancelTarget, cancelled) == 0) {
+                    sCancelPending = sCancelUnconfirmed = 0;
+                    sCancelTarget[0] = sCancelMatch[0] = '\0';
+                    sCancelRetryAt = 0;
+                    sView.cancel_pending = sView.cancel_unconfirmed = 0;
+                } else if (sCancelPending && SDL_strcmp(sCancelTarget, cancelled) == 0) {
+                    SDL_strlcpy(sCancelMatch, cancelled, sizeof(sCancelMatch));
+                    sWantCancel = 1;
+                    sCancelRetryAt = SDL_GetTicks() + 1000;
+                    sView.cancel_pending = 1;
+                }
+                SDL_UnlockMutex(sLock);
+                {
+                    char event[128];
+                    SDL_snprintf(event, sizeof(event), "ranked/cancel match=%.32s state=%s confirmed=%d",
+                                 cancelled, cancelState[0] ? cancelState : "no-response", terminal);
+                    ranked_debug_log_line(event);
                 }
             }
             if (pendingRefresh) {
@@ -1176,8 +1266,7 @@ static int SDLCALL worker(void *unused) {
                             sWantSearch = sView.searching = 0;
                             sView.state = -1;
                             sView.msg = DRMSG_HOST_NO_ROOM;
-                            SDL_strlcpy(sCancelMatch, sView.match, sizeof(sCancelMatch));
-                            sWantCancel = 1;
+                            ranked_cancel_request_locked(sView.match);
                         }
                         SDL_UnlockMutex(sLock);
                     } else if (!sLifeConnect && !sLifeReady && (sCodePollAt == 0 || SDL_GetTicks() - sCodePollAt >= 2500)) {
@@ -1198,8 +1287,7 @@ static int SDLCALL worker(void *unused) {
                             sWantSearch = sView.searching = 0;
                             sView.state = -1;
                             sView.msg = DRMSG_NO_RIVAL;
-                            SDL_strlcpy(sCancelMatch, sView.match, sizeof(sCancelMatch));
-                            sWantCancel = 1;
+                            ranked_cancel_request_locked(sView.match);
                         }
                         SDL_UnlockMutex(sLock);
                     } else {
@@ -1227,7 +1315,9 @@ static int SDLCALL worker(void *unused) {
             }
         } else if (cancel && is_hex(cancelled,32)) {
             SDL_LockMutex(sLock);
-            SDL_strlcpy(sCancelMatch,cancelled,sizeof(sCancelMatch));sWantCancel=1;
+            SDL_strlcpy(sCancelMatch, cancelled, sizeof(sCancelMatch));
+            sWantCancel = 1;
+            sCancelRetryAt = SDL_GetTicks() + 1000;
             SDL_UnlockMutex(sLock);
         } else if (chat) {
             chatAt = SDL_GetTicks();
@@ -1251,7 +1341,9 @@ static int SDLCALL worker(void *unused) {
             rounds = !search ? 100 : gPortInBackground ? 1 : paired ? MATCH_RANKED_PAIRED_MS / 20 : waited < 30000 ? MATCH_RANKED_FIRST_MS / 20 : waited < 120000 ? MATCH_RANKED_MIDDLE_MS / 20 : MATCH_RANKED_LATE_MS / 20;
             for (i = 0; i < rounds; i++) {
                 SDL_LockMutex(sLock);
-                urgent = sFlowNow || (!gPortInBackground && (sRefresh || sWantBoard || sChatOutN > 0)) || sWantCancel || sRoomPending[0] != '\0' || sPresenceLeave || sLifeReady || sLifeStarted;
+                urgent = sFlowNow || (!gPortInBackground && (sRefresh || sWantBoard || sChatOutN > 0)) ||
+                         (sWantCancel && (sCancelRetryAt == 0 || SDL_GetTicks() >= sCancelRetryAt)) ||
+                         sRoomPending[0] != '\0' || sPresenceLeave || sLifeReady || sLifeStarted;
                 SDL_UnlockMutex(sLock);
                 if (urgent) {
                     break;
@@ -1259,11 +1351,10 @@ static int SDLCALL worker(void *unused) {
                 if (!Match_BackgroundWait(gPortInBackground ? MATCH_BACKGROUND_POLL_MS : 20, !paired)) {
                     SDL_LockMutex(sLock);
                     if (!paired && sView.searching) {
-                        sWantCancel = 1;
-                        SDL_strlcpy(sCancelMatch, sView.match, sizeof(sCancelMatch));
                         sView.searching = 0;
                         sView.state = -1;
                         sView.msg = DRMSG_BACKGROUND_TIMEOUT;
+                        ranked_cancel_request_locked(sView.match);
                     }
                     SDL_UnlockMutex(sLock);
                     break;
@@ -1556,11 +1647,9 @@ void DrRanked_ResetForNewSearch(void) {
     if(hasSession) SDL_strlcpy(match,sessionMatch,sizeof(match));
     else if(is_hex(sView.match,32)) SDL_strlcpy(match,sView.match,sizeof(match));
     else if(is_hex(sHandedOver,32)) SDL_strlcpy(match,sHandedOver,sizeof(match));
+    if (!sCancelPending) sCancelUnconfirmed = 0;
     ranked_burn_attempt_locked();
-    if(is_hex(match,32)) {
-        SDL_strlcpy(sCancelMatch,match,sizeof(sCancelMatch));
-        sWantCancel=1;
-    }
+    if(is_hex(match,32)) ranked_cancel_request_locked(match);
     sSearchGen++;
     ranked_clear_search_view_locked();
     sView.msg = DRMSG_CANCELLED;
@@ -1568,6 +1657,8 @@ void DrRanked_ResetForNewSearch(void) {
     sView.error_field[0] = '\0';
     SDL_memset(sView.route_http, 0, sizeof(sView.route_http));
     SDL_memset(sView.route_error, 0, sizeof(sView.route_error));
+    sView.cancel_pending = sCancelPending;
+    sView.cancel_unconfirmed = sCancelUnconfirmed;
     SDL_UnlockMutex(sLock);
     if(hasSession) remove_file("dragonnet-session.txt");
     remove_file("dragonnet-flow.txt");
@@ -1655,11 +1746,14 @@ void DrRanked_RecordLobbyCode(const char *match, const char *code, int host) {
 }
 
 void DrRanked_BurnLobbyCode(const char *match, const char *code) {
+    char event[128];
     if (code == NULL || SDL_strlen(code) != 6) return;
     lock_make();
     SDL_LockMutex(sLock);
     if (match == NULL || !sView.match[0] || SDL_strcmp(match, sView.match) == 0) burn_code_locked(code);
     SDL_UnlockMutex(sLock);
+    SDL_snprintf(event, sizeof(event), "ranked/code burned match=%.32s code=%.6s", match ? match : "-", code);
+    ranked_debug_log_line(event);
 }
 
 int DrRanked_CodeIsBurned(const char *code) {

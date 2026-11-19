@@ -49,6 +49,8 @@ typedef struct DrRanked {
     int code_change_count;
     int server_code_burned;
     int room_kept_old;
+    int cancel_pending;
+    int cancel_unconfirmed;
     int profile;        /* 0 not loaded, 1 loaded */
     int rating, wins, losses, draws, position;
     char rank[20], peer[20], code[8], server_code[8], match[33];
@@ -106,6 +108,7 @@ void DrRanked_SetRoomForMatch(const char *match, const char *code);
 void DrRanked_RecordLobbyCode(const char *match, const char *code, int host);
 void DrRanked_BurnLobbyCode(const char *match, const char *code);
 int DrRanked_CodeIsBurned(const char *code);
+void DrRanked_DebugLog(const char *event);
 void DrRanked_Connection(int ready);   /* the lobby is connected (flow:2): tells the service */
 void DrRanked_FightStarted(void);      /* the fight begins (flow:2): tells the service */
 int DrRanked_Handover(void);                       /* the match starts: remembered for its result (1 = it was a ranked one) */
