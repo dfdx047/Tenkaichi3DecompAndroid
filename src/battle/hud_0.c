@@ -3,10 +3,11 @@
 #include "battle/battle.h"
 #include "sys/pad.h"
 #ifdef PORT
+#include "battle/port_menu.h"
 #include "../../port/src/gs/net_dragon.h"
 extern void BtlMenu_PortDrawRankedHeader(int won, unsigned seconds, int waiting);
 extern s32 BtlMenu_PortLive(void);
-extern s32 BtlMenu_PortVisible(BtlMenu *menu);
+extern s32 BtlMenu_PortVisible(void);
 #endif
 #ifdef PORT
 #include "battle/tag_team.h"
@@ -420,7 +421,7 @@ static void PauseMenu_PortLobbyPick(BtlMenu *menu, s32 pad) {
 #ifdef PORT
 /* The battle's menu work exists (between PauseMenu_Init and PauseMenu_Term): a spectator's own pause menu
    (port/src/spec_menu.c) is drawn with it. Set the same way on every copy. */
-s32 gPortBtlMenuLive;
+int gPortBtlMenuLive;
 #endif
 
 #ifdef PORT
@@ -725,7 +726,7 @@ void PauseMenu_Draw(void) {
             unsigned now=DrRanked_Ticks();
             unsigned elapsed=now>=rankedPostOpened?now-rankedPostOpened:0;
             BtlMenu_DrawAll();
-            rankedPostDrawn=BtlMenu_PortVisible(&rankedPostMenu);
+            rankedPostDrawn=BtlMenu_PortVisible();
             BtlMenu_PortDrawRankedHeader(BattleResult_IsPlayerWin(), elapsed>=20000u?0:(20u-elapsed/1000u), rankedPostWaiting);
         }
         return;

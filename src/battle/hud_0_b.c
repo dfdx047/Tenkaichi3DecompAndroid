@@ -2,6 +2,9 @@
 #include "battle/hud_0.h"
 #include "sys/pad.h"
 #include "sys/heap.h"
+#ifdef PORT
+#include "battle/port_menu.h"
+#endif
 
 /*
  * Battle pause menu, part 2: the menu engine. Source range 0x213238-0x215010.
@@ -648,7 +651,6 @@ void BtlMenu_DrawAll(void) {
 /* Draws a menu that is not the shown tree, as BtlMenu_DrawAll draws that one: a spectator's own pause menu
    (port/src/spec_menu.c). */
 void BtlMenu_PortDrawMenu(BtlMenu *menu) {
-    extern s32 gPortBtlMenuLive; /* battle/hud_0.c */
     u64 *pkt;
     s32 first;
     s32 pad;
@@ -708,7 +710,6 @@ void BtlMenu_PortDrawRankedHeader(int won, unsigned seconds, int waiting) {
 
 /* Its box's size, as the engine works it out (0 when the battle's menu work does not exist). */
 void BtlMenu_PortSize(BtlMenu *menu, s32 *w, s32 *h) {
-    extern s32 gPortBtlMenuLive;
     s32 pad;
 
     *w = *h = 0;
@@ -724,15 +725,11 @@ void BtlMenu_PortSize(BtlMenu *menu, s32 *w, s32 *h) {
 
 /* 1 while the battle's menu work exists. */
 s32 BtlMenu_PortLive(void) {
-    extern s32 gPortBtlMenuLive;
-
     return gPortBtlMenuLive && gBtlMenu != NULL;
 }
 
-s32 BtlMenu_PortVisible(BtlMenu *menu) {
-    extern s32 gPortBtlMenuLive;
-
-    return gPortBtlMenuLive && gBtlMenu != NULL && gBtlMenu->active && gBtlMenu->top == menu;
+s32 BtlMenu_PortVisible(void) {
+    return gPortBtlMenuLive && gBtlMenu != NULL && gBtlMenu->active && gBtlMenu->top != NULL;
 }
 #endif
 
