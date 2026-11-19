@@ -434,9 +434,11 @@ typedef struct TboScreen {
 static TboScreen *sTb;
 static DrRanked sTbRk; /* (what Ranked says this frame) */
 static char sTbRkJoinCode[8], sTbRkOpenedCode[8], sTbRkLobbyMatch[33], sTbRkCurrentMatch[33];
-static int sTbRkHostReopened;
+static int sTbRkHostReopened, sTbRkLobbyStartFailed;
 static void Tb_RankedResetLocal(void);
 static void Tb_RankedResetForNewSearch(void);
+static void Tb_RankedExit(const char *reason);
+static void Tb_RankedExitForSearch(const char *fallback);
 static PortLobbyView sTbLv; /* (the lobby's page: what it shows this frame) */
 static Bt3Profile sTbCommunity;
 static s32 sTbCommunityBoard;
@@ -875,8 +877,6 @@ static s32 Tb_SearchNews(void) {
     }
     if (state <= 0 && !sTb->found) {
         int ranked = sTb->rkLobby;
-        char serverCode[8];
-        Ps_Copy(serverCode, sTbRk.server_code[0] ? sTbRk.server_code : sTbRk.code, sizeof(serverCode));
         int oldRoom = sTbRk.room_kept_old || sTbRk.server_code_burned;
         if (state == -3) {
             Tb_Say(Port_LobbyError()); /* (in the box: the network's reasons are long; whole lines of the catalog, sTbNetLines) */
@@ -889,8 +889,11 @@ static s32 Tb_SearchNews(void) {
             Tb_Note("THE SEARCH COULD NOT BE STARTED");
         }
         if (ranked) {
+            Tb_RankedExitForSearch(sTbRkLobbyStartFailed ? "lobby local não abriu" :
+                                   state == -3 ? "lobby recusado" :
+                                   state == -4 ? "lobby sem conexão" :
+                                   state == -2 ? "versão incompatível" : "lobby abortado");
             Tb_RankedResetForNewSearch();
-            if (!oldRoom && DrRanked_CodeIsBurned(serverCode)) oldRoom = 1;
             if (oldRoom) Tb_Note("O servidor ainda devolve a sala antiga");
         } else {
             Port_LobbyCancel();
@@ -1086,7 +1089,7 @@ static void Tb_QuickUpdate(s32 live) {
 static void Tb_RankedResetLocal(void) {
     memset(&sTbRk, 0, sizeof(sTbRk));
     sTbRkJoinCode[0] = sTbRkOpenedCode[0] = sTbRkLobbyMatch[0] = sTbRkCurrentMatch[0] = '\0';
-    sTbRkHostReopened = 0;
+    sTbRkHostReopened = sTbRkLobbyStartFailed = 0;
     if (sTb != NULL) {
         sTb->rkLobby = 0;
         sTb->rkLobbyFrom = 0;
@@ -1097,6 +1100,76 @@ static void Tb_RankedResetLocal(void) {
 static void Tb_RankedResetForNewSearch(void) {
     DrRanked_ResetForNewSearch();
     Tb_RankedResetLocal();
+}
+
+static void Tb_RankedExit(const char *reason) {
+    char local[8] = "";
+    char event[384];
+    if (sTbRkJoinCode[0]) Ps_Copy(local, sTbRkJoinCode, sizeof(local));
+    else if (sTbRkOpenedCode[0]) Ps_Copy(local, sTbRkOpenedCode, sizeof(local));
+    else if (sTbRk.code[0]) Ps_Copy(local, sTbRk.code, sizeof(local));
+    sprintf(sTb->sayLine,
+            "Busca encerrada: %.42s; match=%.8s local=%.6s pub=%.6s@%.8s resp=%.6s q=%d/p=%d/r=%d",
+            reason, sTbRk.match, local, sTbRk.room_published_code, sTbRk.room_published_match,
+            sTbRk.room_response_code, sTbRk.route_http[0], sTbRk.route_http[1], sTbRk.route_http[2]);
+    sTb->say = 600;
+    sprintf(event, "ranked/search-exit reason=%.42s match=%s local=%s opened=%s published=%s@%s room_response=%s http=%d/%d/%d",
+            reason, sTbRk.match, local, sTbRkOpenedCode, sTbRk.room_published_code,
+            sTbRk.room_published_match, sTbRk.room_response_code,
+            sTbRk.route_http[0], sTbRk.route_http[1], sTbRk.route_http[2]);
+    DrRanked_DebugLog(event);
+}
+
+static void Tb_RankedExitForSearch(const char *fallback) {
+    char reason[64];
+    int http = 0;
+    if (sTbRk.room_kept_old || sTbRk.server_code_burned) {
+        Tb_RankedExit("o servidor ainda devolve a sala antiga");
+        return;
+    }
+    if (sTbRk.cancel_unconfirmed) {
+        Tb_RankedExit("cancel sem confirmação do servidor");
+        return;
+    }
+    if (sTbRk.cancel_pending) {
+        Tb_RankedExit("cancelamento pendente no servidor");
+        return;
+    }
+    if (sTbRk.msg == DRMSG_FINISH_FIRST) {
+        Tb_RankedExit("resultado ranked anterior pendente");
+        return;
+    }
+    if (sTbRk.msg == DRMSG_VERSION) {
+        Tb_RankedExit("versão incompatível com o servidor");
+        return;
+    }
+    if (sTbRk.msg == DRMSG_LIMIT) {
+        Tb_RankedExit("limite temporário do servidor");
+        return;
+    }
+    if (sTbRk.msg == DRMSG_NO_RIVAL) {
+        Tb_RankedExit("busca encerrada sem rival");
+        return;
+    }
+    if (sTbRk.msg == DRMSG_BACKGROUND_TIMEOUT) {
+        Tb_RankedExit("tempo de busca em segundo plano esgotado");
+        return;
+    }
+    if (sTbRk.msg == DRMSG_ENDED_NO_POINTS) {
+        Tb_RankedExit("servidor encerrou a busca sem resultado");
+        return;
+    }
+    if (sTbRk.route_http[2] && sTbRk.route_http[2] != 200) http = sTbRk.route_http[2];
+    else if (sTbRk.route_http[1] && sTbRk.route_http[1] != 200) http = sTbRk.route_http[1];
+    else if (sTbRk.route_http[0] && sTbRk.route_http[0] != 200) http = sTbRk.route_http[0];
+    if (http) {
+        sprintf(reason, "erro de rede http=%d", http);
+        Tb_RankedExit(reason);
+    } else if (sTbRk.msg == DRMSG_NO_CONNECTION || sTbRk.msg == DRMSG_NO_ANSWER) {
+        Tb_RankedExit("erro de rede sem resposta");
+    } else {
+        Tb_RankedExit(fallback);
+    }
 }
 
 /* A message of Ranked (DRMSG_), in English: the screens' line, translated as the others. "" none. */
@@ -1203,16 +1276,15 @@ static void Tb_RankedWaitUpdate(s32 live) {
         sTb->rkLobby = 0;
         sTb->rkLobbyFrom = 0;
         sTbRkJoinCode[0] = sTbRkOpenedCode[0] = sTbRkLobbyMatch[0] = '\0';
+        sTbRkLobbyStartFailed = 0;
     }
     if (sTbRk.match[0]) Ps_Copy(sTbRkCurrentMatch, sTbRk.match, sizeof(sTbRkCurrentMatch));
 
     if (sTbRk.state == 3 && sTb->rkLobbyFrom == 0) sTb->rkLobbyFrom = sTb->frames;
-    if (sTb->rkLobby && !sTb->found && sTb->rkLobbyFrom != 0 && sTb->frames - sTb->rkLobbyFrom >= 30 * 60) {
-        char serverCode[8];
+    if (sTbRk.state == 3 && !sTb->found && sTb->rkLobbyFrom != 0 && sTb->frames - sTb->rkLobbyFrom >= 30 * 60) {
         int oldRoom = sTbRk.room_kept_old || sTbRk.server_code_burned;
-        Ps_Copy(serverCode, sTbRk.server_code[0] ? sTbRk.server_code : sTbRk.code, sizeof(serverCode));
+        Tb_RankedExitForSearch(sTbRkLobbyStartFailed ? "lobby local não abriu" : "o adversário não conectou");
         Tb_RankedResetForNewSearch();
-        if (!oldRoom && DrRanked_CodeIsBurned(serverCode)) oldRoom = 1;
         Tb_Note(oldRoom ? "O servidor ainda devolve a sala antiga" : "O adversário não conectou");
         Tb_SetMode(TB_RANKED);
         return;
@@ -1233,9 +1305,12 @@ static void Tb_RankedWaitUpdate(s32 live) {
         if (sTbRk.role == 1 && sTbRkLobbyMatch[0] && strcmp(sTbRkLobbyMatch, sTbRk.match) == 0 && Port_LobbyCode()[0] != 0) {
             const char *opened = Port_LobbyCode();
             if (strcmp(opened, sTbRkOpenedCode) != 0) {
+                char event[128];
                 Ps_Copy(sTbRkOpenedCode, opened, sizeof(sTbRkOpenedCode));
                 DrRanked_RecordLobbyCode(sTbRkLobbyMatch, opened, 1);
                 DrRanked_SetRoomForMatch(sTbRkLobbyMatch, opened);
+                sprintf(event, "ranked/lobby host-code match=%.32s code=%.6s", sTbRkLobbyMatch, opened);
+                DrRanked_DebugLog(event);
             }
         }
         if (Tb_SearchNews()) {
@@ -1253,21 +1328,37 @@ static void Tb_RankedWaitUpdate(s32 live) {
             Port_NetSpeedSet(Port_NetSpeedStandard());
             Port_NetRulesSet(sTbRk.mode ? 1 : 0, 0, 4); /* no time limit */
             Port_SettingsWrite();
+            {
+                char event[96];
+                sprintf(event, "ranked/lobby host-open match=%.32s", sTbRk.match);
+                DrRanked_DebugLog(event);
+            }
             if (Port_LobbyStartCode(1, "") >= 0) {
+                sTbRkLobbyStartFailed = 0;
                 sTb->rkLobby = 1;
                 sTb->host = 1;
                 sTb->rkLobbyFrom = sTb->frames;
+            } else {
+                sTbRkLobbyStartFailed = 1;
             }
         } else if (sTbRk.role == 2 && Ps_Len(sTbRk.code) == CODE_LEN) {
             Ps_Copy(sTbRkLobbyMatch, sTbRk.match, sizeof(sTbRkLobbyMatch));
             Port_NetNameSet(Port_NetNameGet());
             Port_NetOptions(-1, -1); /* joining: the host's choices arrive with its answer */
+            {
+                char event[128];
+                sprintf(event, "ranked/lobby guest-join match=%.32s code=%.6s", sTbRk.match, sTbRk.code);
+                DrRanked_DebugLog(event);
+            }
             if (Port_LobbyStartCode(0, sTbRk.code) >= 0) {
+                sTbRkLobbyStartFailed = 0;
                 sTb->rkLobby = 1;
                 sTb->host = 0;
                 sTb->rkLobbyFrom = sTb->frames;
                 Ps_Copy(sTbRkJoinCode, sTbRk.code, sizeof(sTbRkJoinCode));
                 DrRanked_RecordLobbyCode(sTbRk.match, sTbRk.code, 0);
+            } else {
+                sTbRkLobbyStartFailed = 1;
             }
         }
         if (sTb->rkLobby) {
@@ -1275,11 +1366,9 @@ static void Tb_RankedWaitUpdate(s32 live) {
             sTb->ended = Port_NetSessionsEnded();
         }
     } else if (sTb->modeT > 30 && (sTbRk.state < 0 || (sTbRk.state == 0 && !sTbRk.searching))) { /* the search ended */
-        char serverCode[8];
         int oldRoom = sTbRk.room_kept_old || sTbRk.server_code_burned;
-        Ps_Copy(serverCode, sTbRk.server_code[0] ? sTbRk.server_code : sTbRk.code, sizeof(serverCode));
+        Tb_RankedExitForSearch("busca encerrada pelo servidor");
         Tb_RankedResetForNewSearch();
-        if (!oldRoom && DrRanked_CodeIsBurned(serverCode)) oldRoom = 1;
         if (oldRoom) Tb_Note("O servidor ainda devolve a sala antiga");
         Tb_SetMode(TB_RANKED);
         return;
@@ -1289,6 +1378,7 @@ static void Tb_RankedWaitUpdate(s32 live) {
     }
     if (pad->gamePressed & (PADG_CIRCLE | PADG_TRIANGLE)) {
         Snd_PlaySe(1, 2);
+        Tb_RankedExit("cancelamento pendente no servidor");
         Tb_RankedResetForNewSearch();
         Tb_SetMode(TB_HUB);
     }
@@ -4355,6 +4445,9 @@ static char *Tb_Help(void) {
             Ps_Copy(logged, rankedLines, sizeof(logged));
         }
         return rankedLines;
+    }
+    if (sTb->say > 0 && (sTb->mode == TB_HUB || sTb->mode == TB_RANKED)) {
+        return sTb->sayLine;
     }
     if (sTb->mode == TB_RANKED && (finishDiag[0] || requestDiag[0])) {
         Ps_Copy(rankedDiagnostic, requestDiag, sizeof(rankedDiagnostic));
