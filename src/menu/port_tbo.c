@@ -4421,11 +4421,12 @@ static void Tb_BracketFocus(char *focus) {
 /* What the hosts say in the box at the foot of the screen (two lines at most). */
 static char *Tb_Help(void) {
     static char rankedDiagnostic[700];
-    char finishDiag[384], requestDiag[384];
+    char finishDiag[384], requestDiag[384], lifecycleDiag[256];
     extern void DrNet_FinishDiagCopy(char *out, size_t size);
     extern void DrRanked_DiagnosticCopy(char *out, size_t size);
     DrNet_FinishDiagCopy(finishDiag, sizeof(finishDiag));
     DrRanked_DiagnosticCopy(requestDiag, sizeof(requestDiag));
+    DrRanked_LifecycleDiagnosticCopy(lifecycleDiag, sizeof(lifecycleDiag));
     if (sTb->mode == TB_RKWAIT) {
         static char rankedLines[700];
         static char logged[700];
@@ -4450,6 +4451,10 @@ static char *Tb_Help(void) {
         }
         return rankedLines;
     }
+    if (sTb->mode == TB_HUB && lifecycleDiag[0]) {
+        Ps_Copy(rankedDiagnostic, lifecycleDiag, sizeof(rankedDiagnostic));
+        return rankedDiagnostic;
+    }
     if (sTb->say > 0 && (sTb->mode == TB_HUB || sTb->mode == TB_RANKED)) {
         return sTb->sayLine;
     }
@@ -4465,11 +4470,6 @@ static char *Tb_Help(void) {
             Ps_Cat(rankedDiagnostic, " | ", sizeof(rankedDiagnostic));
             Ps_Cat(rankedDiagnostic, requestDiag, sizeof(rankedDiagnostic));
         }
-        return rankedDiagnostic;
-    }
-    if (sTb->mode == TB_HUB && strstr(requestDiag, "lifecycle ") != NULL &&
-        strstr(requestDiag, "lifecycle - none") == NULL) {
-        Ps_Copy(rankedDiagnostic, requestDiag, sizeof(rankedDiagnostic));
         return rankedDiagnostic;
     }
     if (sTb->mode == TB_HUB && strstr(requestDiag, "postfight phase=") != NULL) {

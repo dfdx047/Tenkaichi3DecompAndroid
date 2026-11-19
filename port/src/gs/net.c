@@ -74,6 +74,7 @@ static const uint32_t kVersion = NET_VERSION;
 #include "net_chat.h"
 #include "net_lobby.h"
 #include "net_update.h"
+#include "net_dragon.h"
 static int sLobbyOther;
 
 /* What the meter shows (ui.cpp): the round trip time, and per second how often the game went back, how far, and
@@ -800,6 +801,8 @@ enum { T_LOBBY_INVITE = 40, LOBBY_CAP = 0x4C4F4231 }; /* (net_lobby.c) */
 static uint32_t sMyArrival, sTheirArrival; /* (0: not yet) */
 static int sMet;
 static char sBannerSaid[NAME_LEN + 8]; /* what session_banner last put up (empty: nothing yet in this session) */
+static int sRankedSession, sRankedMeetComplete;
+static uint64_t sRankedConnectSince;
 
 static void send_inputs(void) {
     uint8_t pkt[IN_HEAD + REDUNDANT * PAD];
@@ -1918,6 +1921,9 @@ static void net_start(int role, const char *host, const char *join) {
     fp_wait();
     sMode = role;
     sConnected = 0;
+    sRankedSession = sSession && DrRanked_InSession();
+    sRankedMeetComplete = 0;
+    sRankedConnectSince = SDL_GetTicksNS();
     sTick = 0;
     memset(sIn, 0, sizeof(sIn));
     memset(sHave, 0, sizeof(sHave)); /* (a second session in one run starts as clean as the first) */
@@ -2702,6 +2708,14 @@ static void session_banner(void) {
 /* While the game's thread waits for the other side during a session's start: the line, and the picture. */
 static void session_hold(void) {
     if (sSession) {
+        if (sRankedSession && !sRankedMeetComplete && SDL_GetTicksNS() - sRankedConnectSince >= 25000000000ull) {
+            const char *why = sConnected ? "Não consegui confirmar a conexão com o rival" : "O rival não confirmou a conexão";
+            fprintf(stderr, "bt3: ranked: connection setup exceeded 25 seconds connected=%d\n", sConnected);
+            DrRanked_ConnectionTimeout(sConnected);
+            Port_UiNotice(why);
+            Port_NetLeave(); /* before the first fight: DrNet_SessionEnding releases the assignment without a forfeit */
+            exit(2);
+        }
         session_banner();
         Gs_HoldFrame();
     }
@@ -2775,6 +2789,7 @@ static void meet(unsigned tick) {
         sByeWhy = BYE_APART;
         ended("The two games no longer agree (desync): the match has ended.", tick);
     }
+    sRankedMeetComplete = 1;
 }
 
 /* The spectator: looks at the socket, and tells the host what it has (every 50 ms). */

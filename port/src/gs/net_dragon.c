@@ -219,7 +219,7 @@ static SDL_AtomicInt sStarted;
 static SDL_Condition *sWake;
 static char sFinishDiag[192];
 static char sOutboxDiag[192];
-static char sLastResultDiag[160], sLastSeriesDiag[128];
+static char sLastResultDiag[160], sLastSeriesDiag[128], sLastLifeDiag[256];
 static int sLastPostStatus;
 static int sPostFightPhase;
 static unsigned sPostFightElapsed;
@@ -516,6 +516,44 @@ void DrRanked_DiagnosticCopy(char *out,size_t size) {
     SDL_LockMutex(sLock);
     SDL_snprintf(out,size,"result %s | series %s | gap=%u round=%u | postfight phase=%d ms=%u",sLastResultDiag[0]?sLastResultDiag:"http=0 -",sLastSeriesDiag[0]?sLastSeriesDiag:"http=0 -",sSeriesGap,sRankedRound,sPostFightPhase,sPostFightElapsed);
     SDL_UnlockMutex(sLock);
+}
+
+void DrRanked_LifecycleDiagnosticCopy(char *out, size_t size) {
+    if (!out || !size) return;
+    lock_make();
+    SDL_LockMutex(sLock);
+    SDL_strlcpy(out, sLastLifeDiag, size);
+    SDL_UnlockMutex(sLock);
+    if (!out[0] && read_text("ranked-lifecycle.txt", out, size)) {
+        SDL_LockMutex(sLock);
+        SDL_strlcpy(sLastLifeDiag, out, sizeof(sLastLifeDiag));
+        SDL_UnlockMutex(sLock);
+    }
+}
+
+static void ranked_lifecycle_note(const char *action, int status, const char *response) {
+    char safe[144], note[256], event[320];
+    ranked_redact_body(response, safe, sizeof(safe));
+    SDL_snprintf(note, sizeof(note), "%s http=%d response=%.132s", action, status, safe);
+    lock_make();
+    SDL_LockMutex(sLock);
+    SDL_strlcpy(sLastLifeDiag, note, sizeof(sLastLifeDiag));
+    SDL_UnlockMutex(sLock);
+    write_text("ranked-lifecycle.txt", note);
+    SDL_snprintf(event, sizeof(event), "ranked/lifecycle %s", note);
+    ranked_debug_log_line(event);
+}
+
+void DrRanked_ConnectionTimeout(int connected) {
+    const char *why = connected ? "Não consegui confirmar a conexão com o rival" : "O rival não confirmou a conexão";
+    char event[160];
+    lock_make();
+    SDL_LockMutex(sLock);
+    SDL_strlcpy(sLastLifeDiag, why, sizeof(sLastLifeDiag));
+    SDL_UnlockMutex(sLock);
+    write_text("ranked-lifecycle.txt", why);
+    SDL_snprintf(event, sizeof(event), "ranked/connection timeout after=25000ms connected=%d reason=%s", connected, why);
+    ranked_debug_log_line(event);
 }
 
 void DrRanked_PostFightState(int phase, unsigned elapsed_ms) {
@@ -1093,8 +1131,8 @@ static void do_presence(void) {
 /* flow:2 (the service's lifecycle): "ready" once the lobby is connected, "started" when the fight begins.
    Sent by this thread (the game never waits for HTTP); gives up after a few failed tries. */
 static void do_lifecycle(void) {
-    char match[33], answer[512], extra[96];
-    int ready, started, connect;
+    char match[33], answer[512], extra[96], action[16];
+    int ready, started, connect, status;
     SDL_LockMutex(sLock);
     ready = sLifeReady;
     started = sLifeStarted;
@@ -1104,18 +1142,31 @@ static void do_lifecycle(void) {
     if ((!connect && !ready && !started) || !is_hex(match, 32)) {
         return;
     }
-    SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\",\"action\":\"%s\"", match, connect ? "connect" : ready ? "ready" : "started");
-    if (post_ranked_search("lifecycle", extra, answer, sizeof(answer)) || ++sLifeTries >= 5) {
+    SDL_strlcpy(action, connect ? "connect" : ready ? "ready" : "started", sizeof(action));
+    SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\",\"action\":\"%s\"", match, action);
+    {
+        char event[112];
+        SDL_snprintf(event, sizeof(event), "ranked/lifecycle send match=%s action=%s", match, action);
+        ranked_debug_log_line(event);
+    }
+    {
+        int ok = post_ranked_search("lifecycle", extra, answer, sizeof(answer));
         SDL_LockMutex(sLock);
-        if (connect) {
-            sLifeConnect = 0;
-        } else if (ready) {
-            sLifeReady = 0;
-        } else {
-            sLifeStarted = 0;
-        }
-        sLifeTries = 0;
+        status = sView.route_http[3];
         SDL_UnlockMutex(sLock);
+        ranked_lifecycle_note(action, status, answer);
+        if (ok || ++sLifeTries >= 5) {
+            SDL_LockMutex(sLock);
+            if (connect) {
+                sLifeConnect = 0;
+            } else if (ready) {
+                sLifeReady = 0;
+            } else {
+                sLifeStarted = 0;
+            }
+            sLifeTries = 0;
+            SDL_UnlockMutex(sLock);
+        }
     }
 }
 

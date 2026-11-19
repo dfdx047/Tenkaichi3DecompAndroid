@@ -111,6 +111,7 @@ void DrRanked_BurnLobbyCode(const char *match, const char *code);
 int DrRanked_CodeIsBurned(const char *code);
 void DrRanked_DebugLog(const char *event);
 void DrRanked_Connection(int ready);   /* the lobby is connected (flow:2): tells the service */
+void DrRanked_ConnectionTimeout(int connected); /* connection setup exceeded its ranked deadline */
 void DrRanked_FightStarted(void);      /* the fight begins (flow:2): tells the service */
 int DrRanked_Handover(void);                       /* the match starts: remembered for its result (1 = it was a ranked one) */
 int DrRanked_InSession(void);
@@ -121,6 +122,7 @@ void DrRanked_BattleStart(void);
 void DrNet_SessionEnding(int mine);
 void DrNet_FinishDiagCopy(char *out, size_t size);
 void DrRanked_DiagnosticCopy(char *out, size_t size);
+void DrRanked_LifecycleDiagnosticCopy(char *out, size_t size);
 
 /* The general chat. */
 typedef struct DrChat {
