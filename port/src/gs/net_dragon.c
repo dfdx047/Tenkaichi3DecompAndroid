@@ -212,10 +212,14 @@ static void hex_decode(const char *in, size_t len, char *out, size_t size) {
 
 static SDL_Mutex *sLock;
 static SDL_Mutex *sOutboxLock; /* result queue file */
+static Uint64 sOutboxDeadline;
+static char sOutboxTrackedMatch[33];
 static SDL_AtomicInt sStarted;
 static SDL_Condition *sWake;
 static char sFinishDiag[192];
+static char sOutboxDiag[192];
 static char sLastResultDiag[160], sLastSeriesDiag[128];
+static int sLastPostStatus;
 static int sPostFightPhase;
 static unsigned sPostFightElapsed;
 static SDL_AtomicInt sRankedWinnerDecided;
@@ -233,7 +237,9 @@ void DrNet_FinishDiagCopy(char *out, size_t size) {
     if (out == NULL || size == 0) return;
     lock_make();
     SDL_LockMutex(sLock);
-    SDL_strlcpy(out, sFinishDiag, size);
+    SDL_snprintf(out, size, "%s%s%s", sFinishDiag,
+                 sFinishDiag[0] && sOutboxDiag[0] ? " | " : "",
+                 sOutboxDiag);
     SDL_UnlockMutex(sLock);
 }
 
@@ -562,20 +568,22 @@ static int post_ranked(const char *what, const char *extra, char *answer, size_t
     SDL_snprintf(body, sizeof(body), "{\"v\":6001,\"id\":\"%s\",\"token\":\"%s\"%s}", sId, sToken, extra != NULL ? extra : "");
     answer[0]='\0';
     if (!Match_PostFriendlyRanked(path, body, answer, size, &status)) {
+        sLastPostStatus = status;
         ranked_log_http(what, status, answer);
         if(SDL_strcmp(what,"result")==0 || SDL_strcmp(what,"series")==0) ranked_response_diagnostic(what,status,answer);
         if (SDL_strcmp(what, "profile") == 0 || ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
         return 0;
     }
+    sLastPostStatus = status;
     ranked_log_http(what, status, answer);
     if(SDL_strcmp(what,"result")==0 || SDL_strcmp(what,"series")==0) ranked_response_diagnostic(what,status,answer);
     if (SDL_strcmp(what, "profile") == 0 || ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
     if (strstr(answer, "\"error\":\"limit\"") != NULL) {
-        message(DRMSG_LIMIT, 99); /* (a search goes on, without asking, until the pause is over: net_match.c) */
+        if (SDL_strcmp(what, "result") != 0) message(DRMSG_LIMIT, 99); /* result retries must not alter a newer queue's UI */
         return 0;
     }
     if (strstr(answer, "\"error\":\"version\"") != NULL) {
-        message(DRMSG_VERSION, -1);
+        if (SDL_strcmp(what, "result") != 0) message(DRMSG_VERSION, -1);
         return 0;
     }
     return strstr(answer, "\"error\"") == NULL;
@@ -719,6 +727,45 @@ static void outbox_done(void) {
     SDL_UnlockMutex(sOutboxLock);
 }
 
+static void outbox_watch(const char *match, Uint64 now) {
+    SDL_LockMutex(sOutboxLock);
+    if (SDL_strcmp(sOutboxTrackedMatch, match) != 0) {
+        SDL_strlcpy(sOutboxTrackedMatch, match, sizeof(sOutboxTrackedMatch));
+        sOutboxDeadline = now + 10000;
+    }
+    SDL_UnlockMutex(sOutboxLock);
+}
+
+static int outbox_watch_expired(const char *match, Uint64 now) {
+    int expired;
+    SDL_LockMutex(sOutboxLock);
+    expired = sOutboxDeadline != 0 && SDL_strcmp(sOutboxTrackedMatch, match) == 0 && now >= sOutboxDeadline;
+    SDL_UnlockMutex(sOutboxLock);
+    return expired;
+}
+
+static void outbox_unwatch(const char *match) {
+    SDL_LockMutex(sOutboxLock);
+    if (SDL_strcmp(sOutboxTrackedMatch, match) == 0) {
+        sOutboxTrackedMatch[0] = '\0';
+        sOutboxDeadline = 0;
+    }
+    SDL_UnlockMutex(sOutboxLock);
+}
+
+static void outbox_remove_report(const char *match, int score, unsigned round, const char *reason, int discarded) {
+    char diag[192];
+    outbox_done();
+    outbox_unwatch(match);
+    SDL_snprintf(diag, sizeof(diag), "%s: %.48s match=%.8s round=%u score=%d",
+                 discarded ? "resultado antigo descartado" : "resultado ranked encerrado",
+                 reason ? reason : "estado terminal", match, round, score);
+    SDL_LockMutex(sLock);
+    SDL_strlcpy(sOutboxDiag, diag, sizeof(sOutboxDiag));
+    SDL_UnlockMutex(sLock);
+    ranked_debug_log_line(diag);
+}
+
 /* the ranked match being played: dragonnet-session.txt, "match role mode sent" */
 static int session_read(char *match, int *role, int *mode, int *sent) {
     char text[160];
@@ -843,9 +890,34 @@ static void ranked_burn_attempt_locked(void) {
     SDL_memset(sAttemptCodes, 0, sizeof(sAttemptCodes));
 }
 
+/* Terminal replies retire a persisted result instead of leaving it to block later ranked searches. */
+static int result_terminal(const char *answer, char *reason, size_t size) {
+    char state[24] = "", error[32] = "";
+    text_value(answer, "state", state, sizeof(state));
+    if (SDL_strcmp(state, "final") == 0 || SDL_strcmp(state, "disputed") == 0 ||
+        SDL_strcmp(state, "cancelled") == 0 || SDL_strcmp(state, "expired") == 0 ||
+        SDL_strcmp(state, "finished") == 0 || SDL_strcmp(state, "complete") == 0 ||
+        SDL_strcmp(state, "closed") == 0 || SDL_strcmp(state, "void") == 0) {
+        SDL_snprintf(reason, size, "server state=%s", state);
+        return 2;
+    }
+    text_value(answer, "error", error, sizeof(error));
+    if (SDL_strcmp(error, "match") == 0 || SDL_strcmp(error, "not_found") == 0 ||
+        SDL_strcmp(error, "match_not_found") == 0 || SDL_strcmp(error, "not found") == 0 ||
+        SDL_strcmp(error, "expired") == 0 || SDL_strcmp(error, "cancelled") == 0 ||
+        SDL_strcmp(error, "finished") == 0 || SDL_strcmp(error, "already_finished") == 0 ||
+        SDL_strcmp(error, "final") == 0 || SDL_strcmp(error, "disputed") == 0 ||
+        SDL_strcmp(error, "already_final") == 0 || SDL_strcmp(error, "closed") == 0) {
+        SDL_snprintf(reason, size, "server error=%s", error);
+        return 1;
+    }
+    return 0;
+}
+
 static void do_result(int *refresh) {
     char match[33], digest[9], extra[160], answer[2048], state[24];
-    int score;
+    char terminalReason[64] = "";
+    int score, posted, terminal, resultStatus, matchPosted, matchStatus;
     unsigned round;
     if (!outbox_first(match, &score, digest, &round)) {
         return;
@@ -855,26 +927,35 @@ static void do_result(int *refresh) {
     } else {
         SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\",\"score\":%d,\"digest\":\"%s\",\"round\":%u", match, score, digest, round);
     }
-    if (post_ranked(score < 0 ? "forfeit" : "result", extra, answer, sizeof(answer))) {
+    posted = post_ranked(score < 0 ? "forfeit" : "result", extra, answer, sizeof(answer));
+    resultStatus = sLastPostStatus;
+    terminal = result_terminal(answer, terminalReason, sizeof(terminalReason));
+    if (terminal) {
+        outbox_remove_report(match, score, round, terminalReason, terminal == 1);
+        *refresh = 1;
+        return;
+    }
+    if (!posted && (resultStatus == 404 || resultStatus == 410)) {
+        SDL_snprintf(terminalReason, sizeof(terminalReason), "server HTTP %d match inexistente/expirado", resultStatus);
+        outbox_remove_report(match, score, round, terminalReason, 1);
+        *refresh = 1;
+        return;
+    }
+    if (posted) {
         text_value(answer, "state", state, sizeof(state));
         fprintf(stderr, "dragonnet: ranked result: %s\n", state);
-        if (strcmp(state, "final") == 0 || strcmp(state, "disputed") == 0 || strcmp(state, "cancelled") == 0 || strcmp(state, "expired") == 0) {
-            outbox_done();
-            *refresh = 1;
-            message(strcmp(state, "final") == 0 ? DRMSG_CONFIRMED : strcmp(state, "disputed") == 0 ? DRMSG_DISPUTED : DRMSG_VOID, 0);
-        } else {
-            message(DRMSG_WAIT_RIVAL, 99);
-        }
     } else if (strstr(answer, "\"error\"") != NULL) { /* refused (a match that is over, or not this device's): its state */
         SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\"", match);
-        if (post_ranked("match", extra, answer, sizeof(answer)) &&
-            (strstr(answer, "\"state\":\"cancelled\"") || strstr(answer, "\"state\":\"expired\"") || strstr(answer, "\"state\":\"disputed\"") ||
-             strstr(answer, "\"state\":\"final\""))) {
-            outbox_done();
+        matchPosted = post_ranked("match", extra, answer, sizeof(answer));
+        matchStatus = sLastPostStatus;
+        terminal = result_terminal(answer, terminalReason, sizeof(terminalReason));
+        if (terminal) {
+            outbox_remove_report(match, score, round, terminalReason, terminal == 1);
             *refresh = 1;
-            message(strstr(answer, "\"state\":\"final\"") != NULL ? DRMSG_CONFIRMED : DRMSG_VOID, 0);
-        } else if (strstr(answer, "\"error\":\"match\"") != NULL) {
-            outbox_done(); /* (not known to the service: nothing to wait for) */
+        } else if (!matchPosted && (matchStatus == 404 || matchStatus == 410)) {
+            SDL_snprintf(terminalReason, sizeof(terminalReason), "server HTTP %d match inexistente/expirado", matchStatus);
+            outbox_remove_report(match, score, round, terminalReason, 1);
+            *refresh = 1;
         }
     }
 }
@@ -1102,8 +1183,11 @@ static int SDLCALL worker(void *unused) {
     (void)unused;
     for (;;) {
         char answer[4096], extra[256], name[20], match[33], code[8], roomMatch[33], cancelled[33];
-        int refresh, search, cancel, board, state, role, chat, presence, leave, urgent, series, i, cancelTimedOut;
+        int refresh, search, cancel, board, state, role, chat, presence, leave, urgent, series, i, cancelTimedOut, discardPending;
         char viewcode[8];
+        char pendingMatch[33], pendingDigest[9];
+        int pendingScore;
+        unsigned pendingRound;
         int background = gPortInBackground;
         unsigned gen;
         Uint64 now = SDL_GetTicks();
@@ -1160,12 +1244,17 @@ static int SDLCALL worker(void *unused) {
             }
         }
         {
-            char om[33], od[16];
-            int os; unsigned oround;
-            urgent = outbox_first(om, &os, od, &oround) && now >= resultAt; /* (a result still to send) */
-            if (!urgent && resultAt != 0 && !outbox_first(om, &os, od, &oround)) {
+            int hasPending = outbox_first(pendingMatch, &pendingScore, pendingDigest, &pendingRound);
+            urgent = hasPending && now >= resultAt; /* (a result still to send) */
+            discardPending = hasPending && outbox_watch_expired(pendingMatch, now);
+            if (!urgent && resultAt != 0 && !hasPending) {
                 resultAt = resultWait = 0;
             }
+        }
+        if (discardPending) {
+            outbox_remove_report(pendingMatch, pendingScore, pendingRound, "sem estado terminal do servidor em 10 s", 1);
+            resultAt = resultWait = 0;
+            urgent = 0;
         }
         if ((refresh || search || cancel || board || chat || urgent || series) && identity()) {
             int pendingRefresh = refresh;
@@ -1627,12 +1716,14 @@ void DrRanked_Search(const char *name, int mode) {
         return;
     }
     if (outbox_first(m, &s, d, &round)) {
-        message(DRMSG_FINISH_FIRST, -1);
-        return;
+        outbox_watch(m, SDL_GetTicks()); /* old results retry in the background; they never gate the new queue */
     }
-    if (session_read(oldMatch,&oldRole,&oldMode,&oldSent) && sRankedStarted) {
-        message(DRMSG_FINISH_FIRST,-1);
-        return;
+    if (session_read(oldMatch,&oldRole,&oldMode,&oldSent) && sRankedStarted && !oldSent) {
+        char event[128];
+        SDL_snprintf(event, sizeof(event), "ranked/stale-session discarded match=%.32s round=%u; new queue allowed", oldMatch, sRankedRound);
+        ranked_debug_log_line(event);
+        remove_file("dragonnet-session.txt"); /* a relaunch returned to the hub without saving a result */
+        sRankedStarted = 0;
     }
     SDL_LockMutex(sLock);
     SDL_strlcpy(sPreviousQueueMatch,sLastQueueMatch,sizeof(sPreviousQueueMatch));
@@ -1836,6 +1927,7 @@ void DrNet_BattleFinished(int flags, int reason, int clock) {
        natural-end hook runs earlier, so apply the same normalization here for the same score/digest. */
     if (reason & 0x20) flags |= 2;
     if (reason & 0x40) flags |= 1;
+    /* Result scores use the host's viewpoint on both devices: 2 = host won, 0 = host lost, 1 = draw. */
     score = (flags & 3) == 1 ? 2 : (flags & 3) == 2 ? 0 : (flags & 4) ? 1 : -1;
     if (gPortResim) {
         SDL_snprintf(diag, sizeof(diag), "finish=resim score=%d flags=%x", score, flags);
@@ -1883,7 +1975,8 @@ void DrNet_BattleFinished(int flags, int reason, int clock) {
     }
     session_write(match, role, mode, 1);
     fprintf(stderr, "dragonnet: ranked result saved: score %d (host's view), digest %s\n", score, digest);
-    SDL_snprintf(diag, sizeof(diag), "finish=enviado ok score=%d digest=%s", score, digest);
+    SDL_snprintf(diag, sizeof(diag), "finish=enviado score=%d(host:2 ganhou/0 perdeu/1 empate) round=%u match=%.8s digest=%s",
+                 score, sRankedRound, match, digest);
     finish_diag(diag);
     start(NULL); /* (sent by the thread, now or the next time the online screen is open) */
 }

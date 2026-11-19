@@ -4420,7 +4420,7 @@ static void Tb_BracketFocus(char *focus) {
 /* What the hosts say in the box at the foot of the screen (two lines at most). */
 static char *Tb_Help(void) {
     static char rankedDiagnostic[700];
-    char finishDiag[192], requestDiag[384];
+    char finishDiag[384], requestDiag[384];
     extern void DrNet_FinishDiagCopy(char *out, size_t size);
     extern void DrRanked_DiagnosticCopy(char *out, size_t size);
     DrNet_FinishDiagCopy(finishDiag, sizeof(finishDiag));
@@ -4452,6 +4452,15 @@ static char *Tb_Help(void) {
     if (sTb->mode == TB_RANKED && (finishDiag[0] || requestDiag[0])) {
         Ps_Copy(rankedDiagnostic, requestDiag, sizeof(rankedDiagnostic));
         if(finishDiag[0]) { Ps_Cat(rankedDiagnostic, " | ", sizeof(rankedDiagnostic)); Ps_Cat(rankedDiagnostic, finishDiag, sizeof(rankedDiagnostic)); }
+        return rankedDiagnostic;
+    }
+    if (sTb->mode == TB_HUB && (strstr(finishDiag, "resultado antigo descartado:") != NULL ||
+                                strstr(finishDiag, "score=") != NULL)) {
+        Ps_Copy(rankedDiagnostic, finishDiag, sizeof(rankedDiagnostic));
+        if (strstr(requestDiag, "postfight phase=") != NULL) {
+            Ps_Cat(rankedDiagnostic, " | ", sizeof(rankedDiagnostic));
+            Ps_Cat(rankedDiagnostic, requestDiag, sizeof(rankedDiagnostic));
+        }
         return rankedDiagnostic;
     }
     if (sTb->mode == TB_HUB && strstr(requestDiag, "postfight phase=") != NULL) {
