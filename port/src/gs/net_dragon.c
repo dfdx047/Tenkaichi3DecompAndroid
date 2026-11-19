@@ -216,6 +216,8 @@ static SDL_AtomicInt sStarted;
 static SDL_Condition *sWake;
 static char sFinishDiag[192];
 static char sLastResultDiag[160], sLastSeriesDiag[128];
+static int sPostFightPhase;
+static unsigned sPostFightElapsed;
 static SDL_AtomicInt sRankedWinnerDecided;
 static void lock_make(void);
 
@@ -505,8 +507,25 @@ void DrRanked_DiagnosticCopy(char *out,size_t size) {
     if(!out||!size)return;
     lock_make();
     SDL_LockMutex(sLock);
-    SDL_snprintf(out,size,"result %s | series %s | gap=%u round=%u",sLastResultDiag[0]?sLastResultDiag:"http=0 -",sLastSeriesDiag[0]?sLastSeriesDiag:"http=0 -",sSeriesGap,sRankedRound);
+    SDL_snprintf(out,size,"result %s | series %s | gap=%u round=%u | postfight phase=%d ms=%u",sLastResultDiag[0]?sLastResultDiag:"http=0 -",sLastSeriesDiag[0]?sLastSeriesDiag:"http=0 -",sSeriesGap,sRankedRound,sPostFightPhase,sPostFightElapsed);
     SDL_UnlockMutex(sLock);
+}
+
+void DrRanked_PostFightState(int phase, unsigned elapsed_ms) {
+    static const char *names[] = {"idle", "menu", "waiting", "native-fallback", "server-decision"};
+    int changed;
+    char event[128];
+    if (phase < 0 || phase > 4) phase = 0;
+    lock_make();
+    SDL_LockMutex(sLock);
+    changed = sPostFightPhase != phase;
+    sPostFightPhase = phase;
+    sPostFightElapsed = elapsed_ms;
+    SDL_UnlockMutex(sLock);
+    if (changed) {
+        SDL_snprintf(event, sizeof(event), "ranked/postfight phase=%s elapsed_ms=%u", names[phase], elapsed_ms);
+        ranked_debug_log_line(event);
+    }
 }
 
 static void message(int msg, int state) {

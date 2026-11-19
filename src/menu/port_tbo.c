@@ -4454,6 +4454,10 @@ static char *Tb_Help(void) {
         if(finishDiag[0]) { Ps_Cat(rankedDiagnostic, " | ", sizeof(rankedDiagnostic)); Ps_Cat(rankedDiagnostic, finishDiag, sizeof(rankedDiagnostic)); }
         return rankedDiagnostic;
     }
+    if (sTb->mode == TB_HUB && strstr(requestDiag, "postfight phase=") != NULL) {
+        Ps_Copy(rankedDiagnostic, requestDiag, sizeof(rankedDiagnostic));
+        return rankedDiagnostic;
+    }
     if ((sTb->mode == TB_RANKED || sTb->mode == TB_RKWAIT) && (sTbRk.http_status || sTbRk.error_field[0])) {
         sprintf(rankedDiagnostic, "http=%d error=%s", sTbRk.http_status, sTbRk.error_field);
         return rankedDiagnostic;

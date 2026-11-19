@@ -82,6 +82,7 @@ typedef struct DrRankedSeries {
 } DrRankedSeries;
 void DrRanked_SeriesChoice(unsigned gap, int choice); /* 1 continue, 2 team, 3 forfeit */
 void DrRanked_SeriesPoll(DrRankedSeries *out);
+void DrRanked_PostFightState(int phase, unsigned elapsed_ms); /* 1 menu, 2 waiting, 3 native fallback, 4 server decision */
 unsigned DrRanked_SessionRound(void);
 unsigned DrRanked_Ticks(void); /* monotonic milliseconds for source/battle UI code */
 
