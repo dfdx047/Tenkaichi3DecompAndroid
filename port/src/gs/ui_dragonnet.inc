@@ -34,6 +34,7 @@ static const char *const kCountries[][2] = {{"UN","Sin especificar"},{"AR","Arge
 static int sLobbyLast;                       // the lobby's last state worth telling (errors)
 static Uint64 sSearchSince, sFoundAt;
 static bool sRankedLobby;                    // the lobby was started for a ranked match
+static char sRankedLobbyMatch[33], sRankedLobbyCode[8];
 static float sK = 1.0f;                      // FontSizeBase per pixel of text
 // The PC's Quick Match regions (src/menu/port_tbo.c): what the matchmaking service is told, and their names here.
 static const char *const kRegionArea[9] = {"auto", "NA", "SA", "EU", "ME", "AF", "AS", "OC", "any"};
@@ -441,6 +442,9 @@ static void screen_ranked_menu(void) {
             sRankedNameError = true;
         } else {
             sRankedNameError = false;
+            Port_LobbyCancel();
+            sRankedLobby = false;
+            sRankedLobbyMatch[0] = sRankedLobbyCode[0] = '\0';
             DrRanked_Search(sName, sRankMode);
             sSearchSince = SDL_GetTicks();
             sFoundAt = 0;
@@ -758,9 +762,18 @@ static void screen_ranked_wait(void) {
     int st = sRankedLobby ? lobby_step() : 0;
     if (!sOpen) { return; }
     bool back = header(T("Searching for a rival", "Buscando rival", "Buscando rival"), true) || padB();
+    if (r.match[0] && !sRankedLobbyMatch[0]) SDL_strlcpy(sRankedLobbyMatch, r.match, sizeof(sRankedLobbyMatch));
+    if (r.match[0] && sRankedLobbyMatch[0] && SDL_strcmp(r.match, sRankedLobbyMatch) != 0) {
+        if (sRankedLobby) Port_LobbyCancel();
+        sRankedLobby = false;
+        sRankedLobbyCode[0] = '\0';
+        sFoundAt = SDL_GetTicks();
+        SDL_strlcpy(sRankedLobbyMatch, r.match, sizeof(sRankedLobbyMatch));
+    }
     if (back && r.searching) {
         if (sRankedLobby && st >= 0) Port_LobbyCancel();
         sRankedLobby = false;
+        sRankedLobbyCode[0] = sRankedLobbyMatch[0] = '\0';
         sFoundAt=0;
         DrRanked_AbortBeforeStart();
         Port_UiNotice(T("Search canceled.", "Busca cancelada.", "Búsqueda cancelada."));
@@ -768,7 +781,7 @@ static void screen_ranked_wait(void) {
         return;
     }
     if (st < 0 && r.state == 3) {
-        Port_LobbyCancel();sRankedLobby=false;sFoundAt=0;
+        Port_LobbyCancel();sRankedLobby=false;sRankedLobbyCode[0]=sRankedLobbyMatch[0]='\0';sFoundAt=0;
         DrRanked_AbortBeforeStart();
         const char *why=lobby_error(st);
         Port_UiNotice(why[0]?why:T("The rival did not connect.","O adversário não conectou","El rival no se conectó."));
@@ -778,6 +791,7 @@ static void screen_ranked_wait(void) {
         if (sRankedLobby && st >= 0) { Port_LobbyCancel(); }
         if (r.state == 3 || sRankedLobby) DrRanked_AbortBeforeStart();
         sRankedLobby = false;
+        sRankedLobbyCode[0] = sRankedLobbyMatch[0] = '\0';
         sFoundAt=0;
         goto_screen(RANKED_MENU, 0);
         return;
@@ -785,7 +799,7 @@ static void screen_ranked_wait(void) {
     if (r.state == 3 && sFoundAt == 0) sFoundAt=SDL_GetTicks();
     if (r.state == 3 && sFoundAt != 0 && SDL_GetTicks()-sFoundAt >= 30000) {
         if (sRankedLobby) Port_LobbyCancel();
-        sRankedLobby=false;sFoundAt=0;
+        sRankedLobby=false;sRankedLobbyCode[0]=sRankedLobbyMatch[0]='\0';sFoundAt=0;
         DrRanked_AbortBeforeStart();
         Port_UiNotice(T("The rival did not connect.","O adversário não conectou","El rival no se conectó."));
         goto_screen(RANKED_MENU,0);return;
@@ -802,7 +816,19 @@ static void screen_ranked_wait(void) {
             Port_NetOptions(-1, -1);
             Port_LobbyStartCode(0, r.code);
             sRankedLobby = true;
+            SDL_strlcpy(sRankedLobbyCode, r.code, sizeof(sRankedLobbyCode));
         }
+    } else if (r.state == 3 && r.role == 2 && sRankedLobby && strlen(r.code) == 6 &&
+               SDL_strcmp(r.code, sRankedLobbyCode) != 0) {
+        /* The server changed the room code before connect/ready: tear down the old lobby socket and join the current code. */
+        Port_LobbyCancel();
+        sRankedLobby = false;
+        sRankedLobbyCode[0] = '\0';
+        Port_NetNameSet(sName);
+        Port_NetOptions(-1, -1);
+        Port_LobbyStartCode(0, r.code);
+        sRankedLobby = true;
+        SDL_strlcpy(sRankedLobbyCode, r.code, sizeof(sRankedLobbyCode));
     }
     if (r.state == 3) {
         char diag[256];
@@ -840,6 +866,9 @@ static void screen_ranked_wait(void) {
             SDL_snprintf(diag,sizeof(diag),"queue id=%s; mesmo match=%s",r.queue_match,r.queue_same_previous?"sim":"não");
             dl->AddText(ImVec2(sCardMin.x + U(), y),ImGui::GetColorU32(kText),diag); y += line_h;
         }
+        SDL_snprintf(diag,sizeof(diag),"code servidor=%.6s; em uso=%.6s; mudou=%d; mesmo match=%s",
+                     r.server_code, sRankedLobbyCode, r.code_change_count, r.queue_same_previous?"sim":"não");
+        dl->AddText(ImVec2(sCardMin.x + U(), y),ImGui::GetColorU32(kText),diag); y += line_h;
         for (int route = 0; route < 3; ++route) {
             char line[96];
             static const char *names[] = {"queue", "room", "lifecycle"};
