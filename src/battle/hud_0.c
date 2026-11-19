@@ -568,8 +568,9 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
     /* The draw hook uses this selector too. Set it before any ranked early return. */
     gPauseMenuWhich = which;
     if (which == 1 && rankedPostStarted && !rankedPostFallback && !DrRanked_InSession()) {
+        unsigned now=DrRanked_Ticks();
         rankedPostFallback=1;
-        DrRanked_PostFightState(3,DrRanked_Ticks()>=rankedPostOpened?DrRanked_Ticks()-rankedPostOpened:0);
+        DrRanked_PostFightState(3,now>=rankedPostOpened?now-rankedPostOpened:0);
         DrRanked_DebugLog("ranked/postfight fallback=native reason=ranked session state disappeared; result preserved");
     }
     if (which == 1 && DrRanked_InSession() && !rankedPostFallback) {
@@ -592,11 +593,11 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
         }
         if (rankedPostFallback) goto ranked_native_menu;
         DrRanked_SeriesPoll(&series);
-        rankedPostWaiting = !series.answered || rankedPostChoiceSent;
+        rankedPostWaiting = series.decision == DR_SERIES_PENDING || rankedPostChoiceSent;
         if(series.decision==DR_SERIES_CONTINUE) { BattleResult_Set(BTL_RESULT_ABORT,0x8000); rankedPostStarted=0; DrRanked_PostFightState(4,now-rankedPostOpened); return 1; }
         if(series.decision==DR_SERIES_TEAM) { BattleResult_Set(BTL_RESULT_ABORT,0x10); rankedPostStarted=0; DrRanked_PostFightState(4,now-rankedPostOpened); return 1; }
         if(series.decision==DR_SERIES_OVER) { BattleResult_Set(BTL_RESULT_ABORT,8); rankedPostStarted=0; DrRanked_PostFightState(4,now-rankedPostOpened); return 1; }
-        DrRanked_PostFightState(series.answered ? 4 : (rankedPostChoiceSent ? 2 : 1),now-rankedPostOpened);
+        DrRanked_PostFightState(series.decision != DR_SERIES_PENDING ? 4 : (rankedPostChoiceSent ? 2 : 1),now-rankedPostOpened);
         menu=&rankedPostMenu;
         if (menu->count != 3) {
             rankedPostFallback=1;
