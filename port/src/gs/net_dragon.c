@@ -306,19 +306,17 @@ static int code_index(char codes[][8], unsigned count, const char *code) {
     return -1;
 }
 
-/* Port_LobbyStartCode relaunches the executable. Carry only these short-lived,
-   non-secret rejected room codes through that relaunch in the child environment. */
+/* Port_LobbyStartCode can relaunch the executable. Keep rejected room codes in
+   the game folder so the same app run still rejects them after that relaunch. */
 static void burned_codes_load_locked(void) {
-    const char *env;
-    char copy[160], *p, *next;
+    char contents[160], *p, *next;
     if (sBurnedLoaded) return;
     sBurnedLoaded = 1;
-    env = SDL_getenv("BT3_RANKED_BURNED_CODES");
-    if (env == NULL) return;
-    SDL_strlcpy(copy, env, sizeof(copy));
-    for (p = copy; *p && sBurnedCount < 16; p = next) {
-        next = SDL_strchr(p, ',');
+    if (!read_text("dragonnet-ranked-burned.txt", contents, sizeof(contents))) return;
+    for (p = contents; *p && sBurnedCount < 16; p = next) {
+        next = SDL_strchr(p, '\n');
         if (next != NULL) *next++ = '\0';
+        if (SDL_strlen(p) == 7 && p[6] == '\r') p[6] = '\0';
         if (SDL_strlen(p) == 6 && code_index(sBurnedCodes, sBurnedCount, p) < 0)
             SDL_strlcpy(sBurnedCodes[sBurnedCount++], p, sizeof(sBurnedCodes[0]));
         if (next == NULL) break;
@@ -326,16 +324,16 @@ static void burned_codes_load_locked(void) {
 }
 
 static void burned_codes_save_locked(void) {
-    char env[160];
+    char contents[160];
     unsigned i;
     size_t used = 0;
-    env[0] = '\0';
+    contents[0] = '\0';
     for (i = 0; i < sBurnedCount; i++) {
-        int n = SDL_snprintf(env + used, sizeof(env) - used, "%s%s", i ? "," : "", sBurnedCodes[i]);
-        if (n < 0 || (size_t)n >= sizeof(env) - used) break;
+        int n = SDL_snprintf(contents + used, sizeof(contents) - used, "%s\n", sBurnedCodes[i]);
+        if (n < 0 || (size_t)n >= sizeof(contents) - used) break;
         used += (size_t)n;
     }
-    SDL_setenv("BT3_RANKED_BURNED_CODES", env, 1);
+    write_text("dragonnet-ranked-burned.txt", contents);
 }
 
 static int code_burned_locked(const char *code) {

@@ -3,6 +3,7 @@
 #include "sys/pad.h"
 #include "sys/save.h"
 #include <stdio.h>
+#include <string.h>
 
 #ifdef PORT
 /*
@@ -431,6 +432,9 @@ typedef struct TboScreen {
 } TboScreen;
 
 static TboScreen *sTb;
+static DrRanked sTbRk; /* (what Ranked says this frame) */
+static char sTbRkJoinCode[8], sTbRkOpenedCode[8], sTbRkLobbyMatch[33], sTbRkCurrentMatch[33];
+static int sTbRkHostReopened;
 static void Tb_RankedResetLocal(void);
 static void Tb_RankedResetForNewSearch(void);
 static PortLobbyView sTbLv; /* (the lobby's page: what it shows this frame) */
@@ -1079,10 +1083,6 @@ static void Tb_QuickUpdate(s32 live) {
 /* Ranked is Dragon Net's (port/src/gs/net_dragon.c): an Elo profile per player, a search that pairs two of a level,
    then a room of the two (the first opens it and tells the service its code, the other joins with it), and the
    result, counted when both sides report the same one. These pages are its face; the work is net_dragon.c's. */
-static DrRanked sTbRk; /* (what Ranked says this frame) */
-static char sTbRkJoinCode[8], sTbRkOpenedCode[8], sTbRkLobbyMatch[33], sTbRkCurrentMatch[33];
-static int sTbRkHostReopened;
-
 static void Tb_RankedResetLocal(void) {
     memset(&sTbRk, 0, sizeof(sTbRk));
     sTbRkJoinCode[0] = sTbRkOpenedCode[0] = sTbRkLobbyMatch[0] = sTbRkCurrentMatch[0] = '\0';
