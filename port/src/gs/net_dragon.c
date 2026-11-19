@@ -262,6 +262,7 @@ static char sConnectionDone[33];
 static unsigned sRankedRound = 1;
 static int sRankedStarted;
 static char sLastQueueMatch[33], sPreviousQueueMatch[33];
+static char sLastQueueCode[8], sPreviousQueueCode[8];
 static int sSeriesActive, sSeriesDirty, sSeriesChoice;
 static unsigned sSeriesGap;
 static DrRankedSeries sSeriesView;
@@ -528,9 +529,12 @@ static void session_write(const char *match, int role, int mode, int sent) {
 /* ---- the thread ---- */
 
 static void update_match(const char *answer, unsigned gen) {
-    char state[24], assigned[33];
+    char state[24], assigned[33], incomingCode[8], oldServerCode[8];
+    int changedMatch, stalePreviousCode, incomingRole;
     text_value(answer, "state", state, sizeof(state));
     text_value(answer, "match", assigned, sizeof(assigned));
+    text_value(answer, "code", incomingCode, sizeof(incomingCode));
+    incomingRole = number_value(answer, "role");
     SDL_LockMutex(sLock);
     if (gen != sSearchGen || !sWantSearch) { /* cancelled meanwhile: that search is given up (not a handed-over one) */
         int keep = strcmp(assigned, sHandedOver) == 0;
@@ -542,10 +546,29 @@ static void update_match(const char *answer, unsigned gen) {
         }
         return;
     }
+    changedMatch = sView.match[0] && SDL_strcmp(sView.match, assigned) != 0;
+    if (changedMatch) {
+        sView.code[0] = sView.server_code[0] = '\0';
+        sView.code_poll_count = sView.code_change_count = 0;
+        sCodePollCount = 0;
+        sPairedAt = sCodePollAt = 0;
+    }
+    SDL_strlcpy(oldServerCode, sView.server_code, sizeof(oldServerCode));
+    stalePreviousCode = incomingRole == 2 && assigned[0] &&
+        SDL_strcmp(assigned, sPreviousQueueMatch) == 0 && sPreviousQueueCode[0] &&
+        SDL_strcmp(incomingCode, sPreviousQueueCode) == 0;
     SDL_strlcpy(sView.match, assigned, sizeof(sView.match));
-    text_value(answer, "code", sView.code, sizeof(sView.code));
+    SDL_strlcpy(sView.server_code, incomingCode, sizeof(sView.server_code));
     text_value(answer, "peer", sView.peer, sizeof(sView.peer));
-    sView.role = number_value(answer, "role");
+    sView.role = incomingRole;
+    if (sView.role == 2 && stalePreviousCode) {
+        sView.code[0] = '\0'; /* same match and code as last attempt: wait for ranked/match to publish a new code */
+    } else {
+        SDL_strlcpy(sView.code, incomingCode, sizeof(sView.code));
+        if (incomingCode[0]) SDL_strlcpy(sLastQueueCode, incomingCode, sizeof(sLastQueueCode));
+    }
+    if (incomingCode[0] && oldServerCode[0] && SDL_strcmp(incomingCode, oldServerCode) != 0)
+        sView.code_change_count++;
     sView.flow = 2;
     sView.state = strcmp(state, "paired") == 0 ? 3 : strcmp(state, "waiting") == 0 ? 2 : 0;
     if (sView.state == 3 && sView.role == 2 && sView.code[0] == '\0') {
@@ -955,9 +978,9 @@ static int SDLCALL worker(void *unused) {
                     } else {
                         if (sView.msg != DRMSG_VERSION && sView.msg != DRMSG_NO_CONNECTION) message(DRMSG_ROOM_FAILED, -1);
                     }
-                } else if (state == 3 && role == 2 && viewcode[0] == '\0') {
+                } else if (state == 3 && role == 2) {
                     Uint64 pairedFor = SDL_GetTicks() - sPairedAt;
-                    if (pairedFor >= 30000) {
+                    if (pairedFor >= 30000 && viewcode[0] == '\0') {
                         SDL_LockMutex(sLock);
                         if (gen == sSearchGen && sWantSearch && sView.state == 3 && sView.role == 2 && sView.code[0] == '\0') {
                             sWantSearch = sView.searching = 0;
@@ -967,7 +990,7 @@ static int SDLCALL worker(void *unused) {
                             sWantCancel = 1;
                         }
                         SDL_UnlockMutex(sLock);
-                    } else if (sCodePollAt == 0 || SDL_GetTicks() - sCodePollAt >= 2500) {
+                    } else if (!sLifeConnect && !sLifeReady && (sCodePollAt == 0 || SDL_GetTicks() - sCodePollAt >= 2500)) {
                         sCodePollAt = SDL_GetTicks();
                         SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\"", match);
                         sCodePollCount++;
@@ -1314,18 +1337,20 @@ void DrRanked_Search(const char *name, int mode) {
     DrRanked_AbortBeforeStart();
     SDL_LockMutex(sLock);
     SDL_strlcpy(sPreviousQueueMatch,sLastQueueMatch,sizeof(sPreviousQueueMatch));
+    SDL_strlcpy(sPreviousQueueCode,sLastQueueCode,sizeof(sPreviousQueueCode));
     sLastQueueMatch[0]='\0';
+    sLastQueueCode[0]='\0';
     sSearchGen++;
     sHandedOver[0] = '\0';
     sView.mode = mode != 0;
-    sView.role=0;sView.flow=0;sView.code_poll_count=0;sView.queue_match[0]='\0';sView.queue_same_previous=0;
+    sView.role=0;sView.flow=0;sView.code_poll_count=sView.code_change_count=0;sView.queue_match[0]='\0';sView.queue_same_previous=0;
     sWantSearch = sView.searching = 1;
     sSearchAt = SDL_GetTicks();
     sView.state = 1;
     sView.msg = DRMSG_SEARCHING;
     sView.http_status = 0;
     sView.error_field[0] = '\0';
-    sView.match[0] = sView.code[0] = sView.peer[0] = sRoomPending[0] = '\0';
+    sView.match[0] = sView.code[0] = sView.server_code[0] = sView.peer[0] = sRoomPending[0] = '\0';
     sPairedAt=sCodePollAt=0;sCodePollCount=0;
     sView.msg = DRMSG_SEARCHING;
     SDL_UnlockMutex(sLock);
@@ -1347,8 +1372,8 @@ void DrRanked_AbortBeforeStart(void) {
     }
     sSearchGen++;
     sWantSearch=sView.searching=0;
-    sView.state=0;sView.role=0;sView.flow=0;sView.code_poll_count=0;sView.queue_match[0]=0;sView.queue_same_previous=0;
-    sView.match[0]=sView.code[0]=sView.peer[0]=0;
+    sView.state=0;sView.role=0;sView.flow=0;sView.code_poll_count=sView.code_change_count=0;sView.queue_match[0]=0;sView.queue_same_previous=0;
+    sView.match[0]=sView.code[0]=sView.server_code[0]=sView.peer[0]=0;
     sRoomPending[0]=sHandedOver[0]=0;
     sLifeMatch[0]=sStartSent[0]=0;
     sConnectionDone[0]=0;

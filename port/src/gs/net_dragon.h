@@ -46,9 +46,10 @@ typedef struct DrRanked {
     int flow;            /* 2: the service negotiated the lifecycle (flow:2) with the rival */
     int searching, role, mode; /* role 1 host, 2 the one who joins; mode 0 single, 1 team */
     int code_poll_count;
+    int code_change_count;
     int profile;        /* 0 not loaded, 1 loaded */
     int rating, wins, losses, draws, position;
-    char rank[20], peer[20], code[8], match[33];
+    char rank[20], peer[20], code[8], server_code[8], match[33];
     char queue_match[5]; /* short match ID last returned by ranked/queue */
     int queue_same_previous;
     int msg;            /* DRMSG_* */
