@@ -5,6 +5,8 @@
 #ifdef PORT
 #include "../../port/src/gs/net_dragon.h"
 extern void BtlMenu_PortDrawMenu(BtlMenu *menu);
+extern void BtlMenu_PortDrawRankedHeader(int won, unsigned seconds, int waiting);
+extern s32 BtlMenu_PortLive(void);
 #endif
 #ifdef PORT
 #include "battle/tag_team.h"
@@ -18,6 +20,7 @@ static BtlMenu rankedPostMenu;
 static BtlMenuItem rankedPostItems[3];
 static int rankedPostChoiceSent;
 static unsigned rankedPostOpened;
+static int rankedPostStarted, rankedPostDrawn, rankedPostFallback, rankedPostWaiting;
 #endif
 
 /*
@@ -42,6 +45,7 @@ static unsigned rankedPostOpened;
 
 extern s32 gBtlGameReplayActive;
 extern s32 gPauseMenuWhich;
+extern s32 BattleResult_IsPlayerWin(void);
 
 extern BtlMenu gPauseMenuVersus;
 extern BtlMenu gPauseMenuResultVersus;
@@ -448,6 +452,7 @@ void PauseMenu_Init(void) {
         }
         rankedPostMenu.open=-1;rankedPostMenu.cursor=0;rankedPostMenu.state=BTL_MENU_STATE_ACTIVE;
         rankedPostChoiceSent=0;rankedPostOpened=0;
+        rankedPostStarted=rankedPostDrawn=rankedPostFallback=rankedPostWaiting=0;
     }
     if(TagTeam_Active()) {
         s32 i;
@@ -547,6 +552,7 @@ void PauseMenu_Init(void) {
 void PauseMenu_Term(void) {
 #ifdef PORT
     gPortBtlMenuLive = 0;
+    rankedPostStarted=rankedPostDrawn=rankedPostFallback=rankedPostWaiting=0;
 #endif
     BtlMenu_Term();
 }
@@ -559,26 +565,68 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
     BtlMenuItem *item;
 
 #ifdef PORT
-    if (which == 1 && DrRanked_InSession()) {
+    /* The draw hook uses this selector too. Set it before any ranked early return. */
+    gPauseMenuWhich = which;
+    if (which == 1 && rankedPostStarted && !rankedPostFallback && !DrRanked_InSession()) {
+        rankedPostFallback=1;
+        DrRanked_PostFightState(3,DrRanked_Ticks()>=rankedPostOpened?DrRanked_Ticks()-rankedPostOpened:0);
+        DrRanked_DebugLog("ranked/postfight fallback=native reason=ranked session state disappeared; result preserved");
+    }
+    if (which == 1 && DrRanked_InSession() && !rankedPostFallback) {
         DrRankedSeries series;
         unsigned gap=DrRanked_SessionRound();
-        if(!rankedPostOpened) { rankedPostOpened=DrRanked_Ticks(); rankedPostChoiceSent=0; DrRanked_SeriesChoice(gap,0); }
+        unsigned now=DrRanked_Ticks();
+        if(!rankedPostStarted) {
+            rankedPostOpened=now ? now : 1;
+            rankedPostStarted=1;
+            rankedPostDrawn=0;
+            rankedPostChoiceSent=0;
+            rankedPostWaiting=1;
+            DrRanked_SeriesChoice(gap,0);
+            DrRanked_PostFightState(1,0);
+        }
+        if (now >= rankedPostOpened && now-rankedPostOpened >= 5000u && !rankedPostDrawn) {
+            rankedPostFallback=1;
+            DrRanked_PostFightState(3,now-rankedPostOpened);
+            DrRanked_DebugLog("ranked/postfight fallback=native reason=custom menu not drawn in 5s; result preserved");
+        }
+        if (rankedPostFallback) goto ranked_native_menu;
         DrRanked_SeriesPoll(&series);
-        if(series.decision==DR_SERIES_CONTINUE) { BattleResult_Set(BTL_RESULT_ABORT,0x8000); rankedPostOpened=0; return 1; }
-        if(series.decision==DR_SERIES_TEAM) { BattleResult_Set(BTL_RESULT_ABORT,0x10); rankedPostOpened=0; return 1; }
-        if(series.decision==DR_SERIES_OVER) { BattleResult_Set(BTL_RESULT_ABORT,8); rankedPostOpened=0; return 1; }
-        if(rankedPostChoiceSent) return 1;
+        rankedPostWaiting = !series.answered || rankedPostChoiceSent;
+        if(series.decision==DR_SERIES_CONTINUE) { BattleResult_Set(BTL_RESULT_ABORT,0x8000); rankedPostStarted=0; DrRanked_PostFightState(4,now-rankedPostOpened); return 1; }
+        if(series.decision==DR_SERIES_TEAM) { BattleResult_Set(BTL_RESULT_ABORT,0x10); rankedPostStarted=0; DrRanked_PostFightState(4,now-rankedPostOpened); return 1; }
+        if(series.decision==DR_SERIES_OVER) { BattleResult_Set(BTL_RESULT_ABORT,8); rankedPostStarted=0; DrRanked_PostFightState(4,now-rankedPostOpened); return 1; }
+        DrRanked_PostFightState(series.answered ? 4 : (rankedPostChoiceSent ? 2 : 1),now-rankedPostOpened);
         menu=&rankedPostMenu;
+        if (menu->count != 3) {
+            rankedPostFallback=1;
+            DrRanked_PostFightState(3,now>=rankedPostOpened?now-rankedPostOpened:0);
+            DrRanked_DebugLog("ranked/postfight fallback=native reason=expected 3 menu items; result preserved");
+            goto ranked_native_menu;
+        }
+        if (!BtlMenu_PortLive()) {
+            if (now >= rankedPostOpened && now-rankedPostOpened >= 5000u) {
+                rankedPostFallback=1;
+                DrRanked_PostFightState(3,now-rankedPostOpened);
+                DrRanked_DebugLog("ranked/postfight fallback=native reason=menu work unavailable after 5s; result preserved");
+                BtlMenu_Init();
+                gPortBtlMenuLive=1;
+                goto ranked_native_menu;
+            }
+            return 1;
+        }
+        if(rankedPostChoiceSent) return 1;
         if(BtlMenu_Update(which,NULL,menu,pad)) return 1;
         item=BtlMenu_FindResult(NULL,menu);
         if(item) {
             int choice=item->id==0x13?1:item->id==0xD?2:3;
             DrRanked_SeriesChoice(gap,choice);rankedPostChoiceSent=1;return 1;
         }
-        if(DrRanked_Ticks()-rankedPostOpened>=20000u) { DrRanked_SeriesChoice(gap,1);rankedPostChoiceSent=1; }
+        if(now>=rankedPostOpened && now-rankedPostOpened>=20000u) { DrRanked_SeriesChoice(gap,1);rankedPostChoiceSent=1;DrRanked_PostFightState(2,now-rankedPostOpened); }
         return 1;
     }
-    rankedPostOpened=0;
+    if (which != 1) { rankedPostStarted=rankedPostDrawn=rankedPostFallback=rankedPostWaiting=0; rankedPostOpened=0; }
+ranked_native_menu:
 #endif
 
     {extern s32 TagChallenge_ResultInput(s32);if(which==1 && TagChallenge_ResultInput(pad))return 1;}
@@ -669,9 +717,17 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
 
 /* Draws the menu when it is shown. */
 void PauseMenu_Draw(void) {
-    {extern s32 TagChallenge_ResultVisible(void);if(TagChallenge_ResultVisible())return;}
 #ifdef PORT
-    if(gPauseMenuWhich==1 && DrRanked_InSession()) { BtlMenu_PortDrawMenu(&rankedPostMenu); return; }
+    if(gPauseMenuWhich==1 && DrRanked_InSession() && !rankedPostFallback) {
+        if (BtlMenu_PortLive()) {
+            unsigned now=DrRanked_Ticks();
+            unsigned elapsed=now>=rankedPostOpened?now-rankedPostOpened:0;
+            rankedPostDrawn=1;
+            BtlMenu_PortDrawMenu(&rankedPostMenu);
+            BtlMenu_PortDrawRankedHeader(BattleResult_IsPlayerWin(), elapsed>=20000u?0:(20u-elapsed/1000u), rankedPostWaiting);
+        }
+        return;
+    }
     {
         /* Online the pause menu belongs to the one who opened it (the fight goes on under it, btl_seq.c): it is
            not drawn on the other screen. The result menu (which = 1) is drawn for both as before. */
@@ -684,5 +740,6 @@ void PauseMenu_Draw(void) {
         }
     }
 #endif
+    {extern s32 TagChallenge_ResultVisible(void);if(TagChallenge_ResultVisible())return;}
     BtlMenu_DrawAll();
 }

@@ -667,6 +667,45 @@ void BtlMenu_PortDrawMenu(BtlMenu *menu) {
     gBtlMenu->pad = pad;
 }
 
+/* Ranked result heading and countdown are drawn over the same native menu box. */
+void BtlMenu_PortDrawRankedHeader(int won, unsigned seconds, int waiting) {
+    static u16 titleWon[] = {'V','o','c',0xEA,' ','g','a','n','h','o','u','!',0};
+    static u16 titleLost[] = {'V','o','c',0xEA,' ','p','e','r','d','e','u','!',0};
+    static u16 subtitle[] = {'M','e','l','h','o','r',' ','d','e',' ','3',0};
+    static u16 waitText[] = {'A','g','u','a','r','d','a','n','d','o',' ','a','d','v','e','r','s',0xE1,'r','i','o',0};
+    static u16 timeText[] = {'T','e','m','p','o',':',' ',0};
+    u16 digits[3];
+    u64 *pkt;
+    s32 first;
+    if (!gPortBtlMenuLive || gBtlMenu == NULL) return;
+    if (seconds > 99) seconds = 99;
+    digits[0] = (u16)('0' + (seconds / 10) % 10);
+    digits[1] = (u16)('0' + seconds % 10);
+    digits[2] = 0;
+    first = Font_GetCmdCount();
+    BtlMenu_BeginDraw(&pkt);
+    Font_PushStyle();
+    Font_PushCursor();
+    Font_SetHome(0x100, 0x22);
+    Font_SetScale(0.85f);
+    Font_SetAlign(1);
+    Font_SetColorRGBA(0xFF, 0xB0, 0x40, 0x80);
+    Font_Print(won ? titleWon : titleLost);
+    Font_SetHome(0x100, 0x42);
+    Font_SetScale(0.65f);
+    Font_SetColorRGBA(0x89, 0xC3, 0xE5, 0x80);
+    Font_Print(subtitle);
+    Font_SetHome(0x100, 0x1A0);
+    if (waiting) Font_Print(waitText);
+    Font_SetHome(0x100, 0x1B8);
+    Font_Print(timeText);
+    Font_Print(digits);
+    Font_PopCursor();
+    Font_PopStyle();
+    BtlMenu_EndDraw(&pkt);
+    Font_Flush(first);
+}
+
 /* Its box's size, as the engine works it out (0 when the battle's menu work does not exist). */
 void BtlMenu_PortSize(BtlMenu *menu, s32 *w, s32 *h) {
     extern s32 gPortBtlMenuLive;
