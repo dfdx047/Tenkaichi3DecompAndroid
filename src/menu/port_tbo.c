@@ -4440,6 +4440,9 @@ static char *Tb_Help(void) {
                      sTbRk.room_response_code, sTbRk.code_change_count,
                      sTbRk.room_kept_old ? " servidor manteve a sala antiga" : "",
                      sTbRkHostReopened && !sTbRk.room_kept_old ? " host reabriu lobby" : "");
+        if (strstr(finishDiag, "resultado antigo descartado:") != NULL) {
+            n += sprintf(rankedLines + n, " | %.180s", finishDiag);
+        }
         if (strcmp(logged, rankedLines) != 0) {
             fprintf(stderr, "bt3: ranked diagnostic: %s\n", rankedLines);
             Ps_Copy(logged, rankedLines, sizeof(logged));
