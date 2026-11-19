@@ -3,9 +3,9 @@
 #include "sys/pad.h"
 #include "sys/save.h"
 #include <stdio.h>
-#include <string.h>
 
 #ifdef PORT
+extern void *memset(void *dst, s32 c, u32 n);
 /*
  * PC only: "Tenkaichi Budokai Online", the main menu's item 11 (menu_a.c). The port's screen mode (port_screen.c)
  * runs this screen. Its own look for online play, after the mockups of online_design: every picture, piece,
