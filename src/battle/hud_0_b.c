@@ -728,6 +728,12 @@ s32 BtlMenu_PortLive(void) {
 
     return gPortBtlMenuLive && gBtlMenu != NULL;
 }
+
+s32 BtlMenu_PortVisible(BtlMenu *menu) {
+    extern s32 gPortBtlMenuLive;
+
+    return gPortBtlMenuLive && gBtlMenu != NULL && gBtlMenu->active && gBtlMenu->top == menu;
+}
 #endif
 
 /* Returns the work. */

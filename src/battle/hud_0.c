@@ -6,6 +6,7 @@
 #include "../../port/src/gs/net_dragon.h"
 extern void BtlMenu_PortDrawRankedHeader(int won, unsigned seconds, int waiting);
 extern s32 BtlMenu_PortLive(void);
+extern s32 BtlMenu_PortVisible(BtlMenu *menu);
 #endif
 #ifdef PORT
 #include "battle/tag_team.h"
@@ -724,7 +725,7 @@ void PauseMenu_Draw(void) {
             unsigned now=DrRanked_Ticks();
             unsigned elapsed=now>=rankedPostOpened?now-rankedPostOpened:0;
             BtlMenu_DrawAll();
-            rankedPostDrawn=1;
+            rankedPostDrawn=BtlMenu_PortVisible(&rankedPostMenu);
             BtlMenu_PortDrawRankedHeader(BattleResult_IsPlayerWin(), elapsed>=20000u?0:(20u-elapsed/1000u), rankedPostWaiting);
         }
         return;
