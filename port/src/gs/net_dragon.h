@@ -47,16 +47,19 @@ typedef struct DrRanked {
     int searching, role, mode; /* role 1 host, 2 the one who joins; mode 0 single, 1 team */
     int code_poll_count;
     int code_change_count;
+    int server_code_burned;
+    int room_kept_old;
     int profile;        /* 0 not loaded, 1 loaded */
     int rating, wins, losses, draws, position;
     char rank[20], peer[20], code[8], server_code[8], match[33];
+    char room_published_code[8], room_published_match[33], room_response_code[8];
     char queue_match[5]; /* short match ID last returned by ranked/queue */
     int queue_same_previous;
     int msg;            /* DRMSG_* */
     int http_status;
     char error_field[48];
-    int route_http[3]; /* queue, room, lifecycle */
-    char route_error[3][48];
+    int route_http[4]; /* queue, match, room, lifecycle */
+    char route_error[4][48];
     int board;          /* 0 not asked, 1 asking, 2 there, -1 failed */
     int boardCount;
     char boardName[9][20];
@@ -94,10 +97,15 @@ int DrRanked_RematchOffer(void);
 void DrRanked_Open(const char *name);              /* starts the client and loads the profile */
 void DrRanked_Search(const char *name, int mode);  /* 0 single, 1 team */
 void DrRanked_Cancel(void);
+void DrRanked_ResetForNewSearch(void);
 void DrRanked_AbortBeforeStart(void); /* cancel an unstarted assignment without reporting a forfeit */
 void DrRanked_Board(void);
 void DrRanked_Poll(DrRanked *out);
 void DrRanked_SetRoom(const char *code);           /* the host's room code, once the lobby has it */
+void DrRanked_SetRoomForMatch(const char *match, const char *code);
+void DrRanked_RecordLobbyCode(const char *match, const char *code, int host);
+void DrRanked_BurnLobbyCode(const char *match, const char *code);
+int DrRanked_CodeIsBurned(const char *code);
 void DrRanked_Connection(int ready);   /* the lobby is connected (flow:2): tells the service */
 void DrRanked_FightStarted(void);      /* the fight begins (flow:2): tells the service */
 int DrRanked_Handover(void);                       /* the match starts: remembered for its result (1 = it was a ranked one) */

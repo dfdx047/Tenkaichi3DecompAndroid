@@ -442,9 +442,9 @@ static void screen_ranked_menu(void) {
             sRankedNameError = true;
         } else {
             sRankedNameError = false;
-            Port_LobbyCancel();
             sRankedLobby = false;
             sRankedLobbyMatch[0] = sRankedLobbyCode[0] = '\0';
+            DrRanked_ResetForNewSearch();
             DrRanked_Search(sName, sRankMode);
             sSearchSince = SDL_GetTicks();
             sFoundAt = 0;
@@ -771,7 +771,6 @@ static void screen_ranked_wait(void) {
         SDL_strlcpy(sRankedLobbyMatch, r.match, sizeof(sRankedLobbyMatch));
     }
     if (back && r.searching) {
-        if (sRankedLobby && st >= 0) Port_LobbyCancel();
         sRankedLobby = false;
         sRankedLobbyCode[0] = sRankedLobbyMatch[0] = '\0';
         sFoundAt=0;
@@ -781,14 +780,13 @@ static void screen_ranked_wait(void) {
         return;
     }
     if (st < 0 && r.state == 3) {
-        Port_LobbyCancel();sRankedLobby=false;sRankedLobbyCode[0]=sRankedLobbyMatch[0]='\0';sFoundAt=0;
+        sRankedLobby=false;sRankedLobbyCode[0]=sRankedLobbyMatch[0]='\0';sFoundAt=0;
         DrRanked_AbortBeforeStart();
         const char *why=lobby_error(st);
         Port_UiNotice(why[0]?why:T("The rival did not connect.","O adversário não conectou","El rival no se conectó."));
         goto_screen(RANKED_MENU,0);return;
     }
     if (back || (r.state == 0 && !r.searching) || st < 0) {
-        if (sRankedLobby && st >= 0) { Port_LobbyCancel(); }
         if (r.state == 3 || sRankedLobby) DrRanked_AbortBeforeStart();
         sRankedLobby = false;
         sRankedLobbyCode[0] = sRankedLobbyMatch[0] = '\0';
@@ -798,7 +796,6 @@ static void screen_ranked_wait(void) {
     }
     if (r.state == 3 && sFoundAt == 0) sFoundAt=SDL_GetTicks();
     if (r.state == 3 && sFoundAt != 0 && SDL_GetTicks()-sFoundAt >= 30000) {
-        if (sRankedLobby) Port_LobbyCancel();
         sRankedLobby=false;sRankedLobbyCode[0]=sRankedLobbyMatch[0]='\0';sFoundAt=0;
         DrRanked_AbortBeforeStart();
         Port_UiNotice(T("The rival did not connect.","O adversário não conectou","El rival no se conectó."));
@@ -843,9 +840,9 @@ static void screen_ranked_wait(void) {
             fprintf(stderr, "bt3: ranked diagnostic: %s\n", diag);
         }
         SDL_strlcat(diag, "\n", sizeof(diag));
-        for (int route = 0; route < 3; ++route) {
+        for (int route = 0; route < 4; ++route) {
             char line[96];
-            static const char *names[] = {"queue", "room", "lifecycle"};
+            static const char *names[] = {"queue", "match", "room", "lifecycle"};
             SDL_snprintf(line, sizeof(line), "%s http=%d error=%s\n", names[route], r.route_http[route], r.route_error[route]);
             SDL_strlcat(diag, line, sizeof(diag));
             fprintf(stderr, "bt3: ranked diagnostic: %s", line);
@@ -869,9 +866,9 @@ static void screen_ranked_wait(void) {
         SDL_snprintf(diag,sizeof(diag),"code servidor=%.6s; em uso=%.6s; mudou=%d; mesmo match=%s",
                      r.server_code, sRankedLobbyCode, r.code_change_count, r.queue_same_previous?"sim":"não");
         dl->AddText(ImVec2(sCardMin.x + U(), y),ImGui::GetColorU32(kText),diag); y += line_h;
-        for (int route = 0; route < 3; ++route) {
+        for (int route = 0; route < 4; ++route) {
             char line[96];
-            static const char *names[] = {"queue", "room", "lifecycle"};
+            static const char *names[] = {"queue", "match", "room", "lifecycle"};
             SDL_snprintf(line, sizeof(line), "%s http=%d error=%s", names[route], r.route_http[route], r.route_error[route]);
             dl->AddText(ImVec2(sCardMin.x + U(), y), ImGui::GetColorU32(kText), line); y += line_h;
         }
@@ -898,9 +895,9 @@ static void screen_ranked_wait(void) {
     ImGui::SetCursorScreenPos(ImVec2(sCardMin.x + U(), sCardMax.y - U() * 1.05f));
     if (ImGui::Button(r.searching ? T("Cancel search", "Cancelar busca", "Cancelar búsqueda") : T("Back", "Voltar", "Volver"), ImVec2(U() * 7.0f, U() * 0.8f))) {
         if (r.searching) {
-            if (sRankedLobby) Port_LobbyCancel();
             sRankedLobby = false;
-            DrRanked_Cancel();
+            sRankedLobbyCode[0] = sRankedLobbyMatch[0] = '\0';
+            DrRanked_ResetForNewSearch();
             Port_UiNotice(T("Search canceled.", "Busca cancelada.", "Búsqueda cancelada."));
         }
         goto_screen(RANKED_MENU, 0);

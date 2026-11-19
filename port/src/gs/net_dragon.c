@@ -263,6 +263,10 @@ static unsigned sRankedRound = 1;
 static int sRankedStarted;
 static char sLastQueueMatch[33], sPreviousQueueMatch[33];
 static char sLastQueueCode[8], sPreviousQueueCode[8];
+static char sRoomPendingMatch[33];
+static char sBurnedCodes[16][8], sAttemptCodes[16][8];
+static unsigned sBurnedCount, sBurnedNext, sAttemptCodeCount;
+static int sBurnedLoaded;
 static int sSeriesActive, sSeriesDirty, sSeriesChoice;
 static unsigned sSeriesGap;
 static DrRankedSeries sSeriesView;
@@ -288,10 +292,140 @@ static int sCodePollCount;
 static Uint64 sPresenceAt;
 
 static int ranked_route(const char *what) {
-    if (SDL_strcmp(what, "queue") == 0 || SDL_strcmp(what, "match") == 0) return 0;
-    if (SDL_strcmp(what, "room") == 0) return 1;
-    if (SDL_strcmp(what, "lifecycle") == 0) return 2;
+    if (SDL_strcmp(what, "queue") == 0) return 0;
+    if (SDL_strcmp(what, "match") == 0) return 1;
+    if (SDL_strcmp(what, "room") == 0) return 2;
+    if (SDL_strcmp(what, "lifecycle") == 0) return 3;
     return -1;
+}
+
+static int code_index(char codes[][8], unsigned count, const char *code) {
+    unsigned i;
+    if (code == NULL || SDL_strlen(code) != 6) return -1;
+    for (i = 0; i < count; i++) if (SDL_strcmp(codes[i], code) == 0) return (int)i;
+    return -1;
+}
+
+/* Port_LobbyStartCode relaunches the executable. Carry only these short-lived,
+   non-secret rejected room codes through that relaunch in the child environment. */
+static void burned_codes_load_locked(void) {
+    const char *env;
+    char copy[160], *p, *next;
+    if (sBurnedLoaded) return;
+    sBurnedLoaded = 1;
+    env = SDL_getenv("BT3_RANKED_BURNED_CODES");
+    if (env == NULL) return;
+    SDL_strlcpy(copy, env, sizeof(copy));
+    for (p = copy; *p && sBurnedCount < 16; p = next) {
+        next = SDL_strchr(p, ',');
+        if (next != NULL) *next++ = '\0';
+        if (SDL_strlen(p) == 6 && code_index(sBurnedCodes, sBurnedCount, p) < 0)
+            SDL_strlcpy(sBurnedCodes[sBurnedCount++], p, sizeof(sBurnedCodes[0]));
+        if (next == NULL) break;
+    }
+}
+
+static void burned_codes_save_locked(void) {
+    char env[160];
+    unsigned i;
+    size_t used = 0;
+    env[0] = '\0';
+    for (i = 0; i < sBurnedCount; i++) {
+        int n = SDL_snprintf(env + used, sizeof(env) - used, "%s%s", i ? "," : "", sBurnedCodes[i]);
+        if (n < 0 || (size_t)n >= sizeof(env) - used) break;
+        used += (size_t)n;
+    }
+    SDL_setenv("BT3_RANKED_BURNED_CODES", env, 1);
+}
+
+static int code_burned_locked(const char *code) {
+    burned_codes_load_locked();
+    return code_index(sBurnedCodes, sBurnedCount, code) >= 0;
+}
+
+static void burn_code_locked(const char *code) {
+    unsigned at;
+    burned_codes_load_locked();
+    if (code == NULL || SDL_strlen(code) != 6 || code_index(sBurnedCodes, sBurnedCount, code) >= 0) return;
+    if (sBurnedCount < 16) {
+        at = sBurnedCount++;
+    } else {
+        at = sBurnedNext++ % 16;
+    }
+    SDL_strlcpy(sBurnedCodes[at], code, sizeof(sBurnedCodes[at]));
+    burned_codes_save_locked();
+}
+
+static void attempt_code_locked(const char *code) {
+    if (code == NULL || SDL_strlen(code) != 6 || code_index(sAttemptCodes, sAttemptCodeCount, code) >= 0) return;
+    if (sAttemptCodeCount < 16) SDL_strlcpy(sAttemptCodes[sAttemptCodeCount++], code, sizeof(sAttemptCodes[0]));
+    else SDL_strlcpy(sAttemptCodes[15], code, sizeof(sAttemptCodes[0]));
+}
+
+static void ranked_redact_body(const char *json, char *safe, size_t size) {
+    size_t n = 0;
+    const char *p = json != NULL ? json : "";
+    if (size == 0) return;
+    while (*p && n + 1 < size) {
+        if (SDL_strncmp(p, "\"token\"", 7) == 0) {
+            const char *value = p + 7, *end;
+            while (*value == ' ' || *value == '\t' || *value == '\r' || *value == '\n') value++;
+            if (*value++ == ':') {
+                while (*value == ' ' || *value == '\t' || *value == '\r' || *value == '\n') value++;
+                if (*value == '"') {
+                    end = SDL_strchr(value + 1, '"');
+                    if (end != NULL) {
+                        const char *redacted = "\"token\":\"[redacted]\"";
+                        while (*redacted && n + 1 < size) safe[n++] = *redacted++;
+                        p = end + 1;
+                        continue;
+                    }
+                }
+            }
+            safe[n++] = *p++;
+        } else {
+            safe[n++] = *p++;
+        }
+    }
+    safe[n] = '\0';
+}
+
+static void ranked_log_code_response(const char *what, int status, const char *json) {
+    char code[8] = "", safe[4096];
+    char publish[8] = "", publishMatch[33] = "";
+    if (SDL_strcmp(what, "queue") != 0 && SDL_strcmp(what, "match") != 0 && SDL_strcmp(what, "room") != 0) return;
+    text_value(json != NULL ? json : "", "code", code, sizeof(code));
+    if (code[0] == '\0') return;
+    ranked_redact_body(json, safe, sizeof(safe));
+    if (SDL_strcmp(what, "room") == 0) {
+        SDL_LockMutex(sLock);
+        SDL_strlcpy(publish, sView.room_published_code, sizeof(publish));
+        SDL_strlcpy(publishMatch, sView.room_published_match, sizeof(publishMatch));
+        SDL_UnlockMutex(sLock);
+    }
+    fprintf(stderr, "dragonnet: ranked/%s http=%d%s%s code=%s body=%s\n", what, status,
+            publish[0] ? " publish=" : "", publish[0] ? publish : "",
+            code, safe);
+    if (publishMatch[0]) fprintf(stderr, "dragonnet: ranked/room published_match=%s\n", publishMatch);
+}
+
+static void ranked_room_report(const char *match, const char *published, const char *json) {
+    char returned[8] = "", safe[4096];
+    int status, old;
+    text_value(json != NULL ? json : "", "code", returned, sizeof(returned));
+    ranked_redact_body(json, safe, sizeof(safe));
+    SDL_LockMutex(sLock);
+    status = sView.route_http[2];
+    old = status == 200 && returned[0] && SDL_strcmp(returned, published) != 0;
+    if (SDL_strcmp(match, sView.match) == 0 && SDL_strcmp(match, sView.room_published_match) == 0) {
+        SDL_strlcpy(sView.room_response_code, returned, sizeof(sView.room_response_code));
+        sView.room_kept_old = old;
+    }
+    SDL_UnlockMutex(sLock);
+    fprintf(stderr, "dragonnet: ranked/room publish match=%s code=%s http=%d response_code=%s body=%s\n",
+            match, published, status, returned[0] ? returned : "-", safe);
+    if (old) fprintf(stderr, "dragonnet: ranked/room servidor manteve a sala antiga: match=%s published=%s returned=%s http=%d\n",
+                     match, published, returned, status);
 }
 
 static void ranked_diagnostic(const char *what, int status, const char *json) {
@@ -380,10 +514,12 @@ static int post_ranked_search(const char *what, const char *extra, char *answer,
     answer[0]='\0';
     if (!Match_PostFriendlyRanked(path, body, answer, size, &status)) {
         if (ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
+        ranked_log_code_response(what, status, answer);
         message(DRMSG_NO_CONNECTION, 99);
         return 0;
     }
     if (ranked_route(what) >= 0) ranked_diagnostic(what, status, answer);
+    ranked_log_code_response(what, status, answer);
     if (strstr(answer, "\"error\":\"version\"") != NULL || strstr(answer, "\"http\":409") != NULL) {
         if (SDL_strcmp(what, "queue") == 0) {
             SDL_LockMutex(sLock);
@@ -530,7 +666,7 @@ static void session_write(const char *match, int role, int mode, int sent) {
 
 static void update_match(const char *answer, unsigned gen) {
     char state[24], assigned[33], incomingCode[8], oldServerCode[8];
-    int changedMatch, stalePreviousCode, incomingRole;
+    int changedMatch, stalePreviousCode, incomingRole, burnedCode;
     text_value(answer, "state", state, sizeof(state));
     text_value(answer, "match", assigned, sizeof(assigned));
     text_value(answer, "code", incomingCode, sizeof(incomingCode));
@@ -557,11 +693,13 @@ static void update_match(const char *answer, unsigned gen) {
     stalePreviousCode = incomingRole == 2 && assigned[0] &&
         SDL_strcmp(assigned, sPreviousQueueMatch) == 0 && sPreviousQueueCode[0] &&
         SDL_strcmp(incomingCode, sPreviousQueueCode) == 0;
+    burnedCode = incomingRole == 2 && code_burned_locked(incomingCode);
     SDL_strlcpy(sView.match, assigned, sizeof(sView.match));
     SDL_strlcpy(sView.server_code, incomingCode, sizeof(sView.server_code));
+    sView.server_code_burned = burnedCode;
     text_value(answer, "peer", sView.peer, sizeof(sView.peer));
     sView.role = incomingRole;
-    if (sView.role == 2 && stalePreviousCode) {
+    if (sView.role == 2 && (stalePreviousCode || burnedCode)) {
         sView.code[0] = '\0'; /* same match and code as last attempt: wait for ranked/match to publish a new code */
     } else {
         SDL_strlcpy(sView.code, incomingCode, sizeof(sView.code));
@@ -585,6 +723,44 @@ static void update_match(const char *answer, unsigned gen) {
         sView.msg = sView.state == 3 ? DRMSG_FOUND : DRMSG_SEARCHING_LEVEL;
     }
     SDL_UnlockMutex(sLock);
+}
+
+static void ranked_clear_search_view_locked(void) {
+    sWantSearch = sView.searching = 0;
+    sView.state = 0;
+    sView.role = sView.flow = 0;
+    sView.mode = 0;
+    sView.code_poll_count = sView.code_change_count = sView.server_code_burned = 0;
+    sView.queue_match[0] = sView.queue_same_previous = 0;
+    sView.match[0] = sView.code[0] = sView.server_code[0] = sView.peer[0] = '\0';
+    sView.room_published_code[0] = sView.room_published_match[0] = sView.room_response_code[0] = '\0';
+    sView.room_kept_old = 0;
+    sRoomPending[0] = sRoomPendingMatch[0] = '\0';
+    sHandedOver[0] = sLifeMatch[0] = sStartSent[0] = sConnectionDone[0] = '\0';
+    sLifeConnect = sLifeReady = sLifeStarted = sLifeTries = 0;
+    sCodePollCount = 0;
+    sPairedAt = sCodePollAt = 0;
+    sRankedStarted = 0;
+    sRankedRound = 1;
+    sSeriesActive = sSeriesDirty = sSeriesChoice = 0;
+    sSeriesGap = 0;
+    SDL_memset(&sSeriesView, 0, sizeof(sSeriesView));
+    sFlowAct = sFlowNow = sFlowState = sFlowTries = 0;
+    sFlowMatch[0] = '\0';
+    sFlowAt = 0;
+    sFlowMode = 0;
+}
+
+static void ranked_burn_attempt_locked(void) {
+    unsigned i;
+    if (sRankedStarted) {
+        sAttemptCodeCount = 0;
+        SDL_memset(sAttemptCodes, 0, sizeof(sAttemptCodes));
+        return;
+    }
+    for (i = 0; i < sAttemptCodeCount; i++) burn_code_locked(sAttemptCodes[i]);
+    sAttemptCodeCount = 0;
+    SDL_memset(sAttemptCodes, 0, sizeof(sAttemptCodes));
 }
 
 static void do_result(int *refresh) {
@@ -845,7 +1021,7 @@ static int SDLCALL worker(void *unused) {
                                                          doubling to a minute, not every round) */
     (void)unused;
     for (;;) {
-        char answer[4096], extra[256], name[20], match[33], code[8], cancelled[33];
+        char answer[4096], extra[256], name[20], match[33], code[8], roomMatch[33], cancelled[33];
         int refresh, search, cancel, board, state, role, chat, presence, leave, urgent, series, i;
         char viewcode[8];
         int background = gPortInBackground;
@@ -870,7 +1046,9 @@ static int SDLCALL worker(void *unused) {
         sCancelMatch[0] = '\0';
         SDL_strlcpy(match, sView.match, sizeof(match));
         SDL_strlcpy(code, sRoomPending, sizeof(code));
+        SDL_strlcpy(roomMatch, sRoomPendingMatch, sizeof(roomMatch));
         sRoomPending[0] = '\0';
+        sRoomPendingMatch[0] = '\0';
         chat = !background && DRNET_CHAT && sChatOpen && (now - chatAt > 3000 || sChatOutN > 0);
         presence = (sPresenceOn && (sPresenceAt == 0 || now - sPresenceAt > 300000)) || sPresenceLeave;
         leave = sPresenceLeave;
@@ -969,13 +1147,27 @@ static int SDLCALL worker(void *unused) {
                 SDL_UnlockMutex(sLock);
             }
             if (search) {
-                if (code[0] != '\0' && is_hex(match, 32)) {
+                if (code[0] != '\0' && is_hex(match, 32) && SDL_strcmp(roomMatch, match) == 0) {
+                    int canPublish = 0;
                     SDL_snprintf(extra, sizeof(extra), ",\"match\":\"%s\",\"code\":\"%s\"", match, code);
-                    if (post_ranked_search("room", extra, answer, sizeof(answer))) {
+                    SDL_LockMutex(sLock);
+                    if (gen == sSearchGen && sWantSearch && SDL_strcmp(match, sView.match) == 0) {
+                        SDL_strlcpy(sView.room_published_match, match, sizeof(sView.room_published_match));
+                        SDL_strlcpy(sView.room_published_code, code, sizeof(sView.room_published_code));
+                        sView.room_response_code[0] = '\0';
+                        sView.room_kept_old = 0;
+                        canPublish = 1;
+                    }
+                    SDL_UnlockMutex(sLock);
+                    if (!canPublish) {
+                        /* This lobby result belongs to a search that has already ended. */
+                    } else if (post_ranked_search("room", extra, answer, sizeof(answer))) {
+                        ranked_room_report(match, code, answer);
                         SDL_LockMutex(sLock);
                         if (gen == sSearchGen && sWantSearch) SDL_strlcpy(sView.code, code, sizeof(sView.code));
                         SDL_UnlockMutex(sLock);
                     } else {
+                        ranked_room_report(match, code, answer);
                         if (sView.msg != DRMSG_VERSION && sView.msg != DRMSG_NO_CONNECTION) message(DRMSG_ROOM_FAILED, -1);
                     }
                 } else if (state == 3 && role == 2) {
@@ -1334,16 +1526,16 @@ void DrRanked_Search(const char *name, int mode) {
         message(DRMSG_FINISH_FIRST,-1);
         return;
     }
-    DrRanked_AbortBeforeStart();
     SDL_LockMutex(sLock);
     SDL_strlcpy(sPreviousQueueMatch,sLastQueueMatch,sizeof(sPreviousQueueMatch));
     SDL_strlcpy(sPreviousQueueCode,sLastQueueCode,sizeof(sPreviousQueueCode));
+    SDL_UnlockMutex(sLock);
+    SDL_LockMutex(sLock);
     sLastQueueMatch[0]='\0';
     sLastQueueCode[0]='\0';
     sSearchGen++;
     sHandedOver[0] = '\0';
     sView.mode = mode != 0;
-    sView.role=0;sView.flow=0;sView.code_poll_count=sView.code_change_count=0;sView.queue_match[0]='\0';sView.queue_same_previous=0;
     sWantSearch = sView.searching = 1;
     sSearchAt = SDL_GetTicks();
     sView.state = 1;
@@ -1356,7 +1548,7 @@ void DrRanked_Search(const char *name, int mode) {
     SDL_UnlockMutex(sLock);
 }
 
-void DrRanked_AbortBeforeStart(void) {
+void DrRanked_ResetForNewSearch(void) {
     char match[33]="", sessionMatch[33]="";
     int role=0, mode=0, sent=0, hasSession;
     lock_make();
@@ -1366,22 +1558,18 @@ void DrRanked_AbortBeforeStart(void) {
     if(hasSession) SDL_strlcpy(match,sessionMatch,sizeof(match));
     else if(is_hex(sView.match,32)) SDL_strlcpy(match,sView.match,sizeof(match));
     else if(is_hex(sHandedOver,32)) SDL_strlcpy(match,sHandedOver,sizeof(match));
+    ranked_burn_attempt_locked();
     if(is_hex(match,32)) {
         SDL_strlcpy(sCancelMatch,match,sizeof(sCancelMatch));
         sWantCancel=1;
     }
     sSearchGen++;
-    sWantSearch=sView.searching=0;
-    sView.state=0;sView.role=0;sView.flow=0;sView.code_poll_count=sView.code_change_count=0;sView.queue_match[0]=0;sView.queue_same_previous=0;
-    sView.match[0]=sView.code[0]=sView.server_code[0]=sView.peer[0]=0;
-    sRoomPending[0]=sHandedOver[0]=0;
-    sLifeMatch[0]=sStartSent[0]=0;
-    sConnectionDone[0]=0;
-    sLifeConnect=sLifeReady=sLifeStarted=sLifeTries=0;
-    sRankedStarted=0;sRankedRound=1;
-    sSeriesActive=sSeriesDirty=sSeriesChoice=0;sSeriesGap=0;
-    SDL_memset(&sSeriesView,0,sizeof(sSeriesView));
-    sFlowAct=sFlowNow=sFlowState=0;sFlowMatch[0]=0;
+    ranked_clear_search_view_locked();
+    sView.msg = DRMSG_CANCELLED;
+    sView.http_status = 0;
+    sView.error_field[0] = '\0';
+    SDL_memset(sView.route_http, 0, sizeof(sView.route_http));
+    SDL_memset(sView.route_error, 0, sizeof(sView.route_error));
     SDL_UnlockMutex(sLock);
     if(hasSession) remove_file("dragonnet-session.txt");
     remove_file("dragonnet-flow.txt");
@@ -1389,21 +1577,10 @@ void DrRanked_AbortBeforeStart(void) {
     start(NULL);
 }
 
+void DrRanked_AbortBeforeStart(void) { DrRanked_ResetForNewSearch(); }
+
 void DrRanked_Cancel(void) {
-    lock_make();
-    SDL_LockMutex(sLock);
-    if (sHandedOver[0] != '\0' || (!sWantSearch && !sView.searching)) {
-        SDL_UnlockMutex(sLock);
-        return;
-    }
-    SDL_strlcpy(sCancelMatch, sView.match, sizeof(sCancelMatch));
-    sSearchGen++;
-    sWantSearch = sView.searching = 0;
-    sView.state = -1;
-    sView.msg = DRMSG_CANCELLED;
-    sView.match[0] = sView.code[0] = sRoomPending[0] = '\0';
-    sWantCancel = 1;
-    SDL_UnlockMutex(sLock);
+    DrRanked_ResetForNewSearch();
 }
 
 void DrRanked_Board(void) {
@@ -1451,12 +1628,48 @@ void DrRanked_SeriesPoll(DrRankedSeries *out) {
 }
 
 void DrRanked_SetRoom(const char *code) {
+    char match[33];
+    if (code == NULL) return;
     lock_make();
     SDL_LockMutex(sLock);
-    if (sWantSearch && sView.role == 1 && strcmp(code, sView.code) != 0) {
+    SDL_strlcpy(match, sView.match, sizeof(match));
+    SDL_UnlockMutex(sLock);
+    DrRanked_SetRoomForMatch(match, code);
+}
+
+void DrRanked_SetRoomForMatch(const char *match, const char *code) {
+    if (match == NULL || code == NULL || !is_hex(match, 32) || SDL_strlen(code) != 6) return;
+    lock_make();
+    SDL_LockMutex(sLock);
+    if (sWantSearch && sView.role == 1 && SDL_strcmp(match, sView.match) == 0 && SDL_strcmp(code, sView.code) != 0) {
         SDL_strlcpy(sRoomPending, code, sizeof(sRoomPending));
+        SDL_strlcpy(sRoomPendingMatch, match, sizeof(sRoomPendingMatch));
     }
     SDL_UnlockMutex(sLock);
+}
+
+void DrRanked_RecordLobbyCode(const char *match, const char *code, int host) {
+    if (match == NULL || code == NULL || !is_hex(match, 32) || SDL_strlen(code) != 6) return;
+    lock_make();
+    SDL_LockMutex(sLock);
+    if (sWantSearch && SDL_strcmp(match, sView.match) == 0 && (host == 0 || sView.role == 1)) attempt_code_locked(code);
+    SDL_UnlockMutex(sLock);
+}
+
+void DrRanked_BurnLobbyCode(const char *match, const char *code) {
+    if (code == NULL || SDL_strlen(code) != 6) return;
+    lock_make();
+    SDL_LockMutex(sLock);
+    if (match == NULL || !sView.match[0] || SDL_strcmp(match, sView.match) == 0) burn_code_locked(code);
+    SDL_UnlockMutex(sLock);
+}
+
+int DrRanked_CodeIsBurned(const char *code) {
+    int burned;
+    if (code == NULL) return 0;
+    lock_make();
+    SDL_LockMutex(sLock);burned=code_burned_locked(code);SDL_UnlockMutex(sLock);
+    return burned;
 }
 
 int DrRanked_Handover(void) {
