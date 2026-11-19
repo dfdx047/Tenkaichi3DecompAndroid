@@ -214,6 +214,7 @@ static SDL_Mutex *sLock;
 static SDL_Mutex *sOutboxLock; /* result queue file */
 static Uint64 sOutboxDeadline;
 static char sOutboxTrackedMatch[33];
+static int sOutboxForceRetry;
 static SDL_AtomicInt sStarted;
 static SDL_Condition *sWake;
 static char sFinishDiag[192];
@@ -732,6 +733,7 @@ static void outbox_watch(const char *match, Uint64 now) {
     if (SDL_strcmp(sOutboxTrackedMatch, match) != 0) {
         SDL_strlcpy(sOutboxTrackedMatch, match, sizeof(sOutboxTrackedMatch));
         sOutboxDeadline = now + 10000;
+        sOutboxForceRetry = 1;
     }
     SDL_UnlockMutex(sOutboxLock);
 }
@@ -744,11 +746,21 @@ static int outbox_watch_expired(const char *match, Uint64 now) {
     return expired;
 }
 
+static int outbox_take_force_retry(void) {
+    int force;
+    SDL_LockMutex(sOutboxLock);
+    force = sOutboxForceRetry;
+    sOutboxForceRetry = 0;
+    SDL_UnlockMutex(sOutboxLock);
+    return force;
+}
+
 static void outbox_unwatch(const char *match) {
     SDL_LockMutex(sOutboxLock);
     if (SDL_strcmp(sOutboxTrackedMatch, match) == 0) {
         sOutboxTrackedMatch[0] = '\0';
         sOutboxDeadline = 0;
+        sOutboxForceRetry = 0;
     }
     SDL_UnlockMutex(sOutboxLock);
 }
@@ -1243,6 +1255,7 @@ static int SDLCALL worker(void *unused) {
                 sPresenceAt = now;
             }
         }
+        if (outbox_take_force_retry()) resultAt = resultWait = 0;
         {
             int hasPending = outbox_first(pendingMatch, &pendingScore, pendingDigest, &pendingRound);
             urgent = hasPending && now >= resultAt; /* (a result still to send) */
@@ -1258,7 +1271,7 @@ static int SDLCALL worker(void *unused) {
         }
         if ((refresh || search || cancel || board || chat || urgent || series) && identity()) {
             int pendingRefresh = refresh;
-            if (urgent || refresh) {
+            if ((urgent || refresh) && !search) {
                 char om[33], od[16];
                 int os;
                 unsigned oround;
@@ -1415,6 +1428,24 @@ static int SDLCALL worker(void *unused) {
                             message(strstr(answer, "busy") != NULL ? DRMSG_BUSY : DRMSG_NO_ANSWER, 99);
                         }
                     }
+                }
+            }
+            /* Give a new queue/match request priority over a persisted result from an older match. */
+            if (search && (urgent || refresh)) {
+                char om[33], od[16];
+                int os;
+                unsigned oround;
+                do_result(&pendingRefresh);
+                if (outbox_first(om, &os, od, &oround)) {
+                    resultWait = resultWait == 0 ? 5000 : resultWait * 2 > 60000 ? 60000 : resultWait * 2;
+                    resultAt = SDL_GetTicks() + resultWait;
+                } else {
+                    resultAt = resultWait = 0;
+                }
+                if (pendingRefresh) {
+                    SDL_LockMutex(sLock);
+                    sRefresh = 1;
+                    SDL_UnlockMutex(sLock);
                 }
             }
             if (chat) {
