@@ -4,7 +4,6 @@
 #include "sys/pad.h"
 #ifdef PORT
 #include "../../port/src/gs/net_dragon.h"
-extern void BtlMenu_PortDrawMenu(BtlMenu *menu);
 extern void BtlMenu_PortDrawRankedHeader(int won, unsigned seconds, int waiting);
 extern s32 BtlMenu_PortLive(void);
 #endif
@@ -599,10 +598,10 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
         if(series.decision==DR_SERIES_OVER) { BattleResult_Set(BTL_RESULT_ABORT,8); rankedPostStarted=0; DrRanked_PostFightState(4,now-rankedPostOpened); return 1; }
         DrRanked_PostFightState(series.decision != DR_SERIES_PENDING ? 4 : (rankedPostChoiceSent ? 2 : 1),now-rankedPostOpened);
         menu=&rankedPostMenu;
-        if (menu->count != 3) {
+        if (menu->count != 3 || menu->state < BTL_MENU_STATE_OPEN || menu->state > BTL_MENU_STATE_ACTIVE) {
             rankedPostFallback=1;
             DrRanked_PostFightState(3,now>=rankedPostOpened?now-rankedPostOpened:0);
-            DrRanked_DebugLog("ranked/postfight fallback=native reason=expected 3 menu items; result preserved");
+            DrRanked_DebugLog("ranked/postfight fallback=native reason=menu count/state inconsistent; result preserved");
             goto ranked_native_menu;
         }
         if (!BtlMenu_PortLive()) {
@@ -616,6 +615,7 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
             }
             return 1;
         }
+        BtlMenu_SetTop(menu);
         if(rankedPostChoiceSent) return 1;
         if(BtlMenu_Update(which,NULL,menu,pad)) return 1;
         item=BtlMenu_FindResult(NULL,menu);
@@ -723,8 +723,8 @@ void PauseMenu_Draw(void) {
         if (BtlMenu_PortLive()) {
             unsigned now=DrRanked_Ticks();
             unsigned elapsed=now>=rankedPostOpened?now-rankedPostOpened:0;
+            BtlMenu_DrawAll();
             rankedPostDrawn=1;
-            BtlMenu_PortDrawMenu(&rankedPostMenu);
             BtlMenu_PortDrawRankedHeader(BattleResult_IsPlayerWin(), elapsed>=20000u?0:(20u-elapsed/1000u), rankedPostWaiting);
         }
         return;
