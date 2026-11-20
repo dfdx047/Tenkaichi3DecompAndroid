@@ -82,6 +82,14 @@ typedef struct DrRankedSeries {
 } DrRankedSeries;
 void DrRanked_SeriesChoice(unsigned gap, int choice); /* 1 continue, 2 team, 3 forfeit */
 void DrRanked_SeriesPoll(DrRankedSeries *out);
+/* Between two fights of a series: holds the game's thread (the picture stands, the overlay shows the choice:
+   gPortSeriesRequest) until the service's decision, and returns what the result menu applies: 0x8000 the same
+   fight again, 0x10 the character select, 8 the end. DrRanked_SeriesApplied: that answer again for a blank the
+   rollback runs a second time (0: not decided yet for this match and gap). */
+int DrRanked_SeriesHold(unsigned gap);
+void DrRanked_SessionBegins(void); /* net.c, as a session begins: forgets a ranked file no hand-over led to */
+int DrRanked_SeriesApplied(unsigned gap);
+extern volatile int gPortSeriesRequest, gPortSeriesPick, gPortSeriesLeave;
 void DrRanked_PostFightState(int phase, unsigned elapsed_ms); /* 1 menu, 2 waiting, 3 native fallback, 4 server decision */
 unsigned DrRanked_SessionRound(void);
 unsigned DrRanked_Ticks(void); /* monotonic milliseconds for source/battle UI code */

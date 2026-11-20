@@ -3290,9 +3290,38 @@ static void put_env(const char *name, const char *value) {
 #endif
 }
 
+/* A team battle whose DP row is 1 (team battles do not use DP) is Ranked's team of three: the team select stops at
+   three fighters (src/menu/menu_e_b.c), as DBT-NX's (Bt3Online_TeamLimit, the same rule). Else the game's five. */
+int Port_RankedTeamLimit(void) {
+    int type, dp, time;
+    if (!Port_NetSession()) {
+        return 5;
+    }
+    Port_NetRules(&type, &dp, &time);
+    return type == 1 && dp == 1 ? 3 : 5;
+}
+
+/* Ranked 3 vs 3: a team is complete only with its three fighters (menu_e_b.c), as DBT-NX's Bt3Online_TeamMin. */
+int Port_RankedTeamMin(void) {
+    return Port_RankedTeamLimit() == 3 ? 3 : 1;
+}
+
 void Port_NetSessionBegin(int role, const char *address, int port) {
     char host[16], join[160];
     static int known;
+
+    {
+        extern void DrRanked_SessionBegins(void);
+        DrRanked_SessionBegins();
+    }
+    if (role == 1 && DrRanked_InSession()) {
+        /* Ranked (team3-bo3-v1) is always a team battle of up to three, no time limit, the standard pace: the host's
+           rules are what both games apply (T_HELLO_ACK), and they could still be the player's own (single battle)
+           when the room went through another path than the ranked window's (seen: DBT-NX Switch joining an Android
+           host). The DP row, unused by team battles, is 1: DBT-NX's mark of a team of three (Port_RankedTeamLimit). */
+        Port_NetSpeedSet(NET_SPEED_STANDARD);
+        Port_NetRulesSet(1, 1, 4);
+    }
 
     if (!known) { /* the player's own save folder, as the program was started */
         const char *saves = getenv("BT3_SAVES");

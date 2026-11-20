@@ -271,6 +271,7 @@ static Uint64 sCancelAt, sCancelRetryAt;
 static char sLifeMatch[33], sStartSent[33]; /* flow:2: the match the lifecycle calls are for */
 static char sConnectionDone[33];
 static unsigned sRankedRound = 1;
+static int sRankedLaunchPending; /* DrRanked_Handover since the last session began (DrRanked_SessionBegins) */
 static int sRankedStarted;
 static char sLastQueueMatch[33], sPreviousQueueMatch[33];
 static char sLastQueueCode[8], sPreviousQueueCode[8];
@@ -984,7 +985,7 @@ static void do_series(void) {
     choice=sSeriesChoice; gap=sSeriesGap;
     sSeriesDirty=0;
     SDL_UnlockMutex(sLock);
-    SDL_snprintf(extra,sizeof(extra),",\"match\":\"%s\",\"gap\":%u,\"choice\":%d,\"wait\":20",match,gap,choice);
+    SDL_snprintf(extra,sizeof(extra),",\"match\":\"%s\",\"gap\":%u,\"choice\":%d,\"wait\":4",match,gap,choice); /* (short: a choice made meanwhile goes in the next request) */
     if (!post_ranked("series",extra,answer,sizeof(answer))) return;
     text_value(answer,"decision",decision,sizeof(decision));
     SDL_LockMutex(sLock);
@@ -1412,7 +1413,7 @@ static int SDLCALL worker(void *unused) {
                         }
                         SDL_UnlockMutex(sLock);
                     } else {
-                        SDL_snprintf(extra, sizeof(extra), ",\"rules\":\"dp20-bo3-v1\",\"flow\":2,\"rematches\":0,\"wait\":20");
+                        SDL_snprintf(extra, sizeof(extra), ",\"rules\":\"team3-bo3-v1\",\"flow\":2,\"rematches\":0,\"wait\":20");
                         if (post_ranked_search("queue", extra, answer, sizeof(answer))) {
                             char queued[33]="";
                             text_value(answer,"match",queued,sizeof(queued));
@@ -1541,7 +1542,9 @@ static void connection_queue(int ready) {
     SDL_LockMutex(sLock);
     if (sView.flow && is_hex(sView.match, 32)) {
         SDL_strlcpy(sLifeMatch, sView.match, sizeof(sLifeMatch));
-        sLifeConnect = 1;
+        /* Only "ready": the service's ready also sets the connect bit, and one request (not connect, then ready on
+           the next round of the worker) is what fits before the relaunch. */
+        sLifeConnect = 0;
         sLifeReady = 1;
         sLifeTries = 0;
     }
@@ -1550,7 +1553,8 @@ static void connection_queue(int ready) {
 }
 
 /* The lobby is connected (flow:2). The game restarts right after (relaunch), so the worker could not be trusted to
-   send `ready` in time: it is woken, and this waits (at most 2.5 s) until it has been sent. */
+   send `ready` in time: it is woken, and this waits (at most 6 s: the worker may still be inside a poll, and the
+   service is far from some players) until it has been sent. */
 void DrRanked_Connection(int ready) {
     char match[33], line[64];
     int i, pending, flow;
@@ -1568,7 +1572,7 @@ void DrRanked_Connection(int ready) {
     SDL_snprintf(line, sizeof(line), "%s 1\n", match);
     write_text("dragonnet-flow.txt", line);
     connection_queue(1);
-    for (i = 0; i < 250; i++) {
+    for (i = 0; i < 600; i++) {
         SDL_LockMutex(sLock);
         pending = sLifeReady && strcmp(sLifeMatch, match) == 0;
         SDL_UnlockMutex(sLock);
@@ -1857,6 +1861,65 @@ void DrRanked_SeriesPoll(DrRankedSeries *out) {
     SDL_LockMutex(sLock);*out=sSeriesView;SDL_UnlockMutex(sLock);
 }
 
+/* ---- The choice between two fights, with the game standing still (DBT-NX's way: both games stop at the same
+   blank of the result menu, so they go on alike whatever the decision is and whenever each one hears it). ---- */
+volatile int gPortSeriesRequest, gPortSeriesPick, gPortSeriesLeave;
+static char sSeriesAppliedMatch[33];
+static unsigned sSeriesAppliedGap;
+static int sSeriesAppliedReason;
+
+int DrRanked_SeriesApplied(unsigned gap) {
+    char match[33];
+    int role, mode, sent;
+    if (!gap || !sSeriesAppliedReason || gap != sSeriesAppliedGap || !session_read(match, &role, &mode, &sent)) return 0;
+    return SDL_strcmp(match, sSeriesAppliedMatch) == 0 ? sSeriesAppliedReason : 0;
+}
+
+int DrRanked_SeriesHold(unsigned gap) {
+    extern void Gs_HoldFrame(void);
+    extern volatile int gPortRematchUi;
+    char match[33];
+    int role, mode, sent, reason = 8, picked = 0;
+    Uint64 opened = SDL_GetTicks(), overAt = 0;
+    DrRankedSeries s;
+    if (!gap || !session_read(match, &role, &mode, &sent)) return 8;
+    DrRanked_SeriesChoice(gap, 0);
+    gPortSeriesPick = gPortSeriesLeave = 0;
+    gPortSeriesRequest = (int)gap; /* (ui.cpp opens the SERIES screen) */
+    fprintf(stderr, "dragonnet: series hold gap=%u\n", gap);
+    for (;;) {
+        Uint64 now = SDL_GetTicks();
+        DrRanked_SeriesPoll(&s);
+        if (s.decision == DR_SERIES_CONTINUE) { reason = 0x8000; break; }
+        if (s.decision == DR_SERIES_TEAM) { reason = 0x10; break; }
+        if (s.decision == DR_SERIES_OVER) {
+            if (!overAt) overAt = now ? now : 1;
+            /* the series' result stays up until the player goes on (after 2 s) or 15 s, or at once without an overlay */
+            if (!gPortRematchUi || gPortSeriesLeave || now - overAt >= 15000) { reason = 8; break; }
+        }
+        if (!picked && gPortSeriesPick >= 1 && gPortSeriesPick <= 3) {
+            picked = gPortSeriesPick;
+            DrRanked_SeriesChoice(gap, picked);
+        }
+        if (!picked && !s.decision && now - opened >= 20000) { /* (nobody chose: "continue", as the service decides) */
+            picked = 1;
+            DrRanked_SeriesChoice(gap, 1);
+        }
+        if (!s.decision && now - opened >= 90000) { /* the service never answered: the series ends here */
+            reason = 8;
+            break;
+        }
+        Gs_HoldFrame();
+        SDL_Delay(16);
+    }
+    gPortSeriesRequest = 0;
+    SDL_strlcpy(sSeriesAppliedMatch, match, sizeof(sSeriesAppliedMatch));
+    sSeriesAppliedGap = gap;
+    sSeriesAppliedReason = reason;
+    fprintf(stderr, "dragonnet: series gap=%u decision=%d applied=0x%x\n", gap, s.decision, (unsigned)reason);
+    return reason;
+}
+
 void DrRanked_SetRoom(const char *code) {
     char match[33];
     if (code == NULL) return;
@@ -1923,8 +1986,24 @@ int DrRanked_Handover(void) {
     sSearchGen++;
     sWantSearch = sView.searching = 0;
     SDL_UnlockMutex(sLock);
+    sRankedLaunchPending = 1;
     fprintf(stderr, "dragonnet: ranked match handed over (role %d)\n", v.role);
     return 1;
+}
+
+/* A session begins (net.c). One that Ranked did not hand over (a friendly room, a lobby, a quick match) must not
+   be taken for a ranked one because of a dragonnet-session.txt left behind by a ranked match whose session never
+   began: that file makes the series' hold, the forced rules and the ranked results apply. (A program started as the
+   session, without the in-process change, has only the file to go by: it is kept.) */
+void DrRanked_SessionBegins(void) {
+    extern int Port_SessionCan(void);
+    char match[33];
+    int role, mode, sent;
+    if (!sRankedLaunchPending && Port_SessionCan() && session_read(match, &role, &mode, &sent)) {
+        remove_file("dragonnet-session.txt");
+        fprintf(stderr, "dragonnet: a ranked session file was left from match %.8s: this session is not a ranked one\n", match);
+    }
+    sRankedLaunchPending = 0;
 }
 
 /* flow:2: the game flags for the Revanche screen (ui.cpp shows it while MainMenu_Run waits, before the session ends). */
@@ -2016,7 +2095,7 @@ void DrNet_BattleFinished(int flags, int reason, int clock) {
 void DrRanked_BattleStart(void) {
     char match[33]; int role, mode, sent;
     if (!session_read(match, &role, &mode, &sent) || !sent) return;
-    if (sRankedRound < 3) ++sRankedRound;
+    if (sRankedRound < 6) ++sRankedRound; /* (a series has up to six fights: draws are played again) */
     session_write(match, role, mode, 0);
     SDL_SetAtomicInt(&sRankedWinnerDecided, 0);
 }

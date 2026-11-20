@@ -320,11 +320,12 @@ extern void Port_SettingsWrite(void);
 #define HUB_ITEMS 7
 
 /* Ranked's rows */
-#define RK_BATTLE 0
-#define RK_SEARCH 1
-#define RK_BOARD 2
-#define RK_UPDATE 3
-#define RK_COUNT 4
+/* (Ranked is always a DP battle of 20, best of 3: no battle row to choose single or team any more) */
+#define RK_BATTLE -1
+#define RK_SEARCH 0
+#define RK_BOARD 1
+#define RK_UPDATE 2
+#define RK_COUNT 3
 
 /* New Lobby's rows (the rules are the lobby page's: its owner sets them there) */
 #define CR_OPEN 0 /* Open Lobby: a code from the matchmaking service, for Join */
@@ -1246,7 +1247,7 @@ static void Tb_RankedUpdate(s32 live) {
             }
             Snd_PlaySe(1, 1);
             Tb_RankedResetForNewSearch();
-            DrRanked_Search(Port_NetNameGet(), sTb->rkMode);
+            DrRanked_Search(Port_NetNameGet(), 0); /* (teams of 3: the one ranked queue) */
             sTb->waitFrom = sTb->frames;
             Tb_SetMode(TB_RKWAIT);
             break;
@@ -1326,7 +1327,7 @@ static void Tb_RankedWaitUpdate(s32 live) {
             Port_NetNameSet(Port_NetNameGet());
             Port_NetOptions(Port_RollCan() ? 8 : 0, -2); /* rollback when the build has it, the delay from the line */
             Port_NetSpeedSet(Port_NetSpeedStandard());
-            Port_NetRulesSet(sTbRk.mode ? 1 : 0, 0, 4); /* no time limit */
+            Port_NetRulesSet(1, 1, 4); /* team3-bo3-v1: a team battle of three (DP row 1: the mark), no time limit */
             Port_SettingsWrite();
             {
                 char event[96];
@@ -2346,7 +2347,7 @@ static void Tb_DrawRanked(void) {
 
 static void Tb_DrawRankedText(void) {
     static char line[64];
-    static char *label[RK_COUNT] = {"Battle", "Search for a Rival", "Ranking", "Update Profile"};
+    static char *label[RK_COUNT] = {"Search for a Rival", "Ranking", "Update Profile"};
     s32 i;
 
     if (!sTbRk.profile) {
@@ -2388,7 +2389,7 @@ static void Tb_DrawRankedWaitText(void) {
     s32 secs = (sTb->frames - sTb->waitFrom) / 60;
 
     Ps_Text(22.0f, 94.0f, "RANKED", 0.56f, 0.0f, 0);
-    Ps_Text(22.0f, 116.0f, sTb->rkMode ? "TEAM" : "SINGLE", 0.8f, 150.0f, 2);
+    Ps_Text(22.0f, 116.0f, "3 VS 3", 0.8f, 150.0f, 2);
     if (sTbRk.state == 3 && sTbRk.peer[0] != 0) {
         Ps_Text(22.0f, 150.0f, "RIVAL", 0.56f, 0.0f, 0);
         Ps_Text(22.0f, 170.0f, sTbRk.peer, 0.8f, 150.0f, 3);
@@ -4728,7 +4729,7 @@ static void Tb_Speak(void) {
         Tb_LobbyFocus(focus, now);
         break;
     case TB_RANKED: {
-        static char *label[RK_COUNT] = {"Battle", "Search for a Rival", "Ranking", "Update Profile"};
+        static char *label[RK_COUNT] = {"Search for a Rival", "Ranking", "Update Profile"};
 
         Ps_Copy(focus, label[sTb->rkCur], 160);
         if (sTb->rkCur == RK_BATTLE) {

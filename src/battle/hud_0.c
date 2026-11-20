@@ -568,64 +568,20 @@ s32 PauseMenu_Update(s32 pad, s32 which) {
 #ifdef PORT
     /* The draw hook uses this selector too. Set it before any ranked early return. */
     gPauseMenuWhich = which;
-    if (which == 1 && rankedPostStarted && !rankedPostFallback && !DrRanked_InSession()) {
-        unsigned now=DrRanked_Ticks();
-        rankedPostFallback=1;
-        DrRanked_PostFightState(3,now>=rankedPostOpened?now-rankedPostOpened:0);
-        DrRanked_DebugLog("ranked/postfight fallback=native reason=ranked session state disappeared; result preserved");
-    }
-    if (which == 1 && DrRanked_InSession() && !rankedPostFallback) {
-        DrRankedSeries series;
-        unsigned gap=DrRanked_SessionRound();
-        unsigned now=DrRanked_Ticks();
-        if(!rankedPostStarted) {
-            rankedPostOpened=now ? now : 1;
-            rankedPostStarted=1;
-            rankedPostDrawn=0;
-            rankedPostChoiceSent=0;
-            rankedPostWaiting=1;
-            DrRanked_SeriesChoice(gap,0);
-            DrRanked_PostFightState(1,0);
+    if (which == 1 && DrRanked_InSession()) {
+        /* Ranked, between two fights: as DBT-NX (Switch) does it. Both games stop at this same blank of the result
+           menu and nothing advances while the players choose (the game's thread holds the picture; the overlay,
+           ui_dragonnet.inc SERIES, shows the choice), the service fixes ONE decision and both apply it here: 0x8000
+           the same fight again, 0x10 the character select, 8 the end. Before, this side kept running blanks with
+           its menu while the other side stood still, so the session ran out of input (connection lost) or the two
+           applied the decision at different blanks. A blank run again (rollback) applies the kept decision. */
+        unsigned gap = DrRanked_SessionRound();
+        int reason = DrRanked_SeriesApplied(gap);
+        if (!reason) {
+            reason = DrRanked_SeriesHold(gap);
         }
-        if (now >= rankedPostOpened && now-rankedPostOpened >= 5000u && !rankedPostDrawn) {
-            rankedPostFallback=1;
-            DrRanked_PostFightState(3,now-rankedPostOpened);
-            DrRanked_DebugLog("ranked/postfight fallback=native reason=custom menu not drawn in 5s; result preserved");
-        }
-        if (rankedPostFallback) goto ranked_native_menu;
-        DrRanked_SeriesPoll(&series);
-        rankedPostWaiting = series.decision == DR_SERIES_PENDING || rankedPostChoiceSent;
-        if(series.decision==DR_SERIES_CONTINUE) { BattleResult_Set(BTL_RESULT_ABORT,0x8000); rankedPostStarted=0; DrRanked_PostFightState(4,now-rankedPostOpened); return 1; }
-        if(series.decision==DR_SERIES_TEAM) { BattleResult_Set(BTL_RESULT_ABORT,0x10); rankedPostStarted=0; DrRanked_PostFightState(4,now-rankedPostOpened); return 1; }
-        if(series.decision==DR_SERIES_OVER) { BattleResult_Set(BTL_RESULT_ABORT,8); rankedPostStarted=0; DrRanked_PostFightState(4,now-rankedPostOpened); return 1; }
-        DrRanked_PostFightState(series.decision != DR_SERIES_PENDING ? 4 : (rankedPostChoiceSent ? 2 : 1),now-rankedPostOpened);
-        menu=&rankedPostMenu;
-        if (menu->count != 3 || menu->state < BTL_MENU_STATE_OPEN || menu->state > BTL_MENU_STATE_ACTIVE) {
-            rankedPostFallback=1;
-            DrRanked_PostFightState(3,now>=rankedPostOpened?now-rankedPostOpened:0);
-            DrRanked_DebugLog("ranked/postfight fallback=native reason=menu count/state inconsistent; result preserved");
-            goto ranked_native_menu;
-        }
-        if (!BtlMenu_PortLive()) {
-            if (now >= rankedPostOpened && now-rankedPostOpened >= 5000u) {
-                rankedPostFallback=1;
-                DrRanked_PostFightState(3,now-rankedPostOpened);
-                DrRanked_DebugLog("ranked/postfight fallback=native reason=menu work unavailable after 5s; result preserved");
-                BtlMenu_Init();
-                gPortBtlMenuLive=1;
-                goto ranked_native_menu;
-            }
-            return 1;
-        }
-        BtlMenu_SetTop(menu);
-        if(rankedPostChoiceSent) return 1;
-        if(BtlMenu_Update(which,NULL,menu,pad)) return 1;
-        item=BtlMenu_FindResult(NULL,menu);
-        if(item) {
-            int choice=item->id==0x13?1:item->id==0xD?2:3;
-            DrRanked_SeriesChoice(gap,choice);rankedPostChoiceSent=1;return 1;
-        }
-        if(now>=rankedPostOpened && now-rankedPostOpened>=20000u) { DrRanked_SeriesChoice(gap,1);rankedPostChoiceSent=1;DrRanked_PostFightState(2,now-rankedPostOpened); }
+        rankedPostStarted = rankedPostDrawn = rankedPostFallback = rankedPostWaiting = 0;
+        BattleResult_Set(BTL_RESULT_ABORT, reason);
         return 1;
     }
     if (which != 1) { rankedPostStarted=rankedPostDrawn=rankedPostFallback=rankedPostWaiting=0; rankedPostOpened=0; }
@@ -721,15 +677,8 @@ ranked_native_menu:
 /* Draws the menu when it is shown. */
 void PauseMenu_Draw(void) {
 #ifdef PORT
-    if(gPauseMenuWhich==1 && DrRanked_InSession() && !rankedPostFallback) {
-        if (BtlMenu_PortLive()) {
-            unsigned now=DrRanked_Ticks();
-            unsigned elapsed=now>=rankedPostOpened?now-rankedPostOpened:0;
-            BtlMenu_DrawAll();
-            rankedPostDrawn=BtlMenu_PortVisible();
-            BtlMenu_PortDrawRankedHeader(BattleResult_IsPlayerWin(), elapsed>=20000u?0:(20u-elapsed/1000u), rankedPostWaiting);
-        }
-        return;
+    if(gPauseMenuWhich==1 && DrRanked_InSession()) {
+        return; /* (the choice between two fights is the overlay's while the game holds: PauseMenu_Update) */
     }
     {
         /* Online the pause menu belongs to the one who opened it (the fight goes on under it, btl_seq.c): it is

@@ -616,6 +616,25 @@ static void Cs_Grid(void) {
         }
     }
     Port_GsMarker(GS_CHIP_OFF);
+    /* A DP battle: each fighter's cost on its chip, as the game's own screen shows it (only the one under the cursor
+       had it, in the details), so a team can be put together at a glance. */
+    if (sV.dpMax > 0) {
+        for (r = 0; r < CS_VIS_ROWS; r++) {
+            for (c = 0; c < MCHR_COLS; c++) {
+                s32 at = c + (r + sTopRowOf[sNow]) * MCHR_COLS;
+                f32 x0 = CS_GRID_X + gapW + c * (cellW + gapW);
+                f32 y0 = CS_GRID_Y + r * (CS_CELL_H + CS_GAP);
+                char dp[8];
+
+                if (at >= count || cells[at].id < 0 || cells[at].id >= MCHR_RANDOM) {
+                    continue;
+                }
+                snprintf(dp, sizeof(dp), "%d", (int)ChrTbl_GetCost(cells[at].id));
+                Cs_Text(x0, y0 + CS_CELL_H - 19.0f, dp, 0.52f, cellW - Cs_UnitsAcross(2.0f), 2, Ps_Rgba(0xFF, 0xEC, 0xA8, 0x80),
+                        Ps_Rgba(0xFF, 0xC0, 0x50, 0x80));
+            }
+        }
+    }
     /* the cursor over the chips, and how far down the list is */
     if (row >= sTopRowOf[sNow] && row < sTopRowOf[sNow] + CS_VIS_ROWS) {
         f32 x0 = CS_GRID_X + gapW + col * (cellW + gapW);

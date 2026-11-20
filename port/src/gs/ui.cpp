@@ -3263,6 +3263,10 @@ static bool frame_build(void) {
     } else if (sReady && gPortNetMenuRequest) { // Dragon Net Battle was chosen in the game's main menu
         gPortNetMenuRequest = 0;
         net_open();
+    } else if (sReady && gPortSeriesRequest && (!sOpen || dn::sScreen != dn::SERIES || dn::sSeriesShown != gPortSeriesRequest)) {
+        // a ranked series between two fights (the game holds): its screen, open whatever closed the window before
+        net_open();
+        dn::series_open();
     } else if (sReady && gPortRematchRequest) { // flow:2: the Revanche screen, after the result of a ranked match
         gPortRematchRequest = 0;
         net_open();

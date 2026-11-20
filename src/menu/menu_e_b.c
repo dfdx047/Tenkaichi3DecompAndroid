@@ -58,6 +58,10 @@ extern volatile int gUiSongX, gUiSongY, gUiSongW, gUiSongH;
 extern volatile int gUiSongIdx, gUiSongReady, gUiSongLit;
 static s32 sPortSongNameHidden;
 #include "plat_stages.h" /* the stages added from outside the disc: their ids and names */
+#ifdef PORT
+extern int Port_RankedTeamLimit(void); /* gs/net.c: 3 in a ranked team battle (DBT-NX's mark), else 5 */
+extern int Port_RankedTeamMin(void);   /* gs/net.c: 3 there (3 vs 3: a team is complete only with three), else 1 */
+#endif
 /* The port's stage-name overlay, as the duel's select uses it. */
 extern volatile int gUiNameX, gUiNameY, gUiNameW, gUiNameH;
 extern volatile int gUiNameIdx, gUiNameReady;
@@ -2212,6 +2216,9 @@ f32 TeamSel_Input(s32 *result) {
                         /* it was a new member: the cursor goes to the next free slot */
                         CUR_SIDE->memberCount = CUR_SIDE->cur + 1;
                         CUR_SIDE->cur = CUR_SIDE->memberCount;
+#ifdef PORT
+                        if(CUR_SIDE->cur>=Port_RankedTeamLimit())CUR_SIDE->cur=TS_CUR_MENU; /* (ranked: a team of three, as DBT-NX) */
+#endif
                     }
 #ifdef PORT
                     if(TagSession_Selected()) {
@@ -2255,6 +2262,9 @@ f32 TeamSel_Input(s32 *result) {
                         CUR_SIDE->cur = TS_CUR_MENU;
                     } else if (CUR_SIDE->cur > CUR_SIDE->memberCount) {
                         CUR_SIDE->cur = CUR_SIDE->memberCount;
+#ifdef PORT
+                        if(CUR_SIDE->cur>=Port_RankedTeamLimit())CUR_SIDE->cur=Port_RankedTeamLimit()-1;
+#endif
                     }
 #ifdef PORT
                     if(TagSession_Selected() && CUR_SIDE->cur!=TS_CUR_MENU && CUR_SIDE->cur>=TagSession_Size(CUR_N))
@@ -2273,7 +2283,11 @@ f32 TeamSel_Input(s32 *result) {
                     CUR_SIDE->cur++;
                     if (CUR_SIDE->cur > TS_CUR_MENU) {
                         CUR_SIDE->cur = 0;
+#ifdef PORT
+                    } else if (CUR_SIDE->cur >= Port_RankedTeamLimit() || CUR_SIDE->cur > CUR_SIDE->memberCount) {
+#else
                     } else if (CUR_SIDE->cur > CUR_SIDE->memberCount) {
+#endif
                         CUR_SIDE->cur = TS_CUR_MENU;
                     }
 #ifdef PORT
@@ -2332,6 +2346,7 @@ f32 TeamSel_Input(s32 *result) {
                     } else if (CUR_SIDE->memberCount != 0
 #ifdef PORT
                                && (!TagSession_Selected() || CUR_SIDE->memberCount>=TagSession_MinSize(CUR_N))
+                               && CUR_SIDE->memberCount >= Port_RankedTeamMin() /* (as DBT-NX: Bt3Online_TeamMin) */
 #endif
                     ) {
                         /* the team is complete */

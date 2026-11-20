@@ -16,7 +16,7 @@ extern "C" {
 
 namespace dn {
 
-enum Screen { HOME, FRIENDLY_MENU, TAG_MENU, RANKED_MENU, PROFILE, CREATE, CREATE_WAIT, JOIN, JOIN_WAIT, QUICK, QUICK_WAIT, RANKED_WAIT, BOARD, CHAT, REMATCH, WATCH_WAIT };
+enum Screen { HOME, FRIENDLY_MENU, TAG_MENU, RANKED_MENU, PROFILE, CREATE, CREATE_WAIT, JOIN, JOIN_WAIT, QUICK, QUICK_WAIT, RANKED_WAIT, BOARD, CHAT, REMATCH, WATCH_WAIT, SERIES };
 
 static Screen sScreen = HOME;
 static int sRow, sHomeRow;
@@ -804,7 +804,8 @@ static void screen_ranked_wait(void) {
     // paired: the host opens the room and tells the service its code; the other joins it once the code is there
     if (r.state == 3 && !sRankedLobby) {
         if (sFoundAt == 0) { sFoundAt = SDL_GetTicks(); }
-        rules_set(4); // dp20-bo3-v1
+        rules_set(1); // team3-bo3-v1: a team battle...
+        Port_NetRulesSet(1, 1, 4); // ...of up to three (the DP row 1 marks it, as DBT-NX does)
         if (r.role == 1) {
             Port_LobbyStartCode(1, "");
             sRankedLobby = true;
@@ -1041,6 +1042,108 @@ static void screen_rematch(void) {
     footer(T("A: choose", "A: escolher", "A: elegir"), "", T("B: back", "B: voltar", "B: volver"));
 }
 
+// ---- A ranked series, between two fights (DrRanked_SeriesHold, net_dragon.c): the game stands still at the result
+// menu while this screen is open; the choice goes to the service, which fixes one decision for both players (nobody
+// choosing in 20 s is "continue"). When the series is over: its result, until A (or 15 s).
+static int sSeriesShown;     // the gap (gPortSeriesRequest) this screen was opened for: 0 none
+static Uint64 sSeriesSince, sSeriesOverAt;
+static int sSeriesPicked;
+
+static void series_open(void) {
+    sSeriesShown = gPortSeriesRequest;
+    sSeriesSince = SDL_GetTicks();
+    sSeriesOverAt = 0;
+    sSeriesPicked = 0;
+    goto_screen(SERIES, 0);
+}
+
+// One player's line of the series' table: name and flag, Elo before -> after with the change, rank, wins / losses.
+static void series_card(float y, const DrRankedPlayerResult &c, const char *tag, bool mine) {
+    ImDrawList *dl = ImGui::GetWindowDrawList();
+    const float u = U();
+    char line[160];
+    const int change = c.after - c.before;
+    card_start(y, u * 2.7f, NULL);
+    dl->AddRectFilled(sCardMin, sCardMax, mine ? col(0.16f, 0.24f, 0.14f, 0.85f) : col(0.14f, 0.11f, 0.19f, 0.85f), u * 0.25f);
+    font_px(u * 0.55f);
+    dl->AddText(ImVec2(sCardMin.x + u * 0.5f, sCardMin.y + u * 0.2f), col(0.78f, 0.73f, 0.81f), tag);
+    ImGui::PopFont();
+    font_px(u * 0.72f);
+    SDL_snprintf(line, sizeof(line), "%s  [%s]", c.name[0] ? c.name : "?", c.flag[0] ? c.flag : "--");
+    dl->AddText(ImVec2(sCardMin.x + u * 0.5f, sCardMin.y + u * 0.75f), col(1, 1, 1), line);
+    ImGui::PopFont();
+    font_px(u * 0.62f);
+    SDL_snprintf(line, sizeof(line), "%d -> %d Elo (%+d)   %s   %d%s / %d%s", c.before, c.after, change, c.rank, c.wins,
+                 T("W", "V", "V"), c.losses, T("L", "D", "D"));
+    dl->AddText(ImVec2(sCardMin.x + u * 0.5f, sCardMin.y + u * 1.65f), change >= 0 ? col(0.42f, 0.93f, 0.60f) : col(0.93f, 0.42f, 0.42f), line);
+    ImGui::PopFont();
+}
+
+static void screen_series(void) {
+    const float u = U();
+    const Uint64 now = SDL_GetTicks();
+    DrRankedSeries s;
+    char big[64], note[160];
+    if (!gPortSeriesRequest) { // the game has its decision: the window closes, the battle goes on
+        sSeriesShown = 0;
+        goto_screen(HOME, 0); // (the next time the window opens, it opens at its start)
+        gPortNetWindowClose = 1;
+        return;
+    }
+    DrRanked_SeriesPoll(&s);
+    header(T("Ranked: best of 3", "Ranqueada: melhor de 3", "Clasificatoria: al mejor de 3"), false);
+    if (s.decision == DR_SERIES_OVER) {
+        // The series' result, as DBT-NX (Switch) shows it: the score, the total change, and both players' Elo
+        // (before -> after), rank and record, the winner on top. A (or a touch) after 2 s, or 15 s, goes on.
+        const bool won = s.my_wins > s.their_wins, lost = s.my_wins < s.their_wins;
+        const bool scored = s.me.before || s.me.after || s.rival.before || s.rival.after;
+        if (!sSeriesOverAt) { sSeriesOverAt = now ? now : 1; }
+        SDL_snprintf(big, sizeof(big), "%s  %d-%d", won ? T("VICTORY", "VITÓRIA", "VICTORIA") : lost ? T("DEFEAT", "DERROTA", "DERROTA")
+                     : scored ? T("DRAW", "EMPATE", "EMPATE") : T("NO RESULT", "SEM RESULTADO", "SIN RESULTADO"), s.my_wins, s.their_wins);
+        if (scored) {
+            SDL_snprintf(note, sizeof(note), "%s %+d Elo", T("Total", "Total", "Total"), s.me.after - s.me.before);
+        } else {
+            SDL_snprintf(note, sizeof(note), "%s", T("Series without a confirmed result: no points.", "Série sem resultado confirmado: sem pontos.",
+                                                     "Serie sin resultado confirmado: sin puntos."));
+        }
+        wait_card(u * 3.3f, T("Ranked: series result", "Ranqueada: resultado da série", "Clasificatoria: resultado de la serie"), big, note,
+                  won ? col(0.42f, 0.86f, 0.55f) : lost ? col(0.95f, 0.42f, 0.42f) : col(1.0f, 0.86f, 0.30f));
+        if (scored) {
+            const bool meFirst = !lost;
+            const DrRankedPlayerResult &top = meFirst ? s.me : s.rival, &bottom = meFirst ? s.rival : s.me;
+            const char *winTag = won || lost ? T("Winner", "Vencedor", "Victoria") : T("You", "Você", "Tú");
+            const char *loseTag = won || lost ? T("Loser", "Perdedor", "Derrota") : T("Rival", "Rival", "Rival");
+            series_card(u * 9.2f, top, winTag, meFirst);
+            series_card(u * 12.1f, bottom, loseTag, !meFirst);
+        }
+        const bool ready = now - sSeriesOverAt >= 2000;
+        if (ready && (padA() || padB() || ImGui::IsMouseReleased(0))) { gPortSeriesLeave = 1; }
+        footer(ready ? T("A: continue", "A: continuar", "A: continuar") : "", "", "");
+        return;
+    }
+    const int left = s.answered ? s.remaining : (int)(20 - (now - sSeriesSince) / 1000);
+    if (s.answered) {
+        SDL_snprintf(big, sizeof(big), "%s %d - %d %s", T("You", "Você", "Tú"), s.my_wins, s.their_wins, T("Rival", "Rival", "Rival"));
+    } else {
+        SDL_snprintf(big, sizeof(big), "%s", T("CONFIRMING", "CONFIRMANDO", "CONFIRMANDO"));
+    }
+    SDL_snprintf(note, sizeof(note), "%s  %s %d s", sSeriesPicked ? T("Waiting for the rival's choice...", "Esperando a escolha do rival...",
+                 "Esperando la elección del rival...") : T("Choose before the time runs out.", "Escolha antes do tempo acabar.",
+                 "Elige antes de que acabe el tiempo."), T("Time:", "Tempo:", "Tiempo:"), left < 0 ? 0 : left);
+    wait_card(u * 3.3f, T("Fight over", "Luta terminada", "Pelea terminada"), big, note, col(1.0f, 0.86f, 0.30f));
+    if (!sSeriesPicked) {
+        card_start(u * 9.2f, u * 4.9f, NULL);
+        int m = padMove();
+        if (m != 0) { sRow = (sRow + m + 3) % 3; }
+        int pick = 0;
+        if (card_row(0, u * 0.35f, T("Continue", "Continuar", "Continuar"), "") || (sRow == 0 && padA())) { pick = 1; }
+        else if (card_row(1, u * 1.9f, T("Change team", "Trocar equipe", "Cambiar equipo"), "") || (sRow == 1 && padA())) { pick = 2; }
+        else if (card_row(2, u * 3.45f, T("Surrender", "Desistir", "Rendirse"), "") || (sRow == 2 && padA())) { pick = 3; }
+        if (pick) { sSeriesPicked = pick; gPortSeriesPick = pick; }
+    }
+    footer(T("A: choose", "A: escolher", "A: elegir"), "", T("No choice = Continue", "Sem escolha = Continuar", "Sin elección = Continuar"));
+}
+
 static void screen_chat(void) {
     DrChat c;
     DrChat_Poll(&c);
@@ -1160,6 +1263,7 @@ static void window(void) {
     case CHAT: screen_chat(); break;
     case REMATCH: screen_rematch(); break;
     case WATCH_WAIT: screen_watch_wait(); break;
+    case SERIES: screen_series(); break;
     }
     ImGui::End();
     if (close) {

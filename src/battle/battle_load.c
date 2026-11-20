@@ -903,6 +903,11 @@ void BtlLoad_FreeAll(void) {
 /* Zeroes the result block. */
 void BattleResult_Clear(void) {
     memset(Battle_GetResult(), 0, sizeof(BattleResult));
+#ifdef PORT
+    /* A ranked series' next fight: "continue" plays the same fight again (0x8000) without clearing the battle's work,
+       so the round must advance here too, as DBT-NX (Switch) does it (only after a reported finish: net_dragon.c). */
+    { extern void DrRanked_BattleStart(void); DrRanked_BattleStart(); }
+#endif
 }
 
 /* Stores the winner bits and the reason bits; a restart reason is forwarded to BattleReplay_SetActive. */
