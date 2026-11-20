@@ -978,3 +978,30 @@ bool FightPanels_Art(const char *path, int chara, int costume, SDL_GPUTexture **
     face_point(a, chara, costume, fx, fy);
     return true;
 }
+
+// For the Profile's avatar (gs/gs_draw.c, the picture TBO_FAV_PORTRAIT: the most used character): the large portrait
+// of the character select for `chara` (its first costume; a mod's file wins, as for the game's own reads), as
+// ART_W x ART_H RGBA pixels (malloc'd, the caller's: the PS2's alpha doubled, 0..255), and in face[] the point of the
+// face these panels place and the head's size (pixels). 0 = no portrait for it.
+extern "C" int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size); // plat_file.c
+extern "C" int FightPanels_PortraitPixels(int chara, uint32_t **out, float face[3]) {
+    char path[FP_PATH];
+    if (chara < 0 || chara >= 0x100 || !Port_FilePath(1, 0x71C + chara - 1, NULL, path, (int)sizeof(path))) {
+        return 0; // (0x71C: FACE_FILE of fight_panels.c, the character select's portraits, one file per character)
+    }
+    uint8_t *pix = (uint8_t *)malloc((size_t)ART_W * ART_H * 4);
+    Art a;
+    memset(&a, 0, sizeof(a));
+    snprintf(a.path, sizeof(a.path), "%s", path);
+    if (pix == NULL || !portrait_rgba(path, pix, &a.signature)) {
+        free(pix);
+        fprintf(stderr, "bt3: profile: no portrait for character %d in %s\n", chara, path);
+        return 0;
+    }
+    head_of(pix, &a.hx, &a.hy, &a.hs);
+    face_of(pix, &a);
+    face_point(&a, chara, 0, &face[0], &face[1]);
+    face[2] = a.hs;
+    *out = (uint32_t *)pix;
+    return 1;
+}

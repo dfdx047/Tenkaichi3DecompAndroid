@@ -1012,6 +1012,47 @@ static void Td_Trophy(f32 cx, f32 cy, f32 s, s32 kind) {
 }
 
 #ifdef __ANDROID__
+/* The card's avatar, at the left of the name: the face of the player's most used character in the online battles
+   (the profile service's `fav`), cut from the character select's own portrait (TBO_FAV_PORTRAIT, gs/gs_draw.c) and
+   framed by the point of the face the fight panels use. Before the first online battle, or while the portrait is
+   read, the "1P" disc as before. */
+static void Td_Avatar(void) {
+    static const f32 cx = 220.0f, cy = 420.0f, half = 106.0f;
+    Bt4ProfileStats st;
+    f32 face[3], side, fx, fy, u0, v0, p[16];
+
+    memset(&st, 0, sizeof(st));
+    if (!getenv("BT4_RENDER_TEST")) {
+        Bt4Profile_Stats(&st);
+    } else {
+        st.state = 1;
+        st.favChara = getenv("BT4_TEST_FAV") ? atoi(getenv("BT4_TEST_FAV")) : 4;
+    }
+    Port_TboFavWant(st.state == 1 ? st.favChara : -1);
+    if (st.state != 1 || st.favChara < 0 || !Port_TboFavFace(st.favChara, face)) {
+        Td_Disc(cx, cy, 110.0f, TD_RGB(255, 220, 120), TD_RGB(255, 220, 120));
+        Td_Disc(cx, cy, 98.0f, TD_RGB(40, 100, 220), TD_RGB(40, 100, 220));
+        Td_Words(cx, cy + 2.0f, "1P", TD_B, 110.0f, Td_Ink(TD_RGB(255, 255, 255), TD_RGB(210, 230, 255), TD_RGB(10, 30, 90)), 1, 0.0f, 1);
+        return;
+    }
+    /* the square of the portrait (256 x 512 pixels) shown: the head and a little of the shoulders */
+    side = face[2] * 1.55f;
+    side = side < 110.0f ? 110.0f : side > 220.0f ? 220.0f : side;
+    fx = face[0] - side * 0.5f;
+    fy = face[1] - side * 0.42f;
+    fx = fx < 0.0f ? 0.0f : fx + side > 256.0f ? 256.0f - side : fx;
+    fy = fy < 0.0f ? 0.0f : fy + side > 512.0f ? 512.0f - side : fy;
+    u0 = fx / 256.0f;
+    v0 = fy / 512.0f;
+    Td_Chamfer(p, cx - half - 6.0f, cy - half - 6.0f, cx + half + 6.0f, cy + half + 6.0f, 30.0f); /* gold frame */
+    Td_Poly(p, 8, TD_RGB(255, 232, 140), TD_RGB(214, 150, 40));
+    Td_Chamfer(p, cx - half, cy - half, cx + half, cy + half, 26.0f); /* the ground behind the portrait */
+    Td_Poly(p, 8, TD_RGB(70, 110, 230), TD_RGB(16, 26, 80));
+    Td_Pic(TBO_FAV_PORTRAIT, cx - half + 8.0f, cy - half + 8.0f, cx + half - 8.0f, cy + half - 8.0f, u0, v0, u0 + side / 256.0f,
+           v0 + side / 512.0f, 0x80);
+    Td_Outline(p, 8, 3.0f, Td_Rgba(255, 240, 190, 200));
+}
+
 /* the card's row of medals and trophies, and the line under the name */
 static void Td_ProfileStats(void) {
     static char line[96], wl[64], num[5][16];
@@ -1083,9 +1124,13 @@ static void Td_Profile(void) {
 #else
     Td_Window(40.0f, 230.0f, 1990.0f, 920.0f, "PLAYER CARD");
 #endif
+#ifdef __ANDROID__
+    Td_Avatar(); /* (the face of the most used character; "1P" until there is one) */
+#else
     Td_Disc(220.0f, 420.0f, 110.0f, TD_RGB(255, 220, 120), TD_RGB(255, 220, 120));
     Td_Disc(220.0f, 420.0f, 98.0f, TD_RGB(40, 100, 220), TD_RGB(40, 100, 220));
     Td_Words(220.0f, 422.0f, "1P", TD_B, 110.0f, Td_Ink(TD_RGB(255, 255, 255), TD_RGB(210, 230, 255), TD_RGB(10, 30, 90)), 1, 0.0f, 1);
+#endif
     Td_Words(370.0f, 380.0f, (char *)Port_NetNameGet(), TD_B, 110.0f, Td_InkOuter(TD_RGB(240, 255, 242), TD_RGB(156, 244, 180), TD_RGB(0, 30, 10), TD_RGB(14, 4, 36), 3.0f), 0,
 #ifdef __ANDROID__
              880.0f, 1); /* (room on the right for the country and the most used character) */

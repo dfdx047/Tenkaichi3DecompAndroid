@@ -88,4 +88,10 @@ enum { TBO_ART_LIST(TBO_ART_ENUM) TBO_ART_COUNT };
 #define TBO_LANG_ARROW_LEFT 0x201
 #define TBO_LANG_ARROW_RIGHT 0x202
 
+/* The Profile's avatar (Android): the large portrait of the player's most used character, the character select's own
+   (256 x 512; gs/gs_draw.c reads it when the character changes, Port_TboFavWant / Port_TboFavFace). */
+#define TBO_FAV_PORTRAIT 0x210
+void Port_TboFavWant(int chara);               /* the character whose portrait the picture is to be (-1: none) */
+int Port_TboFavFace(int chara, float face[3]); /* 1 when the picture is that character's: its face point and head size */
+
 #endif

@@ -1093,6 +1093,79 @@ static GsTex tbo_film_texture(TboFilm *film) {
     return film->tex;
 }
 
+/* The Profile's avatar (TBO_FAV_PORTRAIT): the portrait of the player's most used character. The menu says which
+   character (Port_TboFavWant, the game's thread); here, when that changes, its portrait file is read and made the
+   picture (gs/fight_panels_ui.cpp, as the fight panels read theirs), and the menu learns where the face is in it
+   (Port_TboFavFace) to frame it. A character without a portrait is not looked for again until another is asked. */
+extern int FightPanels_PortraitPixels(int chara, uint32_t **out, float face[3]);
+static SDL_AtomicInt sFavWant;  /* the character asked for, plus 1 (0: none) */
+static SDL_AtomicInt sFavReady; /* the character the picture and sFavFace are, plus 1 (0: none yet) */
+static float sFavFace[3];
+static GsTex sFavTex, sFavOld;
+static int sFavHave;            /* what was last read (plus 1), found or not */
+static uint32_t sFavShown;      /* the frame sFavTex was last given in */
+
+void Port_TboFavWant(int chara) {
+    SDL_SetAtomicInt(&sFavWant, chara >= 0 && chara < 0x100 ? chara + 1 : 0);
+}
+
+int Port_TboFavFace(int chara, float face[3]) {
+    if (chara < 0 || SDL_GetAtomicInt(&sFavReady) != chara + 1) {
+        return 0;
+    }
+    face[0] = sFavFace[0];
+    face[1] = sFavFace[1];
+    face[2] = sFavFace[2];
+    return 1;
+}
+
+static GsTex tbo_fav_texture(void) {
+    int want = SDL_GetAtomicInt(&sFavWant);
+    GsTex none = sClearTex != 0 ? sClearTex : gsWhite;
+
+    if (sFavOld != 0 && sFavShown != gGsFrame) { /* (one replaced in a frame that had drawn it: freed after it) */
+        sBackend->texDestroy(sFavOld);
+        sFavOld = 0;
+    }
+    if (want != sFavHave) {
+        uint32_t *px = NULL, i;
+        float face[3];
+        if (sBackend->texSlotsLeft() <= 0) {
+            return none; /* (no room this frame: the next one tries again) */
+        }
+        sFavHave = want;
+        SDL_SetAtomicInt(&sFavReady, 0);
+        if (sFavTex != 0) {
+            if (sFavShown == gGsFrame) {
+                if (sFavOld != 0) sBackend->texDestroy(sFavOld);
+                sFavOld = sFavTex;
+            } else {
+                sBackend->texDestroy(sFavTex);
+            }
+            sFavTex = 0;
+        }
+        if (want > 0 && FightPanels_PortraitPixels(want - 1, &px, face)) {
+            for (i = 0; i < 256u * 512u; i++) { /* the GS's alpha: 0x80 is opaque */
+                uint32_t a = px[i] >> 24;
+                px[i] = (px[i] & 0xFFFFFFu) | (((a * 128u + 127u) / 255u) << 24);
+            }
+            sFavTex = tbo_upload(px, 256, 512); /* (takes px) */
+            if (sFavTex != 0) {
+                sFavFace[0] = face[0];
+                sFavFace[1] = face[1];
+                sFavFace[2] = face[2];
+                SDL_SetAtomicInt(&sFavReady, want);
+                fprintf(stderr, "bt3: profile: avatar of character %d (face %.0f,%.0f)\n", want - 1, face[0], face[1]);
+            }
+        }
+    }
+    if (sFavTex == 0) {
+        return none;
+    }
+    sFavShown = gGsFrame;
+    return sFavTex;
+}
+
 /* 1: the picture is on the card; 0: not yet (the first draw asks for it); -1: no such file (src/battle/stg_c.c, the storm). */
 int Port_TboArtState(int id) {
     if (id < 0 || id >= TBO_ART_COUNT || sTboMissing[id]) return -1;
@@ -1127,6 +1200,9 @@ static GsTex tbo_texture(uint32_t id) {
     }
     if (id >= TBO_TEXT_BASE && id < TBO_TEXT_BASE + TBO_TEXT_SLOTS) {
         return tbo_text_texture(id);
+    }
+    if (id == TBO_FAV_PORTRAIT) {
+        return tbo_fav_texture();
     }
     if (id >= TBO_ART_COUNT && !languageArt) {
         return gsWhite;
