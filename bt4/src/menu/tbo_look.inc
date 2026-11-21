@@ -14,14 +14,19 @@ static f32 Td_X(f32 px) {
     f32 l = Ps_Left();
     return l + px * (512.0f - 2.0f * l) / TD_W;
 }
+/* (sTdBody: a page laid out for the old top bar, its content from y 230 down to 950, moved under the templates' taller
+   head, 360 to 1040: see Td_Draw) */
+static s32 sTdBody;
+#define TD_BODY_K (680.0f / 720.0f)
 static f32 Td_Y(f32 py) {
+    if (sTdBody) py = 360.0f + (py - 230.0f) * TD_BODY_K;
     return py * 448.0f / TD_H;
 }
 static f32 Td_Wd(f32 px) { /* a width */
     return px * (512.0f - 2.0f * Ps_Left()) / TD_W;
 }
 static f32 Td_Ht(f32 py) { /* a height */
-    return py * 448.0f / TD_H;
+    return (sTdBody ? py * TD_BODY_K : py) * 448.0f / TD_H;
 }
 /* a colour as the mock-ups give it (alpha 0..255) */
 static u32 Td_Rgba(s32 r, s32 g, s32 b, s32 a) {
@@ -232,10 +237,10 @@ static TdInk Td_InkOuter(u32 top, u32 bottom, u32 line, u32 outer, f32 w) {
 }
 #define TD_GOLD Td_InkOuter(TD_RGB(255, 250, 210), TD_RGB(255, 150, 20), TD_RGB(110, 26, 0), TD_RGB(14, 4, 36), 4.0f) /* the titles */
 #define TD_GOLD_FLAT Td_Ink(TD_RGB(255, 250, 210), TD_RGB(255, 150, 20), TD_RGB(100, 26, 0))
-#define TD_GREEN Td_Ink(TD_RGB(236, 255, 236), TD_RGB(150, 240, 176), TD_RGB(0, 30, 10))
+#define TD_GREEN Td_Ink(TD_RGB(240, 245, 255), TD_RGB(200, 214, 250), TD_RGB(8, 12, 36)) /* (the template: light on navy glass) */
 #define TD_AGE Td_Ink(TD_RGB(150, 255, 170), TD_RGB(80, 224, 120), TD_RGB(2, 30, 12))
-#define TD_DARK Td_Ink(TD_RGB(60, 20, 0), TD_RGB(30, 8, 0), TD_RGB(255, 240, 200))
-#define TD_DARK_FLAT Td_Ink(TD_RGB(60, 20, 0), TD_RGB(30, 8, 0), TD_NONE)
+#define TD_DARK Td_Ink(TD_RGB(16, 26, 62), TD_RGB(28, 44, 100), TD_NONE) /* (navy on the gold plates) */
+#define TD_DARK_FLAT Td_Ink(TD_RGB(16, 26, 62), TD_RGB(28, 44, 100), TD_NONE)
 #define TD_WHITE Td_Ink(TD_RGB(255, 255, 255), TD_RGB(210, 220, 255), TD_RGB(14, 8, 40))
 #define TD_CYAN Td_Ink(TD_RGB(200, 250, 255), TD_RGB(110, 220, 255), TD_RGB(8, 40, 80))
 #define TD_ORANGE Td_Ink(TD_RGB(255, 236, 184), TD_RGB(255, 148, 48), TD_RGB(92, 36, 8))
@@ -247,11 +252,8 @@ static TdInk Td_InkOuter(u32 top, u32 bottom, u32 line, u32 outer, f32 w) {
 /* a window: its shape x0..y1, its title on a gold tab over its top edge (NULL: none) */
 static void Td_Window(f32 x0, f32 y0, f32 x1, f32 y1, char *title) {
     Td_Nine(TBO_TD_WIN, x0, y0, x1, y1, 24.0f, 88.0f, 0x80);
-    if (title != NULL && title[0] != 0) {
-        f32 tw = Td_WordsW(title, TD_B, 54.0f);
-        f32 px0 = x0 + 40.0f, px1 = px0 + tw + 110.0f;
-        Td_Three(TBO_TD_TAB, px0 - 42.0f, y0 - 46.0f, px1 + 42.0f, y0 + 66.0f, 106.0f, 46.0f, 0x80);
-        Td_Words(px0 + 64.0f, y0 + 10.0f, title, TD_B, 54.0f, TD_DARK_FLAT, 0, 0.0f, 0);
+    if (title != NULL && title[0] != 0) { /* (the template: the title in gold inside the glass, at its top left) */
+        Td_Words(x0 + 40.0f, y0 + 44.0f, title, TD_B, 50.0f, TD_GOLD_FLAT, 0, x1 - x0 - 80.0f, 0);
     }
 }
 
@@ -267,7 +269,7 @@ static void Td_Capsule(f32 cx, f32 cy, f32 r, s32 n) {
    where it is among its choices (`total` dots); `value` NULL: a plain entry */
 static void Td_Option(f32 x0, f32 y0, f32 x1, f32 y1, char *label, char *value, s32 idx, s32 total, s32 on, s32 icon, char *hint, s32 raw) {
     f32 h = y1 - y0, s = h / 126.0f, cy = (y0 + y1) * 0.5f;
-    f32 r = h * 0.26f, lx = x0 + 40.0f + r * 2.7f + 30.0f;
+    f32 r = h * 0.26f, lx = x0 + 44.0f; /* (the template: no capsule before the name) */
     f32 vw = value != NULL ? (x1 - x0) * 0.40f : 0.0f, vx1 = x1 - 36.0f, vx0 = vx1 - vw;
     f32 room;
 
@@ -283,29 +285,29 @@ static void Td_Option(f32 x0, f32 y0, f32 x1, f32 y1, char *label, char *value, 
         f32 g = 6.0f * s;
         Td_Three(TBO_TD_OPT, x0 - 16.0f * s - g, y0 - g, x1 + 16.0f * s + g, y1 + g, 6.0f + 42.0f, 6.0f + 42.0f, 0x80);
     }
-    Td_Capsule(x0 + 40.0f + r * 1.35f, cy, r, icon);
+    (void)r;
+    (void)icon;
     room = (value != NULL ? vx0 : x1 - 40.0f) - lx - 24.0f;
     if (on && hint != NULL && hint[0] != 0 && Td_WordsW(hint, TD_C, 28.0f) <= room) {
         Td_Words(lx, cy - 18.0f, label, TD_B, 56.0f, TD_DARK, 0, room, 0);
-        Td_Words(lx + 2.0f, cy + 30.0f, hint, TD_C, 28.0f, TD_TEXT(70, 26, 0), 0, room, 0);
+        Td_Words(lx + 2.0f, cy + 30.0f, hint, TD_C, 28.0f, TD_TEXT(40, 50, 96), 0, room, 0);
     } else {
         Td_Words(lx, cy + 2.0f, label, TD_B, 56.0f, on ? TD_DARK : TD_GREEN, 0, room, 0);
     }
     if (value == NULL) {
         return;
     }
-    Td_Nine(on ? TBO_TD_VAL_ON : TBO_TD_VAL, vx0, y0 + 12.0f, vx1, y1 - 12.0f, 2.0f, 14.0f, 0x80);
-    Td_Words((vx0 + vx1) * 0.5f, cy - (total > 1 ? 8.0f : 0.0f), value, TD_B, 50.0f,
-             on ? Td_Ink(TD_RGB(255, 255, 240), TD_RGB(255, 255, 240), TD_RGB(10, 6, 30)) : Td_Ink(TD_RGB(150, 236, 255), TD_RGB(150, 236, 255), TD_RGB(10, 6, 30)),
+    Td_Words((vx0 + vx1) * 0.5f, cy, value, TD_B, 50.0f,
+             on ? Td_Ink(TD_RGB(16, 26, 62), TD_RGB(28, 44, 100), TD_NONE) : Td_Ink(TD_RGB(255, 226, 120), TD_RGB(255, 190, 50), TD_RGB(10, 6, 30)),
              1, vw - 110.0f, raw);
-    if (total > 1) {
-        u32 a = TD_RGB(255, 220, 120);
+    if (total > 1) { /* (the template: the value between two arrows, gold; navy on the chosen row; no dots) */
+        u32 a = on ? TD_RGB(16, 26, 62) : TD_RGB(255, 204, 64);
         f32 dw = 22.0f, d0 = (vx0 + vx1) * 0.5f - (f32)(total - 1) * dw * 0.5f;
         s32 k;
 
         Td_Tri(vx0 + 16.0f, cy, vx0 + 40.0f, cy - 18.0f, vx0 + 40.0f, cy + 18.0f, a);
         Td_Tri(vx1 - 16.0f, cy, vx1 - 40.0f, cy - 18.0f, vx1 - 40.0f, cy + 18.0f, a);
-        if (total <= 12 && idx >= 0) { /* (idx < 0: the arrows alone, where the place among the choices is not known) */
+        if (0 && total <= 12 && idx >= 0) { /* (idx < 0: the arrows alone, where the place among the choices is not known) */
             for (k = 0; k < total; k++) {
                 u32 c = k == idx ? TD_RGB(255, 200, 80) : TD_RGB(90, 90, 120);
                 Td_Disc(d0 + (f32)k * dw, y1 - 30.0f, k == idx ? 6.0f : 4.0f, c, c);
@@ -361,7 +363,7 @@ static void Td_Gohan(f32 cx, f32 feet, f32 height) {
 
 /* the time tunnel with its dark edges; `dim` darker still (a window over the page) */
 static void Td_Back(s32 dim) {
-    Td_Pic(TBO_TD_VIGNETTE, 0.0f, 0.0f, TD_W, TD_H, 0.0f, 0.0f, 1.0f, 1.0f, 0x80);
+    Td_Pic(TBO_HUB_PAGE, 0.0f, 0.0f, TD_W, TD_H, 0.0f, 0.0f, 1.0f, 1.0f, 0x80); /* (the template: the meadow, dimmed) */
     if (dim > 0) {
         u32 c = Td_Rgba(4, 0, 18, dim);
         Td_Rect(0.0f, 0.0f, TD_W, TD_H, c, c);
@@ -374,16 +376,20 @@ static void Td_TopBar(char *page, char *sub) {
     Bt4RankedView rv = {0};
     f32 fs = 108.0f, tw;
 
-    Td_Pic(TBO_TD_BAND, 440.0f, -16.0f, 440.0f + 890.0f, -16.0f + 214.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0x80);
-    Td_Words(554.0f, 44.0f, sub, TD_C, 32.0f, Td_Ink(TD_RGB(150, 226, 255), TD_RGB(110, 180, 255), TD_NONE), 0, 700.0f, 1);
-    tw = Td_WordsW(page, TD_B, 108.0f);
-    if (tw > 710.0f) {
-        fs = 108.0f * 710.0f / tw;
+    /* (the template: the BT4 ONLINE seal small at the top left, the page's name on the gold tab under it) */
+    (void)sub;
+    Td_Pic(TBO_HUB_LOGO, 28.0f, 6.0f, 28.0f + 700.0f * 0.6f, 6.0f + 150.0f * 0.6f, 0.0f, 0.0f, 1.0f, 0.75f, 0x80);
+    fs = 66.0f;
+    tw = Td_WordsW(page, TD_B, fs);
+    if (tw > 900.0f) {
+        fs *= 900.0f / tw;
+        tw = 900.0f;
     }
-    Td_Words(540.0f, 112.0f, page, TD_B, fs, TD_GOLD, 0, 760.0f, 0);
+    Td_Three(TBO_TD_TAB, 0.0f, 98.0f, 40.0f + tw + 130.0f, 98.0f + 112.0f, 106.0f, 46.0f, 0x80);
+    Td_Words(66.0f, 156.0f, page, TD_B, fs, TD_DARK_FLAT, 0, 0.0f, 0);
     Td_Pic(TBO_TD_PLATE, 1510.0f, 22.0f, 2105.0f, 150.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0x80);
-    Td_Words(1636.0f, 62.0f, "FIGHTER", TD_C, 26.0f, TD_TEXT(120, 230, 160), 0, 0.0f, 0);
-    Td_Words(1634.0f, 106.0f, (char *)Port_NetNameGet(), TD_B, 62.0f, Td_Ink(TD_RGB(240, 255, 242), TD_RGB(156, 244, 180), TD_RGB(0, 30, 10)), 0, 330.0f, 1);
+    Td_Words(1636.0f, 62.0f, "FIGHTER", TD_C, 26.0f, TD_TEXT(255, 214, 90), 0, 0.0f, 0);
+    Td_Words(1634.0f, 106.0f, (char *)Port_NetNameGet(), TD_B, 62.0f, TD_GREEN, 0, 330.0f, 1);
     if (!getenv("BT4_RENDER_TEST")) {
         Port_RankedView(&rv);
     }
@@ -518,13 +524,13 @@ static void Td_Card(f32 x0, f32 y0, f32 x1, f32 y1, char *title, char *sub, s32 
     if (on) {
         f32 p[16];
         Td_Chamfer(p, x0 - 10.0f, y0 - 10.0f, x1 + 10.0f, y1 + 10.0f, 34.0f);
-        Td_Poly(p, 8, Td_Rgba(255, 150, 40, 90), Td_Rgba(255, 150, 40, 90));
+        Td_Poly(p, 8, Td_Rgba(255, 210, 90, 90), Td_Rgba(255, 210, 90, 90));
     }
     Td_Window(x0, y0, x1, y1, NULL);
     if (on) {
         f32 p[16];
         Td_Chamfer(p, x0, y0, x1, y1, 30.0f);
-        Td_Outline(p, 8, 6.0f, TD_RGB(255, 180, 60));
+        Td_Outline(p, 8, 6.0f, TD_RGB(255, 214, 90));
     }
     Td_Capsule(x0 + 130.0f, ty, 62.0f, icon);
     Td_Words(x0 + 250.0f, ty - 34.0f, title, TD_B, big, on ? TD_GOLD_FLAT : TD_GREEN, 0, x1 - x0 - 290.0f, 0);
@@ -575,7 +581,120 @@ static void Td_Plate(f32 x0, f32 y0, f32 x1, f32 y1, char *tag, char *name, char
 /* ------------------------------------------------------------------------------------------------ the hub */
 static const char *sTdAge[HUB_COUNT] = {"AGE 767", "AGE 774", "AGE 784", "AGE 785", "AGE 788", "AGE 790", "AGE 794"};
 
+/* ---------------------------------------------------------------------------- the main screen, its new look
+   The approved preview (previas-bt4/online-bt4/01-principal: the Tag Team's new screen look): the time machine on the
+   meadow (hub_bg), Trunks large beside the menu from his thighs up (his film, trunks.mpg), the BT4 ONLINE seal, the
+   seven modes as navy glass rows with their badges and the chosen one on a gold plate that glides, under it the
+   chosen mode's facts as chips, and the buttons' prompts along the foot. The pictures are port/tools/tbo_hub_art.py's
+   (the previews' own drawing), the letters the game's own (Bangers, Chakra Petch), in the chosen language. */
+static const char *const sTdHubChips[HUB_COUNT][2] = {
+    {"1 VS 1 OR TEAMS", "RIVAL NEAR YOU"}, {"WEEKLY SEASON", "MEDALS AND TROPHIES"}, {"YOU ARE THE HOST", "6-LETTER CODE"},
+    {"CODE OR ADDRESS", NULL}, {"PLAYERS AND CPU", "SIMULTANEOUS BATTLES"}, {"BRACKET", "2 TO 8 PLAYERS"},
+    {"PLAYER CARD", "LEADERBOARD"}};
+
+static void Td_HubFoot(void) {
+    f32 x = 2712.0f - 70.0f, py = 1170.0f;
+    s32 k;
+
+    Ps_Quad(Td_X(0.0f), Td_Y(1100.0f), Td_X(2712.0f), Td_Y(1100.0f), Td_X(0.0f), Td_Y(1220.0f), Td_X(2712.0f), Td_Y(1220.0f),
+            Td_Rgba(6, 10, 26, 0), Td_Rgba(6, 10, 26, 0), Td_Rgba(6, 10, 26, 220), Td_Rgba(6, 10, 26, 220));
+    for (k = Ps_PromptCount() - 1; k >= 0; k--) {
+        char *lab = Ps_PromptLabel(k);
+        s32 id = Ps_ButtonPic(Ps_PromptKind(k));
+        f32 tw = Td_WordsW(lab, TD_C, 40.0f), bw = 64.0f * Ps_PicW(id) / Ps_PicH(id);
+
+        Td_Words(x, py, lab, TD_C, 40.0f, TD_TEXT_EDGE(255, 255, 255), 2, 0.0f, 0);
+        x -= tw + 16.0f;
+        Ps_Icon(id, Td_X(x - bw * 0.5f), Td_Y(py), Td_Ht(64.0f), 0x80);
+        x -= bw + 44.0f;
+    }
+}
+
 static void Td_Hub(s32 live) {
+    f32 in = Tb_In(0), slide = (1.0f - in) * -700.0f;
+    f32 warp = sTb->warp > 0 ? (f32)sTb->warp / (f32)TB_WARP_FRAMES : 0.0f;
+    f32 x0 = 80.0f + slide, y0 = 268.0f, rowh = 112.0f, step = 126.0f, wide = 1060.0f, k = 2.0069f;
+    f32 target = (f32)sTb->hubCur, gy, cx;
+    s32 online = getenv("BT4_RENDER_TEST") ? -1 : Port_OnlinePresence(1), i;
+    static char line[64];
+
+    (void)live;
+    if (!sTb->tmInit) {
+        sTb->tmInit = 1;
+        sTb->tmRow = target;
+    }
+    sTb->tmRow += (target - sTb->tmRow) * 0.35f;
+    /* the meadow, Trunks (his head at 22, from his thighs up: the screen cuts him there), the shade under the menu */
+    Td_Pic(TBO_HUB_BG, 0.0f, 0.0f, 2712.0f, 1220.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0x80);
+    Td_Pic(TBO_TRUNKS, 1225.0f - slide * 0.25f, 22.0f, 1225.0f - slide * 0.25f + 448.0f * k, 22.0f + 608.0f * k, 0.0f, 0.0f, 1.0f, 1.0f,
+           (s32)(0x80 * in));
+    Ps_Quad(Td_X(0.0f), 0.0f, Td_X(1050.0f), 0.0f, Td_X(0.0f), 448.0f, Td_X(1050.0f), 448.0f, Td_Rgba(6, 12, 30, 225), Td_Rgba(6, 12, 30, 124),
+            Td_Rgba(6, 12, 30, 225), Td_Rgba(6, 12, 30, 124));
+    Ps_Quad(Td_X(1050.0f), 0.0f, Td_X(1500.0f), 0.0f, Td_X(1050.0f), 448.0f, Td_X(1500.0f), 448.0f, Td_Rgba(6, 12, 30, 124), Td_Rgba(6, 12, 30, 0),
+            Td_Rgba(6, 12, 30, 124), Td_Rgba(6, 12, 30, 0));
+    /* the seal, and the fighters online beside it */
+    Td_Pic(TBO_HUB_LOGO, x0 - 20.0f, 30.0f, x0 + 680.0f, 230.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0x80);
+    Ps_Copy(line, (char *)PortOnline_Text("Fighters online: "), sizeof(line));
+    if (online < 0) {
+        Ps_Cat(line, "...", sizeof(line));
+    } else {
+        static char n[16];
+        sprintf(n, "%d", online);
+        Ps_Cat(line, n, sizeof(line));
+    }
+    {
+        f32 w = Td_WordsW(line, TD_C, 28.0f) + 84.0f, cx0 = x0 + 760.0f;
+        Td_Three(TBO_HUB_CHIP, cx0 - 12.0f, 110.0f - 40.0f, cx0 + w + 12.0f, 110.0f + 40.0f, 40.0f, 40.0f, 0x80);
+        Td_Disc(cx0 + 34.0f, 110.0f, 10.0f, TD_RGB(80, 255, 110), TD_RGB(80, 255, 110));
+        Td_Words(cx0 + 58.0f, 110.0f, line, TD_C, 28.0f, TD_TEXT_EDGE(220, 255, 220), 0, 0.0f, 1);
+    }
+    /* the rows: glass, the gold plate gliding to the chosen one, the badges and the names */
+    for (i = 0; i < HUB_COUNT; i++) {
+        f32 y = y0 + (f32)i * step;
+        Td_Three(TBO_HUB_ROW, x0 - 40.0f, y - 40.0f, x0 + wide + 40.0f, y + rowh + 40.0f, 96.0f, 96.0f, 0x80);
+    }
+    gy = y0 + sTb->tmRow * step;
+    Td_Three(TBO_HUB_ROW_ON, x0 - 40.0f, gy - 40.0f, x0 + wide + 50.0f + 40.0f, gy + rowh + 40.0f, 96.0f, 96.0f, 0x80);
+    for (i = 0; i < HUB_COUNT; i++) {
+        f32 y = y0 + (f32)i * step, cy = y + rowh * 0.5f;
+        s32 on = i == sTb->hubCur && fabsf(sTb->tmRow - (f32)i) < 0.5f;
+        f32 u0 = (f32)i / (f32)HUB_COUNT, u1 = (f32)(i + 1) / (f32)HUB_COUNT;
+
+        Td_Pic(TBO_HUB_ICONS, x0, y, x0 + rowh, y + rowh, u0, on ? 0.5f : 0.0f, u1, on ? 1.0f : 0.5f, 0x80);
+        Td_Words(x0 + rowh + 30.0f, cy + 2.0f, sTbHubName[i], TD_B, on ? 66.0f : 60.0f,
+                 on ? Td_Ink(TD_RGB(16, 26, 62), TD_RGB(28, 44, 100), TD_NONE) : Td_Ink(TD_RGB(240, 245, 255), TD_RGB(200, 214, 250), TD_RGB(8, 12, 36)),
+                 0, wide - rowh - 140.0f, 0);
+        if (on) {
+            cx = x0 + wide + 50.0f - 52.0f;
+            Td_Tri(cx - 14.0f, cy - 20.0f, cx + 14.0f, cy, cx - 14.0f, cy + 20.0f, TD_RGB(16, 26, 62));
+        }
+    }
+    /* the chosen mode's facts */
+    {
+        f32 x = x0, cy = y0 + 7.0f * step + 32.0f;
+        for (i = 0; i < 2; i++) {
+            const char *t = sTdHubChips[sTb->hubCur][i];
+            static char chip[2][64];
+            f32 w;
+            if (t == NULL) {
+                break;
+            }
+            Ps_Copy(chip[i], (char *)PortOnline_Text(t), sizeof(chip[i]));
+            w = Td_WordsW(chip[i], TD_C, 28.0f) + 44.0f;
+            Td_Three(TBO_HUB_CHIP, x - 12.0f, cy - 40.0f, x + w + 12.0f, cy + 40.0f, 40.0f, 40.0f, 0x80);
+            Td_Words(x + w * 0.5f, cy, chip[i], TD_C, 28.0f, TD_TEXT_EDGE(255, 255, 255), 1, 0.0f, 1);
+            x += w + 14.0f;
+        }
+    }
+    Td_HubFoot();
+    if (warp > 0.72f) {
+        u32 c = Ps_Rgba(0xFF, 0xFF, 0xFF, (s32)(0x80 * (warp - 0.72f) / 0.28f));
+        Ps_Rect(Ps_Left(), 0.0f, 512.0f - Ps_Left(), 448.0f, c, c);
+    }
+}
+
+/* the main screen as it was until 1.0.2 (the time machine's dashboard, Future Gohan): not drawn any more */
+static void Td_HubTimeMachine(s32 live) {
     f32 in = Tb_In(0);
     f32 slide = (1.0f - in) * 700.0f, gs = (1.0f - in) * -260.0f;
     f32 warp = sTb->warp > 0 ? (f32)sTb->warp / (f32)TB_WARP_FRAMES : 0.0f;
@@ -681,15 +800,183 @@ static void Td_Hub(s32 live) {
     }
 }
 
+/* ------------------------------------------------------------------------- the inner pages, as the templates
+   The approved templates of the inner screens (previas-bt4/online-bt4/online_bt4.py, 02..10, the places and sizes
+   below are theirs): the small BT4 ONLINE seal, the path under it, the screen's name on a gold tab; navy glass windows
+   (the screen's main one with a gold edge), their titles in gold; light cells inside them; the chosen item a gold
+   plate; the buttons' prompts along the foot, on its shade. A page that shows its guide line itself (in a window of
+   its own) says so (sTdOwnCaption), the others have it at the foot's left. */
+#define TD_GOLDC Td_Ink(TD_RGB(255, 226, 120), TD_RGB(250, 200, 64), TD_NONE) /* the templates' GOLD: the windows' titles */
+#define TD_SOFT TD_TEXT(210, 225, 255)                                       /* their SOFT: the smaller texts */
+#define TD_PALE TD_TEXT(230, 238, 255)                                       /* their guide lines */
+#define TD_NAVY TD_TEXT(14, 24, 52)                                          /* letters on gold */
+#define TD_NAVY2 TD_TEXT(30, 46, 90)
+enum { TD_IC_FFA, TD_IC_CUP, TD_IC_TEAM, TD_IC_ONLINE, TD_IC_TT, TD_IC_GAUNTLET, TD_IC_PERSON }; /* hub_icons, in order */
+static s32 sTdOwnCaption;
+
+/* the seal, the path (crumb: "ONLINE ›" and further), the name on its gold tab (x 80, y 210, 104 tall, its end slanted) */
+static void Td_Head(char *title, char *crumb) {
+    static char path[96];
+    f32 s = 0.72f, fs = 70.0f, w, p[8];
+
+    /* hub_logo: its pill at (20, 20)..(660, 140) of the picture, here at (80, 50) and 0.72 as large; its line left out */
+    Td_Pic(TBO_HUB_LOGO, 80.0f - 20.0f * s, 50.0f - 20.0f * s, 80.0f + 680.0f * s, 50.0f + 140.0f * s, 0.0f, 0.0f, 1.0f, 0.8f, 0x80);
+    Ps_Copy(path, (char *)PortOnline_Text("ONLINE"), sizeof(path));
+    Ps_Cat(path, "  \xE2\x80\xBA", sizeof(path));
+    if (crumb != NULL && crumb[0] != 0) {
+        Ps_Cat(path, "  ", sizeof(path));
+        Ps_Cat(path, (char *)PortOnline_Text(crumb), sizeof(path));
+        Ps_Cat(path, "  \xE2\x80\xBA", sizeof(path));
+    }
+    Td_Words(84.0f, 170.0f, path, TD_C, 30.0f, TD_TEXT_EDGE(210, 228, 255), 0, 0.0f, 1);
+    w = Td_WordsW(title, TD_B, fs);
+    if (w > 1300.0f) {
+        fs *= 1300.0f / w;
+        w = 1300.0f;
+    }
+    w += 90.0f;
+    p[0] = 80.0f + 8.0f; p[1] = 210.0f + 14.0f; p[2] = 80.0f + w + 8.0f; p[3] = 210.0f + 14.0f; /* its shadow */
+    p[4] = 80.0f + w - 36.0f + 8.0f; p[5] = 314.0f + 14.0f; p[6] = 80.0f + 8.0f; p[7] = 314.0f + 14.0f;
+    Td_Poly(p, 4, Td_Rgba(0, 0, 0, 90), Td_Rgba(0, 0, 0, 90));
+    p[0] = 80.0f; p[1] = 210.0f; p[2] = 80.0f + w; p[3] = 210.0f; p[4] = 80.0f + w - 36.0f; p[5] = 314.0f; p[6] = 80.0f; p[7] = 314.0f;
+    Td_Poly(p, 4, TD_RGB(255, 240, 160), TD_RGB(214, 146, 28));
+    Td_Outline(p, 4, 3.0f, TD_RGB(255, 252, 230));
+    Td_Words(114.0f, 264.0f, title, TD_B, fs, TD_DARK_FLAT, 0, 0.0f, 0);
+}
+
+/* the foot: its shade, the buttons' prompts from the right (the templates' bottom_bar), the guide line at the left */
+static void Td_PageFoot(char *caption) {
+    f32 x = 2712.0f - 70.0f, py = 1170.0f;
+    s32 k;
+
+    Ps_Quad(Td_X(0.0f), Td_Y(1100.0f), Td_X(2712.0f), Td_Y(1100.0f), Td_X(0.0f), Td_Y(1220.0f), Td_X(2712.0f), Td_Y(1220.0f),
+            Td_Rgba(6, 10, 26, 0), Td_Rgba(6, 10, 26, 0), Td_Rgba(6, 10, 26, 220), Td_Rgba(6, 10, 26, 220));
+    for (k = Ps_PromptCount() - 1; k >= 0; k--) {
+        char *lab = Ps_PromptLabel(k);
+        s32 id = Ps_ButtonPic(Ps_PromptKind(k));
+        f32 tw = Td_WordsW(lab, TD_C, 38.0f), bw = 64.0f * Ps_PicW(id) / Ps_PicH(id);
+
+        Td_Words(x, py, lab, TD_C, 38.0f, TD_TEXT_EDGE(255, 255, 255), 2, 0.0f, 0);
+        x -= tw + 16.0f;
+        Ps_Icon(id, Td_X(x - bw * 0.5f), Td_Y(py), Td_Ht(64.0f), 0x80);
+        x -= bw + 44.0f;
+    }
+    /* the guide line: after the app's microphone button (bottom left), before its "Show controls" button (the middle of
+       the foot, about 1160 to 1540) and the prompts; in two lines when it is long */
+    if (caption != NULL && caption[0] != 0) {
+        static char lines[3][160];
+        f32 room = (x - 60.0f < 1130.0f ? x - 60.0f : 1130.0f) - 110.0f;
+        s32 n = Td_Wrap(caption, lines, 28.0f, room), k;
+        if (n > 2) n = 2;
+        for (k = 0; k < n; k++) {
+            Td_Words(110.0f, n == 1 ? py : py - 22.0f + 44.0f * (f32)k, lines[k], TD_C, 28.0f, TD_TEXT_EDGE(230, 238, 255), 0, room, 1);
+        }
+    }
+}
+
+/* a window: navy glass, the gold edge on the screen's main one; its title gold at its top left (NULL none) */
+static void Td_Panel(f32 x0, f32 y0, f32 x1, f32 y1, s32 gold, char *title) {
+    Td_Nine(gold ? TBO_TD_WIN_GOLD : TBO_TD_WIN, x0, y0, x1, y1, 24.0f, 88.0f, 0x80);
+    if (title != NULL && title[0] != 0) {
+        Td_Words(x0 + 50.0f, y0 + 62.0f, title, TD_B, 50.0f, TD_GOLDC, 0, x1 - x0 - 100.0f, 0);
+    }
+}
+/* a light cell inside a window, a white tile with a gold edge (`alpha` 0x80 whole, less: an empty one), a card */
+static void Td_Cell(f32 x0, f32 y0, f32 x1, f32 y1) {
+    Td_Nine(TBO_TD_CELL, x0, y0, x1, y1, 2.0f, 30.0f, 0x80);
+}
+static void Td_Tile(f32 x0, f32 y0, f32 x1, f32 y1, s32 alpha) {
+    Td_Nine(TBO_TD_TILE, x0, y0, x1, y1, 2.0f, 26.0f, alpha);
+}
+static void Td_BigCard(f32 x0, f32 y0, f32 x1, f32 y1, s32 lit) {
+    Td_Nine(lit ? TBO_TD_CARD_ON : TBO_TD_WIN, x0, y0, x1, y1, 24.0f, 88.0f, 0x80);
+}
+/* a mode's round badge (hub_icons: its disc 45 of the cell's 56 unlit, 47 lit), `r` the disc's */
+static void Td_Badge(s32 icon, f32 cx, f32 cy, f32 r, s32 lit) {
+    f32 h = r * 56.0f / (lit ? 47.0f : 45.0f), u0 = (f32)icon / 7.0f;
+    Td_Pic(TBO_HUB_ICONS, cx - h, cy - h, cx + h, cy + h, u0, lit ? 0.5f : 0.0f, u0 + 1.0f / 7.0f, lit ? 1.0f : 0.5f, 0x80);
+}
+/* a row as the main screen's (the templates' row()): glass or the gold plate, its badge, its name, ▶ on the chosen */
+static void Td_Row(f32 x0, f32 y0, f32 x1, f32 y1, s32 lit, char *name, s32 icon, f32 size) {
+    f32 rh = y1 - y0, pad = 40.0f * rh / 112.0f, cy = (y0 + y1) * 0.5f;
+
+    Td_Three(lit ? TBO_HUB_ROW_ON : TBO_HUB_ROW, x0 - pad, y0 - pad, x1 + pad, y1 + pad, 96.0f, 96.0f, 0x80);
+    if (icon >= 0) {
+        Td_Badge(icon, x0 + rh * 0.5f, cy, rh * 0.5f - (lit ? 9.0f : 11.0f), lit);
+    }
+    Td_Words(x0 + (icon >= 0 ? rh + 30.0f : 50.0f), cy + 2.0f, name, TD_B, lit ? size : size - 6.0f,
+             lit ? TD_DARK_FLAT : Td_Ink(TD_RGB(240, 245, 255), TD_RGB(200, 214, 250), TD_RGB(8, 12, 36)), 0, x1 - x0 - rh - 120.0f, 0);
+    if (lit) {
+        f32 ax = x1 - 46.0f;
+        Td_Tri(ax - 16.0f, cy - 20.0f, ax + 12.0f, cy, ax - 16.0f, cy + 20.0f, TD_RGB(14, 24, 52));
+    }
+}
+/* a setting's row (the templates' Create Room): its name at the left, its value between ◀ ▶ at the right */
+static void Td_SetRow(f32 x0, f32 y0, f32 x1, f32 y1, s32 lit, char *label, char *value, s32 arrows, s32 raw) {
+    f32 rh = y1 - y0, pad = 40.0f * rh / 112.0f, cy = (y0 + y1) * 0.5f, vw = 0.0f;
+
+    Td_Three(lit ? TBO_HUB_ROW_ON : TBO_HUB_ROW, x0 - pad, y0 - pad, x1 + pad, y1 + pad, 96.0f, 96.0f, 0x80);
+    if (value != NULL && value[0] != 0) {
+        TdInk ink = lit ? TD_NAVY : TD_TEXT(250, 212, 80);
+        f32 vx = x1 - 50.0f;
+        if (arrows) {
+            Td_Words(vx, cy, "\xE2\x96\xB6", TD_C, 30.0f, ink, 2, 0.0f, 1);
+            vx -= 30.0f + 34.0f;
+        }
+        if (raw) PortOnline_Raw(1);
+        vw = Td_WordsW(value, TD_C, 40.0f);
+        if (raw) PortOnline_Raw(0);
+        if (vw > (x1 - x0) * 0.45f) vw = (x1 - x0) * 0.45f;
+        Td_Words(vx, cy, value, TD_C, 40.0f, ink, 2, vw, raw);
+        vx -= vw + 34.0f;
+        if (arrows) {
+            Td_Words(vx, cy, "\xE2\x97\x80", TD_C, 30.0f, ink, 2, 0.0f, 1);
+            vx -= 30.0f;
+        }
+        vw = x1 - vx;
+    }
+    Td_Words(x0 + 50.0f, cy, label, TD_C, 42.0f, lit ? TD_NAVY : TD_TEXT_EDGE(255, 255, 255), 0, x1 - x0 - vw - 100.0f, 0);
+}
+/* a ring of `w` pixels, its middle cx, cy and radius r */
+static void Td_Ring(f32 cx, f32 cy, f32 r, f32 w, u32 c) {
+    s32 k;
+    for (k = 0; k < 64; k++) {
+        f32 a0 = (f32)k * 0.0981748f, a1 = (f32)(k + 1) * 0.0981748f;
+        f32 ri = r - w * 0.5f, ro = r + w * 0.5f;
+        Ps_Quad(Td_X(cx + cosf(a0) * ri), Td_Y(cy + sinf(a0) * ri), Td_X(cx + cosf(a0) * ro), Td_Y(cy + sinf(a0) * ro), Td_X(cx + cosf(a1) * ri),
+                Td_Y(cy + sinf(a1) * ri), Td_X(cx + cosf(a1) * ro), Td_Y(cy + sinf(a1) * ro), c, c, c, c);
+    }
+}
+/* a slice of a disc from angle a0 to a1 (degrees, 0 to the right, clockwise as the screen goes) */
+static void Td_Slice(f32 cx, f32 cy, f32 r, f32 a0, f32 a1, u32 c) {
+    s32 k, n = (s32)((a1 - a0) / 4.0f) + 1;
+    for (k = 0; k < n; k++) {
+        f32 b0 = (a0 + (a1 - a0) * (f32)k / (f32)n) * 0.0174533f, b1 = (a0 + (a1 - a0) * (f32)(k + 1) / (f32)n) * 0.0174533f;
+        Td_Tri(cx, cy, cx + cosf(b0) * r, cy + sinf(b0) * r, cx + cosf(b1) * r, cy + sinf(b1) * r, c);
+    }
+}
+/* the guide line in a window's lines, `size` its letters, at most `n` lines from y, `step` apart */
+static void Td_Guide(char *text, f32 x, f32 y, f32 room, f32 size, f32 step, s32 n) {
+    static char lines[3][160];
+    s32 count = Td_Wrap(text, lines, size, room), k;
+    if (count > n) count = n;
+    for (k = 0; k < count; k++) {
+        Td_Words(x, y + step * (f32)k, lines[k], TD_C, size, TD_PALE, 0, room, 1);
+    }
+    sTdOwnCaption = 1;
+}
+
 /* ------------------------------------------------------------------------------------------------ the pages */
 #define TD_GX 2330.0f /* Gohan on the pages: on the right, his knees on the box */
 
 static void Td_Page(char *title, s32 gohan, s32 dim) {
+    s32 body = sTdBody;
+
+    sTdBody = 0; /* (the backdrop and the head where the templates have them, whatever the page's layout) */
     Td_Back(dim);
-    if (gohan) {
-        Td_Gohan(TD_GX, 1000.0f + 4.0f * Tb_Beat(150), 700.0f);
-    }
-    Td_TopBar(title, "TENKAICHI BUDOKAI ONLINE");
+    (void)gohan; /* (the template's pages have no fighter: Future Gohan is no longer drawn on them) */
+    Td_Head(title, NULL);
+    sTdBody = body;
 }
 
 static void Td_Trophy(f32 cx, f32 cy, f32 s, s32 kind);
@@ -714,6 +1001,92 @@ static void Td_Ranked(void) {
     }
 #endif
     Td_Page(sTbTitle[TB_RANKED], 1, 0);
+#ifdef __ANDROID__
+    if (sTb->rankedPage == 0) { /* the template (03): the season's card, the actions on the right, the week's top 3 */
+        static char season[64], ends[96], pts[32], place[64], cell[3][16], race[128];
+        static char *cellName[3] = {"Wins", "Losses", "Rank"};
+        static const s32 icon[3] = {TD_IC_FFA, TD_IC_CUP, TD_IC_GAUNTLET};
+        Bt4ProfileStats st;
+
+        memset(&st, 0, sizeof(st));
+        if (!getenv("BT4_RENDER_TEST")) {
+            Bt4Profile_Stats(&st);
+        } else {
+            st.state = 1; st.seasonNumber = 3; st.hoursLeft = 52; st.rating = 1128; st.rwins = 24; st.rlosses = 11; st.rank = 37; st.players = 120;
+            st.rated = 4; st.opponents = 2;
+        }
+        Td_Panel(80.0f, 380.0f, 1180.0f, 1040.0f, 1, NULL);
+        if (st.seasonNumber > 0) sprintf(season, Tb_Fmt("SEASON %d  \xC2\xB7  WEEKLY"), st.seasonNumber);
+        else Ps_Copy(season, (char *)PortOnline_Text("WEEKLY SEASON"), sizeof(season));
+        Td_Words(130.0f, 440.0f, season, TD_B, 46.0f, TD_GOLDC, 0, 1000.0f, 1);
+        if (st.state == 1) sprintf(ends, Tb_Fmt("Week ends Monday 00:00 (UTC-3): %dh left"), st.hoursLeft);
+        else Ps_Copy(ends, Tb_Fmt("Week ends Monday 00:00 (UTC-3)"), sizeof(ends));
+        Td_Words(130.0f, 494.0f, ends, TD_C, 28.0f, TD_SOFT, 0, 1000.0f, 1);
+        if (st.state == 1) sprintf(pts, "%d", st.rating > 0 ? st.rating : rv.rating);
+        else Ps_Copy(pts, "...", sizeof(pts));
+        Td_Words(130.0f, 640.0f, pts, TD_B, 150.0f, Td_Ink(TD_RGB(255, 248, 210), TD_RGB(214, 146, 28), TD_RGB(60, 30, 0)), 0, 500.0f, 1);
+        Td_Words(650.0f, 620.0f, "POINTS", TD_B, 44.0f, TD_WHITE, 0, 480.0f, 0);
+        if (st.state == 1 && st.rank > 0) sprintf(place, Tb_Fmt("#%d of %d this week"), st.rank, st.players);
+        else Ps_Copy(place, (char *)PortOnline_Text(st.state == 1 ? "Not ranked this week" : st.state < 0 ? "Ranked service unavailable" : "Loading Ranked status..."),
+                     sizeof(place));
+        Td_Words(650.0f, 672.0f, place, TD_C, 30.0f, TD_TEXT(120, 230, 150), 0, 500.0f, 1);
+        if (st.state == 1) {
+            sprintf(cell[0], "%d", st.rwins);
+            sprintf(cell[1], "%d", st.rlosses);
+            if (st.rank > 0) sprintf(cell[2], "#%d", st.rank);
+            else Ps_Copy(cell[2], "-", sizeof(cell[2]));
+        } else {
+            for (i = 0; i < 3; i++) Ps_Copy(cell[i], "-", sizeof(cell[i]));
+        }
+        for (i = 0; i < 3; i++) {
+            f32 x = 130.0f + 340.0f * (f32)i;
+            Td_Cell(x, 760.0f, x + 310.0f, 900.0f);
+            Td_Words(x + 155.0f, 810.0f, cell[i], TD_B, 56.0f, TD_WHITE, 1, 280.0f, 1);
+            Td_Words(x + 155.0f, 870.0f, cellName[i], TD_C, 28.0f, TD_SOFT, 1, 280.0f, 0);
+        }
+        Ps_Copy(race, (char *)PortOnline_Text("Trophy race"), sizeof(race));
+        Ps_Cat(race, ": ", sizeof(race));
+        if (st.state == 1 && st.eligible) {
+            Ps_Cat(race, (char *)PortOnline_Text("QUALIFIED"), sizeof(race));
+        } else if (st.state == 1) {
+            static char n[64];
+            sprintf(n, Tb_Fmt("%d/5 battles, %d/3 rivals"), st.rated < 5 ? st.rated : 5, st.opponents < 3 ? st.opponents : 3);
+            Ps_Cat(race, n, sizeof(race));
+        } else {
+            Ps_Copy(race, (char *)PortOnline_Text("Top 3 of the week win trophies"), sizeof(race));
+        }
+        Td_Words(130.0f, 980.0f, race, TD_C, 28.0f, TD_PALE, 0, 1000.0f, 1);
+        /* the actions */
+        for (i = 0; i < 3; i++) {
+            f32 y = 380.0f + 125.0f * (f32)i;
+            Td_Row(1260.0f, y, 2630.0f, y + 110.0f, i == sTb->rankedCur, sTbRankedActions[i], icon[i], 58.0f);
+        }
+        /* the week's first three */
+        Td_Panel(1260.0f, 775.0f, 2630.0f, 1040.0f, 0, "TOP OF THE WEEK");
+        {
+            static Bt4RankedEntry top[10];
+            s32 n = getenv("BT4_RENDER_TEST") ? rv.count : Port_RankedTopTen(top);
+            if (getenv("BT4_RENDER_TEST")) {
+                for (i = 0; i < n && i < 5; i++) top[i] = rv.top[i];
+            }
+            for (i = 0; i < n && i < 3; i++) {
+                static char num[3][8], score[3][16];
+                f32 y = 880.0f + 54.0f * (f32)i;
+                sprintf(num[i], "%d", i + 1);
+                sprintf(score[i], "%d", top[i].rating);
+                Td_Words(1310.0f, y, num[i], TD_B, 38.0f, TD_GOLDC, 0, 0.0f, 1);
+                Td_Words(1380.0f, y, top[i].name, TD_C, 36.0f, TD_WHITE, 0, 1000.0f, 1);
+                Td_Words(2580.0f, y, score[i], TD_C, 34.0f, TD_SOFT, 2, 0.0f, 1);
+            }
+            if (n <= 0) {
+                Td_Words(1310.0f, 930.0f, n == -2 ? "Loading Global Top..." : n == -1 ? "Global Top unavailable" : "No ranking published yet.",
+                         TD_C, 34.0f, TD_SOFT, 0, 1270.0f, 0);
+            }
+        }
+        return;
+    }
+    sTdBody = 1; /* (the top and the rules: their own layout, under the head) */
+#endif
     if (sTb->rankedPage == 0) {
 #ifdef __ANDROID__
         static char *hint[3] = {"ONE ON ONE, 240 SECONDS", "THE BEST OF THE WEEK", "POINTS, MEDALS, TROPHIES"};
@@ -911,32 +1284,44 @@ static void Td_Ranked(void) {
     }
 }
 
+/* Create Room as the template (04): the rules one under the other, the room's code on the right (it is given when the
+   room opens) with the button that opens it */
 static void Td_Create(void) {
     static char value[CR_COUNT][32];
-    static char *hint[CR_COUNT] = {"A CODE, OR YOUR ADDRESS", "ONE ON ONE, TEAMS, 10/15/20 DP", "", "", "", "", "", ""};
-    s32 idx[CR_COUNT], tot[CR_COUNT], i;
+    static const s32 raw[CR_COUNT] = {0, 0, 0, 1, 1, 0, 0, 0};
+    s32 i;
 
     for (i = 0; i < CR_COUNT; i++) {
         Tb_CreateValue(value[i], i);
     }
-    idx[CR_METHOD] = sTb->createAddress; tot[CR_METHOD] = 2;
-    idx[CR_BATTLE] = sTb->battle; tot[CR_BATTLE] = 5;
-    idx[CR_TIME] = sTb->time; tot[CR_TIME] = 5;
-    idx[CR_SPEED] = (sTb->speed - 100) / 10; tot[CR_SPEED] = 6;
-    idx[CR_ROLL] = sTb->roll / 2; tot[CR_ROLL] = 5;
-    idx[CR_DELAY] = sTb->delay + 1; tot[CR_DELAY] = 8;
-    idx[CR_ADDR] = 0; tot[CR_ADDR] = sTb->createAddress ? 2 : 1;
     Td_Page(sTbTitle[TB_CREATE], 0, 0);
-    Td_Gohan(2380.0f, 1000.0f + 4.0f * Tb_Beat(150), 700.0f);
-    Td_Window(40.0f, 230.0f, 2030.0f, 940.0f, "ROOM RULES");
-    for (i = 0; i < CR_COUNT - 1; i++) {
-        f32 x0 = 110.0f + 965.0f * (f32)(i % 2), y = 290.0f + 150.0f * (f32)(i / 2);
-        Td_Option(x0, y, x0 + 905.0f, y + 126.0f, sTbCreateLabel[i], value[i], idx[i], tot[i], i == sTb->crCur, i + 1, hint[i], 1);
+    for (i = 0; i < CR_OPEN; i++) {
+        f32 y = 360.0f + 96.0f * (f32)i;
+        s32 r = raw[i] || (i == CR_DELAY && sTb->delay >= 0) || (i == CR_ADDR && sTb->createAddress);
+        Td_SetRow(80.0f, y, 1560.0f, y + 84.0f, i == sTb->crCur, sTbCreateLabel[i], value[i], i != CR_ADDR || sTb->createAddress, r);
     }
-    Td_BigButton(1120.0f, 755.0f, 1940.0f, 870.0f, sTbCreateLabel[CR_OPEN], 80.0f, sTb->crCur == CR_OPEN, 0x80);
+    Td_Panel(1640.0f, 360.0f, 2630.0f, 1040.0f, 1, sTb->createAddress ? "YOUR ADDRESS" : "ROOM CODE");
+    if (sTb->createAddress) {
+        static char port[32];
+        sprintf(port, Tb_Fmt("PORT %d"), sTb->port);
+        Td_Words(1690.0f, 484.0f, "Your rival joins by your address and port", TD_C, 28.0f, TD_SOFT, 0, 900.0f, 0);
+        Td_Words(2135.0f, 610.0f, port, TD_B, 90.0f, TD_GOLDC, 1, 880.0f, 1);
+    } else {
+        Td_Words(1690.0f, 484.0f, "Pass the code to the others", TD_C, 28.0f, TD_SOFT, 0, 900.0f, 0);
+        for (i = 0; i < 6; i++) {
+            f32 x = 1700.0f + 150.0f * (f32)i;
+            Td_Tile(x, 540.0f, x + 130.0f, 680.0f, 0x30);
+            Td_Words(x + 65.0f, 610.0f, "?", TD_B, 70.0f, TD_SOFT, 1, 0.0f, 1);
+        }
+    }
+    Td_Row(1700.0f, 740.0f, 2570.0f, 852.0f, sTb->crCur == CR_OPEN, sTbCreateLabel[CR_OPEN], TD_IC_TEAM, 58.0f);
+    Td_Words(1690.0f, 920.0f, "The rules do not change", TD_C, 32.0f, TD_PALE, 0, 900.0f, 0);
+    Td_Words(1690.0f, 970.0f, "during a match.", TD_C, 32.0f, TD_PALE, 0, 900.0f, 0);
+    sTdOwnCaption = 1;
 }
 
 #define TD_CODE_KEYS 6
+/* Join as the template (05): the code's six tiles, the keyboard under them, the other ways on the right */
 static void Td_Join(void) {
     char one[2] = {0, 0};
     s32 c, rows = KEY_ROWS;
@@ -944,18 +1329,36 @@ static void Td_Join(void) {
     s32 nb = sTb->tagJoin ? 3 : 4;
 
     Td_Page((char *)((sTb->mode == TB_JOIN && sTb->tagJoin) ? "Join Room" : sTbTitle[TB_JOIN]), 1, 0);
-    Td_Window(40.0f, 230.0f, 1990.0f, 950.0f, "ROOM CODE");
-    for (c = 0; c < CODE_LEN; c++) {
-        f32 x = 120.0f + 190.0f * (f32)c;
+    Td_Panel(80.0f, 360.0f, 1700.0f, 560.0f, 1, NULL);
+    Td_Words(130.0f, 410.0f, sTb->tagJoin ? "ROOM CODE" : "CODE (6 LETTERS AND NUMBERS)", TD_C, 30.0f, TD_SOFT, 0, 1500.0f, 0);
+    for (c = 0; c < CODE_LEN && c < 6; c++) {
+        f32 x = 130.0f + 160.0f * (f32)c;
         s32 on = c == sTb->codeLen;
+        Td_Tile(x, 440.0f, x + 140.0f, 540.0f, c < sTb->codeLen ? 0x80 : 0x20);
+        if (on) {
+            f32 p[16];
+            Td_Chamfer(p, x - 2.0f, 438.0f, x + 142.0f, 542.0f, 12.0f);
+            Td_Outline(p, 8, 5.0f, TD_RGB(250, 212, 80));
+        }
         one[0] = c < sTb->codeLen ? sTb->code[c] : (on && (sTb->frames / 16) & 1 ? '_' : 0);
-        Td_Key(x, 290.0f, x + 165.0f, 440.0f, one, on, 110.0f, 1);
+        Td_Words(x + 70.0f, 490.0f, one, TD_B, 72.0f, c < sTb->codeLen ? TD_DARK_FLAT : TD_GOLDC, 1, 0.0f, 1);
     }
-    if (!sTb->tagJoin) { /* By Address: the keypad's second row of buttons, at the top right */
+    Td_Keypad(80.0f, 580.0f, rows, sTbKeys, b, nb, 164.0f, 80.0f, 16.0f, 56.0f, 1);
+    Td_Panel(1760.0f, 360.0f, 2630.0f, 1040.0f, 0, "OTHER WAYS");
+    if (!sTb->tagJoin) { /* By Address: the keypad's second row of buttons */
         s32 on = sTb->keyRow == rows + 1;
-        Td_Chip(1300.0f, 310.0f, 1920.0f, 420.0f, "BY ADDRESS", on, 54.0f, 0x80);
+        if (on) {
+            Td_Nine(TBO_TD_CARD_ON, 1800.0f, 480.0f, 2590.0f, 630.0f, 24.0f, 88.0f, 0x80);
+        } else {
+            Td_Cell(1800.0f, 480.0f, 2590.0f, 630.0f);
+        }
+        Td_Badge(TD_IC_ONLINE, 1880.0f, 555.0f, 52.0f, on);
+        Td_Words(1960.0f, 536.0f, "BY ADDRESS", TD_B, 44.0f, on ? TD_DARK_FLAT : TD_WHITE, 0, 600.0f, 0);
+        Td_Words(1960.0f, 588.0f, "IP:port (port 7000)", TD_C, 28.0f, on ? TD_NAVY2 : TD_SOFT, 0, 600.0f, 0);
+        Td_Guide(Td_Caption(), 1810.0f, 700.0f, 770.0f, 30.0f, 46.0f, 3);
+    } else {
+        Td_Guide(Td_Caption(), 1810.0f, 480.0f, 770.0f, 30.0f, 46.0f, 3);
     }
-    Td_Keypad(120.0f, 480.0f, rows, sTbKeys, b, nb, 165.0f, 72.0f, 20.0f, 58.0f, 1);
 }
 
 static void Td_Addr(void) {
@@ -992,8 +1395,9 @@ static void Td_Medal(f32 cx, f32 cy, f32 s, s32 kind) {
     Td_Tri(cx - 14.0f * s, cy + 8.0f * s, cx + 14.0f * s, cy + 8.0f * s, cx, cy + 20.0f * s, TD_RGB(f[3], f[4], f[5]));
 }
 static void Td_Trophy(f32 cx, f32 cy, f32 s, s32 kind) {
-    static const u8 metal[3][6] = {{255, 236, 120, 214, 140, 10}, {250, 252, 255, 150, 160, 180}, {244, 176, 112, 160, 84, 34}};
-    const u8 *m = metal[kind < 0 ? 0 : kind > 2 ? 2 : kind];
+    /* gold, silver, bronze; 3: none won yet (the templates' locked one: navy grey) */
+    static const u8 metal[4][6] = {{255, 236, 120, 214, 140, 10}, {250, 252, 255, 150, 160, 180}, {244, 176, 112, 160, 84, 34}, {96, 106, 140, 52, 60, 92}};
+    const u8 *m = metal[kind < 0 ? 0 : kind > 3 ? 3 : kind];
     u32 light = TD_RGB(m[0], m[1], m[2]), dark = TD_RGB(m[3], m[4], m[5]);
     f32 cup[8] = {cx - 38.0f * s, cy - 50.0f * s, cx + 38.0f * s, cy - 50.0f * s, cx + 16.0f * s, cy + 8.0f * s, cx - 16.0f * s, cy + 8.0f * s};
     f32 hw = 7.0f * s;
@@ -1112,6 +1516,225 @@ static void Td_ProfileStats(void) {
 }
 #endif
 
+#ifdef __ANDROID__
+/* the most used character's card: its portrait (the character select's, TBO_FAV_PORTRAIT) cut tall round the face */
+static void Td_FavCard(f32 x0, f32 y0, f32 x1, f32 y1, Bt4ProfileStats *st) {
+    static char name[64], line[96];
+    f32 face[3], p[16], w, h, fx, fy;
+    s32 total = st->wins + st->losses;
+
+    Td_Chamfer(p, x0 - 5.0f, y0 - 5.0f, x1 + 5.0f, y1 + 5.0f, 30.0f); /* the gold frame, the ground */
+    Td_Poly(p, 8, TD_RGB(255, 232, 140), TD_RGB(214, 150, 40));
+    Td_Chamfer(p, x0, y0, x1, y1, 26.0f);
+    Td_Poly(p, 8, TD_RGB(120, 40, 50), TD_RGB(30, 20, 60));
+    Port_TboFavWant(st->state == 1 ? st->favChara : -1);
+    if (st->state == 1 && st->favChara >= 0 && Port_TboFavFace(st->favChara, face)) {
+        w = face[2] * 3.2f; /* (the portrait is 256 x 512: the head and the chest, as tall as the card) */
+        if (w > 256.0f) w = 256.0f;
+        if (w < 140.0f) w = 140.0f;
+        h = w * (y1 - y0) / (x1 - x0);
+        if (h > 512.0f) { h = 512.0f; w = h * (x1 - x0) / (y1 - y0); }
+        fx = face[0] - w * 0.5f;
+        fy = face[1] - h * 0.28f;
+        fx = fx < 0.0f ? 0.0f : fx + w > 256.0f ? 256.0f - w : fx;
+        fy = fy < 0.0f ? 0.0f : fy + h > 512.0f ? 512.0f - h : fy;
+        Td_Pic(TBO_FAV_PORTRAIT, x0 + 6.0f, y0 + 6.0f, x1 - 6.0f, y1 - 6.0f, fx / 256.0f, fy / 512.0f, (fx + w) / 256.0f, (fy + h) / 512.0f, 0x80);
+        Ps_Quad(Td_X(x0 + 6.0f), Td_Y(y1 - 170.0f), Td_X(x1 - 6.0f), Td_Y(y1 - 170.0f), Td_X(x0 + 6.0f), Td_Y(y1 - 6.0f), Td_X(x1 - 6.0f), Td_Y(y1 - 6.0f),
+                Td_Rgba(10, 8, 30, 0), Td_Rgba(10, 8, 30, 0), Td_Rgba(10, 8, 30, 230), Td_Rgba(10, 8, 30, 230));
+        if (st->favName[0]) Ps_Copy(name, st->favName, sizeof(name));
+        else sprintf(name, Tb_Fmt("Character %d"), st->favChara);
+        Td_Words(x0 + 26.0f, y1 - 82.0f, name, TD_B, 58.0f, TD_GOLD, 0, x1 - x0 - 50.0f, 1);
+        if (total > 0) sprintf(line, Tb_Fmt("%d battles  \xC2\xB7  %d%% of the matches"), st->favBattles, st->favBattles * 100 / total);
+        else sprintf(line, Tb_Fmt("%d battles"), st->favBattles);
+        Td_Words(x0 + 26.0f, y1 - 30.0f, line, TD_C, 26.0f, TD_TEXT_EDGE(240, 244, 255), 0, x1 - x0 - 50.0f, 1);
+    } else {
+        Td_Words((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, "1P", TD_B, 160.0f, Td_Ink(TD_RGB(255, 255, 255), TD_RGB(210, 230, 255), TD_RGB(10, 30, 90)), 1, 0.0f, 1);
+        Td_Words((x0 + x1) * 0.5f, y1 - 40.0f, "No online battles yet", TD_C, 26.0f, TD_SOFT, 1, x1 - x0 - 40.0f, 0);
+    }
+    Td_Outline(p, 8, 3.0f, Td_Rgba(255, 240, 190, 200));
+    {   /* "MOST USED" on a gold chip at its top left */
+        f32 cw = Td_WordsW("MOST USED", TD_C, 24.0f) + 44.0f;
+        Td_Nine(TBO_TD_CHIP_ON, x0 + 16.0f, y0 + 16.0f, x0 + 16.0f + cw, y0 + 66.0f, 14.0f, 14.0f + 18.0f, 0x80);
+        Td_Words(x0 + 16.0f + cw * 0.5f, y0 + 42.0f, "MOST USED", TD_C, 24.0f, TD_NAVY, 1, 0.0f, 0);
+    }
+}
+
+/* the hexagon of the week's place */
+static void Td_Hex(f32 cx, f32 cy, f32 r, char *label) {
+    f32 p[12], q[12];
+    s32 k;
+    for (k = 0; k < 6; k++) {
+        f32 a = (-90.0f + 60.0f * (f32)k) * 0.0174533f;
+        p[k * 2] = cx + cosf(a) * r; p[k * 2 + 1] = cy + sinf(a) * r;
+        q[k * 2] = cx + cosf(a) * (r - 12.0f); q[k * 2 + 1] = cy + sinf(a) * (r - 12.0f);
+    }
+    Td_Poly(p, 6, TD_RGB(40, 30, 10), TD_RGB(40, 30, 10));
+    Td_Poly(q, 6, TD_RGB(255, 236, 140), TD_RGB(214, 146, 28));
+    Td_Outline(q, 6, 3.0f, TD_RGB(255, 252, 230));
+    Td_Words(cx, cy + 4.0f, label, TD_B, r * 0.62f, TD_DARK_FLAT, 1, r * 1.5f, 1);
+}
+
+/* Profile as the approved template (08-perfil): the player's card on the left (the most used character, the name,
+   where from, the week's place and points, the battles), the trophies of the weeks and the medals at the top right,
+   the settings (name, language) where the achievements will be, the week's top 3 at the foot */
+static void Td_Profile(void) {
+    extern int MenuTranslation_TboLanguage(void);
+    static char *languages[4] = {"Automatic", "English", "Portugu\xC3\xAAs", "Espa\xC3\xB1ol"};
+    static char *places[3] = {"1st place", "2nd place", "3rd place"};
+    static char *cellName[4] = {"Battles", "Wins", "Losses", "Rate"};
+    static char value[32], line[128], chip[64], cell[4][16], count[3][16], medal[2][16], hint[96], code[24];
+    s32 language = MenuTranslation_TboLanguage(), i, total;
+    Bt4ProfileStats st;
+
+    memset(&st, 0, sizeof(st));
+    if (!getenv("BT4_RENDER_TEST")) {
+        Bt4Profile_Stats(&st);
+    } else {
+        st.state = 1; st.gold = 201; st.silver = 111; st.wins = 201; st.losses = 111; st.rating = 1088; st.rank = 37; st.players = 214;
+        st.trophies[0] = 1; st.trophies[1] = 2; st.seasonNumber = 1; st.rated = 7; st.opponents = 4; st.eligible = 1; st.seasonGold = 5; st.seasonSilver = 2;
+        st.bestRating = 1412; st.seasonsPlayed = 1;
+        Ps_Copy(st.country, "BR", sizeof(st.country));
+        Ps_Copy(st.countryName, "Brasil", sizeof(st.countryName));
+        st.favChara = 4; st.favBattles = 148;
+        Ps_Copy(st.favName, "Trunks", sizeof(st.favName));
+    }
+    total = st.wins + st.losses;
+    Td_Page(sTbTitle[TB_PROFILE], 1, 0);
+
+    /* ---- the player's card */
+    Td_Panel(50.0f, 345.0f, 1010.0f, 1070.0f, 1, NULL);
+    Td_FavCard(80.0f, 375.0f, 420.0f, 790.0f, &st);
+    Td_Words(455.0f, 420.0f, (char *)Port_NetNameGet(), TD_B, 90.0f, TD_GOLD, 0, 530.0f, 1);
+    if (st.state == 1 && st.country[0]) {
+        Td_Flag(st.country, 455.0f, 462.0f, 66.0f, 44.0f, 0x80);
+        Td_Words(540.0f, 485.0f, st.countryName[0] ? st.countryName : st.country, TD_C, 34.0f, TD_WHITE, 0, 440.0f, 1);
+    } else if (st.state != 1) {
+        Td_Words(455.0f, 485.0f, st.state == -2 ? "Choose a nickname to win medals and play Ranked." : st.state < 0 ? "Profile service unavailable" : "Loading your profile...",
+                 TD_C, 28.0f, st.state == -2 ? TD_TEXT(255, 230, 170) : TD_SOFT, 0, 530.0f, 0);
+    }
+    if (st.seasonNumber > 0) sprintf(chip, Tb_Fmt("SEASON %d  \xC2\xB7  WEEKLY"), st.seasonNumber);
+    else Ps_Copy(chip, (char *)PortOnline_Text("WEEKLY SEASON"), sizeof(chip));
+    {
+        f32 cw;
+        PortOnline_Raw(1);
+        cw = Td_WordsW(chip, TD_C, 26.0f) + 48.0f;
+        PortOnline_Raw(0);
+        Td_Nine(TBO_TD_CHIP_ON, 455.0f, 520.0f, 455.0f + cw, 576.0f, 14.0f, 14.0f + 18.0f, 0x80);
+        Td_Words(455.0f + cw * 0.5f, 548.0f, chip, TD_C, 26.0f, TD_NAVY, 1, 0.0f, 1);
+    }
+    if (st.state == 1 && st.rank > 0) sprintf(line, "#%d", st.rank);
+    else Ps_Copy(line, "-", sizeof(line));
+    Td_Hex(720.0f, 680.0f, 95.0f, line);
+    if (st.state == 1) {
+        sprintf(line, Tb_Fmt("%d POINTS"), st.rating);
+        Td_Words(720.0f, 806.0f, line, TD_B, 50.0f, TD_GOLDC, 1, 520.0f, 1);
+        if (st.rank > 0) sprintf(line, Tb_Fmt("Ranked  \xC2\xB7  #%d of %d"), st.rank, st.players);
+        else Ps_Copy(line, (char *)PortOnline_Text("Not ranked this week"), sizeof(line));
+        Td_Words(720.0f, 848.0f, line, TD_C, 28.0f, TD_PALE, 1, 520.0f, 1);
+    }
+    if (st.state == 1) {
+        sprintf(cell[0], "%d", total);
+        sprintf(cell[1], "%d", st.wins);
+        sprintf(cell[2], "%d", st.losses);
+        if (total > 0) sprintf(cell[3], "%d%%", st.wins * 100 / total);
+        else Ps_Copy(cell[3], "-", sizeof(cell[3]));
+    } else {
+        for (i = 0; i < 4; i++) Ps_Copy(cell[i], "-", sizeof(cell[i]));
+    }
+    for (i = 0; i < 4; i++) {
+        f32 x = 80.0f + 232.0f * (f32)i;
+        Td_Cell(x, 885.0f, x + 214.0f, 975.0f);
+        Td_Words(x + 107.0f, 920.0f, cell[i], TD_B, 54.0f, TD_WHITE, 1, 190.0f, 1);
+        Td_Words(x + 107.0f, 958.0f, cellName[i], TD_C, 24.0f, TD_SOFT, 1, 190.0f, 0);
+    }
+    code[0] = 0;
+    if (!getenv("BT4_RENDER_TEST")) Bt4Profile_RecoveryCode(code);
+    if (code[0]) {
+        sprintf(hint, Tb_Fmt("Recovery code: %s"), code);
+        Td_Words(80.0f, 1045.0f, hint, TD_C, 26.0f, TD_TEXT(255, 230, 170), 0, 900.0f, 1);
+    }
+    if (st.state == 1 && st.bestRating > 0) {
+        sprintf(line, Tb_Fmt("Best rating: %d  \xC2\xB7  %d seasons played"), st.bestRating, st.seasonsPlayed);
+        Td_Words(80.0f, 1005.0f, line, TD_C, 24.0f, TD_SOFT, 0, 900.0f, 1);
+    }
+
+    /* ---- the trophies of the weeks */
+    Td_Panel(1050.0f, 345.0f, 1830.0f, 660.0f, 1, "WEEKLY TROPHIES");
+    Td_Rect(1090.0f, 548.0f, 1790.0f, 560.0f, Td_Rgba(255, 255, 255, 50), Td_Rgba(255, 255, 255, 20)); /* the shelf */
+    for (i = 0; i < 3; i++) {
+        f32 cx = 1230.0f + 210.0f * (f32)i;
+        s32 n = st.state == 1 ? st.trophies[i] : 0;
+        Td_Trophy(cx, 502.0f, 0.88f, n > 0 ? i : 3);
+        sprintf(count[i], "\xC3\x97%d", n);
+        Td_Nine(n > 0 ? TBO_TD_CHIP_ON : TBO_TD_CHIP, cx + 22.0f, 446.0f, cx + 98.0f, 482.0f, n > 0 ? 14.0f : 2.0f, n > 0 ? 30.0f : 18.0f, 0x80);
+        Td_Words(cx + 60.0f, 464.0f, count[i], TD_C, 22.0f, n > 0 ? TD_NAVY : TD_WHITE, 1, 0.0f, 1);
+        Td_Words(cx, 594.0f, places[i], TD_C, 30.0f, n > 0 ? TD_WHITE : TD_SOFT, 1, 200.0f, 0);
+    }
+    if (st.state == 1) {
+        sprintf(line, Tb_Fmt("This week: %d/5 battles  \xC2\xB7  %d/3 rivals"), st.rated < 5 ? st.rated : 5, st.opponents < 3 ? st.opponents : 3);
+        if (st.eligible) {
+            Ps_Cat(line, "  \xC2\xB7  ", sizeof(line));
+            Ps_Cat(line, (char *)PortOnline_Text("QUALIFIED"), sizeof(line));
+        }
+        Td_Words(1090.0f, 634.0f, line, TD_C, 24.0f, TD_PALE, 0, 700.0f, 1);
+    }
+
+    /* ---- the medals */
+    Td_Panel(1860.0f, 345.0f, 2662.0f, 660.0f, 1, "MEDALS");
+    Td_Words(2622.0f, 404.0f, "Ranked 1 vs 1", TD_C, 22.0f, TD_SOFT, 2, 0.0f, 0);
+    for (i = 0; i < 2; i++) { /* (under the title: the ribbons' tops at 450) */
+        f32 cx = 2080.0f + 380.0f * (f32)i;
+        s32 n = st.state == 1 ? (i == 0 ? st.gold : st.silver) : 0;
+        Td_Medal(cx, 500.0f, 0.85f, i);
+        sprintf(medal[i], "\xC3\x97%d", n);
+        Td_Words(cx, 578.0f, medal[i], TD_B, 48.0f, i == 0 ? TD_GOLD : TD_WHITE, 1, 300.0f, 1);
+        Td_Words(cx, 614.0f, i == 0 ? "GOLD  \xC2\xB7  Wins" : "SILVER  \xC2\xB7  Losses", TD_C, 24.0f, TD_PALE, 1, 360.0f, 0);
+    }
+    if (st.state == 1) {
+        sprintf(line, Tb_Fmt("This week: %d gold  \xC2\xB7  %d silver"), st.seasonGold, st.seasonSilver);
+        Td_Words(2261.0f, 642.0f, line, TD_C, 22.0f, TD_PALE, 1, 760.0f, 1);
+    }
+
+    /* ---- the settings: the name, the language */
+    Td_Panel(1050.0f, 685.0f, 2662.0f, 880.0f, 0, NULL);
+    if (language == 0) Ps_Copy(value, (char *)PortOnline_Text("Automatic"), sizeof(value));
+    else Ps_Copy(value, languages[language], sizeof(value));
+    Td_SetRow(1090.0f, 702.0f, 2622.0f, 780.0f, sTb->prCur == PR_NAME, "Name", (char *)Port_NetNameGet(), 0, 1);
+    Td_SetRow(1090.0f, 788.0f, 2622.0f, 866.0f, sTb->prCur == PR_LANG, "Language", value, 1, 1);
+
+    /* ---- the week's top 3 */
+    Td_Panel(1050.0f, 905.0f, 2662.0f, 1070.0f, 0, NULL);
+    Td_Words(1090.0f, 988.0f, "TOP OF THE WEEK", TD_B, 50.0f, TD_GOLDC, 0, 420.0f, 0);
+    {
+        static Bt4RankedEntry top[10];
+        static char num[3][8], pts[3][16];
+        s32 n = 0;
+        if (!getenv("BT4_RENDER_TEST")) {
+            n = Port_RankedTopTen(top);
+        } else {
+            static char *names[3] = {"YAMI", "Geovany", "EndyGer"};
+            static const s32 r[3] = {1342, 1301, 1275};
+            for (n = 0; n < 3; n++) { Ps_Copy(top[n].name, names[n], sizeof(top[n].name)); top[n].rating = r[n]; }
+        }
+        for (i = 0; i < n && i < 3; i++) {
+            f32 x = 1540.0f + 375.0f * (f32)i;
+            char cc[4] = "";
+            if (getenv("BT4_RENDER_TEST")) { static const char *t[3] = {"AR", "BR", "MX"}; Ps_Copy(cc, (char *)t[i], sizeof(cc)); }
+            else Bt4Profile_TopCountryAt(i, cc);
+            sprintf(num[i], "%d", i + 1);
+            sprintf(pts[i], "%d", top[i].rating);
+            Td_Words(x, 988.0f, num[i], TD_B, 52.0f, TD_GOLDC, 0, 0.0f, 1);
+            if (cc[0]) Td_Flag(cc, x + 46.0f, 968.0f, 60.0f, 40.0f, 0x80);
+            Td_Words(x + (cc[0] ? 122.0f : 46.0f), 970.0f, top[i].name, TD_C, 30.0f, TD_WHITE, 0, cc[0] ? 220.0f : 296.0f, 1);
+            Td_Words(x + (cc[0] ? 122.0f : 46.0f), 1012.0f, pts[i], TD_C, 24.0f, TD_SOFT, 0, 0.0f, 1);
+        }
+        if (n <= 0) {
+            Td_Words(1540.0f, 988.0f, n == -2 ? "Loading Global Top..." : n == -1 ? "Global Top unavailable" : "No ranking published yet.", TD_C, 30.0f, TD_SOFT, 0, 1400.0f, 0);
+        }
+    }
+    sTdOwnCaption = 0;
+}
+#else
 static void Td_Profile(void) {
     extern int MenuTranslation_TboLanguage(void);
     static char *languages[4] = {"Automatic", "English", "Portugu\xC3\xAAs", "Espa\xC3\xB1ol"};
@@ -1175,6 +1798,8 @@ static void Td_Profile(void) {
 #endif
 }
 
+#endif
+
 static void Td_Name(void) {
     static char line[40];
     static char count[16];
@@ -1195,47 +1820,75 @@ static void Td_Name(void) {
     Td_Keypad(400.0f, 405.0f, NAME_ROWS, NAME_PAD_KEYS, NAME_PAD_BTNS, NAME_PAD_NB, 200.0f, 64.0f, 16.0f, 56.0f, -1);
 }
 
+/* Quick Match as the template (02): the battles as two big cards (the Tag Team's three), the guide line under them,
+   and the search's radar on the right; `searching` (the page of the search under way, TB_WAIT): its sweep turns, the
+   time runs. */
+static void Td_QuickLayout(s32 searching) {
+    static char line[128], count[48];
+    static char *cards[2][2] = {{"1 VS 1", "Single battle"}, {"TEAMS", "Team battle (up to 5 vs 5)"}};
+    static char *tagCards[3] = {"FREE FOR ALL (6)", "2 VS 2", "5 VS 5"};
+    s32 n = sTb->quickFromTag ? 3 : 2, i, secs = (sTb->frames - sTb->waitFrom) / 60;
+    f32 cw = n == 3 ? 453.0f : 680.0f, gap = n == 3 ? 20.0f : 40.0f, px = 1560.0f, rx = px + 535.0f, ry = 720.0f, sweep;
+
+    Td_Back(0);
+    Td_Head(sTbTitle[TB_QUICK], NULL);
+    for (i = 0; i < n; i++) {
+        f32 x = 80.0f + (f32)i * (cw + gap), y = 380.0f;
+        s32 q = sTb->quickFromTag ? i + 1 : i, lit = q == sTb->queue;
+        s32 waiting = getenv("BT4_RENDER_TEST") ? -1 : sTb->quickFromTag ? Port_TagQueueWaiting(i) : Port_LobbyQueueWaiting(i);
+
+        if (searching && !lit) {
+            continue; /* (while it searches: only the battle it searches for) */
+        }
+        Td_BigCard(x, y, x + cw, y + 480.0f, lit);
+        Td_Badge(sTb->quickFromTag ? TD_IC_TT : i == 0 ? TD_IC_FFA : TD_IC_TEAM, x + cw * 0.5f, y + 160.0f, 100.0f, lit);
+        Td_Words(x + cw * 0.5f, y + 330.0f, sTb->quickFromTag ? tagCards[i] : cards[i][0], TD_B, n == 3 ? 56.0f : 64.0f, lit ? TD_DARK_FLAT : TD_WHITE, 1,
+                 cw - 60.0f, 0);
+        if (waiting >= 0) {
+            sprintf(count, Tb_Fmt("%d WAITING"), waiting);
+            Td_Words(x + cw * 0.5f, y + 400.0f, count, TD_C, 32.0f, lit ? TD_NAVY2 : TD_SOFT, 1, cw - 60.0f, 1);
+        } else if (!sTb->quickFromTag) {
+            Td_Words(x + cw * 0.5f, y + 400.0f, cards[i][1], TD_C, 32.0f, lit ? TD_NAVY2 : TD_SOFT, 1, cw - 60.0f, 0);
+        }
+        if (lit && !searching && sTb->qkCur == 0) { /* (the cursor on the battles: ◀ ▶ on the chosen card) */
+            Td_Words(x + 40.0f, y + 330.0f, "\xE2\x97\x80", TD_C, 34.0f, TD_NAVY, 1, 0.0f, 1);
+            Td_Words(x + cw - 40.0f, y + 330.0f, "\xE2\x96\xB6", TD_C, 34.0f, TD_NAVY, 1, 0.0f, 1);
+        }
+    }
+    /* the guide line */
+    Td_Panel(80.0f, 900.0f, 1480.0f, 1040.0f, 0, NULL);
+    Td_Guide(Td_Caption(), 120.0f, 945.0f, 1320.0f, 32.0f, 50.0f, 2);
+    /* the radar */
+    Td_Panel(px, 380.0f, 2630.0f, 1040.0f, 1, searching ? "LOOKING FOR A RIVAL" : "WAITING RIGHT NOW");
+    for (i = 0; i < 3; i++) {
+        static const f32 r[3] = {220.0f, 160.0f, 100.0f};
+        Td_Ring(rx, ry, r[i], 4.0f, Td_Rgba(255, 255, 255, 60 + 50 * i));
+    }
+    sweep = searching ? (f32)((sTb->frames * 3) % 360) : 0.0f;
+    Td_Slice(rx, ry, 220.0f, -90.0f + sweep, -30.0f + sweep, Td_Rgba(250, 212, 80, 90));
+    Td_Badge(TD_IC_ONLINE, rx, ry, 50.0f, 1);
+    if (sTb->quickFromTag) {
+        Ps_Copy(line, (char *)PortOnline_Text("Tag Team"), sizeof(line));
+    } else {
+        Ps_Copy(line, (char *)PortOnline_Text(sTb->region == 0 ? "Near you first" : sTbRegionName[sTb->region]), sizeof(line));
+    }
+    if (searching) {
+        sprintf(count, "  \xC2\xB7  %d:%02d", (int)(secs / 60), (int)(secs % 60));
+        Ps_Cat(line, count, sizeof(line));
+    }
+    if (!searching && !sTb->quickFromTag && sTb->qkCur == 1) { /* (the cursor on the region: its line on a gold chip, ◀ ▶) */
+        f32 w = Td_WordsW(line, TD_C, 30.0f) + 140.0f;
+        Td_Nine(TBO_TD_CHIP_ON, rx - w * 0.5f, 980.0f - 34.0f, rx + w * 0.5f, 980.0f + 34.0f, 14.0f, 14.0f + 18.0f, 0x80);
+        Td_Words(rx - w * 0.5f + 34.0f, 980.0f, "\xE2\x97\x80", TD_C, 28.0f, TD_NAVY, 1, 0.0f, 1);
+        Td_Words(rx + w * 0.5f - 34.0f, 980.0f, "\xE2\x96\xB6", TD_C, 28.0f, TD_NAVY, 1, 0.0f, 1);
+        Td_Words(rx, 980.0f, line, TD_C, 30.0f, TD_NAVY, 1, 0.0f, 1);
+    } else {
+        Td_Words(rx, 980.0f, line, TD_C, 30.0f, TD_SOFT, 1, 1000.0f, 1);
+    }
+}
+
 static void Td_Quick(void) {
-    static char line[96];
-    static char *tagModes[] = {"One on One", "Free for All", "2 vs 2", "5 vs 5"};
-    s32 q, row = 0;
-    s32 from = sTb->quickFromTag ? 1 : 0, to = sTb->quickFromTag ? 4 : 2;
-
-    Td_Page(sTbTitle[TB_QUICK], 1, 0);
-    Td_Window(40.0f, 230.0f, 1210.0f, 920.0f, "PICK YOUR BATTLE");
-    Td_Option(110.0f, 300.0f, 1150.0f, 440.0f, "Battle",
-              sTb->quickFromTag ? (char *[]){"ONE ON ONE", "FREE FOR ALL (6)", "2 VS 2", "5 VS 5"}[sTb->queue] : (sTb->queue ? "TEAMS (UP TO 5)" : "ONE ON ONE"),
-              sTb->quickFromTag ? sTb->queue - 1 : sTb->queue, sTb->quickFromTag ? 3 : 2, sTb->qkCur == 0, 1, "ONE ON ONE OR TEAMS (UP TO 5)", 0);
-    Td_Option(110.0f, 470.0f, 1150.0f, 610.0f, "Region", sTbRegionName[sTb->region], sTb->region, QK_REGIONS, sTb->qkCur == 1, 2, "RIVALS THERE FIRST, THEN ANYWHERE", 0);
-    Td_BigButton(150.0f, 680.0f, 1110.0f, 830.0f, "Search", 96.0f, sTb->qkCur == 2, 0x80);
-    Td_Window(1250.0f, 230.0f, 1990.0f, 920.0f, "WAITING RIGHT NOW");
-    for (q = from; q < to; q++, row++) {
-        s32 n = getenv("BT4_RENDER_TEST") ? -1 : sTb->quickFromTag ? Port_TagQueueWaiting(q - 1) : Port_LobbyQueueWaiting(q);
-        f32 y = 350.0f + (to - from > 2 ? 120.0f : 170.0f) * (f32)row, f;
-        char *label = sTb->quickFromTag ? tagModes[q] : (q ? "Teams" : "One on One");
-        u32 bar0 = TD_RGB(30, 30, 70), bar1 = TD_RGB(20, 20, 50);
-
-        Td_Words(1310.0f, y, label, TD_B, 60.0f, q == sTb->queue ? TD_GOLD_FLAT : TD_GREEN, 0, 380.0f, 0);
-        if (n < 0) {
-            Ps_Copy(line, "...", sizeof(line));
-        } else {
-            sprintf(line, Tb_Fmt("%d WAITING"), (int)n);
-        }
-        Td_Words(1930.0f, y, line, TD_B, 48.0f, TD_GOLD_FLAT, 2, 260.0f, 1);
-        Td_Rect(1310.0f, y + 46.0f, 1930.0f, y + 68.0f, bar0, bar1);
-        f = n > 0 ? (n > 10 ? 1.0f : (f32)n / 10.0f) : 0.0f;
-        if (f > 0.0f) {
-            Td_Rect(1310.0f, y + 46.0f, 1310.0f + 620.0f * f, y + 68.0f, TD_RGB(120, 255, 150), TD_RGB(40, 180, 80));
-        }
-    }
-    {
-        f32 p[16];
-        Td_Chamfer(p, 1300.0f, 700.0f, 1940.0f, 860.0f, 16.0f);
-        Td_Poly(p, 8, Td_Rgba(20, 40, 80, 230), Td_Rgba(8, 16, 40, 240));
-        sprintf(line, Tb_Fmt("PLAYERS THERE FIRST, EVERYONE AFTER %d S"), (int)QK_REGION_WIDEN);
-        Td_Words(1620.0f, 780.0f, sTb->queue ? "NO TIME LIMIT - 114% SPEED" : sTb->region == 0 ? "RIVALS NEAR YOU FIRST, THEN ANYWHERE" :
-                 sTb->region == QK_REGIONS - 1 ? "THE NEXT RIVAL, WHEREVER: THE FASTEST" : line, TD_C, 30.0f, TD_SKY(255), 1, 600.0f, 0);
-    }
+    Td_QuickLayout(0);
 }
 
 /* searching, a room open, joining one; the rival found */
@@ -1261,6 +1914,10 @@ static void Td_Wait(void) {
         Td_Words(1356.0f, 600.0f, "VS", TD_B, 300.0f, Td_InkOuter(TD_RGB(255, 250, 210), TD_RGB(255, 120, 20), TD_RGB(110, 20, 0), TD_RGB(14, 4, 36), 6.0f), 1, 0.0f, 1);
         Td_Words(1356.0f, 270.0f, "YOUR RIVAL IS HERE!", TD_B, 110.0f, Td_InkOuter(TD_RGB(220, 255, 200), TD_RGB(100, 232, 80), TD_RGB(8, 60, 16), TD_RGB(14, 4, 36), 3.0f),
                  1, 2400.0f, 0);
+        return;
+    }
+    if (sTb->host == 2 && sTb->waitBack != TB_RANKED) { /* the Quick Match search: its page, the radar turning */
+        Td_QuickLayout(1);
         return;
     }
     Td_Page(title, 1, 0);
@@ -1657,18 +2314,22 @@ static s32 Td_Draw(s32 live) {
 
     if (mode == TB_BRACKET) { /* the bracket: its own layout, in a window of the redesign */
         Td_Page("Tournament", 0, 0);
-        Td_Window(40.0f, 250.0f, 2680.0f, 950.0f, "BRACKET");
-        Ps_SetShiftY(Td_Y(300.0f) - 70.0f);
+        Td_Panel(40.0f, 360.0f, 2680.0f, 1040.0f, 1, "BRACKET");
+        Ps_SetShiftY(Td_Y(410.0f) - 70.0f);
         Tb_DrawBracket();
         Tb_DrawBracketText();
         Ps_SetShiftY(0.0f);
-        Td_BottomBox(Td_Caption(), 0, live);
+        Td_PageFoot(Td_Caption());
         return 1;
     }
     if (mode == TB_HUB) {
         Td_Hub(live);
         return 1;
     }
+    sTdOwnCaption = 0;
+    /* the pages laid out as the templates draw where those have it; the others (not yet redone) under the head */
+    sTdBody = !(mode == TB_QUICK || mode == TB_CREATE || mode == TB_JOIN || mode == TB_RANKED || mode == TB_PROFILE || mode == TB_NAME ||
+                (mode == TB_WAIT && sTb->host == 2 && sTb->waitBack != TB_RANKED && !sTb->found));
     Tb_PageIn(1);
     switch (mode) {
     case TB_RANKED: Td_Ranked(); break;
@@ -1686,12 +2347,14 @@ static s32 Td_Draw(s32 live) {
     default: Td_Profile(); break;
     }
     Tb_PageIn(0);
+    sTdBody = 0;
     if (mode == TB_NAME) {
         Tb_PageIn(2);
         Td_Name();
         Tb_PageIn(0);
     }
-    Td_BottomBox(Td_Caption(), 0, live);
+    Td_PageFoot(sTdOwnCaption ? NULL : Td_Caption());
+    (void)live;
     if (mode == TB_LOBBY) {
         Td_LobbyWin();
     }

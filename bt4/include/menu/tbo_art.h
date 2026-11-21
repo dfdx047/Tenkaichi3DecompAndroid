@@ -64,7 +64,19 @@
     X(TBO_CS_PLAIN, "cs_plain")     /* a plain row, */ \
     X(TBO_CS_CARD, "cs_card")       /* a card, */ \
     X(TBO_CS_PILL, "cs_pill")       /* a button's pill, */ \
-    X(TBO_CS_PILL_ON, "cs_pill_on") /* and lit */
+    X(TBO_CS_PILL_ON, "cs_pill_on") /* and lit */ \
+    X(TBO_HUB_BG, "hub_bg")         /* the Online main screen's new look (port/tools/tbo_hub_art.py): the meadow, */ \
+    X(TBO_HUB_ROW, "hub_row")       /* a mode's row of navy glass, */ \
+    X(TBO_HUB_ROW_ON, "hub_row_on") /* the chosen one's gold plate, */ \
+    X(TBO_HUB_ICONS, "hub_icons")   /* the modes' badges (unlit, lit), */ \
+    X(TBO_HUB_LOGO, "hub_logo")     /* the BT4 ONLINE seal, */ \
+    X(TBO_HUB_CHIP, "hub_chip")     /* a chip of facts, */ \
+    X(TBO_TRUNKS, "trunks")         /* and Trunks (his film trunks.mpg, colours above and how solid below: gs_draw.c) */ \
+    X(TBO_HUB_PAGE, "hub_page")     /* the inner pages' backdrop: the meadow dimmed (port/tools/tbo_kit_template.py) */ \
+    X(TBO_TD_WIN_GOLD, "td_win_gold") /* the inner pages' pieces (port/tools/tbo_page_art.py): a window with a gold edge, */ \
+    X(TBO_TD_CARD_ON, "td_card_on") /* the chosen card, */ \
+    X(TBO_TD_CELL, "td_cell")       /* a light cell, */ \
+    X(TBO_TD_TILE, "td_tile")       /* a room code's letter */
 
 #define TBO_MAIN_ONLINE_OFF (TBO_ART_COUNT + 16)
 #define TBO_MAIN_ONLINE_ON (TBO_ART_COUNT + 17)

@@ -39,6 +39,7 @@ int Port_OnlineRecover(const char *name, const char *code);
 void Bt4Profile_TopRow(int i, int out[5]);
 /* the same row's country ("BR"; "" unknown) */
 void Bt4Profile_TopCountry(int i, char out[4]);
+void Bt4Profile_TopCountryAt(int k, char out[4]);
 /* gs/net.c: a session (one or more battles with one rival) begins and ends; every battle's state as Ranked's was */
 void Bt4Profile_SessionBegin(int ranked, const char *code);
 void Bt4Profile_SessionEnd(void);

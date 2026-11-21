@@ -55,6 +55,7 @@ extern int Port_SelectEntrance(void);
 extern int Port_SelectTurnMilli(void);
 extern void ChrView_PortAir(s32 side, f32 *air, f32 *land);
 extern void ChrView_PortLineup(s32 n, const s32 *chara, const s32 *costume, const f32 *screenX);
+extern void ChrView_PortCinema(s32 frame, s32 oppChara, s32 oppCostume);
 extern s32 ChrView_PortStageUp(void);
 extern int Port_SelectDemo(void);
 #define MCHR_COLS 7
@@ -83,6 +84,9 @@ extern void Sprite_DrawList(void *res, s32 x, s32 y, CsSprite *list);
 #define GS_MUTE_OFF 0x61
 #define GS_WHOLE_ON 0x62 /* 2D is laid out on the whole window (the scene mode would narrow it to 3/4) */
 #define GS_WHOLE_OFF 0x63
+/* the 2D drawn after them at the screen's own resolution, not into the game's picture (gs_draw.h: the select only) */
+#define GS_NATIVE_ON 0x66
+#define GS_NATIVE_OFF 0x67
 #define GS_CHIP_ON 0x64 /* the chips drawn from here are enlarged when decoded */
 #define GS_CHIP_OFF 0x65
 
@@ -97,6 +101,32 @@ static PORT_HOST s32 sSplit;    /* two people choosing: the screen in two halves
 static PORT_HOST s32 sNow;      /* the half being drawn */
 static PORT_HOST s32 sTopRowOf[2];
 static PORT_HOST s32 sWantChara[2], sWantCostume[2], sShownChara[2], sShownCostume[2];
+/* The way to the battle (PortCharSel_CinemaStart, the user's video of Sparking Zero): its frame (-1 none) and the
+   opponent's fighter. The screen shows only the 3D then, the camera its own (view_a_d.c ChrView_PortCinema). */
+#define CS_CINE_END 270 /* (view_a_d.c CHRVIEW_CINE_END) */
+#define CS_CINE_CUT 55
+/* The dust of the press (Cw_Dust): full over the screen at RISE, the way begins there; it has cleared at END */
+#define CS_DUST 1 /* the grey streaks over the press: back on, at their full strength (the user); 0 takes them off */
+#define CS_FX_RISE (CS_DUST ? 26 : 0)
+#define CS_FX_HOLD 36
+#define CS_FX_END 92
+/* The way to the battle, as the game's own state (NOT host variables: an online session saves and restores the game's variables, so that both
+   copies of the game, and a copy run again after a rollback, are at the same blank of it). sCineBlank: 0 not begun, else the blanks since the
+   press, from 1; it is the only clock: the picture's variables below are worked out from it each frame. */
+static s32 sCineBlank;
+static s32 sCineOpp = -1, sCineOppCostume, sCineLead = -1, sCineLeadCostume, sCineToBattle;
+static PORT_HOST s32 sCine = -1; /* (the picture's frame of the way, from sCineBlank: -1 none; 0 while the dust rises) */
+/* The way to the battle kept up past the screen (the battle's loading): the viewer's last arguments, as drawn. */
+static PORT_HOST s32 sCineHold, sKeepOk, sKeepN, sKeepTeam;
+/* The way to the battle's lead (the player's first fighter, who the select must show, not the cursor's: against the CPU the cursor was last on the
+   other team's pick) and its pre-roll: the clock of the way does not run until he is read and standing (behind the speed lines' flash), so he
+   is not swapped, nor does he come down from the sky, in the middle of it. */
+static PORT_HOST s32 sCinePre, sCinePreFrames;
+static PORT_HOST s32 sCineFx = -1; /* frames since the press that began the way to the battle (the dust: Cw_Dust) */
+extern s32 ChrView_PortLeadReady(s32 chara);
+extern void ChrView_PortCinemaPre(s32 on);
+static PORT_HOST s32 sKeepChara[8], sKeepCostume[8];
+static PORT_HOST f32 sKeepAt[8], sKeepMiddle[2];
 static PORT_HOST s32 sRest[2];
 static PORT_HOST CsView sViews[2];
 /* the roster's place: set for each half */
@@ -1103,9 +1133,13 @@ static PORT_HOST s32 sOwnFloor;
 static void Cs_Sharp(s32 on) {
     extern void GsDraw_ScreenScaleFloor(int floor4);
     extern int GsDraw_ScreenScaleFloorNow(void);
+    extern int GsDraw_ScreenScaleNeeded4(void);
 
-    if (on && !sOwnFloor && gPortVariant != 0 && GsDraw_ScreenScaleFloorNow() == 0) {
-        GsDraw_ScreenScaleFloor(16);
+    (void)GsDraw_ScreenScaleNeeded4;
+    if (0 && on && !sOwnFloor && gPortVariant != 0 && GsDraw_ScreenScaleFloorNow() == 0) {
+        /* (off, as the user asked: the select keeps the player's own resolution. Raising it for sharp letters drew the
+           stage and the fighters in 3D at that size too: 4x ran at half speed on a phone, 2.75x at 69%) */
+        GsDraw_ScreenScaleFloor(GsDraw_ScreenScaleNeeded4());
         sOwnFloor = 1;
     } else if (!on && sOwnFloor) {
         GsDraw_ScreenScaleFloor(0);
@@ -1117,12 +1151,24 @@ void PortCharSel_Begin(s32 allow) {
     const char *env = getenv("BT3_SELECT_CLASSIC");
     s32 i;
 
+    PortHold_Release(); /* (a held picture the loading never took) */
+    sKeepOk = 0;
+    if (sCineHold) { /* (a way to the battle that was never loaded behind) */
+        sCineHold = 0;
+        ChrView_PortEnd();
+        Port_MenuScene3D(0);
+    }
     sOn = allow && !(env != NULL ? atoi(env) : Port_Setting("select_classic", 0));
     Cs_Sharp(sOn);
     s3D = sOn && Port_WorldCan();
     sTick = 0;
     sSplit = 0;
     sInScene = 0;
+    sCine = -1;
+    sCinePre = 0;
+    sCineFx = -1;
+    sCineLead = -1;
+    sCineBlank = 0;
     for (i = 0; i < 2; i++) {
         sTopRowOf[i] = 0;
         sWantChara[i] = sWantCostume[i] = sShownChara[i] = sShownCostume[i] = -1;
@@ -1137,6 +1183,10 @@ void PortCharSel_Begin(s32 allow) {
 
 /* Right before the screen's Term (and before the battle is set up). */
 void PortCharSel_End(void) {
+    extern void Port_SelectStageSet(int stage);
+    Port_GsMarker(GS_NATIVE_OFF); /* (never left on past the select) */
+    Port_SelectStageSet(-1);
+    sCine = -1;
     if (sInScene) {
         Port_MenuScene3D(0);
         sInScene = 0;
@@ -1164,24 +1214,143 @@ void PortCharSel_Abandon(void) {
     Cs_Sharp(0);
 }
 
+/* The fighters chosen: the way to the battle instead of the game's VS (the chosen fighter's opponent: oppChara,
+   oppCostume). 0: it cannot be (no 3D on this screen): the game's own way then. */
+s32 PortCharSel_CinemaStart(s32 oppChara, s32 oppCostume, s32 leadChara, s32 leadCostume) {
+    s32 online = Port_NetActive() || Port_NetSession();
+
+    /* Online, whether this machine can draw it or not must not change the game: the flow (the blanks it takes, the battle that follows) is the
+       same on every copy, so it is always begun; a machine that cannot draw it (no 3D, a narrow screen) shows the select meanwhile. */
+    if (!online && (!sOn || !s3D || sSplit || sNarrow)) {
+        return 0;
+    }
+    if (Cs_IsFighter(leadChara)) {
+        ChrTbl_WrapCostume(leadChara, &leadCostume);
+        sCineLead = leadChara;
+        sCineLeadCostume = leadCostume;
+    } else {
+        sCineLead = -1; /* (not a fighter, a random: whatever the screen shows) */
+    }
+    if (Cs_IsFighter(oppChara)) {
+        ChrTbl_WrapCostume(oppChara, &oppCostume);
+    } else {
+        oppChara = -1;
+    }
+    sCineOpp = oppChara;
+    sCineOppCostume = oppCostume;
+    sCineToBattle = 1;
+    sCineBlank = 1;
+    return 1;
+}
+/* The battle that follows the way to the battle (set at its start, cleared when the battle is freed): the fighters
+   already stand in the stage, so the battle shows no loading screen, no stage presentation and no entrance cameras. */
+s32 PortCharSel_CineBattle(void) {
+    return sCineToBattle;
+}
+void PortCharSel_CineBattleEnd(void) {
+    sCineToBattle = 0;
+}
+/* The way to the battle skipped (a press of the user's): to its end, the battle at once. */
+void PortCharSel_CinemaSkip(void) {
+    /* Online too: the press comes from the pads the two copies exchange (the callers read both, gPad[0] and gPad[1]), so it is the same blank
+       on both: when one player skips, the other's way is skipped with it. Not at once: the press that began the way, or one a moment after, is
+       not a skip (45 blanks). */
+    if ((Port_NetActive() || Port_NetSession()) && sCineBlank < 45) {
+        return;
+    }
+    if (sCineBlank > 0 && sCineBlank <= CS_FX_RISE + CS_CINE_END) {
+        sCineBlank = CS_FX_RISE + CS_CINE_END + 1;
+    }
+}
+/* One blank of the way to the battle: called by the screen's loop (the game's logic, once a blank, as the press was). */
+void PortCharSel_CineBlank(void) {
+    if (sCineBlank > 0 && sCineBlank < CS_FX_RISE + CS_CINE_END + 600) {
+        sCineBlank++;
+    }
+}
+s32 PortCharSel_CineFrame(void) {
+    return sCinePre ? -1 : sCine;
+}
+s32 PortCharSel_InCinema(void) {
+    return sCineBlank > 0; /* (the flow: on every copy, and in a copy run again) */
+}
+s32 PortCharSel_CinemaDone(void) {
+    /* The way to the battle plays out WHOLE inside the select, where the viewer's world is up and alone, and the screen is
+       left when it is over. It cannot go on while the battle is loaded behind it (what the night's build did: the camera, the
+       stage and the objects it draws with are the fight's own modules' (gBtlCamView, gBtlStage, the object table), which
+       Battle_Load initialises again as the viewer draws: the picture flickered between the way's camera, the stage's own
+       camera and black, as in the user's recording). */
+    return sCineBlank > CS_FX_RISE + CS_CINE_END;
+}
+
+/* Non-zero: the new screen is the one shown (not the game's own, select_classic). */
+s32 PortCharSel_On(void) {
+    return sOn;
+}
+
+/* The map chosen before the fighters (the stage-first order, menu_e_b.c / menu_c_e.c): the world behind them is made
+   again with it at the next frame (its fighters read again into it). 0x23 (random) or -1: the usual stage. */
+void PortCharSel_SetStage(s32 stage) {
+    extern void Port_SelectStageSet(int stage);
+    s32 i;
+
+    Port_SelectStageSet(stage == 0x23 ? -1 : stage);
+    if (s3D) {
+        ChrView_PortEnd();
+    }
+    for (i = 0; i < 2; i++) {
+        sShownChara[i] = sShownCostume[i] = -1;
+    }
+}
+
 /* Non-zero: the screen's Draw shows this one instead of its own (asked with the screen in its stage choice or leaving). */
 s32 PortCharSel_Shown(s32 stagePhase) {
-    return sOn && !stagePhase;
+    return sOn && (!stagePhase || sCine >= 0); /* (the way to the battle: shown to its end, the screen leaving) */
 }
 
 void PortCharSel_MuteOn(void) {
     Port_GsMarker(GS_MUTE_ON);
 }
 
+void PortCharSel_MuteOff(void) {
+    Port_GsMarker(GS_MUTE_OFF);
+}
+
 /* Once a frame, before the screen is drawn: what it shows now, which models are wanted, and the 3D view on or off. */
 void PortCharSel_Frame(const CsView *view, s32 split, s32 stagePhase) {
-    s32 scene = s3D && PortCharSel_Shown(stagePhase);
+    s32 scene;
+
+    /* The way to the battle's picture, from its clock (sCineBlank, the game's): the dust rises for CS_FX_RISE blanks (the fighters stand, the lead
+       out of the picture till he is read: ChrView_PortLeadReady), then the way runs. A machine that cannot draw it (no 3D, a narrow screen) draws
+       the select as it was meanwhile (online the way is always taken: its blanks are the same on every copy). */
+    sCine = -1;
+    sCinePre = 0;
+    sCineFx = -1;
+    if (sCineBlank > 0) {
+        s32 want = sCineLead >= 0 ? sCineLead : sShownChara[0]; /* (a random: whatever stands) */
+
+        ChrView_PortLeadReady(want); /* (always asked: it tells the viewer whom to wait for) */
+        if (sOn && s3D && !sNarrow && !split) {
+            sCineFx = sCineBlank - 1;
+            sCinePre = sCineFx < CS_FX_RISE;
+            sCine = sCinePre ? 0 : sCineFx - CS_FX_RISE;
+            if (sCine > CS_CINE_END + 600) {
+                sCine = CS_CINE_END + 600;
+            }
+            stagePhase = 0; /* (the way to the battle: the 3D on until the screen is left) */
+        }
+    }
+    scene = s3D && PortCharSel_Shown(stagePhase);
     s32 i;
 
     sSplit = split != 0;
     sViews[0] = view[0];
     if (sSplit) {
         sViews[1] = view[1];
+    }
+    if (sCine >= 0 && sCineLead >= 0) { /* the way to the battle: the player's fighter, not what the cursor rests on */
+        sViews[0].chara = sCineLead;
+        sViews[0].color = sCineLeadCostume;
     }
     sV = sViews[0];
     sNow = 0;
@@ -1215,14 +1384,16 @@ void PortCharSel_Frame(const CsView *view, s32 split, s32 stagePhase) {
             sRest[i]++;
         }
         if (sRest[i] >= CS_WAIT) {
-            sShownChara[i] = sWantChara[i];
+            s32 chara = sWantChara[i];
             /* (the cursor keeps the last fighter's costume: a number this one may not have, whose file is empty) */
-            sShownCostume[i] = sWantCostume[i];
-            if (Cs_IsFighter(sWantChara[i])) {
-                ChrTbl_WrapCostume(sWantChara[i], &sShownCostume[i]);
+            s32 costume = sWantCostume[i];
+            if (Cs_IsFighter(chara)) {
+                ChrTbl_WrapCostume(chara, &costume);
             } else {
-                sShownChara[i] = -1;
+                chara = -1;
             }
+            sShownChara[i] = chara;
+            sShownCostume[i] = costume;
         }
     }
 }
@@ -1244,12 +1415,15 @@ void PortCharSel_Frame(const CsView *view, s32 split, s32 stagePhase) {
 #define CW_ROWS 5
 #define CW_UPRIGHT 0.78f /* a chip's width for its height */
 #define CW_TILT 0.022f   /* each column of the roster so much smaller than the one before (the panel going back) */
-#define CW_PANEL_TOP Ps_Rgba(0x14, 0x14, 0x1A, 0x69)
-#define CW_PANEL_LOW Ps_Rgba(0x0E, 0x0E, 0x14, 0x70)
-#define CW_PANEL_LINE Ps_Rgba(0xDC, 0xE1, 0xF0, 0x4B)
-#define CW_LIT Ps_Rgba(0xF0, 0xF4, 0xFF, 0x80) /* (Instinto Prateado: silver going down to lilac) */
-#define CW_LIT_DEEP Ps_Rgba(0x96, 0x8C, 0xDC, 0x80)
-#define CW_DARK_TEXT Ps_Rgba(0x14, 0x14, 0x1E, 0x80) /* (words on the lit silver) */
+/* (the approved template since 20/11, previas-bt4/selecao-nova: indigo glass, a lavender edge, gold for what is
+   chosen; the roster's panel keeps the curve it had) */
+#define CW_PANEL_TOP Ps_Rgba(0x1C, 0x16, 0x40, 0x6C)
+#define CW_PANEL_LOW Ps_Rgba(0x0A, 0x08, 0x1E, 0x73)
+#define CW_PANEL_LINE Ps_Rgba(0x96, 0xAA, 0xFF, 0x3C)
+#define CW_LIT Ps_Rgba(0xFF, 0xC4, 0x40, 0x80) /* (the template's GOLD) */
+#define CW_LIT_DEEP Ps_Rgba(0xE6, 0x8C, 0x1E, 0x80)
+#define CW_DARK_TEXT Ps_Rgba(0xFF, 0xFF, 0xFF, 0x80) /* (words on the lit violet and orange: white) */
+#define CW_FORM_TEXT Ps_Rgba(0xFF, 0xDE, 0x78, 0x80) /* (the template's form and cost: gold) */
 #define CW_CHIP_TOP Ps_Rgba(0x46, 0x48, 0x58, 0x7A)
 #define CW_CHIP_LOW Ps_Rgba(0x1C, 0x1C, 0x26, 0x7C)
 #define CW_X Cs_UnitsAcross(26.0f)      /* the slots' left */
@@ -1473,7 +1647,7 @@ static void Cw_Nine(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 pad, f32 c, f32 
 /* A panel (cs_panel: its corners 16 of the template's pixels; r unused, the template's own). */
 static void Cw_Glass(f32 x0, f32 y0, f32 x1, f32 y1, f32 r) {
     (void)r;
-    Cw_Nine(TBO_CS_PANEL, x0, y0, x1, y1, 52.0f, 68.0f, 1.0f, PS_PLAIN);
+    Cw_Nine(TBO_CS_PANEL, x0, y0, x1, y1, 52.0f, 78.0f, 1.0f, PS_PLAIN); /* (corners 26 of the template's pixels) */
 }
 
 /* A button's pill of glass, round ends (cs_pill, drawn for its height). */
@@ -1499,9 +1673,22 @@ static void Cw_Plain(f32 x0, f32 y0, f32 x1, f32 y1, f32 r) {
     Cw_Nine(TBO_CS_PLAIN, x0, y0, x1, y1, 4.0f, 30.0f, r / CW_PXU / 26.0f, PS_PLAIN);
 }
 
-/* A dark card (cs_card), dim: darker. */
-static void Cw_Card(f32 x0, f32 y0, f32 x1, f32 y1, f32 r, s32 dim) {
-    Cw_Nine(TBO_CS_CARD, x0, y0, x1, y1, 12.0f, 34.0f, r / CW_PXU / 22.0f, dim ? 0x484848 : PS_PLAIN);
+/* A fighter's colour on its card (the template's six hues: orange, blue, green, red, yellow, violet, each as light
+   as its cells' tops), as a tint of cs_card (R | G << 8 | B << 16, 0x80 as it is); a place without one, plain. */
+static u32 Cw_Hue(s32 who, s32 dim) {
+    static const u8 kHue[6][3] = {{93, 64, 39}, {47, 61, 93}, {56, 83, 56}, {86, 47, 56}, {92, 83, 47}, {70, 56, 93}};
+    const u8 *h;
+
+    if (!Cs_IsFighter(who)) {
+        return dim ? 0x303030 : 0x5C5C5C;
+    }
+    h = kHue[(u32)(who * 7 + 3) % 6u];
+    return dim ? (u32)(h[0] / 2) | ((u32)(h[1] / 2) << 8) | ((u32)(h[2] / 2) << 16) : (u32)h[0] | ((u32)h[1] << 8) | ((u32)h[2] << 16);
+}
+
+/* A card of the roster (cs_card) in its fighter's colour; dim: darker. */
+static void Cw_Card(f32 x0, f32 y0, f32 x1, f32 y1, f32 r, s32 dim, s32 who) {
+    Cw_Nine(TBO_CS_CARD, x0, y0, x1, y1, 12.0f, 34.0f, r / CW_PXU / 22.0f, Cw_Hue(who, dim));
 }
 
 /* A face in an upright card: orange and lined in white when it is the one (chosen, under the cursor), light
@@ -1514,7 +1701,7 @@ static void Cw_FaceCard(s32 who, f32 x0, f32 y0, f32 x1, f32 y1, s32 lit, s32 di
     if (lit) {
         Cw_Lit(x0, y0, x1, y1, r, 0.0f);
     } else {
-        Cw_Card(x0, y0, x1, y1, r, dim);
+        Cw_Card(x0, y0, x1, y1, r, dim, who);
     }
     if (Cs_IsFighter(who)) {
         Port_GsMarker(GS_CHIP_ON);
@@ -1581,7 +1768,7 @@ static void Cw_Strip(void) {
                on ? CW_DARK_TEXT : Ps_Rgba(255, 255, 255, 0x80));
         if (sV.dpMax > 0) {
             snprintf(line, sizeof(line), "DP %d / %d", (int)sV.cost, (int)sV.dpMax);
-            Cw_Say(a + endW * 0.5f, y1 - Cw_Y(40.0f), line, 36.0f, endW, 1, Ps_Rgba(0xBE, 0xB9, 0xF0, 0x80), Ps_Rgba(0xBE, 0xB9, 0xF0, 0x80));
+            Cw_Say(a + endW * 0.5f, y1 - Cw_Y(40.0f), line, 36.0f, endW, 1, CW_FORM_TEXT, CW_FORM_TEXT);
         }
     } else {
         s32 chara = sV.chara;
@@ -1610,17 +1797,17 @@ static void Cw_Strip(void) {
         Cw_FaceCard(chara, f0, y0 + Cw_Y(22.0f), f1, y0 + Cw_Y(22.0f) + fh, 1, 0);
         /* (the name: the template's 62 at y0 + 34; alone, in the card's middle) */
         Cw_Say(nx, form[0] != 0 ? y0 + Cw_Y(34.0f + CW_LA(62.0f)) : (y0 + y1) * 0.5f, name, 62.0f, x1 - nx - Cw_X(30.0f), 0,
-               Ps_Rgba(255, 255, 255, 0x80), Ps_Rgba(0xF2, 0xF4, 0xFA, 0x80));
+               Ps_Rgba(255, 255, 255, 0x80), Ps_Rgba(0xBA, 0xDC, 0xFF, 0x80)); /* (the template's name: white to light blue) */
         if (form[0] != 0) {
-            Cw_Say(nx + Cw_X(4.0f), y1 - Cw_Y(64.0f - CW_LA(44.0f)), form, 44.0f, p0 - nx - Cw_X(24.0f), 0, Ps_Rgba(0xBE, 0xB9, 0xF0, 0x80),
-                   Ps_Rgba(0xBE, 0xB9, 0xF0, 0x80));
+            Cw_Say(nx + Cw_X(4.0f), y1 - Cw_Y(64.0f - CW_LA(44.0f)), form, 44.0f, p0 - nx - Cw_X(24.0f), 0, CW_FORM_TEXT,
+                   CW_FORM_TEXT);
         }
         if (Cs_IsFighter(chara)) {
             /* its cost, in a pill at the right of the form's line */
             snprintf(line, sizeof(line), "%d DP", (int)ChrTbl_GetCost(chara));
             Cw_Box(p0, y1 - Cw_Y(76.0f), p1, y1 - Cw_Y(24.0f), Cw_Y(26.0f), Ps_Rgba(0xDC, 0xE1, 0xF0, 0x0D), Ps_Rgba(0xDC, 0xE1, 0xF0, 0x0D));
             Cw_Line(p0, y1 - Cw_Y(76.0f), p1, y1 - Cw_Y(24.0f), Cw_Y(26.0f), Cw_Y(3.0f), Ps_Rgba(0xF0, 0xF4, 0xFF, 0x80));
-            Cw_Say((p0 + p1) * 0.5f, y1 - Cw_Y(50.0f), line, 38.0f, p1 - p0, 1, Ps_Rgba(0xBE, 0xB9, 0xF0, 0x80), Ps_Rgba(0xBE, 0xB9, 0xF0, 0x80));
+            Cw_Say((p0 + p1) * 0.5f, y1 - Cw_Y(50.0f), line, 38.0f, p1 - p0, 1, CW_FORM_TEXT, CW_FORM_TEXT);
         }
     }
 }
@@ -1721,7 +1908,7 @@ static void Cw_Grid(void) {
                 litK = k;
                 continue;
             }
-            Cw_Card(x0, y0, x0 + cw * k, y0 + CW_CELL * k, Cw_Y(16.0f) * k, Cw_Taken(cells[i].id));
+            Cw_Card(x0, y0, x0 + cw * k, y0 + CW_CELL * k, Cw_Y(16.0f) * k, Cw_Taken(cells[i].id), cells[i].id);
         }
     }
     Port_GsMarker(GS_CHIP_ON);
@@ -1843,7 +2030,9 @@ static void Cw_Text(f32 x, f32 y, char *s, f32 scale, f32 width, s32 align, u32 
     f32 pageW = Cs_PageX(width) - Cs_PageX(0.0f);
 
     Ps_Align(align);
-    Ps_TextExOuterXY(Cs_PageX(x + sShift), Cs_PageY(y), s, scale * sTextWide, scale, pageW, Cs_A(top), Cs_A(bottom), 0, 0, 0.0f);
+    /* (the template's letters: a dark navy edge round them, readable over the stage) */
+    Ps_TextExOuterXY(Cs_PageX(x + sShift), Cs_PageY(y), s, scale * sTextWide, scale, pageW, Cs_A(top), Cs_A(bottom),
+                     Cs_A(Ps_Rgba(0x12, 0x0E, 0x34, 0x70)), 0, 0.0f);
     Ps_Align(0);
 }
 
@@ -1858,7 +2047,7 @@ static void Cw_Head(f32 x0, f32 y, f32 x1, s32 word, char *right) {
     Cw_Box(x0 + Cw_X(30.0f), y + Cw_Y(4.0f), x0 + Cw_X(40.0f), y + Cw_Y(50.0f), Cw_Y(5.0f), CW_LIT, CW_LIT);
     Cw_Say(x0 + Cw_X(60.0f), y + Cw_Y(CW_LA(46.0f)), (char *)Cs_Words(word), 46.0f, 0.0f, 0, Ps_Rgba(255, 255, 255, 0x80), Ps_Rgba(255, 255, 255, 0x80));
     if (right != NULL) {
-        Cw_Say(x1 - Cw_X(40.0f), y + Cw_Y(4.0f + CW_LA(40.0f)), right, 40.0f, 0.0f, 2, Ps_Rgba(0xBE, 0xB9, 0xF0, 0x80), Ps_Rgba(0xBE, 0xB9, 0xF0, 0x80));
+        Cw_Say(x1 - Cw_X(40.0f), y + Cw_Y(4.0f + CW_LA(40.0f)), right, 40.0f, 0.0f, 2, CW_FORM_TEXT, CW_FORM_TEXT);
     }
 }
 
@@ -1941,7 +2130,7 @@ static void Cw_Details(void) {
             if (lit) {
                 Cw_Lit(a, top - up, a + cw, top + ch - up, rc, Cw_Y(sV.formActive ? 6.0f : 5.0f));
             } else {
-                Cw_Card(a, top, a + cw, top + ch, rc, 0);
+                Cw_Card(a, top, a + cw, top + ch, rc, 0, cell->form[i]); /* (each form in its own colour) */
             }
         }
         Port_GsMarker(GS_CHIP_ON);
@@ -1968,11 +2157,11 @@ static void Cw_Details(void) {
             if (beside) {
                 f32 fx = x0 + Cw_X(40.0f + (f32)n * 176.0f + 6.0f);
 
-                Cw_Say(fx, y + Cw_Y(160.0f + CW_LA(46.0f)), form, 46.0f, x1 - Cw_X(30.0f) - fx, 0, Ps_Rgba(0xBE, 0xB9, 0xF0, 0x80),
-                       Ps_Rgba(0xBE, 0xB9, 0xF0, 0x80));
+                Cw_Say(fx, y + Cw_Y(160.0f + CW_LA(46.0f)), form, 46.0f, x1 - Cw_X(30.0f) - fx, 0, CW_FORM_TEXT,
+                       CW_FORM_TEXT);
             } else {
-                Cw_Say(x0 + Cw_X(40.0f), top + ch + Cw_Y(50.0f), form, 46.0f, x1 - x0 - Cw_X(80.0f), 0, Ps_Rgba(0xBE, 0xB9, 0xF0, 0x80),
-                       Ps_Rgba(0xBE, 0xB9, 0xF0, 0x80));
+                Cw_Say(x0 + Cw_X(40.0f), top + ch + Cw_Y(50.0f), form, 46.0f, x1 - x0 - Cw_X(80.0f), 0, CW_FORM_TEXT,
+                       CW_FORM_TEXT);
             }
         }
         sAlpha = 1.0f;
@@ -2110,7 +2299,7 @@ static void Cw_Items(s32 side) {
         snprintf(line, sizeof(line), "%d / %d", (int)p->used, (int)p->limit);
         Cw_Box(p0, y + Cw_Y(28.0f), p1, y + Cw_Y(86.0f), Cw_Y(29.0f), Ps_Rgba(0xDC, 0xE1, 0xF0, 0x0D), Ps_Rgba(0xDC, 0xE1, 0xF0, 0x0D));
         Cw_Line(p0, y + Cw_Y(28.0f), p1, y + Cw_Y(86.0f), Cw_Y(29.0f), Cw_Y(3.0f), Ps_Rgba(0xF0, 0xF4, 0xFF, 0x80));
-        Cw_Say((p0 + p1) * 0.5f, y + Cw_Y(57.0f), line, 38.0f, p1 - p0, 1, Ps_Rgba(0xBE, 0xB9, 0xF0, 0x80), Ps_Rgba(0xBE, 0xB9, 0xF0, 0x80));
+        Cw_Say((p0 + p1) * 0.5f, y + Cw_Y(57.0f), line, 38.0f, p1 - p0, 1, CW_FORM_TEXT, CW_FORM_TEXT);
     }
     y += Cw_Y(110.0f);
     for (i = 0; i < ITEMPANEL_ROWS; i++) {
@@ -2230,7 +2419,7 @@ static void Cw_Line2D(void) {
         f32 c1 = y0 + Cw_Y(240.0f) - up;
 
         if (!Cs_IsFighter(sV.teamChara[i])) {
-            Cw_Card(a, c0, a + cw, c1, rc, 1);
+            Cw_Plain(a, c0, a + cw, c1, rc); /* (an empty place: the template's indigo slot with its plus) */
             Cw_Say(a + cw * 0.5f, (c0 + c1) * 0.5f, "+", 90.0f, 0.0f, 1, Ps_Rgba(0xFF, 0xFF, 0xFF, 0x64), Ps_Rgba(0xFF, 0xFF, 0xFF, 0x64));
             continue;
         }
@@ -2249,13 +2438,73 @@ static void Cw_Line2D(void) {
     }
 }
 
+/* The dust that covers the screen at the press that starts the battle (the user: the effect must come at that very moment, then the
+   way to the battle begins under it, and the dust clears away on it): brown earth smoke, puffs rising and swirling from the bottom, soft at
+   their edges, over a brown veil. t: frames since the press. It is full over the screen at CS_FX_RISE (the way begins there) and has cleared
+   at CS_FX_END. */
+/* One wisp of dust: a soft streak (opaque along its middle, clear at both sides) from (cx, cy) along (dx, dy), `len` long and `wid` wide. */
+static void Cw_Wisp(f32 cx, f32 cy, f32 dx, f32 dy, f32 len, f32 wid, u32 mid, u32 edge) {
+    f32 hx = dx * len * 0.5f, hy = dy * len * 0.5f, nx = -dy * wid * 0.5f, ny = dx * wid * 0.5f;
+
+    Ps_ScreenQuad(cx - hx - nx, cy - hy - ny, cx + hx - nx, cy + hy - ny, cx - hx, cy - hy, cx + hx, cy + hy, edge, edge, mid, mid);
+    Ps_ScreenQuad(cx - hx, cy - hy, cx + hx, cy + hy, cx - hx + nx, cy - hy + ny, cx + hx + nx, cy + hy + ny, mid, mid, edge, edge);
+}
+
+/* The transition of the press, as the speed lines were, in dust: brown earth smoke streaming across the screen from the bottom left to the top
+   right, in quickly and out quickly, with light and dark streaks racing along it. All drawn; nothing of the game's. t: frames since the press. */
+static void Cw_Dust(s32 t) {
+    static const f32 dx = 0.906f, dy = -0.423f; /* their way, up to the right */
+    static const u8 tone[4][3] = {{0xC8, 0xCB, 0xD2}, {0xA6, 0xAB, 0xB4}, {0xDC, 0xDF, 0xE4}, {0x8A, 0x90, 0x9A}}; /* light, mid, pale, dark grey (the user: grey, not brown) */
+    f32 env;
+    s32 k;
+
+    if (!CS_DUST || t < 0 || t >= CS_FX_END) {
+        return;
+    }
+    env = t < CS_FX_RISE ? (f32)t / (f32)CS_FX_RISE : t < CS_FX_HOLD ? 1.0f : 1.0f - (f32)(t - CS_FX_HOLD) / (f32)(CS_FX_END - CS_FX_HOLD);
+    env = env * env * (3.0f - 2.0f * env);
+    {   /* the ground of it: sand at the top, earth at the bottom */
+        u32 c0 = Ps_Rgba(0xC6, 0xC9, 0xD0, (s32)(0x78 * env)), c1 = Ps_Rgba(0x9C, 0xA1, 0xAB, (s32)(0x78 * env));
+
+        Ps_ScreenQuad(-40.0f, -40.0f, 552.0f, -40.0f, -40.0f, 488.0f, 552.0f, 488.0f, c0, c0, c1, c1);
+    }
+    for (k = 0; k < 22; k++) { /* the smoke: wide soft streaks racing along, each at its own speed, thick and thin */
+        u32 h = (u32)(k * 2654435761u) ^ 0x9E3779B9u;
+        f32 r0 = (f32)(h & 0xFF) / 255.0f, r1 = (f32)((h >> 8) & 0xFF) / 255.0f, r2 = (f32)((h >> 16) & 0xFF) / 255.0f, r3 = (f32)((h >> 24) & 0xFF) / 255.0f;
+        f32 len = 300.0f + 420.0f * r0, wid = 60.0f + 110.0f * r1;
+        f32 across = -300.0f + 800.0f * r2;
+        f32 along = (f32)((s32)(r0 * 900.0f + (f32)t * (18.0f + 22.0f * r3)) % 1000) - 380.0f;
+        f32 sway = sinf((f32)t * 0.09f + r1 * 6.2832f) * 16.0f; /* (it billows a little as it goes) */
+        f32 cx = 256.0f + along * dx - (across + sway) * dy, cy = 224.0f + along * dy + (across + sway) * dx;
+        const u8 *c = tone[k & 3];
+        s32 a = (s32)(0x6C * env * (0.55f + 0.45f * r3));
+
+        Cw_Wisp(cx, cy, dx, dy, len, wid, Ps_Rgba(c[0], c[1], c[2], a), Ps_Rgba(c[0], c[1], c[2], 0));
+    }
+    for (k = 0; k < 26; k++) { /* the streaks over it, thin: light dust and dark earth */
+        u32 h = (u32)(k * 2246822519u) ^ 0x85EBCA6Bu;
+        f32 r0 = (f32)(h & 0xFF) / 255.0f, r1 = (f32)((h >> 8) & 0xFF) / 255.0f, r2 = (f32)((h >> 16) & 0xFF) / 255.0f;
+        f32 len = 90.0f + 220.0f * r0, thick = 2.0f + 8.0f * r1;
+        f32 across = -260.0f + 760.0f * r2;
+        f32 along = (f32)((s32)((r0 * 900.0f + (f32)t * 30.0f)) % 900) - 300.0f;
+        f32 cx = 256.0f + along * dx - across * dy, cy = 224.0f + along * dy + across * dx;
+        f32 hx = dx * len * 0.5f, hy = dy * len * 0.5f, nx = -dy * thick * 0.5f, ny = dx * thick * 0.5f;
+        s32 light = (h >> 24) & 1;
+        u32 c = light ? Ps_Rgba(0xF2, 0xF4, 0xF8, (s32)(0x80 * env)) : Ps_Rgba(0x78, 0x7E, 0x88, (s32)(0x70 * env));
+        u32 tl = light ? Ps_Rgba(0xF2, 0xF4, 0xF8, 0) : Ps_Rgba(0x78, 0x7E, 0x88, 0);
+
+        Ps_ScreenQuad(cx - hx - nx, cy - hy - ny, cx + hx - nx, cy + hy - ny, cx - hx + nx, cy - hy + ny, cx + hx + nx, cy + hy + ny, tl, c, tl, c);
+    }
+}
+
 static void Cw_Draw(void) {
     f32 middle[2];
     s32 line = (sV = sViews[0], Cw_ViewTeamPad(), Cw_LineShown());
     s32 n = 0;
     s32 i;
 
-    middle[0] = 512.0f * 0.61f; /* (the fighter near the roster, as the user asked) */
+    middle[0] = 512.0f * 0.55f; /* (the fighter between the roster and the panels on the right: at 0.61 he stood too
+                                    far right, as the user saw) */
     middle[1] = 0.0f;
     if (!s3D || !Port_NetListShown() || !ChrView_PortStageUp()) {
         /* (until the stage is up: then it covers all of this. Drawn under it every frame before, full screen four times
@@ -2268,6 +2517,10 @@ static void Cw_Draw(void) {
         s32 costume[CS_TEAM_MAX];
         f32 at[CS_TEAM_MAX];
 
+        if (sCine >= 0) { /* the way to the battle: a team in its row, from where it starts; nothing turned by hand */
+            line = sV.isTeam && Cw_TeamCount() > 0;
+            turn = 0.0f;
+        }
         if (!line && (turn > 0.1f || turn < -0.1f)) {
             sYawOf[0] += turn * 0.06f;
             if (sYawOf[0] > 3.14159265f) {
@@ -2304,11 +2557,35 @@ static void Cw_Draw(void) {
         /* (one on one: turned a little more to the right than on a team's select, as the user asked) */
         ChrView_PortStyle(1, Port_SelectEntrance(), (f32)(Port_SelectTurnMilli() - (sV.isTeam ? 0 : 100)) * 0.001f);
         ChrView_PortLineup(n, chara, costume, at);
+        ChrView_PortCinemaPre(sCinePre);
+        ChrView_PortCinema(sCinePre ? -1 : sCine, sCineOpp, sCineOppCostume);
+        if (sCine >= 0) {
+            s32 k;
+
+            sKeepOk = 1;
+            sKeepN = n;
+            sKeepTeam = sV.isTeam;
+            sKeepMiddle[0] = middle[0];
+            sKeepMiddle[1] = middle[1];
+            for (k = 0; k < n && k < 8; k++) {
+                sKeepChara[k] = chara[k];
+                sKeepCostume[k] = costume[k];
+                sKeepAt[k] = at[k];
+            }
+        }
         if (Port_NetListShown()) {
             ChrView_PortFrame(middle, sYawOf, sShownChara, sShownCostume, 0);
         }
     }
-    if (!line && (!s3D || !ChrView_PortVisible(0))) {
+    if (Port_Setting("select_native_ui", 0)) { /* (off until it is tried on a phone, the user's choice: select_native_ui = 1 turns it on) */
+        Port_GsMarker(GS_NATIVE_ON); /* (from here to PortCharSel_DrawEnd: the screen's 2D, at the screen's resolution) */
+    }
+    if (sCine >= 0) { /* the way to the battle: only the 3D, and the speed lines over it */
+        Cw_Dust(sCineFx); /* (from the press: the dust covers the screen, the way begins under it, it clears away on it) */
+        Font_FlushAll();
+        return;
+    }
+    if (!line && !s3D) { /* (the portrait only where there is no 3D model at all: with it, none shows before the model comes, the user) */
         sV = sViews[0];
         Cs_Portrait(middle[0], 330.0f);
     }
@@ -2500,6 +2777,43 @@ void PortCharSel_DrawItems(void) {
 }
 
 void PortCharSel_DrawEnd(void) {
+    Port_GsMarker(GS_NATIVE_OFF);
     Port_GsMarker(GS_WHOLE_OFF);
 }
 #endif
+
+/* The way to the battle as the battle's loading screen (Load_RunBlocking): one frame of it, the viewer's world kept
+   up past the select. */
+s32 PortCharSel_CineHold(void) {
+    return sCineHold;
+}
+s32 PortCharSel_CineLoadFrame(void) {
+    if (!sCineHold) {
+        return 0;
+    }
+    if (sCine < CS_CINE_END + 600) {
+        sCine++;
+    }
+    fprintf(stderr, "bt3: cine: load frame %d\n", (int)sCine); /* (measured, for the recordings) */
+    Port_MenuScene3D(1);
+    ChrView_PortStyle(1, Port_SelectEntrance(), (f32)(Port_SelectTurnMilli() - (sKeepTeam ? 0 : 100)) * 0.001f);
+    ChrView_PortLineup(sKeepN, sKeepChara, sKeepCostume, sKeepAt);
+    ChrView_PortCinema(sCine, sCineOpp, sCineOppCostume);
+    ChrView_PortFrame(sKeepMiddle, sYawOf, sShownChara, sShownCostume, 0);
+    Cw_Dust(sCineFx);
+    Font_FlushAll();
+    return 1;
+}
+s32 PortCharSel_CineLoadDone(void) {
+    return !sCineHold || sCine >= CS_CINE_END;
+}
+void PortCharSel_CineFinish(void) {
+    if (!sCineHold) {
+        return;
+    }
+    sCineHold = 0;
+    ChrView_PortEnd();
+    Port_MenuScene3D(0);
+    sCine = -1;
+    s3D = 0;
+}

@@ -25,6 +25,12 @@ static s32 sPortStageNameHidden;
 static s32 sPortStagesAdded; /* this stage select shows stages from outside the disc */
 static s32 sPortSongsAdded;  /* ... and its music list songs from outside the disc */
 static s32 sPortStageRows = 11; /* rows of the stage reel: the game's 6, more with stages added */
+#ifdef PORT
+/* The map before the fighters (Dragon Rage, the user's order; offline with the new select): 1 the reel to open as the
+   screen is ready, 3 choosing in it, 2 chosen (its place kept: when both teams are done the battle goes there), 0 the
+   game's own order */
+static s32 sPortStageFirst, sPortFirstRow, sPortFirstCol, sPortFirstStage;
+#endif
 /* The picture behind the reel: a disc stage's own (0x39D + id); an added stage borrows one (its id past 0x23
    would fall on the loading screens' files), as in the duel's select. */
 #define TS_STAGE_PICTURE(id) (TS_STAGE_FILE + ((id)>=0x63?0:(id)))
@@ -956,7 +962,11 @@ void TeamSel_Term(void) {
 /* Draws the two stage pictures (cross fade), sets up every clip of the seven movies and draws them and the windows. */
 #ifdef PORT
 #include "menu/port_charsel.h"
-#define TEAMSEL_PORT_STAGE() ((gTeamSel->flags & (TEAMSEL_STAGE | TEAMSEL_LEAVING)) != 0)
+/* The map first (sPortStageFirst 1): until its reel opens, the screen holds, empty: neither the new select (its 3D world
+   split in two, its name plates) nor the game's own pieces are shown, only run (the movies' state is the game's). The user's
+   recording had the select up for half a second and the plates of the game's chips sliding in over the map. */
+#define TEAMSEL_PORT_HOLD() (sPortStageFirst == 1)
+#define TEAMSEL_PORT_STAGE() ((gTeamSel->flags & (TEAMSEL_STAGE | TEAMSEL_LEAVING)) != 0 || TEAMSEL_PORT_HOLD())
 
 /* What the new screen shows of one side (src/menu/port_charsel.c). */
 static void TeamSel_PortFill(CsView *v, s32 side) {
@@ -1012,7 +1022,7 @@ static void TeamSel_PortFrame(void) {
         TeamSel_PortFill(&v[1], 1);
         PortCharSel_Frame(v, 1, TEAMSEL_PORT_STAGE());
     } else {
-        TeamSel_PortFill(&v[0], gTeamSel->base & 1);
+        TeamSel_PortFill(&v[0], PortCharSel_InCinema() ? PortCharSel_NetSide(0) : gTeamSel->base & 1); /* (the way to the battle: the player's team) */
         PortCharSel_Frame(v, 0, TEAMSEL_PORT_STAGE());
     }
 }
@@ -1029,7 +1039,7 @@ void TeamSel_Draw(void) {
     s32 cost;
 
 #ifdef PORT
-    if (PortCharSel_Shown(TEAMSEL_PORT_STAGE())) {
+    if (PortCharSel_Shown(TEAMSEL_PORT_STAGE()) || TEAMSEL_PORT_HOLD()) {
         PortCharSel_MuteOn(); /* all of this still runs (the movies' state is the game's); none of it is shown */
     }
 #endif
@@ -1472,6 +1482,11 @@ void TeamSel_Draw(void) {
     for (i = 0; i < TEAMSEL_FLASH_NUM; i++) {
 #ifdef PORT
         if(sTagSelectActive && (gTeamSel->flags&TEAMSEL_STAGE) && i>0)continue;
+        /* The map first, its reel open and nothing chosen yet: the team strips (the movies after the first: the faces of
+           each side's team, with their cost plates) are the fighters' select, showing the last battle's or nobody's, over the
+           reel's title and the music bar. As the Tag Select's, they are not drawn here (user: "a part of the select stays in
+           the map"). */
+        if(sPortStageFirst==3 && (gTeamSel->flags&TEAMSEL_STAGE) && i>0)continue;
         Port_MenuMovie(i);
 #endif
         Flash_Draw(&gTeamSel->flash[i]);
@@ -1504,6 +1519,9 @@ void TeamSel_Draw(void) {
     ItemPanel_Draw(1);
     ItemHelp_Draw(gTeamSel->help);
 #ifdef PORT
+    if (TEAMSEL_PORT_HOLD()) {
+        PortCharSel_MuteOff(); /* (the hold of the map first: all of it ran, none of it was shown) */
+    }
     Port_MenuPage(0);
 #endif
 }
@@ -1634,12 +1652,46 @@ f32 TeamSel_Input(s32 *result) {
         break;
     }
     if (!(gTeamSel->flags & TEAMSEL_STARTED)) {
+#ifdef PORT
+        if (sPortStageFirst != 1) /* (the map first: the name chips come in once the map is chosen, not over it) */
+#endif
         for (i = 0; i < pads; i++) {
             TeamSel_ClipGoto(i + 3, i, TEAMSEL_CLIP_CHIP, "fl_on_start");
         }
         gTeamSel->flags |= TEAMSEL_STARTED;
     }
 
+#ifdef PORT
+    if (PortCharSel_InCinema()) { /* the way to the battle: nothing chosen any more; at its end the screen is left */
+        PortCharSel_CineBlank();
+        if ((gPad[0].gamePressed | gPad[1].gamePressed) & (PADG_CROSS | PADG_START)) {
+            PortCharSel_CinemaSkip(); /* (a press of either player skips it: online the pads are the two copies', the same on both) */
+        }
+        if (PortCharSel_CinemaDone() && !(gTeamSel->flags & TEAMSEL_LEAVING)) {
+            gTeamSel->flags |= TEAMSEL_STAGE | TEAMSEL_DECIDED | TEAMSEL_LEAVING;
+            gTeamSel->timer = 0;
+        }
+        return;
+    }
+    if (sPortStageFirst == 1 && !(gTeamSel->flags & TEAMSEL_STAGE)) { /* the map first: its reel as the screen is ready */
+        Flash_GotoLabel(&gTeamSel->flash[0], "fl_map", 1);
+        IconWin_Open();
+        TeamSel_ClipGoto(0, 0, TEAMSEL_CLIP_STAGE_CHIP, "fl_on_start");
+        gTeamSel->flags |= TEAMSEL_STAGE;
+        gTeamSel->faceMask = 1;
+        gTeamSel->stage->state = TEAMSEL_STAGE_GRID;
+        sPortStageFirst = 3;
+        return;
+    }
+    if (sPortStageFirst == 3 && (gTeamSel->flags & TEAMSEL_STAGE) && gTeamSel->stage->state == TEAMSEL_STAGE_GRID &&
+        (gPad[0].gamePressed & 0x400)) { /* back from the first map: the screen is left */
+        IconWin_Close();
+        ColorFade_StartOut(0, 0, 0, 0x14);
+        *result = 0;
+        Snd_PlaySe(1, 2);
+        return;
+    }
+#endif
     if (gTeamSel->flags & TEAMSEL_STAGE) {
         switch (gTeamSel->stage->state) {
         case TEAMSEL_STAGE_GRID:
@@ -1701,6 +1753,27 @@ f32 TeamSel_Input(s32 *result) {
                     TeamSel_ClipGoto(0, 0, TEAMSEL_CLIP_BGM, "fl_on_start");
                     gTeamSel->stage->bgmCursor = gTeamSel->stage->bgm;
                     gTeamSel->stage->state = TEAMSEL_STAGE_BGM;
+#ifdef PORT
+                } else if (sPortStageFirst == 3) {
+                    /* the map first: kept, and on to the fighters, in front of it (the select's world made with it) */
+                    sPortFirstRow = gTeamSel->stage->row;
+                    sPortFirstCol = gTeamSel->stage->col;
+                    sPortFirstStage = gTeamSel->stage->stage;
+                    PortCharSel_SetStage(sPortFirstStage);
+                    gTeamSel->flags &= ~TEAMSEL_STAGE;
+                    Flash_GotoLabel(&gTeamSel->flash[0], "fl_map_cansel", 1);
+                    IconWin_Close();
+                    TeamSel_ClipGoto(0, 0, TEAMSEL_CLIP_STAGE_CHIP, "fl_off_start");
+                    gTeamSel->faceMask = 0;
+                    sPortStageFirst = 2;
+                    {   /* the name chips held back while the map was chosen: in now, for the fighters */
+                        s32 q;
+
+                        for (q = 0; q < pads; q++) {
+                            TeamSel_ClipGoto(q + 3, q, TEAMSEL_CLIP_CHIP, "fl_on_start");
+                        }
+                    }
+#endif
                 } else {
                     /* the stage is chosen: the battle starts after 60 frames */
                     Flash_GotoLabel(&gTeamSel->flash[0], "fl_vs", 1);
@@ -1906,6 +1979,12 @@ f32 TeamSel_Input(s32 *result) {
                     } else if (gTeamSel->players != TEAMSEL_PLAYERS_TWO) {
                         switch (gTeamSel->base) {
                         case 0:
+#ifdef PORT
+                            if (sPortStageFirst == 2) { /* the map was chosen first: back to it, not out of the screen */
+                                sPortStageFirst = 1;
+                                break;
+                            }
+#endif
                             /* leave the screen */
                             ColorFade_StartOut(0, 0, 0, 0x14);
                             *result = 0;
@@ -1920,8 +1999,15 @@ f32 TeamSel_Input(s32 *result) {
                             break;
                         }
                     } else {
-                        ColorFade_StartOut(0, 0, 0, 0x14);
-                        *result = 0;
+#ifdef PORT
+                        if (sPortStageFirst == 2) { /* (two pads) the map was chosen first: back to it */
+                            sPortStageFirst = 1;
+                        } else
+#endif
+                        {
+                            ColorFade_StartOut(0, 0, 0, 0x14);
+                            *result = 0;
+                        }
                     }
                     Snd_PlaySe(1, 2);
                 }
@@ -2374,6 +2460,24 @@ f32 TeamSel_Input(s32 *result) {
                 if (gTeamSel->flags & TEAMSEL_STAGE) {
                     continue;
                 }
+#ifdef PORT
+                if (gTeamSel->side[(i + gTeamSel->base) ^ 1]->state == TEAMSEL_ST_DONE && sPortStageFirst == 2) {
+                    /* both teams are complete, the map chosen first: the battle there, by the new select's way to it
+                       (the camera to the first fighter, round him, the other team's first in front:
+                       PortCharSel_CinemaStart; TeamSel_Run leaves at its end), else after the game's VS of 60 frames */
+                    gTeamSel->stage->row = sPortFirstRow;
+                    gTeamSel->stage->col = sPortFirstCol;
+                    gTeamSel->stage->stage = sPortFirstStage;
+                    gTeamSel->faceMask = 0;
+                    if (!PortCharSel_CinemaStart(gTeamSel->side[PortCharSel_NetSide(0) ^ 1]->member[0].chara, gTeamSel->side[PortCharSel_NetSide(0) ^ 1]->member[0].color,
+                                                 gTeamSel->side[PortCharSel_NetSide(0)]->member[0].chara, gTeamSel->side[PortCharSel_NetSide(0)]->member[0].color)) {
+                        Flash_GotoLabel(&gTeamSel->flash[0], "fl_vs", 1);
+                        gTeamSel->flags |= TEAMSEL_STAGE | TEAMSEL_DECIDED | TEAMSEL_LEAVING;
+                        gTeamSel->timer = 0x3C;
+                    }
+                    Snd_PlaySe(1, 1);
+                } else
+#endif
                 if (gTeamSel->side[(i + gTeamSel->base) ^ 1]->state == TEAMSEL_ST_DONE) {
                     /* both teams are complete: on to the stage */
                     Flash_GotoLabel(&gTeamSel->flash[0], "fl_map", 1);
@@ -2419,6 +2523,10 @@ s32 TeamSel_Run(s32 section) {
     TeamSel_Init(section);
 #ifdef PORT
     PortCharSel_Begin(1); /* (BT4decomp: the new screen, src/menu/port_charsel.c) */
+    {   /* the map first (the setting select_stage_first, 1 by default): offline, with the new screen */
+        extern int Port_Setting(const char *name, int def), Port_NetSession(void), Port_NetActive(void);
+        sPortStageFirst = PortCharSel_On() && (Port_NetSession() || Port_NetActive() || Port_Setting("select_stage_first", 1)) ? 1 : 0;
+    }
 #endif
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {
@@ -2456,11 +2564,25 @@ s32 TeamSel_Run(s32 section) {
         if (gTeamSel->flags & TEAMSEL_LEAVING) {
             if (--gTeamSel->timer == -1) {
                 /* the stage was chosen 60 frames ago: fade out and remember the choices for the next visit */
+#ifdef PORT
+                if (PortCharSel_InCinema()) {
+                    PortHold_Capture(); /* the way's last frame is kept, to stay on over the battle's loading */
+                }
+                if (!PortHold_Active()) {
+                    ColorFade_StartOut(0, 0, 0, PortCharSel_InCinema() ? 1 : 0x14); /* (after the way to the battle: a cut) */
+                }
+#else
                 ColorFade_StartOut(0, 0, 0, 0x14);
+#endif
                 gTsProgress->team[0] = *(TsTeam *)gTeamSel->side[0];
                 gTsProgress->team[1] = *(TsTeam *)gTeamSel->side[1];
                 gTsProgress->stageCell = gTeamSel->stage->col + gTeamSel->stage->row * TS_STAGE_COLS;
                 gTsProgress->bgm = gTeamSel->bgmIds[gTeamSel->stage->bgm];
+#ifdef PORT
+                if (PortHold_Active()) {
+                    break; /* no fade to black: the picture goes straight on into the loading (stg_b.c PortHold_*) */
+                }
+#endif
             }
             continue;
         }
@@ -2469,6 +2591,7 @@ s32 TeamSel_Run(s32 section) {
 
 #ifdef PORT
     PortCharSel_End();
+    sPortStageFirst = 0;
 #endif
     if (result != 0) {
         s32 handicap[2] = { 1, 1 };

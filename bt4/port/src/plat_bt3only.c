@@ -17,9 +17,18 @@ unsigned Port_LoadTimeUs(void) { return (unsigned)(SDL_GetTicksNS() / 1000); }
    BT4_SELECT_STAGE=<id> (testing). */
 #include <stdlib.h>
 #include <stdio.h>
+static int sSelectChosen = -1; /* the stage chosen before the fighters (Port_SelectStageSet), -1 none */
 int Port_SelectStage(void) {
     const char *e = getenv("BT4_SELECT_STAGE");
+    if (sSelectChosen >= 0) {
+        return sSelectChosen;
+    }
     return e != NULL && e[0] != '\0' ? atoi(e) : 7;
+}
+/* The select's stage-first order (src/menu/menu_e_b.c, menu_c_e.c): the map chosen first is the one behind the
+   fighters; -1 back to the usual one. */
+void Port_SelectStageSet(int stage) {
+    sSelectChosen = stage;
 }
 
 /* Whose motions every fighter of BT4's new select plays (its entrance, then standing still): Goku Black's base form,

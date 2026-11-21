@@ -1009,8 +1009,10 @@ static void Tb_QuickStart(void) {
 static void Tb_QuickUpdate(s32 live) {
     Pad *pad = &gPad[0];
 
+    /* (as the template: the battle's cards and the region chosen with left / right, up / down between them, Cross
+       searches from either) */
+    Ps_Prompt(0, "Search");
     Ps_Prompt(3, "Change");
-    Ps_Prompt(0, sTb->qkCur == 2 ? "Search" : "Next");
     Ps_Prompt(2, "Back");
     if (sTb->frames - sTb->asked > 1800) { /* how many wait in each queue, asked again every half minute */
         sTb->asked = sTb->frames;
@@ -1019,7 +1021,12 @@ static void Tb_QuickUpdate(s32 live) {
     if (!live) {
         return;
     }
-    Ps_Move(&sTb->qkCur, 3);
+    if (sTb->qkCur > 1 || (sTb->quickFromTag && sTb->qkCur > 0)) {
+        sTb->qkCur = 0;
+    }
+    if (!sTb->quickFromTag) {
+        Ps_Move(&sTb->qkCur, 2);
+    }
     if (sTb->qkCur == 0 && Ps_Side() != 0) {
         if(sTb->quickFromTag)sTb->queue = 1+(sTb->queue-1 + Ps_Side() + 3) % 3;
         else sTb->queue = !sTb->queue;
@@ -1029,13 +1036,8 @@ static void Tb_QuickUpdate(s32 live) {
         Snd_PlaySe(1, 0);
     }
     if (pad->gamePressed & (PADG_CROSS | PADG_START)) {
-        if (sTb->qkCur == 2 || (pad->gamePressed & PADG_START)) {
-            Snd_PlaySe(1, 1);
-            Tb_QuickStart();
-        } else {
-            Snd_PlaySe(1, 0);
-            sTb->qkCur++;
-        }
+        Snd_PlaySe(1, 1);
+        Tb_QuickStart();
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
         Tb_SetMode(sTb->quickFromTag?TB_TAG:TB_HUB);
@@ -1393,7 +1395,7 @@ static void Tb_HubEnter(void) {
         switch (sTb->hubCur) {
         case HUB_QUICK:
             sTb->quickFromTag=0;sTb->queue=Port_Setting("tbo_queue",0)==1;
-            sTb->qkCur = 2;
+            sTb->qkCur = 0; /* (the battles first: Cross searches from either row) */
             sTb->asked = sTb->frames - 100000;
             Tb_SetMode(TB_QUICK);
             break;
@@ -1508,15 +1510,7 @@ static void Tb_CreateUpdate(s32 live) {
     if (!live) {
         return;
     }
-    {   /* the rules in two columns, as tbo_look.inc lays them out (Create Room: the big button at the right's foot) */
-        s32 item[CR_COUNT], col[CR_COUNT], row[CR_COUNT], k;
-        for (k = 0; k < CR_COUNT; k++) {
-            item[k] = k;
-            col[k] = k % 2;
-            row[k] = k / 2;
-        }
-        Tb_ColumnMove(&sTb->crCur, item, col, row, CR_COUNT);
-    }
+    Ps_Move(&sTb->crCur, CR_COUNT); /* (the rules one under the other, as tbo_look.inc lays them out; Create Room last) */
     side = Ps_Side();
     if (sTb->crCur == CR_ADDR && (pad->gameRepeat & (PADG_R1 | PADG_L1))) { /* the port in hundreds */
         side = (pad->gameRepeat & PADG_R1) ? 100 : -100;

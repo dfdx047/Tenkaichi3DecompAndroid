@@ -730,6 +730,14 @@ void Bt4Profile_TopCountry(int i, char out[4]) {
     else out[0] = '\0';
     SDL_UnlockMutex(sP.lock);
 }
+/* the same by the place in the table (0: the first), whatever page of it is shown */
+void Bt4Profile_TopCountryAt(int k, char out[4]) {
+    profile_start();
+    SDL_LockMutex(sP.lock);
+    if (k >= 0 && k < sP.topCount) SDL_memcpy(out, sP.topCountry[k], 4);
+    else out[0] = '\0';
+    SDL_UnlockMutex(sP.lock);
+}
 void Port_RankedPage(int direction) {
     profile_start();
     SDL_LockMutex(sP.lock);

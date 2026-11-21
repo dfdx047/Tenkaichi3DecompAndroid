@@ -41,7 +41,19 @@ void PortCharSel_Begin(s32 allow);
 void PortCharSel_End(void);
 void PortCharSel_Abandon(void);
 s32 PortCharSel_Shown(s32 stagePhase);
+s32 PortCharSel_On(void);
+void PortCharSel_SetStage(s32 stage);
+s32 PortCharSel_CinemaStart(s32 oppChara, s32 oppCostume, s32 leadChara, s32 leadCostume);
+s32 PortCharSel_InCinema(void);
+void PortCharSel_CinemaSkip(void);
+void PortCharSel_CineBlank(void); /* one blank of the way to the battle (the screens' loops, once a blank) */
+s32 PortCharSel_CinemaDone(void);
 void PortCharSel_MuteOn(void);
+void PortCharSel_MuteOff(void);
+/* The last frame of the way to the battle, held over its loading (src/battle/stg_b.c) */
+void PortHold_Capture(void);
+s32 PortHold_Active(void);
+void PortHold_Release(void); /* (the map first's hold: its end, when the new screen did not draw to end it) */
 /* view[0] alone, or with split the two sides, view[side]: two people choosing, both seen as they choose */
 void PortCharSel_Frame(const CsView *view, s32 split, s32 stagePhase);
 void PortCharSel_Draw(void);

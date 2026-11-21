@@ -870,6 +870,18 @@ s32 BtlSeqIntroTalk_Setup(BtlSeqTalkCtx *ctx) {
         ctx->line[0] = rand() % 2;
         ctx->line[1] = rand() % 2;
     }
+#ifdef PORT
+    /* Dragon Rage (the user, as Sparking Zero): the opponent speaks first, then the player's fighter (side 0). Offline
+       only (online both games must run the same opening: an order of each one's own would part them), and not where
+       the two have a dialogue of their own in the table (its order is the conversation's) */
+    if (!Port_NetActive() && !TagBattle_Active() && !(tbl0 != NULL && tbl1 != NULL && tbl0[obj1->chara * 4] != 0xFF) &&
+        ctx->side[0] == 0) {
+        s32 k;
+        k = ctx->side[0]; ctx->side[0] = ctx->side[1]; ctx->side[1] = k;
+        k = ctx->chara[0]; ctx->chara[0] = ctx->chara[1]; ctx->chara[1] = k;
+        k = ctx->line[0]; ctx->line[0] = ctx->line[1]; ctx->line[1] = k;
+    }
+#endif
     ctx->step = 0;
     Ramp_Start(&ctx->timer, 10.0f, 0.0f, 1.0f);
     return 1;
@@ -1144,8 +1156,16 @@ s32 BtlSeqWinTalk_Skip(BtlSeqTalkCtx *ctx) {
 }
 
 /* State 0 enter: restarts the step counter and holds the fighters. */
+#ifdef PORT
+extern s32 PortCharSel_CineBattle(void);
+#endif
 s32 BtlSeqStageIntro_Enter(BtlSeqWaitCtx *ctx) {
     ctx->step = 0;
+#ifdef PORT
+    if (PortCharSel_CineBattle()) {
+        ctx->step = 6; /* (the select's way to the battle was the presentation: straight on) */
+    }
+#endif
     Battle_GetWork()->flags |= BATTLE_FLAG_DEMO;
     return 1;
 }
@@ -1207,6 +1227,11 @@ s32 BtlSeqStageIntro_Update(BtlSeqWaitCtx *ctx) {
 
 /* State 0 exit: stops a camera cut that is still playing. */
 s32 BtlSeqStageIntro_Exit(BtlSeqWaitCtx *ctx) {
+#ifdef PORT
+    if (PortCharSel_CineBattle()) {
+        return 1;
+    }
+#endif
     if (DemoCam_IsActive()) {
         DemoCam_Stop();
     }

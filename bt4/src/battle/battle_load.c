@@ -853,6 +853,18 @@ void BtlLoad_Reload(void) {
         }
     }
     if (BtlJob_GetFreeCount() != BTL_JOB_COUNT) {
+#ifdef PORT
+        {
+            /* A rematch ("Fight Again") that has to read something: the picture on the screen (the result's) stays over it, as it stays over the
+               way to the battle's loading, in the loading screen's place. */
+            extern void PortHold_Capture(void);
+            extern s32 PortHold_Active(void);
+
+            if (!PortHold_Active()) {
+                PortHold_Capture();
+            }
+        }
+#endif
         Load_RunBlocking();
     }
     for (side = 0; side < TagBattle_Count(); side++) {

@@ -167,7 +167,33 @@ void Gfx_Init(void) {
 }
 
 /* Start of a frame: debug hook, rebuilds the battle object table, advances the screen fades. */
+#ifdef PORT
+#include <stdio.h>
+#include <time.h>
+extern s32 PortCharSel_CineFrame(void);
+extern s32 PortHold_Active(void);
+
+/* (measured, for the recordings: a frame that took longer than 45 ms from the last one's start, and where the game was) */
+static void Gfx_PortHitch(void) {
+    static double last;
+    static s32 count;
+    struct timespec ts;
+    double now;
+
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    now = ts.tv_sec * 1000.0 + ts.tv_nsec / 1.0e6;
+    if (last > 0.0 && now - last > 45.0 && now - last < 20000.0 && count < 400) {
+        count++;
+        fprintf(stderr, "bt3: hitch: %d ms (cine frame %d, held %d)\n", (int)(now - last), (int)PortCharSel_CineFrame(), (int)PortHold_Active());
+    }
+    last = now;
+}
+#endif
+
 void Gfx_BeginFrame(void) {
+#ifdef PORT
+    Gfx_PortHitch();
+#endif
     Dbg_BeginFrame();
     BtlObj_RebuildTable();
     Fade_UpdateAll();

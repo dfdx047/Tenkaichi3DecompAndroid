@@ -24,10 +24,10 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {422, 256, 0}, /* btn_leftright */
     {256, 256, 0}, /* btn_circle */
     {289, 120, 0}, /* btn_start */
-    {1280, 720, 0}, /* tag_hud_preview, actual native framebuffer */
+    {1599, 900, 0}, /* tag_hud_preview */
     {640, 64, 0}, /* tag_hud_faces */
-    {160, 100, 50}, /* compact keyboard bar */
-    {160, 107, 54}, /* compact keyboard selection */
+    {160, 100, 0}, /* kit_bar_compact */
+    {160, 107, 0}, /* kit_sel_compact */
     {2420, 2728, 0}, /* radar */
     {512, 512, 0}, /* discord */
     {512, 832, 0}, /* gohan */
@@ -63,6 +63,18 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {144, 174, 34}, /* cs_card */
     {404, 204, 102}, /* cs_pill */
     {380, 180, 90}, /* cs_pill_on */
+    {2712, 1220, 0}, /* hub_bg */
+    {680, 192, 0}, /* hub_row */
+    {680, 192, 0}, /* hub_row_on */
+    {784, 224, 0}, /* hub_icons */
+    {700, 200, 0}, /* hub_logo */
+    {324, 80, 0}, /* hub_chip */
+    {672, 912, 0}, /* trunks */
+    {2712, 1220, 0}, /* hub_page */
+    {448, 348, 0}, /* td_win_gold */
+    {448, 348, 0}, /* td_card_on */
+    {204, 124, 0}, /* td_cell */
+    {164, 164, 0}, /* td_tile */
 };
 
 #endif

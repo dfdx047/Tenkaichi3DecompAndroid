@@ -659,6 +659,11 @@ static int pipeline_create(uint32_t key, int remember) {
         ci.depth_stencil_state.enable_stencil_test = false;
         ci.target_info.has_depth_stencil_target = false;
     }
+    if (key & (1u << 29)) { /* the select's 2D drawn on the screen itself (overlay_replay): its one picture, no alpha written */
+        cds[0].format = SDL_GetGPUSwapchainTextureFormat(sDev, sWindow);
+        cds[0].blend_state.color_write_mask = (SDL_GPUColorComponentFlags)(wmask & ~(uint32_t)SDL_GPU_COLORCOMPONENT_A);
+        ci.target_info.num_color_targets = 1;
+    }
     if (fx) {
         ci.vertex_shader = sFxVs;
         ci.fragment_shader = sDclutFs;
@@ -739,6 +744,135 @@ static int pipe_depthless(int i) {
         sDepthlessOf[i] = v >= 0 && sPipes[v].key == want && sPipes[v].p != NULL ? v + 1 : i + 1;
     }
     return sDepthlessOf[i] - 1;
+}
+
+/* The same pipeline drawing on the screen's own picture (bits 28 and 29, no stencil): BT4's character select's 2D at
+   the screen's resolution (gs_draw.h, overlay_replay). Its index + 1, or -1 if it cannot be made. */
+static int sOverlayOf[1024];
+static int pipe_overlay(int i) {
+    if (i < 0 || i >= 1024) {
+        return -1;
+    }
+    if (sOverlayOf[i] == 0) {
+        uint32_t want = (sPipes[i].key | (1u << 28) | (1u << 29)) & ~(1u << 24);
+        int v;
+        for (v = 0; v < sPipeCount && sPipes[v].key != want; v++) {
+        }
+        if (v == sPipeCount) {
+            v = pipeline_create(want, 0); /* (not remembered: made again when first needed) */
+        }
+        sOverlayOf[i] = v >= 0 && v < sPipeCount && sPipes[v].key == want && sPipes[v].p != NULL ? v + 1 : -1;
+    }
+    return sOverlayOf[i];
+}
+
+/* A draw of the frame that goes on the screen itself, not into the game's picture: in the select's 2D ranges, an
+   ordinary primitive (no native step, no vertex program) into the frame's own buffer, with its pipeline's variant. */
+static int overlay_draw(uint32_t n, int target) {
+    const GsDraw *d = &gsDraws[n];
+    return target >= 0 && !d->native && !d->vu && d->target == target && GsDraw_InOverlay(n) && pipe_overlay(d->pipeline) > 0;
+}
+
+/* The select's 2D, over the picture just shown (show_target's rectangle, gUiPresent*): the draws' 1024 x 1024 page laid
+   so that its 512 x 448 picture covers that rectangle, each draw as the frame's replay draws it, at the screen's own
+   resolution: its letters and pieces as sharp as the screen, whatever the game's internal one. */
+static void overlay_replay(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *swap, Uint32 sw, Uint32 sh, int target) {
+    SDL_GPURenderPass *pass = NULL;
+    SDL_GPUTexture *lastTex = NULL;
+    int lastPipe = -1, lastSampler = -1;
+    float lastBlend = -1.0f;
+    float kx = (float)gUiPresentW / 512.0f, ky = (float)gUiPresentH / 448.0f;
+    uint32_t n;
+
+    if (target < 0 || (gsOverlayCount == 0 && !gsOverlayOn) || gsVertCount == 0 || gUiPresentW <= 0 || gUiPresentH <= 0) {
+        return;
+    }
+    for (n = 0; n < gsDrawCount; n++) {
+        const GsDraw *d = &gsDraws[n];
+        struct { int32_t mode[4]; float misc[4]; float rect[4]; float orig[4]; float extra[4]; } fu;
+        SDL_FColor bc;
+        SDL_Rect r;
+        float x0, y0, x1, y1;
+        int pi;
+
+        if (!overlay_draw(n, target)) {
+            continue;
+        }
+        pi = pipe_overlay(d->pipeline) - 1;
+        if (pass == NULL) {
+            SDL_GPUColorTargetInfo ct;
+            SDL_GPUViewport vp;
+            SDL_GPUBufferBinding vb;
+            SDL_zero(ct);
+            ct.texture = swap;
+            ct.load_op = SDL_GPU_LOADOP_LOAD;
+            ct.store_op = SDL_GPU_STOREOP_STORE;
+            pass = SDL_BeginGPURenderPass(cmd, &ct, 1, NULL);
+            sPassN++;
+            vp.x = (float)gUiPresentX;
+            vp.y = (float)gUiPresentY;
+            vp.w = 1024.0f * kx;
+            vp.h = 1024.0f * ky;
+            vp.min_depth = 0.0f;
+            vp.max_depth = 1.0f;
+            SDL_SetGPUViewport(pass, &vp);
+            vb.buffer = sVbuf;
+            vb.offset = 0;
+            SDL_BindGPUVertexBuffers(pass, 0, &vb, 1);
+        }
+        if (pi != lastPipe) {
+            SDL_BindGPUGraphicsPipeline(pass, sPipes[pi].p);
+            lastPipe = pi;
+        }
+        if ((SDL_GPUTexture *)(uintptr_t)d->tex != lastTex || (int)d->sampler != lastSampler) {
+            SDL_GPUTextureSamplerBinding two[2];
+            lastTex = (SDL_GPUTexture *)(uintptr_t)d->tex;
+            lastSampler = (int)d->sampler;
+            two[0].texture = lastTex;
+            two[0].sampler = sSamplers[d->sampler];
+            two[1].texture = sDateCopy;
+            two[1].sampler = sSamplers[6];
+            SDL_BindGPUFragmentSamplers(pass, 0, two, 2);
+        }
+        memset(&fu, 0, sizeof(fu));
+        memcpy(fu.mode, d->mode, sizeof(fu.mode));
+        memcpy(fu.misc, d->misc, sizeof(fu.misc));
+        memcpy(fu.rect, d->rect, sizeof(fu.rect));
+        memcpy(fu.orig, d->orig, sizeof(fu.orig));
+        fu.extra[0] = gsZMax;
+        fu.extra[1] = (sPipes[d->pipeline].key & (1u << 9)) ? 1.0f : 0.0f;
+        fu.extra[2] = d->portrait[0];
+        fu.extra[3] = d->portrait[1];
+        SDL_PushGPUFragmentUniformData(cmd, 0, &fu, sizeof(fu));
+        if (d->blendc != lastBlend) {
+            bc.r = bc.g = bc.b = bc.a = d->blendc;
+            SDL_SetGPUBlendConstants(pass, bc);
+            lastBlend = d->blendc;
+        }
+        /* its scissor (the target's pixels, SCALE to a GS pixel) on the screen, inside the picture's rectangle */
+        x0 = (float)gUiPresentX + (float)d->scissor[0] / (float)SCALE * kx;
+        y0 = (float)gUiPresentY + (float)d->scissor[1] / (float)SCALE * ky;
+        x1 = (float)gUiPresentX + (float)(d->scissor[0] + d->scissor[2]) / (float)SCALE * kx;
+        y1 = (float)gUiPresentY + (float)(d->scissor[1] + d->scissor[3]) / (float)SCALE * ky;
+        if (x0 < (float)gUiPresentX) x0 = (float)gUiPresentX;
+        if (y0 < (float)gUiPresentY) y0 = (float)gUiPresentY;
+        if (x1 > (float)(gUiPresentX + gUiPresentW)) x1 = (float)(gUiPresentX + gUiPresentW);
+        if (y1 > (float)(gUiPresentY + gUiPresentH)) y1 = (float)(gUiPresentY + gUiPresentH);
+        if (x1 > (float)sw) x1 = (float)sw;
+        if (y1 > (float)sh) y1 = (float)sh;
+        if (x1 <= x0 || y1 <= y0) {
+            continue;
+        }
+        r.x = (int)x0;
+        r.y = (int)y0;
+        r.w = (int)(x1 + 0.999f) - r.x;
+        r.h = (int)(y1 + 0.999f) - r.y;
+        SDL_SetGPUScissor(pass, &r);
+        SDL_DrawGPUPrimitives(pass, d->count, 1, d->first, 0);
+    }
+    if (pass != NULL) {
+        SDL_EndGPURenderPass(pass);
+    }
 }
 
 /* How a finished picture reaches the display. on = 0: without waiting for it (MAILBOX: no tearing, no wait; else
@@ -1828,6 +1962,7 @@ static void vk_frame_end(void) {
     bool acquired;
     uint64_t sEndT[6];
     int lastPipe = -1, lastUni = -1, lastSampler = -1, haveFu = 0, haveScissor = 0, pipe, split; /* what the pass has set (the replay loop) */
+    int ovlTarget = -1; /* the frame's buffer, when the select's 2D goes on the screen itself (overlay_replay) */
     int broke = 0; /* what ended the last pass (sPassWhy) */
     int shadowRef = 1; /* the stencil reference of the flat-shadow run being drawn */
     int passStencil = 0; /* the pass began with its stencil cleared */
@@ -2107,6 +2242,8 @@ static void vk_frame_end(void) {
     if (aux_plan_on()) {
         aux_plan();
     }
+    /* (the select's 2D at the screen's resolution: left out here, drawn over the picture once it is shown) */
+    ovlTarget = (gsOverlayCount > 0 || gsOverlayOn) && gGsMainFbp >= 0 ? GsDraw_TargetGet((uint32_t)gGsMainFbp, 0) : -1;
     for (n = 0; n < gsDrawCount; n++) {
         const GsDraw *d = &gsDraws[n];
         SDL_GPUBufferBinding vb;
@@ -2114,6 +2251,10 @@ static void vk_frame_end(void) {
         SDL_FColor bc;
         struct { int32_t mode[4]; float misc[4]; float rect[4]; float orig[4]; float extra[4]; } fu;
         int shadowStart;
+
+        if (ovlTarget >= 0 && overlay_draw(n, ovlTarget)) {
+            continue;
+        }
 
         if (d->native >= 100) { /* a picture uploaded into this display buffer (GsGpu_FbUpload): scaled into its texture */
             SDL_GPUBlitInfo bl;
@@ -2715,6 +2856,9 @@ static void vk_frame_end(void) {
     if (acquired && swap != NULL && best >= 0 && gsTargets[best].cleared) {
 #endif
         show_target(cmd, best, swap, sw, sh);
+        if (ovlTarget >= 0 && ovlTarget == best) {
+            overlay_replay(cmd, swap, sw, sh, ovlTarget);
+        }
         Ui_Draw(cmd, swap);
         {   /* BT3_UI_SHOT=<frame>:<file.ppm>: the window's picture with the settings window on it, for checking
                 the settings window without a person or a screen capture (drawn a second time into a texture) */
@@ -3049,6 +3193,7 @@ capture_done: ;
     gsVuIdxCount = 0;
     gsVuUniCount = 0;
     gsDrawCount = 0;
+    GsDraw_OverlayReset();
     gsAnchor = 0;
     {
         extern int gsWhole2D, gsChipUp;

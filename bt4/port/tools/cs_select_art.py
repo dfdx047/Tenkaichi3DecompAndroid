@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""The pieces of BT4's new character select (port/tbo/ui/cs_*.png), drawn as in its approved template, "Instinto
-Prateado" (previas-bt4/redesign-geral: 2712 x 1220, one pixel of these pictures is one pixel of that screen). Again
-with:  python3 port/tools/cs_select_art.py  (then port/tools/tbo_sizes.py)
+"""The pieces of BT4's new character select (port/tbo/ui/cs_*.png), drawn as in its approved template (since 20/11/2026
+previas-bt4/selecao-nova/selecao.py: indigo glass with a lavender edge, the chosen one violet lined in gold, the
+buttons violet and orange; before it "Instinto Prateado", graphite and silver, which the user found black and
+dull). 2712 x 1220: one pixel of these pictures is one pixel of that screen. Again with:
+python3 port/tools/cs_select_art.py  (then port/tools/tbo_sizes.py)
 
 Each piece is a shape in the middle of its picture with room round it (PAD) for its shadow or glow; the game stretches
 it over a box keeping its corners (src/menu/port_charsel.c Cw_Nine, as the online screens' Td_Nine):
-  cs_panel    a panel: graphite glass going darker down, lit at the top, a thin silver edge, a soft shadow (corners 16)
-  cs_lit      the chosen one: silver going down to lilac, lined in white, a lilac glow round it (corners 26)
-  cs_plain    a plain row: a faint light glass, a thin edge (corners 26)
-  cs_card     a card of the roster: dark, a thin edge (corners 22)
-  cs_pill     a button's pill of glass (100 tall, round ends), with its shadow
-  cs_pill_on  the pill lit (View Team)
+  cs_panel    a panel: indigo glass going darker down, lit at the top, a lavender edge, a soft shadow (corners 26)
+  cs_lit      the chosen one: violet going deeper down, lined in gold, a gold glow round it (corners 26)
+  cs_plain    a plain place (an empty slot, a row): indigo glass, a lavender edge (corners 26)
+  cs_card     a card of the roster: light going dark, a faint edge, tinted by the game per fighter (corners 22)
+  cs_pill     a button: violet, lit at the top, lined in white (100 tall, round ends), with its shadow
+  cs_pill_on  the main button lit (View Team): orange, lined in white, an orange glow
 Only our own drawing; no words in them."""
 import pathlib
 from PIL import Image, ImageDraw, ImageFilter
@@ -84,41 +86,55 @@ def edge(im, box, r, color, width):
     im.alpha_composite(l)
 
 
-def glass(im, box, r):
-    shadow(im, box, r, (10, 16), 16, 110)
-    fill_grad(im, box, r, (46, 46, 58, 230), (14, 14, 20, 240))
-    shine(im, box, r, 0.42, 30)
-    edge(im, box, r, (220, 225, 240, 150), 3)
-
-
-def lit(im, box, r):
+def glow(im, box, r, color, size):
     x0, y0, x1, y1 = box
     g = layer(im.size)
-    ImageDraw.Draw(g).rounded_rectangle((x0 - 10 * K, y0 - 10 * K, x1 + 10 * K, y1 + 10 * K), r + 8 * K, fill=(200, 200, 255, 150))
-    im.alpha_composite(g.filter(ImageFilter.GaussianBlur(12 * K)))
-    fill_grad(im, box, r, (240, 244, 255, 255), (150, 140, 220, 255))
-    shine(im, box, r, 0.45, 70)
-    edge(im, box, r, (255, 255, 255, 255), 5)
+    ImageDraw.Draw(g).rounded_rectangle((x0 - size * K // 2, y0 - size * K // 2, x1 + size * K // 2, y1 + size * K // 2), r + size * K // 2,
+                                        outline=color, width=size * K // 2)
+    im.alpha_composite(g.filter(ImageFilter.GaussianBlur(size * K * 0.6)))
 
 
-def plain(im, box, r):
-    fill_grad(im, box, r, (255, 255, 255, 22), (255, 255, 255, 14))
-    edge(im, box, r, (200, 205, 230, 90), 2)
+def glass(im, box, r):  # (the template's panel())
+    shadow(im, box, r, (6, 12), 14, 120)
+    fill_grad(im, box, r, (28, 22, 64, 215), (10, 8, 30, 230))
+    shine(im, box, r, 0.42, 34)
+    edge(im, box, r, (150, 170, 255, 120), 3)
 
 
-def card(im, box, r):
+def lit(im, box, r):  # (the template's chosen cell, gold lined with its glow, over the chosen row's violet)
+    glow(im, box, r, (255, 196, 64, 200), 18)
+    fill_grad(im, box, r, (126, 74, 255, 245), (70, 36, 190, 245))
+    shine(im, box, r, 0.45, 60)
+    edge(im, box, r, (255, 196, 64, 255), 5)
+
+
+def plain(im, box, r):  # (the template's empty team slot)
+    fill_grad(im, box, r, (40, 36, 90, 200), (14, 12, 34, 220))
+    edge(im, box, r, (170, 180, 255, 150), 3)
+
+
+def card(im, box, r):  # (the template's portrait cell: its colour per fighter is the game's tint over this)
     shadow(im, box, r, (3, 5), 4, 90)
-    fill_grad(im, box, r, (70, 72, 88, 245), (28, 28, 38, 245))
-    edge(im, box, r, (200, 205, 230, 90), 3)
+    fill_grad(im, box, r, (232, 232, 244, 250), (40, 36, 80, 250))
+    edge(im, box, r, (210, 216, 255, 120), 2)
+
+
+def button(im, box, r, top, bot, glow_color):  # (the template's big_button())
+    if glow_color:
+        glow(im, box, r, glow_color, 24)
+    shadow(im, box, r, (4, 10), 10, 140)
+    fill_grad(im, box, r, top, bot)
+    shine(im, box, r, 0.48, 110)
+    edge(im, box, r, (255, 255, 255, 230), 4)
 
 
 def main():
-    piece("cs_panel", 200, 200, 52, 16, glass)
+    piece("cs_panel", 200, 200, 52, 26, glass)
     piece("cs_lit", 200, 200, 40, 26, lit)
     piece("cs_plain", 120, 120, 4, 26, plain)
     piece("cs_card", 120, 150, 12, 22, card)
-    piece("cs_pill", 300, 100, 52, 50, glass)
-    piece("cs_pill_on", 300, 100, 40, 50, lit)
+    piece("cs_pill", 300, 100, 52, 50, lambda im, b, r: button(im, b, r, (112, 90, 255, 255), (52, 30, 160, 255), None))
+    piece("cs_pill_on", 300, 100, 40, 50, lambda im, b, r: button(im, b, r, (255, 214, 90, 255), (230, 120, 20, 255), (255, 170, 40, 200)))
 
 
 if __name__ == "__main__":

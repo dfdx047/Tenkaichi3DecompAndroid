@@ -872,6 +872,7 @@ typedef struct {
 static TboFilm sTboFilm = {"bg", 0};
 static TboFilm sRaditzFilm = {"raditz", 1};
 static TboFilm sGohanFilm = {"gohan", 1}; /* BT4's host, Future Gohan: colours above, how solid below */
+static TboFilm sTrunksFilm = {"trunks", 1}; /* the Online main screen's new look: Trunks, as Gohan's film */
 
 static uint8_t *tbo_film_read(const char *name, size_t *len) {
     const char *base = SDL_GetBasePath();
@@ -1209,6 +1210,12 @@ static GsTex tbo_texture(uint32_t id) {
     }
     if (id == TBO_BG) { /* (BT4's online art has no Raditz bust: only the backdrop's film) */
         GsTex film = tbo_film_texture(&sTboFilm);
+        if (film != 0) {
+            return film;
+        }
+    }
+    if (id == TBO_TRUNKS) { /* (the same: trunks.png without its film) */
+        GsTex film = tbo_film_texture(&sTrunksFilm);
         if (film != 0) {
             return film;
         }
@@ -2498,8 +2505,26 @@ void Port_WallMesh(const void *key, int second, int culled, const float *screen,
 
 /* Two draws can be merged into one call when everything they need is the same. `scissor` is compared as
    four ints (the scissor a draw has recorded). */
+uint32_t gsOverlayFrom[GS_OVERLAY_MAX], gsOverlayTo[GS_OVERLAY_MAX];
+int gsOverlayCount, gsOverlayOn;
+uint32_t gsMergeFloor;
+void GsDraw_OverlayReset(void) {
+    gsOverlayCount = 0;
+    gsMergeFloor = 0;
+    gsOverlayFrom[0] = 0; /* (still on across the frame's end: the next frame's range starts at its first draw) */
+}
+int GsDraw_InOverlay(uint32_t n) {
+    int k;
+    for (k = 0; k < gsOverlayCount; k++) {
+        if (n >= gsOverlayFrom[k] && n < gsOverlayTo[k]) {
+            return 1;
+        }
+    }
+    return gsOverlayOn && gsOverlayCount < GS_OVERLAY_MAX && n >= gsOverlayFrom[gsOverlayCount];
+}
+
 static int same_state(const GsDraw *a, const GsDraw *b) {
-    return !a->native && a->portrait[0] == b->portrait[0] && a->portrait[1] == b->portrait[1] && a->hud == b->hud && a->vu == b->vu && a->wall == b->wall && a->target == b->target && a->tex == b->tex && a->sampler == b->sampler && a->pipeline == b->pipeline &&
+    return !a->native && (uint32_t)(a - gsDraws) >= gsMergeFloor && a->portrait[0] == b->portrait[0] && a->portrait[1] == b->portrait[1] && a->hud == b->hud && a->vu == b->vu && a->wall == b->wall && a->target == b->target && a->tex == b->tex && a->sampler == b->sampler && a->pipeline == b->pipeline &&
            memcmp(a->mode, b->mode, sizeof(a->mode)) == 0 && a->misc[0] == b->misc[0] && a->misc[1] == b->misc[1] &&
            a->misc[2] == b->misc[2] && a->misc[3] == b->misc[3] && a->blendc == b->blendc &&
            memcmp(a->rect, b->rect, sizeof(a->rect)) == 0 && memcmp(a->orig, b->orig, sizeof(a->orig)) == 0 &&
@@ -3398,6 +3423,18 @@ static void grade_add(void) {
 
 void GsGpu_Native(int effect) {
     if((effect&0xF0000000)==0x40000000){sPresentationObject=(uint32_t)effect&0x0FFFFFFF;return;}
+    if (effect == 0x66 || effect == 0x67) { /* the select's 2D at the screen's resolution begins / ends (gs_draw.h) */
+        if (effect == 0x66 && !gsOverlayOn && gsOverlayCount < GS_OVERLAY_MAX) {
+            gsOverlayFrom[gsOverlayCount] = gsDrawCount;
+            gsOverlayOn = 1;
+            gsMergeFloor = gsDrawCount;
+        } else if (effect == 0x67 && gsOverlayOn) {
+            gsOverlayTo[gsOverlayCount++] = gsDrawCount;
+            gsOverlayOn = 0;
+            gsMergeFloor = gsDrawCount;
+        }
+        return;
+    }
     if(effect==0x70 || effect==0x71){
         sPresentationHudScope=effect==0x70;
         if(effect==0x70 && !GS_NO_PICTURE)grade_add();
@@ -3896,6 +3933,21 @@ void GsDraw_ScreenScaleFloor(int floor4) {
         sScreenAside = 0;
         gsPendingScale4 = sUserScale4 != gsScale4 ? sUserScale4 : 0;
     }
+}
+/* The internal resolution, in quarter steps, that just fills the window's height (448 lines of the PS2's picture to
+   the screen's pixels, rounded up), 2x to 4x: BT4's new select is sharp at it and draws nothing the screen cannot show.
+   At 4x on a phone 1220 pixels high it drew 1792 lines (2048 x 1792) with the stage and the fighter in 3D: 29 fps,
+   half speed; at 2.75x (1408 x 1232) the screen gets the same sharpness with half the pixels. */
+int GsDraw_ScreenScaleNeeded4(void) {
+    int ww = 0, wh = 0, need;
+    if (sWindow == NULL || !SDL_GetWindowSizeInPixels(sWindow, &ww, &wh) || wh <= 0) {
+        return 12;
+    }
+    if (ww < wh) { /* (a window still standing up: its long side is the one the game lies along) */
+        wh = ww;
+    }
+    need = (wh * 4 + 447) / 448;
+    return need < 8 ? 8 : need > 16 ? 16 : need;
 }
 /* The floor set now (0: none): BT4's new select takes one only when nobody else has (menu/port_charsel.c). */
 int GsDraw_ScreenScaleFloorNow(void) {
@@ -6299,7 +6351,7 @@ static void interp_show(int step) {
             sBackend->frameEnd();
             interp_cost(gpu_now() - t0);
         } else {
-            gsVertCount = gsVuVertCount = gsVuIdxCount = gsVuUniCount = gsDrawCount = 0; /* (as the back end leaves them) */
+            gsVertCount = gsVuVertCount = gsVuIdxCount = gsVuUniCount = gsDrawCount = 0; GsDraw_OverlayReset(); /* (as the back end leaves them) */
         }
         interp_wall_restore();
         gsVuUni = real;
@@ -6334,7 +6386,7 @@ static int interp_show_next(void) {
         sInterpRepeat = 0;
         interp_counts_restore();
         interp_remember();
-        gsVertCount = gsVuVertCount = gsVuIdxCount = gsVuUniCount = gsDrawCount = 0;
+        gsVertCount = gsVuVertCount = gsVuIdxCount = gsVuUniCount = gsDrawCount = 0; GsDraw_OverlayReset();
         return 0;
     }
     interp_counts_restore();
@@ -6509,7 +6561,7 @@ void GsGpu_FrameEnd(void) {
         }
         sInterpPrevCount = 0;
         sInterpPrevPrimCount = 0;
-        gsVertCount = gsVuVertCount = gsVuIdxCount = gsVuUniCount = gsDrawCount = 0;
+        gsVertCount = gsVuVertCount = gsVuIdxCount = gsVuUniCount = gsDrawCount = 0; GsDraw_OverlayReset();
         skip_decide();
         return;
     }

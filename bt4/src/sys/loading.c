@@ -6,6 +6,12 @@
 
 #ifdef PORT
 extern void Port_GsMarker(s32 effect);
+/* (src/battle/stg_b.c) the last frame of the select's way to the battle, held over the loading instead of its screen */
+extern s32 PortHold_Active(void);
+extern u32 Port_LoadTimeUs(void);
+#include <stdio.h>
+extern void PortHold_Draw(void);
+extern void PortHold_Release(void);
 extern int Port_PageAspectMilli(void);
 #define PORT_2D_LOADING 0x17
 #define PORT_2D_END 0x13
@@ -68,19 +74,43 @@ void Load_RunBlocking(void) {
     s32 busy = 1;
     s32 done = 0;
     s32 prev;
+#ifdef PORT
+    s32 hold = PortHold_Active(); /* the select's way to the battle ended on a picture: it stays on, in the loading screen's place */
+#endif
 
+#ifdef PORT
+    u32 loadT0 = Port_LoadTimeUs(); /* (measured, for the recordings: how long a blocking load takes, in frames and milliseconds) */
+    s32 loadFrames = 0;
+#endif
     PadWatch_SetEnabled(0);
     Dma_ResetBuffers();
     Load_InitScreen();
     Fade_ResetAll();
+#ifdef PORT
+    if (!hold) /* (a fade up from black would darken the held picture) */
+#endif
     Fade_Start(0, 1, 1.0f);
     gProgress->flags |= PROGRESS_FLAG_LOADING;
     for (;;) {
+#ifdef PORT
+        loadFrames++;
+#endif
         Snd_Update();
         prev = busy;
         Gfx_BeginFrame();
         Pad_Update();
         busy = Job_Run();
+#ifdef PORT
+        if (hold) { /* the held picture, every frame, until the files are in */
+            PortHold_Draw();
+            Gfx_EndFrame(1);
+            Dma_Flush();
+            if (!busy) {
+                break;
+            }
+            continue;
+        }
+#endif
         if (prev != busy) {
             Fade_Start(0, 0, 1.0f);
         }
@@ -98,6 +128,12 @@ void Load_RunBlocking(void) {
         }
         Load_ReadInput();
     }
+#ifdef PORT
+    fprintf(stderr, "bt3: load: blocking load %d frames, %d ms (held %d)\n", (int)loadFrames, (int)((Port_LoadTimeUs() - loadT0) / 1000u), (int)hold);
+    if (hold) {
+        PortHold_Release();
+    }
+#endif
     Dma_ResetBuffers();
     gProgress->flags &= ~PROGRESS_FLAG_LOADING;
     PadWatch_SetEnabled(1);

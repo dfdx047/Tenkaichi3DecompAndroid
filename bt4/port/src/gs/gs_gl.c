@@ -1699,6 +1699,7 @@ static void frame_end(void) {
     gsVuIdxCount = 0;
     gsVuUniCount = 0;
     gsDrawCount = 0;
+    GsDraw_OverlayReset();
     gsAnchor = 0;
     gsSkipped = 0;
     gsNative = 0;

@@ -116,6 +116,16 @@ typedef struct GsDraw {
    clears the counters for the next frame. */
 extern GsDraw *gsDraws;
 extern uint32_t gsDrawCount;
+/* The 2D of BT4's character select drawn at the screen's own resolution (markers 0x66 on, 0x67 off: src/menu/
+   port_charsel.c), not into the game's picture at its internal one: the ranges of the frame's draws between the two.
+   The Vulkan back end leaves them out of the picture and draws them over it once it is on the screen, scaled to it
+   (gs_gpu.c overlay_replay); the others draw them as ever. A draw is never merged across a marker (gsMergeFloor). */
+#define GS_OVERLAY_MAX 8
+extern uint32_t gsOverlayFrom[GS_OVERLAY_MAX], gsOverlayTo[GS_OVERLAY_MAX];
+extern int gsOverlayCount, gsOverlayOn;
+extern uint32_t gsMergeFloor;
+void GsDraw_OverlayReset(void); /* (with the frame's draws: wherever gsDrawCount goes back to 0) */
+int GsDraw_InOverlay(uint32_t n); /* draw n is in one of the ranges */
 extern Vtx *gsVerts;            /* MAX_VERTS of them, malloc'd in GsGpu_Init */
 extern uint32_t gsVertCount;
 extern float *gsVuVerts;        /* 12 floats per vertex, as the vertex programs get them */

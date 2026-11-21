@@ -1172,6 +1172,86 @@ s32 ScrXfade_IsActive(void) {
     return gScrXfade->alpha != 0;
 }
 
+#ifdef PORT
+/* The last frame of the way to the battle, held over the battle's loading (BT4's new select; the user: "the loading screen
+   must go"). The loading screen is not drawn: the picture the select ended on is. Made with the cross-fade's own functions,
+   on a state of its own: ScrXfade_Capture reads the shown frame (the renderer keeps it on the card at the resolution it was drawn
+   in, GsGpu_Snapshot, and hands the game black), ScrXfade_Draw draws it over the frame as a whole-frame texture, which the
+   renderer takes from that snapshot (draw_state, sWholeFrame). Not the fight's gScrXfade (the fight makes its own, after):
+   it is put back after each call. No memory for it: nothing is held and the loading screen shows, as it did. */
+static ScrXfade *sHold;
+static s32 sHoldOn;
+extern HeapBlock *Heap_AllocBlock(s32 size, u32 align, s32 fromTail, s32 heap);
+
+/* The game's own heap, not Heap_Alloc: while the select's viewer is up, Heap_Alloc takes its memory from the viewer's world
+   (state.c), which is let go as the screen ends (PortCharSel_End), BEFORE the loading these buffers are for: they would be
+   gone, the loading drawing from memory that is no one's. Heap_Free takes such a block back as any. */
+static void *HoldAlloc(s32 size) {
+    HeapBlock *block = Heap_AllocBlock(size, 0x20, 0, 2);
+
+    return block != NULL ? (void *)block->data : NULL;
+}
+
+void PortHold_Capture(void) {
+    ScrXfade *keep = gScrXfade;
+
+    sHoldOn = 0;
+    if (sHold == NULL) {
+        sHold = HoldAlloc(sizeof(ScrXfade));
+        if (sHold == NULL) {
+            return;
+        }
+    }
+    memset(sHold, 0, sizeof(ScrXfade));
+    sHold->buf[0] = HoldAlloc(0x60090);
+    sHold->buf[1] = HoldAlloc(0x60090);
+    if (sHold->buf[0] == NULL || sHold->buf[1] == NULL) {
+        if (sHold->buf[0] != NULL) {
+            Heap_Free(sHold->buf[0]);
+        }
+        if (sHold->buf[1] != NULL) {
+            Heap_Free(sHold->buf[1]);
+        }
+        sHold->buf[0] = sHold->buf[1] = NULL;
+        return;
+    }
+    gScrXfade = sHold;
+    ScrXfade_Capture();
+    gScrXfade = keep;
+    sHoldOn = 1;
+}
+
+s32 PortHold_Active(void) {
+    return sHoldOn;
+}
+
+/* One frame of it (the loading's loop: instead of its screen). */
+void PortHold_Draw(void) {
+    ScrXfade *keep = gScrXfade;
+
+    if (!sHoldOn) {
+        return;
+    }
+    gScrXfade = sHold;
+    ScrXfade_Draw(0, 0x1C00, 0x80);
+    gScrXfade = keep;
+}
+
+void PortHold_Release(void) {
+    if (sHold != NULL) {
+        if (sHold->buf[0] != NULL) {
+            Heap_Free(sHold->buf[0]);
+        }
+        if (sHold->buf[1] != NULL) {
+            Heap_Free(sHold->buf[1]);
+        }
+        Heap_Free(sHold);
+        sHold = NULL;
+    }
+    sHoldOn = 0;
+}
+#endif
+
 /* Starts the packet: copies the frame region x0..x1 at half size into the work buffer at block 0x2A00, then
    points the frame, scissor, clamp and texture registers at drawing that copy back over the region. */
 void ScrWarp_BeginPacket(u64 **pp, s32 x0, s32 x1, s32 w, s32 h, s32 tw, s32 th) {

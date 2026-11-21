@@ -17,6 +17,9 @@
 static s32 sPortStagesAdded; /* this stage select shows stages from outside the disc */
 static s32 sPortSongsAdded;  /* ... and its music list songs from outside the disc */
 static s32 sPortSongNameHidden, sPortStageNameHidden;
+/* The map before the fighters (Dragon Rage, the user's order; offline with the new select): 1 the reel to open as the
+   screen is ready, 3 choosing in it, 2 chosen (kept: when both sides are done the battle goes there), 0 the game's */
+static s32 sPortStageFirst, sPortFirstRow, sPortFirstCol, sPortFirstStage;
 /* The port's stage-name overlay (port/src/gs/ui.cpp / gs_draw.c): the names of added stages are drawn by the
    port, over the picture, from its own stylized art. The menu only fills the name's rectangle and which image. */
 static void *sPortStagePictures[2];
@@ -846,7 +849,10 @@ void CharSel_Term(void) {
    clip of the five movies are set from the state, the movies are drawn, then the windows and the side panels. */
 #ifdef PORT
 #include "menu/port_charsel.h"
-#define CHARSEL_PORT_STAGE() ((gCharSel->flags & (CHARSEL_STAGE_PHASE | CHARSEL_LEAVING)) != 0)
+/* The map first (sPortStageFirst 1): until its reel opens, the screen holds, empty (see menu_e_b.c: the select half a
+   second up and the name chips sliding in over the map, as in the user's recording). */
+#define CHARSEL_PORT_HOLD() (sPortStageFirst == 1)
+#define CHARSEL_PORT_STAGE() ((gCharSel->flags & (CHARSEL_STAGE_PHASE | CHARSEL_LEAVING)) != 0 || CHARSEL_PORT_HOLD())
 
 /* What the new screen shows of one side (src/menu/port_charsel.c). */
 static void CharSel_PortFill(CsView *v, s32 side) {
@@ -916,7 +922,7 @@ static void CharSel_PortFrame(void) {
         CharSel_PortFill(&v[1], 1);
         PortCharSel_Frame(v, 1, CHARSEL_PORT_STAGE());
     } else {
-        CharSel_PortFill(&v[0], gCharSel->turn & 1);
+        CharSel_PortFill(&v[0], PortCharSel_InCinema() ? PortCharSel_NetSide(0) : gCharSel->turn & 1); /* (the way to the battle: the player's own) */
         PortCharSel_Frame(v, 0, CHARSEL_PORT_STAGE());
     }
 }
@@ -930,7 +936,7 @@ void CharSel_Draw(void) {
     MFlash *f;
 
 #ifdef PORT
-    if (PortCharSel_Shown(CHARSEL_PORT_STAGE())) {
+    if (PortCharSel_Shown(CHARSEL_PORT_STAGE()) || CHARSEL_PORT_HOLD()) {
         PortCharSel_MuteOn(); /* all of this still runs (the movies' state is the game's); none of it is shown */
     }
     gUiNameIdx = -1; /* set again below only for a stage added from outside the disc */
@@ -1321,6 +1327,11 @@ void CharSel_Draw(void) {
     Flash_PortPortraits(gCharSel->tex[23],gCharSel->tex[22]);
 #endif
     for (i = 0; i < CHARSEL_FLASH_NUM; i++) {
+        /* The map first, its reel open and nothing chosen yet: the sides' movies (names, chips, faces: the fighters' select)
+           are not drawn over it, as in menu_e_b.c. */
+        if (sPortStageFirst == 3 && (gCharSel->flags & CHARSEL_STAGE_PHASE) && i > 0) {
+            continue;
+        }
         Port_MenuMovie(i); /* widescreen menus: which of the screen's movies (port/src/gs_marker.c) */
         Flash_Draw(&gCharSel->flash[i]);
     }
@@ -1353,6 +1364,9 @@ void CharSel_Draw(void) {
     ItemPanel_Draw(1);
     ItemHelp_Draw(gCharSel->itemInfo);
 #ifdef PORT
+    if (CHARSEL_PORT_HOLD()) {
+        PortCharSel_MuteOff(); /* (the hold of the map first: all of it ran, none of it was shown) */
+    }
     Port_MenuPage(0);
 #endif
 }
@@ -1525,12 +1539,35 @@ void CharSel_Input(s32 *running) {
         break;
     }
     if (!(gCharSel->flags & CHARSEL_STARTED)) {
+#ifdef PORT
+        if (sPortStageFirst != 1) /* (the map first: the name chips come in once the map is chosen, not over it) */
+#endif
         for (i = 0; i < count; i++) {
             CharSel_ClipGoto(i + 1, i, CHARSEL_CLIP_CHIP, "fl_on_start");
         }
         gCharSel->flags |= CHARSEL_STARTED;
     }
 
+#ifdef PORT
+    if (sPortStageFirst == 1 && !(gCharSel->flags & CHARSEL_STAGE_PHASE)) { /* the map first: its reel as the screen is ready */
+        Flash_GotoLabel(&gCharSel->flash[0], "fl_map", 1);
+        IconWin_Open();
+        CharSel_ClipGoto(0, 0, CHARSEL_CLIP_STAGE_CHIP, "fl_on_start");
+        gCharSel->flags |= CHARSEL_STAGE_PHASE;
+        gCharSel->stage->state = CHARSEL_ST_STAGE;
+        gCharSel->faceMask = 1;
+        sPortStageFirst = 3;
+        return;
+    }
+    if (sPortStageFirst == 3 && (gCharSel->flags & CHARSEL_STAGE_PHASE) && gCharSel->stage->state == CHARSEL_ST_STAGE &&
+        (gPad[0].gamePressed & 0x400)) { /* back from the first map: the screen is left */
+        IconWin_Close();
+        ColorFade_StartOut(0, 0, 0, 20);
+        *running = 0;
+        Snd_PlaySe(1, 2);
+        return;
+    }
+#endif
     if (gCharSel->flags & CHARSEL_STAGE_PHASE) {
         switch (gCharSel->stage->state) {
         case CHARSEL_ST_STAGE:
@@ -1587,6 +1624,27 @@ void CharSel_Input(s32 *running) {
                     CharSel_ClipGoto(0, 0, CHARSEL_CLIP_NONE, "fl_on_start");
                     gCharSel->stage->bgm = gCharSel->stage->bgmPlaying;
                     gCharSel->stage->state = CHARSEL_ST_BGM;
+#ifdef PORT
+                } else if (sPortStageFirst == 3) {
+                    /* the map first: kept, and on to the fighters, in front of it (the select's world made with it) */
+                    sPortFirstRow = gCharSel->stage->row;
+                    sPortFirstCol = gCharSel->stage->col;
+                    sPortFirstStage = gCharSel->stage->stage;
+                    PortCharSel_SetStage(sPortFirstStage);
+                    gCharSel->flags &= ~CHARSEL_STAGE_PHASE;
+                    Flash_GotoLabel(&gCharSel->flash[0], "fl_map_cansel", 1);
+                    IconWin_Close();
+                    CharSel_ClipGoto(0, 0, CHARSEL_CLIP_STAGE_CHIP, "fl_off_start");
+                    gCharSel->faceMask = 0;
+                    sPortStageFirst = 2;
+                    {   /* the name chips held back while the map was chosen: in now, for the fighters */
+                        s32 q;
+
+                        for (q = 0; q < count; q++) {
+                            CharSel_ClipGoto(q + 1, q, CHARSEL_CLIP_CHIP, "fl_on_start");
+                        }
+                    }
+#endif
                 } else {
                     Flash_GotoLabel(&gCharSel->flash[0], "fl_vs", 1);
                     IconWin_Close();
@@ -1792,6 +1850,11 @@ void CharSel_Input(s32 *running) {
                 } else {
 #ifdef PORT
                     if (CharSel_PortLobbyHold(i)) { /* a lobby's match: only its owner leaves the select */
+                        Snd_PlaySe(1, 2);
+                        break;
+                    }
+                    if (sPortStageFirst == 2) { /* the map was chosen first: back to it, not out of the screen */
+                        sPortStageFirst = 1;
                         Snd_PlaySe(1, 2);
                         break;
                     }
@@ -2110,6 +2173,27 @@ void CharSel_Input(s32 *running) {
             if (gCharSel->flags & CHARSEL_STAGE_PHASE) {
                 continue;
             }
+#ifdef PORT
+            if (gCharSel->side[CS_N ^ 1]->state == CHARSEL_ST_DONE && sPortStageFirst == 2) {
+                /* both sides are done, the map chosen first: the battle there, by the new select's way to it (the
+                   camera to the fighter, round him, his opponent in front: PortCharSel_CinemaStart), else after the
+                   game's VS of 60 frames */
+                gCharSel->stage->row = sPortFirstRow;
+                gCharSel->stage->col = sPortFirstCol;
+                gCharSel->stage->stage = sPortFirstStage;
+                gCharSel->faceMask = 0;
+                /* (the way starts from this machine's own fighter and shows his opponent: online the local side, offline the first) */
+                if (PortCharSel_CinemaStart(gCharSel->side[PortCharSel_NetSide(0) ^ 1]->chara, gCharSel->side[PortCharSel_NetSide(0) ^ 1]->colorPlate,
+                                            gCharSel->side[PortCharSel_NetSide(0)]->chara, gCharSel->side[PortCharSel_NetSide(0)]->colorPlate)) {
+                    gCharSel->flags |= CHARSEL_STAGE_PHASE | CHARSEL_LEAVING;
+                } else {
+                    Flash_GotoLabel(&gCharSel->flash[0], "fl_vs", 1);
+                    gCharSel->flags |= CHARSEL_STAGE_PHASE | CHARSEL_LEAVING | CHARSEL_FLAG10;
+                    gCharSel->timer = 60;
+                }
+                Snd_PlaySe(1, 1);
+            } else
+#endif
             if (gCharSel->side[CS_N ^ 1]->state == CHARSEL_ST_DONE) {
                 /* both sides are done: on to the stage */
                 Flash_GotoLabel(&gCharSel->flash[0], "fl_map", 1);
@@ -2167,6 +2251,13 @@ s32 CharSel_Run(s32 section) {
     CharSel_Init(section);
 #ifdef PORT
     PortCharSel_Begin(1); /* (BT4decomp: the new screen, src/menu/port_charsel.c) */
+    {   /* the map first (the setting select_stage_first, 1 by default): offline, with the new screen */
+        extern int Port_Setting(const char *name, int def), Port_NetSession(void), Port_NetActive(void), Port_TagNetwork(void);
+        /* online too: the same order on both copies (the setting is this device's: online it does not decide), the map chosen first by the one whose
+           pad it is as ever, then each at his side; the way to the battle after, from the local fighter */
+        sPortStageFirst = PortCharSel_On() && !Port_TagNetwork() &&
+                          (Port_NetSession() || Port_NetActive() || Port_Setting("select_stage_first", 1)) ? 1 : 0;
+    }
 #endif
     ColorFade_StartIn(0, 0, 0, 0x14);
     while (1) {
@@ -2201,13 +2292,40 @@ s32 CharSel_Run(s32 section) {
             }
             continue;
         }
+#ifdef PORT
+        if (PortCharSel_InCinema() && !(gCharSel->flags & CHARSEL_FLAG10)) { /* the way to the battle: to its end, then out */
+            PortCharSel_CineBlank();
+            if ((gPad[0].gamePressed | gPad[1].gamePressed) & (PADG_CROSS | PADG_START)) {
+                PortCharSel_CinemaSkip(); /* (a press of either player skips it: online the pads are the two copies', the same on both) */
+            }
+            if (PortCharSel_CinemaDone()) {
+                gCharSel->flags |= CHARSEL_FLAG10;
+                gCharSel->timer = 0;
+            }
+            continue;
+        }
+#endif
         if (gCharSel->flags & CHARSEL_FLAG10) {
             if (--gCharSel->timer == -1) {
+#ifdef PORT
+                if (PortCharSel_InCinema()) {
+                    PortHold_Capture(); /* the way's last frame is kept, to stay on over the battle's loading */
+                }
+                if (!PortHold_Active()) {
+                    ColorFade_StartOut(0, 0, 0, PortCharSel_InCinema() ? 1 : 0x14); /* (after the way to the battle: a cut) */
+                }
+#else
                 ColorFade_StartOut(0, 0, 0, 0x14);
+#endif
                 CSPROG->side[0].pick = *(CharSelPick *)gCharSel->side[0];
                 CSPROG->side[1].pick = *(CharSelPick *)gCharSel->side[1];
                 CSPROG->stage = gCharSel->stage->col + gCharSel->stage->row * CHARSEL_STAGE_COLS;
                 CSPROG->bgm = gCharSel->bgmIds[gCharSel->stage->bgmPlaying];
+#ifdef PORT
+                if (PortHold_Active()) {
+                    break; /* no fade to black: the picture goes straight on into the loading (stg_b.c PortHold_*) */
+                }
+#endif
             }
         } else {
             CharSel_Input(&result);
@@ -2215,6 +2333,7 @@ s32 CharSel_Run(s32 section) {
     }
 #ifdef PORT
     PortCharSel_End();
+    sPortStageFirst = 0;
 #endif
     if (result != 0) {
         s32 flag[2] = { 1, 1 };

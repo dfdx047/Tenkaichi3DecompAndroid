@@ -729,11 +729,18 @@ s32 PortScreen_Main(void) {
         if(back==2)Port_TagClose();
         if(back==1 || (Port_TagPhase()==2 && Port_TagResultChoice()==1)) {
             if(TeamSel_TagRun(2)){result=3;gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;break;}
+            Adx_StopAll(); /* (back from the select: its music stops before the Online menu's starts) */
         }}
-        Bgm_Play(0x816 + 2);
+        /* the Online menu's music from its start: SUPER SURVIVOR, the last song of the music list before "random" (list
+           id 0xD5: file 0x816 + 0xD5, read from the select's own list, BT3_BGM_DEBUG). Was 0x816 + 2. */
+        Bgm_Play(0x816 + 0xD5);
         do {
             result = PortTbo_Run();
             if (result == 2 && TeamSel_TagRun(2)) { result=3; break; }
+            if (result == 2) { /* back from the Tag Team's select to the Online menu: the select's music off, the menu's again */
+                Adx_StopAll();
+                Bgm_Play(0x816 + 0xD5);
+            }
         } while (result == 2);
         Adx_StopAll();
         if(result==3){gProgress->mode=80;gPortScreen=PORT_SCREEN_TBO;}

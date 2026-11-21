@@ -2,6 +2,7 @@
 #include "port_variant.h"
 #include "battle/view_a.h"
 #include "battle/orbit_cam.h"
+#include "cine_shot.h"
 #include "sys/common.h"
 #include "sys/fade.h"
 #include "sys/file.h"
@@ -472,6 +473,42 @@ extern s32 BtlObjAnim_PortStopped(u8 *obj);
 extern s32 BtlObjAnim_PortSpan(u8 *obj, f32 *top, f32 *bottom);
 extern void BtlObjAnim_SetStep(u8 *obj, f32 step);
 extern void BtlObjAnim_PortPlace(u8 *obj, f32 x, f32 yaw, f32 scale, const f32 *feet, f32 lift);
+extern void BtlObjAnim_PortRigid(u8 *obj, f32 th, f32 ox, f32 oy, f32 oz);
+extern s32 BtlStage_GetStartPlace(s32 side, Vec4 *pos, Vec4 *rot, s32 alt);
+
+/* Where the select stands in each stage: its first player's place, on its ground, turned as the fight turns him (the user: "put the
+   select exactly where the models appear in each field", so that the animations make sense). The select's own frame (the fighter at the
+   origin, facing +z) is carried there whole: its positions turned by sHostTh and moved by (sHostOx, sHostOy, sHostOz), its yaws and the
+   camera's turned by sHostTh. */
+#ifndef atan2f
+extern f32 atan2f(f32 y, f32 x);
+extern f32 cosf(f32 x);
+extern f32 sinf(f32 x);
+#endif
+static CHRVIEW_HOST f32 sHostOx, sHostOy, sHostOz, sHostTh;
+
+static void ChrView_PortWorld(f32 x, f32 z, f32 *wx, f32 *wz) {
+    f32 c = cosf(sHostTh);
+    f32 s = sinf(sHostTh);
+
+    *wx = x * c + z * s + sHostOx;
+    *wz = -x * s + z * c + sHostOz;
+}
+
+static void ChrView_PortSetTarget(f32 x, f32 y, f32 z) {
+    f32 wx;
+    f32 wz;
+
+    ChrView_PortWorld(x, z, &wx, &wz);
+    OrbitCam_SetTarget(wx, y + sHostOy, wz);
+}
+#define OrbitCam_SetTarget ChrView_PortSetTarget
+
+static void ChrView_PortSetAngles(f32 pitch, f32 yaw, f32 roll) {
+    OrbitCam_SetAngles(pitch, yaw + sHostTh, roll);
+}
+#define OrbitCam_SetAngles ChrView_PortSetAngles
+extern void BtlObjAnim_PortShiftZ(u8 *obj, f32 z);
 extern s32 BtlObjAnim_PortFeet(u8 *obj, f32 *feet);
 extern void BtlObjAnim_PortSeek(u8 *obj, s32 end);
 extern void BtlObjAnim_PortIdle(u8 *obj, f32 seconds);
@@ -508,6 +545,14 @@ static CHRVIEW_HOST f32 sHostAir[CHRVIEW_PORT_VIEWS], sHostLand[CHRVIEW_PORT_VIE
 /* BT4's new select, a team complete: its fighters standing in a row in the stage, each in its own entrance (no fall),
    instead of the one fighter (ChrView_PortLineup). 0: the one fighter. */
 static CHRVIEW_HOST s32 sHostLine;
+/* BT4's new select, the fighters chosen: the way to the battle, as the user's video of Sparking Zero
+   (ChrView_PortCinema). sHostCine its frame (-1 none), the opponent's fighter (chara, costume) */
+static CHRVIEW_HOST s32 sHostCine = -1, sHostOppChara = -1, sHostOppCostume;
+/* its times, in frames from its start (the video's 2.42 s): the speed lines cover the screen from CHRVIEW_CINE_CUT - 18
+   to + 21, the camera cut to the face under them at CHRVIEW_CINE_CUT; the hold behind him ends at CHRVIEW_CINE_END */
+#define CHRVIEW_CINE_CUT 55
+#define CHRVIEW_CINE_END 270
+static f32 sPortCineX, sPortCineH; /* the chosen fighter: where he stands across, how tall */
 static CHRVIEW_HOST s32 sHostStageOk; /* a fight's stage was read (not the character reference's room) */
 static CHRVIEW_HOST s32 sHostStageDrawn; /* and drawn all round (BT4's one-screen select): its 2D field is not needed */
 static CHRVIEW_HOST s32 sHostLineChara[CHRVIEW_PORT_LINE_MAX], sHostLineCostume[CHRVIEW_PORT_LINE_MAX];
@@ -564,6 +609,7 @@ static f32 sPortGround[CHRVIEW_PORT_VIEWS], sPortGroundNew[CHRVIEW_PORT_VIEWS], 
 static s32 sPortMeasure[CHRVIEW_PORT_VIEWS];
 /* its feet's height and its body's at the end of the entrance (measured before it is shown; body 0: not measured) */
 static f32 sPortEndFeet[CHRVIEW_PORT_VIEWS], sPortEndBody[CHRVIEW_PORT_VIEWS], sPortEndFeetNew[CHRVIEW_PORT_VIEWS], sPortEndBodyNew[CHRVIEW_PORT_VIEWS];
+static s32 sPortCineLoad[CHRVIEW_PORT_VIEWS]; /* read for the way to the battle: it stands as the select left it, in its last pose */
 static s32 sPortIdleOn[CHRVIEW_PORT_VIEWS]; /* gone into its stance: the blend is being stepped */
 /* the character reference's stance read for a slot (sPortPose), to go over into after the entrance */
 static s32 sPortPoseOk[CHRVIEW_PORT_VIEWS][CHRVIEW_SLOT_COUNT];
@@ -670,6 +716,46 @@ void ChrView_PortLineup(s32 n, const s32 *chara, const s32 *costume, const f32 *
     }
 }
 
+/* BT4's new select, the fighters chosen (frame 0 on, -1 off): the way to the battle, the user's video of Sparking
+   Zero's. The camera comes up to the chosen fighter (a team's first, the one in the middle of its row), the screen
+   is crossed by speed lines and under them the camera is at his face; it goes round him by his right to his back and
+   holds there, the opponent (oppChara, oppCostume) standing far off in front of him, turned to him. Set before
+   ChrView_PortFrame, every frame. */
+/* The way to the battle's pre-roll (before its clock runs): its fighter is being read, and, as in the way itself, he is shown standing, not
+   coming down from the sky. */
+static CHRVIEW_HOST s32 sHostPre;
+void ChrView_PortCinemaPre(s32 on) {
+    sHostPre = on;
+}
+
+/* The way's fighter, `chara`, is the one shown on the first side, whole, nothing waiting to take his place, and on the screen. */
+s32 ChrView_PortNoFade(void) {
+    return sHostCine >= 0 || sHostPre;
+}
+
+/* (measured: why the lead is not ready, for the recordings) */
+void ChrView_PortLeadWhy(void) {
+    fprintf(stderr, "bt3: cine: lead not ready: view %d shown %d new %d reading %d cur %d visible %d count %d measure %d resim %d\n", sPortView[0] != NULL,
+            (int)sPortShown[0], sPortNew[0] != NULL, sPortReading[0] != NULL, sPortView[0] != NULL && sPortView[0]->cur != NULL,
+            sPortView[0] != NULL ? (int)sPortView[0]->visible : -1, (int)sPortCount[0], (int)sPortMeasure[0], 0);
+}
+
+/* Whether the chosen fighter stands in the viewer (the cinema's pre-roll waits for it). The viewer's variables exist only inside its
+   world: from outside (the select's screen) they read empty, which kept this "not ready" for ever and the pre-roll ran to its limit,
+   a still grey flash. So it is worked out inside, once a frame (ChrView_PortFrame), into host variables. */
+static CHRVIEW_HOST s32 sHostLeadWant = -1, sHostLeadOk;
+
+s32 ChrView_PortLeadReady(s32 chara) {
+    sHostLeadWant = chara;
+    return sHostLeadOk;
+}
+
+void ChrView_PortCinema(s32 frame, s32 oppChara, s32 oppCostume) {
+    sHostCine = frame;
+    sHostOppChara = oppChara;
+    sHostOppCostume = oppCostume;
+}
+
 /* A viewer of slots model buffers (the sides two: one shown, the next read beside it; a team's fighters one). */
 static void ChrView_PortOneView(s32 side, s32 slots) {
     s32 i;
@@ -713,6 +799,7 @@ static void ChrView_PortOneView(s32 side, s32 slots) {
 static void ChrView_PortInit(s32 split) {
     ChrViewCommon *res = (ChrViewCommon *)gCommonRes->unk20;
     s32 got;
+    u32 t0 = Port_LoadTimeUs(), t1 = 0, t2 = 0, t3 = 0; /* (measured, for the recordings: where the viewer's start-up spends its time) */
 
     Battle_GetWork()->flags &= ~0x100;
     for (got = 0; got < CHRVIEW_PORT_VIEWS; got++) {
@@ -741,20 +828,43 @@ static void ChrView_PortInit(s32 split) {
         s32 size = 0x6CB800; /* (the fight's stage buffer, battle_work.h) */
 
         res->stage = ChrView_PortMem(size);
-        got = res->stage != NULL && stage >= 0 && stage < 38 ? File_PortReadRaw(0x5F3 + stage, res->stage, size) : 0;
+        got = res->stage != NULL && stage >= 0 && stage < 0x63 ? File_PortReadRaw(0x5F3 + stage, res->stage, size) : 0;
         if (got < 0x1000 && res->stage != NULL) {
             stage = -1;
             got = File_PortReadRaw(CHRVIEW_FILE_STAGE, res->stage, size);
         }
+        t1 = Port_LoadTimeUs();
         sHostStageOk = stage >= 0;
         fprintf(stderr, "bt3: select: the viewer's world is up (stage %d, %d bytes, %d side(s))\n", (int)stage, (int)got,
                 (int)(split ? 2 : 1));
     }
+    t2 = Port_LoadTimeUs();
     StgModel_InitStage();
+    t3 = Port_LoadTimeUs();
+    sHostOx = sHostOy = sHostOz = sHostTh = 0.0f;
+    if (sHostStageOk) {
+        Vec4 at;
+        Vec4 rot;
+
+        memset(&at, 0, sizeof(at));
+        memset(&rot, 0, sizeof(rot));
+        BtlStage_GetStartPlace(0, &at, &rot, 0);
+        fprintf(stderr, "bt3: select: stage's place x %d y %d z %d yaw %d\n", (int)at.x, (int)at.y, (int)at.z, (int)(rot.y * 1000.0f));
+        if (at.x > -5000.0f && at.x < 5000.0f && at.z > -5000.0f && at.z < 5000.0f && at.y > -690.0f && at.y < 1000.0f && rot.y > -7.0f &&
+            rot.y < 7.0f) {
+            sHostOx = at.x;
+            sHostOy = at.y;
+            sHostOz = at.z;
+            sHostTh = rot.y;
+        }
+    }
     StgFx_Init();
     Ot_Init();
     BtlScene_Init(8);
     Fade_Start(0, 1, 1.0f);
+    fprintf(stderr, "bt3: select: viewer start-up %d ms: views and objects %d, stage read %d, stage bound %d, place and effects %d\n",
+            (int)((Port_LoadTimeUs() - t0) / 1000u), (int)((t1 - t0) / 1000u), (int)((t2 - t1) / 1000u), (int)((t3 - t2) / 1000u),
+            (int)((Port_LoadTimeUs() - t3) / 1000u));
 }
 
 /* One of a fighter's files, into buf: begun on the port's thread, or (no thread) read now. */
@@ -833,6 +943,7 @@ static void ChrView_PortNone(void) {
 /* A frame of the reading: when its files are there, the fighter's object is made. chara and costume: the fighter wanted
    now (one read for a fighter no longer wanted is let go: the next frame reads the one that is). */
 static void ChrView_PortReadStep(s32 side, s32 chara, s32 costume) {
+    s32 still; /* (the way to the battle: each fighter stands from the first frame) */
     ChrViewSlot *slot = sPortReading[side];
     s32 got = sPortReadJob[side] != 0 ? File_PortReadRawPoll(sPortReadJob[side]) : sPortReadGot[side];
     s32 at;
@@ -877,7 +988,10 @@ static void ChrView_PortReadStep(s32 side, s32 chara, s32 costume) {
         /* the fight's motions (entrance 0x180, hold 0x181): BT3's file chara * 10 + 0x598; BT4 renumbers them, 0x141E +
            chara, as the fight asks for them (btl_obj.c BtlObj_RequestCharaModel; SLUS_219.78 0x249C60) */
         slot->file[1].id = PORT_V(chara * 10 + CHRVIEW_FILE_FIRST + 8, 0x141E + chara);
-        if (gPortVariant != 0 && sHostEntrance >= 0 && sHostEntrance < CHRVIEW_CHARA_COUNT && !ChrView_PortGiant(chara)) {
+        if (gPortVariant != 0 && sHostEntrance >= 0 && sHostEntrance < CHRVIEW_CHARA_COUNT && !ChrView_PortGiant(chara) &&
+            side < CHRVIEW_PORT_LINE) {
+            /* (a team's row, View Team, is not: each of its fighters stands on the ground from the start and plays its own
+               presentation, the one of a fight's opening, as the user asked; they no longer come down from the sky) */
             /* BT4's new select: one fighter's motions for all (a skeleton is the same on every fighter): its entrance
                ends standing still, facing the camera, where many fighters' own end bent over or keep moving */
             slot->file[1].id = 0x141E + sHostEntrance;
@@ -923,23 +1037,33 @@ static void ChrView_PortReadStep(s32 side, s32 chara, s32 costume) {
     sPortGroundNew[side] = 0.0f;
     sPortEndBodyNew[side] = 0.0f;
     sPortPhase[side] = 0;
-    if (chara == CHRVIEW_CHARA_TAOPAIPAI && sPortPoseOk[side][at]) {
+    /* (the way to the battle, or what comes before it: each fighter stands from the first frame, in the fight's hold, as Taopaipai does:
+       the entrance, the fall from the sky, was played for the one swapped in the middle of the way (thin in its first poses, blinking
+       at each swap) and for the opponent while the camera turned round him) */
+    /* (the way to the battle: each fighter stands as the select shows him, in the last pose of the shared entrance, not in the fight's hold:
+       the user, "he does not go into battle mode, he stays where he was in the select". The entrance is not played: its last frame is) */
+    sPortCineLoad[side] = sHostCine >= 0 || sHostPre;
+    still = chara == CHRVIEW_CHARA_TAOPAIPAI;
+    if (still && sPortPoseOk[side][at]) {
         /* (Taopaipai's entrance comes flying from far off, on his pillar: he goes straight to his stance) */
         *(void **)(obj + 0x754) = sPortPose[side][at];
         BtlObjAnim_PlayModel(obj, 7, 2);
         sPortStanding[side] = 1;
-    } else if (chara == CHRVIEW_CHARA_TAOPAIPAI && BtlObjAnim_PortPlay(obj, sPortMotion[side][at], 0x181, 2)) {
+    } else if (still && BtlObjAnim_PortPlay(obj, sPortMotion[side][at], 0x181, 2)) {
         sPortStanding[side] = 1;
     } else if (BtlObjAnim_PortPlay(obj, sPortMotion[side][at], 0x180, 1)) {
         sPortStanding[side] = 0;
-        if (gPortVariant != 0 && sHostEntrance >= 0 && !ChrView_PortGiant(chara)) {
-            BtlObjAnim_SetStep(obj, 1.3f); /* (the shared entrance, a little quicker: it is the fighter's coming down) */
+        if (gPortVariant != 0 && sHostEntrance >= 0 && !ChrView_PortGiant(chara) && side < CHRVIEW_PORT_LINE) {
+            BtlObjAnim_SetStep(obj, 1.55f); /* (the shared entrance, quicker: the fighter's coming down; 1.3 before, a little faster again, the user) */
             if (chara != sHostEntrance) {
                 /* its last frame first: where its feet end, measured before it is shown (ChrView_PortFrame), so a small
                    body is brought down from the start and nothing moves after its landing */
                 BtlObjAnim_PortSeek(obj, 1);
                 sPortMeasure[side] = 1;
             }
+        }
+        if (sPortCineLoad[side] && sPortMeasure[side] != 1) {
+            BtlObjAnim_PortSeek(obj, 1); /* (its last frame: the pose the select keeps) */
         }
     } else if (sPortPoseOk[side][at]) {
         *(void **)(obj + 0x754) = sPortPose[side][at];
@@ -964,7 +1088,11 @@ static void ChrView_PortReadStep(s32 side, s32 chara, s32 costume) {
 /* A point of the world on the screen's 512 x 448, by the frame's camera. */
 static void ChrView_PortProject(f32 x, f32 y, f32 z, f32 *sx, f32 *sy) {
     Mtx44 *m = &gBtlCamView->world2screen;
-    f32 w = x * m->m[0][3] + y * m->m[1][3] + z * m->m[2][3] + m->m[3][3];
+    f32 w;
+
+    ChrView_PortWorld(x, z, &x, &z); /* (a point of the select's own frame, carried to the stage's place) */
+    y += sHostOy;
+    w = x * m->m[0][3] + y * m->m[1][3] + z * m->m[2][3] + m->m[3][3];
 
     if (w == 0.0f) {
         w = 1.0f;
@@ -1036,6 +1164,30 @@ static void ChrView_PortShowNew(s32 v, s32 split) {
    back, each fighter scaled to what its own framing would have made of it. BT4's new select with a team complete
    (ChrView_PortLineup): its fighters in a row instead, the one fighter kept, hidden. What the screen drew before this
    stays behind them. */
+/* the way to the battle's camera at its frame f: from the select's own framing (t0y its aim, p0 its pitch, d0 its
+   distance) up to the chosen fighter (across lx, h tall), the cut to his face, round him to his back, the hold. Worked out by
+   cine_shot.h from the lens of THIS view (its screenDist and aspect factors, the picture's shape as the port set them) and the
+   fighter's own height, not from distances written for one fighter on one picture (see that file: the old numbers cut every
+   fighter's head and feet on every shape, checked by port/tests/cine_shot_test.c). */
+static f32 sCineLockX, sCineLockH, sCineLockOppH, sCineLockT0, sCineLockP0, sCineLockD0; /* what the way was told at its first frame */
+static s32 sCineLocked;
+extern u32 Port_WorldFreeBytes(void);
+static void ChrView_PortCineCam(s32 f, f32 lx, f32 h, f32 hOpp, f32 t0y, f32 p0, f32 d0) {
+    CineLens lens = CineLens_Of(gOrbitCam->view.screenDist, gOrbitCam->view.aspectX, gOrbitCam->view.aspectY);
+    CineCam c = Cine_Cam(f, &lens, lx, h, hOpp, t0y, p0, d0);
+
+    OrbitCam_SetFloorClamp(0);
+    OrbitCam_SetPitchLimit(0.78539816f);
+    OrbitCam_SetTarget(c.tx, c.ty, c.tz);
+    OrbitCam_SetAngles(c.pitch, c.yaw, 0.0f);
+    OrbitCam_SetDistRange(c.dist, c.dist);
+    OrbitCam_SetDist(c.dist);
+    /* (measured, for the recordings: what the way's camera is told, a line a frame) */
+    fprintf(stderr, "bt3: cine: f=%d x=%d h=%d tan=%d,%d tgt=%d,%d,%d yaw=%d pit=%d dist=%d\n", (int)f, (int)(lx * 100.0f), (int)(h * 100.0f),
+            (int)(lens.tanV * 1000.0f), (int)(lens.tanH * 1000.0f), (int)(c.tx * 100.0f), (int)(c.ty * 100.0f), (int)(c.tz * 100.0f),
+            (int)(c.yaw * 1000.0f), (int)(c.pitch * 1000.0f), (int)(c.dist * 100.0f));
+}
+
 void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 split) {
     u32 *dma = gDmaCur;
     s32 vif = gDmaVif1Started;
@@ -1135,6 +1287,30 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
             act[acts++] = v;
         }
     }
+    /* the way to the battle: the opponent, read as soon as it starts (into the second side's viewer, one on one and a
+       team alike: it is not on the screen before the camera is behind the chosen fighter) */
+    if (sHostCine >= 0 && !split && sHostOppChara >= 0 && sHostOppChara < CHRVIEW_CHARA_COUNT) {
+        extern u32 Port_WorldFreeBytes(void);
+
+        if (sPortView[1] == NULL && Port_WorldFreeBytes() >= (u32)CHRVIEW_PORT_LINE_ROOM) {
+            ChrView_PortOneView(1, 1);
+        }
+        if (sPortView[1] != NULL) {
+            gChrView = sPortView[1];
+            if (sPortReading[1] != NULL) {
+                ChrView_PortReadStep(1, sHostOppChara, sHostOppCostume);
+            } else if (sPortNew[1] == NULL && (sHostOppChara != sPortChara[1] || sHostOppCostume != sPortCostume[1])) {
+                ChrView_PortNone();
+                if (!ChrView_PortLoad(1, sHostOppChara, sHostOppCostume)) {
+                    ChrView_PortNone();
+                }
+                sPortChara[1] = sHostOppChara;
+                sPortCostume[1] = sHostOppCostume;
+            }
+            ChrView_PortShowNew(1, 0);
+            act[acts++] = 1;
+        }
+    }
     /* what is not on screen this frame is hidden (and kept: a team shown again, or left, is there at once) */
     for (k = 0; k < CHRVIEW_PORT_VIEWS; k++) {
         s32 on = 0;
@@ -1148,6 +1324,16 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
         for (j = 0; j < acts; j++) {
             on |= act[j] == k;
         }
+        if (sHostPre && !sHostLeadOk && k == 0) {
+            on = 0; /* (the chosen fighter is being put in the place of the one shown: not on the screen meanwhile, not swapped before the eyes) */
+        }
+        if (sHostCine >= 0 && !split) { /* the way to the battle: before the cut the row, after it him and his opponent */
+            if (k == 1) {
+                on &= sHostCine >= CHRVIEW_CINE_CUT;
+            } else if (k > CHRVIEW_PORT_LINE) {
+                on &= sHostCine < CHRVIEW_CINE_CUT;
+            }
+        }
         if (sPortView[k]->cur != NULL) {
             extern void BtlObj_PortSetActive(u8 *obj, s32 on); /* (btl_obj.c: out of every object pass while hidden) */
 
@@ -1159,6 +1345,8 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
             sHostPedestal[k] = 0;
         }
     }
+    sHostLeadOk = sHostLeadWant >= 0 && sPortView[0] != NULL && sPortShown[0] == sHostLeadWant && sPortNew[0] == NULL && sPortReading[0] == NULL &&
+                  sPortView[0]->cur != NULL;
     if (line) {
         /* The team in a row, laid out in the world by each one's own size (the character table's distance for it, as
            large as the body: a giant takes three times a man's room), the first in the middle and the others out to
@@ -1183,15 +1371,17 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
             }
             far = size > far ? size : far;
             w = size * 0.42f; /* (a body's room across: Goku's table distance 25, some 10 across with his arms) */
+            /* (the gap between two: the user asked for room between them, they stood too close: a fifth of a body's
+               size, some 5.5 for Goku, where it was 2.5) */
             if (k == 0) {
                 sPortLineAt[k] = 0.0f;
                 left = -w * 0.5f;
                 right = w * 0.5f;
             } else if (k & 1) {
-                sPortLineAt[k] = left - 2.5f - w * 0.5f;
+                sPortLineAt[k] = left - size * 0.22f - w * 0.5f;
                 left = sPortLineAt[k] - w * 0.5f;
             } else {
-                sPortLineAt[k] = right + 2.5f + w * 0.5f;
+                sPortLineAt[k] = right + size * 0.22f + w * 0.5f;
                 right = sPortLineAt[k] + w * 0.5f;
             }
         }
@@ -1203,7 +1393,9 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
         if (far > 0.0f) {
             /* far enough for the row across the screen's width (0.645 of it, as the one fighter's framing shows) and
                for the tallest from head to feet (0.86 of its table distance) */
-            f32 goal = width * 0.66f > far * 0.92f ? width * 0.66f : far * 0.92f;
+            /* (the user: too close and too low, not every fighter on the screen. Further off, the whole row with room at
+               its ends in the middle of the screen the select leaves free, and more from above) */
+            f32 goal = width * 1.05f > far * 1.25f ? width * 1.05f : far * 1.25f;
 
             if (sPortLineDist <= 0.0f) {
                 sPortLineDist = goal;
@@ -1216,7 +1408,7 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
             OrbitCam_SetFloorClamp(0);
             OrbitCam_SetPitchLimit(0.78539816f);
             OrbitCam_SetTarget(0.0f, sPortLineAim, 0.0f);
-            OrbitCam_SetAngles(-0.04f, 3.14159265f, 0.0f);
+            OrbitCam_SetAngles(-0.26f, 3.14159265f, 0.0f);
             OrbitCam_SetDistRange(sPortLineDist, sPortLineDist);
             OrbitCam_SetDist(sPortLineDist);
         }
@@ -1270,6 +1462,68 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
             sPortCamTurn++;
         }
     }
+    if (sHostCine >= 0 && !split) { /* the way to the battle: the camera is its own */
+        if (!sCineLocked) {
+            /* What the way is told is taken ONCE, at its first frame, and kept. Before, it was worked out again every frame from
+               values the screen goes on changing (the fighter's world x from the moving camera, his measured height as the file
+               is read again, the table's 16 when not yet measured): the camera and the fighter chased each other and the framing
+               jumped. */
+            ChrViewInfo *lead;
+
+            lead = NULL; /* (no pointer chosen by ?: here: the 4-byte pointers' step cannot take it) */
+            sCineLockT0 = line ? sPortLineAim : sPortAimY;
+            sCineLockP0 = line ? -0.26f : -0.04f;
+            sCineLockD0 = line ? sPortLineDist : sPortDist;
+            if (line) {
+                if (sHostLineChara[0] >= 0 && sHostLineChara[0] < CHRVIEW_CHARA_COUNT) {
+                    lead = ChrView_GetCharaInfo(sHostLineChara[0]);
+                }
+                sCineLockX = sPortLineAt[0];
+                sCineLockH = 0.0f;
+                if (sPortEndBody[CHRVIEW_PORT_LINE] > 1.0f) { /* the lead of the row, as measured on its feet */
+                    sCineLockH = sPortEndBody[CHRVIEW_PORT_LINE];
+                } else if (lead != NULL && lead->dist > 1.0f) {
+                    sCineLockH = lead->dist * 0.63f;
+                }
+            } else {
+                if (sPortShown[0] >= 0 && sPortShown[0] < CHRVIEW_CHARA_COUNT) {
+                    lead = ChrView_GetCharaInfo(sPortShown[0]);
+                }
+                sCineLockX = sPortX[0];
+                sCineLockH = 0.0f;
+                if (sPortEndBody[0] > 1.0f) {
+                    sCineLockH = sPortEndBody[0];
+                } else if (lead != NULL && lead->dist > 1.0f) {
+                    sCineLockH = lead->dist * 0.63f;
+                }
+            }
+            if (sCineLockH <= 1.0f) {
+                sCineLockH = 16.0f; /* (nothing known of him: Goku's, as the select was made on) */
+            }
+            sCineLockOppH = sCineLockH; /* the opponent's height: the character table's by his distance, as a fighter not measured is; else his equal */
+            if (sHostOppChara >= 0 && sHostOppChara < CHRVIEW_CHARA_COUNT) {
+                ChrViewInfo *oi = ChrView_GetCharaInfo(sHostOppChara);
+
+                if (oi != NULL && oi->dist > 1.0f) {
+                    sCineLockOppH = oi->dist * 0.63f;
+                }
+            }
+            if (sCineLockD0 <= 1.0f) {
+                sCineLockD0 = sCineLockH * 2.0f;
+            }
+            sCineLocked = 1;
+            fprintf(stderr, "bt3: cine: locked x=%d h=%d (line %d, measured %d)\n", (int)(sCineLockX * 100.0f), (int)(sCineLockH * 100.0f),
+                    (int)line, (int)((line ? sPortEndBody[CHRVIEW_PORT_LINE] : sPortEndBody[0]) > 1.0f));
+        }
+        sPortCineX = sCineLockX;
+        sPortCineH = sCineLockH;
+        ChrView_PortCineCam(sHostCine, sCineLockX, sCineLockH, sCineLockOppH, sCineLockT0, sCineLockP0, sCineLockD0);
+        fprintf(stderr, "bt3: cine: acts=%d shown0=%d free=%d | opp: chara=%d shown=%d new=%d view=%d cur=%d vis=%d\n", (int)acts, (int)sPortShown[0],
+                (int)(Port_WorldFreeBytes() >> 10), (int)sHostOppChara, (int)sPortShown[1], sPortNew[1] != NULL, sPortView[1] != NULL,
+                sPortView[1] != NULL && sPortView[1]->cur != NULL, sPortView[1] != NULL ? (int)sPortView[1]->visible : -1);
+    } else {
+        sCineLocked = 0;
+    }
     OrbitCam_Update(0);
     gBtlStage->flags &= ~1;
     for (k = 0; k < acts; k++) {
@@ -1312,8 +1566,15 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
                     sPortStanding[v] = 1;
                 }
             }
-            if (inLine) {
+            if (v == 1 && sHostCine >= 0 && !split) {
+                sPortX[v] = sPortCineX + CINE_OPP_SIDE * sPortCineH; /* the opponent, in the map: to one side, ahead of him (cine_shot.h) */
+            } else if (inLine) {
                 sPortX[v] = sPortLineAt[v - CHRVIEW_PORT_LINE];
+            } else if (sHostCine >= 0 && !split && sCineLocked) {
+                /* the way to the battle: the fighter stands where he stood when it began. Worked out again each frame from the
+                   screen position by the camera of the moment, with that camera moving, he was moved about the world by it,
+                   and the camera, aimed at where he was, went after him. */
+                sPortX[v] = sCineLockX;
             } else if (info != NULL) {
                 f32 a;
                 f32 b;
@@ -1332,8 +1593,11 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
                 /* brought down by as much as it would end over the floor (its entrance someone else's), less as it goes
                    over into its own stance */
                 f32 lift = -sPortGroundShown[v] * sPortGroundW[v];
-                f32 turn = sHostWide && !split && !inLine ? sHostTurn : 0.0f;
-                f32 y = inLine ? 0.0f : yaw[v];
+                s32 opp = v == 1 && sHostCine >= 0 && !split;
+                f32 turn = sHostWide && !split && !inLine && !opp ? sHostTurn : 0.0f;
+                f32 y = inLine ? 0.0f : opp ? 3.14159265f + atan2f(CINE_OPP_SIDE * sPortCineH,
+                                                                   Cine_OppDepth(sPortCineH, sCineLockOppH > 1.0f ? sCineLockOppH : sPortCineH))
+                                                : yaw[v]; /* (the opponent turned to face him: he stands a little to the side) */
 
                 sHostAir[v] = 0.0f;
                 sHostLand[v] = 0.0f;
@@ -1361,13 +1625,17 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
                    off. His feet are still followed meanwhile: in a team's row his own presentation after the fall is
                    kept on its place by them, as before) */
                 s32 freeFall = sPortCurChara[v] == CHRVIEW_CHARA_METAL_COOLER && gPortVariant != 0 && sHostEntrance >= 0 &&
-                               (sPortPhase[v] == 0 || !inLine);
+                               !inLine; /* (a team's row: on the ground from the start, no fall) */
 
                 if (sPortPinned[v] && !freeFall) {
                     BtlObjAnim_PortPlace(obj, sPortX[v], y + turn, scale, &sPortFeet[v][0], lift);
                 } else {
                     BtlObjAnim_PortPlace(obj, sPortX[v], y + turn, scale, NULL, lift);
                 }
+                if (opp) {
+                    BtlObjAnim_PortShiftZ(obj, Cine_OppDepth(sPortCineH, sCineLockOppH > 1.0f ? sCineLockOppH : sPortCineH));
+                }
+                BtlObjAnim_PortRigid(obj, sHostTh, sHostOx, sHostOy, sHostOz);
             }
         }
     }
@@ -1447,8 +1715,12 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
                     /* (only a small fighter, a body shorter than 14: on the others what is left does not show, and
                        taking it off after the landing read as a jolt to the user) */
                     (void)rest; /* (the ground is measured before it is shown now: nothing changes after the landing) */
-                    fprintf(stderr, "bt3: select: fighter %d down, feet %d thousandths over the floor (body %d): brought down\n",
-                            (int)sPortShown[v], (int)(sPortGround[v] * 1000.0f), (int)(sPortSpanV[v] * 1000.0f));
+                    {
+                        extern int Port_SelectStage(void);
+
+                        fprintf(stderr, "bt3: select: fighter %d down, feet %d thousandths over the floor (body %d): brought down (stage %d)\n",
+                                (int)sPortShown[v], (int)(sPortGround[v] * 1000.0f), (int)(sPortSpanV[v] * 1000.0f), (int)Port_SelectStage());
+                    }
                 }
             } else {
                 sPortStill[v] = 0;
@@ -1463,6 +1735,17 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
         }
         if (again) {
             break; /* (nothing was worked out this blank: nothing to measure or blend) */
+        }
+        if (k >= CHRVIEW_PORT_LINE && sPortNew[k] != NULL && sPortMeasure[k] == 0 && sPortCount[k] == 2) {
+            /* (measured, for the recordings: a team's row stands on its own presentation, no shared entrance and no measure of the
+               floor, so where each fighter's feet are is only known from here: the lowest joint and the top, in the model's axes) */
+            f32 low;
+            f32 top;
+
+            if (BtlObjAnim_PortFeetSpan(BtlObj_Get(sPortNew[k]->obj), &low, &top)) {
+                fprintf(stderr, "bt3: select: row view %d fighter %d: lowest joint %d, top %d, span %d\n", (int)k, (int)sPortShown[k],
+                        (int)(low * 1000.0f), (int)(top * 1000.0f), (int)((top - low) * 1000.0f));
+            }
         }
         if (sPortNew[k] != NULL && sPortMeasure[k] == 1 && sPortCount[k] >= 2) {
             /* the entrance's last frame worked out (by an update of its own): its feet's lowest joint that far over the
@@ -1488,7 +1771,7 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
                             (int)(span * 1000.0f), (int)(sPortGroundNew[k] * 1000.0f));
                 }
             }
-            BtlObjAnim_PortSeek(obj, 0);
+            BtlObjAnim_PortSeek(obj, sPortCineLoad[k] ? 1 : 0); /* (the way to the battle: it stays on that last frame) */
             sPortMeasure[k] = 2;
         }
         if (sPortView[k]->cur != NULL && sPortIdleOn[k]) {
@@ -1539,8 +1822,24 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
         gChrView = sPortView[0];
         BtlObj_UpdateVisibility(0);
         BtlObj_FinishVisibility(0);
+        if (sHostCine >= 0 && !split && sHostCine % 15 == 0) { /* (measured, for the recordings) */
+            extern void BtlObj_PortDump(u8 *obj, const char *tag);
+
+            BtlObj_PortDump(sPortView[0] != NULL && sPortView[0]->cur != NULL ? BtlObj_Get(sPortView[0]->cur->obj) : NULL, "lead");
+            BtlObj_PortDump(sPortView[1] != NULL && sPortView[1]->cur != NULL ? BtlObj_Get(sPortView[1]->cur->obj) : NULL, "opp");
+        }
         BtlStage_Update();
         BtlScene_Update();
+        if (sHostCine >= 0 && !split) {
+            /* The stage's and the scene's updates are the fight's own modules and share the camera with it (View_Apply sets the
+               one global view, gBtlCamView, and the VU0's matrices). The way's camera is put back after them, so that what is
+               drawn is drawn by it whatever they did: the recording had the picture change between the way's camera and others
+               from one frame to the next. */
+            if (gBtlCamView != &gOrbitCam->view) {
+                fprintf(stderr, "bt3: cine: the view was swapped by the stage or scene update: the way's camera put back\n");
+            }
+            OrbitCam_Update(0);
+        }
         if (sHostWide || (gPortVariant != 0 && sHostStageOk)) {
             /* BT4's new select (and BT4 with two choosing): the fight's stage all around (the BT3 select drew no room: its backdrop is 2D) */
             Gfx_MarkPass(1);
@@ -1601,10 +1900,16 @@ void ChrView_PortEnd(void) {
     }
     sHostLive = 0;
     sHostStageDrawn = 0;
+    sHostOx = sHostOy = sHostOz = sHostTh = 0.0f;
     memset(sHostVisible, 0, sizeof(sHostVisible));
     memset(sHostPedestal, 0, sizeof(sHostPedestal));
     sHostLine = 0;
     sHostStage = NULL;
+    sHostCine = -1;
+    sHostPre = 0;
+    sHostLeadWant = -1;
+    sHostLeadOk = 0;
+    sHostOppChara = -1;
 }
 #endif
 

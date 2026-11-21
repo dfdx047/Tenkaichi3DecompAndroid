@@ -904,6 +904,7 @@ void BtlObjAnim_PortPlace(BobjObj *obj, f32 x, f32 yaw, f32 scale, const f32 *fe
 
     obj->xf.pos.x = x;
     obj->xf.pos.y = -lift;
+    obj->xf.pos.z = 0.0f; /* (every frame: what moves z after this (the shift, the stage's place) is added to this, once) */
     obj->xf.rot.y = yaw;
     obj->xf.scale = scale;
     BtlObjXf_Update(obj);
@@ -913,6 +914,39 @@ void BtlObjAnim_PortPlace(BobjObj *obj, f32 x, f32 yaw, f32 scale, const f32 *fe
     obj->xf.pos.x = x - (feet[0] * m->m[0][0] + feet[2] * m->m[2][0]);
     obj->xf.pos.y = -feet[1] * m->m[1][1] - lift;
     obj->xf.pos.z = -(feet[0] * m->m[0][2] + feet[2] * m->m[2][2]);
+    BtlObjXf_Update(obj);
+}
+
+/* The select's model carried to the stage's place for the fighter (view_a_d.c): turned by th about the vertical through the origin, then
+   moved by (ox, oy, oz). After BtlObjAnim_PortPlace and the shift in z, once a frame (PortPlace sets x, y, z and the yaw each frame). */
+extern f32 cosf(f32 x);
+extern f32 sinf(f32 x);
+
+void BtlObjAnim_PortRigid(BobjObj *obj, f32 th, f32 ox, f32 oy, f32 oz) {
+    f32 c;
+    f32 sn;
+    f32 x;
+    f32 z;
+
+    if (th == 0.0f && ox == 0.0f && oy == 0.0f && oz == 0.0f) {
+        return;
+    }
+    c = cosf(th);
+    sn = sinf(th);
+    x = obj->xf.pos.x;
+    z = obj->xf.pos.z;
+    obj->xf.pos.x = x * c + z * sn + ox;
+    obj->xf.pos.z = -x * sn + z * c + oz;
+    obj->xf.pos.y += oy;
+    obj->xf.rot.y += th;
+    BtlObjXf_Update(obj);
+}
+
+/* The select's model put at z, after BtlObjAnim_PortPlace: the opponent ahead of the chosen fighter, BT4's new select's way to the
+   battle (view_a_d.c ChrView_PortCinema). It SETS z: BtlObjAnim_PortPlace does not touch it, and this was `+=`, called every frame:
+   the opponent went 41 units further each frame (the box's z in the log: 2303, 2921, 3538 ... 7861) and was never in the picture. */
+void BtlObjAnim_PortShiftZ(BobjObj *obj, f32 z) {
+    obj->xf.pos.z = z;
     BtlObjXf_Update(obj);
 }
 

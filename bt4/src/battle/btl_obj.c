@@ -387,6 +387,14 @@ void BtlObj_InitTable(void) {
     s32 i;
 
     memset(tbl, 0, sizeof(BtlObjTable));
+#ifdef PORT
+    /* gBtlObjTbl is only rebuilt at the start of a frame (BtlObj_RebuildTable, while there is a work block), so after a fight
+       it still holds that fight's objects, freed. A world made in the middle of a frame (the select's, back from a fight)
+       asks BtlObj_Get(0) for the stage's boundary wall (EftBoundMgr_Init, fighters 0 and 1) before that frame's rebuild and
+       got those: the crash in BtlCharApi_GetRadius, in the user's session after the first fight. Empty with the table: a free
+       id is NULL, as BtlObj_Get says. */
+    memset(gBtlObjTbl, 0, sizeof(gBtlObjTbl));
+#endif
     tbl->unk44FC4 = 2.0f;
     List_Init(&tbl->freeObjs);
     List_Init(&tbl->usedObjs);
@@ -915,7 +923,14 @@ void BtlObj_UpdateView(BtlObj *obj) {
                 }
             }
             BtlObj_CalcViewColor(obj, view);
+#ifdef PORT
+            /* The select's way to the battle: no distance fade. A model fades out between its fadeNear (40 by default) and its fadeFar
+               (120) from the camera; the opponent stands 50 to 150 off the camera in the last shot and was faded or gone. */
+            extern s32 ChrView_PortNoFade(void);
+            if (!ChrView_PortNoFade() && (mdl->model->flags & 1) && !(FLAG_BITS(state->view)->black || FLAG_BITS(state->view)->pass1 || FLAG_BITS(state->view)->pass2)) {
+#else
             if ((mdl->model->flags & 1) && !(FLAG_BITS(state->view)->black || FLAG_BITS(state->view)->pass1 || FLAG_BITS(state->view)->pass2)) {
+#endif
                 BtlObjView_SetFade(view, (mdl->model->fadeNear == 0.0f) ? 40.0f : mdl->model->fadeNear,
                                    (mdl->model->fadeFar == 0.0f) ? 120.0f : mdl->model->fadeFar);
             } else {
@@ -970,6 +985,28 @@ void BtlObj_BuildDrawList(BtlObjDrawList *list, s32 view) {
     if (own != NULL) {
         list->objs[list->count++] = own;
     }
+}
+
+/* (measured, for the recordings: what the object is for the drawing, after the visibility pass: whether the frame has it in its list, how far
+   it is, its fade and its box) */
+void BtlObj_PortDump(BtlObj *obj, const char *tag) {
+    BtlObjState *state;
+    BtlObjView *view;
+    Vec4 c;
+    Vec4 h;
+
+    if (obj == NULL) {
+        fprintf(stderr, "bt3: cine: %s: no object\n", tag);
+        return;
+    }
+    state = &obj->state;
+    view = state->view;
+    ColBox_GetCenter(&state->box, &c);
+    ColBox_GetHalf(&state->box, &h);
+    fprintf(stderr, "bt3: cine: %s: active=%d stateVisible=%d viewVisible=%d dist=%d fade=%d box c(%d,%d,%d) h(%d,%d,%d)\n", tag, (int)obj->active,
+            (state->flags & BTL_OBJ_FLAG_VISIBLE) != 0, view != NULL ? (view->flags & BTL_OBJ_FLAG_VISIBLE) != 0 : -1,
+            view != NULL ? (int)(view->dist * 100.0f) : -1, view != NULL ? (int)view->fade : -1, (int)c.x, (int)c.y, (int)c.z, (int)h.x, (int)h.y,
+            (int)h.z);
 }
 
 #ifdef PORT

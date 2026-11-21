@@ -231,6 +231,10 @@ s32 TeamSel_TagRun(s32 section){
     memset(gTsProgress->team,0,sizeof(gTsProgress->team));
     for(i=0;i<5;++i){gTsProgress->team[0].member[i].chara=-1;gTsProgress->team[1].member[i].chara=-1;}
     gTsProgress->players=TEAMSEL_PLAYERS_TWO;gTsProgress->battleType=1;TeamSel_Init(section);
+#ifdef PORT
+    PortCharSel_Begin(1); /* (the new select here too, as TeamSel_Run has it: the drafting team's side, see below) */
+    sPortStageFirst = 0; /* (the room's draft: the map after it, as the room's owner decides it) */
+#endif
     sTagPage[0]=sTagPage[1]=-1;sTagSelectActive=1;sTagFacesHidden=sTagTransition=sTagTurnSeconds=0;TagSelectTest_Reset();
     sTagPublishedStage=sTagPublishedBgm=sTagAppliedStage=sTagAppliedBgm=-1;
     if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_CATALOG")){
@@ -342,6 +346,13 @@ s32 TeamSel_TagRun(s32 section){
             }
         }
         gPad[0]=savedPads[0];gPad[1]=savedPads[1];
+#ifdef PORT
+        {   /* the new select shows the team whose turn it is (its fighter, its roster); the room's line over it */
+            CsView v[2];
+            TeamSel_PortFill(&v[0], team);
+            PortCharSel_Frame(v, 0, TEAMSEL_PORT_STAGE());
+        }
+#endif
         TeamSel_Draw();Font_FlushAll();TeamSel_TagCaption(seat,pending);
         if(getenv("BT4_RENDER_TEST")&&getenv("BT4_TAG_WIDE_AUDIT")&&ColorFade_IsInDone()){
             static s32 frames[3];
@@ -351,6 +362,9 @@ s32 TeamSel_TagRun(s32 section){
         ColorFade_Draw();Gfx_EndFrame(1);Dma_Flush();File_Stub264D90();
     }
     while(gTeamSel->faceState!=TEAMSEL_LOAD_IDLE || gTeamSel->stageState!=TEAMSEL_LOAD_IDLE){TeamSel_UpdateFaceLoad();TeamSel_UpdateStageLoad();}
+#ifdef PORT
+    PortCharSel_End();
+#endif
     TeamSel_Term();Dma_ResetBuffers();sTagSelectActive=sTagFacesHidden=0;
     if(startLocal){extern void TagBattle_SetArena(s32,s32);TagBattle_SetArena(chosenStage,chosenBgm);startLocal=TagBattle_ConfigureLocal();}
     if(!startLocal && !keepRoom)Port_TagClose();

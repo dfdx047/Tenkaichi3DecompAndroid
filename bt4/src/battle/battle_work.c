@@ -369,6 +369,12 @@ s32 Battle_Load(void) {
 
 /* Frees everything Battle_Load made. */
 s32 Battle_Unload(void) {
+#ifdef PORT
+    extern void PortCharSel_CineBattleEnd(void);
+    extern void PortHold_Release(void);
+    PortCharSel_CineBattleEnd();
+    PortHold_Release(); /* (a held picture the loading never took: no later loading shows it) */
+#endif
     BtlObj_Term();
     BtlLoad_FreeAll();
     BtlScript_Free();
