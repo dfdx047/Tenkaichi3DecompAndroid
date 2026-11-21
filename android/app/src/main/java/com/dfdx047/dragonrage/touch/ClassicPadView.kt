@@ -54,8 +54,8 @@ enum class ClassicCtl(
     R3(CtlKind.BUTTON, Ps2.R3, 50f, 0.56f, 0.70f, shownByDefault = false),
     SELECT(CtlKind.PILL, Ps2.SELECT, 70f, 0.42f, 0.92f),
     START(CtlKind.PILL, Ps2.START, 70f, 0.58f, 0.92f),
-    MENU(CtlKind.SYSTEM, 0, 40f, 0.47f, 0.07f),    // the game's pause / settings window (the back key)
-    OPTIONS(CtlKind.SYSTEM, 0, 40f, 0.53f, 0.07f), // this controller's own quick menu
+    MENU(CtlKind.SYSTEM, 0, 40f, 0.47f, 0.13f),    // the game's pause / settings window (the back key)
+    OPTIONS(CtlKind.SYSTEM, 0, 40f, 0.53f, 0.13f), // this controller's own quick menu
 }
 
 /**

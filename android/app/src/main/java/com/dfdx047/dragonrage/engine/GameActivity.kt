@@ -133,6 +133,36 @@ open class GameActivity : SDLActivity() {
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
         window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
         setWindowStyle(true)
+        // The same by the current API (Android 11 and later: the flags above are only a hint there, and Android 15 and 16 keep the bars
+        // when the screen is made edge to edge), and again whenever the bars come back.
+        runCatching {
+            androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+                hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }
+        window.decorView.setOnSystemUiVisibilityChangeListener { visibility ->
+            if (visibility and android.view.View.SYSTEM_UI_FLAG_FULLSCREEN == 0) {
+                handler.removeCallbacks(rehideBars)
+                handler.postDelayed(rehideBars, 1200)
+            }
+        }
+    }
+
+    /**
+     * The system's bars are hidden again (they came back after a swipe, a notification, another app or the keyboard): the status bar over
+     * the top of the screen takes the touches of the controller's buttons that sit under it (SELECT, pause, options, the layout switch),
+     * which then do nothing.
+     */
+    private val rehideBars = Runnable { hideBars() }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            hideBars()
+            handler.removeCallbacks(rehideBars)
+            handler.postDelayed(rehideBars, 600) // (once more: some devices show them again as the window gets its focus)
+        }
     }
 
     /** The player's choice (launcher, Settings): 0 landscape, 1 portrait, 2 as the device is held. */
@@ -224,6 +254,7 @@ open class GameActivity : SDLActivity() {
 
     override fun onResume() {
         super.onResume()
+        hideBars()
         runCatching { nativeSetOnlineBackground(false) }
         runCatching {
             val lock = wifiLock ?: run {

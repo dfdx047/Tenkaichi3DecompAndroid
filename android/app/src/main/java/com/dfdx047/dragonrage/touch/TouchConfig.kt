@@ -97,11 +97,11 @@ enum class Ctl(
     // Battle-only roster actions. The native game decides the actual team size at runtime.
     TEAM_SWAP(CtlKind.SYSTEM, 0, 54f, 0.22f, 0.325f),            // sends L3 + R3 together
     TEAM_SELECT(CtlKind.SYSTEM, 0, 48f, 0.22f, 0.435f),          // one right-stick-down input advances the roster target
-    SELECT(CtlKind.PILL, Ps2.SELECT, 50f, 0.355f, 0.065f), // (shown: SELECT opens the Tag Team modes)
-    START(CtlKind.PILL, Ps2.START, 50f, 0.645f, 0.065f),
-    MENU(CtlKind.SYSTEM, 0, 40f, 0.465f, 0.065f),                // port pause / settings window
-    OPTIONS(CtlKind.SYSTEM, 0, 40f, 0.535f, 0.065f),             // controller quick menu
-    NAV_MODE(CtlKind.SYSTEM, 0, 42f, 0.50f, 0.155f),              // manually swap combat controls <-> menu D-pad
+    SELECT(CtlKind.PILL, Ps2.SELECT, 50f, 0.355f, 0.13f), // (shown: SELECT opens the Tag Team modes)
+    START(CtlKind.PILL, Ps2.START, 50f, 0.645f, 0.13f),
+    MENU(CtlKind.SYSTEM, 0, 40f, 0.465f, 0.13f),                // port pause / settings window (not at the very top: the system's status bar takes the touches there)
+    OPTIONS(CtlKind.SYSTEM, 0, 40f, 0.535f, 0.13f),             // controller quick menu
+    NAV_MODE(CtlKind.SYSTEM, 0, 42f, 0.50f, 0.235f),              // manually swap combat controls <-> menu D-pad
 }
 
 /** The ready-made tunings (ControlsScreen, "Perfis"): Standard, Online competitive, Relaxed, Classic (0.9's feel). */
