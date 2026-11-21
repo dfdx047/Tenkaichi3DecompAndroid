@@ -1017,10 +1017,16 @@ static void TeamSel_PortFill(CsView *v, s32 side) {
 static void TeamSel_PortFrame(void) {
     CsView v[2];
 
-    if (gTeamSel->players == 1 && !sTagSelectActive) { /* (BT4's Tag Team draft has a loop of its own: TeamSel_TagRun) */
+    extern int Port_NetActive(void), Port_NetSession(void);
+
+    /* (online: only this machine's own team is drawn, the opponent's not seen until the way to the battle: see CharSel_PortFrame) */
+    if (gTeamSel->players == 1 && !sTagSelectActive && !(Port_NetActive() || Port_NetSession())) { /* (BT4's Tag Team draft has a loop of its own: TeamSel_TagRun) */
         TeamSel_PortFill(&v[0], 0);
         TeamSel_PortFill(&v[1], 1);
         PortCharSel_Frame(v, 1, TEAMSEL_PORT_STAGE());
+    } else if (gTeamSel->players == 1 && !sTagSelectActive) {
+        TeamSel_PortFill(&v[0], PortCharSel_NetSide(0));
+        PortCharSel_Frame(v, 0, TEAMSEL_PORT_STAGE());
     } else {
         TeamSel_PortFill(&v[0], PortCharSel_InCinema() ? PortCharSel_NetSide(0) : gTeamSel->base & 1); /* (the way to the battle: the player's team) */
         PortCharSel_Frame(v, 0, TEAMSEL_PORT_STAGE());

@@ -38,8 +38,33 @@ u32 Ps_Rgba(s32 r, s32 g, s32 b, s32 a) {
 
 /* Any four-cornered plain shape, in the screen's 512 x 448 (corners in the order of a strip: top left, top right,
    bottom left, bottom right); the radar is drawn of these. */
+/* Everything the screens draw, scaled and moved as a whole (screen units: the 512 x 448): the select in two halves draws each half's screen as
+   the one player's, at half the size (Ps_SetAffine(0.5, 0 or 256, 0)), and back to as it was (1, 0, 0). Only these two places put anything on the
+   screen (flat shapes; pictures, which the letters are too), so the letters, the cards and the chips all follow. */
+static f32 sPsAfK = 1.0f, sPsAfX, sPsAfY;
+
+void Ps_SetAffine(f32 k, f32 ox, f32 oy) {
+    sPsAfK = k;
+    sPsAfX = ox;
+    sPsAfY = oy;
+}
+/* The same for what the game's own sprite drawing is given (a texture's part, Cs_Tex in menu/port_charsel.c): it does not pass through the two places below. */
+f32 Ps_AffX(f32 x) {
+    return x * sPsAfK + sPsAfX;
+}
+f32 Ps_AffY(f32 y) {
+    return y * sPsAfK + sPsAfY;
+}
+
 void Ps_ScreenQuad(f32 x0, f32 y0, f32 x1, f32 y1, f32 x2, f32 y2, f32 x3, f32 y3, u32 c0, u32 c1, u32 c2, u32 c3) {
     u64 *p = Dma_BeginDirect();
+
+    if (sPsAfK != 1.0f || sPsAfX != 0.0f || sPsAfY != 0.0f) {
+        x0 = x0 * sPsAfK + sPsAfX; y0 = y0 * sPsAfK + sPsAfY;
+        x1 = x1 * sPsAfK + sPsAfX; y1 = y1 * sPsAfK + sPsAfY;
+        x2 = x2 * sPsAfK + sPsAfX; y2 = y2 * sPsAfK + sPsAfY;
+        x3 = x3 * sPsAfK + sPsAfX; y3 = y3 * sPsAfK + sPsAfY;
+    }
 
     p[0] = 4 | (1ULL << 15) | (1ULL << 60);
     p[1] = 0xE;
@@ -208,6 +233,10 @@ static void Ps_SpriteScreenFiltered(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 
     }
     if (alpha > 0x80) {
         alpha = 0x80;
+    }
+    if (sPsAfK != 1.0f || sPsAfX != 0.0f || sPsAfY != 0.0f) {
+        x0 = x0 * sPsAfK + sPsAfX; y0 = y0 * sPsAfK + sPsAfY;
+        x1 = x1 * sPsAfK + sPsAfX; y1 = y1 * sPsAfK + sPsAfY;
     }
     p = Dma_BeginDirect();
     p[0] = 4 | (1ULL << 15) | (1ULL << 60); /* A+D x 4 */

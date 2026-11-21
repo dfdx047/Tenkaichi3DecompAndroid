@@ -38,6 +38,9 @@ s32 Ps_Move(s32 *cur, s32 count);
 s32 Ps_Side(void);
 s32 Ps_Wrap(s32 v, s32 lo, s32 hi);
 void Ps_PageSet(void);
+f32 Ps_AffX(f32 x);
+f32 Ps_AffY(f32 y);
+void Ps_SetAffine(f32 k, f32 ox, f32 oy); /* all that is drawn is scaled by k and moved by (ox, oy), the screen's units; (1, 0, 0) off */
 void Ps_SetShift(f32 x); /* what is drawn on the page is moved this far right (a page coming in) */
 void Ps_SetShiftY(f32 y);
 f32 Ps_X(f32 x);

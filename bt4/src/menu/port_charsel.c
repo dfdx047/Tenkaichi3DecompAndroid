@@ -51,6 +51,7 @@ extern s32 ChrView_PortPedestal(s32 side, f32 *cx, f32 *cy, f32 *rx, f32 *ry);
 extern f32 sinf(f32), cosf(f32);
 extern s32 ChrTbl_WrapCostume(s32 chara, s32 *costume);
 extern void ChrView_PortStyle(s32 wide, s32 entrance, f32 turn);
+extern void ChrView_PortSplitZoom(f32 zoom);
 extern int Port_SelectEntrance(void);
 extern int Port_SelectTurnMilli(void);
 extern void ChrView_PortAir(s32 side, f32 *air, f32 *land);
@@ -108,8 +109,8 @@ static PORT_HOST s32 sWantChara[2], sWantCostume[2], sShownChara[2], sShownCostu
 /* The dust of the press (Cw_Dust): full over the screen at RISE, the way begins there; it has cleared at END */
 #define CS_DUST 1 /* the grey streaks over the press: back on, at their full strength (the user); 0 takes them off */
 #define CS_FX_RISE (CS_DUST ? 26 : 0)
-#define CS_FX_HOLD 36
-#define CS_FX_END 92
+#define CS_FX_HOLD 46
+#define CS_FX_END 98
 /* The way to the battle, as the game's own state (NOT host variables: an online session saves and restores the game's variables, so that both
    copies of the game, and a copy run again after a rollback, are at the same blank of it). sCineBlank: 0 not begun, else the blanks since the
    press, from 1; it is the only clock: the picture's variables below are worked out from it each frame. */
@@ -142,8 +143,10 @@ static PORT_HOST s32 sFormCell[2]; /* the roster's cell that list is of */
 static PORT_HOST f32 sAlpha = 1.0f;
 static PORT_HOST f32 sShift;  /* what is drawn now is this far to the right */
 static PORT_HOST s32 sWide;   /* BT4's new select: one screen, wide (roster left, fighter large, its name low right) */
-static PORT_HOST f32 sPop;    /* the chip under the cursor growing in (0..1) */
-static PORT_HOST s32 sPopAt;
+static PORT_HOST f32 sPopOf[2];    /* the chip under the cursor growing in (0..1), each half's */
+static PORT_HOST s32 sPopAtOf[2];
+#define sPop sPopOf[sNow]
+#define sPopAt sPopAtOf[sNow]
 static PORT_HOST s32 sDemo, sDemoAt; /* BT4_SELECT_DEMO=<frames>: testing, the fighters shown one after another */
 
 static const char *Cs_Words(s32 id) {
@@ -176,13 +179,14 @@ static const char *Cs_Words(s32 id) {
         { "Remove", "Remover", "Quitar" },
         { "Change", "Alternar", "Cambiar" },
         { "View Team", "Visualizar Equipe", "Ver equipo" },
+        { "Waiting for the opponent", "Aguardando o oponente", "Esperando al rival" },
     };
     s32 lang = Port_Setting("dr_lang", 0);
 
     return kWords[id][lang >= 0 && lang < LANGS ? lang : 0];
 }
 enum { W_P1, W_P2, W_CPU, W_CHOOSE, W_FORMS, W_COSTUME, W_CUSTOM, W_NORMAL, W_C1, W_C2, W_C3, W_COST, W_OK, W_BACK,
-       W_RANDOM, W_LOCKED, W_SAVED, W_ROTATE, W_ITEMS, W_EMPTY, W_TEAM, W_READY, W_END, W_START, W_REMOVE, W_SWAP, W_VIEWTEAM };
+       W_RANDOM, W_LOCKED, W_SAVED, W_ROTATE, W_ITEMS, W_EMPTY, W_TEAM, W_READY, W_END, W_START, W_REMOVE, W_SWAP, W_VIEWTEAM, W_WAIT };
 
 /* The side a screen is about online (this machine's); otherwise the one its caller worked out. */
 s32 PortCharSel_NetSide(s32 fallback) {
@@ -244,11 +248,26 @@ static PORT_HOST f32 sAcrossPerDown = 1.0f;
 static PORT_HOST f32 sTextWide = 1.0f;
 static PORT_HOST s32 sNarrow; /* no room for roster, fighter and details side by side: the details go under the roster */
 
+/* BT4's new select at every shape of the picture (the user: the fighter in the same place as in "Screen", whatever the shape chosen): the one
+   layout, the fighter at the same place across (0.55) and the same size; on a picture narrower than the device's own (2.22: where it was made)
+   the menus are drawn at their size and then shrunk to as much of the picture as they take at 2.22 (sUiK, the same all through: shapes and letters
+   as they are), the left ones from the left edge, the right ones from the right. The old narrow layout is left for the other variant. */
+#define CS_REF_ASPECT 2222
+#define CS_CINE_ASPECT 1750 /* (the way to the battle was tried from here up) */
+static PORT_HOST f32 sUiK = 1.0f;
+static PORT_HOST s32 sNoCine;
 static void Cs_MeasureWindow(void) {
     s32 aspect = Port_PageAspectMilli();
 
     sAcrossPerDown = (512.0f / 448.0f) * 1000.0f / (f32)aspect;
-    sNarrow = aspect < 1900;
+    sNoCine = aspect < CS_CINE_ASPECT;
+    if (gPortVariant != 0) {
+        sNarrow = 0;
+        sUiK = aspect < CS_REF_ASPECT ? (f32)aspect / (f32)CS_REF_ASPECT : 1.0f;
+    } else {
+        sNarrow = aspect < 1900;
+        sUiK = 1.0f;
+    }
 }
 
 static f32 Cs_UnitsAcross(f32 unitsDown) { /* so many units across are as long as this many down */
@@ -402,10 +421,10 @@ static void Cs_Tex(MTexRes *res, f32 x0, f32 y0, f32 x1, f32 y1, s32 u0, s32 v0,
         return;
     }
     list[0].flags = LOAD_SPR_DRAW;
-    list[0].x0 = (s32)(x0 + sShift);
-    list[0].y0 = (s32)y0;
-    list[0].x1 = (s32)(x1 + sShift);
-    list[0].y1 = (s32)y1;
+    list[0].x0 = (s32)Ps_AffX(x0 + sShift); /* (with the select in two halves, the picture goes where the rest of the half goes) */
+    list[0].y0 = (s32)Ps_AffY(y0);
+    list[0].x1 = (s32)Ps_AffX(x1 + sShift);
+    list[0].y1 = (s32)Ps_AffY(y1);
     list[0].u0 = u0;
     list[0].v0 = v0;
     list[0].u1 = u1;
@@ -1221,7 +1240,7 @@ s32 PortCharSel_CinemaStart(s32 oppChara, s32 oppCostume, s32 leadChara, s32 lea
 
     /* Online, whether this machine can draw it or not must not change the game: the flow (the blanks it takes, the battle that follows) is the
        same on every copy, so it is always begun; a machine that cannot draw it (no 3D, a narrow screen) shows the select meanwhile. */
-    if (!online && (!sOn || !s3D || sSplit || sNarrow)) {
+    if (!online && (!sOn || !s3D || sSplit || sNarrow || sNoCine)) {
         return 0;
     }
     if (Cs_IsFighter(leadChara)) {
@@ -1330,7 +1349,7 @@ void PortCharSel_Frame(const CsView *view, s32 split, s32 stagePhase) {
         s32 want = sCineLead >= 0 ? sCineLead : sShownChara[0]; /* (a random: whatever stands) */
 
         ChrView_PortLeadReady(want); /* (always asked: it tells the viewer whom to wait for) */
-        if (sOn && s3D && !sNarrow && !split) {
+        if (sOn && s3D && !sNarrow && !sNoCine && !split) {
             sCineFx = sCineBlank - 1;
             sCinePre = sCineFx < CS_FX_RISE;
             sCine = sCinePre ? 0 : sCineFx - CS_FX_RISE;
@@ -1647,12 +1666,13 @@ static void Cw_Nine(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 pad, f32 c, f32 
 /* A panel (cs_panel: its corners 16 of the template's pixels; r unused, the template's own). */
 static void Cw_Glass(f32 x0, f32 y0, f32 x1, f32 y1, f32 r) {
     (void)r;
-    Cw_Nine(TBO_CS_PANEL, x0, y0, x1, y1, 52.0f, 78.0f, 1.0f, PS_PLAIN); /* (corners 26 of the template's pixels) */
+    /* (corners 26 of the template's pixels; the rival's half, the second player's, in red) */
+    Cw_Nine(TBO_CS_PANEL, x0, y0, x1, y1, 52.0f, 78.0f, 1.0f, sRed ? Ps_Rgba(0xFF, 0x78, 0x88, 0x80) : PS_PLAIN);
 }
 
 /* A button's pill of glass, round ends (cs_pill, drawn for its height). */
 static void Cw_PillGlass(f32 x0, f32 y0, f32 x1, f32 y1) {
-    Cw_Nine(TBO_CS_PILL, x0, y0, x1, y1, 52.0f, 102.0f, (y1 - y0) / CW_PXU / 100.0f, PS_PLAIN);
+    Cw_Nine(TBO_CS_PILL, x0, y0, x1, y1, 52.0f, 102.0f, (y1 - y0) / CW_PXU / 100.0f, sRed ? Ps_Rgba(0xFF, 0x78, 0x88, 0x80) : PS_PLAIN);
 }
 
 /* The template's lit box (the chosen one): cs_lit, its corners r (units down; the piece's own 26 of its pixels); a pill
@@ -1852,19 +1872,19 @@ static void Cw_Grid(void) {
         }
         right = colX[MCHR_COLS] - gap * dep[MCHR_COLS - 1];
     }
-    if (row < sTopRowOf[0]) {
-        sTopRowOf[0] = row;
+    if (row < sTopRowOf[sNow]) {
+        sTopRowOf[sNow] = row;
     }
-    if (row >= sTopRowOf[0] + CW_ROWS) {
-        sTopRowOf[0] = row - CW_ROWS + 1;
+    if (row >= sTopRowOf[sNow] + CW_ROWS) {
+        sTopRowOf[sNow] = row - CW_ROWS + 1;
     }
-    if (sTopRowOf[0] > rows - CW_ROWS) {
-        sTopRowOf[0] = rows - CW_ROWS;
+    if (sTopRowOf[sNow] > rows - CW_ROWS) {
+        sTopRowOf[sNow] = rows - CW_ROWS;
     }
-    if (sTopRowOf[0] < 0) {
-        sTopRowOf[0] = 0;
+    if (sTopRowOf[sNow] < 0) {
+        sTopRowOf[sNow] = 0;
     }
-    top = sTopRowOf[0];
+    top = sTopRowOf[sNow];
     at = col + row * MCHR_COLS + (custom ? 1000 : 0);
     if (at != sPopAt) {
         sPopAt = at;
@@ -1987,6 +2007,32 @@ static void Cw_Foot(void) {
     }
 }
 
+/* Online, once this player has chosen: the other is still choosing, and what he chooses is not shown (a surprise, until the way to the battle,
+   which begins by itself the moment he has chosen). A pill of glass at the foot, in the middle, its words breathing. */
+static void Cw_Waiting(void) {
+    char *text = (char *)Cs_Words(W_WAIT);
+    f32 w = Cw_SayW(text, 52.0f);
+    f32 h = Cw_Y(120.0f);
+    f32 mid = 448.0f * 0.80f;
+    f32 pad = Cw_X(70.0f);
+
+    sAlpha = 0.62f + 0.38f * (f32)Cw_Pulse() / 16.0f;
+    Cw_PillGlass(256.0f - w * 0.5f - pad, mid - h * 0.5f, 256.0f + w * 0.5f + pad, mid + h * 0.5f);
+    Cw_Say(256.0f, mid, text, 52.0f, w + 4.0f, 1, Ps_Rgba(255, 255, 255, 0x80), Ps_Rgba(0xE0, 0xEA, 0xFF, 0x80));
+    sAlpha = 1.0f;
+}
+
+/* The menus shrunk (sUiK) for a picture narrower than the one they were made for: the left ones from the left edge, the right ones from the right. */
+static void Cw_UiLeft(void) {
+    Ps_SetAffine(sUiK, 0.0f, 0.0f);
+}
+static void Cw_UiRight(void) {
+    Ps_SetAffine(sUiK, 512.0f * (1.0f - sUiK), 0.0f);
+}
+static void Cw_UiOff(void) {
+    Ps_SetAffine(1.0f, 0.0f, 0.0f);
+}
+
 /* The fighter's soft shadow on the grass, small and faint from high up, and the dust of its landing. */
 static void Cw_Shadow(s32 view, s32 lit) {
     f32 cx;
@@ -2081,16 +2127,16 @@ static void Cw_Details(void) {
         }
     }
     open = cell != NULL && (sV.formActive || sV.tabWant || sV.done);
-    if (cell == NULL || (!open && at != sFormCell[0])) {
-        sFormOf[0] = 0.0f;
+    if (cell == NULL || (!open && at != sFormCell[sNow])) {
+        sFormOf[sNow] = 0.0f;
     }
-    sFormCell[0] = at;
-    sFormOf[0] += open ? 0.16f : -0.25f;
-    sFormOf[0] = sFormOf[0] < 0.0f ? 0.0f : sFormOf[0] > 1.0f ? 1.0f : sFormOf[0];
-    if (cell != NULL && sFormOf[0] > 0.0f) {
+    sFormCell[sNow] = at;
+    sFormOf[sNow] += open ? 0.16f : -0.25f;
+    sFormOf[sNow] = sFormOf[sNow] < 0.0f ? 0.0f : sFormOf[sNow] > 1.0f ? 1.0f : sFormOf[sNow];
+    if (cell != NULL && sFormOf[sNow] > 0.0f) {
         s32 n = cell->formCount < 7 ? cell->formCount : 7;
         s32 beside = n <= 3;
-        f32 t = sFormOf[0];
+        f32 t = sFormOf[sNow];
         f32 e = t * t * (3.0f - 2.0f * t);
         f32 cwp = beside ? 150.0f : (680.0f - 26.0f * (f32)(n - 1)) / (f32)n;
         f32 chp;
@@ -2169,9 +2215,9 @@ static void Cw_Details(void) {
     }
 
     /* Personalization and costume: in from the screen's edge when the fighter is chosen, back with the triangle */
-    sTabOf[0] += ((want ? 1.0f : 0.0f) - sTabOf[0]) * 0.2f;
-    if (sTabOf[0] > 0.01f) {
-        f32 t = sTabOf[0];
+    sTabOf[sNow] += ((want ? 1.0f : 0.0f) - sTabOf[sNow]) * 0.2f;
+    if (sTabOf[sNow] > 0.01f) {
+        f32 t = sTabOf[sNow];
         f32 e = t * t * (3.0f - 2.0f * t);
         s32 sets = sV.plateCount < 4 ? sV.plateCount : 4;
         s32 colors = sV.colorCount < 12 ? sV.colorCount : 12; /* (every costume the fighter has: the game's own count, ChrTbl_WrapCostume) */
@@ -2442,19 +2488,23 @@ static void Cw_Line2D(void) {
    way to the battle begins under it, and the dust clears away on it): brown earth smoke, puffs rising and swirling from the bottom, soft at
    their edges, over a brown veil. t: frames since the press. It is full over the screen at CS_FX_RISE (the way begins there) and has cleared
    at CS_FX_END. */
-/* One wisp of dust: a soft streak (opaque along its middle, clear at both sides) from (cx, cy) along (dx, dy), `len` long and `wid` wide. */
+/* One streak of the effect: a solid core across most of its width and only a narrow soft edge on each side (crisp: the user, "very sharp"), from (cx, cy)
+   along (dx, dy), `len` long and `wid` wide. */
 static void Cw_Wisp(f32 cx, f32 cy, f32 dx, f32 dy, f32 len, f32 wid, u32 mid, u32 edge) {
+    static const f32 kFringe = 0.16f; /* (the share of the width, each side, that fades) */
     f32 hx = dx * len * 0.5f, hy = dy * len * 0.5f, nx = -dy * wid * 0.5f, ny = dx * wid * 0.5f;
+    f32 ix = nx * (1.0f - 2.0f * kFringe), iy = ny * (1.0f - 2.0f * kFringe); /* (the core's half width) */
 
-    Ps_ScreenQuad(cx - hx - nx, cy - hy - ny, cx + hx - nx, cy + hy - ny, cx - hx, cy - hy, cx + hx, cy + hy, edge, edge, mid, mid);
-    Ps_ScreenQuad(cx - hx, cy - hy, cx + hx, cy + hy, cx - hx + nx, cy - hy + ny, cx + hx + nx, cy + hy + ny, mid, mid, edge, edge);
+    Ps_ScreenQuad(cx - hx - nx, cy - hy - ny, cx + hx - nx, cy + hy - ny, cx - hx - ix, cy - hy - iy, cx + hx - ix, cy + hy - iy, edge, edge, mid, mid);
+    Ps_ScreenQuad(cx - hx - ix, cy - hy - iy, cx + hx - ix, cy + hy - iy, cx - hx + ix, cy - hy + iy, cx + hx + ix, cy + hy + iy, mid, mid, mid, mid);
+    Ps_ScreenQuad(cx - hx + ix, cy - hy + iy, cx + hx + ix, cy + hy + iy, cx - hx + nx, cy - hy + ny, cx + hx + nx, cy + hy + ny, mid, mid, edge, edge);
 }
 
 /* The transition of the press, as the speed lines were, in dust: brown earth smoke streaming across the screen from the bottom left to the top
    right, in quickly and out quickly, with light and dark streaks racing along it. All drawn; nothing of the game's. t: frames since the press. */
 static void Cw_Dust(s32 t) {
     static const f32 dx = 0.906f, dy = -0.423f; /* their way, up to the right */
-    static const u8 tone[4][3] = {{0xC8, 0xCB, 0xD2}, {0xA6, 0xAB, 0xB4}, {0xDC, 0xDF, 0xE4}, {0x8A, 0x90, 0x9A}}; /* light, mid, pale, dark grey (the user: grey, not brown) */
+    static const u8 tone[4][3] = {{0xD2, 0xD5, 0xDC}, {0x9A, 0x9F, 0xA9}, {0xE6, 0xE9, 0xEE}, {0x78, 0x7E, 0x88}}; /* light, mid, pale, dark grey (the user: grey, not brown) */
     f32 env;
     s32 k;
 
@@ -2464,7 +2514,7 @@ static void Cw_Dust(s32 t) {
     env = t < CS_FX_RISE ? (f32)t / (f32)CS_FX_RISE : t < CS_FX_HOLD ? 1.0f : 1.0f - (f32)(t - CS_FX_HOLD) / (f32)(CS_FX_END - CS_FX_HOLD);
     env = env * env * (3.0f - 2.0f * env);
     {   /* the ground of it: sand at the top, earth at the bottom */
-        u32 c0 = Ps_Rgba(0xC6, 0xC9, 0xD0, (s32)(0x78 * env)), c1 = Ps_Rgba(0x9C, 0xA1, 0xAB, (s32)(0x78 * env));
+        u32 c0 = Ps_Rgba(0xC6, 0xC9, 0xD0, (s32)(0x80 * env)), c1 = Ps_Rgba(0x9C, 0xA1, 0xAB, (s32)(0x80 * env));
 
         Ps_ScreenQuad(-40.0f, -40.0f, 552.0f, -40.0f, -40.0f, 488.0f, 552.0f, 488.0f, c0, c0, c1, c1);
     }
@@ -2477,7 +2527,7 @@ static void Cw_Dust(s32 t) {
         f32 sway = sinf((f32)t * 0.09f + r1 * 6.2832f) * 16.0f; /* (it billows a little as it goes) */
         f32 cx = 256.0f + along * dx - (across + sway) * dy, cy = 224.0f + along * dy + (across + sway) * dx;
         const u8 *c = tone[k & 3];
-        s32 a = (s32)(0x6C * env * (0.55f + 0.45f * r3));
+        s32 a = (s32)(0x80 * env * (0.82f + 0.18f * r3));
 
         Cw_Wisp(cx, cy, dx, dy, len, wid, Ps_Rgba(c[0], c[1], c[2], a), Ps_Rgba(c[0], c[1], c[2], 0));
     }
@@ -2490,8 +2540,8 @@ static void Cw_Dust(s32 t) {
         f32 cx = 256.0f + along * dx - across * dy, cy = 224.0f + along * dy + across * dx;
         f32 hx = dx * len * 0.5f, hy = dy * len * 0.5f, nx = -dy * thick * 0.5f, ny = dx * thick * 0.5f;
         s32 light = (h >> 24) & 1;
-        u32 c = light ? Ps_Rgba(0xF2, 0xF4, 0xF8, (s32)(0x80 * env)) : Ps_Rgba(0x78, 0x7E, 0x88, (s32)(0x70 * env));
-        u32 tl = light ? Ps_Rgba(0xF2, 0xF4, 0xF8, 0) : Ps_Rgba(0x78, 0x7E, 0x88, 0);
+        u32 c = light ? Ps_Rgba(0xF8, 0xFA, 0xFF, (s32)(0x80 * env)) : Ps_Rgba(0x5C, 0x62, 0x6E, (s32)(0x80 * env));
+        u32 tl = light ? Ps_Rgba(0xF8, 0xFA, 0xFF, 0) : Ps_Rgba(0x5C, 0x62, 0x6E, 0);
 
         Ps_ScreenQuad(cx - hx - nx, cy - hy - ny, cx + hx - nx, cy + hy - ny, cx - hx + nx, cy - hy + ny, cx + hx + nx, cy + hy + ny, tl, c, tl, c);
     }
@@ -2593,14 +2643,22 @@ static void Cw_Draw(void) {
     sV = sViews[0];
     sRed = 0;
     if (line) {
+        Cw_UiLeft();
         Cw_Line2D();
+        Cw_UiOff();
         Font_FlushAll();
         return;
     }
+    Cw_UiLeft();
     Cw_Strip();
     Cw_Grid();
-    Cw_Details();
     Cw_Foot();
+    Cw_UiRight();
+    Cw_Details();
+    Cw_UiOff();
+    if (sV.done && sCineBlank == 0 && (Port_NetActive() || Port_NetSession())) {
+        Cw_Waiting();
+    }
     if (sDemo > 0 && sTick == 90) { /* testing: the roster's names, by number, once */
         s32 k;
         char nm[128];
@@ -2612,6 +2670,102 @@ static void Cw_Draw(void) {
             fprintf(stderr, "bt3: select: name %d %s / %s\n", (int)k, nm, fm);
         }
     }
+}
+
+/* Two players choosing on one screen (BT4's new select, the same template as one player's: the user, "use the single mode's template, redo it"):
+   each player has the single screen's card with the name and its roster at its full size, the first player's on the left edge, the second's, in
+   red, on the right edge (the roster of the one player's screen takes a third of the width: two of them leave the middle third), and the two
+   fighters stand close together between, large, the camera nearer than on one player's screen. The panels with the forms and the costumes (the
+   single screen's right side) open smaller over the middle, each player's toward his own side. The buttons are drawn once, at the foot. */
+#define CW_SPLIT_K 0.80f       /* each player's card and roster: this size of the single screen's (the user: the menus smaller, side by side with room) */
+#define CW_SPLIT_DK 0.70f      /* the panels of the forms and costumes: this size, under each player's roster */
+#define CW_SPLIT_DY 297.0f
+#define CW_SPLIT_DY_TAB 62.0f  /* the personalization tab (the sets, the costumes), which is tall: the panel goes up over the roster, which is not used then */
+#define CW_SPLIT_ZOOM 0.72f
+/* (the measures of the one player's screen, in the picture's own units, which change with its shape: where the card and the roster end, where the right
+   panel begins and ends, and the margin at the edge; the second player's half is put by them against the right edge) */
+static f32 Cw_SplitCardRight(void) {
+    return Cw_GridRight() + Cs_UnitsAcross(17.0f);
+}
+static f32 Cw_SplitMargin(void) {
+    return Cs_UnitsAcross(25.0f) * CW_SPLIT_K * sUiK;
+}
+static void Cw_SplitCardAffine(s32 i) {
+    f32 k = CW_SPLIT_K * sUiK;
+
+    Ps_SetAffine(k, i == 0 ? 0.0f : 512.0f - Cw_SplitMargin() - k * Cw_SplitCardRight(), 4.0f);
+}
+static void Cw_SplitPanelAffine(s32 i) {
+    f32 k = CW_SPLIT_DK * sUiK;
+    f32 px0 = 512.0f - Cw_X(60.0f) - Cw_X(760.0f); /* (the single screen's right panel: its left and its right) */
+    f32 px1 = 512.0f - Cw_X(60.0f);
+    f32 t = sTabOf[i] < 0.0f ? 0.0f : sTabOf[i] > 1.0f ? 1.0f : sTabOf[i]; /* (as the tab comes in: the panel rises with it) */
+    f32 oy = (CW_SPLIT_DY + (CW_SPLIT_DY_TAB - CW_SPLIT_DY) * t * t * (3.0f - 2.0f * t)) * sUiK;
+
+    Ps_SetAffine(k, i == 0 ? Cw_SplitMargin() - k * px0 : 512.0f - Cw_SplitMargin() - k * px1, oy);
+}
+
+static void Cw_DrawSplit(void) {
+    f32 middle[2];
+    s32 i;
+
+    middle[0] = 512.0f * 0.385f; /* (apart, in the middle: room on both sides for the menus) */
+    middle[1] = 512.0f * 0.615f;
+    if (!s3D || !Port_NetListShown() || !ChrView_PortStageUp()) {
+        Cs_Field();
+    }
+    if (s3D) {
+        ChrView_PortStyle(0, Port_SelectEntrance(), 0.0f); /* (every fighter comes down in the same entrance, and stays) */
+        ChrView_PortSplitZoom(CW_SPLIT_ZOOM); /* (larger, nearer: not as far as it was) */
+        for (i = 0; i < 2; i++) {
+            f32 turn = gPad[Port_NetActive() || Port_NetSession() ? sViews[i].side : 0].gameRight[0];
+
+            if (turn > 0.1f || turn < -0.1f) {
+                sYawOf[i] += turn * 0.06f;
+                if (sYawOf[i] > 3.14159265f) {
+                    sYawOf[i] -= 6.2831853f;
+                } else if (sYawOf[i] < -3.14159265f) {
+                    sYawOf[i] += 6.2831853f;
+                }
+            }
+            sRed = sViews[i].side == 1;
+            Cs_Pedestal(i);
+            sRed = 0;
+        }
+        if (Port_NetListShown()) {
+            ChrView_PortFrame(middle, sYawOf, sShownChara, sShownCostume, 1);
+        }
+    }
+    if (!s3D) { /* (the portrait only where there is no 3D at all) */
+        for (i = 0; i < 2; i++) {
+            sV = sViews[i];
+            Cs_Portrait(middle[i], 230.0f);
+        }
+    }
+    for (i = 0; i < 2; i++) {
+        sNow = i;
+        sV = sViews[i];
+        sRed = sV.side == 1;
+        Cw_SplitCardAffine(i);
+        Cw_Strip();
+        Cw_Grid();
+        Cw_SplitPanelAffine(i);
+        Cw_Details();
+        Ps_SetAffine(1.0f, 0.0f, 0.0f);
+    }
+    sRed = 0;
+    sNow = 0;
+    sV = sViews[0];
+    {   /* (the buttons: once, in the middle, above the Android button at the bottom edge) */
+        f32 left = CW_GRID_X - Cw_X(10.0f);
+        f32 wide = Cw_X(120.0f) + Cw_SayW((char *)Cs_Words(W_OK), 52.0f) + Cw_X(26.0f) + Cw_X(120.0f) + Cw_SayW((char *)Cs_Words(W_BACK), 52.0f);
+        f32 mid = Cw_RowY(CW_ROWS, 0) + 34.0f;
+
+        Ps_SetAffine(sUiK, 256.0f - sUiK * (left + wide * 0.5f), 448.0f * 0.80f - sUiK * mid);
+        Cw_Foot();
+        Cw_UiOff();
+    }
+    Font_FlushAll();
 }
 
 static f32 Cs_GridWidth(void) {
@@ -2655,7 +2809,7 @@ void PortCharSel_Draw(void) {
     /* (Always drawn, also on a blank run again: the game's own picture is off, and the list of the last such blank is
        shown. Left out it was a black picture at every rollback. The renderer discards the others.) */
     Ps_PageSet();
-    sWide = !sSplit && !sNarrow && gPortVariant != 0;
+    sWide = !sNarrow && gPortVariant != 0; /* (the two halves too: Cw_DrawSplit) */
     if (sDemo > 0) {
         sViews[0].chara = sShownChara[0]; /* (testing: what the grid and the name show follow the fighters shown) */
         sViews[0].col = sDemoAt % MCHR_COLS;
@@ -2668,13 +2822,18 @@ void PortCharSel_Draw(void) {
         sTextWide = (1220.0f / 448.0f) * (512.0f - 2.0f * Ps_Left()) / (2712.0f * PS_UNIT_X * Port_MenuTextNarrow());
         Ps_SetTextKind(4);
         Ps_SetTextExact(1);
-        Cw_Draw();
+        if (sSplit) {
+            Cw_DrawSplit();
+        } else {
+            Cw_Draw();
+        }
         Font_FlushAll();
         Ps_SetTextKind(0);
         Ps_SetTextExact(0);
         return;
     }
     ChrView_PortStyle(0, Port_SelectEntrance(), 0.0f); /* (BT4: every fighter comes down in the same entrance, and stays) */
+    ChrView_PortSplitZoom(0.8f); /* (the older halves, as they were) */
     sides = sSplit ? 2 : 1;
     /* each fighter in the middle of the room next to its roster */
     if (sSplit) {
@@ -2765,7 +2924,16 @@ void PortCharSel_DrawItems(void) {
         if (sWide) {
             Ps_SetTextKind(4);
             Ps_SetTextExact(1);
+            if (sSplit) {
+                sNow = i;
+                Cw_SplitPanelAffine(i);
+            }
+            if (!sSplit) {
+                Cw_UiRight();
+            }
             Cw_Items(sViews[i].side);
+            Cw_UiOff();
+            sNow = 0;
             Ps_SetTextKind(0);
             Ps_SetTextExact(0);
         } else {

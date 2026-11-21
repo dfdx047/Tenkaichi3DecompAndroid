@@ -182,6 +182,11 @@ void ChrView_SetLoading(s32 loading) {
     gChrView->loading = loading;
 }
 
+/* (the select's own frame carried to the stage's place, below: the camera made here is of that frame too, as the fighters are; without
+   it, in a stage whose place is not the origin, a camera at the origin and fighters at the place, far off and out of the picture) */
+static void ChrView_PortSetTarget(f32 x, f32 y, f32 z);
+static void ChrView_PortSetAngles(f32 pitch, f32 yaw, f32 roll);
+
 /* Points the orbit camera at a character: target height and distance come from the character table. */
 void ChrView_SetupCamera(s32 chara) {
     ChrViewInfo *info = ChrView_GetCharaInfo(chara);
@@ -189,8 +194,8 @@ void ChrView_SetupCamera(s32 chara) {
     if (info != NULL) {
         OrbitCam_Reset();
         OrbitCam_SetFloorClamp(1);
-        OrbitCam_SetTarget(0.0f, info->targetY, 0.0f);
-        OrbitCam_SetAngles(0.0f, 3.14159265f, 0.0f);
+        ChrView_PortSetTarget(0.0f, info->targetY, 0.0f);
+        ChrView_PortSetAngles(0.0f, 3.14159265f, 0.0f);
         OrbitCam_SetDist(info->dist);
         if (gChrView->zoom != 0) {
             OrbitCam_SetDistRange(PORT_V(3.0f, *(f32 *)((u8 *)info + 0x38)), 100.0f);
@@ -610,6 +615,9 @@ static s32 sPortMeasure[CHRVIEW_PORT_VIEWS];
 /* its feet's height and its body's at the end of the entrance (measured before it is shown; body 0: not measured) */
 static f32 sPortEndFeet[CHRVIEW_PORT_VIEWS], sPortEndBody[CHRVIEW_PORT_VIEWS], sPortEndFeetNew[CHRVIEW_PORT_VIEWS], sPortEndBodyNew[CHRVIEW_PORT_VIEWS];
 static s32 sPortCineLoad[CHRVIEW_PORT_VIEWS]; /* read for the way to the battle: it stands as the select left it, in its last pose */
+/* A team's row (View Team): how far a fighter whose own presentation ended with his feet off the floor is brought down (Goku's Pseudo Super Saiyan,
+   his lowest joint 8.7 up, floated: the user). Worked out once it has stopped, eased. */
+static f32 sPortRowDown[CHRVIEW_PORT_VIEWS];
 static s32 sPortIdleOn[CHRVIEW_PORT_VIEWS]; /* gone into its stance: the blend is being stepped */
 /* the character reference's stance read for a slot (sPortPose), to go over into after the entrance */
 static s32 sPortPoseOk[CHRVIEW_PORT_VIEWS][CHRVIEW_SLOT_COUNT];
@@ -665,6 +673,14 @@ s32 ChrView_PortStageUp(void) {
 }
 
 /* BT4's new select: the screen's look (wide: the fighter framed large, falling in, the stage around it). */
+/* The two choosing: how near the camera is (the character table's distance for the first fighter, divided by this; 0.8 as it was). The new
+   look (the same screen as one player's, in two halves) takes them larger: the user, "the characters are far, it is not good". Asked each
+   frame by the screen; the camera is made once, with what it says then. */
+static CHRVIEW_HOST f32 sHostSplitZoom = 0.8f;
+void ChrView_PortSplitZoom(f32 zoom) {
+    sHostSplitZoom = zoom;
+}
+
 void ChrView_PortStyle(s32 wide, s32 entrance, f32 turn) {
     sHostWide = wide;
     sHostEntrance = entrance;
@@ -1139,6 +1155,7 @@ static void ChrView_PortShowNew(s32 v, s32 split) {
     memcpy(sPortFeet[v], sPortFeetNew[v], sizeof(sPortFeet[v]));
     sPortPinned[v] = sPortPinnedNew[v];
     sPortGround[v] = sPortGroundNew[v]; /* (measured before it was shown: taken off from the start) */
+    sPortRowDown[v] = 0.0f;
     sPortEndFeet[v] = sPortEndFeetNew[v];
     sPortEndBody[v] = sPortEndBodyNew[v];
     sPortGroundW[v] = 1.0f;
@@ -1220,8 +1237,8 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
         if (split && sPortView[0] != NULL && sPortView[1] != NULL) {
             gChrView = sPortView[0];
             ChrView_SetupCamera(0);
-            OrbitCam_SetDistRange(ref->dist / 0.8f, ref->dist / 0.8f);
-            OrbitCam_SetDist(ref->dist / 0.8f);
+            OrbitCam_SetDistRange(ref->dist / sHostSplitZoom, ref->dist / sHostSplitZoom);
+            OrbitCam_SetDist(ref->dist / sHostSplitZoom);
         }
     }
     if (sPortView[0] == NULL || (split && sPortView[1] == NULL)) {
@@ -1592,7 +1609,7 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
             {
                 /* brought down by as much as it would end over the floor (its entrance someone else's), less as it goes
                    over into its own stance */
-                f32 lift = -sPortGroundShown[v] * sPortGroundW[v];
+                f32 lift = -sPortGroundShown[v] * sPortGroundW[v] - (inLine ? sPortRowDown[v] : 0.0f);
                 s32 opp = v == 1 && sHostCine >= 0 && !split;
                 f32 turn = sHostWide && !split && !inLine && !opp ? sHostTurn : 0.0f;
                 f32 y = inLine ? 0.0f : opp ? 3.14159265f + atan2f(CINE_OPP_SIDE * sPortCineH,
@@ -1746,6 +1763,24 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
                 fprintf(stderr, "bt3: select: row view %d fighter %d: lowest joint %d, top %d, span %d\n", (int)k, (int)sPortShown[k],
                         (int)(low * 1000.0f), (int)(top * 1000.0f), (int)((top - low) * 1000.0f));
             }
+        }
+        if (k >= CHRVIEW_PORT_LINE && sPortView[k]->cur != NULL) {
+            u8 *cobj = BtlObj_Get(sPortView[k]->cur->obj);
+            f32 lowJ;
+            f32 topJ;
+            f32 want = 0.0f;
+
+            if (BtlObjAnim_PortFeetSpan(cobj, &lowJ, &topJ) && topJ - lowJ > 1.0f) {
+                f32 rest = (topJ - lowJ) * 0.047f; /* (an ankle's height) */
+
+                /* On the floor, also while it plays: a presentation that lifts him into the air (Goku's Pseudo Super Saiyan rose, and came down only when the
+                   screen was left: the user) keeps his feet on the floor. A small hop (his lowest joint under a fifth of his height) is left to the
+                   motion; what stays up after it has ended is brought down all the same. */
+                if (lowJ > rest && (BtlObjAnim_PortStopped(cobj) || lowJ > (topJ - lowJ) * 0.2f)) {
+                    want = lowJ - rest;
+                }
+            }
+            sPortRowDown[k] += (want - sPortRowDown[k]) * 0.3f;
         }
         if (sPortNew[k] != NULL && sPortMeasure[k] == 1 && sPortCount[k] >= 2) {
             /* the entrance's last frame worked out (by an update of its own): its feet's lowest joint that far over the

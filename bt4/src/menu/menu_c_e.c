@@ -421,6 +421,15 @@ void CharSel_Init(s32 section) {
     if (gProgress->mode == 0x2D) {
         CSPROG->players = 0;
     }
+#ifdef PORT
+    {   /* BT4_TEST_SPLIT=1 (testing, with BT3_MENU_MODE=39): the select opens with two people choosing, without the menus to it */
+        extern char *getenv(const char *name);
+
+        if (getenv("BT4_TEST_SPLIT") != NULL) {
+            CSPROG->players = 1;
+        }
+    }
+#endif
 
     CS_RES(gCharSel->res, 47);
     gCharSel->tex[0] = MTEX(res, 0);
@@ -917,10 +926,16 @@ static s32 CharSel_PortFormRow(s32 n) {
 static void CharSel_PortFrame(void) {
     CsView v[2];
 
-    if (gCharSel->players == 1) {
+    /* Online the two people choose, in the game (gCharSel->players == 1: the session sets it), but each machine shows only its own side, as the one
+       player's screen: the opponent's choice is not seen until the way to the battle (the user: a surprise); the game goes on as ever on both
+       copies, only what is drawn is chosen here. */
+    if (gCharSel->players == 1 && !(Port_NetActive() || Port_NetSession())) {
         CharSel_PortFill(&v[0], 0);
         CharSel_PortFill(&v[1], 1);
         PortCharSel_Frame(v, 1, CHARSEL_PORT_STAGE());
+    } else if (gCharSel->players == 1) {
+        CharSel_PortFill(&v[0], PortCharSel_NetSide(0));
+        PortCharSel_Frame(v, 0, CHARSEL_PORT_STAGE());
     } else {
         CharSel_PortFill(&v[0], PortCharSel_InCinema() ? PortCharSel_NetSide(0) : gCharSel->turn & 1); /* (the way to the battle: the player's own) */
         PortCharSel_Frame(v, 0, CHARSEL_PORT_STAGE());
