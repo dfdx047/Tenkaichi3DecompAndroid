@@ -51,7 +51,7 @@ assert.equal((await call("poll", { code: h.code, key: "nope" })).error, "no room
 now += 50;
 p = await call("poll", { code: h.code, key: h.key });
 assert.equal(p.members.length, 0);
-now += 200;
+now += 310; // (310 s after the owner's last poll, above: past ROOM_IDLE)
 assert.equal((await call("poll", { code: h.code, key: h.key })).error, "no room");
 // the owner leaving closes the room
 const h2 = await call("host", { v: 5, name: "H2", addrs: [] });
@@ -69,7 +69,51 @@ for (let t = 0; t < 30; t++) {
     assert.equal(p.members.length, 1);
 }
 assert.ok(writes <= 12, "rows written in a minute of polls: " + writes);
+const minuteWrites = writes;
 // a member who stops polling still leaves the owner's list after MEMBER_IDLE, whatever the sweep's pace
 now += 46;
 assert.equal((await call("poll", { code: h3.code, key: h3.key })).members.length, 0);
-console.log("tagnet worker: all tests passed (" + writes + " rows written in the minute of polls)");
+// A phone in the background (C2, 2026-11-22): its app may not poll at all meanwhile (Android freezes a cached app; the
+// game polls every 15 s while it can). The owner sharing the code in another app for a few minutes, or a player
+// answering a message, must find the room and their place in it when they come back.
+{
+    const relayEnv = { ...env, RELAY: { idFromName: () => 1, get: () => ({ fetch: async () => new Response("relay", { status: 200 }) }) } };
+    const ws = async (code, key) => (await handle(new Request(`https://t/v1/ws?code=${code}&key=${key}`, { headers: { upgrade: "websocket" } }), relayEnv, now)).status;
+    for (const away of [100, 110, 280]) { // the owner away: a friend joins meanwhile, the owner comes back to its room
+        const o = await call("host", { v: 5, name: "Away", addrs: [] });
+        now += 14; await call("poll", { code: o.code, key: o.key }); // (its last poll before it went)
+        now += away;
+        const f = await call("join", { v: 5, code: o.code, name: "Friend", addrs: [] });
+        assert.equal(f.status, 200, `owner away ${away} s: a friend's join`);
+        now += 1;
+        const back = await call("poll", { code: o.code, key: o.key });
+        assert.equal(back.error, undefined, `owner away ${away} s: its poll on its return`);
+        assert.equal(back.members.length, 1, `owner away ${away} s: the friend is in its list`);
+    }
+    { // past the room's limit it is gone, as before
+        const o = await call("host", { v: 5, name: "Gone", addrs: [] });
+        now += 310;
+        assert.equal((await call("join", { v: 5, code: o.code, name: "Late", addrs: [] })).error, "no room");
+    }
+    for (const away of [50, 120, 280]) { // a player away: its place, its poll and the room's relay are still there
+        const o = await call("host", { v: 5, name: "Owner", addrs: [] });
+        const g = await call("join", { v: 5, code: o.code, name: "Player", addrs: [] });
+        for (let t = 0; t < away; t += 2) { now += 2; await call("poll", { code: o.code, key: o.key }); } // (the owner stays)
+        const list = await call("poll", { code: o.code, key: o.key });
+        assert.equal(list.members.length, away > 45 ? 0 : 1, `player away ${away} s: out of the owner's list meanwhile`);
+        assert.equal((await call("poll", { code: o.code, key: g.key })).error, undefined, `player away ${away} s: its poll on its return`);
+        assert.equal(await ws(o.code, g.key), 200, `player away ${away} s: the room's relay takes it again`);
+        assert.equal((await call("poll", { code: o.code, key: o.key })).members.length, 1, `player away ${away} s: back in the owner's list`);
+    }
+    { // owner and player taking turns in the background for 20 minutes: the room and both places live on
+        const o = await call("host", { v: 5, name: "Turns", addrs: [] });
+        const g = await call("join", { v: 5, code: o.code, name: "Turns2", addrs: [] });
+        for (let round = 0; round < 12; round++) {
+            now += 100;
+            assert.equal((await call("poll", { code: o.code, key: round % 2 ? o.key : g.key })).error, undefined, `turns, round ${round}`);
+        }
+        assert.equal((await call("poll", { code: o.code, key: o.key })).error, undefined);
+        assert.equal((await call("poll", { code: o.code, key: g.key })).error, undefined);
+    }
+}
+console.log("tagnet worker: all tests passed (" + minuteWrites + " rows written in the minute of polls)");

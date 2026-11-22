@@ -19,7 +19,7 @@
 //                      sends a member's with that number before it. Needs the Durable Object binding RELAY (class TagRelay).
 // `v` is the mod's network version (the game's PROTOCOL): rooms only take games of their own. `addrs` is a list of up to
 // eight "ip:port" (the owner's relay address as "relay=ip:port"); `seen` is the address this Worker saw a player under
-// (the relay must be told whom to let through). A room nobody asked about for two minutes is gone.
+// (the relay must be told whom to let through). A room its owner has not asked about for five minutes is gone.
 //
 // Settings (Cloudflare dashboard, the Worker's variables and secrets):
 //   DB                 the D1 database (binding)
@@ -30,8 +30,14 @@
 //   ALLOWED_VERSIONS   the network versions taken, "5" or "5,6" (default: any)
 //   MAX_MEMBERS        players and spectators a room takes besides its owner (default 19: ten players, ten watching)
 
-const ROOM_IDLE = 120;      // seconds a room lives with nobody asking about it
-const MEMBER_IDLE = 45;     // seconds a member lives without a poll (the owner is told it is gone)
+// A phone in the background may not poll at all (Android freezes a cached app; the game asks every 15 s while it can):
+// the owner sharing the room's code in another app, a player answering a message. With two minutes for a room and 45 s
+// for a member, the room was gone (a friend's code: "no room") or the player out of it (its relay refused) when they
+// came back. A room and a member's place now outlive five minutes away; the owner's list still shows only the members
+// heard from in the last MEMBER_IDLE seconds, and only those count towards a full room.
+const ROOM_IDLE = 300;      // seconds a room lives without its owner's poll
+const MEMBER_IDLE = 45;     // seconds without a poll after which a member leaves the owner's list (it is told it is gone)
+const MEMBER_KEEP = 300;    // seconds without a poll after which a member's place (its key, its relay) is gone
 const RELAY_PER_DAY = 300;
 // D1's free plan counts every row read and written (100,000 written a day): a poll every 2 s that wrote its room's and
 // its member's time each time was most of the writes (68,000 on 2026-11-09). The time is now written only when it is
@@ -78,7 +84,7 @@ async function sweep(env, now) {
     await env.DB.batch([
         env.DB.prepare("DELETE FROM tag_members WHERE code IN (SELECT code FROM tag_rooms WHERE touched < ?)").bind(now - ROOM_IDLE),
         env.DB.prepare("DELETE FROM tag_rooms WHERE touched < ?").bind(now - ROOM_IDLE),
-        env.DB.prepare("DELETE FROM tag_members WHERE touched < ?").bind(now - MEMBER_IDLE),
+        env.DB.prepare("DELETE FROM tag_members WHERE touched < ?").bind(now - MEMBER_KEEP),
     ]);
 }
 
@@ -88,7 +94,7 @@ async function whoIs(env, code, key, now) {
     if (!room || room.touched < now - ROOM_IDLE) return null;
     if (room.host_key === key) return { room, owner: true };
     const m = await env.DB.prepare("SELECT * FROM tag_members WHERE code = ? AND key = ?").bind(code, key).first();
-    return m && m.touched >= now - MEMBER_IDLE ? { room, owner: false, member: m } : null;
+    return m && m.touched >= now - MEMBER_KEEP ? { room, owner: false, member: m } : null;
 }
 
 // The relay of Metered (metered.ca, free plan): METERED_APP is the app's name (<name>.metered.live), METERED_KEY its
