@@ -32,7 +32,12 @@ namespace {
 constexpr int kVersion=140001; /* Dragon Net's number for BT4 (net_match.c's DRNET_BT4_VERSION) */
 constexpr unsigned kAnswerBytes=65536;
 std::string str(const Dj &j,const char *key){auto i=j.find(key);return i!=j.end()&&i->is_string()?i->get<std::string>():std::string();}
-struct Job{unsigned serial=0;std::string op;Dj args;unsigned session=0;};
+struct Job{unsigned serial=0;std::string op;Dj args;unsigned session=0;int tries=0;};
+/* A request that brought no usable answer (no network, a timeout, a page that is not JSON) is passing trouble: asked again
+ * after 1, 2, then 4 s, kTries times in all. A join or a room made failed at the first one ("SIGNALING_UNAVAILABLE"), a
+ * leave left its room behind. The service's own answers, refusals included, are final; a "signal" is asked again by
+ * tag_team_p2p.cpp itself. */
+constexpr int kTries=4;
 struct State{
     std::mutex lock,lifecycle;SDL_Thread *thread=nullptr;SDL_Semaphore *wake=nullptr;
     std::atomic<bool> quit{false};std::atomic<int> status{0},pace{2};
@@ -89,6 +94,12 @@ int entry(void*){
                 answer={{"signals",Dj::array()},{"cursor",job.args.value("after",0ull)}};
             }else if(!post(job.op,job.args,answer,buffer)){
                 fprintf(stderr,"bt4: dragon net: %s failed (no answer from %s)\n",job.op.c_str(),dn.url.c_str());
+                if(job.op!="signal"&&++job.tries<kTries){
+                    retry=SDL_GetTicks()+(1000ull<<(job.tries-1));
+                    std::lock_guard<std::mutex> g(dn.lock);
+                    if(job.session==dn.session||job.op=="leave"||job.op=="cancel")dn.jobs.push_front(std::move(job));
+                    continue;
+                }
                 answer={{"error","SIGNALING_UNAVAILABLE"}};
                 retry=now+1000;
             }else if(!answer.contains("error")){
