@@ -963,6 +963,7 @@ void TeamSel_Term(void) {
 #ifdef PORT
 #include "menu/port_charsel.h"
 #include "menu/port_selflow.h"
+#include "menu/port_seldiag.h"
 /* The map first (sPortStageFirst 1): until its reel opens, the screen holds, empty: neither the new select (its 3D world
    split in two, its name plates) nor the game's own pieces are shown, only run (the movies' state is the game's). The user's
    recording had the select up for half a second and the plates of the game's chips sliding in over the map. */
@@ -2534,6 +2535,7 @@ s32 TeamSel_Run(s32 section) {
         extern int Port_Setting(const char *name, int def), Port_NetSession(void), Port_NetActive(void);
         sPortStageFirst = PortSelFlow_StageFirst(Port_NetSession() || Port_NetActive(), 0, PortCharSel_On(),
                                                  Port_Setting("select_stage_first", 1)); /* (include/menu/port_selflow.h: online it does not depend on the screen) */
+        PortSelDiag_Flow("team", Port_NetSession() || Port_NetActive(), sPortStageFirst, PortCharSel_On());
     }
 #endif
     ColorFade_StartIn(0, 0, 0, 0x14);
@@ -2587,6 +2589,25 @@ s32 TeamSel_Run(s32 section) {
                 gTsProgress->stageCell = gTeamSel->stage->col + gTeamSel->stage->row * TS_STAGE_COLS;
                 gTsProgress->bgm = gTeamSel->bgmIds[gTeamSel->stage->bgm];
 #ifdef PORT
+                {   /* diagnostics only (BT3_SELECT_DIAG): the canonical result of the select, the same from either screen */
+                    PortSelCanon canon;
+
+                    PortSelCanon_Clear(&canon);
+                    canon.kind = 2;
+                    canon.players = gTsProgress->players;
+                    canon.stage = gTsProgress->stageCell;
+                    canon.bgm = gTsProgress->bgm;
+                    {
+                        s32 side, slot;
+
+                        for (side = 0; side < 2; side++) {
+                            for (slot = 0; slot < TS_MEMBER_MAX; slot++) {
+                                PortSelCanon_PutMember(&canon, side, slot, (const s32 *)&gTsProgress->team[side].member[slot]);
+                            }
+                        }
+                    }
+                    PortSelDiag_Leave("team", &canon);
+                }
                 if (PortHold_Active()) {
                     break; /* no fade to black: the picture goes straight on into the loading (stg_b.c PortHold_*) */
                 }

@@ -859,6 +859,7 @@ void CharSel_Term(void) {
 #ifdef PORT
 #include "menu/port_charsel.h"
 #include "menu/port_selflow.h"
+#include "menu/port_seldiag.h"
 /* The map first (sPortStageFirst 1): until its reel opens, the screen holds, empty (see menu_e_b.c: the select half a
    second up and the name chips sliding in over the map, as in the user's recording). */
 #define CHARSEL_PORT_HOLD() (sPortStageFirst == 1)
@@ -2273,6 +2274,7 @@ s32 CharSel_Run(s32 section) {
            pad it is as ever, then each at his side; the way to the battle after, from the local fighter */
         sPortStageFirst = PortSelFlow_StageFirst(Port_NetSession() || Port_NetActive(), Port_TagNetwork(), PortCharSel_On(),
                                                  Port_Setting("select_stage_first", 1)); /* (include/menu/port_selflow.h: online it does not depend on the screen) */
+        PortSelDiag_Flow("duel", Port_NetSession() || Port_NetActive(), sPortStageFirst, PortCharSel_On());
     }
 #endif
     ColorFade_StartIn(0, 0, 0, 0x14);
@@ -2338,6 +2340,18 @@ s32 CharSel_Run(s32 section) {
                 CSPROG->stage = gCharSel->stage->col + gCharSel->stage->row * CHARSEL_STAGE_COLS;
                 CSPROG->bgm = gCharSel->bgmIds[gCharSel->stage->bgmPlaying];
 #ifdef PORT
+                {   /* diagnostics only (BT3_SELECT_DIAG): the canonical result of the select, the same from either screen */
+                    PortSelCanon canon;
+
+                    PortSelCanon_Clear(&canon);
+                    canon.kind = 1;
+                    canon.players = CSPROG->players;
+                    canon.stage = CSPROG->stage;
+                    canon.bgm = CSPROG->bgm;
+                    PortSelCanon_PutMember(&canon, 0, 0, CSPROG->side[0].pick.unk0);
+                    PortSelCanon_PutMember(&canon, 1, 0, CSPROG->side[1].pick.unk0);
+                    PortSelDiag_Leave("duel", &canon);
+                }
                 if (PortHold_Active()) {
                     break; /* no fade to black: the picture goes straight on into the loading (stg_b.c PortHold_*) */
                 }

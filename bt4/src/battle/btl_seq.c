@@ -1174,11 +1174,13 @@ s32 BtlSeqWinTalk_Skip(BtlSeqTalkCtx *ctx) {
 
 /* State 0 enter: restarts the step counter and holds the fighters. */
 #ifdef PORT
+#include "menu/port_seldiag.h"
 extern s32 PortCharSel_CineBattle(void);
 #endif
 s32 BtlSeqStageIntro_Enter(BtlSeqWaitCtx *ctx) {
     ctx->step = 0;
 #ifdef PORT
+    PortSelDiag_Battle(); /* (prints only, with BT3_SELECT_DIAG) */
     if (PortCharSel_CineBattle()) {
         ctx->step = 6; /* (the select's way to the battle was the presentation: straight on) */
     }
