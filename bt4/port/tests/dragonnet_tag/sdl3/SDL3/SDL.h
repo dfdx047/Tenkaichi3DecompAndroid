@@ -28,3 +28,5 @@ typedef int (*SDL_ThreadFunction)(void *);
 struct SDL_ThreadStart { SDL_ThreadFunction f; void *a; };
 static void *SDL_ThreadRun(void *p) { SDL_ThreadStart s = *(SDL_ThreadStart *)p; free(p); s.f(s.a); return NULL; }
 static inline SDL_Thread *SDL_CreateThread(SDL_ThreadFunction f, const char *name, void *a) { (void)name; SDL_Thread *t = (SDL_Thread *)malloc(sizeof(*t)); SDL_ThreadStart *s = (SDL_ThreadStart *)malloc(sizeof(*s)); s->f = f; s->a = a; pthread_create(&t->t, NULL, SDL_ThreadRun, s); return t; }
+static inline Uint64 SDL_GetTicksNS(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (Uint64)t.tv_sec * 1000000000ull + (Uint64)t.tv_nsec; }
+static inline void SDL_WaitThread(SDL_Thread *t, int *status) { (void)status; if (t) { pthread_join(t->t, NULL); free(t); } }

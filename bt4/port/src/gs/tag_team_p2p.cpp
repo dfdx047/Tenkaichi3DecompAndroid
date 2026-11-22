@@ -15,6 +15,7 @@
 #include "tag_team_p2p.h"
 #include "../../include/online_room_policy.h"
 #include "tag_signal.h" /* (Supabase's signaling, or Dragon Net's: dragonnet_tag.cpp) */
+#include "tag_input_resend.h" /* (a guest's inputs sent again with the next ones) */
 #include "voice_platform.inc"
 #include "../../third_party/voice/rtc/rtc.h"
 #define JSON_NOEXCEPTION
@@ -58,6 +59,7 @@ struct Session {
     std::deque<PendingSignal> earlySignals;
     std::map<unsigned,OutgoingSignal> outgoing;
     uint64_t signalCursor=0;unsigned recovery=0;Uint64 recoverAt=0;
+    TagInputResend<512> inputResend; /* (a guest: each TTW_INPUT goes with the two before it, tag_input_resend.h) */
     void pingSample(unsigned sample){
         if(sample>=10000)return;
         pingSamples[pingCursor++%pingSamples.size()]=sample;
@@ -253,7 +255,7 @@ struct Session {
             {std::lock_guard<std::mutex> g(service.lock);events.swap(service.events);requests.swap(service.requests);}
             for(auto &e:events)event(e);
             for(auto &packet:requests){unsigned cmd=Ttw_Read(packet.data()+4);if(!self){if(!initializing&&(cmd==TTW_OPEN||cmd==TTW_JOIN))initialize(packet);continue;}
-                if(self==1)command(self,packet);else if(auto *p=find(1)){if(cmd==TTW_INPUT)send(*p,packet,false);else send(*p,packet,true);}}
+                if(self==1)command(self,packet);else if(auto *p=find(1)){if(cmd==TTW_INPUT)inputResend.send(packet,Ttw_Read(packet.data()+8),[&](const Packet &q){send(*p,q,false);});else send(*p,packet,true);}}
             Uint64 now=SDL_GetTicks();retrySignals(now);
             bool negotiating=!room.empty()&&std::any_of(peers.begin(),peers.end(),[](const Peer &p){return p.id&&!p.admitted;});
             /* (how soon news is needed: a negotiation, an admission or a search; the owner's lobby, where players join; else none) */
