@@ -3,10 +3,8 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import fs from 'node:fs';
 import {rankedFetch} from './ranked.js';
-const sql=new DatabaseSync(':memory:');
-sql.exec(fs.readFileSync(new URL('./schema.sql',import.meta.url),'utf8'));
-sql.exec(fs.readFileSync(new URL('./ranked-schema.sql',import.meta.url),'utf8'));
-sql.exec(fs.readFileSync(new URL('./ranked-flow-schema.sql',import.meta.url),'utf8'));
+import {newDatabase} from './new-database.mjs';
+const sql=newDatabase(DatabaseSync); // (a new database as README.md makes it)
 const DB={prepare(text){return {values:[],bind(...v){return {...this,values:v};},async first(){return sql.prepare(text).get(...this.values)??null;},sync(){const r=sql.prepare(text).run(...this.values);return {meta:{changes:Number(r.changes)}};},async run(){return this.sync();},async all(){return {results:sql.prepare(text).all(...this.values)};}};},async batch(stmts){sql.exec('BEGIN');try{const r=stmts.map(s=>s.sync());sql.exec('COMMIT');return r;}catch(e){sql.exec('ROLLBACK');throw e;}}};
 const env={DB,RANKED_ENABLED:'1',ALLOWED_VERSIONS:'5001'};let now=1800000000;
 async function api(path,p={},extra={}){const r=await rankedFetch(null,env,path,{v:5001,...p,...extra},now,'198.51.100.1');return {status:r.status,...await r.json()};}

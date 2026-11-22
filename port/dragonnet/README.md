@@ -28,24 +28,29 @@ code (below) for Ranked, the chat and the players online, and `ALLOWED_VERSIONS`
 ## Updating a Worker to this one (Cloudflare dashboard)
 
 1. D1 console of the Worker's database: run `ranked-migrate-version.sql` once (adds `ranked_matches.version`; keeps
-   every profile, rating and result; earlier searches count as 40001).
-2. Replace the Worker's code with `worker.js`, `ranked.js`, `chat.js`, `presence.js` and the new `versions.js`
+   every profile, rating and result; earlier searches count as 40001), then `ranked-flow-schema.sql` (the table
+   `ranked_flow`, which every Ranked search writes; `CREATE TABLE IF NOT EXISTS`, safe to run again).
+2. Replace the Worker's code with `worker.js`, `ranked.js`, `ranked_flow.js`, `chat.js`, `presence.js` and
+   `versions.js` (`ranked.js` imports `ranked_flow.js`: without it the Worker does not start)
    (with wrangler: `wrangler deploy` with `wrangler-ranked.example.jsonc` as a model).
 3. Variable `ALLOWED_VERSIONS` = `40001,5001` (the old `ALLOWED_VERSION` is read only when this one is missing).
    `RANKED_ENABLED` = `1`, `CHAT_ENABLED` = `1`, `MIN_RELEASE` = `0`.
 
-A new database: `schema.sql`, `ranked-schema.sql`, `chat-schema.sql`, `presence-schema.sql`.
+A new database: `schema.sql`, `ranked-schema.sql`, `ranked-flow-schema.sql`, `chat-schema.sql`, `presence-schema.sql`.
+(The tests build their databases from this line: `new-database.mjs`.)
 
 ## Tests
 
-`node test.mjs`, `node ranked-test.mjs`, `node ranked-rematch-test.mjs`, `node chat-test.mjs`,
-`node presence-test.mjs`, `node dragonnet-test.mjs` (Node 22: `node:sqlite`, no other package).
+`node test.mjs`, `node ranked-test.mjs`, `node ranked-rematch-test.mjs`, `node ranked-flow-test.mjs`,
+`node ranked-cd-test.mjs`, `node chat-test.mjs`, `node presence-test.mjs`, `node dragonnet-test.mjs` (Node 22:
+`node:sqlite`, no other package). The `*-http-test.mjs` ones ask a running Worker (`wrangler dev`).
 
 ---
 
 **Resumen (ES):** servidor oficial: `https://mitigo-rooms.minetivacraft.workers.dev` (el Worker del fork Tenkaichi3DecompAndroidOnline); Dragon
 Rage y DBT-NX apuntan ahí. Es el servicio de DBT-NX con un cambio: acepta varias versiones de netcode (`ALLOWED_VERSIONS`, p. ej.
 `40001,5001`) y nunca empareja versiones distintas (salas, partida rápida y Clasificatoria). Perfiles, Elo, chat y
-contador se comparten. Para actualizar: ejecutar `ranked-migrate-version.sql` en D1, subir los cinco `.js` y poner
+contador se comparten. Para actualizar: ejecutar `ranked-migrate-version.sql` y `ranked-flow-schema.sql` en D1, subir los seis `.js`
+(`ranked_flow.js` incluido) y poner
 `ALLOWED_VERSIONS`. La versión `5001` = netcode 5 del PC 0.1.37 + simulación 1; solo cambia cuando cambia algo que
 decide la pelea, no con cada versión del PC.

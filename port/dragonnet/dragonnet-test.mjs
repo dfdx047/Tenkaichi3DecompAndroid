@@ -6,8 +6,8 @@ import fs from 'node:fs';
 import {rankedFetch} from './ranked.js';
 import {chatFetch} from './chat.js';
 import {presenceFetch} from './presence.js';
-const sql=new DatabaseSync(':memory:');
-for(const f of ['schema.sql','ranked-schema.sql','chat-schema.sql','presence-schema.sql'])sql.exec(fs.readFileSync(new URL('./'+f,import.meta.url),'utf8'));
+import {newDatabase} from './new-database.mjs';
+const sql=newDatabase(DatabaseSync); // (the schemas README.md lists for a new database)
 const DB={prepare(text){return {values:[],bind(...v){return {...this,values:v};},async first(){return sql.prepare(text).get(...this.values)??null;},async run(){const r=sql.prepare(text).run(...this.values);return {meta:{changes:Number(r.changes)}};},async all(){return {results:sql.prepare(text).all(...this.values)};}};},async batch(statements){sql.exec('BEGIN');try{const out=[];for(const st of statements)out.push(await st.run());sql.exec('COMMIT');return out;}catch(e){sql.exec('ROLLBACK');throw e;}}};
 let now=1800000000;
 const env={DB,RANKED_ENABLED:'1',CHAT_ENABLED:'1',ALLOWED_VERSIONS:'40001,5001'};
