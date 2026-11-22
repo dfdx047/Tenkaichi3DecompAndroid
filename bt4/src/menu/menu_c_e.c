@@ -858,6 +858,7 @@ void CharSel_Term(void) {
    clip of the five movies are set from the state, the movies are drawn, then the windows and the side panels. */
 #ifdef PORT
 #include "menu/port_charsel.h"
+#include "menu/port_selflow.h"
 /* The map first (sPortStageFirst 1): until its reel opens, the screen holds, empty (see menu_e_b.c: the select half a
    second up and the name chips sliding in over the map, as in the user's recording). */
 #define CHARSEL_PORT_HOLD() (sPortStageFirst == 1)
@@ -2270,8 +2271,8 @@ s32 CharSel_Run(s32 section) {
         extern int Port_Setting(const char *name, int def), Port_NetSession(void), Port_NetActive(void), Port_TagNetwork(void);
         /* online too: the same order on both copies (the setting is this device's: online it does not decide), the map chosen first by the one whose
            pad it is as ever, then each at his side; the way to the battle after, from the local fighter */
-        sPortStageFirst = PortCharSel_On() && !Port_TagNetwork() &&
-                          (Port_NetSession() || Port_NetActive() || Port_Setting("select_stage_first", 1)) ? 1 : 0;
+        sPortStageFirst = PortSelFlow_StageFirst(Port_NetSession() || Port_NetActive(), Port_TagNetwork(), PortCharSel_On(),
+                                                 Port_Setting("select_stage_first", 1)); /* (include/menu/port_selflow.h: online it does not depend on the screen) */
     }
 #endif
     ColorFade_StartIn(0, 0, 0, 0x14);

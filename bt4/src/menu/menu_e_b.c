@@ -962,6 +962,7 @@ void TeamSel_Term(void) {
 /* Draws the two stage pictures (cross fade), sets up every clip of the seven movies and draws them and the windows. */
 #ifdef PORT
 #include "menu/port_charsel.h"
+#include "menu/port_selflow.h"
 /* The map first (sPortStageFirst 1): until its reel opens, the screen holds, empty: neither the new select (its 3D world
    split in two, its name plates) nor the game's own pieces are shown, only run (the movies' state is the game's). The user's
    recording had the select up for half a second and the plates of the game's chips sliding in over the map. */
@@ -2531,7 +2532,8 @@ s32 TeamSel_Run(s32 section) {
     PortCharSel_Begin(1); /* (BT4decomp: the new screen, src/menu/port_charsel.c) */
     {   /* the map first (the setting select_stage_first, 1 by default): offline, with the new screen */
         extern int Port_Setting(const char *name, int def), Port_NetSession(void), Port_NetActive(void);
-        sPortStageFirst = PortCharSel_On() && (Port_NetSession() || Port_NetActive() || Port_Setting("select_stage_first", 1)) ? 1 : 0;
+        sPortStageFirst = PortSelFlow_StageFirst(Port_NetSession() || Port_NetActive(), 0, PortCharSel_On(),
+                                                 Port_Setting("select_stage_first", 1)); /* (include/menu/port_selflow.h: online it does not depend on the screen) */
     }
 #endif
     ColorFade_StartIn(0, 0, 0, 0x14);
