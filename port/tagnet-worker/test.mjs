@@ -4,7 +4,8 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 import { handle } from "./worker.js";
 
-let writes = 0; // rows written (D1's free plan counts them)
+let writes = 0;
+let raceNextJoin = false; // rows written (D1's free plan counts them)
 const db = new DatabaseSync(":memory:");
 db.exec(fs.readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
 const D1 = {
@@ -14,7 +15,13 @@ const D1 = {
             bind(...a) { this.args = a; return this; },
             async first() { return db.prepare(sql).get(...this.args) ?? null; },
             async all() { return { results: db.prepare(sql).all(...this.args) }; },
-            async run() { const r = db.prepare(sql).run(...this.args); writes += r.changes; return { meta: { changes: r.changes } }; },
+            async run() {
+                if (raceNextJoin && /INTO tag_members/.test(sql)) { // (another join takes the same number between this one's look and its write)
+                    raceNextJoin = false;
+                    db.prepare("INSERT INTO tag_members (code, id, key, name, addrs, seen, watch, touched) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(this.args[0], this.args[1], "other-join-key", "B", "[]", "", 0, now);
+                }
+                const r = db.prepare(sql).run(...this.args); writes += r.changes; return { meta: { changes: r.changes } };
+            },
         };
     },
     async batch(list) { return Promise.all(list.map((s) => s.run())); },
@@ -115,5 +122,42 @@ assert.equal((await call("poll", { code: h3.code, key: h3.key })).members.length
         assert.equal((await call("poll", { code: o.code, key: o.key })).error, undefined);
         assert.equal((await call("poll", { code: o.code, key: g.key })).error, undefined);
     }
+}
+// Member numbers travel as one byte through the room's relay (TagRelay: the owner's messages start with the member's
+// number & 255, tag_link.c answers by it). A long-lived room whose newest member always stays (people coming and going
+// around one who stays) went past 255: member 256 got the owner's answers for nobody (its byte is 0) and 257 shared
+// member 1's. Numbers stay within 1..255 and unique among the room's members.
+{
+    const o = await call("host", { v: 5, name: "Long", addrs: [] });
+    let last = await call("join", { v: 5, code: o.code, name: "M", addrs: [] });
+    const ids = [last.id];
+    for (let k = 0; k < 300; k++) { // the next one arrives, then the one before leaves
+        now += 1;
+        const next = await call("join", { v: 5, code: o.code, name: "M" + k, addrs: [] });
+        assert.equal(next.status, 200, `join ${k}`);
+        ids.push(next.id);
+        await call("leave", { code: o.code, key: last.key });
+        last = next;
+        await call("poll", { code: o.code, key: o.key }); // (the owner stays)
+    }
+    assert.ok(ids.every((id) => id >= 1 && id <= 255), "member numbers stay within one byte: largest " + Math.max(...ids));
+    assert.ok(ids.includes(254) && ids.includes(255), "numbers up to 255 are given");
+    assert.ok(ids[ids.indexOf(255) + 1] < 255, "after 255, the smallest free number: " + ids[ids.indexOf(255) + 1]);
+    // the members present at once all have different bytes
+    const together = [];
+    for (let k = 0; k < 10; k++) { now += 1; together.push((await call("join", { v: 5, code: o.code, name: "T" + k, addrs: [] })).id); }
+    together.push(last.id);
+    assert.equal(new Set(together.map((id) => id & 255)).size, together.length, "members present together share a relay byte: " + together.join(","));
+    assert.ok(together.every((id) => id >= 1 && id <= 255), "members present together within one byte: " + together.join(","));
+}
+{ // two joins at once want the same next number: the one that finds it taken takes another instead of failing
+    const o = await call("host", { v: 5, name: "Race", addrs: [] });
+    const first = await call("join", { v: 5, code: o.code, name: "A", addrs: [] });
+    raceNextJoin = true;
+    let second;
+    try { second = await call("join", { v: 5, code: o.code, name: "C", addrs: [] }); } catch (e) { second = { status: "exception: " + e.message }; }
+    assert.equal(second.status, 200, "a join whose number was just taken");
+    assert.notEqual(second.id, first.id + 1);
+    assert.ok(second.id >= 1 && second.id <= 255);
 }
 console.log("tagnet worker: all tests passed (" + minuteWrites + " rows written in the minute of polls)");

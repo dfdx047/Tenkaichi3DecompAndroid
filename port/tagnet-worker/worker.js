@@ -37,6 +37,7 @@
 // heard from in the last MEMBER_IDLE seconds, and only those count towards a full room.
 const ROOM_IDLE = 300;      // seconds a room lives without its owner's poll
 const MEMBER_IDLE = 45;     // seconds without a poll after which a member leaves the owner's list (it is told it is gone)
+const MEMBER_TOP = 255;     // the largest member number (one byte through the room's relay)
 const MEMBER_KEEP = 300;    // seconds without a poll after which a member's place (its key, its relay) is gone
 const RELAY_PER_DAY = 300;
 // D1's free plan counts every row read and written (100,000 written a day): a poll every 2 s that wrote its room's and
@@ -207,9 +208,26 @@ export async function handle(request, env, now) {
         const max = Number(env.MAX_MEMBERS) || 19;
         const count = await env.DB.prepare("SELECT COUNT(*) FILTER (WHERE touched >= ?) AS n, COALESCE(MAX(id), 0) AS top FROM tag_members WHERE code = ?").bind(now - MEMBER_IDLE, code).first();
         if (count.n >= max) return reply({ error: "full" }, 409);
-        const key = randomKey(), id = count.top + 1;
-        await env.DB.prepare("INSERT INTO tag_members (code, id, key, name, addrs, seen, watch, touched) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-            .bind(code, id, key, cleanName(body.name), JSON.stringify(cleanAddrs(body.addrs)), ip, body.watch ? 1 : 0, now).run();
+        // A member's number goes through the room's relay as one byte (TagRelay below, tag_link.c's relay addresses):
+        // it stays within 1..MEMBER_TOP. The next number after the largest, as always; past MEMBER_TOP (a long-lived
+        // room whose newest member stays), the smallest free one. Two joins at once may want the same number: the one
+        // that finds it taken takes another (the members' primary key) instead of failing.
+        const key = randomKey();
+        let id = 0, candidates = count.top < MEMBER_TOP ? [count.top + 1] : null;
+        for (let round = 0; round < 2 && !id; round++) {
+            if (candidates === null) {
+                const taken = new Set((await env.DB.prepare("SELECT id FROM tag_members WHERE code = ?").bind(code).all()).results.map((r) => r.id));
+                candidates = [];
+                for (let n = 1; n <= MEMBER_TOP && candidates.length < 4; n++) if (!taken.has(n)) candidates.push(n);
+            }
+            for (const n of candidates) {
+                const r = await env.DB.prepare("INSERT OR IGNORE INTO tag_members (code, id, key, name, addrs, seen, watch, touched) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+                    .bind(code, n, key, cleanName(body.name), JSON.stringify(cleanAddrs(body.addrs)), ip, body.watch ? 1 : 0, now).run();
+                if (r.meta.changes === 1) { id = n; break; }
+            }
+            candidates = null;
+        }
+        if (!id) return reply({ error: "full" }, 409);
         await env.DB.prepare("UPDATE tag_rooms SET touched = ? WHERE code = ?").bind(now, code).run();
         return reply({ key, id, you: ip, host: { name: room.host_name, addrs: JSON.parse(room.host_addrs), seen: room.host_seen } });
     }
