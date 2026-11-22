@@ -10,6 +10,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <fcntl.h>
 static int gDrop;
 static Uint64 gCutAt, gOpenAt; /* CUT_MS: from this time on the direct way loses everything (the room relay still works) */
 static ssize_t drop_sendto(int s, const void *b, size_t n, int f, const struct sockaddr *a, socklen_t l) {
@@ -35,7 +36,7 @@ static const char *test_dir(void) {
     return dir;
 }
 volatile int gPortInBackground;
-int TagLink_Stun(int sock, char *out, int size) { (void)sock; (void)out; (void)size; return 0; }
+int TagLink_Stun(int sock, char *out, int size) { (void)sock; (void)out; (void)size; if (getenv("STUN_MS")) SDL_Delay((Uint32)atoi(getenv("STUN_MS"))); return 0; } /* (STUN_MS: a slow STUN server) */
 int TagLink_Lan(int port, char *out, int size) { snprintf(out, size, "127.0.0.1:%d", port); return 1; }
 /* FAIL_POLLS="2:503,4:timeout": the service's answer to those polls of this game (counted from 1) is replaced:
      503      {"error":"unavailable"} (the Worker's own error, a database hiccup)
@@ -64,6 +65,7 @@ int TagLink_Http(const char *url, const char *json, char *out, int size) {
     static int registered;
     if (!registered) { registered = 1; atexit(calls_report); }
     if (strstr(url, "/v1/leave")) { gLeaves++; if (!gEnding) gEarlyLeaves++; }
+    if (strstr(url, "/v1/relay") && getenv("FAKE_RELAY")) { snprintf(out, size, "{\"turn\":{\"server\":\"127.0.0.1:3478\",\"username\":\"u\",\"credential\":\"p\"}}"); return 1; }
     if (strstr(url, "/v1/poll") && gPortInBackground) gBackgroundPolls++;
     if (strstr(url, "/v1/poll")) {
         const char *fault = poll_fault(++gPolls);
@@ -84,9 +86,21 @@ int TagLink_Http(const char *url, const char *json, char *out, int size) {
 }
 const char *Port_FileRoot(void) { return test_dir(); }
 int Relay_Allocate(int a, const char *b, const char *c, const char *d, char *e, int f) { return 0; }
+/* RELAY_ALLOC_MS: an allocation that takes that long (as the real one's ten rounds of 0.7 s), "sending" on its socket
+   every 100 ms; it notes when that socket number has become the current room's own while it was still at work. */
+static int gAllocSock = -1, gAllocOnOtherRoomSocket;
+static int gen_now(void);
+static int sock_now(void);
 int Relay_AllocateVia(int sock, const char *server, const char *username, const char *password, char *out, int size,
                       int (*recvfn)(uint8_t *buf, int max, struct sockaddr_in *from)) {
-    (void)sock; (void)server; (void)username; (void)password; (void)out; (void)size; (void)recvfn; return 0;
+    int startGen = gen_now(), t;
+    (void)server; (void)username; (void)password; (void)out; (void)size; (void)recvfn;
+    gAllocSock = sock;
+    for (t = 0; getenv("RELAY_ALLOC_MS") && t < atoi(getenv("RELAY_ALLOC_MS")); t += 100) {
+        if (gen_now() != startGen && sock == sock_now()) gAllocOnOtherRoomSocket++;
+        SDL_Delay(100);
+    }
+    return 0;
 }
 void Relay_Permit(int s, const struct sockaddr_in *p) {}
 int Relay_Active(void) { return 0; }
@@ -113,6 +127,59 @@ static int background_thread(void *arg) {
 }
 
 #define TOTAL (300 * 1024)
+static int gen_now(void) { return SDL_GetAtomicInt(&L.gen); }
+static int sock_now(void) { return L.sock; }
+
+/* `harness restart` (P3): the owner leaves a room while its service thread is still at work (asking the relay for an
+   address) and opens another at once, whose STUN takes a while. The old thread must not touch the new room: not its
+   "busy" (the new STUN's answer would then be read by the game thread and lost), not its socket. */
+static int restart_test(void) {
+    char st[160], code[16], body[256], answer[1024], url[300];
+    Uint64 t0;
+    int oldSock, newSock, clobbered = 0, sampled = 0, stunMs = getenv("STUN_MS") ? atoi(getenv("STUN_MS")) : 0;
+    TagLink_Host("A", 5);
+    for (t0 = SDL_GetTicks(); SDL_GetTicks() - t0 < 15000; SDL_Delay(5)) { TagLink_Pump(); TagLink_Status(st, sizeof st, code, sizeof code); if (code[0]) break; }
+    if (!code[0]) { fprintf(stderr, "restart: no room code\n"); return 2; }
+    SDL_snprintf(url, sizeof(url), "%s/v1/join", L.url); /* a member who never connects: after 4 s the owner wants the relay */
+    SDL_snprintf(body, sizeof(body), "{\"v\":5,\"code\":\"%s\",\"name\":\"Away\",\"addrs\":[\"127.0.0.1:9\"]}", code);
+    TagLink_Http(url, body, answer, sizeof(answer));
+    for (t0 = SDL_GetTicks(); SDL_GetTicks() - t0 < 20000 && !SDL_GetAtomicInt(&sAllocating); SDL_Delay(5)) TagLink_Pump();
+    if (!SDL_GetAtomicInt(&sAllocating)) { fprintf(stderr, "restart: the owner never asked the relay\n"); return 2; }
+    SDL_Delay(300);
+    oldSock = L.sock;
+    TagLink_Host("B", 5); /* (TagLink_Stop of A, then B) */
+    newSock = L.sock;
+    for (t0 = SDL_GetTicks(); SDL_GetTicks() - t0 < (Uint64)stunMs + 3000; SDL_Delay(5)) {
+        TagLink_Pump();
+        if (SDL_GetTicks() - t0 < (Uint64)stunMs - 200) { sampled++; if (!SDL_GetAtomicInt(&L.busy)) clobbered++; }
+    }
+    { /* the old room's socket: closed by its thread as it ended (the old allocation ended 2.7 s after the change) */
+        int oldOpen = fcntl(oldSock, F_GETFD) != -1 && oldSock != L.sock && oldSock != L.sock6;
+        fprintf(stderr, "RESTART old socket %d, new socket %d, the allocation's socket %d; new room's busy cleared during its STUN %d of %d samples; the old allocation on the new room's socket %d times; the old socket still open %d\n",
+                oldSock, newSock, gAllocSock, clobbered, sampled, gAllocOnOtherRoomSocket, oldOpen);
+        gEnding = 1; TagLink_Stop(); SDL_Delay(500);
+        return clobbered || gAllocOnOtherRoomSocket || oldSock == newSock || oldOpen ? 1 : 0;
+    }
+}
+
+/* `harness cycle` (P3): twenty rooms opened and left in a row, 150 ms apart (each one's thread still in its STUN or
+   its requests when the next begins); then no thread may hold a socket, nor any lock, and a last room still works. */
+static int open_fds(void) { int n = 0, fd; for (fd = 0; fd < 1024; fd++) if (fcntl(fd, F_GETFD) != -1) n++; return n; }
+static int cycle_test(void) {
+    char st[160], code[16];
+    int before = open_fds(), after, i;
+    Uint64 t0;
+    for (i = 0; i < 20; i++) { TagLink_Host("C", 5); TagLink_Pump(); SDL_Delay(150); }
+    TagLink_Stop();
+    SDL_Delay((getenv("STUN_MS") ? atoi(getenv("STUN_MS")) : 0) + 4000); /* (every thread ends: its STUN, its requests) */
+    after = open_fds();
+    TagLink_Host("Last", 5);
+    for (t0 = SDL_GetTicks(), code[0] = 0; SDL_GetTicks() - t0 < 15000 && !code[0]; SDL_Delay(5)) { TagLink_Pump(); TagLink_Status(st, sizeof st, code, sizeof code); }
+    fprintf(stderr, "CYCLE descriptors open before %d, after twenty rooms %d; the last room's code %s\n", before, after, code[0] ? code : "(none)");
+    gEnding = 1; TagLink_Stop(); SDL_Delay(300);
+    return after == before && code[0] ? 0 : 1;
+}
+
 /* `harness unit`: tag_link.c's own functions on a connection set up by hand, without the service. */
 static int unitFailures;
 #define UNIT_CHECK(c, ...) do { if (!(c)) { unitFailures++; fprintf(stderr, "FAIL unit: " __VA_ARGS__); fprintf(stderr, "\n"); } } while (0)
@@ -168,6 +235,8 @@ static int unit_tests(void) {
 int main(int argc, char **argv) {
     SDL_Init(0);
     if (argc > 1 && !strcmp(argv[1], "unit")) return unit_tests();
+    if (argc > 1 && !strcmp(argv[1], "restart")) return restart_test();
+    if (argc > 1 && !strcmp(argv[1], "cycle")) return cycle_test();
     if (getenv("BG")) { /* BG=<from ms>:<for ms>: the app goes to the background then (gPortInBackground), as onPause says */
         static unsigned bg[2]; static SDL_Thread *t;
         sscanf(getenv("BG"), "%u:%u", &bg[0], &bg[1]);

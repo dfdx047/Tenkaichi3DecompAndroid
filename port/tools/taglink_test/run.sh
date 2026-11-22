@@ -76,5 +76,10 @@ background() {
 }
 background "C2 the player's app in the background for 40 s" "" "BG=5000:40000" join
 background "C2 the owner's app in the background for 40 s" "COUNT_CALLS=1 BG=5000:40000" "" host
+# P3: the owner leaves a room while its thread asks the relay for an address (3 s) and opens another whose STUN takes 4 s
+if env FAKE_RELAY=1 RELAY_ALLOC_MS=3000 STUN_MS=4000 "$BIN" restart 2> "$TAGLINK_TEST_DIR/restart.err"; then echo "PASS P3 $(grep RESTART "$TAGLINK_TEST_DIR/restart.err")"
+else echo "FAIL P3 $(grep -E "RESTART|restart:" "$TAGLINK_TEST_DIR/restart.err")"; FAILED=1; fi
+if env STUN_MS=1000 "$BIN" cycle 2> "$TAGLINK_TEST_DIR/cycle.err"; then echo "PASS P3 $(grep CYCLE "$TAGLINK_TEST_DIR/cycle.err")"
+else echo "FAIL P3 $(grep CYCLE "$TAGLINK_TEST_DIR/cycle.err")"; FAILED=1; fi
 [ $FAILED = 0 ] && echo "all passed"
 exit $FAILED

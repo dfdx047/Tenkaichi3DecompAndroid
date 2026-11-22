@@ -37,6 +37,8 @@ static inline Uint32 SDL_rand_bits(void){static int s;if(!s){s=1;srand((unsigned
 #define SDL_memcpy memcpy
 #define SDL_memmove memmove
 #define SDL_memcmp memcmp
+#define SDL_calloc calloc
+#define SDL_free free
 #define SDL_memset memset
 #define SDL_snprintf snprintf
 #define SDL_strchr strchr

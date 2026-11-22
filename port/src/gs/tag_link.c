@@ -1065,24 +1065,58 @@ static Uint64 poll_retry(int *failures) {
     return wait > 20000 ? 20000 : wait;
 }
 
+/* A room's service thread can still be at work (an HTTP request, STUN, the relay's allocation: seconds) when its room
+   is left and the next one begins (TagLink_Stop does not wait for it). Nothing it does may then reach the new room:
+   - "busy" and sAllocating hold the number (+1) of the room that set them, are set only while that room is the
+     current one and cleared only by it, all under L.lock as TagLink_Stop's change of room (P3: an old allocation's end
+     cleared the new room's "busy" in the middle of its STUN, whose answer the game thread then read and lost);
+   - the room's sockets belong to its thread while it runs: TagLink_Stop leaves them to it, and it closes them as it
+     ends (closed at once, their number went to the new room's socket, which the old allocation then sent on);
+   - one relay allocation at a time (Relay_AllocateVia starts by clearing net_relay.c's one state), and one opening of
+     the room's relay WebSocket at a time, none by a thread whose room is gone. */
+typedef struct { int gen, sock, sock6, running, closeOnExit; } ServiceArgs;
+static ServiceArgs *sService;           /* the current room's thread (under L.lock) */
+static SDL_Mutex *sAllocLock, *sRelayOpenLock;
+static void owned_set(SDL_AtomicInt *flag, int mine, int on) {
+    SDL_LockMutex(L.lock);
+    if (!on) {
+        if (SDL_GetAtomicInt(flag) == mine + 1) {
+            SDL_SetAtomicInt(flag, 0);
+        }
+    } else if (SDL_GetAtomicInt(&L.gen) == mine) {
+        SDL_SetAtomicInt(flag, mine + 1);
+    }
+    SDL_UnlockMutex(L.lock);
+}
+/* relay_open for a room's thread: one at a time, and not once its room is gone */
+static int relay_open_for(int mine, const char *url) {
+    int ok = 0;
+    SDL_LockMutex(sRelayOpenLock);
+    if (SDL_GetAtomicInt(&L.gen) == mine) {
+        ok = relay_open(url);
+    }
+    SDL_UnlockMutex(sRelayOpenLock);
+    return ok;
+}
+
 #define STOPPED() (SDL_GetAtomicInt(&L.gen) != mine)
-static int SDLCALL service_thread(void *arg) {
+static int service_run(int mine, int sock) {
     char pub[64] = "", lan[64] = "", relay[64] = "", addrs[256], body[1024], answer[4096], name[48], code[16], key[48];
-    int mine = (int)(intptr_t)arg, sock = L.sock, hosting = L.hosting;
+    int hosting = L.hosting;
     struct sockaddr_in me;
     socklen_t ml = sizeof(me);
     Uint64 lastPoll = 0, relayAsked = 0, relayRetry = 0;
     Uint64 pollEvery = 2000; /* (one a second was 60 a minute for each open room, on a free Worker) */
     int relayRefused = 0, relayWait = 5000, got, pollFailures = 0;
     char ws[400];
-    getsockname(L.sock, (struct sockaddr *)&me, &ml);
-    SDL_SetAtomicInt(&L.busy, 1);
+    getsockname(sock, (struct sockaddr *)&me, &ml);
+    owned_set(&L.busy, mine, 1);
     set_status("Finding this device's internet address...");
-    TagLink_Stun(L.sock, pub, sizeof(pub));
+    TagLink_Stun(sock, pub, sizeof(pub));
+    owned_set(&L.busy, mine, 0);
     if (STOPPED()) { /* (the room is gone, another may have begun: nothing below is this thread's any more) */
         return 0;
     }
-    SDL_SetAtomicInt(&L.busy, 0);
     TagLink_Lan(ntohs(me.sin_port), lan, sizeof(lan));
     { char v6[80]; own_ipv6(v6, sizeof(v6));
       fprintf(stderr, "taglink: addresses: internet %s, own network %s, IPv6 %s\n", pub[0] ? pub : "(not found)", lan[0] ? lan : "(none)", v6[0] ? v6 : "(none)"); }
@@ -1140,7 +1174,7 @@ static int SDLCALL service_thread(void *arg) {
     }
     SDL_snprintf(ws, sizeof(ws), "%s/v1/ws?code=%s&key=%s", L.url, code, key);
     { /* the room's relay at the service: for players whose networks keep them from reaching each other directly */
-        if (relay_open(ws)) {
+        if (relay_open_for(mine, ws)) {
             if (STOPPED()) {
                 if (!L.active) {
                     relay_close();
@@ -1161,7 +1195,7 @@ static int SDLCALL service_thread(void *arg) {
            (Not from the background, as the polls below.) */
         if (!gPortInBackground && !SDL_GetAtomicInt(&L.relayOn) && now - relayRetry >= (Uint64)relayWait) {
             relayRetry = now;
-            if (relay_open(ws)) {
+            if (relay_open_for(mine, ws)) {
                 if (STOPPED()) {
                     if (!L.active) {
                         relay_close();
@@ -1249,21 +1283,33 @@ static int SDLCALL service_thread(void *arg) {
                     if (STOPPED()) {
                         break;
                     }
+                    SDL_LockMutex(sAllocLock);
+                    if (STOPPED()) {
+                        SDL_UnlockMutex(sAllocLock);
+                        break;
+                    }
                     SDL_LockMutex(L.lock);
                     sBoxN = 0;
                     SDL_UnlockMutex(L.lock);
-                    SDL_SetAtomicInt(&sAllocating, 1);
-                    SDL_SetAtomicInt(&L.busy, 1);
+                    owned_set(&sAllocating, mine, 1);
+                    owned_set(&L.busy, mine, 1);
                     got = Relay_AllocateVia(sock, server, user, pass, relay, sizeof(relay), box_take);
-                    SDL_SetAtomicInt(&sAllocating, 0);
+                    owned_set(&sAllocating, mine, 0);
+                    owned_set(&L.busy, mine, 0);
+                    if (STOPPED()) { /* (an address for a room that is gone: given up, net_relay.c's state cleared) */
+                        if (got) {
+                            Relay_Close(sock);
+                        }
+                        SDL_UnlockMutex(sAllocLock);
+                        break;
+                    }
+                    SDL_UnlockMutex(sAllocLock);
                     if (got) {
                         fprintf(stderr, "taglink: relay address %s\n", relay);
                         my_addrs(addrs, sizeof(addrs), pub, lan, relay);
                         SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\",\"addrs\":%s}", code, key, addrs);
-                        SDL_SetAtomicInt(&L.busy, 0);
                         post("addrs", body, answer, sizeof(answer));
                     } else {
-                        SDL_SetAtomicInt(&L.busy, 0);
                         relay[0] = 0;
                         fprintf(stderr, "taglink: the relay gave no address\n");
                     }
@@ -1288,6 +1334,25 @@ static int SDLCALL service_thread(void *arg) {
     SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"}", code, key);
     post("leave", body, answer, sizeof(answer)); /* (the room's owner leaving closes it) */
     (void)hosting;
+    return 0;
+}
+
+static int SDLCALL service_thread(void *arg) {
+    ServiceArgs *a = (ServiceArgs *)arg;
+    service_run(a->gen, a->sock);
+    SDL_LockMutex(L.lock);
+    a->running = 0;
+    if (a->closeOnExit) { /* (its room is gone: the sockets TagLink_Stop left to this thread) */
+        closesocket(a->sock);
+        if (a->sock6 >= 0) {
+            closesocket(a->sock6);
+        }
+    }
+    if (sService == a) {
+        sService = NULL;
+    }
+    SDL_UnlockMutex(L.lock);
+    SDL_free(a);
     return 0;
 }
 
@@ -1320,6 +1385,8 @@ static int start(int hosting, const char *code, const char *name, int version, i
     TagLink_Stop();
     if (L.lock == NULL) {
         L.lock = SDL_CreateMutex();
+        sAllocLock = SDL_CreateMutex();
+        sRelayOpenLock = SDL_CreateMutex();
     }
     if (!service_url()) {
         set_status("No online service is set for Tag Team rooms.");
@@ -1378,7 +1445,7 @@ static int start(int hosting, const char *code, const char *name, int version, i
         }
     }
     L.tag = hosting ? 0 : (uint32_t)SDL_atoi(L.code);
-    SDL_SetAtomicInt(&L.busy, 0);
+    SDL_SetAtomicInt(&L.busy, SDL_GetAtomicInt(&L.gen) + 1); /* (this room's thread begins with STUN on its socket) */
     if (!hosting) {
         Conn *c = &L.conn[0];
         conn_reset(c);
@@ -1386,11 +1453,30 @@ static int start(int hosting, const char *code, const char *name, int version, i
         c->id = (uint32_t)SDL_rand_bits() | 1u;
         c->lastIn = SDL_GetTicks();
     }
-    L.thread = SDL_CreateThread(service_thread, "tag-online", (void *)(intptr_t)SDL_GetAtomicInt(&L.gen));
-    if (L.thread != NULL) {
+    {
+        ServiceArgs *a = (ServiceArgs *)SDL_calloc(1, sizeof(ServiceArgs));
+        if (a == NULL) {
+            return 0;
+        }
+        a->gen = SDL_GetAtomicInt(&L.gen);
+        a->sock = L.sock;
+        a->sock6 = L.sock6;
+        a->running = 1;
+        SDL_LockMutex(L.lock);
+        sService = a;
+        SDL_UnlockMutex(L.lock);
+        L.thread = SDL_CreateThread(service_thread, "tag-online", a);
+        if (L.thread == NULL) {
+            SDL_LockMutex(L.lock);
+            sService = NULL;
+            SDL_SetAtomicInt(&L.busy, 0);
+            SDL_UnlockMutex(L.lock);
+            SDL_free(a);
+            return 0;
+        }
         SDL_DetachThread(L.thread); /* (it ends by itself when the room's number changes: TagLink_Stop) */
     }
-    return L.thread != NULL;
+    return 1;
 }
 
 int TagLink_Host(const char *name, int version) {
@@ -1402,15 +1488,26 @@ int TagLink_Join(const char *code, const char *name, int version, int watch) {
 }
 
 void TagLink_Stop(void) {
-    int i;
+    int i, handed = 0;
+    if (L.lock != NULL) {
+        SDL_LockMutex(L.lock); /* (the change of room and the room-owned flags together: owned_set) */
+    }
     SDL_AddAtomicInt(&L.gen, 1); /* (the room's thread says "leave" to the service and ends, by itself) */
+    SDL_SetAtomicInt(&L.busy, 0);
+    SDL_SetAtomicInt(&sAllocating, 0);
+    if (sService != NULL && sService->running) { /* (its sockets are closed by that thread as it ends) */
+        sService->closeOnExit = 1;
+        handed = 1;
+    }
+    sService = NULL;
+    if (L.lock != NULL) {
+        SDL_UnlockMutex(L.lock);
+    }
     if (SDL_GetAtomicInt(&L.relayOn)) {
         SDL_SetAtomicInt(&L.relayOn, 0);
         relay_close();
     }
     L.thread = NULL;
-    SDL_SetAtomicInt(&L.busy, 0);
-    SDL_SetAtomicInt(&sAllocating, 0);
     if (L.sock >= 0) {
         for (i = 0; i < TL_SLOTS; i++) {
             if (L.conn[i].state == TK_LINK_OPEN) {
@@ -1420,10 +1517,12 @@ void TagLink_Stop(void) {
         if (Relay_Active()) {
             Relay_Close(L.sock);
         }
-        closesocket(L.sock);
+        if (!handed) {
+            closesocket(L.sock);
+        }
         L.sock = -1;
     }
-    if (L.sock6 >= 0) {
+    if (L.sock6 >= 0 && !handed) {
         closesocket(L.sock6);
     }
     L.sock6 = -1;
