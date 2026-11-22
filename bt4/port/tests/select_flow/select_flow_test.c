@@ -28,9 +28,10 @@ int main(void) {
         }
         legacyMixedCases++;
     }
-    /* 2. the same screen on both: the result is the one that was already (new screen online: the map first, as released) */
-    CHECK(PortSelFlow_StageFirst(1, 0, 1, 1) == 1 && legacy(1, 0, 1, 1) == 1, "new screen on both: unchanged");
-    CHECK(PortSelFlow_StageFirst(1, 0, 1, 0) == 1 && legacy(1, 0, 1, 0) == 1, "new screen on both, setting off: unchanged (the map first online)");
+    /* 2. online is the game's own order (what a classic screen and a PC copy without the new screen do): the fighters first, for every screen and setting */
+    for (uiA = 0; uiA < 2; uiA++) for (setA = 0; setA < 2; setA++)
+        CHECK(PortSelFlow_StageFirst(1, 0, uiA, setA) == 0, "online must be the original order (screen %d, setting %d)", uiA, setA);
+    CHECK(PortSelFlow_StageFirst(1, 0, 0, 0) == legacy(1, 0, 0, 0), "classic screen online: the same as it always was");
     /* 3. offline is exactly what it was, for every input */
     for (online = 0; online < 1; online++)
     for (tag = 0; tag < 2; tag++) for (uiA = 0; uiA < 2; uiA++) for (setA = 0; setA < 2; setA++) {

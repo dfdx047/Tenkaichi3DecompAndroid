@@ -11,12 +11,19 @@
    order only offline.
 
    Pure on purpose: port/tests/select_flow/ compiles this very file and checks every pair of screens against each other. */
+/* The order ONLINE. It has to be the game's own (the fighters, then the map, then the game's VS of 60 blanks and the stage's
+   introduction): that is what every earlier release does, what the classic screen does, and what a PC copy that does not know the
+   new screen does. "Map first" online was only ever in test builds (from 21/11/2026); with it a classic copy and a new-screen copy
+   did not agree, and neither did a new-screen copy and a PC one. Offline the new screen still has it (select_stage_first).
+   1 here would put the map first online for everybody; it must then be so for every client that plays with this one. */
+#define PORT_SELFLOW_ONLINE_STAGE_FIRST 0
+
 static inline int PortSelFlow_StageFirst(int online, int tagNetwork, int newScreen, int settingStageFirst) {
     if (tagNetwork) {
         return 0; /* (the Tag Team network select has its own order, as before) */
     }
     if (online) {
-        return 1; /* the same on every copy, whichever screen draws it */
+        return PORT_SELFLOW_ONLINE_STAGE_FIRST; /* the same on every copy, whichever screen draws it */
     }
     return newScreen && settingStageFirst ? 1 : 0;
 }
