@@ -8,10 +8,19 @@ import { pathToFileURL } from "node:url";
 const src = fs.readFileSync(new URL("./worker.js", import.meta.url), "utf8").replace("export default", "const worker =") + "\nexport { worker, network, isPrivate, sameNetwork, shown };";
 const copy = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "worker-test-")), "worker.mjs");
 fs.writeFileSync(copy, src);
-fs.copyFileSync(new URL("./ranked.js", import.meta.url),path.join(path.dirname(copy),"ranked.js"));
-fs.copyFileSync(new URL("./presence.js", import.meta.url),path.join(path.dirname(copy),"presence.js"));
-fs.copyFileSync(new URL("./chat.js", import.meta.url),path.join(path.dirname(copy),"chat.js"));
-fs.copyFileSync(new URL("./versions.js", import.meta.url),path.join(path.dirname(copy),"versions.js"));
+// (the modules worker.js imports, and theirs, beside the copy: followed from the import lines, so a new module is never
+// left out; ranked_flow.js was, and this test stopped with ERR_MODULE_NOT_FOUND)
+{
+    const todo = ["worker.js"], seen = new Set(["worker.js"]);
+    while (todo.length) {
+        const name = todo.pop(), text = fs.readFileSync(new URL("./" + name, import.meta.url), "utf8");
+        for (const m of text.matchAll(/^\s*import\s[^;]*?from\s*["']\.\/([A-Za-z0-9_.-]+\.js)["']/gm)) {
+            if (seen.has(m[1])) continue;
+            seen.add(m[1]); todo.push(m[1]);
+            fs.copyFileSync(new URL("./" + m[1], import.meta.url), path.join(path.dirname(copy), m[1]));
+        }
+    }
+}
 const { worker, network, sameNetwork } = await import(pathToFileURL(copy).href);
 const rooms = new Map(), used = new Map(), watchers = new Map();
 let rowids = 0;
