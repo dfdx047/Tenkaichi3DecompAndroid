@@ -197,16 +197,26 @@ static TK_UNUSED void Tk_NightLife(void) {
     }
 }
 
-/* The night with its stars and rock spires over the whole window (the picture's middle, as wide as the window is).
-   (Was the dusk sky, TBO_DB_SKY: the mod's pages took the dragon radar's look, 2026-11-08.) */
+/* The tournament arena behind every page of the mod (2026-11-21: the user's clip, a still of it) with Goku standing at the
+   right, breathing; a soft light on the left where the lists sit. The picture is as wide as the window is (cut at the
+   sides, never stretched). Goku's place is the design's (Tk_PX, Tk_PY): his feet and his height. */
+/* Goku of the menus: his film (tbo/ui/goku.mpg, port/tools/tag_goku_film.py), from the head to the thighs, as tall as
+   `top` to `bottom` (the bottom below the screen's: the screen cuts him), centred on `cx`. */
+static TK_UNUSED void Tk_Goku(f32 cx, f32 top, f32 bottom) {
+    f32 h = bottom - top, w = h * Ps_PicW(TBO_DB_GOKU) / Ps_PicH(TBO_DB_GOKU) * PS_UNIT_X;
+
+    Ps_Sprite(TBO_DB_GOKU, cx - w * 0.5f, top, cx + w * 0.5f, bottom, 0.0f, 0.0f, 1.0f, 1.0f, PS_PLAIN, 0x80);
+}
+
 static TK_UNUSED void Tk_Backdrop(void) {
     f32 aspect = (f32)Port_PageAspectMilli() / 1000.0f;
-    f32 pic = Ps_PicW(TBO_DB_NIGHT) / Ps_PicH(TBO_DB_NIGHT);
+    f32 pic = Ps_PicW(TBO_DB_ARENA) / Ps_PicH(TBO_DB_ARENA);
     f32 u = aspect < pic ? aspect / pic : 1.0f;
     f32 v = aspect < pic ? 1.0f : pic / aspect;
 
-    Ps_SpriteScreen(TBO_DB_NIGHT, 0.0f, 0.0f, 512.0f, 448.0f, 0.5f - u * 0.5f, 0.5f - v * 0.5f, 0.5f + u * 0.5f, 0.5f + v * 0.5f, PS_PLAIN, 0x80);
-    Tk_NightLife();
+    Ps_SpriteScreen(TBO_DB_ARENA, 0.0f, 0.0f, 512.0f, 448.0f, 0.5f - u * 0.5f, 0.5f - v * 0.5f, 0.5f + u * 0.5f, 0.5f + v * 0.5f, PS_PLAIN, 0x80);
+    Tk_Glow(Tk_PX(1450.0f), Tk_PY(150.0f), Tk_PX(2740.0f), Tk_PY(1300.0f), 255, 190, 90, 0x28); /* (the light behind him) */
+    Tk_Goku(Tk_PX(2090.0f), Tk_PY(220.0f), Tk_PY(1340.0f));
 }
 
 /* Where the window's left edge is, and a little in: the lists keep to it on a wide phone. */
@@ -295,12 +305,12 @@ static TK_UNUSED f32 Tk_Languages(f32 right, f32 cy, s32 lang) {
 
 /* The page's title in the game's orange lettering at the top left; `card`, if any: a red capsule at the top right. */
 static TK_UNUSED void Tk_Capsule(f32 x0, f32 y0, f32 x1, f32 y1, char *text, f32 scale) {
-    f32 sk = (y1 - y0) * 0.35f;
+    f32 sk = (y1 - y0) * 0.40f;
 
-    Tk_Para(x0 - 2.0f, y0 - 2.0f, x1 + 2.0f, y1 + 2.0f, sk, Ps_Rgba(255, 230, 140, 128), Ps_Rgba(255, 200, 90, 128));
-    Tk_Para(x0, y0, x1, y1, sk, Ps_Rgba(225, 40, 30, 128), Ps_Rgba(170, 14, 14, 128));
+    Tk_Para(x0 - 2.0f, y0 - 2.0f, x1 + 2.0f, y1 + 2.0f, sk, Ps_Rgba(255, 250, 220, 128), Ps_Rgba(255, 214, 120, 128));
+    Tk_Para(x0, y0, x1, y1, sk, Ps_Rgba(255, 204, 70, 128), Ps_Rgba(236, 116, 8, 128));
     Ps_Align(1);
-    Ps_Text((x0 + x1) * 0.5f, Ps_TextTop((y0 + y1) * 0.5f, scale), text, scale, x1 - x0 - sk - 8.0f, 0);
+    Ps_Text((x0 + x1) * 0.5f, Ps_TextTop((y0 + y1) * 0.5f, scale), text, scale, x1 - x0 - sk - 8.0f, 1);
 }
 
 static TK_UNUSED void Tk_Title(char *title, char *card) {
@@ -313,26 +323,40 @@ static TK_UNUSED void Tk_Title(char *title, char *card) {
     Ps_Align(1);
 }
 
-/* A plate of a list: slanted, deep blue with a navy edge, or orange with a brown one under the cursor (a glow behind). */
-static TK_UNUSED void Tk_Bar(f32 x0, f32 y0, f32 x1, f32 y1, s32 lit) {
-    f32 sk = (y1 - y0) * 0.45f;
+/* A plate of a list (2026-11-21, the new design): slanted. Deep blue with a light edge and an orange tab at its end; the one
+   under the cursor orange with a light edge and a glow. `ball`: its dragon ball (0: none), as big as the plate lets it. */
+static TK_UNUSED void Tk_Plate(f32 x0, f32 y0, f32 x1, f32 y1, s32 lit, s32 ball) {
+    f32 h = y1 - y0, sk = h * 0.40f, mid = (y0 + y1) * 0.5f;
+    u32 white = Ps_Rgba(255, 255, 255, 36);
 
     if (lit) {
-        Tk_Glow(x0 - 30.0f, y0 - 16.0f, x1 + 30.0f, y1 + 16.0f, 255, 170, 40, 0x60);
-        Tk_Para(x0 - 2.0f, y0 - 2.0f, x1 + 2.0f, y1 + 2.0f, sk, Ps_Rgba(120, 30, 0, 128), Ps_Rgba(120, 30, 0, 128));
-        Tk_Para(x0, y0, x1, y1, sk, Ps_Rgba(255, 240, 150, 128), Ps_Rgba(240, 120, 10, 128));
-    } else { /* dark blue glass with a light edge */
-        Tk_Para(x0 - 1.5f, y0 - 1.5f, x1 + 1.5f, y1 + 1.5f, sk, Ps_Rgba(110, 210, 255, 110), Ps_Rgba(70, 160, 230, 100));
-        Tk_Para(x0, y0, x1, y1, sk, Ps_Rgba(24, 52, 130, 118), Ps_Rgba(8, 22, 70, 122));
+        Tk_Glow(x0 - 26.0f, y0 - 16.0f, x1 + 26.0f, y1 + 16.0f, 255, 170, 40, 0x60);
+        Tk_Para(x0 - 2.0f, y0 - 2.0f, x1 + 2.0f, y1 + 2.0f, sk, Ps_Rgba(255, 250, 220, 128), Ps_Rgba(255, 214, 120, 128));
+        Tk_Para(x0, y0, x1, y1, sk, Ps_Rgba(255, 204, 70, 128), Ps_Rgba(236, 116, 8, 128));
+        Tk_Para(x0 + 3.0f, y0 + 2.0f, x1 - 5.0f, y0 + h * 0.45f, sk * 0.8f, white, Ps_Rgba(255, 255, 255, 8));
+    } else {
+        Tk_Para(x0 - 1.5f, y0 - 1.5f, x1 + 1.5f, y1 + 1.5f, sk, Ps_Rgba(120, 160, 235, 110), Ps_Rgba(90, 130, 220, 100));
+        Tk_Para(x0, y0, x1, y1, sk, Ps_Rgba(30, 58, 138, 124), Ps_Rgba(6, 14, 58, 126));
+        Tk_Para(x0 + 3.0f, y0 + 2.0f, x1 - 5.0f, y0 + h * 0.42f, sk * 0.8f, Ps_Rgba(150, 190, 255, 18), Ps_Rgba(150, 190, 255, 4));
+        Tk_Para(x0 + 1.0f, y0 + 2.0f, x0 + 6.0f, y1 - 2.0f, sk * 0.6f, Ps_Rgba(255, 176, 50, 128), Ps_Rgba(230, 100, 10, 128));
+    }
+    if (ball > 0) {
+        f32 r = h * (lit ? 0.46f : 0.38f), bx = x0 + h * 0.80f;
+
+        if (lit) {
+            Tk_Glow(bx - r * 1.5f * PS_UNIT_X, mid - r * 1.5f, bx + r * 1.5f * PS_UNIT_X, mid + r * 1.5f, 255, 250, 220, 0x50);
+        }
+        Tk_Ball(bx, mid, r, ball);
     }
 }
 
-/* A plate of the main list: dark blue glass with a light edge; its letters are light (Tk_NavyText). */
-static TK_UNUSED void Tk_LightBar(f32 x0, f32 y0, f32 x1, f32 y1) {
-    f32 sk = (y1 - y0) * 0.55f;
+static TK_UNUSED void Tk_Bar(f32 x0, f32 y0, f32 x1, f32 y1, s32 lit) {
+    Tk_Plate(x0, y0, x1, y1, lit, 0);
+}
 
-    Tk_Para(x0 - 1.5f, y0 - 1.5f, x1 + 1.5f, y1 + 1.5f, sk, Ps_Rgba(110, 210, 255, 110), Ps_Rgba(70, 160, 230, 100));
-    Tk_Para(x0, y0, x1, y1, sk, Ps_Rgba(24, 52, 130, 118), Ps_Rgba(8, 22, 70, 122));
+/* A plate of the main list (the blue one); its letters are light (Tk_NavyText). */
+static TK_UNUSED void Tk_LightBar(f32 x0, f32 y0, f32 x1, f32 y1) {
+    Tk_Plate(x0, y0, x1, y1, 0, 0);
 }
 
 /* The letters on the glass plates and in the talk box: near white, a pale blue foot, a navy edge. (Navy on white

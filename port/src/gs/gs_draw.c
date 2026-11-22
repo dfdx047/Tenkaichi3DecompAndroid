@@ -780,6 +780,8 @@ typedef struct {
 #define TBO_FILM_TRIES 100
 static TboFilm sTboFilm = {"bg", 0};
 static TboFilm sRaditzFilm = {"raditz", 1};
+static TboFilm sArenaFilm = {"arena", 0}; /* the arena behind the Tag Team menus (db_arena.png): tbo/ui/arena.mpg, port/tools/tag_menu_art.py */
+static TboFilm sGokuFilm = {"goku", 1}; /* Goku of the Tag Team menus (db_goku.png): tbo/ui/goku.mpg, port/tools/tag_goku_film.py */
 
 static uint8_t *tbo_film_read(const char *name, size_t *len) {
     const char *base = SDL_GetBasePath();
@@ -1025,8 +1027,8 @@ static GsTex tbo_texture(uint32_t id) {
     if (id >= TBO_ART_COUNT && !languageArt) {
         return gsWhite;
     }
-    if (id == TBO_BG || id == TBO_RADITZ_BUST) {
-        GsTex film = tbo_film_texture(id == TBO_BG ? &sTboFilm : &sRaditzFilm);
+    if (id == TBO_BG || id == TBO_RADITZ_BUST || id == TBO_DB_GOKU || id == TBO_DB_ARENA) {
+        GsTex film = tbo_film_texture(id == TBO_BG ? &sTboFilm : id == TBO_DB_GOKU ? &sGokuFilm : id == TBO_DB_ARENA ? &sArenaFilm : &sRaditzFilm);
         if (film != 0) {
             return film;
         }

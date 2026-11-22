@@ -38,6 +38,11 @@
     X(TBO_DB_RADAR, "db_radar")             /* the dragon radar: case, button, green screen (its middle: 512, 588 of 1024 x 1100) */ \
     X(TBO_DB_RING, "db_ring")               /* a thin white ring (tinted): the radar's pulses */ \
     X(TBO_DB_GLASS, "db_glass")             /* dark blue glass (nine pieces): panels and plates */ \
+    X(TBO_DB_ARENA, "db_arena")             /* the tournament arena behind the mod's menus (a clip's still; port/tools/tag_menu_art.py) */ \
+    X(TBO_DB_GOKU, "db_goku")               /* Goku cut out of his still (RGBA) */ \
+    X(TBO_DB_LOGO, "db_logo")               /* the gold TAG TEAM lettering (RGBA) */ \
+    X(TBO_DB_PLATE, "db_plate")             /* a list plate, blue (nine pieces) */ \
+    X(TBO_DB_PLATE_ON, "db_plate_on")       /* ... orange, under the cursor (nine pieces) */ \
     X(TBO_STORM_BOLT, "storm_bolt")         /* four lightning bolts side by side, 256 x 1024 each (our own drawing): the full power storm (stg_c.c) */
 
 #define TBO_ART_ENUM(id, name) id,

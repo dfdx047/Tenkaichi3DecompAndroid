@@ -36,6 +36,11 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {1024, 1100, 0}, /* db_radar */
     {256, 256, 0}, /* db_ring */
     {256, 256, 48}, /* db_glass */
+    {1280, 576, 0}, /* db_arena */
+    {640, 832, 0}, /* db_goku */
+    {1509, 300, 0}, /* db_logo */
+    {256, 256, 60}, /* db_plate */
+    {256, 256, 60}, /* db_plate_on */
     {1024, 1024, 0}, /* storm_bolt */
 };
 

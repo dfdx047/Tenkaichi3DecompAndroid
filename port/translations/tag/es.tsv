@@ -399,7 +399,7 @@ MATCH SETTINGS	AJUSTES DE COMBATE
 MOD SETTINGS	AJUSTES DEL MOD
 MODDED DUEL	DUELO DEL MOD
 MODDED GAUNTLET	OLEADAS DEL MOD
-MODDED MODES	MODOS DEL MOD
+MODDED MODES	MODOS DE BATALLA
 MODDED ONLINE	ONLINE DEL MOD
 MODDED TRAINING	ENTRENAMIENTO DEL MOD
 NEXT WAVE	SIGUIENTE OLEADA
@@ -911,3 +911,6 @@ Choose a mode for the lobby.	Elige un modo para la sala.
 held %d s	frenó %d s
 Your game kept the others waiting too long. A CPU took your fighter.	Tu juego hizo esperar demasiado a los demás. La CPU tomó tu luchador.
 A player kept the others waiting too long. A CPU took their fighter.	Un jugador hizo esperar demasiado a los demás. La CPU tomó su luchador.
+BLUE TEAM	EQUIPO AZUL
+RED TEAM	EQUIPO ROJO
+NORMAL MODES	MODOS NORMALES

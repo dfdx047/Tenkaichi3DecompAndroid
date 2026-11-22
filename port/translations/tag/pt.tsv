@@ -399,7 +399,7 @@ MATCH SETTINGS	OPÇÕES DA LUTA
 MOD SETTINGS	OPÇÕES DO MOD
 MODDED DUEL	DUELO MODIFICADO
 MODDED GAUNTLET	DESAFIO MODIFICADO
-MODDED MODES	MODOS MODIFICADOS
+MODDED MODES	MODOS DE BATALHA
 MODDED ONLINE	ONLINE MODIFICADO
 MODDED TRAINING	TREINO MODIFICADO
 NEXT WAVE	PRÓXIMA ONDA
@@ -911,3 +911,6 @@ Choose a mode for the lobby.	Escolha um modo para a sala.
 held %d s	travou %d s
 Your game kept the others waiting too long. A CPU took your fighter.	Seu jogo deixou os outros esperando demais. A CPU assumiu o seu lutador.
 A player kept the others waiting too long. A CPU took their fighter.	Um jogador deixou os outros esperando demais. A CPU assumiu o lutador dele.
+BLUE TEAM	EQUIPE AZUL
+RED TEAM	EQUIPE VERMELHA
+NORMAL MODES	MODOS NORMAIS
