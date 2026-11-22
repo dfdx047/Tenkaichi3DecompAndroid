@@ -31,5 +31,29 @@ host_and_join() {
 }
 host_and_join "stream echoed, no loss" "" "" "ALL BYTES MATCH"
 host_and_join "stream echoed, 20% loss" "DROP=20" "" "ALL BYTES MATCH"
+# calls <name> <env for the joiner> <polls after the fault at least> <early leaves>: a joiner playing PING (a match's
+# inputs) while its service polls are answered as FAIL_POLLS says; its game must keep playing over UDP all along.
+calls() {
+    name=$1; joiner=$2; after=$3; early=$4
+    "$BIN" host > "$TAGLINK_TEST_DIR/host.out" 2> "$TAGLINK_TEST_DIR/host.err" &
+    HOST=$!
+    for i in $(seq 50); do grep -q CODE "$TAGLINK_TEST_DIR/host.out" && break; sleep 0.2; done
+    code=$(awk '/CODE/{print $2}' "$TAGLINK_TEST_DIR/host.out")
+    out=$(env $joiner PING=20 timeout 120 "$BIN" join "$code" 2>&1)
+    kill $HOST 2>/dev/null; wait $HOST 2>/dev/null
+    line=$(printf '%s\n' "$out" | grep "^CALLS")
+    a=$(printf '%s' "$line" | sed -n 's/.*after the first replaced one \([0-9]*\)).*/\1/p')
+    e=$(printf '%s' "$line" | sed -n 's/.*before the game.s own end \([0-9]*\)).*/\1/p')
+    echoes=$(printf '%s\n' "$out" | sed -n 's/.*PING \([0-9]*\) echoes.*/\1/p')
+    if [ -n "$a" ] && [ "$a" -ge "$after" ] && [ "$e" = "$early" ] && [ "${echoes:-0}" -gt 500 ]; then echo "PASS $name ($line; $echoes echoes)"
+    else echo "FAIL $name ($line; ${echoes:-0} echoes; wanted polls after >= $after, early leaves $early)"; FAILED=1; fi
+}
+# C1: a passing error of the service never takes a player out of the room; only "no room" does.
+calls "C1 one 503 on a poll: polls go on, no leave" "FAIL_POLLS=2:503" 2 0
+calls "C1 a Cloudflare 500 page on a poll (no JSON: polling goes on at its pace)" "FAIL_POLLS=2:500" 1 0
+calls "C1 a poll without an answer (timeout)" "FAIL_POLLS=2:timeout" 2 0
+calls "C1 503, 503, timeout in a row, then the service is back" "FAIL_POLLS=2:503,3:503,4:timeout" 2 0
+calls "C1 no room: the player leaves and asks no more" "FAIL_POLLS=2:noroom" 0 1
+calls "C1 a game that ends by itself says leave once, at its end" "COUNT_CALLS=1" 0 0
 [ $FAILED = 0 ] && echo "all passed"
 exit $FAILED

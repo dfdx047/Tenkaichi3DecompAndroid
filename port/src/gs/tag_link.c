@@ -1039,6 +1039,14 @@ static void take_members(const char *json) {
     SDL_UnlockMutex(L.lock);
 }
 
+/* The wait before the next poll after one that brought nothing usable (no answer, or the service's own error): 2 s,
+   doubling to 20 s, which stays under the service's 45 s without a poll after which it forgets a member. */
+static Uint64 poll_retry(int *failures) {
+    Uint64 wait = 2000ull << (*failures < 4 ? *failures : 4);
+    (*failures)++;
+    return wait > 20000 ? 20000 : wait;
+}
+
 #define STOPPED() (SDL_GetAtomicInt(&L.gen) != mine)
 static int SDLCALL service_thread(void *arg) {
     char pub[64] = "", lan[64] = "", relay[64] = "", addrs[256], body[1024], answer[4096], name[48], code[16], key[48];
@@ -1047,7 +1055,7 @@ static int SDLCALL service_thread(void *arg) {
     socklen_t ml = sizeof(me);
     Uint64 lastPoll = 0, relayAsked = 0, relayRetry = 0;
     Uint64 pollEvery = 2000; /* (one a second was 60 a minute for each open room, on a free Worker) */
-    int relayRefused = 0, relayWait = 5000, got;
+    int relayRefused = 0, relayWait = 5000, got, pollFailures = 0;
     char ws[400];
     getsockname(L.sock, (struct sockaddr *)&me, &ml);
     SDL_SetAtomicInt(&L.busy, 1);
@@ -1157,7 +1165,10 @@ static int SDLCALL service_thread(void *arg) {
         lastPoll = now;
         SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\"}", code, key);
         if (!post("poll", body, answer, sizeof(answer)) || STOPPED()) {
-            continue; /* (the service was not reached this time: the room goes on) */
+            if (!STOPPED()) {
+                pollEvery = poll_retry(&pollFailures); /* (the service was not reached this time: the room goes on) */
+            }
+            continue;
         }
         /* over the service's limit (HTTP 429, Cloudflare's error 1027): 30 s, doubling up to 10 minutes */
         if (SDL_strstr(answer, "\"http\":429") != NULL || SDL_strstr(answer, "error code: 1027") != NULL) {
@@ -1166,14 +1177,27 @@ static int SDLCALL service_thread(void *arg) {
             fprintf(stderr, "taglink: the service is over its limit: next poll in %d s\n", (int)(pollEvery / 1000));
             continue;
         }
-        pollEvery = 2000;
         if (SDL_strstr(answer, "\"error\"") != NULL) {
-            say_error(answer, "poll");
-            if (!L.hosting) {
-                break;
+            char e[64] = "";
+            /* Only "no room" says the room (or this player's place in it) is gone. Any other refusal of a poll is the
+               service's own trouble ({"error":"unavailable"}: a database or Worker error, HTTP 503), and is asked
+               again. Before, any error ended a player's service thread: it said "leave" to the service and stopped,
+               so one passing 503 took the player off the owner's list and the room's relay for the rest of the room,
+               although the game itself still played over UDP. */
+            if (json_str(answer, "error", e, sizeof(e)) && SDL_strcmp(e, "no room") == 0) {
+                say_error(answer, "poll");
+                if (!L.hosting) {
+                    break;
+                }
+                pollEvery = 2000;
+                continue;
             }
+            pollEvery = poll_retry(&pollFailures);
+            fprintf(stderr, "taglink: the service refused a poll for now (%s): asked again in %d s\n", e, (int)(pollEvery / 1000));
             continue;
         }
+        pollEvery = 2000;
+        pollFailures = 0;
         if (L.hosting) {
             int i, j, waiting = 0, pending = 0;
             take_members(answer);
