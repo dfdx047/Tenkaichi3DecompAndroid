@@ -1,0 +1,1 @@
+{"name": "bt4-supabase-pglite-tests", "private": true, "type": "module", "scripts": {"test": "node ranked_sql.test.mjs && node contract.test.mjs && node rollback.test.mjs"}, "dependencies": {"@electric-sql/pglite": "^0.3.0"}}

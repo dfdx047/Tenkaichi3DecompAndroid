@@ -1,0 +1,9 @@
+\set n random(1,30000)
+begin;
+select set_config('request.jwt.claim.sub', (select a::text from bench_matches where n=:n), true);
+select public.bt4_ranked_api('report', jsonb_build_object('match',(select id::text from bench_matches where n=:n),'outcome',0,'digest',repeat('a',64)));
+commit;
+begin;
+select set_config('request.jwt.claim.sub', (select b::text from bench_matches where n=:n), true);
+select public.bt4_ranked_api('report', jsonb_build_object('match',(select id::text from bench_matches where n=:n),'outcome',0,'digest',repeat('a',64)));
+commit;

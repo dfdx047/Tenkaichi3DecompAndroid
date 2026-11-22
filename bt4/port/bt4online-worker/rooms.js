@@ -5,6 +5,7 @@ import {versionAllowed, versionGateOn} from "./versions.js";
 // addition: every quick match it makes in the Ranked queue ("D20") is written down (table ranked_rooms, see
 // joinRoom's caller in /v1/quick), so that profile.js counts Ranked points only for matches this service made.
 const RANKED_QUEUE = "D20";
+import { accountId } from "./profile.js";
 const unavailable = () => new Response(JSON.stringify({ error: "unavailable" }), { status: 404, headers: { "Content-Type": "application/json" } });
 const chatFetch = async () => unavailable(), presenceFetch = async () => unavailable(), rankedFetch = async () => unavailable();
 // Matchmaking for Tenkaichi3Decomp's online play: room codes.
@@ -613,6 +614,13 @@ export default {
         if (minRelease > 0 && entry && !(Number.isInteger(body.rel) && body.rel >= minRelease)) {
             return reply({ error: "old", need: minRelease }, 426);
         }
+        // The Ranked queue only, for a service that has to stop crediting games it cannot pair safely (profile.js findOther: no room code): the variable
+        // RANKED_MIN_RELEASE (0 or unset: off) turns such a game away at the SEARCH with the same "old, need N" answer, instead of letting it play a match
+        // that will never count. It needs the game's release number to change when its behaviour does (PORT_RELEASE; see docs/AUDITORIA-GERAL-BT4.md).
+        const rankedMin = Number(env.RANKED_MIN_RELEASE ?? 0) || 0;
+        if (rankedMin > 0 && what === "quick" && body.queue === RANKED_QUEUE && !(Number.isInteger(body.rel) && body.rel >= rankedMin)) {
+            return reply({ error: "old", need: rankedMin }, 426);
+        }
         // Only official releases, if the Worker's keeper says so: the build key (see the top of this file). After the
         // check above, so that an official release that is too old is told to update, not that it is no release.
         const known = buildKeys(env);
@@ -673,6 +681,17 @@ export default {
             if (!Number.isInteger(body.v) || addrs === null || !QUEUES.includes(queue) || who.length < 8) {
                 return reply({ error: "bad request" }, 400);
             }
+            // The Ranked search names the player's ACCOUNT ({id, secret}; a game that does not is a legacy one): checked here, never kept or logged. A wrong
+            // account is refused, not treated as anonymous. The account is bound to the seat the search is given (ranked_seats), see profile.js.
+            let acctId = null;
+            if (queue === RANKED_QUEUE) {
+                if (body.acct !== undefined) {
+                    acctId = await accountId(env, body.acct);
+                    if (!acctId) return reply({ error: "account" }, 401);
+                } else if (env.RANKED_REQUIRE_ACCOUNT === "1") {
+                    return reply({ error: "account" }, 401);
+                }
+            }
             // A newer game says how long it has searched: it is put with someone near (see the top of this file).
             const near = typeof body.waited === "number" && Number.isFinite(body.waited);
             const waited = near ? Math.max(0, Math.min(86400, Math.floor(body.waited))) : 0;
@@ -689,6 +708,15 @@ export default {
                 own = await env.DB.prepare("SELECT * FROM rooms WHERE code = ? AND made >= ?").bind(body.code, now - ROOM_SECONDS).first();
                 if (!own || own.host_key !== body.key || own.queue !== queue || own.version !== body.v) {
                     return reply({ error: "no room" }, 404);
+                }
+                if (acctId) { // the room's host seat belongs to the account that made it (or, a room made by a legacy game, to the first that names itself)
+                    const seat = await env.DB.prepare("SELECT player FROM ranked_seats WHERE code = ? AND seat = 'host'").bind(own.code).first();
+                    if (seat && seat.player !== acctId) {
+                        return reply({ error: "identity" }, 403);
+                    }
+                    if (!seat) {
+                        await env.DB.prepare("INSERT OR IGNORE INTO ranked_seats (code, seat, player, made) VALUES (?, 'host', ?, ?)").bind(own.code, acctId, own.made).run();
+                    }
                 }
                 if (own.join_key === null) {
                     const held = await env.DB.prepare("UPDATE rooms SET join_key = ? WHERE code = ? AND join_key IS NULL").bind(HELD, own.code).run();
@@ -713,13 +741,23 @@ export default {
             }
             for (let attempt = 0; attempt < 3; attempt++) {
                 // an older game: whoever waits longest in this queue; a newer one: as it chose (see pick())
-                const waiting = pick(await waitingRooms(env, queue, body.v, now), me, now);
+                let candidates = await waitingRooms(env, queue, body.v, now);
+                let ownCodes = new Set(); // (an account is never put against itself: its other device, its other search)
+                if (acctId) {
+                    const mineSeats = await env.DB.prepare("SELECT code FROM ranked_seats WHERE seat = 'host' AND player = ?").bind(acctId).all();
+                    ownCodes = new Set(mineSeats.results.map((x) => x.code));
+                    candidates = candidates.filter((r) => !ownCodes.has(r.code));
+                }
+                const waiting = pick(candidates, me, now);
                 if (waiting) {
                     const joined = await joinRoom(env, waiting, ip, addrs, body.name, regionOf(place));
                     if (joined) {
                         if (queue === RANKED_QUEUE) { // (the Ranked match this service made: its code and its two players)
                             await env.DB.prepare("INSERT OR REPLACE INTO ranked_rooms (code, made, host_name, join_name) VALUES (?, ?, ?, ?)")
                                 .bind(waiting.code, now, waiting.host_name, cleanName(body.name)).run();
+                            if (acctId) {
+                                await env.DB.prepare("INSERT OR REPLACE INTO ranked_seats (code, seat, player, made) VALUES (?, 'join', ?, ?)").bind(waiting.code, acctId, now).run();
+                            }
                         }
                         if (own) {
                             await env.DB.prepare("DELETE FROM rooms WHERE code = ?").bind(own.code).run();
@@ -741,11 +779,17 @@ export default {
                 if (!made) {
                     return reply({ error: "busy" }, 503);
                 }
+                if (queue === RANKED_QUEUE && made.code) { // (a code that comes round again starts with no seats of an old room)
+                    await env.DB.prepare("DELETE FROM ranked_seats WHERE code = ?").bind(made.code).run();
+                    if (acctId) {
+                        await env.DB.prepare("INSERT INTO ranked_seats (code, seat, player, made) VALUES (?, 'host', ?, ?)").bind(made.code, acctId, now).run();
+                    }
+                }
                 // Two who search in the same moment both find nobody and both make a room. The one whose room came
                 // second sees the first one's here, gives its own up (unless someone is in it already) and joins.
                 // (Only a room it would be put with.)
                 const rows = await waitingRooms(env, queue, body.v, now), mine = rows.find((r) => r.code === made.code);
-                if (mine && pick(rows.filter((r) => r.rid < mine.rid), me, now)) {
+                if (mine && pick(rows.filter((r) => r.rid < mine.rid && !ownCodes.has(r.code)), me, now)) {
                     const gone = await env.DB.prepare("DELETE FROM rooms WHERE code = ? AND join_key IS NULL").bind(made.code).run();
                     if (gone.meta && gone.meta.changes === 1) {
                         continue;

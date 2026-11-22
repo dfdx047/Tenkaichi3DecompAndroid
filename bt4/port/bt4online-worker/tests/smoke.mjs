@@ -1,0 +1,10 @@
+import { boot } from "./harness.mjs";
+const h = boot();
+const A = await h.register("Goku1"), B = await h.register("Vegeta1");
+const code = await h.rankedRoom(A, B);
+await h.rep(A, { rkey: h.rk(), code, n: 1, me: A.name, opp: B.name, side: 0, winner: 0, ranked: true });
+h.clock.advance(11000);
+const r = await h.rep(B, { rkey: h.rk(), code, n: 1, me: B.name, opp: A.name, side: 1, winner: 0, ranked: true });
+console.log(JSON.stringify(r));
+const me = await h.post("me", h.auth(A));
+console.log("A rating", me.rating, "gold", me.gold);

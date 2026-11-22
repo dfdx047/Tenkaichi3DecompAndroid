@@ -27,11 +27,12 @@ const polled = await post("poll", { code: qa.code, key: qa.key });
 ok(polled.peer && polled.peer.name === B.name, "the host's poll finds the other player", JSON.stringify(polled));
 const code = qa.code;
 
-// a Ranked battle of that match: points and medals; the joiner's report without the room code (games before 1.0.3) still pairs
+// a Ranked battle of that match: points and medals. Both reports carry the room's code (a report without one pairs only when the
+// service runs with RANKED_ALLOW_CODELESS=1: it let any account claim a winner's name, tests/ranked_integrity.test.mjs)
 const k1 = rk();
 await rep(A, { rkey: k1, code, n: 1, me: A.name, opp: B.name, side: 0, winner: 0, ranked: true, chars: [[3, "Goku (End)"], [52, "Super Vegito"]] });
-const r1 = await rep(B, { rkey: rk(), code: "", n: 1, me: B.name, opp: A.name, side: 1, winner: 0, ranked: true });
-ok(r1.state === "settled" && r1.medal === "silver" && r1.delta === -16 && r1.rating === 984 && r1.rematches_left === 3, "Ranked battle of a served match (joiner sent no code): points", JSON.stringify(r1));
+const r1 = await rep(B, { rkey: rk(), code, n: 1, me: B.name, opp: A.name, side: 1, winner: 0, ranked: true });
+ok(r1.state === "settled" && r1.medal === "silver" && r1.delta === -16 && r1.rating === 984 && r1.rematches_left === 3, "Ranked battle of a served match: points", JSON.stringify(r1));
 const again = await rep(A, { rkey: k1, code, n: 1, me: A.name, opp: B.name, side: 0, winner: 0, ranked: true, chars: [[3, "Goku (End)"]] });
 ok(again.state === "settled" && again.medal === "gold" && again.delta === 16, "the same report sent again: the same answer, nothing counted twice", JSON.stringify(again));
 

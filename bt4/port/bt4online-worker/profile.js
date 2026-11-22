@@ -110,6 +110,10 @@ export async function schema(env) {
         env.DB.prepare("CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v INTEGER NOT NULL)"),
         env.DB.prepare("CREATE TABLE IF NOT EXISTS presence (who TEXT PRIMARY KEY, at INTEGER NOT NULL)"),
         env.DB.prepare("CREATE TABLE IF NOT EXISTS ranked_rooms (code TEXT PRIMARY KEY, made INTEGER NOT NULL, host_name TEXT NOT NULL, join_name TEXT NOT NULL)"),
+        // who sat where: the ACCOUNT of the host and of the joiner of a Ranked room, bound when the search admitted them (rooms.js). A battle's reports
+        // are taken only from these accounts, and it scores only when they are the two that settle it.
+        env.DB.prepare("CREATE TABLE IF NOT EXISTS ranked_seats (code TEXT NOT NULL, seat TEXT NOT NULL CHECK (seat IN ('host', 'join')), player TEXT NOT NULL, made INTEGER NOT NULL, PRIMARY KEY (code, seat))"),
+        env.DB.prepare("CREATE INDEX IF NOT EXISTS ranked_seats_made ON ranked_seats (made)"),
         // seasons and the permanent profile
         env.DB.prepare("CREATE TABLE IF NOT EXISTS seasons (id INTEGER PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, starts_at INTEGER NOT NULL, ends_at INTEGER NOT NULL, status TEXT NOT NULL CHECK (status IN ('scheduled','active','closing','closed')), closed_at INTEGER, players INTEGER NOT NULL DEFAULT 0, CHECK (ends_at > starts_at))"),
         env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS seasons_one_active ON seasons (status) WHERE status = 'active'"),
@@ -128,6 +132,13 @@ export async function schema(env) {
         env.DB.prepare("CREATE TABLE IF NOT EXISTS char_usage (player_id TEXT NOT NULL, chara INTEGER NOT NULL, battles INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL DEFAULT '', PRIMARY KEY (player_id, chara))"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS recover_tries_ip ON recover_tries (ip_key, at)"),
     ]);
+    // One RATED settlement per fight: a room's battle number scores once, whatever report keys its two sides use (a restarted game, a replay).
+    // (Left out, with a log line, on a database that already holds two rated rows of one fight: the check in settle() still applies.)
+    try {
+        await env.DB.prepare("CREATE UNIQUE INDEX IF NOT EXISTS ranked_matches_one_fight ON ranked_matches (room_code, battle_no) WHERE rated = 1 AND room_code <> ''").run();
+    } catch (e) {
+        console.log("bt4-online: unique index of rated fights not created: " + String(e && e.message || e).slice(0, 120));
+    }
     const cols = await env.DB.prepare("PRAGMA table_info(players)").all();
     if (!cols.results.some((c) => c.name === "recovery_hash")) {
         await env.DB.prepare("ALTER TABLE players ADD COLUMN recovery_hash TEXT").run();
@@ -146,6 +157,12 @@ async function who(env, body) {
     const p = await env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(body.id).first();
     if (!p || p.secret_hash !== await sha256(body.secret)) return null;
     return p;
+}
+// The account a game names in a Ranked search ({id, secret}): its id, or null. The secret is checked here and never kept, logged or returned.
+export async function accountId(env, acct) {
+    if (!acct || typeof acct !== "object") return null;
+    const p = await who(env, acct);
+    return p ? p.id : null;
 }
 const ipKeyOf = async (ip) => (await sha256("bt4-online|" + ip)).slice(0, 24);
 
@@ -344,6 +361,14 @@ async function rankedRoom(env, code, nameA, nameB, atMs) {
     return h !== "" && j !== "" && h !== j && ((h === a && j === b) || (h === b && j === a));
 }
 
+// The seats of a Ranked room (see ranked_seats): every seat that was bound must be one of the two accounts that settle the battle, and with
+// RANKED_REQUIRE_ACCOUNT=1 both seats must have been bound (a game that did not name its account in the search cannot score).
+async function seatsOk(env, code, playerA, playerB) {
+    const seats = (await env.DB.prepare("SELECT seat, player FROM ranked_seats WHERE code = ?").bind(code).all()).results;
+    if (env.RANKED_REQUIRE_ACCOUNT === "1" && seats.length < 2) return false;
+    return seats.every((s) => s.player === playerA || s.player === playerB) && (seats.length < 2 || playerA !== playerB);
+}
+
 // The two agreeing reports a and b of one battle: counted once, in one transaction (see the rules above).
 async function settle(env, a, b, now) {
     const first = Math.min(a.rid, b.rid), second = Math.max(a.rid, b.rid), matchKey = first + ":" + second;
@@ -356,7 +381,15 @@ async function settle(env, a, b, now) {
     }
     const win = a.side === a.winner ? a : b, lose = win === a ? b : a;
     const code = a.code || b.code, at = Math.min(a.at, b.at);
-    const ranked = a.ranked === 1 && b.ranked === 1 && await rankedRoom(env, code, win.me, lose.me, at);
+    let ranked = a.ranked === 1 && b.ranked === 1 && await rankedRoom(env, code, win.me, lose.me, at) && await seatsOk(env, code, win.player, lose.player);
+    if (ranked) { // a fight (room, battle number) that already scored is not scored again, whatever keys the reports carry
+        const done = await env.DB.prepare("SELECT 1 AS x FROM ranked_matches WHERE room_code = ? AND battle_no = ? AND rated = 1").bind(code, a.n).first();
+        if (done) {
+            const o = { state: "settled", medal: "none", ranked: true, capped: true, duplicate: true, rematches_left: 0 };
+            try { await env.DB.batch([claim(), outcome(a, o), outcome(b, o)]); } catch (e) { if (!String(e).includes("UNIQUE")) throw e; }
+            return;
+        }
+    }
     for (let attempt = 0; attempt < 3; attempt++) {
         const day = dayOf(at), pa = win.player < lose.player ? win.player : lose.player, pb = pa === win.player ? lose.player : win.player;
         const season = seasonOf(now);
@@ -420,6 +453,11 @@ async function settle(env, a, b, now) {
             return;
         } catch (e) {
             const s = String(e);
+            if (s.includes("ranked_matches.room_code")) { // (another settlement of this same fight won the race: this one scores nothing)
+                const o = { state: "settled", medal: "none", ranked: true, capped: true, duplicate: true, rematches_left: 0 };
+                try { await env.DB.batch([claim(), outcome(win, o), outcome(lose, o)]); } catch (e2) { if (!String(e2).includes("UNIQUE")) throw e2; }
+                return;
+            }
             if (s.includes("UNIQUE")) return; // (counted already: the outcome is in the reports)
             if (!s.includes("NOT NULL")) throw e; // a guard: read again, at most three times
             if (attempt === 2) return; // (still moving: the reports stay open; the next report or the sweep settles them)
@@ -433,11 +471,24 @@ function answer(row) {
     return json({ ok: true, ...JSON.parse(row.outcome) });
 }
 
-// The other report of the same battle: the same room (or, from a game that sent none, any room), battle number, names
-// both ways, the other side, within PAIR_WINDOW, not counted yet.
-const OTHER = "SELECT * FROM reports WHERE n = ? AND player <> ? AND me = ? AND opp = ? AND side <> ? AND at >= ? AND at <= ? AND outcome IS NULL " +
-    "AND (code = ? OR code = '' OR ? = '') ORDER BY rid LIMIT 1";
-const findOther = (env, mine) => env.DB.prepare(OTHER).bind(mine.n, mine.player, mine.opp, mine.me, mine.side, mine.at - PAIR_WINDOW, mine.at + PAIR_WINDOW, mine.code, mine.code).first();
+// The other report of the same battle: the same battle number, names both ways, the other side, within PAIR_WINDOW, not
+// counted yet. WHICH room: a Ranked report (the only kind that scores) pairs only with another Ranked report of the SAME
+// non-empty room code. A report with no code used to pair with any room's ("a game before 1.0.3 sent no code from the
+// joiner"); that wildcard let any account, in no room at all, claim the winner's name and take the medal and the points
+// of a battle whose loser had reported first, or place a contradicting report ahead of the real ones so that theirs
+// counted for nothing (tests/ranked_integrity.test.mjs). The room's code is known to the two players of the match, not to
+// a stranger. RANKED_ALLOW_CODELESS=1 brings the old wildcard back for a service that still has such games to serve.
+// A report that is not Ranked pairs only with another that is not (it scores nothing either way).
+const OTHER_BASE = "SELECT * FROM reports WHERE n = ? AND player <> ? AND me = ? AND opp = ? AND side <> ? AND at >= ? AND at <= ? AND outcome IS NULL ";
+const OTHER_LEGACY = OTHER_BASE + "AND (code = ? OR code = '' OR ? = '') ORDER BY rid LIMIT 1";
+const OTHER_RANKED = OTHER_BASE + "AND ranked = 1 AND code = ? AND code <> '' ORDER BY rid LIMIT 1";
+const OTHER_CASUAL = OTHER_BASE + "AND ranked = 0 AND (code = ? OR code = '' OR ? = '') ORDER BY rid LIMIT 1";
+const findOther = (env, mine) => {
+    const common = [mine.n, mine.player, mine.opp, mine.me, mine.side, mine.at - PAIR_WINDOW, mine.at + PAIR_WINDOW];
+    if (env.RANKED_ALLOW_CODELESS === "1") return env.DB.prepare(OTHER_LEGACY).bind(...common, mine.code, mine.code).first();
+    if (mine.ranked === 1) return mine.code ? env.DB.prepare(OTHER_RANKED).bind(...common, mine.code).first() : Promise.resolve(null);
+    return env.DB.prepare(OTHER_CASUAL).bind(...common, mine.code, mine.code).first();
+};
 
 async function report(env, body, now, country) {
     const p = await who(env, body);
@@ -451,8 +502,23 @@ async function report(env, body, now, country) {
     const meName = typeof body.me === "string" ? body.me.slice(0, 24) : "", opp = typeof body.opp === "string" ? body.opp.slice(0, 24) : "";
     if (!rkey || !n || side < 0 || winner < 0 || !meName || !opp || meName === opp) return json({ error: "invalid" });
     let mine = await env.DB.prepare("SELECT * FROM reports WHERE player = ? AND rkey = ?").bind(p.id, rkey).first();
+    if (!mine && body.ranked && code) { // not admitted to this room: nothing is stored (it could only contradict or impersonate)
+        const seats = (await env.DB.prepare("SELECT player FROM ranked_seats WHERE code = ?").bind(code).all()).results;
+        // both seats bound: only those two accounts report. One bound (the other side is a game that did not name its account): the unbound seat cannot be told
+        // from a stranger here, but settle() still needs the bound seat's account to be one of the two that score.
+        if (seats.length >= 2 && !seats.some((x) => x.player === p.id)) return json({ error: "not admitted" });
+        if (seats.length === 1 && seats[0].player !== p.id && env.RANKED_REQUIRE_ACCOUNT === "1") return json({ error: "not admitted" });
+    }
     if (!mine) {
         if (now - p.last_report < REPORT_GAP) return json({ error: "slow" });
+        // Migration telemetry only (no effect on any outcome): how many ranked reports arrive WITHOUT a room code, i.e. from a game that
+        // cannot be credited any more (see findOther). When this stops growing, nobody is left to migrate. Read it with maintain()'s log line.
+        if (body.ranked && !code) {
+            await env.DB.batch([
+                env.DB.prepare("INSERT INTO meta (k, v) VALUES ('codeless_ranked_reports', 1) ON CONFLICT (k) DO UPDATE SET v = v + 1"),
+                env.DB.prepare("INSERT INTO meta (k, v) VALUES ('codeless_ranked_last', ?) ON CONFLICT (k) DO UPDATE SET v = excluded.v").bind(Math.floor(now / 1000)),
+            ]);
+        }
         await env.DB.batch([
             env.DB.prepare("INSERT OR IGNORE INTO reports (rkey, player, code, n, me, opp, side, winner, ranked, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
                 .bind(rkey, p.id, code, n, meName, opp, side, winner, body.ranked ? 1 : 0, now),
@@ -507,11 +573,14 @@ async function presence(env, body, now) {
 // Housekeeping: seasons that are over, then (rarely) old reports and claims. The history tables are never pruned.
 export async function maintain(env, now) {
     await closeSeasons(env, now);
+    const codeless = await env.DB.prepare("SELECT k, v FROM meta WHERE k IN ('codeless_ranked_reports', 'codeless_ranked_last')").all();
+    if (codeless.results.length) console.log("bt4-online migration: ranked reports without a room code so far: " + JSON.stringify(Object.fromEntries(codeless.results.map((r) => [r.k, r.v]))));
     await env.DB.batch([
         env.DB.prepare("DELETE FROM reports WHERE at < ?").bind(now - 7 * DAY),
         env.DB.prepare("DELETE FROM settled WHERE at < ?").bind(now - 7 * DAY),
         env.DB.prepare("DELETE FROM pair_day WHERE day < ?").bind(dayOf(now) - 2),
         env.DB.prepare("DELETE FROM ranked_rooms WHERE made < ?").bind(Math.floor(now / 1000) - 7 * 86400),
+        env.DB.prepare("DELETE FROM ranked_seats WHERE made < ?").bind(Math.floor(now / 1000) - 7 * 86400),
         env.DB.prepare("DELETE FROM recover_tries WHERE at < ?").bind(now - 2 * 3600000),
     ]);
 }
