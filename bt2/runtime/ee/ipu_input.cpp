@@ -55,12 +55,15 @@ bool IpuInput::available(unsigned bits) {
 }
 
 std::uint32_t IpuInput::peek(unsigned bits) {
-    std::uint64_t value=0;unsigned at=bit_;std::size_t q=0;
-    for(unsigned n=0;n<bits;++n) {
-        const auto byte=queue_[q][at/8];value=(value<<1)|((byte>>(7-at%8))&1);
-        if(++at==128){at=0;++q;}
+    // Whole bytes covering the bits (at most five, spanning at most two quadwords), then one shift.
+    if(!bits)return 0;
+    const unsigned shift=bit_%8,bytes=(shift+bits+7)/8;
+    unsigned at=bit_/8;std::size_t q=0;std::uint64_t window=0;
+    for(unsigned n=0;n<bytes;++n) {
+        window=(window<<8)|queue_[q][at];
+        if(++at==16){at=0;++q;}
     }
-    return std::uint32_t(value);
+    return std::uint32_t((window>>(bytes*8-shift-bits))&((std::uint64_t(1)<<bits)-1));
 }
 
 void IpuInput::skip(unsigned bits) {

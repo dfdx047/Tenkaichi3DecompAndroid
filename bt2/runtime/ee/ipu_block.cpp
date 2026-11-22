@@ -82,6 +82,36 @@ constexpr std::uint8_t alternate_scan[64]={
     0,8,16,24,1,9,2,10,17,25,32,40,48,56,57,49,41,33,26,18,3,11,4,12,19,27,34,42,50,58,35,43,
     51,59,20,28,5,13,6,14,21,29,36,44,52,60,37,45,53,61,22,30,7,15,23,31,38,46,54,62,39,47,55,63};
 
+// Direct lookup of the prefix codes: every 16-bit (coefficients) or 9-bit (patterns) continuation of a
+// code maps to its entry. The tables are complete prefix codes (checked above), so the one match is the
+// entry the linear search of the tables would find; a zero length marks a pattern no code prefixes.
+struct CoefficientLookup {std::array<Coefficient,1u<<16> entries{};};
+CoefficientLookup makeCoefficientLookup(bool table_one) {
+    CoefficientLookup lookup;
+    const auto add=[&](const Coefficient& entry) {
+        const unsigned first=unsigned(entry.code)<<(16-entry.length),count=1u<<(16-entry.length);
+        for(unsigned n=0;n<count;++n)lookup.entries[first+n]=entry;
+    };
+    if(table_one)for(const auto& entry:coefficients_one)add(entry);
+    for(const auto& entry:coefficients)if(!table_one || entry.length>=shared_code_length)add(entry);
+    return lookup;
+}
+const Coefficient& coefficientFor(bool table_one,std::uint32_t next17) {
+    static const CoefficientLookup zero=makeCoefficientLookup(false),one=makeCoefficientLookup(true);
+    return (table_one?one:zero).entries[next17>>1];
+}
+const Pattern& patternFor(std::uint32_t next9) {
+    static const auto lookup=[] {
+        std::array<Pattern,512> table{};
+        for(const auto& entry:patterns) {
+            const unsigned first=unsigned(entry.code)<<(9-entry.length),count=1u<<(9-entry.length);
+            for(unsigned n=0;n<count;++n)table[first+n]=entry;
+        }
+        return table;
+    }();
+    return lookup[next9&511];
+}
+
 // Bit access that reports a dry input instead of returning short.
 struct Bits {
     IpuInput& input;
@@ -122,11 +152,8 @@ void coefficientsInto(Bits& bits,const IpuBlockParameters& p,bool intra,std::arr
             if(!level)throw std::runtime_error("IPU BDEC: escape with level 0");
             negative=level<0;if(negative)level=-level;
         } else {
-            const Coefficient* found=nullptr;
-            if(one)for(const auto& entry:coefficients_one)if((next>>(17-entry.length))==entry.code){found=&entry;break;}
-            if(!found)for(const auto& entry:coefficients)
-                if((!one || entry.length>=shared_code_length) && (next>>(17-entry.length))==entry.code){found=&entry;break;}
-            if(!found)throw std::runtime_error("IPU BDEC: invalid DCT coefficient code");
+            const Coefficient* found=&coefficientFor(one,next);
+            if(!found->length)throw std::runtime_error("IPU BDEC: invalid DCT coefficient code");
             bits.input.skip(found->length);run=found->run;level=found->level;negative=bits.take(1);
         }
         position+=run;
@@ -150,6 +177,12 @@ const std::array<std::array<double,8>,8>& dctBasis() {
     }();
     return basis;
 }
+
+// floor() for the IDCT's sums (far inside int's range): truncation, one less for a negative fraction.
+inline int floorToInt(double value) {
+    const int truncated=int(value);
+    return truncated-(value<double(truncated));
+}
 }
 
 unsigned ipuQuantiserScale(unsigned code,bool nonlinear) {
@@ -158,17 +191,48 @@ unsigned ipuQuantiserScale(unsigned code,bool nonlinear) {
 }
 
 void ipuInverseDct(std::array<int,64>& block) {
+    // Most coefficients are zero. A zero coefficient adds a zero product, which leaves the sum unchanged
+    // (a sum that starts at +0 stays +0), so it is skipped: the remaining terms are added in the same
+    // order and every result equals the full sum's. Rows without coefficients give zero rows, skipped too.
+    // The loops run over the eight outputs innermost, each output's sum still taking its terms in order,
+    // so the compiler can compute several outputs at once without changing any of them.
     const auto& basis=dctBasis();
-    double rows[64];
-    for(unsigned v=0;v<8;++v)for(unsigned x=0;x<8;++x) {
-        double sum=0;
-        for(unsigned u=0;u<8;++u)sum+=basis[x][u]*block[v*8+u];
-        rows[v*8+x]=sum;
+    static const auto transposed=[&] { // transposed[u][x] = basis[x][u].
+        std::array<std::array<double,8>,8> table{};
+        for(unsigned x=0;x<8;++x)for(unsigned u=0;u<8;++u)table[u][x]=basis[x][u];
+        return table;
+    }();
+    unsigned live_rows[8],row_count=0,coefficients=0;
+    for(unsigned v=0;v<8;++v) {
+        bool live=false;
+        for(unsigned u=0;u<8;++u)if(block[v*8+u]){live=true;++coefficients;}
+        if(live)live_rows[row_count++]=v;
     }
-    for(unsigned y=0;y<8;++y)for(unsigned x=0;x<8;++x) {
-        double sum=0;
-        for(unsigned v=0;v<8;++v)sum+=basis[y][v]*rows[v*8+x];
-        block[y*8+x]=int(std::floor(sum+0.5));
+    if(coefficients==1 && block[0]) {
+        // DC only: every basis[x][0] is the same number, so all 64 sums are the same single product.
+        const int value=floorToInt(basis[0][0]*(basis[0][0]*block[0])+0.5);
+        block.fill(value);return;
+    }
+    alignas(16) double rows[64];
+    for(unsigned n=0;n<row_count;++n) {
+        const unsigned v=live_rows[n];
+        double* row=rows+v*8;
+        for(unsigned x=0;x<8;++x)row[x]=0;
+        for(unsigned u=0;u<8;++u) {
+            const int coefficient=block[v*8+u];
+            if(!coefficient)continue;
+            const double* column=transposed[u].data();
+            for(unsigned x=0;x<8;++x)row[x]+=column[x]*coefficient;
+        }
+    }
+    for(unsigned y=0;y<8;++y) {
+        alignas(16) double sums[8]={};
+        for(unsigned n=0;n<row_count;++n) {
+            const double weight=basis[y][live_rows[n]];
+            const double* row=rows+live_rows[n]*8;
+            for(unsigned x=0;x<8;++x)sums[x]+=weight*row[x];
+        }
+        for(unsigned x=0;x<8;++x)block[y*8+x]=floorToInt(sums[x]+0.5);
     }
 }
 
@@ -179,9 +243,8 @@ void ipuDecodeMacroblock(IpuInput& input,const IpuBlockParameters& p,std::array<
     unsigned pattern=0x3F;
     if(!p.intra) {
         const auto next=bits.peek(9);
-        const Pattern* found=nullptr;
-        for(const auto& entry:patterns)if((next>>(9-entry.length))==entry.code){found=&entry;break;}
-        if(!found)throw std::runtime_error("IPU BDEC: invalid coded block pattern");
+        const Pattern* found=&patternFor(next);
+        if(!found->length)throw std::runtime_error("IPU BDEC: invalid coded block pattern");
         input.skip(found->length);pattern=found->value;
     }
     for(unsigned index=0;index<6;++index) {
