@@ -766,6 +766,16 @@ s32 ChrView_PortLeadReady(s32 chara) {
     return sHostLeadOk;
 }
 
+/* The way to the battle's measuring lines (two a frame, for the recordings) are written only when BT3_CINE_LOG is set: on a phone
+   every line is a write to the log, in the frames that are the slowest. */
+static int CineLogOn(void) {
+    static int on = -1;
+
+    if (on < 0) {
+        on = getenv("BT3_CINE_LOG") != NULL;
+    }
+    return on;
+}
 void ChrView_PortCinema(s32 frame, s32 oppChara, s32 oppCostume) {
     sHostCine = frame;
     sHostOppChara = oppChara;
@@ -1200,7 +1210,7 @@ static void ChrView_PortCineCam(s32 f, f32 lx, f32 h, f32 hOpp, f32 t0y, f32 p0,
     OrbitCam_SetDistRange(c.dist, c.dist);
     OrbitCam_SetDist(c.dist);
     /* (measured, for the recordings: what the way's camera is told, a line a frame) */
-    fprintf(stderr, "bt3: cine: f=%d x=%d h=%d tan=%d,%d tgt=%d,%d,%d yaw=%d pit=%d dist=%d\n", (int)f, (int)(lx * 100.0f), (int)(h * 100.0f),
+    if (CineLogOn()) fprintf(stderr, "bt3: cine: f=%d x=%d h=%d tan=%d,%d tgt=%d,%d,%d yaw=%d pit=%d dist=%d\n", (int)f, (int)(lx * 100.0f), (int)(h * 100.0f),
             (int)(lens.tanV * 1000.0f), (int)(lens.tanH * 1000.0f), (int)(c.tx * 100.0f), (int)(c.ty * 100.0f), (int)(c.tz * 100.0f),
             (int)(c.yaw * 1000.0f), (int)(c.pitch * 1000.0f), (int)(c.dist * 100.0f));
 }
@@ -1535,7 +1545,7 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
         sPortCineX = sCineLockX;
         sPortCineH = sCineLockH;
         ChrView_PortCineCam(sHostCine, sCineLockX, sCineLockH, sCineLockOppH, sCineLockT0, sCineLockP0, sCineLockD0);
-        fprintf(stderr, "bt3: cine: acts=%d shown0=%d free=%d | opp: chara=%d shown=%d new=%d view=%d cur=%d vis=%d\n", (int)acts, (int)sPortShown[0],
+        if (CineLogOn()) fprintf(stderr, "bt3: cine: acts=%d shown0=%d free=%d | opp: chara=%d shown=%d new=%d view=%d cur=%d vis=%d\n", (int)acts, (int)sPortShown[0],
                 (int)(Port_WorldFreeBytes() >> 10), (int)sHostOppChara, (int)sPortShown[1], sPortNew[1] != NULL, sPortView[1] != NULL,
                 sPortView[1] != NULL && sPortView[1]->cur != NULL, sPortView[1] != NULL ? (int)sPortView[1]->visible : -1);
     } else {

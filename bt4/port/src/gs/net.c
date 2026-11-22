@@ -586,6 +586,55 @@ static void queue_flush(void) {
     }
 }
 
+/* The line's health, always on and quiet (2026-11-21: "lag online: be sure it is the network"). In windows of five seconds of a match: the
+   longest wait between two packets heard from the other player (sLkInMax) and the longest between two this game sent (sLkOutMax). A line is
+   written only for a window with a gap of 80 ms or more or a failed send, with the blank it was on. Read the two games' logs side by side: a
+   long gap in what one HEARD while the other's SENT is short is the line (or the other's network thread) at fault; a long gap in what a game
+   SENT is that game's own thread standing still (a render wait, a load). Nothing here changes what is sent or when. */
+static uint64_t sLkInAt, sLkOutAt, sLkRepAt;
+static uint32_t sLkInMax, sLkOutMax, sLkIn, sLkOut, sLkInTick, sLkOutTick, sLkErr0;
+static void link_in(void) {
+    extern unsigned Port_NetTick(void);
+    uint64_t now = SDL_GetTicksNS();
+
+    if (sLkInAt != 0 && now > sLkInAt && (uint32_t)((now - sLkInAt) / 1000000ull) > sLkInMax) {
+        sLkInMax = (uint32_t)((now - sLkInAt) / 1000000ull);
+        sLkInTick = Port_NetTick();
+    }
+    sLkInAt = now;
+    sLkIn++;
+}
+static void link_out(void) {
+    extern unsigned Port_NetTick(void);
+    uint64_t now = SDL_GetTicksNS();
+
+    if (sLkOutAt != 0 && now > sLkOutAt && (uint32_t)((now - sLkOutAt) / 1000000ull) > sLkOutMax) {
+        sLkOutMax = (uint32_t)((now - sLkOutAt) / 1000000ull);
+        sLkOutTick = Port_NetTick();
+    }
+    sLkOutAt = now;
+    sLkOut++;
+}
+static void link_report(void) {
+    uint64_t now = SDL_GetTicksNS();
+
+    if (sLkRepAt == 0) {
+        sLkRepAt = now;
+        sLkErr0 = (uint32_t)sStatErr;
+        return;
+    }
+    if (now - sLkRepAt < 5000000000ull) {
+        return;
+    }
+    if (sLkInMax >= 80 || sLkOutMax >= 80 || (uint32_t)sStatErr != sLkErr0) {
+        fprintf(stderr, "bt3: net: link, last 5 s: heard %u packets, longest silence %u ms (at blank %u); sent %u, longest pause %u ms (at blank %u), %u failed sends\n",
+                sLkIn, sLkInMax, sLkInTick, sLkOut, sLkOutMax, sLkOutTick, (unsigned)((uint32_t)sStatErr - sLkErr0));
+    }
+    sLkInMax = sLkOutMax = sLkIn = sLkOut = 0;
+    sLkErr0 = (uint32_t)sStatErr;
+    sLkRepAt = now;
+}
+
 static void send_to_peer(const void *buf, int n) {
     if (sLoss != 0 && (rand() % 100) < sLoss) {
         return;
@@ -607,6 +656,9 @@ static void send_to_peer(const void *buf, int n) {
         memcpy(sQueue[sQueueTail % 256].data, buf, (size_t)n);
         sQueueTail++;
         return;
+    }
+    if (sConnected && sMode != 3) {
+        link_out();
     }
     net_send(buf, n, &sPeer);
 }
@@ -1676,6 +1728,9 @@ static int receive(void) {
             continue; /* a match takes packets from the other player's address only: nobody else can end it or put buttons in */
         }
         got = 1;
+        if (sConnected) {
+            link_in();
+        }
         if (type == T_PING && n >= 12) { /* setting up: sent back as it came, for the round trip time */
             uint32_t pong[3] = {MAGIC, T_PONG, 0};
             memcpy(&pong[2], pkt + 8, 4);
@@ -2533,6 +2588,7 @@ static void roll_tick(unsigned tick) {
         sample_local(tick);
         send_inputs();
         receive();
+        link_report();
         if (sGone) {
             gone(tick);
         }
@@ -2978,6 +3034,7 @@ enum { RB_ASK = 0, RB_ASKED = 1, RB_THEY_ASK = 2, RB_ACCEPTED = 3, RB_LAST = 4, 
 extern void Port_UiRematch(int phase, const char *rival, int left, int secs); /* ui.cpp (phase -1: gone) */
 extern int Port_UiRematchTake(void); /* ui.cpp: 1 REMATCH, 2 BACK TO MENU pressed (once), else 0 */
 extern int Port_UiMedalShowing(void); /* ui.cpp */
+extern void Port_UiMedalPoll(void); /* ui.cpp: the cross puts the medal away */
 static struct {
     uint32_t battle, mine, theirs, sawMine, open, closed; /* (closed: the box of `battle` is over) */
     uint32_t pendBattle, pendVote, pendSaw;                /* a vote for a box this copy has not opened yet */
@@ -3027,6 +3084,7 @@ static void rematch_box(unsigned tick, int battle) {
         if (!receive()) {
             net_idle_wait();
         }
+        Port_UiMedalPoll();
         if (phase < 0) Bt4Profile_Pump(); /* (the medal, when the service answers; one that comes after the box opened waits
                                              for the box to close, so the two are never drawn over each other) */
         answered = Bt4Profile_ResultOf(battle, &left);
@@ -3080,6 +3138,15 @@ static void rematch_box(unsigned tick, int battle) {
                 sRv.closed = 1;
                 Port_UiRematch(-1, rival, 0, 0);
                 fprintf(stderr, "bt3: net: rematch: the session goes on (%.1f s in the box)\n", (double)(now - t0) / 1e9);
+                {   /* Both chose the rematch: the fight is started again, by the game's own "Fight Again" (the restart reason, 0x8000, the one
+                       the result menu's item 0x13 would set: BtlSeq_Update at the exit turns it into BATTLE_FLAG_RESTART). The result menu itself
+                       is never shown in a Ranked session: it has no "Fight Again" there (hud_0.c takes it out), and its one item that is left
+                       leaves for the main menu, which a press of the cross that put the medal away could take. Both copies do this at the same
+                       blank (the box ends together), so the two restart together. (2026-11-21: this was never wired: the box only asked.) */
+                    extern void BattleResult_Set(int flags, int reason);
+
+                    BattleResult_Set(0x08, 0x8000); /* BTL_RESULT_ABORT, restart */
+                }
                 return;
             }
         }
@@ -3094,7 +3161,11 @@ static void rematch_box(unsigned tick, int battle) {
             Port_NetLeave(); /* back to the online screens, for both (does not return) */
             exit(2);
         }
-        if (phase >= 0 && phase != RB_LEAVING && phase != RB_THEY_LEFT && now - sRv.heardNs > 20000000000ull) {
+        /* (`now` was read at the top of the turn, and receive() may have heard the other copy AFTER it: heardNs is then the later time, and the
+           unsigned difference is huge, not negative. That made the first vote of the other copy "20 seconds of silence": both boxes were
+           closed as "the connection was lost" some 30 ms after they opened (the logs of 2026-11-21, the two phones). Only a heardNs that
+           is behind `now` counts.) */
+        if (phase >= 0 && phase != RB_LEAVING && phase != RB_THEY_LEFT && now > sRv.heardNs && now - sRv.heardNs > 20000000000ull) {
             Port_UiRematch(-1, rival, 0, 0);
             gone_quiet(tick); /* (does not return) */
         }
@@ -3108,6 +3179,14 @@ static void rematch_box(unsigned tick, int battle) {
 }
 #endif
 
+/* A Ranked session's end of the battle plays through (the winner's pose is not skippable: btl_seq.c) */
+int Port_RankedNoSkip(void){
+#ifdef __ANDROID__
+    return sSession&&Bt4Profile_RankedSession();
+#else
+    return 0;
+#endif
+}
 static void ranked_outcome(unsigned tick){
     extern int Port_BattleOutcome(int *);
     extern int Port_RankedPauseAbortPad(void);
@@ -3119,7 +3198,21 @@ static void ranked_outcome(unsigned tick){
         int abortPad=bits&8?Port_RankedPauseAbortPad():-1;
         int over=Bt4Profile_Observe(state,bits,tick,sRollMax>0?sChecked:tick,sResim||gPortResim,abortPad<0?-1:abortPad==sMe,sMe,sNames[0],sNames[1]);
         if(!sResim&&!gPortResim)Bt4Profile_Pump();
-        if(over>0&&!sResim&&!gPortResim&&Bt4Profile_RankedSession()&&!getenv("BT4_NO_REMATCH_BOX"))rematch_box(tick,over); /* (the medal, then REMATCH / BACK TO MENU) */
+        /* The way a Ranked battle ends (the user, 2026-11-21): the finish and the winner's pose play through, not to be skipped; the
+           medal comes up over them as soon as the profile service answers (a press of the cross puts it away); then, at the end of
+           the winner's pose, the game waits in the rematch box. (It used to wait 20 blanks after the knock-out, over the finish
+           announcement: the pose was never seen and the medal and the box came one on the other.) */
+        static int sBoxDue;
+        extern int Port_BtlSeqPoseEnding(void);
+        extern void Port_UiMedalPoll(void); /* ui.cpp */
+        if(state==3)sBoxDue=0;
+        if(over>0&&!sResim&&!gPortResim&&Bt4Profile_RankedSession()&&!getenv("BT4_NO_REMATCH_BOX"))sBoxDue=over;
+        if(!sResim&&!gPortResim)Port_UiMedalPoll();
+        if(sBoxDue>0&&!sResim&&!gPortResim&&(Port_BtlSeqPoseEnding()||state==6)){
+            int due=sBoxDue;
+            sBoxDue=0;
+            rematch_box(tick,due); /* (REMATCH / BACK TO MENU; the medal, if it is still up, goes first) */
+        }
     }
     return;
 #endif

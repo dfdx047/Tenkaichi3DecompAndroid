@@ -471,7 +471,14 @@ void EftStorm_Term(void) {
 
 /* Storm update callback: steps the textures, the four lightning bolts and the rain. */
 void EftStorm_Update(void) {
-    EftStormBolt *bolt = gEftStorm->bolt;
+    EftStormBolt *bolt;
+#ifdef PORT
+    if (gEftStorm == NULL) { /* (see EftStorm_Draw) */
+        return;
+    }
+#endif
+    bolt = gEftStorm->bolt;
+
     s32 i;
 
     EftTexSet_Keep32(gEftStorm, 1, 0);
@@ -622,6 +629,12 @@ INCLUDE_ASM("asm/nonmatchings/battle/eft_g", EftStorm_DrawBolts);
 
 /* Storm draw callback. */
 void EftStorm_Draw(void) {
+#ifdef PORT
+    if (gEftStorm == NULL) { /* the storm's work was let go but its task is still on the list (the character select's viewer, stage 79: a null
+                                pointer read at EftStorm_DrawRain, the crash of 2026-11-21): nothing to draw */
+        return;
+    }
+#endif
     EftStorm_DrawBolts(gEftStorm->bolt);
     EftStorm_DrawRain();
 }
@@ -632,8 +645,15 @@ void EftStorm_PostUpdate(void) {
 
 /* Storm reset callback: respawns the four bolts. */
 void EftStorm_Reset(EftTask *task) {
-    EftStormBolt *bolt = gEftStorm->bolt;
+    EftStormBolt *bolt;
     s32 i;
+
+#ifdef PORT
+    if (gEftStorm == NULL) { /* (see EftStorm_Draw) */
+        return;
+    }
+#endif
+    bolt = gEftStorm->bolt;
 
     for (i = 0; i < EFT_STORM_BOLTS; i++, bolt++) {
         EftStorm_SpawnBolt(bolt);
@@ -793,7 +813,14 @@ void EftStorm_DrawRain(void) {
     Vec4 streak;
     Vec4 delta;
     Mtx44 cam;
-    s32 view = gBtlCam->cur->index;
+    s32 view;
+
+#ifdef PORT
+    if (gEftStorm == NULL || gBtlCam == NULL || gBtlCam->cur == NULL) { /* (see EftStorm_Draw) */
+        return;
+    }
+#endif
+    view = gBtlCam->cur->index;
 
     Vec4_Set(&center, 0.0f, 0.0f, 150.0f, 1.0f);
     Vec4_Set(&streak, 0.0f, 100.0f, 0.0f, 0.0f);

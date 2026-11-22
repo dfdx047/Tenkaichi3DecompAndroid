@@ -641,8 +641,25 @@ s32 BtlSeq_Call(BtlSeqFunc func, s32 state) {
         return -1;
     }
     gBtlSeq->ctx.poll = gBtlSeq->table[state].poll;
+#ifdef PORT
+    {   /* A Ranked session's end of the battle (the user, 2026-11-21): the winner's pose plays through, not to be skipped (the Ranked
+           rematch box comes after it: gs/net.c). The skip polls of the finish and the winner's states are left out there. */
+        extern int Port_RankedNoSkip(void);
+
+        if ((state == BTL_SEQ_FINISH || state == BTL_SEQ_WIN_TALK) && Port_RankedNoSkip()) {
+            gBtlSeq->ctx.poll = NULL;
+        }
+    }
+#endif
     return func(&gBtlSeq->ctx);
 }
+
+#ifdef PORT
+/* The winner's pose is on its last step (the next update leaves it for the end state): where the Ranked rematch box opens. */
+s32 Port_BtlSeqPoseEnding(void) {
+    return gBtlSeq != NULL && gBtlSeq->state == BTL_SEQ_WIN_TALK && ((BtlSeqTalkCtx *)&gBtlSeq->ctx)->step == 4;
+}
+#endif
 
 /* Clears the sequence, picks the state table for the battle mode and enters its first state. */
 s32 BtlSeq_Reset(void) {

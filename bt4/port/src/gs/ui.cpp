@@ -3329,6 +3329,9 @@ static float medal_fit(ImFont *font, float size, float widest, const char *text)
     float w = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text).x;
     return w > widest ? size * widest / w : size;
 }
+// The medal (2026-11-21, the user: "not a big square in the middle, only a medal in the corner of the screen"): a small medal at the
+// upper right with its points under it, a line of its own when the day's battles with this rival are over. It pops in, stays, fades;
+// the cross puts it away (Port_UiMedalPoll). Nothing is put behind it.
 static void medal_draw(Uint64 now) {
     ImGuiIO &io = ImGui::GetIO();
     ImDrawList *dl = ImGui::GetForegroundDrawList();
@@ -3338,58 +3341,27 @@ static void medal_draw(Uint64 now) {
     float pop = t < 220.0f ? 0.55f + 0.6f * (t / 220.0f) : t < 380.0f ? 1.15f - 0.15f * ((t - 220.0f) / 160.0f) : 1.0f;
     if (alpha < 0.0f) alpha = 0.0f;
     float H = io.DisplaySize.y, W = io.DisplaySize.x;
-    float cx = W * 0.5f, cy = H * 0.34f, R0 = H * 0.115f, R = R0 * pop;
-    float text = ImGui::GetFontSize() * (H >= 900.0f ? 1.9f : 1.5f);
-    float pad = text * 0.9f, widest = W * 0.86f - pad * 2.0f; // (the box at most 86% of the screen, the lines inside it)
-    char line[3][192], fmt[192];
-    float size[3], top;
-    ImU32 col[3];
-    int n = 3;
+    float R0 = H * 0.062f, R = R0 * pop;
+    float cx = W - R0 * 2.1f, cy = H * 0.20f;
+    float text = ImGui::GetFontSize() * (H >= 900.0f ? 1.5f : 1.2f);
+    char line[2][192], fmt[192];
     bool medal = sMedal.kind == 1 || sMedal.kind == 2, gold = sMedal.kind == 1;
     auto A = [alpha](int r, int g, int bl, int al = 255) { return IM_COL32(r, g, bl, (int)(al * alpha)); };
+    line[0][0] = line[1][0] = 0;
     if (medal) {
         medal_text(gold ? "GOLD MEDAL!" : "SILVER MEDAL", line[0], sizeof(line[0]));
         SDL_snprintf(line[1], sizeof(line[1]), medal_text("Ranked: %+d points (%d)", fmt, sizeof(fmt)), sMedal.delta, sMedal.rating);
-        if (sMedal.left > 0) SDL_snprintf(line[2], sizeof(line[2]), medal_text("Rematches that still count today against this rival: %d", fmt, sizeof(fmt)), sMedal.left);
-        else if (sMedal.left == 0) medal_text("That was the last battle that counts today against this rival.", line[2], sizeof(line[2]));
-        else n = 2;
-        size[0] = text * 1.25f; size[1] = text * 0.85f; size[2] = text * 0.7f;
-        col[0] = gold ? A(255, 226, 110) : A(230, 236, 250); col[1] = A(255, 255, 255); col[2] = A(170, 210, 255);
-        top = cy + R0 * 1.18f;                     // (under the medal at its size at rest: the lines do not move with the pop)
-    } else { // the day's battles against this rival are over: no medal, no points
-        medal_text("REMATCH LIMIT REACHED", line[0], sizeof(line[0]));
-        medal_text("The match and 3 rematches a day count against the same rival.", line[1], sizeof(line[1]));
-        medal_text("This battle gave no medal and no points.", line[2], sizeof(line[2]));
-        size[0] = text * 1.05f; size[1] = text * 0.75f; size[2] = text * 0.75f;
-        col[0] = A(255, 200, 120); col[1] = A(255, 255, 255); col[2] = A(170, 210, 255);
-        top = 0.0f;
-    }
-    float boxW = 0.0f, block = 0.0f, ys[3];
-    for (int i = 0; i < n; i++) {
-        size[i] = medal_fit(font, size[i], widest, line[i]);
-        float w = font->CalcTextSizeA(size[i], FLT_MAX, 0.0f, line[i]).x;
-        if (w > boxW) boxW = w;
-    }
-    for (int i = 0; i < n; i++) { ys[i] = block; block += size[i] * (i + 1 < n ? 1.18f : 1.0f); }
-    if (!medal) top = cy - block * 0.5f;         // (the three lines in the middle of their box)
-    if (medal && boxW < R0 * 2.3f) boxW = R0 * 2.3f;
-    float x0 = cx - boxW * 0.5f - pad, x1 = cx + boxW * 0.5f + pad;
-    float y0 = medal ? cy - R0 * 2.05f : top - pad, y1 = top + block + pad * 0.8f;
-    dl->AddRectFilled(ImVec2(x0, y0), ImVec2(x1, y1), A(8, 10, 36, 170), text * 0.8f);
-    if (medal) {
         ImU32 dark = gold ? A(140, 92, 18) : A(98, 104, 116), base = gold ? A(232, 172, 40) : A(182, 188, 200);
         ImU32 light = gold ? A(255, 222, 112) : A(238, 241, 248), star = gold ? A(205, 38, 28) : A(70, 84, 120);
         // the ribbon: two bands from above, blue and red
-        dl->AddQuadFilled(ImVec2(cx - R * 0.95f, cy - R * 1.95f), ImVec2(cx - R * 0.35f, cy - R * 1.95f), ImVec2(cx + R * 0.05f, cy - R * 0.55f), ImVec2(cx - R * 0.55f, cy - R * 0.55f), A(38, 92, 210));
-        dl->AddQuadFilled(ImVec2(cx + R * 0.35f, cy - R * 1.95f), ImVec2(cx + R * 0.95f, cy - R * 1.95f), ImVec2(cx + R * 0.55f, cy - R * 0.55f), ImVec2(cx - R * 0.05f, cy - R * 0.55f), A(210, 40, 40));
-        // the glow and the disc
-        for (int i = 6; i >= 1; i--) dl->AddCircleFilled(ImVec2(cx, cy), R * (1.0f + 0.07f * i), gold ? A(255, 200, 80, 18) : A(220, 230, 255, 16), 64);
-        dl->AddCircleFilled(ImVec2(cx, cy), R * 1.06f, A(20, 14, 6), 64);
-        dl->AddCircleFilled(ImVec2(cx, cy), R, dark, 64);
-        dl->AddCircleFilled(ImVec2(cx - R * 0.04f, cy - R * 0.04f), R * 0.93f, base, 64);
-        dl->AddCircle(ImVec2(cx, cy), R * 0.78f, light, 64, R * 0.05f);
-        dl->AddCircleFilled(ImVec2(cx - R * 0.42f, cy - R * 0.45f), R * 0.16f, A(255, 255, 255, 120), 24); // (shine)
-        // the star (a dragon ball's): a pentagon and five points
+        dl->AddQuadFilled(ImVec2(cx - R * 0.95f, cy - R * 1.9f), ImVec2(cx - R * 0.35f, cy - R * 1.9f), ImVec2(cx + R * 0.05f, cy - R * 0.55f), ImVec2(cx - R * 0.55f, cy - R * 0.55f), A(38, 92, 210));
+        dl->AddQuadFilled(ImVec2(cx + R * 0.35f, cy - R * 1.9f), ImVec2(cx + R * 0.95f, cy - R * 1.9f), ImVec2(cx + R * 0.55f, cy - R * 0.55f), ImVec2(cx - R * 0.05f, cy - R * 0.55f), A(210, 40, 40));
+        for (int i = 4; i >= 1; i--) dl->AddCircleFilled(ImVec2(cx, cy), R * (1.0f + 0.07f * i), gold ? A(255, 200, 80, 18) : A(220, 230, 255, 16), 48);
+        dl->AddCircleFilled(ImVec2(cx, cy), R * 1.06f, A(20, 14, 6), 48);
+        dl->AddCircleFilled(ImVec2(cx, cy), R, dark, 48);
+        dl->AddCircleFilled(ImVec2(cx - R * 0.04f, cy - R * 0.04f), R * 0.93f, base, 48);
+        dl->AddCircle(ImVec2(cx, cy), R * 0.78f, light, 48, R * 0.05f);
+        dl->AddCircleFilled(ImVec2(cx - R * 0.42f, cy - R * 0.45f), R * 0.16f, A(255, 255, 255, 120), 20); // (shine)
         ImVec2 tip[5], in[5];
         for (int i = 0; i < 5; i++) {
             float ao = -1.5707963f + i * 1.2566371f, ai = ao + 0.6283185f;
@@ -3398,24 +3370,45 @@ static void medal_draw(Uint64 now) {
         }
         dl->AddConvexPolyFilled(in, 5, star);
         for (int i = 0; i < 5; i++) dl->AddTriangleFilled(tip[i], in[i], in[(i + 4) % 5], star);
+        float y = cy + R0 * 1.25f;
+        medal_outlined(dl, font, medal_fit(font, text * 0.95f, W * 0.30f, line[0]), cx, y, gold ? A(255, 226, 110) : A(230, 236, 250), line[0], alpha);
+        medal_outlined(dl, font, medal_fit(font, text * 0.72f, W * 0.30f, line[1]), cx, y + text * 1.0f, A(255, 255, 255), line[1], alpha);
+    } else { // the day's battles against this rival are over: no medal, no points: one small line
+        medal_text("REMATCH LIMIT REACHED", line[0], sizeof(line[0]));
+        medal_text("This battle gave no medal and no points.", line[1], sizeof(line[1]));
+        float y = cy - R0 * 0.8f;
+        medal_outlined(dl, font, medal_fit(font, text * 0.9f, W * 0.34f, line[0]), cx - R0 * 0.3f, y, A(255, 200, 120), line[0], alpha);
+        medal_outlined(dl, font, medal_fit(font, text * 0.66f, W * 0.34f, line[1]), cx - R0 * 0.3f, y + text * 0.95f, A(255, 255, 255), line[1], alpha);
     }
-    for (int i = 0; i < n; i++) medal_outlined(dl, font, size[i], cx, top + ys[i], col[i], line[i], alpha);
 }
 
 // The Ranked rematch box (gs/net.c rematch_box, Android): after a Ranked battle's medal, while the game holds its last
 // picture. CROSS (the on-screen A) or a tap on the button: REMATCH / ACCEPT; TRIANGLE or CIRCLE (or a tap): BACK TO MENU.
 // phase: 0 ask, 1 asked (waiting), 2 the rival asks, 3 accepted, 4 the last battle (back only), 5 the rival left,
 // 6 leaving; -1 gone.
-static struct { int phase, left, secs; char rival[40]; ImVec2 btn[2][2]; int nbtn, kind[2]; unsigned prev; } sRb = {-1};
+static struct { int phase, left, secs, sel; char rival[40]; ImVec2 btn[2][2]; int nbtn, kind[2]; unsigned prev; } sRb = {-1};
 extern "C" int Port_PadRead(int socket, unsigned char *data);   // gs_input.c
 extern "C" int Port_TouchTapTake(int *x, int *y);               // gs_input.c: a tap off the on-screen controls
 extern "C" void Port_UiRematch(int phase, const char *rival, int left, int secs) {
     if (phase >= 0 && sRb.phase < 0) sRb.prev = 0xFFFFFFFFu; // (a button already held when the box opens is not a press)
+    if (phase != sRb.phase) sRb.sel = 0; // (a new question starts on its first row)
     sRb.phase = phase; sRb.left = left; sRb.secs = secs;
     SDL_strlcpy(sRb.rival, rival != NULL ? rival : "", sizeof(sRb.rival));
 }
 extern "C" int Port_UiMedalShowing(void) {
     return sMedal.until != 0 && SDL_GetTicks() < sMedal.until;
+}
+// The medal puts away with the cross (the on-screen A), once the winner's pose has been playing under it (the user, 2026-11-21): called
+// every blank from the game's thread (gs/net.c ranked_outcome, and in the rematch box's wait); a press the medal came up under does not count.
+extern "C" void Port_UiMedalPoll(void) {
+    static unsigned prev = 0xFFFFFFFFu;
+    unsigned char d[18];
+    unsigned btn = 0, now;
+    if (!Port_UiMedalShowing()) { prev = 0xFFFFFFFFu; return; }
+    if (Port_PadRead(0, d)) btn = (unsigned)(~(d[0] | (d[1] << 8))) & 0xFFFFu;
+    now = btn & ~prev;
+    prev = btn; // (the first look only notes what is held: prev was all ones)
+    if (now & 0x4000u) sMedal.until = SDL_GetTicks();
 }
 // 1 REMATCH (or ACCEPT), 2 BACK TO MENU: a new press since the last call (the game's thread, in the box's wait).
 extern "C" int Port_UiRematchTake(void) {
@@ -3430,10 +3423,11 @@ extern "C" int Port_UiRematchTake(void) {
     if (Port_PadRead(0, d)) btn = (unsigned)(~(d[0] | (d[1] << 8))) & 0xFFFFu;
     now = btn & ~sRb.prev;
     sRb.prev = btn;
-    for (k = 0; k < sRb.nbtn; k++) { // CROSS presses the first button; TRIANGLE / CIRCLE is BACK TO MENU
-        if ((now & 0x4000u) && k == 0) return sRb.kind[0];
-        if ((now & (0x1000u | 0x2000u)) && sRb.kind[k] == 2) return 2;
-    }
+    // as the game's own menus: up / down move the lit row, the cross takes it, the triangle or the circle is BACK TO MENU
+    if (sRb.nbtn > 1 && (now & (0x0010u | 0x0040u))) sRb.sel = (sRb.sel + ((now & 0x0010u) ? sRb.nbtn - 1 : 1)) % sRb.nbtn;
+    if (sRb.sel >= sRb.nbtn) sRb.sel = 0;
+    if ((now & 0x4000u) && sRb.nbtn > 0) return sRb.kind[sRb.sel];
+    if (now & (0x1000u | 0x2000u)) for (k = 0; k < sRb.nbtn; k++) if (sRb.kind[k] == 2) return 2;
     if (Port_TouchTapTake(&x, &y)) { // (window pixels; the box is drawn in ImGui's units)
         ImGuiIO &io = ImGui::GetIO();
         float fx = (float)x / (io.DisplayFramebufferScale.x > 0.0f ? io.DisplayFramebufferScale.x : 1.0f);
@@ -3458,11 +3452,14 @@ static void rematch_icon(ImDrawList *dl, ImVec2 c, float r, int cross, float alp
     }
 }
 static void rematch_draw(void) {
+    // The rematch window, in the look of the game's own menus (2026-11-21, the user: "as if it were native"): a dark blue window with a light
+    // edge, an orange title bar, the rows as the game's plates (the lit one orange, white lettering with a dark outline), the buttons' pictures
+    // on the rows. Up / down and the cross work it as the game's menus are worked (Port_UiRematchTake); a tap takes a row.
     ImGuiIO &io = ImGui::GetIO();
     ImDrawList *dl = ImGui::GetForegroundDrawList();
     ImFont *font = ImGui::GetFont();
-    float H = io.DisplaySize.y, W = io.DisplaySize.x, alpha = 1.0f;
-    float text = ImGui::GetFontSize() * (H >= 900.0f ? 1.9f : 1.5f), pad = text * 0.9f, widest = W * 0.86f - pad * 2.0f;
+    float H = io.DisplaySize.y, W = io.DisplaySize.x;
+    float text = ImGui::GetFontSize() * (H >= 900.0f ? 1.8f : 1.4f), pad = text * 0.8f, widest = W * 0.56f - pad * 2.0f;
     char title[192], body[192], tail[96], fmt[192], b0[64], b1[64];
     int phase = sRb.phase;
     title[0] = body[0] = tail[0] = 0;
@@ -3506,49 +3503,60 @@ static void rematch_draw(void) {
     if (sRb.secs >= 0 && sRb.secs <= 20 && (phase == 0 || phase == 1 || phase == 2 || phase == 4)) {
         SDL_snprintf(tail, sizeof(tail), medal_text("Back to the menu in %d s", fmt, sizeof(fmt)), sRb.secs);
     }
-    // the lines' sizes (smaller when too wide), the buttons', and the box round them all
-    const char *line[3] = {title, body, tail};
-    float size[3] = {text * 1.15f, text * 0.8f, text * 0.62f}, w[3], boxW = 0.0f, y;
-    ImU32 col[3] = {IM_COL32(255, 210, 90, 255), IM_COL32(255, 255, 255, 255), IM_COL32(170, 210, 255, 255)};
-    for (int i = 0; i < 3; i++) {
-        if (!line[i][0]) { w[i] = 0.0f; continue; }
-        size[i] = medal_fit(font, size[i], widest, line[i]);
-        w[i] = font->CalcTextSizeA(size[i], FLT_MAX, 0.0f, line[i]).x;
-        if (w[i] > boxW) boxW = w[i];
-    }
-    float bt = text * 0.72f, bh = bt * 1.9f, icon = bh * 0.32f, gap = text * 0.6f;
     const char *blabel[2] = {sRb.nbtn == 2 ? b0 : b1, b1};
-    float bw[2] = {0.0f, 0.0f}, rowW = 0.0f;
+    float tsize = medal_fit(font, text * 1.05f, widest, title), bsize = medal_fit(font, text * 0.72f, widest, body), lsize = text * 0.9f;
+    float tw = font->CalcTextSizeA(tsize, FLT_MAX, 0.0f, title).x, bw = body[0] ? font->CalcTextSizeA(bsize, FLT_MAX, 0.0f, body).x : 0.0f;
+    float rowH = lsize * 1.9f, icon = rowH * 0.3f, rowW = 0.0f;
     for (int i = 0; i < sRb.nbtn; i++) {
-        bw[i] = font->CalcTextSizeA(bt, FLT_MAX, 0.0f, blabel[i]).x + icon * 2.0f + bt * 1.6f;
-        rowW += bw[i] + (i ? gap : 0.0f);
+        float w = font->CalcTextSizeA(lsize, FLT_MAX, 0.0f, blabel[i]).x + icon * 2.0f + lsize * 2.4f;
+        if (w > rowW) rowW = w;
     }
-    if (rowW > boxW) boxW = rowW;
-    float block = 0.0f;
-    for (int i = 0; i < 3; i++) if (line[i][0]) block += size[i] * 1.2f;
-    if (sRb.nbtn) block += gap + bh;
-    float cx = W * 0.5f, top = H * 0.5f - block * 0.5f;
-    dl->AddRectFilled(ImVec2(cx - boxW * 0.5f - pad, top - pad), ImVec2(cx + boxW * 0.5f + pad, top + block + pad), IM_COL32(8, 10, 36, 228), text * 0.8f);
-    dl->AddRect(ImVec2(cx - boxW * 0.5f - pad, top - pad), ImVec2(cx + boxW * 0.5f + pad, top + block + pad), IM_COL32(200, 165, 85, 200), text * 0.8f, 0, 3.0f);
-    y = top;
-    for (int i = 0; i < 3; i++) {
-        if (!line[i][0]) continue;
-        medal_outlined(dl, font, size[i], cx, y, col[i], line[i], alpha);
-        y += size[i] * 1.2f;
+    float inner = tw > bw ? tw : bw;
+    if (rowW > inner) inner = rowW;
+    if (inner < W * 0.30f) inner = W * 0.30f;
+    float barH = tsize * 1.9f, gap = text * 0.35f;
+    float winW = inner + pad * 2.0f, winH = barH + pad * 0.5f + (body[0] ? bsize * 1.4f : 0.0f) + (sRb.nbtn ? gap + sRb.nbtn * rowH + (sRb.nbtn - 1) * gap : 0.0f) + (tail[0] ? text * 0.8f : 0.0f) + pad * 0.7f;
+    float x0 = W * 0.5f - winW * 0.5f, y0 = H * 0.5f - winH * 0.5f, x1 = x0 + winW, y1 = y0 + winH;
+    ImU32 navyT = IM_COL32(18, 38, 118, 238), navyB = IM_COL32(4, 10, 46, 242);
+    dl->AddRectFilled(ImVec2(x0 + 6, y0 + 8), ImVec2(x1 + 6, y1 + 10), IM_COL32(0, 0, 0, 110), 6.0f); // (the shadow)
+    dl->AddRectFilledMultiColor(ImVec2(x0, y0), ImVec2(x1, y1), navyT, navyT, navyB, navyB);
+    dl->AddRect(ImVec2(x0, y0), ImVec2(x1, y1), IM_COL32(150, 190, 255, 230), 0.0f, 0, 3.0f);
+    // the title bar: the game's orange
+    dl->AddRectFilledMultiColor(ImVec2(x0 + 3, y0 + 3), ImVec2(x1 - 3, y0 + barH), IM_COL32(255, 204, 70, 255), IM_COL32(255, 204, 70, 255), IM_COL32(236, 116, 8, 255), IM_COL32(236, 116, 8, 255));
+    dl->AddRectFilledMultiColor(ImVec2(x0 + 3, y0 + 3), ImVec2(x1 - 3, y0 + barH * 0.5f), IM_COL32(255, 255, 255, 70), IM_COL32(255, 255, 255, 70), IM_COL32(255, 255, 255, 8), IM_COL32(255, 255, 255, 8));
+    medal_outlined(dl, font, tsize, (x0 + x1) * 0.5f, y0 + (barH - tsize) * 0.5f, IM_COL32(255, 255, 255, 255), title, 1.0f);
+    float y = y0 + barH + pad * 0.4f;
+    if (body[0]) {
+        dl->AddText(font, bsize, ImVec2((x0 + x1) * 0.5f - bw * 0.5f, y), IM_COL32(225, 238, 255, 255), body);
+        y += bsize * 1.4f;
     }
     if (sRb.nbtn) {
-        float x = cx - rowW * 0.5f;
         y += gap;
+        if (sRb.sel >= sRb.nbtn) sRb.sel = 0;
         for (int i = 0; i < sRb.nbtn; i++) {
-            bool accept = sRb.kind[i] == 1;
-            ImVec2 a(x, y), b(x + bw[i], y + bh);
-            dl->AddRectFilled(a, b, accept ? IM_COL32(236, 104, 20, 245) : IM_COL32(30, 38, 84, 245), bh * 0.5f);
-            dl->AddRect(a, b, accept ? IM_COL32(255, 214, 120, 255) : IM_COL32(150, 170, 230, 220), bh * 0.5f, 0, 3.0f);
-            rematch_icon(dl, ImVec2(x + bt * 0.8f + icon, y + bh * 0.5f), icon, accept, alpha); /* (CROSS: the accept; TRIANGLE: back) */
-            dl->AddText(font, bt, ImVec2(x + bt * 0.8f + icon * 2.0f + bt * 0.4f, y + (bh - bt) * 0.5f), IM_COL32(255, 255, 255, 255), blabel[i]);
+            bool lit = i == sRb.sel;
+            ImVec2 a(x0 + pad * 0.6f, y), b(x1 - pad * 0.6f, y + rowH);
+            if (lit) {
+                dl->AddRectFilledMultiColor(a, b, IM_COL32(255, 204, 70, 255), IM_COL32(255, 204, 70, 255), IM_COL32(236, 116, 8, 255), IM_COL32(236, 116, 8, 255));
+                dl->AddRect(a, b, IM_COL32(255, 244, 200, 255), 0.0f, 0, 3.0f);
+            } else {
+                dl->AddRectFilledMultiColor(a, b, IM_COL32(40, 76, 170, 255), IM_COL32(40, 76, 170, 255), IM_COL32(8, 20, 84, 255), IM_COL32(8, 20, 84, 255));
+                dl->AddRect(a, b, IM_COL32(130, 170, 235, 220), 0.0f, 0, 2.0f);
+            }
+            rematch_icon(dl, ImVec2(a.x + icon * 1.5f, (a.y + b.y) * 0.5f), icon, sRb.kind[i] == 1, 1.0f); // (CROSS takes the first; TRIANGLE is back)
+            float lw = font->CalcTextSizeA(lsize, FLT_MAX, 0.0f, blabel[i]).x;
+            medal_outlined(dl, font, lsize, a.x + icon * 3.4f + lw * 0.5f, a.y + (rowH - lsize) * 0.5f, IM_COL32(255, 255, 255, 255), blabel[i], 1.0f);
+            if (lit) { // the cursor: a small triangle at the row's end, as the game's menus
+                float ax = b.x - rowH * 0.45f, ay = (a.y + b.y) * 0.5f, s2 = rowH * 0.2f;
+                dl->AddTriangleFilled(ImVec2(ax - s2, ay - s2), ImVec2(ax - s2, ay + s2), ImVec2(ax + s2, ay), IM_COL32(110, 44, 0, 255));
+            }
             sRb.btn[i][0] = a; sRb.btn[i][1] = b;
-            x += bw[i] + gap;
+            y += rowH + gap;
         }
+    }
+    if (tail[0]) {
+        float ts = text * 0.62f, tww = font->CalcTextSizeA(ts, FLT_MAX, 0.0f, tail).x;
+        dl->AddText(font, ts, ImVec2((x0 + x1) * 0.5f - tww * 0.5f, y), IM_COL32(170, 210, 255, 255), tail);
     }
 }
 

@@ -4035,6 +4035,22 @@ int GsGpu_Init(void) {
             sb = &sVulkanBackend; sBackend = sb;
             if (sb->init()) { goto renderer_ready; }
         }
+        if (sb == &sVulkanBackend) {
+            /* Vulkan can fail ONCE and work a moment later (2026-11-21, the user's phone: a start-up right after the game was
+               left, "vulkan unsupported!" in a millisecond; the next start was fine): the whole session then ran on OpenGL ES,
+               at half the speed in the select and with its own faults. So it is tried a few times more before it is given up. */
+            int tries;
+
+            for (tries = 1; tries <= 5; tries++) {
+                SDL_Delay(400);
+                sBackend = sb;
+                if (sb->init()) {
+                    fprintf(stderr, "bt3: Vulkan started on try %d (after %d ms)\n", tries + 1, tries * 400);
+                    goto renderer_ready;
+                }
+                sBackend = NULL;
+            }
+        }
         fprintf(stderr, "bt3: Vulkan unavailable; trying OpenGL\n");
         sb = &sGlBackend; sBackend = sb;
         if (!sb->init()) { sBackend = NULL; return 0; }
