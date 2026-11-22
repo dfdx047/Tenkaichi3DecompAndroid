@@ -52,3 +52,6 @@ static inline size_t SDL_strlcat(char *d,const char *s,size_t n){size_t l=strlen
 #define SDL_max(a,b) ((a)>(b)?(a):(b))
 #define SDL_min(a,b) ((a)<(b)?(a):(b))
 #define SDL_clamp(x,a,b) ((x)<(a)?(a):(x)>(b)?(b):(x))
+typedef atomic_int SDL_SpinLock;
+static inline void SDL_LockSpinlock(SDL_SpinLock *l){int z=0;while(!atomic_compare_exchange_weak(l,&z,1))z=0;}
+static inline void SDL_UnlockSpinlock(SDL_SpinLock *l){atomic_store(l,0);}

@@ -2221,29 +2221,39 @@ static void arb_commit_all(void) {
         }
     }
 }
+/* A TN_FAST carries at most FAST_MAX bytes (with dgram_send's 8, one TagLink datagram: TL_PIECE, 1100), and one player's
+   entry at most FAST_ENTRY: a byte, the frame (2, or 6 far away), and ARB_FAST+1 pads as runs (a whole pad, then per
+   frame a repeat byte and a pad's mask and changed bytes). Ten players whose every pad byte changed every frame needed
+   1,150 bytes: written into a 1,100-byte buffer on the stack, and too long for the connection anyway (TagLink refuses
+   more than TL_PIECE: the datagram was lost, every guest waiting for the ordered stream). The entries now go into as
+   many datagrams as they need, each a whole TN_FAST with its own header: the guest takes each one by itself. */
+enum { FAST_MAX=1100-8, FAST_ENTRY=1+6+PAD+ARB_FAST*(1+3+PAD) };
+typedef char fast_entry_fits[20+FAST_ENTRY<=FAST_MAX?1:-1]; /* (one entry always fits an empty TN_FAST) */
 static void arb_send_fast(void) {
-    unsigned char b[1100];int i,p;
+    unsigned char b[FAST_MAX],entry[FAST_ENTRY];int i,p;
     if(!host || !arb_on() || phase!=4 || !begun)return;
     for(i=0;i<PEERS;i++) {
-        Peer *q=&peers[i];int r=q->role;unsigned k,from,t,np=0;
+        Peer *q=&peers[i];int r=q->role,sent=0;unsigned k,from,t,np=0;
         if(!q->hello || r<0 || r>=TN_PLAYERS || q->catching)continue;
         put32(b,roundId);put32(b+4,frame);put32(b+8,qHave[r]);put32(b+12,(unsigned)SDL_min(slackCur[r],slackPrev[r]));
         k=20;
         for(p=0;p<TN_PLAYERS;p++)if(input_mask()&(1u<<p)) {
+            unsigned e=0;
             from=have[p]>ARB_FAST?have[p]-ARB_FAST:0;if(fastAck[i][p]>from)from=fastAck[i][p];
             if(from>=have[p])continue;
             {unsigned char seq[ARB_FAST+1][PAD];unsigned cnt=have[p]-from,rel=from>0 && (fastAck[i][p]>=from || (fastAck[i][p]>0 && q->fastHi[p]>=from)); /* (sent before counts once this guest has acknowledged anything: at the start its first datagrams can come before it plays) */int dd=(int)(from-frame);
              for(t=0;t<cnt;t++)memcpy(seq[1+t],inputs[p][(from+t)%RING],PAD);
-             b[k++]=(unsigned char)(p|cnt<<4|rel<<7);
-             if(dd>-32768 && dd<32768){b[k]=(unsigned char)(dd&255);b[k+1]=(unsigned char)((dd>>8)&255);k+=2;}
-             else{b[k]=0;b[k+1]=0x80;put32(b+k+2,from);k+=6;}
-             if(rel){memcpy(seq[0],inputs[p][(from-1)%RING],PAD);k+=run_put(b+k,(const unsigned char (*)[PAD])seq,cnt+1);}
-             else{memcpy(b+k,seq[1],PAD);k+=PAD;k+=run_put(b+k,(const unsigned char (*)[PAD])(seq+1),cnt);}
+             entry[e++]=(unsigned char)(p|cnt<<4|rel<<7);
+             if(dd>-32768 && dd<32768){entry[e]=(unsigned char)(dd&255);entry[e+1]=(unsigned char)((dd>>8)&255);e+=2;}
+             else{entry[e]=0;entry[e+1]=0x80;put32(entry+e+2,from);e+=6;}
+             if(rel){memcpy(seq[0],inputs[p][(from-1)%RING],PAD);e+=run_put(entry+e,(const unsigned char (*)[PAD])seq,cnt+1);}
+             else{memcpy(entry+e,seq[1],PAD);e+=PAD;e+=run_put(entry+e,(const unsigned char (*)[PAD])(seq+1),cnt);}
              if(have[p]>q->fastHi[p])q->fastHi[p]=have[p];}
+            if(k+e>FAST_MAX){put32(b+16,np);dgram_send(q,TN_FAST,b,k);sent=1;k=20;np=0;} /* (full: this one goes, the next begins) */
+            memcpy(b+k,entry,e);k+=e;
             np++;
         }
-        put32(b+16,np);
-        dgram_send(q,TN_FAST,b,k);
+        if(np || !sent){put32(b+16,np);dgram_send(q,TN_FAST,b,k);}
     }
 }
 static void arb_recv_fast(const unsigned char *d,unsigned n) {
