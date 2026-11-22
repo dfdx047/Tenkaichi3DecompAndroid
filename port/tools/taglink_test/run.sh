@@ -55,5 +55,24 @@ calls "C1 a poll without an answer (timeout)" "FAIL_POLLS=2:timeout" 2 0
 calls "C1 503, 503, timeout in a row, then the service is back" "FAIL_POLLS=2:503,3:503,4:timeout" 2 0
 calls "C1 no room: the player leaves and asks no more" "FAIL_POLLS=2:noroom" 0 1
 calls "C1 a game that ends by itself says leave once, at its end" "COUNT_CALLS=1" 0 0
+# background <name> <env for the host> <env for the joiner> <side whose calls are checked: host|join>: that side's app
+# goes to the background (BG); its service is still asked about meanwhile (C2), and nothing leaves early.
+background() {
+    name=$1; hostenv=$2; joinenv=$3; side=$4
+    env $hostenv "$BIN" host > "$TAGLINK_TEST_DIR/host.out" 2> "$TAGLINK_TEST_DIR/host.err" &
+    HOST=$!
+    for i in $(seq 50); do grep -q CODE "$TAGLINK_TEST_DIR/host.out" && break; sleep 0.2; done
+    code=$(awk '/CODE/{print $2}' "$TAGLINK_TEST_DIR/host.out")
+    out=$(env $joinenv COUNT_CALLS=1 PING=45 timeout 120 "$BIN" join "$code" 2>&1)
+    wait $HOST 2>/dev/null # (the host ends by itself after 60 s, and counts its calls)
+    if [ "$side" = host ]; then line=$(grep "^CALLS" "$TAGLINK_TEST_DIR/host.err"); else line=$(printf '%s\n' "$out" | grep "^CALLS"); fi
+    b=$(printf '%s' "$line" | sed -n 's/.*in the background \([0-9]*\).*/\1/p')
+    e=$(printf '%s' "$line" | sed -n 's/.*before the game.s own end \([0-9]*\)).*/\1/p')
+    echoes=$(printf '%s\n' "$out" | sed -n 's/.*PING \([0-9]*\) echoes.*/\1/p')
+    if [ "${b:-0}" -ge 2 ] && [ "$e" = 0 ] && [ "${echoes:-0}" -gt 1500 ]; then echo "PASS $name ($side: $line; $echoes echoes)"
+    else echo "FAIL $name ($side: ${line:-no CALLS line}; ${echoes:-0} echoes; wanted 2+ polls in the background, no early leave)"; FAILED=1; fi
+}
+background "C2 the player's app in the background for 40 s" "" "BG=5000:40000" join
+background "C2 the owner's app in the background for 40 s" "COUNT_CALLS=1 BG=5000:40000" "" host
 [ $FAILED = 0 ] && echo "all passed"
 exit $FAILED

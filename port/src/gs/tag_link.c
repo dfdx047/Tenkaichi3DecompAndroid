@@ -30,6 +30,7 @@ typedef int socklen_t;
 #include <errno.h>
 #define closesocket close
 #endif
+#include "net_match.h" /* (MATCH_BACKGROUND_POLL_MS) */
 #include "net_relay.h"
 #include "tag_link.h"
 #ifndef _WIN32
@@ -1136,7 +1137,7 @@ static int SDLCALL service_thread(void *arg) {
         }
     }
     while (!STOPPED()) {
-        extern volatile int gPortInBackground; /* net_match.c: nobody asks the service from the background */
+        extern volatile int gPortInBackground; /* net_match.c: the app is in the background (polls slow down below) */
         Uint64 now = SDL_GetTicks();
         /* The relay is the way left when the direct one fails, so it comes back when it closes (a phone's network drops
            a connection, the service restarts); it stayed closed for the rest of the room. 5 s, then up to a minute.
@@ -1158,7 +1159,10 @@ static int SDLCALL service_thread(void *arg) {
             }
             now = SDL_GetTicks();
         }
-        if (now - lastPoll < pollEvery || gPortInBackground) {
+        /* In the background the room is still asked about, every MATCH_BACKGROUND_POLL_MS as the rest of the
+           matchmaking does (net_match.c), not every second: never asked, it was gone from the service in under two
+           minutes (the owner sharing its code in another app) and a player lost its place in 45 s. */
+        if (now - lastPoll < (gPortInBackground && pollEvery < MATCH_BACKGROUND_POLL_MS ? MATCH_BACKGROUND_POLL_MS : pollEvery)) {
             SDL_Delay(50);
             continue;
         }

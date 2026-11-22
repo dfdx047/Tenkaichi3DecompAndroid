@@ -43,11 +43,11 @@ int TagLink_Lan(int port, char *out, int size) { snprintf(out, size, "127.0.0.1:
      timeout  no answer (after 2 s)
      noroom   {"error":"no room"} (the room, or this player's place in it, is gone)
    At the end the calls are counted: CALLS polls P (after the first replaced one A), leaves L (before the game's own end E). */
-static int gPolls, gLeaves, gEarlyLeaves, gPollsAfterFault, gFaulted, gEnding;
+static int gPolls, gLeaves, gEarlyLeaves, gPollsAfterFault, gFaulted, gEnding, gBackgroundPolls;
 static void calls_report(void) {
     if (getenv("FAIL_POLLS") || getenv("COUNT_CALLS"))
-        fprintf(stderr, "CALLS polls %d (after the first replaced one %d), leaves %d (before the game's own end %d)\n",
-                gPolls, gPollsAfterFault, gLeaves, gEarlyLeaves);
+        fprintf(stderr, "CALLS polls %d (after the first replaced one %d), leaves %d (before the game's own end %d), in the background %d\n",
+                gPolls, gPollsAfterFault, gLeaves, gEarlyLeaves, gBackgroundPolls);
 }
 static const char *poll_fault(int n) {
     const char *list = getenv("FAIL_POLLS"), *p;
@@ -64,6 +64,7 @@ int TagLink_Http(const char *url, const char *json, char *out, int size) {
     static int registered;
     if (!registered) { registered = 1; atexit(calls_report); }
     if (strstr(url, "/v1/leave")) { gLeaves++; if (!gEnding) gEarlyLeaves++; }
+    if (strstr(url, "/v1/poll") && gPortInBackground) gBackgroundPolls++;
     if (strstr(url, "/v1/poll")) {
         const char *fault = poll_fault(++gPolls);
         if (gFaulted) gPollsAfterFault++;
@@ -100,9 +101,26 @@ void Relay_Close(int s) {}
 #include "tag_link.c"
 #undef sendto
 
+static int background_thread(void *arg) {
+    const unsigned *bg = arg;
+    SDL_Delay(bg[0]);
+    gPortInBackground = 1;
+    fprintf(stderr, "harness: the app is in the background for %u ms\n", bg[1]);
+    SDL_Delay(bg[1]);
+    gPortInBackground = 0;
+    fprintf(stderr, "harness: the app is back\n");
+    return 0;
+}
+
 #define TOTAL (300 * 1024)
 int main(int argc, char **argv) {
     SDL_Init(0);
+    if (getenv("BG")) { /* BG=<from ms>:<for ms>: the app goes to the background then (gPortInBackground), as onPause says */
+        static unsigned bg[2]; static SDL_Thread *t;
+        sscanf(getenv("BG"), "%u:%u", &bg[0], &bg[1]);
+        t = SDL_CreateThread(background_thread, "bg", bg);
+        if (t != NULL) SDL_DetachThread(t);
+    }
     gDrop = getenv("DROP") ? atoi(getenv("DROP")) : 0;
     if (getenv("CUT_MS")) gCutAt = SDL_GetTicks() + (Uint64)atoi(getenv("CUT_MS"));
     if (getenv("OPEN_MS")) gOpenAt = SDL_GetTicks() + (Uint64)atoi(getenv("OPEN_MS"));
