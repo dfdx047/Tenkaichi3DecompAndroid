@@ -29,6 +29,9 @@ struct Game {
     bool began = false;
     unsigned bootFields = 40, arriveAt = 30;
     std::thread th;
+    std::atomic<bool> done{false};              // it has played its fields
+    const Game* other = nullptr;
+    unsigned pauseAt = 0, pauseMs = 0;          // at that field, the game's thread stands still that long (a long load): no padField meanwhile
 };
 
 std::vector<Sample> makeScript(unsigned seed, unsigned n) {
@@ -59,7 +62,21 @@ void play(Game& g, const SessionFile& file, unsigned fields, int lossPercent, un
             std::memcpy(p.p1.data(), p1, 6); std::memcpy(p.p2.data(), p2, 6);
             g.seen.push_back(p);
             (void)before;
-            if (g.seen.size() >= fields) break;
+            if (g.seen.size() >= fields) {
+                // The game goes on asking for its controllers at every field after the fight (the pad service at each vertical
+                // blank: runtime/services/pad_service.cpp), until the players leave from the main menu (online_plugin.cpp:
+                // requestLeave, the other side told by a goodbye). So does this one, until the other game has played its fields
+                // too: a game that went silent at its last field, as this test's did, left the other one without its last
+                // inputs whenever their packets were lost (seed 2 with 20% loss: 299 of 300 fields, about one run in seven).
+                g.done = true;
+                const auto t0 = std::chrono::steady_clock::now();
+                while (g.other && !g.other->done && !g.other->endedWith && std::chrono::steady_clock::now() - t0 < std::chrono::seconds(30)) {
+                    if (!g.fs.padField(local, p1, p2) && g.fs.ended()) break;
+                    std::this_thread::sleep_for(std::chrono::microseconds(500));
+                }
+                break;
+            }
+            if (g.pauseAt && g.seen.size() == g.pauseAt) std::this_thread::sleep_for(std::chrono::milliseconds(g.pauseMs));
             if (leaveAfter && g.seen.size() == leaveAfter) {g.fs.leave("the player left"); break;}
         } else if (g.fs.ended()) {g.endedWith = 1; break;}
         std::this_thread::sleep_for(std::chrono::microseconds(500));   // (a field's work)
@@ -73,8 +90,8 @@ SessionFile fileFor(bool host, std::uint16_t myPort, std::uint16_t peerPort, con
     return f;
 }
 
-// One match of `fields` fields. Returns whether both finished.
-bool match(unsigned seed, int loss, unsigned fields, unsigned hostStartMs, unsigned guestStartMs, unsigned leaveAfter = 0) {
+// One match of `fields` fields. Returns whether both finished. `pauseMs`: the host's thread stands still that long at field 150.
+bool match(unsigned seed, int loss, unsigned fields, unsigned hostStartMs, unsigned guestStartMs, unsigned leaveAfter = 0, unsigned pauseMs = 0, bool pauseEnds = false) {
     // Ports: two sockets are opened first to learn two free ports, then closed and taken again by the matches (as a restarted engine takes the lobby's port).
     Link a, b;
     a.open(); b.open();
@@ -83,6 +100,8 @@ bool match(unsigned seed, int loss, unsigned fields, unsigned hostStartMs, unsig
     Game host, guest;
     host.script = makeScript(seed * 2 + 1, fields + 64);
     guest.script = makeScript(seed * 2 + 2, fields + 64);
+    host.other = &guest; guest.other = &host;
+    if (pauseMs) {host.pauseAt = 150; host.pauseMs = pauseMs;}
     const std::string code = "FIGHT" + std::to_string(seed);
     host.th = std::thread(play, std::ref(host), fileFor(true, pa, pb, code), fields, loss, hostStartMs, leaveAfter);
     guest.th = std::thread(play, std::ref(guest), fileFor(false, pb, pa, code), fields, loss, guestStartMs, 0u);
@@ -92,6 +111,10 @@ bool match(unsigned seed, int loss, unsigned fields, unsigned hostStartMs, unsig
         CHECK(host.seen.size() == leaveAfter, "seed %u: the leaving side played %zu fields", seed, host.seen.size());
         CHECK(guest.endedWith == 1, "seed %u: the other side's match did not end when this one left", seed);
         CHECK(guest.reason.find("left") != std::string::npos, "seed %u: the reason was \"%s\"", seed, guest.reason.c_str());
+        return true;
+    }
+    if (pauseEnds) { // (a game silent longer than the line allows: the other one's match ends, it is not left waiting)
+        CHECK(guest.endedWith == 1 && guest.reason.find("stopped answering") != std::string::npos, "seed %u: a %u ms pause: the other game's match did not end (\"%s\")", seed, pauseMs, guest.reason.c_str());
         return true;
     }
     CHECK(host.seen.size() == fields && guest.seen.size() == fields, "seed %u loss %d: the games played %zu and %zu of %u fields", seed, loss, host.seen.size(), guest.seen.size(), fields);
@@ -127,6 +150,10 @@ int main() {
     for (unsigned seed = 3; seed < 8; ++seed) match(seed, 25, 250, seed * 20 % 200, seed * 70 % 500);
     // a game that leaves ends the other's match
     match(20, 0, 300, 0, 100, 120);
+    // the game's thread standing still in the middle of a match (a long load, the app paused): up to the line's limit
+    // (6 s without a packet while running) the match goes on; past it the other game's match ends
+    match(30, 10, 300, 0, 100, 0, 3000);
+    match(31, 0, 300, 0, 100, 0, 8000, true);
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }
