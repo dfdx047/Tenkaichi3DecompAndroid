@@ -113,8 +113,61 @@ static int background_thread(void *arg) {
 }
 
 #define TOTAL (300 * 1024)
+/* `harness unit`: tag_link.c's own functions on a connection set up by hand, without the service. */
+static int unitFailures;
+#define UNIT_CHECK(c, ...) do { if (!(c)) { unitFailures++; fprintf(stderr, "FAIL unit: " __VA_ARGS__); fprintf(stderr, "\n"); } } while (0)
+static TlAddr loopback(int port) { TlAddr a; memset(&a, 0, sizeof(a)); a.v4.sin_family = AF_INET; a.v4.sin_port = htons((unsigned short)port); a.v4.sin_addr.s_addr = htonl(0x7f000001); return a; }
+static int unit_tests(void) {
+    int peer = (int)socket(AF_INET, SOCK_DGRAM, 0), n;
+    struct sockaddr_in any; socklen_t al = sizeof(any);
+    uint8_t got[2048];
+    Conn *c = &L.conn[0];
+    TlAddr unreachable[3];
+    memset(&any, 0, sizeof(any)); any.sin_family = AF_INET; any.sin_addr.s_addr = htonl(0x7f000001);
+    bind(peer, (struct sockaddr *)&any, sizeof(any)); getsockname(peer, (struct sockaddr *)&any, &al);
+    { struct timeval tv = {0, 300000}; setsockopt(peer, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)); }
+    L.sock = (int)socket(AF_INET, SOCK_DGRAM, 0); L.sock6 = -1; L.active = 1; L.tag = 123456;
+    conn_reset(c); c->state = TK_LINK_OPEN; c->id = 77; c->member = 1; c->lastIn = SDL_GetTicks();
+    c->to = loopback(ntohs(any.sin_port));
+    unreachable[0] = loopback(9); unreachable[1] = loopback(10); unreachable[2] = loopback(11);
+    /* P5: a DATA came (an acknowledgement is owed); a SYN then goes to the owner's other addresses, which do not answer
+       (a guest on the relay tries the direct way every second). Those packets never reach the other side: the
+       acknowledgement must still be owed, and the next flush must carry it to the connection's own way. */
+    take_data(c, 0, (const uint8_t *)"hello", 5);
+    c->ackOwed = 1;
+    for (n = 0; n < 3; n++) send_packet(c, T_SYN, 1, NULL, 0, &unreachable[n]);
+    UNIT_CHECK(c->ackOwed == 1, "P5: a SYN to another address took the owed acknowledgement away");
+    while (recv(peer, got, sizeof(got), MSG_DONTWAIT) > 0) {}
+    TagLink_FlushAcks();
+    n = (int)recv(peer, got, sizeof(got), 0);
+    UNIT_CHECK(n >= TL_HEAD && got[4] == T_ACK && get32(got + 13) == 1, "P5: the flush sent no acknowledgement of piece 0 to the connection's way (got %d bytes, type %d)", n, n > 4 ? got[4] : -1);
+    UNIT_CHECK(c->ackOwed == 0, "P5: the acknowledgement is still owed after the flush");
+    /* a packet to the connection's own way carries the acknowledgement: nothing more owed */
+    take_data(c, 1, (const uint8_t *)"again", 5); c->ackOwed = 1;
+    send_packet(c, T_SYN, 1, NULL, 0, &c->to);
+    UNIT_CHECK(c->ackOwed == 0, "P5: a packet to the connection's own address left the acknowledgement owed");
+    take_data(c, 2, (const uint8_t *)"third", 5); c->ackOwed = 1;
+    send_packet(c, T_ACK, 0, NULL, 0, NULL);
+    UNIT_CHECK(c->ackOwed == 0, "P5: a packet by the connection's way left the acknowledgement owed");
+    { /* same_addr: what counts as the connection's own way */
+        TlAddr a6, b6, r1 = relay_addr(1), r2 = relay_addr(2);
+        memset(&a6, 0, sizeof(a6)); a6.v6.sin6_family = AF_INET6; a6.v6.sin6_port = htons(5000); inet_pton(AF_INET6, "2804:5c::1", &a6.v6.sin6_addr);
+        b6 = a6;
+        UNIT_CHECK(same_addr(&a6, &b6), "same_addr: one IPv6 address");
+        b6.v6.sin6_port = htons(5001);
+        UNIT_CHECK(!same_addr(&a6, &b6), "same_addr: IPv6, another port");
+        UNIT_CHECK(!same_addr(&a6, &unreachable[0]), "same_addr: IPv6 against IPv4");
+        UNIT_CHECK(!same_addr(&unreachable[0], &unreachable[1]), "same_addr: IPv4, another port");
+        UNIT_CHECK(same_addr(&r1, &r1) && !same_addr(&r1, &r2), "same_addr: the room relay's players");
+    }
+    close(peer); close(L.sock); L.sock = -1; conn_reset(c); L.active = 0;
+    fprintf(stderr, unitFailures ? "unit: %d failure(s)\n" : "unit: all passed\n", unitFailures);
+    return unitFailures ? 1 : 0;
+}
+
 int main(int argc, char **argv) {
     SDL_Init(0);
+    if (argc > 1 && !strcmp(argv[1], "unit")) return unit_tests();
     if (getenv("BG")) { /* BG=<from ms>:<for ms>: the app goes to the background then (gPortInBackground), as onPause says */
         static unsigned bg[2]; static SDL_Thread *t;
         sscanf(getenv("BG"), "%u:%u", &bg[0], &bg[1]);

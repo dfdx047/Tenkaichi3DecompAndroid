@@ -451,11 +451,28 @@ static void send_raw(const uint8_t *pkt, int len, const TlAddr *to) {
     }
 }
 
+/* The same address and port (IPv4, IPv6, or the room relay's stand-in addresses). */
+static int same_addr(const TlAddr *a, const TlAddr *b) {
+    if (a->sa.sa_family != b->sa.sa_family) {
+        return 0;
+    }
+    if (a->sa.sa_family == AF_INET6) {
+        return a->v6.sin6_port == b->v6.sin6_port && SDL_memcmp(&a->v6.sin6_addr, &b->v6.sin6_addr, sizeof(a->v6.sin6_addr)) == 0;
+    }
+    return a->v4.sin_port == b->v4.sin_port && a->v4.sin_addr.s_addr == b->v4.sin_addr.s_addr;
+}
+
 static void send_packet(Conn *c, int type, uint32_t seq, const uint8_t *data, int len, const TlAddr *to) {
     uint8_t pkt[TL_HEAD + TL_PIECE];
     uint32_t sack = 0;
     int i;
-    c->ackOwed = 0; /* (every packet carries what came in: rcvNext and sack, below) */
+    /* Every packet carries what came in (rcvNext and sack, below), so one sent by the connection's way pays the
+       acknowledgement owed. One sent elsewhere does not: a guest on the room's relay sends a SYN to the owner's direct
+       addresses every second, and those often reach nobody. Taken as paid, the owed acknowledgement was not sent at
+       the end of the pump (TagLink_FlushAcks), and the other side sent its pieces again after its timeout. */
+    if (to == NULL || same_addr(to, &c->to)) {
+        c->ackOwed = 0;
+    }
     for (i = 0; i < 32; i++) {
         const Piece *r = &c->rx[(c->rcvNext + 1 + (uint32_t)i) & (TL_WINDOW - 1)];
         if (r->used) {

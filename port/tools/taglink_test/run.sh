@@ -18,6 +18,8 @@ SERVER=$!
 trap 'kill $SERVER 2>/dev/null' EXIT INT TERM
 for i in $(seq 50); do grep -q "server up" "$TAGLINK_TEST_DIR/server.log" 2>/dev/null && break; sleep 0.2; done
 FAILED=0
+# tag_link.c's own functions, without the service (harness unit)
+if "$BIN" unit; then echo "PASS unit (P5: owed acknowledgements, same_addr)"; else echo "FAIL unit"; FAILED=1; fi
 # host_and_join <name> <env for both sides> <env for the joiner only> <what the joiner's output must contain>
 host_and_join() {
     name=$1; both=$2; joiner=$3; want=$4
