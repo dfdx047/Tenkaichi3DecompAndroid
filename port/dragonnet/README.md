@@ -12,6 +12,8 @@ Every request carries `v`, the game's netcode version. `ALLOWED_VERSIONS` lists 
 |---|---|
 | `40001` | DBT-NX before its merge with the PC port's 0.1.37 |
 | `5001` | Dragon Net: Dragon Rage 0.8+ and DBT-NX after the merge. `NET_VERSION * 1000 + DRNET_SIM`: the PC port's netcode (5, of 0.1.37) and the simulation version (1) |
+| `6001` | Dragon Rage's BT3 from the PC port's 0.1.39 on (netcode 6: lobbies), android-v1.0.1 and later: rooms, quick match, Ranked, chat, players online |
+| `140001` | Dragon Rage's BT4 (BT4decomp): its 1 vs 1 rooms and quick match here (`DRNET_BT4_VERSION`); its Ranked has a service of its own (`bt4/port/bt4online-worker`) |
 
 Games of different versions never meet: rooms, quick-match queues and Ranked searches only pair the same `v`.
 Profiles (Elo, wins, losses), the general chat and the count of players online are shared.
@@ -23,7 +25,11 @@ in `ALLOWED_VERSIONS` until its players have updated.
 ## The official server
 
 `https://mitigo-rooms.minetivacraft.workers.dev` (the Tenkaichi3DecompAndroidOnline fork's Worker): Dragon Rage and DBT-NX both point there. It needs this
-code (below) for Ranked, the chat and the players online, and `ALLOWED_VERSIONS` with `5001`.
+code (below) for Ranked, the chat and the players online, and `ALLOWED_VERSIONS` with every version above that is
+still played: `40001,5001,6001,140001`. Without `6001` today's Dragon Rage gets "version" (HTTP 409) for Ranked, the
+chat and the count of players, and its rooms; without `140001` BT4's rooms and quick match. A Ranked authority (Ranked
+C/D, `ranked_authority.js`) needs `5001,6001`. `node versions-test.mjs` checks the example settings against the
+games' sources.
 
 ## Updating a Worker to this one (Cloudflare dashboard)
 
@@ -33,7 +39,7 @@ code (below) for Ranked, the chat and the players online, and `ALLOWED_VERSIONS`
 2. Replace the Worker's code with `worker.js`, `ranked.js`, `ranked_flow.js`, `chat.js`, `presence.js` and
    `versions.js` (`ranked.js` imports `ranked_flow.js`: without it the Worker does not start)
    (with wrangler: `wrangler deploy` with `wrangler-ranked.example.jsonc` as a model).
-3. Variable `ALLOWED_VERSIONS` = `40001,5001` (the old `ALLOWED_VERSION` is read only when this one is missing).
+3. Variable `ALLOWED_VERSIONS` = `40001,5001,6001,140001` (the old `ALLOWED_VERSION` is read only when this one is missing).
    `RANKED_ENABLED` = `1`, `CHAT_ENABLED` = `1`, `MIN_RELEASE` = `0`.
 
 A new database: `schema.sql`, `ranked-schema.sql`, `ranked-flow-schema.sql`, `chat-schema.sql`, `presence-schema.sql`.
@@ -42,7 +48,8 @@ A new database: `schema.sql`, `ranked-schema.sql`, `ranked-flow-schema.sql`, `ch
 ## Tests
 
 `node test.mjs`, `node ranked-test.mjs`, `node ranked-rematch-test.mjs`, `node ranked-flow-test.mjs`,
-`node ranked-cd-test.mjs`, `node chat-test.mjs`, `node presence-test.mjs`, `node dragonnet-test.mjs` (Node 22:
+`node ranked-cd-test.mjs`, `node chat-test.mjs`, `node presence-test.mjs`, `node dragonnet-test.mjs`,
+`node versions-test.mjs` (Node 22:
 `node:sqlite`, no other package). The `*-http-test.mjs` ones ask a running Worker (`wrangler dev`).
 
 ---
@@ -52,5 +59,5 @@ Rage y DBT-NX apuntan ahí. Es el servicio de DBT-NX con un cambio: acepta varia
 `40001,5001`) y nunca empareja versiones distintas (salas, partida rápida y Clasificatoria). Perfiles, Elo, chat y
 contador se comparten. Para actualizar: ejecutar `ranked-migrate-version.sql` y `ranked-flow-schema.sql` en D1, subir los seis `.js`
 (`ranked_flow.js` incluido) y poner
-`ALLOWED_VERSIONS`. La versión `5001` = netcode 5 del PC 0.1.37 + simulación 1; solo cambia cuando cambia algo que
+`ALLOWED_VERSIONS` = `40001,5001,6001,140001` (`6001`: el BT3 de Dragon Rage desde la 1.0.1; `140001`: el BT4). La versión `5001` = netcode 5 del PC 0.1.37 + simulación 1; solo cambia cuando cambia algo que
 decide la pelea, no con cada versión del PC.

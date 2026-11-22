@@ -6,7 +6,7 @@
   "vars": {
     "REQUIRE_KEY": "off",
     "MIN_RELEASE": "0",
-    "ALLOWED_VERSIONS": "40001,5001",
+    "ALLOWED_VERSIONS": "40001,5001,6001,140001", // DBT-NX old, Dragon Rage before 0.1.39, BT3 today, BT4 (versions-test.mjs)
     "RANKED_ENABLED": "1",
     "CHAT_ENABLED": "1"
   },
