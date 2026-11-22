@@ -1699,7 +1699,7 @@ static void rk_note(const char *base, int ok, int exhausted) {
 
 /* 1 = C/D compartilhado, 0 = C antigo (so C), -1 = inalcancavel ou inseguro */
 static int rk_verify(const char *base) {
-    char url[320], out[2048], a[72], c[256], d[256];
+    char url[320], out[2048], a[72], c[256], d[256], body[48];
     int ok, isD = SDL_strcmp(base, DrNet_RankedUrl()) != 0;
     if (!SDL_GetAtomicInt(&sRkShared) && DrNet_CdLoad(a, (int)sizeof(a))) {
         SDL_strlcpy(sRkAuth, a, sizeof(sRkAuth));
@@ -1722,7 +1722,10 @@ static int rk_verify(const char *base) {
     }
     SDL_snprintf(url, sizeof(url), "%s/v1/ranked/capabilities", base);
     out[0] = '\0';
-    ok = http_post_native(url, "{\"v\":5001,\"cd\":1}", NULL, out, sizeof(out));
+    /* (asked with this game's own version, the one every Ranked request then carries: a fixed 5001 was taken by an
+       authority that would then refuse this game's 6001 searches, and refused by one that takes only 6001) */
+    SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"cd\":1}", DrNet_ServiceVersion());
+    ok = http_post_native(url, body, NULL, out, sizeof(out));
     if (rk_bad(ok, out)) {
         rk_note(base, 0, rk_quota(out));
         return -1;

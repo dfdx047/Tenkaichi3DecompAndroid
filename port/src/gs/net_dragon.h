@@ -25,6 +25,7 @@ int Match_ServiceLimited(void); /* a service answered HTTP 429 a moment ago: not
 int DrNet_Mode(void);          /* 0 Dragon Net (Android + Switch), 1 against PC (the PC port's service); setting "net_mode" */
 void DrNet_SetMode(int mode);
 int DrNet_WireVersion(int netVersion); /* what the service is told as `v` in this mode */
+int DrNet_ServiceVersion(void);         /* the `v` of Dragon Net's own requests (Ranked, its capabilities, chat, presence) */
 #define DRNET_CHAT 0 /* chat geral desligado */
 const char *DrNet_UrlB(void);       /* dragonnet_url_b.txt ("" se nao existe) */
 const char *DrNet_RankedUrl(void);  /* dragonnet_ranked_url.txt ("" se nao existe) */

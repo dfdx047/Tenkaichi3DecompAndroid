@@ -62,6 +62,10 @@ static int wire(void) {
     return Port_NetVersion() * 1000 + DRNET_SIM;
 }
 
+int DrNet_ServiceVersion(void) {
+    return wire();
+}
+
 /* ---- small things ---- */
 
 static void path_of(const char *name, char *out, size_t size) {
