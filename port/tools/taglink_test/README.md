@@ -22,3 +22,16 @@ that time on; `PACE` (bytes per ms) spreads the stream over a few seconds so the
     TAGLINK_TEST_RELAY=8790 PACE=100 CUT_MS=1000 ./harness join nnnnnn
 
 Start the relay first and wait for its "relay up" (a game whose first message went nowhere is unknown to it).
+
+## The regression run
+
+    sh port/tools/taglink_test/run.sh
+
+builds the harness and runs its cases one after the other against the local service, each case printing PASS or FAIL
+(exit status 0 when all pass). Without SDL3_INCLUDE/SDL3_LIB it builds with `sdl3/`, a POSIX stand-in for the few
+SDL3 calls tag_link.c makes (test only).
+
+What is real and what is simulated: `port/src/gs/tag_link.c` is the game's own file (#included by harness.c), and the
+service is `port/tagnet-worker/worker.js` (server.mjs, with SQLite for D1). Simulated: STUN (none; loopback addresses),
+the TURN relay (none), the app's background state (`gPortInBackground`), the HTTP client (curl), the network's losses
+(DROP, CUT_MS, OPEN_MS, CUT4, CUT6) and the room relay (relay.mjs, when used).

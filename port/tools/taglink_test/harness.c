@@ -7,6 +7,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 static int gDrop;
 static Uint64 gCutAt, gOpenAt; /* CUT_MS: from this time on the direct way loses everything (the room relay still works) */
 static ssize_t drop_sendto(int s, const void *b, size_t n, int f, const struct sockaddr *a, socklen_t l) {
@@ -17,20 +20,38 @@ static ssize_t drop_sendto(int s, const void *b, size_t n, int f, const struct s
     if (getenv("CUT6") && a && a->sa_family == AF_INET6) return (ssize_t)n;
     return sendto(s, b, n, f, a, l);
 }
-/* stand-ins for net_match.c, net_relay.c, plat_file.c */
+/* Stand-ins for what tag_link.c takes from other files of the game (these are simulated; tag_link.c itself is the real
+   one, #included below):
+     net_match.c   TagLink_Stun (no STUN: the joiner is told the host's loopback address), TagLink_Lan, TagLink_Http
+                   (the local service, server.mjs, through curl), gPortInBackground (the app in the background: never here)
+     net_relay.c   the TURN relay: not used (Relay_Active is 0, Relay_AllocateVia gives no address)
+     plat_file.c   Port_FileRoot: the harness's folder (TAGLINK_TEST_DIR, default /tmp/taglink-test) */
+static const char *test_dir(void) {
+    static char dir[512];
+    if (!dir[0]) {
+        snprintf(dir, sizeof(dir), "%s", getenv("TAGLINK_TEST_DIR") ? getenv("TAGLINK_TEST_DIR") : "/tmp/taglink-test");
+        mkdir(dir, 0700);
+    }
+    return dir;
+}
+volatile int gPortInBackground;
 int TagLink_Stun(int sock, char *out, int size) { (void)sock; (void)out; (void)size; return 0; }
 int TagLink_Lan(int port, char *out, int size) { snprintf(out, size, "127.0.0.1:%d", port); return 1; }
 int TagLink_Http(const char *url, const char *json, char *out, int size) {
-    char cmd[2048], file[64]; FILE *f; size_t n;
+    char cmd[2048], file[600]; FILE *f; size_t n;
     const char *path = strstr(url, "/v1/");
-    snprintf(file, sizeof(file), "/tmp/claude-1000/tl-%d.json", (int)SDL_GetCurrentThreadID() & 0xffff);
+    snprintf(file, sizeof(file), "%s/tl-%d-%d.json", test_dir(), (int)getpid(), (int)SDL_GetCurrentThreadID() & 0xffff);
     f = fopen(file, "w"); fputs(json, f); fclose(f);
     snprintf(cmd, sizeof(cmd), "curl -s -X POST -H 'content-type: application/json' --data-binary @%s http://127.0.0.1:8787%s", file, path);
     f = popen(cmd, "r"); n = fread(out, 1, size - 1, f); pclose(f); out[n] = 0;
     return n > 0;
 }
-const char *Port_FileRoot(void) { return "/tmp/claude-1000"; }
+const char *Port_FileRoot(void) { return test_dir(); }
 int Relay_Allocate(int a, const char *b, const char *c, const char *d, char *e, int f) { return 0; }
+int Relay_AllocateVia(int sock, const char *server, const char *username, const char *password, char *out, int size,
+                      int (*recvfn)(uint8_t *buf, int max, struct sockaddr_in *from)) {
+    (void)sock; (void)server; (void)username; (void)password; (void)out; (void)size; (void)recvfn; return 0;
+}
 void Relay_Permit(int s, const struct sockaddr_in *p) {}
 int Relay_Active(void) { return 0; }
 void Relay_Tick(int s) {}
