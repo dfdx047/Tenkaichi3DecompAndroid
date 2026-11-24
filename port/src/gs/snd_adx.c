@@ -622,7 +622,16 @@ static void start(Player *p, const char *path) {
     fclose(fp);
     if (p->size < 0x40 || be16(p->file) != 0x8000 || p->file[4] != 3 || p->file[5] != FRAME || p->file[6] != 4 ||
         p->file[7] < 1 || p->file[7] > 2 || (p->file[0x13] & 8)) {
-        fprintf(stderr, "bt3: %s is not an ADX file of the kind the game uses\n", path);
+        /* What differs, for a mod's re-encoded voices (a log showed 71 of them and nothing more to go on): the
+           encoding (3 = the game's), block size, bits, channels and the encryption flag (0x13 bit 3). */
+        if (p->size >= 0x14 && be16(p->file) == 0x8000) {
+            fprintf(stderr, "bt3: %s is not an ADX file of the kind the game uses (encoding %u, block %u, bits %u, "
+                            "channels %u, version %u, encrypted %s)\n", path, p->file[4], p->file[5], p->file[6],
+                    p->file[7], p->file[0x12], (p->file[0x13] & 8) ? "yes" : "no");
+        } else {
+            fprintf(stderr, "bt3: %s is not an ADX file of the kind the game uses (no ADX header, %u bytes)\n", path,
+                    (unsigned)p->size);
+        }
         free(p->file);
         p->file = NULL;
         return;
