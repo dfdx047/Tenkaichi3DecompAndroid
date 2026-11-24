@@ -154,8 +154,8 @@ export async function rankedFetch(request,env,path,body,now,ip){
    m=await one(db,"SELECT * FROM ranked_matches WHERE id=?",m.id);
   }
   if(m?.state==="waiting"){
-   // A widening Elo window; within it, the best estimated round trip (port/netgeo/match.js: under 70 ms at once,
-   // widening as the older search waits, anyone after 45 s). The older room is always the host: this search pairs
+   // A widening Elo window; within it, the best estimated round trip (port/netgeo/match.js: under 47 ms at once,
+   // widening as the older search waits, anyone after 30 s). The older room is always the host: this search pairs
    // only with older ones, and a younger one pairs with it when that one asks. A search without a place (no column,
    // or Cloudflare said nothing) pairs as before: the oldest in the window, at once.
    const window=200+Math.min(800,Math.floor((now-m.made)/15)*100);
