@@ -35,7 +35,13 @@ testado no repositório, com o código real de cada parte e o resto simulado.
 
 ## Depende de ação fora do repositório
 
-- **Publicar na Cloudflare** `port/tagnet-worker/worker.js` (C2 servidor, P6): sem isso nada muda em produção.
+- **`port/tagnet-worker/worker.js` publicado em 2026-11-24** (versão `4375d631`, deployment `b5195630`; a anterior, `322382fd`, é o
+  ponto de volta): C2 (servidor) e P6 estão no ar. O servidor em produção tinha o controle de requisições assinadas
+  (`keyGate`, `BUILD_KEYS`, `REQUIRE_KEY=count`) que nenhuma branch tinha; ele foi trazido para o repositório (commit
+  `96a5b6a5`) e preservado. Verificado depois do deploy: respostas idênticas às de antes num teste de fumaça, vínculos e
+  configurações iguais, jogador sem consultar por 75 s mantido, contagem do controle de chave gravando. As linhas de
+  teste ficaram em `tag_key_days` com a versão `v999` (nenhum jogo usa). Não verificado: o cabeçalho de versão e o endereço de
+  pré-visualização da Cloudflare não funcionam para versões enviadas pela API, então a versão foi testada já ativa.
 - **Z3 / D1**: conferir no painel do Worker `mitigo-rooms` se `ALLOWED_VERSIONS` tem `6001` e `140001`, e na autoridade
   do Ranqueado `6001`. Sem `6001`, o BT3 atual recebe 409 no Ranqueado, chat, contagem e salas.
 - **Z1**: o código do servidor `POST /v1/tag` (TagTeam do BT4 pelo Dragon Net) não está em nenhuma branch deste repositório.
