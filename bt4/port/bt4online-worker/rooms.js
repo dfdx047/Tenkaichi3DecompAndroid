@@ -1,3 +1,4 @@
+import {REGIONS, ANY_SECONDS, REGION_WIDEN_SECONDS, placeOf, regionOf, choiceIn, withChoice, pick} from "../../../port/netgeo/match.js";
 import {versionAllowed, versionGateOn} from "./versions.js";
 // BT4 Android's Ranked rooms (port/bt4online-worker): Dragon Net's rooms (T3-102/port/dragonnet/worker.js) as they are,
 // without its chat, presence and Ranked services (BT4's profile and Ranked results are profile.js's), and with one
@@ -49,14 +50,15 @@ const chatFetch = async () => unavailable(), presenceFetch = async () => unavail
 //   Nearby first (from the release after 0.1.38.8): a game that sends `waited` (seconds it has been searching) and
 //       `area` (what the player chose: "auto", "any", or a region of REGIONS) is put with a room by where Cloudflare
 //       places the two requests (see "Where players are" below, and pick()):
-//         auto  within NEAR_KM at once; anyone once WIDEN_SECONDS have gone by, the nearest first (rooms of older
-//               games, whose place is not known, last);
+//         auto  the best estimated round trip first, under a limit that widens as the search waits (70 ms at
+//               once, then 110, 160, 230; anyone after ANY_SECONDS, 45), the player's own country first among
+//               near ones: port/netgeo/match.js (rooms of older games, whose place is not known, after 45 s);
 //         a region (e.g. "EU")  players placed in that region at once, the nearest first; anyone once
 //               REGION_WIDEN_SECONDS have gone by;
 //         any   anyone: whoever waits longest (as before).
 //       Both sides must take each other, the wait being the longer of the two (a room's: its age): an Auto room is
-//       not taken by a far searcher of any kind before WIDEN_SECONDS, a region's only by players placed there before
-//       REGION_WIDEN_SECONDS.
+//       taken by a far searcher of any kind only once that pair's estimate is within the widened limit, a region's only
+//       by players placed there before REGION_WIDEN_SECONDS.
 //       Otherwise it is given a room of its own; the answer says `again` (AGAIN_SECONDS) and, for auto and a region,
 //       `widen` (WIDEN_SECONDS, REGION_WIDEN_SECONDS: when it takes anyone). While it waits there it asks again every `again` seconds: /v1/quick {..., waited, code, key}
 //       names its room (the room's key: not counted against QUICK_PER_HOUR) -> {role: "join", ...} (it is put with
@@ -72,7 +74,7 @@ const chatFetch = async () => unavailable(), presenceFetch = async () => unavail
 //       set; `now` is this Worker's clock, seconds since 1970, for the build key's time below)
 // Where players are: Cloudflare says, with each request (request.cf), roughly where it came from. A quick-match room of
 // a newer game keeps, for its life (ten minutes at most), only the latitude and longitude rounded to whole degrees
-// (about 100 km), the region and what its host chose (column `loc`, "25,55,ME,"); the one who joins it, only its
+// (about 100 km), the region, what its host chose and the country (column `loc`, "25,55,ME,,AE"); the one who joins it, only its
 // region (column `join_region`). Nothing of it is logged or kept anywhere else, and the other player is told the
 // region only. The regions are Cloudflare's continents, with the countries of MIDDLE_EAST as the Middle East (Egypt,
 // Turkey and Cyprus with it, as games' regions usually have them).
@@ -112,18 +114,9 @@ const WRONG_CODES_PER_HOUR = 30; // codes that name no room, from one address in
 const HOSTS_PER_HOUR = 20;      // rooms one address may make in an hour
 const QUICK_PER_HOUR = 60;      // quick-match searches from one address in an hour (a search that waits asks again every ten
                                 // minutes; its searches again from its room, every ten seconds, are not counted)
-const NEAR_KM = 2500;           // quick match: a room this near (great-circle, from the rounded places) is taken at once.
-                                // About the distance at which a round trip stays under some 60 ms (Frankfurt-Madrid
-                                // 1,400 km, Dubai-Mumbai 1,900 km, New York-Chicago 1,150 km, Tokyo-Seoul 1,150 km).
-const WIDEN_SECONDS = 25;       // ... and any room, the nearest first, once the searcher or the room has waited this long
-const REGION_WIDEN_SECONDS = 40; // a player who chose a region: players placed there at once, anyone after this long
 const CANDIDATES = 50;          // the rooms of a queue looked at for the nearest (the longest waiting)
 const AGAIN_SECONDS = 10;       // ... a newer game that waits in its room searches again from it this often
 const HELD = "-";               // join_key of a room whose host is searching again from it (a moment): nobody joins it then
-// The regions a player is placed in, and can choose to play only in: Cloudflare's continent, except that the
-// countries of MIDDLE_EAST are the Middle East (Antarctica: none).
-const REGIONS = ["NA", "SA", "EU", "ME", "AF", "AS", "OC"];
-const MIDDLE_EAST = ["AE", "BH", "CY", "EG", "IL", "IQ", "IR", "JO", "KW", "LB", "OM", "PS", "QA", "SA", "SY", "TR", "YE"];
 const QUEUES = ["S", "T", "D10", "D15", "D20"];
 const WATCH_SECONDS = 120;      // a spectator's addresses are handed to the host for this long after it asked
 const WATCHERS_PER_ROOM = 12;   // spectators' requests one room takes in that time (the game takes six at a time)
@@ -386,95 +379,6 @@ async function turnAccess(env) {
     } catch (e) {
         return { why: "the TURN service could not be asked" };
     }
-}
-
-// Where a request comes from, as coarsely as matchmaking needs it (see "Where players are" at the top): "lat,lon,RR"
-// with whole degrees and the region (REGIONS), empty parts for what Cloudflare did not say (",,EU", ",,").
-function placeOf(request) {
-    const cf = request.cf ?? {};
-    const la = Number.parseFloat(cf.latitude), lo = Number.parseFloat(cf.longitude);
-    const known = Number.isFinite(la) && Number.isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180;
-    const region = MIDDLE_EAST.includes(cf.country) ? "ME" : REGIONS.includes(cf.continent) ? cf.continent : "";
-    return (known ? Math.round(la) + "," + Math.round(lo) : ",") + "," + region;
-}
-
-// A kept place's region ("" if not known).
-function regionOf(place) {
-    const c = typeof place === "string" ? place.split(",")[2] ?? "" : "";
-    return REGIONS.includes(c) ? c : "";
-}
-
-// What a quick-match room's host chose (kept after its place: "lat,lon,RR,choice"): "" the nearest (Auto), "*"
-// anyone (Anywhere), or a region; null for a room of an older game (taken as anyone).
-function choiceOf(loc) {
-    if (typeof loc !== "string") {
-        return null;
-    }
-    const c = loc.split(",")[3] ?? "";
-    return c === "*" || REGIONS.includes(c) ? c : "";
-}
-
-// The choice a request makes (`area`): "" Auto (also when it says nothing it knows), "*" Anywhere, or a region.
-function choiceIn(area) {
-    return area === "any" ? "*" : REGIONS.includes(area) ? area : "";
-}
-
-// How far apart two places are, in km: great-circle; without both positions, 0 for one region (taken as near:
-// Cloudflare left the position out) and Infinity when that is not known either (a room of an older game).
-function distanceKm(a, b) {
-    if (typeof a !== "string" || typeof b !== "string") {
-        return Infinity;
-    }
-    const [la1, lo1] = a.split(",").map((x) => (x === "" ? NaN : Number(x)));
-    const [la2, lo2] = b.split(",").map((x) => (x === "" ? NaN : Number(x)));
-    if ([la1, lo1, la2, lo2].every(Number.isFinite)) {
-        const r = Math.PI / 180, h = Math.sin(((la2 - la1) * r) / 2) ** 2 + Math.cos(la1 * r) * Math.cos(la2 * r) * Math.sin(((lo2 - lo1) * r) / 2) ** 2;
-        return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)));
-    }
-    return regionOf(a) !== "" && regionOf(a) === regionOf(b) ? 0 : Infinity;
-}
-
-// Whether one side of a quick match takes the other: `choice` its own ("" Auto, "*" Anywhere, a region; null an older
-// game, as Anywhere), `region` where the other is placed, `km` how far apart the two are, `waited` the longer of the
-// two sides' waits.
-function accepts(choice, region, km, waited) {
-    if (choice === null || choice === "*") {
-        return true;
-    }
-    if (choice === "") {
-        return km <= NEAR_KM || waited >= WIDEN_SECONDS;
-    }
-    return region === choice || waited >= REGION_WIDEN_SECONDS;
-}
-
-// Quick match: of the rooms that wait (the longest waiting first), the one the searcher `me` ({place, choice,
-// waited, who}; choice null: an older game) is to be put with, or null: none yet. A pair is made when each side
-// takes the other (accepts()), the wait being the longer of the searcher's and the room's:
-//   - Auto: within NEAR_KM at once; anyone once WIDEN_SECONDS have gone by;
-//   - a region: players placed in it at once; anyone once REGION_WIDEN_SECONDS have gone by;
-//   - Anywhere, and an older game: anyone.
-// Of the rooms it may have, Auto and a region take the nearest (rooms of older games, whose place is not known,
-// last); Anywhere and an older game whoever waits longest.
-function pick(rows, me, now) {
-    let best = null, bestKm = Infinity;
-    const mine = me.place ? regionOf(me.place) : "";
-    for (const r of rows) {
-        if (r.who === me.who) {
-            continue;
-        }
-        const km = distanceKm(me.place, r.loc), waited = Math.max(me.waited, now - r.made);
-        if (!accepts(me.choice, regionOf(r.loc), km, waited) || !accepts(choiceOf(r.loc), mine, km, waited)) {
-            continue;
-        }
-        if (me.choice === null || me.choice === "*") {
-            return r;
-        }
-        if (best === null || km < bestKm) {
-            best = r;
-            bestKm = km;
-        }
-    }
-    return best;
 }
 
 // The rooms that wait in a queue, the longest waiting first (with their rowid as `rid`).
@@ -776,7 +680,7 @@ export default {
             const me = { place, choice: near ? choiceIn(body.area) : null, waited, who };
             // what a room of its own says to a newer game: search again from it every AGAIN_SECONDS; past widen
             // seconds (Auto) it is looking everywhere
-            const told = near ? { again: AGAIN_SECONDS, ...(me.choice === "" ? { widen: WIDEN_SECONDS } : me.choice !== "*" ? { widen: REGION_WIDEN_SECONDS } : {}) } : {};
+            const told = near ? { again: AGAIN_SECONDS, ...(me.choice === "" ? { widen: ANY_SECONDS } : me.choice !== "*" ? { widen: REGION_WIDEN_SECONDS } : {}) } : {};
             await env.DB.prepare("DELETE FROM rooms WHERE made < ?").bind(now - ROOM_SECONDS).run();
             // A newer game that waits in its room searches again from it (every ten seconds): the room is held while
             // it looks (nobody can join it meanwhile), and it is given up only if this search joins another.
@@ -833,7 +737,7 @@ export default {
                 if (open && open.n >= ROOMS_PER_ADDRESS) {
                     return reply({ error: "busy" }, 429);
                 }
-                const made = await makeRoom(env, ip, now, body.v, body.name, addrs, queue, who, body.relay !== false && !asksLater(body), false, near ? place + "," + me.choice : null);
+                const made = await makeRoom(env, ip, now, body.v, body.name, addrs, queue, who, body.relay !== false && !asksLater(body), false, near ? withChoice(place, me.choice) : null);
                 if (!made) {
                     return reply({ error: "busy" }, 503);
                 }
