@@ -3240,7 +3240,7 @@ void GsGpu_SetSettings(const PortVideo *v) {
     PortVideo now;
     GsGpu_GetSettings(&now);
     if (v->scale4 != now.scale4) {
-        int q = v->scale4 < 4 ? 4 : v->scale4 > 32 ? 32 : v->scale4;
+        int q = v->scale4 < 2 ? 2 : v->scale4 > 32 ? 32 : v->scale4;
         if (sScreenCap4 || sScreenFloor4) { /* (on the online screens: kept for after them, drawn there within cap and floor) */
             sUserScale4 = q;
             q = screen_scale_bound(q);
@@ -3382,7 +3382,7 @@ int GsGpu_Init(void) {
             gsScale4 = Port_Setting("scale", 2) * 4;
         }
     }
-    gsScale4 = gsScale4 < 4 ? 4 : gsScale4 > 32 ? 32 : gsScale4;
+    gsScale4 = gsScale4 < 2 ? 2 : gsScale4 > 32 ? 32 : gsScale4; /* 0.5x and 0.75x: weak GPUs (Mali-G71, ...) */
     gsPendingScale4 = 0;
     gsVerts = malloc(MAX_VERTS * sizeof(Vtx));
     gsVuVerts = malloc(MAX_VU_VERTS * 48);

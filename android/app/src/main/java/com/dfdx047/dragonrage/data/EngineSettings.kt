@@ -107,7 +107,7 @@ class EngineSettings(private val file: File) {
         const val GLOW_DEFAULT = 60
         const val SCALE_DEFAULT = 2
         /** The internal resolutions offered, in quarters (the engine's settings window has the same list). */
-        val SCALE_STEPS = listOf(4, 5, 6, 7, 8, 10, 12, 16, 20, 24, 32)
+        val SCALE_STEPS = listOf(2, 3, 4, 5, 6, 7, 8, 10, 12, 16, 20, 24, 32)
         const val ASPECT_DEFAULT = 0              // 0 = the screen's own shape (the engine measures it)
     }
 }

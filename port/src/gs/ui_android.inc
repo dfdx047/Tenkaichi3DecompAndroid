@@ -166,14 +166,14 @@ static void save_setting(const char *name, int value) {
 static void page_video(PortVideo &v) {
     card_begin("res", T("Picture", "Imagem", "Imagen"));
     {
-        static const int q[] = {4, 5, 6, 7, 8, 10, 12, 16, 20, 24};
-        static const char *const names[] = {"1x", "1.25x", "1.5x", "1.75x", "2x", "2.5x", "3x", "4x", "5x", "6x"};
+        static const int q[] = {2, 3, 4, 5, 6, 7, 8, 10, 12, 16, 20, 24};
+        static const char *const names[] = {"0.5x", "0.75x", "1x", "1.25x", "1.5x", "1.75x", "2x", "2.5x", "3x", "4x", "5x", "6x"};
         char desc[200];
         snprintf(desc, sizeof(desc), T("%d x %d. 1x is the PlayStation 2's own. Higher is sharper and heavier for the GPU.",
                                        "%d x %d. 1x é a do PlayStation 2. Mais alta fica mais nítida e pesa mais na GPU.",
                                        "%d x %d. 1x es la del PlayStation 2. Más alta se ve más nítida y pesa más en la GPU."),
                  128 * v.scale4, 112 * v.scale4);
-        achoice(T("Internal resolution", "Resolução interna", "Resolución interna"), desc, &v.scale4, names, q, 10);
+        achoice(T("Internal resolution", "Resolução interna", "Resolución interna"), desc, &v.scale4, names, q, 12);
     }
     {
         static const int vals[] = {0, 1333, 1600, 1778, 2222, 2389};

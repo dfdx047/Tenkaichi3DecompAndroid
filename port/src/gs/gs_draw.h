@@ -11,7 +11,7 @@
    pixels at SCALE times the PS2's resolution, about 9 MB of video memory each at 1x, 36 MB at 2x, 144 MB at
    4x; a fight uses 7 to 16 of them. Shared: the capture scales coordinates with it, the back ends size
    their attachments with it. */
-extern int gsScale4;              /* the multiplier in quarters: 4 = 1x, 6 = 1.5x, 8 = 2x (4..32) */
+extern int gsScale4;              /* the multiplier in quarters: 4 = 1x, 6 = 1.5x, 8 = 2x (2..32: 0.5x and 0.75x for weak GPUs) */
 #define SCALE ((float)gsScale4 * 0.25f)
 #define GS_W 1024
 #define GS_H 1024

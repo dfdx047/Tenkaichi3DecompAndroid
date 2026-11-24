@@ -1432,7 +1432,7 @@ static void video_tab(PortVideo &v) {
     int best = 0, count = 0;
 
     /* in quarters: the steps between 1x and 2x for weaker GPUs (1.5x is 672 lines, 1.75x 784) */
-    static const int steps[] = {4, 5, 6, 7, 8, 10, 12, 16, 20, 24, 32};
+    static const int steps[] = {2, 3, 4, 5, 6, 7, 8, 10, 12, 16, 20, 24, 32};
     snprintf(label, sizeof(label), "%gx  (%d x %d)", v.scale4 / 4.0, 128 * v.scale4, 112 * v.scale4);
     if (ImGui::BeginCombo("Internal resolution", label)) {
         for (int q : steps) {
