@@ -4,6 +4,10 @@
 // search of the same version: a Switch of 40001 never meets an Android of 5001. Profiles and ratings are shared.
 import {versionAllowed} from "./versions.js";
 import {flowQueue,flowView,flowExpire,flowRequest} from './ranked_flow.js';
+import {placeOf,regionOf,pickRanked} from '../netgeo/match.js';
+// Where a search comes from (port/netgeo/match.js: Cloudflare's place of the request, whole degrees, region, country),
+// kept in ranked_matches.loc while it waits (ranked-migrate-loc.sql); null when Cloudflare said nothing of it.
+const placeOrNull=r=>{const p=placeOf(r);return regionOf(p)!==''?p:null;};
 const TTL=21600, WAIT_TTL=120;
 const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{"content-type":"application/json","cache-control":"no-store"}});
 const id=()=>crypto.randomUUID().replaceAll("-","");
@@ -136,6 +140,9 @@ export async function rankedFetch(request,env,path,body,now,ip){
     stmt(db,"INSERT OR IGNORE INTO ranked_flow(match_id,host_cap) SELECT ?,? WHERE EXISTS(SELECT 1 FROM ranked_matches WHERE id=?)",mine,body.flow===2?2:0,mine)
    ]);
    p=await one(db,"SELECT * FROM ranked_players WHERE id=?",p.id);
+   // (a database without the column, ranked-migrate-loc.sql not run yet: searches pair as before, by rating alone)
+   const loc=placeOrNull(request);
+   if(loc)await stmt(db,"UPDATE ranked_matches SET loc=? WHERE id=? AND host_id=?",loc,mine,p.id).run().catch(()=>null);
   }
   let m=await one(db,"SELECT * FROM ranked_matches WHERE id=?",p.active_match);
   if(m.rule_set!==rules || m.version!==body.v)return json({error:'cancel current search first'},409);
@@ -147,9 +154,14 @@ export async function rankedFetch(request,env,path,body,now,ip){
    m=await one(db,"SELECT * FROM ranked_matches WHERE id=?",m.id);
   }
   if(m?.state==="waiting"){
-   // FIFO within a widening Elo window. The older room is always the host.
+   // A widening Elo window; within it, the best estimated round trip (port/netgeo/match.js: under 70 ms at once,
+   // widening as the older search waits, anyone after 45 s). The older room is always the host: this search pairs
+   // only with older ones, and a younger one pairs with it when that one asks. A search without a place (no column,
+   // or Cloudflare said nothing) pairs as before: the oldest in the window, at once.
    const window=200+Math.min(800,Math.floor((now-m.made)/15)*100);
-   const other=await one(db,"SELECT m.* FROM ranked_matches m JOIN ranked_players p ON p.id=m.host_id AND p.active_match=m.id WHERE m.state='waiting' AND m.rule_set=? AND m.version=? AND m.id<>? AND m.made>=? AND ABS(m.host_rating-?)<=? ORDER BY m.made,m.id LIMIT 1",rules,body.v,m.id,now-WAIT_TTL,p.rating,window);
+   const rows=await stmt(db,"SELECT m.* FROM ranked_matches m JOIN ranked_players p ON p.id=m.host_id AND p.active_match=m.id WHERE m.state='waiting' AND m.rule_set=? AND m.version=? AND m.id<>? AND m.made>=? AND ABS(m.host_rating-?)<=? ORDER BY m.made,m.id LIMIT 20",rules,body.v,m.id,now-WAIT_TTL,p.rating,window).all();
+   const older=((rows&&rows.results)||[]).filter(o=>o.made<m.made||(o.made===m.made&&o.id<m.id));
+   const other=pickRanked(older,m.loc??placeOrNull(request),now-m.made,now);
    if(other && (other.made<m.made || (other.made===m.made && other.id<m.id))){
     await db.batch([
      stmt(db,"UPDATE ranked_matches SET guest_id=?,guest_rating=?,state='paired',rematch_caps=rematch_caps|? WHERE id=? AND state='waiting' AND rule_set=? AND EXISTS(SELECT 1 FROM ranked_players WHERE id=? AND active_match=?) AND EXISTS(SELECT 1 FROM ranked_matches WHERE id=? AND state='waiting' AND rule_set=?)",p.id,p.rating,body.rematches===1?2:0,other.id,rules,p.id,m.id,m.id,rules),
