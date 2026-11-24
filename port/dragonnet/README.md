@@ -35,10 +35,13 @@ games' sources.
 
 1. D1 console of the Worker's database: run `ranked-migrate-version.sql` once (adds `ranked_matches.version`; keeps
    every profile, rating and result; earlier searches count as 40001), then `ranked-flow-schema.sql` (the table
-   `ranked_flow`, which every Ranked search writes; `CREATE TABLE IF NOT EXISTS`, safe to run again).
-2. Replace the Worker's code with `worker.js`, `ranked.js`, `ranked_flow.js`, `chat.js`, `presence.js` and
-   `versions.js` (`ranked.js` imports `ranked_flow.js`: without it the Worker does not start)
-   (with wrangler: `wrangler deploy` with `wrangler-ranked.example.jsonc` as a model).
+   `ranked_flow`, which every Ranked search writes; `CREATE TABLE IF NOT EXISTS`, safe to run again), then
+   `ranked-migrate-loc.sql` once (adds `ranked_matches.loc`: Ranked pairs near players first; without it Ranked
+   pairs by rating alone, as before).
+2. Deploy with wrangler from this folder (`wrangler deploy`, with `wrangler-ranked.example.jsonc` as a model): the
+   Worker imports `../netgeo/match.js` (the matchmaking rules shared with BT4's Worker), which the dashboard's editor
+   cannot reach; wrangler bundles it. (The files: `worker.js`, `ranked.js`, `ranked_flow.js`, `chat.js`,
+   `presence.js`, `versions.js` and `../netgeo/match.js`.)
 3. Variable `ALLOWED_VERSIONS` = `40001,5001,6001,140001` (the old `ALLOWED_VERSION` is read only when this one is missing).
    `RANKED_ENABLED` = `1`, `CHAT_ENABLED` = `1`, `MIN_RELEASE` = `0`.
 
