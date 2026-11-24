@@ -29,6 +29,7 @@
 //   TURN_DAILY_MAX     relay logins a day, all rooms together (default 300)
 //   ALLOWED_VERSIONS   the network versions taken, "5" or "5,6" (default: any)
 //   MAX_MEMBERS        players and spectators a room takes besides its owner (default 19: ten players, ten watching)
+//   BUILD_KEYS (secret), REQUIRE_KEY   signed requests: see keyGate below (default: nothing is checked)
 
 // A phone in the background may not poll at all (Android freezes a cached app; the game asks every 15 s while it can):
 // the owner sharing the room's code in another app, a player answering a message. With two minutes for a room and 45 s
@@ -152,6 +153,58 @@ async function relayLogin(env, now) {
     }
 }
 
+// Signed requests (net_sign.c in the game): a release's build sends X-BT3-Release, X-BT3-Time and X-BT3-Sign, an HMAC of
+// the request made with that release's key. BUILD_KEYS (a secret) is a JSON object {"<release>": "<key>"}; REQUIRE_KEY is
+// "off" (nothing is checked), "count" (every host and join is counted by result, country and version in tag_key_days,
+// nobody is refused) or "on" (a request not signed by an official build is refused with 403).
+const KEY_SECONDS = 600;
+function buildKeys(env) {
+    const keys = new Map();
+    try {
+        const j = JSON.parse(String(env.BUILD_KEYS ?? "{}"));
+        for (const [release, key] of Object.entries(j && typeof j === "object" && !Array.isArray(j) ? j : {})) {
+            if (/^[1-9]\d{0,5}$/.test(release) && typeof key === "string" && key.length >= 16) keys.set(release, key);
+        }
+    } catch (e) {
+    }
+    return keys;
+}
+function requireKey(env) {
+    const mode = String(env.REQUIRE_KEY ?? "off").trim().toLowerCase();
+    return mode === "count" || mode === "on" ? mode : "off";
+}
+function toHex(bytes) {
+    return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function keyCheck(request, keys, path, raw, now) {
+    const release = request.headers.get("x-bt3-release") ?? "", time = request.headers.get("x-bt3-time") ?? "", sign = request.headers.get("x-bt3-sign") ?? "";
+    if (sign === "") return "none";
+    const key = keys.get(release);
+    if (key === undefined) return "release";
+    if (!/^\d{1,12}$/.test(time) || !/^[0-9a-f]{64}$/.test(sign)) return "sign";
+    const enc = new TextEncoder();
+    const text = ["BT3-SIGN-1", request.method, path, release, time, toHex(await crypto.subtle.digest("SHA-256", raw))].join("\n");
+    const k = await crypto.subtle.importKey("raw", enc.encode(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    const want = new Uint8Array(await crypto.subtle.sign("HMAC", k, enc.encode(text)));
+    let differ = 0;
+    for (let i = 0; i < 32; i++) differ |= want[i] ^ parseInt(sign.slice(i * 2, i * 2 + 2), 16);
+    if (differ !== 0) return "sign";
+    return Math.abs(now - Number(time)) > KEY_SECONDS ? "time" : null;
+}
+async function keyGate(request, env, raw, body, now, what) {
+    const mode = requireKey(env);
+    if (mode === "off") return null;
+    const why = await keyCheck(request, buildKeys(env), new URL(request.url).pathname, raw, now);
+    const country = String(request.cf && request.cf.country || "??").replace(/[^A-Z?]/g, "").slice(0, 2);
+    const v = Number.isInteger(body.v) ? body.v : 0;
+    try {
+        await env.DB.prepare("INSERT INTO tag_key_days (day, what, n) VALUES (?, ?, 1) ON CONFLICT (day, what) DO UPDATE SET n = n + 1").bind(now - now % 86400, `${why ?? "ok"} ${what} v${v} ${country}`).run();
+    } catch (e) {
+    }
+    if (why === null || mode !== "on") return null;
+    if (why === "time") return reply({ error: "time", now }, 403);
+    return reply({ error: "official" }, 403);
+}
 export async function handle(request, env, now) {
     const url = new URL(request.url);
     if (request.method === "GET" && url.pathname === "/") {
@@ -173,9 +226,9 @@ export async function handle(request, env, now) {
         return stub.fetch(new Request(request.url, { headers }));
     }
     if (request.method !== "POST" || !url.pathname.startsWith("/v1/")) return reply({ error: "bad request" }, 404);
-    let body;
+    let body, raw;
     try {
-        const raw = await request.arrayBuffer();
+        raw = await request.arrayBuffer();
         if (raw.byteLength > 2048) return reply({ error: "bad request" }, 413);
         body = JSON.parse(new TextDecoder().decode(raw));
     } catch (e) {
@@ -185,8 +238,13 @@ export async function handle(request, env, now) {
     const what = url.pathname.slice(4);
     const ip = request.headers.get("cf-connecting-ip") ?? "";
 
-    if (what === "hello") return reply({ ok: versionAllowed(env, body.v), v: body.v ?? null });
+    if (what === "hello") return reply({ ok: versionAllowed(env, body.v), v: body.v ?? null, now });
     await sweep(env, now);
+
+    if (what === "host" || what === "join") {
+        const refused = await keyGate(request, env, raw, body, now, what);
+        if (refused) return refused;
+    }
 
     if (what === "host") {
         if (!versionAllowed(env, body.v)) return reply({ error: "version" }, 409);

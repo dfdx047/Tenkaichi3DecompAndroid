@@ -160,4 +160,57 @@ assert.equal((await call("poll", { code: h3.code, key: h3.key })).members.length
     assert.notEqual(second.id, first.id + 1);
     assert.ok(second.id >= 1 && second.id <= 255);
 }
+// Signed requests (keyGate): REQUIRE_KEY off / count / on, as the live service runs them. The signature is the game's
+// (net_sign.c): HMAC-SHA256 with the release's key over "BT3-SIGN-1", the method, the path, the release, the time and the
+// body's SHA-256, one per line.
+{
+    const KEY = "k".repeat(32), hex = (b) => [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("");
+    const sign = async (path, bodyText, time, release = "139", key = KEY) => {
+        const digest = hex(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(bodyText)));
+        const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(key), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+        return hex(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(["BT3-SIGN-1", "POST", path, release, String(time), digest].join("\n"))));
+    };
+    const ask = async (mode, what, bodyObj, headers = {}, keys = { 139: KEY }) => {
+        const e = { ...env, REQUIRE_KEY: mode, BUILD_KEYS: JSON.stringify(keys) };
+        if (mode === undefined) delete e.REQUIRE_KEY;
+        const r = await handle(new Request("https://t/v1/" + what, { method: "POST", body: JSON.stringify(bodyObj), headers: { "cf-connecting-ip": "203.0.113.50", ...headers } }), e, now);
+        return { status: r.status, ...(await r.json()) };
+    };
+    const rows = () => db.prepare("SELECT what, n FROM tag_key_days ORDER BY what").all().map((r) => `${r.what}=${r.n}`).join(",");
+    const signed = async (what, bodyObj, over = {}) => {
+        const text = JSON.stringify(bodyObj), time = over.time ?? now;
+        return { "x-bt3-release": over.release ?? "139", "x-bt3-time": String(time), "x-bt3-sign": over.sign ?? await sign("/v1/" + what, text, time, over.release ?? "139", over.key ?? KEY) };
+    };
+    db.exec("DELETE FROM tag_key_days");
+    const body = { v: 5, name: "K", addrs: [] };
+    assert.equal((await ask(undefined, "host", body)).status, 200, "no REQUIRE_KEY: nothing checked");
+    assert.equal((await ask("off", "host", body)).status, 200);
+    assert.equal(rows(), "", "off: nothing counted");
+    assert.equal((await ask("count", "host", body)).status, 200, "count: an unsigned host is let in");
+    assert.equal((await ask("count", "host", body, await signed("host", body))).status, 200);
+    assert.equal((await ask("count", "host", body, await signed("host", body, { sign: "0".repeat(64) }))).status, 200, "count: a wrong signature is let in");
+    assert.equal(rows(), "none host v5 ??=1,ok host v5 ??=1,sign host v5 ??=1", "count: counted by result");
+    assert.equal((await ask("on", "host", body)).error, "official", "on: unsigned refused");
+    assert.equal((await ask("on", "host", body, await signed("host", body, { sign: "0".repeat(64) }))).error, "official", "on: a wrong signature refused");
+    assert.equal((await ask("on", "host", body, await signed("host", body, { release: "140" }))).error, "official", "on: an unknown release refused");
+    assert.equal((await ask("on", "host", body, await signed("host", body, { key: "x".repeat(32) }))).error, "official", "on: another key refused");
+    assert.equal((await ask("on", "host", body, { "x-bt3-release": "139", "x-bt3-time": "abc", "x-bt3-sign": "f".repeat(64) })).error, "official", "on: a malformed time refused");
+    const late = await ask("on", "host", body, await signed("host", body, { time: now - 700 }));
+    assert.equal(late.status, 403); assert.equal(late.error, "time"); assert.equal(late.now, now, "on: an old time is told the Worker's time");
+    const ok = await ask("on", "host", body, await signed("host", body));
+    assert.equal(ok.status, 200, "on: a signed request is let in"); assert.ok(ok.code && ok.key);
+    const join = { v: 5, code: ok.code, name: "J", addrs: [] };
+    assert.equal((await ask("on", "join", join)).error, "official", "on: an unsigned join refused");
+    assert.equal((await ask("on", "join", join, await signed("join", join))).status, 200, "on: a signed join let in");
+    assert.equal((await ask("on", "poll", { code: ok.code, key: ok.key })).status, 200, "on: polls are not signed and are let in");
+    assert.equal((await ask("on", "hello", { v: 5 })).ok, true);
+    assert.equal((await ask("on", "hello", { v: 5 })).now, now, "hello says the Worker's time");
+    assert.equal((await ask("on", "host", body, await signed("host", body), "{}")).error, "official", "on: no keys at all refuses");
+    assert.equal((await ask("on", "host", body, await signed("host", body), { 139: "short" })).error, "official", "on: a key under 16 characters is not taken");
+    assert.equal((await ask("bogus", "host", body)).status, 200, "an unknown mode is off");
+    // the counting never stops a request: a database without the table
+    db.exec("ALTER TABLE tag_key_days RENAME TO tag_key_days_away");
+    assert.equal((await ask("count", "host", body)).status, 200, "count without its table: the request still goes through");
+    db.exec("ALTER TABLE tag_key_days_away RENAME TO tag_key_days");
+}
 console.log("tagnet worker: all tests passed (" + minuteWrites + " rows written in the minute of polls)");
