@@ -66,5 +66,6 @@ int Match_SignTest(void);    /* BT3_SIGN_TEST: see net_match.c */
 int Match_PostDragon(const char *what, const char *json, char *out, size_t size); /* Dragon Net's service (net_dragon.c) */
 int Match_ServiceLimited(void); /* a service answered HTTP 429 a moment ago: nothing is asked for now (net_match.c) */
 int Match_BackgroundWait(unsigned int activeMs, int cancelAfterThreeMinutes); /* 0 only when this search cancels in the background */
+void Port_SetOnlineBackground(int paused); /* GameActivity onPause (1) / onResume (0), through libmain.so (loader.c) */
 
 #endif

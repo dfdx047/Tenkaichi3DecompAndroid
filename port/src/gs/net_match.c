@@ -634,13 +634,12 @@ static int limit_after(const char *base, const char *what, int ok, const char *o
 volatile int gPortInBackground;
 static SDL_AtomicInt sBackgroundSince;
 
-#ifdef __ANDROID__
-JNIEXPORT void JNICALL Java_com_dfdx047_dragonrage_engine_GameActivity_nativeSetOnlineBackground(JNIEnv *env, jobject self, jboolean paused) {
-    (void)env; (void)self;
-    gPortInBackground = paused == JNI_TRUE;
+/* GameActivity.onPause / onResume (its nativeSetOnlineBackground, which lives in libmain.so's loader.c: the engine is
+   loaded by that loader, not by System.loadLibrary, so Java never sees a JNI name defined here). */
+void Port_SetOnlineBackground(int paused) {
+    gPortInBackground = paused != 0;
     if (!gPortInBackground) SDL_SetAtomicInt(&sBackgroundSince, 0);
 }
-#endif
 
 int Match_BackgroundWait(Uint32 activeMs, int cancelAfterThreeMinutes) {
     Uint64 start = SDL_GetTicks();

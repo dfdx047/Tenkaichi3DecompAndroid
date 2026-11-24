@@ -1168,6 +1168,21 @@ JNIEXPORT jboolean JNICALL Java_com_dfdx047_dragonrage_engine_TouchBridge_native
     return fn != NULL && fn() ? JNI_TRUE : JNI_FALSE;
 }
 
+/* GameActivity.onPause / onResume: the online flow waits longer between requests while the game is away
+   (port/src/gs/net_match.c, Port_SetOnlineBackground). The name was once defined in the engine itself, where Java
+   cannot find it ("No implementation found" in every log). */
+JNIEXPORT void JNICALL Java_com_dfdx047_dragonrage_engine_GameActivity_nativeSetOnlineBackground(JNIEnv *env, jobject self, jboolean paused) {
+    static void (*fn)(int);
+    (void)env;
+    (void)self;
+    if (fn == NULL && sEngine != NULL) {
+        fn = (void (*)(int))dlsym(sEngine, "Port_SetOnlineBackground");
+    }
+    if (fn != NULL) {
+        fn(paused == JNI_TRUE ? 1 : 0);
+    }
+}
+
 /* The touch menu (engine/GameMenu.kt through MenuBridge): the engine's Ui_Nm* (port/src/gs/ui_android.inc). */
 static void *menu_fn(const char *name) {
     return sEngine != NULL ? dlsym(sEngine, name) : NULL;
