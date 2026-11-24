@@ -916,12 +916,19 @@ static void build_android(void) {
     ImGui::BeginChild("side", ImVec2(side, -foot), ImGuiChildFlags_NavFlattened);
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, fs() * 0.6f);
     ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.08f, 0.5f));
+    // (every page's button in sight: with nine pages a wide phone has no room for 2.2 lines each, so they get lower,
+    // never below 1.6 lines; the bar still scrolls if even that does not fit)
+    float pageH = fs() * 2.2f;
+    {
+        const float room = (ImGui::GetContentRegionAvail().y - ImGui::GetStyle().ItemSpacing.y * (float)(npages - 1)) / (float)npages;
+        if (room < pageH) { pageH = room > fs() * 1.6f ? room : fs() * 1.6f; }
+    }
     for (int i = 0; i < npages; i++) {
         bool on = i == page;
         ImGui::PushStyleColor(ImGuiCol_Button, on ? ImVec4(0.98f, 0.55f, 0.13f, 0.95f) : ImVec4(0.11f, 0.12f, 0.19f, 0.9f));
         ImGui::PushStyleColor(ImGuiCol_Text, on ? ImVec4(0.12f, 0.07f, 0.02f, 1.0f) : ImVec4(0.92f, 0.93f, 0.97f, 1.0f));
         ImGui::PushID(i);
-        if (ImGui::Button(pages[i], ImVec2(-FLT_MIN, fs() * 2.2f))) { page = i; }
+        if (ImGui::Button(pages[i], ImVec2(-FLT_MIN, pageH))) { page = i; }
         ImGui::PopID();
         ImGui::PopStyleColor(2);
     }
