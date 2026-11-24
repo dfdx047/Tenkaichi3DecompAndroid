@@ -4,6 +4,8 @@
 // full screen, display, V-sync or keyboard bindings. Its text is in English, Portuguese or Spanish: the launcher's
 // language (setting "dr_lang", written by the app), else the system's.
 #include <sys/system_properties.h>
+#include <math.h>
+#include "mods.h" // (the script mods: page_mods)
 
 extern "C" int gGsFragDepth; // gs_draw.c: draws may write depth from the fragment shader (precise depth)
 
@@ -628,6 +630,132 @@ static void page_cheats(void) {
 
 // The full-screen window of the Android menus (pause menu, online): night blue with the launcher's glow, text about a
 // thirtieth of the screen's height, the launcher's colours. dr_end() closes it.
+// ---- Script mods (gs/mods.c, mods/<name>/mod.lua): the PC's F1 > Mods tab (gs/mods_ui.cpp) for fingers. Each mod is
+// off until switched on here; the choice and the settings go to bt3_mods.txt as on the PC (Mods_SettingChanged). The
+// app's Mods screen (Scripts) installs and deletes them; this page switches them on and sets them.
+static void mods_setting(ModsSetting &st) {
+    double val = st.value;
+    bool changed = false;
+    ImGui::PushID(st.id);
+    if (st.kind == MODS_SET_TOGGLE) {
+        bool on = val != 0.0;
+        if (aswitch(st.label, st.tip, &on)) { val = on ? 1.0 : 0.0; changed = true; }
+    } else if (st.kind == MODS_SET_CHOICE) {
+        const char *names[8];
+        int vals[8], at = (int)val, n = st.choices < 8 ? st.choices : 8;
+        for (int k = 0; k < n; k++) { names[k] = st.choice[k]; vals[k] = k; }
+        if (n > 0 && achoice(st.label, st.tip, &at, names, vals, n)) { val = at; changed = true; }
+    } else if (st.step > 0.0 && st.max > st.min) {
+        // (as the PC's: the slider moves by whole steps, its text the value)
+        int steps = (int)floor((st.max - st.min) / st.step + 0.5), at = (int)floor((val - st.min) / st.step + 0.5);
+        bool whole = floor(st.step) == st.step && floor(st.min) == st.min;
+        char shown[32];
+        snprintf(shown, sizeof(shown), whole ? "%.0f" : "%.2f", st.min + at * st.step);
+        ImGui::TextUnformatted(st.label);
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - ImGui::CalcTextSize(shown).x - ImGui::GetStyle().ItemSpacing.x);
+        ImGui::TextColored(kOrange, "%s", shown);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, fs() * 1.4f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(fs() * 0.6f, fs() * 0.45f));
+        if (ImGui::SliderInt("##s", &at, 0, steps, "", ImGuiSliderFlags_AlwaysClamp)) {
+            at = at < 0 ? 0 : at > steps ? steps : at;
+            val = st.min + at * st.step;
+            changed = true;
+        }
+        ImGui::PopStyleVar(2);
+        if (st.tip[0] != '\0') { dim_text(st.tip); }
+        ImGui::Dummy(ImVec2(0.0f, fs() * 0.25f));
+    } else if (st.max > st.min) {
+        float fv = (float)val;
+        char shown[32];
+        snprintf(shown, sizeof(shown), "%.2f", fv);
+        ImGui::TextUnformatted(st.label);
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - ImGui::CalcTextSize(shown).x - ImGui::GetStyle().ItemSpacing.x);
+        ImGui::TextColored(kOrange, "%s", shown);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        ImGui::PushStyleVar(ImGuiStyleVar_GrabMinSize, fs() * 1.4f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(fs() * 0.6f, fs() * 0.45f));
+        if (ImGui::SliderFloat("##f", &fv, (float)st.min, (float)st.max, "", ImGuiSliderFlags_AlwaysClamp)) {
+            val = fv;
+            changed = true;
+        }
+        ImGui::PopStyleVar(2);
+        if (st.tip[0] != '\0') { dim_text(st.tip); }
+        ImGui::Dummy(ImVec2(0.0f, fs() * 0.25f));
+    }
+    if (changed) {
+        st.value = val < st.min ? st.min : val > st.max ? st.max : val;
+        Mods_SettingChanged();
+    }
+    ImGui::PopID();
+}
+
+static void page_mods(void) {
+    card_begin("about", T("Script mods", "Mods de script", "Mods de script"));
+    dim_text(T("Lua scripts that draw over the picture and change how the fight camera is shown. They cannot change a fight, "
+               "so they can be used online. Install them in the app (Mods, Scripts); switch them on and set them here. "
+               "Each starts switched off.",
+               "Scripts em Lua que desenham sobre a imagem e mudam como a câmera da luta é mostrada. Eles não mudam a luta, "
+               "então podem ser usados no online. Instale no app (Mods, Scripts); ligue e ajuste aqui. "
+               "Todos começam desligados.",
+               "Scripts en Lua que dibujan sobre la imagen y cambian cómo se muestra la cámara de la pelea. No cambian la pelea, "
+               "así que se pueden usar online. Instálalos en la app (Mods, Scripts); actívalos y ajústalos aquí. "
+               "Todos empiezan desactivados."));
+    if (ImGui::Button(T("Reload the scripts", "Recarregar os scripts", "Recargar los scripts"), ImVec2(-FLT_MIN, fs() * 2.2f))) {
+        Mods_ReloadAsk();
+    }
+    dim_text(T("After installing a mod in the app, or changing a script.", "Depois de instalar um mod no app, ou de mudar um script.",
+               "Después de instalar un mod en la app, o de cambiar un script."));
+    card_end();
+
+    Mods_Lock();
+    int n = Mods_Count();
+    if (n == 0) {
+        card_begin("none", T("No mods", "Nenhum mod", "Ningún mod"));
+        dim_text(T("None installed. In the app: Mods, Scripts, then add a .zip or a .lua.",
+                   "Nenhum instalado. No app: Mods, Scripts, e adicione um .zip ou um .lua.",
+                   "Ninguno instalado. En la app: Mods, Scripts, y agrega un .zip o un .lua."));
+        card_end();
+    }
+    for (int i = 0; i < n; i++) {
+        ModsInfo *m = Mods_Info(i);
+        char id[16], title[160];
+        snprintf(id, sizeof(id), "mod%d", i);
+        snprintf(title, sizeof(title), "%s%s%s", m->name[0] != '\0' ? m->name : m->folder, m->version[0] != '\0' ? "  " : "", m->version);
+        ImGui::PushID(i);
+        card_begin(id, title);
+        bool on = m->enabled != 0;
+        char about[400];
+        snprintf(about, sizeof(about), "%s%s%s%s", m->author[0] != '\0' ? T("by ", "por ", "por ") : "", m->author,
+                 m->author[0] != '\0' && m->about[0] != '\0' ? "\n" : "", m->about);
+        if (aswitch(T("On", "Ligado", "Activado"), about, &on)) {
+            m->enabled = on;
+            Mods_SettingChanged();
+        }
+        if (m->error[0] != '\0') {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.45f, 0.4f, 1.0f));
+            ImGui::TextWrapped("%s %s", T("Stopped:", "Parou:", "Detenido:"), m->error);
+            ImGui::PopStyleColor();
+        }
+        if (on && m->settings > 0) {
+            for (int k = 0; k < m->settings && k < MODS_SETTINGS; k++) {
+                ImGui::PushID(k);
+                mods_setting(m->set[k]);
+                ImGui::PopID();
+            }
+            if (ImGui::Button(T("Defaults", "Padrão", "Predeterminado"), ImVec2(fs() * 9.0f, fs() * 2.1f))) {
+                for (int k = 0; k < m->settings && k < MODS_SETTINGS; k++) {
+                    m->set[k].value = m->set[k].def;
+                }
+                Mods_SettingChanged();
+            }
+        }
+        card_end();
+        ImGui::PopID();
+    }
+    Mods_Unlock();
+}
+
 static void dr_begin(const char *id) {
     ImGuiIO &io = ImGui::GetIO();
     ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
@@ -700,9 +828,9 @@ static void build_android(void) {
     const char *pages[] = {
         T("Video", "Vídeo", "Video"), T("Performance", "Desempenho", "Rendimiento"), T("Effects", "Efeitos", "Efectos"),
         T("Audio", "Áudio", "Audio"), T("Interface", "Interface", "Interfaz"), T("Controls", "Controles", "Controles"),
-        T("Online", "Online", "Online"), T("Cheats", "Trapaças", "Trucos"),
+        T("Online", "Online", "Online"), T("Cheats", "Trapaças", "Trucos"), T("Mods", "Mods", "Mods"),
     };
-    const int npages = 8;
+    const int npages = 9;
     if (pad_pressed(ImGuiKey_GamepadL1)) { page = (page + npages - 1) % npages; }
     if (pad_pressed(ImGuiKey_GamepadR1)) { page = (page + 1) % npages; }
 
@@ -809,6 +937,7 @@ static void build_android(void) {
     case 4: page_interface(v); break;
     case 5: page_controls(); break;
     case 6: page_online(); break;
+    case 8: page_mods(); break;
     default: page_cheats(); break;
     }
     ImGui::EndChild();
@@ -1040,6 +1169,10 @@ static void nm_frame(void) {
     if (action == 3) { // the controller's buttons: this window, on its Controls page
         sNativeOpen = 0;
         sAndroidPage = 5;
+        set_open(true);
+    } else if (action == 9) { // the touch menu's script mods: this window, on its Mods page
+        sNativeOpen = 0;
+        sAndroidPage = 8;
         set_open(true);
     } else if (action == 2) {
         quit_to_app();
