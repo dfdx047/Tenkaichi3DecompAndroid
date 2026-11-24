@@ -6,7 +6,9 @@ import path from "node:path";
 import nodeCrypto from "node:crypto";
 import { pathToFileURL } from "node:url";
 const src = fs.readFileSync(new URL("./worker.js", import.meta.url), "utf8").replace("export default", "const worker =") + "\nexport { worker, network, isPrivate, sameNetwork, shown };";
-const copy = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "worker-test-")), "worker.mjs");
+// (in a folder named as this one, so that an import from a neighbour folder, "../netgeo/match.js", finds its copy)
+const copy = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "worker-test-")), "dragonnet", "worker.mjs");
+fs.mkdirSync(path.dirname(copy));
 fs.writeFileSync(copy, src);
 // (the modules worker.js imports, and theirs, beside the copy: followed from the import lines, so a new module is never
 // left out; ranked_flow.js was, and this test stopped with ERR_MODULE_NOT_FOUND)
@@ -14,10 +16,13 @@ fs.writeFileSync(copy, src);
     const todo = ["worker.js"], seen = new Set(["worker.js"]);
     while (todo.length) {
         const name = todo.pop(), text = fs.readFileSync(new URL("./" + name, import.meta.url), "utf8");
-        for (const m of text.matchAll(/^\s*import\s[^;]*?from\s*["']\.\/([A-Za-z0-9_.-]+\.js)["']/gm)) {
-            if (seen.has(m[1])) continue;
-            seen.add(m[1]); todo.push(m[1]);
-            fs.copyFileSync(new URL("./" + m[1], import.meta.url), path.join(path.dirname(copy), m[1]));
+        for (const m of text.matchAll(/^\s*import\s[^;]*?from\s*["']((?:\.\/|\.\.\/)(?:[A-Za-z0-9_-]+\/)?[A-Za-z0-9_.-]+\.js)["']/gm)) {
+            const rel = path.posix.normalize(path.posix.join(path.posix.dirname(name), m[1].replace(/^\.\//, "")));
+            if (seen.has(rel)) continue;
+            seen.add(rel); todo.push(rel);
+            const to = path.join(path.dirname(copy), rel);
+            fs.mkdirSync(path.dirname(to), { recursive: true });
+            fs.copyFileSync(new URL("./" + rel, import.meta.url), to);
         }
     }
 }
@@ -444,7 +449,7 @@ delete env.ALLOWED_VERSION;
     rooms.clear();
     let f = await ask(me("F", { waited: 0 }), FRA);
     let r = await ask(me("R", { waited: 0 }), RUH);
-    check("near: a room of one's own says when the search widens", f.role === "host" && f.widen === 25 && r.role === "host" && rooms.get(f.code).loc === "50,9,EU,");
+    check("near: a room of one's own says when the search widens", f.role === "host" && f.widen === 45 && r.role === "host" && rooms.get(f.code).loc === "50,9,EU,,DE");
     let d = await ask(me("D", { waited: 0 }), DXB);
     check("near: the nearer room is taken first, not the one waiting longest", d.role === "join" && d.code === r.code && d.region === "ME" && rooms.get(f.code).join_key === null);
     let p = await poll(r);
@@ -453,7 +458,7 @@ delete env.ALLOWED_VERSION;
     rooms.clear();
     f = await ask(me("F", { waited: 0 }), FRA);
     d = await ask(me("D", { waited: 0 }), DXB);
-    check("far: not taken at once (a room of one's own)", d.role === "host" && d.widen === 25 && rooms.get(f.code).join_key === null);
+    check("far: not taken at once (a room of one's own)", d.role === "host" && d.widen === 45 && rooms.get(f.code).join_key === null);
     let again = await ask(me("D", { waited: 10, code: d.code, key: d.key }), DXB);
     check("far: searching again from the room before the widening: still waiting, the same room", again.role === "host" && again.code === d.code && again.key === d.key && !again.joined && rooms.get(d.code).join_key === null);
     again = await ask(me("D", { waited: 30, code: d.code, key: d.key }), DXB);
@@ -535,17 +540,17 @@ delete env.ALLOWED_VERSION;
     rooms.clear();
     const oldD = await ask(me("OD"), FRA);
     d = await ask(me("D", { waited: 0 }), FRA);
-    d2 = await ask(me("D", { waited: 30, code: d.code, key: d.key }), FRA);
+    d2 = await ask(me("D", { waited: 45, code: d.code, key: d.key }), FRA);
     check("new + old: a newer searcher takes an older game's room after the widening", d.role === "host" && d2.role === "join" && d2.code === oldD.code && d2.region === undefined);
     // a place without position: one continent counts as near
     rooms.clear();
     f = await ask(me("F", { waited: 0 }), NOPOS);
     c = await ask(me("C", { waited: 0 }), CDG);
-    check("no position: the same continent is taken at once", c.role === "join" && c.code === f.code && rooms.get(f.code).loc === ",,EU,");
+    check("no position: the same continent is taken at once", c.role === "join" && c.code === f.code && rooms.get(f.code).loc === ",,EU,,FR");
     rooms.clear();
     f = await ask(me("F", { waited: 0 }), undefined);
     c = await ask(me("C", { waited: 0 }), CDG);
-    check("no place at all: taken only after the widening", c.role === "host" && (await ask(me("C", { waited: 25, code: c.code, key: c.key }), CDG)).code === f.code);
+    check("no place at all: taken only after the widening", c.role === "host" && (await ask(me("C", { waited: 45, code: c.code, key: c.key }), CDG)).code === f.code);
     // two near ones in the same moment: the later gives its room up and joins
     rooms.clear();
     {
@@ -573,7 +578,7 @@ delete env.ALLOWED_VERSION;
     const age = (room, s) => { rooms.get(room.code).made -= s; };
     fresh();
     let eu = await ask(me("P", { waited: 0, area: "EU" }), CDG);
-    check("region: a room of one's own says when to search again and when it takes anyone (40)", eu.role === "host" && eu.again === 10 && eu.widen === 40 && rooms.get(eu.code).loc === "49,2,EU,EU");
+    check("region: a room of one's own says when to search again and when it takes anyone (40)", eu.role === "host" && eu.again === 10 && eu.widen === 40 && rooms.get(eu.code).loc === "49,2,EU,EU,FR");
     let x = await ask(me("D", { waited: 30 }), DXB);
     check("region: an Auto searcher outside it does not get it at 30 seconds", x.role === "host" && rooms.get(eu.code).join_key === null);
     x = await ask(me("D", { waited: 40, code: x.code, key: x.key }), DXB);
@@ -628,9 +633,10 @@ delete env.ALLOWED_VERSION;
     fresh();
     const tky = await ask(me("T", { waited: 0 }), { latitude: "35.68", longitude: "139.69", continent: "AS" });
     let an = await ask(me("A", { waited: 0, area: "any" }), FRA);
-    check("anywhere: a far Auto room does not take it before 25 seconds; a room of its own says no widening", an.role === "host" && an.widen === undefined && an.again === 10);
-    an = await ask(me("A", { waited: 25, code: an.code, key: an.key, area: "any" }), FRA);
-    check("anywhere: ... at 25 it does", an.role === "join" && an.code === tky.code && an.region === "AS");
+    check("anywhere: a far Auto room does not take it at once; a room of its own says no widening", an.role === "host" && an.widen === undefined && an.again === 10);
+    // (Tokyo-Frankfurt is estimated at about 180 ms: the Auto room takes it from 30 seconds, see port/netgeo/match.js)
+    an = await ask(me("A", { waited: 30, code: an.code, key: an.key, area: "any" }), FRA);
+    check("anywhere: ... at 30 it does", an.role === "join" && an.code === tky.code && an.region === "AS");
     fresh();
     const any1 = await ask(me("Y", { waited: 0, area: "any" }), NYC);
     an = await ask(me("A", { waited: 0, area: "any" }), DXB);
@@ -652,7 +658,7 @@ delete env.ALLOWED_VERSION;
     fresh();
     eu = await ask(me("P", { waited: 0, area: "EU" }), CDG);
     check("an unknown area is taken as Auto", (await ask(me("Z", { waited: 0, area: "moon" }), FRA)).code === eu.code);
-    check("the Middle East: by country (Egypt), not by continent", (await ask(me("E", { waited: 0, area: "ME" }), { latitude: "30", longitude: "31", continent: "AF", country: "EG" })).loc === undefined && [...rooms.values()].some((r) => r.loc === "30,31,ME,ME"));
+    check("the Middle East: by country (Egypt), not by continent", (await ask(me("E", { waited: 0, area: "ME" }), { latitude: "30", longitude: "31", continent: "AF", country: "EG" })).loc === undefined && [...rooms.values()].some((r) => r.loc === "30,31,ME,ME,EG"));
     // nothing of a place goes to the other player but the continent
     const text = JSON.stringify(seen, (k, v) => (k === "key" || k === "code" ? "*" : v)); // (random letters: FRA could be in one)
     check("no position, country or colo in any answer", !/"loc"|latitude|longitude|"(DE|FR|AE|BR|US)"|FRA|CDG|DXB|RUH|50,9|25,55|25,47|"[A-Z][A-Z],/.test(text) && seen.some((x) => x.region));
@@ -661,7 +667,7 @@ delete env.ALLOWED_VERSION;
     noLocColumn = true;
     f = await ask(me("F", { waited: 0 }), FRA);
     c = await ask(me("C", { waited: 0 }), CDG);
-    const c2 = await ask(me("C", { waited: 30, code: c.code, key: c.key }), CDG);
+    const c2 = await ask(me("C", { waited: 45, code: c.code, key: c.key }), CDG);
     check("no columns: rooms made without a place, matched after the widening", f.role === "host" && rooms.get(c2.code ?? "") !== undefined && c2.role === "join" && c2.code === f.code && rooms.get(f.code).join_name === "C");
     p = await poll(f);
     check("no columns: the host's poll as before", p.peer && p.peer.name === "C" && !("region" in p));
