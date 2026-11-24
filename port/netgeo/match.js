@@ -23,10 +23,14 @@ export const BASE_MS = 10;          // two players in the same city: the last mi
 export const MS_PER_KM = 0.015;     // round trip over fibre with ordinary routing (Sao Paulo-Buenos Aires about 35 ms)
 export const CROSS_REGION_MS = 30;  // pairs in two regions: the detours of intercontinental routes
 export const SAME_REGION_MS = 60;   // the same region, one position unknown (Cloudflare left it out)
-export const COUNTRY_BONUS_MS = 15; // in a choice between two, the one in the player's own country is worth this much
-// [round trip estimate in ms, accepted once the longer of the two waits has reached these seconds]
-export const STEPS = [[70, 0], [110, 10], [160, 20], [230, 30]];
-export const ANY_SECONDS = 45;      // ... and anyone, the best estimate first
+export const COUNTRY_BONUS_MS = 5;  // in a choice between two, the one in the player's own country is worth this much
+// [round trip estimate in ms, accepted once the longer of the two waits has reached these seconds]. Chosen by
+// port/netgeo/sim.mjs against the rules before them (the nearest within 2,500 km at once, anyone after 25 s): with
+// arrivals from one every 30 s to one a second, no worse in average ping, in pairs over 150 ms (about half as many
+// where players are many) or in waiting (average and 90th percentile); at the busiest, the 90th percentile of ping
+// within 2 ms of the old.
+export const STEPS = [[47, 0], [55, 12], [120, 18], [180, 25]];
+export const ANY_SECONDS = 30;      // ... and anyone, the best estimate first
 export const REGION_WIDEN_SECONDS = 40; // a player who chose a region: players placed there at once, anyone after this
 
 // Where a request comes from: "lat,lon,RR,,CC" (whole degrees, region, an empty slot, country), empty parts for what is

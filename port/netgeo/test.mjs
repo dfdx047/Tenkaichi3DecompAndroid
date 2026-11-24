@@ -41,8 +41,8 @@ check("the same pair either way", ms("Lagos", "Sydney") === ms("Sydney", "Lagos"
 check("one region without positions: an estimate, lower within one country", G.estimateMs(",,SA,,BR", ",,SA,,BR") < G.estimateMs(",,SA,,BR", ",,SA,,AR") && G.estimateMs(",,SA,,BR", ",,SA,,AR") <= 70);
 
 // widening: low estimates first, anyone in the end
-check("at once: only pairs under 70 ms", G.maxMsAfter(0) === 70 && G.maxMsAfter(9) === 70);
-check("then 110 (10 s), 160 (20 s), 230 (30 s), anyone (45 s)", G.maxMsAfter(10) === 110 && G.maxMsAfter(20) === 160 && G.maxMsAfter(30) === 230 && G.maxMsAfter(44) === 230 && G.maxMsAfter(45) === Infinity);
+check("at once: only pairs under 47 ms (about the 2,500 km the rules before took at once)", G.maxMsAfter(0) === 47 && G.maxMsAfter(11) === 47);
+check("then 55 (12 s), 120 (18 s), 180 (25 s), anyone (30 s)", G.maxMsAfter(12) === 55 && G.maxMsAfter(18) === 120 && G.maxMsAfter(25) === 180 && G.maxMsAfter(29) === 180 && G.maxMsAfter(30) === Infinity);
 
 // quick match: the rooms that wait, oldest first
 const now = 100000;
@@ -53,31 +53,34 @@ const pick = (rows, me) => { const r = G.pick(rows, me, now); return r ? r.name 
 check("by region: Brazil takes Brazil over an older Argentine room", pick([room("ar", "BuenosAires", "", 5), room("br", "Rio")], search("SaoPaulo")) === "br");
 check("by continent: no Brazilian, an Argentine at once", pick([room("us", "Miami", "", 5), room("ar", "BuenosAires")], search("SaoPaulo")) === "ar");
 check("no one in the region: the United States not at once ...", pick([room("us", "Miami")], search("SaoPaulo")) === null);
-check("... but once the search has waited 20 seconds", pick([room("us", "Miami")], search("SaoPaulo", 20)) === "us");
-check("Europe from Brazil: at 30 seconds, not at 20", pick([room("pt", "Lisbon")], search("SaoPaulo", 20)) === null && pick([room("pt", "Lisbon")], search("SaoPaulo", 30)) === "pt");
-check("the room's own wait counts as well (it waited 30)", pick([room("pt", "Lisbon", "", 30)], search("SaoPaulo", 0)) === "pt");
-check("Japan from Brazil: only when anyone is taken (45 s)", pick([room("jp", "Tokyo")], search("SaoPaulo", 44)) === null && pick([room("jp", "Tokyo")], search("SaoPaulo", 45)) === "jp");
-check("nobody is left without a match: after 45 s the best of several far rooms", pick([room("jp", "Tokyo"), room("au", "Sydney"), room("ng", "Lagos")], search("SaoPaulo", 45)) === "ng");
+check("... but once the search has waited 25 seconds (not at 18)", pick([room("us", "Miami")], search("SaoPaulo", 18)) === null && pick([room("us", "Miami")], search("SaoPaulo", 25)) === "us");
+check("Europe from Brazil: at 25 seconds, not at 18", pick([room("pt", "Lisbon")], search("SaoPaulo", 18)) === null && pick([room("pt", "Lisbon")], search("SaoPaulo", 25)) === "pt");
+check("the room's own wait counts as well (it waited 25)", pick([room("pt", "Lisbon", "", 25)], search("SaoPaulo", 0)) === "pt");
+check("Japan from Brazil: only when anyone is taken (30 s)", pick([room("jp", "Tokyo")], search("SaoPaulo", 29)) === null && pick([room("jp", "Tokyo")], search("SaoPaulo", 30)) === "jp");
+check("nobody is left without a match: after 30 s the best of several far rooms", pick([room("jp", "Tokyo"), room("au", "Sydney"), room("ng", "Lagos")], search("SaoPaulo", 30)) === "ng");
 check("a Brazilian who comes a few seconds later is preferred to Europe (the Brazilian had waited 10)", pick([room("pt", "Lisbon", "", 12), room("br", "Rio")], search("SaoPaulo", 10)) === "br");
 check("Oceania: Sydney takes Auckland at once", pick([room("nz", "Auckland")], search("Sydney")) === "nz");
 check("Asia: Tokyo takes Seoul at once, Mumbai later", pick([room("in", "Mumbai"), room("kr", "Seoul")], search("Tokyo")) === "kr" && pick([room("in", "Mumbai")], search("Tokyo")) === null);
-check("Africa: Lagos and Johannesburg are far apart (4,500 km)", pick([room("za", "Johannesburg")], search("Lagos")) === null && pick([room("za", "Johannesburg")], search("Lagos", 20)) === "za");
+check("Africa: Lagos and Johannesburg are far apart (4,500 km, about 78 ms): from 18 s", pick([room("za", "Johannesburg")], search("Lagos", 17)) === null && pick([room("za", "Johannesburg")], search("Lagos", 18)) === "za");
 check("the Middle East: Dubai takes Riyadh at once", pick([room("sa", "Riyadh")], search("Dubai")) === "sa");
 check("North America: New York takes Miami, not Los Angeles first", pick([room("la", "LosAngeles", "", 9), room("mi", "Miami")], search("NewYork")) === "mi");
-check("one country is worth a little: Sao Paulo takes Recife (Brazil) over Buenos Aires though Recife is a little farther",
-      G.distanceKm(P.SaoPaulo, P.Recife) > G.distanceKm(P.SaoPaulo, P.BuenosAires) && pick([room("ar", "BuenosAires"), room("re", "Recife")], search("SaoPaulo")) === "re");
+{   // two rooms as far from a player near the border, one in its country: the country decides
+    const border = at(-30, -51, "SA", "BR"), br = { name: "br", loc: G.withChoice(at(-30, -47, "SA", "BR"), ""), made: now, who: "b" }, ar = { name: "ar", loc: G.withChoice(at(-30, -55, "SA", "AR"), ""), made: now - 5, who: "a" };
+    check("one country is worth a little: between two rooms as far, the one in the player's country", G.pick([ar, br], { place: border, choice: "", waited: 0, who: "s" }, now).name === "br");
+    check("... but only a little: Sao Paulo takes Buenos Aires (35 ms) over Recife (Brazil, 42 ms)", pick([room("re", "Recife"), room("ar", "BuenosAires")], search("SaoPaulo")) === "ar");
+}
 check("a region chosen: South America only, at once", pick([room("mi", "Miami"), room("ar", "BuenosAires")], search("SaoPaulo", 0, "SA")) === "ar");
-check("a region chosen: not Miami before 40 s, though it is near enough for Auto at 20", pick([room("mi", "Miami")], search("SaoPaulo", 20, "SA")) === null && pick([room("mi", "Miami")], search("SaoPaulo", 40, "SA")) === "mi");
+check("a region chosen: not Miami before 40 s, though Auto takes it at 25", pick([room("mi", "Miami")], search("SaoPaulo", 20, "SA")) === null && pick([room("mi", "Miami")], search("SaoPaulo", 40, "SA")) === "mi");
 check("a room whose host chose Europe does not take Brazil before 40 s", pick([room("pt", "Lisbon", "EU", 35)], search("SaoPaulo", 35)) === null);
 check("Anywhere: the longest waiting, wherever it is", pick([room("jp", "Tokyo", "*", 5), room("br", "Rio", "*")], search("SaoPaulo", 0, "*")) === "jp");
-check("an older game's room (no place): only when anyone is taken", pick([{ name: "old", loc: null, made: now, who: "o" }], search("SaoPaulo", 44)) === null && pick([{ name: "old", loc: null, made: now, who: "o" }], search("SaoPaulo", 45)) === "old");
+check("an older game's room (no place): only when anyone is taken", pick([{ name: "old", loc: null, made: now, who: "o" }], search("SaoPaulo", 29)) === null && pick([{ name: "old", loc: null, made: now, who: "o" }], search("SaoPaulo", 30)) === "old");
 check("one's own room is never one's match", G.pick([{ ...room("br", "Rio"), who: "searcher" }], search("SaoPaulo"), now) === null);
 
 // Ranked: within the rating window, the best pair; a search without a place as before
 const rk = (name, where, age = 0) => ({ name, loc: where ? P[where] : null, made: now - age });
 const ranked = (rows, where, waited = 0) => { const r = G.pickRanked(rows, where ? P[where] : null, waited, now); return r ? r.name : null; };
 check("Ranked: Brazil takes Brazil over an older search in Japan", ranked([rk("jp", "Tokyo", 20), rk("br", "Rio")], "SaoPaulo") === "br");
-check("Ranked: Japan is not taken at once, only after 45 s", ranked([rk("jp", "Tokyo")], "SaoPaulo") === null && ranked([rk("jp", "Tokyo", 45)], "SaoPaulo") === "jp");
+check("Ranked: Japan is not taken at once, only after 30 s", ranked([rk("jp", "Tokyo")], "SaoPaulo") === null && ranked([rk("jp", "Tokyo", 30)], "SaoPaulo") === "jp");
 check("Ranked: a search without a place is taken at once, as before", ranked([rk("old", null)], "SaoPaulo") === "old" && ranked([rk("jp", "Tokyo")], null) === "jp");
 
 // time: picking among CANDIDATES (50) rooms, many times

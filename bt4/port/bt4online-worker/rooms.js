@@ -50,9 +50,9 @@ const chatFetch = async () => unavailable(), presenceFetch = async () => unavail
 //   Nearby first (from the release after 0.1.38.8): a game that sends `waited` (seconds it has been searching) and
 //       `area` (what the player chose: "auto", "any", or a region of REGIONS) is put with a room by where Cloudflare
 //       places the two requests (see "Where players are" below, and pick()):
-//         auto  the best estimated round trip first, under a limit that widens as the search waits (70 ms at
-//               once, then 110, 160, 230; anyone after ANY_SECONDS, 45), the player's own country first among
-//               near ones: port/netgeo/match.js (rooms of older games, whose place is not known, after 45 s);
+//         auto  the best estimated round trip first, under a limit that widens as the search waits (47 ms at
+//               once, then 55, 120, 180; anyone after ANY_SECONDS, 30), the player's own country first among
+//               near ones: port/netgeo/match.js (rooms of older games, whose place is not known, after 30 s);
 //         a region (e.g. "EU")  players placed in that region at once, the nearest first; anyone once
 //               REGION_WIDEN_SECONDS have gone by;
 //         any   anyone: whoever waits longest (as before).

@@ -40,11 +40,11 @@ async function run(withLoc){
  console.log('ok   Ranked: Brazil with Brazil, though Japan waited longer');
  const p=await t.q(t.pt,CF.Lisbon);
  assert.equal(p.state,'waiting','Lisbon is not put with Tokyo at once');
- t.step(50);
+ t.step(35);
  const j=await t.q(t.jp,CF.Tokyo);
  const p2=await t.q(t.pt,CF.Lisbon);
- assert.equal(p2.match,t.jm.match,'after 45 s anyone: Lisbon with Tokyo');
- console.log('ok   Ranked: far players are paired once anyone is taken (45 s): nobody is left without a match');
+ assert.equal(p2.match,t.jm.match,'after 30 s anyone: Lisbon with Tokyo');
+ console.log('ok   Ranked: far players are paired once anyone is taken (30 s): nobody is left without a match');
 }
 {
  const t=await run(false);
@@ -59,4 +59,4 @@ async function run(withLoc){
  assert.equal(n.match,m.match,'no place known (Cloudflare said nothing): as before');
  console.log('ok   Ranked: searches without a place pair as before');
 }
-console.log('PASS ranked-geo: near first, far after 45 s, unchanged without places or the column');
+console.log('PASS ranked-geo: near first, far after 30 s, unchanged without places or the column');
