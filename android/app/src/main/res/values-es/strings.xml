@@ -548,7 +548,7 @@
     <string name="bt4dec_data_ok">Beta 14 Rev2 verificada · %1$d archivos · %2$s</string>
     <string name="tab_scripts">Scripts (%1$d)</string>
     <string name="count_scripts">%1$d mod(s) de script</string>
-    <string name="scripts_how">Los mods de script (Lua, hechos para el port de PC) dibujan un HUD nuevo, cambian la cámara del combate o el aspecto. Agrega aquí un .zip con mod.lua o un archivo .lua; actívalos y ajústalos en el juego: F1 (o el botón atrás) &gt; Mods. No cambian nada del combate: el juego en línea sigue funcionando con quien no tiene mods.</string>
+    <string name="scripts_how">Los mods de script (Lua, hechos para el port de PC) dibujan un HUD nuevo, cambian la cámara del combate o el aspecto. Agrega aquí un .zip con mod.lua o un archivo .lua; actívalos y ajústalos en el juego: botón atrás &gt; Interfaz &gt; Mods de script (o START + SELECT en el control, página Mods). No cambian nada del combate: el juego en línea sigue funcionando con quien no tiene mods.</string>
     <string name="scripts_empty">Ningún mod de script</string>
-    <string name="scripts_empty_text">Los ejemplos (HUD, cámara y aspecto modernos) vienen con la app, desactivados: actívalos en el juego, F1 &gt; Mods.</string>
+    <string name="scripts_empty_text">Los ejemplos (HUD, cámara y aspecto modernos) vienen con la app, desactivados: actívalos en el juego, botón atrás &gt; Interfaz &gt; Mods de script.</string>
 </resources>

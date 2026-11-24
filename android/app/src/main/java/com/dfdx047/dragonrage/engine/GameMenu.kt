@@ -437,7 +437,7 @@ private fun PageContent(
             Page.PERFORMANCE -> PerformancePage(l, game, v)
             Page.EFFECTS -> EffectsPage(l, v)
             Page.AUDIO -> AudioPage(l, v)
-            Page.INTERFACE -> InterfacePage(l, v)
+            Page.INTERFACE -> InterfacePage(l, game, v, closeMenu)
             Page.CONTROLS -> ControlsPage(l, game, v, actions, closeMenu)
             Page.ONLINE -> OnlinePage(l, v)
             Page.CHEATS -> CheatsPage(l, v)
@@ -741,7 +741,7 @@ private fun AudioPage(l: L, v: MenuValues) {
 }
 
 @Composable
-private fun InterfacePage(l: L, v: MenuValues) {
+private fun InterfacePage(l: L, game: Game, v: MenuValues, closeMenu: () -> Unit) {
     Card(l.t("Screen layout", "Layout da tela", "Diseño de pantalla")) {
         Choice(
             l.t("HUD in a wide picture", "HUD na tela larga", "HUD en pantalla ancha"), null,
@@ -774,6 +774,18 @@ private fun InterfacePage(l: L, v: MenuValues) {
                 name to id
             }.ifEmpty { listOf(l.t("Original", "Original", "Original") to 0) }
             Choice(title, null, options, v.get(key, 0)) { v.set(key, it) }
+        }
+    }
+    if (game == Game.BT3) {
+        // the script mods (Lua, mods/<name>/mod.lua): switched on and set in the game's own window, on its Mods page
+        // (ui_android.inc page_mods), as the PC's F1 > Mods; the app's Mods screen (Scripts) installs them
+        Card(l.t("Script mods", "Mods de script", "Mods de script")) {
+            Note(l.t("Lua mods: HUD, camera and look. Install them in the app (Mods, Scripts); each starts switched off. Switch them on and set them in the game's window.",
+                "Mods em Lua: HUD, câmera e visual. Instale no app (Mods, Scripts); todos começam desligados. Ligue e ajuste na janela do jogo.",
+                "Mods en Lua: HUD, cámara y aspecto. Instálalos en la app (Mods, Scripts); todos empiezan desactivados. Actívalos y ajústalos en la ventana del juego."))
+            BigButton(l.t("Script mods", "Mods de script", "Mods de script"), primary = true) {
+                closeMenu(); MenuBridge.action(MenuBridge.ACTION_MODS)
+            }
         }
     }
 }
