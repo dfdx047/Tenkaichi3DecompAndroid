@@ -3,6 +3,7 @@ package com.dfdx047.dragonrage.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -121,92 +122,193 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                     ),
             )
 
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .fillMaxWidth()
-                    .padding(horizontal = 28.dp, vertical = 34.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    "DRAGON RAGE",
-                    color = Color.White.copy(alpha = 0.82f),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = MaterialTheme.typography.labelLarge.letterSpacing,
-                )
-                Text(
-                    "SELECT YOUR FIGHT",
-                    color = slide.accent,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceBetween,
-            ) {
-                // Keep the entire center clear for the user's future background artwork.
-                Spacer(Modifier.weight(1f))
-
-                // Description and PLAY are anchored together at the bottom.
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(bottom = 24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Box(
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val isLandscape = maxWidth > maxHeight
+                if (isLandscape) {
+                    // Landscape: identity and game index stay at the upper-left.
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color.White.copy(alpha = 0.10f))
-                            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(16.dp))
-                            .padding(horizontal = 16.dp, vertical = 13.dp),
-                        contentAlignment = Alignment.Center,
+                            .align(Alignment.TopStart)
+                            .fillMaxWidth(0.48f)
+                            .padding(start = 22.dp, top = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(1.dp),
                     ) {
                         Text(
-                            stringResource(slide.description),
-                            color = Color.White.copy(alpha = 0.94f),
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = KanitDisplay, fontWeight = FontWeight.ExtraBold, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
-                            textAlign = TextAlign.Center,
+                            "DRAGON RAGE",
+                            color = Color.White.copy(alpha = 0.78f),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = MaterialTheme.typography.labelSmall.letterSpacing,
+                        )
+                        Text(
+                            "SELECT YOUR FIGHT",
+                            color = slide.accent,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            slide.title,
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontFamily = KanitDisplay,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            ),
+                            maxLines = 1,
+                        )
+                        Text(
+                            slide.number,
+                            color = slide.accent,
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontFamily = KanitDisplay,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                            ),
                         )
                     }
 
-                    Button(
-                        onClick = { onPick(slide.game) },
-                        modifier = Modifier.size(width = 216.dp, height = 52.dp),
-                        shape = RoundedCornerShape(18.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = slide.accent,
-                            contentColor = Color(0xFF101018),
-                        ),
-                        contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp),
+                    // Compact controls sit at the lower-left edge; the center remains open.
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .fillMaxWidth(0.48f)
+                            .navigationBarsPadding()
+                            .padding(start = 22.dp, bottom = 3.dp),
+                        horizontalAlignment = Alignment.Start,
+                        verticalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(11.dp))
+                                .background(Color.White.copy(alpha = 0.10f))
+                                .border(1.dp, Color.White.copy(alpha = 0.20f), RoundedCornerShape(11.dp))
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                stringResource(slide.description),
+                                color = Color.White.copy(alpha = 0.94f),
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = KanitDisplay,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                ),
+                                maxLines = 3,
+                            )
+                        }
+                        Button(
+                            onClick = { onPick(slide.game) },
+                            modifier = Modifier.size(width = 164.dp, height = 40.dp),
+                            shape = RoundedCornerShape(13.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = slide.accent,
+                                contentColor = Color(0xFF101018),
+                            ),
+                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp),
+                        ) {
+                            Text(
+                                stringResource(R.string.play),
+                                style = MaterialTheme.typography.labelLarge.copy(
+                                    fontFamily = KanitDisplay,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                ),
+                            )
+                        }
+                        androidx.compose.foundation.layout.Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        ) {
+                            RowDots(active = page % slides.size, accent = slide.accent)
+                            Text(
+                                stringResource(R.string.welcome_swipe),
+                                color = Color.White.copy(alpha = 0.58f),
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
+                } else {
+                    // Portrait layout is intentionally preserved.
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .fillMaxWidth()
+                            .padding(horizontal = 28.dp, vertical = 34.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(
-                            stringResource(R.string.play),
-                            style = MaterialTheme.typography.titleMedium.copy(fontFamily = KanitDisplay, fontWeight = FontWeight.ExtraBold, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = MaterialTheme.typography.titleMedium.letterSpacing,
+                            "DRAGON RAGE",
+                            color = Color.White.copy(alpha = 0.82f),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = MaterialTheme.typography.labelLarge.letterSpacing,
+                        )
+                        Text(
+                            "SELECT YOUR FIGHT",
+                            color = slide.accent,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
                         )
                     }
-                    RowDots(
-                        active = page % slides.size,
-                        accent = slide.accent,
-                    )
-                    Text(
-                        stringResource(R.string.welcome_swipe),
-                        color = Color.White.copy(alpha = 0.58f),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Medium,
-                    )
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 28.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Spacer(Modifier.weight(1f))
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .padding(bottom = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .background(Color.White.copy(alpha = 0.10f))
+                                    .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(16.dp))
+                                    .padding(horizontal = 16.dp, vertical = 13.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    stringResource(slide.description),
+                                    color = Color.White.copy(alpha = 0.94f),
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = KanitDisplay, fontWeight = FontWeight.ExtraBold, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                            Button(
+                                onClick = { onPick(slide.game) },
+                                modifier = Modifier.size(width = 216.dp, height = 52.dp),
+                                shape = RoundedCornerShape(18.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = slide.accent,
+                                    contentColor = Color(0xFF101018),
+                                ),
+                                contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp),
+                            ) {
+                                Text(
+                                    stringResource(R.string.play),
+                                    style = MaterialTheme.typography.titleMedium.copy(fontFamily = KanitDisplay, fontWeight = FontWeight.ExtraBold, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
+                                    fontWeight = FontWeight.ExtraBold,
+                                    letterSpacing = MaterialTheme.typography.titleMedium.letterSpacing,
+                                )
+                            }
+                            RowDots(active = page % slides.size, accent = slide.accent)
+                            Text(
+                                stringResource(R.string.welcome_swipe),
+                                color = Color.White.copy(alpha = 0.58f),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                    }
                 }
             }
         }
