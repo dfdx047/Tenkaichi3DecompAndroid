@@ -28,6 +28,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.border
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -182,18 +183,30 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                     style = MaterialTheme.typography.labelMedium,
                 )
 
-                Text(
-                    stringResource(slide.description),
-                    color = Color.White.copy(alpha = 0.92f),
-                    style = MaterialTheme.typography.bodySmall,
-                    textAlign = TextAlign.Center,
-                )
                 RowDots(
                     active = page % slides.size,
                     accent = slide.accent,
                 )
 
-                Spacer(Modifier.height(4.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.White.copy(alpha = 0.10f))
+                        .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(16.dp))
+                        .padding(horizontal = 16.dp, vertical = 13.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        stringResource(slide.description),
+                        color = Color.White.copy(alpha = 0.94f),
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+
+                Spacer(Modifier.height(18.dp))
                 Button(
                     onClick = { onPick(slide.game) },
                     modifier = Modifier
