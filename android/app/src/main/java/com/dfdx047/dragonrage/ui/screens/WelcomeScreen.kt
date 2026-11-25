@@ -32,10 +32,14 @@ import androidx.compose.ui.draw.border
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.dfdx047.dragonrage.data.Game
 import com.dfdx047.dragonrage.R
+
+private val KanitDisplay = FontFamily(Font(R.font.kanit_extrabold_italic))
 
 private data class GameSlide(
     val game: Game,
@@ -201,7 +205,7 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                     Text(
                         stringResource(slide.description),
                         color = Color.White.copy(alpha = 0.94f),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = KanitDisplay, fontWeight = FontWeight.ExtraBold, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
                         textAlign = TextAlign.Center,
                     )
                 }
@@ -220,8 +224,8 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                 ) {
                     Text(
                         stringResource(R.string.play),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Black,
+                        style = MaterialTheme.typography.titleMedium.copy(fontFamily = KanitDisplay, fontWeight = FontWeight.ExtraBold, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
+                        fontWeight = FontWeight.ExtraBold,
                         letterSpacing = MaterialTheme.typography.titleMedium.letterSpacing,
                     )
                 }
