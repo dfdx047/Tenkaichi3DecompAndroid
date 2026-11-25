@@ -41,9 +41,6 @@ private data class GameSlide(
     val title: String,
     val subtitle: String,
     val description: Int,
-    val isoInfo: Int,
-    val dataInfo: Int,
-    val engineInfo: Int,
     val serial: String,
     val colors: List<Color>,
     val accent: Color,
@@ -58,19 +55,19 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
         listOf(
             GameSlide(
                 Game.BT2, "BUDOKAI TENKAICHI 2", "THE NEXT LEVEL OF TENKAICHI",
-                R.string.welcome_bt2_desc, R.string.welcome_bt2_iso, R.string.welcome_bt2_data, R.string.welcome_bt2_engine,
+                R.string.welcome_bt2,
                 "SLUS-21441", listOf(Color(0xFF092F27), Color(0xFF16865A), Color(0xFF071713)),
                 Color(0xFF9BFFB8), "02",
             ),
             GameSlide(
                 Game.BT3, "BUDOKAI TENKAICHI 3", "THE ULTIMATE BATTLE",
-                R.string.welcome_bt3_desc, R.string.welcome_bt3_iso, R.string.welcome_bt3_data, R.string.welcome_bt3_engine,
+                R.string.welcome_bt3,
                 "SLUS-21678", listOf(Color(0xFF431B0B), Color(0xFFE36A16), Color(0xFF160A08)),
                 Color(0xFFFFC56B), "03",
             ),
             GameSlide(
                 Game.BT4, "BUDOKAI TENKAICHI 4", "BETA 14 · REV 2",
-                R.string.welcome_bt4_desc, R.string.welcome_bt4_iso, R.string.welcome_bt4_data, R.string.welcome_bt4_engine,
+                R.string.welcome_bt4,
                 "SLUS-219.78", listOf(Color(0xFF111B42), Color(0xFF5141A0), Color(0xFF100D20)),
                 Color(0xFFD4C1FF), "04",
             ),
@@ -189,25 +186,6 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                     stringResource(slide.description),
                     color = Color.White.copy(alpha = 0.92f),
                     style = MaterialTheme.typography.bodySmall,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    stringResource(slide.isoInfo),
-                    color = Color.White.copy(alpha = 0.78f),
-                    style = MaterialTheme.typography.labelSmall,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    stringResource(slide.dataInfo),
-                    color = Color.White.copy(alpha = 0.78f),
-                    style = MaterialTheme.typography.labelSmall,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    stringResource(slide.engineInfo),
-                    color = slide.accent,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.Center,
                 )
                 RowDots(

@@ -546,17 +546,5 @@
     <string name="bt4dec_data_ok">Beta 14 Rev2 verificada · %1$d archivos · %2$s</string>
 
     <string name="welcome_swipe">DESLIZA PARA CAMBIAR DE JUEGO</string>
-    <string name="welcome_bt2_desc">El clásico de la saga. Configuración, partidas y datos independientes de BT3 y BT4.</string>
-    <string name="welcome_bt2_iso">ISO requerida: versión USA · SLUS-21441.</string>
-    <string name="welcome_bt2_data">La imagen se lee desde su ubicación original; no se copia ni se extrae.</string>
-    <string name="welcome_bt2_engine">Motor BT2-Recomp propio · biblioteca libbt2.so · ARM64.</string>
-    <string name="welcome_bt3_desc">La entrega principal: Dragon Net, mods, texturas, escenarios, canciones y ajustes.</string>
-    <string name="welcome_bt3_iso">ISO requerida: versión USA · SLUS-21678.</string>
-    <string name="welcome_bt3_data">La imagen se verifica y sus archivos se extraen al almacenamiento de la app.</string>
-    <string name="welcome_bt3_engine">Motor Tenkaichi3Decomp · biblioteca libbt3.so · ARM64.</string>
-    <string name="welcome_bt4_desc">Mod de Team BT4 con personajes, transformaciones y escenarios adicionales.</string>
-    <string name="welcome_bt4_iso">Imagen requerida: Team BT4 Beta 14 Rev2 · SLUS-219.78.</string>
-    <string name="welcome_bt4_data">Se copian y verifican sus archivos (aprox. 5,7 GB); después no hace falta conservar la ISO.</string>
-    <string name="welcome_bt4_engine">Motor BT4decomp · biblioteca libbt4dec.so · ARM64.</string>
 
 </resources>
