@@ -144,15 +144,6 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                             ),
                             maxLines = 1,
                         )
-                        Text(
-                            slide.number,
-                            color = slide.accent,
-                            style = MaterialTheme.typography.headlineMedium.copy(
-                                fontFamily = KanitDisplay,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                            ),
-                        )
                     }
 
                     // Compact controls sit at the lower-left edge; the center remains open.
