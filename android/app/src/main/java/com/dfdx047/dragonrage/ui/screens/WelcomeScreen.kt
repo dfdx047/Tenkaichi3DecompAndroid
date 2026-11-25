@@ -13,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -152,89 +153,104 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
 
             Column(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.82f)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 28.dp)
-                    .padding(bottom = 24.dp),
+                    .fillMaxSize()
+                    .padding(horizontal = 28.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(7.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                Text(
-                    slide.number,
-                    color = slide.accent.copy(alpha = 0.8f),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Black,
-                )
-                Text(
-                    slide.title,
-                    color = Color.White,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Black,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    slide.subtitle,
-                    color = slide.accent,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                )
-                Text(
-                    slide.serial,
-                    color = Color.White.copy(alpha = 0.68f),
-                    style = MaterialTheme.typography.labelMedium,
-                )
-
-                RowDots(
-                    active = page % slides.size,
-                    accent = slide.accent,
-                )
-
-                Box(
+                // Game identity stays in the central area.
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.White.copy(alpha = 0.10f))
-                        .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(16.dp))
-                        .padding(horizontal = 16.dp, vertical = 13.dp),
-                    contentAlignment = Alignment.Center,
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
-                        stringResource(slide.description),
-                        color = Color.White.copy(alpha = 0.94f),
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = KanitDisplay, fontWeight = FontWeight.ExtraBold, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
+                        slide.number,
+                        color = slide.accent.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Black,
+                    )
+                    Spacer(Modifier.height(7.dp))
+                    Text(
+                        slide.title,
+                        color = Color.White,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Black,
                         textAlign = TextAlign.Center,
                     )
-                }
-
-                Spacer(Modifier.height(18.dp))
-                Button(
-                    onClick = { onPick(slide.game) },
-                    modifier = Modifier
-                        .size(width = 216.dp, height = 52.dp),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = slide.accent,
-                        contentColor = Color(0xFF101018),
-                    ),
-                    contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp),
-                ) {
                     Text(
-                        stringResource(R.string.play),
-                        style = MaterialTheme.typography.titleMedium.copy(fontFamily = KanitDisplay, fontWeight = FontWeight.ExtraBold, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = MaterialTheme.typography.titleMedium.letterSpacing,
+                        slide.subtitle,
+                        color = slide.accent,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        slide.serial,
+                        color = Color.White.copy(alpha = 0.68f),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                    Spacer(Modifier.height(18.dp))
+                    RowDots(
+                        active = page % slides.size,
+                        accent = slide.accent,
                     )
                 }
-                Text(
-                    stringResource(R.string.welcome_swipe),
-                    color = Color.White.copy(alpha = 0.58f),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Medium,
-                )
+
+                // Description and PLAY are anchored together at the bottom.
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(bottom = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(Color.White.copy(alpha = 0.10f))
+                            .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(16.dp))
+                            .padding(horizontal = 16.dp, vertical = 13.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            stringResource(slide.description),
+                            color = Color.White.copy(alpha = 0.94f),
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = KanitDisplay, fontWeight = FontWeight.ExtraBold, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+
+                    Button(
+                        onClick = { onPick(slide.game) },
+                        modifier = Modifier.size(width = 216.dp, height = 52.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = slide.accent,
+                            contentColor = Color(0xFF101018),
+                        ),
+                        contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp),
+                    ) {
+                        Text(
+                            stringResource(R.string.play),
+                            style = MaterialTheme.typography.titleMedium.copy(fontFamily = KanitDisplay, fontWeight = FontWeight.ExtraBold, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic),
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = MaterialTheme.typography.titleMedium.letterSpacing,
+                        )
+                    }
+                    Text(
+                        stringResource(R.string.welcome_swipe),
+                        color = Color.White.copy(alpha = 0.58f),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
             }
         }
     }
