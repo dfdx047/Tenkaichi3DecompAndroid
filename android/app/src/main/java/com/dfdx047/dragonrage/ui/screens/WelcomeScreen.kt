@@ -7,6 +7,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -21,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,11 +34,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.dfdx047.dragonrage.data.Game
+import com.dfdx047.dragonrage.R
 
 private data class GameSlide(
     val game: Game,
     val title: String,
     val subtitle: String,
+    val description: Int,
+    val isoInfo: Int,
+    val dataInfo: Int,
+    val engineInfo: Int,
     val serial: String,
     val colors: List<Color>,
     val accent: Color,
@@ -49,16 +58,19 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
         listOf(
             GameSlide(
                 Game.BT2, "BUDOKAI TENKAICHI 2", "THE NEXT LEVEL OF TENKAICHI",
+                R.string.welcome_bt2_desc, R.string.welcome_bt2_iso, R.string.welcome_bt2_data, R.string.welcome_bt2_engine,
                 "SLUS-21441", listOf(Color(0xFF092F27), Color(0xFF16865A), Color(0xFF071713)),
                 Color(0xFF9BFFB8), "02",
             ),
             GameSlide(
                 Game.BT3, "BUDOKAI TENKAICHI 3", "THE ULTIMATE BATTLE",
+                R.string.welcome_bt3_desc, R.string.welcome_bt3_iso, R.string.welcome_bt3_data, R.string.welcome_bt3_engine,
                 "SLUS-21678", listOf(Color(0xFF431B0B), Color(0xFFE36A16), Color(0xFF160A08)),
                 Color(0xFFFFC56B), "03",
             ),
             GameSlide(
                 Game.BT4, "BUDOKAI TENKAICHI 4", "BETA 14 · REV 2",
+                R.string.welcome_bt4_desc, R.string.welcome_bt4_iso, R.string.welcome_bt4_data, R.string.welcome_bt4_engine,
                 "SLUS-219.78", listOf(Color(0xFF111B42), Color(0xFF5141A0), Color(0xFF100D20)),
                 Color(0xFFD4C1FF), "04",
             ),
@@ -140,10 +152,12 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
+                    .fillMaxHeight(0.82f)
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 28.dp)
-                    .padding(bottom = 38.dp),
+                    .padding(bottom = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
             ) {
                 Text(
                     slide.number,
@@ -171,6 +185,31 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                     style = MaterialTheme.typography.labelMedium,
                 )
 
+                Text(
+                    stringResource(slide.description),
+                    color = Color.White.copy(alpha = 0.92f),
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    stringResource(slide.isoInfo),
+                    color = Color.White.copy(alpha = 0.78f),
+                    style = MaterialTheme.typography.labelSmall,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    stringResource(slide.dataInfo),
+                    color = Color.White.copy(alpha = 0.78f),
+                    style = MaterialTheme.typography.labelSmall,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    stringResource(slide.engineInfo),
+                    color = slide.accent,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                )
                 RowDots(
                     active = page % slides.size,
                     accent = slide.accent,
@@ -189,14 +228,14 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                     contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp),
                 ) {
                     Text(
-                        "JUGAR",
+                        stringResource(R.string.play),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Black,
                         letterSpacing = MaterialTheme.typography.titleMedium.letterSpacing,
                     )
                 }
                 Text(
-                    "DESLIZA PARA CAMBIAR DE JUEGO",
+                    stringResource(R.string.welcome_swipe),
                     color = Color.White.copy(alpha = 0.58f),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Medium,
