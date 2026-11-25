@@ -1,118 +1,225 @@
 package com.dfdx047.dragonrage.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.dfdx047.dragonrage.R
 import com.dfdx047.dragonrage.data.Game
-import com.dfdx047.dragonrage.ui.components.DragonBall
-import com.dfdx047.dragonrage.ui.theme.Dbz
 
-/**
- * The first screen: which game to open. Both are in the same app with the same pages; each has its own folder,
- * disc image, saves and settings, its own engine and its own colours (Game).
- */
+private data class GameSlide(
+    val game: Game,
+    val title: String,
+    val subtitle: String,
+    val serial: String,
+    val colors: List<Color>,
+    val accent: Color,
+    val number: String,
+)
+
 @Composable
 fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
-    val wide = LocalConfiguration.current.screenWidthDp >= 600
-    Box(
-        Modifier.fillMaxSize().background(Dbz.Night).windowInsetsPadding(WindowInsets.safeDrawing),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(
-            Modifier.widthIn(max = 900.dp).verticalScroll(rememberScrollState()).padding(20.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+    // A very large pager range makes the three entries behave like a circular carousel.
+    // The initial page is aligned to BT2, then adjusted to the last selected game.
+    val slides = remember {
+        listOf(
+            GameSlide(
+                Game.BT2, "BUDOKAI TENKAICHI 2", "THE NEXT LEVEL OF TENKAICHI",
+                "SLUS-21441", listOf(Color(0xFF092F27), Color(0xFF16865A), Color(0xFF071713)),
+                Color(0xFF9BFFB8), "02",
+            ),
+            GameSlide(
+                Game.BT3, "BUDOKAI TENKAICHI 3", "THE ULTIMATE BATTLE",
+                "SLUS-21678", listOf(Color(0xFF431B0B), Color(0xFFE36A16), Color(0xFF160A08)),
+                Color(0xFFFFC56B), "03",
+            ),
+            GameSlide(
+                Game.BT4, "BUDOKAI TENKAICHI 4", "BETA 14 · REV 2",
+                "SLUS-219.78", listOf(Color(0xFF111B42), Color(0xFF5141A0), Color(0xFF100D20)),
+                Color(0xFFD4C1FF), "04",
+            ),
+        )
+    }
+    val initialIndex = slides.indexOfFirst { it.game == last }.coerceAtLeast(0)
+    val pagerState = rememberPagerState(initialPage = 1_000_002 + initialIndex) { Int.MAX_VALUE }
+
+    HorizontalPager(
+        state = pagerState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(0.dp),
+        pageSpacing = 0.dp,
+        key = { it },
+    ) { page ->
+        val slide = slides[page % slides.size]
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Brush.verticalGradient(slide.colors)),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                DragonBall(stars = 4, size = 64.dp)
-                Spacer(Modifier.size(10.dp))
-                Column {
-                    Text("DRAGON RAGE", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = Dbz.SaiyanGold)
-                    Text(stringResource(R.string.welcome_pick), style = MaterialTheme.typography.bodyLarge, color = Color(0xFFC4C3D6))
-                }
-            }
-            val cards: @Composable (Modifier) -> Unit = { m ->
-                GameCard(
-                    Game.BT3, "Budokai Tenkaichi 3", stringResource(R.string.welcome_bt3), "SLUS-21678",
-                    listOf(Color(0xFFFF8A1F), Color(0xFFB8420A)), Dbz.SaiyanGold, last == Game.BT3, m, onPick,
-                )
-                GameCard(
-                    Game.BT4, "Budokai Tenkaichi 4", stringResource(R.string.welcome_bt4), "SLUS-219.78 · Beta 14 Rev2",
-                    listOf(Color(0xFF2FB8F0), Color(0xFF5A2A8C)), Color(0xFFD3A6FF), last == Game.BT4, m, onPick,
-                )
-                GameCard(
-                    Game.BT2, "Budokai Tenkaichi 2", stringResource(R.string.welcome_bt2), "SLUS-21441",
-                    listOf(Color(0xFF2FB85A), Color(0xFF0B5A33)), Color(0xFFA6E86B), last == Game.BT2, m, onPick,
-                )
-            }
-            if (wide) {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    cards(Modifier.weight(1f))
-                }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    cards(Modifier.fillMaxWidth())
-                }
-            }
-            Text(
-                stringResource(R.string.welcome_note),
-                style = MaterialTheme.typography.bodySmall, color = Color(0xFF9A99B0),
+            // Graphic layers create a dramatic full-screen backdrop without remote assets.
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 110.dp, end = 18.dp)
+                    .size(250.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.radialGradient(
+                            listOf(slide.accent.copy(alpha = 0.38f), slide.accent.copy(alpha = 0.06f), Color.Transparent),
+                        ),
+                    ),
             )
+            Box(
+                Modifier
+                    .align(Alignment.Center)
+                    .padding(start = 36.dp)
+                    .size(190.dp)
+                    .clip(CircleShape)
+                    .background(slide.accent.copy(alpha = 0.07f)),
+            )
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = 0.12f),
+                            0.42f to Color.Transparent,
+                            0.68f to Color.Black.copy(alpha = 0.28f),
+                            1f to Color.Black.copy(alpha = 0.88f),
+                        ),
+                    ),
+            )
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .fillMaxWidth()
+                    .padding(horizontal = 28.dp, vertical = 34.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    "DRAGON RAGE",
+                    color = Color.White.copy(alpha = 0.82f),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = MaterialTheme.typography.labelLarge.letterSpacing,
+                )
+                Text(
+                    "SELECT YOUR FIGHT",
+                    color = slide.accent,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(horizontal = 28.dp)
+                    .padding(bottom = 38.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Text(
+                    slide.number,
+                    color = slide.accent.copy(alpha = 0.8f),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Black,
+                )
+                Text(
+                    slide.title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Black,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    slide.subtitle,
+                    color = slide.accent,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                )
+                Text(
+                    slide.serial,
+                    color = Color.White.copy(alpha = 0.68f),
+                    style = MaterialTheme.typography.labelMedium,
+                )
+
+                RowDots(
+                    active = page % slides.size,
+                    accent = slide.accent,
+                )
+
+                Spacer(Modifier.height(4.dp))
+                Button(
+                    onClick = { onPick(slide.game) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(58.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = slide.accent,
+                        contentColor = Color(0xFF101018),
+                    ),
+                    contentPadding = PaddingValues(horizontal = 28.dp, vertical = 12.dp),
+                ) {
+                    Text(
+                        "JUGAR",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = MaterialTheme.typography.titleMedium.letterSpacing,
+                    )
+                }
+                Text(
+                    "DESLIZA PARA CAMBIAR DE JUEGO",
+                    color = Color.White.copy(alpha = 0.58f),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun GameCard(
-    game: Game, title: String, text: String, disc: String, colors: List<Color>, accent: Color, last: Boolean,
-    modifier: Modifier, onPick: (Game) -> Unit,
-) {
-    val shape = RoundedCornerShape(22.dp)
-    Column(
-        modifier
-            .clip(shape)
-            .background(Brush.linearGradient(colors))
-            .border(if (last) 3.dp else 1.dp, if (last) accent else Color.White.copy(alpha = 0.25f), shape)
-            .clickable { onPick(game) }
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+private fun RowDots(active: Int, accent: Color) {
+    androidx.compose.foundation.layout.Row(
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title.uppercase(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = Color.White)
-        Text(disc, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.8f))
-        Spacer(Modifier.height(2.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = Color.White)
-        if (last) {
-            Text(stringResource(R.string.welcome_last), style = MaterialTheme.typography.labelLarge, color = accent, fontWeight = FontWeight.Bold)
+        repeat(3) { index ->
+            Box(
+                Modifier
+                    .size(if (index == active) 9.dp else 6.dp)
+                    .clip(CircleShape)
+                    .background(if (index == active) accent else Color.White.copy(alpha = 0.42f)),
+            )
         }
     }
 }
