@@ -96,19 +96,7 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                 .fillMaxSize()
                 .background(Brush.verticalGradient(slide.colors)),
         ) {
-            // Graphic layers create a dramatic full-screen backdrop without remote assets.
-            Box(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 110.dp, end = 18.dp)
-                    .size(250.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.radialGradient(
-                            listOf(slide.accent.copy(alpha = 0.38f), slide.accent.copy(alpha = 0.06f), Color.Transparent),
-                        ),
-                    ),
-            )
+            // Keep the right half free of foreground decorations for character artwork.
             Box(
                 Modifier
                     .fillMaxSize()
