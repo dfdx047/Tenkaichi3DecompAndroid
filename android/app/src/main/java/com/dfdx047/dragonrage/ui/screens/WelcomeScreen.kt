@@ -110,14 +110,6 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
             )
             Box(
                 Modifier
-                    .align(Alignment.Center)
-                    .padding(start = 36.dp)
-                    .size(190.dp)
-                    .clip(CircleShape)
-                    .background(slide.accent.copy(alpha = 0.07f)),
-            )
-            Box(
-                Modifier
                     .fillMaxSize()
                     .background(
                         Brush.verticalGradient(
@@ -158,47 +150,8 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                // Game identity stays in the central area.
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Text(
-                        slide.number,
-                        color = slide.accent.copy(alpha = 0.8f),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Black,
-                    )
-                    Spacer(Modifier.height(7.dp))
-                    Text(
-                        slide.title,
-                        color = Color.White,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Black,
-                        textAlign = TextAlign.Center,
-                    )
-                    Text(
-                        slide.subtitle,
-                        color = slide.accent,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                    )
-                    Spacer(Modifier.height(5.dp))
-                    Text(
-                        slide.serial,
-                        color = Color.White.copy(alpha = 0.68f),
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                    Spacer(Modifier.height(18.dp))
-                    RowDots(
-                        active = page % slides.size,
-                        accent = slide.accent,
-                    )
-                }
+                // Keep the entire center clear for the user's future background artwork.
+                Spacer(Modifier.weight(1f))
 
                 // Description and PLAY are anchored together at the bottom.
                 Column(
@@ -244,6 +197,10 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                             letterSpacing = MaterialTheme.typography.titleMedium.letterSpacing,
                         )
                     }
+                    RowDots(
+                        active = page % slides.size,
+                        accent = slide.accent,
+                    )
                     Text(
                         stringResource(R.string.welcome_swipe),
                         color = Color.White.copy(alpha = 0.58f),
