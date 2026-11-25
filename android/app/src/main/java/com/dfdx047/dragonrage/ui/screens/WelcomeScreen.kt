@@ -180,8 +180,7 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                 Button(
                     onClick = { onPick(slide.game) },
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(58.dp),
+                        .size(width = 216.dp, height = 52.dp),
                     shape = RoundedCornerShape(18.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = slide.accent,
