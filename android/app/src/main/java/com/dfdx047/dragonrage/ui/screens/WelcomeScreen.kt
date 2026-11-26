@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -142,6 +143,7 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                         assetName = slide.logo,
                         modifier = Modifier
                             .align(Alignment.CenterStart)
+                            .offset(y = (-24).dp)
                             .fillMaxWidth(0.34f)
                             .fillMaxHeight(0.34f)
                             .padding(start = 22.dp),
@@ -244,8 +246,8 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                         LogoArtwork(
                             assetName = slide.logo,
                             modifier = Modifier
-                                .fillMaxWidth(0.62f)
-                                .height(64.dp),
+                                .fillMaxWidth(0.72f)
+                                .height(76.dp),
                         )
                     }
                     Column(
