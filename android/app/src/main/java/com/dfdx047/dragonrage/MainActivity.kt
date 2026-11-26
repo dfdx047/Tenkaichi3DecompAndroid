@@ -109,10 +109,12 @@ class MainActivity : ComponentActivity() {
     private val bt2: Bt2ViewModel by viewModels() // (Budokai Tenkaichi 2's own: its folder, settings and pages)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        CrashReportStore.install(applicationContext)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val prefs = UiPrefs.get(this)
         setContent {
+            val previousCrashReport = remember { CrashReportStore.readLatest(this@MainActivity) }
             // the welcome screen first (which game), then that game's pages with its own view model, folder and colours
             var chosen by rememberSaveable { mutableStateOf<String?>(null) }
             val ui by prefs.state.collectAsStateWithLifecycle()
@@ -131,6 +133,7 @@ class MainActivity : ComponentActivity() {
                     BackHandler { chosen = null } // (back: to the welcome screen)
                     DragonRageApp(vm, onSwitchGame = { chosen = null })
                 }
+                CrashReportDialog(previousCrashReport)
             }
         }
     }
