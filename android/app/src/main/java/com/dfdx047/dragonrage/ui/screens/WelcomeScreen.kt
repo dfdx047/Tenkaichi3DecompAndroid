@@ -159,12 +159,6 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                             fontWeight = FontWeight.Black,
                             letterSpacing = MaterialTheme.typography.labelSmall.letterSpacing,
                         )
-                        Text(
-                            "SELECT YOUR FIGHT",
-                            color = slide.accent,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                        )
                     }
 
                     // Compact controls sit at the lower-left edge; the center remains open.
@@ -250,12 +244,6 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                             modifier = Modifier
                                 .fillMaxWidth(0.62f)
                                 .height(64.dp),
-                        )
-                        Text(
-                            "SELECT YOUR FIGHT",
-                            color = slide.accent,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
                         )
                     }
                     Column(
