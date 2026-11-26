@@ -234,6 +234,7 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                             .align(Alignment.TopStart)
                             .fillMaxWidth()
                             .padding(horizontal = 28.dp, vertical = 34.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Text(
@@ -243,7 +244,7 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                             fontWeight = FontWeight.Black,
                             letterSpacing = MaterialTheme.typography.labelLarge.letterSpacing,
                         )
-                        // Reuse each game's logo near the upper-left, directly below the app identity.
+                        // Center each game's logo directly below the app identity in the upper area.
                         LogoArtwork(
                             assetName = slide.logo,
                             modifier = Modifier
