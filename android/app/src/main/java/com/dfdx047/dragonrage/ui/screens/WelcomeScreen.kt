@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +35,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.asImageBitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -105,19 +108,6 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                 .background(Brush.verticalGradient(slide.colors)),
         ) {
             // Keep the right half free of foreground decorations for character artwork.
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            0f to Color.Black.copy(alpha = 0.12f),
-                            0.42f to Color.Transparent,
-                            0.68f to Color.Black.copy(alpha = 0.28f),
-                            1f to Color.Black.copy(alpha = 0.88f),
-                        ),
-                    ),
-            )
-
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val isLandscape = maxWidth > maxHeight
                 CoverArtwork(if (isLandscape) slide.landscapeCover ?: slide.portraitCover else slide.portraitCover)
@@ -345,11 +335,15 @@ private fun RowDots(active: Int, accent: Color) {
 @Composable
 private fun CoverArtwork(assetName: String) {
     val context = LocalContext.current
-    val bitmap = remember(assetName) {
-        runCatching {
-            context.assets.open("covers/$assetName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
-        }.getOrNull()
+    // Decode assets away from the UI thread so swiping never waits for BitmapFactory.
+    val bitmapState = produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, assetName) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                context.assets.open("covers/$assetName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+            }.getOrNull()
+        }
     }
+    val bitmap = bitmapState.value
     if (bitmap != null) {
         Image(
             bitmap = bitmap,
