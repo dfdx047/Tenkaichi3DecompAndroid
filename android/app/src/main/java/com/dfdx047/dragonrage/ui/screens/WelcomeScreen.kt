@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import com.dfdx047.dragonrage.data.Game
 import com.dfdx047.dragonrage.R
 import android.graphics.BitmapFactory
+import android.util.LruCache
 
 private val KanitDisplay = FontFamily(Font(R.font.kanit_extrabold_italic))
 
@@ -331,6 +332,27 @@ private fun RowDots(active: Int, accent: Color) {
 
  
 /**
+ * Keep recently used, already-decoded images so returning to a carousel page does not
+ * decode the same asset again. The cache is bounded to a fraction of the app heap.
+ */
+private object ArtworkBitmapCache {
+    private val cache = object : LruCache<String, androidx.compose.ui.graphics.ImageBitmap>(
+        (Runtime.getRuntime().maxMemory() / 1024L / 8L).coerceIn(1024L, Int.MAX_VALUE.toLong()).toInt(),
+    ) {
+        override fun sizeOf(
+            key: String,
+            value: androidx.compose.ui.graphics.ImageBitmap,
+        ): Int = ((value.width.toLong() * value.height.toLong() * 4L) / 1024L)
+            .coerceAtMost(Int.MAX_VALUE.toLong()).toInt().coerceAtLeast(1)
+    }
+
+    fun get(key: String) = cache.get(key)
+    fun put(key: String, bitmap: androidx.compose.ui.graphics.ImageBitmap) {
+        cache.put(key, bitmap)
+    }
+}
+
+/**
  * Decode large artwork at a bounded resolution. Decoding the original asset directly can
  * allocate hundreds of MiB on devices with limited graphics memory, even when Compose
  * displays the image only inside a phone-sized viewport.
@@ -340,6 +362,9 @@ private fun decodeAssetBitmap(
     assetName: String,
     maxDimension: Int,
 ): androidx.compose.ui.graphics.ImageBitmap? {
+    val cacheKey = "$assetName@$maxDimension"
+    ArtworkBitmapCache.get(cacheKey)?.let { return it }
+
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     context.assets.open("covers/$assetName").use { BitmapFactory.decodeStream(it, null, bounds) }
 
@@ -357,9 +382,11 @@ private fun decodeAssetBitmap(
         inSampleSize = sampleSize
         inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
     }
-    return context.assets.open("covers/$assetName").use {
+    val decoded = context.assets.open("covers/$assetName").use {
         BitmapFactory.decodeStream(it, null, options)?.asImageBitmap()
-    }
+    } ?: return null
+    ArtworkBitmapCache.put(cacheKey, decoded)
+    return decoded
 }
 
 @Composable
