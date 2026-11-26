@@ -1,5 +1,6 @@
 package com.dfdx047.dragonrage.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +31,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -40,6 +44,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.dfdx047.dragonrage.data.Game
 import com.dfdx047.dragonrage.R
+import android.graphics.BitmapFactory
 
 private val KanitDisplay = FontFamily(Font(R.font.kanit_extrabold_italic))
 
@@ -52,6 +57,8 @@ private data class GameSlide(
     val colors: List<Color>,
     val accent: Color,
     val number: String,
+    val portraitCover: String,
+    val landscapeCover: String?,
 )
 
 @Composable
@@ -64,19 +71,19 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                 Game.BT2, "BUDOKAI TENKAICHI 2", "THE NEXT LEVEL OF TENKAICHI",
                 R.string.welcome_bt2,
                 "SLUS-21441", listOf(Color(0xFF092F27), Color(0xFF16865A), Color(0xFF071713)),
-                Color(0xFF9BFFB8), "02",
+                Color(0xFF9BFFB8), "02", "bt2.png", "bt2land.png",
             ),
             GameSlide(
                 Game.BT3, "BUDOKAI TENKAICHI 3", "THE ULTIMATE BATTLE",
                 R.string.welcome_bt3,
                 "SLUS-21678", listOf(Color(0xFF431B0B), Color(0xFFE36A16), Color(0xFF160A08)),
-                Color(0xFFFFC56B), "03",
+                Color(0xFFFFC56B), "03", "bt3.png", "bt3land.png",
             ),
             GameSlide(
                 Game.BT4, "BUDOKAI TENKAICHI 4", "BETA 14 · REV 2",
                 R.string.welcome_bt4,
                 "SLUS-219.78", listOf(Color(0xFF111B42), Color(0xFF5141A0), Color(0xFF100D20)),
-                Color(0xFFD4C1FF), "04",
+                Color(0xFFD4C1FF), "04", "bt4.jpg", null,
             ),
         )
     }
@@ -112,6 +119,7 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
 
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val isLandscape = maxWidth > maxHeight
+                CoverArtwork(if (isLandscape) slide.landscapeCover ?: slide.portraitCover else slide.portraitCover)
                 if (isLandscape) {
                     // Landscape: identity and game index stay at the upper-left.
                     Column(
@@ -308,5 +316,24 @@ private fun RowDots(active: Int, accent: Color) {
                     .background(if (index == active) accent else Color.White.copy(alpha = 0.42f)),
             )
         }
+    }
+}
+
+ 
+@Composable
+private fun CoverArtwork(assetName: String) {
+    val context = LocalContext.current
+    val bitmap = remember(assetName) {
+        runCatching {
+            context.assets.open("covers/$assetName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+        }.getOrNull()
+    }
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
     }
 }
