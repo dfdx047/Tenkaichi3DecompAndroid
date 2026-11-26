@@ -184,7 +184,13 @@ s32 BtlCharApi_GetCostume(s32 objId) {
     BtlCapiChr *chr = BtlChar_FindByObjId(objId);
 
     if (chr != NULL) {
+#ifdef PORT
+        s32 c = ((s32 *)BtlMember_GetActive(chr))[1];
+
+        return c >= 8 ? ((c - 8) & 3) : c; /* a new fighter's costume code (port_mods.h) */
+#else
         return ((s32 *)BtlMember_GetActive(chr))[1];
+#endif
     }
     return 0;
 }

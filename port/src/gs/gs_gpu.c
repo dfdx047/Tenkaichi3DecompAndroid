@@ -1176,6 +1176,170 @@ static int vk_init(void) {
     return 1;
 }
 
+/* The PC keyboard as text, for a screen of the game that asks for it (the Mod Manager's names and searches): while
+   the mode is on, key presses are kept as characters (8 backspace, 13 enter, 27 escape) instead of being pad buttons
+   (gs_input.c lets only the arrow keys through) and Esc does not close the game. */
+int gPortTextMode;
+static int gPortEscOff, sEscHit; /* Esc is "back" for a screen of the game instead of closing the program */
+static char sText[64];
+static int sTextHead, sTextTail;
+
+/* Whether Esc closes the program (the default) or is handed to the screen that is up as "back": that screen asks
+   with Port_EscTake every frame. */
+void Port_EscQuit(int on) {
+    gPortEscOff = !on;
+    sEscHit = 0;
+}
+
+int Port_EscTake(void) {
+    int hit = sEscHit;
+
+    sEscHit = 0;
+    return hit;
+}
+
+void Port_TextMode(int on) {
+    gPortTextMode = on;
+    sTextHead = sTextTail = 0;
+}
+
+int Port_TextRead(void) {
+    int c;
+
+    if (sTextHead == sTextTail) {
+        return 0;
+    }
+    c = (unsigned char)sText[sTextTail];
+    sTextTail = (sTextTail + 1) & 63;
+    return c;
+}
+
+/* An event of the window, for the screens of the game that take the keyboard or dropped files themselves (the Mod
+   Manager). 1 = used: the back end's loop goes on to the next event. `early` = the call before the settings window
+   has its turn (dropped files), 0 = the one after it (text and Esc). */
+/* ---- the mouse for the game's own screens (Port_MouseState; Z Warriors' texture painting): where it is on the picture
+   shown (0..10000 across and down, outside it below 0 or above 10000), its buttons (1 left, 2 right, 4 middle), the
+   wheel's turns since asked. ---- */
+static float sMouseWinX, sMouseWinY;
+static int sMouseButtons, sMouseWheel, sMouseSeen;
+static float sPresentRect[4] = {0.0f, 0.0f, 1.0f, 1.0f}; /* (where the picture is in the window's pixels) */
+static int sAxisKey; /* (X, Y or Z pressed: Z Warriors' pose maker keeps its turns to that axis, 1..3; again: none) */
+
+int Port_AxisKey(void) {
+    return sAxisKey;
+}
+
+void Port_AxisKeySet(int k) {
+    sAxisKey = k;
+}
+
+void Port_MouseState(int *out) {
+    float px = sMouseWinX, py = sMouseWinY;
+    int ww = 0, wh = 0, pw = 0, ph = 0;
+
+    if (sWindow != NULL) { /* (the window's points to its pixels: a screen scaled by the system) */
+        SDL_GetWindowSize(sWindow, &ww, &wh);
+        SDL_GetWindowSizeInPixels(sWindow, &pw, &ph);
+        if (ww > 0 && wh > 0) {
+            px *= (float)pw / (float)ww;
+            py *= (float)ph / (float)wh;
+        }
+    }
+    out[0] = (int)((px - sPresentRect[0]) / (sPresentRect[2] > 1.0f ? sPresentRect[2] : 1.0f) * 10000.0f);
+    out[1] = (int)((py - sPresentRect[1]) / (sPresentRect[3] > 1.0f ? sPresentRect[3] : 1.0f) * 10000.0f);
+    out[2] = sMouseButtons;
+    out[3] = sMouseWheel;
+    out[4] = sMouseSeen;
+    sMouseWheel = 0;
+}
+
+/* F12 a screenshot, F10 a recording with the game's sound (gs_capture.cpp). */
+extern int GsCapture_Key(const SDL_Event *ev);
+extern int GsCapture_Encode(SDL_GPUDevice *dev, SDL_GPUCommandBuffer *cmd, const SDL_GPUBlitInfo *bl, Uint32 sw, Uint32 sh, SDL_GPUTextureFormat fmt);
+extern void GsCapture_Submitted(SDL_GPUFence *fence);
+extern void GsCapture_Poll(SDL_GPUDevice *dev);
+extern void GsCapture_Overlay(SDL_GPUDevice *dev, SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *swap, Uint32 sw, Uint32 sh, SDL_GPUTextureFormat fmt);
+static int sCaptureFrame;
+/* Z Warriors' photos of the model (gs_photo.cpp): taken from the present path, below. */
+extern int GsPhoto_Encode(SDL_GPUDevice *dev, SDL_GPUCommandBuffer *cmd, const SDL_GPUBlitInfo *bl, Uint32 sw, Uint32 sh, SDL_GPUTextureFormat fmt);
+extern void GsPhoto_Submitted(SDL_GPUFence *fence);
+extern void GsPhoto_Poll(SDL_GPUDevice *dev);
+static int sPhotoFrame;
+
+int Port_GameEvent(const SDL_Event *evp, int early) {
+    SDL_Event ev = *evp;
+
+    if (early) {
+        if (ev.type == SDL_EVENT_MOUSE_MOTION) {
+            sMouseWinX = ev.motion.x;
+            sMouseWinY = ev.motion.y;
+            sMouseSeen = 1;
+        } else if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN || ev.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+            int bit = ev.button.button == SDL_BUTTON_LEFT ? 1 : ev.button.button == SDL_BUTTON_RIGHT ? 2 : ev.button.button == SDL_BUTTON_MIDDLE ? 4 : 0;
+
+            sMouseWinX = ev.button.x;
+            sMouseWinY = ev.button.y;
+            sMouseButtons = ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? (sMouseButtons | bit) : (sMouseButtons & ~bit);
+            sMouseSeen = 1;
+        } else if (ev.type == SDL_EVENT_MOUSE_WHEEL) {
+            sMouseWheel += ev.wheel.y > 0.0f ? 1 : ev.wheel.y < 0.0f ? -1 : 0;
+        } else if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat &&
+                   (ev.key.scancode == SDL_SCANCODE_X || ev.key.scancode == SDL_SCANCODE_Y || ev.key.scancode == SDL_SCANCODE_Z)) {
+            int k = ev.key.scancode == SDL_SCANCODE_X ? 1 : ev.key.scancode == SDL_SCANCODE_Y ? 2 : 3;
+
+            sAxisKey = sAxisKey == k ? 0 : k;
+        }
+        if (ev.type == SDL_EVENT_DROP_FILE && ev.drop.data != NULL) { /* a folder of mods, for the Mod Manager */
+            extern void Port_DropPut(const char *path);
+
+            Port_DropPut(ev.drop.data);
+            return 1;
+        }
+        return 0;
+    }
+    if (gPortTextMode && ev.type == SDL_EVENT_KEY_DOWN) { /* a screen of the game is taking text (the Mod Manager) */
+        int c = 0;
+        SDL_Keycode k = ev.key.key;
+
+        if (k == SDLK_BACKSPACE) {
+            c = 8;
+        } else if (k == SDLK_RETURN || k == SDLK_KP_ENTER) {
+            c = ev.key.repeat ? 0 : 13;
+        } else if (k == SDLK_ESCAPE) {
+            c = ev.key.repeat ? 0 : 27;
+        } else if (k >= 32 && k < 127 && !(ev.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_ALT))) {
+            int shift = (ev.key.mod & SDL_KMOD_SHIFT) != 0;
+            c = (int)k;
+            if (c >= 'a' && c <= 'z') {
+                if (shift != ((ev.key.mod & SDL_KMOD_CAPS) != 0)) {
+                    c -= 32;
+                }
+            } else if (shift) {
+                static const char from[] = "1234567890-=[];',./`\\";
+                static const char to[] = "!@#$%^&*()_+{}:\"<>?~|";
+                const char *at = strchr(from, c);
+                if (at != NULL) {
+                    c = to[at - from];
+                }
+            }
+        }
+        if (c != 0 && ((sTextHead + 1) & 63) != sTextTail) {
+            sText[sTextHead] = (char)c;
+            sTextHead = (sTextHead + 1) & 63;
+        }
+        if (k == SDLK_ESCAPE || c != 0) {
+            return 1;
+        }
+    }
+    if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_ESCAPE && gPortEscOff) { /* a screen of the game takes Esc as "back" */
+        if (!ev.key.repeat) {
+            sEscHit = 1;
+        }
+        return 1;
+    }
+    return 0;
+}
+
 /* --- the frame ---------------------------------------------------------------------------------- */
 
 /* The window's events: the settings window's key, the settings window, quitting, full screen. (Also the OpenGL ES
@@ -1226,6 +1390,9 @@ static void poll_events(void) {
             continue;
         }
 #endif
+        if (Port_GameEvent(&ev, 1)) { /* (mouse for the mod's screens; a folder dropped on the window) */
+            continue;
+        }
         if (ev.type == SDL_EVENT_QUIT) {
 #ifdef __ANDROID__
             /* (not exit(): its destructors run while Android's own UI threads still use them, which aborts in
@@ -1246,6 +1413,12 @@ static void poll_events(void) {
             continue;
         }
         if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && GsDraw_FullscreenEvent(&ev)) continue;
+        if (Port_GameEvent(&ev, 0)) { /* a screen of the game takes text, or Esc as "back" (the Mod Manager) */
+            continue;
+        }
+        if (GsCapture_Key(&ev)) { /* F12 a screenshot, F10 a recording (gs_capture.cpp) */
+            continue;
+        }
 #ifndef __ANDROID__
         if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_ESCAPE) {
             if (!ev.key.repeat && !Ui_QuitAsk()) { exit(0); } /* (asks first) */
@@ -2653,8 +2826,26 @@ static void vk_frame_end(void) {
 #else
     if (acquired && swap != NULL && best >= 0 && gsTargets[best].cleared) {
 #endif
+        SDL_GPUBlitInfo bl;
         show_target(cmd, best, swap, sw, sh);
+        SDL_zero(bl); /* where the picture went, for the screenshot, the photo and the mouse */
+        bl.source.texture = sTgCol[best];
+        bl.source.w = 512 * SCALE;
+        bl.source.h = 448 * SCALE;
+        bl.destination.texture = swap;
+        bl.destination.x = gUiPresentX;
+        bl.destination.y = gUiPresentY;
+        bl.destination.w = gUiPresentW;
+        bl.destination.h = gUiPresentH;
+        sPresentRect[0] = (float)gUiPresentX;
+        sPresentRect[1] = (float)gUiPresentY;
+        sPresentRect[2] = (float)gUiPresentW;
+        sPresentRect[3] = (float)gUiPresentH;
         Ui_Draw(cmd, swap);
+        sCaptureFrame = GsCapture_Encode(sDev, cmd, &bl, sw, sh, SDL_GetGPUSwapchainTextureFormat(sDev, sWindow)); /* (the screenshot / the recording) */
+        GsCapture_Overlay(sDev, cmd, swap, sw, sh, SDL_GetGPUSwapchainTextureFormat(sDev, sWindow));
+        sPhotoFrame = sCaptureFrame ? 0 : GsPhoto_Encode(sDev, cmd, &bl, sw, sh, SDL_GetGPUSwapchainTextureFormat(sDev, sWindow)); /* (Z Warriors'
+                                                                     photo, if asked: a frame the recording does not take) */
         {   /* BT3_UI_SHOT=<frame>:<file.ppm>: the window's picture with the settings window on it, for checking
                 the settings window without a person or a screen capture (drawn a second time into a texture) */
             static int frame = -1;
@@ -2748,7 +2939,15 @@ static void vk_frame_end(void) {
         Ui_Draw(cmd, swap);
     }
     sEndT[4] = gpu_now();
-    if (getenv("BT3_LAG_LOG") != NULL) { /* (and when the graphics chip has finished it: lag_fence) */
+    if (sCaptureFrame) {
+        GsCapture_Submitted(SDL_SubmitGPUCommandBufferAndAcquireFence(cmd));
+        sCaptureFrame = 0;
+        { extern void Port_LagMark(int what); Port_LagMark('S'); }
+    } else if (sPhotoFrame) {
+        GsPhoto_Submitted(SDL_SubmitGPUCommandBufferAndAcquireFence(cmd));
+        sPhotoFrame = 0;
+        { extern void Port_LagMark(int what); Port_LagMark('S'); }
+    } else if (getenv("BT3_LAG_LOG") != NULL) { /* (and when the graphics chip has finished it: lag_fence) */
         SDL_GPUFence *f = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
         extern void Port_LagMark(int what);
         Port_LagMark('S');
@@ -2756,6 +2955,8 @@ static void vk_frame_end(void) {
     } else {
         SDL_SubmitGPUCommandBuffer(cmd); { extern void Port_LagMark(int what); Port_LagMark('S'); }
     }
+    GsPhoto_Poll(sDev);
+    GsCapture_Poll(sDev);
     {   /* BT3_DRAW_LOG=<ms>: each picture whose drawing took longer, from the start of its list to the driver, in parts:
            to find what makes a drawing slow now and then (a laptop: 1 in 10 took 10 to 20 ms instead of 2) */
         static int limit = -1;

@@ -20,3 +20,8 @@ by their sizes, `include/menu/tbo_sizes.h`).
 - **The storm** (`storm_bolt.png`, `thunder_1.wav` .. `thunder_4.wav`): made for the port. The four lightning bolts
   were drawn for it; the thunder is synthesised from filtered noise by `port/tools/make_thunder.py` (nothing
   recorded). Shown and heard while a fighter is in full power (`src/battle/stg_c.c`, `port/src/gs/storm_snd.c`).
+
+## Z Warriors
+
+The Z Warriors screens' pictures (`zw_*.png`) and the shared Mod Manager kit's pictures (`mm_*.png`) were made for the port.
+The CUSTOM tile of the character select is drawn by `port/tools/zw_art/make_custom_chip.py`.

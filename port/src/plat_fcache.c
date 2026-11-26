@@ -193,11 +193,31 @@ static int slot_of(const char *rel) {
     return old;
 }
 
+/* A file that a mod which is on answers (plat_mods.c), opened; NULL = not one. These are not kept open and nothing
+   about them is remembered: the Mod Manager and Create a Character switch them, write them again
+   and delete them while the game runs. */
+extern const char *Port_ModRedirect(const char *rel);
+
+static FILE *mod_open(const char *rel) {
+    const char *path = Port_ModRedirect(rel);
+
+    return path != NULL ? fopen(path, "rb") : NULL;
+}
+
 /* The file's size in bytes, or -1 if there is no such file. */
 long Port_FileSize(const char *rel) {
     long size;
     int i;
+    FILE *fp;
     while (__sync_lock_test_and_set(&sLock, 1)) {
+    }
+    fp = mod_open(rel);
+    if (fp != NULL) {
+        fseek(fp, 0, SEEK_END);
+        size = ftell(fp);
+        fclose(fp);
+        __sync_lock_release(&sLock);
+        return size;
     }
     i = slot_of(rel);
     size = i < 0 ? -1 : sSlot[i].size;
@@ -209,7 +229,18 @@ long Port_FileSize(const char *rel) {
 size_t Port_FileReadAt(const char *rel, long offset, void *buf, size_t bytes) {
     size_t got = 0;
     int i;
+    FILE *fp;
     while (__sync_lock_test_and_set(&sLock, 1)) {
+    }
+    fp = mod_open(rel);
+    if (fp != NULL) {
+        if (fseek(fp, offset, SEEK_SET) == 0) {
+            Port_StateTouch(buf, bytes);
+            got = fread(buf, 1, bytes, fp);
+        }
+        fclose(fp);
+        __sync_lock_release(&sLock);
+        return got;
     }
     i = slot_of(rel);
     if (i >= 0 && offset >= 0 && offset < sSlot[i].size && fseek(sSlot[i].fp, sSlot[i].base + offset, SEEK_SET) == 0) {

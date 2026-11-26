@@ -73,6 +73,12 @@ static s32 sPortStageRows = TS_STAGE_COLS; /* rows of the stage reel: the game's
 #define STGGRID_ID_LOCKED (PortGame_IsBT4() ? 0xFE : 0x3E)
 #define STGGRID_ID_EMPTY (PortGame_IsBT4() ? 0xFF : 0x3F)
 #endif
+#ifdef PORT
+extern void Port_MenuPage(int screen); /* port/src/gs_marker.c: widescreen menus */
+static s32 sTsMemberSkin[2][5] = {{-1, -1, -1, -1, -1}, {-1, -1, -1, -1, -1}}; /* each member's warrior, -1 a fighter */
+extern void Port_MenuMovie(int index);
+extern void Port_MenuFill(int on);
+#endif
 
 /*
  * TeamSel: the team character / stage / music select of the versus modes, 0x348D78..0x351C38. One object,
@@ -170,13 +176,24 @@ void TeamSel_RemoveMember(s32 side, s32 idx) {
 
     memset(&gTeamSel->side[side]->member[idx], 0, sizeof(TsMember));
     gTeamSel->side[side]->member[idx].chara = -1;
+#ifdef PORT
+    if (idx >= 0 && idx < 5) {
+        sTsMemberSkin[side][idx] = -1;
+    }
+#endif
     if (idx < gTeamSel->side[side]->memberCount) {
         for (i = idx; i < gTeamSel->side[side]->memberCount - 1; i++) {
             gTeamSel->side[side]->member[i] = gTeamSel->side[side]->member[i + 1];
 #ifdef PORT
             if(TagSession_Selected()) TagSession_SetCpuSetting(side,i,TagSession_CpuSetting(side,i+1));
+            sTsMemberSkin[side][i] = i + 1 < 5 ? sTsMemberSkin[side][i + 1] : -1;
 #endif
         }
+#ifdef PORT
+        if (gTeamSel->side[side]->memberCount - 1 >= 0 && gTeamSel->side[side]->memberCount - 1 < 5) {
+            sTsMemberSkin[side][gTeamSel->side[side]->memberCount - 1] = -1;
+        }
+#endif
         memset(&gTeamSel->side[side]->member[gTeamSel->side[side]->memberCount - 1], 0, sizeof(TsMember));
         gTeamSel->side[side]->member[gTeamSel->side[side]->memberCount - 1].chara = -1;
     }
@@ -209,6 +226,180 @@ void TeamSel_SetStageChips(void) {
 }
 
 /* The seven chips of a side's reel show the cursor's row of the character grid. */
+#ifdef PORT
+/* PC: the CUSTOM tile (TS_ZW) of Z Warriors in the team select, as in the duel's (menu_c_e.c): the custom characters in
+   the reel, seven to a row, up and down for more; one chosen goes on to the plates and the costume as a fighter does,
+   and the team member is that warrior (its fighter with the warrior's costume code, PORT_SKIN_CODE). Their forms are
+   reached in the fight, by transforming. */
+#include "menu/port_mods.h"
+#define TS_ZW 0xA5            /* (the tile's cell id: MCHR_ZW in the duel's) */
+#define PORT_TS_ZW 0x40       /* (a side's state: in the custom characters' reel) */
+#define PORT_TS_ZW_MAX 63
+extern s32 Port_SkinIsWarrior(s32 skin);
+extern s32 Port_SkinChara(s32 skin);
+extern s32 Port_SkinForms(s32 skin, s32 *out);
+extern s32 Port_ZwCustomChip(void *out, s32 max);
+extern s32 Port_ModChipReel(s32 i, void *out, s32 max);
+extern s32 Port_SkinCostumes(s32 skin);
+extern s32 Port_SkinFile(s32 chara, s32 code, s32 kind, s32 variant);
+static s32 sTsZwSkin[PORT_TS_ZW_MAX];     /* each listed warrior's skin */
+static s32 sTsZwCount;
+static u8 *sTsZwChip[PORT_TS_ZW_MAX + 1]; /* their chips (by place), the last the tile's */
+static s32 sTsZwRow[2], sTsZwCol[2];
+static s32 sTsZwPick[2] = {-1, -1};       /* the warrior being chosen (plates, costume next), -1 none */
+static s32 sTsZwHover[2] = {-1, -1};      /* the warrior under the reel's cursor: its portrait */
+
+/* The warriors a select lists (PC): every Z Warriors skin that is not someone's form (forms linked round in a loop:
+   its first), in the skins' order; their count. The team select's and the tournament's (menu_i_d.c). */
+s32 PortZw_ListWarriors(s32 *out, s32 max) {
+    static s32 isForm[256];
+    static u8 reach[256];
+    s32 i, k, n = Port_SkinCount(), root, grew, count = 0;
+
+    memset(isForm, 0, sizeof(isForm));
+    for (i = 0; i < n && i < 256; i++) {
+        s32 f[4], m;
+
+        if (Port_SkinIsWarrior(i)) {
+            m = Port_SkinForms(i, f);
+            for (k = 0; k < m; k++) {
+                if (f[k] >= 0 && f[k] < 256) {
+                    isForm[f[k]] = 1;
+                }
+            }
+        }
+    }
+    memset(reach, 0, sizeof(reach));
+    for (root = -1; root < n && root < 256; root++) {
+        if (root >= 0) {
+            if (!Port_SkinIsWarrior(root) || reach[root]) {
+                continue;
+            }
+            isForm[root] = 0;
+        }
+        for (i = 0; i < n && i < 256; i++) {
+            if (Port_SkinIsWarrior(i) && !isForm[i]) {
+                reach[i] = 1;
+            }
+        }
+        do {
+            grew = 0;
+            for (i = 0; i < n && i < 256; i++) {
+                s32 f[4], m;
+
+                if (!reach[i]) {
+                    continue;
+                }
+                m = Port_SkinForms(i, f);
+                for (k = 0; k < m; k++) {
+                    if (f[k] >= 0 && f[k] < 256 && !reach[f[k]]) {
+                        reach[f[k]] = 1;
+                        grew = 1;
+                    }
+                }
+            }
+        } while (grew);
+    }
+    for (i = 0; i < n && i < 256 && count < max; i++) {
+        if (Port_SkinIsWarrior(i) && !isForm[i]) {
+            out[count++] = i;
+        }
+    }
+    return count;
+}
+
+/* The listed warriors and their chips, made again each visit. */
+static void PortTs_ZwLoad(void) {
+    s32 i, k;
+
+    for (i = 0; i <= PORT_TS_ZW_MAX; i++) {
+        if (sTsZwChip[i] != NULL) {
+            Heap_Free(sTsZwChip[i]);
+            sTsZwChip[i] = NULL;
+        }
+    }
+    sTsZwCount = PortZw_ListWarriors(sTsZwSkin, PORT_TS_ZW_MAX);
+    for (i = 0; i < sTsZwCount; i++) {
+        u8 *res = Heap_Alloc(0x1600, 0x40, 0, 2);
+
+        if (res != NULL && Port_ModChipReel(Port_SkinMod(sTsZwSkin[i]), res, 0x1600) > 0) {
+            Res_RelocateOffsets((void *)&res, res, res);
+            sTsZwChip[i] = res;
+        } else if (res != NULL) {
+            Heap_Free(res);
+        }
+    }
+    {
+        u8 *res = Heap_Alloc(0x1600, 0x40, 0, 2);
+
+        if (res != NULL && Port_ZwCustomChip(res, 0x1600) > 0) {
+            Res_RelocateOffsets((void *)&res, res, res);
+            sTsZwChip[PORT_TS_ZW_MAX] = res;
+        } else if (res != NULL) {
+            Heap_Free(res);
+        }
+    }
+    for (k = 0; k < 2; k++) { /* (a member kept from the last visit whose warrior is not that any more: its fighter) */
+        for (i = 0; i < 5; i++) {
+            s32 sk = sTsMemberSkin[k][i];
+
+            if (sk >= 0 && (!Port_SkinIsWarrior(sk) || Port_SkinChara(sk) != gTsProgress->team[k].member[i].chara)) {
+                sTsMemberSkin[k][i] = -1;
+            }
+        }
+        sTsZwPick[k] = -1;
+        sTsZwHover[k] = -1;
+    }
+}
+
+/* A warrior's chip picture (NULL none). */
+static u8 *PortTs_ZwChipTex(s32 place) {
+    return place >= 0 && place <= PORT_TS_ZW_MAX && sTsZwChip[place] != NULL ? ((MTexRes *)sTsZwChip[place])->tex : NULL;
+}
+
+/* How many warriors a row of the reel has. */
+static s32 PortTs_ZwRowLen(s32 row) {
+    s32 n = sTsZwCount - row * TS_COLS;
+
+    return n < 0 ? 0 : n > TS_COLS ? TS_COLS : n;
+}
+
+/* The reel's seven chips: the cursor's row of the warriors. */
+static void PortTs_ZwSetChips(s32 side) {
+    s32 slot[7] = { 8, 11, 12, 13, 14, 15, 16 };
+    s32 i;
+
+    for (i = 0; i < 7; i++) {
+        s32 at = sTsZwRow[side] * TS_COLS + i, id = TS_EMPTY;
+        MTexRes *res;
+        u8 *t = NULL;
+
+        if (at < sTsZwCount) {
+            id = Port_SkinChara(sTsZwSkin[at]);
+            id = id >= 0 && id < TS_RANDOM ? id : 0;
+            t = PortTs_ZwChipTex(at);
+        }
+        gTeamSel->side[side]->chip[1][i] = gTeamSel->side[side]->chip[0][i];
+        gTeamSel->side[side]->chip[0][i] = id;
+        res = (MTexRes *)MPACK_AT(gTeamSel->chipPack, id + 1);
+        gTeamSel->sideTex[side][18 + i] = gTeamSel->sideTex[side][slot[i]];
+        gTeamSel->sideTex[side][slot[i]] = t != NULL ? t : res->tex;
+    }
+}
+
+/* The cursor's warrior on the portrait. */
+static void PortTs_ZwHover(s32 side) {
+    s32 at = sTsZwRow[side] * TS_COLS + sTsZwCol[side];
+
+    if (at >= sTsZwCount) {
+        return;
+    }
+    sTsZwHover[side] = sTsZwSkin[at];
+    gTeamSel->side[side]->chara = gTeamSel->side[side]->chip[0][sTsZwCol[side]];
+    TeamSel_RequestFace(side);
+}
+#endif
+
 void TeamSel_SetChips(s32 side) {
     s32 slot[7] = { 8, 11, 12, 13, 14, 15, 16 };
     s32 i;
@@ -216,12 +407,24 @@ void TeamSel_SetChips(s32 side) {
     for (i = 0; i < 7; i++) {
         s32 id = gTeamSel->cells[side][gTeamSel->side[side]->member[gTeamSel->side[side]->cur].row * 7 + i].id;
         MTexRes *res;
+#ifdef PORT
+        s32 zw = id == TS_ZW;
+
+        if (zw) { /* (the CUSTOM tile: its own chip; the game sees the custom marker) */
+            id = TS_CUSTOM;
+        }
+#endif
 
         gTeamSel->side[side]->chip[1][i] = gTeamSel->side[side]->chip[0][i];
         gTeamSel->side[side]->chip[0][i] = id;
         res = (MTexRes *)MPACK_AT(gTeamSel->chipPack, id + 1);
         gTeamSel->sideTex[side][18 + i] = gTeamSel->sideTex[side][slot[i]];
         gTeamSel->sideTex[side][slot[i]] = res->tex;
+#ifdef PORT
+        if (zw && PortTs_ZwChipTex(PORT_TS_ZW_MAX) != NULL) {
+            gTeamSel->sideTex[side][slot[i]] = PortTs_ZwChipTex(PORT_TS_ZW_MAX);
+        }
+#endif
     }
 }
 
@@ -305,6 +508,17 @@ void TeamSel_SetTeamTex(s32 side) {
             MTexRes *res = (MTexRes *)MPACK_AT(gTeamSel->chipPack, id + 1);
 
             gTeamSel->teamTex[side][slot[i]] = res->tex;
+#ifdef PORT
+            {
+                s32 sk = sTsMemberSkin[side][i], q;
+
+                for (q = 0; sk >= 0 && q < sTsZwCount; q++) { /* (a warrior: its own chip) */
+                    if (sTsZwSkin[q] == sk && PortTs_ZwChipTex(q) != NULL) {
+                        gTeamSel->teamTex[side][slot[i]] = PortTs_ZwChipTex(q);
+                    }
+                }
+            }
+#endif
             if (gTeamSel->battleType == 2) {
                 gTeamSel->side[side]->cost += ChrTbl_GetCost(id);
             }
@@ -362,8 +576,23 @@ void TeamSel_UpdateFaceLoad(void) {
                 gTeamSel->faceState = TEAMSEL_LOAD_IDLE;
             }
         } else {
+#ifdef PORT
+            {
+                TeamSelSide *fs = gTeamSel->side[gTeamSel->faceSide];
+                s32 sk = fs->state == PORT_TS_ZW ? sTsZwHover[gTeamSel->faceSide] : sTsZwPick[gTeamSel->faceSide];
+
+                if (sk < 0 && fs->cur >= 0 && fs->cur < 5 && fs->state == TEAMSEL_ST_TEAM) {
+                    sk = sTsMemberSkin[gTeamSel->faceSide][fs->cur];
+                } else if (sk < 0 && fs->cur == TS_CUR_MENU && fs->state == TEAMSEL_ST_TEAM) {
+                    sk = sTsMemberSkin[gTeamSel->faceSide][0];
+                }
+                File_Request(sk >= 0 ? Port_SkinFile(fs->chara, PORT_SKIN_CODE(sk, 0), 10, 0) : fs->chara + TS_FACE_FILE,
+                             gTeamSel->faceFile[gTeamSel->faceSide], 0x16800);
+            }
+#else
             File_Request(gTeamSel->side[gTeamSel->faceSide]->chara + TS_FACE_FILE,
                          gTeamSel->faceFile[gTeamSel->faceSide], 0x16800);
+#endif
             gTeamSel->faceState = TEAMSEL_LOAD_READ;
         }
         break;
@@ -706,6 +935,13 @@ void TeamSel_Init(s32 section) {
         res = (MTexRes *)MPACK_AT(gTeamSel->chipPack, i + 1);
         Res_RelocateOffsets(&res, res, res);
     }
+#ifdef PORT
+    {
+        extern void PortMods_PatchSelect(void *names, void *forms, u32 *chips);
+
+        PortMods_PatchSelect(gTeamSel->nameText, gTeamSel->formText, gTeamSel->chipPack); /* the mods' names and faces */
+    }
+#endif
     gTeamSel->stagePack = (u32 *)MPACK_AT(gTeamSel->res, 46);
     for (i = 0; i < (PortGame_IsBT4() ? 99 : 38); i++) {
         res = (MTexRes *)MPACK_AT(gTeamSel->stagePack, i + 1);
@@ -813,6 +1049,34 @@ void TeamSel_Init(s32 section) {
                       &gTeamSel->customCount[i], gTeamSel->custom[i]);
         gTeamSel->masterCount[i] = gTeamSel->cellCount[i];
         gTeamSel->cells[i] = gTeamSel->grid[i];
+#ifdef PORT
+        if (i == 0) {
+            PortTs_ZwLoad();
+        }
+        if (sTsZwCount > 0 && gTeamSel->cellCount[i] > 0) { /* the CUSTOM tile: in the first empty place, else a row of its own */
+            s32 c, at = -1;
+
+            for (c = 0; c < gTeamSel->cellCount[i]; c++) {
+                if (gTeamSel->grid[i][c].id == TS_EMPTY) {
+                    at = c;
+                    break;
+                }
+            }
+            if (at < 0 && gTeamSel->cellCount[i] + 7 <= (s32)(sizeof(gTeamSel->grid[i]) / sizeof(gTeamSel->grid[i][0]))) {
+                at = gTeamSel->cellCount[i];
+                for (c = 0; c < 7; c++) {
+                    gTeamSel->grid[i][at + c].id = TS_EMPTY;
+                    gTeamSel->grid[i][at + c].formCount = 0;
+                }
+                gTeamSel->cellCount[i] += 7;
+                gTeamSel->masterCount[i] = gTeamSel->cellCount[i];
+            }
+            if (at >= 0) {
+                gTeamSel->grid[i][at].id = TS_ZW;
+                gTeamSel->grid[i][at].formCount = 0;
+            }
+        }
+#endif
         gTeamSel->rows[i] = gTeamSel->masterCount[i] / cols;
         if (gTeamSel->masterCount[i] % cols) {
             gTeamSel->rows[i]++;
@@ -1875,6 +2139,27 @@ f32 TeamSel_Input(s32 *result) {
                     TeamSel_RequestFace(CUR_N);
                     Snd_PlaySe(2, 1);
                 } else if (gPad[i].gamePressed & 0x200) {
+#ifdef PORT
+                    if (CUR_CELL.id == TS_ZW) {
+                        if (sTsZwCount > 0) {
+                            sTsZwRow[CUR_N] = 0;
+                            sTsZwCol[CUR_N] = 0;
+                            CUR_MEMBER.customCol = 0;
+                            CUR_MEMBER.customRow = 0;
+                            Flash_GotoLabel(&gTeamSel->flash[CUR_N + 3], "fl_form", 1);
+                            CUR_SIDE->mask = 1;
+                            TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_CHIP, "fl_off_start");
+                            TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_CUSTOM_CHIP, "fl_on_start");
+                            PortTs_ZwSetChips(CUR_N);
+                            CUR_SIDE->state = PORT_TS_ZW;
+                            PortTs_ZwHover(CUR_N);
+                            Snd_PlaySe(2, 0x29);
+                        } else {
+                            Snd_PlaySe(1, 7);
+                        }
+                        continue;
+                    }
+#endif
                     if (CUR_CELL.id == TS_RANDOM) {
                         /* random: straight to the plates; the character is drawn when the costume is confirmed */
                         Flash_GotoLabel(&gTeamSel->flash[CUR_N + 5], "fl_custom_in", 1);
@@ -1977,6 +2262,73 @@ f32 TeamSel_Input(s32 *result) {
                 }
                 break;
 
+#ifdef PORT
+            case PORT_TS_ZW: { /* the custom characters' reel */
+                s32 rows = (sTsZwCount + TS_COLS - 1) / TS_COLS, at = sTsZwRow[CUR_N] * TS_COLS + sTsZwCol[CUR_N];
+
+                CUR_MEMBER.customCol = sTsZwCol[CUR_N]; /* (the reel's cursor: the game's clip of the chip is found by it) */
+                if (gPad[i].gameRepeat & 3) {
+                    s32 len = PortTs_ZwRowLen(sTsZwRow[CUR_N]);
+
+                    if (len > 1) {
+                        TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_CUSTOM_CHIP, "fl_off_start");
+                        sTsZwCol[CUR_N] = (sTsZwCol[CUR_N] + ((gPad[i].gameRepeat & 1) ? len - 1 : 1)) % len;
+                        CUR_MEMBER.customCol = sTsZwCol[CUR_N];
+                        TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_CUSTOM_CHIP, "fl_on_start");
+                        PortTs_ZwHover(CUR_N);
+                        Snd_PlaySe(2, 0);
+                    }
+                } else if ((gPad[i].gameRepeat & 0xC) && rows > 1) {
+                    s32 up = (gPad[i].gameRepeat & 8) != 0;
+
+                    Flash_GotoLabel(&gTeamSel->flash[CUR_N + 3], up ? "fl_reel_down" : "fl_reel_up", 1);
+                    CUR_SIDE->mask = 1;
+                    TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_CUSTOM_CHIP, "fl_off_start");
+                    sTsZwRow[CUR_N] = (sTsZwRow[CUR_N] + (up ? rows - 1 : 1)) % rows;
+                    if (sTsZwCol[CUR_N] >= PortTs_ZwRowLen(sTsZwRow[CUR_N])) {
+                        sTsZwCol[CUR_N] = PortTs_ZwRowLen(sTsZwRow[CUR_N]) - 1;
+                    }
+                    CUR_MEMBER.customCol = sTsZwCol[CUR_N];
+                    TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_CUSTOM_CHIP, "fl_on_start");
+                    PortTs_ZwSetChips(CUR_N);
+                    PortTs_ZwHover(CUR_N);
+                    Snd_PlaySe(2, up ? 2 : 1);
+                } else if ((gPad[i].gamePressed & 0x200) && at < sTsZwCount) { /* chosen: its plates, then its costume */
+                    s32 skin = sTsZwSkin[at];
+
+                    if (!TeamSel_FitsDp(CUR_N, CUR_SIDE->chara)) {
+                        Snd_PlaySe(1, 7);
+                        break;
+                    }
+                    sTsZwPick[CUR_N] = skin;
+                    Flash_GotoLabel(&gTeamSel->flash[CUR_N + 5], "fl_custom_in", 1);
+                    TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_CUSTOM_CHIP, "fl_ok");
+                    gTeamSel->plateCount[CUR_N] = (gTeamSel->battleType == 2) ? 1 : 4;
+                    if (!(CUR_MEMBER.plate < gTeamSel->plateCount[CUR_N])) {
+                        CUR_MEMBER.plate = 0;
+                    }
+                    TeamSel_ClipGoto(CUR_N + 5, CUR_N, TEAMSEL_CLIP_CUSTOM_PLATE, "fl_on_start");
+                    gTeamSel->colorCount[CUR_N] = Port_SkinCostumes(skin);
+                    if (!(CUR_MEMBER.color < gTeamSel->colorCount[CUR_N])) {
+                        CUR_MEMBER.color = 0;
+                    }
+                    CUR_SIDE->state = TEAMSEL_ST_PLATE;
+                    Snd_PlaySe(1, 1);
+                } else if (gPad[i].gamePressed & 0x400) { /* back to the grid */
+                    Flash_GotoLabel(&gTeamSel->flash[CUR_N + 3], "fl_form", 1);
+                    CUR_SIDE->mask = 1;
+                    TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_CUSTOM_CHIP, "fl_off_start");
+                    TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_CHIP, "fl_on_start");
+                    sTsZwHover[CUR_N] = -1;
+                    TeamSel_SetChips(CUR_N);
+                    CUR_SIDE->chara = CUR_SIDE->chip[0][CUR_MEMBER.col];
+                    TeamSel_RequestFace(CUR_N);
+                    CUR_SIDE->state = TEAMSEL_ST_GRID;
+                    Snd_PlaySe(2, 0x29);
+                }
+                break;
+            }
+#endif
             case TEAMSEL_ST_FORM:
                 if (gPad[i].gameRepeat & 1) {
                     TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_FORM_CHIP, "fl_off_start");
@@ -2088,6 +2440,15 @@ f32 TeamSel_Input(s32 *result) {
                 } else if (gPad[i].gamePressed & 0x400) {
                     Flash_GotoLabel(&gTeamSel->flash[CUR_N + 5], "fl_custom_cansel", 1);
                     TeamSel_ClipGoto(CUR_N + 5, CUR_N, TEAMSEL_CLIP_CUSTOM_PLATE, "fl_off_start");
+#ifdef PORT
+                    if (sTsZwPick[CUR_N] >= 0) { /* (a warrior's plates: back to the reel) */
+                        sTsZwPick[CUR_N] = -1;
+                        TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_CUSTOM_CHIP, "fl_on_start");
+                        CUR_SIDE->state = PORT_TS_ZW;
+                        Snd_PlaySe(1, 2);
+                        break;
+                    }
+#endif
                     if (CUR_SIDE->flags & TEAMSEL_SIDE_FORM) {
                         TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_FORM_CHIP, "fl_on_start");
                         CUR_SIDE->state = TEAMSEL_ST_FORM;
@@ -2159,6 +2520,24 @@ f32 TeamSel_Input(s32 *result) {
                     Flash_GotoLabel(&gTeamSel->flash[CUR_N + 1], "fl_in", 1);
                     TeamSel_ClipGoto(CUR_N + 5, CUR_N, TEAMSEL_CLIP_COLOR_PLATE, "fl_ok");
                     TeamSel_ClipGoto(CUR_N + 5, CUR_N, TEAMSEL_CLIP_CUSTOM_PLATE, "fl_off_start");
+#ifdef PORT
+                    if (CUR_SIDE->cur >= 0 && CUR_SIDE->cur < 5) {
+                        sTsMemberSkin[CUR_N][CUR_SIDE->cur] = sTsZwPick[CUR_N];
+                    }
+                    if (sTsZwPick[CUR_N] >= 0) { /* a warrior: its fighter, the tile's item sets */
+                        s32 ch = Port_SkinChara(sTsZwPick[CUR_N]);
+
+                        CUR_MEMBER.chara = ch >= 0 && ch < TS_RANDOM ? ch : 0;
+                        if (CUR_MEMBER.plate != 0) {
+                            CUR_ITEMS = TS_SAVE->custom[CUR_MEMBER.row * TS_COLS + CUR_MEMBER.col].set[CUR_MEMBER.plate - 1];
+                        } else {
+                            memset(&CUR_ITEMS, 0, sizeof(TsItemSet));
+                        }
+                        TeamSel_ClipGoto(CUR_N + 3, CUR_N, TEAMSEL_CLIP_CUSTOM_CHIP, "fl_off_start");
+                        sTsZwPick[CUR_N] = -1;
+                        sTsZwHover[CUR_N] = -1;
+                    } else
+#endif
                     if (CUR_SIDE->flags & TEAMSEL_SIDE_FORM) {
                         CUR_MEMBER.chara = CUR_SIDE->chip[0][CUR_MEMBER.form];
                         if (CUR_MEMBER.plate != 0) {
@@ -2719,14 +3098,18 @@ s32 TeamSel_Run(s32 section) {
         }
         for (i = 0; i < TEAMSEL_SIDES; i++) {
             for (j = 0; j < gTeamSel->side[i]->memberCount; j++) {
-                BattleSetup_SetMember(i, j, gTeamSel->side[i]->member[j].chara, gTeamSel->side[i]->member[j].color,
-                                      0,
 #ifdef PORT
-                                      TagSession_Selected()?TagSession_CpuLevel(i,j):cpuLevel,
+                s32 code = gTeamSel->side[i]->member[j].color;
+
+                if (j < 5 && sTsMemberSkin[i][j] >= 0) { /* (a Z Warriors member: its warrior's costume code) */
+                    code = PORT_SKIN_CODE(sTsMemberSkin[i][j], code & 3);
+                }
+                BattleSetup_SetMember(i, j, gTeamSel->side[i]->member[j].chara, code, 0, TagSession_Selected() ? TagSession_CpuLevel(i, j) : cpuLevel, 100.0f,
+                                      gTeamSel->side[i]->member[j].items.id);
 #else
-                                      cpuLevel,
+                BattleSetup_SetMember(i, j, gTeamSel->side[i]->member[j].chara, gTeamSel->side[i]->member[j].color,
+                                      0, cpuLevel, 100.0f, gTeamSel->side[i]->member[j].items.id);
 #endif
-                                      100.0f, gTeamSel->side[i]->member[j].items.id);
             }
         }
         TagChallenge_SetupBattle();

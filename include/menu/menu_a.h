@@ -171,7 +171,7 @@ extern MenuProgress *gProgress;
 /* ---- MainMenu (menu_a.c) ---- */
 
 #ifdef PORT
-#define MAINMENU_ITEM_MAX 12 /* PC: "Tenkaichi Budokai Online" (11) is listed too */
+#define MAINMENU_ITEM_MAX 15 /* PC: "Tenkaichi Budokai Online" (11), the Mod Manager (12), Z Warriors (13) and Tag Team (14) are listed too */
 #else
 #define MAINMENU_ITEM_MAX 11
 #endif

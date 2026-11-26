@@ -43,7 +43,63 @@
     X(TBO_DB_LOGO, "db_logo")               /* the gold TAG TEAM lettering (RGBA) */ \
     X(TBO_DB_PLATE, "db_plate")             /* a list plate, blue (nine pieces) */ \
     X(TBO_DB_PLATE_ON, "db_plate_on")       /* ... orange, under the cursor (nine pieces) */ \
-    X(TBO_STORM_BOLT, "storm_bolt")         /* four lightning bolts side by side, 256 x 1024 each (our own drawing): the full power storm (stg_c.c) */
+    X(TBO_STORM_BOLT, "storm_bolt")         /* four lightning bolts side by side, 256 x 1024 each (our own drawing): the full power storm (stg_c.c) */ \
+    X(MM_BG, "mm_bg")               /* the Mod Manager's pictures (src/menu/port_mmkit.c), in mm_sizes.h's order */ \
+    X(MM_BAR, "mm_bar") \
+    X(MM_BAR_SEL, "mm_bar_sel") \
+    X(MM_TAB, "mm_tab") \
+    X(MM_TAB_SEL, "mm_tab_sel") \
+    X(MM_BAR_GREY, "mm_bar_grey") \
+    X(MM_NAVBAR, "mm_navbar") \
+    X(MM_FIELD, "mm_field") \
+    X(MM_KEY, "mm_key") \
+    X(MM_WINDOW_DARK, "mm_window_dark") \
+    X(MM_CARD, "mm_card") \
+    X(MM_WINDOW, "mm_window") \
+    X(MM_EMBLEM, "mm_emblem") \
+    X(MM_PLATFORM, "mm_platform") \
+    X(MM_FOLDER, "mm_folder") \
+    X(MM_FOLDER_MOD, "mm_folder_mod") \
+    X(MM_FOLDER_BATCH, "mm_folder_batch") \
+    X(MM_ZIP, "mm_zip") \
+    X(MM_KEYCAP, "mm_keycap") \
+    X(MM_KEYCAP_SEL, "mm_keycap_sel") \
+    X(MM_CELL, "mm_cell") \
+    X(MM_UP, "mm_up") \
+    X(MM_DOWN, "mm_down") \
+    X(MM_LEFT, "mm_left") \
+    X(MM_RIGHT, "mm_right") \
+    X(MM_BALL, "mm_ball") \
+    X(MM_LOCK, "mm_lock") \
+    X(MM_PIP, "mm_pip") \
+    X(MM_PIP_OFF, "mm_pip_off") \
+    X(MM_BG_DUSK, "mm_bg_dusk")     /* the character select's mod grid */ \
+    X(ZW_BG, "zw_bg")  /* Z Warriors (src/menu/port_zw.c), in zw_sizes.h's order */ \
+    X(ZW_KK_THUMB, "zw_kk_thumb") \
+    X(ZW_KK_THINK, "zw_kk_think") \
+    X(ZW_KK_LAUGH, "zw_kk_laugh") \
+    X(ZW_KK_POINT, "zw_kk_point") \
+    X(ZW_EMBLEM, "zw_emblem") \
+    X(ZW_PLATFORM, "zw_platform") \
+    X(ZW_PORTRAIT, "zw_portrait") \
+    X(ZW_HALO, "zw_halo") \
+    X(ZW_BAR, "zw_bar") \
+    X(ZW_BAR_SEL, "zw_bar_sel") \
+    X(ZW_WINDOW, "zw_window") \
+    X(ZW_DIALOG, "zw_dialog") \
+    X(ZW_PILL, "zw_pill") \
+    X(ZW_PILL_STEEL, "zw_pill_steel") \
+    X(ZW_FIELD, "zw_field") \
+    X(ZW_RING, "zw_ring") \
+    X(ZW_RING_SEL, "zw_ring_sel") \
+    X(ZW_KEY, "zw_key") \
+    X(ZW_KEY_SEL, "zw_key_sel") \
+    X(ZW_SECTION, "zw_section") \
+    X(ZW_UP, "zw_up") \
+    X(ZW_DOWN, "zw_down") \
+    X(ZW_SHIN, "zw_shin") \
+    X(MENU_BALL, "menu_ball")     /* the main menu's animated icons (port/tools/menu_icon_films.py): Z Warriors', */ \
+    X(MENU_RADAR, "menu_radar")   /* ... and Tag Team's */
 
 #define TBO_ART_ENUM(id, name) id,
 enum { TBO_ART_LIST(TBO_ART_ENUM) TBO_ART_COUNT };
@@ -57,7 +113,11 @@ enum { TBO_ART_LIST(TBO_ART_ENUM) TBO_ART_COUNT };
 /* The lines of letters (port/src/gs/tbo_text.c) are drawn the same way: numbers TBO_TEXT_BASE and on, one per line
    the screens write, the picture made from a TrueType font of the font list. */
 #define TBO_TEXT_BASE 0x100
-#define TBO_TEXT_SLOTS 128
+#define TBO_TEXT_SLOTS 256
+/* The last place is not a line: a picture the game made (PortTbo_SetPicture: Z Warriors' texture painting), drawn as
+   one picture instead of a rectangle a pixel */
+#define TBO_PICTURE (TBO_TEXT_BASE + TBO_TEXT_SLOTS - 1)
+int PortTbo_SetPicture(const unsigned int *rgba, int w, int h); /* RGBA, the GS's alpha (0x80 opaque); 1 kept */
 
 /* Native artwork for the first-run language selector, decoded from the player's EU disc. */
 #define TBO_LANG_BG 0x200

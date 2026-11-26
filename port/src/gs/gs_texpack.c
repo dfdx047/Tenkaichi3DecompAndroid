@@ -63,6 +63,102 @@ static uint32_t *sHeld, sHeldCount;          /* the entries in memory (state 2) 
 static size_t sHeldBytes, sBudget;
 static unsigned sTick;
 static int sSync = -1;
+static void image_free(TexPackImage *img);
+
+/* Z Warriors' HD pictures (the photos of a warrior: its render, small portrait and health-bar faces). The game's own
+   texture is 8-bit and small; its palette carries a tag in entries 252..254 (index order) that no pixel uses:
+     252  nonce | 0x03 << 24   (changes with each new photo: the picture is read again)
+     253  0x015A5748            ("HWZ", alpha 1)
+     254  key | 0x02 << 24      (which warrior and which picture: plat_mods.c Port_ZwHdPath finds its file)
+   Such a texture is drawn from that PNG instead, whatever the texture pack setting. */
+#define HD_MAX 64
+#define HD_BASE 0x40000000
+#define HD_MAGIC 0x015A5748u
+static Entry sHd[HD_MAX];
+static uint32_t sHdKey[HD_MAX], sHdNonce[HD_MAX];
+static int sHdN, sStaticOn = 1;
+extern int Port_ZwHdPath(uint32_t key, char *out, int max);
+
+static Entry *ent(uint32_t id) {
+    return id >= HD_BASE ? &sHd[id - HD_BASE] : &sEntries[id];
+}
+
+void TexPack_SetStatic(int on) {
+    sStaticOn = on;
+}
+
+int TexPack_IsHd(int id) {
+    return id >= HD_BASE;
+}
+
+/* The tagged texture's HD entry, or -1. */
+static int hd_lookup(uint32_t psm, uint32_t cbp, uint32_t cpsm) {
+    uint32_t c[3], i, key, nonce;
+    int k;
+    char path[1024];
+
+    if (psm != 0x13 || cpsm != 0) {
+        return -1;
+    }
+    for (i = 0; i < 3; i++) {
+        uint32_t n = 252 + i, s = (n & 0xE7) | ((n & 8) << 1) | ((n & 0x10) >> 1);
+        c[i] = Gs_VramRead(cbp, 1, cpsm, s & 15, s >> 4);
+    }
+    if (c[1] != HD_MAGIC || (c[2] >> 24) != 2 || (c[0] >> 24) != 3) {
+        return -1;
+    }
+    key = c[2] & 0xFFFFFF;
+    nonce = c[0] & 0xFFFFFF;
+    for (k = 0; k < sHdN; k++) {
+        if (sHdKey[k] == key) {
+            break;
+        }
+    }
+    if (k < sHdN && sHdNonce[k] == nonce && sHd[k].state != 3) {
+        return HD_BASE + k;
+    }
+    if (!Port_ZwHdPath(key, path, (int)sizeof(path))) {
+        return -1;
+    }
+    if (k == sHdN) {
+        if (sHdN == HD_MAX) {
+            return -1;
+        }
+        sHdN++;
+        memset(&sHd[k], 0, sizeof(sHd[k]));
+    }
+    if (sLock != NULL) {
+        SDL_LockMutex(sLock);
+    }
+    if (sHd[k].state == 1) { /* (still being read: its old file; asked again later) */
+        if (sLock != NULL) {
+            SDL_UnlockMutex(sLock);
+        }
+        return -1;
+    }
+    if (sHd[k].state == 2) {
+        uint32_t j;
+        image_free(&sHd[k].img);
+        sHeldBytes -= sHd[k].held;
+        sHd[k].held = 0;
+        for (j = 0; j < sHeldCount; j++) {
+            if (sHeld[j] == (uint32_t)(HD_BASE + k)) {
+                sHeld[j] = sHeld[--sHeldCount];
+                break;
+            }
+        }
+    }
+    free(sHd[k].path);
+    sHd[k].path = strdup(path);
+    sHd[k].state = 0;
+    sHdKey[k] = key;
+    sHdNonce[k] = nonce;
+    if (sLock != NULL) {
+        SDL_UnlockMutex(sLock);
+    }
+    fprintf(stderr, "bt3: HD picture %06x: %s\n", key, path);
+    return HD_BASE + k;
+}
 
 static uint32_t bucket_of(uint64_t tex, uint64_t clut, uint32_t bits) {
     uint64_t h = (tex ^ (clut * 0x9E3779B97F4A7C15ull) ^ bits) * 0x9FB21C651E98DF25ull;
@@ -328,7 +424,7 @@ int TexPack_Count(void) {
 }
 
 const char *TexPack_Path(int id) {
-    return id >= 0 && (uint32_t)id < sCount ? sEntries[id].path : NULL;
+    return id >= HD_BASE && id < HD_BASE + sHdN ? sHd[id - HD_BASE].path : id >= 0 && (uint32_t)id < sCount ? sEntries[id].path : NULL;
 }
 
 int TexPack_Lookup(uint32_t tbp, uint32_t tbw, uint32_t psm, uint32_t tw, uint32_t th, uint32_t tcc, uint32_t cbp, uint32_t cpsm, uint32_t *maxAlpha) {
@@ -338,7 +434,14 @@ int TexPack_Lookup(uint32_t tbp, uint32_t tbw, uint32_t psm, uint32_t tw, uint32
     int pal = psm == 0x13 || psm == 0x14;
 
     *maxAlpha = 255;
-    if (sCount == 0) {
+    {
+        int hd = hd_lookup(psm, cbp, cpsm);
+        if (hd >= 0) {
+            *maxAlpha = 0x80;
+            return hd;
+        }
+    }
+    if (sCount == 0 || !sStaticOn) {
         return -1;
     }
     if (psm == 0x13) { bw = 16; bh = 16; }
@@ -595,7 +698,7 @@ static size_t image_bytes(const TexPackImage *img) {
 
 /* Called with sLock held: a file read, into its entry */
 static void store(uint32_t id, int ok, const TexPackImage *img) {
-    Entry *e = &sEntries[id];
+    Entry *e = ent(id);
     if (!ok) {
         e->state = 3;
         return;
@@ -620,7 +723,7 @@ static int SDLCALL reader(void *unused) {
         }
         id = sQueue[sTail++ & (QUEUE - 1)];
         SDL_UnlockMutex(sLock);
-        ok = load_for_gpu(sEntries[id].path, &img);
+        ok = load_for_gpu(ent(id)->path, &img);
         SDL_LockMutex(sLock);
         store(id, ok, &img);
         SDL_UnlockMutex(sLock);
@@ -634,7 +737,7 @@ static void trim(uint32_t keep) {
     while (sHeldBytes > sBudget / 4 * 3 && sHeldCount > 1) {
         uint32_t i, old = sHeldCount;
         for (i = 0; i < sHeldCount; i++) {
-            if (sHeld[i] != keep && (old == sHeldCount || sEntries[sHeld[i]].used < sEntries[sHeld[old]].used)) {
+            if (sHeld[i] != keep && (old == sHeldCount || ent(sHeld[i])->used < ent(sHeld[old])->used)) {
                 old = i;
             }
         }
@@ -642,7 +745,7 @@ static void trim(uint32_t keep) {
             return;
         }
         {
-            Entry *e = &sEntries[sHeld[old]];
+            Entry *e = ent(sHeld[old]);
             image_free(&e->img);
             sHeldBytes -= e->held;
             e->held = 0;
@@ -656,14 +759,14 @@ int TexPack_Get(int id, TexPackImage *img) {
     Entry *e;
     int r;
 
-    if (id < 0 || (uint32_t)id >= sCount) {
+    if (id < 0 || (id < HD_BASE && (uint32_t)id >= sCount) || (id >= HD_BASE && id >= HD_BASE + sHdN)) {
         return -1;
     }
     if (sSync < 0) {
         const char *mb = getenv("BT3_PACK_MB");
         sSync = getenv("BT3_PACK_SYNC") != NULL && atoi(getenv("BT3_PACK_SYNC")) != 0;
         sBudget = mb != NULL && atoi(mb) > 0 ? (size_t)atoi(mb) << 20 : TEXPACK_BUDGET;
-        sHeld = malloc(sCount * sizeof(uint32_t));
+        sHeld = malloc((sCount + HD_MAX) * sizeof(uint32_t));
         sLock = SDL_CreateMutex();
         sWake = SDL_CreateCondition();
         if (!sSync && sLock != NULL && sWake != NULL) {
@@ -673,7 +776,7 @@ int TexPack_Get(int id, TexPackImage *img) {
             sSync = 1;
         }
     }
-    e = &sEntries[id];
+    e = ent((uint32_t)id);
     SDL_LockMutex(sLock);
     e->used = ++sTick;
     if (e->state == 0 && sSync) {

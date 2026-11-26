@@ -21,6 +21,12 @@ extern s32 TeamSel_Run(s32 section);  /* 0x351508: team character select (team a
 s32 Duel_Mode41(s32 arg);
 
 /* Runs the duel mode's screens until one of them leaves the mode. */
+#ifdef PORT
+extern s32 gPortDuelRole;
+extern s32 PortModMgr_Run(void);
+extern s32 PortZw_Run(void);
+extern s32 Port_ZwAllowed(void); /* port/src/plat_fprint.c: the original disc only */
+#endif
 s32 Duel_Main(void) {
     s32 bgm = 0;
     s32 done = 0;
@@ -29,6 +35,53 @@ s32 Duel_Main(void) {
     if (gMenuArc5 == NULL) {
         gMenuArc5 = File_LoadSync(gProgress->baseFile, NULL, 0);
     }
+#ifdef PORT
+    if (gPortDuelRole == 3 && !Port_ZwAllowed()) { /* a modified disc image: back to the main menu */
+        gPortDuelRole = 0;
+        gProgress->mode = 4;
+        result = 0;
+        done = 1;
+    }
+    if (gPortDuelRole == 3) { /* opened from the main menu's Z Warriors item: its screen, then back; it can leave for the
+                                 character select (back to it after) or a test fight (its pause menu comes back) */
+        s32 to;
+
+        while (1) {
+            Bgm_Play(0x10B16 + 2);
+            to = PortZw_Run();
+            Adx_StopAll();
+            if (to != 2) {
+                break;
+            }
+            CharSel_Run(2); /* (the real character select: the CUSTOM slot shows the warriors) */
+            Adx_StopAll();
+        }
+        gPortDuelRole = 0;
+        if (to == 1) { /* the test fight is set up: the Training runs it */
+            gProgress->mode = 45;
+            result = 1;
+        } else {
+            gProgress->mode = 4;
+            result = 0;
+        }
+        done = 1;
+    }
+    if (gPortDuelRole == 2) { /* opened from the main menu's Mod Manager item: its screen, then back */
+        Bgm_Play(0x10B16 + 2); /* "Innocent World" (the third piece of the music list) */
+        if (PortModMgr_Run()) { /* left for a test fight: a training battle is set up; from it the Training is next */
+            Adx_StopAll();
+            gPortDuelRole = 0;
+            gProgress->mode = 45;
+            result = 1;
+        } else {
+            Adx_StopAll();
+            gPortDuelRole = 0;
+            gProgress->mode = 4;
+            result = 0;
+        }
+        done = 1;
+    }
+#endif
     do {
         switch (gProgress->mode) {
         case 38:

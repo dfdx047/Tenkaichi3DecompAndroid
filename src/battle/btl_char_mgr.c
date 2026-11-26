@@ -499,6 +499,17 @@ void BtlChar_OnModelLoaded(BtlMgrChr *chr) {
     }
     { extern void TagFusion_ModelLoaded(s32); TagFusion_ModelLoaded(chr->side); }
     BtlObj_SetColorPreset(obj, BtlParam_GetAuraKind(chr), -1);
+#ifdef PORT
+    { /* PC: a warrior's aura colour on the light its aura casts on its body too (a Super Saiyan's gold while charging):
+         bobj_a.c PortObj_AuraPreset, which nothing called */
+        extern s32 Port_SkinAuraOf(s32 player);
+        extern void PortObj_AuraPreset(void *obj, s32 bgr);
+
+        if (chr->objId >= 0 && chr->objId < 2 && Port_SkinAuraOf(chr->objId) > 0) {
+            PortObj_AuraPreset((void *)obj, Port_SkinAuraOf(chr->objId) & 0xFFFFFF);
+        }
+    }
+#endif
     if (BtlMember_GetActiveGauge(chr)->unk20 != 0) {
         obj->flags |= 0x40000000;
     } else {

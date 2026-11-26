@@ -23,6 +23,8 @@ int TexPack_Count(void);
 int TexPack_Lookup(uint32_t tbp, uint32_t tbw, uint32_t psm, uint32_t tw, uint32_t th, uint32_t tcc, uint32_t cbp, uint32_t cpsm,
                    uint32_t *maxAlpha);
 const char *TexPack_Path(int id);
+void TexPack_SetStatic(int on); /* the texture pack setting (Z Warriors' HD pictures are used either way) */
+int TexPack_IsHd(int id);
 /* Replacement `id`'s pixels: 1 and *img (kept by the pack: valid until the next call), 0 while the file is still
    being read (in the background: ask again later), -1 if it cannot be read. */
 int TexPack_Get(int id, TexPackImage *img);

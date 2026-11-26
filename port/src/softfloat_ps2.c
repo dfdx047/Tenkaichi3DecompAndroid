@@ -149,3 +149,14 @@ uint32_t __floatunsisf(uint32_t v) {
 
     return (v & SIGN) ? RefVu0_AddBits(f, 0x4F800000u) : f;
 }
+
+/* The same from 64 bits (the compiler widens some unsigned conversions): the two halves, the high one 2^32 up. */
+uint32_t __floatundisf(uint64_t v) {
+    uint32_t hi = (uint32_t)(v >> 32), f;
+
+    if (hi == 0) {
+        return __floatunsisf((uint32_t)v);
+    }
+    f = __floatunsisf(hi) + (32u << 23);
+    return RefVu0_AddBits(f, __floatunsisf((uint32_t)v));
+}

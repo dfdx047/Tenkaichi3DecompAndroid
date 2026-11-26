@@ -1,0 +1,350 @@
+Attack + 1
+Attack + 2
+Attack + 3
+Defense + 1
+Defense + 2
+Defense + 3
+Ki Power + 1
+Ki Power + 2
+Ki Power + 3
+Super + 1
+Super + 2
+Super + 3
+Attack + 2 & Defense - 1
+Defense + 2 & Attack - 1
+Ki Power + 2 & Super - 1
+Super + 2 & Power - 1
+Attack + 3 & Super - 1
+Defense + 3 & Attack - 2
+Ki Power + 3 & Defense - 1
+Super + 3 & Power - 2
+Attack + 3 & Defense - 2
+Defense + 3 & Power - 1
+Power + 3 & Super - 2
+Super + 3 & Attack - 1
+Blue Blank 1
+Blue Blank 2
+Blue Blank 3
+Blue Blank 4
+Blue Blank 5
+Blue Blank 6
+Blue Blank 7
+Blue Blank 8 
+Blue Blank 9
+Blue Blank 10
+Flight
+Unleash Latent Power 1
+Unleash Latent Power 2
+Unleash Latent Power 3
+Ki Control
+Dragon Dash Mastery
+High Spot
+Essence of Sight
+Warrior Lineage
+Halo
+Demon Seal
+Satisfying Blow
+Active Heart
+Indomitable Fighting Spirit
+Mind Breaker
+Gigantic Power
+Rising Fighting Spirit
+Secret Measures
+Proof of Friendship
+Dende's Healing Ability
+Eternal Life
+Tension Up
+High Tension
+Water Blessing
+Spiritual Control
+Lover of Justice
+Evil Ambitions
+Dragon Heart
+Dragon Beat
+Dragon Spirit
+Confidence
+Battle Control
+Kibito's Secret Art
+Persistent Threat
+Miracle Master
+Exquisite Skill
+Quick Return
+Heavy Pressure
+Unleash Ki
+Power of Rage
+Dragon Power
+Latent Energy!
+Fighting Spirit!
+Indignation!
+Serious!
+Hatred of Saiyans
+Rush Blast 1
+Rush Blast 2
+Rush Blast 3
+Guard Master
+Mirage
+Warrior's Will
+Evil Pride
+Perfect Guard
+Sparking Plus
+Style of the Strong
+Emperor's Aura
+Miracle Sparking
+Savior
+Light Body
+Power Body
+Ultimate Body
+Draconic Aura
+Master Strike
+Master Blast
+Master Throw
+Charged Attack
+Quick Fast Attack
+Dragon Break
+Dragon Crush
+Vanishing Break
+Vanishing Rush
+Combo Master
+Quick Charge
+Super Senses
+Broly's Ring
+Namek Power
+Earth Power
+Universal Power
+Aura Charge Blue
+Aura Charge Purple
+Aura Charge Yellow
+Aura Charge Red
+Aura Charge Green
+Aura Charge White
+Aura Charge Pink
+Aura Charge Violet
+Aura Charge Ultimate
+Aura Charge Ultimate 3
+Aura Charge Ultimate 4
+Master Roshi's Training
+King Kai's Training
+#18's Kiss
+#17's Scarf
+Medical Machine
+Yellow Blank 1
+Yellow Blank 2
+Yellow Blank 3
+Yellow Blank 4
+Yellow Blank 5
+Yellow Blank 6
+Yellow Blank 7
+Launch's Support
+Goku Type
+Vegeta Type
+Gohan Type
+Trunks Type
+Piccolo Type
+Krillin Type
+Tien Type
+Chiaotzu Type
+Yajirobe Type
+Frieza Type
+Cell Type
+Majin Buu Type
+Broly Type
+Ginyu Type
+Recoome Type
+Purple Blank 1
+Purple Blank 2
+Purple Blank 3
+Purple Blank 4
+Purple Blank 5
+Purple Blank 6
+Purple Blank 7
+Purple Blank 8
+Purple Blank 9
+Purple Blank 10
+Ultimate Warrior  1
+Ultimate Warrior  2
+Ultimate Warrior  3
+Ultimate Warrior  4
+Ultimate Warrior  5
+Ultimate Warrior  6
+Ultimate Warrior  7
+Ultimate Warrior  8
+Attack -25
+Attack -24
+Attack -23
+Attack -22
+Attack -21
+Attack -20
+Attack -19
+Attack -18
+Attack -17
+Attack -16
+Attack -15
+Attack -14
+Attack -13
+Attack -12
+Attack -11
+Attack -10
+Attack -9
+Attack -8
+Attack -7
+Attack -6
+Attack -5
+Attack -4
+Attack -3
+Attack -2
+Attack -1
+Attack 0
+Attack +1
+Attack +2
+Attack +3
+Attack +4
+Attack +5
+Attack +6
+Attack +7
+Attack +8
+Attack +9
+Attack +10
+Attack +11
+Attack +12
+Attack +13
+Attack +14
+Attack +15
+Attack +16
+Attack +17
+Attack +18
+Attack +19
+Attack +20
+Attack +21
+Attack +22
+Attack +23
+Attack +24
+Attack +25
+Attack +26
+Attack +27
+Attack +28
+Attack +29
+Attack +30
+Attack +31
+Attack +32
+Attack +33
+Attack +34
+Attack +35
+Attack +36
+Attack +37
+Attack +38
+Attack +39
+Attack +40
+Attack +41
+Attack +42
+Attack +43
+Attack +44
+Attack +45
+Attack +46
+Attack +47
+Attack +48
+Attack +49
+Attack +50
+Defense -25
+Defense -24
+Defense -23
+Defense -22
+Defense -21
+Defense -20
+Defense -19
+Defense -18
+Defense -17
+Defense -16
+Defense -15
+Defense -14
+Defense -13
+Defense -12
+Defense -11
+Defense -10
+Defense -9
+Defense -8
+Defense -7
+Defense -6
+Defense -5
+Defense -4
+Defense -3
+Defense -2
+Defense -1
+Defense 0
+Defense +1
+Defense +2
+Defense +3
+Defense +4
+Defense +5
+Defense +6
+Defense +7
+Defense +8
+Defense +9
+Defense +10
+Defense +11
+Defense +12
+Defense +13
+Defense +14
+Defense +15
+Defense +16
+Defense +17
+Defense +18
+Defense +19
+Defense +20
+Defense +21
+Defense +22
+Defense +23
+Defense +24
+Defense +25
+Defense +26
+Defense +27
+Defense +28
+Defense +29
+Defense +30
+Defense +31
+Defense +32
+Defense +33
+Defense +34
+Defense +35
+Defense +36
+Defense +37
+Defense +38
+Defense +39
+Defense +40
+Defense +41
+Defense +42
+Defense +43
+Defense +44
+Defense +45
+Defense +46
+Defense +47
+Defense +48
+Defense +49
+Defense +50
+Strength Enhancement
+Strength Reduction (-30k)
+Blast Clash Weakened (Small)
+Blast Clash Weakened (Medium)
+Blast Clash Weakened (Large)
+Absolutely Invincible Body
+Go To Hell
+Super Mode
+Extreme Hand to Hand
+Extreme Energy Blast
+Extreme Blast
+Extreme Defense
+Resistor
+Super Regeneration Cells
+Complete Ki Control
+God of Battle
+Fierce God
+Strength Reduction (-10k)
+Strength Reduction (-20k)
+Limitbreaker
+Inherited Power
+Red Blank 1
+Red Blank 2
+Red Blank 3
+Red Blank 4
+Red Blank 5
+Red Blank 6
+Red Blank 7

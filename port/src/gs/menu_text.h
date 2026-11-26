@@ -64,7 +64,8 @@ uint8_t *MenuText_RenderSong(const char *text, int selected, int scale, int *out
 /* Added stage name centered in the disc's 512x64 row, with ordinary RGBA alpha. */
 uint8_t *MenuText_RenderStage(const char *text, int scale, int *outWidth, int *outHeight);
 /* A line of UTF-8 text for the PC's own screens (gs/tbo_text.c): `kind` 0 in the Menu font, 1 in the Dialogue / UI
-   font, each on "Original" the first font of fonts.tsv for that use. Capitals `cap` pixels high, `pad` pixels of
+   font, each on "Original" the first font of fonts.tsv for that use; 2 in the lettering of the game's menus (Tahoma
+   Bold, from Windows; the Menu font where there is none). Capitals `cap` pixels high, `pad` pixels of
    room round it; the picture is *w x *h coverage bytes with the baseline *base rows down and the pen `pad` in.
    Measure returns how far the pen goes (0: no font or no text); Render returns the picture (free() it) or NULL.
    The generation changes when the font of either kind changes. */
@@ -77,6 +78,9 @@ uint8_t *MenuText_LineRender(int kind, const char *text, int cap, int pad, int *
    returns the picture, RGBA with the GS's alpha (0x80 opaque), or NULL; free() it. */
 int MenuText_HeadingMeasure(const char *text, int *cap, int *w, int *h, int *base, int *pad);
 uint8_t *MenuText_HeadingRender(const char *text, int *w, int *h);
+/* The same with the font of a line's `kind` (0 the Menu font, 2 the game's lettering: Tahoma Bold). */
+int MenuText_HeadingMeasureKind(int kind, const char *text, int *cap, int *w, int *h, int *base, int *pad);
+uint8_t *MenuText_HeadingRenderKind(int kind, const char *text, int *w, int *h);
 #ifdef __cplusplus
 }
 #endif

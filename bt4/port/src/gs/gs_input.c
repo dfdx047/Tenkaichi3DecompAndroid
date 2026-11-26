@@ -13,6 +13,7 @@
  * bytes of the buffer are left at zero. The game's motor commands go to the player's controller (Port_PadVibrate).
  */
 #ifdef __ANDROID__
+#include <stdint.h>
 #include <unistd.h>
 #endif
 #include <SDL3/SDL.h>
@@ -105,6 +106,19 @@ int Port_TouchTapTake(int *x, int *y) {
     }
     *x = sTapX;
     *y = sTapY;
+    return 1;
+}
+/* A tap for the game's own menus, in the picture's 512 x 448 (out: two ints, a game address). 1 once per tap. */
+int Port_MenuTap(unsigned out) {
+    extern volatile int gUiPresentX, gUiPresentY, gUiPresentW, gUiPresentH;
+    int x, y;
+    int *o = (int *)(uintptr_t)out;
+
+    if (!Port_TouchTapTake(&x, &y) || gUiPresentW <= 0 || gUiPresentH <= 0) {
+        return 0;
+    }
+    o[0] = (int)((long long)(x - gUiPresentX) * 512 / gUiPresentW);
+    o[1] = (int)((long long)(y - gUiPresentY) * 448 / gUiPresentH);
     return 1;
 }
 extern int Port_Setting(const char *name, int def); /* plat_settings.c */

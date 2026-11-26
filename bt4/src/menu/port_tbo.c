@@ -4996,6 +4996,124 @@ static void Tb_WinTerm(void) {
     sTbWinRes = NULL;
 }
 
+/* ---- touch: a finger on an option chooses it and presses it ---- */
+extern s32 Ps_Tap(f32 *x, f32 *y);
+
+/* The pages are the redesign's (tbo_look.inc): the places below are in its design units (2712 x 1220), as it draws. */
+static s32 Tb_TouchIn(f32 x, f32 y, f32 x0, f32 y0, f32 x1, f32 y1) {
+    return x >= Td_X(x0) && x <= Td_X(x1) && y >= Td_Y(y0) && y <= Td_Y(y1);
+}
+
+static void Tb_TouchPick(s32 *cur, s32 i) {
+    *cur = i;
+    gPad[0].gamePressed |= PADG_CROSS;
+}
+
+static void Tb_TouchKeys(f32 x, f32 y, s32 rows, char (*keys)[KEY_COLS + 1], const TbKeyBtn *b, s32 nb, f32 x0, f32 y0, f32 kw, f32 kh, f32 gap, s32 skipRow) {
+    f32 by = y0 + (f32)rows * (kh + gap) + 6.0f;
+    s32 r, c, k;
+
+    for (r = 0; r < rows; r++) {
+        for (c = 0; c < KEY_COLS; c++) {
+            f32 kx = x0 + (f32)c * (kw + gap), ky = y0 + (f32)r * (kh + gap);
+
+            if (keys[r][c] != ' ' && Tb_TouchIn(x, y, kx, ky, kx + kw, ky + kh)) {
+                sTb->keyRow = r;
+                sTb->keyCol = c;
+                gPad[0].gamePressed |= PADG_CROSS;
+                return;
+            }
+        }
+    }
+    for (k = 0; k < nb; k++) {
+        f32 kx = x0 + (f32)b[k].c0 * (kw + gap), xe = x0 + (f32)b[k].c1 * (kw + gap) + kw, ky = by + (f32)b[k].row * (kh + gap);
+
+        if (b[k].row != skipRow && Tb_TouchIn(x, y, kx, ky, xe, ky + kh)) {
+            sTb->keyRow = rows + b[k].row;
+            sTb->keyCol = b[k].c0;
+            gPad[0].gamePressed |= PADG_CROSS;
+            return;
+        }
+    }
+}
+
+static void Tb_Touch(void) {
+    f32 x, y;
+    s32 i;
+
+    if (!Ps_Tap(&x, &y)) {
+        return;
+    }
+    sTdBody = 0;
+    switch (sTb->mode) {
+    case TB_HUB: /* (Td_Hub: the seven rows beside Trunks) */
+        for (i = 0; i < HUB_COUNT; i++) {
+            if (Tb_TouchIn(x, y, 40.0f, 260.0f + 126.0f * (f32)i, 1180.0f, 386.0f + 126.0f * (f32)i)) {
+                Tb_TouchPick(&sTb->hubCur, i);
+            }
+        }
+        break;
+    case TB_RANKED:
+        for (i = 0; i < 3 && !sTb->rankedPage; i++) {
+            if (Tb_TouchIn(x, y, 1260.0f, 380.0f + 125.0f * (f32)i, 2630.0f, 490.0f + 125.0f * (f32)i)) {
+                Tb_TouchPick(&sTb->rankedCur, i);
+            }
+        }
+        break;
+    case TB_CREATE:
+        for (i = 0; i < CR_OPEN; i++) {
+            if (Tb_TouchIn(x, y, 80.0f, 360.0f + 96.0f * (f32)i, 1560.0f, 444.0f + 96.0f * (f32)i)) {
+                Tb_TouchPick(&sTb->crCur, i);
+            }
+        }
+        if (Tb_TouchIn(x, y, 1700.0f, 740.0f, 2570.0f, 852.0f)) {
+            Tb_TouchPick(&sTb->crCur, CR_OPEN);
+        }
+        break;
+    case TB_SPAR:
+        if (Tb_TouchIn(x, y, 110.0f, 300.0f, 1150.0f, 430.0f)) {
+            Tb_TouchPick(&sTb->spCur, 0);
+        } else if (Tb_TouchIn(x, y, 110.0f, 460.0f, 1150.0f, 590.0f)) {
+            Tb_TouchPick(&sTb->spCur, 1);
+        } else if (Tb_TouchIn(x, y, 150.0f, 660.0f, 1110.0f, 800.0f)) {
+            Tb_TouchPick(&sTb->spCur, 2);
+        }
+        break;
+    case TB_QUICK: { /* the battle's cards: another one is chosen (a step to the right), the chosen one searches */
+        s32 n = sTb->quickFromTag ? 3 : 2;
+        f32 cw = n == 3 ? 453.0f : 680.0f, gap = n == 3 ? 20.0f : 40.0f;
+
+        for (i = 0; i < n; i++) {
+            f32 left = 80.0f + (f32)i * (cw + gap);
+
+            if (Tb_TouchIn(x, y, left, 380.0f, left + cw, 860.0f)) {
+                sTb->qkCur = 0;
+                if ((sTb->quickFromTag ? i + 1 : i) == sTb->queue) {
+                    gPad[0].gamePressed |= PADG_START;
+                } else {
+                    gPad[0].gamePressed |= PADG_CROSS;
+                }
+            }
+        }
+        if (!sTb->quickFromTag && Tb_TouchIn(x, y, 1700.0f, 940.0f, 2490.0f, 1020.0f)) {
+            Tb_TouchPick(&sTb->qkCur, 1);
+        }
+        break;
+    }
+    case TB_JOIN:
+        Tb_TouchKeys(x, y, KEY_ROWS, sTbKeys, sTb->tagJoin ? sTagJoinBtn : sTbJoinBtn, sTb->tagJoin ? 3 : 4, 80.0f, 580.0f, 164.0f, 80.0f, 16.0f, 1);
+        break;
+    case TB_ADDR:
+        Tb_TouchKeys(x, y, ADDR_ROWS, sTbAddrKeys, sTbAddrBtn, 3, 120.0f, 425.0f, 165.0f, 62.0f, 16.0f, -1);
+        break;
+    case TB_NAME:
+        Tb_TouchKeys(x, y, NAME_ROWS, NAME_PAD_KEYS, NAME_PAD_BTNS, NAME_PAD_NB, 400.0f, 405.0f, 200.0f, 64.0f, 16.0f, -1);
+        break;
+    default:
+        break;
+    }
+}
+
 s32 PortTbo_Run(void) {
     const s32 communityTest = getenv("BT4_RENDER_TEST") && getenv("BT4_TBO_COMMUNITY_INPUT_TEST");
     s32 train;
@@ -5150,6 +5268,9 @@ s32 PortTbo_Run(void) {
         }
         Ps_PromptsClear();
         Port_LobbyView(&sTbLv);
+        if (live) {
+            Tb_Touch();
+        }
         if (getenv("BT4_RENDER_TBO") == NULL || communityTest || (getenv("BT4_RENDER_TEST")&&getenv("BT4_TBO_TOP_INPUT_TEST"))) switch (sTb->mode) {
         case TB_HUB:
             Tb_HubUpdate(live);

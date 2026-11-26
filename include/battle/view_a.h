@@ -175,7 +175,18 @@ void IconWin_SetIcon(s32 icon);
 /* ---- ChrView (view_a_d.c) ---- */
 
 #define CHRVIEW_SLOT_COUNT 2
+#if defined(PORT) && defined(__ANDROID__)
+/* Android: the heap is the PS2's 32 MB (the program lies right above it): 9 MB buffers did not fit in it. The
+   character selects' viewer keeps the game's size (it grows a buffer for a larger file); the Mod Manager's and
+   Z Warriors' viewers take PORT_MODVIEW_MODEL_SIZE and do not read a file larger than their buffer. */
 #define CHRVIEW_MODEL_SIZE 0xCE000
+#define PORT_MODVIEW_MODEL_SIZE 0x1A0000
+#elif defined(PORT)
+#define PORT_MODVIEW_MODEL_SIZE 0x900000
+#define CHRVIEW_MODEL_SIZE 0x900000 /* PC: room for a model file of 9 MB (a converted high-detail model) */
+#else
+#define CHRVIEW_MODEL_SIZE 0xCE000
+#endif
 #define CHRVIEW_FILE_FIRST 0x590   /* model of character c, costume n: 0x590 + c * 10 + n (+4 for the damaged model) */
 #define CHRVIEW_FILE_STAGE 0x197   /* the viewer's backdrop, loaded once by ChrView_Init */
 #define CHRVIEW_CHARA_COUNT 0xA1
@@ -293,6 +304,12 @@ typedef struct ViewProgress {
 #define CHRGRID_COLS 7
 #define CHRGRID_ID_LOCKED 0xA2   /* a locked character: the cursor skips it */
 #define CHRGRID_ID_CUSTOM 0xA3   /* the saved custom characters: selectable like a character */
+#ifdef PORT
+#define CHRGRID_ID_ZW 0xA5       /* (PC) Z Warriors' custom characters: selectable like a character */
+#define CHRGRID_MARK_OK(id) ((id) == CHRGRID_ID_CUSTOM || (id) == CHRGRID_ID_ZW)
+#else
+#define CHRGRID_MARK_OK(id) ((id) == CHRGRID_ID_CUSTOM)
+#endif
 #define CHRGRID_ID_EMPTY 0xA4    /* filler: the cursor skips it */
 #define CHRGRID_ID_RANDOM 0xA1   /* the "random" cell (first marker id: ids >= 0xA1 are not characters) */
 #define CHRGRID_FORM_MAX 7

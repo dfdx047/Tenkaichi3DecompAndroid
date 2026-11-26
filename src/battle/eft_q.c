@@ -220,6 +220,38 @@ void EftGlow_SetType(EftGlow *w, s32 objId, s32 type, s32 paramFlags) {
             EftGlow_ColorFromBytes(&w->color[i], &gEftGlowCfg->color[w->type * EFT_GLOW_ROW + j + 1]);
         }
     }
+#ifdef PORT
+    { /* PC: a warrior's aura colour (plat_mods.c Port_SkinAuraOf) on its glow too (the charge's and the dash's light):
+         each colour keeps its brightness and takes the hue */
+        extern s32 Port_SkinAuraOf(s32 player);
+        s32 bgr = objId >= 0 && objId < 2 ? Port_SkinAuraOf(objId) : 0;
+
+        if (bgr > 0) {
+            f32 c[3], m;
+            Vec4 *v[6];
+            s32 k, q;
+
+            c[0] = (f32)(bgr & 0xFF);
+            c[1] = (f32)((bgr >> 8) & 0xFF);
+            c[2] = (f32)((bgr >> 16) & 0xFF);
+            m = c[0] > c[1] ? (c[0] > c[2] ? c[0] : c[2]) : (c[1] > c[2] ? c[1] : c[2]);
+            m = m < 1.0f ? 1.0f : m;
+            v[0] = &w->colorA;
+            v[1] = &w->colorB;
+            for (k = 0; k < 4; k++) {
+                v[2 + k] = &w->color[k];
+            }
+            for (k = 0; k < 6; k++) {
+                f32 l = v[k]->x > v[k]->y ? (v[k]->x > v[k]->z ? v[k]->x : v[k]->z) : (v[k]->y > v[k]->z ? v[k]->y : v[k]->z);
+                f32 *f = &v[k]->x;
+
+                for (q = 0; q < 3; q++) {
+                    f[q] = l * (c[q] / m + (1.0f - c[q] / m) * 0.15f);
+                }
+            }
+        }
+    }
+#endif
 }
 
 /* Reads the fighter's aura type, parameter flags and height into the glow. */

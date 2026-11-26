@@ -156,7 +156,15 @@ void BtlObjMdl_InitAlphaSlots(void *res, ObjMdl *mdl, s32 row) {
             } else {
                 u8 *p = (u8 *)e->clut;
 
-                for (j = 15; j >= 0; j--) {
+                j = 15;
+#ifdef PORT
+                /* PC: a texture without a CLUT (some mods' models have one among their materials) has no alpha
+                   bytes to set; on the console the write went to low memory and did nothing */
+                if (p == NULL) {
+                    j = -1;
+                }
+#endif
+                for (; j >= 0; j--) {
                     p[0x60 + j * 4 + 3] = slot + row;
                 }
             }

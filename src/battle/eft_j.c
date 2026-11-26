@@ -256,6 +256,12 @@ void EftMulti_FirePiece(s32 objId, EftJTask *task) {
         src, w->set, {}, {}, src->def->scale, src->def->speed, (f32)src->def->life / 30.0f, 0.1f, 0.9f,
         src->def->homing, 3.5f, 0.0f, 0.0f, 0, 0, objId, 2, 0, 0
     };
+#ifdef PORT
+    {
+        extern f32 PortTech_Scale(void *src); /* (a warrior's technique size: eft_a.c) */
+        arg.scale *= PortTech_Scale(src);
+    }
+#endif
     Vec4_Copy(&arg.dir, &w->dir);
     if (w->flags & 0x200) {
         arg.unk57 = 2;
@@ -460,6 +466,13 @@ void EftMulti_Init(EftJTask *task, EftJSrc *src) {
     w->homing = def->homing;
     w->unkC = def->scale;
     w->scale = def->scale;
+#ifdef PORT
+    {
+        extern f32 PortTech_Scale(void *src); /* (a warrior's technique size: eft_a.c) */
+        w->unkC *= PortTech_Scale(src);
+        w->scale *= PortTech_Scale(src);
+    }
+#endif
     w->unk14 = w->unkC;
     w->set = &mgr->set;
     EftEmit_InitState(&mgr->set, w->emit);
@@ -888,6 +901,13 @@ void EftPropShot_Init(EftJTask *task, EftJSrc *src) {
     w->speed = def->speed;
     w->unk8 = def->scale;
     w->scale = def->scale;
+#ifdef PORT
+    {
+        extern f32 PortTech_Scale(void *src); /* (a warrior's technique size: eft_a.c) */
+        w->unk8 *= PortTech_Scale(src);
+        w->scale *= PortTech_Scale(src);
+    }
+#endif
     w->radius = w->unk8;
     w->set = &mgr->set;
     EftEmit_InitState(&mgr->set, w->emit);

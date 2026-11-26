@@ -1309,6 +1309,39 @@ int Port_DataFingerprintOriginal(void) {
     }
     return test_claim(&fp) ? fp == kFpMain : sOriginal;
 }
+static int sZwBadChars;
+
+/* Z Warriors builds its fighters out of the disc's files: it only runs on the original disc's gameplay data. A
+   modified disc image (a romhack, replaced characters) is refused, with a notice. 1 allowed, 0 not. */
+int Port_ZwAllowed(void) {
+    extern void Gs_HoldFrame(void);
+    extern void Port_UiNotice(const char *text);
+    struct timespec pause = {0, 10000000};
+    int waited;
+
+    Port_DataFingerprintNeed();
+    for (waited = 0; sState == FP_RUNNING && waited < 12000; waited++) { /* (once per run; two minutes at most) */
+        Gs_HoldFrame();
+        nanosleep(&pause, NULL);
+    }
+    if (sState == FP_READY && sMain == kFpMain) { /* (the fight's data; then the characters themselves, looks included) */
+        extern int Port_ZwCharsOriginal(void); /* plat_verify.c */
+
+        if (Port_ZwCharsOriginal()) {
+            return 1;
+        }
+        sZwBadChars = 1;
+    }
+    fprintf(stderr, "bt3: Z Warriors: refused, the game data are not the original disc's (state %d)\n", sState);
+    Port_UiNotice("O Z Warriors só funciona com a ISO original do BT3 (SLUS-21678).");
+    return 0;
+}
+
+/* 1 once the data are known to be modified (no waiting): the warriors' files are then not served (plat_mods.c). */
+int Port_ZwDataModified(void) {
+    return sZwBadChars || (sState == FP_READY && sMain != kFpMain);
+}
+
 /* The log's line without its "bt3: " (for a crash report, a lobby window); "" until it is known. */
 const char *Port_DataFingerprintText(void) { return sState == FP_READY ? sText : ""; }
 

@@ -1989,7 +1989,13 @@ static int ml_item_pics(MlCtx *c, unsigned char *out[2], const char *text) {
     return ok;
 }
 
+int MenuLabels_MainItemNamed(const char *dataDir, const char *text, unsigned char *out[2]);
 int MenuLabels_MainItem(const char *dataDir, unsigned char *out[2]) {
+    return MenuLabels_MainItemNamed(dataDir, NULL, out);
+}
+
+/* The two pictures of a PC item's label with these words (Z Warriors), NULL Tenkaichi Budokai Online's. */
+int MenuLabels_MainItemNamed(const char *dataDir, const char *text, unsigned char *out[2]) {
     MlCtx *c = calloc(1, sizeof(*c));
     int ok = 0;
 
@@ -1999,7 +2005,7 @@ int MenuLabels_MainItem(const char *dataDir, unsigned char *out[2]) {
     }
     pthread_mutex_lock(&sMlCutter);
     if (ml_read_one(c, dataDir, ml_file(448), 0) == MENU_LABELS_MADE && ml_read_one(c, dataDir, ml_file(449), 0) == MENU_LABELS_MADE) {
-        ok = ml_item_pics(c, out, NULL);
+        ok = ml_item_pics(c, out, text);
     }
     if (!ok) {
         fprintf(stderr, "bt3: main menu: the lettering of the PC's item was not made from the disc (%s)\n",

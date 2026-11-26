@@ -9,7 +9,8 @@
  * renderer asks here for the picture of that number (TboText_Pixels) the first time and whenever the line or the
  * font changed (its version). The picture is the line twice: filled above, outlined below, white, so the game
  * tints and blends it as it did its letter sheet; a heading (kind 2) is one picture in its colours, the main
- * menu's heading style (MenuText_Heading*).
+ * menu's heading style (MenuText_Heading*). Kinds 3 and 4 are a line and a heading in the lettering of the game's
+ * menus (Tahoma Bold: the Mod Manager).
  *
  * Nothing here is game state: the screens are a menu of the PC's, before and outside an online match.
  */
@@ -37,11 +38,14 @@ typedef struct {
 static TboLine sLines[TBO_TEXT_SLOTS];
 static uint32_t sVersion;
 static pthread_mutex_t sLock = PTHREAD_MUTEX_INITIALIZER;
+static uint32_t *sPic, sPicW, sPicH, sPicVersion; /* (TBO_PICTURE) */
 
 /* The size the letters are drawn at, by kind (capitals, in pixels: the screens show them smaller, from smaller
    copies), and the outline's thickness: as the letter sheet had it, about a 16th of the capitals. */
-static int line_cap(int kind) { return kind == 0 ? 80 : 48; }
-static int line_outline(int kind) { return kind == 0 ? 5 : 3; }
+static int line_cap(int kind) { return kind == 1 ? 48 : 80; }
+static int line_outline(int kind) { return kind == 1 ? 3 : kind == 3 ? 7 : 5; } /* (the game's lettering: its thicker outline) */
+/* Kinds 3 and 4 are 0 and 2 in the lettering of the game's menus (MenuText kind 2). */
+static int line_font(int kind) { return kind == 3 ? 2 : kind; }
 
 static int line_measure(TboLine *l, uint32_t generation) {
     l->generation = generation;
@@ -49,15 +53,15 @@ static int line_measure(TboLine *l, uint32_t generation) {
     if (sVersion == 0) {
         l->version = sVersion = 1;
     }
-    if (l->kind == 2) {
+    if (l->kind == 2 || l->kind == 4) {
         l->outline = 0;
-        l->advance = MenuText_HeadingMeasure(l->text, &l->cap, &l->w, &l->h, &l->base, &l->pad);
+        l->advance = MenuText_HeadingMeasureKind(l->kind == 4 ? 2 : 0, l->text, &l->cap, &l->w, &l->h, &l->base, &l->pad);
         return l->advance > 0;
     }
     l->cap = line_cap(l->kind);
     l->outline = line_outline(l->kind);
     l->pad = l->outline + 2;
-    l->advance = MenuText_LineMeasure(l->kind, l->text, l->cap, l->pad, &l->w, &l->h, &l->base);
+    l->advance = MenuText_LineMeasure(line_font(l->kind), l->text, l->cap, l->pad, &l->w, &l->h, &l->base);
     return l->advance > 0;
 }
 
@@ -67,7 +71,7 @@ int PortTbo_TextId(const char *text, int kind) {
     uint64_t now = SDL_GetTicks();
     int i, spare = -1, id = -1;
 
-    if (text == NULL || text[0] == '\0' || kind < 0 || kind > 2) {
+    if (text == NULL || text[0] == '\0' || kind < 0 || kind > 4) {
         return -1;
     }
     {   /* a line of the menu in the chosen language (translations/port/<language>.json; as it is without one), here
@@ -78,7 +82,7 @@ int PortTbo_TextId(const char *text, int kind) {
         }
     }
     pthread_mutex_lock(&sLock);
-    for (i = 0; i < TBO_TEXT_SLOTS; i++) {
+    for (i = 0; i < TBO_TEXT_SLOTS - 1; i++) { /* (the last place: TBO_PICTURE's) */
         TboLine *l = &sLines[i];
         if (l->version != 0 && l->kind == kind && strncmp(l->text, text, TEXT_MAX - 1) == 0) {
             l->askedMs = now;
@@ -92,7 +96,7 @@ int PortTbo_TextId(const char *text, int kind) {
             spare = i;
         }
     }
-    if (i == TBO_TEXT_SLOTS && spare >= 0) {
+    if (i == TBO_TEXT_SLOTS - 1 && spare >= 0) {
         TboLine *l = &sLines[spare];
         SDL_strlcpy(l->text, text, sizeof(l->text));
         l->kind = kind;
@@ -109,7 +113,7 @@ int PortTbo_TextId(const char *text, int kind) {
    where to break a line). 0 without a font. */
 int PortTbo_TextMeasure(const char *text, int kind) {
     int w, h, base, cap, adv;
-    if (text == NULL || text[0] == '\0' || kind < 0 || kind > 1) {
+    if (text == NULL || text[0] == '\0' || kind < 0 || kind > 3 || kind == 2) {
         return 0;
     }
     {
@@ -119,7 +123,7 @@ int PortTbo_TextMeasure(const char *text, int kind) {
         }
     }
     cap = line_cap(kind);
-    adv = MenuText_LineMeasure(kind, text, cap, 0, &w, &h, &base);
+    adv = MenuText_LineMeasure(line_font(kind), text, cap, 0, &w, &h, &base);
     return (int)((int64_t)adv * 1000 / cap);
 }
 
@@ -138,10 +142,33 @@ int PortTbo_TextInfo(int id, int what) {
     return r;
 }
 
+/* The game's picture (TBO_PICTURE) changed to this one; 1 kept. */
+int PortTbo_SetPicture(const unsigned int *rgba, int w, int h) {
+    uint32_t *p = w > 0 && h > 0 && w <= 2048 && h <= 2048 ? malloc((size_t)w * h * 4) : NULL;
+
+    if (p == NULL) {
+        return 0;
+    }
+    memcpy(p, rgba, (size_t)w * h * 4);
+    pthread_mutex_lock(&sLock);
+    free(sPic);
+    sPic = p;
+    sPicW = (uint32_t)w;
+    sPicH = (uint32_t)h;
+    sPicVersion++;
+    pthread_mutex_unlock(&sLock);
+    return 1;
+}
+
 /* The version of a line's place (0: nothing there). */
 uint32_t TboText_Version(uint32_t id) {
     uint32_t r = 0;
     pthread_mutex_lock(&sLock);
+    if (id == TBO_PICTURE) {
+        r = sPicVersion;
+        pthread_mutex_unlock(&sLock);
+        return r;
+    }
     if (id >= TBO_TEXT_BASE && id < TBO_TEXT_BASE + TBO_TEXT_SLOTS) {
         r = sLines[id - TBO_TEXT_BASE].version;
     }
@@ -161,6 +188,19 @@ uint32_t *TboText_Pixels(uint32_t id, uint32_t *version, uint32_t *w, uint32_t *
     if (id < TBO_TEXT_BASE || id >= TBO_TEXT_BASE + TBO_TEXT_SLOTS) {
         return NULL;
     }
+    if (id == TBO_PICTURE) { /* (the game's picture: a copy) */
+        uint32_t *p = NULL;
+
+        pthread_mutex_lock(&sLock);
+        *version = sPicVersion;
+        if (sPic != NULL && (p = malloc((size_t)sPicW * sPicH * 4)) != NULL) {
+            memcpy(p, sPic, (size_t)sPicW * sPicH * 4);
+            *w = sPicW;
+            *h = sPicH;
+        }
+        pthread_mutex_unlock(&sLock);
+        return p;
+    }
     pthread_mutex_lock(&sLock);
     l = sLines[id - TBO_TEXT_BASE];
     pthread_mutex_unlock(&sLock);
@@ -168,8 +208,8 @@ uint32_t *TboText_Pixels(uint32_t id, uint32_t *version, uint32_t *w, uint32_t *
     if (l.version == 0 || l.advance <= 0) {
         return NULL;
     }
-    if (l.kind == 2) {
-        px = (uint32_t *)(void *)MenuText_HeadingRender(l.text, &lw, &lh);
+    if (l.kind == 2 || l.kind == 4) {
+        px = (uint32_t *)(void *)MenuText_HeadingRenderKind(l.kind == 4 ? 2 : 0, l.text, &lw, &lh);
         if (px != NULL && (lw != l.w || lh != l.h)) {
             free(px);
             px = NULL;
@@ -178,7 +218,7 @@ uint32_t *TboText_Pixels(uint32_t id, uint32_t *version, uint32_t *w, uint32_t *
         *h = (uint32_t)lh;
         return px;
     }
-    cov = MenuText_LineRender(l.kind, l.text, l.cap, l.pad, &lw, &lh, &lb);
+    cov = MenuText_LineRender(line_font(l.kind), l.text, l.cap, l.pad, &lw, &lh, &lb);
     if (cov == NULL) {
         return NULL;
     }

@@ -259,11 +259,6 @@ fun SettingsScreen(vm: AppViewModel) {
             ToggleRow(stringResource(R.string.lite), stringResource(R.string.lite_text), get(EngineSettings.LITE, 0) != 0) {
                 vm.setLite(it)
             }
-            if (vm.game == com.dfdx047.dragonrage.data.Game.BT3) {
-                ToggleRow(stringResource(R.string.tag_team), stringResource(R.string.tag_team_text), get(EngineSettings.TAG_TEAM, EngineSettings.TAG_TEAM_DEFAULT) != 0) {
-                    vm.setting(EngineSettings.TAG_TEAM, if (it) 1 else 0)
-                }
-            }
             run { // (smooth motion: BT3's engine, and BT4decomp's)
                 Text(stringResource(R.string.fps60), style = MaterialTheme.typography.titleSmall)
                 ChipRow(

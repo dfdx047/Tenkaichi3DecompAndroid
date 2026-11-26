@@ -6,6 +6,88 @@
 
 ESel *gEntrySel = NULL; /* 0x3B5910 */
 
+#ifdef PORT
+/* PC: the CUSTOM tile of Z Warriors here too, as in the duel's and the team select (menu_e_b.c): the custom characters
+   in the reel (the form reel's chips), seven to a row, up and down for more; one chosen goes on to the plates and the
+   costume as a fighter does, and the entrant is that warrior (its fighter, the warrior's costume code). */
+#include "menu/port_mods.h"
+#define ESEL_ID_ZW 0xA5          /* (the tile's cell id) */
+#define PORT_ES_ZW 0x40          /* (the step: in the custom characters' reel) */
+#define PORT_ES_ZW_MAX 63
+extern s32 PortZw_ListWarriors(s32 *out, s32 max);
+extern s32 Port_SkinChara(s32 skin);
+extern s32 Port_ZwCustomChip(void *out, s32 max);
+extern s32 Port_ModChipReel(s32 i, void *out, s32 max);
+extern s32 Port_SkinCostumes(s32 skin);
+static s32 sEsZwSkin[PORT_ES_ZW_MAX];
+static s32 sEsZwCount;
+static u8 *sEsZwChip[PORT_ES_ZW_MAX + 1]; /* (the last the tile's) */
+static s32 sEsZwRow;
+static s32 sEsZwPick = -1, sEsZwHover = -1;
+static s32 sEsEntrySkin[ESEL_ENTRY_MAX];  /* each entrant's warrior, -1 a fighter */
+
+static void PortEs_ZwLoad(void) {
+    s32 i;
+
+    for (i = 0; i <= PORT_ES_ZW_MAX; i++) {
+        if (sEsZwChip[i] != NULL) {
+            Heap_Free(sEsZwChip[i]);
+            sEsZwChip[i] = NULL;
+        }
+    }
+    sEsZwCount = PortZw_ListWarriors(sEsZwSkin, PORT_ES_ZW_MAX);
+    for (i = 0; i <= sEsZwCount; i++) {
+        u8 *res = Heap_Alloc(0x1600, 0x40, 0, 2);
+        s32 got = res == NULL ? 0 : i < sEsZwCount ? Port_ModChipReel(Port_SkinMod(sEsZwSkin[i]), res, 0x1600) : Port_ZwCustomChip(res, 0x1600);
+
+        if (got > 0) {
+            Res_RelocateOffsets((void *)&res, res, res);
+            sEsZwChip[i < sEsZwCount ? i : PORT_ES_ZW_MAX] = res;
+        } else if (res != NULL) {
+            Heap_Free(res);
+        }
+    }
+    for (i = 0; i < ESEL_ENTRY_MAX; i++) {
+        sEsEntrySkin[i] = -1;
+    }
+    sEsZwPick = -1;
+    sEsZwHover = -1;
+}
+
+static u8 *PortEs_ZwChipTex(s32 place) {
+    return place >= 0 && place <= PORT_ES_ZW_MAX && sEsZwChip[place] != NULL ? ((MTexRes *)sEsZwChip[place])->tex : NULL;
+}
+
+static s32 PortEs_ZwRowLen(s32 row) {
+    s32 n = sEsZwCount - row * ESEL_COLS;
+
+    return n < 0 ? 0 : n > ESEL_COLS ? ESEL_COLS : n;
+}
+
+/* The reel's seven chips: the row of warriors (in the form reel's places). */
+static void PortEs_ZwSetChips(void) {
+    s32 tbl[ESEL_COLS] = {8, 11, 12, 13, 14, 15, 16};
+    s32 i;
+
+    for (i = 0; i < ESEL_COLS; i++) {
+        s32 at = sEsZwRow * ESEL_COLS + i, id = ESEL_ID_NONE;
+        MTexRes *res;
+        u8 *t = NULL;
+
+        if (at < sEsZwCount) {
+            id = Port_SkinChara(sEsZwSkin[at]);
+            id = id >= 0 && id < ESEL_ID_RANDOM ? id : 0;
+            t = PortEs_ZwChipTex(at);
+        }
+        gEntrySel->sel->prevRowChara[i] = gEntrySel->sel->rowChara[i];
+        gEntrySel->sel->rowChara[i] = id;
+        res = (MTexRes *)MPACK_AT(gEntrySel->chips, id + 1);
+        gEntrySel->texB[18 + i] = gEntrySel->texB[tbl[i]];
+        gEntrySel->texB[tbl[i]] = t != NULL ? t : MTEX(res, 0);
+    }
+}
+#endif
+
 /*
  * EntrySel, 0x35E0F8..0x3623A8: the entrant select of the tournament mode ("Dragon World Tour", mode 34) and,
  * last, Tour_Main (0x362160), the handler of modes 33..35 that runs it. One object: the chunk cut at 0x35F650
@@ -25,12 +107,24 @@ void EntrySel_SwapRowTex(void) {
     for (i = 0; i < ESEL_COLS; i++) {
         s32 chara =
             gEntrySel->grid[ES_CUR.row * ESEL_COLS + i].id;
+#ifdef PORT
+        s32 zw = chara == ESEL_ID_ZW;
+
+        if (zw) {
+            chara = ESEL_ID_REC;
+        }
+#endif
 
         gEntrySel->sel->prevRowChara[i] = gEntrySel->sel->rowChara[i];
         gEntrySel->sel->rowChara[i] = chara;
         res = (MTexRes *)MPACK_AT(gEntrySel->chips, chara + 1);
         gEntrySel->texB[18 + i] = gEntrySel->texB[tbl[i]];
         gEntrySel->texB[tbl[i]] = MTEX(res, 0);
+#ifdef PORT
+        if (zw && PortEs_ZwChipTex(PORT_ES_ZW_MAX) != NULL) {
+            gEntrySel->texB[tbl[i]] = PortEs_ZwChipTex(PORT_ES_ZW_MAX);
+        }
+#endif
     }
 }
 
@@ -67,6 +161,17 @@ void EntrySel_SetMemberTex(void) {
     for (i = 0; i < gEntrySel->sel->cur; i++) {
         res = (MTexRes *)MPACK_AT(gEntrySel->chips, gEntrySel->sel->entry[i].chara + 1);
         gEntrySel->texA[10 + i] = MTEX(res, 0);
+#ifdef PORT
+        {
+            s32 q;
+
+            for (q = 0; i < ESEL_ENTRY_MAX && sEsEntrySkin[i] >= 0 && q < sEsZwCount; q++) {
+                if (sEsZwSkin[q] == sEsEntrySkin[i] && PortEs_ZwChipTex(q) != NULL) {
+                    gEntrySel->texA[10 + i] = PortEs_ZwChipTex(q);
+                }
+            }
+        }
+#endif
     }
 }
 
@@ -86,7 +191,17 @@ void EntrySel_UpdateImage(void) {
         break;
     case ESEL_LOAD_REQUEST:
         File_CancelRequests();
-        File_Request(gEntrySel->sel->image + DISC_RESOURCE(0x2F9, 0x71C), gEntrySel->imageFile, 0x16800);
+#ifdef PORT
+        {
+            s32 sk = gEntrySel->sel->step == PORT_ES_ZW ? sEsZwHover : sEsZwPick;
+            s32 file = PortGame_IsBT4() ? gEntrySel->sel->image + 0x71C
+                     : sk >= 0 ? Port_SkinFile(gEntrySel->sel->image, PORT_SKIN_CODE(sk, 0), 10, 0) : gEntrySel->sel->image + 0x2F9;
+
+            File_Request(file, gEntrySel->imageFile, 0x16800);
+        }
+#else
+        File_Request(gEntrySel->sel->image + 0x2F9, gEntrySel->imageFile, 0x16800);
+#endif
         gEntrySel->loadState = ESEL_LOAD_READ;
         break;
     case ESEL_LOAD_READ:
@@ -281,6 +396,31 @@ void EntrySel_Init(s32 section) {
     ChrGrid_Build(&gEntrySel->gridOutCount, gEntrySel->gridBuf, &gEntrySel->gridCount, gEntrySel->grid, NULL, NULL);
     gEntrySel->gridCount = gEntrySel->gridOutCount;
     gEntrySel->grid = gEntrySel->gridBuf;
+#ifdef PORT
+    PortEs_ZwLoad();
+    if (sEsZwCount > 0 && gEntrySel->gridCount > 0) { /* the CUSTOM tile: the first empty place, else a row of its own */
+        s32 c, at = -1;
+
+        for (c = 0; c < gEntrySel->gridCount; c++) {
+            if (gEntrySel->grid[c].id == ESEL_ID_NONE) {
+                at = c;
+                break;
+            }
+        }
+        if (at < 0 && gEntrySel->gridCount + ESEL_COLS <= ESEL_CELL_MAX) {
+            at = gEntrySel->gridCount;
+            for (c = 0; c < ESEL_COLS; c++) {
+                gEntrySel->grid[at + c].id = ESEL_ID_NONE;
+                gEntrySel->grid[at + c].formCount = 0;
+            }
+            gEntrySel->gridCount += ESEL_COLS;
+        }
+        if (at >= 0) {
+            gEntrySel->grid[at].id = ESEL_ID_ZW;
+            gEntrySel->grid[at].formCount = 0;
+        }
+    }
+#endif
     {
         s32 cols = ESEL_COLS;
         s32 cols2 = ESEL_COLS;
@@ -650,6 +790,28 @@ void EntrySel_Input(s32 *result) {
                 Snd_PlaySe(2, 1);
             }
         } else if (gPad[0].gamePressed & 0x200) {
+#ifdef PORT
+            if (ES_CELL.id == ESEL_ID_ZW) {
+                if (sEsZwCount > 0) {
+                    sEsZwRow = 0;
+                    ES_CUR.form = 0;
+                    gEntrySel->sel->flags |= ESEL_SEL_FORM;
+                    Flash_GotoLabel(&gEntrySel->flash[1], "fl_form", 1);
+                    gEntrySel->sel->rowAnim = 1;
+                    EntrySel_ClipGoto(1, 0, "fl_off_start");
+                    EntrySel_ClipGoto(1, 1, "fl_on_start");
+                    PortEs_ZwSetChips();
+                    sEsZwHover = sEsZwSkin[0];
+                    gEntrySel->sel->step = PORT_ES_ZW;
+                    gEntrySel->sel->image = gEntrySel->sel->rowChara[0];
+                    EntrySel_ChangeImage();
+                    Snd_PlaySe(2, 0x29);
+                } else {
+                    Snd_PlaySe(1, 7);
+                }
+                break;
+            }
+#endif
             if (ES_CELL.id == ESEL_ID_RANDOM) {
                 /* the random cell: no form, two costumes */
                 Flash_GotoLabel(&gEntrySel->flash[2], "fl_custom_in", 1);
@@ -710,6 +872,69 @@ void EntrySel_Input(s32 *result) {
             Snd_PlaySe(1, 2);
         }
         break;
+#ifdef PORT
+    case PORT_ES_ZW: { /* the custom characters' reel */
+        s32 rows = (sEsZwCount + ESEL_COLS - 1) / ESEL_COLS, at = sEsZwRow * ESEL_COLS + ES_CUR.form;
+
+        if (gPad[0].gameRepeat & 3) {
+            s32 len = PortEs_ZwRowLen(sEsZwRow);
+
+            if (len > 1) {
+                EntrySel_ClipGoto(1, 1, "fl_off_start");
+                ES_CUR.form = (ES_CUR.form + ((gPad[0].gameRepeat & 1) ? len - 1 : 1)) % len;
+                EntrySel_ClipGoto(1, 1, "fl_on_start");
+                sEsZwHover = sEsZwSkin[sEsZwRow * ESEL_COLS + ES_CUR.form];
+                gEntrySel->sel->image = gEntrySel->sel->rowChara[ES_CUR.form];
+                EntrySel_ChangeImage();
+                Snd_PlaySe(2, 0);
+            }
+        } else if ((gPad[0].gameRepeat & 0xC) && rows > 1) {
+            s32 up = (gPad[0].gameRepeat & 8) != 0;
+
+            Flash_GotoLabel(&gEntrySel->flash[1], up ? "fl_reel_down" : "fl_reel_up", 1);
+            gEntrySel->sel->rowAnim = 1;
+            EntrySel_ClipGoto(1, 1, "fl_off_start");
+            sEsZwRow = (sEsZwRow + (up ? rows - 1 : 1)) % rows;
+            if (ES_CUR.form >= PortEs_ZwRowLen(sEsZwRow)) {
+                ES_CUR.form = PortEs_ZwRowLen(sEsZwRow) - 1;
+            }
+            EntrySel_ClipGoto(1, 1, "fl_on_start");
+            PortEs_ZwSetChips();
+            sEsZwHover = sEsZwSkin[sEsZwRow * ESEL_COLS + ES_CUR.form];
+            gEntrySel->sel->image = gEntrySel->sel->rowChara[ES_CUR.form];
+            EntrySel_ChangeImage();
+            Snd_PlaySe(2, up ? 2 : 1);
+        } else if ((gPad[0].gamePressed & 0x200) && at < sEsZwCount) { /* chosen: its plates, then its costume */
+            sEsZwPick = sEsZwSkin[at];
+            Flash_GotoLabel(&gEntrySel->flash[2], "fl_custom_in", 1);
+            EntrySel_ClipGoto(1, 1, "fl_ok");
+            EntrySel_ClipGoto(2, 2, "fl_on_start");
+            gEntrySel->customCount = (gEntrySel->flags & ESEL_NO_CUSTOM) ? 1 : 4;
+            if (ES_CUR.custom >= gEntrySel->customCount) {
+                ES_CUR.custom = 0;
+            }
+            gEntrySel->colorCount = Port_SkinCostumes(sEsZwPick);
+            if (ES_CUR.costume >= gEntrySel->colorCount) {
+                ES_CUR.costume = 0;
+            }
+            gEntrySel->sel->step = ESEL_STEP_CUSTOM;
+            Snd_PlaySe(1, 1);
+        } else if (gPad[0].gamePressed & 0x400) { /* back to the grid */
+            gEntrySel->sel->flags &= ~ESEL_SEL_FORM;
+            Flash_GotoLabel(&gEntrySel->flash[1], "fl_form", 1);
+            gEntrySel->sel->rowAnim = 1;
+            EntrySel_ClipGoto(1, 1, "fl_off_start");
+            EntrySel_ClipGoto(1, 0, "fl_on_start");
+            sEsZwHover = -1;
+            EntrySel_SwapRowTex();
+            gEntrySel->sel->image = gEntrySel->sel->rowChara[ES_CUR.col];
+            EntrySel_ChangeImage();
+            gEntrySel->sel->step = ESEL_STEP_CHARA;
+            Snd_PlaySe(2, 0x29);
+        }
+        break;
+    }
+#endif
     case ESEL_STEP_FORM:
         if ((gPad[0].gameRepeat & 1) && TOUR_PROG->t.tour != TOUR_YAMCHA) {
             EntrySel_ClipGoto(1, 1, "fl_off_start");
@@ -790,6 +1015,15 @@ void EntrySel_Input(s32 *result) {
         } else if (gPad[0].gamePressed & 0x400) {
             Flash_GotoLabel(&gEntrySel->flash[2], "fl_custom_cansel", 1);
             EntrySel_ClipGoto(2, 2, "fl_off_start");
+#ifdef PORT
+            if (sEsZwPick >= 0) {
+                sEsZwPick = -1;
+                EntrySel_ClipGoto(1, 1, "fl_on_start");
+                gEntrySel->sel->step = PORT_ES_ZW;
+                Snd_PlaySe(1, 2);
+                break;
+            }
+#endif
             if (gEntrySel->sel->flags & ESEL_SEL_FORM) {
                 EntrySel_ClipGoto(1, 1, "fl_on_start");
                 gEntrySel->sel->step = ESEL_STEP_FORM;
@@ -850,6 +1084,25 @@ void EntrySel_Input(s32 *result) {
             EntrySel_ClipGoto(2, 5, "fl_ok");
             EntrySel_ClipGoto(0, 7, "fl_stop");
             EntrySel_ClipGoto(2, 2, "fl_off_start");
+#ifdef PORT
+            if (gEntrySel->sel->cur >= 0 && gEntrySel->sel->cur < ESEL_ENTRY_MAX) {
+                sEsEntrySkin[gEntrySel->sel->cur] = sEsZwPick;
+            }
+            if (sEsZwPick >= 0) { /* a warrior: its fighter, the tile's item sets */
+                s32 ch = Port_SkinChara(sEsZwPick);
+
+                ES_CUR.chara = ch >= 0 && ch < ESEL_ID_RANDOM ? ch : 0;
+                slot = ES_CUR.col + ES_CUR.row * ESEL_COLS;
+                if (ES_CUR.custom != 0) {
+                    ES_CUR.items = *(TourItemSet *)gSaveData->custom[slot].item[ES_CUR.custom - 1];
+                } else {
+                    memset(&ES_CUR.items, 0, 16);
+                }
+                EntrySel_ClipGoto(1, 1, "fl_off_start");
+                sEsZwPick = -1;
+                sEsZwHover = -1;
+            } else
+#endif
             if (gEntrySel->sel->flags & ESEL_SEL_FORM) {
                 ES_CUR.chara = gEntrySel->sel->rowChara[ES_CUR.form];
                 if (ES_CELL.id == ESEL_ID_REC) {
@@ -1047,6 +1300,11 @@ s32 EntrySel_Run(s32 section) {
                 for (i = 0; i < TOUR_PROG->t.entryNum; i++) {
                     TOUR_PROG->t.entrant[i].chara = gEntrySel->sel->entry[i].chara;
                     TOUR_PROG->t.entrant[i].costume = gEntrySel->sel->entry[i].costume;
+#ifdef PORT
+                    if (i < ESEL_ENTRY_MAX && sEsEntrySkin[i] >= 0) { /* (a Z Warriors entrant: its warrior's costume code) */
+                        TOUR_PROG->t.entrant[i].costume = PORT_SKIN_CODE(sEsEntrySkin[i], gEntrySel->sel->entry[i].costume & 3);
+                    }
+#endif
                     TOUR_PROG->t.entrant[i].player = i;
                     TOUR_PROG->t.entrant[i].flags |= TOUR_ENT_PLAYER;
                     if (gEntrySel->sel->entry[i].custom != 0) {

@@ -42,6 +42,7 @@ char gPortMoviePath[512]; /* host path of the movie file opened last */
 int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size);
 extern void *Port_LowAlloc(size_t size); /* plat_mem.c */
 extern void Port_LowFree(void *addr);
+extern const char *Port_ModRedirect(const char *rel); /* plat_mods.c */
 
 static const char *root(void) {
     const char *r = getenv("BT3_DATA");
@@ -130,8 +131,15 @@ int Port_FilePath(int ptid, int flid, const char *fname, char *out, int size) {
             snprintf(rel, sizeof(rel), "%s", a);
         }
     }
-    snprintf(out, (size_t)size, "%s/mods/%s", root(), rel);
-    fp = fopen(out, "rb");
+    fp = NULL;
+    if (Port_ModRedirect(rel) != NULL) { /* a mod that is on has this file (plat_mods.c) */
+        snprintf(out, (size_t)size, "%s", Port_ModRedirect(rel));
+        fp = fopen(out, "rb");
+    }
+    if (fp == NULL) {
+        snprintf(out, (size_t)size, "%s/mods/%s", root(), rel);
+        fp = fopen(out, "rb");
+    }
     if (fp == NULL) {
         snprintf(out, (size_t)size, "%s/%s", root(), rel);
         fp = fopen(out, "rb");

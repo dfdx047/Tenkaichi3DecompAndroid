@@ -57,7 +57,7 @@ def link(objs, extra):
         # the compiler's own libraries linked in, SDL3 as SDL3.dll next to the program.
         lib = [f"-L{sdl3() / 'lib'}"] if sdl3() else []
         cmd = [PREFIX + "gcc", "-w", "-o", str(EXE)] + extra + objs + lib + \
-              ["-lSDL3", "-lm", "-lwinmm", "-lws2_32", "-lwinhttp", "-static-libgcc", "-Wl,-Bstatic", "-lstdc++", "-lwinpthread", "-Wl,-Bdynamic",
+              ["-lSDL3", "-lm", "-lwinmm", "-lws2_32", "-lwinhttp", "-lmfplat", "-lmfreadwrite", "-lmfuuid", "-lole32", "-lwindowscodecs", "-static-libgcc", "-Wl,-Bstatic", "-lstdc++", "-lwinpthread", "-Wl,-Bdynamic",
                "-Wl,--image-base,0x20000000", "-Wl,--disable-dynamicbase", "-Wl,--disable-reloc-section", "-Wl,--disable-high-entropy-va", "-Wl,--wrap=main",
                "-Wl,--stack,0x1000000", "-mwindows"] + common
         argsfile = B / "link.rsp"
@@ -73,6 +73,16 @@ def link(objs, extra):
 
 def main():
     objs = [str(o) for o in sorted(OBJ.glob("*.o")) + sorted(DATA.glob("*.o"))]
+    if WIN:  # the program's icon: port/src/win_resource.rc made into an object with windres, linked in with the rest
+        rc = ROOT / "port/src/win_resource.rc"
+        if rc.exists():
+            (B / "gen").mkdir(exist_ok=True)
+            ro = B / "gen/win_resource.o"
+            d = subprocess.run([PREFIX + "windres", "-I", str(rc.parent), "-i", str(rc), "-o", str(ro)], capture_output=True, text=True)
+            if d.returncode == 0:
+                objs.append(str(ro))
+            else:
+                print("no icon: windres failed: " + (d.stdout + d.stderr).strip()[-200:])
     r = link(objs, [])  # first pass: ask the linker what nobody provides (the host C library included)
     need = sorted(set(re.findall(r'^\s+"_(\w+)", referenced from', r.stderr, re.M) if MAC else  # (ld64; GNU ld)
                       re.findall(r"undefined reference to `(\w+)'", r.stderr)))

@@ -303,6 +303,20 @@ s32 BtlAct_QueueTransform(BtlActJChr *chr, s32 index) {
     if (BtlParam_TestUnkADBit(chr, index)) {
         chr->form.variant = 0;
     }
+#ifdef PORT
+    { /* PC: a transformation into a new fighter of the Mod Manager: its template, in a costume number that says
+         which new fighter (the loader takes its files) */
+        extern s32 Port_FormSkin(void *param, s32 kind, s32 index);
+        extern void *BtlParam_Block(void *chr);
+        s32 skin = Port_FormSkin(BtlParam_Block(chr), 0, index);
+
+        if (skin >= 0) {
+            s32 c = chr->form.costume;
+
+            chr->form.costume = 8 + skin * 4 + (c >= 8 ? ((c - 8) & 3) : c);
+        }
+    }
+#endif
     switch (seq) {
         case 1:
             action = 0xED;
@@ -458,6 +472,17 @@ s32 BtlAct_QueueFusion(BtlActJChr *chr, s32 index, s32 partner) {
     chr->form.unk24 = unk24;
     chr->form.chara = chara;
     chr->form.costume = 0;
+#ifdef PORT
+    { /* PC: a fusion into a new fighter of the Mod Manager (as above, for transformations) */
+        extern s32 Port_FormSkin(void *param, s32 kind, s32 index);
+        extern void *BtlParam_Block(void *chr);
+        s32 skin = Port_FormSkin(BtlParam_Block(chr), 1, index);
+
+        if (skin >= 0) {
+            chr->form.costume = 8 + skin * 4;
+        }
+    }
+#endif
     chr->form.partner = partner;
     chr->form.unk28 = BtlMember_Get(chr, partner)->costume;
     chr->form.variant = BtlMember_GetActiveGauge(chr)->variant;

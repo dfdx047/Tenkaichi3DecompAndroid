@@ -70,7 +70,13 @@ HeapBlock *Heap_NextBlock(HeapBlock *block) {
 }
 
 void Heap_Create(void) {
+#if defined(PORT) && !defined(__ANDROID__)
+    /* PC: more than the PlayStation 2 has (port/src/plat_mem.c maps it): room for several models in the menus'
+       viewer and for larger models */
+    s32 size = 0x1EFB000 + 0xD000000 - (u32)D_3BE71C; /* 208 MB more: the model buffers are 9 MB each */
+#else
     s32 size = 0x1EFB000 - (u32)D_3BE71C;
+#endif
     HeapBlock *start;
 
     size += Mem_Align4Pad(size);

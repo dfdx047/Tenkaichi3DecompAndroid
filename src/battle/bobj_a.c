@@ -17,6 +17,7 @@
 
 extern void *memset(void *dst, s32 c, u32 n);
 extern s32 memcmp(const void *a, const void *b, u32 n);
+extern void *memcpy(void *dst, const void *src, u32 n);
 extern s32 rand(void);
 
 extern void Vec4_Set(Vec4 *dst, f32 x, f32 y, f32 z, f32 w);
@@ -364,6 +365,156 @@ void BtlObjAnim_SamplePosRot(BobjTrack *trk, Vec4 *pos, Quat *rot, u16 *cursor, 
             *cursor = 0;
             i = 0;
         }
+    }
+}
+
+/* PC port: a custom warrior (port/src/plat_mods.c, warrior_build) plays other fighters' motions on its own body.
+   The game plays motions as they were made (BtlObjAnim_Retarget only runs in one special state), so a taller body
+   would sink into the ground. Part 0x1A of a warrior's model file (empty in every fighter of the disc) holds
+   "BT3WARRI", the ratio of the body's hip height to the moves fighter's, a count, then (first motion, count, ratio)
+   for the motions taken from other fighters; the translation keys of every motion the warrior plays from its own
+   table are scaled by the ratio of the fighter it was made for. A negative ratio marks motions made for a fighter
+   without a tail on a body with one: the body's own tail motion (stored after the ranges) is put into them. */
+#define PORT_WARRIOR_OBJS 16
+static struct {
+    void *obj;
+    const u8 *part;
+} sPortWarrior[PORT_WARRIOR_OBJS];
+
+static void PortWarrior_Bind(void *obj, const u8 *part) {
+    s32 i, slot = -1;
+
+    if (part != NULL && memcmp(part, "BT3WARRI", 8) != 0) {
+        part = NULL;
+    }
+    for (i = 0; i < PORT_WARRIOR_OBJS; i++) {
+        if (sPortWarrior[i].obj == obj) {
+            slot = i;
+            break;
+        }
+        if (sPortWarrior[i].obj == NULL && slot < 0) {
+            slot = i;
+        }
+    }
+    if (slot < 0) {
+        return;
+    }
+    sPortWarrior[slot].obj = part != NULL ? obj : NULL;
+    sPortWarrior[slot].part = part;
+}
+
+/* Puts the body's tail motion (the "TAIL" clip after the ranges: its length in frames, then the tracks of nodes
+   4..7) into a decoded motion of `size` bytes made for a fighter without a tail: each track is repeated over the
+   motion's length and appended behind the motion in its buffer, and the node points at it. */
+static void PortWarrior_Tail(BobjAnim *anim, s32 size, const u8 *clip) {
+    u32 clipLen = *(const u32 *)(clip + 4);
+    const u8 *p = clip + 8;
+    s32 at = (size + 3) & ~3;
+    s32 cycles, n, c, i;
+
+    if (clipLen == 0) {
+        return;
+    }
+    cycles = ((s32)anim->length + (s32)clipLen - 1) / (s32)clipLen;
+    if (cycles < 1) {
+        cycles = 1;
+    }
+    for (n = 0; n < 4; n++) {
+        u32 bytes = *(const u32 *)p;
+        const u8 *trk = p + 4;
+        u16 flags = *(const u16 *)trk, count = *(const u16 *)(trk + 2);
+        s32 rot = flags & 1;
+        s32 keys = 1 + (count - 1) * cycles;
+        s32 need = ((rot ? 4 + keys * 10 : 4 + keys * 0x18) + 3) & ~3;
+        u8 *dst = (u8 *)anim + at;
+        s32 k = 1;
+
+        p += 4 + ((bytes + 3) & ~3u);
+        if (count < 2 || keys > 0xFFFF || at + need > BOBJ_WORK_LAYER_SIZE || at / 4 > 0xFFFF) {
+            return;
+        }
+        *(u16 *)dst = flags;
+        *(u16 *)(dst + 2) = (u16)keys;
+        if (rot) { /* packed rotations, then the frame numbers */
+            memcpy(dst + 4, trk + 4, 8);
+            *(u16 *)(dst + 4 + keys * 8) = *(const u16 *)(trk + 4 + count * 8);
+            for (c = 0; c < cycles; c++) {
+                for (i = 1; i < count; i++, k++) {
+                    memcpy(dst + 4 + k * 8, trk + 4 + i * 8, 8);
+                    *(u16 *)(dst + 4 + keys * 8 + k * 2) = (u16)(*(const u16 *)(trk + 4 + count * 8 + i * 2) + c * clipLen);
+                }
+            }
+        } else { /* full keys {x, y, z, frame, rotation} */
+            memcpy(dst + 4, trk + 4, 0x18);
+            for (c = 0; c < cycles; c++) {
+                for (i = 1; i < count; i++, k++) {
+                    memcpy(dst + 4 + k * 0x18, trk + 4 + i * 0x18, 0x18);
+                    *(u32 *)(dst + 4 + k * 0x18 + 12) += c * clipLen;
+                }
+            }
+        }
+        anim->track[4 + n] = (u16)(at / 4);
+        at += need;
+    }
+}
+
+static void PortWarrior_ScaleAs(BobjObj *obj, BobjAnim *anim, s32 id, s32 size, s32 withTail);
+
+static void PortWarrior_Scale(BobjObj *obj, BobjAnim *anim, s32 id, s32 size) {
+    PortWarrior_ScaleAs(obj, anim, id, size, 1);
+}
+
+/* Scales motion `id` of warrior `obj`'s table (decoded in `anim`); `withTail`: and puts the body's tail in. */
+static void PortWarrior_ScaleAs(BobjObj *obj, BobjAnim *anim, s32 id, s32 size, s32 withTail) {
+    const u8 *part = NULL;
+    BobjTrack *trk;
+    f32 scale;
+    u32 ranges;
+    s32 i, k, tail;
+
+    for (i = 0; i < PORT_WARRIOR_OBJS; i++) {
+        if (sPortWarrior[i].obj == (void *)obj) {
+            part = sPortWarrior[i].part;
+        }
+    }
+    if (part == NULL || anim == NULL || (withTail && obj->work->retarget != 0) || memcmp(part, "BT3WARRI", 8) != 0) {
+        return; /* (the mark is looked at again: a model being swapped may not have been bound yet) */
+    }
+    scale = *(const f32 *)(part + 8);
+    ranges = *(const u32 *)(part + 12);
+    if (ranges > 32) { /* (the builder writes 32 at most: plat_mods.c) */
+        return;
+    }
+    for (i = 0; i < (s32)ranges; i++) {
+        const u8 *r = part + 16 + i * 8;
+        s32 first = *(const u16 *)r, count = *(const u16 *)(r + 2);
+
+        if (id >= first && id < first + count) {
+            scale = *(const f32 *)(r + 4);
+        }
+    }
+    tail = scale < 0.0f; /* (a motion made for a fighter without a tail, on a body with one) */
+    if (tail) {
+        scale = -scale;
+    }
+    if (scale > 0.3f && scale < 3.0f && scale != 1.0f) {
+        for (i = 0; i < BOBJ_NODE_MAX; i++) {
+            if (anim->track[i] == 0) {
+                continue;
+            }
+            trk = (BobjTrack *)((u16 *)anim + anim->track[i] * 2);
+            if (BOBJ_TRACK_ROT_ONLY(trk)) {
+                continue;
+            }
+            for (k = 0; k < trk->count; k++) {
+                trk->u.key[k].x *= scale;
+                trk->u.key[k].y *= scale;
+                trk->u.key[k].z *= scale;
+            }
+        }
+    }
+    if (tail && withTail && memcmp(part + 16 + ranges * 8, "TAIL", 4) == 0) {
+        PortWarrior_Tail(anim, size, part + 16 + ranges * 8);
     }
 }
 
@@ -764,6 +915,9 @@ void BtlObjAnim_Play(BobjObj *obj, s32 layer, s32 anim, s32 reset) {
     if (l->data == NULL) {
         return;
     }
+    if (anim < BOBJ_ANIM_MAX) { /* (a decoded copy; the model's own motions are used in place and stay as they are) */
+        PortWarrior_Scale(obj, l->data, anim, size);
+    }
     ap->manual = 1;
     l->id = anim;
     l->length = l->data->length;
@@ -797,6 +951,11 @@ void BtlObjAnim_PlayFrom(BobjObj *obj, BobjObj *other, s32 anim, s32 useTable) {
     ap->layer[0].data = BtlObjAnim_Load(other, obj->work->layer[0], anim, &size);
     obj->hit.node = 3;
     data = ap->layer[0].data;
+#ifdef PORT
+    if (data != NULL && anim < BOBJ_ANIM_MAX) { /* (a victim's motion from a warrior's table: scaled as the warrior's, its tail left) */
+        PortWarrior_ScaleAs(other, data, anim, size, 0);
+    }
+#endif
     if (data != NULL) {
         ap->manual = 1;
         ap->layer[0].id = anim;
@@ -846,6 +1005,24 @@ void BtlObjAnim_PlayAuto(BobjObj *obj, s32 anim, s32 mode) {
     ap->manual = 0;
     ap->mode = m;
 }
+
+#ifdef PORT
+/* PC (Z Warriors' render photo): a motion unpacked elsewhere (a fighter's animation file), played on the object. */
+void PortObjAnim_PlayData(BobjObj *obj, void *data, s32 mode) {
+    BobjAnimPlayer *ap = &obj->anim;
+
+    if (obj == NULL || data == NULL) {
+        return;
+    }
+    ap->layer[0].data = (BobjAnim *)data;
+    ap->layer[0].id = 7;
+    ap->frame = 0.0f;
+    ap->prevFrame = 0.0f;
+    ap->layer[0].length = ap->layer[0].data->length;
+    ap->mode = mode;
+    memset(ap->layer[0].cursor, 0, sizeof(ap->layer[0].cursor));
+}
+#endif
 
 /* Starts one of the eight motions of the model file itself, in the given mode. */
 void BtlObjAnim_PlayModel(BobjObj *obj, s32 anim, s32 mode) {
@@ -963,6 +1140,13 @@ s32 BtlObjAnim_PortStopped(BobjObj *obj) {
 /* Advances the frame of a self-stepped object by anim.step: once (stops on the last frame) or looping. */
 void BtlObjAnim_Step(BobjObj *obj) {
     BobjAnimPlayer *ap = &obj->anim;
+#ifdef PORT
+    extern void *gPortFreezeObj;
+
+    if ((void *)obj == gPortFreezeObj) {
+        return; /* (held still) */
+    }
+#endif
     extern f32 TagGiant_AnimationStep(void *);
     f32 step=ap->step*TagGiant_AnimationStep(obj);
 
@@ -1538,6 +1722,16 @@ void BtlObjXf_SetMtx(BobjObj *obj, Mtx44 *m) {
 
 /* World matrix of every node, parents first, on the VU0 matrix stack: node = local * parent. Stores the root
    node's world position in xf.rootPos. */
+#ifdef PORT
+void *gPortTPose; /* PC: an object shown in its bind pose, the T-pose (the Z Warriors viewer, port_modmgr.c Mm_ViewCamera) */
+/* PC: the stance maker's pose on the viewer's model as it is being made (port_zw.c): each of 16 nodes' rotation times
+   its quaternion, every frame, before the model is made again with it */
+void *gPortLivePoseObj;
+void *gPortFreezeObj; /* PC: an object whose motion is held where it is (the stance maker's dots) */
+Quat gPortLivePose[16];
+s32 gPortLivePoseNode[16];
+#endif
+
 void BtlObjPose_CalcMatrices(BobjObj *obj) {
     Mtx44 local;
     BobjXf *xf = &obj->xf;
@@ -1549,8 +1743,34 @@ void BtlObjPose_CalcMatrices(BobjObj *obj) {
     Vu0Cur_LoadMtx(&obj->xf.mtx);
     while (1) {
         part = BtlObj_GetNode(obj, bone->id);
+#ifdef PORT
+        if ((void *)obj == gPortTPose) { /* no rotation, the node where the model has it from its parent */
+            part->rot.x = part->rot.y = part->rot.z = 0.0f;
+            part->rot.w = 1.0f;
+            part->pos.x = ((f32 *)((u8 *)bone + 0x30))[0];
+            part->pos.y = ((f32 *)((u8 *)bone + 0x30))[1];
+            part->pos.z = ((f32 *)((u8 *)bone + 0x30))[2];
+        }
+#endif
         Vu0Cur_Push();
         Vu0Cur_StoreMtx(&part->parent);
+#ifdef PORT
+        if ((void *)obj == gPortLivePoseObj && gPortLivePoseObj != NULL) { /* (the pose being made: its rotation for this frame only) */
+            s32 k;
+
+            for (k = 0; k < 16 && gPortLivePoseNode[k] != (s32)bone->id; k++) {
+            }
+            if (k < 16) {
+                Quat keep = part->rot;
+
+                Quat_Mul(&part->rot, &keep, &gPortLivePose[k]);
+                BtlObjPose_GetNodeMtx(obj, &local, part);
+                part->rot = keep;
+            } else {
+                BtlObjPose_GetNodeMtx(obj, &local, part);
+            }
+        } else
+#endif
         BtlObjPose_GetNodeMtx(obj, &local, part);
         Vec3_Copy((Vec4 *)local.m[3], &part->pos);
         Mtx_Mul(&part->mtx, &part->parent, &local);
@@ -2485,6 +2705,7 @@ void BtlObj_BindTables(BObj *obj) {
         PortGame_RepairModelBody(mdl->unk3C,(parts[3]&~3u)-(parts[2]&~3u),slot->file[0].id);
     }
 #endif
+    PortWarrior_Bind(obj, BObjFile_GetEntry(&slot->file[0], 0x1A));
     if (slot->file[1].buf != NULL) {
         for (i = 0; i < 0x19E; i++) {
             ((BObjBindView *)obj)->res.mdl.anims[i] = BObjFile_GetEntry(&slot->file[1], i + 1);
@@ -2654,6 +2875,30 @@ void BtlObj_SetColorPreset(BObj *obj, s32 row, s32 set) {
         state->preset[4] = table[set][row][4];
     }
 }
+
+#ifdef PORT
+/* PC: a warrior's aura colour (warrior.txt aura=, plat_mods.c Port_SkinAuraOf) on the light its aura casts on it too:
+   the preset row's colour (BtlObj_SetColorPreset, chosen by its aura kind) made that hue, as bright as the table's
+   rows are (each channel 63..255). */
+void PortObj_AuraPreset(BObj *obj, s32 bgr) {
+    f32 c[3], m;
+    s32 i;
+
+    if (obj == NULL || bgr <= 0) {
+        return;
+    }
+    c[0] = (f32)(bgr & 0xFF);
+    c[1] = (f32)((bgr >> 8) & 0xFF);
+    c[2] = (f32)((bgr >> 16) & 0xFF);
+    m = c[0] > c[1] ? (c[0] > c[2] ? c[0] : c[2]) : (c[1] > c[2] ? c[1] : c[2]);
+    if (m < 1.0f) {
+        m = 1.0f;
+    }
+    for (i = 0; i < 3; i++) {
+        obj->state.preset[i] = 63.0f + 192.0f * c[i] / m;
+    }
+}
+#endif
 
 /* Points the object's lip tracks and two more tables at common file 3. */
 void BtlObj_BindCommonTables(BObj *obj) {

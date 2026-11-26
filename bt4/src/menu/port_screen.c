@@ -682,6 +682,11 @@ char *Ps_PromptLabel(s32 k) {
     return sPsPromptLabel[k];
 }
 
+/* where each prompt was drawn last, for a finger (Ps_PromptTap) */
+static f32 sPsTapX0[PS_PROMPTS], sPsTapX1[PS_PROMPTS];
+static s32 sPsTapKind[PS_PROMPTS];
+static s32 sPsTapCount;
+
 void Ps_PromptsDrawAt(f32 right) {
     s32 k;
 
@@ -689,6 +694,10 @@ void Ps_PromptsDrawAt(f32 right) {
         f32 bw = Ps_ButtonW(sPsPromptKind[k], 19.0f);
         f32 x = Ps_PromptX(k, right);
 
+        sPsTapKind[k] = sPsPromptKind[k];
+        sPsTapX0[k] = x - 6.0f;
+        sPsTapX1[k] = x + bw + 5.0f + Ps_MsgWidth(sPsPromptLabel[k], 1.0f) + 8.0f;
+        sPsTapCount = k + 1;
         Ps_Button(sPsPromptKind[k], x + bw * 0.5f, 425.0f, 19.0f);
         Ps_Msg(x + bw + 5.0f, 425.0f - (PS_MSG_BASE - PS_MSG_CAP * 0.5f), sPsPromptLabel[k], 1.0f, 0x80); /* its capitals beside the button's middle */
     }
@@ -788,3 +797,45 @@ void Ps_TextRaw(f32 x,f32 y,char *s,f32 scale,f32 width,s32 style){
     PortOnline_Raw(1);Ps_Text(x,y,s,scale,width,style);PortOnline_Raw(0);
 }
 #endif
+
+/* A tap on the screen, in the page's units (as everything here is laid out). 1 once per tap. */
+extern s32 Port_MenuTap(u32 out); /* port/src/gs/gs_input.c */
+
+s32 Ps_Tap(f32 *x, f32 *y) {
+    static s32 at[2];
+
+    if (!Port_MenuTap((u32)at)) {
+        return 0;
+    }
+    *x = ((f32)at[0] - sPsPx) * 512.0f / sPsPw;
+    *y = ((f32)at[1] - sPsPy) * 448.0f / sPsPh;
+    return 1;
+}
+
+/* The pad button of the prompt at (x, y), 0 none: a prompt is pressed by touching it. */
+u32 Ps_PromptTap(f32 x, f32 y) {
+    s32 k;
+
+    if (y < 405.0f || y > 448.0f) {
+        return 0;
+    }
+    for (k = 0; k < sPsTapCount && k < PS_PROMPTS; k++) {
+        if (x >= sPsTapX0[k] && x <= sPsTapX1[k]) {
+            switch (sPsTapKind[k]) {
+            case 1:
+                return PADG_SQUARE;
+            case 2:
+                return PADG_TRIANGLE;
+            case 3:
+                return 0; /* (left / right: touch the value's row) */
+            case 4:
+                return PADG_CIRCLE;
+            case 7:
+                return PADG_START;
+            default:
+                return PADG_CROSS;
+            }
+        }
+    }
+    return 0;
+}

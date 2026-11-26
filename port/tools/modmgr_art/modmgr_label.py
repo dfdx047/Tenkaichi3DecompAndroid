@@ -1,0 +1,158 @@
+"""Writes "Mod Manager" in the main menu's plate lettering: port/include/port_modmgr_label.h.
+
+The plate labels are two sheets per state (lists 5 "not chosen" and 6 "chosen" of the main menu's pack): texture 0
+has eight rows of 32 lines, texture 1 has "Character Reference", "Options", "Shenron" and a free fourth row. The
+letters are taken from texture 0 (o of "Dragon", d and W of "World" - the W turned upside down is the M -, the rest
+from "Ultimate Training") and written into that free row in texture 1's own palette, as runs of palette indices.
+
+    modmgr_label.py <mainmenu_pack.bin> <out header> <preview.png>
+"""
+import pathlib, struct, sys
+import numpy as np
+from PIL import Image
+
+HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+
+import bpe, gsmem
+import os
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '..')).replace('\\', '/')  # the repository
+
+
+ROW_H = 32
+# (row of texture 0, index of the letter in that row's text, turned upside down)
+WORD = [(2, 6, True), (0, 4, False), (2, 10, False), None,
+        (2, 6, True), (6, 5, False), (6, 12, False), (6, 5, False), (6, 15, False), (6, 7, False), (6, 9, False)]
+EXPECT = {0: 13, 2: 15, 6: 16}  # letters in "Dragon History", "Dragon World Tour", "Ultimate Training"
+START, GAP, SPACE = 8, 3, 9
+
+
+def load(tex):
+    """-> (indices (h, 512), palette (256, 4) by index)"""
+    e = tex[:0x40]
+    isz, csz = struct.unpack_from('<II', e, 8)
+    w = 512
+    h = (isz - 0x80) // w
+    tex0 = struct.unpack_from('<Q', e, 0x30)[0]
+    pix = tex[0x40:0x40 + isz]
+    clut = tex[0x40 + isz:0x40 + isz + csz]
+    idx, psm = gsmem.decode(pix[0x60:], clut, (tex0 & ~(0x3F << 14)) | (8 << 14) | (9 << 26) | ((h.bit_length() - 1) << 30) | (0x13 << 20),
+                            256, h // 2, 4)
+    pal = gsmem.csm1(np.frombuffer(clut[0x60:0x60 + 1024], dtype=np.uint8).reshape(256, 4))
+    return idx[:h, :w], pal
+
+
+def letters(rgba, row, on):
+    """The letters of a row: [(x0, x1)] of their own colour's columns."""
+    a = rgba[row * ROW_H:(row + 1) * ROW_H].astype(np.int32)
+    lum = (a[..., 0] * 3 + a[..., 1] * 6 + a[..., 2]) // 10
+    fill = ((a[..., 0] > 150) & (lum > 95) if on else (lum > 140)) & (a[..., 3] >= 96)
+    cols = fill.any(0)
+    out = []
+    x = 0
+    while x < 512:
+        if cols[x]:
+            x0 = x
+            while x + 1 < 512 and cols[x + 1]:
+                x += 1
+            out.append((x0, x))
+        x += 1
+    return out, fill
+
+
+def build(pack, lst):
+    texs = bpe.textures(pack, lst)
+    src, spal = load(texs[0])
+    dst, dpal = load(texs[1])
+    rgba = spal[src]
+    on = lst == 6
+    seg = {}
+    for row, count in EXPECT.items():
+        s, _ = letters(rgba, row, on)
+        print(lst, row, len(s), 'letters (expected %d)' % count, s)
+        seg[row] = s
+    out = np.zeros((ROW_H, 512, 4), dtype=np.uint8)
+    pen = START
+    for item in WORD:
+        if item is None:
+            pen += SPACE - GAP
+            continue
+        row, n, turn = item
+        x0, x1 = seg[row][n]
+        gx0, gx1 = max(0, x0 - 4), min(511, x1 + 5)
+        # the pixels that belong to this letter: nearer to its columns than to its neighbours'
+        if n > 0:
+            gx0 = max(gx0, (seg[row][n - 1][1] + x0 + 1) // 2)
+        if n + 1 < len(seg[row]):
+            gx1 = min(gx1, (seg[row][n + 1][0] + x1) // 2)
+        g = rgba[row * ROW_H:(row + 1) * ROW_H, gx0:gx1 + 1].copy()
+        if turn:
+            a = g[..., 3] >= 96      # the letter and its outline; the soft shadow would point the wrong way
+            ys, xs = np.nonzero(a)
+            y0, y1 = ys.min(), ys.max()
+            core = np.zeros_like(g)
+            core[a] = g[a]
+            t = np.zeros_like(g)
+            t[y0:y1 + 1] = core[y0:y1 + 1][::-1, ::-1]
+            g = t
+        w = gx1 - gx0 + 1
+        px = pen - (x0 - gx0)
+        for y in range(ROW_H):
+            for x in range(w):
+                if 0 <= px + x < 512 and g[y, x, 3] > out[y, px + x, 3]:
+                    out[y, px + x] = g[y, x]
+        pen += (x1 - x0 + 1) + GAP
+    # in texture 1's palette
+    dp = dpal.astype(np.int32)
+    idx = np.zeros((ROW_H, 512), dtype=np.uint8)
+    clear = int(np.argmin(dp[:, 3]))
+    for y in range(ROW_H):
+        for x in range(512):
+            c = out[y, x].astype(np.int32)
+            if c[3] < 8:
+                idx[y, x] = clear
+            else:
+                d = ((dp[:, :3] - c[:3]) ** 2).sum(1) + ((dp[:, 3] - c[3]) ** 2) * 3
+                idx[y, x] = int(np.argmin(d))
+    return idx, dpal, dst
+
+
+def runs(idx):
+    out = []
+    for y in range(ROW_H):
+        x = 0
+        while x < 256:
+            v = idx[y, x]
+            x0 = x
+            while x + 1 < 256 and idx[y, x + 1] == v and x + 1 - x0 < 255:
+                x += 1
+            out.append((y, x - x0 + 1, x0, int(v)))
+            x += 1
+    return out
+
+
+def main():
+    pack = pathlib.Path(sys.argv[1]).read_bytes()
+    lines = ['/* Generated by port/build/ml/modmgr_label.py: "Mod Manager" for a main-menu plate, as runs of palette indices',
+             '   for the free fourth row of the second label sheet (len pixels of value v from column x of line y). */',
+             'typedef struct PortLabelRun { u8 y; u8 len; u8 x; u8 v; } PortLabelRun;']
+    sheet = Image.new('RGB', (512, ROW_H * 2 + 4), (60, 60, 90))
+    for n, (lst, name) in enumerate(((5, 'sPortModMgrOff'), (6, 'sPortModMgrOn'))):
+        idx, dpal, dst = build(pack, lst)
+        r = runs(idx)
+        lines.append('static const PortLabelRun %s[%d] = {' % (name, len(r)))
+        for i in range(0, len(r), 8):
+            lines.append('    ' + ' '.join('{%d, %d, %d, %d},' % q for q in r[i:i + 8]))
+        lines.append('};')
+        rgba = dpal[idx].copy()
+        rgba[..., 3] = np.minimum(rgba[..., 3].astype(np.int32) * 2, 255)
+        im = Image.fromarray(rgba, 'RGBA')
+        bg = Image.new('RGBA', im.size, (60, 60, 90, 255))
+        bg.alpha_composite(im)
+        sheet.paste(bg.convert('RGB'), (0, n * (ROW_H + 4)))
+        print(lst, len(r), 'runs')
+    pathlib.Path(sys.argv[2]).write_text('\n'.join(lines) + '\n')
+    sheet.crop((0, 0, 256, ROW_H * 2 + 4)).resize((1024, (ROW_H * 2 + 4) * 4), Image.NEAREST).save(sys.argv[3])
+
+
+main()

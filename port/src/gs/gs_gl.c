@@ -1191,12 +1191,16 @@ static void frame_end(void) {
 #else
     GsGpu_TitlePoll();
     while (SDL_PollEvent(&ev)) {
+        extern int Port_GameEvent(const SDL_Event *evp, int early); /* gs_gpu.c: the game's own screens (the Mod Manager) */
+        if (Port_GameEvent(&ev, 1)) { continue; }
         if (ev.type == SDL_EVENT_QUIT) { exit(0); }
         if (ev.type != SDL_EVENT_MOUSE_BUTTON_DOWN && GsDraw_FullscreenEvent(&ev)) continue;
         { extern void PortA11y_Event(const SDL_Event *ev); PortA11y_Event(&ev); } /* a11y.c: the repeat key and button */
         if (PortInput_Hotkey(&ev)) { Ui_Toggle(); continue; }
         if (Ui_Event(&ev)) { continue; }
         if (ev.type == SDL_EVENT_MOUSE_BUTTON_DOWN && GsDraw_FullscreenEvent(&ev)) continue;
+        { extern int GsCapture_Key(const SDL_Event *ev); if (GsCapture_Key(&ev)) { continue; } } /* F12 a screenshot, F10 a recording (gs_capture.cpp) */
+        if (Port_GameEvent(&ev, 0)) { continue; }
         if (ev.type == SDL_EVENT_KEY_DOWN && ev.key.key == SDLK_ESCAPE) { if (!ev.key.repeat && !Ui_QuitAsk()) { exit(0); } /* (asks first) */ }
         if (ev.type == SDL_EVENT_KEY_DOWN && !ev.key.repeat && ev.key.key == SDLK_F9) { /* in-between pictures on / off */
             extern int gsInterp;
@@ -1453,6 +1457,25 @@ static void frame_end(void) {
         sLastBest = best; /* (shown again while the game is paused: GsGl_PauseFrame) */
     }
     present_picture(best);
+    {   /* Z Warriors' photo of the model (gs_photo.cpp), without the overlay on it */
+        extern int GsPhoto_GLWanted(void);
+        extern void GsPhoto_GLGive(const uint8_t *bottomUp, int w, int h, int rx, int ry, int rw, int rh);
+        extern volatile int gUiPresentX, gUiPresentY, gUiPresentW, gUiPresentH;
+        if (GsPhoto_GLWanted()) {
+            int pw, ph;
+            uint8_t *wp;
+            SDL_GetWindowSizeInPixels(sWindow, &pw, &ph);
+            wp = pw > 0 && ph > 0 ? malloc((size_t)pw * ph * 4) : NULL;
+            if (wp != NULL) {
+                glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+                glReadBuffer(GL_BACK);
+                glPixelStorei(GL_PACK_ALIGNMENT, 1);
+                glReadPixels(0, 0, pw, ph, GL_RGBA, GL_UNSIGNED_BYTE, wp);
+                GsPhoto_GLGive(wp, pw, ph, gUiPresentX, gUiPresentY, gUiPresentW, gUiPresentH);
+                free(wp);
+            }
+        }
+    }
     Ui_DrawGL(); /* the overlay, over the presented picture */
     SDL_GL_SwapWindow(sWindow);
     /* BT3_GL_WINSHOT=<n>: dump the window's own framebuffer every n frames (what the user sees) */

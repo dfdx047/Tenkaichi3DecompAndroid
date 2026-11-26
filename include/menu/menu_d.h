@@ -25,6 +25,7 @@ typedef struct MChrCell {
 #define MCHR_LOCKED 0xA2
 #define MCHR_CUSTOM 0xA3
 #define MCHR_EMPTY 0xA4
+#define MCHR_ZW 0xA5 /* (PC) the CUSTOM tile: Z Warriors' custom characters in the reel */
 #define MCHR_CELL_MAX 165
 #define MCHR_CUSTOM_MAX 14
 

@@ -4784,6 +4784,98 @@ static void Tb_WinTerm(void) {
     sTbWinRes = NULL;
 }
 
+/* ---- touch: a finger on an option chooses it and presses it ---- */
+extern s32 Ps_Tap(f32 *x, f32 *y);
+
+static void Tb_TouchRows(f32 x, f32 y, s32 *cur, s32 count, f32 y0, f32 step, f32 h) {
+    s32 i;
+
+    for (i = 0; i < count; i++) {
+        f32 top = y0 + step * (f32)i;
+
+        if (x >= 8.0f && x <= 306.0f && y >= top - 3.0f && y < top + h + 3.0f) {
+            *cur = i;
+            gPad[0].gamePressed |= PADG_CROSS;
+        }
+    }
+}
+
+static void Tb_TouchKeys(f32 x, f32 y, s32 rows, char (*keys)[KEY_COLS + 1], const TbKeyBtn *b, s32 nb, f32 left, f32 top, f32 step) {
+    f32 by = top + step * (f32)rows + 4.0f;
+    s32 r, c, k;
+
+    for (r = 0; r < rows; r++) {
+        for (c = 0; c < KEY_COLS; c++) {
+            f32 kx = left + 36.0f * (f32)c;
+            f32 ky = top + step * (f32)r;
+
+            if (keys[r][c] != ' ' && x >= kx - 2.0f && x < kx + 32.0f + 2.0f && y >= ky && y < ky + step) {
+                sTb->keyRow = r;
+                sTb->keyCol = c;
+                gPad[0].gamePressed |= PADG_CROSS;
+                return;
+            }
+        }
+    }
+    for (k = 0; k < nb; k++) {
+        f32 y0 = by + step * (f32)b[k].row;
+
+        if (x >= left + 36.0f * (f32)b[k].c0 && x <= left + 36.0f * (f32)b[k].c1 + 32.0f && y >= y0 && y < y0 + step) {
+            sTb->keyRow = rows + b[k].row;
+            sTb->keyCol = b[k].c0;
+            gPad[0].gamePressed |= PADG_CROSS;
+            return;
+        }
+    }
+}
+
+static void Tb_Touch(void) {
+    f32 x, y;
+    s32 i;
+
+    if (!Ps_Tap(&x, &y)) {
+        return;
+    }
+    switch (sTb->mode) {
+    case TB_HUB:
+        for (i = 0; i < HUB_ROWS; i++) {
+            f32 y0 = Tb_HubRowY(i);
+
+            if (x < Ps_Left() + 300.0f && y >= y0 - 2.0f && y < y0 + Tb_HubRowH(i) + 2.0f) {
+                sTb->hubCur = sTbHubOrder[i];
+                gPad[0].gamePressed |= PADG_CROSS;
+            }
+        }
+        break;
+    case TB_RANKED:
+        Tb_TouchRows(x, y, &sTb->rkCur, RK_COUNT, TB_RK_ROWS_Y, TB_ROW, TB_ROW_H);
+        break;
+    case TB_CREATE:
+        Tb_TouchRows(x, y, &sTb->crCur, CR_COUNT, CR_Y, CR_STEP, 36.0f);
+        break;
+    case TB_SPAR:
+        Tb_TouchRows(x, y, &sTb->spCur, 3, 96.0f, 42.0f, TB_ROW_H);
+        break;
+    case TB_QUICK:
+        Tb_TouchRows(x, y, &sTb->qkCur, 3, 96.0f, 42.0f, TB_ROW_H);
+        break;
+    case TB_PROFILE:
+        Tb_TouchRows(x, y, &sTb->prCur, PR_COUNT, 110.0f, 42.0f, TB_ROW_H);
+        break;
+    case TB_JOIN:
+        Tb_TouchKeys(x, y, KEY_ROWS, sTbKeys, sTbJoinBtn, 4, 24.0f, 122.0f, 32.0f);
+        break;
+    case TB_ADDR:
+        Tb_TouchKeys(x, y, ADDR_ROWS, sTbAddrKeys, sTbAddrBtn, 3, 24.0f, 122.0f, 31.0f);
+        break;
+    case TB_NAME:
+        Tb_TouchKeys(x, y, NAME_ROWS, sTbNameKeys[sTb->lower], sTbNameBtn, 4, 94.0f, 134.0f, 34.0f);
+        break;
+    default:
+        break;
+    }
+}
+
 s32 PortTbo_Run(void) {
     s32 train;
 
@@ -4829,6 +4921,9 @@ s32 PortTbo_Run(void) {
         live = !sTb->leaving && ColorFade_IsInDone();
         Ps_PromptsClear();
         Port_LobbyView(&sTbLv);
+        if (live) {
+            Tb_Touch();
+        }
         if (sTb->mode >= TB_RANKED || sTb->rkLobby) {
             DrRanked_Poll(&sTbRk);
         }

@@ -43,6 +43,7 @@ int MenuLabels_Make(const char *dataDir, const char *outDir, int anyDisc, char *
    none of them has. Files only, a few tenths of a second; may run in a thread of its own. */
 int MenuLabels_MainTexts(const char *dataDir, const char *const *text, int count, unsigned char *out[][2]);
 int MenuLabels_MainItem(const char *dataDir, unsigned char *out[2]);
+int MenuLabels_MainItemNamed(const char *dataDir, const char *text, unsigned char *out[2]); /* (Z Warriors': another item's words) */
 /* What the label sheet's pixels hold for such a picture (512 x 32 values into `out`): each pixel the colour of
    `table` (the sheet's 256 colours, in the order they are in memory) nearest to it. The game's write and the list of
    labels (which finds the sheet by its pixels) both use this, so the two agree. */

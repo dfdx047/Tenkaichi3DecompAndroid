@@ -1,0 +1,2 @@
+/* The program's icon (Windows): linked into the exe by port/tools/link.py with windres. */
+1 ICON "zwarriors.ico"

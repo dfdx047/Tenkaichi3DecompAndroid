@@ -1,0 +1,42 @@
+00 - Plains (Noon)
+01 - Rocky Area (Noon)
+02 - Namek
+03 - Ruined Namek
+04 - World Tour (Noon)
+05 - Kami Palace
+06 - Cell Arena (Evening)
+07 - Supreme Planet
+08 - Time Chamber
+09 - City Ruins (Noon)
+10 - Mountain Road (Noon)
+11 - Islands
+12 - Kame House
+13 - Planet (Night)
+14 - Glaciar
+15 - Ruined Earth
+16 - Space
+17 - Penguin Village
+18 - Hell
+19 - Desert (Noon)
+20 - King Castle
+21 - Muscle Tower
+22 - Mount Paozu
+23 - Plains (Evening)
+24 - Plains (Night)
+25 - Rocky Area (Evening)
+26 - Rocky Area (Night)
+27 - World Tour (Evening)
+28 - Cell Arena (Noon)
+29 - City Ruins (Evening)
+30 - City Ruins (Night)
+31 - Desert (Evening)
+32 - Desert (Night)
+33 - Mountain Road (Evening)
+34 - Planet (Evening)
+35 - Shenron Earth
+36 - Shenron Namek
+37 - Shenron GT
+38 - Character Reference
+Random
+Locked
+Not Selectable

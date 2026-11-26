@@ -13,6 +13,7 @@
  * bytes of the buffer are left at zero. The game's motor commands go to the player's controller (Port_PadVibrate).
  */
 #ifdef __ANDROID__
+#include <stdint.h>
 #include <unistd.h>
 #endif
 #include <SDL3/SDL.h>
@@ -75,6 +76,19 @@ int Port_TouchTapTake(int *x, int *y) {
     }
     *x = sTapX;
     *y = sTapY;
+    return 1;
+}
+/* A tap for the game's own menus, in the picture's 512 x 448 (out: two ints, a game address). 1 once per tap. */
+int Port_MenuTap(unsigned out) {
+    extern volatile int gUiPresentX, gUiPresentY, gUiPresentW, gUiPresentH;
+    int x, y;
+    int *o = (int *)(uintptr_t)out;
+
+    if (!Port_TouchTapTake(&x, &y) || gUiPresentW <= 0 || gUiPresentH <= 0) {
+        return 0;
+    }
+    o[0] = (int)((long long)(x - gUiPresentX) * 512 / gUiPresentW);
+    o[1] = (int)((long long)(y - gUiPresentY) * 448 / gUiPresentH);
     return 1;
 }
 extern int Port_Setting(const char *name, int def); /* plat_settings.c */
@@ -235,6 +249,7 @@ void PortInput_SwallowKeys(void) { sKeySwallow = 1; }
    arrow keys and the controller still move on the keypad. The window's events come in on the renderer's thread
    (PortInput_TboEvent, from Ui_Event), the game reads them on its own. */
 int gPortTboTyping;
+extern int gPortTextMode; /* gs_gpu.c: a screen of the game (the Mod Manager) takes the keyboard as text */
 static char sTboKeys[64];
 static unsigned sTboHead, sTboTail;
 static SDL_SpinLock sTboLock;
@@ -344,9 +359,70 @@ static void tbo_paste_code(const char *clip) {
     }
 }
 
+/* Z Warriors' sharing (plat_mods.c Port_WarriorShare / Port_WarriorImport): a warrior's code put on the clipboard,
+   the clipboard's text read for the game; both on the window's thread, as above. */
+static char sZwClip[16384];
+static int sZwCopyDue, sZwPasteDue, sZwPasteReady;
+
+void PortZw_ClipCopy(const char *text) {
+    SDL_LockSpinlock(&sTboLock);
+    SDL_strlcpy(sZwClip, text != NULL ? text : "", sizeof(sZwClip));
+    sZwCopyDue = sZwClip[0] != '\0';
+    SDL_UnlockSpinlock(&sTboLock);
+}
+
+void PortZw_ClipAsk(void) {
+    SDL_LockSpinlock(&sTboLock);
+    sZwPasteDue = 1;
+    sZwPasteReady = 0;
+    SDL_UnlockSpinlock(&sTboLock);
+}
+
+/* The clipboard's text once it has been read (1), not yet (0). */
+int PortZw_ClipTake(char *out, int size) {
+    int ready;
+
+    SDL_LockSpinlock(&sTboLock);
+    ready = sZwPasteReady;
+    if (ready) {
+        SDL_strlcpy(out, sZwClip, (size_t)size);
+        sZwPasteReady = 0;
+    }
+    SDL_UnlockSpinlock(&sTboLock);
+    return ready;
+}
+
+static void zw_clipboard(void) {
+    static char text[sizeof(sZwClip)];
+    int copy, paste;
+
+    SDL_LockSpinlock(&sTboLock);
+    copy = sZwCopyDue;
+    paste = sZwPasteDue;
+    sZwCopyDue = sZwPasteDue = 0;
+    if (copy) {
+        memcpy(text, sZwClip, sizeof(text));
+    }
+    SDL_UnlockSpinlock(&sTboLock);
+    if (copy) {
+        SDL_SetClipboardText(text);
+    }
+    if (paste) {
+        char *clip = SDL_GetClipboardText();
+
+        SDL_LockSpinlock(&sTboLock);
+        SDL_strlcpy(sZwClip, clip != NULL ? clip : "", sizeof(sZwClip));
+        sZwPasteReady = 1;
+        SDL_UnlockSpinlock(&sTboLock);
+        SDL_free(clip);
+    }
+}
+
 void PortInput_TboClipboard(void) {
     char text[sizeof(sTboCopy)];
     int due, paste;
+
+    zw_clipboard();
     SDL_LockSpinlock(&sTboLock);
     due = sTboCopyDue;
     sTboCopyDue = 0;
@@ -1729,11 +1805,14 @@ static int pad_read(int socket, unsigned char *data) {
         static const int noKeys[PORT_ACTIONS]={0};
         const int *k = keyProfile>=0?sKeys[keyProfile]:noKeys;
         for (a = 0; a < PORT_PAD_BUTTONS; a++) {
+            if (gPortTextMode && k[a] != SDL_SCANCODE_UP && k[a] != SDL_SCANCODE_DOWN && k[a] != SDL_SCANCODE_LEFT && k[a] != SDL_SCANCODE_RIGHT) {
+                continue; /* the keyboard is being typed on (gs_gpu.c: the Mod Manager): only the arrow keys are still the pad */
+            }
             if (k[a] > 0 && k[a] < SDL_SCANCODE_COUNT && !window_key(ks, k[a]) && ks[k[a]] && !(gPortTboTyping && typing_key(k[a]))) {
                 btn |= kActions[a].bit;
             }
         }
-#define HELD(n) (k[n] > 0 && k[n] < SDL_SCANCODE_COUNT && !window_key(ks, k[n]) && ks[k[n]] && !(gPortTboTyping && typing_key(k[n])))
+#define HELD(n) (!gPortTextMode && k[n] > 0 && k[n] < SDL_SCANCODE_COUNT && !window_key(ks, k[n]) && ks[k[n]] && !(gPortTboTyping && typing_key(k[n])))
         if (HELD(16)) { ly = 0x00; }
         if (HELD(17)) { ly = 0xFF; }
         if (HELD(18)) { lx = 0x00; }

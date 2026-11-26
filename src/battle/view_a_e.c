@@ -553,7 +553,7 @@ s32 ChrGrid_IsSelectable(ChrGridCell *cells, s32 index) {
 #endif
 
     if (cells[index].id >= CHRGRID_ID_LOCKED) {
-        ok = cells[index].id == CHRGRID_ID_CUSTOM;
+        ok = CHRGRID_MARK_OK(cells[index].id);
     }
     return ok;
 }
@@ -581,7 +581,7 @@ s32 ChrGrid_MoveRight(ChrGridCell *cells, s32 *col, s32 row) {
         ) {
             break;
         }
-        if (id == CHRGRID_ID_CUSTOM) {
+        if (CHRGRID_MARK_OK(id)) {
             goto end;
         }
     }
@@ -612,7 +612,7 @@ s32 ChrGrid_MoveLeft(ChrGridCell *cells, s32 *col, s32 row) {
         ) {
             break;
         }
-        if (id == CHRGRID_ID_CUSTOM) {
+        if (CHRGRID_MARK_OK(id)) {
             goto end;
         }
     }
@@ -637,7 +637,7 @@ void ChrGrid_MoveDown(ChrGridCell *cells, s32 *col, s32 *row, s32 rows) {
         ) {
             return;
         }
-        if (id == CHRGRID_ID_CUSTOM) {
+        if (CHRGRID_MARK_OK(id)) {
             return;
         }
     } while (ChrGrid_MoveRight(cells, col, *row) == 0);
@@ -660,7 +660,7 @@ void ChrGrid_MoveUp(ChrGridCell *cells, s32 *col, s32 *row, s32 rows) {
         ) {
             return;
         }
-        if (id == CHRGRID_ID_CUSTOM) {
+        if (CHRGRID_MARK_OK(id)) {
             return;
         }
     } while (ChrGrid_MoveRight(cells, col, *row) == 0);

@@ -464,13 +464,36 @@ u8 *BtlObj_GetCharaWork(u32 id) {
     return NULL;
 }
 
+#ifdef PORT
+extern s32 Port_SkinFile(s32 chara, s32 code, s32 kind, s32 variant);
+extern s32 Port_CharaOfFile(s32 id);
+extern void Port_TransApplyFile(s32 modelFile, void *param);
+extern s32 PortGame_IsBT4(void);
+extern void Port_SkillRewrite(s32 modelFile, void *scriptSlot, void *buf, s32 words);
+/* PC: a fighter's skill list written again when its transformations / fusions are set in the Mod Manager (its
+   Transformation page then says what R3 does): one buffer per object */
+#define PORT_SKILL_WORDS 12288
+#define PORT_SKILL_OBJS 4 /* (the fighters a warrior can be: not all BTL_OBJ_MAX, this is part of the state online play saves) */
+static u16 sPortSkill[PORT_SKILL_OBJS][PORT_SKILL_WORDS];
+#endif
 /* Binds an object to a loaded model and fills its header. */
 void BtlObj_Setup(BtlObj *obj, s32 type, BtlResSlot *res, s32 id, s32 active) {
     BtlObjMdl_Destroy(obj);
     BtlObjMdl_Create(type, obj, res);
     obj->active = active;
     obj->id = id;
-    obj->chara = PortGame_ModelCharacter(res->file[0].id);
+#ifdef PORT
+    obj->chara = PortGame_IsBT4() ? PortGame_ModelCharacter(res->file[0].id) : Port_CharaOfFile(res->file[0].id);
+    /* Z Warriors: the transformations set for a new fighter go into the parameter block (object + 0x91C) */
+    if (!PortGame_IsBT4()) {
+        Port_TransApplyFile(res->file[0].id, *(void **)((u8 *)obj + 0x91C));
+        if (id >= 0 && id < PORT_SKILL_OBJS) {
+            Port_SkillRewrite(res->file[0].id, (u8 *)obj + 0xBC, sPortSkill[id], PORT_SKILL_WORDS);
+        }
+    }
+#else
+    obj->chara = (res->file[0].id - 0x590) / 10;
+#endif
     BtlObj_InitChains(obj);
 }
 
@@ -608,8 +631,12 @@ s32 BtlObj_RequestCharaModel(s32 side, s32 chara, s32 costume, s32 variant) {
       Port_ModelRequestTrace(side,-1,chara,costume,variant); }
     {
         extern s32 PortGame_IsBT4(void);
+        if (!PortGame_IsBT4()) { /* Z Warriors: a new fighter's files */
+            model = Port_SkinFile(chara, costume, 0, variant != 0);
+            if (costume < 8) model = BtlObj_PortModel(chara, model); /* an empty model file falls back */
+            return BtlRes_Request(1, model, Port_SkinFile(chara, costume, 8, 0), Port_SkinFile(chara, costume, 9, 0));
+        }
         model = PortGame_Model(chara,costume,variant);
-        if (!PortGame_IsBT4()) model = BtlObj_PortModel(chara, model); /* an empty model file falls back */
         return BtlRes_Request(1, model, PortGame_Animation(chara), PortGame_Combat(chara));
     }
 #endif
@@ -818,6 +845,50 @@ void BtlObj_CalcViewColor(BtlObj *obj, BtlObjView *view) {
     } else {
         Vec4_Copy(&view->color, (Vec4 *)&color);
     }
+#ifdef PORT
+    { /* PC: a warrior's technique glow (Z Warriors, plat_mods.c Port_SkinTechGlow): the body lit in its colour while it
+         does the technique - a Blast 1 for as long as its effect lasts (its time), like the Kaio-ken */
+        extern s32 Port_SkinTechGlow(s32 player, s32 cls);
+        extern void *BtlChar_FindByObjId(s32 objId);
+        extern s32 BtlAct_GetCurrentClass(void *chr);
+        extern s32 BtlSkill_GetFrames(void *chr, s32 slot);
+        static s32 sLeft[2], sBgr[2], sCount[2];
+        s32 id = obj->id;
+
+        if (id >= 0 && id < 2) {
+            void *chr = BtlChar_FindByObjId(id);
+            s32 cls = chr != NULL ? BtlAct_GetCurrentClass(chr) : -1;
+            s32 bgr = Port_SkinTechGlow(id, cls);
+
+            if (bgr > 0) {
+                sBgr[id] = bgr;
+                sLeft[id] = cls <= 1 ? BtlSkill_GetFrames(chr, cls) : 2;
+                sCount[id] = sLeft[id];
+            } else if (sLeft[id] > 0) {
+                sLeft[id]--;
+            }
+            if (sLeft[id] > 0 && sBgr[id] > 0) {
+                f32 c[3], m, k;
+                s32 q;
+
+                c[0] = (f32)(sBgr[id] & 0xFF);
+                c[1] = (f32)((sBgr[id] >> 8) & 0xFF);
+                c[2] = (f32)((sBgr[id] >> 16) & 0xFF);
+                m = c[0] > c[1] ? (c[0] > c[2] ? c[0] : c[2]) : (c[1] > c[2] ? c[1] : c[2]);
+                k = m / 255.0f * 0.85f; /* (its brightness: how strong) */
+                if (sLeft[id] < 15 && sCount[id] > 15) {
+                    k *= (f32)sLeft[id] / 15.0f; /* (fading out) */
+                }
+                for (q = 0; q < 3; q++) {
+                    f32 *v = q == 0 ? &view->color.x : q == 1 ? &view->color.y : &view->color.z;
+                    f32 to = m > 0.0f ? 128.0f + 127.0f * (c[q] / m) - 64.0f * (1.0f - c[q] / m) : 128.0f;
+
+                    *v = *v + (to - *v) * k;
+                }
+            }
+        }
+    }
+#endif
 }
 
 /* Returns 1 when all eight corners of the object's box are beyond the same edge of the view. */

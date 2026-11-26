@@ -107,6 +107,12 @@ extern s32 BtlObj_Create(s32 slot, s32 model, s32 arg);
 extern s32 BtlObj_CreateChara(s32 id);
 extern void BtlObj_Rebind(s32 objId, s32 id);
 extern s32 BtlObj_RequestCharaModel(s32 side, s32 chara, s32 costume, s32 variant);
+#ifdef PORT
+extern s32 Port_SkinFile(s32 chara, s32 code, s32 kind, s32 variant);
+extern s32 Port_SkinVoice(s32 chara, s32 code);                 /* a new fighter's own voice (plat_mods.c) */
+extern void Port_SkinVoiceSet(s32 player, s32 chara, s32 code);
+extern s32 Port_SkinItems(s32 code, s32 *out);                   /* the Z-items a new fighter always has */
+#endif
 extern void BtlRes_CommitReloadEx(void);
 extern void BtlObj_Init(s32 arg);
 extern void BtlObj_Term(void);
@@ -416,16 +422,24 @@ s32 BtlLoad_StepChara(BtlJob *job) {
         } else {
             model = job->chara * 10 + job->costume + BTL_FILE_CHARA;
         }
-        model = PortGame_Model(job->chara,job->costume,job->variant);
         {
             extern s32 PortGame_IsBT4(void);
             extern s32 BtlObj_PortModel(s32 chara, s32 model); /* btl_obj.c: an empty model file falls back */
-            if (!PortGame_IsBT4()) model = BtlObj_PortModel(job->chara, model);
+            if (!PortGame_IsBT4()) {
+                /* Z Warriors: a new fighter (costume code of 8 and above, plat_mods.c) has files of its own */
+                model = Port_SkinFile(job->chara, job->costume, 0, job->variant != 0);
+                if (job->costume < 8) model = BtlObj_PortModel(job->chara, model); /* an empty model file falls back */
+            } else {
+                model = PortGame_Model(job->chara,job->costume,job->variant);
+            }
         }
         if (job->modelOnly == 0) {
-            file8 = PortGame_Animation(job->animChara);
-            file9 = PortGame_Combat(job->unk1C);
-            voice = PortGame_Voice(job->voiceChara,(gSaveData->flags & SAVE_FLAG_VOICE)!=0);
+            s32 mod = !PortGame_IsBT4();
+            s32 jp = (gSaveData->flags & SAVE_FLAG_VOICE)!=0;
+            file8 = mod ? Port_SkinFile(job->animChara, job->costume, 8, 0) : PortGame_Animation(job->animChara);
+            file9 = mod ? Port_SkinFile(job->unk1C, job->costume, 9, 0) : PortGame_Combat(job->unk1C);
+            voice = PortGame_Voice(mod ? Port_SkinVoice(job->voiceChara, job->costume) : job->voiceChara, jp);
+            if (mod) Port_SkinVoiceSet(job->side, job->chara, job->costume);
             BtlRes_Reload(BattleSide_GetModelSlot(job->side), model, file8, file9);
             res->bank = File_Request3(voice, res->bank, res->bankSize);
             if (!BtlCtrl_IsSwitching(job->side)) {
@@ -436,7 +450,7 @@ s32 BtlLoad_StepChara(BtlJob *job) {
                     member = BtlSide_GetActiveMember(job->side);
                 }
                 next = BattleSide_GetMember(job->side, member);
-                next->buf[1] = File_Request3(PortGame_Member(job->chara,TagTeam_NativeSide(job->side)), next->buf[1], BTL_MEMBER_BUF_SIZE);
+                next->buf[1] = File_Request3(PortGame_IsBT4() ? PortGame_Member(job->chara,TagTeam_NativeSide(job->side)) : Port_SkinFile(job->chara, job->costume, 11 + TagTeam_NativeSide(job->side), 0), next->buf[1], BTL_MEMBER_BUF_SIZE);
             }
         } else {
             BtlRes_Reload(BattleSide_GetModelSlot(job->side), model, -1, -1);
@@ -517,10 +531,14 @@ s32 BtlLoad_StepInitial(BtlJob *job) {
     case 0:
         res->sndCommon = File_Request3(BTL_FILE_SND_COMMON, NULL, 0);
         res->sndStage = File_Request3(BTL_STAGE_BANK(Battle_GetStartStage()), NULL, 0);
-        res->sndChara[0] = File_Request3(PortGame_Voice(BattleSide_GetStartChara(0),(gSaveData->flags & SAVE_FLAG_VOICE)!=0), NULL, 0);
-        res->sndChara[1] = File_Request3(PortGame_Voice(BattleSide_GetStartChara(1),(gSaveData->flags & SAVE_FLAG_VOICE)!=0), NULL, 0);
-        for (side = 2; side < TagTeam_Count(); side++) {
-            tagVoice[side] = File_Request3(PortGame_Voice(BattleSide_GetStartChara(side),(gSaveData->flags & SAVE_FLAG_VOICE)!=0), NULL, 0);
+        for (side = 0; side < TagTeam_Count(); side++) {
+            s32 chara = BattleSide_GetStartChara(side);
+            if (!PortGame_IsBT4() && side < 2) { /* Z Warriors: a new fighter's own voice */
+                Port_SkinVoiceSet(side, chara, BattleSide_GetStartCostume(side));
+                chara = Port_SkinVoice(chara, BattleSide_GetStartCostume(side));
+            }
+            if (side < 2) res->sndChara[side] = File_Request3(PortGame_Voice(chara,(gSaveData->flags & SAVE_FLAG_VOICE)!=0), NULL, 0);
+            else tagVoice[side] = File_Request3(PortGame_Voice(chara,(gSaveData->flags & SAVE_FLAG_VOICE)!=0), NULL, 0);
         }
         job->state++;
         return 0;
@@ -619,7 +637,7 @@ s32 BtlLoad_StepInitial(BtlJob *job) {
         for (side = 0; side < TagTeam_Count(); side++) {
             for (i = 0; (u32)i < (u32)BattleSide_GetMemberCount(side); i++) {
                 m = BattleSide_GetMember(side, i);
-                m->buf[0] = File_Request3(PortGame_Member(m->chara,TagTeam_NativeSide(side)), m->buf[0], BTL_MEMBER_BUF_SIZE);
+                m->buf[0] = File_Request3(PortGame_IsBT4() ? PortGame_Member(m->chara,TagTeam_NativeSide(side)) : Port_SkinFile(m->chara, m->costume, 11 + TagTeam_NativeSide(side), 0), m->buf[0], BTL_MEMBER_BUF_SIZE);
             }
         }
         res->unk8 = File_Request3(gProgress->unk0[0] + 6, NULL, 0);
@@ -1385,7 +1403,28 @@ void BtlMember_ApplyItems(BattleMember *m) {
         }
     }
 #endif
+#ifdef PORT
+    { /* PC: a new fighter's own Z-items (Port_SkinItems) count as equipped, in the free places of its set */
+        BattleItemSet with = m->items;
+        s32 own[4];
+        s32 k;
+        s32 at = 0;
+
+        if (Port_SkinItems(m->costume, own) > 0) {
+            for (k = 0; k < 4; k++) {
+                while (at < 8 && with.id[at] != 0) {
+                    at++;
+                }
+                if (own[k] != 0 && at < 8) {
+                    with.id[at++] = (u16)own[k];
+                }
+            }
+        }
+        ItemSet_GetStats(&with, stats, ability, m->chara);
+    }
+#else
     ItemSet_GetStats(&m->items, stats, ability, m->chara);
+#endif
     m->bonus[0] = 0;
     m->bonus[1] = stats[2];
     m->bonus[2] = stats[0];
@@ -1414,6 +1453,18 @@ void BtlMember_Init(BattleMember *m, s32 chara, s32 costume, s32 variant, s32 cp
     BtlMember_ApplyItems(m);
     m->chara = chara;
     m->costume = costume;
+#ifdef PORT
+    { /* PC: a new fighter's own Z-items (Port_SkinItems), now that its costume is known; the rest as the game had it
+         (the items were applied with chara still 0) */
+        s32 own[4];
+
+        if (Port_SkinItems(costume, own) > 0) {
+            m->chara = 0;
+            BtlMember_ApplyItems(m);
+            m->chara = chara;
+        }
+    }
+#endif
     m->variant = variant;
     m->cpuLevel = cpuLevel;
     m->health = health;

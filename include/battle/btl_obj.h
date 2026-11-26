@@ -35,7 +35,17 @@
    other move props. These are objects, not additional playable fighters. */
 #define BTL_OBJ_MAX 192
 #define BTL_OBJ_VIEW_MAX 2
-#define BTL_OBJ_WORK_SIZE 0x6B740
+#ifdef PORT
+/* PC: four times the mesh records (one per mesh of every model on screen): larger models need more */
+#define BTL_OBJ_PARTS 2048
+#define BTL_OBJ_FACES 16   /* one per model with a face: the PS2 has 4 */
+#define BTL_OBJ_SHADOWS 12 /* ground shadows: the PS2 has 5 (OBJ_SHADOW_MAX, sys/gfxm_e.h) */
+#else
+#define BTL_OBJ_PARTS 512
+#define BTL_OBJ_FACES 4
+#define BTL_OBJ_SHADOWS 5
+#endif
+#define BTL_OBJ_WORK_SIZE (0x6B740 + (BTL_OBJ_PARTS - 512) * 0xE0 + (BTL_OBJ_FACES - 4) * 0x70 + (BTL_OBJ_SHADOWS - 5) * 0x2040)
 
 /* BtlObj.type */
 #define BTL_OBJ_TYPE_CHARA 0 /* a fighter: gets a charaWork buffer, is drawn last in its own view */
@@ -214,7 +224,11 @@ typedef struct BtlResSlot {
 #define BTL_RES_ID_KEEP (-99) /* BtlRes_SetFileId: leave the file as it is */
 
 /* Buffer sizes of a fixed slot. */
+#if defined(PORT) && !defined(__ANDROID__)
+#define BTL_RES_MODEL_SIZE 0x900000 /* PC: room for a model file of 9 MB (a converted high-detail model) */
+#else
 #define BTL_RES_MODEL_SIZE 0xCE000
+#endif
 #define BTL_RES_ANIM0_SIZE 0x160800
 #define BTL_RES_ANIM1_SIZE 0xCE800
 

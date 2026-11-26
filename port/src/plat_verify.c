@@ -311,3 +311,98 @@ void Port_VerifyStart(void) {
     }
     pthread_attr_destroy(&attr);
 }
+
+/* Z Warriors builds its fighters out of the characters' files, looks included (which the gameplay fingerprint leaves
+   out): every model, animation and effect file of the 161 characters has to be the original disc's. 1 all are, 0 one is
+   not (or is missing). Read once; kept in <root>/.zwchars with the files' sizes and times. Called on the game's thread:
+   the picture is held while it reads. */
+#define ZW_CHAR_FIRST 1424 /* model of character c, costume n: 1424 + c * 10 + n */
+#define ZW_CHAR_END (ZW_CHAR_FIRST + 161 * 10)
+int Port_ZwCharsOriginal(void) {
+    extern FILE *Port_FileOpenHost(const char *rel, char *path, size_t n); /* plat_fcache.c */
+    extern int Port_AfsSpan(const char *rel, char *path, unsigned n, long *base, long *size);
+    extern void Gs_HoldFrame(void);
+    static int known = -1;
+    char rel[64], path[1024], cache[1024];
+    uint32_t sig = 0, was = 0;
+    unsigned char *buf;
+    int pass, id, ok = 1, saved = 0;
+    FILE *f;
+
+    if (known >= 0) {
+        return known;
+    }
+    crc_init();
+    buf = malloc(1 << 18);
+    if (buf == NULL) {
+        return 0;
+    }
+    snprintf(cache, sizeof(cache), "%s/.zwchars", Port_FileRoot());
+    for (pass = 0; pass < 2 && ok; pass++) { /* 0: sizes and times (is the kept result still good?); 1: the contents */
+        if (pass == 1) {
+            f = fopen(cache, "r");
+            if (f != NULL) {
+                if (fscanf(f, "%x %d", (unsigned *)&was, &saved) == 2 && was == sig) {
+                    fclose(f);
+                    ok = saved == 1;
+                    break;
+                }
+                fclose(f);
+            }
+        }
+        for (id = ZW_CHAR_FIRST; id < ZW_CHAR_END && ok; id++) {
+            long base = 0, span = -1;
+            uint64_t rec[2], left;
+            uint32_t crc = 0;
+            struct stat st;
+
+            snprintf(rel, sizeof(rel), "pzs3us1/%05d.bin", id - 1);
+            f = Port_FileOpenHost(rel, path, sizeof(path));
+            if (f == NULL && Port_AfsSpan(rel, path, (unsigned)sizeof(path), &base, &span)) {
+                f = fopen(path, "rb");
+            }
+            if (f == NULL || stat(path, &st) != 0) {
+                ok = 0;
+            } else {
+                if (span < 0) {
+                    span = (long)st.st_size;
+                }
+                if (pass == 0) {
+                    rec[0] = (uint64_t)span;
+                    rec[1] = (uint64_t)st.st_mtime;
+                    sig = crc_add(sig, (const uint8_t *)rec, sizeof(rec));
+                } else if ((uint64_t)span != kVerify[id][0] || fseek(f, base, SEEK_SET) != 0) {
+                    ok = 0;
+                } else {
+                    for (left = (uint64_t)span; left > 0;) {
+                        size_t got = fread(buf, 1, left < (1 << 18) ? (size_t)left : (1 << 18), f);
+
+                        if (got == 0) {
+                            break;
+                        }
+                        crc = crc_add(crc, buf, got);
+                        left -= got;
+                    }
+                    ok = left == 0 && crc == kVerify[id][1];
+                    if ((id & 31) == 0) {
+                        Gs_HoldFrame();
+                    }
+                }
+            }
+            if (f != NULL) {
+                fclose(f);
+            }
+            if (!ok) {
+                fprintf(stderr, "bt3: Z Warriors: character file %s is not the original disc's\n", rel);
+            }
+        }
+    }
+    free(buf);
+    f = fopen(cache, "w");
+    if (f != NULL) {
+        fprintf(f, "%08x %d\n", (unsigned)sig, ok);
+        fclose(f);
+    }
+    known = ok;
+    return known;
+}

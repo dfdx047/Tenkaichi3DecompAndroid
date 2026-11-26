@@ -1424,6 +1424,13 @@ s32 BtlParam_TestUnkADBit(BtlTechChr *chr, s32 n) {
     return (BtlChar_GetObj(chr)->param->unkAD & (0x10 << n)) != 0;
 }
 
+#ifdef PORT
+/* PC: the parameter block itself (the Mod Manager's transformations into new fighters are kept by its address). */
+void *BtlParam_Block(void *chr) {
+    return BtlChar_GetObj((BtlTechChr *)chr)->param;
+}
+#endif
+
 /* Parameter +0xB4 + n: fusion n. */
 s32 BtlParam_GetUnkB4(BtlTechChr *chr, s32 n) {
     return BtlChar_GetObj(chr)->param->fusionResult[n];
@@ -1489,7 +1496,11 @@ s32 BtlParam_GetAuraKind(BtlTechChr *chr) {
    become 7 (8 for type 4) while the member's gauge word +0x20 is set. */
 s32 BtlParam_GetType(BtlTechChr *chr) {
     BtlParam *param = BtlChar_GetObj(chr)->param;
+#ifdef PORT
+    u32 costume = (u32)(BtlMember_GetActive(chr)->costume >= 8 ? ((BtlMember_GetActive(chr)->costume - 8) & 3) : BtlMember_GetActive(chr)->costume);
+#else
     u32 costume = BtlMember_GetActive(chr)->costume;
+#endif
     s32 type;
 
     if (costume >= 4) {

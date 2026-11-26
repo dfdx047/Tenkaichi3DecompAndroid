@@ -91,6 +91,236 @@ extern void ItemHelp_Term(void);
 extern void ItemHelp_Draw(s32 arg);
 
 /* The six chips of the stage reel show the cursor's row of the stage grid. */
+#ifdef PORT
+#include "menu/port_mods.h"
+/* PC: the costume code of a side that picked a new fighter from the mod grid (square), 0 = it did not. */
+static s32 gPortSelSkin[2];
+
+/* The CUSTOM tile (MCHR_ZW): Z Warriors' custom characters in the reel, seven to a row, up and down for more; one with
+   forms opens into them (its base first). Warriors that are only another's form are not listed apart. */
+#define PORT_ST_ZW 0x40     /* (a side's state: in the custom characters' reel) */
+#define PORT_ST_ZWFORM 0x41 /* (in one's forms) */
+#define PORT_ZW_MAX 63
+extern s32 Port_SkinIsWarrior(s32 skin);
+extern s32 Port_SkinChara(s32 skin);
+extern s32 Port_SkinForms(s32 skin, s32 *out);
+extern s32 Port_ZwCustomChip(void *out, s32 max);
+extern s32 Port_ModChip(s32 i, void *out, s32 max);
+extern s32 Port_ModChipReel(s32 i, void *out, s32 max);
+extern s32 Port_SkinCostumes(s32 skin);
+static s32 sZwSel[2] = {-1, -1}; /* the warrior chosen in the reel (its capsules and costume next), -1 none */
+static s32 sZwFrom[2], sZwClip[2]; /* (the reel's state and clip to go back to)) */
+static u16 sZwTileName[2][24];     /* the tile's name lines */
+static s32 sZwSkin[PORT_ZW_MAX];      /* each listed warrior's skin */
+static s32 sZwForm[PORT_ZW_MAX][5];   /* its forms' skins, its own first */
+static s32 sZwForms[PORT_ZW_MAX];
+static s32 sZwCount;
+static u8 *sZwChip[PORT_ZW_MAX + 1];  /* chips: each warrior's (by its place), the last the tile's */
+static s32 sZwChipOf[PORT_ZW_MAX * 5]; /* (the chip of a skin: its place in sZwChip, -1) */
+static s32 sZwRow[2], sZwCol[2], sZwPick[2];
+
+/* The listed warriors and their chips, made again each time the screen opens. */
+static void PortZw_SelLoad(void) {
+    s32 i, k, n = Port_SkinCount();
+    static s32 isForm[256];
+
+    for (i = 0; i <= PORT_ZW_MAX; i++) {
+        if (sZwChip[i] != NULL) {
+            Heap_Free(sZwChip[i]);
+            sZwChip[i] = NULL;
+        }
+    }
+    sZwCount = 0;
+    memset(isForm, 0, sizeof(isForm));
+    for (i = 0; i < n && i < 256; i++) { /* (who is someone's form) */
+        s32 f[4], m;
+
+        if (Port_SkinIsWarrior(i)) {
+            m = Port_SkinForms(i, f);
+            for (k = 0; k < m; k++) {
+                if (f[k] >= 0 && f[k] < 256) {
+                    isForm[f[k]] = 1;
+                }
+            }
+        }
+    }
+    for (i = 0; i < PORT_ZW_MAX * 5; i++) {
+        sZwChipOf[i] = -1;
+    }
+    { /* (forms linked round in a loop, A into B into A: each is someone's form, so none would be listed and the tile could
+         go; a loop with no warrior outside it leading in is listed by its first member) */
+        static u8 reach[256];
+        s32 grew, root;
+
+        memset(reach, 0, sizeof(reach));
+        for (root = -1; root < n && root < 256; root++) {
+            if (root >= 0) {
+                if (!Port_SkinIsWarrior(root) || reach[root]) {
+                    continue;
+                }
+                isForm[root] = 0; /* (nothing outside reaches it: it is a base) */
+            }
+            for (i = 0; i < n && i < 256; i++) {
+                if (Port_SkinIsWarrior(i) && !isForm[i]) {
+                    reach[i] = 1;
+                }
+            }
+            do { /* (everything the bases power up into, and on) */
+                grew = 0;
+                for (i = 0; i < n && i < 256; i++) {
+                    s32 f[4], m;
+
+                    if (!reach[i]) {
+                        continue;
+                    }
+                    m = Port_SkinForms(i, f);
+                    for (k = 0; k < m; k++) {
+                        if (f[k] >= 0 && f[k] < 256 && !reach[f[k]]) {
+                            reach[f[k]] = 1;
+                            grew = 1;
+                        }
+                    }
+                }
+            } while (grew);
+        }
+    }
+    for (i = 0; i < n && sZwCount < PORT_ZW_MAX; i++) {
+        if (!Port_SkinIsWarrior(i) || (i < 256 && isForm[i])) {
+            continue;
+        }
+        sZwSkin[sZwCount] = i;
+        sZwForm[sZwCount][0] = i;
+        sZwForms[sZwCount] = 1 + Port_SkinForms(i, &sZwForm[sZwCount][1]);
+        sZwCount++;
+    }
+    for (i = 0; i < n && i < PORT_ZW_MAX * 5; i++) { /* (a chip for every warrior: the listed and their forms) */
+        u8 *res;
+
+        if (!Port_SkinIsWarrior(i)) {
+            continue;
+        }
+        for (k = 0; k < PORT_ZW_MAX && sZwChip[k] != NULL; k++) {
+        }
+        if (k >= PORT_ZW_MAX) {
+            break;
+        }
+        res = Heap_Alloc(0x1600, 0x40, 0, 2);
+        if (res != NULL && Port_ModChipReel(Port_SkinMod(i), res, 0x1600) > 0) {
+            Res_RelocateOffsets((void *)&res, res, res);
+            sZwChip[k] = res;
+            sZwChipOf[i] = k;
+        } else if (res != NULL) {
+            Heap_Free(res);
+        }
+    }
+    {
+        u8 *res = Heap_Alloc(0x1600, 0x40, 0, 2);
+
+        if (res != NULL && Port_ZwCustomChip(res, 0x1600) > 0) {
+            Res_RelocateOffsets((void *)&res, res, res);
+            sZwChip[PORT_ZW_MAX] = res;
+        } else if (res != NULL) {
+            Heap_Free(res);
+        }
+    }
+}
+
+/* A skin's chip in the reel (NULL: its fighter's). */
+static u8 *PortZw_ChipTex(s32 skin) {
+    if (skin < 0 || skin >= PORT_ZW_MAX * 5 || sZwChipOf[skin] < 0) {
+        return NULL;
+    }
+    {
+        MTexRes *res = (MTexRes *)sZwChip[sZwChipOf[skin]];
+
+        return res->tex;
+    }
+}
+
+/* The reel's seven chips: a row of the custom characters (forms 0), or the forms of the one under the cursor (1). */
+static void PortZw_SetChips(s32 side, s32 forms) {
+    s32 slot[7] = { 8, 11, 12, 13, 14, 15, 16 };
+    s32 i, at = sZwRow[side] * 7 + sZwCol[side];
+
+    for (i = 0; i < 7; i++) {
+        s32 skin = -1, id = MCHR_EMPTY;
+        MTexRes *res;
+        u8 *t;
+
+        if (forms) {
+            if (at < sZwCount && i < sZwForms[at]) {
+                skin = sZwForm[at][i];
+            }
+        } else if (sZwRow[side] * 7 + i < sZwCount) {
+            skin = sZwSkin[sZwRow[side] * 7 + i];
+        }
+        if (skin >= 0) {
+            id = Port_SkinChara(skin);
+            id = id >= 0 && id < MCHR_RANDOM ? id : 0;
+        }
+        gCharSel->side[side]->prevChip[i] = gCharSel->side[side]->chip[i];
+        gCharSel->side[side]->chip[i] = id;
+        res = (MTexRes *)MPACK_AT(gCharSel->chipPack, id + 1);
+        t = NULL;
+        if (skin >= 0) {
+            t = PortZw_ChipTex(skin);
+        }
+        gCharSel->sideTex[side][18 + i] = gCharSel->sideTex[side][slot[i]];
+        if (t != NULL) { /* (two statements: a "?:" of the two pointers does not build for arm64, irfix.py) */
+            gCharSel->sideTex[side][slot[i]] = t;
+        } else {
+            gCharSel->sideTex[side][slot[i]] = res->tex;
+        }
+    }
+}
+
+/* The cursor's warrior (or form) on the portrait and the names. */
+static void PortZw_Hover(s32 side, s32 forms) {
+    s32 at = sZwRow[side] * 7 + sZwCol[side];
+    s32 skin;
+
+    if (at >= sZwCount) {
+        return;
+    }
+    skin = forms ? sZwForm[at][sZwPick[side] < sZwForms[at] ? sZwPick[side] : 0] : sZwSkin[at];
+    gPortSelSkin[side] = PORT_SKIN_CODE(skin, 0);
+    gCharSel->side[side]->chara = gCharSel->side[side]->chip[forms ? sZwPick[side] : sZwCol[side]];
+    CharSel_RequestFace(side);
+}
+
+/* Whether a side's grid cursor is on the CUSTOM tile. */
+static s32 PortZw_OnTile(s32 side) {
+    CharSelSide *sd = gCharSel->side[side];
+
+    return gCharSel->cells[side] != NULL && gCharSel->cells[side][sd->col + sd->row * 7].id == MCHR_ZW;
+}
+
+/* The tile's name lines (as the name boxes take them). */
+static u16 *PortZw_TileName(s32 side, s32 which) {
+    static char *say[2] = {"Custom Characters", "Z Warriors"};
+    u16 *dst = sZwTileName[which & 1];
+    char *src = say[which & 1];
+    s32 n = 0;
+
+    if (gCharSel->nameText != NULL && *(u16 *)MPACK_AT(gCharSel->nameText, 1) == 0xFEFF) {
+        dst[n++] = 0xFEFF;
+    }
+    for (; *src != 0 && n < 23; src++) {
+        dst[n++] = (u8)*src;
+    }
+    dst[n] = 0;
+    (void)side;
+    return sZwTileName[which & 1];
+}
+
+/* The number of custom characters in a row of the reel. */
+static s32 PortZw_RowLen(s32 row) {
+    s32 n = sZwCount - row * 7;
+
+    return n < 0 ? 0 : n > 7 ? 7 : n;
+}
+#endif
+
 void CharSel_SetStageChips(void) {
     s32 slot[6] = { 8, 11, 12, 13, 14, 15 };
     s32 i;
@@ -133,12 +363,24 @@ void CharSel_SetRowChips(s32 side) {
     for (i = 0; i < 7; i++) {
         s32 id = gCharSel->cells[side][i + gCharSel->side[side]->row * 7].id;
         MTexRes *res;
+#ifdef PORT
+        s32 zw = id == MCHR_ZW;
+
+        if (zw) { /* (the CUSTOM tile: its own chip; the game sees the custom marker's portrait and name) */
+            id = MCHR_CUSTOM;
+        }
+#endif
 
         gCharSel->side[side]->prevChip[i] = gCharSel->side[side]->chip[i];
         gCharSel->side[side]->chip[i] = id;
         res = (MTexRes *)MPACK_AT(gCharSel->chipPack, id + 1);
         gCharSel->sideTex[side][18 + i] = gCharSel->sideTex[side][slot[i]];
         gCharSel->sideTex[side][slot[i]] = res->tex;
+#ifdef PORT
+        if (zw && sZwChip[PORT_ZW_MAX] != NULL) {
+            gCharSel->sideTex[side][slot[i]] = ((MTexRes *)sZwChip[PORT_ZW_MAX])->tex;
+        }
+#endif
     }
 }
 
@@ -222,7 +464,13 @@ void CharSel_UpdateFaceLoad(void) {
         break;
     case CHARSEL_LOAD_REQUEST:
         File_CancelRequests();
+#ifdef PORT
+        File_Request(gCharSel->side[gCharSel->faceSide]->state == CHARSEL_ST_GRID && PortZw_OnTile(gCharSel->faceSide) && sZwCount > 0
+                         ? Port_SkinFile(Port_SkinChara(sZwSkin[0]), PORT_SKIN_CODE(sZwSkin[0], 0), 10, 0)
+                         : Port_SkinFile(gCharSel->side[gCharSel->faceSide]->chara, gPortSelSkin[gCharSel->faceSide], 10, 0),
+#else
         File_Request(gCharSel->side[gCharSel->faceSide]->chara + CHARSEL_FACE_FILE,
+#endif
                      gCharSel->faceFile[gCharSel->faceSide], 0x16800);
         gCharSel->faceState = CHARSEL_LOAD_READ;
         break;
@@ -537,6 +785,9 @@ void CharSel_Init(s32 section) {
     for (i = 0; i < (PortGame_IsBT4() ? 250 : MCHR_CELL_MAX); i++) {
         CS_RES(gCharSel->chipPack, i + 1);
     }
+#ifdef PORT
+    PortMods_PatchSelect(gCharSel->nameText, gCharSel->formText, gCharSel->chipPack); /* the mods' names and faces (port_modmgr2.c) */
+#endif
     gCharSel->stagePack = (u32 *)MPACK_AT(gCharSel->res, 46);
     for (i = 0; i < (PortGame_IsBT4() ? 99 : 38); i++) {
         CS_RES(gCharSel->stagePack, i + 1);
@@ -685,6 +936,35 @@ void CharSel_Init(s32 section) {
                       &gCharSel->customCount[i], gCharSel->custom[i]);
         gCharSel->masterCount[i] = gCharSel->cellCount[i];
         gCharSel->cells[i] = gCharSel->grid[i];
+#ifdef PORT
+        if (i == 0) {
+            PortZw_SelLoad();
+        }
+        if (sZwCount > 0 && gCharSel->cellCount[i] > 0) { /* the CUSTOM tile: in the first empty place after the game's
+                                                             own markers, else a row of its own */
+            s32 c, at = -1;
+
+            for (c = 0; c < gCharSel->cellCount[i]; c++) {
+                if (gCharSel->grid[i][c].id == MCHR_EMPTY) {
+                    at = c;
+                    break;
+                }
+            }
+            if (at < 0 && gCharSel->cellCount[i] + 7 <= MCHR_CELL_MAX) {
+                at = gCharSel->cellCount[i];
+                for (c = 0; c < 7; c++) {
+                    gCharSel->grid[i][at + c].id = MCHR_EMPTY;
+                    gCharSel->grid[i][at + c].formCount = 0;
+                }
+                gCharSel->cellCount[i] += 7;
+                gCharSel->masterCount[i] = gCharSel->cellCount[i];
+            }
+            if (at >= 0) {
+                gCharSel->grid[i][at].id = MCHR_ZW;
+                gCharSel->grid[i][at].formCount = 0;
+            }
+        }
+#endif
         gCharSel->rows[i] = gCharSel->masterCount[i] / cols;
         if (gCharSel->masterCount[i] % cols != 0) {
             gCharSel->rows[i]++;
@@ -960,9 +1240,37 @@ void CharSel_Draw(void) {
         Flash_FindLabel(f, NULL, i ? "mc_single_chara_r" : "mc_single_chara_l", &ref);
         Flash_ClipSetAlpha(f, &ref, gCharSel->faceAlpha[i]);
         Flash_ClipSetFlags(f, &ref, 0x80, (u8)gCharSel->faceMask);
+#ifdef PORT
+        /* PC: a side that is choosing on the roster again has no pick from the mod grid, whatever way it came back
+           here (there are several: from the other side's turn, from the stage, from its own "done") */
+        if (gCharSel->side[i]->state == CHARSEL_ST_GRID) {
+            sZwSel[i] = -1;
+        }
+        if (gPortSelSkin[i] != 0 && gCharSel->side[i]->state == CHARSEL_ST_GRID) {
+            gPortSelSkin[i] = 0;
+            gCharSel->side[i]->colorPlate = 0;
+            gCharSel->side[i]->chara = gCharSel->side[i]->chip[gCharSel->side[i]->col];
+            CharSel_RequestFace(i);
+        }
+#endif
         Flash_FindLabel(f, NULL, i ? "mc_name_text_r" : "mc_name_text_l", &ref);
+#ifdef PORT
+        /* PC: a fighter picked from the mod grid has names of its own (the game knows it as its template) */
+        if (gCharSel->side[i]->state == CHARSEL_ST_GRID && PortZw_OnTile(i)) {
+            TextBox_AttachString(f, &ref, 0, 0, PortZw_TileName(i, 0), &gCharSel->nameBox[i]);
+        } else if (gPortSelSkin[i] != 0 && PortMods_SkinName(gPortSelSkin[i], 0, i, gCharSel->nameText) != NULL) {
+            TextBox_AttachString(f, &ref, 0, 0, PortMods_SkinName(gPortSelSkin[i], 0, i, gCharSel->nameText), &gCharSel->nameBox[i]);
+        } else
+#endif
         TextBox_AttachLine(f, &ref, 0, 0, gCharSel->side[i]->chara, &gCharSel->nameBox[i]);
         Flash_FindLabel(f, NULL, i ? "mc_form_text_r" : "mc_form_text_l", &ref);
+#ifdef PORT
+        if (gCharSel->side[i]->state == CHARSEL_ST_GRID && PortZw_OnTile(i)) {
+            TextBox_AttachString(f, &ref, 0, 0, PortZw_TileName(i, 1), &gCharSel->formBox[i]);
+        } else if (gPortSelSkin[i] != 0 && PortMods_SkinName(gPortSelSkin[i], 1, i, gCharSel->formText) != NULL) {
+            TextBox_AttachString(f, &ref, 0, 0, PortMods_SkinName(gPortSelSkin[i], 1, i, gCharSel->formText), &gCharSel->formBox[i]);
+        } else
+#endif
         TextBox_AttachLine(f, &ref, 0, 0, gCharSel->side[i]->chara, &gCharSel->formBox[i]);
     }
 
@@ -1545,6 +1853,24 @@ void CharSel_Input(s32 *running) {
         }
         switch (CS_SIDE->state) {
         case CHARSEL_ST_GRID:
+#ifdef PORT
+            /* PC: the CUSTOM tile opens the custom characters' reel, as a fighter opens into its forms */
+            if ((gPad[i].gamePressed & 0x200) && CS_CELL.id == MCHR_ZW && sZwCount > 0) {
+                sZwRow[CS_N] = 0;
+                sZwCol[CS_N] = 0;
+                sZwPick[CS_N] = 0;
+                CS_SIDE->customCol = 0;
+                Flash_GotoLabel(CS_REEL, "fl_form", 1);
+                CS_SIDE->mask = 1;
+                CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_CHIP, "fl_off_start");
+                CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_CUSTOM_CHIP, "fl_on_start");
+                PortZw_SetChips(CS_N, 0);
+                PortZw_Hover(CS_N, 0);
+                CS_SIDE->state = PORT_ST_ZW;
+                Snd_PlaySe(2, 0x29);
+                break;
+            }
+#endif
             if (gPad[i].gameRepeat & 1) {
                 CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_CHIP, "fl_off_start");
                 ChrGrid_MoveLeft(gCharSel->cells[CS_N], &CS_SIDE->col, CS_SIDE->row);
@@ -1644,6 +1970,17 @@ void CharSel_Input(s32 *running) {
                         CharSel_ClipGoto(i + 2, i + turn, CHARSEL_CLIP_CHIP, "fl_off_start");
                         gCharSel->turn = 0;
                         Flash_GotoLabel(CS_REEL, "fl_in", 1);
+#ifdef PORT
+                        if (gPortSelSkin[CS_N] != 0) { /* the first side's pick from the mod grid is taken back with it */
+                            gPortSelSkin[CS_N] = 0;
+                            CS_SIDE->colorPlate = 0;
+                            CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_CHIP, "fl_on_start");
+                            CharSel_SetRowChips(CS_N);
+                            CS_SIDE->chara = CS_SIDE->chip[CS_SIDE->col];
+                            CharSel_RequestFace(CS_N);
+                            CS_SIDE->state = CHARSEL_ST_GRID;
+                        } else
+#endif
                         if (CS_SIDE->flags & CHARSEL_SIDE_FORMS) {
                             CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_FORM_CHIP, "fl_on_start");
                             CS_SIDE->state = turn; /* CHARSEL_ST_FORM */
@@ -1772,6 +2109,14 @@ void CharSel_Input(s32 *running) {
                 } else if (gPad[i].gamePressed & 0x400) {
                     Flash_GotoLabel(CS_PLATE, "fl_custom_cansel", 1);
                     CharSel_ClipGoto(CS_N + 3, CS_N, CHARSEL_CLIP_CUSTOM_PLATE, "fl_off_start");
+#ifdef PORT
+                    if (sZwSel[CS_N] >= 0) { /* (a custom character: back to the reel) */
+                        CharSel_ClipGoto(CS_N + 1, CS_N, sZwClip[CS_N], "fl_on_start");
+                        CS_SIDE->state = sZwFrom[CS_N];
+                        sZwSel[CS_N] = -1;
+                        PortZw_Hover(CS_N, CS_SIDE->state == PORT_ST_ZWFORM);
+                    } else
+#endif
                     if (CS_SIDE->flags & CHARSEL_SIDE_FORMS) {
                         CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_FORM_CHIP, "fl_on_start");
                         CS_SIDE->state = CHARSEL_ST_FORM;
@@ -1817,6 +2162,12 @@ void CharSel_Input(s32 *running) {
                     CS_SIDE->colorPlate = gCharSel->colorCount[CS_N] - 1;
                 }
                 CharSel_ClipGoto(CS_N + 3, CS_N, CHARSEL_CLIP_COLOR_PLATE, "fl_on_start");
+#ifdef PORT
+                if (sZwSel[CS_N] >= 0) { /* (a custom character's costume: its portrait) */
+                    gPortSelSkin[CS_N] = PORT_SKIN_CODE(sZwSel[CS_N], CS_SIDE->colorPlate);
+                    CharSel_RequestFace(CS_N);
+                }
+#endif
                 Snd_PlaySe(1, 0);
             } else if (gPad[i].gameRepeat & 2) {
                 CharSel_ClipGoto(CS_N + 3, CS_N, CHARSEL_CLIP_COLOR_PLATE, "fl_off_start");
@@ -1825,6 +2176,12 @@ void CharSel_Input(s32 *running) {
                     CS_SIDE->colorPlate = 0;
                 }
                 CharSel_ClipGoto(CS_N + 3, CS_N, CHARSEL_CLIP_COLOR_PLATE, "fl_on_start");
+#ifdef PORT
+                if (sZwSel[CS_N] >= 0) {
+                    gPortSelSkin[CS_N] = PORT_SKIN_CODE(sZwSel[CS_N], CS_SIDE->colorPlate);
+                    CharSel_RequestFace(CS_N);
+                }
+#endif
                 Snd_PlaySe(1, 0);
             } else if (gPad[i].gamePressed & 0x200) {
                 CS_SIDE->mask = 0;
@@ -1878,6 +2235,18 @@ void CharSel_Input(s32 *running) {
                     }
                     CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_CHIP, "fl_off_start");
                 }
+#ifdef PORT
+                if (sZwSel[CS_N] >= 0) { /* a custom character: it, in its costume, with the capsules chosen (the tile's sets) */
+                    s32 chara = Port_SkinChara(sZwSel[CS_N]);
+
+                    CS_SIDE->picked = chara >= 0 && chara < MCHR_RANDOM ? chara : 0;
+                    CS_SIDE->chara = CS_SIDE->picked;
+                    CS_SIDE->colorPlate = PORT_SKIN_CODE(sZwSel[CS_N], CS_SIDE->colorPlate);
+                    gPortSelSkin[CS_N] = CS_SIDE->colorPlate;
+                    CharSel_ClipGoto(CS_N + 1, CS_N, sZwClip[CS_N], "fl_off_start");
+                    sZwSel[CS_N] = -1;
+                }
+#endif
                 CS_SIDE->state = CHARSEL_ST_DONE;
                 if (gCharSel->players != 1 && gCharSel->turn == 0) {
                     /* one pad: now choose for the other side */
@@ -1895,6 +2264,97 @@ void CharSel_Input(s32 *running) {
             }
             break;
 
+#ifdef PORT
+        case PORT_ST_ZW: /* the custom characters' reel */
+        case PORT_ST_ZWFORM: { /* one's forms */
+            s32 forms = CS_SIDE->state == PORT_ST_ZWFORM;
+            s32 at = sZwRow[CS_N] * 7 + sZwCol[CS_N];
+            s32 clip = forms ? CHARSEL_CLIP_FORM_CHIP : CHARSEL_CLIP_CUSTOM_CHIP;
+            s32 rows = (sZwCount + 6) / 7;
+
+            CS_SIDE->customCol = sZwCol[CS_N]; /* (the reel's cursor: the game's clip of the chip is found by these) */
+            CS_SIDE->form = sZwPick[CS_N];
+            if (gPad[i].gameRepeat & 3) { /* along the row (or the forms) */
+                s32 len = forms ? sZwForms[at] : PortZw_RowLen(sZwRow[CS_N]);
+                s32 *c = forms ? &sZwPick[CS_N] : &sZwCol[CS_N];
+
+                if (len > 1) {
+                    CharSel_ClipGoto(CS_N + 1, CS_N, clip, "fl_off_start");
+                    *c = (*c + ((gPad[i].gameRepeat & 1) ? len - 1 : 1)) % len;
+                    CS_SIDE->customCol = sZwCol[CS_N];
+                    CS_SIDE->form = sZwPick[CS_N];
+                    CharSel_ClipGoto(CS_N + 1, CS_N, clip, "fl_on_start");
+                    PortZw_Hover(CS_N, forms);
+                    Snd_PlaySe(2, 0);
+                }
+            } else if (!forms && (gPad[i].gameRepeat & 0xC) && rows > 1) { /* another row */
+                s32 up = (gPad[i].gameRepeat & 8) != 0;
+
+                Flash_GotoLabel(CS_REEL, up ? "fl_reel_down" : "fl_reel_up", 1);
+                CS_SIDE->mask = 1;
+                CharSel_ClipGoto(CS_N + 1, CS_N, clip, "fl_off_start");
+                sZwRow[CS_N] = (sZwRow[CS_N] + (up ? rows - 1 : 1)) % rows;
+                if (sZwCol[CS_N] >= PortZw_RowLen(sZwRow[CS_N])) {
+                    sZwCol[CS_N] = PortZw_RowLen(sZwRow[CS_N]) - 1;
+                }
+                CS_SIDE->customCol = sZwCol[CS_N];
+                CharSel_ClipGoto(CS_N + 1, CS_N, clip, "fl_on_start");
+                PortZw_SetChips(CS_N, 0);
+                PortZw_Hover(CS_N, 0);
+                Snd_PlaySe(2, up ? 2 : 1);
+            } else if (gPad[i].gamePressed & 0x200) {
+                if (!forms && at < sZwCount && sZwForms[at] > 1) { /* into its forms */
+                    sZwPick[CS_N] = 0;
+                    Flash_GotoLabel(CS_REEL, "fl_form", 1);
+                    CS_SIDE->mask = 1;
+                    CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_CUSTOM_CHIP, "fl_off_start");
+                    CS_SIDE->form = 0;
+                    CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_FORM_CHIP, "fl_on_start");
+                    PortZw_SetChips(CS_N, 1);
+                    PortZw_Hover(CS_N, 1);
+                    CS_SIDE->state = PORT_ST_ZWFORM;
+                    Snd_PlaySe(2, 0x29);
+                } else if (at < sZwCount) { /* chosen: its capsules, then its costume, as the game does a fighter */
+                    s32 skin = forms ? sZwForm[at][sZwPick[CS_N] < sZwForms[at] ? sZwPick[CS_N] : 0] : sZwSkin[at];
+
+                    sZwSel[CS_N] = skin;
+                    sZwFrom[CS_N] = CS_SIDE->state;
+                    sZwClip[CS_N] = clip;
+                    CS_SIDE->flags &= ~(CHARSEL_SIDE_FORMS | CHARSEL_SIDE_CUSTOM);
+                    Flash_GotoLabel(CS_PLATE, "fl_custom_in", 1);
+                    CharSel_ClipGoto(CS_N + 1, CS_N, clip, "fl_ok");
+                    gCharSel->customRows[CS_N] = 4;
+                    if (!(CS_SIDE->customPlate < gCharSel->customRows[CS_N])) {
+                        CS_SIDE->customPlate = 0;
+                    }
+                    CharSel_ClipGoto(CS_N + 3, CS_N, CHARSEL_CLIP_CUSTOM_PLATE, "fl_on_start");
+                    gCharSel->colorCount[CS_N] = Port_SkinCostumes(skin);
+                    CS_SIDE->colorPlate = 0;
+                    CS_SIDE->state = CHARSEL_ST_ITEMSET;
+                    Snd_PlaySe(1, 1);
+                }
+            } else if (gPad[i].gamePressed & 0x400) { /* back: from the forms to the reel, from the reel to the grid */
+                Flash_GotoLabel(CS_REEL, "fl_form", 1);
+                CS_SIDE->mask = 1;
+                CharSel_ClipGoto(CS_N + 1, CS_N, clip, "fl_off_start");
+                if (forms) {
+                    CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_CUSTOM_CHIP, "fl_on_start");
+                    PortZw_SetChips(CS_N, 0);
+                    PortZw_Hover(CS_N, 0);
+                    CS_SIDE->state = PORT_ST_ZW;
+                } else {
+                    CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_CHIP, "fl_on_start");
+                    CharSel_SetRowChips(CS_N);
+                    gPortSelSkin[CS_N] = 0;
+                    CS_SIDE->chara = CS_SIDE->chip[CS_SIDE->col];
+                    CharSel_RequestFace(CS_N);
+                    CS_SIDE->state = CHARSEL_ST_GRID;
+                }
+                Snd_PlaySe(2, 0x29);
+            }
+            break;
+        }
+#endif
         case CHARSEL_ST_CUSTOM:
             if (gPad[i].gameRepeat & 1) {
                 CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_CUSTOM_CHIP, "fl_off_start");
@@ -1984,6 +2444,12 @@ void CharSel_Input(s32 *running) {
                 gCharSel->stage->state = CHARSEL_ST_STAGE;
                 gCharSel->faceMask = 1;
             } else if (gPad[i].gamePressed & 0x400) {
+#ifdef PORT
+                if (gPortSelSkin[CS_N] != 0) { /* a pick from the mod grid is taken back */
+                    gPortSelSkin[CS_N] = 0;
+                    CS_SIDE->colorPlate = 0;
+                }
+#endif
                 Flash_GotoLabel(CS_REEL, "fl_in", 1);
                 CharSel_ClipGoto(CS_N + 1, CS_N, CHARSEL_CLIP_CHIP, "fl_on_start");
                 CharSel_SetRowChips(CS_N);
@@ -2040,6 +2506,12 @@ s32 CharSel_Run(s32 section) {
 
     CharSel_Init(section);
 #ifdef PORT
+    for (i = 0; i < 2; i++) { /* a costume code left from a fight with a new fighter is no colour of this screen */
+        gPortSelSkin[i] = 0;
+        if (gCharSel->side[i]->colorPlate >= 8) {
+            gCharSel->side[i]->colorPlate = 0;
+        }
+    }
     PortCharSel_Begin(!PortGame_IsBT4());
 #endif
     ColorFade_StartIn(0, 0, 0, 0x14);

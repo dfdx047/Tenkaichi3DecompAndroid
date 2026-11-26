@@ -1238,7 +1238,11 @@ s32 BtlSuper_GetThrowChara(BtlTechBChr *chr, s32 slot) {
 
     if (obj->chara != chara) {
         if (chara >= 0x100 && (tbl->flags[i] & 0x40000000)) {
+#ifdef PORT
+            if ((BtlMember_GetActive(chr)->costume >= 8 ? ((BtlMember_GetActive(chr)->costume - 8) & 3) : BtlMember_GetActive(chr)->costume) == 1) {
+#else
             if (BtlMember_GetActive(chr)->costume == 1) {
+#endif
                 return alt;
             }
         }
@@ -1263,7 +1267,11 @@ s32 BtlSuper_GetThrowCostume(BtlTechBChr *chr, s32 slot) {
 #endif
     if (tbl->throwChara[slot] < 0x100) {
         if (tbl->flags[slot] & 0x40000000) {
+#ifdef PORT
+            return BtlMember_GetActive(chr)->costume >= 8 ? ((BtlMember_GetActive(chr)->costume - 8) & 3) : BtlMember_GetActive(chr)->costume;
+#else
             return BtlMember_GetActive(chr)->costume;
+#endif
         }
         if (tbl->id[slot] == 0x27F) {
             return 1;

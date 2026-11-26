@@ -375,6 +375,11 @@ s32 BtlHit_CheckGrab(HitChr *a, HitChr *b) {
     BtlChar_ClearFlag(a, 0x4C);
     BtlChar_ClearFlag(a, 0x4D);
     n = BtlMember_GetActive(b)->costume;
+#ifdef PORT
+    if (n >= 8) { /* a new fighter's costume code (port_mods.h) */
+        n = (n - 8) & 3;
+    }
+#endif
     n = BtlHit_FormIndex(n, BtlMember_GetActiveGauge(b));
     if (BtlParam_GetFlags(b) & (0x1000000 << n)) {
         return 0;

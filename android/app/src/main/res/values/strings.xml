@@ -332,8 +332,6 @@
     <string name="frame_skip_text">When the GPU is behind, the game keeps its speed and leaves a picture out.</string>
     <string name="lite">Lite mode (weak GPUs)</string>
     <string name="lite_text">For Mali-G52 class GPUs: the renderer on its own thread and the glow and the sky\'s glare off (turning it on sets both to 0). Takes effect the next time the game starts.</string>
-    <string name="tag_team">Tag Team mod</string>
-    <string name="tag_team_text">Up to ten fighters: SELECT in the main menu opens Team Battle, Free For All and the mod\'s settings. Takes effect the next time the game opens.</string>
     <string name="gpu_opt_lite">Lite mode: render thread, glow and glare off</string>
     <string name="bt4_weak_cpu">This device has too little CPU for BT4: the fight will run below normal speed.</string>
     <string name="orientation">Screen orientation</string>

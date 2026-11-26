@@ -849,12 +849,31 @@ s32 EftHit_IsTechClass(EftHitRec *rec, s32 cls) {
     return result;
 }
 
+#ifdef PORT
+/* PC: a warrior's technique size (Z Warriors' Fine-tune), as a factor: src is a technique effect's source (its fighter
+   at +0, its slot at +4; port/src/plat_mods.c Port_SkinTechSize, set when the fight loads). 1 for anyone else. */
+f32 PortTech_Scale(void *src) {
+    extern s32 Port_SkinTechSize(s32 player, s32 slot);
+    s32 *s = (s32 *)src;
+    s32 pct;
+
+    if (s == NULL || s[0] < 0 || s[0] > 1 || s[1] < 2 || s[1] > 4) {
+        return 1.0f;
+    }
+    pct = Port_SkinTechSize(s[0], s[1]);
+    return pct > 0 ? (f32)pct / 100.0f : 1.0f;
+}
+#endif
+
 /* Returns the record's scale: the definition's for a technique, 0.1 for a blast. */
 f32 EftHit_GetScale(EftHitRec *rec) {
     f32 scale = 1.0f;
 
     if (rec->src != NULL) {
         scale = rec->src->def->scale;
+#ifdef PORT
+        scale *= PortTech_Scale(rec->src);
+#endif
     }
     if (rec->atk != NULL) {
         scale = 0.1f;
@@ -1000,6 +1019,9 @@ void EftCam_Clear(void) {
 /* Starts a camera cut: plays arg->anim on the demo camera, timed by fighter arg->objId's technique timer if any. */
 void EftCam_Start(EftCamArg *arg) {
 #ifdef PORT
+    if (arg->anim == NULL) { /* (a technique without its camera work, as a mixed custom warrior can have: no cut) */
+        return;
+    }
     EftCam *saved=gEftCam;void *demo=NULL;s32 i;
     if(TagTeam_Active() && BtlSeq_IsFighting()) for(i=0;i<TagTeam_Count();i++)
         if(BattleSide_GetObjId(i)==arg->objId) {

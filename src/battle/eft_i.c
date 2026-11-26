@@ -1562,6 +1562,13 @@ void EftSweep_Init(EftTask *task, EftOwner *owner) {
     w->speed = p->speed;
     w->unk784 = p->scale;
     w->scale = p->scale;
+#ifdef PORT
+    {
+        extern f32 PortTech_Scale(void *src); /* (a warrior's technique size: eft_a.c) */
+        w->unk784 *= PortTech_Scale(owner);
+        w->scale *= PortTech_Scale(owner);
+    }
+#endif
     w->width = w->unk784;
     w->set = set;
     EftEmit_InitState(set, &w->state);
@@ -1829,6 +1836,13 @@ void EftFollow_Init(EftTask *task, EftOwner *owner) {
     w->unk4 = 0.0f;
     w->unk8 = p->scale;
     w->scale = p->scale;
+#ifdef PORT
+    {
+        extern f32 PortTech_Scale(void *src); /* (a warrior's technique size: eft_a.c) */
+        w->unk8 *= PortTech_Scale(owner);
+        w->scale *= PortTech_Scale(owner);
+    }
+#endif
     w->width = w->unk8;
     w->set = set;
     EftEmit_InitState(set, &w->state);

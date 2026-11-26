@@ -115,9 +115,44 @@ static void TagMenu_SettingChange(s32 row,s32 direction) {
 void TagMenu_Request(s32 page) { tagPage=page; }
 static s32 tag_icon(s32 item) {
     static const s32 icons[6]={3,3,6,9,4,4};
-    return tagPage>=4 ? 9 : tagPage==3 ? 3 : tagPage ? icons[item%6] : item==MAINMENU_TBO?4:item;
+    return tagPage>=4 ? 9 : tagPage==3 ? 3 : tagPage ? icons[item%6] : item==MAINMENU_TBO?4:item==13/*ZW: Dragon History's*/?0:item==14/*Tag Team*/?2:item==12/*Mod Manager*/?7:item;
 }
 #define MM_ICON(item) tag_icon(item)
+#define PORT_LABEL_RUN /* (PortLabelRun: port_tbo_label.h's, the same) */
+/* "Mod Manager" (item 12), listed after Options. The label sheets have no free row left, so each plate state gets a
+   third sheet (PortMainMenu_AddSheet: a copy of the second with pixels of its own) whose first row is its label
+   (label 16, port_modmgr_label.h); its icon is the Data Center's. Choosing it opens the Duel mode with gPortDuelRole
+   2, where Duel_Main runs the manager's screen (menu/port_modmgr.c) instead of its own. */
+#include "port_modmgr_label.h"
+
+#define MAINMENU_MOD_MANAGER 12
+#define MAINMENU_TAG 14 /* "Tag Team": the Tag Team mod's own item (label 18, the third row of the third sheets) */
+#define MAINMENU_ZW 13 /* "Z Warriors" (menu/port_zw.c): listed after Evolution Z, label 17 (the second row of the third sheets) */
+s32 gPortDuelRole; /* the Duel screens (progress mode 38) are open for a screen of the PC's: 2 the Mod Manager, 3 Z Warriors */
+#define MM_LABEL(item) ((item) == MAINMENU_MOD_MANAGER ? 16 : (item) == MAINMENU_ZW ? 17 : (item) == MAINMENU_TAG ? 18 : (item)) /* whose label row an item shows */
+
+/* A third label sheet for a plate state (slot 8: not chosen, 12: chosen): the movie takes a label's sheet as the
+   n-th entry behind the one in gMainMenu->tex[slot], so the two entries of the game are copied into a block with
+   room for a third, which is the second again with pixels of its own (the same palette: the PC's labels are made
+   for it). Returns the new sheet's entry. */
+static u8 sPortSheetEnt[2][3 * 0x40];
+static u8 *sPortSheetPix[2];
+
+static u8 *PortMainMenu_AddSheet(s32 slot) {
+    s32 n = slot == 8 ? 0 : 1;
+    u8 *ent = sPortSheetEnt[n];
+    u8 *third = ent + 0x80;
+    u32 size;
+
+    memcpy(ent, gMainMenu->tex[slot], 0x80);
+    memcpy(third, gMainMenu->tex[slot] + 0x40, 0x40);
+    size = *(u32 *)(third + 8);
+    sPortSheetPix[n] = Heap_Alloc(size, 0x40, 0, 2);
+    memcpy(sPortSheetPix[n], *(u8 **)(third + 0x38), size);
+    *(u8 **)(third + 0x38) = sPortSheetPix[n];
+    gMainMenu->tex[slot] = ent;
+    return third;
+}
 
 /* A label sheet's pixels are stored the way the GS keeps 8-bit textures (in blocks): where pixel (x, y) is. */
 static s32 PortMainMenu_PixelAt(s32 x, s32 y) {
@@ -139,6 +174,44 @@ static void PortMainMenu_WriteRuns(u8 *tex, s32 row, const PortLabelRun *run, s3
             px[PortMainMenu_PixelAt(run[i].x + k, row * 0x20 + run[i].y)] = run[i].v;
         }
     }
+}
+
+/* Z Warriors' label in the disc's lettering into row `row` of a sheet; 0 when it could not be made. */
+static s32 PortMainMenu_WriteZw(u8 *tex, s32 row, s32 lit) {
+    extern s32 Port_MainItemLabelZw(s32 entry, s32 lit, s32 out);
+    static u8 index[512 * 0x20];
+    u8 *px = *(u8 **)(tex + 0x38) + 0x60;
+    s32 x;
+    s32 y;
+
+    if (!Port_MainItemLabelZw((s32)(u32)tex, lit, (s32)(u32)index)) {
+        return 0;
+    }
+    for (y = 0; y < 0x20; y++) {
+        for (x = 0; x < 512; x++) {
+            px[PortMainMenu_PixelAt(x, row * 0x20 + y)] = index[y * 512 + x];
+        }
+    }
+    return 1;
+}
+
+/* Tag Team's label, the same way. */
+static s32 PortMainMenu_WriteTag(u8 *tex, s32 row, s32 lit) {
+    extern s32 Port_MainItemLabelTag(s32 entry, s32 lit, s32 out);
+    static u8 index[512 * 0x20];
+    u8 *px = *(u8 **)(tex + 0x38) + 0x60;
+    s32 x;
+    s32 y;
+
+    if (!Port_MainItemLabelTag((s32)(u32)tex, lit, (s32)(u32)index)) {
+        return 0;
+    }
+    for (y = 0; y < 0x20; y++) {
+        for (x = 0; x < 512; x++) {
+            px[PortMainMenu_PixelAt(x, row * 0x20 + y)] = index[y * 512 + x];
+        }
+    }
+    return 1;
 }
 
 /* The label in the disc's lettering into row `row` of a sheet; 0 when it could not be made. */
@@ -522,6 +595,7 @@ static void TagMenu_SelectHint(const char *line) {
 }
 #define MAINMENU_VOICED(item) (!tagPage && (item) < MAINMENU_TBO)
 #else
+#define MM_LABEL(item) (item)
 #define MM_ICON(item) (item)
 #define MAINMENU_VOICED(item) 1
 #endif
@@ -673,7 +747,7 @@ void MainMenu_Init(s32 section) {
         if (i == 4 && !Port_NetMenuListed()) {
             continue;
         }
-        if (i == MAINMENU_TBO) { /* (listed after Dragon Net Battle, below: not again at the end) */
+        if (i == MAINMENU_TBO || i == MAINMENU_MOD_MANAGER || i == MAINMENU_ZW || i == MAINMENU_TAG) { /* (listed after the game's they follow, below) */
             continue;
         }
 #else
@@ -689,6 +763,17 @@ void MainMenu_Init(s32 section) {
         if (i == 3 && !Port_NetMenuListed() && !Port_TagAvailable()) { /* (Dragon Net Battle opens these screens now: listed alone only without it) */
             gMainMenu->items[gMainMenu->itemCount++] = MAINMENU_TBO;
         }
+        /* (the Mod Manager item is not listed in this build: Z Warriors is the only addition to the main menu) */
+        if (i == 5 && !PortGame_IsBT4()) { /* (Z Warriors is made of BT3's fighters) */
+            gMainMenu->items[gMainMenu->itemCount++] = MAINMENU_ZW;
+        }
+        if (i == 5) {
+            extern s32 Port_TagAvailable(void);
+
+            if (Port_TagAvailable()) {
+                gMainMenu->items[gMainMenu->itemCount++] = MAINMENU_TAG;
+            }
+        }
 #endif
     }
 #ifdef PORT
@@ -697,6 +782,15 @@ void MainMenu_Init(s32 section) {
         PortMainMenu_WriteRuns(gMainMenu->tex[8] + 0x40, 3, sPortTboOff, sizeof(sPortTboOff) / sizeof(sPortTboOff[0]));
         PortMainMenu_WriteRuns(gMainMenu->tex[12] + 0x40, 3, sPortTboOn, sizeof(sPortTboOn) / sizeof(sPortTboOn[0]));
     }
+    /* the Mod Manager: the first row of the third sheets */
+    PortMainMenu_WriteRuns(PortMainMenu_AddSheet(8), 0, sPortModMgrOff, sizeof(sPortModMgrOff) / sizeof(sPortModMgrOff[0]));
+    PortMainMenu_WriteRuns(PortMainMenu_AddSheet(12), 0, sPortModMgrOn, sizeof(sPortModMgrOn) / sizeof(sPortModMgrOn[0]));
+    /* Z Warriors: the second row of the third sheets (in the disc's lettering only) */
+    PortMainMenu_WriteZw(sPortSheetEnt[0] + 0x80, 1, 0);
+    PortMainMenu_WriteZw(sPortSheetEnt[1] + 0x80, 1, 1);
+    /* Tag Team: the third row */
+    PortMainMenu_WriteTag(sPortSheetEnt[0] + 0x80, 2, 0);
+    PortMainMenu_WriteTag(sPortSheetEnt[1] + 0x80, 2, 1);
 #endif
     gMainMenu->top = gMainMenu->itemCount - 1;
     for (i = 0; i < gMainMenu->itemCount; i++) {
@@ -734,11 +828,77 @@ void MainMenu_Term(void) {
         Heap_Free(gMainMenu->res);
         gMainMenu->res = NULL;
     }
+#ifdef PORT
+    for (i = 0; i < 2; i++) {
+        if (sPortSheetPix[i] != NULL) {
+            Heap_Free(sPortSheetPix[i]);
+            sPortSheetPix[i] = NULL;
+        }
+    }
+#endif
     if (gMainMenu != NULL) {
         Heap_Free(gMainMenu);
         gMainMenu = NULL;
     }
 }
+
+#ifdef PORT
+/* Z Warriors' and Tag Team's icons are films of their own (a four-star ball, the Dragon Radar). The game's icon clip is
+   given an empty corner of its sheet, and tells where it is being drawn (its "draw over" callback: the clip's drawing
+   state, FlashProp, whose matrix is at 0x30); the film is drawn there once the movie is done, so that nothing of ours
+   changes the renderer's state in the middle of it. The clips are reused by every row: each is set every frame. */
+static f32 sIconAt[16][4]; /* x, y, scale y, which (1 the ball, 2 the radar) */
+static s32 sIconCount;
+
+static void PortMainMenu_IconNote(void *arg, f32 *prop) {
+    if (sIconCount < 16 && prop != NULL) {
+        sIconAt[sIconCount][0] = prop[0x38 / 4];
+        sIconAt[sIconCount][1] = prop[0x44 / 4];
+        sIconAt[sIconCount][2] = prop[0x40 / 4];
+        sIconAt[sIconCount][3] = (f32)(s32)arg;
+        sIconCount++;
+    }
+}
+
+/* 1 if the row's icon is one of the films (its clips' pictures are then emptied). */
+static s32 PortMainMenu_FilmIcon(MFlash *flash, char *plate, s32 item) {
+    extern void Flash_ClipSetCallbackC(MFlash *flash, MFlashRef *ref, void *fn, void *arg);
+    s32 which = tagPage ? 0 : item == 13 /* Z Warriors */ ? 1 : item == 14 /* Tag Team */ ? 2 : 0;
+    MFlashUv empty = {0};
+    MFlashRef ref;
+    s32 k;
+
+    empty.x1 = 1;
+    empty.y1 = 1;
+    for (k = 0; k < 2; k++) {
+        Flash_FindLabel(flash, plate, k ? "mc_icon_play" : "mc_icon_off", &ref);
+        if (which != 0) {
+            Flash_ClipSetUv(flash, &ref, &empty);
+            Flash_ClipSetCallbackC(flash, &ref, (void *)PortMainMenu_IconNote, (void *)which);
+        } else {
+            Flash_ClipSetCallbackC(flash, &ref, NULL, NULL);
+        }
+    }
+    return which != 0;
+}
+
+static void PortMainMenu_DrawIcons(void) {
+    extern s32 Port_PageAspectMilli(void);
+    f32 aspect = (f32)Port_PageAspectMilli() / 1000.0f;
+    s32 i;
+
+    for (i = 0; i < sIconCount; i++) {
+        f32 h = 44.0f * sIconAt[i][2];
+        f32 w = h * (512.0f / 448.0f) / aspect; /* (round on the window, whatever its shape) */
+        f32 x = sIconAt[i][0], y = sIconAt[i][1];
+
+        Ps_SpriteScreen(sIconAt[i][3] == 1.0f ? MENU_BALL : MENU_RADAR, x - w * 0.5f, y - h * 0.5f, x + w * 0.5f, y + h * 0.5f, 0.0f, 0.0f,
+                        1.0f, 1.0f, PS_PLAIN, 0x80);
+    }
+    sIconCount = 0;
+}
+
+#endif
 
 /* Draws the background, sets up every clip of the movie for this frame and draws it and the two windows. */
 void MainMenu_Draw(void) {
@@ -792,15 +952,15 @@ void MainMenu_Draw(void) {
             item = gMainMenu->items[(gMainMenu->top + i) % gMainMenu->itemCount];
             uv.x0 = 0;
             uv.x1 = 0x200;
-            uv.y0 = (item % 8) * 0x20;
+            uv.y0 = (MM_LABEL(item) % 8) * 0x20;
             uv.y1 = uv.y0 + 0x20;
             sprintf(name, "mc_menu_plate_%d", i + 1);
             Flash_FindLabel(flash, name, "mc_menu_text_off", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
-            Flash_ClipSetTex(flash, &ref, item / 8);
+            Flash_ClipSetTex(flash, &ref, MM_LABEL(item) / 8);
             Flash_FindLabel(flash, name, "mc_menu_text_on", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
-            Flash_ClipSetTex(flash, &ref, item / 8);
+            Flash_ClipSetTex(flash, &ref, MM_LABEL(item) / 8);
             uv.x0 = (MM_ICON(item) % 4) * 0x40;
             uv.y0 = (MM_ICON(item) / 4) * 0x40;
             uv.x1 = uv.x0 + 0x40;
@@ -814,6 +974,11 @@ void MainMenu_Draw(void) {
             Flash_FindLabel(flash, name, "mc_icon_play", &ref);
             Flash_ClipSetUv(flash, &ref, &uv);
             Flash_ClipSetTex(flash, &ref, MM_ICON(item) / 10);
+#ifdef PORT
+            if (PortMainMenu_FilmIcon(flash, name, item)) {
+                /* (a film: no sheet animation of the game's) */
+            } else
+#endif
             if (item == MAINMENU_CUR(gMainMenu)) {
                 FlashAnim_Sheet(flash, &ref, &gMainMenu->iconTimer, &gMainMenu->iconFrame, &uv,
                                 cols[MM_ICON(MAINMENU_CUR(gMainMenu))], 1, MM_ICON(MAINMENU_CUR(gMainMenu)) == 3 ? 3 : 6);
@@ -825,14 +990,14 @@ void MainMenu_Draw(void) {
         item = gMainMenu->items[gMainMenu->extra];
         uv.x1 = 0x200;
         uv.x0 = 0;
-        uv.y0 = (item % 8) * 0x20;
+        uv.y0 = (MM_LABEL(item) % 8) * 0x20;
         uv.y1 = uv.y0 + 0x20;
         Flash_FindLabel(flash, "mc_menu_plate_7", "mc_menu_text_off", &ref);
         Flash_ClipSetUv(flash, &ref, &uv);
-        Flash_ClipSetTex(flash, &ref, item / 8);
+        Flash_ClipSetTex(flash, &ref, MM_LABEL(item) / 8);
         Flash_FindLabel(flash, "mc_menu_plate_7", "mc_menu_text_on", &ref);
         Flash_ClipSetUv(flash, &ref, &uv);
-        Flash_ClipSetTex(flash, &ref, item / 8);
+        Flash_ClipSetTex(flash, &ref, MM_LABEL(item) / 8);
         uv.x0 = (MM_ICON(item) % 4) * 0x40;
         uv.y0 = (MM_ICON(item) / 4) * 0x40;
         uv.x1 = uv.x0 + 0x40;
@@ -846,6 +1011,9 @@ void MainMenu_Draw(void) {
         Flash_FindLabel(flash, "mc_menu_plate_7", "mc_icon_play", &ref);
         Flash_ClipSetUv(flash, &ref, &uv);
         Flash_ClipSetTex(flash, &ref, MM_ICON(item) / 10);
+#ifdef PORT
+        PortMainMenu_FilmIcon(flash, "mc_menu_plate_7", item);
+#endif
     }
 
     for (i = 0; i < 2; i++) {
@@ -895,9 +1063,15 @@ void MainMenu_Draw(void) {
         }
     }
 #endif
+#ifdef PORT
+    sIconCount = 0;
+#endif
     for (i = 0; i < MAINMENU_FLASH_NUM; i++) {
         Flash_Draw(&gMainMenu->flash[i]);
     }
+#ifdef PORT
+    PortMainMenu_DrawIcons();
+#endif
 #ifdef PORT
     if(tagPage==3) for(i=0;i<9;i++) Flash_ClipSetFlags(flash,&hidden[i],2,visible[i]);
     if(!tagPage)
@@ -914,7 +1088,7 @@ void MainMenu_Draw(void) {
         else {
             if(tagPage) { Tk_Backdrop(); TagMenu_DrawPage(); TagMenu_SelectAgain(); }
             if(TagNet_HostMenu()) Ps_Text(256,Ps_TextTop(Tk_PY(1180),0.65f),TagNet_HostChoosing()?"BRINGING GUESTS TO BATTLE SETUP":"CHOOSE A MODE FOR THE LOBBY",0.65f,470,3);
-            else if(!tagPage) TagMenu_SelectHint("PRESS SELECT FOR MODDED MODES");
+            ;
             if(TagNet_HostMenu())TagLobbyRoster_Draw(1);
         }
     }
@@ -1029,7 +1203,7 @@ void MainMenu_Input(s32 *result) {
     /* Select is available immediately, including while the native menu enters. Into the mod's pages: at once. Out of
        them (back to the game's own modes): a second Select within two seconds. On a phone the touch pad's SELECT sits
        over the foot of the screen, where the pages' buttons are: one tap meant for them left the mod's menus (v58). */
-    if(!TagNet_HostMenu() && tagLabelsReady && !Port_TagControllersActive() && (gPad[0].gamePressed&PADG_SELECT)) {
+    if(tagPage && !TagNet_HostMenu() && tagLabelsReady && !Port_TagControllersActive() && (gPad[0].gamePressed&PADG_SELECT)) { /* (into the mod: its item) */
         if(tagPage && (tmSelectAt==0 || sTkFrames-tmSelectAt>120)) { tmSelectAt=sTkFrames?sTkFrames:1; Snd_PlaySe(1,7); return; }
         tmSelectAt=0;
         TagSession_Leave(); TagMenu_SetPage(tagPage?0:1); Snd_PlaySe(1,0); return;
@@ -1213,6 +1387,25 @@ void MainMenu_Input(s32 *result) {
               gPortScreen = Port_TagAvailable()?PORT_SCREEN_TAG_TEAM:PORT_SCREEN_TBO; }
             MAINMENU_COUNT();
             MAINMENU_CHOOSE(MPROG_MODE_PORT_SCREEN);
+            break;
+        case MAINMENU_MOD_MANAGER: /* the Duel mode runs the manager's screen (menu_g_b.c) */
+            gPortDuelRole = 2;
+            MAINMENU_COUNT();
+            MAINMENU_CHOOSE(38);
+            break;
+        case MAINMENU_TAG: /* the Tag Team mod: its own pages, over this menu */
+            { extern void TagSession_Leave(void); TagSession_Leave(); }
+            if (tagLabelsReady) {
+                TagMenu_SetPage(1);
+                Snd_PlaySe(1, 0);
+            } else {
+                Snd_PlaySe(1, 2);
+            }
+            return;
+        case MAINMENU_ZW: /* the Duel mode runs the Z Warriors screen (menu_g_b.c) */
+            gPortDuelRole = 3;
+            MAINMENU_COUNT();
+            MAINMENU_CHOOSE(38);
             break;
 #endif
         }

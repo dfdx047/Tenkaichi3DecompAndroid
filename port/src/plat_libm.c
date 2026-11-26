@@ -45,3 +45,8 @@ int __ledf2(uint64_t a, uint64_t b) { return dcmp(a, b); }
 int __gtdf2(uint64_t a, uint64_t b) { return dcmp(a, b); }
 int __gedf2(uint64_t a, uint64_t b) { return dcmp(a, b); }
 int __unorddf2(uint64_t a, uint64_t b) { return d(a) != d(a) || d(b) != d(b); } /* clang asks for it; gcc does not */
+/* the 64-bit ones: the port's own files ask for them (a loop counter widened to 64 bits and made a double) */
+uint64_t __floatdidf(int64_t v) { return q((double)v); }
+uint64_t __floatundidf(uint64_t v) { return q((double)v); }
+int64_t __fixdfdi(uint64_t a) { return (int64_t)d(a); }
+uint64_t __fixunsdfdi(uint64_t a) { return (uint64_t)d(a); }

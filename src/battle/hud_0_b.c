@@ -239,9 +239,13 @@ u16 *BtlMenu_GetItemText(s32 n) {
     }
     /* Tenkaichi Budokai Online's sparring fight goes back to its search, and its pause menu says so */
     static const char from[] = "Return to Character Select";
-    static const char to[] = "Back to Budokai Online";
+    static const char toTbo[] = "Back to Budokai Online";
+    static const char toManager[] = "Return to Mod Manager"; /* (the Mod Manager's test fight goes back to it) */
+    static const char toZw[] = "Return to Z Warriors";      /* (and Z Warriors' test fight to it) */
     static u16 line[32];
     extern s32 gPortTboSpar; /* menu/port_tbo.c */
+    extern s32 gPortModTest; /* menu/port_modmgr.c */
+    const char *to = gPortTboSpar ? toTbo : gPortModTest == 2 ? toZw : toManager;
     u16 *s;
 
     if (n >= 0x6FFE) { /* the port's own (port/src/spec_menu.c): a lobby's "Back to the Lobby" (0x6FFE), a spectator's
@@ -250,7 +254,7 @@ u16 *BtlMenu_GetItemText(s32 n) {
         return PortSpecMenu_Text(n == 0x6FFE ? 8 : n == 0x6FFF ? 7 : n - 0x7000);
     }
     s = BtlMenu_GetText(n + 8);
-    if (gPortTboSpar) {
+    if (gPortTboSpar || gPortModTest) {
         u16 *t = *s == 0xFEFF ? s + 1 : s;
         s32 i;
 

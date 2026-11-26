@@ -27,7 +27,11 @@
 
 #define HEAP_BASE 0x003BE000u  /* page that holds the first address */
 #define HEAP_FIRST 0x003BE730u /* what the PS2's malloc returns for the game heap (gHeapStart in a PCSX2 save state) */
-#define HEAP_END 0x02000000u
+#ifdef __ANDROID__
+#define HEAP_END 0x02000000u /* the program is linked at 0x03000000: the PC's larger heap would run into it */
+#else
+#define HEAP_END 0x0F000000u /* the PS2's 32 MB and 32 MB more (Heap_Create asks for both: the Mod Manager's 9 MB model buffers, src/sys/heap.c) */
+#endif
 
 static uint32_t sHeapNext = HEAP_FIRST, sHeapEnd = HEAP_END;
 

@@ -954,7 +954,7 @@ int SDL_main(int argc, char *argv[]) {
     snprintf(exe, sizeof(exe), "%s/libbt3.so", dir); /* plat_mem.c reads <BT3_EXE>.dat: the app put it there */
     setenv("BT3_EXE", exe, 1);
     setenv("BT3_GS", "gpu", 0);
-    if (argc > 6 && strcmp(argv[6], "1") == 0) { /* the Tag Team mod, setting dr_tag_team (GameActivity): SELECT in the main
+    if (argc > 6 && strcmp(argv[6], "1") == 0) { /* the Tag Team mod, always in BT3 (GameActivity): its row in the main
                                                     menu opens its modes (port/src/tagteam_trace.c) */
         setenv("BT3_TAG_TEAM", "1", 0);
     }

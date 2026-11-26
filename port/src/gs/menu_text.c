@@ -1230,6 +1230,50 @@ int Port_MainTagLabel(int entry,int lit,int row,int out) {
     return 1;
 }
 
+/* The game (menu_a.c): Z Warriors' label, as Port_MainItemLabel makes Tenkaichi Budokai Online's (made the first
+   time it is asked for, from the same letters). 0: none from the disc. */
+int Port_MainItemLabelZw(int entry, int lit, int out) {
+    static unsigned char *pic[2];
+    static int made;
+    const uint8_t *e = (const uint8_t *)Port_Ptr((uint32_t)entry);
+    uint8_t *dst = (uint8_t *)Port_Ptr((uint32_t)out);
+    uint32_t clutAt;
+
+    if (!made) {
+        const char *data = getenv("BT3_DATA");
+
+        made = 1;
+        MenuLabels_MainItemNamed(data != NULL ? data : "gamedata", "Z Warriors", pic);
+    }
+    if (lit < 0 || lit > 1 || pic[lit] == NULL) {
+        return 0;
+    }
+    memcpy(&clutAt, e + 0x3C, 4);
+    MenuLabels_ItemPixels(pic[lit], (const uint8_t *)Port_Ptr(clutAt) + 0x60, dst);
+    return 1;
+}
+
+int Port_MainItemLabelTag(int entry, int lit, int out) {
+    static unsigned char *pic[2];
+    static int made;
+    const uint8_t *e = (const uint8_t *)Port_Ptr((uint32_t)entry);
+    uint8_t *dst = (uint8_t *)Port_Ptr((uint32_t)out);
+    uint32_t clutAt;
+
+    if (!made) {
+        const char *data = getenv("BT3_DATA");
+
+        made = 1;
+        MenuLabels_MainItemNamed(data != NULL ? data : "gamedata", "Tag Team", pic);
+    }
+    if (lit < 0 || lit > 1 || pic[lit] == NULL) {
+        return 0;
+    }
+    memcpy(&clutAt, e + 0x3C, 4);
+    MenuLabels_ItemPixels(pic[lit], (const uint8_t *)Port_Ptr(clutAt) + 0x60, dst);
+    return 1;
+}
+
 /* The European disc's menu art for the chosen language, if the setup took the European disc's archives
    (gamedata/pzs3eu1): paired with the USA textures in a thread of its own, once. */
 static int sArtBank;
@@ -2265,8 +2309,11 @@ int MenuText_MapGlyph(int tbp, int cbp, int width, int height,
    headings and buttons with the Menu font, its talk box with the Dialogue / UI font, and with a setting on
    "Original" with the first font of fonts.tsv for that use (any font of the list if none is for it). Each of the
    two kinds keeps its own copy of its font, opened when first needed and again when the setting changes. */
-static Face sLineFace[2];
-static int sLineChoice[2];       /* the font in sLineFace (0: none) */
+static Face sLineFace[3];
+static int sLineChoice[3];       /* the font in sLineFace (0: none) */
+/* Kind 2: the lettering of the game's own menus, Tahoma Bold, from the fonts of Windows (nothing of it is in the
+   repository or in a release); where there is none, the Menu font (kind 0). */
+static int sGameFontTried;
 static uint32_t sLineGeneration; /* changes when one of the two changes */
 static int sLineDrawing; /* lines being drawn outside the lock (MenuText_LineRender): their fonts are not changed meanwhile */
 
@@ -2288,6 +2335,22 @@ static int line_choice(int kind) {
 /* (with the lock held) */
 static Face *line_face(int kind) {
     int tries;
+    if (kind == 2) {
+        if (!sGameFontTried) {
+            const char *windows = getenv("WINDIR");
+            char path[600];
+            sGameFontTried = 1;
+            snprintf(path, sizeof(path), "%s/Fonts/tahomabd.ttf", windows != NULL ? windows : "C:/Windows");
+            if (face_open(&sLineFace[2], path) == NULL) {
+                sLineChoice[2] = -1;
+                sLineGeneration++;
+            } else {
+                fprintf(stderr, "bt3: menu text: no Tahoma Bold (%s): the game's lettering is the Menu font\n", path);
+            }
+        }
+        if (sLineChoice[2] == -1) { return &sLineFace[2]; }
+        kind = 0;
+    }
     for (tries = 0; tries < 4; tries++) { /* (a font that cannot be used is taken off the list: the next one) */
         int choice = line_choice(kind);
         if (choice == sLineChoice[kind] || sLineDrawing > 0) { break; } /* (a line is drawn with this one: changed later) */
@@ -2353,29 +2416,32 @@ static unsigned line_next(const unsigned char **text) {
    returns how far the pen goes, in pixels (0: no font, or nothing to write). A character the font does not have is
    a question mark. */
 #define LINE_CHARS 160
-static int line_layout_face(Face *f, const char *text, int cap, int pad, uint8_t **out, int *w, int *h, int *base);
+static int line_layout_face(Face *f, int kind, const char *text, int cap, int pad, uint8_t **out, int *w, int *h, int *base);
+#define LINE_GAME_TRACK 0.02f /* the game's lettering: room between letters, of the capitals' height */
+#define LINE_GAME_NARROW 0.82f /* ... and how narrow its letters are (Tahoma Bold, condensed) */
 static int line_layout(int kind, const char *text, int cap, int pad, uint8_t **out, int *w, int *h, int *base) {
-    return line_layout_face(line_face(kind), text, cap, pad, out, w, h, base);
+    return line_layout_face(line_face(kind), kind, text, cap, pad, out, w, h, base);
 }
 
 /* (reads the face only: a line can be drawn outside the lock while sLineDrawing keeps its font) */
-static int line_layout_face(Face *f, const char *text, int cap, int pad, uint8_t **out, int *w, int *h, int *base) {
+static int line_layout_face(Face *f, int kind, const char *text, int cap, int pad, uint8_t **out, int *w, int *h, int *base) {
     const unsigned char *p = (const unsigned char *)text;
     int glyphs[LINE_CHARS], count = 0, i, ascent, descent, gap, adv, lsb, prev = 0, width, height, top;
-    float scale, x = 0.0f, pen[LINE_CHARS];
+    float scale, sx, x = 0.0f, pen[LINE_CHARS];
     unsigned c;
 
     if (f == NULL || text == NULL || cap < 4 || cap > 256 || pad < 0 || pad > 64) { return 0; }
     scale = (float)cap / (float)f->capUnits;
+    sx = kind == 2 ? scale * LINE_GAME_NARROW : scale;
     while ((c = line_next(&p)) != 0 && count < LINE_CHARS) {
         int g = face_glyph(f, c);
         if (g == 0) { g = face_glyph(f, '?'); }
         if (g == 0) { continue; }
-        if (prev != 0 && f->info.kern) { x += (float)face_kern(f, prev, g) * scale; }
+        if (prev != 0 && f->info.kern) { x += (float)face_kern(f, prev, g) * sx; }
         pen[count] = x;
         glyphs[count++] = g;
         stbtt_GetGlyphHMetrics(&f->info, g, &adv, &lsb);
-        x += (float)adv * scale;
+        x += (float)adv * sx + (kind == 2 ? (float)cap * LINE_GAME_TRACK : 0.0f);
         prev = g;
     }
     if (count == 0 || x > 4096.0f) { return 0; }
@@ -2391,7 +2457,7 @@ static int line_layout_face(Face *f, const char *text, int cap, int pad, uint8_t
         for (i = 0; px != NULL && i < count; i++) {
             int gw, gh, ox, oy, gx, gy;
             float shift = pen[i] - floorf(pen[i]);
-            unsigned char *g = face_bitmap(f, glyphs[i], scale, scale, shift, 0.0f, &gw, &gh, &ox, &oy);
+            unsigned char *g = face_bitmap(f, glyphs[i], sx, scale, shift, 0.0f, &gw, &gh, &ox, &oy);
             if (g == NULL) { continue; }
             for (gy = 0; gy < gh; gy++) {
                 int y = *base + oy + gy;
@@ -2418,6 +2484,7 @@ uint32_t MenuText_LineGeneration(void) {
     }
     line_face(0);
     line_face(1);
+    line_face(2);
     r = sLineGeneration;
     pthread_mutex_unlock(&sLock);
     __atomic_store_n(&last, r, __ATOMIC_RELEASE);
@@ -2426,7 +2493,7 @@ uint32_t MenuText_LineGeneration(void) {
 
 int MenuText_LineMeasure(int kind, const char *text, int cap, int pad, int *w, int *h, int *base) {
     int r;
-    if (kind < 0 || kind > 1) { return 0; }
+    if (kind < 0 || kind > 2) { return 0; }
     pthread_mutex_lock(&sLock);
     r = line_layout(kind, text, cap, pad, NULL, w, h, base);
     pthread_mutex_unlock(&sLock);
@@ -2438,12 +2505,12 @@ int MenuText_LineMeasure(int kind, const char *text, int cap, int pad, int *w, i
 uint8_t *MenuText_LineRender(int kind, const char *text, int cap, int pad, int *w, int *h, int *base) {
     uint8_t *px = NULL;
     Face *f;
-    if (kind < 0 || kind > 1) { return NULL; }
+    if (kind < 0 || kind > 2) { return NULL; }
     pthread_mutex_lock(&sLock);
     f = line_face(kind);
     sLineDrawing++;
     pthread_mutex_unlock(&sLock);
-    if (line_layout_face(f, text, cap, pad, &px, w, h, base) == 0) {
+    if (line_layout_face(f, kind, text, cap, pad, &px, w, h, base) == 0) {
         free(px);
         px = NULL;
     }
@@ -2462,11 +2529,11 @@ uint8_t *MenuText_LineRender(int kind, const char *text, int cap, int pad, int *
 #define HEADING_MARGIN 8  /* left of the letters' edge, and right of their end */
 #define HEADING_RES 4
 
-static int heading_label(const char *text, MenuLabel *label) {
+static int heading_label(int kind, const char *text, MenuLabel *label) {
     int adv, w, h, base;
     size_t length = text != NULL ? strlen(text) : 0;
     if (length == 0 || length >= sizeof(label->text)) { return 0; }
-    adv = line_layout(0, text, HEADING_CAP, 0, NULL, &w, &h, &base);
+    adv = line_layout(kind, text, HEADING_CAP, 0, NULL, &w, &h, &base);
     if (adv <= 0 || adv > 1000) { return 0; }
     memset(label, 0, sizeof(*label));
     label->rowWidth = adv + 2 * HEADING_MARGIN + 2 * 4 + 2; /* (4: menu_text_row's own room inside the margins) */
@@ -2474,7 +2541,7 @@ static int heading_label(const char *text, MenuLabel *label) {
     label->cap = HEADING_CAP;
     label->baseline = HEADING_BASE;
     label->margin = HEADING_MARGIN;
-    label->widthMilli = 1000;
+    label->widthMilli = kind == 2 ? (int)(LINE_GAME_NARROW * 1000.0f) : 1000;
     label->top = 0xFFBE2F; label->bottom = 0xFF2222; label->outline = 0x7C3025; label->outlineBottom = 0x64180C;
     label->outlineMilli = 3000; label->outerMilli = 2000; label->outerColor = 0xFFEED8;
     label->bevelMilli = 1000; label->bevelLight = 0xA86C5B; label->bevelDark = 0x180603;
@@ -2482,11 +2549,11 @@ static int heading_label(const char *text, MenuLabel *label) {
     return adv;
 }
 
-int MenuText_HeadingMeasure(const char *text, int *cap, int *w, int *h, int *base, int *pad) {
+int MenuText_HeadingMeasureKind(int kind, const char *text, int *cap, int *w, int *h, int *base, int *pad) {
     MenuLabel label;
     int adv;
     pthread_mutex_lock(&sLock);
-    adv = line_face(0) != NULL ? heading_label(text, &label) : 0;
+    adv = line_face(kind) != NULL ? heading_label(kind, text, &label) : 0;
     pthread_mutex_unlock(&sLock);
     if (adv <= 0) { return 0; }
     *cap = HEADING_CAP * HEADING_RES;
@@ -2495,14 +2562,14 @@ int MenuText_HeadingMeasure(const char *text, int *cap, int *w, int *h, int *bas
     return adv * HEADING_RES;
 }
 
-uint8_t *MenuText_HeadingRender(const char *text, int *w, int *h) {
+uint8_t *MenuText_HeadingRenderKind(int kind, const char *text, int *w, int *h) {
     MenuLabel label;
     Row row;
     uint8_t *px = NULL;
     Face *f;
     pthread_mutex_lock(&sLock);
-    f = line_face(0);
-    if (f != NULL && heading_label(text, &label) > 0 && menu_text_row(f, &label, HEADING_RES, &row)) {
+    f = line_face(kind);
+    if (f != NULL && heading_label(kind, text, &label) > 0 && menu_text_row(f, &label, HEADING_RES, &row)) {
         *w = label.rowWidth * HEADING_RES; *h = HEADING_HEIGHT * HEADING_RES;
         px = malloc((size_t)*w * *h * 4);
         if (px != NULL) { row_paste(px, *w, 0, 0, *w, *h, &row); }
@@ -2510,4 +2577,12 @@ uint8_t *MenuText_HeadingRender(const char *text, int *w, int *h) {
     }
     pthread_mutex_unlock(&sLock);
     return px;
+}
+
+int MenuText_HeadingMeasure(const char *text, int *cap, int *w, int *h, int *base, int *pad) {
+    return MenuText_HeadingMeasureKind(0, text, cap, w, h, base, pad);
+}
+
+uint8_t *MenuText_HeadingRender(const char *text, int *w, int *h) {
+    return MenuText_HeadingRenderKind(0, text, w, h);
 }

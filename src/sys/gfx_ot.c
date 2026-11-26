@@ -59,6 +59,9 @@ void Ot_Init(void) {
     memset(gOt, 0, sizeof(Ot));
     gOt->bufSize = Ot_Align64(0x68FFF);
     gOt->bufSize += 0xA000;
+#ifdef PORT
+    gOt->bufSize += 0x180000; /* PC: room for the packets of larger models and more of them */
+#endif
     buf = Heap_Alloc(Ot_Align64(gOt->bufSize + OT_ENTRY_COUNT * sizeof(OtEntry)), 0x20, 0, HEAP_ANY);
     memset(buf, 0, 4);
     Ot_SetBuffer(buf, gOt->bufSize);

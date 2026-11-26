@@ -1,0 +1,177 @@
+Rush Attack 1 (First Combo)
+Rush Attack 1 (First Combo) (Second Strike)
+Rush Attack 2 (First Combo)
+Rush Attack 3 (First Combo)
+Rush Attack 4 (First Combo)
+Rush Attack 5 (First Combo)
+Rush Attack 1 (Second Combo)
+Rush Attack 2 (Second Combo)
+Rush Attack 3 (Second Combo)
+Rush Attack 4 (Second Combo)
+Rush Attack 5 (Second Combo)
+Heavy Finish (Short)
+Heavy Finish (Medium)
+Heavy Finish (Strong)
+Heavy Crush 1
+Heavy Crush 2
+Heavy Crush 3
+Flying Kick 1
+Flying Kick 2
+Charged Left Strike (Short)
+Charged Right Strike (Short)
+Charged Up Strike (Short)
+Charged Down Strike (Short)
+Charged Neutral Strike (Short)
+Charged Left Strike (Medium)
+Charged Right Strike (Medium)
+Charged Up Strike (Medium)
+Charged Down Strike (Medium)
+Charged Neutral Strike (Medium)
+Charged Left Strike (Strong)
+Charged Right Strike (Strong)
+Charged Up Strike (Strong)
+Charged Down Strike (Strong)
+Charged Neutral Strike (Strong)
+Dash Smash 1 (Short)
+Dash Smash 2 (Short)
+Dash Smash 1 (Medium)
+Dash Smash 2 (Medium)
+Dash Smash 1 (Strong)
+Dash Smash 2 (Strong)
+Jump Strike 1 (Short)
+Jump Strike 2 (Short)
+Jump Strike 1 (Medium)
+Jump Strike 2 (Medium)
+Jump Strike 1 (Strong)
+Jump Strike 2 (Strong)
+Kiai Cannon (Short)
+Kiai Cannon (Medium)
+Kiai Cannon (Strong)
+Blaster Wave (Short)
+Blaster Wave (Medium)
+Blaster Wave (Strong)
+First Dragon Smash Left (Short)
+First Dragon Smash Right (Short)
+First Dragon Smash Up (Short)
+First Dragon Smash Down (Short)
+First Dragon Smash Neutral (Short)
+First Dragon Smash Left (Strong)
+First Dragon Smash Right (Strong)
+First Dragon Smash Up (Strong)
+First Dragon Smash Down (Strong)
+First Dragon Smash Neutral (Strong)
+Second Dragon Smash Left (Strong)
+Second Dragon Smash Right (Strong)
+Second Dragon Smash Up (Strong)
+Second Dragon Smash Down (Strong)
+Second Dragon Smash Neutral (Strong)
+Vanishing Attack Left
+Vanishing Attack Right
+Vanishing Attack Up
+Vanishing Attack Down
+Vanishing Attack Neutral (Unused)
+Lift Strike (Short)
+Lift Strike (Medium)
+Lift Strike (Strong)
+Ground Slash (Short)
+Ground Slash (Medium)
+Ground Slash (Strong)
+Air Combo 1
+Air Combo 2
+Air Combo 3
+Air Combo 4
+Air Combo 5
+Air Combo Finisher
+Air Combo Heavy Finisher
+Throw
+Giant Throw
+Body Strike
+Kiai Cannon Smash
+Rolling Hammer Left (Short)
+Rolling Hammer Right (Short)
+Rolling Hammer Left (Medium)
+Rolling Hammer Right (Medium)
+Rolling Hammer Left (Strong)
+Rolling Hammer Right (Strong)
+Sonic Impact 1
+Sonic Impact 2
+Wild Sense Down
+Wild Sense Up
+Dragon Tornado 1
+Dragon Tornado 2
+Dragon Tornado 3
+MAX Mode
+Hyper Smash Left
+Hyper Smash Right
+Hyper Smash Up
+Hyper Smash Down
+Hyper Smash Neutral
+Burst Meteor 1
+? (110)
+Rush Finish Up
+Rush Finish Finisher
+Rush Finish Down
+Delta Storm 1
+Delta Storm 2
+Blaster Wave Combo 1
+Blaster Wave Combo 2
+Z Counter Left
+Z Counter Right
+Z Counter Up
+Z Counter Down
+Rolling Hurricane Left
+Rolling Hurricane Right
+Rolling Hurricane Finisher
+Raging Impact 1
+Raging Impact 2
+Energy Wave 1 (Short)
+Energy Wave 2 (Short)
+Energy Wave 3 (Short)
+Energy Wave 1 (Medium)
+Energy Wave 2 (Medium)
+Energy Wave 3 (Medium)
+Energy Wave 1 (Strong)
+Energy Wave 2 (Strong)
+Energy Wave 3 (Strong)
+Rush In Attack Up
+Rush In Attack Down
+Rush In Attack Neutral
+Burst Meteor Finisher
+Burst Meteor 2
+Energy Storm (Short) 1
+Energy Storm (Short) 2
+Tri-Cannon Strike 1
+Tri-Cannon Strike 2
+Tri-Cannon Strike 3
+Power Press 1
+Power Press 2
+Lightning Attack
+Body Strike Heavy
+Body Strike Kiai
+Body Strike Blaster
+Body Strike Flying Kick
+Energy Storm (Long) 1
+Energy Storm (Long) 2
+Dragon Tornado Blast Combo Followup
+Blaster Wave Blast Combo Followup
+Energy Storm (Short) Blast Combo Followup
+Energy Storm (Long) Blast Combo Followup
+Power Press Blast Combo Followup
+Rolling Hammer Blast Combo Followup
+Burst Meteor Blast Combo Followup
+Air Combo Blast Combo Followup
+Heavy Crush Blast Combo Followup
+? (164) (Unused)
+? (165) (Unused)
+? (166) (Unused)
+? (167) (Unused)
+? (168) (Unused)
+? (169) (Unused)
+? (170) (Unused)
+? (171) (Unused)
+? (172) (Unused)
+? (173) (Unused)
+? (174) (Unused)
+? (175) (Unused)
+? (176) (Unused)
+? (177) (Unused)

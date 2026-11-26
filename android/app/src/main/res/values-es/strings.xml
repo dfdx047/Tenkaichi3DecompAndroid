@@ -331,8 +331,6 @@
     <string name="frame_skip_text">Cuando la GPU no alcanza, el juego mantiene la velocidad y salta un cuadro.</string>
     <string name="lite">Modo Lite (GPU débiles)</string>
     <string name="lite_text">Para GPU del nivel del Mali-G52: el renderizador en su propio hilo, y el brillo y el reflejo del cielo apagados (activarlo pone los dos en 0). Vale la próxima vez que se abra el juego.</string>
-    <string name="tag_team">Mod Tag Team</string>
-    <string name="tag_team_text">Hasta diez luchadores: SELECT en el menú principal abre Batalla por Equipos, Todos Contra Todos y los ajustes del mod. Se aplica la próxima vez que se abra el juego.</string>
     <string name="gpu_opt_lite">Modo Lite: hilo de renderizado, brillo y reflejo apagados</string>
     <string name="bt4_weak_cpu">Este dispositivo tiene poca CPU para BT4: la pelea irá por debajo de la velocidad normal.</string>
     <string name="orientation">Orientación de pantalla</string>

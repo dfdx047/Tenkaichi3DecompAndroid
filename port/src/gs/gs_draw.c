@@ -781,6 +781,10 @@ typedef struct {
 static TboFilm sTboFilm = {"bg", 0};
 static TboFilm sRaditzFilm = {"raditz", 1};
 static TboFilm sArenaFilm = {"arena", 0}; /* the arena behind the Tag Team menus (db_arena.png): tbo/ui/arena.mpg, port/tools/tag_menu_art.py */
+static TboFilm sZwBgFilm = {"zw_bg", 0};   /* the Kaioshins' world behind Z Warriors (port/tools/zw_kai_films.py) */
+static TboFilm sZwShinFilm = {"zw_shin", 1};
+static TboFilm sMenuBallFilm = {"menu_ball", 1}; /* the main menu's animated icons (port/tools/menu_icon_films.py) */
+static TboFilm sMenuRadarFilm = {"menu_radar", 1};
 static TboFilm sGokuFilm = {"goku", 1}; /* Goku of the Tag Team menus (db_goku.png): tbo/ui/goku.mpg, port/tools/tag_goku_film.py */
 
 static uint8_t *tbo_film_read(const char *name, size_t *len) {
@@ -1027,6 +1031,18 @@ static GsTex tbo_texture(uint32_t id) {
     if (id >= TBO_ART_COUNT && !languageArt) {
         return gsWhite;
     }
+    if (id == MENU_BALL || id == MENU_RADAR) {
+        GsTex film = tbo_film_texture(id == MENU_BALL ? &sMenuBallFilm : &sMenuRadarFilm);
+        if (film != 0) {
+            return film;
+        }
+    }
+    if (id == ZW_BG || id == ZW_SHIN) {
+        GsTex film = tbo_film_texture(id == ZW_BG ? &sZwBgFilm : &sZwShinFilm);
+        if (film != 0) {
+            return film;
+        }
+    }
     if (id == TBO_BG || id == TBO_RADITZ_BUST || id == TBO_DB_GOKU || id == TBO_DB_ARENA) {
         GsTex film = tbo_film_texture(id == TBO_BG ? &sTboFilm : id == TBO_DB_GOKU ? &sGokuFilm : id == TBO_DB_ARENA ? &sArenaFilm : &sRaditzFilm);
         if (film != 0) {
@@ -1171,7 +1187,7 @@ static void pack_arrived(Tex *c) {
         sBackend->texDestroy(old[oldTail++ & 255].tex);
     }
     got = TexPack_Get(c->pack, &pack);
-    if (got < 0 || !sTexPackOn) {
+    if (got < 0 || (!sTexPackOn && !TexPack_IsHd(c->pack))) {
         c->pack = -1;
         return;
     }
@@ -1440,8 +1456,9 @@ static GsTex texture_get(int ctx) {
         }
     }
     tex_t0 = gpu_now();
-    /* a texture pack's replacement for this texture, if there is one (gs_texpack.c) */
-    if (sTexPackOn && TexPack_Count() != 0) {
+    /* a texture pack's replacement for this texture, if there is one (gs_texpack.c; Z Warriors' HD pictures always) */
+    TexPack_SetStatic(sTexPackOn);
+    if ((sTexPackOn && TexPack_Count() != 0) || bits == 8) {
         int id = TexPack_Lookup(tbp, tbw, psm, tw, th, (uint32_t)((t0 >> 34) & 1), cbp, cpsm, &packMaxAlpha);
         int got = id >= 0 ? TexPack_Get(id, &pack) : -1;
         if (got > 0 && sBackend->texSlotsLeft() >= pack.levels && pack_budget_take(&pack)) {

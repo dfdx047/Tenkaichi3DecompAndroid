@@ -503,6 +503,96 @@ static inline void EftAura_LoadColors(EftAuraWork *aura, s32 alt, s32 multi) {
     alt = 0;
 }
 
+#ifdef PORT
+/* PC: a character whose parameter flags have this bit (no original character has it) gets its aura in icy blue:
+   every colour of the type keeps its brightness and alpha and takes the blue's hue, the flames deeper, the sparks
+   nearly white. (The character built by port/build/model/afgoku.py.) */
+#define PORT_AF_AURA 0x4000
+
+static void PortAura_Blue(Vec4 *c, f32 r, f32 g) {
+    f32 l = c->x;
+
+    if (c->y > l) {
+        l = c->y;
+    }
+    if (c->z > l) {
+        l = c->z;
+    }
+    c->x = l * r;
+    c->y = l * g;
+    c->z = l;
+}
+
+/* PC: a warrior's aura colour (warrior.txt aura=, plat_mods.c): every colour of the type keeps its brightness and
+   alpha and takes the colour's hue, the flames as it is, the sparks lighter. */
+extern s32 Port_SkinAuraOf(s32 player);
+
+static void PortAura_Hue(Vec4 *c, f32 r, f32 g, f32 b, f32 white) {
+    f32 l = c->x;
+
+    if (c->y > l) {
+        l = c->y;
+    }
+    if (c->z > l) {
+        l = c->z;
+    }
+    c->x = l * (r + (1.0f - r) * white);
+    c->y = l * (g + (1.0f - g) * white);
+    c->z = l * (b + (1.0f - b) * white);
+}
+
+static void PortAura_Tint(EftAuraWork *aura, s32 bgr) {
+    f32 r = (f32)(bgr & 0xFF), g = (f32)((bgr >> 8) & 0xFF), b = (f32)((bgr >> 16) & 0xFF);
+    f32 m = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    s32 i;
+
+    if (m < 1.0f) {
+        m = 1.0f;
+    }
+    r /= m;
+    g /= m;
+    b /= m;
+    PortAura_Hue(&aura->colorStart, r, g, b, 0.15f);
+    PortAura_Hue(&aura->colorEnd, r, g, b, 0.0f);
+    for (i = 0; i < 4; i++) {
+        PortAura_Hue(&aura->colorAlt[i], r, g, b, 0.1f);
+        PortAura_Hue(&aura->sparkColor[i], r, g, b, 0.6f);
+        PortAura_Hue(&aura->sparkColorAlt[i], r, g, b, 0.4f);
+    }
+}
+
+/* The body lightning of a warrior with an aura colour: each colour (0..255) keeps its brightness, takes the hue,
+   half way to white (lightning stays bright). */
+static void PortAura_TintBolt(s32 objId, s32 *c) {
+    s32 bgr = objId >= 0 && objId < 2 ? Port_SkinAuraOf(objId) : 0;
+    s32 m, i, t[3];
+
+    if (bgr <= 0) {
+        return;
+    }
+    t[0] = bgr & 0xFF, t[1] = (bgr >> 8) & 0xFF, t[2] = (bgr >> 16) & 0xFF;
+    m = t[0] > t[1] ? (t[0] > t[2] ? t[0] : t[2]) : (t[1] > t[2] ? t[1] : t[2]);
+    if (m < 1) {
+        m = 1;
+    }
+    for (i = 0, bgr = c[0] > c[1] ? (c[0] > c[2] ? c[0] : c[2]) : (c[1] > c[2] ? c[1] : c[2]); i < 3; i++) {
+        c[i] = bgr * (t[i] + (m - t[i]) * 2 / 5) / m;
+    }
+}
+
+static void PortAura_TintBlue(EftAuraWork *aura) {
+    s32 i;
+
+    PortAura_Blue(&aura->colorStart, 0.62f, 0.86f);
+    PortAura_Blue(&aura->colorEnd, 0.25f, 0.60f);
+    for (i = 0; i < 4; i++) {
+        PortAura_Blue(&aura->colorAlt[i], 0.35f, 0.70f);
+        PortAura_Blue(&aura->sparkColor[i], 0.85f, 0.95f);
+        PortAura_Blue(&aura->sparkColorAlt[i], 0.60f, 0.85f);
+    }
+}
+#endif
+
 void EftAura_SetType(EftAuraWork *aura, s32 objId, s32 type, s32 paramFlags) {
     s32 alt = 0;
     s32 multi;
@@ -537,6 +627,14 @@ void EftAura_SetType(EftAuraWork *aura, s32 objId, s32 type, s32 paramFlags) {
     }
     multi = aura->flags & 0x80;
     EftAura_LoadColors(aura, alt, multi);
+#ifdef PORT
+    if (paramFlags & PORT_AF_AURA) {
+        PortAura_TintBlue(aura);
+    }
+    if (objId >= 0 && objId < 2 && Port_SkinAuraOf(objId) > 0) { /* (a warrior's own colour) */
+        PortAura_Tint(aura, Port_SkinAuraOf(objId) & 0xFFFFFF);
+    }
+#endif
 }
 
 /* Reads the fighter's aura type and height: called at creation and again every frame. */
@@ -1537,8 +1635,14 @@ void EftBolt_Draw(EftBoltWork *work, EftBolt *bolt, f32 alpha) {
             pkt->gif1 = 0x42142142142160;
             pkt->next = NULL;
             IVec4_Set(col0, seg->r * 255.0f, seg->g * 255.0f, seg->b * 255.0f, seg->alpha * 255.0f * alpha);
+#ifdef PORT
+            PortAura_TintBolt(work->objId, col0);
+#endif
             IVec4_Set(col1, next->r * 255.0f, next->g * 255.0f, next->b * 255.0f,
                           next->alpha * 255.0f * alpha);
+#ifdef PORT
+            PortAura_TintBolt(work->objId, col1);
+#endif
             pkt->v[0].r = col0[0];
             pkt->v[0].g = col0[1];
             pkt->v[0].b = col0[2];
@@ -1820,7 +1924,15 @@ void EftBolt_DrawFlashes(EftBoltWork *work, f32 alpha) {
     for (i = 0; i < EFT_BOLT_FLASHES; i++) {
         f = &work->flash[i];
         if (f->flags & 1) {
+#ifdef PORT
+            s32 c[4];
+
+            c[0] = (s32)(f->r * 255.0f), c[1] = (s32)(f->g * 255.0f), c[2] = (s32)(f->b * 255.0f), c[3] = 0;
+            PortAura_TintBolt(work->objId, c);
+            EftSpr_DrawRot((u32)c[0], (u32)c[1], (u32)c[2],
+#else
             EftSpr_DrawRot((u32)(f->r * 255.0f), (u32)(f->g * 255.0f), (u32)(f->b * 255.0f),
+#endif
                           (u32)(f->a * 255.0f * alpha), f->pos.x, f->pos.y, f->pos.z, f->uv.x, f->uv.y, f->uv.z,
                           f->uv.w, f->rot, 0, 0, 0x40, 0x40, 0, (u32)(f->size * 4096.0f), 0, 1,
                           &tex->entry[f->kind]);

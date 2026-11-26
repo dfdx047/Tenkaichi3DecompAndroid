@@ -308,10 +308,14 @@ void MapBgm_FadeOutStep(void) {
 }
 
 /* Plays line `line` of character `chara` on voice player `voice`, from the voice set chosen in the options. */
+#ifdef PORT
+extern s32 Port_SkinVoiceOf(s32 player, s32 chara); /* a new fighter of the fight with another fighter's voice (plat_mods.c) */
+#endif
 void Voice_PlayCharaEx(s32 voice, s32 chara, s32 line, s32 vol, s32 pan) {
     s32 id;
 
 #ifdef PORT
+    if (!PortGame_IsBT4()) chara = Port_SkinVoiceOf(voice, chara); /* Z Warriors */
     id = PortGame_VoiceLine(chara,line,(gSaveData->flags & SAVE_FLAG_ALT_VOICE)!=0);
 #else
     if (gSaveData->flags & SAVE_FLAG_ALT_VOICE) {
