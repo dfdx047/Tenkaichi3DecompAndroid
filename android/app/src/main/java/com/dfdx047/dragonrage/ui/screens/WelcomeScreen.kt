@@ -115,8 +115,8 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                     Modifier
                         .fillMaxSize()
                         .background(
-                            if (isLandscape) {
-                                // Darken the text/logo side and fade smoothly toward the character artwork.
+                            if (isLandscape && (slide.game == Game.BT2 || slide.game == Game.BT3)) {
+                                // BT2 and BT3: dark text/logo side, fading toward the character artwork.
                                 Brush.horizontalGradient(
                                     0f to Color.Black.copy(alpha = 0.82f),
                                     0.38f to Color.Black.copy(alpha = 0.58f),
