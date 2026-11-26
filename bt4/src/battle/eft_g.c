@@ -467,6 +467,10 @@ void EftStorm_Init(EftTask *task) {
 /* Storm term callback. */
 void EftStorm_Term(void) {
     BtlPool_Free(BtlPool_GetCurrent(), gEftStorm);
+#ifdef PORT
+    gEftStorm = NULL; /* (left pointing at the freed block, EftStorm_Init freed it a second time on the next stage with a storm, and the
+                         NULL checks of Draw, Update and Reset could not tell it was gone) */
+#endif
 }
 
 /* Storm update callback: steps the textures, the four lightning bolts and the rain. */
