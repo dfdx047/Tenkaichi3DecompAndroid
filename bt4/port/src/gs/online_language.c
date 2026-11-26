@@ -31,7 +31,6 @@ static const char *const kText[][2]={
 {"Rating: unranked","Puntos: sin clasificar"},
 {"No ranking published yet.","A\u00fan no hay clasificaci\u00f3n."},
 {"Updates every 10 minutes.","Se actualiza cada 10 minutos."},
-{"Most Dangerous Fighters","Luchadores m\u00e1s peligrosos"},
 {"Loading Global Top...","Cargando el Top global..."},
 {"Global Top unavailable","Top global no disponible"},
 {"Loading Ranked status...","Cargando Clasificatorias..."},

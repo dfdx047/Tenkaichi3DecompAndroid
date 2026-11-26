@@ -2092,41 +2092,6 @@ static f32 Tb_HubBadgeWidth(void){
     f32 width=Ps_TextWidth("SOON",0.34f)+12.0f;
     return width<40?40:width>90?90:width;
 }
-static f32 Tb_MostWantedLeft(void){
-    return 512.0f-Ps_Left()-159.0f;
-}
-
-static void Tb_DrawMostWanted(void){
-    Bt4RankedEntry entries[10];
-    f32 x=Tb_MostWantedLeft();
-    s32 i,count=-2;
-    if(!getenv("BT4_RENDER_TEST"))count=Port_RankedTopTen(entries);
-    else if(getenv("BT4_RENDER_TBO")&&!strcmp(getenv("BT4_RENDER_TBO"),"most-wanted")){
-        static const char *names[]={"Nova", "Blue Phoenix", "Kairo", "Stellar", "Ryuu", "Kaioken", "Mirai", "Arashi", "Mako", "Zenith"};
-        count=10;
-        for(i=0;i<count;++i){Ps_Copy(entries[i].name,names[i],sizeof(entries[i].name));entries[i].rating=1876-47*i;}
-    }
-    Ps_Align(1);
-    Ps_TextEx(x+77.0f,Ps_TextTop(75.0f,.72f),"Most Dangerous Fighters",.72f,136.0f,
-              Ps_Rgba(83,46,12,0x80),Ps_Rgba(49,26,9,0x80),Ps_Rgba(255,230,141,0x70));
-    Ps_Text(x+77.0f,91.0f,"Global Top",.46f,132.0f,3);
-    Ps_Align(0);
-    for(i=0;i<count;++i){
-        char value[12];
-        f32 y=Ps_TextTop(115.0f+15.0f*i,.50f);
-        sprintf(value,"%02d",i+1);
-        Ps_TextRaw(x+12.0f,y,value,.48f,16.0f,i<3?1:3);
-        Ps_TextRaw(x+31.0f,y,entries[i].name,.50f,77.0f,0);
-        sprintf(value,"%d",entries[i].rating);
-        Ps_Align(2);Ps_TextRaw(x+141.0f,y,value,.50f,32.0f,i<3?1:3);Ps_Align(0);
-    }
-    if(count<=0){
-        Ps_Align(1);
-        Ps_Text(x+77.0f,171.0f,count==-2?"Loading Global Top...":count<0?"Global Top unavailable":"No ranking published yet.",.52f,136.0f,0);
-        Ps_Align(0);
-    }
-}
-
 /* rows of label / value, as New Lobby and Profile have them, `step` apart */
 static void Tb_DrawRowsAt(s32 count, s32 cur, f32 y0, f32 step) {
     s32 i;
@@ -5078,7 +5043,6 @@ s32 PortTbo_Run(void) {
         else if (which[0] == 'p' && getenv("BT4_RENDER_TEST")) Tb_SetMode(TB_PROFILE);
         else if (which[0] == 'n' && getenv("BT4_RENDER_TEST")) Tb_SetMode(TB_NAME);
         else if (which[0] == 'q' && getenv("BT4_RENDER_TEST")) Tb_SetMode(TB_QUICK);
-        else if (!strcmp(which,"most-wanted")&&getenv("BT4_RENDER_TEST")) {sTb->hubCur=HUB_RANKED;sTb->hubY=Tb_HubRowY(HUB_RANKED);}
         else if (which[0] == 'h') { sTb->hubCur = HUB_TAG; sTb->hubY = Tb_HubRowY(HUB_TAG); }
         else { sTb->host = 1; Tb_SetMode(TB_WAIT); }
     }

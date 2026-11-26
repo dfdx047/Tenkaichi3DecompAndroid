@@ -5244,7 +5244,6 @@
       "text": "Nas ranqueadas, você joga um contra um e começa com 1000 pontos. Vitórias somam pontos e derrotas descontam, de acordo com a pontuação dos dois jogadores. O Top global é atualizado a cada 10 minutos. A classificação semanal se renova aos domingos, às 23h59 da Argentina (UTC-3), e você mantém seus pontos para a próxima semana."
     },
     "tbo/hub/community": {"original": "Join our Discord Server!", "text": "Entre no nosso servidor do Discord!"},
-    "tbo/ranked/most-wanted": {"original": "Most Dangerous Fighters", "text": "Lutadores mais perigosos"},
     "tbo/ranked/top-interval": {"original": "Updates every 10 minutes.", "text": "Atualiza a cada 10 minutos."},
     "tbo/ranked/top-loading": {"original": "Loading Global Top...", "text": "Carregando o Top global..."},
     "tbo/ranked/top-unavailable": {"original": "Global Top unavailable", "text": "Top global indisponível"},
