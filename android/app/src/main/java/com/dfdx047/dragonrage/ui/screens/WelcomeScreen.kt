@@ -115,12 +115,13 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                     Modifier
                         .fillMaxSize()
                         .background(
-                            if (isLandscape && (slide.game == Game.BT2 || slide.game == Game.BT3)) {
-                                // BT2 and BT3: dark text/logo side, fading toward the character artwork.
+                            if (isLandscape) {
+                                // BT2 and BT3 use a stronger fade; BT4 keeps the same direction with lighter shading.
+                                val isClassicEntry = slide.game == Game.BT2 || slide.game == Game.BT3
                                 Brush.horizontalGradient(
-                                    0f to Color.Black.copy(alpha = 0.82f),
-                                    0.38f to Color.Black.copy(alpha = 0.58f),
-                                    0.72f to Color.Black.copy(alpha = 0.16f),
+                                    0f to Color.Black.copy(alpha = if (isClassicEntry) 0.82f else 0.56f),
+                                    (if (isClassicEntry) 0.38f else 0.34f) to Color.Black.copy(alpha = if (isClassicEntry) 0.58f else 0.34f),
+                                    0.72f to Color.Black.copy(alpha = if (isClassicEntry) 0.16f else 0.08f),
                                     1f to Color.Transparent,
                                 )
                             } else {
