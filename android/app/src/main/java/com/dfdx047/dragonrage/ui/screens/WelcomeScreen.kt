@@ -59,6 +59,7 @@ private data class GameSlide(
     val number: String,
     val portraitCover: String,
     val landscapeCover: String?,
+    val logo: String,
 )
 
 @Composable
@@ -71,19 +72,19 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                 Game.BT2, "BUDOKAI TENKAICHI 2", "THE NEXT LEVEL OF TENKAICHI",
                 R.string.welcome_bt2,
                 "SLUS-21441", listOf(Color(0xFF092F27), Color(0xFF16865A), Color(0xFF071713)),
-                Color(0xFF9BFFB8), "02", "bt2.png", "bt2land.png",
+                Color(0xFF9BFFB8), "02", "bt2.png", "bt2land.png", "bt2logo.png",
             ),
             GameSlide(
                 Game.BT3, "BUDOKAI TENKAICHI 3", "THE ULTIMATE BATTLE",
                 R.string.welcome_bt3,
                 "SLUS-21678", listOf(Color(0xFF431B0B), Color(0xFFE36A16), Color(0xFF160A08)),
-                Color(0xFFFFC56B), "03", "bt3.png", "bt3land.png",
+                Color(0xFFFFC56B), "03", "bt3.png", "bt3land.png", "bt3logo.png",
             ),
             GameSlide(
                 Game.BT4, "BUDOKAI TENKAICHI 4", "BETA 14 · REV 2",
                 R.string.welcome_bt4,
                 "SLUS-219.78", listOf(Color(0xFF111B42), Color(0xFF5141A0), Color(0xFF100D20)),
-                Color(0xFFD4C1FF), "04", "bt4.jpg", null,
+                Color(0xFFD4C1FF), "04", "bt4.jpg", "bt4land.png", "bt4logo.png",
             ),
         )
     }
@@ -133,6 +134,15 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                         ),
                 )
                 if (isLandscape) {
+                    // Game logo occupies the intentionally open left-center area.
+                    LogoArtwork(
+                        assetName = slide.logo,
+                        modifier = Modifier
+                            .align(Alignment.CenterStart)
+                            .fillMaxWidth(0.34f)
+                            .fillMaxHeight(0.34f)
+                            .padding(start = 22.dp),
+                    )
                     // Landscape: identity and game index stay at the upper-left.
                     Column(
                         modifier = Modifier
@@ -346,6 +356,25 @@ private fun CoverArtwork(assetName: String) {
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
+        )
+    }
+}
+
+
+@Composable
+private fun LogoArtwork(assetName: String, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val bitmap = remember(assetName) {
+        runCatching {
+            context.assets.open("covers/$assetName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+        }.getOrNull()
+    }
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap,
+            contentDescription = null,
+            modifier = modifier,
+            contentScale = ContentScale.Fit,
         )
     }
 }
