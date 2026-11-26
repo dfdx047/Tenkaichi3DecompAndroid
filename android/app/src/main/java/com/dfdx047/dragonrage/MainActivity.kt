@@ -115,12 +115,16 @@ class MainActivity : ComponentActivity() {
         val prefs = UiPrefs.get(this)
         setContent {
             val previousCrashReport = remember { CrashReportStore.readLatest(this@MainActivity) }
+            var showCrashReport by remember { mutableStateOf(previousCrashReport != null) }
             // the welcome screen first (which game), then that game's pages with its own view model, folder and colours
             var chosen by rememberSaveable { mutableStateOf<String?>(null) }
             val ui by prefs.state.collectAsStateWithLifecycle()
             val game = chosen?.let { Game.of(it) }
             DragonRageTheme(mode = ui.theme, dynamicColor = ui.dynamicColor, game = game ?: Game.BT3) {
-                if (game == null) {
+                // Show a previous crash before composing the screen that may have caused it.
+                if (showCrashReport && previousCrashReport != null) {
+                    CrashReportDialog(previousCrashReport) { showCrashReport = false }
+                } else if (game == null) {
                     WelcomeScreen(last = prefs.game) { g -> prefs.setGame(g); chosen = g.id }
                 } else if (game == Game.BT2) {
                     // BT2 has no AppViewModel: its pages, view model and files (bt2/) are apart from BT3's and BT4's
@@ -133,7 +137,6 @@ class MainActivity : ComponentActivity() {
                     BackHandler { chosen = null } // (back: to the welcome screen)
                     DragonRageApp(vm, onSwitchGame = { chosen = null })
                 }
-                CrashReportDialog(previousCrashReport)
             }
         }
     }
