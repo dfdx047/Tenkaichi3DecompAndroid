@@ -213,4 +213,48 @@ assert.equal((await call("poll", { code: h3.code, key: h3.key })).members.length
     assert.equal((await ask("count", "host", body)).status, 200, "count without its table: the request still goes through");
     db.exec("ALTER TABLE tag_key_days_away RENAME TO tag_key_days");
 }
+{
+// the quick 2 vs 2: four tickets make a room of two teams; fewer wait; a ticket that stops polling is dropped
+const q = [];
+for (let i = 0; i < 3; i++) {
+    const r = await call("quick", { v: 5, name: "P" + i, addrs: ["10.0.0." + i + ":5000"] }, "198.51.100." + (20 + i));
+    assert.equal(r.state, "waiting");
+    assert.equal(r.waiting, i + 1);
+    q.push(r);
+}
+assert.equal((await call("quick", { v: 4, name: "Old", addrs: [] }, "198.51.100.30")).error, "version");
+let qp = await call("quickpoll", { ticket: q[0].ticket, key: q[0].key }, "198.51.100.20");
+assert.equal(qp.state, "waiting");
+assert.equal((await call("quickpoll", { ticket: q[0].ticket, key: "nope" })).error, "no ticket");
+const last = await call("quick", { v: 5, name: "P3", addrs: ["10.0.0.3:5000"] }, "198.51.100.23");
+q.push(last);
+assert.equal(last.state, "matched");
+const polled = [];
+for (const t of q) polled.push(await call("quickpoll", { ticket: t.ticket, key: t.key }));
+for (const p of polled) assert.equal(p.state, "matched", JSON.stringify(p));
+assert.equal(new Set(polled.map((p) => p.code)).size, 1);
+assert.deepEqual(polled.map((p) => p.role).sort(), [0, 1, 2, 3]);
+assert.equal(polled.filter((p) => p.team === 0).length, 2);
+assert.equal(polled.filter((p) => p.team === 1).length, 2);
+assert.equal(polled[0].players.length, 4);
+const owner = polled.find((p) => p.role === 0);
+assert.equal(owner.id, 0);
+assert.deepEqual((await call("poll", { code: owner.code, key: owner.roomKey })).members.map((m) => m.id), [1, 2, 3]); // (the others are its room's members)
+const mate = polled.find((p) => p.role === 3);
+assert.equal((await call("poll", { code: mate.code, key: mate.roomKey })).host.name, owner.players.find((x) => x.role === 0).name);
+// the line goes on: a fifth waits alone; a ticket nobody polls is dropped
+const fifth = await call("quick", { v: 5, name: "P4", addrs: [] }, "198.51.100.24");
+assert.equal(fifth.state, "waiting");
+assert.equal(fifth.waiting, 1);
+now += 15; // (within QUICK_IDLE: this must not depend on when the last sweep happened to run)
+assert.equal((await call("quickpoll", { ticket: fifth.ticket, key: fifth.key })).state, "waiting"); // (asked in time: it is kept: touched)
+now += 70; // (past QUICK_IDLE and SWEEP_EVERY)
+assert.equal((await call("quickpoll", { ticket: fifth.ticket, key: fifth.key })).error, "no ticket");
+const left = await call("quick", { v: 5, name: "P5", addrs: [] }, "198.51.100.25");
+await call("quickleave", { ticket: left.ticket, key: left.key });
+assert.equal((await call("quickpoll", { ticket: left.ticket, key: left.key })).error, "no ticket");
+// one address does not fill a line alone
+for (let i = 0; i < 2; i++) assert.equal((await call("quick", { v: 5, name: "S" + i, addrs: [] }, "203.0.113.99")).state, "waiting");
+assert.equal((await call("quick", { v: 5, name: "S2", addrs: [] }, "203.0.113.99")).error, "busy");
+}
 console.log("tagnet worker: all tests passed (" + minuteWrites + " rows written in the minute of polls)");

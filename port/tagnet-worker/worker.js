@@ -13,6 +13,12 @@
 //   /v1/addrs  {code, key, addrs}                    -> {}   (one's addresses again: the owner's relay address, found later)
 //   /v1/relay  {code, key}                           -> {turn: {server, username, credential}} | {noRelay: why}   (the owner only)
 //   /v1/leave  {code, key}                           -> {}   (the owner leaving closes the room)
+//   /v1/quick  {v, name, addrs, ticket?, key?}       -> {ticket, key, state: "waiting", waiting}  or  {state: "matched", ...}
+//                      the quick 2 vs 2: a ticket in the queue (signed like host and join); with four waiting the room is made, the four
+//                      shuffled into two teams (role 0, 1: one team; 2, 3: the other), role 0 its owner: {code, roomKey, id, role, team,
+//                      host: {name, addrs, seen}, players: [{role, name}]} (the owner then goes on as /v1/host's, the others as /v1/join's)
+//   /v1/quickpoll {ticket, key}                      -> the same ("no ticket": it was dropped; polled every 2 s)
+//   /v1/quickleave {ticket, key}                     -> {}
 //   GET /v1/ws?code=&key=   (a WebSocket)            the room's relay, for players who cannot reach each other directly:
 //                      a room's own Durable Object (TagRelay) passes binary messages between its owner and its members.
 //                      A member's message reaches the owner with the member's number before it (one byte); the owner
@@ -47,6 +53,9 @@ const RELAY_PER_DAY = 300;
 // instance), and what is read checks the times itself, so nothing gone is ever answered in between.
 const TOUCH_EVERY = 15;     // seconds
 const SWEEP_EVERY = 30;     // seconds
+const QUICK_IDLE = 20;     // seconds a waiting ticket lives without a poll
+const QUICK_KEEP = 90;     // seconds a matched ticket is kept, for the players that have not asked yet
+const QUICK_PLAYERS = 4;
 let lastSweep = 0;
 
 function reply(obj, status = 200) {
@@ -87,7 +96,55 @@ async function sweep(env, now) {
         env.DB.prepare("DELETE FROM tag_members WHERE code IN (SELECT code FROM tag_rooms WHERE touched < ?)").bind(now - ROOM_IDLE),
         env.DB.prepare("DELETE FROM tag_rooms WHERE touched < ?").bind(now - ROOM_IDLE),
         env.DB.prepare("DELETE FROM tag_members WHERE touched < ?").bind(now - MEMBER_KEEP),
+        env.DB.prepare("DELETE FROM tag_quick WHERE (code IS NULL AND touched < ?) OR (code IS NOT NULL AND touched < ?)").bind(now - QUICK_IDLE, now - QUICK_KEEP),
     ]);
+}
+
+// The quick 2 vs 2 queue. A ticket answers with where the line stands, or, once four are together, with its place in their room.
+async function quickState(env, t, now) {
+    if (t.code) {
+        const room = await env.DB.prepare("SELECT host_name, host_addrs, host_seen FROM tag_rooms WHERE code = ?").bind(t.code).first();
+        if (!room) return { error: "no ticket" };
+        const all = await env.DB.prepare("SELECT name, role FROM tag_quick WHERE code = ? ORDER BY role").bind(t.code).all();
+        return {
+            state: "matched", code: t.code, roomKey: t.mkey, id: t.id, role: t.role, team: t.role >> 1,
+            host: { name: room.host_name, addrs: JSON.parse(room.host_addrs), seen: room.host_seen },
+            players: all.results.map((p) => ({ role: p.role, name: p.name })),
+        };
+    }
+    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM tag_quick WHERE code IS NULL AND v = ? AND touched >= ?").bind(t.v, now - QUICK_IDLE).first();
+    return { state: "waiting", waiting: n.n, need: QUICK_PLAYERS };
+}
+
+// Four live tickets that wait, the oldest first, make a room: shuffled, the first is its owner (the room is /v1/host's), the others its
+// members (/v1/join's), two teams of two. Returns whether a room was made.
+async function quickMatch(env, v, now) {
+    const rows = await env.DB.prepare("SELECT * FROM tag_quick WHERE code IS NULL AND v = ? AND touched >= ? ORDER BY created, ticket LIMIT ?")
+        .bind(v, now - QUICK_IDLE, QUICK_PLAYERS).all();
+    if (rows.results.length < QUICK_PLAYERS) return false;
+    const order = rows.results.slice();
+    for (let i = order.length - 1; i > 0; i--) { // (the teams are drawn: partner and rivals)
+        const j = Math.floor(Math.random() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+    }
+    const hostKey = randomKey();
+    let code = null;
+    for (let tries = 0; tries < 8 && !code; tries++) {
+        const c = randomCode();
+        const r = await env.DB.prepare("INSERT OR IGNORE INTO tag_rooms (code, v, host_key, host_name, host_addrs, host_seen, created, touched) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+            .bind(c, v, hostKey, order[0].name, order[0].addrs, order[0].seen, now, now).run();
+        if (r.meta.changes === 1) code = c;
+    }
+    if (!code) return false;
+    const writes = [env.DB.prepare("UPDATE tag_quick SET code = ?, mkey = ?, id = 0, role = 0, touched = ? WHERE ticket = ?").bind(code, hostKey, now, order[0].ticket)];
+    for (let i = 1; i < order.length; i++) {
+        const mkey = randomKey();
+        writes.push(env.DB.prepare("INSERT INTO tag_members (code, id, key, name, addrs, seen, watch, touched) VALUES (?, ?, ?, ?, ?, ?, 0, ?)")
+            .bind(code, i, mkey, order[i].name, order[i].addrs, order[i].seen, now));
+        writes.push(env.DB.prepare("UPDATE tag_quick SET code = ?, mkey = ?, id = ?, role = ?, touched = ? WHERE ticket = ?").bind(code, mkey, i, i, now, order[i].ticket));
+    }
+    await env.DB.batch(writes);
+    return true;
 }
 
 async function whoIs(env, code, key, now) {
@@ -241,7 +298,7 @@ export async function handle(request, env, now) {
     if (what === "hello") return reply({ ok: versionAllowed(env, body.v), v: body.v ?? null, now });
     await sweep(env, now);
 
-    if (what === "host" || what === "join") {
+    if (what === "host" || what === "join" || (what === "quick" && !body.ticket)) {
         const refused = await keyGate(request, env, raw, body, now, what);
         if (refused) return refused;
     }
@@ -288,6 +345,41 @@ export async function handle(request, env, now) {
         if (!id) return reply({ error: "full" }, 409);
         await env.DB.prepare("UPDATE tag_rooms SET touched = ? WHERE code = ?").bind(now, code).run();
         return reply({ key, id, you: ip, host: { name: room.host_name, addrs: JSON.parse(room.host_addrs), seen: room.host_seen } });
+    }
+
+    if (what === "quick") {
+        if (!versionAllowed(env, body.v)) return reply({ error: "version" }, 409);
+        let t = null;
+        if (typeof body.ticket === "string" && typeof body.key === "string") {
+            t = await env.DB.prepare("SELECT * FROM tag_quick WHERE ticket = ? AND key = ?").bind(body.ticket, body.key).first();
+        }
+        if (!t) {
+            const open = await env.DB.prepare("SELECT COUNT(*) AS n FROM tag_quick WHERE seen = ? AND touched >= ?").bind(ip, now - QUICK_KEEP).first();
+            if (open.n >= 2) return reply({ error: "busy" }, 429); // (one address does not fill a line on its own: two friends on one network may)
+            const ticket = randomKey(), key = randomKey();
+            await env.DB.prepare("INSERT INTO tag_quick (ticket, key, v, name, addrs, seen, created, touched) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+                .bind(ticket, key, body.v, cleanName(body.name), JSON.stringify(cleanAddrs(body.addrs)), ip, now, now).run();
+            t = { ticket, key, v: body.v, code: null };
+        }
+        if (!t.code) await quickMatch(env, t.v, now);
+        t = await env.DB.prepare("SELECT * FROM tag_quick WHERE ticket = ?").bind(t.ticket).first();
+        return reply({ ticket: t.ticket, key: t.key, ...(await quickState(env, t, now)) });
+    }
+    if (what === "quickpoll" || what === "quickleave") {
+        const t = typeof body.ticket === "string" && typeof body.key === "string"
+            ? await env.DB.prepare("SELECT * FROM tag_quick WHERE ticket = ? AND key = ?").bind(body.ticket, body.key).first() : null;
+        if (!t) return reply({ error: "no ticket" }, 404);
+        if (what === "quickleave") {
+            if (!t.code) await env.DB.prepare("DELETE FROM tag_quick WHERE ticket = ?").bind(t.ticket).run();
+            return reply({});
+        }
+        if (!t.code) {
+            if (now - t.touched >= TOUCH_EVERY / 2) await env.DB.prepare("UPDATE tag_quick SET touched = ? WHERE ticket = ?").bind(now, t.ticket).run();
+            await quickMatch(env, t.v, now);
+            const again = await env.DB.prepare("SELECT * FROM tag_quick WHERE ticket = ?").bind(t.ticket).first();
+            return reply(await quickState(env, again ?? t, now));
+        }
+        return reply(await quickState(env, t, now));
     }
 
     const who = await whoIs(env, body.code, body.key, now);

@@ -1778,6 +1778,126 @@
     "tbo/443": {
       "original": "There is no room with that code on the PC service. Check the code (it lasts ten minutes). A room made on Dragon Net does not show here: both players need the same service.",
       "text": "Não existe sala com esse código no serviço do PC. Confira o código (ele dura dez minutos). Se a sala foi criada no Dragon Net, ela não aparece aqui: os dois jogadores precisam usar o mesmo serviço."
+    },
+    "tbo/444": {
+      "original": "2 vs 2",
+      "text": "2 contra 2"
+    },
+    "tbo/445": {
+      "original": "NEW",
+      "text": "NOVO"
+    },
+    "tbo/446": {
+      "original": "YOUR TEAM",
+      "text": "SEU TIME"
+    },
+    "tbo/447": {
+      "original": "RIVAL TEAM",
+      "text": "TIME RIVAL"
+    },
+    "tbo/448": {
+      "original": "2 VS 2 LOBBY",
+      "text": "LOBBY 2 CONTRA 2"
+    },
+    "tbo/449": {
+      "original": "SEARCHING...",
+      "text": "PROCURANDO..."
+    },
+    "tbo/450": {
+      "original": "PARTNER",
+      "text": "PARCEIRO"
+    },
+    "tbo/451": {
+      "original": "MATCH FOUND! OPENING THE ROOM...",
+      "text": "PARTIDA ENCONTRADA! ABRINDO A SALA..."
+    },
+    "tbo/452": {
+      "original": "%d OF 4 PLAYERS",
+      "text": "%d DE 4 JOGADORES"
+    },
+    "tbo/453": {
+      "original": "THE FIGHT STARTS WHEN THE TWO TEAMS ARE FULL",
+      "text": "A LUTA COMEÇA QUANDO OS 2 TIMES FECHAREM"
+    },
+    "tbo/454": {
+      "original": "HOW IT WORKS",
+      "text": "COMO FUNCIONA"
+    },
+    "tbo/455": {
+      "original": "FOUR PLAYERS FORM THE LINE",
+      "text": "QUATRO JOGADORES FORMAM A FILA"
+    },
+    "tbo/456": {
+      "original": "PARTNER AND RIVALS ARE DRAWN",
+      "text": "PARCEIRO E RIVAIS SÃO SORTEADOS"
+    },
+    "tbo/457": {
+      "original": "THEN THE TAG TEAM ROOM OPENS",
+      "text": "DEPOIS ABRE A SALA DO TAG TEAM"
+    },
+    "tbo/458": {
+      "original": "Leave the line",
+      "text": "Sair da fila"
+    },
+    "tbo/459": {
+      "original": "2 VS 2",
+      "text": "2 CONTRA 2"
+    },
+    "tbo/460": {
+      "original": "Pairs are drawn: you and a partner against two rivals, 2 vs 2 as in the Tag Team.",
+      "text": "Duplas sorteadas, 2 contra 2 como no Tag Team."
+    },
+    "tbo/461": {
+      "original": "Four players, two teams of two: your partner and your rivals are drawn. The Tag Team room opens when the line is full.",
+      "text": "Quatro jogadores, dois times de dois: parceiro e rivais são sorteados. A sala do Tag Team abre quando a fila enche."
+    },
+    "tbo/462": {
+      "original": "Here we go! The room is opening.",
+      "text": "Vamos lá! A sala está abrindo."
+    },
+    "tbo/463": {
+      "original": "Waiting for four players. Triangle leaves the line.",
+      "text": "Esperando quatro jogadores. Triângulo sai da fila."
+    },
+    "tbo/464": {
+      "original": "The service does not have the 2 vs 2 search yet.",
+      "text": "O serviço ainda não tem a busca 2 contra 2."
+    },
+    "tbo/465": {
+      "original": "The online service could not be reached.",
+      "text": "Não foi possível falar com o serviço online."
+    },
+    "tbo/466": {
+      "original": "The service does not take this version yet.",
+      "text": "O serviço ainda não aceita esta versão."
+    },
+    "tbo/467": {
+      "original": "Too many searches from this network.",
+      "text": "Muitas buscas desta rede."
+    },
+    "tbo/468": {
+      "original": "Online play is only for the official Dragon Rage.",
+      "text": "O online é só para o Dragon Rage oficial."
+    },
+    "tbo/469": {
+      "original": "The search was dropped. Try again.",
+      "text": "A busca caiu. Tente de novo."
+    },
+    "tbo/470": {
+      "original": "The service refused the search.",
+      "text": "O serviço recusou a busca."
+    },
+    "tbo/471": {
+      "original": "The online service gave an unexpected answer.",
+      "text": "O serviço online deu uma resposta inesperada."
+    },
+    "tbo/472": {
+      "original": "No online service is set for the 2 vs 2.",
+      "text": "Nenhum serviço online configurado para o 2 contra 2."
+    },
+    "tbo/473": {
+      "original": "The search could not start.",
+      "text": "A busca não pôde começar."
     }
   }
 }

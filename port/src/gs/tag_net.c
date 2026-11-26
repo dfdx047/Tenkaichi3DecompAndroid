@@ -450,7 +450,19 @@ static void publish(void) {
     SDL_UnlockSpinlock(&uiLock);
 }
 void TagNet_Status(TagNetStatus *out) { SDL_LockSpinlock(&uiLock);*out=status;SDL_UnlockSpinlock(&uiLock); }
+/* The quick 2 vs 2 (the service's queue, tag_link.c TagQuick_*): the room it made is taken as it is (TagLink_Adopt), made 2 against 2, and
+   each player takes the place the draw gave: fighter `slot` (0, 1 one team, 2, 3 the other; the owner's is 0). */
+int TagNet_Protocol(void) {return PROTOCOL;} /* (the version the service's rooms and the quick 2 vs 2 are told) */
+static int quickOn,quickSlot=-1;
+void TagNet_Start(int r,const char *address,int port);
+void TagNet_QuickRoom(int role,const char *code,const char *roomKey,int id,int slot,int port) {
+    extern void TagLink_Adopt(const char *,const char *,int);
+    TagLink_Adopt(code,roomKey,id);
+    TagNet_Start(role==0?0:1,role==0?"":code,port);
+    quickOn=1;quickSlot=role==0?-1:slot;
+}
 void TagNet_Start(int r,const char *address,int port) {
+    quickOn=0;quickSlot=-1;
     SDL_LockSpinlock(&uiLock);pendingRole=r;pendingPort=port;
     snprintf(pendingAddress,sizeof(pendingAddress),"%s",address);pendingStart=1;SDL_UnlockSpinlock(&uiLock);
 }
@@ -1375,7 +1387,7 @@ static void begin_socket(int r,const char *address,int port) {
     lateJoining=0;localJoinAt=0;replayTarget=0;
     config.party=TagNet_IsParty();config.practice=config.party;config.mode=TL_TEAM;config.preset=0;config.heal=2;
     memset(&tournament,0,sizeof(tournament));pendingSkip=0;
-    if(host){for(i=0;i<TN_FIGHTERS;i++)config.owner[i]=-1;config.owner[0]=0;config.revision++;
+    if(host){for(i=0;i<TN_FIGHTERS;i++)config.owner[i]=-1;config.owner[0]=0;if(quickOn)config.size[0]=config.size[1]=2;config.revision++;
         readyFloor=config.revision;
         if(config.party){
             memset(&partyRoom,0,sizeof(partyRoom));partyRoom.revision=partyRoom.generation=1;partyRoom.members[0].present=1;
@@ -1463,6 +1475,11 @@ static void commands(void) {
     } else if(edit && phase==2 && !host && role<TN_PLAYERS) {
         unsigned char data[sizeof(c)];unsigned i;
         for(i=0;i<sizeof(c)/4;i++)put32(data+i*4,((unsigned *)&c)[i]);send_packet(&peers[0],TN_EDIT,data,sizeof(data));
+    }
+    if(quickOn && quickSlot>=0 && sw<0 && phase==2 && !host && role>=0 && role<TN_PLAYERS && config.revision>0 && config.size[0]==2 && config.size[1]==2) {
+        static unsigned lastClaim;
+        if(config.owner[quickSlot]==role)quickSlot=-1; /* (taken: the draw's place is this player's) */
+        else if(SDL_GetTicks()-lastClaim>1000){lastClaim=SDL_GetTicks();sw=1;fighter=quickSlot;}
     }
     if(sw>=0 && phase==2) {
         if(host)switch_role(NULL,sw,fighter);

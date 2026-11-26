@@ -1778,6 +1778,86 @@
     "tbo/443": {
       "original": "There is no room with that code on the PC service. Check the code (it lasts ten minutes). A room made on Dragon Net does not show here: both players need the same service.",
       "text": "No existe una sala con ese código en el servicio de PC. Revisa el código (dura diez minutos). Si la sala se creó en Dragon Net, no aparece aquí: los dos jugadores necesitan el mismo servicio."
+    },
+    "tbo/444": {
+      "original": "2 vs 2",
+      "text": "2 contra 2"
+    },
+    "tbo/445": {
+      "original": "NEW",
+      "text": "NUEVO"
+    },
+    "tbo/446": {
+      "original": "YOUR TEAM",
+      "text": "TU EQUIPO"
+    },
+    "tbo/447": {
+      "original": "RIVAL TEAM",
+      "text": "EQUIPO RIVAL"
+    },
+    "tbo/448": {
+      "original": "2 VS 2 LOBBY",
+      "text": "SALA 2 CONTRA 2"
+    },
+    "tbo/449": {
+      "original": "SEARCHING...",
+      "text": "BUSCANDO..."
+    },
+    "tbo/450": {
+      "original": "PARTNER",
+      "text": "COMPAÑERO"
+    },
+    "tbo/451": {
+      "original": "MATCH FOUND! OPENING THE ROOM...",
+      "text": "¡PARTIDA ENCONTRADA! ABRIENDO LA SALA..."
+    },
+    "tbo/452": {
+      "original": "%d OF 4 PLAYERS",
+      "text": "%d DE 4 JUGADORES"
+    },
+    "tbo/453": {
+      "original": "THE FIGHT STARTS WHEN THE TWO TEAMS ARE FULL",
+      "text": "LA LUCHA EMPIEZA CUANDO LOS 2 EQUIPOS ESTÉN COMPLETOS"
+    },
+    "tbo/454": {
+      "original": "HOW IT WORKS",
+      "text": "CÓMO FUNCIONA"
+    },
+    "tbo/455": {
+      "original": "FOUR PLAYERS FORM THE LINE",
+      "text": "CUATRO JUGADORES FORMAN LA COLA"
+    },
+    "tbo/456": {
+      "original": "PARTNER AND RIVALS ARE DRAWN",
+      "text": "COMPAÑERO Y RIVALES SE SORTEAN"
+    },
+    "tbo/457": {
+      "original": "THEN THE TAG TEAM ROOM OPENS",
+      "text": "DESPUÉS SE ABRE LA SALA DEL TAG TEAM"
+    },
+    "tbo/458": {
+      "original": "Leave the line",
+      "text": "Salir de la cola"
+    },
+    "tbo/459": {
+      "original": "2 VS 2",
+      "text": "2 CONTRA 2"
+    },
+    "tbo/460": {
+      "original": "Pairs are drawn: you and a partner against two rivals, 2 vs 2 as in the Tag Team.",
+      "text": "Parejas sorteadas, 2 contra 2 como en el Tag Team."
+    },
+    "tbo/461": {
+      "original": "Four players, two teams of two: your partner and your rivals are drawn. The Tag Team room opens when the line is full.",
+      "text": "Cuatro jugadores, dos equipos de dos: compañero y rivales se sortean. La sala del Tag Team se abre cuando la cola se llena."
+    },
+    "tbo/462": {
+      "original": "Here we go! The room is opening.",
+      "text": "¡Vamos! La sala se está abriendo."
+    },
+    "tbo/463": {
+      "original": "Waiting for four players. Triangle leaves the line.",
+      "text": "Esperando cuatro jugadores. Triángulo sale de la cola."
     }
   }
 }

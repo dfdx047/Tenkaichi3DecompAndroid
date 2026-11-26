@@ -966,6 +966,8 @@ static void say_error(const char *answer, const char *what) {
         set_status("That room is for another version of the mod.");
     } else if (SDL_strcmp(e, "full") == 0) {
         set_status("That room is full.");
+    } else if (SDL_strcmp(e, "official") == 0 || SDL_strcmp(e, "time") == 0) {
+        set_status("Online play is only for the official Dragon Rage. Update it from the official page.");
     } else {
         char line[120];
         SDL_snprintf(line, sizeof(line), "The online service refused (%s: %s).", what, e);
@@ -1099,6 +1101,18 @@ static int relay_open_for(int mine, const char *url) {
     return ok;
 }
 
+/* A room the quick 2 vs 2 queue made at the service (TagQuick_*): its code, this player's key and place are already known, so the
+   room is not made (/v1/host) or joined (/v1/join) but taken as it is. Set by TagLink_Adopt before TagLink_Host / TagLink_Join. */
+static struct { int on; char code[16]; char key[48]; int id; } sAdopt;
+
+void TagLink_Adopt(const char *code, const char *key, int id) {
+    SDL_memset(&sAdopt, 0, sizeof(sAdopt));
+    SDL_strlcpy(sAdopt.code, code != NULL ? code : "", sizeof(sAdopt.code));
+    SDL_strlcpy(sAdopt.key, key != NULL ? key : "", sizeof(sAdopt.key));
+    sAdopt.id = id;
+    sAdopt.on = sAdopt.code[0] && sAdopt.key[0];
+}
+
 #define STOPPED() (SDL_GetAtomicInt(&L.gen) != mine)
 static int service_run(int mine, int sock) {
     char pub[64] = "", lan[64] = "", relay[64] = "", addrs[256], body[1024], answer[4096], name[48], code[16], key[48];
@@ -1122,7 +1136,28 @@ static int service_run(int mine, int sock) {
       fprintf(stderr, "taglink: addresses: internet %s, own network %s, IPv6 %s\n", pub[0] ? pub : "(not found)", lan[0] ? lan : "(none)", v6[0] ? v6 : "(none)"); }
     my_addrs(addrs, sizeof(addrs), pub, lan, NULL);
     SDL_strlcpy(name, L.name, sizeof(name));
-    if (L.hosting) {
+    if (sAdopt.on) { /* (a room of the quick queue: taken as the service made it; this device's real addresses go to it now) */
+        char line[96];
+        SDL_snprintf(code, sizeof(code), "%s", sAdopt.code);
+        SDL_snprintf(key, sizeof(key), "%s", sAdopt.key);
+        SDL_strlcpy(L.code, code, sizeof(L.code));
+        SDL_strlcpy(L.key, key, sizeof(L.key));
+        if (L.hosting) {
+            L.tag = (uint32_t)SDL_atoi(L.code);
+        } else {
+            L.myId = sAdopt.id;
+        }
+        sAdopt.on = 0;
+        SDL_snprintf(body, sizeof(body), "{\"code\":\"%s\",\"key\":\"%s\",\"addrs\":%s}", code, key, addrs);
+        post("addrs", body, answer, sizeof(answer));
+        if (STOPPED()) {
+            return 0;
+        }
+        L.codeReady = 1;
+        SDL_snprintf(line, sizeof(line), L.hosting ? "Online room code: %s" : "Reaching the room's owner...", L.code);
+        set_status(line);
+        fprintf(stderr, "taglink: quick room %s taken (%s)\n", L.code, L.hosting ? "owner" : "member");
+    } else if (L.hosting) {
         set_status("Creating the online room...");
         SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"name\":\"%s\",\"addrs\":%s}", L.version, name, addrs);
         if (!post("host", body, answer, sizeof(answer)) || !json_str(answer, "code", code, sizeof(code)) || !json_str(answer, "key", key, sizeof(key))) {
@@ -1689,4 +1724,176 @@ int TagLink_RttMs(int slot) {
     }
     c = &L.conn[slot];
     return c->state == TK_LINK_OPEN && c->lastSample != 0 ? c->srtt : -1;
+}
+
+
+/* ---- the quick 2 vs 2 queue (port/tagnet-worker: /v1/quick, /v1/quickpoll, /v1/quickleave) ----
+ * A ticket at the service while four players are found; then the room it made is taken (TagLink_Adopt). A thread of its own: its requests take a
+ * while. The screens read it with TagQuick_Poll. Without the service's side of it (an older Worker answers "bad request") it says so and stops. */
+static struct {
+    SDL_Mutex *lock;
+    SDL_AtomicInt gen;
+    int version;
+    char name[48];
+    TagQuickState st;
+} Q;
+
+static void q_set(int phase, const char *error) {
+    SDL_LockMutex(Q.lock);
+    Q.st.phase = phase;
+    SDL_strlcpy(Q.st.error, error != NULL ? error : "", sizeof(Q.st.error));
+    SDL_UnlockMutex(Q.lock);
+}
+
+/* The answer of /v1/quick or /v1/quickpoll into the state: matched (its room), waiting (how many), or an error (0: could not read). */
+static int q_take(const char *answer) {
+    char state[24], e[64];
+    if (json_str(answer, "error", e, sizeof(e))) {
+        q_set(3, SDL_strcmp(e, "version") == 0 ? "The service does not take this version yet."
+              : SDL_strcmp(e, "busy") == 0 ? "Too many searches from this network."
+              : SDL_strcmp(e, "official") == 0 || SDL_strcmp(e, "time") == 0 ? "Online play is only for the official Dragon Rage."
+              : SDL_strcmp(e, "bad request") == 0 ? "The service does not have the 2 vs 2 search yet."
+              : SDL_strcmp(e, "no ticket") == 0 ? "The search was dropped. Try again." : "The service refused the search.");
+        return 0;
+    }
+    if (!json_str(answer, "state", state, sizeof(state))) {
+        q_set(3, answer[0] ? "The online service gave an unexpected answer." : "The online service could not be reached.");
+        return 0;
+    }
+    SDL_LockMutex(Q.lock);
+    if (SDL_strcmp(state, "matched") == 0) {
+        const char *p = SDL_strstr(answer, "\"players\":[");
+        int n = 0;
+        Q.st.phase = 2;
+        Q.st.role = json_int(answer, "role", 0);
+        Q.st.team = json_int(answer, "team", 0);
+        Q.st.id = json_int(answer, "id", 0);
+        json_str(answer, "code", Q.st.code, sizeof(Q.st.code));
+        json_str(answer, "roomKey", Q.st.roomKey, sizeof(Q.st.roomKey));
+        SDL_memset(Q.st.have, 0, sizeof(Q.st.have));
+        while (p != NULL && n < 4 && (p = SDL_strstr(p, "{\"role\":")) != NULL) {
+            int role = json_int(p, "role", -1);
+            if (role >= 0 && role < 4) {
+                json_str(p, "name", Q.st.names[role], sizeof(Q.st.names[role]));
+                Q.st.have[role] = 1;
+            }
+            p += 8;
+            n++;
+        }
+    } else {
+        Q.st.phase = 1;
+        Q.st.waiting = json_int(answer, "waiting", 0);
+        Q.st.need = json_int(answer, "need", 4);
+    }
+    SDL_UnlockMutex(Q.lock);
+    return 1;
+}
+
+static int SDLCALL quick_thread(void *arg) {
+    int mine = (int)(intptr_t)arg, ok;
+    char body[512], answer[4096], ticket[64] = "", key[64] = "";
+    Uint64 last = 0;
+    SDL_snprintf(body, sizeof(body), "{\"v\":%d,\"name\":\"%s\",\"addrs\":[]}", Q.version, Q.name);
+    answer[0] = 0;
+    ok = post("quick", body, answer, sizeof(answer));
+    if (SDL_GetAtomicInt(&Q.gen) != mine) {
+        if (ok && json_str(answer, "ticket", ticket, sizeof(ticket)) && json_str(answer, "key", key, sizeof(key))) {
+            SDL_snprintf(body, sizeof(body), "{\"ticket\":\"%s\",\"key\":\"%s\"}", ticket, key);
+            post("quickleave", body, answer, sizeof(answer));
+        }
+        return 0;
+    }
+    if (!ok || !q_take(answer) || !json_str(answer, "ticket", ticket, sizeof(ticket)) || !json_str(answer, "key", key, sizeof(key))) {
+        if (Q.st.phase != 3) {
+            q_set(3, "The online service could not be reached.");
+        }
+        return 0;
+    }
+    while (SDL_GetAtomicInt(&Q.gen) == mine && Q.st.phase == 1) {
+        Uint64 now = SDL_GetTicks();
+        if (now - last >= 2000) {
+            last = now;
+            SDL_snprintf(body, sizeof(body), "{\"ticket\":\"%s\",\"key\":\"%s\"}", ticket, key);
+            answer[0] = 0;
+            if (post("quickpoll", body, answer, sizeof(answer)) && SDL_GetAtomicInt(&Q.gen) == mine) {
+                q_take(answer);
+            } else if (SDL_GetAtomicInt(&Q.gen) == mine && !answer[0]) { /* (no answer: tried again at the next poll; the ticket lives 20 s) */
+            }
+        }
+        SDL_Delay(100);
+    }
+    if (SDL_GetAtomicInt(&Q.gen) != mine && Q.st.phase != 2) { /* (cancelled while it waited: the ticket is given up) */
+        SDL_snprintf(body, sizeof(body), "{\"ticket\":\"%s\",\"key\":\"%s\"}", ticket, key);
+        post("quickleave", body, answer, sizeof(answer));
+    }
+    return 0;
+}
+
+int TagQuick_Start(const char *name, int version) {
+    SDL_Thread *t;
+    char *c;
+    if (Q.lock == NULL) {
+        Q.lock = SDL_CreateMutex();
+    }
+    if (L.lock == NULL) {
+        L.lock = SDL_CreateMutex();
+    }
+    TagQuick_Cancel();
+    SDL_LockMutex(Q.lock);
+    SDL_memset(&Q.st, 0, sizeof(Q.st));
+    Q.st.phase = 1;
+    Q.st.need = 4;
+    SDL_UnlockMutex(Q.lock);
+    if (!service_url()) {
+        q_set(3, "No online service is set for the 2 vs 2.");
+        return 0;
+    }
+    Q.version = version;
+    SDL_strlcpy(Q.name, name != NULL ? name : "", sizeof(Q.name));
+    for (c = Q.name; *c; c++) {
+        if (*c == '"' || *c == '\\' || (unsigned char)*c < ' ') {
+            *c = ' ';
+        }
+    }
+    t = SDL_CreateThread(quick_thread, "tag-quick", (void *)(intptr_t)SDL_GetAtomicInt(&Q.gen));
+    if (t == NULL) {
+        q_set(3, "The search could not start.");
+        return 0;
+    }
+    SDL_DetachThread(t);
+    return 1;
+}
+
+void TagQuick_Poll(TagQuickState *out) {
+    if (Q.lock == NULL) {
+        SDL_memset(out, 0, sizeof(*out));
+        return;
+    }
+    SDL_LockMutex(Q.lock);
+    *out = Q.st;
+    SDL_UnlockMutex(Q.lock);
+}
+
+/* The search is given up (the thread leaves the ticket). A found room is kept: it is taken with TagLink_Adopt. */
+void TagQuick_Cancel(void) {
+    if (Q.lock == NULL) {
+        return;
+    }
+    SDL_AddAtomicInt(&Q.gen, 1);
+    SDL_LockMutex(Q.lock);
+    if (Q.st.phase != 2) {
+        SDL_memset(&Q.st, 0, sizeof(Q.st));
+    }
+    SDL_UnlockMutex(Q.lock);
+}
+
+/* After the room was taken (or left): the quick state is cleared. */
+void TagQuick_Clear(void) {
+    if (Q.lock == NULL) {
+        return;
+    }
+    SDL_AddAtomicInt(&Q.gen, 1);
+    SDL_LockMutex(Q.lock);
+    SDL_memset(&Q.st, 0, sizeof(Q.st));
+    SDL_UnlockMutex(Q.lock);
 }

@@ -6,6 +6,7 @@
 /* The service built in (port/tagnet-worker); <game folder>/tag_online_url.txt names another. */
 #ifndef TAG_ONLINE_URL
 #define TAG_ONLINE_URL "https://tagteam-online.regulusplay.workers.dev"
+
 #endif
 
 #define TL_SLOTS 24
@@ -33,5 +34,24 @@ int TagLink_RecvDatagram(int slot, void *out, int max);
 int TagLink_RttMs(int slot); /* (prototype: the measured round trip, -1 unknown) */
 /* What the online part is doing (a line for the screen), and the room's code once it has one ("" until then). */
 void TagLink_Status(char *out, int size, char *code, int codeSize);
+
+
+/* The quick 2 vs 2 (the service's /v1/quick): a search for four players that makes a room of two teams of two. phase: 0 none, 1 searching,
+   2 found (the room: code, roomKey, id, role, team, the four names), 3 failed (error). */
+typedef struct TagQuickState {
+    int phase, waiting, need;
+    int role, team, id;
+    char code[16], roomKey[48];
+    char names[4][28];
+    int have[4];
+    char error[96];
+} TagQuickState;
+int TagQuick_Start(const char *name, int version);
+void TagQuick_Poll(TagQuickState *out);
+void TagQuick_Cancel(void);
+void TagQuick_Clear(void);
+/* Takes the room the search found (before TagLink_Host for its owner, role 0, or TagLink_Join with its code for the others). */
+void TagLink_Adopt(const char *code, const char *key, int id);
+
 
 #endif

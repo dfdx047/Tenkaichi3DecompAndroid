@@ -282,6 +282,7 @@ extern int Port_Setting(const char *name, int def);
 extern void Port_SettingSave(const char *name, int value);
 extern void Port_SettingsWrite(void);
 #include "../../port/src/gs/net_lobby.h" /* the lobby (Port_LobbyView, Port_LobbyDo ...): plain C, its view has no pointers */
+#include "../../port/src/gs/tag_link.h" /* the quick 2 vs 2 (TagQuick_*) */
 #include "../../port/src/gs/net_dragon.h" /* Dragon Net: against whom (DrNet_Mode), Ranked (DrRanked_*), players online */
 
 /* the screens */
@@ -300,7 +301,9 @@ extern void Port_SettingsWrite(void);
 #define TB_RANKED 12 /* Ranked (Dragon Net only): the profile, the battle, search, the ranking, update */
 #define TB_RKWAIT 13 /* Ranked: searching for a rival, then the room the service pairs the two in */
 #define TB_BOARD 14  /* Ranked: the best fighters */
-#define TB_MODES 15
+#define TB_Q22 15  /* 2 vs 2: the quick search's settings (tag_link.c TagQuick_*) */
+#define TB_Q22L 16 /* 2 vs 2: the line (four places, two teams) until the room is found */
+#define TB_MODES 17
 #define TB_FIGHTERS 161
 #define TB_TOURNAMENT_STAGE 4 /* the World Tournament Stage, at noon */
 
@@ -317,7 +320,8 @@ extern void Port_SettingsWrite(void);
 #define HUB_COUNT 9
 #define HUB_LANG 9  /* the language of these screens: a small row above the list */
 #define HUB_VS 10   /* against whom: Android + Switch (Dragon Net's service) or the PC (the PC port's) */
-#define HUB_ITEMS 11
+#define HUB_2V2 11  /* a quick 2 vs 2 of drawn pairs (the Tag Team's rooms, tag_link.c) */
+#define HUB_ITEMS 12
 
 /* Ranked's rows */
 #define RK_BATTLE 0
@@ -426,6 +430,11 @@ typedef struct TboScreen {
 } TboScreen;
 
 static TboScreen *sTb;
+/* 2 vs 2: what the quick search says this frame, the page's cursor, the frames since a room was found, and the room taken when the screens close */
+static TagQuickState sQ2;
+static s32 sQ2Cur, sQ2Found, sQ2Frames;
+static TagQuickState sQ2Take;
+static s32 sQ2Taken;
 static PortLobbyView sTbLv; /* (the lobby's page: what it shows this frame) */
 static s32 sTbBgKind;  /* what the search left open for "Train While Waiting" is: 0 joining a code, 2 a quick match */
 static s32 sTbBgQueue;
@@ -444,11 +453,11 @@ static char *Tb_Fmt(char *format) {
 }
 
 static char *sTbHubName[HUB_ITEMS] = {"Quick Match", "Ranked", "Lobby", "Join", "Friends", "Tournament", "Replays", "Leaderboard", "Profile",
-                                     "Language", "Play Against"};
-static const s32 sTbHubReady[HUB_ITEMS] = {1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1};
+                                     "Language", "Play Against", "2 vs 2"};
+static const s32 sTbHubReady[HUB_ITEMS] = {1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1};
 /* What the hub lists, top to bottom: the language and against whom, then what can be played. Friends, Tournament,
    Replays and Leaderboard need more of the matchmaking service than it has: not listed until they do. */
-static const s32 sTbHubOrder[] = {HUB_LANG, HUB_VS, HUB_QUICK, HUB_RANKED, HUB_LOBBY, HUB_JOIN, HUB_PROFILE};
+static const s32 sTbHubOrder[] = {HUB_LANG, HUB_VS, HUB_QUICK, HUB_2V2, HUB_RANKED, HUB_LOBBY, HUB_JOIN, HUB_PROFILE};
 #define HUB_SMALL 2 /* the rows above the list (the language, against whom): small, changed with left / right */
 #define HUB_ROWS ((s32)(sizeof(sTbHubOrder) / sizeof(sTbHubOrder[0])))
 static s32 Tb_HubRow(s32 item) {
@@ -476,6 +485,7 @@ static char *sTbHubSay[HUB_ITEMS] = {
     "The name your rivals see.",
     "Choose the language of these screens. Left and right change it.",
     "Choose who you play against: Android and Switch, or the PC.",
+    "Pairs are drawn: you and a partner against two rivals, 2 vs 2 as in the Tag Team.",
 };
 /* against whom, as the row writes it (not translated: names) */
 static char *sTbVsName[2] = {"ANDROID + SWITCH", "PC"};
@@ -979,6 +989,96 @@ static void Tb_QuickUpdate(s32 live) {
     }
 }
 
+/* ---------------------------------------------------------------------------------------------- 2 vs 2 */
+/* The quick 2 vs 2: four players are drawn into two teams of two, in a room the service makes (port/tagnet-worker, /v1/quick); the room is
+   then the Tag Team's own (tag_net.c TagNet_QuickRoom), 2 against 2, each player at the place the draw gave. The page is a search (the
+   settings, then Search) and the line (the four places) until the room is found; the screens then close and the room opens. */
+extern int TagNet_Protocol(void);
+
+static void Tb_Q22Search(void) {
+    extern const char *Port_NetNameGet(void);
+
+    if (Port_OnlineBlocked() != NULL) {
+        Snd_PlaySe(1, 2);
+        Tb_Note((char *)Port_OnlineBlocked());
+        return;
+    }
+    memset(&sQ2, 0, sizeof(sQ2));
+    sQ2Found = 0;
+    sQ2Frames = 0;
+    if (!TagQuick_Start(Port_NetNameGet(), TagNet_Protocol())) {
+        TagQuick_Poll(&sQ2);
+        Tb_Say(sQ2.error[0] ? sQ2.error : "The 2 vs 2 search could not start.");
+        return;
+    }
+    Tb_SetMode(TB_Q22L);
+}
+
+static void Tb_Q22Update(s32 live) {
+    Pad *pad = &gPad[0];
+
+    Ps_Prompt(0, sQ2Cur == 2 ? "Search" : "Change");
+    Ps_Prompt(2, "Back");
+    if (!live) {
+        return;
+    }
+    Ps_Move(&sQ2Cur, 3);
+    if (pad->gamePressed & (PADG_CROSS | PADG_START)) {
+        if (sQ2Cur == 2 || (pad->gamePressed & PADG_START)) {
+            Snd_PlaySe(1, 1);
+            Tb_Q22Search();
+        }
+    } else if (pad->gamePressed & PADG_TRIANGLE) {
+        Snd_PlaySe(1, 2);
+        Tb_SetMode(TB_HUB);
+    }
+}
+
+/* The line: the service's answers each frame; a room found is shown for a moment (the four names), then the screens close and it opens. */
+static void Tb_Q22LUpdate(s32 live) {
+    Pad *pad = &gPad[0];
+
+    sQ2Frames++;
+    TagQuick_Poll(&sQ2);
+    if (sQ2.phase == 3) { /* (could not be, or dropped: why, and the page of the search again) */
+        Tb_Say(sQ2.error[0] ? sQ2.error : "The 2 vs 2 search ended.");
+        Snd_PlaySe(1, 2);
+        TagQuick_Cancel();
+        Tb_SetMode(TB_Q22);
+        return;
+    }
+    if (sQ2.phase == 2) {
+        sQ2Found++;
+        Ps_Prompt(2, "");
+        if (sQ2Found > 150) { /* (two and a half seconds on the four names) */
+            sQ2Take = sQ2;
+            sQ2Taken = 1;
+            sTb->leaving = 1;
+            ColorFade_StartOut(0, 0, 0, 0x14);
+        }
+        return;
+    }
+    Ps_Prompt(2, "Leave the line");
+    if (live && (pad->gamePressed & PADG_TRIANGLE)) {
+        Snd_PlaySe(1, 2);
+        TagQuick_Cancel();
+        Tb_SetMode(TB_Q22);
+    }
+}
+
+/* The screens have closed on a room found: it is taken (port_screen.c runs the Tag Team's room next). 1: there is one. */
+s32 PortTbo_QuickTake(void) {
+    extern void TagNet_QuickRoom(int role, const char *code, const char *roomKey, int id, int slot, int port);
+
+    if (!sQ2Taken) {
+        return 0;
+    }
+    sQ2Taken = 0;
+    TagNet_QuickRoom(sQ2Take.role, sQ2Take.code, sQ2Take.roomKey, sQ2Take.id, sQ2Take.role, 7001);
+    TagQuick_Clear();
+    return 1;
+}
+
 /* ---------------------------------------------------------------------------------------------- Ranked */
 /* Ranked is Dragon Net's (port/src/gs/net_dragon.c): an Elo profile per player, a search that pairs two of a level,
    then a room of the two (the first opens it and tells the service its code, the other joins with it), and the
@@ -1218,6 +1318,11 @@ static void Tb_HubUpdate(s32 live) {
             Snd_PlaySe(1, 1);
             sTb->crCur = CR_OPEN;
             Tb_SetMode(TB_CREATE);
+            break;
+        case HUB_2V2:
+            Snd_PlaySe(1, 1);
+            sQ2Cur = 0;
+            Tb_SetMode(TB_Q22);
             break;
         case HUB_JOIN:
             Snd_PlaySe(1, 1);
@@ -1866,6 +1971,11 @@ static void Tb_DrawHubText(void) {
         } else {
             Ps_Text(x + 12.0f, Ps_TextTop(mid, 0.96f), sTbHubName[item], 0.96f, 200.0f, item == HUB_RANKED && DrNet_Mode() != 0 ? 4 : 0);
         }
+        if (item == HUB_2V2) { /* (a new mode: its tag at the plate's end) */
+            Ps_Align(2);
+            Ps_Text(x + (i == cur ? 252.0f : 238.0f), Ps_TextTop(mid, 0.5f), Tb_Fmt("NEW"), 0.5f, 60.0f, 5);
+            Ps_Align(0);
+        }
     }
 }
 
@@ -2278,6 +2388,109 @@ static void Tb_DrawQuickText(void) {
             0.5f, 276.0f, 3);
 #undef QK_ROW
 #undef QK_VAL
+}
+
+/* 2 vs 2: the search's settings (the rows of Quick Match's page), then the line: two windows of two places, a lightning between. */
+static void Tb_DrawQ22(void) {
+    Tb_Hosts(TBO_HOSTS_MIC_WAVE, 404.0f, 350.0f, 240.0f);
+    Tb_DrawRows(3, sQ2Cur, 96.0f);
+    Ps_Panel(TBO_KIT_WINDOW, 8.0f, 232.0f, 306.0f, 330.0f, 0x80);
+}
+
+#define Q2_TEAM_X0 18.0f
+#define Q2_TEAM_X1 238.0f
+#define Q2_RIVAL_X0 274.0f
+#define Q2_RIVAL_X1 494.0f
+#define Q2_PLACE_Y 118.0f
+#define Q2_PLACE_PITCH 54.0f
+#define Q2_PLACE_H 44.0f
+
+static void Tb_DrawQ22L(void) {
+    s32 i;
+
+    Ps_Panel(TBO_KIT_WINDOW, 8.0f, 62.0f, 504.0f, 300.0f, 0x80);
+    for (i = 0; i < 2; i++) {
+        f32 y = Q2_PLACE_Y + Q2_PLACE_PITCH * (f32)i;
+
+        Ps_Pill(i == 0 ? TBO_KIT_SEL : TBO_KIT_BAR, Q2_TEAM_X0, y, Q2_TEAM_X1, y + Q2_PLACE_H, 0x80);
+        Ps_Pill(TBO_KIT_BAR, Q2_RIVAL_X0, y, Q2_RIVAL_X1, y + Q2_PLACE_H, 0x80);
+    }
+}
+
+static void Tb_DrawQ22Text(void) {
+    static char line[96];
+
+#define QK_ROW(i) Ps_TextTop(96.0f + TB_ROW * (f32)(i) + TB_ROW_H * 0.5f, TB_ROW_LABEL)
+#define QK_VAL(i) Ps_TextTop(96.0f + TB_ROW * (f32)(i) + TB_ROW_H * 0.5f, TB_ROW_VALUE)
+    Ps_Text(22.0f, Ps_TextTop(70.0f, 0.7f), "PICK YOUR BATTLE", 0.7f, 0.0f, 2);
+    Ps_Text(36.0f, QK_ROW(0), "Battle", TB_ROW_LABEL, 100.0f, sQ2Cur == 0 ? 1 : 0);
+    Ps_Align(2);
+    Ps_Text(266.0f, QK_VAL(0), "2 VS 2", TB_ROW_VALUE, 140.0f, sQ2Cur == 0 ? 1 : 3);
+    Ps_Align(0);
+    Ps_Text(36.0f, QK_ROW(1), "Region", TB_ROW_LABEL, 100.0f, sQ2Cur == 1 ? 1 : 0);
+    Ps_Align(2);
+    Ps_Text(266.0f, QK_VAL(1), sTbRegionName[0], TB_ROW_VALUE, 150.0f, sQ2Cur == 1 ? 1 : 3);
+    Ps_Align(0);
+    Ps_Text(36.0f, QK_ROW(2), "Search", TB_ROW_LABEL, 100.0f, sQ2Cur == 2 ? 1 : 0);
+    Ps_Text(22.0f, Ps_TextTop(250.0f, 0.62f), "HOW IT WORKS", 0.62f, 0.0f, 2);
+    Ps_Text(36.0f, Ps_TextTop(272.0f, 0.62f), "FOUR PLAYERS FORM THE LINE", 0.62f, 262.0f, 0);
+    Ps_Text(36.0f, Ps_TextTop(292.0f, 0.62f), "PARTNER AND RIVALS ARE DRAWN", 0.62f, 262.0f, 0);
+    Ps_Text(36.0f, Ps_TextTop(312.0f, 0.5f), "THEN THE TAG TEAM ROOM OPENS", 0.5f, 262.0f, 3);
+    (void)line;
+#undef QK_ROW
+#undef QK_VAL
+}
+
+static void Tb_DrawQ22LText(void) {
+    static char line[96];
+    s32 found = sQ2.phase == 2, myTeam = found ? sQ2.team : 0, side, place;
+
+    Ps_Text(22.0f, Ps_TextTop(76.0f, 0.7f), "2 VS 2 LOBBY", 0.7f, 0.0f, 2);
+    Ps_Text(Q2_TEAM_X0 + 10.0f, Ps_TextTop(98.0f, 0.66f), "YOUR TEAM", 0.66f, 200.0f, 2);
+    Ps_Text(Q2_RIVAL_X0 + 10.0f, Ps_TextTop(98.0f, 0.66f), "RIVAL TEAM", 0.66f, 200.0f, 2);
+    for (side = 0; side < 2; side++) { /* 0 this player's team (the left), 1 the rivals' (the right) */
+        for (place = 0; place < 2; place++) {
+            s32 role = (side == 0 ? myTeam : 1 - myTeam) * 2 + place;
+            f32 x = (side == 0 ? Q2_TEAM_X0 : Q2_RIVAL_X0) + 14.0f;
+            f32 mid = Q2_PLACE_Y + Q2_PLACE_PITCH * (f32)place + Q2_PLACE_H * 0.5f;
+            char *who = NULL;
+            char *what = "";
+            s32 me = found && role == sQ2.role;
+
+            s32 shown = 0;
+
+            if (found && sQ2.have[role]) {
+                who = sQ2.names[role];
+                shown = 1;
+                what = Tb_Fmt("RIVAL");
+                if (side == 0) { /* (not `?:` between pointers: the 32-bit ones) */
+                    what = Tb_Fmt("PARTNER");
+                }
+                if (me) {
+                    what = Tb_Fmt("YOU");
+                }
+            } else if (!found && side == 0 && place == 0) {
+                who = (char *)Port_NetNameGet();
+                shown = 1;
+                what = Tb_Fmt("YOU");
+            }
+            if (!shown) {
+                who = Tb_Fmt("SEARCHING...");
+            }
+            Ps_Text(x, Ps_TextTop(mid - 8.0f, 0.9f), who, 0.9f, 170.0f, shown && (me || !found) ? 1 : 0);
+            Ps_Text(x, Ps_TextTop(mid + 10.0f, 0.5f), what, 0.5f, 120.0f, 3);
+        }
+    }
+    Ps_Text(256.0f, Ps_TextTop(168.0f, 1.1f), "VS", 1.1f, 40.0f, 2);
+    Ps_Align(1);
+    if (found) {
+        Ps_Text(256.0f, Ps_TextTop(250.0f, 0.7f), Tb_Fmt("MATCH FOUND! OPENING THE ROOM..."), 0.7f, 440.0f, 5);
+    } else {
+        sprintf(line, Tb_Fmt("%d OF 4 PLAYERS"), (int)(sQ2.waiting > 0 ? sQ2.waiting : 1));
+        Ps_Text(256.0f, Ps_TextTop(250.0f, 0.7f), line, 0.7f, 440.0f, 5);
+        Ps_Text(256.0f, Ps_TextTop(274.0f, 0.55f), Tb_Fmt("THE FIGHT STARTS WHEN THE TWO TEAMS ARE FULL"), 0.55f, 440.0f, 3);
+    }
+    Ps_Align(0);
 }
 
 static void Tb_DrawProfile(void) {
@@ -4027,6 +4240,10 @@ static char *Tb_Help(void) {
     case TB_QUICK:
         return sTb->qkCur == 1 ? "Auto: rivals near you first. A region: players there first, everyone after 40 s. Anywhere: the fastest."
                                : "Pick a battle and we'll find you a rival! No time limit, and the game runs a little faster.";
+    case TB_Q22:
+        return "Four players, two teams of two: your partner and your rivals are drawn. The Tag Team room opens when the line is full.";
+    case TB_Q22L:
+        return sQ2.phase == 2 ? "Here we go! The room is opening." : "Waiting for four players. Triangle leaves the line.";
     case TB_NAME:
         return "Pick your letters, then Done! Square deletes, Start finishes.";
     case TB_PROFILE:
@@ -4076,7 +4293,7 @@ static char *Tb_Help(void) {
 /* Each page's title (by TB_ mode), as its heading shows it and the screen reader says it. */
 static char *sTbTitle[TB_MODES] = {"Dragon Net Online", "New Lobby", "Join", "Searching", "Profile", "Profile", "Quick Match",
                                    "Train While Waiting", "Dragon Net Online", "Lobby", "Tournament", "Join by Address", "Ranked", "Searching",
-                                   "Ranking"};
+                                   "Ranking", "2 vs 2", "2 vs 2 Lobby"};
 
 /* ---- the screen reader (port/src/gs/a11y.c; silent unless the player has it on). The game's own screens are read
    from their state by port/src/a11y_game.c; these pages say what they show themselves: the page's title as it opens,
@@ -4403,6 +4620,12 @@ static void Tb_Draw(void) {
     case TB_QUICK:
         Tb_DrawQuick();
         break;
+    case TB_Q22:
+        Tb_DrawQ22();
+        break;
+    case TB_Q22L:
+        Tb_DrawQ22L();
+        break;
     case TB_SPAR:
         Tb_DrawSpar();
         break;
@@ -4472,6 +4695,12 @@ static void Tb_DrawText(void) {
         break;
     case TB_QUICK:
         Tb_DrawQuickText();
+        break;
+    case TB_Q22:
+        Tb_DrawQ22Text();
+        break;
+    case TB_Q22L:
+        Tb_DrawQ22LText();
         break;
     case TB_SPAR:
         Tb_DrawSparText();
@@ -4637,6 +4866,12 @@ s32 PortTbo_Run(void) {
         case TB_QUICK:
             Tb_QuickUpdate(live);
             break;
+        case TB_Q22:
+            Tb_Q22Update(live);
+            break;
+        case TB_Q22L:
+            Tb_Q22LUpdate(live);
+            break;
         case TB_SPAR:
             Tb_SparUpdate(live);
             break;
@@ -4682,6 +4917,9 @@ s32 PortTbo_Run(void) {
     }
     if (sTb->mode == TB_RKWAIT || (sTb->rkLobby && !sTb->found)) {
         DrRanked_Cancel();
+    }
+    if (sTb->mode == TB_Q22L && !sQ2Taken) { /* (the screens close on a line: the search is given up) */
+        TagQuick_Cancel();
     }
     DrNet_PresenceActive(0);
     GsDraw_ScreenScaleFloor(0);

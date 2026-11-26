@@ -647,6 +647,17 @@ s32 PortScreen_Main(void) {
         Bgm_Play(0x10B16 + 2);
         result = PortTbo_Run();
         Adx_StopAll();
+        { /* the quick 2 vs 2 found its room: the Tag Team's own room opens next, 2 against 2 (tag_net.c TagNet_QuickRoom), as the main menu's
+             Online room does */
+          extern s32 PortTbo_QuickTake(void);
+          extern void TagNet_Enable(s32),TagNet_Party(s32),Port_TagOnlineSetup(void);
+          extern s32 TagNet_Room(void);
+          if(!result && PortTbo_QuickTake()) {
+              TagNet_Party(0);TagNet_Enable(1);result=TagNet_Room();
+              if(result==1)Port_TagOnlineSetup();else {result=0;TagMenu_Request(1);gProgress->mode=4;}
+              break;
+          }
+        }
         gProgress->mode = result ? 45 : 4; /* the Ultimate Training's fight, or back to the main menu */
         break;
     default:

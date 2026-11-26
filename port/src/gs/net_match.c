@@ -1918,7 +1918,29 @@ int TagLink_Stun(int sock, char *out, int size) {
 int TagLink_Lan(int port, char *out, int size) {
     return lan_address(port, out, (size_t)size);
 }
-/* A POST of `json` to `url` (the answer in out, error answers too). 0: nothing came back. */
+/* A POST of `json` to `url` (the answer in out, error answers too). 0: nothing came back. Signed with the build key
+   (net_sign.c), as Dragon Net's requests are: the Tag service only makes and joins rooms for the official game. A
+   request refused for its time (this device's clock off) sets the clock by the service's and is sent once more. */
 int TagLink_Http(const char *url, const char *json, char *out, int size) {
-    return http_post_native(url, json, NULL, out, (size_t)size);
+    const char *at = SDL_strstr(url, "://"), *path = at != NULL ? SDL_strchr(at + 3, '/') : NULL;
+    int tries, ok = 0;
+    for (tries = 0; tries < 2; tries++) {
+        char sig[65], head[3][96];
+        const char *headers[4] = {NULL, NULL, NULL, NULL};
+        long long when = (long long)time(NULL) + SDL_GetAtomicInt(&sClockAhead);
+        if (path != NULL && Sign_Request("POST", path, PORT_RELEASE, when, json, sig)) { /* (a program without a key: no headers) */
+            SDL_snprintf(head[0], sizeof(head[0]), "X-BT3-Release: %d", PORT_RELEASE);
+            SDL_snprintf(head[1], sizeof(head[1]), "X-BT3-Time: %lld", when);
+            SDL_snprintf(head[2], sizeof(head[2]), "X-BT3-Sign: %s", sig);
+            headers[0] = head[0];
+            headers[1] = head[1];
+            headers[2] = head[2];
+        }
+        ok = http_post_native(url, json, headers[0] != NULL ? headers : NULL, out, (size_t)size);
+        if (!ok || headers[0] == NULL || SDL_strstr(out, "\"error\":\"time\"") == NULL) {
+            break;
+        }
+        clock_learn(out);
+    }
+    return ok;
 }

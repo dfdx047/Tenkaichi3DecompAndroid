@@ -78,6 +78,8 @@ void TagNet_Tick(unsigned blank);
 void TagNet_Input(int player,unsigned char *data);
 void TagNet_Status(TagNetStatus *out);
 void TagNet_Start(int role,const char *address,int port);
+/* The room of the quick 2 vs 2 (tag_link.c TagQuick_*), taken as the service made it; role 0 its owner; slot 0..3 the fighter this player takes. */
+void TagNet_QuickRoom(int role,const char *code,const char *roomKey,int id,int slot,int port);
 void TagNet_Edit(const TagNetConfig *config);
 void TagNet_Ready(int ready);
 /* Lobby only: release your fighter or claim an available one (-1 = automatic). */

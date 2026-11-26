@@ -42,7 +42,7 @@ for p in (LLVM / "lib/python3/site-packages", TC / "clang-bindings"):
         sys.path.insert(0, str(p))
 os.environ["LD_LIBRARY_PATH"] = os.pathsep.join([str(LLVM / "lib"), str(pathlib.Path(GLSLC).parent), os.environ.get("LD_LIBRARY_PATH", "")])
 sys.path.insert(0, str(HERE))
-import portsrc, eeconst, irfix  # noqa: E402
+import portsrc, eeconst, irfix, buildkey  # noqa: E402
 try:
     import clang.cindex as _ci
     if (LLVM / "lib/libclang.so").exists():
@@ -143,9 +143,15 @@ def port_source(f):
     return (o if r.returncode == 0 else None), f.name, r.stderr
 
 
+# the build key (port/tools/buildkey.py, from BT3_BUILD_KEY in the environment): only net_sign.c is given it, so that
+# the official game signs its requests to the online services (Dragon Net, Tag Team Online); [] without one
+KEY = buildkey.flags()
+
+
 def gs_source(f):
     o = OBJ / ("gs_" + f.stem + ".o")
-    r = run(HARD + ["-std=gnu99", "-Wall", "-Wno-unused", "-Wno-misleading-indentation", f"-I{GEN / 'gs'}", f"-I{SDL3 / 'include'}", str(f), "-o", str(o)])
+    key = KEY if f.name == "net_sign.c" else []
+    r = run(HARD + ["-std=gnu99", "-Wall", "-Wno-unused", "-Wno-misleading-indentation", f"-I{GEN / 'gs'}", f"-I{SDL3 / 'include'}"] + key + [str(f), "-o", str(o)])
     return (o if r.returncode == 0 else None), f.name, r.stderr
 
 

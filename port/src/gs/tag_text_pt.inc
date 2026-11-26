@@ -517,6 +517,7 @@
 {"On","Ligado"},
 {"One Player","Um Jogador"},
 {"Online Lobby","Sala Online"},
+{"Online play is only for the official Dragon Rage. Update it from the official page.","O online é só para o Dragon Rage oficial. Atualize pela página oficial."},
 {"Only CPU slots can be removed. Players can choose Spectate.","Só vagas da CPU podem ser removidas. Jogadores podem escolher Assistir."},
 {"Only with one enemy","Só com um inimigo"},
 {"Open Room","Abrir Sala"},
