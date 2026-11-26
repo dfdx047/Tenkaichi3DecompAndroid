@@ -53,7 +53,6 @@ private val KanitDisplay = FontFamily(Font(R.font.kanit_extrabold_italic))
 
 private data class GameSlide(
     val game: Game,
-    val title: String,
     val subtitle: String,
     val description: Int,
     val serial: String,
@@ -72,19 +71,19 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
     val slides = remember {
         listOf(
             GameSlide(
-                Game.BT2, "BUDOKAI TENKAICHI 2", "THE NEXT LEVEL OF TENKAICHI",
+                Game.BT2, "THE NEXT LEVEL OF TENKAICHI",
                 R.string.welcome_bt2,
                 "SLUS-21441", listOf(Color(0xFF092F27), Color(0xFF16865A), Color(0xFF071713)),
                 Color(0xFF9BFFB8), "02", "bt2.png", "bt2land.png", "bt2logo.png",
             ),
             GameSlide(
-                Game.BT3, "BUDOKAI TENKAICHI 3", "THE ULTIMATE BATTLE",
+                Game.BT3, "THE ULTIMATE BATTLE",
                 R.string.welcome_bt3,
                 "SLUS-21678", listOf(Color(0xFF431B0B), Color(0xFFE36A16), Color(0xFF160A08)),
                 Color(0xFFFFC56B), "03", "bt3.png", "bt3land.png", "bt3logo.png",
             ),
             GameSlide(
-                Game.BT4, "BUDOKAI TENKAICHI 4", "BETA 14 · REV 2",
+                Game.BT4, "BETA 14 · REV 2",
                 R.string.welcome_bt4,
                 "SLUS-219.78", listOf(Color(0xFF111B42), Color(0xFF5141A0), Color(0xFF100D20)),
                 Color(0xFFD4C1FF), "04", "bt4.jpg", "bt4land.png", "bt4logo.png",
