@@ -115,12 +115,23 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                     Modifier
                         .fillMaxSize()
                         .background(
-                            Brush.verticalGradient(
-                                0f to Color.Black.copy(alpha = 0.12f),
-                                0.42f to Color.Transparent,
-                                0.68f to Color.Black.copy(alpha = 0.28f),
-                                1f to Color.Black.copy(alpha = 0.88f),
-                            ),
+                            if (isLandscape) {
+                                // Darken the text/logo side and fade smoothly toward the character artwork.
+                                Brush.horizontalGradient(
+                                    0f to Color.Black.copy(alpha = 0.82f),
+                                    0.38f to Color.Black.copy(alpha = 0.58f),
+                                    0.72f to Color.Black.copy(alpha = 0.16f),
+                                    1f to Color.Transparent,
+                                )
+                            } else {
+                                // Preserve the existing portrait shading.
+                                Brush.verticalGradient(
+                                    0f to Color.Black.copy(alpha = 0.12f),
+                                    0.42f to Color.Transparent,
+                                    0.68f to Color.Black.copy(alpha = 0.28f),
+                                    1f to Color.Black.copy(alpha = 0.88f),
+                                )
+                            },
                         ),
                 )
                 if (isLandscape) {
