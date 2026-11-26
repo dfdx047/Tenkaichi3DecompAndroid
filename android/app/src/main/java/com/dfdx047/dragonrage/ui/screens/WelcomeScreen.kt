@@ -120,6 +120,18 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val isLandscape = maxWidth > maxHeight
                 CoverArtwork(if (isLandscape) slide.landscapeCover ?: slide.portraitCover else slide.portraitCover)
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0f to Color.Black.copy(alpha = 0.12f),
+                                0.42f to Color.Transparent,
+                                0.68f to Color.Black.copy(alpha = 0.28f),
+                                1f to Color.Black.copy(alpha = 0.88f),
+                            ),
+                        ),
+                )
                 if (isLandscape) {
                     // Landscape: identity and game index stay at the upper-left.
                     Column(
