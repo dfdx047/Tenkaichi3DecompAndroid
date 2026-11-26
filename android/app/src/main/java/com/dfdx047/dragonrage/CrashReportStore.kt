@@ -47,6 +47,10 @@ object CrashReportStore {
             File(context.filesDir, REPORT_FILE).takeIf { it.isFile }?.readText()
         }.getOrNull()?.takeIf { it.isNotBlank() }
 
+    fun clearLatest(context: Context) {
+        runCatching { File(context.filesDir, REPORT_FILE).delete() }
+    }
+
     private class CrashHandler(
         context: Context,
         private val delegate: Thread.UncaughtExceptionHandler?,
@@ -99,14 +103,10 @@ object CrashReportStore {
 }
 
 @Composable
-fun CrashReportDialog(report: String?) {
-    if (report == null) return
-    var visible by remember(report) { mutableStateOf(true) }
-    if (!visible) return
-
+fun CrashReportDialog(report: String, onDismiss: () -> Unit) {
     val context = LocalContext.current
     AlertDialog(
-        onDismissRequest = { visible = false },
+        onDismissRequest = onDismiss,
         title = { Text("Se detectó un cierre inesperado") },
         text = {
             Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
@@ -121,14 +121,15 @@ fun CrashReportDialog(report: String?) {
                 onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                     clipboard.setPrimaryClip(ClipData.newPlainText("Dragon Rage crash report", report))
-                    visible = false
+                    CrashReportStore.clearLatest(context)
+                    onDismiss()
                 },
             ) {
                 Text("Copiar informe")
             }
         },
         dismissButton = {
-            TextButton(onClick = { visible = false }) {
+            TextButton(onClick = onDismiss) {
                 Text("Cerrar")
             }
         },
