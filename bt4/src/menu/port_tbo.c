@@ -2054,16 +2054,11 @@ static void Tb_Backdrop(void) {
 #define TB_BOX_BOTTOM 446.0f
 #define TB_HOSTS_HEIGHT 236.0f /* Gohan standing on the box: no taller than this (the film is him from his hair to his knees) */
 static void Tb_Hosts(s32 pose, f32 cx, f32 feet, f32 height) {
-    if (feet >= 300.0f) { /* (on the box's line) his knees fade out just behind the box's top edge; on a window wider than
-                              4:3 more to the right, out of the page's way */
-        if (height > TB_HOSTS_HEIGHT) {
-            height = TB_HOSTS_HEIGHT;
-        }
-        feet = TB_BOX_TOP + 6.0f;
-        cx -= Ps_Left() * 0.6f;
-    }
-    (void)pose; /* (BT4's host is Future Gohan, one film for every page: tbo/ui/gohan.mpg) */
-    Ps_Stand(TBO_GOHAN, cx, feet + 2.0f * Tb_Beat(150) - 1.0f, height, 0x80);
+    /* (no host on BT4's pages: the redesign's screens have their own pictures, tbo_look.inc) */
+    (void)pose;
+    (void)cx;
+    (void)feet;
+    (void)height;
 }
 
 /* The Dragon Radar of the search: an animated picture (tbo/ui/radar.png: 118 frames of 220 x 248, 11 a row, every second
@@ -2101,177 +2096,6 @@ static f32 Tb_MostWantedLeft(void){
     return 512.0f-Ps_Left()-159.0f;
 }
 
-/* ---- the hub as the Time Machine (port/tools/tbo_time_machine.py: tm_*.png; the time tunnel behind it is the backdrop's
-   film, tbo/ui/bg.mpg, and Future Gohan the hosts' film, tbo/ui/gohan.mpg). Its places follow the window: Gohan on its left
-   edge, the machine from beside him to its right edge. ---- */
-#define TM_TOP 94.0f    /* the machine's top and bottom (the box at the foot begins at TB_BOX_TOP) */
-#define TM_BOTTOM 346.0f
-static const char *sTmAge[HUB_COUNT] = {"AGE 767", "AGE 774", "AGE 784", "AGE 785", "AGE 788", "AGE 790", "AGE 794"};
-
-typedef struct {
-    f32 x0, y0, x1, y1, w, h; /* the machine's body */
-    f32 head;                 /* its header's height (the rule under it) */
-    f32 sx0, sy0, sx1, sy1;   /* the green screen's glass (its glow round it not counted) */
-    f32 dx, dy, dr;           /* the dial's centre and radius (y units; x ones are 0.857 of them) */
-    f32 rowH;                 /* one mode's line on the screen */
-} TmGeom;
-
-static void Tm_Place(TmGeom *g) {
-    f32 l = Ps_Left();
-    f32 slide = (1.0f - Tb_In(0)) * 260.0f; /* (the machine comes in from the right) */
-    f32 room;
-
-    g->x1 = 512.0f - l - 10.0f + slide;
-    g->x0 = l + 200.0f + slide; /* (beside Gohan) */
-    if (g->x1 - g->x0 > 720.0f) {
-        g->x0 = g->x1 - 720.0f;
-    }
-    g->y0 = TM_TOP;
-    g->y1 = TM_BOTTOM;
-    g->w = g->x1 - g->x0;
-    g->h = g->y1 - g->y0;
-    g->head = g->h * 0.13f;
-    g->sx0 = g->x0 + g->w * 0.025f;
-    g->sx1 = g->x0 + g->w * 0.60f;
-    g->sy0 = g->y0 + g->head + 8.0f;
-    g->sy1 = g->y1 - 10.0f;
-    g->dx = g->x0 + g->w * 0.80f;
-    g->dy = (g->sy0 + g->sy1) * 0.5f;
-    g->dr = g->h * 0.36f;
-    room = (g->x1 - g->sx1) * 0.40f / 0.857f; /* (a narrow window: the dial no wider than the room beside the screen) */
-    if (g->dr > room) {
-        g->dr = room;
-    }
-    g->rowH = (g->sy1 - g->sy0) * 0.88f / (f32)HUB_COUNT;
-}
-
-static f32 Tm_RowY(const TmGeom *g, f32 i) {
-    return g->sy0 + (g->sy1 - g->sy0) * 0.06f + (i + 0.5f) * g->rowH;
-}
-
-/* the needle's angle for a mode, in degrees from the top, clockwise */
-static f32 Tm_Angle(s32 i) {
-    return -140.0f + 280.0f * (f32)i / (f32)(HUB_COUNT - 1);
-}
-
-/* the time tunnel's centre on the page, where it is in the backdrop's film (840, 214 of 1280 x 720) */
-static void Tm_Tunnel(f32 *x, f32 *y) {
-    f32 aspect = (f32)Port_PageAspectMilli() / 1000.0f;
-    f32 pic = 1280.0f / 720.0f;
-    f32 u = aspect < pic ? aspect / pic : 1.0f;
-    f32 v = aspect < pic ? 1.0f : pic / aspect;
-    f32 fx = (840.0f / 1280.0f - (0.5f - u * 0.5f)) / u;
-    f32 fy = (214.0f / 720.0f - (0.5f - v * 0.5f)) / v;
-    f32 l = Ps_Left();
-
-    *x = l + fx * (512.0f - 2.0f * l);
-    *y = fy * 448.0f;
-}
-
-/* a line of light from p to q, `w` units thick */
-static void Tm_Beam(f32 px, f32 py, f32 qx, f32 qy, f32 w, u32 c0, u32 c1) {
-    f32 dx = qx - px, dy = qy - py;
-    f32 n = sqrtf(dx * dx + dy * dy);
-    f32 ox, oy;
-
-    if (n < 0.01f) {
-        return;
-    }
-    ox = -dy / n * w * 0.857f;
-    oy = dx / n * w;
-    Ps_Quad(px - ox, py - oy, px + ox, py + oy, qx - ox, qy - oy, qx + ox, qy + oy, c0, c0, c1, c1);
-}
-
-static void Tb_DrawHub(void) {
-    TmGeom g;
-    f32 l = Ps_Left();
-    f32 warp = sTb->warp > 0 ? (f32)sTb->warp / (f32)TB_WARP_FRAMES : 0.0f;
-    f32 target = Tm_Angle(sTb->hubCur);
-    f32 y, a, glow;
-    s32 i;
-
-    Tm_Place(&g);
-    if (!sTb->tmInit) {
-        sTb->tmInit = 1;
-        sTb->tmRow = (f32)sTb->hubCur;
-        sTb->tmNeedle = target;
-    }
-    sTb->tmRow += ((f32)sTb->hubCur - sTb->tmRow) * 0.35f;
-    sTb->tmNeedle += (target - sTb->tmNeedle) * 0.18f;
-
-    /* the jump: the tunnel's light streams out, more and longer as it goes on */
-    if (warp > 0.0f) {
-        f32 tx, ty;
-        Tm_Tunnel(&tx, &ty);
-        for (i = 0; i < 40; i++) {
-            f32 an = (f32)i * 0.15708f + (f32)((i * 7) % 5) * 0.05f;
-            f32 r0 = 14.0f + 170.0f * warp + (f32)((i * 13) % 7) * 6.0f;
-            f32 r1 = r0 + 20.0f + 300.0f * warp * warp;
-            s32 al = (s32)(0x60 * warp);
-            Tm_Beam(tx + cosf(an) * r0 * 0.857f, ty + sinf(an) * r0 * 0.75f, tx + cosf(an) * r1 * 0.857f, ty + sinf(an) * r1 * 0.75f, 0.7f,
-                    Ps_Rgba(0xD0, 0xF0, 0xFF, al), Ps_Rgba(0xFF, 0xFF, 0xFF, 0));
-        }
-        Ps_Disc(tx, ty, 26.0f + 60.0f * warp, Ps_Rgba(0xFF, 0xFF, 0xFF, (s32)(0x70 * warp)), Ps_Rgba(0x90, 0xD0, 0xFF, 0));
-    }
-
-    /* Future Gohan (the film), his crossed arms over the box at the foot, coming in from the left */
-    Ps_Stand(TBO_GOHAN, l + 98.0f - (1.0f - Tb_In(0)) * 200.0f, TB_BOX_TOP + 6.0f + 2.0f * Tb_Beat(150) - 1.0f, 252.0f, 0x80);
-
-    /* the machine: its gold body, the header's rule and rivets, the Capsule Corp. seal (the words: Tb_DrawHubText) */
-    Ps_Panel(TBO_TM_PANEL, g.x0, g.y0, g.x1, g.y1, 0x80);
-    {
-        u32 rule = Ps_Rgba(0x96, 0x73, 0x32, 0x80), hi = Ps_Rgba(0xFF, 0xF4, 0xC8, 0x60);
-        f32 ry = g.y0 + g.head, cx = g.x0 + 20.0f, cy = g.y0 + g.head * 0.5f + 1.0f;
-        f32 r0 = g.x0 + g.w * 0.50f, r1 = g.x1 - g.w * 0.17f, step = 16.0f;
-        f32 x;
-
-        Ps_Rect(g.x0 + 8.0f, ry - 1.0f, g.x1 - 8.0f, ry + 0.6f, rule, rule);
-        Ps_Rect(g.x0 + 8.0f, ry + 0.6f, g.x1 - 8.0f, ry + 1.4f, hi, hi);
-        for (x = r0; x <= r1; x += step) {
-            Ps_Disc(x, cy, 3.2f, Ps_Rgba(0x6E, 0x50, 0x1E, 0x80), Ps_Rgba(0x6E, 0x50, 0x1E, 0x80));
-            Ps_Disc(x - 0.3f, cy - 0.4f, 2.4f, Ps_Rgba(0xF4, 0xDE, 0x92, 0x80), Ps_Rgba(0xC8, 0xA0, 0x4C, 0x80));
-        }
-        Ps_Disc(cx, cy, 11.5f, Ps_Rgba(0xFF, 0xFF, 0xFF, 0x80), Ps_Rgba(0xFF, 0xFF, 0xFF, 0x80));
-        Ps_Disc(cx, cy, 9.6f, Ps_Rgba(0x3C, 0x78, 0xE6, 0x80), Ps_Rgba(0x1E, 0x50, 0xB4, 0x80));
-    }
-    {
-        f32 px = 24.0f * 0.22f * 0.857f, py = 24.0f * 0.22f; /* (the picture's glow round the glass, in its corners' scale) */
-        Ps_Panel(TBO_TM_SCREEN, g.sx0 - px, g.sy0 - py, g.sx1 + px, g.sy1 + py, 0x80);
-    }
-    /* the cursor: an orange line that glides, glowing (brighter while the machine jumps) */
-    y = Tm_RowY(&g, sTb->tmRow);
-    glow = warp > 0.0f ? 0.5f + 0.5f * (f32)((sTb->warp / 3) & 1) : Tb_Beat(70);
-    Ps_Rect(g.sx0 + 4.0f, y - g.rowH * 0.62f, g.sx1 - 4.0f, y + g.rowH * 0.62f, Ps_Rgba(0xFF, 0xA0, 0x40, (s32)(0x18 + 0x20 * glow)),
-            Ps_Rgba(0xFF, 0x70, 0x20, (s32)(0x18 + 0x20 * glow)));
-    Ps_Rect(g.sx0 + 7.0f, y - g.rowH * 0.46f, g.sx1 - 7.0f, y + g.rowH * 0.46f, Ps_Rgba(0xFF, 0x9C, 0x3A, 0x80), Ps_Rgba(0xE4, 0x62, 0x14, 0x80));
-    if (warp > 0.0f) {
-        u32 w = Ps_Rgba(0xFF, 0xFF, 0xE0, (s32)(0x80 * glow));
-        Ps_Rect(g.sx0 + 5.0f, y - g.rowH * 0.5f, g.sx1 - 5.0f, y - g.rowH * 0.5f + 1.0f, w, w);
-        Ps_Rect(g.sx0 + 5.0f, y + g.rowH * 0.5f - 1.0f, g.sx1 - 5.0f, y + g.rowH * 0.5f, w, w);
-    }
-    {
-        f32 tx = g.sx0 + 11.0f, h = g.rowH * 0.28f;
-        u32 c = Ps_Rgba(0x24, 0x0C, 0x00, 0x80);
-        Ps_Quad(tx, y - h, tx + h * 1.2f, y, tx, y + h, tx, y + h, c, c, c, c);
-    }
-    {
-        f32 hw = g.dr * 1.404f; /* (the dial's picture: its glow round the bezel) */
-        Ps_Sprite(TBO_TM_DIAL, g.dx - hw * 0.857f, g.dy - hw, g.dx + hw * 0.857f, g.dy + hw, 0.0f, 0.0f, 1.0f, 1.0f, PS_PLAIN, 0x80);
-    }
-    a = sTb->tmNeedle;
-    if (warp > 0.0f && warp < 0.5f) {
-        a += sinf((f32)sTb->warp * 1.3f) * 6.0f * (1.0f - warp * 2.0f); /* (the needle locks: it shivers, then holds) */
-    }
-    a *= 0.0174533f;
-    {
-        f32 len = g.dr * 0.80f;
-        f32 ex = g.dx + sinf(a) * len * 0.857f, ey = g.dy - cosf(a) * len;
-        Tm_Beam(g.dx, g.dy, ex, ey, 3.2f, Ps_Rgba(0xFF, 0x90, 0x40, 0x30), Ps_Rgba(0xFF, 0x60, 0x20, 0x10));
-        Tm_Beam(g.dx, g.dy, ex, ey, 1.4f, Ps_Rgba(0xFF, 0x70, 0x30, 0x80), Ps_Rgba(0xFF, 0x50, 0x20, 0x80));
-        Ps_Disc(g.dx, g.dy, g.dr * 0.10f, Ps_Rgba(0xFF, 0xE0, 0x70, 0x80), Ps_Rgba(0xC0, 0x80, 0x10, 0x80));
-    }
-}
-
 static void Tb_DrawMostWanted(void){
     Bt4RankedEntry entries[10];
     f32 x=Tb_MostWantedLeft();
@@ -2300,97 +2124,6 @@ static void Tb_DrawMostWanted(void){
         Ps_Align(1);
         Ps_Text(x+77.0f,171.0f,count==-2?"Loading Global Top...":count<0?"Global Top unavailable":"No ranking published yet.",.52f,136.0f,0);
         Ps_Align(0);
-    }
-}
-
-static void Tb_DrawHubText(void) {
-    TmGeom g;
-    s32 i;
-    s32 online = getenv("BT4_RENDER_TEST") ? -1 : Port_OnlinePresence(1);
-    char presence[80];
-    f32 warp = sTb->warp > 0 ? (f32)sTb->warp / (f32)TB_WARP_FRAMES : 0.0f;
-    f32 scale;
-
-    Tm_Place(&g);
-    scale = g.rowH * 0.70f / 17.3f; /* (17.3 units a line at scale 1) */
-    if (scale > 1.05f) {
-        scale = 1.05f;
-    }
-    Ps_Copy(presence, (char *)PortOnline_Text("Fighters online: "), sizeof(presence));
-    if (online < 0) {
-        Ps_Cat(presence, "...", sizeof(presence));
-    } else {
-        char value[16];
-        sprintf(value, "%d", online);
-        Ps_Cat(presence, value, sizeof(presence));
-    }
-    Ps_Text(g.x0 + 6.0f, Ps_TextTop(TM_TOP - 14.0f, 0.80f), presence, 0.80f, 300.0f, 5);
-    {   /* the header: the seal's letters, the machine's name, "HOPE!!" */
-        f32 cy = g.y0 + g.head * 0.5f + 1.0f;
-        u32 ink = Ps_Rgba(0x5A, 0x3A, 0x10, 0x80), ink2 = Ps_Rgba(0x3C, 0x24, 0x08, 0x80), rim = Ps_Rgba(0xF6, 0xE2, 0x96, 0x40);
-
-        Ps_Align(1);
-        PortOnline_Raw(1);
-        Ps_TextEx(g.x0 + 20.0f, Ps_TextTop(cy, 0.46f), "CC", 0.46f, 18.0f, Ps_Rgba(0xFF, 0xFF, 0xFF, 0x80), Ps_Rgba(0xE0, 0xEC, 0xFF, 0x80),
-                  Ps_Rgba(0x10, 0x28, 0x60, 0x80));
-        PortOnline_Raw(0);
-        Ps_Align(0);
-        Ps_TextEx(g.x0 + 38.0f, Ps_TextTop(cy, 0.86f), "TIME MACHINE - DESTINATION", 0.86f, g.w * 0.50f - 44.0f, ink, ink2, rim);
-        Ps_Align(2);
-        PortOnline_Raw(1);
-        Ps_TextEx(g.x1 - 14.0f, Ps_TextTop(cy, 1.0f), "HOPE!!", 1.0f, g.w * 0.15f, Ps_Rgba(0x46, 0x26, 0x08, 0x80), Ps_Rgba(0x2A, 0x14, 0x02, 0x80), rim);
-        PortOnline_Raw(0);
-        Ps_Align(0);
-    }
-    for (i = 0; i < HUB_COUNT; i++) {
-        f32 y = Ps_TextTop(Tm_RowY(&g, (f32)i), scale);
-        f32 sw = g.sx1 - g.sx0;
-        f32 ax = g.sx0 + sw * 0.075f, nx = g.sx0 + sw * 0.33f;
-        f32 nw = sw * 0.63f, aw = sw * 0.24f;
-
-        if (i == sTb->hubCur) {
-            u32 ink = Ps_Rgba(0x2A, 0x0E, 0x00, 0x80), ink2 = Ps_Rgba(0x18, 0x06, 0x00, 0x80), rim = Ps_Rgba(0xFF, 0xC8, 0x80, 0x50);
-            Ps_TextEx(ax, y, (char *)sTmAge[i], scale, aw, ink, ink2, rim);
-            Ps_TextEx(nx, y, sTbHubName[i], scale, nw, ink, ink2, rim);
-        } else {
-            Ps_TextEx(ax, y, (char *)sTmAge[i], scale, aw, Ps_Rgba(0x8C, 0xFF, 0xA0, 0x80), Ps_Rgba(0x50, 0xE0, 0x78, 0x80), Ps_Rgba(0x02, 0x20, 0x0C, 0x80));
-            Ps_TextEx(nx, y, sTbHubName[i], scale, nw, Ps_Rgba(0xE4, 0xFF, 0xE8, 0x80), Ps_Rgba(0xA4, 0xF4, 0xB8, 0x80), Ps_Rgba(0x02, 0x20, 0x0C, 0x80));
-        }
-    }
-    /* the dial's destination */
-    Ps_Align(1);
-    Ps_Text(g.dx, Ps_TextTop(g.dy + g.dr * 0.34f, 0.62f), (char *)sTmAge[sTb->hubCur], 0.62f, g.dr * 1.4f, 3);
-    Ps_Text(g.dx, Ps_TextTop(g.dy + g.dr * 0.60f, 0.66f), sTbHubName[sTb->hubCur], 0.66f, g.dr * 1.5f, 1);
-    Ps_Align(0);
-
-    if (warp > 0.0f) {
-        f32 tx, ty, p = warp * 4.0f;
-        char line[48];
-        Tm_Tunnel(&tx, &ty);
-        /* "DESTINATION LOCKED!" stamped on the dial: it falls from larger and settles */
-        if (p > 1.0f) {
-            p = 1.0f;
-        }
-        {
-            f32 h = g.dr * (1.15f + 0.6f * (1.0f - p));
-            f32 w = h * 622.0f / 220.0f * 0.857f;
-            Ps_Sprite(TBO_TM_STAMP, g.dx - w * 0.5f, g.dy - h * 0.5f, g.dx + w * 0.5f, g.dy + h * 0.5f, 0.0f, 0.0f, 1.0f, 1.0f, PS_PLAIN, (s32)(0x80 * p));
-        }
-        /* the jump's line and its energy, under the tunnel */
-        Ps_Copy(line, "JUMPING TO ", sizeof(line));
-        Ps_Cat(line, (char *)sTmAge[sTb->hubCur], sizeof(line));
-        Ps_Align(1);
-        Ps_TextEx(tx, Ps_TextTop(ty + 6.0f, 1.0f), line, 1.0f, 420.0f, Ps_Rgba(0xFF, 0xFF, 0xFF, 0x80), Ps_Rgba(0x96, 0xE6, 0xFF, 0x80),
-                  Ps_Rgba(0x14, 0x00, 0x46, 0x80));
-        Ps_Align(0);
-        Ps_Rect(tx - 120.0f, ty + 22.0f, tx + 120.0f, ty + 28.0f, Ps_Rgba(0x14, 0x10, 0x32, 0x70), Ps_Rgba(0x14, 0x10, 0x32, 0x70));
-        Ps_Quad(tx - 119.0f, ty + 23.0f, tx - 119.0f + 238.0f * warp, ty + 23.0f, tx - 119.0f, ty + 27.0f, tx - 119.0f + 238.0f * warp, ty + 27.0f,
-                Ps_Rgba(0x78, 0xE6, 0xFF, 0x80), Ps_Rgba(0xFF, 0x70, 0xFF, 0x80), Ps_Rgba(0x78, 0xE6, 0xFF, 0x80), Ps_Rgba(0xFF, 0x70, 0xFF, 0x80));
-        /* the white flash at its end */
-        if (warp > 0.72f) {
-            u32 c = Ps_Rgba(0xFF, 0xFF, 0xFF, (s32)(0x80 * (warp - 0.72f) / 0.28f));
-            Ps_Rect(Ps_Left(), 0.0f, 512.0f - Ps_Left(), 448.0f, c, c);
-        }
     }
 }
 
@@ -5042,7 +4775,7 @@ static void Tb_DrawHelpCaption(void){
     }
 }
 
-/* What a page draws comes in from the left as it opens, as the hub's bars do (the hub moves its own: Tb_DrawHub);
+/* What a page draws comes in from the left as it opens, as the hub's bars do (the hub moves its own: Td_Hub);
    the title, the player card and the box stay where they are. The name's keypad comes in over the profile, which
    stays (on: 2 for the keypad). */
 static void Tb_PageIn(s32 on) {
@@ -5106,7 +4839,7 @@ static void Tb_Draw(void) {
     Tb_PageIn(1);
     switch (sTb->mode) {
     case TB_HUB:
-        Tb_DrawHub();
+        /* (the main screen is the redesign's: Td_Hub, tbo_look.inc) */
         break;
     case TB_RANKED:
         Tb_DrawRanked();
@@ -5189,7 +4922,7 @@ static void Tb_DrawText(void) {
     }
     switch (sTb->mode) {
     case TB_HUB:
-        Tb_DrawHubText();
+        /* (drawn whole by Td_Hub) */
         break;
     case TB_RANKED:
         Tb_DrawRankedText();

@@ -355,12 +355,6 @@ static void Td_BigButton(f32 x0, f32 y0, f32 x1, f32 y1, char *label, f32 size, 
              Td_Ink(Td_Rgba(255, 255, 240, alpha * 2 - 1), Td_Rgba(255, 220, 150, alpha * 2 - 1), Td_Rgba(100, 10, 0, alpha * 2 - 1)), 1, x1 - x0 - 40.0f, 0);
 }
 
-/* Future Gohan (the film), standing with his knees on `feet`, `height` pixels from his hair down */
-static void Td_Gohan(f32 cx, f32 feet, f32 height) {
-    f32 s = height / 800.0f;
-    Td_Pic(TBO_GOHAN, cx - 256.0f * s, feet - 832.0f * s, cx + 256.0f * s, feet, 0.0f, 0.0f, 1.0f, 1.0f, 0x80);
-}
-
 /* the time tunnel with its dark edges; `dim` darker still (a window over the page) */
 static void Td_Back(s32 dim) {
     Td_Pic(TBO_HUB_PAGE, 0.0f, 0.0f, TD_W, TD_H, 0.0f, 0.0f, 1.0f, 1.0f, 0x80); /* (the template: the meadow, dimmed) */
@@ -579,10 +573,9 @@ static void Td_Plate(f32 x0, f32 y0, f32 x1, f32 y1, char *tag, char *name, char
 }
 
 /* ------------------------------------------------------------------------------------------------ the hub */
-static const char *sTdAge[HUB_COUNT] = {"AGE 767", "AGE 774", "AGE 784", "AGE 785", "AGE 788", "AGE 790", "AGE 794"};
 
 /* ---------------------------------------------------------------------------- the main screen, its new look
-   The approved preview (previas-bt4/online-bt4/01-principal: the Tag Team's new screen look): the time machine on the
+   The approved preview (previas-bt4/online-bt4/01-principal: the Tag Team's new screen look): the
    meadow (hub_bg), Trunks large beside the menu from his thighs up (his film, trunks.mpg), the BT4 ONLINE seal, the
    seven modes as navy glass rows with their badges and the chosen one on a gold plate that glides, under it the
    chosen mode's facts as chips, and the buttons' prompts along the foot. The pictures are port/tools/tbo_hub_art.py's
@@ -687,113 +680,6 @@ static void Td_Hub(s32 live) {
         }
     }
     Td_HubFoot();
-    if (warp > 0.72f) {
-        u32 c = Ps_Rgba(0xFF, 0xFF, 0xFF, (s32)(0x80 * (warp - 0.72f) / 0.28f));
-        Ps_Rect(Ps_Left(), 0.0f, 512.0f - Ps_Left(), 448.0f, c, c);
-    }
-}
-
-/* the main screen as it was until 1.0.2 (the time machine's dashboard, Future Gohan): not drawn any more */
-static void Td_HubTimeMachine(s32 live) {
-    f32 in = Tb_In(0);
-    f32 slide = (1.0f - in) * 700.0f, gs = (1.0f - in) * -260.0f;
-    f32 warp = sTb->warp > 0 ? (f32)sTb->warp / (f32)TB_WARP_FRAMES : 0.0f;
-    f32 lx0 = 630.0f, lx1 = 1800.0f, ly0 = 342.0f, ly1 = 860.0f, rh = (ly1 - ly0 - 30.0f) / 7.0f;
-    f32 dx = 2230.0f, dy = 766.0f, dr = 150.0f;
-    f32 target = (f32)sTb->hubCur, a, glow;
-    s32 online = getenv("BT4_RENDER_TEST") ? -1 : Port_OnlinePresence(1), i;
-    static char line[64];
-
-    if (!sTb->tmInit) {
-        sTb->tmInit = 1;
-        sTb->tmRow = target;
-        sTb->tmNeedle = target;
-    }
-    sTb->tmRow += (target - sTb->tmRow) * 0.35f;
-    sTb->tmNeedle += (target - sTb->tmNeedle) * 0.18f;
-    Td_Back(0);
-    /* the jump: the tunnel's light streams out, more and longer as it goes on (under the machine) */
-    if (warp > 0.0f) {
-        f32 tx, ty;
-        Tm_Tunnel(&tx, &ty);
-        for (i = 0; i < 40; i++) {
-            f32 an = (f32)i * 0.15708f + (f32)((i * 7) % 5) * 0.05f;
-            f32 r0 = 14.0f + 170.0f * warp + (f32)((i * 13) % 7) * 6.0f;
-            f32 r1 = r0 + 20.0f + 300.0f * warp * warp;
-            s32 al = (s32)(0x60 * warp);
-            Tm_Beam(tx + cosf(an) * r0 * 0.857f, ty + sinf(an) * r0 * 0.75f, tx + cosf(an) * r1 * 0.857f, ty + sinf(an) * r1 * 0.75f, 0.7f,
-                    Ps_Rgba(0xD0, 0xF0, 0xFF, al), Ps_Rgba(0xFF, 0xFF, 0xFF, 0));
-        }
-        Ps_Disc(tx, ty, 26.0f + 60.0f * warp, Ps_Rgba(0xFF, 0xFF, 0xFF, (s32)(0x70 * warp)), Ps_Rgba(0x90, 0xD0, 0xFF, 0));
-    }
-    Td_Gohan(300.0f + gs, 990.0f + 4.0f * Tb_Beat(150), 700.0f);
-    Td_TopBar("Online", "TENKAICHI BUDOKAI");
-    /* the machine */
-    Td_Pic(TBO_TD_MACHINE, 520.0f + slide, 176.0f, 2712.0f + slide, 990.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0x80);
-    /* fighters online */
-    {
-        f32 p[16];
-        Td_Chamfer(p, 1290.0f + slide, 160.0f, 1840.0f + slide, 214.0f, 12.0f);
-        Td_Poly(p, 8, Td_Rgba(20, 60, 30, 240), Td_Rgba(6, 24, 12, 245));
-        Td_Outline(p, 8, 2.0f, Td_Rgba(120, 255, 150, 200));
-        Td_Disc(1323.0f + slide, 187.0f, 11.0f, TD_RGB(80, 255, 110), TD_RGB(80, 255, 110));
-        Ps_Copy(line, (char *)PortOnline_Text("Fighters online: "), sizeof(line));
-        if (online < 0) {
-            Ps_Cat(line, "...", sizeof(line));
-        } else {
-            static char n[16];
-            sprintf(n, "%d", online);
-            Ps_Cat(line, n, sizeof(line));
-        }
-        Td_Words(1350.0f + slide, 188.0f, line, TD_B, 44.0f, Td_Ink(TD_RGB(220, 255, 200), TD_RGB(100, 232, 80), TD_RGB(8, 60, 16)), 0, 470.0f, 1);
-    }
-    {   /* its words (in the chosen language) */
-        TdInk plate = Td_Ink(TD_RGB(96, 56, 12), TD_RGB(56, 30, 4), TD_RGB(255, 240, 190));
-        Td_Words(732.0f + slide, 260.0f, "TIME MACHINE", TD_B, 84.0f, plate, 0, 560.0f, 0);
-        Td_Words(1320.0f + slide, 262.0f, "CAPSULE CORP. \xE2\x80\xA2 DESTINATION SELECT", TD_C, 30.0f, TD_TEXT(110, 70, 20), 0, 900.0f, 0);
-        Td_Words(2610.0f + slide, 260.0f, "HOPE!!", TD_B, 90.0f, Td_Ink(TD_RGB(220, 40, 30), TD_RGB(150, 10, 10), TD_RGB(255, 240, 190)), 2, 380.0f, 0);
-        Td_Words(1880.0f + slide, 384.0f, "DESTINATION", TD_C, 30.0f, Td_Ink(Td_Rgba(120, 255, 160, 200), Td_Rgba(120, 255, 160, 200), TD_NONE), 0, 650.0f, 0);
-        Td_Words(1870.0f + slide, 530.0f, "TIME ENERGY", TD_C, 28.0f, TD_TEXT(110, 70, 20), 0, 560.0f, 0);
-    }
-    glow = warp > 0.0f ? 0.5f + 0.5f * (f32)((sTb->warp / 3) & 1) : 0.5f + 0.5f * sinf((f32)sTb->frames * 0.1f);
-    {   /* the destination under the cursor: an orange bar that glides, its glow pulsing */
-        f32 y = ly0 + 15.0f + sTb->tmRow * rh, a0 = y + 6.0f, b0 = y + rh - 6.0f;
-        f32 g = 18.0f * (b0 - a0) / 126.0f;
-        u32 c = Td_Rgba(255, 200, 90, (s32)(60.0f * glow));
-        Td_Rect(lx0 + 20.0f + slide, a0 - 8.0f, lx1 - 20.0f + slide, b0 + 8.0f, c, c);
-        Td_Three(TBO_TD_OPT_ON, lx0 + 34.0f - 12.0f - g + slide, a0 - g, lx1 - 34.0f + 12.0f + g + slide, b0 + g, 18.0f + 42.0f, 18.0f + 42.0f, 0x80);
-        Td_Tri(lx0 + 50.0f + slide, (a0 + b0) * 0.5f - 18.0f, lx0 + 76.0f + slide, (a0 + b0) * 0.5f, lx0 + 50.0f + slide, (a0 + b0) * 0.5f + 18.0f,
-               TD_RGB(60, 20, 0));
-    }
-    for (i = 0; i < HUB_COUNT; i++) {
-        f32 y = ly0 + 15.0f + (f32)i * rh, cy = y + rh * 0.5f + 2.0f;
-        s32 on = i == sTb->hubCur && fabsf(sTb->tmRow - (f32)i) < 0.5f;
-        Td_Words(lx0 + 90.0f + slide, cy, (char *)sTdAge[i], TD_B, 54.0f, on ? TD_DARK_FLAT : TD_AGE, 0, 290.0f, 0);
-        Td_Words(lx0 + 400.0f + slide, cy, sTbHubName[i], TD_B, on ? 62.0f : 58.0f, on ? TD_DARK : TD_GREEN, 0, 720.0f, 0);
-    }
-    /* the visor, the needle, the energy */
-    Td_Words(1880.0f + slide, 446.0f, (char *)sTdAge[sTb->hubCur], TD_B, 76.0f, TD_CYAN, 0, 330.0f, 0);
-    Td_Words(2580.0f + slide, 446.0f, sTbHubName[sTb->hubCur], TD_B, 70.0f, TD_ORANGE, 2, 380.0f, 0);
-    {
-        f32 e = warp > 0.0f ? 1.0f - warp : 1.0f, ex0 = 1874.0f + slide, ex1 = 2586.0f + slide;
-        Td_Words(2590.0f + slide, 530.0f, e >= 0.995f ? "100%" : e > 0.5f ? "75%" : e > 0.25f ? "40%" : "10%", TD_C, 28.0f, TD_TEXT(110, 70, 20), 2, 0.0f, 1);
-        Ps_Quad(Td_X(ex0), Td_Y(554.0f), Td_X(ex0 + (ex1 - ex0) * e), Td_Y(554.0f), Td_X(ex0), Td_Y(578.0f), Td_X(ex0 + (ex1 - ex0) * e), Td_Y(578.0f),
-                TD_RGB(130, 240, 255), TD_RGB(220, 110, 255), TD_RGB(130, 240, 255), TD_RGB(220, 110, 255));
-    }
-    a = -140.0f + 280.0f * sTb->tmNeedle / (f32)(HUB_COUNT - 1);
-    if (warp > 0.0f && warp < 0.5f) {
-        a += sinf((f32)sTb->warp * 1.3f) * 6.0f * (1.0f - warp * 2.0f);
-    }
-    a *= 0.0174533f;
-    Td_Line(dx + slide, dy, dx + slide + sinf(a) * dr * 0.78f, dy - cosf(a) * dr * 0.78f, 10.0f, TD_RGB(255, 90, 30));
-    Td_Disc(dx + slide, dy, 22.0f, TD_RGB(120, 70, 10), TD_RGB(120, 70, 10));
-    Td_Disc(dx + slide, dy, 19.0f, TD_RGB(255, 220, 110), TD_RGB(255, 220, 110));
-    if (warp > 0.0f) {
-        f32 p = warp * 4.0f > 1.0f ? 1.0f : warp * 4.0f;
-        f32 sh = dr * (1.6f + 0.8f * (1.0f - p)), sw = sh * Ps_PicW(TBO_TM_STAMP) / Ps_PicH(TBO_TM_STAMP);
-        Td_Pic(TBO_TM_STAMP, dx - sw * 0.5f, dy - sh * 0.5f, dx + sw * 0.5f, dy + sh * 0.5f, 0.0f, 0.0f, 1.0f, 1.0f, (s32)(0x80 * p));
-    }
-    Td_BottomBox(Td_Caption(), 0, live); /* (no Discord button since 1.0.2: the prompts in the middle of the box) */
     if (warp > 0.72f) {
         u32 c = Ps_Rgba(0xFF, 0xFF, 0xFF, (s32)(0x80 * (warp - 0.72f) / 0.28f));
         Ps_Rect(Ps_Left(), 0.0f, 512.0f - Ps_Left(), 448.0f, c, c);
@@ -967,7 +853,6 @@ static void Td_Guide(char *text, f32 x, f32 y, f32 room, f32 size, f32 step, s32
 }
 
 /* ------------------------------------------------------------------------------------------------ the pages */
-#define TD_GX 2330.0f /* Gohan on the pages: on the right, his knees on the box */
 
 static void Td_Page(char *title, s32 gohan, s32 dim) {
     s32 body = sTdBody;
@@ -2115,7 +2000,6 @@ static void Td_Block(void) {
     static char parts[96];
 
     Td_Back(140);
-    Td_Gohan(2200.0f, 1000.0f + 4.0f * Tb_Beat(150), 700.0f);
     Td_Window(360.0f, 250.0f, 1940.0f, 900.0f, tag ? "Unable to Connect" : "Cannot Go Online");
     Td_Tri(520.0f, 340.0f, 620.0f, 520.0f, 420.0f, 520.0f, TD_RGB(110, 40, 0));
     Td_Tri(520.0f, 352.0f, 610.0f, 514.0f, 430.0f, 514.0f, TD_RGB(255, 190, 40));
@@ -2155,9 +2039,6 @@ static void Td_Lobby(void) {
 
     Td_Page(v->mode ? "Tournament" : sTbTitle[TB_LOBBY], 0, 0);
     if (v->state != 2) {
-        if (v->state == 3) {
-            Td_Gohan(TD_GX, 1000.0f + 4.0f * Tb_Beat(150), 700.0f);
-        }
         return;
     }
     for (i = v->entrants; i < LB_ROWS; i++) watch += v->taken[i];

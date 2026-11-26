@@ -32,11 +32,6 @@
     X(TBO_KIT_SEL_COMPACT, "kit_sel_compact") \
     X(TBO_RADAR, "radar") \
     X(TBO_DISCORD, "discord") \
-    X(TBO_GOHAN, "gohan")                   /* Future Gohan, the host (a film with its transparency: gohan.mpg) */ \
-    X(TBO_TM_PANEL, "tm_panel")             /* the hub's Time Machine: its gold body, */ \
-    X(TBO_TM_SCREEN, "tm_screen")           /* the green screen of the modes, */ \
-    X(TBO_TM_DIAL, "tm_dial")               /* the destination dial (its needle is drawn), */ \
-    X(TBO_TM_STAMP, "tm_stamp")             /* "DESTINATION LOCKED!" (port/tools/tbo_time_machine.py), */ \
     X(TBO_TM_NAME, "tm_name")               /* the player's name plate at the top, */ \
     X(TBO_TM_KEY, "tm_key")                 /* a key of the keypads, */ \
     X(TBO_TM_KEY_ON, "tm_key_on")           /* the key under the cursor, */ \
@@ -55,7 +50,6 @@
     X(TBO_TD_PLATE, "td_plate")  \
     X(TBO_TD_BAND, "td_band")  \
     X(TBO_TD_CAPS, "td_caps")  \
-    X(TBO_TD_MACHINE, "td_machine")  \
     X(TBO_TD_VIGNETTE, "td_vignette")  \
     X(TBO_STORM_BOLT, "storm_bolt") /* four lightning bolts side by side, 256 x 1024 each (our own drawing): the full power storm (stg_c.c) */ \
     X(TBO_FLAGS, "flags")           /* the countries' flags, Profile and Global Top (port/tools/tbo_flags.py, include/menu/tbo_flags.h) */ \

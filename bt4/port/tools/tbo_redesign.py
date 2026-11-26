@@ -15,7 +15,6 @@ Pieces that stretch (src/menu/port_tbo.c, Td_Slice9 / Td_Slice3) keep their corn
 Whole pictures:
   td_band     the title's band at the top left
   td_caps     the seven Capsule Corp. capsules (1 to 7, one colour each), in a row
-  td_machine  the hub's Time Machine without what moves or changes (the destinations, the needle, the energy)
   td_vignette the dark edge laid over the time tunnel
 Words are not in the pictures (they are the screens', in the chosen language), but for the machine's own name plate.
 Fonts: Bangers (titles, menus, buttons) and Chakra Petch Bold (texts), port/third_party/fonts. Then tbo_sizes.py.
@@ -290,70 +289,6 @@ def caps():
     print("  capsule cell", cw, ch, "capsule", r * 2.7, r * 1.25)
 
 
-def machine():
-    """the static Time Machine (the screen's x 520.. / y 180..); the dial without its needle"""
-    ox, oy = 520, 176
-    x0, y0, x1, y1 = 560 - ox, 196 - oy, 2690 - ox, 952 - oy
-    p = Pic(2712 - ox, 990 - oy)
-    for cx in (x0 + 10, x1 - 10):
-        glow = Image.new("RGBA", p.im.size)
-        ImageDraw.Draw(glow).rounded_rectangle(P(cx - 34, y0 + 90, cx + 34, y1 - 70), radius=34 * K, fill=(80, 220, 255, 120))
-        p.im.alpha_composite(glow.filter(ImageFilter.GaussianBlur(7 * K)))
-        grad_poly(p, chamfer(cx - 30, y0 + 80, cx + 30, y1 - 60, 14), (230, 200, 120, 255), (140, 100, 30, 255))
-        grad_poly(p, chamfer(cx - 18, y0 + 110, cx + 18, y1 - 90, 10), (160, 240, 255, 255), (40, 140, 230, 255))
-        lines(p, [[(cx - 18, yy), (cx + 18, yy)] for yy in range(int(y0 + 130), int(y1 - 100), 38)], (255, 255, 255, 150), 3)
-    glow_poly(p, chamfer(x0 + 40, y0 + 20, x1 - 10, y1 + 24, 40), (0, 0, 0, 160), 8)
-    grad_poly(p, chamfer(x0 + 30, y0, x1 - 30, y1, 40), (250, 232, 160, 255), (176, 132, 52, 255))
-    outline(p, chamfer(x0 + 30, y0, x1 - 30, y1, 40), (90, 60, 16, 255), 4)
-    hl = Image.new("RGBA", p.im.size)
-    ImageDraw.Draw(hl).polygon([tuple(P(*q)) for q in chamfer(x0 + 40, y0 + 8, x1 - 40, y0 + 120, 34)], fill=(255, 255, 255, 50))
-    p.im.alpha_composite(hl)
-    layer = Image.new("RGBA", p.im.size)
-    d = ImageDraw.Draw(layer)
-    d.ellipse(P(x0 + 70, y0 + 22, x0 + 150, y0 + 102), fill=(255, 255, 255, 255))
-    d.ellipse(P(x0 + 77, y0 + 29, x0 + 143, y0 + 95), fill=(40, 100, 220, 255))
-    p.im.alpha_composite(layer)
-    gtext(p, (x0 + 110, y0 + 63), "CC", F("b", 46), (255, 255, 255), (220, 230, 255), anchor="mm")
-    lines(p, [[(x0 + 60, y0 + 124), (x1 - 60, y0 + 124)]], (120, 84, 28, 255), 4)
-    layer = Image.new("RGBA", p.im.size)
-    d = ImageDraw.Draw(layer)
-    for x in range(int(x0 + 80), int(x1 - 60), 64):
-        d.ellipse(P(x - 7, y1 - 22, x + 7, y1 - 8), fill=(240, 220, 140, 255), outline=(110, 80, 30, 255), width=2 * K)
-    p.im.alpha_composite(layer)
-    lx0, lx1, ly0, ly1 = x0 + 70, x0 + 1240, y0 + 146, y1 - 92
-    sx0, sx1, sy0, sy1 = lx0, lx1, y1 - 74, y1 - 34
-    m = Image.new("L", p.im.size)
-    ImageDraw.Draw(m).rectangle(P(sx0, sy0, sx1, sy1), fill=255)
-    st = Image.new("RGBA", p.im.size)
-    sd = ImageDraw.Draw(st)
-    sd.rectangle(P(sx0, sy0, sx1, sy1), fill=(30, 26, 20, 255))
-    for x in range(int(sx0) - 60, int(sx1), 60):
-        sd.polygon([tuple(P(x, sy1)), tuple(P(x + 30, sy1)), tuple(P(x + 70, sy0)), tuple(P(x + 40, sy0))], fill=(250, 200, 30, 255))
-    p.im.alpha_composite(Image.composite(st, Image.new("RGBA", p.im.size), m))
-    glow_poly(p, chamfer(lx0, ly0, lx1, ly1, 22), (60, 255, 120, 90), 7)
-    grad_poly(p, chamfer(lx0, ly0, lx1, ly1, 22), (70, 50, 20, 255), (70, 50, 20, 255))
-    grad_poly(p, chamfer(lx0 + 8, ly0 + 8, lx1 - 8, ly1 - 8, 18), (10, 30, 18, 255), (4, 14, 8, 255))
-    lines(p, [[(lx0 + 16, yy), (lx1 - 16, yy)] for yy in range(int(ly0 + 14), int(ly1 - 14), 6)], (120, 255, 160, 14), 1)
-    vx0, vx1, vy0, vy1 = x0 + 1290, x1 - 80, y0 + 146, y0 + 300
-    grad_poly(p, chamfer(vx0, vy0, vx1, vy1, 18), (70, 50, 20, 255), (70, 50, 20, 255))
-    grad_poly(p, chamfer(vx0 + 8, vy0 + 8, vx1 - 8, vy1 - 8, 14), (10, 40, 22, 255), (4, 18, 10, 255))
-    ex0, ex1, ey = vx0 + 20, vx1 - 20, vy1 + 64
-    grad_poly(p, chamfer(ex0, ey - 10, ex1, ey + 22, 8), (40, 30, 70, 255), (20, 16, 40, 255))
-    dx, dy, dr = (vx0 + vx1) / 2, vy1 + 270, 150
-    gl = Image.new("RGBA", p.im.size)
-    ImageDraw.Draw(gl).ellipse(P(dx - dr - 40, dy - dr - 40, dx + dr + 40, dy + dr + 40), fill=(80, 220, 255, 90))
-    p.im.alpha_composite(gl.filter(ImageFilter.GaussianBlur(9 * K)))
-    dial = Image.open(OUT / "tm_dial.png").convert("RGBA")
-    ds = int(dr * 2 * 1.30 * K)
-    p.im.alpha_composite(dial.resize((ds, ds), Image.LANCZOS), (int(dx * K - ds / 2), int(dy * K - ds / 2)))
-    layer = Image.new("RGBA", p.im.size)
-    ImageDraw.Draw(layer).arc(P(dx - dr * 0.66, dy - dr * 0.66, dx + dr * 0.66, dy + dr * 0.66), 130, 410, fill=(80, 220, 255, 200), width=6 * K)
-    p.im.alpha_composite(layer)
-    p.save("td_machine")
-    print("  machine at", ox, oy, "list", lx0 + ox, ly0 + oy, lx1 + ox, ly1 + oy, "visor", vx0 + ox, vy0 + oy, vx1 + ox, vy1 + oy,
-          "dial", dx + ox, dy + oy, dr, "energy", ex0 + ox, ex1 + ox, ey + oy)
-
-
 def vignette():
     w, h = 160, 72
     v = Image.new("L", (w, h), 0)
@@ -378,5 +313,4 @@ if __name__ == "__main__":
     plate()
     band()
     caps()
-    machine()
     vignette()

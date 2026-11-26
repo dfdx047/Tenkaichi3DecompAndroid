@@ -30,11 +30,6 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {160, 107, 0}, /* kit_sel_compact */
     {2420, 2728, 0}, /* radar */
     {512, 512, 0}, /* discord */
-    {512, 832, 0}, /* gohan */
-    {600, 260, 70}, /* tm_panel */
-    {928, 316, 76}, /* tm_screen */
-    {441, 441, 0}, /* tm_dial */
-    {621, 219, 0}, /* tm_stamp */
     {600, 140, 58}, /* tm_name */
     {120, 120, 40}, /* tm_key */
     {120, 120, 44}, /* tm_key_on */
@@ -53,7 +48,6 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {595, 128, 0}, /* td_plate */
     {890, 214, 0}, /* td_band */
     {952, 78, 0}, /* td_caps */
-    {2192, 814, 0}, /* td_machine */
     {160, 72, 0}, /* td_vignette */
     {1024, 1024, 0}, /* storm_bolt */
     {1024, 1024, 0}, /* flags */

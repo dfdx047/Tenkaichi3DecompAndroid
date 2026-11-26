@@ -871,8 +871,7 @@ typedef struct {
 #define TBO_FILM_TRIES 100
 static TboFilm sTboFilm = {"bg", 0};
 static TboFilm sRaditzFilm = {"raditz", 1};
-static TboFilm sGohanFilm = {"gohan", 1}; /* BT4's host, Future Gohan: colours above, how solid below */
-static TboFilm sTrunksFilm = {"trunks", 1}; /* the Online main screen's new look: Trunks, as Gohan's film */
+static TboFilm sTrunksFilm = {"trunks", 1}; /* the Online main screen's new look: Trunks */
 
 static uint8_t *tbo_film_read(const char *name, size_t *len) {
     const char *base = SDL_GetBasePath();
@@ -1214,14 +1213,8 @@ static GsTex tbo_texture(uint32_t id) {
             return film;
         }
     }
-    if (id == TBO_TRUNKS) { /* (the same: trunks.png without its film) */
+    if (id == TBO_TRUNKS) { /* (no film, or one that cannot be read: trunks.png, its first picture) */
         GsTex film = tbo_film_texture(&sTrunksFilm);
-        if (film != 0) {
-            return film;
-        }
-    }
-    if (id == TBO_GOHAN) { /* (no film, or one that cannot be read: gohan.png, its first picture) */
-        GsTex film = tbo_film_texture(&sGohanFilm);
         if (film != 0) {
             return film;
         }
