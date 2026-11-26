@@ -358,11 +358,15 @@ private fun CoverArtwork(assetName: String) {
 @Composable
 private fun LogoArtwork(assetName: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val bitmap = remember(assetName) {
-        runCatching {
-            context.assets.open("covers/$assetName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
-        }.getOrNull()
+    // Decode logos off the UI thread as well; landscape pages load these during swipes.
+    val bitmapState = produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, assetName) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                context.assets.open("covers/$assetName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+            }.getOrNull()
+        }
     }
+    val bitmap = bitmapState.value
     if (bitmap != null) {
         Image(
             bitmap = bitmap,
