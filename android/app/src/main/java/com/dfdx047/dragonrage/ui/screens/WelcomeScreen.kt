@@ -243,6 +243,13 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                             fontWeight = FontWeight.Black,
                             letterSpacing = MaterialTheme.typography.labelLarge.letterSpacing,
                         )
+                        // Reuse each game's logo near the upper-left, directly below the app identity.
+                        LogoArtwork(
+                            assetName = slide.logo,
+                            modifier = Modifier
+                                .fillMaxWidth(0.62f)
+                                .height(64.dp),
+                        )
                         Text(
                             "SELECT YOUR FIGHT",
                             color = slide.accent,
