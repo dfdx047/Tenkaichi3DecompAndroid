@@ -330,6 +330,38 @@ private fun RowDots(active: Int, accent: Color) {
 }
 
  
+/**
+ * Decode large artwork at a bounded resolution. Decoding the original asset directly can
+ * allocate hundreds of MiB on devices with limited graphics memory, even when Compose
+ * displays the image only inside a phone-sized viewport.
+ */
+private fun decodeAssetBitmap(
+    context: android.content.Context,
+    assetName: String,
+    maxDimension: Int,
+): androidx.compose.ui.graphics.ImageBitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    context.assets.open("covers/$assetName").use { BitmapFactory.decodeStream(it, null, bounds) }
+
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+    var sampleSize = 1
+    while (
+        bounds.outWidth / sampleSize > maxDimension ||
+        bounds.outHeight / sampleSize > maxDimension
+    ) {
+        sampleSize *= 2
+    }
+
+    val options = BitmapFactory.Options().apply {
+        inSampleSize = sampleSize
+        inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+    }
+    return context.assets.open("covers/$assetName").use {
+        BitmapFactory.decodeStream(it, null, options)?.asImageBitmap()
+    }
+}
+
 @Composable
 private fun CoverArtwork(assetName: String) {
     val context = LocalContext.current
@@ -337,7 +369,7 @@ private fun CoverArtwork(assetName: String) {
     val bitmapState = produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, assetName) {
         value = withContext(Dispatchers.IO) {
             runCatching {
-                context.assets.open("covers/$assetName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+                decodeAssetBitmap(context, assetName, maxDimension = 1920)
             }.getOrNull()
         }
     }
@@ -360,7 +392,7 @@ private fun LogoArtwork(assetName: String, modifier: Modifier = Modifier) {
     val bitmapState = produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, assetName) {
         value = withContext(Dispatchers.IO) {
             runCatching {
-                context.assets.open("covers/$assetName").use { BitmapFactory.decodeStream(it)?.asImageBitmap() }
+                decodeAssetBitmap(context, assetName, maxDimension = 1024)
             }.getOrNull()
         }
     }
