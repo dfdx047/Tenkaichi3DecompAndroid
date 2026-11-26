@@ -110,12 +110,13 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
             BoxWithConstraints(Modifier.fillMaxSize()) {
                 val isLandscape = maxWidth > maxHeight
                 CoverArtwork(if (isLandscape) slide.landscapeCover ?: slide.portraitCover else slide.portraitCover)
+                // Shading stays behind all foreground content so text and logos remain fully clear.
                 Box(
                     Modifier
                         .fillMaxSize()
                         .background(
                             if (isLandscape) {
-                                // BT2 and BT3 use a stronger fade; BT4 keeps the same direction with lighter shading.
+                                // Keep the lateral fade; foreground text and logo are rendered above this layer.
                                 val isClassicEntry = slide.game == Game.BT2 || slide.game == Game.BT3
                                 Brush.horizontalGradient(
                                     0f to Color.Black.copy(alpha = if (isClassicEntry) 0.82f else 0.56f),
@@ -124,12 +125,12 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                                     1f to Color.Transparent,
                                 )
                             } else {
-                                // Preserve the existing portrait shading.
+                                // Portrait: subtle shading at the top and a stronger, balanced fade at the bottom.
                                 Brush.verticalGradient(
-                                    0f to Color.Black.copy(alpha = 0.12f),
-                                    0.42f to Color.Transparent,
-                                    0.68f to Color.Black.copy(alpha = 0.28f),
-                                    1f to Color.Black.copy(alpha = 0.88f),
+                                    0f to Color.Black.copy(alpha = 0.06f),
+                                    0.30f to Color.Transparent,
+                                    0.66f to Color.Black.copy(alpha = 0.24f),
+                                    1f to Color.Black.copy(alpha = 0.72f),
                                 )
                             },
                         ),
