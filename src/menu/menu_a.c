@@ -67,7 +67,6 @@ static s32 tmRadarRow;  /* the ball last chosen on the radar (the page comes bac
 static s32 tmLockAt;    /* the frame (sTkFrames) the lock began; 0: none */
 static s32 tmLockRow;   /* the ball being locked */
 static s32 tmLockHost;  /* whether it was an online room's host menu when the lock began */
-static s32 tmSelectAt;  /* the frame of a first Select on the mod's pages (a second within two seconds leaves them) */
 static void TagMenu_Goto(s32 row);
 /* The mod's pages have a song of their own (2026-11-21, the user's choice): CAUTION!, entry 0x0B of the music list; the game's
    own menu music comes back with the game's menu. (BT3's list: BT4's is another, it keeps the menu's.) */
@@ -272,7 +271,6 @@ static void TagMenu_SetPage(s32 page) {
     Voice_Stop(0); gMainMenu->voiceLine=-1;
     gMainMenu->flags=(gMainMenu->flags&~MAINMENU_STARTED)|MAINMENU_GREETED;
     tmLockAt=0; /* (a lock belongs to the radar's page as it was) */
-    tmSelectAt=0;
     if(page==1) { if(tmRadarRow<0 || tmRadarRow>=TR_BALLS || tmRadarRow>=count) tmRadarRow=0; TagMenu_Goto(tmRadarRow); }
 }
 static void TagMenu_Prepare(void) {
@@ -377,15 +375,6 @@ static f32 TagMenu_Ease(f32 t) {
     if(t>1.0f) t=1.0f;
     t=1.0f-t;
     return 1.0f-t*t*t;
-}
-/* After a first Select on the mod's pages: what a second one does, for two seconds (MainMenu_Input). */
-static void TagMenu_SelectAgain(void) {
-    f32 w;
-    if(!tmSelectAt || sTkFrames-tmSelectAt>120) return;
-    Ps_SetShift(0);
-    w=Ps_TextWidth((char *)Port_TagText("PRESS SELECT AGAIN FOR THE NORMAL MODES"),0.8f)+40.0f;
-    Tk_Pill(256.0f-w*0.5f,362.0f,256.0f+w*0.5f,388.0f,Ps_Rgba(255,230,200,128),Ps_Rgba(200,40,30,124),Ps_Rgba(140,14,10,124),
-            "PRESS SELECT AGAIN FOR THE NORMAL MODES",0.8f,0);
 }
 /* ---- The mod's pages, the new design (2026-11-21, approved on previews/redesign-v3): the arena behind with Goku (Tk_Backdrop),
    the gold TAG TEAM lettering with a dark ribbon (the page) and the seven dragon balls (the lit one is the row's) at the top
@@ -566,33 +555,13 @@ static void TagMenu_DrawPage(void) {
             cx=TagMenu_Chip(cx,by1-Tk_PY(72),sides[0]);
             TagMenu_Chip(cx,by1-Tk_PY(72),sides[1]);
         }
-        if(!TagNet_HostMenu()) Tk_Region(bx0,by0,bx1,by1,TK_PAD,PADG_SELECT); /* (a tap on the bar: SELECT, as the old talk box) */
     }
     if(!TagNet_HostMenu()) { /* the buttons, at the foot between the bar and the touch pad's buttons */
         f32 x=Tk_PX(1210);
         x=TagMenu_FootButton(x,0,option?"Change":"Enter",PADG_CROSS);
         x=TagMenu_FootButton(x,2,"Back",PADG_TRIANGLE);
-        { /* SELECT: the way back to the game's modes */
-            char *w=(char *)Port_TagText("NORMAL MODES");
-            f32 pw2=Ps_TextWidth("SELECT",0.62f)+Tk_PX(60)-Tk_PX(0),cy=Tk_PY(1148),ww=Ps_MsgWidth(w,1.0f);
-            Tk_Para(x,cy-Tk_PY(24),x+pw2,cy+Tk_PY(24),Tk_PY(48)*0.4f,Ps_Rgba(30,58,138,124),Ps_Rgba(6,14,58,126));
-            Ps_Align(1); Ps_Text(x+pw2*0.5f+2.0f,Ps_TextTop(cy,0.62f),"SELECT",0.62f,pw2-4.0f,0);
-            Ps_Align(0); Ps_Msg(x+pw2+5.0f,cy-(PS_MSG_BASE-PS_MSG_CAP*0.5f),w,1.0f,0x80); Ps_Align(1);
-            Tk_Region(x-4.0f,cy-22.0f,x+pw2+ww+9.0f,cy+22.0f,TK_PAD,(s32)PADG_SELECT);
-        }
         (void)in;
     }
-}
-/* On the game's own menu: the way to the mod's (SELECT) in a red capsule at the foot, a place to tap. */
-static void TagMenu_SelectHint(const char *line) {
-    char text[96];
-    f32 w,x0;
-    Ps_Copy(text,Port_TagText(line),sizeof(text));
-    w=Ps_TextWidth(text,0.62f)+40;
-    if(w>300) w=300;
-    x0=256-w*0.5f;
-    Tk_Capsule(x0,414,x0+w,436,text,0.62f);
-    Tk_Region(x0-4,410,x0+w+4,442,TK_PAD,PADG_SELECT);
 }
 #define MAINMENU_VOICED(item) (!tagPage && (item) < MAINMENU_TBO)
 #else
@@ -1131,9 +1100,9 @@ void MainMenu_Draw(void) {
 #ifdef PORT
     if(Port_TagAvailable()) {
         Tk_Begin(); Ps_Align(1);
-        if(tagPage==3) { TagSetup_Draw(); TagMenu_SelectAgain(); }
+        if(tagPage==3) TagSetup_Draw();
         else {
-            if(tagPage) { Tk_Backdrop(); TagMenu_DrawPage(); TagMenu_SelectAgain(); }
+            if(tagPage) { Tk_Backdrop(); TagMenu_DrawPage(); }
             if(TagNet_HostMenu()) Ps_Text(256,Ps_TextTop(Tk_PY(1180),0.65f),TagNet_HostChoosing()?"BRINGING GUESTS TO BATTLE SETUP":"CHOOSE A MODE FOR THE LOBBY",0.65f,470,3);
             ;
             if(TagNet_HostMenu())TagLobbyRoster_Draw(1);
@@ -1246,14 +1215,6 @@ void MainMenu_Input(s32 *result) {
                 else { TagMenu_Goto(value); Snd_PlaySe(1,0); return; }
             }
         }
-    }
-    /* Select is available immediately, including while the native menu enters. Into the mod's pages: at once. Out of
-       them (back to the game's own modes): a second Select within two seconds. On a phone the touch pad's SELECT sits
-       over the foot of the screen, where the pages' buttons are: one tap meant for them left the mod's menus (v58). */
-    if(tagPage && !TagNet_HostMenu() && tagLabelsReady && !Port_TagControllersActive() && (gPad[0].gamePressed&PADG_SELECT)) { /* (into the mod: its item) */
-        if(tagPage && (tmSelectAt==0 || sTkFrames-tmSelectAt>120)) { tmSelectAt=sTkFrames?sTkFrames:1; Snd_PlaySe(1,7); return; }
-        tmSelectAt=0;
-        TagSession_Leave(); TagMenu_SetPage(tagPage?0:1); Snd_PlaySe(1,0); return;
     }
     if(tagPage==3) {
         s32 action=TagSetup_Input();
