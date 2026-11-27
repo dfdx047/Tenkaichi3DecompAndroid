@@ -21,7 +21,7 @@ int main() {
             SET_GPR_U32(&context, 31, runtime.expected_return);
             runtime.callFunction(0x0033A7C8, context);
             if (context.pc != runtime.expected_return || GPR_U32(&context, 2) != 0
-                    || runtime.returns != 1 || runtime.word_writes != size / 4
+                    || runtime.returns != 1 // RAM stores are inline (ps2_runtime_macros.h): the bytes are checked.
                     || !std::equal(image.begin() + source, image.begin() + source + size,
                                    runtime.memory().begin() + destination))
                 throw std::runtime_error("Generated copy result/return differs");

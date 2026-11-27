@@ -1,4 +1,5 @@
 #ifdef BT2_GPU_GS
+#include "ee/native_functions.h"
 #include "gs/gpu/gpu_gs_mirror.h"
 #include "gs/gpu/in_between_frames.h"
 #endif
@@ -712,6 +713,8 @@ int main(int argc, char** argv) {
         loadContinuationEvidence(runtime,modes,argv);
         registerStartupFunctions(runtime);
         registerKernelPayloads(runtime,modes);
+        // Game functions as host code (ee/native_functions.h); BT2_NO_NATIVE_FUNCTIONS keeps the generated ones.
+        if (!std::getenv("BT2_NO_NATIVE_FUNCTIONS")) registerNativeFunctions(runtime);
         // BT2_START_BATTLE / BT2_START_SCREEN / BT2_START_EPISODE: a CPU-against-CPU battle, a screen or a
         // story episode without input, for tool runs (game_starter.h).
         {

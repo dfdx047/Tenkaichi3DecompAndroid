@@ -14,6 +14,7 @@
 #include <windows.h>
 #include <mmsystem.h>
 #include <atomic>
+#include <cstdlib>
 #include <cstdint>
 #include <fstream>
 #include <map>
@@ -60,8 +61,16 @@ private:
     static constexpr std::size_t capacity=4'000'000;
     void run() {
         timeBeginPeriod(1); // Millisecond sleeps: about a thousand samples per second.
+        // BT2_SAMPLE_INTERVAL_US below 1000: a shorter interval, waited for by spinning (one core busy).
+        const char* interval_text=std::getenv("BT2_SAMPLE_INTERVAL_US");
+        const long long interval_us=interval_text?std::atoll(interval_text):1000;
+        LARGE_INTEGER frequency;QueryPerformanceFrequency(&frequency);
         while(!stop_ && samples_.size()<capacity) {
-            Sleep(1);
+            if(interval_us>=1000)Sleep(DWORD(interval_us/1000));
+            else {
+                LARGE_INTEGER begin,now;QueryPerformanceCounter(&begin);
+                do {YieldProcessor();QueryPerformanceCounter(&now);} while((now.QuadPart-begin.QuadPart)*1000000/frequency.QuadPart<interval_us);
+            }
             if(SuspendThread(target_)==DWORD(-1))continue;
             CONTEXT context{};context.ContextFlags=CONTEXT_CONTROL|CONTEXT_INTEGER;
             if(GetThreadContext(target_,&context)) {

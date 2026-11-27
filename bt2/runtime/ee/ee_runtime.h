@@ -734,11 +734,26 @@ public:
         // loading work: battle loading copies and unpacks for tens of millions of iterations in one go.
         if (gs_display_flips != checkpoint_flips_ || vblank_deliveries != checkpoint_fields_)
             {checkpoint_flips_ = gs_display_flips; checkpoint_fields_ = vblank_deliveries; checkpoints_ = 0;}
-        if (++checkpoints_ > (checkpoint_limit ? checkpoint_limit : gs_display_flips ? frame_checkpoint_limit : post_cd.supplied ? 2000000u : 1000000u))
+        if (++checkpoints_ > checkpointLimit())
             throw std::runtime_error("Bootstrap execution budget exceeded; thread "+std::to_string(current_thread_id)
                 +", frame "+std::to_string(gs_display_flips)+", last branch "+std::to_string(last_branch_source_)+" -> "+std::to_string(last_branch_target_));
         if (current_thread_id == 1 && ++main_checkpoints_since_field_ > main_checkpoints_per_field) busyMainField();
         return false; // Run to a checked boundary, rather than pretending to schedule the EE.
+    }
+    unsigned checkpointLimit() const {return checkpoint_limit ? checkpoint_limit : gs_display_flips ? frame_checkpoint_limit : post_cd.supplied ? 2000000u : 1000000u;}
+    // `count` checkpoints at once, for a native function that stands for a generated loop (native_functions.cpp):
+    // taken only when none of them would stop the run or deliver main's busy-field VBlank (false: nothing is counted
+    // and the caller runs the generated code instead). (oric212/BT2-Recomp 7a4c3be)
+    bool takeCheckpoints(std::uint64_t count) {
+        if (!count) return true;
+        const bool fresh = gs_display_flips != checkpoint_flips_ || vblank_deliveries != checkpoint_fields_;
+        const std::uint64_t used = fresh ? 0 : checkpoints_;
+        if (used + count > checkpointLimit()) return false;
+        if (current_thread_id == 1 && main_checkpoints_since_field_ + count > main_checkpoints_per_field) return false;
+        if (fresh) {checkpoint_flips_ = gs_display_flips; checkpoint_fields_ = vblank_deliveries;}
+        checkpoints_ = static_cast<unsigned>(used + count);
+        if (current_thread_id == 1) main_checkpoints_since_field_ += static_cast<unsigned>(count);
+        return true;
     }
 
     std::uint32_t expected_return = 0;

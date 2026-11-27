@@ -2,6 +2,7 @@
 #include "ps2_runtime.h"
 #include "ps2_fpu.h"
 #include <bit>
+#include <cstring>
 
 inline std::uint32_t GPR_U32(const R5900Context* context, unsigned index) {
     return index == 0 ? 0 : static_cast<std::uint32_t>(context->r.at(index).low);
@@ -171,20 +172,68 @@ inline bool FPU_C_OLT_S(float left, float right) { return ps2_fpu_c_lt(left, rig
 inline bool FPU_C_OLE_S(float left, float right) { return ps2_fpu_c_le(left, right); }
 inline void FPU_SET_ACC(R5900Context* context, float value) { context->f_acc = value; }
 
-#define READ16(address) runtime->read16(rdram, (address))
+// Guest memory: an aligned access to main RAM (plain addresses below 32 MB) is made here directly; every
+// other address (the scratchpad, the uncached alias, the registers, the kernel) and every unaligned access
+// goes through the runtime's checked accessors, which also refuse what is not modelled. Halfword stores
+// always take the checked path (the runtime counts them). ps2GuestRamChecked sends RAM stores through the
+// checked path too, for the runtime's write diagnostics (a watched quadword).
+inline constexpr std::uint32_t ps2_guest_ram_size = 32u * 1024 * 1024;
+inline bool ps2GuestRamChecked = false;
+template<class T> inline bool ps2GuestRam(std::uint32_t address) {
+    return address < ps2_guest_ram_size && !(address & (sizeof(T) - 1));
+}
+template<class T> inline T ps2GuestLoad(const std::uint8_t* rdram, std::uint32_t address) {
+    T value; std::memcpy(&value, rdram + address, sizeof(T)); return value;
+}
+template<class T> inline void ps2GuestStore(std::uint8_t* rdram, std::uint32_t address, const T& value) {
+    std::memcpy(rdram + address, &value, sizeof(T));
+}
+inline std::uint8_t ps2Read8(std::uint8_t* rdram, PS2Runtime* runtime, std::uint32_t address) {
+    return address < ps2_guest_ram_size ? rdram[address] : runtime->read8(rdram, address);
+}
+inline void ps2Write8(std::uint8_t* rdram, PS2Runtime* runtime, std::uint32_t address, std::uint8_t value) {
+    if (address < ps2_guest_ram_size && !ps2GuestRamChecked) rdram[address] = value; else runtime->write8(rdram, address, value);
+}
+inline std::uint16_t ps2Read16(std::uint8_t* rdram, PS2Runtime* runtime, std::uint32_t address) {
+    return ps2GuestRam<std::uint16_t>(address) ? ps2GuestLoad<std::uint16_t>(rdram, address) : runtime->read16(rdram, address);
+}
+inline std::uint32_t ps2Read32(std::uint8_t* rdram, PS2Runtime* runtime, R5900Context* ctx, std::uint32_t address) {
+    return ps2GuestRam<std::uint32_t>(address) ? ps2GuestLoad<std::uint32_t>(rdram, address) : runtime->Load32(rdram, ctx, address);
+}
+inline void ps2Write32(std::uint8_t* rdram, PS2Runtime* runtime, R5900Context* ctx, std::uint32_t address, std::uint32_t value) {
+    if (ps2GuestRam<std::uint32_t>(address) && !ps2GuestRamChecked) ps2GuestStore(rdram, address, value); else runtime->Store32(rdram, ctx, address, value);
+}
+inline std::uint64_t ps2Read64(std::uint8_t* rdram, PS2Runtime* runtime, R5900Context* ctx, std::uint32_t address) {
+    return ps2GuestRam<std::uint64_t>(address) ? ps2GuestLoad<std::uint64_t>(rdram, address) : runtime->guestRead64(rdram, ctx, address);
+}
+inline void ps2Write64(std::uint8_t* rdram, PS2Runtime* runtime, R5900Context* ctx, std::uint32_t address, std::uint64_t value) {
+    if (ps2GuestRam<std::uint64_t>(address) && !ps2GuestRamChecked) ps2GuestStore(rdram, address, value); else runtime->guestWrite64(rdram, ctx, address, value);
+}
+inline ProbeGpr ps2Read128(std::uint8_t* rdram, PS2Runtime* runtime, std::uint32_t address) {
+    return ps2GuestRam<ProbeGpr>(address) ? ps2GuestLoad<ProbeGpr>(rdram, address) : runtime->read128(rdram, address);
+}
+inline void ps2Write128(std::uint8_t* rdram, PS2Runtime* runtime, R5900Context* ctx, std::uint32_t address, const ProbeGpr& value) {
+    if (ps2GuestRam<ProbeGpr>(address) && !ps2GuestRamChecked) ps2GuestStore(rdram, address, value); else runtime->guestWrite128(rdram, ctx, address, value);
+}
+// Vector register stores (VU0 macro mode: SQC2) pass the lanes as an integer vector.
+inline void ps2Write128(std::uint8_t* rdram, PS2Runtime* runtime, R5900Context* ctx, std::uint32_t address, __m128i value) {
+    ps2Write128(rdram, runtime, ctx, address, std::bit_cast<ProbeGpr>(value));
+}
+
+#define READ16(address) ps2Read16(rdram, runtime, (address))
 #define WRITE16(address, value) runtime->write16(rdram, (address), (value))
-#define WRITE8(address, value) runtime->write8(rdram, (address), (value))
+#define WRITE8(address, value) ps2Write8(rdram, runtime, (address), (value))
 #define FAST_WRITE8(address, value) WRITE8(address, value)
-#define READ128(address) runtime->read128(rdram, (address))
-#define FAST_READ128(address) runtime->read128(rdram, (address))
-#define WRITE128(address, value) runtime->guestWrite128(rdram, ctx, (address), (value))
-#define READ32(address) runtime->Load32(rdram, ctx, (address))
+#define READ128(address) ps2Read128(rdram, runtime, (address))
+#define FAST_READ128(address) READ128(address)
+#define WRITE128(address, value) ps2Write128(rdram, runtime, ctx, (address), (value))
+#define READ32(address) ps2Read32(rdram, runtime, ctx, (address))
 
-#define WRITE64(address, value) runtime->guestWrite64(rdram, ctx, (address), (value))
-#define READ64(address) runtime->guestRead64(rdram, ctx, (address))
-#define FAST_READ64(address) runtime->read64(rdram, (address))
+#define WRITE64(address, value) ps2Write64(rdram, runtime, ctx, (address), (value))
+#define READ64(address) ps2Read64(rdram, runtime, ctx, (address))
+#define FAST_READ64(address) (ps2GuestRam<std::uint64_t>(address) ? ps2GuestLoad<std::uint64_t>(rdram, (address)) : runtime->read64(rdram, (address)))
 
-#define WRITE32(address, value) runtime->Store32(rdram, ctx, (address), (value))
+#define WRITE32(address, value) ps2Write32(rdram, runtime, ctx, (address), (value))
 // Generated fast path still uses the same checked bootstrap memory API.
 #define FAST_WRITE32(address, value) WRITE32(address, value)
 // Optional upstream diagnostic hook only; the following store performs validation.
@@ -204,7 +253,7 @@ inline std::uint32_t SLL32(std::uint32_t value, unsigned amount) { return value 
 inline void SET_GPR_ZE32(R5900Context* context, unsigned index, std::uint32_t value) {
     SET_GPR_U64(context, index, value);
 }
-#define READ8(address) runtime->read8(rdram, (address))
+#define READ8(address) ps2Read8(rdram, runtime, (address))
 
 inline std::uint32_t SUB32(std::uint32_t left, std::uint32_t right) { return left - right; }
 

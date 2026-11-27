@@ -30,6 +30,7 @@ set(BT2_EE_HOT_SOURCES
     "${BT2_SOURCE_ROOT}/runtime/gs/textures/gs_texture_names.cpp"
     "${BT2_SOURCE_ROOT}/runtime/ee/guest_interface.cpp"
     "${BT2_SOURCE_ROOT}/runtime/ee/ps2_runtime_dispatch.cpp"
+    "${BT2_SOURCE_ROOT}/runtime/ee/native_functions.cpp"
     "${BT2_SOURCE_ROOT}/runtime/ee/ps2_runtime_memory.cpp"
     "${BT2_SOURCE_ROOT}/runtime/ee/ipu_device.cpp"
     "${BT2_SOURCE_ROOT}/runtime/ee/ipu_input.cpp"
