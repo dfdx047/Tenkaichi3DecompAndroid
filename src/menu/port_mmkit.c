@@ -101,7 +101,7 @@ static const u16 *Pic_Size(s32 id) { /* (the Mod Manager's pictures, the Raging 
     if (id >= ZW_BG && id <= ZW_SHIN) {
         return sZwArtSize[id - ZW_BG];
     }
-    if (id >= ZW_T_PANEL && id <= ZW_T_CHEV) {
+    if (id >= ZW_T_PANEL && id <= ZW_T_RIPPLE) {
         return sZwTArtSize[id - ZW_T_PANEL];
     }
     return NULL;

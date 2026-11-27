@@ -114,7 +114,12 @@
     X(ZW_T_BAR, "zw_t_bar") \
     X(ZW_T_RING, "zw_t_ring") \
     X(ZW_T_BACK, "zw_t_back") \
-    X(ZW_T_CHEV, "zw_t_chev")
+    X(ZW_T_CHEV, "zw_t_chev") \
+    X(ZW_T_ONLINE, "zw_t_online") \
+    X(ZW_T_GLOW, "zw_t_glow") \
+    X(ZW_T_SHINE, "zw_t_shine") \
+    X(ZW_T_RIPPLE, "zw_t_ripple") \
+    X(ZW_CLOUD, "zw_cloud") /* the search screen's flying cloud, a film (port/tools/zw_cloud_film.py) */
 
 #define TBO_ART_ENUM(id, name) id,
 enum { TBO_ART_LIST(TBO_ART_ENUM) TBO_ART_COUNT };

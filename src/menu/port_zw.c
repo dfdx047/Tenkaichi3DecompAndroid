@@ -42,7 +42,7 @@ extern f32 Mm_Ease(f32 t);
 #define CO_PITCH 42.0f
 
 enum { ZW_LIBRARY, ZW_EDIT, ZW_PICK, ZW_NAME, ZW_CROP, ZW_COLOUR, ZW_WORK, ZW_PHOTO, ZW_FXCOL, ZW_SHADEPK, ZW_TEXTURE, ZW_POSE,
-       ZW_WSHOP, ZW_WSDETAIL, ZW_WSUPLOAD, ZW_LAB };
+       ZW_WSHOP, ZW_WSDETAIL, ZW_WSUPLOAD, ZW_LAB, ZW_ONLINE };
 #define ZW_UNDO 12          /* the changes kept to step back through */
 #define ZW_DRAFT_EVERY 600  /* frames between two writes of the unsaved warrior */
 enum { ASK_NONE, ASK_REMOVE, ASK_LEAVE, ASK_COSON, ASK_COSOFF, ASK_WSDEL };
@@ -1047,7 +1047,7 @@ static void Zw_Stage(s32 key, s32 chara, s32 mod, f32 cx, f32 feet, f32 height, 
         }
     }
     if (chara >= 0 && sZw->ask == ASK_NONE && sZw->mode != ZW_WSHOP && sZw->mode != ZW_WSDETAIL && sZw->mode != ZW_WSUPLOAD &&
-        sZw->mode != ZW_LAB && sZw->mode != ZW_EDIT && sZw->mode != ZW_PICK) { /* how to look at it
+        sZw->mode != ZW_LAB && sZw->mode != ZW_EDIT && sZw->mode != ZW_PICK && sZw->mode != ZW_ONLINE) { /* how to look at it
                                                                                                                          (not on the Workshop's pages) */
         s32 top = sZw->mode == ZW_LIBRARY || sZw->mode == ZW_EDIT || sZw->mode == ZW_PICK || sZw->mode == ZW_SHADEPK;
         f32 x = sZw->mode == ZW_EDIT ? cx - 330.0f : cx - 250.0f;
@@ -2027,6 +2027,7 @@ static void Wk_UploadUpdate(s32 live) {
 static void Zt_Step(s32 dir); /* (port_zw_touch.inc) */
 static s32 Zt_Back(void);
 static void Zt_EdDraw(void);
+static void Zo_Open(void), Zo_Tap(f32 x, f32 y), Zo_Draw(void), Zo_Update(s32 live); /* (port_zw_online.inc) */
 static void Zt_EdTap(f32 x, f32 y);
 static void Zt_AskDraw(void);
 static void Zt_AskTap(f32 x, f32 y);
@@ -2148,12 +2149,14 @@ static void Zw_Touch(void) {
         return;
     }
     sTapLen = sTapAt2 = 0;
-    if (sZw->ask != ASK_NONE || sZw->mode == ZW_EDIT || sZw->mode == ZW_PICK) {
+    if (sZw->ask != ASK_NONE || sZw->mode == ZW_EDIT || sZw->mode == ZW_PICK || sZw->mode == ZW_ONLINE) {
         if (Port_MenuTap((u32)at)) {
             f32 x = (f32)at[0] / Mx_X(1.0f) * (2400.0f / MX_W), y = (f32)at[1] / Mx_Y(1.0f) * (1080.0f / MX_H);
 
             if (sZw->ask != ASK_NONE) {
                 Zt_AskTap(x, y);
+            } else if (sZw->mode == ZW_ONLINE) {
+                Zo_Tap(x, y);
             } else if (sZw->mode == ZW_PICK) {
                 Zt_PkTap(x, y);
             } else {
@@ -2205,6 +2208,8 @@ static u32 Lib_Button(s32 kind) {
 
 /* The home screen (Android): the Kaioshins' world, the list on the left, the warrior on the stage, Shin on the right,
    everything pressed by touch (Lib_Touch). The foot's buttons are the screen's prompts. */
+static void Zo_LibButton(void);
+static s32 sZoLibSel; /* (the home screen: the arrows are on the "play online" button, above the list) */
 static void Lib_Draw(void) {
     PortWarrior *w = sZw->cur > 0 ? &sZw->list[sZw->cur - 1] : NULL;
     s32 i;
@@ -2215,9 +2220,10 @@ static void Lib_Draw(void) {
 
     Mx_Pic(ZW_SHIN, 1044.0f, 132.0f, 1252.0f, 736.0f, 0x80);
     Zw_Title("Z WARRIORS");
+    Zo_LibButton();
     for (i = 0; i < LIB_ROWS && sZw->top + i <= sZw->count; i++) {
         s32 at = sZw->top + i;
-        s32 sel = at == sZw->cur;
+        s32 sel = at == sZw->cur && !sZoLibSel;
         f32 y = LIB_Y + (f32)i * LIB_PITCH;
         char *name;
 
@@ -2256,8 +2262,8 @@ static void Lib_Draw(void) {
         Zw_Stage(-1, -1, -1, 835.0f, 590.0f, 420.0f, 0);
         Mx_Text(835.0f, 330.0f, "A NEW WARRIOR", 32.0f, 0.0f, MX_GOLD, 1);
     }
-    Zw_Prompt(0, sZw->cur == 0 ? "Create" : "Edit");
-    if (sZw->cur > 0) {
+    Zw_Prompt(0, sZoLibSel ? "Online" : sZw->cur == 0 ? "Create" : "Edit");
+    if (sZw->cur > 0 && !sZoLibSel) {
         Zw_Prompt(1, "Copy");
         Zw_Prompt(4, "Remove");
         Zw_Prompt(9, "Share");
@@ -2286,6 +2292,10 @@ static void Lib_Draw(void) {
     Mx_Say(1148.0f, 56.0f, say, 21.0f, 380.0f, MX_WHITE, 1);
 }
 
+#define LIB_ONLINE_X0 545.0f
+#define LIB_ONLINE_X1 915.0f
+#define LIB_ONLINE_Y0 34.0f
+#define LIB_ONLINE_Y1 96.0f
 /* A finger on a row chooses it (on the chosen one: presses it); on a button of the foot, presses it. */
 static void Lib_Touch(Pad *pad) {
     extern s32 Port_MenuTap(u32 out); /* port/src/gs/gs_input.c: the picture's 512 x 448 */
@@ -2298,6 +2308,11 @@ static void Lib_Touch(Pad *pad) {
     }
     x = (f32)at[0] / Mx_X(1.0f);
     y = (f32)at[1] / Mx_Y(1.0f);
+    if (x >= LIB_ONLINE_X0 - 8.0f && x <= LIB_ONLINE_X1 + 8.0f && y <= LIB_ONLINE_Y1 + 8.0f) {
+        Snd_PlaySe(1, 1);
+        Zo_Open();
+        return;
+    }
     if (y >= LIB_BTN_Y0 - 6.0f && sPromptCount > 0) {
         f32 bw = (LIB_BTN_X1 - LIB_X - 8.0f * (f32)(sPromptCount - 1)) / (f32)sPromptCount;
 
@@ -2315,9 +2330,10 @@ static void Lib_Touch(Pad *pad) {
             f32 mid = LIB_Y + (f32)i * LIB_PITCH;
 
             if (y >= mid - LIB_PITCH * 0.5f && y < mid + LIB_PITCH * 0.5f) {
-                if (sZw->top + i == sZw->cur) {
+                if (sZw->top + i == sZw->cur && !sZoLibSel) {
                     pad->gamePressed |= PADG_CROSS;
                 } else {
+                    sZoLibSel = 0;
                     sZw->cur = sZw->top + i;
                     sZw->rest = 0;
                     Snd_PlaySe(1, 0);
@@ -2432,10 +2448,29 @@ static void Lib_Update(s32 live) {
     if (sZw->importWait <= 0) {
         Lib_Touch(pad);
     }
-    if (pad->gameRepeat & (PADG_UP | PADG_UP2)) {
-        sZw->cur = sZw->cur > 0 ? sZw->cur - 1 : sZw->count;
+    /* up / down go round the online button and the list; right goes to the button, left back to the list */
+    if (sZoLibSel) {
+        if (pad->gameRepeat & (PADG_UP | PADG_UP2)) {
+            sZoLibSel = 0, sZw->cur = sZw->count, sZw->rest = 0;
+            Snd_PlaySe(1, 0);
+        } else if (pad->gameRepeat & (PADG_DOWN | PADG_DOWN2 | PADG_LEFT | PADG_LEFT2)) {
+            sZoLibSel = 0;
+            sZw->cur = pad->gameRepeat & (PADG_DOWN | PADG_DOWN2) ? 0 : sZw->cur;
+            sZw->rest = 0;
+            Snd_PlaySe(1, 0);
+        }
+    } else if (((pad->gameRepeat & (PADG_UP | PADG_UP2)) && sZw->cur == 0) || ((pad->gameRepeat & (PADG_DOWN | PADG_DOWN2)) && sZw->cur >= sZw->count)
+               || (pad->gameRepeat & (PADG_RIGHT | PADG_RIGHT2))) {
+        sZoLibSel = 1;
+        was = sZw->cur;
+        Snd_PlaySe(1, 0);
+    } else if (pad->gameRepeat & (PADG_UP | PADG_UP2)) {
+        sZw->cur = sZw->cur - 1;
     } else if (pad->gameRepeat & (PADG_DOWN | PADG_DOWN2)) {
-        sZw->cur = sZw->cur < sZw->count ? sZw->cur + 1 : 0;
+        sZw->cur = sZw->cur + 1;
+    }
+    if (sZoLibSel && (pad->gamePressed & (PADG_SQUARE | PADG_CIRCLE | PADG_L1))) { /* (no warrior is chosen) */
+        pad->gamePressed &= ~(PADG_SQUARE | PADG_CIRCLE | PADG_L1);
     }
     if (sZw->cur != was) {
         Snd_PlaySe(1, 0);
@@ -2468,13 +2503,20 @@ static void Lib_Update(s32 live) {
         Zw_Note(Port_WarriorShare(sZw->cur - 1) ? "Code copied! Send it to a friend: they paste it here with R1."
                                                  : "That warrior's code couldn't be made.");
         Snd_PlaySe(1, 1);
+    } else if (pad->gamePressed & PADG_START) { /* (a controller's way to the online screens) */
+        Snd_PlaySe(1, 1);
+        Zo_Open();
     } else if (pad->gamePressed & PADG_R1) { /* a warrior from the clipboard's code */
         Port_WarriorImportAsk();
         sZw->importWait = 30;
         Snd_PlaySe(1, 1);
     } else if (pad->gamePressed & PADG_CROSS) {
         Snd_PlaySe(1, 1);
-        Zw_Edit(sZw->cur - 1);
+        if (sZoLibSel) {
+            Zo_Open();
+        } else {
+            Zw_Edit(sZw->cur - 1);
+        }
     } else if ((pad->gamePressed & PADG_SQUARE) && sZw->cur > 0) {
         s32 n = Port_WarriorCopy(sZw->cur - 1);
 
@@ -6571,6 +6613,7 @@ static void Zw_LeaveFor(s32 to) {
 }
 
 static void Zw_Init(void) {
+    sZoLibSel = 0;
     extern void GsDraw_ScreenScaleFloor(int floor4); /* port/src/gs/gs_draw.c */
 
     GsDraw_ScreenScaleFloor(16); /* (at least 4x here, as Dragon Net: at 1x its pictures and letters blurred) */
@@ -9042,6 +9085,12 @@ static void Zw_Auto(void) {
 }
 
 #include "port_zw_touch.inc"
+#include "port_zw_online.inc"
+static void Zo_LibButton(void) { /* the home screen's way to the online screens */
+    Zo_BigButton(LIB_ONLINE_X0 * 2400.0f / MX_W, LIB_ONLINE_Y0 * 1080.0f / MX_H, LIB_ONLINE_X1 * 2400.0f / MX_W,
+                 LIB_ONLINE_Y1 * 1080.0f / MX_H, Zo_L("JOGAR ONLINE", "PLAY ONLINE", "JUGAR ONLINE"),
+                 Zo_L("Partida r\303\241pida e salas", "Quick match and rooms", "Partida r\303\241pida y salas"), 0x80, sZoLibSel);
+}
 
 static void Zt_Reset(void) {
     sZtPage = 0;
@@ -9093,6 +9142,7 @@ s32 PortZw_Run(void) {
                                                                                                                           dots are dragged, while photographed) */
             switch (sZw->mode) {
             case ZW_LIBRARY: Lib_Update(live); break;
+            case ZW_ONLINE: Zo_Update(live); break;
             case ZW_EDIT: Ed_Update(live); break;
             case ZW_FXCOL: Fx_Update(live); break;
             case ZW_SHADEPK: Sh_Update(live); break;
@@ -9127,6 +9177,7 @@ s32 PortZw_Run(void) {
         Mx_Pic(ZW_BG, 0.0f, 0.0f, MX_W, MX_H, 0x80);
         switch (sZw->mode) {
         case ZW_LIBRARY: Lib_Draw(); break;
+        case ZW_ONLINE: Zo_Draw(); break;
         case ZW_EDIT: Zt_EdDraw(); break;
         case ZW_FXCOL: Fx_Draw(); break;
         case ZW_SHADEPK: Sh_Draw(); break;

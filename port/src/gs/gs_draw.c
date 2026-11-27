@@ -785,6 +785,7 @@ static TboFilm sZwBgFilm = {"zw_bg", 0};   /* the Kaioshins' world behind Z Warr
 static TboFilm sZwShinFilm = {"zw_shin", 1};
 static TboFilm sMenuBallFilm = {"menu_ball", 1}; /* the main menu's animated icons (port/tools/menu_icon_films.py) */
 static TboFilm sMenuRadarFilm = {"menu_radar", 1};
+static TboFilm sZwCloudFilm = {"zw_cloud", 1};
 static TboFilm sGokuFilm = {"goku", 1}; /* Goku of the Tag Team menus (db_goku.png): tbo/ui/goku.mpg, port/tools/tag_goku_film.py */
 
 static uint8_t *tbo_film_read(const char *name, size_t *len) {
@@ -1033,6 +1034,12 @@ static GsTex tbo_texture(uint32_t id) {
     }
     if (id == MENU_BALL || id == MENU_RADAR) {
         GsTex film = tbo_film_texture(id == MENU_BALL ? &sMenuBallFilm : &sMenuRadarFilm);
+        if (film != 0) {
+            return film;
+        }
+    }
+    if (id == ZW_CLOUD) {
+        GsTex film = tbo_film_texture(&sZwCloudFilm);
         if (film != 0) {
             return film;
         }
