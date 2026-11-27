@@ -124,6 +124,8 @@ export async function schema(env) {
         env.DB.prepare("CREATE TABLE IF NOT EXISTS ranked_rooms (code TEXT PRIMARY KEY, made INTEGER NOT NULL, host_name TEXT NOT NULL, join_name TEXT NOT NULL)"),
         // who sat where: the ACCOUNT of the host and of the joiner of a Ranked room, bound when the search admitted them (rooms.js). A battle's reports
         // are taken only from these accounts, and it scores only when they are the two that settle it.
+        // what the history says of a player (read again only after a new battle): its last battle's time and what was counted from it
+        env.DB.prepare("CREATE TABLE IF NOT EXISTS history_counts (player TEXT PRIMARY KEY, last INTEGER NOT NULL, streak INTEGER NOT NULL, continents INTEGER NOT NULL, rematch INTEGER NOT NULL, recent TEXT NOT NULL)"),
         env.DB.prepare("CREATE TABLE IF NOT EXISTS achievements (player TEXT NOT NULL, k INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (player, k))"),
         env.DB.prepare("CREATE TABLE IF NOT EXISTS ranked_live (code TEXT NOT NULL, n INTEGER NOT NULL, player TEXT NOT NULL, me TEXT NOT NULL, side INTEGER NOT NULL, first INTEGER NOT NULL, last INTEGER NOT NULL, gap INTEGER NOT NULL DEFAULT 0, gap_at INTEGER NOT NULL DEFAULT 0, claim INTEGER, claim_gap INTEGER, self INTEGER NOT NULL DEFAULT 0, seen_back INTEGER, outcome TEXT, PRIMARY KEY (code, n, player), UNIQUE (code, n, side))"),
         env.DB.prepare("CREATE TABLE IF NOT EXISTS abandons (code TEXT NOT NULL, n INTEGER NOT NULL, loser TEXT NOT NULL, winner TEXT NOT NULL, at INTEGER NOT NULL, self INTEGER NOT NULL, forgiven INTEGER NOT NULL, PRIMARY KEY (code, n))"),
@@ -290,6 +292,38 @@ const continentOf = (cc) => Object.keys(CONTINENTS).find((k) => cc && CONTINENTS
 export const ACHIEVEMENTS = 10;
 const TARGET = [1, 10, 100, 50, 1, 1, 5, 1, 500, 3]; // what each one counts up to
 
+// The player's history counted (longest winning run, rivals' continents, a rematch won, the last ten results), kept until
+// the player has a newer battle: two index seeks say whether there is one.
+async function historyCounts(env, player) {
+    const [w, l, kept] = await env.DB.batch([
+        env.DB.prepare("SELECT MAX(played_at) AS t FROM ranked_matches WHERE winner_id = ?").bind(player),
+        env.DB.prepare("SELECT MAX(played_at) AS t FROM ranked_matches WHERE loser_id = ?").bind(player),
+        env.DB.prepare("SELECT last, streak, continents, rematch, recent FROM history_counts WHERE player = ?").bind(player),
+    ]);
+    const last = Math.max(w.results[0]?.t ?? 0, l.results[0]?.t ?? 0), old = kept.results[0];
+    if (old && old.last === last) return old;
+    const rows = (await env.DB.prepare("SELECT m.winner_id = ?1 AS won, m.room_code AS room, m.battle_no AS n, p.country AS cc FROM ranked_matches m " +
+        "LEFT JOIN players p ON p.id = CASE WHEN m.winner_id = ?1 THEN m.loser_id ELSE m.winner_id END " +
+        "WHERE (m.winner_id = ?1 OR m.loser_id = ?1) AND m.kind = 'ranked' ORDER BY m.played_at, m.id LIMIT 3000").bind(player).all()).results;
+    let row = 0, streak = 0, rematch = 0;
+    const lost = new Set(), where = new Set();
+    for (const m of rows) {
+        row = m.won ? row + 1 : 0;
+        streak = Math.max(streak, row);
+        if (m.room) {
+            if (m.won && lost.has(m.room + ":" + (m.n - 1))) rematch = 1;
+            if (!m.won) lost.add(m.room + ":" + m.n);
+        }
+        const c = continentOf(m.cc);
+        if (c) where.add(c);
+    }
+    const out = { last, streak, continents: where.size, rematch, recent: rows.slice(-10).reverse().map((m) => m.won ? "V" : "D").join("") };
+    await env.DB.prepare("INSERT INTO history_counts (player, last, streak, continents, rematch, recent) VALUES (?, ?, ?, ?, ?, ?) " +
+        "ON CONFLICT (player) DO UPDATE SET last = excluded.last, streak = excluded.streak, continents = excluded.continents, rematch = excluded.rematch, recent = excluded.recent")
+        .bind(player, out.last, out.streak, out.continents, out.rematch, out.recent).run();
+    return out;
+}
+
 async function achievements(env, player, career, now) {
     const had = new Set((await env.DB.prepare("SELECT k FROM achievements WHERE player = ?").bind(player).all()).results.map((r) => r.k));
     const got = new Set();
@@ -305,32 +339,18 @@ async function achievements(env, player, career, now) {
         if (h && h.best !== null && h.best <= 10) got.add(4);
         if (h && h.clean === 1) got.add(5);
     }
-    if (!had.has(1) || !had.has(7) || !had.has(9)) {
-        const rows = (await env.DB.prepare("SELECT m.winner_id = ?1 AS won, m.room_code AS room, m.battle_no AS n, p.country AS cc FROM ranked_matches m " +
-            "LEFT JOIN players p ON p.id = CASE WHEN m.winner_id = ?1 THEN m.loser_id ELSE m.winner_id END " +
-            "WHERE (m.winner_id = ?1 OR m.loser_id = ?1) AND m.kind = 'ranked' ORDER BY m.played_at, m.id LIMIT 3000").bind(player).all()).results;
-        let row = 0;
-        const lost = new Set(), where = new Set();
-        for (const m of rows) {
-            row = m.won ? row + 1 : 0;
-            streak = Math.max(streak, row);
-            if (row >= 10) got.add(1);
-            if (m.room) {
-                if (m.won && lost.has(m.room + ":" + (m.n - 1))) got.add(7);
-                if (!m.won) lost.add(m.room + ":" + m.n);
-            }
-            const c = continentOf(m.cc);
-            if (c) where.add(c);
-        }
-        continents = where.size;
-        if (where.size >= 3) got.add(9);
-    }
+    const h = await historyCounts(env, player);
+    streak = h.streak;
+    continents = h.continents;
+    if (streak >= 10) got.add(1);
+    if (h.rematch) got.add(7);
+    if (continents >= 3) got.add(9);
     const fresh = [...got].filter((k) => !had.has(k));
     if (fresh.length) await env.DB.batch(fresh.map((k) => env.DB.prepare("INSERT OR IGNORE INTO achievements (player, k, at) VALUES (?, ?, ?)").bind(player, k, now)));
     const bits = Array.from({ length: ACHIEVEMENTS }, (_, k) => had.has(k) || got.has(k) ? "1" : "0").join("");
     // how far each one is (a full one: its target)
     const count = [wins, streak, wins, played, 0, 0, career.seasons_played ?? 0, 0, played, continents];
-    return { bits, progress: count.map((v, k) => bits[k] === "1" ? TARGET[k] : Math.min(v, TARGET[k] - 1)) };
+    return { bits, progress: count.map((v, k) => bits[k] === "1" ? TARGET[k] : Math.min(v, TARGET[k] - 1)), recent: h.recent };
 }
 
 async function me(env, body, now, country) {
@@ -357,8 +377,7 @@ async function me(env, body, now, country) {
     const t = [0, 0, 0];
     for (const row of trophies.results) if (row.place >= 1 && row.place <= 3) t[row.place - 1] = row.n;
     if (now - p.seen > 3600000) await env.DB.prepare("UPDATE players SET seen = ? WHERE id = ?").bind(now, p.id).run();
-    const [recent, used, usedTotal] = await env.DB.batch([
-        env.DB.prepare("SELECT winner_id = ?1 AS won FROM ranked_matches WHERE (winner_id = ?1 OR loser_id = ?1) AND kind = 'ranked' ORDER BY played_at DESC, id DESC LIMIT 10").bind(p.id),
+    const [used, usedTotal] = await env.DB.batch([
         env.DB.prepare("SELECT name, battles FROM char_usage WHERE player_id = ? ORDER BY battles DESC, chara LIMIT 3").bind(p.id),
         env.DB.prepare("SELECT SUM(battles) AS n FROM char_usage WHERE player_id = ?").bind(p.id),
     ]);
@@ -368,7 +387,7 @@ async function me(env, body, now, country) {
         ok: true, name: p.name, has_recovery: !!p.recovery_hash,
         country: p.country || "", country_name: countryName(p.country || "", body.lang),
         fav: f ? [f.chara, f.battles, f.name] : null,
-        ach: ach.bits, ach_p: ach.progress, recent: recent.results.map((x) => x.won ? "V" : "D").join(""),
+        ach: ach.bits, ach_p: ach.progress, recent: ach.recent,
         used: used.results.map((x) => [x.name, x.battles]), used_total: usedTotal.results[0] ? usedTotal.results[0].n ?? 0 : 0,
         // the career (never reset)
         gold: c.gold ?? 0, silver: c.silver ?? 0, wins: c.wins ?? 0, losses: c.losses ?? 0, ranked_total: c.ranked_matches ?? 0,
