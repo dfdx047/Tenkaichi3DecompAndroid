@@ -9283,6 +9283,14 @@ int Port_ZwHdPath(uint32_t key, char *out, int max) {
     int i;
     FILE *fp;
 
+    if (key >= 0xFFFFF8u) { /* the main menu's remastered icon sheets (src/menu/menu_a.c; no warrior has pictures 8..10) */
+        char cwd[700];
+        if (getcwd(cwd, sizeof(cwd)) == NULL) { return 0; } /* (a whole path: SDL on Android takes others as internal) */
+        snprintf(out, (size_t)max, "%s/tbo/ui/menu_icons_%u.png", cwd, key - 0xFFFFF8u);
+        if ((fp = fopen(out, "rb")) == NULL) { return 0; }
+        fclose(fp);
+        return 1;
+    }
     for (i = 0; i < sModCount; i++) {
         if ((hd_key(sMod[i].dir, 0) >> 4) == (key >> 4)) {
             snprintf(out, (size_t)max, "%s/hd_%u.png", sMod[i].dir, key & 15);

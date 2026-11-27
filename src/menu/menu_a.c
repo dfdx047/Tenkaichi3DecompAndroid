@@ -584,6 +584,48 @@ void MainMenu_StartBallLoops(void) {
     }
 }
 
+#ifdef PORT
+/* An icon sheet of the menu marked to be drawn from its remastered picture (tbo/ui/menu_icons_<which>.png, four times
+   the size; port/src/gs/gs_texpack.c's tagged textures, the same as Z Warriors' photos): the game animates, places and
+   fades it as before. The three palette entries that carry the mark are taken from the picture first (its pixels of
+   those colours get the nearest other one), so the sheet looks the same until the picture is in. Without the file,
+   the sheet is left as it is. */
+static void PortMainMenu_HdSheet(u8 *entry, s32 which) {
+    extern int Port_ZwHdPath(u32 key, char *out, int max);
+    static char path[800];
+    u8 *pix, *clut, map[3];
+    u32 *pal, mark[3];
+    s32 size, i, k, v;
+
+    if (!Port_ZwHdPath(0xFFFFF8u + (u32)which, path, sizeof(path))) return;
+    pix = *(u8 **)(entry + 0x38);
+    clut = *(u8 **)(entry + 0x3C);
+    size = *(s32 *)(entry + 8) - 0x80; /* (the packet: 0x60 bytes before the data, 0x20 after) */
+    if (pix == NULL || clut == NULL || size <= 0) return;
+    pix += 0x60;
+    pal = (u32 *)(clut + 0x60);
+#define HD_AT(n) (((n) & 0xE7) | (((n) & 8) << 1) | (((n) & 0x10) >> 1))
+    for (k = 0; k < 3; k++) {
+        const u8 *want = (const u8 *)&pal[HD_AT(252 + k)];
+        s32 best = 0x7FFFFFFF;
+        for (v = 0; v < 252; v++) {
+            const u8 *c = (const u8 *)&pal[HD_AT(v)];
+            s32 d = 0;
+            for (i = 0; i < 4; i++) d += (c[i] - want[i]) * (c[i] - want[i]);
+            if (d < best) { best = d; map[k] = (u8)v; }
+        }
+    }
+    for (i = 0; i < size; i++) {
+        if (pix[i] >= 252 && pix[i] <= 254) pix[i] = map[pix[i] - 252];
+    }
+    mark[0] = 1u | 3u << 24;
+    mark[1] = 0x015A5748u;
+    mark[2] = (0xFFFFF8u + (u32)which) | 2u << 24;
+    for (k = 0; k < 3; k++) pal[HD_AT(252 + k)] = mark[k];
+#undef HD_AT
+}
+#endif
+
 #define MM_RES(n) \
     res = (MTexRes *)MPACK_AT(gMainMenu->res, n); \
     Res_RelocateOffsets(&res, res, res)
@@ -631,6 +673,11 @@ void MainMenu_Init(s32 section) {
     MM_RES(7);
     gMainMenu->tex[7] = MTEX(res, 0);
     gMainMenu->tex[11] = MTEX(res, 1);
+#ifdef PORT
+    PortMainMenu_HdSheet(MTEX(res, 0), 0); /* the icons at rest */
+    PortMainMenu_HdSheet(MTEX(res, 1), 1); /* their animations */
+    PortMainMenu_HdSheet(MTEX(res, 2), 2); /* Shenron's */
+#endif
     MM_RES(8);
     gMainMenu->tex[6] = MTEX(res, 0);
     gMainMenu->tex[10] = MTEX(res, 1);
