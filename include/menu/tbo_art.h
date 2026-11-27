@@ -99,7 +99,22 @@
     X(ZW_DOWN, "zw_down") \
     X(ZW_SHIN, "zw_shin") \
     X(MENU_BALL, "menu_ball")     /* the main menu's animated icons (port/tools/menu_icon_films.py): Z Warriors', */ \
-    X(MENU_RADAR, "menu_radar")   /* ... and Tag Team's */
+    X(MENU_RADAR, "menu_radar")   /* ... and Tag Team's */ \
+    X(MENU_BALL_STILL, "menu_ball_still")   /* the same two, held still: the row is not the chosen one */ \
+    X(MENU_RADAR_STILL, "menu_radar_still") \
+    X(ZW_T_PANEL, "zw_t_panel") /* Z Warriors' touch screens (port/tools/zw_template_art.py), in zw_sizes.h's order */ \
+    X(ZW_T_SEL, "zw_t_sel") \
+    X(ZW_T_STAGE, "zw_t_stage") \
+    X(ZW_T_ASK, "zw_t_ask") \
+    X(ZW_T_NAVY, "zw_t_navy") \
+    X(ZW_T_ORANGE, "zw_t_orange") \
+    X(ZW_T_GREEN, "zw_t_green") \
+    X(ZW_T_RED, "zw_t_red") \
+    X(ZW_T_GREY, "zw_t_grey") \
+    X(ZW_T_BAR, "zw_t_bar") \
+    X(ZW_T_RING, "zw_t_ring") \
+    X(ZW_T_BACK, "zw_t_back") \
+    X(ZW_T_CHEV, "zw_t_chev")
 
 #define TBO_ART_ENUM(id, name) id,
 enum { TBO_ART_LIST(TBO_ART_ENUM) TBO_ART_COUNT };

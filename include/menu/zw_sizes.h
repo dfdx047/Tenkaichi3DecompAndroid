@@ -28,4 +28,10 @@ static const u16 sZwArtSize[][3] = {
     {90, 90, 0}, /* zw_down */
     {272, 784, 0}, /* zw_shin */
 };
+/* the touch screens' pictures (port/tools/zw_template_art.py), from ZW_T_PANEL */
+static const u16 sZwTArtSize[][3] = {
+    {200, 200, 40}, {200, 200, 40}, {200, 200, 40}, {200, 200, 40},
+    {400, 100, 50}, {400, 100, 50}, {400, 100, 50}, {400, 100, 50}, {400, 100, 50}, {400, 100, 50}, {400, 100, 50},
+    {112, 112, 0}, {28, 44, 0},
+};
 #endif

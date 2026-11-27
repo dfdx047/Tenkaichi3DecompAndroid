@@ -8,6 +8,7 @@
 #include "menu/tag_labels.h"
 #include "menu/tag_setup.h"
 #include "menu/port_screen.h"
+#include <stdio.h>
 extern s32 Port_TagAvailable(void);
 extern void Port_NetMenuOpen(void);
 extern int Port_NetMenuListed(void);
@@ -818,6 +819,11 @@ void MainMenu_Init(s32 section) {
    after it: without the loop the function does not match. */
 void MainMenu_Term(void) {
     s32 i;
+#ifdef PORT
+    extern void GsDraw_ScreenScaleFloor(int floor4); /* port/src/gs/gs_draw.c */
+
+    GsDraw_ScreenScaleFloor(0);
+#endif
 
     MsgWin_Term();
     IconWin_Term();
@@ -843,25 +849,41 @@ void MainMenu_Term(void) {
 }
 
 #ifdef PORT
-/* Z Warriors' and Tag Team's icons are films of their own (a four-star ball, the Dragon Radar). The game's icon clip is
-   given an empty corner of its sheet, and tells where it is being drawn (its "draw over" callback: the clip's drawing
-   state, FlashProp, whose matrix is at 0x30); the film is drawn there once the movie is done, so that nothing of ours
+/* Z Warriors' and Tag Team's icons are films of their own. The game's icon clip is given an empty corner of its sheet,
+   and the box of the screen it is drawn on is measured while it is (its "before" and "draw over" callbacks around
+   gPortFlashProbe, sys/gfxm_c.c); the film is drawn over that box once the movie is done, so that nothing of ours
    changes the renderer's state in the middle of it. The clips are reused by every row: each is set every frame. */
-static f32 sIconAt[16][4]; /* x, y, scale y, which (1 the ball, 2 the radar) */
+extern f32 *gPortFlashProbe;
+static f32 sIconAt[16][7]; /* the box x0 y0 x1 y1, its alpha, which (1 the ball, 2 Tag Team's), 1 the chosen row's */
 static s32 sIconCount;
 
+static void PortMainMenu_IconBegin(void *arg) {
+    if (sIconCount < 16) {
+        f32 *at = sIconAt[sIconCount];
+
+        at[0] = at[1] = 1.0e6f;
+        at[2] = at[3] = -1.0e6f;
+        at[4] = 0.0f;
+        gPortFlashProbe = at;
+    }
+}
+
 static void PortMainMenu_IconNote(void *arg, f32 *prop) {
-    if (sIconCount < 16 && prop != NULL) {
-        sIconAt[sIconCount][0] = prop[0x38 / 4];
-        sIconAt[sIconCount][1] = prop[0x44 / 4];
-        sIconAt[sIconCount][2] = prop[0x40 / 4];
-        sIconAt[sIconCount][3] = (f32)(s32)arg;
-        sIconCount++;
+    if (gPortFlashProbe != NULL && sIconCount < 16) {
+        f32 *at = sIconAt[sIconCount];
+
+        gPortFlashProbe = NULL;
+        if (at[2] > at[0] && at[3] > at[1] && at[4] > 0.0f) {
+            at[5] = (f32)((s32)arg & 0xFF);
+            at[6] = ((s32)arg & 0x100) ? 1.0f : 0.0f;
+            sIconCount++;
+        }
     }
 }
 
 /* 1 if the row's icon is one of the films (its clips' pictures are then emptied). */
 static s32 PortMainMenu_FilmIcon(MFlash *flash, char *plate, s32 item) {
+    extern void Flash_ClipSetCallbackA(MFlash *flash, MFlashRef *ref, void *fn, void *arg);
     extern void Flash_ClipSetCallbackC(MFlash *flash, MFlashRef *ref, void *fn, void *arg);
     s32 which = tagPage ? 0 : item == 13 /* Z Warriors */ ? 1 : item == 14 /* Tag Team */ ? 2 : 0;
     MFlashUv empty = {0};
@@ -874,8 +896,10 @@ static s32 PortMainMenu_FilmIcon(MFlash *flash, char *plate, s32 item) {
         Flash_FindLabel(flash, plate, k ? "mc_icon_play" : "mc_icon_off", &ref);
         if (which != 0) {
             Flash_ClipSetUv(flash, &ref, &empty);
-            Flash_ClipSetCallbackC(flash, &ref, (void *)PortMainMenu_IconNote, (void *)which);
+            Flash_ClipSetCallbackA(flash, &ref, (void *)PortMainMenu_IconBegin, NULL);
+            Flash_ClipSetCallbackC(flash, &ref, (void *)PortMainMenu_IconNote, (void *)(which | (k ? 0x100 : 0)));
         } else {
+            Flash_ClipSetCallbackA(flash, &ref, NULL, NULL);
             Flash_ClipSetCallbackC(flash, &ref, NULL, NULL);
         }
     }
@@ -888,12 +912,30 @@ static void PortMainMenu_DrawIcons(void) {
     s32 i;
 
     for (i = 0; i < sIconCount; i++) {
-        f32 h = 44.0f * sIconAt[i][2];
-        f32 w = h * (512.0f / 448.0f) / aspect; /* (round on the window, whatever its shape) */
-        f32 x = sIconAt[i][0], y = sIconAt[i][1];
+        f32 *at = sIconAt[i];
+        s32 chosen = at[6] != 0.0f;
+        s32 ball = at[5] == 1.0f;
+        f32 x = (at[0] + at[2]) * 0.5f, y = (at[1] + at[3]) * 0.5f;
+        /* heights in the movie's lines, as large as the game's own icons (not from the clip's box, whose size differs
+           between the two states). The Scouter's picture is wider than tall: a larger square for the same weight. */
+        f32 h = ball ? (chosen ? 35.0f : 31.0f) : (chosen ? 45.0f : 40.0f);
+        f32 w = h * (512.0f / 448.0f) / aspect;          /* (round on the window, whatever its shape) */
+        s32 alpha = at[4] > 128.0f ? 128 : (s32)at[4]; /* (the GS's opaque is 0x80) */
 
-        Ps_SpriteScreen(sIconAt[i][3] == 1.0f ? MENU_BALL : MENU_RADAR, x - w * 0.5f, y - h * 0.5f, x + w * 0.5f, y + h * 0.5f, 0.0f, 0.0f,
-                        1.0f, 1.0f, PS_PLAIN, 0x80);
+        {
+            static s32 told[4];
+            s32 n = (ball ? 0 : 1) + (chosen ? 2 : 0);
+
+            if (!told[n]) {
+                told[n] = 1;
+                fprintf(stderr, "bt3: menu icon %d %s: box %d,%d %d,%d\n", (int)at[5], chosen ? "chosen" : "other", (int)at[0], (int)at[1],
+                        (int)at[2], (int)at[3]);
+            }
+        }
+        /* the film plays only under the cursor; elsewhere the picture stands still and a little faded */
+        Ps_SpriteScreen(chosen ? (ball ? MENU_BALL : MENU_RADAR) : (ball ? MENU_BALL_STILL : MENU_RADAR_STILL), x - w * 0.5f,
+                        y - h * 0.5f, x + w * 0.5f, y + h * 0.5f, 0.0f, 0.0f, 1.0f, 1.0f, chosen ? PS_PLAIN : 0x666666,
+                        chosen ? alpha : alpha * 7 / 8);
     }
     sIconCount = 0;
 }
@@ -1064,6 +1106,11 @@ void MainMenu_Draw(void) {
     }
 #endif
 #ifdef PORT
+    {   /* Tag Team's own pages: at least 4x whatever the player's resolution, as Dragon Net's screens */
+        extern void GsDraw_ScreenScaleFloor(int floor4); /* port/src/gs/gs_draw.c */
+
+        GsDraw_ScreenScaleFloor(tagPage ? 16 : 0);
+    }
     sIconCount = 0;
 #endif
     for (i = 0; i < MAINMENU_FLASH_NUM; i++) {

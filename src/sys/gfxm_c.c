@@ -1388,6 +1388,24 @@ void FlashShape_Set(FlashShape *shape, FlashMtx *mtx, FlashCxform *cx) {
 
 /* Draws a placed shape: each quad of its record (tag 4), textured with its image's texture file or flat when
    the image index is negative. A quad whose image has no texture file is skipped. */
+#ifdef PORT
+/* While not NULL, the screen box of every quad drawn is gathered here: x0, y0, x1, y1 and the largest alpha (0..255).
+   The main menu's film icons are drawn where the game's own icon would be (menu_a.c). */
+f32 *gPortFlashProbe;
+
+static void FlashShape_PortProbe(FlashQuad *q) {
+    s32 i;
+
+    for (i = 0; i < 4; i++) {
+        if (q->pt[i][0] < gPortFlashProbe[0]) gPortFlashProbe[0] = q->pt[i][0];
+        if (q->pt[i][1] < gPortFlashProbe[1]) gPortFlashProbe[1] = q->pt[i][1];
+        if (q->pt[i][0] > gPortFlashProbe[2]) gPortFlashProbe[2] = q->pt[i][0];
+        if (q->pt[i][1] > gPortFlashProbe[3]) gPortFlashProbe[3] = q->pt[i][1];
+    }
+    if ((f32)q->rgba[3] > gPortFlashProbe[4]) gPortFlashProbe[4] = (f32)q->rgba[3];
+}
+#endif
+
 void FlashShape_Draw(FlashShape *shape, FlashProp *prop, Flash *flash) {
     FlashShapeQuad rec;
     FlashQuad quad;
@@ -1437,6 +1455,11 @@ void FlashShape_Draw(FlashShape *shape, FlashProp *prop, Flash *flash) {
         quad.rgba[2] = (rec.rgba & 0xFF00) >> 8;
         quad.rgba[3] = rec.rgba & 0xFF;
         FlashDraw_TransformQuad(pq, &shape->mtx, &shape->cx, prop, flash->ofs);
+#ifdef PORT
+        if (gPortFlashProbe != NULL) {
+            FlashShape_PortProbe(pq);
+        }
+#endif
         FlashDraw_Quad(tex, pq);
     }
 }

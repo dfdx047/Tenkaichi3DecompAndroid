@@ -827,10 +827,69 @@ static void mod_file(const Mod *m, int kind, char *out, size_t size) {
     }
 }
 
+/* A file to read. The disc's files by number ("<root>/pzs3us1/01453.bin") are loose only where the disc was
+   extracted; the Android app keeps the archives whole (<root>/disc/DATA/PZS3US1.AFS: "AFS", the count, then offset
+   and size per entry), so what is not there as a file is read out of the archive. Without this no warrior could be
+   made there (its donors "not found on the disc"). On its own, with no lock and no table kept: the mods are scanned
+   from inside the file layer's own lock (plat_fcache.c Port_FileSize), so nothing of that layer may be called here. */
+static FILE *disc_open(const char *path) {
+    FILE *fp = fopen(path, "rb"), *in, *mem;
+    char afs[600], part[512];
+    uint8_t head[8], entry[8];
+    const char *r = root(), *p;
+    long base, size, left;
+    size_t n = strlen(r), k;
+    uint32_t count;
+    int index, m, c;
+
+    if (fp != NULL || strncmp(path, r, n) != 0 || path[n] != '/' || strncmp(path + n + 1, "pzs3us", 6) != 0 ||
+        (p = strchr(path + n + 1, '/')) == NULL || sscanf(p + 1, "%d.bin", &index) != 1 || index < 0) {
+        return fp;
+    }
+    m = snprintf(afs, sizeof(afs), "%s/disc/DATA/", r);
+    for (c = (int)n + 1; path + c < p && m < (int)sizeof(afs) - 5; c++) {
+        afs[m++] = (char)toupper((unsigned char)path[c]);
+    }
+    snprintf(afs + m, sizeof(afs) - (size_t)m, ".AFS");
+    if ((in = fopen(afs, "rb")) == NULL) {
+        return NULL;
+    }
+    if (fread(head, 1, 8, in) != 8 || memcmp(head, "AFS", 3) != 0) {
+        fclose(in);
+        return NULL;
+    }
+    count = (uint32_t)head[4] | (uint32_t)head[5] << 8 | (uint32_t)head[6] << 16 | (uint32_t)head[7] << 24;
+    if ((uint32_t)index >= count || fseek(in, 8 + (long)index * 8, SEEK_SET) != 0 || fread(entry, 1, 8, in) != 8) {
+        fclose(in);
+        return NULL;
+    }
+    base = (long)((uint32_t)entry[0] | (uint32_t)entry[1] << 8 | (uint32_t)entry[2] << 16 | (uint32_t)entry[3] << 24);
+    size = (long)((uint32_t)entry[4] | (uint32_t)entry[5] << 8 | (uint32_t)entry[6] << 16 | (uint32_t)entry[7] << 24);
+    if (size <= 0) {
+        fclose(in);
+        return NULL;
+    }
+    mem = fmemopen(NULL, (size_t)size + 1, "w+"); /* (its own memory, freed on fclose) */
+    fseek(in, base, SEEK_SET);
+    for (left = size; mem != NULL && left > 0; left -= (long)k) {
+        k = fread(part, 1, left < (long)sizeof(part) ? (size_t)left : sizeof(part), in);
+        if (k == 0 || fwrite(part, 1, k, mem) != k) {
+            fclose(mem);
+            mem = NULL;
+        }
+    }
+    fclose(in);
+    if (mem != NULL) {
+        fflush(mem);
+        rewind(mem);
+    }
+    return mem;
+}
+
 /* Whether a file is a portrait the select screens can take: packed (unpacked size, packed size, data), no larger
    than their buffers. Anything else would be unpacked over whatever lies behind those buffers. */
 static int portrait_ok(const char *path) {
-    FILE *fp = fopen(path, "rb");
+    FILE *fp = disc_open(path);
     uint32_t h[2];
     long len;
     int ok = 0;
@@ -851,7 +910,7 @@ static int portrait_ok(const char *path) {
    table), else 0. The rest of the table is not held to order or to the file's end: tools trim the padding at the
    end and the game takes such files. */
 static uint32_t pak_count(const char *path, long len) {
-    FILE *fp = fopen(path, "rb");
+    FILE *fp = disc_open(path);
     uint32_t h[2] = {0, 0};
     uint32_t n = 0;
 
@@ -9899,7 +9958,7 @@ static uint8_t *bpe_decode(const uint8_t *d, long len, uint32_t *size) {
 }
 
 static uint8_t *read_all(const char *path, long *len) {
-    FILE *fp = fopen(path, "rb");
+    FILE *fp = disc_open(path);
     uint8_t *d;
 
     if (fp == NULL) {

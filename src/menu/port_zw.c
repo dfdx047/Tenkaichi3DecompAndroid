@@ -1037,13 +1037,17 @@ static void Zw_Stage(s32 key, s32 chara, s32 mod, f32 cx, f32 feet, f32 height, 
             extern f32 gMmViewScale;
             extern s32 Port_WarriorViewScale(s32 mod);
 
-            gMmViewScale = mod >= 0 ? (f32)Port_WarriorViewScale(mod) / 100.0f : 1.0f;
+            { /* (only giants are taken further: a small one magnified went out of the picture) */
+                s32 pc = mod >= 0 ? Port_WarriorViewScale(mod) : 100;
+
+                gMmViewScale = (f32)(pc > 100 ? pc : 100) / 100.0f;
+            }
             Mm_ViewDraw(cx, at + bob, height * zoom);
             gMmViewScale = 1.0f;
         }
     }
     if (chara >= 0 && sZw->ask == ASK_NONE && sZw->mode != ZW_WSHOP && sZw->mode != ZW_WSDETAIL && sZw->mode != ZW_WSUPLOAD &&
-        sZw->mode != ZW_LAB && (sZw->mode != ZW_PICK || Pk_Side())) { /* how to look at it
+        sZw->mode != ZW_LAB && sZw->mode != ZW_EDIT && sZw->mode != ZW_PICK) { /* how to look at it
                                                                                                                          (not on the Workshop's pages) */
         s32 top = sZw->mode == ZW_LIBRARY || sZw->mode == ZW_EDIT || sZw->mode == ZW_PICK || sZw->mode == ZW_SHADEPK;
         f32 x = sZw->mode == ZW_EDIT ? cx - 330.0f : cx - 250.0f;
@@ -1368,32 +1372,6 @@ static void Ask_Open(s32 ask) {
     Snd_PlaySe(1, 0);
 }
 
-static void Ask_Draw(void) {
-    f32 pop = Zw_In(sZw->askT, 10);
-    f32 s = 0.85f + 0.15f * pop;
-    f32 cx = 688.0f;
-    f32 cy = 360.0f;
-    f32 hw = 330.0f * s;
-    f32 hh = 140.0f * s;
-    s32 n = Ask_Count();
-    s32 k;
-
-    Mx_Rect(0.0f, 0.0f, MX_W, MX_H, Mx_Rgba(0, 0, 24, (s32)(0x48 * pop)), Mx_Rgba(0, 0, 24, (s32)(0x48 * pop)));
-    Mx_Box(ZW_WINDOW, cx - hw, cy - hh, cx + hw, cy + hh, 26.0f, (s32)(128.0f * pop));
-    Mx_Fit(ZW_HALO, cx, cy - hh + 6.0f + 3.0f * Zw_Beat(60), 54.0f, (s32)(128.0f * pop));
-    Mx_TextA(cx, cy - 58.0f * s, Ask_Text(), 28.0f * s, hw * 1.8f, MX_GOLD, 1, (s32)(128.0f * pop));
-    Mx_TextA(cx, cy - 14.0f * s, Ask_Sub(), 19.0f * s, hw * 1.8f, MX_WHITE, 1, (s32)(128.0f * pop));
-    for (k = 0; k < n; k++) {
-        f32 bw = n == 3 ? 190.0f : 230.0f;
-        f32 bx = cx + ((f32)k - (f32)(n - 1) * 0.5f) * (bw + 18.0f) * s;
-        s32 lit = k == sZw->askCur;
-        f32 grow = lit ? 1.0f + 0.03f * Zw_Beat(40) : 1.0f;
-
-        Mx_Bar(lit ? ZW_PILL : ZW_PILL_STEEL, bx - bw * 0.5f * s * grow, cy + 50.0f * s, bx + bw * 0.5f * s * grow, cy + 96.0f * s, (s32)(128.0f * pop));
-        Mx_TextA(bx, cy + 73.0f * s, Ask_Button(k), 20.0f * s, bw * s - 20.0f, lit ? MX_DARK : MX_WHITE, 1, (s32)(128.0f * pop));
-    }
-}
-
 static void Zw_Edit(s32 at);
 static void Ed_Save(void);
 static void Zw_CosSwitch(s32 to);
@@ -1449,10 +1427,10 @@ static void Ask_Update(void) {
     s32 n = Ask_Count();
 
     sZw->askT++;
-    if (pad->gameRepeat & (PADG_LEFT | PADG_LEFT2)) {
+    if (pad->gameRepeat & (PADG_RIGHT | PADG_RIGHT2)) {
         sZw->askCur = (sZw->askCur + n - 1) % n;
         Snd_PlaySe(1, 0);
-    } else if (pad->gameRepeat & (PADG_RIGHT | PADG_RIGHT2)) {
+    } else if (pad->gameRepeat & (PADG_LEFT | PADG_LEFT2)) {
         sZw->askCur = (sZw->askCur + 1) % n;
         Snd_PlaySe(1, 0);
     }
@@ -2046,6 +2024,15 @@ static void Wk_UploadUpdate(s32 live) {
     }
 }
 
+static void Zt_Step(s32 dir); /* (port_zw_touch.inc) */
+static s32 Zt_Back(void);
+static void Zt_EdDraw(void);
+static void Zt_EdTap(f32 x, f32 y);
+static void Zt_AskDraw(void);
+static void Zt_AskTap(f32 x, f32 y);
+static void Zt_PkDraw(void);
+static void Zt_PkTap(f32 x, f32 y);
+
 /* ---------------------------------------------------------------------------------------------- touch */
 static u32 sTapQueue[64]; /* presses still to give, one every third frame */
 static s32 sTapLen, sTapAt2, sTapWait;
@@ -2161,6 +2148,20 @@ static void Zw_Touch(void) {
         return;
     }
     sTapLen = sTapAt2 = 0;
+    if (sZw->ask != ASK_NONE || sZw->mode == ZW_EDIT || sZw->mode == ZW_PICK) {
+        if (Port_MenuTap((u32)at)) {
+            f32 x = (f32)at[0] / Mx_X(1.0f) * (2400.0f / MX_W), y = (f32)at[1] / Mx_Y(1.0f) * (1080.0f / MX_H);
+
+            if (sZw->ask != ASK_NONE) {
+                Zt_AskTap(x, y);
+            } else if (sZw->mode == ZW_PICK) {
+                Zt_PkTap(x, y);
+            } else {
+                Zt_EdTap(x, y);
+            }
+        }
+        return;
+    }
     if ((sZw->mode != ZW_LIBRARY || sZw->ask != ASK_NONE) && Port_MenuTap((u32)at)) { /* (the home screen has its own) */
         Zw_TapAt((f32)at[0] / Mx_X(1.0f), (f32)at[1] / Mx_Y(1.0f));
     }
@@ -2330,7 +2331,9 @@ static void Lib_Touch(Pad *pad) {
     }
 }
 
+static void Zt_Reset(void);
 static void Zw_Edit(s32 at) {
+    Zt_Reset();
     sZw->at = at;
     if (at >= 0) {
         sZw->w = sZw->list[at];
@@ -3009,6 +3012,10 @@ static void Ed_Update(s32 live) {
     if (Zw_SaveTick() || !live) {
         return;
     }
+    if ((pad->gamePressed & PADG_TRIANGLE) && Zt_Back()) { /* (from all the options: back to the tab first) */
+        Snd_PlaySe(1, 2);
+        return;
+    }
     if (Port_DropTake(path)) { /* a picture dropped on the window or chosen: the warrior's own render */
         if (sZw->w.mod < 0 || sZw->dirty) { /* (saved first, then used: Ed_Save) */
             Ps_Copy(sZw->artPending, path, sizeof(sZw->artPending));
@@ -3025,19 +3032,16 @@ static void Ed_Update(s32 live) {
         Snd_PlaySe(1, 0);
         return;
     }
-    if (pad->gameRepeat & (PADG_UP | PADG_UP2)) { /* (over the rows shown, headings too) */
-        do {
-            *cur = *cur > 0 ? *cur - 1 : n - 1;
-        } while (!Zw_RowShown(rows, sZw->tab, *cur));
+    if (pad->gameRepeat & (PADG_UP | PADG_UP2)) { /* (over what the screen shows: port_zw_touch.inc) */
+        Zt_Step(-1);
     } else if (pad->gameRepeat & (PADG_DOWN | PADG_DOWN2)) {
-        do {
-            *cur = *cur < n - 1 ? *cur + 1 : 0;
-        } while (!Zw_RowShown(rows, sZw->tab, *cur));
+        Zt_Step(1);
     }
     if (*cur != was) {
         Snd_PlaySe(1, 0);
         sZw->rest = 0;
     }
+    kind = rows[*cur].kind; /* (the row the cursor is on now) */
     {
         s32 v = Zw_VisPos(rows, sZw->tab, *cur);
 
@@ -3286,8 +3290,9 @@ static void Ed_Update(s32 live) {
         Zw_Note(line);
         Snd_PlaySe(1, 0);
     }
-    if ((pad->gamePressed & PADG_CROSS) && IS_SIZE(kind)) {
-        /* (a size has no picker) */
+    if ((pad->gamePressed & PADG_CROSS) && (IS_SIZE(kind) || (kind >= ROW_FORMKEY && kind <= ROW_FORMKEY_END) ||
+                                            (kind >= ROW_FORMCOST && kind <= ROW_FORMCOST_END) || (kind >= ROW_FORMAURA && kind <= ROW_FORMAURA_END))) {
+        /* (no picker for these) */
     } else if ((pad->gamePressed & PADG_CROSS) && kind >= ROW_LAB && kind <= ROW_LAB_END) { /* the Technique Lab */
         Snd_PlaySe(1, 1);
         Lb_Open(kind - ROW_LAB);
@@ -6566,6 +6571,9 @@ static void Zw_LeaveFor(s32 to) {
 }
 
 static void Zw_Init(void) {
+    extern void GsDraw_ScreenScaleFloor(int floor4); /* port/src/gs/gs_draw.c */
+
+    GsDraw_ScreenScaleFloor(16); /* (at least 4x here, as Dragon Net: at 1x its pictures and letters blurred) */
     sZw = Heap_Alloc(sizeof(Zw), 0x20, 0, 2);
     memset(sZw, 0, sizeof(Zw));
     sZw->at = -1;
@@ -6599,6 +6607,9 @@ static void Zw_Init(void) {
 }
 
 static void Zw_Term(void) {
+    extern void GsDraw_ScreenScaleFloor(int floor4); /* port/src/gs/gs_draw.c */
+
+    GsDraw_ScreenScaleFloor(0); /* (the player's own resolution again: the fights are theirs) */
     Glow_Off();
     Port_TextMode(0);
     Mm_ViewClose();
@@ -9030,6 +9041,19 @@ static void Zw_Auto(void) {
     }
 }
 
+#include "port_zw_touch.inc"
+
+static void Zt_Reset(void) {
+    sZtPage = 0;
+}
+
+static s32 Zt_Back(void) {
+    s32 was = sZtPage;
+
+    sZtPage = 0;
+    return was != 0;
+}
+
 s32 PortZw_Run(void) {
     Zw_Init();
     Port_EscQuit(0); /* Esc is "back" in here */
@@ -9103,18 +9127,12 @@ s32 PortZw_Run(void) {
         Mx_Pic(ZW_BG, 0.0f, 0.0f, MX_W, MX_H, 0x80);
         switch (sZw->mode) {
         case ZW_LIBRARY: Lib_Draw(); break;
-        case ZW_EDIT: Ed_Draw(); break;
+        case ZW_EDIT: Zt_EdDraw(); break;
         case ZW_FXCOL: Fx_Draw(); break;
         case ZW_SHADEPK: Sh_Draw(); break;
         case ZW_TEXTURE: Tx_Draw(); break;
         case ZW_POSE: Po_Draw(); break;
-        case ZW_PICK:
-            sZwEdBehind = 1;
-            Ed_Draw(); /* (the editor behind it: its model, not its dialog box, prompts or info window) */
-            sZwEdBehind = 0;
-            sPromptCount = 0;
-            Pk_Draw();
-            break;
+        case ZW_PICK: Zt_PkDraw(); break;
         case ZW_NAME: Kb_Draw(); break;
         case ZW_LAB: Lb_Draw(); break;
         case ZW_CROP: Cr_Draw(); break;
@@ -9127,7 +9145,7 @@ s32 PortZw_Run(void) {
         }
         if (sZw->ask != ASK_NONE) {
             gMxTapCount = 0; /* (only the question answers) */
-            Ask_Draw();
+            Zt_AskDraw();
         }
         ColorFade_Draw();
         File_Stub264D90();

@@ -639,6 +639,13 @@ s32 PortScreen_Main(void) {
     if (gMenuArc5 == NULL) {
         gMenuArc5 = File_LoadSync(gProgress->baseFile, NULL, 0);
     }
+    {   /* Tag Team's screens: at least 4x, as Dragon Net's (menu/port_tbo.c sets its own) */
+        extern void GsDraw_ScreenScaleFloor(int floor4); /* port/src/gs/gs_draw.c */
+
+        if (screen == PORT_SCREEN_TAG_TEAM || screen == PORT_SCREEN_TAG_ONLINE || screen == PORT_SCREEN_TAG_LOBBY) {
+            GsDraw_ScreenScaleFloor(16);
+        }
+    }
     switch (screen) {
     case PORT_SCREEN_TAG_TEAM:
         { extern s32 TagSession_Run(void);
@@ -662,6 +669,9 @@ s32 PortScreen_Main(void) {
           extern void TagNet_Enable(s32),TagNet_Party(s32),Port_TagOnlineSetup(void);
           extern s32 TagNet_Room(void);
           if(!result && PortTbo_QuickTake()) {
+              extern void GsDraw_ScreenScaleFloor(int floor4); /* port/src/gs/gs_draw.c */
+
+              GsDraw_ScreenScaleFloor(16);
               TagNet_Party(0);TagNet_Enable(1);result=TagNet_Room();
               if(result==1)Port_TagOnlineSetup();else {result=0;TagMenu_Request(1);gProgress->mode=4;}
               break;
@@ -672,6 +682,11 @@ s32 PortScreen_Main(void) {
     default:
         gProgress->mode = 4;
         break;
+    }
+    {
+        extern void GsDraw_ScreenScaleFloor(int floor4); /* port/src/gs/gs_draw.c */
+
+        GsDraw_ScreenScaleFloor(0); /* (whatever screen it was: the player's own resolution for what comes next) */
     }
     return result;
 }
