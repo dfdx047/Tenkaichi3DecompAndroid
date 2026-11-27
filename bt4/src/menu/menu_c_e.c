@@ -2274,6 +2274,16 @@ s32 CharSel_Run(s32 section) {
            pad it is as ever, then each at his side; the way to the battle after, from the local fighter */
         sPortStageFirst = PortSelFlow_StageFirst(Port_NetSession() || Port_NetActive(), Port_TagNetwork(), PortCharSel_On(),
                                                  Port_Setting("select_stage_first", 1)); /* (include/menu/port_selflow.h: online it does not depend on the screen) */
+#ifdef __ANDROID__
+        {   /* Ranked (Android only, so both copies are this game): the map first, then the fighters and the way to the battle with no
+               loading screen, as it was before the online order went back to the game's own. Both players need this build. */
+            extern int Port_RankedActive(void);
+
+            if (!Port_TagNetwork() && Port_RankedActive()) {
+                sPortStageFirst = 1;
+            }
+        }
+#endif
         PortSelDiag_Flow("duel", Port_NetSession() || Port_NetActive(), sPortStageFirst, PortCharSel_On());
     }
 #endif

@@ -2535,6 +2535,16 @@ s32 TeamSel_Run(s32 section) {
         extern int Port_Setting(const char *name, int def), Port_NetSession(void), Port_NetActive(void);
         sPortStageFirst = PortSelFlow_StageFirst(Port_NetSession() || Port_NetActive(), 0, PortCharSel_On(),
                                                  Port_Setting("select_stage_first", 1)); /* (include/menu/port_selflow.h: online it does not depend on the screen) */
+#ifdef __ANDROID__
+        {   /* Ranked (Android only, so both copies are this game): the map first, then the fighters and the way to the battle with no
+               loading screen, as it was before the online order went back to the game's own. Both players need this build. */
+            extern int Port_RankedActive(void);
+
+            if (Port_RankedActive()) {
+                sPortStageFirst = 1;
+            }
+        }
+#endif
         PortSelDiag_Flow("team", Port_NetSession() || Port_NetActive(), sPortStageFirst, PortCharSel_On());
     }
 #endif
