@@ -89,7 +89,8 @@ static struct {
     int resultBattle, resultLeft; /* the last battle whose answer came (its number in the session), its rematches left */
     /* a Ranked battle being played: said every 3 s while the game runs it (/v1/beat), so that the service can tell who
        vanished from it; and the battles that broke off, asked about until decided (/v1/gone) */
-    struct { int on; Uint64 alive, next; char body[420]; } live;
+    /* (off: the service did not take the notices; none more this session. wrote: what the file says, -1 no file) */
+    struct { int on, off, wrote; Uint64 alive, next; char body[420]; } live;
     struct { int used, crash; Uint64 next, until, since; char body[220]; } left[2];
 } sP;
 
@@ -485,12 +486,16 @@ static bool SDLCALL app_watch(void *arg, SDL_Event *e) {
     if (e->type == SDL_EVENT_DID_ENTER_FOREGROUND) SDL_SetAtomicInt(&sInBackground, 0);
     return true;
 }
-/* (the lock held) "room battle frozen" */
+/* (the lock held) "room battle frozen": written only when it says something new */
 static void live_file(void) {
-    FILE *f = fopen(LIVE_FILE, "w");
-    if (f != NULL) {
-        fprintf(f, "%s %d %d\n", sG.liveCode, sG.liveN, !SDL_GetAtomicInt(&sInBackground) && SDL_GetTicks() - sP.live.alive > 9000);
+    int frozen = !SDL_GetAtomicInt(&sInBackground) && SDL_GetTicks() - sP.live.alive > 9000;
+    int says = sG.liveN * 2 + frozen;
+    FILE *f;
+    if (says == sP.live.wrote) return;
+    if ((f = fopen(LIVE_FILE, "w")) != NULL) {
+        fprintf(f, "%s %d %d\n", sG.liveCode, sG.liveN, frozen);
         fclose(f);
+        sP.live.wrote = says;
     }
 }
 
@@ -511,7 +516,13 @@ static int SDLCALL live_thread(void *arg) {
             SDL_UnlockMutex(sP.lock);
             i = post("beat", body, a, sizeof(a));
             SDL_LockMutex(sP.lock);
-            if (i && (SDL_strstr(a, "\"off\"") != NULL || SDL_strstr(a, "\"path\"") != NULL)) sP.live.on = 0; /* (a service without the rule) */
+            if (i && SDL_strstr(a, "\"playing\"") == NULL) { /* a service without the rule: no more, and no file to answer for */
+                sP.live.on = 0;
+                sP.live.off = 1;
+                sP.live.wrote = -1;
+                remove(LIVE_FILE);
+                SDL_Log("bt4 profile: the service takes no notices of the battle being played: %.80s", a);
+            }
         }
         for (k = 0; k < 2; k++) {
             char state[16] = "";
@@ -1036,6 +1047,7 @@ void Bt4Profile_SessionBegin(int ranked, const char *code) {
     if (sP.lock != NULL) { /* (medals of an earlier session not shown yet: not this match's) */
         SDL_LockMutex(sP.lock);
         sP.medals = 0;
+        sP.live.on = sP.live.off = 0;
         SDL_UnlockMutex(sP.lock);
     }
     SDL_Log("bt4 profile: session begins (%s, room %s)", sG.ranked ? "Ranked" : "normal", sG.code[0] ? sG.code : "-");
@@ -1104,7 +1116,7 @@ static void live_tick(int me, const char *name0, const char *name1) {
     const char *myName = me ? name1 : name0, *their = me ? name0 : name1;
     if (sP.lock == NULL || myName == NULL || their == NULL || myName[0] == '\0' || their[0] == '\0' || sG.code[0] == '\0') return;
     SDL_LockMutex(sP.lock);
-    if (sP.has) {
+    if (sP.has && !sP.live.off) {
         sP.live.alive = SDL_GetTicks();
         if (!sP.live.on || sG.liveN != sG.battle) {
             jesc(mine, sizeof(mine), myName);
@@ -1116,6 +1128,7 @@ static void live_tick(int me, const char *name0, const char *name1) {
                          sP.id, sP.secret, code, sG.battle, mine, theirs, me);
             sP.live.on = 1;
             sP.live.next = 0;
+            sP.live.wrote = -1;
             live_file();
         }
     }

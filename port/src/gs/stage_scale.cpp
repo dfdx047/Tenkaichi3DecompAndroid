@@ -10,6 +10,9 @@
 #include <set>
 #include <map>
 #include <algorithm>
+#include <chrono>
+#define XXH_INLINE_ALL
+#include "../../third_party/xxhash/xxhash.h"
 
 namespace {
 struct Plan {
@@ -313,19 +316,35 @@ extern "C" int Port_TagStageRepair(void *file,int capacity) {
     if(!p.repairs.empty()) std::fprintf(stderr,"tagstage: repaired %zu exported collision offsets\n",p.repairs.size());
     return 1;
 }
+/* The coordinate words found in the last stage file scaled, by the file's content (an online match's start runs the
+   stage's set-up again when a rollback goes back past it: the same file was searched two and three times, 0.3-0.4 s
+   each, in the black loading screen of a 2026-11-03 log). The search only reads the file, so the same bytes give
+   the same words: a file seen before is only multiplied. */
+static struct { bool valid=false; uint64_t hash=0; size_t capacity=0, bytes=0; std::vector<size_t> fields; } sScaleCache;
 extern "C" int Port_TagStageScale(void *file,int capacity,int percent) {
     if(percent<=100) return 100;
     if(!file || capacity<128 || capacity>128*1024*1024) return 100;
-    Plan plan(file,size_t(capacity));
-    if(!plan.build()) {
-        std::fprintf(stderr,"tagstage: unsupported %s layout; kept original stage\n",plan.section);
-        return 100;
+    auto t0=std::chrono::steady_clock::now();
+    uint64_t hash=XXH3_64bits(file,size_t(capacity));
+    bool cached=sScaleCache.valid && sScaleCache.hash==hash && sScaleCache.capacity==size_t(capacity);
+    if(!cached) {
+        Plan plan(file,size_t(capacity));
+        if(!plan.build()) {
+            std::fprintf(stderr,"tagstage: unsupported %s layout; kept original stage\n",plan.section);
+            return 100;
+        }
+        sScaleCache.fields.swap(plan.fields);
+        sScaleCache.bytes=plan.parts.back().second;
+        sScaleCache.hash=hash;sScaleCache.capacity=size_t(capacity);sScaleCache.valid=true;
     }
     float scale=std::min(percent,300)/100.0f;
-    for(size_t p:plan.fields) {
-        float v;std::memcpy(&v,plan.data+p,4);v*=scale;std::memcpy(plan.data+p,&v,4);
+    uint8_t *data=(uint8_t *)file;
+    for(size_t p:sScaleCache.fields) {
+        float v;std::memcpy(&v,data+p,4);v*=scale;std::memcpy(data+p,&v,4);
     }
-    std::fprintf(stderr,"tagstage: scale=%d fields=%zu bytes=%zu\n",percent,plan.fields.size(),plan.parts.back().second);
+    std::fprintf(stderr,"tagstage: scale=%d fields=%zu bytes=%zu (%s, %.1f ms)\n",percent,sScaleCache.fields.size(),sScaleCache.bytes,
+                 cached?"the same file again":"searched",
+                 std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-t0).count());
     return std::min(percent,300);
 }
 #ifndef TAG_STAGE_SCALE_TOOL

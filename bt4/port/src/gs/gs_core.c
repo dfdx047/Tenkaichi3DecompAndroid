@@ -1386,14 +1386,38 @@ static void render_stop(void) {
    drawn and its first picture shown. Without the thread that drawing comes before the pads are read, at the start of
    the next tick; with it the game read the pads at once and the drawing went on beside it, which made what was read
    older by the drawing's time when its picture came (2.4 ms measured at 2x). A game that is behind does not wait
-   here: then the drawing beside the game's work is what the thread is for. */
+   here: then the drawing beside the game's work is what the thread is for.
+   At most PAD_WAIT_MS (as BT3, 2026-11-11): a list the thread is far from done with held the game for 10 to 14 ms a
+   frame in a big fight, the game and the drawing then ran one after the other and the next tick came late. A list
+   nearly done is still waited for. BT3_PAD_WAIT_MS=<n>: n ms (0: not at all, -1: until the list is done, as before). */
+#define PAD_WAIT_MS 3
 void Gs_RenderListWait(void) {
+    static int limit = -2;
+    struct timespec until;
     if (!sThreaded || pthread_equal(pthread_self(), sThread)) {
         return;
     }
+    if (limit == -2) {
+        limit = getenv("BT3_PAD_WAIT_MS") != NULL ? atoi(getenv("BT3_PAD_WAIT_MS")) : PAD_WAIT_MS;
+    }
+    if (limit == 0) {
+        return;
+    }
+    if (limit > 0) {
+        clock_gettime(CLOCK_REALTIME, &until); /* (the condition's clock) */
+        until.tv_nsec += (long)limit * 1000000L;
+        while (until.tv_nsec >= 1000000000L) {
+            until.tv_nsec -= 1000000000L;
+            until.tv_sec++;
+        }
+    }
     pthread_mutex_lock(&sLock);
     while (sJob == 2 && !sListDone) {
-        pthread_cond_wait(&sDone, &sLock);
+        if (limit < 0) {
+            pthread_cond_wait(&sDone, &sLock);
+        } else if (pthread_cond_timedwait(&sDone, &sLock, &until) != 0) {
+            break; /* (timed out: the game goes on, the drawing beside it) */
+        }
     }
     pthread_mutex_unlock(&sLock);
 }
