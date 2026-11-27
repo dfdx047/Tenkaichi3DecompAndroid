@@ -207,6 +207,22 @@ int ADXF_LoadPartitionNw(int ptid, char *fname, void *dir, void *ptinfo) {
         sPartDir[ptid & 7][n++] = (char)tolower((unsigned char)*p);
     }
     sPartDir[ptid & 7][n] = '\0';
+    /* BT3's three archives are PZS3US0 / 1 / 2. A modified disc whose data moved gives this table another string
+       (a phone's log, 2026-11-27: "pzs3us", and the game asked for its files for ever, a black screen): the
+       archive's own name then, as the disc is installed. */
+    if (!PortGame_IsBT4() && (ptid & 7) < 3) {
+        char want[16];
+        int k;
+
+        snprintf(want, sizeof(want), "pzs3us%d", ptid & 7);
+        for (k = 0; sPartDir[ptid & 7][k] != '\0' && sPartDir[ptid & 7][k] == want[k]; k++) {
+        }
+        if (sPartDir[ptid & 7][k] != '\0' || want[k] != '\0') {
+            fprintf(stderr, "bt3: archive %d is named \"%s\" in this disc's data (a modified disc): %s is used\n", ptid & 7,
+                    sPartDir[ptid & 7], want);
+            snprintf(sPartDir[ptid & 7], sizeof(sPartDir[0]), "%s", want);
+        }
+    }
     return 0;
 }
 

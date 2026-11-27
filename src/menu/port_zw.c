@@ -23,6 +23,68 @@
 #include "menu/port_zw.h"
 #include "sys/math3d.h"
 
+/* ---- Portuguese, English, Spanish (2026-11-27) ---- every text of these screens is looked up as it is drawn (and
+   every format as it is filled) in port_zw_lang.inc (port/tools/zw_lang.py); a text not listed is shown as written. */
+typedef struct ZwWord {
+    const char *key;
+    const char *to[3]; /* in Port_TagLang's order: English, Portuguese, Spanish */
+} ZwWord;
+static ZwWord sZwWords[] = {
+#include "port_zw_lang.inc"
+};
+#define ZW_WORDS ((int)(sizeof(sZwWords) / sizeof(sZwWords[0])))
+
+static int Zw_Cmp(const char *a, const char *b) {
+    while (*a != 0 && *a == *b) {
+        a++, b++;
+    }
+    return (int)(unsigned char)*a - (int)(unsigned char)*b;
+}
+
+static char *Zw_Tr(const char *s) {
+    extern int Port_TagLang(void);
+    static int sorted;
+    int lo = 0, hi = ZW_WORDS - 1, l, i, k;
+
+    if (s == NULL || s[0] == 0) {
+        return (char *)s;
+    }
+    if (!sorted) {
+        sorted = 1;
+        for (i = 1; i < ZW_WORDS; i++) {
+            ZwWord w = sZwWords[i];
+
+            for (k = i; k > 0 && Zw_Cmp(sZwWords[k - 1].key, w.key) > 0; k--) {
+                sZwWords[k] = sZwWords[k - 1];
+            }
+            sZwWords[k] = w;
+        }
+    }
+    while (lo <= hi) {
+        int mid = (lo + hi) / 2, c = Zw_Cmp(s, sZwWords[mid].key);
+
+        if (c == 0) {
+            l = Port_TagLang();
+            return (char *)sZwWords[mid].to[l >= 0 && l < 3 ? l : 0];
+        }
+        if (c < 0) {
+            hi = mid - 1;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    return (char *)s;
+}
+#define Mx_Text(x, cy, s, ...) (Mx_Text)(x, cy, Zw_Tr(s), __VA_ARGS__)
+#define Mx_TextA(x, cy, s, ...) (Mx_TextA)(x, cy, Zw_Tr(s), __VA_ARGS__)
+#define Mx_TextC(x, cy, s, ...) (Mx_TextC)(x, cy, Zw_Tr(s), __VA_ARGS__)
+#define Mx_Heading(x, cy, s, ...) (Mx_Heading)(x, cy, Zw_Tr(s), __VA_ARGS__)
+#define Mx_Say(x, cy, s, ...) (Mx_Say)(x, cy, Zw_Tr(s), __VA_ARGS__)
+#define Mx_SayC(x, cy, s, ...) (Mx_SayC)(x, cy, Zw_Tr(s), __VA_ARGS__)
+#define Mx_TextW(s, cap) (Mx_TextW)(Zw_Tr(s), cap)
+#define sprintf(out, fmt, ...) (sprintf)(out, Zw_Tr(fmt), ##__VA_ARGS__)
+#define snprintf(out, n, fmt, ...) snprintf(out, n, Zw_Tr(fmt), ##__VA_ARGS__) /* (not in parentheses: as undeclared here as before) */
+
 extern void Job_Run(void);
 extern void *Sprite_Unpack(void *src, void *dst, s32 *size);
 extern void Mm_PromptReset(void);
@@ -307,9 +369,13 @@ static void Ws_Load(void);
 static void Ws_ShapeTick(void);
 static s32 Sh_BlinkNode(void);
 
+static void Zb_Free(void); /* (port_zw_bar.inc) */
 static void Zw_SetMode(s32 mode) {
     Glow_Off();
     sZw->glowKey = 0;
+    if (mode != ZW_PICK) {
+        Zb_Free(); /* (the picker's portraits) */
+    }
     sZw->back = sZw->mode;
     sZw->mode = mode;
     sZw->modeT = 0;
@@ -2209,7 +2275,34 @@ static u32 Lib_Button(s32 kind) {
 /* The home screen (Android): the Kaioshins' world, the list on the left, the warrior on the stage, Shin on the right,
    everything pressed by touch (Lib_Touch). The foot's buttons are the screen's prompts. */
 static void Zo_LibButton(void);
-static s32 sZoLibSel; /* (the home screen: the arrows are on the "play online" button, above the list) */
+static s32 sZoLibSel; /* (the home screen's arrows: 0 the list, 1 the "play online" button, 2 the language) */
+#define LIB_LANG_X0 1084.0f
+#define LIB_LANG_X1 1356.0f
+#define LIB_LANG_Y0 20.0f
+#define LIB_LANG_Y1 76.0f
+static void Lib_LangDraw(void) {
+    extern int Port_TagLang(void);
+    static char *kName[3] = {"PT", "EN", "ES"};
+    static const s32 kId[3] = {1, 0, 2};
+    f32 w = (LIB_LANG_X1 - LIB_LANG_X0 - 16.0f) / 3.0f;
+    s32 i;
+
+    Mx_Box(sZoLibSel == 2 ? ZW_T_SEL : ZW_T_PANEL, LIB_LANG_X0, LIB_LANG_Y0, LIB_LANG_X1, LIB_LANG_Y1, 22.0f, 0x80);
+    for (i = 0; i < 3; i++) {
+        f32 x = LIB_LANG_X0 + 8.0f + w * (f32)i;
+        s32 on = Port_TagLang() == kId[i];
+
+        Mx_Bar(on ? ZW_T_ORANGE : ZW_T_NAVY, x + 2.0f, LIB_LANG_Y0 + 8.0f, x + w - 2.0f, LIB_LANG_Y1 - 8.0f, on || sZoLibSel == 2 ? 0x80 : 0x58);
+        Mx_Text(x + w * 0.5f, (LIB_LANG_Y0 + LIB_LANG_Y1) * 0.5f, kName[i], 20.0f, w - 12.0f, MX_WHITE, 1);
+    }
+}
+static void Lib_LangNext(void) { /* PT, EN, ES, round */
+    extern int Port_TagLang(void);
+    extern void Port_TagLangSet(int);
+    s32 l = Port_TagLang();
+
+    Port_TagLangSet(l == 1 ? 0 : l == 0 ? 2 : 1);
+}
 static void Lib_Draw(void) {
     PortWarrior *w = sZw->cur > 0 ? &sZw->list[sZw->cur - 1] : NULL;
     s32 i;
@@ -2262,7 +2355,7 @@ static void Lib_Draw(void) {
         Zw_Stage(-1, -1, -1, 835.0f, 590.0f, 420.0f, 0);
         Mx_Text(835.0f, 330.0f, "A NEW WARRIOR", 32.0f, 0.0f, MX_GOLD, 1);
     }
-    Zw_Prompt(0, sZoLibSel ? "Online" : sZw->cur == 0 ? "Create" : "Edit");
+    Zw_Prompt(0, sZoLibSel == 2 ? "Change" : sZoLibSel ? "Online" : sZw->cur == 0 ? "Create" : "Edit");
     if (sZw->cur > 0 && !sZoLibSel) {
         Zw_Prompt(1, "Copy");
         Zw_Prompt(4, "Remove");
@@ -2288,8 +2381,9 @@ static void Lib_Draw(void) {
     } else {
         say = sZw->count == 0 ? "Welcome! Shall we make a warrior?" : w != NULL ? "A fine warrior you have there." : "A new warrior? Let us begin.";
     }
-    Mx_Box(ZW_DIALOG, 940.0f, 24.0f, 1356.0f, 124.0f, 24.0f, 0x80);
-    Mx_Say(1148.0f, 56.0f, say, 21.0f, 380.0f, MX_WHITE, 1);
+    Mx_Box(ZW_DIALOG, 944.0f, 84.0f, 1356.0f, 156.0f, 22.0f, 0x80);
+    Mx_Say(1150.0f, 108.0f, Zw_Tr(say), 18.0f, 382.0f, MX_WHITE, 1);
+    Lib_LangDraw();
 }
 
 #define LIB_ONLINE_X0 545.0f
@@ -2308,6 +2402,15 @@ static void Lib_Touch(Pad *pad) {
     }
     x = (f32)at[0] / Mx_X(1.0f);
     y = (f32)at[1] / Mx_Y(1.0f);
+    if (x >= LIB_LANG_X0 && x <= LIB_LANG_X1 && y <= LIB_LANG_Y1 + 6.0f) {
+        extern void Port_TagLangSet(int);
+        static const s32 kId[3] = {1, 0, 2};
+        s32 k = (s32)((x - LIB_LANG_X0 - 8.0f) / ((LIB_LANG_X1 - LIB_LANG_X0 - 16.0f) / 3.0f));
+
+        Port_TagLangSet(kId[k < 0 ? 0 : k > 2 ? 2 : k]);
+        Snd_PlaySe(1, 1);
+        return;
+    }
     if (x >= LIB_ONLINE_X0 - 8.0f && x <= LIB_ONLINE_X1 + 8.0f && y <= LIB_ONLINE_Y1 + 8.0f) {
         Snd_PlaySe(1, 1);
         Zo_Open();
@@ -2449,7 +2552,13 @@ static void Lib_Update(s32 live) {
         Lib_Touch(pad);
     }
     /* up / down go round the online button and the list; right goes to the button, left back to the list */
-    if (sZoLibSel) {
+    if (sZoLibSel == 1 && (pad->gameRepeat & (PADG_RIGHT | PADG_RIGHT2))) {
+        sZoLibSel = 2;
+        Snd_PlaySe(1, 0);
+    } else if (sZoLibSel == 2 && (pad->gameRepeat & (PADG_LEFT | PADG_LEFT2))) {
+        sZoLibSel = 1;
+        Snd_PlaySe(1, 0);
+    } else if (sZoLibSel) {
         if (pad->gameRepeat & (PADG_UP | PADG_UP2)) {
             sZoLibSel = 0, sZw->cur = sZw->count, sZw->rest = 0;
             Snd_PlaySe(1, 0);
@@ -2512,7 +2621,9 @@ static void Lib_Update(s32 live) {
         Snd_PlaySe(1, 1);
     } else if (pad->gamePressed & PADG_CROSS) {
         Snd_PlaySe(1, 1);
-        if (sZoLibSel) {
+        if (sZoLibSel == 2) {
+            Lib_LangNext();
+        } else if (sZoLibSel) {
             Zo_Open();
         } else {
             Zw_Edit(sZw->cur - 1);
@@ -3807,6 +3918,9 @@ static void Pk_TakeInto(PortWarrior *w, s32 quiet) {
     Zw_Changed();
 }
 
+static void Zb_Nav(Pad *pad);
+static s32 Zb_Keys(Pad *pad);
+static void Zb_Free(void);
 static void Pk_Update(s32 live) {
     Pad *pad = &gPad[0];
     s32 slots = Pk_Slots(sZw->pickRow->kind);
@@ -3818,7 +3932,10 @@ static void Pk_Update(s32 live) {
     if (sZw->pickStage == 0) {
         s32 c = sZw->pickCur;
 
-        if (c == -2) { /* (on "None", above the grid) */
+        if (!slots) { /* (the fighter picker: its bar, menu/port_zw_bar.inc) */
+            Zb_Nav(pad);
+            c = sZw->pickCur;
+        } else if (c == -2) { /* (on "None", above the grid) */
             if (pad->gameRepeat & (PADG_DOWN | PADG_DOWN2)) {
                 c = sZw->pickTop * PK_COLS;
             }
@@ -3867,6 +3984,9 @@ static void Pk_Update(s32 live) {
     }
     if (sZw->pickCur * 8 + sZw->pickSlot != was) {
         Snd_PlaySe(1, 0);
+    }
+    if (!slots && Zb_Keys(pad)) {
+        return;
     }
     if (pad->gamePressed & PADG_CROSS) {
         Snd_PlaySe(1, 1);
@@ -9085,11 +9205,12 @@ static void Zw_Auto(void) {
 }
 
 #include "port_zw_touch.inc"
+#include "port_zw_bar.inc"
 #include "port_zw_online.inc"
 static void Zo_LibButton(void) { /* the home screen's way to the online screens */
     Zo_BigButton(LIB_ONLINE_X0 * 2400.0f / MX_W, LIB_ONLINE_Y0 * 1080.0f / MX_H, LIB_ONLINE_X1 * 2400.0f / MX_W,
                  LIB_ONLINE_Y1 * 1080.0f / MX_H, Zo_L("JOGAR ONLINE", "PLAY ONLINE", "JUGAR ONLINE"),
-                 Zo_L("Partida r\303\241pida e salas", "Quick match and rooms", "Partida r\303\241pida y salas"), 0x80, sZoLibSel);
+                 Zo_L("Partida r\303\241pida e salas", "Quick match and rooms", "Partida r\303\241pida y salas"), 0x80, sZoLibSel == 1);
 }
 
 static void Zt_Reset(void) {

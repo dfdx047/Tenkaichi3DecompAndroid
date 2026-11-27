@@ -153,6 +153,15 @@ static int slot_of(const char *rel) {
             repeats = 0;
         }
         repeats++;
+        if (repeats == 64) { /* (the game will not go on: said on screen too, not only a black picture) */
+            extern void Port_UiNotice(const char *text);
+            static int told;
+
+            if (!told++) {
+                Port_UiNotice("This game image does not work with Dragon Rage: a file it needs is not in it (a modified disc). "
+                              "Install the original USA disc (SLUS-21678).");
+            }
+        }
         if (repeats <= 3 || (repeats & (repeats - 1)) == 0) {
             fprintf(stderr, "bt3: file not found: %s%s\n", path,
                     repeats > 3 ? " (asked for again and again: the game data does not have it)" : "");

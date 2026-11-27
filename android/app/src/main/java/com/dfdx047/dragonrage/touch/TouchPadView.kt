@@ -67,6 +67,7 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
 
     /** Hidden because a physical controller is in use ([TouchMode.AUTO]); a touch shows it again. */
     override var hiddenForPad = false
+    override var tapWhenOff = false
         set(v) {
             if (field != v) {
                 field = v
@@ -258,6 +259,18 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
 
     private val windowAt = IntArray(2)
 
+    /** With the controls switched off no finger presses a button: a short, still touch is only a tap on the picture. */
+    private fun hiddenTouch(ev: MotionEvent) {
+        val i = ev.actionIndex
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN ->
+                tracks[ev.getPointerId(i)] = Track(null, ev.getX(i), ev.getY(i), ev.getX(i), ev.getY(i))
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP ->
+                tracks.remove(ev.getPointerId(i))?.let { tapEnded(it, ev.getX(i), ev.getY(i)) }
+            MotionEvent.ACTION_CANCEL -> tracks.clear()
+        }
+    }
+
     /** A short touch that stayed put and was not on a control (or only woke the floating stick) is a tap on the
      *  game's picture: the Tag Team menus press what is under it (TouchBridge.tap, in window pixels). */
     private fun tapEnded(t: Track, x: Float, y: Float) {
@@ -442,7 +455,9 @@ class TouchPadView(context: Context, initial: TouchConfig, editing: Boolean = fa
                 listener?.onConfigChanged(config)
                 return true
             }
-            return false
+            if (!tapWhenOff) return false
+            hiddenTouch(ev) // (the game's screens are still pressed by touch with the controls hidden)
+            return true
         }
         if (hiddenForPad && !editing) {
             if (ev.actionMasked == MotionEvent.ACTION_DOWN) {

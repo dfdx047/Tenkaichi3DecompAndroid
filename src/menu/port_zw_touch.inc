@@ -502,6 +502,8 @@ static void Zt_Face(s32 chara, f32 x, f32 y, f32 size, s32 lit) {
     sZwChipTag = 0;
 }
 
+static void Zb_Draw(void);
+static void Zb_Tap(f32 x, f32 y);
 static void Zt_PkDraw(void) {
     s32 kind = sZw->pickRow->kind;
     s32 slots = Pk_Slots(kind);
@@ -512,6 +514,10 @@ static void Zt_PkDraw(void) {
     char sub[128], line[96];
 
     Zt_PkSync();
+    if (!slots) {
+        Zb_Draw();
+        return;
+    }
     fam = Zt_Family(cur);
     Mx_Rect(0.0f, 0.0f, MX_W, MX_H, Mx_Rgba(10, 8, 40, 35), Mx_Rgba(10, 8, 40, 35));
     sprintf(sub, "para: %s%s", sZw->pickLayer ? "camada em " : "", Zt_KindLabel(kind));
@@ -642,6 +648,10 @@ static void Zt_PkTap(f32 x, f32 y) {
     f32 r[4];
 
     Zt_PkSync();
+    if (!slots) {
+        Zb_Tap(x, y);
+        return;
+    }
     fam = Zt_Family(sZw->pickCur);
     if (Zt_In(x, y, 40.0f, 20.0f, 195.0f, 150.0f) || (slots && Zt_In(x, y, 1590.0f, 925.0f, 2310.0f, 1040.0f)) ||
         (!slots && Zt_In(x, y, 1560.0f, 935.0f, 2340.0f, 1045.0f))) {

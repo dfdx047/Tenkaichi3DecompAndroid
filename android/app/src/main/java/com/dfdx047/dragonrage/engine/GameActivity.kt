@@ -183,6 +183,7 @@ open class GameActivity : SDLActivity() {
     private fun addTouchPad() {
         val layout = SDLActivity.getContentView() as? ViewGroup ?: return
         val view = createTouchSurface(this, store.load())
+        view.tapWhenOff = game == com.dfdx047.dragonrage.data.Game.BT3
         view.listener = object : TouchListener {
             override fun onPad(buttons: Int, lx: Int, ly: Int, rx: Int, ry: Int) = TouchBridge.setPad(buttons, lx, ly, rx, ry)
 

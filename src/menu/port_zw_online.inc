@@ -6,6 +6,8 @@ enum { ZO_MENU, ZO_QUICK, ZO_SEARCH, ZO_FOUND, ZO_CREATE, ZO_CODE, ZO_ROOM, ZO_S
 
 static struct {
     s32 screen, from, t, sel, ready, host, friendReady;
+    s32 focus;           /* the button the arrows are on (its hit id) */
+    s32 swap, swapFrom;  /* 1: choosing another warrior (left / right); the one before */
     s32 pref[5], rule[6], stage, stagePick, stagePage, movesMine, codeLen, rounds;
     char code[8];
 } sZo;
@@ -27,7 +29,7 @@ static ZoHit sZoHit[64];
 static s32 sZoHits;
 enum { H_BACK = 1, H_LANG0, H_LANG1, H_LANG2, H_QUICK, H_CREATE, H_ENTER, H_HOW, H_TEST, H_REPORT, H_PREV, H_NEXT, H_GO, H_MOVES,
        H_CANCEL, H_PRACTICE, H_REFUSE, H_ACCEPT, H_JOIN, H_ERASE, H_PASTE, H_COPY, H_READY, H_START, H_SWAP, H_LEAVE, H_ROOM,
-       H_REMATCH, H_CONFIRM, H_PGPREV, H_PGNEXT, H_DEMO, H_PREF = 40, H_RULE = 48, H_KEY = 64, H_STAGE = 128 };
+       H_REMATCH, H_CONFIRM, H_PGPREV, H_PGNEXT, H_DEMO, H_HEADBACK, H_PICKED, H_PREF = 40, H_RULE = 48, H_KEY = 64, H_STAGE = 128 };
 
 static void Zo_Hit(s32 id, f32 x0, f32 y0, f32 x1, f32 y1) {
     if (sZoHits < 64) {
@@ -41,6 +43,8 @@ static void Zo_Go(s32 screen) {
     sZo.from = sZo.screen;
     sZo.screen = screen;
     sZo.t = 0;
+    sZo.focus = 0;
+    sZo.swap = 0;
     sZw->rest = 0;
 }
 
@@ -90,7 +94,7 @@ static void Zo_Header(char *title, char *sub, s32 lang) {
     extern int Port_TagLang(void);
 
     Mx_Fit(ZW_T_BACK, ZT_X(116.0f), ZT_Y(86.0f), ZT_S(112.0f), a);
-    Zo_Hit(H_BACK, 40.0f, 20.0f, 195.0f, 160.0f);
+    Zo_Hit(H_HEADBACK, 40.0f, 20.0f, 195.0f, 160.0f);
     Zt_Text(205.0f, 64.0f, title, 54.0f, 880.0f, ZT_GOLD, 0, a);
     Zt_Text(205.0f, 120.0f, sub, 29.0f, 880.0f, ZT_DIM, 0, a);
     if (lang) {
@@ -166,12 +170,15 @@ static void Zo_Side(f32 x0, f32 x1, char *title, PortWarrior *v, s32 model, s32 
         }
     }
     Zt_Text(cx, 792.0f + dy, Zo_Name(v), 42.0f, x1 - x0 - 40.0f, ZT_WHITE, 1, a);
-    Zt_Text(cx, 836.0f + dy, Zo_Info(v), 25.0f, x1 - x0 - (arrows ? 340.0f : 40.0f), ZT_DIM, 1, a);
-    if (arrows && sZw->count > 1) {
-        Zo_Button(H_PREV, ZW_T_BAR, x0 + 30.0f, 850.0f + dy, x0 + 140.0f, 912.0f + dy, "<", 44.0f);
-        Zo_Button(H_NEXT, ZW_T_BAR, x1 - 140.0f, 850.0f + dy, x1 - 30.0f, 912.0f + dy, ">", 44.0f);
-    }
-    if (badge != NULL) {
+    Zt_Text(cx, 836.0f + dy, Zo_Info(v), 25.0f, x1 - x0 - 40.0f, ZT_DIM, 1, a);
+    if (sZo.swap && v != NULL && x0 < 100.0f) { /* choosing: the arrows and the confirm */
+        Mx_Frame(ZT_X(x0), ZT_Y(170.0f + dy), ZT_X(x1), ZT_Y(925.0f + dy), ZT_S(7.0f + 3.0f * Zw_Beat(40)), Mx_Rgba(255, 206, 70, 0x80));
+        Zo_Button(H_PREV, ZW_T_ORANGE, x0 + 30.0f, 850.0f + dy, x0 + 170.0f, 918.0f + dy, "<", 48.0f);
+        Zo_Button(H_NEXT, ZW_T_ORANGE, x1 - 170.0f, 850.0f + dy, x1 - 30.0f, 918.0f + dy, ">", 48.0f);
+        Zo_Button(H_PICKED, ZW_T_GREEN, cx - 210.0f, 856.0f + dy, cx + 210.0f, 914.0f + dy, L("X  CONFIRMAR", "X  CONFIRM", "X  CONFIRMAR"), 30.0f);
+    } else if (arrows) {
+        Zo_Button(H_SWAP, ZW_T_BAR, cx - 220.0f, 856.0f + dy, cx + 220.0f, 916.0f + dy, L("Trocar guerreiro", "Change warrior", "Cambiar guerrero"), 30.0f);
+    } else if (badge != NULL) {
         f32 g = badgeArt == ZW_T_GREEN ? 3.0f * Zw_Beat(50) : 0.0f;
 
         Zo_Button(badgeHit, badgeArt, cx - 180.0f - g, 862.0f + dy - g, cx + 180.0f + g, 914.0f + dy + g, badge, 28.0f);
@@ -228,6 +235,7 @@ static u8 *sZoChips;
 static MTexRes *sZoBig;
 static s32 sZoBigId = -1, sZoOwnArc, sZoStages[64], sZoStageN;
 
+void *sZoSelArtPtr(void) { return sZoSelArt; } /* (the fighter picker reads the grid's table from it) */
 static void Zo_StagesOpen(void) {
     s32 i;
 
@@ -384,6 +392,75 @@ static void Zo_Overlay(void) {
     sZoHits = 0; /* (only the box answers) */
 }
 
+/* ---- the arrows: from the button they are on to the nearest one that way ---- */
+static s32 Zo_Focusable(s32 id) {
+    return id != H_DEMO && id != H_HEADBACK && id != H_PREV && id != H_NEXT && id != H_PICKED;
+}
+
+static const ZoHit *Zo_Find(s32 id) {
+    s32 i;
+
+    for (i = 0; id != 0 && i < sZoHits; i++) {
+        if (sZoHit[i].id == id) {
+            return &sZoHit[i];
+        }
+    }
+    return NULL;
+}
+
+static void Zo_FocusDraw(void) {
+    static const s32 kFirst[13] = {H_QUICK, H_GO, H_CANCEL, H_ACCEPT, H_GO, H_KEY + 1, H_READY, H_CONFIRM, H_BACK, 0, H_REMATCH, H_ROOM, H_ROOM};
+    const ZoHit *h = Zo_Find(sZo.focus);
+    s32 i;
+
+    if (h == NULL) { /* (a new screen, or what it was on is gone) */
+        sZo.focus = Zo_Find(kFirst[sZo.screen]) != NULL ? kFirst[sZo.screen] : 0;
+        for (i = 0; sZo.focus == 0 && i < sZoHits; i++) {
+            if (Zo_Focusable(sZoHit[i].id)) {
+                sZo.focus = sZoHit[i].id;
+            }
+        }
+        h = Zo_Find(sZo.focus);
+    }
+    if (h != NULL && !sZo.swap) {
+        f32 g = 5.0f + 4.0f * Zw_Beat(40);
+
+        Mx_Frame(ZT_X(h->x0 - g), ZT_Y(h->y0 - g), ZT_X(h->x1 + g), ZT_Y(h->y1 + g), ZT_S(7.0f), Mx_Rgba(255, 214, 80, 0x80));
+    }
+}
+
+static void Zo_Move(s32 dx, s32 dy) {
+    const ZoHit *from = Zo_Find(sZo.focus);
+    f32 best = 1.0e9f;
+    s32 i, to = 0;
+
+    if (from == NULL) {
+        return;
+    }
+    for (i = 0; i < sZoHits; i++) {
+        const ZoHit *h = &sZoHit[i];
+        f32 ax = (h->x0 + h->x1 - from->x0 - from->x1) * 0.5f, ay = (h->y0 + h->y1 - from->y0 - from->y1) * 0.5f;
+        f32 along = (f32)dx * ax + (f32)dy * ay, off, gap, score;
+
+        if (!Zo_Focusable(h->id) || h->id == from->id || along < 20.0f) {
+            continue;
+        }
+        off = dx ? ay : ax;
+        off = off < 0.0f ? -off : off;
+        gap = dx ? (h->y0 > from->y1 ? h->y0 - from->y1 : from->y0 > h->y1 ? from->y0 - h->y1 : 0.0f)
+                 : (h->x0 > from->x1 ? h->x0 - from->x1 : from->x0 > h->x1 ? from->x0 - h->x1 : 0.0f);
+        score = along + gap * 3.0f + off * 0.35f;
+        if (score < best) {
+            best = score;
+            to = h->id;
+        }
+    }
+    if (to != 0) {
+        sZo.focus = to;
+        Snd_PlaySe(1, 0);
+    }
+}
+
 /* ---- the screens ---- */
 static void Zo_RoomDraw(void) {
     s32 a = Zo_Alpha(), k;
@@ -414,7 +491,7 @@ static void Zo_RoomDraw(void) {
     for (k = 0; k < 3; k++) {
         char *name = k == 0 ? L("Cen\303\241rio", "Stage", "Escenario") : k == 1 ? L("Tempo", "Time", "Tiempo") : L("Itens", "Items", "Objetos");
 
-        Zo_Row(sZo.host ? H_RULE + k : 0, 870.0f, 598.0f + (f32)k * 112.0f, 1530.0f, name, Zo_Rule(k, sZo.rule[k]), 0, 96.0f, k);
+        Zo_Row(sZo.host ? H_RULE + k : 0, 870.0f, 598.0f + (f32)k * 112.0f, 1530.0f, name, Zo_Rule(k, sZo.rule[k]), sZo.host && sZo.focus == H_RULE + k, 96.0f, k);
     }
     art[3] = both ? ZW_T_GREEN : ZW_T_GREY;
     label[0] = L("Sair da sala", "Leave", "Salir");
@@ -438,15 +515,15 @@ static void Zo_Draw(void) {
         Zo_Card(H_QUICK, 170.0f, 410.0f, L("PARTIDA R\303\201PIDA", "QUICK MATCH", "PARTIDA R\303\201PIDA"),
                 L("Procura um rival agora, sem c\303\263digo.", "Finds a rival now, no code.", "Busca un rival ahora, sin c\303\263digo."),
                 L("S\303\263 encontra quem tamb\303\251m aceita guerreiros criados.", "Only meets who also accepts made warriors.", "Solo con quien acepta guerreros creados."),
-                L("JOGAR", "PLAY", "JUGAR"), ZW_T_ORANGE, 1, 0);
+                L("JOGAR", "PLAY", "JUGAR"), ZW_T_ORANGE, sZo.focus == H_QUICK, 0);
         Zo_Card(H_CREATE, 430.0f, 670.0f, L("CRIAR SALA", "CREATE ROOM", "CREAR SALA"),
                 L("Voc\303\252 recebe um c\303\263digo para enviar ao amigo.", "You get a code to send your friend.", "Recibes un c\303\263digo para tu amigo."),
                 L("Voc\303\252 escolhe o cen\303\241rio e as regras.", "You choose the stage and rules.", "T\303\272 eliges el escenario y las reglas."),
-                L("CRIAR", "CREATE", "CREAR"), ZW_T_GREEN, 0, 1);
+                L("CRIAR", "CREATE", "CREAR"), ZW_T_GREEN, sZo.focus == H_CREATE, 1);
         Zo_Card(H_ENTER, 690.0f, 925.0f, L("ENTRAR COM C\303\223DIGO", "ENTER A CODE", "ENTRAR CON C\303\223DIGO"),
                 L("Digite o c\303\263digo que recebeu.", "Type the code you got.", "Escribe el c\303\263digo recibido."),
                 L("Voc\303\252 v\303\252 o guerreiro do anfitri\303\243o antes da luta.", "You see the host's warrior before the fight.", "Ves el guerrero del anfitri\303\263n antes."),
-                L("ENTRAR", "ENTER", "ENTRAR"), ZW_T_BAR, 0, 2);
+                L("ENTRAR", "ENTER", "ENTRAR"), ZW_T_BAR, sZo.focus == H_ENTER, 2);
         hit[0] = H_BACK, hit[1] = H_HOW, hit[2] = H_TEST, hit[3] = H_REPORT;
         art[0] = ZW_T_RED, art[1] = art[2] = art[3] = ZW_T_BAR;
         label[0] = L("Voltar", "Back", "Volver"), label[1] = L("Como funciona", "How it works", "C\303\263mo funciona");
@@ -455,14 +532,14 @@ static void Zo_Draw(void) {
         break;
     case ZO_QUICK:
         Zo_Header(L("PARTIDA R\303\201PIDA", "QUICK MATCH", "PARTIDA R\303\201PIDA"), L("1 contra 1  -  sem pontos de ranque", "1 vs 1  -  no rank points", "1 contra 1  -  sin puntos de rango"), 1);
-        Zo_Side(60.0f, 860.0f, L("SEU GUERREIRO", "YOUR WARRIOR", "TU GUERRERO"), Zo_Mine(), 1, 1, NULL, 0, 0);
+        Zo_Side(60.0f, 860.0f, L("SEU GUERREIRO", "YOUR WARRIOR", "TU GUERRERO"), Zo_Mine(), 1, 0, NULL, 0, 0);
         for (k = 0; k < 5; k++) {
             char *name = k == 0 ? L("Aceitar rivais com", "Accept rivals with", "Aceptar rivales con") : k == 1 ? L("Conex\303\243o do rival", "Rival's connection", "Conexi\303\263n del rival")
                        : k == 2 ? L("Regi\303\243o", "Region", "Regi\303\263n") : k == 3 ? L("Cen\303\241rio", "Stage", "Escenario") : L("Tempo da luta", "Fight time", "Tiempo");
 
-            Zo_Row(H_PREF + k, 900.0f, 170.0f + (f32)k * 115.0f, 2340.0f, name, Zo_Pref(k, sZo.pref[k]), k == 0, 100.0f, k);
+            Zo_Row(H_PREF + k, 900.0f, 170.0f + (f32)k * 115.0f, 2340.0f, name, Zo_Pref(k, sZo.pref[k]), sZo.focus == H_PREF + k, 100.0f, k);
         }
-        Zo_BigButton(1270.0f, 780.0f, 1970.0f, 896.0f, L("BUSCAR RIVAL", "FIND A RIVAL", "BUSCAR RIVAL"), L("Entrar na fila", "Join the queue", "Entrar en la cola"), a, 1);
+        Zo_BigButton(1270.0f, 780.0f, 1970.0f, 896.0f, L("BUSCAR RIVAL", "FIND A RIVAL", "BUSCAR RIVAL"), L("Entrar na fila", "Join the queue", "Entrar en la cola"), a, sZo.focus == H_GO);
         Zo_Hit(H_GO, 1270.0f, 770.0f, 1970.0f, 906.0f);
         hit[0] = H_BACK, hit[1] = H_SWAP, hit[2] = H_MOVES, art[0] = ZW_T_RED, art[1] = art[2] = ZW_T_BAR;
         label[0] = L("Voltar", "Back", "Volver"), label[1] = L("Trocar guerreiro", "Change warrior", "Cambiar guerrero"), label[2] = L("Meus golpes", "My moves", "Mis golpes");
@@ -514,14 +591,14 @@ static void Zo_Draw(void) {
     }
     case ZO_CREATE:
         Zo_Header(L("CRIAR SALA", "CREATE ROOM", "CREAR SALA"), L("Defina as regras da sua sala", "Set your room's rules", "Define las reglas de tu sala"), 1);
-        Zo_Side(60.0f, 860.0f, L("SEU GUERREIRO", "YOUR WARRIOR", "TU GUERRERO"), Zo_Mine(), 1, 1, NULL, 0, 0);
+        Zo_Side(60.0f, 860.0f, L("SEU GUERREIRO", "YOUR WARRIOR", "TU GUERRERO"), Zo_Mine(), 1, 0, NULL, 0, 0);
         for (k = 0; k < 6; k++) {
             char *name = k == 0 ? L("Cen\303\241rio", "Stage", "Escenario") : k == 1 ? L("Tempo da luta", "Fight time", "Tiempo") : k == 2 ? L("Itens", "Items", "Objetos")
                        : k == 3 ? L("Vida", "Health", "Vida") : k == 4 ? L("Quem pode entrar", "Who can join", "Qui\303\251n puede entrar") : L("Guerreiros permitidos", "Allowed", "Permitidos");
 
-            Zo_Row(H_RULE + k, 900.0f, 170.0f + (f32)k * 104.0f, 2340.0f, name, Zo_Rule(k, sZo.rule[k]), k == 0, 92.0f, k);
+            Zo_Row(H_RULE + k, 900.0f, 170.0f + (f32)k * 104.0f, 2340.0f, name, Zo_Rule(k, sZo.rule[k]), sZo.focus == H_RULE + k, 92.0f, k);
         }
-        Zo_BigButton(1270.0f, 812.0f, 1970.0f, 912.0f, L("CRIAR SALA", "CREATE ROOM", "CREAR SALA"), L("Gera o c\303\263digo", "Makes the code", "Genera el c\303\263digo"), a, 1);
+        Zo_BigButton(1270.0f, 812.0f, 1970.0f, 912.0f, L("CRIAR SALA", "CREATE ROOM", "CREAR SALA"), L("Gera o c\303\263digo", "Makes the code", "Genera el c\303\263digo"), a, sZo.focus == H_GO);
         Zo_Hit(H_GO, 1270.0f, 800.0f, 1970.0f, 925.0f);
         hit[0] = H_BACK, hit[1] = H_SWAP, hit[2] = H_MOVES, art[0] = ZW_T_RED, art[1] = art[2] = ZW_T_BAR;
         label[0] = L("Voltar", "Back", "Volver"), label[1] = L("Trocar guerreiro", "Change warrior", "Cambiar guerrero"), label[2] = L("Meus golpes", "My moves", "Mis golpes");
@@ -533,7 +610,7 @@ static void Zo_Draw(void) {
         s32 r, c, n = 0;
 
         Zo_Header(L("ENTRAR COM C\303\223DIGO", "ENTER A CODE", "ENTRAR CON C\303\223DIGO"), L("Digite o c\303\263digo de 6 letras e n\303\272meros", "Type the 6 letters and numbers", "Escribe las 6 letras y n\303\272meros"), 1);
-        Zo_Side(60.0f, 860.0f, L("SEU GUERREIRO", "YOUR WARRIOR", "TU GUERRERO"), Zo_Mine(), 1, 1, NULL, 0, 0);
+        Zo_Side(60.0f, 860.0f, L("SEU GUERREIRO", "YOUR WARRIOR", "TU GUERRERO"), Zo_Mine(), 1, 0, NULL, 0, 0);
         Zt_Box(ZW_T_PANEL, 900.0f, 170.0f, 2340.0f, 925.0f, 34.0f, a);
         for (i = 0; i < 6; i++) {
             f32 x = 1085.0f + (f32)i * 180.0f;
@@ -667,6 +744,7 @@ static void Zo_Draw(void) {
     }
     }
     Zo_Strip();
+    Zo_FocusDraw();
     if (sZw->noteT > 0) {
         Zt_Box(ZW_T_ASK, 640.0f, 128.0f, 1760.0f, 214.0f, 40.0f, 0x80);
         Zt_Text(1200.0f, 171.0f, sZw->note, 30.0f, 1060.0f, ZT_WHITE, 1, 0x80);
@@ -705,6 +783,26 @@ static void Zo_Open(void) {
 static void Zo_Press(s32 id) {
     extern void Port_TagLangSet(int);
 
+    if (sZo.swap) { /* (choosing a warrior: only the arrows, the confirm, and back to give it up) */
+        if (id == H_PICKED) {
+            sZo.swap = 0;
+            sZo.focus = H_SWAP;
+            Snd_PlaySe(1, 1);
+        } else if (id == H_PREV || id == H_NEXT) {
+            sZo.sel = (sZo.sel + (id == H_PREV ? sZw->count - 1 : 1)) % sZw->count;
+            sZw->rest = 0;
+            Snd_PlaySe(1, 0);
+        } else if (id == H_BACK || id == H_HEADBACK) {
+            sZo.sel = sZo.swapFrom;
+            sZo.swap = 0;
+            sZw->rest = 0;
+            Snd_PlaySe(1, 2);
+        }
+        return;
+    }
+    if (id == H_HEADBACK) {
+        id = H_BACK;
+    }
     Snd_PlaySe(1, id == H_BACK || id == H_CANCEL || id == H_LEAVE || id == H_REFUSE ? 2 : 1);
     if (id >= H_STAGE) {
         if (id - H_STAGE < sZoStageN) {
@@ -760,10 +858,14 @@ static void Zo_Press(s32 id) {
     case H_HOW: Zw_Note(L("Seu guerreiro salvo luta contra o de um amigo. Ainda em constru\303\247\303\243o.", "Your saved warrior fights a friend's. Still being built.", "Tu guerrero contra el de un amigo. En construcci\303\263n.")); break;
     case H_TEST: case H_PRACTICE: Zw_Note(L("Dispon\303\255vel quando o online ligar.", "Available once online is on.", "Disponible cuando el online est\303\251 activo.")); break;
     case H_REPORT: Zw_Note(Port_MakeReport("") ? L("Relat\303\263rio salvo na pasta reports.", "Report saved in the reports folder.", "Informe guardado en reports.") : L("N\303\243o deu para criar o relat\303\263rio.", "Could not make the report.", "No se pudo crear el informe.")); break;
-    case H_PREV: case H_NEXT: case H_SWAP:
-        if (sZw->count > 0) {
-            sZo.sel = (sZo.sel + (id == H_PREV ? sZw->count - 1 : 1)) % sZw->count;
-            sZw->rest = 0;
+    case H_SWAP:
+        if (sZw->count > 1) {
+            sZo.swap = 1;
+            sZo.swapFrom = sZo.sel % sZw->count;
+            sZo.sel = sZo.swapFrom;
+            sZo.ready = 0;
+        } else {
+            Zw_Note(L("S\303\263 h\303\241 um guerreiro salvo.", "There is only one saved warrior.", "Solo hay un guerrero guardado."));
         }
         break;
     case H_GO:
@@ -833,6 +935,9 @@ static void Zo_Tap(f32 x, f32 y) {
         const ZoHit *h = &sZoHit[i];
 
         if (x >= h->x0 && x <= h->x1 && y >= h->y0 && y <= h->y1) {
+            if (!sZo.swap && Zo_Focusable(h->id)) {
+                sZo.focus = h->id; /* (the arrows go on from where the finger was) */
+            }
             Zo_Press(h->id);
             return;
         }
@@ -857,19 +962,33 @@ static void Zo_Update(s32 live) {
     if (!live) {
         return;
     }
-    if (pad->gamePressed & PADG_TRIANGLE) {
+    if (sZo.swap) {
+        if (pad->gameRepeat & (PADG_LEFT | PADG_LEFT2)) {
+            Zo_Press(H_PREV);
+        } else if (pad->gameRepeat & (PADG_RIGHT | PADG_RIGHT2)) {
+            Zo_Press(H_NEXT);
+        } else if (pad->gamePressed & PADG_CROSS) {
+            Zo_Press(H_PICKED);
+        } else if (pad->gamePressed & (PADG_TRIANGLE | PADG_CIRCLE)) {
+            Zo_Press(H_BACK);
+        }
+        return;
+    }
+    if (pad->gamePressed & (PADG_TRIANGLE | PADG_CIRCLE)) {
         Snd_PlaySe(1, 2);
         Zo_Back();
-    } else if (pad->gamePressed & PADG_CROSS) { /* (a controller: the screen's main button) */
-        static const s32 kMain[13] = {H_QUICK, H_GO, 0, H_ACCEPT, H_GO, H_JOIN, H_READY, H_CONFIRM, H_BACK, 0, H_REMATCH, H_ROOM, H_ROOM};
-
-        if (sZo.screen == ZO_ROOM && sZo.ready && sZo.friendReady) {
-            Zo_Press(H_START);
-        } else if (kMain[sZo.screen]) {
-            Zo_Press(kMain[sZo.screen]);
+    } else if (pad->gamePressed & PADG_CROSS) {
+        if (sZo.focus != 0) {
+            Zo_Press(sZo.focus);
         }
-    } else if (pad->gameRepeat & (PADG_LEFT | PADG_RIGHT)) {
-        Zo_Press(pad->gameRepeat & PADG_LEFT ? H_PREV : H_NEXT);
+    } else if (pad->gameRepeat & (PADG_LEFT | PADG_LEFT2)) {
+        Zo_Move(-1, 0);
+    } else if (pad->gameRepeat & (PADG_RIGHT | PADG_RIGHT2)) {
+        Zo_Move(1, 0);
+    } else if (pad->gameRepeat & (PADG_UP | PADG_UP2)) {
+        Zo_Move(0, -1);
+    } else if (pad->gameRepeat & (PADG_DOWN | PADG_DOWN2)) {
+        Zo_Move(0, 1);
     }
 }
 #undef L

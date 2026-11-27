@@ -18,6 +18,10 @@ interface TouchSurface {
     var editing: Boolean
     var suppressed: Boolean
     var hiddenForPad: Boolean
+
+    /** With the controls switched off, still tell the engine where a tap was (TouchBridge.tap): BT3 only, whose
+     *  menus use it; the other engines keep the touch passing through to the game. */
+    var tapWhenOff: Boolean
 }
 
 /** The view of the layout the config asks for: the game-specific one (default) or the classic generic pad. */
