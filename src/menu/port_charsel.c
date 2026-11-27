@@ -362,6 +362,9 @@ static void Cs_Tex(MTexRes *res, f32 x0, f32 y0, f32 x1, f32 y1, s32 u0, s32 v0,
 
 /* A roster chip: the disc's chips hold their picture in 48 x 41 of their 64 x 64 (x 8..55, y 11..51). */
 static void Cs_ChipAlpha(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 grey, s32 alpha) {
+    if (id < 0 || id >= 0xA5) { /* (MCHR_ZW, menu/menu_d.h, and past it) */
+        return;
+    }
     Cs_Tex((MTexRes *)MPACK_AT(sV.chipPack, id + 1), x0, y0, x1, y1, 8, 11, 56, 52, grey, alpha);
 }
 
@@ -1009,6 +1012,17 @@ void PortCharSel_Begin(s32 allow) {
     s32 i;
 
     sOn = allow && !(env != NULL ? atoi(env) : Port_Setting("select_classic", 0));
+    {   /* Z Warriors: with a warrior made, the grid has the mod's tile (menu_c_e.c MCHR_ZW) and its reel of warriors,
+           which only the game's own screen draws. The new one took the tile for a fighter, asked the disc for chip 165
+           and the game stopped there (a phone's log, 2026-11-27): the game's screen while there are warriors. */
+        extern s32 Port_SkinCount(void), Port_SkinIsWarrior(s32 skin);
+
+        for (i = 0; sOn && i < Port_SkinCount(); i++) {
+            if (Port_SkinIsWarrior(i)) {
+                sOn = 0;
+            }
+        }
+    }
     s3D = sOn && Port_WorldCan();
     sTick = 0;
     sSplit = 0;
