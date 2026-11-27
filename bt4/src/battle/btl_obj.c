@@ -315,6 +315,14 @@ BtlObjPool70Work *BtlObjPool70_Get(void) {
     return &gBtlObjWork->pool70;
 }
 
+#ifdef PORT
+/* The game has 4 face states; the port's select stands a whole team in a row (up to 5, view_a_d.c ChrView_PortLineup):
+   the fifth got none and BtlObj_CreateFace wrote through NULL (a phone's log, 2026-11-26). Spare ones, taken only
+   once the game's are all out: with 4 or fewer nothing changes. */
+static BtlObjPool70 sPortSpareFace[8];
+static s32 sPortSpareFaces;
+#endif
+
 /* Puts all 4 nodes on the free list. */
 void BtlObjPool70_Init(void) {
     BtlObjPool70Work *pool = BtlObjPool70_Get();
@@ -322,6 +330,9 @@ void BtlObjPool70_Init(void) {
     s32 i;
 
     memset(pool, 0, sizeof(BtlObjPool70Work));
+#ifdef PORT
+    sPortSpareFaces = 0;
+#endif
     for (i = 0; i < (TagBattle_Active() ? 12 : 4); i++) {
         SList_PushFront(&pool->free, TagBattle_Active() ? &tagFaces[i].link : &pool->nodes[i].link);
     }
@@ -332,6 +343,11 @@ BtlObjPool70 *BtlObjPool70_Alloc(void) {
     SListNode *link = SList_PopFront(&BtlObjPool70_Get()->free);
     BtlObjPool70 *node = (BtlObjPool70 *)link;
 
+#ifdef PORT
+    if (node == NULL && sPortSpareFaces < 8) {
+        node = &sPortSpareFace[sPortSpareFaces++]; /* (given back, it joins the free list like the others) */
+    }
+#endif
     return node;
 }
 
