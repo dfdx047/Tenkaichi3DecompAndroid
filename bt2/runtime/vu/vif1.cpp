@@ -1,5 +1,6 @@
 #include "ee/frame_profile.h"
 #include "vif1.h"
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -42,6 +43,15 @@ void Vif1::process(std::span<const std::uint32_t> words,Registers& r,Vif1* self,
                 if(vl==1) {std::uint16_t v;std::memcpy(&v,from+n*2,2);return usn?v:std::uint32_t(std::int32_t(std::int16_t(v)));}
                 return usn?from[n]:std::uint32_t(std::int32_t(std::int8_t(from[n])));
             };
+            if(vn==3 && vl==0) { // V4-32 (vertices, matrices: most of a fight's data): the quadwords as they are.
+                for(unsigned n=0;n<count;) {
+                    const unsigned to=(address+n)&Vu1::data_mask,run=std::min(count-n,Vu1::data_mask+1-to);
+                    std::memcpy(self->vu.data.data()+std::size_t(to)*16,from+std::size_t(n)*16,std::size_t(run)*16);
+                    n+=run;
+                }
+                ++self->unpacks;self->unpacked_qwords+=count;
+                continue;
+            }
             for(unsigned n=0;n<count;++n) {
                 std::array<std::uint32_t,4> vector;
                 if(v45) { // RGBA 5:5:5:1 to four 8-bit values.
