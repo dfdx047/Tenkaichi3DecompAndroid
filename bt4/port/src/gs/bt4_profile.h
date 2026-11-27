@@ -23,6 +23,11 @@ typedef struct Bt4ProfileStats {
     char countryName[48];
     int favChara, favBattles; /* the most used character (-1 none yet): its id, battles and name as the disc writes it */
     char favName[48];
+    char ach[11];           /* the ten achievements, '1' earned ("" from a service without them) */
+    int achP[10];           /* ... and how far each one is */
+    char recent[11];        /* the last Ranked results, newest first: 'V' won, 'D' lost */
+    char usedName[3][24];   /* the three most used characters, their battles, and the battles of all */
+    int usedBattles[3], usedTotal;
 } Bt4ProfileStats;
 void Bt4Profile_Stats(Bt4ProfileStats *out);
 /* The BT4 Android online service (port/bt4online-worker): profiles and the Ranked queue's rooms. BT4_ONLINE_URL in the

@@ -17,6 +17,8 @@
 //   POST /v1/gone     {id, secret, code, n, self}            (the battle ended unfinished: the other side is gone, or
 //                                             self: this player left it)  -> {ok, state: "waiting"|"abandon"|"link"|"off"}
 //   POST /v1/exit     {id, secret, code, n, why}             (opened again: "closed" by the player, or "fault")
+//                                             (me also: ach "1100000000" (achievements(), below), ach_p [how far each is], recent "VVD..."
+//                                             newest first, used [[name, battles] x3], used_total)
 //   POST /v1/top      {season?}               -> {ok, season, name, ends, total, closed,
 //                                                 top: [[name, rating, wins, losses, gold, silver, trophy1, trophy2, trophy3, country], ...]}
 //   POST /v1/seasons  {page}                  -> {ok, seasons: [[id, slug, name, starts, ends, status, players], ...]}
@@ -122,6 +124,7 @@ export async function schema(env) {
         env.DB.prepare("CREATE TABLE IF NOT EXISTS ranked_rooms (code TEXT PRIMARY KEY, made INTEGER NOT NULL, host_name TEXT NOT NULL, join_name TEXT NOT NULL)"),
         // who sat where: the ACCOUNT of the host and of the joiner of a Ranked room, bound when the search admitted them (rooms.js). A battle's reports
         // are taken only from these accounts, and it scores only when they are the two that settle it.
+        env.DB.prepare("CREATE TABLE IF NOT EXISTS achievements (player TEXT NOT NULL, k INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (player, k))"),
         env.DB.prepare("CREATE TABLE IF NOT EXISTS ranked_live (code TEXT NOT NULL, n INTEGER NOT NULL, player TEXT NOT NULL, me TEXT NOT NULL, side INTEGER NOT NULL, first INTEGER NOT NULL, last INTEGER NOT NULL, gap INTEGER NOT NULL DEFAULT 0, gap_at INTEGER NOT NULL DEFAULT 0, claim INTEGER, claim_gap INTEGER, self INTEGER NOT NULL DEFAULT 0, seen_back INTEGER, outcome TEXT, PRIMARY KEY (code, n, player), UNIQUE (code, n, side))"),
         env.DB.prepare("CREATE TABLE IF NOT EXISTS abandons (code TEXT NOT NULL, n INTEGER NOT NULL, loser TEXT NOT NULL, winner TEXT NOT NULL, at INTEGER NOT NULL, self INTEGER NOT NULL, forgiven INTEGER NOT NULL, PRIMARY KEY (code, n))"),
         env.DB.prepare("CREATE TABLE IF NOT EXISTS ranked_seats (code TEXT NOT NULL, seat TEXT NOT NULL CHECK (seat IN ('host', 'join')), player TEXT NOT NULL, made INTEGER NOT NULL, PRIMARY KEY (code, seat))"),
@@ -272,6 +275,64 @@ async function recover(env, body, ip, now) {
     return json({ ok: true, id: p.id, secret, name: p.name });
 }
 
+// ---- the ten achievements, in the order of the profile's shelf (Ranked battles only; once earned, kept) ----
+//  0 first win            1 ten wins in a row     2 100 Ranked wins        3 50 battles           4 top 10 of a week
+//  5 a week unbeaten (5+) 6 5 weeks played        7 a rematch won          8 500 battles          9 rivals of 3 continents
+const CONTINENTS = {
+    SA: "AR BO BR CL CO EC GF GY PE PY SR UY VE",
+    NA: "AG AW BB BM BS BZ CA CR CU CW DM DO GD GL GP GT HN HT JM KN KY LC MQ MS MX NI PA PM PR SV TC TT US VC VG VI",
+    EU: "AD AL AT AX BA BE BG BY CH CY CZ DE DK EE ES FI FO FR GB GG GI GR HR HU IE IM IS IT JE LI LT LU LV MC MD ME MK MT NL NO PL PT RO RS RU SE SI SJ SK SM UA VA XK",
+    AS: "AE AF AM AZ BD BH BN BT CN GE HK ID IL IN IQ IR JO JP KG KH KP KR KW KZ LA LB LK MM MN MO MV MY NP OM PH PK PS QA SA SG SY TH TJ TL TM TR TW UZ VN YE",
+    AF: "AO BF BI BJ BW CD CF CG CI CM CV DJ DZ EG EH ER ET GA GH GM GN GQ GW KE KM LR LS LY MA MG ML MR MU MW MZ NA NE NG RE RW SC SD SL SN SO SS ST SZ TD TG TN TZ UG YT ZA ZM ZW",
+    OC: "AS AU CK FJ FM GU KI MH MP NC NF NR NU NZ PF PG PW SB TK TO TV VU WF WS",
+};
+const continentOf = (cc) => Object.keys(CONTINENTS).find((k) => cc && CONTINENTS[k].includes(cc)) || "";
+export const ACHIEVEMENTS = 10;
+const TARGET = [1, 10, 100, 50, 1, 1, 5, 1, 500, 3]; // what each one counts up to
+
+async function achievements(env, player, career, now) {
+    const had = new Set((await env.DB.prepare("SELECT k FROM achievements WHERE player = ?").bind(player).all()).results.map((r) => r.k));
+    const got = new Set();
+    const wins = career.wins ?? 0, played = career.ranked_matches ?? 0;
+    let streak = 0, continents = 0;
+    if (wins >= 1) got.add(0);
+    if (wins >= 100) got.add(2);
+    if (played >= 50) got.add(3);
+    if ((career.seasons_played ?? 0) >= 5) got.add(6);
+    if (played >= 500) got.add(8);
+    if (!had.has(4) || !had.has(5)) {
+        const h = await env.DB.prepare("SELECT MIN(final_rank) AS best, MAX(CASE WHEN losses = 0 AND matches >= 5 THEN 1 ELSE 0 END) AS clean FROM season_history WHERE player_id = ?").bind(player).first();
+        if (h && h.best !== null && h.best <= 10) got.add(4);
+        if (h && h.clean === 1) got.add(5);
+    }
+    if (!had.has(1) || !had.has(7) || !had.has(9)) {
+        const rows = (await env.DB.prepare("SELECT m.winner_id = ?1 AS won, m.room_code AS room, m.battle_no AS n, p.country AS cc FROM ranked_matches m " +
+            "LEFT JOIN players p ON p.id = CASE WHEN m.winner_id = ?1 THEN m.loser_id ELSE m.winner_id END " +
+            "WHERE (m.winner_id = ?1 OR m.loser_id = ?1) AND m.kind = 'ranked' ORDER BY m.played_at, m.id LIMIT 3000").bind(player).all()).results;
+        let row = 0;
+        const lost = new Set(), where = new Set();
+        for (const m of rows) {
+            row = m.won ? row + 1 : 0;
+            streak = Math.max(streak, row);
+            if (row >= 10) got.add(1);
+            if (m.room) {
+                if (m.won && lost.has(m.room + ":" + (m.n - 1))) got.add(7);
+                if (!m.won) lost.add(m.room + ":" + m.n);
+            }
+            const c = continentOf(m.cc);
+            if (c) where.add(c);
+        }
+        continents = where.size;
+        if (where.size >= 3) got.add(9);
+    }
+    const fresh = [...got].filter((k) => !had.has(k));
+    if (fresh.length) await env.DB.batch(fresh.map((k) => env.DB.prepare("INSERT OR IGNORE INTO achievements (player, k, at) VALUES (?, ?, ?)").bind(player, k, now)));
+    const bits = Array.from({ length: ACHIEVEMENTS }, (_, k) => had.has(k) || got.has(k) ? "1" : "0").join("");
+    // how far each one is (a full one: its target)
+    const count = [wins, streak, wins, played, 0, 0, career.seasons_played ?? 0, 0, played, continents];
+    return { bits, progress: count.map((v, k) => bits[k] === "1" ? TARGET[k] : Math.min(v, TARGET[k] - 1)) };
+}
+
 async function me(env, body, now, country) {
     const p = await who(env, body);
     if (!p) return json({ error: "who" });
@@ -296,11 +357,19 @@ async function me(env, body, now, country) {
     const t = [0, 0, 0];
     for (const row of trophies.results) if (row.place >= 1 && row.place <= 3) t[row.place - 1] = row.n;
     if (now - p.seen > 3600000) await env.DB.prepare("UPDATE players SET seen = ? WHERE id = ?").bind(now, p.id).run();
+    const [recent, used, usedTotal] = await env.DB.batch([
+        env.DB.prepare("SELECT winner_id = ?1 AS won FROM ranked_matches WHERE (winner_id = ?1 OR loser_id = ?1) AND kind = 'ranked' ORDER BY played_at DESC, id DESC LIMIT 10").bind(p.id),
+        env.DB.prepare("SELECT name, battles FROM char_usage WHERE player_id = ? ORDER BY battles DESC, chara LIMIT 3").bind(p.id),
+        env.DB.prepare("SELECT SUM(battles) AS n FROM char_usage WHERE player_id = ?").bind(p.id),
+    ]);
+    const ach = await achievements(env, p.id, c, now);
     const rated = mine ? mine.matches : 0, opponents = opps.results[0] ? opps.results[0].n : 0;
     return json({
         ok: true, name: p.name, has_recovery: !!p.recovery_hash,
         country: p.country || "", country_name: countryName(p.country || "", body.lang),
         fav: f ? [f.chara, f.battles, f.name] : null,
+        ach: ach.bits, ach_p: ach.progress, recent: recent.results.map((x) => x.won ? "V" : "D").join(""),
+        used: used.results.map((x) => [x.name, x.battles]), used_total: usedTotal.results[0] ? usedTotal.results[0].n ?? 0 : 0,
         // the career (never reset)
         gold: c.gold ?? 0, silver: c.silver ?? 0, wins: c.wins ?? 0, losses: c.losses ?? 0, ranked_total: c.ranked_matches ?? 0,
         best_rating: c.best_rating ?? START_RATING, best_rating_season: c.best_rating_season ?? null, seasons_played: c.seasons_played ?? 0,

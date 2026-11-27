@@ -335,6 +335,29 @@ static void take_me(const char *a) {
             }
         }
     }
+    jstr(a, "ach", s->ach, sizeof(s->ach));
+    SDL_memset(s->achP, 0, sizeof(s->achP));
+    t = jfind(a, "ach_p"); /* "ach_p":[n,...] */
+    for (i = 0; t != NULL && (*t == '[' || *t == ',') && i < 10; i++) {
+        s->achP[i] = SDL_atoi(t + 1);
+        t = SDL_strpbrk(t + 1, ",]");
+    }
+    jstr(a, "recent", s->recent, sizeof(s->recent));
+    s->usedTotal = jwhole(a, "used_total", 0);
+    for (i = 0; i < 3; i++) {
+        s->usedName[i][0] = '\0';
+        s->usedBattles[i] = 0;
+    }
+    t = jfind(a, "used"); /* "used":[["name",battles],...] */
+    for (i = 0; t != NULL && *t == '[' && i < 3; i++) {
+        const char *q = t + 1, *e;
+        if (*q != '[' || q[1] != '"' || (e = SDL_strchr(q + 2, '"')) == NULL) break;
+        SDL_snprintf(s->usedName[i], sizeof(s->usedName[i]), "%.*s", (int)(e - q - 2), q + 2);
+        s->usedBattles[i] = SDL_atoi(e + 2);
+        e = SDL_strchr(e, ']');
+        if (e == NULL || e[1] != ',') break;
+        t = e + 1; /* (the next entry: the loop steps past the comma) */
+    }
     s->trophies[0] = s->trophies[1] = s->trophies[2] = 0;
     t = jfind(a, "trophies");
     if (t != NULL && *t == '[') {

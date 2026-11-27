@@ -1280,9 +1280,10 @@ static void Td_Medal(f32 cx, f32 cy, f32 s, s32 kind) {
     Td_Tri(cx - 14.0f * s, cy + 8.0f * s, cx + 14.0f * s, cy + 8.0f * s, cx, cy + 20.0f * s, TD_RGB(f[3], f[4], f[5]));
 }
 static void Td_Trophy(f32 cx, f32 cy, f32 s, s32 kind) {
-    /* gold, silver, bronze; 3: none won yet (the templates' locked one: navy grey) */
-    static const u8 metal[4][6] = {{255, 236, 120, 214, 140, 10}, {250, 252, 255, 150, 160, 180}, {244, 176, 112, 160, 84, 34}, {96, 106, 140, 52, 60, 92}};
-    const u8 *m = metal[kind < 0 ? 0 : kind > 3 ? 3 : kind];
+    /* gold, silver, bronze; 3: none won yet (the templates' locked one: navy grey); 4: the achievements' crystal blue */
+    static const u8 metal[5][6] = {{255, 236, 120, 214, 140, 10}, {250, 252, 255, 150, 160, 180}, {244, 176, 112, 160, 84, 34}, {96, 106, 140, 52, 60, 92},
+                                   {170, 236, 255, 40, 112, 220}};
+    const u8 *m = metal[kind < 0 ? 0 : kind > 4 ? 4 : kind];
     u32 light = TD_RGB(m[0], m[1], m[2]), dark = TD_RGB(m[3], m[4], m[5]);
     f32 cup[8] = {cx - 38.0f * s, cy - 50.0f * s, cx + 38.0f * s, cy - 50.0f * s, cx + 16.0f * s, cy + 8.0f * s, cx - 16.0f * s, cy + 8.0f * s};
     f32 hw = 7.0f * s;
@@ -1459,9 +1460,59 @@ static void Td_Hex(f32 cx, f32 cy, f32 r, char *label) {
     Td_Words(cx, cy + 4.0f, label, TD_B, r * 0.62f, TD_DARK_FLAT, 1, r * 1.5f, 1);
 }
 
+/* "All achievements" (the approved template of 2026-11-27): a card each, how to earn it and how far it is. */
+static void Td_AllAchievements(const Bt4ProfileStats *st) {
+    static char *name[10] = {"First victory", "10 wins in a row", "100 Ranked wins", "50 online battles", "Top 10 of a week",
+                             "Unbeaten week", "5 weeks played", "Rematch won", "500 online battles", "Rivals of 3 continents"};
+    static char *how[10] = {"Win your first Ranked battle.", "Win ten Ranked battles with no loss between them.", "Win a hundred Ranked 1 vs 1 battles.",
+                            "Play fifty Ranked battles.", "End a weekly season among the first ten.", "End a week without a loss, with 5 battles or more.",
+                            "Play Ranked in five different weeks.", "Lose a battle and win the rematch.", "Play five hundred Ranked battles.",
+                            "Face rivals from three continents."};
+    static const u8 metal[10] = {2, 1, 4, 2, 1, 0, 1, 2, 0, 4};
+    static const s32 target[10] = {1, 10, 100, 50, 1, 1, 5, 1, 500, 3};
+    static char total[32], part[10][24];
+    s32 i, got = 0;
+
+    for (i = 0; i < 10; i++) {
+        s32 col = i % 2, row = i / 2;
+        f32 x0 = 49.0f + 1319.0f * (f32)col, y0 = 274.0f + 168.0f * (f32)row;
+        s32 earned = st->state == 1 && (s32)strlen(st->ach) > i && st->ach[i] == '1';
+        s32 v = earned ? target[i] : st->state == 1 ? st->achP[i] : 0;
+        f32 full = (f32)(v < target[i] ? v : target[i]) / (f32)target[i];
+
+        got += earned;
+        Td_Panel(x0, y0, x0 + 1294.0f, y0 + 153.0f, earned, NULL);
+        Td_Trophy(x0 + 96.0f, y0 + 72.0f, 0.95f, earned ? metal[i] : 3);
+        Td_Words(x0 + 197.0f, y0 + 44.0f, name[i], TD_B, 42.0f, earned ? TD_WHITE : TD_SOFT, 0, 760.0f, 0);
+        Td_Words(x0 + 197.0f, y0 + 93.0f, how[i], TD_C, 26.0f, earned ? TD_PALE : TD_SOFT, 0, 1040.0f, 0);
+        if (earned) {
+            Td_Nine(TBO_TD_CHIP_ON, x0 + 1010.0f, y0 + 20.0f, x0 + 1260.0f, y0 + 68.0f, 14.0f, 32.0f, 0x80);
+            Td_Words(x0 + 1135.0f, y0 + 44.0f, "EARNED", TD_C, 24.0f, TD_NAVY, 1, 220.0f, 0);
+        } else {
+            Td_Nine(TBO_TD_CHIP, x0 + 1080.0f, y0 + 20.0f, x0 + 1260.0f, y0 + 68.0f, 2.0f, 18.0f, 0x80);
+            if (target[i] > 1) {
+                sprintf(part[i], "%d / %d", v, target[i]);
+                Td_Words(x0 + 1170.0f, y0 + 44.0f, part[i], TD_C, 24.0f, TD_WHITE, 1, 170.0f, 1);
+            } else {
+                Td_Words(x0 + 1170.0f, y0 + 44.0f, "LOCKED", TD_C, 24.0f, TD_SOFT, 1, 160.0f, 0);
+            }
+        }
+        Td_Rect(x0 + 197.0f, y0 + 122.0f, x0 + 1260.0f, y0 + 136.0f, Td_Rgba(255, 255, 255, 40), Td_Rgba(255, 255, 255, 40));
+        if (full > 0.0f) {
+            Td_Rect(x0 + 197.0f, y0 + 122.0f, x0 + 197.0f + 1063.0f * full, y0 + 136.0f, earned ? TD_RGB(255, 220, 100) : TD_RGB(120, 180, 255),
+                    earned ? TD_RGB(255, 160, 30) : TD_RGB(70, 110, 220));
+        }
+    }
+    sprintf(total, Tb_Fmt("%d of 10"), got);
+    Td_Panel(2095.0f, 74.0f, 2662.0f, 242.0f, 1, NULL);
+    Td_Words(2378.0f, 130.0f, total, TD_B, 64.0f, TD_GOLDC, 1, 520.0f, 1);
+    Td_Rect(2145.0f, 185.0f, 2612.0f, 205.0f, Td_Rgba(255, 255, 255, 45), Td_Rgba(255, 255, 255, 45));
+    Td_Rect(2145.0f, 185.0f, 2145.0f + 46.7f * (f32)got, 205.0f, TD_RGB(255, 220, 100), TD_RGB(255, 160, 30));
+}
+
 /* Profile as the approved template (08-perfil): the player's card on the left (the most used character, the name,
    where from, the week's place and points, the battles), the trophies of the weeks and the medals at the top right,
-   the settings (name, language) where the achievements will be, the week's top 3 at the foot */
+   the achievements' shelf, the most used, the week's top 3 at the foot */
 static void Td_Profile(void) {
     extern int MenuTranslation_TboLanguage(void);
     static char *languages[4] = {"Automatic", "English", "Portugu\xC3\xAAs", "Espa\xC3\xB1ol"};
@@ -1478,12 +1529,23 @@ static void Td_Profile(void) {
         st.state = 1; st.gold = 201; st.silver = 111; st.wins = 201; st.losses = 111; st.rating = 1088; st.rank = 37; st.players = 214;
         st.trophies[0] = 1; st.trophies[1] = 2; st.seasonNumber = 1; st.rated = 7; st.opponents = 4; st.eligible = 1; st.seasonGold = 5; st.seasonSilver = 2;
         st.bestRating = 1412; st.seasonsPlayed = 1;
+        Ps_Copy(st.ach, "1111100000", sizeof(st.ach));
+        Ps_Copy(st.recent, "VVDVVVVDVV", sizeof(st.recent));
+        Ps_Copy(st.usedName[0], "Trunks", 24); Ps_Copy(st.usedName[1], "Goku", 24); Ps_Copy(st.usedName[2], "Vegeta", 24);
+        st.usedBattles[0] = 47; st.usedBattles[1] = 23; st.usedBattles[2] = 16; st.usedTotal = 100;
+        st.achP[6] = 2; st.achP[8] = 312; st.achP[9] = 2;
         Ps_Copy(st.country, "BR", sizeof(st.country));
         Ps_Copy(st.countryName, "Brasil", sizeof(st.countryName));
         st.favChara = 4; st.favBattles = 148;
         Ps_Copy(st.favName, "Trunks", sizeof(st.favName));
     }
     total = st.wins + st.losses;
+    if (sTbAllAch) {
+        Td_Page("ALL ACHIEVEMENTS", 1, 0);
+        Td_AllAchievements(&st);
+        sTdOwnCaption = 1;
+        return;
+    }
     Td_Page(sTbTitle[TB_PROFILE], 1, 0);
 
     /* ---- the player's card */
@@ -1528,19 +1590,33 @@ static void Td_Profile(void) {
     }
     for (i = 0; i < 4; i++) {
         f32 x = 80.0f + 232.0f * (f32)i;
-        Td_Cell(x, 885.0f, x + 214.0f, 975.0f);
-        Td_Words(x + 107.0f, 920.0f, cell[i], TD_B, 54.0f, TD_WHITE, 1, 190.0f, 1);
-        Td_Words(x + 107.0f, 958.0f, cellName[i], TD_C, 24.0f, TD_SOFT, 1, 190.0f, 0);
+        Td_Cell(x, 838.0f, x + 214.0f, 928.0f);
+        Td_Words(x + 107.0f, 873.0f, cell[i], TD_B, 54.0f, TD_WHITE, 1, 190.0f, 1);
+        Td_Words(x + 107.0f, 911.0f, cellName[i], TD_C, 24.0f, TD_SOFT, 1, 190.0f, 0);
+    }
+    if (st.state == 1 && st.recent[0]) { /* the last ten, newest at the right */
+        static char mark[10][2];
+        s32 count = (s32)strlen(st.recent);
+
+        Td_Words(80.0f, 970.0f, "LAST 10", TD_C, 24.0f, TD_SOFT, 0, 150.0f, 0);
+        for (i = 0; i < count && i < 10; i++) {
+            s32 won = st.recent[count - 1 - i] == 'V';
+            f32 x = 250.0f + 72.0f * (f32)i;
+
+            Td_Rect(x, 944.0f, x + 62.0f, 996.0f, won ? TD_RGB(64, 200, 120) : TD_RGB(228, 80, 90), won ? TD_RGB(36, 150, 90) : TD_RGB(170, 40, 56));
+            Ps_Copy(mark[i], (char *)PortOnline_Text(won ? "W" : "L"), 2);
+            Td_Words(x + 31.0f, 970.0f, mark[i], TD_B, 36.0f, TD_WHITE, 1, 0.0f, 1);
+        }
     }
     code[0] = 0;
     if (!getenv("BT4_RENDER_TEST")) Bt4Profile_RecoveryCode(code);
     if (code[0]) {
         sprintf(hint, Tb_Fmt("Recovery code: %s"), code);
-        Td_Words(80.0f, 1045.0f, hint, TD_C, 26.0f, TD_TEXT(255, 230, 170), 0, 900.0f, 1);
+        Td_Words(80.0f, 1056.0f, hint, TD_C, 24.0f, TD_TEXT(255, 230, 170), 0, 900.0f, 1);
     }
     if (st.state == 1 && st.bestRating > 0) {
         sprintf(line, Tb_Fmt("Best rating: %d  \xC2\xB7  %d seasons played"), st.bestRating, st.seasonsPlayed);
-        Td_Words(80.0f, 1005.0f, line, TD_C, 24.0f, TD_SOFT, 0, 900.0f, 1);
+        Td_Words(80.0f, 1024.0f, line, TD_C, 24.0f, TD_SOFT, 0, 900.0f, 1);
     }
 
     /* ---- the trophies of the weeks */
@@ -1580,16 +1656,57 @@ static void Td_Profile(void) {
         Td_Words(2261.0f, 642.0f, line, TD_C, 22.0f, TD_PALE, 1, 760.0f, 1);
     }
 
-    /* ---- the settings: the name, the language */
-    Td_Panel(1050.0f, 685.0f, 2662.0f, 880.0f, 0, NULL);
+    /* ---- the settings: the name, the language, at the head of the page */
     if (language == 0) Ps_Copy(value, (char *)PortOnline_Text("Automatic"), sizeof(value));
     else Ps_Copy(value, languages[language], sizeof(value));
-    Td_SetRow(1090.0f, 702.0f, 2622.0f, 780.0f, sTb->prCur == PR_NAME, "Name", (char *)Port_NetNameGet(), 0, 1);
-    Td_SetRow(1090.0f, 788.0f, 2622.0f, 866.0f, sTb->prCur == PR_LANG, "Language", value, 1, 1);
+    Td_SetRow(1420.0f, 170.0f, 2030.0f, 262.0f, sTb->prCur == PR_NAME, "Name", (char *)Port_NetNameGet(), 0, 1);
+    Td_SetRow(2070.0f, 170.0f, 2640.0f, 262.0f, sTb->prCur == PR_LANG, "Language", value, 1, 1);
+
+    /* ---- the achievements (the service's ten, in its order) */
+    {
+        static char *name[10][2] = {{"First", "win"}, {"10 wins", "in a row"}, {"100 ranked", "wins"}, {"50 online", "battles"}, {"Top 10", "of a week"},
+                                    {"Unbeaten", "week"}, {"5 seasons", "played"}, {"Rematch", "won"}, {"500 online", "battles"}, {"Rivals of 3", "continents"}};
+        static const u8 metal[10] = {2, 1, 4, 2, 1, 0, 1, 2, 0, 4};
+        static char have[16];
+        s32 got = 0;
+
+        Td_Panel(1050.0f, 682.0f, 2662.0f, 918.0f, 0, NULL);
+        Td_Words(1090.0f, 722.0f, "ACHIEVEMENTS", TD_B, 46.0f, TD_PALE, 0, 600.0f, 0);
+        Td_Rect(1090.0f, 826.0f, 2622.0f, 836.0f, Td_Rgba(255, 255, 255, 50), Td_Rgba(255, 255, 255, 20)); /* the shelf */
+        for (i = 0; i < 10; i++) {
+            f32 cx = 1170.0f + 156.0f * (f32)i;
+            s32 earned = st.state == 1 && (s32)strlen(st.ach) > i && st.ach[i] == '1';
+
+            got += earned;
+            Td_Trophy(cx, 790.0f, 0.62f, earned ? metal[i] : 3);
+            Td_Words(cx, 862.0f, name[i][0], TD_C, 21.0f, earned ? TD_WHITE : TD_SOFT, 1, 150.0f, 0);
+            Td_Words(cx, 892.0f, name[i][1], TD_C, 21.0f, earned ? TD_WHITE : TD_SOFT, 1, 150.0f, 0);
+        }
+        sprintf(have, Tb_Fmt("%d of 10"), got);
+        Td_Words(2622.0f, 722.0f, have, TD_C, 28.0f, TD_PALE, 2, 0.0f, 0);
+    }
+
+    /* ---- the most used characters */
+    Td_Panel(1050.0f, 935.0f, 1842.0f, 1070.0f, 0, NULL);
+    Td_Words(1090.0f, 968.0f, "MOST USED", TD_B, 36.0f, TD_GOLDC, 0, 400.0f, 0);
+    for (i = 0; i < 3; i++) {
+        static char pct[3][8];
+        f32 x = 1090.0f + 248.0f * (f32)i;
+        s32 part = st.state == 1 && st.usedTotal > 0 ? st.usedBattles[i] * 100 / st.usedTotal : 0;
+
+        if (st.state != 1 || !st.usedName[i][0]) {
+            continue;
+        }
+        sprintf(pct[i], "%d%%", part);
+        Td_Words(x, 1010.0f, st.usedName[i], TD_C, 26.0f, TD_WHITE, 0, 150.0f, 1);
+        Td_Words(x + 226.0f, 1010.0f, pct[i], TD_C, 24.0f, TD_PALE, 2, 0.0f, 1);
+        Td_Rect(x, 1036.0f, x + 226.0f, 1048.0f, Td_Rgba(255, 255, 255, 40), Td_Rgba(255, 255, 255, 40));
+        Td_Rect(x, 1036.0f, x + 2.26f * (f32)part, 1048.0f, i == 0 ? TD_RGB(255, 200, 60) : TD_RGB(110, 150, 240), i == 0 ? TD_RGB(230, 150, 20) : TD_RGB(70, 100, 200));
+    }
 
     /* ---- the week's top 3 */
-    Td_Panel(1050.0f, 905.0f, 2662.0f, 1070.0f, 0, NULL);
-    Td_Words(1090.0f, 988.0f, "TOP OF THE WEEK", TD_B, 50.0f, TD_GOLDC, 0, 420.0f, 0);
+    Td_Panel(1862.0f, 935.0f, 2662.0f, 1070.0f, 0, NULL);
+    Td_Words(1902.0f, 968.0f, "TOP OF THE WEEK", TD_B, 36.0f, TD_GOLDC, 0, 420.0f, 0);
     {
         static Bt4RankedEntry top[10];
         static char num[3][8], pts[3][16];
@@ -1602,19 +1719,19 @@ static void Td_Profile(void) {
             for (n = 0; n < 3; n++) { Ps_Copy(top[n].name, names[n], sizeof(top[n].name)); top[n].rating = r[n]; }
         }
         for (i = 0; i < n && i < 3; i++) {
-            f32 x = 1540.0f + 375.0f * (f32)i;
+            f32 x = 1895.0f + 255.0f * (f32)i;
             char cc[4] = "";
             if (getenv("BT4_RENDER_TEST")) { static const char *t[3] = {"AR", "BR", "MX"}; Ps_Copy(cc, (char *)t[i], sizeof(cc)); }
             else Bt4Profile_TopCountryAt(i, cc);
             sprintf(num[i], "%d", i + 1);
             sprintf(pts[i], "%d", top[i].rating);
-            Td_Words(x, 988.0f, num[i], TD_B, 52.0f, TD_GOLDC, 0, 0.0f, 1);
-            if (cc[0]) Td_Flag(cc, x + 46.0f, 968.0f, 60.0f, 40.0f, 0x80);
-            Td_Words(x + (cc[0] ? 122.0f : 46.0f), 970.0f, top[i].name, TD_C, 30.0f, TD_WHITE, 0, cc[0] ? 220.0f : 296.0f, 1);
-            Td_Words(x + (cc[0] ? 122.0f : 46.0f), 1012.0f, pts[i], TD_C, 24.0f, TD_SOFT, 0, 0.0f, 1);
+            Td_Words(x, 1030.0f, num[i], TD_B, 40.0f, TD_GOLDC, 0, 0.0f, 1);
+            if (cc[0]) Td_Flag(cc, x + 30.0f, 1012.0f, 44.0f, 30.0f, 0x80);
+            Td_Words(x + (cc[0] ? 84.0f : 30.0f), 1014.0f, top[i].name, TD_C, 24.0f, TD_WHITE, 0, cc[0] ? 160.0f : 214.0f, 1);
+            Td_Words(x + (cc[0] ? 84.0f : 30.0f), 1046.0f, pts[i], TD_C, 20.0f, TD_SOFT, 0, 0.0f, 1);
         }
         if (n <= 0) {
-            Td_Words(1540.0f, 988.0f, n == -2 ? "Loading Global Top..." : n == -1 ? "Global Top unavailable" : "No ranking published yet.", TD_C, 30.0f, TD_SOFT, 0, 1400.0f, 0);
+            Td_Words(1902.0f, 1030.0f, n == -2 ? "Loading Global Top..." : n == -1 ? "Global Top unavailable" : "No ranking published yet.", TD_C, 30.0f, TD_SOFT, 0, 720.0f, 0);
         }
     }
     sTdOwnCaption = 0;

@@ -1770,12 +1770,23 @@ static void Tb_JoinUpdate(s32 live) {
 }
 
 /* ---------------------------------------------------------------------------------------------- Profile */
+static s32 sTbAllAch; /* the profile showing "All achievements" (tbo_look.inc) */
+
 static void Tb_ProfileUpdate(s32 live) {
     extern int MenuTranslation_TboLanguage(void);
     extern void MenuTranslation_SetTboLanguage(int language);
     Pad *pad = &gPad[0];
     s32 side;
 
+    if (sTbAllAch) {
+        Ps_Prompt(2, "Back");
+        if (live && (pad->gamePressed & (PADG_TRIANGLE | PADG_SQUARE))) {
+            Snd_PlaySe(1, 2);
+            sTbAllAch = 0;
+        }
+        return;
+    }
+    Ps_Prompt(1, "All achievements");
     if (sTb->prCur == PR_LANG) {
         Ps_Prompt(3, "Change");
     } else {
@@ -1783,6 +1794,11 @@ static void Tb_ProfileUpdate(s32 live) {
     }
     Ps_Prompt(2, "Back");
     if (!live) {
+        return;
+    }
+    if (pad->gamePressed & PADG_SQUARE) {
+        Snd_PlaySe(1, 1);
+        sTbAllAch = 1;
         return;
     }
     Ps_Move(&sTb->prCur, PR_COUNT);
@@ -5046,6 +5062,11 @@ static void Tb_Touch(void) {
     }
     sTdBody = 0;
     switch (sTb->mode) {
+    case TB_PROFILE: /* (Td_Profile: the achievements' shelf opens all of them) */
+        if (!sTbAllAch && Tb_TouchIn(x, y, 1050.0f, 682.0f, 2662.0f, 918.0f)) {
+            gPad[0].gamePressed |= PADG_SQUARE;
+        }
+        break;
     case TB_HUB: /* (Td_Hub: the seven rows beside Trunks) */
         for (i = 0; i < HUB_COUNT; i++) {
             if (Tb_TouchIn(x, y, 40.0f, 260.0f + 126.0f * (f32)i, 1180.0f, 386.0f + 126.0f * (f32)i)) {
