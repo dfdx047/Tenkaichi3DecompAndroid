@@ -429,6 +429,24 @@ open class GameActivity : SDLActivity() {
      * a POST of [body], or a GET when it is null; [headers] are extra "Name: value" lines (an official build signs
      * its requests with them). The answer's text, "" when there is none.
      */
+    /**
+     * Why this game's process stopped the last time (port/src/gs/bt4_profile.c, through JNI): "closed" only when the
+     * player closed it (recent apps, "force stop"); "fault" for a crash, a freeze, low memory, anything else, and when
+     * the system cannot say (before Android 11). A Ranked battle is only ever lost by the first.
+     */
+    @Suppress("unused")
+    fun lastExitReason(): String = runCatching {
+        if (android.os.Build.VERSION.SDK_INT < 30) return "fault"
+        val am = getSystemService(android.content.Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val me = android.app.Application.getProcessName()
+        val exit = am.getHistoricalProcessExitReasons(packageName, 0, 16).firstOrNull { it.processName == me } ?: return "fault"
+        val closed = exit.reason == android.app.ApplicationExitInfo.REASON_USER_REQUESTED ||
+            exit.reason == android.app.ApplicationExitInfo.REASON_USER_STOPPED ||
+            exit.description?.contains("SwipeUp", ignoreCase = true) == true // (Xiaomi's recent apps)
+        android.util.Log.i("bt3", "bt4 profile: the last exit: reason ${exit.reason} (${exit.description}) -> ${if (closed) "closed" else "fault"}")
+        if (closed) "closed" else "fault"
+    }.getOrDefault("fault")
+
     @Suppress("unused")
     fun netRequest(url: String, body: String?, headers: String?): String = runCatching {
         val c = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {

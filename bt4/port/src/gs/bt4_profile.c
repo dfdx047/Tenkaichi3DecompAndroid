@@ -20,6 +20,7 @@
  */
 #ifdef __ANDROID__
 #include <SDL3/SDL.h>
+#include <jni.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -86,11 +87,17 @@ static struct {
     int medal[4][5];        /* medals to show: kind (1 gold, 2 silver), delta, rating, rematches left, capped */
     int medals;
     int resultBattle, resultLeft; /* the last battle whose answer came (its number in the session), its rematches left */
+    /* a Ranked battle being played: said every 3 s while the game runs it (/v1/beat), so that the service can tell who
+       vanished from it; and the battles that broke off, asked about until decided (/v1/gone) */
+    struct { int on; Uint64 alive, next; char body[420]; } live;
+    struct { int used, crash; Uint64 next, until, since; char body[220]; } left[2];
 } sP;
 
 /* the game's thread only */
 static struct {
     int session, ranked, battle, sawFight, outcomeBits, warned;
+    int liveN;          /* the battle being said to the service, and its room */
+    char liveCode[24];
     unsigned outcomeTick;
     char code[12];
 } sG;
@@ -124,7 +131,7 @@ static const char *jfind(const char *json, const char *key) {
     p = SDL_strstr(json, k);
     return p != NULL ? p + SDL_strlen(k) : NULL;
 }
-static int jint(const char *json, const char *key, int def) {
+static int jwhole(const char *json, const char *key, int def) {
     const char *p = jfind(json, key);
     return p != NULL && (*p == '-' || (*p >= '0' && *p <= '9')) ? SDL_atoi(p) : def;
 }
@@ -284,23 +291,23 @@ static void take_me(const char *a) {
     Bt4ProfileStats *s = &sP.stats;
     double ends = jnum(a, "ends");
     SDL_Time real = 0;
-    s->gold = jint(a, "gold", 0);
-    s->silver = jint(a, "silver", 0);
-    s->wins = jint(a, "wins", 0);
-    s->losses = jint(a, "losses", 0);
-    s->rating = jint(a, "rating", 1000);
-    s->rwins = jint(a, "rwins", 0);
-    s->rlosses = jint(a, "rlosses", 0);
-    s->rank = jint(a, "rank", 0);
-    s->players = jint(a, "players", 0);
-    s->rated = jint(a, "rated", s->rwins + s->rlosses);
-    s->opponents = jint(a, "opponents", 0);
+    s->gold = jwhole(a, "gold", 0);
+    s->silver = jwhole(a, "silver", 0);
+    s->wins = jwhole(a, "wins", 0);
+    s->losses = jwhole(a, "losses", 0);
+    s->rating = jwhole(a, "rating", 1000);
+    s->rwins = jwhole(a, "rwins", 0);
+    s->rlosses = jwhole(a, "rlosses", 0);
+    s->rank = jwhole(a, "rank", 0);
+    s->players = jwhole(a, "players", 0);
+    s->rated = jwhole(a, "rated", s->rwins + s->rlosses);
+    s->opponents = jwhole(a, "opponents", 0);
     s->eligible = SDL_strstr(a, "\"eligible\":true") != NULL;
-    s->seasonGold = jint(a, "season_gold", 0);
-    s->seasonSilver = jint(a, "season_silver", 0);
-    s->bestRating = jint(a, "best_rating", 1000);
-    s->rankedTotal = jint(a, "ranked_total", 0);
-    s->seasonsPlayed = jint(a, "seasons_played", 0);
+    s->seasonGold = jwhole(a, "season_gold", 0);
+    s->seasonSilver = jwhole(a, "season_silver", 0);
+    s->bestRating = jwhole(a, "best_rating", 1000);
+    s->rankedTotal = jwhole(a, "ranked_total", 0);
+    s->seasonsPlayed = jwhole(a, "seasons_played", 0);
     {   /* "season_name":"Temporada 3" */
         char sn[40] = "";
         jstr(a, "season_name", sn, sizeof(sn));
@@ -355,7 +362,7 @@ static void take_me(const char *a) {
 static void take_top(const char *a) {
     const char *p = jfind(a, "top");
     int n = 0;
-    sP.topTotal = jint(a, "total", 0);
+    sP.topTotal = jwhole(a, "total", 0);
     if (p != NULL && *p == '[') {
         p++;
         while (*p == '[' && n < TOP_MAX) {
@@ -392,7 +399,7 @@ static void take_top(const char *a) {
 static void take_result(const char *a, int ranked, int battle) {
     char state[16] = "", medal[16] = "";
     int capped = SDL_strstr(a, "\"capped\":true") != NULL;
-    int left = jint(a, "rematches_left", -1);
+    int left = jwhole(a, "rematches_left", -1);
     jstr(a, "state", state, sizeof(state));
     jstr(a, "medal", medal, sizeof(medal));
     sP.resultBattle = battle; /* (answered, whatever the answer: the rematch box waits for it, net.c) */
@@ -402,8 +409,8 @@ static void take_result(const char *a, int ranked, int battle) {
         if (sP.medals < 4) {
             int *m = sP.medal[sP.medals++];
             m[0] = SDL_strcmp(medal, "gold") == 0 ? 1 : 2;
-            m[1] = jint(a, "delta", 0);
-            m[2] = jint(a, "rating", 0);
+            m[1] = jwhole(a, "delta", 0);
+            m[2] = jwhole(a, "rating", 0);
             m[3] = left;
             m[4] = 0;
         }
@@ -416,6 +423,99 @@ static void take_result(const char *a, int ranked, int battle) {
     /* (a battle that is not Ranked gives nothing since 1.0.3: medals are Ranked's) */
     sP.wantMe = 1;
     sP.wantTop = sP.wantTop || ranked;
+}
+
+static void wake(void);
+static void profile_start(void);
+#define LIVE_FILE "bt4_live.txt" /* the Ranked battle being played: left behind only by a game that stopped */
+
+/* What became of a Ranked battle that broke off, said on the screen (the lock held). */
+static void left_banner(const char *a, const char *state) {
+    const char *l = screens_lang();
+    int pt = l[0] == 'p', es = l[0] == 'e' && l[1] == 's';
+    const char *line;
+    if (SDL_strcmp(state, "crash") == 0) {
+        line = pt ? "O jogo travou durante a luta: ningu\303\251m perdeu nada." : es ? "El juego fall\303\263 durante la pelea: nadie pierde nada." :
+               "The game crashed during the match: nobody loses anything.";
+    } else if (SDL_strcmp(state, "link") == 0) {
+        line = pt ? "A conex\303\243o entre voc\303\252s caiu: ningu\303\251m perdeu." :
+               es ? "Se cort\303\263 la conexi\303\263n entre los dos: nadie pierde." : "The line between you failed: nobody loses.";
+    } else if (SDL_strstr(a, "\"left\":true") == NULL) {
+        line = pt ? "O advers\303\241rio saiu da partida: vit\303\263ria sua!" : es ? "El rival sali\303\263 de la partida: \302\241ganas t\303\272!" :
+               "Your rival left the match: you win!";
+    } else if (SDL_strstr(a, "\"forgiven\":true") != NULL) {
+        line = pt ? "Voc\303\252 saiu da partida. Desta vez n\303\243o houve puni\303\247\303\243o." :
+               es ? "Saliste de la partida. Esta vez no hay castigo." : "You left the match. No penalty this time.";
+    } else {
+        line = pt ? "Voc\303\252 saiu da partida ranqueada: derrota e -1 medalha de ouro." :
+               es ? "Saliste de la partida clasificatoria: derrota y -1 medalla de oro." : "You left the Ranked match: a loss and -1 gold medal.";
+    }
+    if (sP.banners < 4) SDL_strlcpy(sP.banner[sP.banners++], line, sizeof(sP.banner[0]));
+}
+
+/* The Ranked battle being played, and those that broke off: a thread of their own, so that a slow answer to anything
+   else never holds a "still playing" back (the service reads silence as having left). */
+static SDL_AtomicInt sInBackground; /* the app is not on the screen (a game at rest then is not a frozen one) */
+static bool SDLCALL app_watch(void *arg, SDL_Event *e) {
+    (void)arg;
+    if (e->type == SDL_EVENT_DID_ENTER_BACKGROUND) SDL_SetAtomicInt(&sInBackground, 1);
+    if (e->type == SDL_EVENT_DID_ENTER_FOREGROUND) SDL_SetAtomicInt(&sInBackground, 0);
+    return true;
+}
+/* (the lock held) "room battle frozen" */
+static void live_file(void) {
+    FILE *f = fopen(LIVE_FILE, "w");
+    if (f != NULL) {
+        fprintf(f, "%s %d %d\n", sG.liveCode, sG.liveN, !SDL_GetAtomicInt(&sInBackground) && SDL_GetTicks() - sP.live.alive > 9000);
+        fclose(f);
+    }
+}
+
+static int SDLCALL live_thread(void *arg) {
+    char body[420], a[1024];
+    (void)arg;
+    for (;;) {
+        Uint64 now;
+        int k, i, beat;
+        SDL_Delay(500);
+        SDL_LockMutex(sP.lock);
+        now = SDL_GetTicks();
+        if (sP.live.on) live_file();
+        beat = sP.live.on && now >= sP.live.next && now - sP.live.alive < 9000;
+        if (beat) {
+            SDL_strlcpy(body, sP.live.body, sizeof(body));
+            sP.live.next = now + 3000;
+            SDL_UnlockMutex(sP.lock);
+            i = post("beat", body, a, sizeof(a));
+            SDL_LockMutex(sP.lock);
+            if (i && (SDL_strstr(a, "\"off\"") != NULL || SDL_strstr(a, "\"path\"") != NULL)) sP.live.on = 0; /* (a service without the rule) */
+        }
+        for (k = 0; k < 2; k++) {
+            char state[16] = "";
+            if (!sP.left[k].used || SDL_GetTicks() < sP.left[k].next) continue;
+            SDL_strlcpy(body, sP.left[k].body, sizeof(body));
+            /* (a service waits some minutes for a silent side, which may come back saying it crashed: asked often at
+               first, then now and then) */
+            sP.left[k].next = SDL_GetTicks() + (SDL_GetTicks() - sP.left[k].since < 60000 ? 3000 : 20000);
+            {
+                int crashed = sP.left[k].crash;
+                SDL_UnlockMutex(sP.lock);
+                i = post(crashed ? "exit" : "gone", body, a, sizeof(a));
+            }
+            SDL_LockMutex(sP.lock);
+            if (i) jstr(a, "state", state, sizeof(state));
+            if (i && SDL_strcmp(state, "waiting") != 0) {
+                if (SDL_strcmp(state, "abandon") == 0 || SDL_strcmp(state, "link") == 0 || SDL_strcmp(state, "crash") == 0) left_banner(a, state);
+                sP.left[k].used = 0;
+                sP.wantMe = 1;
+                sP.wantTop = 1;
+                wake();
+            } else if (SDL_GetTicks() >= sP.left[k].until) {
+                sP.left[k].used = 0;
+            }
+        }
+        SDL_UnlockMutex(sP.lock);
+    }
 }
 
 static int SDLCALL profile_thread(void *arg) {
@@ -437,7 +537,7 @@ static int SDLCALL profile_thread(void *arg) {
                 if (sP.rep[i].used && now >= sP.rep[i].next) { job = 10 + i; break; }
             }
             if (job) break;
-            SDL_WaitConditionTimeout(sP.wake, sP.lock, 1000);
+            SDL_WaitConditionTimeout(sP.wake, sP.lock, 500);
         }
         if (job == 1) { /* the nickname: a new account, or the account's new name */
             char name[40];
@@ -574,7 +674,7 @@ static int SDLCALL profile_thread(void *arg) {
             i = post("presence", body, a, sizeof(a));
             SDL_LockMutex(sP.lock);
             if (i && SDL_strstr(a, "\"ok\":true") != NULL) {
-                sP.online = jint(a, "online", -1);
+                sP.online = jwhole(a, "online", -1);
             }
             SDL_UnlockMutex(sP.lock);
         } else { /* a battle's report: again until both have told of it (or three minutes) */
@@ -622,6 +722,11 @@ static void profile_start(void) {
     if (!sP.has) sP.nick = BT4_NICKNAME_OPTIONAL;
     sP.thread = SDL_CreateThread(profile_thread, "bt4-profile", NULL);
     if (sP.thread != NULL) SDL_DetachThread(sP.thread);
+    {
+        SDL_Thread *t = SDL_CreateThread(live_thread, "bt4-live", NULL);
+        SDL_AddEventWatch(app_watch, NULL);
+        if (t != NULL) SDL_DetachThread(t);
+    }
 }
 static void wake(void) { SDL_SignalCondition(sP.wake); }
 
@@ -760,8 +865,93 @@ int Port_RankedResult(int *rating, int *delta) {
     return 0;
 }
 void Port_RankedDisconnected(int peerGone) { (void)peerGone; }
+/* The session is being left (gs/net.c). how: 1 this player's own choice, 0 the other side or the line, -1 the two
+   games had come apart (nobody's doing). Only a Ranked battle still being played counts. */
+void Bt4Profile_Left(int how) {
+    int k;
+    if (sP.lock == NULL) return;
+    SDL_LockMutex(sP.lock);
+    if (sP.live.on && how >= 0 && sP.has) {
+        for (k = 0; k < 1 && sP.left[k].used; k++) {}
+        sP.left[k].crash = 0;
+        sP.left[k].since = SDL_GetTicks();
+        SDL_snprintf(sP.left[k].body, sizeof(sP.left[k].body), "{\"id\":\"%s\",\"secret\":\"%s\",\"code\":\"%s\",\"n\":%d,\"self\":%s}",
+                     sP.id, sP.secret, sG.liveCode, sG.liveN, how == 1 ? "true" : "false");
+        sP.left[k].used = 1;
+        sP.left[k].next = SDL_GetTicks();
+        sP.left[k].until = sP.left[k].next + 1200000;
+    }
+    sP.live.on = 0;
+    remove(LIVE_FILE); /* (left, not crashed) */
+    SDL_UnlockMutex(sP.lock);
+}
+/* Whether the player closed the game the last time (GameActivity.lastExitReason: Android's own record of it). */
+static int closed_by_player(void) {
+    JNIEnv *env = (JNIEnv *)SDL_GetAndroidJNIEnv();
+    jobject act;
+    jclass cls;
+    jmethodID m;
+    jstring r = NULL;
+    int closed = 0;
+    if (env == NULL || (act = (jobject)SDL_GetAndroidActivity()) == NULL) return 0;
+    cls = (*env)->GetObjectClass(env, act);
+    m = (*env)->GetMethodID(env, cls, "lastExitReason", "()Ljava/lang/String;");
+    if (m != NULL) r = (jstring)(*env)->CallObjectMethod(env, act, m);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+        r = NULL;
+    }
+    if (r != NULL) {
+        const char *t = (*env)->GetStringUTFChars(env, r, NULL);
+        if (t != NULL) {
+            closed = SDL_strcmp(t, "closed") == 0;
+            (*env)->ReleaseStringUTFChars(env, r, t);
+        }
+        (*env)->DeleteLocalRef(env, r);
+    }
+    (*env)->DeleteLocalRef(env, cls);
+    (*env)->DeleteLocalRef(env, act);
+    return closed;
+}
+
+/* The game was opened again with a Ranked battle's file still here: the game stopped inside it. Say why: the player's
+   own closing, or a fault (a crash in the run before, whose log the loader kept; frozen on the screen; the system). */
+static void crash_report(void) {
+    char code[24] = "", line[512];
+    int n = 0, stalled = 0, crashed = 0, k;
+    const char *why;
+    FILE *f = fopen(LIVE_FILE, "r");
+    if (f == NULL) return;
+    if (fscanf(f, "%23s %d %d", code, &n, &stalled) < 2) n = 0;
+    fclose(f);
+    if ((f = fopen("bt3_log.1.txt", "r")) != NULL) {
+        while (!crashed && fgets(line, sizeof(line), f) != NULL) crashed = SDL_strstr(line, "CRASH: signal") != NULL;
+        fclose(f);
+    }
+    remove(LIVE_FILE);
+    if (n <= 0) return;
+    why = !crashed && !stalled && closed_by_player() ? "closed" : "fault";
+    SDL_Log("bt4 profile: a Ranked battle was left on: %s (crash %d, frozen %d)", why, crashed, stalled);
+    profile_start();
+    SDL_LockMutex(sP.lock);
+    if (sP.has) {
+        for (k = 0; k < 1 && sP.left[k].used; k++) {}
+        SDL_snprintf(sP.left[k].body, sizeof(sP.left[k].body), "{\"id\":\"%s\",\"secret\":\"%s\",\"code\":\"%s\",\"n\":%d,\"why\":\"%s\"}",
+                     sP.id, sP.secret, code, n, why);
+        sP.left[k].crash = 1;
+        sP.left[k].used = 1;
+        sP.left[k].since = sP.left[k].next = SDL_GetTicks();
+        sP.left[k].until = sP.left[k].next + 600000;
+    }
+    SDL_UnlockMutex(sP.lock);
+}
 int Port_RankedTakeSettlement(int *rating, int *delta) {
+    static int looked;
     (void)rating; (void)delta;
+    if (!looked) { /* (called every blank outside a session: once, for a crash of the run before) */
+        looked = 1;
+        crash_report();
+    }
     Bt4Profile_Pump();
     return 0;
 }
@@ -882,8 +1072,52 @@ static void report(int winner, int me, const char *name0, const char *name1) {
 /* A battle's end, as Ranked's observer saw it on the PC (gs/match_supabase.cpp Port_RankedObserve): the fight seen,
    then a result that holds past the rollback window and the other's confirmed input. A surrender from the pause menu
    (bits 8) is a loss for the one who gave up (BT4decomp R5.4). */
+static int observe(int battleState, int bits, unsigned tick, unsigned confirmed, int resimulating, int localConcession,
+                   int me, const char *name0, const char *name1);
+
+/* The game ran a tick of a Ranked battle: say so (the thread does, every 3 s), until its result is told. */
+static void live_tick(int me, const char *name0, const char *name1) {
+    char mine[40], theirs[40], code[24];
+    const char *myName = me ? name1 : name0, *their = me ? name0 : name1;
+    if (sP.lock == NULL || myName == NULL || their == NULL || myName[0] == '\0' || their[0] == '\0' || sG.code[0] == '\0') return;
+    SDL_LockMutex(sP.lock);
+    if (sP.has) {
+        sP.live.alive = SDL_GetTicks();
+        if (!sP.live.on || sG.liveN != sG.battle) {
+            jesc(mine, sizeof(mine), myName);
+            jesc(theirs, sizeof(theirs), their);
+            jesc(code, sizeof(code), sG.code);
+            sG.liveN = sG.battle;
+            SDL_strlcpy(sG.liveCode, code, sizeof(sG.liveCode));
+            SDL_snprintf(sP.live.body, sizeof(sP.live.body), "{\"id\":\"%s\",\"secret\":\"%s\",\"code\":\"%s\",\"n\":%d,\"me\":\"%s\",\"opp\":\"%s\",\"side\":%d}",
+                         sP.id, sP.secret, code, sG.battle, mine, theirs, me);
+            sP.live.on = 1;
+            sP.live.next = 0;
+            live_file();
+        }
+    }
+    SDL_UnlockMutex(sP.lock);
+}
+
 int Bt4Profile_Observe(int battleState, int bits, unsigned tick, unsigned confirmed, int resimulating, int localConcession,
                        int me, const char *name0, const char *name1) {
+    int over = observe(battleState, bits, tick, confirmed, resimulating, localConcession, me, name0, name1);
+    if (!sG.session || !sG.ranked || resimulating || (me != 0 && me != 1)) return over;
+    if (over > 0) { /* (told: a battle that ended is nobody's abandonment) */
+        if (sP.lock != NULL) {
+            SDL_LockMutex(sP.lock);
+            sP.live.on = 0;
+            remove(LIVE_FILE);
+            SDL_UnlockMutex(sP.lock);
+        }
+    } else if (sG.sawFight) {
+        live_tick(me, name0, name1);
+    }
+    return over;
+}
+
+static int observe(int battleState, int bits, unsigned tick, unsigned confirmed, int resimulating, int localConcession,
+                   int me, const char *name0, const char *name1) {
     int winner;
     if (!sG.session || resimulating || (me != 0 && me != 1)) return 0;
     if (battleState == 3) {

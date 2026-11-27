@@ -43,6 +43,7 @@ void Bt4Profile_TopCountryAt(int k, char out[4]);
 /* gs/net.c: a session (one or more battles with one rival) begins and ends; every battle's state as Ranked's was */
 void Bt4Profile_SessionBegin(int ranked, const char *code);
 void Bt4Profile_SessionEnd(void);
+void Bt4Profile_Left(int how); /* the session left: 1 by choice, 0 the other side or the line, -1 desync */
 /* (returns the battle's number in the session when this blank reported its end, else 0) */
 int Bt4Profile_Observe(int battleState, int bits, unsigned tick, unsigned confirmed, int resimulating, int localConcession,
                        int me, const char *name0, const char *name1);

@@ -3639,6 +3639,11 @@ void Port_NetArrived(void) {
 /* The session is over (the game went back to the main menu, or the other side is gone): back to the game as it
    normally is. */
 void Port_NetLeave(void) {
+#ifdef __ANDROID__
+    /* a Ranked battle left unfinished (bt4_profile.c): by the two games coming apart (nobody's), by the other side or
+       the line, or by this player's own choice */
+    Bt4Profile_Left(sByeWhy == BYE_APART || sGone == 2 ? -1 : sByeWhy == BYE_LOST || sGone == 1 ? 0 : 1);
+#endif
     Port_RankedDisconnected(sByeWhy == BYE_LOST || (sGone == 1 && sByeHeard != BYE_LOST));
     PortVoice_Leave(1);sVoiceRoomKeyKnown=0;sVoiceRoomKeySent=0;memset(sVoiceRoomKey,0,sizeof(sVoiceRoomKey));
     fprintf(stderr, "bt3: net: the session has ended\n");

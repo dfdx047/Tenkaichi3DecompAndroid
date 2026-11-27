@@ -13,6 +13,10 @@
 //   POST /v1/report   {id, secret, rkey, code, n, me, opp, side, winner, ranked, chars?: [[chara, name], ...]}
 //                                             -> {ok, state: "waiting"|"settled"|"casual"|"conflict"|"draw", medal, delta, rating, ranked,
 //                                                 capped, rematches_left}
+//   POST /v1/beat     {id, secret, code, n, me, opp, side}   (every few seconds while a Ranked battle is being played)
+//   POST /v1/gone     {id, secret, code, n, self}            (the battle ended unfinished: the other side is gone, or
+//                                             self: this player left it)  -> {ok, state: "waiting"|"abandon"|"link"|"off"}
+//   POST /v1/exit     {id, secret, code, n, why}             (opened again: "closed" by the player, or "fault")
 //   POST /v1/top      {season?}               -> {ok, season, name, ends, total, closed,
 //                                                 top: [[name, rating, wins, losses, gold, silver, trophy1, trophy2, trophy3, country], ...]}
 //   POST /v1/seasons  {page}                  -> {ok, seasons: [[id, slug, name, starts, ends, status, players], ...]}
@@ -28,6 +32,12 @@
 //    The winner gets a gold medal and Elo points (K 32, from 1000 every season), the loser a silver medal.
 //  - With the same rival, RANKED_PER_PAIR_DAY battles a day count (the match and its three rematches); later ones count
 //    for nothing.
+//  - Abandoning (ABANDON_PENALTY=1; off otherwise): the one who leaves a Ranked battle, or goes silent in it, loses it
+//    and ONE gold medal (never below none); the other wins it as usual. See decide() below. A line that fails between
+//    two players who both still reach the service counts for nobody, and so does a CRASH, a freeze or the system
+//    closing the game for memory (the game says why when it is opened again, however late: silence alone is never judged). Nothing can tell a connection that dropped from
+//    one switched off on purpose: ABANDON_FREE_PER_DAY (default 0) forgives that many silent exits a day (never a
+//    player's own choice to leave).
 //  - A battle's season and career rows, its history row and its claim are written in ONE transaction (env.DB.batch): all
 //    or nothing, never twice (UNIQUE claims), and the rating it read is still the rating it writes (guard).
 //  - Seasons are weeks (seasons.js): Monday 00:00 in Brasilia. Their end archives the table (season_history, trophies for
@@ -112,6 +122,8 @@ export async function schema(env) {
         env.DB.prepare("CREATE TABLE IF NOT EXISTS ranked_rooms (code TEXT PRIMARY KEY, made INTEGER NOT NULL, host_name TEXT NOT NULL, join_name TEXT NOT NULL)"),
         // who sat where: the ACCOUNT of the host and of the joiner of a Ranked room, bound when the search admitted them (rooms.js). A battle's reports
         // are taken only from these accounts, and it scores only when they are the two that settle it.
+        env.DB.prepare("CREATE TABLE IF NOT EXISTS ranked_live (code TEXT NOT NULL, n INTEGER NOT NULL, player TEXT NOT NULL, me TEXT NOT NULL, side INTEGER NOT NULL, first INTEGER NOT NULL, last INTEGER NOT NULL, gap INTEGER NOT NULL DEFAULT 0, gap_at INTEGER NOT NULL DEFAULT 0, claim INTEGER, claim_gap INTEGER, self INTEGER NOT NULL DEFAULT 0, seen_back INTEGER, outcome TEXT, PRIMARY KEY (code, n, player), UNIQUE (code, n, side))"),
+        env.DB.prepare("CREATE TABLE IF NOT EXISTS abandons (code TEXT NOT NULL, n INTEGER NOT NULL, loser TEXT NOT NULL, winner TEXT NOT NULL, at INTEGER NOT NULL, self INTEGER NOT NULL, forgiven INTEGER NOT NULL, PRIMARY KEY (code, n))"),
         env.DB.prepare("CREATE TABLE IF NOT EXISTS ranked_seats (code TEXT NOT NULL, seat TEXT NOT NULL CHECK (seat IN ('host', 'join')), player TEXT NOT NULL, made INTEGER NOT NULL, PRIMARY KEY (code, seat))"),
         env.DB.prepare("CREATE INDEX IF NOT EXISTS ranked_seats_made ON ranked_seats (made)"),
         // seasons and the permanent profile
@@ -383,7 +395,8 @@ async function settle(env, a, b, now) {
     const code = a.code || b.code, at = Math.min(a.at, b.at);
     let ranked = a.ranked === 1 && b.ranked === 1 && await rankedRoom(env, code, win.me, lose.me, at) && await seatsOk(env, code, win.player, lose.player);
     if (ranked) { // a fight (room, battle number) that already scored is not scored again, whatever keys the reports carry
-        const done = await env.DB.prepare("SELECT 1 AS x FROM ranked_matches WHERE room_code = ? AND battle_no = ? AND rated = 1").bind(code, a.n).first();
+        const done = await env.DB.prepare("SELECT 1 AS x FROM ranked_matches WHERE room_code = ? AND battle_no = ? AND rated = 1").bind(code, a.n).first()
+            || await env.DB.prepare("SELECT 1 AS x FROM abandons WHERE code = ? AND n = ? AND forgiven = 0").bind(code, a.n).first();
         if (done) {
             const o = { state: "settled", medal: "none", ranked: true, capped: true, duplicate: true, rematches_left: 0 };
             try { await env.DB.batch([claim(), outcome(a, o), outcome(b, o)]); } catch (e) { if (!String(e).includes("UNIQUE")) throw e; }
@@ -552,6 +565,194 @@ export async function sweep(env, now) {
         const other = await findOther(env, mine);
         if (other) await settle(env, mine, other, now);
     }
+    if (env.ABANDON_PENALTY === "1") { // (broken-off battles whose games stopped asking)
+        const live = await env.DB.prepare("SELECT DISTINCT code, n FROM ranked_live WHERE outcome IS NULL AND claim IS NOT NULL AND claim > ? LIMIT 40").bind(now - 30 * DAY).all();
+        for (const r of live.results) await decide(env, r.code, r.n, now);
+    }
+}
+
+// ---- abandoned Ranked battles ------------------------------------------------------------------------------------
+const OFFLINE_MS = 7000;  // no word for this long (a game says it is playing every 3 s; it gives up on its rival after 6 s): gone
+const GRACE_MS = 40000;   // how long an older game (never heard playing) is waited for
+const RETURN_MS = 600000; // an account back online that never says why its game stopped is judged after this
+
+const liveCode = (body) => typeof body.code === "string" ? body.code.replace(/[^A-Za-z0-9]/g, "").slice(0, 12).toUpperCase() : "";
+const liveN = (body) => Number.isInteger(body.n) && body.n > 0 && body.n < 100000 ? body.n : 0;
+
+async function beat(env, body, now) {
+    if (env.ABANDON_PENALTY !== "1") return json({ ok: true, state: "off" });
+    const p = await who(env, body);
+    if (!p) return json({ error: "who" });
+    const code = liveCode(body), n = liveN(body), side = body.side === 0 || body.side === 1 ? body.side : -1;
+    const meName = typeof body.me === "string" ? body.me.slice(0, 24) : "", opp = typeof body.opp === "string" ? body.opp.slice(0, 24) : "";
+    if (!code || !n || side < 0 || !meName || !opp) return json({ error: "invalid" });
+    const mine = await env.DB.prepare("SELECT * FROM ranked_live WHERE code = ? AND n = ? AND player = ?").bind(code, n, p.id).first();
+    if (!mine) { // only the two of a Ranked match the queue made, one account a side
+        const seats = (await env.DB.prepare("SELECT player FROM ranked_seats WHERE code = ?").bind(code).all()).results;
+        if (!await rankedRoom(env, code, meName, opp, now) || (seats.length >= 2 && !seats.some((x) => x.player === p.id))) return json({ error: "not admitted" });
+        await env.DB.prepare("INSERT OR IGNORE INTO ranked_live (code, n, player, me, side, first, last) VALUES (?, ?, ?, ?, ?, ?, ?)")
+            .bind(code, n, p.id, meName, side, now, now).run();
+    } else {
+        await env.DB.prepare("UPDATE ranked_live SET gap = CASE WHEN ? - last >= gap OR ? - gap_at > 25000 THEN ? - last ELSE gap END, gap_at = CASE WHEN ? - last >= gap OR ? - gap_at > 25000 THEN ? ELSE gap_at END, last = ? WHERE code = ? AND n = ? AND player = ?").bind(now, now, now, now, now, now, now, code, n, p.id).run();
+    }
+    return json({ ok: true, state: "playing" });
+}
+
+async function gone(env, body, now) {
+    if (env.ABANDON_PENALTY !== "1") return json({ ok: true, state: "off" });
+    const p = await who(env, body);
+    if (!p) return json({ error: "who" });
+    const code = liveCode(body), n = liveN(body);
+    const find = () => env.DB.prepare("SELECT * FROM ranked_live WHERE code = ? AND n = ? AND player = ?").bind(code, n, p.id).first();
+    let mine = code && n ? await find() : null;
+    if (!mine) return json({ error: "not playing" });
+    if (!mine.outcome) {
+        await env.DB.prepare("UPDATE ranked_live SET gap = CASE WHEN ? - last >= gap OR ? - gap_at > 25000 THEN ? - last ELSE gap END, gap_at = CASE WHEN ? - last >= gap OR ? - gap_at > 25000 THEN ? ELSE gap_at END, last = ?, claim = COALESCE(claim, ?), self = MAX(self, ?) WHERE code = ? AND n = ? AND player = ?")
+            .bind(now, now, now, now, now, now, now, now, body.self === true ? 1 : 0, code, n, p.id).run();
+        // (the silence this side had when it first said the battle broke off: its later asking changes nothing)
+        await env.DB.prepare("UPDATE ranked_live SET claim_gap = gap WHERE code = ? AND n = ? AND player = ? AND claim_gap IS NULL").bind(code, n, p.id).run();
+        await decide(env, code, n, now);
+        mine = await find();
+    }
+    return answer(mine);
+}
+
+// An account heard of again while a battle it went silent in is still undecided.
+async function cameBack(env, body, now) {
+    const p = await who(env, body);
+    if (p) await env.DB.prepare("UPDATE ranked_live SET seen_back = ? WHERE player = ? AND outcome IS NULL AND claim IS NULL AND seen_back IS NULL AND last < ?")
+        .bind(now, p.id, now - OFFLINE_MS).run();
+}
+
+// A game opened again says why it stopped in that battle: "closed" (the player closed it) or "fault" (a crash, a
+// freeze, the system short of memory, anything not the player's doing). Only the first is ever punished.
+async function exited(env, body, now) {
+    if (env.ABANDON_PENALTY !== "1") return json({ ok: true, state: "off" });
+    const p = await who(env, body);
+    if (!p) return json({ error: "who" });
+    const code = liveCode(body), n = liveN(body);
+    const find = () => env.DB.prepare("SELECT * FROM ranked_live WHERE code = ? AND n = ? AND player = ?").bind(code, n, p.id).first();
+    const mine = code && n ? await find() : null;
+    if (!mine) return json({ error: "not playing" });
+    if (!mine.outcome && body.why === "closed") {
+        await env.DB.prepare("UPDATE ranked_live SET self = 1, claim = COALESCE(claim, ?), claim_gap = COALESCE(claim_gap, 0) WHERE code = ? AND n = ? AND player = ?")
+            .bind(now, code, n, p.id).run();
+        await decide(env, code, n, now);
+    } else if (!mine.outcome) {
+        await env.DB.prepare("UPDATE ranked_live SET outcome = ? WHERE code = ? AND n = ? AND outcome IS NULL").bind(JSON.stringify({ state: "crash" }), code, n).run();
+    }
+    return answer(await find());
+}
+
+// Who abandoned battle n of room `code`, if it can be known yet:
+//  - a player who says it left it (its own menus): that one;
+//  - one says the battle broke off and the other stays silent past the grace: the silent one;
+//  - both say so: the one whose word stopped coming for a while (it was off the network); neither or both: the line.
+export async function decide(env, code, n, now) {
+    const rows = (await env.DB.prepare("SELECT * FROM ranked_live WHERE code = ? AND n = ? AND outcome IS NULL").bind(code, n).all()).results;
+    if (!rows.length) return;
+    const close = (o) => env.DB.prepare("UPDATE ranked_live SET outcome = ? WHERE code = ? AND n = ? AND outcome IS NULL").bind(JSON.stringify(o), code, n).run();
+    const claims = rows.filter((r) => r.claim !== null);
+    if (!claims.length) return;
+    const first = Math.min(...claims.map((r) => r.claim));
+    if (rows.length < 2) { // the other side never said it was playing (an older game): nobody is blamed
+        if (now - first >= GRACE_MS) await close({ state: "link" });
+        return;
+    }
+    const told = (await env.DB.prepare("SELECT COUNT(DISTINCT player) AS c FROM reports WHERE code = ? AND n = ?").bind(code, n).first()).c;
+    if (told >= 2) return close({ state: "finished" }); // both told its result: it counts as any other
+    const [a, b] = rows;
+    let loser = null, self = false;
+    if (a.self !== b.self) {
+        loser = a.self ? a : b;
+        self = true;
+    } else if (a.self && b.self) {
+        return close({ state: "link" });
+    } else if (claims.length === 2) {
+        // the one whose word stopped for longer: it was off the network (alike, or both brief: the line between them)
+        const [hi, lo] = a.claim_gap >= b.claim_gap ? [a, b] : [b, a];
+        if (hi.claim_gap <= 6000 || hi.claim_gap - lo.claim_gap <= 2500) return close({ state: "link" });
+        loser = hi;
+    } else {
+        const claimer = claims[0], other = claimer === a ? b : a;
+        // a silent side is never judged for the silence alone: its game says why when it is opened again (exited);
+        // only an account that comes back and never says is taken to have left
+        if (other.seen_back === null || now - other.seen_back < RETURN_MS) return;
+        if (claimer.claim_gap > OFFLINE_MS) return close({ state: "link" }); // (both were off: not known)
+        loser = other;
+    }
+    await penalize(env, code, n, loser === a ? b : a, loser, self, now, close);
+}
+
+async function penalize(env, code, n, win, lose, self, now, close) {
+    const free = self ? 0 : Math.max(0, Number(env.ABANDON_FREE_PER_DAY) || 0);
+    const used = free ? (await env.DB.prepare("SELECT COUNT(*) AS c FROM abandons WHERE loser = ? AND self = 0 AND at > ?").bind(lose.player, now - DAY).first()).c : 0;
+    const forgiven = free > used;
+    const claim = env.DB.prepare("INSERT INTO abandons (code, n, loser, winner, at, self, forgiven) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        .bind(code, n, lose.player, win.player, now, self ? 1 : 0, forgiven ? 1 : 0);
+    const answers = (wo, lo) => [
+        env.DB.prepare("UPDATE ranked_live SET outcome = ? WHERE code = ? AND n = ? AND player = ?").bind(JSON.stringify(wo), code, n, win.player),
+        env.DB.prepare("UPDATE ranked_live SET outcome = ? WHERE code = ? AND n = ? AND player = ?").bind(JSON.stringify(lo), code, n, lose.player),
+    ];
+    const scored = await env.DB.prepare("SELECT 1 AS x FROM ranked_matches WHERE room_code = ? AND battle_no = ? AND rated = 1").bind(code, n).first();
+    if (scored) return close({ state: "finished" });
+    if (forgiven) {
+        try { await env.DB.batch([claim, ...answers({ state: "link" }, { state: "abandon", forgiven: true, left: true })]); }
+        catch (e) { if (!String(e).includes("UNIQUE")) throw e; }
+        return;
+    }
+    for (let attempt = 0; attempt < 3; attempt++) {
+        const day = dayOf(now), pa = win.player < lose.player ? win.player : lose.player, pb = pa === win.player ? lose.player : win.player;
+        const season = seasonOf(now);
+        const [pairRow, ratingRows] = await env.DB.batch([
+            env.DB.prepare("SELECT battles, rated FROM pair_day WHERE day = ? AND a = ? AND b = ?").bind(day, pa, pb),
+            env.DB.prepare("SELECT player_id, rating FROM season_stats WHERE season_id = ? AND player_id IN (?, ?)").bind(season, win.player, lose.player),
+        ]);
+        const pair = pairRow.results[0] || { battles: 0, rated: 0 };
+        const rated = pair.rated < RANKED_PER_PAIR_DAY; // (the points; the gold medal is lost either way)
+        const rating = Object.fromEntries(ratingRows.results.map((r) => [r.player_id, r.rating]));
+        const rw = rating[win.player] ?? START_RATING, rl = rating[lose.player] ?? START_RATING;
+        const gain = rated ? elo(rw, rl) : 0, loss = rated ? Math.min(elo(rw, rl), Math.max(0, rl - MIN_RATING)) : 0;
+        const writes = [
+            claim,
+            env.DB.prepare("INSERT INTO ranked_matches (match_key, season_id, played_at, room_code, battle_no, kind, rated, medals, winner_id, loser_id, winner_before, winner_after, loser_before, loser_after) VALUES (?, ?, ?, ?, ?, 'ranked', ?, ?, ?, ?, ?, ?, ?, ?)")
+                .bind("gone:" + code + ":" + n, season, now, code, n, rated ? 1 : 0, rated ? 1 : 0, win.player, lose.player,
+                      rated ? rw : null, rated ? rw + gain : null, rated ? rl : null, rated ? rl - loss : null),
+            env.DB.prepare("INSERT INTO guard SELECT NULL WHERE COALESCE((SELECT rated FROM pair_day WHERE day = ? AND a = ? AND b = ?), 0) <> ?").bind(day, pa, pb, pair.rated),
+            env.DB.prepare("INSERT INTO pair_day (day, a, b, battles, rated) VALUES (?, ?, ?, 1, ?) ON CONFLICT (day, a, b) DO UPDATE SET battles = battles + 1, rated = rated + excluded.rated")
+                .bind(day, pa, pb, rated ? 1 : 0),
+            ensureSeasonStatement(env, season),
+            env.DB.prepare("INSERT INTO guard SELECT NULL WHERE NOT EXISTS (SELECT 1 FROM seasons WHERE id = ? AND status = 'active')").bind(season),
+            env.DB.prepare("INSERT INTO guard SELECT NULL WHERE COALESCE((SELECT rating FROM season_stats WHERE season_id = ? AND player_id = ?), 1000) <> ? OR COALESCE((SELECT rating FROM season_stats WHERE season_id = ? AND player_id = ?), 1000) <> ?")
+                .bind(season, win.player, rw, season, lose.player, rl),
+        ];
+        // [account, rating after, gold, wins, losses]: the winner a gold medal (when it counts), the one who left one fewer
+        for (const [id, r, g, w, l] of [[win.player, rw + gain, rated ? 1 : 0, rated ? 1 : 0, 0], [lose.player, rl - loss, -1, 0, 1]]) {
+            if (id === win.player && !rated) continue;
+            writes.push(
+                env.DB.prepare("INSERT OR IGNORE INTO season_stats (season_id, player_id, rating, peak_rating, updated) VALUES (?, ?, 1000, 1000, ?)").bind(season, id, now),
+                env.DB.prepare("UPDATE season_stats SET rating = ?, peak_rating = MAX(peak_rating, ?), gold = MAX(0, gold + ?), wins = wins + ?, losses = losses + ?, matches = matches + 1, updated = ? WHERE season_id = ? AND player_id = ?")
+                    .bind(r, r, g, w, l, now, season, id),
+                env.DB.prepare("INSERT OR IGNORE INTO career_stats (player_id, updated) VALUES (?, ?)").bind(id, now),
+                env.DB.prepare("UPDATE career_stats SET gold = MAX(0, gold + ?), wins = wins + ?, losses = losses + ?, ranked_matches = ranked_matches + 1, best_rating_season = CASE WHEN ? > best_rating THEN ? ELSE best_rating_season END, best_rating = MAX(best_rating, ?), updated = ? WHERE player_id = ?")
+                    .bind(g, w, l, r, season, r, now, id));
+        }
+        writes.push(
+            env.DB.prepare("INSERT OR IGNORE INTO season_opponents (season, player, opp) VALUES (?, ?, ?)").bind(season, win.player, lose.player),
+            env.DB.prepare("INSERT OR IGNORE INTO season_opponents (season, player, opp) VALUES (?, ?, ?)").bind(season, lose.player, win.player),
+            ...answers({ state: "abandon", medal: rated ? "gold" : "none", delta: gain, rating: rw + gain, ranked: true },
+                       { state: "abandon", medal: "lost", delta: -loss, rating: rl - loss, ranked: true, left: true }));
+        try {
+            await env.DB.batch(writes);
+            return;
+        } catch (e) {
+            const t = String(e);
+            if (t.includes("UNIQUE")) return; // (decided already)
+            if (!t.includes("NOT NULL")) throw e; // a guard: read again
+            if (attempt === 2) return;
+            await closeSeasons(env, now);
+        }
+    }
 }
 
 // The players with the online screens open: each game says so every two minutes (bt4_profile.c), with a random word of
@@ -582,11 +783,13 @@ export async function maintain(env, now) {
         env.DB.prepare("DELETE FROM ranked_rooms WHERE made < ?").bind(Math.floor(now / 1000) - 7 * 86400),
         env.DB.prepare("DELETE FROM ranked_seats WHERE made < ?").bind(Math.floor(now / 1000) - 7 * 86400),
         env.DB.prepare("DELETE FROM recover_tries WHERE at < ?").bind(now - 2 * 3600000),
+        env.DB.prepare("DELETE FROM ranked_live WHERE last < ?").bind(now - 30 * DAY),
+        env.DB.prepare("DELETE FROM abandons WHERE at < ?").bind(now - 7 * DAY),
     ]);
 }
 
 export const PROFILE_PATHS = new Set(["/v1/register", "/v1/rename", "/v1/recover", "/v1/recovery", "/v1/me", "/v1/report", "/v1/top",
-                                      "/v1/seasons", "/v1/history", "/v1/matches", "/v1/presence"]);
+                                      "/v1/seasons", "/v1/history", "/v1/matches", "/v1/presence", "/v1/beat", "/v1/gone", "/v1/exit"]);
 
 export async function profileFetch(request, env) {
     const url = new URL(request.url);
@@ -607,13 +810,18 @@ export async function profileFetch(request, env) {
         case "/v1/rename": return await rename(env, body, now);
         case "/v1/recover": return await recover(env, body, ip, now);
         case "/v1/recovery": return await recovery(env, body);
-        case "/v1/me": return await me(env, body, now, country);
+        case "/v1/me":
+            if (env.ABANDON_PENALTY === "1") await cameBack(env, body, now);
+            return await me(env, body, now, country);
         case "/v1/report": return await report(env, body, now, country);
         case "/v1/top": return await top(env, body, now);
         case "/v1/seasons": return json({ ok: true, seasons: await listSeasons(env, body) });
         case "/v1/history": return await history(env, body);
         case "/v1/matches": return await matches(env, body);
         case "/v1/presence": return await presence(env, body, now);
+        case "/v1/beat": return await beat(env, body, now);
+        case "/v1/gone": return await gone(env, body, now);
+        case "/v1/exit": return await exited(env, body, now);
         default: return json({ error: "path" }, 404);
         }
     } catch (e) {
