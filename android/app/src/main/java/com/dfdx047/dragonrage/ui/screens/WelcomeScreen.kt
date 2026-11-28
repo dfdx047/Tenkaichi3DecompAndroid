@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -31,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -47,7 +47,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dfdx047.dragonrage.R
@@ -67,8 +66,10 @@ private val ShenronGreenDeep = Color(0xFF0B5A33)
 fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
     val wide = LocalConfiguration.current.screenWidthDp >= 600
     val density = LocalDensity.current
-    val insets = WindowInsets.safeDrawing.get(density, LayoutDirection.Ltr)
-    val availableHeight = (LocalConfiguration.current.screenHeightDp.dp - insets.top - insets.bottom).coerceAtLeast(320.dp)
+    val insets = WindowInsets.safeDrawing
+    val topInset = (insets.getTop(density) / density.density).dp
+    val bottomInset = (insets.getBottom(density) / density.density).dp
+    val availableHeight = (LocalConfiguration.current.screenHeightDp.dp - topInset - bottomInset).coerceAtLeast(320.dp)
     val compact = wide && density.fontScale <= 1.15f && availableHeight >= 400.dp
 
     val outerPadding = if (compact) 12.dp else 20.dp
@@ -227,9 +228,9 @@ private fun GameCard(
 ) {
     val shape = RoundedCornerShape(24.dp)
     val faceAlignment = when (game) {
-        Game.BT3 -> Alignment(0f, -0.36f)
-        Game.BT4 -> Alignment(0f, -0.52f)
-        Game.BT2 -> Alignment(-1f, -0.40f)
+        Game.BT3 -> BiasAlignment(0f, -0.36f)
+        Game.BT4 -> BiasAlignment(0f, -0.52f)
+        Game.BT2 -> BiasAlignment(-1f, -0.40f)
     }
     Box(
         modifier
@@ -347,8 +348,8 @@ private fun CardText(
             val numberBox = if (twoLines) 52.dp else 46.dp
             val titleWidth = (maxWidth - numberBox - 6.dp).coerceAtLeast(60.dp)
             val chars = if (twoLines) 9 else 17
-            val titleMax = if (twoLines) 30.sp else 24.sp
-            val titleSp = (titleWidth.value / (chars * 0.62f) / density.fontScale).sp.coerceIn(13.sp, titleMax)
+            val titleSp = (titleWidth.value / (chars * 0.62f) / density.fontScale)
+                .coerceIn(13f, if (twoLines) 30f else 24f).sp
             val numberSp = (numberBox.value * 0.82f / density.fontScale).sp
             val titleStyle = (if (twoLines) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium)
                 .copy(fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic)
