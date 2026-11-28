@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -64,6 +65,11 @@ private val ShenronGreenDeep = Color(0xFF0B5A33)
 private val CodeGray = Color(0xFFB8BCC8)
 private val DescGray = Color(0xFFC3C7D3)
 private val Bt3Red = Color(0xFFF0281E)
+private val TextShadow = Shadow(
+    color = Color.Black.copy(alpha = 0.65f),
+    offset = Offset(0f, 1f),
+    blurRadius = 2f,
+)
 
 /**
  * The first screen: which game to open. Each game keeps its own folder, disc image, saves, settings and engine.
@@ -71,11 +77,16 @@ private val Bt3Red = Color(0xFFF0281E)
 @Composable
 fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
     val wide = LocalConfiguration.current.screenWidthDp >= 600
+    val fontScale = LocalDensity.current.fontScale
     val scrollState = rememberScrollState()
     val outerPad = 8.dp
-    val gap = if (wide) 16.dp else 10.dp
-    val headerH = if (wide) 44.dp else 54.dp
-    val footerH = 20.dp
+    val gap = if (wide) 8.dp else 10.dp
+    val topPad = if (wide) 0.dp else 4.dp
+    val bottomPad = if (wide) 8.dp else outerPad
+    val headerH = if (wide) 56.dp else 54.dp
+    val footerH = if (wide) 24.dp else 20.dp
+    val headerGap = if (wide) 8.dp else gap
+    val footerGap = if (wide) 8.dp else gap
 
     Box(
         Modifier
@@ -98,26 +109,26 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
     ) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
             val contentW = (maxWidth - outerPad * 2f).coerceAtLeast(220.dp)
-            val gapCount = if (wide) 5 else 4
-            val cardSpaceH = (maxHeight - outerPad * 2f - headerH - footerH - gap * gapCount).coerceAtLeast(120.dp)
 
             val cardW: Dp
             val cardH: Dp
             if (wide) {
                 val maxCardW = ((contentW - gap * 2f) / 3f).coerceAtLeast(80.dp)
-                val baseH = cardSpaceH.coerceAtMost(maxCardW / 0.85f)
-                cardH = baseH.coerceAtLeast(150.dp)
-                cardW = (cardH * 0.85f).coerceAtMost(maxCardW)
+                val availableH = (
+                    maxHeight - topPad - headerH - headerGap - footerH - footerGap - bottomPad
+                    ).coerceAtLeast(120.dp)
+                val idealH = availableH.coerceAtMost(maxCardW / 0.85f)
+                val readableH = (200f * fontScale + 24f).dp
+                cardH = maxOf(idealH, readableH)
+                cardW = minOf(cardH * 0.85f, maxCardW)
             } else {
                 cardW = contentW
                 cardH = cardW / 2f
             }
             val groupW = if (wide) cardW * 3f + gap * 2f else cardW
             val headerOffset = if (wide) ((contentW - groupW) / 2f).coerceAtLeast(0.dp) else 0.dp
-            val cardRowsH = if (wide) cardH else cardH * 3f
-            val fits = cardRowsH + gap * gapCount + headerH + footerH + outerPad * 2f <= maxHeight
             val footerSpacer = if (wide) {
-                (maxHeight - outerPad * 2f - headerH - footerH - gap * gapCount - cardRowsH).coerceAtLeast(0.dp)
+                (maxHeight - topPad - headerH - headerGap - cardH - footerH - bottomPad).coerceAtLeast(0.dp)
             } else {
                 0.dp
             }
@@ -126,14 +137,15 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                 Modifier
                     .fillMaxSize()
                     .verticalScroll(scrollState)
-                    .padding(horizontal = outerPad, vertical = outerPad),
+                    .padding(start = outerPad, top = topPad, end = outerPad, bottom = bottomPad),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(gap, if (fits) Alignment.CenterVertically else Alignment.Top),
             ) {
                 WelcomeHeader(
                     wide = wide,
                     modifier = if (wide) Modifier.align(Alignment.Start).padding(start = headerOffset) else Modifier,
                 )
+
+                Spacer(Modifier.height(headerGap))
 
                 val cards: @Composable (Modifier) -> Unit = { m ->
                     GameCard(
@@ -145,8 +157,9 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                         accent = Dbz.SaiyanGold,
                         numberColor = Bt3Red,
                         deep = Dbz.GiOrangeDeep,
-                        art = R.drawable.welcome_art_bt3,
-                        artAlignment = BiasAlignment(0f, -0.30f),
+                        artPortrait = R.drawable.welcome_art_bt3,
+                        artLandscape = R.drawable.welcome_art_bt3_full,
+                        artAlignment = Alignment.Center,
                         last = last == Game.BT3,
                         wide = wide,
                         modifier = m,
@@ -161,8 +174,9 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                         accent = Dbz.KiBlue,
                         numberColor = Dbz.KiBlue,
                         deep = KiBlueDeep,
-                        art = R.drawable.welcome_art_bt4,
-                        artAlignment = BiasAlignment(-0.3f, -0.30f),
+                        artPortrait = R.drawable.welcome_art_bt4,
+                        artLandscape = R.drawable.welcome_art_bt4_full,
+                        artAlignment = Alignment.Center,
                         last = last == Game.BT4,
                         wide = wide,
                         modifier = m,
@@ -177,8 +191,9 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                         accent = Dbz.ShenronGreen,
                         numberColor = Dbz.ShenronGreen,
                         deep = ShenronGreenDeep,
-                        art = R.drawable.welcome_art_bt2,
-                        artAlignment = BiasAlignment(-1f, -0.30f),
+                        artPortrait = R.drawable.welcome_art_bt2,
+                        artLandscape = R.drawable.welcome_art_bt2,
+                        artAlignment = Alignment.CenterStart,
                         last = last == Game.BT2,
                         wide = wide,
                         modifier = m,
@@ -190,9 +205,9 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(gap, Alignment.CenterHorizontally),
-                        verticalAlignment = Alignment.CenterVertically,
+                        verticalAlignment = Alignment.Top,
                     ) {
-                        cards(Modifier.width(cardW).heightIn(min = cardH))
+                        cards(Modifier.width(cardW).height(cardH))
                     }
                 } else {
                     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(gap)) {
@@ -200,8 +215,8 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                     }
                 }
 
-                if (wide) Spacer(Modifier.height(footerSpacer))
-                WelcomeFooter(modifier = Modifier.width(groupW))
+                Spacer(Modifier.height(if (wide) footerSpacer else footerGap))
+                WelcomeFooter(modifier = Modifier.width(groupW), wide = wide)
             }
         }
     }
@@ -219,7 +234,7 @@ private fun WelcomeHeader(wide: Boolean, modifier: Modifier = Modifier) {
         fontStyle = FontStyle.Italic,
     )
     Row(
-        modifier,
+        modifier.then(if (wide) Modifier.height(56.dp) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -229,21 +244,38 @@ private fun WelcomeHeader(wide: Boolean, modifier: Modifier = Modifier) {
                 .background(CodeGray.copy(alpha = 0.5f)),
         )
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(if (wide) 4.dp else 6.dp)) {
+            Row(
+                Modifier.drawBehind {
+                    val y = size.height - 1.dp.toPx()
+                    val thick = 2.dp.toPx()
+                    drawLine(
+                        Dbz.SaiyanGold.copy(alpha = 0.2f),
+                        Offset(0f, y),
+                        Offset(size.width * 0.14f, y),
+                        strokeWidth = thick * 0.3f,
+                    )
+                    drawLine(
+                        Dbz.SaiyanGold,
+                        Offset(size.width * 0.07f, y),
+                        Offset(size.width * 0.93f, y),
+                        strokeWidth = thick,
+                    )
+                    drawLine(
+                        Dbz.SaiyanGold.copy(alpha = 0.2f),
+                        Offset(size.width * 0.86f, y),
+                        Offset(size.width, y),
+                        strokeWidth = thick * 0.3f,
+                    )
+                },
+                horizontalArrangement = Arrangement.spacedBy(if (wide) 4.dp else 6.dp),
+            ) {
                 Text("DRAGON", style = nameStyle, color = Color.White, maxLines = 1)
                 Text("RAGE", style = nameStyle, color = Dbz.SaiyanGold, maxLines = 1)
-            }
-            Canvas(Modifier.fillMaxWidth().height(if (wide) 4.dp else 5.dp)) {
-                drawLine(
-                    color = Dbz.SaiyanGold,
-                    start = Offset(0f, size.height * 0.85f),
-                    end = Offset(size.width * 0.72f, size.height * 0.2f),
-                    strokeWidth = size.height * 0.45f,
-                )
             }
             Text(
                 stringResource(R.string.welcome_short_subtitle),
                 fontSize = subSp,
+                lineHeight = if (wide) 10.sp else 12.sp,
                 fontWeight = FontWeight.Medium,
                 letterSpacing = if (wide) 1.sp else 1.6.sp,
                 color = Color(0xFFC4C3D6),
@@ -254,9 +286,9 @@ private fun WelcomeHeader(wide: Boolean, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun WelcomeFooter(modifier: Modifier = Modifier) {
+private fun WelcomeFooter(modifier: Modifier = Modifier, wide: Boolean) {
     Row(
-        modifier,
+        modifier.then(if (wide) Modifier.height(24.dp) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -265,6 +297,7 @@ private fun WelcomeFooter(modifier: Modifier = Modifier) {
         Text(
             stringResource(R.string.welcome_short_footer),
             fontSize = 9.sp,
+            lineHeight = 11.sp,
             fontStyle = FontStyle.Italic,
             color = CodeGray,
             maxLines = 1,
@@ -299,7 +332,8 @@ private fun GameCard(
     accent: Color,
     numberColor: Color,
     deep: Color,
-    @DrawableRes art: Int?,
+    @DrawableRes artPortrait: Int?,
+    @DrawableRes artLandscape: Int? = null,
     artAlignment: Alignment = Alignment.Center,
     last: Boolean,
     wide: Boolean,
@@ -308,11 +342,18 @@ private fun GameCard(
 ) {
     val shape = RoundedCornerShape(18.dp)
     val border = if (last) 3.dp else 2.dp
-    val faceAlignment = when (game) {
-        Game.BT3 -> BiasAlignment(0f, -0.34f)
-        Game.BT4 -> BiasAlignment(-0.3f, -0.42f)
-        Game.BT2 -> BiasAlignment(-1f, -0.34f)
+    val portraitAlignment = when (game) {
+        Game.BT3 -> BiasAlignment(0f, -0.30f)
+        Game.BT4 -> BiasAlignment(-0.3f, -0.30f)
+        Game.BT2 -> BiasAlignment(-1f, -0.30f)
     }
+    val landscapeArt = artLandscape ?: artPortrait
+    val shiftRatio = when (game) {
+        Game.BT3 -> 0f
+        Game.BT4 -> -0.17f
+        Game.BT2 -> -0.23f
+    }
+    val bottomFade = game == Game.BT4 || game == Game.BT2
     Box(
         modifier
             .drawBehind {
@@ -330,42 +371,62 @@ private fun GameCard(
             }
             .clip(shape)
             .background(CardDark)
-            .background(accent.copy(alpha = 0.06f))
+            .then(if (wide) Modifier else Modifier.background(accent.copy(alpha = 0.06f)))
             .border(border, accent, shape)
             .clickable { onPick(game) },
     ) {
         if (wide) {
             CardArt(
-                art = art,
+                art = landscapeArt,
                 accent = accent,
                 deep = deep,
-                alignment = faceAlignment,
+                alignment = artAlignment,
                 portrait = false,
+                shiftRatio = shiftRatio,
+                bottomFade = bottomFade,
                 modifier = Modifier.matchParentSize(),
             )
-            Box(
-                Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(
-                        0.34f to Color.Transparent,
-                        0.58f to CardDark.copy(alpha = 0.94f),
-                        1f to CardDark.copy(alpha = 0.98f),
-                    ),
-                ),
-            )
             Column(
-                Modifier.fillMaxSize().padding(10.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.Bottom),
+                Modifier.matchParentSize().padding(horizontal = 8.dp),
+                verticalArrangement = Arrangement.Bottom,
             ) {
-                CardText(tag, disc, number, text, accent, numberColor, twoLines = false)
-                SelectButton(accent)
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(16.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, CardDark.copy(alpha = 0.70f)),
+                            ),
+                        ),
+                )
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    CardDark.copy(alpha = 0.70f),
+                                    CardDark.copy(alpha = 0.88f),
+                                    CardDark.copy(alpha = 0.90f),
+                                ),
+                            ),
+                        )
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    CardText(tag, disc, number, text, accent, numberColor, twoLines = false)
+                    SelectButton(accent, compact = true)
+                }
+                Spacer(Modifier.height(6.dp))
             }
         } else {
             Box(Modifier.fillMaxWidth()) {
                 CardArt(
-                    art = art,
+                    art = artPortrait,
                     accent = accent,
                     deep = deep,
-                    alignment = artAlignment,
+                    alignment = portraitAlignment,
                     portrait = true,
                     modifier = Modifier.matchParentSize(),
                 )
@@ -376,7 +437,7 @@ private fun GameCard(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         CardText(tag, disc, number, text, accent, numberColor, twoLines = true)
-                        SelectButton(accent)
+                        SelectButton(accent, compact = false)
                     }
                 }
             }
@@ -391,7 +452,8 @@ private fun GameCard(
             ) {
                 Text(
                     stringResource(R.string.welcome_last),
-                    fontSize = 9.sp,
+                    fontSize = if (wide) 8.sp else 9.sp,
+                    lineHeight = 10.sp,
                     fontWeight = FontWeight.Black,
                     fontStyle = FontStyle.Italic,
                     color = DeepNavy,
@@ -404,52 +466,39 @@ private fun GameCard(
 
 @Composable
 private fun BadgeAndCode(tag: Int, disc: String, accent: Color) {
-    val density = LocalDensity.current
-    BoxWithConstraints {
-        val badgeText = stringResource(tag)
-        val badgeW = (badgeText.length * 9f * 0.62f + 18f) * density.fontScale
-        val codeW = (disc.length * 10f * 0.60f + 4f) * density.fontScale
-        val badge: @Composable () -> Unit = {
-            Box(
-                Modifier.clip(RoundedCornerShape(5.dp))
-                    .background(accent)
-                    .padding(horizontal = 8.dp, vertical = 2.dp),
-            ) {
-                Text(
-                    badgeText,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Black,
-                    fontStyle = FontStyle.Italic,
-                    color = DeepNavy,
-                    maxLines = 1,
-                )
-            }
-        }
-        val code: @Composable () -> Unit = {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            Modifier.clip(RoundedCornerShape(5.dp))
+                .background(accent)
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+        ) {
             Text(
-                disc,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Medium,
+                stringResource(tag),
+                style = MaterialTheme.typography.labelSmall.copy(shadow = TextShadow),
+                fontSize = 9.sp,
+                lineHeight = 11.sp,
+                fontWeight = FontWeight.Black,
                 fontStyle = FontStyle.Italic,
-                color = CodeGray,
+                color = DeepNavy,
                 maxLines = 1,
             )
         }
-        if (badgeW + codeW + 12f <= maxWidth.value) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                badge()
-                Box(Modifier.width(1.dp).height(10.dp).background(CodeGray.copy(alpha = 0.55f)))
-                code()
-            }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                badge()
-                code()
-            }
-        }
+        Box(Modifier.width(1.dp).height(10.dp).background(CodeGray.copy(alpha = 0.55f)))
+        Text(
+            disc,
+            modifier = Modifier.weight(1f, fill = false),
+            style = MaterialTheme.typography.labelSmall.copy(shadow = TextShadow),
+            fontSize = 10.sp,
+            lineHeight = 12.sp,
+            fontWeight = FontWeight.Medium,
+            fontStyle = FontStyle.Italic,
+            color = CodeGray,
+            maxLines = 1,
+            softWrap = false,
+        )
     }
 }
 
@@ -464,18 +513,24 @@ private fun CardText(
     twoLines: Boolean,
 ) {
     val density = LocalDensity.current
-    Column(verticalArrangement = Arrangement.spacedBy(if (twoLines) 4.dp else 3.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(if (twoLines) 4.dp else 2.dp)) {
         BadgeAndCode(tag, disc, accent)
         BoxWithConstraints {
-            val baseSp = if (twoLines) 19f else 17f
-            val chars = if (twoLines) 9 else 17
-            val numberSp = if (twoLines) 46f else 38f
+            val numberSp = if (twoLines) 46f else 30f
             val numberBox = (numberSp * 0.68f * density.fontScale).dp
-            val titleAvail = (maxWidth - numberBox - 4.dp).coerceAtLeast(48.dp)
-            val titleSp = ((titleAvail.value / (chars * 0.58f * density.fontScale)).coerceIn(10f, baseSp)).sp
+            val titleAvail = (maxWidth - numberBox - 6.dp).coerceAtLeast(40.dp)
+            val chars = if (twoLines) 9 else 17
+            val baseSp = if (twoLines) 19f else 17f
+            val titleSp = ((titleAvail.value / (chars * 0.58f * density.fontScale)).coerceIn(9f, baseSp))
+            val titleSpUnit = titleSp.sp
+            val lineSp = if (twoLines) {
+                titleSp * 1.04f
+            } else {
+                maxOf(numberSp * 1.05f, titleSp * 1.04f)
+            }
             val titleStyle = (if (twoLines) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium).copy(
-                fontSize = titleSp,
-                lineHeight = titleSp * 1.04f,
+                fontSize = titleSpUnit,
+                lineHeight = lineSp.sp,
                 fontWeight = FontWeight.Black,
                 fontStyle = FontStyle.Italic,
                 textGeometricTransform = TextGeometricTransform(scaleX = 0.9f),
@@ -497,11 +552,13 @@ private fun CardText(
                         maxLines = 1,
                     )
                 }
+                Spacer(Modifier.width(6.dp))
                 Text(
                     number,
                     modifier = Modifier.width(numberBox),
                     style = MaterialTheme.typography.headlineLarge.copy(
                         fontSize = numberSp.sp,
+                        lineHeight = (if (twoLines) numberSp * 1.05f else lineSp).sp,
                         fontWeight = FontWeight.Black,
                         fontStyle = FontStyle.Italic,
                         textGeometricTransform = TextGeometricTransform(scaleX = 0.9f),
@@ -515,8 +572,9 @@ private fun CardText(
         }
         Text(
             text,
-            fontSize = 10.5.sp,
-            lineHeight = 13.5.sp,
+            style = MaterialTheme.typography.bodySmall.copy(shadow = TextShadow),
+            fontSize = if (twoLines) 10.5.sp else 10.sp,
+            lineHeight = if (twoLines) 13.5.sp else 12.5.sp,
             fontWeight = FontWeight.Normal,
             color = DescGray,
         )
@@ -524,11 +582,11 @@ private fun CardText(
 }
 
 @Composable
-private fun SelectButton(accent: Color) {
+private fun SelectButton(accent: Color, compact: Boolean) {
     Box(
         Modifier
             .fillMaxWidth()
-            .heightIn(min = 32.dp)
+            .heightIn(min = if (compact) 30.dp else 32.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(Brush.verticalGradient(listOf(accent.copy(alpha = 0.95f), accent.copy(alpha = 0.72f)))),
         contentAlignment = Alignment.Center,
@@ -539,7 +597,7 @@ private fun SelectButton(accent: Color) {
         ) {
             Text(
                 stringResource(R.string.welcome_select),
-                fontSize = 12.sp,
+                fontSize = if (compact) 11.sp else 12.sp,
                 fontWeight = FontWeight.Black,
                 fontStyle = FontStyle.Italic,
                 color = DeepNavy,
@@ -561,30 +619,71 @@ private fun CardArt(
     deep: Color,
     alignment: Alignment,
     portrait: Boolean,
+    shiftRatio: Float = 0f,
+    bottomFade: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier, contentAlignment = Alignment.TopStart) {
-        if (art == null) {
+        Box(if (portrait) Modifier.fillMaxHeight().fillMaxWidth(0.46f) else Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(accent, deep))))
-        } else {
-            Box(if (portrait) Modifier.fillMaxHeight().fillMaxWidth(0.46f) else Modifier.fillMaxSize()) {
-                Image(
-                    painter = painterResource(art),
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    alignment = alignment,
-                    contentScale = ContentScale.Crop,
-                )
+            if (art != null) {
                 if (portrait) {
-                    Box(
-                        Modifier.align(Alignment.CenterEnd)
-                            .width(56.dp)
-                            .fillMaxHeight()
-                            .background(
-                                Brush.horizontalGradient(0.35f to Color.Transparent, 1f to CardDark),
-                            ),
+                    Image(
+                        painter = painterResource(art),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        alignment = alignment,
+                        contentScale = ContentScale.FillHeight,
                     )
+                } else {
+                    BoxWithConstraints(Modifier.fillMaxSize()) {
+                        val shift = maxHeight * shiftRatio
+                        Box(
+                            Modifier
+                                .matchParentSize()
+                                .graphicsLayer {
+                                    translationY = shift.toPx()
+                                    clip = true
+                                    shape = RoundedCornerShape(18.dp)
+                                },
+                        ) {
+                            Image(
+                                painter = painterResource(art),
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize(),
+                                alignment = alignment,
+                                contentScale = ContentScale.Crop,
+                            )
+                            if (bottomFade) {
+                                Box(
+                                    Modifier
+                                        .align(Alignment.BottomCenter)
+                                        .fillMaxWidth()
+                                        .fillMaxHeight(0.38f)
+                                        .background(
+                                            Brush.verticalGradient(
+                                                listOf(
+                                                    Color.Transparent,
+                                                    CardDark.copy(alpha = 0.45f),
+                                                    CardDark,
+                                                ),
+                                            ),
+                                        ),
+                                )
+                            }
+                        }
+                    }
                 }
+            }
+            if (portrait) {
+                Box(
+                    Modifier.align(Alignment.CenterEnd)
+                        .width(56.dp)
+                        .fillMaxHeight()
+                        .background(
+                            Brush.horizontalGradient(0.35f to Color.Transparent, 1f to CardDark),
+                        ),
+                )
             }
         }
     }
