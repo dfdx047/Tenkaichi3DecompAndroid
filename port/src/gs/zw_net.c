@@ -19,11 +19,16 @@ static char sPath[48], sBody[20000], sAnswer[40000];
 static SDL_AtomicInt sState; /* 0 free, 1 asking, 2 answered, 3 no answer */
 static long long sClockAhead;
 static char sPublic[64]; /* this phone as the internet sees it, "ip:port" */
+static char sLocal[64];  /* and on its own network */
 extern int TagLink_Stun(int sock, char *out, int size); /* net_match.c */
 extern int TagLink_Lan(int port, char *out, int size);
 
 const char *ZwHttp_Public(void) {
     return sPublic;
+}
+
+const char *ZwHttp_Local(void) {
+    return sLocal;
 }
 
 /* The "@" of the body's address list: this phone's own network and what STUN sees from the fight's port. */
@@ -51,6 +56,7 @@ static void zw_addresses(void) {
     if (!TagLink_Lan(7777, lan, sizeof(lan))) {
         lan[0] = '\0';
     }
+    SDL_strlcpy(sLocal, lan, sizeof(sLocal));
     SDL_snprintf(list, sizeof(list), "[\"%s\"%s%s%s]", lan[0] ? lan : "0.0.0.0:7777", sPublic[0] ? ",\"" : "", sPublic, sPublic[0] ? "\"" : "");
     *at = '\0';
     SDL_snprintf(out, sizeof(out), "%s%s%s", sBody, list, at + 3);

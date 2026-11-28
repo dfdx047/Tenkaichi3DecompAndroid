@@ -119,13 +119,21 @@ async function quickMatch(env, t, now) {
     const pair = other.created <= t.created ? [other, t] : [t, other];
     const code = await newRoom(env, t.v, t.disc, [-1, 0, 0, 0, 0, 0], pair[0].seen, now);
     if (!code) return;
-    const writes = [];
-    pair.forEach((p, slot) => {
-        const key = randomHex();
-        writes.push(addPlayer(env, code, slot, key, p, p.seen, now));
-        writes.push(env.DB.prepare("UPDATE zw_quick SET code = ?, mkey = ?, slot = ?, touched = ? WHERE ticket = ?").bind(code, key, slot, now, p.ticket));
-    });
-    await env.DB.batch(writes);
+    // Requests run between one another's statements: both tickets are taken in one statement, only while both are still
+    // free, and their places in the room are made in the same transaction. Whoever comes second takes nothing.
+    const keys = [randomHex(), randomHex()];
+    const place = (slot) => env.DB.prepare(
+        "INSERT INTO zw_players (code, slot, key, name, addrs, seen, warrior, rev, ready, touched) SELECT code, slot, mkey, name, addrs, seen, warrior, 1, 0, ? FROM zw_quick WHERE ticket = ? AND code = ?")
+        .bind(now, pair[slot].ticket, code);
+    const done = await env.DB.batch([
+        env.DB.prepare(
+            "UPDATE zw_quick SET code = ?, mkey = CASE ticket WHEN ? THEN ? ELSE ? END, slot = CASE ticket WHEN ? THEN 0 ELSE 1 END, touched = ? " +
+            "WHERE ticket IN (?, ?) AND (SELECT COUNT(*) FROM zw_quick WHERE ticket IN (?, ?) AND code IS NULL) = 2")
+            .bind(code, pair[0].ticket, keys[0], keys[1], pair[0].ticket, now, pair[0].ticket, pair[1].ticket, pair[0].ticket, pair[1].ticket),
+        place(0),
+        place(1),
+    ]);
+    if (done[0].meta.changes !== 2) await env.DB.prepare("DELETE FROM zw_rooms WHERE code = ?").bind(code).run();
 }
 async function quickState(env, ticket, now) {
     const t = await env.DB.prepare("SELECT * FROM zw_quick WHERE ticket = ?").bind(ticket).first();

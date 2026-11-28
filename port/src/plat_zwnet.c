@@ -24,14 +24,20 @@ extern void Port_SessionRequest(int role, const char *address, int port); /* gs/
 extern int Port_SessionCan(void);
 extern void Port_NetZwPunch(int port, const char *punch); /* gs/net.c */
 extern const char *ZwHttp_Public(void);
+extern const char *ZwHttp_Local(void);
 
 static ZwNetInfo sZn = {.peer = -1};
 static char sKey[40], sTicket[40], sCode[17000], sJoinCode[8], sAnswer[40000], sPeerCode[17000];
 static int sWarrior, sPeerRev, sWait, sAsked, sMadeOk, sBye;
 static char sByeBody[128];
+static int sOrphan; /* an entering request whose room or search was left before its answer came */
+static char sOrphanCode[8];
 enum { ASK_NONE, ASK_HOST, ASK_JOIN, ASK_QUICK, ASK_QUICKPOLL, ASK_POLL, ASK_READY, ASK_WARRIOR, ASK_RULES, ASK_START, ASK_ADDRS };
 static int sDue[ASK_ADDRS + 1];
-static char sPeerLan[64], sPeerPub[64];
+static char sPeerLan[64], sPeerPub[64], sPeerSeen[64]; /* theirs: own network, by STUN, as the server saw it */
+static char sMyIp[64];  /* this phone as the server saw it */
+static int sTrouble;    /* answers in a row that the server could not serve */
+#define ZN_TROUBLE 15   /* so many (about half a minute of polls) and the room is given up */
 static int sRound; /* the room's round last seen: a new one is the host's "start" */
 
 
@@ -77,8 +83,8 @@ static void reset(void) {
     sPeerRev = sWait = 0;
     memset(sDue, 0, sizeof(sDue));
     sAsked = 0; /* (an answer still on its way is not this room's) */
-    sPeerLan[0] = sPeerPub[0] = '\0';
-    sRound = 0;
+    sPeerLan[0] = sPeerPub[0] = sPeerSeen[0] = sMyIp[0] = '\0';
+    sRound = sTrouble = 0;
 }
 
 static void fail(int why) {
@@ -140,6 +146,10 @@ void Port_ZwNetRules(const int *rules) {
     }
 }
 void Port_ZwNetLeave(void) {
+    if (sAsked == ASK_HOST || sAsked == ASK_JOIN || sAsked == ASK_QUICK) {
+        sOrphan = sAsked;
+        snprintf(sOrphanCode, sizeof(sOrphanCode), "%s", sJoinCode);
+    }
     if (sKey[0] != '\0' && sZn.code[0] != '\0') {
         snprintf(sByeBody, sizeof(sByeBody), "{\"code\":\"%s\",\"key\":\"%s\"}", sZn.code, sKey);
         sBye = 1;
@@ -167,32 +177,63 @@ void Port_ZwNetGet(ZwNetInfo *out) {
     *out = sZn;
 }
 
-/* The fight: on one network (the same public address) straight there; else each by what STUN saw, the host knocking. */
-static void fight(void) {
-    char ip[64], *colon;
-    const char *mine = ZwHttp_Public();
-    size_t n = strcspn(mine, ":");
-    int lan = sPeerPub[0] == '\0' || mine[0] == '\0' || (strncmp(mine, sPeerPub, n) == 0 && sPeerPub[n] == ':');
-    int port = ZN_PORT;
+/* "a.b.c.d[:port]" of IPv4 only: its first three numbers are the same, its whole address is the same. */
+static int ip_len(const char *a) {
+    return (int)strcspn(a, ":");
+}
+static int ip_v4(const char *a) {
+    const char *c = strchr(a, ':');
 
-    if (!Port_SessionCan() || (sPeerLan[0] == '\0' && sPeerPub[0] == '\0')) {
-        return;
+    return a[0] != '\0' && (c == NULL || strchr(c + 1, ':') == NULL) && strncmp(a, "0.0.0.0", 7) != 0 && strchr(a, '.') != NULL;
+}
+static int same_ip(const char *a, const char *b) {
+    return ip_len(a) == ip_len(b) && strncmp(a, b, (size_t)ip_len(a)) == 0;
+}
+static int same_net(const char *a, const char *b) {
+    int n = ip_len(a);
+
+    while (n > 0 && a[n - 1] != '.') {
+        n--;
     }
-    if (sPeerCode[0] == '\0') {
-        return;
+    return n > 0 && strncmp(a, b, (size_t)n) == 0 && memchr(b + n, '.', strcspn(b + n, ":")) == NULL;
+}
+
+/* The fight: on one home network (the same public address AND the same local network: a carrier gives one public address
+   to many that cannot reach each other locally) straight there; else each by the other's public address (STUN's, or
+   the one the server saw, on the fight's port), the host knocking. 1: the session was asked for. */
+static int fight(void) {
+    char ip[64], theirs[64] = "", *colon;
+    const char *mine = ZwHttp_Public(), *local = ZwHttp_Local();
+    int port = ZN_PORT, lan;
+
+    if (!Port_SessionCan() || sPeerCode[0] == '\0') {
+        return 0;
+    }
+    if (!ip_v4(mine)) {
+        mine = ip_v4(sMyIp) ? sMyIp : "";
+    }
+    if (ip_v4(sPeerPub)) {
+        snprintf(theirs, sizeof(theirs), "%s", sPeerPub);
+    } else if (ip_v4(sPeerSeen)) {
+        snprintf(theirs, sizeof(theirs), "%.40s:%d", sPeerSeen, ZN_PORT);
+    }
+    lan = ip_v4(sPeerLan) && ip_v4(local) && same_net(local, sPeerLan) && (mine[0] == '\0' || theirs[0] == '\0' || same_ip(mine, theirs));
+    if (!lan && theirs[0] == '\0') {
+        return 0;
     }
     ZwFight_Put(sZn.host ? sCode : sPeerCode, sZn.host ? sPeerCode : sCode, sZn.rules[0], sZn.rules[1]);
-    Port_NetZwPunch(lan ? 0 : ZN_PORT, sZn.host && !lan ? sPeerPub : NULL);
+    Port_NetZwPunch(lan ? 0 : ZN_PORT, sZn.host && !lan ? theirs : NULL);
     if (sZn.host) {
         Port_SessionRequest(1, "", ZN_PORT);
-        return;
+        return 1;
     }
-    snprintf(ip, sizeof(ip), "%s", lan ? sPeerLan : sPeerPub);
+    snprintf(ip, sizeof(ip), "%s", lan ? sPeerLan : theirs);
     if ((colon = strchr(ip, ':')) != NULL) {
         port = atoi(colon + 1);
         *colon = '\0';
     }
     Port_SessionRequest(2, ip, port);
+    return 1;
 }
 
 static void peer_read(const char *a) {
@@ -209,6 +250,7 @@ static void peer_read(const char *a) {
     {
         const char *q = js_find(p, "addrs");
 
+        js_str(p, "seen", sPeerSeen, sizeof(sPeerSeen));
         sPeerLan[0] = sPeerPub[0] = '\0';
         if (q != NULL) {
             sscanf(q, "[\"%63[^\"]\",\"%63[^\"]\"", sPeerLan, sPeerPub);
@@ -245,15 +287,30 @@ static void answer(int what, const char *a) {
     if (what == ASK_START && js_find(a, "round") != NULL) { /* the host: the room is told, the fight is waited for */
         sRound = js_int(a, "round", sRound);
         sZn.ready = 0;
+        sTrouble = 0;
         fight();
         return;
     }
 
     if (js_str(a, "error", err, sizeof(err))) {
+        /* a server that could not serve just now (503, its limits) is asked again: only a lasting one ends the room.
+           Entering a room or a search still says so at once. */
+        if (what != ASK_HOST && what != ASK_JOIN && what != ASK_QUICK && (!strcmp(err, "unavailable") || !strcmp(err, "limit") || !strcmp(err, "busy")) &&
+            ++sTrouble < ZN_TROUBLE) {
+            if (what != ASK_POLL && what != ASK_QUICKPOLL) {
+                sDue[what] = 1;
+                sWait = 0;
+            }
+            return;
+        }
         fail(!strcmp(err, "no room") ? ZNE_NOROOM : !strcmp(err, "full") ? ZNE_FULL : !strcmp(err, "version") ? ZNE_VERSION
              : !strcmp(err, "disc") ? ZNE_DISC : !strcmp(err, "busy") ? ZNE_BUSY : !strcmp(err, "official") ? ZNE_OFFICIAL
              : !strcmp(err, "time") ? ZNE_TIME : ZNE_OTHER);
         return;
+    }
+    sTrouble = 0;
+    if (sMyIp[0] == '\0') {
+        js_str(a, "you", sMyIp, sizeof(sMyIp));
     }
     switch (what) {
     case ASK_HOST:
@@ -295,10 +352,10 @@ static void answer(int what, const char *a) {
         peer_read(a);
         rules_read(a);
         if (js_int(a, "round", sRound) > sRound) {
-            sRound = js_int(a, "round", sRound);
             sZn.ready = 0;
-            if (!sZn.host) { /* the host started: join its fight */
-                fight();
+            /* the host started: join its fight (a start that could not be made now is tried at the next poll) */
+            if (sZn.host || fight()) {
+                sRound = js_int(a, "round", sRound);
             }
         }
         if (!sZn.host && !sZn.peerHere) {
@@ -312,6 +369,22 @@ void Port_ZwNetTick(void) {
     static char body[19000];
     int got = ZwHttp_Take(sAnswer, sizeof(sAnswer)), what = sAsked, i, n;
 
+    if (got != 0 && sOrphan) { /* what it made on the server is given back */
+        char key[40] = "", id[40] = "";
+
+        if (got > 0 && js_str(sAnswer, "key", key, sizeof(key))) {
+            if (sOrphan == ASK_QUICK && js_str(sAnswer, "ticket", id, sizeof(id))) {
+                snprintf(sByeBody, sizeof(sByeBody), "{\"ticket\":\"%s\",\"key\":\"%s\"}", id, key);
+                sBye = 2;
+            } else if (sOrphan == ASK_JOIN || (sOrphan == ASK_HOST && js_str(sAnswer, "code", id, sizeof(id)))) {
+                snprintf(sByeBody, sizeof(sByeBody), "{\"code\":\"%s\",\"key\":\"%s\"}", sOrphan == ASK_JOIN ? sOrphanCode : id, key);
+                sBye = 1;
+            }
+        }
+        sOrphan = 0;
+        got = 0;
+        what = sAsked = ASK_NONE;
+    }
     if (got != 0) {
         sAsked = ASK_NONE;
         if (what != ASK_NONE && sZn.state != ZN_IDLE && sZn.state != ZN_FAILED) {
