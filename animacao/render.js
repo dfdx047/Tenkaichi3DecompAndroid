@@ -14,8 +14,8 @@ const path = require('path');
 
   if (stills) {
     for (const s of stills.split(',')) {
-      await page.evaluate(t => draw(t), Number(s));
-      await page.locator('canvas').screenshot({ path: path.join(process.argv[4] || __dirname, `still_${s}.png`) });
+      const buf = await page.evaluate(t => { draw(t); return document.getElementById('c').toDataURL('image/png'); }, Number(s));
+      require('fs').writeFileSync(path.join(process.argv[4] || __dirname, `still_${s}.png`), Buffer.from(buf.split(',')[1], 'base64'));
     }
     await browser.close();
     return;
@@ -24,7 +24,7 @@ const path = require('path');
   const duration = await page.evaluate(() => DURATION);
   const out = path.join(__dirname, 'dragon_rage_intro.mp4');
   const ff = spawn('ffmpeg', ['-y', '-f', 'image2pipe', '-framerate', String(fps), '-c:v', 'png', '-i', '-',
-    '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '16', '-preset', 'slow', '-movflags', '+faststart', out],
+    '-vf', 'scale=1920:1080:flags=lanczos', '-c:v', 'libx264', '-tune', 'animation', '-pix_fmt', 'yuv420p', '-crf', '12', '-preset', 'slow', '-movflags', '+faststart', out],
     { stdio: ['pipe', 'ignore', 'inherit'] });
   const frames = Math.round(duration * fps);
   for (let i = 0; i <= frames; i++) {
