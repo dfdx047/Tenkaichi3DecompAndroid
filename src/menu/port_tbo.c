@@ -433,6 +433,12 @@ static TboScreen *sTb;
 /* 2 vs 2: what the quick search says this frame, the page's cursor, the frames since a room was found, and the room taken when the screens close */
 static TagQuickState sQ2;
 static s32 sQ2Cur, sQ2Found, sQ2Frames;
+static s32 sQk2v2;      /* Quick Match's mode is 2 vs 2 */
+static s32 sQ2At[4];    /* the frame each of the line's places was first taken (it comes in sliding) */
+static s32 sTbPop;      /* the chosen plate's jump, frames left */
+static s32 sTbRadT;     /* the same since the screen was OPENED: Raditz comes in once, not at every page */
+static s32 sTbAnimT;    /* frames since the page came to be SEEN (not while the screen is still black, coming in) */
+extern void Ps_SetAnim(s32 cascade, s32 glint, s32 pop); /* port_screen.c */
 static TagQuickState sQ2Take;
 static s32 sQ2Taken;
 static PortLobbyView sTbLv; /* (the lobby's page: what it shows this frame) */
@@ -457,7 +463,7 @@ static char *sTbHubName[HUB_ITEMS] = {"Quick Match", "Ranked", "Lobby", "Join", 
 static const s32 sTbHubReady[HUB_ITEMS] = {1, 1, 1, 1, 0, 0, 0, 0, 1, 1, 1, 1};
 /* What the hub lists, top to bottom: the language and against whom, then what can be played. Friends, Tournament,
    Replays and Leaderboard need more of the matchmaking service than it has: not listed until they do. */
-static const s32 sTbHubOrder[] = {HUB_LANG, HUB_VS, HUB_QUICK, HUB_2V2, HUB_RANKED, HUB_LOBBY, HUB_JOIN, HUB_PROFILE};
+static const s32 sTbHubOrder[] = {HUB_LANG, HUB_VS, HUB_QUICK, HUB_RANKED, HUB_LOBBY, HUB_JOIN, HUB_PROFILE}; /* (2 vs 2: a mode of Quick Match) */
 #define HUB_SMALL 2 /* the rows above the list (the language, against whom): small, changed with left / right */
 #define HUB_ROWS ((s32)(sizeof(sTbHubOrder) / sizeof(sTbHubOrder[0])))
 static s32 Tb_HubRow(s32 item) {
@@ -538,6 +544,7 @@ static void Tb_SetMode(s32 mode) {
     Port_TextMode(sTb->typing);
     if (sTb->mode != mode) { /* (the page that is up again, as when the rival comes on the search: it does not come in anew) */
         sTb->modeT = 0;
+        sTbAnimT = 0;
     }
     sTb->mode = mode;
 }
@@ -956,6 +963,8 @@ static void Tb_QuickStart(void) {
     Tb_SetMode(TB_WAIT);
 }
 
+static void Tb_Q22Search(void);
+
 static void Tb_QuickUpdate(s32 live) {
     Pad *pad = &gPad[0];
     s32 side;
@@ -972,7 +981,12 @@ static void Tb_QuickUpdate(s32 live) {
     Ps_Move(&sTb->qkCur, 3);
     side = Tb_Side();
     if (sTb->qkCur == 0 && side != 0) {
-        sTb->queue = !sTb->queue;
+        s32 mode = ((sQk2v2 ? 2 : sTb->queue) + side + 3) % 3;
+
+        sQk2v2 = mode == 2;
+        if (!sQk2v2) {
+            sTb->queue = mode;
+        }
         Snd_PlaySe(1, 0);
     } else if (sTb->qkCur == 1 && side != 0) {
         sTb->region = (sTb->region + side + QK_REGIONS) % QK_REGIONS;
@@ -981,7 +995,11 @@ static void Tb_QuickUpdate(s32 live) {
     if (pad->gamePressed & (PADG_CROSS | PADG_START)) {
         if (sTb->qkCur == 2 || (pad->gamePressed & PADG_START)) {
             Snd_PlaySe(1, 1);
-            Tb_QuickStart();
+            if (sQk2v2) {
+                Tb_Q22Search();
+            } else {
+                Tb_QuickStart();
+            }
         }
     } else if (pad->gamePressed & PADG_TRIANGLE) {
         Snd_PlaySe(1, 2);
@@ -1006,6 +1024,7 @@ static void Tb_Q22Search(void) {
     memset(&sQ2, 0, sizeof(sQ2));
     sQ2Found = 0;
     sQ2Frames = 0;
+    memset(sQ2At, 0, sizeof(sQ2At));
     if (!TagQuick_Start(Port_NetNameGet(), TagNet_Protocol())) {
         TagQuick_Poll(&sQ2);
         Tb_Say(sQ2.error[0] ? sQ2.error : "The 2 vs 2 search could not start.");
@@ -1044,7 +1063,7 @@ static void Tb_Q22LUpdate(s32 live) {
         Tb_Say(sQ2.error[0] ? sQ2.error : "The 2 vs 2 search ended.");
         Snd_PlaySe(1, 2);
         TagQuick_Cancel();
-        Tb_SetMode(TB_Q22);
+        Tb_SetMode(TB_QUICK);
         return;
     }
     if (sQ2.phase == 2) {
@@ -1062,7 +1081,7 @@ static void Tb_Q22LUpdate(s32 live) {
     if (live && (pad->gamePressed & PADG_TRIANGLE)) {
         Snd_PlaySe(1, 2);
         TagQuick_Cancel();
-        Tb_SetMode(TB_Q22);
+        Tb_SetMode(TB_QUICK);
     }
 }
 
@@ -1846,7 +1865,8 @@ static void Tb_Backdrop(void) {
 static void Tb_RaditzBust(f32 dx) {
     f32 h = 452.0f - TB_RADITZ_TOP; /* (down to the foot of the screen, and a little under it: he floats up and down) */
     f32 w = h * Ps_PicW(TBO_RADITZ_BUST) / Ps_PicH(TBO_RADITZ_BUST) * 0.857f;
-    f32 x = TB_RADITZ_X + dx;
+    f32 in = sTbRadT >= 40 ? 0.0f : 1.0f - (f32)sTbRadT / 40.0f; /* (from the right, as the rows come from the left) */
+    f32 x = TB_RADITZ_X + dx + 420.0f * in * in * in;
     f32 y = TB_RADITZ_TOP + 3.0f * sinf((f32)sTb->frames * 0.04f);
 
     Ps_Sprite(TBO_RADITZ_BUST, x - w * 0.5f, y, x + w * 0.5f, y + h, 0.0f, 0.0f, 1.0f, 1.0f, PS_PLAIN, 0x80); /* (moving: raditz.mpg) */
@@ -1922,7 +1942,7 @@ static f32 Tb_HubRowH(s32 row) {
 
 static void Tb_DrawHub(void) {
     s32 i, cur = Tb_HubRow(sTb->hubCur);
-    f32 slide = (1.0f - Tb_In(0)) * -160.0f;
+    f32 slide = 0.0f; /* (its rows come in one after another: Ps_Cascade) */
     f32 left = Tb_TitleLeft() - 8.0f + slide;
 
     Tb_RaditzBust(0.0f);
@@ -1948,7 +1968,7 @@ static void Tb_DrawHub(void) {
 
 static void Tb_DrawHubText(void) {
     s32 i, cur = Tb_HubRow(sTb->hubCur);
-    f32 slide = (1.0f - Tb_In(0)) * -160.0f;
+    f32 slide = 0.0f;
     f32 x = Tb_TitleLeft() + 38.0f + slide;
 
     for (i = 0; i < HUB_ROWS; i++) {
@@ -1971,9 +1991,11 @@ static void Tb_DrawHubText(void) {
         } else {
             Ps_Text(x + 12.0f, Ps_TextTop(mid, 0.96f), sTbHubName[item], 0.96f, 200.0f, item == HUB_RANKED && DrNet_Mode() != 0 ? 4 : 0);
         }
-        if (item == HUB_2V2) { /* (a new mode: its tag at the plate's end) */
+        if (item == HUB_QUICK) { /* (a new mode inside: its tag at the plate's end, pulsing) */
+            f32 k = 0.5f * (1.0f + 0.07f * sinf((f32)sTb->frames * 0.083f));
+
             Ps_Align(2);
-            Ps_Text(x + (i == cur ? 252.0f : 238.0f), Ps_TextTop(mid, 0.5f), Tb_Fmt("NEW"), 0.5f, 60.0f, 5);
+            Ps_Text(x + (i == cur ? 252.0f : 238.0f), Ps_TextTop(mid, k), Tb_Fmt("NEW"), k, 60.0f, 5);
             Ps_Align(0);
         }
     }
@@ -2361,7 +2383,7 @@ static void Tb_DrawQuickText(void) {
     Ps_Text(22.0f, Ps_TextTop(70.0f, 0.7f), "PICK YOUR BATTLE", 0.7f, 0.0f, 2);
     Ps_Text(36.0f, QK_ROW(0), "Battle", TB_ROW_LABEL, 100.0f, sTb->qkCur == 0 ? 1 : 0);
     Ps_Align(2);
-    Ps_Text(266.0f, QK_VAL(0), sTb->queue ? "TEAMS (UP TO 5)" : "ONE ON ONE", TB_ROW_VALUE, 140.0f, sTb->qkCur == 0 ? 1 : 3);
+    Ps_Text(266.0f, QK_VAL(0), sQk2v2 ? "2 VS 2" : sTb->queue ? "TEAMS (UP TO 5)" : "ONE ON ONE", TB_ROW_VALUE, 140.0f, sTb->qkCur == 0 ? 1 : 3);
     Ps_Align(0);
     Ps_Text(36.0f, QK_ROW(1), "Region", TB_ROW_LABEL, 100.0f, sTb->qkCur == 1 ? 1 : 0);
     Ps_Align(2);
@@ -2372,19 +2394,24 @@ static void Tb_DrawQuickText(void) {
     for (q = 0; q < 2; q++) {
         s32 n = Port_LobbyQueueWaiting(q);
 
-        Ps_Text(36.0f, Ps_TextTop(272.0f + 20.0f * (f32)q, 0.66f), q ? "Teams" : "One on One", 0.66f, 130.0f, q == sTb->queue ? 1 : 0);
+        Ps_Text(36.0f, Ps_TextTop(269.0f + 16.0f * (f32)q, 0.62f), q ? "Teams" : "One on One", 0.62f, 130.0f, !sQk2v2 && q == sTb->queue ? 1 : 0);
         if (n < 0) {
             sprintf(line, "...");
         } else {
             sprintf(line, Tb_Fmt("%d WAITING"), (int)n);
         }
         Ps_Align(2);
-        Ps_Text(290.0f, Ps_TextTop(272.0f + 20.0f * (f32)q, 0.6f), line, 0.6f, 120.0f, n > 0 ? 5 : 3);
+        Ps_Text(290.0f, Ps_TextTop(269.0f + 16.0f * (f32)q, 0.56f), line, 0.56f, 120.0f, n > 0 ? 5 : 3);
         Ps_Align(0);
     }
+    Ps_Text(36.0f, Ps_TextTop(301.0f, 0.62f), "2 VS 2", 0.62f, 130.0f, sQk2v2 ? 1 : 0);
+    Ps_Align(2);
+    Ps_Text(290.0f, Ps_TextTop(301.0f, 0.56f * (1.0f + 0.07f * sinf((f32)sTb->frames * 0.083f))), Tb_Fmt("NEW"),
+            0.56f * (1.0f + 0.07f * sinf((f32)sTb->frames * 0.083f)), 120.0f, 5);
+    Ps_Align(0);
     /* (the queues count everyone; what the region choice means instead of the rules, which the hosts' line says) */
     sprintf(line, Tb_Fmt("PLAYERS THERE FIRST, EVERYONE AFTER %d S"), (int)QK_REGION_WIDEN);
-    Ps_Text(22.0f, Ps_TextTop(312.0f, 0.5f), sTb->region == 0 ? "RIVALS NEAR YOU FIRST, THEN ANYWHERE" : sTb->region == QK_REGIONS - 1 ? "THE NEXT RIVAL, WHEREVER: THE FASTEST" : line,
+    Ps_Text(22.0f, Ps_TextTop(318.0f, 0.46f), sTb->region == 0 ? "RIVALS NEAR YOU FIRST, THEN ANYWHERE" : sTb->region == QK_REGIONS - 1 ? "THE NEXT RIVAL, WHEREVER: THE FASTEST" : line,
             0.5f, 276.0f, 3);
 #undef QK_ROW
 #undef QK_VAL
@@ -2405,15 +2432,36 @@ static void Tb_DrawQ22(void) {
 #define Q2_PLACE_PITCH 54.0f
 #define Q2_PLACE_H 44.0f
 
+/* How far a place of the line still is from where it stands: it slides in from its side when first taken. */
+static f32 Tb_Q22Slide(s32 side, s32 place) {
+    s32 at = sQ2At[side * 2 + place];
+    f32 t = at == 0 ? 1.0f : (f32)(sTb->frames - at) / 14.0f;
+
+    t = t > 1.0f ? 1.0f : t;
+    t = 1.0f - t;
+    return (side ? 150.0f : -150.0f) * t * t * t;
+}
+
 static void Tb_DrawQ22L(void) {
     s32 i;
 
     Ps_Panel(TBO_KIT_WINDOW, 8.0f, 62.0f, 504.0f, 300.0f, 0x80);
     for (i = 0; i < 2; i++) {
         f32 y = Q2_PLACE_Y + Q2_PLACE_PITCH * (f32)i;
+        s32 found = sQ2.phase == 2, myTeam = found ? sQ2.team : 0, side;
 
+        for (side = 0; side < 2; side++) {
+            s32 role = (side == 0 ? myTeam : 1 - myTeam) * 2 + i;
+
+            if (found && sQ2.have[role] && sQ2At[side * 2 + i] == 0) {
+                sQ2At[side * 2 + i] = sTb->frames + 1 + 8 * (side * 2 + i); /* (one after another) */
+            }
+        }
+        Ps_SetShift(Tb_Q22Slide(0, i));
         Ps_Pill(i == 0 ? TBO_KIT_SEL : TBO_KIT_BAR, Q2_TEAM_X0, y, Q2_TEAM_X1, y + Q2_PLACE_H, 0x80);
+        Ps_SetShift(Tb_Q22Slide(1, i));
         Ps_Pill(TBO_KIT_BAR, Q2_RIVAL_X0, y, Q2_RIVAL_X1, y + Q2_PLACE_H, 0x80);
+        Ps_SetShift(0.0f);
     }
 }
 
@@ -2477,13 +2525,29 @@ static void Tb_DrawQ22LText(void) {
             if (!shown) {
                 who = Tb_Fmt("SEARCHING...");
             }
+            Ps_SetShift(Tb_Q22Slide(side, place));
             Ps_Text(x, Ps_TextTop(mid - 8.0f, 0.9f), who, 0.9f, 170.0f, shown && (me || !found) ? 1 : 0);
             Ps_Text(x, Ps_TextTop(mid + 10.0f, 0.5f), what, 0.5f, 120.0f, 3);
+            Ps_SetShift(0.0f);
         }
     }
-    Ps_Text(256.0f, Ps_TextTop(168.0f, 1.1f), "VS", 1.1f, 40.0f, 2);
+    if (sQ2Found == 0) { /* the VS drops into its place */
+        f32 t = sTb->modeT >= 18 ? 1.0f : (f32)sTb->modeT / 18.0f;
+        f32 k = 1.1f * (1.0f + 1.8f * (1.0f - t) * (1.0f - t));
+
+        Ps_Align(1);
+        Ps_Text(256.0f, Ps_TextTop(168.0f, k), "VS", k, 0.0f, 2);
+        Ps_Align(0);
+    }
     Ps_Align(1);
-    if (found) {
+    if (found) { /* 3, 2, 1: each large, settling, while the room is shown before it opens */
+        static char *kNum[3] = {"3", "2", "1"};
+        s32 n = sQ2Found / 50 > 2 ? 2 : sQ2Found / 50;
+        s32 in = sQ2Found % 50;
+        f32 t = in >= 12 ? 1.0f : (f32)in / 12.0f;
+        f32 k = 2.8f * (1.0f + 0.9f * (1.0f - t) * (1.0f - t));
+
+        Ps_Text(256.0f, Ps_TextTop(170.0f, k), kNum[n], k, 0.0f, 2);
         Ps_Text(256.0f, Ps_TextTop(250.0f, 0.7f), Tb_Fmt("MATCH FOUND! OPENING THE ROOM..."), 0.7f, 440.0f, 5);
     } else {
         sprintf(line, Tb_Fmt("%d OF 4 PLAYERS"), (int)(sQ2.waiting > 0 ? sQ2.waiting : 1));
@@ -4594,9 +4658,9 @@ draw:
    the title, the player card and the box stay where they are. The name's keypad comes in over the profile, which
    stays (on: 2 for the keypad). */
 static void Tb_PageIn(s32 on) {
-    s32 page = on == 2 || (on == 1 && sTb->mode != TB_HUB && sTb->mode != TB_BLOCK && sTb->mode != TB_NAME);
-
-    Ps_SetShift(page ? (1.0f - Tb_In(0)) * -160.0f : 0.0f);
+    Ps_SetShift(0.0f);
+    /* (every page's pieces come in one after another; the light and the jump of the chosen plate always) */
+    Ps_SetAnim(on && sTb->mode != TB_BLOCK && sTb->mode != TB_NAME && sTbAnimT < 100 ? sTbAnimT : -1, sTb->frames, sTbPop);
 }
 
 static void Tb_Draw(void) {
@@ -4675,7 +4739,7 @@ static void Tb_DrawText(void) {
 
     /* its capitals centred on the crest beside it (y 32); up to the player card */
     /* (it floats: a slow rise and fall of a few units) */
-    Ps_Heading(Tb_TitleLeft() + 44.0f, Ps_TextTop(32.0f + 2.2f * sinf((f32)sTb->frames * 0.045f), 1.3f), title[sTb->mode], 1.3f, 248.0f, 0x80);
+    Ps_Heading(Tb_TitleLeft() + 44.0f + (sTbAnimT < 26 ? -460.0f * (1.0f - (f32)sTbAnimT / 26.0f) * (1.0f - (f32)sTbAnimT / 26.0f) * (1.0f - (f32)sTbAnimT / 26.0f) : 0.0f), Ps_TextTop(32.0f + 2.2f * sinf((f32)sTb->frames * 0.045f), 1.3f), title[sTb->mode], 1.3f, 248.0f, 0x80);
     Tb_PageIn(1);
     switch (sTb->mode) {
     case TB_HUB:
@@ -4907,6 +4971,7 @@ s32 PortTbo_Run(void) {
     Port_EscQuit(0);
     Tb_WinInit();
     ColorFade_StartIn(0, 0, 0, 0x14);
+    sTbAnimT = sTbRadT = 0;
     while (1) {
         s32 live;
 
@@ -4919,6 +4984,10 @@ s32 PortTbo_Run(void) {
         Snd_Update();
         ColorFade_Update();
         live = !sTb->leaving && ColorFade_IsInDone();
+        sTbAnimT = ColorFade_IsInDone() || sTb->leaving ? (sTbAnimT < 1000 ? sTbAnimT + 1 : sTbAnimT) : 0;
+        if (ColorFade_IsInDone() && sTbRadT < 1000) {
+            sTbRadT++;
+        }
         Ps_PromptsClear();
         Port_LobbyView(&sTbLv);
         if (live) {
@@ -4993,6 +5062,11 @@ s32 PortTbo_Run(void) {
         Dma_Flush();
         sTb->frames++;
         sTb->modeT++;
+        if (gPad[0].gamePressed & PADG_CROSS) {
+            sTbPop = 12;
+        } else if (sTbPop > 0) {
+            sTbPop--;
+        }
         if (sTb->note > 0) {
             sTb->note--;
         }
@@ -5003,6 +5077,7 @@ s32 PortTbo_Run(void) {
             break;
         }
     }
+    Ps_SetAnim(-1, -1, 0); /* (no other screen has these) */
     sceGsSyncPath(0, 0);
     Port_EscQuit(1);
     Port_TextMode(0);

@@ -1,3 +1,4 @@
+#include <math.h>
 #include "common.h"
 #include "menu/menu_a.h"
 #include "menu/menu_e.h"
@@ -167,6 +168,30 @@ void Ps_PageSet(void) {
 
 /* A page coming in (Tb_PageIn): what it draws is moved this far right (from the left, as the hub's bars come). */
 static f32 sPsShift;
+/* The Dragon Net screens' animations (the approved film, previas-bt4/dragonnet-2v2): the page's pieces coming in one
+   after another down the screen, a light band over the chosen plate, its jump when confirmed. Off (-1, 0) for every
+   other screen. */
+static s32 sPsCascade = -1, sPsGlint = -1, sPsPop;
+
+void Ps_SetAnim(s32 cascade, s32 glint, s32 pop) {
+    sPsCascade = cascade;
+    sPsGlint = glint;
+    sPsPop = pop;
+}
+
+/* How far left a piece at height y still is. */
+f32 Ps_Cascade(f32 y) {
+    f32 t;
+
+    if (sPsCascade < 0) {
+        return 0.0f;
+    }
+    /* (the film's pace: each row some 4 frames after the one above, half a second on its way, from off the screen) */
+    t = ((f32)sPsCascade - y / 9.0f) / 28.0f;
+    t = t < 0.0f ? 0.0f : t > 1.0f ? 1.0f : t;
+    t = 1.0f - t;
+    return -460.0f * t * t * t;
+}
 
 void Ps_SetShift(f32 x) {
     sPsShift = x;
@@ -268,7 +293,7 @@ void Ps_Icon(s32 id, f32 cx, f32 cy, f32 height, s32 alpha) {
 
 
 /* A piece of the kit as a bar: its round ends keep their shape, its middle stretches. */
-void Ps_Pill(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 alpha) {
+static void Ps_PillRaw(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 alpha) {
     f32 w = Ps_PicW(id);
     f32 h = Ps_PicH(id);
     f32 c = (f32)sTboSize[id][2];
@@ -283,10 +308,44 @@ void Ps_Pill(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 alpha) {
     Ps_Sprite(id, x1 - cap, y0, x1, y1, 1.0f - cu, 0.0f, 1.0f, 1.0f, PS_PLAIN, alpha);
 }
 
+void Ps_Pill(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 alpha) {
+    f32 shift = sPsShift;
+    f32 w = Ps_PicW(id);
+    f32 cu = (f32)sTboSize[id][2] / w;
+    f32 cap = (f32)sTboSize[id][2] * (y1 - y0) / Ps_PicH(id) * 0.857f;
+
+    sPsShift += Ps_Cascade(y0);
+    if (id != TBO_KIT_SEL || sPsGlint < 0) {
+        Ps_PillRaw(id, x0, y0, x1, y1, alpha);
+    } else {
+        f32 k = sPsPop > 0 ? sinf(3.14159265f * (f32)(12 - sPsPop) / 12.0f) : 0.0f; /* the jump */
+        f32 gx = (x1 - x0) * 0.0225f * k, gy = (y1 - y0) * 0.0225f * k;
+        s32 ph = sPsGlint % 108;
+
+        Ps_PillRaw(id, x0 - gx, y0 - gy, x1 + gx, y1 + gy, alpha);
+        if (k > 0.0f) {
+            Ps_Sprite(id, x0 - gx + cap, y0 - gy, x1 + gx - cap, y1 + gy, cu, 0.0f, 1.0f - cu, 1.0f, 0xFFFFFF, (s32)(0x58 * k));
+        } else if (ph < 65 && x1 - x0 > cap * 2.0f + 8.0f) { /* the light passing over it */
+            f32 a = x0 + cap, b = x1 - cap, c = a - 30.0f + (b - a + 60.0f) * (f32)ph / 65.0f;
+            s32 n;
+
+            for (n = 0; n < 10; n++) { /* (many thin steps over one another, brightest in the middle: no stripes) */
+                f32 half = 30.0f - 2.8f * (f32)n;
+                f32 l = c - half < a ? a : c - half, r = c + half > b ? b : c + half;
+
+                if (r > l) {
+                    Ps_Sprite(id, l, y0, r, y1, 0.45f, 0.0f, 0.55f, 1.0f, 0xFFFFFF, 0x08);
+                }
+            }
+        }
+    }
+    sPsShift = shift;
+}
+
 /* A piece of the kit as a box: its corners keep their shape, its sides and middle stretch. (kit_window's inside is
    made one teal when it is read: port/src/gs/gs_draw.c, tbo_texture.) */
 
-void Ps_Panel(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 alpha) {
+static void Ps_PanelRaw(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 alpha) {
     f32 w = Ps_PicW(id);
     f32 h = Ps_PicH(id);
     f32 c = (f32)sTboSize[id][2];
@@ -324,6 +383,14 @@ void Ps_Panel(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 alpha) {
             Ps_Sprite(id, xs[i], ys[j], xs[i + 1], ys[j + 1], us[i], vs[j], us[i + 1], vs[j + 1], PS_PLAIN, alpha);
         }
     }
+}
+
+void Ps_Panel(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 alpha) {
+    f32 shift = sPsShift;
+
+    sPsShift += Ps_Cascade(y0);
+    Ps_PanelRaw(id, x0, y0, x1, y1, alpha);
+    sPsShift = shift;
 }
 
 /* The shapes of the radar, on the page. */
@@ -406,6 +473,7 @@ void Ps_Line(s32 id, f32 x, f32 base, f32 cap, f32 fit, u32 top, u32 bottom, u32
 void Ps_TextExOuterXY(f32 x, f32 y, char *str, f32 scaleX, f32 scaleY, f32 width,
                       u32 top, u32 bottom, u32 line, u32 outer, f32 outerWidth) {
     f32 cell = PS_CELL_UNITS * scaleY;
+    f32 casc = Ps_Cascade(y);
     f32 cap = cell * PS_CAP_OF_CELL;
     f32 fit = 1.0f;
     f32 lineFit;
@@ -430,6 +498,7 @@ void Ps_TextExOuterXY(f32 x, f32 y, char *str, f32 scaleX, f32 scaleY, f32 width
     } else if (sPsAlign == 2) {
         x -= w;
     }
+    x += casc;
     lineFit = scaleX == scaleY ? fit : fit * scaleX / scaleY;
     if (outerWidth > 0.0f) {
         static const f32 offset[8][2] = {
@@ -538,8 +607,16 @@ f32 Ps_ButtonW(s32 kind, f32 size) {
     return size * Ps_PicW(id) / Ps_PicH(id) * 0.857f;
 }
 
-void Ps_Button(s32 kind, f32 cx, f32 cy, f32 size) {
+static void Ps_ButtonRaw(s32 kind, f32 cx, f32 cy, f32 size) {
     Ps_Icon(Ps_ButtonPic(kind), cx, cy, size, 0x80);
+}
+
+void Ps_Button(s32 kind, f32 cx, f32 cy, f32 size) {
+    f32 shift = sPsShift;
+
+    sPsShift += Ps_Cascade(cy);
+    Ps_ButtonRaw(kind, cx, cy, size);
+    sPsShift = shift;
 }
 
 /* The buttons the screen that is up answers to, at the foot of the hosts' box (bottom right, as in the mockups). */
