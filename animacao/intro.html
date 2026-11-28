@@ -79,12 +79,12 @@ function ballAt(t) {
   if (t < T.passLeft[1]) {              // fast right → left pass
     const k = prog(t, ...T.passLeft);
     const kk = k * .8 + easeInOut(k) * .2;
-    return { x: lerp(W + 320, -320, kk), y: lerp(400, 600, kk) - Math.sin(kk * Math.PI) * 90, r: 118 };
+    return { x: lerp(W + 420, -420, kk), y: lerp(400, 600, kk) - Math.sin(kk * Math.PI) * 90, r: 118 };
   }
   if (t < T.arrive[0]) return null;
   const k = easeOutQuart(prog(t, ...T.arrive));
   const F = L.ball;                     // slam into logo position
-  return { x: lerp(-260, F.x, k), y: lerp(F.y + 90, F.y, k), r: lerp(FINAL_R * 1.35, FINAL_R, k) };
+  return { x: lerp(-520, F.x, k), y: lerp(F.y + 110, F.y, k), r: lerp(FINAL_R * 1.35, FINAL_R, k) };
 }
 
 const spinAt = t => easeInOut(prog(t, ...T.spin)) * Math.PI * 2 * 10; // ends on full turns
@@ -402,6 +402,85 @@ function drawTitle(t) {
   twinkle(L.ball.x - FINAL_R * .45, L.ball.y - FINAL_R * .55, 70 * Math.sin(tw * Math.PI), Math.sin(tw * Math.PI));
 }
 
+// ---------- camera ----------
+// keyframes: [time, x, y, zoom, rotation, easing into this key]
+let CAM_KEYS = null;
+function camKeys() {
+  const F = L.ball, hold = T.hit + .085;
+  return [
+    [0.00, C.x, C.y, .9, -.04, null],
+    [0.38, C.x, C.y, 1.14, .025, easeInQuad],           // slow push-in while charging
+    [0.47, C.x, C.y, 1.38, -.01, easeOutExpo],          // snap zoom on the pop
+    [0.66, C.x, C.y, 1.2, -.03, easeOutCubic],
+    [0.92, C.x + 25, C.y - 12, 1.5, .035, easeInOut],   // slow close-up during the shine
+    [1.04, C.x - 90, C.y + 10, .98, -.1, easeOutExpo],  // snap pull-back + dutch angle
+    [1.38, C.x + 280, C.y + 90, 1.3, .11, easeInCubic], // chase the launch
+    [1.52, C.x + 560, C.y - 50, 1.12, -.07, easeInOut], // whip-pan right
+    [1.80, C.x - 300, C.y + 20, 1.12, .09, k => k],     // track the pass left
+    [1.93, C.x - 380, C.y + 30, 1.04, .11, easeOutCubic],
+    [2.13, F.x + 25, F.y - 5, 1.48, -.08, easeInOut],   // whip to the landing spot
+    [T.hit, F.x, F.y, 1.52, -.06, k => k],
+    [hold, F.x, F.y, 1.52, -.06, k => k],
+    [hold + .5, C.x, C.y, 1, 0, easeOutExpo],            // pull-out reveal of the title
+  ];
+}
+function camAt(t) {
+  if (!CAM_KEYS) CAM_KEYS = camKeys();
+  const K = CAM_KEYS;
+  let c;
+  if (t <= K[0][0]) c = K[0].slice(1, 5);
+  else if (t >= K[K.length - 1][0]) c = K[K.length - 1].slice(1, 5);
+  else {
+    let i = 1; while (K[i][0] < t) i++;
+    const a = K[i - 1], b = K[i], e = b[5]((t - a[0]) / (b[0] - a[0]));
+    c = [1, 2, 3, 4].map(j => lerp(a[j], b[j], e));
+  }
+  let [x, y, zoom, rot] = c;
+  // handheld jitter during action
+  const act = Math.max(Math.sin(prog(t, T.antic[0], T.arrive[1]) * Math.PI) * .9, 0);
+  x += (Math.sin(t * 13.1) + Math.sin(t * 29.7) * .5) * 14 * act;
+  y += (Math.cos(t * 11.3) + Math.sin(t * 23.9) * .5) * 10 * act;
+  rot += Math.sin(t * 9.7) * .015 * act;
+  // impact punch
+  const dt = t - T.hit - .085;
+  if (dt >= 0) zoom *= 1 + .1 * Math.exp(-dt * 14);
+  // shake
+  let shake = 0;
+  if (t >= T.hit) shake = 22 * Math.exp(-(t - T.hit) * 8);
+  const ap = prog(t, T.appear[0], T.appear[0] + .22); if (ap > 0 && ap < 1) shake = Math.max(shake, 12 * (1 - ap));
+  const gr = prog(t, ...T.goRight); if (gr > 0 && gr < 1) shake = Math.max(shake, 10 * gr);
+  const pl = prog(t, ...T.passLeft); if (pl > 0 && pl < 1) shake = Math.max(shake, 8 * Math.sin(pl * Math.PI));
+  return { x, y, zoom, rot, sx: Math.sin(t * 97) * shake, sy: Math.cos(t * 83) * shake * .7 };
+}
+function applyCam(c) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.translate(W / 2 + c.sx, H / 2 + c.sy);
+  ctx.rotate(c.rot); ctx.scale(c.zoom, c.zoom);
+  ctx.translate(-c.x, -c.y);
+}
+
+function drawBackdrop(t, cam) {
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.translate(W / 2 + cam.sx * .5, H / 2 + cam.sy * .5); ctx.rotate(cam.rot); ctx.translate(-W / 2, -H / 2);
+  const amb = ctx.createRadialGradient(W / 2, H / 2, 100, W / 2, H / 2, W * .75);
+  amb.addColorStop(0, 'rgba(45,50,90,.3)'); amb.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = amb; ctx.fillRect(-400, -400, W + 800, H + 800);
+  // three parallax layers of dust / bokeh
+  for (const [depth, n, size, alpha, seed] of [[.35, 30, 14, .035, 0], [.7, 50, 3, .1, 100], [1.2, 30, 4, .14, 200]]) {
+    const span = W + 800, spanY = H + 800;
+    for (let i = 0; i < n; i++) {
+      const wx = rand(seed + i) * span * 2, wy = rand(seed + i + 50) * spanY * 2;
+      let x = (wx - (cam.x - C.x) * depth * cam.zoom + t * 20 * depth) % span; if (x < 0) x += span;
+      let y = (wy - (cam.y - C.y) * depth * cam.zoom) % spanY; if (y < 0) y += spanY;
+      x -= 400; y -= 400;
+      x = W / 2 + (x - W / 2) * (1 + (cam.zoom - 1) * depth); y = H / 2 + (y - H / 2) * (1 + (cam.zoom - 1) * depth);
+      ctx.fillStyle = depth < .5 ? `rgba(120,130,220,${alpha})` : `rgba(200,210,255,${alpha + rand(seed + i + 9) * alpha})`;
+      ctx.beginPath(); ctx.arc(x, y, size * (.5 + rand(seed + i + 7)) * (depth < .5 ? 1 : cam.zoom), 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
 // ---------- scene ----------
 function scene(t) {
   ctx = sctx;
@@ -414,36 +493,31 @@ function scene(t) {
     const white = dt < .04;
     ctx.fillStyle = white ? '#fff8e8' : '#000';
     ctx.fillRect(0, 0, W, H);
-    focusLines(L.ball.x, L.ball.y, 1.6, 5000 + (white ? 0 : 77), white ? '20,16,30' : '255,250,235', 150);
+    applyCam(camAt(t), t);
+    focusLines(L.ball.x, L.ball.y, 1.6, 5000 + (white ? 0 : 77), white ? '20,16,30' : '255,250,235', 120);
     ctx.save(); ctx.translate(L.ball.x, L.ball.y);
     ballBody(FINAL_R * 1.08, 0, 0, { silhouette: white ? '#12101a' : '#fff8e8' });
     ctx.restore();
     return;
   }
 
-  // camera: shake + zoom punch
-  let shake = 0, zoom = 1, zx = W / 2, zy = H / 2;
-  if (dt >= 0) { shake = 18 * Math.exp(-dt * 9); zoom = 1 + .07 * Math.exp(-dt * 7); zx = L.ball.x; zy = L.ball.y; }
-  const gr = prog(t, ...T.goRight); if (gr > 0 && gr < 1) { shake = Math.max(shake, 7 * gr); zoom = 1 + .05 * easeInCubic(gr); }
-  const pl = prog(t, ...T.passLeft); if (pl > 0 && pl < 1) shake = Math.max(shake, 6 * Math.sin(pl * Math.PI));
-  const ap = prog(t, T.appear[0], T.appear[0] + .2); if (ap > 0 && ap < 1) shake = Math.max(shake, 8 * (1 - ap));
-  ctx.translate(zx, zy); ctx.scale(zoom, zoom); ctx.translate(-zx, -zy);
-  ctx.translate(Math.sin(t * 97) * shake, Math.cos(t * 83) * shake * .7);
+  const cam = camAt(t);
+  // parallax background (screen space, driven by the camera so pans read as motion)
+  drawBackdrop(t, cam);
+  // whip-pan streaks in screen space
+  speedLines(t, Math.sin(prog(t, T.goRight[1], T.passLeft[0] + .02) * Math.PI) * .9, -1, 2500);
+  speedLines(t, Math.sin(prog(t, T.passLeft[1] + .1, T.arrive[0] - .02) * Math.PI) * .9, 1, 2700);
 
-  // ambient
-  const amb = ctx.createRadialGradient(W / 2, H / 2, 100, W / 2, H / 2, W * .7);
-  amb.addColorStop(0, 'rgba(45,50,90,.28)'); amb.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = amb; ctx.fillRect(-100, -100, W + 200, H + 200);
-  for (let i = 0; i < 40; i++) {               // drifting dust
-    const x = (rand(i + 40) * W + t * (20 + rand(i) * 40)) % W, y = (rand(i + 80) * H - t * 15 + H) % H;
-    ctx.fillStyle = `rgba(200,210,255,${.05 + rand(i + 9) * .08})`; ctx.fillRect(x, y, 2, 2);
-  }
+  applyCam(cam, t);
 
   drawCharge(t);
 
   // launch: focus lines + ribbon + afterimages
-  focusLines(C.x, C.y, Math.sin(prog(t, T.goRight[0] + .05, T.goRight[1] + .12) * Math.PI) * .8, 1000);
+  const launchB = ballAt(t) || C;
+  focusLines(launchB.x, launchB.y, Math.sin(prog(t, T.goRight[0] + .05, T.goRight[1] + .12) * Math.PI) * .8, 1000);
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
   speedLines(t, Math.sin(prog(t, T.passLeft[0] - .05, T.passLeft[1] + .2) * Math.PI), -1, 2000);
+  ctx.restore();
 
   if (t > T.goRight[0] && t < T.passLeft[0]) ribbon(t, .06, .45, .8 * (1 - prog(t, T.goRight[1], T.goRight[1] + .1)), .6);
   if (t > T.passLeft[0] && t < T.arrive[0]) ribbon(t, .22, .95, 1 - prog(t, T.passLeft[1] + .02, T.passLeft[1] + .32));
