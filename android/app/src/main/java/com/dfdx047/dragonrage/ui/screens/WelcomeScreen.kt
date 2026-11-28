@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -270,10 +269,7 @@ private fun GameCard(
                 SelectButton(accent = accent)
             }
         } else {
-            Row(
-                Modifier.fillMaxWidth().height(IntrinsicSize.Min),
-                verticalAlignment = Alignment.Top,
-            ) {
+            Box(Modifier.fillMaxWidth()) {
                 CardArt(
                     art = art,
                     accent = accent,
@@ -281,14 +277,17 @@ private fun GameCard(
                     alignment = artAlignment,
                     portrait = true,
                     game = game,
-                    modifier = Modifier.weight(0.45f).fillMaxHeight(),
+                    modifier = Modifier.matchParentSize(),
                 )
-                Column(
-                    Modifier.weight(0.55f).padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    CardText(tag = tag, disc = disc, number = number, text = text, accent = accent, twoLines = true)
-                    SelectButton(accent = accent)
+                Row(Modifier.fillMaxWidth()) {
+                    Box(Modifier.weight(0.45f))
+                    Column(
+                        Modifier.weight(0.55f).padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        CardText(tag = tag, disc = disc, number = number, text = text, accent = accent, twoLines = true)
+                        SelectButton(accent = accent)
+                    }
                 }
             }
         }
@@ -416,33 +415,35 @@ private fun CardArt(
     game: Game,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier) {
+    Box(modifier, contentAlignment = Alignment.TopStart) {
         if (art == null) {
             Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(accent, deep))))
         } else {
-            Image(
-                painter = painterResource(art),
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                alignment = alignment,
-                contentScale = ContentScale.Crop,
-            )
-            if (portrait) {
-                Box(
-                    Modifier.align(Alignment.CenterEnd)
-                        .fillMaxHeight()
-                        .width(28.dp)
-                        .background(Brush.horizontalGradient(listOf(Color.Transparent, CardDark))),
+            Box(if (portrait) Modifier.fillMaxHeight().fillMaxWidth(0.45f) else Modifier.fillMaxSize()) {
+                Image(
+                    painter = painterResource(art),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    alignment = alignment,
+                    contentScale = ContentScale.Crop,
                 )
-            } else {
-                Box(
-                    Modifier.fillMaxSize().background(
-                        Brush.verticalGradient(
-                            0.34f to Color.Transparent,
-                            1f to CardDark.copy(alpha = if (game == Game.BT2) 0.72f else 0.88f),
+                if (portrait) {
+                    Box(
+                        Modifier.align(Alignment.CenterEnd)
+                            .fillMaxHeight()
+                            .width(28.dp)
+                            .background(Brush.horizontalGradient(listOf(Color.Transparent, CardDark))),
+                    )
+                } else {
+                    Box(
+                        Modifier.fillMaxSize().background(
+                            Brush.verticalGradient(
+                                0.34f to Color.Transparent,
+                                1f to CardDark.copy(alpha = if (game == Game.BT2) 0.72f else 0.88f),
+                            ),
                         ),
-                    ),
-                )
+                    )
+                }
             }
         }
     }
