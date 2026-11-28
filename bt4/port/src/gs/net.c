@@ -367,6 +367,7 @@ static unsigned sQueueHead, sQueueTail;
    hold a relay address (net_relay.c), and then the other player's packets can arrive wrapped by the relay and must
    go back the same way. Without a relay they are plain sendto / recvfrom. */
 static int sStatOut, sStatIn, sStatInVia, sStatOutVia, sStatErr, sStatOther, sStatBytes;
+static int sTryOut, sTryIn, sTryErr, sTryTheirs; /* as they were when this connection attempt began; theirs: game packets of it */
 static void net_stat(void) { /* BT3_RELAY_LOG: packets out and in, a line a second */
     static uint64_t last;
     uint64_t now = SDL_GetTicks();
@@ -699,6 +700,8 @@ static void note_put(NoteLog *l, uint32_t tick, uint64_t v);
 static uint32_t sApartAt;   /* the first blank whose notes differed (0: none in this session) */
 static unsigned sApartCount;
 
+extern int Port_RankedActive(void); /* bt4_profile.c */
+
 static int desync_ends(void) {
     extern int Port_Setting(const char *name, int def);
     if (getenv("BT3_NET_DESYNC_END") != NULL) {
@@ -746,7 +749,9 @@ static void sync_check(uint32_t sure, unsigned tick) {
                     sApartAt = was;
                     fprintf(stderr, "bt3: net: the two games differ at blank %u (this copy %016llx, the other %016llx)\n", (unsigned)was,
                             (unsigned long long)m->value, (unsigned long long)o->value);
-                    if (desync_ends()) {
+                    /* (a Ranked battle always ends, 2026-11-28, the user: two screens showing different fights cannot give
+                       a result; BYE_APART is nobody's doing: no points, no medal, no abandonment) */
+                    if (desync_ends() || (sMode != 3 && Port_RankedActive())) {
                         sByeWhy = BYE_APART;
                         ended("The two games no longer agree (desync): the match has ended.", tick);
                     }
@@ -4156,6 +4161,7 @@ int Port_LobbyPoll(void) {
             sCodeGen = st.addrGen;
             sCodeRelayGen = st.relayGen;
             sCodeSince = now;
+            sTryOut = sStatOut, sTryIn = sStatIn, sTryErr = sStatErr, sTryTheirs = 0;
             sLobby = sCodeAddrs > 0 ? 1 : -4;
         }
         return sLobby;
@@ -4209,8 +4215,9 @@ int Port_LobbyPoll(void) {
             return sLobby;
         }
         if (now - sCodeSince > 24000000000ull) {
-            fprintf(stderr, "bt4: connect: timed out; role=%d candidates=%d relay-active=%d relay-candidate=%d packets-out=%d packets-in=%d send-errors=%d\n",
-                    sLobbyRole, sCodeAddrs, Relay_Active(), sCodeRelay >= 0, sStatOut, sStatIn, sStatErr);
+            /* (this attempt's own numbers: the totals, which also held the last match's packets, misled) */
+            fprintf(stderr, "bt4: connect: timed out; role=%d candidates=%d relay-active=%d relay-candidate=%d this-try: packets-out=%d packets-in=%d from-the-other=%d send-errors=%d\n",
+                    sLobbyRole, sCodeAddrs, Relay_Active(), sCodeRelay >= 0, sStatOut - sTryOut, sStatIn - sTryIn, sTryTheirs, sStatErr - sTryErr);
             sLobby = -4; /* Direct connection timed out; no hosted relay is configured for Supabase. */
             return sLobby;
         }
@@ -4235,6 +4242,7 @@ int Port_LobbyPoll(void) {
         if (magic != MAGIC) {
             continue;
         }
+        sTryTheirs++;
         if (sCodeMode && sLobbyRole == 2 && type == T_PUNCH && n == 8 &&
             (!sHostPunchReply || now - sHostPunchReply >= 200000000ull) &&
             NetIo_HostPunch(&from, sCodeAddr, sCodeAddrs, sCodeRelay)) {
