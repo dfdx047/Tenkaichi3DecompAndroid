@@ -69,6 +69,10 @@ static const u16 sTboSize[TBO_ART_COUNT][3] = {
     {448, 348, 0}, /* td_card_on */
     {204, 124, 0}, /* td_cell */
     {164, 164, 0}, /* td_tile */
+    {144, 174, 0}, /* cs_frame */
+    {168, 198, 0}, /* cs_frame_sel */
+    {64, 64, 0}, /* cs_star_on */
+    {64, 64, 0}, /* cs_star_off */
 };
 
 #endif

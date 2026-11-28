@@ -1172,6 +1172,52 @@ int Port_TboArtState(int id) {
     return sTboTex[id] != 0;
 }
 
+#include "bt4_face.inc"
+
+/* A frame of the smoke, one level (shown larger than it is: no smaller copies needed). */
+static GsTex smoke_texture(int n) {
+    static GsTex tex[TBO_SMOKE_FRAMES];
+    static unsigned char missing[TBO_SMOKE_FRAMES];
+    uint32_t *lv[12], lw[12], lh[12], y, x;
+    SDL_Surface *png, *rgba;
+    char path[1024], cwd[768];
+
+    if (tex[n] != 0 || missing[n] || sBackend->texSlotsLeft() <= 4) {
+        return tex[n]; /* (0: nothing this frame) */
+    }
+    snprintf(path, sizeof(path), "%s/tbo/ui/smoke/%02d.png", getcwd(cwd, sizeof(cwd)) != NULL ? cwd : ".", n);
+    png = SDL_LoadPNG(path);
+    if (png == NULL) {
+        snprintf(path, sizeof(path), "port/tbo/ui/smoke/%02d.png", n);
+        png = SDL_LoadPNG(path);
+    }
+    rgba = png != NULL ? SDL_ConvertSurface(png, SDL_PIXELFORMAT_RGBA32) : NULL;
+    if (png != NULL) {
+        SDL_DestroySurface(png);
+    }
+    if (rgba == NULL || (lv[0] = malloc((size_t)rgba->w * rgba->h * 4)) == NULL) {
+        if (rgba != NULL) {
+            SDL_DestroySurface(rgba);
+        }
+        missing[n] = 1;
+        return 0;
+    }
+    lw[0] = (uint32_t)rgba->w;
+    lh[0] = (uint32_t)rgba->h;
+    for (y = 0; y < lh[0]; y++) {
+        const uint8_t *row = (const uint8_t *)rgba->pixels + (size_t)y * rgba->pitch;
+
+        for (x = 0; x < lw[0]; x++) {
+            const uint8_t *c = row + x * 4;
+
+            lv[0][y * lw[0] + x] = (uint32_t)c[0] | (uint32_t)c[1] << 8 | (uint32_t)c[2] << 16 | (uint32_t)((c[3] * 128 + 127) / 255) << 24;
+        }
+    }
+    SDL_DestroySurface(rgba);
+    tex[n] = tbo_upload_levels(lv, lw, lh, 1);
+    return tex[n];
+}
+
 static GsTex tbo_texture(uint32_t id) {
     char path[1024] = {0};
     SDL_Surface *png = NULL, *rgba = NULL;
@@ -1203,6 +1249,14 @@ static GsTex tbo_texture(uint32_t id) {
     }
     if (id == TBO_FAV_PORTRAIT) {
         return tbo_fav_texture();
+    }
+    if (id >= TBO_FACE_BASE && id < TBO_FACE_BASE + FACE_COUNT) {
+        return face_texture((int)(id - TBO_FACE_BASE));
+    }
+    if (id >= TBO_SMOKE_BASE && id < TBO_SMOKE_BASE + TBO_SMOKE_FRAMES) {
+        GsTex smoke = smoke_texture((int)(id - TBO_SMOKE_BASE));
+
+        return smoke != 0 ? smoke : face_clear();
     }
     if (id >= TBO_ART_COUNT && !languageArt) {
         return gsWhite;

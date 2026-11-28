@@ -1155,10 +1155,10 @@ static void Cs_Sharp(s32 on) {
     extern int GsDraw_ScreenScaleNeeded4(void);
 
     (void)GsDraw_ScreenScaleNeeded4;
-    if (0 && on && !sOwnFloor && gPortVariant != 0 && GsDraw_ScreenScaleFloorNow() == 0) {
-        /* (off, as the user asked: the select keeps the player's own resolution. Raising it for sharp letters drew the
-           stage and the fighters in 3D at that size too: 4x ran at half speed on a phone, 2.75x at 69%) */
-        GsDraw_ScreenScaleFloor(GsDraw_ScreenScaleNeeded4());
+    if (on && !sOwnFloor && gPortVariant != 0 && GsDraw_ScreenScaleFloorNow() == 0 && !Port_Setting("select_native_ui", 1)) {
+        /* (only without the 2D's own layer: 2x at least. Not more: the stage and fighters are drawn at this size too; on
+           an Adreno 710 the select ran at 100% at 2x and at 50% at 3x) */
+        GsDraw_ScreenScaleFloor(8);
         sOwnFloor = 1;
     } else if (!on && sOwnFloor) {
         GsDraw_ScreenScaleFloor(0);
@@ -1432,8 +1432,8 @@ void PortCharSel_Frame(const CsView *view, s32 split, s32 stagePhase) {
 #define CW_CELL 50.0f
 #define CW_GAP 5.0f
 #define CW_ROWS 5
-#define CW_UPRIGHT 0.78f /* a chip's width for its height */
-#define CW_TILT 0.022f   /* each column of the roster so much smaller than the one before (the panel going back) */
+#define CW_UPRIGHT 0.88f /* a chip's width for its height */
+#define CW_TILT 0.0f     /* the roster flat (template of 28/11; it went back 2.2% a column before) */
 /* (the approved template since 20/11, previas-bt4/selecao-nova: indigo glass, a lavender edge, gold for what is
    chosen; the roster's panel keeps the curve it had) */
 #define CW_PANEL_TOP Ps_Rgba(0x1C, 0x16, 0x40, 0x6C)
@@ -1512,10 +1512,6 @@ static f32 Cw_SayW(char *s, f32 em) {
 }
 static s32 Cw_TeamCount(void);
 
-/* A chip cut round the face, upright as the cells are. */
-static void Cw_Chip(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, s32 grey) {
-    Cs_Tex((MTexRes *)MPACK_AT(sV.chipPack, id + 1), x0, y0, x1, y1, 16, 11, 48, 52, grey, 0x80); /* (32 x 41: the face whole) */
-}
 
 /* A box with round corners (four steps each), its colour going down; moved with the tab sliding in (sShift). */
 static void Cw_Box(f32 x0, f32 y0, f32 x1, f32 y1, f32 r, u32 top, u32 bottom) {
@@ -1696,7 +1692,7 @@ static void Cw_Plain(f32 x0, f32 y0, f32 x1, f32 y1, f32 r) {
 /* A fighter's colour on its card (the template's six hues: orange, blue, green, red, yellow, violet, each as light
    as its cells' tops), as a tint of cs_card (R | G << 8 | B << 16, 0x80 as it is); a place without one, plain. */
 static u32 Cw_Hue(s32 who, s32 dim) {
-    static const u8 kHue[6][3] = {{93, 64, 39}, {47, 61, 93}, {56, 83, 56}, {86, 47, 56}, {92, 83, 47}, {70, 56, 93}};
+    static const u8 kHue[6][3] = {{110, 74, 29}, {44, 52, 96}, {44, 81, 59}, {88, 44, 52}, {104, 88, 36}, {74, 44, 96}}; /* (28/11) */
     const u8 *h;
 
     if (!Cs_IsFighter(who)) {
@@ -1707,6 +1703,7 @@ static u32 Cw_Hue(s32 who, s32 dim) {
 }
 
 /* A card of the roster (cs_card) in its fighter's colour; dim: darker. */
+static void Cw_Line(f32 x0, f32 y0, f32 x1, f32 y1, f32 r, f32 t, u32 c);
 static void Cw_Card(f32 x0, f32 y0, f32 x1, f32 y1, f32 r, s32 dim, s32 who) {
     Cw_Nine(TBO_CS_CARD, x0, y0, x1, y1, 12.0f, 34.0f, r / CW_PXU / 22.0f, Cw_Hue(who, dim));
 }
@@ -1715,30 +1712,46 @@ static void Cw_Card(f32 x0, f32 y0, f32 x1, f32 y1, f32 r, s32 dim, s32 who) {
    otherwise; dim: one the team already has. */
 /* A face in an upright card: lit (silver, lined in white, a glow) when it is the one (chosen, under the cursor), a
    dark card otherwise; dim: one the team already has. Corners of 20 of the template's pixels. */
+static void Cw_Frame(f32 x0, f32 y0, f32 x1, f32 y1, f32 r, s32 sel) {
+    if (sel) {
+        Cw_Nine(TBO_CS_FRAME_SEL, x0, y0, x1, y1, 24.0f, 40.0f, r / CW_PXU / 16.0f, PS_PLAIN);
+    } else {
+        Cw_Nine(TBO_CS_FRAME, x0, y0, x1, y1, 12.0f, 28.0f, r / CW_PXU / 16.0f, PS_PLAIN);
+    }
+}
+
+/* A fighter's large portrait over a box, cut to the box's shape round the face (136 x 176: port/src/gs/bt4_face.inc). */
+static void Cw_Face(s32 who, f32 x0, f32 y0, f32 x1, f32 y1, s32 grey, f32 alpha) {
+    f32 shape = (x1 - x0) / Cs_UnitsAcross(y1 - y0) / (136.0f / 176.0f);
+    f32 du = shape < 1.0f ? shape : 1.0f;
+    f32 dv = shape > 1.0f ? 1.0f / shape : 1.0f;
+    s32 a = (s32)(alpha * sAlpha * 128.0f);
+
+    if (!Cs_IsFighter(who)) { /* (random, locked, saved: the game's own little picture) */
+        Cs_Tex((MTexRes *)MPACK_AT(sV.chipPack, who + 1), x0, y0, x1, y1, 16, 11, 48, 52, grey, (s32)(alpha * 128.0f));
+        return;
+    }
+    Ps_Sprite(TBO_FACE_BASE + who, Cs_PageX(x0 + sShift), Cs_PageY(y0), Cs_PageX(x1 + sShift), Cs_PageY(y1), 0.5f - du * 0.5f,
+              (1.0f - dv) * 0.55f, 0.5f + du * 0.5f, (1.0f - dv) * 0.55f + dv, (u32)(grey | (grey << 8) | (grey << 16)), a);
+}
+
 static void Cw_FaceCard(s32 who, f32 x0, f32 y0, f32 x1, f32 y1, s32 lit, s32 dim) {
     f32 r = Cw_Y(20.0f);
 
-    if (lit) {
-        Cw_Lit(x0, y0, x1, y1, r, 0.0f);
-    } else {
-        Cw_Card(x0, y0, x1, y1, r, dim, who);
-    }
+    Cw_Card(x0, y0, x1, y1, r, dim, who);
     if (Cs_IsFighter(who)) {
-        Port_GsMarker(GS_CHIP_ON);
-        Cs_Tex((MTexRes *)MPACK_AT(sV.chipPack, who + 1), x0 + Cw_X(5.0f), y0 + Cw_Y(5.0f), x1 - Cw_X(5.0f), y1 - Cw_Y(3.0f), 12, 11, 52, 52,
-               dim ? 0x3C : 0x80, 0x80);
-        Port_GsMarker(GS_CHIP_OFF);
+        Cw_Face(who, x0 + Cw_X(4.0f), y0 + Cw_Y(4.0f), x1 - Cw_X(4.0f), y1 - Cw_Y(4.0f), dim ? 0x3C : 0x80, 1.0f);
     }
+    Cw_Frame(x0, y0, x1, y1, r, lit);
 }
 
 /* The same, the face cut upright as the roster's chips. */
 /* The same, the face cut upright as the roster's chips (the one under the cursor in the roster). */
 static void Cw_FaceCardCut(s32 who, f32 x0, f32 y0, f32 x1, f32 y1, s32 lit, s32 dim) {
     (void)lit;
-    Cw_Lit(x0, y0, x1, y1, Cw_Y(18.0f), 0.0f);
-    Port_GsMarker(GS_CHIP_ON);
-    Cw_Chip(who, x0 + Cw_X(5.0f), y0 + Cw_Y(7.0f), x1 - Cw_X(5.0f), y1 - Cw_Y(3.0f), dim ? 0x48 : 0x80);
-    Port_GsMarker(GS_CHIP_OFF);
+    Cw_Card(x0, y0, x1, y1, Cw_Y(18.0f), 0, who);
+    Cw_Face(who, x0 + Cw_X(5.0f), y0 + Cw_Y(5.0f), x1 - Cw_X(5.0f), y1 - Cw_Y(5.0f), dim ? 0x48 : 0x80, 1.0f);
+    Cw_Frame(x0, y0, x1, y1, Cw_Y(18.0f), 1);
 }
 
 /* Up on the left. One on one: the fighter's card (the approved preview A): its face in an orange card, its name large,
@@ -1791,6 +1804,7 @@ static void Cw_Strip(void) {
             Cw_Say(a + endW * 0.5f, y1 - Cw_Y(40.0f), line, 36.0f, endW, 1, CW_FORM_TEXT, CW_FORM_TEXT);
         }
     } else {
+    if (sSplit) { /* (two selects side by side: the card with its name, as it was) */
         s32 chara = sV.chara;
         char name[128];
         char form[128];
@@ -1829,6 +1843,70 @@ static void Cw_Strip(void) {
             Cw_Line(p0, y1 - Cw_Y(76.0f), p1, y1 - Cw_Y(24.0f), Cw_Y(26.0f), Cw_Y(3.0f), Ps_Rgba(0xF0, 0xF4, 0xFF, 0x80));
             Cw_Say((p0 + p1) * 0.5f, y1 - Cw_Y(50.0f), line, 38.0f, p1 - p0, 1, CW_FORM_TEXT, CW_FORM_TEXT);
         }
+    } else {
+        s32 chara = sV.chara;
+        f32 fh = (y1 - y0) - Cw_Y(44.0f);
+        f32 f0 = x0 + Cw_X(26.0f);
+        f32 f1 = f0 + Cs_UnitsAcross(fh);
+        f32 p0 = f1 + Cw_X(26.0f);
+        f32 p1 = p0 + Cw_X(170.0f);
+
+        Cw_Glass(x0, y0, Cs_IsFighter(chara) ? p1 + Cw_X(26.0f) : f1 + Cw_X(26.0f), y1, 0.0f);
+        Cw_FaceCard(chara, f0, y0 + Cw_Y(22.0f), f1, y0 + Cw_Y(22.0f) + fh, 1, 0);
+        if (Cs_IsFighter(chara)) {
+            snprintf(line, sizeof(line), "%d DP", (int)ChrTbl_GetCost(chara));
+            Cw_Box(p0, y0 + Cw_Y(52.0f), p1, y0 + Cw_Y(104.0f), Cw_Y(26.0f), Ps_Rgba(0xDC, 0xE1, 0xF0, 0x0D), Ps_Rgba(0xDC, 0xE1, 0xF0, 0x0D));
+            Cw_Line(p0, y0 + Cw_Y(52.0f), p1, y0 + Cw_Y(104.0f), Cw_Y(26.0f), Cw_Y(3.0f), Ps_Rgba(0xF0, 0xF4, 0xFF, 0x80));
+            Cw_Say((p0 + p1) * 0.5f, y0 + Cw_Y(78.0f), line, 38.0f, p1 - p0, 1, CW_FORM_TEXT, CW_FORM_TEXT);
+        }
+    }
+    }
+}
+
+/* Up on the right (the template of 28/11): the fighter's name large, its form under it, and "Pericia": its DP cost as
+   seven stars. */
+static void Cw_Name(void) {
+    s32 chara = sV.chara;
+    s32 lang = Port_Setting("dr_lang", 0);
+    char name[128];
+    char form[128];
+    f32 x1 = 512.0f - Cw_X(60.0f);
+    s32 i, stars;
+
+    name[0] = form[0] = 0;
+    if (chara == MCHR_RANDOM) {
+        Ps_Copy(name, Cs_Words(W_RANDOM), sizeof(name));
+    } else if (chara == MCHR_LOCKED) {
+        Ps_Copy(name, Cs_Words(W_LOCKED), sizeof(name));
+    } else if (chara == MCHR_CUSTOM) {
+        Ps_Copy(name, Cs_Words(W_SAVED), sizeof(name));
+    } else if (Cs_IsFighter(chara)) {
+        Cs_Line(name, sizeof(name), (u32 *)sV.nameText, chara);
+        Cs_Line(form, sizeof(form), (u32 *)sV.formText, chara);
+    }
+    Cw_Say(x1, Cw_Y(46.0f), (char *)Cs_Words(sV.side == 1 ? W_P2 : W_P1), 44.0f, 0.0f, 2, Ps_Rgba(0x46, 0xAA, 0xFF, 0x80), Ps_Rgba(0x46, 0xAA, 0xFF, 0x80));
+    for (i = 0; i < 8; i++) { /* (its thick dark outline: the name drawn round itself) */
+        static const f32 kO[8][2] = { {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0.7f, 0.7f}, {-0.7f, 0.7f}, {0.7f, -0.7f}, {-0.7f, -0.7f} };
+
+        Cw_Say(x1 + Cw_X(kO[i][0] * 8.0f), Cw_Y(122.0f + kO[i][1] * 8.0f), name, 112.0f, Cw_X(900.0f), 2, Ps_Rgba(0x08, 0x1E, 0x46, 0x80),
+               Ps_Rgba(0x08, 0x1E, 0x46, 0x80));
+    }
+    Cw_Say(x1, Cw_Y(122.0f), name, 112.0f, Cw_X(900.0f), 2, Ps_Rgba(0xA0, 0xF0, 0xFF, 0x80), Ps_Rgba(0x46, 0xC8, 0xFF, 0x80));
+    if (form[0] != 0) {
+        Cw_Say(x1, Cw_Y(196.0f), form, 40.0f, Cw_X(880.0f), 2, CW_FORM_TEXT, CW_FORM_TEXT);
+    }
+    if (!Cs_IsFighter(chara)) {
+        return;
+    }
+    stars = (s32)ChrTbl_GetCost(chara);
+    stars = stars < 0 ? 0 : stars > 7 ? 7 : stars;
+    Cw_Say(x1 - Cw_X(7.0f * 62.0f + 20.0f), Cw_Y(256.0f), (char *)(lang == 1 ? "Per\303\255cia" : lang == 2 ? "Pericia" : "Skill"), 44.0f, 0.0f, 2,
+           Ps_Rgba(255, 255, 255, 0x80), Ps_Rgba(255, 255, 255, 0x80));
+    for (i = 0; i < 7; i++) {
+        f32 cx = x1 - Cw_X((f32)(6 - i) * 62.0f + 30.0f);
+
+        Ps_Sprite(i < stars ? TBO_CS_STAR_ON : TBO_CS_STAR_OFF, Cs_PageX(cx - Cw_X(32.0f)), Cs_PageY(Cw_Y(236.0f - 4.0f * (f32)i)), Cs_PageX(cx + Cw_X(32.0f)),
+                  Cs_PageY(Cw_Y(300.0f - 4.0f * (f32)i)), 0.0f, 0.0f, 1.0f, 1.0f, PS_PLAIN, 0x80);
     }
 }
 
@@ -1942,11 +2020,22 @@ static void Cw_Grid(void) {
             if (i >= count || cells[i].id == MCHR_EMPTY || (c == col && r + top == row)) {
                 continue;
             }
-            Cw_Chip(cells[i].id, x0 + Cs_UnitsAcross(1.5f * k), y0 + 3.0f * k, x0 + cw * k - Cs_UnitsAcross(1.5f * k), y0 + CW_CELL * k - 1.0f,
-                    Cw_Taken(cells[i].id) ? 0x38 : 0x80);
+            Cw_Face(cells[i].id, x0 + Cs_UnitsAcross(1.5f * k), y0 + 1.5f * k, x0 + cw * k - Cs_UnitsAcross(1.5f * k), y0 + CW_CELL * k - 1.5f * k,
+                    Cw_Taken(cells[i].id) ? 0x38 : 0x80, 1.0f);
         }
     }
     Port_GsMarker(GS_CHIP_OFF);
+    for (r = 0; r < CW_ROWS; r++) { /* the edges, over the faces */
+        for (c = 0; c < MCHR_COLS; c++) {
+            s32 i = c + (r + top) * MCHR_COLS;
+            f32 k = dep[c];
+
+            if (i >= count || cells[i].id == MCHR_EMPTY || (c == col && r + top == row)) {
+                continue;
+            }
+            Cw_Frame(colX[c], rowY[r][c], colX[c] + cw * k, rowY[r][c] + CW_CELL * k, Cw_Y(16.0f) * k, 0);
+        }
+    }
     if (lit) {
         /* the one under the cursor: in orange, a little larger, glowing, lined in white; its face inside the card (the
            user: it came out of the frame) */
@@ -1977,33 +2066,29 @@ static void Cw_Grid(void) {
 /* Under the roster, from its left (the template): each button with its word in a pill of dark glass (100 of the
    template's pixels tall, its mark 72 across, its word of 52); on a team's select View Team after them, lit silver,
    its word dark. */
-static void Cw_FootPill(f32 x, f32 mid, s32 kind, s32 word, f32 k, s32 lit, f32 w) {
-    f32 h = Cw_Y(50.0f);
-
-    (void)k;
-    if (lit) {
-        Cw_Lit(x, mid - h, x + w, mid + h, h, Cw_Y(5.0f));
-    } else {
-        Cw_PillGlass(x, mid - h, x + w, mid + h);
-    }
-    Ps_Button(kind, Cs_PageX(x + Cw_X(52.0f) + sShift), Cs_PageY(mid), 37.5f);
-    Cw_Say(x + Cw_X(104.0f), mid, (char *)Cs_Words(word), 52.0f, 0.0f, 0, lit ? CW_DARK_TEXT : Ps_Rgba(255, 255, 255, 0x80),
-           lit ? CW_DARK_TEXT : Ps_Rgba(255, 255, 255, 0x80));
-}
 
 static void Cw_Foot(void) {
     static const s32 kKind[3] = { 0, 2, 1 };
     static const s32 kWord[3] = { W_OK, W_BACK, W_VIEWTEAM };
-    f32 mid = Cw_RowY(CW_ROWS, 0) + 34.0f;
+    f32 mid = Cw_RowY(CW_ROWS, 0) + 32.0f;
     f32 x = CW_GRID_X - Cw_X(10.0f);
+    f32 h = Cw_Y(46.0f);
+    f32 w[3];
+    f32 all = Cw_X(24.0f);
     s32 n = sV.isTeam && s3D && Cw_TeamCount() > 0 ? 3 : 2; /* (View Team: only on a team's select) */
     s32 i;
 
     for (i = 0; i < n; i++) {
-        f32 w = Cw_X(i == 2 ? 140.0f : 120.0f) + Cw_SayW((char *)Cs_Words(kWord[i]), 52.0f);
-
-        Cw_FootPill(x, mid, kKind[i], kWord[i], 1.0f, i == 2, w);
-        x += w + Cw_X(26.0f);
+        w[i] = Cw_X(110.0f) + Cw_SayW((char *)Cs_Words(kWord[i]), 46.0f);
+        all += w[i] + Cw_X(30.0f);
+    }
+    Cw_Glass(x, mid - h, x + all, mid + h, 0.0f);
+    x += Cw_X(24.0f);
+    for (i = 0; i < n; i++) {
+        Ps_Button(kKind[i], Cs_PageX(x + Cw_X(40.0f) + sShift), Cs_PageY(mid), 33.0f);
+        Cw_Say(x + Cw_X(90.0f), mid, (char *)Cs_Words(kWord[i]), 46.0f, 0.0f, 0, i == 2 ? CW_FORM_TEXT : Ps_Rgba(255, 255, 255, 0x80),
+               i == 2 ? CW_FORM_TEXT : Ps_Rgba(255, 255, 255, 0x80));
+        x += w[i] + Cw_X(30.0f);
     }
 }
 
@@ -2090,11 +2175,41 @@ static f32 Cw_TextW(char *s, f32 scale) {
 /* A tab's panel (the template's): its heading with the silver mark, the heading's word (46), and on its right a count
    (40, lilac). */
 static void Cw_Head(f32 x0, f32 y, f32 x1, s32 word, char *right) {
-    Cw_Box(x0 + Cw_X(30.0f), y + Cw_Y(4.0f), x0 + Cw_X(40.0f), y + Cw_Y(50.0f), Cw_Y(5.0f), CW_LIT, CW_LIT);
-    Cw_Say(x0 + Cw_X(60.0f), y + Cw_Y(CW_LA(46.0f)), (char *)Cs_Words(word), 46.0f, 0.0f, 0, Ps_Rgba(255, 255, 255, 0x80), Ps_Rgba(255, 255, 255, 0x80));
+    f32 a = x0 + Cw_X(16.0f);
+    f32 b = x1 - Cw_X(16.0f);
+    f32 y0 = y - Cw_Y(12.0f);
+    f32 y1 = y + Cw_Y(60.0f);
+    f32 mid = (y0 + y1) * 0.5f;
+
+    Cw_Box(a, y0, b, y1, (y1 - y0) * 0.5f, Ps_Rgba(0x0C, 0x0C, 0x1E, 0x70), Ps_Rgba(0x0C, 0x0C, 0x1E, 0x70));
+    Cw_Say(b - Cw_X(80.0f), mid, (char *)Cs_Words(word), 44.0f, b - a - Cw_X(230.0f), 2, Ps_Rgba(255, 255, 255, 0x80), Ps_Rgba(255, 255, 255, 0x80));
+    Ps_Sprite(TBO_CS_STAR_OFF, Cs_PageX(b - Cw_X(62.0f) + sShift), Cs_PageY(mid - Cw_Y(22.0f)), Cs_PageX(b - Cw_X(18.0f) + sShift),
+              Cs_PageY(mid + Cw_Y(22.0f)), 0.0f, 0.0f, 1.0f, 1.0f, PS_PLAIN, (s32)(0x80 * sAlpha));
     if (right != NULL) {
-        Cw_Say(x1 - Cw_X(40.0f), y + Cw_Y(4.0f + CW_LA(40.0f)), right, 40.0f, 0.0f, 2, CW_FORM_TEXT, CW_FORM_TEXT);
+        Cw_Say(a + Cw_X(30.0f), mid, right, 38.0f, 0.0f, 0, CW_FORM_TEXT, CW_FORM_TEXT);
     }
+}
+
+/* A slanted bar, as the template's technique rows. */
+static void Cw_Slant(f32 x0, f32 y0, f32 x1, f32 y1, u32 c) {
+    f32 k = Cs_UnitsAcross((y1 - y0) * 0.28f);
+
+    c = Cs_A(c);
+    Ps_ScreenQuad(x0 + k + sShift, y0, x1 + sShift, y0, x0 + sShift, y1, x1 - k + sShift, y1, c, c, c, c);
+}
+
+/* A row of the right column: a coloured slanted bar, the chosen one blue lined in gold, a gold dot at its left. */
+static void Cw_Row(f32 x0, f32 y0, f32 x1, f32 y1, s32 lit) {
+    f32 mid = (y0 + y1) * 0.5f;
+    f32 r = (y1 - y0) * 0.2f;
+
+    if (lit) {
+        Cw_Slant(x0 - Cs_UnitsAcross(2.5f), y0 - 1.8f, x1 + Cs_UnitsAcross(2.5f), y1 + 1.8f, Ps_Rgba(0xFF, 0xD7, 0x50, 0x80));
+        Cw_Slant(x0, y0, x1, y1, Ps_Rgba(0x34, 0x70, 0xC4, 0x80));
+    } else {
+        Cw_Slant(x0, y0, x1, y1, Ps_Rgba(0x2D, 0x4E, 0x86, 0x6C));
+    }
+    Cs_Ellipse(x0 + Cw_X(38.0f) + sShift, mid, Cs_UnitsAcross(r), r, Cs_A(Ps_Rgba(0xFF, 0xCD, 0x32, 0x80)), Cs_A(Ps_Rgba(0xF0, 0xB4, 0x20, 0x80)));
 }
 
 static void Cw_Panel(f32 x0, f32 y0, f32 x1, f32 y1, s32 word, char *right) {
@@ -2116,7 +2231,7 @@ static void Cw_Details(void) {
     s32 at = sV.col + sV.row * MCHR_COLS;
     s32 open;
     s32 want = sV.tabWant;
-    f32 y = Cw_Y(60.0f);
+    f32 y = Cw_Y(sSplit ? 60.0f : 290.0f); /* (under the name and its stars) */
     char line[32];
     char form[128];
 
@@ -2142,17 +2257,18 @@ static void Cw_Details(void) {
         f32 chp;
         f32 cw;
         f32 ch;
-        f32 top = y + Cw_Y(104.0f);
+        f32 top = y + Cw_Y(86.0f);
         f32 bottom;
         f32 rc = Cw_Y(22.0f);
         s32 i;
         s32 now = 0;
 
         cwp = cwp > 118.0f && !beside ? 118.0f : cwp;
+        cwp = beside ? 128.0f : cwp;
         chp = cwp * 192.0f / 150.0f;
         cw = Cw_X(cwp);
         ch = Cw_Y(chp);
-        bottom = beside ? y + Cw_Y(360.0f) : top + ch + Cw_Y(110.0f);
+        bottom = beside ? top + ch + Cw_Y(24.0f) : top + ch + Cw_Y(90.0f);
         for (i = 0; i < n; i++) {
             if (cell->form[i] == chara) {
                 now = i + 1;
@@ -2173,11 +2289,7 @@ static void Cw_Details(void) {
             p = p > 1.0f ? 1.0f : p * p * (3.0f - 2.0f * p);
             a = x0 + Cw_X(40.0f) + (f32)i * (cw + Cw_X(26.0f)) * p;
             sAlpha = p * e;
-            if (lit) {
-                Cw_Lit(a, top - up, a + cw, top + ch - up, rc, Cw_Y(sV.formActive ? 6.0f : 5.0f));
-            } else {
-                Cw_Card(a, top, a + cw, top + ch, rc, 0, cell->form[i]); /* (each form in its own colour) */
-            }
+            Cw_Card(a, top - up, a + cw, top + ch - up, rc, 0, cell->form[i]); /* (each form in its own colour) */
         }
         Port_GsMarker(GS_CHIP_ON);
         for (i = 0; i < n; i++) {
@@ -2190,10 +2302,30 @@ static void Cw_Details(void) {
             }
             p = p > 1.0f ? 1.0f : p * p * (3.0f - 2.0f * p);
             a = x0 + Cw_X(40.0f) + (f32)i * (cw + Cw_X(26.0f)) * p;
-            Cs_Tex((MTexRes *)MPACK_AT(sV.chipPack, cell->form[i] + 1), a + Cw_X(6.0f), top + Cw_Y(8.0f) - up, a + cw - Cw_X(6.0f), top + ch - Cw_Y(4.0f) - up,
-                   17, 11, 46, 52, 0x80, (s32)(128.0f * p * e)); /* (cut upright, as Cw_Chip) */
+            sAlpha = 1.0f;
+            Cw_Face(cell->form[i], a + Cw_X(5.0f), top + Cw_Y(5.0f) - up, a + cw - Cw_X(5.0f), top + ch - Cw_Y(5.0f) - up, 0x80, p * e);
         }
         Port_GsMarker(GS_CHIP_OFF);
+        for (i = 0; i < n; i++) {
+            f32 p = (t * (f32)(n + 2) - (f32)i) * 0.5f;
+            f32 up = cell->form[i] == chara ? Cw_Y(10.0f) : 0.0f;
+            f32 a;
+
+            if (p <= 0.0f) {
+                continue;
+            }
+            p = p > 1.0f ? 1.0f : p * p * (3.0f - 2.0f * p);
+            a = x0 + Cw_X(40.0f) + (f32)i * (cw + Cw_X(26.0f)) * p;
+            sAlpha = p * e;
+            Cw_Frame(a, top - up, a + cw, top + ch - up, rc, cell->form[i] == chara);
+            {
+                char num[4];
+
+                snprintf(num, sizeof(num), "%d", (int)(i + 1));
+                Cw_Say(a + cw - Cw_X(18.0f), top + ch - Cw_Y(20.0f) - up, num, 60.0f, 0.0f, 1, Ps_Rgba(0x10, 0x10, 0x20, 0x80), Ps_Rgba(0x10, 0x10, 0x20, 0x80));
+                Cw_Say(a + cw - Cw_X(22.0f), top + ch - Cw_Y(24.0f) - up, num, 60.0f, 0.0f, 1, Ps_Rgba(255, 255, 255, 0x80), Ps_Rgba(255, 255, 255, 0x80));
+            }
+        }
         sAlpha = e;
         form[0] = 0;
         if (Cs_IsFighter(chara)) {
@@ -2211,7 +2343,7 @@ static void Cw_Details(void) {
             }
         }
         sAlpha = 1.0f;
-        y = bottom + Cw_Y(30.0f);
+        y = bottom + Cw_Y(16.0f);
     }
 
     /* Personalization and costume: in from the screen's edge when the fighter is chosen, back with the triangle */
@@ -2221,8 +2353,8 @@ static void Cw_Details(void) {
         f32 e = t * t * (3.0f - 2.0f * t);
         s32 sets = sV.plateCount < 4 ? sV.plateCount : 4;
         s32 colors = sV.colorCount < 12 ? sV.colorCount : 12; /* (every costume the fighter has: the game's own count, ChrTbl_WrapCostume) */
-        f32 step = 104.0f; /* (the template's rows, in its pixels; closer when the forms took more room) */
-        f32 room = 1200.0f - y / CW_PXU - 110.0f - 210.0f;
+        f32 step = 80.0f; /* (rows in the template's pixels; closer when the forms took more room) */
+        f32 room = 1200.0f - y / CW_PXU - 90.0f - 170.0f;
         f32 a = x0 + Cw_X(34.0f);
         f32 b = x1 - Cw_X(34.0f);
         f32 rr = Cw_Y(26.0f);
@@ -2231,12 +2363,12 @@ static void Cw_Details(void) {
 
         if (sets > 0 && room < step * (f32)sets) {
             step = room / (f32)sets;
-            step = step < 70.0f ? 70.0f : step;
+            step = step < 56.0f ? 56.0f : step;
         }
         sShift = (1.0f - e) * (x1 - x0 + Cw_X(80.0f));
         sAlpha = e;
-        Cw_Panel(x0, y, x1, y + Cw_Y(110.0f + (f32)sets * step + 210.0f), W_CUSTOM, NULL);
-        ry = y + Cw_Y(110.0f);
+        Cw_Panel(x0, y, x1, y + Cw_Y(90.0f + (f32)sets * step + 170.0f), W_CUSTOM, NULL);
+        ry = y + Cw_Y(90.0f);
         for (i = 0; i < sets; i++) {
             s32 lit = i == sV.plate;
             f32 r0 = ry;
@@ -2244,55 +2376,31 @@ static void Cw_Details(void) {
             f32 mid = (r0 + r1) * 0.5f;
             char num[4];
 
-            if (lit) {
-                Cw_Lit(a, r0, b, r1, rr, Cw_Y(sV.plateActive ? 6.0f : 5.0f));
-                {
-                    /* the tick: a dark ring, a silver tick in it */
-                    f32 cx = b - Cw_X(52.0f);
-                    f32 r = Cw_Y(26.0f);
-
-                    Cs_Ellipse(cx + sShift, mid, Cs_UnitsAcross(r), r, Cs_A(Ps_Rgba(0x1A, 0x1A, 0x24, 0x80)), Cs_A(Ps_Rgba(0x1A, 0x1A, 0x24, 0x80)));
-                    {
-                        f32 tx = cx + sShift;
-                        f32 u = r * 0.4f;
-                        u32 c = Cs_A(CW_LIT);
-
-                        Ps_ScreenQuad(tx - Cs_UnitsAcross(u * 1.3f), mid, tx - Cs_UnitsAcross(u * 0.8f), mid - u * 0.5f, tx - Cs_UnitsAcross(u * 0.3f), mid + u * 1.1f,
-                                      tx - Cs_UnitsAcross(u * 0.3f), mid + u * 0.3f, c, c, c, c);
-                        Ps_ScreenQuad(tx - Cs_UnitsAcross(u * 0.3f), mid + u * 0.3f, tx + Cs_UnitsAcross(u * 1.3f), mid - u * 1.2f, tx - Cs_UnitsAcross(u * 0.3f),
-                                      mid + u * 1.1f, tx + Cs_UnitsAcross(u * 1.5f), mid - u * 0.7f, c, c, c, c);
-                    }
-                }
-            } else {
-                Cw_Plain(a, r0, b, r1, rr);
-            }
+            Cw_Row(a, r0, b, r1, lit);
             num[0] = '0';
             num[1] = (char)('1' + i);
             num[2] = 0;
-            Cw_Say(a + Cw_X(34.0f), mid, num, 42.0f, 0.0f, 0, lit ? CW_DARK_TEXT : Ps_Rgba(0x96, 0x9E, 0xB6, 0x80), lit ? CW_DARK_TEXT : Ps_Rgba(0x96, 0x9E, 0xB6, 0x80));
-            Cs_Rect(a + Cw_X(110.0f) + sShift, r0 + Cw_Y(22.0f), a + Cw_X(113.0f) + sShift, r1 - Cw_Y(22.0f), lit ? Ps_Rgba(0x14, 0x14, 0x1E, 0x40) : Ps_Rgba(0xFF, 0xFF, 0xFF, 0x19),
-                    lit ? Ps_Rgba(0x14, 0x14, 0x1E, 0x40) : Ps_Rgba(0xFF, 0xFF, 0xFF, 0x19));
-            Cw_Say(a + Cw_X(140.0f), mid, (char *)Cs_Words(W_NORMAL + i), 54.0f, b - a - Cw_X(240.0f), 0, lit ? CW_DARK_TEXT : Ps_Rgba(255, 255, 255, 0x80),
-                   lit ? CW_DARK_TEXT : Ps_Rgba(255, 255, 255, 0x80));
+            Cw_Say(a + Cw_X(70.0f), mid, (char *)Cs_Words(W_NORMAL + i), 46.0f, b - a - Cw_X(190.0f), 0, Ps_Rgba(0xFF, 0xF0, 0x96, 0x80),
+                   Ps_Rgba(0xFF, 0xF0, 0x96, 0x80));
+            Cw_Say(b - Cw_X(60.0f), mid + Cw_Y(4.0f), num, 46.0f, 0.0f, 1, Ps_Rgba(255, 255, 255, 0x80), Ps_Rgba(255, 255, 255, 0x80));
             ry += Cw_Y(step);
         }
         /* the costume: one bar of four */
-        ry += Cw_Y(6.0f);
         snprintf(line, sizeof(line), "%d / %d", (int)(sV.color + 1), (int)colors);
         Cw_Head(x0, ry, x1, W_COSTUME, colors > 0 ? line : NULL);
         ry += Cw_Y(72.0f);
         if (colors > 0) {
-            f32 h = Cw_Y(100.0f);
+            f32 h = Cw_Y(84.0f);
             f32 w = (b - a - Cw_X(16.0f)) / (f32)colors;
 
-            Cw_Plain(a, ry, b, ry + h, h * 0.5f);
+            Cw_Slant(a, ry, b, ry + h, Ps_Rgba(0x6E, 0x34, 0x98, 0x70));
             for (i = 0; i < colors; i++) {
                 f32 s0 = a + Cw_X(8.0f) + w * (f32)i;
                 s32 lit = i == sV.color;
                 char digit[4];
 
                 if (lit) {
-                    Cw_Lit(s0, ry + Cw_Y(8.0f), s0 + w, ry + h - Cw_Y(8.0f), Cw_Y(42.0f), Cw_Y(sV.colorActive ? 6.0f : 5.0f));
+                    Cw_Slant(s0, ry + Cw_Y(6.0f), s0 + w, ry + h - Cw_Y(6.0f), Ps_Rgba(0xF0, 0xA8, 0x28, 0x80));
                 }
                 snprintf(digit, sizeof(digit), "%d", (int)(i + 1));
                 Cw_Say(s0 + w * 0.5f, ry + h * 0.5f, digit, colors > 8 ? 44.0f : 56.0f, 0.0f, 1, lit ? CW_DARK_TEXT : Ps_Rgba(0xC8, 0xCE, 0xE0, 0x80),
@@ -2503,48 +2611,17 @@ static void Cw_Wisp(f32 cx, f32 cy, f32 dx, f32 dy, f32 len, f32 wid, u32 mid, u
 /* The transition of the press, as the speed lines were, in dust: brown earth smoke streaming across the screen from the bottom left to the top
    right, in quickly and out quickly, with light and dark streaks racing along it. All drawn; nothing of the game's. t: frames since the press. */
 static void Cw_Dust(s32 t) {
-    static const f32 dx = 0.906f, dy = -0.423f; /* their way, up to the right */
-    static const u8 tone[4][3] = {{0xD2, 0xD5, 0xDC}, {0x9A, 0x9F, 0xA9}, {0xE6, 0xE9, 0xEE}, {0x78, 0x7E, 0x88}}; /* light, mid, pale, dark grey (the user: grey, not brown) */
-    f32 env;
-    s32 k;
+    /* the user's cartoon smoke (28/11; streaks of dust before): its frames, on the same clock: coming in until the
+       screen is covered at CS_FX_RISE (its frame 11), covered a moment, gone by CS_FX_END */
+    s32 n;
 
     if (!CS_DUST || t < 0 || t >= CS_FX_END) {
         return;
     }
-    env = t < CS_FX_RISE ? (f32)t / (f32)CS_FX_RISE : t < CS_FX_HOLD ? 1.0f : 1.0f - (f32)(t - CS_FX_HOLD) / (f32)(CS_FX_END - CS_FX_HOLD);
-    env = env * env * (3.0f - 2.0f * env);
-    {   /* the ground of it: sand at the top, earth at the bottom */
-        u32 c0 = Ps_Rgba(0xC6, 0xC9, 0xD0, (s32)(0x80 * env)), c1 = Ps_Rgba(0x9C, 0xA1, 0xAB, (s32)(0x80 * env));
-
-        Ps_ScreenQuad(-40.0f, -40.0f, 552.0f, -40.0f, -40.0f, 488.0f, 552.0f, 488.0f, c0, c0, c1, c1);
-    }
-    for (k = 0; k < 22; k++) { /* the smoke: wide soft streaks racing along, each at its own speed, thick and thin */
-        u32 h = (u32)(k * 2654435761u) ^ 0x9E3779B9u;
-        f32 r0 = (f32)(h & 0xFF) / 255.0f, r1 = (f32)((h >> 8) & 0xFF) / 255.0f, r2 = (f32)((h >> 16) & 0xFF) / 255.0f, r3 = (f32)((h >> 24) & 0xFF) / 255.0f;
-        f32 len = 300.0f + 420.0f * r0, wid = 60.0f + 110.0f * r1;
-        f32 across = -300.0f + 800.0f * r2;
-        f32 along = (f32)((s32)(r0 * 900.0f + (f32)t * (18.0f + 22.0f * r3)) % 1000) - 380.0f;
-        f32 sway = sinf((f32)t * 0.09f + r1 * 6.2832f) * 16.0f; /* (it billows a little as it goes) */
-        f32 cx = 256.0f + along * dx - (across + sway) * dy, cy = 224.0f + along * dy + (across + sway) * dx;
-        const u8 *c = tone[k & 3];
-        s32 a = (s32)(0x80 * env * (0.82f + 0.18f * r3));
-
-        Cw_Wisp(cx, cy, dx, dy, len, wid, Ps_Rgba(c[0], c[1], c[2], a), Ps_Rgba(c[0], c[1], c[2], 0));
-    }
-    for (k = 0; k < 26; k++) { /* the streaks over it, thin: light dust and dark earth */
-        u32 h = (u32)(k * 2246822519u) ^ 0x85EBCA6Bu;
-        f32 r0 = (f32)(h & 0xFF) / 255.0f, r1 = (f32)((h >> 8) & 0xFF) / 255.0f, r2 = (f32)((h >> 16) & 0xFF) / 255.0f;
-        f32 len = 90.0f + 220.0f * r0, thick = 2.0f + 8.0f * r1;
-        f32 across = -260.0f + 760.0f * r2;
-        f32 along = (f32)((s32)((r0 * 900.0f + (f32)t * 30.0f)) % 900) - 300.0f;
-        f32 cx = 256.0f + along * dx - across * dy, cy = 224.0f + along * dy + across * dx;
-        f32 hx = dx * len * 0.5f, hy = dy * len * 0.5f, nx = -dy * thick * 0.5f, ny = dx * thick * 0.5f;
-        s32 light = (h >> 24) & 1;
-        u32 c = light ? Ps_Rgba(0xF8, 0xFA, 0xFF, (s32)(0x80 * env)) : Ps_Rgba(0x5C, 0x62, 0x6E, (s32)(0x80 * env));
-        u32 tl = light ? Ps_Rgba(0xF8, 0xFA, 0xFF, 0) : Ps_Rgba(0x5C, 0x62, 0x6E, 0);
-
-        Ps_ScreenQuad(cx - hx - nx, cy - hy - ny, cx + hx - nx, cy + hy - ny, cx - hx + nx, cy - hy + ny, cx + hx + nx, cy + hy + ny, tl, c, tl, c);
-    }
+    n = t < CS_FX_RISE ? t * 12 / CS_FX_RISE : t < CS_FX_HOLD ? 12 + (t - CS_FX_RISE) * 2 / (CS_FX_HOLD - CS_FX_RISE) :
+        14 + (t - CS_FX_HOLD) * (TBO_SMOKE_FRAMES - 14) / (CS_FX_END - CS_FX_HOLD);
+    n = n < 0 ? 0 : n >= TBO_SMOKE_FRAMES ? TBO_SMOKE_FRAMES - 1 : n;
+    Ps_Sprite(TBO_SMOKE_BASE + n, Cs_PageX(-4.0f), Cs_PageY(-2.0f), Cs_PageX(516.0f), Cs_PageY(450.0f), 0.0f, 0.0f, 1.0f, 1.0f, PS_PLAIN, 0x80);
 }
 
 static void Cw_Draw(void) {
@@ -2627,7 +2704,7 @@ static void Cw_Draw(void) {
             ChrView_PortFrame(middle, sYawOf, sShownChara, sShownCostume, 0);
         }
     }
-    if (Port_Setting("select_native_ui", 0)) { /* (off until it is tried on a phone, the user's choice: select_native_ui = 1 turns it on) */
+    if (Port_Setting("select_native_ui", 1)) { /* (on since 2026-11-28, the user: crisp menus; select_native_ui = 0 turns it off) */
         Port_GsMarker(GS_NATIVE_ON); /* (from here to PortCharSel_DrawEnd: the screen's 2D, at the screen's resolution) */
     }
     if (sCine >= 0) { /* the way to the battle: only the 3D, and the speed lines over it */
@@ -2654,6 +2731,7 @@ static void Cw_Draw(void) {
     Cw_Grid();
     Cw_Foot();
     Cw_UiRight();
+    Cw_Name();
     Cw_Details();
     Cw_UiOff();
     if (sV.done && sCineBlank == 0 && (Port_NetActive() || Port_NetSession())) {

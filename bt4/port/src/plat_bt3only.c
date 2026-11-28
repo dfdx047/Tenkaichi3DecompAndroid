@@ -48,7 +48,7 @@ int Port_SelectTurnMilli(void) {
     static int v = -100000;
     if (v == -100000) {
         const char *e = getenv("BT4_SELECT_TURN");
-        v = e != NULL && e[0] != '\0' ? atoi(e) : 750; /* (a little to the screen's left, as the user's picture) */
+        v = e != NULL && e[0] != '\0' ? atoi(e) : 420; /* (turned more to the front, 2026-11-28; 750 before) */
     }
     return v;
 }

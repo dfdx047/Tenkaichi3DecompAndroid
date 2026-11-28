@@ -70,7 +70,11 @@
     X(TBO_TD_WIN_GOLD, "td_win_gold") /* the inner pages' pieces (port/tools/tbo_page_art.py): a window with a gold edge, */ \
     X(TBO_TD_CARD_ON, "td_card_on") /* the chosen card, */ \
     X(TBO_TD_CELL, "td_cell")       /* a light cell, */ \
-    X(TBO_TD_TILE, "td_tile")       /* a room code's letter */
+    X(TBO_TD_TILE, "td_tile")       /* a room code's letter */ \
+    X(TBO_CS_FRAME, "cs_frame")     /* the select's portrait edge, */ \
+    X(TBO_CS_FRAME_SEL, "cs_frame_sel") /* the chosen one's, */ \
+    X(TBO_CS_STAR_ON, "cs_star_on") /* its stars, */ \
+    X(TBO_CS_STAR_OFF, "cs_star_off") /* and unlit */
 
 #define TBO_MAIN_ONLINE_OFF (TBO_ART_COUNT + 16)
 #define TBO_MAIN_ONLINE_ON (TBO_ART_COUNT + 17)
@@ -97,6 +101,14 @@ enum { TBO_ART_LIST(TBO_ART_ENUM) TBO_ART_COUNT };
 /* The Profile's avatar (Android): the large portrait of the player's most used character, the character select's own
    (256 x 512; gs/gs_draw.c reads it when the character changes, Port_TboFavWant / Port_TboFavFace). */
 #define TBO_FAV_PORTRAIT 0x210
+
+/* BT4's large portraits cut round the face (port/src/gs/bt4_face.inc): TBO_FACE_BASE + fighter, 136 x 176. */
+#define TBO_FACE_BASE 0x1000
+
+/* The cartoon smoke across the way to the battle (the user's film of 28/11, its frames: port/tbo/ui/smoke/NN.png,
+   white and gray on clear). */
+#define TBO_SMOKE_BASE 0x1200
+#define TBO_SMOKE_FRAMES 48
 void Port_TboFavWant(int chara);               /* the character whose portrait the picture is to be (-1: none) */
 int Port_TboFavFace(int chara, float face[3]); /* 1 when the picture is that character's: its face point and head size */
 
