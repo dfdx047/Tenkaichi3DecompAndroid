@@ -57,3 +57,7 @@ bt3_mods.txt
 android/.kotlin/
 apply_dragonrage_patch*.py
 /lab-apk/
+
+# cache do wrangler (traz o nome da conta Cloudflare)
+.wrangler/
+.dev.vars
