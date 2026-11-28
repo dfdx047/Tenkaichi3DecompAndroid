@@ -4,10 +4,11 @@
 </head><body>
 <canvas id="c" width="1920" height="1080"></canvas>
 <script>
-// 2D anime-style (cel shaded, ink outlines, flat colors) intro. Rendered at 24 fps.
+// 2D retro-anime intro: field -> launch -> chase up through the sky into space -> slam into the title.
+// Front-facing camera only. Rendered at 24 fps, supersampled.
 const W = 1920, H = 1080;
 const RENDER = new URLSearchParams(location.search).has('render');
-const SS = RENDER ? 2 : 1;                 // supersample when rendering video (smooth edges)
+const SS = RENDER ? 2 : 1;
 const WD = W * SS, HD = H * SS;
 const out = document.getElementById('c');
 out.width = WD; out.height = HD;
@@ -18,6 +19,11 @@ const sctx = sceneCv.getContext('2d'), tctx = textCv.getContext('2d');
 let ctx = sctx;
 
 const BG = '#0e111c', INK = '#140c10', ORANGE = '#ffa21a', YELLOW = '#ffd23f', WHITE = '#fffbea', AMBER = '#ff8a00', RED = '#d9271c';
+
+// character art (user supplied)
+const HERO = new Image();
+const READY = new Promise(r => { HERO.onload = r; HERO.src = 'gohan.jpg'; });
+const IW = 832, IH = 1248;
 
 // ---------- helpers ----------
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
@@ -34,7 +40,8 @@ const linear = k => k;
 const rand = i => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
 const spring = (dt, freq = 22, damp = 7) => dt < 0 ? 0 : Math.exp(-damp * dt) * Math.cos(freq * dt);
 const bell = k => Math.sin(clamp(k) * Math.PI);
-const boilAt = t => Math.floor(t * 12);          // drawings "boil" on twos
+const boilAt = t => Math.floor(t * 12);
+const mixHex = (a, b, k) => { const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)); const A = p(a), B = p(b); return `rgb(${A.map((v, i) => Math.round(lerp(v, B[i], clamp(k)))).join(',')})`; };
 
 // ---------- final layout (matches the logo) ----------
 const TITLE = 'DRAGON RAGE';
@@ -50,20 +57,20 @@ function layout() {
   L = { ball: { x: left + FINAL_R, y: H / 2 + 6 }, textX, titleW, titleY: H / 2 - 8, subY: H / 2 + 92, letters };
 }
 
-// ---------- timeline (shared with audio.py) ----------
+// ---------- timeline ----------
 const C = { x: W / 2, y: H / 2 };
-const R0 = 140;
 const T = {
-  charge: [0, .45], appear: [.45, .72], shine: [.88, 1.18],
-  antic: [1.35, 1.5], launch: [1.5, 1.85],
-  side1: [1.85, 3.4], insert1: [2.5, 2.68], boom1: 2.95,
-  front: [3.4, 3.95],
-  side2: [3.95, 5.0], boom2: 4.2, insert2: [4.33, 4.5], surge: [4.6, 4.88],
-  arrive: [5.12, 5.33], hit: 5.33,
+  open: [0, 1.7], glowIn: .35,
+  face: [1.7, 2.1],
+  launch: [2.1, 2.8], kiBurst: 2.1, ballGone: 2.42,
+  sky: [2.8, 3.83], breach: 3.75,
+  space: [3.83, 4.72],
+  insert: [4.72, 4.92],
+  arrive: [4.92, 5.18], hit: 5.18,
 };
 const HOLD = T.hit + .085;
-const DURATION = 7.9;
-const spinAt = t => { const k = prog(t, T.antic[0], T.hit); return (1 - Math.pow(1 - Math.pow(k, 2.2), 3)) * Math.PI * 2 * 10; };
+const DURATION = T.hit + 2.6;
+const spinAt = t => { const k = prog(t, T.kiBurst, T.hit); return (1 - Math.pow(1 - Math.pow(k, 2.2), 3)) * Math.PI * 2 * 10; };
 
 // ---------- cel-shaded ball ----------
 function starPath(cx, cy, r, sx, sy) {
@@ -76,9 +83,8 @@ function starPath(cx, cy, r, sx, sy) {
   ctx.closePath();
 }
 const STARS = [[-0.30, -0.36], [0.30, -0.36], [-0.30, 0.20], [0.30, 0.20]];
-
 function celBall(r, spin, shineK, o = {}) {
-  const ow = Math.max(3, r * .05);
+  const ow = Math.max(3, r * .055);
   if (o.silhouette) { ctx.fillStyle = o.silhouette; ctx.beginPath(); ctx.arc(0, 0, r + ow / 2, 0, Math.PI * 2); ctx.fill(); return; }
   ctx.save(); ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.clip();
   ctx.fillStyle = ORANGE; ctx.fillRect(-r, -r, r * 2, r * 2);
@@ -89,10 +95,8 @@ function celBall(r, spin, shineK, o = {}) {
     ctx.fillStyle = RED; ctx.fill();
     ctx.strokeStyle = INK; ctx.lineWidth = r * .018; ctx.lineJoin = 'round'; ctx.stroke();
   }
-  // hard cel shadow crescent
   ctx.beginPath(); ctx.rect(-r, -r, r * 2, r * 2); ctx.arc(-r * .17, -r * .21, r * 1.0, 0, Math.PI * 2, true);
   ctx.fillStyle = 'rgba(190,60,0,.55)'; ctx.fill('evenodd');
-  // second, deeper core shadow
   ctx.beginPath(); ctx.rect(-r, -r, r * 2, r * 2); ctx.arc(-r * .3, -r * .36, r * 1.1, 0, Math.PI * 2, true);
   ctx.fillStyle = 'rgba(120,30,0,.35)'; ctx.fill('evenodd');
   if (shineK > 0 && shineK < 1) {
@@ -102,19 +106,15 @@ function celBall(r, spin, shineK, o = {}) {
     ctx.fillRect(p * r + r * .24, -r * 2, r * .08, r * 4);
   }
   ctx.restore();
-  // hard highlight
   ctx.save(); ctx.translate(-r * .36, -r * .46); ctx.rotate(-.55);
   ctx.fillStyle = WHITE; ctx.beginPath(); ctx.ellipse(0, 0, r * .24, r * .12, 0, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
   ctx.fillStyle = WHITE; ctx.beginPath(); ctx.arc(-r * .08, -r * .66, r * .055, 0, Math.PI * 2); ctx.fill();
-  // rim light
   ctx.strokeStyle = 'rgba(255,240,170,.9)'; ctx.lineWidth = r * .05;
   ctx.beginPath(); ctx.arc(0, 0, r * .9, Math.PI * .1, Math.PI * .4); ctx.stroke();
-  // ink outline
   ctx.strokeStyle = INK; ctx.lineWidth = ow;
   ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
 }
-
 function drawBall(x, y, r, t, o = {}) {
   if (r <= .5) return;
   const st = o.stretch || 1, ang = o.ang || 0, sq = o.squash || 0;
@@ -123,27 +123,14 @@ function drawBall(x, y, r, t, o = {}) {
   celBall(r, spinAt(t), o.shine || 0, o);
   ctx.restore();
 }
-function drawBallFn(pos, t, b, o = {}) {
-  const p = pos(t - 1 / 240);
-  let ang = 0, st = 1;
-  if (p && Math.abs(p.x - b.x) < 600) {
-    const vx = (b.x - p.x) * 240, vy = (b.y - p.y) * 240;
-    ang = Math.atan2(vy, vx); st = 1 + clamp(Math.hypot(vx, vy) / 7000, 0, .85);
-  }
-  drawBall(b.x, b.y, b.r, t, { ...o, ang, stretch: st });
-}
-// flat smear ghosts
-function ghostsFn(pos, t, n, step) {
-  const now = pos(t);
-  for (let i = n; i >= 1; i--) {
-    const b = pos(t - i * step);
-    if (!b || !now || Math.abs(b.x - now.x) > 900 || b.r < 2) continue;
-    ctx.fillStyle = i % 2 ? 'rgba(255,170,40,.55)' : 'rgba(255,220,90,.45)';
-    ctx.beginPath(); ctx.arc(b.x, b.y, b.r * (1 - i * .08), 0, Math.PI * 2); ctx.fill();
-  }
+function glow(x, y, r, s, rad = 2.1) {
+  if (s <= 0) return;
+  const g = ctx.createRadialGradient(x, y, r * .7, x, y, r * rad);
+  g.addColorStop(0, `rgba(255,200,70,${.6 * s})`); g.addColorStop(.45, `rgba(255,160,40,${.2 * s})`); g.addColorStop(1, 'rgba(255,140,30,0)');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * rad, 0, Math.PI * 2); ctx.fill();
 }
 
-// closed path through points using quadratic curves between midpoints (no hard corners)
+// ---------- flat energy trails / aura ----------
 function smoothClosed(P) {
   ctx.beginPath();
   const n = P.length, m = i => [(P[i % n][0] + P[(i + 1) % n][0]) / 2, (P[i % n][1] + P[(i + 1) % n][1]) / 2];
@@ -151,13 +138,11 @@ function smoothClosed(P) {
   for (let i = 0; i < n; i++) ctx.quadraticCurveTo(P[i][0], P[i][1], ...m(i));
   ctx.closePath();
 }
-
-// ---------- flat energy trails ----------
-function ribbonPts(s, t, alpha = 1) {
+function ribbonPts(s, t, alpha = 1, cols = [AMBER, YELLOW, WHITE]) {
   if (alpha <= 0 || s.length < 2) return;
   const boil = boilAt(t);
   ctx.save(); ctx.globalAlpha = alpha;
-  for (const [wm, col] of [[1, AMBER], [.62, YELLOW], [.26, WHITE]]) {
+  [[1, cols[0]], [.62, cols[1]], [.26, cols[2]]].forEach(([wm, col]) => {
     const Lp = [], Rp = [];
     for (let i = 0; i < s.length; i++) {
       const p = s[Math.max(0, i - 1)], q = s[Math.min(s.length - 1, i + 1)];
@@ -166,36 +151,24 @@ function ribbonPts(s, t, alpha = 1) {
       Lp.push([s[i].x + nx * s[i].w * wm * j, s[i].y + ny * s[i].w * wm * j]);
       Rp.push([s[i].x - nx * s[i].w * wm * (2 - j), s[i].y - ny * s[i].w * wm * (2 - j)]);
     }
-    ctx.fillStyle = col;
-    smoothClosed(Lp.concat(Rp.reverse())); ctx.fill();
-  }
+    ctx.fillStyle = col; smoothClosed(Lp.concat(Rp.reverse())); ctx.fill();
+  });
   ctx.restore();
 }
-function ribbonFn(pos, t, win, widthMul, alpha = 1) {
-  const N = 26, pts = [];
-  for (let i = 0; i <= N; i++) {
-    const b = pos(t - i / N * win);
-    if (!b || b.r < 2) break;
-    if (pts.length && Math.hypot(b.x - pts[pts.length - 1].x, b.y - pts[pts.length - 1].y) > 700) break;
-    pts.push({ x: b.x, y: b.y, w: b.r * widthMul * Math.pow(1 - i / N, .8) });
-  }
-  ribbonPts(pts, t, alpha);
-}
-function streamTrail(x, y, r, len, t) {
-  const pts = [], boil = boilAt(t);
+// trail pointing along angle `dir` (radians) behind the ball
+function trail(x, y, r, len, dir, t, cols) {
+  const pts = [], boil = boilAt(t), dx = Math.cos(dir), dy = Math.sin(dir);
   for (let i = 0; i <= 26; i++) {
-    const s = i / 26;
-    pts.push({ x: x - s * len, y: y + Math.sin(s * 6 + boil * 1.3) * r * .14 * s, w: r * .92 * Math.pow(1 - s, .7) });
+    const s = i / 26, wob = Math.sin(s * 6 + boil * 1.3) * r * .14 * s;
+    pts.push({ x: x + dx * s * len - dy * wob, y: y + dy * s * len + dx * wob, w: r * .92 * Math.pow(1 - s, .7) });
   }
-  ribbonPts(pts, t);
+  ribbonPts(pts, t, 1, cols);
 }
-
-// ---------- flat spiky ki aura ----------
-function aura(x, y, r, dir, bend, size, t, alpha = 1) {
+function aura(x, y, r, dir, bend, size, t, alpha = 1, cols = [AMBER, YELLOW, WHITE]) {
   if (alpha <= 0 || size <= 0) return;
   const boil = boilAt(t), N = 24;
-  ctx.save(); ctx.globalAlpha = alpha; ctx.lineJoin = 'miter';
-  [[1, AMBER], [.68, YELLOW], [.4, WHITE]].forEach(([ls, col], li) => {
+  ctx.save(); ctx.globalAlpha = alpha;
+  [[1, cols[0]], [.68, cols[1]], [.4, cols[2]]].forEach(([ls, col], li) => {
     ctx.beginPath();
     for (let i = 0; i < N * 2; i++) {
       const ang = i / (N * 2) * Math.PI * 2, tip = i % 2 === 0;
@@ -238,18 +211,16 @@ function sunburst(cx, cy, c1, c2, n, rot) {
   }
   ctx.restore();
 }
-function speedLines(t, k, dir, seed, n = 40, rgb = '255,250,235') {
+// vertical speed lines (things rushing downward past the camera)
+function speedLinesV(t, k, seed, n = 50, rgb = '255,250,235') {
   if (k <= 0) return;
   ctx.save(); ctx.setTransform(SS, 0, 0, SS, 0, 0);
   const f = boilAt(t * 2);
   for (let i = 0; i < n; i++) {
-    const y = rand(seed + i + f * 3) * H, len = 250 + rand(seed + i + 50 + f) * 800, x = rand(seed + i + 3 + f * 7) * (W + len) - len;
+    const x = rand(seed + i + f * 3) * W, len = 200 + rand(seed + i + 50 + f) * 700, y = rand(seed + i + 3 + f * 7) * (H + len) - len;
     const w = 2 + rand(seed + i + 11) * 7;
     ctx.fillStyle = `rgba(${rgb},${clamp(k) * (.35 + rand(seed + i + 7) * .65)})`;
-    ctx.beginPath();
-    if (dir < 0) { ctx.moveTo(x, y - w / 2); ctx.lineTo(x + len, y); ctx.lineTo(x, y + w / 2); }
-    else { ctx.moveTo(x + len, y - w / 2); ctx.lineTo(x, y); ctx.lineTo(x + len, y + w / 2); }
-    ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x - w / 2, y); ctx.lineTo(x, y + len); ctx.lineTo(x + w / 2, y); ctx.fill();
   }
   ctx.restore();
 }
@@ -266,7 +237,7 @@ function twinkle(x, y, s, a) {
   ctx.closePath(); ctx.stroke(); ctx.fill(); ctx.restore();
 }
 function screenFill(col, a) { if (a <= 0) return; ctx.save(); ctx.setTransform(SS, 0, 0, SS, 0, 0); ctx.globalAlpha = clamp(a); ctx.fillStyle = col; ctx.fillRect(0, 0, W, H); ctx.restore(); }
-function letterbox(k) { FX.lb = Math.max(FX.lb || 0, k); } // cinematic bars, drawn after post FX
+function letterbox(k) { FX.lb = Math.max(FX.lb || 0, k); }
 
 // ---------- camera ----------
 function interpKeys(K, t) {
@@ -280,298 +251,269 @@ function applyCam(x, y, zoom, rot, sx = 0, sy = 0) {
   ctx.setTransform(SS, 0, 0, SS, 0, 0);
   ctx.translate(W / 2 + sx, H / 2 + sy); ctx.rotate(rot); ctx.scale(zoom, zoom); ctx.translate(-x, -y);
 }
-// jittery hand-animated shake (new offset every frame)
 const shakeXY = (t, s) => { const f = Math.floor(t * 24); return [(rand(f * 3 + 1) - .5) * 2 * s, (rand(f * 3 + 2) - .5) * 1.4 * s]; };
 
-function dotsBackdrop(t, cx, cy, zoom, rot) {
-  ctx.save(); ctx.setTransform(SS, 0, 0, SS, 0, 0);
-  ctx.translate(W / 2, H / 2); ctx.rotate(rot); ctx.translate(-W / 2, -H / 2);
-  for (const [depth, n, size, col, seed] of [[.4, 40, 3, 'rgba(120,130,220,.35)', 0], [1, 30, 4, 'rgba(220,225,255,.45)', 100]]) {
-    const span = W + 800, spanY = H + 800;
-    for (let i = 0; i < n; i++) {
-      let x = (rand(seed + i) * span * 2 - (cx - C.x) * depth * zoom) % span; if (x < 0) x += span;
-      let y = (rand(seed + i + 50) * spanY * 2 - (cy - C.y) * depth * zoom) % spanY; if (y < 0) y += spanY;
-      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x - 400, y - 400, size * .7, 0, Math.PI * 2); ctx.fill();
-    }
-  }
+// =====================================================================
+// SHOT 1 — the field. The art is placed in "field space": 1080 tall, centered.
+// =====================================================================
+const HS = H / IH;
+const HX = C.x - IW * HS / 2, HY = 0;
+const hp = (ix, iy) => ({ x: HX + ix * HS, y: HY + iy * HS });
+const BALL_HOLD = hp(418, 470);                // ball floats in front of the crossed arms
+const BALL_HOLD_R = 62;
+
+let FIELD_CV = null;
+function prepField() {
+  // feathered copy of the art (sides fade out) at native resolution
+  FIELD_CV = document.createElement('canvas'); FIELD_CV.width = IW; FIELD_CV.height = IH;
+  const c = FIELD_CV.getContext('2d');
+  c.drawImage(HERO, 0, 0);
+  c.globalCompositeOperation = 'destination-in';
+  const g = c.createLinearGradient(0, 0, IW, 0);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.08, 'rgba(0,0,0,1)'); g.addColorStop(.92, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = g; c.fillRect(0, 0, IW, IH);
+}
+function drawField(t) {
+  // extend the art to 16:9 by stretching its edge columns (blurred), then the art with feathered sides
+  const w = IW * HS, h = IH * HS;
+  // depth-of-field backdrop: the art itself, scaled to cover the frame, blurred and a little darker
+  ctx.save();
+  ctx.filter = `blur(${14 * SS}px) brightness(.82) saturate(1.15)`;
+  // only the landscape margins of the art (no character) fill the sides
+  ctx.drawImage(HERO, 0, 0, 150, IH, -700, HY - 30, HX + 760, h + 60);
+  ctx.drawImage(HERO, IW - 140, 0, 140, IH, HX + w - 60, HY - 30, HX + 760, h + 60);
+  ctx.filter = 'none';
   ctx.restore();
+  ctx.fillStyle = '#b9a586'; ctx.fillRect(-900, HY + h - 2, W + 1800, 1400);   // ground below the art (tilt-up)
+  ctx.fillStyle = '#5f9fe0'; ctx.fillRect(-900, HY - 2400, W + 1800, 2402);    // sky above the art (tilt-up)
+  const g = ctx.createLinearGradient(0, HY - 2400, 0, HY + 40);
+  g.addColorStop(0, '#2f6fc8'); g.addColorStop(1, '#5f9fe0');
+  ctx.fillStyle = g; ctx.fillRect(-900, HY - 2400, W + 1800, 2402);
+  ctx.drawImage(FIELD_CV, HX - 1, HY, w + 2, h);
+  // drifting dust & pebbles
+  for (let i = 0; i < 26; i++) {
+    const x = ((rand(i + 40) * (W + 400) + t * (60 + rand(i) * 140)) % (W + 400)) - 200;
+    const y = (rand(i + 80) * H * 1.1 - t * (20 + rand(i + 3) * 40) + H * 2) % (H * 1.1);
+    ctx.fillStyle = i % 3 ? 'rgba(210,190,160,.8)' : 'rgba(120,100,80,.9)';
+    ctx.beginPath(); ctx.ellipse(x, y, 3 + rand(i + 5) * 6, 2 + rand(i + 6) * 4, rand(i) * 3, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+const CAM1 = [
+  [0.00, C.x, C.y - 10, 1.0, 0, null],
+  [1.70, C.x + 10, C.y - 70, 1.28, -.02, easeInOut],
+];
+const CAM_L = [
+  [T.launch[0], BALL_HOLD.x, BALL_HOLD.y - 40, 1.35, .03, null],
+  [T.launch[0] + .3, BALL_HOLD.x, BALL_HOLD.y - 60, 1.2, -.02, easeOutExpo],
+  [T.launch[1], BALL_HOLD.x, BALL_HOLD.y - 1500, 1.05, .04, easeInCubic],
+];
+function ballLaunch(t) {
+  if (t < T.kiBurst + .06) return { x: BALL_HOLD.x, y: BALL_HOLD.y, r: BALL_HOLD_R };
+  const k = prog(t, T.kiBurst + .06, T.ballGone);
+  return { x: BALL_HOLD.x + Math.sin(k * 3) * 10, y: BALL_HOLD.y - easeInCubic(k) * 1500, r: BALL_HOLD_R * lerp(1, .85, k) };
+}
+
+function shotOpen(t) {
+  const [cx, cy, z, rot] = interpKeys(CAM1, t);
+  applyCam(cx, cy, z, rot);
+  drawField(t);
+  const gk = prog(t, T.glowIn, T.glowIn + .35);
+  if (gk > 0) {
+    const bob = Math.sin(t * 3.2) * 6;
+    const r = BALL_HOLD_R * Math.max(0, easeOutBack(gk, 2.6));
+    glow(BALL_HOLD.x, BALL_HOLD.y + bob, r, 1.2, 2.6);
+    aura(BALL_HOLD.x, BALL_HOLD.y + bob, r, -Math.PI / 2, .25, .35 + .1 * Math.sin(t * 9), t, gk);
+    drawBall(BALL_HOLD.x, BALL_HOLD.y + bob, r, t, { shine: prog(t, .95, 1.25) });
+    const pk = prog(t, T.glowIn, T.glowIn + .4);
+    if (pk < 1) { ring(BALL_HOLD.x, BALL_HOLD.y, BALL_HOLD_R * lerp(1, 3, easeOutExpo(pk)), 10 * (1 - pk) + 1, 1 - pk); shock(BALL_HOLD.x, BALL_HOLD.y, BALL_HOLD_R * lerp(1, 3, easeOutExpo(pk)), 22, .06 * (1 - pk)); }
+    const tk = prog(t, 1.25, 1.45);
+    twinkle(BALL_HOLD.x + r * .55, BALL_HOLD.y - r * .65 + bob, 60 * bell(tk), 1);
+  }
+  screenFill('#000', 1 - prog(t, 0, .3));
+  letterbox(1);
 }
 
 // =====================================================================
-// SHOT 1 — awakening + launch into the lens
+// SHOT 2 — eyes close-up
 // =====================================================================
-const CAM1 = [
-  [0.00, C.x, C.y, .9, -.05, null],
-  [0.45, C.x, C.y, 1.16, .03, easeInQuad],
-  [0.50, C.x, C.y, 1.45, -.04, easeOutExpo],
-  [0.75, C.x, C.y, 1.22, .03, easeOutCubic],
-  [1.18, C.x + 25, C.y - 12, 1.55, -.04, easeInOut],
-  [1.35, C.x + 10, C.y - 5, 1.45, .02, easeOutCubic],
-  [1.50, C.x - 90, C.y + 10, .95, -.14, easeOutExpo],
-  [1.85, C.x + 120, C.y + 40, 1.15, .1, easeInCubic],
-];
-function pos1(t) {
-  if (t < T.appear[0]) return null;
-  if (t < T.antic[0]) {
-    const s = Math.max(0, easeOutBack(prog(t, ...T.appear), 3));
-    const bob = Math.sin((t - T.appear[1]) * 6) * 6 * prog(t, T.appear[1], T.appear[1] + .2);
-    return { x: C.x, y: C.y + bob, r: R0 * s };
-  }
-  if (t < T.launch[0]) { const k = easeOutCubic(prog(t, ...T.antic)); return { x: C.x - 60 * k, y: C.y + 12 * k, r: R0 * lerp(1, .85, k) }; }
-  const e = easeInCubic(prog(t, ...T.launch));
-  return { x: lerp(C.x - 60, C.x + 240, e), y: lerp(C.y + 12, C.y + 90, e), r: R0 * lerp(.85, 17, e) };
+function shotFace(t) {
+  const k = prog(t, ...T.face);
+  const cw = lerp(600, 520, easeOutCubic(k)), ch = cw * 9 / 16, ccx = 418, ccy = 238;
+  applyCam(C.x, C.y, 1, 0, ...shakeXY(t, 6));
+  ctx.drawImage(HERO, ccx - cw / 2, ccy - ch / 2, cw, ch, 0, 0, W, H);
+  ctx.fillStyle = 'rgba(10,8,30,.55)'; ctx.fillRect(0, 0, W, H * .22); ctx.fillRect(0, H * .78, W, H * .22);
+  focusLines(C.x, C.y + 20, .9, 8800, '255,255,255', 560, 70);
+  const gk = prog(t, T.face[0] + .1, T.face[0] + .3);
+  for (const ex of [.37, .66]) twinkle(W * ex, H * .5, 70 * bell(gk), 1);
+  screenFill(WHITE, 1 - prog(t, T.face[0], T.face[0] + .085));
+  zoomFX(C.x, C.y, .06 + .05 * k); FX.ca = 4;
+  letterbox(1);
 }
-function shot1(t) {
-  // pop frames: flat orange burst panel
-  const popK = t - T.appear[0];
-  if (popK >= 0 && popK < .085) {
-    sunburst(C.x, C.y, AMBER, YELLOW, 24, popK * 3);
-    const [cx, cy, z, rot] = interpKeys(CAM1, t); applyCam(cx, cy, z, rot);
-    focusLines(C.x, C.y, 1, 900, '20,12,16', 180);
-    const b = pos1(t); if (b) drawBall(b.x, b.y, Math.max(b.r, 60), t, { silhouette: INK });
-    zoomFX(C.x, C.y, .18); FX.ca = 12; FX.warp = 6;
+
+// =====================================================================
+// SHOT 3 — ki burst, the ball is launched upward, camera tilts after it
+// =====================================================================
+function shotLaunch(t) {
+  const d = t - T.kiBurst;
+  if (d >= 0 && d < .085) {
+    const white = d < .042;
+    const [cx, cy, z, rot] = interpKeys(CAM_L, t);
+    ctx.save(); ctx.setTransform(SS, 0, 0, SS, 0, 0); ctx.fillStyle = white ? WHITE : '#000'; ctx.fillRect(0, 0, W, H); ctx.restore();
+    applyCam(cx, cy, z, rot, ...shakeXY(t, 24));
+    // manga-style high-contrast impact frame of the art
+    ctx.save();
+    ctx.filter = white ? 'grayscale(1) contrast(7) brightness(1.35)' : 'grayscale(1) contrast(7) brightness(1.35) invert(1)';
+    ctx.drawImage(FIELD_CV, HX, HY, IW * HS, IH * HS);
+    ctx.restore();
+    focusLines(BALL_HOLD.x, BALL_HOLD.y, 1, 9100, white ? '20,12,16' : '255,250,235', 140, 110);
+    ctx.save(); ctx.translate(BALL_HOLD.x, BALL_HOLD.y); celBall(BALL_HOLD_R * 1.1, 0, 0, { silhouette: white ? INK : WHITE }); ctx.restore();
+    zoomFX(BALL_HOLD.x, BALL_HOLD.y, .2); FX.ca = 16; FX.warp = 10;
+    letterbox(1);
     return;
   }
-  let [cx, cy, z, rot] = interpKeys(CAM1, t);
-  let sh = 0;
-  const ap = prog(t, T.appear[0], T.appear[0] + .25); if (ap > 0 && ap < 1) sh = 22 * (1 - ap);
-  const lk = prog(t, ...T.launch); if (lk > 0) sh = Math.max(sh, 26 * lk);
-  if (t > T.antic[0] && t < T.antic[0] + .08) sh = 14;
-  ctx.setTransform(SS, 0, 0, SS, 0, 0); ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
-  dotsBackdrop(t, cx, cy, z, rot);
-  speedLines(t, lk * 1.5, 1, 2100, 60);
+  const [cx, cy, z, rot] = interpKeys(CAM_L, t);
+  const sh = 26 * Math.exp(-(t - T.kiBurst) * 5);
   applyCam(cx, cy, z, rot, ...shakeXY(t, sh));
-  // charge: flat energy streaks converging
-  const ck = prog(t, ...T.charge);
-  if (ck > 0 && t < T.appear[0]) {
-    ctx.save(); ctx.lineCap = 'butt';
-    for (let i = 0; i < 60; i++) {
-      const a = rand(i + 700) * Math.PI * 2, d0 = 320 + rand(i + 800) * 700, st = rand(i + 900) * .45, kk = clamp((ck - st) / (1 - st));
-      if (kk <= 0) continue;
-      const d = d0 * (1 - easeInQuad(kk)), d2 = d + 50 + 170 * kk;
-      ctx.strokeStyle = i % 3 ? YELLOW : WHITE; ctx.lineWidth = 3 + rand(i) * 4;
-      ctx.beginPath(); ctx.moveTo(C.x + Math.cos(a) * d, C.y + Math.sin(a) * d); ctx.lineTo(C.x + Math.cos(a) * d2, C.y + Math.sin(a) * d2); ctx.stroke();
-    }
-    const core = 6 + easeInCubic(ck) * 50;
-    ctx.fillStyle = YELLOW; ctx.beginPath(); ctx.arc(C.x, C.y, core * 1.6, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = WHITE; ctx.beginPath(); ctx.arc(C.x, C.y, core, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
-  }
-  const b = pos1(t);
-  focusLines(b ? b.x : C.x, b ? b.y : C.y, bell(prog(t, T.launch[0], T.launch[1] + .2)) * 1.2, 1000, '255,250,235', 300);
-  if (b && b.r > .5) {
-    if (t > T.launch[0]) { ribbonFn(pos1, t, .08, .6); ghostsFn(pos1, t, 3, .02); }
-    const ak = prog(t, T.shine[1], T.antic[1]);
-    aura(b.x, b.y, b.r, 0, 0, .45 * ak + .3 * lk, t, ak > 0 ? 1 : 0);
-    drawBallFn(pos1, t, b, { shine: prog(t, ...T.shine) });
-  }
-  // pop rings
-  const dk = prog(t, T.appear[0] + .085, T.appear[0] + .5);
-  if (dk > 0 && dk < 1) {
-    ring(C.x, C.y, R0 * lerp(1.1, 3.6, easeOutExpo(dk)), 22 * (1 - dk) + 2, 1 - dk, WHITE);
-    ring(C.x, C.y, R0 * lerp(1, 2.3, easeOutExpo(prog(dk, .1, 1))), 10 * (1 - dk) + 2, 1 - dk, YELLOW);
-  }
-  if (t < T.appear[0]) zoomFX(C.x, C.y, .09 * ck * ck);
-  if (dk > 0 && dk < 1) { shock(C.x, C.y, R0 * lerp(1.1, 3.6, easeOutExpo(dk)), 34, .07 * (1 - dk)); FX.ca = Math.max(FX.ca, 8 * (1 - dk)); }
-  if (lk > 0 && b) { zoomFX(b.x, b.y, .35 * Math.pow(lk, 1.4)); FX.ca = 20 * lk; FX.warp = 12 * lk; }
-  if (t > T.antic[0] && t < T.antic[0] + .1) { FX.ca = 7; zoomFX(C.x, C.y, .06); }
-  const tk = prog(t, T.shine[1] - .05, T.shine[1] + .2);
-  twinkle(C.x + R0 * .6, C.y - R0 * .65, 95 * bell(tk), 1);
-  screenFill(AMBER, prog(t, 1.74, 1.79));
-  screenFill(WHITE, prog(t, 1.79, 1.82));
-  letterbox(easeOutExpo(prog(t, T.antic[0], T.antic[0] + .1)));
-}
-
-// =====================================================================
-// SIDE TRACKING SHOTS
-// =====================================================================
-function speedAt(t) {
-  if (t < T.side1[1]) return lerp(.05, .55, easeInQuad(prog(t, ...T.side1)));
-  return lerp(.7, 1, easeOutCubic(prog(t, T.side2[0], T.surge[0])));
-}
-const VMAX = 24000;
-function scrollAt(t) {
-  const t0 = t < T.side1[1] ? T.side1[0] : T.side2[0], n = 40, dt = (t - t0) / n;
-  let s = 0; for (let i = 0; i < n; i++) s += speedAt(t0 + (i + .5) * dt) * VMAX * dt;
-  return s;
-}
-function sidePos(t) {
-  if (t < T.side1[1]) {
-    const k = prog(t, ...T.side1);
-    return { x: lerp(700, 860, easeOutCubic(k)) + Math.sin(t * 2.3) * 18, y: 560 + Math.sin(t * 6.5) * 14 * (1 - speedAt(t)), r: 150 };
-  }
-  const s = easeInCubic(prog(t, ...T.surge));
-  return { x: 880 + Math.sin(t * 9) * 10 + s * 1900, y: 545 + Math.sin(t * 13) * 6 - s * 40, r: 150 };
-}
-function sideBackground(t, sp, scroll, hot) {
-  // flat sky bands
-  const base = hot ? '#2b0b24' : '#121833', band = hot ? '#3d1031' : '#1a2245', band2 = hot ? '#521741' : '#222c58';
-  ctx.fillStyle = base; ctx.fillRect(-300, -300, W + 600, H + 600);
-  for (const [y, h, col] of [[140, 90, band], [690, 150, band], [880, 70, band2], [300, 40, band2]]) {
-    ctx.fillStyle = col; ctx.fillRect(-300, y, W + 600, h);
-  }
-  // streaks (flat, tapered)
-  for (const [depth, n, lw, col, seed] of [[.15, 70, 3, hot ? 'rgba(255,190,120,.55)' : 'rgba(190,205,255,.55)', 0], [.5, 40, 5, hot ? 'rgba(255,220,120,.7)' : 'rgba(225,230,255,.6)', 300], [1.2, 16, 9, hot ? 'rgba(255,240,180,.8)' : 'rgba(255,245,220,.7)', 600]]) {
-    const span = W + 1400;
-    ctx.fillStyle = col;
-    for (let i = 0; i < n; i++) {
-      const x0 = rand(seed + i) * span, y = rand(seed + i + 50) * (H + 200) - 100;
-      const x = ((x0 - scroll * depth) % span + span) % span - 700;
-      const len = 10 + sp * VMAX * depth * .03 * (.6 + rand(seed + i + 9) * .8), w = lw * (.6 + rand(seed + i + 3) * .8);
-      ctx.beginPath(); ctx.moveTo(x, y - w / 2); ctx.lineTo(x + len, y); ctx.lineTo(x, y + w / 2); ctx.closePath(); ctx.fill();
+  drawField(t);
+  const kk = prog(t, T.kiBurst + .085, T.kiBurst + .7);
+  if (kk < 1) {
+    for (let i = 0; i < 3; i++) ring(BALL_HOLD.x, BALL_HOLD.y, 120 + 900 * easeOutExpo(prog(kk, i * .1, 1)), 20 * (1 - kk) + 2, (1 - kk) * .9, i % 2 ? YELLOW : WHITE);
+    shock(BALL_HOLD.x, BALL_HOLD.y, 120 + 900 * easeOutExpo(kk), 70, .1 * (1 - kk));
+    for (let i = 0; i < 24; i++) {
+      const a = -Math.PI / 2 + (rand(i + 600) - .5) * 2.6, sp = 300 + rand(i + 610) * 900;
+      const x = BALL_HOLD.x + Math.cos(a) * sp * easeOutCubic(kk), y = BALL_HOLD.y + 300 + Math.sin(a) * sp * easeOutCubic(kk) + kk * kk * 300;
+      ctx.fillStyle = i % 2 ? '#7a6550' : '#a8916f'; ctx.strokeStyle = INK; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(x, y, 10 + rand(i) * 18, 8 + rand(i + 1) * 12, kk * 6 + i, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     }
   }
-}
-function foregroundDebris(t, sp, scroll) {
-  const span = W * 2.6;
-  for (let i = 0; i < 5; i++) {
-    const x0 = rand(i + 1200) * span, y = rand(i + 1210) < .5 ? 40 + rand(i + 1220) * 140 : H - 40 - rand(i + 1220) * 140;
-    const x = ((x0 - scroll * 3.2) % span + span) % span - 500;
-    const r = 80 + rand(i + 1230) * 120, st = 1 + sp * 3.5;
-    ctx.save(); ctx.translate(x, y); ctx.scale(st, 1 / Math.sqrt(st) + .3);
-    ctx.fillStyle = '#06040a'; ctx.beginPath();
-    for (let j = 0; j < 9; j++) { const a = j / 9 * Math.PI * 2, rr = r * (.7 + rand(i * 9 + j) * .4); j ? ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) : ctx.moveTo(Math.cos(a) * rr, Math.sin(a) * rr); }
-    ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,150,60,.7)'; ctx.lineWidth = 4; ctx.stroke();
-    ctx.restore();
-  }
-}
-function sideSparks(t, shotStart, scroll) {
-  for (let i = 0; i < 80; i++) {
-    const ts = shotStart + rand(i + 3000) * 1.6, age = t - ts;
-    if (age < 0 || age > .4 || ts < shotStart) continue;
-    const b = sidePos(ts), k = age / .4;
-    const x = b.x - (scroll - scrollAt(ts)) * .9 - 40 + Math.cos(i) * b.r * .7;
-    const y = b.y + (rand(i + 3100) - .5) * b.r * 1.8 + (rand(i + 3200) - .5) * 160 * k;
-    ctx.fillStyle = i % 2 ? YELLOW : WHITE;
-    const len = 30 + speedAt(t) * 200, w = (4 + rand(i + 3300) * 5) * (1 - k);
-    ctx.beginPath(); ctx.moveTo(x, y - w / 2); ctx.lineTo(x + len, y); ctx.lineTo(x, y + w / 2); ctx.closePath(); ctx.fill();
-  }
-}
-function sonicBoom(t, tb, b, scroll) {
-  const k = prog(t, tb, tb + .45);
-  if (k <= 0 || k >= 1) return;
-  const back = (scroll - scrollAt(tb)) * .55;
-  for (const [d, m, lw, col] of [[0, 1, 16, WHITE], [.05, .7, 8, YELLOW], [.1, .5, 5, WHITE]]) {
-    const kk = prog(t, tb + d, tb + .45);
-    if (kk <= 0 || kk >= 1) continue;
-    const ry = b.r * (1.1 + 3.3 * m * easeOutExpo(kk)), rx = ry * .28;
-    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = lw * (1 - kk) + 2;
-    ctx.beginPath(); ctx.ellipse(b.x + b.r * .4 - back * (1 + d * 4), b.y, rx, ry, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
-  }
-}
-function sideShot(t) {
-  const sp = speedAt(t), scroll = scrollAt(t), shotStart = t < T.side1[1] ? T.side1[0] : T.side2[0];
-  const hot = t >= T.side2[0];
-  // boom frames: 2 flat burst frames
-  for (const tb of [T.boom1, T.boom2]) {
-    const d = t - tb;
-    if (d >= 0 && d < .085) {
-      const b = sidePos(t), white = d < .042;
-      sunburst(b.x, b.y, white ? WHITE : INK, white ? YELLOW : '#3a1230', 28, d * 4);
-      applyCam(C.x, C.y, 1.05, 0, ...shakeXY(t, 30));
-      aura(b.x, b.y, b.r, Math.PI, .9, 2.4, t, 1);
-      drawBall(b.x, b.y, b.r, t, { stretch: 1.5, silhouette: white ? INK : null });
-      zoomFX(b.x, b.y, .25); FX.ca = 18; FX.warp = 14;
-      letterbox(1);
-      return;
-    }
-  }
-  const sh = 4 + sp * 20 + (t > T.boom1 && t < T.boom1 + .35 ? 30 * (1 - prog(t, T.boom1, T.boom1 + .35)) : 0) + (t > T.boom2 && t < T.boom2 + .35 ? 36 * (1 - prog(t, T.boom2, T.boom2 + .35)) : 0);
-  const zoom = !hot ? lerp(1.25, 1.0, easeOutCubic(prog(t, ...T.side1))) : lerp(1.1, .95, prog(t, ...T.side2));
-  const rot = !hot ? lerp(-.04, -.1, prog(t, ...T.side1)) : lerp(.09, .04, prog(t, ...T.side2));
-  applyCam(C.x, C.y, zoom, rot, ...shakeXY(t, sh));
-  sideBackground(t, sp, scroll, hot);
-  const b = sidePos(t);
-  streamTrail(b.x - b.r * .2, b.y, b.r, 420 + sp * 3200, t);
-  sideSparks(t, shotStart, scroll);
-  aura(b.x, b.y, b.r, Math.PI, .6 + sp * .35, .55 + sp * 1.7, t, 1);
-  drawBall(b.x, b.y, b.r, t, { stretch: 1 + sp * .6 });
-  // compressed-air front arcs
-  ctx.save(); ctx.strokeStyle = WHITE; ctx.lineCap = 'round';
-  for (let i = 0; i < 2; i++) {
-    ctx.lineWidth = 6 - i * 2 + sp * 4;
-    ctx.beginPath(); ctx.ellipse(b.x + b.r * (.2 + i * .25), b.y, b.r * (1.1 + i * .22 + sp * .2), b.r * (1.06 + i * .15), 0, -Math.PI / 2.6, Math.PI / 2.6); ctx.stroke();
-  }
-  ctx.restore();
-  sonicBoom(t, T.boom1, b, scroll);
-  sonicBoom(t, T.boom2, b, scroll);
-  foregroundDebris(t, sp, scroll);
-  FX.dir = 10 + sp * 45; FX.warp = 3 + sp * 16; FX.ca = 2 + sp * 9;
-  zoomFX(b.x, b.y, .03 + sp * .09);
-  for (const tb of [T.boom1, T.boom2]) {
-    const k = prog(t, tb + .085, tb + .6);
-    if (k > 0 && k < 1) { shock(b.x + b.r * .4, b.y, b.r * (1.3 + 5 * easeOutExpo(k)), 60, .1 * (1 - k)); FX.ca += 22 * (1 - k); FX.warp += 18 * (1 - k); }
-  }
-  speedLines(t, .3 + sp * 1.3, -1, 4400, 60);
-  screenFill(WHITE, 1 - prog(t, shotStart, shotStart + .085));
+  const b = ballLaunch(t);
+  const up = t > T.kiBurst + .06;
+  if (up) trail(b.x, b.y + b.r * .2, b.r, 200 + 900 * prog(t, T.kiBurst, T.ballGone), Math.PI / 2, t);
+  aura(b.x, b.y, b.r, Math.PI / 2, up ? .8 : .2, up ? 1.8 : .5, t, 1);
+  drawBall(b.x, b.y, b.r, t, { stretch: up ? 1.5 : 1, ang: -Math.PI / 2 });
+  focusLines(BALL_HOLD.x, BALL_HOLD.y - 200, (1 - prog(t, T.kiBurst + .085, T.kiBurst + .5)) * 1.1, 9200, '255,250,235', 250);
+  speedLinesV(t, prog(t, T.ballGone - .1, T.launch[1]) * 1.2, 1300, 60);
+  zoomFX(b.x, Math.max(b.y, cy - 500), .03 + .09 * prog(t, T.ballGone, T.launch[1]));
+  FX.dirY = 30 * prog(t, T.ballGone - .1, T.launch[1]);
+  FX.ca = 3 + 10 * Math.exp(-(t - T.kiBurst) * 5); FX.warp = 2 + 10 * Math.exp(-(t - T.kiBurst) * 6);
   letterbox(1);
 }
 
 // =====================================================================
-// INSERT CLOSE-UPS — extreme close-up of the spinning ball
+// SHOT 4 — front chase straight up: sky -> breach -> space
 // =====================================================================
-function insertShot(t, a, b, seed) {
-  const k = prog(t, a, b);
-  sunburst(W * .62, H * .5, AMBER, '#ffb52e', 30, k * .9 + seed);
-  applyCam(C.x, C.y, 1, seed % 2 ? .12 : -.12, ...shakeXY(t, 14));
-  focusLines(W * .62, H * .5, 1, 7000 + seed * 50, '20,12,16', 520);
-  const r = lerp(560, 640, k);
-  const x = W * .62 + (seed % 2 ? -1 : 1) * lerp(80, -40, k), y = H * .5;
-  aura(x, y, r, Math.PI, .3, .32, t, 1);
+const SKY_V = [1800, 14000];
+function climb(t) {
+  const a = T.sky[0], b = T.space[1], k = prog(t, a, b), dur = b - a;
+  return dur * (SKY_V[0] * k + (SKY_V[1] - SKY_V[0]) * k * k * k / 3);
+}
+function climbSpeed(t) { const k = prog(t, T.sky[0], T.space[1]); return lerp(SKY_V[0], SKY_V[1], k * k) / SKY_V[1]; }
+function cloud(x, y, s, seed) {
+  const blobs = [];
+  for (let i = 0; i < 7; i++) blobs.push([(rand(seed + i) - .5) * 2.4 * s, (rand(seed + i + 9) - .3) * .7 * s, s * (.45 + rand(seed + i + 19) * .5)]);
+  ctx.fillStyle = INK; for (const [bx, by, r] of blobs) { ctx.beginPath(); ctx.arc(x + bx, y + by, r + 5, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = '#9fc0e6'; for (const [bx, by, r] of blobs) { ctx.beginPath(); ctx.arc(x + bx, y + by, r, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = '#ffffff'; for (const [bx, by, r] of blobs) { ctx.beginPath(); ctx.arc(x + bx - r * .12, y + by - r * .2, r * .86, 0, Math.PI * 2); ctx.fill(); }
+}
+function chaseBall(t) {
+  return { x: C.x + Math.sin(t * 2.1) * 50 + Math.sin(t * 5.3) * 12, y: 620 + Math.sin(t * 3.7) * 18 - 60 * prog(t, T.sky[0], T.space[1]), r: 120 };
+}
+function shotChase(t) {
+  const alt = prog(t, T.sky[0], T.breach), sp = climbSpeed(t), y0 = climb(t);
+  const inSpace = t >= T.space[0];
+  const d = t - T.breach;
+  if (d >= 0 && d < .085) {
+    const b = chaseBall(t), white = d < .042;
+    sunburst(b.x, b.y, white ? WHITE : INK, white ? '#ffb347' : '#2a1640', 30, d * 4);
+    applyCam(C.x, C.y, 1.05, 0, ...shakeXY(t, 30));
+    aura(b.x, b.y, b.r, Math.PI / 2, .9, 2.6, t, 1, ['#ff4a1a', AMBER, YELLOW]);
+    drawBall(b.x, b.y, b.r, t, { stretch: 1.6, ang: -Math.PI / 2, silhouette: white ? INK : null });
+    zoomFX(b.x, b.y, .28); FX.ca = 20; FX.warp = 16; letterbox(1);
+    return;
+  }
+  const rot = Math.sin(t * 1.3) * .05;
+  applyCam(C.x, C.y, 1, rot, ...shakeXY(t, 4 + sp * 18));
+  if (!inSpace) {
+    const g = ctx.createLinearGradient(0, -200, 0, H + 200);
+    g.addColorStop(0, mixHex('#3e86d8', '#0a0c24', alt));
+    g.addColorStop(1, mixHex('#a9d5f6', '#3b4fa8', alt));
+    ctx.fillStyle = g; ctx.fillRect(-300, -300, W + 600, H + 600);
+    for (const [depth, n, size, seed] of [[.35, 7, 110, 0], [1, 6, 190, 50]]) {
+      const span = H + 900;
+      for (let i = 0; i < n; i++) {
+        const yy = ((rand(seed + i) * span + y0 * depth * .12) % span) - 450;
+        const xx = rand(seed + i + 30) * (W + 400) - 200;
+        ctx.save(); ctx.translate(xx, yy); ctx.scale(1, 1 + sp * 1.6 * depth); cloud(0, 0, size * (1 - alt * .4), seed + i * 13); ctx.restore();
+      }
+    }
+    const heat = prog(t, T.breach - .45, T.breach);
+    if (heat > 0) { ctx.save(); ctx.globalAlpha = heat * .35; ctx.fillStyle = '#ff6a2a'; ctx.fillRect(-300, -300, W + 600, H + 600); ctx.restore(); }
+  } else {
+    const k = prog(t, ...T.space);
+    ctx.fillStyle = '#070914'; ctx.fillRect(-300, -300, W + 600, H + 600);
+    for (let i = 0; i < 120; i++) {
+      const span = H + 400, yy = ((rand(i + 200) * span + y0 * (.04 + rand(i + 210) * .08)) % span) - 200, xx = rand(i + 220) * W;
+      const len = 3 + sp * 160 * rand(i + 230);
+      ctx.fillStyle = i % 7 ? 'rgba(230,235,255,.9)' : YELLOW;
+      ctx.fillRect(xx - 1.5, yy - len, 3, len);
+    }
+    const er = 2800, ey = lerp(H * .62, H + 600, easeInQuad(k)) + er;
+    ctx.fillStyle = '#7ec3ff'; ctx.beginPath(); ctx.arc(C.x, ey, er + 40, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1f5bb8'; ctx.beginPath(); ctx.arc(C.x, ey, er, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2f7d4a';
+    for (let i = 0; i < 5; i++) { const a = -Math.PI / 2 + (rand(i + 900) - .5) * .7; ctx.beginPath(); ctx.ellipse(C.x + Math.cos(a) * er * .97, ey + Math.sin(a) * er * .97, 260 + rand(i) * 200, 60 + rand(i + 1) * 40, a + Math.PI / 2, 0, Math.PI * 2); ctx.fill(); }
+    ctx.strokeStyle = INK; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(C.x, ey, er, 0, Math.PI * 2); ctx.stroke();
+  }
+  const b = chaseBall(t);
+  const fire = inSpace ? ['#ff7a1a', YELLOW, WHITE] : (alt > .55 ? ['#ff4a1a', AMBER, YELLOW] : [AMBER, YELLOW, WHITE]);
+  trail(b.x, b.y + b.r * .2, b.r, 400 + sp * 1600, Math.PI / 2, t, fire);
+  aura(b.x, b.y, b.r, Math.PI / 2, .6 + sp * .35, .6 + sp * 1.6 + (alt > .55 && !inSpace ? .6 : 0), t, 1, fire);
+  drawBall(b.x, b.y, b.r, t, { stretch: 1 + sp * .5, ang: -Math.PI / 2 });
+  ctx.save(); ctx.strokeStyle = WHITE; ctx.lineCap = 'round';
+  for (let i = 0; i < 2; i++) { ctx.lineWidth = 6 - i * 2 + sp * 4; ctx.beginPath(); ctx.ellipse(b.x, b.y - b.r * (.2 + i * .25), b.r * (1.06 + i * .15), b.r * (1.1 + i * .22 + sp * .2), 0, Math.PI + Math.PI / 2 - Math.PI / 2.6, Math.PI + Math.PI / 2 + Math.PI / 2.6); ctx.stroke(); }
+  ctx.restore();
+  const bk = prog(t, T.breach + .085, T.breach + .6);
+  if (bk > 0 && bk < 1) {
+    ctx.save(); ctx.strokeStyle = WHITE; ctx.lineWidth = 16 * (1 - bk) + 2;
+    ctx.beginPath(); ctx.ellipse(b.x, b.y - b.r * .4, b.r * (1.3 + 5 * easeOutExpo(bk)), b.r * (.4 + 1.4 * easeOutExpo(bk)), 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+    shock(b.x, b.y, b.r * (1.3 + 5 * easeOutExpo(bk)), 60, .1 * (1 - bk)); FX.ca += 20 * (1 - bk);
+  }
+  speedLinesV(t, .3 + sp * 1.2, 4400, 60);
+  FX.dirY = 10 + sp * 50; FX.warp += 3 + sp * 14; FX.ca += 2 + sp * 8;
+  zoomFX(b.x, b.y, .04 + sp * .1);
+  screenFill(WHITE, 1 - prog(t, T.sky[0], T.sky[0] + .085));
+  letterbox(1);
+}
+
+// =====================================================================
+// SHOT 5 — insert close-up of the burning ball
+// =====================================================================
+function shotInsert(t) {
+  const k = prog(t, ...T.insert);
+  sunburst(W * .55, H * .5, AMBER, '#ffb52e', 30, k * .9);
+  applyCam(C.x, C.y, 1, -.1, ...shakeXY(t, 14));
+  focusLines(W * .55, H * .5, 1, 7050, '20,12,16', 520);
+  const r = lerp(560, 640, k), x = W * .55 + lerp(60, -40, k), y = H * .5;
+  aura(x, y, r, Math.PI / 2, .3, .32, t, 1);
   drawBall(x, y, r, t, {});
   zoomFX(x, y, .16); FX.ca = 9; FX.warp = 7;
-  ctx.save(); ctx.setTransform(SS, 0, 0, SS, 0, 0); ctx.fillStyle = WHITE;
-  for (let i = 0; i < 3; i++) { const yy = H * (.2 + .3 * i) + Math.sin(i + seed) * 40; const xx = lerp(-W, W * 2, prog(k, i * .1, .6 + i * .1)); ctx.fillRect(xx - 900, yy, 900, 6 + i * 3); }
-  ctx.restore();
   letterbox(1);
 }
 
 // =====================================================================
-// FRONT SHOT — head-on, then passes glued to the lens
-// =====================================================================
-function posFront(t) {
-  const k = prog(t, T.front[0], T.front[1] - .12), k2 = prog(t, T.front[1] - .14, T.front[1]);
-  return { x: C.x + Math.sin(t * 3.1) * 25 + easeInQuad(k2) * 650, y: C.y + Math.cos(t * 2.7) * 18 + easeInQuad(k2) * 260, r: lerp(95, 260, easeInQuad(k)) + easeInCubic(k2) * 3200 };
-}
-function frontShot(t) {
-  const k = prog(t, ...T.front), b = posFront(t);
-  sunburst(b.x, b.y, '#1a1030', '#26173f', 22, t * 1.5);
-  applyCam(C.x, C.y, lerp(1, 1.12, k), lerp(.07, -.06, k), ...shakeXY(t, 10 + 22 * k));
-  for (let i = 0; i < 160; i++) {
-    const a = rand(i + 5000) * Math.PI * 2, r0 = 40 + rand(i + 5100) * 380;
-    const z = 1 - ((rand(i + 5200) + (t - T.front[0]) * 1.8) % 1), z2 = Math.min(1, z + .1);
-    const p1 = r0 / Math.max(z, .02), p2 = r0 / z2, w = 2 + (1 - z) * 7;
-    ctx.fillStyle = i % 4 ? 'rgba(235,235,255,.85)' : YELLOW;
-    ctx.beginPath();
-    ctx.moveTo(b.x + Math.cos(a) * p2, b.y + Math.sin(a) * p2);
-    ctx.lineTo(b.x + Math.cos(a) * p1 - Math.sin(a) * w, b.y + Math.sin(a) * p1 + Math.cos(a) * w);
-    ctx.lineTo(b.x + Math.cos(a) * p1 + Math.sin(a) * w, b.y + Math.sin(a) * p1 - Math.cos(a) * w);
-    ctx.closePath(); ctx.fill();
-  }
-  aura(b.x, b.y, b.r, 0, 0, .7, t, 1);
-  drawBall(b.x, b.y, b.r, t, {});
-  const k2 = prog(t, T.front[1] - .16, T.front[1]);
-  zoomFX(b.x, b.y, .12 + .22 * k + .3 * k2); FX.ca = 6 + 12 * k + 20 * k2; FX.warp = 4 + 8 * k + 26 * k2;
-  screenFill(WHITE, 1 - prog(t, T.front[0], T.front[0] + .085));
-  screenFill(AMBER, prog(t, T.front[1] - .07, T.front[1] - .035));
-  screenFill(WHITE, prog(t, T.front[1] - .035, T.front[1] - .01));
-  letterbox(1);
-}
-
-// =====================================================================
-// FINAL — slam into the logo spot, pull-out title reveal
+// FINAL — the ball rises into the logo spot and slams; title reveal
 // =====================================================================
 const CAM4 = () => [
-  [T.side2[1], L.ball.x + 160, L.ball.y + 15, 1.8, -.16, null],
-  [T.hit, L.ball.x, L.ball.y, 1.55, -.08, easeOutCubic],
-  [HOLD, L.ball.x, L.ball.y, 1.55, -.08, linear],
+  [T.insert[1], L.ball.x + 40, L.ball.y + 140, 1.8, .14, null],
+  [T.hit, L.ball.x, L.ball.y, 1.55, .07, easeOutCubic],
+  [HOLD, L.ball.x, L.ball.y, 1.55, .07, linear],
   [HOLD + .5, C.x, C.y, 1, 0, easeOutExpo],
 ];
 function posArrive(t) {
   if (t < T.arrive[0]) return null;
   const k = easeOutQuart(prog(t, ...T.arrive)), F = L.ball;
-  return { x: lerp(-560, F.x, k), y: lerp(F.y + 120, F.y, k), r: lerp(FINAL_R * 1.4, FINAL_R, k) };
+  return { x: lerp(F.x + 60, F.x, k), y: lerp(F.y + 900, F.y, k), r: lerp(FINAL_R * 1.4, FINAL_R, k) };
 }
 function drawImpact(t) {
   const dt = t - T.hit; if (dt < 0) return;
@@ -600,12 +542,6 @@ function drawImpact(t) {
   }
   focusLines(x, y, 1 - prog(dt, .085, .45), 3000, '255,250,235', 230);
 }
-function glow(x, y, r, s, rad = 2.1) {
-  if (s <= 0) return;
-  const g = ctx.createRadialGradient(x, y, r * .7, x, y, r * rad);
-  g.addColorStop(0, `rgba(255,200,70,${.6 * s})`); g.addColorStop(.45, `rgba(255,160,40,${.2 * s})`); g.addColorStop(1, 'rgba(255,140,30,0)');
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * rad, 0, Math.PI * 2); ctx.fill();
-}
 function drawTitle(t) {
   const t0 = T.hit + .03;
   if (t < t0) return;
@@ -623,7 +559,7 @@ function drawTitle(t) {
     tctx.fillText(l.ch, -l.w / 2, 48);
     tctx.restore();
   });
-  for (const gs of [T.hit + .95, T.hit + 2.1]) {
+  for (const gs of [T.hit + .95, T.hit + 2.0]) {
     const gk = prog(t, gs, gs + .4);
     if (gk <= 0 || gk >= 1) continue;
     tctx.save(); tctx.globalCompositeOperation = 'source-atop'; tctx.fillStyle = 'rgba(255,255,245,.95)';
@@ -640,16 +576,30 @@ function drawTitle(t) {
     ctx.fillText(full.slice(0, n), L.textX + 4, L.subY);
     ctx.restore();
   }
-  for (const ts of [T.hit + 1.2, T.hit + 2.4]) {
+  for (const ts of [T.hit + 1.2, T.hit + 2.3]) {
     const tw = prog(t, ts, ts + .25);
     twinkle(L.ball.x - FINAL_R * .45, L.ball.y - FINAL_R * .6, 60 * bell(tw), 1);
   }
 }
+function starfield(t, still) {
+  ctx.save(); ctx.setTransform(SS, 0, 0, SS, 0, 0);
+  for (let i = 0; i < 90; i++) {
+    const x = rand(i + 300) * W, y0 = rand(i + 310) * H, len = 40 + rand(i + 320) * 160;
+    if (still) {
+      ctx.fillStyle = `rgba(220,225,255,${.12 + rand(i) * .18})`;
+      ctx.beginPath(); ctx.arc(x, y0, 1 + rand(i + 5) * 1.2, 0, Math.PI * 2); ctx.fill();
+    } else {
+      const y = ((y0 + t * 3000 * (.5 + rand(i + 330))) % (H + 200)) - 100;
+      ctx.fillStyle = 'rgba(220,225,255,.7)'; ctx.fillRect(x - 1.5, y - len, 3, len);
+    }
+  }
+  ctx.restore();
+}
 let K4 = null;
-function finalShot(t) {
+function shotFinal(t) {
   if (!K4) K4 = CAM4();
   const dt = t - T.hit;
-  if (dt >= 0 && dt < .085) {                         // impact frames
+  if (dt >= 0 && dt < .085) {
     const white = dt < .042;
     ctx.setTransform(SS, 0, 0, SS, 0, 0);
     ctx.fillStyle = white ? WHITE : '#000'; ctx.fillRect(0, 0, W, H);
@@ -663,35 +613,35 @@ function finalShot(t) {
   const pd = t - HOLD; if (pd >= 0) z *= 1 + .12 * Math.exp(-pd * 14);
   const sh = t >= T.hit ? 30 * Math.exp(-(t - T.hit) * 7) : 10;
   ctx.setTransform(SS, 0, 0, SS, 0, 0); ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
-  if (t < T.hit) { sunburst(L.ball.x, L.ball.y, '#10142a', '#161c38', 26, t); speedLines(t, 1.3, 1, 2700, 70); }
-  else dotsBackdrop(t, cx, cy, z, rot);
+  if (t < T.hit) { sunburst(L.ball.x, L.ball.y, '#0c1026', '#141a38', 26, t); starfield(t, false); speedLinesV(t, 1.2, 2700, 70); }
+  else starfield(t, true);
   applyCam(cx, cy, z, rot, ...shakeXY(t, sh));
   const b = posArrive(t);
-  if (b && t < T.hit) { ribbonFn(posArrive, t, .12, 1); ghostsFn(posArrive, t, 3, .02); }
+  if (b && t < T.hit) trail(b.x, b.y + b.r * .2, b.r, 500 + 600 * (1 - prog(t, ...T.arrive)), Math.PI / 2, t);
   if (b) {
     if (t >= T.hit) glow(b.x, b.y, b.r, prog(t, HOLD, HOLD + .6) * (1 + .1 * Math.sin(dt * 5)));
-    if (t < T.hit) aura(b.x, b.y, b.r, Math.PI, .75, 1.7, t, 1);
+    if (t < T.hit) aura(b.x, b.y, b.r, Math.PI / 2, .75, 1.7, t, 1);
     else aura(b.x, b.y, b.r, 0, 0, .3, t, 1 - prog(t, HOLD, HOLD + .7));
-    if (t < T.hit) drawBallFn(posArrive, t, b);
+    if (t < T.hit) drawBall(b.x, b.y, b.r, t, { stretch: 1 + .8 * (1 - prog(t, ...T.arrive)), ang: -Math.PI / 2 });
     else drawBall(b.x, b.y, b.r, t, { squash: spring(dt - .085, 34, 9) * .18 });
   }
   drawImpact(t);
-  if (t < T.hit) { FX.dir = 35; zoomFX(L.ball.x, L.ball.y, .12 + .2 * prog(t, ...T.arrive)); FX.ca = 8 + 10 * prog(t, ...T.arrive); FX.warp = 8; }
+  if (t < T.hit) { FX.dirY = 35; zoomFX(L.ball.x, L.ball.y, .12 + .2 * prog(t, ...T.arrive)); FX.ca = 8 + 10 * prog(t, ...T.arrive); FX.warp = 8; }
   else {
     const e = Math.exp(-(t - HOLD) * 7);
     for (const [d, m] of [[0, 4.8], [.07, 3.2]]) { const k = prog(t - HOLD - d, 0, .55); if (k > 0 && k < 1) shock(L.ball.x, L.ball.y, FINAL_R * lerp(1, m, easeOutExpo(k)), 55, .12 * (1 - k)); }
     zoomFX(L.ball.x, L.ball.y, .22 * e); FX.ca = 26 * e; FX.warp = 22 * e;
   }
   drawTitle(t);
-  screenFill(WHITE, 1 - prog(t, T.side2[1], T.side2[1] + .085));
+  screenFill(WHITE, 1 - prog(t, T.insert[1], T.insert[1] + .085));
   letterbox(1 - easeOutExpo(prog(t, HOLD, HOLD + .5)));
 }
 
 // =====================================================================
-// POST FX — speed / distortion passes on the finished frame (device pixels)
+// POST FX
 // =====================================================================
 let FX = null;
-const resetFX = () => { FX = { zoom: null, dir: 0, shocks: [], warp: 0, ca: 0 }; };
+const resetFX = () => { FX = { zoom: null, dir: 0, dirY: 0, shocks: [], warp: 0, ca: 0, lb: 0 }; };
 const scr = (x, y) => { const p = ctx.getTransform().transformPoint(new DOMPoint(x, y)); return { x: p.x, y: p.y }; };
 const scrR = (x, y, r) => { const a = scr(x, y), b = scr(x + r, y); return Math.hypot(b.x - a.x, b.y - a.y); };
 function shock(x, y, r, w, str) { if (str > .001) { const p = scr(x, y); FX.shocks.push({ x: p.x, y: p.y, r: scrR(x, y, r), w: w * SS, s: str }); } }
@@ -699,23 +649,20 @@ function zoomFX(x, y, amt) { if (amt > .002) { const p = scr(x, y); if (!FX.zoom
 
 function post(t) {
   let src = sceneCv, dst = PA;
-  const begin = () => { const c = dst.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.fillStyle = '#000'; c.fillRect(0, 0, WD, HD); return c; };
+  const begin = () => { const c = dst.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.filter = 'none'; c.fillStyle = '#000'; c.fillRect(0, 0, WD, HD); return c; };
   const swap = () => { src = dst; dst = dst === PA ? PB : PA; };
-  // directional smear (everything trails behind the motion)
-  if (FX.dir * SS > 2) {
-    const c = begin(), n = 7, d = FX.dir * SS;
+  if ((FX.dir + FX.dirY) * SS > 2) {
+    const c = begin(), n = 7, dx = FX.dir * SS, dy = FX.dirY * SS;
     c.drawImage(src, 0, 0);
-    for (let i = 1; i <= n; i++) { c.globalAlpha = 1 / (i + 1); c.drawImage(src, -d * i / n, 0); }
+    for (let i = 1; i <= n; i++) { c.globalAlpha = 1 / (i + 1); c.drawImage(src, -dx * i / n, dy * i / n); }
     swap();
   }
-  // radial zoom blur
   if (FX.zoom) {
     const c = begin(), n = 8, { x, y, amt } = FX.zoom;
     c.drawImage(src, 0, 0);
     for (let i = 1; i <= n; i++) { const k = 1 + amt * i / n; c.globalAlpha = 1 / (i + 1); c.setTransform(k, 0, 0, k, x * (1 - k), y * (1 - k)); c.drawImage(src, 0, 0); }
     swap();
   }
-  // shockwave refraction rings
   if (FX.shocks.length) {
     const c = begin();
     c.drawImage(src, 0, 0);
@@ -725,7 +672,6 @@ function post(t) {
     }
     swap();
   }
-  // speed / heat warp: horizontal strips sliding
   if (FX.warp > .3) {
     const c = begin(), h = 6 * SS, f = Math.floor(t * 24);
     c.drawImage(src, 0, 0);
@@ -736,7 +682,6 @@ function post(t) {
     }
     swap();
   }
-  // chromatic aberration (radial RGB split)
   if (FX.ca > .4) {
     for (const [cv, col] of [[RC, '#f00'], [GC, '#0ff']]) {
       const c = cv.getContext('2d'); c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.globalAlpha = 1;
@@ -757,22 +702,22 @@ function post(t) {
 function scene(t) {
   ctx = sctx;
   ctx.setTransform(SS, 0, 0, SS, 0, 0);
-  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter = 'none';
   ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
-  if (t < T.launch[1]) shot1(t);
-  else if (t >= T.insert1[0] && t < T.insert1[1]) insertShot(t, ...T.insert1, 1);
-  else if (t >= T.insert2[0] && t < T.insert2[1]) insertShot(t, ...T.insert2, 2);
-  else if (t < T.front[0]) sideShot(t);
-  else if (t < T.front[1]) frontShot(t);
-  else if (t < T.side2[1]) sideShot(t);
-  else finalShot(t);
+  if (t < T.face[0]) shotOpen(t);
+  else if (t < T.launch[0]) shotFace(t);
+  else if (t < T.launch[1]) shotLaunch(t);
+  else if (t < T.insert[0]) shotChase(t);
+  else if (t < T.insert[1]) shotInsert(t);
+  else shotFinal(t);
 }
-function draw(t) { if (!L) layout(); resetFX(); scene(t); post(t); }
+function draw(t) { if (!L) layout(); if (!FIELD_CV) prepField(); resetFX(); scene(t); post(t); }
 
 window.draw = draw;
 window.DURATION = DURATION;
+window.READY = READY;
 
-if (!new URLSearchParams(location.search).has('render')) {
+if (!RENDER) {
   const fit = () => { const s = Math.min(innerWidth / W, innerHeight / H); out.style.width = W * s + 'px'; out.style.height = H * s + 'px'; };
   addEventListener('resize', fit); fit();
   let start = performance.now(), last = -1;
@@ -781,7 +726,7 @@ if (!new URLSearchParams(location.search).has('render')) {
     const f = Math.floor(Math.min(t, DURATION) * 24); if (f !== last) { last = f; draw(f / 24); }
     requestAnimationFrame(loop);
   };
-  document.fonts.load(FONT_TITLE).then(() => requestAnimationFrame(loop));
+  Promise.all([READY, document.fonts.load(FONT_TITLE)]).then(() => requestAnimationFrame(loop));
 }
 </script>
 </body></html>

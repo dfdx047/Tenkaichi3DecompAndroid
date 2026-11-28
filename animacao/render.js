@@ -7,10 +7,10 @@ const path = require('path');
 (async () => {
   const fps = Number(process.argv[2] || 60);
   const stills = process.argv[3];
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ args: ['--allow-file-access-from-files'] });
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   await page.goto('file://' + path.join(__dirname, 'intro.html') + '?render');
-  await page.evaluate(() => document.fonts.load('italic 800 132px Inter').then(() => document.fonts.ready));
+  await page.evaluate(() => Promise.all([window.READY, document.fonts.load('italic 800 132px Inter')]).then(() => document.fonts.ready));
 
   if (stills) {
     for (const s of stills.split(',')) {
