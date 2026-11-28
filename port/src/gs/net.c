@@ -1910,6 +1910,8 @@ static void fp_wait(void) {
 
 /* Connects: role 1 hosts on `port`, role 2 joins `join` ("address:port"), role 3 watches the match hosted at `join`
    (a spectator). Waits until the other side is there. */
+static char sRivalRegion[4]; /* (defined below: a matched rival has his region) */
+
 static void net_start(int role, const char *host, const char *join) {
     struct sockaddr_in local;
     uint64_t t0, last = 0;
@@ -2178,10 +2180,19 @@ static void net_start(int role, const char *host, const char *join) {
             exit(2);
         }
         SDL_Delay(2);
-        if (now - t0 > 120000000000ull) {
-            fprintf(stderr, "bt3: net: nobody answered in two minutes\n");
+        /* a rival the service matched (his region known) greets within seconds or never: his line cannot be reached.
+           Thirty seconds then, not two minutes with the picture standing and no way out (the user, 2026-11-28) */
+        if (now - t0 > (sSession && sRivalRegion[0] != '\0' ? 30000000000ull : 120000000000ull)) {
+            int matched = sSession && sRivalRegion[0] != '\0';
+
+            fprintf(stderr, "bt3: net: nobody answered (%s, packets in %d, out %d)\n", matched ? "matched rival, 30 s" : "two minutes", sStatIn, sStatOut);
             if (sSession) {
-                Port_UiNotice("Nobody answered in two minutes.");
+                extern int Port_Setting(const char *name, int def);
+                int pt = Port_Setting("dr_lang", 0) == 1;
+
+                Port_UiNotice(!matched ? "Nobody answered in two minutes."
+                              : pt ? "N\303\243o foi poss\303\255vel conectar ao rival. Procure outra partida."
+                                   : "Could not connect to your rival. Search again.");
                 Port_NetLeave();
             }
             exit(2);
@@ -2673,8 +2684,13 @@ static void session_banner(void) {
     }
     snprintf(sBannerSaid, sizeof(sBannerSaid), "%s", said);
     if (k == 0) {
+        extern int Port_Setting(const char *name, int def);
+
         line = MenuTranslation_PortText("net/connecting");
-        Port_UiBanner(line != NULL ? line : "Connecting to your rival...", 0);
+        if (line == NULL) { /* (the catalog has no Portuguese) */
+            line = Port_Setting("dr_lang", 0) == 1 ? "Conectando ao seu rival..." : "Connecting to your rival...";
+        }
+        Port_UiBanner(line, 0);
         return;
     }
     if (region[0] != '\0') { /* a quick match: where the rival is */
