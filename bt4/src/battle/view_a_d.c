@@ -47,6 +47,8 @@ extern void BtlObj_Init(s32 prealloc);
 extern void BtlObj_Term(void);
 extern void BtlObj_SetUnk44FC4(f32 value);
 extern void BtlObj_UpdateAll(void);
+extern s32 Port_NetActive(void);
+extern s32 Port_NetSession(void);
 extern void BtlObj_UpdateVisibility(s32 view);
 extern void BtlObj_FinishVisibility(s32 split);
 extern void BtlStage_Update(void);
@@ -629,6 +631,8 @@ static s32 sPortOwnOk[CHRVIEW_PORT_VIEWS][CHRVIEW_SLOT_COUNT];
 static s32 sPortPhase[CHRVIEW_PORT_VIEWS];
 static f32 sPortLineDist, sPortLineAim; /* the team's camera, eased */
 static f32 sPortLineAt[CHRVIEW_PORT_LINE_MAX]; /* where each of the team stands across, in the world */
+static f32 sPortLineZ[CHRVIEW_PORT_LINE_MAX];  /* and how far behind the first (negative: further from the camera) */
+static s32 sPortLineRest;                      /* blanks the whole team has stood still (this machine's own) */
 /* each side's fighter coming down: its tallest span yet, its lowest joint last frame, whether it has come down some
    way, frames its feet have stood still, and sPortGround as taken off now (eased in) */
 static f32 sPortSpanV[CHRVIEW_PORT_VIEWS], sPortLowV[CHRVIEW_PORT_VIEWS], sPortGroundShown[CHRVIEW_PORT_VIEWS];
@@ -1398,22 +1402,24 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
             }
             far = size > far ? size : far;
             w = size * 0.42f; /* (a body's room across: Goku's table distance 25, some 10 across with his arms) */
-            /* (the gap between two: the user asked for room between them, they stood too close: a fifth of a body's
-               size, some 5.5 for Goku, where it was 2.5) */
-            if (k == 0) {
-                sPortLineAt[k] = 0.0f;
-                left = -w * 0.5f;
-                right = w * 0.5f;
-            } else if (k & 1) {
-                sPortLineAt[k] = left - size * 0.22f - w * 0.5f;
-                left = sPortLineAt[k] - w * 0.5f;
-            } else {
-                sPortLineAt[k] = right + size * 0.22f + w * 0.5f;
-                right = sPortLineAt[k] + w * 0.5f;
-            }
+            (void)w;
         }
-        for (k = 0; k < line; k++) {
-            sPortLineAt[k] -= (left + right) * 0.5f; /* (the row in the middle) */
+        {
+            /* (the user, 28/11: a group instead of a straight row, at different depths: the first in front, one at each
+               side a step back, two further back between them) across and in depth, in table distances of the largest */
+            static const f32 kGroup[5][2] = { {0.0f, 0.0f}, {-0.40f, -0.24f}, {0.40f, -0.16f}, {-0.22f, -0.56f}, {0.24f, -0.50f} };
+            f32 unit = far > 0.0f ? far : 25.0f;
+
+            for (k = 0; k < line; k++) {
+                sPortLineAt[k] = kGroup[k % 5][0] * unit;
+                sPortLineZ[k] = kGroup[k % 5][1] * unit;
+                if (sPortLineAt[k] - unit * 0.21f < left) {
+                    left = sPortLineAt[k] - unit * 0.21f;
+                }
+                if (sPortLineAt[k] + unit * 0.21f > right) {
+                    right = sPortLineAt[k] + unit * 0.21f;
+                }
+            }
         }
         width = right - left;
         aim = -far * 0.63f * 0.5f; /* (its tallest's middle: a body is some 0.63 of its table distance tall) */
@@ -1422,7 +1428,7 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
                for the tallest from head to feet (0.86 of its table distance) */
             /* (the user: too close and too low, not every fighter on the screen. Further off, the whole row with room at
                its ends in the middle of the screen the select leaves free, and more from above) */
-            f32 goal = width * 1.05f > far * 1.25f ? width * 1.05f : far * 1.25f;
+            f32 goal = width * 1.15f > far * 1.30f ? width * 1.15f : far * 1.30f; /* (nearer, 28/11) */
 
             if (sPortLineDist <= 0.0f) {
                 sPortLineDist = goal;
@@ -1659,6 +1665,9 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
                 } else {
                     BtlObjAnim_PortPlace(obj, sPortX[v], y + turn, scale, NULL, lift);
                 }
+                if (inLine) {
+                    BtlObjAnim_PortShiftZ(obj, sPortLineZ[v - CHRVIEW_PORT_LINE]);
+                }
                 if (opp) {
                     BtlObjAnim_PortShiftZ(obj, Cine_OppDepth(sPortCineH, sCineLockOppH > 1.0f ? sCineLockOppH : sPortCineH));
                 }
@@ -1696,8 +1705,22 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
             BtlObjAnim_PortSpread(BtlObj_Get(sPortView[v]->cur->obj), sPortSpreadNow[v]);
         }
     }
-    if (!again) {
-        BtlObj_UpdateAll();
+    {
+        /* A whole team standing still costs five skeletons a blank for a picture that does not change: worked out one
+           blank in three then (offline only; as a blank run again, which shows them as they stand) */
+        s32 still = line > 1 && sHostCine < 0 && !split && !Port_NetActive() && !Port_NetSession();
+
+        for (k = 0; k < line && still; k++) {
+            s32 v = CHRVIEW_PORT_LINE + k;
+
+            still = sPortView[v] != NULL && sPortStanding[v] && sPortReading[v] == NULL && sPortNew[v] == NULL;
+        }
+        if (!again) {
+            sPortLineRest = still ? sPortLineRest + 1 : 0;
+            if (sPortLineRest < 30 || sPortLineRest % 3 == 0) {
+                BtlObj_UpdateAll();
+            }
+        }
     }
     for (k = 0; k < acts && !again; k++) {
         /* Down: a side's fighter (one fighter's entrance for all, BT4) has come down and its lowest joint stopped,
@@ -1915,10 +1938,11 @@ void ChrView_PortFrame(f32 *screenX, f32 *yaw, s32 *chara, s32 *costume, s32 spl
                 f32 ey;
                 f32 fx;
                 f32 fy;
+                f32 z = v >= CHRVIEW_PORT_LINE && v < CHRVIEW_PORT_LINE + CHRVIEW_PORT_LINE_MAX ? sPortLineZ[v - CHRVIEW_PORT_LINE] : 0.0f;
 
-                ChrView_PortProject(sPortX[v], 0.0f, 0.0f, &cx, &cy);
-                ChrView_PortProject(sPortX[v] + r, 0.0f, 0.0f, &ex, &ey);
-                ChrView_PortProject(sPortX[v], 0.0f, r, &fx, &fy);
+                ChrView_PortProject(sPortX[v], 0.0f, z, &cx, &cy);
+                ChrView_PortProject(sPortX[v] + r, 0.0f, z, &ex, &ey);
+                ChrView_PortProject(sPortX[v], 0.0f, z + r, &fx, &fy);
                 sHostCx[v] = cx;
                 sHostCy[v] = cy;
                 sHostRx[v] = ex > cx ? ex - cx : cx - ex;

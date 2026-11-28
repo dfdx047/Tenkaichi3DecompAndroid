@@ -2820,6 +2820,9 @@ static void Cw_DrawSplit(void) {
             Cs_Portrait(middle[i], 230.0f);
         }
     }
+    if (Port_Setting("select_native_ui", 1)) {
+        Port_GsMarker(GS_NATIVE_ON); /* (the two halves' menus at the screen's resolution too) */
+    }
     for (i = 0; i < 2; i++) {
         sNow = i;
         sV = sViews[i];
