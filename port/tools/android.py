@@ -146,11 +146,12 @@ def port_source(f):
 # the build key (port/tools/buildkey.py, from BT3_BUILD_KEY in the environment): only net_sign.c is given it, so that
 # the official game signs its requests to the online services (Dragon Net, Tag Team Online); [] without one
 KEY = buildkey.flags()
+ZW_KEY = buildkey.flags("ZW_BUILD_KEY")  # Z Warriors Online's own key (zw_net.c)
 
 
 def gs_source(f):
     o = OBJ / ("gs_" + f.stem + ".o")
-    key = KEY if f.name == "net_sign.c" else []
+    key = KEY if f.name == "net_sign.c" else ZW_KEY if f.name == "zw_net.c" else []
     r = run(HARD + ["-std=gnu99", "-Wall", "-Wno-unused", "-Wno-misleading-indentation", f"-I{GEN / 'gs'}", f"-I{SDL3 / 'include'}"] + key + [str(f), "-o", str(o)])
     return (o if r.returncode == 0 else None), f.name, r.stderr
 

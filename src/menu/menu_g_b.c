@@ -82,7 +82,49 @@ s32 Duel_Main(void) {
         done = 1;
     }
 #endif
+#ifdef PORT
+    if (!done) { /* Z Warriors online: its session goes straight to the fight, and out of it once fought */
+        extern int Port_NetSession(void);
+        extern int Port_ZwFightSetup(int *out); /* port/src/plat_zwnet.c */
+        static int zw[6];
+        int kind = Port_NetSession() ? Port_ZwFightSetup(zw) : 0;
+
+        if (kind == 1) {
+            static u8 noItems[0x10];
+            extern void Battle_ClearWork(void);
+            extern void BattleSetup_SetRule(s32 screenMode, s32 mode, s32 bgm, s32 timeLimit, s32 announcer, s32 stage, s32 unk10);
+            extern void BattleSetup_SetSide(s32 sideNo, s32 a1, s32 a2, s32 a3, s32 a4, s32 a5, s32 a6, void *a7);
+            extern void BattleSetup_SetMember(s32 sideNo, s32 idx, s32 chara, s32 costume, s32 variant, s32 cpuLevel, f32 health, void *items);
+            extern void BattleSetup_Finish(void);
+
+            Battle_ClearWork();
+            BattleSetup_SetRule(1, 0, 8, zw[5] == 0 ? 3 : zw[5] == 1 ? 4 : 0, 0, zw[4], 1);
+            BattleSetup_SetSide(0, 0, 0, 1, 1, 1, 0, NULL);
+            BattleSetup_SetSide(1, 0, 1, 1, 1, 1, 0, NULL);
+            BattleSetup_SetMember(0, 0, zw[0], zw[1], 0, 0, 100.0f, noItems);
+            BattleSetup_SetMember(1, 0, zw[2], zw[3], 0, 0, 100.0f, noItems);
+            BattleSetup_Finish();
+            { /* (as the character select leaves for a battle) */
+                extern void Adx_StopAll(void);
+                extern void Dma_ResetBuffers(void);
+
+                Adx_StopAll();
+                sceGsSyncPath(0, 0);
+                Dma_ResetBuffers();
+            }
+            gProgress->mode = 39;
+            result = 1;
+            done = 1;
+        } else if (kind < 0) {
+            gProgress->mode = 4;
+            result = 0;
+            done = 1;
+        }
+    }
+    while (!done) {
+#else
     do {
+#endif
         switch (gProgress->mode) {
         case 38:
             if (!bgm) {
@@ -168,7 +210,11 @@ s32 Duel_Main(void) {
             break;
         }
         sceGsSyncPath(0, 0);
+#ifdef PORT
+    }
+#else
     } while (!done);
+#endif
     if (gMenuArc5 != NULL) {
         Heap_Free(gMenuArc5);
         gMenuArc5 = NULL;

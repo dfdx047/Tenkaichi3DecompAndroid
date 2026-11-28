@@ -318,7 +318,11 @@ static void PortTs_ZwLoad(void) {
             sTsZwChip[i] = NULL;
         }
     }
-    sTsZwCount = PortZw_ListWarriors(sTsZwSkin, PORT_TS_ZW_MAX);
+    {
+        extern s32 PortCharSel_UsesNew(void); /* menu/port_charsel.c: no tile on the new screen */
+
+        sTsZwCount = PortCharSel_UsesNew() ? 0 : PortZw_ListWarriors(sTsZwSkin, PORT_TS_ZW_MAX);
+    }
     for (i = 0; i < sTsZwCount; i++) {
         u8 *res = Heap_Alloc(0x1600, 0x40, 0, 2);
 

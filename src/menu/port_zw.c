@@ -370,9 +370,38 @@ static void Ws_ShapeTick(void);
 static s32 Sh_BlinkNode(void);
 
 static void Zb_Free(void); /* (port_zw_bar.inc) */
+static void Zc_Reset(void);
+static void Zf_Reset(void);
+void Zf_Keep(f32 *x, f32 *y, s32 restore);
+static void Zf_DrawBegin(void);
+static void Zf_DrawEnd(void);
+static void Zb_NextChip(void);
+static void Zt_EdTap(f32 x, f32 y);
+static s32 sZtBar = -1; /* (the editor's foot buttons the pad is on, -1 none) */
+static s32 sZtPage;
 static void Zw_SetMode(s32 mode) {
     Glow_Off();
     sZw->glowKey = 0;
+    if (mode == ZW_FXCOL) {
+        Zc_Reset();
+    }
+    {
+        extern void Mm_ViewPairOff(void); /* menu/port_modmgr.c */
+
+        Mm_ViewPairOff();
+    }
+    { /* (back in the editor: the focus where it was) */
+        static f32 edX = -1.0f, edY = -1.0f;
+        extern void Zf_Keep(f32 *x, f32 *y, s32 restore);
+
+        if (sZw->mode == ZW_EDIT) {
+            Zf_Keep(&edX, &edY, 0);
+        }
+        Zf_Reset();
+        if (mode == ZW_EDIT) {
+            Zf_Keep(&edX, &edY, 1);
+        }
+    }
     if (mode != ZW_PICK) {
         Zb_Free(); /* (the picker's portraits) */
     }
@@ -1086,6 +1115,15 @@ static void Zw_Stage(s32 key, s32 chara, s32 mod, f32 cx, f32 feet, f32 height, 
     f32 mid = feet - height * 0.5f;
     f32 at = mid + height * zoom * focus; /* the feet, the focus staying in the stage's middle */
 
+    if (chara >= ZW_MODREF) { /* (a body taken from a mod: that mod's own model; asked as a fighter of the disc it asked
+                                 for a file that is not there and the game waited for ever, 2026-11-28) */
+        extern int Port_ModRefMod(int who);
+
+        mod = Port_ModRefMod(chara);
+        chara = Port_ModRefChara(chara);
+        key = 0x40000 + (mod < 0 ? 0 : mod * 64) + (sZw->viewGen & 63);
+    }
+
     Mx_Fit(ZW_PLATFORM, cx, at + 14.0f * zoom + bob, height * 0.36f * zoom, (s32)(128.0f * Zw_In(sZw->modeT, 10)));
     if (chara < 0) {
         Mm_ViewWant(-1, 0, 0, -1, 1);
@@ -1098,7 +1136,13 @@ static void Zw_Stage(s32 key, s32 chara, s32 mod, f32 cx, f32 feet, f32 height, 
         }
         Mm_ViewWant(key, chara, 0, mod, sZw->rest > 4 || (key & 0xF0000) == 0x10000); /* (the preview made again: read at once,
                                                                                        whatever is being pressed) */
-        Mm_ViewCamera(sZw->camYaw, sZw->camShownV * 0.45f, sZw->tpose);
+        if (sZw->mode == ZW_ONLINE) { /* (facing the screen wherever it stands) */
+            f32 r = (cx / MX_W - 0.492f) / 0.76f;
+
+            Mm_ViewCamera(3.1415927f + r * (1.0f - 0.2f * r * r), 0.0f, 0);
+        } else {
+            Mm_ViewCamera(sZw->camYaw, sZw->camShownV * 0.45f, sZw->tpose);
+        }
         { /* (a giant, or a warrior made bigger, at a fighter's size here: Port_WarriorViewScale) */
             extern f32 gMmViewScale;
             extern s32 Port_WarriorViewScale(s32 mod);
@@ -1113,7 +1157,8 @@ static void Zw_Stage(s32 key, s32 chara, s32 mod, f32 cx, f32 feet, f32 height, 
         }
     }
     if (chara >= 0 && sZw->ask == ASK_NONE && sZw->mode != ZW_WSHOP && sZw->mode != ZW_WSDETAIL && sZw->mode != ZW_WSUPLOAD &&
-        sZw->mode != ZW_LAB && sZw->mode != ZW_EDIT && sZw->mode != ZW_PICK && sZw->mode != ZW_ONLINE) { /* how to look at it
+        sZw->mode != ZW_LAB && sZw->mode != ZW_EDIT && sZw->mode != ZW_PICK && sZw->mode != ZW_ONLINE && sZw->mode != ZW_SHADEPK && sZw->mode != ZW_COLOUR && sZw->mode != ZW_TEXTURE &&
+        sZw->mode != ZW_FXCOL) { /* how to look at it
                                                                                                                          (not on the Workshop's pages) */
         s32 top = sZw->mode == ZW_LIBRARY || sZw->mode == ZW_EDIT || sZw->mode == ZW_PICK || sZw->mode == ZW_SHADEPK;
         f32 x = sZw->mode == ZW_EDIT ? cx - 330.0f : cx - 250.0f;
@@ -2199,6 +2244,14 @@ static void Zw_TapAt(f32 x, f32 y) {
     }
 }
 
+static s32 Co_Touch(f32 x, f32 y);
+static s32 Fx_Touch(f32 x, f32 y);
+static void Za_Tap(f32 x, f32 y);
+static void Za_ColourTap(f32 x, f32 y);
+static void Zt_Press(u32 bit); /* (port_zw_touch.inc) */
+static void Zp_ColourTap(f32 x, f32 y);
+static void Zp_PaintTap(f32 x, f32 y);
+static s32 sZfTouch; /* (port_zw_touch.inc: the pad's focus on the touch screens) */
 static void Zw_Touch(void) {
     extern s32 Port_MenuTap(u32 out); /* port/src/gs/gs_input.c: the picture's 512 x 448 */
     static s32 at[2];
@@ -2226,7 +2279,44 @@ static void Zw_Touch(void) {
             } else if (sZw->mode == ZW_PICK) {
                 Zt_PkTap(x, y);
             } else {
+                sZfTouch = 1;
                 Zt_EdTap(x, y);
+            }
+        }
+        return;
+    }
+    if (sZw->mode == ZW_COLOUR || sZw->mode == ZW_TEXTURE) { /* (colours and paint) */
+        if (Port_MenuTap((u32)at)) {
+            f32 x = (f32)at[0] / Mx_X(1.0f) * (2400.0f / MX_W), y = (f32)at[1] / Mx_Y(1.0f) * (1080.0f / MX_H);
+
+            sZfTouch = 1;
+            if (sZw->mode == ZW_COLOUR) {
+                Zp_ColourTap(x, y);
+            } else {
+                Zp_PaintTap(x, y);
+            }
+        }
+        return;
+    }
+    if (sZw->mode == ZW_SHADEPK || sZw->mode == ZW_FXCOL) { /* (the shading, and every colour picker) */
+        if (Port_MenuTap((u32)at)) {
+            f32 x = (f32)at[0] / Mx_X(1.0f) * (2400.0f / MX_W), y = (f32)at[1] / Mx_Y(1.0f) * (1080.0f / MX_H);
+
+            if (sZw->mode == ZW_SHADEPK) {
+                sZfTouch = 1;
+                Za_Tap(x, y);
+            } else {
+                Za_ColourTap(x, y);
+            }
+        }
+        return;
+    }
+    if (sZw->mode == ZW_COLOUR || sZw->mode == ZW_FXCOL) { /* (the colours: pressed where the finger is) */
+        if (Port_MenuTap((u32)at)) {
+            f32 x = (f32)at[0] / Mx_X(1.0f), y = (f32)at[1] / Mx_Y(1.0f);
+
+            if (!(sZw->mode == ZW_COLOUR ? Co_Touch(x, y) : Fx_Touch(x, y))) {
+                Zw_TapAt(x, y); /* (the foot's buttons) */
             }
         }
         return;
@@ -2275,7 +2365,9 @@ static u32 Lib_Button(s32 kind) {
 /* The home screen (Android): the Kaioshins' world, the list on the left, the warrior on the stage, Shin on the right,
    everything pressed by touch (Lib_Touch). The foot's buttons are the screen's prompts. */
 static void Zo_LibButton(void);
-static s32 sZoLibSel; /* (the home screen's arrows: 0 the list, 1 the "play online" button, 2 the language) */
+static s32 sZoLibSel; /* (the home screen's arrows: 0 the list, 1 the "play online" button, 2 the language, 3 the foot's buttons) */
+static s32 sZoFoot;   /* (which of the foot's) */
+static s32 sZoFootN;  /* (how many the last draw had: sPromptCount is 0 again before the update runs) */
 #define LIB_LANG_X0 1084.0f
 #define LIB_LANG_X1 1356.0f
 #define LIB_LANG_Y0 20.0f
@@ -2311,12 +2403,17 @@ static void Lib_Draw(void) {
     char *say;
     char why[160];
 
+    {
+        extern void Port_ZwNetTick(void); /* (a room left a moment ago is still told so) */
+
+        Port_ZwNetTick();
+    }
     Mx_Pic(ZW_SHIN, 1044.0f, 132.0f, 1252.0f, 736.0f, 0x80);
     Zw_Title("Z WARRIORS");
     Zo_LibButton();
     for (i = 0; i < LIB_ROWS && sZw->top + i <= sZw->count; i++) {
         s32 at = sZw->top + i;
-        s32 sel = at == sZw->cur && !sZoLibSel;
+        s32 sel = at == sZw->cur && (sZoLibSel == 0 || sZoLibSel == 3); /* (the foot's buttons act on this one) */
         f32 y = LIB_Y + (f32)i * LIB_PITCH;
         char *name;
 
@@ -2355,8 +2452,8 @@ static void Lib_Draw(void) {
         Zw_Stage(-1, -1, -1, 835.0f, 590.0f, 420.0f, 0);
         Mx_Text(835.0f, 330.0f, "A NEW WARRIOR", 32.0f, 0.0f, MX_GOLD, 1);
     }
-    Zw_Prompt(0, sZoLibSel == 2 ? "Change" : sZoLibSel ? "Online" : sZw->cur == 0 ? "Create" : "Edit");
-    if (sZw->cur > 0 && !sZoLibSel) {
+    Zw_Prompt(0, sZoLibSel == 2 ? "Change" : sZoLibSel == 1 ? "Online" : sZw->cur == 0 ? "Create" : "Edit");
+    if (sZw->cur > 0 && (sZoLibSel == 0 || sZoLibSel == 3)) {
         Zw_Prompt(1, "Copy");
         Zw_Prompt(4, "Remove");
         Zw_Prompt(9, "Share");
@@ -2365,12 +2462,20 @@ static void Lib_Draw(void) {
     Zw_Prompt(13, "Bug report");
     Zw_Prompt(2, "Back");
     n = sPromptCount;
+    sZoFootN = n;
     bw = (LIB_BTN_X1 - LIB_X - 8.0f * (f32)(n - 1)) / (f32)n;
     for (i = 0; i < n; i++) {
         f32 x = LIB_X + (bw + 8.0f) * (f32)i;
 
-        Mx_Bar(i == 0 ? ZW_BAR_SEL : ZW_BAR, x, LIB_BTN_Y0, x + bw, LIB_BTN_Y1, 0x80);
-        Mx_Text(x + bw * 0.5f, (LIB_BTN_Y0 + LIB_BTN_Y1) * 0.5f, sPrompt[i].label, 22.0f, bw - 16.0f, i == 0 ? MX_DARK : MX_WHITE, 1);
+        s32 lit = i == (sZoLibSel == 3 ? (sZoFoot < n ? sZoFoot : n - 1) : sZoLibSel == 0 ? 0 : -1);
+
+        Mx_Bar(lit ? ZW_BAR_SEL : ZW_BAR, x, LIB_BTN_Y0, x + bw, LIB_BTN_Y1, 0x80);
+        if (lit && sZoLibSel == 3) {
+            f32 g = 3.0f + 3.0f * Zw_Beat(40);
+
+            Mx_Frame(x - g, LIB_BTN_Y0 - g, x + bw + g, LIB_BTN_Y1 + g, 4.0f, Mx_Rgba(255, 255, 255, 0x80));
+        }
+        Mx_Text(x + bw * 0.5f, (LIB_BTN_Y0 + LIB_BTN_Y1) * 0.5f, sPrompt[i].label, 22.0f, bw - 16.0f, lit ? MX_DARK : MX_WHITE, 1);
     }
     /* what Shin says */
     if (sZw->noteT > 0) {
@@ -2416,10 +2521,10 @@ static void Lib_Touch(Pad *pad) {
         Zo_Open();
         return;
     }
-    if (y >= LIB_BTN_Y0 - 6.0f && sPromptCount > 0) {
-        f32 bw = (LIB_BTN_X1 - LIB_X - 8.0f * (f32)(sPromptCount - 1)) / (f32)sPromptCount;
+    if (y >= LIB_BTN_Y0 - 6.0f && sZoFootN > 0) {
+        f32 bw = (LIB_BTN_X1 - LIB_X - 8.0f * (f32)(sZoFootN - 1)) / (f32)sZoFootN;
 
-        for (i = 0; i < sPromptCount; i++) {
+        for (i = 0; i < sZoFootN; i++) {
             f32 x0 = LIB_X + (bw + 8.0f) * (f32)i;
 
             if (x >= x0 && x <= x0 + bw) {
@@ -2552,7 +2657,29 @@ static void Lib_Update(s32 live) {
         Lib_Touch(pad);
     }
     /* up / down go round the online button and the list; right goes to the button, left back to the list */
-    if (sZoLibSel == 1 && (pad->gameRepeat & (PADG_RIGHT | PADG_RIGHT2))) {
+    if (sZoLibSel == 3) { /* the foot's buttons: left / right travel them, Triangle leaves them, Cross presses */
+        s32 n = sZoFootN > 0 ? sZoFootN : 1;
+
+        sZoFoot = sZoFoot < n ? sZoFoot : n - 1;
+        if (pad->gamePressed & (PADG_TRIANGLE | PADG_CIRCLE)) {
+            pad->gamePressed &= ~(PADG_TRIANGLE | PADG_CIRCLE); /* (leaves the buttons, not the screen) */
+            sZoLibSel = 0;
+            Snd_PlaySe(1, 2);
+        } else if (pad->gamePressed & (PADG_LEFT | PADG_LEFT2)) {
+            sZoFoot = (sZoFoot + n - 1) % n;
+            Snd_PlaySe(1, 0);
+        } else if (pad->gamePressed & (PADG_RIGHT | PADG_RIGHT2)) {
+            sZoFoot = (sZoFoot + 1) % n;
+            Snd_PlaySe(1, 0);
+        } else if ((pad->gamePressed & PADG_CROSS) && sZoFoot > 0 && sZoFoot < sZoFootN) {
+            pad->gamePressed &= ~PADG_CROSS; /* (that button's own press; the first one is Cross itself) */
+            pad->gamePressed |= Lib_Button(sPrompt[sZoFoot].kind);
+        }
+    } else if (sZoLibSel == 0 && (pad->gamePressed & (PADG_LEFT | PADG_LEFT2))) { /* left on the list: the foot's buttons */
+        sZoLibSel = 3;
+        sZoFoot = 0;
+        Snd_PlaySe(1, 0);
+    } else if (sZoLibSel == 1 && (pad->gameRepeat & (PADG_RIGHT | PADG_RIGHT2))) {
         sZoLibSel = 2;
         Snd_PlaySe(1, 0);
     } else if (sZoLibSel == 2 && (pad->gameRepeat & (PADG_LEFT | PADG_LEFT2))) {
@@ -2578,7 +2705,7 @@ static void Lib_Update(s32 live) {
     } else if (pad->gameRepeat & (PADG_DOWN | PADG_DOWN2)) {
         sZw->cur = sZw->cur + 1;
     }
-    if (sZoLibSel && (pad->gamePressed & (PADG_SQUARE | PADG_CIRCLE | PADG_L1))) { /* (no warrior is chosen) */
+    if ((sZoLibSel == 1 || sZoLibSel == 2) && (pad->gamePressed & (PADG_SQUARE | PADG_CIRCLE | PADG_L1))) { /* (no warrior is chosen) */
         pad->gamePressed &= ~(PADG_SQUARE | PADG_CIRCLE | PADG_L1);
     }
     if (sZw->cur != was) {
@@ -2623,7 +2750,7 @@ static void Lib_Update(s32 live) {
         Snd_PlaySe(1, 1);
         if (sZoLibSel == 2) {
             Lib_LangNext();
-        } else if (sZoLibSel) {
+        } else if (sZoLibSel == 1) {
             Zo_Open();
         } else {
             Zw_Edit(sZw->cur - 1);
@@ -3152,6 +3279,7 @@ static s32 Zw_SaveTick(void) {
     return 1;
 }
 
+static void Zf_Run(Pad *pad, s32 which);
 static void Ed_Update(s32 live) {
     Pad *pad = &gPad[0];
     s32 n;
@@ -3165,6 +3293,7 @@ static void Ed_Update(s32 live) {
     if (Zw_SaveTick() || !live) {
         return;
     }
+    Zf_Run(pad, 3); /* (the arrows go to everything on the screen: rows, tabs, the small buttons, the foot, Save) */
     if ((pad->gamePressed & PADG_TRIANGLE) && Zt_Back()) { /* (from all the options: back to the tab first) */
         Snd_PlaySe(1, 2);
         return;
@@ -3932,7 +4061,7 @@ static void Pk_Update(s32 live) {
     if (sZw->pickStage == 0) {
         s32 c = sZw->pickCur;
 
-        if (!slots) { /* (the fighter picker: its bar, menu/port_zw_bar.inc) */
+        if (1) { /* (the fighter picker: its bar, menu/port_zw_bar.inc) */
             Zb_Nav(pad);
             c = sZw->pickCur;
         } else if (c == -2) { /* (on "None", above the grid) */
@@ -3985,7 +4114,11 @@ static void Pk_Update(s32 live) {
     if (sZw->pickCur * 8 + sZw->pickSlot != was) {
         Snd_PlaySe(1, 0);
     }
-    if (!slots && Zb_Keys(pad)) {
+    if (sZw->pickStage == 0 && (pad->gamePressed & PADG_SQUARE)) {
+        Zb_NextChip();
+        return;
+    }
+    if ((!slots || sZw->pickStage == 0) && Zb_Keys(pad)) {
         return;
     }
     if (pad->gamePressed & PADG_CROSS) {
@@ -5218,6 +5351,7 @@ static void Co_PicDraw(f32 ox) {
 }
 
 /* The picker opened on region k: its colour now as hue / strength / lightness; what to go back to. */
+static void Zc_Reset(void);
 static void Co_Open(s32 k) {
     s32 at;
     u32 now = Co_Now(k, &at);
@@ -5228,6 +5362,7 @@ static void Co_Open(s32 k) {
     sZw->pkC = (now >> 24) != 0 ? (s32)(now >> 24) : 100;
     sZw->colourStage = 1;
     sZw->modeT = 0;
+    Zc_Reset();
 }
 
 /* Whether region k is a whole texture (the eyedropper's "all of it"). */
@@ -5293,7 +5428,12 @@ static void Co_Bar(f32 x0, f32 y, f32 w, s32 which, f32 at, s32 lit) { /* a slid
     Zw_Swatch(which == 0 ? Co_FromHsv(sZw->pkH, 0.85f, 0.95f) : Co_FromHsv(sZw->pkH, sZw->pkS, sZw->pkV), x0 + w * at, y, lit ? 30.0f : 24.0f, lit);
 }
 
+static void Zp_ColourDraw(void);
 static void Co_Draw(void) {
+    Zp_ColourDraw(); /* (the Android screens, port_zw_paint.inc) */
+    return;
+}
+static void Co_DrawOld(void) {
     s32 i;
     s32 at;
     s32 k = Co_Region();
@@ -5453,12 +5593,17 @@ static void Co_Draw(void) {
     }
 }
 
+static void Zc_Filter(Pad *pad, s32 only, s32 apply);
+static void Zf_Run(Pad *pad, s32 which);
 static void Co_Update(s32 live) {
     Pad *pad = &gPad[0];
     s32 k = Co_Region();
 
     if (Zw_SaveTick() || !live) {
         return;
+    }
+    if (sZw->colourStage != 1) {
+        Zf_Run(pad, 1);
     }
     if (sZw->colourStage == 0) {
         s32 was = sZw->coCur;
@@ -5539,6 +5684,7 @@ static void Co_Update(s32 live) {
         sZw->colourStage = 0;
         return;
     }
+    Zc_Filter(pad, 1, 1);
     { /* the picker */
         s32 rows = CP_ROWS;
         s32 left = pad->gameRepeat & (PADG_LEFT | PADG_LEFT2), right = pad->gameRepeat & (PADG_RIGHT | PADG_RIGHT2);
@@ -6736,7 +6882,7 @@ static void Zw_Init(void) {
     sZoLibSel = 0;
     extern void GsDraw_ScreenScaleFloor(int floor4); /* port/src/gs/gs_draw.c */
 
-    GsDraw_ScreenScaleFloor(16); /* (at least 4x here, as Dragon Net: at 1x its pictures and letters blurred) */
+    GsDraw_ScreenScaleFloor(12); /* (at least 3x here: at 1x its pictures and letters blurred, at 4x a phone's GPU gave 70% speed, log of 27/11) */
     sZw = Heap_Alloc(sizeof(Zw), 0x20, 0, 2);
     memset(sZw, 0, sizeof(Zw));
     sZw->at = -1;
@@ -7716,6 +7862,7 @@ static void Tx_ToolRect(s32 t, f32 *r) { /* (the buttons at the foot of the cont
     r[3] = 338.0f;
 }
 
+static void Zf_Run(Pad *pad, s32 which);
 static void Tx_Update(s32 live) {
     Pad *pad = &gPad[0];
     s32 m[5], press, i;
@@ -7724,6 +7871,7 @@ static void Tx_Update(s32 live) {
     if (Zw_SaveTick() || !live) {
         return;
     }
+    Zf_Run(pad, 2);
     if (sZw->picImport) { /* a picture file chosen: put on this texture */
         char path[700];
 
@@ -8071,7 +8219,12 @@ padInput:
     }
 }
 
+static void Zp_PaintDraw(void);
 static void Tx_Draw(void) {
+    Zp_PaintDraw(); /* (the Android screens, port_zw_paint.inc) */
+    return;
+}
+static void Tx_DrawOld(void) {
     f32 pop = Zw_In(sZw->modeT, 8), px, py, sc, r[4];
     s32 a = (s32)(128.0f * pop), i, top = sTxCur > 15 ? sTxCur - 15 : 0;
     char name[40];
@@ -8713,15 +8866,22 @@ static void St_Update(s32 live) {
     }
 }
 
+static void Za_PartsDraw(void);
+static void Za_TexDraw(void);
+static void Za_ColourDraw(void);
+static void Za_Tap(f32 x, f32 y);
+static void Za_ColourTap(f32 x, f32 y);
 static void Sh_Draw(void) {
     f32 pop = Zw_In(sZw->modeT, 8);
     s32 a = (s32)(128.0f * pop), i, r, top = sZw->shRow > 10 ? sZw->shRow - 10 : 0, e;
     char line[64], name[48];
 
-    if (sZw->shByTex) {
-        St_Draw();
+    if (sZw->shByTex) { /* (the Android screens, port_zw_shade.inc) */
+        Za_TexDraw();
         return;
     }
+    Za_PartsDraw();
+    return;
     Sh_Load();
     Zw_Host(1250.0f, 330.0f, 300.0f, 1);
     Zw_EditStage(900.0f, 540.0f, 400.0f);
@@ -8834,6 +8994,7 @@ static void Sh_Changed(void) {
     sZw->previewDue = ZW_PREVIEW_REST;
 }
 
+static void Zf_Run(Pad *pad, s32 which);
 static void Sh_Update(s32 live) {
     Pad *pad = &gPad[0];
     s32 e, i, last;
@@ -8849,6 +9010,10 @@ static void Sh_Update(s32 live) {
         return;
     }
     if (Zw_SaveTick()) {
+        return;
+    }
+    if (live) { /* (the Android screens: the focus, then nothing of the old pad code) */
+        Zf_Run(pad, 0);
         return;
     }
     if (sZw->shByTex) {
@@ -9007,6 +9172,154 @@ static void Fx_Set(s32 c) {
     sZw->dirty = 1; /* (the effects, not the model: no new preview) */
 }
 
+/* A finger on a slider: 0..1 along it, -1 not on it. */
+static f32 Co_BarAt(f32 x, f32 y, f32 rowY) {
+    f32 k = (x - 170.0f) / 410.0f;
+
+    if (y < rowY - 24.0f || y >= rowY + 24.0f || x < 150.0f || x > 600.0f) {
+        return -1.0f;
+    }
+    return k < 0.0f ? 0.0f : k > 0.999f ? 0.999f : k;
+}
+
+/* A finger on the texture colours screen. 1 taken. */
+static s32 Co_Touch(f32 x, f32 y) {
+    s32 i, k;
+
+    if (sZw->saving || x > 620.0f) {
+        return 0;
+    }
+    if (sZw->colourStage == 0) { /* the list: a row chosen, the chosen one opened */
+        for (i = 0; i < CO_ROWS && sZw->coTop + i < sZw->coRows; i++) {
+            f32 mid = CO_Y + (f32)i * CO_PITCH;
+
+            if (y >= mid - CO_PITCH * 0.5f && y < mid + CO_PITCH * 0.5f && x >= 30.0f) {
+                if (sZw->coList[sZw->coTop + i] >= 0) {
+                    if (sZw->coCur == sZw->coTop + i) {
+                        Zt_Press(PADG_CROSS);
+                    } else {
+                        sZw->coCur = sZw->coTop + i;
+                        Snd_PlaySe(1, 0);
+                    }
+                }
+                return 1;
+            }
+        }
+        if (y >= 112.0f && y < CO_Y - CO_PITCH * 0.5f) { /* (the arrows above and below the list) */
+            Zt_Press(PADG_UP);
+            return 1;
+        }
+        if (y >= CO_Y + CO_PITCH * (CO_ROWS - 0.5f) && y <= 640.0f) {
+            Zt_Press(PADG_DOWN);
+            return 1;
+        }
+        return 0;
+    }
+    if (sZw->colourStage == 3) { /* the picture: the colour under the finger; or one of its sixteen */
+        s32 w = sZw->picW, h = sZw->picH;
+        f32 sc, px;
+
+        if (w <= 0 || h <= 0 || sZw->picDraw) {
+            return 0;
+        }
+        sc = 540.0f / (f32)w < 330.0f / (f32)h ? 540.0f / (f32)w : 330.0f / (f32)h;
+        px = 325.0f - (f32)w * sc * 0.5f;
+        if (x >= px && x < px + (f32)w * sc && y >= 150.0f && y < 150.0f + (f32)h * sc) {
+            sZw->picX = (s32)((x - px) / sc);
+            sZw->picY = (s32)((y - 150.0f) / sc);
+            Zt_Press(PADG_CROSS);
+            return 1;
+        }
+        if (y >= 490.0f && y <= 534.0f) {
+            k = (s32)((x - 53.0f) / 34.0f);
+            for (i = 0; k >= 0 && k < 16 && i < w * h; i++) {
+                if ((sZw->pic[i] & 15) == k) {
+                    sZw->picX = i % w;
+                    sZw->picY = i / w;
+                    Zt_Press(PADG_CROSS);
+                    break;
+                }
+            }
+            return 1;
+        }
+        return 0;
+    }
+    if (Co_Region() < 0) {
+        return 0;
+    }
+    for (i = 0; i < CP_ROWS; i++) { /* the picker: where the finger is, that colour */
+        f32 rowY = 266.0f + (f32)i * 50.0f, at = Co_BarAt(x, y, rowY);
+
+        if (y < rowY - 25.0f || y >= rowY + 25.0f) {
+            continue;
+        }
+        if (i <= CP_VAL) {
+            if (at < 0.0f) {
+                return 1;
+            }
+            *(i == CP_HUE ? &sZw->pkH : i == CP_SAT ? &sZw->pkS : &sZw->pkV) = at;
+        } else if (i == CP_SW1 || i == CP_SW2) {
+            k = (s32)((x - 70.0f + 17.75f) / 35.5f);
+            if (x < 52.0f || k < 0 || k >= 15) {
+                return 1;
+            }
+            sZw->pkSwatch = k;
+            Co_ToHsv(kSwatch[(i - CP_SW1) * 15 + k], &sZw->pkH, &sZw->pkS, &sZw->pkV);
+        } else if (i == CP_RECENT) {
+            k = (s32)((x - 190.0f + 23.0f) / 46.0f);
+            if (x < 167.0f || k < 0 || k >= sZw->recents) {
+                return 1;
+            }
+            sZw->pkSwatch = k;
+            Co_ToHsv(sZw->recent[k], &sZw->pkH, &sZw->pkS, &sZw->pkV);
+        } else { /* "only on": its left half back, its right half on */
+            sZw->pkRow = i;
+            Zt_Press(x < 395.0f ? PADG_LEFT : PADG_RIGHT);
+            return 1;
+        }
+        sZw->pkRow = i;
+        Co_Apply();
+        Snd_PlaySe(1, 0);
+        return 1;
+    }
+    return 0;
+}
+
+/* A finger on the technique / aura colour screen. 1 taken. */
+static s32 Fx_Touch(f32 x, f32 y) {
+    s32 i, k;
+
+    for (i = 0; i < FX_ROWS && x <= 620.0f; i++) {
+        f32 rowY = 266.0f + (f32)i * 50.0f, at = Co_BarAt(x, y, rowY);
+
+        if (y < rowY - 25.0f || y >= rowY + 25.0f) {
+            continue;
+        }
+        if (i <= FX_VAL) {
+            if (at < 0.0f) {
+                return 1;
+            }
+            *(i == FX_HUE ? &sZw->pkH : i == FX_SAT ? &sZw->pkS : &sZw->pkV) = at;
+        } else if (i == FX_SW1 || i == FX_SW2) {
+            k = (s32)((x - 70.0f + 18.0f) / 36.0f);
+            if (x < 52.0f || k < 0 || k >= 15) {
+                return 1;
+            }
+            sZw->pkSwatch = k;
+            Co_ToHsv(kSwatch[(i - FX_SW1) * 15 + k], &sZw->pkH, &sZw->pkS, &sZw->pkV);
+        } else { /* its own colours again */
+            sZw->pkRow = i;
+            Zt_Press(PADG_CROSS);
+            return 1;
+        }
+        sZw->pkRow = i;
+        Fx_Set((s32)(0x1000000 | Co_FromHsv(sZw->pkH, sZw->pkS, sZw->pkV)));
+        Snd_PlaySe(1, 0);
+        return 1;
+    }
+    return 0;
+}
+
 static void Fx_Draw(void) {
     static char *labels[FX_ROWS] = {"Hue", "Strength", "Light", "", "", "Its own colours"};
     f32 pop = Zw_In(sZw->modeT, 8);
@@ -9014,6 +9327,10 @@ static void Fx_Draw(void) {
     s32 i, j;
     char title[64];
 
+    if (1) { /* (every colour picker: port_zw_shade.inc) */
+        Za_ColourDraw();
+        return;
+    }
     Zw_Host(1250.0f, 330.0f, 300.0f, 1);
     Zw_EditStage(900.0f, 540.0f, 400.0f);
     Zw_Title(sZw->fxTarget >= 9 && sZw->fxTarget <= 13 ? "BODY GLOW" : sZw->fxTarget == 8 ? "NEW COLOUR" : sZw->fxTarget >= 6 ? "BLAST 1 COLOUR" : sZw->fxTarget >= 4 ? "SHADE COLOUR" : sZw->fxTarget == 3 ? "AURA COLOUR" : "TECHNIQUE COLOUR");
@@ -9070,6 +9387,8 @@ static void Fx_Draw(void) {
                                : "Any colour you like! Fire it in a fight to see it.");
 }
 
+static void Zc_Filter(Pad *pad, s32 only, s32 apply);
+static void Zc_Reset(void);
 static void Fx_Update(s32 live) {
     Pad *pad = &gPad[0];
     s32 hl = pad->gameHeld & (PADG_LEFT | PADG_LEFT2), hr = pad->gameHeld & (PADG_RIGHT | PADG_RIGHT2);
@@ -9078,6 +9397,7 @@ static void Fx_Update(s32 live) {
     if (!live) {
         return;
     }
+    Zc_Filter(pad, 0, 0);
     if (pad->gameRepeat & (PADG_UP | PADG_UP2)) {
         sZw->pkRow = (sZw->pkRow + FX_ROWS - 1) % FX_ROWS;
         Snd_PlaySe(1, 0);
@@ -9207,6 +9527,49 @@ static void Zw_Auto(void) {
 #include "port_zw_touch.inc"
 #include "port_zw_bar.inc"
 #include "port_zw_online.inc"
+#include "port_zw_shade.inc"
+#include "port_zw_paint.inc"
+
+static void Zf_DrawBegin(void) {
+    sZfN = 0;
+}
+
+void Zf_Keep(f32 *x, f32 *y, s32 restore) {
+    if (restore) {
+        sZfX = *x, sZfY = *y;
+    } else {
+        *x = sZfX, *y = sZfY;
+    }
+}
+
+static void Zf_Reset(void) {
+    sZfN = sZfGrab = sZfTouch = 0;
+    sZfX = sZfY = -1.0f;
+    sZpPop = sZaPop = 0;
+    sZtBar = -1;
+}
+
+static void Zf_Run(Pad *pad, s32 which) {
+    sZfCircle = which != 3;
+    Zf_Filter(pad, which == 0 ? Za_Tap : which == 1 ? Zp_ColourTap : which == 2 ? Zp_PaintTap : Zt_EdTap);
+}
+
+static void Zf_DrawEnd(void) {
+    s32 at;
+
+    if (!(sZw->mode == ZW_SHADEPK || sZw->mode == ZW_TEXTURE || (sZw->mode == ZW_EDIT && sZw->ask == ASK_NONE) ||
+          (sZw->mode == ZW_COLOUR && sZw->colourStage != 1)) || (at = Zf_At()) < 0) {
+        return;
+    }
+    {
+        const ZfBox *b = &sZfBox[at];
+        f32 g = 6.0f + (sZfGrab ? 5.0f * Zw_Beat(30) : 0.0f);
+
+        sZfX = (b->x0 + b->x1) * 0.5f, sZfY = (b->y0 + b->y1) * 0.5f;
+        Mx_Frame(ZT_X(b->x0 - g), ZT_Y(b->y0 - g), ZT_X(b->x1 + g), ZT_Y(b->y1 + g), ZT_S(sZfGrab ? 10.0f : 6.0f),
+                 sZfGrab ? Mx_Rgba(90, 255, 140, 0x80) : Mx_Rgba(255, 255, 255, 0x80));
+    }
+}
 static void Zo_LibButton(void) { /* the home screen's way to the online screens */
     Zo_BigButton(LIB_ONLINE_X0 * 2400.0f / MX_W, LIB_ONLINE_Y0 * 1080.0f / MX_H, LIB_ONLINE_X1 * 2400.0f / MX_W,
                  LIB_ONLINE_Y1 * 1080.0f / MX_H, Zo_L("JOGAR ONLINE", "PLAY ONLINE", "JUGAR ONLINE"),
@@ -9295,6 +9658,7 @@ s32 PortZw_Run(void) {
         }
         Mx_Begin();
         gMxTapCount = 0;
+        Zf_DrawBegin();
         Mx_Pic(ZW_BG, 0.0f, 0.0f, MX_W, MX_H, 0x80);
         switch (sZw->mode) {
         case ZW_LIBRARY: Lib_Draw(); break;
@@ -9315,6 +9679,7 @@ s32 PortZw_Run(void) {
         case ZW_WSDETAIL: Wk_DetailDraw(); break;
         case ZW_WSUPLOAD: Wk_UploadDraw(); break;
         }
+        Zf_DrawEnd();
         if (sZw->ask != ASK_NONE) {
             gMxTapCount = 0; /* (only the question answers) */
             Zt_AskDraw();

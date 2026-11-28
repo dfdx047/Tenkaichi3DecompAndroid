@@ -3290,6 +3290,26 @@ static void put_env(const char *name, const char *value) {
 #endif
 }
 
+/* Z Warriors Online (plat_zwnet.c): the next session uses UDP port `port` (the one STUN saw), and a host knocks at
+   `punch` ("ip:port") so its router lets the other player's packets in. port 0: neither (both on one network). */
+static int sZwPunched;
+void Port_NetZwPunch(int port, const char *punch) {
+    char text[64], *colon;
+
+    sZwPunched = 1;
+
+    sCodeLocalPort = port;
+    sCodePunchSet = 0;
+    snprintf(text, sizeof(text), "%s", punch != NULL ? punch : "");
+    if ((colon = strrchr(text, ':')) != NULL) {
+        *colon = '\0';
+        memset(&sCodePunch, 0, sizeof(sCodePunch));
+        sCodePunch.sin_family = AF_INET;
+        sCodePunch.sin_port = htons((uint16_t)atoi(colon + 1));
+        sCodePunchSet = inet_pton(AF_INET, text, &sCodePunch.sin_addr) == 1;
+    }
+}
+
 void Port_NetSessionBegin(int role, const char *address, int port) {
     char host[16], join[160];
     static int known;
@@ -3328,6 +3348,16 @@ int Port_NetSessionsEnded(void) {
 }
 
 void Port_NetSessionEnd(void) {
+    {
+        extern void ZwFight_Clear(void); /* gs/zw_net.c */
+
+        ZwFight_Clear();
+        if (sZwPunched) { /* (the port and the knocking were this room's: not the next online mode's) */
+            sZwPunched = 0;
+            sCodeLocalPort = 0;
+            sCodePunchSet = 0;
+        }
+    }
     sSessionsEnded++;
     Port_UiBanner(NULL, 0); /* (see Port_NetLeave) */
     sRivalRegion[0] = '\0';

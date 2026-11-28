@@ -11,15 +11,126 @@
 #define ZT_GREEN ZT_C(110, 230, 160)
 #define ZT_INK ZT_C(22, 20, 52)
 
+/* ---- the pad on the touch screens: what each draw lists, the arrows travel and Cross presses ---------------------
+   Zt_Pill, the rows (Zt_Box panel / selected) and the big dots list their boxes (template pixels). A box listed with
+   `grab` (a picture to draw or point on): Cross takes hold, the pad then works it as before, Triangle lets go. */
+typedef struct ZfBox {
+    f32 x0, y0, x1, y1;
+    s32 grab;
+} ZfBox;
+static ZfBox sZfBox[96];
+static s32 sZfCircle = 1; /* Circle goes back too (not in the editor: there it is a shortcut) */
+static s32 sZfN, sZfTouch, sZfHeld, sZfGrab; /* sZfTouch: a finger acted this frame, its presses pass */
+static f32 sZfX = -1.0f, sZfY = -1.0f;       /* the focus: the middle of the box it is on */
+
+static void Zf_Add(f32 x0, f32 y0, f32 x1, f32 y1, s32 grab) {
+    if (sZfN < 96) {
+        ZfBox *b = &sZfBox[sZfN++];
+
+        b->x0 = x0, b->y0 = y0, b->x1 = x1, b->y1 = y1, b->grab = grab;
+    }
+}
+
+static s32 Zf_At(void) { /* the box the focus is on: the one whose middle is nearest */
+    f32 best = 1.0e12f;
+    s32 i, at = -1;
+
+    for (i = 0; i < sZfN; i++) {
+        f32 dx = (sZfBox[i].x0 + sZfBox[i].x1) * 0.5f - sZfX, dy = (sZfBox[i].y0 + sZfBox[i].y1) * 0.5f - sZfY;
+        f32 d = dx * dx + dy * dy;
+
+        if (d < best) {
+            best = d, at = i;
+        }
+    }
+    return at;
+}
+
+/* tap: the screen's own function for a finger at a place. */
+static void Zf_Filter(Pad *pad, void (*tap)(f32, f32)) {
+    u32 hit = pad->gamePressed, step = hit;
+    u32 all = PADG_UP | PADG_UP2 | PADG_DOWN | PADG_DOWN2 | PADG_LEFT | PADG_LEFT2 | PADG_RIGHT | PADG_RIGHT2 | PADG_CROSS | PADG_TRIANGLE | PADG_CIRCLE;
+    s32 at, i, dx = 0, dy = 0, to = -1;
+    f32 best = 1.0e9f;
+
+    if (sZfTouch) {
+        sZfTouch = 0;
+        sZfGrab = 0;
+        return;
+    }
+    at = Zf_At();
+    if (sZfGrab) {
+        for (i = 0; i < sZfN && sZfBox[i].grab != 1; i++) {
+        }
+        if (i == sZfN || (hit & PADG_TRIANGLE)) {
+            sZfGrab = 0;
+            pad->gamePressed &= ~(PADG_TRIANGLE | PADG_CIRCLE);
+            Snd_PlaySe(1, 2);
+        }
+        return;
+    }
+    if (!sZfCircle) {
+        all &= ~PADG_CIRCLE;
+    }
+    pad->gamePressed &= ~all;
+    pad->gameRepeat &= ~all;
+    pad->gameHeld &= ~all;
+    if (hit & (PADG_TRIANGLE | (sZfCircle ? PADG_CIRCLE : 0))) {
+        tap(117.0f, 86.0f); /* (the back arrow; in a box over the screen, outside it) */
+        return;
+    }
+    if (at < 0) {
+        return;
+    }
+    sZfX = (sZfBox[at].x0 + sZfBox[at].x1) * 0.5f, sZfY = (sZfBox[at].y0 + sZfBox[at].y1) * 0.5f;
+    dx = step & (PADG_LEFT | PADG_LEFT2) ? -1 : step & (PADG_RIGHT | PADG_RIGHT2) ? 1 : 0;
+    dy = dx ? 0 : step & (PADG_UP | PADG_UP2) ? -1 : step & (PADG_DOWN | PADG_DOWN2) ? 1 : 0;
+    if (dx && sZfBox[at].grab == 2) { /* (a value: left lowers it, right raises it) */
+        tap(sZfBox[at].x0 + (sZfBox[at].x1 - sZfBox[at].x0) * (dx < 0 ? 0.2f : 0.9f), sZfY);
+        return;
+    }
+    if (dx || dy) {
+        for (i = 0; i < sZfN; i++) {
+            f32 ax = (sZfBox[i].x0 + sZfBox[i].x1) * 0.5f - sZfX, ay = (sZfBox[i].y0 + sZfBox[i].y1) * 0.5f - sZfY;
+            f32 along = (f32)dx * ax + (f32)dy * ay, off = dx ? ay : ax, score;
+
+            if (i == at || along < 12.0f) {
+                continue;
+            }
+            score = along + (off < 0.0f ? -off : off) * 2.2f;
+            if (score < best) {
+                best = score, to = i;
+            }
+        }
+        if (to >= 0) {
+            sZfX = (sZfBox[to].x0 + sZfBox[to].x1) * 0.5f, sZfY = (sZfBox[to].y0 + sZfBox[to].y1) * 0.5f;
+            Snd_PlaySe(1, 0);
+        }
+        return;
+    }
+    if (hit & PADG_CROSS) {
+        if (sZfBox[at].grab == 1) {
+            sZfGrab = 1;
+            Snd_PlaySe(1, 1);
+        } else {
+            tap(sZfX, sZfY);
+        }
+    }
+}
+
 static void Zt_Text(f32 x, f32 y, char *s, f32 size, f32 width, u32 colour, s32 align, s32 alpha) {
     Mx_TextC(ZT_X(x), ZT_Y(y), s, ZT_CAP(size), width > 0.0f ? ZT_X(width) : 0.0f, colour, colour, ZT_INK, align, alpha);
 }
 
 static void Zt_Box(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 r, s32 alpha) {
+    if ((id == ZW_T_PANEL || id == ZW_T_SEL) && y1 - y0 < 170.0f) { /* (a row, not a panel behind others) */
+        Zf_Add(x0, y0, x1, y1, 0);
+    }
     Mx_Box(id, ZT_X(x0), ZT_Y(y0), ZT_X(x1), ZT_Y(y1), ZT_S(r), alpha);
 }
 
 static void Zt_Pill(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, char *s, f32 size, s32 alpha) {
+    Zf_Add(x0, y0, x1, y1, 0);
     Mx_Bar(id, ZT_X(x0), ZT_Y(y0), ZT_X(x1), ZT_Y(y1), alpha);
     Zt_Text((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, s, size, x1 - x0 - 40.0f, ZT_WHITE, 1, alpha);
 }
@@ -180,6 +291,26 @@ static void Zt_Header(char *title, char *sub) {
 
 static char *kZtBar0[4] = {"Pose pr\303\263pria", "Sortear tudo", "Anima\303\247\303\265es e aura", "Formas 3 e 4"};
 
+/* What a row does besides being pressed (the pad's Select / Circle, which a finger had no way to): its small button. */
+static char *Zt_Extra(s32 kind, u32 *press) {
+    *press = PADG_CIRCLE;
+    if (kind == ROW_AURA || (kind >= ROW_TECH0 && kind <= ROW_TECH2) || kind == ROW_SKILL0 || kind == ROW_SKILL1) {
+        *press = PADG_SELECT;
+        return "COR";
+    }
+    if (IS_PART(kind)) {
+        return "CAMADA";
+    }
+    if (kind == ROW_RENDER || kind == ROW_CHIP || kind == ROW_HUD) {
+        return "FOTO";
+    }
+    return NULL;
+}
+#define ZT_EXTRA_W 140.0f
+
+/* Rows a finger steps down on their left half and up on their right (the pad's left / right). */
+#define ZT_STEPS(kind) (IS_SIZE(kind) || (kind) == ROW_BODYSCALE || ((kind) >= ROW_XL && (kind) <= ROW_XL_END))
+
 static void Zt_EdDraw(void) {
     static char *tabs[4] = {"GUERREIRO", "PE\303\207AS", "GOLPES", "FORMAS"};
     PortWarrior *w = &sZw->w;
@@ -226,6 +357,9 @@ static void Zt_EdDraw(void) {
             continue;
         }
         Zt_Box(sel ? ZW_T_SEL : ZW_T_PANEL, r[0], r[1], r[2], r[3], sZtPage == 0 ? 28.0f : 18.0f, 0x80);
+        if (ZT_STEPS(kind) && sZfN > 0) { /* (left / right change it) */
+            sZfBox[sZfN - 1].grab = 2;
+        }
         if (sZtPage == 0) {
             char *v = kind == -2 ? "3 itens" : kind == ROW_WORKSHOP || kind == ROW_SHADING || kind == ROW_TEXTURES ||
                       (kind >= ROW_LAB && kind <= ROW_LAB_END) ? "abrir" : Zw_Value(kind);
@@ -237,7 +371,13 @@ static void Zt_EdDraw(void) {
                 sprintf(pc, "-    %d%%    +", (int)(w->size[kind - ROW_SIZE] > 0 ? w->size[kind - ROW_SIZE] : 100));
                 Zt_Text(r[2] - 60.0f, mid, pc, 34.0f, 570.0f, ZT_GOLD, 2, 0x80);
             } else {
-                Zt_Text(r[2] - 60.0f, mid, v, 31.0f, 570.0f, ZT_DIM, 2, 0x80);
+                u32 press;
+                char *extra = Zt_Extra(kind, &press);
+
+                Zt_Text(r[2] - (extra != NULL ? 80.0f + ZT_EXTRA_W : 60.0f), mid, v, 31.0f, 570.0f, ZT_DIM, 2, 0x80);
+                if (extra != NULL) {
+                    Zt_Pill(ZW_T_ORANGE, r[2] - 62.0f - ZT_EXTRA_W, r[1] + 8.0f, r[2] - 62.0f, r[3] - 8.0f, extra, 28.0f, 0x80);
+                }
             }
             Zt_Chev(r[2] - 32.0f, mid, 36.0f);
         } else {
@@ -245,9 +385,15 @@ static void Zt_EdDraw(void) {
             s32 inPlace = IS_SIZE(kind) || kind == ROW_COSTUMES || kind == ROW_COSEDIT || kind == ROW_DAMAGE || kind == ROW_DYNSHADE ||
                           (kind >= ROW_FORM && kind <= ROW_FORM_END) || (kind >= ROW_FORMKEY && kind <= ROW_FORMKEY_END) ||
                           (kind >= ROW_FORMCOST && kind <= ROW_FORMCOST_END) || (kind >= ROW_FORMKIND && kind <= ROW_FORMKIND_END) ||
-                          (kind >= ROW_FORMAURA && kind <= ROW_FORMAURA_END); /* (changed where they are: their value shown) */
+                          (kind >= ROW_FORMAURA && kind <= ROW_FORMAURA_END) || ZT_STEPS(kind); /* (changed where they are: their value shown) */
 
-            Zt_Text(r[0] + 24.0f, mid, it[i].label, size, inPlace ? (r[2] - r[0]) * 0.55f : r[2] - r[0] - 90.0f, ZT_WHITE, 0, 0x80);
+            u32 press;
+            char *extra = Zt_Extra(kind, &press);
+
+            Zt_Text(r[0] + 24.0f, mid, it[i].label, size, inPlace ? (r[2] - r[0]) * 0.55f : r[2] - r[0] - (extra != NULL ? 230.0f : 90.0f), ZT_WHITE, 0, 0x80);
+            if (extra != NULL) {
+                Zt_Pill(ZW_T_ORANGE, r[2] - 62.0f - ZT_EXTRA_W, r[1] + 5.0f, r[2] - 62.0f, r[3] - 5.0f, extra, size * 0.8f, 0x80);
+            }
             if (inPlace) {
                 Zt_Text(r[2] - 55.0f, mid, Zw_Value(kind), size * 0.85f, (r[2] - r[0]) * 0.35f, ZT_DIM, 2, 0x80);
             }
@@ -262,6 +408,9 @@ static void Zt_EdDraw(void) {
             f32 x = 60.0f + (f32)k * (bw + 18.0f);
 
             Zt_Pill(ZW_T_BAR, x, 940.0f, x + bw, 1044.0f, k == 0 ? kZtBar0[sZw->tab] : bar[k], 34.0f, 0x80);
+            if (k == sZtBar) {
+                Mx_Frame(ZT_X(x - 6.0f), ZT_Y(934.0f), ZT_X(x + bw + 6.0f), ZT_Y(1050.0f), ZT_S(7.0f), Mx_Rgba(255, 214, 80, 0x80));
+            }
         }
     }
     if (sZw->saving || sZw->noteT > 0) { /* (what has just happened) */
@@ -362,8 +511,16 @@ static void Zt_EdTap(f32 x, f32 y) {
         }
         sZw->row[sZw->tab] = row;
         sZw->rest = 0;
-        if (IS_SIZE(kind)) { /* the left half smaller, the right half bigger */
-            Zt_Press(x < r[0] + (r[2] - r[0]) * (sZtPage == 0 ? 0.8f : 0.5f) ? PADG_LEFT : PADG_RIGHT);
+        {
+            u32 press;
+
+            if (Zt_Extra(kind, &press) != NULL && x >= r[2] - 70.0f - ZT_EXTRA_W && x <= r[2] - 54.0f) {
+                Zt_Press(press);
+                return;
+            }
+        }
+        if (ZT_STEPS(kind)) { /* the left half smaller, the right half bigger */
+            Zt_Press(x < r[0] + (r[2] - r[0]) * (sZtPage == 0 && IS_SIZE(kind) ? 0.8f : 0.5f) ? PADG_LEFT : PADG_RIGHT);
         } else if (kind >= ROW_FORMKEY && kind <= ROW_FORMKEY_END) {
             Zw_Note("O comando de transforma\303\247\303\243o \303\251 o do jogo.");
         } else if ((kind >= ROW_FORMCOST && kind <= ROW_FORMCOST_END) || (kind >= ROW_FORMAURA && kind <= ROW_FORMAURA_END)) {
@@ -514,7 +671,7 @@ static void Zt_PkDraw(void) {
     char sub[128], line[96];
 
     Zt_PkSync();
-    if (!slots) {
+    if (1) { /* (the technique choice too: port_zw_bar.inc) */
         Zb_Draw();
         return;
     }
@@ -648,7 +805,7 @@ static void Zt_PkTap(f32 x, f32 y) {
     f32 r[4];
 
     Zt_PkSync();
-    if (!slots) {
+    if (1) {
         Zb_Tap(x, y);
         return;
     }

@@ -258,6 +258,12 @@ static void set_state(int state, const char *error) {
     SDL_UnlockMutex(sM.lock);
 }
 
+static int http_post_native(const char *url, const char *json, const char *const *headers, char *out, size_t size);
+/* The system's HTTPS for another service of the game (gs/zw_net.c). */
+int Match_HttpPost(const char *url, const char *json, const char *const *headers, char *out, size_t size) {
+    return http_post_native(url, json, headers, out, size);
+}
+
 /* ---- the Worker, through curl ---- */
 /* (http_post_native: `json` NULL makes it a GET of `url`. `headers`: lines
    "Name: value" to send as well, ended by a NULL, or NULL for none.) */

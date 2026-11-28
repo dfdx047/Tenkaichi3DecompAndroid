@@ -1,0 +1,14 @@
+{
+    // Deploy with the account of Z Warriors: XDG_CONFIG_HOME=$HOME/.config/dragonrage-zw npx wrangler deploy
+    "name": "zwarriors-online",
+    "main": "worker.js",
+    "compatibility_date": "2026-10-01",
+    "workers_dev": true,
+    "d1_databases": [{ "binding": "DB", "database_name": "zwarriors-online", "database_id": "bc95b804-3132-45fc-8c0d-780b1d518bba" }],
+    "durable_objects": { "bindings": [{ "name": "RELAY", "class_name": "ZwRelay" }] },
+    "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ZwRelay"] }],
+    "vars": { "REQUIRE_KEY": "on", "ALLOWED_VERSIONS": "1", "TURN_DAILY_MAX": "500" },
+    // quiet rooms, old counters (worker.js scheduled)
+    "triggers": { "crons": ["*/15 * * * *"] },
+    "observability": { "enabled": true }
+}

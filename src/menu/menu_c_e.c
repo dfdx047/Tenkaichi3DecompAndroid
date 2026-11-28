@@ -3,6 +3,9 @@
 #else
 #define GRID_REAL_CHAR(id) ((id) < MCHR_RANDOM)
 #endif
+#ifdef PORT
+extern int PortCharSel_UsesNew(void); /* menu/port_charsel.c */
+#endif
 #include "common.h"
 #ifdef PORT
 #include "menu/tag_outfit.h"
@@ -940,7 +943,7 @@ void CharSel_Init(s32 section) {
         if (i == 0) {
             PortZw_SelLoad();
         }
-        if (sZwCount > 0 && gCharSel->cellCount[i] > 0) { /* the CUSTOM tile: in the first empty place after the game's
+        if (sZwCount > 0 && gCharSel->cellCount[i] > 0 && !PortCharSel_UsesNew()) { /* the CUSTOM tile: in the first empty place after the game's
                                                              own markers, else a row of its own */
             s32 c, at = -1;
 

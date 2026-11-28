@@ -369,8 +369,8 @@ static void Zb_Draw(void) {
     /* the warrior, in the middle and large */
     Zw_EditStage(ZT_X(1200.0f), ZT_Y(830.0f), ZT_Y(600.0f));
     sprintf(sub, "para: %s%s", sZw->pickLayer ? "camada em " : "", Zt_KindLabel(kind));
-    Zt_Header("ESCOLHER LUTADOR", sub);
-    Zt_Pill(ZW_T_GREEN, 1950.0f, 38.0f, 2340.0f, 138.0f, "USAR", 40.0f, 0x80);
+    Zt_Header(Pk_Slots(kind) ? "APRENDER T\303\211CNICA" : "ESCOLHER LUTADOR", sub);
+    Zt_Pill(ZW_T_GREEN, 1950.0f, 38.0f, 2340.0f, 138.0f, Pk_Slots(kind) ? "APRENDER" : "USAR", 40.0f, 0x80);
     k = Zt_PkChips(label, what);
     for (i = 0; i < k; i++) {
         s32 lit = (what[i] == 0 && !sZtPkMods && cur != -2) || (what[i] == 1 && sZtPkMods && cur != -2) || (what[i] == 2 && cur == -2);
@@ -416,6 +416,32 @@ static void Zb_Draw(void) {
     Zt_Text(2084.0f, 940.0f, Zo_L("LINHA", "ROW", "FILA"), 24.0f, 120.0f, ZT_DIM, 1, 0x80);
     sprintf(line, "%d/%d", (int)row + 1, (int)rows);
     Zt_Text(2084.0f, 1000.0f, line, 36.0f, 120.0f, ZT_GOLD, 1, 0x80);
+    if (Pk_Slots(kind) > 0 && sZw->pickStage == 1) { /* which of its techniques */
+        s32 slots = Pk_Slots(kind), who = Pk_Chara(sZw->pickCur);
+        u32 shade = Mx_Rgba(4, 6, 26, 0x58);
+
+        Mx_Rect(0.0f, 0.0f, MX_W, MX_H, shade, shade);
+        Zt_Box(ZW_T_ASK, 650.0f, 200.0f, 1750.0f, 940.0f, 48.0f, 0x80);
+        Zt_Text(1200.0f, 265.0f, Zb_Name(sZw->pickCur), 44.0f, 1000.0f, ZT_GOLD, 1, 0x80);
+        Zt_Text(1200.0f, 325.0f, Zo_L("escolha a t\303\251cnica", "choose the technique", "elige la t\303\251cnica"), 30.0f, 1000.0f, ZT_DIM, 1, 0x80);
+        for (i = 0; i < slots; i++) {
+            f32 y = 370.0f + (f32)i * 140.0f;
+            char name[48];
+            char *note = i == 2 ? "Ultimate" : slots == 2 ? "Blast 1" : "Blast 2";
+
+            Port_FighterMove(who, (slots == 2 ? 0 : 2) + i, name, sizeof(name));
+            if (kind == ROW_LABLIKE && (Port_FighterMoveFx(who, 2 + i) == 2 || Port_FighterMoveFx(who, 2 + i) == 7)) {
+                note = Zo_L("investida: n\303\243o serve", "rush: won't fit", "embestida: no sirve");
+            } else if (kind >= ROW_FX0 && kind <= ROW_FX2 && Port_FighterMoveFx(who, 2 + i) != Pk_FxType(kind)) {
+                note = Zo_L("outro tipo: n\303\243o serve", "another kind", "otro tipo");
+            }
+            Zt_Box(i == sZw->pickSlot ? ZW_T_SEL : ZW_T_PANEL, 700.0f, y, 1700.0f, y + 124.0f, 30.0f, 0x80);
+            Zt_Text(740.0f, y + 44.0f, name[0] ? name : "-", 38.0f, 920.0f, ZT_WHITE, 0, 0x80);
+            Zt_Text(740.0f, y + 94.0f, note, 28.0f, 920.0f, ZT_DIM, 0, 0x80);
+        }
+        Zt_Pill(ZW_T_RED, 700.0f, 820.0f, 1180.0f, 915.0f, Zo_L("Voltar", "Back", "Volver"), 36.0f, 0x80);
+        Zt_Pill(ZW_T_GREEN, 1220.0f, 820.0f, 1700.0f, 915.0f, Zo_L("APRENDER", "LEARN", "APRENDER"), 38.0f, 0x80);
+    }
     Co_PaintTick();
     Ws_ShapeTick();
     if (sZw->noteT > 0) {
@@ -434,6 +460,21 @@ static void Zb_Tap(f32 x, f32 y) {
     at = Zb_At();
     n = Zb_Count();
     forms = sZw->pickCur >= 0 && n > 0 ? Zb_Forms(at) : 0;
+    if (Pk_Slots(sZw->pickRow->kind) > 0 && sZw->pickStage == 1) {
+        for (i = 0; i < Pk_Slots(sZw->pickRow->kind); i++) {
+            if (Zt_In(x, y, 700.0f, 370.0f + i * 140.0f, 1700.0f, 494.0f + i * 140.0f)) {
+                sZw->pickSlot = i;
+                Snd_PlaySe(1, 0);
+            }
+        }
+        if (Zt_In(x, y, 1220.0f, 820.0f, 1700.0f, 915.0f)) {
+            sZbTake = 1;
+            Zt_Press(PADG_CROSS);
+        } else if (Zt_In(x, y, 700.0f, 820.0f, 1180.0f, 915.0f) || Zt_In(x, y, 40.0f, 20.0f, 195.0f, 150.0f)) {
+            Zt_Press(PADG_TRIANGLE);
+        }
+        return;
+    }
     if (Zt_In(x, y, 40.0f, 20.0f, 195.0f, 150.0f)) {
         sZbOpen = -1;
         sZw->pickStage = 0;
@@ -441,6 +482,13 @@ static void Zb_Tap(f32 x, f32 y) {
         return;
     }
     if (Zt_In(x, y, 1950.0f, 30.0f, 2350.0f, 145.0f)) { /* USE */
+        if (Pk_Slots(sZw->pickRow->kind) > 0) { /* (the technique next) */
+            sZbOpen = -1;
+            sZw->pickStage = 1;
+            sZw->pickSlot = sZw->pickSlot < Pk_Slots(sZw->pickRow->kind) ? sZw->pickSlot : 0;
+            Snd_PlaySe(1, 1);
+            return;
+        }
         sZbTake = 1;
         sZbOpen = -1;
         Zt_Press(PADG_CROSS);
@@ -493,5 +541,33 @@ static void Zb_Tap(f32 x, f32 y) {
                 Zb_Go(i);
             }
         }
+    }
+}
+
+/* The pad's Square: the next of the game's fighters / the mods' / none. */
+static void Zb_NextChip(void) {
+    char *label[4];
+    s32 what[4], n = Zt_PkChips(label, what), i, at = 0;
+
+    for (i = 0; i < n; i++) {
+        if ((what[i] == 0 && !sZtPkMods && sZw->pickCur != -2) || (what[i] == 1 && sZtPkMods) || (what[i] == 2 && sZw->pickCur == -2)) {
+            at = i;
+        }
+    }
+    for (i = 1; i <= n; i++) {
+        s32 w = what[(at + i) % n];
+
+        if (w == 3) { /* (the costume: L1 / R1) */
+            continue;
+        }
+        sZbOpen = -1;
+        if (w == 2) {
+            Zt_PkChoose(-2);
+        } else {
+            sZtPkMods = w;
+            Zt_PkChoose(w ? MM_CHARA_COUNT : 0);
+        }
+        Snd_PlaySe(1, 1);
+        return;
     }
 }

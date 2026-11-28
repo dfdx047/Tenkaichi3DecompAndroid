@@ -13647,9 +13647,8 @@ extern int PortZw_ClipTake(char *out, int size);
 
 static const char kB64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
-/* Warrior i's code onto the clipboard. 1 put there. */
-int Port_WarriorShare(int i) {
-    static char code[16384];
+/* Warrior i's code into `code`. 1 done. */
+int Port_WarriorCode(int i, char *code, int size) {
     unsigned char txt[11000];
     char path[600];
     FILE *fp;
@@ -13665,7 +13664,7 @@ int Port_WarriorShare(int i) {
     }
     n = fread(txt, 1, sizeof(txt), fp);
     fclose(fp);
-    if (n == 0 || n >= sizeof(txt)) {
+    if (n == 0 || n >= sizeof(txt) || size < (int)((n + 2) / 3 * 4 + 5)) {
         return 0;
     }
     memcpy(code, "ZW1:", 4);
@@ -13678,8 +13677,18 @@ int Port_WarriorShare(int i) {
         code[o++] = k + 2 < n ? kB64[v & 63] : '=';
     }
     code[o] = '\0';
+    return 1;
+}
+
+/* Warrior i's code onto the clipboard. 1 put there. */
+int Port_WarriorShare(int i) {
+    static char code[16384];
+
+    if (!Port_WarriorCode(i, code, sizeof(code))) {
+        return 0;
+    }
     PortZw_ClipCopy(code);
-    fprintf(stderr, "bt3: warriors: %s shared (%u characters)\n", sWarrior[i], (unsigned)o);
+    fprintf(stderr, "bt3: warriors: %s shared (%u characters)\n", sWarrior[i], (unsigned)strlen(code));
     return 1;
 }
 
@@ -13688,21 +13697,16 @@ void Port_WarriorImportAsk(void) {
     PortZw_ClipAsk();
 }
 
-/* The clipboard's warrior, once it has been read: made as a new warrior; its index, -1 no warrior's code there,
-   -2 not read yet. */
-int Port_WarriorImportPoll(void) {
-    static char clip[16384];
-    static unsigned char txt[11000];
+/* A code's warrior made as a warrior of this phone (or found, when one is already the same); its index, -1 not one. */
+int Port_WarriorFromCode(const char *clip) {
+    static unsigned char txt[11000], have[11000];
     char folder[64], name[48], path[600];
     const char *at, *p;
     size_t n = 0;
     uint32_t v = 0;
-    int bits = 0;
+    int bits = 0, i;
     FILE *fp;
 
-    if (!PortZw_ClipTake(clip, sizeof(clip))) {
-        return -2;
-    }
     if ((at = strstr(clip, "ZW1:")) == NULL) {
         return -1;
     }
@@ -13742,6 +13746,19 @@ int Port_WarriorImportPoll(void) {
         name[k] = '\0';
     }
     ensure();
+    for (i = 0; i < sWarriorCount; i++) {
+        size_t m;
+
+        snprintf(path, sizeof(path), "%s/mods/%s/warrior.txt", root(), sWarrior[i]);
+        if ((fp = fopen(path, "rb")) == NULL) {
+            continue;
+        }
+        m = fread(have, 1, sizeof(have), fp);
+        fclose(fp);
+        if (m == n && memcmp(have, txt, n) == 0) {
+            return i;
+        }
+    }
     warrior_folder(name[0] != '\0' ? name : "Warrior", folder, sizeof(folder));
     snprintf(path, sizeof(path), "%s/mods/%s", root(), folder);
     make_dir(path);
@@ -13754,4 +13771,89 @@ int Port_WarriorImportPoll(void) {
     fprintf(stderr, "bt3: warriors: %s imported from a code\n", folder);
     Port_ModRescan(); /* (its files are made as the library is read) */
     return warrior_index(folder);
+}
+
+/* An online rival's warrior is a guest: made for the room and gone with it (nobody keeps another's). A mark file in
+   its folder says so, so one left by a crash goes the next time too. A warrior this phone already had is not a guest. */
+int Port_WarriorGuest(const char *code) {
+    char path[600];
+    int before, i;
+    FILE *fp;
+
+    ensure();
+    before = sWarriorCount;
+    i = Port_WarriorFromCode(code);
+    if (i >= 0 && i < sWarriorCount && sWarriorCount > before) {
+        snprintf(path, sizeof(path), "%s/mods/%s/online_guest", root(), sWarrior[i]);
+        if ((fp = fopen(path, "wb")) != NULL) {
+            fclose(fp);
+        }
+    }
+    return i;
+}
+
+int Port_WarriorIsGuest(int i) {
+    char path[600];
+    FILE *fp;
+
+    ensure();
+    if (i < 0 || i >= sWarriorCount) {
+        return 0;
+    }
+    snprintf(path, sizeof(path), "%s/mods/%s/online_guest", root(), sWarrior[i]);
+    if ((fp = fopen(path, "rb")) == NULL) {
+        return 0;
+    }
+    fclose(fp);
+    return 1;
+}
+
+/* Every guest removed; how many. */
+int Port_WarriorDropGuests(void) {
+    extern int Port_WarriorRemove(int i);
+    char path[600];
+    int i, n = 0;
+
+    ensure();
+    for (i = sWarriorCount - 1; i >= 0; i--) {
+        if (i < sWarriorCount && Port_WarriorIsGuest(i)) {
+            snprintf(path, sizeof(path), "%s/mods/%s/online_guest", root(), sWarrior[i]);
+            Port_WarriorRemove(i);
+            remove(path);
+            n++;
+        }
+    }
+    return n;
+}
+
+int Port_ModToggle(int i);
+/* Warrior i as a fighter of a battle: its character and costume number (switched on if it was not). 1 done. */
+int Port_WarriorFight(int i, int *chara, int *costume) {
+    int m, k, round;
+
+    ensure();
+    if (i < 0 || i >= sWarriorCount || (m = mod_by_name(sWarrior[i])) < 0) {
+        return 0;
+    }
+    for (round = 0; round < 2; round++) {
+        for (k = 0; k < sSkinCount; k++) {
+            if (sSkin[k] == m) {
+                *chara = target_of(&sMod[m]);
+                *costume = 8 + k * 4;
+                return 1;
+            }
+        }
+        if (!sMod[m].on) {
+            Port_ModToggle(m);
+        }
+    }
+    return 0;
+}
+
+/* The clipboard's warrior, once it has been read: made as a new warrior; its index, -1 no warrior's code there,
+   -2 not read yet. */
+int Port_WarriorImportPoll(void) {
+    static char clip[16384];
+
+    return PortZw_ClipTake(clip, sizeof(clip)) ? Port_WarriorFromCode(clip) : -2;
 }

@@ -105,6 +105,14 @@ s32 Progress_Main(s32 arg) {
             }
             gPortTboSpar = 0;
         }
+        {   /* A test fight (Z Warriors' or the Mod Manager's) is a Training: leaving it, by whatever way out the pause
+               menu gave, goes back where it came from, not to the Training's own character select */
+            extern s32 gPortModTest;
+
+            if (gPortModTest) {
+                gProgress->mode = 4; /* (the block below opens that screen from here) */
+            }
+        }
         {   /* A lobby's match (port/src/gs/net_lobby.c): "Return to Vs Menu", the owner's way back to the lobby window,
                leaves for the main menu, which ends the session on every copy (there is no versus menu in it) */
             extern int Port_NetLobbyOwnerSide(void);
@@ -129,7 +137,7 @@ s32 Progress_Main(s32 arg) {
             extern s32 gPortModTest;
             extern s32 gPortDuelRole;
 
-            if (gPortModTest && (reason & 0x10)) {
+            if (gPortModTest && (flags & 8)) {
                 gPortDuelRole = gPortModTest == 2 ? 3 : 2; /* (2: Z Warriors' test fight) */
                 gProgress->mode = 38;
             }

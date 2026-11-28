@@ -2,6 +2,11 @@
    and the warriors saved on this phone. NOTHING CONNECTS YET: there is no queue, no room and no warrior sent; the
    screens say so (the "preview" strip) and walk from one to the other so the design can be judged on a phone. Included
    by port_zw.c after port_zw_touch.inc; positions are the templates' pixels (Zt_*). */
+#include "../../include/menu/port_zw_net.h"
+static ZwNetInfo sZoNet;
+static PortWarrior sZoPeer;
+static int sZoHasPeer, sZoGen;
+
 enum { ZO_MENU, ZO_QUICK, ZO_SEARCH, ZO_FOUND, ZO_CREATE, ZO_CODE, ZO_ROOM, ZO_STAGES, ZO_MOVES, ZO_PREPARE, ZO_RESULT, ZO_LOST, ZO_VERSION };
 
 static struct {
@@ -40,6 +45,11 @@ static void Zo_Hit(s32 id, f32 x0, f32 y0, f32 x1, f32 y1) {
 }
 
 static void Zo_Go(s32 screen) {
+    {
+        extern void Mm_ViewPairOff(void); /* menu/port_modmgr.c: the room's second model does not stay */
+
+        Mm_ViewPairOff();
+    }
     sZo.from = sZo.screen;
     sZo.screen = screen;
     sZo.t = 0;
@@ -106,11 +116,10 @@ static void Zo_Header(char *title, char *sub, s32 lang) {
     }
 }
 
-static void Zo_Strip(void) { /* (nothing here connects: said on every screen) */
-    Zt_Box(ZW_T_RED, 760.0f, 2.0f, 1640.0f, 38.0f, 16.0f, 0x70);
-    Zt_Text(1200.0f, 20.0f, L("PR\303\211VIA: o online ainda n\303\243o conecta", "PREVIEW: online does not connect yet",
-                            "VISTA PREVIA: el online a\303\272n no conecta"), 24.0f, 850.0f, ZT_WHITE, 1, 0x80);
-    Zo_Hit(H_DEMO, 760.0f, 0.0f, 1640.0f, 44.0f);
+static void Zo_Strip(void) { /* (said on every screen) */
+    Zt_Box(ZW_T_RED, 700.0f, 2.0f, 1700.0f, 38.0f, 16.0f, 0x70);
+    Zt_Text(1200.0f, 20.0f, L("BETA: online em teste, nem toda rede conecta", "BETA: online in testing, not every network connects",
+                            "BETA: online en pruebas, no toda red conecta"), 24.0f, 970.0f, ZT_WHITE, 1, 0x80);
 }
 
 static void Zo_Bar(s32 n, const s32 *hit, const s32 *art, char **label) {
@@ -129,8 +138,8 @@ static PortWarrior *Zo_Mine(void) {
     return sZw->count > 0 ? &sZw->list[sZo.sel % sZw->count] : NULL;
 }
 
-static PortWarrior *Zo_Friend(void) { /* (the preview's other side: another of the saved ones) */
-    return sZw->count > 0 ? &sZw->list[(sZo.sel + 1) % sZw->count] : NULL;
+static PortWarrior *Zo_Friend(void) { /* the other player's, once it has come and been made here */
+    return sZoHasPeer ? &sZoPeer : NULL;
 }
 
 static char *Zo_Name(PortWarrior *v) {
@@ -165,7 +174,7 @@ static void Zo_Side(f32 x0, f32 x1, char *title, PortWarrior *v, s32 model, s32 
         Zw_Stage(0x30000 + v->body, v->body, -1, ZT_X(cx), ZT_Y(730.0f + dy), ZT_Y(450.0f), 0);
     } else {
         Mx_Fit(ZW_PLATFORM, ZT_X(cx), ZT_Y(700.0f + dy), ZT_Y(180.0f), a);
-        if (v != NULL) {
+        if (v != NULL && model != 2) { /* (2: one of the room's pair, drawn by Zo_Pair) */
             Zw_Chip(Lib_Face(v), ZT_X(cx), ZT_Y(470.0f + dy + 8.0f * Zw_Beat(120)), ZT_S(300.0f), 0);
         }
     }
@@ -461,6 +470,47 @@ static void Zo_Move(s32 dx, s32 dy) {
     }
 }
 
+/* The room's two warriors in 3D, facing each other: the viewer's model and one beside it (port_modmgr.c). */
+static void Zo_PairOne(PortWarrior *v, s32 *key, s32 *chara, s32 *mod) {
+    if (v->mod >= 0) {
+        PortModInfo info;
+
+        Port_ModGetInfo(v->mod, &info);
+        *key = 0x20000 + v->mod * 64 + (sZw->viewGen & 63);
+        *chara = info.chara;
+        *mod = v->mod;
+    } else {
+        *key = 0x30000 + v->body;
+        *chara = v->body;
+        *mod = -1;
+        if (v->body >= ZW_MODREF) {
+            extern int Port_ModRefMod(int who);
+
+            *mod = Port_ModRefMod(v->body);
+            *chara = Port_ModRefChara(v->body);
+        }
+    }
+}
+
+/* The turn that faces the screen for a model drawn at template x (port_modmgr.c Mm_PlaceModel: its place across over
+   its distance is (x - 0.492) / 0.76; the camera looks along the middle). */
+static f32 Zo_Front(f32 x) {
+    f32 r = (x / 2400.0f - 0.492f) / 0.76f;
+
+    return 3.1415927f + r * (1.0f - 0.2f * r * r); /* (atan, near enough for these few degrees) */
+}
+
+static void Zo_Pair(PortWarrior *mine, PortWarrior *theirs) {
+    s32 k0, c0, m0, k1, c1, m1;
+    f32 left[3] = {ZT_X(450.0f), ZT_Y(730.0f), ZT_Y(450.0f)}, right[3] = {ZT_X(1950.0f), ZT_Y(730.0f), ZT_Y(450.0f)};
+
+    Zo_PairOne(mine, &k0, &c0, &m0);
+    Zo_PairOne(theirs, &k1, &c1, &m1);
+    sZw->rest++;
+    Mm_ViewPair(k0, c0, 0, m0, k1, c1, 0, m1, sZw->rest > 4);
+    Mm_ViewPairDraw(left, Zo_Front(450.0f), right, Zo_Front(1950.0f));
+}
+
 /* ---- the screens ---- */
 static void Zo_RoomDraw(void) {
     s32 a = Zo_Alpha(), k;
@@ -474,20 +524,30 @@ static void Zo_RoomDraw(void) {
     Zt_Text(1520.0f, 90.0f, L("C\303\223DIGO", "CODE", "C\303\223DIGO"), 30.0f, 160.0f, ZT_DIM, 0, a);
     Zt_Text(1700.0f, 90.0f, sZo.code, 52.0f, 340.0f, ZT_GOLD, 0, a);
     Zo_Button(H_COPY, ZW_T_BAR, 2060.0f, 50.0f, 2325.0f, 130.0f, L("Copiar", "Copy", "Copiar"), 32.0f);
-    Zo_Side(60.0f, 840.0f, sZo.host ? L("VOC\303\212 (anfitri\303\243o)", "YOU (host)", "T\303\232 (anfitri\303\263n)") : L("VOC\303\212", "YOU", "T\303\232"), Zo_Mine(), 1, 0,
+    Zo_Side(60.0f, 840.0f, sZo.host ? L("VOC\303\212 (anfitri\303\243o)", "YOU (host)", "T\303\232 (anfitri\303\263n)") : L("VOC\303\212", "YOU", "T\303\232"), Zo_Mine(), Zo_Friend() != NULL ? 2 : 1, 0,
             sZo.ready ? L("PRONTO", "READY", "LISTO") : L("TOQUE: PRONTO", "TAP WHEN READY", "TOCA: LISTO"), sZo.ready ? ZW_T_GREEN : ZW_T_ORANGE, H_READY);
-    Zo_Side(1560.0f, 2340.0f, L("AMIGO", "FRIEND", "AMIGO"), Zo_Friend(), 0, 0,
-            sZo.friendReady ? L("PRONTO", "READY", "LISTO") : L("ESCOLHENDO...", "CHOOSING...", "ELIGIENDO..."), sZo.friendReady ? ZW_T_GREEN : ZW_T_GREY, 0);
+    Zo_Side(1560.0f, 2340.0f, L("AMIGO", "FRIEND", "AMIGO"), Zo_Friend(), 2, 0,
+            !sZoNet.peerHere ? NULL : sZo.friendReady ? L("PRONTO", "READY", "LISTO") : L("ESCOLHENDO...", "CHOOSING...", "ELIGIENDO..."), sZo.friendReady ? ZW_T_GREEN : ZW_T_GREY, 0);
+    if (sZo.screen == ZO_ROOM && Zo_Mine() != NULL && Zo_Friend() != NULL) {
+        Zo_Pair(Zo_Mine(), Zo_Friend());
+    }
     {
         f32 s = 120.0f + 8.0f * Zw_Beat(60);
 
         Zt_Text(1200.0f, 235.0f, "VS", s, 500.0f, ZT_GOLD, 1, a);
     }
     Zt_Box(ZW_T_STAGE, 870.0f, 320.0f, 1530.0f, 575.0f, 34.0f, a);
-    Zt_Text(910.0f, 360.0f, L("Guerreiro do amigo recebido", "Friend's warrior received", "Guerrero del amigo recibido"), 29.0f, 590.0f, ZT_GREEN, 0, a);
-    Zt_Text(910.0f, 417.0f, L("Mesma vers\303\243o do app", "Same app version", "Misma versi\303\263n de la app"), 29.0f, 590.0f, ZT_GREEN, 0, a);
-    Zt_Text(910.0f, 474.0f, L("Mesmo disco do jogo", "Same game disc", "Mismo disco del juego"), 29.0f, 590.0f, ZT_GREEN, 0, a);
-    Zt_Text(910.0f, 531.0f, L("Conex\303\243o: exemplo (48 ms)", "Connection: example (48 ms)", "Conexi\303\263n: ejemplo (48 ms)"), 29.0f, 590.0f, ZT_WHITE, 0, a);
+    if (sZoNet.state == ZN_CONNECTING) {
+        Zt_Text(1200.0f, 447.0f, L("Conectando ao servidor...", "Connecting...", "Conectando..."), 34.0f, 610.0f, ZT_GOLD, 1, a);
+    } else if (!sZoNet.peerHere) {
+        Zt_Text(1200.0f, 410.0f, L("Esperando o amigo entrar", "Waiting for your friend", "Esperando a tu amigo"), 34.0f, 610.0f, ZT_GOLD, 1, a);
+        Zt_Text(1200.0f, 480.0f, L("Envie o c\303\263digo acima.", "Send them the code above.", "Env\303\255a el c\303\263digo."), 29.0f, 610.0f, ZT_WHITE, 1, a);
+    } else {
+        Zt_Text(910.0f, 390.0f, sZoHasPeer ? L("Guerreiro do amigo recebido", "Friend's warrior received", "Guerrero del amigo recibido")
+                                : L("Recebendo o guerreiro...", "Receiving the warrior...", "Recibiendo el guerrero..."), 29.0f, 590.0f, ZT_GREEN, 0, a);
+        Zt_Text(910.0f, 447.0f, L("Mesma vers\303\243o do online", "Same online version", "Misma versi\303\263n"), 29.0f, 590.0f, ZT_GREEN, 0, a);
+        Zt_Text(910.0f, 504.0f, L("Mesmo disco do jogo", "Same game disc", "Mismo disco del juego"), 29.0f, 590.0f, ZT_GREEN, 0, a);
+    }
     for (k = 0; k < 3; k++) {
         char *name = k == 0 ? L("Cen\303\241rio", "Stage", "Escenario") : k == 1 ? L("Tempo", "Time", "Tiempo") : L("Itens", "Items", "Objetos");
 
@@ -674,7 +734,7 @@ static void Zo_Draw(void) {
         static char val[7][96], forms[96];
 
         Zo_Header(sZo.movesMine ? L("MEUS GOLPES", "MY MOVES", "MIS GOLPES") : L("GOLPES DO AMIGO", "FRIEND'S MOVES", "GOLPES DEL AMIGO"), Zo_Name(v), 0);
-        Zo_Side(60.0f, 860.0f, sZo.movesMine ? L("VOC\303\212", "YOU", "T\303\232") : L("AMIGO", "FRIEND", "AMIGO"), v, sZo.movesMine, 0, NULL, 0, 0);
+        Zo_Side(60.0f, 860.0f, sZo.movesMine ? L("VOC\303\212", "YOU", "T\303\232") : L("AMIGO", "FRIEND", "AMIGO"), v, 1, 0, NULL, 0, 0); /* (this screen has the one 3D viewer for whoever it shows) */
         if (v != NULL) {
             s32 n = 0;
 
@@ -752,7 +812,23 @@ static void Zo_Draw(void) {
 }
 
 /* ---- what a press does ---- */
+static void Zo_Rules(void) { /* the host's choices: stage, time, items, health, who may join, fighters allowed */
+    int r[6] = {sZo.stage, sZo.rule[1], sZo.rule[2], sZo.rule[3], sZo.rule[4], sZo.rule[5]};
+
+    Port_ZwNetRules(r);
+}
+
+static void Zo_DrawStage(void) { /* a "random" stage is drawn by the host, so both fight on the same one */
+    if (sZo.stage < 0 && sZoStageN > 1) {
+        sZo.stage = sZoStages[(u32)(sZw->frames * 2654435761u >> 8) % (u32)(sZoStageN - 1)];
+        Zo_Rules();
+    }
+}
+
 static void Zo_Leave(void) {
+    Port_ZwNetLeave();
+    Port_ZwNetTick();
+    Zw_Reload(); /* (the rival's warrior is gone from the library) */
     Zo_StagesClose();
     Zw_SetMode(ZW_LIBRARY);
     sZw->noteT = 0;
@@ -762,7 +838,8 @@ static void Zo_Back(void) {
     switch (sZo.screen) {
     case ZO_MENU: Zo_Leave(); break;
     case ZO_QUICK: case ZO_CREATE: case ZO_CODE: Zo_Go(ZO_MENU); break;
-    case ZO_SEARCH: case ZO_FOUND: Zo_Go(ZO_QUICK); break;
+    case ZO_SEARCH: case ZO_FOUND: Port_ZwNetLeave(); Zo_Go(ZO_QUICK); break;
+    case ZO_ROOM: Port_ZwNetLeave(); Zo_Go(ZO_MENU); break;
     case ZO_STAGES: case ZO_MOVES: Zo_Go(sZo.from); break;
     case ZO_RESULT: case ZO_LOST: case ZO_VERSION: case ZO_PREPARE: Zo_Go(ZO_ROOM); break;
     default: Zo_Go(ZO_MENU); break;
@@ -787,9 +864,18 @@ static void Zo_Press(s32 id) {
         if (id == H_PICKED) {
             sZo.swap = 0;
             sZo.focus = H_SWAP;
+            Port_ZwNetWarrior(sZo.sel % sZw->count);
             Snd_PlaySe(1, 1);
         } else if (id == H_PREV || id == H_NEXT) {
-            sZo.sel = (sZo.sel + (id == H_PREV ? sZw->count - 1 : 1)) % sZw->count;
+            extern int Port_WarriorIsGuest(int i);
+            s32 tries;
+
+            for (tries = 0; tries < sZw->count; tries++) { /* (never the rival's) */
+                sZo.sel = (sZo.sel + (id == H_PREV ? sZw->count - 1 : 1)) % sZw->count;
+                if (!Port_WarriorIsGuest(sZo.sel)) {
+                    break;
+                }
+            }
             sZw->rest = 0;
             Snd_PlaySe(1, 0);
         } else if (id == H_BACK || id == H_HEADBACK) {
@@ -832,6 +918,7 @@ static void Zo_Press(s32 id) {
             Zo_Go(ZO_STAGES);
         } else {
             sZo.rule[k] = (sZo.rule[k] + 1) % kZoRuleN[k];
+            Zo_Rules();
         }
         return;
     }
@@ -869,12 +956,16 @@ static void Zo_Press(s32 id) {
         }
         break;
     case H_GO:
+        if (sZw->count == 0) {
+            break;
+        }
         if (sZo.screen == ZO_QUICK) {
+            Port_ZwNetQuick(sZo.sel % sZw->count, sZo.pref[0] == 0);
             Zo_Go(ZO_SEARCH);
         } else {
-            Zo_NewCode();
-            sZo.host = 1;
-            sZo.ready = sZo.friendReady = sZo.rounds = 0;
+            int r[6] = {sZo.stage, sZo.rule[1], sZo.rule[2], sZo.rule[3], sZo.rule[4], sZo.rule[5]};
+
+            Port_ZwNetHost(sZo.sel % sZw->count, r);
             Zo_Go(ZO_ROOM);
         }
         break;
@@ -893,23 +984,45 @@ static void Zo_Press(s32 id) {
         }
         break;
     case H_JOIN:
-        if (sZo.codeLen == 6) {
-            sZo.host = 0;
-            sZo.ready = sZo.friendReady = sZo.rounds = 0;
+        if (sZo.codeLen == 6 && sZw->count > 0) {
+            Port_ZwNetJoin(sZo.sel % sZw->count, sZo.code);
             Zo_Go(ZO_ROOM);
         }
         break;
-    case H_COPY: Zw_Note(L("Na vers\303\243o final, o c\303\263digo \303\251 copiado para voc\303\252 enviar.", "In the final version the code is copied for you to send.", "En la versi\303\263n final el c\303\263digo se copia.")); break;
-    case H_READY: sZo.ready = !sZo.ready; break;
-    case H_START:
-        if (sZo.ready && sZo.friendReady) {
-            Zo_Go(ZO_PREPARE);
+    case H_COPY:
+        if (sZo.code[0] != 0) {
+            Port_ZwNetCopyCode();
+            Zw_Note(L("C\303\263digo copiado.", "Code copied.", "C\303\263digo copiado."));
         }
         break;
-    case H_LEAVE: Zo_Go(ZO_MENU); break;
-    case H_ROOM: sZo.ready = sZo.friendReady = 0; Zo_Go(ZO_ROOM); break;
-    case H_REMATCH: Zo_Go(ZO_PREPARE); break;
-    case H_CONFIRM: sZo.stage = sZo.stagePick; Zo_Go(sZo.from); break;
+    case H_READY: Port_ZwNetReady(!sZo.ready); break;
+    case H_START:
+        if (sZo.host && sZo.ready && sZo.friendReady) {
+            Zo_DrawStage();
+            Port_ZwNetStart(0);
+            Zw_Note(L("Abrindo a luta...", "Starting the fight...", "Abriendo la lucha..."));
+        } else {
+            Zw_Note(L("O anfitri\303\243o come\303\247a quando os dois estiverem prontos.", "The host starts when both are ready.", "El anfitri\303\263n empieza cuando ambos est\303\251n listos."));
+        }
+        break;
+    case H_LEAVE: Port_ZwNetLeave(); Zo_Go(ZO_MENU); break;
+    case H_ROOM: Zo_Go(ZO_ROOM); break;
+    case H_REMATCH: Zo_Go(ZO_ROOM); break;
+    case H_CONFIRM:
+        sZo.stage = sZo.stagePick;
+        Zo_Rules();
+        if (sZoNet.state == ZN_ROOM && sZoNet.quick) { /* a quick match: the stage chosen, the fight */
+            Zo_DrawStage();
+            if (sZoNet.peer >= 0) {
+                Port_ZwNetStart(1);
+                Zw_Note(L("Abrindo a luta...", "Starting the fight...", "Abriendo la lucha..."));
+            } else {
+                Zw_Note(L("Ainda recebendo o guerreiro do rival. Confirme de novo.", "Still receiving the rival's warrior. Confirm again.", "Recibiendo el guerrero rival. Confirma otra vez."));
+            }
+        } else {
+            Zo_Go(sZo.from);
+        }
+        break;
     case H_PGPREV: case H_PGNEXT: {
         s32 pages = (sZoStageN + ZO_PER_PAGE - 1) / ZO_PER_PAGE;
 
@@ -918,13 +1031,6 @@ static void Zo_Press(s32 id) {
         }
         break;
     }
-    case H_DEMO: /* the preview's strip: in a room, the two warning boxes by turns */
-        if (sZo.screen == ZO_ROOM) {
-            static s32 next;
-
-            Zo_Go(next++ & 1 ? ZO_VERSION : ZO_LOST);
-        }
-        break;
     }
 }
 
@@ -944,21 +1050,93 @@ static void Zo_Tap(f32 x, f32 y) {
     }
 }
 
+/* The library read again, the chosen warrior still the chosen one (the order is by name). */
+static void Zo_Reload(void) {
+    char folder[64];
+    s32 i;
+
+    folder[0] = 0;
+    if (Zo_Mine() != NULL) {
+        snprintf(folder, sizeof(folder), "%s", Zo_Mine()->folder);
+    }
+    Zw_Reload();
+    for (i = 0; i < sZw->count; i++) {
+        if (strcmp(sZw->list[i].folder, folder) == 0) {
+            sZo.sel = i;
+        }
+    }
+    sZw->rest = 0;
+}
+
+/* The room as the server has it, into the screens. */
+static void Zo_NetFrame(void) {
+    static int had;
+
+    Port_ZwNetTick();
+    Port_ZwNetGet(&sZoNet);
+    if (sZoNet.libraryGen != sZoGen) { /* (the friend's warrior was made: the library is read again) */
+        sZoGen = sZoNet.libraryGen;
+        Zo_Reload();
+    }
+    { /* the rival's warrior read only when it changes: Port_WarriorGet reads its file, every frame was costly */
+        static int at = -1, gen = -1;
+
+        sZoHasPeer = sZoNet.peer >= 0;
+        if (sZoHasPeer && (sZoNet.peer != at || sZoNet.libraryGen != gen)) {
+            Port_WarriorGet(sZoNet.peer, &sZoPeer);
+        }
+        at = sZoHasPeer ? sZoNet.peer : -1;
+        gen = sZoNet.libraryGen;
+    }
+    if (sZoNet.state == ZN_ROOM) {
+        if (!had) {
+            Snd_PlaySe(1, 1);
+        }
+        snprintf(sZo.code, sizeof(sZo.code), "%s", sZoNet.code);
+        sZo.codeLen = (s32)strlen(sZo.code);
+        sZo.host = sZoNet.host;
+        sZo.ready = sZoNet.ready;
+        sZo.friendReady = sZoNet.peerReady;
+        if (!sZo.host) {
+            sZo.stage = sZoNet.rules[0];
+            sZo.rule[1] = sZoNet.rules[1], sZo.rule[2] = sZoNet.rules[2], sZo.rule[3] = sZoNet.rules[3];
+        }
+        if (sZo.screen == ZO_SEARCH) { /* a quick match: the host chooses the stage and the fight starts */
+            Zo_Go(ZO_ROOM);
+            if (sZo.host) {
+                sZo.stagePick = sZo.stage = sZoNet.rules[0];
+                Zo_Go(ZO_STAGES);
+            } else {
+                Zw_Note(L("Rival encontrado! Ele escolhe o cen\303\241rio.", "Rival found! They choose the stage.", "\302\241Rival! Elige el escenario."));
+            }
+        }
+    } else if (sZoNet.state == ZN_CONNECTING) {
+        sZo.code[0] = 0;
+    } else if (sZoNet.state == ZN_FAILED) {
+        static char *msg;
+        int e = sZoNet.error;
+
+        msg = e == ZNE_NET ? L("Sem resposta do servidor. Confira a internet.", "No answer from the server.", "El servidor no responde.")
+            : e == ZNE_NOROOM ? L("Sala n\303\243o encontrada ou encerrada.", "Room not found or closed.", "Sala no encontrada.")
+            : e == ZNE_FULL ? L("A sala est\303\241 cheia.", "The room is full.", "La sala est\303\241 llena.")
+            : e == ZNE_VERSION ? L("Vers\303\265es diferentes: atualize o app.", "Different versions: update.", "Versiones distintas.")
+            : e == ZNE_BUSY ? L("Muitas tentativas. Espere um pouco.", "Too many tries. Wait a bit.", "Demasiados intentos.")
+            : e == ZNE_OFFICIAL ? L("Este app n\303\243o \303\251 aceito pelo servidor.", "This app is not accepted.", "App no aceptada.")
+            : e == ZNE_TIME ? L("Acerte o rel\303\263gio do celular.", "Check the phone's clock.", "Revisa el reloj.")
+            : e == ZNE_WARRIOR ? L("N\303\243o deu para ler o guerreiro.", "Could not read the warrior.", "No se pudo leer el guerrero.")
+            : L("O online falhou. Tente de novo.", "Online failed. Try again.", "El online fall\303\263.");
+        Port_ZwNetLeave();
+        Zo_Go(ZO_MENU);
+        Zw_Note(msg);
+    }
+    had = sZoNet.state == ZN_ROOM;
+}
+
 static void Zo_Update(s32 live) {
     Pad *pad = &gPad[0];
 
     sZo.t++;
-    if (sZo.screen == ZO_SEARCH && sZo.t == 300) {
-        Zo_Go(ZO_FOUND);
-        Snd_PlaySe(1, 1);
-    } else if (sZo.screen == ZO_FOUND && sZo.t == 15 * 60) {
-        Zo_Go(ZO_QUICK);
-    } else if (sZo.screen == ZO_ROOM && sZo.t == 150) {
-        sZo.friendReady = 1;
-    } else if (sZo.screen == ZO_PREPARE && sZo.t == 240) {
-        sZo.rounds++;
-        Zo_Go(ZO_RESULT);
-    }
+    Zo_NetFrame();
     if (!live) {
         return;
     }

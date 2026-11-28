@@ -1010,6 +1010,7 @@ static void Mm_ExtraDrop(MmExtra *e) {
 static void Mm_ExtrasInit(void) {
     s32 k;
 
+    sMvExtraKey = -1; /* (a pair asked before is asked again: it waited for ever otherwise) */
     memset(sMmExtra, 0, sizeof(sMmExtra));
     for (k = 0; k < MM_EXTRAS; k++) {
         sMmExtra[k].want = -1;
@@ -1390,7 +1391,7 @@ void Mm_ViewWant(s32 key, s32 chara, s32 costume, s32 mod, s32 rested) {
     if (key == sMvShown || ChrView_IsLoading() || (key >= 0 && !rested)) {
         return;
     }
-    if (key < 0) {
+    if (key < 0 || chara < 0 || chara >= MM_CHARA_COUNT) { /* (never a fighter the disc does not have) */
         ChrView_Hide();
         Port_ModPreview(-1);
     } else {
@@ -1413,7 +1414,17 @@ s32 Mm_ViewReady(void) {
    game's); shown once `rested`. Mm_ViewPairDraw draws them: feet (x, y) and height of each, mockup pixels, and turns. */
 void Mm_ViewPair(s32 key0, s32 chara0, s32 costume0, s32 mod0, s32 key1, s32 chara1, s32 costume1, s32 mod1, s32 rested) {
     Mm_ViewWant(key0, chara0, costume0, mod0, rested);
-    if (sMm == NULL) { Port_ClashLog((int)key1, "rbdbg pair", 0, (int)sMmExtra[0].want * 1000 + (int)sMmExtra[0].shown, (int)sMmExtra[0].reading); } /* DBG */
+    { /* (in the log when it changes: what the pair waits on) */
+        static s32 said = -12345;
+        s32 now = sMmExtra[0].want * 100000 + sMmExtra[0].shown * 100 + sMmExtra[0].reading * 10 + (sMmExtra[0].obj >= 0) + (Mm_ViewReady() ? 2 : 0);
+
+        if (now != said) {
+            extern void Port_ZwViewLog(s32 key, s32 chara, s32 mod);
+
+            said = now;
+            Port_ZwViewLog(0x7000000 + now, sMmExtra[0].reading, sMmExtra[0].obj);
+        }
+    }
     if (sMvExtraKey != key1 && !sMmExtra[0].reading && rested) {
         sMvExtraKey = key1;
         sMmExtra[0].want = key1 < 0 ? -1 : chara1;
@@ -1423,12 +1434,24 @@ void Mm_ViewPair(s32 key0, s32 chara0, s32 costume0, s32 mod0, s32 key1, s32 cha
     }
 }
 
+/* The pair's second model off the screen (it stayed, small, beside the warrior of the next screen). */
+void Mm_ViewPairOff(void) {
+    if (ChrView_PortInitDone() && (sMvExtraKey >= 0 || sMmExtra[0].obj >= 0 || sMmExtra[0].reading)) {
+        Mm_ExtrasHide();
+        sMmExtra[0].want = sMmExtra[0].shown = -1;
+        sMvExtraKey = -1;
+    }
+}
+
 void Mm_ViewPairDraw(const f32 *place0, f32 yaw0, const f32 *place1, f32 yaw1) {
     f32 dist;
     f32 fy;
     f32 hf;
 
     if (!Mm_ViewReady()) {
+        if (sMmExtra[0].reading) { /* the second one's read goes on: it holds the first "not ready" until it ends */
+            Mm_ExtrasUpdate(1.0f, 0.0f, 1.0f);
+        }
         return;
     }
     sMvYaw = yaw0;

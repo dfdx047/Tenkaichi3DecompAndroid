@@ -1005,23 +1005,26 @@ static void Cs_Items(s32 side) {
 
 /* ---- what menu_c_e.c calls ---- */
 
+/* Whether the select about to open is the new one (roster, fighter in 3D). The Z Warriors' CUSTOM tile is then left
+   out of the grid: the new screen cannot draw it (the game stopped there, a phone's log, 2026-11-27); the editor's own
+   "Character select" preview keeps the game's screen, with the tile. */
+s32 PortCharSel_UsesNew(void) {
+    extern s32 gPortZwSelPreview; /* menu/port_zw.c */
+    const char *env = getenv("BT3_SELECT_CLASSIC");
+
+    return !PortGame_IsBT4() && !gPortZwSelPreview && !(env != NULL ? atoi(env) : Port_Setting("select_classic", 0));
+}
+
 /* Right after the screen's Init. allow: this game and this moment take the new screen at all (not a fight's practice
    roster, which runs inside a fight on every peer). */
 void PortCharSel_Begin(s32 allow) {
     const char *env = getenv("BT3_SELECT_CLASSIC");
     s32 i;
 
-    sOn = allow && !(env != NULL ? atoi(env) : Port_Setting("select_classic", 0));
-    {   /* Z Warriors: with a warrior made, the grid has the mod's tile (menu_c_e.c MCHR_ZW) and its reel of warriors,
-           which only the game's own screen draws. The new one took the tile for a fighter, asked the disc for chip 165
-           and the game stopped there (a phone's log, 2026-11-27): the game's screen while there are warriors. */
-        extern s32 Port_SkinCount(void), Port_SkinIsWarrior(s32 skin);
+    {
+        extern s32 gPortZwSelPreview;
 
-        for (i = 0; sOn && i < Port_SkinCount(); i++) {
-            if (Port_SkinIsWarrior(i)) {
-                sOn = 0;
-            }
-        }
+        sOn = allow && !gPortZwSelPreview && !(env != NULL ? atoi(env) : Port_Setting("select_classic", 0));
     }
     s3D = sOn && Port_WorldCan();
     sTick = 0;

@@ -10,9 +10,9 @@ The key is written to no file: it goes to the compiler as two macros on the comm
 scrambled (which keeps it out of `strings`, no more), and nothing here prints it."""
 import hashlib, os, re
 
-def flags():
+def flags(env="BT3_BUILD_KEY"):
     """The compiler arguments that carry the key, [] without one. Stops the build on a key that cannot be used."""
-    key = os.environ.get("BT3_BUILD_KEY", "").strip()
+    key = os.environ.get(env, "").strip()
     if not key:
         return []
     if not re.fullmatch(r"[A-Za-z0-9._+/=-]{16,128}", key):

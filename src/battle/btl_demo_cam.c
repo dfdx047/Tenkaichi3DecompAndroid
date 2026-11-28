@@ -1,3 +1,6 @@
+#ifdef PORT
+#include <stdio.h>
+#endif
 #include "common.h"
 #include "battle/battle.h"
 #include "battle/btl_demo_cam.h"
@@ -64,6 +67,32 @@ void DemoCam_EvalAnim(DemoCamPose *out, f32 time) {
     DemoCamChannel *ch = anim->channels;
     s32 i;
 
+#ifdef PORT
+    { /* an animation's pointers are all inside its own file: one that is not (crash of 2026-11-27, the intro of an
+         online fight of two warriors) is left out instead of read */
+        static s32 said;
+        u32 base = (u32)anim, span = 0x40000;
+
+        if ((u32)anim->defaults - base >= span || (u32)ch - base >= span || (u32)anim->channelCount > 64) {
+            if (!said++) {
+                fprintf(stderr, "bt3: demo camera: bad animation %08x (channels %08x, defaults %08x, count %d, version %d)\n", base,
+                        (u32)ch, (u32)anim->defaults, (int)anim->channelCount, (int)anim->version);
+            }
+            memset(out, 0, sizeof(*out));
+            return;
+        }
+        *out = *anim->defaults;
+        for (i = 0; i < anim->channelCount; i++) {
+            if ((u32)ch[i].keys - base >= span || (u32)ch[i].keyCount > 4096) {
+                if (!said++) {
+                    fprintf(stderr, "bt3: demo camera: bad channel %d of %08x (keys %08x, count %d)\n", (int)i, base, (u32)ch[i].keys,
+                            (int)ch[i].keyCount);
+                }
+                return;
+            }
+        }
+    }
+#endif
     *out = *anim->defaults;
     for (i = 0; i < anim->channelCount; i++) {
         DemoCamKey *key = ch->keys;
