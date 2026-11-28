@@ -16,18 +16,33 @@
    `grab` (a picture to draw or point on): Cross takes hold, the pad then works it as before, Triangle lets go. */
 typedef struct ZfBox {
     f32 x0, y0, x1, y1;
-    s32 grab;
+    s32 grab, lit; /* lit: it shows the focus itself */
 } ZfBox;
 static ZfBox sZfBox[96];
 static s32 sZfCircle = 1; /* Circle goes back too (not in the editor: there it is a shortcut) */
 static s32 sZfN, sZfTouch, sZfHeld, sZfGrab; /* sZfTouch: a finger acted this frame, its presses pass */
 static f32 sZfX = -1.0f, sZfY = -1.0f;       /* the focus: the middle of the box it is on */
+static s32 sZfFinger; /* the last thing used was a finger: nothing lit for the pad until a button is pressed */
+
+/* The screens the arrows move a focus on. */
+static s32 Zf_Screen(void) {
+    return sZw->mode == ZW_SHADEPK || sZw->mode == ZW_TEXTURE || (sZw->mode == ZW_EDIT && sZw->ask == ASK_NONE) ||
+           (sZw->mode == ZW_COLOUR && sZw->colourStage != 1);
+}
+
+/* Whether the box about to be drawn is the one the pad is on (the user, 2026-11-28: the thing itself lit, no white
+   square round it). */
+static s32 Zf_Is(f32 x0, f32 y0, f32 x1, f32 y1) {
+    f32 dx = (x0 + x1) * 0.5f - sZfX, dy = (y0 + y1) * 0.5f - sZfY;
+
+    return !sZfFinger && sZfX >= 0.0f && dx > -3.0f && dx < 3.0f && dy > -3.0f && dy < 3.0f;
+}
 
 static void Zf_Add(f32 x0, f32 y0, f32 x1, f32 y1, s32 grab) {
     if (sZfN < 96) {
         ZfBox *b = &sZfBox[sZfN++];
 
-        b->x0 = x0, b->y0 = y0, b->x1 = x1, b->y1 = y1, b->grab = grab;
+        b->x0 = x0, b->y0 = y0, b->x1 = x1, b->y1 = y1, b->grab = grab, b->lit = 0;
     }
 }
 
@@ -56,7 +71,11 @@ static void Zf_Filter(Pad *pad, void (*tap)(f32, f32)) {
     if (sZfTouch) {
         sZfTouch = 0;
         sZfGrab = 0;
+        sZfFinger = 1;
         return;
+    }
+    if (hit & all) {
+        sZfFinger = 0;
     }
     at = Zf_At();
     if (sZfGrab) {
@@ -125,12 +144,27 @@ static void Zt_Text(f32 x, f32 y, char *s, f32 size, f32 width, u32 colour, s32 
 static void Zt_Box(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, f32 r, s32 alpha) {
     if ((id == ZW_T_PANEL || id == ZW_T_SEL) && y1 - y0 < 170.0f) { /* (a row, not a panel behind others) */
         Zf_Add(x0, y0, x1, y1, 0);
+        if (Zf_Screen() && sZfN > 0) { /* (a row: lit in the menu's own colour, and only the one the pad is on) */
+            sZfBox[sZfN - 1].lit = 1;
+            if (!sZfFinger) {
+                id = Zf_Is(x0, y0, x1, y1) ? ZW_T_SEL : ZW_T_PANEL;
+            }
+        }
     }
     Mx_Box(id, ZT_X(x0), ZT_Y(y0), ZT_X(x1), ZT_Y(y1), ZT_S(r), alpha);
 }
 
 static void Zt_Pill(s32 id, f32 x0, f32 y0, f32 x1, f32 y1, char *s, f32 size, s32 alpha) {
     Zf_Add(x0, y0, x1, y1, 0);
+    if (Zf_Screen() && sZfN > 0) {
+        sZfBox[sZfN - 1].lit = 1;
+        if (Zf_Is(x0, y0, x1, y1)) { /* (a button outside the list: orange, and a little larger, so that it is told from
+                                         the tab that is open) */
+            id = ZW_T_ORANGE;
+            x0 -= 8.0f, x1 += 8.0f, y0 -= 6.0f, y1 += 6.0f;
+            alpha = 0x80;
+        }
+    }
     Mx_Bar(id, ZT_X(x0), ZT_Y(y0), ZT_X(x1), ZT_Y(y1), alpha);
     Zt_Text((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, s, size, x1 - x0 - 40.0f, ZT_WHITE, 1, alpha);
 }

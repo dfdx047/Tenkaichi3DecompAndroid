@@ -9566,8 +9566,13 @@ static void Zf_DrawEnd(void) {
         f32 g = 6.0f + (sZfGrab ? 5.0f * Zw_Beat(30) : 0.0f);
 
         sZfX = (b->x0 + b->x1) * 0.5f, sZfY = (b->y0 + b->y1) * 0.5f;
-        Mx_Frame(ZT_X(b->x0 - g), ZT_Y(b->y0 - g), ZT_X(b->x1 + g), ZT_Y(b->y1 + g), ZT_S(sZfGrab ? 10.0f : 6.0f),
-                 sZfGrab ? Mx_Rgba(90, 255, 140, 0x80) : Mx_Rgba(255, 255, 255, 0x80));
+        /* (rows and buttons light themselves; a frame only for what is held, green, and for the small things with no
+           shape of their own to light, a thin orange one) */
+        if (sZfGrab) {
+            Mx_Frame(ZT_X(b->x0 - g), ZT_Y(b->y0 - g), ZT_X(b->x1 + g), ZT_Y(b->y1 + g), ZT_S(10.0f), Mx_Rgba(90, 255, 140, 0x80));
+        } else if (!b->lit && !sZfFinger) {
+            Mx_Frame(ZT_X(b->x0), ZT_Y(b->y0), ZT_X(b->x1), ZT_Y(b->y1), ZT_S(5.0f), Mx_Rgba(255, 170, 40, 0x80));
+        }
     }
 }
 static void Zo_LibButton(void) { /* the home screen's way to the online screens */
@@ -9587,6 +9592,40 @@ static s32 Zt_Back(void) {
     return was != 0;
 }
 
+/* The arrows in these screens (the user, 2026-11-28: the white square raced and could not be controlled). The game
+   repeats a held arrow every frame (60 a second) after a third of a second: here one step per press, two presses at
+   least 7 frames apart (a stick at its edge no longer steps twice), and held: after 0.4 s, 7 steps a second. */
+#define ZW_NAV_GAP 7
+#define ZW_NAV_DELAY 24
+#define ZW_NAV_EVERY 9
+static void Zw_Arrows(Pad *pad) {
+    static const u32 kDir[4] = {PADG_LEFT | PADG_LEFT2, PADG_RIGHT | PADG_RIGHT2, PADG_UP | PADG_UP2, PADG_DOWN | PADG_DOWN2};
+    static s32 held[4], since[4] = {99, 99, 99, 99};
+    s32 d;
+
+    for (d = 0; d < 4; d++) {
+        u32 down = pad->gameHeld & kDir[d], fresh = 0, again = 0;
+
+        since[d] = since[d] < 99 ? since[d] + 1 : 99;
+        if (down == 0) {
+            held[d] = 0;
+        } else {
+            if (held[d] == 0 && since[d] >= ZW_NAV_GAP) {
+                fresh = down;
+            }
+            held[d]++;
+            if (held[d] >= ZW_NAV_DELAY && (held[d] - ZW_NAV_DELAY) % ZW_NAV_EVERY == 0) {
+                again = down;
+            }
+            if (fresh | again) {
+                since[d] = 0;
+            }
+        }
+        pad->gamePressed = (pad->gamePressed & ~kDir[d]) | fresh;
+        pad->gameRepeat = (pad->gameRepeat & ~kDir[d]) | fresh | again;
+    }
+}
+
 s32 PortZw_Run(void) {
     Zw_Init();
     Port_EscQuit(0); /* Esc is "back" in here */
@@ -9597,6 +9636,7 @@ s32 PortZw_Run(void) {
         Job_Run();
         Gfx_BeginFrame();
         Pad_Update();
+        Zw_Arrows(&gPad[0]); /* (before the taps are made into presses: theirs keep their own pace) */
         if (Port_EscTake() && sZw->mode != ZW_NAME) {
             gPad[0].gamePressed |= PADG_TRIANGLE;
         }
