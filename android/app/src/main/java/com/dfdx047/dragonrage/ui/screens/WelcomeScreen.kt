@@ -39,6 +39,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -65,6 +66,7 @@ private val ShenronGreenDeep = Color(0xFF0B5A33)
 private val CodeGray = Color(0xFFB8BCC8)
 private val DescGray = Color(0xFFC3C7D3)
 private val Bt3Red = Color(0xFFF0281E)
+private val ScrimDark = Color(0xFF080C16)
 private val TextShadow = Shadow(
     color = Color.Black.copy(alpha = 0.65f),
     offset = Offset(0f, 1f),
@@ -81,7 +83,7 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
     val scrollState = rememberScrollState()
     val outerPad = 8.dp
     val gap = if (wide) 8.dp else 10.dp
-    val topPad = if (wide) 0.dp else 4.dp
+    val topPad = if (wide) 0.dp else 16.dp
     val bottomPad = if (wide) 8.dp else outerPad
     val headerH = if (wide) 56.dp else 54.dp
     val footerH = if (wide) 24.dp else 20.dp
@@ -247,24 +249,11 @@ private fun WelcomeHeader(wide: Boolean, modifier: Modifier = Modifier) {
             Row(
                 Modifier.drawBehind {
                     val y = size.height - 1.dp.toPx()
-                    val thick = 2.dp.toPx()
                     drawLine(
-                        Dbz.SaiyanGold.copy(alpha = 0.2f),
-                        Offset(0f, y),
-                        Offset(size.width * 0.14f, y),
-                        strokeWidth = thick * 0.3f,
-                    )
-                    drawLine(
-                        Dbz.SaiyanGold,
-                        Offset(size.width * 0.07f, y),
-                        Offset(size.width * 0.93f, y),
-                        strokeWidth = thick,
-                    )
-                    drawLine(
-                        Dbz.SaiyanGold.copy(alpha = 0.2f),
-                        Offset(size.width * 0.86f, y),
-                        Offset(size.width, y),
-                        strokeWidth = thick * 0.3f,
+                        color = Dbz.SaiyanGold,
+                        start = Offset(0f, y),
+                        end = Offset(size.width, y),
+                        strokeWidth = 1.5.dp.toPx(),
                     )
                 },
                 horizontalArrangement = Arrangement.spacedBy(if (wide) 4.dp else 6.dp),
@@ -353,7 +342,8 @@ private fun GameCard(
         Game.BT4 -> -0.17f
         Game.BT2 -> -0.23f
     }
-    val bottomFade = game == Game.BT4 || game == Game.BT2
+    val artZoom = if (wide && game == Game.BT3) 1.3f else 1f
+    val artOrigin = if (game == Game.BT3) TransformOrigin(0.45f, 0.31f) else TransformOrigin.Center
     Box(
         modifier
             .drawBehind {
@@ -383,62 +373,44 @@ private fun GameCard(
                 alignment = artAlignment,
                 portrait = false,
                 shiftRatio = shiftRatio,
-                bottomFade = bottomFade,
+                zoom = artZoom,
+                origin = artOrigin,
                 modifier = Modifier.matchParentSize(),
             )
+            Box(
+                Modifier.matchParentSize().background(
+                    Brush.verticalGradient(
+                        0.40f to Color.Transparent,
+                        0.60f to ScrimDark.copy(alpha = 0.75f),
+                        0.75f to ScrimDark.copy(alpha = 0.90f),
+                        1f to ScrimDark.copy(alpha = 0.90f),
+                    ),
+                ),
+            )
             Column(
-                Modifier.matchParentSize().padding(horizontal = 8.dp),
-                verticalArrangement = Arrangement.Bottom,
+                Modifier.matchParentSize().padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.Bottom),
             ) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(16.dp)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, CardDark.copy(alpha = 0.70f)),
-                            ),
-                        ),
-                )
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    CardDark.copy(alpha = 0.70f),
-                                    CardDark.copy(alpha = 0.88f),
-                                    CardDark.copy(alpha = 0.90f),
-                                ),
-                            ),
-                        )
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    CardText(tag, disc, number, text, accent, numberColor, twoLines = false)
-                    SelectButton(accent, compact = true)
-                }
-                Spacer(Modifier.height(6.dp))
+                CardText(tag, disc, number, text, accent, numberColor, twoLines = false)
+                SelectButton(accent, compact = true)
             }
         } else {
-            Box(Modifier.fillMaxWidth()) {
-                CardArt(
-                    art = artPortrait,
-                    accent = accent,
-                    deep = deep,
-                    alignment = portraitAlignment,
-                    portrait = true,
-                    modifier = Modifier.matchParentSize(),
-                )
-                Row(Modifier.fillMaxWidth()) {
-                    Box(Modifier.weight(0.46f))
-                    Column(
-                        Modifier.weight(0.54f).padding(horizontal = 9.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        CardText(tag, disc, number, text, accent, numberColor, twoLines = true)
-                        SelectButton(accent, compact = false)
-                    }
+            CardArt(
+                art = artPortrait,
+                accent = accent,
+                deep = deep,
+                alignment = portraitAlignment,
+                portrait = true,
+                modifier = Modifier.matchParentSize(),
+            )
+            Row(Modifier.fillMaxWidth()) {
+                Box(Modifier.weight(0.46f))
+                Column(
+                    Modifier.weight(0.54f).padding(horizontal = 9.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    CardText(tag, disc, number, text, accent, numberColor, twoLines = true)
+                    SelectButton(accent, compact = false)
                 }
             }
         }
@@ -577,6 +549,7 @@ private fun CardText(
             lineHeight = if (twoLines) 13.5.sp else 12.5.sp,
             fontWeight = FontWeight.Normal,
             color = DescGray,
+            minLines = 3,
         )
     }
 }
@@ -620,12 +593,12 @@ private fun CardArt(
     alignment: Alignment,
     portrait: Boolean,
     shiftRatio: Float = 0f,
-    bottomFade: Boolean = false,
+    zoom: Float = 1f,
+    origin: TransformOrigin = TransformOrigin.Center,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier, contentAlignment = Alignment.TopStart) {
         Box(if (portrait) Modifier.fillMaxHeight().fillMaxWidth(0.46f) else Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(accent, deep))))
             if (art != null) {
                 if (portrait) {
                     Image(
@@ -633,45 +606,25 @@ private fun CardArt(
                         contentDescription = null,
                         modifier = Modifier.fillMaxSize(),
                         alignment = alignment,
-                        contentScale = ContentScale.FillHeight,
+                        contentScale = ContentScale.Crop,
                     )
                 } else {
                     BoxWithConstraints(Modifier.fillMaxSize()) {
                         val shift = maxHeight * shiftRatio
-                        Box(
-                            Modifier
-                                .matchParentSize()
+                        Image(
+                            painter = painterResource(art),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .fillMaxSize()
                                 .graphicsLayer {
                                     translationY = shift.toPx()
-                                    clip = true
-                                    shape = RoundedCornerShape(18.dp)
+                                    scaleX = zoom
+                                    scaleY = zoom
+                                    transformOrigin = origin
                                 },
-                        ) {
-                            Image(
-                                painter = painterResource(art),
-                                contentDescription = null,
-                                modifier = Modifier.fillMaxSize(),
-                                alignment = alignment,
-                                contentScale = ContentScale.Crop,
-                            )
-                            if (bottomFade) {
-                                Box(
-                                    Modifier
-                                        .align(Alignment.BottomCenter)
-                                        .fillMaxWidth()
-                                        .fillMaxHeight(0.38f)
-                                        .background(
-                                            Brush.verticalGradient(
-                                                listOf(
-                                                    Color.Transparent,
-                                                    CardDark.copy(alpha = 0.45f),
-                                                    CardDark,
-                                                ),
-                                            ),
-                                        ),
-                                )
-                            }
-                        }
+                            alignment = alignment,
+                            contentScale = ContentScale.Crop,
+                        )
                     }
                 }
             }
