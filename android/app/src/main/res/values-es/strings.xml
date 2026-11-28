@@ -431,6 +431,10 @@
     <string name="welcome_bt2">El clásico: Budokai Tenkaichi 2 (disco USA), con motor propio. Modo Online con 1P VS 2P. Lo que ajustes aquí queda separado de BT3 y BT4.</string>
     <string name="welcome_note">Cada juego tiene su propia imagen de disco, partidas, texturas y ajustes. Puedes cambiar desde el menú (Juego) cuando quieras.</string>
     <string name="welcome_last">Jugado por última vez</string>
+    <string name="welcome_tag_original">JUEGO ORIGINAL</string>
+    <string name="welcome_tag_modified">MODIFICADO</string>
+    <string name="welcome_tag_classic">CLÁSICO</string>
+    <string name="welcome_select">SELECCIONAR JUEGO</string>
     <string name="nav_switch_game">Juego</string>
     <string name="bt4_tagline">Budokai Tenkaichi 4 · Team BT4</string>
     <string name="bt4_game_data_intro">Elige tu imagen del mod de Team BT4, Beta 14 Rev2, en inglés o en español. Los archivos del juego se copian de ella (unos 5,7 GB, algunos minutos) y se revisa cada uno; después la imagen ya no hace falta.</string>

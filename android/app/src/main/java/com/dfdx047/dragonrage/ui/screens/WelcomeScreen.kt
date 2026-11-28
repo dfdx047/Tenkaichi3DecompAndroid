@@ -1,14 +1,19 @@
 package com.dfdx047.dragonrage.ui.screens
 
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,8 +33,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.dfdx047.dragonrage.R
@@ -37,8 +45,12 @@ import com.dfdx047.dragonrage.data.Game
 import com.dfdx047.dragonrage.ui.components.DragonBall
 import com.dfdx047.dragonrage.ui.theme.Dbz
 
+// Cores que faltam na paleta Dbz: o azul profundo do BT4 e o verde profundo do BT2.
+private val KiBlueDeep = Color(0xFF5A2A8C)
+private val ShenronGreenDeep = Color(0xFF0B5A33)
+
 /**
- * The first screen: which game to open. Both are in the same app with the same pages; each has its own folder,
+ * The first screen: which game to open. Each game is in the same app with the same pages; each has its own folder,
  * disc image, saves and settings, its own engine and its own colours (Game).
  */
 @Composable
@@ -63,21 +75,55 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
             }
             val cards: @Composable (Modifier) -> Unit = { m ->
                 GameCard(
-                    Game.BT3, "Budokai Tenkaichi 3", stringResource(R.string.welcome_bt3), "SLUS-21678",
-                    listOf(Color(0xFFFF8A1F), Color(0xFFB8420A)), Dbz.SaiyanGold, last == Game.BT3, m, onPick,
+                    game = Game.BT3,
+                    number = "3",
+                    tag = R.string.welcome_tag_original,
+                    text = stringResource(R.string.welcome_bt3),
+                    disc = "SLUS-21678",
+                    accent = Dbz.SaiyanGold,
+                    deep = Dbz.GiOrangeDeep,
+                    art = R.drawable.welcome_art_bt3,
+                    last = last == Game.BT3,
+                    wide = wide,
+                    modifier = m,
+                    onPick = onPick,
                 )
                 GameCard(
-                    Game.BT4, "Budokai Tenkaichi 4", stringResource(R.string.welcome_bt4), "SLUS-219.78 · Beta 14 Rev2",
-                    listOf(Color(0xFF2FB8F0), Color(0xFF5A2A8C)), Color(0xFFD3A6FF), last == Game.BT4, m, onPick,
+                    game = Game.BT4,
+                    number = "4",
+                    tag = R.string.welcome_tag_modified,
+                    text = stringResource(R.string.welcome_bt4),
+                    disc = "SLUS-219.78 · Beta 14 Rev2",
+                    accent = Dbz.KiBlue,
+                    deep = KiBlueDeep,
+                    art = R.drawable.welcome_art_bt4,
+                    last = last == Game.BT4,
+                    wide = wide,
+                    modifier = m,
+                    onPick = onPick,
                 )
                 GameCard(
-                    Game.BT2, "Budokai Tenkaichi 2", stringResource(R.string.welcome_bt2), "SLUS-21441",
-                    listOf(Color(0xFF2FB85A), Color(0xFF0B5A33)), Color(0xFFA6E86B), last == Game.BT2, m, onPick,
+                    game = Game.BT2,
+                    number = "2",
+                    tag = R.string.welcome_tag_classic,
+                    text = stringResource(R.string.welcome_bt2),
+                    disc = "SLUS-21441",
+                    accent = Dbz.ShenronGreen,
+                    deep = ShenronGreenDeep,
+                    art = R.drawable.welcome_art_bt2,
+                    artAlignment = Alignment.CenterStart,
+                    last = last == Game.BT2,
+                    wide = wide,
+                    modifier = m,
+                    onPick = onPick,
                 )
             }
             if (wide) {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
-                    cards(Modifier.weight(1f))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+                ) {
+                    cards(Modifier.weight(1f).fillMaxHeight())
                 }
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
@@ -94,25 +140,186 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
 
 @Composable
 private fun GameCard(
-    game: Game, title: String, text: String, disc: String, colors: List<Color>, accent: Color, last: Boolean,
-    modifier: Modifier, onPick: (Game) -> Unit,
+    game: Game,
+    number: String,
+    tag: Int,
+    text: String,
+    disc: String,
+    accent: Color,
+    deep: Color,
+    @DrawableRes art: Int?,
+    artAlignment: Alignment = Alignment.Center,
+    last: Boolean,
+    wide: Boolean,
+    modifier: Modifier,
+    onPick: (Game) -> Unit,
 ) {
-    val shape = RoundedCornerShape(22.dp)
-    Column(
+    val shape = RoundedCornerShape(24.dp)
+    val cardBackground = Brush.linearGradient(
+        listOf(Dbz.NightHigh, accent.copy(alpha = 0.22f), deep.copy(alpha = 0.72f), Dbz.Night),
+    )
+    Box(
         modifier
             .clip(shape)
-            .background(Brush.linearGradient(colors))
-            .border(if (last) 3.dp else 1.dp, if (last) accent else Color.White.copy(alpha = 0.25f), shape)
-            .clickable { onPick(game) }
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .background(cardBackground)
+            .border(if (last) 3.dp else 2.dp, accent, shape)
+            .clickable { onPick(game) },
     ) {
-        Text(title.uppercase(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black, color = Color.White)
-        Text(disc, style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.8f))
-        Spacer(Modifier.height(2.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = Color.White)
+        if (wide) {
+            Column(
+                Modifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                CardArt(
+                    art = art,
+                    accent = accent,
+                    deep = deep,
+                    artAlignment = artAlignment,
+                    modifier = Modifier.fillMaxWidth().weight(0.55f),
+                )
+                Column(
+                    Modifier.fillMaxWidth().weight(0.45f),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    CardText(tag = tag, disc = disc, number = number, text = text, accent = accent)
+                    SelectButton(accent = accent)
+                }
+            }
+        } else {
+            Row(
+                Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                CardArt(
+                    art = art,
+                    accent = accent,
+                    deep = deep,
+                    artAlignment = artAlignment,
+                    modifier = Modifier.weight(0.4f).aspectRatio(1f),
+                )
+                Column(
+                    Modifier.weight(0.6f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CardText(tag = tag, disc = disc, number = number, text = text, accent = accent)
+                    SelectButton(accent = accent)
+                }
+            }
+        }
         if (last) {
-            Text(stringResource(R.string.welcome_last), style = MaterialTheme.typography.labelLarge, color = accent, fontWeight = FontWeight.Bold)
+            Box(
+                Modifier.align(Alignment.TopEnd)
+                    .padding(10.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(accent.copy(alpha = 0.92f))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    stringResource(R.string.welcome_last),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Dbz.Night,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CardText(tag: Int, disc: String, number: String, text: String, accent: Color) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Box(
+                Modifier.clip(RoundedCornerShape(8.dp))
+                    .background(accent.copy(alpha = 0.9f))
+                    .padding(horizontal = 8.dp, vertical = 3.dp),
+            ) {
+                Text(
+                    stringResource(tag),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Dbz.Night,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Text(
+                disc,
+                style = MaterialTheme.typography.labelMedium,
+                color = Color.White.copy(alpha = 0.82f),
+            )
+        }
+        Row(
+            verticalAlignment = Alignment.Bottom,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                "BUDOKAI TENKAICHI",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Black,
+                    fontStyle = FontStyle.Italic,
+                ),
+                color = Color.White,
+            )
+            Text(
+                number,
+                style = MaterialTheme.typography.displaySmall.copy(
+                    fontWeight = FontWeight.Black,
+                    fontStyle = FontStyle.Italic,
+                ),
+                color = accent,
+            )
+        }
+        Text(
+            text,
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.White,
+        )
+    }
+}
+
+@Composable
+private fun SelectButton(accent: Color) {
+    Box(
+        Modifier.clip(RoundedCornerShape(14.dp))
+            .background(accent.copy(alpha = 0.92f))
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Text(
+            stringResource(R.string.welcome_select) + " >",
+            style = MaterialTheme.typography.labelLarge,
+            color = Dbz.Night,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun CardArt(
+    @DrawableRes art: Int?,
+    accent: Color,
+    deep: Color,
+    artAlignment: Alignment = Alignment.Center,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier.clip(RoundedCornerShape(18.dp))) {
+        if (art == null) {
+            Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(accent, deep))))
+        } else {
+            Image(
+                painter = painterResource(art),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                alignment = artAlignment,
+                contentScale = ContentScale.Crop,
+            )
+            Box(
+                Modifier.fillMaxSize().background(
+                    Brush.verticalGradient(listOf(Color.Transparent, Dbz.Night.copy(alpha = 0.88f))),
+                ),
+            )
         }
     }
 }
