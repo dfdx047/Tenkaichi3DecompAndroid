@@ -7,7 +7,7 @@ import java.io.File
  * the launcher comes back; each log is looked at once (its time is kept in .lastrun_seen), so a problem is told once.
  */
 object LastRun {
-    enum class Problem { DATA, MEMORY, ENGINE, CRASH, TEXTURES }
+    enum class Problem { DATA, MEMORY, ENGINE, CRASH, TEXTURES, DRIVER }
 
     data class Report(val problem: Problem, val detail: String)
 
@@ -33,6 +33,11 @@ object LastRun {
         find("no room below 4 GB", "no free place below 4 GB", "no memory below 4 GB", "cannot map ")?.let { return Report(Problem.MEMORY, it.substringAfter("bt3: ").trim()) }
         find("the engine did not load", "cannot read the engine", "the engine has no entry point")?.let { return Report(Problem.ENGINE, it.trim()) }
         find("Native Tag Team stopped")?.let { return Report(Problem.ENGINE, it.trim()) }
+        // A custom GPU driver the game crashed with before it drew its first frames: it would crash at every start
+        val driver = find("custom GPU driver: ")
+        if (driver != null && find("CRASH: signal") != null && find("bt3: alive: frame ") == null) {
+            return Report(Problem.DRIVER, driver.substringAfter("custom GPU driver: ").substringBeforeLast('/').substringAfterLast('/'))
+        }
         // (last: a crash that follows one of the causes above, the process ending under Android's own threads, says less)
         find("CRASH: signal")?.let { return Report(Problem.CRASH, it.substringAfter("CRASH: ").trim()) }
         // A texture pack the game did not take: no file with a PCSX2 name in it, or a fight played without one of its

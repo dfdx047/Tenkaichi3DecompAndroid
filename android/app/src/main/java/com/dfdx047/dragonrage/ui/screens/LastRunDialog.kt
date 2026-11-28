@@ -32,6 +32,7 @@ fun LastRunDialog(vm: AppViewModel) {
         LastRun.Problem.ENGINE -> R.string.lastrun_engine_title to R.string.lastrun_engine
         LastRun.Problem.CRASH -> R.string.lastrun_crash_title to R.string.lastrun_crash
         LastRun.Problem.TEXTURES -> R.string.lastrun_textures_title to R.string.lastrun_textures
+        LastRun.Problem.DRIVER -> R.string.lastrun_driver_title to R.string.lastrun_driver
     }
     AlertDialog(
         onDismissRequest = { vm.dismissLastRun() },

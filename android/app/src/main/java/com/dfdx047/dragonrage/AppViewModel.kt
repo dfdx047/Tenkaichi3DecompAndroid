@@ -329,6 +329,8 @@ class AppViewModel @JvmOverloads constructor(app: Application, val game: Game = 
 
     fun checkLastRun() = viewModelScope.launch(Dispatchers.IO) {
         runCatching { LastRun.check(paths) }.getOrNull()?.let {
+            // (back to the system's driver by itself: the chosen one stays imported, the player may choose it again)
+            if (it.problem == LastRun.Problem.DRIVER) runCatching { drivers.select(null); _driver.value = null }
             ActivityLog.fail("game", "the last run ended badly: ${it.problem}: ${it.detail}")
             _lastRunLog.value = autoLog()
             _lastRun.value = it

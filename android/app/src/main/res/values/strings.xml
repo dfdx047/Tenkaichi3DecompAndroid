@@ -371,6 +371,8 @@
     <string name="lastrun_engine_title">The game closed: the engine did not start</string>
     <string name="lastrun_engine">The game\'s engine could not start on this phone. Try the other renderer (Settings → Renderer), and if you use a custom driver, go back to the system driver.</string>
     <string name="lastrun_crash_title">The game closed unexpectedly</string>
+    <string name="lastrun_driver_title">The GPU driver was turned off</string>
+    <string name="lastrun_driver">The game closed while starting with the custom GPU driver, so it went back to the system\'s driver. The driver is still imported: you can choose it again in the settings.</string>
     <string name="lastrun_crash">The last run ended with a crash. If it happens again, export the log and send it to us (Discord or GitHub) with your phone\'s model. Switching the renderer or the GPU driver often helps.</string>
     <string name="err_mod_incompatible">This disc image is modified in a way Dragon Rage cannot run (its DBZP.BIN is smaller than the game needs). Use an unmodified USA dump (SLUS-21678).</string>
     <string name="err_copy_short">%1$s was not copied completely (storage full or the file could not be read). Free some space and import again.</string>

@@ -370,6 +370,8 @@
     <string name="lastrun_engine_title">O jogo fechou: o motor não iniciou</string>
     <string name="lastrun_engine">O motor do jogo não conseguiu iniciar neste celular. Tente o outro renderizador (Configurações → Renderizador) e, se usa um driver customizado, volte para o driver do sistema.</string>
     <string name="lastrun_crash_title">O jogo fechou inesperadamente</string>
+    <string name="lastrun_driver_title">O driver de vídeo foi desligado</string>
+    <string name="lastrun_driver">O jogo fechou ao iniciar com o driver de vídeo personalizado, então voltou ao driver do sistema. O driver continua importado: você pode escolhê-lo de novo nas configurações.</string>
     <string name="lastrun_crash">A última execução terminou com um travamento. Se acontecer de novo, exporte o log e mande para a gente (Discord ou GitHub) com o modelo do seu celular. Trocar o renderizador ou o driver da GPU costuma ajudar.</string>
     <string name="err_mod_incompatible">Esta imagem de disco foi modificada de um jeito que o Dragon Rage não consegue rodar (o DBZP.BIN dela é menor do que o jogo precisa). Use um dump americano sem modificações (SLUS-21678).</string>
     <string name="err_copy_short">%1$s não foi copiado por completo (armazenamento cheio ou o arquivo não pôde ser lido). Libere espaço e importe de novo.</string>
