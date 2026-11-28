@@ -22,8 +22,8 @@ const BG = '#0e111c', INK = '#140c10', ORANGE = '#ffa21a', YELLOW = '#ffd23f', W
 
 // character art (user supplied)
 const HERO = new Image();
-const READY = new Promise(r => { HERO.onload = r; HERO.src = 'gohan.jpg'; });
-const IW = 832, IH = 1248;
+const READY = new Promise(r => { HERO.onload = r; HERO.src = 'gohan2.jpg'; });
+const IW = 1152, IH = 1728;
 
 // ---------- helpers ----------
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
@@ -60,17 +60,17 @@ function layout() {
 // ---------- timeline ----------
 const C = { x: W / 2, y: H / 2 };
 const T = {
-  open: [0, 1.7], glowIn: .35,
-  face: [1.7, 2.1],
-  launch: [2.1, 2.8], kiBurst: 2.1, ballGone: 2.42,
-  sky: [2.8, 3.83], breach: 3.75,
-  space: [3.83, 4.72],
-  insert: [4.72, 4.92],
-  arrive: [4.92, 5.18], hit: 5.18,
+  open: [0, 1.5], glowIn: .3,
+  face: [1.5, 1.85],
+  launch: [1.85, 2.85], antic: [1.85, 2.02], snap: [2.02, 2.0833], release: 2.0833, ballGone: 2.45,
+  sky: [2.85, 3.875], breach: 3.7917,
+  space: [3.875, 4.7917],
+  insert: [4.7917, 5.0],
+  arrive: [5.0, 5.25], hit: 5.25,
 };
 const HOLD = T.hit + .085;
 const DURATION = T.hit + 2.6;
-const spinAt = t => { const k = prog(t, T.kiBurst, T.hit); return (1 - Math.pow(1 - Math.pow(k, 2.2), 3)) * Math.PI * 2 * 10; };
+const spinAt = t => { const k = prog(t, T.release, T.hit); return (1 - Math.pow(1 - Math.pow(k, 2.2), 3)) * Math.PI * 2 * 10; };
 
 // ---------- cel-shaded ball ----------
 function starPath(cx, cy, r, sx, sy) {
@@ -259,38 +259,96 @@ const shakeXY = (t, s) => { const f = Math.floor(t * 24); return [(rand(f * 3 + 
 const HS = H / IH;
 const HX = C.x - IW * HS / 2, HY = 0;
 const hp = (ix, iy) => ({ x: HX + ix * HS, y: HY + iy * HS });
-const BALL_HOLD = hp(418, 470);                // ball floats in front of the crossed arms
-const BALL_HOLD_R = 62;
+// the throwing arm (image px): forearm + hand + ball, hinged at the elbow
+const ARM_POLY = [[268, 522], [408, 526], [428, 616], [424, 700], [408, 772], [398, 830], [338, 896], [298, 948], [222, 950], [184, 872], [200, 770], [232, 690], [244, 606]];
+const ELBOW = [236, 905];
+const IMG_BALL = [340, 583], IMG_BALL_R = 54;
+const BALL_HOLD = hp(...IMG_BALL), BALL_HOLD_R = IMG_BALL_R * HS;
 
-let FIELD_CV = null;
+let BASE_CV = null, ARM_CV = null, ARM_EMPTY_CV = null;
+function polyPath(c, P) { c.beginPath(); P.forEach(([x, y], i) => i ? c.lineTo(x, y) : c.moveTo(x, y)); c.closePath(); }
 function prepField() {
-  // feathered copy of the art (sides fade out) at native resolution
-  FIELD_CV = document.createElement('canvas'); FIELD_CV.width = IW; FIELD_CV.height = IH;
-  const c = FIELD_CV.getContext('2d');
+  const mkc = () => { const c = document.createElement('canvas'); c.width = IW; c.height = IH; return c; };
+  // base: art with the arm area painted over (shirt / sky) and feathered left/right edges
+  BASE_CV = mkc();
+  let c = BASE_CV.getContext('2d');
   c.drawImage(HERO, 0, 0);
+  c.save(); c.filter = 'blur(6px)'; polyPath(c, ARM_POLY); c.fillStyle = '#141417'; c.fill(); c.restore();
+  c.save(); polyPath(c, ARM_POLY); c.clip();
+  c.beginPath(); c.moveTo(0, 0); c.lineTo(222, 0); c.lineTo(226, 550); c.lineTo(392, 905); c.lineTo(392, IH); c.lineTo(0, IH); c.closePath();
+  c.filter = 'blur(4px)'; c.fillStyle = '#6aa6de'; c.fill(); c.restore();
   c.globalCompositeOperation = 'destination-in';
   const g = c.createLinearGradient(0, 0, IW, 0);
   g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(.08, 'rgba(0,0,0,1)'); g.addColorStop(.92, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
   c.fillStyle = g; c.fillRect(0, 0, IW, IH);
+  // arm layer with a feathered mask
+  const armFrom = (empty) => {
+    const cv = mkc(), a = cv.getContext('2d');
+    a.drawImage(HERO, 0, 0);
+    if (empty) { a.save(); a.beginPath(); a.rect(0, 0, IW, 606); a.clip(); a.beginPath(); a.arc(IMG_BALL[0], IMG_BALL[1], IMG_BALL_R + 9, 0, Math.PI * 2); a.fillStyle = '#141417'; a.fill(); a.restore(); }
+    a.globalCompositeOperation = 'destination-in'; a.filter = 'blur(3px)'; polyPath(a, ARM_POLY); a.fillStyle = '#000'; a.fill();
+    return cv;
+  };
+  ARM_CV = armFrom(false); ARM_EMPTY_CV = armFrom(true);
+}
+// arm pose over time: rotation about the elbow + offset (image px)
+function armAt(t) {
+  if (t < T.antic[0]) return { rot: Math.sin(t * 2.1) * .012, dx: 0, dy: Math.sin(t * 2.6) * 3 };
+  if (t < T.snap[0]) { const k = easeOutCubic(prog(t, ...T.antic)); return { rot: -.1 * k, dx: -8 * k, dy: 34 * k }; }
+  if (t < T.snap[1]) { const k = prog(t, ...T.snap); return { rot: lerp(-.1, .34, k), dx: lerp(-8, 30, k), dy: lerp(34, -90, k) }; }
+  const k = easeOutCubic(prog(t, T.snap[1], T.snap[1] + .4));
+  return { rot: lerp(.34, .1, k), dx: lerp(30, 10, k), dy: lerp(-90, -24, k) };
+}
+const armXf = (p, a) => {   // image px point -> posed image px
+  const dx = p[0] - ELBOW[0], dy = p[1] - ELBOW[1], c = Math.cos(a.rot), s = Math.sin(a.rot);
+  return [ELBOW[0] + dx * c - dy * s + a.dx, ELBOW[1] + dx * s + dy * c + a.dy];
+};
+// body reacts: small crouch on the wind-up, lift on the throw
+function bodyAt(t) {
+  const breathe = Math.sin(t * 2.6) * .004;
+  const crouch = bell(prog(t, T.antic[0], T.snap[1] + .05)) * 10 - bell(prog(t, T.snap[0], T.snap[1] + .35)) * 14;
+  return { s: 1 + breathe, dy: crouch };
+}
+function drawArm(c, a, empty) {
+  c.save();
+  c.translate(ELBOW[0] + a.dx, ELBOW[1] + a.dy); c.rotate(a.rot); c.translate(-ELBOW[0], -ELBOW[1]);
+  c.drawImage(empty ? ARM_EMPTY_CV : ARM_CV, 0, 0);
+  c.restore();
+}
+function drawHero(t, opts = {}) {
+  const w = IW * HS, h = IH * HS, b = bodyAt(t), a = armAt(t);
+  const released = t >= T.release;
+  ctx.save();
+  ctx.translate(HX + w / 2, HY + h + b.dy); ctx.scale(b.s, b.s); ctx.translate(-(HX + w / 2), -(HY + h));
+  ctx.translate(HX, HY); ctx.scale(HS, HS);
+  if (opts.filter) ctx.filter = opts.filter;
+  ctx.drawImage(BASE_CV, 0, 0);
+  // smear frames during the snap: ghost arms along the swing
+  if (t >= T.snap[0] && t < T.snap[1] + .045 && !opts.filter) {
+    for (let i = 3; i >= 1; i--) {
+      const ga = armAt(t - i * .018);
+      ctx.globalAlpha = .28 * (1 - i / 4); drawArm(ctx, ga, ga === a ? released : t - i * .018 >= T.release);
+    }
+    ctx.globalAlpha = 1;
+  }
+  drawArm(ctx, a, released);
+  ctx.restore();
+  return { a, b };
 }
 function drawField(t) {
-  // extend the art to 16:9 by stretching its edge columns (blurred), then the art with feathered sides
   const w = IW * HS, h = IH * HS;
-  // depth-of-field backdrop: the art itself, scaled to cover the frame, blurred and a little darker
   ctx.save();
   ctx.filter = `blur(${14 * SS}px) brightness(.82) saturate(1.15)`;
-  // only the landscape margins of the art (no character) fill the sides
   ctx.drawImage(HERO, 0, 0, 150, IH, -700, HY - 30, HX + 760, h + 60);
   ctx.drawImage(HERO, IW - 140, 0, 140, IH, HX + w - 60, HY - 30, HX + 760, h + 60);
   ctx.filter = 'none';
   ctx.restore();
-  ctx.fillStyle = '#b9a586'; ctx.fillRect(-900, HY + h - 2, W + 1800, 1400);   // ground below the art (tilt-up)
-  ctx.fillStyle = '#5f9fe0'; ctx.fillRect(-900, HY - 2400, W + 1800, 2402);    // sky above the art (tilt-up)
   const g = ctx.createLinearGradient(0, HY - 2400, 0, HY + 40);
   g.addColorStop(0, '#2f6fc8'); g.addColorStop(1, '#5f9fe0');
   ctx.fillStyle = g; ctx.fillRect(-900, HY - 2400, W + 1800, 2402);
-  ctx.drawImage(FIELD_CV, HX - 1, HY, w + 2, h);
-  // drifting dust & pebbles
+  ctx.fillStyle = '#b9a586'; ctx.fillRect(-900, HY + h - 2, W + 1800, 1400);
+}
+function dust(t) {
   for (let i = 0; i < 26; i++) {
     const x = ((rand(i + 40) * (W + 400) + t * (60 + rand(i) * 140)) % (W + 400)) - 200;
     const y = (rand(i + 80) * H * 1.1 - t * (20 + rand(i + 3) * 40) + H * 2) % (H * 1.1);
@@ -298,37 +356,43 @@ function drawField(t) {
     ctx.beginPath(); ctx.ellipse(x, y, 3 + rand(i + 5) * 6, 2 + rand(i + 6) * 4, rand(i) * 3, 0, Math.PI * 2); ctx.fill();
   }
 }
+// where the ball is in the posed hand (field px)
+function handBall(t) {
+  const b = bodyAt(t), p = armXf(IMG_BALL, armAt(t)), w = IW * HS, h = IH * HS;
+  const fx = HX + p[0] * HS, fy = HY + p[1] * HS;
+  const cx = HX + w / 2, by = HY + h;
+  return { x: cx + (fx - cx) * b.s, y: by + b.dy + (fy - by) * b.s, r: BALL_HOLD_R };
+}
+function ballFlight(t) {
+  const r0 = handBall(T.release), k = prog(t, T.release, T.ballGone);
+  return { x: lerp(r0.x, r0.x + 140, easeInQuad(k)), y: r0.y - easeInCubic(k) * 1700 - k * 120, r: BALL_HOLD_R * lerp(1.25, .9, k) };
+}
 
 const CAM1 = [
   [0.00, C.x, C.y - 10, 1.0, 0, null],
-  [1.70, C.x + 10, C.y - 70, 1.28, -.02, easeInOut],
+  [T.open[1], C.x - 60, C.y - 90, 1.3, -.02, easeInOut],
 ];
 const CAM_L = [
-  [T.launch[0], BALL_HOLD.x, BALL_HOLD.y - 40, 1.35, .03, null],
-  [T.launch[0] + .3, BALL_HOLD.x, BALL_HOLD.y - 60, 1.2, -.02, easeOutExpo],
-  [T.launch[1], BALL_HOLD.x, BALL_HOLD.y - 1500, 1.05, .04, easeInCubic],
+  [T.antic[0], BALL_HOLD.x + 60, BALL_HOLD.y + 40, 1.42, .035, null],
+  [T.snap[0], BALL_HOLD.x + 70, BALL_HOLD.y + 60, 1.5, .05, easeOutCubic],      // push in on the wind-up
+  [T.release + .1, BALL_HOLD.x + 80, BALL_HOLD.y - 10, 1.2, -.04, easeOutExpo], // snap out with the throw
+  [T.release + .35, BALL_HOLD.x + 100, BALL_HOLD.y - 140, 1.15, -.02, easeOutCubic],
+  [T.launch[1], BALL_HOLD.x + 140, BALL_HOLD.y - 1700, 1.05, .04, easeInCubic],  // whip-tilt up after the ball
 ];
-function ballLaunch(t) {
-  if (t < T.kiBurst + .06) return { x: BALL_HOLD.x, y: BALL_HOLD.y, r: BALL_HOLD_R };
-  const k = prog(t, T.kiBurst + .06, T.ballGone);
-  return { x: BALL_HOLD.x + Math.sin(k * 3) * 10, y: BALL_HOLD.y - easeInCubic(k) * 1500, r: BALL_HOLD_R * lerp(1, .85, k) };
-}
 
 function shotOpen(t) {
   const [cx, cy, z, rot] = interpKeys(CAM1, t);
   applyCam(cx, cy, z, rot);
   drawField(t);
-  const gk = prog(t, T.glowIn, T.glowIn + .35);
+  drawHero(t);
+  dust(t);
+  const hb = handBall(t), gk = prog(t, T.glowIn, T.glowIn + .4);
   if (gk > 0) {
-    const bob = Math.sin(t * 3.2) * 6;
-    const r = BALL_HOLD_R * Math.max(0, easeOutBack(gk, 2.6));
-    glow(BALL_HOLD.x, BALL_HOLD.y + bob, r, 1.2, 2.6);
-    aura(BALL_HOLD.x, BALL_HOLD.y + bob, r, -Math.PI / 2, .25, .35 + .1 * Math.sin(t * 9), t, gk);
-    drawBall(BALL_HOLD.x, BALL_HOLD.y + bob, r, t, { shine: prog(t, .95, 1.25) });
-    const pk = prog(t, T.glowIn, T.glowIn + .4);
-    if (pk < 1) { ring(BALL_HOLD.x, BALL_HOLD.y, BALL_HOLD_R * lerp(1, 3, easeOutExpo(pk)), 10 * (1 - pk) + 1, 1 - pk); shock(BALL_HOLD.x, BALL_HOLD.y, BALL_HOLD_R * lerp(1, 3, easeOutExpo(pk)), 22, .06 * (1 - pk)); }
-    const tk = prog(t, 1.25, 1.45);
-    twinkle(BALL_HOLD.x + r * .55, BALL_HOLD.y - r * .65 + bob, 60 * bell(tk), 1);
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; glow(hb.x, hb.y, hb.r, .45 * gk + .12 * Math.sin(t * 7), 2.6); ctx.restore();
+    const pk = prog(t, T.glowIn, T.glowIn + .45);
+    if (pk < 1) { ring(hb.x, hb.y, hb.r * lerp(1, 3.2, easeOutExpo(pk)), 9 * (1 - pk) + 1, 1 - pk); shock(hb.x, hb.y, hb.r * lerp(1, 3.2, easeOutExpo(pk)), 20, .06 * (1 - pk)); }
+    const tk = prog(t, 1.05, 1.28);
+    twinkle(hb.x + hb.r * .6, hb.y - hb.r * .7, 55 * bell(tk), 1);
   }
   screenFill('#000', 1 - prog(t, 0, .3));
   letterbox(1);
@@ -339,64 +403,79 @@ function shotOpen(t) {
 // =====================================================================
 function shotFace(t) {
   const k = prog(t, ...T.face);
-  const cw = lerp(600, 520, easeOutCubic(k)), ch = cw * 9 / 16, ccx = 418, ccy = 238;
+  const cw = lerp(640, 540, easeOutCubic(k)), ch = cw * 9 / 16, ccx = 596, ccy = 338;
   applyCam(C.x, C.y, 1, 0, ...shakeXY(t, 6));
   ctx.drawImage(HERO, ccx - cw / 2, ccy - ch / 2, cw, ch, 0, 0, W, H);
-  ctx.fillStyle = 'rgba(10,8,30,.55)'; ctx.fillRect(0, 0, W, H * .22); ctx.fillRect(0, H * .78, W, H * .22);
+  ctx.fillStyle = 'rgba(10,8,30,.55)'; ctx.fillRect(0, 0, W, H * .2); ctx.fillRect(0, H * .8, W, H * .2);
   focusLines(C.x, C.y + 20, .9, 8800, '255,255,255', 560, 70);
   const gk = prog(t, T.face[0] + .1, T.face[0] + .3);
-  for (const ex of [.37, .66]) twinkle(W * ex, H * .5, 70 * bell(gk), 1);
+  for (const ex of [.36, .66]) twinkle(W * ex, H * .47, 70 * bell(gk), 1);
   screenFill(WHITE, 1 - prog(t, T.face[0], T.face[0] + .085));
   zoomFX(C.x, C.y, .06 + .05 * k); FX.ca = 4;
   letterbox(1);
 }
 
 // =====================================================================
-// SHOT 3 — ki burst, the ball is launched upward, camera tilts after it
+// SHOT 3 — wind-up, snap throw, release, camera whips up after the ball
 // =====================================================================
 function shotLaunch(t) {
-  const d = t - T.kiBurst;
-  if (d >= 0 && d < .085) {
-    const white = d < .042;
-    const [cx, cy, z, rot] = interpKeys(CAM_L, t);
+  const d = t - T.release;
+  const [cx, cy, z, rot] = interpKeys(CAM_L, t);
+  if (d >= 0 && d < .08) {                        // manga impact frames on release
+    const white = d < .03;
     ctx.save(); ctx.setTransform(SS, 0, 0, SS, 0, 0); ctx.fillStyle = white ? WHITE : '#000'; ctx.fillRect(0, 0, W, H); ctx.restore();
-    applyCam(cx, cy, z, rot, ...shakeXY(t, 24));
-    // manga-style high-contrast impact frame of the art
-    ctx.save();
-    ctx.filter = white ? 'grayscale(1) contrast(7) brightness(1.35)' : 'grayscale(1) contrast(7) brightness(1.35) invert(1)';
-    ctx.drawImage(FIELD_CV, HX, HY, IW * HS, IH * HS);
-    ctx.restore();
-    focusLines(BALL_HOLD.x, BALL_HOLD.y, 1, 9100, white ? '20,12,16' : '255,250,235', 140, 110);
-    ctx.save(); ctx.translate(BALL_HOLD.x, BALL_HOLD.y); celBall(BALL_HOLD_R * 1.1, 0, 0, { silhouette: white ? INK : WHITE }); ctx.restore();
-    zoomFX(BALL_HOLD.x, BALL_HOLD.y, .2); FX.ca = 16; FX.warp = 10;
+    applyCam(cx, cy, z, rot, ...shakeXY(t, 26));
+    drawHero(t, { filter: white ? 'grayscale(1) contrast(7) brightness(1.35)' : 'grayscale(1) contrast(7) brightness(1.35) invert(1)' });
+    const hb = handBall(t);
+    focusLines(hb.x, hb.y, 1, 9100, white ? '20,12,16' : '255,250,235', 120, 110);
+    ctx.save(); ctx.translate(hb.x, hb.y - 30); celBall(hb.r * 1.3, 0, 0, { silhouette: white ? INK : WHITE }); ctx.restore();
+    zoomFX(hb.x, hb.y, .2); FX.ca = 16; FX.warp = 10;
     letterbox(1);
     return;
   }
-  const [cx, cy, z, rot] = interpKeys(CAM_L, t);
-  const sh = 26 * Math.exp(-(t - T.kiBurst) * 5);
+  const sh = t < T.release ? 3 + 8 * prog(t, ...T.antic) : 26 * Math.exp(-(t - T.release) * 5);
   applyCam(cx, cy, z, rot, ...shakeXY(t, sh));
   drawField(t);
-  const kk = prog(t, T.kiBurst + .085, T.kiBurst + .7);
-  if (kk < 1) {
-    for (let i = 0; i < 3; i++) ring(BALL_HOLD.x, BALL_HOLD.y, 120 + 900 * easeOutExpo(prog(kk, i * .1, 1)), 20 * (1 - kk) + 2, (1 - kk) * .9, i % 2 ? YELLOW : WHITE);
-    shock(BALL_HOLD.x, BALL_HOLD.y, 120 + 900 * easeOutExpo(kk), 70, .1 * (1 - kk));
-    for (let i = 0; i < 24; i++) {
-      const a = -Math.PI / 2 + (rand(i + 600) - .5) * 2.6, sp = 300 + rand(i + 610) * 900;
-      const x = BALL_HOLD.x + Math.cos(a) * sp * easeOutCubic(kk), y = BALL_HOLD.y + 300 + Math.sin(a) * sp * easeOutCubic(kk) + kk * kk * 300;
-      ctx.fillStyle = i % 2 ? '#7a6550' : '#a8916f'; ctx.strokeStyle = INK; ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.ellipse(x, y, 10 + rand(i) * 18, 8 + rand(i + 1) * 12, kk * 6 + i, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  drawHero(t);
+  dust(t);
+  const hb = handBall(t);
+  if (t < T.release) {
+    // charging: aura flickers around the held ball, focus lines tighten
+    ctx.save(); ctx.globalCompositeOperation = 'lighter'; glow(hb.x, hb.y, hb.r, .6, 2.8); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(-5000, -5000, 10000, 10000); ctx.arc(hb.x, hb.y, hb.r * 1.02, 0, Math.PI * 2, true); ctx.clip('evenodd');
+    aura(hb.x, hb.y, hb.r * 1.05, -Math.PI / 2, .3, .45 + .6 * prog(t, ...T.antic), t, prog(t, T.antic[0], T.antic[0] + .08), ['rgba(255,138,0,.85)', 'rgba(255,210,63,.85)', 'rgba(255,251,234,.0)']);
+    ctx.restore();
+    focusLines(hb.x, hb.y, prog(t, T.antic[0], T.snap[0]) * .8, 9300, '255,250,235', 260);
+    // swing arcs during the snap
+    if (t >= T.snap[0]) {
+      ctx.save(); ctx.strokeStyle = WHITE; ctx.lineCap = 'round';
+      const p0 = handBall(T.snap[0]), p1 = hb;
+      for (let i = 0; i < 4; i++) { ctx.lineWidth = 10 - i * 2; ctx.globalAlpha = .9 - i * .2; ctx.beginPath(); ctx.moveTo(p0.x - 40 + i * 18, p0.y + 40); ctx.quadraticCurveTo(p0.x - 70 + i * 10, p1.y + 10, p1.x - 30 + i * 14, p1.y - 40); ctx.stroke(); }
+      ctx.restore();
     }
+  } else {
+    // release: ki burst on the ground + rocks lifting
+    const kk = prog(t, T.release + .085, T.release + .7);
+    if (kk < 1) {
+      for (let i = 0; i < 3; i++) ring(hb.x, hb.y, 100 + 900 * easeOutExpo(prog(kk, i * .1, 1)), 20 * (1 - kk) + 2, (1 - kk) * .9, i % 2 ? YELLOW : WHITE);
+      shock(hb.x, hb.y, 100 + 900 * easeOutExpo(kk), 70, .1 * (1 - kk));
+      for (let i = 0; i < 24; i++) {
+        const a = -Math.PI / 2 + (rand(i + 600) - .5) * 2.6, sp = 300 + rand(i + 610) * 900;
+        const x = hb.x + 120 + Math.cos(a) * sp * easeOutCubic(kk), y = hb.y + 520 + Math.sin(a) * sp * easeOutCubic(kk) + kk * kk * 300;
+        ctx.fillStyle = i % 2 ? '#7a6550' : '#a8916f'; ctx.strokeStyle = INK; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.ellipse(x, y, 10 + rand(i) * 18, 8 + rand(i + 1) * 12, kk * 6 + i, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+    }
+    const b = ballFlight(t);
+    trail(b.x, b.y + b.r * .2, b.r, 180 + 1000 * prog(t, T.release, T.ballGone), Math.PI / 2 - .08, t);
+    aura(b.x, b.y, b.r, Math.PI / 2, .8, 1.9, t, 1);
+    drawBall(b.x, b.y, b.r, t, { stretch: 1.6, ang: -Math.PI / 2 + .08 });
+    focusLines(b.x, b.y, (1 - prog(t, T.release + .085, T.release + .45)) * 1.1, 9200, '255,250,235', 250);
+    speedLinesV(t, prog(t, T.ballGone - .12, T.launch[1]) * 1.2, 1300, 60);
+    zoomFX(b.x, Math.max(b.y, cy - 500), .03 + .09 * prog(t, T.ballGone, T.launch[1]));
+    FX.dirY = 30 * prog(t, T.ballGone - .1, T.launch[1]);
+    FX.ca = 3 + 10 * Math.exp(-(t - T.release) * 5); FX.warp = 2 + 10 * Math.exp(-(t - T.release) * 6);
   }
-  const b = ballLaunch(t);
-  const up = t > T.kiBurst + .06;
-  if (up) trail(b.x, b.y + b.r * .2, b.r, 200 + 900 * prog(t, T.kiBurst, T.ballGone), Math.PI / 2, t);
-  aura(b.x, b.y, b.r, Math.PI / 2, up ? .8 : .2, up ? 1.8 : .5, t, 1);
-  drawBall(b.x, b.y, b.r, t, { stretch: up ? 1.5 : 1, ang: -Math.PI / 2 });
-  focusLines(BALL_HOLD.x, BALL_HOLD.y - 200, (1 - prog(t, T.kiBurst + .085, T.kiBurst + .5)) * 1.1, 9200, '255,250,235', 250);
-  speedLinesV(t, prog(t, T.ballGone - .1, T.launch[1]) * 1.2, 1300, 60);
-  zoomFX(b.x, Math.max(b.y, cy - 500), .03 + .09 * prog(t, T.ballGone, T.launch[1]));
-  FX.dirY = 30 * prog(t, T.ballGone - .1, T.launch[1]);
-  FX.ca = 3 + 10 * Math.exp(-(t - T.kiBurst) * 5); FX.warp = 2 + 10 * Math.exp(-(t - T.kiBurst) * 6);
   letterbox(1);
 }
 
@@ -711,7 +790,7 @@ function scene(t) {
   else if (t < T.insert[1]) shotInsert(t);
   else shotFinal(t);
 }
-function draw(t) { if (!L) layout(); if (!FIELD_CV) prepField(); resetFX(); scene(t); post(t); }
+function draw(t) { if (!L) layout(); if (!BASE_CV) prepField(); resetFX(); scene(t); post(t); }
 
 window.draw = draw;
 window.DURATION = DURATION;
