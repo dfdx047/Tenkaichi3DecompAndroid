@@ -37,13 +37,15 @@ android {
     // Release signing: a keystore given by the environment (CI secrets), else the debug key.
     val ks = System.getenv("DR_KEYSTORE")
     signingConfigs {
-        // Test builds (debug, and the nightly): one fixed key kept in the repository, so a newer build installs over
-        // the old one and keeps the game's data. Not for publishing.
-        getByName("debug") {
-            storeFile = file("dragonrage-test.jks")
-            storePassword = "dragonrage"
-            keyAlias = "dragonrage-test"
-            keyPassword = "dragonrage"
+        // Test builds: a fixed key, when dragonrage-test.jks is beside this file (kept out of the repository), so a
+        // newer build installs over the old one and keeps the game's data. Without it, Gradle's own debug key.
+        if (file("dragonrage-test.jks").exists()) {
+            getByName("debug") {
+                storeFile = file("dragonrage-test.jks")
+                storePassword = "dragonrage"
+                keyAlias = "dragonrage-test"
+                keyPassword = "dragonrage"
+            }
         }
         if (ks != null && file(ks).exists()) {
             create("release") {

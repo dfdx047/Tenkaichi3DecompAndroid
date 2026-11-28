@@ -1,7 +1,9 @@
 import math, random, sys
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
-R='/home/lawliet/Projetos-Recomp/Tenkaichi3DecompAndroid-tag/port/third_party/fonts/'
-UI='/home/lawliet/Projetos-Recomp/Tenkaichi3DecompAndroid-tag/port/tbo/ui/'
+import os
+PORT=os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+R=PORT+'/third_party/fonts/'
+UI=PORT+'/tbo/ui/'
 W,H=2712,1220
 KANIT=lambda s:ImageFont.truetype(R+'kanit/Kanit-ExtraBoldItalic.ttf',int(s))
 FIRA=lambda s:ImageFont.truetype(R+'fira/FiraSansCondensed-Bold.ttf',int(s))

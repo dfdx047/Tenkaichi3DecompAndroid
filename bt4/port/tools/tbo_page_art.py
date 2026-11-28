@@ -11,7 +11,7 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-PREV = pathlib.Path('/home/lawliet/Projetos-Recomp/previas-tagteam')
+PREV = ROOT.parents[1] / 'previas-tagteam'  # (beside the repository)
 sys.path.insert(0, str(PREV))
 sys.path.insert(0, str(PREV / 'nova-tela'))
 import tagteam_menus as K  # noqa: E402

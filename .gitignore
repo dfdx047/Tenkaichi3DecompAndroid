@@ -61,3 +61,7 @@ apply_dragonrage_patch*.py
 # cache do wrangler (traz o nome da conta Cloudflare)
 .wrangler/
 .dev.vars
+
+# chave de teste (fica só no PC) e relatórios de auditoria
+android/app/dragonrage-test.jks
+bt4/docs/AUDITORIA*
