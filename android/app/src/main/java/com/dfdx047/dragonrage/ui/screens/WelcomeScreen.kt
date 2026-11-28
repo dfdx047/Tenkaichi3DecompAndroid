@@ -1,25 +1,27 @@
 package com.dfdx047.dragonrage.ui.screens
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.matchParentSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
@@ -31,54 +33,72 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.dfdx047.dragonrage.R
 import com.dfdx047.dragonrage.data.Game
 import com.dfdx047.dragonrage.ui.components.DragonBall
 import com.dfdx047.dragonrage.ui.theme.Dbz
 
-// Cores que faltam na paleta Dbz: o azul profundo do BT4 e o verde profundo do BT2.
-private val KiBlueDeep = Color(0xFF5A2A8C)
+private val DeepNavy = Color(0xFF050914)
+private val CardDark = Color(0xFF0A0E1B)
+private val KiBlueDeep = Color(0xFF10466B)
 private val ShenronGreenDeep = Color(0xFF0B5A33)
 
 /**
- * The first screen: which game to open. Each game is in the same app with the same pages; each has its own folder,
- * disc image, saves and settings, its own engine and its own colours (Game).
+ * The first screen: which game to open. Each game keeps its own folder, disc image, saves, settings and engine.
  */
 @Composable
 fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
     val wide = LocalConfiguration.current.screenWidthDp >= 600
+    val density = LocalDensity.current
+    val insets = WindowInsets.safeDrawing.get(density, LayoutDirection.Ltr)
+    val availableHeight = (LocalConfiguration.current.screenHeightDp.dp - insets.top - insets.bottom).coerceAtLeast(320.dp)
+    val compact = wide && density.fontScale <= 1.15f && availableHeight >= 400.dp
+
+    val outerPadding = if (compact) 12.dp else 20.dp
+    val gap = if (compact) 10.dp else 18.dp
+    val headerReserve = if (wide) 56.dp else 92.dp
+    val footerReserve = 30.dp
+    val cardHeight = (availableHeight - outerPadding * 2 - headerReserve - footerReserve - gap * 2)
+        .coerceIn(150.dp, 340.dp)
+    val scrollState = rememberScrollState()
+
     Box(
-        Modifier.fillMaxSize().background(Dbz.Night).windowInsetsPadding(WindowInsets.safeDrawing),
+        Modifier.fillMaxSize().background(DeepNavy).windowInsetsPadding(WindowInsets.safeDrawing),
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            Modifier.widthIn(max = 900.dp).verticalScroll(rememberScrollState()).padding(20.dp),
+            Modifier
+                .widthIn(max = if (wide) 1100.dp else 900.dp)
+                .then(if (compact) Modifier else Modifier.verticalScroll(scrollState))
+                .padding(outerPadding),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+            verticalArrangement = Arrangement.spacedBy(gap),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                DragonBall(stars = 4, size = 64.dp)
-                Spacer(Modifier.size(10.dp))
-                Column {
-                    Text("DRAGON RAGE", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black, color = Dbz.SaiyanGold)
-                    Text(stringResource(R.string.welcome_pick), style = MaterialTheme.typography.bodyLarge, color = Color(0xFFC4C3D6))
-                }
-            }
+            WelcomeHeader(wide = wide)
+
             val cards: @Composable (Modifier) -> Unit = { m ->
                 GameCard(
                     game = Game.BT3,
                     number = "3",
                     tag = R.string.welcome_tag_original,
-                    text = stringResource(R.string.welcome_bt3),
+                    text = stringResource(R.string.welcome_short_bt3),
                     disc = "SLUS-21678",
                     accent = Dbz.SaiyanGold,
                     deep = Dbz.GiOrangeDeep,
@@ -92,8 +112,8 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                     game = Game.BT4,
                     number = "4",
                     tag = R.string.welcome_tag_modified,
-                    text = stringResource(R.string.welcome_bt4),
-                    disc = "SLUS-219.78 · Beta 14 Rev2",
+                    text = stringResource(R.string.welcome_short_bt4),
+                    disc = "BETA 14 REV2",
                     accent = Dbz.KiBlue,
                     deep = KiBlueDeep,
                     art = R.drawable.welcome_art_bt4,
@@ -106,7 +126,7 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                     game = Game.BT2,
                     number = "2",
                     tag = R.string.welcome_tag_classic,
-                    text = stringResource(R.string.welcome_bt2),
+                    text = stringResource(R.string.welcome_short_bt2),
                     disc = "SLUS-21441",
                     accent = Dbz.ShenronGreen,
                     deep = ShenronGreenDeep,
@@ -118,23 +138,74 @@ fun WelcomeScreen(last: Game, onPick: (Game) -> Unit) {
                     onPick = onPick,
                 )
             }
+
             if (wide) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
+                    horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 16.dp),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    cards(Modifier.weight(1f).fillMaxHeight())
+                    cards(Modifier.weight(1f).then(if (compact) Modifier.height(cardHeight) else Modifier))
                 }
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(verticalArrangement = Arrangement.spacedBy(gap), modifier = Modifier.fillMaxWidth()) {
                     cards(Modifier.fillMaxWidth())
                 }
             }
-            Text(
-                stringResource(R.string.welcome_note),
-                style = MaterialTheme.typography.bodySmall, color = Color(0xFF9A99B0),
-            )
+
+            WelcomeFooter()
         }
+    }
+}
+
+@Composable
+private fun WelcomeHeader(wide: Boolean) {
+    val titleStyle = (if (wide) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium)
+        .copy(fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic)
+    val subtitleStyle = (if (wide) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium)
+        .copy(letterSpacing = if (wide) 1.5.sp else 2.sp)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(if (wide) 8.dp else 10.dp),
+    ) {
+        DragonBall(stars = 4, size = if (wide) 42.dp else 64.dp)
+        Column {
+            Row(horizontalArrangement = Arrangement.spacedBy(if (wide) 5.dp else 7.dp)) {
+                Text("DRAGON", style = titleStyle, color = Color.White)
+                Text("RAGE", style = titleStyle, color = Dbz.SaiyanGold)
+            }
+            Text(stringResource(R.string.welcome_short_subtitle), style = subtitleStyle, color = Color(0xFFC4C3D6))
+        }
+    }
+}
+
+@Composable
+private fun WelcomeFooter() {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        InfoIcon(tint = Color(0xFF9A99B0), modifier = Modifier.size(16.dp))
+        Text(
+            stringResource(R.string.welcome_short_footer),
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF9A99B0),
+        )
+    }
+}
+
+@Composable
+private fun InfoIcon(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val r = size.minDimension / 2f
+        drawCircle(color = tint.copy(alpha = 0.18f), radius = r)
+        drawCircle(color = tint, radius = r, style = Stroke(width = size.minDimension * 0.08f))
+        drawCircle(color = tint, radius = size.minDimension * 0.07f, center = Offset(center.x, center.y - r * 0.5f))
+        drawLine(
+            color = tint,
+            start = Offset(center.x, center.y - r * 0.16f),
+            end = Offset(center.x, center.y + r * 0.55f),
+            strokeWidth = size.minDimension * 0.12f,
+        )
     }
 }
 
@@ -155,70 +226,83 @@ private fun GameCard(
     onPick: (Game) -> Unit,
 ) {
     val shape = RoundedCornerShape(24.dp)
-    val cardBackground = Brush.linearGradient(
-        listOf(Dbz.NightHigh, accent.copy(alpha = 0.22f), deep.copy(alpha = 0.72f), Dbz.Night),
-    )
+    val faceAlignment = when (game) {
+        Game.BT3 -> Alignment(0f, -0.36f)
+        Game.BT4 -> Alignment(0f, -0.52f)
+        Game.BT2 -> Alignment(-1f, -0.40f)
+    }
     Box(
         modifier
+            .drawBehind {
+                val radius = 24.dp.toPx()
+                drawRoundRect(
+                    color = accent.copy(alpha = 0.10f),
+                    cornerRadius = CornerRadius(radius),
+                    style = Stroke(width = 12.dp.toPx()),
+                )
+                drawRoundRect(
+                    color = accent.copy(alpha = 0.18f),
+                    cornerRadius = CornerRadius(radius),
+                    style = Stroke(width = 6.dp.toPx()),
+                )
+            }
             .clip(shape)
-            .background(cardBackground)
+            .background(CardDark)
             .border(if (last) 3.dp else 2.dp, accent, shape)
             .clickable { onPick(game) },
     ) {
         if (wide) {
+            CardArt(
+                art = art,
+                accent = accent,
+                deep = deep,
+                alignment = faceAlignment,
+                portrait = false,
+                game = game,
+                modifier = Modifier.matchParentSize(),
+            )
             Column(
-                Modifier.fillMaxSize().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                Modifier.fillMaxWidth().padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                CardArt(
-                    art = art,
-                    accent = accent,
-                    deep = deep,
-                    artAlignment = artAlignment,
-                    modifier = Modifier.fillMaxWidth().weight(0.55f),
-                )
-                Column(
-                    Modifier.fillMaxWidth().weight(0.45f),
-                    verticalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    CardText(tag = tag, disc = disc, number = number, text = text, accent = accent)
-                    SelectButton(accent = accent)
-                }
+                CardText(tag = tag, disc = disc, number = number, text = text, accent = accent, twoLines = false)
+                SelectButton(accent = accent)
             }
         } else {
             Row(
-                Modifier.fillMaxWidth().padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                verticalAlignment = Alignment.Top,
             ) {
                 CardArt(
                     art = art,
                     accent = accent,
                     deep = deep,
-                    artAlignment = artAlignment,
-                    modifier = Modifier.weight(0.4f).aspectRatio(1f),
+                    alignment = artAlignment,
+                    portrait = true,
+                    game = game,
+                    modifier = Modifier.weight(0.45f).fillMaxHeight(),
                 )
                 Column(
-                    Modifier.weight(0.6f),
+                    Modifier.weight(0.55f).padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    CardText(tag = tag, disc = disc, number = number, text = text, accent = accent)
+                    CardText(tag = tag, disc = disc, number = number, text = text, accent = accent, twoLines = true)
                     SelectButton(accent = accent)
                 }
             }
         }
         if (last) {
             Box(
-                Modifier.align(Alignment.TopEnd)
+                Modifier.align(Alignment.TopStart)
                     .padding(10.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(accent.copy(alpha = 0.92f))
+                    .background(accent.copy(alpha = 0.88f))
                     .padding(horizontal = 10.dp, vertical = 4.dp),
             ) {
                 Text(
                     stringResource(R.string.welcome_last),
                     style = MaterialTheme.typography.labelSmall,
-                    color = Dbz.Night,
+                    color = DeepNavy,
                     fontWeight = FontWeight.Bold,
                 )
             }
@@ -227,8 +311,16 @@ private fun GameCard(
 }
 
 @Composable
-private fun CardText(tag: Int, disc: String, number: String, text: String, accent: Color) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun CardText(
+    tag: Int,
+    disc: String,
+    number: String,
+    text: String,
+    accent: Color,
+    twoLines: Boolean,
+) {
+    val density = LocalDensity.current
+    Column(verticalArrangement = Arrangement.spacedBy(if (twoLines) 6.dp else 4.dp)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -241,42 +333,59 @@ private fun CardText(tag: Int, disc: String, number: String, text: String, accen
                 Text(
                     stringResource(tag),
                     style = MaterialTheme.typography.labelSmall,
-                    color = Dbz.Night,
+                    color = DeepNavy,
                     fontWeight = FontWeight.Bold,
                 )
             }
             Text(
                 disc,
                 style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.82f),
+                color = Color.White.copy(alpha = 0.84f),
             )
         }
-        Row(
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                "BUDOKAI TENKAICHI",
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontWeight = FontWeight.Black,
-                    fontStyle = FontStyle.Italic,
-                ),
-                color = Color.White,
-            )
-            Text(
-                number,
-                style = MaterialTheme.typography.displaySmall.copy(
-                    fontWeight = FontWeight.Black,
-                    fontStyle = FontStyle.Italic,
-                ),
-                color = accent,
-            )
+        BoxWithConstraints {
+            val numberBox = if (twoLines) 52.dp else 46.dp
+            val titleWidth = (maxWidth - numberBox - 6.dp).coerceAtLeast(60.dp)
+            val chars = if (twoLines) 9 else 17
+            val titleMax = if (twoLines) 30.sp else 24.sp
+            val titleSp = (titleWidth.value / (chars * 0.62f) / density.fontScale).sp.coerceIn(13.sp, titleMax)
+            val numberSp = (numberBox.value * 0.82f / density.fontScale).sp
+            val titleStyle = (if (twoLines) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium)
+                .copy(fontWeight = FontWeight.Black, fontStyle = FontStyle.Italic)
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (twoLines) {
+                    Column(Modifier.weight(1f)) {
+                        Text("BUDOKAI", style = titleStyle, fontSize = titleSp, color = Color.White, maxLines = 1)
+                        Text("TENKAICHI", style = titleStyle, fontSize = titleSp, color = Color.White, maxLines = 1)
+                    }
+                } else {
+                    Text(
+                        "BUDOKAI TENKAICHI",
+                        modifier = Modifier.weight(1f),
+                        style = titleStyle,
+                        fontSize = titleSp,
+                        color = Color.White,
+                        maxLines = 1,
+                    )
+                }
+                Text(
+                    number,
+                    modifier = Modifier.width(numberBox),
+                    style = MaterialTheme.typography.headlineLarge.copy(
+                        fontWeight = FontWeight.Black,
+                        fontStyle = FontStyle.Italic,
+                    ),
+                    fontSize = numberSp,
+                    textAlign = TextAlign.End,
+                    color = accent,
+                    maxLines = 1,
+                )
+            }
         }
-        Text(
-            text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color.White,
-        )
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = Color.White)
     }
 }
 
@@ -290,7 +399,7 @@ private fun SelectButton(accent: Color) {
         Text(
             stringResource(R.string.welcome_select) + " >",
             style = MaterialTheme.typography.labelLarge,
-            color = Dbz.Night,
+            color = DeepNavy,
             fontWeight = FontWeight.Bold,
         )
     }
@@ -301,10 +410,12 @@ private fun CardArt(
     @DrawableRes art: Int?,
     accent: Color,
     deep: Color,
-    artAlignment: Alignment = Alignment.Center,
+    alignment: Alignment,
+    portrait: Boolean,
+    game: Game,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier.clip(RoundedCornerShape(18.dp))) {
+    Box(modifier) {
         if (art == null) {
             Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(accent, deep))))
         } else {
@@ -312,14 +423,26 @@ private fun CardArt(
                 painter = painterResource(art),
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
-                alignment = artAlignment,
+                alignment = alignment,
                 contentScale = ContentScale.Crop,
             )
-            Box(
-                Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(listOf(Color.Transparent, Dbz.Night.copy(alpha = 0.88f))),
-                ),
-            )
+            if (portrait) {
+                Box(
+                    Modifier.align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .width(28.dp)
+                        .background(Brush.horizontalGradient(listOf(Color.Transparent, CardDark))),
+                )
+            } else {
+                Box(
+                    Modifier.fillMaxSize().background(
+                        Brush.verticalGradient(
+                            0.34f to Color.Transparent,
+                            1f to CardDark.copy(alpha = if (game == Game.BT2) 0.72f else 0.88f),
+                        ),
+                    ),
+                )
+            }
         }
     }
 }

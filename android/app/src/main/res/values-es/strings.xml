@@ -435,6 +435,11 @@
     <string name="welcome_tag_modified">MODIFICADO</string>
     <string name="welcome_tag_classic">CLÁSICO</string>
     <string name="welcome_select">SELECCIONAR JUEGO</string>
+    <string name="welcome_short_bt3">El clásico original con Dragon Net, mods, escenarios, canciones y personalizaciones.</string>
+    <string name="welcome_short_bt4">Mod de Team BT4 con personajes, transformaciones y escenarios nuevos.</string>
+    <string name="welcome_short_bt2">Versión clásica con motor propio y modo online 1P VS 2P.</string>
+    <string name="welcome_short_subtitle">ELIGE TU JUEGO</string>
+    <string name="welcome_short_footer">Cada juego tiene sus propias partidas guardadas, texturas y ajustes.</string>
     <string name="nav_switch_game">Juego</string>
     <string name="bt4_tagline">Budokai Tenkaichi 4 · Team BT4</string>
     <string name="bt4_game_data_intro">Elige tu imagen del mod de Team BT4, Beta 14 Rev2, en inglés o en español. Los archivos del juego se copian de ella (unos 5,7 GB, algunos minutos) y se revisa cada uno; después la imagen ya no hace falta.</string>
